@@ -487,6 +487,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # genuinely runaway loop still stops, not so tight that ordinary
         # multi-step work errors out.
         max_turns=20,
+        # SDK 的 stdio transport 預設單條 JSON 訊息上限 1MB——agent 一個 Bash 印出
+        # 大量輸出(K 線資料、回測明細)就整輪炸掉(實測:「建立 MACD 策略」第一輪
+        # 就中)。放寬到 16MB;這是單條訊息的解析上限,不是常駐記憶體。
+        max_buffer_size=16 * 1024 * 1024,
         permission_mode="bypassPermissions",
     )
 
