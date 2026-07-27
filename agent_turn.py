@@ -273,6 +273,18 @@ class TelegramStreamer:
         self.last_edit_at = 0
         self.last_sent_text = None
 
+    def discard(self):
+        """收回這則串流中的訊息(內容被判定為旁白)。已送出就刪掉,還沒送出就無事。"""
+        if self.message_id is None:
+            return
+        try:
+            tg_api(self.token, "deleteMessage",
+                   {"chat_id": self.chat_id, "message_id": self.message_id})
+        except Exception as e:
+            print(f"[telegram] discard failed: {e}", file=sys.stderr)
+        self.message_id = None
+        self.last_sent_text = None
+
     def _send_with_fallback(self, method, text, extra):
         try:
             return tg_api(self.token, method, {**extra, "text": text, "parse_mode": "Markdown"})
@@ -355,6 +367,15 @@ class TelegramSink:
         self.streamer.update(convert_markdown_tables_to_list(self.chunk_text))
 
     def on_tool(self, block):
+        # 同 WebSink:後面還有工具呼叫的文字段是旁白。TG 是邊打邊編輯同一則訊息,
+        # 所以要把已經送出的那則刪掉,否則旁白會變成一堆零碎訊息。
+        if self.chunk_text.strip():
+            self.streamer.discard()
+            self._last_status = self.chunk_text
+            self.chunk_text = ""
+            self.streamer = TelegramStreamer(self.token, self.chat_id)
+            self.pending_new_bubble = False
+            return
         self.pending_new_bubble = True
 
     def on_status(self, text):
@@ -426,6 +447,10 @@ class WebSink:
         # inter-tool narration fragments glue into one wall when history replays.
         self._break_before_text = False
         self._last_status = ""
+        # 目前這段文字在 full_text 裡的起點。SDK 每個 block 各自一則訊息,所以
+        # 「同訊息裡有沒有 tool_use」判不出旁白;真正的訊號是「這段文字後面還有沒有
+        # 工具呼叫」——有就是旁白(丟去活動列),最後那段才是回覆。
+        self._seg_start = 0
 
     def _send(self, chunk):
         chunk.setdefault("session_id", self.session_id)
@@ -455,6 +480,14 @@ class WebSink:
         self._send({"type": "thinking", "text": text})
 
     def on_tool(self, block):
+        # 這段文字後面接了工具呼叫 → 是過場旁白:移出回覆本文(不進歷史),
+        # 改送活動列。前端收到 tool chunk 也會把對應的文字區塊從泡泡移除。
+        seg = self.full_text[self._seg_start:]
+        if seg.strip():
+            self.full_text = self.full_text[:self._seg_start]
+            self._last_status = seg
+            self._send({"type": "thinking", "text": seg})
+        self._seg_start = len(self.full_text)
         self._break_before_text = True
         # Surface which tool is running so the UI can show a status line
         # (e.g. "跑回測中"); the frontend maps tool name -> label.
