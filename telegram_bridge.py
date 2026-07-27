@@ -164,19 +164,36 @@ def main():
             continue
         idle_logged = False
 
-        # First time we hold a token while still UNPAIRED: discard the bot's backlog
-        # so auto-pair can't bind to a stranger. getUpdates replays the last ~24h, so a
-        # pre-existing / group / previously-messaged bot would otherwise pair to whoever
-        # spoke before the user did — no timing luck needed. Only messages that arrive
-        # AFTER this drain are considered for pairing (user just re-sends if needed).
+        # First time we hold a token while still UNPAIRED: drop the bot's STALE
+        # backlog (older than 2 min) so auto-pair can't bind to a stranger —
+        # getUpdates replays ~24h, so a pre-existing / group bot would otherwise
+        # pair to whoever spoke before the user did. RECENT messages are kept:
+        # the linking user's own first message routinely arrives BEFORE the token
+        # does (pairing poller lag ≤15s), and a blanket drain kept eating it,
+        # forcing a confusing re-send. Old = stranger risk; recent = almost
+        # certainly the user who just linked.
         if allowed_chat_id is None and not drained_backlog:
             try:
-                drain = tg_api(token, "getUpdates", {"offset": -1, "timeout": 0}, timeout=15)
-                results = drain.get("result", [])
-                if results:
-                    offset = results[-1]["update_id"] + 1
+                cutoff = time.time() - 120
+                for _ in range(10):  # backlog paginates ~100/call
+                    params = {"timeout": 0}
+                    if offset is not None:
+                        params["offset"] = offset
+                    batch = tg_api(token, "getUpdates", params, timeout=15).get("result", [])
+                    if not batch:
+                        break
+                    hit_recent = False
+                    for u in batch:
+                        # non-message updates have no date → count as stale
+                        if (u.get("message") or {}).get("date", 0) >= cutoff:
+                            hit_recent = True
+                            break
+                        offset = u["update_id"] + 1
+                    if hit_recent:
+                        break
+                if offset is not None:
                     save_offset(offset)
-                print("[telegram_bridge] discarded pre-pair backlog", file=sys.stderr)
+                print("[telegram_bridge] dropped stale pre-pair backlog", file=sys.stderr)
             except Exception as e:
                 print(f"[telegram_bridge] backlog drain failed: {e}", file=sys.stderr)
             drained_backlog = True
