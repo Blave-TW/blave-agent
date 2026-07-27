@@ -135,6 +135,18 @@ _NO_NARRATION = (
 
 # Telegram uses LEGACY Markdown (single-asterisk bold) and cannot render
 # tables at all; each text segment becomes its own message bubble.
+# 兩個 sink 共用的回覆風格(語法各自另訂)。長度紀律一定要兩邊都掛——
+# 只掛 web 的結果就是 TG 上問一句「台積電多少」回 15 行全套報價(實測)。
+_STYLE_RULES = (
+    "回覆風格：\n"
+    "- 語言跟著使用者的語言走。\n"
+    "- 預設精簡、先講結論：日常問答 1–5 行(問價格就報價格,不用附整套盤面)、"
+    "一般回覆 3–8 行；使用者要細節或分析再展開。\n"
+    "- 程式碼一律寫進檔案,不貼在對話裡;片段以 10 行為上限。\n"
+    "- 回測結果只報關鍵數字(報酬、Sharpe、最大回撤、勝率這類挑 3–4 個)。\n"
+    "- 不要向使用者敘述內部探索過程或背景任務狀態。\n"
+)
+
 TELEGRAM_FORMATTING_RULE = (
     "\n\n---\n\n"
     "## Telegram 輸出格式（本 runtime 專屬規則）\n"
@@ -144,7 +156,8 @@ TELEGRAM_FORMATTING_RULE = (
     "- 代碼用反引號 `文字`\n"
     "- 不支援標題（#）、不支援表格（|）—表格一律改成清單（- 開頭）或分行條列\n"
     "段落之間適時空行，不要擠成一大塊。\n\n"
-    "**每個文字段落之間會各自變成一則獨立 Telegram 訊息**（工具呼叫前後會分開送）。"
+    "**每個文字段落之間會各自變成一則獨立 Telegram 訊息**（工具呼叫前後會分開送）。\n\n"
+    + _STYLE_RULES
     + _NO_NARRATION
 )
 
@@ -153,17 +166,12 @@ TELEGRAM_FORMATTING_RULE = (
 WEB_FORMATTING_RULE = (
     "\n\n---\n\n"
     "## 網頁輸出格式（本 runtime 專屬規則）\n"
-    "回覆顯示在工作區的聊天欄（窄欄、旁邊就是程式碼/回測分頁），規則：\n"
-    "- 語言跟著使用者的語言走。\n"
-    "- 預設精簡：先講結論，一般回覆 3–8 行；使用者要細節再展開。\n"
-    "- 程式碼一律寫進檔案，不要貼在聊天裡——建立/修改策略後說一句"
-    "「程式碼在左側策略頁」即可；聊天中的程式碼片段以 10 行為上限。\n"
-    "- 回測結果只報關鍵數字（報酬、Sharpe、最大回撤、勝率這類，挑 3–4 個），"
-    "其餘請使用者看回測分頁。\n"
+    "回覆顯示在工作區的聊天欄（窄欄、旁邊就是程式碼/回測分頁），語法規則：\n"
     "- 不要用 # 標題（聊天泡泡裡太重），要分段就用**粗體行**；"
     "可用 **粗體**、清單、`行內程式碼`；表格僅限小型。\n"
-    "- 不要向使用者敘述內部探索過程或背景任務狀態"
-    "（讀了哪些檔、某檔不存在、子代理完成與否——這些都不是使用者問的）。\n\n"
+    "- 建立/修改策略後說一句「程式碼在左側策略頁」即可；"
+    "回測細節請使用者看回測分頁。\n\n"
+    + _STYLE_RULES
     + _NO_NARRATION
 )
 
@@ -304,6 +312,7 @@ class TelegramSink:
         self.chunk_text = ""
         self.streamer = TelegramStreamer(token, chat_id)
         self.pending_new_bubble = False
+        self._last_status = ""
         self.typing_task = None
 
     async def start(self):
@@ -322,6 +331,11 @@ class TelegramSink:
     def on_tool(self, block):
         self.pending_new_bubble = True
 
+    def on_status(self, text):
+        # 過場旁白(帶工具呼叫的訊息裡的文字)——TG 沒有狀態列,直接不送,
+        # 免得旁白變成一堆零碎訊息。留著當空回覆時的備援。
+        self._last_status = text
+
     def on_thinking(self, block):
         # Telegram has no "thinking" surface — reasoning is ignored here (it's
         # already kept out of the reply text by the no-narration system prompt).
@@ -339,7 +353,13 @@ class TelegramSink:
         self.chunk_text = convert_markdown_tables_to_list(self.chunk_text)
         self.streamer.finish(self.chunk_text)
         self.segments.append(self.chunk_text)
-        return "\n\n".join(s for s in self.segments if s)
+        reply = "\n\n".join(s for s in self.segments if s)
+        if not reply and getattr(self, "_last_status", ""):
+            # 極端情況:模型把話全講在帶工具的訊息裡、最後一則沒有純文字——
+            # 用最後一句旁白當回覆,別讓用戶收到空氣。
+            reply = convert_markdown_tables_to_list(self._last_status)
+            self.streamer.finish(reply)
+        return reply
 
 
 def _post_report(report_url, token, chunk, timeout=15):
@@ -379,6 +399,7 @@ class WebSink:
         # Text resuming after a tool call gets a paragraph break — without it the
         # inter-tool narration fragments glue into one wall when history replays.
         self._break_before_text = False
+        self._last_status = ""
 
     def _send(self, chunk):
         chunk.setdefault("session_id", self.session_id)
@@ -398,6 +419,14 @@ class WebSink:
                 delta = "\n\n" + delta
         self.full_text += delta
         self._send({"type": "text", "text": delta})
+
+    def on_status(self, text):
+        # 過場旁白——走 thinking 通道進「思考/活動」指示器,不進泡泡、不進歷史。
+        # 用戶看得到 agent 在做什麼,但對話裡只留最後的真回覆。
+        if not text:
+            return
+        self._last_status = text
+        self._send({"type": "thinking", "text": text})
 
     def on_tool(self, block):
         self._break_before_text = True
@@ -423,6 +452,9 @@ class WebSink:
         if self.error_text:
             self._send({"type": "error", "message": self.error_text})
             return self.error_text
+        if not self.full_text and getattr(self, "_last_status", ""):
+            # 模型把話全講在帶工具的訊息裡——用最後一句旁白補位,別回空氣
+            self.on_text(self._last_status)
         self._send({"type": "done"})
         return self.full_text
 
@@ -518,10 +550,18 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         strat_sig = None
         async for msg in query_iter:
             if isinstance(msg, sdk.AssistantMessage):
+                # 結構性旁白判定:同一則訊息裡帶 ToolUseBlock,其中的文字就是
+                # 「我來查一下…」式的過場話——只給狀態指示器,不進回覆/歷史。
+                # 真正的回覆是最後那則(沒有工具呼叫)的文字。用 prompt 禁止旁白
+                # 屢戰屢敗(preset 本來就鼓勵邊做邊講),這裡用結構切,100% 生效。
+                has_tool_use = any(isinstance(b, sdk.ToolUseBlock) for b in msg.content)
                 had_tool = False
                 for block in msg.content:
                     if isinstance(block, sdk.TextBlock):
-                        sink.on_text(block.text)
+                        if has_tool_use:
+                            sink.on_status(block.text)
+                        else:
+                            sink.on_text(block.text)
                     elif isinstance(block, sdk.ThinkingBlock):
                         sink.on_thinking(block)
                     elif isinstance(block, sdk.ToolUseBlock):
