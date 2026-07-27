@@ -51,8 +51,21 @@ def sync_strategies():
     except Exception as e:
         print(f"[web_bridge] strategy scan failed: {e}", file=sys.stderr)
         return
-    # live: goes through the SSE stream the browser already has open
-    chunk = json.dumps({"type": "strategies", "strategies": strategies}).encode()
+    # 順序重要:先寫快取(含圖)、再推 live chunk。瀏覽器收到 chunk 後幾秒會
+    # refetch 快取補圖——倒過來的話 refetch 會跟快取寫入競速,輸了圖就不出現
+    # (實測撲空過)。
+    # cache: WITH images(這條走 8000 端點,沒有串流的 2MB 上限)。回合中產生
+    # 的圖表因此在回合結束當下就進快取,不用等 2 分鐘的 timer。
+    try:
+        sigs = strategy_reporter.attach_images(strategies)
+        strategy_reporter.report_cache(strategies, token=PROXY_TOKEN)
+        strategy_reporter.save_image_sigs(sigs)
+    except Exception as e:
+        print(f"[web_bridge] strategies cache update failed: {e}", file=sys.stderr)
+    # live: goes through the SSE stream the browser already has open.
+    # 圖不上串流(2MB 上限)——attach 已就地加了 images,推 chunk 前剝掉。
+    chunk_strategies = [{k: v for k, v in s.items() if k != "images"} for s in strategies]
+    chunk = json.dumps({"type": "strategies", "strategies": chunk_strategies}).encode()
     req = urllib.request.Request(
         REPORT_URL, data=chunk,
         headers={"Content-Type": "application/json", "x-api-key": f"proxy-{PROXY_TOKEN}"},
@@ -61,11 +74,6 @@ def sync_strategies():
         urllib.request.urlopen(req, timeout=15).read()
     except Exception as e:
         print(f"[web_bridge] strategies chunk push failed: {e}", file=sys.stderr)
-    # cache: for the next page load / reload
-    try:
-        strategy_reporter.report_cache(strategies, token=PROXY_TOKEN)
-    except Exception as e:
-        print(f"[web_bridge] strategies cache update failed: {e}", file=sys.stderr)
 
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None):
