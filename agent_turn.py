@@ -153,8 +153,17 @@ TELEGRAM_FORMATTING_RULE = (
 WEB_FORMATTING_RULE = (
     "\n\n---\n\n"
     "## 網頁輸出格式（本 runtime 專屬規則）\n"
-    "回覆會在網頁上以標準 Markdown 顯示，可正常使用 **粗體**、清單、"
-    "`程式碼`、程式碼區塊、表格、標題。段落之間適時空行。\n\n"
+    "回覆顯示在工作區的聊天欄（窄欄、旁邊就是程式碼/回測分頁），規則：\n"
+    "- 語言跟著使用者的語言走。\n"
+    "- 預設精簡：先講結論，一般回覆 3–8 行；使用者要細節再展開。\n"
+    "- 程式碼一律寫進檔案，不要貼在聊天裡——建立/修改策略後說一句"
+    "「程式碼在左側策略頁」即可；聊天中的程式碼片段以 10 行為上限。\n"
+    "- 回測結果只報關鍵數字（報酬、Sharpe、最大回撤、勝率這類，挑 3–4 個），"
+    "其餘請使用者看回測分頁。\n"
+    "- 不要用 # 標題（聊天泡泡裡太重），要分段就用**粗體行**；"
+    "可用 **粗體**、清單、`行內程式碼`；表格僅限小型。\n"
+    "- 不要向使用者敘述內部探索過程或背景任務狀態"
+    "（讀了哪些檔、某檔不存在、子代理完成與否——這些都不是使用者問的）。\n\n"
     + _NO_NARRATION
 )
 
@@ -367,6 +376,9 @@ class WebSink:
         # response (that's the only channel that reaches this VM mid-turn), and
         # run_turn breaks at the next step boundary.
         self.interrupted = False
+        # Text resuming after a tool call gets a paragraph break — without it the
+        # inter-tool narration fragments glue into one wall when history replays.
+        self._break_before_text = False
 
     def _send(self, chunk):
         chunk.setdefault("session_id", self.session_id)
@@ -380,10 +392,15 @@ class WebSink:
     def on_text(self, delta):
         if not delta:
             return
+        if self._break_before_text:
+            self._break_before_text = False
+            if self.full_text and not self.full_text.endswith("\n") and not delta.startswith("\n"):
+                delta = "\n\n" + delta
         self.full_text += delta
         self._send({"type": "text", "text": delta})
 
     def on_tool(self, block):
+        self._break_before_text = True
         # Surface which tool is running so the UI can show a status line
         # (e.g. "跑回測中"); the frontend maps tool name -> label.
         self._send({"type": "tool", "tool": getattr(block, "name", ""), "status": "running"})
@@ -482,11 +499,11 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             "preset": "claude_code",
             "append": agents_md + model_catalog_rule(session_id) + sink.formatting_rule,
         } if agents_md else None,
-        # Trading/coding tasks legitimately need several tool round-trips
-        # (read a few files, run a check, write, verify). Bounded so a
-        # genuinely runaway loop still stops, not so tight that ordinary
-        # multi-step work errors out.
-        max_turns=20,
+        # 實測「建策略+回測+調參」正常就要 20+ 步(BTC RSI 那輪 21 步被砍在半路,
+        # $1.46 白燒)。步數放寬到 50,真正的煞車改用預算——失控迴圈燒錢才是
+        # 原本要防的事,用錢設限比步數合理。
+        max_turns=50,
+        max_budget_usd=10,
         # SDK 的 stdio transport 預設單條 JSON 訊息上限 1MB——agent 一個 Bash 印出
         # 大量輸出(K 線資料、回測明細)就整輪炸掉(實測:「建立 MACD 策略」第一輪
         # 就中)。放寬到 16MB;這是單條訊息的解析上限,不是常駐記憶體。
