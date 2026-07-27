@@ -57,6 +57,35 @@ PROXY_ENV = {
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 
 
+# 模型(尤其較弱的 instruction-following)看到 prompt 裡的逐字稿格式,會在寫完
+# 回覆後「順著格式續寫下一個 user 回合」——實測 deepseek-v4-pro 捏造了一整則
+# 使用者訊息(「幫我把參數更新到 scan 找到的最佳解」)。那段若存進歷史,下一輪
+# agent 可能真的去執行使用者從沒下過的指令(對交易 agent 是實質風險)。
+# SDK 沒有 stop_sequences,所以在輸出端硬攔:一出現我們自己產生的標記就截斷。
+# 這些字串全是本檔產生的,正常回覆不會出現。
+_SCAFFOLD_RE = re.compile(
+    r"^(?:user:\s|assistant:\s"
+    r"|\[工作頁狀態[:：]"
+    r"|\[使用者這次的訊息\]"
+    r"|\[用中文回覆這則訊息\]"
+    r"|\[The user wrote in English"
+    r"|\[Reply in the language of the user message"
+    r"|\[近期對話"
+    r"|\[過去對話摘要\])",
+    re.M,
+)
+
+
+def strip_hallucinated_turn(text):
+    """截掉模型續寫出來的假對話回合。回傳 (清理後文字, 是否有截斷)。"""
+    if not text:
+        return text, False
+    m = _SCAFFOLD_RE.search(text)
+    if not m:
+        return text, False
+    return text[: m.start()].rstrip(), True
+
+
 def _lang_directive(message):
     """Deterministic per-turn language pin. Han-character ratio decides what the
     user wrote in; the directive names ONE target language explicitly — a generic
@@ -80,9 +109,13 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
     if recent:
-        parts.append("[近期對話]")
+        # 「user: / assistant:」這種逐字稿排版會誘使模型續寫下一輪(見
+        # strip_hallucinated_turn)。改用不像對話腳本的標籤 + 明講界線。
+        parts.append("[近期對話紀錄(僅供參考,不要複述也不要續寫)]")
         for role, content in recent:
-            parts.append(f"{role}: {content}")
+            who = "使用者" if role == "user" else "你"
+            parts.append(f"<{who}> {content}")
+        parts.append("[紀錄結束]")
         parts.append("")
     # Ephemeral UI context (web workspace only) — the strategy the user is
     # looking at right now. Placed next to their message so "這支/this one"
@@ -102,7 +135,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             f"他說「這支 / 這個策略 / 這裡 / 這結果」通常就是指這支;需要看內容就自己讀 "
             f"strategies/ 底下對應的檔(程式碼在 strategy.py、回測結果在 stats.json / pnl.png)。]"
         )
-    parts.append(f"user: {message}")
+    parts.append("[使用者這次的訊息]")
+    parts.append(message)
     # 語言錨放最尾端(recency 權重最大)且由 code 偵測、給「針對性」指令:
     # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住
     # 英文訊息被回成中文/中英混雜(實測兩輪)。
@@ -397,6 +431,10 @@ class TelegramSink:
             self.typing_task.cancel()
 
     def finalize(self):
+        cleaned, cut = strip_hallucinated_turn(self.chunk_text)
+        if cut:
+            print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
+            self.chunk_text = cleaned
         self.chunk_text = convert_markdown_tables_to_list(self.chunk_text)
         self.streamer.finish(self.chunk_text)
         self.segments.append(self.chunk_text)
@@ -514,6 +552,14 @@ class WebSink:
         if not self.full_text and getattr(self, "_last_status", ""):
             # 模型把話全講在帶工具的訊息裡——用最後一句旁白補位,別回空氣
             self.on_text(self._last_status)
+        # 假對話一定長在最後一段(續寫發生在回覆結尾),所以只需清這一段,
+        # 並叫前端把已經串流出去的那段換成乾淨版。
+        seg = self.full_text[self._seg_start:]
+        cleaned, cut = strip_hallucinated_turn(seg)
+        if cut:
+            print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
+            self.full_text = self.full_text[: self._seg_start] + cleaned
+            self._send({"type": "text_replace", "text": cleaned})
         self._send({"type": "done"})
         return self.full_text
 
