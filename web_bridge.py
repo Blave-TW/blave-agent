@@ -37,6 +37,13 @@ HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_WEB_HEARTBEAT", f"{BASE}/state/web_
 # 目前正在處理的 session(SIGTERM handler 要知道該通知誰)
 _current_session = {"id": None}
 
+# 一輪的硬上限。參數掃描是網格搜尋(每組都回測),600s 常常不夠——真正的煞車
+# 是 agent_turn 自己的 max_budget_usd/max_turns,這裡只防永久卡死。
+TURN_TIMEOUT = 1800
+# 掃描期間 agent 跑一條長 bash,中間完全不會有 chunk;前端看門狗會誤判成
+# 「機器死了」。每分鐘送一個 ping 讓它知道還活著(前端只用來重置計時,不顯示)。
+PING_INTERVAL = 60
+
 
 def poll_once():
     """One long-poll (blocks up to ~25s server-side). Returns the message list."""
@@ -80,25 +87,31 @@ def sync_strategies():
         print(f"[web_bridge] strategies chunk push failed: {e}", file=sys.stderr)
 
 
-def report_turn_aborted(session_id):
+def _post_chunk(chunk, log=False):
+    """Best-effort POST of one chunk to the web-chat transport."""
+    try:
+        req = urllib.request.Request(
+            REPORT_URL, data=json.dumps(chunk).encode(),
+            headers={"Content-Type": "application/json",
+                     "x-api-key": f"proxy-{PROXY_TOKEN}"},
+        )
+        body = urllib.request.urlopen(req, timeout=5).read()
+        if log:
+            print(f"[web_bridge] chunk {chunk['type']} → {body[:60]}", file=sys.stderr)
+    except Exception as e:
+        if log:
+            print(f"[web_bridge] chunk {chunk['type']} FAILED: {e}", file=sys.stderr)
+
+
+def report_turn_aborted(session_id, message=None):
     """Tell the browser the in-flight turn died, so the UI stops spinning. Called
-    on SIGTERM (systemd stop/restart — e.g. a release swap) while a turn runs;
-    without it the user just watches 「思考中」forever with no reply and no error."""
-    for chunk in (
-        {"type": "error", "session_id": session_id,
-         "message": "這輪處理被中斷了（機器剛更新或重啟），請再問一次。"},
-        {"type": "done", "session_id": session_id},
-    ):
-        try:
-            req = urllib.request.Request(
-                REPORT_URL, data=json.dumps(chunk).encode(),
-                headers={"Content-Type": "application/json",
-                         "x-api-key": f"proxy-{PROXY_TOKEN}"},
-            )
-            body = urllib.request.urlopen(req, timeout=5).read()
-            print(f"[web_bridge] abort chunk {chunk['type']} → {body[:60]}", file=sys.stderr)
-        except Exception as e:
-            print(f"[web_bridge] abort chunk {chunk['type']} FAILED: {e}", file=sys.stderr)
+    on SIGTERM (systemd stop/restart — e.g. a release swap) and on the turn
+    timeout; without it the user just watches 「思考中」forever with no reply
+    and no error."""
+    _post_chunk({"type": "error", "session_id": session_id,
+                 "message": message or "這輪處理被中斷了（機器剛更新或重啟），請再問一次。"},
+                log=True)
+    _post_chunk({"type": "done", "session_id": session_id}, log=True)
 
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None):
@@ -120,15 +133,31 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None)
     # print help + exit 0 and the user would get nothing back).
     cmd += ["--", session_id, message]
     _current_session["id"] = session_id
+    proc = subprocess.Popen(cmd)
+    deadline = time.time() + TURN_TIMEOUT
+    next_ping = time.time() + PING_INTERVAL
     try:
-        result = subprocess.run(cmd, timeout=600)
-    except subprocess.TimeoutExpired:
-        print("[web_bridge] agent_turn timed out", file=sys.stderr)
-        return False
+        while proc.poll() is None:
+            time.sleep(1)
+            now = time.time()
+            if now >= next_ping:
+                _post_chunk({"type": "ping", "session_id": session_id})
+                next_ping = now + PING_INTERVAL
+            if now >= deadline:
+                print(f"[web_bridge] agent_turn exceeded {TURN_TIMEOUT}s — killing",
+                      file=sys.stderr)
+                proc.kill()
+                proc.wait(timeout=10)
+                report_turn_aborted(
+                    session_id,
+                    "這輪跑太久被中止了（超過 30 分鐘）。可以把任務拆小一點再試，"
+                    "例如縮小掃描範圍或減少參數組合。",
+                )
+                return False
     finally:
         _current_session["id"] = None
-    if result.returncode != 0:
-        print(f"[web_bridge] agent_turn failed (exit {result.returncode})", file=sys.stderr)
+    if proc.returncode != 0:
+        print(f"[web_bridge] agent_turn failed (exit {proc.returncode})", file=sys.stderr)
         return False
     return True
 
