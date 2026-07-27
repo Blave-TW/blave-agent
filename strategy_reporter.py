@@ -7,6 +7,7 @@ strategies change rarely, and the web reads a Redis cache, not the VM live.
 VM auth = proxy-{ttyd_password} (BLAVE_PROXY_TOKEN), same trust model as the
 LLM proxy and the chat transport: the token resolves to this user only.
 """
+import base64
 import json
 import os
 import re
@@ -15,6 +16,15 @@ import urllib.request
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 STRATEGIES_DIR = os.path.join(WORKSPACE, "strategies")
+STATE_DIR = os.environ.get("BLAVE_AGENT_STATE", "/opt/blave-agent/state")
+
+# 回測 tab 的附件圖:strategies/<name>/ 內的圖檔(pnl.png、param heatmap…)。
+# 上限防single檔爆量;數量取 mtime 最新的 N 張。
+_IMG_EXTS = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+             ".webp": "image/webp", ".gif": "image/gif"}
+_IMG_MAX_BYTES = 2 * 1024 * 1024
+_IMG_MAX_COUNT = 8
+_IMG_SIG_PATH = os.path.join(STATE_DIR, "strategy_images_sig.json")
 API_URL = os.environ.get(
     "BLAVE_STRATEGIES_URL", "https://api.blave.org/openclaw/agent/strategies"
 )
@@ -110,6 +120,73 @@ def scan():
     return list(by_name.values())
 
 
+def _list_images(name):
+    """(mtime, file, path, mime) for the newest ≤N image files under
+    strategies/<name>/, oldest→newest so the tab reads left→right in time order."""
+    d = os.path.join(STRATEGIES_DIR, name)
+    out = []
+    try:
+        entries = os.listdir(d)
+    except OSError:
+        return out
+    for f in entries:
+        ext = os.path.splitext(f)[1].lower()
+        mime = _IMG_EXTS.get(ext)
+        if not mime:
+            continue
+        p = os.path.join(d, f)
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if not os.path.isfile(p) or st.st_size > _IMG_MAX_BYTES:
+            continue
+        out.append((st.st_mtime, f, p, mime))
+    out.sort()
+    return out[-_IMG_MAX_COUNT:]
+
+
+def attach_images(strategies):
+    """TIMER-PATH ONLY: base64 the strategy dirs' chart images into the report.
+    Deliberately NOT part of scan() — the mid-turn live push rides the 2MB-capped
+    webchat /report and images would blow it; the api carries images over when a
+    report omits them, so the web still shows them. A signature file skips
+    re-uploading unchanged sets every 2 minutes. Returns the new signature dict
+    for the caller to persist AFTER a successful POST."""
+    old_sigs = {}
+    try:
+        with open(_IMG_SIG_PATH) as f:
+            old_sigs = json.load(f)
+    except (OSError, ValueError):
+        pass
+    new_sigs = {}
+    for s in strategies:
+        imgs = _list_images(s["name"])
+        sig = [[f, int(m)] for (m, f, _p, _mime) in imgs]
+        new_sigs[s["name"]] = sig
+        if old_sigs.get(s["name"]) == sig:
+            continue  # unchanged → omit key; the api keeps the previous set
+        payload = []
+        for (_m, f, p, mime) in imgs:
+            try:
+                with open(p, "rb") as fh:
+                    payload.append({"file": f, "mime": mime,
+                                    "b64": base64.b64encode(fh.read()).decode()})
+            except OSError:
+                continue
+        s["images"] = payload  # [] = 圖被清掉,明確清空
+    return new_sigs
+
+
+def save_image_sigs(sigs):
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(_IMG_SIG_PATH, "w") as f:
+            json.dump(sigs, f)
+    except OSError:
+        pass
+
+
 def report_cache(strategies, token=None):
     """POST the list to the backend cache (GET /strategies reads this on page
     load / reload). Reused by the timer AND by web_bridge after each turn."""
@@ -131,8 +208,10 @@ def main():
         print("[strategy_reporter] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
         sys.exit(1)
     strategies = scan()
+    sigs = attach_images(strategies)
     try:
         resp = report_cache(strategies)
+        save_image_sigs(sigs)  # 成功送達才記,失敗下輪重送
         print(f"[strategy_reporter] reported {len(strategies)} strategies: {resp}", file=sys.stderr)
     except Exception as e:
         print(f"[strategy_reporter] report failed: {e}", file=sys.stderr)
