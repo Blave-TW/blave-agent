@@ -13,6 +13,7 @@ swap, see updater.py) picks up the matching agent_turn.py on the next spawn.
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -32,6 +33,9 @@ PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 AGENT_TURN_SCRIPT = os.environ.get("BLAVE_AGENT_TURN_SCRIPT", f"{_THIS_DIR}/agent_turn.py")
 PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON", f"{BASE}/venv/bin/python3")
 HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_WEB_HEARTBEAT", f"{BASE}/state/web_heartbeat")
+
+# 目前正在處理的 session(SIGTERM handler 要知道該通知誰)
+_current_session = {"id": None}
 
 
 def poll_once():
@@ -76,6 +80,27 @@ def sync_strategies():
         print(f"[web_bridge] strategies chunk push failed: {e}", file=sys.stderr)
 
 
+def report_turn_aborted(session_id):
+    """Tell the browser the in-flight turn died, so the UI stops spinning. Called
+    on SIGTERM (systemd stop/restart — e.g. a release swap) while a turn runs;
+    without it the user just watches 「思考中」forever with no reply and no error."""
+    for chunk in (
+        {"type": "error", "session_id": session_id,
+         "message": "這輪處理被中斷了（機器剛更新或重啟），請再問一次。"},
+        {"type": "done", "session_id": session_id},
+    ):
+        try:
+            req = urllib.request.Request(
+                REPORT_URL, data=json.dumps(chunk).encode(),
+                headers={"Content-Type": "application/json",
+                         "x-api-key": f"proxy-{PROXY_TOKEN}"},
+            )
+            body = urllib.request.urlopen(req, timeout=5).read()
+            print(f"[web_bridge] abort chunk {chunk['type']} → {body[:60]}", file=sys.stderr)
+        except Exception as e:
+            print(f"[web_bridge] abort chunk {chunk['type']} FAILED: {e}", file=sys.stderr)
+
+
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None):
     model = model_prefs.get(session_id)
     cmd = [
@@ -94,11 +119,14 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None)
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
     cmd += ["--", session_id, message]
+    _current_session["id"] = session_id
     try:
         result = subprocess.run(cmd, timeout=600)
     except subprocess.TimeoutExpired:
         print("[web_bridge] agent_turn timed out", file=sys.stderr)
         return False
+    finally:
+        _current_session["id"] = None
     if result.returncode != 0:
         print(f"[web_bridge] agent_turn failed (exit {result.returncode})", file=sys.stderr)
         return False
@@ -111,10 +139,23 @@ def touch_heartbeat():
         f.write(str(time.time()))
 
 
+def on_term(signum=None, frame=None):
+    """systemd stop/restart (release swap, reboot…) while a turn is running:
+    tell the browser before we go, or it spins on 「思考中」forever."""
+    sid = _current_session.get("id")
+    if sid:
+        print(f"[web_bridge] SIGTERM mid-turn ({sid}) — telling the browser",
+              file=sys.stderr)
+        report_turn_aborted(sid)
+    sys.exit(0)
+
+
 def main():
     if not PROXY_TOKEN:
         print("[web_bridge] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
         sys.exit(1)
+
+    signal.signal(signal.SIGTERM, on_term)
     print("[web_bridge] starting poll loop", file=sys.stderr)
     while True:
         touch_heartbeat()
