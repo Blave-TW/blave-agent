@@ -57,6 +57,24 @@ PROXY_ENV = {
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 
 
+def _lang_directive(message):
+    """Deterministic per-turn language pin. Han-character ratio decides what the
+    user wrote in; the directive names ONE target language explicitly — a generic
+    bilingual "follow the user" line loses to a Chinese-heavy context."""
+    han = sum(1 for ch in message if "一" <= ch <= "鿿")
+    letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
+    # 漢字要「壓過」英文字母才算中文訊息——「what is 台積電 price」是英文句帶
+    # 個股名,不是中文句
+    if han >= 3 and han > letters * 0.5:
+        return "[用中文回覆這則訊息]"
+    if letters >= 2:
+        return (
+            "[The user wrote in English — reply ENTIRELY in English. "
+            "No Chinese anywhere in this reply, including headers and closing remarks.]"
+        )
+    return "[Reply in the language of the user message above]"
+
+
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None):
     parts = []
     if summary:
@@ -85,6 +103,10 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             f"strategies/ 底下對應的檔(程式碼在 strategy.py、回測結果在 stats.json / pnl.png)。]"
         )
     parts.append(f"user: {message}")
+    # 語言錨放最尾端(recency 權重最大)且由 code 偵測、給「針對性」指令:
+    # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住
+    # 英文訊息被回成中文/中英混雜(實測兩輪)。
+    parts.append(_lang_directive(message))
     return "\n".join(parts)
 
 
@@ -139,7 +161,11 @@ _NO_NARRATION = (
 # 只掛 web 的結果就是 TG 上問一句「台積電多少」回 15 行全套報價(實測)。
 _STYLE_RULES = (
     "回覆風格：\n"
-    "- 語言跟著使用者的語言走。\n"
+    "- 語言跟著使用者**最新一則訊息**的語言走——對方寫英文就整則用英文回,"
+    "不要被本規則的中文或對話歷史帶偏。"
+    "(IMPORTANT: reply in the language of the user's LATEST message. "
+    "If they write in English, answer entirely in English — these rules being "
+    "written in Chinese does NOT make Chinese the default.)\n"
     "- 預設精簡、先講結論：日常問答 1–5 行(問價格就報價格,不用附整套盤面)、"
     "一般回覆 3–8 行；使用者要細節或分析再展開。\n"
     "- 程式碼一律寫進檔案,不貼在對話裡;片段以 10 行為上限。\n"
