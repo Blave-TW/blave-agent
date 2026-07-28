@@ -165,8 +165,10 @@ def save_attachment(attachment):
         return None
 
 
-def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None):
-    model = model_prefs.get(session_id)
+def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
+                   attachment_name=None):
+    # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
+    model = model_prefs.resolve(session_id, attachment_name)
     cmd = [
         PYTHON_BIN, AGENT_TURN_SCRIPT,
         f"--model={model}",
@@ -258,9 +260,11 @@ def main():
             # 開工即確認:從這裡開始的失敗由 mid-turn 機制(SIGTERM 補報)負責,
             # 租約只救「領走但還沒開工」的窗口。
             ack_message(m.get("message_id"))
+            attachment_name = None
             if attachment is not None:
                 saved = save_attachment(attachment)
                 if saved:
+                    attachment_name = saved
                     note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
                 else:
                     # 接收失敗也照常跑 turn——讓 agent 告知用戶重傳,不准靜默吞掉
@@ -270,7 +274,7 @@ def main():
             viewing_strategy = ctx.get("viewing_strategy")
             viewing_tab = ctx.get("viewing_tab")
             run_agent_turn(session_id, content, viewing_strategy=viewing_strategy,
-                           viewing_tab=viewing_tab)
+                           viewing_tab=viewing_tab, attachment_name=attachment_name)
             # A turn may have created/deployed/removed a strategy — push the
             # fresh list live (and refresh the cache) right away.
             sync_strategies()

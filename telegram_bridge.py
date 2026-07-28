@@ -127,7 +127,7 @@ def _typing_pinger(token, chat_id, stop_evt):
         stop_evt.wait(4)
 
 
-def run_agent_turn(token, chat_id, session_id, message):
+def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
     """Runs agent_turn.py, which delivers (and streams) its own reply to
     Telegram directly. Returns True if the subprocess ran to completion
     (regardless of whether the turn itself succeeded — agent_turn.py
@@ -145,7 +145,8 @@ def run_agent_turn(token, chat_id, session_id, message):
         target=_typing_pinger, args=(token, chat_id, stop_typing), daemon=True
     )
     typing.start()
-    model = model_prefs.get(session_id)
+    # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
+    model = model_prefs.resolve(session_id, attachment_name)
     try:
         result = subprocess.run(
             [
@@ -286,6 +287,7 @@ def main():
             if chat_id != allowed_chat_id:
                 print(f"[telegram_bridge] ignoring unpaired chat_id={chat_id}", file=sys.stderr)
                 continue
+            attachment_name = None
             if has_text:
                 message_text = msg["text"]
             elif has_media:
@@ -311,6 +313,7 @@ def main():
                 if not saved:
                     send_message(token, chat_id, "檔案接收失敗，請再傳一次。")
                     continue
+                attachment_name = saved
                 note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
                 caption = msg.get("caption") or ""
                 message_text = f"{caption}\n{note}" if caption else note
@@ -318,7 +321,9 @@ def main():
                 # 不支援的訊息類型:告知用戶,結束以前的靜默丟棄
                 send_message(token, chat_id, "目前不支援這類訊息，請傳文字、圖片或一般檔案。")
                 continue
-            delivered = run_agent_turn(token, chat_id, str(chat_id), message_text)
+            delivered = run_agent_turn(
+                token, chat_id, str(chat_id), message_text, attachment_name=attachment_name
+            )
             if not delivered:
                 send_message(token, chat_id, "（agent 出錯，稍後再試）")
 
