@@ -11,6 +11,7 @@ user's id — so /poll only ever yields this user's messages.
 agent_turn.py is resolved relative to THIS file so a version deploy (symlink
 swap, see updater.py) picks up the matching agent_turn.py on the next spawn.
 """
+import base64
 import json
 import os
 import signal
@@ -37,6 +38,11 @@ PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 AGENT_TURN_SCRIPT = os.environ.get("BLAVE_AGENT_TURN_SCRIPT", f"{_THIS_DIR}/agent_turn.py")
 PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON", f"{BASE}/venv/bin/python3")
 HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_WEB_HEARTBEAT", f"{BASE}/state/web_heartbeat")
+
+# 附件落地位置——WORKSPACE 解析跟 agent_turn.py 一致,agent 的 cwd 就是 workspace,
+# 訊息裡給相對路徑 tmp/inbound/... 它自己 Read 得到
+WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", f"{BASE}/workspace")
+INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
 
 # 目前正在處理的 session(SIGTERM handler 要知道該通知誰)
 _current_session = {"id": None}
@@ -136,6 +142,29 @@ def report_turn_aborted(session_id, message=None):
     _post_chunk({"type": "done", "session_id": session_id}, log=True)
 
 
+def save_attachment(attachment):
+    """把 /send 帶來的 inline base64 附件落地,回傳最終檔名(相對 tmp/inbound/);
+    失敗回 None。VM 端不盲信 api——檔名再消毒一次、decode 失敗當接收失敗。"""
+    try:
+        name = "".join(
+            c for c in os.path.basename(str(attachment.get("name") or "")) if ord(c) >= 32
+        )
+        if not name:
+            raise ValueError("empty attachment name")
+        data = base64.b64decode(attachment.get("data") or "", validate=True)
+        os.makedirs(INBOUND_DIR, exist_ok=True)
+        path = os.path.join(INBOUND_DIR, name)
+        if os.path.exists(path):
+            name = f"{int(time.time())}_{name}"
+            path = os.path.join(INBOUND_DIR, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return name
+    except Exception as e:
+        print(f"[web_bridge] attachment save failed: {e}", file=sys.stderr)
+        return None
+
+
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None):
     model = model_prefs.get(session_id)
     cmd = [
@@ -222,12 +251,21 @@ def main():
                 continue
             session_id = m.get("session_id") or ""
             content = m.get("content") or ""
-            if not session_id or not content:
+            attachment = m.get("attachment") if isinstance(m.get("attachment"), dict) else None
+            if not session_id or (not content and attachment is None):
                 ack_message(m.get("message_id"))  # discarding — release the lease
                 continue
             # 開工即確認:從這裡開始的失敗由 mid-turn 機制(SIGTERM 補報)負責,
             # 租約只救「領走但還沒開工」的窗口。
             ack_message(m.get("message_id"))
+            if attachment is not None:
+                saved = save_attachment(attachment)
+                if saved:
+                    note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
+                else:
+                    # 接收失敗也照常跑 turn——讓 agent 告知用戶重傳,不准靜默吞掉
+                    note = "[用戶附了一個檔案但接收失敗，請告知用戶重傳]"
+                content = f"{content}\n{note}" if content else note
             ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
             viewing_strategy = ctx.get("viewing_strategy")
             viewing_tab = ctx.get("viewing_tab")

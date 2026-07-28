@@ -46,6 +46,11 @@ SYNC_SCRIPT = os.environ.get("BLAVE_SYNC_NOTIFY", f"{BASE}/sync_notify_compat.py
 # reprocessing the same message on every restart.
 OFFSET_PATH = os.environ.get("BLAVE_AGENT_TG_OFFSET", f"{BASE}/state/tg_offset")
 
+# 用戶傳的檔案落地位置——WORKSPACE 解析跟 agent_turn.py 一致,agent 的 cwd 就是
+# workspace,訊息裡給相對路徑 tmp/inbound/... 它自己 Read 得到
+WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", f"{BASE}/workspace")
+INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
+
 
 def load_offset():
     try:
@@ -87,6 +92,27 @@ def tg_api(token, method, params=None, timeout=35):
 
 def send_message(token, chat_id, text):
     tg_api(token, "sendMessage", {"chat_id": chat_id, "text": text})
+
+
+def download_tg_file(token, file_id, name):
+    """getFile 拿 file_path 再抓檔案內容,存進 {WORKSPACE}/tmp/inbound/。
+    回傳最終檔名(同名加 epoch 前綴);任何一步失敗回 None,不讓 poll loop 掛掉。"""
+    try:
+        file_path = tg_api(token, "getFile", {"file_id": file_id}, timeout=15)["result"]["file_path"]
+        url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            data = resp.read()
+        os.makedirs(INBOUND_DIR, exist_ok=True)
+        path = os.path.join(INBOUND_DIR, name)
+        if os.path.exists(path):
+            name = f"{int(time.time())}_{name}"
+            path = os.path.join(INBOUND_DIR, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return name
+    except Exception as e:
+        print(f"[telegram_bridge] file download failed: {e}", file=sys.stderr)
+        return None
 
 
 def _typing_pinger(token, chat_id, stop_evt):
@@ -233,13 +259,20 @@ def main():
             offset = update["update_id"] + 1
             save_offset(offset)
             msg = update.get("message")
-            if not msg or "text" not in msg:
+            if not msg:
                 continue
+            has_text = "text" in msg
+            has_media = "photo" in msg or "document" in msg
+            unsupported = any(
+                k in msg for k in ("voice", "audio", "video", "video_note", "sticker")
+            )
+            if not (has_text or has_media or unsupported):
+                continue  # 其他 service message(入群、置頂…)照舊靜默跳過
             chat_id = msg["chat"]["id"]
             # Auto-pair: the first chat to message this bot becomes the allowed
             # one (same convention as openclaw — the user just sends a message
             # to their bot). Persist it so it survives restarts.
-            if allowed_chat_id is None:
+            if allowed_chat_id is None and (has_text or has_media):
                 allowed_chat_id = chat_id
                 config["allowed_chat_id"] = chat_id
                 save_config(config)
@@ -253,7 +286,39 @@ def main():
             if chat_id != allowed_chat_id:
                 print(f"[telegram_bridge] ignoring unpaired chat_id={chat_id}", file=sys.stderr)
                 continue
-            delivered = run_agent_turn(token, chat_id, str(chat_id), msg["text"])
+            if has_text:
+                message_text = msg["text"]
+            elif has_media:
+                # 下載一律發生在 allowed_chat_id 檢查之後——不幫陌生 chat 下載檔案
+                if "document" in msg:
+                    doc = msg["document"]
+                    # Bot API 的檔案下載上限 20MB,留 0.5MB 餘裕在下載前先擋
+                    if (doc.get("file_size") or 0) > 19.5 * 1024 * 1024:
+                        send_message(token, chat_id, "檔案超過 20MB 上限，請壓縮後再傳。")
+                        continue
+                    file_id = doc["file_id"]
+                    name = "".join(
+                        c for c in os.path.basename(str(doc.get("file_name") or ""))
+                        if ord(c) >= 32
+                    )
+                    if not name:
+                        name = f"file_{doc['file_unique_id']}"
+                else:
+                    photo = msg["photo"][-1]  # 最大尺寸
+                    file_id = photo["file_id"]
+                    name = f"photo_{photo['file_unique_id']}.jpg"
+                saved = download_tg_file(token, file_id, name)
+                if not saved:
+                    send_message(token, chat_id, "檔案接收失敗，請再傳一次。")
+                    continue
+                note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
+                caption = msg.get("caption") or ""
+                message_text = f"{caption}\n{note}" if caption else note
+            else:
+                # 不支援的訊息類型:告知用戶,結束以前的靜默丟棄
+                send_message(token, chat_id, "目前不支援這類訊息，請傳文字、圖片或一般檔案。")
+                continue
+            delivered = run_agent_turn(token, chat_id, str(chat_id), message_text)
             if not delivered:
                 send_message(token, chat_id, "（agent 出錯，稍後再試）")
 
