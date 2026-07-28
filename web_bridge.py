@@ -26,7 +26,11 @@ BASE = "/opt/blave-agent"
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 API_BASE = os.environ.get("BLAVE_CHAT_API_BASE", "https://api.blave.org/openclaw/chat")
-POLL_URL = f"{API_BASE}/poll"
+# lease=1: delivered messages stay recoverable server-side until we ACK at spawn —
+# without it, a message claimed right before a release swap killed this process was
+# gone forever (user watched「思考中」until the watchdog gave up; 07-28 實踩).
+POLL_URL = f"{API_BASE}/poll?lease=1"
+ACK_URL = f"{API_BASE}/ack"
 REPORT_URL = f"{API_BASE}/report"
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 
@@ -50,6 +54,24 @@ def poll_once():
     req = urllib.request.Request(POLL_URL, headers={"x-api-key": f"proxy-{PROXY_TOKEN}"})
     with urllib.request.urlopen(req, timeout=35) as resp:
         return json.loads(resp.read()).get("messages", [])
+
+
+def ack_message(message_id):
+    """Confirm we're processing this message — the server drops its recovery lease.
+    Called at spawn time, NOT turn end: a mid-turn death must not replay a half-
+    executed message. Best-effort: on failure we process anyway (worst case the
+    lease expires and the message redelivers once — visible, unlike a lost one)."""
+    if not message_id:
+        return
+    try:
+        req = urllib.request.Request(
+            ACK_URL, data=json.dumps({"message_ids": [message_id]}).encode(),
+            headers={"Content-Type": "application/json",
+                     "x-api-key": f"proxy-{PROXY_TOKEN}"},
+        )
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception as e:
+        print(f"[web_bridge] ack failed for {message_id}: {e}", file=sys.stderr)
 
 
 def sync_strategies():
@@ -196,11 +218,16 @@ def main():
             continue
         for m in messages:
             if m.get("type") != "user_message":
+                ack_message(m.get("message_id"))  # discarding — release the lease
                 continue
             session_id = m.get("session_id") or ""
             content = m.get("content") or ""
             if not session_id or not content:
+                ack_message(m.get("message_id"))  # discarding — release the lease
                 continue
+            # 開工即確認:從這裡開始的失敗由 mid-turn 機制(SIGTERM 補報)負責,
+            # 租約只救「領走但還沒開工」的窗口。
+            ack_message(m.get("message_id"))
             ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
             viewing_strategy = ctx.get("viewing_strategy")
             viewing_tab = ctx.get("viewing_tab")
