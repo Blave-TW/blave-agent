@@ -122,6 +122,12 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # resolves. NOT persisted to session (it's the state at send time, not part
     # of the conversation). The code itself isn't passed — the agent reads the
     # file from strategies/ if it needs it.
+    # Deliberately weak: this is ambient UI state, and the open tab is often
+    # stale (user browses another strategy while chatting about a new one).
+    # It only binds on explicit deixis — an unnamed command in an ongoing
+    # conversation must follow the conversation, not the tab (2026-07-28: a
+    # bare「掃描參數」right after building BTC momentum got applied to the
+    # twstock strategy whose tab happened to be open).
     if viewing_strategy:
         # which tab is open decides what "這個 / 這裡 / 這結果" points at.
         if viewing_tab == "data":
@@ -131,9 +137,12 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         else:
             focus = ""
         parts.append(
-            f"[工作頁狀態:使用者目前在中間欄看著策略「{viewing_strategy}」{focus}。"
-            f"他說「這支 / 這個策略 / 這裡 / 這結果」通常就是指這支;需要看內容就自己讀 "
-            f"strategies/ 底下對應的檔(程式碼在 strategy.py、回測結果在 stats.json / pnl.png)。]"
+            f"[工作頁狀態(僅供釐清指代,不是工作指令):使用者畫面上開著策略"
+            f"「{viewing_strategy}」{focus}。訊息裡有「這支 / 這個策略 / 這裡 / 這結果」"
+            f"這類指示詞時,指的通常是它。訊息沒指名策略、而對話正在處理另一支時,"
+            f"以對話脈絡為準,不要因為分頁開著就對它動手;兩邊衝突拿不準,"
+            f"先用一句話確認要動哪一支再動。需要看內容就自己讀 strategies/ 底下對應的檔"
+            f"(程式碼在 strategy.py、回測結果在 stats.json / pnl.png)。]"
         )
     parts.append("[使用者這次的訊息]")
     parts.append(message)
