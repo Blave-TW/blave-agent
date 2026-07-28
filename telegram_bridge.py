@@ -20,6 +20,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
@@ -88,6 +89,18 @@ def send_message(token, chat_id, text):
     tg_api(token, "sendMessage", {"chat_id": chat_id, "text": text})
 
 
+def _typing_pinger(token, chat_id, stop_evt):
+    """Telegram 的 typing 指示只撐 ~5 秒,要持續補。agent_turn 自己也有一個,但那是
+    spawn 完、SDK 載入完才開始(冷啟動實測 ~5s)——使用者送出後那幾秒完全沒反應。
+    這裡從「收到訊息的當下」就開始打,把空窗補掉;兩邊重複送同一個 action 無害。"""
+    while not stop_evt.is_set():
+        try:
+            tg_api(token, "sendChatAction", {"chat_id": chat_id, "action": "typing"}, timeout=10)
+        except Exception:
+            pass  # 指示器失敗不該影響這一輪
+        stop_evt.wait(4)
+
+
 def run_agent_turn(token, chat_id, session_id, message):
     """Runs agent_turn.py, which delivers (and streams) its own reply to
     Telegram directly. Returns True if the subprocess ran to completion
@@ -100,6 +113,12 @@ def run_agent_turn(token, chat_id, session_id, message):
     everything into a string that only gets printed on failure, which made
     every successful turn's logging invisible — a real observability gap,
     not just an inconvenience during debugging."""
+    # 先讓使用者知道有在跑,再去做 spawn 前的準備工作
+    stop_typing = threading.Event()
+    typing = threading.Thread(
+        target=_typing_pinger, args=(token, chat_id, stop_typing), daemon=True
+    )
+    typing.start()
     model = model_prefs.get(session_id)
     try:
         result = subprocess.run(
@@ -118,6 +137,8 @@ def run_agent_turn(token, chat_id, session_id, message):
     except subprocess.TimeoutExpired:
         print("[telegram_bridge] agent_turn timed out", file=sys.stderr)
         return False
+    finally:
+        stop_typing.set()
 
     if result.returncode != 0:
         print(f"[telegram_bridge] agent_turn failed (exit {result.returncode}) — see its own output above", file=sys.stderr)
