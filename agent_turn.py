@@ -633,11 +633,15 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         model=model,
         env=turn_env,
         cwd=WORKSPACE,
-        # allowed_tools is the actual allowlist that restricts the agent; `tools=`
-        # (also a valid kwarg) is for *defining* custom/MCP tools and silently
-        # leaves the built-in set unrestricted (WebFetch/WebSearch/etc. would stay
-        # on). Keep the agent to Bash/Read/Write/Edit/Glob/Grep only.
+        # allowed_tools is an AUTO-APPROVE list, not a hard restriction — the
+        # subagent tool (Task/Agent) ran fine outside it (07-28 實測,DeepSeek
+        # 自己 spawn 了 explore 子代理)。Subagents interleave a second stream
+        # into the same sink and wreck the「最後一段無工具文字=回覆」判定
+        # (正式回覆被子代理尾隨的 tool chunk 收回成旁白,子代理的英文報告
+        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` (also a valid
+        # kwarg) is for *defining* custom/MCP tools — not this either.
         allowed_tools=ALLOWED_TOOLS,
+        disallowed_tools=["Task", "Agent"],
         # Keep Claude Code's own default system prompt (tool-use guidance
         # etc.) and append AGENTS.md + this surface's formatting rule on top.
         system_prompt={
@@ -664,6 +668,14 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         strat_sig = None
         async for msg in query_iter:
             if isinstance(msg, sdk.AssistantMessage):
+                # 第二層防線(第一層是 disallowed_tools):子代理的訊息帶
+                # parent_tool_use_id,它的文字一律進活動列、不進回覆/歷史——
+                # 兩條 stream 混流時,回覆的結構判定(見下)會被子代理打亂。
+                if getattr(msg, "parent_tool_use_id", None):
+                    for block in msg.content:
+                        if isinstance(block, sdk.TextBlock) and block.text.strip():
+                            sink.on_status(block.text)
+                    continue
                 # 結構性旁白判定:同一則訊息裡帶 ToolUseBlock,其中的文字就是
                 # 「我來查一下…」式的過場話——只給狀態指示器,不進回覆/歷史。
                 # 真正的回覆是最後那則(沒有工具呼叫)的文字。用 prompt 禁止旁白
