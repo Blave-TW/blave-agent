@@ -34,7 +34,11 @@ import time
 import urllib.request
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
-STATE_DIR = os.environ.get("BLAVE_AGENT_STATE", "/opt/blave-agent/state")
+# The workspace has its own state/ — NOT the runtime's /opt/blave-agent/state.
+# reconciler.py touches `state/heartbeat/reconciler` and lib/guard.py writes
+# `state/HALT`, both relative to the workspace they run in. Reading the runtime
+# dir instead silently reports every machine as "reconciler dead".
+WORKSPACE_STATE = os.path.join(WORKSPACE, "state")
 API_URL = os.environ.get(
     "BLAVE_PORTFOLIO_URL", "https://api.blave.org/openclaw/agent/portfolio"
 )
@@ -206,9 +210,57 @@ def allocators():
     return out
 
 
+def _fresh(ts, window=HEARTBEAT_STALE_S):
+    return bool(ts and (time.time() - ts) < window)
+
+
+def halt_state():
+    """Kill-switch state, read the same way lib/guard.py writes it: the FILE'S
+    EXISTENCE is authoritative and unreadable content still counts as halted."""
+    path = os.path.join(WORKSPACE_STATE, "HALT")
+    if not os.path.exists(path):
+        return {"halted": False}
+    info = _read_json(path, {}) or {}
+    return {
+        "halted": True,
+        "at": info.get("ts"),
+        "reason": info.get("reason"),
+        "source": info.get("source"),
+        "blocked": _halt_denials(info.get("ts")),
+    }
+
+
+def _halt_denials(since_ts):
+    """How many orders the halt has refused since it was tripped.
+
+    state/audit.jsonl is append-only and fsynced per line (lib/guard.py), so a
+    tail is enough — the file can grow, and the whole point is a recent count.
+    """
+    path = os.path.join(WORKSPACE_STATE, "audit.jsonl")
+    try:
+        with open(path) as f:
+            lines = f.readlines()[-500:]
+    except OSError:
+        return None
+    n = 0
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        # Event name comes from lib/order_*.py, which is what actually refuses
+        # the order — guard.py only writes halt_tripped / halt_cleared.
+        if row.get("event") != "order_denied_halt":
+            continue
+        # ISO-8601 UTC on both sides, so string comparison is chronological.
+        if not since_ts or str(row.get("ts", "")) >= str(since_ts):
+            n += 1
+    return n
+
+
 def build_report():
     cfg = _read_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {})
-    hb = _mtime(os.path.join(STATE_DIR, "heartbeat", "reconciler"))
+    hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
     last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     sched = scheduled_strategies()
 
@@ -222,8 +274,21 @@ def build_report():
         "orders": recent_orders(),
         "reconciler": {
             "heartbeat_at": hb,
-            "alive": bool(hb and (time.time() - hb) < HEARTBEAT_STALE_S),
+            "alive": _fresh(hb),
         },
+        # Whether the stop button will work at all. A listener that died leaves
+        # a button that looks fine and does nothing — the page disables it
+        # instead of letting the user believe they stopped trading.
+        "command_listener": {
+            "alive": _fresh(
+                _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "command_listener"))
+            )
+        },
+        # Halted and not-running are different facts and must not collapse into
+        # one "not trading" line: one the user did on purpose, the other is a
+        # fault. `blocked` turns "stopped" from a claim into something visible —
+        # it is the count of orders the switch actually refused.
+        "halt": halt_state(),
         "allocators": allocators(),
         # The built-in method's own walk-forward, so it can sit in the same
         # comparison table as the user's allocators.

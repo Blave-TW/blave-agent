@@ -17,10 +17,13 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 
 import model_prefs
+import command_listener
+import portfolio_reporter
 import strategy_reporter
 
 BASE = "/opt/blave-agent"
@@ -113,6 +116,19 @@ def sync_strategies():
         urllib.request.urlopen(req, timeout=15).read()
     except Exception as e:
         print(f"[web_bridge] strategies chunk push failed: {e}", file=sys.stderr)
+
+
+def sync_portfolio():
+    """Same idea for the 投資組合 view: a turn is the only thing that changes
+    weights / members / capital, and waiting for the 2-minute timer leaves the
+    user reading pre-turn numbers long enough to redo the operation. Cache only,
+    no stream chunk — that view refetches the cache itself after a turn, and its
+    payload (per-allocator backtest series) does not belong on the 2MB-capped
+    /report."""
+    try:
+        portfolio_reporter.report(portfolio_reporter.build_report(), token=PROXY_TOKEN)
+    except Exception as e:
+        print(f"[web_bridge] portfolio report failed: {e}", file=sys.stderr)
 
 
 def _post_chunk(chunk, log=False):
@@ -238,6 +254,17 @@ def main():
         sys.exit(1)
 
     signal.signal(signal.SIGTERM, on_term)
+    # Commands (stop/start trading, membership, exchange keys) run on their own
+    # thread: this loop below blocks for the whole of an agent turn, and a stop
+    # that waits minutes for a turn to finish is not a stop. Daemon thread — it
+    # must never keep the bridge alive on shutdown.
+    threading.Thread(
+        target=command_listener.run,
+        kwargs={"on_applied": sync_portfolio},
+        daemon=True,
+        name="command-listener",
+    ).start()
+
     print("[web_bridge] starting poll loop", file=sys.stderr)
     while True:
         touch_heartbeat()
@@ -275,8 +302,13 @@ def main():
             viewing_tab = ctx.get("viewing_tab")
             run_agent_turn(session_id, content, viewing_strategy=viewing_strategy,
                            viewing_tab=viewing_tab, attachment_name=attachment_name)
-            # A turn may have created/deployed/removed a strategy — push the
-            # fresh list live (and refresh the cache) right away.
+            # A turn may have created/deployed/removed a strategy, or changed
+            # the portfolio — refresh both caches now instead of leaving the
+            # user on the 2-minute timers.
+            # 投資組合排前面:瀏覽器是在 done 之後固定 3 秒回抓它的快取,而策略
+            # 清單的回抓綁在下面那個 chunk 送達之後——只有投資組合這條會輸掉競速,
+            # 慢的那條(圖片 base64 + 數 MB 上傳)因此排後面。
+            sync_portfolio()
             sync_strategies()
 
 
