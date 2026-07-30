@@ -26,7 +26,9 @@ import urllib.request
 
 import model_prefs
 
-BASE = "/opt/blave-agent"
+BASE = os.environ.get("BLAVE_AGENT_BASE") or (
+    r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
+)
 # agent_turn.py is resolved relative to THIS file, not a fixed /opt/blave-agent
 # path — that's what makes "each spawn picks up whatever version is currently
 # symlinked" work: this process itself runs from /opt/blave-agent/current/,
@@ -35,7 +37,10 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.environ.get("BLAVE_AGENT_TG_CONFIG", f"{BASE}/config/telegram.json")
 HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_HEARTBEAT", f"{BASE}/state/heartbeat")
 AGENT_TURN_SCRIPT = os.environ.get("BLAVE_AGENT_TURN_SCRIPT", f"{_THIS_DIR}/agent_turn.py")
-PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON", f"{BASE}/venv/bin/python3")
+PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON") or (
+    rf"{BASE}\venv\Scripts\python.exe" if os.name == "nt"
+    else f"{BASE}/venv/bin/python3"
+)
 SYNC_SCRIPT = os.environ.get("BLAVE_SYNC_NOTIFY", f"{BASE}/sync_notify_compat.py")
 # The offset marks "already-seen" updates to Telegram. Keeping it in memory
 # only means every restart (crash, health-check restart, a version deploy —

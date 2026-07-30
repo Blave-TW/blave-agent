@@ -26,7 +26,9 @@ import command_listener
 import portfolio_reporter
 import strategy_reporter
 
-BASE = "/opt/blave-agent"
+BASE = os.environ.get("BLAVE_AGENT_BASE") or (
+    r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
+)
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 API_BASE = os.environ.get("BLAVE_CHAT_API_BASE", "https://api.blave.org/openclaw/chat")
@@ -39,7 +41,10 @@ REPORT_URL = f"{API_BASE}/report"
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 
 AGENT_TURN_SCRIPT = os.environ.get("BLAVE_AGENT_TURN_SCRIPT", f"{_THIS_DIR}/agent_turn.py")
-PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON", f"{BASE}/venv/bin/python3")
+PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON") or (
+    rf"{BASE}\venv\Scripts\python.exe" if os.name == "nt"
+    else f"{BASE}/venv/bin/python3"
+)
 HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_WEB_HEARTBEAT", f"{BASE}/state/web_heartbeat")
 
 # 附件落地位置——WORKSPACE 解析跟 agent_turn.py 一致,agent 的 cwd 就是 workspace,
@@ -254,6 +259,16 @@ def main():
         sys.exit(1)
 
     signal.signal(signal.SIGTERM, on_term)
+    if os.name == "nt":
+        # A Windows service stop NEVER delivers SIGTERM. NSSM's default stop
+        # method sends a console Ctrl-C, escalating to Ctrl-Break — Python
+        # surfaces those as SIGINT / SIGBREAK. Without these the mid-turn notice
+        # below never fires on Windows and the browser spins on 「思考中」 through
+        # every release swap (the exact symptom this handler exists to prevent).
+        signal.signal(signal.SIGINT, on_term)
+        sigbreak = getattr(signal, "SIGBREAK", None)
+        if sigbreak is not None:
+            signal.signal(sigbreak, on_term)
     # Commands (stop/start trading, membership, exchange keys) run on their own
     # thread: this loop below blocks for the whole of an agent turn, and a stop
     # that waits minutes for a turn to finish is not a stop. Daemon thread — it
