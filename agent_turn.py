@@ -62,18 +62,9 @@ ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 # 使用者訊息(「幫我把參數更新到 scan 找到的最佳解」)。那段若存進歷史,下一輪
 # agent 可能真的去執行使用者從沒下過的指令(對交易 agent 是實質風險)。
 # SDK 沒有 stop_sequences,所以在輸出端硬攔:一出現我們自己產生的標記就截斷。
-# 這些字串全是本檔產生的,正常回覆不會出現。
-_SCAFFOLD_RE = re.compile(
-    r"^(?:user:\s|assistant:\s"
-    r"|\[工作頁狀態[:：]"
-    r"|\[使用者這次的訊息\]"
-    r"|\[用中文回覆這則訊息\]"
-    r"|\[The user wrote in English"
-    r"|\[Reply in the language of the user message"
-    r"|\[近期對話"
-    r"|\[過去對話摘要\])",
-    re.M,
-)
+# 這些字串全是本檔產生的,正常回覆不會出現。pattern 本身放 session_store
+# (單一來源——它存 summary 前也要用同一組標記做清洗)。
+_SCAFFOLD_RE = ss.SCAFFOLD_RE
 
 
 def strip_hallucinated_turn(text):
@@ -622,7 +613,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # user's own words is worse than a slightly-early write.
     ss.append_turn(session_id, "user", message)
 
-    turn_env = {**PROXY_ENV, "BLAVECLAW_HOME": BLAVECLAW_HOME}
+    # BLAVE_AGENT_DB:AGENTS.md 教 agent 用 sqlite 唯讀查自己的逐字稿;Linux 的
+    # provisioning 沒設這個 env,在這裡帶最終解析值,兩個 OS 都保證看得到。
+    turn_env = {**PROXY_ENV, "BLAVECLAW_HOME": BLAVECLAW_HOME, "BLAVE_AGENT_DB": ss.DB_PATH}
     if isinstance(sink, WebSink):
         # So lib/notify.report_photo_web can mirror backtest/param-scan charts into the
         # web chat (the agent's Bash-run strategy code inherits this env).

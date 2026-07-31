@@ -164,7 +164,9 @@ def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
             ],
             # bot token via env, not argv (argv is visible in `ps`).
             env={**os.environ, "BLAVE_TELEGRAM_TOKEN": token},
-            timeout=600,
+            # turn 本體 600s + 回覆送出後的摘要壓縮（session_store，最長 90s）
+            # + 裕度——摘要拖滿時把行程殺在半路，會在完整回覆之後又冒一則假錯誤。
+            timeout=720,
         )
     except subprocess.TimeoutExpired:
         print("[telegram_bridge] agent_turn timed out", file=sys.stderr)
