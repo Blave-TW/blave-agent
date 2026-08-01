@@ -18,6 +18,7 @@ built) website form.
 """
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -55,6 +56,17 @@ OFFSET_PATH = os.environ.get("BLAVE_AGENT_TG_OFFSET", f"{BASE}/state/tg_offset")
 # workspace,訊息裡給相對路徑 tmp/inbound/... 它自己 Read 得到
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", f"{BASE}/workspace")
 INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
+
+# 目前正在處理的那一輪(SIGTERM handler 要知道該通知誰)。比照 web_bridge。
+_current_turn = {"token": None, "chat_id": None}
+
+# 連續幾次 TLS 憑證驗證失敗就自我了斷。Windows 冷機的 Schannel root store 只帶
+# ~33 張憑證,其餘 root 要等第一次 Schannel 驗證才會下載;而 python 的 SSL context
+# 在 process 啟動時就固定,所以 first-boot 之後才補進系統的 root 對「已經在跑的」
+# bridge 永遠不可見——它會一路 CERTIFICATE_VERIFY_FAILED 到有人重啟為止(1.0.71
+# image 實測)。退出讓服務管理器(systemd Restart=always / NSSM)重拉一個新
+# process,新的 SSL context 就讀得到新 root。憑證以外的錯誤不算,計數會歸零。
+TLS_FAIL_LIMIT = 5
 
 
 def load_offset():
@@ -152,6 +164,7 @@ def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
     typing.start()
     # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
     model = model_prefs.resolve(session_id, attachment_name)
+    _current_turn.update(token=token, chat_id=chat_id)
     try:
         result = subprocess.run(
             [
@@ -173,6 +186,7 @@ def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
         return False
     finally:
         stop_typing.set()
+        _current_turn.update(token=None, chat_id=None)
 
     if result.returncode != 0:
         print(f"[telegram_bridge] agent_turn failed (exit {result.returncode}) — see its own output above", file=sys.stderr)
@@ -186,8 +200,37 @@ def touch_heartbeat():
         f.write(str(time.time()))
 
 
+def on_term(signum=None, frame=None):
+    """systemd stop/restart(換版、重開機…)打斷進行中的一輪:先告訴用戶再走。
+    沒有這則訊息的話對方是「永久沉默」——offset 一收到就存檔(save_offset),
+    Telegram 不會重送,所以那則訊息連同回覆一起消失,用戶只看得到自己送出去
+    的東西沒有下文。web_bridge.on_term 是同一個道理。"""
+    token, chat_id = _current_turn["token"], _current_turn["chat_id"]
+    if token and chat_id:
+        print(f"[telegram_bridge] SIGTERM mid-turn (chat {chat_id}) — telling the user",
+              file=sys.stderr)
+        try:
+            send_message(token, chat_id, "這輪被中止了（機器剛更新或重啟），請再傳一次。")
+        except Exception as e:
+            print(f"[telegram_bridge] abort notice failed: {e}", file=sys.stderr)
+    sys.exit(0)
+
+
+def _is_tls_failure(exc):
+    return "CERTIFICATE_VERIFY_FAILED" in str(exc)
+
+
 def main():
     offset = load_offset()
+
+    signal.signal(signal.SIGTERM, on_term)
+    if os.name == "nt":
+        # Windows 服務停止不會送 SIGTERM:NSSM 預設送 console Ctrl-C,升級成
+        # Ctrl-Break,python 看到的是 SIGINT / SIGBREAK(同 web_bridge)。
+        signal.signal(signal.SIGINT, on_term)
+        sigbreak = getattr(signal, "SIGBREAK", None)
+        if sigbreak is not None:
+            signal.signal(sigbreak, on_term)
 
     version = "unknown"
     try:
@@ -199,6 +242,7 @@ def main():
 
     idle_logged = False
     drained_backlog = False
+    tls_failures = 0
     while True:
         touch_heartbeat()
 
@@ -260,8 +304,18 @@ def main():
             resp = tg_api(token, "getUpdates", params, timeout=35)
         except Exception as e:
             print(f"[telegram_bridge] poll error: {e}", file=sys.stderr)
+            if _is_tls_failure(e):
+                tls_failures += 1
+                if tls_failures >= TLS_FAIL_LIMIT:
+                    print(f"[telegram_bridge] {tls_failures} consecutive TLS verify "
+                          f"failures — exiting so a restart picks up a refreshed "
+                          f"root store", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                tls_failures = 0
             time.sleep(5)
             continue
+        tls_failures = 0
 
         for update in resp.get("result", []):
             offset = update["update_id"] + 1

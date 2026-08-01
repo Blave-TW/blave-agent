@@ -61,6 +61,12 @@ TURN_TIMEOUT = 1800
 # 掃描期間 agent 跑一條長 bash,中間完全不會有 chunk;前端看門狗會誤判成
 # 「機器死了」。每分鐘送一個 ping 讓它知道還活著(前端只用來重置計時,不顯示)。
 PING_INTERVAL = 60
+# 連續幾次 TLS 憑證驗證失敗就自我了斷,讓服務管理器重拉。Windows 冷機的 Schannel
+# root store 只帶 ~33 張憑證、其餘 root 要等第一次 Schannel 驗證才下載,而 python
+# 的 SSL context 在 process 啟動時就固定——first-boot 事後補進系統的 root,對已經
+# 在跑的這個 process 永遠不可見,它會一路 CERTIFICATE_VERIFY_FAILED 到有人重啟
+# (1.0.71 image 實測)。憑證以外的錯誤不算,計數歸零。
+TLS_FAIL_LIMIT = 5
 
 
 def poll_once():
@@ -281,14 +287,25 @@ def main():
     ).start()
 
     print("[web_bridge] starting poll loop", file=sys.stderr)
+    tls_failures = 0
     while True:
         touch_heartbeat()
         try:
             messages = poll_once()
         except Exception as e:
             print(f"[web_bridge] poll error: {e}", file=sys.stderr)
+            if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                tls_failures += 1
+                if tls_failures >= TLS_FAIL_LIMIT:
+                    print(f"[web_bridge] {tls_failures} consecutive TLS verify failures "
+                          f"— exiting so a restart picks up a refreshed root store",
+                          file=sys.stderr)
+                    sys.exit(1)
+            else:
+                tls_failures = 0
             time.sleep(5)
             continue
+        tls_failures = 0
         for m in messages:
             if m.get("type") != "user_message":
                 ack_message(m.get("message_id"))  # discarding — release the lease
