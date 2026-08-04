@@ -12,21 +12,19 @@ What it collects, and why each piece has to come from here:
   - manager/last_reconcile.json    the only record of real exchange positions
                                    (written by lib/portfolio.reconcile)
   - manager/orders.jsonl           what was actually sent to the exchange
+  - manager/account.json           live equity/positions per venue, written by
+                                   account_reader.py — read as JSON, never
+                                   executed; a broken account module shows up
+                                   as that file's "error" field, not as this
+                                   report dying
   - state/heartbeat/reconciler     is the auto-trader alive
-  - allocators/<n>/                available weighting methods + their walk-forward
-                                   results, for the 配置方法 comparison
-  - manager/stats.json             same, for the built-in method
-
-Targets are computed here rather than in the browser: the sizing formula
-(account_value × leverage × weight × position) decides real position sizes, and
-a second implementation elsewhere is a second thing that can drift. We import
-the workspace's own lib/portfolio.py so there is exactly one.
 
 VM auth = proxy-{ttyd_password} (BLAVE_PROXY_TOKEN), same trust model as the
 chat transport and strategy_reporter: the token resolves to this user only.
 """
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
@@ -47,12 +45,6 @@ PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 ORDERS_TAIL = 20  # 最近下單只給一屏的量,orders.jsonl 會一直長
 HEARTBEAT_STALE_S = 300  # reconciler 每 5 秒 touch 一次;超過這個就當它死了
 
-# Allocator metadata, same top-of-file-constant convention as strategies. Parsed
-# rather than imported: the reporter must never execute user code.
-_DISPLAY_RE = re.compile(r'^\s*DISPLAY_NAME\s*=\s*["\']([^"\']+)["\']', re.M)
-_DESC_RE = re.compile(r'^\s*DESCRIPTION\s*=\s*["\']([^"\']*)["\']', re.M)
-_PARAMS_RE = re.compile(r"^\s*PARAMS\s*=\s*(\{[^}]*\})", re.M)
-
 
 def _read_json(path, default=None):
     try:
@@ -60,20 +52,6 @@ def _read_json(path, default=None):
             return json.load(f)
     except (OSError, ValueError):
         return default
-
-
-def _read_backtest(path):
-    """management_backtest.py output, minus `weights_history`.
-
-    That field is a full strategies × OOS-days matrix — by far the biggest thing
-    in the file, and it only feeds the stacked-area panel of pnl.png, which the
-    web does not draw. `managed_returns` (one float per day) is what the
-    comparison chart needs, and it stays.
-    """
-    data = _read_json(path)
-    if isinstance(data, dict):
-        data.pop("weights_history", None)
-    return data
 
 
 def _mtime(path):
@@ -84,14 +62,26 @@ def _mtime(path):
 
 
 def scheduled_strategies():
-    """Names that have a run_strategy.sh entry in the agent's crontab.
+    """Names with a live schedule — crontab (Linux) or schtasks (Windows).
 
     A weighted strategy with no schedule is the quiet failure this whole view
     exists to surface: state.json never updates, so the reconciler keeps sizing
     a real position from a signal that stopped moving days ago. Returns None
-    (not an empty set) when crontab can't be read, so the UI can say "unknown"
-    instead of accusing every strategy of being unscheduled.
+    (not an empty set) when the schedule can't be read, so the UI can say
+    "unknown" instead of accusing every strategy of being unscheduled.
     """
+    if platform.system() == "Windows":
+        # deployment.md's task-name convention: blaveclaw-strategy-<name>
+        try:
+            out = subprocess.run(
+                ["schtasks", "/query", "/fo", "csv", "/nh"],
+                capture_output=True, text=True, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if out.returncode != 0:
+            return None
+        return set(re.findall(r"blaveclaw-strategy-([^\",]+)", out.stdout))
     try:
         out = subprocess.run(
             ["crontab", "-l"], capture_output=True, text=True, timeout=10
@@ -103,8 +93,22 @@ def scheduled_strategies():
     return set(re.findall(r"run_strategy\.sh\s+(\S+)", out.stdout))
 
 
+_MARKET_RE = re.compile(r'^\s*MARKET\s*=\s*["\']([a-z]+)["\']', re.M)
+
+
+def _strategy_market(name):
+    """strategy.py 的 MARKET 常數(swap|spot)。沒宣告=swap——與現況一致
+    (全機隊實測過的下單路徑只有 USDT 本位合約),UI 要靠它標示錢包。"""
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py")) as f:
+            m = _MARKET_RE.search(f.read())
+        return m.group(1) if m else "swap"
+    except OSError:
+        return "swap"
+
+
 def strategy_states():
-    """{name: {symbol, position, updated_at}} from every strategies/*/state.json."""
+    """{name: {symbol, position, market, updated_at}} from strategies/*/state.json."""
     root = os.path.join(WORKSPACE, "strategies")
     states = {}
     try:
@@ -119,43 +123,10 @@ def strategy_states():
         states[name] = {
             "symbol": data.get("symbol"),
             "position": data.get("position", 0),
+            "market": _strategy_market(name),
             "updated_at": _mtime(path),
         }
     return states
-
-
-def targets():
-    """Per-symbol target exposure, computed by the workspace's own aggregator.
-
-    Returns None if it can't run — the view then shows weights without dollar
-    targets rather than showing numbers this file invented.
-    """
-    try:
-        cwd = os.getcwd()
-    except OSError:
-        cwd = None
-    try:
-        os.chdir(WORKSPACE)  # lib/portfolio.py resolves every path relative to it
-        sys.path.insert(0, WORKSPACE)
-        from lib.portfolio import aggregate_portfolio
-
-        return aggregate_portfolio()
-    except Exception as e:
-        print(f"[portfolio_reporter] aggregate_portfolio failed: {e}", file=sys.stderr)
-        return None
-    finally:
-        if WORKSPACE in sys.path:
-            sys.path.remove(WORKSPACE)
-        # Best-effort restore. Under the systemd unit the original cwd is always
-        # readable, but this also gets run ad-hoc (`python3 -c "import
-        # portfolio_reporter"`) from wherever the caller happened to be — and a
-        # cwd the agent user can't chdir back into would otherwise raise out of
-        # `finally` and throw away a report that was already built.
-        if cwd:
-            try:
-                os.chdir(cwd)
-            except OSError:
-                pass
 
 
 def recent_orders():
@@ -174,39 +145,54 @@ def recent_orders():
     return out
 
 
-def allocators():
-    """Weighting methods available on this machine, plus each one's walk-forward
-    result. The built-in optimiser is not a file, so it is reported separately
-    (see build_report) from manager/stats.json."""
-    root = os.path.join(WORKSPACE, "allocators")
-    out = []
+# Case-insensitive: the web writes uppercase ({ID}_API_KEY), but shipped
+# integrations are not consistent — sinopac_api_key is lowercase — and a venue
+# the scan misses is invisible to the workspace page (no readiness, no
+# finish-the-integration prompt).
+# No value requirement and no value capture: an empty `FOO_API_KEY=` still
+# counts as a venue (matching command_listener / account_reader — the account
+# read then fails VISIBLY instead of the venue silently vanishing), and the
+# key's value must never sit in a match group waiting for a debug print.
+_ENV_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_API_KEY\s*=", re.IGNORECASE)
+# blave_api_key / blave_secret_key are the platform's own data-API credentials
+# (written at first boot), not an exchange — never report "blave" as a venue.
+_RESERVED_PREFIXES = {"BLAVE"}
+
+
+def venues():
+    """{venue_id: {credentials, order, account}} discovered from the workspace .env.
+
+    Scanning .env for `{PREFIX}_API_KEY` rather than keeping a fixed venue list
+    here mirrors how the credentials get written in the first place: the web
+    modal's cxSlug() derives the exact same {SLUG}_API_KEY / _SECRET_KEY /
+    _PASSPHRASE names for a free-typed "other exchange", so this picks those up
+    too without a second list to keep in sync with CX_VENUES.
+
+    `order`/`account` mirror whether lib/order_{id}.py / lib/account_{id}.py
+    ship on this machine — that is what actually lets the venue trade or read
+    equity; storing the key is necessary but not sufficient for either.
+    """
+    path = os.path.join(WORKSPACE, ".env")
     try:
-        entries = sorted(os.listdir(root))
+        with open(path) as f:
+            lines = f.readlines()
     except OSError:
-        return out
-    for name in entries:
-        src_path = os.path.join(root, name, "allocator.py")
-        if not os.path.isfile(src_path):
-            continue  # TEMPLATE.py and stray files are not allocators
-        try:
-            with open(src_path) as f:
-                src = f.read()
-        except OSError:
+        return {}
+    lib_root = os.path.join(WORKSPACE, "lib")
+    out = {}
+    for line in lines:
+        m = _ENV_KEY_RE.match(line)
+        if not m:
             continue
-        dm, ds, pm = (
-            _DISPLAY_RE.search(src),
-            _DESC_RE.search(src),
-            _PARAMS_RE.search(src),
-        )
-        out.append({
-            "name": name,
-            "display_name": dm.group(1) if dm else name,
-            "description": ds.group(1) if ds else "",
-            # Raw source, not eval'd — the web renders the declared knobs, and
-            # executing a user file to read a dict is not worth the blast radius.
-            "params_src": pm.group(1) if pm else "",
-            "backtest": _read_backtest(os.path.join(root, name, "stats.json")),
-        })
+        prefix = m.group(1)
+        if prefix.upper() in _RESERVED_PREFIXES:
+            continue
+        venue_id = prefix.lower()
+        out[venue_id] = {
+            "credentials": True,
+            "order": os.path.isfile(os.path.join(lib_root, f"order_{venue_id}.py")),
+            "account": os.path.isfile(os.path.join(lib_root, f"account_{venue_id}.py")),
+        }
     return out
 
 
@@ -269,8 +255,13 @@ def build_report():
         "states": strategy_states(),
         # None = couldn't tell (no crontab access), [] = genuinely nothing scheduled
         "scheduled": None if sched is None else sorted(sched),
-        "targets": targets(),
         "last_reconcile": last,
+        # account_reader.py's output verbatim (None until its first run).
+        # {read_at, venues: {id: {ok, equity, currency, positions, error}}}
+        "account": _read_json(os.path.join(WORKSPACE, "manager", "account.json")),
+        # newest-last order failures (lib/portfolio._record_order_error) — the
+        # page must show a failed order, not sit silently on an empty 實際欄
+        "order_errors": _read_json(os.path.join(WORKSPACE, "manager", "order_errors.json"), []),
         "orders": recent_orders(),
         "reconciler": {
             "heartbeat_at": hb,
@@ -289,12 +280,14 @@ def build_report():
         # fault. `blocked` turns "stopped" from a claim into something visible —
         # it is the count of orders the switch actually refused.
         "halt": halt_state(),
-        "allocators": allocators(),
-        # The built-in method's own walk-forward, so it can sit in the same
-        # comparison table as the user's allocators.
-        "builtin_backtest": _read_backtest(
-            os.path.join(WORKSPACE, "manager", "stats.json")
-        ),
+        # id not present in the dict = no key stored for it. Front end reads
+        # this as venues[id] (web/.../workspace.html cxSupport()) — id present
+        # with order/account both false = key saved, modules not built yet.
+        "venues": venues(),
+        # capability signal: the web hides 平倉-dependent controls on platforms
+        # whose flatten layer isn't built yet (Windows) — without this the
+        # 「暫停並全部平倉」 button halts only and LOOKS successful.
+        "platform": platform.system(),
         "reported_at": int(time.time()),
     }
 

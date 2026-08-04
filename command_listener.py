@@ -11,9 +11,9 @@ not go through the agent (see AGENTS.md "No LLM in the execution loop" — the
 same reasoning, applied to the web side). Anything needing judgment (write me a
 strategy, why did this die) stays in the chat.
 
-Deliberately NOT here: applying weights and sending orders. Those move real
-money and need the "you saw this exact proposal" handshake first; adding them
-without it would turn a reviewed action into a one-click one.
+`amounts` (per-strategy sizing) IS here: the web confirms the exact numbers
+with the user before sending, and the reconciler—not this command—decides if
+any order actually fires. Sending orders directly stays out.
 
 Secrets: `credentials` carries an exchange key to the workspace .env. It is
 never printed, never echoed, and never included in an error message.
@@ -21,8 +21,10 @@ never printed, never echoed, and never included in an error message.
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -90,40 +92,6 @@ def _cmd_resume(args):
     return "resumed"
 
 
-def _cmd_members(args):
-    """Portfolio membership = the keys of portfolio_config["exchanges"].
-
-    Membership and routing are separate facts sharing one dict: a key present
-    means "this strategy is in the portfolio" (manager.py weights it), a
-    non-empty value means "and it trades here". A member added before an
-    exchange is connected keeps an empty value — weighted, never routed, so
-    aggregate_portfolio skips it and nothing can trade by accident.
-    """
-    names = args.get("names")
-    if not isinstance(names, list) or not all(isinstance(n, str) and n for n in names):
-        raise ValueError("members needs a list of strategy names")
-
-    path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
-    try:
-        with open(path) as f:
-            cfg = json.load(f)
-    except (OSError, ValueError):
-        cfg = {}
-    old = cfg.get("exchanges") or {}
-    # One portfolio, one account: a new member inherits whatever venue the
-    # existing ones use, so membership never silently splits across venues.
-    venues = {v for v in old.values() if v}
-    default_venue = venues.pop() if len(venues) == 1 else ""
-    cfg["exchanges"] = {n: old.get(n, default_venue) for n in names}
-    cfg.setdefault("account_value", 0)
-    cfg.setdefault("asset_specs", {})
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(cfg, f, indent=2)
-    return f"members={len(names)}"
-
-
 def _cmd_credentials(args):
     """Write exchange keys into the workspace .env.
 
@@ -154,6 +122,201 @@ def _cmd_credentials(args):
     return f"credentials={len(env)}"  # count only — never the keys or values
 
 
+# ── strategy signal-refresh crons(選到就跑,2026-08-03 拍板)─────────────────
+# Picked into the 下單設定 table = its signal must stay fresh (the 目標部位
+# column is live data), funded or not. Signal runs are read-only — orders are
+# the reconciler's alone — so scheduling early is free.
+
+_CRON_TAG = "# blave-web"  # marks the lines this handler owns
+_INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
+
+
+def _strategy_cadence(name):
+    """Cron cadence from the strategy's declared INTERVAL (default 1h).
+    Sub-hour intervals poll at their own pace (capped at 30m); ≥1h all poll
+    hourly at :05 — re-running an unchanged signal is idempotent and cheap."""
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py")) as f:
+            m = _INTERVAL_RE.search(f.read())
+        iv = (m.group(1) if m else "1h").lower()
+    except OSError:
+        iv = "1h"
+    mm = re.match(r"(\d+)\s*m", iv)
+    if mm:
+        return f"*/{max(1, min(30, int(mm.group(1))))} * * * *"
+    return "5 * * * *"
+
+
+def _sync_strategy_crons(names):
+    """One tagged cron line per picked strategy; drop tagged lines for
+    strategies no longer picked. Only lines carrying _CRON_TAG are touched —
+    agent-/user-made entries are none of our business. BLAVE_MODE=live makes
+    the runner refresh signals even while the file's MODE says backtest.
+    Best-effort: a cron failure must not fail the amounts write. Windows is
+    pending the scheduled-task work (jobs manifest)."""
+    if platform.system() == "Windows":
+        _log("cron sync skipped on Windows (scheduled-task support pending)")
+        return
+    try:
+        out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+        lines = out.stdout.splitlines() if out.returncode == 0 else []
+        kept = [l for l in lines if _CRON_TAG not in l]
+        for n in sorted(names):
+            kept.append(
+                f"{_strategy_cadence(n)} cd {WORKSPACE} && "
+                f"BLAVE_MODE=live bash manager/run_strategy.sh {n} {_CRON_TAG}"
+            )
+        subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
+                       text=True, timeout=10, check=True)
+        _log(f"cron sync: {len(names)} strategy line(s)")
+    except Exception as e:
+        _log(f"cron sync failed: {type(e).__name__}: {e}")
+
+
+def _cmd_amounts(args):
+    """策略下單金額 — the 下單設定 page's save button.
+
+    `amounts` is canonical: {strategy: dollars at position=1}; the reconciler
+    sizes targets as amount × position (lib/portfolio.strategy_amounts) —
+    what the user typed is what trades, and it never drifts with equity.
+    Doubles as membership: an amount > 0 puts the strategy in the portfolio
+    and routes it; the venue is inherited from existing members (one
+    portfolio, one account — membership never silently splits across venues).
+    """
+    amounts = args.get("amounts")
+    # empty dict is legal: "the portfolio is empty" (every strategy unpicked)
+    if not isinstance(amounts, dict):
+        raise ValueError("amounts needs a {strategy: dollars} mapping")
+    prev = set()
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
+            prev = set((json.load(f).get("amounts") or {}))
+    except (OSError, ValueError):
+        pass
+    clean = {}
+    for k, v in amounts.items():
+        # Names are interpolated into crontab lines and workspace paths —
+        # anything outside this set is not a strategy dir name, it is an
+        # injection attempt (the enqueue API passes args through unvalidated).
+        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k):
+            raise ValueError("bad strategy name")
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            raise ValueError("amounts must be numbers")
+        if not (0 <= f < 1e12):  # rejects NaN, negatives, inf
+            raise ValueError("amounts must be finite and >= 0")
+        clean[k] = round(f, 2)
+
+    path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        cfg = {}
+    cfg["amounts"] = clean
+    old = cfg.get("exchanges") or {}
+    # Only inherit venues that are STILL BOUND (keys in .env) — after 解除綁定
+    # +重連別家, the old routing would otherwise zombie back in (positions
+    # live on the account, not in this dict).
+    bound = set()
+    try:
+        with open(os.path.join(WORKSPACE, ".env")) as f:
+            for line in f:
+                m = re.match(r"\s*([A-Za-z0-9_]+)_API_KEY\s*=", line, re.IGNORECASE)
+                if m and m.group(1).upper() != "BLAVE":
+                    bound.add(m.group(1).lower())
+    except OSError:
+        pass
+    old = {k: (v if v in bound else "") for k, v in old.items()}
+    venues = {v for v in old.values() if v}
+    default_venue = venues.pop() if len(venues) == 1 else ""
+    if not default_venue and len(bound) == 1:
+        # No routed member to inherit from (fresh portfolio, membership emptied,
+        # or old venue unbound): fall back to the machine's one bound exchange.
+        default_venue = next(iter(bound))
+    cfg["exchanges"] = {
+        n: (old.get(n) or default_venue) for n, amt in clean.items() if amt > 0
+    }
+    cfg.setdefault("asset_specs", {})
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, path)  # atomic: the reconciler mtime-watches + json-loads this
+    _sync_strategy_crons(set(clean))  # 選到就跑:picked = scheduled,不看金額
+    # 勾好=在跑:新選入的立刻背景跑一次,不等下一個 cron 整點——訊號一分鐘
+    # 內就新鮮,sidebar 的點跟著亮。detached + DEVNULL:跑多久、成敗都不能
+    # 拖住指令迴圈,結果由 state.json/回報說話。
+    if platform.system() != "Windows":
+        for n in sorted(set(clean) - prev):
+            try:
+                subprocess.Popen(
+                    ["bash", "manager/run_strategy.sh", n],
+                    cwd=WORKSPACE,
+                    # minimal env — the bridge's BLAVE_PROXY_TOKEN etc. have no
+                    # business inside agent/user strategy code (cron runs give
+                    # strategies a bare env too, so this also matches prod)
+                    env={k: v for k, v in os.environ.items()
+                         if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": "live"},
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except OSError as e:
+                _log(f"kickoff run failed for {n}: {type(e).__name__}")
+    return f"amounts={len(clean)}"
+
+
+def _cmd_credentials_remove(args):
+    """Unbind: drop exchange keys from the workspace .env.
+
+    The platform's own blave_* data-API credentials are never removed, no
+    matter what the caller lists — losing those takes the machine's market
+    data down with it.
+    """
+    names = args.get("env")
+    if (
+        not isinstance(names, list)
+        or not names
+        or not all(isinstance(n, str) and n.replace("_", "").isalnum() for n in names)
+    ):
+        raise ValueError("credentials_remove needs a list of env names")
+    drop = {n for n in names if not n.upper().startswith("BLAVE_")}
+
+    path = os.path.join(WORKSPACE, ".env")
+    try:
+        with open(path) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return "credentials_remove=0"
+    kept = [l for l in lines if l.split("=", 1)[0].strip() not in drop]
+    removed = len(lines) - len(kept)
+    with open(path, "w") as f:
+        f.write("\n".join(kept) + "\n")
+    os.chmod(path, 0o600)
+
+    # Prune the unbound venues from account.json right away — the account
+    # reader only rewrites it every 2 min, and until then the web would keep
+    # showing a live-looking equity for an account that no longer has a key.
+    dropped_ids = {
+        n[: -len("_API_KEY")].lower() for n in drop if n.upper().endswith("_API_KEY")
+    }
+    if dropped_ids:
+        apath = os.path.join(WORKSPACE, "manager", "account.json")
+        try:
+            with open(apath) as f:
+                acct = json.load(f)
+            for vid in dropped_ids:
+                (acct.get("venues") or {}).pop(vid, None)
+            with open(apath + ".tmp", "w") as f:
+                json.dump(acct, f)
+            os.replace(apath + ".tmp", apath)  # atomic: a path unit watches this
+        except (OSError, ValueError):
+            pass  # no account.json yet, or unreadable — the reader will converge it
+
+    return f"credentials_remove={removed}"  # count only — never the names' values
+
+
 def _cmd_restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
@@ -172,11 +335,39 @@ def _cmd_restart_reconciler(args):
     return "reconciler restarted"
 
 
+def _cmd_close_all(args):
+    """Panic: trip HALT synchronously, then flatten every venue position in a
+    detached process (fills can take a while — the command loop must not wait;
+    results surface through orders.jsonl → the report, like everything else)."""
+    from lib.guard import trip_halt
+
+    trip_halt("close all positions", "web")
+    if platform.system() == "Windows":
+        # 平倉層還沒上 Windows——誠實回報只掛了 halt,別讓用戶以為已平倉
+        return "close_all=halted_only"
+    # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
+    # 除了 order_errors.json 外,還要有完整紀錄可查
+    log_path = os.path.join(WORKSPACE, "state", "flatten.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, "ab") as logf:
+        subprocess.Popen(
+            ["python3", "manager/flatten.py"],
+            cwd=WORKSPACE,
+            env={k: v for k, v in os.environ.items()
+                 if k in ("PATH", "HOME", "LANG", "USER", "SHELL")},
+            stdout=logf, stderr=logf,
+            start_new_session=True,
+        )
+    return "close_all=started"
+
+
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
-    "members": _cmd_members,
+    "close_all": _cmd_close_all,
+    "amounts": _cmd_amounts,
     "credentials": _cmd_credentials,
+    "credentials_remove": _cmd_credentials_remove,
     "restart_reconciler": _cmd_restart_reconciler,
 }
 
@@ -188,7 +379,11 @@ def dispatch(command):
     if not fn:
         raise ValueError(f"unknown command {cmd!r}")
     args = command.get("args") if isinstance(command.get("args"), dict) else {}
-    if cmd in ("halt", "resume"):
+    # close_all imports lib.guard AND writes state/HALT — both resolve relative
+    # to the workspace. Outside _in_workspace a fresh listener ImportErrors
+    # (panic button dead) or writes HALT into the bridge's cwd (halt silently
+    # ineffective) — measured in audit, P0.
+    if cmd in ("halt", "resume", "close_all"):
         return _in_workspace(fn, args)
     return fn(args)
 
@@ -232,3 +427,12 @@ def run(on_applied=None):
                 on_applied()
             except Exception as e:
                 _log(f"post-command report failed: {type(e).__name__}")
+            # 二次回報:指令的下游效果(reconcile 快照、account 讀數)要幾秒才
+            # 落地,只推一次會讓頁面等到 2 分鐘 timer 才看到「實際」更新
+            def _repush():
+                time.sleep(8)
+                try:
+                    on_applied()
+                except Exception as e2:
+                    _log(f"delayed report failed: {type(e2).__name__}")
+            threading.Thread(target=_repush, daemon=True).start()
