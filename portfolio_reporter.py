@@ -284,10 +284,13 @@ def build_report():
         # this as venues[id] (web/.../workspace.html cxSupport()) — id present
         # with order/account both false = key saved, modules not built yet.
         "venues": venues(),
-        # capability signal: the web hides 平倉-dependent controls on platforms
-        # whose flatten layer isn't built yet (Windows) — without this the
-        # 「暫停並全部平倉」 button halts only and LOOKS successful.
+        # capability signals: the web hides controls the machine can't honor —
+        # without this the 「暫停並全部平倉」 button halts only and LOOKS
+        # successful. can_flatten keys on the actual artifact (flatten.py in
+        # the workspace), which is also exactly the listener's own check —
+        # true on any OS/generation whose workspace has the close-all layer.
         "platform": platform.system(),
+        "can_flatten": os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")),
         "reported_at": int(time.time()),
     }
 

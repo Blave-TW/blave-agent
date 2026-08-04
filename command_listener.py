@@ -342,21 +342,39 @@ def _cmd_close_all(args):
     from lib.guard import trip_halt
 
     trip_halt("close all positions", "web")
-    if platform.system() == "Windows":
-        # 平倉層還沒上 Windows——誠實回報只掛了 halt,別讓用戶以為已平倉
+    if not os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")):
+        # workspace 還沒更新到有平倉層——誠實回報只掛了 halt(reporter 的
+        # can_flatten 同一判準,前端本來就不會給這顆選項;這裡是最後防線)
         return "close_all=halted_only"
     # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
     # 除了 order_errors.json 外,還要有完整紀錄可查
     log_path = os.path.join(WORKSPACE, "state", "flatten.log")
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    # 環境走 denylist 不走 allowlist:Windows 的 python 少了 SystemRoot 等
+    # 系統變數會直接起不來;要擋的只有 bridge 的 BLAVE_* 秘密
+    child_env = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
+    child_env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
+    if platform.system() == "Windows":
+        # 脫離 NSSM 的 process tree:bridge 重啟時 NSSM 會殺整棵樹,平倉做一半
+        # 被砍=HALT 掛著、倉平一半。經由一個立刻退場的 powershell 中轉
+        # (Start-Process 的子程序在 powershell 死後變孤兒,樹掃描摸不到)。
+        ps_cmd = (
+            f"Start-Process -WindowStyle Hidden -FilePath python "
+            f"-ArgumentList 'manager/flatten.py' -WorkingDirectory '{WORKSPACE}' "
+            f"-RedirectStandardOutput '{log_path}.out' "
+            f"-RedirectStandardError '{log_path}.err'"
+        )
+        subprocess.Popen(["powershell", "-NoProfile", "-Command", ps_cmd],
+                         cwd=WORKSPACE, env=child_env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return "close_all=started"
+    # Linux:bridge unit 是 KillMode=process(見 systemd/blave-agent-web.service)
+    # ——重啟只殺 bridge 本體,flatten 活到收工
     with open(log_path, "ab") as logf:
         subprocess.Popen(
             ["python3", "manager/flatten.py"],
-            cwd=WORKSPACE,
-            env={k: v for k, v in os.environ.items()
-                 if k in ("PATH", "HOME", "LANG", "USER", "SHELL")},
-            stdout=logf, stderr=logf,
-            start_new_session=True,
+            cwd=WORKSPACE, env=child_env,
+            stdout=logf, stderr=logf, start_new_session=True,
         )
     return "close_all=started"
 
