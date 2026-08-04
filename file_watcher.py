@@ -1,6 +1,6 @@
 """File-event watcher — the Windows stand-in for the Linux systemd path units.
 
-Linux gets its event chain from three PathModified units (.env → re-read
+Linux gets its event chain from PathModified units (.env / lib/ → re-read
 accounts; last_reconcile.json → re-read + push; account.json → push). Windows
 Task Scheduler has no file trigger, so this always-on service (NSSM,
 blave-agent-watcher) polls mtimes every couple of seconds and runs the same
@@ -48,6 +48,12 @@ WATCHES = {
     os.path.join(WORKSPACE, ".env"): (ACCOUNT, REPORT),
     os.path.join(WORKSPACE, "manager", "last_reconcile.json"): (ACCOUNT, REPORT),
     os.path.join(WORKSPACE, "manager", "account.json"): (REPORT,),
+    # lib/ 目錄 mtime:agent 寫出新的 lib/account_{venue}.py 的當下重讀——
+    # venue 可讀性=金鑰(.env)+模組(lib/)兩件事,只看 .env 會漏後者
+    # (實測串 Binance 時模組比金鑰晚 72 秒,卡到下一輪 2 分鐘 timer)。
+    # 目錄 mtime 只動在檔案增刪,既有檔改內容不觸發——夠用,「新 venue 接上」
+    # 就是新增檔案那一刻。
+    os.path.join(WORKSPACE, "lib"): (ACCOUNT, REPORT),
 }
 
 
