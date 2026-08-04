@@ -7,6 +7,7 @@ strategies change rarely, and the web reads a Redis cache, not the VM live.
 VM auth = proxy-{ttyd_password} (BLAVE_PROXY_TOKEN), same trust model as the
 LLM proxy and the chat transport: the token resolves to this user only.
 """
+import ast
 import base64
 import json
 import os
@@ -30,16 +31,48 @@ API_URL = os.environ.get(
 )
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 
-# Strategy files set STRATEGY_NAME / MODE near the top (see references/
-# strategy-code.md). MODE="live" = deployed for live trading -> "live";
-# anything else (backtest/draft) -> "draft".
-_NAME_RE = re.compile(r'^\s*STRATEGY_NAME\s*=\s*["\']([^"\']+)["\']', re.M)
-_MODE_RE = re.compile(r'^\s*MODE\s*=\s*["\']([^"\']+)["\']', re.M)
-# Human-facing name + one-line blurb the agent sets (references/strategy-code.md
-# › Naming & description). STRATEGY_NAME stays the technical id; these drive the
-# workspace list/detail so a user isn't reading snake_case ids.
-_DISPLAY_RE = re.compile(r'^\s*DISPLAY_NAME\s*=\s*["\']([^"\']+)["\']', re.M)
-_DESC_RE = re.compile(r'^\s*DESCRIPTION\s*=\s*["\']([^"\']*)["\']', re.M)
+# Strategy files set these near the top (see references/strategy-code.md).
+# STRATEGY_NAME is the technical id; DISPLAY_NAME / DESCRIPTION are the
+# human-facing name + one-line blurb driving the workspace list/detail, so a
+# user isn't reading snake_case ids. MODE="live" = deployed for live trading ->
+# "live"; anything else (backtest/draft) -> "draft".
+FIELDS = ("STRATEGY_NAME", "DISPLAY_NAME", "DESCRIPTION", "MODE")
+# Fallback only — see strategy_consts(). A quote inside the value ends the match
+# early here ("Bob's BTC trend" -> "Bob"), which is why ast is the primary path.
+_FALLBACK_RE = {
+    field: re.compile(r'^\s*%s\s*=\s*["\']([^"\']*)["\']' % field, re.M)
+    for field in FIELDS
+}
+
+
+def strategy_consts(src):
+    """The module-level string constants above, as a dict (missing keys absent).
+
+    Parsed with `ast`, not regex: a name or blurb containing an ASCII quote —
+    `DISPLAY_NAME = "Bob's BTC trend"` — used to be silently truncated at that
+    quote, which reads as a half-written name rather than an obvious failure.
+    Falls back to the regexes when the file doesn't parse: a strategy with a
+    syntax error still has to show up in the workspace list.
+    """
+    out = {}
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        for field, pattern in _FALLBACK_RE.items():
+            m = pattern.search(src)
+            if m:
+                out[field] = m.group(1)
+        return out
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str):
+            continue
+        for target in node.targets:
+            # first assignment wins, matching the regexes this replaced
+            if isinstance(target, ast.Name) and target.id in FIELDS and target.id not in out:
+                out[target.id] = node.value.value
+    return out
 
 
 def _extract(path, fallback_name):
@@ -48,20 +81,17 @@ def _extract(path, fallback_name):
             src = f.read()
     except OSError:
         return None
-    m = _NAME_RE.search(src)
-    name = m.group(1) if m else fallback_name
-    mode = _MODE_RE.search(src)
-    status = "live" if (mode and mode.group(1).lower() == "live") else "draft"
-    dm = _DISPLAY_RE.search(src)
-    ds = _DESC_RE.search(src)
+    consts = strategy_consts(src)
+    name = consts.get("STRATEGY_NAME") or fallback_name
+    status = "live" if consts.get("MODE", "").lower() == "live" else "draft"
     # Ship the source too so the workspace can show it on click without a VM
     # round-trip. Files are small (a few KB); keep a sane cap so a runaway one
     # can't bloat the cache/stream. display_name falls back to the technical id
     # when the strategy predates the DISPLAY_NAME convention.
     return {
         "name": name,
-        "display_name": dm.group(1) if dm else name,
-        "description": ds.group(1) if ds else "",
+        "display_name": consts.get("DISPLAY_NAME") or name,
+        "description": consts.get("DESCRIPTION") or "",
         "status": status,
         "code": src[:100000],
     }
