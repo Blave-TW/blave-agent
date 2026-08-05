@@ -332,6 +332,21 @@ def _cmd_credentials_remove(args):
     return f"credentials_remove={removed}"  # count only — never the names' values
 
 
+def _cmd_retest_accounts(args):
+    """Run the account reader NOW with the stored keys (Wei 2026-08-05: the
+    connect-failed page's button must actively re-test on press, not wait for
+    the 60s timer). Detached — the reader can take up to its per-venue alarm,
+    and blocking here would delay a queued halt. Its account.json write fires
+    the path unit / file_watcher, which pushes the fresh report the web is
+    burst-polling for."""
+    base = os.path.dirname(WORKSPACE)
+    reader = os.path.join(base, "current", "account_reader.py")
+    sys_py = "python" if platform.system() == "Windows" else "/usr/bin/python3"
+    subprocess.Popen([sys_py, reader], cwd=WORKSPACE,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return "retesting"
+
+
 def _cmd_restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
@@ -401,6 +416,7 @@ HANDLERS = {
     "amounts": _cmd_amounts,
     "credentials": _cmd_credentials,
     "credentials_remove": _cmd_credentials_remove,
+    "retest_accounts": _cmd_retest_accounts,
     "restart_reconciler": _cmd_restart_reconciler,
 }
 
