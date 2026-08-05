@@ -121,11 +121,32 @@ def _norm_positions(raw):
     return out
 
 
+def _norm_holdings(raw):
+    """[{'asset','amount','usdt_value','wallet'}, ...] — display-only coin
+    holdings. Scrub non-finite numbers, drop rowless dicts, cap at 50 rows
+    (a wallet with hundreds of dust coins must not bloat every report)."""
+    out = []
+    for h in raw or []:
+        if not isinstance(h, dict) or not h.get("asset"):
+            continue
+        out.append({
+            "asset": str(h["asset"])[:20],
+            "amount": _finite(h.get("amount"), 0.0),
+            "usdt_value": _finite(h.get("usdt_value")),
+            "wallet": str(h.get("wallet") or "")[:20],
+        })
+    # sort before capping — an agent-written lib that doesn't pre-sort must
+    # not get its LARGEST rows truncated (audit M3)
+    out.sort(key=lambda h: -(h["usdt_value"] or 0))
+    return out[:50]
+
+
 def read_venue(vid, env):
-    """One venue → {ok, equity, currency, accounts, positions, error}. Never raises."""
+    """One venue → {ok, equity, currency, accounts, positions, holdings,
+    error}. Never raises."""
     entry = {
         "ok": False, "equity": None, "currency": None,
-        "accounts": None, "positions": None, "error": None,
+        "accounts": None, "positions": None, "holdings": None, "error": None,
     }
     try:
         mod = importlib.import_module(f"lib.account_{vid}")
@@ -149,6 +170,14 @@ def read_venue(vid, env):
     except Exception as e:
         entry["error"] = _err("get_positions", e)
         return entry
+    # Display-only coin holdings (spot/funding wallets) — optional in the
+    # module contract and best-effort here: a holdings hiccup must not take
+    # equity/positions down with it. None = not supported or failed this tick.
+    if hasattr(mod, "get_holdings"):
+        try:
+            entry["holdings"] = _norm_holdings(mod.get_holdings(env))
+        except Exception:
+            pass
     entry["ok"] = True
     return entry
 
@@ -175,7 +204,7 @@ def _read_venue_timed(vid, env, seconds=60):
     except _VenueTimeout as e:
         # fired between read_venue's own try blocks — record it here
         return {"ok": False, "equity": None, "currency": None, "accounts": None,
-                "positions": None, "error": _err("timeout", e)}
+                "positions": None, "holdings": None, "error": _err("timeout", e)}
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old)

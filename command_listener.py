@@ -314,6 +314,21 @@ def _cmd_credentials_remove(args):
         except (OSError, ValueError):
             pass  # no account.json yet, or unreadable — the reader will converge it
 
+    # Unbinding PAUSES trading immediately (Wei 2026-08-05): the reconciler's
+    # wiring points at the venue whose keys just vanished — without this it
+    # fails reads for up to 15 min before auto-halt trips, and any strategy
+    # still routed here looks "running" the whole time. Conservative on
+    # multi-venue machines (halts everything); resuming is the user's explicit
+    # 啟動下單 press, same as every other halt.
+    if dropped_ids:
+        try:
+            from lib.guard import trip_halt
+            trip_halt(f"exchange unbound ({'/'.join(sorted(dropped_ids))})", "web")
+        except Exception as e:
+            # guard genuinely unavailable (pre-guard workspace) — auto-halt
+            # still covers it, but say so instead of hiding it (audit H2)
+            print(f"[credentials_remove] unbind-halt failed: {e}", file=sys.stderr)
+
     return f"credentials_remove={removed}"  # count only — never the names' values
 
 
@@ -400,8 +415,10 @@ def dispatch(command):
     # close_all imports lib.guard AND writes state/HALT — both resolve relative
     # to the workspace. Outside _in_workspace a fresh listener ImportErrors
     # (panic button dead) or writes HALT into the bridge's cwd (halt silently
-    # ineffective) — measured in audit, P0.
-    if cmd in ("halt", "resume", "close_all"):
+    # ineffective) — measured in audit, P0. credentials_remove is in the list
+    # for its unbind-halt (audit H2: outside it, that halt was inert — either
+    # a swallowed ImportError or a HALT file in the wrong cwd).
+    if cmd in ("halt", "resume", "close_all", "credentials_remove"):
         return _in_workspace(fn, args)
     return fn(args)
 

@@ -11,7 +11,7 @@
   "_comment_windows": "Scheduled tasks the release wants registered on Windows (schtasks stand-in for the timers; the event chain is the blave-agent-watcher NSSM service, provision-owned). script is relative to C:\\blave-agent; bin: venv|system. Control-plane tasks (updater/watchdog/firstboot) stay provision-owned and NEVER appear here. provision.ps1 registers the same definitions at build time as bootstrap; on drift, this manifest wins.",
   "windows_tasks": {
     "blave-agent-strategies": {"script": "current/strategy_reporter.py", "minutes": 2, "delay_sec": 35, "bin": "venv"},
-    "blave-agent-account": {"script": "current/account_reader.py", "minutes": 2, "delay_sec": 25, "bin": "system"},
+    "blave-agent-account": {"script": "current/account_reader.py", "minutes": 1, "delay_sec": 25, "bin": "system"},
     "blave-agent-portfolio": {"script": "current/portfolio_reporter.py", "minutes": 2, "delay_sec": 45, "bin": "venv"},
     "blave-agent-prune": {"script": "current/prune_job.py", "minutes": 1440, "delay_sec": 300, "bin": "venv"},
     "blave-agent-skill": {"script": "current/skill_sync.py", "minutes": 1440, "delay_sec": 180, "bin": "venv"}
