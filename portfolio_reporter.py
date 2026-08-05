@@ -81,7 +81,11 @@ def scheduled_strategies():
             return None
         if out.returncode != 0:
             return None
-        return set(re.findall(r"blaveclaw-strategy-([^\",]+)", out.stdout))
+        # both task families count as "scheduled": agent-made
+        # blaveclaw-strategy-* and the web picker's blave-web-strategy-*
+        # (command_listener's schtasks twin of the tagged cron lines)
+        return set(re.findall(r"blaveclaw-strategy-([^\",]+)", out.stdout)) | \
+            set(re.findall(r"blave-web-strategy-([^\",]+)", out.stdout))
     try:
         out = subprocess.run(
             ["crontab", "-l"], capture_output=True, text=True, timeout=10
@@ -100,7 +104,8 @@ def _strategy_market(name):
     """strategy.py 的 MARKET 常數(swap|spot)。沒宣告=swap——與現況一致
     (全機隊實測過的下單路徑只有 USDT 本位合約),UI 要靠它標示錢包。"""
     try:
-        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py")) as f:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                  encoding="utf-8", errors="replace") as f:
             m = _MARKET_RE.search(f.read())
         return m.group(1) if m else "swap"
     except OSError:

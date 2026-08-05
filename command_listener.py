@@ -119,6 +119,17 @@ def _cmd_credentials(args):
     with open(path, "w") as f:
         f.write("\n".join(kept) + "\n")
     os.chmod(path, 0o600)
+    # rebind restores the signal schedules the unbind cleared (audit: without
+    # this, 解除→重綁→啟動下單 trades real money on signals frozen at unbind
+    # time — the exact quiet failure scheduled_strategies() exists to surface)
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json"),
+                  encoding="utf-8") as f:
+            amounts = json.load(f).get("amounts") or {}
+        if amounts:
+            _sync_strategy_crons(set(amounts))
+    except (OSError, ValueError):
+        pass
     return f"credentials={len(env)}"  # count only — never the keys or values
 
 
@@ -136,7 +147,11 @@ def _strategy_cadence(name):
     Sub-hour intervals poll at their own pace (capped at 30m); ≥1h all poll
     hourly at :05 — re-running an unchanged signal is idempotent and cheap."""
     try:
-        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py")) as f:
+        # utf-8 explicit: Windows opens with the locale codepage and agent
+        # strategies carry Chinese comments — a UnicodeDecodeError here is not
+        # OSError and would poison the whole sync (audit)
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                  encoding="utf-8", errors="replace") as f:
             m = _INTERVAL_RE.search(f.read())
         iv = (m.group(1) if m else "1h").lower()
     except OSError:
@@ -147,15 +162,86 @@ def _strategy_cadence(name):
     return "5 * * * *"
 
 
+_WIN_TASK_PREFIX = "blave-web-strategy-"
+_NAME_OK_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _win_cadence(name):
+    """schtasks schedule flags from the strategy's INTERVAL — mirrors
+    _strategy_cadence (sub-hour at its own pace capped 30m; ≥1h hourly)."""
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                  encoding="utf-8", errors="replace") as f:
+            m = _INTERVAL_RE.search(f.read())
+        iv = (m.group(1) if m else "1h").lower()
+    except OSError:
+        iv = "1h"
+    mm = re.match(r"(\d+)\s*m", iv)
+    if mm:
+        return ["/sc", "minute", "/mo", str(max(1, min(30, int(mm.group(1)))))]
+    return ["/sc", "hourly", "/mo", "1", "/st", "00:05"]
+
+
+def _sync_strategy_tasks_windows(names):
+    """schtasks twin of the tagged cron lines — the task-name prefix is the
+    ownership marker (only our own tasks are created/deleted; agent-made
+    blaveclaw-strategy-* tasks are none of our business). Runs as SYSTEM like
+    every provision task; output appends to the strategy's own log so a crash
+    is at least findable (Windows has no run_strategy.sh alert wrapper yet)."""
+    try:
+        out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                             capture_output=True, text=True, errors="replace",
+                             timeout=30)
+        existing = set()
+        for line in (out.stdout or "").splitlines():
+            tn = line.split('","')[0].strip('"').lstrip("\\")
+            if tn.startswith(_WIN_TASK_PREFIX):
+                existing.add(tn[len(_WIN_TASK_PREFIX):])
+        wanted = {n for n in names if _NAME_OK_RE.fullmatch(n)}
+        for n in sorted(set(names) - wanted):
+            _log(f"task sync: skipping unsafe strategy name {n!r}")
+        for n in sorted(existing - wanted):
+            r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_TASK_PREFIX + n, "/f"],
+                               capture_output=True, text=True, errors="replace",
+                               timeout=30)
+            if r.returncode != 0:  # a survivor keeps refreshing signals unseen
+                _log(f"task sync: delete {n} failed: "
+                     f"{(r.stderr or r.stdout or '').strip()[:120]}")
+        for n in sorted(wanted):
+            tr = (f'cmd /c cd /d "{WORKSPACE}" && set BLAVE_MODE=live&& '
+                  f"python strategies\\{n}\\strategy.py >> strategies\\{n}\\strategy.log 2>&1")
+            cadence = _win_cadence(n)
+            r = subprocess.run(["schtasks", "/create", "/tn", _WIN_TASK_PREFIX + n,
+                                "/tr", tr, "/ru", "SYSTEM", "/f"] + cadence,
+                               capture_output=True, text=True, errors="replace",
+                               timeout=30)
+            if r.returncode != 0:
+                _log(f"task sync: create {n} failed: "
+                     f"{(r.stderr or r.stdout or '').strip()[:120]}")
+            elif n not in existing and cadence[1] == "hourly":
+                # first run NOW — hourly tasks (/st 00:05) otherwise wait up to
+                # an hour for their first signal while the web's optimistic
+                # light gives up after 5 min. Minute-cadence tasks fire on
+                # their own within ≤30m AND may fire immediately on create —
+                # kicking those too can race two writers into state.json,
+                # which lib/execute writes non-atomically (audit B1)
+                subprocess.run(["schtasks", "/run", "/tn", _WIN_TASK_PREFIX + n],
+                               capture_output=True, timeout=30)
+        _log(f"task sync: {len(wanted)} strategy task(s)")
+    except Exception as e:
+        _log(f"task sync failed: {type(e).__name__}: {e}")
+
+
 def _sync_strategy_crons(names):
     """One tagged cron line per picked strategy; drop tagged lines for
     strategies no longer picked. Only lines carrying _CRON_TAG are touched —
     agent-/user-made entries are none of our business. BLAVE_MODE=live makes
     the runner refresh signals even while the file's MODE says backtest.
-    Best-effort: a cron failure must not fail the amounts write. Windows is
-    pending the scheduled-task work (jobs manifest)."""
+    Best-effort: a cron failure must not fail the amounts write. Windows uses
+    the schtasks twin (audit L6 — before it, web-picked strategies simply
+    never ran on Windows machines)."""
     if platform.system() == "Windows":
-        _log("cron sync skipped on Windows (scheduled-task support pending)")
+        _sync_strategy_tasks_windows(set(names))
         return
     try:
         out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
@@ -328,6 +414,15 @@ def _cmd_credentials_remove(args):
             # guard genuinely unavailable (pre-guard workspace) — auto-halt
             # still covers it, but say so instead of hiding it (audit H2)
             print(f"[credentials_remove] unbind-halt failed: {e}", file=sys.stderr)
+        # NO venue left → stop the signal-refresh schedules too (Wei
+        # 2026-08-05: halt keeps signals breathing, unbind kills them — an
+        # unbound machine updating targets reads as "still trading"). The next
+        # amounts save after a rebind re-syncs the crons, so resume costs
+        # nothing; partial unbind on a multi-venue machine keeps them.
+        if not any(l.split("=", 1)[0].strip().upper().endswith("_API_KEY")
+                   and not l.split("=", 1)[0].strip().upper().startswith("BLAVE")
+                   for l in kept):
+            _sync_strategy_crons(set())
 
     return f"credentials_remove={removed}"  # count only — never the names' values
 
