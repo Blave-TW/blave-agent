@@ -446,7 +446,75 @@ def _cmd_restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
     if platform.system() == "Windows":
-        cmd = ["nssm", "restart", "blaveclaw-reconciler"]
+        # Self-bootstrap like the Linux tmux path: a machine where the agent
+        # never set up auto-trading has no service yet — install it here
+        # (references/manager.md sequence) instead of failing the button.
+        st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
+                            capture_output=True, timeout=30)
+        if st.returncode != 0:
+            ps1 = os.path.join(WORKSPACE, "manager",
+                               "start_reconciler_windows.ps1")
+            # nssm install doesn't validate the target — installing against a
+            # missing ps1 yields a service that flaps silently forever
+            if not os.path.isfile(ps1):
+                raise RuntimeError("start_reconciler_windows.ps1 missing — "
+                                   "workspace too old, run 更新 blave agent first")
+            # Capital's SKCOM.dll binds its cert to the Administrator identity;
+            # a LocalSystem service fails login with error 602 and the button
+            # would hand back a machine that auto-halts with no visible cause
+            # (references/manager.md broker exception). The agent-led install
+            # flow handles the ObjectName step; this button doesn't.
+            try:
+                with open(os.path.join(WORKSPACE, "manager",
+                                       "portfolio_config.json")) as f:
+                    routed = set((json.load(f).get("exchanges") or {}).values())
+            except (OSError, ValueError):
+                routed = set()
+            if "capital" in routed:
+                raise RuntimeError("capital routing needs the agent-led service "
+                                   "install (Administrator identity) — ask the "
+                                   "agent to start auto-trading")
+            for step in (
+                ["install", "blaveclaw-reconciler", "powershell.exe",
+                 "-ExecutionPolicy", "Bypass", "-File", ps1],
+                ["set", "blaveclaw-reconciler", "AppDirectory", WORKSPACE],
+                ["set", "blaveclaw-reconciler", "Start", "SERVICE_AUTO_START"],
+            ):
+                out = subprocess.run(["nssm"] + step, capture_output=True,
+                                     text=True, timeout=15)
+                if out.returncode != 0:
+                    raise RuntimeError(
+                        (out.stderr or out.stdout or "").strip()[:200])
+            # register for health monitoring (references/manager.md) — a
+            # bootstrap machine has no agent-written deployments.json, so the
+            # freshly installed daemon would otherwise die unseen
+            dep_path = os.path.join(WORKSPACE, "state", "deployments.json")
+            try:
+                try:
+                    with open(dep_path) as f:
+                        deps = json.load(f)
+                except (OSError, ValueError):
+                    deps = {}
+                deps.setdefault("reconciler", {
+                    "type": "daemon", "expect_every_minutes": 5,
+                    "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S",
+                                                   time.gmtime()),
+                })
+                os.makedirs(os.path.dirname(dep_path), exist_ok=True)
+                with open(dep_path, "w") as f:
+                    json.dump(deps, f, indent=2)
+            except OSError as e:
+                _log(f"deployments.json registration failed: {e}")
+        else:
+            # stop is best-effort: nssm returns 0 on an already-stopped
+            # service, but a HUNG one can outlast the timeout — that must not
+            # kill the restart (start is what decides)
+            try:
+                subprocess.run(["nssm", "stop", "blaveclaw-reconciler"],
+                               capture_output=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                pass
+        cmd = ["nssm", "start", "blaveclaw-reconciler"]
     else:
         # kill any existing session first: a crash-looping one would otherwise
         # keep its name and this would silently no-op
