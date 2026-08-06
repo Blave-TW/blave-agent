@@ -221,11 +221,26 @@ def save_image_sigs(sigs):
         pass
 
 
+def _config_version():
+    """workspace 根的 VERSION(config 更新流程會 copy 進來)。讀不到 = None,
+    fail-soft:舊機沒這個檔是常態,不值得噪音。"""
+    try:
+        with open(os.path.join(WORKSPACE, "VERSION")) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
 def report_cache(strategies, token=None):
     """POST the list to the backend cache (GET /strategies reads this on page
-    load / reload). Reused by the timer AND by web_bridge after each turn."""
+    load / reload). Reused by the timer AND by web_bridge after each turn.
+    Piggybacks config_version so the web can flag an outdated workspace config."""
     token = token or PROXY_TOKEN
-    data = json.dumps({"strategies": strategies}).encode()
+    payload = {"strategies": strategies}
+    version = _config_version()
+    if version:
+        payload["config_version"] = version
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(
         API_URL, data=data,
         headers={"Content-Type": "application/json", "x-api-key": f"proxy-{token}"},
