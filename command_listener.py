@@ -22,6 +22,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -427,6 +428,157 @@ def _cmd_credentials_remove(args):
     return f"credentials_remove={removed}"  # count only — never the names' values
 
 
+def _purge_strategy_schedules(entries):
+    """Drop the schedules that ran the just-deleted entries. Without this, an
+    agent-deployed cron (untagged `bash manager/run_strategy.sh <entry>`, see
+    references/deployment.md) keeps firing forever: run_strategy.sh mkdir -p's
+    the ghost dir back and Telegrams a failure alert every tick. Tag or no tag
+    doesn't matter here — the tag guards LIVE schedules from the web's sync,
+    but with the strategy files gone every line running this entry is only
+    alarm garbage. Keyed by the filesystem ENTRY name, not the reported
+    STRATEGY_NAME — the schedule references the path, and the two can differ.
+    Best-effort like _sync_strategy_crons: a purge failure must not fail the
+    delete that already happened."""
+    if not entries:
+        return
+    try:
+        if platform.system() == "Windows":
+            out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                                 capture_output=True, text=True, errors="replace",
+                                 timeout=30)
+            existing = set()
+            for line in (out.stdout or "").splitlines():
+                existing.add(line.split('","')[0].strip('"').lstrip("\\"))
+            for e in sorted(entries):
+                # both owners: the agent's blaveclaw-strategy-* and our own
+                for tn in (f"blaveclaw-strategy-{e}", _WIN_TASK_PREFIX + e):
+                    if tn not in existing:
+                        continue
+                    r = subprocess.run(["schtasks", "/delete", "/tn", tn, "/f"],
+                                       capture_output=True, text=True,
+                                       errors="replace", timeout=30)
+                    if r.returncode != 0:  # a survivor keeps alerting unseen
+                        _log(f"schedule purge: delete {tn} failed: "
+                             f"{(r.stderr or r.stdout or '').strip()[:120]}")
+            return
+        out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+        if out.returncode != 0:
+            return  # no crontab at all — nothing scheduled
+        pats = []
+        for e in entries:
+            # run_strategy.sh <entry> (agent + web lines) and the direct
+            # strategies/<entry>/strategy.py form deployment.md forbids but
+            # agents have written anyway
+            pats.append(re.compile(r"run_strategy\.sh\s+%s(\s|$)" % re.escape(e)))
+            pats.append(re.compile(r"strategies[/\\]%s[/\\]strategy\.py" % re.escape(e)))
+        lines = out.stdout.splitlines()
+        kept = [l for l in lines if not any(p.search(l) for p in pats)]
+        if len(kept) != len(lines):
+            subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
+                           text=True, timeout=10, check=True)
+            _log(f"schedule purge: dropped {len(lines) - len(kept)} cron line(s)")
+    except Exception as e:
+        _log(f"schedule purge failed: {type(e).__name__}: {e}")
+
+
+def _cmd_delete_strategy(args):
+    """Remove a strategy's files from the workspace — the strategy list's 刪除
+    button. Pure file removal, no judgment, hence a command and not a chat turn.
+
+    The web sends the reported STRATEGY_NAME, which is a constant inside the
+    file and need not match the dir/file name — so matching walks the same two
+    layouts strategy_reporter.scan() reports from and compares by consts, or a
+    rename inside the file would make the button delete nothing (or worse, the
+    wrong entry).
+
+    A strategy still in the portfolio is refused outright: the reconciler
+    routes live money by that name, and deleting the files under it would leave
+    a portfolio member whose target can never refresh — the exact frozen-signal
+    failure the cron sync exists to prevent. Membership is 選到就跑: keyed at
+    all counts, the amount is irrelevant.
+    """
+    name = args.get("name")
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
+        raise ValueError("bad strategy name")
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        cfg = {}  # fresh machine — no portfolio was ever written, nothing to guard
+    except (OSError, ValueError) as e:
+        # fail-closed: manager.py writes this file non-atomically, so unreadable
+        # can mean mid-write — treating that as "empty portfolio" would wave
+        # through deleting a strategy that IS routing real money. A delete can
+        # wait; a flattened live position can't be undone.
+        raise RuntimeError(
+            f"portfolio config unreadable ({type(e).__name__}) — try again"
+        )
+    if not isinstance(cfg, dict):
+        raise RuntimeError("portfolio config unreadable (not a dict) — try again")
+    # Membership is the key union the reconciler itself reads (lib/portfolio.py):
+    # `amounts` is canonical, but pre-2026-08-03 configs have none — they still
+    # trade off `weights` + `exchanges` (strategy_amounts' fallback keeps them
+    # "trading identically"). Checking `amounts` alone waves those members
+    # through, and the reconciler flattens the live position the moment its
+    # target vanishes.
+    members = set()
+    for key in ("amounts", "weights", "exchanges"):
+        val = cfg.get(key)
+        if isinstance(val, dict):
+            members |= set(val)
+    if name in members:
+        raise RuntimeError(
+            "strategy is in the 下單設定 portfolio — remove it there first"
+        )
+
+    import strategy_reporter  # same runtime dir; resolves consts the way scan() does
+
+    sdir = os.path.join(WORKSPACE, "strategies")
+    doomed = []
+    if os.path.isdir(sdir):
+        for entry in sorted(os.listdir(sdir)):
+            if entry.startswith(".") or entry == "__pycache__" or entry.startswith("TEMPLATE"):
+                continue
+            full = os.path.join(sdir, entry)
+            if os.path.isfile(full) and entry.endswith(".py"):
+                path, fallback = full, entry[:-3]
+            elif os.path.isdir(full) and os.path.isfile(os.path.join(full, "strategy.py")):
+                path, fallback = os.path.join(full, "strategy.py"), entry
+            else:
+                continue
+            try:
+                # utf-8 explicit for the same Windows-codepage reason as
+                # _strategy_cadence — a decode error must not abort the delete
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    src = f.read()
+            except OSError:
+                continue
+            consts = strategy_reporter.strategy_consts(src)
+            if (consts.get("STRATEGY_NAME") or fallback) == name:
+                doomed.append(full)
+    # Single-file layout writes its backtest output to strategies/<name>/
+    # (stats.json / pnl.png, no strategy.py) — take it too, or the deleted
+    # strategy's stats and charts linger as a ghost the next scan re-reports.
+    out_dir = os.path.join(sdir, name)
+    if os.path.isdir(out_dir) and not os.path.isfile(os.path.join(out_dir, "strategy.py")):
+        doomed.append(out_dir)
+
+    if not doomed:
+        # idempotent: a retry after a half-seen success is a no-op, not an error
+        return "delete_strategy=absent"
+    entries = set()
+    for p in doomed:
+        base = os.path.basename(p)
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+            entries.add(base)
+        else:
+            os.remove(p)
+            entries.add(base[:-3] if base.endswith(".py") else base)
+    _purge_strategy_schedules(entries)
+    return f"delete_strategy={len(doomed)}"
+
+
 def _cmd_retest_accounts(args):
     """Run the account reader NOW with the stored keys (Wei 2026-08-05: the
     connect-failed page's button must actively re-test on press, not wait for
@@ -581,6 +733,7 @@ HANDLERS = {
     "credentials_remove": _cmd_credentials_remove,
     "retest_accounts": _cmd_retest_accounts,
     "restart_reconciler": _cmd_restart_reconciler,
+    "delete_strategy": _cmd_delete_strategy,
 }
 
 
@@ -618,6 +771,32 @@ def run(on_applied=None):
         _log("BLAVE_PROXY_TOKEN not set; command listener disabled")
         return
     _log("started")
+
+    # Reporting is several HTTP POSTs (15s timeout each) plus a full workspace
+    # scan — a degraded network stacks that to ~45s. This loop is the panic path
+    # (halt → close_all), and a stop that queues behind a report is not a stop:
+    # the whole push, delayed repush included, runs off-loop on its own daemon
+    # thread. Single-flight (only this loop thread touches the flag): on_applied
+    # reads live state, so the in-flight push's 8s repush already carries the
+    # newer command's effects — a second thread would only race the same POSTs.
+    report_inflight = threading.Event()
+
+    def _report():
+        try:
+            try:
+                on_applied()
+            except Exception as e:
+                _log(f"post-command report failed: {type(e).__name__}")
+            # 二次回報:指令的下游效果(reconcile 快照、account 讀數)要幾秒才
+            # 落地,只推一次會讓頁面等到 2 分鐘 timer 才看到「實際」更新
+            time.sleep(8)
+            try:
+                on_applied()
+            except Exception as e2:
+                _log(f"delayed report failed: {type(e2).__name__}")
+        finally:
+            report_inflight.clear()
+
     while True:
         _beat()
         try:
@@ -637,16 +816,9 @@ def run(on_applied=None):
             # handlers raise with shapes, not contents.
             _log(f"{command.get('cmd')} {cid} FAILED: {type(e).__name__}: {e}")
         if on_applied:
-            try:
-                on_applied()
-            except Exception as e:
-                _log(f"post-command report failed: {type(e).__name__}")
-            # 二次回報:指令的下游效果(reconcile 快照、account 讀數)要幾秒才
-            # 落地,只推一次會讓頁面等到 2 分鐘 timer 才看到「實際」更新
-            def _repush():
-                time.sleep(8)
-                try:
-                    on_applied()
-                except Exception as e2:
-                    _log(f"delayed report failed: {type(e2).__name__}")
-            threading.Thread(target=_repush, daemon=True).start()
+            if report_inflight.is_set():
+                _log("post-command report still in flight — skipped (its repush covers this)")
+            else:
+                report_inflight.set()
+                threading.Thread(target=_report, daemon=True,
+                                 name="command-report").start()

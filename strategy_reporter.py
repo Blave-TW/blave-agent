@@ -77,7 +77,11 @@ def strategy_consts(src):
 
 def _extract(path, fallback_name):
     try:
-        with open(path) as f:
+        # utf-8 explicit: Windows opens with the locale codepage and strategies
+        # carry Chinese comments — a UnicodeDecodeError is not OSError and would
+        # kill the whole scan. errors="replace" also keeps name resolution
+        # identical to the delete path's read (command_listener).
+        with open(path, encoding="utf-8", errors="replace") as f:
             src = f.read()
     except OSError:
         return None

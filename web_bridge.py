@@ -279,9 +279,18 @@ def main():
     # thread: this loop below blocks for the whole of an agent turn, and a stop
     # that waits minutes for a turn to finish is not a stop. Daemon thread — it
     # must never keep the bridge alive on shutdown.
+    def on_command_applied():
+        # Both views, every command: delete_strategy changes the left rail, the
+        # rest change the portfolio, and switching on cmd here would just be a
+        # second copy of the handler table to keep in sync. Commands are rare
+        # user actions, and attach_images' signature file already skips
+        # re-uploading unchanged images.
+        sync_portfolio()
+        sync_strategies()
+
     threading.Thread(
         target=command_listener.run,
-        kwargs={"on_applied": sync_portfolio},
+        kwargs={"on_applied": on_command_applied},
         daemon=True,
         name="command-listener",
     ).start()
