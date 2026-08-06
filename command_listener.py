@@ -354,6 +354,33 @@ def _cmd_amounts(args):
     return f"amounts={len(clean)}"
 
 
+def _stop_reconciler():
+    """True only when no reconciler daemon can still be watching the workspace
+    (confirmed stopped, or provably never running). The full-unbind path gates
+    the membership clear on this — see the WHY there. Same stop mechanics as
+    _cmd_restart_reconciler's first half."""
+    try:
+        if platform.system() == "Windows":
+            st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
+                                capture_output=True, timeout=30)
+            if st.returncode != 0:
+                return True  # service never installed — nothing watching
+            r = subprocess.run(["nssm", "stop", "blaveclaw-reconciler"],
+                               capture_output=True, timeout=60)
+            return r.returncode == 0
+        r = subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
+                           capture_output=True, text=True, timeout=20)
+        if r.returncode == 0:
+            return True
+        err = (r.stderr or "").lower()
+        # no such session / no tmux server at all = no daemon = nothing watching
+        return ("find session" in err or "no server" in err
+                or "failed to connect" in err)
+    except Exception as e:  # TimeoutExpired, FileNotFoundError, …
+        _log(f"reconciler stop failed: {type(e).__name__}: {e}")
+        return False
+
+
 def _cmd_credentials_remove(args):
     """Unbind: drop exchange keys from the workspace .env.
 
@@ -424,6 +451,47 @@ def _cmd_credentials_remove(args):
                    and not l.split("=", 1)[0].strip().upper().startswith("BLAVE")
                    for l in kept):
             _sync_strategy_crons(set())
+            # …and zero the 下單設定 itself (Wei 2026-08-06): users don't
+            # bounce between venues, and members lingering with no venue bound
+            # block 刪除策略 and friends — a rebind starts from a clean sheet.
+            # STOP THE DAEMON FIRST, THEN CLEAR — the halt above is NOT a
+            # defense here. state/HALT only blocks is_entry legs
+            # (lib/portfolio.py), never reduce legs; clearing membership zeroes
+            # every target, so a live daemon's next mtime-triggered reconcile
+            # (≤5s) would market-flatten every actual position as "reduce".
+            # Nor does deleting the keys save sinopac/capital: their order
+            # libs are module singletons with a cached login session
+            # (lib/order_sinopac.py _get_api) that keeps reading positions
+            # after .env is wiped — only auto-wired venues re-read env per
+            # call and fail closed. With no venue bound there is nothing to
+            # reconcile, so a stopped daemon is the right state; after a
+            # rebind the user's 啟動下單 press restarts it
+            # (_cmd_restart_reconciler), same as every resume. If the stop
+            # cannot be confirmed, keep the membership — a stale-but-consistent
+            # config is the safe direction — and still let the unbind succeed.
+            # What's cleared is membership only (amounts/exchanges emptied,
+            # legacy weights dropped — asset_specs and the rest survive).
+            # Partial unbind on a multi-venue machine keeps daemon and
+            # portfolio as-is.
+            if _stop_reconciler():
+                cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+                try:
+                    with open(cpath) as f:
+                        cfg = json.load(f)
+                    if isinstance(cfg, dict):
+                        cfg["amounts"] = {}
+                        cfg["exchanges"] = {}
+                        cfg.pop("weights", None)
+                        with open(cpath + ".tmp", "w") as f:
+                            json.dump(cfg, f, indent=2)
+                        # atomic: the reconciler mtime-watches + json-loads this
+                        os.replace(cpath + ".tmp", cpath)
+                except FileNotFoundError:
+                    pass  # no portfolio was ever written — nothing to clear
+                except (OSError, ValueError) as e:
+                    _log(f"membership clear failed: {type(e).__name__}: {e}")
+            else:
+                _log("reconciler not confirmed stopped — membership kept")
 
     return f"credentials_remove={removed}"  # count only — never the names' values
 
