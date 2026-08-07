@@ -158,14 +158,14 @@ def recent_orders():
 # counts as a venue (matching command_listener / account_reader — the account
 # read then fails VISIBLY instead of the venue silently vanishing), and the
 # key's value must never sit in a match group waiting for a debug print.
-_ENV_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_API_KEY\s*=", re.IGNORECASE)
+_ENV_CRED_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY)\s*=", re.IGNORECASE)
 # blave_api_key / blave_secret_key are the platform's own data-API credentials
 # (written at first boot), not an exchange — never report "blave" as a venue.
 _RESERVED_PREFIXES = {"BLAVE"}
 
 
 def venues():
-    """{venue_id: {credentials, order, account}} discovered from the workspace .env.
+    """{venue_id: {credentials, pair, order, account}} discovered from the workspace .env.
 
     Scanning .env for `{PREFIX}_API_KEY` rather than keeping a fixed venue list
     here mirrors how the credentials get written in the first place: the web
@@ -176,6 +176,12 @@ def venues():
     `order`/`account` mirror whether lib/order_{id}.py / lib/account_{id}.py
     ship on this machine — that is what actually lets the venue trade or read
     equity; storing the key is necessary but not sufficient for either.
+
+    `pair` is the bound-venue rule (API_KEY + SECRET_KEY under the same ID —
+    command_listener._venue_cred_ids' definition): only paired entries count
+    as a bound venue. Single-key entries stay reported (pair: false) so a
+    half-entered integration still shows up and its account-read failure is
+    visible instead of the venue silently vanishing.
     """
     path = os.path.join(WORKSPACE, ".env")
     try:
@@ -184,17 +190,18 @@ def venues():
     except OSError:
         return {}
     lib_root = os.path.join(WORKSPACE, "lib")
-    out = {}
+    suffixes = {}
     for line in lines:
-        m = _ENV_KEY_RE.match(line)
-        if not m:
-            continue
-        prefix = m.group(1)
-        if prefix.upper() in _RESERVED_PREFIXES:
-            continue
-        venue_id = prefix.lower()
+        m = _ENV_CRED_RE.match(line)
+        if m and m.group(1).upper() not in _RESERVED_PREFIXES:
+            suffixes.setdefault(m.group(1).lower(), set()).add(m.group(2).upper())
+    out = {}
+    for venue_id, sfx in suffixes.items():
+        if "API_KEY" not in sfx:
+            continue  # secret-only orphan: not an entry, same as before
         out[venue_id] = {
             "credentials": True,
+            "pair": "SECRET_KEY" in sfx,
             "order": os.path.isfile(os.path.join(lib_root, f"order_{venue_id}.py")),
             "account": os.path.isfile(os.path.join(lib_root, f"account_{venue_id}.py")),
         }

@@ -19,6 +19,7 @@ Secrets: `credentials` carries an exchange key to the workspace .env. It is
 never printed, never echoed, and never included in an error message.
 """
 import json
+import contextlib
 import os
 import platform
 import re
@@ -29,6 +30,11 @@ import threading
 import time
 import urllib.error
 import urllib.request
+
+try:
+    import fcntl
+except ImportError:  # Windows — no concurrent .env writer there (first-boot
+    fcntl = None     # secret injection is a Linux systemd unit)
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 WORKSPACE_STATE = os.path.join(WORKSPACE, "state")
@@ -93,43 +99,162 @@ def _cmd_resume(args):
     return "resumed"
 
 
+_CRED_ENV_RE = re.compile(r"^([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY|PASSPHRASE)$", re.IGNORECASE)
+# Only the platform's own data-API keys survive a venue bind. TW brokers are
+# in the eviction pool like any exchange — one bound trading venue per
+# machine, TW included (2026-08-07 拍板).
+_CRED_KEEP_IDS = {"BLAVE"}
+
+
+@contextlib.contextmanager
+def _env_lock():
+    """Serialize every .env read-modify-write against first-boot.sh, which
+    flocks the same .env.lock around its secret injection. Without this the
+    injector's write can land inside our read→replace window (or vice versa)
+    and either side's lines get eaten — 29026 2026-08-07 lost blave_api_key
+    exactly this way. Lock file, not .env itself: our writes os.replace the
+    .env inode, and a lock on a replaced inode guards nothing."""
+    if fcntl is None:
+        yield
+        return
+    fd = os.open(os.path.join(WORKSPACE, ".env.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # closing the fd releases the flock
+
+
+def _venue_cred_ids(lines, skip_ids=frozenset()):
+    """IDs holding a complete credential pair ({ID}_API_KEY + {ID}_SECRET_KEY)
+    in these .env lines — the pair IS a bound venue, TW brokers same pool; a
+    lone key with no secret sibling is a service key (OPENAI_API_KEY), not a
+    venue. Single source for both the eviction sweep and bound/unbound checks.
+    Known gap (audit B6): Capital's credentials (capital_id/capital_password)
+    don't fit the pair shape — they arrive via chat handoff, never through the
+    credentials command, so eviction can't see them; fixing that waits on the
+    capital credential shape being standardized."""
+    suffixes = {}
+    for l in lines:
+        m = _CRED_ENV_RE.match(l.split("=", 1)[0].strip())
+        if m and m.group(1).upper() not in _CRED_KEEP_IDS | skip_ids:
+            suffixes.setdefault(m.group(1).upper(), set()).add(m.group(2).upper())
+    return {i for i, s in suffixes.items() if {"API_KEY", "SECRET_KEY"} <= s}
+
+
 def _cmd_credentials(args):
     """Write exchange keys into the workspace .env.
 
-    Merge, never replace: .env also holds the Blave data-API keys injected at
-    first boot, and clobbering those would take the machine's market data down
-    with it.
+    Merge for everything EXCEPT other venues' credentials: .env also holds
+    the Blave data-API keys injected at first boot (clobbering those would
+    take the machine's market data down with it), but a single bound trading
+    venue per machine is the designed case — TW brokers included. Binding
+    venue X evicts every other venue's credentials in the same write, or a
+    Binance→BingX switch leaves BINANCE_* behind and puts the machine on
+    venue_wiring.detect_venue's multiple-venues warning path. Evicted =
+    complete credential PAIRS only ({ID}_API_KEY with an {ID}_SECRET_KEY
+    sibling, plus that ID's _PASSPHRASE) — that shape IS the previously bound
+    venue(s); singleton service keys (OPENAI_API_KEY — no secret sibling),
+    venue support keys (SINOPAC_CA_PATH), user-added lines and comments all
+    survive, deliberately.
     """
     env = args.get("env")
     if not isinstance(env, dict) or not env:
         raise ValueError("credentials needs an env mapping")
-    for k in env:
-        if not isinstance(k, str) or not k.replace("_", "").isalnum():
+    for k, v in env.items():
+        # ASCII-only on purpose: a Unicode-alnum key passes isalnum() but never
+        # matches _CRED_ENV_RE — keys the eviction sweep can't see
+        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_]+", k):
             raise ValueError("bad env key")
+        # a newline in a value would smuggle extra .env lines past every check
+        # here (e.g. a fresh BLAVE_API_KEY= line)
+        if not isinstance(v, str) or "\n" in v or "\r" in v:
+            raise ValueError("bad env value")
+    writing = {m.group(1).upper() for k in env if (m := _CRED_ENV_RE.match(k))}
+    # the remove side refuses to drop BLAVE_*; the write side must refuse to
+    # overwrite it too, or a custom exchange named "Blave" clobbers the
+    # platform keys
+    if writing & _CRED_KEEP_IDS:
+        raise ValueError("platform credentials are not writable here")
 
     path = os.path.join(WORKSPACE, ".env")
-    lines = []
-    try:
-        with open(path) as f:
-            lines = f.read().splitlines()
-    except OSError:
-        pass
-    keys = set(env)
-    kept = [l for l in lines if l.split("=", 1)[0].strip() not in keys]
-    kept += [f"{k}={env[k]}" for k in env]
-    with open(path, "w") as f:
-        f.write("\n".join(kept) + "\n")
-    os.chmod(path, 0o600)
+    with _env_lock():
+        lines = []
+        try:
+            with open(path) as f:
+                lines = f.read().splitlines()
+        except FileNotFoundError:
+            pass  # first bind on a fresh workspace
+        except OSError as e:
+            # fail-closed like _cmd_amounts: rebuilding from just this payload
+            # would silently drop the BLAVE data-API keys. A retry costs nothing.
+            raise RuntimeError(f".env unreadable ({type(e).__name__}) — try again")
+        # casefold: an agent-hand-written lowercase twin of the same key must be
+        # replaced, not left to coexist with the new line
+        keys_cf = {k.casefold() for k in env}
+        kept = [l for l in lines if l.split("=", 1)[0].strip().casefold() not in keys_cf]
+        evicted_ids = set()
+        # Bind = the FINAL state pairs up an id this payload touches — judged
+        # on kept+payload, not the payload alone, or a two-step single-key
+        # write (API_KEY now, SECRET_KEY later) completes a pair without ever
+        # tripping eviction (audit B1). A pure service-key write (no pair
+        # formed with its own id) still evicts nothing.
+        binding = _venue_cred_ids(kept + [k + "=" for k in env]) & writing
+        if binding:  # this write binds a trading venue
+            evict = _venue_cred_ids(kept, skip_ids=writing)
+            if evict:
+
+                def _stale_cred(line):
+                    m = _CRED_ENV_RE.match(line.split("=", 1)[0].strip())
+                    return bool(m) and m.group(1).upper() in evict
+
+                kept = [l for l in kept if not _stale_cred(l)]
+                evicted_ids = {i.lower() for i in evict}
+        kept += [f"{k}={env[k]}" for k in env]
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("\n".join(kept) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
+    if evicted_ids:
+        # eviction == unbind for the old venue: halt like credentials_remove
+        # does, or strategies still routed there run blind until auto-halt
+        # trips (~15 min)
+        try:
+            from lib.guard import trip_halt
+            trip_halt(f"venue rebind ({'/'.join(sorted(evicted_ids))} evicted)", "web")
+        except Exception as e:
+            print(f"[credentials] rebind-halt failed: {e}", file=sys.stderr)
+        # …and the evicted venue must not linger as a routing target (audit
+        # B2): empty those exchanges values, same as _cmd_amounts does for
+        # unbound venues. Best-effort like the halt — the keys are already
+        # swapped, failing the whole command here helps nobody.
+        cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+        try:
+            with open(cpath) as f:
+                cfg = json.load(f)
+            if isinstance(cfg, dict) and isinstance(cfg.get("exchanges"), dict):
+                cleared = {k: ("" if v in evicted_ids else v)
+                           for k, v in cfg["exchanges"].items()}
+                if cleared != cfg["exchanges"]:
+                    cfg["exchanges"] = cleared
+                    with open(cpath + ".tmp", "w") as f:
+                        json.dump(cfg, f, indent=2)
+                    os.replace(cpath + ".tmp", cpath)  # atomic, reconciler-watched
+        except (OSError, ValueError) as e:
+            _log(f"evicted-venue routing clear failed: {type(e).__name__}: {e}")
     # rebind restores the signal schedules the unbind cleared (audit: without
     # this, 解除→重綁→啟動下單 trades real money on signals frozen at unbind
-    # time — the exact quiet failure scheduled_strategies() exists to surface)
+    # time — the exact quiet failure scheduled_strategies() exists to surface).
+    # Gated on a venue actually being bound now (pair rule): a service-key
+    # write on an unbound machine must not wake the schedules back up.
     try:
         with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json"),
                   encoding="utf-8") as f:
             amounts = json.load(f).get("amounts") or {}
-        if amounts:
+        if amounts and _venue_cred_ids(kept):
             _sync_strategy_crons(set(amounts))
-    except (OSError, ValueError):
+    except (OSError, ValueError, AttributeError):
         pass
     return f"credentials={len(env)}"  # count only — never the keys or values
 
@@ -318,10 +443,10 @@ def _cmd_amounts(args):
     bound = set()
     try:
         with open(os.path.join(WORKSPACE, ".env")) as f:
-            for line in f:
-                m = re.match(r"\s*([A-Za-z0-9_]+)_API_KEY\s*=", line, re.IGNORECASE)
-                if m and m.group(1).upper() != "BLAVE":
-                    bound.add(m.group(1).lower())
+            # pair rule (_venue_cred_ids), same as everywhere else: a lone
+            # OPENAI_API_KEY must not get inferred as a venue and written
+            # into exchanges as a routing target
+            bound = {i.lower() for i in _venue_cred_ids(f.read().splitlines())}
     except OSError:
         pass
     old = {k: (v if v in bound else "") for k, v in old.items()}
@@ -403,7 +528,7 @@ def _cmd_execution(args):
                 raise ValueError("twap duration_min must be a number")
             try:
                 dur = int(dur)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):  # Overflow: json Infinity
                 raise ValueError("twap duration_min must be a number")
             clean[k] = {"type": "twap", "duration_min": min(max(dur, 1), 1440)}
         elif typ == "custom":
@@ -482,19 +607,24 @@ def _cmd_credentials_remove(args):
         or not all(isinstance(n, str) and n.replace("_", "").isalnum() for n in names)
     ):
         raise ValueError("credentials_remove needs a list of env names")
-    drop = {n for n in names if not n.upper().startswith("BLAVE_")}
+    # casefold like the write side: a MixedCase line (agent-hand-written
+    # Gateio_Api_Key) must still match its unbind name
+    drop = {n.casefold() for n in names if not n.upper().startswith("BLAVE_")}
 
     path = os.path.join(WORKSPACE, ".env")
-    try:
-        with open(path) as f:
-            lines = f.read().splitlines()
-    except OSError:
-        return "credentials_remove=0"
-    kept = [l for l in lines if l.split("=", 1)[0].strip() not in drop]
-    removed = len(lines) - len(kept)
-    with open(path, "w") as f:
-        f.write("\n".join(kept) + "\n")
-    os.chmod(path, 0o600)
+    with _env_lock():
+        try:
+            with open(path) as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return "credentials_remove=0"
+        kept = [l for l in lines if l.split("=", 1)[0].strip().casefold() not in drop]
+        removed = len(lines) - len(kept)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("\n".join(kept) + "\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
 
     # Prune the unbound venues from account.json right away — the account
     # reader only rewrites it every 2 min, and until then the web would keep
@@ -531,12 +661,13 @@ def _cmd_credentials_remove(args):
             print(f"[credentials_remove] unbind-halt failed: {e}", file=sys.stderr)
         # NO venue left → stop the signal-refresh schedules too (Wei
         # 2026-08-05: halt keeps signals breathing, unbind kills them — an
-        # unbound machine updating targets reads as "still trading"). The next
-        # amounts save after a rebind re-syncs the crons, so resume costs
-        # nothing; partial unbind on a multi-venue machine keeps them.
-        if not any(l.split("=", 1)[0].strip().upper().endswith("_API_KEY")
-                   and not l.split("=", 1)[0].strip().upper().startswith("BLAVE")
-                   for l in kept):
+        # unbound machine updating targets reads as "still trading"). A rebind
+        # (_cmd_credentials) or the next amounts save re-syncs the crons, so
+        # resume costs nothing; partial unbind on a multi-venue machine keeps
+        # them. "Venue left" is the pair rule — a lingering service key
+        # (OPENAI_API_KEY) must not read as still-bound and keep schedules
+        # firing on a machine that can no longer trade.
+        if not _venue_cred_ids(kept):
             _sync_strategy_crons(set())
             # …and zero the 下單設定 itself (Wei 2026-08-06): users don't
             # bounce between venues, and members lingering with no venue bound
@@ -905,8 +1036,9 @@ def dispatch(command):
     # (panic button dead) or writes HALT into the bridge's cwd (halt silently
     # ineffective) — measured in audit, P0. credentials_remove is in the list
     # for its unbind-halt (audit H2: outside it, that halt was inert — either
-    # a swallowed ImportError or a HALT file in the wrong cwd).
-    if cmd in ("halt", "resume", "close_all", "credentials_remove"):
+    # a swallowed ImportError or a HALT file in the wrong cwd); credentials for
+    # the same reason (its rebind-eviction halt).
+    if cmd in ("halt", "resume", "close_all", "credentials", "credentials_remove"):
         return _in_workspace(fn, args)
     return fn(args)
 
