@@ -278,8 +278,8 @@ def _cmd_amounts(args):
     try:
         with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
             prev = set((json.load(f).get("amounts") or {}))
-    except (OSError, ValueError):
-        pass
+    except (OSError, ValueError, AttributeError):
+        pass  # kickoff detection only — the main read below fail-closes properly
     clean = {}
     for k, v in amounts.items():
         # Names are interpolated into crontab lines and workspace paths —
@@ -299,8 +299,17 @@ def _cmd_amounts(args):
     try:
         with open(path) as f:
             cfg = json.load(f)
-    except (OSError, ValueError):
-        cfg = {}
+    except FileNotFoundError:
+        cfg = {}  # fresh machine — first write creates the file
+    except (OSError, ValueError) as e:
+        # fail-closed like _cmd_execution: unreadable can mean manager.py
+        # mid-write — rebuilding from {} here would wipe keys this command
+        # doesn't own (execution, asset_specs). A retry costs nothing.
+        raise RuntimeError(
+            f"portfolio config unreadable ({type(e).__name__}) — try again"
+        )
+    if not isinstance(cfg, dict):
+        raise RuntimeError("portfolio config unreadable (not a dict) — try again")
     cfg["amounts"] = clean
     old = cfg.get("exchanges") or {}
     # Only inherit venues that are STILL BOUND (keys in .env) — after 解除綁定
@@ -352,6 +361,84 @@ def _cmd_amounts(args):
             except OSError as e:
                 _log(f"kickoff run failed for {n}: {type(e).__name__}")
     return f"amounts={len(clean)}"
+
+
+_EXEC_MODULE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
+
+
+def _cmd_execution(args):
+    """每策略下單方式 — the 下單設定 page's execution-style setting.
+
+    Whole-map replace, like `amounts`: the web sends the complete non-market
+    list on every save, so an empty dict is legal ("everyone back to market")
+    and is written as {} rather than dropping the key — one shape, no
+    absent-vs-empty ambiguity downstream. Validation is all-or-nothing: one
+    bad spec rejects the whole payload, never a partial write. Whether a
+    custom module actually exists (manager/executors/<module>.py) is the
+    executor's problem at run time, not this write's.
+    """
+    execution = args.get("execution")
+    if not isinstance(execution, dict):
+        raise ValueError("execution needs a {strategy: spec} mapping")
+    if len(execution) > 200:
+        raise ValueError("too many execution entries")
+    clean = {}
+    for k, spec in execution.items():
+        # Same name rule as _cmd_amounts — these are strategy dir names, and
+        # the enqueue API passes args through unvalidated.
+        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k):
+            raise ValueError("bad strategy name")
+        if not isinstance(spec, dict):
+            raise ValueError("execution spec must be an object")
+        typ = spec.get("type")
+        if typ == "market":
+            clean[k] = {"type": "market"}
+        elif typ == "twap":
+            dur = spec.get("duration_min")
+            # Mirror the machine-side consumer (lib/execute.py: int() + clamp to
+            # 1..1440) — an agent-hand-written config with 2000 or "30" must
+            # survive the web's whole-map re-save, not get silently dropped by a
+            # stricter gate here. bool is an int subclass — True would int() to 1.
+            if isinstance(dur, bool):
+                raise ValueError("twap duration_min must be a number")
+            try:
+                dur = int(dur)
+            except (TypeError, ValueError):
+                raise ValueError("twap duration_min must be a number")
+            clean[k] = {"type": "twap", "duration_min": min(max(dur, 1), 1440)}
+        elif typ == "custom":
+            module = spec.get("module")
+            if not isinstance(module, str) or not _EXEC_MODULE_RE.fullmatch(module):
+                raise ValueError("bad custom executor module name")
+            clean[k] = {"type": "custom", "module": module}
+        elif typ == "chase":
+            clean[k] = {"type": "chase"}
+        else:
+            raise ValueError("execution type must be market/twap/custom/chase")
+
+    path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+    try:
+        with open(path) as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        cfg = {}  # fresh machine — first write creates the file
+    except (OSError, ValueError) as e:
+        # fail-closed like _cmd_delete_strategy: manager.py writes this file
+        # non-atomically, so unreadable can mean mid-write — falling back to {}
+        # here would clobber amounts/exchanges, and this command owns only the
+        # `execution` key. A retry costs nothing.
+        raise RuntimeError(
+            f"portfolio config unreadable ({type(e).__name__}) — try again"
+        )
+    if not isinstance(cfg, dict):
+        raise RuntimeError("portfolio config unreadable (not a dict) — try again")
+    cfg["execution"] = clean
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, path)  # atomic: the reconciler mtime-watches + json-loads this
+    return f"execution={len(clean)}"
 
 
 def _stop_reconciler():
@@ -797,6 +884,7 @@ HANDLERS = {
     "resume": _cmd_resume,
     "close_all": _cmd_close_all,
     "amounts": _cmd_amounts,
+    "execution": _cmd_execution,
     "credentials": _cmd_credentials,
     "credentials_remove": _cmd_credentials_remove,
     "retest_accounts": _cmd_retest_accounts,
