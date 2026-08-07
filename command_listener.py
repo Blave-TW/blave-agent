@@ -491,6 +491,17 @@ def _cmd_amounts(args):
 _EXEC_MODULE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 
 
+def _execution_engine_ready():
+    """True when the workspace's lib/execute.py carries the execution-style
+    dispatch layer. String probe, never an import — importing runs workspace
+    code inside the listener."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "execute.py"), encoding="utf-8") as f:
+            return "def dispatch_order" in f.read()
+    except OSError:
+        return False
+
+
 def _cmd_execution(args):
     """每策略下單方式 — the 下單設定 page's execution-style setting.
 
@@ -563,6 +574,21 @@ def _cmd_execution(args):
     with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2)
     os.replace(tmp, path)  # atomic: the reconciler mtime-watches + json-loads this
+    # Old workspaces predate the execution-style dispatch layer: the reconciler
+    # there ignores this config key entirely, so a non-market setting would
+    # look saved yet trade as market, silently. The setting is still WRITTEN
+    # (it activates the moment the workspace updates) — but the user gets told.
+    if any(s.get("type") != "market" for s in clean.values()) \
+            and not _execution_engine_ready():
+        def _notice():
+            from lib.notify import send_text
+            send_text("此機器的執行引擎尚未更新,下單方式設定暫不會生效"
+                      "——請跟 agent 說『更新 workspace』")
+        try:
+            _in_workspace(_notice)  # lib.notify resolves config relative to cwd
+        except Exception as e:
+            _log(f"engine-outdated notice failed: {type(e).__name__}")
+        return f"execution={len(clean)} engine_outdated"
     return f"execution={len(clean)}"
 
 
