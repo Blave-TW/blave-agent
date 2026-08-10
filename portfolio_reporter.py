@@ -269,7 +269,10 @@ def build_report():
         "scheduled": None if sched is None else sorted(sched),
         "last_reconcile": last,
         # account_reader.py's output verbatim (None until its first run).
-        # {read_at, venues: {id: {ok, equity, currency, positions, error}}}
+        # {read_at, venues: {id: {ok, equity, currency, positions, holdings,
+        # flows, error}}} — `flows` (external deposit/withdraw rolling window,
+        # absent on libs without get_flows) rides along for the platform's
+        # dual-track PnL ingest; no reporter change, shipped as-is.
         "account": _read_json(os.path.join(WORKSPACE, "manager", "account.json")),
         # newest-last order failures (lib/portfolio._record_order_error) — the
         # page must show a failed order, not sit silently on an empty 實際欄

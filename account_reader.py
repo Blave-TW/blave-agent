@@ -26,6 +26,16 @@ import time
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 OUT_PATH = os.path.join(WORKSPACE, "manager", "account.json")
+# 出入金流水的機器端狀態:每所的增量游標(上次成功拉取的時點)+ 供上傳的
+# rolling window。與 account.json 同目錄、存活過 reboot;新機被 clear 後不存在,
+# 首拉走 INITIAL_LOOKBACK。lib.account_*.get_flows(env, since) 回
+# [{ts, direction 'in'/'out', currency, amount, txid}],四所合約一致。
+FLOW_STATE_PATH = os.path.join(WORKSPACE, "manager", "flow_state.json")
+INITIAL_LOOKBACK_S = 2 * 24 * 3600   # 首拉回看:PnL baseline=launch,更早的不在曲線內
+FLOW_PULL_INTERVAL_S = 3600          # get_flows 是重呼叫(89 天滑窗多頁),每小時拉一次
+REPULL_OVERLAP_S = 2 * 24 * 3600     # 每次往前多拉 2 天,接住晚結算的 deposit(status 6)
+SHIP_WINDOW_S = 35 * 24 * 3600       # rolling window 只留近 35 天,平台 txid dedup 自癒漏送
+MAX_SHIP_FLOWS = 200                 # 單所上傳上限,擋 account.json 膨脹
 
 # Same discovery rule as portfolio_reporter.venues(): a venue exists iff
 # {PREFIX}_API_KEY is in .env (case-insensitive — sinopac_api_key is lowercase),
@@ -54,6 +64,86 @@ def _read_env(path):
     except OSError:
         pass
     return env
+
+
+def _read_flow_state():
+    try:
+        with open(FLOW_STATE_PATH) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_flow_state(state):
+    tmp = FLOW_STATE_PATH + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, FLOW_STATE_PATH)  # atomic
+    except OSError as e:
+        _log(f"flow_state write failed: {type(e).__name__}")
+
+
+def _clean_flow(raw):
+    """一筆 lib get_flows 回傳的最小驗證+正規化;壞的回 None(不上傳污染平台)。"""
+    if not isinstance(raw, dict):
+        return None
+    direction = raw.get("direction")
+    txid = raw.get("txid")
+    currency = raw.get("currency")
+    try:
+        ts = int(raw.get("ts"))
+        amount = float(raw.get("amount"))
+    except (TypeError, ValueError):
+        return None
+    if direction not in ("in", "out") or not txid or not currency:
+        return None
+    if not math.isfinite(amount) or amount <= 0 or ts <= 0:
+        return None
+    return {"ts": ts, "direction": direction, "currency": str(currency)[:20],
+            "amount": amount, "txid": str(txid)[:191]}
+
+
+def _pull_flows(vid, mod, env, flow_state):
+    """拉某所的出入金增量、維護 rolling window,回該所要上傳的 flows list。
+
+    相容防呆:lib 沒有 get_flows(舊版)→ 回 None,account.json 就不放 flows 鍵,
+    平台端當「沒送流水」走 fallback。get_flows 拋錯→保留現有 window 不推游標,
+    best-effort 不拖垮 equity/positions(同 holdings 慣例)。
+    """
+    if not hasattr(mod, "get_flows"):
+        return None
+
+    now = int(time.time())
+    st = flow_state.get(vid) or {}
+    cursor = st.get("cursor_ts")
+    window = [f for f in (st.get("flows") or []) if isinstance(f, dict)]
+
+    # 節流:距上次成功拉取不到一小時就不打交易所,只沿用/修剪既有 window
+    if isinstance(cursor, (int, float)) and now - cursor < FLOW_PULL_INTERVAL_S:
+        window = [f for f in window if int(f.get("ts", 0)) >= now - SHIP_WINDOW_S]
+        flow_state[vid] = {"cursor_ts": cursor, "flows": window[-MAX_SHIP_FLOWS:]}
+        return window[-MAX_SHIP_FLOWS:]
+
+    since = int(cursor - REPULL_OVERLAP_S) if isinstance(cursor, (int, float)) \
+        else now - INITIAL_LOOKBACK_S
+    try:
+        fetched = mod.get_flows(env, max(since, 0))
+    except Exception as e:
+        _log(f"{vid}: get_flows failed ({type(e).__name__}); keeping window")
+        return window[-MAX_SHIP_FLOWS:] if window else []
+
+    # 併進 window,txid 去重(平台也 dedup,這裡先省頻寬),剪掉超窗的
+    by_txid = {f["txid"]: f for f in window if f.get("txid")}
+    for raw in fetched or []:
+        cf = _clean_flow(raw)
+        if cf:
+            by_txid[cf["txid"]] = cf
+    merged = sorted(by_txid.values(), key=lambda f: f["ts"])
+    merged = [f for f in merged if f["ts"] >= now - SHIP_WINDOW_S][-MAX_SHIP_FLOWS:]
+    flow_state[vid] = {"cursor_ts": now, "flows": merged}  # 成功才推游標
+    return merged
 
 
 def _venues(env):
@@ -141,9 +231,10 @@ def _norm_holdings(raw):
     return out[:50]
 
 
-def read_venue(vid, env):
+def read_venue(vid, env, flow_state=None):
     """One venue → {ok, equity, currency, accounts, positions, holdings,
-    error}. Never raises."""
+    flows, error}. Never raises. `flows` absent when the lib has no get_flows
+    (older lib) — the platform reads that as "no flows shipped" and falls back."""
     entry = {
         "ok": False, "equity": None, "currency": None,
         "accounts": None, "positions": None, "holdings": None, "error": None,
@@ -178,6 +269,13 @@ def read_venue(vid, env):
             entry["holdings"] = _norm_holdings(mod.get_holdings(env))
         except Exception:
             pass
+    # External deposit/withdraw flows for the dual-track PnL — best-effort and
+    # absent-when-unsupported, same contract as holdings above. flow_state is
+    # mutated in place so the caller can persist the advanced cursor.
+    if flow_state is not None:
+        flows = _pull_flows(vid, mod, env, flow_state)
+        if flows is not None:
+            entry["flows"] = flows
     entry["ok"] = True
     return entry
 
@@ -186,13 +284,13 @@ class _VenueTimeout(Exception):
     pass
 
 
-def _read_venue_timed(vid, env, seconds=60):
+def _read_venue_timed(vid, env, seconds=60, flow_state=None):
     """Per-venue wall clock: one hanging account module must not starve the
     other venues into the unit's global TimeoutStartSec (which would kill the
     whole run and write nothing). SIGALRM is Linux-only; without it this
     degrades to the unit-level timeout."""
     if not hasattr(signal, "SIGALRM"):
-        return read_venue(vid, env)
+        return read_venue(vid, env, flow_state)
 
     def _raise(signum, frame):
         raise _VenueTimeout(f"account_{vid} exceeded {seconds}s")
@@ -200,7 +298,7 @@ def _read_venue_timed(vid, env, seconds=60):
     old = signal.signal(signal.SIGALRM, _raise)
     signal.alarm(seconds)
     try:
-        return read_venue(vid, env)
+        return read_venue(vid, env, flow_state)
     except _VenueTimeout as e:
         # fired between read_venue's own try blocks — record it here
         return {"ok": False, "equity": None, "currency": None, "accounts": None,
@@ -217,9 +315,10 @@ def main():
     env = _read_env(os.path.join(WORKSPACE, ".env"))
     _ENV_VALUES.extend(sorted((v for v in env.values() if v), key=len, reverse=True))
     venues = _venues(env)
+    flow_state = _read_flow_state()  # _pull_flows mutates in place (cursor + window)
     out = {"read_at": int(time.time()), "venues": {}}
     for vid in venues:
-        entry = _read_venue_timed(vid, env)
+        entry = _read_venue_timed(vid, env, flow_state=flow_state)
         out["venues"][vid] = entry
         _log(f"{vid}: {'ok' if entry['ok'] else entry['error']['stage'] + ' failed'}")
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
@@ -227,6 +326,9 @@ def main():
     with open(tmp, "w") as f:
         json.dump(out, f)
     os.replace(tmp, OUT_PATH)  # atomic: the reporter never sees a half-written file
+    # Drop cursors for venues no longer bound (unbound → key gone from .env) so a
+    # stale window can't resurface if the venue is rebound later.
+    _write_flow_state({v: flow_state[v] for v in venues if v in flow_state})
     _log(f"wrote {len(venues)} venue(s)")
 
 
