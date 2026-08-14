@@ -31,6 +31,11 @@ OUT_PATH = os.path.join(WORKSPACE, "manager", "account.json")
 # 首拉走 INITIAL_LOOKBACK。lib.account_*.get_flows(env, since) 回
 # [{ts, direction 'in'/'out', currency, amount, txid}],四所合約一致。
 FLOW_STATE_PATH = os.path.join(WORKSPACE, "manager", "flow_state.json")
+# Durable one-way ratchet: has this venue EVER produced ok:True, across all runs.
+# Lets the web tell "never-once-succeeded (still mid manual onboarding, e.g. Capital)"
+# apart from "was working, just broke now" — both look like ok:False on their own.
+# Never pruned when a venue is unbound (unlike flow_state) — it's a permanent record.
+EVER_OK_PATH = os.path.join(WORKSPACE, "manager", "venue_ever_ok.json")
 INITIAL_LOOKBACK_S = 2 * 24 * 3600   # 首拉回看:PnL baseline=launch,更早的不在曲線內
 FLOW_PULL_INTERVAL_S = 3600          # get_flows 是重呼叫(89 天滑窗多頁),每小時拉一次
 REPULL_OVERLAP_S = 2 * 24 * 3600     # 每次往前多拉 2 天,接住晚結算的 deposit(status 6)
@@ -83,6 +88,25 @@ def _write_flow_state(state):
         os.replace(tmp, FLOW_STATE_PATH)  # atomic
     except OSError as e:
         _log(f"flow_state write failed: {type(e).__name__}")
+
+
+def _read_ever_ok():
+    try:
+        with open(EVER_OK_PATH) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_ever_ok(state):
+    tmp = EVER_OK_PATH + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, EVER_OK_PATH)  # atomic
+    except OSError as e:
+        _log(f"ever_ok write failed: {type(e).__name__}")
 
 
 def _clean_flow(raw):
@@ -316,9 +340,13 @@ def main():
     _ENV_VALUES.extend(sorted((v for v in env.values() if v), key=len, reverse=True))
     venues = _venues(env)
     flow_state = _read_flow_state()  # _pull_flows mutates in place (cursor + window)
+    ever_ok = _read_ever_ok()
     out = {"read_at": int(time.time()), "venues": {}}
     for vid in venues:
         entry = _read_venue_timed(vid, env, flow_state=flow_state)
+        if entry["ok"]:
+            ever_ok[vid] = True  # one-way ratchet — never reset back to False
+        entry["ever_ok"] = ever_ok.get(vid, False)
         out["venues"][vid] = entry
         _log(f"{vid}: {'ok' if entry['ok'] else entry['error']['stage'] + ' failed'}")
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
@@ -329,6 +357,9 @@ def main():
     # Drop cursors for venues no longer bound (unbound → key gone from .env) so a
     # stale window can't resurface if the venue is rebound later.
     _write_flow_state({v: flow_state[v] for v in venues if v in flow_state})
+    # ever_ok is a permanent record, unlike flow_state — do NOT prune unbound venues;
+    # a Capital user who unbinds/rebinds must not lose "already finished onboarding".
+    _write_ever_ok(ever_ok)
     _log(f"wrote {len(venues)} venue(s)")
 
 
