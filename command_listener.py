@@ -99,11 +99,18 @@ def _cmd_resume(args):
     return "resumed"
 
 
-_CRED_ENV_RE = re.compile(r"^([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY|PASSPHRASE)$", re.IGNORECASE)
+_CRED_ENV_RE = re.compile(
+    r"^([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY|PASSWORD|PASSPHRASE)$", re.IGNORECASE
+)
 # Only the platform's own data-API keys survive a venue bind. TW brokers are
 # in the eviction pool like any exchange — one bound trading venue per
-# machine, TW included (2026-08-07 拍板).
-_CRED_KEEP_IDS = {"BLAVE"}
+# machine, TW included (2026-08-07 拍板). ADMIN added defensively after the
+# B6 PASSWORD-suffix fix made `admin_password` (RDP recovery cred on older
+# machines) match _CRED_ENV_RE for the first time: harmless today (no
+# admin_api_key sibling exists anywhere), but one future admin_api_key write
+# away from being read as a "bound venue" and silently evicted by an unrelated
+# rebind — see the RDP Password Incident this fleet already had.
+_CRED_KEEP_IDS = {"BLAVE", "ADMIN"}
 
 
 @contextlib.contextmanager
@@ -126,20 +133,24 @@ def _env_lock():
 
 
 def _venue_cred_ids(lines, skip_ids=frozenset()):
-    """IDs holding a complete credential pair ({ID}_API_KEY + {ID}_SECRET_KEY)
-    in these .env lines — the pair IS a bound venue, TW brokers same pool; a
-    lone key with no secret sibling is a service key (OPENAI_API_KEY), not a
-    venue. Single source for both the eviction sweep and bound/unbound checks.
-    Known gap (audit B6): Capital's credentials (capital_id/capital_password)
-    don't fit the pair shape — they arrive via chat handoff, never through the
-    credentials command, so eviction can't see them; fixing that waits on the
-    capital credential shape being standardized."""
+    """IDs holding a complete credential pair ({ID}_API_KEY + one of
+    {ID}_SECRET_KEY / {ID}_PASSWORD / {ID}_PASSPHRASE) in these .env lines —
+    the pair IS a bound venue, TW brokers same pool; a lone key with no
+    secret-shaped sibling is a service key (OPENAI_API_KEY), not a venue.
+    Single source for both the eviction sweep and bound/unbound checks.
+    Capital's shape is {ID}_API_KEY + {ID}_PASSWORD (canonical env names
+    decided 2026-08-14, references/capital-broker.md) — PASSWORD joined the
+    accepted secret suffixes for this (fixes audit B6: capital never read as
+    bound, so every 下單設定 save wiped its `exchanges` routing)."""
     suffixes = {}
     for l in lines:
         m = _CRED_ENV_RE.match(l.split("=", 1)[0].strip())
         if m and m.group(1).upper() not in _CRED_KEEP_IDS | skip_ids:
             suffixes.setdefault(m.group(1).upper(), set()).add(m.group(2).upper())
-    return {i for i, s in suffixes.items() if {"API_KEY", "SECRET_KEY"} <= s}
+    return {
+        i for i, s in suffixes.items()
+        if "API_KEY" in s and s & {"SECRET_KEY", "PASSWORD", "PASSPHRASE"}
+    }
 
 
 def _cmd_credentials(args):
@@ -152,9 +163,9 @@ def _cmd_credentials(args):
     venue X evicts every other venue's credentials in the same write, or a
     Binance→BingX switch leaves BINANCE_* behind and puts the machine on
     venue_wiring.detect_venue's multiple-venues warning path. Evicted =
-    complete credential PAIRS only ({ID}_API_KEY with an {ID}_SECRET_KEY
-    sibling, plus that ID's _PASSPHRASE) — that shape IS the previously bound
-    venue(s); singleton service keys (OPENAI_API_KEY — no secret sibling),
+    complete credential PAIRS only ({ID}_API_KEY with an {ID}_SECRET_KEY /
+    {ID}_PASSWORD / {ID}_PASSPHRASE sibling) — that shape IS the previously
+    bound venue(s); singleton service keys (OPENAI_API_KEY — no secret sibling),
     venue support keys (SINOPAC_CA_PATH), user-added lines and comments all
     survive, deliberately.
     """
@@ -391,9 +402,23 @@ def _cmd_amounts(args):
     `amounts` is canonical: {strategy: dollars at position=1}; the reconciler
     sizes targets as amount × position (lib/portfolio.strategy_amounts) —
     what the user typed is what trades, and it never drifts with equity.
-    Doubles as membership: an amount > 0 puts the strategy in the portfolio
-    and routes it; the venue is inherited from existing members (one
-    portfolio, one account — membership never silently splits across venues).
+    Doubles as membership: a strategy KEY present in `amounts` (any value,
+    including 0 — 0 means "paused, converge to flat") puts it in the
+    portfolio and routes it. Flattening mechanics differ by market: futures
+    read `actual` from a live exchange position query every round, so amount=0
+    closes it out directly; spot has no such blanket query and instead relies
+    on `lib/portfolio.spot_scope`'s persisted-scope sell-down (the same
+    exit-on-removal path a dropped strategy takes) — it converges to flat over
+    one or more rounds, down to dust below the reconcile threshold, provided
+    the venue lib ships a spot layer (`order.get_spot_balances`). The venue is
+    inherited from existing members
+    (one portfolio, one account — membership never silently splits across
+    venues). Only a key's ABSENCE (unpicked in the picker) drops routing —
+    amount=0 must NOT drop it, or the reconciler (and Capital's
+    _is_capital_routed venue-detection, which reads `exchanges` alone) loses
+    the venue to even query/flatten the position it's supposed to zero out
+    (bug hit 2026-08-14: pausing a strategy at amount=0 wiped `exchanges` and
+    stranded the reconciler with no venue to reconcile against).
     """
     amounts = args.get("amounts")
     # empty dict is legal: "the portfolio is empty" (every strategy unpicked)
@@ -457,7 +482,7 @@ def _cmd_amounts(args):
         # or old venue unbound): fall back to the machine's one bound exchange.
         default_venue = next(iter(bound))
     cfg["exchanges"] = {
-        n: (old.get(n) or default_venue) for n, amt in clean.items() if amt > 0
+        n: (old.get(n) or default_venue) for n in clean
     }
     cfg.setdefault("asset_specs", {})
     os.makedirs(os.path.dirname(path), exist_ok=True)

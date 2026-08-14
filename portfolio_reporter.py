@@ -158,7 +158,17 @@ def recent_orders():
 # counts as a venue (matching command_listener / account_reader — the account
 # read then fails VISIBLY instead of the venue silently vanishing), and the
 # key's value must never sit in a match group waiting for a debug print.
-_ENV_CRED_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY)\s*=", re.IGNORECASE)
+# PASSWORD/PASSPHRASE joined SECRET_KEY 2026-08-14 to mirror command_listener's
+# _venue_cred_ids fix (audit B6): Capital's pair shape is {ID}_API_KEY +
+# {ID}_PASSWORD, which this regex used to miss entirely, so venues() always
+# reported `pair: false` for a venue the reconciler already treats as bound
+# (web papers over that with a manual-venue workaround, see cxSpec below).
+# No crypto CX_VENUES entry uses a lone _PASSWORD as its secret field (all use
+# _SECRET_KEY / _PASSPHRASE — web/app/main/templates/agent/workspace.html
+# CX_VENUES, checked 2026-08-14), so this can't newly mispair any of those.
+_ENV_CRED_RE = re.compile(
+    r"^\s*([A-Za-z0-9_]+)_(API_KEY|SECRET_KEY|PASSWORD|PASSPHRASE)\s*=", re.IGNORECASE
+)
 # blave_api_key / blave_secret_key are the platform's own data-API credentials
 # (written at first boot), not an exchange — never report "blave" as a venue.
 _RESERVED_PREFIXES = {"BLAVE"}
@@ -177,11 +187,12 @@ def venues():
     ship on this machine — that is what actually lets the venue trade or read
     equity; storing the key is necessary but not sufficient for either.
 
-    `pair` is the bound-venue rule (API_KEY + SECRET_KEY under the same ID —
-    command_listener._venue_cred_ids' definition): only paired entries count
-    as a bound venue. Single-key entries stay reported (pair: false) so a
-    half-entered integration still shows up and its account-read failure is
-    visible instead of the venue silently vanishing.
+    `pair` is the bound-venue rule (API_KEY + one of SECRET_KEY / PASSWORD /
+    PASSPHRASE under the same ID — command_listener._venue_cred_ids'
+    definition): only paired entries count as a bound venue. Single-key
+    entries stay reported (pair: false) so a half-entered integration still
+    shows up and its account-read failure is visible instead of the venue
+    silently vanishing.
     """
     path = os.path.join(WORKSPACE, ".env")
     try:
@@ -201,7 +212,7 @@ def venues():
             continue  # secret-only orphan: not an entry, same as before
         out[venue_id] = {
             "credentials": True,
-            "pair": "SECRET_KEY" in sfx,
+            "pair": bool(sfx & {"SECRET_KEY", "PASSWORD", "PASSPHRASE"}),
             "order": os.path.isfile(os.path.join(lib_root, f"order_{venue_id}.py")),
             "account": os.path.isfile(os.path.join(lib_root, f"account_{venue_id}.py")),
         }
