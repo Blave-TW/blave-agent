@@ -991,10 +991,72 @@ def _cmd_retest_accounts(args):
     return "retesting"
 
 
+def _capital_admin_password():
+    """Administrator RDP password, needed so blaveclaw-reconciler can run as
+    Administrator (not LocalSystem) — Capital's SKCOM.dll binds its cert to
+    the Administrator identity, and a LocalSystem service fails login with
+    error 602 (references/manager.md broker exception). Newest machines keep
+    it in credentials/rdp_password.txt, sibling to WORKSPACE (same path
+    convention _cmd_retest_accounts uses to reach "current"); oldest
+    machines predate that file and keep it in .env as admin_password instead
+    (capital-broker.md) — _CRED_KEEP_IDS already special-cases ADMIN because
+    that key is real on this fleet. Never put the returned value in a log or
+    exception message."""
+    pw_path = os.path.join(os.path.dirname(WORKSPACE), "credentials",
+                           "rdp_password.txt")
+    try:
+        with open(pw_path, encoding="utf-8") as f:
+            pw = f.read().strip()
+        if pw:
+            return pw
+    except (OSError, ValueError):
+        pass
+    env_path = os.path.join(WORKSPACE, ".env")
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f.read().splitlines():
+                k, _, v = line.partition("=")
+                if k.strip().casefold() == "admin_password" and v.strip():
+                    return v.strip()
+    except (OSError, ValueError):
+        pass
+    raise RuntimeError(
+        "capital reconciler needs the Administrator RDP password, but "
+        f"neither {pw_path} nor .env's admin_password is available")
+
+
+def _nssm_run(step, timeout=15):
+    """Run one `nssm <step>` call with the error handling every caller in
+    this function needs. TimeoutExpired's own str() embeds the full argv it
+    was given — for the ObjectName step that's the plaintext Administrator
+    password — so it must never propagate uncaught up to the command
+    dispatch loop's generic `except Exception as e: _log(...)`."""
+    try:
+        out = subprocess.run(["nssm"] + step, capture_output=True,
+                             text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"nssm {' '.join(step[:3])} timed out")
+    if out.returncode != 0:
+        raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
+
+
 def _cmd_restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
     if platform.system() == "Windows":
+        try:
+            with open(os.path.join(WORKSPACE, "manager",
+                                   "portfolio_config.json")) as f:
+                routed = set((json.load(f).get("exchanges") or {}).values())
+        except (OSError, ValueError):
+            routed = set()
+        # Resolved once, up front, so the Administrator-identity fix applies
+        # whichever branch below runs — including the ALREADY-INSTALLED case
+        # (service set up for some other venue before Capital was routed
+        # through this machine), which is plausibly the more common path and
+        # was silently skipped by an earlier version of this function.
+        admin_pw = _capital_admin_password() if "capital" in routed else None
+
         # Self-bootstrap like the Linux tmux path: a machine where the agent
         # never set up auto-trading has no service yet — install it here
         # (references/manager.md sequence) instead of failing the button.
@@ -1008,32 +1070,19 @@ def _cmd_restart_reconciler(args):
             if not os.path.isfile(ps1):
                 raise RuntimeError("start_reconciler_windows.ps1 missing — "
                                    "workspace too old, run 更新 blave agent first")
-            # Capital's SKCOM.dll binds its cert to the Administrator identity;
-            # a LocalSystem service fails login with error 602 and the button
-            # would hand back a machine that auto-halts with no visible cause
-            # (references/manager.md broker exception). The agent-led install
-            # flow handles the ObjectName step; this button doesn't.
-            try:
-                with open(os.path.join(WORKSPACE, "manager",
-                                       "portfolio_config.json")) as f:
-                    routed = set((json.load(f).get("exchanges") or {}).values())
-            except (OSError, ValueError):
-                routed = set()
-            if "capital" in routed:
-                raise RuntimeError("capital routing needs the agent-led service "
-                                   "install (Administrator identity) — ask the "
-                                   "agent to start auto-trading")
-            for step in (
+            steps = [
                 ["install", "blaveclaw-reconciler", "powershell.exe",
                  "-ExecutionPolicy", "Bypass", "-File", ps1],
                 ["set", "blaveclaw-reconciler", "AppDirectory", WORKSPACE],
                 ["set", "blaveclaw-reconciler", "Start", "SERVICE_AUTO_START"],
-            ):
-                out = subprocess.run(["nssm"] + step, capture_output=True,
-                                     text=True, timeout=15)
-                if out.returncode != 0:
-                    raise RuntimeError(
-                        (out.stderr or out.stdout or "").strip()[:200])
+            ]
+            if admin_pw is not None:
+                # after AppDirectory, before Start — matches capital-broker.md
+                # Step 8's order for the worker service
+                steps.insert(2, ["set", "blaveclaw-reconciler", "ObjectName",
+                                 ".\\Administrator", admin_pw])
+            for step in steps:
+                _nssm_run(step)
             # register for health monitoring (references/manager.md) — a
             # bootstrap machine has no agent-written deployments.json, so the
             # freshly installed daemon would otherwise die unseen
@@ -1063,6 +1112,11 @@ def _cmd_restart_reconciler(args):
                                capture_output=True, timeout=60)
             except subprocess.TimeoutExpired:
                 pass
+            if admin_pw is not None:
+                # service already existed, possibly still LocalSystem from
+                # before Capital was routed here — correct it before start
+                _nssm_run(["set", "blaveclaw-reconciler", "ObjectName",
+                          ".\\Administrator", admin_pw])
         cmd = ["nssm", "start", "blaveclaw-reconciler"]
     else:
         # kill any existing session first: a crash-looping one would otherwise
