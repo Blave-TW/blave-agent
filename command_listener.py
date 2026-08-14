@@ -396,6 +396,45 @@ def _sync_strategy_crons(names):
         _log(f"cron sync failed: {type(e).__name__}: {e}")
 
 
+# TW index futures (Capital/群益) asset_specs, keyed by the strategy's SYMBOL
+# constant (TXF/MXF/TMF). Mirrors blaveclaw-config/manager/reconciler.py's
+# _CAPITAL_FUTURES_SPEC table and the shape documented in
+# references/capital-broker.md Step 8 — duplicated, not imported: this file is
+# the platform-controlled runtime layer (ships via blave_agent/publish.py) and
+# must not depend on the user/agent-editable workspace layer (account_reader.py,
+# same layer, already keeps the same boundary). A static SYMBOL->spec lookup,
+# no AI judgment involved — TW stock strategies (asset_specs "tw_stock" shape)
+# are intentionally NOT covered here.
+_TXF_ASSET_SPECS = {
+    "TXF": {"type": "futures_contracts", "contract_value": 200, "currency": "TWD", "lot_size": 1},
+    "MXF": {"type": "futures_contracts", "contract_value": 50, "currency": "TWD", "lot_size": 1},
+    "TMF": {"type": "futures_contracts", "contract_value": 10, "currency": "TWD", "lot_size": 1},
+}
+
+
+def _strategy_futures_symbol(name):
+    """The SYMBOL a strategy trades, read straight off disk (no workspace
+    import — this runtime never executes strategy/workspace code). Tries
+    stats.json first: lib/runner.py writes it on EVERY backtest run (both the
+    'backtest' and 'live' branches reach that json.dump before diverging), so
+    it exists for any strategy the user could plausibly allocate to — even one
+    that has never gone live. Falls back to state.json (written only once a
+    strategy has run live at least once — see portfolio_reporter.strategy_states)
+    for the rare case stats.json is missing or corrupt but the strategy has
+    already traded live."""
+    for fname in ("stats.json", "state.json"):
+        path = os.path.join(WORKSPACE, "strategies", name, fname)
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        sym = data.get("symbol") if isinstance(data, dict) else None
+        if isinstance(sym, str) and sym.strip():
+            return sym.strip().upper()
+    return None
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -460,6 +499,7 @@ def _cmd_amounts(args):
         )
     if not isinstance(cfg, dict):
         raise RuntimeError("portfolio config unreadable (not a dict) — try again")
+    old_amounts = cfg.get("amounts") if isinstance(cfg.get("amounts"), dict) else {}
     cfg["amounts"] = clean
     old = cfg.get("exchanges") or {}
     # Only inherit venues that are STILL BOUND (keys in .env) — after 解除綁定
@@ -484,7 +524,27 @@ def _cmd_amounts(args):
     cfg["exchanges"] = {
         n: (old.get(n) or default_venue) for n in clean
     }
-    cfg.setdefault("asset_specs", {})
+    if not isinstance(cfg.get("asset_specs"), dict):
+        cfg["asset_specs"] = {}
+    # First-allocation TXF/MXF/TMF spec write (mirrors the frontend's own
+    # handoff condition in workspace.html's save handler): previous amount
+    # was 0/absent, this save makes it positive, and no spec is already
+    # recorded (never clobber one already written — by this code, the agent,
+    # or a manual edit). contract_value/lot_size are a static, deterministic
+    # lookup keyed off the strategy's SYMBOL — no AI turn needed.
+    for k, amt in clean.items():
+        if amt <= 0:
+            continue
+        try:
+            prev_amt = float(old_amounts.get(k, 0))
+        except (TypeError, ValueError):
+            prev_amt = 0.0
+        if prev_amt > 0 or cfg["asset_specs"].get(k):
+            continue
+        sym = _strategy_futures_symbol(k)
+        spec = _TXF_ASSET_SPECS.get(sym) if sym else None
+        if spec:
+            cfg["asset_specs"][k] = dict(spec)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
