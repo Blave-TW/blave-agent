@@ -1216,6 +1216,36 @@ def poll_once():
         return (json.loads(resp.read().decode()) or {}).get("command")
 
 
+def _send_ack(cmd_id, cmd, ok, result=None, error=None):
+    """Fire this the instant dispatch() returns — a small, independent POST that
+    answers "did the machine run this command", seconds before on_applied()'s
+    full portfolio report can answer "has real exchange state converged" (that
+    one needs exchange calls + a workspace scan). Meant to be called on its own
+    daemon thread (see run() below) so a slow/dead network here never blocks the
+    poll loop; never queued against report_inflight — that flag protects the
+    heavy report, not this.
+
+    ok=True only means dispatch() didn't raise for this id — for close_all this
+    is "flatten started", not "positions are flat". Best-effort: a failed ack
+    send is logged and dropped, never retried (the caller falls back to the next
+    portfolio report either way)."""
+    payload = {"id": cmd_id, "cmd": cmd, "ok": ok}
+    if ok:
+        payload["result"] = result
+    else:
+        payload["error"] = error
+    try:
+        req = urllib.request.Request(
+            API_BASE + "/ack",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json", "x-api-key": f"proxy-{PROXY_TOKEN}"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+    except Exception as e:
+        _log(f"ack send failed: {type(e).__name__}")
+
+
 def run(on_applied=None):
     """Poll-execute-report forever. `on_applied` pushes a fresh portfolio report
     so the page confirms from real machine state rather than from its own POST
@@ -1264,10 +1294,22 @@ def run(on_applied=None):
         try:
             result = dispatch(command)
             _log(f"{command.get('cmd')} {cid} ok: {result}")
+            if cid != "?":
+                threading.Thread(
+                    target=_send_ack, args=(cid, command.get("cmd"), True, result, None),
+                    daemon=True, name="command-ack",
+                ).start()
         except Exception as e:
             # The message may quote user input but never a payload value —
-            # handlers raise with shapes, not contents.
-            _log(f"{command.get('cmd')} {cid} FAILED: {type(e).__name__}: {e}")
+            # handlers raise with shapes, not contents. Same string goes into
+            # the ack's error field — no new exposure, it's already in this log.
+            err_str = f"{type(e).__name__}: {e}"
+            _log(f"{command.get('cmd')} {cid} FAILED: {err_str}")
+            if cid != "?":
+                threading.Thread(
+                    target=_send_ack, args=(cid, command.get("cmd"), False, None, err_str),
+                    daemon=True, name="command-ack",
+                ).start()
         if on_applied:
             if report_inflight.is_set():
                 _log("post-command report still in flight — skipped (its repush covers this)")
