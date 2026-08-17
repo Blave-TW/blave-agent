@@ -5,7 +5,8 @@ accounts; last_reconcile.json → re-read + push; account.json → push). Window
 Task Scheduler has no file trigger, so this always-on service (NSSM,
 blave-agent-watcher) polls mtimes every couple of seconds and runs the same
 two programs the Linux units would. Harmless on Linux too, but only registered
-on Windows — the path units already cover it there.
+on Windows — the path units already cover it there (except the Capital watch,
+which is Windows-only by nature; see WATCHES).
 
 Runs from current/ like the bridges, so it updates with every release. The
 jobs it spawns are the SAME oneshots the timers run — this only shortens the
@@ -40,7 +41,8 @@ DEBOUNCE_S = 5
 ACCOUNT = (SYS_PY, os.path.join(CURRENT, "account_reader.py"))
 REPORT = (VENV_PY, os.path.join(CURRENT, "portfolio_reporter.py"))
 
-# path → jobs to run when its mtime moves (mirrors the three Linux path units).
+# path → jobs to run when its mtime moves (the three Linux path units +
+# one Windows-only Capital watch).
 # .env runs BOTH: on Linux the chain is .env→account→(account.json path)→report,
 # but the baseline refresh below hides our own account.json write — so the
 # report must ride in the same trigger, not wait for a second hop.
@@ -54,6 +56,15 @@ WATCHES = {
     # 目錄 mtime 只動在檔案增刪,既有檔改內容不觸發——夠用,「新 venue 接上」
     # 就是新增檔案那一刻。
     os.path.join(WORKSPACE, "lib"): (ACCOUNT, REPORT),
+    # 群益(Capital)帳戶快照:capital_worker(第三方常駐,COM)寫,
+    # order_capital 成交後 touch state/capital_refresh 讓 worker 10 秒內提前
+    # 重寫——這裡接著跑 account_reader+reporter,成交到平台秒級、到頁面
+    # ~30 秒內(剩頁面 30s 輪詢;原本要 ~3.5 分)。
+    # 副作用(刻意接受,非漏 debounce):worker 每 60s 例行重寫也會動 mtime,
+    # 群益機的回報節奏因此從 2min timer 變 ~60s 事件觸發;reporter 很輕
+    # (本地讀+一個 POST)。第三方寫的檔,不進 SELF_WRITTEN。Linux 不加對應
+    # path unit:群益 API 走 Windows COM,Linux 機不會有這個檔。
+    os.path.join(WORKSPACE, "state", "capital_account.json"): (ACCOUNT, REPORT),
 }
 
 
