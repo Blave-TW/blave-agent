@@ -178,6 +178,93 @@ def model_catalog_rule(session_id):
     )
 
 
+# ── 用戶常駐偏好 ──────────────────────────────────────────────────────────
+# 對話裡表達的常駐偏好(「以後每個策略都要停損」)存 workspace/state/
+# preferences.md,每輪整份注入(跟 AGENTS.md 同路徑)。滾動摘要的 schema 沒有
+# 「用戶偏好」這個段落,偏好掉出近期對話視窗就會被 compaction 洗掉——這個檔
+# 就是為了補這個洞。量的控制在寫入端(下面的規則要求 agent 保持 ≤10 條、寫入
+# 時修剪);這裡只設兩道保險,而且都要出聲——無聲截斷會讓後面的偏好靜默失效,
+# 對交易 agent 是實質風險:
+#   - 超過 SOFT cap:全文照注,但附一行指令要 agent 本輪先整理再繼續。
+#   - 超過 HARD cap(失控寫爆):截斷保護 context,並在注入文字裡明講已截斷。
+PREFERENCES_PATH = os.path.join(WORKSPACE, "state", "preferences.md")
+PREFS_SOFT_CAP_CHARS = 4000
+PREFS_HARD_CAP_CHARS = 16000
+
+_PREFS_HOWTO = (
+    "\n\n---\n\n"
+    "## 用戶常駐偏好（本 runtime 專屬規則）\n"
+    "使用者表達**常駐**偏好時（「以後都…」「記住…」「每次建策略都…」），"
+    f"把它改寫成一條明確、可執行的規則，寫進 `{PREFERENCES_PATH}`"
+    "（Markdown 條列，每條一句、一行），並回覆確認你記住了什麼。規則：\n"
+    "- 上限 10 條、總量 4000 字以內（精簡措辭）。每次寫入時順手整理：合併重複、"
+    "刪除被新偏好取代或已過期的條目。\n"
+    "- 只收使用者明確表達的常駐偏好。一次性指示不算；任務進度歸 state/notes/，"
+    "不要寫進來。\n"
+    "- 偏好是**預設值，不是鐵律**：位階低於本 system prompt 的其他規則"
+    "（安全與煞車規則絕不因偏好放寬）。與當下策略邏輯衝突時"
+    "（例如組合型策略沒有單筆停損可做），明講衝突並問使用者——不要硬套，"
+    "也不要無聲忽略。\n"
+    "- 使用者問「你記了哪些偏好」就照檔案內容唸；要求修改或刪除就直接改檔。\n"
+)
+
+
+def preferences_rule():
+    """每輪重讀:偏好的寫入規則(常駐,讓 agent 知道要記)+ 目前偏好內容。"""
+    try:
+        # encoding 明寫:這個檔是 agent 在對話中寫入的 UTF-8 中文,Windows 機
+        # 的 locale 預設(cp950)會 UnicodeDecodeError,而那不是 OSError。
+        with open(PREFERENCES_PATH, encoding="utf-8") as f:
+            # 有界讀取:hard cap 防的就是失控寫爆,先整份 read() 會在 cap 檢查
+            # 之前把巨檔吞進記憶體(4GB 機、有 OOM 前科)。多讀 1 字元足以判定
+            # 超限,MemoryError 也就不可能發生。
+            content = f.read(PREFS_HARD_CAP_CHARS + 1).strip()
+    except FileNotFoundError:
+        content = ""
+    except (OSError, UnicodeDecodeError) as e:
+        # 讀壞掉(權限/IO)不能讓整輪死,但也不能裝作沒有偏好——明講讀不到。
+        print(f"[agent_turn] WARNING: preferences unreadable: {e}", file=sys.stderr)
+        return _PREFS_HOWTO + "\n[偏好檔目前讀取失敗，本輪先不套用，並向使用者說明。]\n"
+    over_hard = len(content) > PREFS_HARD_CAP_CHARS
+    # 跟 session_store._sanitize_summary 同一道防線:這段內容進的是 system
+    # prompt,夾帶鷹架標記的行會偽造假對話區塊(agent 照唸偏好時也會被
+    # strip_hallucinated_turn 砍斷回覆)。逐行剝掉,不截斷。
+    content = "\n".join(
+        line for line in content.splitlines()
+        if not ss.SCAFFOLD_RE.match(line) and not line.startswith("<<<")
+    ).strip()
+    if not content:
+        return _PREFS_HOWTO + "\n（目前沒有任何常駐偏好。）\n"
+    parts = [_PREFS_HOWTO, "\n[目前的常駐偏好——建策略/下單/回測時都要套用或明講衝突]\n"]
+    if over_hard:
+        parts.append(content[:PREFS_HARD_CAP_CHARS])
+        parts.append(
+            "\n\n[警告：偏好檔大小失控，以上內容已被截斷。本輪先把 "
+            "preferences.md 整理回 10 條、總量 4000 字以內（向使用者確認要留哪些），"
+            "再處理訊息。]\n"
+        )
+        try:
+            size = os.path.getsize(PREFERENCES_PATH)
+        except OSError:
+            size = -1
+        print(
+            f"[agent_turn] WARNING: preferences.md over hard cap "
+            f"({size} bytes on disk), truncated",
+            file=sys.stderr,
+        )
+    elif len(content) > PREFS_SOFT_CAP_CHARS:
+        parts.append(content)
+        parts.append(
+            "\n\n[注意：偏好檔已超過建議大小。本輪先把 preferences.md 整理回 "
+            "10 條、總量 4000 字以內（精簡措辭、合併重複、刪過期；拿不準就問"
+            "使用者），再處理訊息。]\n"
+        )
+    else:
+        parts.append(content)
+        parts.append("\n")
+    return "".join(parts)
+
+
 # Shared across all surfaces: the model tends to narrate its own process as
 # user-facing text ("Let me check...", "Now I will...") — that's internal
 # reasoning, not something the user needs to read. Kept out of AGENTS.md
@@ -641,7 +728,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         system_prompt={
             "type": "preset",
             "preset": "claude_code",
-            "append": agents_md + model_catalog_rule(session_id) + sink.formatting_rule,
+            "append": agents_md + model_catalog_rule(session_id)
+            + preferences_rule() + sink.formatting_rule,
         } if agents_md else None,
         # 實測「建策略+回測+調參」正常就要 20+ 步(BTC RSI 那輪 21 步被砍在半路,
         # $1.46 白燒)。步數放寬到 50,真正的煞車改用預算——失控迴圈燒錢才是
