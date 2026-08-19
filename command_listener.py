@@ -270,19 +270,128 @@ def _cmd_credentials(args):
     return f"credentials={len(env)}"  # count only — never the keys or values
 
 
-# ── strategy signal-refresh crons(選到就跑,2026-08-03 拍板)─────────────────
+# ── strategy signal-refresh scheduling(選到就跑,2026-08-03 拍板)────────────
 # Picked into the 下單設定 table = its signal must stay fresh (the 目標部位
 # column is live data), funded or not. Signal runs are read-only — orders are
 # the reconciler's alone — so scheduling early is free.
+#
+# Type A/C (has INTERVAL/fetch_data — see references/deployment.md) are
+# scheduled by the in-process wait_for_bar loop below (_scheduler_loop), not
+# crontab/schtasks: this thread is already a long-lived daemon, so there is
+# no reason to have it shell out to the OS scheduler to remind itself to wake
+# up once a minute — see blaveclaw-config/manager/wait_for_bar.py's own
+# docstring for why a fixed "run N minutes after the hour" cron guesses
+# wrong. Type B strategies have no INTERVAL/fetch_data contract to poll a bar
+# against (references/deployment.md), so they keep the plain fixed-cadence
+# crontab/schtasks path unchanged below.
 
 _CRON_TAG = "# blave-web"  # marks the lines this handler owns
+# Guards every crontab read-modify-write below (_sync_strategy_crons,
+# _purge_strategy_schedules, _migrate_legacy_ac_crons) — `crontab -l` then
+# `crontab -` is a classic read/replace race, and with the scheduler thread
+# now able to run the migration sweep independently of the dispatch thread's
+# own syncs, two writers hitting this in the same window is a real
+# possibility (not hypothetical — see _run_scheduler_cycle's transition
+# handling), where the second write silently clobbers the first's.
+_cron_lock = threading.Lock()
 _INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
+# Value-format validator — byte-for-byte the SAME pattern as
+# wait_for_bar.py:185 (`_INTERVAL_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")`)
+# and healthcheck.py:105, matched with fullmatch and NO .strip()/.lower()
+# relaxation (wait_for_bar.py's own _interval_to_timedelta doesn't relax
+# either — it matches the raw INTERVAL attribute as-is). This is deliberately
+# stricter than "just non-empty": _strategy_has_interval below used to accept
+# any non-empty quoted value as Type A/C, so a strategy with a malformed
+# INTERVAL (e.g. "hourly", "5Min", trailing whitespace) got migrated off its
+# working Type B crontab and handed to wait_for_bar.py, whose own
+# _interval_to_timedelta then raises ValueError on that exact value — caught
+# by its top-level except → _alert_wrapper_error (6h cooldown) — and the
+# strategy never runs again, with the reconciler silently holding any funded
+# position (code-auditor finding, 2026-08-19). An unparseable value is
+# therefore never Type A/C — Type B (old crontab) at least still runs.
+_INTERVAL_VALUE_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")
+# Unit spellings must match blaveclaw-config/manager/wait_for_bar.py's
+# _INTERVAL_RE/_UNIT_TO_KW and manager/healthcheck.py's _UNIT_TO_MINUTES —
+# three copies now (see those files' own comments on this); change all three
+# together or they silently disagree on cadence.
+_UNIT_TO_MINUTES = {"min": 1, "m": 1, "h": 60, "d": 1440, "w": 10080}
+
+
+def _strategy_source(name):
+    """strategies/<name>/strategy.py's text, or None — the single file read
+    every INTERVAL-sniffing helper below shares (cadence, type split,
+    healthcheck registration)."""
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                  encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _wait_for_bar_available():
+    """True once this workspace has pulled blaveclaw-config's manager/wait_for_bar.py
+    (a2ced19+) — NOT every machine has, at any given moment: workspaces update
+    independently of this runtime, on their own cadence. Gates the whole A/C
+    split below: without this, a runtime update landing before a given
+    workspace's own update would classify a strategy as Type A/C, migrate away
+    its working Type B crontab line, then every scheduler tick fails with
+    FileNotFoundError — silently freezing that strategy's signal fleet-wide
+    until the workspace catches up. Until the file exists, EVERY strategy is
+    treated as Type B (old crontab/schtasks behavior, unchanged) — never
+    partially-migrated."""
+    return os.path.isfile(os.path.join(WORKSPACE, "manager", "wait_for_bar.py"))
+
+
+def _strategy_has_interval(name):
+    """True = Type A/C (wait_for_bar-scheduled in-process), False = Type B
+    (no INTERVAL/fetch_data contract — stays on crontab/schtasks). Always
+    False if this workspace doesn't have wait_for_bar.py yet — see
+    _wait_for_bar_available. Also False if INTERVAL is present but its VALUE
+    doesn't pass _INTERVAL_VALUE_RE — see that constant's comment for why
+    "present" alone is not enough."""
+    if not _wait_for_bar_available():
+        return False
+    src = _strategy_source(name)
+    if not src:
+        return False
+    m = _INTERVAL_RE.search(src)
+    return bool(m and _INTERVAL_VALUE_RE.fullmatch(m.group(1)))
+
+
+def _strategy_interval_minutes(name):
+    """Declared INTERVAL in minutes, for state/deployments.json's
+    expect_every_minutes (manager/healthcheck.py's staleness threshold).
+    1440 (guess long, like healthcheck.py's own fallback) if unparseable —
+    a late alert beats a false one. Only ever called for names
+    _strategy_has_interval already accepted, so the fullmatch here always
+    succeeds in practice — kept as an explicit check anyway rather than
+    trusting that invariant silently."""
+    src = _strategy_source(name)
+    m = _INTERVAL_RE.search(src) if src else None
+    if not m:
+        return 1440
+    mu = _INTERVAL_VALUE_RE.fullmatch(m.group(1))
+    if not mu:
+        return 1440
+    return max(int(mu.group(1)) * _UNIT_TO_MINUTES[mu.group(2)], 1)
+
+
+def _split_by_type(names):
+    """{name} → (type_ac, type_b) — the only place this classification
+    happens; every cron/scheduler sync below calls this instead of
+    re-deriving it, so the split can't drift between call sites."""
+    names = set(names)
+    ac = {n for n in names if _strategy_has_interval(n)}
+    return ac, names - ac
 
 
 def _strategy_cadence(name):
     """Cron cadence from the strategy's declared INTERVAL (default 1h).
     Sub-hour intervals poll at their own pace (capped at 30m); ≥1h all poll
-    hourly at :05 — re-running an unchanged signal is idempotent and cheap."""
+    hourly at :05 — re-running an unchanged signal is idempotent and cheap.
+    Only ever called for Type B names now — see _split_by_type, the single
+    gate that keeps Type A/C off this path entirely."""
     try:
         # utf-8 explicit: Windows opens with the locale codepage and agent
         # strategies carry Chinese comments — a UnicodeDecodeError here is not
@@ -324,76 +433,426 @@ def _sync_strategy_tasks_windows(names):
     ownership marker (only our own tasks are created/deleted; agent-made
     blaveclaw-strategy-* tasks are none of our business). Runs as SYSTEM like
     every provision task; output appends to the strategy's own log so a crash
-    is at least findable (Windows has no run_strategy.sh alert wrapper yet)."""
+    is at least findable (Windows has no run_strategy.sh alert wrapper yet).
+    _cron_lock-guarded like the crontab twin — _migrate_legacy_ac_crons's own
+    Windows branch touches the same _WIN_TASK_PREFIX namespace from the
+    scheduler thread, and a query-then-act sequence here is exactly the kind
+    of read-modify-write that lock exists to serialize."""
     try:
-        out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
-                             capture_output=True, text=True, errors="replace",
-                             timeout=30)
-        existing = set()
-        for line in (out.stdout or "").splitlines():
-            tn = line.split('","')[0].strip('"').lstrip("\\")
-            if tn.startswith(_WIN_TASK_PREFIX):
-                existing.add(tn[len(_WIN_TASK_PREFIX):])
-        wanted = {n for n in names if _NAME_OK_RE.fullmatch(n)}
-        for n in sorted(set(names) - wanted):
-            _log(f"task sync: skipping unsafe strategy name {n!r}")
-        for n in sorted(existing - wanted):
-            r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_TASK_PREFIX + n, "/f"],
-                               capture_output=True, text=True, errors="replace",
-                               timeout=30)
-            if r.returncode != 0:  # a survivor keeps refreshing signals unseen
-                _log(f"task sync: delete {n} failed: "
-                     f"{(r.stderr or r.stdout or '').strip()[:120]}")
-        for n in sorted(wanted):
-            tr = (f'cmd /c cd /d "{WORKSPACE}" && set BLAVE_MODE=live&& '
-                  f"python strategies\\{n}\\strategy.py >> strategies\\{n}\\strategy.log 2>&1")
-            cadence = _win_cadence(n)
-            r = subprocess.run(["schtasks", "/create", "/tn", _WIN_TASK_PREFIX + n,
-                                "/tr", tr, "/ru", "SYSTEM", "/f"] + cadence,
-                               capture_output=True, text=True, errors="replace",
-                               timeout=30)
-            if r.returncode != 0:
-                _log(f"task sync: create {n} failed: "
-                     f"{(r.stderr or r.stdout or '').strip()[:120]}")
-            elif n not in existing and cadence[1] == "hourly":
-                # first run NOW — hourly tasks (/st 00:05) otherwise wait up to
-                # an hour for their first signal while the web's optimistic
-                # light gives up after 5 min. Minute-cadence tasks fire on
-                # their own within ≤30m AND may fire immediately on create —
-                # kicking those too can race two writers into state.json,
-                # which lib/execute writes non-atomically (audit B1)
-                subprocess.run(["schtasks", "/run", "/tn", _WIN_TASK_PREFIX + n],
-                               capture_output=True, timeout=30)
-        _log(f"task sync: {len(wanted)} strategy task(s)")
+        with _cron_lock:
+            out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                                 capture_output=True, text=True, errors="replace",
+                                 timeout=30)
+            existing = set()
+            for line in (out.stdout or "").splitlines():
+                tn = line.split('","')[0].strip('"').lstrip("\\")
+                if tn.startswith(_WIN_TASK_PREFIX):
+                    existing.add(tn[len(_WIN_TASK_PREFIX):])
+            wanted = {n for n in names if _NAME_OK_RE.fullmatch(n)}
+            for n in sorted(set(names) - wanted):
+                _log(f"task sync: skipping unsafe strategy name {n!r}")
+            for n in sorted(existing - wanted):
+                r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_TASK_PREFIX + n, "/f"],
+                                   capture_output=True, text=True, errors="replace",
+                                   timeout=30)
+                if r.returncode != 0:  # a survivor keeps refreshing signals unseen
+                    _log(f"task sync: delete {n} failed: "
+                         f"{(r.stderr or r.stdout or '').strip()[:120]}")
+            for n in sorted(wanted):
+                tr = (f'cmd /c cd /d "{WORKSPACE}" && set BLAVE_MODE=live&& '
+                      f"python strategies\\{n}\\strategy.py >> strategies\\{n}\\strategy.log 2>&1")
+                cadence = _win_cadence(n)
+                r = subprocess.run(["schtasks", "/create", "/tn", _WIN_TASK_PREFIX + n,
+                                    "/tr", tr, "/ru", "SYSTEM", "/f"] + cadence,
+                                   capture_output=True, text=True, errors="replace",
+                                   timeout=30)
+                if r.returncode != 0:
+                    _log(f"task sync: create {n} failed: "
+                         f"{(r.stderr or r.stdout or '').strip()[:120]}")
+                elif n not in existing and cadence[1] == "hourly":
+                    # first run NOW — hourly tasks (/st 00:05) otherwise wait up to
+                    # an hour for their first signal while the web's optimistic
+                    # light gives up after 5 min. Minute-cadence tasks fire on
+                    # their own within ≤30m AND may fire immediately on create —
+                    # kicking those too can race two writers into state.json,
+                    # which lib/execute writes non-atomically (audit B1)
+                    subprocess.run(["schtasks", "/run", "/tn", _WIN_TASK_PREFIX + n],
+                                   capture_output=True, timeout=30)
+            _log(f"task sync: {len(wanted)} strategy task(s)")
     except Exception as e:
         _log(f"task sync failed: {type(e).__name__}: {e}")
 
 
 def _sync_strategy_crons(names):
-    """One tagged cron line per picked strategy; drop tagged lines for
+    """One tagged cron line per picked Type B strategy; drop tagged lines for
     strategies no longer picked. Only lines carrying _CRON_TAG are touched —
     agent-/user-made entries are none of our business. BLAVE_MODE=live makes
     the runner refresh signals even while the file's MODE says backtest.
     Best-effort: a cron failure must not fail the amounts write. Windows uses
     the schtasks twin (audit L6 — before it, web-picked strategies simply
-    never ran on Windows machines)."""
+    never ran on Windows machines).
+
+    Type A/C strategies get NO crontab/schtasks entry at all — the
+    in-process scheduler (_scheduler_loop) picks them up by re-reading
+    portfolio_config.json's `amounts` itself on its own cadence; this
+    function only wakes it early so a freshly-picked one doesn't wait for
+    the next cycle (mirrors the Type B kickoff Popen in _cmd_amounts)."""
+    ac, b = _split_by_type(names)
+    if ac:
+        _scheduler_wake.set()
     if platform.system() == "Windows":
-        _sync_strategy_tasks_windows(set(names))
+        _sync_strategy_tasks_windows(b)
         return
     try:
-        out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
-        lines = out.stdout.splitlines() if out.returncode == 0 else []
-        kept = [l for l in lines if _CRON_TAG not in l]
-        for n in sorted(names):
-            kept.append(
-                f"{_strategy_cadence(n)} cd {WORKSPACE} && "
-                f"BLAVE_MODE=live bash manager/run_strategy.sh {n} {_CRON_TAG}"
-            )
-        subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
-                       text=True, timeout=10, check=True)
-        _log(f"cron sync: {len(names)} strategy line(s)")
+        with _cron_lock:
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            lines = out.stdout.splitlines() if out.returncode == 0 else []
+            kept = [l for l in lines if _CRON_TAG not in l]
+            for n in sorted(b):
+                kept.append(
+                    f"{_strategy_cadence(n)} cd {WORKSPACE} && "
+                    f"BLAVE_MODE=live bash manager/run_strategy.sh {n} {_CRON_TAG}"
+                )
+            subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
+                           text=True, timeout=10, check=True)
+        _log(f"cron sync: {len(b)} type B line(s) (+{len(ac)} type A/C via in-process scheduler)")
     except Exception as e:
         _log(f"cron sync failed: {type(e).__name__}: {e}")
+
+
+# ── Type A/C in-process scheduler ───────────────────────────────────────────
+# Replaces "N * * * * wait_for_bar.py <name>" crontab entries with a plain
+# while-loop on this thread: command_listener is already a long-lived daemon
+# thread (see module docstring), so there is no reason for it to write itself
+# a system-cron reminder instead of just looping — the scheduling/timing logic
+# lives here, in-process, exactly per the 定案方案.
+#
+# What does NOT live here: wait_for_bar.py's own freshness-check code
+# (_tick/_check_freshness). Each tick below shells out to the unmodified CLI
+# entrypoint (`python3 manager/wait_for_bar.py <name>`, PATH-resolved
+# interpreter) instead of importing it — confirmed on a real machine while
+# building this: /opt/blave-agent/venv (this runtime's own environment, ships
+# via blave_agent/publish.py) carries only the Claude Agent SDK's own
+# dependencies, not pandas/pyarrow/numpy/etc — those live in the system
+# python strategies already run under (same one run_strategy.sh/cron always
+# used). Importing wait_for_bar.py in-process would mean _check_freshness's
+# `fetch_data()` call executing INSIDE this runtime's process with none of a
+# strategy's actual dependencies available — every real strategy would
+# ModuleNotFoundError immediately. This isn't a workaround for that gap: it's
+# the same boundary _execution_engine_ready() elsewhere in this file already
+# documents for a different command ("String probe, never an import —
+# importing runs workspace code inside the listener"), applied consistently
+# here too. Subprocess dispatch still gets everything the 定案方案 asked
+# for — no crontab writes, no guessed cadence, in-process timing + wake +
+# migration, per-strategy parallelism — plus process isolation the in-process
+# design would not have had (a broken strategy.py can't take this process
+# down with it).
+
+SCHEDULER_INTERVAL_SECONDS = 60  # matches wait_for_bar.py's own cron cadence
+# Generous: fetch_data() can legitimately take minutes (wait_for_bar.py's own
+# cost-note docstring) on top of the strategy run's own 600s budget inside
+# it — 1200 would be tight. Matches wait_for_bar.py's LOCK_STALE_SECONDS, so
+# by the time this would actually fire, that file's own stale-lock recovery
+# is already the active safety net, not this timeout.
+SCHEDULER_TICK_TIMEOUT_SECONDS = 1800
+
+_scheduler_wake = threading.Event()  # lets a fresh 下單設定 save skip the wait
+_ac_migration_done = False  # see _run_scheduler_cycle's transition handling
+
+
+def _strategy_subprocess_env():
+    """Minimal env for a strategy/wait_for_bar.py subprocess — the bridge's
+    BLAVE_PROXY_TOKEN etc. have no business inside agent/user strategy code.
+    Linux: same allowlist the Type B kickoff Popen already uses (see
+    _cmd_amounts) — a plain allowlist is fine there because it's Linux-only.
+    Windows: _tick_one runs on BOTH platforms (unlike that Linux-only
+    kickoff), and an allowlist is wrong here — _cmd_close_all's own comment
+    already covers why: "Windows 的 python 少了 SystemRoot 等系統變數會直接
+    起不來;要擋的只有 bridge 的 BLAVE_* 秘密". Same denylist pattern as
+    that function, so a Windows tick doesn't die at interpreter boot."""
+    if platform.system() == "Windows":
+        env = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
+        env["BLAVE_MODE"] = "live"
+        return env
+    return {k: v for k, v in os.environ.items()
+            if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": "live"}
+
+
+def _bound_venue():
+    """True if ANY exchange is bound on this machine right now. Gates the
+    whole scheduler cycle: after a full unbind, _cmd_credentials_remove may
+    deliberately KEEP `amounts` non-empty while stopping every schedule (Wei
+    2026-08-05 — see that function's own comment, "membership kept") because
+    the reconciler couldn't be confirmed stopped. A scheduler keyed on
+    `amounts` alone would re-animate those signals on an unbound machine —
+    exactly the "still looks like it's trading" failure that rule exists to
+    prevent. A rebind (_cmd_credentials) or unpick-then-repick naturally
+    resumes it — no separate resume path needed."""
+    try:
+        with open(os.path.join(WORKSPACE, ".env")) as f:
+            return bool(_venue_cred_ids(f.read().splitlines()))
+    except OSError:
+        return False
+
+
+_AC_DEPLOY_TYPE = "wait_for_bar"
+
+
+def _sync_deployment_registry(ac_names):
+    """Upsert state/deployments.json entries for Type A/C names so
+    manager/healthcheck.py keeps monitoring them even though they now have no
+    crontab line — that file's own auto-registration only fires from a LIVE
+    crontab scan (see its _autoregister), so a Type A/C strategy that's never
+    had one would otherwise get zero healthcheck coverage, silently. The
+    `type` value is deliberately NOT "cron": _check_entry only applies the
+    crontab-presence check to entries typed "cron" — anything else (like the
+    existing "daemon" type used for the reconciler) falls straight through to
+    the heartbeat-freshness check, which still applies unchanged
+    (wait_for_bar.py's own _run_strategy_protected touches
+    state/heartbeat/<name> on every success, exactly as before — nothing
+    about that changed). Best-effort, skip-on-no-change: called every cycle,
+    must not become the bottleneck or race the reconciler's own writes to
+    this same file more than the pre-existing multi-writer risk already
+    accepted for portfolio_config.json elsewhere in this file."""
+    path = os.path.join(WORKSPACE, "state", "deployments.json")
+    try:
+        with open(path) as f:
+            deps = json.load(f)
+    except (OSError, ValueError):
+        deps = {}
+    if not isinstance(deps, dict):
+        deps = {}
+    changed = False
+    now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+    for n in ac_names:
+        cur = deps.get(n)
+        expect = _strategy_interval_minutes(n)
+        if not (isinstance(cur, dict) and cur.get("type") == _AC_DEPLOY_TYPE
+                and cur.get("expect_every_minutes") == expect):
+            deps[n] = {
+                "type": _AC_DEPLOY_TYPE,
+                "expect_every_minutes": expect,
+                "registered_at": (cur or {}).get("registered_at") or now_iso,
+            }
+            changed = True
+    if not changed:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(deps, f, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        _log(f"deployment registry sync failed: {type(e).__name__}: {e}")
+
+
+def _prune_deployment_registry(ac_names):
+    """Drop state/deployments.json entries typed _AC_DEPLOY_TYPE
+    ("wait_for_bar") whose name is no longer in `ac_names` — the unpick case,
+    distinct from _purge_deployment_registry (deletion, which already knows
+    the exact names to drop and doesn't care about type). Without this, a
+    strategy unchecked (not deleted) in 下單設定 keeps its registry entry
+    forever: heartbeat goes stale, healthcheck.py raises a false "no
+    successful run" alert for something the user deliberately turned off
+    (code-auditor finding, 2026-08-19). Only ever touches _AC_DEPLOY_TYPE
+    entries — Type B's `type: "cron"` (auto-registered by healthcheck.py
+    itself, confirmed by the auditor to never be anything else) and the
+    reconciler's `type: "daemon"` are untouched either way."""
+    path = os.path.join(WORKSPACE, "state", "deployments.json")
+    try:
+        with open(path) as f:
+            deps = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(deps, dict):
+        return
+    stale = [n for n, e in deps.items()
+             if isinstance(e, dict) and e.get("type") == _AC_DEPLOY_TYPE and n not in ac_names]
+    if not stale:
+        return
+    for n in stale:
+        deps.pop(n, None)
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(deps, f, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        _log(f"deployment registry prune failed: {type(e).__name__}: {e}")
+
+
+def _tick_one(name):
+    """One strategy's wait_for_bar tick — runs the UNMODIFIED CLI entrypoint
+    (`python3 manager/wait_for_bar.py <name>`) as a subprocess, on its own
+    daemon thread (see _run_scheduler_cycle for why parallel, not a
+    for-loop). See the "Type A/C in-process scheduler" comment above for why
+    this is a subprocess and not an in-process call. PATH-resolved
+    interpreter name (not sys.executable, which here would resolve to THIS
+    runtime's own /opt/blave-agent/venv) — matches run_strategy.sh and the
+    Windows schtasks `tr` exactly, so it lands on the same python those
+    already use. wait_for_bar.py's own main()/_tick already carries the
+    top-level try/except + Telegram wrapper-error alert (unchanged, since
+    this is the unmodified CLI) — main() catches everything and exits 0, so
+    a NONZERO exit here means the interpreter itself never got that far
+    (missing/broken wait_for_bar.py, or — the exact bug this comment exists
+    to prevent recurring — a wrong subprocess env the interpreter can't even
+    boot under). That failure mode is otherwise silent, so it's logged here,
+    not swallowed as a bare last-resort net for "failed to start"."""
+    interp = "python" if platform.system() == "Windows" else "python3"
+    try:
+        r = subprocess.run(
+            [interp, os.path.join("manager", "wait_for_bar.py"), name],
+            cwd=WORKSPACE, env=_strategy_subprocess_env(),
+            capture_output=True, text=True,
+            timeout=SCHEDULER_TICK_TIMEOUT_SECONDS,
+        )
+        if r.returncode != 0:
+            _log(f"scheduler tick {name}: wait_for_bar.py exited {r.returncode} "
+                 f"(interpreter-level failure, not a strategy crash — that's "
+                 f"alerted separately): {(r.stderr or r.stdout or '').strip()[:200]}")
+    except subprocess.TimeoutExpired:
+        _log(f"scheduler tick {name} exceeded {SCHEDULER_TICK_TIMEOUT_SECONDS}s "
+             f"— likely a hung fetch_data(); next cycle retries")
+    except OSError as e:
+        _log(f"scheduler tick {name} failed to start: {type(e).__name__}: {e}")
+
+
+def _run_scheduler_cycle():
+    """Read portfolio_config.json's `amounts` fresh — the SAME source of
+    truth _cmd_amounts writes and _sync_strategy_crons reads, not a
+    separately maintained tracked list that could drift from it — and fire
+    one tick per Type A/C name in parallel.
+
+    Parallel, not a for-loop: the fleet has already hit this exact starvation
+    bug once (uid 21894 — a slow 2-minute job routinely starved a 1-minute
+    alert job sharing its tick). fetch_data() can legitimately take minutes
+    (wait_for_bar.py's own cost-note docstring), and a strategy stuck there
+    must not delay every OTHER strategy's freshness check for the same
+    minute — the N-separate-crontab-entries design this replaces never had
+    that coupling, and this must not reintroduce it. Threads, not a
+    ThreadPoolExecutor: pool workers are non-daemon (joined at interpreter
+    exit) and N is small (a user's whole portfolio, not a fleet) — one spawn
+    per name per minute is cheap, and per-strategy overlap is already
+    prevented by wait_for_bar.py's own file lock (state/bar_wait/<name>.lock),
+    not by anything in this loop."""
+    if not _bound_venue():
+        return  # see _bound_venue — unbound is a deliberate "stay quiet" state
+    global _ac_migration_done
+    if _wait_for_bar_available() and not _ac_migration_done:
+        # Runs once per process, but not necessarily on the FIRST cycle: a
+        # workspace can update (git pull bringing in wait_for_bar.py for the
+        # first time) any time after this runtime already started — see
+        # _wait_for_bar_available. Doing this here, right before that cycle's
+        # ticks, is what keeps the transition itself glitch-free: without it,
+        # a stale Type-A/C crontab line (bash → strategy.py directly,
+        # bypassing wait_for_bar.py's own lock) could fire in the SAME window
+        # this scheduler starts ticking the same name.
+        _migrate_legacy_ac_crons()
+        _ac_migration_done = True
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
+            amounts = json.load(f).get("amounts") or {}
+    except (OSError, ValueError):
+        return  # no portfolio yet, or manager.py mid-write — next cycle retries
+    if not isinstance(amounts, dict):
+        return
+    # Same name validation _cmd_amounts already applies at write time
+    # (re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k)) — this file's own writer is
+    # trusted, but a name feeds straight into a strategies/<name>/ path and a
+    # subprocess argv below, so re-validating on the READ side doesn't
+    # implicitly trust portfolio_config.json's content just because nothing
+    # else currently writes an invalid key into it (code-auditor finding,
+    # 2026-08-19 — defense in depth, not a known exploit path today).
+    names = set()
+    for k in amounts:
+        if isinstance(k, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k):
+            names.add(k)
+        else:
+            _log(f"scheduler: skipping invalid strategy name in amounts: {k!r}")
+    ac_names, _b = _split_by_type(names)
+    # Pruning runs even when ac_names is empty — unpicking the LAST Type A/C
+    # strategy must still drop its now-stale registry entry, not just every
+    # OTHER one (code-auditor finding, 2026-08-19); that's why this sits
+    # before the ac_names-empty early return, not after it.
+    _prune_deployment_registry(ac_names)
+    if not ac_names:
+        return
+    _sync_deployment_registry(ac_names)
+    for name in sorted(ac_names):
+        threading.Thread(target=_tick_one, args=(name,),
+                         daemon=True, name=f"strategy-tick-{name}").start()
+
+
+def _migrate_legacy_ac_crons():
+    """One-time upgrade sweep, run once before the scheduler's first cycle:
+    drop any existing `# blave-web` crontab line (Linux) / blave-web-strategy-*
+    task (Windows) for a strategy that's Type A/C. Without this, a machine
+    upgrading from the old crontab-per-strategy runtime keeps the stale entry
+    firing `run_strategy.sh <name>` forever alongside this loop's own tick()
+    — both would run the SAME strategy on their own schedules, and unlike two
+    wait_for_bar.py callers (which share state/bar_wait's lock + state file
+    and dedupe for free), the old entry runs bash → strategy.py directly,
+    bypassing that lock entirely. Best-effort, like every other cron sync
+    here — a failed sweep logs and the loop still starts."""
+    if platform.system() == "Windows":
+        try:
+            with _cron_lock:
+                out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                                     capture_output=True, text=True, errors="replace",
+                                     timeout=30)
+                existing = set()
+                for line in (out.stdout or "").splitlines():
+                    tn = line.split('","')[0].strip('"').lstrip("\\")
+                    if tn.startswith(_WIN_TASK_PREFIX):
+                        existing.add(tn[len(_WIN_TASK_PREFIX):])
+                stale = {n for n in existing if _strategy_has_interval(n)}
+                for n in sorted(stale):
+                    r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_TASK_PREFIX + n, "/f"],
+                                       capture_output=True, text=True, errors="replace", timeout=30)
+                    if r.returncode != 0:
+                        _log(f"cron migration: delete task {n} failed: "
+                             f"{(r.stderr or r.stdout or '').strip()[:120]}")
+            if stale:
+                _log(f"cron migration: removed {len(stale)} type A/C scheduled task(s)")
+        except Exception as e:
+            _log(f"cron migration (windows) failed: {type(e).__name__}: {e}")
+        return
+    try:
+        with _cron_lock:
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            if out.returncode != 0:
+                return  # no crontab at all — nothing to migrate
+            kept, dropped = [], 0
+            for l in out.stdout.splitlines():
+                if _CRON_TAG in l:
+                    m = re.search(r"run_strategy\.sh\s+(\S+)", l)
+                    if m and _strategy_has_interval(m.group(1)):
+                        dropped += 1
+                        continue
+                kept.append(l)
+            if dropped:
+                subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
+                               text=True, timeout=10, check=True)
+        if dropped:
+            _log(f"cron migration: removed {dropped} type A/C crontab line(s)")
+    except Exception as e:
+        _log(f"cron migration failed: {type(e).__name__}: {e}")
+
+
+def _scheduler_loop():
+    """The migration sweep is NOT called here unconditionally — it runs from
+    inside _run_scheduler_cycle, gated on wait_for_bar.py actually being
+    present in THIS workspace (see _wait_for_bar_available), because that can
+    become true at any point after this runtime already started, not only at
+    process startup."""
+    while True:
+        try:
+            _run_scheduler_cycle()
+        except Exception as e:
+            _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
+        _scheduler_wake.wait(timeout=SCHEDULER_INTERVAL_SECONDS)
+        _scheduler_wake.clear()
 
 
 # TW index futures (Capital/群益) asset_specs, keyed by the strategy's SYMBOL
@@ -553,9 +1012,13 @@ def _cmd_amounts(args):
     _sync_strategy_crons(set(clean))  # 選到就跑:picked = scheduled,不看金額
     # 勾好=在跑:新選入的立刻背景跑一次,不等下一個 cron 整點——訊號一分鐘
     # 內就新鮮,sidebar 的點跟著亮。detached + DEVNULL:跑多久、成敗都不能
-    # 拖住指令迴圈,結果由 state.json/回報說話。
+    # 拖住指令迴圈,結果由 state.json/回報說話。Type A/C 不在這裡跑——
+    # _sync_strategy_crons 剛剛已經 _scheduler_wake.set() 過,交給常駐迴圈用
+    # tick() 跑(有 wait_for_bar.py 自己的 lock/state,這裡再跑一次只會撞鎖）。
     if platform.system() != "Windows":
         for n in sorted(set(clean) - prev):
+            if _strategy_has_interval(n):
+                continue
             try:
                 subprocess.Popen(
                     ["bash", "manager/run_strategy.sh", n],
@@ -563,8 +1026,7 @@ def _cmd_amounts(args):
                     # minimal env — the bridge's BLAVE_PROXY_TOKEN etc. have no
                     # business inside agent/user strategy code (cron runs give
                     # strategies a bare env too, so this also matches prod)
-                    env={k: v for k, v in os.environ.items()
-                         if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": "live"},
+                    env=_strategy_subprocess_env(),
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     start_new_session=True,
                 )
@@ -779,7 +1241,9 @@ def _cmd_credentials_remove(args):
         # (OPENAI_API_KEY) must not read as still-bound and keep schedules
         # firing on a machine that can no longer trade.
         if not _venue_cred_ids(kept):
-            _sync_strategy_crons(set())
+            _sync_strategy_crons(set())  # Type B crontab; Type A/C stops via
+            # _bound_venue() in _run_scheduler_cycle reading this same .env —
+            # no separate action needed there, see that function's docstring.
             # …and zero the 下單設定 itself (Wei 2026-08-06): users don't
             # bounce between venues, and members lingering with no venue bound
             # block 刪除策略 and friends — a rebind starts from a clean sheet.
@@ -825,55 +1289,91 @@ def _cmd_credentials_remove(args):
     return f"credentials_remove={removed}"  # count only — never the names' values
 
 
+def _purge_deployment_registry(entries):
+    """Drop state/deployments.json entries for just-deleted strategies —
+    otherwise manager/healthcheck.py keeps alerting "no successful run" for a
+    name whose files (and heartbeat) are gone for good. Covers both Type A/C
+    (registered by _sync_deployment_registry) and Type B (auto-registered by
+    healthcheck.py itself from its old crontab line) — the field is a plain
+    name→entry map either way."""
+    path = os.path.join(WORKSPACE, "state", "deployments.json")
+    try:
+        with open(path) as f:
+            deps = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(deps, dict):
+        return
+    changed = any(deps.pop(e, None) is not None for e in entries)
+    if not changed:
+        return
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(deps, f, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        _log(f"deployment registry purge failed: {type(e).__name__}: {e}")
+
+
 def _purge_strategy_schedules(entries):
     """Drop the schedules that ran the just-deleted entries. Without this, an
-    agent-deployed cron (untagged `bash manager/run_strategy.sh <entry>`, see
-    references/deployment.md) keeps firing forever: run_strategy.sh mkdir -p's
-    the ghost dir back and Telegrams a failure alert every tick. Tag or no tag
-    doesn't matter here — the tag guards LIVE schedules from the web's sync,
-    but with the strategy files gone every line running this entry is only
-    alarm garbage. Keyed by the filesystem ENTRY name, not the reported
+    agent-deployed cron (untagged `bash manager/run_strategy.sh <entry>` or
+    `manager/wait_for_bar.py <entry>`, see references/deployment.md) keeps
+    firing forever: run_strategy.sh mkdir -p's the ghost dir back and
+    Telegrams a failure alert every tick (wait_for_bar.py's own
+    _alert_wrapper_error does the same for a missing strategy.py). Tag or no
+    tag doesn't matter here — the tag guards LIVE schedules from the web's
+    sync, but with the strategy files gone every line running this entry is
+    only alarm garbage. Keyed by the filesystem ENTRY name, not the reported
     STRATEGY_NAME — the schedule references the path, and the two can differ.
     Best-effort like _sync_strategy_crons: a purge failure must not fail the
     delete that already happened."""
     if not entries:
         return
+    _purge_deployment_registry(entries)
     try:
-        if platform.system() == "Windows":
-            out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
-                                 capture_output=True, text=True, errors="replace",
-                                 timeout=30)
-            existing = set()
-            for line in (out.stdout or "").splitlines():
-                existing.add(line.split('","')[0].strip('"').lstrip("\\"))
-            for e in sorted(entries):
-                # both owners: the agent's blaveclaw-strategy-* and our own
-                for tn in (f"blaveclaw-strategy-{e}", _WIN_TASK_PREFIX + e):
-                    if tn not in existing:
-                        continue
-                    r = subprocess.run(["schtasks", "/delete", "/tn", tn, "/f"],
-                                       capture_output=True, text=True,
-                                       errors="replace", timeout=30)
-                    if r.returncode != 0:  # a survivor keeps alerting unseen
-                        _log(f"schedule purge: delete {tn} failed: "
-                             f"{(r.stderr or r.stdout or '').strip()[:120]}")
-            return
-        out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
-        if out.returncode != 0:
-            return  # no crontab at all — nothing scheduled
-        pats = []
-        for e in entries:
-            # run_strategy.sh <entry> (agent + web lines) and the direct
-            # strategies/<entry>/strategy.py form deployment.md forbids but
-            # agents have written anyway
-            pats.append(re.compile(r"run_strategy\.sh\s+%s(\s|$)" % re.escape(e)))
-            pats.append(re.compile(r"strategies[/\\]%s[/\\]strategy\.py" % re.escape(e)))
-        lines = out.stdout.splitlines()
-        kept = [l for l in lines if not any(p.search(l) for p in pats)]
-        if len(kept) != len(lines):
-            subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
-                           text=True, timeout=10, check=True)
-            _log(f"schedule purge: dropped {len(lines) - len(kept)} cron line(s)")
+        with _cron_lock:
+            if platform.system() == "Windows":
+                out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                                     capture_output=True, text=True, errors="replace",
+                                     timeout=30)
+                existing = set()
+                for line in (out.stdout or "").splitlines():
+                    existing.add(line.split('","')[0].strip('"').lstrip("\\"))
+                for e in sorted(entries):
+                    # both owners: the agent's blaveclaw-strategy-* and our own
+                    for tn in (f"blaveclaw-strategy-{e}", _WIN_TASK_PREFIX + e):
+                        if tn not in existing:
+                            continue
+                        r = subprocess.run(["schtasks", "/delete", "/tn", tn, "/f"],
+                                           capture_output=True, text=True,
+                                           errors="replace", timeout=30)
+                        if r.returncode != 0:  # a survivor keeps alerting unseen
+                            _log(f"schedule purge: delete {tn} failed: "
+                                 f"{(r.stderr or r.stdout or '').strip()[:120]}")
+                return
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            if out.returncode != 0:
+                return  # no crontab at all — nothing scheduled
+            pats = []
+            for e in entries:
+                # run_strategy.sh <entry> (Type B, agent + web lines),
+                # wait_for_bar.py <entry> (Type A/C, agent-deployed per
+                # references/deployment.md — this web runtime never writes one
+                # itself, but an agent-deployed line for a since-deleted strategy
+                # is exactly the ghost this function exists to clean up), and the
+                # direct strategies/<entry>/strategy.py form deployment.md
+                # forbids but agents have written anyway
+                pats.append(re.compile(r"run_strategy\.sh\s+%s(\s|$)" % re.escape(e)))
+                pats.append(re.compile(r"wait_for_bar\.py\s+%s(\s|$)" % re.escape(e)))
+                pats.append(re.compile(r"strategies[/\\]%s[/\\]strategy\.py" % re.escape(e)))
+            lines = out.stdout.splitlines()
+            kept = [l for l in lines if not any(p.search(l) for p in pats)]
+            if len(kept) != len(lines):
+                subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
+                               text=True, timeout=10, check=True)
+                _log(f"schedule purge: dropped {len(lines) - len(kept)} cron line(s)")
     except Exception as e:
         _log(f"schedule purge failed: {type(e).__name__}: {e}")
 
@@ -1254,6 +1754,10 @@ def run(on_applied=None):
         _log("BLAVE_PROXY_TOKEN not set; command listener disabled")
         return
     _log("started")
+
+    # Type A/C strategy scheduling — its own daemon thread, independent of the
+    # poll loop below (see the "Type A/C in-process scheduler" section).
+    threading.Thread(target=_scheduler_loop, daemon=True, name="strategy-scheduler").start()
 
     # Reporting is several HTTP POSTs (15s timeout each) plus a full workspace
     # scan — a degraded network stacks that to ~45s. This loop is the panic path
