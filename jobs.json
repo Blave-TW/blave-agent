@@ -6,7 +6,8 @@
     "blave-agent-account.path": {"enable": true},
     "blave-agent-portfolio.service": {"enable": false},
     "blave-agent-portfolio.timer": {"enable": true},
-    "blave-agent-portfolio.path": {"enable": true}
+    "blave-agent-portfolio.path": {"enable": true},
+    "blave-agent-reconciler.service": {"enable": false}
   },
   "_comment_windows": "Scheduled tasks the release wants registered on Windows (schtasks stand-in for the timers; the event chain is the blave-agent-watcher NSSM service, provision-owned). script is relative to C:\\blave-agent; bin: venv|system. Control-plane tasks (updater/watchdog/firstboot) stay provision-owned and NEVER appear here. provision.ps1 registers the same definitions at build time as bootstrap; on drift, this manifest wins.",
   "windows_tasks": {

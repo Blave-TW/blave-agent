@@ -38,6 +38,17 @@ except ImportError:  # Windows — no concurrent .env writer there (first-boot
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 WORKSPACE_STATE = os.path.join(WORKSPACE, "state")
+# Linux reconciler supervision unit (see systemd/blave-agent-reconciler.service).
+# Ships to the whole fleet via the release channel's jobs.json (installed —
+# the unit has no [Install] section at all, so `enable` is structurally
+# impossible). _cmd_restart_reconciler only ever start/restart/stops it —
+# NEVER enable, on purpose (Wei 2026-08-20): trading is opt-in, a reboot
+# must force it off, the user presses 啟動下單 again to resume. `Restart=`
+# inside the unit still covers a mid-session kill (patch restarting
+# "gateway" etc.) — that's active-state crash recovery, unrelated to
+# boot-time startup.
+RECONCILER_UNIT = "blave-agent-reconciler.service"
+RECONCILER_UNIT_PATH = f"/etc/systemd/system/{RECONCILER_UNIT}"
 API_BASE = os.environ.get(
     "BLAVE_COMMAND_URL", "https://api.blave.org/openclaw/agent/command"
 )
@@ -97,6 +108,45 @@ def _cmd_resume(args):
 
     clear_halt("web")
     return "resumed"
+
+
+def _cmd_resume_wait(args):
+    """啟動,等新訊號才進場 (Wei 2026-08-20): resume WITHOUT catch-up orders.
+    Records every funded strategy's current signal value into
+    state/signal_gate.json BEFORE clearing HALT — lib.portfolio's reconcile
+    path excludes a gated strategy's symbol from diffing until its signal
+    CHANGES from the recorded value (then the gate lifts permanently and it
+    trades normally). Write order matters: gate first, then clear_halt — the
+    reconciler fires within seconds of the HALT mtime change, and a round
+    landing between the two must see the gate already in place.
+    An old workspace without gate support ignores the file entirely, which
+    degrades to plain resume (catch-up) — the web only offers this option
+    when the reporter says the workspace supports it (can_wait_start)."""
+    import json as _json
+
+    from lib.guard import clear_halt
+    from lib.portfolio import load_portfolio_config, strategy_amounts
+
+    cfg = load_portfolio_config()
+    amounts = strategy_amounts(cfg)
+    exchanges = cfg.get("exchanges", {})
+    gate = {}
+    for name, amt in amounts.items():
+        if not exchanges.get(name) or float(amt) == 0:
+            continue
+        try:
+            with open(os.path.join("strategies", name, "state.json")) as f:
+                gate[name] = float(_json.load(f).get("position", 0))
+        except (OSError, ValueError, TypeError):
+            continue  # no state yet = nothing to gate; it trades on first signal
+    gate_path = os.path.join("state", "signal_gate.json")
+    os.makedirs(os.path.dirname(gate_path), exist_ok=True)
+    tmp = gate_path + ".tmp"
+    with open(tmp, "w") as f:
+        _json.dump(gate, f, indent=2)
+    os.replace(tmp, gate_path)
+    clear_halt("web")
+    return f"resumed_wait gated={len(gate)}"
 
 
 _CRED_ENV_RE = re.compile(
@@ -1143,7 +1193,11 @@ def _stop_reconciler():
     """True only when no reconciler daemon can still be watching the workspace
     (confirmed stopped, or provably never running). The full-unbind path gates
     the membership clear on this — see the WHY there. Same stop mechanics as
-    _cmd_restart_reconciler's first half."""
+    _cmd_restart_reconciler's first half.
+
+    Linux checks BOTH supervisors, not just one: the fleet is mid-migration
+    from tmux to systemd (see _cmd_restart_reconciler), so a live daemon could
+    be under either depending on when this machine last pressed 啟動下單."""
     try:
         if platform.system() == "Windows":
             st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
@@ -1153,14 +1207,42 @@ def _stop_reconciler():
             r = subprocess.run(["nssm", "stop", "blaveclaw-reconciler"],
                                capture_output=True, timeout=60)
             return r.returncode == 0
+
         r = subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
                            capture_output=True, text=True, timeout=20)
         if r.returncode == 0:
-            return True
-        err = (r.stderr or "").lower()
-        # no such session / no tmux server at all = no daemon = nothing watching
-        return ("find session" in err or "no server" in err
-                or "failed to connect" in err)
+            tmux_gone = True
+        else:
+            err = (r.stderr or "").lower()
+            # no such session / no tmux server at all = no daemon = nothing watching
+            tmux_gone = ("find session" in err or "no server" in err
+                        or "failed to connect" in err)
+        if not tmux_gone:
+            return False
+
+        if not os.path.isfile(RECONCILER_UNIT_PATH):
+            return True  # unit never installed on this machine — nothing else to check
+        state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
+                               capture_output=True, text=True, timeout=15)
+        # deactivating counts as RUNNING: stop is in flight but the process
+        # can live up to TimeoutStopSec more — returning True here would let
+        # the full-unbind path clear membership while the daemon gets one
+        # last reconcile round in (the flatten-live-positions incident
+        # class). `systemctl stop` on a deactivating unit blocks until it's
+        # actually gone, which is exactly the semantics this needs.
+        # failed counts as "uncertain, treat as running" too: Restart=always +
+        # StartLimitIntervalSec=0 make this state rare (systemd's own
+        # documented crash-loop transient), but a unit caught mid-transition
+        # can still show failed while a child process from the old attempt
+        # hasn't finished exiting yet — the same double-daemon risk
+        # `deactivating` guards against, so it's classified the same way.
+        if state.stdout.strip() not in ("active", "activating", "reloading",
+                                        "deactivating", "failed"):
+            return True  # not running — nothing to stop
+        stop = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "stop",
+                               RECONCILER_UNIT],
+                              capture_output=True, text=True, timeout=30)
+        return stop.returncode == 0
     except Exception as e:  # TimeoutExpired, FileNotFoundError, …
         _log(f"reconciler stop failed: {type(e).__name__}: {e}")
         return False
@@ -1540,6 +1622,47 @@ def _nssm_run(step, timeout=15):
         raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
 
 
+def _register_reconciler_deployment(start_type_ok=None):
+    """Upsert the reconciler's state/deployments.json entry (references/manager.md
+    health monitoring) — a bootstrap machine has no agent-written entry yet, so
+    the freshly (re)started daemon would otherwise die unseen. setdefault, not
+    overwrite: an existing entry (already-registered machine) keeps its
+    original registered_at.
+
+    start_type_ok: Windows-only outcome of this press's SERVICE_DEMAND_START
+    correction (_cmd_restart_reconciler) — True once confirmed applied, False
+    if the nssm set call itself failed. Recorded so a machine stuck on
+    AUTO_START (against the reboot-must-force-off policy, Wei 2026-08-20)
+    leaves a trace in the one place healthcheck/ops already look, instead of
+    only ever reaching a stderr log nobody's watching. None (Linux, or a
+    Windows call this function makes for other reasons) leaves any existing
+    value alone rather than erasing a real prior result with "unknown"."""
+    dep_path = os.path.join(WORKSPACE, "state", "deployments.json")
+    try:
+        try:
+            with open(dep_path) as f:
+                deps = json.load(f)
+        except (OSError, ValueError):
+            deps = {}
+        entry = deps.setdefault("reconciler", {
+            "type": "daemon", "expect_every_minutes": 5,
+            "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
+        })
+        if start_type_ok is not None:
+            entry["start_type_corrected"] = start_type_ok
+            entry["start_type_checked_at"] = time.strftime(
+                "%Y-%m-%dT%H:%M:%S", time.gmtime())
+        os.makedirs(os.path.dirname(dep_path), exist_ok=True)
+        # atomic: a truncate-write killed mid-way leaves a broken JSON, which
+        # the next read turns into deps={} — silently wiping every OTHER
+        # strategy's health registration with it
+        with open(dep_path + ".tmp", "w") as f:
+            json.dump(deps, f, indent=2)
+        os.replace(dep_path + ".tmp", dep_path)
+    except OSError as e:
+        _log(f"deployments.json registration failed: {e}")
+
+
 def _cmd_restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
@@ -1557,9 +1680,12 @@ def _cmd_restart_reconciler(args):
         # was silently skipped by an earlier version of this function.
         admin_pw = _capital_admin_password() if "capital" in routed else None
 
-        # Self-bootstrap like the Linux tmux path: a machine where the agent
-        # never set up auto-trading has no service yet — install it here
-        # (references/manager.md sequence) instead of failing the button.
+        # Self-bootstrap: a machine where the agent never set up auto-trading
+        # has no service yet — install it here (references/manager.md
+        # sequence) instead of failing the button. (Linux's equivalent gap —
+        # unit file not on the machine yet — can't self-bootstrap the same
+        # way: installing a unit needs root, which blaveagent doesn't have.
+        # It's covered by the release channel instead, see below.)
         st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
                             capture_output=True, timeout=30)
         if st.returncode != 0:
@@ -1570,11 +1696,18 @@ def _cmd_restart_reconciler(args):
             if not os.path.isfile(ps1):
                 raise RuntimeError("start_reconciler_windows.ps1 missing — "
                                    "workspace too old, run 更新 blave agent first")
+            # DEMAND_START, never AUTO_START (Wei 2026-08-20, same policy as
+            # the Linux unit's missing [Install]): trading is opt-in and a
+            # reboot must force it OFF — the user presses 啟動下單 again to
+            # resume. Crash recovery while the service IS running is
+            # untouched: that's nssm's AppExit action (default Restart),
+            # which respawns the wrapped app independently of the SCM start
+            # type — Start only controls boot behavior.
             steps = [
                 ["install", "blaveclaw-reconciler", "powershell.exe",
                  "-ExecutionPolicy", "Bypass", "-File", ps1],
                 ["set", "blaveclaw-reconciler", "AppDirectory", WORKSPACE],
-                ["set", "blaveclaw-reconciler", "Start", "SERVICE_AUTO_START"],
+                ["set", "blaveclaw-reconciler", "Start", "SERVICE_DEMAND_START"],
             ]
             if admin_pw is not None:
                 # after AppDirectory, before Start — matches capital-broker.md
@@ -1583,26 +1716,9 @@ def _cmd_restart_reconciler(args):
                                  ".\\Administrator", admin_pw])
             for step in steps:
                 _nssm_run(step)
-            # register for health monitoring (references/manager.md) — a
-            # bootstrap machine has no agent-written deployments.json, so the
-            # freshly installed daemon would otherwise die unseen
-            dep_path = os.path.join(WORKSPACE, "state", "deployments.json")
-            try:
-                try:
-                    with open(dep_path) as f:
-                        deps = json.load(f)
-                except (OSError, ValueError):
-                    deps = {}
-                deps.setdefault("reconciler", {
-                    "type": "daemon", "expect_every_minutes": 5,
-                    "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S",
-                                                   time.gmtime()),
-                })
-                os.makedirs(os.path.dirname(dep_path), exist_ok=True)
-                with open(dep_path, "w") as f:
-                    json.dump(deps, f, indent=2)
-            except OSError as e:
-                _log(f"deployments.json registration failed: {e}")
+            # reaching here means every step above, including the
+            # Start=SERVICE_DEMAND_START one, returned success
+            _register_reconciler_deployment(start_type_ok=True)
         else:
             # stop is best-effort: nssm returns 0 on an already-stopped
             # service, but a HUNG one can outlast the timeout — that must not
@@ -1617,17 +1733,118 @@ def _cmd_restart_reconciler(args):
                 # before Capital was routed here — correct it before start
                 _nssm_run(["set", "blaveclaw-reconciler", "ObjectName",
                           ".\\Administrator", admin_pw])
+            # Existing machines were installed AUTO_START (pre-2026-08-20
+            # policy) — lazily correct the start type on every press, same
+            # pattern as the ObjectName fix above. Best-effort: a failed
+            # correction must not block trading start (the next press
+            # retries) — but the outcome goes into deployments.json either
+            # way (not just a log line), so a machine stuck on AUTO_START has
+            # a durable, queryable trace instead of depending on someone
+            # having watched stderr at the exact moment it failed.
+            try:
+                _nssm_run(["set", "blaveclaw-reconciler", "Start",
+                           "SERVICE_DEMAND_START"])
+                _register_reconciler_deployment(start_type_ok=True)
+            except RuntimeError as e:
+                _log(f"start-type correction to DEMAND_START failed: {e} — "
+                     "this machine still auto-resumes trading on reboot")
+                _register_reconciler_deployment(start_type_ok=False)
         cmd = ["nssm", "start", "blaveclaw-reconciler"]
-    else:
-        # kill any existing session first: a crash-looping one would otherwise
-        # keep its name and this would silently no-op
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if out.returncode != 0:
+            raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
+        return "reconciler restarted"
+
+    # Linux. Two ways this machine isn't ready for the systemd path yet:
+    # the unit file hasn't landed (release channel hasn't ticked / is stuck —
+    # this fleet has broken-updater history) or the sudoers rollout hasn't
+    # reached it. In both cases the button falls back to tmux rather than
+    # error — this box may have a tmux-supervised daemon running right now,
+    # and a skew-triggered RuntimeError here would be a strict regression
+    # (works today via tmux -> breaks on this exact machine once this code
+    # ships). ONE deliberate exception, below: if the systemd unit is
+    # provably RUNNING but sudo can't control it, the button fails honestly
+    # instead — starting tmux on top of a live daemon doubles every order.
+    #
+    # NEVER `systemctl enable` here (Wei 2026-08-20): trading is opt-in and a
+    # reboot must force it off, not resume it unattended — see the unit
+    # file's own comment (it has no [Install] section, so enable would fail
+    # anyway). `restart` alone both starts a stopped unit and restarts a
+    # running one, and is all this button is for.
+    def _tmux_fallback(reason):
+        _log(f"{reason} — falling back to tmux supervision (loses "
+             "Restart=always crash recovery — e.g. a platform patch "
+             "restarting \"gateway\" — until this machine gets the systemd "
+             "unit + sudoers rollout; reboot behavior is unaffected either "
+             "way, neither path auto-resumes trading after one)")
+        # kill any existing session first: a crash-looping one would
+        # otherwise keep its name and this would silently no-op
         subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
                        capture_output=True, timeout=20)
         cmd = ["tmux", "new-session", "-d", "-s", "reconciler",
                f"cd {WORKSPACE} && bash manager/start_reconciler.sh"]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    if out.returncode != 0:
-        raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if out.returncode != 0:
+            raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
+        _register_reconciler_deployment()
+        return "reconciler restarted (tmux fallback)"
+
+    if not os.path.isfile(RECONCILER_UNIT_PATH):
+        return _tmux_fallback(f"{RECONCILER_UNIT} not installed on this "
+                              "machine yet")
+
+    # kill any existing tmux session first, unconditionally: the fleet is
+    # mid-migration from tmux to blave-agent-reconciler.service (2026-08), so
+    # a machine that pressed 啟動下單 before this shipped can still have a
+    # live tmux-supervised daemon — leaving it running alongside a freshly
+    # started systemd one would double-place every order. Best-effort/ignored
+    # like every other kill-session call in this file: "no session" is
+    # success — including tmux not being installed at all (FileNotFoundError:
+    # no binary = no session possible; the systemd path must not require it).
+    try:
+        subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
+                       capture_output=True, timeout=20)
+    except FileNotFoundError:
+        pass
+
+    # systemctl restart on a system unit needs root; blaveagent has none by
+    # default (Linux runs the runtime unprivileged, unlike Windows where
+    # everything is already Administrator — see control/updater.py's runuser
+    # comment). `sudo -n` needs the narrow NOPASSWD rule provision.sh writes
+    # on new/rebuilt machines (restart + stop only — no enable, see above);
+    # on an existing machine that hasn't had the one-time sudoers rollout yet
+    # this fails fast (no password prompt).
+    restart = subprocess.run(
+        ["sudo", "-n", "/usr/bin/systemctl", "restart", RECONCILER_UNIT],
+        capture_output=True, text=True, timeout=30)
+    if restart.returncode != 0:
+        # sudo failing does NOT mean the unit isn't running: the sudoers rule
+        # may have been removed/broken AFTER an earlier successful start.
+        # Blindly starting a tmux daemon on top of a live systemd one would
+        # double-place every order — check first (is-active needs no root).
+        # Wei 2026-08-20: when the unit IS running but uncontrollable, the
+        # button must fail honestly, not silently double the daemons.
+        state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
+                               capture_output=True, text=True, timeout=15)
+        # Kept identical to _stop_reconciler's running-set on purpose — three
+        # audit rounds in a row caught a gap in exactly one of these two sets
+        # not matching the other, so: deactivating raises too (the dying
+        # process can reconcile for up to TimeoutStopSec more; by the user's
+        # retry it's inactive and the fallback below fires cleanly), and
+        # failed/reloading are both "uncertain, not confirmed stopped" for
+        # the same reason — see _stop_reconciler's failed comment.
+        if state.stdout.strip() in ("active", "activating", "deactivating",
+                                    "failed", "reloading"):
+            raise RuntimeError(
+                f"{RECONCILER_UNIT} is running but cannot be controlled — "
+                f"sudo systemctl restart failed "
+                f"({(restart.stderr or '').strip()[:150]}); fix the sudoers "
+                "rule (/etc/sudoers.d/blave-agent-reconciler)")
+        return _tmux_fallback(
+            f"sudo systemctl restart {RECONCILER_UNIT} failed "
+            f"({(restart.stderr or '').strip()[:200]}) and the unit is not "
+            "running")
+    _register_reconciler_deployment()
     return "reconciler restarted"
 
 
@@ -1678,6 +1895,7 @@ def _cmd_close_all(args):
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
+    "resume_wait": _cmd_resume_wait,
     "close_all": _cmd_close_all,
     "amounts": _cmd_amounts,
     "execution": _cmd_execution,
@@ -1703,7 +1921,8 @@ def dispatch(command):
     # for its unbind-halt (audit H2: outside it, that halt was inert — either
     # a swallowed ImportError or a HALT file in the wrong cwd); credentials for
     # the same reason (its rebind-eviction halt).
-    if cmd in ("halt", "resume", "close_all", "credentials", "credentials_remove"):
+    if cmd in ("halt", "resume", "resume_wait", "close_all", "credentials",
+               "credentials_remove"):
         return _in_workspace(fn, args)
     return fn(args)
 
