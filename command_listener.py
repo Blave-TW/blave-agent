@@ -106,6 +106,17 @@ def _cmd_halt(args):
 def _cmd_resume(args):
     from lib.guard import clear_halt
 
+    # 「啟動並補齊部位」must honor the choice: a signal gate left over from an
+    # earlier resume_wait would silently keep excluding those strategies from
+    # reconciling — remove it BEFORE clearing HALT (mirror of resume_wait's
+    # write-then-clear order). A failed removal propagates: HALT stays, the
+    # command errors loudly, the user retries — fail-closed, never a resume
+    # that half-honors a stale gate.
+    gate_path = os.path.join("state", "signal_gate.json")
+    try:
+        os.remove(gate_path)
+    except FileNotFoundError:
+        pass
     clear_halt("web")
     return "resumed"
 
@@ -134,11 +145,20 @@ def _cmd_resume_wait(args):
     for name, amt in amounts.items():
         if not exchanges.get(name) or float(amt) == 0:
             continue
-        try:
-            with open(os.path.join("strategies", name, "state.json")) as f:
-                gate[name] = float(_json.load(f).get("position", 0))
-        except (OSError, ValueError, TypeError):
+        state_path = os.path.join("strategies", name, "state.json")
+        if not os.path.exists(state_path):
             continue  # no state yet = nothing to gate; it trades on first signal
+        try:
+            with open(state_path) as f:
+                gate[name] = float(_json.load(f).get("position", 0))
+        except (ValueError, TypeError, OSError) as e:
+            # A CORRUPT/mid-write state.json is not "nothing to gate" — silently
+            # skipping would leave this strategy un-gated and it would catch up
+            # at market against the user's explicit choice. Fail the whole
+            # command loudly: HALT stays set, the user presses start again.
+            raise RuntimeError(
+                f"resume_wait: could not read {state_path} ({e}) — not resuming; "
+                f"press start again in a few seconds") from e
     gate_path = os.path.join("state", "signal_gate.json")
     os.makedirs(os.path.dirname(gate_path), exist_ok=True)
     tmp = gate_path + ".tmp"

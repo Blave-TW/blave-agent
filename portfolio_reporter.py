@@ -317,8 +317,29 @@ def build_report():
         # true on any OS/generation whose workspace has the close-all layer.
         "platform": platform.system(),
         "can_flatten": os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")),
+        # self_ledger: whether this machine diffs against the bot's own book
+        # (portfolio_config.json flag) — the web's stop dialog phrases what
+        # 「關閉 bot 部位」actually closes from this (bot's book only vs the
+        # whole account on a pre-feature machine).
+        "self_ledger": bool((_read_json(
+            os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {}) or {}
+        ).get("self_ledger")),
+        # can_wait_start: whether the workspace's reconcile path understands
+        # state/signal_gate.json (the 「啟動,等新訊號才進場」 option) — keyed
+        # on the actual artifact like can_flatten, so the web never offers a
+        # start mode the machine would silently ignore (an old workspace
+        # ignoring the gate degrades resume_wait to a full catch-up resume).
+        "can_wait_start": _workspace_has_signal_gate(),
         "reported_at": int(time.time()),
     }
+
+
+def _workspace_has_signal_gate():
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py")) as f:
+            return "signal_gate" in f.read()
+    except OSError:
+        return False
 
 
 def report(payload, token=None):
