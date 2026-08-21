@@ -19,8 +19,10 @@ import importlib
 import json
 import math
 import os
+import platform
 import re
 import signal
+import subprocess
 import sys
 import time
 
@@ -332,6 +334,52 @@ def _read_venue_timed(vid, env, seconds=60, flow_state=None):
         signal.signal(signal.SIGALRM, old)
 
 
+def _kick_portfolio_reporter():
+    """Push the freshly written account.json now, instead of waiting on the
+    portfolio .path unit or its 2-minute保底 timer. The .path unit watches
+    account.json, but os.replace above swaps the inode, and systemd's path
+    matcher drops that event while the portfolio oneshot it triggers is still
+    mid-run — so a just-bound venue sat blank for ~2 minutes until the timer
+    caught up (measured on 29026). This closes that gap; the .path unit /
+    file_watcher stay as the backstop.
+
+    Runs the reporter BLOCKING (subprocess.run, not a detached Popen). This
+    reader is a Type=oneshot unit under the default KillMode=control-group: the
+    instant main() exits, systemd SIGTERMs the whole cgroup — which includes any
+    child we spawned. A detached Popen therefore got killed mid-POST before the
+    report left the box (measured on 29026: control-group teardown reaped the
+    child within 10s, the report never arrived; blocking here lets it finish).
+    By waiting for the POST to complete before we exit, the child runs entirely
+    within our lifetime and never meets the teardown — no systemd unit change,
+    no KillMode=process, no sudoers needed. Cost: account.service takes ~1-3s
+    longer per run, well inside its TimeoutStartSec=120, once a minute.
+
+    Best-effort and idempotent: the reporter is stdlib-only — it only reads
+    files and POSTs, writing no local state — so a run racing the timer just
+    sends one more identical report, and it does not write
+    account.json/last_reconcile.json, so it can't re-trigger this reader. Run
+    under this reader's own interpreter (sys.executable): the reporter needs no
+    venue deps, and BLAVE_PROXY_TOKEN is inherited from our environment (both
+    launch paths carry it — account.service's EnvironmentFile and web.service,
+    which hosts the retest listener). A failure or timeout here must never break
+    the account read, so it is logged and swallowed.
+
+    Linux only: on Windows there is no systemd, and file_watcher polls
+    account.json's mtime (no inode-swap blind spot), so it already pushes the
+    report reliably — a kick here would just double it.
+    """
+    if platform.system() == "Windows":
+        return
+    reporter = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "portfolio_reporter.py")
+    try:
+        subprocess.run([sys.executable, reporter], cwd=WORKSPACE,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=15)
+    except Exception as e:  # noqa: BLE001 — best-effort (incl. TimeoutExpired); never fail the read
+        _log(f"portfolio kick failed: {type(e).__name__}")
+
+
 def main():
     os.chdir(WORKSPACE)  # account modules resolve paths relative to the workspace
     if WORKSPACE not in sys.path:
@@ -361,6 +409,9 @@ def main():
     # a Capital user who unbinds/rebinds must not lose "already finished onboarding".
     _write_ever_ok(ever_ok)
     _log(f"wrote {len(venues)} venue(s)")
+    # Kick only after all durable writes (account.json, flow_state, ever_ok) have landed —
+    # this blocking best-effort push must never risk a systemd SIGTERM eating a cursor/ratchet.
+    _kick_portfolio_reporter()  # don't wait on the .path unit — it misses this inode swap
 
 
 if __name__ == "__main__":
