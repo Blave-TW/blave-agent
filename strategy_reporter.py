@@ -9,10 +9,13 @@ LLM proxy and the chat transport: the token resolves to this user only.
 """
 import ast
 import base64
+import gzip
+import hashlib
 import json
 import os
 import re
 import sys
+import time
 import urllib.request
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
@@ -30,6 +33,22 @@ API_URL = os.environ.get(
     "BLAVE_STRATEGIES_URL", "https://api.blave.org/openclaw/agent/strategies"
 )
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
+
+# Full-history chart export (lib/runner.py writes strategies/<name>/chart/) → S3 via
+# /openclaw/agent/chart_data, chunk by chunk, OUTSIDE the strategies report above (that
+# channel is 16MB-capped and carries stats.json tails for first paint). Progress is
+# persisted per chunk so a failed tick resumes instead of re-sending; the manifest hash
+# is the content hash, so an identical re-backtest uploads nothing.
+CHART_URL = os.environ.get(
+    "BLAVE_CHART_URL", "https://api.blave.org/openclaw/agent/chart_data"
+)
+_CHART_STATE_PATH = os.path.join(STATE_DIR, "strategy_chart_sync.json")
+_CHART_CHUNK_GZ_MAX = 4 * 1024 * 1024  # mirrored in api/openclaw/agent_chart_data.py
+# systemd TimeoutStartSec=120: budget + one in-flight request (45s) + the report POST
+# (15s) must stay under it — stop early, resume next tick
+_CHART_TICK_BUDGET_SEC = 45
+_CHART_REQUEST_TIMEOUT = 45
+_CHART_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 # Strategy files set these near the top (see references/strategy-code.md).
 # STRATEGY_NAME is the technical id; DISPLAY_NAME / DESCRIPTION are the
@@ -221,6 +240,131 @@ def save_image_sigs(sigs):
         pass
 
 
+def _chart_request(method, url, body, token, content_encoding=None):
+    headers = {"x-api-key": f"proxy-{token}", "Content-Type": "application/json"}
+    if content_encoding:
+        headers["Content-Encoding"] = content_encoding
+    req = urllib.request.Request(url, data=body, method=method, headers=headers)
+    with urllib.request.urlopen(req, timeout=_CHART_REQUEST_TIMEOUT) as resp:
+        return resp.read()
+
+
+def _load_chart_state():
+    try:
+        with open(_CHART_STATE_PATH) as f:
+            state = json.load(f)
+        return state if isinstance(state, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_chart_state(state):
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        tmp = _CHART_STATE_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, _CHART_STATE_PATH)
+    except OSError:
+        pass
+
+
+def _save_chart_state_entry(name, entry):
+    state = _load_chart_state()
+    state[name] = entry
+    _save_chart_state(state)
+
+
+def _read_chart_manifest(name):
+    path = os.path.join(STRATEGIES_DIR, name, "chart", "manifest.json")
+    try:
+        with open(path) as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(m, dict) or not isinstance(m.get("hash"), str):
+        return None
+    if not isinstance(m.get("chunks"), list):
+        return None
+    return m
+
+
+def _upload_chart(name, manifest, entry, token, deadline):
+    """Push one strategy's chart set; mutates `entry` and persists it after every
+    chunk. Returns when done, out of time budget, or on the first failure — the next
+    tick resumes from `entry`. A chunk whose sha1 no longer matches the manifest means
+    the runner swapped a new set in mid-upload: stop, the next tick sees the new hash
+    and starts over."""
+    base = f"{CHART_URL}/{name}/{manifest['hash']}"
+    if not entry.get("manifest_sent"):
+        _chart_request("PUT", f"{base}/manifest", json.dumps(manifest).encode(), token)
+        entry["manifest_sent"] = True
+        _save_chart_state_entry(name, entry)
+    chart_dir = os.path.join(STRATEGIES_DIR, name, "chart")
+    uploaded = set(entry.get("uploaded") or [])
+    for c in manifest["chunks"]:
+        cid = c.get("id")
+        if cid in uploaded:
+            continue
+        if time.monotonic() > deadline:
+            return False
+        with open(os.path.join(chart_dir, f"chunk-{cid}.json"), "rb") as f:
+            raw = f.read()
+        if hashlib.sha1(raw).hexdigest() != c.get("sha1"):
+            print(f"[strategy_reporter] chart {name} chunk {cid} changed under us; retry next tick",
+                  file=sys.stderr)
+            return False
+        gz = gzip.compress(raw, compresslevel=6)
+        if len(gz) > _CHART_CHUNK_GZ_MAX:
+            print(f"[strategy_reporter] chart {name} chunk {cid} too large ({len(gz)}B); giving up",
+                  file=sys.stderr)
+            entry["failed"] = True
+            return False
+        _chart_request("PUT", f"{base}/chunk/{cid}", gz, token, content_encoding="gzip")
+        uploaded.add(cid)
+        entry["uploaded"] = sorted(uploaded)
+        _save_chart_state_entry(name, entry)
+    _chart_request("POST", f"{base}/commit", b"{}", token)
+    entry["done"] = True
+    return True
+
+
+def sync_charts(strategies, token=None):
+    """TIMER-PATH ONLY (not the mid-turn web_bridge push — uploads can take a while).
+    For each reported strategy: a chart/manifest.json whose hash differs from what we
+    last finished → upload it; a strategy that vanished from the workspace → ask the
+    api to drop its stored chart. Failures are logged and retried next tick."""
+    token = token or PROXY_TOKEN
+    state = _load_chart_state()
+    names = [s["name"] for s in strategies if _CHART_NAME_RE.match(s.get("name") or "")]
+    deadline = time.monotonic() + _CHART_TICK_BUDGET_SEC
+    for gone in [n for n in state if n not in names]:
+        try:
+            _chart_request("DELETE", f"{CHART_URL}/{gone}", None, token)
+        except Exception as e:
+            print(f"[strategy_reporter] chart delete {gone} failed: {e}", file=sys.stderr)
+            continue
+        state.pop(gone, None)
+        _save_chart_state(state)
+    for name in names:
+        manifest = _read_chart_manifest(name)
+        if manifest is None:
+            continue
+        entry = state.get(name) or {}
+        if entry.get("hash") != manifest["hash"]:
+            entry = {"hash": manifest["hash"], "manifest_sent": False, "uploaded": []}
+            _save_chart_state_entry(name, entry)
+        if entry.get("done") or entry.get("failed"):
+            continue
+        if time.monotonic() > deadline:
+            break
+        try:
+            _upload_chart(name, manifest, entry, token, deadline)
+        except Exception as e:
+            print(f"[strategy_reporter] chart upload {name} failed: {e}", file=sys.stderr)
+        _save_chart_state_entry(name, entry)
+
+
 def _config_version():
     """workspace 根的 VERSION(config 更新流程會 copy 進來)。讀不到 = None,
     fail-soft:舊機沒這個檔是常態,不值得噪音。"""
@@ -265,6 +409,7 @@ def main():
     except Exception as e:
         print(f"[strategy_reporter] report failed: {e}", file=sys.stderr)
         sys.exit(1)
+    sync_charts(strategies)
 
 
 if __name__ == "__main__":
