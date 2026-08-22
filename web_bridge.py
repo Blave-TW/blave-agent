@@ -117,10 +117,10 @@ def sync_strategies():
         strategy_reporter.save_image_sigs(sigs)
     except Exception as e:
         print(f"[web_bridge] strategies cache update failed: {e}", file=sys.stderr)
-    # live: goes through the SSE stream the browser already has open.
-    # 圖不上串流(2MB 上限)——attach 已就地加了 images,推 chunk 前剝掉。
-    chunk_strategies = [{k: v for k, v in s.items() if k != "images"} for s in strategies]
-    chunk = json.dumps({"type": "strategies", "strategies": chunk_strategies}).encode()
+    # live: goes through the SSE stream the browser already has open (2MB /report cap
+    # — live_chunk drops images and, when needed, the heavy backtest arrays; the browser
+    # refetches the full cache a few seconds after this chunk).
+    chunk = json.dumps(strategy_reporter.live_chunk(strategies)).encode()
     req = urllib.request.Request(
         REPORT_URL, data=chunk,
         headers={"Content-Type": "application/json", "x-api-key": f"proxy-{PROXY_TOKEN}"},

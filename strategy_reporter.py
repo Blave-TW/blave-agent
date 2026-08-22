@@ -127,11 +127,10 @@ def _extract(path, fallback_name):
 
 def _read_backtest(name):
     """Backtest output (lib/runner.py) always lands in strategies/<name>/stats.json
-    — metrics + daily equity series, feeding the workspace's 回測數據 tab. Returns
-    the parsed dict, or None when the strategy has no backtest yet / it's unreadable.
-    The daily arrays make this the heaviest field; it rides the same cache/stream as
-    `code`, fine for a handful of strategies — split to an on-demand fetch if a fleet
-    of strategies ever bloats the payload."""
+    — metrics + daily equity series + candles/panes/trades tails (≈1.7MB per 5min
+    strategy), feeding the workspace's 回測數據 / 進出場紀錄 tabs. Returns the parsed
+    dict, or None when the strategy has no backtest yet / it's unreadable. Carried in
+    full only by report_cache (16MB endpoint); live chunks go through live_chunk()."""
     path = os.path.join(STRATEGIES_DIR, name, "stats.json")
     try:
         with open(path) as f:
@@ -176,6 +175,33 @@ def scan():
         if prev is None or (prev["status"] != "live" and s["status"] == "live"):
             by_name[s["name"]] = s
     return list(by_name.values())
+
+
+# Live `strategies` chunks ride the webchat /report channel, capped at REPORT_BODY_MAX
+# (2MB, api/openclaw/webchat.py) — unlike report_cache's 16MB endpoint. Headroom for the
+# chunk wrapper + session_id.
+_LIVE_CHUNK_BUDGET = int(1.5 * 1024 * 1024)
+# Stripped tier by tier until the chunk fits. The web redraws the open strategy from
+# every live chunk: tier 1 loses the 進出場紀錄 K 線/trades (back after the turn-end
+# cache refetch), tier 2 also the equity curve — the list/status/metrics always arrive.
+_LIVE_STRIP_TIERS = (("candles", "panes", "trades"), ("daily_dates", "daily_returns"))
+
+
+def live_chunk(strategies):
+    """The `strategies` chunk for the chat stream (agent_turn mid-turn, web_bridge at
+    turn end / after a command). Never images; the heavy backtest arrays only while the
+    whole chunk stays under the /report cap — 7 strategies × 20k-candle tails = 413 and
+    the workspace stopped updating (29026, 2026-08-21). Does not mutate `strategies`."""
+    out = [{k: v for k, v in s.items() if k != "images"} for s in strategies]
+    chunk = {"type": "strategies", "strategies": out}
+    for tier in _LIVE_STRIP_TIERS:
+        if len(json.dumps(chunk)) <= _LIVE_CHUNK_BUDGET:
+            break
+        for s in out:
+            bt = s.get("backtest")
+            if isinstance(bt, dict):
+                s["backtest"] = {k: v for k, v in bt.items() if k not in tier}
+    return chunk
 
 
 def _list_images(name):

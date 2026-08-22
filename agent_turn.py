@@ -676,8 +676,8 @@ def _strategies_signature(strategies):
 def _maybe_push_strategies(sink, last_sig):
     """Mid-turn: the moment the agent's tools change the strategy inventory (a new
     strategy file, a finished backtest), push the fresh list so the workspace updates
-    right away instead of waiting for the whole turn to end. Live SSE chunk only — the
-    cache is refreshed by web_bridge at turn end."""
+    right away instead of waiting for the whole turn to end. Live SSE chunk only (size-
+    trimmed to the /report cap) — the full cache is refreshed by web_bridge at turn end."""
     try:
         strategies = strategy_reporter.scan()
     except Exception as e:
@@ -685,7 +685,7 @@ def _maybe_push_strategies(sink, last_sig):
         return last_sig
     sig = _strategies_signature(strategies)
     if sig != last_sig:
-        sink._send({"type": "strategies", "strategies": strategies})
+        sink._send(strategy_reporter.live_chunk(strategies))
     return sig
 
 
