@@ -16,6 +16,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.request
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
@@ -48,7 +49,11 @@ _CHART_CHUNK_GZ_MAX = 4 * 1024 * 1024  # mirrored in api/openclaw/agent_chart_da
 # (15s) must stay under it — stop early, resume next tick
 _CHART_TICK_BUDGET_SEC = 45
 _CHART_REQUEST_TIMEOUT = 45
-_CHART_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# A 409 (manifest not uploaded / chunks missing) means the api lost our staged set —
+# e.g. commit hit the total-size cap and swept it — so the persisted progress is a lie:
+# start that hash over. Bounded so a 409 that never clears can't loop every tick forever.
+_CHART_MAX_RESETS = 3
+_CHART_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 # Strategy files set these near the top (see references/strategy-code.md).
 # STRATEGY_NAME is the technical id; DISPLAY_NAME / DESCRIPTION are the
@@ -240,13 +245,34 @@ def save_image_sigs(sigs):
         pass
 
 
+class _ChartHTTPError(Exception):
+    """HTTP 4xx/5xx from the chart api, with the status and a body excerpt for logs."""
+
+    def __init__(self, code, body):
+        super().__init__(f"HTTP {code}: {body}")
+        self.code = code
+
+    @property
+    def permanent(self):
+        """Retrying the same bytes can't fix it (except 429 = rate limited, and 409 =
+        staged set gone, which the caller handles by starting over)."""
+        return 400 <= self.code < 500 and self.code not in (409, 429)
+
+
 def _chart_request(method, url, body, token, content_encoding=None):
     headers = {"x-api-key": f"proxy-{token}", "Content-Type": "application/json"}
     if content_encoding:
         headers["Content-Encoding"] = content_encoding
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=_CHART_REQUEST_TIMEOUT) as resp:
-        return resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=_CHART_REQUEST_TIMEOUT) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as e:
+        try:
+            excerpt = e.read(200).decode("utf-8", "replace").strip()
+        except Exception:
+            excerpt = ""
+        raise _ChartHTTPError(e.code, excerpt) from None
 
 
 def _load_chart_state():
@@ -329,6 +355,10 @@ def _upload_chart(name, manifest, entry, token, deadline):
     return True
 
 
+def _fresh_entry(h, resets=0):
+    return {"hash": h, "manifest_sent": False, "uploaded": [], "resets": resets}
+
+
 def sync_charts(strategies, token=None):
     """TIMER-PATH ONLY (not the mid-turn web_bridge push — uploads can take a while).
     For each reported strategy: a chart/manifest.json whose hash differs from what we
@@ -336,11 +366,17 @@ def sync_charts(strategies, token=None):
     api to drop its stored chart. Failures are logged and retried next tick."""
     token = token or PROXY_TOKEN
     state = _load_chart_state()
-    names = [s["name"] for s in strategies if _CHART_NAME_RE.match(s.get("name") or "")]
+    names = [s["name"] for s in strategies if _CHART_NAME_RE.fullmatch(s.get("name") or "")]
     deadline = time.monotonic() + _CHART_TICK_BUDGET_SEC
     for gone in [n for n in state if n not in names]:
+        if time.monotonic() > deadline:
+            return
         try:
             _chart_request("DELETE", f"{CHART_URL}/{gone}", None, token)
+        except _ChartHTTPError as e:
+            print(f"[strategy_reporter] chart delete {gone} failed: {e}", file=sys.stderr)
+            if not e.permanent:
+                continue  # 429/5xx: retry next tick; a permanent 4xx just drops the entry
         except Exception as e:
             print(f"[strategy_reporter] chart delete {gone} failed: {e}", file=sys.stderr)
             continue
@@ -352,7 +388,7 @@ def sync_charts(strategies, token=None):
             continue
         entry = state.get(name) or {}
         if entry.get("hash") != manifest["hash"]:
-            entry = {"hash": manifest["hash"], "manifest_sent": False, "uploaded": []}
+            entry = _fresh_entry(manifest["hash"])  # new set: a `failed` older hash unlocks here
             _save_chart_state_entry(name, entry)
         if entry.get("done") or entry.get("failed"):
             continue
@@ -360,6 +396,21 @@ def sync_charts(strategies, token=None):
             break
         try:
             _upload_chart(name, manifest, entry, token, deadline)
+        except _ChartHTTPError as e:
+            resets = int(entry.get("resets") or 0)
+            if e.code == 409 and resets < _CHART_MAX_RESETS:
+                print(f"[strategy_reporter] chart upload {name}: {e}; restarting hash "
+                      f"({resets + 1}/{_CHART_MAX_RESETS})", file=sys.stderr)
+                entry = _fresh_entry(manifest["hash"], resets + 1)
+            elif e.code == 409 or e.permanent:
+                # Re-sending the same bytes can't fix a 400/413/…: stop hammering the api
+                # every 2 minutes; only a new hash (re-backtest) clears `failed`.
+                print(f"[strategy_reporter] chart upload {name} rejected, giving up until the "
+                      f"chart changes: {e}", file=sys.stderr)
+                entry["failed"] = True
+            else:
+                print(f"[strategy_reporter] chart upload {name} failed: {e}; retry next tick",
+                      file=sys.stderr)
         except Exception as e:
             print(f"[strategy_reporter] chart upload {name} failed: {e}", file=sys.stderr)
         _save_chart_state_entry(name, entry)
