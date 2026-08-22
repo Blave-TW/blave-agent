@@ -703,6 +703,25 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # BLAVE_AGENT_DB:AGENTS.md 教 agent 用 sqlite 唯讀查自己的逐字稿;Linux 的
     # provisioning 沒設這個 env,在這裡帶最終解析值,兩個 OS 都保證看得到。
     turn_env = {**PROXY_ENV, "BLAVECLAW_HOME": BLAVECLAW_HOME, "BLAVE_AGENT_DB": ss.DB_PATH}
+    # Claude Code's Bash tool auto-backgrounds any command still running at 600s
+    # (CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS) and caps the per-call `timeout`
+    # at BASH_MAX_TIMEOUT_MS (600s). A large-universe Type C backtest (300 台股,
+    # cold cache, throttled Windows box) takes longer than that: uid=1 2026-08-22
+    # the run got backgrounded at 600s, the agent ended the turn "waiting", and the
+    # turn's exit killed the backtest — $0.71 for no stats.json. 30 min keeps a
+    # long backtest in the foreground so the agent actually sees it finish; the
+    # turn's own max_turns / max_budget_usd brakes still bound the damage.
+    # The auto-background threshold is min(requested timeout, AUTO_BACKGROUND), so
+    # only runs the agent explicitly gives a long `timeout` stay in the foreground;
+    # BASH_DEFAULT_TIMEOUT_MS is deliberately left at its 120s default so a
+    # command that hangs with no timeout still gets backgrounded fast.
+    # MUST stay strictly below the bridges' turn timeouts (telegram_bridge 2000s,
+    # web_bridge TURN_TIMEOUT 2100s) or a rule-abiding long backtest gets the
+    # whole turn killed instead. Names verified inside claude 2.1.239.
+    turn_env.update({
+        "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": "1800000",
+        "BASH_MAX_TIMEOUT_MS": "1800000",
+    })
     if isinstance(sink, WebSink):
         # So lib/notify.report_photo_web can mirror backtest/param-scan charts into the
         # web chat (the agent's Bash-run strategy code inherits this env).

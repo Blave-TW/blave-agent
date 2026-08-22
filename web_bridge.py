@@ -57,7 +57,9 @@ _current_session = {"id": None}
 
 # 一輪的硬上限。參數掃描是網格搜尋(每組都回測),600s 常常不夠——真正的煞車
 # 是 agent_turn 自己的 max_budget_usd/max_turns,這裡只防永久卡死。
-TURN_TIMEOUT = 1800
+# 必須嚴格大於 agent_turn 給 Bash 工具的 30 分鐘上限(一支前景跑滿的回測 +
+# 模型往返 + 摘要壓縮),否則照規則前景跑的大回測會在這裡被殺(2026-08-22 稽核)。
+TURN_TIMEOUT = 2100
 # 掃描期間 agent 跑一條長 bash,中間完全不會有 chunk;前端看門狗會誤判成
 # 「機器死了」。每分鐘送一個 ping 讓它知道還活著(前端只用來重置計時,不顯示)。
 PING_INTERVAL = 60
