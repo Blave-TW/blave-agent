@@ -721,6 +721,12 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     turn_env.update({
         "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": "1800000",
         "BASH_MAX_TIMEOUT_MS": "1800000",
+        # The Windows native claude.exe self-updates unless told not to; set it on both
+        # OSes (the Linux CLI bundled in the SDK wheel is not documented to, but this
+        # costs nothing). Keep every machine on the CLI its image shipped — no 330MB
+        # download mid-turn on a throttled box, no silent CLI/SDK drift. Name verified
+        # inside claude 2.1.239.
+        "DISABLE_AUTOUPDATER": "1",
     })
     if isinstance(sink, WebSink):
         # So lib/notify.report_photo_web can mirror backtest/param-scan charts into the
