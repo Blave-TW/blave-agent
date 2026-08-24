@@ -77,6 +77,37 @@ def strip_hallucinated_turn(text):
     return text[: m.start()].rstrip(), True
 
 
+# ── 建議下一步(suggested next actions)────────────────────────────────────
+# 模型依 WEB_FORMATTING_RULE 在回覆末尾輸出 <suggest> 區塊(一行一句);
+# WebSink.finalize 把它剝離成 {"type": "suggestions", "items": [...]} chunk,
+# 前端渲染成輸入框上緣的可點建議列(點了=替用戶送出那句話)。
+# TG 面沒有這條規則,但 TelegramSink 仍防禦性剝除,raw 標記絕不給用戶看到。
+_SUGGEST_BLOCK_RE = re.compile(r"[ \t]*<suggest>(.*?)</suggest>[ \t]*", re.S)
+# 回覆被截斷(interrupt/max_turns)時可能只剩未閉合的開頭——也要剝乾淨。
+_SUGGEST_OPEN_TAIL_RE = re.compile(r"[ \t]*<suggest>(?:(?!</suggest>).)*$", re.S)
+_SUGGEST_MAX_ITEMS = 3
+_SUGGEST_MAX_CHARS = 80
+
+
+def extract_suggestions(text):
+    """回傳 (清理後文字, 建議清單)。剝掉所有 <suggest> 區塊(含未閉合尾段),
+    items 取最後一個完整區塊;格式不符的行直接丟——fail-silent,絕不影響正文。"""
+    if not text or "<suggest>" not in text:
+        return text, []
+    items = []
+    blocks = _SUGGEST_BLOCK_RE.findall(text)
+    if blocks:
+        for line in blocks[-1].strip().splitlines():
+            line = line.strip().lstrip("-•*").strip()
+            if line and len(line) <= _SUGGEST_MAX_CHARS:
+                items.append(line)
+            if len(items) >= _SUGGEST_MAX_ITEMS:
+                break
+    cleaned = _SUGGEST_BLOCK_RE.sub("", text)
+    cleaned = _SUGGEST_OPEN_TAIL_RE.sub("", cleaned)
+    return cleaned.rstrip(), items
+
+
 def _lang_directive(message):
     """Deterministic per-turn language pin. Han-character ratio decides what the
     user wrote in; the directive names ONE target language explicitly — a generic
@@ -319,6 +350,18 @@ WEB_FORMATTING_RULE = (
     "可用 **粗體**、清單、`行內程式碼`；表格僅限小型。\n"
     "- 建立/修改策略後說一句「程式碼在左側策略頁」即可；"
     "回測細節請使用者看回測分頁。\n\n"
+    "**建議下一步**：當這一輪剛完成一個里程碑，在回覆最末尾（其後不得再有任何文字）"
+    "附上建議區塊，前端會渲染成可點的建議列（點了=替用戶送出那句話）。格式：\n"
+    "<suggest>\n把 supertrend_btc 上模擬盤\n</suggest>\n"
+    "規則：\n"
+    "- 只在命中里程碑時附：策略寫好還沒回測→建議跑回測；回測完成且結果可用→"
+    "建議上模擬盤（paper）；模擬盤已穩定跑一段時間且執行無異常→建議小額實盤；"
+    "用戶聊到想實際跑但還沒綁任何交易所→建議先綁模擬盤。閒聊、問答、查資料不附。\n"
+    "- 一行一個建議，最多 3 個、通常 1 個就好；句子=用戶口吻的一句短指令"
+    "（動詞+對象+必要參數），一行寫完、不用標點結尾。\n"
+    "- 禁止：形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、"
+    "催促與 FOMO（立即、馬上、別錯過）、emoji。策略名與數字必須真實存在。\n"
+    "- 用戶拒絕或忽略過的建議，同一階段不要重複提。\n\n"
     + _STYLE_RULES
     + _NO_NARRATION
 )
@@ -522,7 +565,9 @@ class TelegramSink:
         cleaned, cut = strip_hallucinated_turn(self.chunk_text)
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
-            self.chunk_text = cleaned
+        # TG 面沒有建議列規則,但防禦性剝除(模型偶發混淆時 raw 標記不能露出)。
+        cleaned, _ = extract_suggestions(cleaned)
+        self.chunk_text = cleaned
         self.chunk_text = convert_markdown_tables_to_list(self.chunk_text)
         self.streamer.finish(self.chunk_text)
         self.segments.append(self.chunk_text)
@@ -641,13 +686,19 @@ class WebSink:
             # 模型把話全講在帶工具的訊息裡——用最後一句旁白補位,別回空氣
             self.on_text(self._last_status)
         # 假對話一定長在最後一段(續寫發生在回覆結尾),所以只需清這一段,
-        # 並叫前端把已經串流出去的那段換成乾淨版。
+        # 並叫前端把已經串流出去的那段換成乾淨版。<suggest> 區塊同理(規則要求
+        # 放在回覆最末尾),一起在這段剝離——歷史(finalize 回傳值)因此也是乾淨的。
         seg = self.full_text[self._seg_start:]
         cleaned, cut = strip_hallucinated_turn(seg)
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
+        cleaned, suggestions = extract_suggestions(cleaned)
+        if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
             self._send({"type": "text_replace", "text": cleaned})
+        # 被 Stop 截斷的回合不給建議——半途的里程碑判定不可信。
+        if suggestions and not self.interrupted:
+            self._send({"type": "suggestions", "items": suggestions})
         self._send({"type": "done"})
         return self.full_text
 
