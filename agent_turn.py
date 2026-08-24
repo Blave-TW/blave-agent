@@ -108,6 +108,44 @@ def extract_suggestions(text):
     return cleaned.rstrip(), items
 
 
+def _deploy_state_line():
+    """部署現況的一行機器事實(建議規則配套,web 專屬)。2026-08-24 實測:
+    supertrend_sol 已在模擬盤跑兩天,agent 仍建議「上模擬盤」——prompt 要求
+    模型自查 deployments.json 靠不住,deterministic 餵進來才穩(phase 2 狀態機
+    的第一塊)。fail-silent:讀不到就回空字串,絕不影響回合。"""
+    try:
+        deployed = []
+        try:
+            with open(os.path.join(WORKSPACE, "state", "deployments.json"),
+                      encoding="utf-8") as f:
+                reg = json.load(f)
+            if isinstance(reg, dict):
+                deployed = [k for k in reg if k != "reconciler"][:15]
+        except (OSError, ValueError):
+            pass
+        names = []
+        sdir = os.path.join(WORKSPACE, "strategies")
+        if os.path.isdir(sdir):
+            for e in sorted(os.listdir(sdir)):
+                if e.startswith((".", "TEMPLATE")) or e == "__pycache__":
+                    continue
+                full = os.path.join(sdir, e)
+                if os.path.isdir(full) and os.path.isfile(os.path.join(full, "strategy.py")):
+                    names.append(e)
+                elif os.path.isfile(full) and e.endswith(".py"):
+                    names.append(e[:-3])
+        undeployed = [n for n in names if n not in deployed][:15]
+        paper = os.path.isfile(os.path.join(WORKSPACE, "state", "paper_ledger.json"))
+        parts = ["已部署運行中:" + ("、".join(deployed) if deployed else "無")]
+        if undeployed:
+            parts.append("未部署:" + "、".join(undeployed))
+        parts.append("模擬盤帳戶:" + ("已綁定" if paper else "未綁定"))
+        return ("[部署現況(機器事實,提議前先對照——已在跑的策略不要再建議部署/上模擬盤):"
+                + ";".join(parts) + "]")
+    except Exception:
+        return ""
+
+
 def _lang_directive(message):
     """Deterministic per-turn language pin. Han-character ratio decides what the
     user wrote in; the directive names ONE target language explicitly — a generic
@@ -174,6 +212,9 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 英文訊息被回成中文/中英混雜(實測兩輪)。
     parts.append(_lang_directive(message))
     if suggest_directive:
+        state_line = _deploy_state_line()
+        if state_line:
+            parts.append(state_line)
         # 建議規則的逐輪錨(web 專屬)。系統提示尾端的版本擋不住 in-context 慣性:
         # session 歷史累積「市場問答→問句收尾」先例後,deepseek 對探索層連續三輪
         # 不服從(2026-08-24 e2e:ETH/BTC vs ETH/SOL 三輪全數問句收尾、零區塊);
