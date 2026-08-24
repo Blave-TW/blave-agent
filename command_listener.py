@@ -2002,26 +2002,40 @@ def run(on_applied=None):
     # scan — a degraded network stacks that to ~45s. This loop is the panic path
     # (halt → close_all), and a stop that queues behind a report is not a stop:
     # the whole push, delayed repush included, runs off-loop on its own daemon
-    # thread. Single-flight (only this loop thread touches the flag): on_applied
-    # reads live state, so the in-flight push's 8s repush already carries the
-    # newer command's effects — a second thread would only race the same POSTs.
+    # thread. Single-flight + dirty flag: a command landing mid-push marks
+    # report_dirty instead of spawning a racing thread, and the report thread
+    # runs another push+repush round before it exits — so no command's effect
+    # waits on the 2-minute timer. The loop thread sets inflight/dirty, the
+    # report thread clears them; report_lock covers the check-then-set on
+    # both sides so a dirty mark can't slip in between the final dirty check
+    # and inflight.clear().
     report_inflight = threading.Event()
+    report_dirty = threading.Event()
+    report_lock = threading.Lock()
 
     def _report():
         try:
-            try:
-                on_applied()
-            except Exception as e:
-                _log(f"post-command report failed: {type(e).__name__}")
-            # 二次回報:指令的下游效果(reconcile 快照、account 讀數)要幾秒才
-            # 落地,只推一次會讓頁面等到 2 分鐘 timer 才看到「實際」更新
-            time.sleep(8)
-            try:
-                on_applied()
-            except Exception as e2:
-                _log(f"delayed report failed: {type(e2).__name__}")
-        finally:
-            report_inflight.clear()
+            while True:
+                try:
+                    on_applied()
+                except Exception as e:
+                    _log(f"post-command report failed: {type(e).__name__}")
+                # 二次回報:指令的下游效果(reconcile 快照、account 讀數)要幾秒才
+                # 落地,只推一次會讓頁面等到 2 分鐘 timer 才看到「實際」更新
+                time.sleep(8)
+                try:
+                    on_applied()
+                except Exception as e2:
+                    _log(f"delayed report failed: {type(e2).__name__}")
+                with report_lock:
+                    if not report_dirty.is_set():
+                        report_inflight.clear()
+                        return
+                    report_dirty.clear()
+        except Exception:
+            with report_lock:
+                report_inflight.clear()
+            raise
 
     while True:
         _beat()
@@ -2054,9 +2068,19 @@ def run(on_applied=None):
                     daemon=True, name="command-ack",
                 ).start()
         if on_applied:
-            if report_inflight.is_set():
-                _log("post-command report still in flight — skipped (its repush covers this)")
-            else:
+            with report_lock:
+                if report_inflight.is_set():
+                    report_dirty.set()
+                    _log("post-command report in flight — marked dirty, will repush")
+                    continue
                 report_inflight.set()
+            try:
                 threading.Thread(target=_report, daemon=True,
                                  name="command-report").start()
+            except RuntimeError as e:
+                # A stuck inflight would turn every later command into a
+                # "marked dirty" log that nothing ever pushes, until restart.
+                with report_lock:
+                    report_inflight.clear()
+                    report_dirty.clear()
+                _log(f"post-command report thread failed to start: {e}")
