@@ -964,6 +964,26 @@ def _strategy_futures_symbol(name):
     return None
 
 
+def _strategy_is_portfolio(name):
+    """True only when strategies/<name>/stats.json positively identifies a
+    Type C portfolio strategy — read straight off disk like
+    _strategy_futures_symbol (this runtime never executes workspace code).
+    Classification contract lives in strategy_reporter.is_portfolio_stats
+    (symbol absent AND benchmark_* present, per lib/runner.py's two stats.json
+    shapes). Fail-open on missing/corrupt stats: blocking a fundable Type A on
+    a stale file would strand a real config, while a missed Type C only keeps
+    the pre-guard behavior."""
+    import strategy_reporter  # same runtime dir; single classification source
+
+    path = os.path.join(WORKSPACE, "strategies", name, "stats.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return strategy_reporter.is_portfolio_stats(data)
+
+
 def _cmd_amounts(args):
     """策略下單金額 — the 下單設定 page's save button.
 
@@ -992,12 +1012,14 @@ def _cmd_amounts(args):
     # empty dict is legal: "the portfolio is empty" (every strategy unpicked)
     if not isinstance(amounts, dict):
         raise ValueError("amounts needs a {strategy: dollars} mapping")
-    prev = set()
+    prev_amounts = {}
     try:
         with open(os.path.join(WORKSPACE, "manager", "portfolio_config.json")) as f:
-            prev = set((json.load(f).get("amounts") or {}))
+            a = json.load(f).get("amounts")
+            prev_amounts = a if isinstance(a, dict) else {}
     except (OSError, ValueError, AttributeError):
-        pass  # kickoff detection only — the main read below fail-closes properly
+        pass  # kickoff/guard detection only — the main read below fail-closes properly
+    prev = set(prev_amounts)
     clean = {}
     for k, v in amounts.items():
         # Names are interpolated into crontab lines and workspace paths —
@@ -1012,6 +1034,34 @@ def _cmd_amounts(args):
         if not (0 <= f < 1e12):  # rejects NaN, negatives, inf
             raise ValueError("amounts must be finite and >= 0")
         clean[k] = round(f, 2)
+
+    # Type C (portfolio) strategies have no live path: lib/runner.py's Type C
+    # branch never writes state.json, so the reconciler's aggregate never sees
+    # them — funding one schedules signal runs that can never place an order,
+    # with zero alerts, while the user believes it's trading (audit,
+    # 2026-08-24). Refuse the save up front. Checked = every UNFUNDED→FUNDED
+    # transition: amount >0 now while the stored config has it absent or ≤0.
+    # Membership alone was a bypass (pick at 0, save, then raise the amount —
+    # the key is "existing" by then); amount ≤0 itself never trades, so picking
+    # a Type C at 0 stays legal. Already-funded (>0) keys keep saving back
+    # regardless — never lock a stock config out of its own save button — and
+    # _strategy_is_portfolio fail-opens on anything ambiguous.
+    newly_funded = set()  # unfunded→funded this save — the gate cleanup below reuses it
+    for k, amt in clean.items():
+        if amt <= 0:
+            continue
+        try:
+            was_funded = float(prev_amounts.get(k, 0)) > 0
+        except (TypeError, ValueError):
+            was_funded = False  # a garbage stored value is not a funded config
+        if was_funded:
+            continue
+        if _strategy_is_portfolio(k):
+            raise ValueError(
+                f"「{k}」是投資組合(Type C)策略,暫不支援自動下單——"
+                f"請取消勾選這支策略後再儲存"
+            )
+        newly_funded.add(k)
 
     path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
     try:
@@ -1079,6 +1129,35 @@ def _cmd_amounts(args):
     with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2)
     os.replace(tmp, path)  # atomic: the reconciler mtime-watches + json-loads this
+    # signal_gate 殘留清理:resume_wait 寫下的 baseline 只有在「訊號變動」時由
+    # lib/portfolio 的 lift 路徑清掉,但金額歸 0 / 取消勾選的策略在 aggregate
+    # 提前 continue,永遠走不到那條路——之後重新 fund 會拿作廢的 baseline 誤
+    # gate(audit,2026-08-24)。所以儲存成功後把「不在新 amounts 或金額 ≤0」
+    # 的 entry 剔掉;newly_funded(這次 unfunded→funded)也一律剔——它之前
+    # 金額 ≤0/不存在,baseline 定義上必然作廢,不論歸零是不是經過 amounts
+    # 儲存(agent 直接改 config 的那條殘留路也被這關掉),也堵住 reconciler
+    # merge-on-save 毫秒窗口把被剔 entry 寫回、下次 re-fund 又被留下的競態
+    # (audit P2-1)。Delete-only + write only when something was dropped(same
+    # lost-update reasoning as lib/portfolio's merge-on-save, audit #7 there:
+    # the reconciler may lift an entry concurrently, so never write back a
+    # copy that didn't change)。Best-effort:gate 是輔助狀態,清理失敗絕不能
+    # 反過來讓 amounts 儲存 fail。
+    try:
+        gate_path = os.path.join(WORKSPACE_STATE, "signal_gate.json")
+        with open(gate_path, encoding="utf-8") as f:
+            gate = json.load(f)
+        if isinstance(gate, dict):
+            kept = {n: v for n, v in gate.items()
+                    if clean.get(n, 0) > 0 and n not in newly_funded}
+            if kept != gate:
+                gtmp = gate_path + ".tmp"
+                with open(gtmp, "w") as f:
+                    json.dump(kept, f, indent=2)
+                os.replace(gtmp, gate_path)  # atomic, same convention as _cmd_resume_wait
+    except FileNotFoundError:
+        pass  # no gate = nothing to clean
+    except (OSError, ValueError, TypeError) as e:
+        _log(f"signal_gate cleanup failed: {type(e).__name__}")
     _sync_strategy_crons(set(clean))  # 選到就跑:picked = scheduled,不看金額
     # 勾好=在跑:新選入的立刻背景跑一次,不等下一個 cron 整點——訊號一分鐘
     # 內就新鮮,sidebar 的點跟著亮。detached + DEVNULL:跑多久、成敗都不能

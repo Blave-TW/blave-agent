@@ -125,6 +125,26 @@ def _extract(path, fallback_name):
     }
 
 
+def is_portfolio_stats(stats):
+    """True only when this stats.json POSITIVELY identifies a Type C portfolio
+    backtest. Basis (blaveclaw-config lib/runner.py): the Type C branch writes
+    the random_bh_benchmark `benchmark_*` fields and no `symbol` key at all,
+    while the Type A branch always writes `symbol` and never calls
+    random_bh_benchmark. Both signals must agree — an old Type A stats.json
+    that predates the symbol field has no benchmark_* keys either, so it stays
+    False. Anything ambiguous (no stats, unknown shape) is False: this feeds
+    fund-blocking (command_listener._cmd_amounts) and the web picker's grey-out,
+    where wrongly blocking a real Type A strands its config; a missed Type C
+    merely keeps today's behavior. Single classification source — the
+    command_listener guard imports this rather than re-deriving it."""
+    if not isinstance(stats, dict):
+        return False
+    sym = stats.get("symbol")
+    if isinstance(sym, str) and sym.strip():
+        return False
+    return any(isinstance(k, str) and k.startswith("benchmark_") for k in stats)
+
+
 def _read_backtest(name):
     """Backtest output (lib/runner.py) always lands in strategies/<name>/stats.json
     — metrics + daily equity series + candles/panes/trades tails (≈1.7MB per 5min
@@ -170,6 +190,11 @@ def scan():
         bt = _read_backtest(s["name"])
         if bt is not None:
             s["backtest"] = bt
+        # Web-side hint so the 下單設定 picker can grey the checkbox out; the
+        # authoritative block is _cmd_amounts' save-time guard (a stale cache
+        # here must not be the only defense). False when unknown — fail open,
+        # see is_portfolio_stats.
+        s["is_portfolio"] = is_portfolio_stats(bt)
         prev = by_name.get(s["name"])
         # keep the live one if a name shows up twice
         if prev is None or (prev["status"] != "live" and s["status"] == "live"):
