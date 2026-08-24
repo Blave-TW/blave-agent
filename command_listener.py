@@ -223,6 +223,100 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     }
 
 
+def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
+    """manager/amounts.ui.json — the LAST UI-confirmed amounts/exchanges
+    (deployment redline L2, spec §3.1). lib/portfolio's load_portfolio_config
+    prefers this file over portfolio_config.json when it exists, so an agent
+    hand-editing the config can no longer change funding/routing. Called by
+    every writer this listener has for those two keys (_cmd_amounts, the
+    credential-evict routing clear via _clear_evicted_in_ui_mirror, the
+    full-unbind membership clear — the only three writers, audited
+    2026-08-24), and always BEFORE the corresponding portfolio_config write
+    (audit P2-2): the reconciler mtime-watches the CONFIG, so mirror-first
+    means the round the config write triggers already sees the new
+    authoritative values — the reverse order left a window that traded old
+    values and burned the mismatch alert's 24h cooldown on a false positive.
+    only_if_present: the two credential-side writers only UPDATE an existing
+    mirror — they must never be the FIRST writer, or a legacy weights-only
+    machine would get its amounts frozen to {} before the user ever saved
+    下單設定 (the guard is fail-open until that first save). Best-effort but
+    loud: a failed mirror leaves the guard reading stale values."""
+    path = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
+    if only_if_present and not os.path.isfile(path):
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        doc = {"amounts": amounts if isinstance(amounts, dict) else {},
+               "exchanges": exchanges if isinstance(exchanges, dict) else {},
+               "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(doc, f, indent=2)
+        os.replace(tmp, path)  # atomic, same convention as portfolio_config
+    except OSError as e:
+        _log(f"ui amounts mirror write failed: {type(e).__name__}: {e}")
+
+
+def _write_ui_cred_manifest(lines):
+    """manager/credentials.ui.json — venue ids ({"ids": [...]}) whose
+    credential PAIRS the UI just confirmed into .env (deployment redline L2,
+    spec §3.2; paper included via the same pair rule). lib/venue_wiring only
+    routes ids in this manifest when it exists, so keys an agent hand-writes
+    into .env never become a live venue. Best-effort but loud: on failure a
+    stale manifest keeps the just-bound venue OUT of routing (fail-closed
+    direction — no money moves on an unconfirmed bind)."""
+    try:
+        ids = sorted(i.lower() for i in _venue_cred_ids(lines))
+        path = os.path.join(WORKSPACE, "manager", "credentials.ui.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"ids": ids,
+                       "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())},
+                      f, indent=2)
+        os.replace(tmp, path)
+    except OSError as e:
+        _log(f"credentials manifest write failed: {type(e).__name__}: {e}")
+
+
+def _ui_manifest_ids():
+    """Lowercased ids from manager/credentials.ui.json, or None when
+    absent/invalid — mirrors lib/venue_wiring's fail-open reader."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "credentials.ui.json")) as f:
+            ids = json.load(f).get("ids")
+        if not isinstance(ids, list):
+            return None
+        return {str(i).lower() for i in ids}
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _clear_evicted_in_ui_mirror(evicted_ids):
+    """Evict-side mirror update (audit P1-3): NEVER sources amounts from
+    portfolio_config — that is exactly the file an agent may have tampered
+    with, and copying it here would launder the tampered values into the
+    authoritative mirror. Reads the EXISTING mirror, keeps its amounts, and
+    only blanks exchanges values pointing at the evicted venues. No mirror =
+    no first write (guard stays fail-open until the user's first 下單設定
+    save); unreadable mirror = leave it alone, loudly."""
+    path = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
+    try:
+        with open(path) as f:
+            mirror = json.load(f)
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError) as e:
+        _log(f"ui mirror evict update failed: {type(e).__name__}: {e}")
+        return
+    if not isinstance(mirror, dict) or not isinstance(mirror.get("exchanges"), dict):
+        return
+    cleared = {k: ("" if v in evicted_ids else v)
+               for k, v in mirror["exchanges"].items()}
+    if cleared != mirror["exchanges"]:
+        _write_ui_amounts_mirror(mirror.get("amounts"), cleared)
+
+
 def _cmd_credentials(args):
     """Write exchange keys into the workspace .env.
 
@@ -297,6 +391,7 @@ def _cmd_credentials(args):
             f.write("\n".join(kept) + "\n")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
+    _write_ui_cred_manifest(kept)  # final lines = the UI-confirmed bound set
     if evicted_ids:
         # eviction == unbind for the old venue: halt like credentials_remove
         # does, or strategies still routed there run blind until auto-halt
@@ -309,7 +404,11 @@ def _cmd_credentials(args):
         # …and the evicted venue must not linger as a routing target (audit
         # B2): empty those exchanges values, same as _cmd_amounts does for
         # unbound venues. Best-effort like the halt — the keys are already
-        # swapped, failing the whole command here helps nobody.
+        # swapped, failing the whole command here helps nobody. Mirror FIRST,
+        # then config (P2-2 write order — see _write_ui_amounts_mirror), and
+        # the mirror update sources from the mirror itself, never the config
+        # (P1-3 — see _clear_evicted_in_ui_mirror).
+        _clear_evicted_in_ui_mirror(evicted_ids)
         cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
         try:
             with open(cpath) as f:
@@ -1093,6 +1192,13 @@ def _cmd_amounts(args):
             bound = {i.lower() for i in _venue_cred_ids(f.read().splitlines())}
     except OSError:
         pass
+    # P2-4: when the UI bind manifest exists, only UI-bound venues count as
+    # inheritable — keys an agent hand-wrote into .env don't route
+    # (lib/venue_wiring filters them), so inheriting one here would save a
+    # config that LOOKS deployed but never trades.
+    manifest = _ui_manifest_ids()
+    if manifest is not None:
+        bound &= manifest
     old = {k: (v if v in bound else "") for k, v in old.items()}
     venues = {v for v in old.values() if v}
     default_venue = venues.pop() if len(venues) == 1 else ""
@@ -1125,6 +1231,9 @@ def _cmd_amounts(args):
         if spec:
             cfg["asset_specs"][k] = dict(spec)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    # 紅線 L2:UI 儲存=權威副本。鏡像先寫、config 後寫(P2-2)——reconciler
+    # mtime-watch 的是 config,這個順序讓它觸發的那一輪就讀到新權威值。
+    _write_ui_amounts_mirror(clean, cfg["exchanges"])
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(cfg, f, indent=2)
@@ -1379,6 +1488,10 @@ def _cmd_credentials_remove(args):
             f.write("\n".join(kept) + "\n")
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
+    # P1-2: unbind must shrink the bind manifest too, or an agent hand-writing
+    # the SAME venue's keys back into .env after the unbind would still be in
+    # the allowed list and route again without any UI bind.
+    _write_ui_cred_manifest(kept)
 
     # Prune the unbound venues from account.json right away — the account
     # reader only rewrites it every 2 min, and until then the web would keep
@@ -1448,6 +1561,10 @@ def _cmd_credentials_remove(args):
             # Partial unbind on a multi-venue machine keeps daemon and
             # portfolio as-is.
             if _stop_reconciler():
+                # mirror first, config second (P2-2 write order) — and if the
+                # config write below then fails, a {}/{} mirror over a stale
+                # config fails in the SAFE direction (nothing funded).
+                _write_ui_amounts_mirror({}, {}, only_if_present=True)
                 cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
                 try:
                     with open(cpath) as f:

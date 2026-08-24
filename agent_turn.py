@@ -211,6 +211,13 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住
     # 英文訊息被回成中文/中英混雜(實測兩輪)。
     parts.append(_lang_directive(message))
+    # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
+    # 只放 AGENTS.md/系統尾端會輸給 in-context 慣性(deepseek 教訓,同
+    # _lang_directive 的機制);建議句規則(下面那段)維持 web 專屬。
+    parts.append(
+        "[紅線:部署/金額/綁定/恢復交易一律指引用戶到投資組合頁操作,不代做;"
+        "急停(HALT)例外可做。]"
+    )
     if suggest_directive:
         state_line = _deploy_state_line()
         if state_line:
@@ -408,9 +415,12 @@ _SUGGEST_RULE = (
     "- 模擬盤已穩定跑一段時間且執行無異常 → 建議小額實盤\n"
     "- 用戶想實際跑但還沒綁任何交易所 → 建議先綁模擬盤\n"
     "命中時，回覆**必須以 <suggest> 區塊結尾**（其後不得再有任何文字），格式：\n"
-    "<suggest>\n把〈策略名〉上模擬盤\n</suggest>\n"
+    "<suggest>\n帶我看怎麼把〈策略名〉上模擬盤\n</suggest>\n"
     "一行一個建議、最多 3 個（通常 1 個就好）；句子＝用戶口吻的短指令"
     "（動詞＋對象＋必要參數），點了會替用戶原句送出。"
+    "部署類建議（上模擬盤、小額實盤、綁定——含 paper）是**導航句**：固定以"
+    "「帶我看怎麼」起手，點了你回操作步驟、不代做（部署由用戶親手在投資組合頁操作）；"
+    "分析／回測類維持一般執行句。"
     "提到策略時用它的名稱（strategy.py 檔頭 # Strategy: 那行，或用戶慣稱），"
     "不要用底線目錄代號（寫「把 BTC 4h 均線交叉上模擬盤」，"
     "不寫「把 btc_ma_cross_4h 上模擬盤」）。"
