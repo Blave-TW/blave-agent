@@ -126,7 +126,8 @@ def _lang_directive(message):
     return "[Reply in the language of the user message above]"
 
 
-def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None):
+def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
+                 suggest_directive=False):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -172,6 +173,16 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住
     # 英文訊息被回成中文/中英混雜(實測兩輪)。
     parts.append(_lang_directive(message))
+    if suggest_directive:
+        # 建議規則的逐輪錨(web 專屬)。系統提示尾端的版本擋不住 in-context 慣性:
+        # session 歷史累積「市場問答→問句收尾」先例後,deepseek 對探索層連續三輪
+        # 不服從(2026-08-24 e2e:ETH/BTC vs ETH/SOL 三輪全數問句收尾、零區塊);
+        # _lang_directive 已證明「貼著訊息的逐輪指令」對弱模型有效,同機制照搬。
+        parts.append(
+            "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、上模擬盤等)就放進"
+            " <suggest> 區塊(一行一句、用戶口吻、最多 3),不要在正文用問句提議。"
+            "命中里程碑(剛完成回測等)必附區塊;純寒暄或單一報價則什麼都不附。]"
+        )
     return "\n".join(parts)
 
 
@@ -360,10 +371,10 @@ _SUGGEST_RULE = (
     "（動詞＋對象＋必要參數），點了會替用戶原句送出。"
     "**下一步的提議只能放在 <suggest> 區塊——禁止在正文結尾用問句提議"
     "（「要不要我幫你…？」「需要我再…嗎？」這類收尾不要寫，改放 <suggest>）。**\n"
-    "沒命中里程碑時——用戶剛看完市場數據、聊完策略概念、或明顯不知道下一步能做"
-    "什麼 → 可附 1–2 個展示能力的探索建議（例：把剛聊的想法寫成策略跑回測、"
-    "掃參數比較穩健度），把話題往第一個里程碑帶；純寒暄或一句話問答"
-    "（打招呼、問單一價格）仍不附、也不用問句硬湊。\n"
+    "沒命中里程碑、但你想在結尾提議下一步（「要不要我再拉 4h？」「需要補籌碼面嗎？」"
+    "這類話）——**一律把那個提議改寫成 <suggest> 區塊**（1–2 個、用戶口吻），"
+    "正文不留問句；優先挑往策略／回測方向推進的提議。"
+    "純寒暄或一句話問答（打招呼、問單一價格）連提議都不用、直接收尾。\n"
     "區塊內禁止：形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、"
     "催促（立即、馬上、別錯過）、emoji；策略名與數字必須真實存在。"
     "同一建議被用戶拒絕或忽略後，同一階段不要重提。\n"
@@ -761,7 +772,8 @@ def _maybe_push_strategies(sink, last_sig):
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None):
     summary, recent = ss.get_context(session_id)
     prompt = build_prompt(summary, recent, message,
-                          viewing_strategy=viewing_strategy, viewing_tab=viewing_tab)
+                          viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
+                          suggest_directive=isinstance(sink, WebSink))
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
