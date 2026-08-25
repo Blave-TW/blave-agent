@@ -108,6 +108,111 @@ def extract_suggestions(text):
     return cleaned.rstrip(), items
 
 
+# ── 轉出策略程式碼(export)──────────────────────────────────────────────────
+# 工作頁的「轉出 XQ / MultiCharts / TradingView」走一般聊天回合:agent 依
+# references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 把轉好的檔存到
+# strategies/<name>/exports/,回覆末尾自成一行帶 <export target=".." path=".." />。
+# WebSink.finalize 把標記剝掉、讀檔、以 {"type": "export", ...} chunk 送出(前端自動
+# 下載+在該則訊息渲染下載鈕)。標記出現幾個就送幾個 chunk;讀不到/太大/路徑不合法
+# 就不送、只記 stderr——正文照常回,絕不因轉出失敗把整輪弄壞。
+_EXPORT_TAG_RE = re.compile(
+    r'[ \t]*<export\s+target="(xq|mc|pine)"\s+path="([^"<>]+)"\s*/>[ \t]*\n?'
+)
+# 格式不合(target 不在白名單、少屬性)的殘留標記只剝不觸發——raw 標記絕不露出。
+_EXPORT_STRIP_RE = re.compile(r"[ \t]*<export\b[^<>]*>[ \t]*\n?")
+_EXPORT_EXT = {"xq": "xs", "mc": "txt", "pine": "pine"}
+_EXPORT_MAX_BYTES = 256 * 1024
+_EXPORT_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def _read_export(target, path, workspace):
+    """路徑白名單:相對路徑、無 ..、且恰為 strategies/<name>/exports/<file>;
+    realpath 後仍須在 workspace/strategies 底下(擋 symlink 逃逸)。"""
+    parts = path.replace("\\", "/").split("/")
+    if (
+        os.path.isabs(path)
+        or len(parts) != 4
+        or parts[0] != "strategies"
+        or parts[2] != "exports"
+        or not _EXPORT_NAME_RE.fullmatch(parts[1])
+        or parts[3] in ("", ".", "..")
+        or ".." in parts
+    ):
+        print(f"[agent_turn] export path rejected: {path!r}", file=sys.stderr)
+        return None
+    root = os.path.realpath(os.path.join(workspace, "strategies"))
+    full = os.path.realpath(os.path.join(workspace, *parts))
+    if not full.startswith(root + os.sep):
+        print(f"[agent_turn] export path escapes workspace: {path!r}", file=sys.stderr)
+        return None
+    try:
+        if os.path.getsize(full) > _EXPORT_MAX_BYTES:
+            print(f"[agent_turn] export too large (> {_EXPORT_MAX_BYTES}B): {path}",
+                  file=sys.stderr)
+            return None
+        with open(full, encoding="utf-8") as f:
+            content = f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[agent_turn] export unreadable: {path} ({e})", file=sys.stderr)
+        return None
+    strategy = parts[1]
+    return {
+        "type": "export",
+        "target": target,
+        "strategy": strategy,
+        "filename": f"{strategy}_{target}.{_EXPORT_EXT[target]}",
+        "content": content,
+    }
+
+
+def extract_exports(text, workspace=None):
+    """回傳 (清理後文字, export chunk 清單)。剝掉所有 <export …/> 標記(含格式不合的
+    殘留),合法且讀得到的各產一個 chunk;fail-silent,絕不影響正文。"""
+    if not text or "<export" not in text:
+        return text, []
+    workspace = workspace or WORKSPACE
+    chunks = []
+    for target, path in _EXPORT_TAG_RE.findall(text):
+        chunk = _read_export(target, path, workspace)
+        if chunk:
+            chunks.append(chunk)
+    cleaned = _EXPORT_TAG_RE.sub("", text)
+    cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
+    return cleaned.rstrip(), chunks
+
+
+# ── 導航指引(ui_nav)──────────────────────────────────────────────────────
+# 導航句回覆(「帶我看怎麼…」)第一行放 <nav>目標</nav>;WebSink 在段首攔下、
+# 先送 {"type": "ui_nav", "target": ...} 再放正文——前端把投資組合頁開到對的
+# 分頁後步驟文字才到,用戶照著現場做。目標白名單=references/portfolio-steps.md
+# 的三套腳本(web 端 applyUiNav、webchat.py NAV_TARGETS 同一份,手動同步);
+# 不在名單的目標一樣剝掉(標記絕不露出)但不觸發。
+_NAV_TARGETS = ("portfolio.pos", "portfolio.venue", "portfolio.run")
+_NAV_HEAD_RE = re.compile(r"^\s*<nav>\s*([^<>]{0,40}?)\s*</nav>[ \t]*\n*")
+# 段首以外或殘留的標記(模型放錯位置)只剝不觸發。
+_NAV_STRIP_RE = re.compile(r"[ \t]*<nav>[^<]{0,40}</nav>[ \t]*\n?")
+_NAV_HOLD_MAX = 64  # 段首暫留上限:超過還沒閉合就當普通文字放行
+
+
+def nav_hold_more(held):
+    """段首暫留的文字是否仍可能長成 <nav> 標記(要繼續等下一個 delta)。
+    一般回覆第一個 delta 就不是 '<' 開頭,立刻放行——不拖慢首字顯示。"""
+    if len(held) >= _NAV_HOLD_MAX:
+        return False
+    probe = held.lstrip()
+    return "<nav>".startswith(probe) or (probe.startswith("<nav>") and "</nav>" not in probe)
+
+
+def split_nav_head(text):
+    """段首若是完整 <nav> 標記:回傳 (白名單內的目標或 None, 剝掉標記後的文字, True);
+    不是標記則 (None, 原文, False)。目標不在白名單也剝、只是不觸發。"""
+    m = _NAV_HEAD_RE.match(text)
+    if not m:
+        return None, text, False
+    target = m.group(1).strip()
+    return (target if target in _NAV_TARGETS else None), text[m.end():], True
+
+
 def _deploy_state_line():
     """部署現況的一行機器事實(建議規則配套,web 專屬)。2026-08-24 實測:
     supertrend_sol 已在模擬盤跑兩天,agent 仍建議「上模擬盤」——prompt 要求
@@ -144,6 +249,41 @@ def _deploy_state_line():
                 + ";".join(parts) + "]")
     except Exception:
         return ""
+
+
+# 導航類回合(問怎麼部署/綁定/啟動)把 references/portfolio-steps.md 的步驟腳本段
+# 直接注入:UI 標籤要一字不差,模型自己不會去讀那個檔(29026 實測:啟動下單編出
+# 「運行」分頁、綁定編出「渠道」分頁/「綁定」鈕)——頁面被 ui_nav 開好後錯標籤
+# 立刻穿幟。事實來源仍是 bcc 那份檔,這裡只搬運、不另抄一份。
+# 閘=「問怎麼做」+「部署類主題」兩者都命中(單看主題太寬:資金費率/持倉問答也會中,
+# 每次誤中多塞 ~400 token 還可能把純問答帶偏成操作步驟)。
+_NAV_ASK_RE = re.compile(r"帶我看|show me how|怎麼|怎樣|如何|哪裡|哪邊|\bhow\b|\bwhere\b", re.I)
+_NAV_TOPIC_RE = re.compile(
+    r"模擬盤|交易所|綁定|部署|啟動|恢復|部位|金額|實盤|paper|deploy|bind|exchange|venue|fund",
+    re.I,
+)
+
+
+def nav_topic(message):
+    return bool(_NAV_ASK_RE.search(message) and _NAV_TOPIC_RE.search(message))
+_STEPS_MAX_CHARS = 2400
+
+
+def _portfolio_steps_block(workspace=None):
+    """回傳 portfolio-steps.md 的「Step scripts」段(含之後全部),讀不到/沒那段就空字串。"""
+    path = os.path.join(workspace or WORKSPACE, "references", "portfolio-steps.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = f.read()
+    except OSError:
+        return ""
+    i = doc.find("## Step scripts")
+    if i < 0:
+        return ""
+    j = doc.find("\n## ", i + 1)  # 只到下一個標題,日後檔尾加段不會被一併注入
+    if j < 0:
+        j = len(doc)
+    return doc[i:min(j, i + _STEPS_MAX_CHARS)].strip()
 
 
 def _lang_directive(message):
@@ -222,6 +362,22 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         state_line = _deploy_state_line()
         if state_line:
             parts.append(state_line)
+        # 導航句(建議列的部署類固定起手)逐輪錨:標記規則在系統尾端,弱模型對
+        # 「第一行放標記」這種位置要求最容易漏,貼著訊息再講一次。
+        head = message.lstrip().lower()
+        if head.startswith("帶我看") or head.startswith("show me how"):
+            parts.append(
+                "[導航句:回覆第一行單獨放 <nav>目標</nav>(portfolio.pos=設金額/部署、"
+                "portfolio.venue=綁定模擬盤或交易所、portfolio.run=啟動/恢復下單,三選一),"
+                "接著才給步驟。]"
+            )
+        if nav_topic(message):
+            steps = _portfolio_steps_block()
+            if steps:
+                parts.append(
+                    "[投資組合頁操作步驟(要帶用戶操作時照這份寫,UI 標籤一字不差、"
+                    "不要自己發明分頁或按鈕名):\n" + steps + "\n]"
+                )
         # 建議規則的逐輪錨(web 專屬)。系統提示尾端的版本擋不住 in-context 慣性:
         # session 歷史累積「市場問答→問句收尾」先例後,deepseek 對探索層連續三輪
         # 不服從(2026-08-24 e2e:ETH/BTC vs ETH/SOL 三輪全數問句收尾、零區塊);
@@ -400,6 +556,22 @@ TELEGRAM_FORMATTING_RULE = (
     + _NO_NARRATION
 )
 
+# 導航指引(web 專屬;WebSink 段首攔截成 ui_nav chunk)。放在建議規則前一段:
+# 建議規則必須維持 system prompt 最尾端(recency)。
+_NAV_RULE = (
+    "\n\n---\n\n"
+    "## 導航指引（回覆第一行）\n"
+    "用戶要你帶他做部署類操作（「帶我看怎麼…」這類導航句，或直接問怎麼上模擬盤／"
+    "設金額／綁交易所／啟動下單）時，回覆的**第一行**單獨放一個標記，系統會替用戶把"
+    "投資組合頁開到對的位置，接著才給步驟：\n"
+    "- 設定部位金額、把策略部署上模擬盤／實盤 → `<nav>portfolio.pos</nav>`\n"
+    "- 綁定模擬盤或交易所（含換金鑰） → `<nav>portfolio.venue</nav>`\n"
+    "- 啟動／恢復下單 → `<nav>portfolio.run</nav>`\n"
+    "一次只放一個、只放第一行、只用這三個值；不是在帶操作（純解釋、討論）就不要放。"
+    "標記之後直接接步驟（≤4 步，照 references/portfolio-steps.md、UI 標籤原文），"
+    "正文不要提到標記本身。\n"
+)
+
 # 建議下一步(web 專屬;extract_suggestions 在 finalize 剝離)。放在 system prompt
 # append 的最尾端——實測 deepseek-v4-pro 對埋在中段的這條規則不服從(2026-08-24
 # 29026 e2e:回測完成沒附區塊、用問句收尾),弱模型對 prompt 尾端的服從度最高;
@@ -447,6 +619,7 @@ WEB_FORMATTING_RULE = (
     "回測細節請使用者看回測分頁。\n\n"
     + _STYLE_RULES
     + _NO_NARRATION
+    + _NAV_RULE
     + _SUGGEST_RULE
 )
 
@@ -651,6 +824,8 @@ class TelegramSink:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         # TG 面沒有建議列規則,但防禦性剝除(模型偶發混淆時 raw 標記不能露出)。
         cleaned, _ = extract_suggestions(cleaned)
+        cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
+        cleaned = _NAV_STRIP_RE.sub("", cleaned)
         self.chunk_text = cleaned
         self.chunk_text = convert_markdown_tables_to_list(self.chunk_text)
         self.streamer.finish(self.chunk_text)
@@ -706,6 +881,11 @@ class WebSink:
         # 「同訊息裡有沒有 tool_use」判不出旁白;真正的訊號是「這段文字後面還有沒有
         # 工具呼叫」——有就是旁白(丟去活動列),最後那段才是回覆。
         self._seg_start = 0
+        # 段首暫留:文字先扣在這裡,直到判得出「是不是 <nav> 標記」才放行
+        # (nav_hold_more / split_nav_head)。None=本段段首已過。
+        self._head_hold = ""
+        self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
+        self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
 
     def _send(self, chunk):
         chunk.setdefault("session_id", self.session_id)
@@ -723,13 +903,52 @@ class WebSink:
             self._break_before_text = False
             if self.full_text and not self.full_text.endswith("\n") and not delta.startswith("\n"):
                 delta = "\n\n" + delta
+        if self._head_hold is not None:
+            self._head_hold += delta
+            if nav_hold_more(self._head_hold):
+                return
+            delta = self._release_head()
+            if not delta:
+                return
+        self._emit_text(delta)
+
+    def _emit_text(self, delta):
         self.full_text += delta
         self._send({"type": "text", "text": delta})
+
+    def _release_head(self, fire=True):
+        """段首暫留結束:剝掉 <nav> 標記(fire 時白名單目標先送 ui_nav,一回合一次),
+        回傳要放行的文字。"""
+        held, self._head_hold = self._head_hold, None
+        target, rest, stripped = split_nav_head(held)
+        if stripped:
+            # 標記剝掉後正文成了段首:前一段(工具呼叫前的文字)還在的話補回段落分隔
+            if rest and self.full_text and not self.full_text.endswith("\n") \
+                    and not rest.startswith("\n"):
+                rest = "\n\n" + rest
+            if fire and target and not self._nav_fired and not self.interrupted:
+                self._nav_fired = True
+                self._nav_fired_seg = self._seg_start
+                self._send({"type": "ui_nav", "target": target})
+        return rest
+
+    def _flush_head(self, fire=True):
+        """段落結束(工具呼叫/回合結束):暫留的段首不管是什麼都放行。
+        fire=False 用在工具呼叫前的段落——那段是旁白(要移去活動列),它的標記只剝不
+        觸發,「一回合一次」的額度留給最後的真回覆。"""
+        if self._head_hold is None:
+            return
+        rest = self._release_head(fire=fire)
+        if rest:
+            self._emit_text(rest)
 
     def on_status(self, text):
         # 過場旁白——走 thinking 通道進「思考/活動」指示器,不進泡泡、不進歷史。
         # 用戶看得到 agent 在做什麼,但對話裡只留最後的真回覆。
         if not text:
+            return
+        text = _NAV_STRIP_RE.sub("", text)  # 旁白也不露標記(活動列/補位路徑都會顯示它)
+        if not text.strip():
             return
         self._last_status = text
         self._send({"type": "thinking", "text": text})
@@ -737,6 +956,12 @@ class WebSink:
     def on_tool(self, block):
         # 這段文字後面接了工具呼叫 → 是過場旁白:移出回覆本文(不進歷史),
         # 改送活動列。前端收到 tool chunk 也會把對應的文字區塊從泡泡移除。
+        self._flush_head(fire=False)  # 還扣著的段首:這段是旁白,標記只剝不觸發
+        # SDK 整塊送、標記到時就得決定送不送,那時還不知道後面接工具——若這段
+        # (已送過 ui_nav 的)其實是旁白,把「一回合一次」的額度退還給最後的真回覆;
+        # 前端同回合允許再導航一次(navArmed 到 done 才關)。
+        if self._nav_fired and self._nav_fired_seg == self._seg_start:
+            self._nav_fired = False
         seg = self.full_text[self._seg_start:]
         if seg.strip():
             self.full_text = self.full_text[:self._seg_start]
@@ -744,6 +969,7 @@ class WebSink:
             self._send({"type": "thinking", "text": seg})
         self._seg_start = len(self.full_text)
         self._break_before_text = True
+        self._head_hold = ""  # 新段落、新段首
         # Surface which tool is running so the UI can show a status line
         # (e.g. "跑回測中"); the frontend maps tool name -> label.
         self._send({"type": "tool", "tool": getattr(block, "name", ""), "status": "running"})
@@ -766,9 +992,11 @@ class WebSink:
         if self.error_text:
             self._send({"type": "error", "message": self.error_text})
             return self.error_text
+        self._flush_head()
         if not self.full_text and getattr(self, "_last_status", ""):
             # 模型把話全講在帶工具的訊息裡——用最後一句旁白補位,別回空氣
-            self.on_text(self._last_status)
+            # (暫留已過、直接進 full_text,標記在這裡先剝乾淨)
+            self.on_text(_NAV_STRIP_RE.sub("", self._last_status))
         # 假對話一定長在最後一段(續寫發生在回覆結尾),所以只需清這一段,
         # 並叫前端把已經串流出去的那段換成乾淨版。<suggest> 區塊同理(規則要求
         # 放在回覆最末尾),一起在這段剝離——歷史(finalize 回傳值)因此也是乾淨的。
@@ -777,10 +1005,15 @@ class WebSink:
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         cleaned, suggestions = extract_suggestions(cleaned)
+        cleaned, exports = extract_exports(cleaned)
+        cleaned = _NAV_STRIP_RE.sub("", cleaned)  # 放錯位置的標記只剝不觸發
         if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
             self._send({"type": "text_replace", "text": cleaned})
-        # 被 Stop 截斷的回合不給建議——半途的里程碑判定不可信。
+        # 被 Stop 截斷的回合不給建議也不送轉出檔——半途的里程碑判定不可信。
+        if not self.interrupted:
+            for chunk in exports:
+                self._send(chunk)
         if suggestions and not self.interrupted:
             self._send({"type": "suggestions", "items": suggestions})
         self._send({"type": "done"})
