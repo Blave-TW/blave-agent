@@ -548,7 +548,7 @@ def _send_overview(name, manifest, entry, token, deadline):
     if attempts >= _OVERVIEW_MAX_ATTEMPTS or deferred >= _OVERVIEW_MAX_DEFERRED:
         print(f"[strategy_reporter] chart {name} overview: giving up "
               f"({attempts} failures, {deferred} deferrals)", file=sys.stderr)
-        entry["overview_skipped"] = True
+        _skip_overview(entry, "gave up")
         return
     try:
         overview = _build_overview(name, manifest, deadline)
@@ -560,16 +560,16 @@ def _send_overview(name, manifest, entry, token, deadline):
     except (ValueError, TypeError, KeyError, IndexError) as e:
         print(f"[strategy_reporter] chart {name} overview unbuildable: {e!r}; skipping",
               file=sys.stderr)
-        entry["overview_skipped"] = True
+        _skip_overview(entry, "unbuildable")
         return
     if overview is None:
-        entry["overview_skipped"] = True
+        _skip_overview(entry, "not needed")
         return
     gz = gzip.compress(json.dumps(overview, separators=(",", ":")).encode(), compresslevel=6)
     if len(gz) > _CHART_CHUNK_GZ_MAX:
         print(f"[strategy_reporter] chart {name} overview too large ({len(gz)}B); skipping",
               file=sys.stderr)
-        entry["overview_skipped"] = True
+        _skip_overview(entry, "too large")
         return
     if time.monotonic() > deadline:
         return
@@ -580,15 +580,34 @@ def _send_overview(name, manifest, entry, token, deadline):
         if not e.permanent:
             entry["overview_attempts"] = attempts + 1
             raise
+        if e.code in (404, 405):
+            # The api in front of us predates the overview endpoint (runtime rolls out
+            # within 5 minutes, the api deploy may land later): defer, don't give up —
+            # 29026 hit exactly this window on 2026-08-25 and got stuck on `skipped`.
+            entry["overview_deferred"] = deferred + 1
+            print(f"[strategy_reporter] chart {name} overview: api has no endpoint yet "
+                  f"({e.code}); retry next tick", file=sys.stderr)
+            return
         print(f"[strategy_reporter] chart {name} overview rejected: {e}; skipping",
               file=sys.stderr)
-        entry["overview_skipped"] = True
+        _skip_overview(entry, f"http {e.code}")
         return
     entry["overview_sent"] = True
 
 
+def _skip_overview(entry, reason):
+    entry["overview_skipped"] = True
+    entry["overview_reason"] = reason
+
+
 def _overview_pending(entry):
-    return not entry.get("overview_sent") and not entry.get("overview_skipped")
+    """Not sent, and not skipped for a recorded reason. A `skipped` without a reason
+    was written by runtime 1.1.34, which also skipped on the pre-deploy api's 404 —
+    treat those as pending once more so the fleet heals without touching machines
+    (a real skip re-marks itself with a reason on the next attempt)."""
+    if entry.get("overview_sent"):
+        return False
+    return not (entry.get("overview_skipped") and entry.get("overview_reason"))
 
 
 def _upload_chart(name, manifest, entry, token, deadline):
