@@ -145,13 +145,22 @@ def _read_export(target, path, workspace):
     if not full.startswith(root + os.sep):
         print(f"[agent_turn] export path escapes workspace: {path!r}", file=sys.stderr)
         return None
+    # 只收 regular file(FIFO / 目錄 / device 不讀,open 會卡住或炸);getsize 與 read
+    # 之間檔案可能長大(TOCTOU),所以 read 也設上限、讀滿即拒。
+    if not os.path.isfile(full):
+        print(f"[agent_turn] export unreadable: {path} (not a regular file)", file=sys.stderr)
+        return None
     try:
         if os.path.getsize(full) > _EXPORT_MAX_BYTES:
             print(f"[agent_turn] export too large (> {_EXPORT_MAX_BYTES}B): {path}",
                   file=sys.stderr)
             return None
         with open(full, encoding="utf-8") as f:
-            content = f.read()
+            content = f.read(_EXPORT_MAX_BYTES + 1)
+        if len(content.encode("utf-8")) > _EXPORT_MAX_BYTES:
+            print(f"[agent_turn] export too large (> {_EXPORT_MAX_BYTES}B): {path}",
+                  file=sys.stderr)
+            return None
     except (OSError, UnicodeDecodeError) as e:
         print(f"[agent_turn] export unreadable: {path} ({e})", file=sys.stderr)
         return None
@@ -165,20 +174,28 @@ def _read_export(target, path, workspace):
     }
 
 
+_EXPORT_FAIL_NOTE = "轉出檔讀取失敗，請再說一次「重新轉出」。"
+
+
 def extract_exports(text, workspace=None):
     """回傳 (清理後文字, export chunk 清單)。剝掉所有 <export …/> 標記(含格式不合的
-    殘留),合法且讀得到的各產一個 chunk;fail-silent,絕不影響正文。"""
+    殘留),合法且讀得到的各產一個 chunk;讀不到的不炸正文,但正文尾端補一行提示
+    (多個失敗只補一行)——否則用戶只看到「轉好了」卻沒有檔案下載。"""
     if not text or "<export" not in text:
         return text, []
     workspace = workspace or WORKSPACE
     chunks = []
+    failed = False
     for target, path in _EXPORT_TAG_RE.findall(text):
         chunk = _read_export(target, path, workspace)
         if chunk:
             chunks.append(chunk)
-    cleaned = _EXPORT_TAG_RE.sub("", text)
-    cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
-    return cleaned.rstrip(), chunks
+        else:
+            failed = True
+    cleaned = _EXPORT_STRIP_RE.sub("", text).rstrip()
+    if failed:
+        cleaned = f"{cleaned}\n\n{_EXPORT_FAIL_NOTE}" if cleaned else _EXPORT_FAIL_NOTE
+    return cleaned, chunks
 
 
 # ── 導航指引(ui_nav)──────────────────────────────────────────────────────
@@ -259,7 +276,8 @@ def _deploy_state_line():
 # 每次誤中多塞 ~400 token 還可能把純問答帶偏成操作步驟)。
 _NAV_ASK_RE = re.compile(r"帶我看|show me how|怎麼|怎樣|如何|哪裡|哪邊|\bhow\b|\bwhere\b", re.I)
 _NAV_TOPIC_RE = re.compile(
-    r"模擬盤|交易所|綁定|部署|啟動|恢復|部位|金額|實盤|paper|deploy|bind|exchange|venue|fund",
+    r"模擬盤|交易所|綁定|部署|啟動|恢復|部位|金額|實盤|paper|deploy|bind|exchange|venue|fund"
+    r"|go live|live trad|real money|small (?:amount|size)|start trading|resume|restart",
     re.I,
 )
 
@@ -286,21 +304,35 @@ def _portfolio_steps_block(workspace=None):
     return doc[i:min(j, i + _STEPS_MAX_CHARS)].strip()
 
 
-def _lang_directive(message):
+def _lang_directive(message, suggest=False):
     """Deterministic per-turn language pin. Han-character ratio decides what the
     user wrote in; the directive names ONE target language explicitly — a generic
-    bilingual "follow the user" line loses to a Chinese-heavy context."""
+    bilingual "follow the user" line loses to a Chinese-heavy context.
+    suggest=True (web only) extends the pin to the <suggest> lines: the suggest
+    rule + its example are written in Chinese, so without naming them the
+    English reply comes back with Chinese suggestions (uid=1, 2026-08-25)."""
     han = sum(1 for ch in message if "一" <= ch <= "鿿")
     letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
     # 漢字要「壓過」英文字母才算中文訊息——「what is 台積電 price」是英文句帶
     # 個股名,不是中文句
     if han >= 3 and han > letters * 0.5:
+        if suggest:
+            return "[用中文回覆這則訊息,<suggest> 建議句也用中文]"
         return "[用中文回覆這則訊息]"
     if letters >= 2:
+        if suggest:
+            return (
+                "[The user wrote in English — reply ENTIRELY in English. "
+                "No Chinese anywhere in this reply, including headers, closing remarks "
+                "and every line inside the <suggest> block (deployment suggestions "
+                "start with \"Show me how to\", not 「帶我看怎麼」).]"
+            )
         return (
             "[The user wrote in English — reply ENTIRELY in English. "
             "No Chinese anywhere in this reply, including headers and closing remarks.]"
         )
+    if suggest:
+        return "[Reply in the language of the user message above — the <suggest> lines too]"
     return "[Reply in the language of the user message above]"
 
 
@@ -347,10 +379,6 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         )
     parts.append("[使用者這次的訊息]")
     parts.append(message)
-    # 語言錨放最尾端(recency 權重最大)且由 code 偵測、給「針對性」指令:
-    # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住
-    # 英文訊息被回成中文/中英混雜(實測兩輪)。
-    parts.append(_lang_directive(message))
     # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
     # 只放 AGENTS.md/系統尾端會輸給 in-context 慣性(deepseek 教訓,同
     # _lang_directive 的機制);建議句規則(下面那段)維持 web 專屬。
@@ -388,6 +416,12 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             "提到策略用它的名稱、不用底線代號。"
             "命中里程碑(剛完成回測等)必附區塊;純寒暄或單一報價則什麼都不附。]"
         )
+    # 語言錨放**真正的最尾端**(recency 權重最大)且由 code 偵測、給「針對性」指令:
+    # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住英文訊息被
+    # 回成中文/中英混雜(實測兩輪)。必須排在上面所有中文逐輪指令(紅線句、建議句
+    # 規則)之後——之前放在它們前面,英文回合正文是英文、<suggest> 卻照中文範例
+    # 寫成中文(uid=1,2026-08-25)。
+    parts.append(_lang_directive(message, suggest=suggest_directive))
     return "\n".join(parts)
 
 
@@ -602,6 +636,8 @@ _SUGGEST_RULE = (
     "這類話）——**一律把那個提議改寫成 <suggest> 區塊**（1–2 個、用戶口吻），"
     "正文不留問句；優先挑往策略／回測方向推進的提議。"
     "純寒暄或一句話問答（打招呼、問單一價格）連提議都不用、直接收尾。\n"
+    "建議句的語言跟正文一致：用戶用英文，區塊內每一行都用英文，導航句以"
+    "「Show me how to」起手（例：Show me how to paper trade 〈strategy name〉）。\n"
     "區塊內禁止：形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、"
     "催促（立即、馬上、別錯過）、emoji；策略名與數字必須真實存在。"
     "同一建議被用戶拒絕或忽略後，同一階段不要重提。\n"

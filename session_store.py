@@ -61,7 +61,7 @@ SCAFFOLD_RE = re.compile(
     r"^(?:user:\s|assistant:\s"
     r"|\[工作頁狀態[:：]"
     r"|\[使用者這次的訊息\]"
-    r"|\[用中文回覆這則訊息\]"
+    r"|\[用中文回覆這則訊息"  # 前綴匹配:web 版尾巴多「,<suggest> 建議句也用中文」
     r"|\[The user wrote in English"
     r"|\[Reply in the language of the user message"
     r"|\[近期對話"
