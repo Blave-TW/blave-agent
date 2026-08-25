@@ -272,8 +272,10 @@ def _halt_denials(since_ts):
 # ── 策略管理(工作頁 投資組合 › 策略管理)──────────────────────────────────────
 # Read side of command_listener's manage_* commands. Every piece is guarded on
 # its own: a torn stats.json or a syntax error in a user's allocator must cost
-# that one entry, never the report. `can_manage` is a constant — an older
-# runtime has no "manager" key at all, which is how the web tells 「機器尚未更新」.
+# that one entry, never the report. `can_manage` keys on the workspace scripts
+# themselves (see _workspace_manages) — this runtime updates itself from S3 but
+# manager/*.py rides blaveclaw-config's manual channel, so a new runtime on an
+# old workspace is the normal state, not an edge case.
 
 # The two per-day arrays the walk-forward writes for its own PNG; the page
 # charts managed_cum + random_benchmark.band instead, so these only add bytes.
@@ -443,7 +445,7 @@ def _mgmt_backtest_result(job):
 
 
 def manager_view():
-    view = {"can_manage": True, "strategies": [], "allocators": [],
+    view = {"can_manage": _workspace_manages(), "strategies": [], "allocators": [],
             "proposal": None, "backtest_job": None, "backtest": None}
     for key, fn in (("strategies", _manager_strategies),
                     ("allocators", _allocators),
@@ -535,11 +537,34 @@ def build_report():
 
 
 def _workspace_has_signal_gate():
+    # Bytes, not text — same reason as _workspace_manages: the workspace files
+    # are UTF-8 with CJK comments and the Windows fleet's default text encoding
+    # (cp950) either raises mid-read or mojibakes them, and a DBCS lead byte
+    # eating the next ASCII one makes the search silently miss. Do not "tidy"
+    # this back into open()/str.
     try:
-        with open(os.path.join(WORKSPACE, "lib", "portfolio.py")) as f:
-            return "signal_gate" in f.read()
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), "rb") as f:
+            return b"signal_gate" in f.read()
     except OSError:
         return False
+
+
+def _workspace_manages():
+    """Whether both manager scripts take the flags the listener sends. One is
+    the optimise (manager.py), the other the walk-forward
+    (management_backtest.py); on a half-updated workspace one of the two
+    buttons would still die on argparse, so either one missing is a no.
+    Unreadable counts as a no — offering the control is the costly mistake.
+    Read as bytes: these files are UTF-8 with CJK comments and Windows' default
+    text encoding would raise on them."""
+    for script in ("manager.py", "management_backtest.py"):
+        try:
+            with open(os.path.join(WORKSPACE, "manager", script), "rb") as f:
+                if b"--members" not in f.read():
+                    return False
+        except OSError:
+            return False
+    return True
 
 
 def report(payload, token=None):

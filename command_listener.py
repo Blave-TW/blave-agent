@@ -2159,6 +2159,24 @@ class Deferred:
             fn()
 
 
+def _require_manage_scripts():
+    """Both manager scripts must already take --members before we spawn one.
+    This runtime auto-updates from S3, manager/*.py only arrives when the user
+    tells the agent to update blaveclaw-config — so an old script meeting a new
+    command is routine, and argparse's raw "unrecognized arguments" is what the
+    user sees. portfolio_reporter.can_manage hides the controls, but the page's
+    payload can be a report behind; this is the check that actually holds."""
+    for script in ("manager.py", _MANAGE_BACKTEST_SCRIPT):
+        try:
+            with open(os.path.join(WORKSPACE, "manager", script), "rb") as f:
+                ok = b"--members" in f.read()
+        except OSError:
+            ok = False
+        if not ok:
+            raise RuntimeError("workspace scripts are out of date — ask the "
+                               "agent to update blaveclaw-config")
+
+
 def _manage_paths():
     m = os.path.join(WORKSPACE, "manager")
     return {
@@ -2438,6 +2456,7 @@ def _cmd_manage_optimize(args):
     via Deferred so 120s of optimiser can't delay halt/close_all. The old
     proposal is removed FIRST: on failure the page must not reload into a
     stale proposal wearing the new selection's parameters."""
+    _require_manage_scripts()
     members, allocator, lookback, target_vol, extra = _validate_manage_args(args)
     if not _OPT_LOCK.acquire(blocking=False):
         raise RuntimeError("optimize already running")
@@ -2470,6 +2489,7 @@ def _cmd_manage_optimize(args):
 
 def _cmd_manage_backtest(args):
     """Detached walk-forward run; progress + result ride the portfolio report."""
+    _require_manage_scripts()
     members, allocator, lookback, target_vol, extra = _validate_manage_args(args)
     _reap_stale_mgmt_job()
     job = _read_mgmt_job()
