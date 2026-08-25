@@ -55,6 +55,25 @@ _CHART_REQUEST_TIMEOUT = 45
 _CHART_MAX_RESETS = 3
 _CHART_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
+# Coarse-bucket overview stored next to the chunks (PUT .../overview): a two-year 1min set
+# is ~1M bars the web cannot draw zoomed out, so one ≤ ~20,000-bar OHLCV / pane / trade
+# summary is built here from the local chunk files once they're all up. Pure Python —
+# the reporter runs on the VM without pandas. Contract: overview-contract (batch 2).
+_OVERVIEW_TARGET_BARS = 20000
+_OVERVIEW_BUCKETS = (300, 900, 1800, 3600, 14400, 86400)
+_OVERVIEW_MAX_TRADES = 50000
+# Build + PUT retried across ticks (timeout, 5xx); bounded so a box that can never parse
+# 50 chunks inside the budget stops burning CPU every 2 minutes.
+_OVERVIEW_MAX_ATTEMPTS = 5  # real failures (5xx / 429 on PUT)
+_OVERVIEW_MAX_DEFERRED = 40  # build timeouts / chunk swaps / transient file errors (~80 min)
+_INTERVAL_RE = re.compile(r"(\d+)\s*([a-z]+)")
+_INTERVAL_UNIT_SEC = {
+    "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60, "t": 60,
+    "h": 3600, "hr": 3600, "hour": 3600, "hours": 3600,
+    "d": 86400, "day": 86400, "days": 86400,
+    "w": 604800, "week": 604800, "weeks": 604800,
+}
+
 # Strategy files set these near the top (see references/strategy-code.md).
 # STRATEGY_NAME is the technical id; DISPLAY_NAME / DESCRIPTION are the
 # human-facing name + one-line blurb driving the workspace list/detail, so a
@@ -366,18 +385,224 @@ def _read_chart_manifest(name):
     return m
 
 
+def _read_chunk(name, c):
+    """Raw bytes of strategies/<name>/chart/chunk-<id>.json, or None when its sha1 no
+    longer matches the manifest — the runner swapped a new set in under us."""
+    path = os.path.join(STRATEGIES_DIR, name, "chart", f"chunk-{c.get('id')}.json")
+    with open(path, "rb") as f:
+        raw = f.read()
+    return raw if hashlib.sha1(raw).hexdigest() == c.get("sha1") else None
+
+
+def _interval_sec(interval):
+    """manifest.interval ("1m" / "5min" / "1h" / "1d" …) → seconds, or None."""
+    if not isinstance(interval, str):
+        return None
+    m = _INTERVAL_RE.fullmatch(interval.strip().lower())
+    if not m:
+        return None
+    unit = _INTERVAL_UNIT_SEC.get(m.group(2))
+    return int(m.group(1)) * unit if unit and int(m.group(1)) > 0 else None
+
+
+def _median_step(ts_list):
+    diffs = sorted(b - a for a, b in zip(ts_list, ts_list[1:]) if b > a)
+    return diffs[len(diffs) // 2] if diffs else None
+
+
+def _pick_bucket(span_sec, base_sec):
+    """Smallest contract bucket wider than a raw bar that keeps the overview ≤ target
+    bars; the widest one regardless when even that overflows (api tolerates 25,000).
+    None when no bucket is wider than the raw bar (daily+ data never needs one)."""
+    wider = [b for b in _OVERVIEW_BUCKETS if b > base_sec]
+    for b in wider:
+        if span_sec // b + 1 <= _OVERVIEW_TARGET_BARS:
+            return b
+    return wider[-1] if wider else None
+
+
+class _OverviewAgg:
+    """Streaming bucket aggregation over chunks fed in time order (manifest chunks are
+    ascending and disjoint): candles o=first h=max l=min c=last v=sum (null if any raw
+    v is null); panes = last raw value per bucket, series metadata from the first chunk;
+    trades = union keyed by ts."""
+
+    def __init__(self, bucket):
+        self.bucket = bucket
+        self.candles = {}
+        self.panes = None
+        self.trades = {}
+
+    def add(self, body):
+        b = self.bucket
+        candles = self.candles
+        for row in body.get("candles") or []:
+            ts, o, h, l, c = row[:5]
+            v = row[5] if len(row) > 5 else None
+            bts = ts // b * b
+            cur = candles.get(bts)
+            if cur is None:
+                candles[bts] = [bts, o, h, l, c, v]
+                continue
+            if h > cur[2]:
+                cur[2] = h
+            if l < cur[3]:
+                cur[3] = l
+            cur[4] = c
+            cur[5] = None if v is None or cur[5] is None else cur[5] + v
+        panes = body.get("panes") or []
+        if self.panes is None:
+            self.panes = [{**{k: v for k, v in p.items() if k != "points"}, "points": {}}
+                          for p in panes]
+        for agg, p in zip(self.panes, panes):
+            pts = agg["points"]
+            for ts, v in p.get("points") or []:
+                pts[ts // b * b] = v
+        for t in body.get("trades") or []:
+            self.trades[t["ts"]] = t
+        # Chunks arrive oldest-first, so pruning the oldest keys once we hold 2× the cap
+        # keeps memory bounded on bar-by-bar strategies (hundreds of thousands of trades
+        # over two years of 1min) without changing result(): it keeps the newest anyway.
+        if len(self.trades) > 2 * _OVERVIEW_MAX_TRADES:
+            for k in sorted(self.trades)[: len(self.trades) - _OVERVIEW_MAX_TRADES]:
+                del self.trades[k]
+            self.trades_pruned = True
+
+    def result(self):
+        candles = [self.candles[k] for k in sorted(self.candles)]
+        panes = [{**p, "points": [[k, p["points"][k]] for k in sorted(p["points"])]}
+                 for p in self.panes or []]
+        trades = [self.trades[k] for k in sorted(self.trades)]
+        truncated = len(trades) > _OVERVIEW_MAX_TRADES or getattr(self, "trades_pruned", False)
+        if truncated:
+            trades = trades[-_OVERVIEW_MAX_TRADES:]
+        return candles, panes, trades, truncated
+
+
+class _ChartChanged(Exception):
+    """A chunk's sha1 stopped matching the manifest mid-read (runner swapped the set)."""
+
+
+class _ChartTimeout(Exception):
+    """Tick deadline hit; the caller retries on a later tick."""
+
+
+def _build_overview(name, manifest, deadline):
+    """Overview dict for this manifest, or None when the set is ≤ target bars (the web
+    draws it from chunks alone). Raises _ChartChanged / _ChartTimeout."""
+    chunks = manifest["chunks"]
+    if not chunks or sum(int(c.get("bars") or 0) for c in chunks) <= _OVERVIEW_TARGET_BARS:
+        return None
+    base_sec = _interval_sec(manifest.get("interval"))
+    first_raw = _read_chunk(name, chunks[0])
+    if first_raw is None:
+        raise _ChartChanged(name)
+    first = json.loads(first_raw)
+    if base_sec is None:
+        base_sec = _median_step([r[0] for r in first.get("candles") or []])
+    if not base_sec:
+        return None
+    t0_raw, t1_raw = int(chunks[0]["t0"]), int(chunks[-1]["t1"])
+    bucket = _pick_bucket(t1_raw - t0_raw, base_sec)
+    if bucket is None:
+        return None
+    agg = _OverviewAgg(bucket)
+    agg.add(first)
+    del first, first_raw
+    for c in chunks[1:]:
+        if time.monotonic() > deadline:
+            raise _ChartTimeout(name)
+        raw = _read_chunk(name, c)
+        if raw is None:
+            raise _ChartChanged(name)
+        agg.add(json.loads(raw))
+    candles, panes, trades, truncated = agg.result()
+    if not candles:
+        return None
+    return {
+        "v": 1,
+        "hash": manifest["hash"],
+        "base_sec": base_sec,
+        "bucket": bucket,
+        "t0": candles[0][0],
+        "t1": t1_raw,
+        "candles": candles,
+        "panes": panes,
+        "trades": trades,
+        "trades_truncated": truncated,
+    }
+
+
+def _send_overview(name, manifest, entry, token, deadline):
+    """Build + PUT the overview for an uploaded set; marks entry overview_sent (done) or
+    overview_skipped (not needed / can't be built / rejected — nothing left to try for
+    this hash). Silent on timeout and swapped chunks: a later tick retries. Raises
+    _ChartHTTPError for 409 / 429 / 5xx like the chunk path."""
+    # Two counters: real failures (bad data / 5xx) are capped at _OVERVIEW_MAX_ATTEMPTS;
+    # build timeouts / swapped chunks / transient file errors (Defender scanning a fresh
+    # chunk on Windows, the chart.tmp→chart swap window) are "deferred" and get their own,
+    # looser cap so a slow machine can still finish a big set across ticks without the
+    # tick budget being burned forever.
+    attempts = int(entry.get("overview_attempts") or 0)
+    deferred = int(entry.get("overview_deferred") or 0)
+    if attempts >= _OVERVIEW_MAX_ATTEMPTS or deferred >= _OVERVIEW_MAX_DEFERRED:
+        print(f"[strategy_reporter] chart {name} overview: giving up "
+              f"({attempts} failures, {deferred} deferrals)", file=sys.stderr)
+        entry["overview_skipped"] = True
+        return
+    try:
+        overview = _build_overview(name, manifest, deadline)
+    except (_ChartChanged, _ChartTimeout, OSError) as e:
+        entry["overview_deferred"] = deferred + 1
+        print(f"[strategy_reporter] chart {name} overview deferred ({type(e).__name__}); "
+              f"retry next tick", file=sys.stderr)
+        return
+    except (ValueError, TypeError, KeyError, IndexError) as e:
+        print(f"[strategy_reporter] chart {name} overview unbuildable: {e!r}; skipping",
+              file=sys.stderr)
+        entry["overview_skipped"] = True
+        return
+    if overview is None:
+        entry["overview_skipped"] = True
+        return
+    gz = gzip.compress(json.dumps(overview, separators=(",", ":")).encode(), compresslevel=6)
+    if len(gz) > _CHART_CHUNK_GZ_MAX:
+        print(f"[strategy_reporter] chart {name} overview too large ({len(gz)}B); skipping",
+              file=sys.stderr)
+        entry["overview_skipped"] = True
+        return
+    if time.monotonic() > deadline:
+        return
+    try:
+        _chart_request("PUT", f"{CHART_URL}/{name}/{manifest['hash']}/overview", gz, token,
+                       content_encoding="gzip")
+    except _ChartHTTPError as e:
+        if not e.permanent:
+            entry["overview_attempts"] = attempts + 1
+            raise
+        print(f"[strategy_reporter] chart {name} overview rejected: {e}; skipping",
+              file=sys.stderr)
+        entry["overview_skipped"] = True
+        return
+    entry["overview_sent"] = True
+
+
+def _overview_pending(entry):
+    return not entry.get("overview_sent") and not entry.get("overview_skipped")
+
+
 def _upload_chart(name, manifest, entry, token, deadline):
     """Push one strategy's chart set; mutates `entry` and persists it after every
     chunk. Returns when done, out of time budget, or on the first failure — the next
     tick resumes from `entry`. A chunk whose sha1 no longer matches the manifest means
     the runner swapped a new set in mid-upload: stop, the next tick sees the new hash
-    and starts over."""
+    and starts over. The overview goes up between the last chunk and commit, but never
+    holds commit back — a miss there is backfilled by sync_charts on a later tick."""
     base = f"{CHART_URL}/{name}/{manifest['hash']}"
     if not entry.get("manifest_sent"):
         _chart_request("PUT", f"{base}/manifest", json.dumps(manifest).encode(), token)
         entry["manifest_sent"] = True
         _save_chart_state_entry(name, entry)
-    chart_dir = os.path.join(STRATEGIES_DIR, name, "chart")
     uploaded = set(entry.get("uploaded") or [])
     for c in manifest["chunks"]:
         cid = c.get("id")
@@ -385,9 +610,8 @@ def _upload_chart(name, manifest, entry, token, deadline):
             continue
         if time.monotonic() > deadline:
             return False
-        with open(os.path.join(chart_dir, f"chunk-{cid}.json"), "rb") as f:
-            raw = f.read()
-        if hashlib.sha1(raw).hexdigest() != c.get("sha1"):
+        raw = _read_chunk(name, c)
+        if raw is None:
             print(f"[strategy_reporter] chart {name} chunk {cid} changed under us; retry next tick",
                   file=sys.stderr)
             return False
@@ -400,6 +624,18 @@ def _upload_chart(name, manifest, entry, token, deadline):
         _chart_request("PUT", f"{base}/chunk/{cid}", gz, token, content_encoding="gzip")
         uploaded.add(cid)
         entry["uploaded"] = sorted(uploaded)
+        _save_chart_state_entry(name, entry)
+    if _overview_pending(entry):
+        try:
+            _send_overview(name, manifest, entry, token, deadline)
+        except _ChartHTTPError as e:
+            if e.code == 409:
+                raise  # staged set is gone: commit would 409 too — let the caller reset
+            print(f"[strategy_reporter] chart {name} overview failed: {e}; committing without it",
+                  file=sys.stderr)
+        except Exception as e:
+            print(f"[strategy_reporter] chart {name} overview failed: {e!r}; committing without it",
+                  file=sys.stderr)
         _save_chart_state_entry(name, entry)
     _chart_request("POST", f"{base}/commit", b"{}", token)
     entry["done"] = True
@@ -464,6 +700,25 @@ def sync_charts(strategies, token=None):
                       file=sys.stderr)
         except Exception as e:
             print(f"[strategy_reporter] chart upload {name} failed: {e}", file=sys.stderr)
+        _save_chart_state_entry(name, entry)
+    # Backfill last, with whatever budget the uploads left: a live set that missed its
+    # overview (timeout, 5xx, or committed by a runtime that predates overviews) gets
+    # one without a second commit — the hash is already live.
+    state = _load_chart_state()  # the loop above persisted entries the local dict never saw
+    for name in names:
+        entry = state.get(name) or {}
+        if not entry.get("done") or not _overview_pending(entry):
+            continue
+        manifest = _read_chart_manifest(name)
+        if manifest is None or manifest["hash"] != entry.get("hash"):
+            continue
+        if time.monotonic() > deadline:
+            break
+        try:
+            _send_overview(name, manifest, entry, token, deadline)
+        except Exception as e:
+            print(f"[strategy_reporter] chart {name} overview backfill failed: {e!r}",
+                  file=sys.stderr)
         _save_chart_state_entry(name, entry)
 
 
