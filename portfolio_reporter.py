@@ -22,10 +22,12 @@ What it collects, and why each piece has to come from here:
 VM auth = proxy-{ttyd_password} (BLAVE_PROXY_TOKEN), same trust model as the
 chat transport and strategy_reporter: the token resolves to this user only.
 """
+import ast
 import json
 import os
 import platform
 import re
+import statistics
 import subprocess
 import sys
 import time
@@ -267,6 +269,200 @@ def _halt_denials(since_ts):
     return n
 
 
+# ── 策略管理(工作頁 投資組合 › 策略管理)──────────────────────────────────────
+# Read side of command_listener's manage_* commands. Every piece is guarded on
+# its own: a torn stats.json or a syntax error in a user's allocator must cost
+# that one entry, never the report. `can_manage` is a constant — an older
+# runtime has no "manager" key at all, which is how the web tells 「機器尚未更新」.
+
+# The two per-day arrays the walk-forward writes for its own PNG; the page
+# charts managed_cum + random_benchmark.band instead, so these only add bytes.
+_MGMT_STATS_DROP = ("weights_history", "managed_returns")
+_ALLOCATOR_CONSTS = ("DISPLAY_NAME", "DESCRIPTION", "PARAMS")
+# {path: (mtime, size, entry|None)} — a stats.json can be several MB (trades +
+# candles) and this runs every report; only a changed file is parsed again.
+_STRATEGY_FIGURES_CACHE = {}
+
+
+def _strategy_figures(name, path):
+    """One strategy's picker figures, None when the file isn't a backtest
+    (same membership rule as lib/pnl.load_all_stats: non-empty
+    daily_returns). Annualised return/vol are not in stats.json, so they are
+    computed from the daily series (sample std, matching pandas' default)."""
+    data = _read_json(path)
+    if not isinstance(data, dict) or not data.get("daily_returns"):
+        return None
+    try:
+        rets = [float(v) for v in data["daily_returns"]]
+        dates = data.get("daily_dates") or []
+        ann_ret = statistics.fmean(rets) * 365 * 100 if rets else None
+        ann_vol = statistics.stdev(rets) * 365 ** 0.5 * 100 if len(rets) > 1 else None
+        return {
+            "name": name,
+            "days": len(dates) if dates else len(rets),
+            "first_date": dates[0] if dates else None,
+            "last_date": dates[-1] if dates else None,
+            "ann_return_pct": None if ann_ret is None else round(ann_ret, 2),
+            "ann_vol_pct": None if ann_vol is None else round(ann_vol, 2),
+            "sharpe": _num(data.get("Sharpe Ratio")),
+            "mdd_pct": _num(data.get("Max Drawdown [%]")),
+        }
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def _manager_strategies():
+    root = os.path.join(WORKSPACE, "strategies")
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return []
+    out = []
+    seen = set()
+    for name in entries:
+        path = os.path.join(root, name, "stats.json")
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        seen.add(path)
+        cached = _STRATEGY_FIGURES_CACHE.get(path)
+        if cached and cached[0] == st.st_mtime and cached[1] == st.st_size:
+            entry = cached[2]
+        else:
+            entry = _strategy_figures(name, path)
+            _STRATEGY_FIGURES_CACHE[path] = (st.st_mtime, st.st_size, entry)
+        if entry:
+            out.append(dict(entry))
+    for path in list(_STRATEGY_FIGURES_CACHE):
+        if path not in seen:
+            _STRATEGY_FIGURES_CACHE.pop(path, None)  # deleted strategy; pop: concurrent reports
+    return out
+
+
+def _num(v):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return round(f, 4) if f == f else None
+
+
+def _allocators():
+    """allocators/<name>/allocator.py consts via ast — the file is user code
+    and is never imported here. A dir whose file is missing or doesn't parse
+    is skipped; a const that isn't a literal (or is absent) falls back —
+    DISPLAY_NAME to the dir name, DESCRIPTION to "", PARAMS to {}."""
+    root = os.path.join(WORKSPACE, "allocators")
+    try:
+        entries = sorted(os.listdir(root))
+    except OSError:
+        return []
+    out = []
+    for name in entries:
+        if name.startswith(".") or name == "__pycache__":
+            continue
+        path = os.path.join(root, name, "allocator.py")
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                tree = ast.parse(f.read())
+        except (OSError, SyntaxError, ValueError):
+            continue
+        consts = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, ast.Name) or target.id not in _ALLOCATOR_CONSTS:
+                continue
+            try:
+                consts[target.id] = ast.literal_eval(node.value)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                continue
+        params = consts.get("PARAMS")
+        if not isinstance(params, dict):
+            params = {}
+        try:
+            json.dumps(params)  # a literal set/bytes/tuple-key would sink the whole report
+        except (TypeError, ValueError):
+            params = {}
+        out.append({
+            "name": name,
+            "display_name": str(consts.get("DISPLAY_NAME") or name),
+            "description": str(consts.get("DESCRIPTION") or ""),
+            "params": params,
+        })
+    return out
+
+
+def _mgmt_backtest_job():
+    """manager/mgmt_job.json + the live progress file, or None."""
+    root = os.path.join(WORKSPACE, "manager")
+    job = _read_json(os.path.join(root, "mgmt_job.json"))
+    if not isinstance(job, dict):
+        return None
+    job = dict(job)
+    job["progress"] = None
+    if job.get("status") == "running":  # a finished job's file is just the last tick
+        prog = _read_json(os.path.join(root, "mgmt_progress.json"))
+        if isinstance(prog, dict):
+            job["progress"] = {"day": prog.get("day"), "total": prog.get("total")}
+    return job
+
+
+def _mgmt_backtest_result(job):
+    """<output>/stats.json only for a finished job, and only when the file
+    is that job's own output: same members (order-free), allocator and
+    lookback, and a computed_at no earlier than the job's start. A running run's file is still the
+    PREVIOUS result (the script writes it atomically at the end), and an
+    agent running the script by hand later would otherwise have its numbers
+    shown under the web's job parameters."""
+    if not job or job.get("status") != "done":
+        return None
+    output = job.get("output")
+    # The listener writes this as "manager" or "allocators/<name>"; anything
+    # else (hand-edited job file) is not followed.
+    if (not isinstance(output, str) or not output or os.path.isabs(output)
+            or ".." in output.replace("\\", "/").split("/")):
+        return None
+    stats = _read_json(os.path.join(WORKSPACE, output, "stats.json"))
+    if not isinstance(stats, dict):
+        return None
+    # same rule as command_listener._mgmt_result_matches
+    try:
+        ours = (sorted(stats.get("members") or []) == sorted(job.get("members") or [])
+                and stats.get("allocator") == job.get("allocator")
+                and (stats.get("params") or {}).get("lookback")
+                == (job.get("params") or {}).get("lookback")
+                and float(stats.get("computed_at")) >= float(job.get("started_at") or 0))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not ours:
+        return None
+    return {k: v for k, v in stats.items() if k not in _MGMT_STATS_DROP}
+
+
+def manager_view():
+    view = {"can_manage": True, "strategies": [], "allocators": [],
+            "proposal": None, "backtest_job": None, "backtest": None}
+    for key, fn in (("strategies", _manager_strategies),
+                    ("allocators", _allocators),
+                    ("backtest_job", _mgmt_backtest_job)):
+        try:
+            view[key] = fn()
+        except Exception as e:  # noqa: BLE001 — this block must never sink the report
+            print(f"[portfolio_reporter] manager.{key} failed: {type(e).__name__}",
+                  file=sys.stderr)
+    try:
+        view["backtest"] = _mgmt_backtest_result(view["backtest_job"])
+    except Exception as e:  # noqa: BLE001
+        print(f"[portfolio_reporter] manager.backtest failed: {type(e).__name__}",
+              file=sys.stderr)
+    proposal = _read_json(os.path.join(WORKSPACE, "manager", "proposal.json"))
+    view["proposal"] = proposal if isinstance(proposal, dict) else None
+    return view
+
+
 def build_report():
     cfg = _read_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {})
     hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
@@ -330,6 +526,10 @@ def build_report():
         # start mode the machine would silently ignore (an old workspace
         # ignoring the gate degrades resume_wait to a full catch-up resume).
         "can_wait_start": _workspace_has_signal_gate(),
+        # 策略管理 subtab: member figures, allocators, the last proposal and
+        # the walk-forward job/result (see manager_view). can_manage keys the
+        # web's 「機器尚未更新」 fallback exactly like can_flatten/can_wait_start.
+        "manager": manager_view(),
         "reported_at": int(time.time()),
     }
 

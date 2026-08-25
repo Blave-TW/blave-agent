@@ -292,7 +292,9 @@ def main():
 
     threading.Thread(
         target=command_listener.run,
-        kwargs={"on_applied": on_command_applied},
+        # on_progress: portfolio only — the backtest watcher pushes it every
+        # 10s, and the full push would rescan every stats.json each time
+        kwargs={"on_applied": on_command_applied, "on_progress": sync_portfolio},
         daemon=True,
         name="command-listener",
     ).start()

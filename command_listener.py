@@ -24,6 +24,7 @@ import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -2108,6 +2109,500 @@ def _cmd_close_all(args):
     return "close_all=started"
 
 
+# ── 策略管理(工作頁 投資組合 › 策略管理)──────────────────────────────────────
+# Three deterministic wrappers around manager/manager.py (optimise) and
+# manager/management_backtest.py (walk-forward vs random). Results never come
+# back through the ack: the scripts write manager/proposal.json /
+# mgmt_job.json / <output>/stats.json and portfolio_reporter's "manager"
+# block ships them with the next report, same read path as everything else.
+
+_MANAGE_MAX_MEMBERS = 64
+_MANAGE_MAX_PARAMS = 32
+_MANAGE_OPTIMIZE_TIMEOUT_S = 120
+_MANAGE_PROGRESS_PUSH_S = 10  # watcher's report cadence while a backtest runs
+_MANAGE_ERR_TAIL = 300
+_MANAGE_BACKTEST_SCRIPT = "management_backtest.py"
+_MANAGE_ALLOCATOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Strategy dir names are whatever the agent created; only the characters that
+# could escape strategies/ or break the comma-joined --members flag are refused.
+_MANAGE_MEMBER_BAD_RE = re.compile(r"[/\\,\s\x00-\x1f]")
+
+# From run(): on_applied = the full post-command push (portfolio + strategy
+# list); on_progress = portfolio only, what the backtest watcher pushes every
+# 10s — the full one rescans every stats.json and repaints the left rail, and
+# a 10-minute run would do that 60 times.
+_ON_APPLIED = None
+_ON_PROGRESS = None
+# The live backtest Popen (None when the run was started by an earlier bridge
+# process — then identity is the pid's command line, see _mgmt_pid_alive) and
+# the lock serialising job.json writes between the watcher and manage_cancel.
+_MGMT_PROC = {"proc": None}
+_MGMT_LOCK = threading.Lock()
+_OPT_LOCK = threading.Lock()  # one manager.py at a time
+
+
+class Deferred:
+    """A handler's way of saying "validated and started; the real answer comes
+    later": run() acks a Deferred from a daemon thread when `fn` returns (or
+    raises), instead of on the poll loop — so a long synchronous job can't sit
+    in front of halt/close_all. `cleanup` runs exactly once, after `fn` or
+    when the worker thread could not even start (a lock held by `fn` would
+    otherwise leak until restart)."""
+
+    def __init__(self, fn, cleanup=None):
+        self.fn = fn
+        self._cleanup = cleanup
+
+    def cleanup(self):
+        fn, self._cleanup = self._cleanup, None
+        if fn:
+            fn()
+
+
+def _manage_paths():
+    m = os.path.join(WORKSPACE, "manager")
+    return {
+        "job": os.path.join(m, "mgmt_job.json"),
+        "progress": os.path.join(m, "mgmt_progress.json"),
+        "proposal": os.path.join(m, "proposal.json"),
+        "log": os.path.join(WORKSPACE_STATE, "logs", "mgmt_backtest.log"),
+    }
+
+
+def _remove_retry(path, what):
+    """os.remove that tolerates Windows' transient sharing violation (a
+    reporter mid-read) the same way _finish_mgmt_job's write does. Absent is
+    fine; still there after the retries is an error — the message names the
+    file's role, not its path."""
+    for attempt in range(5):
+        try:
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            _log(f"old {what} remove failed ({type(e).__name__}), attempt {attempt + 1}")
+            time.sleep(0.3)
+    raise RuntimeError(f"could not remove the old {what} — try again")
+
+
+def _write_json_atomic(path, doc):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(doc, f, indent=2)
+    os.replace(tmp, path)
+
+
+def _validate_manage_args(args):
+    """Shared shape check for the manage_* commands. Errors name the field,
+    never echo the value. Returns (members, allocator, lookback, target_vol,
+    extra_params) with lookback/target_vol split out of params — they are CLI
+    flags on both scripts, the rest goes to --params-json."""
+    members = args.get("members")
+    if not isinstance(members, list) or not members:
+        raise ValueError("members must be a non-empty list")
+    if len(members) > _MANAGE_MAX_MEMBERS:
+        raise ValueError(f"too many members (max {_MANAGE_MAX_MEMBERS})")
+    seen = set()
+    for name in members:
+        if (not isinstance(name, str) or not 1 <= len(name) <= 64
+                or name.startswith(".") or ".." in name
+                or _MANAGE_MEMBER_BAD_RE.search(name)):
+            raise ValueError("bad member name")
+        if name in seen:
+            raise ValueError("duplicate member")
+        seen.add(name)
+        if not os.path.isfile(os.path.join(WORKSPACE, "strategies", name, "stats.json")):
+            raise ValueError("member has no backtest stats")
+
+    allocator = args.get("allocator")
+    if allocator is not None:
+        if not isinstance(allocator, str) or not _MANAGE_ALLOCATOR_RE.match(allocator):
+            raise ValueError("bad allocator name")
+        if not os.path.isfile(os.path.join(WORKSPACE, "allocators", allocator, "allocator.py")):
+            raise ValueError("allocator not found")
+
+    params = args.get("params")
+    if not isinstance(params, dict):
+        raise ValueError("params must be a dict")
+    if len(params) > _MANAGE_MAX_PARAMS:
+        raise ValueError(f"too many params (max {_MANAGE_MAX_PARAMS})")
+    for k, v in params.items():
+        if not isinstance(k, str) or not 1 <= len(k) <= 64:
+            raise ValueError("bad param key")
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, str):
+            if len(v) > 200:
+                raise ValueError("param value too long")
+        elif isinstance(v, float):
+            if v != v or v in (float("inf"), float("-inf")):
+                raise ValueError("param value must be finite")
+        elif not isinstance(v, int):
+            raise ValueError("param value must be int/float/bool/str")
+    lookback = params.get("lookback")
+    if isinstance(lookback, bool) or not isinstance(lookback, int) or not 10 <= lookback <= 5000:
+        raise ValueError("lookback must be an integer 10–5000")
+    target_vol = params.get("target_vol")
+    if (isinstance(target_vol, bool) or not isinstance(target_vol, (int, float))
+            or not 0.01 <= target_vol <= 5):
+        raise ValueError("target_vol must be 0.01–5")
+    extra = {k: v for k, v in params.items() if k not in ("lookback", "target_vol")}
+    if allocator is None and extra:
+        raise ValueError("built-in allocator takes no extra params")
+    return members, allocator, lookback, target_vol, extra
+
+
+def _manage_argv(script, members, allocator, extra):
+    # Same PATH-resolved interpreter rule as _tick_one — sys.executable would be
+    # this runtime's own venv, not the workspace python the scripts import from.
+    # `--flag=value` form throughout: a member/allocator name starting with `-`
+    # would otherwise be read by argparse as the next option.
+    interp = "python" if platform.system() == "Windows" else "python3"
+    argv = [interp, os.path.join("manager", script), "--members=" + ",".join(members)]
+    if allocator is not None:
+        argv.append("--allocator=" + allocator)
+        if extra:
+            argv.append("--params-json=" + json.dumps(extra))
+    return argv
+
+
+def _tail(text, n=_MANAGE_ERR_TAIL):
+    return (text or "").strip()[-n:]
+
+
+def _log_tail(path, n=_MANAGE_ERR_TAIL):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 4 * n))
+            return _tail(f.read().decode("utf-8", errors="replace"), n)
+    except OSError:
+        return ""
+
+
+def _pid_cmdline(pid):
+    """Command line of `pid`, "" when it doesn't exist / can't be read."""
+    if platform.system() == "Windows":
+        try:
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
+                capture_output=True, text=True, timeout=5)  # runs on the poll loop
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return ""
+        return r.stdout or ""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().replace(b"\0", b" ").decode("utf-8", errors="replace")
+    except OSError:
+        pass
+    try:  # no /proc (dev macOS)
+        r = subprocess.run(["ps", "-o", "args=", "-p", str(int(pid))],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return ""
+    return r.stdout or ""
+
+
+def _mgmt_pid_alive(pid):
+    """Alive AND still the backtest. A bare liveness probe is wrong here: after
+    a reboot the pid in a stale job.json belongs to whatever got it next —
+    the reconciler, say — and cancel would kill that while the page shows a
+    progress bar forever. Our own Popen is trusted; anything else must carry
+    the script name on its command line."""
+    proc = _MGMT_PROC["proc"]
+    if proc is not None and proc.pid == pid:
+        return proc.poll() is None
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    return _MANAGE_BACKTEST_SCRIPT in _pid_cmdline(pid)
+
+
+def _read_mgmt_job():
+    try:
+        with open(_manage_paths()["job"]) as f:
+            job = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return job if isinstance(job, dict) else None
+
+
+def _mgmt_output_dir(job):
+    """<output> from job.json as an absolute path, None unless it is one of the
+    two shapes the listener itself writes (a hand-edited file is not followed)."""
+    output = job.get("output")
+    if (not isinstance(output, str) or not output or os.path.isabs(output)
+            or ".." in output.replace("\\", "/").split("/")):
+        return None
+    return os.path.join(WORKSPACE, output)
+
+
+def _mgmt_result_fresh(job):
+    """True when <output>/stats.json was written by THIS job: the script
+    stamps computed_at, and anything at or after started_at is ours. Used
+    instead of the exit code wherever there is no exit code (a run adopted
+    after a bridge restart, the stale reap) and to refuse a 0-exit that wrote
+    nothing."""
+    out = _mgmt_output_dir(job)
+    if not out:
+        return False
+    try:
+        with open(os.path.join(out, "stats.json")) as f:
+            stats = json.load(f)
+        return _mgmt_result_matches(stats, job)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def _mgmt_result_matches(stats, job):
+    """The attribution rule, shared in spirit with portfolio_reporter's copy:
+    same members (order-free), same allocator, same lookback, and a
+    computed_at no earlier than the job's start. Raises on malformed input."""
+    return (sorted(stats.get("members") or []) == sorted(job.get("members") or [])
+            and stats.get("allocator") == job.get("allocator")
+            and (stats.get("params") or {}).get("lookback")
+            == (job.get("params") or {}).get("lookback")
+            and float(stats.get("computed_at")) >= float(job.get("started_at") or 0))
+
+
+def _finish_mgmt_job(pid, status, error=None):
+    """Terminal write for the job `pid` owns. Under the lock so watcher and
+    cancel can't interleave; a job.json that no longer belongs to this pid
+    (a newer run replaced it) or is already terminal is left alone — the
+    watcher of a cancelled run must not flip it to error when SIGTERM makes
+    the exit code non-zero. Retries the write: on Windows os.replace loses to
+    a reporter mid-read with PermissionError, and a lost terminal write is a
+    progress bar that never ends."""
+    with _MGMT_LOCK:
+        job = _read_mgmt_job()
+        if not job or job.get("pid") != pid or job.get("status") != "running":
+            return False
+        job["status"] = status
+        job["finished_at"] = int(time.time())
+        job["error"] = error
+        for attempt in range(5):
+            try:
+                _write_json_atomic(_manage_paths()["job"], job)
+                return True
+            except OSError as e:
+                _log(f"mgmt job write failed ({type(e).__name__}), attempt {attempt + 1}")
+                time.sleep(0.3)
+        return False
+
+
+def _settle_mgmt_job(pid, rc=None, log_path=None):
+    """Decide done/error once the process is gone. rc=None when nobody
+    waited on it (adopted / reaped run) — then the result file's freshness
+    is the only evidence."""
+    job = _read_mgmt_job()
+    if not job or job.get("pid") != pid:
+        return
+    if rc in (0, None) and _mgmt_result_fresh(job):
+        _finish_mgmt_job(pid, "done")
+        return
+    tail = _log_tail(log_path or _manage_paths()["log"])
+    if rc not in (0, None):
+        msg = tail or f"backtest exited {rc}"
+    elif rc == 0:
+        msg = "backtest exited 0 but wrote no result"
+    else:
+        msg = tail or "backtest process exited without a result"
+    _finish_mgmt_job(pid, "error", msg)
+
+
+def _reap_stale_mgmt_job():
+    """A job.json left at `running` by a process that is gone (bridge/NSSM
+    restart killed the tree, machine rebooted) would show a progress bar that
+    never moves and block every new run. Called at listener start and before
+    each backtest/cancel."""
+    job = _read_mgmt_job()
+    if job and job.get("status") == "running" and not _mgmt_pid_alive(job.get("pid")):
+        _settle_mgmt_job(job.get("pid"))
+
+
+def _push(fn, what):
+    if not fn:
+        return
+    try:
+        fn()
+    except Exception as e:
+        _log(f"{what} push failed: {type(e).__name__}")
+
+
+def _cmd_manage_optimize(args):
+    """Dry-run of manager/manager.py → manager/proposal.json. Validation is
+    synchronous (a bad shape acks at once); the script itself runs off-loop
+    via Deferred so 120s of optimiser can't delay halt/close_all. The old
+    proposal is removed FIRST: on failure the page must not reload into a
+    stale proposal wearing the new selection's parameters."""
+    members, allocator, lookback, target_vol, extra = _validate_manage_args(args)
+    if not _OPT_LOCK.acquire(blocking=False):
+        raise RuntimeError("optimize already running")
+    try:
+        paths = _manage_paths()
+        _remove_retry(paths["proposal"], "proposal")
+        argv = _manage_argv("manager.py", members, allocator, extra)
+        argv += [f"--lookback={lookback}", f"--target-vol={float(target_vol)!r}",
+                 "--json=" + os.path.join("manager", "proposal.json")]
+    except BaseException:
+        _OPT_LOCK.release()
+        raise
+
+    def _run():
+        try:
+            r = subprocess.run(argv, cwd=WORKSPACE, env=_strategy_subprocess_env(),
+                               capture_output=True, encoding="utf-8", errors="replace",
+                               timeout=_MANAGE_OPTIMIZE_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"optimizer timed out after {_MANAGE_OPTIMIZE_TIMEOUT_S}s")
+        if r.returncode != 0:
+            raise RuntimeError(_tail(r.stderr) or _tail(r.stdout)
+                               or f"optimizer exited {r.returncode}")
+        if not os.path.isfile(paths["proposal"]):
+            raise RuntimeError("optimizer exited 0 but wrote no proposal")
+        return "proposal=ok"
+
+    return Deferred(_run, cleanup=_OPT_LOCK.release)
+
+
+def _cmd_manage_backtest(args):
+    """Detached walk-forward run; progress + result ride the portfolio report."""
+    members, allocator, lookback, target_vol, extra = _validate_manage_args(args)
+    _reap_stale_mgmt_job()
+    job = _read_mgmt_job()
+    if job and job.get("status") == "running" and _mgmt_pid_alive(job.get("pid")):
+        raise RuntimeError("backtest already running")
+    paths = _manage_paths()
+    _remove_retry(paths["progress"], "progress file")
+    argv = _manage_argv(_MANAGE_BACKTEST_SCRIPT, members, allocator, extra)
+    argv += [f"--lookback={lookback}",
+             "--progress=" + os.path.join("manager", "mgmt_progress.json")]
+    os.makedirs(os.path.dirname(paths["log"]), exist_ok=True)
+    # Own session / process group so cancel can take the whole tree (killpg)
+    # and — Linux, KillMode=process — a bridge restart doesn't kill the run
+    # (run() re-adopts it by pid). Windows can't detach from the NSSM tree AND
+    # keep a killable pid (see _cmd_close_all's powershell hop, which trades
+    # the pid away); the tree kill on restart is what _reap_stale_mgmt_job
+    # turns into an error.
+    popen_kw = {"start_new_session": True} if platform.system() != "Windows" else {
+        "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    # Unbuffered: with both streams in one file, a block-buffered stdout would
+    # flush at exit AFTER the stderr error line, and the log tail the job's
+    # `error` is cut from would end in report text instead of the reason.
+    env = _strategy_subprocess_env() | {"PYTHONUNBUFFERED": "1"}
+    with open(paths["log"], "wb") as logf:
+        proc = subprocess.Popen(argv, cwd=WORKSPACE, env=env,
+                                stdout=logf, stderr=logf, **popen_kw)
+    doc = {
+        "status": "running", "pid": proc.pid, "members": members,
+        "allocator": allocator, "params": {"lookback": lookback,
+                                           "target_vol": target_vol, **extra},
+        "output": "manager" if allocator is None else f"allocators/{allocator}",
+        "started_at": int(time.time()), "finished_at": None, "error": None,
+    }
+    with _MGMT_LOCK:
+        try:
+            _write_json_atomic(paths["job"], doc)
+        except OSError as e:
+            # no job record = nothing can ever report or cancel this run
+            proc.kill()
+            raise RuntimeError(f"could not record backtest job ({type(e).__name__})")
+        _MGMT_PROC["proc"] = proc
+    threading.Thread(target=_watch_mgmt_backtest, args=(proc, paths["log"]),
+                     daemon=True, name="mgmt-backtest-watch").start()
+    return "backtest=started"
+
+
+def _watch_mgmt_backtest(proc, log_path):
+    try:
+        while True:
+            try:
+                rc = proc.wait(timeout=_MANAGE_PROGRESS_PUSH_S)
+                break
+            except subprocess.TimeoutExpired:
+                _push(_ON_PROGRESS, "progress")
+        _settle_mgmt_job(proc.pid, rc, log_path)
+    except Exception as e:
+        _log(f"backtest watcher died: {type(e).__name__}: {e}")
+    _push(_ON_APPLIED, "backtest result")
+
+
+def _adopt_mgmt_backtest(pid):
+    """Watcher for a run this process did not start (bridge restarted under
+    it): no handle to wait on, so poll liveness — identity-checked, see
+    _mgmt_pid_alive — and settle from the result file when it goes."""
+    try:
+        while _mgmt_pid_alive(pid):
+            time.sleep(_MANAGE_PROGRESS_PUSH_S)
+            _push(_ON_PROGRESS, "progress")
+        _settle_mgmt_job(pid)
+    except Exception as e:
+        _log(f"adopted backtest watcher died: {type(e).__name__}: {e}")
+    _push(_ON_APPLIED, "backtest result")
+
+
+def _resume_mgmt_watch():
+    """At listener start: a run that outlived the previous bridge gets a
+    watcher again; a dead one gets settled. Without this the page sees
+    `running` until something else touches job.json."""
+    job = _read_mgmt_job()
+    if not job or job.get("status") != "running":
+        return
+    pid = job.get("pid")
+    if _mgmt_pid_alive(pid):
+        _log(f"adopting running backtest pid {pid}")
+        threading.Thread(target=_adopt_mgmt_backtest, args=(pid,),
+                         daemon=True, name="mgmt-backtest-adopt").start()
+    else:
+        _settle_mgmt_job(pid)
+
+
+def _cmd_manage_cancel(args):
+    _reap_stale_mgmt_job()
+    job = _read_mgmt_job()
+    if not job or job.get("status") != "running":
+        return "backtest=idle"
+    pid = job.get("pid")
+    # Status first, kill second: SIGTERM ends the process within the same
+    # tick, and a watcher that wins the lock before `cancelled` is written
+    # would record the run as an error with the progress text as the reason.
+    if not _finish_mgmt_job(pid, "cancelled"):
+        job = _read_mgmt_job()
+        if not job or job.get("status") != "running":
+            return "backtest=idle"  # it ended between the check and the lock
+        raise RuntimeError("could not record the cancel — try again")
+    if _mgmt_pid_alive(pid):
+        try:
+            if platform.system() == "Windows":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                               capture_output=True, timeout=30, check=True)
+            else:
+                os.killpg(pid, signal.SIGTERM)
+        except (OSError, subprocess.SubprocessError) as e:
+            if not _mgmt_pid_alive(pid):
+                return "backtest=cancelled"  # it ended on its own meanwhile
+            # the run is still going — a `cancelled` record over a live
+            # process would hide it from the page and from the next start
+            _reopen_mgmt_job(pid)
+            raise RuntimeError(f"could not stop backtest ({type(e).__name__})")
+    return "backtest=cancelled"
+
+
+def _reopen_mgmt_job(pid):
+    with _MGMT_LOCK:
+        job = _read_mgmt_job()
+        if not job or job.get("pid") != pid:
+            return
+        job.update({"status": "running", "finished_at": None, "error": None})
+        try:
+            _write_json_atomic(_manage_paths()["job"], job)
+        except OSError as e:
+            _log(f"mgmt job reopen failed: {type(e).__name__}")
+
+
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
@@ -2120,6 +2615,9 @@ HANDLERS = {
     "retest_accounts": _cmd_retest_accounts,
     "restart_reconciler": _cmd_restart_reconciler,
     "delete_strategy": _cmd_delete_strategy,
+    "manage_optimize": _cmd_manage_optimize,
+    "manage_backtest": _cmd_manage_backtest,
+    "manage_cancel": _cmd_manage_cancel,
 }
 
 
@@ -2181,14 +2679,38 @@ def _send_ack(cmd_id, cmd, ok, result=None, error=None):
         _log(f"ack send failed: {type(e).__name__}")
 
 
-def run(on_applied=None):
+def _run_deferred(cid, cmd, deferred):
+    try:
+        result = deferred.fn()
+        _log(f"{cmd} {cid} ok: {result}")
+        if cid != "?":
+            _send_ack(cid, cmd, True, result, None)
+    except Exception as e:
+        err_str = f"{type(e).__name__}: {e}"
+        _log(f"{cmd} {cid} FAILED: {err_str}")
+        if cid != "?":
+            _send_ack(cid, cmd, False, None, err_str)
+    finally:
+        deferred.cleanup()
+    # the loop skips its post-command push for a Deferred — this is that
+    # push. Portfolio only: the one deferred job (optimize) changes
+    # proposal.json and nothing the strategy list shows.
+    _push(_ON_PROGRESS, "deferred result")
+
+
+def run(on_applied=None, on_progress=None):
     """Poll-execute-report forever. `on_applied` pushes a fresh portfolio report
     so the page confirms from real machine state rather than from its own POST
-    having returned 200."""
+    having returned 200; `on_progress` is the portfolio-only push the
+    backtest watcher uses every 10s (see _ON_PROGRESS)."""
     if not PROXY_TOKEN:
         _log("BLAVE_PROXY_TOKEN not set; command listener disabled")
         return
     _log("started")
+    global _ON_APPLIED, _ON_PROGRESS
+    _ON_APPLIED = on_applied
+    _ON_PROGRESS = on_progress
+    _resume_mgmt_watch()
 
     # Type A/C strategy scheduling — its own daemon thread, independent of the
     # poll loop below (see the "Type A/C in-process scheduler" section).
@@ -2246,6 +2768,24 @@ def run(on_applied=None):
         cid = command.get("id", "?")
         try:
             result = dispatch(command)
+            if isinstance(result, Deferred):
+                # validated + started; the ack (and the report push after it)
+                # comes from the worker when the job ends — see Deferred
+                _log(f"{command.get('cmd')} {cid} deferred")
+                try:
+                    threading.Thread(target=_run_deferred,
+                                     args=(cid, command.get("cmd"), result),
+                                     daemon=True, name="command-deferred").start()
+                except RuntimeError as e:
+                    result.cleanup()
+                    _log(f"{command.get('cmd')} {cid} FAILED: worker thread: {e}")
+                    if cid != "?":
+                        threading.Thread(
+                            target=_send_ack, daemon=True, name="command-ack",
+                            args=(cid, command.get("cmd"), False, None,
+                                  "RuntimeError: could not start worker — try again"),
+                        ).start()
+                continue
             _log(f"{command.get('cmd')} {cid} ok: {result}")
             if cid != "?":
                 threading.Thread(
