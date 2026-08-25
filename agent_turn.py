@@ -200,7 +200,7 @@ def extract_exports(text, workspace=None):
 
 # ── 導航指引(ui_nav)──────────────────────────────────────────────────────
 # 導航句回覆(「帶我看怎麼…」)第一行放 <nav>目標</nav>;WebSink 在段首攔下、
-# 先送 {"type": "ui_nav", "target": ...} 再放正文——前端把投資組合頁開到對的
+# 先送 {"type": "ui_nav", "target": ...} 再放正文——前端把自動下單頁開到對的
 # 分頁後步驟文字才到,用戶照著現場做。目標白名單=references/portfolio-steps.md
 # 的三套腳本(web 端 applyUiNav、webchat.py NAV_TARGETS 同一份,手動同步);
 # 不在名單的目標一樣剝掉(標記絕不露出)但不觸發。
@@ -383,7 +383,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 只放 AGENTS.md/系統尾端會輸給 in-context 慣性(deepseek 教訓,同
     # _lang_directive 的機制);建議句規則(下面那段)維持 web 專屬。
     parts.append(
-        "[紅線:部署/金額/綁定/恢復交易一律指引用戶到投資組合頁操作,不代做;"
+        "[紅線:部署/金額/綁定/恢復交易一律指引用戶到自動下單頁操作,不代做;"
         "急停(HALT)例外可做。]"
     )
     if suggest_directive:
@@ -403,7 +403,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             steps = _portfolio_steps_block()
             if steps:
                 parts.append(
-                    "[投資組合頁操作步驟(要帶用戶操作時照這份寫,UI 標籤一字不差、"
+                    "[自動下單頁操作步驟(要帶用戶操作時照這份寫,UI 標籤一字不差、"
                     "不要自己發明分頁或按鈕名):\n" + steps + "\n]"
                 )
         # 建議規則的逐輪錨(web 專屬)。系統提示尾端的版本擋不住 in-context 慣性:
@@ -598,7 +598,7 @@ _NAV_RULE = (
     "## 導航指引（回覆第一行）\n"
     "用戶要你帶他做部署類操作（「帶我看怎麼…」這類導航句，或直接問怎麼上模擬盤／"
     "設金額／綁交易所／啟動下單）時，回覆的**第一行**單獨放一個標記，系統會替用戶把"
-    "投資組合頁開到對的位置，接著才給步驟：\n"
+    "自動下單頁開到對的位置，接著才給步驟：\n"
     "- 設定部位金額、把策略部署上模擬盤／實盤 → `<nav>portfolio.pos</nav>`\n"
     "- 綁定模擬盤或交易所（含換金鑰） → `<nav>portfolio.venue</nav>`\n"
     "- 啟動／恢復下單 → `<nav>portfolio.run</nav>`\n"
@@ -627,7 +627,7 @@ _SUGGEST_RULE = (
     "一行一個建議、最多 3 個（通常 1 個就好）；句子＝用戶口吻的短指令"
     "（動詞＋對象＋必要參數），點了會替用戶原句送出。"
     "部署類建議（上模擬盤、小額實盤、綁定——含 paper）是**導航句**：固定以"
-    "「帶我看怎麼」起手，點了你回操作步驟、不代做（部署由用戶親手在投資組合頁操作）；"
+    "「帶我看怎麼」起手，點了你回操作步驟、不代做（部署由用戶親手在自動下單頁操作）；"
     "分析／回測類維持一般執行句。"
     "提到策略時用它的名稱（strategy.py 檔頭 # Strategy: 那行，或用戶慣稱），"
     "不要用底線目錄代號（寫「把 BTC 4h 均線交叉上模擬盤」，"
