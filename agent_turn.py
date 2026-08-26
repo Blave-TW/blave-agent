@@ -291,6 +291,91 @@ def _deploy_state_line():
         return ""
 
 
+# ── 圖片儲存空間滿了 ─────────────────────────────────────────────────────
+# 機器上傳回測圖時被 api 以 507 擋下(每個用戶的 S3 儲存上限)。這件事只有 agent 在
+# 對話裡講得掉:工作頁 banner 用戶不一定會看,機隊的 TG 通知疑似長期斷線,而且只有
+# agent 講得出「舊策略的圖佔著空間,要不要刪掉幾支不用的」這種可以直接動手的話。
+#
+# 事實來源只有一個:strategy_reporter 真的收到過 507 才會寫那個檔(見
+# strategy_reporter._record_image_quota)。不從「圖沒出現」之類的現象反推——那是猜。
+#
+# 什麼時候該閉嘴。配額滿了不會自己好,所以「有事實就講」等於每輪都唸。兩道門各擋一種:
+#   1. 事實要還在發生。reporter 每 2 分鐘一輪,但只在圖有變動時才真的上傳,所以
+#      「_QUOTA_FRESH_SEC 內沒再 507」= 這段期間沒有新圖在掉。沒東西在掉就沒必要提;
+#      真的又掉了,2 分鐘內事實就會更新、緊接著那一回合就講——那也正好是用戶剛跑完
+#      回測、最聽得進去的時候。
+#   2. 注入過就冷卻 _QUOTA_REMIND_SEC。
+# 事實過期不是完全閉嘴,而是降級成被動版:用戶兩天後自己問「我的圖呢」時,agent 手上
+# 得有這條事實可以答,否則依 canon 它只能猜。
+#
+# 冷卻是刻意設得比 FRESH 短的(2026-08-26 改,原本 12h > FRESH):門 2 燒的是「注入過」
+# 不是「模型真的講了」,而 29026 deepseek 實測命中率只有一半。原本的順序下,漏講一次
+# 的代價不是「晚半天」而是「這次事件再也不會主動提」——事實 6 小時後就過期成被動版,
+# 冷卻還沒退。多講的代價則有界:507 持續發生時最多 FRESH/REMIND=6 次注入(照實測命中
+# 率約 3 次真的出口),而且那句話本身是「一兩句順帶」+「使用者沒接話就不要再追」。
+# 一邊是靜音到底、一邊是半天內可能多唸兩句,在命中率不是 100% 的前提下偏向前者。
+# 代價是門 2 不再蓋過門 1:剛好在停止掉圖、事實還沒過期的那段(用戶已刪策略但還沒重跑
+# 回測,所以沒有成功上傳來清掉事實)可能會多提一次——比漏講整件事划算。
+_QUOTA_FRESH_SEC = 6 * 3600
+_QUOTA_REMIND_SEC = 3600
+# reporter 寫事實、這裡寫「講過了」,各寫各的檔:兩者是不同 process(2 分鐘一次的
+# timer vs 每輪 spawn),共用一個檔就是互相蓋掉的 read-modify-write。
+_QUOTA_TOLD_PATH = os.path.join(strategy_reporter.STATE_DIR, "strategy_image_quota_told.json")
+
+# 主動版刻意把兩件事寫死進去:空間不是刪完立刻回來(api 端一天掃一次,而且只清超過
+# 一天沒被引用的圖),被擋掉的那幾張也不會自己補上(reporter 的簽章檔認為送過了)。
+# 少了這兩句,用戶照做卻沒看到圖,會以為功能壞掉——之後的第二次提醒更像壞掉。
+_QUOTA_LINE = (
+    "[圖片儲存空間(機器事實,不是推測——這台機器上傳回測圖時,真的被伺服器以"
+    "「儲存空間已滿」擋下):新的回測圖存不進去,工作頁的回測圖分頁看不到它們。"
+    "本回合用一兩句話順帶告訴使用者,並提議刪掉不再用的舊策略(連同它們的圖)來空出"
+    "空間。要講清楚兩件事:空間不是刪完立刻回來(伺服器每天清一次,而且只清超過一天"
+    "沒被引用的圖),已經被擋掉的那幾張也不會自己補上——要等空間回來後重跑一次回測。"
+    "使用者沒接話就不要再追。]"
+)
+_QUOTA_LINE_STALE = (
+    "[圖片儲存空間(機器事實,舊訊息,不要主動提):這台機器先前上傳回測圖時,被伺服器"
+    "以「儲存空間已滿」擋下過,當時那幾張圖沒有存進去。只有使用者自己問起圖片為什麼"
+    "不見時才用得上這條。]"
+)
+
+
+def _read_state_json(path):
+    try:
+        with open(path) as f:
+            val = json.load(f)
+        return val if isinstance(val, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _image_quota_line(now=None):
+    """圖片儲存空間的一行機器事實(沒有就空字串)。fail-silent,同 _deploy_state_line。
+
+    有副作用:回傳主動版的同時就把「注入過」記下去。記的不是「模型真的講了」——那只能
+    靠字串比對模型輸出去猜,跨語言又跨措辭。改用短冷卻(見 _QUOTA_REMIND_SEC)吸收漏講
+    的那幾次,不為了猜而讓一次沒命中變成整段靜音。"""
+    try:
+        at = _read_state_json(strategy_reporter.IMG_QUOTA_PATH).get("at")
+        if not at:
+            return ""
+        now = now if now is not None else time.time()
+        if now - at > _QUOTA_FRESH_SEC:
+            return _QUOTA_LINE_STALE
+        if now - (_read_state_json(_QUOTA_TOLD_PATH).get("at") or 0) < _QUOTA_REMIND_SEC:
+            return ""
+        try:
+            os.makedirs(strategy_reporter.STATE_DIR, exist_ok=True)
+            with open(_QUOTA_TOLD_PATH, "w") as f:
+                json.dump({"at": int(now)}, f)
+        except OSError:
+            # 記不下來就不要講:寧可漏一次提醒,也不要變成每輪都唸。
+            return ""
+        return _QUOTA_LINE
+    except Exception:
+        return ""
+
+
 # 導航類回合(問怎麼部署/綁定/啟動)把 references/portfolio-steps.md 的步驟腳本段
 # 直接注入:UI 標籤要一字不差,模型自己不會去讀那個檔(29026 實測:啟動下單編出
 # 「運行」分頁、綁定編出「渠道」分頁/「綁定」鈕)——頁面被 ui_nav 開好後錯標籤
@@ -440,6 +525,17 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但未部署的策略)必附區塊;"
             "純寒暄或單一報價則什麼都不附。]"
         )
+    # 兩個 sink 都掛(不像 _deploy_state_line 是 web 專屬):這是機器層級的事實,不是
+    # 工作頁的 UI 狀態,而且只從 TG 用的人更沒有別的地方會看到它。
+    # 位置擠在語言錨之前的倒數第二格(2026-08-26 從紅線句後面挪來):它是「本回合要多做
+    # 一件事」的逐輪指令,跟語言錨同一類,弱模型對這種指令吃 recency——原本夾在中段,
+    # 29026 deepseek 實測兩次只講一次(注入都有發生,是模型無視)。TG 那邊本來就已經在
+    # 這個位置(下面那整段是 web 專屬),所以這一步只動到 web。
+    # 挪完同機再跑 6 次是 4 中:跟挪之前的 1/2 在這個樣本數下分不出來,位置效果未證實。
+    # 漏講的下限不靠這格,靠 _QUOTA_REMIND_SEC 的短冷卻兜底。
+    quota_line = _image_quota_line()
+    if quota_line:
+        parts.append(quota_line)
     # 語言錨放**真正的最尾端**(recency 權重最大)且由 code 偵測、給「針對性」指令:
     # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住英文訊息被
     # 回成中文/中英混雜(實測兩輪)。必須排在上面所有中文逐輪指令(紅線句、建議句

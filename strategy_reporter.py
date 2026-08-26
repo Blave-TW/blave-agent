@@ -41,6 +41,12 @@ _IMG_SIG_PATH = os.path.join(STATE_DIR, "strategy_images_sig.json")
 # S3 existed, so nothing is lost by giving up early.
 _IMG_UPLOAD_TIMEOUT = 15
 _IMG_UPLOAD_BUDGET_SEC = 30
+# "the api refused an image because this user's S3 storage is full" (HTTP 507 from
+# api/openclaw/agent_strategy_images.py). Written here, read by agent_turn, which turns
+# it into one line of the turn prompt so the agent can say it in chat — see
+# _record_image_quota() for why this one failure is worth persisting and
+# agent_turn._image_quota_line() for when it is allowed to be mentioned.
+IMG_QUOTA_PATH = os.path.join(STATE_DIR, "strategy_image_quota.json")
 API_URL = os.environ.get(
     "BLAVE_STRATEGIES_URL", "https://api.blave.org/openclaw/agent/strategies"
 )
@@ -330,9 +336,16 @@ def _list_images(name):
 
 
 def _put_image(data, mime, token):
-    """Upload one image to S3 via the api and return its {hash} reference, or None so
-    the caller falls back to inline base64. Content-addressed: re-sending identical
-    bytes overwrites the same key, so a retry after a failed report costs one PUT."""
+    """Upload one image to S3 via the api. Returns (its {hash} reference, or None so the
+    caller falls back to inline base64; whether the api refused on the storage quota).
+    Content-addressed: re-sending identical bytes overwrites the same key, so a retry
+    after a failed report costs one PUT.
+
+    507 is the only failure separated out, because it is the only one that does not
+    clear by itself: every other failure (S3 down, rate limited, socket timeout) means
+    the next tick re-sends the same bytes and the picture still arrives, while over
+    quota the api drops the image outright — the inline-base64 fallback is refused for
+    the same reason on arrival."""
     h = hashlib.sha256(data).hexdigest()
     req = urllib.request.Request(
         f"{IMAGE_URL}/{h}", data=data, method="PUT",
@@ -340,10 +353,51 @@ def _put_image(data, mime, token):
     )
     try:
         urllib.request.urlopen(req, timeout=_IMG_UPLOAD_TIMEOUT).read()
+    except urllib.error.HTTPError as e:  # subclass of the below; must be caught first
+        print(f"[strategy_reporter] image upload failed: {e}", file=sys.stderr)
+        return None, e.code == 507
     except Exception as e:
         print(f"[strategy_reporter] image upload failed: {e}", file=sys.stderr)
-        return None
-    return h
+        return None, False
+    return h, False
+
+
+def _record_image_quota(refused, uploaded, complete=True):
+    """Persist — or clear — "the api is refusing this machine's images because the
+    user's storage is full", for agent_turn to raise in chat.
+
+    Nothing else can tell them. A report whose picture was dropped looks exactly like a
+    report that never had one, so the workspace has nothing to render and no way to
+    explain the gap; chat is the channel that reaches the user either way, and the agent
+    is the only thing that can turn the fact into something they can act on.
+
+    Set ONLY by a real 507 off the wire, never inferred from a missing picture — the
+    sentence the agent ends up saying has to be a machine fact, not a deduction.
+
+    Cleared by an upload that succeeded in the same pass: that is the only evidence this
+    machine can have that the ceiling is no longer being hit. A pass that uploaded
+    nothing at all — the common case, since unchanged signatures skip the upload
+    entirely — is evidence of neither and leaves the file exactly as it was.
+
+    Nor does a pass that ran out of its upload budget (`complete=False`): the image it
+    never reached could be exactly the one being refused, so the ones that did fit are
+    not the evidence this is asking for. Same rule as the paragraph above, applied to
+    the images that were never attempted rather than the passes that attempt none.
+
+    A file of its own rather than a field agent_turn edits: that process writes its
+    "already mentioned this" marker beside this one, so a per-turn spawn and this timer
+    never read-modify-write the same file."""
+    if not (refused or (uploaded and complete)):
+        return
+    try:
+        if refused:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            with open(IMG_QUOTA_PATH, "w") as f:
+                json.dump({"at": int(time.time())}, f)
+        elif os.path.exists(IMG_QUOTA_PATH):
+            os.remove(IMG_QUOTA_PATH)
+    except OSError:
+        pass
 
 
 def attach_images(strategies, token=None):
@@ -368,6 +422,7 @@ def attach_images(strategies, token=None):
     except (OSError, ValueError):
         pass
     new_sigs = {}
+    refused = uploaded = skipped = False
     for s in strategies:
         imgs = _list_images(s["name"])
         sig = [[f, int(m)] for (m, f, _p, _mime) in imgs]
@@ -381,11 +436,21 @@ def attach_images(strategies, token=None):
                     data = fh.read()
             except OSError:
                 continue
-            h = _put_image(data, mime, token) if time.monotonic() < deadline else None
+            if time.monotonic() < deadline:
+                h, over_quota = _put_image(data, mime, token)
+            else:
+                # Budget spent: not attempted, so it says nothing either way — and it
+                # makes the whole pass silent about whether the ceiling cleared, since
+                # this could be the image that would have been refused.
+                h, over_quota = None, False
+                skipped = True
+            refused = refused or over_quota
+            uploaded = uploaded or bool(h)
             entry = {"file": f, "mime": mime}
             entry["hash" if h else "b64"] = h or base64.b64encode(data).decode()
             payload.append(entry)
         s["images"] = payload  # [] = 圖被清掉,明確清空
+    _record_image_quota(refused, uploaded, complete=not skipped)
     return new_sigs
 
 
