@@ -222,6 +222,17 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
         while proc.poll() is None:
             time.sleep(1)
             now = time.time()
+            # 心跳必須在這裡也跳:heartbeat 的語意是「這個 loop 還活著」,不是
+            # 「這個 loop 有空」。只在 main() 迴圈頂端 touch 的話,整輪(實測可達
+            # 273 秒)心跳都是 stale,control/heartbeat_watchdog.py 只能靠
+            # turn_in_flight()(pgrep agent_turn.py)這個旁證擋下重啟——而 child
+            # 一 exit 旗子就落下,後面的 sync_portfolio()/sync_strategies()(圖
+            # base64 + 數 MB 上傳,好幾秒)整段裸奔。2026-08-26 uid=32321 就是在
+            # 那個窗口被 watchdog 重啟,turn-end 的 strategies chunk 沒送出去,
+            # 工作頁的新策略整整 23 分鐘沒長出回測。這樣改不會削弱偵測力:回合中
+            # 本來就被 turn_in_flight() 擋著不會重啟,child 真的卡死另有
+            # TURN_TIMEOUT 收尾。
+            touch_heartbeat()
             if now >= next_ping:
                 _post_chunk({"type": "ping", "session_id": session_id})
                 next_ping = now + PING_INTERVAL
@@ -245,9 +256,19 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
 
 
 def touch_heartbeat():
-    os.makedirs(os.path.dirname(HEARTBEAT_PATH), exist_ok=True)
-    with open(HEARTBEAT_PATH, "w") as f:
-        f.write(str(time.time()))
+    """寫不進去只印一行就算了,絕不讓例外往上竄:這個函式現在是回合中每秒呼叫
+    (一輪最多 ~2100 次),而不是每個 poll 迴圈一次。碟滿(workspace 跟 heartbeat
+    同一顆)或 Windows 上 AV 暫時鎖檔時拋 OSError,例外會穿過 run_agent_turn 的
+    finally 打死整個 main —— on_term 是 signal handler 不會跑(瀏覽器卡在「思考
+    中」),而且回合後的 sync_portfolio()/sync_strategies() 直接沒機會跑,等於
+    原封不動複製了這個 patch 要修的那個症狀。心跳寫不進去本來就該由 watchdog
+    處理(它會照常判 stale 然後重啟),不該由一輪對話陪葬。"""
+    try:
+        os.makedirs(os.path.dirname(HEARTBEAT_PATH), exist_ok=True)
+        with open(HEARTBEAT_PATH, "w") as f:
+            f.write(str(time.time()))
+    except OSError as e:
+        print(f"[web_bridge] heartbeat write failed: {e}", file=sys.stderr)
 
 
 def on_term(signum=None, frame=None):
@@ -353,7 +374,14 @@ def main():
             # 投資組合排前面:瀏覽器是在 done 之後固定 3 秒回抓它的快取,而策略
             # 清單的回抓綁在下面那個 chunk 送達之後——只有投資組合這條會輸掉競速,
             # 慢的那條(圖片 base64 + 數 MB 上傳)因此排後面。
+            # 兩個 sync 中間各補一次心跳:這裡 turn_in_flight() 已經是 False,
+            # 唯一的保護就是心跳還沒過期,窗口因此縮成「最長的單一 sync」而不是
+            # 兩個的總和。不改成背景 thread 定時 touch——那會讓心跳退化成「進程
+            # 還在」而不是「這個迴圈還在跑」,watchdog 對 web_bridge 唯一的真陽性
+            # (閒置時 poll 迴圈 wedge)就沒了。單一 POST 真的卡死仍照常過期重啟。
+            touch_heartbeat()
             sync_portfolio()
+            touch_heartbeat()
             sync_strategies()
 
 
