@@ -2123,6 +2123,10 @@ _MANAGE_PROGRESS_PUSH_S = 10  # watcher's report cadence while a backtest runs
 _MANAGE_ERR_TAIL = 300
 _MANAGE_BACKTEST_SCRIPT = "management_backtest.py"
 _MANAGE_ALLOCATOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Sent explicitly whenever the page doesn't name one, so the job and the result
+# always agree on the window. Mirrors both scripts' own LOOKBACK default —
+# drift only shows up on a caller that sends nothing, and the page always does.
+_MANAGE_DEFAULT_LOOKBACK = 365
 # Strategy dir names are whatever the agent created; only the characters that
 # could escape strategies/ or break the comma-joined --members flag are refused.
 _MANAGE_MEMBER_BAD_RE = re.compile(r"[/\\,\s\x00-\x1f]")
@@ -2212,12 +2216,92 @@ def _write_json_atomic(path, doc):
     os.replace(tmp, path)
 
 
-def _validate_manage_args(args):
-    """Shared shape check for the manage_* commands. Errors name the field,
-    never echo the value. Returns (members, allocator, lookback, target_vol,
-    extra_params) with lookback/target_vol split out of params — they are the
-    two CLI flags (--lookback on both scripts, --target-vol on manager.py
-    only), the rest goes to --params-json."""
+def _builtin_methods():
+    """{method name: the params it declares} for THIS workspace's manager.py —
+    {} on one that predates the named built-ins. Read ONCE per command and
+    passed down (it costs an ast parse), never cached across commands: a
+    workspace can update at any moment and a stale answer here picks the wrong
+    method. Deferred import like strategy_reporter's above — a broken sibling
+    module must not take the halt/close_all path down with it."""
+    import portfolio_reporter
+
+    return portfolio_reporter.builtin_method_params()
+
+
+def _script_knows_builtins(script):
+    """Whether manager/<script> can select a built-in BY NAME — per script,
+    because a half-updated workspace has one that can and one that can't."""
+    import portfolio_reporter
+
+    return portfolio_reporter.script_knows_builtins(script)
+
+
+def _resolve_allocator(allocator, script, builtins):
+    """The wire's `allocator` → what goes on `script`'s command line and into
+    every record of the run. Three cases:
+
+    None — the web's 「內建」 from before it knew the method names. That label
+    has always meant slope/std, so wherever the script can take a name, send
+    slope EXPLICITLY: manager.py's own bare-command default is now
+    config-aware (an already-applied portfolio keeps its method, a fresh one
+    gets equal), which is right for an agent typing the command by hand and
+    wrong as an encoding of a page that means slope. Only a script that can't
+    take a name gets the flag omitted — there, no flag IS slope/std.
+
+    A method name — no file check, it isn't a directory. Refused loudly where
+    THIS script is too old for it: that script would read it as
+    allocators/<name>/ and die on a missing file instead.
+
+    Anything else — allocators/<name>/allocator.py, unchanged. Note there is
+    no reserved-name refusal on a workspace with no built-ins: an older
+    lib/allocator.py has no reserved guard, so allocators/equal/ there is a
+    working user method (and an obvious name to have chosen before equal
+    became built in) — taking it away over a name that means nothing on that
+    machine would break a live selection for no gain.
+
+    Per script, not per workspace: with manager.py updated and the
+    walk-forward not (or the reverse), each command still gets the best
+    encoding available to the script it actually runs.
+    """
+    if allocator is not None and (not isinstance(allocator, str)
+                                  or not _MANAGE_ALLOCATOR_RE.match(allocator)):
+        raise ValueError("bad allocator name")
+    knows = _script_knows_builtins(script)
+    if allocator is None:
+        return "slope" if knows and "slope" in builtins else None
+    if allocator in builtins:
+        if not knows:
+            raise RuntimeError("workspace scripts are out of date — ask the "
+                               "agent to update blaveclaw-config")
+        return allocator
+    if not os.path.isfile(os.path.join(WORKSPACE, "allocators", allocator, "allocator.py")):
+        raise ValueError("allocator not found")
+    return allocator
+
+
+def _mgmt_output_rel(allocator, builtins):
+    """Where the walk-forward writes its stats.json, relative to the workspace.
+    Every built-in shares manager/ — only a user allocator keeps its outputs
+    next to the file (management_backtest.py's --output default). Keyed on the
+    workspace's own method list, not a fixed pair of names, so a script that
+    adds a third built-in doesn't get its results looked for under allocators/."""
+    if allocator is None or allocator in builtins:
+        return "manager"
+    return f"allocators/{allocator}"
+
+
+def _validate_manage_args(args, script):
+    """Shared shape check for the manage_* commands, for the `script` this one
+    will run. Errors name the field, never echo the value. Returns (members,
+    allocator, lookback, target_vol, extra_params, builtins) with
+    lookback/target_vol split out of params — they are the two CLI flags
+    (--lookback on both scripts, --target-vol on manager.py only) and either
+    can come back None, meaning the page sent none and the script's own default
+    stands; the rest goes to --params-json. `allocator` comes back RESOLVED
+    (see _resolve_allocator): what the script is told, which is also what the
+    job/proposal/stats records must carry, so attribution compares like with
+    like. `builtins` is this workspace's method table, read once here so the
+    caller doesn't parse manager.py again."""
     members = args.get("members")
     if not isinstance(members, list) or not members:
         raise ValueError("members must be a non-empty list")
@@ -2235,12 +2319,16 @@ def _validate_manage_args(args):
         if not os.path.isfile(os.path.join(WORKSPACE, "strategies", name, "stats.json")):
             raise ValueError("member has no backtest stats")
 
-    allocator = args.get("allocator")
-    if allocator is not None:
-        if not isinstance(allocator, str) or not _MANAGE_ALLOCATOR_RE.match(allocator):
-            raise ValueError("bad allocator name")
-        if not os.path.isfile(os.path.join(WORKSPACE, "allocators", allocator, "allocator.py")):
-            raise ValueError("allocator not found")
+    builtins = _builtin_methods()
+    # The other half-update: management_backtest.py importing a method table
+    # manager.py doesn't declare dies at IMPORT, before argparse ever runs, so
+    # _require_manage_scripts' --members probe sees nothing wrong and the user
+    # gets a raw traceback. Same verdict as that check, said in words. Ordered
+    # so the byte-grep only happens on a workspace with no method table at all.
+    if not builtins and _script_knows_builtins(_MANAGE_BACKTEST_SCRIPT):
+        raise RuntimeError("workspace scripts are out of date — ask the "
+                           "agent to update blaveclaw-config")
+    allocator = _resolve_allocator(args.get("allocator"), script, builtins)
 
     params = args.get("params")
     if not isinstance(params, dict):
@@ -2260,17 +2348,30 @@ def _validate_manage_args(args):
                 raise ValueError("param value must be finite")
         elif not isinstance(v, int):
             raise ValueError("param value must be int/float/bool/str")
-    lookback = params.get("lookback")
+    # lookback is NOT a method parameter — it is the walk-forward's own
+    # out-of-sample window, the same for every method — so it is always sent,
+    # never conditioned on what the method declares. Conditioning it was a real
+    # bug: equal (the default) and the shipped allocator TEMPLATE both declare
+    # no PARAMS, and a file may never declare lookback (lib/allocator's
+    # RESERVED_PARAM_KEYS), so the window would have been frozen at the script
+    # default for them — and a portfolio with under a year of history, which is
+    # exactly the new one, has no way left to shorten it and just exits 3.
+    lookback = params.get("lookback", _MANAGE_DEFAULT_LOOKBACK)
     if isinstance(lookback, bool) or not isinstance(lookback, int) or not 10 <= lookback <= 5000:
         raise ValueError("lookback must be an integer 10–5000")
     target_vol = params.get("target_vol")
-    if (isinstance(target_vol, bool) or not isinstance(target_vol, (int, float))
-            or not 0.01 <= target_vol <= 5):
+    if target_vol is not None and (isinstance(target_vol, bool)
+                                   or not isinstance(target_vol, (int, float))
+                                   or not 0.01 <= target_vol <= 5):
         raise ValueError("target_vol must be 0.01–5")
     extra = {k: v for k, v in params.items() if k not in ("lookback", "target_vol")}
-    if allocator is None and extra:
-        raise ValueError("built-in allocator takes no extra params")
-    return members, allocator, lookback, target_vol, extra
+    # --params-json overrides an allocator FILE's PARAMS, so a built-in gets
+    # none of it. The scripts refuse it too, but a named built-in is truthy, so
+    # "no allocator" no longer covers the case. lookback/target_vol are already
+    # split out above — they are the caller's flags, not any method's knob.
+    if (allocator is None or allocator in builtins) and extra:
+        raise ValueError("built-in method takes no extra params")
+    return members, allocator, lookback, target_vol, extra, builtins
 
 
 def _manage_argv(script, members, allocator, extra):
@@ -2282,8 +2383,10 @@ def _manage_argv(script, members, allocator, extra):
     argv = [interp, os.path.join("manager", script), "--members=" + ",".join(members)]
     if allocator is not None:
         argv.append("--allocator=" + allocator)
-        if extra:
-            argv.append("--params-json=" + json.dumps(extra))
+    # Only ever non-empty for a user allocator (_validate_manage_args refuses
+    # extras on a built-in), so this no longer has to nest under the flag.
+    if extra:
+        argv.append("--params-json=" + json.dumps(extra))
     return argv
 
 
@@ -2379,11 +2482,17 @@ def _mgmt_result_fresh(job):
 def _mgmt_result_matches(stats, job):
     """The attribution rule, shared in spirit with portfolio_reporter's copy:
     same members (order-free), same allocator, same lookback, and a
-    computed_at no earlier than the job's start. Raises on malformed input."""
+    computed_at no earlier than the job's start. Raises on malformed input.
+
+    The lookback compared is stats.json's TOP-LEVEL field, not the one inside
+    `params`: management_backtest.py writes the top-level one for every method
+    and every generation of the script, while `params` only carries what the
+    METHOD declares — and lookback is nobody's declared knob. Comparing it is
+    what keeps an agent's hand-run at another window from being shown under the
+    page's job."""
     return (sorted(stats.get("members") or []) == sorted(job.get("members") or [])
             and stats.get("allocator") == job.get("allocator")
-            and (stats.get("params") or {}).get("lookback")
-            == (job.get("params") or {}).get("lookback")
+            and stats.get("lookback") == (job.get("params") or {}).get("lookback")
             and float(stats.get("computed_at")) >= float(job.get("started_at") or 0))
 
 
@@ -2458,15 +2567,23 @@ def _cmd_manage_optimize(args):
     proposal is removed FIRST: on failure the page must not reload into a
     stale proposal wearing the new selection's parameters."""
     _require_manage_scripts()
-    members, allocator, lookback, target_vol, extra = _validate_manage_args(args)
+    members, allocator, lookback, target_vol, extra, _b = _validate_manage_args(
+        args, "manager.py")
     if not _OPT_LOCK.acquire(blocking=False):
         raise RuntimeError("optimize already running")
     try:
         paths = _manage_paths()
         _remove_retry(paths["proposal"], "proposal")
         argv = _manage_argv("manager.py", members, allocator, extra)
-        argv += [f"--lookback={lookback}", f"--target-vol={float(target_vol)!r}",
-                 "--json=" + os.path.join("manager", "proposal.json")]
+        argv.append(f"--lookback={lookback}")
+        # Only what the page actually sent. The page has no --target-vol knob
+        # any more, and manager.py already resolves a bare one from the
+        # account's own target_vol_pct (default_target_vol) — re-deriving it
+        # here would put a second copy of that rule on the api side, free to
+        # drift from the one an agent's hand-run gets.
+        if target_vol is not None:
+            argv.append(f"--target-vol={float(target_vol)!r}")
+        argv.append("--json=" + os.path.join("manager", "proposal.json"))
     except BaseException:
         _OPT_LOCK.release()
         raise
@@ -2491,10 +2608,11 @@ def _cmd_manage_optimize(args):
 def _cmd_manage_backtest(args):
     """Detached walk-forward run; progress + result ride the portfolio report."""
     _require_manage_scripts()
-    # target_vol is validated but unused here: management_backtest.py has no
-    # --target-vol (only manager.py does), so recording it would label the run
-    # with a number that had no effect on it.
-    members, allocator, lookback, _target_vol, extra = _validate_manage_args(args)
+    # target_vol is validated (when sent at all) but unused here:
+    # management_backtest.py has no --target-vol (only manager.py does), so
+    # recording it would label the run with a number that had no effect on it.
+    members, allocator, lookback, _target_vol, extra, builtins = _validate_manage_args(
+        args, _MANAGE_BACKTEST_SCRIPT)
     _reap_stale_mgmt_job()
     job = _read_mgmt_job()
     if job and job.get("status") == "running" and _mgmt_pid_alive(job.get("pid")):
@@ -2523,7 +2641,7 @@ def _cmd_manage_backtest(args):
     doc = {
         "status": "running", "pid": proc.pid, "members": members,
         "allocator": allocator, "params": {"lookback": lookback, **extra},
-        "output": "manager" if allocator is None else f"allocators/{allocator}",
+        "output": _mgmt_output_rel(allocator, builtins),
         "started_at": int(time.time()), "finished_at": None, "error": None,
     }
     with _MGMT_LOCK:

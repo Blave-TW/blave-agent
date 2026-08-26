@@ -281,6 +281,14 @@ def _halt_denials(since_ts):
 # charts managed_cum + random_benchmark.band instead, so these only add bytes.
 _MGMT_STATS_DROP = ("weights_history", "managed_returns")
 _ALLOCATOR_CONSTS = ("DISPLAY_NAME", "DESCRIPTION", "PARAMS")
+# manager.py's own declarations, read as literals (never imported).
+_BUILTIN_CONSTS = ("BUILTIN_METHODS", "DEFAULT_METHOD")
+# Mirrors blaveclaw-config lib/allocator.py RESERVED_PARAM_KEYS: the two names
+# that are the CALLER's flags, never a method's own knob, so load() refuses a
+# file declaring either. That guard lives in an import this process never does
+# — without the same check here the picker would happily show the field and
+# the run would die on selection.
+_RESERVED_PARAM_KEYS = ("lookback", "target_vol")
 # {path: (mtime, size, entry|None)} — a stats.json can be several MB (trades +
 # candles) and this runs every report; only a changed file is parsed again.
 _STRATEGY_FIGURES_CACHE = {}
@@ -350,49 +358,149 @@ def _num(v):
     return round(f, 4) if f == f else None
 
 
+def _module_literals(path, names):
+    """Module-level `name = <literal>` assignments from a workspace .py, via
+    ast — the file is never imported (it is user/agent-editable code, and this
+    process must not run any of it). Absent file, syntax error or a value that
+    isn't a literal simply doesn't appear in the result. Shared by the
+    allocator picker and the built-in method read, which want the same thing
+    off two different files.
+
+    None when the file can't be read or parsed at all — distinct from {},
+    which means it parsed and declared none of `names`: the allocator picker
+    skips an unreadable file but still lists one that simply declares nothing.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError, MemoryError, RecursionError):
+        # same tuple as the literal_eval below: deeply nested source can take
+        # the parse out too, and workspace_builtin_methods runs OUTSIDE
+        # manager_view's per-key guard — an escape from here would cost the
+        # whole report, i.e. the machine reads as dead on the web
+        return None
+    out = {}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name) or target.id not in names:
+            continue
+        try:
+            out[target.id] = ast.literal_eval(node.value)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            continue
+    return out
+
+
+def _json_safe_params(params):
+    """A declared PARAMS dict as the report may carry it: a literal set / bytes
+    / tuple key would sink the whole payload at json.dumps time."""
+    if not isinstance(params, dict):
+        return {}
+    try:
+        json.dumps(params)
+    except (TypeError, ValueError):
+        return {}
+    return params
+
+
+_NOTICE_STATE = os.path.join(WORKSPACE_STATE, "reporter_notices.json")
+_NOTICE_EVERY_S = 86400
+_NOTICE_KEEP_S = 7 * _NOTICE_EVERY_S
+
+
+def _notice_daily(key, msg):
+    """Say `msg` at most once a day per `key`.
+
+    An in-process guard would do nothing here: main() is a fresh process every
+    two minutes (jobs.json), so a per-round print is ~720 identical lines a day
+    in journald for one misnamed directory. A state file is the only place a
+    "last said at" survives the process.
+
+    Best-effort both ways — an unreadable state file prints (a repeat beats
+    silence), a failed write may repeat next round; neither may cost the
+    report. Entries older than a week are dropped so the file can't grow with
+    names that no longer exist.
+
+    stderr is the wrong audience — the only person who can act on this is the
+    USER, and they never see journald. The wording is written for them anyway:
+    the real fix is a report field the page renders, and this is the text it
+    should carry.
+    """
+    now = time.time()
+    seen = _read_json(_NOTICE_STATE, {})
+    if not isinstance(seen, dict):
+        seen = {}
+    last = seen.get(key)
+    if isinstance(last, (int, float)) and 0 <= now - last < _NOTICE_EVERY_S:
+        return
+    print(f"[portfolio_reporter] {msg}", file=sys.stderr)
+    seen[key] = int(now)
+    seen = {k: v for k, v in seen.items()
+            if isinstance(v, (int, float)) and now - v < _NOTICE_KEEP_S}
+    try:
+        os.makedirs(os.path.dirname(_NOTICE_STATE), exist_ok=True)
+        tmp = _NOTICE_STATE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(seen, f)
+        os.replace(tmp, _NOTICE_STATE)
+    except OSError:
+        pass
+
+
 def _allocators():
     """allocators/<name>/allocator.py consts via ast — the file is user code
     and is never imported here. A dir whose file is missing or doesn't parse
     is skipped; a const that isn't a literal (or is absent) falls back —
-    DISPLAY_NAME to the dir name, DESCRIPTION to "", PARAMS to {}."""
+    DISPLAY_NAME to the dir name, DESCRIPTION to "", PARAMS to {}.
+    Two skips beyond that, both for the same reason — an entry the machine
+    would refuse to run must not be offered:
+      * a dir named after one of THIS workspace's built-in methods, which
+        lib/allocator.load refuses to load (it would also show a second
+        「等權」 in the picker). Only on a workspace that HAS built-ins: on an
+        older one there is no reserved-name guard at all, so allocators/equal/
+        is an ordinary user method — and the name was the obvious one to pick
+        back when equal wasn't built in.
+      * a file declaring a reserved PARAMS key — see _RESERVED_PARAM_KEYS.
+    Both are logged: the file is still on disk and only a rename/edit fixes
+    it, which the user can't do if nothing ever says so."""
     root = os.path.join(WORKSPACE, "allocators")
     try:
         entries = sorted(os.listdir(root))
     except OSError:
         return []
+    shadowed = builtin_method_params()  # {} on a workspace without built-ins
     out = []
     for name in entries:
         if name.startswith(".") or name == "__pycache__":
             continue
-        path = os.path.join(root, name, "allocator.py")
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                tree = ast.parse(f.read())
-        except (OSError, SyntaxError, ValueError):
+        if name in shadowed:
+            _notice_daily(f"shadowed:{name}",
+                          f"allocators/{name}/ is shadowed by the built-in method "
+                          f"of that name and can no longer run — rename the directory")
             continue
-        consts = {}
-        for node in tree.body:
-            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
-                continue
-            target = node.targets[0]
-            if not isinstance(target, ast.Name) or target.id not in _ALLOCATOR_CONSTS:
-                continue
-            try:
-                consts[target.id] = ast.literal_eval(node.value)
-            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
-                continue
-        params = consts.get("PARAMS")
-        if not isinstance(params, dict):
-            params = {}
-        try:
-            json.dumps(params)  # a literal set/bytes/tuple-key would sink the whole report
-        except (TypeError, ValueError):
-            params = {}
+        consts = _module_literals(os.path.join(root, name, "allocator.py"),
+                                  _ALLOCATOR_CONSTS)
+        if consts is None:
+            continue
+        declared = consts.get("PARAMS")
+        # on the RAW declaration, before _json_safe_params: a reserved key
+        # whose value isn't JSON-safe would otherwise be sanitized away into
+        # an empty dict and the file would sail through the check that exists
+        # to keep it out
+        clash = [k for k in _RESERVED_PARAM_KEYS
+                 if isinstance(declared, dict) and k in declared]
+        if clash:
+            _notice_daily(f"reserved_params:{name}",
+                          f"allocators/{name}/ declares reserved PARAMS {clash} — "
+                          f"lib/allocator.load refuses it, so it is not offered")
+            continue
         out.append({
             "name": name,
             "display_name": str(consts.get("DISPLAY_NAME") or name),
             "description": str(consts.get("DESCRIPTION") or ""),
-            "params": params,
+            "params": _json_safe_params(declared),
         })
     return out
 
@@ -430,12 +538,12 @@ def _mgmt_backtest_result(job):
     stats = _read_json(os.path.join(WORKSPACE, output, "stats.json"))
     if not isinstance(stats, dict):
         return None
-    # same rule as command_listener._mgmt_result_matches
+    # same rule as command_listener._mgmt_result_matches, including why the
+    # lookback compared is the top-level one and not params'
     try:
         ours = (sorted(stats.get("members") or []) == sorted(job.get("members") or [])
                 and stats.get("allocator") == job.get("allocator")
-                and (stats.get("params") or {}).get("lookback")
-                == (job.get("params") or {}).get("lookback")
+                and stats.get("lookback") == (job.get("params") or {}).get("lookback")
                 and float(stats.get("computed_at")) >= float(job.get("started_at") or 0))
     except (TypeError, ValueError, AttributeError):
         return None
@@ -445,7 +553,18 @@ def _mgmt_backtest_result(job):
 
 
 def manager_view():
-    view = {"can_manage": _workspace_manages(), "strategies": [], "allocators": [],
+    # builtin_methods / default_method: the built-in weighting methods THIS
+    # workspace's manager.py declares, same entry shape as `allocators` (name /
+    # display_name / description / params) with the default first, or both None
+    # on a workspace that predates them (then the web keeps its single 「內建」
+    # option, which the listener still resolves to slope).
+    # Deliberately NOT folded into can_manage: 策略管理 works fine without the
+    # names, and gating the whole subtab on them would take the feature away
+    # from every machine that hasn't pulled blaveclaw-config yet.
+    builtin_methods, default_method = workspace_builtin_methods()
+    view = {"can_manage": _workspace_manages(),
+            "builtin_methods": builtin_methods, "default_method": default_method,
+            "strategies": [], "allocators": [],
             "proposal": None, "backtest_job": None, "backtest": None}
     for key, fn in (("strategies", _manager_strategies),
                     ("allocators", _allocators),
@@ -549,6 +668,81 @@ def _workspace_has_signal_gate():
         return False
 
 
+def _declared_builtins():
+    """({name: spec}, default_method) exactly as THIS workspace's manager.py
+    declares them, or ({}, None) on one that predates them / can't be read.
+
+    manager.py's BUILTIN_METHODS is the fact, read as a literal with ast the
+    same way _allocators() reads an allocator file (never imported). Only
+    well-formed entries survive: a non-str name or non-dict spec is not a
+    method, and dropping them here also keeps the caller's sort from comparing
+    a str against whatever that key is."""
+    consts = _module_literals(os.path.join(WORKSPACE, "manager", "manager.py"),
+                              _BUILTIN_CONSTS) or {}
+    methods = consts.get("BUILTIN_METHODS")
+    default = consts.get("DEFAULT_METHOD")
+    if not isinstance(methods, dict) or not isinstance(default, str):
+        return {}, None
+    clean = {n: s for n, s in methods.items()
+             if isinstance(n, str) and isinstance(s, dict)}
+    return (clean, default) if clean else ({}, None)
+
+
+def builtin_method_params():
+    """{method name: the params that method declares} from manager.py — {} on
+    a workspace that predates the named built-ins. The listener's source for
+    which names are methods at all and which knobs each one admits."""
+    methods, _default = _declared_builtins()
+    return {n: _json_safe_params(s.get("params")) for n, s in methods.items()}
+
+
+def script_knows_builtins(script):
+    """Whether manager/<script> selects a built-in method BY NAME. Per script,
+    not per workspace: they update together in principle and separately in
+    practice, and the two commands must not be gated on each other — the one
+    whose script is current can still name the method it means.
+    Byte-grep, because management_backtest.py imports the name rather than
+    declaring it (and bytes for the cp950 reason _workspace_manages documents)."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", script), "rb") as f:
+            return b"BUILTIN_METHODS" in f.read()
+    except OSError:
+        return False
+
+
+def workspace_builtin_methods():
+    """(methods, default_method) for the PICKER — entries in the same shape as
+    _allocators() (name / display_name / description / params), default first,
+    or (None, None) unless BOTH manager scripts know the names.
+
+    Both, deliberately: this list is what the page offers, and an option that
+    works for the optimise button and dies on the backtest one is worse than
+    not offering it. The listener is the half that goes per-script (see
+    script_knows_builtins), because there it can still do the right thing for
+    the command actually being run.
+
+    `params` is the load-bearing field — it decides which inputs the page
+    draws, so a copy kept here would eventually offer a field the script
+    doesn't know. display_name/description ride along verbatim for the
+    allocator-shaped contract; the page uses its own i18n for built-ins.
+    """
+    methods, default = _declared_builtins()
+    if not methods or not all(script_knows_builtins(s) for s in
+                              ("manager.py", "management_backtest.py")):
+        return None, None
+    out = []
+    # default first, the rest alphabetical — the picker's order is this list's
+    for name in sorted(methods, key=lambda n: (n != default, n)):
+        spec = methods[name]
+        out.append({
+            "name": name,
+            "display_name": str(spec.get("display_name") or name),
+            "description": str(spec.get("description") or ""),
+            "params": _json_safe_params(spec.get("params")),
+        })
+    return out, default
+
+
 def _workspace_manages():
     """Whether both manager scripts take the flags the listener sends. One is
     the optimise (manager.py), the other the walk-forward
@@ -556,7 +750,13 @@ def _workspace_manages():
     buttons would still die on argparse, so either one missing is a no.
     Unreadable counts as a no — offering the control is the costly mistake.
     Read as bytes: these files are UTF-8 with CJK comments and Windows' default
-    text encoding would raise on them."""
+    text encoding would raise on them.
+
+    Also no when management_backtest.py imports the built-in method table from a
+    manager.py that doesn't declare it: that half of an update dies at IMPORT
+    time, before argparse, and the user gets a raw traceback. Same "either one
+    is a no" rule — it costs the still-working optimise button on such a
+    machine, which is the trade this function has always made."""
     for script in ("manager.py", "management_backtest.py"):
         try:
             with open(os.path.join(WORKSPACE, "manager", script), "rb") as f:
@@ -564,6 +764,8 @@ def _workspace_manages():
                     return False
         except OSError:
             return False
+    if script_knows_builtins("management_backtest.py") and not builtin_method_params():
+        return False
     return True
 
 
