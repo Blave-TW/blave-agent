@@ -2215,8 +2215,9 @@ def _write_json_atomic(path, doc):
 def _validate_manage_args(args):
     """Shared shape check for the manage_* commands. Errors name the field,
     never echo the value. Returns (members, allocator, lookback, target_vol,
-    extra_params) with lookback/target_vol split out of params — they are CLI
-    flags on both scripts, the rest goes to --params-json."""
+    extra_params) with lookback/target_vol split out of params — they are the
+    two CLI flags (--lookback on both scripts, --target-vol on manager.py
+    only), the rest goes to --params-json."""
     members = args.get("members")
     if not isinstance(members, list) or not members:
         raise ValueError("members must be a non-empty list")
@@ -2490,7 +2491,10 @@ def _cmd_manage_optimize(args):
 def _cmd_manage_backtest(args):
     """Detached walk-forward run; progress + result ride the portfolio report."""
     _require_manage_scripts()
-    members, allocator, lookback, target_vol, extra = _validate_manage_args(args)
+    # target_vol is validated but unused here: management_backtest.py has no
+    # --target-vol (only manager.py does), so recording it would label the run
+    # with a number that had no effect on it.
+    members, allocator, lookback, _target_vol, extra = _validate_manage_args(args)
     _reap_stale_mgmt_job()
     job = _read_mgmt_job()
     if job and job.get("status") == "running" and _mgmt_pid_alive(job.get("pid")):
@@ -2518,8 +2522,7 @@ def _cmd_manage_backtest(args):
                                 stdout=logf, stderr=logf, **popen_kw)
     doc = {
         "status": "running", "pid": proc.pid, "members": members,
-        "allocator": allocator, "params": {"lookback": lookback,
-                                           "target_vol": target_vol, **extra},
+        "allocator": allocator, "params": {"lookback": lookback, **extra},
         "output": "manager" if allocator is None else f"allocators/{allocator}",
         "started_at": int(time.time()), "finished_at": None, "error": None,
     }
