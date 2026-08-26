@@ -87,6 +87,26 @@ _SUGGEST_BLOCK_RE = re.compile(r"[ \t]*<suggest>(.*?)</suggest>[ \t]*", re.S)
 _SUGGEST_OPEN_TAIL_RE = re.compile(r"[ \t]*<suggest>(?:(?!</suggest>).)*$", re.S)
 _SUGGEST_MAX_ITEMS = 3
 _SUGGEST_MAX_CHARS = 80
+# 中文建議句的半形標點轉全形——prompt 講了模型照樣寫半形逗號(同 Markdown 表格,
+# 靠規則擋不住就在 code 收斂)。只動中文為主的行(英文建議照英文標點),
+# 數字之間的逗號(1,000)保持半形。
+_DIGIT_COMMA_RE = re.compile(r"(?<=\d),(?=\d)")
+_HALF_TO_FULL = {",": "，", ";": "；", "!": "！", "?": "？"}
+
+
+def _fullwidth_punct(line):
+    # 判準與 _lang_directive 同一套(漢字要壓過英文字母)——英文建議句裡帶一個
+    # 中文策略名不算中文句,標點維持英文。
+    han = sum(1 for ch in line if "一" <= ch <= "鿿")
+    letters = sum(1 for ch in line if ch.isascii() and ch.isalpha())
+    if han < 2 or han <= letters * 0.5:
+        return line
+    line = _DIGIT_COMMA_RE.sub("\x00", line)
+    for half, full in _HALF_TO_FULL.items():
+        line = line.replace(half, full)
+    # 全形標點本身佔一個字寬,後面再跟半形空格會看起來多一格。
+    line = re.sub(r"([，；！？])[ \t]+", r"\1", line)
+    return line.replace("\x00", ",")
 
 
 def extract_suggestions(text):
@@ -98,7 +118,7 @@ def extract_suggestions(text):
     blocks = _SUGGEST_BLOCK_RE.findall(text)
     if blocks:
         for line in blocks[-1].strip().splitlines():
-            line = line.strip().lstrip("-•*").strip()
+            line = _fullwidth_punct(line.strip().lstrip("-•*‧·").strip())
             if line and len(line) <= _SUGGEST_MAX_CHARS:
                 items.append(line)
             if len(items) >= _SUGGEST_MAX_ITEMS:
@@ -411,7 +431,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         # 不服從(2026-08-24 e2e:ETH/BTC vs ETH/SOL 三輪全數問句收尾、零區塊);
         # _lang_directive 已證明「貼著訊息的逐輪指令」對弱模型有效,同機制照搬。
         parts.append(
-            "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、上模擬盤等)就放進"
+            "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、掃參數、跑 MCPT、上模擬盤等)就放進"
             " <suggest> 區塊(一行一句、用戶口吻、最多 3),不要在正文用問句提議;"
             "提到策略用它的名稱、不用底線代號。"
             "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但未部署的策略)必附區塊;"
@@ -618,7 +638,7 @@ _SUGGEST_RULE = (
     "- 剛建立/修改策略、還沒回測 → 建議跑回測\n"
     "- 剛完成回測且結果可用 → 建議上模擬盤（paper）\n"
     "- 正在總結／分析／回報某支已有可用回測、還沒部署的策略（問它表現、值不值得用、"
-    "要摘要）→ 必附：建議把該策略上模擬盤，或給一個具體的優化方向（掃參數、加濾網）；"
+    "要摘要）→ 必附：建議把該策略上模擬盤，或給一個具體的優化方向（見下面「優化選項」）；"
     "用戶明顯還在迭代改進中就只給優化方向、不提部署\n"
     "- 模擬盤已穩定跑一段時間且執行無異常 → 建議小額實盤\n"
     "- 用戶想實際跑但還沒綁任何交易所 → 建議先綁模擬盤\n"
@@ -632,6 +652,17 @@ _SUGGEST_RULE = (
     "提到策略時用它的名稱（strategy.py 檔頭 # Strategy: 那行，或用戶慣稱），"
     "不要用底線目錄代號（寫「把 BTC 4h 均線交叉上模擬盤」，"
     "不寫「把 btc_ma_cross_4h 上模擬盤」）。"
+    "\n優化選項（只在給優化方向時用，挑最相關的**一個**；只對還沒部署的策略提，"
+    "已在跑的要改就講明另開一支）：\n"
+    "‧ 參數是手挑的、沒驗過穩不穩 → 掃參數找穩定區（plateau）："
+    "「掃一下〈策略名〉的參數，看有沒有穩定區」\n"
+    "‧ 回測好看但沒驗過顯著性（單一標的的策略才有 MCPT，多標的組合沒有）→ "
+    "MCPT（Monte Carlo Permutation Test，出 p-value）：「幫〈策略名〉跑 MCPT 看 p-value」\n"
+    "‧ 部位固定、波動或回撤起伏大 → 依實現波動調整部位（vol targeting，單一標的"
+    "的策略適用；低波動時部位會放大，上限 VOL_CAP，提的時候講明）："
+    "「幫〈策略名〉加 vol targeting 調部位」\n"
+    "‧ 訊號雜訊多、假訊號一堆 → 加濾網（趨勢／波動／時段）："
+    "「幫〈策略名〉加一個趨勢濾網」\n"
     "**下一步的提議只能放在 <suggest> 區塊——禁止在正文結尾用問句提議"
     "（「要不要我幫你…？」「需要我再…嗎？」這類收尾不要寫，改放 <suggest>）。**\n"
     "沒命中里程碑、但你想在結尾提議下一步（「要不要我再拉 4h？」「需要補籌碼面嗎？」"
@@ -640,6 +671,8 @@ _SUGGEST_RULE = (
     "純寒暄或一句話問答（打招呼、問單一價格）連提議都不用、直接收尾。\n"
     "建議句的語言跟正文一致：用戶用英文，區塊內每一行都用英文，導航句以"
     "「Show me how to」起手（例：Show me how to paper trade 〈strategy name〉）。\n"
+    "中文建議句的逗號、分號、驚嘆號、問號一律全形（，；！？），不要半形；"
+    "英文句用英文標點。\n"
     "區塊內禁止：形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、"
     "催促（立即、馬上、別錯過）、emoji；策略名與數字必須真實存在。"
     "用戶**明確拒絕**過的建議（「不要」「先不上」），同一階段不要重提；只是沒點、沒回應"
