@@ -15,12 +15,15 @@ Prints the assistant's reply text to stdout; everything else goes to stderr.
 """
 import argparse
 import asyncio
+import http.client
 import json
 import os
 import re
+import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import claude_agent_sdk as sdk
@@ -765,7 +768,9 @@ class TelegramStreamer:
         self.token = token
         self.chat_id = chat_id
         self.message_id = None
-        self.last_edit_at = 0
+        # monotonic,理由同 WebSink._last_flush:量的是編輯間隔,wall clock 被 NTP
+        # 往前 step 的話這則泡泡會停在半途不再更新。
+        self.last_edit_at = float("-inf")
         self.last_sent_text = None
 
     def discard(self):
@@ -791,10 +796,16 @@ class TelegramStreamer:
             raise
 
     def update(self, text, force=False):
-        if not self.token or not self.chat_id or not text or text == self.last_sent_text:
+        if not self.token or not self.chat_id or not text:
             return
-        now = time.time()
+        now = time.monotonic()
         if self.message_id and not force and (now - self.last_edit_at) < self.MIN_EDIT_INTERVAL:
+            return
+        # 表格轉條列在節流閘「之後」才做:逐 token 串流時一段回覆會呼叫 update 幾百
+        # 次,其中 99% 會被上面擋掉,沒必要為了丟棄的結果把全文重掃一遍。轉換冪等
+        # (轉出來的條列不再是表格列),所以已經轉過的 finalize 路徑再跑一次也不變形。
+        text = convert_markdown_tables_to_list(text)
+        if text == self.last_sent_text:
             return
         try:
             if self.message_id is None:
@@ -853,13 +864,13 @@ class TelegramSink:
 
     def on_text(self, delta):
         if self.pending_new_bubble:
-            self.streamer.finish(convert_markdown_tables_to_list(self.chunk_text))
+            self.streamer.finish(self.chunk_text)
             self.segments.append(self.chunk_text)
             self.chunk_text = ""
             self.streamer = TelegramStreamer(self.token, self.chat_id)
             self.pending_new_bubble = False
         self.chunk_text += delta
-        self.streamer.update(convert_markdown_tables_to_list(self.chunk_text))
+        self.streamer.update(self.chunk_text)
 
     def on_tool(self, block):
         # 同 WebSink:後面還有工具呼叫的文字段是旁白。TG 是邊打邊編輯同一則訊息,
@@ -912,20 +923,86 @@ class TelegramSink:
         return reply
 
 
+# One keep-alive connection, reused for every chunk of the turn. urllib opens a
+# fresh one per call; on this path (29026, same region as api.blave.org) a POST
+# costs 12.2ms cold vs 5.5ms warm — 6.7ms of TLS+TCP per chunk. Streaming turns
+# measured 7-50 chunks, so the connection now opens once instead of once per
+# chunk. Single connection, no lock: WebSink is only ever driven from run_turn's
+# one task (the Telegram sink's typing loop uses tg_api, not this).
+_report_conn = {"key": None, "conn": None}
+# Connection-level failures, i.e. the peer tore the connection down instead of
+# answering. Usually a stale keep-alive (the server or nginx closed an idle
+# connection before our request reached the application), in which case a replay
+# is exactly right; but the same errors can also fire after the server processed
+# the chunk, and then the replay puts that text in the bubble twice. Retried
+# anyway: a duplicated delta is a cosmetic dent, a dropped one is a permanent
+# hole in the reply. The `answered` flag keeps the window to "we never saw a
+# response". The SSL pair is the same event one layer up — a TLS close_notify
+# surfaces as ssl.SSLEOFError/SSLZeroReturnError (an OSError, NOT a
+# ConnectionResetError), so without them a proxy that closes politely would drop
+# the chunk. Anything else — including any HTTP status — is NOT retried.
+_REPORT_RETRYABLE = (http.client.BadStatusLine, http.client.RemoteDisconnected,
+                     ConnectionResetError, BrokenPipeError,
+                     ssl.SSLEOFError, ssl.SSLZeroReturnError)
+
+
+def _close_report_connection():
+    conn, _report_conn["conn"], _report_conn["key"] = _report_conn["conn"], None, None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _report_connection(url, timeout):
+    parts = urllib.parse.urlsplit(url)
+    key = (parts.scheme, parts.hostname, parts.port)
+    if _report_conn["key"] != key:
+        _close_report_connection()
+    if _report_conn["conn"] is None:
+        cls = (http.client.HTTPSConnection if parts.scheme == "https"
+               else http.client.HTTPConnection)
+        _report_conn["conn"] = cls(parts.hostname, parts.port, timeout=timeout)
+        _report_conn["key"] = key
+    path = parts.path or "/"
+    if parts.query:
+        path = f"{path}?{parts.query}"
+    return _report_conn["conn"], path
+
+
 def _post_report(report_url, token, chunk, timeout=15):
     """POST one chunk to the web-chat transport (api/openclaw/webchat.py
     /report). Best-effort: a failed report shouldn't crash the turn."""
     data = json.dumps(chunk).encode()
-    req = urllib.request.Request(
-        report_url, data=data,
-        headers={"Content-Type": "application/json", "x-api-key": f"proxy-{token}"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read())
-    except Exception as e:
-        print(f"[agent_turn] web report failed: {e}", file=sys.stderr)
-        return None
+    headers = {"Content-Type": "application/json", "x-api-key": f"proxy-{token}",
+               "Content-Length": str(len(data))}
+    for attempt in (1, 2):
+        answered = False
+        try:
+            conn, path = _report_connection(report_url, timeout)
+            conn.request("POST", path, body=data, headers=headers)
+            resp = conn.getresponse()
+            answered = True  # past this point the server HAS seen the chunk
+            body = resp.read()  # must drain before the connection can be reused
+            if resp.will_close:
+                _close_report_connection()
+            if resp.status >= 400:
+                print(f"[agent_turn] web report failed: HTTP {resp.status}", file=sys.stderr)
+                return None
+            return json.loads(body)
+        except Exception as e:
+            _close_report_connection()  # never reuse a connection that just failed
+            if attempt == 1 and not answered and isinstance(e, _REPORT_RETRYABLE):
+                continue
+            print(f"[agent_turn] web report failed: {e}", file=sys.stderr)
+            return None
+
+
+# How long text deltas may accumulate before a POST. Small enough to read as
+# live typing, large enough that a 68-delta/second stream is ~4 requests/second
+# instead of 68.
+TEXT_FLUSH_INTERVAL = 0.25
 
 
 class WebSink:
@@ -959,6 +1036,16 @@ class WebSink:
         self._head_hold = ""
         self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
         self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
+        # 逐 token 的文字要先攢起來再送。實測 deepseek 一段回覆吐 ~68 delta/秒,
+        # 一個 delta 一個 POST 的話,光往返就吃掉比模型生成還多的時間(而且 /report
+        # 每筆都進 Redis 的 replay buffer)。攢滿 TEXT_FLUSH_INTERVAL 才送,段落
+        # 邊界(工具呼叫、回合結束)一定強制送出。
+        self._pending = ""
+        # monotonic:量的是「距離上次送出多久」,不是時刻。uid=1 那台 Windows Server
+        # 的 NTP 會 step 時鐘,wall clock 往前跳的話 now - _last_flush 變負數,字就
+        # 一路攢到工具呼叫或回合結束才出現。-inf 讓第一個 delta 一定立刻送
+        # (monotonic 的原點沒有定義,不能假設它從 0 開始)。
+        self._last_flush = float("-inf")
 
     def _send(self, chunk):
         chunk.setdefault("session_id", self.session_id)
@@ -987,7 +1074,16 @@ class WebSink:
 
     def _emit_text(self, delta):
         self.full_text += delta
-        self._send({"type": "text", "text": delta})
+        self._pending += delta
+        if time.monotonic() - self._last_flush >= TEXT_FLUSH_INTERVAL:
+            self._flush_text()
+
+    def _flush_text(self):
+        """Send whatever text has accumulated. Safe to call with nothing pending."""
+        if self._pending:
+            text, self._pending = self._pending, ""
+            self._send({"type": "text", "text": text})
+        self._last_flush = time.monotonic()
 
     def _release_head(self, fire=True):
         """段首暫留結束:剝掉 <nav> 標記(fire 時白名單目標先送 ui_nav,一回合一次),
@@ -1040,6 +1136,9 @@ class WebSink:
             self.full_text = self.full_text[:self._seg_start]
             self._last_status = seg
             self._send({"type": "thinking", "text": seg})
+        # 這段整段被收回活動列(前端收到下面的 tool chunk 就把泡泡文字移除),
+        # 還沒送出去的尾巴直接丟掉——送出去只會讓前端多刪一次。
+        self._pending = ""
         self._seg_start = len(self.full_text)
         self._break_before_text = True
         self._head_hold = ""  # 新段落、新段首
@@ -1063,6 +1162,9 @@ class WebSink:
 
     def finalize(self):
         if self.error_text:
+            # 炸掉的回合也要把攢著的尾巴送出去,否則泡泡裡的半截回覆會比模型
+            # 真正吐出來的少最後 250ms 的字。
+            self._flush_text()
             self._send({"type": "error", "message": self.error_text})
             return self.error_text
         self._flush_head()
@@ -1070,6 +1172,9 @@ class WebSink:
             # 模型把話全講在帶工具的訊息裡——用最後一句旁白補位,別回空氣
             # (暫留已過、直接進 full_text,標記在這裡先剝乾淨)
             self.on_text(_NAV_STRIP_RE.sub("", self._last_status))
+        # 攢著的尾巴一定要送:下面的 text_replace 只在清理過的內容跟原文不同時才送,
+        # 沒送的話「不需要清理的回覆」反而會少掉最後 250ms 的字。
+        self._flush_text()
         # 假對話一定長在最後一段(續寫發生在回覆結尾),所以只需清這一段,
         # 並叫前端把已經串流出去的那段換成乾淨版。<suggest> 區塊同理(規則要求
         # 放在回覆最末尾),一起在這段剝離——歷史(finalize 回傳值)因此也是乾淨的。
@@ -1091,6 +1196,43 @@ class WebSink:
             self._send({"type": "suggestions", "items": suggestions})
         self._send({"type": "done"})
         return self.full_text
+
+
+# Partial-message streaming, if this SDK build has it. Absent = the loop in
+# run_turn silently falls back to a block at a time, i.e. the old behaviour.
+_STREAM_EVENT = getattr(sdk, "StreamEvent", None)
+_SUPPORTS_PARTIAL = _STREAM_EVENT is not None and "include_partial_messages" in getattr(
+    sdk.ClaudeAgentOptions, "__dataclass_fields__", {}
+)
+
+
+def _unstreamed(text, streamed):
+    """The tail of a finished TextBlock that the deltas did not already deliver,
+    consuming the delta buffer that block was streamed from. Normally "" — the
+    deltas are the same bytes. A block that arrives with no deltas at all
+    (streaming off / unsupported) comes back whole.
+
+    `streamed` maps stream-event block index -> text already sent, and the match
+    is by content, not by index: the index is the raw API message's block index,
+    which does NOT line up with a position in msg.content. This SDK build hands
+    out one AssistantMessage per content block (probed on 29026: thinking arrives
+    as its own message at index 0, the reply as another at index 1), so indexing
+    by msg.content position looks the reply's deltas up under the wrong key,
+    finds nothing, and re-sends the whole reply under the copy the user just
+    watched being typed. Content matching also survives the grouped shape
+    ([text, thinking, text] in one message) that indexing was meant to fix."""
+    if not streamed:
+        return text
+    for key, sent in streamed.items():
+        if sent and text.startswith(sent):
+            del streamed[key]
+            return text[len(sent):]
+    # There were deltas, but none of them is the start of this block. Keep what
+    # the user is already reading rather than risk appending a second copy of the
+    # whole reply underneath it.
+    print("[agent_turn] stream/block text mismatch — keeping the streamed copy",
+          file=sys.stderr)
+    return ""
 
 
 def load_agents_md():
@@ -1212,14 +1354,59 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         max_buffer_size=16 * 1024 * 1024,
         permission_mode="bypassPermissions",
     )
+    # Token-level text. Without it the SDK only yields a block once it is fully
+    # generated, so the final answer — the one thing the user is actually waiting
+    # for — lands in a single lump. Same prompt, same box, with vs without
+    # (29026 Linux + uid=1 Windows): a 160-char reply went from 3.1s/3.6s of dead
+    # air to 0.0s, a 950-char table from 6.0s to 0.02s, a 620-char answer after a
+    # tool chain from 5.1s to 1.2s (what's left is the model's own time to first
+    # token). Both sinks were already written to take deltas (WebSink appends,
+    # TelegramStreamer throttles edits to one per 2.5s); this just supplies them.
+    # Only text deltas are consumed — thinking still ships per block, because the
+    # activity line shows one step at a time anyway and reasoning is far more
+    # tokens than the reply. Set after construction, not as a kwarg: on an SDK
+    # build without the field that would be a TypeError killing every turn.
+    if _SUPPORTS_PARTIAL:
+        options.include_partial_messages = True
+    else:
+        # 退回整塊模式是「回覆變慢」,用戶不會回報這種事——留一行給 journalctl,
+        # 否則一次 SDK 降版會讓串流無聲消失。
+        print("[agent_turn] SDK 沒有 include_partial_messages,這輪不串流", file=sys.stderr)
 
     await sink.start()
     try:
         query_iter = sdk.query(prompt=prompt, options=options)
         is_web = isinstance(sink, WebSink)
         strat_sig = None
+        # Text already delivered as deltas, one entry per content block, so the
+        # completed TextBlocks below are not re-sent. Reconciled rather than
+        # trusted: if the deltas never arrived (a provider or SDK build that
+        # doesn't emit them — see anthropics/claude-code#17956 for the streaming-
+        # input variant), the whole block still goes out and the user gets a
+        # reply, just not a live one. One entry per block, not one string for the
+        # whole turn: a message can hold several text blocks (text, thinking,
+        # text) and a single string would let the last one's deltas answer for all
+        # of them, re-sending an earlier block whole — a second copy of it under
+        # the one the user just watched being typed. Matching/consumption is in
+        # _unstreamed; cleared per message so an unconsumed block (narration that
+        # went to the activity line) can't be mistaken for a later reply's deltas.
+        streamed = {}
         async for msg in query_iter:
-            if isinstance(msg, sdk.AssistantMessage):
+            if _STREAM_EVENT is not None and isinstance(msg, _STREAM_EVENT):
+                # 同下面 AssistantMessage 的第二層防線:子代理的 delta 也不能流進
+                # 回覆泡泡/歷史(它的完整訊息稍後會走 on_status)。
+                if getattr(msg, "parent_tool_use_id", None):
+                    continue
+                event = msg.event or {}
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta") or {}
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text") or ""
+                        if text:
+                            sink.on_text(text)
+                            idx = event.get("index")
+                            streamed[idx] = streamed.get(idx, "") + text
+            elif isinstance(msg, sdk.AssistantMessage):
                 # 第二層防線(第一層是 disallowed_tools):子代理的訊息帶
                 # parent_tool_use_id,它的文字一律進活動列、不進回覆/歷史——
                 # 兩條 stream 混流時,回覆的結構判定(見下)會被子代理打亂。
@@ -1239,7 +1426,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                         if has_tool_use:
                             sink.on_status(block.text)
                         else:
-                            sink.on_text(block.text)
+                            rest = _unstreamed(block.text, streamed)
+                            if rest:
+                                sink.on_text(rest)
                     elif isinstance(block, sdk.ThinkingBlock):
                         sink.on_thinking(block)
                     elif isinstance(block, sdk.ToolUseBlock):
@@ -1249,6 +1438,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     # at the next block boundary rather than mid-message.
                     if getattr(sink, "interrupted", False):
                         break
+                streamed.clear()
                 # A tool may have just created a strategy or finished a backtest —
                 # push the fresh list now (web only) rather than waiting for turn end.
                 if is_web and had_tool and not getattr(sink, "interrupted", False):
