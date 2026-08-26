@@ -30,8 +30,23 @@ _IMG_EXTS = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 _IMG_MAX_BYTES = 2 * 1024 * 1024
 _IMG_MAX_COUNT = 8
 _IMG_SIG_PATH = os.path.join(STATE_DIR, "strategy_images_sig.json")
+# Socket timeout per image, and a wall-clock ceiling on the uploads of one call.
+# The budget is the load-bearing one: uploads are sequential, so an api that hangs
+# (rather than answering) costs timeout × every image. Measured on 29026 with the
+# endpoint unreachable: 5 images = 150s, and blave-agent-strategies.service is
+# killed at TimeoutStartSec=120, so the report that the fallback exists to save
+# never got sent. The same call also runs at turn end (web_bridge.sync_strategies),
+# ahead of the live chunk the open workspace is waiting for. Past the budget the
+# remaining images just take the inline-base64 path — which is what they did before
+# S3 existed, so nothing is lost by giving up early.
+_IMG_UPLOAD_TIMEOUT = 15
+_IMG_UPLOAD_BUDGET_SEC = 30
 API_URL = os.environ.get(
     "BLAVE_STRATEGIES_URL", "https://api.blave.org/openclaw/agent/strategies"
+)
+# Image bytes go here (PUT /{sha256}), not into the report — see attach_images().
+IMAGE_URL = os.environ.get(
+    "BLAVE_STRATEGY_IMAGE_URL", "https://api.blave.org/openclaw/agent/strategy_image"
 )
 PROXY_TOKEN = os.environ.get("BLAVE_PROXY_TOKEN", "")
 
@@ -333,13 +348,38 @@ def _list_images(name):
     return out[-_IMG_MAX_COUNT:]
 
 
-def attach_images(strategies):
-    """TIMER-PATH ONLY: base64 the strategy dirs' chart images into the report.
+def _put_image(data, mime, token):
+    """Upload one image to S3 via the api and return its {hash} reference, or None so
+    the caller falls back to inline base64. Content-addressed: re-sending identical
+    bytes overwrites the same key, so a retry after a failed report costs one PUT."""
+    h = hashlib.sha256(data).hexdigest()
+    req = urllib.request.Request(
+        f"{IMAGE_URL}/{h}", data=data, method="PUT",
+        headers={"Content-Type": mime, "x-api-key": f"proxy-{token}"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=_IMG_UPLOAD_TIMEOUT).read()
+    except Exception as e:
+        print(f"[strategy_reporter] image upload failed: {e}", file=sys.stderr)
+        return None
+    return h
+
+
+def attach_images(strategies, token=None):
+    """TIMER-PATH ONLY: attach the strategy dirs' chart images to the report.
     Deliberately NOT part of scan() — the mid-turn live push rides the 2MB-capped
     webchat /report and images would blow it; the api carries images over when a
     report omits them, so the web still shows them. A signature file skips
-    re-uploading unchanged sets every 2 minutes. Returns the new signature dict
-    for the caller to persist AFTER a successful POST."""
+    re-sending unchanged sets every 2 minutes. Returns the new signature dict
+    for the caller to persist AFTER a successful POST.
+
+    The bytes go to S3 (PUT /openclaw/agent/strategy_image/{hash}) and the report
+    carries only {file, mime, hash} — the strategies cache is one 16MB-capped Redis
+    key for the user's whole inventory, and base64 images were what filled it. An
+    upload that fails falls back to inline base64: the api converts it on arrival,
+    so the picture still reaches the workspace either way."""
+    token = token or PROXY_TOKEN
+    deadline = time.monotonic() + _IMG_UPLOAD_BUDGET_SEC
     old_sigs = {}
     try:
         with open(_IMG_SIG_PATH) as f:
@@ -357,10 +397,13 @@ def attach_images(strategies):
         for (_m, f, p, mime) in imgs:
             try:
                 with open(p, "rb") as fh:
-                    payload.append({"file": f, "mime": mime,
-                                    "b64": base64.b64encode(fh.read()).decode()})
+                    data = fh.read()
             except OSError:
                 continue
+            h = _put_image(data, mime, token) if time.monotonic() < deadline else None
+            entry = {"file": f, "mime": mime}
+            entry["hash" if h else "b64"] = h or base64.b64encode(data).decode()
+            payload.append(entry)
         s["images"] = payload  # [] = 圖被清掉,明確清空
     return new_sigs
 
@@ -925,11 +968,38 @@ def report_cache(strategies, token=None):
     version = _config_version()
     if version:
         payload["config_version"] = version
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        API_URL, data=data,
-        headers={"Content-Type": "application/json", "x-api-key": f"proxy-{token}"},
-    )
+    # Gzipped on the wire. This body is mostly the backtests' first-paint tails —
+    # long runs of numeric JSON that compress ~4× — and the timer re-sends the whole
+    # thing every two minutes whether anything changed or not, so an unpacked report
+    # was uploading tens of MB an hour from a machine on a metered link. The api
+    # expands it (agent_strategies._report_body) and stores it still compressed;
+    # 4× applies to the 16MB ceiling as well, which is what stops the cache freezing
+    # once a user has more than a handful of strategies.
+    raw = json.dumps(payload).encode()
+    headers = {"Content-Type": "application/json", "x-api-key": f"proxy-{token}"}
+    try:
+        req = urllib.request.Request(
+            API_URL, data=gzip.compress(raw, 6),
+            headers={**headers, "Content-Encoding": "gzip"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.read().decode()
+    except urllib.error.HTTPError as e:
+        # An api that predates gzip bodies reads the compressed bytes as JSON, gets
+        # nothing, and answers 400 with this exact message. Publishing the runtime
+        # before deploying the api would otherwise silently freeze every machine's
+        # cache, so pay one retry uncompressed rather than depend on deploy order.
+        #
+        # Matched on the message, not just the status: a 400 the api reached by
+        # actually READING our report (a nan in the stats, say) is a permanent
+        # failure, and re-sending it uncompressed every two minutes forever would
+        # double the cost of a condition that never clears. Delete this whole
+        # branch once the fleet is past this release.
+        if e.code != 400 or b"must be a list" not in (e.read() or b""):
+            raise
+        print("[strategy_reporter] api predates gzip reports; retrying uncompressed",
+              file=sys.stderr)
+    req = urllib.request.Request(API_URL, data=raw, headers=headers)
     with urllib.request.urlopen(req, timeout=15) as resp:
         return resp.read().decode()
 
