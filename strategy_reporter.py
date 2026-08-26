@@ -183,8 +183,56 @@ def _read_backtest(name):
     return data if isinstance(data, dict) else None
 
 
-def scan():
-    """Handles both layouts: strategies/<name>.py (single file) and
+def _stats_marker(name, status):
+    """What signature() tracks for strategies/<name>/stats.json. A string either
+    way — the whole signature is an opaque fingerprint, and same-typed elements
+    keep sorted() total no matter what the other two columns hold.
+
+    draft → mtime+size: this file belongs to the agent, and a re-run that
+    overwrites it in place should reach the open workspace mid-turn.
+    live → existence only: a deployed strategy's stats.json belongs to the
+    per-bar tick thread (command_listener._tick_one → blaveclaw-config
+    lib/runner.py rewrites it on every close, unconditionally — the `mode ==
+    'backtest'` gate below that write only guards the chart export). Tracking its
+    mtime would fire a full scan + a ≤1.5MB chunk + a workspace redraw once a
+    bar, mid-conversation, for something the user never asked about — worst on
+    exactly the users with real money running. Existence is the sensitivity the
+    bool(backtest) fingerprint had, and the unconditional turn-end sync in
+    web_bridge still carries anything the agent really changed.
+
+    ValueError as well as OSError: `name` is the strategy file's STRATEGY_NAME
+    constant, i.e. any string ast can parse — an embedded NUL or a lone surrogate
+    makes os.stat raise ValueError, and letting that escape would take the whole
+    turn's live push down with it. Matches _read_backtest's except clause."""
+    try:
+        st = os.stat(os.path.join(STRATEGIES_DIR, name, "stats.json"))
+    except (OSError, ValueError):
+        return "none"
+    if status == "live":
+        return "exists"
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
+def signature():
+    """Cheap "has the inventory changed" fingerprint: name + status + the stats
+    marker above, with no stats.json parsed. agent_turn calls this after every
+    tool step and only pays for scan() when it differs — a 5min strategy's
+    stats.json is ~4.7MB, and parsing three of them on every step (0.30s vs
+    0.004s, measured on uid=32321) lagged every chunk behind for nothing.
+
+    Not free, though: _scan_sources() still reads and ast-parses every strategy
+    file. That is milliseconds against hundreds, but it is not "one stat"."""
+    return json.dumps(sorted(
+        [s["name"], s["status"], _stats_marker(s["name"], s["status"])]
+        for s in _scan_sources()
+    ))
+
+
+def _scan_sources():
+    """Enumeration + source parse, WITHOUT reading stats.json. Shared by scan()
+    and signature() so the layout rules live in exactly one place.
+
+    Handles both layouts: strategies/<name>.py (single file) and
     strategies/<name>/strategy.py (Type C portfolio subdir). Skips the
     TEMPLATE_* scaffolding files (not the user's strategies) and dedupes by
     name (a name existing as both a .py and a dir shows once, live winning)."""
@@ -210,6 +258,17 @@ def scan():
             continue
         if not s:
             continue
+        prev = by_name.get(s["name"])
+        # keep the live one if a name shows up twice
+        if prev is None or (prev["status"] != "live" and s["status"] == "live"):
+            by_name[s["name"]] = s
+    return list(by_name.values())
+
+
+def scan():
+    """The full inventory: sources plus each strategy's parsed backtest."""
+    strategies = _scan_sources()
+    for s in strategies:
         bt = _read_backtest(s["name"])
         if bt is not None:
             s["backtest"] = bt
@@ -218,11 +277,7 @@ def scan():
         # here must not be the only defense). False when unknown — fail open,
         # see is_portfolio_stats.
         s["is_portfolio"] = is_portfolio_stats(bt)
-        prev = by_name.get(s["name"])
-        # keep the live one if a name shows up twice
-        if prev is None or (prev["status"] != "live" and s["status"] == "live"):
-            by_name[s["name"]] = s
-    return list(by_name.values())
+    return strategies
 
 
 # Live `strategies` chunks ride the webchat /report channel, capped at REPORT_BODY_MAX

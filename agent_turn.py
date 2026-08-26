@@ -1106,27 +1106,30 @@ def load_agents_md():
         return ""
 
 
-def _strategies_signature(strategies):
-    # Cheap fingerprint of the inventory (name + status + has-backtest) so we only push
-    # a fresh list when it actually changed, not on every tool step.
-    return json.dumps(
-        sorted([s.get("name"), s.get("status"), bool(s.get("backtest"))] for s in strategies)
-    )
-
-
 def _maybe_push_strategies(sink, last_sig):
     """Mid-turn: the moment the agent's tools change the strategy inventory (a new
     strategy file, a finished backtest), push the fresh list so the workspace updates
     right away instead of waiting for the whole turn to end. Live SSE chunk only (size-
-    trimmed to the /report cap) — the full cache is refreshed by web_bridge at turn end."""
+    trimmed to the /report cap) — the full cache is refreshed by web_bridge at turn end.
+
+    Runs after every tool step, so the unchanged case has to be cheap: signature()
+    skips the multi-MB stats.json parse, and scan() is paid solely when something
+    actually moved."""
+    try:
+        sig = strategy_reporter.signature()
+    except Exception as e:
+        print(f"[agent_turn] mid-turn strategy signature failed: {e}", file=sys.stderr)
+        return last_sig
+    if sig == last_sig:
+        return last_sig
     try:
         strategies = strategy_reporter.scan()
     except Exception as e:
+        # Keep the old signature so the next step retries this push rather than
+        # silently adopting a state the workspace never received.
         print(f"[agent_turn] mid-turn strategy scan failed: {e}", file=sys.stderr)
         return last_sig
-    sig = _strategies_signature(strategies)
-    if sig != last_sig:
-        sink._send(strategy_reporter.live_chunk(strategies))
+    sink._send(strategy_reporter.live_chunk(strategies))
     return sig
 
 
