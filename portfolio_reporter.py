@@ -283,12 +283,15 @@ _MGMT_STATS_DROP = ("weights_history", "managed_returns")
 _ALLOCATOR_CONSTS = ("DISPLAY_NAME", "DESCRIPTION", "PARAMS")
 # manager.py's own declarations, read as literals (never imported).
 _BUILTIN_CONSTS = ("BUILTIN_METHODS", "DEFAULT_METHOD")
-# Mirrors blaveclaw-config lib/allocator.py RESERVED_PARAM_KEYS: the two names
-# that are the CALLER's flags, never a method's own knob, so load() refuses a
-# file declaring either. That guard lives in an import this process never does
-# — without the same check here the picker would happily show the field and
-# the run would die on selection.
-_RESERVED_PARAM_KEYS = ("lookback", "target_vol")
+# Mirrors blaveclaw-config lib/allocator.py RESERVED_PARAM_KEYS: target_vol is
+# the portfolio's leverage target, set once for the account and never a
+# weighting input, so load() refuses a file that declares it. That guard lives
+# in an import this process never does — without the same check here the picker
+# would show the field and the run would die on selection.
+# `lookback` is deliberately NOT in this tuple: a method that fits on a window
+# owns that window and declares it like any other knob (built-in slope does),
+# and the page offers it. Only a method that declares it gets to receive one.
+_RESERVED_PARAM_KEYS = ("target_vol",)
 # {path: (mtime, size, entry|None)} — a stats.json can be several MB (trades +
 # candles) and this runs every report; only a changed file is parsed again.
 _STRATEGY_FIGURES_CACHE = {}
@@ -449,6 +452,26 @@ def _notice_daily(key, msg):
         pass
 
 
+def _uses_window(path):
+    """allocate() refers to its second argument somewhere in its body — the
+    syntactic tell for "this method looks at history". Mirrors
+    lib/allocator.uses_window; pure ast, the file is never imported."""
+    try:
+        with open(path, "rb") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError, MemoryError, RecursionError):
+        return False
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "allocate":
+            params = [a.arg for a in node.args.posonlyargs + node.args.args]
+            if len(params) < 2:
+                return False
+            window = params[1]
+            return any(isinstance(n, ast.Name) and n.id == window
+                       for n in ast.walk(node) if n is not node)
+    return False
+
+
 def _allocators():
     """allocators/<name>/allocator.py consts via ast — the file is user code
     and is never imported here. A dir whose file is missing or doesn't parse
@@ -496,6 +519,28 @@ def _allocators():
                           f"allocators/{name}/ declares reserved PARAMS {clash} — "
                           f"lib/allocator.load refuses it, so it is not offered")
             continue
+        # Same rule as lib/allocator.load's window guard: a method that reads
+        # its window argument must declare PARAMS["lookback"], or the scripts
+        # hand it no window and it fits on nothing — or worse, on everything.
+        # Offering it would put a method in the picker that dies on selection.
+        if (_uses_window(os.path.join(root, name, "allocator.py"))
+                and not (isinstance(declared, dict) and "lookback" in declared)):
+            _notice_daily(f"undeclared_window:{name}",
+                          f"allocators/{name}/ reads its window but declares no literal "
+                          f"PARAMS['lookback'] — PARAMS must be a plain dict literal with "
+                          f"\"lookback\": <days>; until then it is not offered")
+            continue
+        # A declared window the page could never send: the listener holds
+        # lookback to an integer 10–5000, and the page copies the declared
+        # value into the field as-is — so anything outside that would be an
+        # entry that dies on every click. Keep it off the page and say why.
+        lb = declared.get("lookback") if isinstance(declared, dict) else None
+        if "lookback" in (declared or {}) and (
+                isinstance(lb, bool) or not isinstance(lb, int) or not 10 <= lb <= 5000):
+            _notice_daily(f"bad_window:{name}",
+                          f"allocators/{name}/ declares PARAMS['lookback'] = {lb!r}; "
+                          f"it must be an integer 10–5000 days — not offered until fixed")
+            continue
         out.append({
             "name": name,
             "display_name": str(consts.get("DISPLAY_NAME") or name),
@@ -526,7 +571,13 @@ def _mgmt_backtest_result(job):
     lookback, and a computed_at no earlier than the job's start. A running run's file is still the
     PREVIOUS result (the script writes it atomically at the end), and an
     agent running the script by hand later would otherwise have its numbers
-    shown under the web's job parameters."""
+    shown under the web's job parameters.
+
+    Everything the file carries except the two per-day arrays goes to the page
+    as-is — including the top-level `lookback` (0 = the method declares no
+    window and every day was out of sample), which the page compares against
+    its own selection when it pinned one. Passthrough, not an allow-list: a
+    field the scripts add next must not need an edit here to become visible."""
     if not job or job.get("status") != "done":
         return None
     output = job.get("output")
@@ -539,11 +590,12 @@ def _mgmt_backtest_result(job):
     if not isinstance(stats, dict):
         return None
     # same rule as command_listener._mgmt_result_matches, including why the
-    # lookback compared is the top-level one and not params'
+    # lookback compared is the top-level one, and only when the job pinned it
     try:
+        job_lookback = (job.get("params") or {}).get("lookback")
         ours = (sorted(stats.get("members") or []) == sorted(job.get("members") or [])
                 and stats.get("allocator") == job.get("allocator")
-                and stats.get("lookback") == (job.get("params") or {}).get("lookback")
+                and (job_lookback is None or stats.get("lookback") == job_lookback)
                 and float(stats.get("computed_at")) >= float(job.get("started_at") or 0))
     except (TypeError, ValueError, AttributeError):
         return None
@@ -694,6 +746,19 @@ def builtin_method_params():
     which names are methods at all and which knobs each one admits."""
     methods, _default = _declared_builtins()
     return {n: _json_safe_params(s.get("params")) for n, s in methods.items()}
+
+
+def allocator_declared_params(name):
+    """The PARAMS an allocator FILE declares, or None when the file can't be
+    read or parsed. None is "can't tell", not "declares nothing": the listener
+    only refuses a knob it can positively see is undeclared, and a file this
+    process can't parse isn't in the picker to be chosen from anyway."""
+    consts = _module_literals(
+        os.path.join(WORKSPACE, "allocators", name, "allocator.py"), ("PARAMS",))
+    if consts is None:
+        return None
+    declared = consts.get("PARAMS")
+    return declared if isinstance(declared, dict) else {}
 
 
 def script_knows_builtins(script):

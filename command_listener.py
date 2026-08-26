@@ -2123,10 +2123,6 @@ _MANAGE_PROGRESS_PUSH_S = 10  # watcher's report cadence while a backtest runs
 _MANAGE_ERR_TAIL = 300
 _MANAGE_BACKTEST_SCRIPT = "management_backtest.py"
 _MANAGE_ALLOCATOR_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-# Sent explicitly whenever the page doesn't name one, so the job and the result
-# always agree on the window. Mirrors both scripts' own LOOKBACK default —
-# drift only shows up on a caller that sends nothing, and the page always does.
-_MANAGE_DEFAULT_LOOKBACK = 365
 # Strategy dir names are whatever the agent created; only the characters that
 # could escape strategies/ or break the comma-joined --members flag are refused.
 _MANAGE_MEMBER_BAD_RE = re.compile(r"[/\\,\s\x00-\x1f]")
@@ -2279,6 +2275,21 @@ def _resolve_allocator(allocator, script, builtins):
     return allocator
 
 
+def _declared_params(allocator, builtins):
+    """The knobs THIS method declares — the built-in table for a built-in, the
+    file's own PARAMS for an allocator — or None when there is nothing to
+    check against (the legacy omitted-flag wire, or a file this process can't
+    parse). None means permissive: only a knob positively known to be
+    undeclared is refused."""
+    if allocator is None:
+        return None
+    if allocator in builtins:
+        return builtins[allocator]
+    import portfolio_reporter
+
+    return portfolio_reporter.allocator_declared_params(allocator)
+
+
 def _mgmt_output_rel(allocator, builtins):
     """Where the walk-forward writes its stats.json, relative to the workspace.
     Every built-in shares manager/ — only a user allocator keeps its outputs
@@ -2348,16 +2359,16 @@ def _validate_manage_args(args, script):
                 raise ValueError("param value must be finite")
         elif not isinstance(v, int):
             raise ValueError("param value must be int/float/bool/str")
-    # lookback is NOT a method parameter — it is the walk-forward's own
-    # out-of-sample window, the same for every method — so it is always sent,
-    # never conditioned on what the method declares. Conditioning it was a real
-    # bug: equal (the default) and the shipped allocator TEMPLATE both declare
-    # no PARAMS, and a file may never declare lookback (lib/allocator's
-    # RESERVED_PARAM_KEYS), so the window would have been frozen at the script
-    # default for them — and a portfolio with under a year of history, which is
-    # exactly the new one, has no way left to shorten it and just exits 3.
-    lookback = params.get("lookback", _MANAGE_DEFAULT_LOOKBACK)
-    if isinstance(lookback, bool) or not isinstance(lookback, int) or not 10 <= lookback <= 5000:
+    # lookback belongs to the METHOD that fits on it (built-in slope declares
+    # it; equal declares nothing and has no window). It rides in `params` like
+    # any declared knob but becomes the --lookback flag, never --params-json.
+    # Absent = don't send the flag at all: --lookback defaults to a sentinel on
+    # both scripts, so a method that declares one runs on its own value and a
+    # method that declares none runs with no window (0, every day out of
+    # sample) instead of a 365 nobody asked for.
+    lookback = params.get("lookback")
+    if lookback is not None and (isinstance(lookback, bool) or not isinstance(lookback, int)
+                                 or not 10 <= lookback <= 5000):
         raise ValueError("lookback must be an integer 10–5000")
     target_vol = params.get("target_vol")
     if target_vol is not None and (isinstance(target_vol, bool)
@@ -2367,10 +2378,32 @@ def _validate_manage_args(args, script):
     extra = {k: v for k, v in params.items() if k not in ("lookback", "target_vol")}
     # --params-json overrides an allocator FILE's PARAMS, so a built-in gets
     # none of it. The scripts refuse it too, but a named built-in is truthy, so
-    # "no allocator" no longer covers the case. lookback/target_vol are already
-    # split out above — they are the caller's flags, not any method's knob.
+    # "no allocator" no longer covers the case.
     if (allocator is None or allocator in builtins) and extra:
         raise ValueError("built-in method takes no extra params")
+    # A window the method doesn't declare is DROPPED, not refused. A parameter
+    # a method doesn't take is not a broken command — and refusing would take
+    # 策略管理 away from most of the fleet the moment this runtime ships: the
+    # deployed web sends lookback unconditionally, so `equal` (a new
+    # portfolio's default method) and slope-on-a-not-yet-updated workspace
+    # would both fail on both buttons. Dropping it also means the job never
+    # pins a window the result won't carry, which is the whole thing a refusal
+    # was there to prevent.
+    # ...but only against a built-in table that KNOWS about windows. The first
+    # generation of the table (2026-08-26-a/b/c) declared no params for slope
+    # either, and on those scripts a dropped flag means the default 365 with
+    # no knob left on the page to shorten it. A table where some built-in
+    # declares lookback is the generation that means "{} = no window".
+    # Custom allocators too: on an older workspace lib/allocator.py RESERVED the
+    # name, so a file there could not declare it and "not declared" carries no
+    # information — dropping would strand the page's 「改跑 N 天」 in a loop.
+    declared = _declared_params(allocator, builtins)
+    table_knows_windows = any("lookback" in (p or {}) for p in builtins.values())
+    if (lookback is not None and table_knows_windows
+            and declared is not None and "lookback" not in declared):
+        _log(f"dropping lookback: {allocator or 'the built-in method'} declares "
+             f"no window, so it runs with none")
+        lookback = None
     return members, allocator, lookback, target_vol, extra, builtins
 
 
@@ -2484,15 +2517,24 @@ def _mgmt_result_matches(stats, job):
     same members (order-free), same allocator, same lookback, and a
     computed_at no earlier than the job's start. Raises on malformed input.
 
-    The lookback compared is stats.json's TOP-LEVEL field, not the one inside
-    `params`: management_backtest.py writes the top-level one for every method
-    and every generation of the script, while `params` only carries what the
-    METHOD declares — and lookback is nobody's declared knob. Comparing it is
-    what keeps an agent's hand-run at another window from being shown under the
-    page's job."""
+    The lookback compared is stats.json's TOP-LEVEL field: the window that
+    actually ran, written by every method and every generation of the script.
+    `params` carries the method's declared knobs — the same number where the
+    method declares one, absent where it doesn't — so the top-level field is
+    the only one that is always there to compare.
+
+    Compared only when the JOB pinned one, which is a real loosening and not
+    an oversight: a method that declares no window sends no --lookback, the
+    script records 0 (every day out of sample), and that result must not be
+    disowned for not being a number nobody chose. The cost is that a hand-run
+    of such a method between this job's start and the next report can be shown
+    under it — members, allocator and computed_at ≥ started_at are what still
+    have to match. A job that DID pin a window is compared exactly: the script
+    never moves a chosen one, it exits 3 instead."""
+    job_lookback = (job.get("params") or {}).get("lookback")
     return (sorted(stats.get("members") or []) == sorted(job.get("members") or [])
             and stats.get("allocator") == job.get("allocator")
-            and stats.get("lookback") == (job.get("params") or {}).get("lookback")
+            and (job_lookback is None or stats.get("lookback") == job_lookback)
             and float(stats.get("computed_at")) >= float(job.get("started_at") or 0))
 
 
@@ -2575,7 +2617,8 @@ def _cmd_manage_optimize(args):
         paths = _manage_paths()
         _remove_retry(paths["proposal"], "proposal")
         argv = _manage_argv("manager.py", members, allocator, extra)
-        argv.append(f"--lookback={lookback}")
+        if lookback is not None:
+            argv.append(f"--lookback={lookback}")
         # Only what the page actually sent. The page has no --target-vol knob
         # any more, and manager.py already resolves a bare one from the
         # account's own target_vol_pct (default_target_vol) — re-deriving it
@@ -2620,8 +2663,9 @@ def _cmd_manage_backtest(args):
     paths = _manage_paths()
     _remove_retry(paths["progress"], "progress file")
     argv = _manage_argv(_MANAGE_BACKTEST_SCRIPT, members, allocator, extra)
-    argv += [f"--lookback={lookback}",
-             "--progress=" + os.path.join("manager", "mgmt_progress.json")]
+    if lookback is not None:
+        argv.append(f"--lookback={lookback}")
+    argv.append("--progress=" + os.path.join("manager", "mgmt_progress.json"))
     os.makedirs(os.path.dirname(paths["log"]), exist_ok=True)
     # Own session / process group so cancel can take the whole tree (killpg)
     # and — Linux, KillMode=process — a bridge restart doesn't kill the run
@@ -2640,7 +2684,10 @@ def _cmd_manage_backtest(args):
                                 stdout=logf, stderr=logf, **popen_kw)
     doc = {
         "status": "running", "pid": proc.pid, "members": members,
-        "allocator": allocator, "params": {"lookback": lookback, **extra},
+        # only what was actually pinned — see _mgmt_result_matches on why an
+        # unpinned window is not something the result can be judged against
+        "allocator": allocator,
+        "params": ({"lookback": lookback} if lookback is not None else {}) | extra,
         "output": _mgmt_output_rel(allocator, builtins),
         "started_at": int(time.time()), "finished_at": None, "error": None,
     }
