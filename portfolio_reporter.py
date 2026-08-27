@@ -277,9 +277,22 @@ def _halt_denials(since_ts):
 # manager/*.py rides blaveclaw-config's manual channel, so a new runtime on an
 # old workspace is the normal state, not an edge case.
 
-# The two per-day arrays the walk-forward writes for its own PNG; the page
-# charts managed_cum + random_benchmark.band instead, so these only add bytes.
-_MGMT_STATS_DROP = ("weights_history", "managed_returns")
+# The walk-forward's own per-day return series: the page charts managed_cum
+# (the cumulative form of the same numbers) and random_benchmark.band, so this
+# one only adds bytes. weights_history stays — the page's weight pane draws it.
+_MGMT_STATS_DROP = ("managed_returns",)
+# Ceiling on weights_history (members x OOS days). stats.json is a file the
+# agent can rewrite, and _mgmt_backtest_result is a passthrough — the whole
+# report rides one POST with a 4MB hard cap (openclaw/agent_strategies.py
+# PORTFOLIO_MAX_BYTES), and a 413 there is TERMINAL: report() raises, main()
+# exits 1, and the next timer tick re-sends the identical payload forever
+# while the user's whole portfolio view sits on a stale cache. 64 members
+# (command_listener._MANAGE_MAX_MEMBERS) x 3000 days at the script's own 4dp
+# is ~1.3MB; the same shape with full float repr is ~3.8MB and blows the cap
+# on this field alone. So bound it HERE rather than trusting the producer to
+# keep rounding. Dropping the field costs nothing: the page's mgWeightSeries
+# returns null on a missing/short array and simply omits the pane.
+_MGMT_WEIGHTS_MAX_POINTS = 64 * 4000
 _ALLOCATOR_CONSTS = ("DISPLAY_NAME", "DESCRIPTION", "PARAMS")
 # manager.py's own declarations, read as literals (never imported).
 _BUILTIN_CONSTS = ("BUILTIN_METHODS", "DEFAULT_METHOD")
@@ -573,7 +586,7 @@ def _mgmt_backtest_result(job):
     agent running the script by hand later would otherwise have its numbers
     shown under the web's job parameters.
 
-    Everything the file carries except the two per-day arrays goes to the page
+    Everything the file carries except managed_returns goes to the page
     as-is — including the top-level `lookback` (0 = the method declares no
     window and every day was out of sample), which the page compares against
     its own selection when it pinned one. Passthrough, not an allow-list: a
@@ -601,7 +614,27 @@ def _mgmt_backtest_result(job):
         return None
     if not ours:
         return None
-    return {k: v for k, v in stats.items() if k not in _MGMT_STATS_DROP}
+    out = {k: v for k, v in stats.items() if k not in _MGMT_STATS_DROP}
+    wh = out.get("weights_history")
+    if isinstance(wh, dict):
+        try:
+            points = sum(len(v) for v in wh.values())
+        except TypeError:
+            points = None  # a member's value isn't sized (hand-edited file)
+        if points is None or points > _MGMT_WEIGHTS_MAX_POINTS:
+            out.pop("weights_history", None)
+        else:
+            # Re-round here too: the 4dp lives in the script, which the agent
+            # can edit. Non-numeric entries are left alone — the page's
+            # all-or-nothing check drops the pane rather than half-drawing it.
+            out["weights_history"] = {
+                k: [round(x, 4) if isinstance(x, float) else x for x in v]
+                for k, v in wh.items()
+                if isinstance(v, list)
+            }
+    elif wh is not None:
+        out.pop("weights_history", None)  # not a mapping; nothing can draw it
+    return out
 
 
 def manager_view():
