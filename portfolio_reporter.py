@@ -6,9 +6,13 @@ without a VM round-trip — the same report/read split strategy_reporter.py uses
 What it collects, and why each piece has to come from here:
   - manager/portfolio_config.json  weights / leverage / capital / exchange routing
   - strategies/<n>/state.json      each strategy's live signal + when it last moved
-  - crontab                        whether a strategy is actually SCHEDULED; a
-                                   weighted strategy with no cron trades on a
-                                   frozen signal and nothing else notices
+  - crontab + state/deployments.json
+                                   whether a strategy is actually SCHEDULED; a
+                                   weighted strategy with no schedule trades on
+                                   a frozen signal and nothing else notices.
+                                   Two sources because Type A/C strategies get
+                                   NO crontab/schtasks entry at all — see
+                                   scheduled_strategies()
   - manager/last_reconcile.json    the only record of real exchange positions
                                    (written by lib/portfolio.reconcile)
   - manager/orders.jsonl           what was actually sent to the exchange
@@ -49,8 +53,15 @@ HEARTBEAT_STALE_S = 300  # reconciler 每 5 秒 touch 一次;超過這個就當�
 
 
 def _read_json(path, default=None):
+    """utf-8 explicitly, never the locale default: strategy names reach these
+    files from STRATEGY_NAME (may contain spaces/dots/Chinese), and on a cp950
+    Windows box a locale-default read raises UnicodeDecodeError — which lands
+    in the `except` below (UnicodeDecodeError is a ValueError) as a silent
+    `default` — "nothing there" rather than "could not read". No
+    errors="replace" (unlike _strategy_market's open() below): mojibake in a
+    JSON key is worse than a clean parse failure."""
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
         return default
@@ -63,21 +74,58 @@ def _mtime(path):
         return None
 
 
+# Type A/C strategies picked in 下單設定 have NO crontab line and NO scheduled
+# task — command_listener's in-process scheduler runs them and records them
+# here instead (its _sync_deployment_registry / _prune_deployment_registry run
+# on every 60s cycle, so this file tracks the currently-picked set live rather
+# than being a one-shot registration). Type B entries are typed "cron" and the
+# reconciler's is "daemon"; only this type is ours to read.
+_AC_DEPLOY_TYPE = "wait_for_bar"
+
+
+def _in_process_scheduled():
+    """Type A/C names the in-process scheduler owns. Empty set (not None) when
+    the file is missing — a machine with no Type A/C strategy legitimately has
+    none, and the OS schedule scan below is what decides "unknown"."""
+    deps = _read_json(os.path.join(WORKSPACE_STATE, "deployments.json"), {})
+    if not isinstance(deps, dict):
+        return set()
+    return {n for n, e in deps.items()
+            if isinstance(e, dict) and e.get("type") == _AC_DEPLOY_TYPE}
+
+
 def scheduled_strategies():
-    """Names with a live schedule — crontab (Linux) or schtasks (Windows).
+    """Names with a live schedule — the OS scheduler (crontab on Linux,
+    schtasks on Windows) UNION the in-process scheduler's registry.
 
     A weighted strategy with no schedule is the quiet failure this whole view
     exists to surface: state.json never updates, so the reconciler keeps sizing
     a real position from a signal that stopped moving days ago. Returns None
-    (not an empty set) when the schedule can't be read, so the UI can say
-    "unknown" instead of accusing every strategy of being unscheduled.
+    (not an empty set) when the OS schedule can't be read, so the UI can say
+    "unknown" instead of accusing every strategy of being unscheduled — the
+    in-process registry can't stand in for that, since it says nothing about
+    Type B.
+
+    For Type A/C this reports registration, not a successful tick: "funded"
+    implies "registered" because there is no external schedule left to be
+    missing. The failure that registration can't see (scheduler thread wedged,
+    every tick erroring) is caught by the caller's own state.json freshness and
+    by manager/healthcheck.py's heartbeat check, both unchanged.
     """
+    in_process = _in_process_scheduled()
     if platform.system() == "Windows":
         # deployment.md's task-name convention: blaveclaw-strategy-<name>
         try:
             out = subprocess.run(
                 ["schtasks", "/query", "/fo", "csv", "/nh"],
-                capture_output=True, text=True, timeout=30,
+                # errors="replace" like every schtasks/crontab call in
+                # command_listener.py: text=True decodes with the locale
+                # encoding and STRICT errors, and a UnicodeDecodeError is
+                # neither OSError nor SubprocessError — it would escape the
+                # except below and kill the whole report over one task name
+                # the codepage can't represent. Degrade to a mangled name
+                # (that one strategy drops out of the set) instead.
+                capture_output=True, text=True, errors="replace", timeout=30,
             )
         except (OSError, subprocess.SubprocessError):
             return None
@@ -87,16 +135,25 @@ def scheduled_strategies():
         # blaveclaw-strategy-* and the web picker's blave-web-strategy-*
         # (command_listener's schtasks twin of the tagged cron lines)
         return set(re.findall(r"blaveclaw-strategy-([^\",]+)", out.stdout)) | \
-            set(re.findall(r"blave-web-strategy-([^\",]+)", out.stdout))
+            set(re.findall(r"blave-web-strategy-([^\",]+)", out.stdout)) | \
+            in_process
     try:
         out = subprocess.run(
-            ["crontab", "-l"], capture_output=True, text=True, timeout=10
+            ["crontab", "-l"],  # errors="replace": see the schtasks call above
+            capture_output=True, text=True, errors="replace", timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0:
-        return set() if "no crontab" in (out.stderr or "").lower() else None
-    return set(re.findall(r"run_strategy\.sh\s+(\S+)", out.stdout))
+        if "no crontab" in (out.stderr or "").lower():
+            return in_process
+        return None
+    # Both agent-written forms count (references/deployment.md): run_strategy.sh
+    # for Type B, wait_for_bar.py for a Type A/C the agent scheduled by hand.
+    # Same pair command_listener._purge_strategy_schedules already matches on.
+    return set(re.findall(r"run_strategy\.sh\s+(\S+)", out.stdout)) | \
+        set(re.findall(r"wait_for_bar\.py\s+(\S+)", out.stdout)) | \
+        in_process
 
 
 _MARKET_RE = re.compile(r'^\s*MARKET\s*=\s*["\']([a-z]+)["\']', re.M)
