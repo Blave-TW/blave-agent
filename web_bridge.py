@@ -55,6 +55,16 @@ INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
 # 目前正在處理的 session(SIGTERM handler 要知道該通知誰)
 _current_session = {"id": None}
 
+# sync_strategies 的序列化鎖:turn-end、command-applied、下面的變化偵測 thread
+# 三個來源共用一把,兩份掃描+上報永遠不會交疊(同一份 stats.json 掃到一半)。
+_sync_lock = threading.Lock()
+# 最近一次 sync_strategies 實際起跑(拿到鎖、開掃)的時刻。watcher 用它清帳:
+# 變動發生在這個時刻之前 → 那次 scan 已把變動收走,pending 的 dirty 不必再開一發
+# (沒有這條,幾乎每個改策略的回合都會 turn-end + watcher 各 sync 一次,degraded
+# 網路下兩份排隊最壞 ~180 秒 > watchdog STALE_THRESHOLD 120 秒——uid=32321
+# 「turn-end chunk 沒送出去就被重啟」的復刻路徑)。
+_last_sync_started = 0.0
+
 # 一輪的硬上限。參數掃描是網格搜尋(每組都回測),600s 常常不夠——真正的煞車
 # 是 agent_turn 自己的 max_budget_usd/max_turns,這裡只防永久卡死。
 # 必須嚴格大於 agent_turn 給 Bash 工具的 30 分鐘上限(一支前景跑滿的回測 +
@@ -100,7 +110,17 @@ def sync_strategies():
     """Right after a turn (which is when the agent may have created/deployed a
     strategy), push the fresh list two ways: a live chunk on the chat stream so
     the open workspace updates the left rail instantly, and the cache so a page
-    reload is fresh too. The timer (strategy_reporter) is only a slow fallback."""
+    reload is fresh too. The timer (strategy_reporter) is only a slow fallback.
+
+    序列化:三個呼叫源(turn-end / command-applied / 變化偵測 thread)共用
+    _sync_lock,不讓兩份 scan+report 交疊。"""
+    with _sync_lock:
+        _sync_strategies_locked()
+
+
+def _sync_strategies_locked():
+    global _last_sync_started
+    _last_sync_started = time.time()
     try:
         strategies = strategy_reporter.scan()
     except Exception as e:
@@ -282,6 +302,69 @@ def on_term(signum=None, frame=None):
     sys.exit(0)
 
 
+# ── 變化偵測 thread(治本:不等 reporter 的 2 分鐘 timer)──────────────────────
+# reporter 的 timer 每 2 分鐘一班,回測寫入若卡在兩班之間、或撞上寫一半的半套
+# 狀態,workspace 最壞要等 ~2.5 分鐘才長出資料。這條 thread 每 3 秒用
+# strategy_reporter.signature() 比一次指紋(毫秒級;live 策略它是 existence-only,
+# per-bar 重寫零觸發——這是選它、不另造偵測的理由),內容一停穩就立刻 sync,
+# 把延遲從分鐘壓到十幾秒。timer 保留當更慢資產(如 chart export)的兜底。
+_WATCH_POLL_S = 3
+# 指紋要「連續穩定」這麼久才開火:>實測 stats.json→pnl.png 的 7 秒 gap,免得在
+# 回測寫到一半(stats 有了、圖還沒)就上報。更慢的 chart export 交給下一發或 timer。
+_WATCH_STABLE_S = 10
+# 全域最小開火間隔:參數掃描的連環回測會讓指紋每幾秒變一次,靠這個 + stable 窗
+# 自然 coalesce 成一發,不會每輪回測都上報一次。
+_WATCH_MIN_INTERVAL_S = 15
+
+
+def _strategy_change_watcher():
+    """See the block comment above. daemon thread,失敗只印不倒。"""
+    last_fp = None
+    dirty_since = None   # 指紋最後一次變動的時刻;None = 沒有待處理的變動
+    last_fire = 0.0
+    while True:
+        # 整圈 try/except 續命:這條 thread 無聲死掉 = 偵測退化回 2 分鐘 timer,
+        # 而它會死的路徑偏偏都很無聊(stderr 管道斷掉讓 print 自己拋 OSError)。
+        # except 裡的 print 再包一層——報告失敗的那行也可能就是斷掉的管道。
+        try:
+            time.sleep(_WATCH_POLL_S)
+            fp = strategy_reporter.signature()
+            now = time.time()
+            if last_fp is None:
+                last_fp = fp     # 第一筆當基準,不開火
+                continue
+            if fp != last_fp:
+                last_fp = fp
+                dirty_since = now  # 重啟 stable 窗——連環回測會一直重置,天然 coalesce
+                continue
+            # 這一拍指紋沒變
+            if dirty_since is None:
+                continue           # 沒有待處理變動
+            if dirty_since < _last_sync_started:
+                # 這筆變動發生在最近一次 sync 起跑之前——那次 scan(turn-end 或
+                # 上一發 watcher)已把它收走,再開一發只是重複上報+佔鎖
+                dirty_since = None
+                continue
+            if now - dirty_since < _WATCH_STABLE_S:
+                continue           # 還沒穩夠久
+            if now - last_fire < _WATCH_MIN_INTERVAL_S:
+                continue           # 太頻繁:保留 dirty_since,冷卻後下一拍補跑(pending)
+            # 回合進行中不搶跑:turn-end 自己會 sync,這裡跑只是重複又要搶鎖。保留
+            # dirty_since,回合結束後由上面的 _last_sync_started 檢查決定要不要補
+            # (turn-end 的 scan 起跑晚於這筆變動就直接清帳)。
+            if _current_session.get("id"):
+                continue
+            sync_strategies()
+            last_fire = now
+            dirty_since = None     # 開火完清帳,等下一次變動
+        except Exception as e:
+            try:
+                print(f"[web_bridge] strategy watcher iteration failed: {e}",
+                      file=sys.stderr)
+            except Exception:
+                pass
+
+
 def main():
     if not PROXY_TOKEN:
         print("[web_bridge] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
@@ -318,6 +401,13 @@ def main():
         kwargs={"on_applied": on_command_applied, "on_progress": sync_portfolio},
         daemon=True,
         name="command-listener",
+    ).start()
+
+    # 變化偵測 thread:回測一寫完就 sync,不等 2 分鐘 timer(治本)
+    threading.Thread(
+        target=_strategy_change_watcher,
+        daemon=True,
+        name="strategy-change-watcher",
     ).start()
 
     print("[web_bridge] starting poll loop", file=sys.stderr)

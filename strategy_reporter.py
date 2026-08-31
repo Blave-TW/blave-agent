@@ -21,6 +21,17 @@ import urllib.request
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 STRATEGIES_DIR = os.path.join(WORKSPACE, "strategies")
+# 剛出生、還沒回測完的策略:源檔存在但 stats.json 還沒寫出來的頭幾秒。此窗內
+# 先不上報,免得 sidebar 早產一個空殼、auto-open 開進沒資料的分頁(回測 stats
+# →pnl 實測 7 秒 gap)。只擋『從沒回報過』的新策略——既有策略一律照收,整筆
+# omit 會被 report 端當成員減少、workspace 閃一下移除。
+_NEWBORN_GRACE_S = 15
+# process 內「上輪掃描見過的名字」:mtime 分不出「新生」與「剛被編輯的既有無 stats
+# 草稿」——後者被 agent 改一下 code 就消失 15 秒,mid-turn 推送會讓側欄閃移除再閃回。
+# 所以只有從沒出現過的名字才允許走 newborn 跳過。長駐 process(web_bridge/agent_turn)
+# 因此不會誤跳既有草稿;timer 的 oneshot 每次都是新 process、集合是空的,殘留一個
+# 「草稿在 timer 開跑前 15 秒內剛被編輯」的小窗,接受(2 分鐘一班撞 15 秒窗)。
+_seen_names = set()
 STATE_DIR = os.environ.get("BLAVE_AGENT_STATE", "/opt/blave-agent/state")
 
 # 回測 tab 的附件圖:strategies/<name>/ 內的圖檔(pnl.png、param heatmap…)。
@@ -230,6 +241,27 @@ def signature():
     ))
 
 
+def _is_newborn(name, source_path):
+    """True 只在「這檔還沒回測過(無 stats.json)、且源檔剛建立(<15 秒)」。
+
+    兩個條件缺一不可:有 stats.json 就不是新生(已回測、早該顯示);源檔夠老
+    也不是新生(存在很久只是沒回測,那是使用者的草稿,得照顯示)。所以既有
+    策略——不管有沒有 stats.json——都不會被這個 guard 擋掉。源檔 mtime 取
+    single-file 的 <name>.py 或 dir layout 的 strategy.py(呼叫端傳進來的 full)。
+    stat 失敗一律回 False:寧可上報也不要誤刪一筆。呼叫端(_scan_sources)另疊
+    _seen_names:上輪見過的名字連這個函式都不會進——mtime 分不出新生與剛被編輯的
+    既有草稿,只有全新名字才允許走跳過。"""
+    stats_path = os.path.join(STRATEGIES_DIR, name, "stats.json")
+    if os.path.exists(stats_path):
+        return False
+    try:
+        age = time.time() - os.stat(source_path).st_mtime
+    except OSError:
+        return False
+    # 下界擋未來 mtime / 時鐘回撥:age 為負代表 mtime 不可信,寧可顯示不要藏
+    return 0 <= age < _NEWBORN_GRACE_S
+
+
 def _scan_sources():
     """Enumeration + source parse, WITHOUT reading stats.json. Shared by scan()
     and signature() so the layout rules live in exactly one place.
@@ -246,6 +278,7 @@ def _scan_sources():
             continue
         full = os.path.join(STRATEGIES_DIR, entry)
         if os.path.isfile(full) and entry.endswith(".py"):
+            src_path = full
             s = _extract(full, entry[:-3])
         elif os.path.isdir(full):
             sp = os.path.join(full, "strategy.py")
@@ -255,15 +288,19 @@ def _scan_sources():
             # (both 'draft', dir sorts first), wiping its code + DISPLAY_NAME.
             if not os.path.isfile(sp):
                 continue
+            src_path = sp
             s = _extract(sp, entry)
         else:
             continue
         if not s:
             continue
+        if s["name"] not in _seen_names and _is_newborn(s["name"], src_path):
+            continue
         prev = by_name.get(s["name"])
         # keep the live one if a name shows up twice
         if prev is None or (prev["status"] != "live" and s["status"] == "live"):
             by_name[s["name"]] = s
+    _seen_names.update(by_name)
     return list(by_name.values())
 
 
