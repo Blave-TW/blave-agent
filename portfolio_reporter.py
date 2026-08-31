@@ -416,7 +416,12 @@ def _manager_strategies():
             entry = _strategy_figures(name, path)
             _STRATEGY_FIGURES_CACHE[path] = (st.st_mtime, st.st_size, entry)
         if entry:
-            out.append(dict(entry))
+            row = dict(entry)
+            # 回測上次執行時刻 = stats.json 的 mtime(runner 寫檔即完成)。頁面
+            # 拿它判斷「重跑有沒有用」:24h 內跑過就不標落後(連假免疫);從
+            # st 取、不進 cache entry,cache hit 時也永遠是當前值。
+            row["ran_at"] = int(st.st_mtime)
+            out.append(row)
     for path in list(_STRATEGY_FIGURES_CACHE):
         if path not in seen:
             _STRATEGY_FIGURES_CACHE.pop(path, None)  # deleted strategy; pop: concurrent reports
