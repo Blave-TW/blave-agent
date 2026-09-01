@@ -196,20 +196,47 @@ def _read_backtest(name):
     return data if isinstance(data, dict) else None
 
 
-def _stats_marker(name, status):
+def _deployed_names():
+    """STRATEGY_NAMEs deployed for live trading per state/deployments.json — the
+    deployment truth. A web-driven deploy runs the strategy with BLAVE_MODE=live in
+    the environment and never edits the file's MODE constant, so file status alone
+    ("draft") can't tell a deployed strategy from a real draft. Only `wait_for_bar`
+    and `cron` entries count. Stale entries (unbound exchange leaving the checkbox
+    on, Type B cron never pruned) over-exempt a non-deployed strategy — cost is an
+    update delayed to turn end, accepted. Unreadable / missing / malformed registry
+    → empty set (fail-open to current behavior: noisy, not mute); nothing may
+    escape — this runs inside every signature() call on the live push path."""
+    try:
+        with open(os.path.join(WORKSPACE, "state", "deployments.json")) as f:
+            reg = json.load(f)
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(reg, dict):
+        return set()
+    return {
+        name for name, entry in reg.items()
+        if isinstance(entry, dict) and entry.get("type") in ("wait_for_bar", "cron")
+    }
+
+
+def _stats_marker(name, status, deployed=frozenset()):
     """What signature() tracks for strategies/<name>/stats.json. A string either
     way — the whole signature is an opaque fingerprint, and same-typed elements
     keep sorted() total no matter what the other two columns hold.
 
     draft → mtime+size: this file belongs to the agent, and a re-run that
     overwrites it in place should reach the open workspace mid-turn.
-    live → existence only: a deployed strategy's stats.json belongs to the
-    per-bar tick thread (command_listener._tick_one → blaveclaw-config
-    lib/runner.py rewrites it on every close, unconditionally — the `mode ==
-    'backtest'` gate below that write only guards the chart export). Tracking its
-    mtime would fire a full scan + a ≤1.5MB chunk + a workspace redraw once a
-    bar, mid-conversation, for something the user never asked about — worst on
-    exactly the users with real money running. Existence is the sensitivity the
+    live (file MODE) or deployed (registry, `deployed` from _deployed_names) →
+    existence only: a deployed strategy's stats.json belongs to the per-bar tick
+    thread (command_listener._tick_one → blaveclaw-config lib/runner.py rewrites
+    it on every close, unconditionally — the `mode == 'backtest'` gate below that
+    write only guards the chart export). Tracking its mtime would fire a full
+    scan + a ≤1.5MB chunk + a workspace redraw once a bar, mid-conversation, for
+    something the user never asked about — worst on exactly the users with real
+    money running. Deployment truth is the REGISTRY, not the file: a web deploy
+    sets BLAVE_MODE=live in the env and leaves MODE="backtest" in the file, which
+    is exactly the strategy the status=="live" check missed (uid=32321: every 5min
+    close pushed a ~0.5MB strategies chunk). Existence is the sensitivity the
     bool(backtest) fingerprint had, and the unconditional turn-end sync in
     web_bridge still carries anything the agent really changed.
 
@@ -221,7 +248,7 @@ def _stats_marker(name, status):
         st = os.stat(os.path.join(STRATEGIES_DIR, name, "stats.json"))
     except (OSError, ValueError):
         return "none"
-    if status == "live":
+    if status == "live" or name in deployed:
         return "exists"
     return f"{st.st_mtime_ns}:{st.st_size}"
 
@@ -234,9 +261,11 @@ def signature():
     0.004s, measured on uid=32321) lagged every chunk behind for nothing.
 
     Not free, though: _scan_sources() still reads and ast-parses every strategy
-    file. That is milliseconds against hundreds, but it is not "one stat"."""
+    file. That is milliseconds against hundreds, but it is not "one stat" — and
+    the deployment registry is read once per call here, not once per strategy."""
+    deployed = _deployed_names()
     return json.dumps(sorted(
-        [s["name"], s["status"], _stats_marker(s["name"], s["status"])]
+        [s["name"], s["status"], _stats_marker(s["name"], s["status"], deployed)]
         for s in _scan_sources()
     ))
 
