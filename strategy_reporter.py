@@ -36,9 +36,12 @@ STATE_DIR = os.environ.get("BLAVE_AGENT_STATE", "/opt/blave-agent/state")
 
 # 回測 tab 的附件圖:strategies/<name>/ 內的圖檔(pnl.png、param heatmap…)。
 # 上限防single檔爆量;數量取 mtime 最新的 N 張。
-_IMG_EXTS = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-             ".webp": "image/webp", ".gif": "image/gif"}
-_IMG_MAX_BYTES = 2 * 1024 * 1024
+# IMG_EXTS / IMG_MAX_BYTES / put_image / record_image_quota 是**公開的**:
+# report_uploader 的圖片 sidecar 走同一條 strategy_image 通道,共用這裡的
+# 副檔名白名單、大小上限與 507 語意,免得兩支各留一份會漂開的實作。
+IMG_EXTS = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".webp": "image/webp", ".gif": "image/gif"}
+IMG_MAX_BYTES = 2 * 1024 * 1024
 _IMG_MAX_COUNT = 8
 _IMG_SIG_PATH = os.path.join(STATE_DIR, "strategy_images_sig.json")
 # Socket timeout per image, and a wall-clock ceiling on the uploads of one call.
@@ -55,7 +58,7 @@ _IMG_UPLOAD_BUDGET_SEC = 30
 # "the api refused an image because this user's S3 storage is full" (HTTP 507 from
 # api/openclaw/agent_strategy_images.py). Written here, read by agent_turn, which turns
 # it into one line of the turn prompt so the agent can say it in chat — see
-# _record_image_quota() for why this one failure is worth persisting and
+# record_image_quota() for why this one failure is worth persisting and
 # agent_turn._image_quota_line() for when it is allowed to be mentioned.
 IMG_QUOTA_PATH = os.path.join(STATE_DIR, "strategy_image_quota.json")
 API_URL = os.environ.get(
@@ -386,7 +389,7 @@ def _list_images(name):
         return out
     for f in entries:
         ext = os.path.splitext(f)[1].lower()
-        mime = _IMG_EXTS.get(ext)
+        mime = IMG_EXTS.get(ext)
         if not mime:
             continue
         p = os.path.join(d, f)
@@ -394,14 +397,14 @@ def _list_images(name):
             st = os.stat(p)
         except OSError:
             continue
-        if not os.path.isfile(p) or st.st_size > _IMG_MAX_BYTES:
+        if not os.path.isfile(p) or st.st_size > IMG_MAX_BYTES:
             continue
         out.append((st.st_mtime, f, p, mime))
     out.sort()
     return out[-_IMG_MAX_COUNT:]
 
 
-def _put_image(data, mime, token):
+def put_image(data, mime, token):
     """Upload one image to S3 via the api. Returns (its {hash} reference, or None so the
     caller falls back to inline base64; whether the api refused on the storage quota).
     Content-addressed: re-sending identical bytes overwrites the same key, so a retry
@@ -411,7 +414,11 @@ def _put_image(data, mime, token):
     clear by itself: every other failure (S3 down, rate limited, socket timeout) means
     the next tick re-sends the same bytes and the picture still arrives, while over
     quota the api drops the image outright — the inline-base64 fallback is refused for
-    the same reason on arrival."""
+    the same reason on arrival.
+
+    Also the report pipeline's image channel (report_uploader._resolve_images), which
+    has no base64 fallback and turns the same two outcomes into "defer the report" vs
+    "ship it without that figure" — hence the neutral log prefix."""
     h = hashlib.sha256(data).hexdigest()
     req = urllib.request.Request(
         f"{IMAGE_URL}/{h}", data=data, method="PUT",
@@ -420,15 +427,15 @@ def _put_image(data, mime, token):
     try:
         urllib.request.urlopen(req, timeout=_IMG_UPLOAD_TIMEOUT).read()
     except urllib.error.HTTPError as e:  # subclass of the below; must be caught first
-        print(f"[strategy_reporter] image upload failed: {e}", file=sys.stderr)
+        print(f"[strategy_image] upload failed: {e}", file=sys.stderr)
         return None, e.code == 507
     except Exception as e:
-        print(f"[strategy_reporter] image upload failed: {e}", file=sys.stderr)
+        print(f"[strategy_image] upload failed: {e}", file=sys.stderr)
         return None, False
     return h, False
 
 
-def _record_image_quota(refused, uploaded, complete=True):
+def record_image_quota(refused, uploaded, complete=True):
     """Persist — or clear — "the api is refusing this machine's images because the
     user's storage is full", for agent_turn to raise in chat.
 
@@ -503,7 +510,7 @@ def attach_images(strategies, token=None):
             except OSError:
                 continue
             if time.monotonic() < deadline:
-                h, over_quota = _put_image(data, mime, token)
+                h, over_quota = put_image(data, mime, token)
             else:
                 # Budget spent: not attempted, so it says nothing either way — and it
                 # makes the whole pass silent about whether the ceiling cleared, since
@@ -516,7 +523,7 @@ def attach_images(strategies, token=None):
             entry["hash" if h else "b64"] = h or base64.b64encode(data).decode()
             payload.append(entry)
         s["images"] = payload  # [] = 圖被清掉,明確清空
-    _record_image_quota(refused, uploaded, complete=not skipped)
+    record_image_quota(refused, uploaded, complete=not skipped)
     return new_sigs
 
 
@@ -720,12 +727,29 @@ def _config_version():
         return None
 
 
+def _can_report():
+    """Is this runtime able to produce agent reports?
+
+    Probes the RUNTIME's own uploader module, not workspace/lib/: lib is a
+    convenience layer the user's own agent may have edited, deleted or never
+    updated, so its state says nothing about what this machine can actually do.
+    The runtime directory is what publish.py ships as one unit.
+
+    Existence, not import: a future uploader may do real work at import time, and
+    "shipped with this release" is exactly the question the web's update prompt
+    asks. Reads False fleet-wide until the uploader itself ships."""
+    return os.path.exists(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "report_uploader.py")
+    )
+
+
 def report_cache(strategies, token=None):
     """POST the list to the backend cache (GET /strategies reads this on page
     load / reload). Reused by the timer AND by web_bridge after each turn.
-    Piggybacks config_version so the web can flag an outdated workspace config."""
+    Piggybacks config_version so the web can flag an outdated workspace config,
+    and can_report so it can gate the reports feature on this machine."""
     token = token or PROXY_TOKEN
-    payload = {"strategies": strategies}
+    payload = {"strategies": strategies, "can_report": _can_report()}
     version = _config_version()
     if version:
         payload["config_version"] = version

@@ -40,6 +40,7 @@ DEBOUNCE_S = 5
 
 ACCOUNT = (SYS_PY, os.path.join(CURRENT, "account_reader.py"))
 REPORT = (VENV_PY, os.path.join(CURRENT, "portfolio_reporter.py"))
+UPLOAD = (VENV_PY, os.path.join(CURRENT, "report_uploader.py"))
 
 # path → jobs to run when its mtime moves (the three Linux path units +
 # one Windows-only Capital watch).
@@ -65,6 +66,14 @@ WATCHES = {
     # (本地讀+一個 POST)。第三方寫的檔,不進 SELF_WRITTEN。Linux 不加對應
     # path unit:群益 API 走 Windows COM,Linux 機不會有這個檔。
     os.path.join(WORKSPACE, "state", "capital_account.json"): (ACCOUNT, REPORT),
+    # 報告 drop dir(契約見 report_uploader.py):任何腳本——含用戶自己的 agent——
+    # 把 <id>.json 寫進去,runtime 撿走上傳。Linux 端的對應是
+    # blave-agent-reports.path,這裡是 Windows 的替身,同 lib/ 那條:目錄 mtime
+    # 只動在檔案增刪,而「有新報告」正好就是新增檔案那一刻。
+    # 刻意不進 SELF_WRITTEN:上傳成功後檔案被搬走會再動一次目錄 mtime、多跑一輪
+    # 空的 uploader(很便宜),但把基準吃掉就會吞掉上傳期間才落地的下一份報告
+    # ——那正是稽核 B5 的形狀。
+    os.path.join(WORKSPACE, "reports"): (UPLOAD,),
 }
 
 
