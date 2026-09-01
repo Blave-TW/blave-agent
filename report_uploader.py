@@ -706,9 +706,13 @@ def main():
         print(f"[report_uploader] {counts}", file=sys.stderr)
     else:
         _idle_note()
-    # 讓失敗在 journal / watcher log 看得見（watcher 只在 rc!=0 時印 stderr）
-    if counts["failed"] or counts["deferred"]:
-        sys.exit(1)
+    # 掃完就是 rc=0。退出碼只講服務級失敗（上面那兩個 exit:沒 token、drop dir 建不
+    # 起來），不講處理結果——deferred 是正常狀態（api 暫時不通、圖還沒寫完、預算用完，
+    # 而 timer 每 2 分鐘就再來一次）、failed 是產出端寫壞一份報告而這支程式**正確地**
+    # 把它歸檔；拿這兩個 exit 1 會讓 unit 長期停在 failed，真故障淹沒在假訊號裡。
+    # 可見性不靠退出碼:counts 那行在 Linux 進 journal、在 Windows 由 run_task.ps1 的
+    # `*>> logs\tasks.log` 無條件收走，而永久失敗另有 upload_errors.log + failed/、
+    # 退避另有 state/report_uploads.json——都是不隨退出碼消失的持久紀錄。
 
 
 if __name__ == "__main__":

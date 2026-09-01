@@ -38,6 +38,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   agent raises in chat). Sidecars move with their report into `sent/` /
   `failed/`; orphaned ones are swept after a day. Contract:
   `.claude/docs/report-blocks.md` §2.5.
+- report_uploader: the exit code speaks only to service-level failure (no
+  `BLAVE_PROXY_TOKEN`, drop dir uncreatable). A round that ran to completion is
+  `rc=0` no matter what it processed — deferrals are a normal state (api
+  briefly down, figure still being written, tick budget spent) and a permanent
+  refusal is the producer's broken report being correctly archived, so exiting
+  1 on either left `blave-agent-reports.service` sitting in `failed` and buried
+  real faults in false ones (seen on 29026). Nothing is lost: the counts line
+  reaches the journal on Linux and `logs\tasks.log` on Windows regardless of
+  rc, and refusals/backoffs keep their durable records in
+  `upload_errors.log` + `failed/` and `state/report_uploads.json`.
 - performance_report: new — deterministic, zero-LLM daily/weekly performance
   reports. Hourly: samples account equity into
   `workspace/state/equity_history.jsonl` (same cadence and per-venue rules as
@@ -97,6 +107,17 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   run that ships nothing now says what it saw ("inside the quiet window" /
   "half-written .tmp" / "backing off") — those were indistinguishable silent
   runs in the journal.
+- performance_report: the daily/weekly equity `line_chart` now carries the
+  account currency as the contract's `line_chart.y_unit` — apart from
+  `drawdown` (the one chart whose unit the contract pins), the web cannot tell
+  a % series from a USDT equity series, so omitting it printed the axis as bare
+  numbers even though the same report's `kpi_row` was already labelling the
+  equity "USDT" (seen on 29026). Only when the currency is known and fits the
+  contract's 8-char limit: a longer string is dropped rather than truncated (a
+  truncated ticker is a wrong unit, which is worse than none), and mixed
+  currencies already drop the whole series upstream, so a chart that exists has
+  exactly one currency or none at all. No other chart block gains a unit:
+  `drawdown` is pinned by the contract and `heatmap` has no such field.
 - jobs.json: `blave-agent-reports` (uploader, 2 min + path/dir trigger) and
   `blave-agent-perfreport` (hourly) on both Linux and Windows.
 

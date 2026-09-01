@@ -470,6 +470,15 @@ def _equity_kpi(equity, currency):
         "label": "帳戶權益", "value": _fmt_amount(equity), "tone": "neutral"}
 
 
+def _y_unit(currency):
+    """權益曲線的縱軸單位(契約 §3「座標單位」)。省略 = 軸上印裸數字。
+
+    契約限 ≤8 字,而 currency 是交易所模組寫進 account.json 的字串,長度沒有保證——
+    截斷會把一個看起來像單位的錯字印在軸上(最壞是截成另一個真幣別的名字),所以超長
+    就不標。混幣別時整段序列已在 equity_series 退掉,走到這裡的幣別必然單一。"""
+    return {"y_unit": currency} if currency and len(currency) <= 8 else {}
+
+
 def _window(points, start_ts, end_ts):
     return [p for p in points if start_ts <= p[0] < end_ts]
 
@@ -519,6 +528,7 @@ def build_daily(day, history, now, deadline=None):
         blocks.append({
             "type": "line_chart", "title": "當日權益",
             "series": [{"name": "帳戶權益", "role": "primary", "points": _thin(window)}],
+            **_y_unit(currency),
             "caption": f"每小時取樣，當日 {len(window)} 點；來源為各交易所回報的權益讀數。",
         })
     if exposure:
@@ -578,6 +588,7 @@ def build_weekly(last_day, history, now, deadline=None):
         blocks.append({
             "type": "line_chart", "title": "本週權益",
             "series": [{"name": "帳戶權益", "role": "primary", "points": _thin(window)}],
+            **_y_unit(currency),
             "caption": f"每小時取樣，本週 {len(window)} 點。",
         })
     if len(points) >= 2 and len(dd_points) >= 2:
