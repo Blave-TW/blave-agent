@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.52 — 2026-09-01
+
 - telegram_bridge: `download_tg_file` scrubs the bot token out of exception text
   before logging — the download URL embeds the token, and exceptions like
   `http.client.InvalidURL` echo the whole URL; with blaveagent now in the
