@@ -34,6 +34,7 @@ curve in front of the user. Single-currency machines — the whole fleet as
 observed — get the full report.
 """
 import json
+import math
 import os
 import platform
 import sys
@@ -58,16 +59,22 @@ _MAX_POINTS = 2000  # 契約上限 5000；抽稀到這個量已經超過任何�
 _MAX_STRATEGY_ROWS = 100
 # systemd TimeoutStartSec=120。stats.json 可以有好幾 MB，而這是 oneshot(每次
 # 都是新 process，沒有 portfolio_reporter 那份 cache 可用)，所以掃策略要有底。
+# **整支程式共用一份**,由 main() 從起點算出絕對截止時刻往下傳:日報與週報各自從
+# 呼叫當下起算的話，星期一那一輪最壞是 60+60 秒再加上取樣，撞穿 TimeoutStartSec
+# 就是 SIGKILL——state 沒存，下一個小時整套重來，然後每小時重演一次。
 _BUDGET_S = 60
 _MIN_RETURN_DAYS = 3   # 少於這個天數的風險指標只是雜訊
 _MIN_HEATMAP_MONTHS = 2
 
 
 def _read_json(path, default=None):
+    # RecursionError(RuntimeError 的子類,不是 ValueError)= 巢狀深到 parser 爆堆疊。
+    # 這裡讀的全是別的 process 寫的磁碟產物(account.json / stats.json / state.json),
+    # 漏接就是 main() 每小時在同一個檔上死掉一次，日報與週報從此不再產出。
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return default
 
 
@@ -93,17 +100,28 @@ def _save_state(state):
 # ── 權益取樣 ──────────────────────────────────────────────────────────────────
 
 
+def _finite(v):
+    """是不是一個**有限**的數。
+
+    型別檢查不夠:`_read_json` 用的是裸 `json.load`,它收得下非標準的 `NaN` /
+    `Infinity` 字面值(交易所模組把一個算壞的權益寫進 account.json 就會長這樣),
+    而那些值 isinstance 是 float、通得過每一道型別閘門,一路流到
+    `append_sample` 的 `json.dumps(allow_nan=False)` 才丟 ValueError——那裡的 try
+    只接 OSError,於是 main() 在取樣階段整支掛掉，日報與週報從此不再產出。
+    非有限數也不該進報告本文:`f"{nan:.2f}"` 是字串 "nan",渲染出來是一格假數字。"""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
 def _venue_equity(entry):
     """一個交易所的權益。accounts(錢包分佈)總和優先、fallback equity——與平台
     快照和工作頁的 pfLiveTotal 同一個語意，三邊不能各算各的。"""
     accounts = entry.get("accounts")
     if isinstance(accounts, dict) and accounts:
-        values = [v for v in accounts.values()
-                  if isinstance(v, (int, float)) and not isinstance(v, bool)]
+        values = [v for v in accounts.values() if _finite(v)]
         if values:
             return float(sum(values))
     equity = entry.get("equity")
-    if isinstance(equity, (int, float)) and not isinstance(equity, bool):
+    if _finite(equity):
         return float(equity)
     return None
 
@@ -128,7 +146,7 @@ def sample_equity(now=None):
         if not isinstance(entry, dict) or not entry.get("ok"):
             continue
         equity = _venue_equity(entry)
-        if equity is None:
+        if not _finite(equity):  # None,或幾個有限數加總溢位成 inf
             continue
         currency = entry.get("currency")
         venues[str(vid)] = {"equity": round(equity, 4),
@@ -150,7 +168,9 @@ def append_sample(sample):
         os.makedirs(WORKSPACE_STATE, exist_ok=True)
         with open(HISTORY_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(sample, ensure_ascii=False, allow_nan=False) + "\n")
-    except OSError as e:
+    # ValueError 是 allow_nan=False 撞到非有限數。上游的 _finite 閘門已經擋掉了，
+    # 但取樣是 main() 的第一步:這裡漏一個例外出去，日報週報就整段不產出。
+    except (OSError, ValueError) as e:
         print(f"[performance_report] equity history append failed: {e}", file=sys.stderr)
         return False
     _compact_history()
@@ -183,7 +203,7 @@ def read_history():
     for line in lines:
         try:
             row = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):  # 深巢的一行同樣只跳過那一行，見 _read_json
             continue
         if isinstance(row, dict) and isinstance(row.get("t"), int) \
                 and isinstance(row.get("venues"), dict):
@@ -196,17 +216,24 @@ def read_history():
 
 
 def equity_series(history):
-    """(points [[t, total]], currency)。混幣別回 ([], None)：見模組 docstring。"""
-    currencies = {v.get("currency") for row in history for v in row["venues"].values()
-                  if v.get("currency")}
+    """(points [[t, total]], currency)。混幣別回 ([], None)：見模組 docstring。
+
+    「沒回報幣別」(currency=None)與任何已知幣別同時出現**也算混幣別**。不知道那一腿
+    是什麼幣，就沒有「同幣別」的根據可以把它加進總和——那等於偷偷假設了一個匯率，
+    正是這個模組拒絕做的事。整台機器都沒回報幣別(集合 = {None})則照舊出圖,
+    只是不標單位:那時候沒有任何一腿被當成別的幣。"""
+    currencies = set()
+    for row in history:
+        for v in row["venues"].values():
+            c = v.get("currency")
+            # 非字串折成 None:currency 一路走到 `currency[:16]`,而歷史檔是磁碟產物
+            currencies.add(c if isinstance(c, str) else None)
     if len(currencies) > 1:
         return [], None
     currency = next(iter(currencies), None)
     points = []
     for row in history:
-        values = [v.get("equity") for v in row["venues"].values()
-                  if isinstance(v.get("equity"), (int, float))
-                  and not isinstance(v.get("equity"), bool)]
+        values = [v.get("equity") for v in row["venues"].values() if _finite(v.get("equity"))]
         if values:
             points.append([int(row["t"]), round(float(sum(values)), 2)])
     return points, currency
@@ -334,16 +361,16 @@ def strategy_rows(deadline=None):
         if isinstance(stats, dict):
             sharpe = stats.get("Sharpe Ratio")
             mdd = stats.get("Max Drawdown [%]")
+        # 非有限數走 None(表格 cell 渲染成 em-dash):一支回測沒有交易的策略,
+        # stats.json 的 Sharpe 就是 NaN,而 f"{nan:.2f}" 是字串 "nan"——一格看起來
+        # 像數字的假數字比一格空白難發現得多。
         rows.append({
             "name": name[:200],
             "symbol": str(state.get("symbol") or "")[:200] or None,
-            "signal": f"{float(position):+.4g}" if isinstance(position, (int, float))
-                      and not isinstance(position, bool) else None,
+            "signal": f"{float(position):+.4g}" if _finite(position) else None,
             "updated": _fmt_time(updated) if updated else None,
-            "sharpe": f"{float(sharpe):.2f}" if isinstance(sharpe, (int, float))
-                      and not isinstance(sharpe, bool) else None,
-            "mdd": _fmt_pct(float(mdd), signed=False) if isinstance(mdd, (int, float))
-                   and not isinstance(mdd, bool) else None,
+            "sharpe": f"{float(sharpe):.2f}" if _finite(sharpe) else None,
+            "mdd": _fmt_pct(float(mdd), signed=False) if _finite(mdd) else None,
         })
     return rows
 
@@ -378,7 +405,7 @@ def exposure_rows():
             if not isinstance(pos, dict):
                 continue
             size = pos.get("size")
-            if not isinstance(size, (int, float)) or isinstance(size, bool) or not size:
+            if not _finite(size) or not size:
                 continue
             actual[str(symbol)] = {"venue": str(venue_id), "side": pos.get("side"),
                                    "size": float(size)}
@@ -398,9 +425,7 @@ def exposure_rows():
             "venue": act["venue"][:200] if act else None,
             "side": str(side)[:200] if side else None,
             "actual": _fmt_amount(act_size) if act_size is not None else None,
-            "target": _fmt_amount(float(tgt_size))
-                      if isinstance(tgt_size, (int, float)) and not isinstance(tgt_size, bool)
-                      else None,
+            "target": _fmt_amount(float(tgt_size)) if _finite(tgt_size) else None,
         })
     return rows[:500], gross
 
@@ -449,8 +474,12 @@ def _window(points, start_ts, end_ts):
     return [p for p in points if start_ts <= p[0] < end_ts]
 
 
-def build_daily(day, history, now):
-    """day = 被報告的那個 UTC 日（通常是昨天）。資料不夠就少幾個 block。"""
+def build_daily(day, history, now, deadline=None):
+    """day = 被報告的那個 UTC 日（通常是昨天）。資料不夠就少幾個 block。
+
+    `deadline` = 掃策略目錄的**絕對**截止時刻,由 main() 算一次分給日報與週報共用
+    (理由見 _BUDGET_S)。單獨呼叫時退回自己的一份預算。"""
+    deadline = time.time() + _BUDGET_S if deadline is None else deadline
     points, currency = equity_series(history)
     start_ts, end_ts = _day_start(day), _day_start(day + timedelta(days=1))
     window = _window(points, start_ts, end_ts)
@@ -479,7 +508,7 @@ def build_daily(day, history, now):
         if latest:
             items.append({"label": "敞口 / 權益", "value": _fmt_pct(gross / latest * 100, False),
                           "tone": "neutral"})
-    strategies = strategy_rows(deadline=time.time() + _BUDGET_S)
+    strategies = strategy_rows(deadline=deadline)
     if strategies:
         items.append({"label": "策略數", "value": str(len(strategies)), "tone": "neutral"})
 
@@ -508,8 +537,9 @@ def build_daily(day, history, now):
             "created_at": int(now), "blocks": blocks}
 
 
-def build_weekly(last_day, history, now):
-    """last_day = 被報告那一週的最後一個 UTC 日（星期日）。"""
+def build_weekly(last_day, history, now, deadline=None):
+    """last_day = 被報告那一週的最後一個 UTC 日（星期日）。`deadline` 同 build_daily。"""
+    deadline = time.time() + _BUDGET_S if deadline is None else deadline
     first_day = last_day - timedelta(days=6)
     points, currency = equity_series(history)
     start_ts, end_ts = _day_start(first_day), _day_start(last_day + timedelta(days=1))
@@ -597,7 +627,7 @@ def build_weekly(last_day, history, now):
         blocks.append({"type": "table", "title": "敞口", "columns": _EXPOSURE_COLUMNS,
                        "rows": exposure,
                        "caption": "實際部位取自交易所讀數，對帳目標取自最近一次 reconcile。"})
-    strategies = strategy_rows(deadline=time.time() + _BUDGET_S)
+    strategies = strategy_rows(deadline=deadline)
     if strategies:
         blocks.append({"type": "table", "title": "分策略", "columns": _STRATEGY_COLUMNS,
                        "rows": strategies,
@@ -625,6 +655,8 @@ def due(now):
 
 def main():
     now = int(time.time())
+    # process 起點算一次，日報 + 週報 + 取樣全部共用(見 _BUDGET_S)
+    deadline = time.time() + _BUDGET_S
     if append_sample(sample_equity(now)):
         print("[performance_report] equity sample recorded", file=sys.stderr)
 
@@ -636,9 +668,9 @@ def main():
     changed = False
     for key, report_id, build in (
         ("daily", f"daily-{daily_day.isoformat()}",
-         lambda: build_daily(daily_day, history, now)),
+         lambda: build_daily(daily_day, history, now, deadline)),
         ("weekly", f"wk-{weekly_day.isoformat()}",
-         lambda: build_weekly(weekly_day, history, now)),
+         lambda: build_weekly(weekly_day, history, now, deadline)),
     ):
         if state.get(key) == report_id:
             continue

@@ -128,7 +128,10 @@ def download_tg_file(token, file_id, name):
             f.write(data)
         return name
     except Exception as e:
-        print(f"[telegram_bridge] file download failed: {e}", file=sys.stderr)
+        # file_path 是 Telegram 伺服器回的值,拼進含 bot token 的 URL——InvalidURL
+        # 這類例外會內嵌整條 URL,印出前把 token 洗掉(journal 對 blaveagent 可讀)
+        print(f"[telegram_bridge] file download failed: "
+              f"{str(e).replace(token, '***')}", file=sys.stderr)
         return None
 
 

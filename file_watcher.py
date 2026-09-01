@@ -73,6 +73,9 @@ WATCHES = {
     # 刻意不進 SELF_WRITTEN:上傳成功後檔案被搬走會再動一次目錄 mtime、多跑一輪
     # 空的 uploader(很便宜),但把基準吃掉就會吞掉上傳期間才落地的下一份報告
     # ——那正是稽核 B5 的形狀。
+    # 這裡不必補「太新就重跑一次」:2 秒輪詢撞上 uploader 的 QUIET_S 靜默期跟
+    # Linux path unit 是同一個形狀,而那段等待做在 uploader 自己的 main() 裡
+    # (跑的是同一支程式),Windows 這條跟著一起好。
     os.path.join(WORKSPACE, "reports"): (UPLOAD,),
 }
 

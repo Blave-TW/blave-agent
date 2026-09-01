@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- telegram_bridge: `download_tg_file` scrubs the bot token out of exception text
+  before logging — the download URL embeds the token, and exceptions like
+  `http.client.InvalidURL` echo the whole URL; with blaveagent now in the
+  systemd-journal group, stderr is readable by user-side code on the machine.
 - report_uploader: new — the machine's only path from a report JSON to
   `PUT /openclaw/agent/report/<id>`, and the owner of the drop-dir contract
   (`workspace/reports/<id>.json`, written atomically, id = file stem). Runs a
@@ -48,8 +52,51 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   without it the signed ones (年化報酬, 最大回撤) lose their up/down colour.
   Needs an api that accepts the field (same release train as the rest of this
   section); an older api refuses the whole report with 400.
+- report_uploader: a deeply nested report JSON is now refused into `failed/`
+  instead of killing the run. `json.loads` raises `RecursionError` on it, which
+  is a `RuntimeError` subclass and NOT a `ValueError`, so it went straight
+  through `upload_one` → `run_once` → `main()` with `_save_state` never
+  reached — and since `pending()` orders by mtime, oldest first, the poison file
+  sorts first on every subsequent path/timer run, so one such file meant that
+  machine never shipped another report until somebody SSH'd in and deleted it.
+  Same widening on `_read_json` (the backoff state file) and on `_serialize`.
+- report_uploader: a report file is size-checked before it is read. Anything
+  past 4× `REPORT_MAX_BYTES` cannot serialize under the 2 MB ceiling anyway, and
+  reading a multi-GB file out of the drop dir just to find that out would OOM
+  the machine; it is refused into `failed/` unread.
+- performance_report: non-finite numbers are gated everywhere they enter, not
+  just type-checked. `_read_json` uses a bare `json.load`, which ACCEPTS the
+  non-standard `NaN` / `Infinity` literals, so a venue reporting a broken equity
+  reached `append_sample`'s `json.dumps(allow_nan=False)` and raised a
+  `ValueError` that the surrounding `except OSError` did not catch — `main()`
+  died in the sampling step and the daily/weekly reports were never produced at
+  all. The same gate keeps a NaN backtest Sharpe out of the per-strategy table,
+  where `f"{nan:.2f}"` had been rendering the string `nan` as if it were a
+  number.
+- performance_report: the daily and weekly builds now share ONE deadline,
+  computed at the start of `main()`. Each used to anchor its own
+  `time.time() + _BUDGET_S` at call time, so a Monday run could spend 60s + 60s
+  plus sampling and blow through the unit's `TimeoutStartSec=120` — SIGKILL,
+  state unsaved, the whole thing repeated the next hour.
+- performance_report: a venue that reports no currency at all now degrades the
+  equity series the same way a genuinely mixed-currency account does. It used to
+  be dropped from the currency set and silently summed in with the known ones,
+  which is exactly the invented fx rate this module refuses to produce. A
+  machine where NO venue reports a currency still gets its chart, unlabelled.
 - file_watcher: watches the reports drop dir (Windows stand-in for the new
   `blave-agent-reports.path`).
+- report_uploader: a run woken by the drop-dir trigger now waits out the
+  half-written-file quiet window (≤3s, on the same tick budget) and rescans
+  once, instead of exiting empty-handed. The trigger fires milliseconds after
+  the write, so every report was inside `QUIET_S` when the run started and
+  systemd never re-triggers for events during a run — measured 148s from
+  landing to upload, i.e. the path unit was a no-op for normal writes. The
+  guard itself is untouched: a file still being written when the wait ends
+  falls to the 2-minute timer as before, and a run with nothing new never
+  sleeps. Same fix on Windows, where `file_watcher` runs the same script. A
+  run that ships nothing now says what it saw ("inside the quiet window" /
+  "half-written .tmp" / "backing off") — those were indistinguishable silent
+  runs in the journal.
 - jobs.json: `blave-agent-reports` (uploader, 2 min + path/dir trigger) and
   `blave-agent-perfreport` (hourly) on both Linux and Windows.
 

@@ -87,6 +87,9 @@ _ENVELOPE = ("schema_version", "id", "type", "title", "created_at", "blocks")
 # 半寫檔防線：mtime 比這個新的檔留到下一輪。原子換檔才是主要保證，這只是給沒照
 # 契約寫的產出端的網子。
 QUIET_S = 2
+# 這支程式唯一的 sleep，上限 = 一份剛落地的檔最多就差 QUIET_S 秒，多的 1 秒是給
+# mtime 粒度與時鐘校正的餘裕(也順便封住 mtime 在未來的檔)。理由見 main()。
+QUIET_WAIT_MAX_S = QUIET_S + 1
 UPLOAD_TIMEOUT = 20
 # systemd TimeoutStartSec=120：預算 + 一個在途請求要留在裡面。超過就把剩下的檔
 # 留給下一輪——drop dir 本身就是佇列，沒有東西會因此遺失。（實測前例：
@@ -107,13 +110,25 @@ _ERROR_LOG_KEEP_LINES = 200
 # 判死；一天的 api 中斷同理不該讓報告消失。累積量由產出速率自然設限。
 _PERMANENT_STATUS = (400, 413)
 
+# json 的 loads/dumps 在夠深的巢狀上丟的是 RecursionError,而它是 RuntimeError 的
+# 子類、**不是** ValueError。只接 ValueError 的話這個例外會一路穿透 upload_one →
+# run_once,main() 當場死掉而且 _save_state 沒跑;pending() 又是 mtime 最舊優先，
+# 毒檔永遠排第一 → 之後每一輪 path/timer 觸發都在同一個檔上死掉，那台機器的所有
+# 報告永久送不出去,直到有人 SSH 進去手刪。深巢是「重送同樣的 bytes 永遠不會變對」
+# 的那一類，所以判永久失敗進 failed/。
+_JSON_ERRORS = (ValueError, RecursionError)
+# 讀檔前的大小預檢。上限是序列化後的 body,磁碟上那份可能帶縮排、或用
+# ensure_ascii=True 把每個中文字寫成 6 bytes(utf-8 是 3),所以留 4 倍餘裕;超過就
+# 不可能序列化到 2MB 以內，而為了確認這件事把幾 GB 讀進記憶體會 OOM 掉整台機器。
+_READ_MAX_BYTES = 4 * REPORT_MAX_BYTES
+
 
 def _read_json(path, default=None):
     # utf-8 明寫：報告標題與策略名帶中文，cp950 的 Windows 機用 locale 預設會炸
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except (OSError, ValueError):
+    except (OSError,) + _JSON_ERRORS:
         return default
 
 
@@ -244,7 +259,7 @@ def _serialize(doc):
     ——NaN/Infinity 送出去 api 一定 400，在這裡擋掉省一趟。"""
     try:
         body = json.dumps(doc, ensure_ascii=False, allow_nan=False).encode("utf-8")
-    except ValueError as e:
+    except _JSON_ERRORS as e:
         return None, f"report: not valid JSON ({e})"
     if len(body) > REPORT_MAX_BYTES:
         return None, (f"report: {len(body)} bytes exceeds the "
@@ -491,6 +506,46 @@ def _newest_mtime(report_id, path):
     return newest
 
 
+def _quiet_left(report_id, path, now):
+    """離靜默期滿還有幾秒(<= 0 = 這一輪可以動它)。
+
+    半寫檔防線的**唯一**實作:upload_one 用它擋、pending_status 用它算還要等多久，
+    兩邊講的才會是同一件事。讀不到 mtime 當成還沒靜置(同 upload_one 原本的處置)。"""
+    try:
+        return QUIET_S - (now - _newest_mtime(report_id, path))
+    except OSError:
+        return QUIET_S
+
+
+def pending_status(state=None, now=None):
+    """drop dir 現在卡在哪：{"quiet_wait": 秒, "quiet": 份數, "deferring": 份數,
+    "tmp": 份數}。
+
+    `quiet_wait` 是 main() 決定要不要多等一輪的唯一依據,只算「唯一阻礙是 QUIET_S」
+    的檔——退避中的等再久也不會動，所以不算；沒有這種檔就回 0，timer 觸發的那一輪
+    因此一秒都不多付。其餘三項只用來在 journal 上交代這一輪看到了什麼。"""
+    now = time.time() if now is None else now
+    state = _load_state() if state is None else state
+    out = {"quiet_wait": 0.0, "quiet": 0, "deferring": 0, "tmp": 0}
+    for report_id, path in pending():
+        entry = state.get(report_id)
+        if isinstance(entry, dict) and now < (entry.get("next_at") or 0):
+            out["deferring"] += 1
+            continue
+        left = _quiet_left(report_id, path, now)
+        if left > 0:
+            out["quiet"] += 1
+            out["quiet_wait"] = max(out["quiet_wait"], left)
+    if out["quiet_wait"]:
+        # +0.05 = mtime 粒度的餘裕，免得睡醒還差幾微秒又被自己的防線擋下
+        out["quiet_wait"] = min(out["quiet_wait"] + 0.05, QUIET_WAIT_MAX_S)
+    try:
+        out["tmp"] = sum(1 for n in os.listdir(REPORTS_DIR) if n.endswith(".tmp"))
+    except OSError:
+        pass
+    return out
+
+
 def upload_one(report_id, path, state, token, started=None):
     """一份報告走完一輪。回傳 'sent' / 'failed' / 'deferred' / 'skipped'。
 
@@ -501,14 +556,23 @@ def upload_one(report_id, path, state, token, started=None):
                           "file name is not a valid report id ([A-Za-z0-9_-]{1,64})",
                           state)
         return "failed"
-    try:
-        if time.time() - _newest_mtime(report_id, path) < QUIET_S:
-            return "skipped"  # 可能還在寫，留給下一輪
-    except OSError:
-        return "skipped"
+    if _quiet_left(report_id, path, time.time()) > 0:
+        return "skipped"  # 可能還在寫，留給下一輪（main() 會等滿再掃一次）
     entry = state.get(report_id)
     if isinstance(entry, dict) and time.time() < (entry.get("next_at") or 0):
         return "skipped"
+
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        print(f"[report_uploader] {report_id} not sizeable this tick: {e}", file=sys.stderr)
+        return "skipped"
+    if size > _READ_MAX_BYTES:
+        _fail_permanently(report_id, path,
+                          f"file is {size} bytes; anything past {_READ_MAX_BYTES} cannot "
+                          f"serialize under the {REPORT_MAX_BYTES} byte ceiling",
+                          state)
+        return "failed"
 
     try:
         with open(path, encoding="utf-8") as f:
@@ -523,7 +587,7 @@ def upload_one(report_id, path, state, token, started=None):
         return "failed"
     try:
         doc = json.loads(raw)
-    except ValueError as e:
+    except _JSON_ERRORS as e:
         _fail_permanently(report_id, path, f"file is not valid JSON ({e})", state)
         return "failed"
     if isinstance(doc, dict):
@@ -571,8 +635,11 @@ def upload_one(report_id, path, state, token, started=None):
     return "sent"
 
 
-def run_once(token=None):
-    """掃一次 drop dir。回傳 {結果： 數量}。"""
+def run_once(token=None, started=None):
+    """掃一次 drop dir。回傳 {結果： 數量}。
+
+    `started` = TICK_BUDGET_S 的計時起點。main() 等完靜默期的第二輪沿用第一輪的
+    起點，兩輪加起來的最壞時長才還在 unit 的 TimeoutStartSec 裡。"""
     token = token or PROXY_TOKEN
     counts = {"sent": 0, "failed": 0, "deferred": 0, "skipped": 0}
     _sweep_orphan_files()  # 孤兒 sidecar 正好是「沒有報告可掃」的那一輪才留下來的
@@ -580,7 +647,7 @@ def run_once(token=None):
     if not files:
         return counts
     state = _load_state()
-    started = time.time()
+    started = time.time() if started is None else started
     for report_id, path in files:
         if time.time() - started > TICK_BUDGET_S:
             counts["skipped"] += 1
@@ -591,6 +658,24 @@ def run_once(token=None):
         state.pop(gone)  # 檔案沒了（送出或人工刪掉），退避紀錄跟著走
     _save_state(state)
     return counts
+
+
+def _idle_note():
+    """一輪什麼都沒送出去時，說一句掃到了什麼。
+
+    一份報告會叫醒兩輪(.tmp 落地動一次目錄 mtime，os.replace 再動一次)，兩輪原本
+    都完全無輸出，journal 上分不出「看到 .json 但還在靜默期」跟「只看到寫到一半的
+    .tmp」。真的空目錄照樣不說話——沉默因此只剩一個意思。"""
+    st = pending_status()
+    bits = []
+    if st["quiet"]:
+        bits.append(f"{st['quiet']} inside the {QUIET_S}s quiet window")
+    if st["deferring"]:
+        bits.append(f"{st['deferring']} backing off")
+    if st["tmp"]:
+        bits.append(f"{st['tmp']} half-written .tmp")
+    if bits:
+        print("[report_uploader] nothing shipped: " + ", ".join(bits), file=sys.stderr)
 
 
 def main():
@@ -604,9 +689,23 @@ def main():
     except OSError as e:
         print(f"[report_uploader] cannot create {REPORTS_DIR}: {e}", file=sys.stderr)
         sys.exit(1)
-    counts = run_once()
+    started = time.time()
+    counts = run_once(started=started)
+    # blave-agent-reports.path 是寫檔後**毫秒內**觸發的，所以它叫醒的這一輪看到的
+    # 報告必定還在 QUIET_S 靜默期裡；而 systemd 不會為執行期間發生的事件重新觸發，
+    # 這一輪空手而回就等於 path 觸發失效，每份報告都要等滿下一次 2 分鐘 timer
+    # (實測 148 秒)。等滿靜默期再掃一次即可：防線本身一動也沒動，只是這一輪不提早
+    # 收工。沒有「只差靜默期」的檔就不等，所以 timer 觸發的那一輪、以及上傳後搬檔
+    # 造成的空觸發，一秒都不多付。只重掃一次：睡醒還在寫的檔是產出端沒照契約寫，
+    # 那本來就該落到 timer 手上，不是在這裡陪它耗掉 unit 的 TimeoutStartSec。
+    wait = pending_status()["quiet_wait"]
+    if wait and time.time() - started + wait < TICK_BUDGET_S:
+        time.sleep(wait)
+        counts = {k: counts[k] + v for k, v in run_once(started=started).items()}
     if counts["sent"] or counts["failed"] or counts["deferred"]:
         print(f"[report_uploader] {counts}", file=sys.stderr)
+    else:
+        _idle_note()
     # 讓失敗在 journal / watcher log 看得見（watcher 只在 rc!=0 時印 stderr）
     if counts["failed"] or counts["deferred"]:
         sys.exit(1)
