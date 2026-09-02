@@ -8,7 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- `agent_turn._SUGGEST_RULE` 優化選項: no more "scan the parameters" suggestion once the
+  strategy folder has a `scan.json` or the turn is the adopt-and-rebacktest of scanned
+  params; the MCPT line no longer suggests running MCPT (automatic in every Type A
+  backtest, p-value in `stats.json`) — instead p-value > 0.05 → suggest a filter or a
+  different signal, not parameter tuning.
 
 ## 1.1.57 — 2026-09-03
 
