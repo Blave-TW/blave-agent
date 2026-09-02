@@ -24,6 +24,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   adds `report_schedules` to the cache payload (registration + last run +
   `next_run_at` from a built-in 5-field cron evaluator; `{id, error}` for a job
   it will not install) — omitted, not emptied, if the scan itself fails.
+
+## 1.1.53 — 2026-09-02
+
 - performance_report: the daily report gains a 運行狀況 section after the
   existing blocks — one `table` row per strategy known to either
   `strategies/*/state.json` or `state/deployments.json` (排程 = the registry's
@@ -89,6 +92,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   inf string anywhere, `due()` across the year boundary and a leap February,
   and proves the check is wired to the validator by over-filling one metric
   cell (must 400).
+
 ## 1.1.52 — 2026-09-01
 
 - telegram_bridge: `download_tg_file` scrubs the bot token out of exception text
