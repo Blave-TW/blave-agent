@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.58 — 2026-09-03
+
 - `agent_turn._SUGGEST_RULE` 優化選項: no more "scan the parameters" suggestion once the
   strategy folder has a `scan.json` or the turn is the adopt-and-rebacktest of scanned
   params; the MCPT line no longer suggests running MCPT (automatic in every Type A
