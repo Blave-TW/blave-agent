@@ -21,6 +21,7 @@ import os
 import re
 import ssl
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -1372,6 +1373,55 @@ def _maybe_push_strategies(sink, last_sig):
     return sig
 
 
+_SYSPROMPT_STALE_SEC = 6 * 3600
+
+
+def _write_system_prompt_file(text):
+    """Append-system-prompt goes to the CLI as a file, not an argv string.
+
+    The SDK turns system_prompt["append"] into `--append-system-prompt <text>` on the
+    claude command line. Windows CreateProcess caps the whole command line at 32,767
+    chars, so the ceiling is set by AGENTS.md's size and both surfaces hit it: AGENTS.md
+    grew from 26,709 (08-29) to 32,384 chars (09-03), pushing the total past the cap
+    (web: + catalog 635 + preferences 453 + formatting rule 2,704; Telegram's rule is
+    832 — it happened to still fit on the box that broke, but on config HEAD its total
+    is 34,304, over the cap too) → WinError 206 → Python FileNotFoundError → the SDK's
+    connect() reports CLINotFoundError("Claude Code not found at: ...claude.exe") and
+    every turn failed (2026-09-03, uid=1 large_win). Linux has no such cap but takes
+    the same path so there is one behaviour to reason about (and 40 KB less argv per
+    turn). `--append-system-prompt-file` is a hidden flag verified on claude 2.1.239 /
+    2.1.246 / 2.1.258 (missing file → "Append system prompt file not found"; unknown
+    flags → "unknown option").
+
+    One file per turn (telegram + web bridges can run turns concurrently), in the state
+    dir the bridges already write session.db to (SYSTEM-writable on Windows); the
+    caller unlinks it in its finally. That finally is skipped when the bridge kills the
+    turn (web_bridge TURN_TIMEOUT proc.kill(), telegram_bridge subprocess timeout),
+    OOM, or reboot, and prune_job only sweeps tmp/inbound — so stale sysprompt files
+    (older than 6 h; TURN_TIMEOUT is 35 min, a concurrent turn's file is never that
+    old) are swept here before creating the next one.
+    """
+    state_dir = strategy_reporter.STATE_DIR
+    os.makedirs(state_dir, exist_ok=True)
+    cutoff = time.time() - _SYSPROMPT_STALE_SEC
+    try:
+        for name in os.listdir(state_dir):
+            if not (name.startswith("sysprompt-") and name.endswith(".md")):
+                continue
+            stale = os.path.join(state_dir, name)
+            try:
+                if os.path.getmtime(stale) < cutoff:
+                    os.unlink(stale)
+            except OSError as e:
+                print(f"[agent_turn] 清不掉殘留的 {name}: {e}", file=sys.stderr)
+    except OSError as e:
+        print(f"[agent_turn] 掃 sysprompt 殘留檔失敗: {e}", file=sys.stderr)
+    fd, path = tempfile.mkstemp(prefix="sysprompt-", suffix=".md", dir=state_dir)
+    with os.fdopen(fd, "wb") as f:
+        f.write(text.encode("utf-8"))
+    return path
+
+
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None):
     summary, recent = ss.get_context(session_id)
     prompt = build_prompt(summary, recent, message,
@@ -1419,6 +1469,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         turn_env["BLAVE_WEB_REPORT_TOKEN"] = sink.report_token
         turn_env["BLAVE_WEB_SESSION"] = sink.session_id
 
+    sysprompt_path = _write_system_prompt_file(
+        agents_md + model_catalog_rule(session_id) + preferences_rule() + sink.formatting_rule
+    ) if agents_md else None
     options = sdk.ClaudeAgentOptions(
         model=model,
         env=turn_env,
@@ -1433,13 +1486,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         allowed_tools=ALLOWED_TOOLS,
         disallowed_tools=["Task", "Agent"],
         # Keep Claude Code's own default system prompt (tool-use guidance
-        # etc.) and append AGENTS.md + this surface's formatting rule on top.
-        system_prompt={
-            "type": "preset",
-            "preset": "claude_code",
-            "append": agents_md + model_catalog_rule(session_id)
-            + preferences_rule() + sink.formatting_rule,
-        } if agents_md else None,
+        # etc.) and append AGENTS.md + this surface's formatting rule on top —
+        # via file, not argv (see _write_system_prompt_file). A preset without
+        # "append" makes the SDK emit no system-prompt flag at all.
+        system_prompt={"type": "preset", "preset": "claude_code"} if sysprompt_path else None,
         # 實測「建策略+回測+調參」正常就要 20+ 步(BTC RSI 那輪 21 步被砍在半路,
         # $1.46 白燒)。步數放寬到 50,真正的煞車改用預算——失控迴圈燒錢才是
         # 原本要防的事,用錢設限比步數合理。
@@ -1463,6 +1513,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # activity line shows one step at a time anyway and reasoning is far more
     # tokens than the reply. Set after construction, not as a kwarg: on an SDK
     # build without the field that would be a TypeError killing every turn.
+    if sysprompt_path:
+        # Set after construction for the same reason as include_partial_messages
+        # below: an SDK build whose options lack extra_args must not kill every turn.
+        options.extra_args = {"append-system-prompt-file": sysprompt_path}
     if _SUPPORTS_PARTIAL:
         options.include_partial_messages = True
     else:
@@ -1559,6 +1613,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             sink.set_error("處理這則訊息時發生錯誤，稍後再試一次。")
     finally:
         await sink.stop()
+        if sysprompt_path:
+            try:
+                os.unlink(sysprompt_path)
+            except OSError as e:
+                # Windows AV can hold the file briefly (web_bridge.py has the same
+                # note); the next turn's stale sweep picks it up — but say so.
+                print(f"[agent_turn] 刪不掉 {sysprompt_path}: {e}", file=sys.stderr)
 
     reply_text = sink.finalize()
     ss.append_turn(session_id, "assistant", reply_text)

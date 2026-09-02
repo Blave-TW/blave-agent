@@ -10,6 +10,22 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.59 — 2026-09-03
+
+- `agent_turn`: the appended system prompt (AGENTS.md + catalog / preferences / formatting
+  rules) now reaches claude via `--append-system-prompt-file <state/sysprompt-*.md>`
+  (one temp file per turn, unlinked in the turn's `finally`; files older than 6 h are
+  swept before the next one is created, since a killed turn / OOM / reboot skips that
+  `finally`) instead of `system_prompt["append"]` → `--append-system-prompt <text>` on
+  argv. Windows CreateProcess caps the command line at 32,767 chars, so the ceiling is
+  set by AGENTS.md's size and both surfaces hit it: AGENTS.md grew from 26,709 (08-29)
+  to 32,384 chars (09-03), pushing the total past the cap → WinError 206 → SDK
+  `CLINotFoundError` → every web turn `turn failed` (2026-09-03, uid=1 large_win;
+  Telegram's total is over the cap on config HEAD too). Same path on Linux. Flag
+  verified on claude 2.1.239 / 2.1.246 / 2.1.258. `extra_args` is set after options
+  construction (like `include_partial_messages`) so an SDK build without the field
+  doesn't kill every turn; tests/stubs gains the field.
+
 ## 1.1.58 — 2026-09-03
 
 - `agent_turn._SUGGEST_RULE` 優化選項: no more "scan the parameters" suggestion once the
