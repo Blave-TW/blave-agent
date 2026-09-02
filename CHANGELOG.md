@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.54 — 2026-09-02
+
+- report crontab lines address the runner through `<BASE>/current/`, not the resolved
+  `releases/<version>/` path `__file__` gives on a machine (29026 e2e) — a line is only
+  rewritten when it changes, so a pinned path would keep every job on the release it was
+  installed under.
 - Scheduled reports (`.claude/docs/report-schedules.md`): the agent registers a
   job by writing `workspace/report_jobs/<id>/{job.json,run.py}`; this runtime
   owns everything after that. New `report_runner.py <id>` runs the script
