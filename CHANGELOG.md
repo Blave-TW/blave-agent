@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.57 — 2026-09-03
+
 - Watchboard (`.claude/docs/watchboard.md` §4): `report_uploader` also sweeps
   `workspace/watch/` — `ops/*.json` POSTed to `/openclaw/agent/watch/ops` in file-name
   order (200 → `ops/sent/`, 4xx other than 408/429 → `ops/failed/`, else backoff) and
