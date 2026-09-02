@@ -8,7 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- strategy_reporter: `strategies/<name>/scan.json` (blaveclaw-config
+  `lib/param_scan.write_scan`, the 穩健參數 grid) is reported as the strategy's
+  top-level `scan`, sibling of `backtest`; absent / unparseable → key absent, never
+  fatal. `signature()` gains a fourth column (scan.json mtime+size, no live
+  exemption — only an explicit scan writes it) so a finished scan reaches the open
+  workspace mid-turn. Shape validation is the api's (`agent_strategies._clean_scan`,
+  drops the key alone). Check: tests/check_strategy_scan.py.
 
 ## 1.1.54 — 2026-09-02
 

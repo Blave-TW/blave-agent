@@ -199,6 +199,33 @@ def _read_backtest(name):
     return data if isinstance(data, dict) else None
 
 
+def _read_scan(name):
+    """Parameter-scan output (blaveclaw-config lib/param_scan.write_scan) lands in
+    strategies/<name>/scan.json — a rows×cols Sharpe grid + neighbourhood means +
+    peak/plateau/current markers, feeding the workspace 穩健參數 tab. Same
+    fail-soft contract as _read_backtest: None when absent / unreadable / not an
+    object. Shape validation is the api's job (agent_strategies._clean_scan)."""
+    path = os.path.join(STRATEGIES_DIR, name, "scan.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _scan_marker(name):
+    """signature() column for strategies/<name>/scan.json: mtime+size or "none".
+    No live/deployed exemption unlike _stats_marker — scan.json is only written by
+    an explicit parameter scan, never by the per-bar tick, so tracking its mtime
+    fires exactly when the user asked for something. Same ValueError note."""
+    try:
+        st = os.stat(os.path.join(STRATEGIES_DIR, name, "scan.json"))
+    except (OSError, ValueError):
+        return "none"
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
 def _deployed_names():
     """STRATEGY_NAMEs deployed for live trading per state/deployments.json — the
     deployment truth. A web-driven deploy runs the strategy with BLAVE_MODE=live in
@@ -258,8 +285,8 @@ def _stats_marker(name, status, deployed=frozenset()):
 
 def signature():
     """Cheap "has the inventory changed" fingerprint: name + status + the stats
-    marker above, with no stats.json parsed. agent_turn calls this after every
-    tool step and only pays for scan() when it differs — a 5min strategy's
+    and scan markers above, with no stats.json / scan.json parsed. agent_turn
+    calls this after every tool step and only pays for scan() when it differs — a 5min strategy's
     stats.json is ~4.7MB, and parsing three of them on every step (0.30s vs
     0.004s, measured on uid=32321) lagged every chunk behind for nothing.
 
@@ -268,7 +295,8 @@ def signature():
     the deployment registry is read once per call here, not once per strategy."""
     deployed = _deployed_names()
     return json.dumps(sorted(
-        [s["name"], s["status"], _stats_marker(s["name"], s["status"], deployed)]
+        [s["name"], s["status"], _stats_marker(s["name"], s["status"], deployed),
+         _scan_marker(s["name"])]
         for s in _scan_sources()
     ))
 
@@ -337,12 +365,16 @@ def _scan_sources():
 
 
 def scan():
-    """The full inventory: sources plus each strategy's parsed backtest."""
+    """The full inventory: sources plus each strategy's parsed backtest and
+    parameter scan (both optional, both absent rather than null when missing)."""
     strategies = _scan_sources()
     for s in strategies:
         bt = _read_backtest(s["name"])
         if bt is not None:
             s["backtest"] = bt
+        sc = _read_scan(s["name"])
+        if sc is not None:
+            s["scan"] = sc
         # Web-side hint so the 下單設定 picker can grey the checkbox out; the
         # authoritative block is _cmd_amounts' save-time guard (a stale cache
         # here must not be the only defense). False when unknown — fail open,
