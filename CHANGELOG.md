@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.55 — 2026-09-02
+
 - strategy_reporter: `strategies/<name>/scan.json` (blaveclaw-config
   `lib/param_scan.write_scan`, the 穩健參數 grid) is reported as the strategy's
   top-level `scan`, sibling of `backtest`; absent / unparseable → key absent, never
