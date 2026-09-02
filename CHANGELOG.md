@@ -8,7 +8,27 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- performance_report retired: Blave Agent ships **no built-in report** — every
+  report is a job the user registered under `workspace/report_jobs/`
+  (`.claude/docs/report-schedules.md`) or asked for in chat. The hourly equity
+  sampling into `workspace/state/equity_history.jsonl` goes with it (nothing else
+  read that file; the platform keeps `agent_equity_snapshot`).
+  `blave-agent-perfreport.{service,timer}` and the Windows `blave-agent-perfreport`
+  task leave `jobs.json` + `blave_agent/systemd/`. **Fleet mechanism — read before
+  assuming the timer is gone:** the manifest has no remove semantics.
+  `control/updater.py apply_jobs` only installs listed units and `enable --now`s the
+  `enable: true` ones; `_apply_windows_tasks` only registers listed tasks. A dropped
+  entry (and equally `"enable": false`) leaves the unit enabled / the task
+  registered on every machine that took 1.1.52–1.1.54, and control/ cannot update
+  itself. So `performance_report.py` stays as a tombstone that exits 0: those
+  machines keep an hourly fire that reads nothing, writes nothing and uploads
+  nothing, instead of an hourly `failed` unit. Actually removing it is a
+  per-machine hand step (`systemctl disable --now blave-agent-perfreport.timer`,
+  rm the two unit files, `daemon-reload` / `Unregister-ScheduledTask
+  blave-agent-perfreport`), after which the tombstone can be deleted. Existing
+  `daily-*` / `wk-*` / `mo-*` reports and `state/equity_history.jsonl`,
+  `state/performance_report.json` are left in place. tests/check_report_pipeline.py
+  shrinks to the uploader half (the fixtures stand in for the generator's docs).
 
 ## 1.1.55 — 2026-09-02
 
