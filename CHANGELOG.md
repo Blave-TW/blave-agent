@@ -8,6 +8,87 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- Scheduled reports (`.claude/docs/report-schedules.md`): the agent registers a
+  job by writing `workspace/report_jobs/<id>/{job.json,run.py}`; this runtime
+  owns everything after that. New `report_runner.py <id>` runs the script
+  (cwd=workspace, system python, `BLAVE_*` stripped, 600 s), classifies the run
+  `ok` / `skipped` (exit 0, no new `reports/*.json`) / `failed`, appends to
+  `runs.jsonl` (last 50 kept), overwrites `run.log`, and on `failed` calls
+  `manager/alert_failure.py` best-effort. `command_listener._sync_report_crons`
+  installs one `# blave-report:<id>` crontab line (Linux) / `blave-web-report-<id>`
+  scheduled task (Windows, cron subset only) per enabled job, under `_cron_lock`,
+  every scheduler tick and after each `report_*` command; the crontab is only
+  rewritten when the tagged set differs. Five new commands: `report_pause`,
+  `report_resume`, `report_run_now`, `report_delete`, `report_edit_pending`
+  (args `{id}`; the last also takes `prompt` / `schedule_human`). `strategy_reporter`
+  adds `report_schedules` to the cache payload (registration + last run +
+  `next_run_at` from a built-in 5-field cron evaluator; `{id, error}` for a job
+  it will not install) — omitted, not emptied, if the scan itself fails.
+- performance_report: the daily report gains a 運行狀況 section after the
+  existing blocks — one `table` row per strategy known to either
+  `strategies/*/state.json` or `state/deployments.json` (排程 = the registry's
+  `type`, 最後成功執行 = `state/heartbeat/<name>` mtime as 「3 小時前」, 逾期 =
+  heartbeat older than 2 × `expect_every_minutes`, 目前部位 = state.json
+  position; `type == "daemon"` registry entries — the reconciler — are NOT
+  strategies and are left out, the service-heartbeat callout covers them),
+  plus `callout` blocks (tone warning) that appear ONLY when there is something
+  to say. The daily is per-day and idempotent, so the HALT callout is
+  REPORT-DAY based, not 「now」 based: it reads `state/audit.jsonl` (lib/guard.py's
+  append-only `halt_tripped` / `halt_cleared` lines, last 1 MB) and fires when a
+  `halt_tripped` falls inside the report day (lists the day's tripped / cleared
+  times + reason + source, `%m/%d %H:%M` UTC like every other timestamp) OR
+  `state/HALT` still exists (adds a 「目前仍在 HALT」 line with the file's ts /
+  reason / source; title 「HALT：新倉下單已暫停」 vs 「…曾暫停新倉下單（已解除）」).
+  A halt tripped and cleared within the day is therefore reported even though
+  the file is gone by the time the daily is produced. The other callouts:
+  entries in `manager/order_errors.json` dated the report's day — titled
+  「下單失敗（最近 N 筆）」 because the writer (`lib/portfolio._record_order_error`)
+  keeps only the last 5, so the day's true count is unknowable; lines in
+  `reports/upload_errors.log` dated that day (≤5); and a `reconciler` /
+  `command_listener` heartbeat that exists and is older than 300 s — this one
+  is a LIVE condition (heartbeats have only an mtime, no history), so its
+  title and first line say 「產報告時」 with the generation time. Nothing wrong
+  = no callout; silence is the normal state. The columns are untagged
+  (`text`): the position carries a sign but is a direction, not a P&L, so the
+  contract's colour gate must stay neutral. The service-heartbeat callout only
+  fires when the heartbeat FILE exists — a machine that never configured
+  auto-trading has none, and a daily 「reconciler dead」 for it would be noise.
+  Every input is optional: a missing file drops that row/callout, never the
+  report. Existing daily/weekly blocks are byte-identical to before.
+- performance_report: new monthly report, `mo-YYYY-MM` (`type=performance`,
+  `report_type=績效月報`, period = first..last day of the last FINISHED UTC
+  month, same catch-up semantics as the weekly). Blocks: kpi_row (帳戶權益 /
+  本月報酬 / 本月最大回撤 / 年化波動 / 交易日數 / 策略數), line_chart 本月權益
+  (with `y_unit`), drawdown over the month window, the monthly-returns calendar
+  heatmap (same ≥2-month gate as the weekly), metric_table 風險指標 = the
+  weekly set computed on the month's daily closes (the first day's base is the
+  previous month's last close, matching `monthly_returns`) plus Sortino,
+  Calmar, 勝率(日), 獲利因子(日), 最佳日 / 最差日 — undefined ratios (no losing
+  day, no downside, no drawdown) render as 「—」 rather than 0 or inf — and the
+  分策略 table. **No 「分策略貢獻」 bar_chart**: nothing on disk is a real
+  per-strategy P&L — `orders.jsonl` `contributors` are each strategy's TARGET
+  notional at reconcile time and `stats.json` `daily_returns` are backtests —
+  so the block is omitted rather than invented. `due()` now returns a third
+  element (the month) and `main()` runs a third `("monthly", …)` tuple, so
+  idempotence / state / rollback come from the same loop.
+- performance_report: `strategy_rows()` and `exposure_rows()` are computed
+  ONCE per tick in `main()` and passed into all three builders (lazily — a
+  tick where every report is already done still scans nothing), instead of
+  each build re-walking `strategies/` (stats.json can be several MB) inside
+  the shared `_BUDGET_S`. Standalone calls still compute their own.
+- tests/check_report_pipeline.py: builds daily + monthly from fixture files
+  (deployments / heartbeats / HALT / audit.jsonl / order + upload errors)
+  through the real `validate_report`, asserts the 運行狀況 roster (daemon
+  excluded), the overdue rule at a point where 1× vs 2× flips (90-min-old
+  heartbeat on a 60-min cadence), a future-mtime heartbeat (age 0, not
+  overdue), per-day filtering, the four HALT cases (tripped on the day and
+  still halted / tripped-and-cleared within the day with the file gone /
+  standing halt from an earlier day / events on other days only → no callout),
+  zero callouts on a healthy machine with AND without service heartbeat files,
+  an all-up month rendering Sortino / 獲利因子 / Calmar as 「—」 with no nan /
+  inf string anywhere, `due()` across the year boundary and a leap February,
+  and proves the check is wired to the validator by over-filling one metric
+  cell (must 400).
 ## 1.1.52 — 2026-09-01
 
 - telegram_bridge: `download_tg_file` scrubs the bot token out of exception text
