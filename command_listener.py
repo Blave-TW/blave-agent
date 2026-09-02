@@ -1021,8 +1021,205 @@ def _scheduler_loop():
             _run_scheduler_cycle()
         except Exception as e:
             _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
+        _sync_report_crons()  # independent of venue binding — reports run unbound too
         _scheduler_wake.wait(timeout=SCHEDULER_INTERVAL_SECONDS)
         _scheduler_wake.clear()
+
+
+# ── 定期報告排程(.claude/docs/report-schedules.md §3、§6)────────────────────
+# The agent registers a job by writing report_jobs/<id>/{job.json,run.py}; this
+# runtime is the only thing that ever touches crontab / schtasks for it. Same
+# ownership tag pattern as the Type B strategy lines above, separate tag so the
+# two syncs never rewrite each other's lines.
+
+_REPORT_CRON_TAG = "# blave-report:"
+_WIN_REPORT_PREFIX = "blave-web-report-"
+# Windows only: {id: cron} as last installed by this process, so an unchanged job
+# is not re-created every scheduler tick (crontab can be diffed in place; a
+# scheduled task cannot without parsing XML).
+_report_tasks_seen = {}
+
+
+def _report_runner_mod():
+    """report_runner, a sibling in this flat runtime dir: bare name on the machine,
+    package-qualified when the api tests load this module as blave_agent.runtime.*
+    (same two-liner as strategy_reporter.report_schedules)."""
+    import importlib
+    return importlib.import_module((__package__ + "." if __package__ else "") + "report_runner")
+
+
+def _report_runner_cmd(job_id):
+    """argv for one run of report_runner.py — this runtime's own interpreter and
+    directory (the runner is stdlib-only; run.py itself gets the system python)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    return [sys.executable, os.path.join(here, "report_runner.py"), job_id]
+
+
+def _report_jobs_wanted():
+    """{id: cron} for every enabled, valid registration. Read INSIDE _cron_lock by
+    both syncs below — computed outside it, a tick could re-install a line the
+    handler thread just removed, from a job.json it read before the handler wrote."""
+    return {job_id: job["schedule"]["cron"]
+            for job_id, job, _err in _report_runner_mod().list_jobs() if job and job["enabled"]}
+
+
+def _sync_report_tasks_windows():
+    report_runner = _report_runner_mod()
+    try:
+        with _cron_lock:
+            wanted = _report_jobs_wanted()
+            out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                                 capture_output=True, text=True, errors="replace",
+                                 timeout=30)
+            existing = set()
+            for line in (out.stdout or "").splitlines():
+                tn = line.split('","')[0].strip('"').lstrip("\\")
+                if tn.startswith(_WIN_REPORT_PREFIX):
+                    existing.add(tn[len(_WIN_REPORT_PREFIX):])
+            # a cron outside the schtasks subset is simply not installed — the
+            # reporter carries the "schedule not supported on Windows" error
+            specs = {j: (c, report_runner.cron_to_schtasks(c)) for j, c in wanted.items()}
+            specs = {j: v for j, v in specs.items() if v[1]}
+            for j in sorted(existing - set(specs)):
+                r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_REPORT_PREFIX + j, "/f"],
+                                   capture_output=True, text=True, errors="replace",
+                                   timeout=30)
+                if r.returncode != 0:
+                    _log(f"report task sync: delete {j} failed: "
+                         f"{(r.stderr or r.stdout or '').strip()[:120]}")
+                _report_tasks_seen.pop(j, None)
+            for j, (cron, flags) in sorted(specs.items()):
+                if j in existing and _report_tasks_seen.get(j) == cron:
+                    continue
+                argv = _report_runner_cmd(j)
+                tr = f'"{argv[0]}" "{argv[1]}" {j}'
+                r = subprocess.run(["schtasks", "/create", "/tn", _WIN_REPORT_PREFIX + j,
+                                    "/tr", tr, "/ru", "SYSTEM", "/f"] + flags,
+                                   capture_output=True, text=True, errors="replace",
+                                   timeout=30)
+                if r.returncode != 0:
+                    _log(f"report task sync: create {j} failed: "
+                         f"{(r.stderr or r.stdout or '').strip()[:120]}")
+                else:
+                    _report_tasks_seen[j] = cron
+    except Exception as e:
+        _log(f"report task sync failed: {type(e).__name__}: {e}")
+
+
+def _sync_report_crons():
+    """One tagged crontab line per enabled job, drop the rest of ours. Called every
+    scheduler tick and after each report_* command; only writes when the tagged
+    set actually differs, so an idle machine's crontab is read, not rewritten,
+    each minute. Best-effort, like every cron sync here."""
+    if platform.system() == "Windows":
+        _sync_report_tasks_windows()
+        return
+    try:
+        with _cron_lock:
+            wanted = _report_jobs_wanted()
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            lines = out.stdout.splitlines() if out.returncode == 0 else []
+            kept = [l for l in lines if _REPORT_CRON_TAG not in l]
+            for j in sorted(wanted):
+                # load_job already limited the fields to ASCII [0-9*,/-]; the re-join
+                # collapses any run of whitespace so the line is exactly one line
+                kept.append(f"{' '.join(wanted[j].split())} cd {WORKSPACE} && "
+                            f"{' '.join(_report_runner_cmd(j))} {_REPORT_CRON_TAG}{j}")
+            if kept != lines:
+                subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
+                               text=True, timeout=10, check=True)
+                _log(f"report cron sync: {len(wanted)} line(s)")
+    except Exception as e:
+        _log(f"report cron sync failed: {type(e).__name__}: {e}")
+
+
+def _report_job(args):
+    """(id, directory) for a report_* command's args, or raise: a bad id never
+    becomes a path, and a missing directory is the contract's `no such job`."""
+    job_id = args.get("id")
+    if not isinstance(job_id, str) or not _report_runner_mod().ID_RE.fullmatch(job_id):
+        raise ValueError("bad job id")
+    d = os.path.join(WORKSPACE, "report_jobs", job_id)
+    if not os.path.isdir(d):
+        raise RuntimeError("no such job")
+    return job_id, d
+
+
+def _rewrite_report_job(d, mutate):
+    """Read-modify-write job.json in place (atomic). Unknown fields survive; only
+    the registration's own validity is not re-checked here — a pause on a broken
+    file still flips its flag, and the reporter keeps saying why it is broken."""
+    path = os.path.join(d, "job.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"bad job.json ({type(e).__name__})")
+    if not isinstance(doc, dict):
+        raise RuntimeError("bad job.json (not an object)")
+    mutate(doc)
+    _write_json_atomic(path, doc)
+
+
+def _set_report_enabled(args, enabled):
+    _job_id, d = _report_job(args)
+
+    def mutate(doc):
+        doc["enabled"] = enabled
+        doc["updated_at"] = int(time.time())
+
+    _rewrite_report_job(d, mutate)
+    _sync_report_crons()
+    return {"enabled": enabled}
+
+
+def _cmd_report_pause(args):
+    return _set_report_enabled(args, False)
+
+
+def _cmd_report_resume(args):
+    return _set_report_enabled(args, True)
+
+
+def _cmd_report_run_now(args):
+    """Kick one run in the background; the ack says "started", the next report
+    carries the outcome from runs.jsonl. A paused job may be run this way."""
+    job_id, _d = _report_job(args)
+    subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"started": True}
+
+
+def _cmd_report_delete(args):
+    """Drops the registration and its script. Produced reports stay — those belong
+    to reports/, and the sidebar's own delete handles them."""
+    _job_id, d = _report_job(args)
+    shutil.rmtree(d)
+    _sync_report_crons()
+    return {"deleted": True}
+
+
+def _cmd_report_edit_pending(args):
+    """Mark the job as awaiting the agent's rewrite (the web then sends the agent
+    the actual edit request in chat). enabled and the schedule are untouched;
+    register_schedule() on the agent side clears the mark."""
+    report_runner = _report_runner_mod()
+    _job_id, d = _report_job(args)
+    pending = {"since": int(time.time())}
+    for key, cap in (("prompt", report_runner.PROMPT_MAX),
+                     ("schedule_human", report_runner.HUMAN_MAX)):
+        if key not in args:
+            continue
+        v = args[key]
+        if not isinstance(v, str) or not 1 <= len(v) <= cap:
+            raise ValueError(f"bad {key}")
+        pending[key] = v
+
+    def mutate(doc):
+        doc["pending"] = pending
+
+    _rewrite_report_job(d, mutate)
+    return {"pending": True}
 
 
 # TW index futures (Capital/群益) asset_specs, keyed by the strategy's SYMBOL
@@ -2806,6 +3003,11 @@ HANDLERS = {
     "manage_optimize": _cmd_manage_optimize,
     "manage_backtest": _cmd_manage_backtest,
     "manage_cancel": _cmd_manage_cancel,
+    "report_pause": _cmd_report_pause,
+    "report_resume": _cmd_report_resume,
+    "report_run_now": _cmd_report_run_now,
+    "report_delete": _cmd_report_delete,
+    "report_edit_pending": _cmd_report_edit_pending,
 }
 
 

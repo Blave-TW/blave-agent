@@ -743,16 +743,73 @@ def _can_report():
     )
 
 
+def report_schedules():
+    """The `report_schedules` list (.claude/docs/report-schedules.md §5): one entry per
+    workspace/report_jobs/<id>/ — the registration plus the last runs.jsonl line and
+    the next fire time — or `{id, error}` for a job this runtime will not install.
+    Not sorted; the web orders it."""
+    import importlib
+    import platform
+    # Sibling in the same runtime dir. Bare name on the machine (one flat dir),
+    # package-qualified when the api tests load this module as blave_agent.runtime.*
+    report_runner = importlib.import_module(
+        (__package__ + "." if __package__ else "") + "report_runner")
+
+    now = int(time.time())
+    windows = platform.system() == "Windows"
+    out = []
+    for job_id, job, err in report_runner.list_jobs():
+        if job is None:
+            out.append({"id": job_id, "error": err})
+            continue
+        cron = job["schedule"]["cron"]
+        if windows and report_runner.cron_to_schtasks(cron) is None:
+            out.append({"id": job_id, "error": "schedule not supported on Windows"})
+            continue
+        pending = job.get("pending")
+        last = report_runner.last_run(job_id)
+        entry = {
+            "id": job_id,
+            "title": job["title"],
+            "prompt": job["prompt"],
+            "schedule_human": job["schedule"]["human"],
+            "enabled": job["enabled"],
+            "created_at": job["created_at"],
+            "updated_at": job["updated_at"],
+            "pending": None,
+            "last_run": None,
+            "next_run_at": report_runner.cron_next(cron, now) if job["enabled"] else None,
+        }
+        if pending:
+            entry["pending"] = {"since": pending["since"],
+                                "stale": now - pending["since"] > report_runner.PENDING_STALE_S}
+        if last:
+            entry["last_run"] = {"at": last.get("started_at"), "status": last.get("status"),
+                                 "report_ids": last.get("report_ids") or []}
+            if last.get("status") == "failed":
+                entry["last_run"]["error"] = last.get("error") or ""
+        out.append(entry)
+    return out
+
+
 def report_cache(strategies, token=None):
     """POST the list to the backend cache (GET /strategies reads this on page
     load / reload). Reused by the timer AND by web_bridge after each turn.
     Piggybacks config_version so the web can flag an outdated workspace config,
-    and can_report so it can gate the reports feature on this machine."""
+    can_report so it can gate the reports feature on this machine, and the
+    scheduled-report registry (report_schedules) for the 管理定期報告 modal."""
     token = token or PROXY_TOKEN
     payload = {"strategies": strategies, "can_report": _can_report()}
     version = _config_version()
     if version:
         payload["config_version"] = version
+    try:
+        payload["report_schedules"] = report_schedules()
+    except Exception as e:
+        # Omitted, not []: the api reads an absent field as "old runtime, keep what
+        # you have" — an empty list would wipe the user's schedule list on a hiccup.
+        print(f"[strategy_reporter] report_schedules failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
     # Gzipped on the wire. This body is mostly the backtests' first-paint tails —
     # long runs of numeric JSON that compress ~4× — and the timer re-sends the whole
     # thing every two minutes whether anything changed or not, so an unpacked report

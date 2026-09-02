@@ -12,9 +12,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   job by writing `workspace/report_jobs/<id>/{job.json,run.py}`; this runtime
   owns everything after that. New `report_runner.py <id>` runs the script
   (cwd=workspace, system python, `BLAVE_*` stripped, 600 s), classifies the run
-  `ok` / `skipped` (exit 0, no new `reports/*.json`) / `failed`, appends to
-  `runs.jsonl` (last 50 kept), overwrites `run.log`, and on `failed` calls
-  `manager/alert_failure.py` best-effort. `command_listener._sync_report_crons`
+  `ok` / `skipped` (exit 0, no `reports/*.json` with mtime ≥ start) / `failed`,
+  appends to `runs.jsonl` (last 50 kept, stems `[A-Za-z0-9_-]{1,64}` only, ≤50),
+  overwrites `run.log`, holds `report_jobs/<id>/.lock` for the run (a second
+  runner exits 3 without recording), and on `failed` calls
+  `manager/alert_failure.py` best-effort. Stdlib-only, no runtime imports. `command_listener._sync_report_crons`
   installs one `# blave-report:<id>` crontab line (Linux) / `blave-web-report-<id>`
   scheduled task (Windows, cron subset only) per enabled job, under `_cron_lock`,
   every scheduler tick and after each `report_*` command; the crontab is only
@@ -23,7 +25,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   (args `{id}`; the last also takes `prompt` / `schedule_human`). `strategy_reporter`
   adds `report_schedules` to the cache payload (registration + last run +
   `next_run_at` from a built-in 5-field cron evaluator; `{id, error}` for a job
-  it will not install) — omitted, not emptied, if the scan itself fails.
+  it will not install: bad file, cron field outside ASCII `[0-9*,/-]` or a
+  timestamp outside 0–2100, past the 20 valid-job cap, Windows-inexpressible
+  cron) — omitted, not emptied, if the scan itself fails.
 
 ## 1.1.53 — 2026-09-02
 
