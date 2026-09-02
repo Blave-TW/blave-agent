@@ -775,6 +775,19 @@ def _can_report():
     )
 
 
+def _can_watch():
+    """Can this runtime ship watchboard ops / data (.claude/docs/watchboard.md §5.3b)?
+    Same stance as _can_report: the uploader is one file across releases, so the
+    question is whether THIS copy carries the watch sweep — a text probe, not an
+    import, for the reason above."""
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "report_uploader.py"), encoding="utf-8") as f:
+            return "def run_watch_once(" in f.read()
+    except OSError:
+        return False
+
+
 def report_schedules():
     """The `report_schedules` list (.claude/docs/report-schedules.md §5): one entry per
     workspace/report_jobs/<id>/ — the registration plus the last runs.jsonl line and
@@ -798,6 +811,8 @@ def report_schedules():
         if windows and report_runner.cron_to_schtasks(cron) is None:
             out.append({"id": job_id, "error": "schedule not supported on Windows"})
             continue
+        if job.get("kind") == "watch":
+            continue  # a watchboard widget's schedule, not a report — the board shows it
         pending = job.get("pending")
         last = report_runner.last_run(job_id)
         entry = {
@@ -831,7 +846,8 @@ def report_cache(strategies, token=None):
     can_report so it can gate the reports feature on this machine, and the
     scheduled-report registry (report_schedules) for the 管理定期報告 modal."""
     token = token or PROXY_TOKEN
-    payload = {"strategies": strategies, "can_report": _can_report()}
+    payload = {"strategies": strategies, "can_report": _can_report(),
+               "can_watch": _can_watch()}
     version = _config_version()
     if version:
         payload["config_version"] = version

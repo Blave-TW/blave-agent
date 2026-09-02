@@ -5,6 +5,11 @@ Contract: `.claude/docs/report-schedules.md`. The agent only writes files (`run.
 installs one crontab line / scheduled task per enabled job pointing at this file),
 runs the script, records the outcome and reports it (strategy_reporter.report_schedules).
 
+A watchboard machine widget (`.claude/docs/watchboard.md` §4.2) is the same job
+with `"kind": "watch"` and the widget id as the job id: same crontab line, same
+runner, but success is judged by `watch/data/<id>.json` having been rewritten,
+not by a report landing — the script writes that file, report_uploader ships it.
+
 Usage (from the crontab line / schtasks, or `report_run_now`):
     report_runner.py <id>
 
@@ -25,6 +30,8 @@ from datetime import datetime, timedelta
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 JOBS_DIR = os.path.join(WORKSPACE, "report_jobs")
 REPORTS_DIR = os.path.join(WORKSPACE, "reports")
+WATCH_DATA_DIR = os.path.join(WORKSPACE, "watch", "data")
+KINDS = ("report", "watch")
 
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 REPORT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")  # report_uploader's id shape
@@ -192,8 +199,13 @@ def load_job(job_id):
             raise ValueError("not an object")
         if doc.get("id") != job_id:
             raise ValueError("id does not match the directory name")
+        if doc.get("kind", "report") not in KINDS:
+            raise ValueError("kind must be report or watch")
         _str(doc, "title", TITLE_MAX)
-        _str(doc, "prompt", PROMPT_MAX)
+        # a watch job's script is not prompted into being the way a report is —
+        # the field is optional there, still bounded when present
+        if doc.get("kind") != "watch" or "prompt" in doc:
+            _str(doc, "prompt", PROMPT_MAX)
         sched = doc.get("schedule")
         if not isinstance(sched, dict):
             raise ValueError("schedule must be an object")
@@ -318,6 +330,15 @@ def _new_reports(since):
     return sorted(out)[:REPORT_IDS_KEEP]
 
 
+def _data_updated(job_id, since):
+    """Whether watch/data/<id>.json was (re)written at or after `since` — the only
+    evidence a watch job produced anything (the uploader leaves that file in place)."""
+    try:
+        return os.path.getmtime(os.path.join(WATCH_DATA_DIR, job_id + ".json")) >= since
+    except OSError:
+        return False
+
+
 def _append_run(jd, entry):
     """Append to runs.jsonl keeping the last RUNS_KEEP lines. Best-effort: a job
     deleted mid-run (report_delete) must not turn into a traceback."""
@@ -385,11 +406,19 @@ def run_job(job_id):
             f.write(output)
     except OSError as e:
         print(f"[report_runner] run.log write failed: {e}", file=sys.stderr)
-    report_ids = _new_reports(started)
+    if job.get("kind") == "watch":
+        report_ids = []
+        produced = _data_updated(job_id, started)
+        if rc == 0 and not produced:
+            print(f"[report_runner] {job_id}: exit 0 but watch/data/{job_id}.json was not "
+                  "updated", file=sys.stderr)
+    else:
+        report_ids = _new_reports(started)
+        produced = bool(report_ids)
     if rc != 0:
         status = "failed"
     else:
-        status = "ok" if report_ids else "skipped"
+        status = "ok" if produced else "skipped"
     entry = {"started_at": started, "finished_at": int(time.time()), "status": status,
              "rc": rc, "report_ids": report_ids}
     if status == "failed":

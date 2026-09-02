@@ -8,7 +8,20 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- Watchboard (`.claude/docs/watchboard.md` §4): `report_uploader` also sweeps
+  `workspace/watch/` — `ops/*.json` POSTed to `/openclaw/agent/watch/ops` in file-name
+  order (200 → `ops/sent/`, 4xx other than 408/429 → `ops/failed/`, else backoff) and
+  `data/<widget_id>.json` PUT to `/watch/data/<id>` with overwrite semantics (the file
+  stays in place; the mtime+size last shipped is kept in `state/watch_uploads.json`, so
+  only a rewritten file is re-sent; ≤64 KB; image sidecar `data/<id>.files/` with the
+  report's three-way failure rule, except a 507 on the sole block → failed). Errors go
+  to `watch/upload_errors.log`; the quiet-window wait covers both trees.
+  `blave-agent-reports.path` watches `watch/ops` + `watch/data` (Windows:
+  `file_watcher` gets the same two dirs). `report_runner` accepts `job.json`
+  `"kind": "watch"` (`prompt` optional): the run is `ok` only when
+  `watch/data/<id>.json` was rewritten, `skipped` (with a stderr line) otherwise, no
+  report ids; `strategy_reporter.report_schedules` leaves watch jobs out of the
+  定期報告 list. Check: tests/check_agent_watch.py.
 
 ## 1.1.56 — 2026-09-02
 

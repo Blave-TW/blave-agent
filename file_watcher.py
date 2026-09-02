@@ -77,6 +77,11 @@ WATCHES = {
     # Linux path unit 是同一個形狀,而那段等待做在 uploader 自己的 main() 裡
     # (跑的是同一支程式),Windows 這條跟著一起好。
     os.path.join(WORKSPACE, "reports"): (UPLOAD,),
+    # 看盤板(watchboard.md §4)的兩個 drop dir,同一支 uploader 掃;Linux 端是
+    # blave-agent-reports.path 多看的兩個目錄。data/ 是覆蓋語意——原子 os.replace
+    # 也會動目錄 mtime,所以照契約寫的產出端一樣秒級觸發。
+    os.path.join(WORKSPACE, "watch", "ops"): (UPLOAD,),
+    os.path.join(WORKSPACE, "watch", "data"): (UPLOAD,),
 }
 
 
