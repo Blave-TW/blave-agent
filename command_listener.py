@@ -1051,8 +1051,16 @@ def _report_runner_mod():
 def _report_runner_cmd(job_id):
     """argv for one run of report_runner.py — this runtime's own interpreter and
     directory (the runner is stdlib-only; run.py itself gets the system python)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    return [sys.executable, os.path.join(here, "report_runner.py"), job_id]
+    # Through the `current` link, never the resolved releases/<version>/ path
+    # (`__file__` on a machine IS resolved — 29026 e2e wrote releases/1.1.53/).
+    # A crontab line is only rewritten when it changes, so a version-pinned
+    # path would keep every job on the release it was installed under, past
+    # every later update. Same `current` convention as _cmd_retest_accounts;
+    # the sibling-dir fallback is for the checks, which run from a temp tree.
+    current = os.path.join(os.path.dirname(WORKSPACE), "current", "report_runner.py")
+    if not os.path.isfile(current):
+        current = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report_runner.py")
+    return [sys.executable, current, job_id]
 
 
 def _report_jobs_wanted():
