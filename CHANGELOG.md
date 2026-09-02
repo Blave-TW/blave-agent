@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.56 — 2026-09-02
+
 - performance_report retired: Blave Agent ships **no built-in report** — every
   report is a job the user registered under `workspace/report_jobs/`
   (`.claude/docs/report-schedules.md`) or asked for in chat. The hourly equity
