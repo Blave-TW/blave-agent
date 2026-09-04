@@ -982,6 +982,12 @@ class TelegramSink:
             return
         self.pending_new_bubble = True
 
+    def on_tool_result(self, block):
+        # TG 沒有收據那個表面(它是編輯同一則泡泡)。必須存在:run_turn 對 sink
+        # 多型呼叫,少一個方法就是 AttributeError → 整個回合掉進 except → 每個用到
+        # 工具的 TG 回合都回「處理這則訊息時發生錯誤」。
+        pass
+
     def on_status(self, text):
         # 過場旁白(帶工具呼叫的訊息裡的文字)——TG 沒有狀態列,直接不送,
         # 免得旁白變成一堆零碎訊息。留著當空回覆時的備援。
@@ -1103,6 +1109,119 @@ def _post_report(report_url, token, chunk, timeout=15):
 TEXT_FLUSH_INTERVAL = 0.25
 
 
+# 行內環境變數賦值(`FOO=1 python3 x.py`)——摘要要的是被跑的東西,不是它的環境。
+_BASH_ENV_PREFIX_RE = re.compile(r"^(?:\w+=\S+\s+)+")
+# 指令裡唯一真正有顯示價值的東西:workspace 底下的腳本與策略檔。agent 的指令絕大
+# 多數是 `python3 lib/param_scan.py strategies/xxx/strategy.py` 這個形狀。比「開頭是」
+# 不是「包含」——`/usr/lib/…`、`/var/lib/…`、`/lib/x86_64-linux-gnu/…` 都含 `lib/`,
+# 用包含判定會把 pip / ldd / find 的系統路徑當成腳本檔。
+_SCRIPT_PREFIXES = ("lib/", "strategies/")
+# 整段程式塞在參數裡:內容是模型自己寫的字串,可能很長又沒有顯示價值,整列不給
+# summary。只認直譯器後面的旗標——`head -c 100 AGENTS.md` 的 -c 是位元組數,那列
+# 該照常有受詞。
+_INTERPRETERS = ("python", "python3", "node", "bash", "sh", "zsh", "perl", "ruby")
+_INLINE_CODE_FLAGS = ("-c", "-e", "--command")
+TOOL_SUMMARY_MAX = 100
+TOOL_SUMMARY_BASH_MAX = 40  # 452px 的聊天欄裡一列放得下的 mono 長度
+
+
+def _tool_summary(name, params, workspace=None):
+    """工具呼叫的「受詞」:讓活動列從「執行中」變成「讀取 lib/data.py」。
+
+    只從 ToolUseBlock.input 就地推導,不解析工具輸出;Bash 永遠不送完整指令
+    (見 _bash_summary)。"""
+    if not isinstance(params, dict):
+        return ""
+    out = ""
+    if name in ("Read", "Write", "Edit"):
+        path = params.get("file_path")
+        if isinstance(path, str) and path:
+            out = _workspace_relative(path, workspace)
+    elif name == "Bash":
+        out = _bash_summary(params.get("command"), workspace)
+    elif name in ("Grep", "Glob"):
+        pattern = params.get("pattern")
+        if isinstance(pattern, str):
+            out = pattern.strip()
+    return out[:TOOL_SUMMARY_MAX]
+
+
+def _bash_summary(cmd, workspace=None):
+    """Bash 指令的受詞:被跑的腳本/策略檔,最多兩個路徑 token。
+
+    不是「前兩個 token」——實測(29026 2026-09-04)`head -n 10 AGENTS.md` 會摘成
+    `head -n`,而 agent 的指令大量帶旗標,收據會變成一排沒有受詞的 `grep -rn`。
+    也不送完整指令:那會把模型自己組的字串原樣送進瀏覽器,長度換不到資訊。"""
+    if not isinstance(cmd, str):
+        return ""
+    cmd = _BASH_ENV_PREFIX_RE.sub("", cmd.strip())
+    tokens = cmd.split()
+    if not tokens or "<<" in cmd or _has_inline_code(tokens):
+        return ""
+    paths = []
+    for tok in tokens:
+        path = _script_path(tok, workspace)
+        if path:
+            paths.append(path)
+            if len(paths) == 2:
+                break
+    if paths:
+        return _cut(" ".join(paths), TOOL_SUMMARY_BASH_MAX)
+    # 退路:指令名 + 第一個非旗標參數(`head -n 10 AGENTS.md` → `head AGENTS.md`)。
+    # 短旗標連同下一個 token 一起跳過(它多半是該旗標的 value:`-n 10`);長旗標只跳
+    # 自己,因為它的 value 慣例是 `--opt=value`——把後面那個 token 也吃掉會讓
+    # `git --no-pager log` 變成沒有意義的 `git 5`(實測)。
+    out, rest, i = tokens[0], tokens[1:], 0
+    while i < len(rest):
+        if rest[i].startswith("-"):
+            i += 2 if re.fullmatch(r"-\w+", rest[i]) else 1
+            continue
+        out += " " + rest[i]
+        break
+    return _cut(out, TOOL_SUMMARY_BASH_MAX)
+
+
+def _has_inline_code(tokens):
+    """`python3 -c …` / `node -e …`:整段程式碼是參數,沒有可顯示的受詞。"""
+    for i, tok in enumerate(tokens):
+        if os.path.basename(tok) not in _INTERPRETERS:
+            continue
+        for nxt in tokens[i + 1:]:
+            if not nxt.startswith("-"):
+                break  # 直譯器後面第一個非旗標=腳本檔,那就是正常的執行
+            if nxt in _INLINE_CODE_FLAGS:
+                return True
+    return False
+
+
+def _script_path(tok, workspace=None):
+    """token 是 workspace 底下的腳本/策略檔就回傳相對路徑,否則空字串。
+
+    只有絕對路徑才問 _workspace_relative:它用 abspath,而 abspath 是相對 **cwd**
+    解析的,agent_turn 的 cwd(web_bridge 起的那支是 /opt/blave-agent/current)不保證
+    是 workspace——拿裸 token 去 abspath 只會得到看起來對、其實是碰巧的答案。"""
+    rel = _workspace_relative(tok, workspace) if tok.startswith("/") else tok
+    if rel.startswith("./"):
+        rel = rel[2:]
+    return rel if rel.startswith(_SCRIPT_PREFIXES) else ""
+
+
+def _cut(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def _workspace_relative(path, workspace=None):
+    workspace = workspace or WORKSPACE
+    try:
+        if os.path.commonpath([os.path.abspath(path), os.path.abspath(workspace)]) \
+                == os.path.abspath(workspace):
+            return os.path.relpath(path, workspace)
+    except ValueError:
+        # Windows 機(uid=1)不同磁碟機的路徑 commonpath/relpath 都會炸——原樣顯示。
+        pass
+    return path
+
+
 class WebSink:
     """Delivery sink for the website chat. Each text delta / tool call / end
     is a discrete chunk POSTed to /report, which the browser reads over SSE.
@@ -1132,6 +1251,9 @@ class WebSink:
         # 段首暫留:文字先扣在這裡,直到判得出「是不是 <nav> 標記」才放行
         # (nav_hold_more / split_nav_head)。None=本段段首已過。
         self._head_hold = ""
+        # tool_use id -> (發出時間, 工具名)。工具結果回來時用它算耗時、補回工具名
+        # (done chunk 也要帶 tool)。sink 活一個回合就丟,不需要清理。
+        self._tool_t0 = {}
         self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
         self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
         # 逐 token 的文字要先攢起來再送。實測 deepseek 一段回覆吐 ~68 delta/秒,
@@ -1241,8 +1363,40 @@ class WebSink:
         self._break_before_text = True
         self._head_hold = ""  # 新段落、新段首
         # Surface which tool is running so the UI can show a status line
-        # (e.g. "跑回測中"); the frontend maps tool name -> label.
-        self._send({"type": "tool", "tool": getattr(block, "name", ""), "status": "running"})
+        # (e.g. "跑回測中"); the frontend maps tool name -> label. `id` + `summary`
+        # turn that line into one receipt row per call — `id` pairs it with the
+        # `status: "done"` chunk from on_tool_result, `summary` says what was
+        # touched. Both additive: an older frontend still only reads tool/status.
+        name = getattr(block, "name", "")
+        chunk = {"type": "tool", "tool": name, "status": "running"}
+        summary = _tool_summary(name, getattr(block, "input", None))
+        if summary:
+            chunk["summary"] = summary
+        block_id = getattr(block, "id", None)
+        if block_id:
+            chunk["id"] = block_id
+            self._tool_t0[block_id] = (time.monotonic(), name)
+        self._send(chunk)
+
+    def on_tool_result(self, block):
+        """工具結果回流(SDK 把它包在 user 訊息裡)——收據那列補上耗時/錯誤態。
+
+        結果內容一律不外送:可能是幾 MB 的回測輸出,也可能是 agent 剛 cat 出來的
+        任何東西。只送 id/tool/status/ms/error。
+
+        `ms` 是「發出後經過」不是純執行時間:同一則 AssistantMessage 裡的平行工具
+        呼叫共用同一個發出時刻,第二個工具的 ms 會含第一個的等待。前端照這個語意
+        標文案。對不到 id(跨訊息遺失、被 Stop 截斷)就整個不送,讓那列停在 running,
+        不畫假耗時。"""
+        started = self._tool_t0.pop(getattr(block, "tool_use_id", None), None)
+        if not started:
+            return
+        t0, name = started
+        self._send({
+            "type": "tool", "id": block.tool_use_id, "tool": name, "status": "done",
+            "ms": max(0, int((time.monotonic() - t0) * 1000)),
+            "error": bool(getattr(block, "is_error", False)),
+        })
 
     def on_thinking(self, block):
         # The model's reasoning (SDK ThinkingBlock) — feeds the workspace's
@@ -1302,6 +1456,14 @@ _STREAM_EVENT = getattr(sdk, "StreamEvent", None)
 _SUPPORTS_PARTIAL = _STREAM_EVENT is not None and "include_partial_messages" in getattr(
     sdk.ClaudeAgentOptions, "__dataclass_fields__", {}
 )
+# 工具結果的載體:實測(29026 2026-09-04,SDK 0.2.144)工具跑完後 stream 會吐一則
+# UserMessage(parent=None、blocks=['ToolResultBlock'])。同 _STREAM_EVENT 的理由用
+# getattr:少了這兩個型別的 SDK build 只是收據沒有耗時,不能讓它 NameError 掉整個回合。
+_USER_MESSAGE = getattr(sdk, "UserMessage", None)
+_TOOL_RESULT_BLOCK = getattr(sdk, "ToolResultBlock", None)
+# 探針:開著跑一回合就會在 journalctl 列出這個 query() 設定下 stream 吐出哪些訊息
+# 型別。只印類別名,不印任何 content。留著——換 SDK / 換 proxy 模型時要再驗一次。
+_DEBUG_MSGS = os.environ.get("BLAVE_AGENT_DEBUG_MSGS") == "1"
 
 
 def _unstreamed(text, streamed):
@@ -1594,8 +1756,30 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 # push the fresh list now (web only) rather than waiting for turn end.
                 if is_web and had_tool and not getattr(sink, "interrupted", False):
                     strat_sig = _maybe_push_strategies(sink, strat_sig)
+            elif _USER_MESSAGE is not None and isinstance(msg, _USER_MESSAGE):
+                # 工具結果:SDK 把它包成 user 訊息回流(message_parser 的 case "user"
+                # 把 tool_result block 解成 ToolResultBlock)。只拿來補收據的耗時,
+                # 不做任何其他副作用、不碰回覆文字。
+                content = getattr(msg, "content", None)
+                if _DEBUG_MSGS:
+                    kinds = type(content).__name__ if isinstance(content, str) else \
+                        [type(b).__name__ for b in (content or [])]
+                    print(f"[agent_turn][probe] UserMessage parent="
+                          f"{getattr(msg, 'parent_tool_use_id', None)!r} blocks={kinds}",
+                          file=sys.stderr)
+                # 子代理的工具不進收據(同 AssistantMessage 那道第二層防線);
+                # content 是 str = 真的是注入的用戶訊息,裡面沒有工具結果。
+                on_result = getattr(sink, "on_tool_result", None)
+                if on_result and _TOOL_RESULT_BLOCK is not None \
+                        and not isinstance(content, str) \
+                        and not getattr(msg, "parent_tool_use_id", None):
+                    for block in content or []:
+                        if isinstance(block, _TOOL_RESULT_BLOCK):
+                            on_result(block)
             elif isinstance(msg, sdk.ResultMessage):
                 print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
+            elif _DEBUG_MSGS:
+                print(f"[agent_turn][probe] {type(msg).__name__}", file=sys.stderr)
             if getattr(sink, "interrupted", False):
                 print("[agent_turn] interrupted by user — stopping turn", file=sys.stderr)
                 aclose = getattr(query_iter, "aclose", None)
