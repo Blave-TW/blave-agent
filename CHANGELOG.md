@@ -10,6 +10,34 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.60 — 2026-09-04
+
+- Tool-call receipt: `on_tool`'s chunk now carries `id` and `summary` so the workspace
+  activity line can keep one row per call instead of one verb that the next tool
+  overwrites. `summary` is derived in place from `ToolUseBlock.input` — never from tool
+  output. Bash never sends the full command: it prefers a workspace path starting with
+  `lib/` or `strategies/` (at most two tokens), falls back to "command name + first
+  non-flag argument", and sends nothing for `python3 -c …` / heredoc shapes, where the
+  argument is a model-authored string with no display value. Prefix matching, not
+  substring — `/usr/lib/`, `/var/lib/` and `/lib/x86_64-linux-gnu/` all contain `lib/`.
+- New `on_tool_result`: the SDK returns tool results as a `UserMessage` carrying
+  `ToolResultBlock`, which the turn loop did not observe at all. It is now matched back
+  to the issuing `tool_use_id` and reported as a `status: "done"` chunk with `ms` and
+  `error`. Result content is never forwarded (a backtest's stdout can be megabytes).
+  `ms` is elapsed-since-issued, not execution time — parallel calls in one
+  `AssistantMessage` share an issue timestamp. Verified on a real turn (29026,
+  SDK 0.2.144, 2026-09-04); `BLAVE_AGENT_DEBUG_MSGS` keeps the probe for the next SDK
+  or proxy-model change.
+- `TelegramSink.on_tool_result` is a no-op but must exist: `run_turn` calls the sink
+  polymorphically, and a missing method is an `AttributeError` that drops every
+  tool-using Telegram turn into the generic error reply. `--delivery telegram` is the
+  default.
+- Server side (`openclaw/webchat.py`, shipped in the same commit): `/report` rebuilds a
+  `tool` chunk from validated fields only, the same discipline as `export`, and the id
+  cap is 128 — the id is minted by whichever model the proxy routed to, and dropping it
+  is worse than allowing a long one, since `done` then cannot match and the row never
+  settles.
+
 ## 1.1.59 — 2026-09-03
 
 - `agent_turn`: the appended system prompt (AGENTS.md + catalog / preferences / formatting
