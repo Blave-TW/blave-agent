@@ -14,6 +14,7 @@ swap, see updater.py) picks up the matching agent_turn.py on the next spawn.
 import base64
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -79,6 +80,36 @@ PING_INTERVAL = 60
 # 在跑的這個 process 永遠不可見,它會一路 CERTIFICATE_VERIFY_FAILED 到有人重啟
 # (1.0.71 image 實測)。憑證以外的錯誤不算,計數歸零。
 TLS_FAIL_LIMIT = 5
+
+# 看盤脈絡的長度上限。api 端(openclaw/webchat.py `_clamp_viewing_context`)已經
+# 剪過一次,這裡再剪一次不是重複:runtime 5 分鐘自動全機隊更新、api 部署是手動的,
+# 新 runtime 完全可能在還沒部署剪裁的 api 上跑,而這些字串直接進 LLM prompt 也直接
+# 進 argv。兩邊值一樣,沒有共用模組可 import(不同機器上的不同 process)。
+_VIEWING_VIEW_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+VIEWING_WIDGETS_MAX = 24
+VIEWING_WIDGET_LABEL_MAX = 64
+
+
+def clamp_viewing(view, widgets):
+    """回傳 (view, widgets) 的安全版本:形狀不對就當沒有,太長就剪。
+
+    控制字元與中括號一併剝掉:這些字串會進 prompt 裡一段 [ ] 包起來的單行脈絡,
+    換行或一個 ] 就足以提前關掉那一段,後面的內容會被當成指令讀。"""
+    if not isinstance(view, str) or not _VIEWING_VIEW_RE.fullmatch(view):
+        view = None
+    if isinstance(widgets, list):
+        clean = []
+        for item in widgets[:VIEWING_WIDGETS_MAX]:
+            if isinstance(item, str):
+                label = "".join(
+                    c for c in item if ord(c) >= 32 and c not in "[]"
+                )[:VIEWING_WIDGET_LABEL_MAX].strip()
+                if label:
+                    clean.append(label)
+        widgets = clean or None
+    else:
+        widgets = None
+    return view, widgets
 
 
 def poll_once():
@@ -215,7 +246,7 @@ def save_attachment(attachment):
 
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
-                   attachment_name=None):
+                   attachment_name=None, viewing_view=None, viewing_widgets=None):
     # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
     model = model_prefs.resolve(session_id, attachment_name)
     cmd = [
@@ -230,6 +261,16 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
         cmd.append(f"--viewing-strategy={viewing_strategy}")
     if viewing_tab in ("code", "data"):
         cmd.append(f"--viewing-tab={viewing_tab}")
+    viewing_view, viewing_widgets = clamp_viewing(viewing_view, viewing_widgets)
+    if viewing_view:
+        cmd.append(f"--viewing-view={viewing_view}")
+    if viewing_widgets:
+        # 一個 JSON 參數,不是每張卡一個旗標:清單本來就是一個值,重複旗標會讓
+        # argv 長度隨板子大小漂移。ensure_ascii 保持預設:argv 純 ASCII,Windows
+        # 那半機隊不吃 codepage 的虧——代價是中文一字膨脹成 \uXXXX 六個字元,
+        # 上面剪過之後最壞(24 張卡 × 64 個中文字)約 9KB,離 Linux 單一參數 128KB
+        # 與 Windows 命令列 32K 都還很遠。
+        cmd.append(f"--viewing-widgets={json.dumps(viewing_widgets)}")
     # `--` terminates options so a message starting with '-' (or literally '--help')
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
@@ -457,7 +498,9 @@ def main():
             viewing_strategy = ctx.get("viewing_strategy")
             viewing_tab = ctx.get("viewing_tab")
             run_agent_turn(session_id, content, viewing_strategy=viewing_strategy,
-                           viewing_tab=viewing_tab, attachment_name=attachment_name)
+                           viewing_tab=viewing_tab, attachment_name=attachment_name,
+                           viewing_view=ctx.get("viewing_view"),
+                           viewing_widgets=ctx.get("viewing_widgets"))
             # A turn may have created/deployed/removed a strategy, or changed
             # the portfolio — refresh both caches now instead of leaving the
             # user on the 2-minute timers.

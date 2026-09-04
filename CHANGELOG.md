@@ -10,6 +10,30 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.61 — 2026-09-04
+
+- Viewing context beyond a strategy: `web_bridge` now forwards `viewing_view` and
+  `viewing_widgets` from the browser's `context`, and `agent_turn.build_prompt` turns
+  them into the same kind of 「僅供釐清指代」 segment the open-strategy one already
+  emits. On the watchboard the agent gets one line per card and the instruction to change
+  the board through `lib/watch.py` — the machine cannot read the board back, so without
+  this the answer to 「把這張換成 5 分 K」 was 「我看不到你開著哪一頁」 (uid=1). Each line
+  is `<id>｜<title> (<type> …)`, and the prompt says so: the id is the only key the agent
+  can act on, and a segment that lists the cards without naming the id just moves the dead
+  end from 「我看不到」 to 「你說哪一張」.
+  Only one screen segment is ever emitted: the view one is skipped whenever a strategy
+  is open (web clears the selection on every other view, so they are exclusive).
+  Widgets travel as one JSON argv value, not one flag per card, and unknown view codes
+  are silently ignored so the frontend can add a view without a runtime release first.
+- Widget labels reach an LLM prompt verbatim from the browser, so the caps and the
+  filtering (24 cards, 64 chars, control chars and `[` `]` stripped — the segment is one
+  bracket-delimited line, so a newline or a stray `]` closes it early and the rest reads
+  as instructions) live on both sides of the wire:
+  `openclaw/webchat.py` `_clamp_viewing_context` (shipped in the same commit) and
+  `web_bridge.clamp_viewing`. Not redundant — runtime auto-updates in ~5 minutes while
+  an api deploy is manual, so a fresh runtime routinely polls an api without the cap.
+  Over-long input is truncated, never a 400.
+
 ## 1.1.60 — 2026-09-04
 
 - Tool-call receipt: `on_tool`'s chunk now carries `id` and `summary` so the workspace

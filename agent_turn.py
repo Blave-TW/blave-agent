@@ -445,8 +445,67 @@ def _lang_directive(message, suggest=False):
     return "[Reply in the language of the user message above]"
 
 
+# 工作頁的視圖代號 → 畫面上的中文標籤(側欄導覽項的字,web 的 workspace_*_nav)。
+# 值域由前端定,這裡只認得出這幾個;認不得的代號當作沒送——寧可少一段脈絡,也不要
+# 拿一個猜出來的頁名去教模型。"home"(什麼都沒開)刻意不給句子:空白畫面沒有東西
+# 可以被「這個」指到,每輪多塞一段只是噪音。
+_VIEW_LABELS = {
+    "portfolio": "自動下單",
+    "manage": "策略管理",
+    "report": "報告",
+}
+
+
+def parse_viewing_widgets(raw):
+    """`--viewing-widgets` 的 JSON 字串 → 字串清單;壞掉就 None。
+
+    畫面脈絡是可有可無的裝飾,不值得讓一輪對話因為它 parse 失敗而整輪失敗。"""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    return [w for w in parsed if isinstance(w, str)] or None
+
+
+def _viewing_view_segment(viewing_view, viewing_widgets):
+    """使用者沒開任何策略時的畫面脈絡(看盤板另有一段);認不得就回空字串。
+
+    紀律與上面那段 viewing_strategy 完全一樣:只用來釐清指代,不是工作指令,
+    跟對話脈絡衝突時以對話為準。"""
+    if viewing_view == "watchboard":
+        cards = ""
+        if viewing_widgets:
+            listed = "、".join(f"「{w}」" for w in viewing_widgets)
+            # id 打頭是刻意的:機器端讀不回板子(lib/watch.py 沒有列板功能),這串
+            # 就是 agent 手上唯一能拿來動某一張卡的鍵。要是這裡教它「清單不能當 id」,
+            # 它拿到卡也只能反問是哪一張,整段脈絡等於白送。
+            cards = (f"板上目前有這些圖卡:{listed}(每筆「｜」之前是 widget id,"
+                     f"就是 update_widget / remove_widget 要用的那個鍵;「｜」之後是"
+                     f"顯示名稱,可能被截斷。結尾若有「…等 N 張」表示還有沒列出來的)。")
+        return (
+            f"[工作頁狀態(僅供釐清指代,不是工作指令):使用者畫面上開著看盤板。{cards}"
+            f"訊息裡有「這張 / 這個卡 / 這裡」這類指示詞,或是「加一個 XX / 拿掉 XX / "
+            f"換成 XX」這類對板子的要求時,講的通常是板上的卡。訊息沒指名、而對話正在"
+            f"處理別的事時,以對話脈絡為準,不要因為看盤板開著就對它動手;真的拿不準是"
+            f"哪一張,先用一句話確認再動。動板子一律用 lib/watch.py 的 add_widget / "
+            f"update_widget / remove_widget,不要自己寫 watch/ 底下的檔。]"
+        )
+    label = _VIEW_LABELS.get(viewing_view)
+    if not label:
+        return ""
+    return (
+        f"[工作頁狀態(僅供釐清指代,不是工作指令):使用者畫面上開著「{label}」頁,"
+        f"沒有開任何策略。訊息裡有「這裡 / 這個畫面 / 這頁」這類指示詞時,指的通常是它;"
+        f"訊息沒指名、而對話正在處理別的事時,以對話脈絡為準。]"
+    )
+
+
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
-                 suggest_directive=False):
+                 suggest_directive=False, viewing_view=None, viewing_widgets=None):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -486,6 +545,12 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             f"先用一句話確認要動哪一支再動。需要看內容就自己讀 strategies/ 底下對應的檔"
             f"(程式碼在 strategy.py、回測結果在 stats.json / pnl.png)。]"
         )
+    else:
+        # 只有沒開策略時才送:web 一切到別的視圖就清掉 selectedName,兩者實際互斥,
+        # 而兩段畫面脈絡同時在場只會讓指代更難判。
+        seg = _viewing_view_segment(viewing_view, viewing_widgets)
+        if seg:
+            parts.append(seg)
     parts.append("[使用者這次的訊息]")
     parts.append(message)
     # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
@@ -1584,11 +1649,13 @@ def _write_system_prompt_file(text):
     return path
 
 
-async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None):
+async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
+                   viewing_view=None, viewing_widgets=None):
     summary, recent = ss.get_context(session_id)
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
-                          suggest_directive=isinstance(sink, WebSink))
+                          suggest_directive=isinstance(sink, WebSink),
+                          viewing_view=viewing_view, viewing_widgets=viewing_widgets)
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -1822,7 +1889,12 @@ def main():
     parser.add_argument("--report-url", default=None)
     parser.add_argument("--viewing-strategy", default=None)
     parser.add_argument("--viewing-tab", default=None, choices=[None, "code", "data"])
+    # 視圖代號不設 choices:值域是前端的,加新頁不該要 runtime 先發版才不會炸——
+    # 認不認得由 build_prompt 決定(認不得就當沒送)。
+    parser.add_argument("--viewing-view", default=None)
+    parser.add_argument("--viewing-widgets", default=None)  # JSON 字串陣列
     args = parser.parse_args()
+    viewing_widgets = parse_viewing_widgets(args.viewing_widgets)
 
     # Secrets come from env, never argv — argv is world-visible in `ps`. The web
     # report token IS the machine's proxy token; the Telegram bot token is passed
@@ -1838,6 +1910,7 @@ def main():
     reply = asyncio.run(run_turn(
         args.session_id, args.message, args.model, sink,
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
+        viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
     ))
     print(reply)
 
