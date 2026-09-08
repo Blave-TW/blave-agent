@@ -413,6 +413,15 @@ def _portfolio_steps_block(workspace=None):
     return doc[i:min(j, i + _STEPS_MAX_CHARS)].strip()
 
 
+def _is_zh(message):
+    """這則用戶訊息是不是中文。漢字要「壓過」英文字母才算——「what is 台積電 price」
+    是英文句帶個股名,不是中文句。_lang_directive 與兜底錯誤句共用同一條判定,
+    runtime 沒有全域語言設定,也不該為了幾句錯誤訊息另建 i18n 表。"""
+    han = sum(1 for ch in message if "一" <= ch <= "鿿")
+    letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
+    return han >= 3 and han > letters * 0.5
+
+
 def _lang_directive(message, suggest=False):
     """Deterministic per-turn language pin. Han-character ratio decides what the
     user wrote in; the directive names ONE target language explicitly — a generic
@@ -420,11 +429,8 @@ def _lang_directive(message, suggest=False):
     suggest=True (web only) extends the pin to the <suggest> lines: the suggest
     rule + its example are written in Chinese, so without naming them the
     English reply comes back with Chinese suggestions (uid=1, 2026-08-25)."""
-    han = sum(1 for ch in message if "一" <= ch <= "鿿")
     letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
-    # 漢字要「壓過」英文字母才算中文訊息——「what is 台積電 price」是英文句帶
-    # 個股名,不是中文句
-    if han >= 3 and han > letters * 0.5:
+    if _is_zh(message):
         if suggest:
             return "[用中文回覆這則訊息,<suggest> 建議句也用中文]"
         return "[用中文回覆這則訊息]"
@@ -1063,8 +1069,10 @@ class TelegramSink:
         # already kept out of the reply text by the no-narration system prompt).
         pass
 
-    def set_error(self, text):
-        # Replace the in-progress chunk with the error message.
+    def set_error(self, text, code=None):
+        # Replace the in-progress chunk with the error message. `code` 是 web 面
+        # 用來挑 i18n 字串的分類欄位;TG 沒有那一層(這裡的文字就是用戶收到的
+        # 泡泡),簽名收下但不使用——兩個 sink 對 run_turn 是同一個介面。
         self.chunk_text = text
 
     async def stop(self):
@@ -1301,6 +1309,7 @@ class WebSink:
         self.session_id = session_id
         self.full_text = ""
         self.error_text = None
+        self.error_code = None
         # Set when the user hits Stop: /report piggybacks `interrupt: true` on its
         # response (that's the only channel that reaches this VM mid-turn), and
         # run_turn breaks at the next step boundary.
@@ -1471,8 +1480,9 @@ class WebSink:
         if text:
             self._send({"type": "thinking", "text": text})
 
-    def set_error(self, text):
+    def set_error(self, text, code=None):
         self.error_text = text
+        self.error_code = code
 
     async def stop(self):
         pass
@@ -1482,7 +1492,11 @@ class WebSink:
             # 炸掉的回合也要把攢著的尾巴送出去,否則泡泡裡的半截回覆會比模型
             # 真正吐出來的少最後 250ms 的字。
             self._flush_text()
-            self._send({"type": "error", "message": self.error_text})
+            chunk = {"type": "error", "message": self.error_text}
+            if self.error_code:
+                # 分類欄位是附加的:舊前端只讀 message,收到未知 code 也退回原路徑。
+                chunk["code"] = self.error_code
+            self._send(chunk)
             return self.error_text
         self._flush_head()
         if not self.full_text and getattr(self, "_last_status", ""):
@@ -1649,6 +1663,117 @@ def _write_system_prompt_file(text):
     return path
 
 
+# ── 回合炸掉時的兜底訊息 ──────────────────────────────────────────────────────
+# 四個 code 是與前端的契約(web 拿它挑 i18n 字串;未知值或缺欄位就退回既有的
+# 「顯示 message」路徑,舊機器不會壞)。文案定稿在
+# .claude/output/designer/mockup-chat-turn-error.html #spec §1a/§1b。
+FAULT_NOT_STARTED_UPSTREAM = "not_started_upstream"
+FAULT_NOT_STARTED = "not_started"
+FAULT_PARTIAL = "partial"
+FAULT_MAX_TURNS = "max_turns"
+
+# 只有 5xx / 429 算「上游擋掉」。零工具的回合還涵蓋 sink 少方法的 AttributeError、
+# 起 CLI 子行程失敗、proxy 回 402/403(試用額度)——那些情況說「模型服務沒有回應」
+# 是假話,一律退中性句。
+_API_ERROR_RE = re.compile(r"API Error: (5\d\d|429)")
+# 收據摘要接進歷史文字的列數上限:收件人是下一輪的模型,列夠它判斷「做到哪」就好。
+TOOL_STEPS_MAX = 12
+
+# web 與 TG 的文案刻意分岔:web 指得到活動區的收據列(「上面是…」),TG 指不到,
+# 所以第二行改成「請他打什麼字」。中/英以外的語系退英文——runtime 只判得出這兩種,
+# 不為這幾句建 i18n 表(web 面真正的多語言在前端,靠 code 挑字串)。
+FAULT_TEXT = {
+    "web": {
+        FAULT_NOT_STARTED_UPSTREAM: (
+            "模型服務沒有回應，你剛才那句沒有被執行。機器上什麼都沒動。",
+            "The model service did not answer, so your last message never ran. Nothing on the machine changed.",
+        ),
+        FAULT_NOT_STARTED: (
+            "這一輪沒有跑起來，你剛才那句沒有被執行。機器上什麼都沒動。",
+            "This turn never started, so your last message did not run. Nothing on the machine changed.",
+        ),
+        FAULT_PARTIAL: (
+            "這一輪中途斷了，你剛才的要求可能只做完一部分。上面是斷掉前已經執行的步驟。",
+            "This turn broke off midway, so your request may be only partly done. The steps above ran before it stopped.",
+        ),
+        FAULT_MAX_TURNS: (
+            "這一輪步驟超過上限，停在半路。上面已經執行的步驟都生效了，把要求拆小一點再問一次。",
+            "This turn hit the step limit and stopped partway. The steps above took effect — ask again in a smaller step.",
+        ),
+    },
+    "tg": {
+        FAULT_NOT_STARTED_UPSTREAM: (
+            "模型服務沒有回應，你剛才那句沒有被執行，機器上什麼都沒動。\n把同一句再傳一次就好。",
+            "The model service did not answer — your last message never ran, and nothing on the machine changed.\nSend the same message again.",
+        ),
+        FAULT_NOT_STARTED: (
+            "這一輪沒有跑起來，你剛才那句沒有被執行，機器上什麼都沒動。\n把同一句再傳一次就好。",
+            "This turn never started — your last message did not run, and nothing on the machine changed.\nSend the same message again.",
+        ),
+        FAULT_PARTIAL: (
+            "這一輪中途斷了，你剛才的要求可能只做完一部分。\n傳「看一下機器現在的實際狀態，只講你能確認完成的」，我核對後回報。",
+            "This turn broke off midway, so your request may be only partly done.\nReply “check the machine’s current state and report only what you can confirm” and I will verify.",
+        ),
+        FAULT_MAX_TURNS: (
+            "這一輪步驟超過上限，停在半路，前面做的都生效了。\n把要求拆小一點再傳一次。",
+            "This turn hit the step limit and stopped partway; everything before that took effect.\nAsk again in a smaller step.",
+        ),
+    },
+}
+
+
+def _fault_code(exc, tool_calls, result_info=None):
+    """兜底例外 + 這一輪跑過幾個工具 → 四個 code 之一。
+
+    判定順序寫死:先 max_turns 再看工具數。撞上限的回合一定跑過工具,順序反過來
+    就永遠出不了 max_turns(它也是 partial 家族,只是有更精確的說法)。
+
+    欄位一律 getattr 取,不用 isinstance(e, sdk.ResultError):那個類別是 SDK
+    0.2.14x 才有的,舊 build 上做型別判定會讓分類本身炸掉。result_info 是迴圈裡
+    抄下來的最後一則錯誤 ResultMessage(SDK 先把它送出來、才拋例外),連沒有
+    ResultError 的 build 都拿得到 is_error / api_error_status / result。"""
+    info = result_info or {}
+    text = str(exc)
+    subtype = getattr(exc, "subtype", None) or info.get("subtype")
+    reason = getattr(exc, "terminal_reason", None) or info.get("terminal_reason")
+    # 結構化欄位優先;字串比對是 CLI 自帶文案(現行 "Reached maximum number of
+    # turns (N)"),換 CLI 版本要回歸驗一次——驗不過會退成 partial,降級是安全的。
+    if subtype == "error_max_turns" or reason == "max_turns" \
+            or "maximum number of turns" in text.lower():
+        return FAULT_MAX_TURNS
+    if tool_calls > 0:
+        return FAULT_PARTIAL
+    status = getattr(exc, "api_error_status", None)
+    if not isinstance(status, int):
+        status = info.get("api_error_status")
+    if isinstance(status, int) and (status >= 500 or status == 429):
+        return FAULT_NOT_STARTED_UPSTREAM
+    if _API_ERROR_RE.search(text) or _API_ERROR_RE.search(info.get("result") or ""):
+        return FAULT_NOT_STARTED_UPSTREAM
+    return FAULT_NOT_STARTED
+
+
+def _fault_message(code, message, surface):
+    zh, en = FAULT_TEXT[surface][code]
+    return zh if _is_zh(message) else en
+
+
+def _fault_receipt_suffix(steps):
+    """partial / max_turns 時,接在寫進 session sqlite 的 assistant 文字後面的收據摘要。
+
+    收件人是**下一輪的模型**,不是用戶:run_turn 每輪開新 CLI session,這一輪的工具
+    呼叫不在 ss.get_context() 的 role/content 純文字裡,少了這行,用戶按「確認做到哪」
+    時模型只能憑空回想。用戶看不到它——web 面用戶讀的是 api 那份 Redis 歷史,TG 面
+    這行是在 finalize 把泡泡送出去之後才接上的。"""
+    if not steps:
+        return ""
+    shown = [" ".join(x for x in step if x) for step in steps[:TOOL_STEPS_MAX]]
+    more = len(steps) - len(shown)
+    if more > 0:
+        shown.append(f"…另有 {more} 步")
+    return "\n[中斷前已執行:" + "、".join(shown) + "]"
+
+
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, viewing_widgets=None):
     summary, recent = ss.get_context(session_id)
@@ -1754,6 +1879,14 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         print("[agent_turn] SDK 沒有 include_partial_messages,這輪不串流", file=sys.stderr)
 
     await sink.start()
+    # 回合級的工具收據(名稱, 受詞)。兜底分類要的是「這一輪有沒有發過工具呼叫」,
+    # 而 had_tool 是每則訊息的區域變數、WebSink._tool_t0 結束時已經被 pop 空,
+    # 兩個都答不了這個問題。順帶是「做到哪」那份摘要的資料源。
+    tool_steps = []
+    # 最後一則 is_error 的 ResultMessage:SDK 先把它送給呼叫端、才把錯誤包成例外
+    # 拋出,所以這裡抄一份,分類就不必仰賴例外型別有沒有那些欄位。
+    result_info = {}
+    fault_code = None
     try:
         query_iter = sdk.query(prompt=prompt, options=options)
         is_web = isinstance(sink, WebSink)
@@ -1812,6 +1945,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     elif isinstance(block, sdk.ThinkingBlock):
                         sink.on_thinking(block)
                     elif isinstance(block, sdk.ToolUseBlock):
+                        # 先記收據再交給 sink:工具是 CLI 執行的,sink 炸掉不該讓
+                        # 這一步從「做到哪」的名單裡消失。
+                        tool_steps.append((
+                            getattr(block, "name", "") or "",
+                            _tool_summary(getattr(block, "name", ""),
+                                          getattr(block, "input", None)),
+                        ))
                         sink.on_tool(block)
                         had_tool = True
                     # A Stop arrives via the /report response inside on_*; break
@@ -1845,6 +1985,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                             on_result(block)
             elif isinstance(msg, sdk.ResultMessage):
                 print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
+                if getattr(msg, "is_error", False):
+                    result_info = {
+                        "subtype": getattr(msg, "subtype", None),
+                        "api_error_status": getattr(msg, "api_error_status", None),
+                        "terminal_reason": getattr(msg, "terminal_reason", None),
+                        "result": getattr(msg, "result", None),
+                    }
             elif _DEBUG_MSGS:
                 print(f"[agent_turn][probe] {type(msg).__name__}", file=sys.stderr)
             if getattr(sink, "interrupted", False):
@@ -1858,10 +2005,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # record (so future turns have context) and always give the user
         # something back.
         print(f"[agent_turn] turn failed: {e}", file=sys.stderr)
-        if "maximum number of turns" in str(e).lower():
-            sink.set_error("這個任務需要的步驟比較多，處理到一半被中斷了。可以換個更小/更具體的問題再試一次。")
-        else:
-            sink.set_error("處理這則訊息時發生錯誤，稍後再試一次。")
+        fault_code = _fault_code(e, len(tool_steps), result_info)
+        print(f"[agent_turn] fault={fault_code} tools={len(tool_steps)}", file=sys.stderr)
+        surface = "web" if isinstance(sink, WebSink) else "tg"
+        sink.set_error(_fault_message(fault_code, message, surface), code=fault_code)
     finally:
         await sink.stop()
         if sysprompt_path:
@@ -1873,7 +2020,11 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 print(f"[agent_turn] 刪不掉 {sysprompt_path}: {e}", file=sys.stderr)
 
     reply_text = sink.finalize()
-    ss.append_turn(session_id, "assistant", reply_text)
+    # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
+    history_text = reply_text
+    if fault_code in (FAULT_PARTIAL, FAULT_MAX_TURNS):
+        history_text += _fault_receipt_suffix(tool_steps)
+    ss.append_turn(session_id, "assistant", history_text)
     ss.maybe_compact(session_id)
 
     return reply_text

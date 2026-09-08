@@ -8,6 +8,39 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 回合炸掉時的兜底訊息從一句「處理這則訊息時發生錯誤」拆成四種,並帶一個 `code` 給
+  web(`not_started_upstream` / `not_started` / `partial` / `max_turns`,文案定稿見
+  `.claude/output/designer/mockup-chat-turn-error.html` #spec §1a/§1b)。判定順序寫死
+  「先 max_turns 再看這一輪發過幾個工具呼叫」——撞上限的回合一定跑過工具,反過來就永遠
+  出不了 max_turns。**「你剛才那句沒有被執行」只在零工具時才講**:工具跑到一半才炸的
+  回合說這句是假話(uid=18198 要求「刪除全部 api」,上游 503,但同一句在別的回合可能已經
+  改過 `.env`)。零工具再分兩句:只有 `api_error_status` 5xx/429 或錯誤文字命中
+  `API Error: (5\d\d|429)` 才說「模型服務沒有回應」,402/403(試用額度)、sink 缺方法、
+  起 CLI 子行程失敗一律走中性句。分類欄位一律 `getattr` 取,不做
+  `isinstance(e, sdk.ResultError)`——那個類別是 0.2.14x 才有的;迴圈裡順手抄一份
+  `is_error` 的 `ResultMessage`(SDK 先送訊息、才拋例外),舊 build 也分得出來。
+  `max_turns` 結構化欄位(`subtype` / `terminal_reason`)優先,CLI 文案字串比對留作退路。
+  中/英由既有的漢字比例判定(抽成 `_is_zh`,與 `_lang_directive` 共用),其餘語系退英文。
+- `partial` / `max_turns` 時把這一輪的工具收據(動詞+受詞)接在寫進 session sqlite 的
+  assistant 文字後面。每輪開新 CLI session,這一輪的工具呼叫不在 `ss.get_context()` 裡,
+  少了這行,用戶按「確認做到哪」時模型只能憑空回想。它只給下一輪的模型讀:web 面用戶讀的
+  是 api 那份歷史,TG 面它是在泡泡送出之後才接上去的。
+- 同 commit 的 api 端(`openclaw/webchat.py`,獨立部署):失敗的回合現在會寫進 durable
+  history——`error` 分支以前只 delete 累加器,所以 F5 之後失敗訊息、半截回覆、收據、動作鈕
+  全部消失(首次 subscribe 用 `latest_seq` 種 lastSeq,重載不會 replay)。歷史訊息多一個
+  `fault` = `{code?, message, steps:[{tool, summary?, ms?, error?, cut?}]}`(等不到 `done`
+  的那列帶 `cut: true`,前端畫成中斷步驟),`steps` 用與 live
+  `tool` chunk 相同的欄位名,前端重載時可以用同一個列渲染器重建。收據靠新的
+  `webchat:curtools:<user_id>` 逐輪暫存(`done`/`error` 都清)。`code` 白名單在 api 端擋
+  一次,認不得就當沒送、不 400——新 runtime 打到還沒部署的 api 不能因此掉整輪。
+  收據列的上限以「列」計而不是 chunk 計(`running` 才吃額度,`done` 只會填已在列的那行——
+  擋掉它會讓那行變成假的「被中斷」),沒有 `id` 的列一律不標 `cut`(舊 runtime 根本不送
+  `done`,標了就是捏造事實)。`error` 分支多一道等冪守衛:`_post_report` 會重送 chunk,
+  沒有它重載後會看到兩則一樣的失敗通知。同時歷史裡的 user 訊息改存**原句**+另欄
+  `attachment`(檔名),不再存夾著 `📎` 的顯示字串——重載後「再送一次」不能把那行標記
+  當正文送給 agent,純附件訊息的 `text` 是空的,前端據此不畫鈕(spec §3)。
+  檢查:`tests/check_turn_fault.py`、`tests/check_webchat_fold.py`。
+
 - `command_listener._cmd_credentials` is now also the writer behind blaveclaw-config's
   `lib.venue.bind` (a key pasted in chat is bound through the same eviction / manifest /
   halt path as a web bind). Docstring only — no behaviour change; the dependency is
