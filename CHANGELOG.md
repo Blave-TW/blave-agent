@@ -8,7 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- `command_listener._cmd_credentials` is now also the writer behind blaveclaw-config's
+  `lib.venue.bind` (a key pasted in chat is bound through the same eviction / manifest /
+  halt path as a web bind). Docstring only — no behaviour change; the dependency is
+  recorded so a refactor of `_in_workspace` / `_cmd_credentials` / `_ui_manifest_ids`
+  knows it has a caller outside this file.
 
 ## 1.1.61 — 2026-09-04
 

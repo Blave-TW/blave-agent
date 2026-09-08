@@ -260,7 +260,8 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
 
 def _write_ui_cred_manifest(lines):
     """manager/credentials.ui.json — venue ids ({"ids": [...]}) whose
-    credential PAIRS the UI just confirmed into .env (deployment redline L2,
+    credential PAIRS this writer just put into .env — a web bind, or the chat
+    bind through blaveclaw-config's lib.venue.bind (deployment redline L2,
     spec §3.2; paper included via the same pair rule). lib/venue_wiring only
     routes ids in this manifest when it exists, so keys an agent hand-writes
     into .env never become a live venue. Best-effort but loud: on failure a
@@ -333,6 +334,10 @@ def _cmd_credentials(args):
     bound venue(s); singleton service keys (OPENAI_API_KEY — no secret sibling),
     venue support keys (SINOPAC_CA_PATH), user-added lines and comments all
     survive, deliberately.
+
+    Also the chat-bind path: blaveclaw-config's lib/venue.py loads this module
+    from <base>/current and calls _in_workspace(_cmd_credentials, {"env": …})
+    and reads _venue_cred_ids over .env — keep those names and shapes stable.
     """
     env = args.get("env")
     if not isinstance(env, dict) or not env:
