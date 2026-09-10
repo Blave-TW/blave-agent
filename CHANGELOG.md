@@ -44,6 +44,17 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   (原子換檔沒發生 = 舊版原封不動),不會半份、不會遺失。要修就得在這裡加重試迴圈,
   為一個可重試、使用者看得見的失敗加一段只在 Windows 生效的迴圈,不划算。
 
+- 事件通道(通知收斂案第①步,canon `.claude/docs/notifications.md`):新增 `events.py`
+  ——機器側 P1／P2 事件 append 到 `state/events.jsonl`(id=epoch 微秒、保證比檔案最後
+  一筆大,`ts` epoch 秒,`type`＋`payload`),`portfolio_reporter` 每 2 分鐘把水位線以上
+  的帶在既有 payload 送上去,平台回應的 `acked_through` 寫回 `state/events.acked`、
+  水位線以下輪替檔案。寫入端只 append 永不改檔,輪替只有 reporter 做(config 側
+  dual-write 照同一條規則)。payload 另外加 `resources`(disk_pct／記憶體三數字／
+  gateway,Windows 走 `nssm status` 與 GlobalMemoryStatusEx)與 `tg_chat_ids`(配對的
+  chat id):平台每小時 SSH 進機器的部署巡檢同批退役,那兩件事只剩這條路上來——
+  `tg_chat_ids` 是 fan-out router 判斷「有沒有配對 TG」的依據,漏掉的話通知會安靜地
+  停止送達。檢查:`tests/check_events_channel.py`。
+
 ## 1.1.63 — 2026-09-10
 
 - `_stop_reconciler()`(解綁前「daemon 真的停了嗎」那道確認)的判定全部改看 exit code,
