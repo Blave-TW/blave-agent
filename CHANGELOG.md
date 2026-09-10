@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.65 — 2026-09-10
+
 - 策略名閘門 `_CHART_NAME_RE` 由 64 字放寬到 128(canon §9b)。機隊上已經有 65 與 69 字的策略,
   它們的權益圖從來沒上傳成功過、也不會有版本——64 這個數字是抄 `command_listener` 的,不是 S3 的限制。
   api 端 `agent_chart_data`／`agent_strategy_versions` 與 web `strategy_versions.js` 同批放寬,四處必須一致,
