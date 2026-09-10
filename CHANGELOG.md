@@ -8,6 +8,29 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- `_stop_reconciler()`(解綁前「daemon 真的停了嗎」那道確認)的判定全部改看 exit code,
+  不再比對 tmux 的 stderr 文字,順序也倒過來:先問 systemd(`systemctl is-active`,
+  命中 running-set 才 `sudo -n systemctl stop`),tmux 降為 legacy fallback、但在
+  systemd 乾淨停掉之後仍然照查(機隊 tmux→systemd 遷移未完,daemon 可能在任一邊),
+  改用 `tmux has-session` 的 rc:rc≠0 就是沒有 session——沒 server 與沒那個 session
+  結論相同,所以訊息內容無關緊要。舊版在「機器上根本沒有 tmux server」時**必然**誤判成
+  「還在跑」:tmux 3.2a 印的是 `error connecting to /tmp/tmux-0/default (No such file
+  or directory)`,舊碼比對的 `find session` / `no server` / `failed to connect` 一個都
+  不含——而那正是 blave-agent 機的常態(daemon 走 systemd,平常根本不開 tmux)。實測
+  後果:uid 29026 於 2026-09-09 09:37 從 web 解綁 bybit,`_stop_reconciler()` 回 False、
+  membership 保留,daemon 從沒被停掉,接下來 16 小時每 5 分鐘噴一則 Telegram、累計
+  190 則,journal 只留下一句 `reconciler not confirmed stopped — membership kept`。
+  running-set(`active/activating/reloading/deactivating/failed`)與
+  `_cmd_restart_reconciler` 那組仍維持逐字一致,保守契約不變(不確定一律當還在跑、回
+  False);兩條 False 出口現在會把 rc 與 stderr 前 150 字寫進 log——29026 那次只有一句
+  「membership kept」,看不出是卡在 tmux 還是 sudo。確認停掉後另外用
+  `_purge_deployment_registry(["reconciler"])` 退掉 `state/deployments.json` 的健康
+  註冊:`_register_reconciler_deployment` 每次 啟動下單 都會寫進去,但全站沒有任何地方
+  會刪——2026-08-19 稽核修 Type A/C 的同一個 bug 時,daemon 那筆被註記為 "untouched
+  either way" 而漏掉。目前還沒爆是因為 `manager/healthcheck.py` 的 cron 只裝在舊
+  openclaw/blaveclaw 機上,等它補裝到機隊,就會為一個用戶主動關掉的 daemon 每 6 小時
+  各叫一次 heartbeat 過期。檢查:`tests/check_reconciler_stop.py`。
+
 - 回合炸掉時的兜底訊息從一句「處理這則訊息時發生錯誤」拆成四種,並帶一個 `code` 給
   web(`not_started_upstream` / `not_started` / `partial` / `max_turns`,文案定稿見
   `.claude/output/designer/mockup-chat-turn-error.html` #spec §1a/§1b)。判定順序寫死

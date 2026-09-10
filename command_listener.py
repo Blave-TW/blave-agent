@@ -1611,13 +1611,26 @@ def _cmd_execution(args):
 def _stop_reconciler():
     """True only when no reconciler daemon can still be watching the workspace
     (confirmed stopped, or provably never running). The full-unbind path gates
-    the membership clear on this — see the WHY there. Same stop mechanics as
-    _cmd_restart_reconciler's first half.
+    the membership clear on this — see the WHY there. Anything uncertain is
+    False on purpose: a survivor turns that membership clear into a
+    market-flatten of every open position.
 
     Linux checks BOTH supervisors, not just one: the fleet is mid-migration
     from tmux to systemd (see _cmd_restart_reconciler), so a live daemon could
-    be under either depending on when this machine last pressed 啟動下單."""
-    try:
+    be under either depending on when this machine last pressed 啟動下單.
+    systemd is asked FIRST (it is what actually supervises the daemon on this
+    fleet); tmux is the pre-2026-08 legacy path and is still checked after a
+    clean systemd stop, never instead of it.
+
+    Every verdict here comes from an exit code, never from matching a message.
+    The stderr-parsing version of this shipped a fleet-wide false "still
+    running": with no server at all, tmux 3.2a prints `error connecting to
+    /tmp/tmux-0/default (No such file or directory)`, which none of the
+    matched phrases covered — and that is the NORMAL state of these machines
+    (systemd-supervised, tmux never opened). uid 29026, 2026-09-09: unbind
+    kept the membership, the daemon was never even asked to stop, 190 alerts
+    over 16 hours."""
+    def _confirm_stopped():
         if platform.system() == "Windows":
             st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
                                 capture_output=True, timeout=30)
@@ -1627,44 +1640,76 @@ def _stop_reconciler():
                                capture_output=True, timeout=60)
             return r.returncode == 0
 
-        r = subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
-                           capture_output=True, text=True, timeout=20)
-        if r.returncode == 0:
-            tmux_gone = True
-        else:
-            err = (r.stderr or "").lower()
-            # no such session / no tmux server at all = no daemon = nothing watching
-            tmux_gone = ("find session" in err or "no server" in err
-                        or "failed to connect" in err)
-        if not tmux_gone:
-            return False
-
-        if not os.path.isfile(RECONCILER_UNIT_PATH):
-            return True  # unit never installed on this machine — nothing else to check
-        state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
-                               capture_output=True, text=True, timeout=15)
-        # deactivating counts as RUNNING: stop is in flight but the process
-        # can live up to TimeoutStopSec more — returning True here would let
-        # the full-unbind path clear membership while the daemon gets one
-        # last reconcile round in (the flatten-live-positions incident
-        # class). `systemctl stop` on a deactivating unit blocks until it's
-        # actually gone, which is exactly the semantics this needs.
-        # failed counts as "uncertain, treat as running" too: Restart=always +
-        # StartLimitIntervalSec=0 make this state rare (systemd's own
-        # documented crash-loop transient), but a unit caught mid-transition
-        # can still show failed while a child process from the old attempt
-        # hasn't finished exiting yet — the same double-daemon risk
-        # `deactivating` guards against, so it's classified the same way.
-        if state.stdout.strip() not in ("active", "activating", "reloading",
+        # unit file absent = never installed here, nothing systemd can be
+        # running; the legacy supervisor below still has to be cleared before
+        # this may promise that nothing is watching.
+        if os.path.isfile(RECONCILER_UNIT_PATH):
+            state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
+                                   capture_output=True, text=True, timeout=15)
+            # deactivating counts as RUNNING: stop is in flight but the process
+            # can live up to TimeoutStopSec more — treating it as stopped would
+            # let the full-unbind path clear membership while the daemon gets
+            # one last reconcile round in (the flatten-live-positions incident
+            # class). `systemctl stop` on a deactivating unit blocks until it's
+            # actually gone, which is exactly the semantics this needs.
+            # failed counts as "uncertain, treat as running" too: Restart=always +
+            # StartLimitIntervalSec=0 make this state rare (systemd's own
+            # documented crash-loop transient), but a unit caught mid-transition
+            # can still show failed while a child process from the old attempt
+            # hasn't finished exiting yet — the same double-daemon risk
+            # `deactivating` guards against, so it's classified the same way.
+            if state.stdout.strip() in ("active", "activating", "reloading",
                                         "deactivating", "failed"):
-            return True  # not running — nothing to stop
-        stop = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "stop",
-                               RECONCILER_UNIT],
-                              capture_output=True, text=True, timeout=30)
-        return stop.returncode == 0
-    except Exception as e:  # TimeoutExpired, FileNotFoundError, …
+                # is-active needs no root; stop does — `sudo -n` against the
+                # narrow NOPASSWD rule provision.sh writes. A machine that
+                # never got that rollout fails fast here, and honestly:
+                # _cmd_restart_reconciler hits the same wall from the other side.
+                stop = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "stop",
+                                       RECONCILER_UNIT],
+                                      capture_output=True, text=True, timeout=30)
+                if stop.returncode != 0:
+                    _log("reconciler stop failed: sudo systemctl stop rc="
+                         f"{stop.returncode} {(stop.stderr or '').strip()[:150]}")
+                    return False
+
+        try:
+            has = subprocess.run(["tmux", "has-session", "-t", "reconciler"],
+                                 capture_output=True, timeout=20)
+        except FileNotFoundError:
+            return True  # no tmux binary on this machine = no session possible
+        if has.returncode != 0:
+            # rc != 0 means "no such session" whatever the cause (no session,
+            # no server, no socket) — one conclusion, so the message is
+            # irrelevant. This is the ONE call whose rc must be read: unlike
+            # _cmd_restart_reconciler's kill-session (deliberately ignored
+            # there — it only clears the way for the start that immediately
+            # follows, so its contract "a daemon is running afterwards" holds
+            # either way), this function's contract is "nothing is watching",
+            # and the caller zeroes membership on True. So "no session" and
+            # "kill failed" must stay distinguishable here.
+            return True
+        kill = subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
+                              capture_output=True, text=True, timeout=20)
+        if kill.returncode != 0:
+            _log(f"reconciler stop failed: tmux kill-session rc={kill.returncode} "
+                 f"{(kill.stderr or '').strip()[:150]}")
+        return kill.returncode == 0
+
+    try:
+        ok = _confirm_stopped()
+    except Exception as e:  # TimeoutExpired, …
         _log(f"reconciler stop failed: {type(e).__name__}: {e}")
         return False
+    if ok:
+        # Retire the daemon's health registration (written by
+        # _register_reconciler_deployment on every 啟動下單) — nothing else in
+        # the fleet ever deletes it, so manager/healthcheck.py would keep
+        # raising a false "no successful run" for a daemon the user
+        # deliberately stopped. Exactly the bug the 2026-08-19 audit fixed for
+        # Type A/C (_sync_deployment_registry), whose comment left this entry
+        # "untouched either way". A later 啟動下單 registers it again.
+        _purge_deployment_registry(["reconciler"])
+    return ok
 
 
 def _cmd_credentials_remove(args):
@@ -1804,7 +1849,8 @@ def _purge_deployment_registry(entries):
     name whose files (and heartbeat) are gone for good. Covers both Type A/C
     (registered by _sync_deployment_registry) and Type B (auto-registered by
     healthcheck.py itself from its old crontab line) — the field is a plain
-    name→entry map either way."""
+    name→entry map either way, which is why _stop_reconciler reuses this for
+    the "reconciler" daemon entry too (same alert, same fix)."""
     path = os.path.join(WORKSPACE, "state", "deployments.json")
     try:
         with open(path) as f:
@@ -2224,10 +2270,15 @@ def _cmd_restart_reconciler(args):
     # mid-migration from tmux to blave-agent-reconciler.service (2026-08), so
     # a machine that pressed 啟動下單 before this shipped can still have a
     # live tmux-supervised daemon — leaving it running alongside a freshly
-    # started systemd one would double-place every order. Best-effort/ignored
-    # like every other kill-session call in this file: "no session" is
-    # success — including tmux not being installed at all (FileNotFoundError:
-    # no binary = no session possible; the systemd path must not require it).
+    # started systemd one would double-place every order. The rc is ignored
+    # here on purpose, and ONLY here: this function's contract is "a daemon is
+    # running when it returns", so a session that refused to die is bounded by
+    # the restart/new-session right below. _stop_reconciler cannot do the same
+    # — it promises "nothing is watching" and its caller zeroes the 下單設定 on
+    # True, so it reads has-session's rc and then kill's rc. Same reason "no
+    # session" is success here, including tmux not being installed at all
+    # (FileNotFoundError: no binary = no session possible; the systemd path
+    # must not require it).
     try:
         subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
                        capture_output=True, timeout=20)
