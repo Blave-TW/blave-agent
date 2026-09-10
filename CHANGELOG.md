@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.64 — 2026-09-10
+
 - 策略版本(canon `.claude/docs/strategy-versions.md`,第 2 步機器端):`strategy_reporter`
   多兩件事——① `scan()` 每支策略附 `versions`(`counter`/`current`/`items`/`drift`),來源是
   `strategies/<name>/versions/index.json` 加 `drift.json` 存在與否,只帶摘要(每支 ≤20 筆、
