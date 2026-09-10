@@ -92,7 +92,7 @@ _CHART_REQUEST_TIMEOUT = 45
 # e.g. commit hit the total-size cap and swept it — so the persisted progress is a lie:
 # start that hash over. Bounded so a 409 that never clears can't loop every tick forever.
 _CHART_MAX_RESETS = 3
-_CHART_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_CHART_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")  # must match the api's chart/version gate
 
 # Strategy versions (.claude/docs/strategy-versions.md). lib/runner.py freezes every
 # BACKTEST into strategies/<name>/versions/{index.json, v<N>.json}; two channels out:
