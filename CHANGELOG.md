@@ -8,6 +8,20 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 策略版本(canon `.claude/docs/strategy-versions.md`,第 2 步機器端):`strategy_reporter`
+  多兩件事——① `scan()` 每支策略附 `versions`(`counter`/`current`/`items`/`drift`),來源是
+  `strategies/<name>/versions/index.json` 加 `drift.json` 存在與否,只帶摘要(每支 ≤20 筆、
+  每筆約 200 bytes),不帶碼也不帶曲線,否則 16MB 的 strategies cache 會被 20 份策略碼撐爆;
+  ② 新增 `sync_versions()`,把還沒送過的 `v<N>.json` gzip PUT 到
+  `/openclaw/agent/version/<strategy>/<n>`,版本 immutable 所以每個號碼一輩子只送一次,進度記在
+  `state/strategy_version_sync.json`。排在 `sync_charts` 之前(預算 10 秒):
+  `TimeoutStartSec=120` 已被圖片 30＋圖表 45＋report 15 吃掉大半,排後面會被餓死。api 端點還沒
+  部署時的 404 不是失敗——靜音退避一小時,不洗 log 也不每 2 分鐘空打;409 當成已存在;永久性
+  4xx 與過大的 blob 記成已送,免得每輪重試同一份送不出去的東西。機器端**不送 DELETE**(canon §8,
+  清理由 api 在 PUT 時掃)。`_chart_request` 多一個 `timeout` 參數、chart 的 state 讀寫抽成
+  `_load_state_file`/`_save_state_file` 給兩條通道共用。檢查:機器端產出那半在
+  `blaveclaw-config/tests/check_strategy_versions.py`＋既有 `tests/check_agent_chart_sync.py`。
+
 - Agent 常駐規則的 web 讀寫(`state/preferences.md`,原本只有聊天寫入路徑、web 零可見度):
   `strategy_reporter.report_cache()` 的 payload 多一個 `preferences`(原文字串;沒有那個檔
   就空字串,讀不動則整欄省略——欄位在不在就是 api 端的能力旗標,塞 "" 會讓 web 顯示成
@@ -29,17 +43,6 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   handler raise → ack 回 error → 面板顯示「沒有存到」,使用者再按一次就好;檔案本身完好
   (原子換檔沒發生 = 舊版原封不動),不會半份、不會遺失。要修就得在這裡加重試迴圈,
   為一個可重試、使用者看得見的失敗加一段只在 Windows 生效的迴圈,不划算。
-
-- 事件通道(通知收斂案第①步,canon `.claude/docs/notifications.md`):新增 `events.py`
-  ——機器側 P1／P2 事件 append 到 `state/events.jsonl`(id=epoch 微秒、保證比檔案最後
-  一筆大,`ts` epoch 秒,`type`＋`payload`),`portfolio_reporter` 每 2 分鐘把水位線以上
-  的帶在既有 payload 送上去,平台回應的 `acked_through` 寫回 `state/events.acked`、
-  水位線以下輪替檔案。寫入端只 append 永不改檔,輪替只有 reporter 做(config 側
-  dual-write 照同一條規則)。payload 另外加 `resources`(disk_pct／記憶體三數字／
-  gateway,Windows 走 `nssm status` 與 GlobalMemoryStatusEx)與 `tg_chat_ids`(配對的
-  chat id):平台每小時 SSH 進機器的部署巡檢同批退役,那兩件事只剩這條路上來——
-  `tg_chat_ids` 是 fan-out router 判斷「有沒有配對 TG」的依據,漏掉的話通知會安靜地
-  停止送達。檢查:`tests/check_events_channel.py`。
 
 ## 1.1.63 — 2026-09-10
 

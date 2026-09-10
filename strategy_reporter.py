@@ -94,6 +94,28 @@ _CHART_REQUEST_TIMEOUT = 45
 _CHART_MAX_RESETS = 3
 _CHART_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
+# Strategy versions (.claude/docs/strategy-versions.md). lib/runner.py freezes every
+# BACKTEST into strategies/<name>/versions/{index.json, v<N>.json}; two channels out:
+#   - the summary list rides the strategies report below (small, no code, no curve)
+#   - each v<N>.json blob is PUT here once — immutable, so a version is never re-sent
+# Same one-way shape as the chart upload, minus the staging dance: a version has one
+# object, so there is no half-uploaded set to hide behind a commit.
+VERSION_URL = os.environ.get(
+    "BLAVE_VERSION_URL", "https://api.blave.org/openclaw/agent/version"
+)
+_VERSION_STATE_PATH = os.path.join(STATE_DIR, "strategy_version_sync.json")
+# Small next to the chart's 45s: blobs are one request each and the whole tick has to fit
+# inside blave-agent-strategies.service's TimeoutStartSec=120 alongside images (30) +
+# charts (45) + the report POST (15). Versions go FIRST so a slow chart set can't starve
+# them, and the leftovers just go out on the next tick.
+_VERSION_TICK_BUDGET_SEC = 10
+_VERSION_REQUEST_TIMEOUT = 15
+_VERSION_GZ_MAX_BYTES = 4 * 1024 * 1024
+# A 404 means the api does not serve this endpoint yet (deploy order: api ships before the
+# machine side). Silent — it is not a failure — but not a forever per-tick probe either:
+# back off an hour, which costs at most one delayed hour on a misordered deploy.
+_VERSION_404_BACKOFF_S = 3600
+
 # Strategy files set these near the top (see references/strategy-code.md).
 # STRATEGY_NAME is the technical id; DISPLAY_NAME / DESCRIPTION are the
 # human-facing name + one-line blurb driving the workspace list/detail, so a
@@ -212,6 +234,36 @@ def _read_scan(name):
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _read_versions(name):
+    """The strategy's version summary for the report: {counter, current, items, drift}, or
+    None when this strategy has never been versioned (an older config on the machine —
+    the web then simply shows no version history).
+
+    Carries the summary entries only: no code, no equity curve. 20 entries × ~200 bytes is
+    the whole budget (canon §9) — the blobs go to S3 through sync_versions, and 20 copies
+    of a strategy file would blow the report's size cap on their own.
+
+    `drift` is the live-tick flag lib/runner.py writes when strategies/<name>/strategy.py
+    stopped matching what the current version stored (canon §6). The web needs it to draw
+    「上線中 · 檔案已改」 instead of a clean 「上線中」 — a clean badge over code nobody
+    backtested is worse than no badge."""
+    vdir = os.path.join(STRATEGIES_DIR, name, "versions")
+    try:
+        with open(os.path.join(vdir, "index.json"), encoding="utf-8") as f:
+            idx = json.load(f)
+        items = idx["items"]
+        if not isinstance(items, list):
+            raise ValueError("items is not a list")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return {
+        "counter": idx.get("counter"),
+        "current": idx.get("current"),
+        "items": [i for i in items if isinstance(i, dict)],
+        "drift": os.path.exists(os.path.join(vdir, "drift.json")),
+    }
 
 
 def _scan_marker(name):
@@ -375,6 +427,14 @@ def scan():
         sc = _read_scan(s["name"])
         if sc is not None:
             s["scan"] = sc
+        # Same character limit as the blob upload (canon §9b): the summary list has no
+        # limit of its own, but a name the upload path refuses would put 20 entries in
+        # front of the user whose blob GET / compare 404 forever — a permanent 「還在
+        # 同步」. One consistent "no version history" beats an inconsistent one.
+        if _CHART_NAME_RE.fullmatch(s.get("name") or ""):
+            vs = _read_versions(s["name"])
+            if vs is not None:
+                s["versions"] = vs
         # Web-side hint so the 下單設定 picker can grey the checkbox out; the
         # authoritative block is _cmd_amounts' save-time guard (a stale cache
         # here must not be the only defense). False when unknown — fail open,
@@ -582,13 +642,17 @@ class _ChartHTTPError(Exception):
         return 400 <= self.code < 500 and self.code not in (409, 429)
 
 
-def _chart_request(method, url, body, token, content_encoding=None):
+def _chart_request(method, url, body, token, content_encoding=None,
+                   timeout=_CHART_REQUEST_TIMEOUT):
+    """One authenticated upload request, raising _ChartHTTPError on 4xx/5xx. Also the
+    version blobs' transport (sync_versions) — same auth, same gzip body, same
+    permanent-vs-retry judgement."""
     headers = {"x-api-key": f"proxy-{token}", "Content-Type": "application/json"}
     if content_encoding:
         headers["Content-Encoding"] = content_encoding
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=_CHART_REQUEST_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read()
     except urllib.error.HTTPError as e:
         try:
@@ -598,24 +662,34 @@ def _chart_request(method, url, body, token, content_encoding=None):
         raise _ChartHTTPError(e.code, excerpt) from None
 
 
-def _load_chart_state():
+def _load_state_file(path):
+    """An upload-progress file as a dict; {} when absent / unreadable / not an object —
+    progress is a cache, and losing it costs a re-upload, never correctness."""
     try:
-        with open(_CHART_STATE_PATH) as f:
+        with open(path) as f:
             state = json.load(f)
         return state if isinstance(state, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
-def _save_chart_state(state):
+def _save_state_file(path, state):
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        tmp = _CHART_STATE_PATH + ".tmp"
+        tmp = path + ".tmp"
         with open(tmp, "w") as f:
             json.dump(state, f)
-        os.replace(tmp, _CHART_STATE_PATH)
+        os.replace(tmp, path)
     except OSError:
         pass
+
+
+def _load_chart_state():
+    return _load_state_file(_CHART_STATE_PATH)
+
+
+def _save_chart_state(state):
+    _save_state_file(_CHART_STATE_PATH, state)
 
 
 def _save_chart_state_entry(name, entry):
@@ -747,6 +821,110 @@ def sync_charts(strategies, token=None):
         except Exception as e:
             print(f"[strategy_reporter] chart upload {name} failed: {e}", file=sys.stderr)
         _save_chart_state_entry(name, entry)
+
+
+def sync_versions(strategies, token=None):
+    """TIMER-PATH ONLY. PUT every strategy version blob this machine has not sent yet to
+    /openclaw/agent/version/<strategy>/<n> (.claude/docs/strategy-versions.md §9).
+
+    A version is immutable, so this is one PUT per version, ever: the state file records
+    what landed and nothing is re-sent. Its counterpart, the summary list, rides the report
+    (_read_versions) and gets there first — the web is expected to show "still syncing"
+    for the few seconds a blob lags its entry.
+
+    Deletion is split (canon §8). Versions the runner pruned past 20 are NOT chased —
+    chasing them means a second ledger of pending deletes for something the api sweeps at
+    PUT time anyway. A deleted *strategy* is: DELETE /<strategy> for every name that left
+    the ledger, because nothing else can tell the api (it cannot infer a deletion from a
+    report, and the chart DELETE only covers strategies that got a chart uploaded).
+
+    Failures are logged and retried next tick, with two exceptions that would otherwise
+    repeat forever: a 404 (endpoint not deployed yet) backs the whole sweep off an hour
+    silently, and a blob the api can only ever refuse — too large, or a permanent 4xx —
+    is marked sent so it stops being offered."""
+    token = token or PROXY_TOKEN
+    state = _load_state_file(_VERSION_STATE_PATH)
+    if float(state.get("defer_until") or 0) > time.time():
+        return
+    by_name = state.get("strategies")
+    if not isinstance(by_name, dict):
+        by_name = {}
+    deadline = time.monotonic() + _VERSION_TICK_BUDGET_SEC
+    names = [s["name"] for s in strategies if _CHART_NAME_RE.fullmatch(s.get("name") or "")]
+    # Strategy deleted → ask the api to drop its stored versions, then drop its ledger
+    # (canon §8). This is the only signal the api gets: it cannot infer a deletion from a
+    # report, and the chart DELETE only covers strategies that got a chart uploaded.
+    # The ledger entry stays until the api accepted, so a 5xx just retries next tick.
+    for gone in sorted(set(by_name) - set(names)):
+        if time.monotonic() > deadline:
+            break
+        try:
+            _chart_request("DELETE", f"{VERSION_URL}/{gone}", None, token,
+                           timeout=_VERSION_REQUEST_TIMEOUT)
+        except _ChartHTTPError as e:
+            if e.code == 404:  # endpoint not deployed yet — same silent hour as below
+                _save_state_file(_VERSION_STATE_PATH,
+                                 {"strategies": by_name,
+                                  "defer_until": time.time() + _VERSION_404_BACKOFF_S})
+                return
+            print(f"[strategy_reporter] version delete {gone} failed: {e}", file=sys.stderr)
+            if not e.permanent:
+                continue  # 429/5xx: keep the entry and retry next tick
+        except Exception as e:
+            print(f"[strategy_reporter] version delete {gone} failed: {e}", file=sys.stderr)
+            continue
+        by_name.pop(gone, None)
+    for name in names:
+        versions = _read_versions(name)
+        if not versions:
+            continue
+        local = [i.get("n") for i in versions["items"] if isinstance(i.get("n"), int)]
+        # Pruned versions leave the machine for good; keeping their numbers would grow the
+        # ledger without bound and re-uploading them is impossible anyway.
+        sent = sorted(set(by_name.get(name) or []) & set(local))
+        for n in local:
+            if n in sent:
+                continue
+            if time.monotonic() > deadline:
+                break
+            path = os.path.join(STRATEGIES_DIR, name, "versions", f"v{n}.json")
+            try:
+                with open(path, "rb") as f:
+                    gz = gzip.compress(f.read(), compresslevel=6)
+            except OSError as e:  # pruned between index read and now — next tick re-reads
+                print(f"[strategy_reporter] version {name} v{n} unreadable: {e}", file=sys.stderr)
+                continue
+            if len(gz) > _VERSION_GZ_MAX_BYTES:
+                print(f"[strategy_reporter] version {name} v{n} too large ({len(gz)}B); skipped",
+                      file=sys.stderr)
+                sent.append(n)
+                continue
+            try:
+                _chart_request("PUT", f"{VERSION_URL}/{name}/{n}", gz, token,
+                               content_encoding="gzip", timeout=_VERSION_REQUEST_TIMEOUT)
+            except _ChartHTTPError as e:
+                if e.code == 404:
+                    by_name[name] = sorted(sent)
+                    _save_state_file(_VERSION_STATE_PATH,
+                                     {"strategies": by_name,
+                                      "defer_until": time.time() + _VERSION_404_BACKOFF_S})
+                    return
+                if e.code == 409:  # already stored — immutable, so that is success
+                    sent.append(n)
+                    continue
+                print(f"[strategy_reporter] version {name} v{n} upload failed: {e}",
+                      file=sys.stderr)
+                if e.permanent:
+                    sent.append(n)  # re-sending the same bytes cannot fix a 400/413
+                    continue
+                break  # 429 / 5xx — leave the rest for the next tick
+            except Exception as e:
+                print(f"[strategy_reporter] version {name} v{n} upload failed: {e}",
+                      file=sys.stderr)
+                break
+            sent.append(n)
+        by_name[name] = sorted(sent)
+    _save_state_file(_VERSION_STATE_PATH, {"strategies": by_name})
 
 
 def _config_version():
@@ -945,7 +1123,8 @@ def main():
     except Exception as e:
         print(f"[strategy_reporter] report failed: {e}", file=sys.stderr)
         sys.exit(1)
-    sync_charts(strategies)
+    sync_versions(strategies)  # before the charts: version blobs are small and the chart
+    sync_charts(strategies)    # sweep can spend the whole remaining service timeout
 
 
 if __name__ == "__main__":
