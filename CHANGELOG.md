@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.66 — 2026-09-10
+
 - 樣本外驗證(walk-forward)機器端回報:`_read_wf` 讀 `strategies/<name>/wf.json`、`scan()` 每支策略
   附 `wf`(同 `scan` 的 fail-soft 契約:讀不到就不帶這個 key,形狀驗證是 api 的事)。`signature()`
   多一欄 `_wf_marker`(mtime+size)——wf.json 跟 scan.json 一樣只由顯式驗證寫入、不是每根 K 棒都寫,
