@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.63 — 2026-09-10
+
 - `_stop_reconciler()`(解綁前「daemon 真的停了嗎」那道確認)的判定全部改看 exit code,
   不再比對 tmux 的 stderr 文字,順序也倒過來:先問 systemd(`systemctl is-active`,
   命中 running-set 才 `sudo -n systemctl stop`),tmux 降為 legacy fallback、但在
@@ -30,6 +34,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   either way" 而漏掉。目前還沒爆是因為 `manager/healthcheck.py` 的 cron 只裝在舊
   openclaw/blaveclaw 機上,等它補裝到機隊,就會為一個用戶主動關掉的 daemon 每 6 小時
   各叫一次 heartbeat 過期。檢查:`tests/check_reconciler_stop.py`。
+
+## 1.1.62 — 2026-09-08
 
 - 回合炸掉時的兜底訊息從一句「處理這則訊息時發生錯誤」拆成四種,並帶一個 `code` 給
   web(`not_started_upstream` / `not_started` / `partial` / `max_turns`,文案定稿見
