@@ -22,21 +22,36 @@ What it collects, and why each piece has to come from here:
                                    as that file's "error" field, not as this
                                    report dying
   - state/heartbeat/reconciler     is the auto-trader alive
+  - state/events.jsonl             機器側 P1／P2 事件(events.py):平台落
+                                   agent_event 再依級別 fan-out,回應的
+                                   acked_through 是這個檔的水位線
+  - 磁碟／記憶體／gateway、配對的 chat id
+                                   平台每小時 SSH 進機器巡檢的那支掃描退役後,
+                                   這幾件事只剩這條路上來(resources /
+                                   tg_chat_ids)
 
 VM auth = proxy-{ttyd_password} (BLAVE_PROXY_TOKEN), same trust model as the
 chat transport and strategy_reporter: the token resolves to this user only.
 """
 import ast
+import ctypes
 import json
+import math
 import os
 import platform
 import re
+import shutil
 import statistics
 import subprocess
 import sys
 import time
 import urllib.request
 
+import events
+
+BASE = os.environ.get("BLAVE_AGENT_BASE") or (
+    r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
+)
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 # The workspace has its own state/ — NOT the runtime's /opt/blave-agent/state.
 # reconciler.py touches `state/heartbeat/reconciler` and lib/guard.py writes
@@ -731,6 +746,131 @@ def manager_view():
     return view
 
 
+# ── 主機資源與配對狀態(平台側 SSH 巡檢退役後,這三件事只剩這條路上來)──────────
+# 平台原本每小時 SSH 進每台機器收 disk/mem/gateway 與 allowFrom(openclaw/monitor.py
+# 的部署掃描)。定期 SSH 進用戶機本來就貼著「用戶機唯讀」紅線,而且那支掃描的六項檢查
+# 只剩這三個數字是 payload 蓋不掉的——所以把它們搬進這份回報,整支掃描退役。
+# 每一項各自 try:取不到就是 None(平台當「這台不知道」),絕不能拖垮整份回報。
+_TG_SERVICE = "blave-agent-telegram"
+# nssm 走 chocolatey 裝(provision.ps1),排程任務的 PATH 不保證有它
+_NSSM_FALLBACK = r"C:\ProgramData\chocolatey\bin\nssm.exe"
+_TG_CHAT_IDS_MAX = 20
+
+
+def _run(cmd, timeout=10):
+    """外部指令的 stdout(失敗/逾時回 None)。errors="replace" 同檔內其餘 subprocess
+    呼叫的理由:cp950 的 Windows 上嚴格解碼會丟 UnicodeDecodeError,那不是 OSError
+    也不是 SubprocessError,會從 except 逃出去把整份回報帶走。"""
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True,
+                             errors="replace", timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout
+
+
+def _disk_pct():
+    """根磁碟已用百分比(df 的 Use% 口徑:used /(used+avail),無條件進位)。"""
+    try:
+        if platform.system() == "Windows":
+            usage = shutil.disk_usage(os.path.splitdrive(BASE)[0] + os.sep)
+            return int(math.ceil(usage.used * 100.0 / usage.total)) if usage.total else None
+        st = os.statvfs("/")
+        used = st.f_blocks - st.f_bfree
+        denom = used + st.f_bavail
+        return int(math.ceil(used * 100.0 / denom)) if denom else None
+    except (OSError, ValueError, ZeroDivisionError):
+        return None
+
+
+class _MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+
+def _memory():
+    """(total_mb, avail_mb, swap_total_mb);任一項取不到就整組 None。
+
+    平台判「快沒記憶體又沒 swap」要三個數字都在(monitor.py 的檢查 7 口徑),所以
+    這裡不做半套。Windows 的 swap = 分頁檔總量減去實體記憶體(GlobalMemoryStatusEx
+    的 TotalPageFile 含實體),負數視為 0。"""
+    try:
+        if platform.system() == "Windows":
+            stat = _MEMORYSTATUSEX()
+            stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+            if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                return None, None, None
+            mb = 1024 * 1024
+            swap = max(0, int(stat.ullTotalPageFile) - int(stat.ullTotalPhys))
+            return (int(stat.ullTotalPhys) // mb, int(stat.ullAvailPhys) // mb, swap // mb)
+        info = {}
+        with open("/proc/meminfo", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                key, _, rest = line.partition(":")
+                if key in ("MemTotal", "MemAvailable", "SwapTotal"):
+                    info[key] = int(rest.strip().split()[0]) // 1024  # kB → MB
+        if len(info) < 3:
+            return None, None, None
+        return info["MemTotal"], info["MemAvailable"], info["SwapTotal"]
+    except (OSError, ValueError, AttributeError, IndexError):
+        return None, None, None
+
+
+def _gateway_state():
+    """Telegram bridge 服務的狀態,正常一律正規化成 "active"(Windows 的 NSSM 講
+    SERVICE_RUNNING,Linux 的 systemd 講 active——平台只比一個字)。取不到回 None。"""
+    if platform.system() == "Windows":
+        out = _run(["nssm", "status", _TG_SERVICE])
+        if out is None and os.path.isfile(_NSSM_FALLBACK):
+            out = _run([_NSSM_FALLBACK, "status", _TG_SERVICE])
+        if out is None:
+            return None
+        state = out.strip().replace("\x00", "").lower()
+        return "active" if state == "service_running" else (state or None)
+    out = _run(["systemctl", "is-active", _TG_SERVICE])
+    return (out.strip() or None) if out is not None else None
+
+
+def resources():
+    mem_total, mem_avail, swap_total = _memory()
+    return {
+        "disk_pct": _disk_pct(),
+        "mem_total_mb": mem_total,
+        "mem_avail_mb": mem_avail,
+        "swap_total_mb": swap_total,
+        "gateway": _gateway_state(),
+    }
+
+
+def tg_chat_ids():
+    """這台機器目前配對到的 Telegram chat id。
+
+    平台的 fan-out router 靠 openclaw_instances.tg_chat_ids 判斷「這個人有沒有配對
+    TG」,而那個欄位在 blave-agent 機隊唯一的更新來源就是退役掉的那支 SSH 掃描
+    (_deploy_sync_chat_ids)——所以它必須跟著這份回報上來,兩件事同進同出。
+
+    來源同掃描讀的那個檔(credentials/telegram-default-allowFrom.json,
+    sync_notify_compat.py 從 config/telegram.json 同步過去的 lib/notify 相容檔);
+    相容檔還沒同步時退回 config/telegram.json 自己的 allowed_chat_id。
+    驗證照 /report-telegram 那道:只收 list、元素只收 int/str、截 20(平台再驗一次)。"""
+    ids = None
+    data = _read_json(os.path.join(BASE, "credentials",
+                                   "telegram-default-allowFrom.json"))
+    if isinstance(data, dict) and isinstance(data.get("allowFrom"), list):
+        ids = data["allowFrom"]
+    if ids is None:
+        tg = _read_json(os.path.join(BASE, "config", "telegram.json"))
+        chat_id = tg.get("allowed_chat_id") if isinstance(tg, dict) else None
+        ids = [chat_id] if isinstance(chat_id, (int, str)) else []
+    return [c for c in ids if isinstance(c, (int, str))
+            and not isinstance(c, bool)][:_TG_CHAT_IDS_MAX]
+
+
 def build_report():
     cfg = _read_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {})
     hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
@@ -798,6 +938,13 @@ def build_report():
         # the walk-forward job/result (see manager_view). can_manage keys the
         # web's 「機器尚未更新」 fallback exactly like can_flatten/can_wait_start.
         "manager": manager_view(),
+        # 磁碟／記憶體／gateway 與配對的 chat id:平台側 SSH 巡檢退役後改走這裡
+        # (見 resources / tg_chat_ids)
+        "resources": resources(),
+        "tg_chat_ids": tg_chat_ids(),
+        # 機器側 P1／P2 事件(state/events.jsonl 裡水位線以上的那些)。平台照 id
+        # 去重、落 agent_event 再 fan-out,回應的 acked_through 由 main() 寫回。
+        "events": events.unsent(),
         "reported_at": int(time.time()),
     }
 
@@ -941,6 +1088,25 @@ def report(payload, token=None):
         return resp.read().decode()
 
 
+def _handle_ack(resp):
+    """回應的 acked_through=平台已收下的最大事件 id。寫回 state/events.acked,
+    下一輪只送比它新的,並在水位線以下輪替檔案。
+
+    回應解不出 acked_through(舊版 api、或是被中間層改寫過的 body)就什麼都不做:
+    事件留在檔裡下一輪再送,平台照 id 去重,重送的成本只有頻寬。"""
+    try:
+        acked = json.loads(resp).get("acked_through")
+    except (ValueError, TypeError, AttributeError):
+        return
+    if not isinstance(acked, int) or isinstance(acked, bool) or acked <= 0:
+        return
+    events.save_acked(acked)
+    dropped = events.rotate()
+    if dropped:
+        print(f"[portfolio_reporter] events rotated: {dropped} acked line(s) dropped",
+              file=sys.stderr)
+
+
 def main():
     if not PROXY_TOKEN:
         print("[portfolio_reporter] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
@@ -952,6 +1118,8 @@ def main():
     except Exception as e:
         print(f"[portfolio_reporter] report failed: {e}", file=sys.stderr)
         sys.exit(1)
+    # 回報成功之後才動水位線:回報失敗=平台沒收到,事件必須留著下一輪重送
+    _handle_ack(resp)
 
 
 if __name__ == "__main__":
