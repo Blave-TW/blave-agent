@@ -8,7 +8,27 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- Agent 常駐規則的 web 讀寫(`state/preferences.md`,原本只有聊天寫入路徑、web 零可見度):
+  `strategy_reporter.report_cache()` 的 payload 多一個 `preferences`(原文字串;沒有那個檔
+  就空字串,讀不動則整欄省略——欄位在不在就是 api 端的能力旗標,塞 "" 會讓 web 顯示成
+  0 條規則、使用者一存就蓋掉還有內容的檔)。`command_listener` 新增 `preferences_set`
+  指令:args 是 `{"rules": [str, ...]}` 結構而非整份 markdown,機器端再驗一次(必須
+  list、每條是單行非空字串,條數與長度只有傳輸健全性的天花板 100 條 / 1000 字——介面講的
+  10 條 × 150 字**刻意不在後端執法**:整檔 replace 之下擋掉第 11 條,等於 agent 自己寫超過
+  之後使用者連刪都刪不掉,而「先刪掉幾條」正是超限態唯一的復原路徑)、剝掉 `<<<` 與
+  `session_store.SCAFFOLD_RE` 命中的行
+  (同 `agent_turn.preferences_rule()` 讀時那道防線,寫時先擋),組 `- ` 行後以
+  tmp+`os.replace` 原子換檔(`agent_turn` 每輪整份讀它,不能讀到半份),ack 的 `result`
+  回真正落檔的 `{"rules": [...]}` 讓 web 秒級收 spinner。並發不加鎖:agent 也會改這個檔,
+  last-write-wins。`agent_turn._PREFS_HOWTO` 補一句「這個檔網頁也會編輯、只准寫條列行」
+  ——否則 agent 寫的標題行會被使用者的下一次存檔洗掉,兩邊互刪。回報後的推送沿用既有
+  `on_applied → sync_strategies` 那條路,沒有新增 spawn。檢查:`tests/check_agent_rules.py`。
+  **已知行為(接受不修,留紀錄免得下一個人當 bug 查)**:Windows 上 `os.replace` 在目標檔
+  正被另一個 process 開著讀的瞬間會丟 `PermissionError`,而 `agent_turn.preferences_rule()`
+  每輪都會 open 這個檔幾毫秒——所以 Windows 機上存規則有極低機率撞上這個窗。後果止於
+  handler raise → ack 回 error → 面板顯示「沒有存到」,使用者再按一次就好;檔案本身完好
+  (原子換檔沒發生 = 舊版原封不動),不會半份、不會遺失。要修就得在這裡加重試迴圈,
+  為一個可重試、使用者看得見的失敗加一段只在 Windows 生效的迴圈,不划算。
 
 ## 1.1.63 — 2026-09-10
 

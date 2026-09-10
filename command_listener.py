@@ -2473,6 +2473,18 @@ def _write_json_atomic(path, doc):
     os.replace(tmp, path)
 
 
+def _write_text_atomic(path, text):
+    """Same tmp+replace as above for a plain-text file, with the encoding pinned:
+    這裡寫的是中文規則,而 Windows 機的 locale 預設(cp950)會在 f.write 就
+    UnicodeEncodeError(同 agent_turn 讀 preferences.md 的理由,反方向)。
+    newline 也釘死,免得 Windows 寫出 \\r\\n 讓「一條規則一行」多帶一個字元。"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
 def _builtin_methods():
     """{method name: the params it declares} for THIS workspace's manager.py —
     {} on one that predates the named built-ins. Read ONCE per command and
@@ -3052,6 +3064,65 @@ def _reopen_mgmt_job(pid):
             _log(f"mgmt job reopen failed: {type(e).__name__}")
 
 
+# ── 用戶常駐規則(web 的「Agent 常駐規則」面板)────────────────────────────────
+# 同一個檔 agent_turn.preferences_rule() 每輪整份注進 system prompt,agent 自己在
+# 對話裡也會改它。web 送的是結構(規則陣列)而不是整份 markdown:組行、剝鷹架、
+# 原子換檔這三件事只有一份實作,就在這裡,web 送什麼都寫不出非條列的東西。
+# 並發:agent 可能在同一秒改這個檔。last-write-wins,不加鎖——衝突窗只有幾秒、
+# 後果可復原(使用者看得到機器上的最新內容、可以再改一次),而加鎖要在機器端
+# 引進一個狀態機。
+PREFERENCES_PATH = os.path.join(WORKSPACE_STATE, "preferences.md")
+# 傳輸健全性的天花板,不是介面講的 10 條 × 150 字(那組數字住在 web 的新增/編輯
+# 閘門)。這條指令是整檔 replace:機器端擋掉 11 條,等於 agent 自己寫超過 10 條之後
+# 使用者連刪都刪不掉,而「先刪掉幾條」正是超限態唯一的復原路徑。同 api 端
+# (agent_command.PREFS_RULES_CEILING)的兩個值,複製不 import——不同機器上的
+# 不同 process,沒有共用模組可 import。
+PREFS_RULES_CEILING = 100
+PREFS_RULE_CHARS_CEILING = 1000
+
+
+def _cmd_preferences_set(args):
+    """整檔 replace:{"rules": [...]} → `- ` 條列寫回 state/preferences.md。
+
+    回傳真正落檔的那份陣列(被剝掉的行不在內),web 拿 ack 的 result 當真值,秒級
+    收 spinner,不必等下一次 strategies report。
+
+    api(agent_command._preferences_args_error)已經驗過一輪,這裡照樣再驗一次:
+    這個檔每輪整份進 system prompt,信任邊界在機器上,不在對面。"""
+    # session_store 是同 runtime 目錄的手足;延後 import(同 _report_runner_mod
+    # 的兩行),壞掉的手足不該在 listener import 期就把 halt/close_all 拖下水。
+    import importlib
+    scaffold_re = importlib.import_module(
+        (__package__ + "." if __package__ else "") + "session_store").SCAFFOLD_RE
+
+    rules = args.get("rules")
+    if not isinstance(rules, list):
+        raise ValueError("rules must be a list")
+    if len(rules) > PREFS_RULES_CEILING:
+        raise ValueError(f"at most {PREFS_RULES_CEILING} rules")
+    clean = []
+    for rule in rules:
+        if not isinstance(rule, str):
+            raise ValueError("each rule must be a string")
+        # 一條規則 = 檔案裡的一行。夾帶換行的話第二行會以任意內容落進
+        # preferences.md,而下面的鷹架檢查是 match(只看行首),擋不到它。
+        if "\n" in rule or "\r" in rule:
+            raise ValueError("a rule must be a single line")
+        rule = rule.strip()
+        if not 1 <= len(rule) <= PREFS_RULE_CHARS_CEILING:
+            raise ValueError(f"each rule must be 1–{PREFS_RULE_CHARS_CEILING} characters")
+        # agent_turn.preferences_rule() 讀這個檔時走的同一道防線:夾帶鷹架標記的行
+        # 進了 system prompt 會偽造假對話區塊。那邊是讀時剝、這邊是寫時擋,兩道都要
+        # ——寫時擋掉,檔案裡才不會留下一條使用者看得到、卻永遠不生效的規則。
+        if scaffold_re.match(rule) or rule.startswith("<<<"):
+            continue
+        clean.append(rule)
+    # 空陣列合法:那是「把最後一條也刪掉」。preferences_rule() 讀到空檔會說
+    # 「目前沒有任何常駐偏好」,不會壞。
+    _write_text_atomic(PREFERENCES_PATH, "".join(f"- {r}\n" for r in clean))
+    return {"rules": clean}
+
+
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
@@ -3072,6 +3143,7 @@ HANDLERS = {
     "report_run_now": _cmd_report_run_now,
     "report_delete": _cmd_report_delete,
     "report_edit_pending": _cmd_report_edit_pending,
+    "preferences_set": _cmd_preferences_set,
 }
 
 

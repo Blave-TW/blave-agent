@@ -839,12 +839,42 @@ def report_schedules():
     return out
 
 
+# 用戶常駐規則(web「Agent 常駐規則」面板的讀側)。同一個檔
+# agent_turn.preferences_rule() 每輪整份注進 system prompt,agent 自己在對話裡也會
+# 改它;這裡只負責把原文捎給平台,讓 web 顯示得出來(解析成規則陣列在 api 端做)。
+# 路徑與上限跟 agent_turn 那兩個常數同值卻各寫一份:那支模組的 module-level 相依很重,
+# timer oneshot 不該為了兩個常數把它拉進來(同 _TXF_ASSET_SPECS 的「複製不 import」)。
+PREFERENCES_PATH = os.path.join(WORKSPACE, "state", "preferences.md")
+PREFS_READ_MAX_CHARS = 16000  # = agent_turn.PREFS_HARD_CAP_CHARS
+
+
+def _preferences():
+    """state/preferences.md 的原文;沒有這個檔 = ""(還沒記過任何規則)。
+
+    讀不動(權限/IO/編碼)回 None,呼叫端就整個欄位省略——api 把欄位缺席讀成
+    「舊 runtime,維持現狀」(同 report_schedules 的 omitted-not-empty)。回 "" 會讓
+    web 顯示成 0 條規則,使用者一存就把還有內容的檔案蓋掉。"""
+    try:
+        # encoding 明寫 + 有界讀取,兩件事都同 agent_turn.preferences_rule():
+        # Windows 機的 locale 預設(cp950)會 UnicodeDecodeError,而失控寫爆的檔
+        # 不該整份吞進 4GB 機的記憶體。
+        with open(PREFERENCES_PATH, encoding="utf-8") as f:
+            return f.read(PREFS_READ_MAX_CHARS)
+    except FileNotFoundError:
+        return ""
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[strategy_reporter] preferences unreadable: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return None
+
+
 def report_cache(strategies, token=None):
     """POST the list to the backend cache (GET /strategies reads this on page
     load / reload). Reused by the timer AND by web_bridge after each turn.
     Piggybacks config_version so the web can flag an outdated workspace config,
-    can_report so it can gate the reports feature on this machine, and the
-    scheduled-report registry (report_schedules) for the 管理定期報告 modal."""
+    can_report so it can gate the reports feature on this machine, the
+    scheduled-report registry (report_schedules) for the 管理定期報告 modal, and the
+    raw 常駐規則 file (preferences) for the 「Agent 常駐規則」 settings pane."""
     token = token or PROXY_TOKEN
     payload = {"strategies": strategies, "can_report": _can_report(),
                "can_watch": _can_watch()}
@@ -858,6 +888,11 @@ def report_cache(strategies, token=None):
         # you have" — an empty list would wipe the user's schedule list on a hiccup.
         print(f"[strategy_reporter] report_schedules failed: {type(e).__name__}: {e}",
               file=sys.stderr)
+    # 常駐規則的原文。這個 key 在不在,就是 api 端「這台機器支不支援在 web 管理規則」
+    # 的旗標——所以 None(讀不動)必須整個省略,不能塞 "" 冒充「沒有規則」。
+    prefs = _preferences()
+    if prefs is not None:
+        payload["preferences"] = prefs
     # Gzipped on the wire. This body is mostly the backtests' first-paint tails —
     # long runs of numeric JSON that compress ~4× — and the timer re-sends the whole
     # thing every two minutes whether anything changed or not, so an unpacked report
