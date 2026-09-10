@@ -236,6 +236,21 @@ def _read_scan(name):
     return data if isinstance(data, dict) else None
 
 
+def _read_wf(name):
+    """Walk-forward output (blaveclaw-config lib/walk_forward.run_walk_forward) lands
+    in strategies/<name>/wf.json — the per-run picks, the stitched out-of-sample curve
+    and the in/out-of-sample stats, feeding the workspace 樣本外驗證 tab. Same
+    fail-soft contract as _read_scan: None when absent / unreadable / not an object.
+    Shape validation is the api's job (agent_strategies._clean_wf)."""
+    path = os.path.join(STRATEGIES_DIR, name, "wf.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _read_versions(name):
     """The strategy's version summary for the report: {counter, current, items, drift}, or
     None when this strategy has never been versioned (an older config on the machine —
@@ -273,6 +288,18 @@ def _scan_marker(name):
     fires exactly when the user asked for something. Same ValueError note."""
     try:
         st = os.stat(os.path.join(STRATEGIES_DIR, name, "scan.json"))
+    except (OSError, ValueError):
+        return "none"
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
+def _wf_marker(name):
+    """signature() column for strategies/<name>/wf.json: mtime+size or "none".
+    Same stance as _scan_marker — wf.json is only written by an explicit walk-forward
+    validation, never by the per-bar tick, so there is no live/deployed exemption and
+    its mtime moves exactly when the user asked for something."""
+    try:
+        st = os.stat(os.path.join(STRATEGIES_DIR, name, "wf.json"))
     except (OSError, ValueError):
         return "none"
     return f"{st.st_mtime_ns}:{st.st_size}"
@@ -336,8 +363,8 @@ def _stats_marker(name, status, deployed=frozenset()):
 
 
 def signature():
-    """Cheap "has the inventory changed" fingerprint: name + status + the stats
-    and scan markers above, with no stats.json / scan.json parsed. agent_turn
+    """Cheap "has the inventory changed" fingerprint: name + status + the stats,
+    scan and walk-forward markers above, with no stats.json / scan.json / wf.json parsed. agent_turn
     calls this after every tool step and only pays for scan() when it differs — a 5min strategy's
     stats.json is ~4.7MB, and parsing three of them on every step (0.30s vs
     0.004s, measured on uid=32321) lagged every chunk behind for nothing.
@@ -348,7 +375,7 @@ def signature():
     deployed = _deployed_names()
     return json.dumps(sorted(
         [s["name"], s["status"], _stats_marker(s["name"], s["status"], deployed),
-         _scan_marker(s["name"])]
+         _scan_marker(s["name"]), _wf_marker(s["name"])]
         for s in _scan_sources()
     ))
 
@@ -417,8 +444,9 @@ def _scan_sources():
 
 
 def scan():
-    """The full inventory: sources plus each strategy's parsed backtest and
-    parameter scan (both optional, both absent rather than null when missing)."""
+    """The full inventory: sources plus each strategy's parsed backtest, parameter
+    scan and walk-forward validation (all optional, all absent rather than null when
+    missing)."""
     strategies = _scan_sources()
     for s in strategies:
         bt = _read_backtest(s["name"])
@@ -427,6 +455,9 @@ def scan():
         sc = _read_scan(s["name"])
         if sc is not None:
             s["scan"] = sc
+        wf = _read_wf(s["name"])
+        if wf is not None:
+            s["wf"] = wf
         # Same character limit as the blob upload (canon §9b): the summary list has no
         # limit of its own, but a name the upload path refuses would put 20 entries in
         # front of the user whose blob GET / compare 404 forever — a permanent 「還在

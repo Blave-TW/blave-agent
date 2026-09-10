@@ -8,7 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- 樣本外驗證(walk-forward)機器端回報:`_read_wf` 讀 `strategies/<name>/wf.json`、`scan()` 每支策略
+  附 `wf`(同 `scan` 的 fail-soft 契約:讀不到就不帶這個 key,形狀驗證是 api 的事)。`signature()`
+  多一欄 `_wf_marker`(mtime+size)——wf.json 跟 scan.json 一樣只由顯式驗證寫入、不是每根 K 棒都寫,
+  所以沒有 `_stats_marker` 那種 live/deployed 豁免,指紋一動就是使用者真的要了什麼。檔案由
+  blaveclaw-config `lib/walk_forward.py` 產出;api 端 `_clean_wf` 全有或全無地驗證。
 
 ## 1.1.65 — 2026-09-10
 
