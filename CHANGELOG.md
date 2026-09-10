@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.67 — 2026-09-10
+
 - 回覆語言設定:機器上存 `state/reply_lang`(單行語系代碼 zh/cn/en/es/pt/vi/ja,= web `<lang>`;
   白名單、路徑、讀取函式只在 `strategy_reporter` 一份)。`command_listener` 新指令 `reply_lang_set`
   `{"lang", "if_unset"?}`:白名單再驗、原子寫,ack 回 `{"lang": 實際值}`;`if_unset: true`(web 自動
