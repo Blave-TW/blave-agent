@@ -3123,6 +3123,36 @@ def _cmd_preferences_set(args):
     return {"rules": clean}
 
 
+def _cmd_reply_lang_set(args):
+    """{"lang": code} → state/reply_lang;`"lang": ""` = 清除設定(刪檔),回到
+    ui_lang / 訊息啟發式。回傳 {"lang": 實際落檔的值},"" 表示已清除。
+
+    `if_unset: true`(web 的自動帶入才送):已有有效設定就不寫,ack 回現有值。web 判
+    「沒設定」靠的是最多舊 2 分鐘的回報,agent 剛在對話裡寫的值不能被介面語言蓋掉。
+
+    api(agent_command._reply_lang_args_error)驗過一輪,這裡照樣再驗:這個值決定
+    每一輪的語言錨,信任邊界在機器上。"""
+    import strategy_reporter  # same runtime dir; 白名單與路徑只有一份
+    lang = args.get("lang")
+    if not isinstance(lang, str) or (lang and lang not in strategy_reporter.REPLY_LANGS):
+        raise ValueError("lang must be one of %s or \"\"" % "/".join(strategy_reporter.REPLY_LANGS))
+    if_unset = args.get("if_unset", False)
+    if not isinstance(if_unset, bool):
+        raise ValueError("if_unset must be a boolean")
+    if if_unset:
+        existing = strategy_reporter.read_reply_lang()
+        if existing:
+            return {"lang": existing}
+    if lang:
+        _write_text_atomic(strategy_reporter.REPLY_LANG_PATH, lang + "\n")
+    else:
+        try:
+            os.remove(strategy_reporter.REPLY_LANG_PATH)
+        except FileNotFoundError:
+            pass
+    return {"lang": lang}
+
+
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
@@ -3144,6 +3174,7 @@ HANDLERS = {
     "report_delete": _cmd_report_delete,
     "report_edit_pending": _cmd_report_edit_pending,
     "preferences_set": _cmd_preferences_set,
+    "reply_lang_set": _cmd_reply_lang_set,
 }
 
 

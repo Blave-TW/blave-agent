@@ -383,9 +383,14 @@ def _image_quota_line(now=None):
 # 立刻穿幟。事實來源仍是 bcc 那份檔,這裡只搬運、不另抄一份。
 # 閘=「問怎麼做」+「部署類主題」兩者都命中(單看主題太寬:資金費率/持倉問答也會中,
 # 每次誤中多塞 ~400 token 還可能把純問答帶偏成操作步驟)。
-_NAV_ASK_RE = re.compile(r"帶我看|show me how|怎麼|怎樣|如何|哪裡|哪邊|\bhow\b|\bwhere\b", re.I)
+# 簡體變體:簡中錨(cn)下建議句寫成簡體,點下去送回來的就是簡體。es/pt/vi/ja 的部署類
+# 建議句由錨釘成英文「Show me how to …」(_foreign_pins),所以不另收那四種語言的字。
+_NAV_ASK_RE = re.compile(
+    r"帶我看|带我看|show me how|怎麼|怎么|怎樣|怎样|如何|哪裡|哪里|哪邊|哪边|\bhow\b|\bwhere\b",
+    re.I)
 _NAV_TOPIC_RE = re.compile(
-    r"模擬盤|交易所|綁定|部署|啟動|恢復|部位|金額|實盤|paper|deploy|bind|exchange|venue|fund"
+    r"模擬盤|模拟盘|交易所|綁定|绑定|部署|啟動|启动|恢復|恢复|部位|金額|金额|實盤|实盘"
+    r"|paper|deploy|bind|exchange|venue|fund"
     r"|go live|live trad|real money|small (?:amount|size)|start trading|resume|restart",
     re.I,
 )
@@ -415,20 +420,24 @@ def _portfolio_steps_block(workspace=None):
 
 def _is_zh(message):
     """這則用戶訊息是不是中文。漢字要「壓過」英文字母才算——「what is 台積電 price」
-    是英文句帶個股名,不是中文句。_lang_directive 與兜底錯誤句共用同一條判定,
-    runtime 沒有全域語言設定,也不該為了幾句錯誤訊息另建 i18n 表。"""
+    是英文句帶個股名,不是中文句。只在沒有回覆語言設定、也沒有 ui_lang 時才用
+    (_resolve_reply_lang 解不出語言),_lang_directive 與兜底錯誤句共用同一條判定。"""
     han = sum(1 for ch in message if "一" <= ch <= "鿿")
     letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
     return han >= 3 and han > letters * 0.5
 
 
-def _lang_directive(message, suggest=False):
-    """Deterministic per-turn language pin. Han-character ratio decides what the
-    user wrote in; the directive names ONE target language explicitly — a generic
-    bilingual "follow the user" line loses to a Chinese-heavy context.
+def _lang_directive(message, suggest=False, lang=None):
+    """Deterministic per-turn language pin. `lang` (resolved reply language, see
+    _resolve_reply_lang) wins outright — no per-message exception. Without it the
+    Han-character ratio decides what the user wrote in; either way the directive
+    names ONE target language explicitly — a generic bilingual "follow the user"
+    line loses to a Chinese-heavy context.
     suggest=True (web only) extends the pin to the <suggest> lines: the suggest
     rule + its example are written in Chinese, so without naming them the
     English reply comes back with Chinese suggestions (uid=1, 2026-08-25)."""
+    if lang in _REPLY_LANG_PINS:
+        return _REPLY_LANG_PINS[lang][1 if suggest else 0]
     letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
     if _is_zh(message):
         if suggest:
@@ -449,6 +458,53 @@ def _lang_directive(message, suggest=False):
     if suggest:
         return "[Reply in the language of the user message above — the <suggest> lines too]"
     return "[Reply in the language of the user message above]"
+
+
+def _foreign_pins(name):
+    base = (f"[Reply ENTIRELY in {name} — this is the user's reply language, whatever "
+            f"language this message is written in. No Chinese or English sentences anywhere "
+            f"in this reply, including headers and closing remarks")
+    tail = "; code, tickers and strategy names stay as they are.]"
+    # 部署類建議句例外留英文:點下去送回來的句子要被 nav_topic / 導航句判定認得,
+    # 否則 portfolio-steps.md 不注入、UI 標籤又會亂編(29026)。回覆本身仍照目標語言。
+    suggest_tail = (
+        " and every line inside the <suggest> block — EXCEPT deployment suggestions (paper "
+        "trading, setting the amount, binding an exchange, starting or resuming trading): "
+        "write each of those lines entirely in English, starting with \"Show me how to\" "
+        "(e.g. Show me how to paper trade 〈strategy name〉), because the page recognises "
+        "that exact phrase to open the right screen" + tail)
+    return (base + tail, base + suggest_tail)
+
+
+# 語系代碼 → (一般, suggest=True) 的尾端錨。代碼集 = strategy_reporter.REPLY_LANGS。
+# 非中文語言用英文寫但點名目標語言,並明講不要中文:system prompt 與歷史多半是中文。
+_REPLY_LANG_PINS = {
+    "zh": ("[用繁體中文回覆這則訊息——這是使用者的回覆語言,不論這則訊息用什麼語言寫都一樣;"
+           "不要用簡體字]",
+           "[用繁體中文回覆這則訊息——這是使用者的回覆語言,不論這則訊息用什麼語言寫都一樣;"
+           "不要用簡體字,<suggest> 建議句也用繁體中文]"),
+    "cn": ("[用简体中文回复这条消息——这是用户的回复语言,不论这条消息用什么语言写都一样;"
+           "不要用繁体字]",
+           "[用简体中文回复这条消息——这是用户的回复语言,不论这条消息用什么语言写都一样;"
+           "不要用繁体字,<suggest> 建议句也用简体中文]"),
+    "en": ("[Reply ENTIRELY in English — this is the user's reply language, whatever language "
+           "this message is written in. No Chinese anywhere in this reply, including headers "
+           "and closing remarks.]",
+           "[Reply ENTIRELY in English — this is the user's reply language, whatever language "
+           "this message is written in. No Chinese anywhere in this reply, including headers, "
+           "closing remarks and every line inside the <suggest> block (deployment suggestions "
+           "start with \"Show me how to\", not 「帶我看怎麼」).]"),
+    "es": _foreign_pins("Spanish (Español)"),
+    "pt": _foreign_pins("Portuguese (Português)"),
+    "vi": _foreign_pins("Vietnamese (Tiếng Việt)"),
+    "ja": _foreign_pins("Japanese (日本語)"),
+}
+
+
+def _resolve_reply_lang(ui_lang=None):
+    """回覆語言:機器上的設定 > web 回合的 ui_lang > None(交給 _is_zh 啟發式)。"""
+    return strategy_reporter.read_reply_lang() or (
+        ui_lang if ui_lang in strategy_reporter.REPLY_LANGS else None)
 
 
 # 工作頁的視圖代號 → 畫面上的中文標籤(側欄導覽項的字,web 的 workspace_*_nav)。
@@ -511,7 +567,8 @@ def _viewing_view_segment(viewing_view, viewing_widgets):
 
 
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
-                 suggest_directive=False, viewing_view=None, viewing_widgets=None):
+                 suggest_directive=False, viewing_view=None, viewing_widgets=None,
+                 reply_lang=None):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -573,7 +630,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         # 導航句(建議列的部署類固定起手)逐輪錨:標記規則在系統尾端,弱模型對
         # 「第一行放標記」這種位置要求最容易漏,貼著訊息再講一次。
         head = message.lstrip().lower()
-        if head.startswith("帶我看") or head.startswith("show me how"):
+        # 带我看:簡中錨下建議句會寫成簡體,點下去送回來的就是這個字形
+        if head.startswith(("帶我看", "带我看", "show me how")):
             parts.append(
                 "[導航句:回覆第一行單獨放 <nav>目標</nav>(portfolio.pos=設金額/部署、"
                 "portfolio.venue=綁定模擬盤或交易所、portfolio.run=啟動/恢復下單,三選一),"
@@ -613,7 +671,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 回成中文/中英混雜(實測兩輪)。必須排在上面所有中文逐輪指令(紅線句、建議句
     # 規則)之後——之前放在它們前面,英文回合正文是英文、<suggest> 卻照中文範例
     # 寫成中文(uid=1,2026-08-25)。
-    parts.append(_lang_directive(message, suggest=suggest_directive))
+    parts.append(_lang_directive(message, suggest=suggest_directive, lang=reply_lang))
     return "\n".join(parts)
 
 
@@ -679,6 +737,15 @@ _PREFS_HOWTO = (
     "（例如組合型策略沒有單筆停損可做），明講衝突並問使用者——不要硬套，"
     "也不要無聲忽略。\n"
     "- 使用者問「你記了哪些偏好」就照檔案內容唸；要求修改或刪除就直接改檔。\n"
+    # 語言寫成偏好條目會被回覆語言設定(尾端錨)靜默蓋掉,使用者以為記住了其實沒生效
+    "- **回覆語言不是常駐偏好，不要寫進這個檔**：使用者要換回覆語言（「以後用英文回」"
+    "「請用簡體」）時，把語系代碼寫進 "
+    f"`{strategy_reporter.REPLY_LANG_PATH}`（只有一行、只有代碼："
+    "zh=繁體中文、cn=簡體中文、en、es、pt、vi、ja；只能在這七個之間切換，不要刪這個檔）。"
+    "回覆時告訴使用者：從下一則回覆起生效，網頁的設定面板也會顯示這個語言。"
+    # 刪檔 = 「沒設定」,web 的自動帶入下次開頁就寫回介面語言,取消會無聲復原
+    "使用者要「跟著我打的語言回」這類不固定語言的模式時，說明目前不支援、維持現在的設定，"
+    "並請他到網頁設定面板的回覆語言選單切換。\n"
     # web 的設定面板整檔 replace 這個檔(command_listener._cmd_preferences_set),
     # 只寫得出條列行。agent 寫的標題或段落會在使用者存檔的那一刻被洗掉——所以要在
     # 這裡先講,不要讓兩邊各寫各的格式然後互相刪。
@@ -761,11 +828,11 @@ _NO_NARRATION = (
 # 只掛 web 的結果就是 TG 上問一句「台積電多少」回 15 行全套報價(實測)。
 _STYLE_RULES = (
     "回覆風格：\n"
-    "- 語言跟著使用者**最新一則訊息**的語言走——對方寫英文就整則用英文回,"
+    "- 回覆語言以使用者訊息**尾端那條語言指示**為準——它指定哪個語言就整則用那個語言,"
     "不要被本規則的中文或對話歷史帶偏。"
-    "(IMPORTANT: reply in the language of the user's LATEST message. "
-    "If they write in English, answer entirely in English — these rules being "
-    "written in Chinese does NOT make Chinese the default.)\n"
+    "(IMPORTANT: the reply language is set by the language instruction at the very end "
+    "of the user's message — follow it for the whole reply. These rules being written "
+    "in Chinese does NOT make Chinese the default.)\n"
     "- 預設精簡、先講結論：日常問答 1–5 行(問價格就報價格,不用附整套盤面)、"
     "一般回覆 3–8 行；使用者要細節或分析再展開。\n"
     "- 程式碼一律寫進檔案,不貼在對話裡;片段以 10 行為上限。\n"
@@ -1686,8 +1753,8 @@ _API_ERROR_RE = re.compile(r"API Error: (5\d\d|429)")
 TOOL_STEPS_MAX = 12
 
 # web 與 TG 的文案刻意分岔:web 指得到活動區的收據列(「上面是…」),TG 指不到,
-# 所以第二行改成「請他打什麼字」。中/英以外的語系退英文——runtime 只判得出這兩種,
-# 不為這幾句建 i18n 表(web 面真正的多語言在前端,靠 code 挑字串)。
+# 所以第二行改成「請他打什麼字」。回覆語言解析成 cn 走下面的 FAULT_TEXT_CN,其餘非中文
+# 語系退英文,不為這幾句建完整 i18n 表(web 面真正的多語言在前端,靠 code 挑字串)。
 FAULT_TEXT = {
     "web": {
         FAULT_NOT_STARTED_UPSTREAM: (
@@ -1727,6 +1794,22 @@ FAULT_TEXT = {
     },
 }
 
+# 回覆語言解析成 cn 時用的簡體版,一字一句對應上表的中文;es/pt/vi/ja 退英文。
+FAULT_TEXT_CN = {
+    "web": {
+        FAULT_NOT_STARTED_UPSTREAM: "模型服务没有响应，你刚才那句没有被执行。机器上什么都没动。",
+        FAULT_NOT_STARTED: "这一轮没有跑起来，你刚才那句没有被执行。机器上什么都没动。",
+        FAULT_PARTIAL: "这一轮中途断了，你刚才的要求可能只做完一部分。上面是断掉前已经执行的步骤。",
+        FAULT_MAX_TURNS: "这一轮步骤超过上限，停在半路。上面已经执行的步骤都生效了，把要求拆小一点再问一次。",
+    },
+    "tg": {
+        FAULT_NOT_STARTED_UPSTREAM: "模型服务没有响应，你刚才那句没有被执行，机器上什么都没动。\n把同一句再传一次就好。",
+        FAULT_NOT_STARTED: "这一轮没有跑起来，你刚才那句没有被执行，机器上什么都没动。\n把同一句再传一次就好。",
+        FAULT_PARTIAL: "这一轮中途断了，你刚才的要求可能只做完一部分。\n传「看一下机器现在的实际状态，只讲你能确认完成的」，我核对后回报。",
+        FAULT_MAX_TURNS: "这一轮步骤超过上限，停在半路，前面做的都生效了。\n把要求拆小一点再传一次。",
+    },
+}
+
 
 def _fault_code(exc, tool_calls, result_info=None):
     """兜底例外 + 這一輪跑過幾個工具 → 四個 code 之一。
@@ -1759,8 +1842,12 @@ def _fault_code(exc, tool_calls, result_info=None):
     return FAULT_NOT_STARTED
 
 
-def _fault_message(code, message, surface):
+def _fault_message(code, message, surface, lang=None):
     zh, en = FAULT_TEXT[surface][code]
+    if lang == "cn":
+        return FAULT_TEXT_CN[surface][code]
+    if lang:
+        return zh if lang == "zh" else en
     return zh if _is_zh(message) else en
 
 
@@ -1781,12 +1868,14 @@ def _fault_receipt_suffix(steps):
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
-                   viewing_view=None, viewing_widgets=None):
+                   viewing_view=None, viewing_widgets=None, ui_lang=None):
     summary, recent = ss.get_context(session_id)
+    reply_lang = _resolve_reply_lang(ui_lang)
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
-                          viewing_view=viewing_view, viewing_widgets=viewing_widgets)
+                          viewing_view=viewing_view, viewing_widgets=viewing_widgets,
+                          reply_lang=reply_lang)
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -2014,7 +2103,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         fault_code = _fault_code(e, len(tool_steps), result_info)
         print(f"[agent_turn] fault={fault_code} tools={len(tool_steps)}", file=sys.stderr)
         surface = "web" if isinstance(sink, WebSink) else "tg"
-        sink.set_error(_fault_message(fault_code, message, surface), code=fault_code)
+        sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
+                       code=fault_code)
     finally:
         await sink.stop()
         if sysprompt_path:
@@ -2050,6 +2140,8 @@ def main():
     # 認不認得由 build_prompt 決定(認不得就當沒送)。
     parser.add_argument("--viewing-view", default=None)
     parser.add_argument("--viewing-widgets", default=None)  # JSON 字串陣列
+    # 不設 choices(同 --viewing-view):怪值只當沒送,不能 exit 2 整輪死;白名單在 _resolve_reply_lang
+    parser.add_argument("--ui-lang", default=None)
     args = parser.parse_args()
     viewing_widgets = parse_viewing_widgets(args.viewing_widgets)
 
@@ -2068,6 +2160,7 @@ def main():
         args.session_id, args.message, args.model, sink,
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
         viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
+        ui_lang=args.ui_lang,
     ))
     print(reply)
 

@@ -1077,6 +1077,28 @@ def _preferences():
         return None
 
 
+# 回覆語言設定(單行語系代碼)。機器上唯一的一份定義:agent_turn 讀、command_listener
+# 寫、web_bridge 驗 ui_lang 都從這裡拿——這支模組輕,三邊本來就 import 它。
+# 值域 = web 的 <lang> 集合(web/app/__init__.py supported_langs)。
+REPLY_LANGS = ("zh", "cn", "en", "es", "pt", "vi", "ja")
+REPLY_LANG_PATH = os.path.join(WORKSPACE, "state", "reply_lang")
+
+
+def read_reply_lang():
+    """設定的語系代碼;沒設、白名單外、讀不動一律 ""。每輪都讀,壞檔不能讓整輪死。"""
+    try:
+        # utf-8-sig:agent 在 Windows 機上用 PowerShell 寫會帶 BOM,不吃掉就靜默當沒設定
+        with open(REPLY_LANG_PATH, encoding="utf-8-sig") as f:
+            value = f.read(16).strip()
+    except FileNotFoundError:
+        return ""
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[strategy_reporter] reply_lang unreadable: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return ""
+    return value if value in REPLY_LANGS else ""
+
+
 def report_cache(strategies, token=None):
     """POST the list to the backend cache (GET /strategies reads this on page
     load / reload). Reused by the timer AND by web_bridge after each turn.
@@ -1102,6 +1124,8 @@ def report_cache(strategies, token=None):
     prefs = _preferences()
     if prefs is not None:
         payload["preferences"] = prefs
+    # 同樣是欄位在不在 = 能力旗標(這台收得了 reply_lang_set);"" = 沒設定
+    payload["reply_lang"] = read_reply_lang()
     # Gzipped on the wire. This body is mostly the backtests' first-paint tails —
     # long runs of numeric JSON that compress ~4× — and the timer re-sends the whole
     # thing every two minutes whether anything changed or not, so an unpacked report

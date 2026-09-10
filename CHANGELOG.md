@@ -8,7 +8,23 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- 回覆語言設定:機器上存 `state/reply_lang`(單行語系代碼 zh/cn/en/es/pt/vi/ja,= web `<lang>`;
+  白名單、路徑、讀取函式只在 `strategy_reporter` 一份)。`command_listener` 新指令 `reply_lang_set`
+  `{"lang", "if_unset"?}`:白名單再驗、原子寫,ack 回 `{"lang": 實際值}`;`if_unset: true`(web 自動
+  帶入才送)已有有效設定就不寫、回現有值,免得最多舊 2 分鐘的回報讓介面語言蓋掉 agent 剛寫的值。
+  reporter payload 一律帶 `reply_lang`(未設定 `""`,欄位在不在 = api 的 `can_reply_lang` 旗標)。
+  讀檔用 `utf-8-sig`(Windows 上 PowerShell 寫的 BOM 不會被靜默當成沒設定)。
+- 語言錨優先序改在 code 算:設定 > web 回合的 `ui_lang`(`web_bridge` 白名單後接成 `--ui-lang`)>
+  既有 `_is_zh` 啟發式,仍是訊息尾端那一條;有設定就一律照設定、沒有逐則例外。七個語言各有指名的
+  尾端錨(繁/簡分開、互禁),`<suggest>` 版涵蓋建議句;`_STYLE_RULES` 的語言條改成「以尾端語言指示為準」;
+  兜底錯誤句跟著解析出的語言(cn 有簡體版 `FAULT_TEXT_CN`,es/pt/vi/ja 退英文)。無設定、無 `ui_lang`
+  (Telegram 未設定、舊 web)時錨與改版前逐字相同。根因=按鈕代送的中文指令夾英文識別字被判成英文
+  (32321「用繁體中文回答」仍回英文)。
+- agent 只能在七個代碼間切換這個設定、不准刪檔「取消」(刪檔 = 沒設定,web 下次開頁會自動帶回介面語言);
+  「跟著我打的語言回」答不支援並指向設定面板。語言偏好一律寫 `state/reply_lang`,不進 preferences.md。
+- 導航判定:`_NAV_ASK_RE`／`_NAV_TOPIC_RE` 與導航句開頭補簡體字形(带我看、怎么、模拟盘、绑定…);
+  es/pt/vi/ja 的 `<suggest>` 錨把部署類建議句釘成英文「Show me how to …」,點下去照樣注入
+  portfolio-steps.md(否則 UI 標籤又會亂編,29026)。
 
 ## 1.1.66 — 2026-09-10
 

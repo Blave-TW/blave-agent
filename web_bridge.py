@@ -246,7 +246,8 @@ def save_attachment(attachment):
 
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
-                   attachment_name=None, viewing_view=None, viewing_widgets=None):
+                   attachment_name=None, viewing_view=None, viewing_widgets=None,
+                   ui_lang=None):
     # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
     model = model_prefs.resolve(session_id, attachment_name)
     cmd = [
@@ -271,6 +272,9 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
         # 上面剪過之後最壞(24 張卡 × 64 個中文字)約 9KB,離 Linux 單一參數 128KB
         # 與 Windows 命令列 32K 都還很遠。
         cmd.append(f"--viewing-widgets={json.dumps(viewing_widgets)}")
+    # 頁面 <lang>;白名單外當沒送(同 clamp_viewing:新 runtime 可能跑在還沒部署 clamp 的 api 上)
+    if ui_lang in strategy_reporter.REPLY_LANGS:
+        cmd.append(f"--ui-lang={ui_lang}")
     # `--` terminates options so a message starting with '-' (or literally '--help')
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
@@ -500,7 +504,8 @@ def main():
             run_agent_turn(session_id, content, viewing_strategy=viewing_strategy,
                            viewing_tab=viewing_tab, attachment_name=attachment_name,
                            viewing_view=ctx.get("viewing_view"),
-                           viewing_widgets=ctx.get("viewing_widgets"))
+                           viewing_widgets=ctx.get("viewing_widgets"),
+                           ui_lang=ctx.get("ui_lang"))
             # A turn may have created/deployed/removed a strategy, or changed
             # the portfolio — refresh both caches now instead of leaving the
             # user on the 2-minute timers.
