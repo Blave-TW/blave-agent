@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.68 — 2026-09-11
+
 - 回覆語言設定改三態:自動(預設;檔不存在或空)/ 七碼 / 自訂文字(`state/reply_lang` 存
   `custom:<text>`;清洗只在 `strategy_reporter.parse_reply_lang_custom` 一份,讀檔與 listener 共用:
   各種空白(含換行與 U+2028 等行分隔、NBSP/全形/tab)換一般空白並壓縮、不切行(切行會把 `Ko<U+2028>rean`
@@ -27,6 +31,46 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   建議句釘成英文;兜底錯誤句退英文。`_PREFS_HOWTO` 改成:七種寫代碼、七種以外寫 `custom:<語言名稱>`、
   「跟著我打的語言回」= 清空檔案(web 不再自動 seed,清了不會被寫回)。既有機器已 seed 的值不動。
   檢查:`tests/check_agent_reply_lang.py`。
+
+- 工作頁多對話＋並行回合(`.claude/mockups/chat-sessions/spec-c.md` §3.4;api 端 `openclaw/webchat.py`
+  同 commit、**先部署**——反過來機器會對舊 api 回報 `turn_state` 被當一般 chunk 轉發,無害但沒有狀態)。
+  `web_bridge` 派工改寫:poll 迴圈只收件,訊息依 `session_id` 進各自的本地 FIFO(`state/web_queue.json`
+  落盤、tmp+replace)、**進佇列即 ack**(舊的「開工即 ack」在本地排隊 >60s 會被 api 的租約重送、跑兩次);
+  dispatcher thread 在有名額時開跑最早等候的 session,同 session 嚴格序列、跨 session 並行,開不了跑的回報
+  `turn_state: queued`(每分鐘重報續命)、開跑 `running`、結束 `done`;inbox 新的 `interrupt` 控制訊息把還沒
+  開跑的訊息撤回並回報 `cancelled`(在跑的照舊由 /report 夾帶的旗標中斷)。`on_term` 對每條進行中的回合各發
+  一次 `report_turn_aborted`,排隊中的留在磁碟、重啟後照序恢復並各重報一次 `queued`。`_current_session`
+  換成 `_running` 登記表;變化偵測 thread 改看「任一回合進行中」;turn-end 的 `sync_portfolio` /
+  `sync_strategies` 多一個 `since`,回合結束後已有一次 sync 起跑就略過(portfolio 補上同款鎖)。心跳只由
+  poll 迴圈 touch(迴圈不再被回合擋住)。
+- 新 `turn_slots.py`:跨行程名額=`state/turn_slots/slot-N` 的 O_EXCL 檔(90s 沒動視為死人留下、可回收;不用
+  pid——Windows 的 `os.kill(pid, 0)` 會殺掉行程)。保鮮由獨立的 `keep_fresh` thread 每 4 秒 touch:web 是
+  「`_running` 登記著的每個名額」,TG 是這一輪的名額到 `subprocess.run` 結束——不跟回合迴圈或 typing 綁在一起,
+  因為那些會卡在 timeout 管不到的 DNS 解析、`proc.kill()/wait()` 上,卡超過 90 秒名額就會被別人回收。上限讀 `state/turn_limits.json`
+  (`command_listener` 從 command poll 回應的 `turn_limits` 落檔,api `agent_command.turn_limits`:方案
+  vCPU 數=上限,Starter 2／Premium 4／Max 8、Windows Starter 2,試用固定 1;檔案不存在=2)。開跑前另看
+  `MemAvailable`(`portfolio_reporter._memory`)<1GB:**已有回合在跑**才擋、維持排隊,零回合一律放行一條
+  (否則機器會永遠不回話)。`telegram_bridge` 佔同一組名額:spawn 前 `_wait_for_slot`,typing pinger 順便
+  touch 名額檔,TG 等名額時沒有提示。**Windows 未實測**:名額檔的 O_EXCL／utime／90s 回收與
+  `GlobalMemoryStatusEx` 那條路只在 Linux（本機 macOS 檢查）跑過,Windows Starter 的上限 2 也是外推。
+- `model_prefs`:`set` 同時寫 `_last`,沒有自己偏好的 session 沿用它——新對話不再退回預設模型。
+- `session_store._conn`:`timeout=30` + `PRAGMA journal_mode=WAL`,多個 `agent_turn` 同時寫同一個檔。
+- 收件依 `message_id` 去重(最近 200 個＋佇列中＋進行中的一律算已收,重啟時從磁碟佇列重建):ack 沒送達、或
+  落盤後 ack 前被殺,api 會在 60s 租約到期後重送,不去重就同一句跑兩遍。`on_term` 不拿 `_lock`(signal
+  handler 在主線程,主線程可能正持鎖寫佇列,不可重入鎖會卡到 systemd SIGKILL、一則通知都沒發)。回合結束時先
+  回報 `done`(／`queued`)才離開 `_running`,dispatcher 不會夾在中間開跑同 session 下一則、讓舊的 `done`
+  蓋掉新的 `running`。
+- **已知限制(接受不修)**:① 兩個 bridge 同時回收同一個過期名額檔時,上限可能暫時多 1。② bridge 停機超過
+  180 秒期間用戶刪了某條對話,bridge 回來仍會跑那條排隊中的訊息(回覆寫不進已刪的對話)。③ `KillMode=process`
+  讓 bridge 重啟後 `agent_turn` 孤兒繼續跑到完,它的名額檔 90 秒沒人 touch 就被回收——這段期間上限短暫超額,
+  同一個 session 也可能跟孤兒並跑。④ TG 可能一直等不到名額:`telegram_bridge._wait_for_slot` 每 3 秒搶一次,
+  web dispatcher 每 5 秒派工、有新訊息或回合結束時立刻派,web 佇列一直有料時 TG 會持續輸掉搶位,用戶只看到
+  typing。上限 1 的試用戶最明顯。⑤ 回合結束時 `turn_state: done` 是在 session 還留在 `_running` 時送出的網路
+  POST(刻意:避免下一則的 `running` 夾進 `done` 與 `queued` 之間);這個 POST 卡在 DNS 解析(urlopen 的
+  timeout 管不到)時,同一條對話的下一則要等它回來才會開跑,其他對話不受影響。
+- 檢查:`tests/check_web_dispatch.py`(派工序列／並行／上限／記憶體門檻／落盤與 ack 時機／message_id 去重／
+  interrupt 撤回／on_term 逐條通知與持鎖不卡／done 先於離開 `_running`／model_prefs 回退／WAL)、
+  `tests/check_webchat_sessions.py`(api 端 per-session 分流、遷移與並發遷移、空殼清理)。
 
 ## 1.1.67 — 2026-09-10
 

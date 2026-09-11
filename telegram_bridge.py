@@ -26,6 +26,7 @@ import time
 import urllib.request
 
 import model_prefs
+import turn_slots
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
@@ -147,6 +148,19 @@ def _typing_pinger(token, chat_id, stop_evt):
         stop_evt.wait(4)
 
 
+def _wait_for_slot(session_id):
+    """Block until a machine-wide turn slot is free (the cap is shared with the web
+    sessions; TG counts toward it — spec-c §3.4). No Telegram-side 「排隊中」 notice:
+    the typing indicator keeps running (待拍板). Heartbeat is touched while waiting —
+    the watchdog's turn_in_flight() only covers us once a child exists."""
+    while True:
+        slot = turn_slots.acquire(session_id, "telegram")
+        if slot:
+            return slot
+        touch_heartbeat()
+        time.sleep(3)
+
+
 def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
     """Runs agent_turn.py, which delivers (and streams) its own reply to
     Telegram directly. Returns True if the subprocess ran to completion
@@ -161,12 +175,17 @@ def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
     not just an inconvenience during debugging."""
     # 先讓使用者知道有在跑,再去做 spawn 前的準備工作
     stop_typing = threading.Event()
+    slot_box = {"slot": None}
     typing = threading.Thread(
         target=_typing_pinger, args=(token, chat_id, stop_typing), daemon=True
     )
     typing.start()
+    # 名額檔由獨立 thread 保鮮,不跟 typing 那條綁在一起:tg_api 卡在 DNS 時 timeout 管不到
+    threading.Thread(target=turn_slots.keep_fresh, args=(lambda: [slot_box["slot"]], stop_typing),
+                     daemon=True, name="turn-slot-keeper").start()
     # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
     model = model_prefs.resolve(session_id, attachment_name)
+    slot_box["slot"] = _wait_for_slot(session_id)
     _current_turn.update(token=token, chat_id=chat_id)
     try:
         result = subprocess.run(
@@ -192,6 +211,7 @@ def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
         return False
     finally:
         stop_typing.set()
+        turn_slots.release(slot_box["slot"])
         _current_turn.update(token=None, chat_id=None)
 
     if result.returncode != 0:

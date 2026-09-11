@@ -32,6 +32,8 @@ import time
 import urllib.error
 import urllib.request
 
+import turn_slots
+
 try:
     import fcntl
 except ImportError:  # Windows — no concurrent .env writer there (first-boot
@@ -3219,7 +3221,11 @@ def poll_once():
         API_BASE + "/poll", headers={"x-api-key": f"proxy-{PROXY_TOKEN}"}
     )
     with urllib.request.urlopen(req, timeout=POLL_TIMEOUT) as resp:
-        return (json.loads(resp.read().decode()) or {}).get("command")
+        body = json.loads(resp.read().decode()) or {}
+    # The parallel-turn cap rides on every poll response (api agent_command.turn_limits);
+    # both bridges read the file it lands in. Absent on an older api → nothing written.
+    turn_slots.write_limits(body.get("turn_limits"))
+    return body.get("command")
 
 
 def _send_ack(cmd_id, cmd, ok, result=None, error=None):

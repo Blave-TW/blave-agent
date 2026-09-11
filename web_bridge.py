@@ -4,6 +4,17 @@ Blave web-chat transport (api/openclaw/webchat.py) for messages the website
 queued for this machine, and spawns one agent_turn.py per message with web
 delivery (chunks POSTed back to /report, browser reads them over SSE).
 
+Several conversations (sessions) at once (chat-sessions spec-c §3.4): the poll
+loop only receives and files each message into its session's local FIFO; a
+dispatcher starts turns while a machine-wide slot is free (turn_slots — the
+tier's cap, shared with telegram_bridge, none under the memory floor), one at a
+time per session, sessions in parallel. What cannot start is reported to the
+api as `turn_state: queued` (the browser draws the queued row), `running` when
+it starts, `done` when it ends. The FIFO lives on disk (state/web_queue.json):
+a message is ACKed the moment it is filed — the api's 60s lease would
+otherwise redeliver anything queued longer than that — and a bridge restart
+resumes the queue in order.
+
 Same trust model as the LLM proxy: this machine authenticates with its own
 proxy-{ttyd_password} (BLAVE_PROXY_TOKEN), which the transport resolves to this
 user's id — so /poll only ever yields this user's messages.
@@ -12,6 +23,7 @@ agent_turn.py is resolved relative to THIS file so a version deploy (symlink
 swap, see updater.py) picks up the matching agent_turn.py on the next spawn.
 """
 import base64
+import collections
 import json
 import os
 import re
@@ -26,6 +38,7 @@ import model_prefs
 import command_listener
 import portfolio_reporter
 import strategy_reporter
+import turn_slots
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
@@ -52,9 +65,24 @@ HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_WEB_HEARTBEAT", f"{BASE}/state/web_
 # 訊息裡給相對路徑 tmp/inbound/... 它自己 Read 得到
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", f"{BASE}/workspace")
 INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
+# 本地佇列落盤:{"v": 1, "queues": {session_id: [entry, ...]}}。附件在收件時就落到
+# tmp/inbound、entry 只存檔名,所以這個檔永遠很小。
+QUEUE_PATH = os.environ.get("BLAVE_AGENT_WEB_QUEUE", f"{BASE}/state/web_queue.json")
 
-# 目前正在處理的 session(SIGTERM handler 要知道該通知誰)
-_current_session = {"id": None}
+# 派工狀態。_lock 罩住 _queues / _running / _queued_at 三張表;_wake 由「收到新訊息」
+# 「一輪結束」叫醒 dispatcher,DISPATCH_TICK 兜底(記憶體門檻幾秒後重試、排隊續命)。
+_lock = threading.Lock()
+_queues = {}      # session_id -> [entry, ...]  尚未開跑的訊息,同 session 嚴格序列
+_running = {}     # session_id -> {"slot": path, "since": ts}  進行中的回合(取代舊的 _current_session)
+_queued_at = {}   # session_id -> 上次回報 queued 的時刻
+# 收過的 message_id(最近 SEEN_MAX 個):api 在 ack 沒送達時會於租約到期後重送同一則
+_seen = collections.OrderedDict()
+SEEN_MAX = 200
+_wake = threading.Event()
+DISPATCH_TICK = 5
+# api 的 turnactive TTL 是 180s、靠 chunk 續命;排隊中的 session 沒有 chunk,所以每分鐘
+# 重報一次 queued,否則清單上的「排隊中」會在三分鐘後自己消失。
+QUEUED_REFRESH = 60
 
 # sync_strategies 的序列化鎖:turn-end、command-applied、下面的變化偵測 thread
 # 三個來源共用一把,兩份掃描+上報永遠不會交疊(同一份 stats.json 掃到一半)。
@@ -63,8 +91,11 @@ _sync_lock = threading.Lock()
 # 變動發生在這個時刻之前 → 那次 scan 已把變動收走,pending 的 dirty 不必再開一發
 # (沒有這條,幾乎每個改策略的回合都會 turn-end + watcher 各 sync 一次,degraded
 # 網路下兩份排隊最壞 ~180 秒 > watchdog STALE_THRESHOLD 120 秒——uid=32321
-# 「turn-end chunk 沒送出去就被重啟」的復刻路徑)。
+# 「turn-end chunk 沒送出去就被重啟」的復刻路徑)。並行之後 turn-end 也用同一條
+# 去重:回合結束後若已有一次 sync 起跑,這輪的變動已被收走,不再開一發。
 _last_sync_started = 0.0
+_portfolio_lock = threading.Lock()
+_last_portfolio_started = 0.0
 
 # 一輪的硬上限。參數掃描是網格搜尋(每組都回測),600s 常常不夠——真正的煞車
 # 是 agent_turn 自己的 max_budget_usd/max_turns,這裡只防永久卡死。
@@ -120,10 +151,12 @@ def poll_once():
 
 
 def ack_message(message_id):
-    """Confirm we're processing this message — the server drops its recovery lease.
-    Called at spawn time, NOT turn end: a mid-turn death must not replay a half-
-    executed message. Best-effort: on failure we process anyway (worst case the
-    lease expires and the message redelivers once — visible, unlike a lost one)."""
+    """Confirm we hold this message — the server drops its recovery lease.
+    Called once it is filed in the on-disk queue (NOT at turn end: a mid-turn death
+    must not replay a half-executed message; and NOT at spawn any more: a message
+    queued locally for over the 60s lease would be redelivered and run twice).
+    Best-effort: on failure we process anyway (worst case the lease expires and the
+    message redelivers once — visible, unlike a lost one)."""
     if not message_id:
         return
     try:
@@ -137,15 +170,18 @@ def ack_message(message_id):
         print(f"[web_bridge] ack failed for {message_id}: {e}", file=sys.stderr)
 
 
-def sync_strategies():
+def sync_strategies(since=None):
     """Right after a turn (which is when the agent may have created/deployed a
     strategy), push the fresh list two ways: a live chunk on the chat stream so
     the open workspace updates the left rail instantly, and the cache so a page
     reload is fresh too. The timer (strategy_reporter) is only a slow fallback.
 
     序列化:三個呼叫源(turn-end / command-applied / 變化偵測 thread)共用
-    _sync_lock,不讓兩份 scan+report 交疊。"""
+    _sync_lock,不讓兩份 scan+report 交疊。`since`(turn-end 用):這個時刻之後已經
+    有一次 sync 起跑就略過——兩條回合前後腳結束時第二份只是重複上報。"""
     with _sync_lock:
+        if since is not None and _last_sync_started >= since:
+            return
         _sync_strategies_locked()
 
 
@@ -182,17 +218,23 @@ def _sync_strategies_locked():
         print(f"[web_bridge] strategies chunk push failed: {e}", file=sys.stderr)
 
 
-def sync_portfolio():
+def sync_portfolio(since=None):
     """Same idea for the 投資組合 view: a turn is the only thing that changes
     weights / members / capital, and waiting for the 2-minute timer leaves the
     user reading pre-turn numbers long enough to redo the operation. Cache only,
     no stream chunk — that view refetches the cache itself after a turn, and its
     payload (per-allocator backtest series) does not belong on the 2MB-capped
-    /report."""
-    try:
-        portfolio_reporter.report(portfolio_reporter.build_report(), token=PROXY_TOKEN)
-    except Exception as e:
-        print(f"[web_bridge] portfolio report failed: {e}", file=sys.stderr)
+    /report. Same lock + `since` dedup as sync_strategies now that turns end in
+    parallel."""
+    global _last_portfolio_started
+    with _portfolio_lock:
+        if since is not None and _last_portfolio_started >= since:
+            return
+        _last_portfolio_started = time.time()
+        try:
+            portfolio_reporter.report(portfolio_reporter.build_report(), token=PROXY_TOKEN)
+        except Exception as e:
+            print(f"[web_bridge] portfolio report failed: {e}", file=sys.stderr)
 
 
 def _post_chunk(chunk, log=False):
@@ -248,6 +290,8 @@ def save_attachment(attachment):
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
                    attachment_name=None, viewing_view=None, viewing_widgets=None,
                    ui_lang=None):
+    """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
+    keep_fresh thread (every slot in _running), not by this loop."""
     # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
     model = model_prefs.resolve(session_id, attachment_name)
     cmd = [
@@ -279,41 +323,28 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
     cmd += ["--", session_id, message]
-    _current_session["id"] = session_id
     proc = subprocess.Popen(cmd)
     deadline = time.time() + TURN_TIMEOUT
     next_ping = time.time() + PING_INTERVAL
-    try:
-        while proc.poll() is None:
-            time.sleep(1)
-            now = time.time()
-            # 心跳必須在這裡也跳:heartbeat 的語意是「這個 loop 還活著」,不是
-            # 「這個 loop 有空」。只在 main() 迴圈頂端 touch 的話,整輪(實測可達
-            # 273 秒)心跳都是 stale,control/heartbeat_watchdog.py 只能靠
-            # turn_in_flight()(pgrep agent_turn.py)這個旁證擋下重啟——而 child
-            # 一 exit 旗子就落下,後面的 sync_portfolio()/sync_strategies()(圖
-            # base64 + 數 MB 上傳,好幾秒)整段裸奔。2026-08-26 uid=32321 就是在
-            # 那個窗口被 watchdog 重啟,turn-end 的 strategies chunk 沒送出去,
-            # 工作頁的新策略整整 23 分鐘沒長出回測。這樣改不會削弱偵測力:回合中
-            # 本來就被 turn_in_flight() 擋著不會重啟,child 真的卡死另有
-            # TURN_TIMEOUT 收尾。
-            touch_heartbeat()
-            if now >= next_ping:
-                _post_chunk({"type": "ping", "session_id": session_id})
-                next_ping = now + PING_INTERVAL
-            if now >= deadline:
-                print(f"[web_bridge] agent_turn exceeded {TURN_TIMEOUT}s — killing",
-                      file=sys.stderr)
-                proc.kill()
-                proc.wait(timeout=10)
-                report_turn_aborted(
-                    session_id,
-                    "這輪跑太久被中止了（超過 30 分鐘）。可以把任務拆小一點再試，"
-                    "例如縮小掃描範圍或減少參數組合。",
-                )
-                return False
-    finally:
-        _current_session["id"] = None
+    while proc.poll() is None:
+        time.sleep(1)
+        now = time.time()
+        # 心跳不在這裡跳了:回合現在跑在 worker thread,poll 迴圈沒有被擋住,由它每圈
+        # 自己 touch;名額檔由 keep_fresh thread 負責。
+        if now >= next_ping:
+            _post_chunk({"type": "ping", "session_id": session_id})
+            next_ping = now + PING_INTERVAL
+        if now >= deadline:
+            print(f"[web_bridge] agent_turn exceeded {TURN_TIMEOUT}s — killing",
+                  file=sys.stderr)
+            proc.kill()
+            proc.wait(timeout=10)
+            report_turn_aborted(
+                session_id,
+                "這輪跑太久被中止了（超過 30 分鐘）。可以把任務拆小一點再試，"
+                "例如縮小掃描範圍或減少參數組合。",
+            )
+            return False
     if proc.returncode != 0:
         print(f"[web_bridge] agent_turn failed (exit {proc.returncode})", file=sys.stderr)
         return False
@@ -321,13 +352,11 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
 
 
 def touch_heartbeat():
-    """寫不進去只印一行就算了,絕不讓例外往上竄:這個函式現在是回合中每秒呼叫
-    (一輪最多 ~2100 次),而不是每個 poll 迴圈一次。碟滿(workspace 跟 heartbeat
-    同一顆)或 Windows 上 AV 暫時鎖檔時拋 OSError,例外會穿過 run_agent_turn 的
-    finally 打死整個 main —— on_term 是 signal handler 不會跑(瀏覽器卡在「思考
-    中」),而且回合後的 sync_portfolio()/sync_strategies() 直接沒機會跑,等於
-    原封不動複製了這個 patch 要修的那個症狀。心跳寫不進去本來就該由 watchdog
-    處理(它會照常判 stale 然後重啟),不該由一輪對話陪葬。"""
+    """寫不進去只印一行就算了,絕不讓例外往上竄:碟滿(workspace 跟 heartbeat
+    同一顆)或 Windows 上 AV 暫時鎖檔時拋 OSError,例外會打死整個 poll 迴圈——
+    on_term 是 signal handler 不會跑(瀏覽器卡在「思考中」)。心跳寫不進去本來就
+    該由 watchdog 處理(它會照常判 stale 然後重啟),不該由對話陪葬。語意是「poll
+    迴圈還活著」——只有那個迴圈 touch 它;回合與 sync 都在別的 thread,不代跳。"""
     try:
         os.makedirs(os.path.dirname(HEARTBEAT_PATH), exist_ok=True)
         with open(HEARTBEAT_PATH, "w") as f:
@@ -337,14 +366,276 @@ def touch_heartbeat():
 
 
 def on_term(signum=None, frame=None):
-    """systemd stop/restart (release swap, reboot…) while a turn is running:
-    tell the browser before we go, or it spins on 「思考中」forever."""
-    sid = _current_session.get("id")
-    if sid:
+    """systemd stop/restart (release swap, reboot…) while turns are running: tell
+    the browser about each one before we go, or those conversations spin on
+    「思考中」forever. Queued messages get no notice — they are on disk and resume
+    in order when the bridge comes back.
+
+    No _lock here: this runs in the main thread, which may be inside `with _lock:`
+    (_ingest persisting the queue) when the signal lands — a non-reentrant lock would
+    wait forever and systemd's SIGKILL would arrive with no notice sent. list() of a
+    dict is one C call under the GIL, so the snapshot is still consistent."""
+    sids = list(_running)
+    for sid in sids:
         print(f"[web_bridge] SIGTERM mid-turn ({sid}) — telling the browser",
               file=sys.stderr)
         report_turn_aborted(sid)
     sys.exit(0)
+
+
+# ── 佇列落盤 / 收件 / 派工 ────────────────────────────────────────────────────
+
+
+def _load_queue():
+    try:
+        with open(QUEUE_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        queues = data.get("queues") if isinstance(data, dict) else None
+        if not isinstance(queues, dict):
+            return {}
+        return {sid: [e for e in q if isinstance(e, dict)]
+                for sid, q in queues.items() if isinstance(q, list) and q}
+    except OSError:
+        return {}
+    except ValueError as e:
+        # Unreadable JSON: keep the file for forensics instead of overwriting it on the
+        # next _persist_queue — those were ACKed messages the api will never resend.
+        bad = f"{QUEUE_PATH}.bad-{int(time.time())}"
+        print(f"[web_bridge] queue file unreadable ({e}) — moved to {bad}", file=sys.stderr)
+        try:
+            os.replace(QUEUE_PATH, bad)
+        except OSError as e2:
+            print(f"[web_bridge] could not move queue file aside: {e2}", file=sys.stderr)
+        return {}
+
+
+def _persist_queue():
+    """Caller holds _lock. Atomic (tmp + replace): a restart must never read half a
+    file. Failure is logged and the queue lives on in memory — the message was
+    already ACKed, and not running it is worse than losing it on a crash."""
+    try:
+        os.makedirs(os.path.dirname(QUEUE_PATH), exist_ok=True)
+        tmp = QUEUE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"v": 1, "queues": {s: q for s, q in _queues.items() if q}}, f)
+        os.replace(tmp, QUEUE_PATH)
+    except OSError as e:
+        print(f"[web_bridge] queue persist failed: {e}", file=sys.stderr)
+
+
+def _turn_state(session_id, state):
+    _post_chunk({"type": "turn_state", "session_id": session_id, "state": state},
+                log=state != "running")
+
+
+def _cancel_queued(session_id):
+    """Withdraw a session's not-yet-started messages (Stop pressed while queued).
+    A running turn is left alone — the api's per-session interrupt flag reaches it
+    through /report. Returns whether anything was withdrawn."""
+    with _lock:
+        if session_id in _running:
+            return False
+        dropped = _queues.pop(session_id, None)
+        _queued_at.pop(session_id, None)
+        if dropped:
+            _persist_queue()
+    return bool(dropped)
+
+
+def _ingest(m):
+    """One inbox message → local queue (user_message) or control action. ACKs at the
+    end, after the queue is on disk: from here the local FIFO is responsible, the
+    api's lease only covers the window between claiming and filing."""
+    mid = m.get("message_id")
+    mtype = m.get("type")
+    session_id = m.get("session_id") or ""
+    if mtype == "interrupt":
+        if session_id and _cancel_queued(session_id):
+            _turn_state(session_id, "cancelled")
+        ack_message(mid)
+        return
+    if mtype != "user_message":
+        ack_message(mid)  # discarding — release the lease
+        return
+    content = m.get("content") or ""
+    attachment = m.get("attachment") if isinstance(m.get("attachment"), dict) else None
+    if not session_id or (not content and attachment is None):
+        ack_message(mid)
+        return
+    if mid and _already_have(mid):
+        # The api redelivers a message whose ack never landed (failed POST, or killed
+        # between persisting and acking) once its 60s lease runs out. Running it again
+        # would be a duplicate turn; ack again so the lease is finally released.
+        print(f"[web_bridge] duplicate delivery of {mid} dropped", file=sys.stderr)
+        ack_message(mid)
+        return
+    attachment_name = None
+    if attachment is not None:
+        saved = save_attachment(attachment)
+        if saved:
+            attachment_name = saved
+            note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
+        else:
+            # 接收失敗也照常跑 turn——讓 agent 告知用戶重傳,不准靜默吞掉
+            note = "[用戶附了一個檔案但接收失敗，請告知用戶重傳]"
+        content = f"{content}\n{note}" if content else note
+    ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
+    entry = {
+        "message_id": mid,
+        "session_id": session_id,
+        "content": content,
+        "attachment_name": attachment_name,
+        "viewing_strategy": ctx.get("viewing_strategy"),
+        "viewing_tab": ctx.get("viewing_tab"),
+        "viewing_view": ctx.get("viewing_view"),
+        "viewing_widgets": ctx.get("viewing_widgets"),
+        "ui_lang": ctx.get("ui_lang"),
+        "ts": m.get("timestamp") or int(time.time() * 1000),
+    }
+    with _lock:
+        if mid and mid in _seen:   # a redelivery that raced us through the attachment save
+            dup = True
+        else:
+            dup = False
+            _queues.setdefault(session_id, []).append(entry)
+            _remember(mid)
+            _persist_queue()
+    ack_message(mid)
+    if dup:
+        print(f"[web_bridge] duplicate delivery of {mid} dropped", file=sys.stderr)
+
+
+def _remember(mid):
+    """Caller holds _lock. Bounded: SEEN_MAX newest ids; the queue and the running
+    turns are checked directly in _already_have, so the bound never lets a message
+    that is still pending slip through."""
+    if not mid:
+        return
+    _seen[mid] = None
+    _seen.move_to_end(mid)
+    while len(_seen) > SEEN_MAX:
+        _seen.popitem(last=False)
+
+
+def _already_have(mid):
+    with _lock:
+        if mid in _seen:
+            return True
+        if any(r.get("message_id") == mid for r in _running.values()):
+            return True
+        return any(e.get("message_id") == mid for q in _queues.values() for e in q)
+
+
+def _worker(session_id, entry, slot):
+    """One turn, on its own thread. Ends with the turn-end syncs the sequential loop
+    used to run inline (portfolio first — the browser refetches it 3s after done,
+    the strategies refetch waits for the chunk below)."""
+    turn_end = None
+    try:
+        _turn_state(session_id, "running")
+        run_agent_turn(session_id, entry.get("content") or "",
+                       viewing_strategy=entry.get("viewing_strategy"),
+                       viewing_tab=entry.get("viewing_tab"),
+                       attachment_name=entry.get("attachment_name"),
+                       viewing_view=entry.get("viewing_view"),
+                       viewing_widgets=entry.get("viewing_widgets"),
+                       ui_lang=entry.get("ui_lang"))
+    except Exception as e:
+        print(f"[web_bridge] turn {session_id} crashed before/at spawn: {e}", file=sys.stderr)
+        report_turn_aborted(session_id)
+    finally:
+        turn_slots.release(slot)
+        with _lock:
+            more = bool(_queues.get(session_id))
+            if more:
+                _queued_at[session_id] = time.time()
+        turn_end = time.time()
+        # Report BEFORE leaving _running: while this session is registered the
+        # dispatcher cannot start its next message, so that turn's `running` can never
+        # land between this `done` (which clears the api's turnactive) and `queued`.
+        _turn_state(session_id, "done")
+        if more:
+            _turn_state(session_id, "queued")   # honest: the next one is not running yet
+        with _lock:
+            _running.pop(session_id, None)
+        _wake.set()
+    sync_portfolio(since=turn_end)
+    sync_strategies(since=turn_end)
+
+
+def _dispatch():
+    """Start whatever can start: sessions with a pending message and no turn in
+    flight, oldest pending first, while turn_slots hands out a slot. Sessions left
+    waiting are reported queued (first time at once, then every QUEUED_REFRESH so
+    the api's flag does not expire)."""
+    now = time.time()
+    to_report = []
+    with _lock:
+        pending = sorted((s for s, q in _queues.items() if q and s not in _running),
+                         key=lambda s: _queues[s][0].get("ts") or 0)
+        for sid in pending:
+            slot = turn_slots.acquire(sid, "web")
+            if slot is None:
+                break
+            entry = _queues[sid].pop(0)
+            if not _queues[sid]:
+                del _queues[sid]
+            _running[sid] = {"slot": slot, "since": now, "message_id": entry.get("message_id")}
+            _queued_at.pop(sid, None)
+            _persist_queue()
+            try:
+                threading.Thread(target=_worker, args=(sid, entry, slot), daemon=True,
+                                 name=f"turn-{sid}").start()
+            except Exception as e:   # RuntimeError "can't start new thread" (box out of
+                # threads/memory): the entry is already off the queue and disk, the session
+                # registered, the slot taken — undo all three or the message is lost and
+                # the session stuck running forever.
+                print(f"[web_bridge] cannot start turn thread for {sid}: {e}", file=sys.stderr)
+                _queues.setdefault(sid, []).insert(0, entry)
+                _running.pop(sid, None)
+                turn_slots.release(slot)
+                _persist_queue()
+                break
+        for sid in pending:
+            if sid not in _running and now - _queued_at.get(sid, 0) >= QUEUED_REFRESH:
+                _queued_at[sid] = now
+                to_report.append(sid)
+    for sid in to_report:   # network outside the lock — the poll thread must not wait on it
+        _turn_state(sid, "queued")
+
+
+def _running_slots():
+    """Slots of every registered turn — what keep_fresh touches. A slot stays held
+    until _worker drops the session from _running, whatever the turn is blocked on."""
+    return [r.get("slot") for r in list(_running.values())]
+
+
+def _resume_queue():
+    """Restart: the on-disk queue comes back in its original order and every waiting
+    session is told `queued` once more (the api's flag may have expired meanwhile);
+    the dispatcher then starts whatever can start."""
+    with _lock:
+        _queues.update(_load_queue())
+        sids = list(_queues)
+        for sid in sids:
+            _queued_at[sid] = time.time()
+            for e in _queues[sid]:
+                _remember(e.get("message_id"))
+    for sid in sids:
+        _turn_state(sid, "queued")
+
+
+def _dispatch_loop():
+    while True:
+        _wake.wait(DISPATCH_TICK)
+        _wake.clear()
+        try:
+            _dispatch()
+        except Exception as e:
+            try:
+                print(f"[web_bridge] dispatch failed: {e}", file=sys.stderr)
+            except Exception:
+                pass
 
 
 # ── 變化偵測 thread(治本:不等 reporter 的 2 分鐘 timer)──────────────────────
@@ -394,10 +685,10 @@ def _strategy_change_watcher():
                 continue           # 還沒穩夠久
             if now - last_fire < _WATCH_MIN_INTERVAL_S:
                 continue           # 太頻繁:保留 dirty_since,冷卻後下一拍補跑(pending)
-            # 回合進行中不搶跑:turn-end 自己會 sync,這裡跑只是重複又要搶鎖。保留
+            # 任一回合進行中不搶跑:turn-end 自己會 sync,這裡跑只是重複又要搶鎖。保留
             # dirty_since,回合結束後由上面的 _last_sync_started 檢查決定要不要補
             # (turn-end 的 scan 起跑晚於這筆變動就直接清帳)。
-            if _current_session.get("id"):
+            if _running:
                 continue
             sync_strategies()
             last_fire = now
@@ -427,8 +718,7 @@ def main():
         if sigbreak is not None:
             signal.signal(sigbreak, on_term)
     # Commands (stop/start trading, membership, exchange keys) run on their own
-    # thread: this loop below blocks for the whole of an agent turn, and a stop
-    # that waits minutes for a turn to finish is not a stop. Daemon thread — it
+    # thread: a stop that waits on anything else is not a stop. Daemon thread — it
     # must never keep the bridge alive on shutdown.
     def on_command_applied():
         # Both views, every command: delete_strategy changes the left rail, the
@@ -455,9 +745,17 @@ def main():
         name="strategy-change-watcher",
     ).start()
 
+    _resume_queue()
+    threading.Thread(target=turn_slots.keep_fresh, args=(_running_slots,), daemon=True,
+                     name="turn-slot-keeper").start()
+    threading.Thread(target=_dispatch_loop, daemon=True, name="turn-dispatcher").start()
+    _wake.set()
+
     print("[web_bridge] starting poll loop", file=sys.stderr)
     tls_failures = 0
     while True:
+        # 心跳語意=「這個 poll 迴圈還活著」。回合與 sync 都在別的 thread,迴圈本身
+        # 不再被擋住,每圈 touch 一次就夠(poll 最長 35s,watchdog 門檻 120s)。
         touch_heartbeat()
         try:
             messages = poll_once()
@@ -476,51 +774,9 @@ def main():
             continue
         tls_failures = 0
         for m in messages:
-            if m.get("type") != "user_message":
-                ack_message(m.get("message_id"))  # discarding — release the lease
-                continue
-            session_id = m.get("session_id") or ""
-            content = m.get("content") or ""
-            attachment = m.get("attachment") if isinstance(m.get("attachment"), dict) else None
-            if not session_id or (not content and attachment is None):
-                ack_message(m.get("message_id"))  # discarding — release the lease
-                continue
-            # 開工即確認:從這裡開始的失敗由 mid-turn 機制(SIGTERM 補報)負責,
-            # 租約只救「領走但還沒開工」的窗口。
-            ack_message(m.get("message_id"))
-            attachment_name = None
-            if attachment is not None:
-                saved = save_attachment(attachment)
-                if saved:
-                    attachment_name = saved
-                    note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
-                else:
-                    # 接收失敗也照常跑 turn——讓 agent 告知用戶重傳,不准靜默吞掉
-                    note = "[用戶附了一個檔案但接收失敗，請告知用戶重傳]"
-                content = f"{content}\n{note}" if content else note
-            ctx = m.get("context") if isinstance(m.get("context"), dict) else {}
-            viewing_strategy = ctx.get("viewing_strategy")
-            viewing_tab = ctx.get("viewing_tab")
-            run_agent_turn(session_id, content, viewing_strategy=viewing_strategy,
-                           viewing_tab=viewing_tab, attachment_name=attachment_name,
-                           viewing_view=ctx.get("viewing_view"),
-                           viewing_widgets=ctx.get("viewing_widgets"),
-                           ui_lang=ctx.get("ui_lang"))
-            # A turn may have created/deployed/removed a strategy, or changed
-            # the portfolio — refresh both caches now instead of leaving the
-            # user on the 2-minute timers.
-            # 投資組合排前面:瀏覽器是在 done 之後固定 3 秒回抓它的快取,而策略
-            # 清單的回抓綁在下面那個 chunk 送達之後——只有投資組合這條會輸掉競速,
-            # 慢的那條(圖片 base64 + 數 MB 上傳)因此排後面。
-            # 兩個 sync 中間各補一次心跳:這裡 turn_in_flight() 已經是 False,
-            # 唯一的保護就是心跳還沒過期,窗口因此縮成「最長的單一 sync」而不是
-            # 兩個的總和。不改成背景 thread 定時 touch——那會讓心跳退化成「進程
-            # 還在」而不是「這個迴圈還在跑」,watchdog 對 web_bridge 唯一的真陽性
-            # (閒置時 poll 迴圈 wedge)就沒了。單一 POST 真的卡死仍照常過期重啟。
-            touch_heartbeat()
-            sync_portfolio()
-            touch_heartbeat()
-            sync_strategies()
+            _ingest(m)
+        if messages:
+            _wake.set()
 
 
 if __name__ == "__main__":

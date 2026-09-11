@@ -85,7 +85,12 @@ def _conn():
         os.close(os.open(DB_PATH, os.O_CREAT | os.O_WRONLY, 0o600))
     else:
         os.chmod(DB_PATH, 0o600)
-    conn = sqlite3.connect(DB_PATH)
+    # Several agent_turn processes (one per parallel web session, plus Telegram) write
+    # this file at once. WAL lets readers proceed under a writer; the 30s busy timeout
+    # queues a second writer instead of raising "database is locked" mid-turn. The
+    # pragma is persistent but costs nothing to repeat.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS turns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
