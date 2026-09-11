@@ -8,7 +8,15 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- agent_turn: the backtest-chain libs (`lib/runner.py`, `param_scan.py`,
+  `walk_forward.py`, `validation.py`, `analysis.py`) and `control/` are
+  deny-listed for the edit tools (`PROTECTED_EDIT_RULES`; holds in
+  bypassPermissions; live test on CLI 2.1.268: Edit, Write, Bash `>>`, `sed -i`
+  and `cp` onto a listed file all denied — a script opening the file itself is
+  not covered, AGENTS.md carries the rule for that). The rest of
+  lib/ stays writable: user-built exchange helpers live there and the update
+  flow merges it. A real machine's agent extended `lib/walk_forward.py` with an
+  `anchored` option on request — the web then rendered that run as rolling.
 
 ## 1.1.68 — 2026-09-11
 

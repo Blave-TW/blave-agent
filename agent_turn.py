@@ -59,6 +59,22 @@ PROXY_ENV = {
 # Restrict to what a headless trading agent actually needs — the SDK's full
 # default toolset burned 22k+ tokens on a single trivial turn in testing.
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+# Edit(path) deny rules — hold in bypassPermissions and cover Write/NotebookEdit (SDK
+# docs › permissions). Live test on CLI 2.1.268 (2026-09-11): Edit, Write, Bash `>>`,
+# `sed -i` and `cp` onto a listed file were all denied; a script opening the file itself
+# is not covered — AGENTS.md carries the rule for that. The backtest-chain libs are what the web reads by
+# contract and what a config update replaces wholesale; the rest of lib/ stays writable
+# on purpose (user-built exchange helpers live there). A single leading slash anchors at
+# cwd=WORKSPACE. 2026-09-11 an agent added an `anchored` option to lib/walk_forward.py
+# because the user asked; the web then showed that run as rolling.
+PROTECTED_EDIT_RULES = [
+    "Edit(/lib/runner.py)",
+    "Edit(/lib/param_scan.py)",
+    "Edit(/lib/walk_forward.py)",
+    "Edit(/lib/validation.py)",
+    "Edit(/lib/analysis.py)",
+    "Edit(/control/**)",
+]
 
 
 # 模型(尤其較弱的 instruction-following)看到 prompt 裡的逐字稿格式,會在寫完
@@ -1954,7 +1970,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` (also a valid
         # kwarg) is for *defining* custom/MCP tools — not this either.
         allowed_tools=ALLOWED_TOOLS,
-        disallowed_tools=["Task", "Agent"],
+        disallowed_tools=["Task", "Agent"] + PROTECTED_EDIT_RULES,
         # Keep Claude Code's own default system prompt (tool-use guidance
         # etc.) and append AGENTS.md + this surface's formatting rule on top —
         # via file, not argv (see _write_system_prompt_file). A preset without
