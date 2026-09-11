@@ -8,7 +8,25 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- 回覆語言設定改三態:自動(預設;檔不存在或空)/ 七碼 / 自訂文字(`state/reply_lang` 存
+  `custom:<text>`;清洗只在 `strategy_reporter.parse_reply_lang_custom` 一份,讀檔與 listener 共用:
+  各種空白(含換行與 U+2028 等行分隔、NBSP/全形/tab)換一般空白並壓縮、不切行(切行會把 `Ko<U+2028>rean`
+  存成錯但有效的 `Ko`)、刪控制與零寬/雙向字元、`]` `"` 換全形、含 `<` `>`
+  或鷹架標記開頭視為無效、清洗後 >40 字視為無效、剛好是七碼(不分大小寫)正規化成該碼;讀取改
+  `read_reply_lang_setting()` → `(代碼, 自訂文字)`,`read_reply_lang()` 刪除)。手寫檔行為變化:讀檔只取
+  `readline` 那一行(`zh\nextra` 現在認 zh、開頭空行 = 自動;該行解碼後 >512 字 = 自動、不截斷;手寫的
+  `ZH` 與 `custom:ZH` 一樣正規化成 zh),讀不動的警告
+  每個 process 只印一次;開頭是 `FF FE` / `FE FF` 的檔用 UTF-16 解(PowerShell 5.1 的 `>` 重導),
+  `_PREFS_HOWTO` 要求用 UTF-8 寫這個檔。
+  `reply_lang_set` args 加 `custom`(非空時 `lang` 必須是 `""`,api 與機器各驗一次;api 另在該用戶
+  `can_reply_lang_custom` 旗標缺席時以 `reply_lang_custom unsupported` 400 擋掉非空 custom——1.1.67 的
+  listener 只讀 `lang`,收到會刪掉現有設定),ack 回
+  `{"lang", "custom"}`;兩者皆空 = 刪檔 = 自動。reporter payload 加 `reply_lang_custom`(欄位在 =
+  api 的 `can_reply_lang_custom` 旗標,前端據此顯示「其他」)。自訂語言的尾端錨把文字用引號包住當資料
+  (「Reply ENTIRELY in the language the user specified: "<text>"」),suggest 版同 es/pt/vi/ja 把部署
+  建議句釘成英文;兜底錯誤句退英文。`_PREFS_HOWTO` 改成:七種寫代碼、七種以外寫 `custom:<語言名稱>`、
+  「跟著我打的語言回」= 清空檔案(web 不再自動 seed,清了不會被寫回)。既有機器已 seed 的值不動。
+  檢查:`tests/check_agent_reply_lang.py`。
 
 ## 1.1.67 — 2026-09-10
 

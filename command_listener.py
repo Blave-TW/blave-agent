@@ -3124,33 +3124,49 @@ def _cmd_preferences_set(args):
 
 
 def _cmd_reply_lang_set(args):
-    """{"lang": code} → state/reply_lang;`"lang": ""` = 清除設定(刪檔),回到
-    ui_lang / 訊息啟發式。回傳 {"lang": 實際落檔的值},"" 表示已清除。
+    """{"lang": code, "custom"?: text} → state/reply_lang。三態:`lang` 七碼之一;
+    `custom` 非空(此時 `lang` 必須是 "")→ 落檔 `custom:<text>`;兩者皆空 = 清除設定
+    (刪檔)= 自動,回到 ui_lang / 訊息啟發式。回傳 {"lang", "custom"} = 實際落檔的值。
 
-    `if_unset: true`(web 的自動帶入才送):已有有效設定就不寫,ack 回現有值。web 判
-    「沒設定」靠的是最多舊 2 分鐘的回報,agent 剛在對話裡寫的值不能被介面語言蓋掉。
+    `if_unset: true`(舊 web 的自動帶入才送,前端已不再送、留相容):已有有效設定就不寫,
+    ack 回現有值。
 
     api(agent_command._reply_lang_args_error)驗過一輪,這裡照樣再驗:這個值決定
-    每一輪的語言錨,信任邊界在機器上。"""
-    import strategy_reporter  # same runtime dir; 白名單與路徑只有一份
+    每一輪的語言錨,信任邊界在機器上。custom 的清洗只有 strategy_reporter 那一份;
+    清洗後剛好是七碼之一(例如 "ZH")就當成那個碼寫入。"""
+    import strategy_reporter  # same runtime dir; 白名單、路徑、清洗只有一份
     lang = args.get("lang")
     if not isinstance(lang, str) or (lang and lang not in strategy_reporter.REPLY_LANGS):
         raise ValueError("lang must be one of %s or \"\"" % "/".join(strategy_reporter.REPLY_LANGS))
+    custom = args.get("custom", "")
+    if not isinstance(custom, str):
+        raise ValueError("custom must be a string")
+    if custom and lang:
+        raise ValueError("lang and custom are mutually exclusive")
+    clean = ""
+    if custom:
+        lang, clean = strategy_reporter.parse_reply_lang_custom(custom)
+        if not (lang or clean):
+            raise ValueError("custom must be 1-%d printable characters on one line, without < or >"
+                             % strategy_reporter.REPLY_LANG_CUSTOM_MAX)
     if_unset = args.get("if_unset", False)
     if not isinstance(if_unset, bool):
         raise ValueError("if_unset must be a boolean")
     if if_unset:
-        existing = strategy_reporter.read_reply_lang()
-        if existing:
-            return {"lang": existing}
+        existing_lang, existing_custom = strategy_reporter.read_reply_lang_setting()
+        if existing_lang or existing_custom:
+            return {"lang": existing_lang, "custom": existing_custom}
     if lang:
         _write_text_atomic(strategy_reporter.REPLY_LANG_PATH, lang + "\n")
+    elif clean:
+        _write_text_atomic(strategy_reporter.REPLY_LANG_PATH,
+                           strategy_reporter.REPLY_LANG_CUSTOM_PREFIX + clean + "\n")
     else:
         try:
             os.remove(strategy_reporter.REPLY_LANG_PATH)
         except FileNotFoundError:
             pass
-    return {"lang": lang}
+    return {"lang": lang, "custom": clean}
 
 
 HANDLERS = {

@@ -438,6 +438,9 @@ def _lang_directive(message, suggest=False, lang=None):
     English reply comes back with Chinese suggestions (uid=1, 2026-08-25)."""
     if lang in _REPLY_LANG_PINS:
         return _REPLY_LANG_PINS[lang][1 if suggest else 0]
+    if lang and lang.startswith(strategy_reporter.REPLY_LANG_CUSTOM_PREFIX):
+        return _custom_pins(lang[len(strategy_reporter.REPLY_LANG_CUSTOM_PREFIX):])[
+            1 if suggest else 0]
     letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
     if _is_zh(message):
         if suggest:
@@ -461,9 +464,20 @@ def _lang_directive(message, suggest=False, lang=None):
 
 
 def _foreign_pins(name):
-    base = (f"[Reply ENTIRELY in {name} — this is the user's reply language, whatever "
-            f"language this message is written in. No Chinese or English sentences anywhere "
-            f"in this reply, including headers and closing remarks")
+    return _pins(f"[Reply ENTIRELY in {name} — this is the user's reply language, whatever "
+                 f"language this message is written in. No Chinese or English sentences anywhere "
+                 f"in this reply, including headers and closing remarks")
+
+
+def _custom_pins(text):
+    """使用者自填的語言名稱(七種以外)。text 已由 strategy_reporter.parse_reply_lang_custom
+    清成單行、≤40 字、無 `]` `"` `<` `>`——這裡只把它當資料用引號包起來,不當指令。"""
+    return _pins(f"[Reply ENTIRELY in the language the user specified: \"{text}\" — this is "
+                 f"the user's reply language, whatever language this message is written in. "
+                 f"No other language anywhere in this reply, including headers and closing remarks")
+
+
+def _pins(base):
     tail = "; code, tickers and strategy names stay as they are.]"
     # 部署類建議句例外留英文:點下去送回來的句子要被 nav_topic / 導航句判定認得,
     # 否則 portfolio-steps.md 不注入、UI 標籤又會亂編(29026)。回覆本身仍照目標語言。
@@ -502,9 +516,15 @@ _REPLY_LANG_PINS = {
 
 
 def _resolve_reply_lang(ui_lang=None):
-    """回覆語言:機器上的設定 > web 回合的 ui_lang > None(交給 _is_zh 啟發式)。"""
-    return strategy_reporter.read_reply_lang() or (
-        ui_lang if ui_lang in strategy_reporter.REPLY_LANGS else None)
+    """回覆語言:機器上的設定 > web 回合的 ui_lang > None(交給 _is_zh 啟發式)。
+    回七碼之一,或自訂語言的 `custom:<text>`(_lang_directive 認 prefix;_fault_message
+    只認 zh/cn,其餘含自訂一律退英文)。"""
+    lang, custom = strategy_reporter.read_reply_lang_setting()
+    if lang:
+        return lang
+    if custom:
+        return strategy_reporter.REPLY_LANG_CUSTOM_PREFIX + custom
+    return ui_lang if ui_lang in strategy_reporter.REPLY_LANGS else None
 
 
 # 工作頁的視圖代號 → 畫面上的中文標籤(側欄導覽項的字,web 的 workspace_*_nav)。
@@ -738,14 +758,15 @@ _PREFS_HOWTO = (
     "也不要無聲忽略。\n"
     "- 使用者問「你記了哪些偏好」就照檔案內容唸；要求修改或刪除就直接改檔。\n"
     # 語言寫成偏好條目會被回覆語言設定(尾端錨)靜默蓋掉,使用者以為記住了其實沒生效
-    "- **回覆語言不是常駐偏好，不要寫進這個檔**：使用者要換回覆語言（「以後用英文回」"
-    "「請用簡體」）時，把語系代碼寫進 "
-    f"`{strategy_reporter.REPLY_LANG_PATH}`（只有一行、只有代碼："
-    "zh=繁體中文、cn=簡體中文、en、es、pt、vi、ja；只能在這七個之間切換，不要刪這個檔）。"
-    "回覆時告訴使用者：從下一則回覆起生效，網頁的設定面板也會顯示這個語言。"
-    # 刪檔 = 「沒設定」,web 的自動帶入下次開頁就寫回介面語言,取消會無聲復原
-    "使用者要「跟著我打的語言回」這類不固定語言的模式時，說明目前不支援、維持現在的設定，"
-    "並請他到網頁設定面板的回覆語言選單切換。\n"
+    "- **回覆語言不是常駐偏好，不要寫進這個檔**：使用者要固定回覆語言（「以後用英文回」"
+    "「請用簡體」「用韓文回答」）時，寫進 "
+    f"`{strategy_reporter.REPLY_LANG_PATH}`（只有一行、用 UTF-8 寫入）：七種之一寫代碼"
+    "（zh=繁體中文、cn=簡體中文、en、es、pt、vi、ja）；七種以外寫 "
+    f"`{strategy_reporter.REPLY_LANG_CUSTOM_PREFIX}<語言名稱>`"
+    f"（例如 `{strategy_reporter.REPLY_LANG_CUSTOM_PREFIX}한국어`，"
+    f"{strategy_reporter.REPLY_LANG_CUSTOM_MAX} 字以內）。"
+    "使用者要「跟著我打的語言回」時，把這個檔清空（= 自動）。"
+    "回覆時告訴使用者：從下一則回覆起生效，網頁的設定面板也會顯示這個設定。\n"
     # web 的設定面板整檔 replace 這個檔(command_listener._cmd_preferences_set),
     # 只寫得出條列行。agent 寫的標題或段落會在使用者存檔的那一刻被洗掉——所以要在
     # 這裡先講,不要讓兩邊各寫各的格式然後互相刪。

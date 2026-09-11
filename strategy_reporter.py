@@ -1077,26 +1077,84 @@ def _preferences():
         return None
 
 
-# 回覆語言設定(單行語系代碼)。機器上唯一的一份定義:agent_turn 讀、command_listener
+# 回覆語言設定(單行)。機器上唯一的一份定義:agent_turn 讀、command_listener
 # 寫、web_bridge 驗 ui_lang 都從這裡拿——這支模組輕,三邊本來就 import 它。
-# 值域 = web 的 <lang> 集合(web/app/__init__.py supported_langs)。
+# 三態:檔案不存在/空 = 自動;七碼之一(= web 的 <lang> 集合,web/app/__init__.py
+# supported_langs);`custom:<text>` = 使用者自填的語言名稱(七種以外)。
 REPLY_LANGS = ("zh", "cn", "en", "es", "pt", "vi", "ja")
 REPLY_LANG_PATH = os.path.join(WORKSPACE, "state", "reply_lang")
+REPLY_LANG_CUSTOM_PREFIX = "custom:"
+REPLY_LANG_CUSTOM_MAX = 40
+# 讀檔視窗:夠裝一行帶大量空白的手寫值,清洗後再判上限;第一行超過這個長度 = 當沒設定,
+# 不截斷(截一半會得到錯但有效的語言名稱)
+_REPLY_LANG_READ_MAX = 512
+_reply_lang_warned = False
 
 
-def read_reply_lang():
-    """設定的語系代碼;沒設、白名單外、讀不動一律 ""。每輪都讀,壞檔不能讓整輪死。"""
+def parse_reply_lang_custom(text):
+    """自訂語言文字的唯一清洗,回 (語系代碼, 自訂文字),無效一律 ("", "")。這段會原樣進
+    每輪 prompt 尾端的方括號錨、也會回流到 web,只能當資料:
+    - 任何空白(含換行、U+2028/2029/0085/\\x0b/\\x0c 這類行分隔、NBSP、全形空白、tab)換成
+      一般空白並壓縮——不切行:切行會把「Ko<U+2028>rean」存成錯但有效的「Ko」;其餘不可印
+      字元(控制字元、零寬 ZWSP/ZWNJ/ZWJ、雙向控制 RLO 等)刪除
+    - `]` / `"` 換全形,免得提早關掉錨的方括號或引號;含 `<` `>` 整條無效(語言名稱用不到,
+      也擋掉 HTML 回流與 `<<<` 鷹架)
+    - 清洗後超過 REPLY_LANG_CUSTOM_MAX、或以鷹架標記開頭 → 無效
+    - 清洗後(不分大小寫)剛好是七碼之一 → 正規化成該碼"""
+    if not isinstance(text, str):
+        return "", ""
+    text = "".join(" " if ch.isspace() else ch for ch in text
+                   if ch.isspace() or ch.isprintable())
+    text = " ".join(text.split()).replace("]", "］").replace('"', "＂")
+    if not text or len(text) > REPLY_LANG_CUSTOM_MAX or "<" in text or ">" in text:
+        return "", ""
+    if text.lower() in REPLY_LANGS:
+        return text.lower(), ""
     try:
-        # utf-8-sig:agent 在 Windows 機上用 PowerShell 寫會帶 BOM,不吃掉就靜默當沒設定
-        with open(REPLY_LANG_PATH, encoding="utf-8-sig") as f:
-            value = f.read(16).strip()
-    except FileNotFoundError:
-        return ""
-    except (OSError, UnicodeDecodeError) as e:
-        print(f"[strategy_reporter] reply_lang unreadable: {type(e).__name__}: {e}",
+        # session_store 是同目錄的手足;延後 import 並接住例外:壞掉的手足不該讓 reporter
+        # 或 listener 的 reply_lang_set 整個失敗,少掉的只是鷹架這一道(不在行首,偽造不出
+        # 鷹架行;真正的防線是上面的換行 / `]` / `"`)
+        import importlib
+        scaffold_re = importlib.import_module(
+            (__package__ + "." if __package__ else "") + "session_store").SCAFFOLD_RE
+    except Exception as e:
+        print(f"[strategy_reporter] session_store unavailable: {type(e).__name__}: {e}",
               file=sys.stderr)
-        return ""
-    return value if value in REPLY_LANGS else ""
+        return "", text
+    return ("", "") if scaffold_re.match(text) else ("", text)
+
+
+def read_reply_lang_setting():
+    """(語系代碼, 自訂文字);沒設、白名單外、讀不動一律 ("", "")。兩者互斥,至多一個
+    非空。每輪都讀,壞檔不能讓整輪死。"""
+    global _reply_lang_warned
+    try:
+        # Windows 機上 agent 用 PowerShell 寫的檔:5.1 的 `>` 重導是 UTF-16(帶 BOM),
+        # Set-Content / Out-File -Encoding utf8 是帶 BOM 的 UTF-8。BOM 沒認出來就會靜默當沒設定
+        with open(REPLY_LANG_PATH, "rb") as f:
+            bom = f.read(2)
+        encoding = "utf-16" if bom in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig"
+        with open(REPLY_LANG_PATH, encoding=encoding) as f:
+            # 文字模式的 readline 上限算的是解碼後的字元數,UTF-16 不會因為 2 byte/字提早超限;
+            # 只在 \n / \r 切行,其餘行分隔字元交給 parse_reply_lang_custom 換成空白
+            line = f.readline(_REPLY_LANG_READ_MAX + 1)
+    except FileNotFoundError:
+        return "", ""
+    except (OSError, UnicodeDecodeError) as e:
+        # 壞檔每輪都會再讀一次;同一個 process 只講一次,免得 log 被洗版
+        if not _reply_lang_warned:
+            _reply_lang_warned = True
+            print(f"[strategy_reporter] reply_lang unreadable: {type(e).__name__}: {e}",
+                  file=sys.stderr)
+        return "", ""
+    if len(line) > _REPLY_LANG_READ_MAX:
+        return "", ""
+    value = line.strip()
+    if value.lower() in REPLY_LANGS:  # 手寫的 ZH 跟 custom:ZH 一樣正規化
+        return value.lower(), ""
+    if value.startswith(REPLY_LANG_CUSTOM_PREFIX):
+        return parse_reply_lang_custom(value[len(REPLY_LANG_CUSTOM_PREFIX):])
+    return "", ""
 
 
 def report_cache(strategies, token=None):
@@ -1124,8 +1182,9 @@ def report_cache(strategies, token=None):
     prefs = _preferences()
     if prefs is not None:
         payload["preferences"] = prefs
-    # 同樣是欄位在不在 = 能力旗標(這台收得了 reply_lang_set);"" = 沒設定
-    payload["reply_lang"] = read_reply_lang()
+    # 同樣是欄位在不在 = 能力旗標:reply_lang(這台收得了 reply_lang_set)、
+    # reply_lang_custom(收得了 custom 文字);"" = 沒設定
+    payload["reply_lang"], payload["reply_lang_custom"] = read_reply_lang_setting()
     # Gzipped on the wire. This body is mostly the backtests' first-paint tails —
     # long runs of numeric JSON that compress ~4× — and the timer re-sends the whole
     # thing every two minutes whether anything changed or not, so an unpacked report
