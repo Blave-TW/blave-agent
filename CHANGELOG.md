@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.69 — 2026-09-11
+
 - agent_turn: the backtest-chain libs (`lib/runner.py`, `param_scan.py`,
   `walk_forward.py`, `validation.py`, `analysis.py`) and `control/` are
   deny-listed for the edit tools (`PROTECTED_EDIT_RULES`; holds in
