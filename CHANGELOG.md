@@ -59,6 +59,20 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - portfolio_reporter: payload carries `tg_pair_gen` (the generation actually applied);
   the api drives the web's `pending_apply` off it and, once it has a generation for the
   machine, accepts `tg_chat_ids` only from a report carrying it.
+- agent_turn: a turn that ends with no reply text and was not interrupted (DeepSeek
+  cutting the stream after thinking — uid=1, 2026-09-11) is resumed once in the same
+  turn slot: new CLI session, original prompt + continuation anchor + first attempt's
+  tool receipts, remaining budget/steps, Bash timeouts cut to the wall time left (no
+  resume under 300s). Still empty → the last narration is the reply if there was any,
+  else the existing fault (`partial` / `not_started`).
+- The agent turn env and report_runner's `run.py` env get `PYTHONPATH=<workspace>`
+  (prepended to any existing value), so `tmp/x.py` and `report_jobs/<id>/run.py` import
+  `lib` without their own `sys.path.insert`.
+- report_uploader: a successful upload of an id deletes `reports/failed/<id>.json` and
+  its `.files/` sidecar (the `upload_errors.log` line stays).
+- report_runner: a `report_jobs/<id>/` with no `job.json` is a draft (sample run before
+  the user confirms) — not listed, not installed; a `job.json` that exists but is broken
+  is still reported as an error.
 
 ## 1.1.69 — 2026-09-11
 
