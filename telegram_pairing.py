@@ -23,6 +23,9 @@ import sys
 import time
 import urllib.request
 
+if os.name != "nt":
+    import fcntl
+
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
 )
@@ -130,33 +133,31 @@ def replace_retry(tmp, path):
 
 
 def write_json_600(path, data):
-    """Bot token is a secret — owner-only, never briefly world-readable. POSIX:
-    tmp+replace, since telegram.json has three writers (this poller, reset(), the
-    bridge's auto-pair) and the bridge re-reads it every loop. Windows: rewritten IN
-    PLACE — provision.ps1 gives telegram.json an explicit ACL (inheritance removed,
-    Administrators/SYSTEM only) and a replaced file would inherit config\\'s instead;
-    a torn read there costs the bridge one idle loop."""
+    """Bot token is a secret — owner-only, never briefly world-readable. Rewritten IN
+    PLACE on every platform; a tmp+replace needs write permission on the directory:
+      - Linux: provision.sh makes config/ root:root 755 and only telegram.json itself
+        blaveagent 600, so the poller / bridge (User=blaveagent) can rewrite the file
+        but can't create or rename anything next to it (1.1.70 tried → PermissionError).
+      - Windows: provision.ps1 gives telegram.json an explicit ACL (inheritance removed,
+        Administrators/SYSTEM only) and a replaced file would inherit config\\'s instead.
+    POSIX takes an exclusive flock before truncating: telegram.json has three writers
+    (this poller, reset(), the bridge's auto-pair), and interleaved truncate+write from
+    two of them could leave a file that stays corrupt. Readers take no lock — they can
+    land on the empty / half-written file mid-write, which read_config handles."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.name == "nt":
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)
         return
-    # unique temp name: with three writers a shared one gets clobbered mid-write, or
-    # moved away under another writer's os.replace
-    tmp = f"{path}.{os.getpid()}.{time.monotonic_ns()}.tmp"
-    try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump(data, f, indent=2)
-        os.chmod(tmp, 0o600)
-        replace_retry(tmp, path)
-    except BaseException:
-        try:
-            os.remove(tmp)  # it holds the bot token
-        except OSError:
-            pass
-        raise
+    # no O_TRUNC: truncating before holding the lock would cut another writer's file
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+    with os.fdopen(fd, "w") as f:  # closing releases the lock
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.ftruncate(fd, 0)
+        json.dump(data, f, indent=2)
+        f.flush()
+        os.fchmod(fd, 0o600)
 
 
 def save_config(config):

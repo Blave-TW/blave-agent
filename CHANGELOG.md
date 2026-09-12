@@ -10,6 +10,22 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.72 — 2026-09-12
+
+- REGRESSION FIX (1.1.70): no Linux machine could link or pair Telegram since 1.1.70.
+  1.1.70 wrote `config/telegram.json` as tmp + `os.replace` inside `config/`, but
+  provision.sh makes `config/` `root:root 755` (only `telegram.json` itself is
+  `blaveagent 600`), so the pairing poller and the bridge's auto-pair (both run as
+  blaveagent) died with `PermissionError` creating the tmp: the token never landed and
+  the first message never paired. Windows was unaffected (it already wrote in place).
+  Now `write_json_600` rewrites the file in place on every platform, as before 1.1.70:
+  POSIX opens it without `O_TRUNC`, takes an exclusive `flock`, truncates, writes and
+  re-applies 0600, so the three writers (poller, `reset()`, bridge auto-pair) can't
+  interleave into a file that stays corrupt. No directory permissions change. Readers
+  take no lock; the empty / half-written file a read can land on mid-write is handled
+  by `read_config` (1.1.71: one re-read, then "mid-write" = skip the round), with the
+  same accepted residual risk the 1.1.71 entry describes, now on Linux too.
+
 ## 1.1.71 — 2026-09-12
 
 - REGRESSION FIX (1.1.70): a machine that never linked Telegram could not link at all.
