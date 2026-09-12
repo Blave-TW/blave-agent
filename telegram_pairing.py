@@ -58,18 +58,61 @@ def fetch_config():
             at if isinstance(at, int) and not isinstance(at, bool) else None)
 
 
-def load_config():
-    """{} when there is no file yet (unpaired); None when it can't be parsed — on
-    Windows the bridge rewrites it in place, so a read can land mid-write. Callers skip
-    the round on None: reading it as {} would "deliver" the token again and wipe the
-    pairing, and the bridge would then pair whoever speaks next."""
+REREAD_S = 0.3
+# A non-empty file that still doesn't parse is "mid-write" only if someone wrote it
+# just now; older than this it is simply corrupt, and skipping forever would leave the
+# machine unable to ever link.
+MID_WRITE_S = 10
+_EMPTY, _BAD = object(), object()
+
+
+def _read_once(path):
     try:
-        with open(CONFIG_PATH) as f:
-            return json.load(f)
+        # utf-8-sig: a hand-written / PowerShell-written file may carry a BOM
+        with open(path, encoding="utf-8-sig") as f:
+            raw = f.read()
     except FileNotFoundError:
         return {}
+    if not raw.strip():
+        return _EMPTY
+    try:
+        data = json.loads(raw)
     except ValueError:
-        return None
+        return _BAD
+    return data if isinstance(data, dict) else _BAD
+
+
+def read_config(path):
+    """telegram.json as a dict, {} = unpaired, None = mid-write (caller skips the round
+    / keeps its last good copy).
+
+    Empty is the normal state of a machine that never linked — provision / first-boot
+    pre-create a 0-byte file (1.1.70 read it as mid-write and never fetched a token).
+    But on Windows the file is rewritten in place (O_TRUNC), so a read can also land on
+    that instant's 0 bytes; taking it as {} there would re-deliver the token and wipe
+    the pairing. Hence one re-read after REREAD_S for both empty and unparsable: still
+    empty = really empty; still unparsable and freshly written = mid-write; unparsable
+    and old = corrupt → {} (rewritten by the next converge)."""
+    data = _read_once(path)
+    if data is _EMPTY or data is _BAD:
+        time.sleep(REREAD_S)
+        data = _read_once(path)
+    if data is _EMPTY:
+        return {}
+    if data is _BAD:
+        try:
+            fresh = time.time() - os.path.getmtime(path) < MID_WRITE_S
+        except OSError:
+            fresh = False
+        return None if fresh else {}
+    return data
+
+
+def load_config():
+    """See read_config. Callers skip the round on None: reading a mid-write file as {}
+    would "deliver" the token again and wipe the pairing, and the bridge would then
+    pair whoever speaks next."""
+    return read_config(CONFIG_PATH)
 
 
 def replace_retry(tmp, path):

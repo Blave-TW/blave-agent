@@ -117,17 +117,14 @@ _last_config = {}
 
 
 def load_config():
-    """{} when unpaired (no file yet) instead of crashing — a fresh machine has no
-    telegram.json until the pairing poller writes one. An unparsable file (Windows:
-    the read landed mid in-place write) returns the last good one: {} would read as a
-    pairing change, drop the batch in flight and re-arm the backlog guard."""
+    """{} when unpaired (no file, or the 0-byte file provision pre-creates). Same
+    reader as the poller (telegram_pairing.read_config: one re-read, so the instant
+    0 bytes of a Windows in-place write are not taken for "unpaired"). Mid-write
+    returns the last good copy: {} would read as a pairing change, drop the batch in
+    flight and re-arm the backlog guard."""
     global _last_config
-    try:
-        with open(CONFIG_PATH) as f:
-            config = json.load(f)
-    except FileNotFoundError:
-        config = {}
-    except ValueError:
+    config = telegram_pairing.read_config(CONFIG_PATH)
+    if config is None:
         return dict(_last_config)
     _last_config = dict(config)
     return config

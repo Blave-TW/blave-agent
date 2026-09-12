@@ -10,6 +10,29 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.71 — 2026-09-12
+
+- REGRESSION FIX (1.1.70): a machine that never linked Telegram could not link at all.
+  provision / first-boot pre-create `config/telegram.json` as a 0-byte file; 1.1.70's
+  "unparsable = mid-write, skip this round" took it for a torn write, so the pairing
+  poller never asked the backend for the token (journal: `telegram.json unreadable
+  (mid-write?)` every 15s). Now one reader for poller and bridge
+  (`telegram_pairing.read_config`): empty / whitespace-only = unpaired `{}`; empty or
+  unparsable gets one re-read after 0.3s first — on Windows the file is rewritten in
+  place, and that instant's 0 bytes taken as `{}` would re-deliver the token and wipe
+  the pairing (the hole 1.1.70 closed). Still unparsable after the re-read = mid-write
+  only if written in the last 10s (skip the round / bridge keeps its last good copy);
+  older = corrupt, treated as unpaired and rewritten, so it can never block linking.
+  Read as `utf-8-sig` (a BOM no longer makes the file unparsable).
+  What actually stops a Windows mid-write read is the 0.3s re-read; the "written in
+  the last 10s" test is only a second guard, not the main defence (NTFS may update
+  last-write only when the writer closes the file, so a torn file's mtime can look
+  old). Both reads landing inside a write is an accepted residual risk.
+  A paired machine whose `telegram.json` is really corrupt (not written for a while) is
+  now read as `{}` by both poller and bridge: the poller rewrites the token without
+  `allowed_chat_id` and the user sends one message to pair again — a deliberate
+  self-heal, better than 1.1.70 skipping forever.
+
 ## 1.1.70 — 2026-09-11
 
 - Telegram unlink / re-link from the web (spec `workspace-connect-settings` §1). The
