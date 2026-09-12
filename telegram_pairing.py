@@ -1,22 +1,32 @@
 """
-Telegram pairing poller: fetches this machine's bot token from the backend
-(GET /openclaw/agent/telegram/config, auth = proxy token) and writes it into
-config/telegram.json so telegram_bridge (which re-reads config each loop) can
-start polling — no restart needed. Runs on a timer; the user connects TG via
-the website form rarely, so a periodic check is enough.
+Telegram pairing poller: keeps config/telegram.json converged with the backend
+(GET /openclaw/agent/telegram/config, auth = proxy token → {bot_token, pair_gen})
+so telegram_bridge (which re-reads config each loop) follows it without a restart.
+Runs on a timer (Linux systemd 15s; Windows a PS loop re-execs it every 15s).
 
 The chat_id isn't set here — telegram_bridge auto-adopts it from the user's
-first message. This poller only delivers the bot token.
+first message. This poller only delivers the bot token and the pairing generation.
+
+`pair_gen` changes on every web link / unlink (the api mints it). Comparing the
+token alone can't see "same token pasted back to pair another Telegram account",
+so the generation is what decides "new pairing". Two paths reach the machine:
+  - the `telegram_reset` command (command_listener → reset()): instant, but only
+    while the machine is up;
+  - this poller: every tick while unpaired, every PAIRED_CHECK_S while paired —
+    and a machine that was stopped longer than that checks on its first tick after
+    boot, so a change made while it was off converges on its own.
 """
 import json
 import os
 import subprocess
 import sys
+import time
 import urllib.request
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
 )
+BLAVECLAW_HOME = os.environ.get("BLAVECLAW_HOME", BASE)
 CONFIG_PATH = os.environ.get("BLAVE_AGENT_TG_CONFIG", f"{BASE}/config/telegram.json")
 API_URL = os.environ.get(
     "BLAVE_TG_CONFIG_URL", "https://api.blave.org/openclaw/agent/telegram/config"
@@ -27,29 +37,217 @@ PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON") or (
     else f"{BASE}/venv/bin/python3"
 )
 SYNC_SCRIPT = os.environ.get("BLAVE_SYNC_NOTIFY", f"{BASE}/sync_notify_compat.py")
+OFFSET_PATH = os.environ.get("BLAVE_AGENT_TG_OFFSET", f"{BASE}/state/tg_offset")
+CHECKED_PATH = f"{BASE}/state/tg_pair_checked"
+ALLOW_FROM_PATH = os.path.join(BLAVECLAW_HOME, "credentials", "telegram-default-allowFrom.json")
+OPENCLAW_JSON_PATH = os.path.join(BLAVECLAW_HOME, "openclaw.json")
+
+PAIRED_CHECK_S = 300
 
 
-def fetch_token():
+def fetch_config():
+    """(bot_token, pair_gen, pair_at) from the backend; any may be None. pair_gen is
+    None on an api that predates it or when it has no generation for this machine —
+    then only the token is compared. pair_at = api time of the last web link/unlink."""
     req = urllib.request.Request(API_URL, headers={"x-api-key": f"proxy-{PROXY_TOKEN}"})
     with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read()).get("bot_token")
+        body = json.loads(resp.read()) or {}
+    gen, at = body.get("pair_gen"), body.get("pair_at")
+    return (body.get("bot_token") or None,
+            gen if isinstance(gen, str) and gen else None,
+            at if isinstance(at, int) and not isinstance(at, bool) else None)
 
 
 def load_config():
+    """{} when there is no file yet (unpaired); None when it can't be parsed — on
+    Windows the bridge rewrites it in place, so a read can land mid-write. Callers skip
+    the round on None: reading it as {} would "deliver" the token again and wipe the
+    pairing, and the bridge would then pair whoever speaks next."""
     try:
         with open(CONFIG_PATH) as f:
             return json.load(f)
-    except (FileNotFoundError, ValueError):
+    except FileNotFoundError:
         return {}
+    except ValueError:
+        return None
+
+
+def replace_retry(tmp, path):
+    """os.replace, retried: on Windows it loses with PermissionError to another process
+    holding the target open — the same transient command_listener._finish_mgmt_job
+    retries. (Used for state/tg_offset; telegram.json is rewritten in place on Windows.)"""
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.3)
+
+
+def write_json_600(path, data):
+    """Bot token is a secret — owner-only, never briefly world-readable. POSIX:
+    tmp+replace, since telegram.json has three writers (this poller, reset(), the
+    bridge's auto-pair) and the bridge re-reads it every loop. Windows: rewritten IN
+    PLACE — provision.ps1 gives telegram.json an explicit ACL (inheritance removed,
+    Administrators/SYSTEM only) and a replaced file would inherit config\\'s instead;
+    a torn read there costs the bridge one idle loop."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.name == "nt":
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        return
+    # unique temp name: with three writers a shared one gets clobbered mid-write, or
+    # moved away under another writer's os.replace
+    tmp = f"{path}.{os.getpid()}.{time.monotonic_ns()}.tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.chmod(tmp, 0o600)
+        replace_retry(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)  # it holds the bot token
+        except OSError:
+            pass
+        raise
 
 
 def save_config(config):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    # bot token is a secret — owner-only, never briefly world-readable
-    fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(config, f, indent=2)
-    os.chmod(CONFIG_PATH, 0o600)
+    write_json_600(CONFIG_PATH, config)
+
+
+def run_sync_notify():
+    """Keep lib/notify.py's compat files (openclaw.json botToken, allowFrom) in sync."""
+    try:
+        subprocess.run([PYTHON_BIN, SYNC_SCRIPT], check=False, timeout=30)
+    except Exception as e:
+        print(f"[telegram_pairing] sync_notify_compat failed: {e}", file=sys.stderr)
+
+
+def clear_notify_compat():
+    """Drop the pairing from lib/notify's compat files. sync_notify_compat.py only ever
+    writes them and lives in control/ (no release channel reaches it), so the clearing
+    half has to live here. Permission errors propagate: a half-cleared state (config
+    unlinked, lib/notify still sending) is worse than an honest failure."""
+    try:
+        os.remove(ALLOW_FROM_PATH)
+    except FileNotFoundError:
+        pass
+    try:
+        with open(OPENCLAW_JSON_PATH) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except ValueError:
+        data = None
+    tg = ((data or {}).get("channels") or {}).get("telegram") if isinstance(data, dict) else None
+    if isinstance(tg, dict) and "botToken" in tg:
+        del tg["botToken"]
+        write_json_600(OPENCLAW_JSON_PATH, data)
+
+
+def _drop_foreign_offset(token):
+    """Drop state/tg_offset unless it is keyed to this same bot. A same-bot offset is
+    the record of updates the bridge already handled but Telegram hasn't confirmed —
+    deleting it replays them (the message just answered runs again and can win the new
+    pairing). Another bot's offset, or the pre-1.1.70 bare int whose bot is unknown,
+    would skip the new bot's updates, so those go."""
+    try:
+        with open(OFFSET_PATH) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except ValueError:
+        data = None
+    if token and isinstance(data, dict) and data.get("bot") == str(token).split(":", 1)[0]:
+        return
+    try:
+        os.remove(OFFSET_PATH)
+    except FileNotFoundError:
+        pass
+
+
+def _apply(token, gen, at=None, offset_token=None):
+    """A fresh pairing (or none): chat id and compat files dropped (offset only when
+    it isn't this bot's — `offset_token` names the bot to keep it for when no token is
+    written yet); the token (if any), generation and link time written. The bridge sees
+    a new (bot id, pair_gen) identity and starts over — first chat to message the bot
+    after `pair_at` pairs."""
+    clear_notify_compat()
+    _drop_foreign_offset(token or offset_token)
+    config = {}
+    if gen:
+        config["pair_gen"] = gen
+    if at:
+        config["pair_at"] = at
+    if token:
+        config["bot_token"] = token
+    save_config(config)
+    if token:
+        run_sync_notify()
+
+
+def converge(config, token, gen, at=None):
+    """Bring the local pairing in line with the backend's. Returns what changed, or
+    None. Unpairing needs the backend to state a generation too: an api that predates
+    pair_gen (or a row caught mid-resume behind a cached auth) answers a null token for
+    a machine that is still paired, and a lost generation must never unpair anyone."""
+    local_token = config.get("bot_token")
+    if not token:
+        if gen is None:
+            return None
+        if local_token:
+            _apply(None, gen, at)
+            return "unlinked"
+        if config.get("pair_gen") != gen:
+            # nothing to unpair, but the generation is what the report echoes back —
+            # without it the web's pending_apply would never clear
+            save_config({**config, "pair_gen": gen})
+            return "gen-synced"
+        return None
+    if not local_token:
+        _apply(token, gen, at)
+        return "linked"
+    # replacing a token also needs a stated generation: the pre-pair_gen /config read
+    # "some running row of this user" and could hand over another row's token
+    if gen is not None and (local_token != token or config.get("pair_gen") != gen):
+        _apply(token, gen, at)
+        return "re-linked"
+    return None
+
+
+def reset(gen):
+    """Command `telegram_reset` (web link / unlink, machine up). Always a fresh
+    pairing. If the backend can't be reached the pairing is still dropped now — an
+    unlink must not wait on a retry — and the poller delivers the token next tick."""
+    try:
+        token, backend_gen, at = fetch_config()
+    except Exception as e:
+        print(f"[telegram_pairing] reset: fetch failed ({type(e).__name__}); "
+              f"poller will deliver the token", file=sys.stderr)
+        # the token may well come back unchanged (same-bot re-link): keep that bot's offset
+        local = load_config() or {}
+        _apply(None, gen, offset_token=local.get("bot_token"))
+        return {"bot_token": False}
+    _apply(token, backend_gen or gen, at)
+    return {"bot_token": bool(token)}
+
+
+def _paired_check_due():
+    try:
+        return time.time() - os.path.getmtime(CHECKED_PATH) >= PAIRED_CHECK_S
+    except OSError:
+        return True
+
+
+def _mark_checked():
+    os.makedirs(os.path.dirname(CHECKED_PATH), exist_ok=True)
+    with open(CHECKED_PATH, "w") as f:
+        f.write(str(int(time.time())))
 
 
 def main():
@@ -57,36 +255,26 @@ def main():
         print("[telegram_pairing] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
         sys.exit(1)
 
-    # Check locally FIRST: once we have a bot token (paired), stop polling the
-    # backend entirely — the timer keeps firing but this is just a file check,
-    # no network. Only an unpaired machine actually hits the config endpoint.
-    # (Trade-off: a later re-pair to a different bot isn't auto-picked-up; rare,
-    # handle separately if ever needed.)
+    # Paired machines ask the backend only every PAIRED_CHECK_S (the command channel
+    # covers the live case); the rest of the ticks are a local file check, no network.
     config = load_config()
-    if config.get("bot_token"):
+    if config is None:
+        print("[telegram_pairing] telegram.json unreadable (mid-write?) — skipping this round",
+              file=sys.stderr)
+        return
+    if config.get("bot_token") and not _paired_check_due():
         return
 
     try:
-        token = fetch_token()
+        token, gen, at = fetch_config()
     except Exception as e:
-        print(f"[telegram_pairing] fetch failed: {e}", file=sys.stderr)
+        print(f"[telegram_pairing] fetch failed: {type(e).__name__}", file=sys.stderr)
         sys.exit(1)
+    _mark_checked()
 
-    if not token:
-        return  # not connected yet — nothing to do
-
-    config["bot_token"] = token
-    # a new/changed bot means a fresh pairing — drop the old chat_id so the
-    # bridge re-adopts it from the first incoming message on the new bot.
-    config.pop("allowed_chat_id", None)
-    save_config(config)
-    print("[telegram_pairing] wrote new bot token to config", file=sys.stderr)
-
-    # keep lib/notify.py's compat files (openclaw.json botToken) in sync
-    try:
-        subprocess.run([PYTHON_BIN, SYNC_SCRIPT], check=False, timeout=30)
-    except Exception as e:
-        print(f"[telegram_pairing] sync_notify_compat failed: {e}", file=sys.stderr)
+    changed = converge(config, token, gen, at)
+    if changed:
+        print(f"[telegram_pairing] pairing {changed}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ import time
 import urllib.error
 import urllib.request
 
+import telegram_pairing
 import turn_slots
 
 try:
@@ -3171,6 +3172,20 @@ def _cmd_reply_lang_set(args):
     return {"lang": lang, "custom": clean}
 
 
+_PAIR_GEN_RE = re.compile(r"[0-9a-f]{8,32}")
+
+
+def _cmd_telegram_reset(args):
+    """Web unlinked or re-linked Telegram (platform-queued by the api's
+    /openclaw/agent/telegram POST/DELETE, never by the web directly). `gen` is the
+    api's pairing generation; the reporter echoes it back so the api can tell a
+    report built before this reset from one built after."""
+    gen = args.get("gen")
+    if not isinstance(gen, str) or not _PAIR_GEN_RE.fullmatch(gen):
+        raise ValueError("bad gen")
+    return telegram_pairing.reset(gen)
+
+
 HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
@@ -3193,6 +3208,7 @@ HANDLERS = {
     "report_edit_pending": _cmd_report_edit_pending,
     "preferences_set": _cmd_preferences_set,
     "reply_lang_set": _cmd_reply_lang_set,
+    "telegram_reset": _cmd_telegram_reset,
 }
 
 

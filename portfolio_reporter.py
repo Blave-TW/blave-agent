@@ -534,7 +534,8 @@ def _notice_daily(key, msg):
             if isinstance(v, (int, float)) and now - v < _NOTICE_KEEP_S}
     try:
         os.makedirs(os.path.dirname(_NOTICE_STATE), exist_ok=True)
-        tmp = _NOTICE_STATE + ".tmp"
+        # unique: the timer, web_bridge and telegram_bridge can all build a report at once
+        tmp = f"{_NOTICE_STATE}.{os.getpid()}.{time.monotonic_ns()}.tmp"
         with open(tmp, "w") as f:
             json.dump(seen, f)
         os.replace(tmp, _NOTICE_STATE)
@@ -871,7 +872,21 @@ def tg_chat_ids():
             and not isinstance(c, bool)][:_TG_CHAT_IDS_MAX]
 
 
+def tg_pair_gen():
+    """The pairing generation telegram_pairing.reset() stamped into telegram.json
+    (None on a machine never reset from the web). The api only accepts tg_chat_ids
+    from a report carrying its current generation right after an unlink/re-link —
+    otherwise a report built before the reset would write the old chat back."""
+    tg = _read_json(os.path.join(BASE, "config", "telegram.json"))
+    gen = tg.get("pair_gen") if isinstance(tg, dict) else None
+    return gen if isinstance(gen, str) else None
+
+
 def build_report():
+    # generation BEFORE the chat ids: a reset landing between the two reads then pairs
+    # an old generation with the cleared chats (refused / harmless), never an old chat
+    # with the new generation (which the api would accept and write back)
+    pair_gen = tg_pair_gen()
     cfg = _read_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {})
     hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
     last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
@@ -942,6 +957,7 @@ def build_report():
         # (見 resources / tg_chat_ids)
         "resources": resources(),
         "tg_chat_ids": tg_chat_ids(),
+        "tg_pair_gen": pair_gen,
         # 機器側 P1／P2 事件(state/events.jsonl 裡水位線以上的那些)。平台照 id
         # 去重、落 agent_event 再 fan-out,回應的 acked_through 由 main() 寫回。
         "events": events.unsent(),

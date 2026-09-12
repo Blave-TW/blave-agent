@@ -10,6 +10,56 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.70 — 2026-09-11
+
+- Telegram unlink / re-link from the web (spec `workspace-connect-settings` §1). The
+  api's `/telegram/config` now also returns `pair_gen` (changes on every web link /
+  unlink). telegram_pairing converges `telegram.json` on token + `pair_gen`: every tick
+  while unpaired (as before), every 5 min while paired (`state/tg_pair_checked`; a
+  machine stopped longer than that checks on its first tick after boot, so a change made
+  while it was off lands on its own). A backend without `pair_gen` never unpairs — only
+  a token difference does. Instant path: new command `telegram_reset {gen}`
+  (platform-queued by the api's POST/DELETE, not web-sendable) → same apply. Apply =
+  clear lib/notify's compat files itself (allowFrom removed, `openclaw.json` botToken
+  dropped — `control/sync_notify_compat.py` only ever writes them and has no release
+  channel), drop `state/tg_offset` unless it is keyed to the same bot (a same-bot offset
+  holds handled-but-unconfirmed updates; deleting it replays them), write
+  `telegram.json` = `{bot_token?, pair_gen}`
+  without `allowed_chat_id`. `telegram.json` writes are now tmp+replace (three writers).
+- telegram_bridge: pairing identity = (bot id, `pair_gen`); a change resets offset and
+  the backlog drain without a restart, so the same token pasted back re-pairs to
+  whichever account messages first. `state/tg_offset` is now `{"bot", "offset"}`
+  (bare int still read). Config is re-read before each update; a pairing that changed
+  mid-batch drops the rest of the batch unconfirmed and never writes the old pairing
+  back. A portfolio report is pushed right after auto-pair (pending → linked on the web
+  without waiting for the 2-minute timer).
+- Audit hardening of the above: (a) the pre-pair backlog drain drops everything sent
+  before `pair_at` (api time of the web link/unlink, now also in `/telegram/config` and
+  `telegram.json`; 5s clock slack) — re-linking the same bot to switch accounts let the
+  old account's recent message (inside the 2-minute grace) or the interrupted batch win
+  the new pairing; without `pair_at` the 2-minute grace stays. (b) The poller unpairs on
+  a null token only when the backend also states a `pair_gen` — an old api, or a row
+  caught mid-resume behind a cached auth, answers null for a paired machine. (c)
+  `os.replace` of `telegram.json` / `tg_offset` retries PermissionError (Windows: loses
+  to a process holding the file open); an offset save that still fails is logged, not
+  fatal to the bridge.
+- Second audit: `telegram.json` is rewritten in place on Windows (a replaced file would
+  lose provision.ps1's explicit Administrators/SYSTEM ACL); converge records a new
+  `pair_gen` even with no token on either side (else the web's pending_apply never
+  clears) and replaces a token only when the backend states a generation; the bridge
+  re-reads `telegram.json` right before an auto-pair write; the reporter reads
+  `tg_pair_gen` before the chat ids; `reporter_notices.json` uses a unique temp name
+  (the timer, web_bridge and telegram_bridge can build a report at once).
+- Final audit: an unparsable `telegram.json` (Windows: read mid in-place write) makes
+  the poller skip the round and the bridge keep its last good config — read as `{}` it
+  re-delivered the token, wiped the pairing and let the next sender pair.
+  `telegram.json` temp files are unique per write and removed on failure (they hold the
+  token); a failed bridge write is logged, not fatal. A reset whose token fetch fails
+  keeps the current bot's offset.
+- portfolio_reporter: payload carries `tg_pair_gen` (the generation actually applied);
+  the api drives the web's `pending_apply` off it and, once it has a generation for the
+  machine, accepts `tg_chat_ids` only from a report carrying it.
+
 ## 1.1.69 — 2026-09-11
 
 - agent_turn: the backtest-chain libs (`lib/runner.py`, `param_scan.py`,

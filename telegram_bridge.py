@@ -26,6 +26,8 @@ import time
 import urllib.request
 
 import model_prefs
+import portfolio_reporter
+import telegram_pairing
 import turn_slots
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
@@ -70,34 +72,85 @@ _current_turn = {"token": None, "chat_id": None}
 TLS_FAIL_LIMIT = 5
 
 
-def load_offset():
+def pairing_identity(config):
+    """(bot id, pair_gen), or None when there is no token. A change means a new
+    pairing: another bot, or the same token re-linked from the web (reset() stamps a
+    fresh pair_gen) — the bridge must then forget its offset/backlog state even
+    though it never saw the token disappear. The bot id is the token's public prefix."""
+    token = config.get("bot_token")
+    if not token:
+        return None
+    return (str(token).split(":", 1)[0], config.get("pair_gen"))
+
+
+def load_offset(bot_id):
+    """Update ids are per bot: an offset from another bot would make getUpdates skip
+    every update below it, so the offset is stored with the bot id it belongs to.
+    A bare int is the pre-1.1.70 format (one bot per machine back then)."""
     try:
         with open(OFFSET_PATH) as f:
-            return int(f.read().strip())
+            data = json.loads(f.read().strip())
     except (FileNotFoundError, ValueError):
         return None
+    if isinstance(data, int) and not isinstance(data, bool):
+        return data
+    if isinstance(data, dict) and data.get("bot") == bot_id:
+        offset = data.get("offset")
+        if isinstance(offset, int) and not isinstance(offset, bool):
+            return offset
+    return None
 
 
-def save_offset(offset):
+def save_offset(offset, bot_id):
     os.makedirs(os.path.dirname(OFFSET_PATH), exist_ok=True)
-    with open(OFFSET_PATH, "w") as f:
-        f.write(str(offset))
+    tmp = OFFSET_PATH + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump({"bot": bot_id, "offset": offset}, f)
+        telegram_pairing.replace_retry(tmp, OFFSET_PATH)
+    except OSError as e:
+        # the in-memory offset is still right; only a restart before the next save replays
+        print(f"[telegram_bridge] offset save failed: {type(e).__name__}", file=sys.stderr)
+
+
+_last_config = {}
 
 
 def load_config():
-    """Returns {} when unpaired (no file yet) instead of crashing — a fresh
-    machine has no telegram.json until the pairing poller writes one."""
+    """{} when unpaired (no file yet) instead of crashing — a fresh machine has no
+    telegram.json until the pairing poller writes one. An unparsable file (Windows:
+    the read landed mid in-place write) returns the last good one: {} would read as a
+    pairing change, drop the batch in flight and re-arm the backlog guard."""
+    global _last_config
     try:
         with open(CONFIG_PATH) as f:
-            return json.load(f)
-    except (FileNotFoundError, ValueError):
-        return {}
+            config = json.load(f)
+    except FileNotFoundError:
+        config = {}
+    except ValueError:
+        return dict(_last_config)
+    _last_config = dict(config)
+    return config
 
 
 def save_config(config):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+    """A failed write only leaves the auto-pair unpersisted (the next message re-adopts);
+    raising would kill the bridge."""
+    try:
+        telegram_pairing.write_json_600(CONFIG_PATH, config)
+    except OSError as e:
+        print(f"[telegram_bridge] telegram.json write failed: {type(e).__name__}",
+              file=sys.stderr)
+
+
+def _push_report():
+    """Pending → linked shows on the web from tg_chat_ids in the portfolio report;
+    push one now instead of leaving the settings page on 「等待配對」 for up to the
+    2-minute timer."""
+    try:
+        portfolio_reporter.report(portfolio_reporter.build_report())
+    except Exception as e:
+        print(f"[telegram_bridge] post-pair report failed: {type(e).__name__}", file=sys.stderr)
 
 
 def tg_api(token, method, params=None, timeout=35):
@@ -247,7 +300,7 @@ def _is_tls_failure(exc):
 
 
 def main():
-    offset = load_offset()
+    offset = None
 
     signal.signal(signal.SIGTERM, on_term)
     if os.name == "nt":
@@ -269,6 +322,7 @@ def main():
     idle_logged = False
     drained_backlog = False
     tls_failures = 0
+    ident = None
     while True:
         touch_heartbeat()
 
@@ -278,6 +332,15 @@ def main():
         config = load_config()
         token = config.get("bot_token")
         allowed_chat_id = config.get("allowed_chat_id")
+
+        cur = pairing_identity(config)
+        if cur != ident:
+            if cur is not None:
+                print("[telegram_bridge] new pairing — offset and backlog state reset",
+                      file=sys.stderr)
+                offset = load_offset(cur[0])
+            drained_backlog = False
+            ident = cur
 
         if not token:
             # Unpaired: sit quietly (don't crash-loop, don't hammer Telegram)
@@ -300,6 +363,13 @@ def main():
         if allowed_chat_id is None and not drained_backlog:
             try:
                 cutoff = time.time() - 120
+                # A web link/unlink stamps pair_at (api clock). Anything sent before it
+                # belongs to the previous pairing — above all the old account when the
+                # same bot is re-linked to switch accounts, whose recent message would
+                # otherwise sit inside the 2-minute grace and win. 5s of clock slack.
+                pair_at = config.get("pair_at")
+                if isinstance(pair_at, int) and not isinstance(pair_at, bool):
+                    cutoff = max(cutoff, pair_at - 5)
                 for _ in range(10):  # backlog paginates ~100/call
                     params = {"timeout": 0}
                     if offset is not None:
@@ -317,7 +387,7 @@ def main():
                     if hit_recent:
                         break
                 if offset is not None:
-                    save_offset(offset)
+                    save_offset(offset, ident[0])
                 print("[telegram_bridge] dropped stale pre-pair backlog", file=sys.stderr)
             except Exception as e:
                 print(f"[telegram_bridge] backlog drain failed: {e}", file=sys.stderr)
@@ -344,8 +414,16 @@ def main():
         tls_failures = 0
 
         for update in resp.get("result", []):
+            # Unlinked / re-linked while we were long-polling or running a turn: the
+            # rest of this batch belongs to the old pairing. Stop without advancing
+            # the offset (same bot → next loop re-fetches them under the new pairing).
+            config = load_config()
+            if pairing_identity(config) != ident:
+                print("[telegram_bridge] pairing changed mid-batch — dropping the rest",
+                      file=sys.stderr)
+                break
             offset = update["update_id"] + 1
-            save_offset(offset)
+            save_offset(offset, ident[0])
             msg = update.get("message")
             if not msg:
                 continue
@@ -361,6 +439,13 @@ def main():
             # one (same convention as openclaw — the user just sends a message
             # to their bot). Persist it so it survives restarts.
             if allowed_chat_id is None and (has_text or has_media):
+                # re-read right before writing: a reset that landed since the check above
+                # must not get the old token/generation written back with this chat
+                config = load_config()
+                if pairing_identity(config) != ident:
+                    print("[telegram_bridge] pairing changed before auto-pair — dropping",
+                          file=sys.stderr)
+                    break
                 allowed_chat_id = chat_id
                 config["allowed_chat_id"] = chat_id
                 save_config(config)
@@ -371,6 +456,7 @@ def main():
                     subprocess.run([PYTHON_BIN, SYNC_SCRIPT], check=False, timeout=30)
                 except Exception as e:
                     print(f"[telegram_bridge] sync_notify_compat failed: {e}", file=sys.stderr)
+                threading.Thread(target=_push_report, daemon=True, name="post-pair-report").start()
             if chat_id != allowed_chat_id:
                 print(f"[telegram_bridge] ignoring unpaired chat_id={chat_id}", file=sys.stderr)
                 continue
