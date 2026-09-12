@@ -230,7 +230,11 @@ def list_jobs():
     """[(id, job | None, error | None)] for every `report_jobs/<id>/`, sorted by id.
     Only valid registrations count towards MAX_JOBS; past it they are reported as
     errors and never installed. A directory whose name is not a valid id is skipped
-    outright — there is no id to report it under."""
+    outright — there is no id to report it under. So is one with no job.json at all:
+    contract §1 "存在即登記", and AGENTS has the agent write run.py for a sample run
+    before the user confirms the schedule — reporting that draft as `bad job.json`
+    put an error row in 管理定期報告 (uid=1, 2026-09-11). A job.json that exists but
+    cannot be read or parsed is still an error."""
     try:
         names = sorted(os.listdir(JOBS_DIR))
     except OSError:
@@ -238,6 +242,8 @@ def list_jobs():
     out, valid = [], 0
     for name in names:
         if not ID_RE.fullmatch(name) or not os.path.isdir(job_dir(name)):
+            continue
+        if not os.path.lexists(os.path.join(job_dir(name), "job.json")):
             continue
         job, err = load_job(name)
         if job is not None:
@@ -389,6 +395,12 @@ def run_job(job_id):
     # (same reasoning as command_listener._tick_one).
     interp = "python" if platform.system() == "Windows" else "python3"
     env = _subprocess_env()
+    # `python3 report_jobs/<id>/run.py` puts report_jobs/<id>/ on sys.path, not the cwd,
+    # so a run.py that does `from lib…` without its own sys.path.insert dies on import.
+    # Added here, on top of the strategy env, so _subprocess_env stays the twin of
+    # command_listener._strategy_subprocess_env (strategies pin the path in
+    # manager/wait_for_bar.py themselves).
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (WORKSPACE, env.get("PYTHONPATH")) if p)
     started = int(time.time())
     rc = None
     try:

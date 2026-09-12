@@ -19,7 +19,9 @@ report by landing a file in `workspace/reports/<id>.json`:
     same stance the api takes on its own id/URL mismatch.
   * Uploaded → moved to `reports/sent/` (newest few kept, the rest deleted).
     Refused for good → `reports/failed/` plus a line in `upload_errors.log`.
-    Neither directory is ever re-scanned, so nothing uploads twice.
+    Neither directory is ever re-scanned, so nothing uploads twice. A later
+    successful upload of the same id deletes the refused copy from `failed/`
+    (the log line stays as the record).
 
 Figures ride along in a sidecar directory, `workspace/reports/<id>.files/`:
 an `image` block carries `{"file": "equity.png"}` — a plain file name in that
@@ -689,7 +691,22 @@ def upload_one(report_id, path, state, token, started=None):
         # 但要看得見，否則就變成每輪重送的無聲迴圈
         print(f"[report_uploader] {report_id} uploaded but not retired: {e}",
               file=sys.stderr)
+    _clear_failed(report_id)
     return "sent"
+
+
+def _clear_failed(report_id, failed_dir=FAILED_DIR):
+    """同 id 上傳成功 = failed/ 裡那份被拒的舊版已被取代。留著會讓下一回合的 agent 以為
+    還有一份失敗的報告(uid=1 T7b 一開場就被它帶偏)。sidecar 一起清:_sweep_orphan_files
+    不掃 failed/,留下就是永久孤兒。"""
+    try:
+        os.remove(os.path.join(failed_dir, report_id + ".json"))
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        print(f"[report_uploader] {report_id}: stale failed/ copy not removed: {e}",
+              file=sys.stderr)
+    shutil.rmtree(os.path.join(failed_dir, report_id + FILES_SUFFIX), ignore_errors=True)
 
 
 def run_once(token=None, started=None):

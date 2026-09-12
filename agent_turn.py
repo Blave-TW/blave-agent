@@ -604,7 +604,7 @@ def _viewing_view_segment(viewing_view, viewing_widgets):
 
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None, viewing_widgets=None,
-                 reply_lang=None):
+                 reply_lang=None, resume_note=None):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -699,6 +699,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 這個位置(下面那整段是 web 專屬),所以這一步只動到 web。
     # 挪完同機再跑 6 次是 4 中:跟挪之前的 1/2 在這個樣本數下分不出來,位置效果未證實。
     # 漏講的下限不靠這格,靠 _QUOTA_REMIND_SEC 的短冷卻兜底。
+    if resume_note:
+        parts.append(resume_note)
     quota_line = _image_quota_line()
     if quota_line:
         parts.append(quota_line)
@@ -1185,6 +1187,10 @@ class TelegramSink:
         # 泡泡),簽名收下但不使用——兩個 sink 對 run_turn 是同一個介面。
         self.chunk_text = text
 
+    def has_reply(self):
+        """這一輪有沒有真正的回覆文字(旁白 _last_status 不算)。run_turn 的空回合判定。"""
+        return bool(self.chunk_text.strip() or any(s.strip() for s in self.segments))
+
     async def stop(self):
         if self.typing_task:
             self.typing_task.cancel()
@@ -1594,6 +1600,10 @@ class WebSink:
         self.error_text = text
         self.error_code = code
 
+    def has_reply(self):
+        """同 TelegramSink.has_reply。段首暫留(_head_hold)的字還沒進 full_text,也算。"""
+        return bool((self.full_text + (self._head_hold or "")).strip())
+
     async def stop(self):
         pass
 
@@ -1904,6 +1914,35 @@ def _fault_receipt_suffix(steps):
     return "\n[中斷前已執行:" + "、".join(shown) + "]"
 
 
+TURN_MAX_TURNS = 50
+TURN_MAX_BUDGET_USD = 10
+
+# 空回合自動續跑。DeepSeek 串流偶發在 thinking 之後斷掉:最後一則 assistant 沒有文字也沒有
+# 工具(stop_reason None、output_tokens 0),CLI 照常收尾,用戶等 7.5 分鐘看到空白(uid=1 T7,
+# 2026-09-11)。同 session 再送一句「繼續」就接得上(T7b),所以這裡自動補一次,仍空才走兜底。
+# 開新 CLI session 而不用 options.resume:resume 要把那則只剩 thinking 的殘缺 assistant 經
+# proxy 重播給上游,離線驗不了;新 session + 對話脈絡是 T7b 實測接得上的路。
+# 時間上限:bridge 在 2000s(TG)/2100s(web)砍掉整支 process,被砍的回合走
+# report_turn_aborted、不經兜底,比不續跑還糟。所以第二次嘗試的 Bash 上限縮到剩下的牆鐘時間
+# (扣掉 maybe_compact 最長 90s 等收尾),剩的不夠跑一支像樣的指令就不續。
+_RESUME_MAX_ELAPSED_SEC = 1200
+_RESUME_MIN_BUDGET_USD = 0.5
+_RESUME_MIN_TURNS = 10
+_BRIDGE_KILL_SEC = 2000  # the lower of telegram_bridge / web_bridge
+_RESUME_TAIL_MARGIN_SEC = 150
+_RESUME_MIN_TOOL_SEC = 300
+
+
+def _resume_note(tool_steps):
+    """第二次嘗試的逐輪錨。工具跑過就附收據:新 CLI session 看不到上一次的工具呼叫。"""
+    note = ("[接續(系統訊息,不是使用者說的):你上一次處理這則訊息時,還沒寫出任何回覆就中斷了,"
+            "使用者什麼都沒看到。把這則訊息的要求做完並回覆")
+    if not tool_steps:
+        return note + "。]"
+    return (note + ";下面這些步驟中斷前已經執行、可能已生效,先確認現況,不要重做。]"
+            + _fault_receipt_suffix(tool_steps))
+
+
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, viewing_widgets=None, ui_lang=None):
     summary, recent = ss.get_context(session_id)
@@ -1923,6 +1962,12 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # BLAVE_AGENT_DB:AGENTS.md 教 agent 用 sqlite 唯讀查自己的逐字稿;Linux 的
     # provisioning 沒設這個 env,在這裡帶最終解析值,兩個 OS 都保證看得到。
     turn_env = {**PROXY_ENV, "BLAVECLAW_HOME": BLAVECLAW_HOME, "BLAVE_AGENT_DB": ss.DB_PATH}
+    # `python tmp/x.py` puts the script's own dir on sys.path, not the cwd, so a script under
+    # tmp/ or report_jobs/<id>/ could not `import lib…`: nearly every report script failed its
+    # first run (uid=1 Windows + 32321 Linux, 2026-09-11). options.env replaces the inherited
+    # value rather than merging, so an existing PYTHONPATH is carried over explicitly.
+    turn_env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (WORKSPACE, os.environ.get("PYTHONPATH")) if p)
     # Claude Code's Bash tool auto-backgrounds any command still running at 600s
     # (CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS) and caps the per-call `timeout`
     # at BASH_MAX_TIMEOUT_MS (600s). A large-universe Type C backtest (300 台股,
@@ -1979,8 +2024,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 實測「建策略+回測+調參」正常就要 20+ 步(BTC RSI 那輪 21 步被砍在半路,
         # $1.46 白燒)。步數放寬到 50,真正的煞車改用預算——失控迴圈燒錢才是
         # 原本要防的事,用錢設限比步數合理。
-        max_turns=50,
-        max_budget_usd=10,
+        max_turns=TURN_MAX_TURNS,
+        max_budget_usd=TURN_MAX_BUDGET_USD,
         # SDK 的 stdio transport 預設單條 JSON 訊息上限 1MB——agent 一個 Bash 印出
         # 大量輸出(K 線資料、回測明細)就整輪炸掉(實測:「建立 MACD 策略」第一輪
         # 就中)。放寬到 16MB;這是單條訊息的解析上限,不是常駐記憶體。
@@ -2019,119 +2064,164 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 拋出,所以這裡抄一份,分類就不必仰賴例外型別有沒有那些欄位。
     result_info = {}
     fault_code = None
+    t_start = time.monotonic()
+    spent_usd, spent_turns = 0.0, 0
     try:
-        query_iter = sdk.query(prompt=prompt, options=options)
         is_web = isinstance(sink, WebSink)
         strat_sig = None
-        # Text already delivered as deltas, one entry per content block, so the
-        # completed TextBlocks below are not re-sent. Reconciled rather than
-        # trusted: if the deltas never arrived (a provider or SDK build that
-        # doesn't emit them — see anthropics/claude-code#17956 for the streaming-
-        # input variant), the whole block still goes out and the user gets a
-        # reply, just not a live one. One entry per block, not one string for the
-        # whole turn: a message can hold several text blocks (text, thinking,
-        # text) and a single string would let the last one's deltas answer for all
-        # of them, re-sending an earlier block whole — a second copy of it under
-        # the one the user just watched being typed. Matching/consumption is in
-        # _unstreamed; cleared per message so an unconsumed block (narration that
-        # went to the activity line) can't be mistaken for a later reply's deltas.
-        streamed = {}
-        async for msg in query_iter:
-            if _STREAM_EVENT is not None and isinstance(msg, _STREAM_EVENT):
-                # 同下面 AssistantMessage 的第二層防線:子代理的 delta 也不能流進
-                # 回覆泡泡/歷史(它的完整訊息稍後會走 on_status)。
-                if getattr(msg, "parent_tool_use_id", None):
-                    continue
-                event = msg.event or {}
-                if event.get("type") == "content_block_delta":
-                    delta = event.get("delta") or {}
-                    if delta.get("type") == "text_delta":
-                        text = delta.get("text") or ""
-                        if text:
-                            sink.on_text(text)
-                            idx = event.get("index")
-                            streamed[idx] = streamed.get(idx, "") + text
-            elif isinstance(msg, sdk.AssistantMessage):
-                # 第二層防線(第一層是 disallowed_tools):子代理的訊息帶
-                # parent_tool_use_id,它的文字一律進活動列、不進回覆/歷史——
-                # 兩條 stream 混流時,回覆的結構判定(見下)會被子代理打亂。
-                if getattr(msg, "parent_tool_use_id", None):
+        for attempt in (1, 2):
+            query_iter = sdk.query(prompt=prompt, options=options)
+            # Text already delivered as deltas, one entry per content block, so the
+            # completed TextBlocks below are not re-sent. Reconciled rather than
+            # trusted: if the deltas never arrived (a provider or SDK build that
+            # doesn't emit them — see anthropics/claude-code#17956 for the streaming-
+            # input variant), the whole block still goes out and the user gets a
+            # reply, just not a live one. One entry per block, not one string for the
+            # whole turn: a message can hold several text blocks (text, thinking,
+            # text) and a single string would let the last one's deltas answer for all
+            # of them, re-sending an earlier block whole — a second copy of it under
+            # the one the user just watched being typed. Matching/consumption is in
+            # _unstreamed; cleared per message so an unconsumed block (narration that
+            # went to the activity line) can't be mistaken for a later reply's deltas.
+            streamed = {}
+            async for msg in query_iter:
+                if _STREAM_EVENT is not None and isinstance(msg, _STREAM_EVENT):
+                    # 同下面 AssistantMessage 的第二層防線:子代理的 delta 也不能流進
+                    # 回覆泡泡/歷史(它的完整訊息稍後會走 on_status)。
+                    if getattr(msg, "parent_tool_use_id", None):
+                        continue
+                    event = msg.event or {}
+                    if event.get("type") == "content_block_delta":
+                        delta = event.get("delta") or {}
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text") or ""
+                            if text:
+                                sink.on_text(text)
+                                idx = event.get("index")
+                                streamed[idx] = streamed.get(idx, "") + text
+                elif isinstance(msg, sdk.AssistantMessage):
+                    # 第二層防線(第一層是 disallowed_tools):子代理的訊息帶
+                    # parent_tool_use_id,它的文字一律進活動列、不進回覆/歷史——
+                    # 兩條 stream 混流時,回覆的結構判定(見下)會被子代理打亂。
+                    if getattr(msg, "parent_tool_use_id", None):
+                        for block in msg.content:
+                            if isinstance(block, sdk.TextBlock) and block.text.strip():
+                                sink.on_status(block.text)
+                        continue
+                    # 結構性旁白判定:同一則訊息裡帶 ToolUseBlock,其中的文字就是
+                    # 「我來查一下…」式的過場話——只給狀態指示器,不進回覆/歷史。
+                    # 真正的回覆是最後那則(沒有工具呼叫)的文字。用 prompt 禁止旁白
+                    # 屢戰屢敗(preset 本來就鼓勵邊做邊講),這裡用結構切,100% 生效。
+                    has_tool_use = any(isinstance(b, sdk.ToolUseBlock) for b in msg.content)
+                    had_tool = False
                     for block in msg.content:
-                        if isinstance(block, sdk.TextBlock) and block.text.strip():
-                            sink.on_status(block.text)
-                    continue
-                # 結構性旁白判定:同一則訊息裡帶 ToolUseBlock,其中的文字就是
-                # 「我來查一下…」式的過場話——只給狀態指示器,不進回覆/歷史。
-                # 真正的回覆是最後那則(沒有工具呼叫)的文字。用 prompt 禁止旁白
-                # 屢戰屢敗(preset 本來就鼓勵邊做邊講),這裡用結構切,100% 生效。
-                has_tool_use = any(isinstance(b, sdk.ToolUseBlock) for b in msg.content)
-                had_tool = False
-                for block in msg.content:
-                    if isinstance(block, sdk.TextBlock):
-                        if has_tool_use:
-                            sink.on_status(block.text)
-                        else:
-                            rest = _unstreamed(block.text, streamed)
-                            if rest:
-                                sink.on_text(rest)
-                    elif isinstance(block, sdk.ThinkingBlock):
-                        sink.on_thinking(block)
-                    elif isinstance(block, sdk.ToolUseBlock):
-                        # 先記收據再交給 sink:工具是 CLI 執行的,sink 炸掉不該讓
-                        # 這一步從「做到哪」的名單裡消失。
-                        tool_steps.append((
-                            getattr(block, "name", "") or "",
-                            _tool_summary(getattr(block, "name", ""),
-                                          getattr(block, "input", None)),
-                        ))
-                        sink.on_tool(block)
-                        had_tool = True
-                    # A Stop arrives via the /report response inside on_*; break
-                    # at the next block boundary rather than mid-message.
-                    if getattr(sink, "interrupted", False):
-                        break
-                streamed.clear()
-                # A tool may have just created a strategy or finished a backtest —
-                # push the fresh list now (web only) rather than waiting for turn end.
-                if is_web and had_tool and not getattr(sink, "interrupted", False):
-                    strat_sig = _maybe_push_strategies(sink, strat_sig)
-            elif _USER_MESSAGE is not None and isinstance(msg, _USER_MESSAGE):
-                # 工具結果:SDK 把它包成 user 訊息回流(message_parser 的 case "user"
-                # 把 tool_result block 解成 ToolResultBlock)。只拿來補收據的耗時,
-                # 不做任何其他副作用、不碰回覆文字。
-                content = getattr(msg, "content", None)
-                if _DEBUG_MSGS:
-                    kinds = type(content).__name__ if isinstance(content, str) else \
-                        [type(b).__name__ for b in (content or [])]
-                    print(f"[agent_turn][probe] UserMessage parent="
-                          f"{getattr(msg, 'parent_tool_use_id', None)!r} blocks={kinds}",
-                          file=sys.stderr)
-                # 子代理的工具不進收據(同 AssistantMessage 那道第二層防線);
-                # content 是 str = 真的是注入的用戶訊息,裡面沒有工具結果。
-                on_result = getattr(sink, "on_tool_result", None)
-                if on_result and _TOOL_RESULT_BLOCK is not None \
-                        and not isinstance(content, str) \
-                        and not getattr(msg, "parent_tool_use_id", None):
-                    for block in content or []:
-                        if isinstance(block, _TOOL_RESULT_BLOCK):
-                            on_result(block)
-            elif isinstance(msg, sdk.ResultMessage):
-                print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
-                if getattr(msg, "is_error", False):
-                    result_info = {
-                        "subtype": getattr(msg, "subtype", None),
-                        "api_error_status": getattr(msg, "api_error_status", None),
-                        "terminal_reason": getattr(msg, "terminal_reason", None),
-                        "result": getattr(msg, "result", None),
-                    }
-            elif _DEBUG_MSGS:
-                print(f"[agent_turn][probe] {type(msg).__name__}", file=sys.stderr)
-            if getattr(sink, "interrupted", False):
-                print("[agent_turn] interrupted by user — stopping turn", file=sys.stderr)
-                aclose = getattr(query_iter, "aclose", None)
-                if aclose:
-                    await aclose()  # let the SDK tear down the subprocess/session cleanly
+                        if isinstance(block, sdk.TextBlock):
+                            if has_tool_use:
+                                sink.on_status(block.text)
+                            else:
+                                rest = _unstreamed(block.text, streamed)
+                                if rest:
+                                    sink.on_text(rest)
+                        elif isinstance(block, sdk.ThinkingBlock):
+                            sink.on_thinking(block)
+                        elif isinstance(block, sdk.ToolUseBlock):
+                            # 先記收據再交給 sink:工具是 CLI 執行的,sink 炸掉不該讓
+                            # 這一步從「做到哪」的名單裡消失。
+                            tool_steps.append((
+                                getattr(block, "name", "") or "",
+                                _tool_summary(getattr(block, "name", ""),
+                                              getattr(block, "input", None)),
+                            ))
+                            sink.on_tool(block)
+                            had_tool = True
+                        # A Stop arrives via the /report response inside on_*; break
+                        # at the next block boundary rather than mid-message.
+                        if getattr(sink, "interrupted", False):
+                            break
+                    streamed.clear()
+                    # A tool may have just created a strategy or finished a backtest —
+                    # push the fresh list now (web only) rather than waiting for turn end.
+                    if is_web and had_tool and not getattr(sink, "interrupted", False):
+                        strat_sig = _maybe_push_strategies(sink, strat_sig)
+                elif _USER_MESSAGE is not None and isinstance(msg, _USER_MESSAGE):
+                    # 工具結果:SDK 把它包成 user 訊息回流(message_parser 的 case "user"
+                    # 把 tool_result block 解成 ToolResultBlock)。只拿來補收據的耗時,
+                    # 不做任何其他副作用、不碰回覆文字。
+                    content = getattr(msg, "content", None)
+                    if _DEBUG_MSGS:
+                        kinds = type(content).__name__ if isinstance(content, str) else \
+                            [type(b).__name__ for b in (content or [])]
+                        print(f"[agent_turn][probe] UserMessage parent="
+                              f"{getattr(msg, 'parent_tool_use_id', None)!r} blocks={kinds}",
+                              file=sys.stderr)
+                    # 子代理的工具不進收據(同 AssistantMessage 那道第二層防線);
+                    # content 是 str = 真的是注入的用戶訊息,裡面沒有工具結果。
+                    on_result = getattr(sink, "on_tool_result", None)
+                    if on_result and _TOOL_RESULT_BLOCK is not None \
+                            and not isinstance(content, str) \
+                            and not getattr(msg, "parent_tool_use_id", None):
+                        for block in content or []:
+                            if isinstance(block, _TOOL_RESULT_BLOCK):
+                                on_result(block)
+                elif isinstance(msg, sdk.ResultMessage):
+                    print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
+                    spent_usd += msg.total_cost_usd or 0
+                    spent_turns += msg.num_turns or 0
+                    if getattr(msg, "is_error", False):
+                        result_info = {
+                            "subtype": getattr(msg, "subtype", None),
+                            "api_error_status": getattr(msg, "api_error_status", None),
+                            "terminal_reason": getattr(msg, "terminal_reason", None),
+                            "result": getattr(msg, "result", None),
+                        }
+                elif _DEBUG_MSGS:
+                    print(f"[agent_turn][probe] {type(msg).__name__}", file=sys.stderr)
+                if getattr(sink, "interrupted", False):
+                    print("[agent_turn] interrupted by user — stopping turn", file=sys.stderr)
+                    aclose = getattr(query_iter, "aclose", None)
+                    if aclose:
+                        await aclose()  # let the SDK tear down the subprocess/session cleanly
+                    break
+            if attempt == 2 or getattr(sink, "interrupted", False) or sink.has_reply():
                 break
+            elapsed = time.monotonic() - t_start
+            budget = TURN_MAX_BUDGET_USD - spent_usd
+            tool_cap_s = min(int(turn_env["BASH_MAX_TIMEOUT_MS"]) // 1000,
+                             int(_BRIDGE_KILL_SEC - _RESUME_TAIL_MARGIN_SEC - elapsed))
+            if elapsed > _RESUME_MAX_ELAPSED_SEC or budget < _RESUME_MIN_BUDGET_USD \
+                    or tool_cap_s < _RESUME_MIN_TOOL_SEC:
+                print(f"[agent_turn] empty reply, not resuming ({elapsed:.0f}s, "
+                      f"${spent_usd:.2f} spent)", file=sys.stderr)
+                break
+            print(f"[agent_turn] empty reply — resuming once (tools={len(tool_steps)}, "
+                  f"{elapsed:.0f}s, ${spent_usd:.2f} spent)", file=sys.stderr)
+            # The original message goes in again, not a literal 「繼續」: the language pin is
+            # derived from it, and `recent` (read before this turn's user row was written)
+            # would otherwise hold the request twice.
+            prompt = build_prompt(summary, recent, message,
+                                  viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
+                                  suggest_directive=is_web,
+                                  viewing_view=viewing_view, viewing_widgets=viewing_widgets,
+                                  reply_lang=reply_lang, resume_note=_resume_note(tool_steps))
+            options.max_budget_usd = budget
+            options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
+            # A new dict, not an in-place update: the CLI child's env is built from
+            # options.env at connect time, and a fresh object is right whether or not
+            # anything upstream kept a reference to the old one.
+            cap_ms = str(tool_cap_s * 1000)
+            options.env = {**options.env, "BASH_MAX_TIMEOUT_MS": cap_ms,
+                           "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": cap_ms}
+        # Narration still counts as the floor: when both attempts end without reply text
+        # but some narration exists, finalize() shows it the way it did before resuming.
+        if not getattr(sink, "interrupted", False) and not sink.has_reply() \
+                and not getattr(sink, "_last_status", "").strip():
+            fault_code = _fault_code(RuntimeError("the turn ended without any reply text"),
+                                     len(tool_steps), result_info)
+            print(f"[agent_turn] empty reply → fault={fault_code} tools={len(tool_steps)}",
+                  file=sys.stderr)
+            surface = "web" if is_web else "tg"
+            sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
+                           code=fault_code)
     except Exception as e:
         # A crash here must never silently drop the turn — always leave a
         # record (so future turns have context) and always give the user
