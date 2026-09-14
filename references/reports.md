@@ -1,7 +1,7 @@
 # Reports — publishing a rendered report to the workspace
 
 A **report** is a JSON document this machine writes and the platform renders in the
-web workspace sidebar: KPI rows, charts, tables and prose, laid out by the web from
+web workspace's Reports list (More › Reports): KPI rows, charts, tables and prose, laid out by the web from
 structured data — not a screenshot, not a wall of Telegram text. Use it for anything
 the user will want to read again later: a performance review, a morning briefing on a
 watchlist, an MCPT / research write-up, a post-mortem of a live week.
@@ -90,7 +90,7 @@ writes the pictures before the JSON, in the order the drop dir requires. For
 
 **The write is the finish line.** Once the JSON is in the drop dir the report is
 produced and you are done — tell the user it has been produced and will show up in the
-workspace sidebar shortly, then move on. Shipping it is the runtime's job: a 2-minute
+Reports list (More › Reports in the workspace) shortly, then move on. Shipping it is the runtime's job: a 2-minute
 timer picks the file up, so in the normal case the report appears within about two
 minutes. **Do not poll `status()`, and do not wait for `pending` to turn into `sent`
 before replying** — every extra tool call there is the user paying to watch a timer that
@@ -108,7 +108,7 @@ and already pruned from `sent/`".
 
 Old BlaveClaw machines (pre-Blave-Agent runtime) have no uploader; files just
 accumulate in `reports/`. If `reports/sent/` does not exist on this machine, do not tell
-the user the report will appear in the sidebar.
+the user the report will appear in the Reports list.
 The sidecar is newer than the rest of this page: a runtime that predates it passes a
 `file` field straight through to the api, which refuses it as an unknown prop. If a
 report lands in `failed/` for that reason, this machine's runtime is too old — upload
@@ -127,7 +127,7 @@ from lib.report_templates import tw_market_brief, tw_close_brief, crypto_market_
 
 pack = tw_market_brief()                 # today (Taipei); headers come from the workspace .env
 print(pack.describe())                   # every figure the pack carries, one line each — cite these
-#   [tw-market-20260902] 台股大盤晨報          ← title has no date: the sidebar row shows when it was made
+#   [tw-market-20260902] 台股大盤晨報          ← title has no date: the list row shows when it was made
 #     加權指數: 46,948.72(+1.78%),前 20 日高 46,512.35
 #     三大法人: 外資 +267.0 億(昨 -144.0 億)、投信 +131.0 億、自營 +163.0 億、合計 +561.0 億
 #     外資期貨淨多單: +12,300 口(+2,500 口,09-01)
@@ -244,7 +244,7 @@ reads `blave_api_key` / `blave_secret_key` from the workspace `.env` (see `refer
 |---|---|---|
 | `schema_version` | string | `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7–B8; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — a `candlestick` under `"1.1"`, or either flag under `"1.1"` / `"1.2"`, is refused. |
 | `id` | string | `[A-Za-z0-9_-]{1,64}`, equal to the file name stem. |
-| `type` | string | `performance` / `morning` / `research` — sidebar grouping. |
+| `type` | string | `performance` / `morning` / `research` — report list grouping. |
 | `title` | string | 1–200 chars. |
 | `created_at` | int | **unix seconds, UTC** — never milliseconds, never a string. |
 | `blocks` | array | 1–120 blocks. |
@@ -576,7 +576,7 @@ section headings in the report's language.
   reading of the data (§7 rule 1), never a call: no direction for the days ahead, no
   target, no timing (§1b's levels-are-statistics rule applies to the title too).
   `write_report` copies `title` into
-  `meta.title`, so this governs both. *Why:* the title is what the sidebar and the
+  `meta.title`, so this governs both. *Why:* the title is what the report list and the
   notification show, and for research it heads the public page when the user shares it
   (B), where a title past about 50 CJK characters gets cut; 40 leaves room. A topic name tells a reader
   who sees only the title nothing. The api's 1–200 limit (§2) still stands; this is a

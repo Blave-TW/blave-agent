@@ -447,7 +447,7 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
     foot += [("src", "指數、成交值、三大法人、融資餘額:TWSE 日資料,經 Blave API。三大法人為淨買賣超金額,融資餘額為張數。前 20 日高 = 不含當日的前 20 個交易日最高價。")]
     blocks.append(footnote(foot))
 
-    # 標題不帶日期——側欄列本身顯示建立時間(Wei 2026-09-02 拍板);id 仍帶日期,同日重跑才會覆蓋。
+    # 標題不帶日期——報告清單列本身顯示建立時間(Wei 2026-09-02 拍板);id 仍帶日期,同日重跑才會覆蓋。
     # 資料日與晨報日不同才標 period,同日就省(印「09/02–09/02」沒有資訊)。
     meta = {} if asof == date else {"period": {"from": asof[5:].replace("-", "/"), "to": date[5:].replace("-", "/")}}
     return Pack(f"tw-market-{date.replace('-', '')}", "台股大盤晨報", "morning", "台股大盤晨報", blocks, ctx, notes, meta=meta)

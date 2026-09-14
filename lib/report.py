@@ -2,7 +2,7 @@
 Report helper — build a report and drop it in `workspace/reports/`.
 
 A report is a JSON document the platform stores and the web workspace renders in
-the sidebar (charts, KPI rows, tables, prose). The machine publishes one by
+its Reports list (charts, KPI rows, tables, prose). The machine publishes one by
 landing a file at `workspace/reports/<id>.json`. **The write is the finish line:**
 the runtime's uploader (a 2-minute timer) ships it and moves the file to
 `reports/sent/`, or to `reports/failed/` plus a line in
@@ -82,7 +82,7 @@ def _research_warnings(title, blocks):
     width = sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(shown))
     if width > RESEARCH_TITLE_WIDTH:
         out.append(f"research title is {width} wide (CJK counts 2), over {RESEARCH_TITLE_WIDTH}; "
-                   "the sidebar truncates it, state the claim shorter "
+                   "the report list truncates it, state the claim shorter "
                    "(references/reports.md 7b)")
     i = 1
     if i < len(blocks) and isinstance(blocks[i], dict) and blocks[i].get("variant") == "lead":
@@ -144,10 +144,10 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
                 deterministic id makes a re-run idempotent, and a per-run id
                 (a date, a timestamp) keeps every run. Do NOT use the runtime's
                 own ids (`daily-YYYY-MM-DD`, `wk-YYYY-MM-DD`).
-    title       1–200 chars; shown in the sidebar list and the push notification.
+    title       1–200 chars; shown in the report list and the push notification.
     blocks      the block list (see `references/reports.md`). A `meta` block is
                 prepended unless blocks[0] already is one.
-    type        `performance` / `morning` / `research` — sidebar grouping.
+    type        `performance` / `morning` / `research` — report list grouping.
     report_type display string for the report header ("績效週報", "一次性");
                 defaults to `type`.
     created_at  unix seconds, int; defaults to now.
@@ -234,7 +234,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     # has moved it (uid=1: five times in three turns) — say where the file goes before they try.
     print(f"[report] {report_id}.json written. The uploader moves it to reports/sent/, so do not "
           f"read reports/{report_id}.json back; if you need it again, open "
-          f"reports/sent/{report_id}.json. It appears in the workspace sidebar shortly. "
+          f"reports/sent/{report_id}.json. It appears in the workspace Reports list (More › Reports) shortly. "
           "Nothing to check; reply now.")
     return path
 
