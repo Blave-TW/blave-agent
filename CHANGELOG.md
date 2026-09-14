@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.74 — 2026-09-14
+
 - agent_turn: the mid-turn `strategies` chunk (carries `session_id`) now goes out after each
   tool RESULT instead of at the tool request, plus once more right before `done` on any web
   turn that used a tool (skipped when interrupted). Before, a strategy created by the turn's
