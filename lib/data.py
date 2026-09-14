@@ -1523,6 +1523,11 @@ def _broker_day_cache_path(stock_id, date_str):
     return d / f'{date_str}.parquet'
 
 
+# An empty answer for a day this recent may just be "not published yet" (21:30 Taipei)
+# or a server-side outage, so it is not cached; older empty days (holidays, gaps) are.
+_BROKER_RECENT_EMPTY_DAYS = 3
+
+
 def _make_date_chunks(dates, chunk_days=90):
     """Split a sorted date list into chunks, each spanning ≤ chunk_days calendar days."""
     if not dates:
@@ -1574,8 +1579,11 @@ def _populate_broker_day_cache(stock_id, weekdays, headers,
                 if not df_all.empty and 'date' in df_all.columns:
                     for date_str, grp in df_all.groupby('date'):
                         by_date[date_str] = grp
+                today = datetime.now(_TPE).date()
                 for d in chunk_missing:
                     date_str = d.isoformat()
+                    if date_str not in by_date and (today - d).days <= _BROKER_RECENT_EMPTY_DAYS:
+                        continue
                     df_day   = by_date.get(date_str, pd.DataFrame(columns=EMPTY_COLS)).copy()
                     df_day['date'] = date_str
                     df_day.to_parquet(_broker_day_cache_path(stock_id, date_str),
@@ -1627,8 +1635,11 @@ def _populate_trader_day_cache(trader_id, weekdays, headers,
                 if not df_all.empty and 'date' in df_all.columns:
                     for date_str, grp in df_all.groupby('date'):
                         by_date[date_str] = grp
+                today = datetime.now(_TPE).date()
                 for d in chunk_missing:
                     date_str = d.isoformat()
+                    if date_str not in by_date and (today - d).days <= _BROKER_RECENT_EMPTY_DAYS:
+                        continue
                     df_day   = by_date.get(date_str, pd.DataFrame(columns=EMPTY_COLS)).copy()
                     df_day['date'] = date_str
                     df_day.to_parquet(_trader_day_cache_path(trader_id, date_str),
