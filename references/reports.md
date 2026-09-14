@@ -10,7 +10,8 @@ The platform pushes a short summary notification once the report is stored, so t
 report reaches the user even when this machine is asleep — never send your own
 Telegram message about a report as well, that duplicates every alert.
 
-**Only a `research` report can be shared publicly, and only by the user.** In the workspace,
+**A `research` or `morning` report (a morning brief, a close recap, a weekly, …) can be
+shared publicly, and only by the user; a `performance` report never can.** In the workspace,
 the report's title bar has a 「分享」 button; the user confirms each report on its own (a
 consent checkbox, then confirm) and gets a link `blave.org/<lang>/r/<code>`. What is public is
 a snapshot of the report at that moment: writing the same id again later does not change it.
@@ -18,12 +19,13 @@ While a report is public its title bar shows a public status row instead; once y
 rewritten it, the workspace adds a notice with a 「檢查後更新公開版本」 button, which updates
 the public version under the same link. They can cancel at any time;
 sharing again after cancelling gives a new link. Deleting the machine or the account revokes
-every public link. `performance` and `morning` reports can never be shared, and a
-research report whose `meta.shareable` is not `true` (§7b B7) shows no share button.
+every public link. The platform does not review content: whether a report is fit to publish
+is the user's call, made in the consent checkbox. Nothing you write into a report (including
+`meta.shareable`, §7b B7) decides whether it can be shared, so never tell the user a research or
+morning report cannot be shared, and never hold one back for that reason.
 **You cannot share, update or cancel a report for the user** — there is no API or tool for it
-on this machine; point them to the button. When they ask why a research report has no share
-button, say in one sentence which B7 condition it misses, and offer to rewrite it. Never
-promise view counts, a report-abuse flow, takedown notices or anything else not described here.
+on this machine; point them to the button. Never promise view counts, a report-abuse flow,
+takedown notices or anything else not described here.
 
 §1–§6 are the **format** contract; **§7 is the content bar** — what a report has to
 actually say to be worth reading. A report can satisfy every rule in §1–§6 and still
@@ -242,9 +244,9 @@ reads `blave_api_key` / `blave_secret_key` from the workspace `.env` (see `refer
 
 | Field | Type | Notes |
 |---|---|---|
-| `schema_version` | string | `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7–B8; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — a `candlestick` under `"1.1"`, or either flag under `"1.1"` / `"1.2"`, is refused. |
+| `schema_version` | string | `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — a `candlestick` under `"1.1"`, or either flag under `"1.1"` / `"1.2"`, is refused. |
 | `id` | string | `[A-Za-z0-9_-]{1,64}`, equal to the file name stem. |
-| `type` | string | `performance` / `morning` / `research` — report list grouping. |
+| `type` | string | `performance` / `morning` / `research` — report list grouping. **Hard rule: any report that carries the user's account assets, positions, orders or live strategy P&L is `performance`, even when it is shaped as a morning brief or a close recap.** `research` and `morning` reports can be shared publicly by the user and `performance` cannot, so a wrong `type` publishes account numbers. |
 | `title` | string | 1–200 chars. |
 | `created_at` | int | **unix seconds, UTC** — never milliseconds, never a string. |
 | `blocks` | array | 1–120 blocks. |
@@ -264,7 +266,7 @@ the small print below it — put the measurement basis there).
 
 | Block | Required props | Limits / notes |
 |---|---|---|
-| `meta` | `title`, `report_type`, `generated_at` | **Exactly one, always first.** Optional: `period` `{from, to}` display strings ≤32 (`"08/25"`), `account` `{aum: number, currency}`, `benchmark`, `origin` (`scheduled`/`chat`), `machine`, `extra` (≤3 `{label, value}`), `shareable` and `involves_futures` (booleans, `research` only — §7b B7–B8). `period` + `account` + `benchmark` + `extra` ≤4 header cells in total. |
+| `meta` | `title`, `report_type`, `generated_at` | **Exactly one, always first.** Optional: `period` `{from, to}` display strings ≤32 (`"08/25"`), `account` `{aum: number, currency}`, `benchmark`, `origin` (`scheduled`/`chat`), `machine`, `extra` (≤3 `{label, value}`), `shareable` (boolean, `research` only — §7b B7); `involves_futures` is still accepted but read by nothing, so leave it out. `period` + `account` + `benchmark` + `extra` ≤4 header cells in total. |
 | `kpi_row` | `items[{label, value, tone}]` | 1–6 items; **the first is the focus** and renders largest. `label` ≤40, `value` a formatted string, `tone` = `pos`/`neg`/`neutral` (unsigned numbers such as Sharpe or win-rate are `neutral` — a wall of green means nothing). Optional `unit` ≤16, `delta`. |
 | `line_chart` | `series[{name, role, points}]` | 1–4 series; `role` = `primary` (solid, **at most one**) or `benchmark` (dashed); `points` = 1–5000 `[t, v]`, `t` unix seconds int, `v` finite number. Optional `y_unit` (≤8, see *Axis units* below), `bands` (≤2 `{from, to, label}`, unix seconds, label ≤32) and `reflines` (≤4 `{y, label, emphasis}`, `emphasis: true` = red loss level). |
 | `candlestick` | `candles` | 2–120 bars `[t, open, high, low, close]`; `t` unix seconds int, **strictly increasing**; the four prices finite numbers with `low ≤ min(open, close)` and `max(open, close) ≤ high` on every bar. Optional `y_unit` and `reflines` (≤4 horizontal price levels such as the prior 20-day high/low), both exactly as on `line_chart`. No `bands`, no volume pane, no moving-average overlay. The x-axis is one slot per bar, not real time (no weekend or overnight gaps), so it does **not** line up date-for-date with a neighbouring `line_chart` / `drawdown` — expected, not a bug. Needs `schema_version` `"1.2"` or later. `lib/report_templates.candlestick(title, df, y_unit=…, reflines=…)` builds one from an OHLC DataFrame. |
@@ -639,8 +641,9 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   investment advisory rules, telling that public when or at what price to trade a named
   instrument can amount to running an advisory business without a licence. If the user
   explicitly asks for such a call, write it, but keep it out of the title, the lead and the
-  `kpi_row`, and set `shareable` to `false` (B7): the workspace then shows no share button
-  for it, and a public version would have to be a rewrite without the call.
+  `kpi_row`, and set `shareable` to `false` (B7). If the user then wants to share it, say
+  once, in one sentence, that a version without the call is safer to publish, and offer to
+  write it; the decision stays theirs.
 - **B2. Historical only, never connected to today.** A research report states the
   historical finding and stops there. It does not say the condition is being met now
   ("margin has risen for 8 days in a row"), and it does not project the next N days from
@@ -657,7 +660,7 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   ahead.
 
   B1 and B2 win over §7 wherever they meet (§7's examples read today's market, which fits
-  a morning brief, not a report that may later be shared publicly), and they govern B3–B6.
+  a morning brief, not a research report), and they govern B3–B6.
 - **B3. Evidence against: a mandatory section** (「哪些數據不支持這個結論」). List the
   figures that do not fit the claim, each with its number and what it does to the claim's
   strength. If you found none, list what you checked. *Why:* §7 rule 4 — if every figure
@@ -695,14 +698,12 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   section. This is not a word count. A section the data cannot fill says "the data is not
   sufficient to judge X" plus what would settle it (§7 rule 6). That is a complete section;
   padding is not.
-- **B7. `meta.shareable`: the share gate on every research report.** A boolean on the
+- **B7. `meta.shareable`: your self-check record on every research report.** A boolean on the
   `meta` block (`write_report(..., meta={"shareable": ...})`) recording whether the report,
-  as written, meets the research rules in full. Unless it is `true`, the workspace shows no
-  share button and the platform refuses to make the report public. Never name the field to the
-  user; when they ask why a report cannot be shared, say which condition below it misses (a
-  named-instrument call, a reading of today's market, a Marketplace strategy, or a missing
-  evidence-against / robustness / what-would-break section) and offer to rewrite it. Set it
-  on purpose every time; left out, it counts as `false`.
+  as written, meets the research rules in full. It is a record, not a gate: the workspace
+  and the platform do not read it, and a `false` report can still be shared by the user.
+  Never name the field to the user, and never tell them a report cannot be shared because of
+  it. Set it on purpose every time.
   - **`true`** only when all of these hold: B1 and B2 hold everywhere in the report, not
     only in the title, the lead and the `kpi_row`; B3–B5 are all there; and it cites,
     backtests or describes no strategy sold in the Marketplace (`references/marketplace.md`
@@ -719,18 +720,10 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
     earn a `true`.
   - It needs `schema_version` `"1.3"` (§2); `write_report` sets that.
 
-  *Why:* a shared research report is read by people outside the chat, and this flag is
-  the judgement of whether it may be, in a form a machine can check. A report that names a trade,
-  reads today's market or promotes a paid strategy whose seller earns a share of each sale
-  must never qualify, and a flag that defaults to `false` fails safe.
-- **B8. `meta.involves_futures`: the futures warning, next to `shareable`.** Set it `true`
-  when the research uses any futures or perpetual contract as its subject or as data:
-  台指期 TXF / MXF / TMF, a crypto perpetual, any other futures contract. Otherwise leave it
-  out. When the report is shared, the public page adds a futures risk warning above the lead
-  on its own; the author cannot add or remove it. Never name the field to the user. It is
-  set independently of `shareable` (a `false` report
-  that uses futures still carries it) and needs `schema_version` `"1.3"`, which
-  `write_report` sets.
+  *Why:* a shared research report is read by people outside the chat, and writing the flag
+  down forces an explicit check against B1–B5 each time. A report that names a trade, reads
+  today's market or promotes a paid strategy whose seller earns a share of each sale must
+  never be recorded as `true`.
 
 **Order in a research report:** `meta` → lead (A2) → `kpi_row` (A4) → first chart (A5) →
 key points (A6) → 3–5 argument sections (A7) → evidence against (B3) → robustness (B4) →
@@ -738,7 +731,7 @@ what would break this (B5) → `footnote` (A8).
 
 For a `research` report only, `write_report` prints a `WARNING:` (it never refuses) when
 the title is over the A1 cap, when the lead is not followed by a `kpi_row`, or when
-`meta.shareable` is missing (B7). Everything else here is yours to check, in research and in
+`meta.shareable` is missing (B7; a reminder to record it, not a sharing gate). Everything else here is yours to check, in research and in
 a hand-written morning report alike.
 
 ## 8. Scheduled reports — a job directory, not a cron line

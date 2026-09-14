@@ -94,21 +94,15 @@ def _research_warnings(title, blocks):
 
 
 def _shareable_warnings(type, meta):
-    """`meta.shareable` / `meta.involves_futures` (references/reports.md 7b B7, B8): absent
-    `shareable` reads as false, so a research report that forgot it is silently marked
-    unshareable; a non-bool in either is refused by the api."""
-    out = []
-    if "involves_futures" in meta and not isinstance(meta["involves_futures"], bool):
-        out.append(f"meta.involves_futures must be true or false, got "
-                   f"{meta['involves_futures']!r}; the api refuses the report "
-                   "(references/reports.md 7b B8)")
-    return out + _shareable_only(type, meta)
+    """`meta.shareable` (references/reports.md 7b B7) is the research self-check record and no
+    longer gates sharing, so a missing one only nags; a non-bool is refused by the api."""
+    return _shareable_only(type, meta)
 
 
 def _shareable_only(type, meta):
     if "shareable" not in meta:
-        return ["research report has no meta.shareable; it counts as false. Set it true or "
-                "false on purpose (references/reports.md 7b B7)"] if type == "research" else []
+        return ["research report has no meta.shareable; record it true or false on purpose "
+                "(references/reports.md 7b B7)"] if type == "research" else []
     if not isinstance(meta["shareable"], bool):
         return [f"meta.shareable must be true or false, got {meta['shareable']!r}; the api "
                 "refuses the report (references/reports.md 7b B7)"]
@@ -153,8 +147,8 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     created_at  unix seconds, int; defaults to now.
     meta        extra props for the generated meta block (`period`, `account`,
                 `benchmark`, `origin`, `machine`, `extra`, and on research the
-                `shareable` / `involves_futures` booleans of references/reports.md
-                7b B7–B8, either of which makes the report schema 1.3).
+                `shareable` boolean of references/reports.md 7b B7, which makes the
+                report schema 1.3).
     images      `{file name: bytes}` for the picture sidecar `<id>.files/`, named
                 from an `image` block as `{"type": "image", "file": "perm.png",
                 "alt": ...}`. The uploader carries the bytes and swaps `file` for
@@ -169,8 +163,8 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     api's message (it names the offending field path) in `upload_errors.log`.
     For `type="research"` two points of the §7b skeleton (title width, a `kpi_row`
     right after the lead) and a missing `meta.shareable` are printed as `WARNING:`
-    lines, as is a `shareable` that is not a bool or sits on another type, and an
-    `involves_futures` that is not a bool — advice, never a refusal.
+    lines, as is a `shareable` that is not a bool or sits on another type — advice,
+    never a refusal.
     """
     if not isinstance(report_id, str) or not _ID_RE.fullmatch(report_id):
         raise ValueError(f"report id {report_id!r} must match [A-Za-z0-9_-]{{1,64}}")
@@ -234,7 +228,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     # has moved it (uid=1: five times in three turns) — say where the file goes before they try.
     print(f"[report] {report_id}.json written. The uploader moves it to reports/sent/, so do not "
           f"read reports/{report_id}.json back; if you need it again, open "
-          f"reports/sent/{report_id}.json. It appears in the workspace Reports list (More › Reports) shortly. "
+          f"reports/sent/{report_id}.json. It appears in the workspace Reports list (More > Reports) shortly. "
           "Nothing to check; reply now.")
     return path
 

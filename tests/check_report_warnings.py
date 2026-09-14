@@ -74,9 +74,6 @@ try:
           and "WARNING" not in out, "involves_futures true lands on meta, 1.3, no warning")
     run("futonly", "t", [CANDLE], type="morning", meta={"involves_futures": False})
     check(doc("futonly")["schema_version"] == "1.3", "involves_futures alone (even false) makes 1.3")
-    out = run("futstr", "t", [LEAD, KPI], type="research", meta={"shareable": True, "involves_futures": 1})
-    check("involves_futures must be true or false" in out and out.isascii(),
-          "non-bool involves_futures: ASCII warning")
 finally:
     shutil.rmtree(WS, ignore_errors=True)
 
