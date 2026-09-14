@@ -10,6 +10,28 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.77 — 2026-09-14
+
+- agent_turn: every `strategies` chunk it pushes (after a tool result, and pre-done) now
+  carries `touched`: the sorted strategy names this turn's own tools touched, so the web can
+  attribute a new strategy to the conversation that made it instead of "whichever sid chunk
+  carried the name first" (uid=1, two parallel turns: A's chunk carried B's new DOGE strategy
+  4.7s before B's own did, so it was claimed by A and neither side opened it). Names come from
+  `ToolUseBlock.input` — Write/Edit `file_path`, Bash `command` — as any `strategies/<seg>`
+  (absolute and Windows `\` paths too; `<seg>.py` → `<seg>`; `TEMPLATE*`, `__pycache__`,
+  dot-names, and segments with `$`/glob characters are skipped). Subagent tools don't count.
+  Read/Glob/Grep don't count. Always present on these chunks (`[]` = touched nothing), so its
+  presence also marks a runtime that sends it. `live_chunk(strategies, touched=None)` adds the
+  field before the size-budget loop; web_bridge's turn-end / watcher / command pushes don't
+  send it. Checks: `tests/check_agent_turn_strategies_push.py` case 8,
+  `tests/check_web_bridge_turn_end_newborn.py`.
+  KNOWN GAPS (miss an open, never open the wrong one): a path built from a shell variable
+  (`strategies/$NAME`), `cp -r` / `mv` of a whole folder into `strategies/` without naming the
+  strategy dir, a script that generates the file name itself, and a strategy whose
+  `STRATEGY_NAME` differs from its directory / file name (touched holds the path segment,
+  the list holds `STRATEGY_NAME`). Over-capture is by design: `python3 strategies/X/...` counts
+  as touching X.
+
 ## 1.1.76 — 2026-09-14
 
 - FIX (1.1.75): the pre-done chunk auto-opened a just-created strategy, then web_bridge's

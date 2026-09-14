@@ -1411,6 +1411,36 @@ def _workspace_relative(path, workspace=None):
     return path
 
 
+# strategies/<seg>:前面要是字串開頭、路徑分隔或 shell 分隔字元,`my_strategies/x` 不算。
+# 反斜線是 Windows 機(uid=1)的 file_path。seg 碰到 shell 變數/glob 就不收(抓不準)。
+_TOUCHED_RE = re.compile(r"""(?:^|[\s/\\'"=(:;&|>])strategies[/\\]([^/\\\s'"`;&|()<>]+)""")
+
+
+def _touched_strategies(name, params):
+    """這個工具呼叫碰過的策略名(web 靠它認新策略是哪條對話建的)。多抓無妨,語意是
+    「碰過」;抓不到(變數路徑、cp -r、腳本內部產生檔名)只會少開,不會開錯。
+    排除規則同 strategy_reporter._scan_sources。"""
+    if not isinstance(params, dict):
+        return set()
+    if name in ("Write", "Edit"):
+        text = params.get("file_path")
+    elif name == "Bash":
+        text = params.get("command")
+    else:
+        return set()
+    if not isinstance(text, str):
+        return set()
+    out = set()
+    for seg in _TOUCHED_RE.findall(text):
+        if seg.endswith(".py"):
+            seg = seg[:-3]
+        if not seg or seg.startswith((".", "TEMPLATE")) or seg == "__pycache__" \
+                or any(c in seg for c in "$*?[]{}"):
+            continue
+        out.add(seg)
+    return out
+
+
 class WebSink:
     """Delivery sink for the website chat. Each text delta / tool call / end
     is a discrete chunk POSTed to /report, which the browser reads over SSE.
@@ -1707,7 +1737,7 @@ def load_agents_md():
         return ""
 
 
-def _maybe_push_strategies(sink, last_sig, include_newborn=False):
+def _maybe_push_strategies(sink, last_sig, include_newborn=False, touched=None):
     """Mid-turn: the moment the agent's tools change the strategy inventory (a new
     strategy file, a finished backtest), push the fresh list so the workspace updates
     right away instead of waiting for the whole turn to end. Live SSE chunk only (size-
@@ -1730,7 +1760,7 @@ def _maybe_push_strategies(sink, last_sig, include_newborn=False):
         # silently adopting a state the workspace never received.
         print(f"[agent_turn] mid-turn strategy scan failed: {e}", file=sys.stderr)
         return last_sig
-    sink._send(strategy_reporter.live_chunk(strategies))
+    sink._send(strategy_reporter.live_chunk(strategies, touched=touched))
     return sig
 
 
@@ -2059,6 +2089,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 回合級的工具收據(名稱, 受詞)。兜底分類要的是「這一輪有沒有發過工具呼叫」,
     # 而 WebSink._tool_t0 結束時已經被 pop 空,答不了這個問題。順帶是「做到哪」那份摘要的資料源。
     tool_steps = []
+    # 本回合工具碰過的策略名,隨帶 sid 的 strategies chunk 送出。只在 ToolUseBlock 時加,
+    # 所以工具結果回來那一推一定已含這一步的名字。
+    touched = set()
     # 最後一則 is_error 的 ResultMessage:SDK 先把它送給呼叫端、才把錯誤包成例外
     # 拋出,所以這裡抄一份,分類就不必仰賴例外型別有沒有那些欄位。
     result_info = {}
@@ -2130,6 +2163,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                 _tool_summary(getattr(block, "name", ""),
                                               getattr(block, "input", None)),
                             ))
+                            touched |= _touched_strategies(getattr(block, "name", ""),
+                                                           getattr(block, "input", None))
                             sink.on_tool(block)
                         # A Stop arrives via the /report response inside on_*; break
                         # at the next block boundary rather than mid-message.
@@ -2161,7 +2196,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     if is_web and not isinstance(content, str) \
                             and not getattr(msg, "parent_tool_use_id", None) \
                             and not getattr(sink, "interrupted", False):
-                        strat_sig = _maybe_push_strategies(sink, strat_sig)
+                        strat_sig = _maybe_push_strategies(sink, strat_sig, touched=touched)
                 elif isinstance(msg, sdk.ResultMessage):
                     print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
                     spent_usd += msg.total_cost_usd or 0
@@ -2248,7 +2283,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 在 try 外面:這裡拋出去 finalize() 就不跑,前端收不到 done/error 一路轉圈。
     if is_web and tool_steps and not getattr(sink, "interrupted", False):
         try:
-            strat_sig = _maybe_push_strategies(sink, strat_sig, include_newborn=True)
+            strat_sig = _maybe_push_strategies(sink, strat_sig, include_newborn=True,
+                                               touched=touched)
         except Exception as e:
             print(f"[agent_turn] pre-done strategy push failed: {e}", file=sys.stderr)
     reply_text = sink.finalize()

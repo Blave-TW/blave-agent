@@ -489,13 +489,19 @@ _LIVE_CHUNK_BUDGET = int(1.5 * 1024 * 1024)
 _LIVE_STRIP_TIERS = (("candles", "panes", "trades"), ("daily_dates", "daily_returns"))
 
 
-def live_chunk(strategies):
+def live_chunk(strategies, touched=None):
     """The `strategies` chunk for the chat stream (agent_turn mid-turn, web_bridge at
     turn end / after a command). Never images; the heavy backtest arrays only while the
     whole chunk stays under the /report cap — 7 strategies × 20k-candle tails = 413 and
-    the workspace stopped updating (29026, 2026-08-21). Does not mutate `strategies`."""
+    the workspace stopped updating (29026, 2026-08-21). Does not mutate `strategies`.
+
+    `touched` (agent_turn only): names this turn's tools touched, so the web attributes a new
+    strategy to the conversation that made it rather than to whichever sid carried it first.
+    Added before the budget loop so it counts toward the cap."""
     out = [{k: v for k, v in s.items() if k != "images"} for s in strategies]
     chunk = {"type": "strategies", "strategies": out}
+    if touched is not None:
+        chunk["touched"] = sorted(touched)
     for tier in _LIVE_STRIP_TIERS:
         if len(json.dumps(chunk)) <= _LIVE_CHUNK_BUDGET:
             break
