@@ -94,6 +94,9 @@ _sync_lock = threading.Lock()
 # 「turn-end chunk 沒送出去就被重啟」的復刻路徑)。並行之後 turn-end 也用同一條
 # 去重:回合結束後若已有一次 sync 起跑,這輪的變動已被收走,不再開一發。
 _last_sync_started = 0.0
+# 同上,但只記「沒藏 newborn」的那幾次(turn-end)。turn-end 的去重只能被這種 sync 取代:
+# 被一次藏 newborn 的 watcher/command sync 取代,剛結束那輪建的檔就會從側欄消失。
+_last_full_sync_started = 0.0
 _portfolio_lock = threading.Lock()
 _last_portfolio_started = 0.0
 
@@ -170,7 +173,7 @@ def ack_message(message_id):
         print(f"[web_bridge] ack failed for {message_id}: {e}", file=sys.stderr)
 
 
-def sync_strategies(since=None):
+def sync_strategies(since=None, include_newborn=False):
     """Right after a turn (which is when the agent may have created/deployed a
     strategy), push the fresh list two ways: a live chunk on the chat stream so
     the open workspace updates the left rail instantly, and the cache so a page
@@ -178,18 +181,24 @@ def sync_strategies(since=None):
 
     序列化:三個呼叫源(turn-end / command-applied / 變化偵測 thread)共用
     _sync_lock,不讓兩份 scan+report 交疊。`since`(turn-end 用):這個時刻之後已經
-    有一次 sync 起跑就略過——兩條回合前後腳結束時第二份只是重複上報。"""
+    有一次 sync 起跑就略過——兩條回合前後腳結束時第二份只是重複上報。
+
+    include_newborn(只有 turn-end 傳 True):回合結束了,這輪寫的檔不會再被改,不必
+    再藏 15 秒;watcher / command 的時間點檔案可能正寫到一半,照藏。"""
     with _sync_lock:
-        if since is not None and _last_sync_started >= since:
+        last = _last_full_sync_started if include_newborn else _last_sync_started
+        if since is not None and last >= since:
             return
-        _sync_strategies_locked()
+        _sync_strategies_locked(include_newborn)
 
 
-def _sync_strategies_locked():
-    global _last_sync_started
+def _sync_strategies_locked(include_newborn=False):
+    global _last_sync_started, _last_full_sync_started
     _last_sync_started = time.time()
+    if include_newborn:
+        _last_full_sync_started = _last_sync_started
     try:
-        strategies = strategy_reporter.scan()
+        strategies = strategy_reporter.scan(include_newborn)
     except Exception as e:
         print(f"[web_bridge] strategy scan failed: {e}", file=sys.stderr)
         return
@@ -560,7 +569,7 @@ def _worker(session_id, entry, slot):
             _running.pop(session_id, None)
         _wake.set()
     sync_portfolio(since=turn_end)
-    sync_strategies(since=turn_end)
+    sync_strategies(since=turn_end, include_newborn=True)
 
 
 def _dispatch():

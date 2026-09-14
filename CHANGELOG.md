@@ -10,6 +10,25 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.76 — 2026-09-14
+
+- FIX (1.1.75): the pre-done chunk auto-opened a just-created strategy, then web_bridge's
+  turn-end push (no `session_id`) ~1s later still hid it as a newborn, so the sidebar redraw
+  dropped the selection until the watcher pushed it back (uid=1: open 415.4s, done 415.9s,
+  hidden 417.1s, back 439s). `sync_strategies` / `_sync_strategies_locked` gain
+  `include_newborn`; only the turn-end call in `_worker` passes True. Watcher and command
+  syncs keep hiding newborns (a file can be mid-write at those moments).
+  The turn-end `since` dedup now only yields to a sync that also included newborns
+  (`_last_full_sync_started`): the watcher can fire between `_running.pop` and the turn-end
+  call (during `sync_portfolio`), and letting that newborn-hiding sync stand in for the
+  turn-end one would bring the bug straight back. The watcher's own fingerprint does fire
+  once for the name afterwards (the turn-end scan puts it in `_seen_names`, so the next
+  `signature()` includes it) — one redundant push that already carries the file.
+  SIDE EFFECT: web_bridge's `_seen_names` is process-wide, so with two turns in parallel,
+  A's turn-end scan can surface a draft B is still writing a few seconds early, and it then
+  stays listed. That push has no `session_id`, so nothing auto-opens; cosmetic only.
+  Check: `tests/check_web_bridge_turn_end_newborn.py`.
+
 ## 1.1.75 — 2026-09-14
 
 - FIX (1.1.74): a strategy the agent created and kept touching until the turn ended (no
