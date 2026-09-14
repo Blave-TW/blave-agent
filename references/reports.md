@@ -10,9 +10,20 @@ The platform pushes a short summary notification once the report is stored, so t
 report reaches the user even when this machine is asleep — never send your own
 Telegram message about a report as well, that duplicates every alert.
 
-**There is no public share link for any report.** If a user asks to share one publicly, say
-reports cannot be shared publicly — do not promise or speculate whether or when that will
-exist, and never point them to a share button.
+**Only a `research` report can be shared publicly, and only by the user.** In the workspace,
+the report's title bar has a 「分享」 button; the user confirms each report on its own (a
+consent checkbox, then confirm) and gets a link `blave.org/<lang>/r/<code>`. What is public is
+a snapshot of the report at that moment: writing the same id again later does not change it.
+While a report is public its title bar shows a public status row instead; once you have
+rewritten it, the workspace adds a notice with a 「檢查後更新公開版本」 button, which updates
+the public version under the same link. They can cancel at any time;
+sharing again after cancelling gives a new link. Deleting the machine or the account revokes
+every public link. `performance` and `morning` reports can never be shared, and a
+research report whose `meta.shareable` is not `true` (§7b B7) shows no share button.
+**You cannot share, update or cancel a report for the user** — there is no API or tool for it
+on this machine; point them to the button. When they ask why a research report has no share
+button, say in one sentence which B7 condition it misses, and offer to rewrite it. Never
+promise view counts, a report-abuse flow, takedown notices or anything else not described here.
 
 §1–§6 are the **format** contract; **§7 is the content bar** — what a report has to
 actually say to be worth reading. A report can satisfy every rule in §1–§6 and still
@@ -566,8 +577,8 @@ section headings in the report's language.
   target, no timing (§1b's levels-are-statistics rule applies to the title too).
   `write_report` copies `title` into
   `meta.title`, so this governs both. *Why:* the title is what the sidebar and the
-  notification show, and for research it would head a shared page (B), where a title past
-  about 50 CJK characters gets cut; 40 leaves room. A topic name tells a reader
+  notification show, and for research it heads the public page when the user shares it
+  (B), where a title past about 50 CJK characters gets cut; 40 leaves room. A topic name tells a reader
   who sees only the title nothing. The api's 1–200 limit (§2) still stands; this is a
   readability cap, not a format rule.
 - **A2. The lead: one falsifiable claim** (§7 rule 1), the `text` block with
@@ -592,12 +603,12 @@ section headings in the report's language.
   report it is the figure behind the lead (「法人淨賣超 367 億」), not the index level: a
   template brief opens on 加權指數 because the template fixes its KPI row, and yours chooses
   its own. *Why:* it is the first figure a
-  reader sees, and a shared page would show it as the key number. A context figure there,
+  reader sees, and a public page shows it as the key number. A context figure there,
   such as a price level or a sample size, advertises a claim it does not support.
 - **A5. The first chart block is the one that shows the claim**, not a context chart. A
   price chart is a `candlestick` (§3); anything else uses its native block. *Why:* it is
-  the first thing a reader looks at, and for research it would be the main image of a
-  shared page.
+  the first thing a reader looks at, and for research it is the main image of a public
+  page.
 - **A6. Key points: one `text` block with 3–5 bullets, each one sentence carrying one
   number** (§7 rule 2, the swap test). *Why:* a reader who stops here should still hold
   the argument.
@@ -615,11 +626,10 @@ section headings in the report's language.
 
 ### B. Research rules — `type: "research"` only
 
-Write a research report as if it will be shared publicly. This is an internal design
-assumption, not something to tell the user (see the top of this page). A shared page would
-be read by someone who never saw the chat, and it would lead with the **title**, the
-**lead**, the **first item of the first `kpi_row`** and the **first chart**, so A1, A2, A4
-and A5 have to carry the claim on their own.
+Write every research report so it can be shared publicly: the user can make it public from
+the workspace (see the top of this page). A public page is read by someone who never saw the
+chat, and it leads with the **title**, the **lead**, the **first item of the first
+`kpi_row`** and the **first chart**, so A1, A2, A4 and A5 have to carry the claim on their own.
 
 - **B1. Findings, not calls: a hard line.** A research report states findings as historical
   statistics and conditions ("in the last 10 launches the median 10-day return was
@@ -629,7 +639,8 @@ and A5 have to carry the claim on their own.
   investment advisory rules, telling that public when or at what price to trade a named
   instrument can amount to running an advisory business without a licence. If the user
   explicitly asks for such a call, write it, but keep it out of the title, the lead and the
-  `kpi_row`, and say in chat that a report carrying it must not be published.
+  `kpi_row`, and set `shareable` to `false` (B7): the workspace then shows no share button
+  for it, and a public version would have to be a rewrite without the call.
 - **B2. Historical only, never connected to today.** A research report states the
   historical finding and stops there. It does not say the condition is being met now
   ("margin has risen for 8 days in a row"), and it does not project the next N days from
@@ -684,12 +695,14 @@ and A5 have to carry the claim on their own.
   section. This is not a word count. A section the data cannot fill says "the data is not
   sufficient to judge X" plus what would settle it (§7 rule 6). That is a complete section;
   padding is not.
-- **B7. `meta.shareable`: an internal marker on every research report.** A boolean on the
+- **B7. `meta.shareable`: the share gate on every research report.** A boolean on the
   `meta` block (`write_report(..., meta={"shareable": ...})`) recording whether the report,
-  as written, meets the research rules in full. The platform only stores it: it creates no
-  link and changes nothing the user can do, so the statement at the top of this page stands.
-  Never mention the flag, or sharing, to the user. Set it on purpose every time; left out,
-  it counts as `false`.
+  as written, meets the research rules in full. Unless it is `true`, the workspace shows no
+  share button and the platform refuses to make the report public. Never name the field to the
+  user; when they ask why a report cannot be shared, say which condition below it misses (a
+  named-instrument call, a reading of today's market, a Marketplace strategy, or a missing
+  evidence-against / robustness / what-would-break section) and offer to rewrite it. Set it
+  on purpose every time; left out, it counts as `false`.
   - **`true`** only when all of these hold: B1 and B2 hold everywhere in the report, not
     only in the title, the lead and the `kpi_row`; B3–B5 are all there; and it cites,
     backtests or describes no strategy sold in the Marketplace (`references/marketplace.md`
@@ -706,15 +719,16 @@ and A5 have to carry the claim on their own.
     earn a `true`.
   - It needs `schema_version` `"1.3"` (§2); `write_report` sets that.
 
-  *Why:* B assumes a research report might one day be read by someone outside the chat.
-  This flag is that judgement in a form a machine can check. A report that names a trade,
+  *Why:* a shared research report is read by people outside the chat, and this flag is
+  the judgement of whether it may be, in a form a machine can check. A report that names a trade,
   reads today's market or promotes a paid strategy whose seller earns a share of each sale
   must never qualify, and a flag that defaults to `false` fails safe.
-- **B8. `meta.involves_futures`: an internal marker, next to `shareable`.** Set it `true`
+- **B8. `meta.involves_futures`: the futures warning, next to `shareable`.** Set it `true`
   when the research uses any futures or perpetual contract as its subject or as data:
   台指期 TXF / MXF / TMF, a crypto perpetual, any other futures contract. Otherwise leave it
-  out. Like B7 it is recorded by the platform, creates nothing the user can see, and is
-  never mentioned to the user. It is set independently of `shareable` (a `false` report
+  out. When the report is shared, the public page adds a futures risk warning above the lead
+  on its own; the author cannot add or remove it. Never name the field to the user. It is
+  set independently of `shareable` (a `false` report
   that uses futures still carries it) and needs `schema_version` `"1.3"`, which
   `write_report` sets.
 

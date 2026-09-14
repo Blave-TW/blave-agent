@@ -67,7 +67,7 @@ _ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 # the uploader's call, and it reports through reports/upload_errors.log.
 _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 FILES_SUFFIX = ".files"
-# ≈ 40 CJK / 80 Latin: a shared page would cut a title at ~50 CJK, so this leaves a margin.
+# ≈ 40 CJK / 80 Latin: the public share page cuts a title at ~50 CJK, so this leaves a margin.
 RESEARCH_TITLE_WIDTH = 80
 
 
