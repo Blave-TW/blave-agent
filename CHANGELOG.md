@@ -8,7 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- portfolio_reporter: payload gains `account_guard` `{venue, account_id_seeded, account_id_supported,
+  last_read_error, last_read_at, pending}` from `state/venue_account.json` + `state/account_id_read.json`
+  (blaveclaw-config reconciler), so a fail-soft account-id read is visible without SSH. Never
+  the id. `null` on a workspace whose reconciler predates the guard.
 
 ## 1.1.72 — 2026-09-12
 

@@ -313,6 +313,34 @@ def halt_state():
     }
 
 
+def account_guard():
+    """The reconciler's account guard (blaveclaw-config manager/reconciler.py):
+    whether an exchange account id is seeded, whether a confirmation is
+    pending, and why the last id read failed. That read is fail-soft — a
+    permission-scoped key just skips the check — so without this a machine
+    that never seeds its id looks the same as one that is protected. Never
+    the id itself. None = a reconciler that predates the guard."""
+    stored = _read_json(os.path.join(WORKSPACE_STATE, "venue_account.json"))
+    read = _read_json(os.path.join(WORKSPACE_STATE, "account_id_read.json"))
+    stored = stored if isinstance(stored, dict) else None
+    read = read if isinstance(read, dict) else None
+    if stored is None and read is None:
+        return None
+    stored, read = stored or {}, read or {}
+    venue = read.get("venue") or stored.get("venue")
+    error = read.get("error") if read.get("venue") == venue else None
+    return {
+        "venue": venue,
+        "account_id_seeded": bool(stored.get("account_id")) and stored.get("venue") == venue,
+        # False = this venue's account lib cannot read an id (only the empty-read
+        # check guards it); None = not recorded yet
+        "account_id_supported": read.get("supported") if read.get("venue") == venue else None,
+        "last_read_error": str(error)[:120] if error else None,
+        "last_read_at": read.get("at"),
+        "pending": bool(stored.get("pending")),
+    }
+
+
 def _halt_denials(since_ts):
     """How many orders the halt has refused since it was tripped.
 
@@ -925,6 +953,7 @@ def build_report():
         # fault. `blocked` turns "stopped" from a claim into something visible —
         # it is the count of orders the switch actually refused.
         "halt": halt_state(),
+        "account_guard": account_guard(),
         # id not present in the dict = no key stored for it. Front end reads
         # this as venues[id] (web/.../workspace.html cxSupport()) — id present
         # with order/account both false = key saved, modules not built yet.
