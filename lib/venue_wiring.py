@@ -114,8 +114,8 @@ def _manifest_filtered_alert(vid):
     try:
         from lib.notify import send_text
         send_text(_MANIFEST_ALERT_MSG)
-    except Exception:
-        logging.error(f"[notify-unavailable] {_MANIFEST_ALERT_MSG}")
+    except Exception as e:
+        logging.error(f"[notify-unavailable] ({e}) {_MANIFEST_ALERT_MSG}")
 
 
 def official_venues(env):

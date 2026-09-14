@@ -38,7 +38,13 @@ def update_state(candle, signal, state, mode, symbol=None, send_telegram_fn=None
     def _log(action):
         logging.info(f"{action} @ {price}")
         if mode == 'live' and send_telegram_fn:
-            send_telegram_fn(f"Signal: {action} @ {price}")
+            # the caller saves state after this returns — a raise here (Telegram
+            # 429 / "chat not found") kept the new position out of state.json and
+            # re-fired the same signal every tick
+            try:
+                send_telegram_fn(f"Signal: {action} @ {price}")
+            except Exception as e:
+                logging.warning(f"[update_state] notification dropped ({e}): {action} @ {price}")
 
     # Close or flip
     if prev_pos != 0 and (new_pos == 0 or new_pos * prev_pos < 0):
@@ -104,7 +110,9 @@ def run_twap(
                          For buy:  slippage = (vwap - signal_price) / signal_price * 10000 bps
                          For sell: slippage = (signal_price - vwap) / signal_price * 10000 bps
                          Positive = worse fill than signal price.
-        send_telegram_fn: optional callable(str) for per-slice + summary Telegram updates
+        send_telegram_fn: optional callable(str) for per-slice + summary Telegram updates.
+                         Best-effort: a raising sender is logged and never stops or
+                         fails a slice.
 
     Returns:
         summary dict (same record written to twap log with type='summary'):
@@ -131,6 +139,14 @@ def run_twap(
     log_path = f"manager/twap/{twap_key}.jsonl"
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
+    def _notify(text):
+        if not send_telegram_fn:
+            return
+        try:
+            send_telegram_fn(text)
+        except Exception as e:
+            logging.warning(f"[twap] notification dropped ({e}): {text}")
+
     interval_s = (duration_min * 60) / n_slices
     slice_qty  = total_qty / n_slices
     start_ts   = datetime.now(timezone.utc).isoformat()
@@ -141,8 +157,7 @@ def run_twap(
 
     msg = f"TWAP start: {side.upper()} {total_qty} {symbol} | {n_slices} slices over {duration_min}m"
     logging.info(msg)
-    if send_telegram_fn:
-        send_telegram_fn(msg)
+    _notify(msg)
 
     for i in range(n_slices):
         if stop_event is not None and stop_event.is_set():
@@ -176,18 +191,17 @@ def run_twap(
             fills.append({"fill_price": fill_price, "fill_qty": fill_qty})
             consec_err = 0
 
-            slip_str  = f" | slip={slippage_bps:+.1f}bps" if slippage_bps is not None else ""
-            slice_msg = f"TWAP {i+1}/{n_slices}: {fill_qty} @ {fill_price}{slip_str}"
-            logging.info(slice_msg)
-            if notify_slices and send_telegram_fn:
-                send_telegram_fn(slice_msg)
-
         except Exception as e:
             record["error"] = str(e)
             consec_err += 1
             logging.error(f"TWAP slice {i+1}/{n_slices} error: {e}")
-            if send_telegram_fn:
-                send_telegram_fn(f"TWAP {i+1}/{n_slices} ERROR: {e}")
+            _notify(f"TWAP {i+1}/{n_slices} ERROR: {e}")
+        else:
+            slip_str  = f" | slip={slippage_bps:+.1f}bps" if slippage_bps is not None else ""
+            slice_msg = f"TWAP {i+1}/{n_slices}: {fill_qty} @ {fill_price}{slip_str}"
+            logging.info(slice_msg)
+            if notify_slices:
+                _notify(slice_msg)
 
         with open(log_path, "a") as f:
             f.write(json.dumps(record) + "\n")
@@ -199,8 +213,7 @@ def run_twap(
             aborted = True
             abort_msg = f"TWAP aborted: {consec_err} consecutive slice failures"
             logging.error(abort_msg)
-            if send_telegram_fn:
-                send_telegram_fn(abort_msg)
+            _notify(abort_msg)
             break
 
         if i < n_slices - 1:
@@ -243,8 +256,7 @@ def run_twap(
     done_word = "stopped" if aborted else "done"
     done_msg = f"TWAP {done_word}: {side.upper()} {total_filled}/{total_qty} {symbol} | VWAP={vwap}{slip_str}"
     logging.info(done_msg)
-    if send_telegram_fn:
-        send_telegram_fn(done_msg)
+    _notify(done_msg)
 
     return summary
 

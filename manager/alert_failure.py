@@ -11,6 +11,7 @@ still appended to strategies/<name>/strategy.log on every crash regardless
 its own too).
 """
 import json
+import logging
 import os
 import sys
 import time
@@ -57,8 +58,8 @@ def alert(strategy_name, exit_code, output):
     try:
         from lib.notify import send_text
         send_text(msg)
-    except Exception:
-        pass  # best-effort — the alerter itself must never crash the cron job
+    except Exception as e:  # best-effort — the alerter itself must never crash the cron job
+        logging.warning(f"[alert_failure] notification dropped ({e})")
 
     json.dump({"last_alert_ts": now}, open(state_path, "w"))
 

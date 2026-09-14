@@ -115,6 +115,7 @@ with the next minute's — see _acquire_lock.
 """
 import importlib.util
 import json
+import logging
 import os
 import re
 import subprocess
@@ -367,8 +368,8 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol):
             f"⚠️ {name}：{expected.strftime('%Y-%m-%d %H:%M')} 那根 K 棒等了 "
             f"{minutes_waited} 分鐘還沒到位{who}，仍在重試，訊號會晚發。"
         )
-    except Exception:
-        pass  # best-effort — the alerter itself must never crash the cron job
+    except Exception as e:  # best-effort — the alerter itself must never crash the cron job
+        logging.warning(f"[wait_for_bar] stale-bar notification dropped ({e})")
 
 
 def _alert_wrapper_error(name, exc):
@@ -398,8 +399,8 @@ def _alert_wrapper_error(name, exc):
         from lib.notify import send_text
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-1500:]
         send_text(f"⚠️ wait_for_bar.py 本身出錯（{name}），排程可能完全停擺：\n\n{tb}")
-    except Exception:
-        pass
+    except Exception as e:
+        logging.warning(f"[wait_for_bar] wrapper-error notification dropped ({e})")
     state["wrapper_error_alerted_at"] = now
     try:
         _save_state(name, {**_default_state(), **state})

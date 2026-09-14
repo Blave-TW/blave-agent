@@ -169,6 +169,26 @@ def make_sender(photo=False):
         return _send_text
 
 
+def safe(send_fn, label="notify"):
+    """Wrap a sender so a failed send is logged at WARNING (with Telegram's
+    HTTP status / description) and swallowed; the wrapper returns True/False.
+
+    For code where the notification is secondary to work that must still
+    happen — a scheduled live strategy saving its state, a daemon writing a
+    fill. When the send IS the task (a digest the agent reports as sent), use
+    the raw sender so the failure surfaces (see _check_response)."""
+    import logging
+
+    def _send(arg):
+        try:
+            send_fn(arg)
+            return True
+        except Exception as e:
+            logging.warning(f"[{label}] notification dropped ({e}): {str(arg)[:200]}")
+            return False
+    return _send
+
+
 def report_photo_web(path, caption=None):
     """Blave Agent (web delivery): mirror an image into the workspace chat as a base64
     'image' chunk, so a backtest/param-scan chart shows up in the conversation. No-op

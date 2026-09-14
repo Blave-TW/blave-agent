@@ -124,7 +124,7 @@ Key rules:
 
 ## Charts (matplotlib)
 
-**Saving a file is not delivering it — you must send the image on whichever surface you are on.** Telegram: `send_photo(path)`. Web workspace: `report_photo_web(path)` (no-op off-web, so calling both is safe). Standard flow: fetch → plot → `plt.savefig(path)` → send. Ad-hoc charts → `tmp/` (workspace-relative — works on both Linux and Windows); strategy artifacts → `strategies/{name}/`. Note: `pnl.png` and `heatmap.png` are auto-sent by `run()` and `plot_heatmap()` on both surfaces; web users also see every image in `strategies/{name}/` on the backtest tab.
+**Saving a file is not delivering it — you must send the image on whichever surface you are on.** Telegram: `send_photo(path)`. Web workspace: `report_photo_web(path)` (no-op off-web, so calling both is safe). Standard flow: fetch → plot → `plt.savefig(path)` → send. Ad-hoc charts → `tmp/` (workspace-relative — works on both Linux and Windows); strategy artifacts → `strategies/{name}/`. Note: `pnl.png` and `heatmap.png` are auto-sent by `run()` and `plot_heatmap()` on both surfaces (if either printed "Telegram send failed", it did not reach Telegram — never tell the user it was sent); web users also see every image in `strategies/{name}/` on the backtest tab.
 
 **Never confuse looking at an image with sending it.** Using `read` on a chart file only feeds it to your own vision — the user never receives it. Only report "sent"/"傳送" after the send actually ran; if it wasn't called, call it before replying.
 

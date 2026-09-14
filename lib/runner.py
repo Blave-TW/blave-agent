@@ -574,6 +574,19 @@ def _drift_flag(config, mode):
                               'at': int(time.time())})
 
 
+def _send_best_effort(send_fn, arg):
+    """Everything this run produced is already on disk when it notifies, so a
+    rejected send (Telegram 429 / "chat not found") must not fail the run: a
+    live tick that raised here never saved its state and re-fired the same
+    signal every tick. Printed as well as logged — the log goes to
+    strategy.log, and the agent must not report a chart it never delivered."""
+    try:
+        send_fn(arg)
+    except Exception as e:
+        logging.warning(f"[runner] notification dropped ({e})")
+        print(f"⚠️ Telegram send failed, nothing was delivered: {e}")
+
+
 def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     """
     Unified runner for Type A and Type C strategies.
@@ -882,8 +895,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         if mode == 'backtest':
             if send_telegram_fn:
                 from lib.notify import send_photo
-                send_photo(str(out_dir / 'pnl.png'))
-                send_telegram_fn(
+                _send_best_effort(send_photo, str(out_dir / 'pnl.png'))
+                _send_best_effort(send_telegram_fn,
                     f"回測完成：{strategy_name}\n"
                     f"Return {total_ret:.1f}%  "
                     f"Sharpe {sharpe:.2f}  "
@@ -908,7 +921,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
         update_state(candle, signal, state, mode,
                      symbol=config.get('SYMBOL', ''),
-                     send_telegram_fn=send_telegram_fn)
+                     send_telegram_fn=(lambda m: _send_best_effort(send_telegram_fn, m))
+                     if send_telegram_fn else None)
         save_state(strategy_name, state)
 
 
@@ -1010,8 +1024,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
         if send_telegram_fn and not quiet:
             from lib.notify import send_photo
-            send_photo(str(out_dir / 'pnl.png'))
-            send_telegram_fn(
+            _send_best_effort(send_photo, str(out_dir / 'pnl.png'))
+            _send_best_effort(send_telegram_fn,
                 f"回測完成：{strategy_name}\n"
                 f"總報酬 {total_ret:.1%}  年化 {ann_ret:.1%}\n"
                 f"Sharpe {sharpe:.2f}  MDD {mdd:.1%}  Trades {n_trades}"

@@ -45,8 +45,8 @@ def _notify_best_effort(msg):
     try:
         from lib.notify import make_sender
         make_sender()(msg)
-    except Exception:
-        logging.error(f"[notify-unavailable] {msg}")
+    except Exception as e:
+        logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
 def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None):
@@ -495,8 +495,8 @@ def _ui_override_alert():
     try:
         from lib.notify import send_text
         send_text(_UI_ALERT_MSG)
-    except Exception:
-        logging.error(f'[notify-unavailable] {_UI_ALERT_MSG}')
+    except Exception as e:
+        logging.error(f'[notify-unavailable] ({e}) {_UI_ALERT_MSG}')
 
 
 def load_portfolio_config():
@@ -863,6 +863,25 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     def _msg(key, default, **kw):
         return msgs.get(key, default).format(**kw)
 
+    # A notification is sent only after its order is in orders.jsonl, and a
+    # failed one (Telegram 429 / "chat not found", or a bad custom template in
+    # messages) is logged and dropped: raising here once lost a real fill from
+    # the ledger and skipped every symbol after it in the round.
+    def _notify(key, default, **kw):
+        if not send_telegram_fn:
+            return
+        try:
+            text = _msg(key, default, **kw)
+        except (KeyError, ValueError, IndexError) as e:
+            logging.error(f"[reconcile] messages template '{key}' is broken "
+                          f"({type(e).__name__}: {e}) — notification not sent for "
+                          f"{kw.get('symbol')}")
+            return
+        try:
+            send_telegram_fn(text)
+        except Exception as e:
+            logging.warning(f"[reconcile] notification dropped ({e}): {key} {kw.get('symbol')}")
+
     # TOCTOU guard (audit #4): a round that STARTED under HALT must never open
     # exposure, even if the user clears the halt mid-round — this round's gate/
     # target were computed from pre-resume state (e.g. resume_wait writes the
@@ -1018,6 +1037,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
 
         failed = False
         legs = []  # per-leg exchange-confirmed fills for orders.jsonl / the web 交易歷史
+        notices = []  # (key, default, kwargs), sent after the ledger write below
         for sub_diff, reduce_only, is_entry in sub_orders:
             leg_threshold = (0 if is_lot_based else
                              _resolve_threshold(threshold, symbol, reduce_only))
@@ -1047,9 +1067,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 log_msg = f"order error {symbol}: {e}"
                 logging.error(log_msg)
                 _record_order_error(symbol, order.get('exchange'), e)
-                if send_telegram_fn:
-                    send_telegram_fn(_msg('order_error', '⚠️ Order failed {symbol}: {error}',
-                                         symbol=symbol, error=e))
+                notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',
+                                {'symbol': symbol, 'error': e}))
                 failed = True
                 break
 
@@ -1126,8 +1145,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
 
             log_dir = 'BUY' if sub_diff > 0 else 'SELL'
             logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {abs(sub_diff):.2f}")
-            if send_telegram_fn:
-                send_telegram_fn(_msg(key, default, symbol=symbol, amount=abs(sub_diff)))
+            notices.append((key, default, {'symbol': symbol, 'amount': abs(sub_diff)}))
 
         # Log whenever ANYTHING filled — a flip whose close leg executed but
         # whose entry leg then failed (or was halted) moved real money; hiding
@@ -1152,5 +1170,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 entry['failed'] = True
             _append_reconciler_log(entry)
             executed.append(order)
+
+        for key, default, kw in notices:
+            _notify(key, default, **kw)
 
     return executed

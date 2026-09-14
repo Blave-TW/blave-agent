@@ -21,6 +21,7 @@ DISCONNECT_HALT_AFTER = 3  # 連續 N 次「認不得」的讀持倉失敗 → �
                            # (暫時性錯誤不計、金鑰被拒立刻 HALT,見 _on_read_failure)
 UNREACHABLE_EVENT_AFTER_S = 1800  # 暫時性錯誤連續這麼久 → exchange_unreachable 事件
 ACCOUNT_GUARD_PATH = 'state/venue_account.json'  # 帳戶守門:交易所帳號 id + 待確認
+ACCOUNT_ID_READ_PATH = 'state/account_id_read.json'  # 最近一次帳號 id 讀取的結果,給平台看
 OUTAGE_PATH = 'state/reconciler_outage.json'  # 進行中的暫時性斷線(重啟後接續計時)
 OUTAGE_STALE_S = 3600  # 存檔的最後一次失敗比這還舊 → 載入時丟掉(daemon 停過一陣子)
 ERROR_NOTIFY_COOLDOWN_S = 3600  # 對帳失敗通知最多每小時一則。計時是 per-process、
@@ -728,6 +729,12 @@ def _read_account_id(venue, env):
         return None
     try:
         fn = getattr(importlib.import_module(f"lib.account_{venue}"), 'get_account_id', None)
+    except ImportError as e:
+        logging.warning(f"[reconciler] account-id check skipped (lib.account_{venue} "
+                        f"unavailable: {e})")
+        _save_account_id_read(venue, False, None)
+        return None
+    try:
         uid = fn(env) if fn else None
     except Exception as e:
         code = getattr(e, 'code', None)
@@ -735,10 +742,29 @@ def _read_account_id(venue, env):
             code = venue_errors.http_status(e)
         logging.warning(f"[reconciler] account-id check skipped ({venue} {type(e).__name__} "
                         f"code={code}): {e} — the empty-read check still runs")
+        _save_account_id_read(venue, True, f"{type(e).__name__} code={code}")
         return None
     if fn and not uid:
         logging.warning(f"[reconciler] account-id check skipped ({venue}: no id returned)")
+    _save_account_id_read(venue, bool(fn), "no id returned" if fn and not uid else None)
     return str(uid) if uid else None
+
+
+def _save_account_id_read(venue, supported, error):
+    """The fail-soft skip above is otherwise visible only over SSH; the
+    portfolio reporter forwards this file. `supported` = the venue's account
+    lib has get_account_id at all, so an unseeded id on a venue without one is
+    not read as a failing guard. Class and code only — an exception message
+    can carry a signed request URL."""
+    try:
+        os.makedirs(os.path.dirname(ACCOUNT_ID_READ_PATH), exist_ok=True)
+        tmp = ACCOUNT_ID_READ_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump({"venue": venue, "supported": supported, "error": error,
+                       "at": int(time.time())}, f)
+        os.replace(tmp, ACCOUNT_ID_READ_PATH)
+    except OSError as e:
+        logging.warning(f"[reconciler] account-id read result not persisted: {e}")
 
 
 def _live(rows):
@@ -851,12 +877,26 @@ from lib.notify import make_sender as _make_sender
 # reconciler must trade for them anyway. No config → log instead of notify;
 # the workspace page is their surface for state.
 try:
-    send_telegram = _make_sender()
+    _raw_send = _make_sender()
 except Exception as _e:
     logging.warning(f"telegram notify unavailable ({_e}) — falling back to log-only")
+    _raw_send = None
 
-    def send_telegram(msg):
+
+def send_telegram(msg):
+    """Never raises. A rejected send (429, "chat not found") inside the main
+    loop's error handler would otherwise escape the loop and exit the process;
+    inside _halt it would replace the error being classified. HALT, order
+    errors and outage events reach the platform through the report payload
+    and events.jsonl, not through this. Inline rather than lib.notify.safe:
+    a workspace update can leave lib/notify.py older than this file."""
+    if _raw_send is None:
         logging.warning(f"[notify-unavailable] {msg}")
+        return
+    try:
+        _raw_send(msg)
+    except Exception as e:
+        logging.warning(f"[reconciler] notification dropped ({e}): {str(msg)[:200]}")
 
 
 HEARTBEAT_PATH = Path('state/heartbeat/reconciler')
