@@ -74,8 +74,8 @@ status("mcpt-2317-20260901")   # 'pending' | 'sent' | 'failed: <reason>' | 'unkn
 write a file, so it must not be a path) — every other rule is enforced downstream,
 where the error message is more precise than anything this side could reproduce. It
 writes the pictures before the JSON, in the order the drop dir requires. For
-`type="research"` it also prints two advisory `WARNING:` lines from the §7b skeleton
-(title too long, no `kpi_row` right after the lead). They never stop the write.
+`type="research"` it also prints advisory `WARNING:` lines from §7b (title too long, no
+`kpi_row` right after the lead, no `meta.shareable` — B7). They never stop the write.
 
 **The write is the finish line.** Once the JSON is in the drop dir the report is
 produced and you are done — tell the user it has been produced and will show up in the
@@ -231,7 +231,7 @@ reads `blave_api_key` / `blave_secret_key` from the workspace `.env` (see `refer
 
 | Field | Type | Notes |
 |---|---|---|
-| `schema_version` | string | `"1.2"` when the report contains a `candlestick` block, `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — a `candlestick` under `"1.1"` is refused. |
+| `schema_version` | string | `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7–B8; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — a `candlestick` under `"1.1"`, or either flag under `"1.1"` / `"1.2"`, is refused. |
 | `id` | string | `[A-Za-z0-9_-]{1,64}`, equal to the file name stem. |
 | `type` | string | `performance` / `morning` / `research` — sidebar grouping. |
 | `title` | string | 1–200 chars. |
@@ -253,10 +253,10 @@ the small print below it — put the measurement basis there).
 
 | Block | Required props | Limits / notes |
 |---|---|---|
-| `meta` | `title`, `report_type`, `generated_at` | **Exactly one, always first.** Optional: `period` `{from, to}` display strings ≤32 (`"08/25"`), `account` `{aum: number, currency}`, `benchmark`, `origin` (`scheduled`/`chat`), `machine`, `extra` (≤3 `{label, value}`). `period` + `account` + `benchmark` + `extra` ≤4 header cells in total. |
+| `meta` | `title`, `report_type`, `generated_at` | **Exactly one, always first.** Optional: `period` `{from, to}` display strings ≤32 (`"08/25"`), `account` `{aum: number, currency}`, `benchmark`, `origin` (`scheduled`/`chat`), `machine`, `extra` (≤3 `{label, value}`), `shareable` and `involves_futures` (booleans, `research` only — §7b B7–B8). `period` + `account` + `benchmark` + `extra` ≤4 header cells in total. |
 | `kpi_row` | `items[{label, value, tone}]` | 1–6 items; **the first is the focus** and renders largest. `label` ≤40, `value` a formatted string, `tone` = `pos`/`neg`/`neutral` (unsigned numbers such as Sharpe or win-rate are `neutral` — a wall of green means nothing). Optional `unit` ≤16, `delta`. |
 | `line_chart` | `series[{name, role, points}]` | 1–4 series; `role` = `primary` (solid, **at most one**) or `benchmark` (dashed); `points` = 1–5000 `[t, v]`, `t` unix seconds int, `v` finite number. Optional `y_unit` (≤8, see *Axis units* below), `bands` (≤2 `{from, to, label}`, unix seconds, label ≤32) and `reflines` (≤4 `{y, label, emphasis}`, `emphasis: true` = red loss level). |
-| `candlestick` | `candles` | 2–120 bars `[t, open, high, low, close]`; `t` unix seconds int, **strictly increasing**; the four prices finite numbers with `low ≤ min(open, close)` and `max(open, close) ≤ high` on every bar. Optional `y_unit` and `reflines` (≤4 horizontal price levels such as the prior 20-day high/low), both exactly as on `line_chart`. No `bands`, no volume pane, no moving-average overlay. The x-axis is one slot per bar, not real time (no weekend or overnight gaps), so it does **not** line up date-for-date with a neighbouring `line_chart` / `drawdown` — expected, not a bug. Needs `schema_version` `"1.2"`. `lib/report_templates.candlestick(title, df, y_unit=…, reflines=…)` builds one from an OHLC DataFrame. |
+| `candlestick` | `candles` | 2–120 bars `[t, open, high, low, close]`; `t` unix seconds int, **strictly increasing**; the four prices finite numbers with `low ≤ min(open, close)` and `max(open, close) ≤ high` on every bar. Optional `y_unit` and `reflines` (≤4 horizontal price levels such as the prior 20-day high/low), both exactly as on `line_chart`. No `bands`, no volume pane, no moving-average overlay. The x-axis is one slot per bar, not real time (no weekend or overnight gaps), so it does **not** line up date-for-date with a neighbouring `line_chart` / `drawdown` — expected, not a bug. Needs `schema_version` `"1.2"` or later. `lib/report_templates.candlestick(title, df, y_unit=…, reflines=…)` builds one from an OHLC DataFrame. |
 | `drawdown` | `points` | 1–5000 `[t, v]`, `v` a **negative percent** (−9.84 = −9.84%). Optional `maxdd` `{value, from, to}` (unix seconds). No unit field — the contract pins this chart to negative percent. |
 | `heatmap` | `variant`, `values` (+ `rows`,`cols` or `labels`) | `variant` = `calendar` (needs `rows` ≤40 years, `cols` ≤20 months — an annual / total column goes in `cols` too) or `matrix` (needs `labels` ≤40, values −1…1). `values` is 2-D, shaped rows×cols / labels×labels; `null` renders as an em-dash (future months, the diagonal). Optional **`emphasis_cols`** (**calendar only**): unique integer indices into `cols` marking the columns to render with added weight — that annual / total column. The web cannot tell which column is the total (`cols` is plain strings and not every calendar has one), so say it here. On a `matrix` heatmap `emphasis_cols` is an unknown prop → refused. |
 | `bar_chart` | `variant` + `items` or `segments` | `variant` = `bars` (`items` ≤60 `{label, value}`, signed, zero axis) or `stacked` (`segments` **2–4** `{label, value}`, value ≥0, normalised into widths). Only four category colours exist, so a 5th segment would repeat one. **Merging the tail into an "Other" segment is your decision, not the web's** — it cannot know which segments to fold or how to say so; fold them here and explain the fold in `caption`. No unit field on either variant. |
@@ -444,7 +444,10 @@ transient failure. Same status code, different channel, opposite handling.
    `reports/<id>.files/` and was written before the report JSON.
 10. A `candlestick` holds 2–120 bars, its `t` strictly increasing, and every bar has
     `low ≤ min(open, close)` and `max(open, close) ≤ high`; it only appears in a report whose
-    `schema_version` is `"1.2"`.
+    `schema_version` is `"1.2"` or `"1.3"`.
+11. `shareable` and `involves_futures` sit only on `meta`, are `true` or `false` (never a
+    string), belong on `type: "research"` only, and only appear in a report whose
+    `schema_version` is `"1.3"`.
 
 ## 7. Content standards — the report has to say something
 
@@ -681,14 +684,48 @@ and A5 have to carry the claim on their own.
   section. This is not a word count. A section the data cannot fill says "the data is not
   sufficient to judge X" plus what would settle it (§7 rule 6). That is a complete section;
   padding is not.
+- **B7. `meta.shareable`: an internal marker on every research report.** A boolean on the
+  `meta` block (`write_report(..., meta={"shareable": ...})`) recording whether the report,
+  as written, meets the research rules in full. The platform only stores it: it creates no
+  link and changes nothing the user can do, so the statement at the top of this page stands.
+  Never mention the flag, or sharing, to the user. Set it on purpose every time; left out,
+  it counts as `false`.
+  - **`true`** only when all of these hold: B1 and B2 hold everywhere in the report, not
+    only in the title, the lead and the `kpi_row`; B3–B5 are all there; and it cites,
+    backtests or describes no strategy sold in the Marketplace (`references/marketplace.md`
+    › *Strategy categories*), whether the user bought it or sells it.
+  - **`false`, always**, when any of these is true: it gives buy / sell timing, a price
+    target, an entry, exit, support or resistance level, or a long / short call on a named
+    instrument — including one the user explicitly asked for (B1's exception); it says a
+    condition is being met now or projects from today (B2); it cites a Marketplace strategy
+    as above (official, shared-with-me and unlisted private strategies do not count); or any
+    of B1–B5 is missing. When unsure, `false`.
+  - `research` only. Leave it off `morning` and `performance`.
+  - The flag records the report; it never changes what you write. B1–B6 apply to every
+    research report whatever the flag says, and you do not drop what the user asked for to
+    earn a `true`.
+  - It needs `schema_version` `"1.3"` (§2); `write_report` sets that.
+
+  *Why:* B assumes a research report might one day be read by someone outside the chat.
+  This flag is that judgement in a form a machine can check. A report that names a trade,
+  reads today's market or promotes a paid strategy whose seller earns a share of each sale
+  must never qualify, and a flag that defaults to `false` fails safe.
+- **B8. `meta.involves_futures`: an internal marker, next to `shareable`.** Set it `true`
+  when the research uses any futures or perpetual contract as its subject or as data:
+  台指期 TXF / MXF / TMF, a crypto perpetual, any other futures contract. Otherwise leave it
+  out. Like B7 it is recorded by the platform, creates nothing the user can see, and is
+  never mentioned to the user. It is set independently of `shareable` (a `false` report
+  that uses futures still carries it) and needs `schema_version` `"1.3"`, which
+  `write_report` sets.
 
 **Order in a research report:** `meta` → lead (A2) → `kpi_row` (A4) → first chart (A5) →
 key points (A6) → 3–5 argument sections (A7) → evidence against (B3) → robustness (B4) →
 what would break this (B5) → `footnote` (A8).
 
 For a `research` report only, `write_report` prints a `WARNING:` (it never refuses) when
-the title is over the A1 cap or when the lead is not followed by a `kpi_row`. Everything
-else here is yours to check, in research and in a hand-written morning report alike.
+the title is over the A1 cap, when the lead is not followed by a `kpi_row`, or when
+`meta.shareable` is missing (B7). Everything else here is yours to check, in research and in
+a hand-written morning report alike.
 
 ## 8. Scheduled reports — a job directory, not a cron line
 
