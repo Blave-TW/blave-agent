@@ -2057,8 +2057,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     await sink.start()
     # 回合級的工具收據(名稱, 受詞)。兜底分類要的是「這一輪有沒有發過工具呼叫」,
-    # 而 had_tool 是每則訊息的區域變數、WebSink._tool_t0 結束時已經被 pop 空,
-    # 兩個都答不了這個問題。順帶是「做到哪」那份摘要的資料源。
+    # 而 WebSink._tool_t0 結束時已經被 pop 空,答不了這個問題。順帶是「做到哪」那份摘要的資料源。
     tool_steps = []
     # 最後一則 is_error 的 ResultMessage:SDK 先把它送給呼叫端、才把錯誤包成例外
     # 拋出,所以這裡抄一份,分類就不必仰賴例外型別有沒有那些欄位。
@@ -2066,9 +2065,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     fault_code = None
     t_start = time.monotonic()
     spent_usd, spent_turns = 0.0, 0
+    is_web = isinstance(sink, WebSink)
+    strat_sig = None
     try:
-        is_web = isinstance(sink, WebSink)
-        strat_sig = None
         for attempt in (1, 2):
             query_iter = sdk.query(prompt=prompt, options=options)
             # Text already delivered as deltas, one entry per content block, so the
@@ -2113,7 +2112,6 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     # 真正的回覆是最後那則(沒有工具呼叫)的文字。用 prompt 禁止旁白
                     # 屢戰屢敗(preset 本來就鼓勵邊做邊講),這裡用結構切,100% 生效。
                     has_tool_use = any(isinstance(b, sdk.ToolUseBlock) for b in msg.content)
-                    had_tool = False
                     for block in msg.content:
                         if isinstance(block, sdk.TextBlock):
                             if has_tool_use:
@@ -2133,20 +2131,15 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                               getattr(block, "input", None)),
                             ))
                             sink.on_tool(block)
-                            had_tool = True
                         # A Stop arrives via the /report response inside on_*; break
                         # at the next block boundary rather than mid-message.
                         if getattr(sink, "interrupted", False):
                             break
                     streamed.clear()
-                    # A tool may have just created a strategy or finished a backtest —
-                    # push the fresh list now (web only) rather than waiting for turn end.
-                    if is_web and had_tool and not getattr(sink, "interrupted", False):
-                        strat_sig = _maybe_push_strategies(sink, strat_sig)
                 elif _USER_MESSAGE is not None and isinstance(msg, _USER_MESSAGE):
                     # 工具結果:SDK 把它包成 user 訊息回流(message_parser 的 case "user"
-                    # 把 tool_result block 解成 ToolResultBlock)。只拿來補收據的耗時,
-                    # 不做任何其他副作用、不碰回覆文字。
+                    # 把 tool_result block 解成 ToolResultBlock)。只拿來補收據的耗時與
+                    # 推策略清單,不碰回覆文字。
                     content = getattr(msg, "content", None)
                     if _DEBUG_MSGS:
                         kinds = type(content).__name__ if isinstance(content, str) else \
@@ -2163,6 +2156,12 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                         for block in content or []:
                             if isinstance(block, _TOOL_RESULT_BLOCK):
                                 on_result(block)
+                    # 推在工具結果之後、不在工具請求時:請求當下工具還沒跑,那一推只會
+                    # 帶到別人的變動、漏掉這一步建的檔,卻掛上這條對話的 session_id。
+                    if is_web and not isinstance(content, str) \
+                            and not getattr(msg, "parent_tool_use_id", None) \
+                            and not getattr(sink, "interrupted", False):
+                        strat_sig = _maybe_push_strategies(sink, strat_sig)
                 elif isinstance(msg, sdk.ResultMessage):
                     print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
                     spent_usd += msg.total_cost_usd or 0
@@ -2242,6 +2241,16 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 # note); the next turn's stale sweep picks it up — but say so.
                 print(f"[agent_turn] 刪不掉 {sysprompt_path}: {e}", file=sys.stderr)
 
+    # done 之前補推:工具結果之後才落地的檔(背景指令、SDK 沒吐工具結果訊息)只剩
+    # 這一推帶得到 session_id——web_bridge 回合末那推不帶,而且晚於 done。
+    # tool_steps 擋掉純聊天回合:strat_sig 起始是 None,不擋就每輪都掃一次、推整份清單。
+    # 讀取類工具也算進 tool_steps,只讀的回合也會比一次 signature()——刻意的,成本很低。
+    # 在 try 外面:這裡拋出去 finalize() 就不跑,前端收不到 done/error 一路轉圈。
+    if is_web and tool_steps and not getattr(sink, "interrupted", False):
+        try:
+            strat_sig = _maybe_push_strategies(sink, strat_sig)
+        except Exception as e:
+            print(f"[agent_turn] pre-done strategy push failed: {e}", file=sys.stderr)
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
     history_text = reply_text

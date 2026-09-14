@@ -8,7 +8,19 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- agent_turn: the mid-turn `strategies` chunk (carries `session_id`) now goes out after each
+  tool RESULT instead of at the tool request, plus once more right before `done` on any web
+  turn that used a tool (skipped when interrupted). Before, a strategy created by the turn's
+  last tool never appeared in a chunk with `session_id` — only in web_bridge's turn-end push,
+  which has no `session_id` and lands after `done`. web_bridge's turn-end / watcher /
+  command pushes stay without `session_id`: the turn-end `since` dedup lets one scan stand in
+  for two sessions that finished back to back, so it cannot be attributed to either.
+  Check: `tests/check_agent_turn_strategies_push.py`.
+  DEPLOY GATE: deploy the web build that reads `session_id` on `strategies` chunks
+  (workspace auto-open per conversation) once the fleet has picked up this runtime. During
+  the few minutes an updater downgrade can put a machine back on an older runtime, a turn's
+  last-tool strategy simply does not auto-open; the older push-at-tool-request timing also
+  brings back its higher odds of another conversation claiming a new name first.
 
 ## 1.1.73 — 2026-09-14
 
