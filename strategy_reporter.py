@@ -362,7 +362,7 @@ def _stats_marker(name, status, deployed=frozenset()):
     return f"{st.st_mtime_ns}:{st.st_size}"
 
 
-def signature():
+def signature(include_newborn=False):
     """Cheap "has the inventory changed" fingerprint: name + status + the stats,
     scan and walk-forward markers above, with no stats.json / scan.json / wf.json parsed. agent_turn
     calls this after every tool step and only pays for scan() when it differs — a 5min strategy's
@@ -376,7 +376,7 @@ def signature():
     return json.dumps(sorted(
         [s["name"], s["status"], _stats_marker(s["name"], s["status"], deployed),
          _scan_marker(s["name"]), _wf_marker(s["name"])]
-        for s in _scan_sources()
+        for s in _scan_sources(include_newborn)
     ))
 
 
@@ -401,14 +401,18 @@ def _is_newborn(name, source_path):
     return 0 <= age < _NEWBORN_GRACE_S
 
 
-def _scan_sources():
+def _scan_sources(include_newborn=False):
     """Enumeration + source parse, WITHOUT reading stats.json. Shared by scan()
     and signature() so the layout rules live in exactly one place.
 
     Handles both layouts: strategies/<name>.py (single file) and
     strategies/<name>/strategy.py (Type C portfolio subdir). Skips the
     TEMPLATE_* scaffolding files (not the user's strategies) and dedupes by
-    name (a name existing as both a .py and a dir shows once, live winning)."""
+    name (a name existing as both a .py and a dir shows once, live winning).
+
+    include_newborn=True turns the newborn grace off. Only for agent_turn's pre-done push:
+    the turn is over, so no tool is still writing the file, and a file the agent kept
+    editing until the end would otherwise stay hidden past done."""
     by_name = {}
     if not os.path.isdir(STRATEGIES_DIR):
         return []
@@ -433,7 +437,8 @@ def _scan_sources():
             continue
         if not s:
             continue
-        if s["name"] not in _seen_names and _is_newborn(s["name"], src_path):
+        if not include_newborn and s["name"] not in _seen_names \
+                and _is_newborn(s["name"], src_path):
             continue
         prev = by_name.get(s["name"])
         # keep the live one if a name shows up twice
@@ -443,11 +448,11 @@ def _scan_sources():
     return list(by_name.values())
 
 
-def scan():
+def scan(include_newborn=False):
     """The full inventory: sources plus each strategy's parsed backtest, parameter
     scan and walk-forward validation (all optional, all absent rather than null when
     missing)."""
-    strategies = _scan_sources()
+    strategies = _scan_sources(include_newborn)
     for s in strategies:
         bt = _read_backtest(s["name"])
         if bt is not None:

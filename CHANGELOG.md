@@ -10,6 +10,18 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.75 — 2026-09-14
+
+- FIX (1.1.74): a strategy the agent created and kept touching until the turn ended (no
+  backtest) still never reached the pre-done `strategies` chunk. `_scan_sources` hides a
+  "newborn" (no stats.json, source mtime < 15s), and `signature()` shares that filter, so the
+  pre-done compare saw no change and pushed nothing; the first push to carry the name was the
+  watcher's, without `session_id` (uid=1: done at 104s, name first seen at 126s).
+  `signature` / `scan` / `_scan_sources` gain `include_newborn=False`; only agent_turn's
+  pre-done push passes True (the turn is over, nothing is still writing the file). Pushes
+  after each tool result, web_bridge's turn-end push and the watcher keep hiding newborns.
+  Check: `tests/check_agent_turn_strategies_push.py` case 7.
+
 ## 1.1.74 — 2026-09-14
 
 - agent_turn: the mid-turn `strategies` chunk (carries `session_id`) now goes out after each

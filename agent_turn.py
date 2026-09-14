@@ -1707,7 +1707,7 @@ def load_agents_md():
         return ""
 
 
-def _maybe_push_strategies(sink, last_sig):
+def _maybe_push_strategies(sink, last_sig, include_newborn=False):
     """Mid-turn: the moment the agent's tools change the strategy inventory (a new
     strategy file, a finished backtest), push the fresh list so the workspace updates
     right away instead of waiting for the whole turn to end. Live SSE chunk only (size-
@@ -1717,14 +1717,14 @@ def _maybe_push_strategies(sink, last_sig):
     skips the multi-MB stats.json parse, and scan() is paid solely when something
     actually moved."""
     try:
-        sig = strategy_reporter.signature()
+        sig = strategy_reporter.signature(include_newborn)
     except Exception as e:
         print(f"[agent_turn] mid-turn strategy signature failed: {e}", file=sys.stderr)
         return last_sig
     if sig == last_sig:
         return last_sig
     try:
-        strategies = strategy_reporter.scan()
+        strategies = strategy_reporter.scan(include_newborn)
     except Exception as e:
         # Keep the old signature so the next step retries this push rather than
         # silently adopting a state the workspace never received.
@@ -2248,7 +2248,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 在 try 外面:這裡拋出去 finalize() 就不跑,前端收不到 done/error 一路轉圈。
     if is_web and tool_steps and not getattr(sink, "interrupted", False):
         try:
-            strat_sig = _maybe_push_strategies(sink, strat_sig)
+            strat_sig = _maybe_push_strategies(sink, strat_sig, include_newborn=True)
         except Exception as e:
             print(f"[agent_turn] pre-done strategy push failed: {e}", file=sys.stderr)
     reply_text = sink.finalize()
