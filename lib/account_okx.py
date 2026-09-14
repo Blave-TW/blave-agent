@@ -17,6 +17,16 @@ from urllib.parse import urlencode
 
 import requests
 
+try:
+    from lib import venue_errors
+except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
+    venue_errors = None
+
+
+def _tag(exc, code=None, http_status=None):
+    return venue_errors.tag(exc, code, http_status) if venue_errors else exc
+
+
 BASE_URL = "https://www.okx.com"
 
 
@@ -64,11 +74,15 @@ def _request(env, method, path, body=None, timeout=10):
     else:
         r = requests.get(f"{BASE_URL}{path}", headers=headers, timeout=timeout)
 
-    data = r.json()
+    try:
+        data = r.json()
+    except ValueError as e:
+        raise _tag(e, http_status=r.status_code)
     code = data.get("code", "")
     if code != "0":
         msg = data.get("msg", "")
-        raise Exception(f"OKX error {code}: {msg} | {method} {path}")
+        raise _tag(Exception(f"OKX error {code}: {msg} | {method} {path}"),
+                               code=code, http_status=r.status_code)
     return data.get("data", [])
 
 
@@ -293,3 +307,34 @@ def get_positions(env: dict) -> list:
         })
 
     return positions
+
+
+# OKX v5 REST error codes (body `code`, a string). 50004 is an endpoint
+# timeout whose outcome is unknown — harmless for a read, which is all the
+# reconciler asks this about. 50119 has been seen arriving with HTTP 401.
+_TRANSIENT = {"50001", "50004", "50005", "50011", "50013", "50026"}
+_CREDENTIAL = {"50007", "50008", "50012", "50027", "50100", "50101", "50105",
+               "50110", "50111", "50113", "50114", "50119", "50120", "50121"}
+_UNKNOWN = {"50009", "50102", "50112"}  # stop-out freeze; clock skew
+
+
+def classify(exc) -> str:
+    """lib.venue_errors TRANSIENT / CREDENTIAL / UNKNOWN for a failed read.
+    Covers this lib's errors and lib/order_okx.OKXError (which carries the
+    HTTP status in `code` for a non-JSON reply — a 5xx there is transient)."""
+    if venue_errors is None:
+        return None  # the reconciler falls back to its own floor
+    code, status = venue_errors.split_status(getattr(exc, "code", None))
+    return venue_errors.classify(exc, code, status, _TRANSIENT, _CREDENTIAL, _UNKNOWN,
+                                 venue_errors.SERVER_ERRORS)
+
+
+def get_account_id(env: dict) -> str:
+    """The OKX account uid the key belongs to (/api/v5/account/config) — lets
+    the reconciler notice a key swapped to a different account. Raises when
+    the field is missing: a silent None would skip that check."""
+    rows = _request(env, "GET", "/api/v5/account/config")
+    uid = (rows[0] if rows else {}).get("uid")
+    if not uid:
+        raise Exception("OKX account/config returned no uid")
+    return str(uid)

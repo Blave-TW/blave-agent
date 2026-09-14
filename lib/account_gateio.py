@@ -19,6 +19,16 @@ import time
 
 import requests
 
+try:
+    from lib import venue_errors
+except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
+    venue_errors = None
+
+
+def _tag(exc, code=None, http_status=None):
+    return venue_errors.tag(exc, code, http_status) if venue_errors else exc
+
+
 HOST = "https://api.gateio.ws"
 PREFIX = "/api/v4"
 
@@ -55,10 +65,10 @@ def _request(env, method, path, query="", body=None, timeout=10):
             err = r.json()
         except ValueError:
             err = {}
-        raise Exception(
+        raise _tag(Exception(
             f"Gate.io error {err.get('label', r.status_code)}: "
             f"{err.get('message', r.text[:120])} | {method} {path}"
-        )
+        ), code=err.get("label"), http_status=r.status_code)
     return r.json()
 
 
@@ -292,3 +302,23 @@ def get_positions(env: dict) -> list:
             "mark_price": mark_px,
         })
     return positions
+
+
+# Gate.io APIv4 error labels (body `label`, with the HTTP status).
+_TRANSIENT = {"INTERNAL", "SERVER_ERROR", "TOO_BUSY", "TOO_MANY_REQUESTS"}
+_CREDENTIAL = {"ACCOUNT_EXCEPTION", "ACCOUNT_LOCKED", "FORBIDDEN", "INVALID_CREDENTIALS",
+               "INVALID_KEY", "INVALID_SIGNATURE", "IP_FORBIDDEN", "MISSING_REQUIRED_HEADER",
+               "READ_ONLY", "SUB_ACCOUNT_LOCKED"}
+# USER_NOT_FOUND is "futures account not opened yet" here (see get_positions), not a bad key
+_UNKNOWN = {"REQUEST_EXPIRED", "USER_NOT_FOUND"}  # clock skew; see above
+
+
+def classify(exc) -> str:
+    """lib.venue_errors TRANSIENT / CREDENTIAL / UNKNOWN for a failed read.
+    Covers this lib's errors and lib/order_gateio.GateioError (an int `code`
+    there is the HTTP status when the reply carried no label)."""
+    if venue_errors is None:
+        return None  # the reconciler falls back to its own floor
+    code, status = venue_errors.split_status(getattr(exc, "code", None))
+    return venue_errors.classify(exc, code, status, _TRANSIENT, _CREDENTIAL, _UNKNOWN,
+                                 venue_errors.SERVER_ERRORS)

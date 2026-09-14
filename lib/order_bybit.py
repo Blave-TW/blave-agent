@@ -51,7 +51,13 @@ _CANCEL_GONE_CODE = 110001
 
 
 class BybitError(Exception):
-    pass
+    """code = Bybit retCode and http_status = HTTP status, when known —
+    lib/account_bybit.classify reads them."""
+
+    def __init__(self, *args, code=None, http_status=None):
+        super().__init__(*args)
+        self.code = code
+        self.http_status = http_status
 
 
 class OrderNotConfirmed(Exception):
@@ -192,9 +198,11 @@ def _send(env, method, path, params=None, body=None, retries=3):
             msg = msg.replace(api_key, "***")
         if code == 10006 and attempt < retries - 1:  # rate limited — back off
             time.sleep(1 + attempt * 2)
-            last_err = BybitError(f"bybit {path} retCode={code}: {msg}")
+            last_err = BybitError(f"bybit {path} retCode={code}: {msg}",
+                                  code=code, http_status=r.status_code)
             continue
-        raise BybitError(f"bybit {path} retCode={code}: {msg}")
+        raise BybitError(f"bybit {path} retCode={code}: {msg}",
+                         code=code, http_status=r.status_code)
     raise last_err
 
 
@@ -219,7 +227,8 @@ def _public(path, params):
     r.raise_for_status()
     body = r.json()
     if body.get("retCode") != 0:
-        raise BybitError(f"bybit {path} retCode={body.get('retCode')}: {body.get('retMsg')}")
+        raise BybitError(f"bybit {path} retCode={body.get('retCode')}: {body.get('retMsg')}",
+                         code=body.get("retCode"), http_status=r.status_code)
     return body.get("result") or {}
 
 

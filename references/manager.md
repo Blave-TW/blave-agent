@@ -93,7 +93,14 @@ Polls every 5 seconds; only reconciles when a strategy's `state.json` mtime chan
 
 **Wiring exchange order libraries (required, not optional):** `get_positions()` and `place_order()` must call into a `lib/order_*.py` helper — never remain as `raise NotImplementedError`. When writing a new order library, immediately update `reconciler.py` to import and call it in the same session.
 
-**Auto-halt on exchange disconnect:** `reconciler.py` wraps `get_positions()` in `_get_positions_guarded()`, which counts consecutive failures (`DISCONNECT_HALT_AFTER = 3`) and calls `guard.trip_halt()` once that's hit — the reasoning is that a failed `get_positions()` means the exchange link itself is unreachable (bad/revoked key, IP unwhitelisted, outage), not a single order being rejected (which `reconcile()` already handles per-order without halting). This only ever halts, never auto-clears — same as every other halt, only the user resumes it. Applies uniformly to every exchange without needing a shared exception type, since it keys off `get_positions()` failing at all rather than inspecting the error — **one deliberate exemption (2026-08-14):** `CapitalCacheLagError` (capital's Read-Your-Writes guard, see `_capital_check_snapshot_caught_up` — the worker snapshot hasn't caught up to this process's own last capital order yet, a bounded ≤60s self-resolving condition, not a disconnect) is excluded from the counter. Keep this list short — a second exemption is a sign the counter design needs rethinking, not another special case.
+**Auto-halt on exchange disconnect:** `reconciler.py` wraps `get_positions()` in `_get_positions_guarded()`, which classifies every failed read with the bound venue's `lib/account_<venue>.classify(exc)` (shared floor: `lib/venue_errors.py`) — body error code first, HTTP status as fallback, tables taken from each venue's official error-code docs (never from ccxt's maps, which disagree with the docs):
+- **TRANSIENT** — venue busy / down / rate-limited, timeouts, connection errors, HTTP 408/429/502/503/504. The round is skipped (no orders at all) and the failure neither counts toward nor resets the halt counter. After 30 minutes of continuous failure the machine emits one `exchange_unreachable` event (the platform notifies the user); when reads come back after that, `exchange_recovered`. It never halts: a 15-minute OKX `50001`/`50013` spell used to halt a live account until the user noticed, four days later.
+- **CREDENTIAL** — key invalid / revoked / expired, IP or permission refused, HTTP 401. HALT at once; only the user can fix a key.
+- **UNKNOWN** — everything else, including clock-skew codes, Capital and paper errors. Counted: `DISCONNECT_HALT_AFTER = 3` consecutive → HALT. Each one is logged with venue, exception class and code; grow a venue's table only from a code seen there AND documented by the venue.
+
+A good read resets the counter and the outage clock. `CapitalCacheLagError` (capital's Read-Your-Writes guard, `_capital_check_snapshot_caught_up`) is TRANSIENT, retried on the next poll instead of the 5-minute heartbeat, and neither opens an outage nor re-arms the account guard below. A venue lib without `classify` gets only the agnostic floor (network errors and HTTP status). Never catch-and-return `{}` in `get_positions()` — the classifier can only judge exceptions it sees.
+
+**Account guard** (what "halt on any failure" used to protect): an empty positions read after the key moved to another account makes `reconcile()` re-buy the whole target. So at three moments — reconciler start (the web's start-trading button restarts it), the first good read after any failed read, and any change of the venue credentials in `.env` (compared as an in-memory hash, never stored) — the read must pass before anything trades that round: (a) previous actual (`manager/last_reconcile.json`) non-empty AND current target non-empty AND this read empty → HALT; (b) OKX / Bybit / BingX only: the exchange account id (`get_account_id`) differs from the one in `state/venue_account.json` → HALT (the first id seen is stored, not halted on). A trip is stored as `pending` in that file and the reconciler places nothing — reduce legs included — while HALT stands; the user clearing HALT is the confirmation (the new account id is adopted). An error on the account-id call is classified like a positions error and the check stays due. The reconciler never clears a HALT; only the user resumes.
 
 **Qty precision (most common cause of rejected orders):** before placing any order, the order library must know the symbol's qty step, min qty, and min notional — fetch them from the exchange and cache at startup:
 
@@ -167,9 +174,13 @@ offer 「等新訊號才進場」 while the in-memory reconciler still runs the 
 code with no gate support: the gate gets written, HALT clears, and the old
 loop catches up at market against the user's explicit choice. Whenever
 `lib/` or `manager/` files are updated on a machine, restart the reconciler
-in the same session (`tmux kill-session -t reconciler` + the start wrapper,
-or `restart_reconciler` from the web) before telling the user anything is
-enabled.
+in the same session — if it is running; never start a stopped one — through
+its supervisor (*Linux — check for the systemd unit FIRST* / *Windows — NSSM
+service* below; `tmux kill-session` does not stop a systemd-supervised daemon)
+before telling the user anything is enabled. `references/updating.md` carries
+this as a step of every update. Also why a daemon that tripped its own HALT
+needs the restart once: builds before `guard.release_memory_halt` keep that
+HALT in memory after the web resume removes the file.
 
 **Fail-loud guard:** with `self_ledger` on and no baseline in
 `manager/ledger_seed.json` (seed_ledger.py never run, or the file corrupt),

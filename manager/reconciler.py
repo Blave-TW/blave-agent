@@ -1,10 +1,11 @@
-import logging, os, sys, time
+import hashlib, importlib, json, logging, os, sys, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib import guard
-from lib.portfolio import reconcile, load_portfolio_config, strategy_amounts
+from lib import events, guard, venue_errors
+from lib.portfolio import (reconcile, load_portfolio_config, strategy_amounts,
+                           aggregate_portfolio)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
@@ -16,7 +17,12 @@ MIN_ORDER_TTL_S = 60  # how long a symbol's venue minimum stays cached: the LOT
                       # is not (it is the lot valued at mark). Shorter than the
                       # heartbeat on purpose — this dedupes the lookups WITHIN
                       # a round, it is not a cross-round cache
-DISCONNECT_HALT_AFTER = 3  # 連續 N 次讀不到持倉=交易所鏈路斷了,自動 HALT
+DISCONNECT_HALT_AFTER = 3  # 連續 N 次「認不得」的讀持倉失敗 → 自動 HALT
+                           # (暫時性錯誤不計、金鑰被拒立刻 HALT,見 _on_read_failure)
+UNREACHABLE_EVENT_AFTER_S = 1800  # 暫時性錯誤連續這麼久 → exchange_unreachable 事件
+ACCOUNT_GUARD_PATH = 'state/venue_account.json'  # 帳戶守門:交易所帳號 id + 待確認
+OUTAGE_PATH = 'state/reconciler_outage.json'  # 進行中的暫時性斷線(重啟後接續計時)
+OUTAGE_STALE_S = 3600  # 存檔的最後一次失敗比這還舊 → 載入時丟掉(daemon 停過一陣子)
 ERROR_NOTIFY_COOLDOWN_S = 3600  # 對帳失敗通知最多每小時一則。計時是 per-process、
                                # 不分錯誤種類(一小時內換一種失敗也一樣被壓下,
                                # log 與 workspace 的 order_errors 照記):失敗會
@@ -461,50 +467,382 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                           contributors=contributors)
 
 
-# 這層包裝是基礎設施,交易所無關——實作 get_positions() 時不用碰它。
+# ── 讀持倉失敗怎麼辦 + 帳戶守門 (references/manager.md § Auto-halt) ──────────
+# 基礎設施,交易所無關——實作 get_positions() 時不用碰它。
+#
+# 失敗分三類(lib/venue_errors,各 lib/account_<venue>.classify 帶自己的碼表):
+# TRANSIENT 跳過本輪、計數器不動、不 HALT(uid 8232 2026-09-09:OKX 50001/50013
+# 十五分鐘就被舊的「任何失敗連三次」HALT,擋了四天進場);CREDENTIAL 立刻 HALT;
+# UNKNOWN 照舊連續 DISCONNECT_HALT_AFTER 次才 HALT。HALT 只掛不解,只有用戶能 resume。
+#
+# 舊的「任何失敗都算」同時擋掉一個真危險:讀到空持倉(金鑰換到另一個帳戶/空帳戶),
+# reconcile 會把整份 target 重新買一次。暫時性錯誤不再 HALT 之後,這個危險改由帳戶
+# 守門明確擋:在「啟動、斷線後第一次讀成功、金鑰指紋變了」這三個時點,讀數通過
+# 守門之前本輪不下任何單。
 _consecutive_failures = 0
+_guard_due = True  # 啟動那一輪就是時點
+_key_fp = None
 
 
-def _get_positions_guarded():
-    """Auto-halt on exchange disconnect (references/manager.md § Auto-halt).
+class ReadSkipped(Exception):
+    """This round has no position read it may act on — place nothing.
+    `original` is the transient error behind it (None for an account-guard
+    hold); the main loop picks the retry cadence from it."""
 
-    get_positions() 失敗=交易所鏈路本身不通(壞/撤銷金鑰、IP 白名單、斷線),
-    不是單筆下單被拒(那由 reconcile() 逐單處理、不掛 halt)。連續
-    DISCONNECT_HALT_AFTER 次就 trip_halt——看不到真實持倉還繼續開新倉,
-    等於矇著眼下單;金鑰消失期間尤其危險(連線恢復那刻會把整份 target
-    重新買一次)。只掛不自動解:跟所有 halt 一樣,只有用戶能 resume。
+    def __init__(self, msg, original=None):
+        super().__init__(msg)
+        self.original = original
 
-    EXEMPTION (2026-08-14): CapitalCacheLagError is the one exception type
-    excluded from the counter — it means "our own snapshot hasn't caught up
-    yet" (bounded ≤60s, self-resolving), not "the link is down". This is a
-    deliberate, narrowly-scoped deviation from references/manager.md's stated
-    "no shared exception type needed" design — update that doc if this
-    exemption list ever grows."""
+
+def _read_env():
+    from lib.venue_wiring import read_env
+    return read_env()
+
+
+def _current_venue():
+    """Venue id for classification, events and the account guard. Resolved
+    only on failure / guard rounds: detect_venue logs a WARNING per call on a
+    multi-venue machine, and this loop polls every 5s."""
+    if _is_capital_routed():
+        return 'capital'
+    from lib.venue_wiring import detect_venue
+    return detect_venue(_read_env())
+
+
+def _key_fingerprint(env):
+    """sha256 of the venue credential values. Only the digest is kept, and
+    only in memory — startup is itself a guard trigger, so nothing persists."""
+    h = hashlib.sha256()
+    for k in sorted(env):
+        ku = k.upper()
+        if ku.startswith('BLAVE_'):
+            continue
+        if ku.endswith(('_API_KEY', '_SECRET_KEY', '_API_SECRET', '_PASSPHRASE', '_PASSWORD')):
+            h.update(f"{ku}={env[k]}\n".encode())
+    return h.hexdigest()
+
+
+def _classify(venue, exc):
+    if isinstance(exc, CapitalCacheLagError):
+        return venue_errors.TRANSIENT
+    fn = None
+    if venue:
+        try:
+            fn = getattr(importlib.import_module(f"lib.account_{venue}"), 'classify', None)
+        except ImportError as e:
+            logging.warning(f"[reconciler] lib.account_{venue} unavailable for classify ({e})")
+    try:
+        # a lib without venue_errors (partial update) answers None → the floor
+        return (fn(exc) if fn else None) or venue_errors.classify(exc)
+    except Exception as e:
+        logging.warning(f"[reconciler] classify failed ({e}) — treating as unknown")
+        return venue_errors.UNKNOWN
+
+
+_halt_file_seen = False
+
+
+def _halt(reason, message, retrip=False):
+    """Trip HALT once; True when this call tripped it. retrip=True rewrites the
+    reason of a HALT the reconciler itself tripped (an account-guard trip: the
+    user must read THIS reason before resuming, since clearing the HALT is what
+    confirms the account) — never anyone else's: a user's stop (web / flatten /
+    chat) keeps its source, or the platform reads it as an automatic P1."""
+    global _halt_file_seen
+    if guard.halted():
+        if not retrip or (guard.halt_info() or {}).get('source') != 'reconciler':
+            return False
+    guard.trip_halt(reason, 'reconciler')  # raises if the file did not land
+    _halt_file_seen = True
+    send_telegram(message)
+    return True
+
+
+def _sync_halt_flag(halt_mtime):
+    """Called every poll with state/HALT's mtime (0 = absent). trip_halt in
+    THIS process also sets guard's in-memory flag, and the web resume clears
+    only the file (it runs in the command listener) — so once the file this
+    process saw is gone, drop our copy too, or 啟動下單 on a live daemon
+    silently changes nothing. Never-seen files (a trip whose write failed on a
+    full disk) keep the flag: that is what the flag exists for."""
+    global _halt_file_seen
+    if halt_mtime:
+        _halt_file_seen = True
+    elif _halt_file_seen:
+        _halt_file_seen = False
+        if guard.halted():
+            logging.info("[reconciler] HALT removed by another process — resuming")
+            guard.release_memory_halt()
+
+
+def _blank_outage():
+    return {"since": None, "venue": None, "announced": False, "last": None}
+
+
+def _load_outage(now=None):
+    """The outage a restarted process inherits: its start and whether
+    exchange_unreachable already went out — so a watchdog restart mid-outage
+    neither re-emits it nor loses the exchange_recovered that should follow.
+    A save whose last failure is older than OUTAGE_STALE_S is dropped: the
+    daemon was down, and the link state since then is unknown."""
+    now = time.time() if now is None else now
+    try:
+        with open(OUTAGE_PATH) as f:
+            doc = json.load(f)
+        since, last = float(doc['since']), float(doc.get('last') or doc['since'])
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return _blank_outage()
+    if now - last > OUTAGE_STALE_S:
+        return _blank_outage()
+    return {"since": since, "venue": doc.get('venue'),
+            "announced": bool(doc.get('announced')), "last": last}
+
+
+_outage = _load_outage()
+
+
+def _save_outage():
+    try:
+        if _outage['since'] is None:
+            if os.path.exists(OUTAGE_PATH):
+                os.remove(OUTAGE_PATH)
+            return
+        os.makedirs(os.path.dirname(OUTAGE_PATH), exist_ok=True)
+        tmp = OUTAGE_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(_outage, f)
+        os.replace(tmp, OUTAGE_PATH)
+    except OSError as e:
+        logging.warning(f"[reconciler] outage state not persisted: {e}")
+
+
+def _reset_outage():
+    had = _outage['since'] is not None
+    _outage.update(_blank_outage())
+    if had:
+        _save_outage()
+
+
+def _on_read_failure(venue, exc, kind, now):
+    global _consecutive_failures, _guard_due
+    if isinstance(exc, CapitalCacheLagError):
+        # our own snapshot lagging our own order (≤60s) — not a link failure,
+        # so it neither opens an outage nor re-arms the account guard
+        logging.info(f"[reconciler/capital] {exc}")
+        return
+    _guard_due = True  # the next good read is checked before anything trades on it
+    code = getattr(exc, 'code', None)
+    if code is None:
+        code = venue_errors.http_status(exc)
+    what = f"{venue or '?'} {type(exc).__name__} code={code}"
+    if kind == venue_errors.TRANSIENT:
+        # only a transient error is an "outage": that clock is what
+        # exchange_unreachable ("will pick up by itself") reports on
+        if _outage['since'] is None:
+            _outage.update(since=now, venue=venue)
+        _outage['last'] = now
+        minutes = int((now - _outage['since']) // 60)
+        logging.warning(f"get_positions transient failure ({what}, {minutes} min into "
+                        f"the outage) — round skipped: {exc}")
+        # not while halted: that event tells the user trading resumes by itself
+        if not _outage['announced'] and not guard.halted() \
+                and now - _outage['since'] >= UNREACHABLE_EVENT_AFTER_S:
+            _outage.update(announced=True, venue=venue)
+            events.emit("exchange_unreachable", venue=venue, minutes=minutes,
+                        code=None if code is None else str(code))
+        _save_outage()
+        return
+    if kind == venue_errors.CREDENTIAL:
+        logging.error(f"get_positions: the venue rejected the API key ({what}): {exc}")
+        _halt(f"the exchange rejected the API key / permission ({venue} {code})",
+              f"🚨 HALT engaged: the exchange rejected the API key / permission "
+              f"({venue} {code}) — fix or rebind the key, then resume")
+        return
+    _consecutive_failures += 1
+    # every unclassified error is logged with venue + class + code: this line is
+    # where a venue's TRANSIENT/CREDENTIAL table grows from
+    logging.error(f"get_positions failed ({_consecutive_failures}/{DISCONNECT_HALT_AFTER}), "
+                  f"unclassified {what}: {exc}")
+    if _consecutive_failures >= DISCONNECT_HALT_AFTER:
+        last = f"{venue or '?'} {code if code is not None else type(exc).__name__}: {exc}"[:120]
+        _halt(f"{_consecutive_failures} consecutive position-read errors the bot could "
+              f"not classify (last: {last})",
+              f"🚨 HALT engaged: {_consecutive_failures} consecutive position-read errors "
+              f"the bot could not classify (last: {last}) — check the error, then resume")
+
+
+def _on_read_success(now):
     global _consecutive_failures
+    if _outage['announced']:
+        events.emit("exchange_recovered", venue=_outage['venue'],
+                    minutes=int((now - _outage['since']) // 60))
+    _consecutive_failures = 0
+    _reset_outage()
+
+
+def _load_account_guard():
+    try:
+        with open(ACCOUNT_GUARD_PATH) as f:
+            doc = json.load(f)
+        return doc if isinstance(doc, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+# Memory is authoritative in-process: a failed write (full disk) must not drop
+# a pending confirmation and let the next round trade the unconfirmed account.
+_account_guard = _load_account_guard()
+
+
+def _save_account_guard(state):
+    global _account_guard
+    _account_guard = state
+    try:
+        os.makedirs(os.path.dirname(ACCOUNT_GUARD_PATH), exist_ok=True)
+        tmp = ACCOUNT_GUARD_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(state, f)
+        os.replace(tmp, ACCOUNT_GUARD_PATH)
+    except OSError as e:
+        logging.warning(f"[reconciler] account guard state not persisted: {e}")
+
+
+def _last_actual():
+    """The previous round's actual: reconcile() writes it before placing and a
+    skipped round never reaches that write, so this is the last GOOD read."""
+    try:
+        with open('manager/last_reconcile.json') as f:
+            return json.load(f).get('actual') or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _read_account_id(venue, env):
+    """Exchange account id for venues whose account lib ships get_account_id
+    (OKX / Bybit / BingX), or None. FAIL-SOFT: any error or an empty id is
+    logged and returns None — that skips only the account-id check for this
+    trigger. It never counts as a read failure and never halts: those
+    endpoints are unverified with real keys, and a permission-scoped key
+    (OKX 50120, Bybit 10005) must not stop a machine whose positions read fine."""
+    if not venue:
+        return None
+    try:
+        fn = getattr(importlib.import_module(f"lib.account_{venue}"), 'get_account_id', None)
+        uid = fn(env) if fn else None
+    except Exception as e:
+        code = getattr(e, 'code', None)
+        if code is None:
+            code = venue_errors.http_status(e)
+        logging.warning(f"[reconciler] account-id check skipped ({venue} {type(e).__name__} "
+                        f"code={code}): {e} — the empty-read check still runs")
+        return None
+    if fn and not uid:
+        logging.warning(f"[reconciler] account-id check skipped ({venue}: no id returned)")
+    return str(uid) if uid else None
+
+
+def _live(rows):
+    """True when any row holds something. auto_get_positions returns a size-0
+    row for every flat spot-scoped symbol, and a gated target is excluded from
+    the diff — neither counts."""
+    return any(isinstance(v, dict) and float(v.get('size') or 0) > 0 and not v.get('gated')
+               for v in (rows or {}).values())
+
+
+def account_guard_decide(state, venue, account_id, prev_actual, target, actual, halted):
+    """Pure. Returns (new_state, reason, fresh): reason = why this round must
+    place nothing (None = trade on); fresh = a new trip, vs one still waiting.
+
+    A trip stores `pending` and holds every round while HALT stands — HALT
+    alone still lets reduce legs through, and those would trade an account
+    nobody has confirmed. The user clearing HALT IS the confirmation: the
+    pending account id is adopted and the empty-read check is not re-run that
+    round (the snapshot it compares against is still pre-trip, so it would
+    re-trip on every resume otherwise).
+
+    The empty-read check is also skipped while someone else's HALT stands: the
+    user already stopped trading, and 全部平倉 empties the account under a HALT
+    while last_reconcile.json still holds the pre-flatten actual."""
+    state = dict(state or {})
+    pending = state.pop('pending', None)
+    confirmed = False
+    if pending:
+        if halted:
+            state['pending'] = pending
+            return state, pending.get('reason') or 'awaiting account confirmation', False
+        confirmed = True
+        if pending.get('account_id') and pending.get('venue') == venue:
+            state.update(venue=venue, account_id=pending['account_id'])
+    if account_id is not None:
+        if state.get('venue') != venue or not state.get('account_id'):
+            state.update(venue=venue, account_id=account_id)
+        elif str(state['account_id']) != str(account_id):
+            reason = "exchange account changed — confirm the account before resuming"
+            state['pending'] = {'reason': reason, 'venue': venue, 'account_id': account_id}
+            return state, reason, True
+    if not confirmed and not halted and _live(prev_actual) and _live(target) \
+            and not _live(actual):
+        reason = ("positions read back empty while strategies still hold targets — "
+                  "confirm this is the right account and that the positions were "
+                  "closed on purpose, then resume")
+        state['pending'] = {'reason': reason, 'venue': venue}
+        return state, reason, True
+    return state, None, False
+
+
+def _get_positions_guarded(now=None):
+    """reconcile()'s get_positions_fn: the read plus failure classification,
+    the outage events and the account guard. Raises ReadSkipped for a round
+    that must place nothing without counting as a failure."""
+    global _guard_due, _key_fp
+    now = time.time() if now is None else now
+    env = _read_env()
+    fp = _key_fingerprint(env)
+    if fp != _key_fp:
+        if _key_fp is not None:
+            logging.info("[reconciler] exchange credentials changed — account guard due")
+        _key_fp, _guard_due = fp, True
+    check = _guard_due or bool(_account_guard.get('pending'))
     try:
         result = get_positions()
-        _consecutive_failures = 0
-        return result
-    except CapitalCacheLagError as e:
-        # Read-Your-Writes guard tripped, not a connectivity failure (see
-        # CapitalCacheLagError docstring) — leave _consecutive_failures
-        # untouched (neither incremented nor reset) so a genuinely concurrent
-        # disconnect elsewhere still counts correctly; this self-resolves
-        # within one more worker cycle (≤60s) without help from this counter.
-        logging.info(f"[reconciler/capital] {e}")
-        raise
     except Exception as e:
-        _consecutive_failures += 1
-        logging.error(
-            f"get_positions failed ({_consecutive_failures}/{DISCONNECT_HALT_AFTER}): {e}")
-        if _consecutive_failures >= DISCONNECT_HALT_AFTER and not guard.halted():
-            guard.trip_halt(
-                f"exchange unreachable ({_consecutive_failures} consecutive "
-                f"get_positions failures)", "reconciler")
-            send_telegram(
-                f"🚨 HALT engaged: get_positions() failed {_consecutive_failures} "
-                f"times — exchange may be unreachable")
+        venue = None
+        try:
+            venue = _current_venue()
+        except Exception as ve:
+            logging.warning(f"[reconciler] venue lookup failed ({ve})")
+        kind = _classify(venue, e)
+        _on_read_failure(venue, e, kind, now)
+        if kind == venue_errors.TRANSIENT:
+            raise ReadSkipped(f"transient {venue} read error — round skipped ({e})",
+                              original=e) from e
         raise
+    _on_read_success(now)
+    if not check:
+        return result
+    venue = None
+    try:
+        venue = _current_venue()
+    except Exception as ve:
+        logging.warning(f"[reconciler] venue lookup failed ({ve}) — account-id check skipped")
+    account_id = _read_account_id(venue, env)
+    state, reason, fresh = account_guard_decide(
+        _account_guard, venue, account_id, _last_actual(), aggregate_portfolio(), result,
+        guard.halted())
+    if state != _account_guard:
+        _save_account_guard(state)
+    _guard_due = False
+    if reason:
+        if fresh:
+            logging.error(f"[reconciler] account guard tripped on {venue}: {reason} "
+                          f"(stored={_account_guard.get('account_id')}, read={account_id})")
+            if not _halt(reason, f"🚨 HALT engaged: {reason}", retrip=True):
+                # someone else's HALT stands and keeps its source; still say why
+                # resuming now also confirms the account
+                send_telegram(f"⚠️ {reason} (trading is already stopped — resuming "
+                              f"confirms this account)")
+        raise ReadSkipped(f"account guard: {reason}")
+    return result
 
 
 from lib.notify import make_sender as _make_sender
@@ -565,6 +903,8 @@ if __name__ == '__main__':
 
         # 沒綁交易所就整輪跳過 —— 見 _venue_bound。轉態時各記一行,不刷 log。
         if not _venue_bound():
+            # an unbind mid-outage must not carry its clock into the next bind
+            _reset_outage()
             if not _idle_logged:
                 logging.info("[reconciler] no venue bound — idling (no positions "
                              "read, no orders, no notifications) until one is bound")
@@ -584,6 +924,7 @@ if __name__ == '__main__':
             logging.error(f"[reconciler] state scan failed: {e}")
             time.sleep(POLL_INTERVAL)
             continue
+        _sync_halt_flag(current_mtimes.get('__halt__', 0))
         changed = [k for k in current_mtimes if current_mtimes[k] != last_mtimes.get(k)]
         heartbeat_due = time.time() - last_reconcile_at > RECONCILE_EVERY_S
 
@@ -604,17 +945,27 @@ if __name__ == '__main__':
                 force_next = bool(orders)
                 last_mtimes = current_mtimes
                 last_reconcile_at = time.time()
-            except CapitalCacheLagError as e:
-                # Read-Your-Writes guard, not a real failure (see class
-                # docstring) — deliberately the OPPOSITE handling of the
-                # generic except below: do NOT advance last_mtimes /
-                # last_reconcile_at, so whatever triggered this round
-                # (changed state, or force_next from the order that caused
-                # the lag) fires again next poll tick instead of being
-                # silently deferred up to RECONCILE_EVERY_S. No Telegram —
-                # this is an expected, self-resolving (≤60s) condition, not
-                # something to page the user for.
-                logging.info(f"[reconciler] round skipped: {e}")
+            except ReadSkipped as e:
+                if isinstance(e.original, CapitalCacheLagError):
+                    # Read-Your-Writes guard, not a real failure (see class
+                    # docstring) — deliberately do NOT advance last_mtimes /
+                    # last_reconcile_at, so whatever triggered this round
+                    # (changed state, or force_next from the order that caused
+                    # the lag) fires again next poll tick instead of being
+                    # silently deferred up to RECONCILE_EVERY_S. No Telegram —
+                    # this is an expected, self-resolving (≤60s) condition, not
+                    # something to page the user for.
+                    logging.info(f"[reconciler] round skipped: {e.original}")
+                else:
+                    # Exchange busy/down, or an account-guard hold. No Telegram:
+                    # the 30-min exchange_unreachable event / the HALT message
+                    # are the user's signal. Back to heartbeat cadence —
+                    # force_next too, or a transient right after a fill would
+                    # retry every poll tick.
+                    logging.info(f"[reconciler] round skipped: {e}")
+                    force_next = False
+                    last_mtimes = current_mtimes
+                    last_reconcile_at = time.time()
             except Exception as e:
                 logging.error(f"[reconciler] ERROR: {e}")
                 # 冷卻:失敗會一直失敗到有人處理,每 5 分鐘一則只是洗版。訊息寫成

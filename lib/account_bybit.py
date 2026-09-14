@@ -27,6 +27,16 @@ import time
 
 import requests
 
+try:
+    from lib import venue_errors
+except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
+    venue_errors = None
+
+
+def _tag(exc, code=None, http_status=None):
+    return venue_errors.tag(exc, code, http_status) if venue_errors else exc
+
+
 HOST = "https://api.bybit.com"
 RECV_WINDOW = "5000"
 BROKER_REFERER = "Ue001036"  # broker attribution — mandatory on every request
@@ -82,7 +92,8 @@ def _request(env, method, path, params=None, body=None, timeout=10):
         msg = str(payload_json.get("retMsg") or "")
         if api_key and api_key in msg:
             msg = msg.replace(api_key, "***")
-        raise Exception(f"bybit {path} retCode={code}: {msg}")
+        raise _tag(Exception(f"bybit {path} retCode={code}: {msg}"),
+                               code=code, http_status=r.status_code)
     return payload_json.get("result") or {}
 
 
@@ -309,3 +320,37 @@ def get_flows(env: dict, since: int) -> list:
             start = end + 1
     flows.sort(key=lambda f: f["ts"])
     return flows
+
+
+# Bybit v5 retCodes. A key rejection arrives two ways, both CREDENTIAL:
+# - HTTP 200 with a retCode — observed live (mainnet, 2026-09-14): a wrong
+#   secret answered retCode 10004 (sign error) on both /v5/position/list and
+#   /v5/user/query-api;
+# - HTTP 401 with an EMPTY body — documented, never observed live; it reaches
+#   classify as requests.HTTPError with no retCode, and lib.venue_errors maps
+#   401 to CREDENTIAL (fail closed).
+# HTTP 403 is deliberately left UNKNOWN: Bybit uses it for more than one thing
+# (IP rules, region blocks).
+_TRANSIENT = {"10000", "10006", "10016", "10018", "10019"}
+_CREDENTIAL = {"10003", "10004", "10005", "10007", "10008", "10009", "10010",
+               "10024", "10027", "33004"}
+_UNKNOWN = {"10002"}  # clock skew
+
+
+def classify(exc) -> str:
+    """lib.venue_errors TRANSIENT / CREDENTIAL / UNKNOWN for a failed read
+    (this lib's errors and lib/order_bybit.BybitError)."""
+    if venue_errors is None:
+        return None  # the reconciler falls back to its own floor
+    return venue_errors.classify(exc, getattr(exc, "code", None), None,
+                                 _TRANSIENT, _CREDENTIAL, _UNKNOWN)
+
+
+def get_account_id(env: dict) -> str:
+    """The Bybit user id the key belongs to (/v5/user/query-api, readable with
+    any permission) — lets the reconciler notice a key swapped to a different
+    account. Raises when the field is missing rather than skipping that check."""
+    uid = _request(env, "GET", "/v5/user/query-api").get("userID")
+    if not uid:
+        raise Exception("bybit query-api returned no userID")
+    return str(uid)

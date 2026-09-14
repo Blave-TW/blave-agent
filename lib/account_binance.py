@@ -21,6 +21,16 @@ from urllib.parse import urlencode
 
 import requests
 
+try:
+    from lib import venue_errors
+except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
+    venue_errors = None
+
+
+def _tag(exc, code=None, http_status=None):
+    return venue_errors.tag(exc, code, http_status) if venue_errors else exc
+
+
 SPOT_URL = "https://api.binance.com"
 FAPI_URL = "https://fapi.binance.com"
 
@@ -62,7 +72,9 @@ def _signed(method, base, path, env, params=None):
         except ValueError:
             # Binance serves an HTML error page for a wrong host/path — say so
             # instead of dying on 'str' object has no attribute 'get'
-            raise Exception(f"Binance HTTP {r.status_code} on {path}: non-JSON response")
+            raise _tag(
+                Exception(f"Binance HTTP {r.status_code} on {path}: non-JSON response"),
+                http_status=r.status_code)
         # Errors are {"code": -2015, "msg": "..."} — surface the exchange's own
         # code and message. "-2015 Invalid API-key, IP, or permissions" is the
         # difference between "whitelist the machine IP" and "my money is gone".
@@ -70,9 +82,12 @@ def _signed(method, base, path, env, params=None):
             if data["code"] == -1021 and attempt == 0:
                 _sync_time(base)
                 continue
-            raise Exception(f"Binance error {data['code']}: {data['msg']} | {path}")
+            raise _tag(
+                Exception(f"Binance error {data['code']}: {data['msg']} | {path}"),
+                code=data["code"], http_status=r.status_code)
         return data
-    raise Exception(f"Binance error -1021 persisted after clock resync | {path}")
+    raise _tag(
+        Exception(f"Binance error -1021 persisted after clock resync | {path}"), code=-1021)
 
 
 def _sync_time(base):
@@ -282,3 +297,20 @@ def get_positions(env: dict) -> list:
             "mark_price": float(p.get("markPrice") or 0),
         })
     return out
+
+
+# Binance USDⓈ-M error codes (negative ints in the body, with a 4xx/5xx
+# status). HTTP 418 is an IP ban after ignored 429s — left UNKNOWN.
+_TRANSIENT = {"-1000", "-1001", "-1003", "-1007", "-1008"}
+_CREDENTIAL = {"-1002", "-1022", "-2014", "-2015"}
+_UNKNOWN = {"-1021"}  # clock skew that survived the resync
+
+
+def classify(exc) -> str:
+    """lib.venue_errors TRANSIENT / CREDENTIAL / UNKNOWN for a failed read.
+    Covers this lib's errors and lib/order_binance.BinanceError (a positive
+    `code` there is the HTTP status of a non-JSON reply)."""
+    if venue_errors is None:
+        return None  # the reconciler falls back to its own floor
+    code, status = venue_errors.split_status(getattr(exc, "code", None))
+    return venue_errors.classify(exc, code, status, _TRANSIENT, _CREDENTIAL, _UNKNOWN)

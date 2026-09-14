@@ -18,6 +18,16 @@ import time
 
 import requests
 
+try:
+    from lib import venue_errors
+except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
+    venue_errors = None
+
+
+def _tag(exc, code=None, http_status=None):
+    return venue_errors.tag(exc, code, http_status) if venue_errors else exc
+
+
 BASE_URL = "https://open-api.bingx.com"
 FALLBACK = "https://open-api.bingx.pro"
 
@@ -34,13 +44,18 @@ def _call(path_and_query, headers):
     for base in (BASE_URL, FALLBACK):
         try:
             r = requests.get(f"{base}{path_and_query}", headers=headers, timeout=10)
-            data = r.json()
+            try:
+                data = r.json()
+            except ValueError as e:
+                raise _tag(e, http_status=r.status_code)
             # /openApi/api/v3/capital/* history endpoints return a bare JSON
             # array with no {code,msg,data} envelope (official docs + ccxt)
             if isinstance(data, list):
                 return data
             if data.get("code") != 0:
-                raise Exception(f"BingX error {data.get('code')}: {data.get('msg')}")
+                raise _tag(
+                    Exception(f"BingX error {data.get('code')}: {data.get('msg')}"),
+                    code=data.get("code"), http_status=r.status_code)
             return data.get("data")
         except requests.exceptions.ConnectionError:
             if base == FALLBACK:
@@ -371,3 +386,29 @@ def get_positions(env: dict) -> list:
         "size": abs(float(p.get("positionAmt", 0))),
         "mark_price": _mark_price(p),
     } for p in rows]
+
+
+# BingX swap v2 error codes (body `code`, usually with HTTP 200 — so the body
+# code is the only signal most of the time).
+_TRANSIENT = {"100410", "100500", "101214", "101219", "109500", "110500"}
+_CREDENTIAL = {"100001", "100004", "100413", "100419", "100441", "101210"}
+_UNKNOWN = {"100421"}  # timestamp / recvWindow
+
+
+def classify(exc) -> str:
+    """lib.venue_errors TRANSIENT / CREDENTIAL / UNKNOWN for a failed read
+    (this lib's errors and lib/order_bingx.BingXError)."""
+    if venue_errors is None:
+        return None  # the reconciler falls back to its own floor
+    return venue_errors.classify(exc, getattr(exc, "code", None), None,
+                                 _TRANSIENT, _CREDENTIAL, _UNKNOWN, {500})
+
+
+def get_account_id(env: dict) -> str:
+    """The BingX uid the key belongs to (/openApi/account/v1/uid) — lets the
+    reconciler notice a key swapped to a different account. Raises when the
+    field is missing rather than skipping that check."""
+    uid = (_signed_get("/openApi/account/v1/uid", env) or {}).get("uid")
+    if not uid:
+        raise Exception("BingX account/v1/uid returned no uid")
+    return str(uid)

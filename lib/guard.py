@@ -98,6 +98,18 @@ def clear_halt(source):
     audit("halt_cleared", source=source)
 
 
+def release_memory_halt():
+    """Drop THIS process's in-memory halt flag; file and audit log untouched.
+    Only for a long-running process that saw state/HALT land on disk and then
+    saw another process remove it — the web resume runs clear_halt in the
+    command listener, which cannot reach this flag, so without this a daemon
+    that tripped its own HALT refuses entries until it is restarted. A HALT
+    whose file write failed (full disk) was never seen on disk and must never
+    be released this way."""
+    global _halt_flag
+    _halt_flag = False
+
+
 def audit(event, **fields):
     """Append one JSON line to state/audit.jsonl. NEVER raises (see module
     docstring); returns True if the line was written."""
