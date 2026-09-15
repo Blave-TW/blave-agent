@@ -716,6 +716,15 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                 "tp_price": led["protective"][sym]["tp"], "status": "armed"}
 
 
+def get_open_algo_orders(env, symbol=None):
+    """Armed SL/TP as rows — paper keeps one arm per symbol."""
+    sym = str(symbol).upper() if symbol else None
+    with _txn(env) as led:
+        _settle(env, led)
+        return [{"symbol": s, "algo_id": f"prot-{s}", "sl": a.get("sl"), "tp": a.get("tp")}
+                for s, a in led["protective"].items() if not sym or s == sym]
+
+
 def cancel_protective_orders(env, symbol):
     sym = str(symbol).upper()
     with _txn(env) as led:

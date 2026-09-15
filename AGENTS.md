@@ -164,6 +164,7 @@ When writing any process that runs continuously (live monitors, scanners, paper-
 
 - **Every in-memory list/dict that grows per tick, per signal, or per trade MUST be bounded** (`deque(maxlen=N)` or trim) — records that must be kept forever go to disk, never into a Python list.
 - **Every daemon must heartbeat** (`state/heartbeat/<name>` each loop) and be registered in `state/deployments.json` so `manager/healthcheck.py` can see it die.
+- **Stopping one deployment = `manager/stop_strategy.py`** (schedules, processes, registry in one go; never hand-edit crontab); closing one coin = `manager/close_symbol.py`. Usage: `references/manager.md` › *Stopping one strategy / closing one coin*.
 - After starting it, check its RSS once and tell the user; growth run over run is a bug to fix before leaving it running.
 
 Full memory-discipline checklist: `references/deployment.md` › *Long-running processes — memory discipline*.
@@ -200,6 +201,8 @@ If `state/HALT` exists, `lib/order_*` refuses all NEW-EXPOSURE orders at the cod
 ```
 python3 -c "from lib.guard import trip_halt; trip_halt('user request', 'user')"
 ```
+
+Per-strategy halt: `lib.guard` `trip_halt_for(strategy, reason, source)` / `halted_for(strategy)` / `clear_halt_for(strategy, source)` (`state/HALT_<strategy>`) — only code that calls `halted_for` honours it; order libs do NOT block on it. Details: `references/lib.md` › *lib/guard.py*.
 
 Clearing (`clear_halt`) is ONLY done when the user explicitly asks to resume — never clear a halt on your own initiative, and never treat a user question as permission to clear it. Every order attempt/outcome/denial is logged to `state/audit.jsonl` — read it when the user asks what was actually sent to the exchange.
 

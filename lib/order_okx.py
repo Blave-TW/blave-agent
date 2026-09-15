@@ -574,11 +574,24 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
 
 # ── protective orders (swap) ────────────────────────────────────────────────
 
-def get_open_algo_orders(env, symbol=None):
-    params = {"ordType": "conditional"}
-    if symbol:
-        params["instId"] = _swap_inst(symbol)
-    return _send("GET", "/api/v5/trade/orders-algo-pending", env, params=params)
+# Untriggered algo types a close must clear (orders-algo-pending takes one
+# ordType per request apart from conditional+oco; one call per type here).
+# iceberg/twap/chase are execution algos, not left-behind triggers — not queried.
+# cancel-algos' own doc text sets no type limit and the old cancel-advance-algos
+# endpoint is gone from the docs; only its SDK example comment still says
+# "not including ... Trailing Stop". Not live-verified for move_order_stop —
+# manager/close_symbol.py re-reads afterwards and fails loud if one survives.
+CLOSE_ALGO_ORD_TYPES = ("conditional", "oco", "trigger", "move_order_stop")
+
+
+def get_open_algo_orders(env, symbol=None, ord_types=("conditional",)):
+    rows = []
+    for t in ord_types:
+        params = {"ordType": t}
+        if symbol:
+            params["instId"] = _swap_inst(symbol)
+        rows += _send("GET", "/api/v5/trade/orders-algo-pending", env, params=params) or []
+    return rows
 
 
 def cancel_algo_order(env, symbol, algo_id):

@@ -29,6 +29,8 @@ Strategy execution MUST be scheduled as a system cron job (Linux) or Scheduled T
 
 Never assume the user wants to go live just because they described a strategy or said "let's try it."
 Even if the user says "deploy it" or "run it", always confirm with one message before touching the schedule or MODE = "live".
+
+**Before any deployment (Type A, B or C), check for a scoped halt:** `ls state/HALT_<name>` plus any slug the strategy's code checks (`halted_for("…")`, `STRATEGY_SLUG`). One existing means the strategy was stopped (`manager/stop_strategy.py`) or its own breaker fired — tell the user the file's reason and time, and clear it (`lib.guard.clear_halt_for`) only with their explicit consent; code that checks it will never open a position while it exists.
 Once deployed live, send a confirmation message with: strategy name, schedule, amount, and one line noting the healthcheck will alert them if the strategy stops running.
 
 ## Editing a FUNDED Strategy (in the 下單組合)

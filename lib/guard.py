@@ -110,6 +110,63 @@ def release_memory_halt():
     _halt_flag = False
 
 
+# ── Per-strategy halt (scoped kill switch) ───────────────────────────────────
+# A strategy's own circuit breaker must NOT trip the machine-wide HALT above —
+# that single file freezes EVERY strategy sharing the order lib. Instead a
+# strategy trips its own scoped halt (state/HALT_<strategy>), which only that
+# strategy's own code/monitor checks before opening new exposure. The global
+# HALT stays reserved for the user's explicit "全部停止" / kill-switch instruction.
+#
+# MONITOR-ONLY: lib/order_* and the reconciler never read the scoped file — an
+# order sent by code that doesn't call halted_for() goes through. It is a flag
+# the strategy honours, not a transport-level brake like state/HALT.
+# (Shape and names match the version agents already wrote on the fleet, so
+# strategies importing trip_halt_for / halted_for keep working after an update.)
+
+def halt_path_for(strategy):
+    """Filesystem path of one strategy's scoped halt file."""
+    return f"{HALT_PATH}_{strategy}"
+
+
+def halted_for(strategy):
+    """True if the GLOBAL kill switch is set, OR this strategy's own halt.
+    Existence of the scoped file is authoritative (fail-closed), same as the
+    global file. Deliberately never False under the global HALT."""
+    return halted() or os.path.exists(halt_path_for(strategy))
+
+
+def halt_info_for(strategy):
+    """Attribution dict for a scoped halt, or None. Global halt takes
+    precedence; an unreadable scoped file still counts as halted."""
+    if halted():
+        return halt_info()
+    if not os.path.exists(halt_path_for(strategy)):
+        return None
+    try:
+        with open(halt_path_for(strategy)) as f:
+            return json.load(f)
+    except Exception:
+        return {"reason": "scoped HALT present but unreadable"}
+
+
+def trip_halt_for(strategy, reason, source):
+    """Set a strategy's OWN halt. Never touches the global HALT, so other
+    strategies (and the user's kill switch) are unaffected."""
+    os.makedirs(os.path.dirname(HALT_PATH), exist_ok=True)
+    tmp = halt_path_for(strategy) + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"ts": _now(), "reason": reason, "source": source}, f)
+    os.replace(tmp, halt_path_for(strategy))
+    audit("halt_tripped", reason=reason, source=source, scope=strategy)
+
+
+def clear_halt_for(strategy, source):
+    """Remove a strategy's scoped halt. Only on explicit user instruction."""
+    if os.path.exists(halt_path_for(strategy)):
+        os.remove(halt_path_for(strategy))
+    audit("halt_cleared", source=source, scope=strategy)
+
+
 def audit(event, **fields):
     """Append one JSON line to state/audit.jsonl. NEVER raises (see module
     docstring); returns True if the line was written."""

@@ -604,6 +604,29 @@ def cancel_order(env: dict, symbol: str, order_id: str = None,
     return {"status": "canceled", "order_id": res.get("orderId") or order_id}
 
 
+def cancel_all_orders(env: dict, symbol: str):
+    """Cancel EVERY open linear order on the symbol — active, conditional,
+    TP/SL and trailing stop (no orderFilter: Bybit's cancel-all then covers
+    all kinds). Strips the position's protection: only when also closing it."""
+    return _request(env, "POST", "/v5/order/cancel-all",
+                    body={"category": "linear", "symbol": symbol})
+
+
+def get_open_algo_orders(env: dict, symbol: str) -> list:
+    """The conditional rows get_open_orders deliberately hides (stopOrderType
+    set: position TP/SL, stop, trailing) — for close/cleanup checks, never the
+    orphan sweep. One page of 50; a symbol with more is not a real case."""
+    params = {"category": "linear", "symbol": symbol, "limit": 50}
+    rows = _request(env, "GET", "/v5/order/realtime", params).get("list") or []
+    return [{
+        "order_id": r.get("orderId"),
+        "symbol": r.get("symbol"),
+        "side": r.get("side"),
+        "stop_order_type": r.get("stopOrderType"),
+        "trigger_price": float(r.get("triggerPrice") or 0),
+    } for r in rows if r.get("stopOrderType") or ""]
+
+
 def get_open_orders(env: dict, symbol: str = None) -> list:
     """Open orders for the orphan-order sweep.
 

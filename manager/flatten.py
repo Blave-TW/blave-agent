@@ -148,25 +148,34 @@ def _flatten_spot(vid, order, env):
     return closed, errors, closed_symbols
 
 
-def _wait_for_inflight(timeout_s=30.0, poll_s=1.0):
+def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
     """After HALT is tripped, give in-flight TWAP/chase/custom executions a
     moment to drain before closing over them (audit P1 #4): flatten and a
     still-running execution firing orders on the same symbol can over-close.
     HALT already stops entry executions at their next slice; reduce ones may
     legitimately outlive the wait — after the timeout we proceed anyway (a
-    panic close must not block forever) but say so loudly, per symbol."""
+    panic close must not block forever) but say so loudly, per symbol.
+    symbol: only that swap symbol's executions (manager/close_symbol.py)."""
     from lib.execute import list_inflight
+
+    def _pending():
+        rows = list_inflight()
+        if symbol is None:
+            return rows
+        return [m for m in rows if str(m.get("key") or "") == symbol]
+
+    label = "close-all" if symbol is None else "close_symbol"
     deadline = time.time() + timeout_s
-    remaining = list_inflight()
+    remaining = _pending()
     while remaining and time.time() < deadline:
         time.sleep(poll_s)
-        remaining = list_inflight()
+        remaining = _pending()
     for m in remaining:
-        logging.error(f"close-all: execution still in flight for "
+        logging.error(f"{label}: execution still in flight for "
                       f"{m.get('key')} ({m.get('style')}) — closing over it; "
                       f"its later slices may re-move this symbol")
         _record_order_error(str(m.get('key') or '?'), '*',
-                            f"close-all overlapped in-flight {m.get('style')}")
+                            f"{label} overlapped in-flight {m.get('style')}")
     return remaining
 
 
