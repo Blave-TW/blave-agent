@@ -8,7 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- agent_turn: the per-turn red-line anchor adds "stopping one strategy / closing one coin on
+  the user's explicit request is allowed, via manager/stop_strategy.py and
+  manager/close_symbol.py" — only when the workspace has `manager/stop_strategy.py`
+  (blaveclaw-config 2026-09-15-b), same existence gate as `_cmd_close_all`'s flatten.py.
+  Why: uid 30979 asked to close and stop one strategy; the anchor only said HALT was
+  allowed, so deepseek spent 24 minutes deciding whether it could, then hand-wrote a close
+  script with a generic-key fallback and left the registry entries behind.
 
 ## 1.1.77 — 2026-09-14
 

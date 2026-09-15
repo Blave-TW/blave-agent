@@ -655,9 +655,14 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
     # 只放 AGENTS.md/系統尾端會輸給 in-context 慣性(deepseek 教訓,同
     # _lang_directive 的機制);建議句規則(下面那段)維持 web 專屬。
+    # 單支停用句只給已更新到有這兩支工具的 workspace(同 _cmd_close_all 的 flatten.py
+    # 判準):舊 workspace 指去不存在的腳本,弱模型會自己手寫一份(uid 30979 事故)
+    stop_tool = os.path.isfile(os.path.join(WORKSPACE, "manager", "stop_strategy.py"))
     parts.append(
         "[紅線:部署/金額/綁定/恢復交易一律指引用戶到自動下單頁操作,不代做;"
-        "急停(HALT)例外可做。]"
+        "急停(HALT)例外可做"
+        + (";用戶明確要求停單支策略/平單一幣時可做,用 manager/stop_strategy.py、"
+           "manager/close_symbol.py。]" if stop_tool else "。]")
     )
     if suggest_directive:
         state_line = _deploy_state_line()
