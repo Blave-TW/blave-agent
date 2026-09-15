@@ -153,14 +153,32 @@ Content-Type: multipart/form-data
 Fields: total_return, annual_return, sharpe, max_drawdown, backtest_start, backtest_end (all required)
         symbol, interval (optional)
         image = pnl.png (optional file field)
+        gates = JSON string (optional, see below)
 ```
 **Do not include `pnl_curve`** — P&L chart is displayed as an uploaded image, not rendered from data.
 Response: `{"status": "ok", "strategy_id": ..., "pnl_image_url": "https://..." | null}`
 
+`gates` = the quality-gate results of **this same backtest**, which drive the library's "Verified" badge:
+```json
+{
+  "mcpt_status": "pass" | "fail" | "not_applicable",
+  "mcpt_p": 0.005, "mcpt_n": 2000,
+  "robust": {"raw_sharpe": 1.49, "plateau_sharpe": 1.32, "ratio": 0.884},
+  "fee": {"rate": 0.0005, "actual": 0.0005, "venue": "binance"}
+}
+```
+- `mcpt_p` / `mcpt_n` are required numbers unless `mcpt_status` is `not_applicable` (Type C portfolios), where they are `null`.
+- `robust.ratio` = plateau Sharpe ÷ selected Sharpe (`lib/param_scan.find_plateau`); `fee.rate` = the strategy's `FEE`, `fee.actual` = the venue's per-side taker cost.
+- The server computes pass/fail and "Verified" itself — do not send a `verified` key (it is ignored).
+- A malformed `gates` rejects the whole call with 400 and nothing is written.
+- **A full-metrics refresh without `gates` clears the stored gates and the badge disappears.** Whenever you re-post numbers, re-run the gates (MCPT + parameter scan) on that backtest and send them in the same call.
+- Posting only `stats` (curve refresh, no metric fields) leaves gates untouched.
+
 **Admin flow — after running backtest:**
 1. `python3 strategies/{name}/strategy.py` → generates `strategies/{name}/pnl.png` + `strategies/{name}/stats.json`
 2. Read `stats.json` for metrics. Compute `annual_return` from total return + date range if not present.
-3. POST metrics + `strategies/{name}/pnl.png` together to `POST /strategies/{id}/report` (multipart)
+3. Re-run the quality gates on this backtest and build the `gates` JSON above.
+4. POST metrics + `gates` + `strategies/{name}/pnl.png` together to `POST /strategies/{id}/report` (multipart)
 
 ## Admin endpoints (user_id == 1 only)
 
@@ -172,7 +190,9 @@ GET /openclaw/marketplace/admin/pending
 Approve a pending strategy (makes it public):
 ```
 POST /openclaw/marketplace/admin/strategies/{id}/approve
+Body (optional): {"category": "Crypto" | "TW Stock"}
 ```
+If the pending strategy's current category is not `Crypto` / `TW Stock`, approval is rejected with 400 unless the body sets a valid `category`.
 
 Reject a strategy (sets status to unlisted):
 ```
@@ -184,6 +204,7 @@ Create an official strategy (approved + public + is_official immediately):
 POST /openclaw/marketplace/admin/strategies/official
 Body: {title, description, category, code}
 ```
+`category` must be exactly `Crypto` or `TW Stock` (anything else is rejected with 400). Private uploads (`/strategies/private`) accept any category.
 
 ## Description format (required for all uploads)
 
@@ -213,10 +234,12 @@ Content-Type: application/json
   "title": "Strategy Name",
   "description": "<structured description — see format above>",
   "price": 300,
-  "category": "trend",
+  "category": "Crypto",
   "code": "...full source code..."
 }
 ```
+`category` must be exactly `Crypto` or `TW Stock` (anything else is rejected with 400). Private uploads (`/strategies/private`) accept any category.
+
 Status starts as `pending`. Blave reviews and publishes it.
 
 Check submission status:
@@ -277,7 +300,7 @@ Content-Type: application/json
   "title": "BTC SMA Cross + ETH RSI Fade Bundle",
   "description": "<structured description for both strategies>",
   "price": 500,
-  "category": "bundle",
+  "category": "Crypto",
   "code": "# ===== STRATEGY 1: BTC SMA Cross =====\n...\n\n# ===== STRATEGY 2: ETH RSI Fade =====\n..."
 }
 ```
