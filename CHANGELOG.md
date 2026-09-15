@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.78 — 2026-09-15
+
 - agent_turn: the per-turn red-line anchor adds "stopping one strategy / closing one coin on
   the user's explicit request is allowed, via manager/stop_strategy.py and
   manager/close_symbol.py" — only when the workspace has `manager/stop_strategy.py`
