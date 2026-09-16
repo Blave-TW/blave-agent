@@ -1067,7 +1067,7 @@ def fetch_liquidation(symbol, interval, start, end, headers, timeframe='24h'):
 
 
 def fetch_market_direction(interval, start, end, headers):
-    """市場方向 Market Direction (BTC only, no symbol). Returns DataFrame with 'alpha' column."""
+    """市場方向 Market Direction (market-wide, no symbol). Returns DataFrame with 'alpha' column."""
     return _fetch_alpha('market_direction/get_alpha',
                         {'period': interval}, headers, start, end)
 
@@ -1085,7 +1085,7 @@ def fetch_market_sentiment(symbol, interval, start, end, headers):
 
 
 def fetch_top_trader_exposure(interval, start, end, headers):
-    """Blave頂尖交易員曝險 Top Trader Exposure (BTC only, no symbol). Returns DataFrame with 'alpha' column."""
+    """Blave頂尖交易員曝險 Top Trader Exposure (market-wide, no symbol). Returns DataFrame with 'alpha' column."""
     return _fetch_alpha('blave_top_trader/get_exposure',
                         {'period': interval}, headers, start, end)
 
