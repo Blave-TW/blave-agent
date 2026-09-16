@@ -86,11 +86,25 @@ for name, pack in (("tw", T.tw_market_brief("2026-09-02", H)), ("close", T.tw_cl
         check(b[0].get("origin") == ("chat" if nar else "scheduled"), f"{tag}: origin={'chat' if nar else 'scheduled'}")
         check(all(x.get("type") == "kpi_row" and 1 <= len(x["items"]) <= 6 for x in b if x["type"] == "kpi_row"), f"{tag}: kpi_row 1–6 格")
         check(all(sum(s["role"] == "primary" for s in x["series"]) <= 1 for x in b if x["type"] == "line_chart"), f"{tag}: line_chart 最多一條 primary")
+        # 每個圖表/表格都要有 caption,而且是比較基準不是把圖上的數字再念一遍(§7b A3);
+        # kpi_row 的 title 是當日結論句——排程的純數據包沒有 lead,那行是唯一的結論。
+        vis = [x for x in b if x["type"] in ("candlestick", "line_chart", "bar_chart", "table")]
+        check(vis and all(0 < len(x.get("caption", "")) <= 300 for x in vis), f"{tag}: 每個圖表/表格都有 caption(≤300)")
+        kr = [x for x in b if x["type"] == "kpi_row"][0]
+        check(any(w in kr.get("title", "") for w in ("高於", "低於")), f"{tag}: kpi_row title 帶當日漲跌對基準的位置:{kr.get('title')}")
+        pos = pack.context.get("收盤位置", "")
+        check(bool(pos) and pos.split(",")[0] in kr.get("title", ""), f"{tag}: describe() 的收盤位置與 kpi_row title 同一句(agent 引用得到,不會自己再算一次)")
         price, lines = PRICE[name]
         ks = [x for x in b if x["type"] == "candlestick"]
         if price:
             n_k = len(ks[0]["candles"]) if ks else 0
-            check(len(ks) == 1 and ks[0]["title"] == price and n_k == 60, f"{tag}: 價格圖「{price}」是 K 線,{n_k} 根(範本統一 60 根,日 K 建議 40–65)")
+            # title 帶當日結論(「{圖名}:收盤高於 60 日均 X%」),所以認前綴不認全等。
+            check(len(ks) == 1 and ks[0]["title"].startswith(price) and n_k == 60, f"{tag}: 價格圖「{price}」是 K 線,{n_k} 根(範本統一 60 根,日 K 建議 40–65)")
+            check(any(w in ks[0]["title"] for w in ("高於", "低於")) and "60 日均" in ks[0]["caption"],
+                  f"{tag}: 價格圖 title 帶收盤對 60 日均的位置,caption 留口徑與基準值:{ks[0]['title']}")
+            ma = re.search(r"60 日均 ([\d,.]+)", ks[0]["caption"])
+            check(pos.split(",")[-1] in ks[0]["title"] and ma is not None and ma.group(1) in pack.describe(),
+                  f"{tag}: 價格圖 title / caption 的 60 日均與 describe() 同一句同一個值")
             check(all(sound(k) and {"y_unit", "reflines"} <= set(k) for k in ks), f"{tag}: K 線高低包住開收、t 嚴格遞增,帶單位與 20 日參考線")
             check(all(not r["emphasis"] for k in ks for r in k.get("reflines", [])), f"{tag}: 參考線都不強調(強調低點讀起來像標支撐)")
             check(doc["schema_version"] == "1.2", f"{tag}: 含 K 線 → schema_version 1.2")
@@ -110,8 +124,9 @@ for name, pack in (("tw", T.tw_market_brief("2026-09-02", H)), ("close", T.tw_cl
         check(not re.search(r"(?<!前 )20 日[高低]", json.dumps(doc, ensure_ascii=False) + pack.describe()),
               f"{tag}: 沒有不帶「前」的 20 日高/低標籤(同名不同口徑)")
         body = json.dumps(doc, ensure_ascii=False) + pack.describe()
-        check(not re.search("操作建議|支撐|壓力|關鍵價位", body.replace("非支撐壓力", "")),
-              f"{tag}: 範本不自帶操作建議/支撐壓力/關鍵價位字眼")
+        # 站上/跌破/守住/失守 沒有「支撐」兩個字,但把統計值講成地板或天花板,一樣是 §1b 禁的。
+        check(not re.search("操作建議|支撐|壓力|關鍵價位|站上|跌破|守住|失守", body.replace("非支撐壓力", "")),
+              f"{tag}: 範本不自帶操作建議/支撐壓力/站上跌破字眼")
         check(("## 觀察重點" in body) == bool(nar), f"{tag}: watch 槽標題為「觀察重點」")
         titles = {x.get("title") for x in b if x["type"] == "line_chart"}
         check(lines <= titles and not any("收盤" in (t or "") for t in titles), f"{tag}: 非價格圖仍是 line_chart,沒有收盤折線")
@@ -120,6 +135,8 @@ for name, pack in (("tw", T.tw_market_brief("2026-09-02", H)), ("close", T.tw_cl
 d.fetch_twstock_ohlcv = lambda sid, sch, h, start=None, end=None, adjust=False: tw.tail(15)
 p = T.symbol_brief("2330", "2026-09-02", H)
 kb = [x for x in p.blocks if x["type"] == "candlestick"]
+check(all(not x.get("title") for x in p.blocks if x["type"] == "kpi_row"),
+      "日 K 不足 21 根:kpi_row 不下標題(只有漲跌、沒有基準的一句是裝飾)")
 check(len(kb) == 1 and "reflines" not in kb[0] and any("不足 21 根" in x for x in p.notes)
       and "前 20 日" not in "".join(p.context.values())
       and all(not r["level"].startswith("前 20 日") for x in p.blocks if x["type"] == "table" for r in x["rows"]),

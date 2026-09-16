@@ -131,7 +131,9 @@ pack = tw_market_brief()                 # today (Taipei); headers come from the
 print(pack.describe())                   # every figure the pack carries, one line each — cite these
 #   [tw-market-20260902] 台股大盤晨報          ← title has no date: the list row shows when it was made
 #     加權指數: 46,948.72(+1.78%),前 20 日高 46,512.35
+#     收盤位置: 高於前 20 日高 0.94%,高於 60 日均 3.21%   ← the same sentence the block titles carry
 #     三大法人: 外資 +267.0 億(昨 -144.0 億)、投信 +131.0 億、自營 +163.0 億、合計 +561.0 億
+#     外資 20 日均: -40.2 億                              ← the caption's baseline; cite it, don't recompute
 #     外資期貨淨多單: +12,300 口(+2,500 口,09-01)
 #     缺少:  - 台指期 2026-09-01 無夜盤 bar(…)      ← a missing series is a missing block, never a guess
 #     narrative slots: lead≤600, read≤2400, watch≤1500, risk≤900
@@ -168,6 +170,22 @@ publish(pack, narrative={
 - Slots: `lead` becomes the opening card (one falsifiable claim), `read` (判讀) / `watch`
   (觀察重點) become sections after the data, `risk` a warning callout before the footnote. Each
   has a character cap (`pack.slots`); `publish` raises past it — cut, do not summarise.
+- **`read` is skimmed, not read — give it handles.** Write it either as `### ` sub-headings
+  that each state a claim (「### 外資買超集中在電子權值股」, not 「### 籌碼面」), or as 3–5
+  bullets each carrying one number. Never one unbroken block of prose: 2,400 characters with
+  no headings is legal and unreadable. `publish` puts the `## 判讀` heading above the slot, so
+  your own headings inside it are `### ` (§4 renders both). `watch` takes the bullet form —
+  one condition and its threshold per bullet. *Why:* a reader finds things in a report by
+  scanning its headings, and that only works when the point is written in the heading. This is
+  the same bar §7b A6 / A7 set for a report you write by hand.
+- **The blocks already carry their own baselines — do not re-state them in prose.** Every
+  chart and table in the pack has a `caption` holding its measurement basis *and* the figure
+  it is read against (前 20 日高, the 20-session average, the previous 10 sessions), and the
+  `kpi_row` and the first chart (the price chart where there is one) state the day's headline
+  fact in their `title` (「加權指數 +1.78%,高於前 20 日高 0.94%」), the `收盤位置` line in
+  `describe()`. `describe()` prints every one of those numbers:
+  cite them and build on them. A narrative slot that says again what a caption already says
+  spends the reader's attention on nothing.
 - **Levels are statistics, not calls.** 前 20 日高/低 and the moving averages are listed as
   figures. The narrative never calls them 支撐 / 壓力 (support / resistance) or an entry, exit
   or target price, never tells a reader who is flat or holding what to do (進場, 加碼, 減碼,
@@ -263,6 +281,16 @@ Strings are ≤200 chars unless stated. `?` marks optional.
 Most visual blocks (`kpi_row`, all charts, `metric_table`, `table`, `code`, `image`)
 also accept `title?` (≤80, the section heading above the block) and `caption?` (≤300,
 the small print below it — put the measurement basis there).
+
+**In a template brief neither is optional.** `lib/report_templates.py` writes a `caption` on
+every chart and table it builds — the measurement basis **plus** the baseline the figure is
+read against (§7b A3) — and writes the day's headline fact into the `title` of the `kpi_row`
+and of the first chart (the price chart where there is one), which is the only conclusion a
+data-only scheduled run carries (§1b).
+The one exception is a block that measures nothing (the 今日總經事件 schedule): basis alone,
+because it has no baseline and a made-up one is worse than none. The standard holds for a
+chart you build by hand too: a caption that says again what the chart already draws is not a
+caption.
 
 | Block | Required props | Limits / notes |
 |---|---|---|
@@ -474,7 +502,7 @@ one into a report that shouldn't have it is its own failure.
 
 | `type` | What applies |
 |---|---|
-| `research`, `morning` | **All six rules.** These exist to answer "what do you think, and why". A hand-written one also follows §7b's presentation rules (A); `research` adds §7b's research rules (B), while a `morning` report keeps §1b's form for levels and conditions. A template brief is shaped by §1b. |
+| `research`, `morning` | **All six rules.** These exist to answer "what do you think, and why". A hand-written one also follows §7b's presentation rules (A); `research` adds §7b's research rules (B), while a `morning` report keeps §1b's form for levels and conditions. A template brief (§1b) splits the work: the template already carries A3 (a baseline in every caption), A4 (the focus KPI, plus the day's headline in its `title`), A5 (the claim chart first) and A8 (the method footnote) in the blocks it hands you — leave those alone — and you still owe A2 in `lead` and A6 / A7 in `read` / `watch`, in the form §1b defines. |
 | `performance` | **Rules 5 and 6 only** (plus rule 2 on any sentence that explains *why* a number moved — stating the number itself is the point of the report and needs no thesis). A performance report is a state snapshot: numbers, attribution, what changed since last time. Do **not** invent an investment view to fill a section; the clean snapshot is the correct output. The runtime produces no report of its own — every performance report is one the user asked for, one-off or as a registered job (§8). §7b does not apply: a snapshot's title names its period, not a thesis. |
 
 ### 1. One falsifiable claim, carried by the `lead`
@@ -563,7 +591,7 @@ rules:
 
 | Rules | Apply to |
 |---|---|
-| **A. Presentation** (A1–A8) | Every hand-written report **except `performance`**, which is a state snapshot whose title names its period, not a thesis (§7 scope table). A template brief (§1b) is shaped for you and is out of scope too. |
+| **A. Presentation** (A1–A8) | Every hand-written report **except `performance`**, which is a state snapshot whose title names its period, not a thesis (§7 scope table). A template brief (§1b) is only **half** out of scope: its envelope title is fixed by the template (a topic name by design — the list row carries the date, §1b — so A1 is not in play), the template implements A3, A4, A5 and A8 in the blocks it builds, and the narrative you write into it still follows A2, A6 and A7 — §1b says what that looks like in `read` / `watch`. |
 | **B. Research rules** (B1–B6) | `type: "research"` only. A hand-written `morning` report keeps §1b's rules instead: levels are statistics, never calls, and its conditions section takes the 觀察重點 (`watch`) form. |
 
 Blocks are flat (§3). A section is a `text` block that opens with its `## ` heading,
@@ -596,7 +624,8 @@ section headings in the report's language.
   a call.
 - **A3. Every headline number stands next to its baseline**: random trading days, the
   same-period average, the out-of-sample half, the prior period. Put the baseline in the
-  same sentence, in the cell's `delta`, or as a `benchmark` series on the chart. *Why:*
+  same sentence, in the cell's `delta`, in the chart's `caption` (§3), or as a `benchmark`
+  series on the chart. *Why:*
   "−2% in the 10 days after a launch" means nothing until the reader sees what an ordinary
   10 days does. This is §7 rule 2's comparison, made visible.
 - **A4. `kpi_row` directly after the lead; its first item is the number the claim rests

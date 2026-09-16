@@ -8,6 +8,11 @@ lead / read / watch / risk — and `publish()` assembles and drops the report.
 You never build a chart block by hand for these report types, and you never
 recompute a number the pack already carries.
 
+Every chart and table the pack builds carries a `caption` — its measurement basis plus
+the baseline the figure is read against (references/reports.md §7b A3) — and the
+`kpi_row` and the price chart carry the day's headline fact in their `title`. Those
+numbers are all in `describe()`: cite them, don't restate them in a narrative slot.
+
     from lib.report_templates import tw_market_brief, publish
 
     pack = tw_market_brief()              # today's TW market data pack
@@ -264,6 +269,59 @@ def _tw_yi(v):
     return f"{v / 1e8:+,.1f} 億"
 
 
+def _mean(series, n):
+    """n 個交易日的簡單平均,不足 n 根回 None。窗口不夠就不寫這個比較句,不拿較短的
+    窗口頂替(同 _prior20)——讀者看到「20 日均」就是 20 根。"""
+    s = series.dropna()
+    return float(s.tail(n).mean()) if len(s) >= n else None
+
+
+def _vs(last, base, label, digits=1):
+    """「高於/低於{label} X%」。收盤相對某個統計值的位置是事實陳述,不是支撐壓力
+    (references/reports.md §1b);算不出基準就回 None,整句省略。"""
+    if not (_finite(last) and _finite(base)) or float(base) == 0:
+        return None
+    d = (float(last) / float(base) - 1) * 100
+    sep = " " if label[0].isdigit() else ""   # 中文接數字要留一格(「低於 60 日均」),接中文不留
+    return f"{'高於' if d >= 0 else '低於'}{sep}{label} {abs(d):.{digits}f}%"
+
+
+def _cap(basis, *clauses):
+    """caption = 口徑 + 比較基準(§7b A3)。範本產出的每個圖表都要有 caption,而且不是把
+    圖上的數字再念一遍;算不出來的比較句直接省略,只留口徑。"""
+    return ";".join([basis] + [c for c in clauses if c])
+
+
+def _vs7(ser, fmt=lambda v: f"{v:+.2f}"):
+    """指標圖的比較句:最新值對自己的 7 日均(與 KPI delta 同一組數字)。"""
+    if ser is None or len(ser) == 0:
+        return None
+    return f"最新 {fmt(float(ser.iloc[-1]))},7 日均 {fmt(float(ser.tail(7).mean()))}"
+
+
+def _where(ctx, last, pairs):
+    """describe() 裡的「收盤位置」:title 與 caption 用的比較句,原句放進 context。
+    agent 引用得到同一句,就不會自己再算一次(算出第二個版本的數字)。"""
+    txt = ",".join(c for c in (_vs(last, base, label) for base, label in pairs) if c)
+    if txt:
+        ctx["收盤位置"] = txt
+
+
+def _headline(name, chg, last, base, base_label):
+    """kpi_row 的 title:當日漲跌 + 它對一個基準的位置(§7b A3/A4)。排程跑的純數據包
+    沒有 lead,這行是整份報告唯一的結論句,所以由範本從當日資料算,不是寫死的判斷。
+    基準算不出來就回 None(不下標題):只有漲跌的一句跟下面 KPI 那格一字不差,是裝飾。"""
+    vs = _vs(last, base, base_label)
+    return f"{name} {_pct(chg * 100)},{vs}" if vs else None
+
+
+def _price_title(name, last, ma, ma_label="60 日均"):
+    """價格圖的 title:圖名 + 收盤在窗口裡的位置。標題本身就是主張,讀者掃小標就抓得到
+    (§7b A5/A7);均線算不出來就只留圖名。"""
+    vs = _vs(last, ma, ma_label)
+    return f"{name}:收盤{vs}" if vs else name
+
+
 def _dated(delta, ts, asof):
     """Append the series date to a KPI delta when it differs from the report's as-of day."""
     d = pd.Timestamp(ts).strftime("%Y-%m-%d")
@@ -358,8 +416,12 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
     asof = idx.index[-1].strftime("%Y-%m-%d")
     chg = close / prev - 1
     high20, _ = _prior20(idx, notes)
+    ma60 = _mean(idx["Close"], 60)
     ctx["資料日"] = asof
     ctx["加權指數"] = f"{_num(close, 2)}({_pct(chg * 100)})" + (f",前 20 日高 {_num(high20, 2)}" if high20 is not None else "")
+    if ma60 is not None:
+        ctx["60 日均"] = _num(ma60, 2)
+    _where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
     kpis.append(kpi("加權指數", _num(close, 2), _tone(chg), delta=_pct(chg * 100)))
 
     turn = _data.fetch_twmarket_turnover(start, date, headers)
@@ -384,19 +446,27 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
         # 指數可能已是今天、籌碼還是昨天:日期不同的 KPI 在 delta 標日期,讀者才不會把兩天讀成同一天。
         kpis.append(kpi("外資買賣超", _tw_yi(float(last["foreign"])), _tone(float(last["foreign"])),
                         delta=_dated("", inst.index[-1], asof)))
+        f20 = _mean(inst["foreign"], 20)
+        if f20 is not None:
+            ctx["外資 20 日均"] = _tw_yi(f20)
         # 合計不佔 KPI 格(六格要留給夜盤),寫在長條圖說明裡。
         blocks_inst = bar_chart("三大法人買賣超(億元)",
                                 [("外資", last["foreign"] / 1e8), ("投信", last["investment_trust"] / 1e8),
                                  ("自營商", last["dealer"] / 1e8)],
-                                caption=f"{inst.index[-1].strftime('%Y-%m-%d')} 淨買賣超金額,億元;三大法人合計 {_tw_yi(float(last['total']))}")
+                                caption=_cap(f"{inst.index[-1].strftime('%Y-%m-%d')} 淨買賣超金額,億元",
+                                             f"三大法人合計 {_tw_yi(float(last['total']))}",
+                                             f"外資近 20 個交易日平均 {_tw_yi(f20)}" if f20 is not None else None))
     else:
         notes.append("三大法人無資料")
 
     mg = _data.fetch_twmarket_margin(start, date, headers)
     m_last, m_prev = _last_two(mg["margin_balance"]) if len(mg) else (None, None)
+    m20 = _mean(mg["margin_balance"], 20) if len(mg) else None
     if m_last is not None:
         d_m = (m_last - m_prev) if m_prev is not None else 0.0
         ctx["融資餘額"] = f"{m_last / 1e4:,.1f} 萬張({_signed(d_m / 1e4, 1)} 萬張)"
+        if m20 is not None:
+            ctx["融資 20 日均"] = f"{m20 / 1e4:,.1f} 萬張"
         kpis.append(kpi("融資餘額", f"{m_last / 1e4:,.1f}", "neutral", unit="萬張",
                         delta=_dated(f"{_signed(d_m / 1e4, 1)} 萬張", mg.index[-1], asof)))
     else:
@@ -407,10 +477,13 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
         fut = _data.fetch_twfutures_institutional("TX", start, date, headers)
     except Exception as e:
         notes.append(f"期貨三大法人抓取失敗({type(e).__name__})")
+    n20 = _mean(fut["foreign_net_oi"], 20) if fut is not None and len(fut) else None
     if fut is not None and len(fut):
         f_last, f_prev = _last_two(fut["foreign_net_oi"])
         d_f = (f_last - f_prev) if f_prev is not None else 0.0
         ctx["外資期貨淨多單"] = f"{_signed(f_last)} 口({_signed(d_f)} 口,{fut.index[-1].strftime('%m-%d')})"
+        if n20 is not None:
+            ctx["外資期貨 20 日均"] = f"{_signed(n20)} 口"
         # 淨部位是方向不是損益:長期淨空會永遠紅,上色沒有資訊,一律 neutral。
         kpis.append(kpi("外資期貨淨多單", _signed(f_last), "neutral", unit="口",
                         delta=_dated(_signed(d_f) + " 口", fut.index[-1], asof)))
@@ -425,26 +498,36 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
         foot.append(("night", "台指期夜盤 = 15:00 至次日 05:00 的交易時段,漲跌以同日日盤收盤價為基準。"
                      + ("" if night["done"] else "數值為截至標示時點的最新價,不是收盤價。")))
 
-    blocks.append(kpi_row(kpis))
-    ck = candlestick("加權指數", idx.tail(_PRICE_BARS), y_unit="點",
+    blocks.append(kpi_row(kpis, title=_headline("加權指數", chg, close, high20, "前 20 日高")))
+    ck = candlestick(_price_title("加權指數", close, ma60), idx.tail(_PRICE_BARS), y_unit="點",
+                     caption=_cap(f"近 {min(len(idx), _PRICE_BARS)} 個交易日日 K",
+                                  f"參考線為前 20 日高 {_num(high20, 2)}(不含當日)" if high20 is not None else None,
+                                  f"60 日均 {_num(ma60, 2)}(含當日收盤)" if ma60 is not None else None),
                      reflines=[(high20, "前 20 日高", False)] if high20 is not None else None)
     if ck:
         blocks.append(ck)
     if blocks_inst:
         blocks.append(blocks_inst)
     if m_last is not None:
-        lc = line_chart("融資餘額", [("融資餘額", "primary", mg["margin_balance"] / 1e4)], y_unit="萬張")
+        lc = line_chart("融資餘額", [("融資餘額", "primary", mg["margin_balance"] / 1e4)], y_unit="萬張",
+                        caption=_cap("TWSE 日融資餘額,張數(圖為萬張)",
+                                     f"最新 {m_last / 1e4:,.1f} 萬張,近 20 個交易日平均 {m20 / 1e4:,.1f} 萬張"
+                                     if m20 is not None else None))
         if lc:
             blocks.append(lc)
     if fut is not None and len(fut):
         lc = line_chart("外資期貨淨多單", [("外資淨多單", "primary", fut["foreign_net_oi"])], y_unit="口",
+                        caption=_cap("TAIFEX 盤後未平倉淨口數(多 − 空)",
+                                     f"最新 {_signed(f_last)} 口,近 20 個交易日平均 {_signed(n20)} 口"
+                                     if n20 is not None else None),
                         reflines=[(0.0, "0", False)])
         if lc:
             blocks.append(lc)
     cal = _calendar_rows(headers, notes, countries=["US", "CN", "TW", "JP", "EU"])
     if cal:
+        # 事件表沒有比較基準可寫:它是時刻表不是量測,caption 只留口徑(預期/前值已在欄位裡)。
         blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    foot += [("src", "指數、成交值、三大法人、融資餘額:TWSE 日資料,經 Blave API。三大法人為淨買賣超金額,融資餘額為張數。前 20 日高 = 不含當日的前 20 個交易日最高價。")]
+    foot += [("src", "指數、成交值、三大法人、融資餘額:TWSE 日資料,經 Blave API。三大法人為淨買賣超金額,融資餘額為張數。前 20 日高 = 不含當日的前 20 個交易日最高價;20/60 日均為含當日的簡單平均。")]
     blocks.append(footnote(foot))
 
     # 標題不帶日期——報告清單列本身顯示建立時間(Wei 2026-09-02 拍板);id 仍帶日期,同日重跑才會覆蓋。
@@ -564,9 +647,13 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
     close, prev = float(idx["Close"].iloc[-1]), float(idx["Close"].iloc[-2])
     chg = close / prev - 1
     high20, _ = _prior20(idx, notes)
+    ma60 = _mean(idx["Close"], 60)
     ctx["資料日"] = date
     ctx["加權指數"] = (f"{_num(close, 2)}({_signed(close - prev, 2)} 點,{_pct(chg * 100)})"
                     + (f",前 20 日高 {_num(high20, 2)}" if high20 is not None else ""))
+    if ma60 is not None:
+        ctx["60 日均"] = _num(ma60, 2)
+    _where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
     kpis.append(kpi("加權指數", _num(close, 2), _tone(chg), delta=_pct(chg * 100)))
 
     turn = _data.fetch_twmarket_turnover(start, date, headers)
@@ -587,19 +674,27 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
                         f"投信 {_tw_yi(last['investment_trust'])}、自營 {_tw_yi(last['dealer'])}、"
                         f"合計 {_tw_yi(last['total'])}")
         kpis.append(kpi("外資買賣超", _tw_yi(float(last["foreign"])), _tone(float(last["foreign"]))))
+        f20 = _mean(inst["foreign"], 20)
+        if f20 is not None:
+            ctx["外資 20 日均"] = _tw_yi(f20)
         blocks_inst = bar_chart("三大法人買賣超(億元)",
                                 [("外資", last["foreign"] / 1e8), ("投信", last["investment_trust"] / 1e8),
                                  ("自營商", last["dealer"] / 1e8)],
-                                caption=f"{date} 淨買賣超金額,億元;三大法人合計 {_tw_yi(float(last['total']))}")
+                                caption=_cap(f"{date} 淨買賣超金額,億元",
+                                             f"三大法人合計 {_tw_yi(float(last['total']))}",
+                                             f"外資近 20 個交易日平均 {_tw_yi(f20)}" if f20 is not None else None))
     else:
         _pending("三大法人", inst, date, notes)
 
     mg = _data.fetch_twmarket_margin(start, date, headers)
     margin_ok = _on_day(mg, date) and _finite(mg["margin_balance"].iloc[-1])
+    m20 = _mean(mg["margin_balance"], 20) if len(mg) else None
     if margin_ok:
         m_last, m_prev = _last_two(mg["margin_balance"])
         d_m = (m_last - m_prev) if m_prev is not None else 0.0
         ctx["融資餘額"] = f"{m_last / 1e4:,.1f} 萬張({_signed(d_m / 1e4, 1)} 萬張)"
+        if m20 is not None:
+            ctx["融資 20 日均"] = f"{m20 / 1e4:,.1f} 萬張"
         kpis.append(kpi("融資餘額", f"{m_last / 1e4:,.1f}", "neutral", unit="萬張",
                         delta=f"{_signed(d_m / 1e4, 1)} 萬張"))
         foot.append(("margin", "融資增減 = 今日餘額 − 前一交易日餘額(實際餘額變化)。TWSE 的「前日餘額」欄已含"
@@ -613,28 +708,40 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
     except Exception as e:
         notes.append(f"期貨三大法人抓取失敗({type(e).__name__})")
     fut_ok = fut is not None and _on_day(fut, date) and _finite(fut["foreign_net_oi"].iloc[-1])
+    n20 = _mean(fut["foreign_net_oi"], 20) if fut is not None and len(fut) else None
     if fut_ok:
         f_last, f_prev = _last_two(fut["foreign_net_oi"])
         d_f = (f_last - f_prev) if f_prev is not None else 0.0
         ctx["外資期貨淨多單"] = f"{_signed(f_last)} 口({_signed(d_f)} 口)"
+        if n20 is not None:
+            ctx["外資期貨 20 日均"] = f"{_signed(n20)} 口"
         kpis.append(kpi("外資期貨淨多單", _signed(f_last), "neutral", unit="口", delta=_signed(d_f) + " 口"))
         foot.append(("futinst", "期貨三大法人為 TAIFEX 日盤收盤後統計的未平倉淨口數(多 − 空)。"))
     elif fut is not None:
         _pending("外資期貨淨多單", fut, date, notes)
 
-    blocks.append(kpi_row(kpis))
-    ck = candlestick("加權指數", idx.tail(_PRICE_BARS), y_unit="點",
+    blocks.append(kpi_row(kpis, title=_headline("加權指數", chg, close, high20, "前 20 日高")))
+    ck = candlestick(_price_title("加權指數", close, ma60), idx.tail(_PRICE_BARS), y_unit="點",
+                     caption=_cap(f"近 {min(len(idx), _PRICE_BARS)} 個交易日日 K",
+                                  f"參考線為前 20 日高 {_num(high20, 2)}(不含當日)" if high20 is not None else None,
+                                  f"60 日均 {_num(ma60, 2)}(含當日收盤)" if ma60 is not None else None),
                      reflines=[(high20, "前 20 日高", False)] if high20 is not None else None)
     if ck:
         blocks.append(ck)
     if blocks_inst:
         blocks.append(blocks_inst)
     if margin_ok:
-        lc = line_chart("融資餘額", [("融資餘額", "primary", mg["margin_balance"] / 1e4)], y_unit="萬張")
+        lc = line_chart("融資餘額", [("融資餘額", "primary", mg["margin_balance"] / 1e4)], y_unit="萬張",
+                        caption=_cap("TWSE 日融資餘額,張數(圖為萬張)",
+                                     f"最新 {m_last / 1e4:,.1f} 萬張,近 20 個交易日平均 {m20 / 1e4:,.1f} 萬張"
+                                     if m20 is not None else None))
         if lc:
             blocks.append(lc)
     if fut_ok:
         lc = line_chart("外資期貨淨多單", [("外資淨多單", "primary", fut["foreign_net_oi"])], y_unit="口",
+                        caption=_cap("TAIFEX 盤後未平倉淨口數(多 − 空)",
+                                     f"最新 {_signed(f_last)} 口,近 20 個交易日平均 {_signed(n20)} 口"
+                                     if n20 is not None else None),
                         reflines=[(0.0, "0", False)])
         if lc:
             blocks.append(lc)
@@ -643,7 +750,7 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
         if cal:
             blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
     foot.append(("src", "指數、成交值、三大法人、融資餘額:TWSE 日資料,經 Blave API。三大法人為淨買賣超金額,融資餘額為張數。"
-                 "前 20 日高 = 不含當日的前 20 個交易日最高價。"))
+                 "前 20 日高 = 不含當日的前 20 個交易日最高價;20/60 日均為含當日的簡單平均。"))
     blocks.append(footnote(foot))
     return Pack(rid, title, "morning", title, blocks, ctx, notes)
 
@@ -689,13 +796,27 @@ def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), 
     shortage = _indicator(_data.fetch_capital_shortage, ("1d", start, None, headers), "資金稀缺", ctx, kpis, notes)
     exposure = _indicator(_data.fetch_top_trader_exposure, ("1d", start, None, headers), "頂尖交易員曝險", ctx, kpis, notes)
 
-    blocks.append(kpi_row(kpis[:6]))
     base = next(iter(closes))
+    base_c = closes[base]
+    base_ma = _mean(base_c, lookback_days)
+    if base_ma is not None:
+        ctx[f"{base.replace('USDT', '')} 近 {lookback_days} 日均"] = _num(base_ma, 2)
+        _where(ctx, float(base_c.iloc[-1]), [(base_ma, f"近 {lookback_days} 日均")])
+    blocks.append(kpi_row(kpis[:6], title=_headline(base.replace("USDT", ""),
+                                                    float(base_c.iloc[-1] / base_c.iloc[-2] - 1),
+                                                    float(base_c.iloc[-1]), base_ma, f"近 {lookback_days} 日均")))
     win = {s: c.tail(lookback_days + 1) for s, c in closes.items()}   # 圖與表同一個 N 日窗口
     series = [(base.replace("USDT", ""), "primary", win[base] / win[base].iloc[0] * 100)]
     series += [(s.replace("USDT", ""), "benchmark", c / c.iloc[0] * 100) for s, c in win.items() if s != base][:3]
-    lc = line_chart(f"相對表現(重定基 100,{lookback_days} 日)", series, y_unit="",
-                    caption="每個幣種以窗口第一天收盤為 100")
+    rel = sorted(((float(c.iloc[-1] / c.iloc[0] * 100 - 100), s.replace("USDT", "")) for s, c in win.items()),
+                 reverse=True)
+    spread = f"{rel[0][1]} 領先 {rel[-1][1]} {rel[0][0] - rel[-1][0]:,.1f} 個百分點" if len(rel) > 1 else None
+    if spread:
+        ctx[f"{lookback_days} 日相對表現"] = spread
+    lc = line_chart(f"相對表現(重定基 100,{lookback_days} 日)" + (f":{spread}" if spread else ""), series, y_unit="",
+                    caption=_cap("每個幣種以窗口第一天收盤為 100",
+                                 f"窗口報酬 {rel[0][1]} {rel[0][0]:+,.1f}%、{rel[-1][1]} {rel[-1][0]:+,.1f}%"
+                                 if len(rel) > 1 else None))
     if lc:
         blocks.append(lc)
     blocks.append(table("主要幣種報價與報酬", [("symbol", "幣種", "left"), ("price", "價格", "right"),
@@ -703,19 +824,24 @@ def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), 
                                               ("r30", f"{lookback_days} 日", "right", "percent")], rows,
                         caption="Binance USDT 永續日 K 收盤;最後一根為今日未收盤 bar"))
     if fund is not None:
-        lc = line_chart("BTC 資金費率", [("BTC", "primary", fund)], y_unit="%", reflines=[(0.0, "0", False)])
+        lc = line_chart("BTC 資金費率", [("BTC", "primary", fund)], y_unit="%", reflines=[(0.0, "0", False)],
+                        caption=_cap("Binance BTCUSDT 日頻資金費率,單位 %",
+                                     _vs7(fund, lambda v: f"{v:+.4f}%")))
         if lc:
             blocks.append(lc)
     ind = [(n, "benchmark", s) for n, s in (("市場方向", direction), ("資金稀缺", shortage)) if s is not None]
     if ind:
         ind[0] = (ind[0][0], "primary", ind[0][2])
-        lc = line_chart("Blave 市場指標(z-score)", ind, caption="標準化分數,0 = 樣本均值;日頻資料只到前一個完整日")
+        lc = line_chart("Blave 市場指標(z-score)", ind,
+                        caption=_cap("標準化分數,0 = 樣本均值", "日頻資料只到前一個完整日",
+                                     f"{ind[0][0]} {_vs7(ind[0][2])}"))
         if lc:
             blocks.append(lc)
     if exposure is not None:
         # 這支不是 z-score(實測值約 20–30),不能跟上面同軸;單獨一張、不標單位。
         lc = line_chart("頂尖交易員曝險", [("曝險", "primary", exposure)],
-                        caption="Blave 頂尖交易員曝險指標原始值(非標準化),日頻資料只到前一個完整日")
+                        caption=_cap("Blave 頂尖交易員曝險指標原始值(非標準化),日頻資料只到前一個完整日",
+                                     _vs7(exposure)))
         if lc:
             blocks.append(lc)
     cal = _calendar_rows(headers, notes, countries=["US", "CN", "EU", "JP"])
@@ -792,6 +918,7 @@ def _tw_symbol_brief(stock_id, date, headers, lookback_days):
     kpis.append(kpi("成交量", _num(vol), "neutral", unit="張", delta=_pct((vol / vol5 - 1) * 100) + " vs 5日均"))
     lv = _levels(df, notes)
     ctx[_LEVELS_TITLE] = ", ".join(f"{k} {_num(v, 2)}" for k, v in lv.items())
+    _where(ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
 
     inst = None
     try:
@@ -806,13 +933,25 @@ def _tw_symbol_brief(stock_id, date, headers, lookback_days):
             ctx["外資買賣超"] = f"{_signed(f_last)} 張(近 5 日累計 {_signed(f5)} 張,{fn.index[-1].date()})"
             kpis.append(kpi("外資買賣超", _signed(f_last), _tone(f_last), unit="張", delta=f"5日累計 {_signed(f5)}"))
             foot.append(("inst", "外資買賣超 = 外資買進 − 賣出,資料源以股為單位,此處換算為張(÷1000)。"))
-    blocks.append(kpi_row(kpis[:6]))
-    ck = candlestick(f"{stock_id} 日 K", df.tail(_PRICE_BARS), y_unit="元", reflines=_level_lines(lv))
+    blocks.append(kpi_row(kpis[:6], title=_headline(stock_id, chg, last, lv.get("前 20 日高"), "前 20 日高")))
+    ck = candlestick(_price_title(f"{stock_id} 日 K", last, lv.get("60 日均")), df.tail(_PRICE_BARS), y_unit="元",
+                     caption=_cap(f"近 {min(len(df), _PRICE_BARS)} 個交易日日 K,未還原價",
+                                  ("參考線為前 20 日高 " + _num(lv["前 20 日高"], 2) + " / 低 " + _num(lv["前 20 日低"], 2)
+                                   + "(不含當日)") if "前 20 日高" in lv else None,
+                                  f"60 日均 {_num(lv['60 日均'], 2)}" if "60 日均" in lv else None),
+                     reflines=_level_lines(lv))
     if ck:
         blocks.append(ck)
     if inst is not None and len(inst) and "foreign_net" in inst:
-        tail = (inst["foreign_net"].dropna() / 1000.0).tail(10)
-        bc = bar_chart("外資近 10 日買賣超(張)", [(t.strftime("%m/%d"), v) for t, v in tail.items()])
+        net = inst["foreign_net"].dropna() / 1000.0
+        tail = net.tail(10)
+        f10 = float(tail.sum())
+        prev10 = float(net.tail(20).head(10).sum()) if len(net) >= 20 else None
+        ctx["外資 10 日累計"] = f"{_signed(f10)} 張" + (f"(前 10 日 {_signed(prev10)} 張)" if prev10 is not None else "")
+        bc = bar_chart("外資近 10 日買賣超(張)", [(t.strftime("%m/%d"), v) for t, v in tail.items()],
+                       caption=_cap("每日淨買賣超,張",
+                                    f"10 日累計 {_signed(f10)} 張,前 10 個交易日累計 {_signed(prev10)} 張"
+                                    if prev10 is not None else f"10 日累計 {_signed(f10)} 張"))
         if bc:
             blocks.append(bc)
     lt = _levels_table(lv, last)
@@ -841,25 +980,34 @@ def _crypto_symbol_brief(sym, date, headers, lookback_days):
     kpis.append(kpi(label, _num(last, 2), _tone(chg), unit="USDT", delta=_pct(chg * 100)))
     lv = _levels(df, notes)
     ctx[_LEVELS_TITLE] = ", ".join(f"{k} {_num(v, 2)}" for k, v in lv.items())
+    _where(ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
 
     args = (s, "1d", start, None, headers)
     fund = _indicator(_data.fetch_funding_rate, args, "資金費率", ctx, kpis, notes, fmt=lambda v: f"{v:+.4f}%")
     liq = _indicator(_data.fetch_liquidation, args, "爆倉指標", ctx, kpis, notes)
     whale = _indicator(_data.fetch_whale_hunter, args, "巨鯨警報", ctx, kpis, notes)
     taker = _indicator(_data.fetch_taker_intensity, args, "多空力道", ctx, kpis, notes)
-    blocks.append(kpi_row(kpis[:6]))
+    blocks.append(kpi_row(kpis[:6], title=_headline(label, chg, last, lv.get("前 20 日高"), "前 20 日高")))
     # 60 日均仍用整段收盤算,K 線只畫最後 _PRICE_BARS 根。
-    ck = candlestick(f"{label} 日 K", df.tail(_PRICE_BARS), y_unit="USDT", reflines=_level_lines(lv))
+    ck = candlestick(_price_title(f"{label} 日 K", last, lv.get("60 日均")), df.tail(_PRICE_BARS), y_unit="USDT",
+                     caption=_cap(f"近 {min(len(df), _PRICE_BARS)} 根日 K",
+                                  ("參考線為前 20 日高 " + _num(lv["前 20 日高"], 2) + " / 低 " + _num(lv["前 20 日低"], 2)
+                                   + "(不含當日)") if "前 20 日高" in lv else None,
+                                  f"60 日均 {_num(lv['60 日均'], 2)}" if "60 日均" in lv else None),
+                     reflines=_level_lines(lv))
     if ck:
         blocks.append(ck)
     if fund is not None:
-        lc = line_chart("資金費率", [(label, "primary", fund)], y_unit="%", reflines=[(0.0, "0", False)])
+        lc = line_chart("資金費率", [(label, "primary", fund)], y_unit="%", reflines=[(0.0, "0", False)],
+                        caption=_cap("Binance 日頻資金費率,單位 %", _vs7(fund, lambda v: f"{v:+.4f}%")))
         if lc:
             blocks.append(lc)
     ind = [(n, "benchmark", x) for n, x in (("爆倉指標", liq), ("巨鯨警報", whale), ("多空力道", taker)) if x is not None]
     if ind:
         ind[0] = (ind[0][0], "primary", ind[0][2])
-        lc = line_chart("Blave 指標(z-score)", ind, caption="標準化分數,0 = 樣本均值;日頻資料只到前一個完整日")
+        lc = line_chart("Blave 指標(z-score)", ind,
+                        caption=_cap("標準化分數,0 = 樣本均值", "日頻資料只到前一個完整日",
+                                     f"{ind[0][0]} {_vs7(ind[0][2])}"))
         if lc:
             blocks.append(lc)
     lt = _levels_table(lv, last)
