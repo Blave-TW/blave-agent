@@ -136,13 +136,14 @@ print(pack.describe())                   # every figure the pack carries, one li
 #     外資 20 日均: -40.2 億                              ← the caption's baseline; cite it, don't recompute
 #     外資期貨淨多單: +12,300 口(+2,500 口,09-01)
 #     缺少:  - 台指期 2026-09-01 無夜盤 bar(…)      ← a missing series is a missing block, never a guess
-#     narrative slots: lead≤600, read≤2400, watch≤1500, risk≤900
+#     narrative slots: lead≤600(一個可證偽的主張), read≤300(3–5 條,每條一個數字加它的基準;或 3–5 個 ### 子標), watch=表格 2–3 列(條件/門檻/現在值), risk≤100(一句可證偽的)
 
 publish(pack, narrative={
     "lead":   "外資現貨與期貨同日轉多,量能放大六成——這是資金回補,不是空窗反彈。",
-    "read":   "…what the numbers say and why (markdown, §4 subset)…",
-    "watch":  "…which indicator / 籌碼 conditions to watch, and at what thresholds…",
-    "risk":   "外資連兩日淨賣超逾 150 億,或淨多單回落到 1 萬口以下,這份解讀作廢。",
+    "read":   "- 外資買超 267 億,20 日均是 −40 億。\n- 投信連三買,今日 131 億。\n- 成交值 9,000 億,較前 10 日均高六成。",
+    "watch":  [("外資期貨淨多單", "回落到 1 萬口以下", "+12,300 口"),      # 2–3 列,不是散文
+               ("外資現貨買超", "轉為連兩日淨賣超", "+267.0 億")],
+    "risk":   "外資連兩日淨賣超逾 150 億,這份解讀作廢。",
 })
 ```
 
@@ -167,17 +168,33 @@ publish(pack, narrative={
   *Taiwan market calendar*). A skip on a holiday-table day ends with that attribution
   (also `pack.context['休市表出處']`); a reply telling the user the market is closed carries
   it verbatim too.
-- Slots: `lead` becomes the opening card (one falsifiable claim), `read` (判讀) / `watch`
-  (觀察重點) become sections after the data, `risk` a warning callout before the footnote. Each
-  has a character cap (`pack.slots`); `publish` raises past it — cut, do not summarise.
-- **`read` is skimmed, not read — give it handles.** Write it either as `### ` sub-headings
-  that each state a claim (「### 外資買超集中在電子權值股」, not 「### 籌碼面」), or as 3–5
-  bullets each carrying one number. Never one unbroken block of prose: 2,400 characters with
-  no headings is legal and unreadable. `publish` puts the `## 判讀` heading above the slot, so
-  your own headings inside it are `### ` (§4 renders both). `watch` takes the bullet form —
-  one condition and its threshold per bullet. *Why:* a reader finds things in a report by
-  scanning its headings, and that only works when the point is written in the heading. This is
-  the same bar §7b A6 / A7 set for a report you write by hand.
+- Slots: `lead` becomes the opening card (one falsifiable claim, ≤600), `read` (判讀) the one
+  section after the data (≤300), `watch` the 觀察重點 table, `risk` a warning callout before
+  the footnote (≤100). **A cap is the target, not room to fill** — `publish` raises past it,
+  naming how many characters over you are; cut, do not summarise the summary. *Why:* four
+  generous slots produced a wall — 80% of readers are gone by 350 words (Axios), and the blocks
+  already carry every number with its baseline.
+- **`read` is skimmed, not read — 3–5 items, in one of two forms,** and `publish`
+  refuses anything else:
+  - 3–5 `- ` bullets, each carrying **one number and the baseline it is read against**; or
+  - 3–5 `### ` sub-headings that each state a claim (「### 外資買超集中在電子權值股」, not
+    「### 籌碼面」), a sentence under each.
+
+  A range, not a fixed count: some days have three things worth saying and some have five.
+  The 300-character cap is what keeps the range honest — five items means five short ones.
+
+  Never prose, never a mix of the two: 300 characters of unbroken paragraph is shorter than
+  the old wall and just as unscannable. `publish` puts the `## 判讀` heading above the slot,
+  so your own headings inside it are `### ` (§4 renders both). *Why:* a reader finds things in
+  a report by scanning, and that only works when the point is in the bullet or the heading.
+  Same bar as §7b A6 / A7.
+- **`watch` is a table, not prose** — 2–3 rows of `(條件, 門檻, 現在值)`, each cell ≤40 chars,
+  passed as Python tuples (see the example above). `publish` builds the 觀察重點 `table` block
+  from them (a string in this slot is refused). One row = one condition, its threshold, and
+  where that number stands today; the reasoning belongs in `read`. A condition whose 現在值 you
+  cannot state is a condition you cannot watch — drop the row. Thresholds stay indicator /
+  籌碼 conditions, never a price (the rule below).
+- **`risk` is one falsifiable sentence** (≤100): the indicator threshold that voids the `lead`.
 - **The blocks already carry their own baselines — do not re-state them in prose.** Every
   chart and table in the pack has a `caption` holding its measurement basis *and* the figure
   it is read against (前 20 日高, the 20-session average, the previous 10 sessions), and the

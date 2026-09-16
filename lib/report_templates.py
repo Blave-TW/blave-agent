@@ -18,10 +18,11 @@ numbers are all in `describe()`: cite them, don't restate them in a narrative sl
     pack = tw_market_brief()              # today's TW market data pack
     print(pack.describe())                # the numbers, one line each — cite these
     publish(pack, narrative={
-        "lead":   "...one falsifiable claim...",
-        "read":   "...what the numbers say and why...",
-        "watch":  "...which conditions / indicators to watch, at what thresholds...",
-        "risk":   "...the indicator threshold that would prove the lead wrong...",
+        "lead":   "...one falsifiable claim (≤600)...",
+        "read":   "- 甲:數字加它的基準\n- 乙:…\n- 丙:…",      # 3–5 條,或 3–5 個 ### 子標;整格 ≤300
+        "watch":  [("外資期貨淨多單", "回落到 1 萬口以下", "+12,300 口"),      # 2–3 列,不是散文
+                   ("外資現貨買超", "轉為連兩日淨賣超", "+267.0 億")],
+        "risk":   "...one falsifiable indicator threshold that voids the lead (≤100)...",
     })
 
     publish(pack)                          # no narrative = data pack only, id gets "-auto"
@@ -49,14 +50,27 @@ from lib.report import write_report
 TPE = timezone(timedelta(hours=8))
 _FNREF_RE = re.compile(r"\[\^([A-Za-z0-9_-]{1,32})\]")
 
-# Narrative slots: key → (markdown heading, char cap). Caps are generous for a
-# judgement and tight for filler — a lead is one claim, not a summary.
+# Narrative slots: key → (heading, char cap). A cap is an upper bound that doubles as
+# the target — 讀者 80% 在 350 字前離開,而區塊的 title / caption 已經帶了結論與基準,
+# 敘事再講一次就是一面沒人讀的牆。`watch` 沒有字數上限:它是表格,不是散文。
 SLOTS = {
     "lead": ("", 600),
-    "read": ("## 判讀", 2400),
+    "read": ("## 判讀", 300),
     # 不叫「操作建議」:對不特定人給支撐壓力、買賣價位是投顧法規點名的態樣,這格只寫條件與門檻。
-    "watch": ("## 觀察重點", 1500),
-    "risk": ("推翻這份解讀的訊號", 900),
+    "watch": ("觀察重點", None),
+    "risk": ("推翻這份解讀的訊號", 100),
+}
+# `watch` 的表格形狀。key 必須是 ASCII(契約 §3),欄位一律 text format——現在值帶 + 號
+# 會被上色規則讀成獲利。
+WATCH_COLUMNS = (("cond", "條件", "left"), ("threshold", "門檻", "left"), ("now", "現在值", "right"))
+WATCH_ROWS = (2, 3)
+WATCH_CELL = 40
+READ_ITEMS = (3, 5)
+WATCH_CAPTION = "條件與門檻是這份判讀設的觀察位置;現在值取自本報告數據區的當日數值。"
+_SLOT_FORM = {
+    "lead": "一個可證偽的主張",
+    "read": "3–5 條,每條一個數字加它的基準;或 3–5 個 ### 子標",
+    "risk": "一句可證偽的",
 }
 
 
@@ -85,7 +99,10 @@ class Pack:
         lines += [f"  {k}: {v}" for k, v in self.context.items()]
         if self.notes:
             lines += ["  缺少:"] + [f"    - {n}" for n in self.notes]
-        lines.append("  narrative slots: " + ", ".join(f"{k}≤{cap}" for k, (_, cap) in self.slots.items()))
+        slots = [f"{k}=表格 {WATCH_ROWS[0]}–{WATCH_ROWS[1]} 列(條件/門檻/現在值)" if cap is None
+                 else f"{k}≤{cap}" + (f"({_SLOT_FORM[k]})" if k in _SLOT_FORM else "")
+                 for k, (_, cap) in self.slots.items()]
+        lines.append("  narrative slots: " + ", ".join(slots))
         return "\n".join(lines)
 
 
@@ -1021,14 +1038,66 @@ def _crypto_symbol_brief(sym, date, headers, lookback_days):
 
 # ─── publish ──────────────────────────────────────────────────────────────────
 
+def _watch_table(rows):
+    """narrative['watch'] → a `table` block. Rows are (條件, 門檻, 現在值) triples —
+    prose is what the wall was made of, so this slot no longer takes a string."""
+    if isinstance(rows, (str, bytes)):
+        raise ValueError("narrative['watch'] is a table now, not prose: give "
+                         f"{WATCH_ROWS[0]}–{WATCH_ROWS[1]} rows of (條件, 門檻, 現在值), e.g. "
+                         "[('外資期貨淨多單', '回落到 1 萬口以下', '+12,300 口'), "
+                         "('外資現貨連續買超', '轉為連兩日淨賣超', '+267.0 億')] — references/reports.md §1b")
+    try:
+        rows = list(rows)
+    except TypeError:
+        raise ValueError(f"narrative['watch'] must be a list of (條件, 門檻, 現在值) rows, got {type(rows).__name__}")
+    lo, hi = WATCH_ROWS
+    if not lo <= len(rows) <= hi:
+        raise ValueError(f"narrative['watch'] has {len(rows)} row(s), needs {lo}–{hi} — "
+                         "一列一個條件;湊不出第二個條件就別發這一格,寫不下第四個就留最重要的三個")
+    clean = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, (list, tuple)) or len(row) != 3:
+            raise ValueError(f"narrative['watch'][{i}] must be 3 strings (條件, 門檻, 現在值), got {row!r}")
+        cells = {}
+        for (key, label, _), value in zip(WATCH_COLUMNS, row):
+            value = str(value).strip()
+            if not value:
+                raise ValueError(f"narrative['watch'][{i}] 的「{label}」是空的 — "
+                                 "三格缺一格就不要放這一列(現在值報不出來,這個條件就還不能觀察)")
+            if len(value) > WATCH_CELL:
+                raise ValueError(f"narrative['watch'][{i}] 的「{label}」是 {len(value)} 字,上限 {WATCH_CELL}"
+                                 f"(超出 {len(value) - WATCH_CELL}) — 一格寫一件事,理由留給 read")
+            cells[key] = value
+        clean.append(cells)
+    return table(SLOTS["watch"][0], WATCH_COLUMNS, clean, caption=WATCH_CAPTION)
+
+
+def _check_read_form(body):
+    """`read` 是用掃的:3–5 條各帶一個數字的條列,或 3–5 個各自是主張的 ### 子標,兩種擇一。
+
+    範圍而不是定值:有些日子只有三件事值得講,有些有五件;湊到定值只會多出填充的一條
+    或砍掉真的該講的一條。整格仍受 300 字上限管,所以放寬條數不會放寬總長度。"""
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    heads = [ln for ln in lines if ln.startswith("### ")]
+    bullets = [ln for ln in lines if ln.startswith("- ")]
+    lo, hi = READ_ITEMS
+    if (lo <= len(heads) <= hi and not bullets) or (lo <= len(bullets) <= hi and not heads):
+        return
+    raise ValueError(f"narrative['read'] must be {lo}–{hi} items in ONE form — '- ' bullets "
+                     f"(每條一個數字加它的基準) or '### ' sub-headings (小標本身就是主張); "
+                     f"found {len(heads)} 個 ### 子標、{len(bullets)} 條「- 」條列. "
+                     "整段散文不算:讀者是靠標題與條列找東西的 — references/reports.md §1b")
+
+
 def publish(pack, narrative=None, report_id=None, title=None, origin=None):
     """Assemble the pack and the narrative into a report and drop it. Returns the path.
 
-    narrative: {"lead", "read", "watch", "risk"} — any subset, markdown, each capped
-    by `pack.slots`. `lead` becomes the opening conclusion card (right after meta),
-    `read`/`watch` become sections after the data blocks, `risk` a warning callout
-    just before the footnote. No narrative = a data-only report — the honest form
-    for a scheduled run, never a place for a made-up view.
+    narrative: {"lead", "read", "watch", "risk"} — any subset. `lead` / `read` / `risk`
+    are markdown capped by `pack.slots` (600 / 300 / 100); `watch` is 2–3 rows of
+    (條件, 門檻, 現在值), not prose. `lead` becomes the opening conclusion card (right
+    after meta), `read` a section after the data blocks, `watch` the 觀察重點 table,
+    `risk` a warning callout just before the footnote. No narrative = a data-only
+    report — the honest form for a scheduled run, never a place for a made-up view.
     origin: "chat" (default) or "scheduled" — shown in the report header.
     Returns None without writing when `pack.skip` is set."""
     if pack.skip:
@@ -1042,38 +1111,48 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None):
     unknown = set(narrative) - set(pack.slots)
     if unknown:
         raise ValueError(f"unknown narrative slot(s): {sorted(unknown)}; allowed: {sorted(pack.slots)}")
+    watch = narrative.pop("watch", None)
+    watch_block = _watch_table(watch) if watch else None
     for k, v in narrative.items():
         cap = pack.slots[k][1]
         if not isinstance(v, str):
             raise ValueError(f"narrative[{k!r}] must be a markdown string")
         if len(v) > cap:
-            raise ValueError(f"narrative[{k!r}] is {len(v)} chars, cap {cap} — cut it, don't summarise the summary")
+            raise ValueError(f"narrative[{k!r}] is {len(v)} chars, cap {cap} (over by {len(v) - cap}) — "
+                             f"cut it, don't summarise the summary: {_SLOT_FORM[k]}"
+                             + ("。圖表 title / caption 已經帶了結論與基準,敘事不再重述那些數字" if k == "read" else ""))
+    if narrative.get("read", "").strip():
+        _check_read_form(narrative["read"].strip())
     blocks = list(pack.blocks)
     foot = blocks.pop() if blocks and blocks[-1].get("type") == "footnote" else None
     out = []
     if narrative.get("lead", "").strip():
         out.append(text(narrative["lead"].strip(), lead=True))
     out += blocks
-    for key in ("read", "watch"):
-        body = narrative.get(key, "").strip()
-        if body:
-            heading = pack.slots[key][0]
-            # 只有 body 自己已經以這個標題開頭才省略;以 ### 子標或 #1 開頭的段落照常加標題。
-            out.append(text(body if not heading or body.startswith(heading) else f"{heading}\n\n{body}"))
+    body = narrative.get("read", "").strip()
+    if body:
+        heading = pack.slots["read"][0]
+        # 只有 body 自己已經以這個標題開頭才省略;以 ### 子標或 #1 開頭的段落照常加標題。
+        out.append(text(body if body.startswith(heading) else f"{heading}\n\n{body}"))
+    if watch_block:
+        out.append(watch_block)
     if narrative.get("risk", "").strip():
         out.append(callout(narrative["risk"].strip(), tone="warning", title=pack.slots["risk"][0]))
     if foot:
         out.append(foot)
     # [^id] 是 api 唯一會拒的敘事錯誤,而 id 清單就在手上——本地先擋,免得整份進 failed/。
     known = {i["id"] for i in (foot or {}).get("items", [])}
-    for key, body in narrative.items():
+    written = dict(narrative)
+    if watch_block:
+        written["watch"] = " ".join(v for r in watch_block["rows"] for v in r.values())
+    for key, body in written.items():
         missing = sorted(set(_FNREF_RE.findall(body)) - known)
         if missing:
             raise ValueError(f"narrative[{key!r}] references footnote id(s) {missing} that the pack has not got; known: {sorted(known)}")
     if origin not in (None, "chat", "scheduled"):
         raise ValueError("origin must be 'chat' or 'scheduled'")
     meta = dict(pack.meta)
-    narrated = any(v.strip() for v in narrative.values())
+    narrated = bool(watch_block) or any(v.strip() for v in narrative.values())
     meta["origin"] = origin or ("chat" if narrated else "scheduled")
     # 純數據包用自己的 id(-auto):排程版同一天跑,不能把早上那份有判讀的蓋掉
     # (29026 實測:cron 首跑覆蓋了對話產的 tw-market-20260902)。明給 report_id 就照給。
