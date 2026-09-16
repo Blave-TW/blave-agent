@@ -47,6 +47,7 @@ import re
 import shutil
 import time
 import unicodedata
+from zoneinfo import ZoneInfo
 
 # The uploader scans $BLAVE_AGENT_WORKSPACE/reports, so that env var wins when it
 # is set. It is often absent though: scheduled strategy subprocesses are started
@@ -234,6 +235,8 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
 
 
 JOBS_DIR = os.path.join(WORKSPACE, "report_jobs")
+TIMEZONE_PATH = os.path.join(WORKSPACE, "state", "timezone")
+_TZ_MAX = 64
 _JOB_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 _CRON_FIELD_RE = re.compile(r"[0-9*,/-]+")
 _CRON_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
@@ -280,25 +283,74 @@ def _write_text_atomic(path, text):
         raise
 
 
-def register_schedule(id, title, prompt, cron, human, script, enabled=True):
+def _machine_timezone():
+    """The IANA zone the platform recorded for this machine's user, or "" (never set,
+    unreadable, or a value that no longer resolves)."""
+    try:
+        with open(TIMEZONE_PATH, encoding="utf-8-sig") as f:
+            tz = f.readline(_TZ_MAX + 1).strip()
+    except FileNotFoundError:
+        return ""  # never set — the caller's error message is the one that matters
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"Error: {e}")
+        return ""
+    return tz if _tz_ok(tz) else ""
+
+
+def set_timezone(tz):
+    """Record which time zone the user is in (`state/timezone`, one IANA name). Returns it.
+
+    The platform writes this from the user's browser when they open the workspace page, so
+    you normally never call it. Call it when `register_schedule` tells you the machine has
+    no time zone on record: ASK the user which zone they are in (「你在哪個時區?」), pass
+    what they answer, then register. Never guess it from their language, their symbols or
+    this machine's clock — every scheduled report they own is read in this zone.
+    The platform's own write carries `if_unset`, so it will not overwrite what you set here.
+    """
+    if not _tz_ok(tz):
+        raise ValueError(f"tz {tz!r} must be an IANA time zone name, e.g. 'Asia/Taipei' — "
+                         "ask the user which time zone they are in")
+    os.makedirs(os.path.dirname(TIMEZONE_PATH), exist_ok=True)
+    _write_text_atomic(TIMEZONE_PATH, tz + "\n")
+    return tz
+
+
+def _tz_ok(tz):
+    if not isinstance(tz, str) or not 1 <= len(tz) <= _TZ_MAX:
+        return False
+    try:
+        ZoneInfo(tz)
+    except (KeyError, ValueError):
+        return False
+    return True
+
+
+def register_schedule(id, title, prompt, cron, human, script, enabled=True, tz=None):
     """Register (or update) a scheduled report: writes `report_jobs/<id>/run.py` and
-    `job.json`. Returns the job directory. The runtime installs the schedule from
-    that file, runs the script, records each run and reports the list to the web —
-    never touch crontab / schtasks yourself.
+    `job.json`. Returns the job directory. The runtime reads that file, fires the script
+    when the cron comes due, records each run and reports the list to the web — never
+    touch crontab / schtasks yourself.
 
     id      `[a-z0-9][a-z0-9-]{0,39}`, a slug (`perf-4h`, `tsmc-morning`); same id =
             update (keeps `created_at`, bumps `updated_at`, clears any pending edit).
     title   1–80 chars, the list row.
     prompt  1–2000 chars — the user's own words, verbatim, not your rewrite; the
             web shows it back to them as the report's description.
-    cron    standard 5-field cron in this machine's local time (no `@daily`, no
-            seconds). Windows only runs a subset — see references/reports.md §8.
+    cron    standard 5-field cron (no `@daily`, no seconds), **written in the user's own
+            wall-clock time, exactly as they said it**: 台北 08:30 is `30 8 * * *`, full
+            stop. Do NOT convert it to the machine's clock — the runtime evaluates the
+            cron in `tz` (below), so a conversion would shift the report by that offset
+            a second time. The same expression works on Linux and Windows.
     human   1–60 chars, the schedule in words (「每 4 小時」「每個交易日 08:30」);
             the only form the user ever sees, so make it match the cron exactly.
     script  the full text of run.py. It runs like a scheduled strategy: cwd is the
             workspace, every `BLAVE_*` variable stripped, no machine token; it
             publishes by writing into `reports/` (write_report / templates
             `publish(pack)`), and writes nothing when there is nothing to report.
+    tz      IANA zone the cron is read in. Leave it out: it is taken from the machine's
+            own setting (`state/timezone`, written by the platform from the user's
+            browser). If that is missing this raises — ask the user which time zone they
+            are in, record it with `set_timezone()`, then register; never guess one.
     """
     if not isinstance(id, str) or not _JOB_ID_RE.fullmatch(id):
         raise ValueError(f"job id {id!r} must match [a-z0-9][a-z0-9-]{{0,39}}")
@@ -310,6 +362,16 @@ def register_schedule(id, title, prompt, cron, human, script, enabled=True):
         raise ValueError("script must be the full text of run.py")
     if not isinstance(enabled, bool):
         raise ValueError("enabled must be True or False")
+    if tz is None:
+        tz = _machine_timezone()
+    if not tz:
+        raise ValueError(
+            "this machine has no time zone on record (workspace/state/timezone), so the "
+            "wall clock your cron would be read in is unknown. Ask the user which time "
+            "zone they are in, record it with lib.report.set_timezone('Asia/Taipei'), then "
+            "register again — do not guess it and do not convert the time yourself")
+    if not _tz_ok(tz):
+        raise ValueError(f"tz {tz!r} must be an IANA time zone name, e.g. 'Asia/Taipei'")
 
     job_dir = os.path.join(JOBS_DIR, id)
     os.makedirs(job_dir, exist_ok=True)
@@ -325,7 +387,7 @@ def register_schedule(id, title, prompt, cron, human, script, enabled=True):
         pass
     _write_text_atomic(os.path.join(job_dir, "run.py"), script)
     doc = {"id": id, "title": title, "prompt": prompt,
-           "schedule": {"human": human, "cron": " ".join(fields)},
+           "schedule": {"human": human, "cron": " ".join(fields), "tz": tz},
            "enabled": enabled, "created_at": created_at, "updated_at": now, "pending": None}
     _write_text_atomic(os.path.join(job_dir, "job.json"),
                        json.dumps(doc, ensure_ascii=False, indent=2) + "\n")

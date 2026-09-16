@@ -737,19 +737,20 @@ a hand-written morning report alike.
 ## 8. Scheduled reports — a job directory, not a cron line
 
 A recurring report is **one directory plus one registration file**. You write the script and
-the registration; the runtime owns the schedule (it installs, pauses and removes the crontab
-line / scheduled task itself), runs the script, records every run and reports the list to the
-web, where the user can pause, resume, run now and delete without you. **Never touch crontab
-or schtasks for a report.** `lib.report.register_schedule` writes both files correctly:
+the registration; the runtime owns the schedule (it reads the registration and fires the script
+itself — nothing is ever installed in crontab or a scheduled task), records every run and
+reports the list to the web, where the user can pause, resume, run now and delete without you.
+**Never touch crontab or schtasks for a report.** `lib.report.register_schedule` writes both
+files correctly:
 
 ```python
-from lib.report import register_schedule, list_schedules, remove_schedule
+from lib.report import register_schedule, list_schedules, remove_schedule, set_timezone
 
 register_schedule(
     "perf-4h",                                   # id: [a-z0-9][a-z0-9-]{0,39}, a slug
     "每 4 小時運行狀況",                          # title, 1–80
     "每 4 小時給我一份各策略運行狀況：倉位、當日損益、最近訊號、有沒有錯誤。",  # the user's words, verbatim
-    "0 */4 * * *",                               # cron, 5 fields, this machine's local time
+    "0 */4 * * *",                               # cron, 5 fields, in the USER's wall-clock time
     "每 4 小時",                                  # the schedule in words — the only form the user sees
     script,                                      # full text of run.py
 )
@@ -771,7 +772,7 @@ convenience):
 ```json
 {"id": "perf-4h", "title": "每 4 小時運行狀況",
  "prompt": "每 4 小時給我一份各策略運行狀況：倉位、當日損益、最近訊號、有沒有錯誤。",
- "schedule": {"human": "每 4 小時", "cron": "0 */4 * * *"},
+ "schedule": {"human": "每 4 小時", "cron": "0 */4 * * *", "tz": "Asia/Taipei"},
  "enabled": true, "created_at": 1756800000, "updated_at": 1756800000, "pending": null}
 ```
 
@@ -782,8 +783,8 @@ convenience):
   When you decide to re-register a job with a different cron, edit its `run.py`, change the
   report id it writes, or remove it — a bug fix, a side edit, or re-registering over an
   existing job while handling a differently worded request — tell the user what changes,
-  before → after (「tw-weekly:本機 `52 21 * * 5`(台北週六 05:52)→ `52 13 * * 5`(台北週五
-  21:52)」), and do it only once they confirm. A fix you are sure of is proposed the same way,
+  before → after in their own wall-clock time (「tw-weekly:每週五 21:52 → 每週五 13:52」),
+  and do it only once they confirm. A fix you are sure of is proposed the same way,
   never applied on the side. A user instruction that names the change (「把 tw-weekly 刪掉」,
   「tw-weekly 改成 22:00」) or the web's edit flow (end of this section) is its own
   confirmation: do it and state the before → after in the reply.
@@ -791,34 +792,27 @@ convenience):
   overwrites what the job published. Give it its own (`tw-weekly-narr-20260911`).
 - `prompt` is the user's own request, not your rewrite; the web shows it back as the
   report's description and hands it to you again when they edit it.
-- `schedule.cron` is standard 5-field cron in the machine's local time — no `@daily`,
-  no seconds field, no month/weekday names. The web never displays the cron; it displays
-  `schedule.human` and the next run time the runtime computes from the cron, which is how a
-  mis-parse becomes visible — so restate the schedule when you register it (AGENTS.md).
-- **Time zone: the user's, converted to this machine's.** A time the user gives without a zone
-  is in the user's own zone — Asia/Taipei for a Taiwan user. The cron runs on this machine's
-  clock, which is often UTC. Check it once with
-  `python3 -c "import datetime; print(datetime.datetime.now().astimezone().strftime('%z'))"`
-  (`+0000` = UTC, `+0800` = Taipei), convert, and write both sides in the restatement:
-  「台北 08:30 = 本機 UTC 00:30 → `30 0 * * *`」. A conversion that crosses midnight moves the
-  weekday or date too: 台北週一 05:00 = UTC 週日 21:00 → `0 21 * * 0`. `schedule.human` is in
-  the user's time (「每週五 21:52(台北)」). *Why:* a Friday 21:52 Taipei report registered as
-  `52 21 * * 5` on a UTC machine runs at 05:52 on Saturday, Taipei time.
+- `schedule.cron` is standard 5-field cron — no `@daily`, no seconds field, no month/weekday
+  names. The web never displays the cron; it displays `schedule.human` and the next run time
+  the runtime computes from the cron, which is how a mis-parse becomes visible — so restate
+  the schedule when you register it (AGENTS.md).
+- **Time zone: write the user's wall-clock time, unconverted.** 台北 08:30 is `30 8 * * *`,
+  台北週一 05:00 is `0 5 * * 1` — nothing else. The zone the runtime reads that cron in is
+  `schedule.tz`, which `register_schedule` fills from the machine's own setting
+  (`state/timezone`, written by the platform from the user's browser), and it handles daylight
+  saving on its own. **Never convert to the machine's clock and never compute an offset
+  yourself**: the runtime would then apply the zone on top of your conversion and the report
+  would run at the wrong time twice over. `schedule.human` is the same wall-clock time in
+  words (「每週五 21:52」). If `register_schedule` raises because the machine has no time zone
+  on record, ask the user which time zone they are in, record it with
+  `set_timezone("Asia/Taipei")`, then register — never guess it and never substitute this
+  machine's clock. (The platform's own write keeps whatever you set, so you only do this once.)
 - **Say in the restatement that the scheduled report is data only.** A scheduled run has no
   agent behind it (§1b), so it carries the numbers and no 判讀; a reading only comes from
   asking in chat. Tell the user before they confirm, e.g. 「排程版只有數據、沒有判讀;要判讀請在
   對話裡叫我出。」
-- **Windows machines** only run this subset: `*/N * * * *` with N in
-  1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30; `M */N * * *` with N in 1, 2, 3, 4, 6, 8, 12 (steps
-  that divide the hour / day — for any other N the task scheduler counts from creation time
-  and the next-run time shown to the user would be wrong); `M H * * *`; `M H * * D` (one
-  weekday digit); `M H D * *`. `register_schedule` does **not** refuse anything else (it only
-  checks cron grammar): a `1-5` range, a `9,18` list or `*/7` is written, never installed, and
-  shows in the user's list as `schedule not supported on Windows`. Check the form before you
-  register. 每週一至週五 08:30 (`30 0 * * 1-5` on a UTC machine) becomes five jobs,
-  `30 0 * * 1` … `30 0 * * 5`, each with its own id (`tw-morning-mon` … `tw-morning-fri`) and
-  all five counting toward the 20-job cap. For anything else, pick the nearest expressible
-  schedule and say so.
+- **Linux and Windows run the same expression.** There is no scheduled-task subset to work
+  around: 每週一至週五 08:30 is one job, `30 8 * * 1-5`, on either platform.
 
 `run.py` constraints — it runs exactly like a scheduled strategy:
 

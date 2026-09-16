@@ -551,12 +551,10 @@ def add_widget(id, type, title, *, symbol=None, symbols=None, interval=None, ven
                   strategy was back-tested on. The platform serves the data from the
                   strategy it already holds; this machine sends nothing and runs no job.
     block_type    machine: the report block the script will send (see BLOCK_TYPES).
-    refresh_cron  machine: 5-field cron, this machine's local time; `*/1 * * * *` is
-                  the densest schedule there is — no seconds field. Only the grammar is
-                  checked here; a Windows machine runs the subset in
-                  references/reports.md §8 (hourly is `0 */1 * * *`, not `0 * * * *`),
-                  and a form outside it is not installed and shows as an error in the
-                  user's list.
+    refresh_cron  machine: 5-field cron in the USER's wall-clock time (the zone comes from
+                  the machine's own setting, `state/timezone` — never convert it yourself);
+                  `*/1 * * * *` is the densest schedule there is — no seconds field. Only
+                  the grammar is checked here. Linux and Windows run the same expression.
     refresh_human machine: the schedule in words (「每 5 分鐘」), the only form the
                   user sees, so it must match the cron.
     script        machine: the full text of `report_jobs/<id>/run.py`. It runs like a

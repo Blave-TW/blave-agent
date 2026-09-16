@@ -130,12 +130,13 @@ a chart.
   `drawdown`, `heatmap`, `bar_chart`, `histogram`, `box`, `scatter`, `metric_table`, `table`,
   `text`, `quote`, `code`, `callout`, `image`. Not `meta` / `footnote` / `divider` (report
   structure, not tile content). The block you later `write_data` must be that type.
-- **Refresh** (machine): `refresh_cron` is 5-field cron in this machine's local time, **at most
-  once a minute** (`*/1 * * * *`), no seconds field, no `@hourly`; `refresh_human` is the
-  schedule in words and is the only form the user sees, so make it match exactly. Restate
-  the parsed schedule to the user, as for a scheduled report. `lib/watch.py` checks only the
-  cron grammar — on a Windows machine keep to the subset in `references/reports.md` §8
-  (hourly is `0 */1 * * *`; the bare `0 * * * *` is not in it and is not installed).
+- **Refresh** (machine): `refresh_cron` is 5-field cron in the user's own wall-clock time —
+  the zone comes from the machine's setting (`state/timezone`), so write the time the user
+  said and convert nothing (`references/reports.md` §8) — **at most once a minute**
+  (`*/1 * * * *`), no seconds field, no `@hourly`; `refresh_human` is the schedule in words
+  and is the only form the user sees, so make it match exactly. Restate the parsed schedule
+  to the user, as for a scheduled report. `lib/watch.py` checks only the cron grammar, and
+  Linux and Windows run the same expression.
 
 Which to pick: a number that should move as the market moves → stream widget, always. A
 number that comes from **your** computation (exposure, a signal, a scan) → machine widget on
