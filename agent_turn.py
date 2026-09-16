@@ -2003,6 +2003,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # value rather than merging, so an existing PYTHONPATH is carried over explicitly.
     turn_env["PYTHONPATH"] = os.pathsep.join(
         p for p in (WORKSPACE, os.environ.get("PYTHONPATH")) if p)
+    # 機器本身一律 UTC,但 agent 在聊天裡講的「現在幾點」、它讀的 log 時間戳都該是用戶的
+    # 時間(report-schedules.md §2b)——沒帶的話它會把 UTC 的 10:26 當成用戶的現在。
+    # 沒設定就不帶(舊機、只用 Telegram 的用戶),維持機器時間。策略子行程刻意不吃這個
+    # (command_listener._strategy_subprocess_env),排程跑與手動跑的基準才會一致。
+    user_tz = strategy_reporter.read_timezone()
+    if user_tz:
+        turn_env["TZ"] = user_tz
     # Claude Code's Bash tool auto-backgrounds any command still running at 600s
     # (CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS) and caps the per-call `timeout`
     # at BASH_MAX_TIMEOUT_MS (600s). A large-universe Type C backtest (300 台股,

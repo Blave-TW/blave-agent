@@ -1,16 +1,16 @@
 """Scheduled report jobs: the `workspace/report_jobs/<id>/` contract and its runner.
 
 Contract: `.claude/docs/report-schedules.md`. The agent only writes files (`run.py` +
-`job.json`); this runtime owns the schedule (command_listener._sync_report_crons
-installs one crontab line / scheduled task per enabled job pointing at this file),
+`job.json`); this runtime owns the schedule (command_listener._fire_due_reports starts
+this file when a job's cron comes due — nothing is ever installed in crontab/schtasks),
 runs the script, records the outcome and reports it (strategy_reporter.report_schedules).
 
 A watchboard machine widget (`.claude/docs/watchboard.md` §4.2) is the same job
-with `"kind": "watch"` and the widget id as the job id: same crontab line, same
+with `"kind": "watch"` and the widget id as the job id: same trigger, same
 runner, but success is judged by `watch/data/<id>.json` having been rewritten,
 not by a report landing — the script writes that file, report_uploader ships it.
 
-Usage (from the crontab line / schtasks, or `report_run_now`):
+Usage (from the scheduler thread, or `report_run_now`):
     report_runner.py <id>
 
 Exit 2 = no such job / bad job.json, 3 = another run of the same job holds the lock
@@ -26,6 +26,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 JOBS_DIR = os.path.join(WORKSPACE, "report_jobs")
@@ -46,12 +47,13 @@ REPORT_IDS_KEEP = 50
 ERROR_TAIL = 200
 PENDING_STALE_S = 600
 NEXT_RUN_HORIZON_DAYS = 366
+TZ_MAX = 64
 
-# ── cron (5 fields, machine-local time) ──────────────────────────────────────
+# ── cron (5 fields, evaluated on schedule.tz's wall clock) ───────────────────
 
 _FIELD_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
-# ASCII only: a full-width digit or a stray tab passes str.isdigit()/split() but
-# turns the crontab line into something `crontab -` refuses as a whole file.
+# ASCII only: a full-width digit passes str.isdigit() and would be read as a number
+# the user never wrote (contract §3) — refuse the field instead.
 _CRON_FIELD_RE = re.compile(r"[0-9*,/-]+")
 
 
@@ -97,15 +99,27 @@ def parse_cron(expr):
     return minute, hour, dom, month, dow, fields[2].startswith("*"), fields[4].startswith("*")
 
 
-def cron_next(expr, now=None):
-    """Next fire time as unix seconds (local clock), or None when the expression is
-    invalid or nothing matches within NEXT_RUN_HORIZON_DAYS. Standard vixie rule for
-    day-of-month vs weekday: both restricted → either matches."""
+def cron_next(expr, now=None, tz=None):
+    """Next fire time as unix seconds, or None when the expression is invalid, `tz` is
+    not a known zone, or nothing matches within NEXT_RUN_HORIZON_DAYS.
+
+    Evaluated on the WALL CLOCK of `tz` (contract §3): the user's zone, not the
+    machine's (machines are UTC). `tz=None` = the machine's own clock, which is what a
+    registration written before the field existed gets. DST is zoneinfo's to carry —
+    the scan walks wall-clock candidates and `.timestamp()` turns the one it picks into
+    the instant that wall-clock time actually happens, so an 08:30 job stays 08:30 on
+    both sides of a transition. Standard vixie rule for day-of-month vs weekday: both
+    restricted → either matches.
+    """
     spec = parse_cron(expr)
     if spec is None:
         return None
+    try:
+        tzinfo = ZoneInfo(tz) if tz else None
+    except (KeyError, ValueError):
+        return None
     minute, hour, dom, month, dow, dom_any, dow_any = spec
-    start = datetime.fromtimestamp(time.time() if now is None else now)
+    start = datetime.fromtimestamp(time.time() if now is None else now, tzinfo)
     start = start.replace(second=0, microsecond=0) + timedelta(minutes=1)
     hours, minutes = sorted(hour), sorted(minute)
     first_day = start.date()
@@ -119,47 +133,9 @@ def cron_next(expr, now=None):
             continue
         for h in hours:
             for m in minutes:
-                cand = datetime(d.year, d.month, d.day, h, m)
+                cand = datetime(d.year, d.month, d.day, h, m, tzinfo=tzinfo)
                 if cand >= start:
-                    return int(time.mktime(cand.timetuple()))
-    return None
-
-
-_WIN_DAYS = ("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
-# Only steps that divide the hour / day: schtasks counts from the task's creation
-# time, cron from :00 / 00:00 — for any other N the two disagree and next_run_at
-# would lie about when the task fires.
-_WIN_MINUTE_STEPS = (1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30)
-_WIN_HOUR_STEPS = (1, 2, 3, 4, 6, 8, 12)
-
-
-def cron_to_schtasks(expr):
-    """schtasks schedule flags for the contract's Windows subset (§3), or None for
-    anything schtasks cannot express one-to-one."""
-    if parse_cron(expr) is None:
-        return None
-    mi, h, dom, mon, dow = expr.split()
-    if mon != "*":
-        return None
-    if re.fullmatch(r"\*/[0-9]+", mi) and (h, dom, dow) == ("*", "*", "*"):
-        n = int(mi[2:])
-        return ["/sc", "minute", "/mo", str(n)] if n in _WIN_MINUTE_STEPS else None
-    if not mi.isdigit():
-        return None
-    if re.fullmatch(r"\*/[0-9]+", h) and (dom, dow) == ("*", "*"):
-        n = int(h[2:])
-        if n not in _WIN_HOUR_STEPS:
-            return None
-        return ["/sc", "hourly", "/mo", str(n), "/st", f"00:{int(mi):02d}"]
-    if not h.isdigit():
-        return None
-    st = f"{int(h):02d}:{int(mi):02d}"
-    if (dom, dow) == ("*", "*"):
-        return ["/sc", "daily", "/st", st]
-    if dom == "*" and dow.isdigit():
-        return ["/sc", "weekly", "/d", _WIN_DAYS[int(dow) % 7], "/st", st]
-    if dow == "*" and dom.isdigit():
-        return ["/sc", "monthly", "/d", dom, "/st", st]
+                    return int(cand.timestamp())
     return None
 
 
@@ -212,6 +188,17 @@ def load_job(job_id):
         _str(sched, "human", HUMAN_MAX)
         if parse_cron(sched.get("cron")) is None:
             raise ValueError("schedule.cron must be a 5-field cron expression")
+        tz = sched.get("tz")
+        # Absent is NOT a broken file (contract §2): a registration written before the
+        # field existed keeps running on the machine's own clock rather than vanishing
+        # from the user's list.
+        if tz is not None:
+            if not isinstance(tz, str) or not 1 <= len(tz) <= TZ_MAX:
+                raise ValueError(f"schedule.tz must be a string of 1-{TZ_MAX} characters")
+            try:
+                ZoneInfo(tz)
+            except (KeyError, ValueError):
+                raise ValueError(f"schedule.tz {tz!r} is not a known time zone")
         if not isinstance(doc.get("enabled"), bool):
             raise ValueError("enabled must be true or false")
         for key in ("created_at", "updated_at"):
@@ -281,10 +268,11 @@ def last_run(job_id):
 
 def _subprocess_env():
     """Same rule as command_listener._strategy_subprocess_env (Linux allowlist,
-    Windows drops BLAVE_*), inlined so the runner stays stdlib-only and a broken
+    Windows drops BLAVE_* and TZ), inlined so the runner stays stdlib-only and a broken
     listener module cannot take a run down with it. Change both together."""
     if platform.system() == "Windows":
-        env = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("BLAVE_") and k != "TZ"}
         env["BLAVE_MODE"] = "live"
         return env
     return {k: v for k, v in os.environ.items()

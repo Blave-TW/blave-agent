@@ -31,6 +31,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from zoneinfo import ZoneInfo
 
 import telegram_pairing
 import turn_slots
@@ -747,9 +748,13 @@ def _strategy_subprocess_env():
     kickoff), and an allowlist is wrong here — _cmd_close_all's own comment
     already covers why: "Windows 的 python 少了 SystemRoot 等系統變數會直接
     起不來;要擋的只有 bridge 的 BLAVE_* 秘密". Same denylist pattern as
-    that function, so a Windows tick doesn't die at interpreter boot."""
+    that function, so a Windows tick doesn't die at interpreter boot. TZ is dropped on
+    both (the Linux allowlist never had it): a strategy must read the same clock
+    whichever way it was started, and this process may carry the user's own zone
+    (state/timezone, contract §2b) while the scheduler does not."""
     if platform.system() == "Windows":
-        env = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("BLAVE_") and k != "TZ"}
         env["BLAVE_MODE"] = "live"
         return env
     return {k: v for k, v in os.environ.items()
@@ -1019,33 +1024,37 @@ def _migrate_legacy_ac_crons():
 
 
 def _scheduler_loop():
-    """The migration sweep is NOT called here unconditionally — it runs from
-    inside _run_scheduler_cycle, gated on wait_for_bar.py actually being
+    """The Type A/C migration sweep is NOT called here unconditionally — it runs
+    from inside _run_scheduler_cycle, gated on wait_for_bar.py actually being
     present in THIS workspace (see _wait_for_bar_available), because that can
     become true at any point after this runtime already started, not only at
-    process startup."""
+    process startup. The report sweep below has no such gate: the stale crontab
+    lines it removes exist whatever the workspace looks like, and every one of
+    them would double-fire a job from this release onwards."""
+    _sweep_legacy_report_schedules()
     while True:
         try:
             _run_scheduler_cycle()
         except Exception as e:
             _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
-        _sync_report_crons()  # independent of venue binding — reports run unbound too
+        _fire_due_reports()  # independent of venue binding — reports run unbound too
         _scheduler_wake.wait(timeout=SCHEDULER_INTERVAL_SECONDS)
         _scheduler_wake.clear()
 
 
 # ── 定期報告排程(.claude/docs/report-schedules.md §3、§6)────────────────────
 # The agent registers a job by writing report_jobs/<id>/{job.json,run.py}; this
-# runtime is the only thing that ever touches crontab / schtasks for it. Same
-# ownership tag pattern as the Type B strategy lines above, separate tag so the
-# two syncs never rewrite each other's lines.
+# runtime owns the trigger and fires it from the scheduler thread below. Nothing
+# is installed in crontab / schtasks: a cron line always fires on the machine's
+# clock (UTC on every machine we run), and Ubuntu's cron has no per-user time
+# zone at all (`man 5 crontab` LIMITATIONS: `TZ` in a crontab only reaches the
+# command's environment, not the schedule), so a job the user asked for at 台北
+# 08:30 could not be expressed there. Evaluating the cron ourselves on the job's
+# own `schedule.tz` is the only way the wall-clock time the user said is the
+# wall-clock time it runs.
 
 _REPORT_CRON_TAG = "# blave-report:"
 _WIN_REPORT_PREFIX = "blave-web-report-"
-# Windows only: {id: cron} as last installed by this process, so an unchanged job
-# is not re-created every scheduler tick (crontab can be diffed in place; a
-# scheduled task cannot without parsing XML).
-_report_tasks_seen = {}
 
 
 def _report_runner_mod():
@@ -1060,11 +1069,10 @@ def _report_runner_cmd(job_id):
     """argv for one run of report_runner.py — this runtime's own interpreter and
     directory (the runner is stdlib-only; run.py itself gets the system python)."""
     # Through the `current` link, never the resolved releases/<version>/ path
-    # (`__file__` on a machine IS resolved — 29026 e2e wrote releases/1.1.53/).
-    # A crontab line is only rewritten when it changes, so a version-pinned
-    # path would keep every job on the release it was installed under, past
-    # every later update. Same `current` convention as _cmd_retest_accounts;
-    # the sibling-dir fallback is for the checks, which run from a temp tree.
+    # (`__file__` on a machine IS resolved — 29026 e2e wrote releases/1.1.53/), so a
+    # job started now runs the runner of whatever release is current. Same `current`
+    # convention as _cmd_retest_accounts; the sibling-dir fallback is for the checks,
+    # which run from a temp tree.
     current = os.path.join(os.path.dirname(WORKSPACE), "current", "report_runner.py")
     if not os.path.isfile(current):
         current = os.path.join(os.path.dirname(os.path.abspath(__file__)), "report_runner.py")
@@ -1072,81 +1080,102 @@ def _report_runner_cmd(job_id):
 
 
 def _report_jobs_wanted():
-    """{id: cron} for every enabled, valid registration. Read INSIDE _cron_lock by
-    both syncs below — computed outside it, a tick could re-install a line the
-    handler thread just removed, from a job.json it read before the handler wrote."""
-    return {job_id: job["schedule"]["cron"]
+    """{id: (cron, tz)} for every enabled, valid registration — tz None on a job
+    registered before the field existed (contract §2: machine local, not a bad file)."""
+    return {job_id: (job["schedule"]["cron"], job["schedule"].get("tz"))
             for job_id, job, _err in _report_runner_mod().list_jobs() if job and job["enabled"]}
 
 
-def _sync_report_tasks_windows():
+# {id: (cron, tz, next fire as unix seconds)} — the per-job slot memory contract §3
+# asks for, deliberately in memory only: a slot missed while this process was down is
+# not made up (cron semantics), and after a restart every job is re-armed from now.
+_report_next = {}
+_report_fire_lock = threading.Lock()  # scheduler thread + dispatch thread both call
+
+
+def _fire_due_reports():
+    """Start every job whose cron has come due, and re-arm it. Called each scheduler
+    tick (60s) and after the commands that change what should fire (pause / resume /
+    delete).
+
+    A job is armed the first time it is seen and whenever its cron or tz changes —
+    arming never fires, so a freshly registered or resumed job waits for its next real
+    slot. A tick that runs late fires the due slot once, late, rather than dropping it;
+    re-arming from `now` afterwards is what keeps a stalled runtime from replaying a
+    backlog. Best-effort, like every scheduling path here: one unreadable job must not
+    cost the others their run."""
     report_runner = _report_runner_mod()
+    now = int(time.time())
     try:
-        with _cron_lock:
-            wanted = _report_jobs_wanted()
-            out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
-                                 capture_output=True, text=True, errors="replace",
-                                 timeout=30)
-            existing = set()
-            for line in (out.stdout or "").splitlines():
-                tn = line.split('","')[0].strip('"').lstrip("\\")
-                if tn.startswith(_WIN_REPORT_PREFIX):
-                    existing.add(tn[len(_WIN_REPORT_PREFIX):])
-            # a cron outside the schtasks subset is simply not installed — the
-            # reporter carries the "schedule not supported on Windows" error
-            specs = {j: (c, report_runner.cron_to_schtasks(c)) for j, c in wanted.items()}
-            specs = {j: v for j, v in specs.items() if v[1]}
-            for j in sorted(existing - set(specs)):
-                r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_REPORT_PREFIX + j, "/f"],
-                                   capture_output=True, text=True, errors="replace",
-                                   timeout=30)
-                if r.returncode != 0:
-                    _log(f"report task sync: delete {j} failed: "
-                         f"{(r.stderr or r.stdout or '').strip()[:120]}")
-                _report_tasks_seen.pop(j, None)
-            for j, (cron, flags) in sorted(specs.items()):
-                if j in existing and _report_tasks_seen.get(j) == cron:
-                    continue
-                argv = _report_runner_cmd(j)
-                tr = f'"{argv[0]}" "{argv[1]}" {j}'
-                r = subprocess.run(["schtasks", "/create", "/tn", _WIN_REPORT_PREFIX + j,
-                                    "/tr", tr, "/ru", "SYSTEM", "/f"] + flags,
-                                   capture_output=True, text=True, errors="replace",
-                                   timeout=30)
-                if r.returncode != 0:
-                    _log(f"report task sync: create {j} failed: "
-                         f"{(r.stderr or r.stdout or '').strip()[:120]}")
-                else:
-                    _report_tasks_seen[j] = cron
+        wanted = _report_jobs_wanted()
     except Exception as e:
-        _log(f"report task sync failed: {type(e).__name__}: {e}")
+        _log(f"report trigger: listing jobs failed: {type(e).__name__}: {e}")
+        return
+    with _report_fire_lock:
+        for job_id in set(_report_next) - set(wanted):
+            del _report_next[job_id]  # deleted or paused — forget where it was
+        for job_id, (cron, tz) in sorted(wanted.items()):
+            armed = _report_next.get(job_id)
+            if armed is not None and armed[:2] == (cron, tz) and armed[2] > now:
+                continue
+            due = armed is not None and armed[:2] == (cron, tz)
+            nxt = report_runner.cron_next(cron, now, tz)
+            if nxt is None:  # never matches / unknown zone — the reporter says why
+                _report_next.pop(job_id, None)
+                continue
+            _report_next[job_id] = (cron, tz, nxt)
+            if not due:
+                continue
+            try:
+                subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _log(f"report trigger: started {job_id}")
+            except Exception as e:
+                _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
 
 
-def _sync_report_crons():
-    """One tagged crontab line per enabled job, drop the rest of ours. Called every
-    scheduler tick and after each report_* command; only writes when the tagged
-    set actually differs, so an idle machine's crontab is read, not rewritten,
-    each minute. Best-effort, like every cron sync here."""
+def _sweep_legacy_report_schedules():
+    """One-time upgrade sweep: drop the crontab lines / scheduled tasks the previous
+    runtime installed for report jobs. Without it a machine upgrading into the
+    in-process trigger runs every job twice — once from the stale OS entry (on the
+    machine's own clock, which is the bug this change exists to fix) and once from
+    _fire_due_reports. Best-effort, same as the Type A/C migration above."""
     if platform.system() == "Windows":
-        _sync_report_tasks_windows()
+        try:
+            with _cron_lock:
+                out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
+                                     capture_output=True, text=True, errors="replace",
+                                     timeout=30)
+                stale = set()
+                for line in (out.stdout or "").splitlines():
+                    tn = line.split('","')[0].strip('"').lstrip("\\")
+                    if tn.startswith(_WIN_REPORT_PREFIX):
+                        stale.add(tn)
+                for tn in sorted(stale):
+                    r = subprocess.run(["schtasks", "/delete", "/tn", tn, "/f"],
+                                       capture_output=True, text=True, errors="replace",
+                                       timeout=30)
+                    if r.returncode != 0:
+                        _log(f"report sweep: delete task {tn} failed: "
+                             f"{(r.stderr or r.stdout or '').strip()[:120]}")
+            if stale:
+                _log(f"report sweep: removed {len(stale)} scheduled task(s)")
+        except Exception as e:
+            _log(f"report sweep (windows) failed: {type(e).__name__}: {e}")
         return
     try:
         with _cron_lock:
-            wanted = _report_jobs_wanted()
             out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
-            lines = out.stdout.splitlines() if out.returncode == 0 else []
+            if out.returncode != 0:
+                return  # no crontab at all — nothing to sweep
+            lines = out.stdout.splitlines()
             kept = [l for l in lines if _REPORT_CRON_TAG not in l]
-            for j in sorted(wanted):
-                # load_job already limited the fields to ASCII [0-9*,/-]; the re-join
-                # collapses any run of whitespace so the line is exactly one line
-                kept.append(f"{' '.join(wanted[j].split())} cd {WORKSPACE} && "
-                            f"{' '.join(_report_runner_cmd(j))} {_REPORT_CRON_TAG}{j}")
-            if kept != lines:
+            if len(kept) != len(lines):
                 subprocess.run(["crontab", "-"], input="\n".join(kept) + "\n",
                                text=True, timeout=10, check=True)
-                _log(f"report cron sync: {len(wanted)} line(s)")
+                _log(f"report sweep: removed {len(lines) - len(kept)} crontab line(s)")
     except Exception as e:
-        _log(f"report cron sync failed: {type(e).__name__}: {e}")
+        _log(f"report sweep failed: {type(e).__name__}: {e}")
 
 
 def _report_job(args):
@@ -1185,7 +1214,7 @@ def _set_report_enabled(args, enabled):
         doc["updated_at"] = int(time.time())
 
     _rewrite_report_job(d, mutate)
-    _sync_report_crons()
+    _fire_due_reports()
     return {"enabled": enabled}
 
 
@@ -1211,7 +1240,7 @@ def _cmd_report_delete(args):
     to reports/, and the sidebar's own delete handles them."""
     _job_id, d = _report_job(args)
     shutil.rmtree(d)
-    _sync_report_crons()
+    _fire_due_reports()
     return {"deleted": True}
 
 
@@ -3172,6 +3201,37 @@ def _cmd_reply_lang_set(args):
     return {"lang": lang, "custom": clean}
 
 
+def _cmd_tz_set(args):
+    """{"tz": <IANA>, "if_unset"?: bool} → state/timezone, one line (contract §2b).
+    The web sends the browser's own zone on page load, so which wall clock a scheduled
+    report runs on never depends on the agent working a conversion out. `if_unset`
+    keeps an existing valid setting and acks that instead: a trip abroad or one page
+    load on a borrowed laptop must not shift every schedule already registered.
+
+    Re-validated here although the api validated it (agent_command._tz_args_error):
+    this value decides when things run on this machine, and the trust boundary is on
+    the machine. ack = the value now in effect."""
+    import strategy_reporter  # same runtime dir; the path and the read live there
+    tz = args.get("tz")
+    if not isinstance(tz, str) or not 1 <= len(tz.strip()) <= strategy_reporter.TZ_MAX:
+        raise ValueError(
+            f"tz must be an IANA time zone of 1-{strategy_reporter.TZ_MAX} characters")
+    tz = tz.strip()
+    try:
+        ZoneInfo(tz)
+    except (KeyError, ValueError):
+        raise ValueError(f"tz {tz!r} is not a known time zone")
+    if_unset = args.get("if_unset", False)
+    if not isinstance(if_unset, bool):
+        raise ValueError("if_unset must be a boolean")
+    if if_unset:
+        existing = strategy_reporter.read_timezone()
+        if existing:
+            return {"tz": existing}
+    _write_text_atomic(strategy_reporter.TIMEZONE_PATH, tz + "\n")
+    return {"tz": tz}
+
+
 _PAIR_GEN_RE = re.compile(r"[0-9a-f]{8,32}")
 
 
@@ -3208,6 +3268,7 @@ HANDLERS = {
     "report_edit_pending": _cmd_report_edit_pending,
     "preferences_set": _cmd_preferences_set,
     "reply_lang_set": _cmd_reply_lang_set,
+    "tz_set": _cmd_tz_set,
     "telegram_reset": _cmd_telegram_reset,
 }
 

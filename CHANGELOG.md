@@ -10,6 +10,38 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.79 — 2026-09-16
+
+- Scheduled reports now run on the USER's wall clock, not the machine's (contract
+  `.claude/docs/report-schedules.md` §2b/§3). `job.json`'s `schedule.cron` is evaluated in
+  `schedule.tz` (IANA, the user's zone), so the cron holds exactly the time the user said and
+  nothing converts anything: `report_runner.cron_next(expr, now, tz)` starts and returns through
+  `zoneinfo` (DST is its problem, not ours), and `load_job` validates `schedule.tz` — absent is
+  an old registration, machine local, NOT a broken file. Why: machines are UTC and Ubuntu's cron
+  has no per-user zone (`man 5 crontab` LIMITATIONS: `TZ` in a crontab reaches the command's
+  environment, not the schedule), so the conversion could only be the agent's — and it didn't do
+  it: a user's 「11:30」 was written as UTC and fired at 19:30 Taipei.
+- The trigger moved in-process: `command_listener._fire_due_reports()` runs on the scheduler
+  thread (every 60s) and `Popen(report_runner.py <id>)` when a job comes due. Nothing installs a
+  report schedule in crontab / schtasks any more (`_sync_report_crons`,
+  `_sync_report_tasks_windows` and `report_runner.cron_to_schtasks` are gone), and
+  `_sweep_legacy_report_schedules()` removes the old `# blave-report:` lines and
+  `blave-web-report-*` tasks on upgrade — without it every job would fire twice, once per path.
+  It runs at every runtime start and is idempotent (no marker file to look for: a machine with
+  no stale lines reads its crontab and writes nothing).
+  A missed slot is not made up and the slot memory stays in memory. Side effect: Windows has no
+  cron subset to work around any more, `30 8 * * 1-5` is one job on both platforms.
+- New command `tz_set` (`{"tz": <IANA>, "if_unset"?: bool}`) → `state/timezone`; the web sends the
+  browser's zone on workspace load, and `if_unset` keeps an existing setting (a trip abroad or one
+  page load on a borrowed laptop must not shift every registered schedule). One reader,
+  `strategy_reporter.read_timezone()` (path + parse live next to `reply_lang`'s).
+- The agent's own turns now run with `TZ` set to that zone (`agent_turn`'s `turn_env`), so 「現在
+  幾點」 and every log timestamp it reads are the user's time — until now it read the machine's UTC
+  and answered 10:26 when the user's clock said 18:26. Not set = no `TZ`, machine time as before.
+  Strategy subprocesses deliberately do NOT get it (`_strategy_subprocess_env()`'s Windows denylist
+  now drops `TZ` too, the Linux allowlist never had it): a strategy must read the same clock whether
+  the scheduler or the agent started it.
+
 ## 1.1.78 — 2026-09-15
 
 - agent_turn: the per-turn red-line anchor adds "stopping one strategy / closing one coin on

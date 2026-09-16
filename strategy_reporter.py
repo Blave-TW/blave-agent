@@ -18,6 +18,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from zoneinfo import ZoneInfo
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 STRATEGIES_DIR = os.path.join(WORKSPACE, "strategies")
@@ -1014,23 +1015,18 @@ def report_schedules():
     the next fire time — or `{id, error}` for a job this runtime will not install.
     Not sorted; the web orders it."""
     import importlib
-    import platform
     # Sibling in the same runtime dir. Bare name on the machine (one flat dir),
     # package-qualified when the api tests load this module as blave_agent.runtime.*
     report_runner = importlib.import_module(
         (__package__ + "." if __package__ else "") + "report_runner")
 
     now = int(time.time())
-    windows = platform.system() == "Windows"
     out = []
     for job_id, job, err in report_runner.list_jobs():
         if job is None:
             out.append({"id": job_id, "error": err})
             continue
         cron = job["schedule"]["cron"]
-        if windows and report_runner.cron_to_schtasks(cron) is None:
-            out.append({"id": job_id, "error": "schedule not supported on Windows"})
-            continue
         if job.get("kind") == "watch":
             continue  # a watchboard widget's schedule, not a report — the board shows it
         pending = job.get("pending")
@@ -1045,7 +1041,10 @@ def report_schedules():
             "updated_at": job["updated_at"],
             "pending": None,
             "last_run": None,
-            "next_run_at": report_runner.cron_next(cron, now) if job["enabled"] else None,
+            # In the job's own zone (contract §2/§3) — the payload stays plain unix
+            # seconds, so nothing downstream of here changes.
+            "next_run_at": (report_runner.cron_next(cron, now, job["schedule"].get("tz"))
+                            if job["enabled"] else None),
         }
         if pending:
             entry["pending"] = {"since": pending["since"],
@@ -1093,6 +1092,34 @@ def _preferences():
 # 三態:檔案不存在/空 = 自動;七碼之一(= web 的 <lang> 集合,web/app/__init__.py
 # supported_langs);`custom:<text>` = 使用者自填的語言名稱(七種以外)。
 REPLY_LANGS = ("zh", "cn", "en", "es", "pt", "vi", "ja")
+# 用戶所在時區(report-schedules.md §2b)。平台從瀏覽器帶值、runtime 的 tz_set 落檔;
+# 讀的人有兩個 process:agent 子行程的 TZ(agent_turn)與機器上的 lib.report。
+# 路徑與讀法只有這一份,寫入在 command_listener._cmd_tz_set。
+TIMEZONE_PATH = os.path.join(WORKSPACE, "state", "timezone")
+TZ_MAX = 64
+
+
+def read_timezone():
+    """機器上記錄的 IANA 時區,或 ""(沒設過、讀不動、或那個值現在解不開)。
+    解不開等於沒設定:寧可退回機器時間,也不要拿一個沒人認得的名字當時區。"""
+    try:
+        with open(TIMEZONE_PATH, encoding="utf-8-sig") as f:
+            tz = f.readline(TZ_MAX + 1).strip()
+    except FileNotFoundError:
+        return ""
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[strategy_reporter] timezone unreadable: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        return ""
+    if not tz or len(tz) > TZ_MAX:
+        return ""
+    try:
+        ZoneInfo(tz)
+    except (KeyError, ValueError):
+        return ""
+    return tz
+
+
 REPLY_LANG_PATH = os.path.join(WORKSPACE, "state", "reply_lang")
 REPLY_LANG_CUSTOM_PREFIX = "custom:"
 REPLY_LANG_CUSTOM_MAX = 40
