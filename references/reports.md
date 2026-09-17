@@ -609,7 +609,7 @@ rules:
 | Rules | Apply to |
 |---|---|
 | **A. Presentation** (A1–A8) | Every hand-written report **except `performance`**, which is a state snapshot whose title names its period, not a thesis (§7 scope table). A template brief (§1b) is only **half** out of scope: its envelope title is fixed by the template (a topic name by design — the list row carries the date, §1b — so A1 is not in play), the template implements A3, A4, A5 and A8 in the blocks it builds, and the narrative you write into it still follows A2, A6 and A7 — §1b says what that looks like in `read` / `watch`. |
-| **B. Research rules** (B1–B6) | `type: "research"` only. A hand-written `morning` report keeps §1b's rules instead: levels are statistics, never calls, and its conditions section takes the 觀察重點 (`watch`) form. |
+| **B. Research rules** (B1–B8) | `type: "research"` only. A hand-written `morning` report keeps §1b's rules instead: levels are statistics, never calls, and its conditions section takes the 觀察重點 (`watch`) form. |
 
 Blocks are flat (§3). A section is a `text` block that opens with its `## ` heading,
 followed by the chart / table blocks that back it. Nothing nests inside markdown. Write the
@@ -721,6 +721,12 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
     the real effect has to stand clear of that distribution. State the number of draws and
     report it as "beats N of M random dates". It is not MCPT, so never label it a p-value
     from MCPT (AGENTS.md › MCPT).
+  - *Another source or another definition*: re-measure the same claim from a second data
+    source, or with a second way of computing the figure (another smoothing, another
+    bucketing of the same raw series). Only a same-direction result counts as a pass.
+    Most series here have one source only — when there is no second one, say in the
+    report that the finding rests on a single source, rather than skipping the check
+    silently.
   - *Strategy research*: cite what the strategy already has — `"MCPT p-value"` in
     `strategies/<name>/stats.json` (automatic on every Type A backtest; rerun with
     `lib.validation.mcpt` only for a different `n`), peak vs plateau from `scan.json`
@@ -751,7 +757,7 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   Never name the field to the user, and never tell them a report cannot be shared because of
   it. Set it on purpose every time.
   - **`true`** only when all of these hold: B1 and B2 hold everywhere in the report, not
-    only in the title, the lead and the `kpi_row`; B3–B5 are all there; and it cites,
+    only in the title, the lead and the `kpi_row`; B3–B5 and B8 are all there; and it cites,
     backtests or describes no strategy sold in the Marketplace (`references/marketplace.md`
     › *Strategy categories*), whether the user bought it or sells it.
   - **`false`, always**, when any of these is true: it gives buy / sell timing, a price
@@ -759,9 +765,9 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
     instrument — including one the user explicitly asked for (B1's exception); it says a
     condition is being met now or projects from today (B2); it cites a Marketplace strategy
     as above (official, shared-with-me and unlisted private strategies do not count); or any
-    of B1–B5 is missing. When unsure, `false`.
+    of B1–B5 or B8 is missing. When unsure, `false`.
   - `research` only. Leave it off `morning` and `performance`.
-  - The flag records the report; it never changes what you write. B1–B6 apply to every
+  - The flag records the report; it never changes what you write. B1–B6 and B8 apply to every
     research report whatever the flag says, and you do not drop what the user asked for to
     earn a `true`.
   - It needs `schema_version` `"1.3"` (§2); `write_report` sets that.
@@ -770,6 +776,16 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   down forces an explicit check against B1–B5 each time. A report that names a trade, reads
   today's market or promotes a paid strategy whose seller earns a share of each sale must
   never be recorded as `true`.
+
+- **B8. A median or an average never travels alone.** Wherever one carries the finding —
+  the title, the lead, a `kpi_row` item, a section's claim — the same sentence or the same
+  block gives the spread behind it: the hit rate ("6 of the 10"), the worst single case, or
+  the distribution itself (`histogram` / `box`, §3). Name the sample size every time; a
+  central tendency over a handful of events is one more reason the reader needs the spread,
+  not a reason to leave it out. *Why:* "the median 10-day return over the last 10 launches
+  was −0.87%" and "6 of those 10 were positive" describe the same ten events, and a reader
+  given only the first takes a coin flip for a rule. A3 puts a figure next to its baseline;
+  this puts it next to its own dispersion — the more common way a true number misleads.
 
 **Order in a research report:** `meta` → lead (A2) → `kpi_row` (A4) → first chart (A5) →
 key points (A6) → 3–5 argument sections (A7) → evidence against (B3) → robustness (B4) →
