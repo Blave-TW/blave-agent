@@ -1,0 +1,502 @@
+"""
+Telegram bridge, spec item 2: minimal stateless long-polling listener.
+Spawns one agent_turn.py subprocess per incoming message. Processing is
+sequential (poll -> handle -> reply -> poll again), which for a POC also
+gives "one turn per chat at a time" for free. A production version would
+want to dispatch turns without blocking the poll loop (e.g. one worker
+thread per chat) rather than serializing every user behind each other.
+
+Delivery to Telegram (including streaming updates) happens inside
+agent_turn.py itself, not here — only that process has the incremental
+content as it's generated. This bridge only sends a fallback message if the
+subprocess fails before agent_turn.py could deliver anything on its own
+(e.g. it never even started).
+
+Pairing is simulated for this POC: bot token + allowed chat id are dropped
+directly into config/telegram.json rather than delivered via the (not yet
+built) website form.
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+
+import model_prefs
+import portfolio_reporter
+import telegram_pairing
+import turn_slots
+
+BASE = os.environ.get("BLAVE_AGENT_BASE") or (
+    r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
+)
+# agent_turn.py is resolved relative to THIS file, not a fixed /opt/blave-agent
+# path — that's what makes "each spawn picks up whatever version is currently
+# symlinked" work: this process itself runs from /opt/blave-agent/current/,
+# so its sibling agent_turn.py is automatically the matching version.
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.environ.get("BLAVE_AGENT_TG_CONFIG", f"{BASE}/config/telegram.json")
+HEARTBEAT_PATH = os.environ.get("BLAVE_AGENT_HEARTBEAT", f"{BASE}/state/heartbeat")
+AGENT_TURN_SCRIPT = os.environ.get("BLAVE_AGENT_TURN_SCRIPT", f"{_THIS_DIR}/agent_turn.py")
+PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON") or (
+    rf"{BASE}\venv\Scripts\python.exe" if os.name == "nt"
+    else f"{BASE}/venv/bin/python3"
+)
+SYNC_SCRIPT = os.environ.get("BLAVE_SYNC_NOTIFY", f"{BASE}/sync_notify_compat.py")
+# The offset marks "already-seen" updates to Telegram. Keeping it in memory
+# only means every restart (crash, health-check restart, a version deploy —
+# see updater.py) forgets it, so Telegram redelivers whatever was in flight
+# and the same message gets reprocessed. Persisting it to disk fixes that —
+# traded for the rarer failure mode of losing a turn if the process crashes
+# mid-processing (before ever replying), which is far less confusing than
+# reprocessing the same message on every restart.
+OFFSET_PATH = os.environ.get("BLAVE_AGENT_TG_OFFSET", f"{BASE}/state/tg_offset")
+
+# 用戶傳的檔案落地位置——WORKSPACE 解析跟 agent_turn.py 一致,agent 的 cwd 就是
+# workspace,訊息裡給相對路徑 tmp/inbound/... 它自己 Read 得到
+WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", f"{BASE}/workspace")
+INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
+
+# 目前正在處理的那一輪(SIGTERM handler 要知道該通知誰)。比照 web_bridge。
+_current_turn = {"token": None, "chat_id": None}
+
+# 連續幾次 TLS 憑證驗證失敗就自我了斷。Windows 冷機的 Schannel root store 只帶
+# ~33 張憑證,其餘 root 要等第一次 Schannel 驗證才會下載;而 python 的 SSL context
+# 在 process 啟動時就固定,所以 first-boot 之後才補進系統的 root 對「已經在跑的」
+# bridge 永遠不可見——它會一路 CERTIFICATE_VERIFY_FAILED 到有人重啟為止(1.0.71
+# image 實測)。退出讓服務管理器(systemd Restart=always / NSSM)重拉一個新
+# process,新的 SSL context 就讀得到新 root。憑證以外的錯誤不算,計數會歸零。
+TLS_FAIL_LIMIT = 5
+
+
+def pairing_identity(config):
+    """(bot id, pair_gen), or None when there is no token. A change means a new
+    pairing: another bot, or the same token re-linked from the web (reset() stamps a
+    fresh pair_gen) — the bridge must then forget its offset/backlog state even
+    though it never saw the token disappear. The bot id is the token's public prefix."""
+    token = config.get("bot_token")
+    if not token:
+        return None
+    return (str(token).split(":", 1)[0], config.get("pair_gen"))
+
+
+def load_offset(bot_id):
+    """Update ids are per bot: an offset from another bot would make getUpdates skip
+    every update below it, so the offset is stored with the bot id it belongs to.
+    A bare int is the pre-1.1.70 format (one bot per machine back then)."""
+    try:
+        with open(OFFSET_PATH) as f:
+            data = json.loads(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+    if isinstance(data, int) and not isinstance(data, bool):
+        return data
+    if isinstance(data, dict) and data.get("bot") == bot_id:
+        offset = data.get("offset")
+        if isinstance(offset, int) and not isinstance(offset, bool):
+            return offset
+    return None
+
+
+def save_offset(offset, bot_id):
+    os.makedirs(os.path.dirname(OFFSET_PATH), exist_ok=True)
+    tmp = OFFSET_PATH + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump({"bot": bot_id, "offset": offset}, f)
+        telegram_pairing.replace_retry(tmp, OFFSET_PATH)
+    except OSError as e:
+        # the in-memory offset is still right; only a restart before the next save replays
+        print(f"[telegram_bridge] offset save failed: {type(e).__name__}", file=sys.stderr)
+
+
+_last_config = {}
+
+
+def load_config():
+    """{} when unpaired (no file, or the 0-byte file provision pre-creates). Same
+    reader as the poller (telegram_pairing.read_config: one re-read, so the instant
+    0 bytes of a Windows in-place write are not taken for "unpaired"). Mid-write
+    returns the last good copy: {} would read as a pairing change, drop the batch in
+    flight and re-arm the backlog guard."""
+    global _last_config
+    config = telegram_pairing.read_config(CONFIG_PATH)
+    if config is None:
+        return dict(_last_config)
+    _last_config = dict(config)
+    return config
+
+
+def save_config(config):
+    """A failed write only leaves the auto-pair unpersisted (the next message re-adopts);
+    raising would kill the bridge."""
+    try:
+        telegram_pairing.write_json_600(CONFIG_PATH, config)
+    except OSError as e:
+        print(f"[telegram_bridge] telegram.json write failed: {type(e).__name__}",
+              file=sys.stderr)
+
+
+def _push_report():
+    """Pending → linked shows on the web from tg_chat_ids in the portfolio report;
+    push one now instead of leaving the settings page on 「等待配對」 for up to the
+    2-minute timer."""
+    try:
+        portfolio_reporter.report(portfolio_reporter.build_report())
+    except Exception as e:
+        print(f"[telegram_bridge] post-pair report failed: {type(e).__name__}", file=sys.stderr)
+
+
+def tg_api(token, method, params=None, timeout=35):
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    data = json.dumps(params).encode() if params else None
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read())
+
+
+def send_message(token, chat_id, text):
+    tg_api(token, "sendMessage", {"chat_id": chat_id, "text": text})
+
+
+def download_tg_file(token, file_id, name):
+    """getFile 拿 file_path 再抓檔案內容,存進 {WORKSPACE}/tmp/inbound/。
+    回傳最終檔名(同名加 epoch 前綴);任何一步失敗回 None,不讓 poll loop 掛掉。"""
+    try:
+        file_path = tg_api(token, "getFile", {"file_id": file_id}, timeout=15)["result"]["file_path"]
+        url = f"https://api.telegram.org/file/bot{token}/{file_path}"
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            data = resp.read()
+        os.makedirs(INBOUND_DIR, exist_ok=True)
+        path = os.path.join(INBOUND_DIR, name)
+        if os.path.exists(path):
+            name = f"{int(time.time())}_{name}"
+            path = os.path.join(INBOUND_DIR, name)
+        with open(path, "wb") as f:
+            f.write(data)
+        return name
+    except Exception as e:
+        # file_path 是 Telegram 伺服器回的值,拼進含 bot token 的 URL——InvalidURL
+        # 這類例外會內嵌整條 URL,印出前把 token 洗掉(journal 對 blaveagent 可讀)
+        print(f"[telegram_bridge] file download failed: "
+              f"{str(e).replace(token, '***')}", file=sys.stderr)
+        return None
+
+
+def _typing_pinger(token, chat_id, stop_evt):
+    """Telegram 的 typing 指示只撐 ~5 秒,要持續補。agent_turn 自己也有一個,但那是
+    spawn 完、SDK 載入完才開始(冷啟動實測 ~5s)——使用者送出後那幾秒完全沒反應。
+    這裡從「收到訊息的當下」就開始打,把空窗補掉;兩邊重複送同一個 action 無害。"""
+    while not stop_evt.is_set():
+        try:
+            tg_api(token, "sendChatAction", {"chat_id": chat_id, "action": "typing"}, timeout=10)
+        except Exception:
+            pass  # 指示器失敗不該影響這一輪
+        stop_evt.wait(4)
+
+
+def _wait_for_slot(session_id):
+    """Block until a machine-wide turn slot is free (the cap is shared with the web
+    sessions; TG counts toward it — spec-c §3.4). No Telegram-side 「排隊中」 notice:
+    the typing indicator keeps running (待拍板). Heartbeat is touched while waiting —
+    the watchdog's turn_in_flight() only covers us once a child exists."""
+    while True:
+        slot = turn_slots.acquire(session_id, "telegram")
+        if slot:
+            return slot
+        touch_heartbeat()
+        time.sleep(3)
+
+
+def run_agent_turn(token, chat_id, session_id, message, attachment_name=None):
+    """Runs agent_turn.py, which delivers (and streams) its own reply to
+    Telegram directly. Returns True if the subprocess ran to completion
+    (regardless of whether the turn itself succeeded — agent_turn.py
+    handles its own error messaging), False if it never got that far.
+
+    Deliberately does NOT capture_output — inheriting the parent's stdout/
+    stderr means agent_turn.py's logging (including its own diagnostics)
+    streams straight into journalctl in real time. capture_output swallows
+    everything into a string that only gets printed on failure, which made
+    every successful turn's logging invisible — a real observability gap,
+    not just an inconvenience during debugging."""
+    # 先讓使用者知道有在跑,再去做 spawn 前的準備工作
+    stop_typing = threading.Event()
+    slot_box = {"slot": None}
+    typing = threading.Thread(
+        target=_typing_pinger, args=(token, chat_id, stop_typing), daemon=True
+    )
+    typing.start()
+    # 名額檔由獨立 thread 保鮮,不跟 typing 那條綁在一起:tg_api 卡在 DNS 時 timeout 管不到
+    threading.Thread(target=turn_slots.keep_fresh, args=(lambda: [slot_box["slot"]], stop_typing),
+                     daemon=True, name="turn-slot-keeper").start()
+    # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
+    model = model_prefs.resolve(session_id, attachment_name)
+    slot_box["slot"] = _wait_for_slot(session_id)
+    _current_turn.update(token=token, chat_id=chat_id)
+    try:
+        result = subprocess.run(
+            [
+                PYTHON_BIN, AGENT_TURN_SCRIPT,
+                f"--model={model}",
+                f"--telegram-chat-id={chat_id}",
+                # `--` so a message starting with '-' (or '--help') is the positional
+                # arg, not parsed as a flag.
+                "--", session_id, message,
+            ],
+            # bot token via env, not argv (argv is visible in `ps`).
+            env={**os.environ, "BLAVE_TELEGRAM_TOKEN": token},
+            # 必須嚴格大於 agent_turn 給 Bash 工具的上限（BASH_MAX_TIMEOUT_MS /
+            # CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS = 30 min，大宇宙回測前景跑完
+            # 用的）+ 回覆送出後的摘要壓縮（session_store，最長 90s）+ 裕度——
+            # 比 Bash 上限短的話，一支照規則前景跑 15 分鐘的回測會在這裡被整輪殺掉、
+            # 用戶只看到「agent 出錯」（2026-08-22 稽核抓到：原本 720 < 1800）。
+            timeout=2000,
+        )
+    except subprocess.TimeoutExpired:
+        print("[telegram_bridge] agent_turn timed out", file=sys.stderr)
+        return False
+    finally:
+        stop_typing.set()
+        turn_slots.release(slot_box["slot"])
+        _current_turn.update(token=None, chat_id=None)
+
+    if result.returncode != 0:
+        print(f"[telegram_bridge] agent_turn failed (exit {result.returncode}) — see its own output above", file=sys.stderr)
+        return False
+    return True
+
+
+def touch_heartbeat():
+    os.makedirs(os.path.dirname(HEARTBEAT_PATH), exist_ok=True)
+    with open(HEARTBEAT_PATH, "w") as f:
+        f.write(str(time.time()))
+
+
+def on_term(signum=None, frame=None):
+    """systemd stop/restart(換版、重開機…)打斷進行中的一輪:先告訴用戶再走。
+    沒有這則訊息的話對方是「永久沉默」——offset 一收到就存檔(save_offset),
+    Telegram 不會重送,所以那則訊息連同回覆一起消失,用戶只看得到自己送出去
+    的東西沒有下文。web_bridge.on_term 是同一個道理。"""
+    token, chat_id = _current_turn["token"], _current_turn["chat_id"]
+    if token and chat_id:
+        print(f"[telegram_bridge] SIGTERM mid-turn (chat {chat_id}) — telling the user",
+              file=sys.stderr)
+        try:
+            send_message(token, chat_id, "這輪被中止了（機器剛更新或重啟），請再傳一次。")
+        except Exception as e:
+            print(f"[telegram_bridge] abort notice failed: {e}", file=sys.stderr)
+    sys.exit(0)
+
+
+def _is_tls_failure(exc):
+    return "CERTIFICATE_VERIFY_FAILED" in str(exc)
+
+
+def main():
+    offset = None
+
+    signal.signal(signal.SIGTERM, on_term)
+    if os.name == "nt":
+        # Windows 服務停止不會送 SIGTERM:NSSM 預設送 console Ctrl-C,升級成
+        # Ctrl-Break,python 看到的是 SIGINT / SIGBREAK(同 web_bridge)。
+        signal.signal(signal.SIGINT, on_term)
+        sigbreak = getattr(signal, "SIGBREAK", None)
+        if sigbreak is not None:
+            signal.signal(sigbreak, on_term)
+
+    version = "unknown"
+    try:
+        with open(f"{_THIS_DIR}/VERSION") as f:
+            version = f.read().strip()
+    except FileNotFoundError:
+        pass
+    print(f"[telegram_bridge] starting poll loop (version={version})", file=sys.stderr)
+
+    idle_logged = False
+    drained_backlog = False
+    tls_failures = 0
+    ident = None
+    while True:
+        touch_heartbeat()
+
+        # Re-read config every loop so a token written post-boot by the pairing
+        # poller (telegram_pairing.py) is picked up without a restart, and a
+        # re-pair with a new token takes effect on the next iteration.
+        config = load_config()
+        token = config.get("bot_token")
+        allowed_chat_id = config.get("allowed_chat_id")
+
+        cur = pairing_identity(config)
+        if cur != ident:
+            if cur is not None:
+                print("[telegram_bridge] new pairing — offset and backlog state reset",
+                      file=sys.stderr)
+                offset = load_offset(cur[0])
+            drained_backlog = False
+            ident = cur
+
+        if not token:
+            # Unpaired: sit quietly (don't crash-loop, don't hammer Telegram)
+            # until the user connects a bot token via the website.
+            if not idle_logged:
+                print("[telegram_bridge] no bot token yet — idle, waiting for pairing", file=sys.stderr)
+                idle_logged = True
+            time.sleep(10)
+            continue
+        idle_logged = False
+
+        # First time we hold a token while still UNPAIRED: drop the bot's STALE
+        # backlog (older than 2 min) so auto-pair can't bind to a stranger —
+        # getUpdates replays ~24h, so a pre-existing / group bot would otherwise
+        # pair to whoever spoke before the user did. RECENT messages are kept:
+        # the linking user's own first message routinely arrives BEFORE the token
+        # does (pairing poller lag ≤15s), and a blanket drain kept eating it,
+        # forcing a confusing re-send. Old = stranger risk; recent = almost
+        # certainly the user who just linked.
+        if allowed_chat_id is None and not drained_backlog:
+            try:
+                cutoff = time.time() - 120
+                # A web link/unlink stamps pair_at (api clock). Anything sent before it
+                # belongs to the previous pairing — above all the old account when the
+                # same bot is re-linked to switch accounts, whose recent message would
+                # otherwise sit inside the 2-minute grace and win. 5s of clock slack.
+                pair_at = config.get("pair_at")
+                if isinstance(pair_at, int) and not isinstance(pair_at, bool):
+                    cutoff = max(cutoff, pair_at - 5)
+                for _ in range(10):  # backlog paginates ~100/call
+                    params = {"timeout": 0}
+                    if offset is not None:
+                        params["offset"] = offset
+                    batch = tg_api(token, "getUpdates", params, timeout=15).get("result", [])
+                    if not batch:
+                        break
+                    hit_recent = False
+                    for u in batch:
+                        # non-message updates have no date → count as stale
+                        if (u.get("message") or {}).get("date", 0) >= cutoff:
+                            hit_recent = True
+                            break
+                        offset = u["update_id"] + 1
+                    if hit_recent:
+                        break
+                if offset is not None:
+                    save_offset(offset, ident[0])
+                print("[telegram_bridge] dropped stale pre-pair backlog", file=sys.stderr)
+            except Exception as e:
+                print(f"[telegram_bridge] backlog drain failed: {e}", file=sys.stderr)
+            drained_backlog = True
+
+        try:
+            params = {"timeout": 30}
+            if offset is not None:
+                params["offset"] = offset
+            resp = tg_api(token, "getUpdates", params, timeout=35)
+        except Exception as e:
+            print(f"[telegram_bridge] poll error: {e}", file=sys.stderr)
+            if _is_tls_failure(e):
+                tls_failures += 1
+                if tls_failures >= TLS_FAIL_LIMIT:
+                    print(f"[telegram_bridge] {tls_failures} consecutive TLS verify "
+                          f"failures — exiting so a restart picks up a refreshed "
+                          f"root store", file=sys.stderr)
+                    sys.exit(1)
+            else:
+                tls_failures = 0
+            time.sleep(5)
+            continue
+        tls_failures = 0
+
+        for update in resp.get("result", []):
+            # Unlinked / re-linked while we were long-polling or running a turn: the
+            # rest of this batch belongs to the old pairing. Stop without advancing
+            # the offset (same bot → next loop re-fetches them under the new pairing).
+            config = load_config()
+            if pairing_identity(config) != ident:
+                print("[telegram_bridge] pairing changed mid-batch — dropping the rest",
+                      file=sys.stderr)
+                break
+            offset = update["update_id"] + 1
+            save_offset(offset, ident[0])
+            msg = update.get("message")
+            if not msg:
+                continue
+            has_text = "text" in msg
+            has_media = "photo" in msg or "document" in msg
+            unsupported = any(
+                k in msg for k in ("voice", "audio", "video", "video_note", "sticker")
+            )
+            if not (has_text or has_media or unsupported):
+                continue  # 其他 service message(入群、置頂…)照舊靜默跳過
+            chat_id = msg["chat"]["id"]
+            # Auto-pair: the first chat to message this bot becomes the allowed
+            # one (same convention as openclaw — the user just sends a message
+            # to their bot). Persist it so it survives restarts.
+            if allowed_chat_id is None and (has_text or has_media):
+                # re-read right before writing: a reset that landed since the check above
+                # must not get the old token/generation written back with this chat
+                config = load_config()
+                if pairing_identity(config) != ident:
+                    print("[telegram_bridge] pairing changed before auto-pair — dropping",
+                          file=sys.stderr)
+                    break
+                allowed_chat_id = chat_id
+                config["allowed_chat_id"] = chat_id
+                save_config(config)
+                print(f"[telegram_bridge] auto-paired chat_id={chat_id}", file=sys.stderr)
+                # let lib/notify.py's compat allowFrom pick up the new chat_id
+                # (so strategy scripts can send Telegram notifications)
+                try:
+                    subprocess.run([PYTHON_BIN, SYNC_SCRIPT], check=False, timeout=30)
+                except Exception as e:
+                    print(f"[telegram_bridge] sync_notify_compat failed: {e}", file=sys.stderr)
+                threading.Thread(target=_push_report, daemon=True, name="post-pair-report").start()
+            if chat_id != allowed_chat_id:
+                print(f"[telegram_bridge] ignoring unpaired chat_id={chat_id}", file=sys.stderr)
+                continue
+            attachment_name = None
+            if has_text:
+                message_text = msg["text"]
+            elif has_media:
+                # 下載一律發生在 allowed_chat_id 檢查之後——不幫陌生 chat 下載檔案
+                if "document" in msg:
+                    doc = msg["document"]
+                    # Bot API 的檔案下載上限 20MB,留 0.5MB 餘裕在下載前先擋
+                    if (doc.get("file_size") or 0) > 19.5 * 1024 * 1024:
+                        send_message(token, chat_id, "檔案超過 20MB 上限，請壓縮後再傳。")
+                        continue
+                    file_id = doc["file_id"]
+                    name = "".join(
+                        c for c in os.path.basename(str(doc.get("file_name") or ""))
+                        if ord(c) >= 32
+                    )
+                    if not name:
+                        name = f"file_{doc['file_unique_id']}"
+                else:
+                    photo = msg["photo"][-1]  # 最大尺寸
+                    file_id = photo["file_id"]
+                    name = f"photo_{photo['file_unique_id']}.jpg"
+                saved = download_tg_file(token, file_id, name)
+                if not saved:
+                    send_message(token, chat_id, "檔案接收失敗，請再傳一次。")
+                    continue
+                attachment_name = saved
+                note = f"[用戶傳了檔案：tmp/inbound/{saved}，請先讀取檔案內容再回應]"
+                caption = msg.get("caption") or ""
+                message_text = f"{caption}\n{note}" if caption else note
+            else:
+                # 不支援的訊息類型:告知用戶,結束以前的靜默丟棄
+                send_message(token, chat_id, "目前不支援這類訊息，請傳文字、圖片或一般檔案。")
+                continue
+            delivered = run_agent_turn(
+                token, chat_id, str(chat_id), message_text, attachment_name=attachment_name
+            )
+            if not delivered:
+                send_message(token, chat_id, "（agent 出錯，稍後再試）")
+
+
+if __name__ == "__main__":
+    main()

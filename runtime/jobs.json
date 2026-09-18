@@ -1,0 +1,24 @@
+{
+  "_comment": "Units the release wants installed on every Linux machine (jobs-manifest, B案). publish.py packs each listed unit file from blave_agent/systemd/ into the tarball; control/updater.py applies them idempotently every tick (install → daemon-reload → enable --now). SECURITY: the updater runs as root but refuses any .service without User=blaveagent or whose ExecStart leaves /opt/blave-agent — a compromised release channel must stay at agent privilege, never become root. Windows is skipped (schtasks scheduling ships separately).",
+  "linux_units": {
+    "blave-agent-account.service": {"enable": false},
+    "blave-agent-account.timer": {"enable": true},
+    "blave-agent-account.path": {"enable": true},
+    "blave-agent-portfolio.service": {"enable": false},
+    "blave-agent-portfolio.timer": {"enable": true},
+    "blave-agent-portfolio.path": {"enable": true},
+    "blave-agent-reports.service": {"enable": false},
+    "blave-agent-reports.timer": {"enable": true},
+    "blave-agent-reports.path": {"enable": true},
+    "blave-agent-reconciler.service": {"enable": false}
+  },
+  "_comment_windows": "Scheduled tasks the release wants registered on Windows (schtasks stand-in for the timers; the event chain is the blave-agent-watcher NSSM service, provision-owned). script is relative to C:\\blave-agent; bin: venv|system. Control-plane tasks (updater/watchdog/firstboot) stay provision-owned and NEVER appear here. provision.ps1 registers the same definitions at build time as bootstrap; on drift, this manifest wins.",
+  "windows_tasks": {
+    "blave-agent-strategies": {"script": "current/strategy_reporter.py", "minutes": 2, "delay_sec": 35, "bin": "venv"},
+    "blave-agent-account": {"script": "current/account_reader.py", "minutes": 1, "delay_sec": 25, "bin": "system"},
+    "blave-agent-portfolio": {"script": "current/portfolio_reporter.py", "minutes": 2, "delay_sec": 45, "bin": "venv"},
+    "blave-agent-reports": {"script": "current/report_uploader.py", "minutes": 2, "delay_sec": 55, "bin": "venv"},
+    "blave-agent-prune": {"script": "current/prune_job.py", "minutes": 1440, "delay_sec": 300, "bin": "venv"},
+    "blave-agent-skill": {"script": "current/skill_sync.py", "minutes": 1440, "delay_sec": 180, "bin": "venv"}
+  }
+}
