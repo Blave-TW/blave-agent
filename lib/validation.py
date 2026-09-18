@@ -71,7 +71,12 @@ def mcpt(
 
     Returns
     -------
-    actual  : float  — actual OOS Sharpe
+    actual  : float  — this backtest's own Sharpe, the value dist is compared against.
+                       There is no in-sample / out-of-sample split anywhere in this test:
+                       actual and every permutation are scored on the SAME full span.
+                       Recomputed here on the vol-targeted, fee-adjusted series the
+                       permutations are scored on, so it need not equal the backtest's
+                       own 'Sharpe Ratio' in stats.json.
     p_value : float  — fraction of permuted Sharpes >= actual
     dist    : array  — full permuted Sharpe distribution (length n)
     """
@@ -173,7 +178,7 @@ def plot_mcpt(actual, dist, label="Strategy", output_path=os.path.join(tempfile.
 
     Parameters
     ----------
-    actual      : float — actual OOS Sharpe (from mcpt())
+    actual      : float — this backtest's own Sharpe (from mcpt(); no IS/OOS split)
     dist        : array — permuted Sharpe distribution (from mcpt())
     label       : strategy name for title
     output_path : save path
@@ -188,7 +193,7 @@ def plot_mcpt(actual, dist, label="Strategy", output_path=os.path.join(tempfile.
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.hist(dist, bins=50, color="#95a5a6", alpha=0.7, label="Permuted Sharpes")
     ax.axvline(actual, color="#e74c3c", lw=2,
-               label=f"Actual OOS Sharpe = {actual:.2f}")
+               label=f"Strategy Sharpe = {actual:.2f}")
     ax.set_xlabel("Sharpe Ratio")
     ax.set_ylabel("Count")
     sig = "p < 0.05: significant edge" if p_value < 0.05 else "p >= 0.05: no significant edge"

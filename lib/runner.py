@@ -57,7 +57,16 @@ MCPT_N_DEFAULT = 2000
 # scaled down to budget // bars (never below MCPT_N_MIN, never above MCPT_N_MAX whatever
 # MCPT_N says) and a warning names the original and effective n.
 MCPT_BUDGET = 4e8
-MCPT_N_MIN  = 200
+# MCPT_N_MIN must stay >= the library listing gate in api/openclaw/marketplace.py — whose
+# own MCPT_N_MIN is the opposite thing (the minimum n a listing is ACCEPTED with), so the
+# two move together despite living in different repos. With a lower floor here, every
+# backtest past MCPT_BUDGET / gate bars (400k at 4e8 / 1000) silently gets an n that the
+# MCPT itself is fine with but the listing rejects, and nothing in the UI says why. Cost of
+# the floor is backtest time on long 1-min histories: 1.05M bars at n=1000 measured 7.6 s on
+# M5 → ≈ 23–46 s on a 3–6× slower fleet VM (the n=2000 fleet figure above independently
+# implies 28–55 s) — at or just over the 30 s budget for a 1-min 2-year strategy, and
+# unnoticeable for anything shorter.
+MCPT_N_MIN  = 1000
 MCPT_N_MAX  = 20000
 # Fixed seed for the automatic MCPT's permutations: the same backtest gives the same
 # p-value on every run (a live tick carries it over, a re-run must not silently move it).
@@ -121,9 +130,13 @@ def _mcpt_n_effective(n_perm, bars):
     MCPT_BUDGET bars × permutations, floored at MCPT_N_MIN, capped at MCPT_N_MAX."""
     n_eff = min(int(n_perm), MCPT_N_MAX, max(MCPT_N_MIN, int(MCPT_BUDGET // max(int(bars), 1))))
     if n_eff < n_perm:
-        logging.warning("MCPT permutations reduced %d → %d to fit the runtime budget "
-                        "(%d bars × n ≤ %.0e); set MCPT_N lower to silence this",
-                        n_perm, n_eff, bars, MCPT_BUDGET)
+        # No action asked for: the floor keeps n_eff listable, so the only thing the reader
+        # needs is why their p-value was computed on fewer permutations than they asked for.
+        logging.warning("MCPT permutations reduced %d → %d: %d bars × n must stay under "
+                        "%.0e to keep the backtest inside its runtime budget. The p-value "
+                        "is still valid and n never drops below %d, the library listing "
+                        "minimum — nothing to fix.",
+                        n_perm, n_eff, bars, MCPT_BUDGET, MCPT_N_MIN)
     return n_eff
 
 
