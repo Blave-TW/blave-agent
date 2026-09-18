@@ -2,7 +2,8 @@
 A synthetic 1h OHLCV frame + a trivial SMA-cross strategy goes through runner.run() in
 backtest mode; asserts stats.json carries the three MCPT keys with the Distribution shape
 the web reads (edges = counts+1, counts sum = n, everything finite), that MCPT=False writes
-none, that MCPT_N is honoured (and scaled down to the bars × n budget with a warning), that
+none, that MCPT_N is honoured (scaled down to the bars × n budget with a warning, and left
+alone but flagged on stdout and in the log when it sits below the library listing minimum), that
 the seeded private RNG makes the p-value reproducible without touching the global seed,
 that vol_window follows the bar frequency, that stats.json is written atomically, that a
 live tick carries all three over (+ the _carry_over edge cases), and that scan_grid never
@@ -101,7 +102,16 @@ check(any("2000" in m and "1000" in m and "MCPT" in m for m in cap.msgs), f"降 
 check(not any("MCPT_N lower" in m for m in cap.msgs), f"降 n 的 warning 不得建議調低 MCPT_N → {cap.msgs[-1:]}")
 check(R._mcpt_n_effective(2000, 10_000_000) == 1000, "bars=1e7 → 降到下限 1000,不再低")
 check(R._mcpt_n_effective(50_000, 100) == 20000, "MCPT_N=50000 小資料 → 硬上限 20000")
+# 上面每一次降 n 都停在下限 1000(不是低於),所以到這裡一行上架提示都不該出現
+check(all("reduced" in m for m in cap.msgs), f"n 停在門檻上 → 只有降 n 的 warning,沒有上架提示 → {cap.msgs}")
+_seen = len(cap.msgs)
+check(R._mcpt_n_effective(1000, 100) == 1000, "MCPT_N=1000 剛好等於門檻 → 原樣")
+check(len(cap.msgs) == _seen, f"n = 門檻(不是低於)→ 不准印上架提示 → {cap.msgs[_seen:]}")
 check(R._mcpt_n_effective(300, 1_000_000) == 300, "MCPT_N=300 已低於預算 → 原樣(作者自己設的,不抬高)")
+_new = cap.msgs[_seen:]
+check(len(_new) == 1 and "MCPT n=" in _new[0] and "300" in _new[0] and "1000" in _new[0] and "MCPT_N" in _new[0],
+      f"n 低於門檻 → 必須印一行,含實際 n、門檻與可做的動作(設 MCPT_N)→ {_new}")
+check("reduced" not in _new[0], f"上架提示與「降 n」是兩件不同的事,不得混進同一句 → {_new}")
 cap.msgs.clear()
 R.MCPT_BUDGET, _saved = (N - 50) * 1500, R.MCPT_BUDGET  # 2950 bars after WARMUP → n 2000 → 1500 on the real path
 try:
@@ -110,6 +120,30 @@ finally:
     R.MCPT_BUDGET = _saved
 check(st["MCPT Permutations"] == 1500 and dist_ok(st["MCPT Distribution"], 1500), f"預算降 n 走完整回測 → Permutations=1500 → {st['MCPT Permutations']}")
 check(any("reduced 2000" in m for m in cap.msgs), "整條路徑也有降 n 的 warning")
+cap.msgs.clear()
+import contextlib, io
+_out = io.StringIO()
+with contextlib.redirect_stdout(_out):
+    R.run(cfg("n300gate", MCPT_N=300), fetch, compute)
+_so = _out.getvalue(); st = stats_of("n300gate")
+_gate = [m for m in cap.msgs if "MCPT n=" in m]
+check(st["MCPT Permutations"] == 300, f"整條路徑不抬高作者設的 n → {st['MCPT Permutations']}")
+check(len(_gate) == 1 and "1000" in _gate[0], f"整條路徑也印上架提示(log)→ {_gate}")
+check(not any("reduced" in m for m in cap.msgs), f"沒降 n 就不該有降 n 的 warning → {cap.msgs}")
+# stdout 才是 agent 真的會讀到的通道:既有那行形狀不准動,提示另起一行
+check("  MCPT p-value: " in _so and "(n=300," in _so, f"既有那行 stdout 形狀原封不動 → {[l for l in _so.splitlines() if 'MCPT p-value' in l]}")
+_solines = [l for l in _so.splitlines() if "listing minimum" in l]
+check(len(_solines) == 1 and "n=300" in _solines[0] and "MCPT_N" in _solines[0] and "1000" in _solines[0],
+      f"低於門檻 → stdout 必須多出獨立一行,含 n、門檻與動作 → {_solines}")
+check("MCPT p-value" not in _solines[0], f"提示是獨立一行,沒併進既有那行 → {_solines}")
+cap.msgs.clear()
+_out = io.StringIO()
+with contextlib.redirect_stdout(_out):
+    R.run(cfg("n1000gate", MCPT_N=1000), fetch, compute)
+_so = _out.getvalue()
+check(stats_of("n1000gate")["MCPT Permutations"] == 1000, "MCPT_N=1000 走完整路徑 → n 就是 1000")
+check("listing minimum" not in _so and not any("MCPT n=" in m for m in cap.msgs),
+      f"n = 門檻(不是低於)→ stdout 與 log 都不准印 → {[l for l in _so.splitlines() if 'listing' in l]}")
 logging.getLogger().removeHandler(cap)
 
 # ── 2c. reproducible: private RNG seeded, global seed untouched; vol_window ∝ ppy ──

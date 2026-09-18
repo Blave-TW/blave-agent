@@ -127,7 +127,8 @@ def _write_stats(out_dir, stats):
 
 def _mcpt_n_effective(n_perm, bars):
     """Permutation count actually run: MCPT_N (or the default) scaled down to fit
-    MCPT_BUDGET bars × permutations, floored at MCPT_N_MIN, capped at MCPT_N_MAX."""
+    MCPT_BUDGET bars × permutations, capped at MCPT_N_MAX. MCPT_N_MIN floors the budget
+    term only, so a result below MCPT_N_MIN can only have come from MCPT_N itself."""
     n_eff = min(int(n_perm), MCPT_N_MAX, max(MCPT_N_MIN, int(MCPT_BUDGET // max(int(bars), 1))))
     if n_eff < n_perm:
         # No action asked for: the floor keeps n_eff listable, so the only thing the reader
@@ -137,6 +138,20 @@ def _mcpt_n_effective(n_perm, bars):
                         "is still valid and n never drops below %d, the library listing "
                         "minimum — nothing to fix.",
                         n_perm, n_eff, bars, MCPT_BUDGET, MCPT_N_MIN)
+    if n_eff < MCPT_N_MIN:
+        # Unreachable from the budget term (that one is floored at MCPT_N_MIN), so this is
+        # MCPT_N deliberately set below the listing gate. Kept as asked — raising an author's
+        # own number silently would be worse than an n that cannot be listed — but said out
+        # loud now rather than at submission time, which is the only place it used to surface.
+        # warning, not info: info survives only while run()'s basicConfig actually took effect
+        # (it is a no-op once root carries any handler, and root defaults to WARNING), and of
+        # the two lines here this is the one with something to act on.
+        logging.warning("MCPT n=%d is below %d, the minimum the strategy library accepts for "
+                        "a listing. Kept as set: MCPT_N is the strategy's own choice and the "
+                        "p-value is valid to read on its own. To make it listable, set "
+                        "MCPT_N to %d or more and re-run — and if this strategy is not for "
+                        "the library, leaving it is fine.",
+                        n_eff, MCPT_N_MIN, MCPT_N_MIN)
     return n_eff
 
 
@@ -876,6 +891,17 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 print(f"  MCPT p-value: {mcpt_fields[MCPT_KEYS[0]]:.4f}  "
                       f"(n={mcpt_fields[MCPT_KEYS[1]]}, "
                       f"{'significant edge' if mcpt_fields[MCPT_KEYS[0]] < 0.05 else 'no significant edge'} at 95%)")
+                if mcpt_fields[MCPT_KEYS[1]] < MCPT_N_MIN:
+                    # Its own line, never folded into the one above: that f-string's shape is
+                    # parsed downstream, an extra line is not. _mcpt_n_effective says the same
+                    # thing to strategy.log, which the agent does not read on a normal run, and
+                    # a listing gate the author only meets at submission time is the gap this
+                    # whole branch exists to close — so it has to reach the one channel that
+                    # surfaces on every backtest.
+                    print(f"  n={mcpt_fields[MCPT_KEYS[1]]} is below the strategy library's "
+                          f"listing minimum of {MCPT_N_MIN} — raise MCPT_N to {MCPT_N_MIN} or "
+                          f"more and re-run to make it listable, or leave it as is if this "
+                          f"strategy is not for the library.")
         stats.update(_carry_over(out_dir, mode))  # live tick keeps MCPT + Generated At; backtest drops/restamps
         stats.setdefault(GENERATED_AT_KEY, int(time.time()))
         _write_stats(out_dir, stats)
