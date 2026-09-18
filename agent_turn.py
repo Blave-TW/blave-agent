@@ -37,13 +37,11 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 
 # lib/notify.py (config-layer code, unmodified) resolves pairing state from
-# $BLAVE_AGENT_HOME/credentials/telegram-default-allowFrom.json — an openclaw
+# $BLAVECLAW_HOME/credentials/telegram-default-allowFrom.json — an openclaw
 # convention. Our own pairing lives in config/telegram.json instead, so this
 # runtime must keep a compat shim in sync at that path (see sync step below)
-# and point BLAVE_AGENT_HOME there for every agent turn / Bash tool call.
-BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
-                    or os.environ.get("BLAVECLAW_HOME")
-                    or "/opt/blave-agent")
+# and point BLAVECLAW_HOME there for every agent turn / Bash tool call.
+BLAVECLAW_HOME = os.environ.get("BLAVECLAW_HOME", "/opt/blave-agent")
 
 # Every model routes through the real Blave proxy (api/openclaw/proxy.py)
 # instead of holding raw upstream provider keys on this machine. The proxy
@@ -1998,10 +1996,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     # BLAVE_AGENT_DB:AGENTS.md 教 agent 用 sqlite 唯讀查自己的逐字稿;Linux 的
     # provisioning 沒設這個 env,在這裡帶最終解析值,兩個 OS 都保證看得到。
-    # 過渡期兩個名字都注入:機器上的 lib/notify.py 可能還是讀舊名的版本
-    # (config 層走半手動更新通道),新版讀新名,兩邊都要接得住。
-    turn_env = {**PROXY_ENV, "BLAVE_AGENT_HOME": BLAVE_AGENT_HOME,
-                "BLAVECLAW_HOME": BLAVE_AGENT_HOME, "BLAVE_AGENT_DB": ss.DB_PATH}
+    turn_env = {**PROXY_ENV, "BLAVECLAW_HOME": BLAVECLAW_HOME, "BLAVE_AGENT_DB": ss.DB_PATH}
     # `python tmp/x.py` puts the script's own dir on sys.path, not the cwd, so a script under
     # tmp/ or report_jobs/<id>/ could not `import lib…`: nearly every report script failed its
     # first run (uid=1 Windows + 32321 Linux, 2026-09-11). options.env replaces the inherited
