@@ -53,6 +53,9 @@ def _retry_get(url, max_retries=6, **kwargs):
     silently dropped that whole chunk's symbols with no retry). 403 is NOT
     retried — the API returns it only for a missing/invalid api-key, a permanent
     error that backing off would just delay surfacing.
+
+    A non-retried 4xx raises requests.HTTPError with the response body appended
+    (truncated to 200 chars) — the 4xx bodies carry the only explanation there is.
     """
     for attempt in range(max_retries):
         try:
@@ -65,7 +68,15 @@ def _retry_get(url, max_retries=6, **kwargs):
             time.sleep(wait)
             continue
         if r.status_code != 429 and r.status_code < 500:
-            r.raise_for_status()
+            try:
+                r.raise_for_status()
+            except requests.HTTPError as exc:
+                # raise_for_status()'s message is status + URL only. The API puts the
+                # reason in the body ("start must not be after end", "Invalid start
+                # date, expected YYYY-MM-DD"), and a strategy author who never sees it
+                # cannot tell a bad argument from a broken endpoint. Same type and
+                # .response as before so the callers switching on status still work.
+                raise requests.HTTPError(f'{exc} — {r.text[:200]}', response=r) from exc
             return r
         wait = 2 ** (attempt + 1)
         print(f"  {r.status_code} transient — retrying in {wait}s ({url.split('/')[-2]}/{url.split('/')[-1]})")
@@ -648,6 +659,26 @@ def _extend_cache_single(prefix, params, fetch_raw_fn, start, end):
     cap_to = min(req_to, current_ym)       # never claim coverage of a future month
     upper  = tomorrow if req_to >= current_ym else f'{_next_month(req_to)}-01'
     stamp  = now.strftime(_META_TS_FMT)
+
+    # When the caller left `end` to us and the requested start is past even tomorrow,
+    # the window simply has not happened yet (a forward settlement date, a scheduled
+    # backfill span) and the honest answer is "no rows yet". The API cannot tell that
+    # from a reversed range — it sees start > end and returns 400 — so decide it here
+    # and skip the pointless call. "Tomorrow" is Taipei's, not the machine's: this is
+    # a Taiwan dataset and the boxes run UTC. UTC being 8 h behind happens to make the
+    # naive compare safe (tomorrow_utc >= Taipei today), but that is an accident of
+    # sign holding up a silently-empty answer, so it is pinned instead. Two cases
+    # deliberately still reach the API: an explicit `end` (a caller who wrote the
+    # order backwards made a typo and should read the message) and a malformed
+    # `start` (nothing to compare; the 400 names the expected format).
+    if end is None:
+        tpe_tomorrow = (datetime.now(_TPE) + timedelta(days=1)).strftime('%Y-%m-%d')
+        if tpe_tomorrow < start:
+            try:
+                datetime.strptime(start, '%Y-%m-%d')
+                return pd.DataFrame()
+            except ValueError:
+                pass
 
     df, meta = _read_single(prefix, params)
     changed = False
