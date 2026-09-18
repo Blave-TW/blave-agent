@@ -9,9 +9,9 @@ Run: cd blave-agent && .venv/bin/python tests/check_venue_bind.py
 import os, shutil, stat, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RUNTIME = os.path.join(ROOT, "..", "api", "blave_agent", "runtime")
+RUNTIME = os.path.join(ROOT, "runtime")
 if not os.path.isfile(os.path.join(RUNTIME, "command_listener.py")):
-    sys.exit("needs the monorepo layout (../api/blave_agent/runtime)")
+    sys.exit("runtime/ 不在這個 repo 裡?")
 BASE = tempfile.mkdtemp(prefix="venue-")
 WS = os.path.join(BASE, "workspace")
 os.makedirs(os.path.join(WS, "manager"))

@@ -1,6 +1,25 @@
-# Blave Agent Config
+# Blave Agent
 
-Workspace config for Blave Agent. Contains AGENTS.md, shared library, strategy template, manager system, and reference docs.
+Blave Agent 的引擎與工作區:`runtime/`(agent loop、bridges、回報器,出貨到每一台機器)、
+`lib/`(資料、回測、交易所帳戶與下單)、`manager/`(部位管理與對帳)、`AGENTS.md` 與策略範本。
+
+## 發版(runtime)
+
+```
+cd blave-agent
+export BLAVE_S3_KEY=... BLAVE_S3_SECRET=... BLAVE_S3_REGION=... BLAVE_S3_BUCKET=...
+python publish.py            # dry-run,不需要憑證
+python publish.py publish    # 真的上傳,機隊 ~6 分鐘內吃到
+```
+
+發版前 bump `runtime/VERSION`,並把 `runtime/CHANGELOG.md` 的 Unreleased 搬到新版號下。
+打包時會從 `../api/blave_agent/systemd/` 取 `jobs.json` 宣告的 unit 檔,所以 **api 的
+checkout 要跟這個 repo 並排**;不在的話會帶著完整路徑當場失敗。
+
+`runtime/` 的歷史是 2026-09-18 從 api repo 以 subtree 合併過來的(165 則)。
+因為是合併不是改名,`git log -- runtime/` 只會看到那一則合併;要看完整歷史用
+`git log HEAD^2`(檔案在那條線上是根目錄路徑,例如 `agent_turn.py`)。
+
 
 Fresh installs are handled automatically by the provisioning script — no manual steps needed.
 

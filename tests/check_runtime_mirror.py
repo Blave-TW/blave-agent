@@ -6,7 +6,7 @@ code; api cannot import the runtime once they live in separate repos. So api
 keeps a verbatim mirror in `openclaw/agent_pure.py`, and this test is what makes
 "verbatim" true: it goes red the moment either copy is edited alone.
 
-Owner of the originals: runtime/strategy_reporter.py, runtime/report_runner.py.
+Owner of the originals: this repo's runtime/; the mirror lives in the api checkout.
 Run: cd blave-agent && .venv/bin/python tests/check_runtime_mirror.py
 """
 import ast
@@ -14,7 +14,7 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RUNTIME_DIR = os.path.join(ROOT, "..", "api", "blave_agent", "runtime")
+RUNTIME_DIR = os.path.join(ROOT, "runtime")  # 擁有者在本地
 MIRROR = os.path.join(ROOT, "..", "api", "openclaw", "agent_pure.py")
 if not os.path.isfile(MIRROR):
     sys.exit("needs the monorepo layout (../api/openclaw/agent_pure.py)")
