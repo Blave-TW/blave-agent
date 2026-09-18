@@ -1,5 +1,6 @@
 """Minimal check for lib/venue.py — no network. Builds a fake <base>/{workspace,current}
-with the monorepo runtime's command_listener, binds okx over a bingx-bound .env (no
+with the monorepo runtime copied WHOLE (that is what `current/` is on a machine, and
+command_listener imports siblings), binds okx over a bingx-bound .env (no
 credentials.ui.json yet, like a pre-manifest machine) and asserts: exact OKX lines
 written 0600, BLAVE keys kept, bingx evicted + halted + reported, manifest = ["okx"],
 summary carries names only; bad inputs are refused before the runtime is touched.
@@ -8,15 +9,15 @@ Run: cd blave-agent && .venv/bin/python tests/check_venue_bind.py
 import os, shutil, stat, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RUNTIME = os.path.join(ROOT, "..", "api", "blave_agent", "runtime", "command_listener.py")
-if not os.path.isfile(RUNTIME):
+RUNTIME = os.path.join(ROOT, "..", "api", "blave_agent", "runtime")
+if not os.path.isfile(os.path.join(RUNTIME, "command_listener.py")):
     sys.exit("needs the monorepo layout (../api/blave_agent/runtime)")
 BASE = tempfile.mkdtemp(prefix="venue-")
 WS = os.path.join(BASE, "workspace")
 os.makedirs(os.path.join(WS, "manager"))
 open(os.path.join(WS, "manager", "portfolio_config.json"), "w").write("{}")
-os.makedirs(os.path.join(BASE, "current"))
-shutil.copy(RUNTIME, os.path.join(BASE, "current"))
+shutil.copytree(RUNTIME, os.path.join(BASE, "current"),
+                ignore=shutil.ignore_patterns("__pycache__"))
 os.environ["BLAVE_AGENT_WORKSPACE"] = WS
 sys.path.insert(0, ROOT)
 os.chdir(WS)
