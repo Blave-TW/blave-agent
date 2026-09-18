@@ -5,7 +5,7 @@ threshold compute_signals go through scan_grid twice: once with the lines forced
 print the `[scan] done/total cells` lines (10 % steps + the final one) and nothing else.
 mcpt with a seeded rng must be reproducible run to run and match the pre-progress
 list-comprehension formula exactly (same rng draw order).
-Run: cd blaveclaw-config && .venv/bin/python tests/check_progress.py
+Run: cd blave-agent && .venv/bin/python tests/check_progress.py
 """
 import contextlib, io, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -2,7 +2,7 @@
 An empty API answer for a day within 3 days of today (Taipei) is NOT written, so the
 next call re-fetches it; older empty days and days with rows are written as before.
 Covers both _populate_broker_day_cache and _populate_trader_day_cache.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_broker_day_cache_recent.py
+Run: cd blave-agent && .venv/bin/python tests/check_broker_day_cache_recent.py
 """
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

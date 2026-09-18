@@ -12,7 +12,7 @@ Fresh installs are handled automatically by the provisioning script — no manua
 
 Tell your agent:
 
-> Clone https://github.com/Blave-TW/blaveclaw-config to /tmp/oc-config and use it as **reference** to update this machine's live workspace — `$BLAVE_AGENT_HOME/workspace`, i.e. the workspace you are running in (`/root/.openclaw/workspace` on old BlaveClaw machines, `/opt/blave-agent/workspace` on Blave Agent machines; resolution per `references/deployment.md`). For each file below, compare the repo version with the local version and apply only what is missing or outdated — do not blindly overwrite.
+> Clone https://github.com/Blave-TW/blave-agent to /tmp/oc-config and use it as **reference** to update this machine's live workspace — `$BLAVE_AGENT_HOME/workspace`, i.e. the workspace you are running in (`/root/.openclaw/workspace` on old BlaveClaw machines, `/opt/blave-agent/workspace` on Blave Agent machines; resolution per `references/deployment.md`). For each file below, compare the repo version with the local version and apply only what is missing or outdated — do not blindly overwrite.
 >
 > - `AGENTS.md`, `CLAUDE.md` — replace wholesale (these are config, not user-edited)
 > - `references/` — for each file, check if a local version exists; if it does, read both and patch in anything missing; if it does not, copy it in

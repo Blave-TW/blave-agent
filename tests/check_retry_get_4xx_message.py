@@ -5,7 +5,7 @@ prints status + URL, so the API's "start must not be after end" never reached th
 strategy author and a bad argument looked exactly like a broken endpoint.
 Type and .response must stay as they were — fetch_twstock_dividend and the TXF
 export path both branch on exc.response.status_code.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_retry_get_4xx_message.py
+Run: cd blave-agent && .venv/bin/python tests/check_retry_get_4xx_message.py
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

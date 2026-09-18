@@ -15,7 +15,7 @@ named key never writes orders.jsonl/ledger, unlistable or surviving conditional
 orders = exit 1); stop() refusals, exit 3 when nothing matches, kill + PermissionError,
 flatten crash still unregisters and exits 1.
 
-Run: cd blaveclaw-config && python3 tests/check_stop_strategy.py
+Run: cd blave-agent && python3 tests/check_stop_strategy.py
 """
 import json
 import os

@@ -3,7 +3,7 @@
 meta.shareable, stay quiet on a compliant research report and on non-research types, and
 never stop the write. Also the schema_version choice: 1.3 iff meta carries `shareable`,
 else 1.2 iff a candlestick, else 1.1.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_report_warnings.py
+Run: cd blave-agent && .venv/bin/python tests/check_report_warnings.py
 """
 import contextlib, io, json, os, shutil, sys, tempfile
 WS = tempfile.mkdtemp(prefix="rpt-")

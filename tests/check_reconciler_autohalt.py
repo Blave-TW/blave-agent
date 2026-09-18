@@ -17,7 +17,7 @@ cleared; 3a (empty read at a trigger) and 3b (account id changed) trip, hold
 while HALT stands, and are confirmed by the user clearing HALT; a key change
 is a trigger and the raw key never reaches the state file.
 
-Run: cd blaveclaw-config && python3 tests/check_reconciler_autohalt.py
+Run: cd blave-agent && python3 tests/check_reconciler_autohalt.py
 """
 import json, os, sys, tempfile
 

@@ -13,7 +13,7 @@ Asserts: lib.events.emit is a no-op (returns None, no raise) when the runtime
 module is absent; it drops None-valued fields; a raising appender is swallowed;
 and every wired call site passes a type from the agreed registry.
 
-Run: cd blaveclaw-config && python3 tests/check_events_dualwrite.py
+Run: cd blave-agent && python3 tests/check_events_dualwrite.py
 """
 import os, re, sys
 

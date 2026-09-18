@@ -7,7 +7,7 @@ backtest kept no candles) and asserts: the op file carries
 trades and one with no backtest; everything the strategy already knows (symbol, interval,
 venue, block_type) and everything a machine widget takes (cron, script) is refused; and
 `strategy=` on any other type is refused.
-Run: cd blaveclaw-config && python3 tests/check_watch_strategy_chart.py
+Run: cd blave-agent && python3 tests/check_watch_strategy_chart.py
 """
 import json, os, sys, tempfile
 

@@ -8,7 +8,7 @@ Nothing to install — the platform re-clones the blave-quant skill into `skills
 
 ## 2. Config
 
-Clone https://github.com/Blave-TW/blaveclaw-config to `/tmp/oc-config` as **reference only** — never as the live workspace. Run the clone in the foreground with an explicit long timeout (e.g. 300000ms) — never `run_in_background`: on a slow/throttled machine the clone can exceed the 120s default and auto-background, and the runtime kills backgrounded processes at turn end with no completion notification, silently dying instead of finishing. Then follow the "Updating an existing workspace" section of its `README.md` exactly: compare file by file, apply only what's missing or outdated.
+Clone https://github.com/Blave-TW/blave-agent to `/tmp/oc-config` as **reference only** — never as the live workspace. Run the clone in the foreground with an explicit long timeout (e.g. 300000ms) — never `run_in_background`: on a slow/throttled machine the clone can exceed the 120s default and auto-background, and the runtime kills backgrounded processes at turn end with no completion notification, silently dying instead of finishing. Then follow the "Updating an existing workspace" section of its `README.md` exactly: compare file by file, apply only what's missing or outdated.
 
 **Backtest-chain files are replaced, never merged:** `lib/runner.py`, `lib/param_scan.py`, `lib/walk_forward.py`, `lib/validation.py`, `lib/analysis.py` — copy the reference clone's version over the local one (`cp`); a local edit to one of these is drift the web cannot read, and the resident runtime refuses the edit tools on them anyway.
 

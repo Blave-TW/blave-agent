@@ -9,7 +9,7 @@ malformed `start` (the 400 names the format).
 
 The cut-off is Taipei's, not the machine's — the boxes run UTC, 8 h behind — so the
 cross-midnight window (UTC 23:30 = Taipei 07:30 next day) is checked on frozen time.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_future_window_no_fetch.py
+Run: cd blave-agent && .venv/bin/python tests/check_future_window_no_fetch.py
 """
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

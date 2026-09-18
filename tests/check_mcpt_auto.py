@@ -7,7 +7,7 @@ the seeded private RNG makes the p-value reproducible without touching the globa
 that vol_window follows the bar frequency, that stats.json is written atomically, that a
 live tick carries all three over (+ the _carry_over edge cases), and that scan_grid never
 touches lib.validation.mcpt (monkeypatched counter).
-Run: cd blaveclaw-config && MPLBACKEND=Agg .venv/bin/python tests/check_mcpt_auto.py
+Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_mcpt_auto.py
 """
 import json, math, os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

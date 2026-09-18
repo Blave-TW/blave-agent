@@ -6,7 +6,7 @@ Drives the real lib/runner.run() with BLAVE_MODE=live in a temp workspace — no
     exit bar) → state converges to 0 on this tick
   - the last bar carries a signal → same result as before (that signal)
 
-Run: cd blaveclaw-config && .venv/bin/python tests/check_live_ffill.py
+Run: cd blave-agent && .venv/bin/python tests/check_live_ffill.py
 """
 import json
 import os

@@ -2,7 +2,7 @@
 fetch_twstock_holidays degrades to None (unreachable / not published) and carries the
 attribution through; is_tw_trading_day is True / False / None; twstock_industry_name never
 guesses an unknown code.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_tw_holidays.py
+Run: cd blave-agent && .venv/bin/python tests/check_tw_holidays.py
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

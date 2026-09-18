@@ -3,7 +3,7 @@ Builds every template from synthetic frames and asserts the structural rules the
 api enforces (references/reports.md §6): meta first, lead right after meta, one
 footnote last, known block types, finite numbers, narrative caps, price charts as
 candlesticks (schema 1.2) and everything else as line charts.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_report_templates.py
+Run: cd blave-agent && .venv/bin/python tests/check_report_templates.py
 """
 import json, math, os, re, sys, tempfile
 os.environ["BLAVE_AGENT_WORKSPACE"] = tempfile.mkdtemp(prefix="rpt-")

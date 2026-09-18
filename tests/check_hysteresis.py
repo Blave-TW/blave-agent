@@ -5,7 +5,7 @@ the other side off, threshold_position() must equal it with both sides on AND wi
 side pushed out of range (the scan idiom, where it must take the vectorized path), NaN
 bars, values exactly on a threshold and gaps across the flat band included; scan_grid must
 not call compute_signals on a combo an explicit valid_fn rejects.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_hysteresis.py
+Run: cd blave-agent && .venv/bin/python tests/check_hysteresis.py
 """
 import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

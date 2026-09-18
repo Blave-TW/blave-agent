@@ -231,7 +231,7 @@ Editing the built-in looks cheaper and is not:
   `manager.py` is invisible there, and the page also refuses to pass extra
   params to the built-in — so the user can only reach it by typing a command.
 - **It gets merged away.** Both scripts are tracked files; the next
-  `blaveclaw-config` update compares them file by file against the reference
+  `blave-agent` update compares them file by file against the reference
   clone, and a local edit is at the mercy of that merge.
 - **It changes the default for everything.** `equal` is what every portfolio
   falls back to when no method is named; a variant nobody asked for should not

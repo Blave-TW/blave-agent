@@ -2,7 +2,7 @@
 The capped path selects the tail before formatting (a live 1m tick would otherwise format
 years of bars to keep 20k); it must equal the uncapped output's last k, including when bad
 bars are scattered or fill the whole tail, and with an object-dtype pane series.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_build_tails.py
+Run: cd blave-agent && .venv/bin/python tests/check_build_tails.py
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

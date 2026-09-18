@@ -3,7 +3,7 @@
 Without Telegram, make_sender() logs a warning before run() is called; that implicitly gives the
 root logger a stderr handler, so run()'s basicConfig(filename=...) must still take effect.
 
-Run: cd blaveclaw-config && .venv/bin/python tests/check_strategy_log.py
+Run: cd blave-agent && .venv/bin/python tests/check_strategy_log.py
 """
 import logging
 import os

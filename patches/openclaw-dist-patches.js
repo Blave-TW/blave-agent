@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Blave dist patches for openclaw. Applied at provisioning time (user_data runs
-// this right after cloning blaveclaw-config, before the gateway starts).
+// this right after cloning blave-agent, before the gateway starts).
 //
 // Why this exists: openclaw upstream fixes land slowly (see issue #83815), so
 // targeted fixes we cannot wait for are maintained here and applied onto the

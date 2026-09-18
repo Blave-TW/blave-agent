@@ -12,7 +12,7 @@ Plus: training Sharpe ≤ 0 → excluded run, out of the in-sample average; in-s
 mean < 0.25 → wfe null; < 3 runs raises and writes nothing; Type A and Type C both
 run end to end; the wf.json contract the web 樣本外驗證 tab reads.
 
-Run: cd blaveclaw-config && .venv/bin/python tests/check_walk_forward.py
+Run: cd blave-agent && .venv/bin/python tests/check_walk_forward.py
 """
 import json, math, os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

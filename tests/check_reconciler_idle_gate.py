@@ -17,7 +17,7 @@ Asserts: no manifest → reconcile (fail-open); {"ids": []} → idle; a bound
 crypto venue / paper / capital → reconcile; corrupt JSON and a non-list "ids"
 → reconcile (fail-open).
 
-Run: cd blaveclaw-config && python3 tests/check_reconciler_idle_gate.py
+Run: cd blave-agent && python3 tests/check_reconciler_idle_gate.py
 """
 import json, os, sys, tempfile
 

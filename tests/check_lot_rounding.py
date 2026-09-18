@@ -12,7 +12,7 @@ to nothing, a failed rules read leaves qty untouched, BOTH USD->qty conversions
 below-minimum no-op but still records a real zero-fill, and the orders.jsonl `failed`
 flag is judged against the venue's real granularity instead of a flat $10.
 
-Run: cd blaveclaw-config && python3 tests/check_lot_rounding.py
+Run: cd blave-agent && python3 tests/check_lot_rounding.py
 """
 import os, sys, tempfile
 

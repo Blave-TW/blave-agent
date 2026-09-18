@@ -13,7 +13,7 @@ workspace and asserts the rules that are expensive to get wrong:
   - restore() on a funded strategy raises and leaves the file byte-identical; on an
     unfunded one it puts the old code back
 
-Run: cd blaveclaw-config && .venv/bin/python tests/check_strategy_versions.py
+Run: cd blave-agent && .venv/bin/python tests/check_strategy_versions.py
 """
 import json
 import os

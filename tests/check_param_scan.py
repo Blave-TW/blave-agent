@@ -7,7 +7,7 @@ the plateau) goes through find_plateau → write_scan; asserts the scan.json con
 web 穩健參數 tab reads (keys, shapes, NaN → null, peak ≠ plateau, current on/off grid).
 Then a stub stats.json takes the MCPT merge and must keep every other field (the runner's
 carry-over of those keys across live ticks is covered by tests/check_mcpt_auto.py).
-Run: cd blaveclaw-config && .venv/bin/python tests/check_param_scan.py
+Run: cd blave-agent && .venv/bin/python tests/check_param_scan.py
 """
 import json, math, os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -18,7 +18,7 @@ colours a live diff that may have flipped sign since; a row whose reduce side
 is the flat 10 is recorded anyway when its entry side is not; lot-based rows
 stay out; the key is present-but-empty when nothing qualifies.
 
-Run: cd blaveclaw-config && python3 tests/check_reconcile_gates.py
+Run: cd blave-agent && python3 tests/check_reconcile_gates.py
 """
 import json, os, sys, tempfile
 

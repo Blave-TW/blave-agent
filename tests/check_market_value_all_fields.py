@@ -3,7 +3,7 @@ The `market` / `is_etf` columns and the attrs['twse_ex_etf_market_value'] denomi
 reach the caller whatever the local pandas does: the denominator must not shrink when `top`
 slices, and a cache hit missing any of the four (old cache file, or a pandas whose parquet
 writer drops DataFrame.attrs) must be refetched rather than served short.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_market_value_all_fields.py
+Run: cd blave-agent && .venv/bin/python tests/check_market_value_all_fields.py
 """
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

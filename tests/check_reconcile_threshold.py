@@ -23,7 +23,7 @@ reduce side; a failed LOT read alone costs the reduce side only and leaves the
 entry gate standing; capital/lot rows pass untouched with zero venue lookups;
 the gate is cached per round and expires.
 
-Run: cd blaveclaw-config && python3 tests/check_reconcile_threshold.py
+Run: cd blave-agent && python3 tests/check_reconcile_threshold.py
 """
 import inspect, os, sys, tempfile
 
