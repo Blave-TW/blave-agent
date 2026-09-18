@@ -29,7 +29,8 @@ if os.name != "nt":
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
 )
-BLAVECLAW_HOME = os.environ.get("BLAVECLAW_HOME", BASE)
+BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
+                    or os.environ.get("BLAVECLAW_HOME") or BASE)
 CONFIG_PATH = os.environ.get("BLAVE_AGENT_TG_CONFIG", f"{BASE}/config/telegram.json")
 API_URL = os.environ.get(
     "BLAVE_TG_CONFIG_URL", "https://api.blave.org/openclaw/agent/telegram/config"
@@ -42,8 +43,8 @@ PYTHON_BIN = os.environ.get("BLAVE_AGENT_PYTHON") or (
 SYNC_SCRIPT = os.environ.get("BLAVE_SYNC_NOTIFY", f"{BASE}/sync_notify_compat.py")
 OFFSET_PATH = os.environ.get("BLAVE_AGENT_TG_OFFSET", f"{BASE}/state/tg_offset")
 CHECKED_PATH = f"{BASE}/state/tg_pair_checked"
-ALLOW_FROM_PATH = os.path.join(BLAVECLAW_HOME, "credentials", "telegram-default-allowFrom.json")
-OPENCLAW_JSON_PATH = os.path.join(BLAVECLAW_HOME, "openclaw.json")
+ALLOW_FROM_PATH = os.path.join(BLAVE_AGENT_HOME, "credentials", "telegram-default-allowFrom.json")
+OPENCLAW_JSON_PATH = os.path.join(BLAVE_AGENT_HOME, "openclaw.json")
 
 PAIRED_CHECK_S = 300
 

@@ -8,7 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- 環境變數 `BLAVECLAW_HOME` 更名為 `BLAVE_AGENT_HOME`。`agent_turn` / `telegram_pairing`
+  改成讀新名優先、舊名次之;`agent_turn` 送進每個 turn 的環境**兩個名字都注入**——機器上的
+  `lib/notify.py` 走半手動更新通道,可能還是只讀舊名的版本,雙寫才不會在通道落差期間
+  無聲停掉 Telegram 通知。舊名的讀取端**移除條件**:機隊回報的 `config_version`(Redis `agent:config_version:{uid}`)全部 ≥ 帶著新版 `lib/notify.py` 的那個 workspace VERSION——條件寫在這裡,不住在任何 agent 的記憶裡。
 
 ## 1.1.80 — 2026-09-18
 
