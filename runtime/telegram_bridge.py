@@ -433,7 +433,7 @@ def main():
                 continue  # 其他 service message(入群、置頂…)照舊靜默跳過
             chat_id = msg["chat"]["id"]
             # Auto-pair: the first chat to message this bot becomes the allowed
-            # one (same convention as openclaw — the user just sends a message
+            # one (the user just sends a message
             # to their bot). Persist it so it survives restarts.
             if allowed_chat_id is None and (has_text or has_media):
                 # re-read right before writing: a reset that landed since the check above

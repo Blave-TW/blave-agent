@@ -53,7 +53,7 @@ _ALLOW_FROM_PATH = os.path.join(BLAVE_AGENT_HOME, "credentials", "telegram-defau
 
 def _load_config():
     if not os.path.exists(_CONFIG_PATH):
-        raise FileNotFoundError(f"openclaw config not found: {_CONFIG_PATH}")
+        raise FileNotFoundError(f"agent config not found: {_CONFIG_PATH}")
     with open(_CONFIG_PATH) as f:
         cfg = json.load(f)
     token = cfg["channels"]["telegram"]["botToken"]

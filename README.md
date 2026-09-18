@@ -23,7 +23,9 @@ checkout 要跟這個 repo 並排**;不在的話會帶著完整路徑當場失�
 
 Fresh installs are handled automatically by the provisioning script — no manual steps needed.
 
-**關於 `openclaw` 這個名字**:`openclaw.json`、`openclaw/...` 的 API 路徑、`patches/` 與 SSH 主機名 `openclaw-{uid}` 是早期框架留下來的名稱。機器硬碟上與 API 上**真的**叫這些名字,所以文件照實寫;它們與那個產品今天已無關係,也不代表 Blave Agent 還在用它。
+**關於 `openclaw` 這個名字**:那是這套系統早期框架的名字。機器上的設定檔(`openclaw.json`)、
+API 路徑(`/openclaw/...`)與 SSH 主機名沿用它,因為那些位置**真的**叫這個名字,文件照實寫。
+Blave Agent 的 runtime 自 2026-07-25 起是自架的(`runtime/`,見 `runtime/CHANGELOG.md`),與該產品無關。
 
 **Maintainers: bump `VERSION` (date, `YYYY-MM-DD`, add `-b`/`-c` for same-day repushes) in the same commit as any change machines should pick up** — the platform compares each machine's reported VERSION against this repo's to light the web "update available" indicator; an unbumped push is invisible to users.
 

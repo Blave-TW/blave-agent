@@ -37,7 +37,7 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 
 # lib/notify.py (config-layer code, unmodified) resolves pairing state from
-# $BLAVE_AGENT_HOME/credentials/telegram-default-allowFrom.json — an openclaw
+# $BLAVE_AGENT_HOME/credentials/telegram-default-allowFrom.json — a legacy
 # convention. Our own pairing lives in config/telegram.json instead, so this
 # runtime must keep a compat shim in sync at that path (see sync step below)
 # and point BLAVE_AGENT_HOME there for every agent turn / Bash tool call.
