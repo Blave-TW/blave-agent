@@ -100,13 +100,21 @@ def main():
     tar_key = f"{S3_PREFIX}/releases/{version}.tar.gz"
 
     # refuse to overwrite an existing version — rolled-back machines skip
-    # re-attempts of the same number, so a silent overwrite would strand them
+    # re-attempts of the same number, so a silent overwrite would strand them.
+    # Only a genuine 404 means "not published yet": a wrong bucket, bad key or
+    # wrong region must NOT read as one. (It used to be `except Exception: pass`,
+    # which swallowed all of those and fell through to the upload — harmless while
+    # the creds came from common/config.py, live the moment they come from four
+    # environment variables that a human types.)
     try:
         s3.head_object(Bucket=bucket, Key=tar_key)
+    except Exception as e:
+        code = getattr(e, "response", {}).get("Error", {}).get("Code")
+        if code not in ("404", "NoSuchKey", "NotFound"):
+            raise
+    else:
         print(f"ERROR: {version} already published — bump runtime/VERSION first")
         sys.exit(1)
-    except Exception:
-        pass
 
     s3.put_object(Bucket=bucket, Key=tar_key, Body=data)
     s3.put_object(
