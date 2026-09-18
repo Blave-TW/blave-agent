@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.80 — 2026-09-18
+
 - `strategy_reporter` reports INCREMENTALLY: `POST /openclaw/agent/strategies/one` per
   strategy whose files changed, then `POST /openclaw/agent/strategies/manifest` to close the
   round, which answers `missing` (what the api does not hold at the marker we quoted) — those
