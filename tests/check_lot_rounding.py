@@ -160,6 +160,13 @@ finish(filled_usd=0.0, below_min=False)
 check(len(errors) == 1 and "no slices filled" in errors[0][1],
       "a real zero-fill (window expired, nothing rested) still records an error")
 
+# uid 3149, 2026-09-16: the chase's crash path already recorded the venue's own
+# message (110017 reduce-only against an empty position side) — 7 rejections
+# reached the workspace as 14 events, the useful half buried by the generic one.
+finish(filled_usd=0.0, below_min=False, already_reported=True)
+check(errors == [],
+      "a crash the chase already reported does not also record 'no slices filled'")
+
 # uid 32321's 08:20:38 fill: a $227.30 leg that filled 0.002 BTC ($156.64) —
 # everything the venue would take. Residual $70.66 is over the flat $10 (old:
 # marked failed) but under one lot (new: complete).

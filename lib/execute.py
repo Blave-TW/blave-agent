@@ -822,7 +822,8 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
 
 
 def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors,
-            style, filled_usd, vwap, aborted, below_min=False):
+            style, filled_usd, vwap, aborted, below_min=False,
+            already_reported=False):
     """Async completion: one orders.jsonl entry (the web 交易歷史 source of
     truth) mirroring the synchronous reconcile entry shape.
 
@@ -839,6 +840,13 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
         if below_min:
             logging.info(f"[execute] {symbol} {style}: nothing the venue would "
                          f"accept at this size — skipped")
+        elif already_reported:
+            # The caller's crash path already recorded the venue's OWN message,
+            # which is the one worth reading. Adding "no slices filled" on top
+            # doubles the workspace's error count and buries the real reason
+            # (uid 3149: 7 rejections were reported as 14 events).
+            logging.info(f"[execute] {symbol} {style}: zero fill after an error "
+                         f"already recorded — not recording a second one")
         else:
             _record_order_error(symbol, exchange, f"{style}: no slices filled")
         return
@@ -1154,7 +1162,7 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     if filled > 0 else None)
             _finish(symbol, signed_diff, asset_spec, reduce_only, tools.get("venue"),
                     contributors, "chase", filled, vwap, aborted or crashed,
-                    below_min=below_min)
+                    below_min=below_min, already_reported=crashed)
         except Exception as e2:
             logging.error(f"[execute] {key} chase completion record failed: {e2}")
         _reap_own(key)
