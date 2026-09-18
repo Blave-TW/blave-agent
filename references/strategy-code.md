@@ -444,15 +444,15 @@ Run this at session start, before any strategy run or notification:
 
 ```python
 import json, os, platform
-# Same BLAVECLAW_HOME resolution as lib/notify.py — the unset-default is
+# Same BLAVE_AGENT_HOME resolution as lib/notify.py — the unset-default is
 # runtime-dependent, never a single hardcoded path: old BlaveClaw machines use
 # /root/.openclaw, the Blave Agent runtime uses /opt/blave-agent (detected by
 # its openclaw.json FILE existing — not just the directory, or a half-provisioned
 # machine passes falsely). A wrong home doesn't error here: paired just reads
 # False on a machine that IS paired.
 def _blaveclaw_home():
-    if os.environ.get("BLAVECLAW_HOME"):
-        return os.environ["BLAVECLAW_HOME"]
+    if os.environ.get("BLAVE_AGENT_HOME"):
+        return os.environ["BLAVE_AGENT_HOME"]
     if platform.system() == "Windows":
         return r"C:\openclaw"
     if os.path.isfile("/opt/blave-agent/openclaw.json"):

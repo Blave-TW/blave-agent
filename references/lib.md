@@ -196,7 +196,7 @@ The web workspace sends three fixed prompts (bilingual — the zh or en version 
 
 `lib/notify.py`:
 
-`$BLAVECLAW_HOME` resolution (strategies are run with `workdir=$BLAVECLAW_HOME/workspace`): when the env var is unset it defaults to `/root/.openclaw` (old BlaveClaw runtime) or `/opt/blave-agent` (Blave Agent runtime — detected by whether `/opt/blave-agent/openclaw.json` exists, not just the directory) on Linux, and `C:\openclaw` on Windows — the same resolution `lib/notify.py` itself uses. Getting it wrong does not error: notify just silently stops sending Telegram alerts, so check the real environment rather than assume.
+`$BLAVE_AGENT_HOME` resolution (strategies are run with `workdir=$BLAVE_AGENT_HOME/workspace`): when the env var is unset it defaults to `/root/.openclaw` (old BlaveClaw runtime) or `/opt/blave-agent` (Blave Agent runtime — detected by whether `/opt/blave-agent/openclaw.json` exists, not just the directory) on Linux, and `C:\openclaw` on Windows — the same resolution `lib/notify.py` itself uses. Getting it wrong does not error: notify just silently stops sending Telegram alerts, so check the real environment rather than assume.
 - `from lib.notify import make_sender, send_text, send_photo`
 - `make_sender()` → text sender function (broadcasts to all paired chat IDs)
 - `make_sender(photo=True)` → photo sender function

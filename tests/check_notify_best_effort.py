@@ -31,6 +31,7 @@ HOME = WS / "home"
 (HOME / "openclaw.json").write_text(json.dumps({"channels": {"telegram": {"botToken": "t"}}}))
 (HOME / "credentials" / "telegram-default-allowFrom.json").write_text(
     json.dumps({"allowFrom": [111]}))
+# 刻意用舊名:驗 lib/notify.py 對既有機器(只帶 BLAVECLAW_HOME)的相容讀取
 os.environ["BLAVECLAW_HOME"] = str(HOME)
 os.chdir(WS)
 os.makedirs("manager", exist_ok=True)

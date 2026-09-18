@@ -4,13 +4,15 @@ Workspace config for Blave Agent. Contains AGENTS.md, shared library, strategy t
 
 Fresh installs are handled automatically by the provisioning script — no manual steps needed.
 
+**關於 `openclaw` 這個名字**:`openclaw.json`、`openclaw/...` 的 API 路徑、`patches/` 與 SSH 主機名 `openclaw-{uid}` 是早期框架留下來的名稱。機器硬碟上與 API 上**真的**叫這些名字,所以文件照實寫;它們與那個產品今天已無關係,也不代表 Blave Agent 還在用它。
+
 **Maintainers: bump `VERSION` (date, `YYYY-MM-DD`, add `-b`/`-c` for same-day repushes) in the same commit as any change machines should pick up** — the platform compares each machine's reported VERSION against this repo's to light the web "update available" indicator; an unbumped push is invisible to users.
 
 ## Updating an existing workspace
 
 Tell your agent:
 
-> Clone https://github.com/Blave-TW/blaveclaw-config to /tmp/oc-config and use it as **reference** to update this machine's live workspace — `$BLAVECLAW_HOME/workspace`, i.e. the workspace you are running in (`/root/.openclaw/workspace` on old BlaveClaw machines, `/opt/blave-agent/workspace` on Blave Agent machines; resolution per `references/deployment.md`). For each file below, compare the repo version with the local version and apply only what is missing or outdated — do not blindly overwrite.
+> Clone https://github.com/Blave-TW/blaveclaw-config to /tmp/oc-config and use it as **reference** to update this machine's live workspace — `$BLAVE_AGENT_HOME/workspace`, i.e. the workspace you are running in (`/root/.openclaw/workspace` on old BlaveClaw machines, `/opt/blave-agent/workspace` on Blave Agent machines; resolution per `references/deployment.md`). For each file below, compare the repo version with the local version and apply only what is missing or outdated — do not blindly overwrite.
 >
 > - `AGENTS.md`, `CLAUDE.md` — replace wholesale (these are config, not user-edited)
 > - `references/` — for each file, check if a local version exists; if it does, read both and patch in anything missing; if it does not, copy it in

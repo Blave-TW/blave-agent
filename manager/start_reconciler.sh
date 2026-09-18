@@ -1,7 +1,7 @@
 #!/bin/bash
 # Watchdog wrapper — restarts reconciler.py on crash and sends Telegram alert.
-# Usage: cd $BLAVECLAW_HOME/workspace && bash manager/start_reconciler.sh
-# (when unset, $BLAVECLAW_HOME's default is runtime-dependent — /root/.openclaw on old
+# Usage: cd $BLAVE_AGENT_HOME/workspace && bash manager/start_reconciler.sh
+# (when unset, $BLAVE_AGENT_HOME's default is runtime-dependent — /root/.openclaw on old
 # BlaveClaw machines, /opt/blave-agent on Blave Agent machines; resolve it per
 # references/deployment.md. The script itself locates the workspace from its own path,
 # so only the caller's cd needs the resolved value.)

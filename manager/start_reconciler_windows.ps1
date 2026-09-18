@@ -8,11 +8,11 @@
 # purpose: trading is opt-in and a reboot must force it OFF (the user starts
 # it again explicitly); crash recovery while running is NSSM's AppExit
 # restart, independent of the start type:
-#   nssm install blaveclaw-reconciler powershell.exe "-ExecutionPolicy Bypass -File %BLAVECLAW_HOME%\workspace\manager\start_reconciler_windows.ps1"
-#   nssm set blaveclaw-reconciler AppDirectory %BLAVECLAW_HOME%\workspace
+#   nssm install blaveclaw-reconciler powershell.exe "-ExecutionPolicy Bypass -File %BLAVE_AGENT_HOME%\workspace\manager\start_reconciler_windows.ps1"
+#   nssm set blaveclaw-reconciler AppDirectory %BLAVE_AGENT_HOME%\workspace
 #   nssm set blaveclaw-reconciler Start SERVICE_DEMAND_START
 #   nssm start blaveclaw-reconciler
-# (%BLAVECLAW_HOME% defaults to C:\openclaw if unset — see references/deployment.md)
+# (%BLAVE_AGENT_HOME% defaults to C:\openclaw if unset — see references/deployment.md)
 
 $Workspace = Split-Path -Parent $PSScriptRoot
 Set-Location $Workspace

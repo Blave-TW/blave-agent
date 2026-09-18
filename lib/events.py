@@ -30,7 +30,7 @@ _unavailable_logged = False
 def _resolve():
     """runtime 的 events.append。找不到就 None(舊機沒有這支模組)。
 
-    路徑跟 lib/notify 的 BLAVECLAW_HOME 解析同源:runtime 的 payload 解在
+    路徑跟 lib/notify 的 BLAVE_AGENT_HOME 解析同源:runtime 的 payload 解在
     `<BASE>/current/`,而 `<BASE>` 在 Blave Agent 機是 /opt/blave-agent、
     Windows 是 C:\\blave-agent。"""
     global _appender

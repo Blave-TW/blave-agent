@@ -3,7 +3,7 @@ with the monorepo runtime's command_listener, binds okx over a bingx-bound .env 
 credentials.ui.json yet, like a pre-manifest machine) and asserts: exact OKX lines
 written 0600, BLAVE keys kept, bingx evicted + halted + reported, manifest = ["okx"],
 summary carries names only; bad inputs are refused before the runtime is touched.
-Run: cd blaveclaw-config && .venv/bin/python tests/check_venue_bind.py
+Run: cd blave-agent && .venv/bin/python tests/check_venue_bind.py
 """
 import os, shutil, stat, sys, tempfile
 

@@ -8,18 +8,19 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
-# BLAVECLAW_HOME, not OPENCLAW_HOME — the openclaw product itself reads
+# BLAVE_AGENT_HOME (舊名 BLAVECLAW_HOME 仍讀), not OPENCLAW_HOME — the openclaw product itself reads
 # OPENCLAW_HOME as a home-directory override, so reusing that name breaks it.
 #
 # Single-branch /root/.openclaw fallback is deliberate — unlike lib/notify.py this
 # service is only ever installed and started by the OLD openclaw provisioning
 # (api/openclaw/lightsail.py systemd unit / install_windows.ps1 NSSM service, which
-# sets BLAVECLAW_HOME on Windows); the Blave Agent runtime never runs it, so no
+# sets the env var on Windows); the Blave Agent runtime never runs it, so no
 # /opt/blave-agent branch belongs here.
-BLAVECLAW_HOME = os.environ.get("BLAVECLAW_HOME") or (
+BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
+                    or os.environ.get("BLAVECLAW_HOME")) or (
     r"C:\openclaw" if platform.system() == "Windows" else "/root/.openclaw"
 )
-GATEWAY_SECRET = open(os.path.join(BLAVECLAW_HOME, "gateway_secret")).read().strip()
+GATEWAY_SECRET = open(os.path.join(BLAVE_AGENT_HOME, "gateway_secret")).read().strip()
 SESSION_MAX_AGE = 28800  # 8 hours
 valid_sessions = {}  # sid -> expire_ts (epoch seconds)
 

@@ -358,21 +358,21 @@ systemctl is-active blave-agent-reconciler.service
   placing orders, and a tmux daemon started alongside it doubles every order.
 - Only when the unit file does not exist (older machines) use the tmux session:
 ```
-tmux new-session -d -s reconciler 'cd $BLAVECLAW_HOME/workspace && bash manager/start_reconciler.sh'
+tmux new-session -d -s reconciler 'cd $BLAVE_AGENT_HOME/workspace && bash manager/start_reconciler.sh'
 ```
-(resolve `$BLAVECLAW_HOME` first — same env var as `references/deployment.md`'s cron entries; when unset the default is runtime-dependent — `/root/.openclaw` on old BlaveClaw machines, `/opt/blave-agent` on Blave Agent machines — resolve it per that doc's layout signal, never assume one path)
+(resolve `$BLAVE_AGENT_HOME` first — same env var as `references/deployment.md`'s cron entries; when unset the default is runtime-dependent — `/root/.openclaw` on old BlaveClaw machines, `/opt/blave-agent` on Blave Agent machines — resolve it per that doc's layout signal, never assume one path)
 To check status: `tmux attach -t reconciler`. To stop: `tmux kill-session -t reconciler`.
 Note: the systemd unit deliberately has no `[Install]` section — the reconciler must
 NOT auto-start on reboot; the user re-enables trading explicitly after a reboot.
 
 **Windows — NSSM service:**
 ```
-nssm install blaveclaw-reconciler powershell.exe "-ExecutionPolicy Bypass -File %BLAVECLAW_HOME%\workspace\manager\start_reconciler_windows.ps1"
-nssm set blaveclaw-reconciler AppDirectory %BLAVECLAW_HOME%\workspace
+nssm install blaveclaw-reconciler powershell.exe "-ExecutionPolicy Bypass -File %BLAVE_AGENT_HOME%\workspace\manager\start_reconciler_windows.ps1"
+nssm set blaveclaw-reconciler AppDirectory %BLAVE_AGENT_HOME%\workspace
 nssm set blaveclaw-reconciler Start SERVICE_DEMAND_START
 nssm start blaveclaw-reconciler
 ```
-(`%BLAVECLAW_HOME%` — resolve the actual env var on this machine before running these commands, don't type the literal placeholder; defaults to `C:\openclaw` if unset)
+(`%BLAVE_AGENT_HOME%` — resolve the actual env var on this machine before running these commands, don't type the literal placeholder; defaults to `C:\openclaw` if unset)
 To check status: `nssm status blaveclaw-reconciler`. To stop: `nssm stop blaveclaw-reconciler`.
 Note: `SERVICE_DEMAND_START` is required, never `SERVICE_AUTO_START` — same policy as the
 Linux unit above: the reconciler must NOT auto-start on reboot; the user re-enables trading

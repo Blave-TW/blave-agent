@@ -1,8 +1,8 @@
 """
 Telegram notification helper.
 
-Reads bot token from $BLAVECLAW_HOME/openclaw.json.
-Reads paired chat IDs from $BLAVECLAW_HOME/credentials/telegram-default-allowFrom.json.
+Reads bot token from $BLAVE_AGENT_HOME/openclaw.json.
+Reads paired chat IDs from $BLAVE_AGENT_HOME/credentials/telegram-default-allowFrom.json.
 
 Usage:
     from lib.notify import make_sender
@@ -19,7 +19,7 @@ import platform
 import requests
 
 
-# BLAVECLAW_HOME, not OPENCLAW_HOME — the openclaw product itself reads
+# BLAVE_AGENT_HOME (舊名 BLAVECLAW_HOME 仍讀), not OPENCLAW_HOME — the openclaw product itself reads
 # OPENCLAW_HOME as a home-directory override (state dir becomes
 # $OPENCLAW_HOME/.openclaw), so reusing that name breaks the gateway.
 #
@@ -27,14 +27,14 @@ import requests
 # keep openclaw.json under /root/.openclaw; the newer Blave Agent runtime
 # (runtime='blave-agent') keeps the equivalent files under /opt/blave-agent
 # instead — verified live on uid=1 (openclaw-1, runtime=blave-agent): neither
-# /root/.openclaw nor a BLAVECLAW_HOME env var exist there at all, so the old
+# /root/.openclaw nor the env var exist there at all, so the old
 # unconditional "/root/.openclaw" fallback silently degraded every send_text()
 # to a no-op log line, with no error. Prefer /opt/blave-agent when its config
 # file is actually there — not just the directory, since a half-provisioned
 # machine with the dir but no openclaw.json yet would otherwise trade one
 # silent-degradation path for another, just with a different missing-file
 # error underneath; fall back to the old default otherwise.
-def _default_blaveclaw_home():
+def _default_agent_home():
     if platform.system() == "Windows":
         return r"C:\openclaw"
     if os.path.isfile("/opt/blave-agent/openclaw.json"):
@@ -42,9 +42,13 @@ def _default_blaveclaw_home():
     return "/root/.openclaw"
 
 
-BLAVECLAW_HOME = os.environ.get("BLAVECLAW_HOME") or _default_blaveclaw_home()
-_CONFIG_PATH = os.path.join(BLAVECLAW_HOME, "openclaw.json")
-_ALLOW_FROM_PATH = os.path.join(BLAVECLAW_HOME, "credentials", "telegram-default-allowFrom.json")
+# 讀新名優先、舊名次之:runtime 過渡期兩個名字都會注入(agent_turn.py),
+# 而既有機器 crontab 裡寫死的仍是舊名,兩邊都要接得住。
+BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
+                    or os.environ.get("BLAVECLAW_HOME")
+                    or _default_agent_home())
+_CONFIG_PATH = os.path.join(BLAVE_AGENT_HOME, "openclaw.json")
+_ALLOW_FROM_PATH = os.path.join(BLAVE_AGENT_HOME, "credentials", "telegram-default-allowFrom.json")
 
 
 def _load_config():

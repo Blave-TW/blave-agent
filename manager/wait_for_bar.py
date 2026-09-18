@@ -13,7 +13,7 @@ contract to poll — they keep the old fixed-cadence cron straight to
 run_strategy.sh (Linux) / strategy.py (Windows), see references/deployment.md.
 
 Cron (replaces the old "N * * * *  bash manager/run_strategy.sh <name>"):
-  * * * * * cd $BLAVECLAW_HOME/workspace && python3 manager/wait_for_bar.py <name>
+  * * * * * cd $BLAVE_AGENT_HOME/workspace && python3 manager/wait_for_bar.py <name>
 
 Cross-platform by design (Capital/群益 strategies only run on Windows, which
 has no bash): the actual strategy subprocess is launched with sys.executable

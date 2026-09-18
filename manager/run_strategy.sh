@@ -4,8 +4,8 @@
 # Telegram. Cron alone silently swallows non-zero exits; this is the only
 # layer that can catch a failure the Python side never got a chance to.
 #
-# Usage (in crontab): cd $BLAVECLAW_HOME/workspace && bash manager/run_strategy.sh <strategy_name>
-# (when unset, $BLAVECLAW_HOME's default is runtime-dependent — /root/.openclaw on old
+# Usage (in crontab): cd $BLAVE_AGENT_HOME/workspace && bash manager/run_strategy.sh <strategy_name>
+# (when unset, $BLAVE_AGENT_HOME's default is runtime-dependent — /root/.openclaw on old
 # BlaveClaw machines, /opt/blave-agent on Blave Agent machines; resolve it per
 # references/deployment.md. The script itself locates the workspace from its own path,
 # so only the cron entry's cd needs the resolved value.)
