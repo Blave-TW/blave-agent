@@ -722,7 +722,7 @@ def _sync_strategy_crons(names):
 # entrypoint (`python3 manager/wait_for_bar.py <name>`, PATH-resolved
 # interpreter) instead of importing it — confirmed on a real machine while
 # building this: /opt/blave-agent/venv (this runtime's own environment, ships
-# via blave_agent/publish.py) carries only the Claude Agent SDK's own
+# via this repo's publish.py) carries only the Claude Agent SDK's own
 # dependencies, not pandas/pyarrow/numpy/etc — those live in the system
 # python strategies already run under (same one run_strategy.sh/cron always
 # used). Importing wait_for_bar.py in-process would mean _check_freshness's
@@ -1282,7 +1282,7 @@ def _cmd_report_edit_pending(args):
 # constant (TXF/MXF/TMF). Mirrors blave-agent/manager/reconciler.py's
 # _CAPITAL_FUTURES_SPEC table and the shape documented in
 # references/capital-broker.md Step 8 — duplicated, not imported: this file is
-# the platform-controlled runtime layer (ships via blave_agent/publish.py) and
+# the platform-controlled runtime layer (ships via this repo's publish.py) and
 # must not depend on the user/agent-editable workspace layer (account_reader.py,
 # same layer, already keeps the same boundary). A static SYMBOL->spec lookup,
 # no AI judgment involved — TW stock strategies (asset_specs "tw_stock" shape)
