@@ -209,8 +209,12 @@ def _sync_strategies_locked(include_newborn=False):
     # 的圖表因此在回合結束當下就進快取,不用等 2 分鐘的 timer。
     try:
         sigs = strategy_reporter.attach_images(strategies)
-        strategy_reporter.report_cache(strategies, token=PROXY_TOKEN)
-        strategy_reporter.save_image_sigs(sigs)
+        # record=False: this process and the timer's oneshot both report, and they share
+        # the "what has the api already got" ledgers with no lock between them. The
+        # long-lived one sends but does not write them (see strategy_reporter._send_one);
+        # the cost is the timer re-sending these once within two minutes.
+        strategy_reporter.report_cache(strategies, token=PROXY_TOKEN, image_sigs=sigs,
+                                       record=False)
     except Exception as e:
         print(f"[web_bridge] strategies cache update failed: {e}", file=sys.stderr)
     # live: goes through the SSE stream the browser already has open (2MB /report cap

@@ -8,7 +8,37 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- `strategy_reporter` reports INCREMENTALLY: `POST /openclaw/agent/strategies/one` per
+  strategy whose files changed, then `POST /openclaw/agent/strategies/manifest` to close the
+  round, which answers `missing` (what the api does not hold at the marker we quoted) — those
+  are re-sent with their images forced, then the manifest goes again. Replaces the
+  whole-inventory POST, which at 20 strategies was a 52MB body every two minutes and froze
+  uid=32321's cache for a day when it crossed the api's ceiling. **The api must be deployed
+  first**: there is no fallback to the old body, so a machine shipped ahead of it POSTs to a 404.
+  - `strategy_marker()` is what a strategy is offered under: status + stats/scan/wf mtimes +
+    the image signature + a content hash of code/display_name/description/versions. The image
+    signature is in it because images travel out of band; the content hash is in it because an
+    agent can edit a strategy without re-running its backtest (and a Type B never backtests),
+    which no output mtime would ever show. `signature()` is untouched — its "live strategies
+    are tracked by existence only" exemption belongs to the mid-turn push and must not leak here.
+  - `strategy_marker()` returns a HASH of its columns, not the columns themselves: the image
+    signature carries agent-written filenames, and eight descriptive ones measured 522 chars —
+    past the api's field limit, which used to mean that strategy never reported again.
+  - `state/strategy_report_acked.json` records what the api acknowledged, written only after a
+    2xx. `web_bridge`'s turn-end sync sends but does not write it (two processes, no lock); the
+    timer re-sends those once within two minutes.
+  - The inline-base64 image fallback is now budgeted (`_IMG_B64_FALLBACK_BUDGET`, 3MB per
+    strategy) so a body can never exceed what the api will accept; an image left out is not
+    recorded as delivered, so the next tick retries it.
+  - `/one`'s answer carries `dropped_images`: the api took the strategy but could not keep N of
+    the images we inlined. The reporter then records NO signature for that strategy, so the next
+    tick re-attaches and re-uploads them instead of believing they are delivered.
+  - A strategy the api permanently refuses, and a 429, no longer take the round down: the
+    manifest still goes out, because that is what refreshes every object's cache TTL.
+  - The `predates gzip` uncompressed-retry branch is gone (the fleet is long past it).
+  - `main()` runs `sync_versions()` / `sync_charts()` even when the report failed — they are
+    separate channels, and skipping them is how uid=32321 also lost three chart chunks. The
+    exit code still reports the failure.
 
 ## 1.1.79 — 2026-09-16
 

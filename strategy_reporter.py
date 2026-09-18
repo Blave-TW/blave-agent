@@ -44,6 +44,24 @@ IMG_EXTS = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
             ".webp": "image/webp", ".gif": "image/gif"}
 IMG_MAX_BYTES = 2 * 1024 * 1024
 _IMG_MAX_COUNT = 8
+# Ceiling on the inline-base64 FALLBACK (the path taken when the S3 upload failed), per
+# strategy. It exists because the report is one POST per strategy now, and TWO api-side
+# ceilings stand in the way of an unbounded fallback — 8 × 2MB of images base64-expand to
+# 21MB, which has no business travelling in a report body:
+#   - the /one BODY ceiling (agent_strategies.ONE_RAW_MAX_BYTES = store + its own image
+#     budget); this constant is the machine half of that pair, move one and move both
+#   - the PER-STRATEGY STORE ceiling (ONE_STRATEGY_RAW_MAX_BYTES, mirrored below), which
+#     is measured after the api has tried to upload the images itself — and when S3 is
+#     down that attempt is fail-open too, so the base64 is still there when it is
+#     measured. A budget that only respected the body ceiling still 413'd: 1.5MB of
+#     content + 3MB of base64 is a 4.5MB body (fine) that stores at 4.5MB (not fine).
+# So the budget is whichever of the two is tighter, computed per strategy, and an image
+# that does not fit is simply not sent THIS round: its strategy's image signature is then
+# not persisted, so the next tick re-attaches (and re-uploads) it.
+_IMG_B64_FALLBACK_BUDGET = 3 * 1024 * 1024
+# Mirrors api/openclaw/agent_strategies.ONE_STRATEGY_RAW_MAX_BYTES. A copy rather than a
+# request-time lookup: this runs on the machine, and the machine has no way to ask.
+_STRATEGY_STORE_MAX_BYTES = 4 * 1024 * 1024
 _IMG_SIG_PATH = os.path.join(STATE_DIR, "strategy_images_sig.json")
 # Socket timeout per image, and a wall-clock ceiling on the uploads of one call.
 # The budget is the load-bearing one: uploads are sequential, so an api that hangs
@@ -65,6 +83,18 @@ IMG_QUOTA_PATH = os.path.join(STATE_DIR, "strategy_image_quota.json")
 API_URL = os.environ.get(
     "BLAVE_STRATEGIES_URL", "https://api.blave.org/openclaw/agent/strategies"
 )
+# The incremental report (api/openclaw/agent_strategies.py): one POST per strategy whose
+# files actually changed, then one manifest that closes the round and answers what the
+# api is still missing. The whole-inventory POST to API_URL is the api's v1 path — still
+# served, but this runtime does not use it: 20 strategies × 2.5MB was one 52MB body every
+# two minutes, and the ceiling it crossed froze the cache for a day.
+ONE_URL = f"{API_URL}/one"
+MANIFEST_URL = f"{API_URL}/manifest"
+_REPORT_TIMEOUT = 15
+# {name: marker} for the strategies the api has ACKNOWLEDGED at that marker. Same
+# "only record what actually landed" rule as _IMG_SIG_PATH: written after a 2xx, never
+# before. Losing it costs one round of re-sending, never correctness.
+_ACKED_PATH = os.path.join(STATE_DIR, "strategy_report_acked.json")
 # Image bytes go here (PUT /{sha256}), not into the report — see attach_images().
 IMAGE_URL = os.environ.get(
     "BLAVE_STRATEGY_IMAGE_URL", "https://api.blave.org/openclaw/agent/strategy_image"
@@ -363,6 +393,59 @@ def _stats_marker(name, status, deployed=frozenset()):
     return f"{st.st_mtime_ns}:{st.st_size}"
 
 
+def _content_marker(s):
+    """The parts of a reported strategy that no mtime marker watches: the source itself
+    and the version ledger. Hashed rather than embedded — a 20-entry `versions` summary
+    is ~4KB, and the manifest carries one marker per strategy."""
+    blob = json.dumps([s.get("code"), s.get("display_name"), s.get("description"),
+                       s.get("versions")], sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def strategy_marker(s, image_sig=None):
+    """The fingerprint ONE strategy is reported under — what the api stores and compares
+    against on the next round (api/openclaw/agent_strategies.py `markers`).
+
+    Two ways it differs from the columns signature() builds, both load-bearing:
+
+    1. The image set is part of it. Images travel out of band (attach_images uploads
+       them and writes only references into the report), so a strategy whose only change
+       is a new pnl.png has identical stats/scan/wf markers — and with an unchanged
+       marker this reporter would never send it, and the picture would never reach the
+       workspace.
+    2. stats.json is tracked by mtime+size even when the strategy is live/deployed.
+       _stats_marker's "exists" exemption belongs to signature() and must stay there: it
+       stops a per-bar stats.json rewrite from triggering a full scan + a live chunk +
+       a workspace redraw mid-conversation once a bar. It must NOT be merged into this
+       one. Until now the timer re-sent the whole inventory unconditionally every two
+       minutes, so a deployed strategy's fresh numbers reached the cache anyway; under
+       incremental reporting an "exists" marker never changes, and the cache would
+       freeze permanently for exactly the users with real money running.
+    3. The strategy's own CONTENT is in it (_content_marker). The three file markers
+       above only watch the backtest OUTPUTS; the strategy file itself is not one of
+       them. An agent that edits the code without re-running the backtest, and every
+       Type B strategy (which never backtests at all), would otherwise be frozen in the
+       platform's copy from the first report onwards — the workspace would show code
+       nobody has run since.
+
+    Still nothing here parses a file: signature()'s cheapness is what lets agent_turn
+    call it after every tool step, and _scan_sources has already read the sources this
+    marker hashes."""
+    name = s["name"]
+    columns = json.dumps(
+        [s["status"], _stats_marker(name, None), _scan_marker(name), _wf_marker(name),
+         image_sig, _content_marker(s)],
+        sort_keys=True,
+    )
+    # Hashed, not the columns verbatim: `image_sig` carries the image FILENAMES, which the
+    # agent writes and which are routinely descriptive. Five default filenames already make
+    # a 256-char marker and eight agent-named ones measured 522 — past the api's field
+    # limit, which answered 400, which this reporter reads as permanent, which meant that
+    # strategy never reported again. A marker is only ever compared to another marker, so
+    # hashing it loses nothing and the limit can never be reached.
+    return hashlib.sha1(columns.encode("utf-8")).hexdigest()[:16]
+
+
 def signature(include_newborn=False):
     """Cheap "has the inventory changed" fingerprint: name + status + the stats,
     scan and walk-forward markers above, with no stats.json / scan.json / wf.json parsed. agent_turn
@@ -608,7 +691,7 @@ def record_image_quota(refused, uploaded, complete=True):
         pass
 
 
-def attach_images(strategies, token=None):
+def attach_images(strategies, token=None, force=False):
     """TIMER-PATH ONLY: attach the strategy dirs' chart images to the report.
     Deliberately NOT part of scan() — the mid-turn live push rides the 2MB-capped
     webchat /report and images would blow it; the api carries images over when a
@@ -624,17 +707,23 @@ def attach_images(strategies, token=None):
     token = token or PROXY_TOKEN
     deadline = time.monotonic() + _IMG_UPLOAD_BUDGET_SEC
     old_sigs = {}
-    try:
-        with open(_IMG_SIG_PATH) as f:
-            old_sigs = json.load(f)
-    except (OSError, ValueError):
-        pass
+    # force: the api told us it no longer holds these strategies (report_cache's
+    # `missing` answer), so "unchanged since we last sent it" is the wrong question —
+    # re-attach everything. Uploads are content-addressed, so a re-send of bytes S3
+    # already has costs one PUT and stores nothing new.
+    if not force:
+        try:
+            with open(_IMG_SIG_PATH) as f:
+                old_sigs = json.load(f)
+        except (OSError, ValueError):
+            pass
     new_sigs = {}
     refused = uploaded = skipped = False
     for s in strategies:
+        b64_left = None  # 只有真的要退回 b64 時才算(見下面),那是例外路徑
         imgs = _list_images(s["name"])
         sig = [[f, int(m)] for (m, f, _p, _mime) in imgs]
-        new_sigs[s["name"]] = sig
+        new_sigs.setdefault(s["name"], sig)
         if old_sigs.get(s["name"]) == sig:
             continue  # unchanged → omit key; the api keeps the previous set
         payload = []
@@ -655,20 +744,30 @@ def attach_images(strategies, token=None):
             refused = refused or over_quota
             uploaded = uploaded or bool(h)
             entry = {"file": f, "mime": mime}
-            entry["hash" if h else "b64"] = h or base64.b64encode(data).decode()
+            if h:
+                entry["hash"] = h
+            else:
+                if b64_left is None:
+                    # 這支不含圖片時的序列化長度:api 存得下的量減掉它,才是這一支真正
+                    # 還能塞多少 base64。整份一起量而不是用固定值,因為 2.68MB 的策略
+                    # 加 3MB 的圖必定超過存檔上限,而 0.1MB 的策略綽綽有餘。
+                    bare = len(json.dumps({k: v for k, v in s.items() if k != "images"}))
+                    b64_left = max(0, min(_IMG_B64_FALLBACK_BUDGET,
+                                          _STRATEGY_STORE_MAX_BYTES - bare))
+                b64 = base64.b64encode(data).decode()
+                if len(b64) > b64_left:
+                    # Over the fallback budget: leave it out rather than build a body the
+                    # api must refuse. new_sigs[name] = None below keeps the round honest
+                    # — nothing is recorded as delivered, so the next tick tries again.
+                    skipped = True
+                    new_sigs[s["name"]] = None
+                    continue
+                b64_left -= len(b64)
+                entry["b64"] = b64
             payload.append(entry)
         s["images"] = payload  # [] = 圖被清掉,明確清空
     record_image_quota(refused, uploaded, complete=not skipped)
     return new_sigs
-
-
-def save_image_sigs(sigs):
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(_IMG_SIG_PATH, "w") as f:
-            json.dump(sigs, f)
-    except OSError:
-        pass
 
 
 class _ChartHTTPError(Exception):
@@ -677,6 +776,7 @@ class _ChartHTTPError(Exception):
     def __init__(self, code, body):
         super().__init__(f"HTTP {code}: {body}")
         self.code = code
+        self.body = body or ""
 
     @property
     def permanent(self):
@@ -1195,16 +1295,160 @@ def read_reply_lang_setting():
     return "", ""
 
 
-def report_cache(strategies, token=None):
-    """POST the list to the backend cache (GET /strategies reads this on page
+def _save_image_sig(name, sig):
+    """Persist ONE strategy's image signature. Written immediately BEFORE the acked
+    marker that covers it, never after: if the process dies between the two, the next
+    round re-sends that strategy (its marker is not acked) and re-attaches its images
+    (its saved sig matches, so attach_images omits them — and the api carries its
+    references forward). The other order loses the pictures instead."""
+    sigs = _load_state_file(_IMG_SIG_PATH)
+    if sig is None:
+        sigs.pop(name, None)
+    else:
+        sigs[name] = sig
+    _save_state_file(_IMG_SIG_PATH, sigs)
+
+
+def _post_json(url, payload, token):
+    """One gzipped, authenticated report POST → the parsed JSON answer ({} when the api
+    answered something that isn't an object). Raises _ChartHTTPError on 4xx/5xx —
+    report_cache's callers already treat any exception as "failed, retry next round"."""
+    body = _chart_request(
+        "POST", url, gzip.compress(json.dumps(payload).encode(), 6), token,
+        content_encoding="gzip", timeout=_REPORT_TIMEOUT,
+    )
+    try:
+        answer = json.loads(body)
+    except ValueError:
+        return {}
+    return answer if isinstance(answer, dict) else {}
+
+
+def _send_one(s, round_id, token, marker, image_sig, acked, record=True):
+    """POST one strategy and, only once the api has taken it, record what we sent.
+
+    `record=False` (web_bridge's turn-end sync): send, but write neither ledger. Two
+    processes report on this machine — the systemd timer's oneshot and the long-lived
+    web_bridge — and they share these two files with no lock between them, so a
+    concurrent read-modify-write silently drops one side's entries. Rather than add a
+    cross-process lock for a file whose ONLY job is "skip what has not changed", the
+    short-lived writer simply does not write: the cost is the timer re-sending those
+    strategies once, within two minutes, and the api storing an identical object. The
+    lock would have had to cover the image-signature file too, and getting that wrong
+    loses pictures for good."""
+    answer = _post_json(ONE_URL, {"strategy": s, "round": round_id, "marker": marker},
+                        token)
+    acked[s["name"]] = marker
+    if record:
+        # `dropped_images` = the api took the strategy but could not keep N of the images
+        # we inlined (S3 was down for it too, and the object would not fit). Recording the
+        # signature would tell this machine those pictures are delivered, and it would
+        # never offer them again. None = "no idea what you have", so the next tick
+        # re-attaches and re-uploads them.
+        dropped = answer.get("dropped_images") if isinstance(answer, dict) else 0
+        _save_image_sig(s["name"], None if dropped else image_sig)
+        _save_state_file(_ACKED_PATH, acked)
+
+
+def _send_manifest(payload, token, acked_before, record=True):
+    """POST the manifest. One failure is handled here rather than by the caller: the api
+    refusing the whole inventory on its count ceiling.
+
+    That refusal says nothing about any individual strategy, and the /one POSTs that
+    already landed this round have written acked markers — keeping them would mean the
+    next round sends only the manifest, gets refused again, and never tells anyone
+    anything. So the round's bookkeeping is rolled back to where it started (the api
+    still holds those objects; they will simply be re-offered) and the failure is raised
+    with the two numbers the user actually needs: how many strategies they have, and how
+    many this api will hold."""
+    try:
+        return _post_json(MANIFEST_URL, payload, token)
+    except _ChartHTTPError as e:
+        if e.code != 413 or "too many strategies" not in e.body:
+            raise
+        try:
+            detail = json.loads(e.body)
+        except ValueError:
+            detail = {}
+        if record:
+            # record=False(web_bridge)這個 process 從頭到尾就沒寫過這個檔,寫回去
+            # 等於拿一份過時的快照蓋掉 timer 的條目——正是 record=False 要避免的事
+            _save_state_file(_ACKED_PATH, acked_before)
+        print(f"[strategy_reporter] the api will not cache this many strategies: "
+              f"{detail.get('count', len(payload.get('names') or []))} on this machine, "
+              f"limit {detail.get('limit', '?')} — delete some and the list will report "
+              f"again", file=sys.stderr)
+        raise
+
+
+def report_cache(strategies, token=None, image_sigs=None, record=True):
+    """Report the inventory to the backend cache (GET /strategies reads this on page
     load / reload). Reused by the timer AND by web_bridge after each turn.
-    Piggybacks config_version so the web can flag an outdated workspace config,
-    can_report so it can gate the reports feature on this machine, the
-    scheduled-report registry (report_schedules) for the 管理定期報告 modal, and the
-    raw 常駐規則 file (preferences) for the 「Agent 常駐規則」 settings pane."""
+
+    Incremental, one object per strategy: a strategy whose files have not changed since
+    the api acknowledged it is not sent at all. What makes that safe is the manifest's
+    answer rather than any policy of periodically re-sending everything — the api says
+    which strategies it does not hold at the marker we just quoted (`missing`), and this
+    resends exactly those, with their images forced, and closes the round again. One
+    loop covers first boot, an expired cache, an evicted object, and a POST that never
+    landed.
+
+    The manifest carries the piggyback fields: config_version so the web can flag an
+    outdated workspace config, can_report / can_watch so it can gate those features on
+    this machine, the scheduled-report registry for the 管理定期報告 modal, and the raw
+    常駐規則 file (preferences) for the 「Agent 常駐規則」 settings pane.
+
+    `image_sigs` is attach_images' return value. Persisting it is this function's job,
+    per strategy and only after that strategy landed — a single save by the caller would
+    tell the machine "the api has these images" for strategies whose POST failed, and
+    those pictures would never be sent again. `record=False` sends without writing either
+    ledger; see _send_one for why web_bridge uses it."""
     token = token or PROXY_TOKEN
-    payload = {"strategies": strategies, "can_report": _can_report(),
-               "can_watch": _can_watch()}
+    image_sigs = image_sigs or {}
+    # One round = one scan(). /one and the manifest that closes it carry the same value,
+    # so the api can tell a late manifest from an earlier round apart from a current one
+    # and refuse to let it prune a strategy a newer round just added. Milliseconds: the
+    # timer and web_bridge's turn-end sync can start inside the same second, and the api
+    # only prunes entries strictly older than the manifest's round.
+    round_id = int(time.time() * 1000)
+    acked = _load_state_file(_ACKED_PATH)
+    acked_before = dict(acked)
+    by_name = {s["name"]: s for s in strategies}
+    names = list(by_name)
+    markers = {n: strategy_marker(by_name[n], image_sigs.get(n)) for n in names}
+
+    # A strategy the api can only ever refuse (a nan in its stats, say — lib/runner.py
+    # writes 'Total Fees Paid [%]' through a bare round(), so an honest machine can
+    # produce one) must not take the round down with it. Without this the loop stops at
+    # the first bad strategy, the manifest never goes out, and every OTHER strategy loses
+    # its TTL refresh — the whole inventory expires in a day off one bad file. It stays
+    # in the manifest's names because that is the truth (the machine has it, the api does
+    # not), and it is simply not retried again inside this round.
+    refused = set()
+    throttled = False
+    for name in names:
+        if acked.get(name) == markers[name]:
+            continue
+        try:
+            _send_one(by_name[name], round_id, token, markers[name],
+                      image_sigs.get(name), acked, record)
+        except _ChartHTTPError as e:
+            if e.code == 429:
+                # Rate limited. Stop offering strategies, but DO go on to the manifest:
+                # that is what refreshes every object's TTL, and skipping it because of a
+                # throttle would expire the whole inventory in a day — the exact failure
+                # this design exists to remove. The rest go out next round.
+                print(f"[strategy_reporter] rate limited after {len(acked)} strategies; "
+                      f"the rest go out next round", file=sys.stderr)
+                throttled = True
+                break
+            if not e.permanent:
+                raise
+            print(f"[strategy_reporter] api refused {name}: {e}", file=sys.stderr)
+            refused.add(name)
+
+    payload = {"names": names, "markers": markers, "round": round_id,
+               "can_report": _can_report(), "can_watch": _can_watch()}
     version = _config_version()
     if version:
         payload["config_version"] = version
@@ -1223,40 +1467,39 @@ def report_cache(strategies, token=None):
     # 同樣是欄位在不在 = 能力旗標:reply_lang(這台收得了 reply_lang_set)、
     # reply_lang_custom(收得了 custom 文字);"" = 沒設定
     payload["reply_lang"], payload["reply_lang_custom"] = read_reply_lang_setting()
-    # Gzipped on the wire. This body is mostly the backtests' first-paint tails —
-    # long runs of numeric JSON that compress ~4× — and the timer re-sends the whole
-    # thing every two minutes whether anything changed or not, so an unpacked report
-    # was uploading tens of MB an hour from a machine on a metered link. The api
-    # expands it (agent_strategies._report_body) and stores it still compressed;
-    # 4× applies to the 16MB ceiling as well, which is what stops the cache freezing
-    # once a user has more than a handful of strategies.
-    raw = json.dumps(payload).encode()
-    headers = {"Content-Type": "application/json", "x-api-key": f"proxy-{token}"}
-    try:
-        req = urllib.request.Request(
-            API_URL, data=gzip.compress(raw, 6),
-            headers={**headers, "Content-Encoding": "gzip"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            return resp.read().decode()
-    except urllib.error.HTTPError as e:
-        # An api that predates gzip bodies reads the compressed bytes as JSON, gets
-        # nothing, and answers 400 with this exact message. Publishing the runtime
-        # before deploying the api would otherwise silently freeze every machine's
-        # cache, so pay one retry uncompressed rather than depend on deploy order.
-        #
-        # Matched on the message, not just the status: a 400 the api reached by
-        # actually READING our report (a nan in the stats, say) is a permanent
-        # failure, and re-sending it uncompressed every two minutes forever would
-        # double the cost of a condition that never clears. Delete this whole
-        # branch once the fleet is past this release.
-        if e.code != 400 or b"must be a list" not in (e.read() or b""):
-            raise
-        print("[strategy_reporter] api predates gzip reports; retrying uncompressed",
+
+    answer = _send_manifest(payload, token, acked_before, record)
+    missing = [] if throttled else [n for n in (answer.get("missing") or [])
+                                    if n in by_name and n not in refused]
+    if missing:
+        print(f"[strategy_reporter] api is missing {len(missing)} strategy(ies); resending",
               file=sys.stderr)
-    req = urllib.request.Request(API_URL, data=raw, headers=headers)
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return resp.read().decode()
+        resend = [by_name[n] for n in missing]
+        # force: the api lost these, so send everything about them — including images it
+        # may no longer have references for. Without this the workspace's 回測 tab keeps
+        # its pictures only by the api refusing to reconcile S3 forever.
+        forced = attach_images(resend, token, force=True)
+        for s in resend:
+            markers[s["name"]] = strategy_marker(s, forced.get(s["name"]))
+            try:
+                _send_one(s, round_id, token, markers[s["name"]], forced.get(s["name"]),
+                          acked, record)
+            except _ChartHTTPError as e:
+                if not e.permanent:
+                    raise
+                print(f"[strategy_reporter] api refused {s['name']}: {e}", file=sys.stderr)
+        payload["markers"] = markers
+        answer = _send_manifest(payload, token, acked_before, record)
+
+    # Strategies that no longer exist here: drop their bookkeeping so neither file grows
+    # without bound. Only after a successful manifest — a round that failed halfway says
+    # nothing about what the machine still has.
+    if record and any(n not in by_name for n in acked):
+        _save_state_file(_ACKED_PATH, {n: m for n, m in acked.items() if n in by_name})
+    sigs = _load_state_file(_IMG_SIG_PATH) if record else {}
+    if record and any(n not in by_name for n in sigs):
+        _save_state_file(_IMG_SIG_PATH, {n: v for n, v in sigs.items() if n in by_name})
+    return json.dumps(answer)
 
 
 def main():
@@ -1268,15 +1511,23 @@ def main():
         sys.exit(1)
     strategies = scan()
     sigs = attach_images(strategies)
+    # A failed report used to exit(1) right here, which also skipped the two syncs below
+    # — that is how uid=32321 ended up missing three chart chunks while its cache was
+    # frozen. They are independent channels (S3, not the strategies cache) and a machine
+    # that cannot report can still finish uploading versions and charts. The exit code
+    # still reports the failure, it just does so last.
+    ok = True
     try:
-        resp = report_cache(strategies)
-        save_image_sigs(sigs)  # 成功送達才記,失敗下輪重送
-        print(f"[strategy_reporter] reported {len(strategies)} strategies: {resp}", file=sys.stderr)
+        resp = report_cache(strategies, image_sigs=sigs)
+        print(f"[strategy_reporter] reported {len(strategies)} strategies: {resp}",
+              file=sys.stderr)
     except Exception as e:
+        ok = False
         print(f"[strategy_reporter] report failed: {e}", file=sys.stderr)
-        sys.exit(1)
     sync_versions(strategies)  # before the charts: version blobs are small and the chart
     sync_charts(strategies)    # sweep can spend the whole remaining service timeout
+    if not ok:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
