@@ -38,7 +38,7 @@ research figure the block exists for. This process has the token; the producer
 still needs nothing but files.
 
 Why the drop dir is a directory and not a function call: it is what lets a
-custom report ship without waiting for blaveclaw-config's manual update
+custom report ship without waiting for blave-agent's manual update
 channel (`.claude/docs/blave-agent-update-channels.md`) — the producer needs no
 library, no token and no knowledge of the api, just a file.
 

@@ -720,7 +720,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     return "\n".join(parts)
 
 
-# references/models.md (shared blaveclaw-config content, not ours to edit)
+# references/models.md (shared blave-agent content, not ours to edit)
 # points at get-api-key.py, which only exists on real openclaw machines — on
 # this runtime it doesn't exist, so the model has no way to answer "which
 # models do you support" correctly without this note. The proxy token it

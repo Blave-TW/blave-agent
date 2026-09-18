@@ -265,7 +265,7 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
 def _write_ui_cred_manifest(lines):
     """manager/credentials.ui.json — venue ids ({"ids": [...]}) whose
     credential PAIRS this writer just put into .env — a web bind, or the chat
-    bind through blaveclaw-config's lib.venue.bind (deployment redline L2,
+    bind through blave-agent's lib.venue.bind (deployment redline L2,
     spec §3.2; paper included via the same pair rule). lib/venue_wiring only
     routes ids in this manifest when it exists, so keys an agent hand-writes
     into .env never become a live venue. Best-effort but loud: on failure a
@@ -339,7 +339,7 @@ def _cmd_credentials(args):
     venue support keys (SINOPAC_CA_PATH), user-added lines and comments all
     survive, deliberately.
 
-    Also the chat-bind path: blaveclaw-config's lib/venue.py loads this module
+    Also the chat-bind path: blave-agent's lib/venue.py loads this module
     from <base>/current and calls _in_workspace(_cmd_credentials, {"env": …})
     and reads _venue_cred_ids over .env — keep those names and shapes stable.
     """
@@ -458,7 +458,7 @@ def _cmd_credentials(args):
 # scheduled by the in-process wait_for_bar loop below (_scheduler_loop), not
 # crontab/schtasks: this thread is already a long-lived daemon, so there is
 # no reason to have it shell out to the OS scheduler to remind itself to wake
-# up once a minute — see blaveclaw-config/manager/wait_for_bar.py's own
+# up once a minute — see blave-agent/manager/wait_for_bar.py's own
 # docstring for why a fixed "run N minutes after the hour" cron guesses
 # wrong. Type B strategies have no INTERVAL/fetch_data contract to poll a bar
 # against (references/deployment.md), so they keep the plain fixed-cadence
@@ -489,7 +489,7 @@ _INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
 # position (code-auditor finding, 2026-08-19). An unparseable value is
 # therefore never Type A/C — Type B (old crontab) at least still runs.
 _INTERVAL_VALUE_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")
-# Unit spellings must match blaveclaw-config/manager/wait_for_bar.py's
+# Unit spellings must match blave-agent/manager/wait_for_bar.py's
 # _INTERVAL_RE/_UNIT_TO_KW and manager/healthcheck.py's _UNIT_TO_MINUTES —
 # three copies now (see those files' own comments on this); change all three
 # together or they silently disagree on cadence.
@@ -509,7 +509,7 @@ def _strategy_source(name):
 
 
 def _wait_for_bar_available():
-    """True once this workspace has pulled blaveclaw-config's manager/wait_for_bar.py
+    """True once this workspace has pulled blave-agent's manager/wait_for_bar.py
     (a2ced19+) — NOT every machine has, at any given moment: workspaces update
     independently of this runtime, on their own cadence. Gates the whole A/C
     split below: without this, a runtime update landing before a given
@@ -1268,7 +1268,7 @@ def _cmd_report_edit_pending(args):
 
 
 # TW index futures (Capital/群益) asset_specs, keyed by the strategy's SYMBOL
-# constant (TXF/MXF/TMF). Mirrors blaveclaw-config/manager/reconciler.py's
+# constant (TXF/MXF/TMF). Mirrors blave-agent/manager/reconciler.py's
 # _CAPITAL_FUTURES_SPEC table and the shape documented in
 # references/capital-broker.md Step 8 — duplicated, not imported: this file is
 # the platform-controlled runtime layer (ships via blave_agent/publish.py) and
@@ -2455,7 +2455,7 @@ class Deferred:
 def _require_manage_scripts():
     """Both manager scripts must already take --members before we spawn one.
     This runtime auto-updates from S3, manager/*.py only arrives when the user
-    tells the agent to update blaveclaw-config — so an old script meeting a new
+    tells the agent to update blave-agent — so an old script meeting a new
     command is routine, and argparse's raw "unrecognized arguments" is what the
     user sees. portfolio_reporter.can_manage hides the controls, but the page's
     payload can be a report behind; this is the check that actually holds."""
@@ -2467,7 +2467,7 @@ def _require_manage_scripts():
             ok = False
         if not ok:
             raise RuntimeError("workspace scripts are out of date — ask the "
-                               "agent to update blaveclaw-config")
+                               "agent to update blave-agent")
 
 
 def _manage_paths():
@@ -2573,7 +2573,7 @@ def _resolve_allocator(allocator, script, builtins):
     if allocator in builtins:
         if not knows:
             raise RuntimeError("workspace scripts are out of date — ask the "
-                               "agent to update blaveclaw-config")
+                               "agent to update blave-agent")
         return allocator
     if not os.path.isfile(os.path.join(WORKSPACE, "allocators", allocator, "allocator.py")):
         raise ValueError("allocator not found")
@@ -2643,7 +2643,7 @@ def _validate_manage_args(args, script):
     # so the byte-grep only happens on a workspace with no method table at all.
     if not builtins and _script_knows_builtins(_MANAGE_BACKTEST_SCRIPT):
         raise RuntimeError("workspace scripts are out of date — ask the "
-                           "agent to update blaveclaw-config")
+                           "agent to update blave-agent")
     allocator = _resolve_allocator(args.get("allocator"), script, builtins)
 
     params = args.get("params")

@@ -1,7 +1,7 @@
 """systemd ExecStart shim for the Linux reconciler (order daemon) unit.
 
 The reconciler's actual supervision logic (crash-restart loop + Telegram
-notify) already lives in blaveclaw-config's manager/start_reconciler.sh — this
+notify) already lives in blave-agent's manager/start_reconciler.sh — this
 file is NOT a reimplementation of that, it's a whitelist-compliant launcher.
 
 Why this exists instead of ExecStart=/bin/bash .../start_reconciler.sh

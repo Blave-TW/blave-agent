@@ -219,7 +219,7 @@ def _extract(path, fallback_name):
 
 def is_portfolio_stats(stats):
     """True only when this stats.json POSITIVELY identifies a Type C portfolio
-    backtest. Basis (blaveclaw-config lib/runner.py): the Type C branch writes
+    backtest. Basis (blave-agent lib/runner.py): the Type C branch writes
     the random_bh_benchmark `benchmark_*` fields and no `symbol` key at all,
     while the Type A branch always writes `symbol` and never calls
     random_bh_benchmark. Both signals must agree — an old Type A stats.json
@@ -253,7 +253,7 @@ def _read_backtest(name):
 
 
 def _read_scan(name):
-    """Parameter-scan output (blaveclaw-config lib/param_scan.write_scan) lands in
+    """Parameter-scan output (blave-agent lib/param_scan.write_scan) lands in
     strategies/<name>/scan.json — a rows×cols Sharpe grid + neighbourhood means +
     peak/plateau/current markers, feeding the workspace 穩健參數 tab. Same
     fail-soft contract as _read_backtest: None when absent / unreadable / not an
@@ -268,7 +268,7 @@ def _read_scan(name):
 
 
 def _read_wf(name):
-    """Walk-forward output (blaveclaw-config lib/walk_forward.run_walk_forward) lands
+    """Walk-forward output (blave-agent lib/walk_forward.run_walk_forward) lands
     in strategies/<name>/wf.json — the per-run picks, the stitched out-of-sample curve
     and the in/out-of-sample stats, feeding the workspace 樣本外驗證 tab. Same
     fail-soft contract as _read_scan: None when absent / unreadable / not an object.
@@ -368,7 +368,7 @@ def _stats_marker(name, status, deployed=frozenset()):
     overwrites it in place should reach the open workspace mid-turn.
     live (file MODE) or deployed (registry, `deployed` from _deployed_names) →
     existence only: a deployed strategy's stats.json belongs to the per-bar tick
-    thread (command_listener._tick_one → blaveclaw-config lib/runner.py rewrites
+    thread (command_listener._tick_one → blave-agent lib/runner.py rewrites
     it on every close, unconditionally — the `mode == 'backtest'` gate below that
     write only guards the chart export). Tracking its mtime would fire a full
     scan + a ≤1.5MB chunk + a workspace redraw once a bar, mid-conversation, for

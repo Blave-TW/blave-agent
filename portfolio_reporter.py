@@ -314,7 +314,7 @@ def halt_state():
 
 
 def account_guard():
-    """The reconciler's account guard (blaveclaw-config manager/reconciler.py):
+    """The reconciler's account guard (blave-agent manager/reconciler.py):
     whether an exchange account id is seeded, whether a confirmation is
     pending, and why the last id read failed. That read is fail-soft — a
     permission-scoped key just skips the check — so without this a machine
@@ -374,7 +374,7 @@ def _halt_denials(since_ts):
 # its own: a torn stats.json or a syntax error in a user's allocator must cost
 # that one entry, never the report. `can_manage` keys on the workspace scripts
 # themselves (see _workspace_manages) — this runtime updates itself from S3 but
-# manager/*.py rides blaveclaw-config's manual channel, so a new runtime on an
+# manager/*.py rides blave-agent's manual channel, so a new runtime on an
 # old workspace is the normal state, not an edge case.
 
 # The walk-forward's own per-day return series: the page charts managed_cum
@@ -396,7 +396,7 @@ _MGMT_WEIGHTS_MAX_POINTS = 64 * 4000
 _ALLOCATOR_CONSTS = ("DISPLAY_NAME", "DESCRIPTION", "PARAMS")
 # manager.py's own declarations, read as literals (never imported).
 _BUILTIN_CONSTS = ("BUILTIN_METHODS", "DEFAULT_METHOD")
-# Mirrors blaveclaw-config lib/allocator.py RESERVED_PARAM_KEYS: target_vol is
+# Mirrors blave-agent lib/allocator.py RESERVED_PARAM_KEYS: target_vol is
 # the portfolio's leverage target, set once for the account and never a
 # weighting input, so load() refuses a file that declares it. That guard lives
 # in an import this process never does — without the same check here the picker
@@ -751,7 +751,7 @@ def manager_view():
     # option, which the listener still resolves to slope).
     # Deliberately NOT folded into can_manage: 策略管理 works fine without the
     # names, and gating the whole subtab on them would take the feature away
-    # from every machine that hasn't pulled blaveclaw-config yet.
+    # from every machine that hasn't pulled blave-agent yet.
     builtin_methods, default_method = workspace_builtin_methods()
     view = {"can_manage": _workspace_manages(),
             "builtin_methods": builtin_methods, "default_method": default_method,
