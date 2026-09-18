@@ -1,0 +1,13 @@
+{
+  "name": "blave-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Blave 電腦版外殼(v1:連結畫面 → 空三欄 → 第一句話)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "38.2.1"
+  }
+}

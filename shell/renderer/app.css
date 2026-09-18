@@ -1,0 +1,12 @@
+/* 外殼自己的覆寫:mockup.css 是 review 頁抽出來的,這裡把 .app 變成全視窗。 */
+html, body { margin: 0; height: 100%; background: var(--bg-body); }
+.app { height: 100vh; width: 100vw; border: none; border-radius: 0; }
+[hidden] { display: none !important; }
+.cn-bar { -webkit-app-region: drag; height: 38px; }
+.ws-brand { padding-top: 14px; }           /* hiddenInset 紅綠燈的空間 */
+.chat-input textarea {
+  flex: 1; background: none; border: none; outline: none; resize: none;
+  color: inherit; font: inherit; line-height: 1.5;
+}
+.ws-conn { margin-top: auto; padding: 10px 14px; font-size: 11px; opacity: .55; }
+.msg.sys { opacity: .6; font-size: 12px; }

@@ -1,0 +1,338 @@
+
+/* =========================================================================
+   Blave 桌面版 v1 — 拋棄式 review mockup(不上線、不進 web/)
+   Token 值抄自 web/app/static/css/main.css(那裡才是 source of truth);
+   版面/元件抄自 web/app/main/templates/agent/workspace.html +
+   web/app/static/css/agent/workspace.css。
+   規則來源:.claude/docs/design-system.md(canon)。
+   ========================================================================= */
+
+/* ---- tokens:light 值放 :root,dark 只重映射值(canon › Dark mode › 止血條款) ---- */
+:root {
+  /* brand */
+  --color-primary: #ff9960;
+  /* neutrals(冷藍染) */
+  --color-black: #1a222c;
+  --color-greyDark: #3f4a57;
+  --color-greyMedium: #5d6979;
+  --color-greyLightMedium: #c4cdd6;
+  --color-greyLight: #d5dde4;
+  --color-white: #eef1f4;
+  --color-pureWhite: #ffffff;
+  --color-surface: #f8fafb;
+  /* trading */
+  --color-green: #31a86a;
+  /* dark(黑潮墨) */
+  --color-darkBody: #0f161a;
+  --color-darkCard: #1a2328;
+  --color-darkBorder: #2d383e;
+  --color-darkText: #eaeff0;
+
+  /* radii */
+  --radius-micro: 4px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* spacing */
+  --space-2: 2px;  --space-4: 4px;   --space-6: 6px;   --space-8: 8px;
+  --space-12: 12px; --space-16: 16px; --space-24: 24px; --space-32: 32px;
+  --space-48: 48px; --space-64: 64px;
+
+  /* motion */
+  --motion-fast: 0.15s;
+  --motion-base: 0.18s;
+  --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* elevation */
+  --shadow-sm: 0 0 0 1px rgba(26,34,44,.07), 0 1px 2px -1px rgba(26,34,44,.10);
+  --shadow-md: 0 0 0 1px rgba(26,34,44,.06), 0 2px 3px -2px rgba(26,34,44,.08),
+               0 3px 12px -4px rgba(26,34,44,.06), 0 4px 16px -8px rgba(26,34,44,.06);
+
+  /* ---- 語意角色變數(canon › Color › 語意角色變數):雙態表面一律引這層 ---- */
+  --bg-body: var(--color-white);
+  --surface-card: var(--color-surface);
+  --surface-muted: var(--color-greyLight);       /* 軌道 / outlined hover 填色 */
+  --surface-field: var(--color-pureWhite);
+  --border-hairline: var(--color-greyLight);
+  --border-frame: var(--color-greyLight);
+  --ink: var(--color-black);
+  --ink-2: var(--color-greyDark);
+  --ink-3: var(--color-greyMedium);
+  /* in-app 功能動作鈕(canon › Interaction states › 橘的邊界):中性反白,不用橘 */
+  --action-fill: var(--color-black);
+  --action-fill-text: var(--color-pureWhite);
+  --focus-ring: var(--color-black);
+}
+[data-theme="dark"] {
+  /* 墨階三變數的 dark 重上值(canon › Neutrals 註) */
+  --color-black: #222d33;
+  --color-greyDark: #546168;
+  --color-greyMedium: #818f97;
+
+  --bg-body: var(--color-darkBody);
+  --surface-card: var(--color-darkCard);
+  --surface-muted: var(--color-darkBorder);
+  --surface-field: var(--color-darkBody);
+  --border-hairline: var(--color-darkBorder);
+  --border-frame: var(--color-greyDark);
+  --ink: var(--color-darkText);
+  --ink-2: var(--color-greyLightMedium);
+  --ink-3: var(--color-greyMedium);
+  --action-fill: var(--color-darkText);
+  --action-fill-text: var(--color-darkBody);
+  --focus-ring: var(--color-darkText);
+  /* dark 保留 ring、去掉大模糊(canon › Elevation) */
+  --shadow-sm: 0 0 0 1px rgba(255,255,255,.08);
+  --shadow-md: 0 0 0 1px rgba(255,255,255,.08), 0 4px 16px -8px rgba(0,0,0,.5);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* =========================================================================
+   REVIEW CHROME — 這一段不是設計的一部分,只是給 Wei 看圖用的頁面外殼。
+   桌布色固定不隨主題切換(視窗才是設計)。
+   ========================================================================= */
+body {
+  margin: 0;
+  background: #5d6979;              /* = greyMedium light 值,當桌布;review chrome */
+  font-family: "Plus Jakarta Sans", "Noto Sans TC", system-ui, sans-serif;
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+.rv-bar {
+  position: sticky; top: 0; z-index: 50;
+  background: #1a222c;
+  padding: var(--space-16) var(--space-32);
+  display: flex; align-items: flex-start; gap: var(--space-32);
+  box-shadow: 0 4px 16px -8px rgba(0,0,0,.5);
+}
+.rv-bar h1 { margin: 0 0 6px; font-size: 18px; font-weight: 700; line-height: 1.3; }
+.rv-bar p  { margin: 0; font-size: 13px; line-height: 1.6; color: #c4cdd6; max-width: 78ch; }
+.rv-bar .rv-actions { margin-left: auto; flex: none; display: flex; gap: var(--space-8); }
+.rv-toggle {
+  height: 36px; padding: 0 var(--space-16);
+  border: 1px solid #546168; background: transparent; color: #eaeff0;
+  border-radius: var(--radius-md); font: inherit; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background var(--motion-fast) var(--ease-standard);
+}
+.rv-toggle:hover { background: #2d383e; }
+.rv-main { padding: var(--space-48) var(--space-32) var(--space-64); }
+.rv-sec { max-width: 1280px; margin: 0 auto var(--space-64); }
+.rv-sec + .rv-sec { padding-top: var(--space-48); border-top: 1px dashed rgba(255,255,255,.28); }
+.rv-h { margin: 0 0 6px; font-size: 20px; font-weight: 700; line-height: 1.3; }
+.rv-d { margin: 0 0 var(--space-24); font-size: 13px; line-height: 1.6; color: #eef1f4; max-width: 84ch; }
+.rv-d b { font-weight: 600; color: #fff; }
+.rv-cap { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: #eef1f4; }
+.rv-note { font-size: 12px; color: rgba(255,255,255,.72); }
+
+/* =========================================================================
+   macOS 視窗外殼
+   ⚠ 誠實標註:視窗圓角、投影、紅黃綠燈號在真 app 裡是 macOS 自己畫的,
+   不是 Blave token。這裡是為了讓畫面讀起來像桌面軟體才手繪。
+   ========================================================================= */
+.win {
+  width: 1280px; height: 800px;
+  border-radius: 12px;               /* macOS 視窗圓角,不是 --radius-lg 的語意 */
+  overflow: hidden;
+  box-shadow: 0 24px 64px -16px rgba(0,0,0,.55), 0 0 0 .5px rgba(0,0,0,.35);
+}
+.tl { display: flex; gap: var(--space-8); }
+.tl i { width: 12px; height: 12px; border-radius: var(--radius-pill); display: block; }
+.tl .r { background: #ff5f57; }     /* macOS 系統色,OS chrome 事實色 */
+.tl .y { background: #febc2e; }
+.tl .g { background: #28c840; }
+
+/* =========================================================================
+   APP — 共用
+   ========================================================================= */
+.app {
+  height: 100%; width: 100%;
+  background: var(--bg-body);
+  color: var(--ink);
+  font-size: 13px;                   /* Terminal 基準字(canon › Density) */
+  line-height: 1.5;
+  display: flex; flex-direction: column;
+}
+.app .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+/* 零特異度 reset(:where):放全域而非 .app 下——並排展示的卡片不在 .app 裡,
+   收在 .app 下會讓那幾顆鈕露出瀏覽器預設填色。.rv-* 的 review chrome 自己寫死樣式,不受影響 */
+:where(button) { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+:where(a) { text-decoration: none; }
+.wm { display: block; height: 18px; width: auto; }   /* Blave 文字標,fill=currentColor */
+
+/* =========================================================================
+   畫面 1 — 連結畫面(獨立 full-screen,不是蓋在工作頁上的 modal)
+   ========================================================================= */
+.cn { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* 38px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色) */
+.cn-bar { flex: none; height: 38px; display: flex; align-items: center; padding: 0 var(--space-16); }
+.cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 38px; }
+.cn-brand { color: var(--ink); margin-bottom: var(--space-24); }
+.cn-mid h4 {
+  margin: 0 0 var(--space-8);
+  font-size: 20px; font-weight: 600; line-height: 1.4;  /* Terminal h4(canon › Type scale) */
+  color: var(--ink);
+}
+.cn-sub { margin: 0 0 var(--space-24); font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+.cn-foot { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }
+
+/* 連結卡:靜止表面 → shadow-md、無邊框(canon › Elevation:ring 就是那條線) */
+.cn-card {
+  width: 560px;                      /* = workspace.css .ns-modal.wide 的 560 */
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: left;
+}
+.cn-sec { padding: var(--space-16); }
+.cn-sec + .cn-sec { border-top: 1px solid var(--border-hairline); }
+
+/* 區塊 1:Blave 的 AI(上) */
+.cn-blave { display: flex; align-items: center; gap: var(--space-16); }
+.cn-blave .t { flex: 1; min-width: 0; }
+.cn-ttl { font-size: 13px; font-weight: 600; color: var(--ink); }
+.cn-desc { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* in-app 功能動作鈕:高對比中性填色,永遠不是橘(canon › Interaction states) */
+.btn-fill {
+  flex: none; height: 44px; padding: 0 var(--space-16);
+  border-radius: var(--radius-md);
+  background: var(--action-fill); color: var(--action-fill-text);
+  font-size: 13px; font-weight: 600;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.btn-fill:hover { opacity: .85; }
+
+/* 區塊 2:本機偵測到的 agent(下) */
+.cn-head { display: flex; align-items: baseline; gap: var(--space-8); margin-bottom: var(--space-2); }
+.cn-head .l { font-size: 12px; color: var(--ink-3); }
+.btn-quiet {
+  margin-left: auto; flex: none;
+  font-size: 12px; color: var(--ink-3);
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.btn-quiet:hover { color: var(--ink); text-decoration: underline; }
+.cn-rows { margin-top: var(--space-12); }
+.cn-row {
+  display: flex; align-items: center; gap: var(--space-12);
+  min-height: 44px;                  /* Fitts 熱區 */
+}
+.cn-row + .cn-row { border-top: 1px solid var(--border-hairline); }
+.cn-row .n { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); }
+.cn-row.off .n { color: var(--ink-3); }
+.cn-st { flex: none; display: flex; align-items: center; gap: var(--space-6); font-size: 12px; color: var(--ink-3); }
+.cn-st.on { color: var(--ink-2); }
+.cn-st .dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--color-green); }
+/* Outlined control(canon › Terminal toolbar):hover 只灰填,邊框與字不變色 */
+.btn-out {
+  flex: none; height: 32px; padding: 0 var(--space-12);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
+  background: transparent; color: var(--ink);
+  font-size: 13px; font-weight: 500;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.btn-out:hover { background: var(--surface-muted); }
+.cn-link {
+  flex: none; display: inline-flex; align-items: center; gap: var(--space-6);
+  font-size: 12px; color: var(--ink-2);
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: currentColor;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.cn-link:hover { color: var(--ink); }
+.cn-link svg { width: 12px; height: 12px; }
+.cn-hint { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 暗底「必須被讀到」的次要字升一階(canon › Neutrals 註) */
+.cn-hint.up, .cn-st.up { color: var(--ink-2); }
+
+/* =========================================================================
+   畫面 2 / 3 — 三欄工作頁(版面照 workspace.html / workspace.css)
+   ========================================================================= */
+.ws { flex: 1; display: flex; min-height: 0; }
+
+/* LEFT — .pane-strategies:236 寬、右 hairline、padding 16/12 */
+.pane-strategies {
+  width: 236px; flex: 0 0 auto;
+  border-right: 1px solid var(--border-hairline);
+  display: flex; flex-direction: column;
+  padding: 0 var(--space-12) var(--space-16);
+}
+/* 燈號與文字標同一條 38px 拖曳線上(component metric:燈號區 x=16、寬 60) */
+.ws-brand {
+  flex: none; height: 38px; display: flex; align-items: center; gap: var(--space-16);
+  padding: 0 var(--space-4);
+}
+.ws-brand .wm { color: var(--ink); }
+.strat-head { display: flex; align-items: center; padding: var(--space-16) var(--space-4) var(--space-8); }
+.strat-head .label { font-size: 12px; color: var(--ink-3); }
+.strat-list { flex: 1; overflow-y: auto; }
+/* 三態(載入/空/錯誤)同一行灰字,無插圖(canon › States › Empty) */
+.pf-state { padding: var(--space-24) var(--space-4); font-size: 13px; color: var(--ink-3); }
+
+/* MIDDLE — .pane-main:沒選策略時 main-head / main-tabs 都不渲染 */
+.pane-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: var(--space-32);
+}
+.main-empty p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-3); text-align: center; max-width: 34em; }
+
+/* RIGHT — .pane-chat:452 寬、卡面底 */
+.pane-chat {
+  width: 452px; flex: 0 0 auto;
+  background: var(--surface-card);
+  /* light 下 white↔surface 只差一階、幾乎看不出欄界,補一條 hairline(與側欄右緣同語言) */
+  border-left: 1px solid var(--border-hairline);
+  /* 內容避開 macOS 標題列拖曳區(component metric = 燈號那條 38px) */
+  padding-top: 38px;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.chat-scroll { flex: 1; overflow-y: auto; padding: var(--space-24) var(--space-24) var(--space-16); }
+.msg { margin-bottom: var(--space-24); }
+/* 用戶靠右淡底泡泡、agent 靠左純文字——靠對齊區分,不加角色 label */
+.msg.you { display: flex; justify-content: flex-end; }
+.msg.you .bubble {
+  background: var(--surface-muted); border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-16); max-width: 84%;
+  font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+}
+.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); }
+.msg.ai p { margin: 0; }
+.chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
+.chat-input {
+  display: flex; align-items: center; gap: var(--space-8);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-md);
+  background: var(--surface-field);
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
+}
+.chat-input .ta {
+  flex: 1; min-width: 0; font-size: 13px; line-height: 1.5;
+  color: var(--ink-3); padding: var(--space-4) 0;
+}
+.btn-send {
+  width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-sm);
+  background: var(--action-fill); color: var(--action-fill-text);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.btn-send:hover { opacity: .85; }
+.btn-send svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 卡片並排(畫面 1 的 b / c) */
+.cards-2 { display: flex; gap: var(--space-32); flex-wrap: wrap; }
+.field {
+  background: var(--bg-body); border-radius: 12px;
+  padding: var(--space-48) var(--space-32);
+  display: flex; flex-direction: column; align-items: center;
+  font-size: 13px; line-height: 1.5; color: var(--ink);
+}
+.field .cn-foot { color: var(--ink-3); }
+.field-wrap { display: flex; flex-direction: column; }
+.field-wrap > .rv-cap { order: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
