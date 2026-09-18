@@ -39,7 +39,7 @@ IMPORTANT: For ANY market data question — crypto (holder concentration, whale 
 
 Screening many Taiwan stocks: use the `*_batch` fetchers and narrow the pool before pulling time series — never fan out per-stock fetchers in parallel (rate limits). Full flow: `references/twstock.md` › 全市場選股.
 
-Dividend events, TAIEX dividend points and whole-market market-cap ranking are one lib call each (`references/twstock.md`, `references/twfutures.md`): TXF basis (正逆價差) must subtract the dividend-points sum, never raw futures−spot; top-N market-cap pools come from `fetch_twstock_market_value_all`, never rebuilt from shares × price.
+Dividend events, TAIEX dividend points and whole-market market-cap ranking are one lib call each (`references/twstock.md`, `references/twfutures.md`): TXF basis (正逆價差) must subtract the dividend-points sum, never raw futures−spot; top-N market-cap pools come from `fetch_twstock_market_value_all`, never rebuilt from shares × price, 權值比重 comes from that call's `attrs['twse_ex_etf_market_value']` denominator — whose universe is not the one `rank` is on — and ETFs are dropped with that call's `is_etf` column, never by code prefix.
 
 **The symbol you backtest must be the symbol the orders go to, and it must be the contract the user named.** `fetch_kline` carries Binance USDT-M perps only — for a contract listed elsewhere use the exchange-native fetcher (`fetch_bingx_kline()`, see `references/lib.md`), and if the data genuinely is not reachable, say so and stop instead of substituting a similar-looking symbol from another exchange (`XAUUSDT` is not BingX's `GOLD(XAU)-USDT` — that swap silently backtested a different instrument than the one being traded).
 

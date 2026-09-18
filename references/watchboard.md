@@ -489,9 +489,10 @@ from lib.report_templates import headers_from_env
 from lib.watch import write_data
 
 hdrs = headers_from_env()
-pool = fetch_twstock_market_value_all(hdrs, top=60)                 # cached 1 h locally
-ids = [s for s in pool["stock_id"] if not s.startswith("00")][:50]  # drop ETFs; batch max 50
-names = dict(zip(pool["stock_id"], pool["name"]))
+pool = fetch_twstock_market_value_all(hdrs)                         # one call, cached 1 h
+pool = pool[~pool["is_etf"]].head(50)                               # ETFs out; batch max 50
+ids = pool["stock_id"].tolist()
+names = dict(zip(pool["stock_id"], pool["name"]))                   # from the filtered pool
 quotes = fetch_twstock_quote_batch(ids, hdrs)                       # one call, ~10 s snapshot
 rows = [{"id": s, "name": names.get(s, ""), "last": f"{q['close']:,.1f}",
          "chg": f"{q['change_rate']:+.2f}%", "vol": f"{q['total_volume']:,}"}

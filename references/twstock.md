@@ -227,19 +227,41 @@ ranking from per-stock shares × price (that is ~2,000 calls and minutes of wait
 from lib.data import fetch_twstock_market_value_all
 
 top10 = fetch_twstock_market_value_all(hdrs, top=10)
-# columns: rank (1-based, market_value desc), stock_id, name, market_value (NTD 元, int)
+# columns: rank (1-based, market_value desc), stock_id, name, market_value (NTD 元, int),
+#          market ("TWSE" 上市 / "TPEx" 上櫃), is_etf (bool)
 top10.attrs["date"]                     # as-of publication date, 'YYYY-MM-DD'
+top10.attrs["twse_ex_etf_market_value"] # 上市 ex-ETF market-cap total, NTD 元 int
+
+# Index weight of a 上市 non-ETF stock (the denominator is whole-market even with top=10)
+tsmc = top10.iloc[0]                    # 2330 — market "TWSE", not an ETF
+share = tsmc["market_value"] / top10.attrs["twse_ex_etf_market_value"]
 
 mv = fetch_twstock_market_value_all(hdrs)          # all ~2,400 rows
-no_etf = mv[~mv["stock_id"].str.startswith("00")]     # drop ETFs (ETFs such as 0050 rank among the large caps)
-pool = no_etf.head(300)["stock_id"].tolist()          # market-cap top-300 universe
+pool = mv[~mv["is_etf"]].head(300)["stock_id"].tolist()   # ETF-free market-cap top-300 universe
+tpex_only = mv[mv["market"] == "TPEx"]                    # board filter, exact like is_etf
 ```
 
 Notes:
 - Universe = TWSE listed + TPEx OTC + ETFs; 興櫃 (emerging) excluded, ETNs have no data.
+- **`is_etf` is the ETF flag** — filter with `mv[~mv["is_etf"]]`. Never by `stock_id` prefix
+  (`"00"` is a market convention rather than a contract, and it misses REITs like `01010T`) and
+  never by fetching a classification yourself: `is_etf` already IS that classification (FinMind
+  `industry_category`) and is the same criterion the denominator uses, so a filtered pool and
+  the denominator can never disagree. `is_etf` False means "not in the ETF set", **not**
+  "confirmed not an ETF": a security FinMind publishes no category for (REIT `01010T`) is False
+  and stays inside the denominator. `market` is a listing-board tag, not an ETF flag.
+- **`rank` and `attrs["twse_ex_etf_market_value"]` are different universes.** `rank` is
+  whole-market (上市 + 上櫃, ETFs included). The denominator covers 上市 only and excludes ETFs
+  (FinMind `industry_category` in `{ETF, 上櫃ETF, 上櫃指數股票型基金(ETF)}`); REITs and
+  preferred shares (特別股) are not excluded from it. So the ratio is an index weight
+  (權值比重) only for a row whose `market` is `"TWSE"` and which is not an ETF — a TPEx or ETF
+  row over this denominator is not a weight. Never describe a row's `rank` as a rank within
+  that ex-ETF total.
 - Updated once a day after the close (EOD); the server caches the ranking 30 min. Locally the
   FULL ranking is cached 1 hour as a single file and `top` is sliced locally, so repeat calls
-  with different `top` are free within the hour; `attrs["date"]` survives cache hits.
+  with different `top` are free within the hour. A cache hit that comes back without `market`,
+  without `is_etf`, or without either `attrs` entry is discarded and refetched (whether `attrs`
+  survive a parquet round-trip depends on the pandas version), so every field is always there.
 - `top` must be an int in 1–3000 (validated locally, same range as the server); None = all.
 - Errors: 404 = no recent data server-side; 503 = upstream rate limit (`_retry_get` retries
   503 with backoff, so a 503 that surfaces means the retries were exhausted).
@@ -444,8 +466,8 @@ Work as a funnel — narrow the pool first, then pull time series (measured on t
 
 1. **Narrow the pool (seconds)**: `fetch_twstock_market_value_all` (whole-market market-cap
    ranking in one call — THE first-layer filter for market-cap conditions: top-N pool, 前十大權值股;
-   drop ETFs with `stock_id.str.startswith("00")`; `fetch_twstock_list` itself has no
-   market-cap column), `fetch_twstock_list` (industry), `fetch_twstock_quote_batch`
+   ETFs are in it, drop them with `~df["is_etf"]` and never by code prefix;
+   `fetch_twstock_list` itself has no market-cap column), `fetch_twstock_list` (industry), `fetch_twstock_quote_batch`
    (whole-market change/volume ratio, ~24s), `fetch_twstock_monthly_revenue_batch` /
    `fetch_twstock_per_batch` (fundamental / value conditions) → down to a few hundred stocks.
    Per-stock `/market_value/{stock_id}` history is for the already-narrowed pool only.

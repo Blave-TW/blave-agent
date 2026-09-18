@@ -1900,39 +1900,72 @@ def fetch_twstock_market_value_all(headers, top=None):
     """全市場市值排名快照 (whole-market market-cap ranking). 上市 + 上櫃 + ETF
     (興櫃 excluded, ETNs have no data) — about 2,400 rows. DataFrame with columns
     rank (1-based, market_value desc), stock_id, name, market_value (NTD 元,
-    integer); the as-of publication date rides along in `df.attrs['date']`
-    ('YYYY-MM-DD'). Updated once a day after the close; server caches 30 min.
+    integer), market ('TWSE' 上市 / 'TPEx' 上櫃), is_etf (bool); the as-of
+    publication date and the 上市 ex-ETF market-cap total ride along in
+    `df.attrs['date']` ('YYYY-MM-DD') and `df.attrs['twse_ex_etf_market_value']`
+    (NTD 元, int). Updated once a day after the close; server caches 30 min.
 
     `top` (int 1–3000) keeps the first N ranks, None = all. This is the first-layer
     screening filter for anything market-cap based (top-N pool, top-10 權值股) —
-    never rebuild it from per-stock shares × price across the market. ETFs are in
-    the ranking (ETFs such as 0050 rank among the large caps); drop ETFs with
-    `df[~df['stock_id'].str.startswith('00')]`.
+    never rebuild it from per-stock shares × price across the market.
+
+    ETFs are in the ranking (0050 is rank 6) — filter them with the `is_etf`
+    column: `df[~df['is_etf']]`. Never by stock_id prefix ('00' is a market
+    convention rather than a contract, and it misses REITs like '01010T') and never
+    by fetching a classification yourself — is_etf IS that classification (FinMind
+    industry_category), and it is the same criterion the denominator uses, so the
+    two can never disagree. is_etf False means 'not in the ETF set', NOT 'confirmed
+    not an ETF': a security FinMind publishes no category for (REIT '01010T') is
+    False and stays inside the denominator. `market` is a listing-board tag, not an
+    ETF flag.
+
+    `attrs['twse_ex_etf_market_value']` is the index-weight (權值比重) denominator:
+    the sum of the market == 'TWSE' rows that are not ETFs on the same as-of day,
+    whole-market regardless of `top` (REITs and preferred shares are NOT excluded
+    from it). So market_value / twse_ex_etf_market_value is a weight only
+    for a row whose market is 'TWSE' and which is not an ETF — over a TPEx or ETF
+    row it is not a weight. `rank` is on a different universe — still 上市 + 上櫃
+    including ETFs — so never present the ratio and the rank as one ranking.
 
     Single-file cache like fetch_twmarket_dividend_points: the FULL ranking is
     fetched once (one call, ~2.4k rows) and kept 1 hour, `top` is sliced locally,
-    so repeat calls with different `top` are free within the hour. attrs survive
-    the parquet round-trip, so cache hits keep the as-of date."""
+    so repeat calls with different `top` are free within the hour. Whether attrs
+    survive the parquet round-trip is pandas-version dependent, so it is NOT
+    relied on: a cache hit that came back without the new column or without either
+    attr is discarded and refetched. The returned frame therefore always carries
+    both attrs, whatever the machine's pandas version."""
     if top is not None and (not isinstance(top, numbers.Integral)
                             or isinstance(top, bool) or not 1 <= top <= 3000):
         raise ValueError(f'top must be an int in 1–3000 or None, got {top!r}')
     path = _CACHE_DIR / 'twstock_market_value_all.parquet'
     df = _load_fundamental_cache(path, max_age_days=1 / 24)
+    # Old cache file, or a pandas whose parquet writer drops DataFrame.attrs: either way
+    # a field would silently go missing and callers would filter on a column that is not
+    # there. Every field this function promises is checked. `not in` rather than a falsy
+    # test — a genuine null denominator must not refetch on every call.
+    if df is not None and ('market' not in df.columns or 'is_etf' not in df.columns
+                           or 'date' not in df.attrs
+                           or 'twse_ex_etf_market_value' not in df.attrs):
+        df = None
     if df is None:
         r = _retry_get(f'{BASE}/studio/market/twstock/market_value/all',
                        headers=headers, timeout=60)
         payload = r.json()
         data = payload.get('data', [])
         if not data:
-            out = pd.DataFrame(columns=['rank', 'stock_id', 'name', 'market_value'])
+            out = pd.DataFrame(
+                columns=['rank', 'stock_id', 'name', 'market_value', 'market', 'is_etf'])
             out.attrs['date'] = payload.get('date')
+            out.attrs['twse_ex_etf_market_value'] = payload.get('twse_ex_etf_market_value')
             return out
-        df = pd.DataFrame(data)[['rank', 'stock_id', 'name', 'market_value']]
+        df = pd.DataFrame(data)[['rank', 'stock_id', 'name', 'market_value', 'market',
+                                 'is_etf']]
         df = df.sort_values('rank').reset_index(drop=True)
         df.attrs['date'] = payload.get('date')
+        df.attrs['twse_ex_etf_market_value'] = payload.get('twse_ex_etf_market_value')
         _save_fundamental_cache(path, df)
     out = df if top is None else df.head(top).copy()
-    out.attrs = dict(df.attrs)   # slicing must not drop the as-of date
+    out.attrs = dict(df.attrs)   # slicing must not drop the as-of date / denominator
     return out
 
 
