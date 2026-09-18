@@ -8,6 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- `command_listener` 自己把所在目錄(`current/`)加進 `sys.path`,再 import sibling。修的是
+  **聊天貼 key 綁交易所**:`lib/venue.py` 用 `spec_from_file_location` 從 agent turn 載這支,
+  而 turn 的 PYTHONPATH 只有 workspace、importlib 不會把被載檔案的目錄放進 `sys.path`——
+  1.1.68 加了模組層 `import turn_slots` 之後,全機隊的 chat-bind 從 2026-09-11 起必定
+  ImportError(web 自動下單頁不受影響,那條走 bridge 自己的行程)。`append` 不是 `insert(0)`:
+  workspace 的同名模組仍該贏。閘門在 api `tests/check_command_listener_standalone.py`。
+
 - 註解裡的 `blaveclaw-config` 改為 `blave-agent`(repo 改名),無邏輯變動。
   已發版的版本段落**維持舊名不動**——那是當時的事實。
 

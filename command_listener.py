@@ -33,6 +33,17 @@ import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
 
+# Two load paths: web_bridge imports us from `current/` (script dir, siblings
+# resolve for free), and `lib/venue.py` loads this file BY PATH from an agent
+# turn whose sys.path holds only the workspace — importlib does not put the
+# loaded file's directory on sys.path, so the sibling imports below are an
+# ImportError there unless we do it ourselves. Append, not insert: the
+# workspace's own modules keep winning name collisions. Guarded because
+# exec_module re-runs this body on every venue.bind() in the same process.
+_RUNTIME_DIR = os.path.dirname(os.path.abspath(__file__))
+if _RUNTIME_DIR not in sys.path:
+    sys.path.append(_RUNTIME_DIR)
+
 import telegram_pairing
 import turn_slots
 
