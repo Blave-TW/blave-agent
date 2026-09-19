@@ -46,14 +46,20 @@ async function detect() {
   const d = await window.blave.detectAgents();
   const rows = $("agent-rows"); rows.innerHTML = "";
   localReady = !!((d.claude.installed && d.claude.loggedIn) || (d.codex.installed && d.codex.loggedIn));
-  const localCls = localReady ? "btn-fill" : "btn-out";
+  // 填色只給**第一個**能用的本機 agent:兩個都裝好的人(Claude Code + Codex)
+  // 會看到兩顆填色鈕並排,等於沒有焦點(canon › 每視野一個焦點)。
+  let fillGiven = false;
+  const localBtnCls = () => {
+    if (!localReady || fillGiven) return "btn-out";
+    fillGiven = true; return "btn-fill";
+  };
   paintBlaveBtn();
 
   // Claude Code 三態:已登入 / 裝了沒登入 / 沒裝
   if (d.claude.installed && d.claude.loggedIn) {
     rows.appendChild(row({ name: "Claude Code", st: t("st.signedIn"), stClass: "on",
       cur: cur === "claude",
-      action: cur === "claude" ? null : btn(localCls, t("cn.connect"), () => connect("claude", d.claude)) }));
+      action: cur === "claude" ? null : btn(localBtnCls(), t("cn.connect"), () => connect("claude", d.claude)) }));
   } else if (d.claude.installed) {
     rows.appendChild(row({ name: "Claude Code", st: t("st.notSignedIn"), stClass: "up",
       action: btn("btn-out", t("cn.redetect"), detect) }));
@@ -67,7 +73,7 @@ async function detect() {
   if (d.codex.installed && d.codex.loggedIn) {
     rows.appendChild(row({ name: "Codex", st: t("st.signedIn"), stClass: "on",
       cur: cur === "codex",
-      action: cur === "codex" ? null : btn(localCls, t("cn.connect"), () => connect("codex", d.codex)) }));
+      action: cur === "codex" ? null : btn(localBtnCls(), t("cn.connect"), () => connect("codex", d.codex)) }));
   } else if (d.codex.installed) {
     rows.appendChild(row({ name: "Codex", st: t("st.notSignedIn"), stClass: "up",
       action: btn("btn-out", t("cn.redetect"), detect) }));

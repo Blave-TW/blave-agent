@@ -60,8 +60,10 @@
    要人二選一的鈕本來就該在同一個尺寸帶。半徑與字重也對齊 .btn-out:焦點由填色
    承擔,不必再用一階字重重講一次(canon › Type:按鈕 500)。 */
 .btn-fill {
-  flex: none; height: 32px; padding: 0 var(--space-16);
-  border-radius: var(--radius-xs);
+  /* 盒模型跟 .btn-out 完全一樣(1px 邊框 + padding 12),只是邊框透明:兩種鈕同寬,
+     上下兩列的「● 已登入」才會對在同一條垂直線上,而且不必寫 off-scale 的 13。 */
+  flex: none; height: 32px; padding: 0 var(--space-12);
+  border: 1px solid transparent; border-radius: var(--radius-xs);
   background: var(--control-fill); color: var(--control-fill-text);
   font-size: 13px; font-weight: 500;
   transition: opacity var(--motion-fast) var(--ease-standard);
@@ -277,11 +279,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .cn-back::before, .btn-quiet::before {
   content: ""; position: absolute; inset: -6px -4px;
 }
-/* 32 高的鈕補到 44:無邊框 -6,有 1px 邊框的 -7(pseudo 錨 padding box,
-   邊框不算在內,-6 只得到 42)。 */
+/* 32 高的鈕補到 44:兩種鈕都有 1px 邊框(填色那顆是透明的),pseudo 錨的是
+   padding box、邊框不算在內,所以是 -7;-6 只得到 42。 */
 .btn-fill, .btn-out { position: relative; }
-.btn-fill::before { content: ""; position: absolute; inset: -6px; }
-.btn-out::before { content: ""; position: absolute; inset: -7px; }
+.btn-fill::before, .btn-out::before { content: ""; position: absolute; inset: -7px; }
 
 /* 聊天欄的空狀態:一句 + 一顆可點的起手範例(canon › States › Empty:扁平一行
    + 填充動作)。另外兩欄只留狀態句,不再重複同一個例子。 */

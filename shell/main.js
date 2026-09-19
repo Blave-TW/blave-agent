@@ -65,7 +65,13 @@ async function detectAgents() {
       out.claude.email = j.email || null;
     } catch (_) { /* 舊版沒有這個子指令:當成未知,顯示成未登入 */ }
   }
-  const codexBin = await which("codex", envPath);
+  // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
+  // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
+  // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
+  // 「有 Codex」的人會看到「未偵測到」。
+  const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
+  const codexBin = (await which("codex", envPath))
+    || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
   if (codexBin) {
     out.codex.installed = true;
     out.codex.path = codexBin;
@@ -276,6 +282,10 @@ async function ensureEngine(progress) {
 let activeTurn = null;
 async function runTurn(win, { sessionId, message, model, uiLang }) {
   const envPath = await loginShellPath();
+  // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
+  // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
+  const conn = loadConnection() || {};
+  const useCodex = conn.kind === "codex" && conn.path;
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   const acct = loadToken();
@@ -304,6 +314,9 @@ async function runTurn(win, { sessionId, message, model, uiLang }) {
     // agent 回覆語言跟著介面走。runtime 的順序是「機器設定 > ui_lang > 猜」,
     // 桌面版沒有機器設定,所以這個值就是結論。
     ...(uiLang ? ["--ui-lang", uiLang] : []),
+    // 契約(runtime 那邊同一份):不帶 --engine = claude,行為跟以前一模一樣;
+    // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
+    ...(useCodex ? ["--engine", "codex", "--codex-bin", conn.path] : []),
   ], { env, cwd: WS });
   activeTurn = child;
   let buf = "";
