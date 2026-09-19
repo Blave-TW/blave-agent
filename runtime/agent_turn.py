@@ -1998,6 +1998,31 @@ def _resume_note(tool_steps):
             + _fault_receipt_suffix(tool_steps))
 
 
+def python_rule():
+    """電腦版專屬:外殼用 BLAVE_PYTHON 指出 workspace 的直譯器(venv 的絕對路徑)。
+    靠 PATH 前置不夠——Codex 用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排,
+    `python3` 解析到沒裝 workspace 套件的那顆(2026-09-19 實測:回測報「缺 pandas」);
+    環境變數不會被 profile 動到。兩條引擎都用這同一條規則,不各靠各的機制。
+    機隊沒有這個變數 → 回傳空字串,system prompt 一個字都不變。"""
+    py = os.environ.get("BLAVE_PYTHON")
+    if not py:
+        return ""
+    return (
+        "\n\n---\n\n"
+        "## 這台機器的 Python（本 runtime 專屬規則）\n"
+        f"這個 workspace 的 Python 直譯器是 `{py}`。AGENTS.md 與 references/ 裡寫的 "
+        "`python3` / `python` 在這台機器上指的就是它：指令的其餘部分照原樣寫"
+        "（一次一條、從 workspace 目錄執行），只把開頭的 `python3` 換成這個絕對路徑，例如\n"
+        "```\n"
+        f"{py} strategies/my_strategy/strategy.py\n"
+        f"{py} -m tmp.x\n"
+        "```\n"
+        "策略、回測、`lib/` 的腳本、`-c` 單行都一樣。不要用 PATH 上的 `python3` / `python`——"
+        "那可能是另一顆沒有安裝 workspace 套件（pandas 等）的直譯器；遇到 "
+        "`ModuleNotFoundError` 先確認自己用的是不是上面這個路徑，不要自己 pip install。\n"
+    )
+
+
 def _codex_prompt(prompt, sink):
     """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
@@ -2005,7 +2030,7 @@ def _codex_prompt(prompt, sink):
     model_catalog_rule is left out on purpose — it teaches switching between the proxy's
     models, and this engine runs whatever the user's own Codex is set to."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
-            + preferences_rule() + sink.formatting_rule
+            + python_rule() + preferences_rule() + sink.formatting_rule
             + "\n\n---\n\n" + prompt)
 
 
@@ -2095,7 +2120,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         turn_env["BLAVE_WEB_SESSION"] = sink.session_id
 
     sysprompt_path = _write_system_prompt_file(
-        agents_md + model_catalog_rule(session_id) + preferences_rule() + sink.formatting_rule
+        agents_md + model_catalog_rule(session_id) + python_rule() + preferences_rule()
+        + sink.formatting_rule
     ) if agents_md and not use_codex else None
     options = sdk.ClaudeAgentOptions(
         model=model,

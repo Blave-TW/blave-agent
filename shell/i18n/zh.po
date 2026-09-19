@@ -159,5 +159,8 @@ msgstr "Blave 登入已失效，請重新登入。"
 msgid "engine.workspace"
 msgstr "建立工作區 ~/Blave/workspace …"
 
+msgid "engine.deps"
+msgstr "正在安裝策略需要的 Python 套件（pandas、numpy…），只有第一次…"
+
 msgid "engine.preparing"
 msgstr "正在準備引擎（第一次會安裝，約一分鐘）…"

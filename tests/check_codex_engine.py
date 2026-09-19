@@ -8,6 +8,8 @@ What it protects:
      0.155.0-alpha.9) comes out of LocalSink as the chunk sequence the shell renders:
      narration before a tool moves to `thinking`, tools pair running/done by id, the last
      tool-less message is the reply.
+  2b. BLAVE_PYTHON (desktop only) — unset: neither engine's instructions change by a
+     character; set: both engines carry the same interpreter rule.
   3. Failure goes through the EXISTING fault path (same four codes, same error chunk) —
      and a bare `error` event is not terminal, only `turn.failed` is (Codex source:
      exec/src/event_processor_with_jsonl_output.rs).
@@ -193,5 +195,34 @@ assert "--ephemeral" in args and args[args.index("-s") + 1] == "workspace-write"
 assert "sandbox_workspace_write.network_access=true" in args
 assert not any(a in ("-m", "--model") for a in args), "--model 不可傳給 codex"
 assert any(a.startswith("project_doc_max_bytes=") for a in args)
+
+# ── 5. BLAVE_PYTHON:沒設 → 兩條路徑一個字都不加;有設 → 兩條路徑都帶同一條規則 ──
+with open(os.path.join(at.WORKSPACE, "AGENTS.md"), "w") as f:
+    f.write("# rules\n")
+sysprompts = []
+_real_write = at._write_system_prompt_file
+at._write_system_prompt_file = lambda text: (sysprompts.append(text), _real_write(text))[1]
+seen = {}
+codex_engine.run = fake_codex(FIXTURE, seen)
+
+os.environ.pop("BLAVE_PYTHON", None)
+assert at.python_rule() == ""
+run_local_turn()
+run_local_turn(engine="codex", codex_bin="/x/codex")
+assert sysprompts[-1] == "# rules\n" + at.model_catalog_rule("s1") + at.preferences_rule() \
+    + at.WEB_FORMATTING_RULE, "沒設 BLAVE_PYTHON 時 system prompt 必須與原本逐字相同"
+assert "Python 直譯器" not in seen["prompt"]
+
+os.environ["BLAVE_PYTHON"] = "/v/bin/python"
+run_local_turn()
+run_local_turn(engine="codex", codex_bin="/x/codex")
+rule = at.python_rule()
+assert "/v/bin/python strategies/" in rule
+assert rule in sysprompts[-1] and rule in seen["prompt"], "兩條引擎都要帶到"
+assert sysprompts[-1].endswith(at.WEB_FORMATTING_RULE), "建議規則必須維持在最尾端"
+assert len(sysprompts) == 2, "codex 路徑不該寫 system prompt 檔"
+os.environ.pop("BLAVE_PYTHON")
+at._write_system_prompt_file = _real_write
+codex_engine.run = real_run
 
 print("OK check_codex_engine")

@@ -277,7 +277,26 @@ async function ensureEngine(progress) {
     await sh(`python3 -m venv "${path.join(BASE, "venv")}"`, envPath);
     await sh(`"${VENV_PY}" -m pip -q install claude-agent-sdk==0.2.144`, envPath, 600000);
   }
+  // workspace 的 lib/ 與 manager/ 要的第三方套件(從它們的 import 列出來的)。原本只裝
+  // SDK:agent 能聊天、能寫策略,一回測就炸(「Python 環境缺少 pandas」,實測)。
+  // 用一個記號檔而不是每次都問 pip——pip 光是確認「都裝了」也要好幾秒。
+  const depsMark = path.join(BASE, "venv", ".blave-deps-1");
+  if (!fs.existsSync(depsMark)) {
+    progress("engine.deps");
+    await sh(`"${VENV_PY}" -m pip -q install ${WORKSPACE_DEPS.join(" ")}`, envPath, 900000);
+    fs.writeFileSync(depsMark, WORKSPACE_DEPS.join("\n"));
+  }
 }
+
+// 這份清單是**列舉出來的**,不是憑印象:用 AST 掃 lib/ manager/ examples/ 與兩支策略
+// 模板(75 個檔)的頂層 import,扣掉標準庫與 workspace 自己的模組,再逐一實際 import。
+// 第一版憑 grep 少了 python-dotenv(lib/runner.py 第一行就要它)與 scipy。
+// 刻意不裝:shioaji(永豐下單 SDK,有綁該券商的人才需要)、comtypes / pythoncom
+// (群益的 COM 介面,只有 Windows 有)。
+const WORKSPACE_DEPS = [
+  "pandas", "numpy", "matplotlib", "pyarrow", "requests", "python-dotenv", "scipy",
+];
+
 
 let activeTurn = null;
 async function runTurn(win, { sessionId, message, model, uiLang }) {
@@ -290,7 +309,12 @@ async function runTurn(win, { sessionId, message, model, uiLang }) {
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   const acct = loadToken();
   const env = {
-    PATH: envPath, HOME: os.homedir(),
+    // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
+    // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
+    // (實測:前置的路徑被擠到 Homebrew 後面)。所以另外給 BLAVE_PYTHON,runtime 會把
+    // 「這個 workspace 的 python 是哪一顆」明寫進 prompt——環境變數不會被重排。
+    PATH: path.join(BASE, "venv", "bin") + path.delimiter + envPath, HOME: os.homedir(),
+    BLAVE_PYTHON: VENV_PY,
     // 有帳號 token = 用 Blave 的 AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
     // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
     // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。

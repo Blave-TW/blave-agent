@@ -26,6 +26,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   prompt 走 stdin(不進 argv)。頂層 `error` 事件不是終局(Codex 原始碼:重連通知走這條),
   只有 `turn.failed` 才是。
 
+- 電腦版:環境變數 `BLAVE_PYTHON`(外殼帶 venv python 的絕對路徑)有設時,`python_rule()`
+  把「這個 workspace 的 python3 就是這個路徑」加進指示——Claude 走 system prompt 檔、Codex 走
+  prompt 前綴,同一條規則。起因:Codex 用登入 shell 跑指令,profile 重排 PATH,`python3`
+  解析到沒裝套件的那顆(回測報缺 pandas);PATH 前置救不了,環境變數不會被 profile 動。
+  沒設(整個機隊)→ 回傳空字串,system prompt 逐字不變(`tests/check_codex_engine.py` §5)。
+
 ## 1.1.82 — 2026-09-18
 
 - 環境變數 `BLAVECLAW_HOME` 更名為 `BLAVE_AGENT_HOME`。`agent_turn` / `telegram_pairing`

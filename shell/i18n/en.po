@@ -159,5 +159,8 @@ msgstr "Your Blave sign-in is no longer valid. Please sign in again."
 msgid "engine.workspace"
 msgstr "Creating the workspace at ~/Blave/workspace …"
 
+msgid "engine.deps"
+msgstr "Installing the Python packages strategies need (pandas, numpy…), first run only…"
+
 msgid "engine.preparing"
 msgstr "Preparing the engine (first run installs it, about a minute)…"

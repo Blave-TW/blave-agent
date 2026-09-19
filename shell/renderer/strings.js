@@ -58,6 +58,7 @@ const STRINGS = {
     "fault.noCreditBtn": "Top up",
     "conn.expired": "Your Blave sign-in is no longer valid. Please sign in again.",
     "engine.workspace": "Creating the workspace at ~/Blave/workspace …",
+    "engine.deps": "Installing the Python packages strategies need (pandas, numpy…), first run only…",
     "engine.preparing": "Preparing the engine (first run installs it, about a minute)…",
   },
   zh: {
@@ -113,6 +114,7 @@ const STRINGS = {
     "fault.noCreditBtn": "儲值",
     "conn.expired": "Blave 登入已失效，請重新登入。",
     "engine.workspace": "建立工作區 ~/Blave/workspace …",
+    "engine.deps": "正在安裝策略需要的 Python 套件（pandas、numpy…），只有第一次…",
     "engine.preparing": "正在準備引擎（第一次會安裝，約一分鐘）…",
   },
 };
