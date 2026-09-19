@@ -64,11 +64,15 @@ function enterWorkspace(kind, info) {
 }
 
 $("btn-redetect").addEventListener("click", detect);
+// 等待期間這顆鈕變成「取消」而不是變灰:用戶把瀏覽器分頁關掉之後不會有人按
+// 「允許」,沒有取消的話這裡就卡到五分鐘逾時為止。
+let oauthPending = false;
 $("btn-blave").addEventListener("click", async () => {
   const b = $("btn-blave");
-  b.disabled = true;
+  if (oauthPending) { window.blave.cancelOAuth(); return; }
   const was = b.textContent;
-  b.textContent = "等待瀏覽器授權…";
+  oauthPending = true;
+  b.textContent = "取消等待";
   $("cn-hint").textContent = "已在瀏覽器開啟授權頁,完成後會自動回到這裡。";
   $("cn-hint").hidden = false;
   try {
@@ -78,8 +82,14 @@ $("btn-blave").addEventListener("click", async () => {
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
   } catch (e) {
-    $("cn-hint").textContent = (e && e.message) || "授權失敗。";
-    b.disabled = false;
+    const m = (e && e.message) || "";
+    // IPC 會把訊息包成「Error invoking remote method …: Error: X」,所以比對記號
+    // 而不是整串相等。
+    $("cn-hint").textContent = /OAUTH_CANCELLED/.test(m)
+      ? "已取消。要用 Blave 的 AI 再按一次。"
+      : m || "授權失敗。";
+  } finally {
+    oauthPending = false;
     b.textContent = was;
   }
 });
@@ -278,6 +288,16 @@ window.blave.onTurnEnd((r) => {
 
 (async () => {
   const prev = await window.blave.loadConnection();
+  // kind 說「用 Blave 的 AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
+  // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走
+  // 本機模式 —— 帳算在用戶自己的 Claude Code 訂閱上。那個 footer 不能說謊。
+  if (prev && prev.kind === "blave" && !(await window.blave.hasBlaveToken())) {
+    await window.blave.clearConnection();
+    detect();
+    $("cn-hint").textContent = "Blave 登入已失效,請重新登入。";
+    $("cn-hint").hidden = false;
+    return;
+  }
   if (prev && prev.kind) { enterWorkspace(prev.kind, prev); return; }
   detect();
 })();

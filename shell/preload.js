@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("blave", {
   loadConnection: () => ipcRenderer.invoke("load-connection"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   startOAuth: (lang) => ipcRenderer.invoke("start-oauth", lang),
+  cancelOAuth: () => ipcRenderer.invoke("cancel-oauth"),
+  clearConnection: () => ipcRenderer.invoke("clear-connection"),
   hasBlaveToken: () => ipcRenderer.invoke("has-blave-token"),
   clearBlaveToken: () => ipcRenderer.invoke("clear-blave-token"),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),

@@ -82,6 +82,10 @@ function saveConnection(choice) {
   fs.writeFileSync(statePath(), JSON.stringify({ ...choice, at: new Date().toISOString() }));
   return true;
 }
+function clearConnection() {
+  try { fs.unlinkSync(statePath()); } catch (_) {}
+  return true;
+}
 function loadConnection() {
   try { return JSON.parse(fs.readFileSync(statePath(), "utf8")); } catch (_) { return null; }
 }
@@ -136,7 +140,19 @@ function postJSON(url, body) {
   });
 }
 
+// 等待瀏覽器那段可以被取消(用戶關掉分頁就沒人會按「允許」,按鈕不能卡在那裡)。
+let pendingOAuth = null;
+
+function cancelOAuth() {
+  if (!pendingOAuth) return false;
+  const p = pendingOAuth;
+  pendingOAuth = null;
+  p.abort();
+  return true;
+}
+
 async function startOAuth(lang) {
+  cancelOAuth();
   const verifier = b64url(crypto.randomBytes(32));
   const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
   const state = b64url(crypto.randomBytes(16));
@@ -152,12 +168,22 @@ async function startOAuth(lang) {
 
   const code = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { server.close(); reject(new Error("授權逾時(5 分鐘)")); }, 300000);
+    // 取消與逾時走同一個出口:關掉 server、清掉計時器,錯誤碼讓 renderer 認得出
+    // 「這是我自己按的」,不要畫成失敗。
+    pendingOAuth = {
+      abort: () => {
+        clearTimeout(timer); server.close();
+        // 記號寫在 message 裡:IPC 只搬得動 message,自訂欄位到不了 renderer。
+        reject(new Error("OAUTH_CANCELLED"));
+      },
+    };
     server.on("request", (req, res) => {
       const u = new URL(req.url, "http://127.0.0.1");
       if (u.pathname !== "/callback") { res.writeHead(404); res.end(); return; }
       res.writeHead(204); res.end();
       clearTimeout(timer);
       server.close();
+      pendingOAuth = null;
       if (u.searchParams.get("state") !== state) return reject(new Error("state 不符,可能被攔截"));
       const err = u.searchParams.get("error");
       if (err) return reject(new Error(err === "access_denied" ? "你在瀏覽器取消了授權" : err));
@@ -169,7 +195,11 @@ async function startOAuth(lang) {
       code_challenge: challenge, code_challenge_method: "S256", state,
       device_label: os.hostname().replace(/\.local$/, "").slice(0, 64),
     });
-    shell.openExternal(`${WEB_BASE}/desktop/${lang || "zh"}/authorize?${q}`);
+    const authUrl = `${WEB_BASE}/desktop/${lang || "zh"}/authorize?${q}`;
+    // 開發時把網址印出來(challenge / state 本來就是公開值,verifier 不在裡面):
+    // 授權頁一出問題,沒有這行就只能從瀏覽器網址列抄 43 字的 challenge。
+    if (!app.isPackaged) console.log("[oauth] " + authUrl);
+    shell.openExternal(authUrl);
   });
 
   const r = await postJSON(`${API_BASE}/oauth/desktop/token`, {
@@ -182,6 +212,8 @@ async function startOAuth(lang) {
   if (!saveToken(r.body.access_token)) {
     throw new Error("這台電腦無法安全儲存憑證(Keychain 不可用),沒有保存。");
   }
+  // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
+  app.focus({ steal: true });
   return { ok: true };
 }
 
@@ -311,6 +343,8 @@ app.whenReady().then(() => {
     return ensureEngine((t) => win.webContents.send("engine-progress", t));
   });
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
+  ipcMain.handle("cancel-oauth", () => cancelOAuth());
+  ipcMain.handle("clear-connection", () => clearConnection());
   ipcMain.handle("has-blave-token", () => !!loadToken());
   ipcMain.handle("clear-blave-token", () => { clearToken(); return true; });
   ipcMain.handle("send-message", (e, payload) => {
