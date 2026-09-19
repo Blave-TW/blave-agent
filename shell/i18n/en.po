@@ -6,14 +6,11 @@ msgstr ""
 msgid "cn.h"
 msgstr "Blave has no AI of its own."
 
-msgid "cn.sub"
-msgstr "Connect one to write strategies and run backtests."
-
 msgid "cn.blave.title"
 msgstr "Use Blave's AI"
 
 msgid "cn.blave.desc"
-msgstr "Sign in with your Blave account. Pay per use, no AI subscription needed."
+msgstr "Pay per use"
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
@@ -25,7 +22,7 @@ msgid "cn.local.label"
 msgstr "Local agent"
 
 msgid "cn.local.desc"
-msgstr "Use the Claude Code or Codex subscription you already have."
+msgstr "Your Claude Code or Codex — no Blave AI fee"
 
 msgid "cn.redetect"
 msgstr "Detect again"

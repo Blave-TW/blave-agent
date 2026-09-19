@@ -6,14 +6,11 @@ msgstr ""
 msgid "cn.h"
 msgstr "Blave 不內建 AI。"
 
-msgid "cn.sub"
-msgstr "接上一個來寫策略、跑回測。"
-
 msgid "cn.blave.title"
 msgstr "用 Blave 的 AI"
 
 msgid "cn.blave.desc"
-msgstr "登入 Blave 帳號即可開始，按用量計費，不需要自己的 AI 訂閱。"
+msgstr "按用量計費"
 
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
@@ -25,7 +22,7 @@ msgid "cn.local.label"
 msgstr "本機 agent"
 
 msgid "cn.local.desc"
-msgstr "用你已經有的 Claude Code 或 Codex 訂閱。"
+msgstr "你的 Claude Code 或 Codex，Blave 不收 AI 費用"
 
 msgid "cn.redetect"
 msgstr "重新偵測"
