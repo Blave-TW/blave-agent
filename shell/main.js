@@ -1,7 +1,9 @@
 // Blave 電腦版 — Electron 主行程(v1 骨架)
 // 只做三件事:開視窗、偵測本機 agent(IPC)、記住使用者的連結選擇。
 // 引擎 spawn 在第 4 步接,不在這裡。
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, safeStorage } = require("electron");
+const http = require("http");
+const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { execFile } = require("child_process");
 const path = require("path");
@@ -84,6 +86,105 @@ function loadConnection() {
   try { return JSON.parse(fs.readFileSync(statePath(), "utf8")); } catch (_) { return null; }
 }
 
+// ── OAuth(用 Blave 的 AI)─────────────────────────────────────
+// RFC 8252 原生 app 的 loopback 流程:軟體開源所以沒有 client secret,
+// 用 PKCE(S256)。同意頁在 blave.org,換 token 打 api.blave.org。
+const WEB_BASE = "https://blave.org";
+const API_BASE = "https://api.blave.org";
+const CLIENT_ID = "blave-desktop";
+const tokenPath = () => path.join(app.getPath("userData"), "blave-token.bin");
+
+function b64url(buf) {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// token 存 Keychain(safeStorage 背後就是它)。拿不到加密能力時不落地——
+// 寧可每次重新授權,也不要在開源軟體裡留一個明文的計費憑證。
+function saveToken(tok) {
+  if (!safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(tokenPath(), safeStorage.encryptString(tok), { mode: 0o600 });
+  return true;
+}
+function loadToken() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    return safeStorage.decryptString(fs.readFileSync(tokenPath()));
+  } catch (_) { return null; }
+}
+function clearToken() {
+  try { fs.unlinkSync(tokenPath()); } catch (_) {}
+}
+
+function postJSON(url, body) {
+  return new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = require("https").request(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
+      timeout: 20000,
+    }, (res) => {
+      let buf = "";
+      res.on("data", (d) => { buf += d; });
+      res.on("end", () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(buf || "{}") }); }
+        catch (_) { resolve({ status: res.statusCode, body: {} }); }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+    req.end(data);
+  });
+}
+
+async function startOAuth(lang) {
+  const verifier = b64url(crypto.randomBytes(32));
+  const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
+  const state = b64url(crypto.randomBytes(16));
+
+  // 先把 server 起好才知道 port —— redirect_uri 要帶進同意頁
+  const server = http.createServer();
+  await new Promise((ok, no) => {
+    server.once("error", no);
+    server.listen(0, "127.0.0.1", ok);
+  });
+  const port = server.address().port;
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+
+  const code = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { server.close(); reject(new Error("授權逾時(5 分鐘)")); }, 300000);
+    server.on("request", (req, res) => {
+      const u = new URL(req.url, "http://127.0.0.1");
+      if (u.pathname !== "/callback") { res.writeHead(404); res.end(); return; }
+      res.writeHead(204); res.end();
+      clearTimeout(timer);
+      server.close();
+      if (u.searchParams.get("state") !== state) return reject(new Error("state 不符,可能被攔截"));
+      const err = u.searchParams.get("error");
+      if (err) return reject(new Error(err === "access_denied" ? "你在瀏覽器取消了授權" : err));
+      const c = u.searchParams.get("code");
+      c ? resolve(c) : reject(new Error("回來了但沒有 code"));
+    });
+    const q = new URLSearchParams({
+      client_id: CLIENT_ID, redirect_uri: redirectUri,
+      code_challenge: challenge, code_challenge_method: "S256", state,
+      device_label: os.hostname().replace(/\.local$/, "").slice(0, 64),
+    });
+    shell.openExternal(`${WEB_BASE}/desktop/${lang || "zh"}/authorize?${q}`);
+  });
+
+  const r = await postJSON(`${API_BASE}/oauth/desktop/token`, {
+    grant_type: "authorization_code", client_id: CLIENT_ID,
+    code, code_verifier: verifier, redirect_uri: redirectUri,
+  });
+  if (r.status !== 200 || !r.body.access_token) {
+    throw new Error(r.body.error_description || r.body.error || `換 token 失敗(HTTP ${r.status})`);
+  }
+  if (!saveToken(r.body.access_token)) {
+    throw new Error("這台電腦無法安全儲存憑證(Keychain 不可用),沒有保存。");
+  }
+  return { ok: true };
+}
+
 // ── 第 4 步:引擎 ─────────────────────────────────────────────
 // dev 佈局:repo checkout 就在 shell/ 上一層;打包版之後改成 app 資源路徑。
 const REPO = path.join(__dirname, "..");
@@ -141,8 +242,13 @@ async function runTurn(win, { sessionId, message, model }) {
   const envPath = await loginShellPath();
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
+  const acct = loadToken();
   const env = {
     PATH: envPath, HOME: os.homedir(),
+    // 有帳號 token = 用 Blave 的 AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
+    // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
+    // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
+    ...(acct ? { BLAVE_PROXY_TOKEN: acct } : {}),
     // Keychain/暫存都認人:少了 USER,claude CLI 會回「Not logged in」(實測 repro-2/3)
     USER: process.env.USER || os.userInfo().username,
     LOGNAME: process.env.LOGNAME || os.userInfo().username,
@@ -200,6 +306,9 @@ app.whenReady().then(() => {
     const win = BrowserWindow.fromWebContents(e.sender);
     return ensureEngine((t) => win.webContents.send("engine-progress", t));
   });
+  ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
+  ipcMain.handle("has-blave-token", () => !!loadToken());
+  ipcMain.handle("clear-blave-token", () => { clearToken(); return true; });
   ipcMain.handle("send-message", (e, payload) => {
     if (activeTurn) return { busy: true };
     const win = BrowserWindow.fromWebContents(e.sender);

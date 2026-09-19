@@ -64,10 +64,24 @@ function enterWorkspace(kind, info) {
 }
 
 $("btn-redetect").addEventListener("click", detect);
-$("btn-blave").addEventListener("click", () => {
-  // OAuth(PKCE)是之後的工項;先誠實顯示,不做假流程
-  $("cn-hint").textContent = "Blave 登入還沒接上(OAuth 是下一批工項)。先用本機 agent。";
+$("btn-blave").addEventListener("click", async () => {
+  const b = $("btn-blave");
+  b.disabled = true;
+  const was = b.textContent;
+  b.textContent = "等待瀏覽器授權…";
+  $("cn-hint").textContent = "已在瀏覽器開啟授權頁,完成後會自動回到這裡。";
   $("cn-hint").hidden = false;
+  try {
+    // 同意頁的 <lang> 只收 en/zh/cn/ja/vi/es/pt;index.html 是 zh-Hant,
+    // 直接送會落到 en 的退路,用戶會看到英文授權頁。
+    await window.blave.startOAuth("zh");
+    await window.blave.saveConnection({ kind: "blave" });
+    enterWorkspace("blave", {});
+  } catch (e) {
+    $("cn-hint").textContent = (e && e.message) || "授權失敗。";
+    b.disabled = false;
+    b.textContent = was;
+  }
 });
 $("btn-send").addEventListener("click", sendDraft);
 // 注音/日文選字時的 Enter 是「確定候選字」,不是送出。逐字照 web 工作頁
