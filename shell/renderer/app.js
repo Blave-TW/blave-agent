@@ -269,11 +269,13 @@ function classifyFault(text) {
   // 錨在引擎故障訊息的開頭,不是「內文出現 API Error」就算:用戶問「我的交易所
   // 呼叫為什麼回 402」時,agent 的回覆裡也會有那串,不錨定就會把整句答案換成
   // 一顆儲值鈕。開頭這句是 Claude Code 的固定前綴(實測 403 那次逐字對過)。
-  const m = /^Failed to authenticate\. API Error: (40[123])\b/.exec(text || "");
+  const m = /^(?:Failed to authenticate\. )?API Error: (40[123])\b/.exec(text || "");
   if (!m) return null;
   if (m[1] === "402") {
     return { text: "Blave 額度不足,這一輪沒有跑。", label: "儲值",
-             act: () => window.blave.openExternal("https://blave.org/agent/zh/usage") };
+             // #topup:用量頁自己會在餘額回來之後捲到儲值區(web 那邊已經處理過
+             // 原生 hash 捲動的時序),直接落在該按的地方。
+             act: () => window.blave.openExternal("https://blave.org/agent/zh/usage#topup") };
   }
   return {
     text: "這台電腦的 Blave 授權已失效(被撤銷或過期),這一輪沒有跑。",
