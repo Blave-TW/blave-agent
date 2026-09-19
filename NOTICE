@@ -1,0 +1,15 @@
+Blave Agent
+Copyright 2025-2026 Blave
+
+This product includes software developed at Blave (https://blave.org).
+
+The `openclaw` name that appears in file names, API paths and machine paths
+(openclaw.json, /openclaw/... endpoints, patches/, SSH hosts) is the name of an
+earlier framework. Those locations really carry that name on disk and on the
+API, so the code and docs spell it as it is. The Blave Agent runtime in
+runtime/ has been first-party since 2026-07-25 (see runtime/CHANGELOG.md) and
+is unrelated to that product.
+
+The desktop shell in shell/ launches — but does not redistribute — third-party
+agent CLIs (Claude Code, Codex) that the user installs and authenticates
+themselves. Electron, used by the shell at build time, is MIT licensed.

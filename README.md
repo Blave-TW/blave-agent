@@ -23,6 +23,16 @@ checkout 要跟這個 repo 並排**;不在的話會帶著完整路徑當場失�
 
 Fresh installs are handled automatically by the provisioning script — no manual steps needed.
 
+## 授權
+
+**Apache-2.0**(見 `LICENSE`、`NOTICE`)。可以自由使用、修改、散布,含商業用途;含專利授權。
+
+**你自己寫的策略是你的。** `strategies/` 底下你(或 agent 替你)寫出來的東西不屬於本專案,
+授權不及於它;只要你不散布,就沒有任何義務。
+
+付費的部分不在這個 repo 裡:雲端主機、市場資料與 Blave 的 LLM proxy 都是 blave.org 的服務。
+這份程式碼可以完全免費地在你自己的電腦上跑,接你自己的 AI 訂閱與你自己的資料來源。
+
 **關於 `openclaw` 這個名字**:那是這套系統早期框架的名字。機器上的設定檔(`openclaw.json`)、
 API 路徑(`/openclaw/...`)與 SSH 主機名沿用它,因為那些位置**真的**叫這個名字,文件照實寫。
 Blave Agent 的 runtime 自 2026-07-25 起是自架的(`runtime/`,見 `runtime/CHANGELOG.md`),與該產品無關。
