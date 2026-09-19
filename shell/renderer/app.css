@@ -4,9 +4,60 @@ html, body { margin: 0; height: 100%; background: var(--bg-body); }
 [hidden] { display: none !important; }
 .cn-bar { -webkit-app-region: drag; height: 38px; }
 .ws-brand { padding-top: 14px; }           /* hiddenInset 紅綠燈的空間 */
+/* 自動長高:高度由 JS 量 scrollHeight 寫進 style,這裡只定上限與節奏
+   (照 web/app/static/css/agent/workspace.css `.chat-input textarea` 的
+   max-height 120px / padding 4px 0 / 13px·1.5 —— 約 6 行滿版後自己捲) */
 .chat-input textarea {
   flex: 1; background: none; border: none; outline: none; resize: none;
   color: inherit; font: inherit; line-height: 1.5;
+  max-height: 120px; padding: var(--space-4) 0;
 }
+.chat-input textarea::placeholder { color: var(--ink-3); }
 .ws-conn { margin-top: auto; padding: 10px 14px; font-size: 11px; opacity: .55; }
 .msg.sys { opacity: .6; font-size: 12px; }
+
+/* =========================================================================
+   等待指示器 — 網頁工作頁「思考列」的 v1 子集
+   來源:web/app/static/css/agent/workspace.css 約 1830–1945(.think-indicator /
+   .think-head / .think-ticks / .think-verb / .think-elapsed / .is-fading)。
+   搬過來的是 tick 條 + 動詞 + 秒數;**沒搬**展開面板(chevron / .think-reason /
+   .think-steps)——v1 不展開思考內容、沒有工具收據列,回合結束直接淡出移除。
+   差別兩處:① 色改引 mockup.css 的角色變數(--ink / --ink-3),不寫死 dark token,
+   因為這個外殼的 CSS 亮暗兩態都成立;② 它是 .chat-scroll 的最後一個兄弟節點
+   (不是巢在某一回合裡),所以下緣間距對齊 .msg 的 24 而不是 web 的 4。
+   ========================================================================= */
+.think-indicator {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-24);
+  color: var(--ink-3); font-size: 13px; line-height: 1.5;
+}
+/* 淡出:回合結束後移除前先褪,時長走 --motion-base(JS 讀同一顆 token 對時) */
+.think-indicator.is-fading {
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+.think-head {
+  display: inline-flex; align-items: center; align-self: flex-start;
+  gap: var(--space-8); min-height: 26px;
+}
+/* tick 條:一秒一格。最新那格在最右、滿墨,舊的按年齡退色並整條往左滑出
+   44px 窗口——每一格都是真的過去了一秒,不是裝飾性 loader(同 web 註解) */
+.think-ticks { position: relative; flex: none; width: 44px; height: 12px; overflow: hidden; }
+.think-ticks-in {
+  position: absolute; left: 0; bottom: 0; white-space: nowrap;
+  font-size: 0;                            /* 殺掉 inline-block 之間的空白 */
+  transition: transform var(--motion-base) var(--ease-standard);
+}
+/* 2px 格、6px 間距、直角切邊(radius scale 從 4px 起,2px 條會被畫成藥丸) */
+.think-ticks-in i {
+  display: inline-block; width: 2px; height: 10px; margin-right: 4px;
+  background: var(--ink); opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+.think-verb { flex: none; font-size: 11px; line-height: 1; color: var(--ink-3); }
+/* tabular-nums:9s → 10s 不會把動詞推一下(web 那邊由 .mono 帶,外殼沒有 mono) */
+.think-elapsed {
+  flex: none; font-size: 11px; line-height: 1; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
