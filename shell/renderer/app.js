@@ -242,7 +242,7 @@ async function sendDraft() {
   if (!t || running) return;
   running = true; $("btn-send").disabled = true;
   addMsg("you", t); $("ta").value = ""; autosize();
-  liveBubble = null;
+  liveBubble = null; faultShown = false;
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
@@ -260,9 +260,53 @@ async function sendDraft() {
 }
 
 window.blave.onEngineProgress((t) => addMsg("sys", t));
+// 引擎把上游的錯誤原封不動當成回覆文字吐出來(實測:一次一整塊,不是逐字串流),
+// 長這樣:`Failed to authenticate. API Error: 403 …`。401/403 = 這台電腦的授權沒了、
+// 402 = 沒額度,兩種都不是重講一次就會好的事,要給出口而不是給英文。
+// 402 已經是幾秒內失敗;401 會被 Claude Code CLI 重試兩分鐘以上,所以 api 那邊把
+// 帳號 token 失效改回 403(見 proxy.py `_unauthorized`),401 留給機器那條。
+function classifyFault(text) {
+  // 錨在引擎故障訊息的開頭,不是「內文出現 API Error」就算:用戶問「我的交易所
+  // 呼叫為什麼回 402」時,agent 的回覆裡也會有那串,不錨定就會把整句答案換成
+  // 一顆儲值鈕。開頭這句是 Claude Code 的固定前綴(實測 403 那次逐字對過)。
+  const m = /^Failed to authenticate\. API Error: (40[123])\b/.exec(text || "");
+  if (!m) return null;
+  if (m[1] === "402") {
+    return { text: "Blave 額度不足,這一輪沒有跑。", label: "儲值",
+             act: () => window.blave.openExternal("https://blave.org/agent/zh/usage") };
+  }
+  return {
+    text: "這台電腦的 Blave 授權已失效(被撤銷或過期),這一輪沒有跑。",
+    label: "重新登入",
+    act: async () => {
+      // 兩份狀態都自己清:token 檔 + connect.json。只清 token 也會work(啟動檢查
+      // 會接住),但那是靠別人的失敗分支收尾,那條路一改這顆鈕就無聲壞掉。
+      await window.blave.clearBlaveToken();
+      await window.blave.clearConnection();
+      location.reload();
+    },
+  };
+}
+
+// 分類過的錯誤畫完之後,引擎緊接著那句「這輪沒跑起來」就是重複,吞掉。
+let faultShown = false;
+
+function addFault(f) {
+  const el = addMsg("sys", f.text);
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "btn-fill"; b.textContent = f.label;
+  b.style.marginTop = "var(--space-8)"; b.style.display = "block";
+  b.addEventListener("click", f.act);
+  el.appendChild(b);
+  el.style.opacity = "1";   // .msg.sys 是 .6,這條要讀得清楚
+  scrollChat();
+}
+
 window.blave.onTurnEvent((c) => {
   if (c.type === "text") {
     busyHide();
+    const f = classifyFault(c.text);
+    if (f) { faultShown = true; addFault(f); liveBubble = null; return; }
     if (!liveBubble) liveBubble = addMsg("ai", "");
     liveBubble.textContent += c.text;
   } else if (c.type === "text_replace") {
@@ -276,6 +320,7 @@ window.blave.onTurnEvent((c) => {
     // v1 不展開思考內容,只讓指示器回到「思考中」(回覆後又開始想時會用到)
     busySet("思考中");
   } else if (c.type === "error") {
+    if (faultShown && c.code === "not_started") { faultShown = false; return; }
     addMsg("sys", "出錯了:" + (c.message || ""));
   }
   scrollChat();
