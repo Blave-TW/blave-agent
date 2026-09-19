@@ -597,6 +597,9 @@ window.blave.onEngineProgress((key) => addMsg("sys", t(key)));
 /* 選的 model 這個帳號用不了(訂閱方案沒有、或名字不存在)。實測字串(把 --model 設成
    不存在的名字跑一輪):
      There's an issue with the selected model (X). It may not exist or you may not have access to it.
+   「名字不存在」與「帳號沒有權限」是**同一句**:#68121 的用戶沒有 Fable 的權限,API 回
+   404 not_found_error「Claude Fable 5 is not available…」,CLI 顯示的就是上面這句;
+   #52569 的 Pro 用戶權限沒被認到,每個 model 都是這句。所以一個 regex 兩種都接得到。
    三秒內就失敗,不像 401 會轉圈。我們沒辦法事先知道哪個帳號有哪些 model——Claude 沒有
    可查的型錄,逐個試又會燒用戶的額度——所以做法是:讓它快速失敗、講人話、把選擇換回
    預設(下一句就能用),並在面板上把那個 model 標起來,免得再踩一次。 */
@@ -605,12 +608,17 @@ const NO_MODEL_RE = /^There's an issue with the selected model \(([^)]+)\)/;
 function classifyFault(text) {
   const nm = NO_MODEL_RE.exec(text || "");
   if (nm) {
-    const bad = MP.models.find((m) => m.id === nm[1]);
+    // 括號裡的名字**不能拿來認人**:我們送的是別名(`fable`),CLI 會先解析成完整 id 才
+    // 報錯(`claude-fable-5`,見 anthropics/claude-code#68121 的實際輸出),兩個字串對
+    // 不起來——拿它去標記會標到一個不存在的 id,選擇也不會換回預設。出事的一定是這一輪
+    // 送出去的那個 model,所以用 turnModel;括號裡的字只在認不出來時拿來顯示。
+    const id = turnModel || nm[1];
+    const bad = MP.models.find((m) => m.id === id);
     const name = bad ? bad.name : nm[1];
-    mpMarkUnavailable(nm[1]);
+    mpMarkUnavailable(id);
     const back = mpCur();
     return {
-      text: back && back.id !== nm[1]
+      text: back && back.id !== id
         ? t("fault.noModelSwitched", { model: name, to: back.name })
         : t("fault.noModel", { model: name }),
       label: t("fault.noModelBtn"),
