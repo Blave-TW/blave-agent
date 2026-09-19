@@ -1998,8 +1998,25 @@ def _resume_note(tool_steps):
             + _fault_receipt_suffix(tool_steps))
 
 
+def _codex_prompt(prompt, sink):
+    """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
+    the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
+    (codex_engine.build_args lifts its size cap), and inlining it would feed it twice.
+    model_catalog_rule is left out on purpose — it teaches switching between the proxy's
+    models, and this engine runs whatever the user's own Codex is set to."""
+    return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
+            + preferences_rule() + sink.formatting_rule
+            + "\n\n---\n\n" + prompt)
+
+
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
-                   viewing_view=None, viewing_widgets=None, ui_lang=None):
+                   viewing_view=None, viewing_widgets=None, ui_lang=None,
+                   engine="claude", codex_bin=None):
+    # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
+    # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
+    # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
+    # tests/check_codex_engine.py)。
+    use_codex = engine == "codex"
     summary, recent = ss.get_context(session_id)
     reply_lang = _resolve_reply_lang(ui_lang)
     prompt = build_prompt(summary, recent, message,
@@ -2079,7 +2096,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + model_catalog_rule(session_id) + preferences_rule() + sink.formatting_rule
-    ) if agents_md else None
+    ) if agents_md and not use_codex else None
     options = sdk.ClaudeAgentOptions(
         model=model,
         env=turn_env,
@@ -2148,7 +2165,26 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     is_web = isinstance(sink, WebSink)
     strat_sig = None
     try:
-        for attempt in (1, 2):
+        if use_codex:
+            import codex_engine  # 只在這條路徑載入:機隊的回合連 import 都不發生
+
+            def _codex_tool_start(name, params):
+                nonlocal touched
+                tool_steps.append((name, _tool_summary(name, params)))
+                touched |= _touched_strategies(name, params)
+
+            def _codex_tool_done():
+                nonlocal strat_sig
+                if not getattr(sink, "interrupted", False):
+                    strat_sig = _maybe_push_strategies(sink, strat_sig, touched=touched)
+
+            await codex_engine.run(
+                codex_bin, _codex_prompt(prompt, sink), WORKSPACE,
+                {**os.environ,
+                 **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
+                sink, _codex_tool_start, _codex_tool_done)
+        # 空回合續跑是為 DeepSeek 串流斷掉設的,Codex 沒有那個症狀,不重跑。
+        for attempt in () if use_codex else (1, 2):
             query_iter = sdk.query(prompt=prompt, options=options)
             # Text already delivered as deltas, one entry per content block, so the
             # completed TextBlocks below are not re-sent. Reconciled rather than
@@ -2361,6 +2397,11 @@ def main():
     parser.add_argument("--viewing-widgets", default=None)  # JSON 字串陣列
     # 不設 choices(同 --viewing-view):怪值只當沒送,不能 exit 2 整輪死;白名單在 _resolve_reply_lang
     parser.add_argument("--ui-lang", default=None)
+    # 電腦版專屬。不帶 = claude = 機隊原本的路徑;不設 choices(同 --ui-lang),"codex"
+    # 以外的值一律當 claude。codex 時 --model 不使用(那個值是 Claude 的模型名,Codex 用
+    # 用戶自己設定的預設)。
+    parser.add_argument("--engine", default="claude")
+    parser.add_argument("--codex-bin", default=None)
     args = parser.parse_args()
     viewing_widgets = parse_viewing_widgets(args.viewing_widgets)
 
@@ -2381,7 +2422,7 @@ def main():
         args.session_id, args.message, args.model, sink,
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
         viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
-        ui_lang=args.ui_lang,
+        ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
     ))
     print(reply)
 
