@@ -217,7 +217,7 @@ function addMsg(cls, text) {
   const el = document.createElement("div");
   el.className = "msg " + cls;
   if (cls === "you") {
-    // 泡泡樣式掛在子元素上(mockup.css `.msg.you .bubble`);.msg.you 自己只負責靠右
+    // 泡泡樣式掛在子元素上(app.css `.msg.you .bubble`);.msg.you 自己只負責靠右
     const b = document.createElement("div");
     b.className = "bubble"; b.textContent = text;
     el.appendChild(b);

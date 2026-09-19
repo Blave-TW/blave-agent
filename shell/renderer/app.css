@@ -202,7 +202,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    .think-head / .think-ticks / .think-verb / .think-elapsed / .is-fading)。
    搬過來的是 tick 條 + 動詞 + 秒數;**沒搬**展開面板(chevron / .think-reason /
    .think-steps)——v1 不展開思考內容、沒有工具收據列,回合結束直接淡出移除。
-   差別兩處:① 色改引 mockup.css 的角色變數(--ink / --ink-3),不寫死 dark token,
+   差別兩處:① 色改引 tokens.css 的角色變數(--ink / --ink-3),不寫死 dark token,
    因為這個外殼的 CSS 亮暗兩態都成立;② 它是 .chat-scroll 的最後一個兄弟節點
    (不是巢在某一回合裡),所以下緣間距對齊 .msg 的 24 而不是 web 的 4。
    ========================================================================= */

@@ -77,9 +77,18 @@ for (const f of ["renderer/app.js", "renderer/index.html"]) {
 // 產到暫存再比對,不比 hash:標頭那行以後要改,hash 會無謂地紅。
 // 沒有 babel 的環境(別台機器、CI)跳過,前三項仍然照跑。
 const { execFileSync } = require("child_process");
-const PY = "/Users/tsengweiyu/.local/share/virtualenvs/web-SVY6yWQL/bin/python";
-if (!fs.existsSync(PY)) {
-  console.log("SKIP  strings.js 同步檢查(找不到有 babel 的 python)");
+// 找一顆裝了 babel 的 python:先看 BLAVE_PO_PYTHON,再試 PATH 上的 python3。
+// 不寫死任何人機器上的路徑——這是公開 repo。
+function findPython() {
+  for (const py of [process.env.BLAVE_PO_PYTHON, "python3"].filter(Boolean)) {
+    try { execFileSync(py, ["-c", "import babel"], { stdio: "pipe" }); return py; }
+    catch (_) { /* 下一個 */ }
+  }
+  return null;
+}
+const PY = findPython();
+if (!PY) {
+  console.log("SKIP  strings.js 同步檢查(找不到裝了 babel 的 python;可設 BLAVE_PO_PYTHON)");
 } else {
   const keep = read("renderer/strings.js");
   try {
