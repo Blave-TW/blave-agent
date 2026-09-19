@@ -39,8 +39,20 @@ class _RateLimiter:
                     self._calls = [t for t in self._calls if now - t < self._period]
             self._calls.append(time.time())
 
-BASE      = 'https://api.blave.org'
+# Overridable so the desktop build (free software, user's own machine) can point
+# the whole lib somewhere else. Unset on every fleet machine → unchanged.
+BASE      = os.environ.get('BLAVE_API_BASE', 'https://api.blave.org')
 _CACHE_DIR = Path(__file__).parent.parent / 'cache'
+
+
+def _kline_source():
+    """'blave' (default) or 'binance' — where fetch_kline gets its bars.
+
+    Read per call rather than at import so a shell that exports it after this
+    module is loaded still takes effect. Opt-in by design: an unset variable is
+    the fleet's behaviour, byte for byte.
+    """
+    return os.environ.get('BLAVE_KLINE_SOURCE', 'blave').strip().lower()
 
 
 def _retry_get(url, max_retries=6, **kwargs):
@@ -875,14 +887,24 @@ def fetch_kline(symbol, interval, start, end, headers):
     requests are chunked 30 days each server-side, so deep 1min backtests pull
     history month-by-month on first run. Cache namespace is kline2 — the old
     kline cache has Volume hard-zeroed and must not be mixed with real volume.
+
+    With BLAVE_KLINE_SOURCE=binance (the desktop build's BYO data) the bars come
+    straight from Binance's public endpoint instead, `headers` unused. Same
+    market (USDT-M perps), same columns, same kline2 cache. Not literally the
+    same bars: measured 2026-09-19, 8 of 41,335 1h BTCUSDT bars come back from
+    /kline as placeholders (O=H=L=C, Volume 0) where Binance has the real bar,
+    so a cache dir fed by both sources is a mixed one.
     """
     # Venue forms like 'BTC/USDT' → Binance 'BTCUSDT'; the API 400s on
     # separator forms and the separator would leak into the cache dir name.
     symbol = normalize_symbol(symbol)
+    if _kline_source() == 'binance':
+        fetch_raw = lambda s, e: _fetch_binance_kline_raw(symbol, interval, s, e)
+    else:
+        fetch_raw = lambda s, e: _fetch_kline_raw(symbol, interval, s, e, headers)
     df = _extend_cache_monthly(
         'kline2', {'symbol': symbol, 'period': interval},
-        lambda s, e: _fetch_kline_raw(symbol, interval, s, e, headers),
-        start, end,
+        fetch_raw, start, end,
     )
     return _sanity_check_ohlc(df, f'{symbol} {interval} kline')
 
@@ -896,8 +918,14 @@ def fetch_kline_batch(symbols, interval, start, end, headers):
     Uses the same monthly cache dir naming as fetch_kline ('kline2_{interval}_{symbol}')
     so single-symbol and batch calls share cache — a symbol already cached via
     fetch_kline is a warm hit here too, and vice versa. Warm ids are extended through
-    the batch endpoint too (not one call per symbol) — see _fetch_batch_cached."""
+    the batch endpoint too (not one call per symbol) — see _fetch_batch_cached.
+
+    Under BLAVE_KLINE_SOURCE=binance there is no batch endpoint to call, so this
+    fans out to fetch_kline per symbol — otherwise a desktop Type C backtest
+    would quietly keep pulling its prices from api.blave.org."""
     symbols = [normalize_symbol(s) for s in symbols]
+    if _kline_source() == 'binance':
+        return {sid: fetch_kline(sid, interval, start, end, headers) for sid in symbols}
     def _parse(records):
         df = pd.DataFrame(records)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
@@ -1002,6 +1030,136 @@ def fetch_bingx_kline(symbol, interval, start, end):
         start, end,
     )
     return _sanity_check_ohlc(df, f'{symbol} {interval} bingx_kline')
+
+
+# ── BYO kline source: Binance fapi, no key ────────────────────────────────────
+# The desktop build is free software running on the user's own machine, so its
+# market data is BYO: with BLAVE_KLINE_SOURCE=binance, fetch_kline pages the
+# public Binance endpoint directly instead of api.blave.org. Off unless that
+# variable is set, so the fleet never reaches this code.
+
+# USDT-M perpetuals, deliberately — that is the market /kline serves and the
+# collector stores. Pointing this at spot (api.binance.com/api/v3/klines) would
+# make the same strategy backtest differently on the desktop than in the cloud,
+# because basis and funding live in the perp price and not in the spot price.
+_BINANCE_KLINES = 'https://fapi.binance.com/fapi/v1/klines'
+_BINANCE_PAGE   = 1000          # server cap per response, not a preference
+
+# fapi's own exchangeInfo reports 2400 request-weight per minute and a 1000-bar
+# kline page costs 5 (measured off the x-mbx-used-weight-1m header, not the
+# docs). 400 pages/min = 2000 weight, leaving headroom for whatever else the box
+# is doing; the 429 handling below is the backstop, not the throttle.
+_BINANCE_LIMITER = _RateLimiter(400, 60)
+
+# Binance and BingX spell intervals identically, so the lib's own '1min' family
+# maps onto both. Binance spellings map to themselves: lib/paper_data calls
+# fetch_kline with '1m'.
+_BINANCE_INTERVALS = {**_BINGX_INTERVALS, **{v: v for v in _BINGX_INTERVALS.values()}}
+
+
+def _binance_get(url, params, max_retries=6, timeout=30):
+    """GET a public Binance endpoint, honouring Retry-After on 429/418.
+
+    Deliberately not _retry_get: that one is the fleet's path to our own API and
+    its fixed 2/4/8… backoff is tuned for it. Binance answers a rate-limit with
+    the exact number of seconds to wait and escalates an ignored 429 into a 418
+    IP ban, so guessing the wait here is the wrong move.
+    """
+    for attempt in range(max_retries):
+        _BINANCE_LIMITER.acquire()
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            if attempt == max_retries - 1:
+                raise
+            wait = 2 ** (attempt + 1)
+            print(f'  {type(e).__name__} transient — retrying in {wait}s (binance klines)')
+            time.sleep(wait)
+            continue
+        if r.status_code in (429, 418) or r.status_code >= 500:
+            if attempt == max_retries - 1:
+                break
+            try:
+                wait = int(r.headers.get('Retry-After', ''))
+            except ValueError:
+                wait = 2 ** (attempt + 1)
+            print(f'  {r.status_code} from Binance — retrying in {wait}s')
+            time.sleep(min(wait, 300))
+            continue
+        try:
+            r.raise_for_status()
+        except requests.HTTPError as exc:
+            # Binance puts the reason in the body ({"code":-1121,"msg":"Invalid
+            # symbol."}); raise_for_status() alone would say only "400".
+            raise requests.HTTPError(f'{exc} — {r.text[:200]}', response=r) from exc
+        return r
+    r.raise_for_status()
+    return r
+
+
+def _binance_klines_to_df(rows):
+    """Binance's array-of-arrays → the five-column frame every lib consumer eats.
+
+    Index 0 is the bar's open time in ms, 1-4 OHLC, 5 the base-asset volume;
+    everything after (close time, quote volume, taker splits) is dropped.
+    """
+    cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    df = pd.DataFrame([row[:6] for row in rows], columns=['time'] + cols)
+    df['time'] = pd.to_datetime(df['time'].astype('int64'), unit='ms', utc=True)
+    df = df.set_index('time').sort_index()
+    df = df[~df.index.duplicated(keep='first')]
+    return df[cols].astype(float)
+
+
+def _fetch_binance_kline_raw(symbol, interval, start, end):
+    """_fetch_kline_raw's twin against Binance. Same 30/365-day chunking, so the
+    monthly cache sees the same spans either way; inside a chunk we page forward
+    on startTime because one response is capped at 1000 bars — a 30-day 1min
+    chunk is 43,200 of them.
+    """
+    bn_interval = _BINANCE_INTERVALS.get(interval)
+    if bn_interval is None:
+        raise ValueError(f"fetch_kline (binance source): unsupported interval {interval!r} "
+                         f"(supported: {', '.join(sorted(_BINANCE_INTERVALS))})")
+    s = datetime.strptime(start, '%Y-%m-%d')
+    e = datetime.utcnow() if not end else datetime.strptime(end, '%Y-%m-%d')
+    chunks, cursor = [], s
+    chunk_days = 30 if _is_sub_5min(interval) else 365
+    while cursor < e:
+        chunk_end = min(cursor + timedelta(days=chunk_days), e)
+        chunks.append((cursor, chunk_end))
+        cursor = chunk_end
+
+    to_ms = lambda d: int((d - _EPOCH).total_seconds() * 1000)
+
+    def _fetch_one(cs, ce):
+        rows, cursor_ms, end_ms = [], to_ms(cs), to_ms(ce)
+        while cursor_ms <= end_ms:
+            page = _binance_get(_BINANCE_KLINES, {
+                'symbol': symbol, 'interval': bn_interval,
+                'startTime': cursor_ms, 'endTime': end_ms, 'limit': _BINANCE_PAGE,
+            }).json()
+            if not page:
+                break
+            rows.extend(page)
+            nxt = int(page[-1][0]) + 1
+            if nxt <= cursor_ms:
+                break                      # no progress — stop instead of spinning forever
+            cursor_ms = nxt
+            if len(page) < _BINANCE_PAGE:
+                break                      # short page = this window is exhausted
+        return rows
+
+    rows = []
+    progress = Progress(f'fetch {symbol} {interval} (binance)', len(chunks), 'chunks')
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = [pool.submit(_fetch_one, cs, ce) for cs, ce in chunks]
+        for future in as_completed(futures):
+            rows.extend(future.result())
+            progress.tick()
+    return _binance_klines_to_df(rows)
 
 
 # ── Alpha data ────────────────────────────────────────────────────────────────

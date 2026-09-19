@@ -256,6 +256,10 @@ async function runTurn(win, { sessionId, message, model }) {
     BLAVE_AGENT_BASE: BASE, BLAVE_AGENT_WORKSPACE: WS, BLAVE_AGENT_HOME: BASE,
     BLAVE_AGENT_STATE: path.join(BASE, "state"),
     BLAVE_AGENT_DB: path.join(BASE, "state", "session.db"),
+    // K 線走 Binance 公開 API(桌面版沒有 Blave 資料訂閱)。獨立、明確 opt-in 的
+    // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
+    // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
+    BLAVE_KLINE_SOURCE: "binance",
     LANG: process.env.LANG || "zh_TW.UTF-8",
   };
   const child = spawn(VENV_PY, [
