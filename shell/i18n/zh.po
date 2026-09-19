@@ -164,3 +164,45 @@ msgstr "正在安裝策略需要的 Python 套件（pandas、numpy…），只�
 
 msgid "engine.preparing"
 msgstr "正在準備引擎（第一次會安裝，約一分鐘）…"
+
+msgid "mp.model"
+msgstr "模型"
+
+msgid "mp.effort"
+msgstr "思考深度"
+
+msgid "mp.default"
+msgstr "預設"
+
+msgid "mp.aria"
+msgstr "模型與思考深度：{model}，{effort}"
+
+msgid "mp.ariaNoEffort"
+msgstr "模型：{model}"
+
+msgid "mp.cap"
+msgstr "{model} 的預設是「{level}」。越高想得越久、用得越多。"
+
+msgid "mp.reset"
+msgstr "{model} 沒有「{from}」，已改成「{to}」。"
+
+msgid "mp.none"
+msgstr "這個模型沒有思考深度可調。"
+
+msgid "lv.low"
+msgstr "低"
+
+msgid "lv.medium"
+msgstr "中"
+
+msgid "lv.high"
+msgstr "高"
+
+msgid "lv.xhigh"
+msgstr "超高"
+
+msgid "lv.max"
+msgstr "最高"
+
+msgid "lv.ultra"
+msgstr "Ultra"

@@ -2028,7 +2028,7 @@ def _codex_prompt(prompt, sink):
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
     (codex_engine.build_args lifts its size cap), and inlining it would feed it twice.
     model_catalog_rule is left out on purpose — it teaches switching between the proxy's
-    models, and this engine runs whatever the user's own Codex is set to."""
+    models; this engine's model is picked in the shell (or is the user's Codex default)."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + preferences_rule() + sink.formatting_rule
             + "\n\n---\n\n" + prompt)
@@ -2036,7 +2036,7 @@ def _codex_prompt(prompt, sink):
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, viewing_widgets=None, ui_lang=None,
-                   engine="claude", codex_bin=None):
+                   engine="claude", codex_bin=None, effort=None):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
@@ -2164,6 +2164,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # activity line shows one step at a time anyway and reasoning is far more
     # tokens than the reply. Set after construction, not as a kwarg: on an SDK
     # build without the field that would be a TypeError killing every turn.
+    if effort:
+        # 電腦版的 effort 選單。沒帶就連屬性都不碰(SDK 預設);設在建構之後,理由同下面的
+        # extra_args:沒有這個欄位的 SDK build 不能因為一個 kwarg 整輪 TypeError。
+        options.effort = effort
     if sysprompt_path:
         # Set after construction for the same reason as include_partial_messages
         # below: an SDK build whose options lack extra_args must not kill every turn.
@@ -2208,7 +2212,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 codex_bin, _codex_prompt(prompt, sink), WORKSPACE,
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
-                sink, _codex_tool_start, _codex_tool_done)
+                sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort)
         # 空回合續跑是為 DeepSeek 串流斷掉設的,Codex 沒有那個症狀,不重跑。
         for attempt in () if use_codex else (1, 2):
             query_iter = sdk.query(prompt=prompt, options=options)
@@ -2411,7 +2415,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
     parser.add_argument("message")
-    parser.add_argument("--model", default=model_prefs.DEFAULT_MODEL)
+    # 預設值在下面解析,不寫在這裡:codex 引擎要分得出「用戶真的選了 model」與「沒帶」——
+    # 把我們的預設(proxy 的模型名)當成用戶選的傳給 `codex -m` 會整輪失敗。
+    parser.add_argument("--model", default=None)
     parser.add_argument("--delivery", default="telegram", choices=["telegram", "web", "local"])
     parser.add_argument("--telegram-chat-id", default=None)
     parser.add_argument("--report-url", default=None)
@@ -2424,10 +2430,12 @@ def main():
     # 不設 choices(同 --viewing-view):怪值只當沒送,不能 exit 2 整輪死;白名單在 _resolve_reply_lang
     parser.add_argument("--ui-lang", default=None)
     # 電腦版專屬。不帶 = claude = 機隊原本的路徑;不設 choices(同 --ui-lang),"codex"
-    # 以外的值一律當 claude。codex 時 --model 不使用(那個值是 Claude 的模型名,Codex 用
-    # 用戶自己設定的預設)。
+    # 以外的值一律當 claude。codex 時 --model 有帶才轉成 `codex exec -m`(外殼只在用戶
+    # 真的選了 codex 型錄裡的 model 時才帶),沒帶就讓 Codex 用用戶自己設定的預設。
     parser.add_argument("--engine", default="claude")
     parser.add_argument("--codex-bin", default=None)
+    # 選填,值域由外殼依引擎/模型保證,這裡原樣轉發。沒帶 = 引擎自己的預設。
+    parser.add_argument("--effort", default=None)
     args = parser.parse_args()
     viewing_widgets = parse_viewing_widgets(args.viewing_widgets)
 
@@ -2444,11 +2452,15 @@ def main():
     else:
         sink = TelegramSink(telegram_token, args.telegram_chat_id)
 
+    model = args.model
+    if args.engine != "codex":
+        model = model or model_prefs.DEFAULT_MODEL
     reply = asyncio.run(run_turn(
-        args.session_id, args.message, args.model, sink,
+        args.session_id, args.message, model, sink,
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
         viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
         ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
+        effort=args.effort,
     ))
     print(reply)
 

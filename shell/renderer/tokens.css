@@ -57,6 +57,7 @@
   --surface-card: var(--color-surface);
   --surface-muted: var(--color-greyLight);       /* 軌道 / outlined hover 填色 */
   --surface-field: var(--color-pureWhite);
+  --surface-control-on: var(--color-pureWhite);  /* segment 選中格(canon 語意角色變數) */
   --border-hairline: var(--color-greyLight);
   --border-frame: var(--color-greyLight);
   --ink: var(--color-black);
@@ -77,6 +78,7 @@
   --surface-card: var(--color-darkCard);
   --surface-muted: var(--color-darkBorder);
   --surface-field: var(--color-darkBody);
+  --surface-control-on: var(--color-darkBorder);
   --border-hairline: var(--color-darkBorder);
   --border-frame: var(--color-greyDark);
   --ink: var(--color-darkText);

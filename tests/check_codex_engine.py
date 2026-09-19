@@ -76,14 +76,30 @@ def shape(chunks):
 
 
 # ── 1. 不帶 --engine:走 sdk.query,codex_engine 連 import 都不發生 ────────────
-sys.argv = ["agent_turn.py", "s1", "hello", "--delivery", "local"]
-_parser_probe = {}
-_real_run = asyncio.run
-asyncio.run = lambda coro: (_parser_probe.update(coro.cr_frame.f_locals), coro.close(), "")[2]
-with contextlib.redirect_stdout(io.StringIO()):
-    at.main()
-asyncio.run = _real_run
-assert _parser_probe["engine"] == "claude" and _parser_probe["codex_bin"] is None, _parser_probe
+def main_args(*extra):
+    """What main() hands run_turn for this command line (run_turn itself not executed)."""
+    probe = {}
+    real = asyncio.run
+    asyncio.run = lambda coro: (probe.update(coro.cr_frame.f_locals), coro.close(), "")[2]
+    sys.argv = ["agent_turn.py", "s1", "hello", "--delivery", "local", *extra]
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            at.main()
+    finally:
+        asyncio.run = real
+    return probe
+
+
+probe = main_args()
+assert probe["engine"] == "claude" and probe["codex_bin"] is None, probe
+assert probe["model"] == at.model_prefs.DEFAULT_MODEL and probe["effort"] is None, probe
+assert main_args("--model", "haiku", "--effort", "low")["model"] == "haiku"
+# codex:只有明確帶 --model 才算用戶選的;我們的預設(proxy 模型名)絕不可流進 `codex -m`
+probe = main_args("--engine", "codex", "--codex-bin", "/x/codex")
+assert probe["model"] is None and probe["effort"] is None, probe
+probe = main_args("--engine", "codex", "--codex-bin", "/x/codex", "--model", "gpt-5.5",
+                  "--effort", "low")
+assert (probe["model"], probe["effort"]) == ("gpt-5.5", "low"), probe
 
 chunks = run_local_turn()
 assert len(sdk_calls) == 1, "預設引擎必須呼叫 sdk.query 一次"
@@ -91,7 +107,13 @@ assert "codex_engine" not in sys.modules, "機隊路徑不該載入 codex_engine
 assert sdk_calls[0][1].model == "sonnet"
 assert "[Runtime 規則" not in sdk_calls[0][0], "Codex 的 prompt 前綴漏進 Claude 路徑"
 assert shape(chunks) == [("text",), ("done",)], shape(chunks)
-claude_prompt = sdk_calls[0][0]
+# 不帶 --effort:options 上連 effort 這個屬性都沒有;帶了只多這一個
+base_options = dict(vars(sdk_calls[0][1]))
+assert "effort" not in base_options
+run_local_turn(effort="low")
+with_effort = dict(vars(sdk_calls[1][1]))
+assert with_effort.pop("effort") == "low" and with_effort == base_options
+sdk_calls[:] = sdk_calls[:1]
 
 # ── 2. 事件翻譯:真實錄到的 JSONL → chunk 序列 ─────────────────────────────
 import codex_engine  # noqa: E402
@@ -129,8 +151,10 @@ FIXTURE = [
 
 
 def fake_codex(events, captured):
-    async def _run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None):
-        captured.update(bin=codex_bin, prompt=prompt, cwd=cwd, env=env)
+    async def _run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
+                   model=None, effort=None):
+        captured.update(bin=codex_bin, prompt=prompt, cwd=cwd, env=env, model=model,
+                        effort=effort)
         tr = codex_engine.CodexTranslator(sink, on_tool_start, on_tool_done)
         for event in events:
             tr.feed(event)
@@ -164,6 +188,8 @@ assert at.WEB_FORMATTING_RULE in seen["prompt"]
 assert "ANTHROPIC_API_KEY" not in seen["env"] or os.environ.get("ANTHROPIC_API_KEY")
 assert seen["env"]["BLAVE_AGENT_DB"] == os.environ["BLAVE_AGENT_DB"]
 assert seen["bin"] == "/x/codex" and seen["cwd"] == at.WORKSPACE
+# run_turn 原樣轉發它拿到的 model / effort;「沒帶就是 None」由 main() 保證(第 1 節)
+assert seen["model"] == "sonnet" and seen["effort"] is None, seen
 
 # 寫回 session 的方式相同:user + assistant 各一列,assistant 是回覆本文
 _, recent = at.ss.get_context("s1")
@@ -189,12 +215,14 @@ chunks = run_local_turn(engine="codex", codex_bin=os.path.join(_tmp, "no-such-co
 assert chunks[-1]["code"] == at.FAULT_NOT_STARTED, chunks
 
 # ── 4. 命令列:沙盒可寫+有網路、AGENTS.md 不被 32 KiB 截斷、prompt 走 stdin ───
-args = codex_engine.build_args("/x/codex", "/ws")
-assert args[:3] == ["/x/codex", "exec", "--json"] and args[-1] == "-"
-assert "--ephemeral" in args and args[args.index("-s") + 1] == "workspace-write"
-assert "sandbox_workspace_write.network_access=true" in args
-assert not any(a in ("-m", "--model") for a in args), "--model 不可傳給 codex"
-assert any(a.startswith("project_doc_max_bytes=") for a in args)
+#      沒選 model / effort 時 argv 逐字釘死;選了只多出那兩組
+BASE_ARGV = ["/x/codex", "exec", "--json", "--ephemeral", "--skip-git-repo-check",
+             "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true",
+             "-c", "project_doc_max_bytes=262144", "-C", "/ws", "-"]
+assert codex_engine.build_args("/x/codex", "/ws") == BASE_ARGV
+picked = codex_engine.build_args("/x/codex", "/ws", model="gpt-5.5", effort="low")
+assert picked == BASE_ARGV[:5] + ["-m", "gpt-5.5", "-c", "model_reasoning_effort=low"] \
+    + BASE_ARGV[5:], picked
 
 # ── 5. BLAVE_PYTHON:沒設 → 兩條路徑一個字都不加;有設 → 兩條路徑都帶同一條規則 ──
 with open(os.path.join(at.WORKSPACE, "AGENTS.md"), "w") as f:

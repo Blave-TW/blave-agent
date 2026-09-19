@@ -65,9 +65,30 @@
         </div>
       </div>
       <div class="chat-input-wrap">
+        <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
+             選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
+             model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
-          <button class="btn-send" id="btn-send" type="button" data-i18n-aria="ws.send">↑</button>
+          <div class="ci-bar">
+            <div class="mp" id="mp" hidden>
+              <button class="mp-trigger" id="mp-trigger" type="button"
+                      aria-haspopup="dialog" aria-expanded="false" aria-controls="mp-panel">
+                <span class="mp-t-model" id="mp-t-model"></span>
+                <span class="mp-t-effort" id="mp-t-effort"></span>
+                <span class="mp-chev" aria-hidden="true"></span>
+              </button>
+              <div class="mp-panel" id="mp-panel" role="dialog" hidden>
+                <p class="mp-cap" data-i18n="mp.model"></p>
+                <div class="mp-models" id="mp-models" role="radiogroup"></div>
+                <div class="mp-div" id="mp-div"></div>
+                <p class="mp-cap" id="mp-effort-cap" data-i18n="mp.effort"></p>
+                <div class="mp-rail" id="mp-rail" role="radiogroup"></div>
+                <p class="mp-note" id="mp-note" aria-live="polite"></p>
+              </div>
+            </div>
+            <button class="btn-send" id="btn-send" type="button" data-i18n-aria="ws.send">↑</button>
+          </div>
         </div>
       </div>
     </section>

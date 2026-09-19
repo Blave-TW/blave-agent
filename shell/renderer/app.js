@@ -127,6 +127,7 @@ function enterWorkspace(kind, info) {
     : kind === "claude" ? t("ws.connClaude") : t("ws.connCodex");
   $("ws-conn").textContent = t("ws.conn", { name });
   $("ws-conn").title = t("ws.settings");
+  mpInit(kind);
   autosize();          // 進工作頁先把輸入框高度對齊一行
   $("ta").focus();
 }
@@ -198,6 +199,138 @@ function autosize() {
   ta.style.height = Math.min(ta.scrollHeight, TA_MAX) + "px";
 }
 $("ta").addEventListener("input", autosize);
+
+
+/* ── model / effort 選擇器 ─────────────────────────────
+   一顆觸發鈕、一個面板:上半選 model、下半是 effort 的分段軌。軌的格數**直接由所選
+   model 的支援清單長出來**,所以選不到不存在的組合(Cline 有過「換 model 後舊的
+   thinking 設定殘留、打出 API error」的 bug;把 effort 烤進 model 名的做法則是被
+   Cursor 的用戶罵到改掉的)。
+   換 model 時 effort 能留就留,留不住就落回該 model 的預設,**並留一行字**——ChatGPT
+   桌面版的 Codex 有兩個 open bug 都是「effort 被默默重設」。
+   選擇按引擎各記一組(model + 每個 model 各自的 effort),存本機、跨重啟保留。 */
+const MP = { kind: null, models: [], prefs: {}, model: null, note: null };
+
+function mpLevel(lv) { const k = "lv." + lv; const v = t(k); return v === k ? lv.charAt(0).toUpperCase() + lv.slice(1) : v; }
+function mpCur() { return MP.models.find((m) => m.id === MP.model) || null; }
+function mpEffort() {
+  const m = mpCur(); if (!m || !m.efforts.length) return null;
+  const saved = ((MP.prefs[MP.kind] || {}).efforts || {})[m.id];
+  return m.efforts.includes(saved) ? saved : (m.defaultEffort || m.efforts[0]);
+}
+function mpSave() {
+  const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
+  slot.model = MP.model; slot.efforts = slot.efforts || {};
+  window.blave.saveModelPrefs(MP.prefs);
+}
+
+/* 進工作頁 / 換引擎時呼叫。型錄拿不到(沒裝、沒 token、離線)就整顆不畫——
+   那時 runTurn 不帶任何旗標,行為跟沒有這個功能之前一樣。 */
+async function mpInit(kind) {
+  MP.kind = kind; MP.note = null;
+  const [opt, prefs] = await Promise.all([window.blave.modelOptions(kind), window.blave.loadModelPrefs()]);
+  MP.models = (opt && opt.models) || []; MP.prefs = prefs || {};
+  $("mp").hidden = MP.models.length === 0;
+  if (!MP.models.length) { MP.model = null; return; }
+  const saved = (MP.prefs[kind] || {}).model;
+  MP.model = MP.models.some((m) => m.id === saved) ? saved : (opt.defaultModel || MP.models[0].id);
+  mpPaint();
+}
+
+function mpPaint() {
+  const m = mpCur(); if (!m) return;
+  const eff = mpEffort();
+  $("mp-t-model").textContent = m.name;
+  $("mp-t-effort").textContent = eff ? "· " + mpLevel(eff) : "";
+  $("mp-trigger").setAttribute("aria-label",
+    eff ? t("mp.aria", { model: m.name, effort: mpLevel(eff) }) : t("mp.ariaNoEffort", { model: m.name }));
+
+  const box = $("mp-models"); box.textContent = "";
+  box.setAttribute("aria-label", t("mp.model"));
+  MP.models.forEach((x, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "mp-row"; b.setAttribute("role", "radio");
+    const on = x.id === MP.model;
+    b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+    const nm = document.createElement("span"); nm.textContent = x.name; b.appendChild(nm);
+    if (i === 0) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
+    b.addEventListener("click", () => mpPickModel(x.id));
+    box.appendChild(b);
+  });
+
+  const rail = $("mp-rail"); rail.textContent = "";
+  rail.setAttribute("aria-label", t("mp.effort"));
+  const has = m.efforts.length > 0;
+  rail.hidden = !has; $("mp-effort-cap").hidden = !has;
+  m.efforts.forEach((lv) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "mp-seg"; b.setAttribute("role", "radio");
+    const on = lv === eff;
+    b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+    b.textContent = mpLevel(lv);
+    b.addEventListener("click", () => mpPickEffort(lv));
+    rail.appendChild(b);
+  });
+
+  const note = $("mp-note");
+  note.classList.toggle("is-reset", !!MP.note);
+  note.textContent = MP.note ? MP.note
+    : has ? t("mp.cap", { model: m.name, level: mpLevel(m.defaultEffort || m.efforts[0]) })
+    : t("mp.none");
+}
+
+function mpPickModel(id) {
+  if (id === MP.model) return;
+  const before = mpEffort();
+  MP.model = id; MP.note = null;
+  const m = mpCur();
+  const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
+  slot.efforts = slot.efforts || {};
+  if (m.efforts.length && !slot.efforts[id]) {
+    // 這個 model 沒選過 effort:前一個 model 的值它也支援就沿用,不支援就落回預設並說明
+    if (before && m.efforts.includes(before)) slot.efforts[id] = before;
+    else if (before) MP.note = t("mp.reset", { model: m.name, from: mpLevel(before), to: mpLevel(m.defaultEffort || m.efforts[0]) });
+  }
+  mpSave(); mpPaint();
+  const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur) cur.focus();
+}
+function mpPickEffort(lv) {
+  const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
+  slot.efforts = slot.efforts || {}; slot.efforts[MP.model] = lv; MP.note = null;
+  mpSave(); mpPaint();
+  const cur = $("mp-rail").querySelector('[aria-checked="true"]'); if (cur) cur.focus();
+}
+
+/* 選了立即生效,面板**不自動關**(要讓人看到軌變了)。關閉 = Esc / 點面板外 / 再按
+   觸發鈕,焦點一律回觸發鈕。 */
+function mpOpen() {
+  if (running) return;
+  $("mp-panel").hidden = false; $("mp").classList.add("is-open");
+  $("mp-trigger").setAttribute("aria-expanded", "true");
+  const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur) cur.focus();
+}
+function mpClose(refocus) {
+  if ($("mp-panel").hidden) return;
+  $("mp-panel").hidden = true; $("mp").classList.remove("is-open");
+  $("mp-trigger").setAttribute("aria-expanded", "false");
+  MP.note = null; mpPaint();
+  if (refocus) $("mp-trigger").focus();
+}
+$("mp-trigger").addEventListener("click", () => ($("mp-panel").hidden ? mpOpen() : mpClose(true)));
+$("mp-trigger").addEventListener("keydown", (e) => {
+  if (e.key === "ArrowUp" && $("mp-panel").hidden) { e.preventDefault(); mpOpen(); }
+});
+document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target)) mpClose(false); });
+// APG radio group:方向鍵在組內移動**並選取**,Tab 在 model 組 ↔ effort 組之間切換
+$("mp-panel").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); mpClose(true); return; }
+  const group = e.target.closest('[role="radiogroup"]'); if (!group) return;
+  const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]; if (!d) return;
+  e.preventDefault();
+  const items = [...group.querySelectorAll('[role="radio"]')];
+  const next = items[(items.indexOf(e.target) + d + items.length) % items.length];
+  if (next) next.click();
+});
 
 /* ── 第 4 步:真的接線 ───────────────────────────── */
 const sessionId = "desktop-" + Math.random().toString(36).slice(2, 10);
@@ -398,6 +531,7 @@ async function sendDraft() {
   if (!msg || running) return;
   running = true; $("btn-send").disabled = true;
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
+  $("mp-trigger").disabled = true; mpClose(false);
   $("chat-empty").hidden = true;
   addMsg("you", msg); $("ta").value = ""; autosize();
   liveBubble = null; faultShown = false;
@@ -405,15 +539,16 @@ async function sendDraft() {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     await window.blave.ensureEngine();
-    const model = "sonnet"; // v1:先固定;之後從連結資訊帶
-    const r = await window.blave.sendMessage({ sessionId, message: msg, model, uiLang: LANG });
+    // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
+    const r = await window.blave.sendMessage({
+      sessionId, message: msg, model: MP.model, effort: mpEffort(), uiLang: LANG });
     // main.js 的契約只有這兩種回覆:busy 或 started
     if (r.started) busyStart();
-    else { addMsg("sys", t("turn.busy")); running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; }
+    else { addMsg("sys", t("turn.busy")); running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; }
   } catch (e) {
     busyEnd();
     addMsg("sys", t("turn.engineFailed", { msg: (e && e.message) || e }));
-    running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false;
+    running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false;
   }
 }
 
@@ -497,7 +632,7 @@ window.blave.onTurnEvent((c) => {
   scrollChat();
 });
 window.blave.onTurnEnd((r) => {
-  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false;
+  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false;
   busyEnd();
   if (r.code !== 0) addMsg("sys", t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""));
 });

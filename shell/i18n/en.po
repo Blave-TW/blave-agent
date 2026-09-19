@@ -164,3 +164,45 @@ msgstr "Installing the Python packages strategies need (pandas, numpy…), first
 
 msgid "engine.preparing"
 msgstr "Preparing the engine (first run installs it, about a minute)…"
+
+msgid "mp.model"
+msgstr "Model"
+
+msgid "mp.effort"
+msgstr "Effort"
+
+msgid "mp.default"
+msgstr "Default"
+
+msgid "mp.aria"
+msgstr "Model and effort: {model}, {effort}"
+
+msgid "mp.ariaNoEffort"
+msgstr "Model: {model}"
+
+msgid "mp.cap"
+msgstr "Default for {model}: {level}. Higher thinks longer and uses more."
+
+msgid "mp.reset"
+msgstr "{model} has no {from}. Set to {to}."
+
+msgid "mp.none"
+msgstr "This model has no effort setting."
+
+msgid "lv.low"
+msgstr "Low"
+
+msgid "lv.medium"
+msgstr "Medium"
+
+msgid "lv.high"
+msgstr "High"
+
+msgid "lv.xhigh"
+msgstr "Extra High"
+
+msgid "lv.max"
+msgstr "Max"
+
+msgid "lv.ultra"
+msgstr "Ultra"

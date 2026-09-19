@@ -32,6 +32,15 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   解析到沒裝套件的那顆(回測報缺 pandas);PATH 前置救不了,環境變數不會被 profile 動。
   沒設(整個機隊)→ 回傳空字串,system prompt 逐字不變(`tests/check_codex_engine.py` §5)。
 
+- 電腦版的 model / effort 選單:新旗標 `--effort <level>`(選填,值域由外殼保證,原樣轉發)。
+  Claude → `options.effort`(有帶才設);Codex → `-c model_reasoning_effort=<level>`。Codex 引擎下
+  `--model` 現在會生效(`codex exec -m <slug>`),但只認**明確帶的旗標**:`--model` 的 argparse
+  預設改為 None、claude 引擎才在 main() 補 `model_prefs.DEFAULT_MODEL`——我們的預設模型名絕不
+  流進 `codex -m`。都沒帶時 Claude 的 options 與 codex 的 argv 逐字不變(`tests/check_codex_engine.py`
+  §1、§4)。實測備忘(CLI 2.1.239,mock upstream):不帶 `--effort` 時 CLI 本來就送
+  `output_config.effort="high"` + `effort-2025-11-24` beta(含 deepseek 模型名);haiku 則完全
+  不送 effort,`--effort` 對它是 no-op。
+
 ## 1.1.82 — 2026-09-18
 
 - 環境變數 `BLAVECLAW_HOME` 更名為 `BLAVE_AGENT_HOME`。`agent_turn` / `telegram_pairing`

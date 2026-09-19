@@ -162,7 +162,8 @@
 .msg.ai p { margin: 0; }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
 .chat-input {
-  display: flex; align-items: center; gap: var(--space-8);
+  /* 直向:上 textarea、下工具列。外框、半徑、內距都不變,總高約 +36px。 */
+  display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4);
   border: 1px solid var(--border-frame); border-radius: var(--radius-md);
   background: var(--surface-field);
   padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
@@ -365,3 +366,69 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    —— 它沒設字重、繼承 400,加粗看得出來;`.cn-ttl` 本來就是 600,對它加粗是
    no-op,所以不寫。Blave 那段的「目前使用」靠按鈕消失表示,跟列的做法一致。 */
 .cn-row.is-cur .n { font-weight: 600; }
+
+/* ── model / effort 選擇器(設計師 spec,版 A)──────────────
+   工具列左=觸發鈕、右=送出。觸發鈕往左退 8px,讓它的字對齊 textarea 的字。 */
+.ci-bar { display: flex; align-items: center; gap: var(--space-8); margin-left: calc(-1 * var(--space-8)); }
+.ci-bar .btn-send { margin-left: auto; }
+.mp { position: relative; min-width: 0; }
+/* 無邊框:輸入框已經是框,框裡不再放框 */
+.mp-trigger {
+  display: inline-flex; align-items: center; gap: var(--space-6);
+  height: 32px; padding: 0 var(--space-8); max-width: 100%;
+  border-radius: var(--radius-xs); font-size: 13px; line-height: 1;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.mp-t-model { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-t-effort { flex: none; color: var(--ink-3); white-space: nowrap; }
+.mp-trigger:hover:not(:disabled), .mp.is-open .mp-trigger { background: var(--surface-muted); }
+.mp-trigger:hover:not(:disabled) .mp-t-model, .mp.is-open .mp-t-model { color: var(--ink); }
+.mp-trigger:disabled { cursor: not-allowed; }
+.mp-trigger:disabled .mp-t-model, .mp-trigger:disabled .mp-t-effort { color: var(--color-greyDark); }
+.mp-chev {
+  flex: none; width: 5px; height: 5px; margin: 0 2px 2px;
+  border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3);
+  transform: rotate(45deg); transition: transform var(--motion-fast) var(--ease-standard);
+}
+.mp.is-open .mp-chev { transform: rotate(-135deg); margin-bottom: -2px; }
+
+/* 面板往上開(canon › Dropdown menu › Panel):底 surface-card、shadow-md、不加 border */
+.mp-panel {
+  position: absolute; left: 0; bottom: calc(100% + var(--space-8)); z-index: 10;
+  width: 360px; padding: var(--space-6);
+  background: var(--surface-card); box-shadow: var(--shadow-md); border-radius: var(--radius-lg);
+  animation: mp-in var(--motion-fast) var(--ease-standard);
+}
+@keyframes mp-in { from { opacity: 0; transform: translateY(4px); } }
+.mp-cap { margin: 0; padding: 6px 10px 4px; font-size: 12px; color: var(--ink-3); }
+/* 型錄變長時只捲清單,effort 軌不動 */
+.mp-models { display: flex; flex-direction: column; max-height: 264px; overflow-y: auto; }
+.mp-row {
+  display: flex; align-items: center; gap: var(--space-8);
+  min-height: 32px; padding: 6px 10px; border-radius: var(--radius-xs);
+  font-size: 13px; text-align: left; color: var(--ink-2);
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.mp-row:hover { background: var(--surface-muted); color: var(--ink); }
+/* 選中 = 純加粗(canon › Active),不加勾勾、不填色 */
+.mp-row[aria-checked="true"] { color: var(--ink); font-weight: 600; }
+.mp-def { font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.mp-div { height: 1px; margin: var(--space-6) 0; background: var(--border-hairline); }
+/* effort 軌:軌道本身不填色——canon 登記過「dark 下 segment 選中格與軌道同色」是
+   未解的債,不填軌道就踩不到。 */
+.mp-rail {
+  display: flex; margin: 0 10px;
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs); overflow: hidden;
+}
+.mp-seg {
+  flex: 1 1 auto; height: 30px; padding: 0 var(--space-8);
+  font-size: 12px; color: var(--ink-3); white-space: nowrap;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.mp-seg + .mp-seg { border-left: 1px solid var(--border-frame); }
+.mp-seg:hover { color: var(--ink); }
+.mp-seg[aria-checked="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
+/* 軌在裁切容器裡,focus ring 往內畫才不會被切掉 */
+.mp-seg:focus-visible { outline-offset: -2px; border-radius: 0; }
+.mp-note { margin: 0; padding: var(--space-8) 10px 6px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.mp-note.is-reset { color: var(--ink-2); }

@@ -161,6 +161,22 @@ function cancelOAuth() {
   return true;
 }
 
+function getJSON(url, headers) {
+  return new Promise((resolve, reject) => {
+    const req = require("https").request(url, { method: "GET", headers: headers || {}, timeout: 15000 }, (res) => {
+      let buf = "";
+      res.on("data", (d) => { buf += d; });
+      res.on("end", () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(buf || "{}") }); }
+        catch (_) { resolve({ status: res.statusCode, body: {} }); }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function startOAuth(lang) {
   cancelOAuth();
   const verifier = b64url(crypto.randomBytes(32));
@@ -298,8 +314,86 @@ const WORKSPACE_DEPS = [
 ];
 
 
+// ── model / effort ─────────────────────────────────────────
+// 三個引擎的選項來源不同,但交給 renderer 的形狀一樣:
+//   { models: [{ id, name, efforts: [level…], defaultEffort }], defaultModel }
+// efforts 是空陣列 = 這個 model 沒有 effort 可選,renderer 就不畫那條軌。
+// **effort 的集合永遠跟著 model 走**——選不到不存在的組合,不必事後驗。
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
+// Claude Code 沒有本機型錄可讀,別名清單我們自己維護。
+// haiku 的 efforts 是空的:實測(把 CLI 指到 mock upstream 看它送什麼)CLI 對 haiku
+// 完全不送 output_config,`--effort` 不報錯但沒有任何作用——放一個按了沒反應的控件
+// 比藏掉它更糟。
+const CLAUDE_MODELS = [
+  { id: "sonnet", name: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "opus", name: "Opus", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "fable", name: "Fable", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "haiku", name: "Haiku", efforts: [], defaultEffort: null },
+];
+
+// Codex 自己維護一份型錄(伺服器下發、帶 etag,會變):每個 model 的 effort 集合與
+// 預設值都在裡面,`visibility: "hide"` 的(gpt-reserve、codex-auto-review)它自己
+// 就標了,不必我們寫排除名單。
+function codexModels() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "models_cache.json"), "utf8"));
+    return (raw.models || [])
+      .filter((m) => m.visibility === "list")
+      .sort((a, b) => (a.priority || 0) - (b.priority || 0))
+      .map((m) => ({
+        id: m.slug, name: m.display_name || m.slug,
+        efforts: (m.supported_reasoning_levels || []).map((e) => e.effort).filter(Boolean),
+        defaultEffort: m.default_reasoning_level || null,
+      }));
+  } catch (_) { return []; }
+}
+
+// Blave AI:型錄來自 proxy 的 /v1/models(不花錢)。只拿 id——這個選擇器刻意不列
+// 價格(Wei 拍板),所以也沒有「DeepSeek 尖峰 ×2 必標」的義務(那條只在列價時成立)。
+// DeepSeek 不出 effort 軌:proxy 會原樣轉發那個欄位,但 DeepSeek 端收不收 low/max
+// 這些值查不到、也測不了,不出一個行為不明的控件。
+const BLAVE_NAMES = {
+  "anthropic/claude-haiku-4-5-20251001": "Haiku 4.5", "anthropic/claude-sonnet-5": "Sonnet 5",
+  "anthropic/claude-opus-4-8": "Opus 4.8", "anthropic/claude-fable-5": "Fable 5",
+  "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash", "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
+};
+async function blaveModels() {
+  const acct = loadToken();
+  if (!acct) return [];
+  try {
+    const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/models`, { "x-api-key": `proxy-${acct}` });
+    if (r.status !== 200) return [];
+    return (r.body.data || []).map((m) => {
+      const claude = /^anthropic\//.test(m.id) && !/haiku/.test(m.id);
+      return { id: m.id, name: BLAVE_NAMES[m.id] || m.id,
+               efforts: claude ? CLAUDE_EFFORTS : [], defaultEffort: claude ? "high" : null };
+    });
+  } catch (_) { return []; }
+}
+
+async function modelOptions(kind) {
+  if (kind === "codex") { const models = codexModels(); return { models, defaultModel: models[0] ? models[0].id : null }; }
+  if (kind === "blave") {
+    const models = await blaveModels();
+    const d = models.find((m) => /sonnet/.test(m.id)) || models[0];
+    return { models, defaultModel: d ? d.id : null };
+  }
+  return { models: CLAUDE_MODELS, defaultModel: "sonnet" };
+}
+
+// 選擇按引擎各記一組,跨重啟保留:{ codex: { model, efforts: { <model>: <level> } }, … }
+const prefsPath = () => path.join(app.getPath("userData"), "model-prefs.json");
+function loadModelPrefs() {
+  try { return JSON.parse(fs.readFileSync(prefsPath(), "utf8")); } catch (_) { return {}; }
+}
+function saveModelPrefs(prefs) {
+  fs.writeFileSync(prefsPath(), JSON.stringify(prefs || {}));
+  return true;
+}
+
 let activeTurn = null;
-async function runTurn(win, { sessionId, message, model, uiLang }) {
+async function runTurn(win, { sessionId, message, model, effort, uiLang }) {
   const envPath = await loginShellPath();
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
   // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
@@ -334,7 +428,11 @@ async function runTurn(win, { sessionId, message, model, uiLang }) {
   };
   const child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
-    sessionId, message, "--delivery", "local", "--model", model || "sonnet",
+    sessionId, message, "--delivery", "local",
+    // Claude / Blave AI:沒選就照舊送 sonnet。Codex:**沒選就不帶 --model**——runtime
+    // 是用「有沒有明確帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m sonnet`。
+    ...(model ? ["--model", model] : useCodex ? [] : ["--model", "sonnet"]),
+    ...(effort ? ["--effort", effort] : []),
     // agent 回覆語言跟著介面走。runtime 的順序是「機器設定 > ui_lang > 猜」,
     // 桌面版沒有機器設定,所以這個值就是結論。
     ...(uiLang ? ["--ui-lang", uiLang] : []),
@@ -392,6 +490,9 @@ app.whenReady().then(() => {
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
   ipcMain.handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
+  ipcMain.handle("model-options", (_e, kind) => modelOptions(kind));
+  ipcMain.handle("load-model-prefs", () => loadModelPrefs());
+  ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
   ipcMain.handle("cancel-oauth", () => cancelOAuth());
   ipcMain.handle("clear-connection", () => clearConnection());

@@ -44,9 +44,17 @@ class CodexTurnFailed(RuntimeError):
         self.api_error_status = api_error_status
 
 
-def build_args(codex_bin, cwd):
+def build_args(codex_bin, cwd, model=None, effort=None):
+    """model / effort are forwarded only when the user picked them in the shell (which
+    guarantees a slug from Codex's own catalog and an effort that model supports); absent,
+    Codex uses the user's own defaults and the argv is unchanged."""
+    picked = []
+    if model:
+        picked += ["-m", model]
+    if effort:
+        picked += ["-c", f"model_reasoning_effort={effort}"]
     return [
-        codex_bin, "exec", "--json", "--ephemeral", "--skip-git-repo-check",
+        codex_bin, "exec", "--json", "--ephemeral", "--skip-git-repo-check", *picked,
         # exec's default sandbox is read-only, and workspace-write has the network OFF by
         # default — the agent writes strategy files and every lib/ data fetch needs the net.
         "-s", "workspace-write",
@@ -191,14 +199,15 @@ class CodexTranslator:
         return []
 
 
-async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None):
+async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
+              model=None, effort=None):
     """One Codex turn. Returns the translator (usage, thread_id); raises CodexTurnFailed
     when the turn did not complete, so the caller's existing fault path classifies it."""
     if not codex_bin:
         raise CodexTurnFailed("--engine codex needs --codex-bin")
     translator = CodexTranslator(sink, on_tool_start, on_tool_done)
     proc = await asyncio.create_subprocess_exec(
-        *build_args(codex_bin, cwd),
+        *build_args(codex_bin, cwd, model, effort),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         stderr=None,  # Codex's own log goes straight to this process's stderr
         cwd=cwd, env=env, limit=_LINE_LIMIT,
