@@ -335,6 +335,17 @@ const CLAUDE_MODELS = [
 // Codex 自己維護一份型錄(伺服器下發、帶 etag,會變):每個 model 的 effort 集合與
 // 預設值都在裡面,`visibility: "hide"` 的(gpt-reserve、codex-auto-review)它自己
 // 就標了,不必我們寫排除名單。
+/* 用戶自己在 ~/.codex/config.toml 設的 model 與 effort。沒有 TOML parser 可用,也不值得
+   為兩個頂層字串鍵裝一個:只讀第一個 [section] 之前的 `key = "value"`。
+   讀不到就回空物件,下游退回型錄的預設。 */
+function codexUserConfig() {
+  try {
+    const top = fs.readFileSync(path.join(os.homedir(), ".codex", "config.toml"), "utf8").split(/^\s*\[/m)[0];
+    const pick = (k) => (new RegExp(`^\\s*${k}\\s*=\\s*"([^"\\n]+)"`, "m").exec(top) || [])[1] || null;
+    return { model: pick("model"), effort: pick("model_reasoning_effort") };
+  } catch (_) { return {}; }
+}
+
 function codexModels() {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".codex", "models_cache.json"), "utf8"));
@@ -373,7 +384,15 @@ async function blaveModels() {
 }
 
 async function modelOptions(kind) {
-  if (kind === "codex") { const models = codexModels(); return { models, defaultModel: models[0] ? models[0].id : null }; }
+  if (kind === "codex") {
+    const models = codexModels();
+    // 起始值 = 用戶自己在 config.toml 設的(而且型錄裡真的有),不然才是型錄第一個。
+    // 少了這段,一個設了 gpt-5.5 + high 的人從沒碰過選擇器,卻每輪被換成型錄的第一個。
+    const mine = codexUserConfig();
+    const d = models.find((m) => m.id === mine.model) || models[0];
+    if (d && mine.effort && d.efforts.includes(mine.effort)) d.defaultEffort = mine.effort;
+    return { models, defaultModel: d ? d.id : null };
+  }
   if (kind === "blave") {
     const models = await blaveModels();
     const d = models.find((m) => /sonnet/.test(m.id)) || models[0];
@@ -392,8 +411,15 @@ function saveModelPrefs(prefs) {
   return true;
 }
 
+// 縱深防禦:這兩個值最後會進 `codex exec` 的 argv。全程沒有經過 shell、Codex 的
+// `-c k=v` 也只取我們寫死的那個 key,所以打不穿;但以 `-` 開頭或夾空白的值會讓該輪
+// 直接 exit 2,而 model-prefs.json 是磁碟上的檔案、內容不可信。形狀不對就當沒帶。
+const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
+const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
+
 let activeTurn = null;
-async function runTurn(win, { sessionId, message, model, effort, uiLang }) {
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, uiLang }) {
+  const model = safeId(rawModel), effort = safeId(rawEffort);
   const envPath = await loginShellPath();
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
   // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
@@ -429,8 +455,10 @@ async function runTurn(win, { sessionId, message, model, effort, uiLang }) {
   const child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
     sessionId, message, "--delivery", "local",
-    // Claude / Blave AI:沒選就照舊送 sonnet。Codex:**沒選就不帶 --model**——runtime
-    // 是用「有沒有明確帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m sonnet`。
+    // 選擇器畫得出來時,model / effort **一律明確指定**:輸入框上寫的就是送出去的,
+    // 不靠引擎那邊看不見的預設。只有型錄拿不到(沒畫選擇器)時兩個才是 null——
+    // 那時 Claude / Blave AI 照舊送 sonnet,Codex 什麼都不帶(runtime 用「有沒有明確
+    // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m sonnet`)。
     ...(model ? ["--model", model] : useCodex ? [] : ["--model", "sonnet"]),
     ...(effort ? ["--effort", effort] : []),
     // agent 回覆語言跟著介面走。runtime 的順序是「機器設定 > ui_lang > 猜」,

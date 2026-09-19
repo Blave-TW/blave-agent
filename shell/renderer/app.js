@@ -226,10 +226,23 @@ function mpSave() {
 
 /* 進工作頁 / 換引擎時呼叫。型錄拿不到(沒裝、沒 token、離線)就整顆不畫——
    那時 runTurn 不帶任何旗標,行為跟沒有這個功能之前一樣。 */
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
 async function mpInit(kind) {
-  MP.kind = kind; MP.note = null;
+  // 先同步清空:型錄最慢要 15 秒才回來(Blave AI 走網路),這期間按送出不能把**上一個
+  // 引擎**的 model 送過去(Codex 的 gpt-5.5 送給 Blave 的 proxy → 該輪失敗)。
+  MP.kind = kind; MP.note = null; MP.models = []; MP.model = null; MP.defaultModel = null;
+  $("mp").hidden = true;
   const [opt, prefs] = await Promise.all([window.blave.modelOptions(kind), window.blave.loadModelPrefs()]);
-  MP.models = (opt && opt.models) || []; MP.prefs = prefs || {};
+  // 舊引擎的型錄晚到(快速切換)→ 丟掉,不然會蓋掉新引擎的、還被 mpSave 寫進錯的欄位
+  if (MP.kind !== kind) return;
+  MP.models = (opt && opt.models) || [];
+  MP.defaultModel = (opt && opt.defaultModel) || null;
+  // model-prefs.json 是磁碟上的檔案:內容壞掉(`"x"`、`[]`、`{"codex":"abc"}`)時
+  // 正規化成空的,而不是讓 effort 怎麼點都沒反應、要刪檔才會好。
+  MP.prefs = isObj(prefs) ? prefs : {};
+  if (!isObj(MP.prefs[kind])) MP.prefs[kind] = {};
+  if (!isObj(MP.prefs[kind].efforts)) MP.prefs[kind].efforts = {};
   $("mp").hidden = MP.models.length === 0;
   if (!MP.models.length) { MP.model = null; return; }
   const saved = (MP.prefs[kind] || {}).model;
@@ -247,13 +260,13 @@ function mpPaint() {
 
   const box = $("mp-models"); box.textContent = "";
   box.setAttribute("aria-label", t("mp.model"));
-  MP.models.forEach((x, i) => {
+  MP.models.forEach((x) => {
     const b = document.createElement("button");
     b.type = "button"; b.className = "mp-row"; b.setAttribute("role", "radio");
     const on = x.id === MP.model;
     b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
     const nm = document.createElement("span"); nm.textContent = x.name; b.appendChild(nm);
-    if (i === 0) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
+    if (x.id === MP.defaultModel) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
     b.addEventListener("click", () => mpPickModel(x.id));
     box.appendChild(b);
   });
@@ -322,8 +335,10 @@ $("mp-trigger").addEventListener("keydown", (e) => {
 });
 document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target)) mpClose(false); });
 // APG radio group:方向鍵在組內移動**並選取**,Tab 在 model 組 ↔ effort 組之間切換
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("mp-panel").hidden) { e.preventDefault(); mpClose(true); }
+});
 $("mp-panel").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { e.preventDefault(); mpClose(true); return; }
   const group = e.target.closest('[role="radiogroup"]'); if (!group) return;
   const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]; if (!d) return;
   e.preventDefault();

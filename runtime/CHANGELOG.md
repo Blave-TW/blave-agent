@@ -19,7 +19,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   `codex exec --json --ephemeral -s workspace-write`,JSONL 事件翻成同一個 sink 的呼叫;
   prompt、session store、四個 fault code、寫回歷史全部共用。不帶 `--engine` = `claude`,
   那條路徑連 `codex_engine` 都不 import,機隊行為零改變(閘門:
-  `tests/check_codex_engine.py`)。`--engine codex` 時 `--model` 不使用。
+  `tests/check_codex_engine.py`)。`--engine codex` 時 `--model` 只在**明確帶旗標**時才轉成 `codex -m`(見下方 model / effort 那條)。
   多輪脈絡只走我們自己的 session store,不用 `exec resume`(兩個都用會重複餵)。
   三個不加就會靜默壞掉的旗標:`sandbox_workspace_write.network_access=true`(workspace-write
   預設斷網)、`project_doc_max_bytes`(Codex 原生讀 AGENTS.md 但 32 KiB 截斷,我們的是 39 KB)、
