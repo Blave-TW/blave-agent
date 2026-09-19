@@ -100,16 +100,33 @@ function sh(cmd, envPath, timeout = 300000) {
 
 // 首次連結時準備 ~/Blave:workspace 逐目錄從 repo 拷(照 README 的 merge 清單),
 // venv 裝 pinned SDK。冪等:存在就跳過。進度用 callback 丟回聊天欄。
+// 官方檔案清單 = README 的 "Updating an existing workspace" 那張表。
+// 只覆寫這些;strategies/<name>/、state/、.env、cache/ 一律不碰,而且用 cpSync
+// (覆寫但不刪除)——agent 可以合法新增 lib/order_<新交易所>.py 這種用戶自己的
+// 整合(updating.md:「reference clone 裡不存在的那些完全不碰」),不能被清掉。
+const OFFICIAL_DIRS = ["lib", "manager", "references", "examples"];
+const OFFICIAL_FILES = [
+  "strategies/TEMPLATE_A.py", "strategies/TEMPLATE_C.py",
+  "AGENTS.md", "CLAUDE.md", "VERSION",
+];
+function copyOfficial() {
+  fs.mkdirSync(path.join(WS, "strategies"), { recursive: true });
+  for (const d of OFFICIAL_DIRS)
+    fs.cpSync(path.join(REPO, d), path.join(WS, d), { recursive: true });
+  for (const f of OFFICIAL_FILES) fs.cpSync(path.join(REPO, f), path.join(WS, f));
+}
+
 async function ensureEngine(progress) {
   const envPath = await loginShellPath();
-  if (!fs.existsSync(WS)) {
+  const fresh = !fs.existsSync(WS);
+  if (fresh) {
     progress("建立工作區 ~/Blave/workspace …");
     fs.mkdirSync(WS, { recursive: true });
-    for (const d of ["lib", "manager", "references", "examples"])
-      fs.cpSync(path.join(REPO, d), path.join(WS, d), { recursive: true });
-    fs.mkdirSync(path.join(WS, "strategies"), { recursive: true });
-    for (const f of ["strategies/TEMPLATE_A.py", "strategies/TEMPLATE_C.py", "AGENTS.md", "CLAUDE.md", "VERSION"])
-      fs.cpSync(path.join(REPO, f), path.join(WS, f));
+    copyOfficial();
+  } else if (!app.isPackaged) {
+    // 開發時(從原始碼跑,不是打包版)每次啟動都把官方檔案重拷一次,所以改了
+    // lib/ 或 AGENTS.md 只要重啟就生效。打包版不走這條:它照版本比對更新。
+    copyOfficial();
   }
   for (const d of ["state", "config"]) fs.mkdirSync(path.join(BASE, d), { recursive: true });
   if (!fs.existsSync(VENV_PY)) {
