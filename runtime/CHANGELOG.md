@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 電腦版隔離(只在 `--delivery local`,LocalSink;機隊行為零改變):`setting_sources=[]`、
+  `strict_mcp_config`、`--disable-slash-commands`、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`。
+  電腦版的 agent 跑在用戶自己的 Claude Code 帳號上,CLI 預設會把用戶全域的
+  `~/.claude/CLAUDE.md`、`~/.claude.json` 的 MCP、claude.ai 連接器、plugins、skills、自動記憶
+  整包載進來——2026-09-19 實際發生:用戶全域 CLAUDE.md 叫它用 MCP SSH 進雲端機,它照做
+  (把私鑰寫進 `~/.ssh`、到雲端機上畫圖、回報「發送成功」)。四個開關各管一塊,逐項用
+  CLI 2.1.278 的 stream-json init 訊息驗過(MCP 5→0、skills 28→0、memory_paths→None)。
+
 - 電腦版本機模式:`--delivery local`(LocalSink,chunk 邏輯沿用 WebSink、傳輸
   換 stdout JSONL,前綴 @@BLAVE@@);`BLAVE_PROXY_TOKEN` **不存在**時視為本機——
   拔掉 ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY(留著會蓋掉用戶的訂閱登入 → 401,

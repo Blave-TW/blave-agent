@@ -2172,6 +2172,28 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # Set after construction for the same reason as include_partial_messages
         # below: an SDK build whose options lack extra_args must not kill every turn.
         options.extra_args = {"append-system-prompt-file": sysprompt_path}
+    if isinstance(sink, LocalSink):
+        # 電腦版隔離(機隊不走這條,行為不變)。這裡的 agent 跑在**用戶自己的電腦、用戶
+        # 自己的 Claude Code 帳號**上,CLI 預設會把用戶全域的東西整包載進來:
+        # ~/.claude/CLAUDE.md、~/.claude.json 的 MCP、claude.ai 連接器、plugins、skills。
+        # 2026-09-19 實際發生:用戶全域 CLAUDE.md 寫著「用 blave MCP SSH 進機器」,電腦版
+        # 的 agent 就照做——把 SSH 私鑰寫進 ~/.ssh、連進用戶的雲端機抓資料畫圖,然後回報
+        # 「發送成功」。同一個 app 每個人的行為都不一樣,而且碰的是 workspace 以外的東西。
+        # 三個旗標各管一塊(CLI 2.1.278 用 stream-json 的 init 訊息逐項驗過):
+        #   setting_sources=[]      → 不讀 user/project/local 設定與 CLAUDE.md、plugins
+        #   strict_mcp_config       → 只認 --mcp-config 給的 MCP(我們沒給 = 一個都沒有)
+        #   disable-slash-commands  → 連 CLI 內建的 skills(dataviz、deep-research…)也關掉
+        # 規則來源只剩我們經 append-system-prompt-file 給的 AGENTS.md。登入不受影響
+        # (憑證在 Keychain,不在設定檔)。
+        options.setting_sources = []
+        options.strict_mcp_config = True
+        # 自動記憶不歸 setting_sources 管(官方文件 › What settingSources does not control):
+        # 不關的話 agent 會在 ~/.claude/projects/<workspace>/memory/ 自己寫筆記、下次帶回來,
+        # 行為就變成「看這台電腦以前聊過什麼」。我們的跨回合記憶只有 session.db 一條。
+        turn_env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+        options.env = turn_env
+        options.extra_args = {**(getattr(options, "extra_args", None) or {}),
+                              "disable-slash-commands": None}
     if _SUPPORTS_PARTIAL:
         options.include_partial_messages = True
     else:
