@@ -183,9 +183,6 @@ msgstr "Model: {model}"
 msgid "mp.cap"
 msgstr "Default for {model}: {level}. Higher thinks longer and uses more."
 
-msgid "mp.reset"
-msgstr "{model} has no {from}. Set to {to}."
-
 msgid "mp.none"
 msgstr "This model has no effort setting."
 

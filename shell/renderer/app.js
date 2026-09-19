@@ -206,10 +206,10 @@ $("ta").addEventListener("input", autosize);
    model 的支援清單長出來**,所以選不到不存在的組合(Cline 有過「換 model 後舊的
    thinking 設定殘留、打出 API error」的 bug;把 effort 烤進 model 名的做法則是被
    Cursor 的用戶罵到改掉的)。
-   換 model 時 effort 能留就留,留不住就落回該 model 的預設,**並留一行字**——ChatGPT
-   桌面版的 Codex 有兩個 open bug 都是「effort 被默默重設」。
+   換 model 時 effort 能留就留,留不住就落回該 model 的預設——面板不自動關,軌的格數與
+   選中格當場跟著變,看得到。
    選擇按引擎各記一組(model + 每個 model 各自的 effort),存本機、跨重啟保留。 */
-const MP = { kind: null, models: [], prefs: {}, model: null, note: null };
+const MP = { kind: null, models: [], prefs: {}, model: null };
 
 function mpLevel(lv) { const k = "lv." + lv; const v = t(k); return v === k ? lv.charAt(0).toUpperCase() + lv.slice(1) : v; }
 function mpCur() { return MP.models.find((m) => m.id === MP.model) || null; }
@@ -231,7 +231,7 @@ const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 async function mpInit(kind) {
   // 先同步清空:型錄最慢要 15 秒才回來(Blave AI 走網路),這期間按送出不能把**上一個
   // 引擎**的 model 送過去(Codex 的 gpt-5.5 送給 Blave 的 proxy → 該輪失敗)。
-  MP.kind = kind; MP.note = null; MP.models = []; MP.model = null; MP.defaultModel = null;
+  MP.kind = kind; MP.models = []; MP.model = null; MP.defaultModel = null;
   $("mp").hidden = true;
   const [opt, prefs] = await Promise.all([window.blave.modelOptions(kind), window.blave.loadModelPrefs()]);
   // 舊引擎的型錄晚到(快速切換)→ 丟掉,不然會蓋掉新引擎的、還被 mpSave 寫進錯的欄位
@@ -286,34 +286,29 @@ function mpPaint() {
   });
 
   // 說明句(這個 model 的預設是什麼、越高代表什麼)是在解釋術語 → 進 tooltip。
-  // 面板上那一行只留給兩種**狀態**:effort 被重設了、或這個 model 根本沒有 effort。
-  // 重設通知絕不能進 tooltip——藏進 hover 就等於默默重設。
+  // 面板上那一行只留給一種**狀態**:這個 model 根本沒有 effort。
   $("mp-tipbox").textContent = has
     ? t("mp.cap", { model: m.name, level: mpLevel(m.defaultEffort || m.efforts[0]) }) : "";
   const note = $("mp-note");
-  note.classList.toggle("is-reset", !!MP.note);
-  note.textContent = MP.note ? MP.note : has ? "" : t("mp.none");
+  note.textContent = has ? "" : t("mp.none");
   note.hidden = !note.textContent;
 }
 
 function mpPickModel(id) {
   if (id === MP.model) return;
   const before = mpEffort();
-  MP.model = id; MP.note = null;
+  MP.model = id;
   const m = mpCur();
   const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
   slot.efforts = slot.efforts || {};
-  if (m.efforts.length && !slot.efforts[id]) {
-    // 這個 model 沒選過 effort:前一個 model 的值它也支援就沿用,不支援就落回預設並說明
-    if (before && m.efforts.includes(before)) slot.efforts[id] = before;
-    else if (before) MP.note = t("mp.reset", { model: m.name, from: mpLevel(before), to: mpLevel(m.defaultEffort || m.efforts[0]) });
-  }
+  // 這個 model 沒選過 effort:前一個 model 的值它也支援就沿用,不支援就由 mpEffort() 落回預設
+  if (!slot.efforts[id] && before && m.efforts.includes(before)) slot.efforts[id] = before;
   mpSave(); mpPaint();
   const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur) cur.focus();
 }
 function mpPickEffort(lv) {
   const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
-  slot.efforts = slot.efforts || {}; slot.efforts[MP.model] = lv; MP.note = null;
+  slot.efforts = slot.efforts || {}; slot.efforts[MP.model] = lv;
   mpSave(); mpPaint();
   const cur = $("mp-rail").querySelector('[aria-checked="true"]'); if (cur) cur.focus();
 }
@@ -330,7 +325,6 @@ function mpClose(refocus) {
   if ($("mp-panel").hidden) return;
   $("mp-panel").hidden = true; $("mp").classList.remove("is-open");
   $("mp-trigger").setAttribute("aria-expanded", "false");
-  MP.note = null; mpPaint();
   if (refocus) $("mp-trigger").focus();
 }
 $("mp-trigger").addEventListener("click", () => ($("mp-panel").hidden ? mpOpen() : mpClose(true)));
