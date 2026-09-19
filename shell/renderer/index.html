@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en" data-theme="dark"><head><meta charset="utf-8">
 <title>Blave</title>
-<link rel="stylesheet" href="mockup.css">
+<link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="app.css">
 </head><body>
 
@@ -11,20 +11,20 @@
     <div class="cn-bar" style="-webkit-app-region:drag"></div>
     <div class="cn-mid">
       <div class="cn-brand"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></div>
+      <h4 data-i18n="cn.h"></h4>
       <p class="cn-sub" data-i18n="cn.sub"></p>
       <div class="cn-card">
         <button class="cn-back" id="cn-back" type="button" hidden></button>
         <div class="cn-sec cn-blave">
           <div class="t">
-            <div class="cn-ttl" data-i18n="cn.blave.title"></div>
+            <h6 class="cn-ttl" data-i18n="cn.blave.title"></h6>
             <p class="cn-desc" data-i18n="cn.blave.desc"></p>
           </div>
-          <span class="cn-cur" id="cn-blave-cur" data-i18n="cn.current" hidden></span>
           <button class="btn-fill" id="btn-blave" type="button"></button>
         </div>
         <div class="cn-sec">
           <div class="cn-head">
-            <span class="l" data-i18n="cn.local.label"></span>
+            <h6 class="cn-ttl" data-i18n="cn.local.label"></h6>
             <button class="btn-quiet" id="btn-redetect" type="button" data-i18n="cn.redetect"></button>
           </div>
           <p class="cn-desc" data-i18n="cn.local.desc"></p>
@@ -34,19 +34,23 @@
           <p class="cn-hint" id="cn-hint" hidden></p>
         </div>
       </div>
-      <p class="cn-foot" data-i18n="cn.foot"></p>
+      <p class="cn-foot" id="cn-foot" data-i18n="cn.foot"></p>
     </div>
   </div>
 </div>
 
 <!-- ============ 三欄工作頁(v1:全空) ============ -->
 <div id="view-ws" class="app" hidden>
+  <!-- 滿版 38px 拖曳條。原本 drag 只掛在側欄的字標上(236px),其餘一千多 px 的
+       標題列帶拖不動;而且字標擠在紅綠燈那一帶,產品名被燈號蓋成「olave」。
+       這條跟連結畫面的 .cn-bar 是同一個做法。 -->
+  <div class="ws-bar"></div>
   <div class="ws">
     <aside class="pane-strategies">
-      <div class="ws-brand" style="-webkit-app-region:drag"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></div>
+      <div class="ws-brand"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></div>
       <div class="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
       <div class="strat-list"><p class="pf-state" data-i18n="ws.noStrategies"></p></div>
-      <button class="ws-conn" id="ws-conn" type="button" aria-haspopup="true"></button>
+      <button class="ws-conn" id="ws-conn" type="button"></button>
     </aside>
     <section class="pane-main">
       <div class="main-empty">
@@ -54,7 +58,14 @@
       </div>
     </section>
     <section class="pane-chat">
-      <div class="chat-scroll" id="chat-scroll"></div>
+      <div class="chat-scroll" id="chat-scroll">
+        <!-- v1 三欄裡只有這一欄能用,所以由它開口;另外兩欄收回一行狀態句,
+             不再各自叫用戶「去右邊跟 agent 講話」(同一個例子原本出現兩次)。 -->
+        <div class="chat-empty" id="chat-empty">
+          <p data-i18n="ws.chatEmpty"></p>
+          <button class="btn-out" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
+        </div>
+      </div>
       <div class="chat-input-wrap">
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>

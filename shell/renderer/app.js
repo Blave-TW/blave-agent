@@ -3,14 +3,16 @@ const $ = (id) => document.getElementById(id);
 
 function row({ name, st, stClass, action, cur }) {
   const div = document.createElement("div");
-  div.className = "cn-row" + (stClass === "" ? " off" : "");
+  div.className = "cn-row" + (stClass === "" ? " off" : "") + (cur ? " is-cur" : "");
   const stSpan = stClass === "on"
     ? `<span class="cn-st on"><span class="dot"></span>${st}</span>`
     : `<span class="cn-st ${stClass}">${st}</span>`;
   div.innerHTML = `<span class="n">${name}</span>${stSpan}`;
-  // 目前用的那一列給徽章、不給按鈕:這個畫面既是首次連結也是切換器,標出
-  // 「你在這」才不會讀成「重新開始」。
-  if (cur) { const c = document.createElement("span"); c.className = "cn-cur"; c.textContent = t("cn.current"); div.appendChild(c); }
+  // 目前用的那一列:純加粗 + aria-current(canon › Interaction states › Active,
+  // 沿用 Dropdown menu Selected 的先例)。原本掛一顆有框的灰徽章,既不是 canon
+  // 的 status badge 也不是 mini tag,而且佔在兄弟列按鈕的同一個槽,讀起來像一顆
+  // 壞掉的按鈕。
+  if (cur) div.setAttribute("aria-current", "true");
   if (action) div.appendChild(action);
   return div;
 }
@@ -21,17 +23,27 @@ function btn(cls, text, onClick) {
   return b;
 }
 
+/* 焦點跟著「當下真的能用的那條」走,不是固定給 Blave。
+   偵測到已登入的本機 agent 時,填色鈕給它、Blave 退成描邊:那條已經可用、零成本、
+   而且我們不收 AI 費用;Blave 那條要 OAuth 還要綁卡。把填色永遠釘在 Blave 上,
+   讀起來就是「在推自己的付費線」,跟「兩條產品線並行」的定位相反。
+   什麼都沒偵測到時 Blave 拿回填色 —— 那時它是唯一走得通的路。 */
+let localReady = false;
+
 async function detect() {
   $("agent-rows").innerHTML = `<p class="cn-desc">${t("cn.detecting")}</p>`;
   $("cn-hint").hidden = true;
   const d = await window.blave.detectAgents();
   const rows = $("agent-rows"); rows.innerHTML = "";
+  localReady = !!((d.claude.installed && d.claude.loggedIn) || (d.codex.installed && d.codex.loggedIn));
+  const localCls = localReady ? "btn-fill" : "btn-out";
+  paintBlaveBtn();
 
   // Claude Code 三態:已登入 / 裝了沒登入 / 沒裝
   if (d.claude.installed && d.claude.loggedIn) {
     rows.appendChild(row({ name: "Claude Code", st: t("st.signedIn"), stClass: "on",
       cur: cur === "claude",
-      action: cur === "claude" ? null : btn("btn-out", t("cn.connect"), () => connect("claude", d.claude)) }));
+      action: cur === "claude" ? null : btn(localCls, t("cn.connect"), () => connect("claude", d.claude)) }));
   } else if (d.claude.installed) {
     rows.appendChild(row({ name: "Claude Code", st: t("st.notSignedIn"), stClass: "up",
       action: btn("btn-out", t("cn.redetect"), detect) }));
@@ -45,7 +57,7 @@ async function detect() {
   if (d.codex.installed && d.codex.loggedIn) {
     rows.appendChild(row({ name: "Codex", st: t("st.signedIn"), stClass: "on",
       cur: cur === "codex",
-      action: cur === "codex" ? null : btn("btn-out", t("cn.connect"), () => connect("codex", d.codex)) }));
+      action: cur === "codex" ? null : btn(localCls, t("cn.connect"), () => connect("codex", d.codex)) }));
   } else if (d.codex.installed) {
     rows.appendChild(row({ name: "Codex", st: t("st.notSignedIn"), stClass: "up",
       action: btn("btn-out", t("cn.redetect"), detect) }));
@@ -63,6 +75,21 @@ async function connect(kind, info) {
   enterWorkspace(kind, info);
 }
 
+let hasToken = false;
+
+/* Blave 那顆鈕:字(登入 / 切換)與階層(填色 / 描邊)都在這裡決定。
+   已經有 token 就不必再跑一次 OAuth——切回去是一個選擇,不是重新授權。 */
+function paintBlaveBtn() {
+  const b = $("btn-blave");
+  const sec = document.querySelector(".cn-blave");
+  b.hidden = cur === "blave";
+  sec.classList.toggle("is-cur", cur === "blave");
+  if (cur === "blave") { sec.setAttribute("aria-current", "true"); }
+  else { sec.removeAttribute("aria-current"); }
+  b.textContent = hasToken && cur !== "blave" ? t("cn.blave.switch") : t("cn.blave.btn");
+  b.className = localReady ? "btn-out" : "btn-fill";
+}
+
 /* 開啟連結畫面。從工作頁進來(back=true)時多一顆返回鍵——沒有它,按了設定就
    出不去,跟「選了就回不去」是同一個病、只是換一層。 */
 async function openConnect(back) {
@@ -70,12 +97,10 @@ async function openConnect(back) {
   $("view-connect").hidden = false;
   $("cn-back").hidden = !back;
   $("cn-back").textContent = t("cn.back");
-  const b = $("btn-blave");
-  // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權。
-  b.textContent = (await window.blave.hasBlaveToken()) && cur !== "blave"
-    ? t("cn.blave.switch") : t("cn.blave.btn");
-  if (cur === "blave") { b.hidden = true; } else { b.hidden = false; }
-  $("cn-blave-cur").hidden = cur !== "blave";
+  // 「選錯了沒關係」在第一次連結時有用,在切換器上是廢話(用戶正在做的就是換)
+  $("cn-foot").hidden = !!back;
+  hasToken = await window.blave.hasBlaveToken();
+  paintBlaveBtn();
   detect();
 }
 function enterWorkspace(kind, info) {
@@ -164,6 +189,13 @@ let running = false;
 let liveBubble = null;
 
 function scrollChat() { $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight; }
+
+// 起手範例:點了直接送,不要只是把字填進去讓人再按一次。
+$("chat-eg").addEventListener("click", () => {
+  $("ta").value = t("ws.chatExample");
+  autosize();
+  sendDraft();
+});
 
 function addMsg(cls, text) {
   const el = document.createElement("div");
@@ -281,6 +313,7 @@ async function sendDraft() {
   if (!msg || running) return;
   running = true; $("btn-send").disabled = true;
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
+  $("chat-empty").hidden = true;
   addMsg("you", msg); $("ta").value = ""; autosize();
   liveBubble = null; faultShown = false;
   try {
@@ -341,7 +374,6 @@ function addFault(f) {
   b.style.marginTop = "var(--space-8)"; b.style.display = "block";
   b.addEventListener("click", f.act);
   el.appendChild(b);
-  el.style.opacity = "1";   // .msg.sys 是 .6,這條要讀得清楚
   scrollChat();
 }
 
@@ -386,18 +418,21 @@ function applyStatic() {
 (async () => {
   setLang(pickLang(await window.blave.getLocale()));
   applyStatic();
-  $("btn-blave").textContent = t("cn.blave.btn");
+  hasToken = await window.blave.hasBlaveToken();
   const prev = await window.blave.loadConnection();
   // kind 說「用 Blave 的 AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
   // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走
   // 本機模式 —— 帳算在用戶自己的 Claude Code 訂閱上。那個 footer 不能說謊。
   if (prev && prev.kind === "blave" && !(await window.blave.hasBlaveToken())) {
     await window.blave.clearConnection();
+    hasToken = false;
+    paintBlaveBtn();
     detect();
     $("cn-hint").textContent = t("conn.expired");
     $("cn-hint").hidden = false;
     return;
   }
   if (prev && prev.kind) { enterWorkspace(prev.kind, prev); return; }
+  paintBlaveBtn();
   detect();
 })();

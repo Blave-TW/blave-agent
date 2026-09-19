@@ -1,9 +1,184 @@
-/* 外殼自己的覆寫:mockup.css 是 review 頁抽出來的,這裡把 .app 變成全視窗。 */
+/* =========================================================================
+   Blave 桌面版 — 元件與版面
+   版面/元件抄自 web/app/main/templates/agent/workspace.html +
+   web/app/static/css/agent/workspace.css 的 v1 子集。token 在 tokens.css。
+   ========================================================================= */
+/* 字:系統字堆疊,不是官網的 Plus Jakarta Sans + Noto Sans TC。
+   canon › Native app › 字 的「原生 app 用系統字」例外延伸到桌面 Electron:
+   打包 Noto Sans TC 每個字重要數 MB(得 subset、得有 build pipeline),而 SF Pro
+   在 Mac 上反而讓這個 app 讀起來像原生軟體。中文會自己落到 PingFang TC。
+   這條是**誠實宣告已經在出貨的東西**——改之前 CSS 宣告一套、畫面上是另一套。 */
+.app {
+  height: 100%; width: 100%;
+  background: var(--bg-body);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;                   /* Terminal 基準字(canon › Density) */
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column;
+}
+.app .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+/* 零特異度 reset(:where):放全域而非 .app 下——並排展示的卡片不在 .app 裡,
+   收在 .app 下會讓那幾顆鈕露出瀏覽器預設填色。 */
+:where(button) { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+:where(a) { text-decoration: none; }
+.wm { display: block; height: 18px; width: auto; }   /* Blave 文字標,fill=currentColor */
+
+/* =========================================================================
+   畫面 1 — 連結畫面(獨立 full-screen,不是蓋在工作頁上的 modal)
+   ========================================================================= */
+.cn { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* 38px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色) */
+.cn-bar { flex: none; height: 38px; display: flex; align-items: center; padding: 0 var(--space-16); }
+.cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 38px; }
+.cn-brand { color: var(--ink); margin-bottom: var(--space-24); }
+.cn-mid h4 {
+  margin: 0 0 var(--space-8);
+  font-size: 20px; font-weight: 600; line-height: 1.4;  /* Terminal h4(canon › Type scale) */
+  color: var(--ink);
+}
+.cn-sub { margin: 0 0 var(--space-24); font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+.cn-foot { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }
+
+/* 連結卡:靜止表面 → shadow-md、無邊框(canon › Elevation:ring 就是那條線) */
+.cn-card {
+  width: 560px;                      /* = workspace.css .ns-modal.wide 的 560 */
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  text-align: left;
+}
+.cn-sec { padding: var(--space-16); }
+.cn-sec + .cn-sec { border-top: 1px solid var(--border-hairline); }
+
+/* 區塊 1:Blave 的 AI(上) */
+.cn-blave { display: flex; align-items: center; gap: var(--space-16); }
+.cn-blave .t { flex: 1; min-width: 0; }
+.cn-ttl { font-size: 13px; font-weight: 600; color: var(--ink); }
+.cn-desc { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* in-app 功能動作鈕:高對比中性填色,永遠不是橘(canon › Interaction states) */
+.btn-fill {
+  flex: none; height: 44px; padding: 0 var(--space-16);
+  border-radius: var(--radius-md);
+  background: var(--control-fill); color: var(--control-fill-text);
+  font-size: 13px; font-weight: 600;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.btn-fill:hover { opacity: .85; }
+
+/* 區塊 2:本機偵測到的 agent(下) */
+.cn-head { display: flex; align-items: baseline; gap: var(--space-8); margin-bottom: var(--space-2); }
+.cn-head .l { font-size: 12px; color: var(--ink-3); }
+.btn-quiet {
+  margin-left: auto; flex: none;
+  font-size: 12px; color: var(--ink-3);
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.btn-quiet:hover { color: var(--ink); text-decoration: underline; }
+.cn-rows { margin-top: var(--space-12); }
+.cn-row {
+  display: flex; align-items: center; gap: var(--space-12);
+  min-height: 44px;                  /* Fitts 熱區 */
+}
+.cn-row + .cn-row { border-top: 1px solid var(--border-hairline); }
+.cn-row .n { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); }
+.cn-row.off .n { color: var(--ink-3); }
+.cn-st { flex: none; display: flex; align-items: center; gap: var(--space-6); font-size: 12px; color: var(--ink-3); }
+.cn-st.on { color: var(--ink-2); }
+.cn-st .dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--color-green); }
+/* Outlined control(canon › Terminal toolbar):hover 只灰填,邊框與字不變色 */
+.btn-out {
+  flex: none; height: 32px; padding: 0 var(--space-12);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
+  background: transparent; color: var(--ink);
+  font-size: 13px; font-weight: 500;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.btn-out:hover { background: var(--surface-muted); }
+.cn-hint { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 暗底「必須被讀到」的次要字升一階(canon › Neutrals 註) */
+.cn-hint.up, .cn-st.up { color: var(--ink-2); }
+
+/* =========================================================================
+   畫面 2 / 3 — 三欄工作頁(版面照 workspace.html / workspace.css)
+   ========================================================================= */
+.ws { flex: 1; display: flex; min-height: 0; }
+
+/* LEFT — .pane-strategies:236 寬、右 hairline、padding 16/12 */
+.pane-strategies {
+  width: 236px; flex: 0 0 auto;
+  border-right: 1px solid var(--border-hairline);
+  display: flex; flex-direction: column;
+  padding: 0 var(--space-12) var(--space-16);
+}
+/* 字標在拖曳條**下面**:紅綠燈佔 x 12–71.5 / y 10–23.5,字標原本在 y 16–33.5,
+   重疊 55×7.5 —— b、l 的上伸部正好住在那一帶,產品名被讀成「olave」。 */
+.ws-brand {
+  flex: none; height: 32px; display: flex; align-items: center;
+  padding: 0 var(--space-4);
+}
+.ws-brand .wm { color: var(--ink); }
+.strat-head { display: flex; align-items: center; padding: var(--space-16) var(--space-4) var(--space-8); }
+.strat-head .label { font-size: 12px; color: var(--ink-3); }
+.strat-list { flex: 1; overflow-y: auto; }
+/* 三態(載入/空/錯誤)同一行灰字,無插圖(canon › States › Empty) */
+.pf-state { padding: var(--space-24) var(--space-4); font-size: 13px; color: var(--ink-3); }
+
+/* MIDDLE — .pane-main:沒選策略時 main-head / main-tabs 都不渲染 */
+.pane-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  padding: var(--space-32);
+}
+.main-empty p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-3); text-align: center; max-width: 34em; }
+
+/* RIGHT — .pane-chat:452 寬、卡面底 */
+.pane-chat {
+  width: 452px; flex: 0 0 auto;
+  background: var(--surface-card);
+  /* light 下 white↔surface 只差一階、幾乎看不出欄界,補一條 hairline(與側欄右緣同語言) */
+  border-left: 1px solid var(--border-hairline);
+  /* 內容避開 macOS 標題列拖曳區(component metric = 燈號那條 38px) */
+  padding-top: 38px;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.chat-scroll { flex: 1; overflow-y: auto; padding: var(--space-24) var(--space-24) var(--space-16); }
+.msg { margin-bottom: var(--space-24); }
+/* 用戶靠右淡底泡泡、agent 靠左純文字——靠對齊區分,不加角色 label */
+.msg.you { display: flex; justify-content: flex-end; }
+.msg.you .bubble {
+  background: var(--surface-muted); border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-16); max-width: 84%;
+  font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+}
+.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); }
+.msg.ai p { margin: 0; }
+.chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
+.chat-input {
+  display: flex; align-items: center; gap: var(--space-8);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-md);
+  background: var(--surface-field);
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
+}
+.btn-send {
+  width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-sm);
+  background: var(--control-fill); color: var(--control-fill-text);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.btn-send:hover { opacity: .85; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
 html, body { margin: 0; height: 100%; background: var(--bg-body); }
 .app { height: 100vh; width: 100vw; border: none; border-radius: 0; }
 [hidden] { display: none !important; }
-.cn-bar { -webkit-app-region: drag; height: 38px; }
-.ws-brand { padding-top: 14px; }           /* hiddenInset 紅綠燈的空間 */
+.cn-bar, .ws-bar { -webkit-app-region: drag; height: 38px; flex: none; }
+/* 互動元素要能點:整條 drag 之外的東西一律退出拖曳區 */
+button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 自動長高:高度由 JS 量 scrollHeight 寫進 style,這裡只定上限與節奏
    (照 web/app/static/css/agent/workspace.css `.chat-input textarea` 的
    max-height 120px / padding 4px 0 / 13px·1.5 —— 約 6 行滿版後自己捲) */
@@ -13,8 +188,9 @@ html, body { margin: 0; height: 100%; background: var(--bg-body); }
   max-height: 120px; padding: var(--space-4) 0;
 }
 .chat-input textarea::placeholder { color: var(--ink-3); }
-.ws-conn { margin-top: auto; padding: 10px 14px; font-size: 11px; opacity: .55; }
-.msg.sys { opacity: .6; font-size: 12px; }
+/* off-scale 的 10/14 換成 4px 階;顏色走墨階而不是 opacity */
+.ws-conn { margin-top: auto; padding: var(--space-8) var(--space-12); font-size: 11px; color: var(--ink-3); }
+.msg.sys { color: var(--ink-3); font-size: 12px; }
 
 /* =========================================================================
    等待指示器 — 網頁工作頁「思考列」的 v1 子集
@@ -68,12 +244,6 @@ html, body { margin: 0; height: 100%; background: var(--bg-body); }
 /* ── 連結畫面兼任切換器 ─────────────────────────────
    同一個畫面,第一次是「選一個」,之後是「換一個」。差別只有兩件:目前用的那列
    掛徽章(不是把按鈕變灰——灰掉讀起來像壞了),以及左上角多一顆返回。 */
-.cn-cur {
-  flex: none;
-  font-size: 12px; color: var(--ink-3);
-  border: 1px solid var(--border-hairline); border-radius: var(--radius-xs);
-  padding: 2px var(--space-8);
-}
 .cn-back {
   display: block; margin-bottom: var(--space-12);
   font-size: 12px; color: var(--ink-3);
@@ -83,5 +253,36 @@ html, body { margin: 0; height: 100%; background: var(--bg-body); }
 
 /* 左下角那行從「一段字」變成按鈕:回連結畫面換 agent。跑到一半 disabled。 */
 .ws-conn { cursor: pointer; text-align: left; width: 100%; color: inherit; background: none; border: 0; }
-.ws-conn:hover:not(:disabled) { opacity: 1; }
-.ws-conn:disabled { cursor: default; }
+.ws-conn:hover:not(:disabled) { color: var(--ink); }
+.ws-conn:disabled { cursor: not-allowed; color: var(--color-greyDark); }
+
+/* ── 鍵盤焦點(canon › States › Focus)────────────────
+   原本全 app 一條 :focus-visible 都沒有,而唯一的文字輸入框還 outline:none
+   且沒有替代。canon:borderless 欄位自給 focus、絕不 outline:none 而無替代;
+   dark 的 ring 是 2px darkText + 2px offset。--focus-ring 早就在 token 裡。 */
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+/* 輸入框走 border-color,不畫 ring(canon:欄位的 focus 是邊框) */
+.chat-input:focus-within { border-color: var(--ink); }
+
+/* ── 熱區(canon › Verification:熱區與視覺分開量)──────
+   桌面指標裝置的下限是 WCAG 2.5.8 的 24×24。這兩顆是 12px 字 + UA padding
+   ≈19px 高,用透明 ::before 外擴,**不動視覺高度**。 */
+.cn-back, .btn-quiet { position: relative; }
+.cn-back::before, .btn-quiet::before {
+  content: ""; position: absolute; inset: -6px -4px;
+}
+
+/* 聊天欄的空狀態:一句 + 一顆可點的起手範例(canon › States › Empty:扁平一行
+   + 填充動作)。另外兩欄只留狀態句,不再重複同一個例子。 */
+.chat-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-12);
+  padding: var(--space-24) 0;
+}
+.chat-empty p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--ink-3); }
+
+/* 目前使用的那一列/那一段:純加粗,不發明第三種徽章(canon › Active) */
+.cn-row.is-cur .n, .cn-sec.is-cur .cn-ttl { font-weight: 600; }

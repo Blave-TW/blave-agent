@@ -1,0 +1,93 @@
+/* =========================================================================
+   Blave 桌面版 — design token(canon 的落地值)
+   值抄自 web/app/static/css/main.css(那裡才是 source of truth),規則來源
+   .claude/docs/design-system.md。**只有這個檔可以寫 hex**,其餘一律引變數。
+   App 只跑 dark:`<html data-theme="dark">` 是寫死的,light 值留著是為了跟
+   canon 對得起來、以及之後真的要做 light mode 時不必重查。
+   ========================================================================= */
+
+/* ---- tokens:light 值放 :root,dark 只重映射值(canon › Dark mode › 止血條款) ---- */
+:root {
+  /* brand */
+  --color-primary: #ff9960;
+  /* neutrals(冷藍染) */
+  --color-black: #1a222c;
+  --color-greyDark: #3f4a57;
+  --color-greyMedium: #5d6979;
+  --color-greyLightMedium: #c4cdd6;
+  --color-greyLight: #d5dde4;
+  --color-white: #eef1f4;
+  --color-pureWhite: #ffffff;
+  --color-surface: #f8fafb;
+  /* trading */
+  --color-green: #31a86a;
+  /* dark(黑潮墨) */
+  --color-darkBody: #0f161a;
+  --color-darkCard: #1a2328;
+  --color-darkBorder: #2d383e;
+  --color-darkText: #eaeff0;
+
+  /* radii */
+  --radius-micro: 4px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /* spacing */
+  --space-2: 2px;  --space-4: 4px;   --space-6: 6px;   --space-8: 8px;
+  --space-12: 12px; --space-16: 16px; --space-24: 24px; --space-32: 32px;
+  --space-48: 48px; --space-64: 64px;
+
+  /* motion */
+  --motion-fast: 0.15s;
+  --motion-base: 0.18s;
+  --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* elevation */
+  --shadow-sm: 0 0 0 1px rgba(26,34,44,.07), 0 1px 2px -1px rgba(26,34,44,.10);
+  --shadow-md: 0 0 0 1px rgba(26,34,44,.06), 0 2px 3px -2px rgba(26,34,44,.08),
+               0 3px 12px -4px rgba(26,34,44,.06), 0 4px 16px -8px rgba(26,34,44,.06);
+
+  /* ---- 語意角色變數(canon › Color › 語意角色變數):雙態表面一律引這層 ---- */
+  --bg-body: var(--color-white);
+  --surface-card: var(--color-surface);
+  --surface-muted: var(--color-greyLight);       /* 軌道 / outlined hover 填色 */
+  --surface-field: var(--color-pureWhite);
+  --border-hairline: var(--color-greyLight);
+  --border-frame: var(--color-greyLight);
+  --ink: var(--color-black);
+  --ink-2: var(--color-greyDark);
+  --ink-3: var(--color-greyMedium);
+  /* in-app 功能動作鈕(canon › Interaction states › 橘的邊界):中性反白,不用橘 */
+  --control-fill: var(--color-black);
+  --control-fill-text: var(--color-pureWhite);
+  --focus-ring: var(--color-black);
+}
+[data-theme="dark"] {
+  /* 墨階三變數的 dark 重上值(canon › Neutrals 註) */
+  --color-black: #222d33;
+  --color-greyDark: #546168;
+  --color-greyMedium: #818f97;
+
+  --bg-body: var(--color-darkBody);
+  --surface-card: var(--color-darkCard);
+  --surface-muted: var(--color-darkBorder);
+  --surface-field: var(--color-darkBody);
+  --border-hairline: var(--color-darkBorder);
+  --border-frame: var(--color-greyDark);
+  --ink: var(--color-darkText);
+  --ink-2: var(--color-greyLightMedium);
+  --ink-3: var(--color-greyMedium);
+  --control-fill: var(--color-darkText);
+  --control-fill-text: var(--color-darkBody);
+  --focus-ring: var(--color-darkText);
+  /* dark 保留 ring、去掉大模糊(canon › Elevation) */
+  --shadow-sm: 0 0 0 1px rgba(255,255,255,.08);
+  --shadow-md: 0 0 0 1px rgba(255,255,255,.08), 0 4px 16px -8px rgba(0,0,0,.5);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+

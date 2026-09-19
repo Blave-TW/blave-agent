@@ -329,7 +329,10 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 1024, minHeight: 680,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#10151c",
+    // Electron 讀不到 CSS 變數,所以這裡鏡射 `--color-darkBody`(tokens.css)。
+    // 改那顆就要改這裡。原本寫 #10151c —— H≈215,正是 canon › 色溫 點名要避開的
+    // Tailwind slate 地帶,開窗與 resize 的瞬間看得到。
+    backgroundColor: "#0f161a",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, nodeIntegration: false, sandbox: true,

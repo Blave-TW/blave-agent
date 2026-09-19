@@ -3,14 +3,17 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Language: en\n"
 
+msgid "cn.h"
+msgstr "Blave has no AI of its own."
+
 msgid "cn.sub"
-msgstr "Blave has no AI of its own. Pick one to write strategies and run backtests."
+msgstr "Connect one to write strategies and run backtests."
 
 msgid "cn.blave.title"
 msgstr "Use Blave's AI"
 
 msgid "cn.blave.desc"
-msgstr "Sign in with your Blave account. Pay per use, no AI subscription of your own needed."
+msgstr "Sign in with your Blave account. Pay per use, no AI subscription needed."
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
@@ -22,7 +25,7 @@ msgid "cn.local.label"
 msgstr "Local agent"
 
 msgid "cn.local.desc"
-msgstr "Use your own Claude Code or Codex subscription. Blave charges nothing for AI."
+msgstr "Use the Claude Code or Codex subscription you already have."
 
 msgid "cn.redetect"
 msgstr "Detect again"
@@ -38,9 +41,6 @@ msgstr "You can switch at any time."
 
 msgid "cn.back"
 msgstr "Back"
-
-msgid "cn.current"
-msgstr "In use"
 
 msgid "st.signedIn"
 msgstr "Signed in"
@@ -87,17 +87,23 @@ msgstr "This computer can't store credentials securely (Keychain unavailable), s
 msgid "TOKEN_EXCHANGE_FAILED"
 msgstr "Could not exchange the authorization code for a token."
 
+msgid "ws.chatEmpty"
+msgstr "Describe a trading idea and I'll write it, backtest it, and show you the numbers."
+
+msgid "ws.chatExample"
+msgstr "Backtest a BTC 20/50 moving-average strategy"
+
 msgid "ws.strategies"
 msgstr "Strategies"
 
 msgid "ws.noStrategies"
-msgstr "No strategies yet.\nTell the agent on the right an idea; once it backtests, it shows up here."
+msgstr "No strategies yet."
 
 msgid "ws.nothingToSee"
-msgstr "Nothing to see yet.\nSay something to the agent on the right, e.g. backtest a BTC 20/50 moving-average strategy."
+msgstr "Nothing to see yet."
 
 msgid "ws.placeholder"
-msgstr "e.g. backtest a BTC 20/50 moving-average strategy"
+msgstr "Message the agent"
 
 msgid "ws.send"
 msgstr "Send"
