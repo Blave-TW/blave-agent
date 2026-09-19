@@ -32,7 +32,6 @@
 /* 38px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色) */
 .cn-bar { flex: none; height: 38px; display: flex; align-items: center; padding: 0 var(--space-16); }
 .cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 38px; }
-.cn-brand { color: var(--ink); margin-bottom: var(--space-24); }
 .cn-mid h4 {
   margin: 0 0 var(--space-24);
   font-size: 20px; font-weight: 600; line-height: 1.4;  /* Terminal h4(canon › Type scale) */
@@ -56,12 +55,16 @@
 .cn-blave .cn-head { flex: 1; min-width: 0; }
 .cn-ttl { font-size: 13px; font-weight: 600; color: var(--ink); }
 .cn-desc { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
-/* in-app 功能動作鈕:高對比中性填色,永遠不是橘(canon › Interaction states) */
+/* in-app 功能動作鈕:高對比中性填色,永遠不是橘(canon › Interaction states)。
+   高 32 不是 44 —— canon › Verification:「44 是熱區下限,不是視覺高度」,而
+   Terminal › Density 的控件帶是 32–36、Outlined control 是 30–34。同一張卡上兩顆
+   要人二選一的鈕本來就該在同一個尺寸帶。半徑與字重也對齊 .btn-out:焦點由填色
+   承擔,不必再用一階字重重講一次(canon › Type:按鈕 500)。 */
 .btn-fill {
-  flex: none; height: 44px; padding: 0 var(--space-16);
-  border-radius: var(--radius-md);
+  flex: none; height: 32px; padding: 0 var(--space-16);
+  border-radius: var(--radius-xs);
   background: var(--control-fill); color: var(--control-fill-text);
-  font-size: 13px; font-weight: 600;
+  font-size: 13px; font-weight: 500;
   transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .btn-fill:hover { opacity: .85; }
@@ -275,6 +278,11 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .cn-back::before, .btn-quiet::before {
   content: ""; position: absolute; inset: -6px -4px;
 }
+/* 32 高的鈕補到 44:無邊框 -6,有 1px 邊框的 -7(pseudo 錨 padding box,
+   邊框不算在內,-6 只得到 42)。 */
+.btn-fill, .btn-out { position: relative; }
+.btn-fill::before { content: ""; position: absolute; inset: -6px; }
+.btn-out::before { content: ""; position: absolute; inset: -7px; }
 
 /* 聊天欄的空狀態:一句 + 一顆可點的起手範例(canon › States › Empty:扁平一行
    + 填充動作)。另外兩欄只留狀態句,不再重複同一個例子。 */
@@ -284,5 +292,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 }
 .chat-empty p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--ink-3); }
 
-/* 目前使用的那一列/那一段:純加粗,不發明第三種徽章(canon › Active) */
-.cn-row.is-cur .n, .cn-sec.is-cur .cn-ttl { font-weight: 600; }
+/* 目前使用的那一列:純加粗,不發明第三種徽章(canon › Active)。只對 .n 有效
+   —— 它沒設字重、繼承 400,加粗看得出來;`.cn-ttl` 本來就是 600,對它加粗是
+   no-op,所以不寫。Blave 那段的「目前使用」靠按鈕消失表示,跟列的做法一致。 */
+.cn-row.is-cur .n { font-weight: 600; }
