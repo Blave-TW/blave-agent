@@ -22,6 +22,11 @@
   /* trading */
   --color-green: #31a86a;
   --color-red: #d94f5c;        /* crimson — 3.8:1 on surface, 4.5:1 on darkBody */
+  /* categorical data(多序列、非交易語意;canon › Color › Categorical data)——指標線用 */
+  --color-data-1: #ff9960;     /* = --color-primary,主序列 */
+  --color-data-2: #5b7a9e;     /* 暖鋼藍 */
+  --color-data-3: #c79a3e;     /* 暖赭金 */
+  --color-data-4: #9a6f8e;     /* 暖梅紫 */
   /* dark(黑潮墨) */
   --color-darkBody: #0f161a;
   --color-darkCard: #1a2328;
@@ -90,6 +95,9 @@
   /* dark 保留 ring、去掉大模糊(canon › Elevation) */
   --shadow-sm: 0 0 0 1px rgba(255,255,255,.08);
   --shadow-md: 0 0 0 1px rgba(255,255,255,.08), 0 4px 16px -8px rgba(0,0,0,.5);
+  /* modal 這類暫時浮層(= web main.css dark 的 --glass-shadow)與它底下的遮罩 */
+  --shadow-overlay: 0 8px 24px rgba(0,0,0,.5);
+  --scrim: rgba(0,0,0,.6);
 }
 
 *, *::before, *::after { box-sizing: border-box; }

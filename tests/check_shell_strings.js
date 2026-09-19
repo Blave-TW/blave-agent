@@ -20,6 +20,11 @@ const fail = (msg) => { console.log("FAIL  " + msg); bad++; };
 const pass = (msg) => console.log("PASS  " + msg);
 
 // ---- 1. en / zh 對齊 ----
+// 用戶看得到的那層:主畫面 + 報告的各個分頁模組(report-*.js 由別的檔負責,
+// 沒列進來的話它們的 key 漂移、漏翻的字面都不會被擋到)。
+const RENDERER_FILES = ["renderer/app.js", "renderer/index.html",
+  ...fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /^report-.*\.js$/.test(f)).map((f) => "renderer/" + f)];
+
 const src = read("renderer/strings.js");
 const block = (name) => src.split(`  ${name}: {`)[1].split("\n  },")[0];
 const keysOf = (b) => new Set([...b.matchAll(/^\s*"([^"]+)":/gm)].map((m) => m[1]));
@@ -35,7 +40,7 @@ if (onlyEn.length || onlyZh.length) {
 
 // ---- 2. 用到的 key 都存在 ----
 const used = new Set();
-for (const f of ["renderer/app.js", "renderer/index.html"]) {
+for (const f of RENDERER_FILES) {
   const txt = read(f);
   for (const m of txt.matchAll(/\bt\("([^"]+)"/g)) used.add(m[1]);
   for (const m of txt.matchAll(/data-i18n(?:-html|-ph|-aria)?="([^"]+)"/g)) used.add(m[1]);
@@ -51,7 +56,7 @@ else pass(`引用的 ${used.size} 個 key 都在表裡`);
 
 // ---- 3. renderer 的非註解行沒有中文字面 ----
 const HAN = /[一-鿿]/;
-for (const f of ["renderer/app.js", "renderer/index.html"]) {
+for (const f of RENDERER_FILES) {
   const hits = [];
   let inBlock = false;
   read(f).split("\n").forEach((line, i) => {

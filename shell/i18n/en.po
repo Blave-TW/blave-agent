@@ -36,9 +36,6 @@ msgstr "Connect"
 msgid "cn.foot"
 msgstr "You can switch at any time."
 
-msgid "cn.back"
-msgstr "Back"
-
 msgid "st.signedIn"
 msgstr "Signed in"
 
@@ -47,9 +44,6 @@ msgstr "Not signed in"
 
 msgid "st.notFound"
 msgstr "Not found"
-
-msgid "hint.claudeLogin"
-msgstr "Run claude once in a terminal, sign in, then come back and press “Detect again”."
 
 msgid "oauth.waiting"
 msgstr "Waiting for the browser…"
@@ -84,9 +78,6 @@ msgstr "This computer can't store credentials securely (Keychain unavailable), s
 msgid "TOKEN_EXCHANGE_FAILED"
 msgstr "Could not exchange the authorization code for a token."
 
-msgid "ws.chatEmpty"
-msgstr "Describe a trading idea and I'll write it, backtest it, and show you the numbers."
-
 msgid "ws.chatExample"
 msgstr "Backtest a BTC 20/50 moving-average strategy"
 
@@ -101,18 +92,6 @@ msgstr "Message the agent"
 
 msgid "ws.send"
 msgstr "Send"
-
-msgid "ws.connBlave"
-msgstr "Blave AI"
-
-msgid "ws.connClaude"
-msgstr "Claude Code (your subscription)"
-
-msgid "ws.connCodex"
-msgstr "Codex (your subscription)"
-
-msgid "ws.conn"
-msgstr "Connected: {name}"
 
 msgid "ws.settings"
 msgstr "Settings"
@@ -139,10 +118,10 @@ msgid "turn.error"
 msgstr "Something went wrong: {msg}"
 
 msgid "fault.authInvalid"
-msgstr "This computer's Blave authorization is no longer valid (revoked or expired). This turn did not run."
+msgstr "This computer’s Blave sign-in is no longer valid, so this turn didn’t run."
 
 msgid "fault.authBtn"
-msgstr "Sign in again"
+msgstr "Sign In Again"
 
 msgid "fault.noCredit"
 msgstr "Your Blave credit is empty. This turn did not run."
@@ -151,7 +130,7 @@ msgid "fault.noCreditBtn"
 msgstr "Top up"
 
 msgid "conn.expired"
-msgstr "Your Blave sign-in is no longer valid. Please sign in again."
+msgstr "Your Blave sign-in is no longer valid. Sign in again to continue."
 
 msgid "engine.workspace"
 msgstr "Creating the workspace at ~/Blave/workspace …"
@@ -212,3 +191,288 @@ msgstr "Choose a Model"
 
 msgid "mp.na"
 msgstr "Not on your plan"
+
+msgid "rp.tab.backtest"
+msgstr "Backtest"
+
+msgid "rp.tab.trades"
+msgstr "Trades"
+
+msgid "rp.tab.code"
+msgstr "Code"
+
+msgid "bt.fee"
+msgstr "fee"
+
+msgid "bt.totalReturn"
+msgstr "Total Return"
+
+msgid "bt.benchmark"
+msgstr "Benchmark"
+
+msgid "bt.benchmarkRank"
+msgstr "Beat {n}% of random portfolios"
+
+msgid "bt.sharpe"
+msgstr "Sharpe"
+
+msgid "bt.maxDrawdown"
+msgstr "Max Drawdown"
+
+msgid "bt.trades"
+msgstr "Trades"
+
+msgid "bt.mcpt"
+msgstr "MCPT p-value"
+
+msgid "bt.mcptTipSig"
+msgstr "Shuffled {n} times; only {pct} of the shuffles beat it. Below 0.05 is the usual bar."
+
+msgid "bt.mcptTipNs"
+msgstr "Shuffled {n} times; {pct} of the shuffles beat it — above the usual 0.05 bar, so this result can't be told apart from luck."
+
+msgid "bt.equity"
+msgstr "Equity"
+
+msgid "bt.drawdown"
+msgstr "Drawdown"
+
+msgid "bt.chartAria"
+msgstr "Equity curve and drawdown over the backtest period"
+
+msgid "bt.monthly"
+msgstr "Monthly returns"
+
+msgid "bt.year"
+msgstr "Year"
+
+msgid "bt.empty"
+msgstr "No backtest data for this strategy."
+
+msgid "tr.empty"
+msgstr "This strategy has no entries or exits."
+
+msgid "tr.chartError"
+msgstr "Couldn't draw the chart. The entries and exits below are still available."
+
+msgid "tr.list"
+msgstr "Entries & exits"
+
+msgid "tr.count"
+msgstr "{n} trades"
+
+msgid "tr.buy"
+msgstr "Buy"
+
+msgid "tr.sell"
+msgstr "Sell"
+
+msgid "tr.kind.open"
+msgstr "Open"
+
+msgid "tr.kind.close"
+msgstr "Close"
+
+msgid "tr.kind.flip"
+msgstr "Flip"
+
+msgid "tr.position"
+msgstr "Position {n}"
+
+msgid "bt.grpReturns"
+msgstr "Returns"
+
+msgid "bt.grpRisk"
+msgstr "Risk"
+
+msgid "bt.grpTrading"
+msgstr "Trading"
+
+msgid "bt.annReturn"
+msgstr "Annualized Return"
+
+msgid "bt.annVol"
+msgstr "Annualized Vol"
+
+msgid "bt.sortino"
+msgstr "Sortino"
+
+msgid "bt.omega"
+msgstr "Omega"
+
+msgid "bt.winRate"
+msgstr "Daily Win Rate"
+
+msgid "bt.totalFees"
+msgstr "Total Fees"
+
+msgid "bt.mcptDistTitle"
+msgstr "MCPT · Sharpe across {n} shuffles, p = {p}"
+
+msgid "bt.mcptDistActual"
+msgstr "Actual Sharpe {v}"
+
+msgid "bt.mcptDistUnit"
+msgstr "shuffles"
+
+msgid "ws.resizeSide"
+msgstr "Resize strategy list"
+
+msgid "ws.resizeChat"
+msgstr "Resize chat"
+
+msgid "ws.sideCollapse"
+msgstr "Collapse strategy list"
+
+msgid "ws.sideExpand"
+msgstr "Expand strategy list"
+
+msgid "ws.chatCollapse"
+msgstr "Collapse chat"
+
+msgid "ws.chatExpand"
+msgstr "Expand chat"
+
+# 設定 modal
+msgid "set.close"
+msgstr "Close"
+
+msgid "set.cats"
+msgstr "Settings categories"
+
+msgid "set.cat.display"
+msgstr "Display"
+
+msgid "set.cat.model"
+msgstr "Model access"
+
+msgid "set.lang"
+msgstr "Language"
+
+msgid "cn.current"
+msgstr "In use"
+
+# 對話列 / 對話清單
+msgid "cs.all"
+msgstr "All chats"
+
+msgid "cs.back"
+msgstr "Back to chat"
+
+msgid "cs.new"
+msgstr "New chat"
+
+msgid "cs.del"
+msgstr "Delete chat"
+
+msgid "cs.delConfirm"
+msgstr "Delete?"
+
+msgid "strat.del"
+msgstr "Move to Trash"
+
+# 回測指標的 tooltip(定義照 lib/analysis.py、lib/runner.py 的算法)
+msgid "bt.tip.totalReturn"
+msgstr "Cumulative return over the whole backtest, net of fees."
+
+msgid "bt.tip.annReturn"
+msgstr "Total return converted to a compounded yearly rate, so backtests of different lengths can be compared."
+
+msgid "bt.tip.benchmark"
+msgstr "What buying and holding this symbol over the same period would have returned. The strategy has to beat it to be better than doing nothing."
+
+msgid "bt.tip.benchmarkRank"
+msgstr "Share of randomly picked buy-and-hold portfolios that this strategy’s total return beats."
+
+msgid "bt.tip.annVol"
+msgstr "Standard deviation of daily returns, scaled to a year. Higher means a bumpier equity curve."
+
+msgid "bt.tip.maxDrawdown"
+msgstr "Largest fall from a peak to the lowest point after it — how much you would have been down at the worst moment."
+
+msgid "bt.tip.sharpe"
+msgstr "Return earned per unit of volatility (annualized, risk-free rate taken as 0). Higher is better."
+
+msgid "bt.tip.sortino"
+msgstr "Same as Sharpe, but only downside volatility counts as risk; upside swings are not penalized."
+
+msgid "bt.tip.omega"
+msgstr "Sum of all gains divided by sum of all losses. Above 1 means it made more than it lost."
+
+msgid "bt.tip.trades"
+msgstr "Number of position changes: each entry, exit, or resize counts once."
+
+msgid "bt.tip.winRate"
+msgstr "Share of days with a gain, among days that had any P&L. This is not a per-trade win rate."
+
+msgid "bt.tip.totalFees"
+msgstr "All fees paid over the period, as a percentage of capital."
+
+# 刪對話確認框
+msgid "del.title"
+msgstr "Delete “{title}”?"
+
+msgid "del.titleCur"
+msgstr "Delete this conversation?"
+
+msgid "del.body"
+msgstr "This conversation’s chat history will be deleted and can’t be restored. Your strategies are not affected."
+
+msgid "del.bodyCur"
+msgstr "Its chat history will be deleted and can’t be restored. A new chat will open. Your strategies are not affected."
+
+msgid "del.cancel"
+msgstr "Cancel"
+
+msgid "del.ok"
+msgstr "Delete"
+
+msgid "chat.imageAlt"
+msgstr "Chart from the agent"
+
+# 本機 agent 重新登入
+msgid "cn.signIn"
+msgstr "Sign in"
+
+msgid "login.opened"
+msgstr "{name} sign-in is open in your browser. Come back here when you’re done."
+
+msgid "login.ok"
+msgstr "{name} is signed in."
+
+msgid "login.failed"
+msgstr "{name} sign-in didn’t finish."
+
+msgid "fault.localAuth"
+msgstr "{name} isn’t signed in, so this turn didn’t run."
+
+msgid "fault.localAuthBtn"
+msgstr "Sign In to {name}"
+
+msgid "chat.imageZoom"
+msgstr "View larger"
+
+# 回合失敗卡的狀態機
+msgid "login.cancel"
+msgstr "Cancel"
+
+msgid "login.failedCmd"
+msgstr "Or run {cmd} in a terminal."
+
+msgid "login.retry"
+msgstr "Try Again"
+
+msgid "fault.resend"
+msgstr "Send Again"
+
+msgid "fault.resendDone"
+msgstr "Sent Again"
+
+msgid "fault.authOk"
+msgstr "Blave is signed in again."
+
+msgid "cn.blave.signOut"
+msgstr "Sign out"
+
+msgid "cn.blave.signOutLocalOnly"
+msgstr "Signed out on this computer, but the server couldn’t be reached to revoke this device. Revoke it under Settings › Devices on blave.org."

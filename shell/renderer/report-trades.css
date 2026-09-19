@@ -1,0 +1,92 @@
+/* 策略報告「進出場」分頁(report-trades.js)。移植自雲端工作頁的
+   .exec-chart / .pf-sec / .pf-log(web/app/static/css/agent/workspace.css)。
+   顏色、半徑、間距、motion 一律引 tokens.css;這個檔不寫色碼、不寫裸的時間值。
+   空狀態沿用 app.css 的 .pf-state,不另開。 */
+
+/* 面板(.rp-panel)自己會捲。這裡把圖+清單排成一欄、吃滿面板高度:視窗夠高時
+   一屏看完、只有清單自己捲;視窗矮到兩個下限加起來放不下,才退回面板捲動。
+   100% 萬一解析不出來(面板高度不確定),圖退到下限、清單被上限蓋住,頁面
+   一樣不會被上千列撐開 */
+.tr-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 無框的卡面色圓角塊(canon › Terminal › Cards:dark 靠色調提升分隔,半徑上限 lg)。
+   下限 320:子面板 7:2 分完,主圖還剩得下看得清楚的高度 */
+.tr-chart {
+  /* 圖:清單 = 2:1 分剩下的高度(basis 0,不讓清單的內容高度先把圖擠到下限) */
+  flex: 2 1 0;
+  min-height: 320px;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-card);
+}
+/* 圖建不起來時同一塊面放一行字,不是壞掉的空框 */
+.tr-chart.is-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 區段標籤列:組間 24 / 到第一列 8(標籤到第一列的視覺間距要大於列距) */
+.tr-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-12);
+  margin: var(--space-24) 0 var(--space-8);
+}
+.tr-label { font-size: 12px; color: var(--ink-3); }
+.tr-count { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* 清單自己捲:上萬筆也不會把頁面撐到幾千 px。上限同雲端版 */
+.tr-list {
+  flex: 1 1 0;
+  min-height: 120px;
+  max-height: 360px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+/* 一列一筆。是 button(鍵盤可達),外觀是表格列:hairline 分隔、整列可點。
+   窄窗(面板內寬約 280)放不下五欄時允許折行,部位欄靠右 */
+.tr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-16);
+  width: 100%;
+  padding: var(--space-6) var(--space-8);
+  border-bottom: 1px solid var(--border-hairline);
+  border-radius: 0;   /* 表格列:圓角會把 hairline 兩端折彎(button 基底樣式帶進來的) */
+  text-align: left;
+  font-size: inherit;
+  line-height: 1.5;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.tr-row:last-child { border-bottom-color: transparent; }
+.tr-row:hover,
+.tr-row[aria-current="true"] { background: var(--surface-muted); color: var(--ink); }
+.tr-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+
+.tr-ts { flex: none; font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); }
+/* 方向詞上語意色;數量/價格/部位維持灰階(dark 下 green/red 即文字用色階,
+   canon › Trading colors:dark 端 greenText/redText 重映射回同值) */
+.tr-side { flex: none; }
+.tr-side.is-buy { color: var(--color-green); }
+.tr-side.is-sell { color: var(--color-red); }
+/* 種類小標:最亮一階,整片調倉列裡一眼可挑(調倉列沒有這一格) */
+.tr-kind { flex: none; font-size: 11px; color: var(--ink); }
+.tr-px { flex: none; font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); }
+.tr-pos { flex: none; margin-left: auto; text-align: right; }
+
+/* 系統設定要求減少動態時,hover 底色直接切換 */
+@media (prefers-reduced-motion: reduce) {
+  .tr-row { transition: none; }
+}

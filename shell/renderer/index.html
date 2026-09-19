@@ -3,6 +3,8 @@
 <title>Blave</title>
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="report-backtest.css">
+<link rel="stylesheet" href="report-trades.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -12,14 +14,16 @@
     <div class="cn-mid">
       <h4 data-i18n="cn.h"></h4>
       <div class="cn-card">
-        <button class="cn-back" id="cn-back" type="button" hidden></button>
         <div class="cn-sec cn-blave">
           <!-- 說明是標題的副標、不是段落:兩個選項各少一次眼睛停留。 -->
           <p class="cn-head">
             <span class="cn-ttl" data-i18n="cn.blave.title"></span>
             <span class="cn-meta" data-i18n="cn.blave.desc"></span>
           </p>
+          <span class="cn-cur" id="cn-blave-cur" hidden></span>
           <button class="btn-fill" id="btn-blave" type="button"></button>
+          <!-- 有 token 才出現。登出=把這台電腦上的 token 刪掉(共用電腦、換帳號) -->
+          <button class="btn-quiet" id="btn-blave-out" type="button" data-i18n="cn.blave.signOut" hidden></button>
         </div>
         <div class="cn-sec">
           <p class="cn-head">
@@ -45,12 +49,39 @@
   <div class="ws-bar"></div>
   <div class="ws">
     <aside class="pane-strategies">
-      <div class="ws-brand"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></div>
+      <div class="ws-brand"><a class="ws-home" id="ws-home" target="_blank" rel="noopener"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></a></div>
       <div class="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
-      <div class="strat-list"><p class="pf-state" data-i18n="ws.noStrategies"></p></div>
-      <button class="ws-conn" id="ws-conn" type="button"></button>
+      <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
+      <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button></div>
+      <!-- 左下角:設定(照雲端 .ws-foot / .ws-more 的樣式;雲端是「更多」選單,
+           桌面版只有設定一項,所以直接開 modal 不展開) -->
+      <div class="ws-foot">
+        <button class="ws-more" id="ws-conn" type="button" aria-haspopup="dialog">
+          <svg class="ws-more-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span data-i18n="ws.settings"></span>
+        </button>
+      </div>
     </aside>
+    <div class="pane-div" id="div-side" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria="ws.resizeSide"><button class="handle" type="button" tabindex="-1" data-i18n-aria="ws.sideCollapse"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="9.8,3.6 5.4,8 9.8,12.4"/></svg></button></div>
     <section class="pane-main">
+      <!-- 策略報告(選了策略才出現;沒選時是下面的 welcome)。三個分頁:回測 / 進出場 /
+           程式碼。回測與進出場各自一支檔(report-backtest.js / report-trades.js),
+           介面是 window.BlaveReport.renderBacktest(el, stats) / renderTrades(el, stats)。 -->
+      <div class="rp" id="rp" hidden>
+        <!-- 精簡標題(同雲端):給人看的名字 + 一句說明 -->
+        <div class="rp-head">
+          <h5 class="rp-name" id="rp-name"></h5>
+          <p class="rp-desc" id="rp-desc"></p>
+        </div>
+        <div class="rp-tabs" role="tablist" id="rp-tabs">
+          <button class="rp-tab" type="button" role="tab" data-tab="bt" data-i18n="rp.tab.backtest"></button>
+          <button class="rp-tab" type="button" role="tab" data-tab="tr" data-i18n="rp.tab.trades"></button>
+          <button class="rp-tab" type="button" role="tab" data-tab="code" data-i18n="rp.tab.code"></button>
+        </div>
+        <div class="rp-panel" id="rp-bt" role="tabpanel"></div>
+        <div class="rp-panel" id="rp-tr" role="tabpanel" hidden></div>
+        <div class="rp-panel" id="rp-code" role="tabpanel" hidden><pre class="rp-code mono" id="rp-code-pre"></pre></div>
+      </div>
       <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
            同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
       <div class="main-empty" id="main-empty">
@@ -66,13 +97,31 @@
         </div>
       </div>
     </section>
+    <div class="pane-div" id="div-chat" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria="ws.resizeChat"><button class="handle" type="button" tabindex="-1" data-i18n-aria="ws.chatCollapse"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="6.2,3.6 10.6,8 6.2,12.4"/></svg></button></div>
+    <button class="chat-strip" id="chat-strip" type="button" data-i18n-aria="ws.chatExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="9.8,3.6 5.4,8 9.8,12.4"/></svg></button>
     <section class="pane-chat">
+      <!-- 對話列(照雲端 .chat-head):清單鈕 → 目前對話標題 → 新對話。標題是用戶打的字,
+           一律 textContent。回合進行中兩顆鈕都鎖住——第一版一次只跑一條對話。 -->
+      <div class="chat-head" id="cs-head">
+        <button class="cs-btn" id="cs-toggle" type="button" aria-controls="cs-list" aria-expanded="false" data-i18n-aria="cs.all">
+          <svg class="ic cs-ico-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></svg>
+          <svg class="ic cs-ico-back" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <span class="cs-title" id="cs-title"></span>
+        <button class="cs-btn cs-new" id="cs-new" type="button" data-i18n-aria="cs.new">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
+        </button>
+      </div>
+      <!-- 清單層蓋在聊天本體上、不替換它:捲動位置與打到一半的字原封不動 -->
+      <div class="chat-body">
+      <div class="chat-list" id="cs-list" role="region" data-i18n-aria="cs.all" hidden>
+        <button class="cs-newrow" id="cs-newrow" type="button">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
+          <span data-i18n="cs.new"></span>
+        </button>
+        <div class="cs-rows" id="cs-rows"></div>
+      </div>
       <div class="chat-scroll" id="chat-scroll">
-        <!-- v1 三欄裡只有這一欄能用,所以由它開口;另外兩欄收回一行狀態句,
-             不再各自叫用戶「去右邊跟 agent 講話」(同一個例子原本出現兩次)。 -->
-        <div class="chat-empty" id="chat-empty">
-          <p data-i18n="ws.chatEmpty"></p>
-        </div>
       </div>
       <div class="chat-input-wrap">
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
@@ -106,11 +155,69 @@
           </div>
         </div>
       </div>
+      </div>
     </section>
   </div>
 </div>
 
+<!-- ============ 設定 modal(樣式照雲端 .scrim / .ns-modal.set-modal) ============
+     兩個分類:顯示(語言)、模型接入(換 agent——內容就是連結畫面那張卡,開的時候
+     把 .cn-card 整個搬進來,同一份 DOM 與邏輯,不養第二份)。 -->
+<div class="scrim" id="set-scrim" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
+  <div class="set-modal" id="set-modal">
+    <div class="modal-head">
+      <h6 id="set-title" data-i18n="ws.settings"></h6>
+      <button type="button" class="modal-close" id="set-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="set-body">
+      <nav class="set-cats" id="set-cats" data-i18n-aria="set.cats">
+        <button type="button" class="set-cat" data-set-cat="display" aria-current="true" data-i18n="set.cat.display"></button>
+        <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
+      </nav>
+      <div class="set-content">
+        <div class="set-pane" data-set-cat="display">
+          <div class="set-row">
+            <label class="set-gl" for="set-lang" data-i18n="set.lang"></label>
+            <span class="set-selw">
+              <!-- option 由 app.js 建(原生語名,不進 .po) -->
+              <select class="set-sel" id="set-lang"></select>
+            </span>
+          </div>
+        </div>
+        <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 讀屏播報:常駐的 polite live region(見 app.js srSay) -->
+<div id="sr-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+<!-- 圖片放大 -->
+<div class="scrim lb-scrim" id="lb-scrim" role="dialog" aria-modal="true" data-i18n-aria="chat.imageZoom" hidden>
+  <button type="button" class="modal-close lb-close" id="lb-close" data-i18n-aria="set.close">✕</button>
+  <img class="lb-img" id="lb-img" alt="">
+</div>
+
+<!-- 刪對話的確認框(外框沿用 .scrim / .set-modal;寬 440 = 雲端 .ns-modal) -->
+<div class="scrim" id="del-scrim" role="dialog" aria-modal="true" aria-labelledby="del-title" aria-describedby="del-body" hidden>
+  <div class="set-modal del-modal" id="del-modal">
+    <div class="modal-head">
+      <h6 id="del-title"></h6>
+      <button type="button" class="modal-close" id="del-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <p class="del-body" id="del-body"></p>
+    <div class="modal-foot">
+      <button type="button" class="btn-out" id="del-cancel" data-i18n="del.cancel"></button>
+      <button type="button" class="btn-fill" id="del-ok" data-i18n="del.ok"></button>
+    </div>
+  </div>
+</div>
+
+<script src="../node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 <script src="strings.js"></script>
 <script src="i18n.js"></script>
+<script src="report-backtest.js"></script>
+<script src="report-trades.js"></script>
 <script src="app.js"></script>
 </body></html>

@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "electron": "38.2.1"
+  },
+  "dependencies": {
+    "lightweight-charts": "5.2.1"
   }
 }

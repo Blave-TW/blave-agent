@@ -1,0 +1,200 @@
+/* 報告頁「回測」分頁。視覺語言移植自雲端工作頁(web workspace.css 的 .bt-* 家族):
+   Terminal register、只有 dark、平面無陰影,分隔靠 1px hairline。
+   顏色 / 半徑 / 間距 / motion 一律引 tokens.css,這個檔不寫 hex。 */
+
+/* container 讓三組條列依「這一欄實際多寬」決定並排或疊放,而不是依視窗:
+   報告欄跟聊天欄並排、寬度可拖,視窗寬不代表這裡寬。 */
+.bt {
+  container-type: inline-size;
+  font-size: 13px;
+  color: var(--ink);
+}
+.bt > * + * { margin-top: var(--space-24); }
+.bt > .bt-meta + * { margin-top: var(--space-16); }
+
+/* ---- 1. meta ---- */
+.bt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-8);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.bt-meta .bt-sym { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; }
+.bt-mpart { display: inline-flex; gap: var(--space-4); white-space: nowrap; }
+/* 分隔點是裝飾,可以比要被讀的字淡一階 */
+.bt-meta .bt-sep { color: var(--color-greyDark); }
+
+/* ---- 2. 三組條列(tearsheet 慣例,雲端 .bt-cols / .bt-mrow 同構) ----
+   平面、無卡片:組與組之間是 24px 溝 + 一條直 hairline,列與列之間是 8+8 的節奏
+   + 橫 hairline——組距大於列距,分組才讀得出來(Proximity)。 */
+.bt-cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-24) 0;
+}
+.bt-col { min-width: 0; }
+/* 預設是疊成一欄(組間改用上緣 hairline),夠寬才並排。門檻用 container 量:
+   三欄各自要放得下「年化波動率 + 數字」不換行,低於這個寬度中文標籤會被擠成兩行 */
+.bt-col + .bt-col {
+  border-top: 1px solid var(--border-hairline);
+  padding-top: var(--space-16);
+}
+@container (min-width: 480px) {
+  .bt-cols { grid-template-columns: repeat(3, 1fr); gap: 0 var(--space-24); }
+  .bt-col + .bt-col {
+    border-top: 0;
+    padding-top: 0;
+    border-left: 1px solid var(--border-hairline);
+    padding-left: var(--space-24);
+  }
+  /* 標題→第一列 = 這個 margin + 列的 padding 8 = 20,要大於列與列的 16,
+     不然標題會跟第一列黏得比列彼此還緊。疊欄時上緣已有 hairline + 16,不需要 */
+  .bt-group { margin-bottom: var(--space-12); }
+}
+.bt-group {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.bt-mrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-12);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.bt-mrow:last-child { border-bottom: 0; }
+/* relative:給 tooltip 泡泡(app.css 的 .tip,absolute)一個定位基準 */
+.bt-mk { position: relative; font-size: 12px; color: var(--ink-3); }
+/* 泡泡的可用寬度預設被這個窄標籤格限制住,會縮成一條直的;
+   max-content 讓它回到 .tip 自己的 max-width 說了算 */
+.bt-mk .tip { width: max-content; }
+/* 三欄並排時,最右一欄的泡泡改成往左長:從標籤左緣往右長 260 會超出面板被裁掉。
+   疊成一欄時每一欄都貼左,不能套 */
+@container (min-width: 480px) {
+  .bt-col:last-child .bt-mk .tip { left: auto; right: 0; }
+}
+/* 標籤在左、數字在右,泡泡往上開:第一列上面還有組標題,放得下 */
+.bt-mv {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.bt-mv.hero { font-size: 18px; font-weight: 600; }
+.bt-mv.pos { color: var(--color-green); }
+.bt-mv.neg { color: var(--color-red); }
+.bt-mv.na { color: var(--color-greyDark); }
+/* Type C 的基準是一句話不是數字:不進 mono、可以換行 */
+.bt-mv.prose { font-size: 12px; white-space: normal; text-align: right; }
+
+/* ---- 3 / 4 共用:小標 + 資料 frame ---- */
+.bt-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin-bottom: var(--space-8);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+/* 圖例:兩條線的顏色要有文字對應,不能只靠「上面那條 / 下面那條」 */
+.bt-legend { display: inline-flex; align-items: center; gap: var(--space-6); }
+.bt-legend::before {
+  content: "";
+  width: var(--space-12);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+}
+.bt-legend.dd::before { background: var(--color-red); }
+
+.bt-frame {
+  padding: var(--space-16);           /* canon › Density:frame 自身內距 16 */
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-body);
+  overflow: hidden;
+}
+/* 幾何(權益:回撤的分割、軸邊距)在 JS;這裡只給它畫進去的那個盒子 */
+.bt-canvas { display: block; width: 100%; height: 320px; }
+/* 直方圖只有一個區,不必跟上下兩區的權益圖一樣高(雲端 histogram block 的 680:225 比例) */
+.bt-canvas-mcpt { height: 224px; }
+/* 標題是一句話不是圖例:取消 .bt-label 的 flex,讓裡面的 .mono 數字照行內排 */
+.bt-label-prose { display: block; }
+.bt-label-prose .mono { color: var(--ink-2); }   /* 數字比說明字亮一階 */
+
+/* ---- 4. 月報酬熱圖(真 <table>) ----
+   table-layout: fixed 讓 width:100% 說了算;可讀下限放在 table 的 min-width,
+   不放在每格——放每格的話 table 有權撐破 frame(雲端踩過)。窄欄時 frame 橫捲。 */
+.bt-heat-frame { overflow-x: auto; }
+.bt-heat {
+  width: 100%;
+  /* 雲端是 680(它的中欄寬);桌面版的中欄常見只有 500 上下,680 會讓橫捲變成常態,
+     而被捲出畫面的剛好是最右邊的年度合計(實測)。降到 460:12 個月 + 年度欄在
+     500px 裡每格約 30px,「+31%」在 11px 字下放得下;更窄才橫捲。格距同步縮一階。 */
+  min-width: 460px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.bt-heat th {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+  text-align: center;
+}
+.bt-heat th:first-child { width: 40px; }
+/* 橫捲時年份欄釘住;box-shadow 補滿 frame 內距那條縫,不然捲過去的格子會從縫裡透出來。
+   左邊的值由 frame 內距推導,改內距時這裡跟著對 */
+.bt-heat tbody th,
+.bt-heat thead th:first-child {
+  position: sticky;
+  left: 0;
+  padding-right: var(--space-8);
+  text-align: left;
+  background: var(--bg-body);
+  box-shadow:
+    var(--space-4) 0 0 var(--bg-body),
+    calc((var(--space-16) + var(--space-4)) * -1) 0 0 var(--bg-body);
+}
+.bt-heat td {
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-micro);
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+}
+/* 年度合計是推導值不是原始月份:加粗 + 一條浮在 4px 格距中間的分隔線
+   (用 border 的話熱色會直接貼到線上,沒有空氣) */
+.bt-heat .yr { width: 48px; position: relative; }
+.bt-heat td.yr { font-weight: 700; }
+.bt-heat .yr::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 1px;
+  background: var(--border-hairline);
+}
+
+.bt-empty {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: var(--ink-3);
+}

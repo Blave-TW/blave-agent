@@ -82,6 +82,35 @@ async function detectAgents() {
   return out;
 }
 
+/* 本機 agent 的登入不是我們的 OAuth:帳號是用戶跟 Anthropic / OpenAI 之間的事,憑證在 CLI
+   自己手上(Keychain / ~/.codex),app 拿不到也不該拿。登入失效時能做的只有一件——替用戶
+   跑 CLI 自己的登入指令(`claude auth login`、`codex login`),它會開瀏覽器走完官方流程,
+   結束碼 0 = 成功。五分鐘沒完成就收掉,免得留一個孤兒行程佔著回呼的 port。 */
+let loginChild = null;
+async function agentLogin(kind) {
+  if (loginChild) return { ok: false, busy: true };
+  const d = await detectAgents();
+  const bin = kind === "claude" ? d.claude.path : kind === "codex" ? d.codex.path : null;
+  if (!bin) return { ok: false };
+  const envPath = await loginShellPath();
+  return new Promise((resolve) => {
+    const child = spawn(bin, kind === "claude" ? ["auth", "login"] : ["login"],
+      { env: { ...process.env, PATH: envPath }, stdio: "ignore" });
+    loginChild = child;
+    const timer = setTimeout(() => child.kill(), 5 * 60 * 1000);
+    // cancelled:用戶自己按了「取消等待」——不是失敗,renderer 不顯示失敗句
+    const done = (ok) => { clearTimeout(timer); const cancelled = !!child.__cancelled; loginChild = null; resolve({ ok, cancelled }); };
+    child.on("error", () => done(false));
+    child.on("exit", (code) => done(code === 0));
+  });
+}
+
+function cancelAgentLogin() {
+  if (!loginChild) return false;
+  loginChild.__cancelled = true; loginChild.kill();
+  return true;
+}
+
 // v1:連結選擇只落在本機設定檔,引擎接線是第 4 步
 const statePath = () => path.join(app.getPath("userData"), "connect.json");
 function saveConnection(choice) {
@@ -123,6 +152,22 @@ function loadToken() {
 }
 function clearToken() {
   try { fs.unlinkSync(tokenPath()); } catch (_) {}
+}
+
+/* 登出 Blave:先請伺服器撤銷這顆 token(RFC 7009 的形狀:POST /oauth/desktop/revoke,持有 token
+   本身就是授權),再刪本機那份。只刪本機的話伺服器上那顆還是有效的——電腦被拿走、或在共用
+   電腦上登出,舊 token 還能繼續燒帳號額度。
+   撤銷是 best-effort:沒網路也要登得出去。回傳 revoked 讓畫面知道伺服器那邊有沒有成功,
+   沒成功就提醒用戶到網站的「裝置」頁再撤一次。 */
+async function signOutBlave() {
+  const tok = loadToken();
+  let revoked = false;
+  if (tok) {
+    try { revoked = (await postJSON(`${API_BASE}/oauth/desktop/revoke`, { token: tok })).status === 200; }
+    catch (_) { /* 離線 / 逾時:照樣登出本機 */ }
+  }
+  clearToken();
+  return { revoked };
 }
 
 function postJSON(url, body) {
@@ -314,6 +359,185 @@ const WORKSPACE_DEPS = [
 ];
 
 
+// ── 策略(sidebar + 報告)────────────────────────────────────
+// 雲端版是機器把回測結果上傳到 api、網頁再拉回來;桌面版資料就在本機,直接讀資料夾:
+//   ~/Blave/workspace/strategies/<name>/{strategy.py, stats.json, …}
+// stats.json 是 lib/runner 寫的,一支 1MB 上下(含 K 線與指標線),所以清單只回摘要、
+// 並用 mtime 快取——sidebar 每輪結束都會重讀,不能每次都把每支 parse 一遍。
+const STRAT_DIR = () => path.join(WS, "strategies");
+const stratCache = new Map();   // name → { mtime, summary }
+
+// 名字只能是「strategies/ 底下真的存在的資料夾」。renderer 傳什麼都先過這關,
+// `../../.ssh` 之類的根本不會進到 path.join。
+function stratNames() {
+  try {
+    return fs.readdirSync(STRAT_DIR(), { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !d.name.startsWith(".") && !d.name.startsWith("_"))
+      .filter((d) => fs.existsSync(path.join(STRAT_DIR(), d.name, "strategy.py")))
+      .map((d) => d.name);
+  } catch (_) { return []; }
+}
+const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+
+// strategy.py 的頂層常數 DISPLAY_NAME / DESCRIPTION(模板規定的欄位)= 給人看的名字與
+// 一句說明;資料夾名是 snake_case 的識別字。只認「行首、雙引號或單引號、單行」的寫法,
+// 認不到就回 null,呼叫端退回資料夾名。
+function stratMeta(code) {
+  const pick = (k) => {
+    const m = new RegExp(`^${k}\\s*=\\s*(["'])(.*?)\\1\\s*$`, "m").exec(code || "");
+    return m && m[2].trim() ? m[2].trim().slice(0, 200) : null;
+  };
+  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION") };
+}
+
+function listStrategies() {
+  return stratNames().map((name) => {
+    const dir = path.join(STRAT_DIR(), name);
+    const statsPath = path.join(dir, "stats.json");
+    let mtime = 0;
+    try { mtime = fs.statSync(path.join(dir, "strategy.py")).mtimeMs; } catch (_) {}
+    let sMtime = 0;
+    try { sMtime = fs.statSync(statsPath).mtimeMs; } catch (_) {}
+    const hit = stratCache.get(name);
+    if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, mtime: Math.max(mtime, sMtime) };
+    let displayName = null;
+    try { displayName = stratMeta(fs.readFileSync(path.join(dir, "strategy.py"), "utf8")).displayName; } catch (_) {}
+    let summary = { name, displayName, hasBacktest: false, sharpe: null, totalReturn: null };
+    if (sMtime) {
+      try {
+        const st = JSON.parse(fs.readFileSync(statsPath, "utf8"));
+        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), totalReturn: num(st["Total Return [%]"]) };
+      } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
+    }
+    stratCache.set(name, { mtime: sMtime, cMtime: mtime, summary });
+    return { ...summary, mtime: Math.max(mtime, sMtime) };
+  }).sort((a, b) => b.mtime - a.mtime);      // 最近動過的在上面
+}
+
+function loadStrategy(name) {
+  if (!stratNames().includes(name)) return null;
+  const dir = path.join(STRAT_DIR(), name);
+  let stats = null, code = "";
+  try { stats = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8")); } catch (_) {}
+  try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
+  return { name, stats, code, ...stratMeta(code) };
+}
+
+// 刪策略 = 整個資料夾丟進系統的垃圾桶(shell.trashItem),不是 rm:裡面有用戶的程式碼
+// 與回測結果,誤刪要救得回來。回合進行中不給刪——agent 可能正在寫那個資料夾。
+async function deleteStrategy(name) {
+  if (activeTurn || !stratNames().includes(name)) return false;
+  try { await shell.trashItem(path.join(STRAT_DIR(), name)); stratCache.delete(name); return true; }
+  catch (_) { return false; }
+}
+
+// ── 對話(session)─────────────────────────────────────────
+// 逐字稿本來就由 runtime 存在 state/session.db(turns 表,長了會自己摘要壓縮)——外殼
+// 只讀它來列清單、把舊對話畫回畫面,不另存一份。寫入只有「刪除」一種,而且 renderer
+// 在回合進行中不給刪,不會跟 runtime 搶同一列。
+// 只認外殼自己發的 id(desktop-xxxx):這個值會進 SQL 參數與 runtime 的命令列。
+const SESSION_DB = path.join(os.homedir(), "Blave", "state", "session.db");
+const okSessionId = (id) => typeof id === "string" && /^desktop-[a-z0-9]{4,16}$/.test(id);
+function sessionDb(readOnly) {
+  if (!fs.existsSync(SESSION_DB)) return null;      // 還沒跑過任何回合
+  try { return new (require("node:sqlite").DatabaseSync)(SESSION_DB, { readOnly }); }
+  catch (_) { return null; }
+}
+function listSessions() {
+  const db = sessionDb(true); if (!db) return [];
+  try {
+    // 標題 = 第一句用戶的話(同雲端的預設標題);排序 = 最後活動時間
+    return db.prepare(`
+      SELECT s.session_id AS id, s.last AS last,
+             (SELECT content FROM turns f WHERE f.session_id = s.session_id AND f.role = 'user'
+              ORDER BY f.id LIMIT 1) AS title
+      FROM (SELECT session_id, MAX(created_at) AS last FROM turns
+            WHERE session_id LIKE 'desktop-%' GROUP BY session_id) s
+      ORDER BY s.last DESC LIMIT 200`).all()
+      .map((r) => ({ id: r.id, last: r.last, title: String(r.title || "").slice(0, 120) }));
+  } catch (_) { return []; } finally { db.close(); }
+}
+function loadSession(id) {
+  if (!okSessionId(id)) return [];
+  const db = sessionDb(true); if (!db) return [];
+  try {
+    return db.prepare("SELECT role, content, created_at FROM turns WHERE session_id = ? ORDER BY id").all(id)
+      .map((r) => ({ role: r.role, content: r.content, ts: r.created_at }));
+  } catch (_) { return []; } finally { db.close(); }
+}
+function deleteSession(id) {
+  if (!okSessionId(id) || activeTurn) return false;
+  const db = sessionDb(false); if (!db) return false;
+  try {
+    db.prepare("DELETE FROM turns WHERE session_id = ?").run(id);
+    db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
+    try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
+    return true;
+  } catch (_) { return false; } finally { db.close(); }
+}
+
+// ── 聊天裡的圖 ─────────────────────────────────────────
+// agent 畫的圖怎麼進聊天欄:沿用雲端那條契約,不動 lib/。雲端是 `lib/notify.report_photo_web`
+// 把圖 base64 POST 到 BLAVE_WEB_REPORT_URL(帶 x-api-key: proxy-<token>);電腦版在這裡開一個
+// **只聽 127.0.0.1** 的接收端,把同樣三個環境變數指過來——`run()` 自動送的 pnl.png、
+// 參數掃描的熱圖、agent 自己 savefig 的圖,全部不用改一行就會出現。
+// 圖落地在 state/chat-images/<session>/,旁邊一份 index.jsonl(時間、檔名、說明):重開 app、
+// 切回舊對話時照時間插回逐字稿中間。token 每次啟動重抽,只活在記憶體與子行程的環境變數裡。
+const IMG_DIR = path.join(os.homedir(), "Blave", "state", "chat-images");
+const IMG_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+const IMG_MAX_BODY = 6 * 1024 * 1024;       // notify 那邊自己擋 3MB 原檔,base64 後約 4MB
+const imgToken = crypto.randomBytes(24).toString("hex");
+let imgPort = 0, imgWin = null, imgSeq = 0;
+function imgAuthOk(h) {
+  const a = Buffer.from(String(h || "")), b = Buffer.from("proxy-" + imgToken);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function startImageServer() {
+  const srv = http.createServer((req, res) => {
+    const end = (code) => { res.writeHead(code); res.end(); };
+    if (req.method !== "POST" || req.url !== "/chat-image") return end(404);
+    if (!imgAuthOk(req.headers["x-api-key"])) return end(403);
+    const bufs = []; let size = 0;
+    req.on("data", (c) => { size += c.length; if (size > IMG_MAX_BODY) { req.destroy(); return; } bufs.push(c); });
+    req.on("end", () => {
+      try {
+        const j = JSON.parse(Buffer.concat(bufs).toString("utf8"));
+        const ext = IMG_EXT[j.mime];
+        if (j.type !== "image" || !ext || !okSessionId(j.session_id) || typeof j.b64 !== "string") return end(400);
+        const dir = path.join(IMG_DIR, j.session_id);
+        fs.mkdirSync(dir, { recursive: true });
+        const ts = Date.now() / 1000;
+        const file = `${Math.round(ts * 1000)}-${++imgSeq}.${ext}`;   // 檔名我們自己取,不用對方給的
+        fs.writeFileSync(path.join(dir, file), Buffer.from(j.b64, "base64"), { mode: 0o600 });
+        const caption = typeof j.caption === "string" ? j.caption.slice(0, 500) : "";
+        fs.appendFileSync(path.join(dir, "index.jsonl"), JSON.stringify({ ts, file, mime: j.mime, caption }) + "\n");
+        if (imgWin && !imgWin.isDestroyed())
+          imgWin.webContents.send("turn-event", { type: "image", session_id: j.session_id,
+            src: `data:${j.mime};base64,${j.b64}`, caption });
+        end(200);
+      } catch (_) { end(400); }
+    });
+  });
+  srv.listen(0, "127.0.0.1", () => { imgPort = srv.address().port; });
+}
+// 舊對話的圖:回傳 [{ts, src, caption}],renderer 照 ts 跟逐字稿交錯
+function loadSessionImages(id) {
+  if (!okSessionId(id)) return [];
+  const dir = path.join(IMG_DIR, id);
+  let lines = [];
+  try { lines = fs.readFileSync(path.join(dir, "index.jsonl"), "utf8").split("\n").filter(Boolean); } catch (_) { return []; }
+  const out = [];
+  for (const l of lines) {
+    try {
+      const r = JSON.parse(l);
+      if (!/^[0-9]+-[0-9]+\.(png|jpg|webp|gif)$/.test(r.file) || !IMG_EXT[r.mime]) continue;
+      const b64 = fs.readFileSync(path.join(dir, r.file)).toString("base64");
+      out.push({ ts: r.ts, src: `data:${r.mime};base64,${b64}`, caption: r.caption || "" });
+    } catch (_) { /* 壞掉的一列跳過 */ }
+  }
+  return out;
+}
+
 // ── model / effort ─────────────────────────────────────────
 // 三個引擎的選項來源不同,但交給 renderer 的形狀一樣:
 //   { models: [{ id, name, efforts: [level…], defaultEffort }], defaultModel }
@@ -364,8 +588,11 @@ function codexModels() {
 
 // Blave AI:型錄來自 proxy 的 /v1/models(不花錢)。只拿 id——這個選擇器刻意不列
 // 價格(Wei 拍板),所以也沒有「DeepSeek 尖峰 ×2 必標」的義務(那條只在列價時成立)。
-// DeepSeek 不出 effort 軌:proxy 會原樣轉發那個欄位,但 DeepSeek 端收不收 low/max
-// 這些值查不到、也測不了,不出一個行為不明的控件。
+// DeepSeek 的 effort 軌只有三格。它的 Anthropic 相容端點收 output_config.effort,但實際
+// 只有三檔(官方 thinking_mode 文件:medium/xhigh 併進 high、ultra 併進 max)——五格裡
+// 有兩格按了跟隔壁一樣,所以只列真的不同的三個。實測過:CLI 對 deepseek/* 照送 effort、
+// proxy 原樣轉發、亂填的值 DeepSeek 回 422;Pro 同一題 low/high/max 輸出 151/283/354 token。
+const DEEPSEEK_EFFORTS = ["low", "high", "max"];
 const BLAVE_NAMES = {
   "anthropic/claude-haiku-4-5-20251001": "Haiku 4.5", "anthropic/claude-sonnet-5": "Sonnet 5",
   "anthropic/claude-opus-4-8": "Opus 4.8", "anthropic/claude-fable-5": "Fable 5",
@@ -383,8 +610,9 @@ async function blaveModels() {
     const rank = (id) => { const i = BLAVE_STRENGTH.findIndex((re) => re.test(id)); return i < 0 ? 99 : i; };
     return (r.body.data || []).map((m) => {
       const claude = /^anthropic\//.test(m.id) && !/haiku/.test(m.id);
+      const efforts = claude ? CLAUDE_EFFORTS : /^deepseek\//.test(m.id) ? DEEPSEEK_EFFORTS : [];
       return { id: m.id, name: BLAVE_NAMES[m.id] || m.id,
-               efforts: claude ? CLAUDE_EFFORTS : [], defaultEffort: claude ? "high" : null };
+               efforts, defaultEffort: efforts.length ? "high" : null };
     }).sort((a, b) => rank(a.id) - rank(b.id));
   } catch (_) { return []; }
 }
@@ -401,7 +629,8 @@ async function modelOptions(kind) {
   }
   if (kind === "blave") {
     const models = await blaveModels();
-    const d = models.find((m) => /sonnet/.test(m.id)) || models[0];
+    // Blave 線的預設是 DeepSeek V4 Pro(Wei 指定);型錄裡沒有才退 sonnet
+    const d = models.find((m) => /deepseek.*pro/.test(m.id)) || models.find((m) => /sonnet/.test(m.id)) || models[0];
     return { models, defaultModel: d ? d.id : null };
   }
   return { models: CLAUDE_MODELS, defaultModel: "sonnet" };
@@ -424,8 +653,11 @@ const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
 const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
 
 let activeTurn = null;
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, uiLang }) {
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
+  // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
+  if (!okSessionId(sessionId)) throw new Error("bad session id");
+  imgWin = win;
   const envPath = await loginShellPath();
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
   // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
@@ -456,6 +688,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
     // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
     BLAVE_KLINE_SOURCE: "binance",
+    // 聊天裡的圖:見上面「聊天裡的圖」。接收端還沒起來(port 0)就不帶,notify 那邊會 no-op
+    ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
+                    BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
     LANG: process.env.LANG || "zh_TW.UTF-8",
   };
   const child = spawn(VENV_PY, [
@@ -467,9 +702,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m sonnet`)。
     ...(model ? ["--model", model] : useCodex ? [] : ["--model", "sonnet"]),
     ...(effort ? ["--effort", effort] : []),
-    // agent 回覆語言跟著介面走。runtime 的順序是「機器設定 > ui_lang > 猜」,
-    // 桌面版沒有機器設定,所以這個值就是結論。
-    ...(uiLang ? ["--ui-lang", uiLang] : []),
+    // 回覆語言跟著用戶打的字走,不跟介面(Wei):刻意**不帶** --ui-lang。runtime 的順序是
+    // 「機器設定 > ui_lang > 看訊息猜」,電腦版沒有機器設定,不帶就落到最後一項。
+    // 帶的那一版:介面切英文的人用中文問,拿到英文回覆。
     // 契約(runtime 那邊同一份):不帶 --engine = claude,行為跟以前一模一樣;
     // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
     ...(useCodex ? ["--engine", "codex", "--codex-bin", conn.path] : []),
@@ -494,10 +729,29 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   });
 }
 
+/* 這個視窗只顯示我們自己的 index.html,永遠不該被導去別的地方。頁面裡有第三方畫的
+   連結(K 線圖左下角的 TradingView 標誌是 lightweight-charts 依授權放的 <a>),沒有
+   這兩道的話,點它會在 app 裡開一個沒有 preload 隔離設定的新視窗、或把整個 app 導走。
+   https 的交給系統瀏覽器開,其餘一律擋。 */
+function guardNavigation(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//.test(url)) shell.openExternal(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (e, url) => {
+    // 自己重載自己要放行:「重新登入」那顆鈕用的是 location.reload()
+    if (url.split("#")[0] === win.webContents.getURL().split("#")[0]) return;
+    e.preventDefault();
+    if (/^https:\/\//.test(url)) shell.openExternal(url);
+  });
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 1024, minHeight: 680,
     titleBarStyle: "hiddenInset",
+    // 燈的中心對到 44px 標題帶的中線(= 對話列中心 y=22)
+    trafficLightPosition: { x: 12, y: 15 },
     // Electron 讀不到 CSS 變數,所以這裡鏡射 `--color-darkBody`(tokens.css)。
     // 改那顆就要改這裡。原本寫 #10151c —— H≈215,正是 canon › 色溫 點名要避開的
     // Tailwind slate 地帶,開窗與 resize 的瞬間看得到。
@@ -507,10 +761,12 @@ function createWindow() {
       contextIsolation: true, nodeIntegration: false, sandbox: true,
     },
   });
+  guardNavigation(win);
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
 app.whenReady().then(() => {
+  startImageServer();
   ipcMain.handle("detect-agents", () => detectAgents());
   ipcMain.handle("save-connection", (_e, choice) => saveConnection(choice));
   ipcMain.handle("load-connection", () => loadConnection());
@@ -524,6 +780,13 @@ app.whenReady().then(() => {
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
   ipcMain.handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
+  ipcMain.handle("delete-strategy", (_e, name) => deleteStrategy(String(name || "")));
+  ipcMain.handle("list-sessions", () => listSessions());
+  ipcMain.handle("load-session-images", (_e, id) => loadSessionImages(id));
+  ipcMain.handle("load-session", (_e, id) => loadSession(id));
+  ipcMain.handle("delete-session", (_e, id) => deleteSession(id));
+  ipcMain.handle("list-strategies", () => listStrategies());
+  ipcMain.handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
   ipcMain.handle("model-options", (_e, kind) => modelOptions(kind));
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
@@ -532,6 +795,9 @@ app.whenReady().then(() => {
   ipcMain.handle("clear-connection", () => clearConnection());
   ipcMain.handle("has-blave-token", () => !!loadToken());
   ipcMain.handle("clear-blave-token", () => { clearToken(); return true; });
+  ipcMain.handle("sign-out-blave", () => signOutBlave());
+  ipcMain.handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
+  ipcMain.handle("cancel-agent-login", () => cancelAgentLogin());
   ipcMain.handle("send-message", (e, payload) => {
     if (activeTurn) return { busy: true };
     const win = BrowserWindow.fromWebContents(e.sender);
