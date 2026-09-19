@@ -120,6 +120,9 @@ msgstr "Connected: {name}"
 msgid "ws.settings"
 msgstr "Settings"
 
+msgid "turn.process"
+msgstr "Thought process"
+
 msgid "turn.thinking"
 msgstr "Thinking"
 

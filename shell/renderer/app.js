@@ -237,7 +237,10 @@ function addMsg(cls, text) {
    ・工具開跑 → 動詞換「執行中 · 第 N 步」
    ・回覆開始串流 → 隱藏(web 對「沒有可展開內容」的思考列就是隱藏)
    ・下一個 thinking / tool 事件 → 原地復活
-   ・回合結束 → 淡出移除(v1 沒有可回頭展開的思考過程,不留靜態列) */
+   ・回合結束 → **留下來**當可展開的「思考過程」標記(同 web 的 P2)。展開面板裡
+     上面是工具收據(一次呼叫一列:記號 + 動詞 + 受詞 + 耗時),下面是思考文字。
+     沒有任何工具也沒有思考的回合才整塊移除。
+   原本每次工具呼叫都往聊天欄塞一行「● Bash」,一輪跑十幾個工具就把回覆淹掉。 */
 const TICK_WINDOW = 8;   // 窗口內看得到的格數
 const TICK_PITCH = 6;    // 每格 px(2px 條 + 4px 間距),與 CSS 同值
 let busy = null;
@@ -287,8 +290,11 @@ function busyStart() {
   // 送出到第一個字之間唯一的回饋,所以要讓輔助科技讀到;polite 不打斷回覆
   el.setAttribute("role", "status");
   el.setAttribute("aria-live", "polite");
-  const head = document.createElement("div");
-  head.className = "think-head";
+  // 整輪只有這一顆 <button>(不在思考 ↔ 工具之間換節點,換了會 reflow)
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "think-head no-toggle";
+  head.setAttribute("aria-expanded", "false");
   const ticks = document.createElement("span");
   ticks.className = "think-ticks"; ticks.setAttribute("aria-hidden", "true");
   const ticksIn = document.createElement("span");
@@ -299,18 +305,70 @@ function busyStart() {
   const elapsed = document.createElement("span");
   // 每秒變的數字在 live region 裡會被逐秒念出來;狀態由動詞承載,秒數只給眼睛
   elapsed.className = "think-elapsed"; elapsed.setAttribute("aria-hidden", "true");
-  head.append(ticks, verb, elapsed);
-  el.appendChild(head);
+  const chev = document.createElement("span");
+  chev.className = "think-chev"; chev.setAttribute("aria-hidden", "true");
+  head.append(ticks, verb, elapsed, chev);
+  // 折疊面板:grid-rows 0fr↔1fr(動到真實高度,不用猜 max-height)
+  const wrap = document.createElement("div");
+  wrap.className = "think-reason-wrap";
+  const fold = document.createElement("div");
+  fold.className = "think-fold";
+  const stepsEl = document.createElement("ul");
+  stepsEl.className = "think-steps";
+  const reason = document.createElement("div");
+  reason.className = "think-reason";
+  fold.append(stepsEl, reason);
+  wrap.appendChild(fold);
+  el.append(head, wrap);
+  head.addEventListener("click", () => {
+    if (head.classList.contains("no-toggle")) return;
+    const open = el.classList.toggle("is-open");
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+  });
   $("chat-scroll").appendChild(el);
-  busy = { el, ticksIn, verb, elapsed, start: Date.now(), steps: 0, timer: null };
+  busy = { el, head, ticksIn, verb, elapsed, stepsEl, reason, stepRows: {},
+           start: Date.now(), steps: 0, timer: null };
   busySet(t("turn.thinking"));
   busyElapsed(); busyTick();          // 第 0 秒:條子不會是空的
   busy.timer = setInterval(() => { busyElapsed(); busyTick(); }, 1000);
 }
-function busyStep() {
+function busyHasFold() {
+  if (busy) busy.head.classList.remove("no-toggle"), busy.head.classList.add("has-reason");
+}
+/* 工具開跑:收據多一列。受詞(指令 / 檔名)放 summary,太長由 CSS 截。 */
+function busyStep(c) {
   if (!busy) return;
   busy.steps += 1;
   busySet(t("turn.running", { n: busy.steps }));
+  const li = document.createElement("li");
+  li.className = "think-step is-run";
+  const mark = document.createElement("span"); mark.className = "think-step-mark";
+  const verb = document.createElement("span"); verb.className = "think-step-verb";
+  verb.textContent = c.tool || "tool";
+  const obj = document.createElement("span"); obj.className = "think-step-obj";
+  obj.textContent = c.summary || "";
+  const time = document.createElement("span"); time.className = "think-step-time";
+  li.append(mark, verb, obj, time);
+  busy.stepsEl.appendChild(li);
+  if (c.id) busy.stepRows[c.id] = li;
+  busyHasFold();
+}
+/* `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟。 */
+function busyStepDone(c) {
+  const li = busy && c.id && busy.stepRows[c.id];
+  if (!li) return;
+  li.classList.remove("is-run");
+  if (c.error) li.classList.add("is-err");
+  const ms = Number(c.ms) || 0;
+  if (ms > 0) li.querySelector(".think-step-time").textContent =
+    ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";
+}
+/* 思考文字累積在同一個 log,段與段之間空一行。 */
+function busyReason(text) {
+  if (!busy || !text) return;
+  busy.reason.textContent += (busy.reason.textContent ? "\n\n" : "") + text;
+  busy.reason.scrollTop = busy.reason.scrollHeight;
+  busyHasFold();
 }
 function busyHide() {
   if (busy) busy.el.hidden = true;    // 回覆在串流了,字本身就是「還在跑」
@@ -319,6 +377,17 @@ function busyEnd() {
   if (!busy) return;
   const b = busy; busy = null;
   clearInterval(b.timer);
+  const hasFold = b.stepsEl.children.length > 0 || b.reason.textContent.trim() !== "";
+  if (hasFold) {
+    // 留下來:移到這一輪回覆的**上面**(思考在前、結論在後),動詞改成「思考過程」,
+    // 秒數凍結在總耗時,tick 條收掉——那個凍結的秒數已經說了花多久。
+    b.el.hidden = false;
+    b.el.classList.add("is-done");
+    b.el.removeAttribute("role"); b.el.removeAttribute("aria-live");
+    b.verb.textContent = t("turn.process");
+    if (b.anchor && b.anchor.parentNode) b.anchor.parentNode.insertBefore(b.el, b.anchor);
+    return;
+  }
   if (b.el.hidden || reducedMotion()) { b.el.remove(); return; }
   b.el.classList.add("is-fading");
   setTimeout(() => b.el.remove(), motionBaseMs() + 30);
@@ -400,16 +469,27 @@ window.blave.onTurnEvent((c) => {
     if (f) { faultShown = true; addFault(f); liveBubble = null; return; }
     if (!liveBubble) liveBubble = addMsg("ai", "");
     liveBubble.textContent += c.text;
+    // 這一輪的第一個回覆泡泡 = 回合結束時「思考過程」標記要插在它上面的錨點
+    if (busy && !busy.anchor) busy.anchor = liveBubble;
   } else if (c.type === "text_replace") {
     busyHide();
     if (!liveBubble) liveBubble = addMsg("ai", "");
     liveBubble.textContent = c.text;
+    if (busy && !busy.anchor) busy.anchor = liveBubble;
   } else if (c.type === "tool") {
-    if (c.status === "running") { addMsg("sys", "● " + (c.tool || "tool")); busyStep(); }
-    liveBubble = null; // 工具之後的字開新泡泡,跟 web 一致
+    // `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟
+    if (c.status === "done") { busyStepDone(c); scrollChat(); return; }
+    // 這段文字後面接了工具呼叫 → 是過場旁白、不是回覆:從泡泡移除(同 web)。
+    // 內容不會消失——引擎同步把它當 thinking chunk 送進思考 log。
+    if (liveBubble && liveBubble.parentNode) {
+      if (busy && busy.anchor === liveBubble) busy.anchor = null;
+      liveBubble.remove();
+    }
+    liveBubble = null;
+    busyStep(c);
   } else if (c.type === "thinking") {
-    // v1 不展開思考內容,只讓指示器回到「思考中」(回覆後又開始想時會用到)
     busySet(t("turn.thinking"));
+    busyReason(c.text || "");
   } else if (c.type === "error") {
     if (faultShown && c.code === "not_started") { faultShown = false; return; }
     addMsg("sys", t("turn.error", { msg: c.message || "" }));

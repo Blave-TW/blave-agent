@@ -21,6 +21,7 @@
   --color-surface: #f8fafb;
   /* trading */
   --color-green: #31a86a;
+  --color-red: #d94f5c;        /* crimson — 3.8:1 on surface, 4.5:1 on darkBody */
   /* dark(黑潮墨) */
   --color-darkBody: #0f161a;
   --color-darkCard: #1a2328;

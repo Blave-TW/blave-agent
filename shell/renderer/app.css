@@ -156,7 +156,9 @@
   padding: var(--space-8) var(--space-16); max-width: 84%;
   font-size: 13px; line-height: 1.6; white-space: pre-wrap;
 }
-.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); }
+/* pre-wrap:agent 的回覆靠換行排版(清單、逐行結果),不保留的話
+   「references\nstrategies\nmanager」會黏成一行。 */
+.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; }
 .msg.ai p { margin: 0; }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
 .chat-input {
@@ -200,8 +202,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    等待指示器 — 網頁工作頁「思考列」的 v1 子集
    來源:web/app/static/css/agent/workspace.css 約 1830–1945(.think-indicator /
    .think-head / .think-ticks / .think-verb / .think-elapsed / .is-fading)。
-   搬過來的是 tick 條 + 動詞 + 秒數;**沒搬**展開面板(chevron / .think-reason /
-   .think-steps)——v1 不展開思考內容、沒有工具收據列,回合結束直接淡出移除。
+   搬過來的是 tick 條 + 動詞 + 秒數,以及展開面板(chevron / .think-steps 工具收據 /
+   .think-reason 思考文字)。回合結束後整塊留下來當可再點開的「思考過程」標記。
    差別兩處:① 色改引 tokens.css 的角色變數(--ink / --ink-3),不寫死 dark token,
    因為這個外殼的 CSS 亮暗兩態都成立;② 它是 .chat-scroll 的最後一個兄弟節點
    (不是巢在某一回合裡),所以下緣間距對齊 .msg 的 24 而不是 web 的 4。
@@ -217,10 +219,77 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   opacity: 0;
   transition: opacity var(--motion-base) var(--ease-standard);
 }
+/* 整輪一顆 <button>。有東西可以展開才可點(.no-toggle = 純等待,沒有內容) */
 .think-head {
   display: inline-flex; align-items: center; align-self: flex-start;
   gap: var(--space-8); min-height: 26px;
+  padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
+.think-head.no-toggle { cursor: default; }
+/* 回合結束:tick 條收掉——凍結的秒數已經說了花多久,停住的條子是同一件事講兩次。
+   字不變暗:這一列是用戶會回頭展開來讀的內容,不是過期的狀態。 */
+.think-indicator.is-done { margin-bottom: var(--space-8); }
+.think-indicator.is-done .think-ticks { display: none; }
+
+.think-chev {
+  flex: none; width: 5px; height: 5px; margin-left: 2px; position: relative; top: -1px;
+  border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3);
+  transform: rotate(45deg);
+  transition: transform var(--motion-fast) var(--ease-standard);
+  visibility: hidden;
+}
+.think-head.has-reason .think-chev { visibility: visible; }
+.think-indicator.is-open .think-chev { transform: rotate(-135deg); }
+
+/* 展開面板:grid-rows 0fr↔1fr 收合(動到面板的真實高度,不用猜 max-height)。
+   wrap 只能有一個 grid row(.think-fold)——多一個子元素會掉進 implicit auto row,
+   0fr 收不掉它。minmax(0,1fr) 是為了讓 nowrap 的長路徑不把聊天欄撐爆。 */
+.think-reason-wrap {
+  align-self: stretch; display: grid;
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: 0fr;
+  overflow: hidden;
+  transition: grid-template-rows var(--motion-base) var(--ease-standard);
+}
+.think-indicator.is-open .think-reason-wrap { grid-template-rows: 1fr; }
+.think-fold { min-height: 0; opacity: 0; transition: opacity var(--motion-base) var(--ease-standard); }
+.think-indicator.is-open .think-fold { opacity: 1; }
+
+/* 工具收據:一次呼叫一列——記號 + 動詞 + 受詞 + 耗時。記號沿用 tick 條的 2px 短劃
+   語言(不引入勾勾 / 圓點 / chip),列界靠行距。8 列半的高度上限:第 9 列露出
+   上半截就是「下面還有」的提示;沒有上限的話 50 次呼叫的回合展開是 1200px。 */
+.think-steps {
+  list-style: none; margin: 0 0 var(--space-4) 15px; padding: 0;
+  max-width: calc(100% - 15px); max-height: 204px; overflow-y: auto;
+}
+.think-steps:empty { display: none; }
+.think-step {
+  display: flex; align-items: center; gap: var(--space-8);
+  padding: 3px 0; font-size: 12px; line-height: 1.5;
+}
+.think-step-mark { flex: none; width: 8px; height: 2px; background: var(--ink-3); }
+.think-step.is-run .think-step-mark { width: 4px; background: var(--ink); }
+/* 錯誤是狀態不是內容:紅只上在記號與耗時,動詞受詞不變色 */
+.think-step.is-err .think-step-mark { background: var(--color-red); }
+.think-step-verb { flex: none; color: var(--ink-2); }
+.think-step-obj {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-3);
+}
+.think-step-time {
+  flex: none; margin-left: auto; padding-left: var(--space-8);
+  font-size: 11px; color: var(--ink-3); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 思考文字:展開來就是要讀的,所以走無襯線、會換行、有高度上限可捲 */
+.think-reason {
+  max-width: 100%; max-height: 9em; overflow-y: auto;
+  margin: var(--space-4) 0 var(--space-4) 15px;
+  color: var(--ink-3); font-size: 12px; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.think-reason:empty { display: none; }
 /* tick 條:一秒一格。最新那格在最右、滿墨,舊的按年齡退色並整條往左滑出
    44px 窗口——每一格都是真的過去了一秒,不是裝飾性 loader(同 web 註解) */
 .think-ticks { position: relative; flex: none; width: 44px; height: 12px; overflow: hidden; }

@@ -120,6 +120,9 @@ msgstr "已連結：{name}"
 msgid "ws.settings"
 msgstr "設定"
 
+msgid "turn.process"
+msgstr "思考過程"
+
 msgid "turn.thinking"
 msgstr "思考中"
 
