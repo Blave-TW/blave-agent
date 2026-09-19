@@ -96,9 +96,6 @@ msgstr "策略"
 msgid "ws.noStrategies"
 msgstr "還沒有策略。"
 
-msgid "ws.nothingToSee"
-msgstr "還沒有東西可以看。"
-
 msgid "ws.placeholder"
 msgstr "跟 agent 說一句話"
 

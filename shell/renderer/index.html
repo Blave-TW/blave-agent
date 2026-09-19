@@ -54,8 +54,16 @@
       <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
            同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
       <div class="main-empty" id="main-empty">
-        <p class="pf-state" data-i18n="ws.nothingToSee"></p>
-        <button class="btn-out" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
+        <!-- 照雲端工作頁的 welcome(workspace.html `.main-welcome`):品牌記號當浮水印,
+             只比背景亮一階、不加底板——留白就是頁面本身;下面是起手短籤。沒有說明句。 -->
+        <div class="wc-inner">
+          <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
+            <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
+          </svg>
+          <div class="wc-chips">
+            <button class="wc-chip" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
+          </div>
+        </div>
       </div>
     </section>
     <section class="pane-chat">

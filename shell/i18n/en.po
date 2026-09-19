@@ -96,9 +96,6 @@ msgstr "Strategies"
 msgid "ws.noStrategies"
 msgstr "No strategies yet."
 
-msgid "ws.nothingToSee"
-msgstr "Nothing to see yet."
-
 msgid "ws.placeholder"
 msgstr "Message the agent"
 
