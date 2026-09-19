@@ -8,7 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- 電腦版本機模式:`--delivery local`(LocalSink,chunk 邏輯沿用 WebSink、傳輸
+  換 stdout JSONL,前綴 @@BLAVE@@);`BLAVE_PROXY_TOKEN` **不存在**時視為本機——
+  拔掉 ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY(留著會蓋掉用戶的訂閱登入 → 401,
+  2026-09-18 實測)、PATH/HOME/USER 由行程繼承即可(SDK 是 `{**os.environ, **options.env}`),外殼負責帶齊。
+  機隊每台都有 token,行為零改變。
 
 ## 1.1.82 — 2026-09-18
 

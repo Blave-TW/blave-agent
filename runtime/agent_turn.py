@@ -1702,6 +1702,24 @@ _TOOL_RESULT_BLOCK = getattr(sdk, "ToolResultBlock", None)
 _DEBUG_MSGS = os.environ.get("BLAVE_AGENT_DEBUG_MSGS") == "1"
 
 
+class LocalSink(WebSink):
+    """電腦版(本機外殼)的投遞:chunk 邏輯全部沿用 WebSink,傳輸換成 stdout
+    一行一個 JSON(前綴 @@BLAVE@@,讓外殼跟雜訊輸出分得開)。外殼 spawn 這支、
+    逐行讀 stdout 畫進聊天欄。沒有網路、沒有 token;v1 沒有中斷(interrupted
+    永遠 False)。機器端不會走到這裡——只有 --delivery local 會建它。"""
+
+    def __init__(self, session_id):
+        super().__init__(report_url=None, report_token=None, session_id=session_id)
+
+    def _send(self, chunk):
+        chunk.setdefault("session_id", self.session_id)
+        try:
+            sys.stdout.write("@@BLAVE@@" + json.dumps(chunk, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+        except Exception:
+            pass  # 外殼關掉管線也不能讓回合炸掉
+
+
 def _unstreamed(text, streamed):
     """The tail of a finished TextBlock that the deltas did not already deliver,
     consuming the delta buffer that block was streamed from. Normally "" — the
@@ -2030,6 +2048,15 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # MUST stay strictly below the bridges' turn timeouts (telegram_bridge 2000s,
     # web_bridge TURN_TIMEOUT 2100s) or a rule-abiding long backtest gets the
     # whole turn killed instead. Names verified inside claude 2.1.239.
+    if not os.environ.get("BLAVE_PROXY_TOKEN"):
+        # 本機模式(電腦版):沒有 proxy token = 用戶自己的訂閱。這兩個必須
+        # 「不存在」而不是留空——CLI 明講 API key 優先於 claude.ai 登入,
+        # 留著就是 401(2026-09-18 實測)。
+        # SDK 是 {**os.environ, **options.env}(subprocess_cli.py:810),所以
+        # PATH/HOME/USER 這些由這支行程繼承就夠,不必在這裡複製;CLI 讀
+        # Keychain 認的是 USER,外殼 spawn 這支時要帶齊(見 shell/main.js)。
+        turn_env.pop("ANTHROPIC_BASE_URL", None)
+        turn_env.pop("ANTHROPIC_API_KEY", None)
     turn_env.update({
         "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": "1800000",
         "BASH_MAX_TIMEOUT_MS": "1800000",
@@ -2040,7 +2067,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # inside claude 2.1.239.
         "DISABLE_AUTOUPDATER": "1",
     })
-    if isinstance(sink, WebSink):
+    if isinstance(sink, WebSink) and sink.report_url:
+        # LocalSink 繼承 WebSink 但 report_url=None:這三個 env 是給雲端照片鏡射
+        # 用的,本機不塞——塞 None 進 env 會讓 anyio 在 spawn 時炸
+        # TypeError("expected str ... not NoneType"),整輪 not_started。
         # So lib/notify.report_photo_web can mirror backtest/param-scan charts into the
         # web chat (the agent's Bash-run strategy code inherits this env).
         turn_env["BLAVE_WEB_REPORT_URL"] = sink.report_url
@@ -2320,7 +2350,7 @@ def main():
     parser.add_argument("session_id")
     parser.add_argument("message")
     parser.add_argument("--model", default=model_prefs.DEFAULT_MODEL)
-    parser.add_argument("--delivery", default="telegram", choices=["telegram", "web"])
+    parser.add_argument("--delivery", default="telegram", choices=["telegram", "web", "local"])
     parser.add_argument("--telegram-chat-id", default=None)
     parser.add_argument("--report-url", default=None)
     parser.add_argument("--viewing-strategy", default=None)
@@ -2342,6 +2372,8 @@ def main():
 
     if args.delivery == "web":
         sink = WebSink(args.report_url, report_token, args.session_id)
+    elif args.delivery == "local":
+        sink = LocalSink(args.session_id)
     else:
         sink = TelegramSink(telegram_token, args.telegram_chat_id)
 

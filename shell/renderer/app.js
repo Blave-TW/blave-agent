@@ -72,20 +72,59 @@ $("btn-send").addEventListener("click", sendDraft);
 $("ta").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDraft(); }
 });
-function sendDraft() {
-  const t = $("ta").value.trim();
-  if (!t) return;
-  const scroll = $("chat-scroll");
-  const you = document.createElement("div");
-  you.className = "msg you"; you.textContent = t;
-  scroll.appendChild(you);
-  const sys = document.createElement("div");
-  sys.className = "msg sys";
-  sys.textContent = "引擎還沒接線(第 4 步)。這則訊息沒有送出去。";
-  scroll.appendChild(sys);
-  scroll.scrollTop = scroll.scrollHeight;
-  $("ta").value = "";
+
+/* ── 第 4 步:真的接線 ───────────────────────────── */
+const sessionId = "desktop-" + Math.random().toString(36).slice(2, 10);
+let running = false;
+let liveBubble = null;
+
+function addMsg(cls, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + cls; el.textContent = text;
+  $("chat-scroll").appendChild(el);
+  $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight;
+  return el;
 }
+
+async function sendDraft() {
+  const t = $("ta").value.trim();
+  if (!t || running) return;
+  running = true; $("btn-send").disabled = true;
+  addMsg("you", t); $("ta").value = "";
+  liveBubble = null;
+  try {
+    await window.blave.ensureEngine();
+    const model = "sonnet"; // v1:先固定;之後從連結資訊帶
+    const r = await window.blave.sendMessage({ sessionId, message: t, model });
+    if (r.busy) { addMsg("sys", "上一輪還在跑。"); running = false; $("btn-send").disabled = false; }
+  } catch (e) {
+    addMsg("sys", "引擎準備失敗:" + (e.message || e));
+    running = false; $("btn-send").disabled = false;
+  }
+}
+
+window.blave.onEngineProgress((t) => addMsg("sys", t));
+window.blave.onTurnEvent((c) => {
+  if (c.type === "text") {
+    if (!liveBubble) liveBubble = addMsg("agent", "");
+    liveBubble.textContent += c.text;
+  } else if (c.type === "text_replace") {
+    if (!liveBubble) liveBubble = addMsg("agent", "");
+    liveBubble.textContent = c.text;
+  } else if (c.type === "tool") {
+    if (c.status === "running") addMsg("sys", "● " + (c.tool || "工具"));
+    liveBubble = null; // 工具之後的字開新泡泡,跟 web 一致
+  } else if (c.type === "thinking") {
+    // v1 不展開思考,只在狀態列示意
+  } else if (c.type === "error") {
+    addMsg("sys", "出錯了:" + (c.message || ""));
+  }
+  $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight;
+});
+window.blave.onTurnEnd((r) => {
+  running = false; $("btn-send").disabled = false;
+  if (r.code !== 0) addMsg("sys", "引擎退出碼 " + r.code + (r.errTail ? ":" + r.errTail.slice(-300) : ""));
+});
 
 (async () => {
   const prev = await window.blave.loadConnection();
