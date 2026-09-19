@@ -30,8 +30,18 @@ function btn(cls, text, onClick) {
    什麼都沒偵測到時 Blave 拿回填色 —— 那時它是唯一走得通的路。 */
 let localReady = false;
 
+/* 偵測中的佔位:畫**同樣的兩列**,只把狀態換成「偵測中…」。
+   原本是把整個列表換成一行字,卡片會先縮成一行再彈回來——按「重新偵測」時那個
+   高度彈跳很吵,而且第一次開啟也會閃一下。列數固定,就沒有 reflow。 */
+function detectingRows() {
+  const rows = $("agent-rows"); rows.innerHTML = "";
+  ["Claude Code", "Codex"].forEach((name) => {
+    rows.appendChild(row({ name, st: t("cn.detecting"), stClass: "" }));
+  });
+}
+
 async function detect() {
-  $("agent-rows").innerHTML = `<p class="cn-desc">${t("cn.detecting")}</p>`;
+  detectingRows();
   $("cn-hint").hidden = true;
   const d = await window.blave.detectAgents();
   const rows = $("agent-rows"); rows.innerHTML = "";

@@ -27,9 +27,8 @@
             <span class="cn-meta" data-i18n="cn.local.desc"></span>
             <button class="btn-quiet" id="btn-redetect" type="button" data-i18n="cn.redetect"></button>
           </p>
-          <div class="cn-rows" id="agent-rows">
-            <p class="cn-desc" id="detecting" data-i18n="cn.detecting"></p>
-          </div>
+          <!-- 兩列由 JS 畫(偵測中也是同樣兩列,只換狀態字),列數固定不 reflow -->
+          <div class="cn-rows" id="agent-rows"></div>
           <p class="cn-hint" id="cn-hint" hidden></p>
         </div>
       </div>

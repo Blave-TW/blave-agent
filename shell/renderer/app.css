@@ -54,7 +54,6 @@
 .cn-blave { display: flex; align-items: center; gap: var(--space-16); }
 .cn-blave .cn-head { flex: 1; min-width: 0; }
 .cn-ttl { font-size: 13px; font-weight: 600; color: var(--ink); }
-.cn-desc { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 /* in-app 功能動作鈕:高對比中性填色,永遠不是橘(canon › Interaction states)。
    高 32 不是 44 —— canon › Verification:「44 是熱區下限,不是視覺高度」,而
    Terminal › Density 的控件帶是 32–36、Outlined control 是 30–34。同一張卡上兩顆
