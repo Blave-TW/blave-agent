@@ -224,6 +224,23 @@ function mpSave() {
   window.blave.saveModelPrefs(MP.prefs);
 }
 
+/* 這個帳號用不了的 model:記在該引擎的 prefs 裡,面板上標出來(不鎖——訂閱升級之後
+   就能用了,鎖死的話用戶得去刪檔)。選擇換回預設,下一句話才不會再失敗一次。 */
+function mpMarkUnavailable(id) {
+  const slot = MP.prefs[MP.kind]; if (!slot) return;
+  slot.unavailable = Array.isArray(slot.unavailable) ? slot.unavailable : [];
+  if (!slot.unavailable.includes(id)) slot.unavailable.push(id);
+  if (MP.model === id && MP.defaultModel && MP.defaultModel !== id) MP.model = MP.defaultModel;
+  mpSave(); mpPaint();
+}
+/* 用那個 model 成功跑完一輪 = 現在能用了(升級了方案),把標記拿掉。 */
+function mpMarkWorks(id) {
+  const slot = MP.prefs[MP.kind];
+  if (!slot || !Array.isArray(slot.unavailable) || !slot.unavailable.includes(id)) return;
+  slot.unavailable = slot.unavailable.filter((x) => x !== id);
+  mpSave(); mpPaint();
+}
+
 /* 進工作頁 / 換引擎時呼叫。型錄拿不到(沒裝、沒 token、離線)就整顆不畫——
    那時 runTurn 不帶任何旗標,行為跟沒有這個功能之前一樣。 */
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
@@ -266,6 +283,10 @@ function mpPaint() {
     const on = x.id === MP.model;
     b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
     const nm = document.createElement("span"); nm.textContent = x.name; b.appendChild(nm);
+    if (((MP.prefs[MP.kind] || {}).unavailable || []).includes(x.id)) {
+      b.classList.add("is-na");
+      const na = document.createElement("span"); na.className = "mp-def"; na.textContent = t("mp.na"); b.appendChild(na);
+    }
     if (x.id === MP.defaultModel) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
     b.addEventListener("click", () => mpPickModel(x.id));
     box.appendChild(b);
@@ -553,6 +574,7 @@ async function sendDraft() {
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     await window.blave.ensureEngine();
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
+    turnModel = MP.model; turnGotReply = false;
     const r = await window.blave.sendMessage({
       sessionId, message: msg, model: MP.model, effort: mpEffort(), uiLang: LANG });
     // main.js 的契約只有這兩種回覆:busy 或 started
@@ -572,7 +594,29 @@ window.blave.onEngineProgress((key) => addMsg("sys", t(key)));
 // 402 = 沒額度,兩種都不是重講一次就會好的事,要給出口而不是給英文。
 // 402 已經是幾秒內失敗;401 會被 Claude Code CLI 重試兩分鐘以上,所以 api 那邊把
 // 帳號 token 失效改回 403(見 proxy.py `_unauthorized`),401 留給機器那條。
+/* 選的 model 這個帳號用不了(訂閱方案沒有、或名字不存在)。實測字串(把 --model 設成
+   不存在的名字跑一輪):
+     There's an issue with the selected model (X). It may not exist or you may not have access to it.
+   三秒內就失敗,不像 401 會轉圈。我們沒辦法事先知道哪個帳號有哪些 model——Claude 沒有
+   可查的型錄,逐個試又會燒用戶的額度——所以做法是:讓它快速失敗、講人話、把選擇換回
+   預設(下一句就能用),並在面板上把那個 model 標起來,免得再踩一次。 */
+const NO_MODEL_RE = /^There's an issue with the selected model \(([^)]+)\)/;
+
 function classifyFault(text) {
+  const nm = NO_MODEL_RE.exec(text || "");
+  if (nm) {
+    const bad = MP.models.find((m) => m.id === nm[1]);
+    const name = bad ? bad.name : nm[1];
+    mpMarkUnavailable(nm[1]);
+    const back = mpCur();
+    return {
+      text: back && back.id !== nm[1]
+        ? t("fault.noModelSwitched", { model: name, to: back.name })
+        : t("fault.noModel", { model: name }),
+      label: t("fault.noModelBtn"),
+      act: () => mpOpen(),
+    };
+  }
   // 錨在引擎故障訊息的開頭,不是「內文出現 API Error」就算:用戶問「我的交易所
   // 呼叫為什麼回 402」時,agent 的回覆裡也會有那串,不錨定就會把整句答案換成
   // 一顆儲值鈕。開頭這句是 Claude Code 的固定前綴(實測 403 那次逐字對過)。
@@ -616,7 +660,7 @@ window.blave.onTurnEvent((c) => {
     const f = classifyFault(c.text);
     if (f) { faultShown = true; addFault(f); liveBubble = null; return; }
     if (!liveBubble) liveBubble = addMsg("ai", "");
-    liveBubble.textContent += c.text;
+    liveBubble.textContent += c.text; turnGotReply = true;
     // 這一輪的第一個回覆泡泡 = 回合結束時「思考過程」標記要插在它上面的錨點
     if (busy && !busy.anchor) busy.anchor = liveBubble;
   } else if (c.type === "text_replace") {
@@ -644,7 +688,10 @@ window.blave.onTurnEvent((c) => {
   }
   scrollChat();
 });
+let turnModel = null, turnGotReply = false;
 window.blave.onTurnEnd((r) => {
+  // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
+  if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
   running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false;
   busyEnd();
   if (r.code !== 0) addMsg("sys", t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""));

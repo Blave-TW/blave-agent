@@ -458,3 +458,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 說明行沒有內容時不佔高度(只有 model 沒有 effort 時才有字) */
 .mp-note[hidden] { display: none; }
 .mp-rail { margin-bottom: var(--space-8); }
+
+/* 這個帳號用不了的 model:名字退一階灰、旁邊標一句,但**不鎖**——訂閱升級之後就能用,
+   鎖死的話用戶得去刪檔。成功跑過一輪標記就會自己消失。 */
+.mp-row.is-na { color: var(--ink-3); }

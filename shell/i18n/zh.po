@@ -203,3 +203,15 @@ msgstr "最高"
 
 msgid "lv.ultra"
 msgstr "Ultra"
+
+msgid "fault.noModel"
+msgstr "你的帳號用不了「{model}」，這一輪沒有跑。"
+
+msgid "fault.noModelSwitched"
+msgstr "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{to}」。"
+
+msgid "fault.noModelBtn"
+msgstr "選別的模型"
+
+msgid "mp.na"
+msgstr "你的方案沒有"

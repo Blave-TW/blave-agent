@@ -73,6 +73,10 @@ const STRINGS = {
     "lv.xhigh": "Extra High",
     "lv.max": "Max",
     "lv.ultra": "Ultra",
+    "fault.noModel": "Your account can't use {model}. This turn did not run.",
+    "fault.noModelSwitched": "Your account can't use {model}. This turn did not run — switched back to {to}.",
+    "fault.noModelBtn": "Choose a Model",
+    "mp.na": "Not on your plan",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -142,5 +146,9 @@ const STRINGS = {
     "lv.xhigh": "超高",
     "lv.max": "最高",
     "lv.ultra": "Ultra",
+    "fault.noModel": "你的帳號用不了「{model}」，這一輪沒有跑。",
+    "fault.noModelSwitched": "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{to}」。",
+    "fault.noModelBtn": "選別的模型",
+    "mp.na": "你的方案沒有",
   },
 };

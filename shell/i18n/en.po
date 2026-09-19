@@ -203,3 +203,15 @@ msgstr "Max"
 
 msgid "lv.ultra"
 msgstr "Ultra"
+
+msgid "fault.noModel"
+msgstr "Your account can't use {model}. This turn did not run."
+
+msgid "fault.noModelSwitched"
+msgstr "Your account can't use {model}. This turn did not run — switched back to {to}."
+
+msgid "fault.noModelBtn"
+msgstr "Choose a Model"
+
+msgid "mp.na"
+msgstr "Not on your plan"

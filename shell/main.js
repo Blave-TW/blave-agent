@@ -325,10 +325,12 @@ const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 // haiku 的 efforts 是空的:實測(把 CLI 指到 mock upstream 看它送什麼)CLI 對 haiku
 // 完全不送 output_config,`--effort` 不報錯但沒有任何作用——放一個按了沒反應的控件
 // 比藏掉它更糟。
+// 順序 = 模型強度,最強的在上面(三個引擎同一個規則)。預設不是第一個:預設跟著
+// `defaultModel` 走(sonnet——每個方案都有、速度與能力的平衡點),「預設」徽章也是。
 const CLAUDE_MODELS = [
-  { id: "sonnet", name: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
-  { id: "opus", name: "Opus", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
   { id: "fable", name: "Fable", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "opus", name: "Opus", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "sonnet", name: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
   { id: "haiku", name: "Haiku", efforts: [], defaultEffort: null },
 ];
 
@@ -369,17 +371,21 @@ const BLAVE_NAMES = {
   "anthropic/claude-opus-4-8": "Opus 4.8", "anthropic/claude-fable-5": "Fable 5",
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash", "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
 };
+const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /deepseek.*flash/];
 async function blaveModels() {
   const acct = loadToken();
   if (!acct) return [];
   try {
     const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/models`, { "x-api-key": `proxy-${acct}` });
     if (r.status !== 200) return [];
+    // proxy 的型錄順序是 haiku→sonnet→opus→fable→deepseek,照強度重排;
+    // 不認得的新 model 排最後(不擋,它會照 API 給的順序出現)。
+    const rank = (id) => { const i = BLAVE_STRENGTH.findIndex((re) => re.test(id)); return i < 0 ? 99 : i; };
     return (r.body.data || []).map((m) => {
       const claude = /^anthropic\//.test(m.id) && !/haiku/.test(m.id);
       return { id: m.id, name: BLAVE_NAMES[m.id] || m.id,
                efforts: claude ? CLAUDE_EFFORTS : [], defaultEffort: claude ? "high" : null };
-    });
+    }).sort((a, b) => rank(a.id) - rank(b.id));
   } catch (_) { return []; }
 }
 
