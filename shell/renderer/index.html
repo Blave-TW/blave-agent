@@ -51,8 +51,11 @@
       <button class="ws-conn" id="ws-conn" type="button"></button>
     </aside>
     <section class="pane-main">
-      <div class="main-empty">
+      <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
+           同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
+      <div class="main-empty" id="main-empty">
         <p class="pf-state" data-i18n="ws.nothingToSee"></p>
+        <button class="btn-out" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
       </div>
     </section>
     <section class="pane-chat">
@@ -61,7 +64,6 @@
              不再各自叫用戶「去右邊跟 agent 講話」(同一個例子原本出現兩次)。 -->
         <div class="chat-empty" id="chat-empty">
           <p data-i18n="ws.chatEmpty"></p>
-          <button class="btn-out" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
         </div>
       </div>
       <div class="chat-input-wrap">

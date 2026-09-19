@@ -132,9 +132,12 @@
 /* MIDDLE — .pane-main:沒選策略時 main-head / main-tabs 都不渲染 */
 .pane-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .main-empty {
-  flex: 1; display: flex; align-items: center; justify-content: center;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-16);           /* 狀態句 + 起手範例鈕,直向置中 */
   padding: var(--space-32);
 }
+/* .pf-state 自帶 24px 的上下 padding(給側欄清單用),在這裡會把句子跟按鈕推開 */
+.main-empty .pf-state { padding: 0; }
 .main-empty p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-3); text-align: center; max-width: 34em; }
 
 /* RIGHT — .pane-chat:452 寬、卡面底 */
@@ -354,12 +357,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .btn-fill, .btn-out { position: relative; }
 .btn-fill::before, .btn-out::before { content: ""; position: absolute; inset: -7px; }
 
-/* 聊天欄的空狀態:一句 + 一顆可點的起手範例(canon › States › Empty:扁平一行
-   + 填充動作)。另外兩欄只留狀態句,不再重複同一個例子。 */
-.chat-empty {
-  display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-12);
-  padding: var(--space-24) 0;
-}
+/* 聊天欄的空狀態:只有一句話。起手範例鈕在中欄(.main-empty)。 */
+.chat-empty { padding: var(--space-24) 0; }
 .chat-empty p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--ink-3); }
 
 /* 目前使用的那一列:純加粗,不發明第三種徽章(canon › Active)。只對 .n 有效

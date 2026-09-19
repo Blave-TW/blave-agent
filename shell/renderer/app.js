@@ -567,6 +567,7 @@ async function sendDraft() {
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false);
   $("chat-empty").hidden = true;
+  $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
   addMsg("you", msg); $("ta").value = ""; autosize();
   liveBubble = null; faultShown = false;
   try {
