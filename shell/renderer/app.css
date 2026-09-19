@@ -61,3 +61,27 @@ html, body { margin: 0; height: 100%; background: var(--bg-body); }
   flex: none; font-size: 11px; line-height: 1; color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
+
+/* 空狀態的換行來自 .po 的 \n(翻譯檔裡不放 <br>) */
+.pf-state { white-space: pre-line; }
+
+/* ── 連結畫面兼任切換器 ─────────────────────────────
+   同一個畫面,第一次是「選一個」,之後是「換一個」。差別只有兩件:目前用的那列
+   掛徽章(不是把按鈕變灰——灰掉讀起來像壞了),以及左上角多一顆返回。 */
+.cn-cur {
+  flex: none;
+  font-size: 12px; color: var(--ink-3);
+  border: 1px solid var(--border-hairline); border-radius: var(--radius-xs);
+  padding: 2px var(--space-8);
+}
+.cn-back {
+  display: block; margin-bottom: var(--space-12);
+  font-size: 12px; color: var(--ink-3);
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.cn-back:hover { color: var(--ink); text-decoration: underline; }
+
+/* 左下角那行從「一段字」變成按鈕:回連結畫面換 agent。跑到一半 disabled。 */
+.ws-conn { cursor: pointer; text-align: left; width: 100%; color: inherit; background: none; border: 0; }
+.ws-conn:hover:not(:disabled) { opacity: 1; }
+.ws-conn:disabled { cursor: default; }

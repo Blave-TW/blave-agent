@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("blave", {
   saveConnection: (choice) => ipcRenderer.invoke("save-connection", choice),
   loadConnection: () => ipcRenderer.invoke("load-connection"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  getLocale: () => ipcRenderer.invoke("get-locale"),
   startOAuth: (lang) => ipcRenderer.invoke("start-oauth", lang),
   cancelOAuth: () => ipcRenderer.invoke("cancel-oauth"),
   clearConnection: () => ipcRenderer.invoke("clear-connection"),

@@ -140,6 +140,10 @@ function postJSON(url, body) {
   });
 }
 
+// 主行程一律丟**穩定代號**(OAUTH_TIMEOUT / KEYCHAIN_UNAVAILABLE / …),不丟句子:
+// IPC 只搬得動 message,而句子有語言。renderer 拿代號去 strings.js 查當下語系的字。
+// 換 token 那支刻意不把 api 的 error_description 往外送——那是給開發者看的英文。
+
 // 等待瀏覽器那段可以被取消(用戶關掉分頁就沒人會按「允許」,按鈕不能卡在那裡)。
 let pendingOAuth = null;
 
@@ -167,7 +171,7 @@ async function startOAuth(lang) {
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
   const code = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { server.close(); reject(new Error("授權逾時(5 分鐘)")); }, 300000);
+    const timer = setTimeout(() => { server.close(); reject(new Error("OAUTH_TIMEOUT")); }, 300000);
     // 取消與逾時走同一個出口:關掉 server、清掉計時器,錯誤碼讓 renderer 認得出
     // 「這是我自己按的」,不要畫成失敗。
     pendingOAuth = {
@@ -184,11 +188,11 @@ async function startOAuth(lang) {
       clearTimeout(timer);
       server.close();
       pendingOAuth = null;
-      if (u.searchParams.get("state") !== state) return reject(new Error("state 不符,可能被攔截"));
+      if (u.searchParams.get("state") !== state) return reject(new Error("OAUTH_STATE_MISMATCH"));
       const err = u.searchParams.get("error");
-      if (err) return reject(new Error(err === "access_denied" ? "你在瀏覽器取消了授權" : err));
+      if (err) return reject(new Error(err === "access_denied" ? "OAUTH_DENIED" : err));
       const c = u.searchParams.get("code");
-      c ? resolve(c) : reject(new Error("回來了但沒有 code"));
+      c ? resolve(c) : reject(new Error("OAUTH_NO_CODE"));
     });
     const q = new URLSearchParams({
       client_id: CLIENT_ID, redirect_uri: redirectUri,
@@ -207,10 +211,10 @@ async function startOAuth(lang) {
     code, code_verifier: verifier, redirect_uri: redirectUri,
   });
   if (r.status !== 200 || !r.body.access_token) {
-    throw new Error(r.body.error_description || r.body.error || `換 token 失敗(HTTP ${r.status})`);
+    throw new Error("TOKEN_EXCHANGE_FAILED");
   }
   if (!saveToken(r.body.access_token)) {
-    throw new Error("這台電腦無法安全儲存憑證(Keychain 不可用),沒有保存。");
+    throw new Error("KEYCHAIN_UNAVAILABLE");
   }
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
@@ -253,7 +257,7 @@ async function ensureEngine(progress) {
   const envPath = await loginShellPath();
   const fresh = !fs.existsSync(WS);
   if (fresh) {
-    progress("建立工作區 ~/Blave/workspace …");
+    progress("engine.workspace");
     fs.mkdirSync(WS, { recursive: true });
     copyOfficial();
   } else if (!app.isPackaged) {
@@ -263,14 +267,14 @@ async function ensureEngine(progress) {
   }
   for (const d of ["state", "config"]) fs.mkdirSync(path.join(BASE, d), { recursive: true });
   if (!fs.existsSync(VENV_PY)) {
-    progress("準備引擎環境(首次,約一分鐘)…");
+    progress("engine.preparing");
     await sh(`python3 -m venv "${path.join(BASE, "venv")}"`, envPath);
     await sh(`"${VENV_PY}" -m pip -q install claude-agent-sdk==0.2.144`, envPath, 600000);
   }
 }
 
 let activeTurn = null;
-async function runTurn(win, { sessionId, message, model }) {
+async function runTurn(win, { sessionId, message, model, uiLang }) {
   const envPath = await loginShellPath();
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
@@ -297,6 +301,9 @@ async function runTurn(win, { sessionId, message, model }) {
   const child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
     sessionId, message, "--delivery", "local", "--model", model || "sonnet",
+    // agent 回覆語言跟著介面走。runtime 的順序是「機器設定 > ui_lang > 猜」,
+    // 桌面版沒有機器設定,所以這個值就是結論。
+    ...(uiLang ? ["--ui-lang", uiLang] : []),
   ], { env, cwd: WS });
   activeTurn = child;
   let buf = "";
@@ -342,6 +349,9 @@ app.whenReady().then(() => {
     const win = BrowserWindow.fromWebContents(e.sender);
     return ensureEngine((t) => win.webContents.send("engine-progress", t));
   });
+  // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
+  // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
+  ipcMain.handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
   ipcMain.handle("cancel-oauth", () => cancelOAuth());
   ipcMain.handle("clear-connection", () => clearConnection());

@@ -1,13 +1,16 @@
 /* v1 骨架:偵測 → 三態渲染 → 連結 → 進工作頁。引擎接線是第 4 步。 */
 const $ = (id) => document.getElementById(id);
 
-function row({ name, st, stClass, action }) {
+function row({ name, st, stClass, action, cur }) {
   const div = document.createElement("div");
   div.className = "cn-row" + (stClass === "" ? " off" : "");
   const stSpan = stClass === "on"
     ? `<span class="cn-st on"><span class="dot"></span>${st}</span>`
     : `<span class="cn-st ${stClass}">${st}</span>`;
   div.innerHTML = `<span class="n">${name}</span>${stSpan}`;
+  // 目前用的那一列給徽章、不給按鈕:這個畫面既是首次連結也是切換器,標出
+  // 「你在這」才不會讀成「重新開始」。
+  if (cur) { const c = document.createElement("span"); c.className = "cn-cur"; c.textContent = t("cn.current"); div.appendChild(c); }
   if (action) div.appendChild(action);
   return div;
 }
@@ -19,46 +22,70 @@ function btn(cls, text, onClick) {
 }
 
 async function detect() {
-  $("agent-rows").innerHTML = `<p class="cn-desc">偵測中…</p>`;
+  $("agent-rows").innerHTML = `<p class="cn-desc">${t("cn.detecting")}</p>`;
   $("cn-hint").hidden = true;
   const d = await window.blave.detectAgents();
   const rows = $("agent-rows"); rows.innerHTML = "";
 
   // Claude Code 三態:已登入 / 裝了沒登入 / 沒裝
   if (d.claude.installed && d.claude.loggedIn) {
-    rows.appendChild(row({ name: "Claude Code", st: "已登入", stClass: "on",
-      action: btn("btn-out", "連結", () => connect("claude", d.claude)) }));
+    rows.appendChild(row({ name: "Claude Code", st: t("st.signedIn"), stClass: "on",
+      cur: cur === "claude",
+      action: cur === "claude" ? null : btn("btn-out", t("cn.connect"), () => connect("claude", d.claude)) }));
   } else if (d.claude.installed) {
-    rows.appendChild(row({ name: "Claude Code", st: "尚未登入", stClass: "up",
-      action: btn("btn-out", "重新偵測", detect) }));
-    $("cn-hint").textContent = "在終端機跑一次 claude,完成登入後回到這裡按「重新偵測」。";
+    rows.appendChild(row({ name: "Claude Code", st: t("st.notSignedIn"), stClass: "up",
+      action: btn("btn-out", t("cn.redetect"), detect) }));
+    $("cn-hint").textContent = t("hint.claudeLogin");
     $("cn-hint").hidden = false;
   } else {
-    const r = row({ name: "Claude Code", st: "未偵測到", stClass: "" });
+    const r = row({ name: "Claude Code", st: t("st.notFound"), stClass: "" });
     rows.appendChild(r);
   }
 
   if (d.codex.installed && d.codex.loggedIn) {
-    rows.appendChild(row({ name: "Codex", st: "已登入", stClass: "on",
-      action: btn("btn-out", "連結", () => connect("codex", d.codex)) }));
+    rows.appendChild(row({ name: "Codex", st: t("st.signedIn"), stClass: "on",
+      cur: cur === "codex",
+      action: cur === "codex" ? null : btn("btn-out", t("cn.connect"), () => connect("codex", d.codex)) }));
   } else if (d.codex.installed) {
-    rows.appendChild(row({ name: "Codex", st: "尚未登入", stClass: "up",
-      action: btn("btn-out", "重新偵測", detect) }));
+    rows.appendChild(row({ name: "Codex", st: t("st.notSignedIn"), stClass: "up",
+      action: btn("btn-out", t("cn.redetect"), detect) }));
   } else {
-    rows.appendChild(row({ name: "Codex", st: "未偵測到", stClass: "" }));
+    rows.appendChild(row({ name: "Codex", st: t("st.notFound"), stClass: "" }));
   }
 }
 
+// 目前連的是哪一種(連結畫面用來標「目前使用」、決定 Blave 那顆鈕的字)。
+let cur = null;
+
 async function connect(kind, info) {
   await window.blave.saveConnection({ kind, path: info.path, email: info.email || null });
+  cur = kind;
   enterWorkspace(kind, info);
+}
+
+/* 開啟連結畫面。從工作頁進來(back=true)時多一顆返回鍵——沒有它,按了設定就
+   出不去,跟「選了就回不去」是同一個病、只是換一層。 */
+async function openConnect(back) {
+  $("view-ws").hidden = true;
+  $("view-connect").hidden = false;
+  $("cn-back").hidden = !back;
+  $("cn-back").textContent = t("cn.back");
+  const b = $("btn-blave");
+  // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權。
+  b.textContent = (await window.blave.hasBlaveToken()) && cur !== "blave"
+    ? t("cn.blave.switch") : t("cn.blave.btn");
+  if (cur === "blave") { b.hidden = true; } else { b.hidden = false; }
+  $("cn-blave-cur").hidden = cur !== "blave";
+  detect();
 }
 function enterWorkspace(kind, info) {
   $("view-connect").hidden = true;
   $("view-ws").hidden = false;
-  $("ws-conn").textContent = kind === "blave"
-    ? "已連結:Blave AI"
-    : `已連結:${kind === "claude" ? "Claude Code" : "Codex"}(你的訂閱)`;
+  cur = kind;
+  const name = kind === "blave" ? t("ws.connBlave")
+    : kind === "claude" ? t("ws.connClaude") : t("ws.connCodex");
+  $("ws-conn").textContent = t("ws.conn", { name });
+  $("ws-conn").title = t("ws.settings");
   autosize();          // 進工作頁先把輸入框高度對齊一行
   $("ta").focus();
 }
@@ -70,28 +97,40 @@ let oauthPending = false;
 $("btn-blave").addEventListener("click", async () => {
   const b = $("btn-blave");
   if (oauthPending) { window.blave.cancelOAuth(); return; }
+  // 手上已經有 token:直接切過去,不再開一次瀏覽器。
+  if (await window.blave.hasBlaveToken()) {
+    await window.blave.saveConnection({ kind: "blave" });
+    enterWorkspace("blave", {});
+    return;
+  }
   const was = b.textContent;
   oauthPending = true;
-  b.textContent = "取消等待";
-  $("cn-hint").textContent = "已在瀏覽器開啟授權頁,完成後會自動回到這裡。";
+  b.textContent = t("oauth.cancel");
+  $("cn-hint").textContent = t("oauth.opened");
   $("cn-hint").hidden = false;
   try {
-    // 同意頁的 <lang> 只收 en/zh/cn/ja/vi/es/pt;index.html 是 zh-Hant,
-    // 直接送會落到 en 的退路,用戶會看到英文授權頁。
-    await window.blave.startOAuth("zh");
+    // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。
+    await window.blave.startOAuth(LANG);
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
   } catch (e) {
     const m = (e && e.message) || "";
     // IPC 會把訊息包成「Error invoking remote method …: Error: X」,所以比對記號
-    // 而不是整串相等。
-    $("cn-hint").textContent = /OAUTH_CANCELLED/.test(m)
-      ? "已取消。要用 Blave 的 AI 再按一次。"
-      : m || "授權失敗。";
+    // 而不是整串相等;主行程丟的是穩定代號,在這裡才變成當下語系的句子。
+    const code = (m.match(/\b[A-Z][A-Z_]{3,}\b/) || [])[0];
+    $("cn-hint").textContent = code && t(code) !== code ? t(code) : (m || t("oauth.failed"));
   } finally {
     oauthPending = false;
     b.textContent = was;
   }
+});
+
+// 左下角:目前連著誰,按下去回連結畫面換。跑到一半不給換——引擎的環境變數是
+// 開子行程那一刻決定的,中途換等於在活著的子行程底下抽掉設定。
+$("ws-conn").addEventListener("click", () => { if (!running) openConnect(true); });
+$("cn-back").addEventListener("click", () => {
+  $("view-connect").hidden = true;
+  $("view-ws").hidden = false;
 });
 $("btn-send").addEventListener("click", sendDraft);
 // 注音/日文選字時的 Enter 是「確定候選字」,不是送出。逐字照 web 工作頁
@@ -194,7 +233,7 @@ function busySet(verb) {
   busyPin(); scrollChat();
 }
 function busyStart() {
-  if (busy) { busySet("思考中"); return; }
+  if (busy) { busySet(t("turn.thinking")); return; }
   const el = document.createElement("div");
   el.className = "think-indicator";
   // 送出到第一個字之間唯一的回饋,所以要讓輔助科技讀到;polite 不打斷回覆
@@ -216,14 +255,14 @@ function busyStart() {
   el.appendChild(head);
   $("chat-scroll").appendChild(el);
   busy = { el, ticksIn, verb, elapsed, start: Date.now(), steps: 0, timer: null };
-  busySet("思考中");
+  busySet(t("turn.thinking"));
   busyElapsed(); busyTick();          // 第 0 秒:條子不會是空的
   busy.timer = setInterval(() => { busyElapsed(); busyTick(); }, 1000);
 }
 function busyStep() {
   if (!busy) return;
   busy.steps += 1;
-  busySet(`執行中 · 第 ${busy.steps} 步`);
+  busySet(t("turn.running", { n: busy.steps }));
 }
 function busyHide() {
   if (busy) busy.el.hidden = true;    // 回覆在串流了,字本身就是「還在跑」
@@ -238,28 +277,30 @@ function busyEnd() {
 }
 
 async function sendDraft() {
-  const t = $("ta").value.trim();
-  if (!t || running) return;
+  const msg = $("ta").value.trim();
+  if (!msg || running) return;
   running = true; $("btn-send").disabled = true;
-  addMsg("you", t); $("ta").value = ""; autosize();
+  $("ws-conn").disabled = true;   // 跑到一半不給換 agent
+  addMsg("you", msg); $("ta").value = ""; autosize();
   liveBubble = null; faultShown = false;
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     await window.blave.ensureEngine();
     const model = "sonnet"; // v1:先固定;之後從連結資訊帶
-    const r = await window.blave.sendMessage({ sessionId, message: t, model });
+    const r = await window.blave.sendMessage({ sessionId, message: msg, model, uiLang: LANG });
     // main.js 的契約只有這兩種回覆:busy 或 started
     if (r.started) busyStart();
-    else { addMsg("sys", "上一輪還在跑。"); running = false; $("btn-send").disabled = false; }
+    else { addMsg("sys", t("turn.busy")); running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; }
   } catch (e) {
     busyEnd();
-    addMsg("sys", "引擎準備失敗:" + (e.message || e));
-    running = false; $("btn-send").disabled = false;
+    addMsg("sys", t("turn.engineFailed", { msg: (e && e.message) || e }));
+    running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false;
   }
 }
 
-window.blave.onEngineProgress((t) => addMsg("sys", t));
+// 主行程丟的是 strings.js 的 key(它不組句子),查不到就原樣顯示。
+window.blave.onEngineProgress((key) => addMsg("sys", t(key)));
 // 引擎把上游的錯誤原封不動當成回覆文字吐出來(實測:一次一整塊,不是逐字串流),
 // 長這樣:`Failed to authenticate. API Error: 403 …`。401/403 = 這台電腦的授權沒了、
 // 402 = 沒額度,兩種都不是重講一次就會好的事,要給出口而不是給英文。
@@ -272,14 +313,14 @@ function classifyFault(text) {
   const m = /^(?:Failed to authenticate\. )?API Error: (40[123])\b/.exec(text || "");
   if (!m) return null;
   if (m[1] === "402") {
-    return { text: "Blave 額度不足,這一輪沒有跑。", label: "儲值",
+    return { text: t("fault.noCredit"), label: t("fault.noCreditBtn"),
              // #topup:用量頁自己會在餘額回來之後捲到儲值區(web 那邊已經處理過
              // 原生 hash 捲動的時序),直接落在該按的地方。
              act: () => window.blave.openExternal("https://blave.org/agent/zh/usage#topup") };
   }
   return {
-    text: "這台電腦的 Blave 授權已失效(被撤銷或過期),這一輪沒有跑。",
-    label: "重新登入",
+    text: t("fault.authInvalid"),
+    label: t("fault.authBtn"),
     act: async () => {
       // 兩份狀態都自己清:token 檔 + connect.json。只清 token 也會work(啟動檢查
       // 會接住),但那是靠別人的失敗分支收尾,那條路一改這顆鈕就無聲壞掉。
@@ -316,24 +357,36 @@ window.blave.onTurnEvent((c) => {
     if (!liveBubble) liveBubble = addMsg("ai", "");
     liveBubble.textContent = c.text;
   } else if (c.type === "tool") {
-    if (c.status === "running") { addMsg("sys", "● " + (c.tool || "工具")); busyStep(); }
+    if (c.status === "running") { addMsg("sys", "● " + (c.tool || "tool")); busyStep(); }
     liveBubble = null; // 工具之後的字開新泡泡,跟 web 一致
   } else if (c.type === "thinking") {
     // v1 不展開思考內容,只讓指示器回到「思考中」(回覆後又開始想時會用到)
-    busySet("思考中");
+    busySet(t("turn.thinking"));
   } else if (c.type === "error") {
     if (faultShown && c.code === "not_started") { faultShown = false; return; }
-    addMsg("sys", "出錯了:" + (c.message || ""));
+    addMsg("sys", t("turn.error", { msg: c.message || "" }));
   }
   scrollChat();
 });
 window.blave.onTurnEnd((r) => {
-  running = false; $("btn-send").disabled = false;
+  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false;
   busyEnd();
-  if (r.code !== 0) addMsg("sys", "引擎退出碼 " + r.code + (r.errTail ? ":" + r.errTail.slice(-300) : ""));
+  if (r.code !== 0) addMsg("sys", t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""));
 });
 
+/* 把 index.html 的 data-i18n 填進去。三種:文字、placeholder、aria-label。
+   一律走 textContent —— .po 裡不放標記,換行用 \n,靠 CSS 的 white-space: pre-line。
+   在任何畫面顯示之前做完,不然會閃一下 key。 */
+function applyStatic() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+}
+
 (async () => {
+  setLang(pickLang(await window.blave.getLocale()));
+  applyStatic();
+  $("btn-blave").textContent = t("cn.blave.btn");
   const prev = await window.blave.loadConnection();
   // kind 說「用 Blave 的 AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
   // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走
@@ -341,7 +394,7 @@ window.blave.onTurnEnd((r) => {
   if (prev && prev.kind === "blave" && !(await window.blave.hasBlaveToken())) {
     await window.blave.clearConnection();
     detect();
-    $("cn-hint").textContent = "Blave 登入已失效,請重新登入。";
+    $("cn-hint").textContent = t("conn.expired");
     $("cn-hint").hidden = false;
     return;
   }

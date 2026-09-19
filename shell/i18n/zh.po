@@ -1,0 +1,157 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: zh\n"
+
+msgid "cn.sub"
+msgstr "Blave 不內建 AI。選一個來寫策略、跑回測。"
+
+msgid "cn.blave.title"
+msgstr "用 Blave 的 AI"
+
+msgid "cn.blave.desc"
+msgstr "登入 Blave 帳號即可開始,按用量計費,不需要自己的 AI 訂閱。"
+
+msgid "cn.blave.btn"
+msgstr "登入 Blave"
+
+msgid "cn.blave.switch"
+msgstr "切換"
+
+msgid "cn.local.label"
+msgstr "本機 agent"
+
+msgid "cn.local.desc"
+msgstr "用自己的 Claude Code 或 Codex 訂閱,Blave 不收 AI 費用。"
+
+msgid "cn.redetect"
+msgstr "重新偵測"
+
+msgid "cn.detecting"
+msgstr "偵測中…"
+
+msgid "cn.connect"
+msgstr "連結"
+
+msgid "cn.foot"
+msgstr "連結後可以隨時更換。"
+
+msgid "cn.back"
+msgstr "返回"
+
+msgid "cn.current"
+msgstr "目前使用"
+
+msgid "st.signedIn"
+msgstr "已登入"
+
+msgid "st.notSignedIn"
+msgstr "尚未登入"
+
+msgid "st.notFound"
+msgstr "未偵測到"
+
+msgid "hint.claudeLogin"
+msgstr "在終端機跑一次 claude,完成登入後回到這裡按「重新偵測」。"
+
+msgid "oauth.waiting"
+msgstr "等待瀏覽器授權…"
+
+msgid "oauth.cancel"
+msgstr "取消等待"
+
+msgid "oauth.opened"
+msgstr "已在瀏覽器開啟授權頁,完成後會自動回到這裡。"
+
+msgid "oauth.failed"
+msgstr "授權失敗。"
+
+msgid "OAUTH_CANCELLED"
+msgstr "已取消。要用 Blave 的 AI 再按一次。"
+
+msgid "OAUTH_TIMEOUT"
+msgstr "授權逾時(5 分鐘)。"
+
+msgid "OAUTH_STATE_MISMATCH"
+msgstr "回來的授權跟這次請求對不上,已擋下。"
+
+msgid "OAUTH_NO_CODE"
+msgstr "瀏覽器回來了,但沒有帶授權碼。"
+
+msgid "OAUTH_DENIED"
+msgstr "你在瀏覽器取消了授權。"
+
+msgid "KEYCHAIN_UNAVAILABLE"
+msgstr "這台電腦無法安全儲存憑證(Keychain 不可用),沒有保存。"
+
+msgid "TOKEN_EXCHANGE_FAILED"
+msgstr "授權碼換不到 token。"
+
+msgid "ws.strategies"
+msgstr "策略"
+
+msgid "ws.noStrategies"
+msgstr "還沒有策略。\n跟右邊的 agent 說一個想法,回測完會出現在這裡。"
+
+msgid "ws.nothingToSee"
+msgstr "還沒有東西可以看。\n先在右邊跟 agent 講一句話,例如:回測一支 BTC 20/50 均線策略。"
+
+msgid "ws.placeholder"
+msgstr "例如:回測一支 BTC 20/50 均線策略"
+
+msgid "ws.send"
+msgstr "送出"
+
+msgid "ws.connBlave"
+msgstr "Blave AI"
+
+msgid "ws.connClaude"
+msgstr "Claude Code(你的訂閱)"
+
+msgid "ws.connCodex"
+msgstr "Codex(你的訂閱)"
+
+msgid "ws.conn"
+msgstr "已連結:{name}"
+
+msgid "ws.settings"
+msgstr "設定"
+
+msgid "turn.thinking"
+msgstr "思考中"
+
+msgid "turn.running"
+msgstr "執行中 · 第 {n} 步"
+
+msgid "turn.busy"
+msgstr "上一輪還在跑。"
+
+msgid "turn.engineFailed"
+msgstr "引擎準備失敗:{msg}"
+
+msgid "turn.exit"
+msgstr "引擎退出碼 {code}"
+
+msgid "turn.error"
+msgstr "出錯了:{msg}"
+
+msgid "fault.authInvalid"
+msgstr "這台電腦的 Blave 授權已失效(被撤銷或過期),這一輪沒有跑。"
+
+msgid "fault.authBtn"
+msgstr "重新登入"
+
+msgid "fault.noCredit"
+msgstr "Blave 額度不足,這一輪沒有跑。"
+
+msgid "fault.noCreditBtn"
+msgstr "儲值"
+
+msgid "conn.expired"
+msgstr "Blave 登入已失效,請重新登入。"
+
+msgid "engine.workspace"
+msgstr "建立工作區 ~/Blave/workspace …"
+
+msgid "engine.preparing"
+msgstr "正在準備引擎(第一次會安裝,約一分鐘)…"

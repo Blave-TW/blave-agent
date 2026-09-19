@@ -1,0 +1,157 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en\n"
+
+msgid "cn.sub"
+msgstr "Blave has no AI of its own. Pick one to write strategies and run backtests."
+
+msgid "cn.blave.title"
+msgstr "Use Blave's AI"
+
+msgid "cn.blave.desc"
+msgstr "Sign in with your Blave account. Pay per use, no AI subscription of your own needed."
+
+msgid "cn.blave.btn"
+msgstr "Sign in to Blave"
+
+msgid "cn.blave.switch"
+msgstr "Switch"
+
+msgid "cn.local.label"
+msgstr "Local agent"
+
+msgid "cn.local.desc"
+msgstr "Use your own Claude Code or Codex subscription. Blave charges nothing for AI."
+
+msgid "cn.redetect"
+msgstr "Detect again"
+
+msgid "cn.detecting"
+msgstr "Detecting…"
+
+msgid "cn.connect"
+msgstr "Connect"
+
+msgid "cn.foot"
+msgstr "You can switch at any time."
+
+msgid "cn.back"
+msgstr "Back"
+
+msgid "cn.current"
+msgstr "In use"
+
+msgid "st.signedIn"
+msgstr "Signed in"
+
+msgid "st.notSignedIn"
+msgstr "Not signed in"
+
+msgid "st.notFound"
+msgstr "Not found"
+
+msgid "hint.claudeLogin"
+msgstr "Run claude once in a terminal, sign in, then come back and press “Detect again”."
+
+msgid "oauth.waiting"
+msgstr "Waiting for the browser…"
+
+msgid "oauth.cancel"
+msgstr "Cancel"
+
+msgid "oauth.opened"
+msgstr "The authorization page is open in your browser. You'll come back here automatically."
+
+msgid "oauth.failed"
+msgstr "Authorization failed."
+
+msgid "OAUTH_CANCELLED"
+msgstr "Cancelled. Press the button again to use Blave's AI."
+
+msgid "OAUTH_TIMEOUT"
+msgstr "Authorization timed out (5 minutes)."
+
+msgid "OAUTH_STATE_MISMATCH"
+msgstr "The reply didn't match this request and was rejected."
+
+msgid "OAUTH_NO_CODE"
+msgstr "The browser came back without an authorization code."
+
+msgid "OAUTH_DENIED"
+msgstr "You cancelled the authorization in the browser."
+
+msgid "KEYCHAIN_UNAVAILABLE"
+msgstr "This computer can't store credentials securely (Keychain unavailable), so nothing was saved."
+
+msgid "TOKEN_EXCHANGE_FAILED"
+msgstr "Could not exchange the authorization code for a token."
+
+msgid "ws.strategies"
+msgstr "Strategies"
+
+msgid "ws.noStrategies"
+msgstr "No strategies yet.\nTell the agent on the right an idea; once it backtests, it shows up here."
+
+msgid "ws.nothingToSee"
+msgstr "Nothing to see yet.\nSay something to the agent on the right, e.g. backtest a BTC 20/50 moving-average strategy."
+
+msgid "ws.placeholder"
+msgstr "e.g. backtest a BTC 20/50 moving-average strategy"
+
+msgid "ws.send"
+msgstr "Send"
+
+msgid "ws.connBlave"
+msgstr "Blave AI"
+
+msgid "ws.connClaude"
+msgstr "Claude Code (your subscription)"
+
+msgid "ws.connCodex"
+msgstr "Codex (your subscription)"
+
+msgid "ws.conn"
+msgstr "Connected: {name}"
+
+msgid "ws.settings"
+msgstr "Settings"
+
+msgid "turn.thinking"
+msgstr "Thinking"
+
+msgid "turn.running"
+msgstr "Running · step {n}"
+
+msgid "turn.busy"
+msgstr "The previous turn is still running."
+
+msgid "turn.engineFailed"
+msgstr "Engine setup failed: {msg}"
+
+msgid "turn.exit"
+msgstr "Engine exited with code {code}"
+
+msgid "turn.error"
+msgstr "Something went wrong: {msg}"
+
+msgid "fault.authInvalid"
+msgstr "This computer's Blave authorization is no longer valid (revoked or expired). This turn did not run."
+
+msgid "fault.authBtn"
+msgstr "Sign in again"
+
+msgid "fault.noCredit"
+msgstr "Your Blave credit is empty. This turn did not run."
+
+msgid "fault.noCreditBtn"
+msgstr "Top up"
+
+msgid "conn.expired"
+msgstr "Your Blave sign-in is no longer valid. Please sign in again."
+
+msgid "engine.workspace"
+msgstr "Creating the workspace at ~/Blave/workspace …"
+
+msgid "engine.preparing"
+msgstr "Preparing the engine (first run installs it, about a minute)…"
