@@ -349,7 +349,7 @@ Every round gets its own `plot_heatmap` PNG (`heatmap.png`, `heatmap_round2.png`
 
 - Backtest loop — handled by `lib/runner.py`
 - `main()` function — handled by `lib/runner.py`
-- `place_order()` — handled by `strategies/reconciler/reconciler.py`
+- `place_order()` — handled by `manager/reconciler.py`
 - Logging setup — handled by `lib/runner.py`
 - Chart / stats / notify — handled by `lib/runner.py`
 

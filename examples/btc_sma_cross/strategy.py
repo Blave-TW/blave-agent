@@ -2,7 +2,7 @@
 # Type:     A (single symbol, signal-based)
 # Symbol:   BTCUSDT
 # Interval: 1h
-# Logic:    Long on SMA20/SMA50 golden cross, flat on death cross
+# Logic:    Long on SMA45/SMA100 golden cross, flat on death cross
 
 import sys
 from pathlib import Path
