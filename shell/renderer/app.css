@@ -432,3 +432,28 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-seg:focus-visible { outline-offset: -2px; border-radius: 0; }
 .mp-note { margin: 0; padding: var(--space-8) 10px 6px; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .mp-note.is-reset { color: var(--ink-2); }
+
+/* ── Tooltip(canon › Components › Tooltip)──────────────
+   滑過**或鍵盤聚焦**才現的短解釋,不放關鍵資訊。dark:靠比卡片亮一階的底色分層
+   (darkBorder),不是更深的陰影;無邊框、不畫箭頭、離觸發點 6px。Esc 由面板的
+   document 監聽一併處理(面板關了 tooltip 自然消失)。 */
+.mp-cap-tip { position: relative; }
+.mp-tip {
+  padding: 0; font-size: 12px; color: var(--ink-3); cursor: help;
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.mp-tip:hover, .mp-tip:focus-visible { color: var(--ink-2); }
+.tip {
+  position: absolute; left: 10px; bottom: calc(100% + 6px); z-index: 20;
+  display: none; max-width: 260px; padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted); color: var(--ink-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);   /* canon sanctioned:transient overlay 的浮層陰影 */
+  font-size: 12px; line-height: 1.45; text-align: left;
+  animation: mp-in var(--motion-fast) var(--ease-standard);
+}
+.tip:empty { display: none !important; }
+.mp-tip:hover + .tip, .mp-tip:focus-visible + .tip { display: block; }
+/* 說明行沒有內容時不佔高度(現在只有重設 / 無 effort 兩種狀態才有字) */
+.mp-note[hidden] { display: none; }
+.mp-rail { margin-bottom: var(--space-8); }

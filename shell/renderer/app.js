@@ -285,11 +285,15 @@ function mpPaint() {
     rail.appendChild(b);
   });
 
+  // 說明句(這個 model 的預設是什麼、越高代表什麼)是在解釋術語 → 進 tooltip。
+  // 面板上那一行只留給兩種**狀態**:effort 被重設了、或這個 model 根本沒有 effort。
+  // 重設通知絕不能進 tooltip——藏進 hover 就等於默默重設。
+  $("mp-tipbox").textContent = has
+    ? t("mp.cap", { model: m.name, level: mpLevel(m.defaultEffort || m.efforts[0]) }) : "";
   const note = $("mp-note");
   note.classList.toggle("is-reset", !!MP.note);
-  note.textContent = MP.note ? MP.note
-    : has ? t("mp.cap", { model: m.name, level: mpLevel(m.defaultEffort || m.efforts[0]) })
-    : t("mp.none");
+  note.textContent = MP.note ? MP.note : has ? "" : t("mp.none");
+  note.hidden = !note.textContent;
 }
 
 function mpPickModel(id) {

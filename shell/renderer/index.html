@@ -82,7 +82,12 @@
                 <p class="mp-cap" data-i18n="mp.model"></p>
                 <div class="mp-models" id="mp-models" role="radiogroup"></div>
                 <div class="mp-div" id="mp-div"></div>
-                <p class="mp-cap" id="mp-effort-cap" data-i18n="mp.effort"></p>
+                <!-- 「思考深度」本身是 tooltip 的觸發點(點線底線 = 滑過有解釋的慣例)。
+                     說明句是在解釋術語 → tooltip(canon › Tooltip);重設通知是狀態 → 留在面板上。 -->
+                <p class="mp-cap mp-cap-tip" id="mp-effort-cap">
+                  <button class="mp-tip" id="mp-tip" type="button" aria-describedby="mp-tipbox" data-i18n="mp.effort"></button>
+                  <span class="tip" id="mp-tipbox" role="tooltip"></span>
+                </p>
                 <div class="mp-rail" id="mp-rail" role="radiogroup"></div>
                 <p class="mp-note" id="mp-note" aria-live="polite"></p>
               </div>
