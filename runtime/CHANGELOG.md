@@ -13,7 +13,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   仍走 Binance 公開端點、不准換來源,403 `DATA_NOT_INCLUDED`(試用結束且沒主機／API 方案)照實告訴用戶,403 `Invalid API key` = key 已被刪／撤銷、請用戶在 app 重新登入(不找別的 key),
   上架／分享／刪除／報告上傳回 403 `KEY_SCOPE` 時請用戶到網站或雲端機做;`0`(沒有 key:自己的 Claude Code / Codex、
   沒登入,或登入了但帳號不含資料):平實講一次「資料在綁卡試用中、或名下有雲端主機／API 方案時才有」
-  (可提 blave.org 的 Agent 頁;不報價、不催促、同一段對話不重複),做完公開 K 線做得到的部分、不捏造、不去別處找憑證
+  (不指路、不報價、不催促、同一段對話不重複),並在那則回覆文字最末獨立一行放
+  `<blave-card:data-access/>`(外殼換成帶按鈕的卡片;一段對話最多一次;sink 原樣帶著不剝;prompt 明令 agent 不得提到按鈕、卡片或 app 會顯示什麼——實測它會把這件事講給用戶聽、還講錯),做完公開 K 線做得到的部分、不捏造、不去別處找憑證
   (不 SSH、不碰別台機器)。兩條引擎都帶;變數不存在(機隊)回空字串,system prompt 零改變
   (閘門:`tests/check_codex_engine.py`)。api 側要先上線(`/oauth/desktop/token` 回資料 key)。
 

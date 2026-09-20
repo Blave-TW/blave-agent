@@ -207,8 +207,12 @@
 }
 /* pre-wrap:agent 的回覆靠換行排版(清單、逐行結果),不保留的話
    「references\nstrategies\nmanager」會黏成一行。 */
-.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; }
+.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }   /* 沒有空白的長路徑 / 行內 code 不撐破聊天欄 */
 .msg.ai p { margin: 0; }
+/* 行內 markdown(paintAi):粗體只加重不變色;行內程式碼走 mono、亮度退一階,不加底色框
+   (Terminal 平面、聊天欄窄,一行裡好幾個小框會很吵) */
+.msg.ai strong { font-weight: 600; }
+.msg.ai code { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
 .chat-input {
   /* 直向:上 textarea、下工具列。外框、半徑、內距都不變,總高約 +36px。 */
@@ -709,11 +713,51 @@ body.resizing * { cursor: col-resize !important; }
 /* 固定內容高:切分類不改變 modal 尺寸,內容自己捲 */
 .set-content {
   flex: 1 1 auto; min-width: 0;
-  height: min(60vh, 420px);
+  height: min(64vh, 480px);   /* 三類共用一個高度;420 會把英文版「雲端方案」的自動儲值那行切掉 */
   padding: var(--space-16);
   overflow-y: auto;
 }
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
+/* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
+   上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
+   這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */
+.set-content:has(> .plan-pane:not([hidden])) { padding: 0; overflow: hidden; }
+.plan-pane:not([hidden]) { display: flex; flex-direction: column; height: 100%; font-size: 13px; }
+.plan-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:var(--space-16)}
+.plan-top{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-12);flex-wrap:wrap}
+.plan-top h6{margin:0;font-size:15px;font-weight:600;line-height:1.3;color:var(--ink)}
+.plan-st{display:flex;align-items:center;gap:var(--space-6);font-size:12px;color:var(--ink-2)}
+.plan-st .dot{width:7px;height:7px;border-radius:var(--radius-pill);background:var(--ink-3)}
+.plan-st.on .dot{background:var(--color-green)}
+.plan-st.bad .dot{width:8px;height:2px;border-radius:0;background:var(--color-red)}
+.plan-st.busy .dot{animation:plan-pulse 1.2s ease-in-out infinite}
+@keyframes plan-pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.plan-st.busy .dot{animation:none}}
+.plan-lead{margin:var(--space-8) 0 0;line-height:1.7;color:var(--ink-2)}
+.plan-sec{margin-top:var(--space-16)}
+.plan-lbl{margin:0 0 var(--space-6);font-size:12px;color:var(--ink-3)}
+.plan-list{margin:0;padding:0;list-style:none}
+.plan-list li{position:relative;padding-left:var(--space-16);line-height:1.7;color:var(--ink)}
+.plan-list li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:1px;background:var(--ink-3)}
+.plan-price{display:flex;align-items:baseline;gap:var(--space-12);flex-wrap:wrap}
+.plan-price .m{font-family:"Roboto Mono",ui-monospace,monospace;font-size:15px;font-weight:600;color:var(--ink)}
+.plan-price .h{font-size:12px;color:var(--ink-3)}
+.plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
+.plan-foot{flex:none;padding:var(--space-12) var(--space-16);border-top:1px solid var(--border-hairline)}
+.plan-rule{margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}   /* 暗底必讀的次要字升一階 */
+.plan-foot .plan-fine{margin:0 0 var(--space-12)}
+.plan-err{display:flex;gap:var(--space-8);margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}
+.plan-err .fault-mark{margin-top:9px}
+.plan-err.is-calm .fault-mark{background:var(--ink-3)}
+.plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
+.plan-act .btn-quiet{margin-right:auto}
+/* 確認框:三句各自一段 */
+.del-body.lines p{margin:0}
+.del-body.lines p+p{margin-top:var(--space-8)}
+/* 設定鈕右邊那行安靜的字 */
+.ws-more-note{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--ink-3);white-space:nowrap}
+.ws-more-note.up{color:var(--ink-2)}
+
 .set-gl { flex: none; margin: 0; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--ink); }
 .set-selw { position: relative; display: inline-flex; flex: 0 1 160px; margin-left: auto; min-width: 0; }
 .set-selw::after {                 /* canon 的 CSS chevron */

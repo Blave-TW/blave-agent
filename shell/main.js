@@ -153,6 +153,43 @@ function loadToken() {
 function clearToken() {
   try { fs.unlinkSync(tokenPath()); } catch (_) {}
   clearDataKey();
+  clearAppSecret();
+}
+
+/* app_secret:登入時 api 多發的一顆、**只有這支主行程拿得到**的憑證。帳號 token 會進 agent 的
+   環境(策略碼讀得到),所以後端不准它做任何花錢的事;「啟動雲端方案」= 替帳號開一台主機,要
+   token + app_secret 兩顆都對才動。這顆只存 Keychain:不進任何子行程的環境、不寫進 workspace、
+   不交給 renderer(renderer 只拿得到「啟動」這個動作的結果)。 */
+const appSecretPath = () => path.join(app.getPath("userData"), "blave-app.bin");
+function saveAppSecret(v) {
+  if (typeof v !== "string" || !v || !safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(appSecretPath(), safeStorage.encryptString(v), { mode: 0o600 });
+  return true;
+}
+function loadAppSecret() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    return safeStorage.decryptString(fs.readFileSync(appSecretPath()));
+  } catch (_) { return null; }
+}
+function clearAppSecret() {
+  try { fs.unlinkSync(appSecretPath()); } catch (_) {}
+}
+/* 啟動雲端方案。回 { state } 或 { error }(穩定代號,畫面自己換成句子):
+   APP_SECRET_REQUIRED(舊登入,沒有這顆)/ NO_CARD / NO_CREDIT / RATE_LIMITED / SERVER。
+   後端是冪等的:已有主機就回現況,連點或重試不會開第二台。 */
+async function planStart() {
+  const token = loadToken(), secret = loadAppSecret();
+  if (!token) return { error: "INVALID_CREDENTIALS" };
+  if (!secret) return { error: "APP_SECRET_REQUIRED" };
+  try {
+    const r = await postJSON(`${API_BASE}/oauth/desktop/plan/start`, { token, app_secret: secret });
+    const b = r.body || {};
+    if (r.status === 200 && typeof b.state === "string") { lastAcct = null; return { state: b.state }; }
+    if (r.status === 429) return { error: "RATE_LIMITED" };
+    const code = b.error_code || b.error;
+    return { error: ["APP_SECRET_REQUIRED", "NO_CARD", "NO_CREDIT", "INVALID_CREDENTIALS"].includes(code) ? code : "SERVER" };
+  } catch (_) { return { error: "SERVER" }; }
 }
 
 /* Blave 資料 key(api-key / secret-key 一組):換 token 時 api 一併發下來,只此一次。
@@ -365,6 +402,8 @@ async function startOAuth(lang) {
   // 寫進 .env 還告訴 agent「你有資料」
   clearDataKey();
   saveDataKey(r.body.data_api_key, r.body.data_secret_key);
+  clearAppSecret();
+  saveAppSecret(r.body.app_secret);      // 舊版 api 沒有這欄:之後按「啟動方案」會被要求重新登入
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
@@ -905,6 +944,13 @@ app.whenReady().then(() => {
   ipcMain.handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
   ipcMain.handle("model-options", (_e, kind) => modelOptions(kind));
   ipcMain.handle("account-status", () => accountStatus());
+  // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
+  ipcMain.handle("plan-start", (e) => {
+    const from = e.senderFrame && e.senderFrame.url;
+    const mine = "file://" + path.join(__dirname, "renderer", "index.html").split(path.sep).map(encodeURIComponent).join("/");
+    if (!from || from.split(/[?#]/)[0] !== mine || e.senderFrame !== e.sender.mainFrame) return { error: "SERVER" };
+    return planStart();
+  });
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
@@ -927,4 +973,8 @@ app.whenReady().then(() => {
   app.on("browser-window-focus", () => { lastAcct = null; });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
+// 一次只跑一份:第二份會跟第一份搶同一個 workspace 與 session.db,也讓「用同一顆 binary 再開一份」這條
+// 旁路少一點(稽核 M1)
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on("second-instance", () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
 app.on("window-all-closed", () => app.quit());

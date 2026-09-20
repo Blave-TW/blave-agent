@@ -268,6 +268,17 @@ assert "BLAVE_KLINE_SOURCE=binance" in rules["1"] and "403" in rules["1"]
 assert "Invalid API key" in rules["1"] and "sign in" in rules["1"]
 assert "NO Blave data access" in rules["0"] and "no SSH" in rules["0"]
 assert "card trial" in rules["0"] and "cloud machine" in rules["0"] and "ONCE" in rules["0"]
+assert at.DATA_ACCESS_CARD == "<blave-card:data-access/>" and at.DATA_ACCESS_CARD in rules["0"]
+_prose = rules["0"].replace(at.DATA_ACCESS_CARD, "")
+assert "buttons" not in _prose and "a card" not in _prose, "0 must not leak what the app renders"
+assert "or any button, card" in _prose, "the only mention is the prohibition itself"
+assert "blave-card" not in rules["1"] and "blave.org" not in rules["0"]
+_sink = at.LocalSink("s1")
+_sent = []
+_sink._send = _sent.append
+_sink.on_text("No Blave data here.\n" + at.DATA_ACCESS_CARD + "\n<suggest>\nRun it on klines\n</suggest>")
+assert _sink.finalize().endswith(at.DATA_ACCESS_CARD), "the sink must carry the marker verbatim"
+assert any(c.get("type") == "text_replace" and c["text"].endswith(at.DATA_ACCESS_CARD) for c in _sent)
 assert "own agent" not in rules["0"] and "TWD" not in rules["0"], "0 also covers signed-in-but-no-data; no prices"
 assert "credentials" not in rules["0"].split("Never look")[0], "0 must not claim a key exists"
 os.environ.pop("BLAVE_DATA_ACCESS")

@@ -2023,6 +2023,11 @@ def python_rule():
     )
 
 
+# 電腦版外殼把回覆文字裡的這一行換成「綁卡／開主機」的卡片(錢與動作由 app 講,agent 只講事實)。
+# 契約字串,外殼逐字比對;sink 不剝它(text / text_replace / 歷史都原樣帶著)。
+DATA_ACCESS_CARD = "<blave-card:data-access/>"
+
+
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
@@ -2058,10 +2063,21 @@ def data_access_rule():
             "Blave Agent cloud machine or an API plan. Blave-only datasets — holder "
             "concentration, whale hunter, taker intensity, liquidation, Taiwan stock / "
             "futures data and the rest of the Blave indicators — are not reachable. When the "
-            "user asks for one of them, say this plainly ONCE (you may mention that a cloud "
-            "machine can be started from the Agent page on blave.org): quote no prices, do "
-            "not push, and do not repeat it later in the same conversation. Then finish the "
-            "part that public klines allow (`fetch_kline`, Binance public endpoints). Never "
+            "user asks for one of them, say this plainly ONCE: name the data that is missing "
+            "and the conditions under which it becomes available (card trial active, or a "
+            "cloud machine). Give no directions or next steps, quote no prices, do not push, "
+            "and do not repeat it later in the same conversation. "
+            "Then finish the part that public klines allow (`fetch_kline`, Binance public "
+            "endpoints).\n"
+            f"In the reply where you tell the user that Blave data is not available here, put "
+            f"this marker, verbatim, on its own line at the very end of the reply text (before "
+            f"the `<suggest>` block if the reply has one): `{DATA_ACCESS_CARD}`. The line is "
+            "consumed by the runtime and never shown to the user. Never mention the marker, "
+            "or any button, card or anything the app will display — state only the missing "
+            "data and the conditions, then the marker. Do not explain the marker, do not put it in a code block, use it at most once per "
+            "conversation (if asked again later, answer in text only), and never output it in "
+            "a reply that is not about Blave data being unavailable.\n"
+            "Never "
             "fabricate the missing data. Never look for credentials elsewhere: no SSH, no "
             "other machines, no other directories.\n"
         )

@@ -488,7 +488,7 @@ msgid "acct.addCard"
 msgstr "前往綁卡"
 
 msgid "acct.sub"
-msgstr "首次綁卡有 {q} TWD 的 AI 額度。"
+msgstr "首次綁卡有 {q} TWD 的 AI 額度，{t} 天內電腦版也拿得到 Blave 的資料。"
 
 msgid "acct.ready"
 msgstr "可以開始了。"
@@ -501,3 +501,180 @@ msgstr "用 Blave 的 AI 要先綁卡，這一輪沒有跑。"
 
 msgid "fault.checking"
 msgstr "這一輪沒有跑，正在確認帳號狀態。"
+
+msgid "data.needBlave"
+msgstr "Blave 的資料只在用 Blave 的 AI 連線時提供，這台現在用的是 {name}。"
+
+msgid "data.connSettings"
+msgstr "連線設定"
+
+msgid "set.cat.plan"
+msgstr "雲端方案"
+
+msgid "plan.title"
+msgstr "Blave Agent 雲端方案"
+
+msgid "plan.st.trial"
+msgstr "未啟動 · 試用中，剩 {n} 天"
+
+msgid "plan.st.none"
+msgstr "未啟動"
+
+msgid "plan.st.starting"
+msgstr "啟動中 · 通常要幾分鐘"
+
+msgid "plan.st.running"
+msgstr "已啟動 · 主機運行中"
+
+msgid "plan.st.stopped"
+msgstr "已停機 · 餘額低於 {m} TWD"
+
+msgid "plan.st.stoppedNoAmt"
+msgstr "已停機 · 餘額不足"
+
+msgid "plan.st.nocard"
+msgstr "未啟動 · 尚未綁卡"
+
+msgid "plan.lead"
+msgstr "電腦版不啟動也能用。Blave 的資料與 24 小時執行在這個方案裡。"
+
+msgid "plan.lead.trial"
+msgstr "電腦版不啟動也能用。試用期間已經有 Blave 的資料；{d}之後，資料在這個方案裡。"
+
+msgid "plan.lead.starting"
+msgstr "主機開好後，電腦版就拿得到 Blave 的資料。可以關掉這個視窗，開好了會在聊天欄告訴你。"
+
+msgid "plan.lead.running"
+msgstr "Blave 的資料已經可以在電腦版使用。"
+
+msgid "plan.lead.stopped"
+msgstr "停機期間仍每小時扣 {h} TWD。餘額歸零時主機會刪除，主機上的策略與資料一併清除。"
+
+msgid "plan.signedOut"
+msgstr "登入 Blave 後可以啟動。"
+
+msgid "plan.inc"
+msgstr "內含"
+
+msgid "plan.inc.1"
+msgstr "Blave 的資料，電腦版與雲端主機都拿得到"
+
+msgid "plan.inc.2"
+msgstr "一台 24 小時開著的雲端主機，策略可以一直跑"
+
+msgid "plan.inc.3"
+msgstr "從瀏覽器的工作頁也能操作這台主機"
+
+msgid "plan.bill"
+msgstr "計費"
+
+msgid "plan.month"
+msgstr "{p} TWD／月"
+
+msgid "plan.hour"
+msgstr "以 30 天計 ＝ 每個整點從餘額扣 {h} TWD"
+
+msgid "plan.trialFree"
+msgstr "{d}前免主機費，之後照上面的價格。"
+
+msgid "plan.topup"
+msgstr "餘額低於 {a} TWD 時，會從綁定的卡自動儲值 {b} TWD；可以在網頁關閉。"
+
+msgid "plan.rule"
+msgstr "主機存在就會扣，不管有沒有在用；停機照扣，刪除主機才停。"
+
+msgid "plan.rule.running"
+msgstr "主機存在就會扣，不管有沒有在用。停用＝刪除主機，主機上的策略與資料會一併清除。"
+
+msgid "plan.cardSub"
+msgstr "首次綁卡 {t} 天免主機費，另有 {q} TWD 的 AI 額度。"
+
+msgid "plan.start"
+msgstr "啟動方案"
+
+msgid "plan.starting"
+msgstr "啟動中…"
+
+msgid "plan.addCredit"
+msgstr "前往儲值"
+
+msgid "plan.addCard"
+msgstr "前往綁卡"
+
+msgid "plan.openWs"
+msgstr "前往工作頁"
+
+msgid "plan.manage"
+msgstr "前往網頁停用"
+
+msgid "plan.manageStopped"
+msgstr "前往網頁管理"
+
+msgid "plan.connSettings"
+msgstr "連線設定"
+
+msgid "cf.title"
+msgstr "啟動 Blave Agent 雲端方案？"
+
+msgid "cf.body1"
+msgstr "會替這個帳號開一台雲端主機，約需幾分鐘。"
+
+msgid "cf.body2"
+msgstr "開好後每個整點從餘額扣 {h} TWD（每月 {p} TWD，以 30 天計）；主機存在就會扣，不管有沒有在用。"
+
+msgid "cf.body2Trial"
+msgstr "{d}前免主機費；之後每個整點從餘額扣 {h} TWD，主機存在就會扣，不管有沒有在用。"
+
+msgid "cf.body3"
+msgstr "要停止收費，需到網頁刪除主機。"
+
+msgid "cf.ok"
+msgstr "啟動"
+
+msgid "plan.err.credit"
+msgstr "餘額不足，沒有啟動。"
+
+msgid "plan.err.nocard"
+msgstr "這個帳號還沒綁卡，沒有啟動。"
+
+msgid "plan.err.relogin"
+msgstr "啟動方案前要重新登入一次。聊天與策略不受影響。"
+
+msgid "plan.relogin"
+msgstr "重新登入"
+
+msgid "plan.err.server"
+msgstr "啟動沒有完成。再按一次不會重複開主機。"
+
+msgid "plan.err.rate"
+msgstr "按得太頻繁了，請過一陣子再試。不會重複開主機。"
+
+msgid "plan.err.slow"
+msgstr "比平常久。主機還在啟動，不需要再按一次。"
+
+msgid "plan.recheck"
+msgstr "重新查看"
+
+msgid "data.inPlan"
+msgstr "Blave 的資料在 Blave Agent 雲端方案裡。"
+
+msgid "data.seePlan"
+msgstr "看方案內容"
+
+msgid "data.planSub"
+msgstr "每月 {p} TWD，含一台 24 小時的雲端主機；存在就按小時扣。"
+
+msgid "data.starting"
+msgstr "雲端主機啟動中，開好後 Blave 的資料就能用。"
+
+msgid "plan.done"
+msgstr "雲端主機開好了，Blave 的資料可以用了。"
+
+msgid "side.trial"
+msgstr "試用剩 {n} 天"
+
+msgid "side.starting"
+msgstr "啟動中"
+
+msgid "side.stopped"
+msgstr "已停機"

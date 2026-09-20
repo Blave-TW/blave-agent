@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("blave", {
   listStrategies: () => ipcRenderer.invoke("list-strategies"),
   loadStrategy: (name) => ipcRenderer.invoke("load-strategy", name),
   accountStatus: () => ipcRenderer.invoke("account-status"),
+  planStart: () => ipcRenderer.invoke("plan-start"),
   modelOptions: (kind) => ipcRenderer.invoke("model-options", kind),
   loadModelPrefs: () => ipcRenderer.invoke("load-model-prefs"),
   saveModelPrefs: (prefs) => ipcRenderer.invoke("save-model-prefs", prefs),
