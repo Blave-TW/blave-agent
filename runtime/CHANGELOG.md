@@ -8,6 +8,21 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 電腦版實盤鏈第 1 步(paper):新增 `local_daemon.py`——在用戶電腦上跑**同一份**排程執行緒
+  (`_scheduler_loop`)、同一組 `_cmd_*` handler、同一支 `manager/reconciler.py`、同一個
+  `build_report()`;只換傳輸(`state/local_cmd/in|ack` 檔案佇列,HMAC 簽章、secret 走 stdin,
+  `halt` 免簽)與監督者(daemon 自己當對帳器的父行程:當掉 10 秒重啟、flock 交給子行程繼承
+  防雙開、啟動不自動起對帳器;對帳器經 `--run-reconciler` 起,父行程 pipe EOF 或 SIGTERM 時先撤自己的未成交限價單再走,新 daemon 啟動先收孤兒),狀態寫 `state/local_status.json`,並把 `<BASE>/current` 連到
+  runtime(電腦版之前沒有這個目錄,`lib/events` 的事件全被靜默丟掉)。`command_listener` /
+  `portfolio_reporter` 加 `BLAVE_AGENT_LOCAL=1` 開關(部署形態,不是 OS):直譯器用
+  `sys.executable`、不讀不寫 crontab、Type B 在 `amounts` 明確拒絕、對帳器啟停交給
+  `_LOCAL_HOST`、`credentials` 只准 paper(`LOCAL_OPEN_VENUES`,聊天綁定同一道閘門;
+  `agent_turn` 在 LocalSink 時自己帶開關)。daemon 只在呼叫端已設開關且 `<BASE>/control`
+  不存在時啟動。簽章不是同用戶隔離,擋什麼沒擋什麼寫在設計文件 §3。**開關沒設時零改變**(既有檔案的 diff 全為純新增、0 刪改;閘門:
+  `tests/check_local_daemon.py`、`tests/check_local_daemon_chain.py`)。白名單與
+  `api/openclaw/agent_command.py` 的 `ALLOWED` 由測試釘住同步。設計:blave-canon
+  `output/specs/desktop-local-daemon-design-2026-09.md`。
+
 - 電腦版 Blave 資料:`data_access_rule()` 讀外殼 spawn 時設的 `BLAVE_DATA_ACCESS`——`1`
   (用 Blave 的 AI 登入,資料 key 已寫進 workspace `.env`):指標與台股照 AGENTS.md 取,加密 K 線
   仍走 Binance 公開端點、不准換來源,403 `DATA_NOT_INCLUDED`(試用結束且沒主機／API 方案)照實告訴用戶,403 `Invalid API key` = key 已被刪／撤銷、請用戶在 app 重新登入(不找別的 key),

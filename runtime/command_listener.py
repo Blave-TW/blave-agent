@@ -92,6 +92,43 @@ def _beat():
         pass
 
 
+# ── local (desktop) mode ─────────────────────────────────────────────────────
+# Same framework, second place to run it: runtime/local_daemon.py hosts this
+# module's scheduler thread and HANDLERS on the user's own computer. The switch
+# is a deployment mode, not an OS — a cloud box never sets it, so every branch
+# below it is dead code there; and the dev Macs that run the Linux-branch checks
+# keep landing in the Linux branch. What changes under it: no crontab, no
+# systemd/NSSM/tmux (the daemon supervises the reconciler itself), and the
+# interpreter is always the one running us (the app's venv has the strategy
+# deps — the opposite of /opt/blave-agent/venv, see _tick_one).
+_LOCAL_HOST = None  # local_daemon registers its reconciler supervisor here
+
+_LOCAL_ENV_PASS = ("PATH", "HOME", "LANG", "USER", "SHELL", "TMPDIR",
+                   "BLAVE_AGENT_BASE", "BLAVE_AGENT_WORKSPACE", "BLAVE_AGENT_HOME",
+                   "BLAVE_AGENT_STATE", "BLAVE_KLINE_SOURCE", "PYTHONPYCACHEPREFIX")
+
+
+# Venues a local-mode machine may bind. Paper only until the real-key step
+# ships its permission check (withdrawals must be off) — widen it HERE, the one
+# gate both bind paths (the signed `credentials` command and the chat bind,
+# lib/venue.bind → _cmd_credentials) run through.
+LOCAL_OPEN_VENUES = frozenset({"PAPER"})
+
+
+def _local_mode():
+    return os.environ.get("BLAVE_AGENT_LOCAL") == "1"
+
+
+def _local_child_env(**extra):
+    """Env for every workspace subprocess in local mode. Allowlist like the
+    Linux one, plus the path variables that have no /opt/blave-agent default to
+    fall back on here. Any other BLAVE_* stays out of strategy code."""
+    env = {k: v for k, v in os.environ.items() if k in _LOCAL_ENV_PASS}
+    env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
+    env.update(extra)
+    return env
+
+
 def _in_workspace(fn, *a, **kw):
     """lib/guard.py resolves state/HALT relative to the cwd, and this thread has
     no business changing the process-wide cwd out from under the bridge — so the
@@ -372,6 +409,8 @@ def _cmd_credentials(args):
     # platform keys
     if writing & _CRED_KEEP_IDS:
         raise ValueError("platform credentials are not writable here")
+    if _local_mode() and writing - LOCAL_OPEN_VENUES:
+        raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -690,6 +729,10 @@ def _sync_strategy_crons(names):
     ac, b = _split_by_type(names)
     if ac:
         _scheduler_wake.set()
+    if _local_mode():
+        if b:  # _cmd_amounts refuses these up front; this is the other callers
+            _log(f"local mode: {len(b)} type B name(s) left unscheduled")
+        return
     if platform.system() == "Windows":
         _sync_strategy_tasks_windows(b)
         return
@@ -763,6 +806,8 @@ def _strategy_subprocess_env():
     both (the Linux allowlist never had it): a strategy must read the same clock
     whichever way it was started, and this process may carry the user's own zone
     (state/timezone, contract §2b) while the scheduler does not."""
+    if _local_mode():
+        return _local_child_env(BLAVE_MODE="live")
     if platform.system() == "Windows":
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("BLAVE_") and k != "TZ"}
@@ -894,6 +939,8 @@ def _tick_one(name):
     boot under). That failure mode is otherwise silent, so it's logged here,
     not swallowed as a bare last-resort net for "failed to start"."""
     interp = "python" if platform.system() == "Windows" else "python3"
+    if _local_mode():
+        interp = sys.executable
     try:
         r = subprocess.run(
             [interp, os.path.join("manager", "wait_for_bar.py"), name],
@@ -989,6 +1036,8 @@ def _migrate_legacy_ac_crons():
     and dedupe for free), the old entry runs bash → strategy.py directly,
     bypassing that lock entirely. Best-effort, like every other cron sync
     here — a failed sweep logs and the loop still starts."""
+    if _local_mode():
+        return  # never installed anything there, and that crontab is the user's
     if platform.system() == "Windows":
         try:
             with _cron_lock:
@@ -1151,6 +1200,8 @@ def _sweep_legacy_report_schedules():
     in-process trigger runs every job twice — once from the stale OS entry (on the
     machine's own clock, which is the bug this change exists to fix) and once from
     _fire_due_reports. Best-effort, same as the Type A/C migration above."""
+    if _local_mode():
+        return
     if platform.system() == "Windows":
         try:
             with _cron_lock:
@@ -1387,6 +1438,15 @@ def _cmd_amounts(args):
         if not (0 <= f < 1e12):  # rejects NaN, negatives, inf
             raise ValueError("amounts must be finite and >= 0")
         clean[k] = round(f, 2)
+
+    if _local_mode():
+        # Type B runs off crontab/schtasks, which local mode never touches —
+        # saving one would look deployed and never run. Refuse, don't go quiet.
+        for k in clean:
+            if not _strategy_has_interval(k):
+                raise ValueError(
+                    f"「{k}」沒有合法的 INTERVAL(Type B)——電腦版目前只支援 "
+                    f"Type A/C 策略的自動執行,請取消勾選後再儲存")
 
     # Type C (portfolio) strategies have no live path: lib/runner.py's Type C
     # branch never writes state.json, so the reconciler's aggregate never sees
@@ -1674,6 +1734,10 @@ def _stop_reconciler():
     kept the membership, the daemon was never even asked to stop, 190 alerts
     over 16 hours."""
     def _confirm_stopped():
+        if _local_mode():
+            # no host = we are not the daemon (an agent turn's chat bind):
+            # cannot confirm, so the caller keeps the membership
+            return _LOCAL_HOST is not None and _LOCAL_HOST.stop_reconciler()
         if platform.system() == "Windows":
             st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
                                 capture_output=True, timeout=30)
@@ -1930,6 +1994,8 @@ def _purge_strategy_schedules(entries):
     if not entries:
         return
     _purge_deployment_registry(entries)
+    if _local_mode():
+        return
     try:
         with _cron_lock:
             if platform.system() == "Windows":
@@ -2084,6 +2150,10 @@ def _cmd_retest_accounts(args):
     base = os.path.dirname(WORKSPACE)
     reader = os.path.join(base, "current", "account_reader.py")
     sys_py = "python" if platform.system() == "Windows" else "/usr/bin/python3"
+    if _local_mode():
+        subprocess.Popen([sys.executable, reader], cwd=WORKSPACE, env=_local_child_env(),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return "retesting"
     subprocess.Popen([sys_py, reader], cwd=WORKSPACE,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return "retesting"
@@ -2182,6 +2252,12 @@ def _register_reconciler_deployment(start_type_ok=None):
 def _cmd_restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
+    if _local_mode():
+        if _LOCAL_HOST is None:
+            raise RuntimeError("the local daemon is not running")
+        _LOCAL_HOST.restart_reconciler()
+        _register_reconciler_deployment()
+        return "reconciler restarted"
     if platform.system() == "Windows":
         try:
             with open(os.path.join(WORKSPACE, "manager",
@@ -2388,6 +2464,13 @@ def _cmd_close_all(args):
     # 系統變數會直接起不來;要擋的只有 bridge 的 BLAVE_* 秘密
     child_env = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
     child_env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
+    if _local_mode():
+        # own session: the flatten must outlive a daemon that is shutting down
+        with open(log_path, "ab") as logf:
+            subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
+                             env=_local_child_env(), stdout=logf, stderr=logf,
+                             start_new_session=True)
+        return "close_all=started"
     if platform.system() == "Windows":
         # 脫離 NSSM 的 process tree:bridge 重啟時 NSSM 會殺整棵樹,平倉做一半
         # 被砍=HALT 掛著、倉平一半。經由一個立刻退場的 powershell 中轉
@@ -2729,6 +2812,8 @@ def _manage_argv(script, members, allocator, extra):
     # `--flag=value` form throughout: a member/allocator name starting with `-`
     # would otherwise be read by argparse as the next option.
     interp = "python" if platform.system() == "Windows" else "python3"
+    if _local_mode():
+        interp = sys.executable
     argv = [interp, os.path.join("manager", script), "--members=" + ",".join(members)]
     if allocator is not None:
         argv.append("--allocator=" + allocator)

@@ -128,6 +128,10 @@ def scheduled_strategies():
     by manager/healthcheck.py's heartbeat check, both unchanged.
     """
     in_process = _in_process_scheduled()
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        # local (desktop) mode schedules Type A/C in-process only and never
+        # reads the user's own crontab — see command_listener._local_mode
+        return in_process
     if platform.system() == "Windows":
         # deployment.md's task-name convention: blaveclaw-strategy-<name>
         try:

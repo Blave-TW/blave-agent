@@ -2172,6 +2172,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # inside claude 2.1.239.
         "DISABLE_AUTOUPDATER": "1",
     })
+    if isinstance(sink, LocalSink):
+        # 電腦版:agent 的 Bash 經 lib/venue.bind 載入 command_listener 時要落在本機
+        # 分支(不碰用戶的 crontab、只准綁 paper)——見 command_listener._local_mode
+        turn_env["BLAVE_AGENT_LOCAL"] = "1"
     if isinstance(sink, WebSink) and sink.report_url:
         # LocalSink 繼承 WebSink 但 report_url=None:這三個 env 是給雲端照片鏡射
         # 用的,本機不塞——塞 None 進 env 會讓 anyio 在 spawn 時炸
