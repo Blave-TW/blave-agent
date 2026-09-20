@@ -2031,9 +2031,9 @@ DATA_ACCESS_CARD = "<blave-card:data-access/>"
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
-      `1`  = 桌面 key(用 Blave 的 AI 登入時 api 發的那組,外殼寫進 `.env`)——縮權、不計時費,
+      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權、不計時費,
              所以這段可以直接講 `DATA_NOT_INCLUDED` / `KEY_SCOPE` / 重新登入。
-      `0`  = 沒有 key:用自己的 Claude Code / Codex、沒登入,或登入了但帳號不含資料
+      `0`  = 沒有 key:沒登入 Blave,或登入了但帳號不含資料
              (試用結束且沒主機／API 方案)。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
@@ -2059,7 +2059,8 @@ def data_access_rule():
     elif access == "0":
         body = (
             "This desktop has NO Blave data access right now. Blave data comes with signing "
-            "in to Blave's AI while the card trial is active, or with an account that owns a "
+            "in to Blave (whichever AI the user runs — Blave's, their own Claude Code or "
+            "Codex) while the card trial is active, or with an account that owns a "
             "Blave Agent cloud machine or an API plan. Blave-only datasets — holder "
             "concentration, whale hunter, taker intensity, liquidation, Taiwan stock / "
             "futures data and the rest of the Blave indicators — are not reachable. When the "

@@ -26,7 +26,6 @@
           <span class="cn-cur" id="cn-blave-cur" hidden></span>
           <button class="btn-fill" id="btn-blave" type="button"></button>
           <!-- 有 token 才出現。登出=把這台電腦上的 token 刪掉(共用電腦、換帳號) -->
-          <button class="btn-quiet" id="btn-blave-out" type="button" data-i18n="cn.blave.signOut" hidden></button>
         </div>
         <div class="cn-sec">
           <p class="cn-head">
@@ -46,6 +45,8 @@
         <p data-i18n="cn.foot"></p>
         <div class="cn-lang" id="cn-lang" role="radiogroup" data-i18n-aria="set.lang"></div>
       </div>
+      <!-- 對兩條路都成立的一句,所以放尾註、不掛在任何一列底下(數字來自 api,拿不到就不出) -->
+      <p class="cn-foot-data" id="cn-foot-data" hidden></p>
     </div>
   </div>
 </div>
@@ -186,6 +187,13 @@
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
         <!-- 會花錢的一類排最後:前兩類是偏好。聊天裡的情境卡會直接開到這裡 -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
+        <!-- 帳號區:登入是帳號的事,不是某一種 AI 的事——登出從「用 Blave 的 AI」那一列搬到這裡,
+             三個分類都看得到。有 token 才出現;沒登入時這裡不放登入鈕(登入只從講得出後果的地方進) -->
+        <div class="set-acct" id="set-acct" hidden>
+          <p class="lbl" data-i18n="acct.lbl"></p>
+          <p class="mail" data-i18n="acct.signedIn"></p>
+          <button type="button" class="btn-quiet" id="set-acct-out" data-i18n="acct.out"></button>
+        </div>
       </nav>
       <div class="set-content">
         <div class="set-pane" data-set-cat="display">

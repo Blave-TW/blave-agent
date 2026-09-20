@@ -204,9 +204,9 @@ async function planStart() {
 }
 
 /* Blave 資料 key(api-key / secret-key 一組):換 token 時 api 一併發下來,只此一次。
-   跟 token 一樣進 Keychain;**只有連的是「用 Blave 的 AI」時**才寫進 workspace 的 `.env`
-   (lib 與範例讀的就是 `blave_api_key` / `blave_secret_key` 這兩行)——用自己 Claude Code /
-   Codex 的人拿不到 Blave 資料(Wei 拍板)。K 線不受影響,照舊走 Binance 公開端點。 */
+   跟 token 一樣進 Keychain;**登入了、而且帳號含資料**才寫進 workspace 的 `.env`
+   (lib 與範例讀的就是 `blave_api_key` / `blave_secret_key` 這兩行)——不看連的是哪個 AI:用自己
+   Claude Code / Codex 的人登入 Blave 之後一樣拿得到(Wei 拍板,v3)。K 線不受影響,照舊走 Binance 公開端點。 */
 const dataKeyPath = () => path.join(app.getPath("userData"), "blave-data.bin");
 function saveDataKey(apiKey, secretKey) {
   if (!apiKey || !secretKey || !safeStorage.isEncryptionAvailable()) return false;
@@ -778,8 +778,26 @@ async function accountStatus() {
     if (r.status !== 200) return null;
     const b = r.body && (r.body.data || r.body);
     if (!(b && typeof b.can_run === "boolean")) return null;
+    if (loadToken() !== acct) return null;          // 在途時登出 / 換了帳號:舊帳號的答案不寫回、不回給畫面
     lastAcct = { at: Date.now(), body: b };
     return b;
+  } catch (_) { return null; }
+}
+/* 沒登入時方案頁要的數字(試用天數 / AI 額度 / 驗證金 / 自動儲值 / Starter 月價)。公開端點、不帶任何
+   憑證;月價 = Starter 時價 × 720(跟 api 的 plan.monthly 同一個算法)。舊 api 沒有 trial 欄 → 回 null,
+   畫面用不帶數字的退化句。 */
+let pubCache = null;
+async function publicPricing() {
+  if (pubCache && Date.now() - pubCache.at < 3600000) return pubCache.body;
+  try {
+    const r = await getJSON(`${API_BASE}/openclaw/public_tiers`, {});
+    const b = r.status === 200 && r.body && (r.body.data || r.body);
+    if (!(b && b.trial && Number(b.trial.days) > 0)) return null;
+    const st = (Array.isArray(b.linux) ? b.linux : []).find((x) => x && x.label === "Starter");
+    const hr = st && Number(st.twd_per_hour) > 0 ? Number(st.twd_per_hour) : null;
+    const body = { trial: b.trial, starter_hourly: hr, starter_monthly: hr ? Math.round(hr * 720) : null };
+    pubCache = { at: Date.now(), body };
+    return body;
   } catch (_) { return null; }
 }
 /* 這個帳號現在含不含 Blave 資料(試用中 / 名下有主機 / API 方案)。畫面的預檢與回前景重查
@@ -847,7 +865,7 @@ function saveModelPrefs(prefs) {
 const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
 const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
 
-let activeTurn = null;
+let activeTurn = null, turnStarting = false;
 async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
@@ -862,9 +880,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
   // token 還在 Keychain 裡——照「有 token 就帶」會讓他以為在用自己的訂閱、實際上燒 Blave 額度
+  // 資料則相反——**看有沒有登入,不看連的是誰**:登入 Blave 是帳號的事,資料 key 是另一把縮權的 key
+  // (不能呼叫 LLM、不產生 usage_blave),給自帶 CLI 的人不會燒到他的 AI 額度。
   const useBlave = conn.kind === "blave";
+  const signedIn = !!loadToken();
   const acct = useBlave ? loadToken() : null;
-  const dataAccess = syncDataEnv(useBlave && !!acct && await dataIncluded());
+  const dataAccess = syncDataEnv(signedIn && await dataIncluded());
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -992,6 +1013,7 @@ app.whenReady().then(() => {
   ipcMain.handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
   ipcMain.handle("model-options", (_e, kind) => modelOptions(kind));
   ipcMain.handle("account-status", () => accountStatus());
+  ipcMain.handle("public-pricing", () => publicPricing());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
   ipcMain.handle("plan-start", (e) => {
     const from = e.senderFrame && e.senderFrame.url;
@@ -1005,14 +1027,18 @@ app.whenReady().then(() => {
   ipcMain.handle("cancel-oauth", () => cancelOAuth());
   ipcMain.handle("clear-connection", () => clearConnection());
   ipcMain.handle("has-blave-token", () => !!loadToken());
-  ipcMain.handle("clear-blave-token", () => { clearToken(); return true; });
   ipcMain.handle("sign-out-blave", () => signOutBlave());
   ipcMain.handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   ipcMain.handle("cancel-agent-login", () => cancelAgentLogin());
   ipcMain.handle("send-message", (e, payload) => {
-    if (activeTurn) return { busy: true };
+    if (activeTurn || turnStarting) return { busy: true };
     const win = BrowserWindow.fromWebContents(e.sender);
-    runTurn(win, payload);
+    // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
+    // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db
+    turnStarting = true;
+    runTurn(win, payload).catch((err) => {
+      if (win && !win.isDestroyed()) win.webContents.send("turn-end", { code: 1, errTail: String((err && err.message) || err) });
+    }).finally(() => { turnStarting = false; });
     return { started: true };
   });
   createWindow();

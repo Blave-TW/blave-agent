@@ -750,7 +750,25 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err .fault-mark{margin-top:9px}
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
 .plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
-.plan-act .btn-quiet{margin-right:auto}
+.plan-act .btn-quiet{margin-right:auto;padding:0}
+/* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
+.plan-pane .plan-scroll{padding:var(--space-24) var(--space-16) var(--space-16)}
+.plan-pane .plan-st{margin-bottom:var(--space-8)}
+.plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
+.plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
+.plan-pane .plan-rule{text-wrap:pretty}
+.plan-more{margin-top:var(--space-16);display:inline-block;padding:0}
+.plan-detail{margin-top:var(--space-12);padding-top:var(--space-4);border-top:1px solid var(--border-hairline)}
+.plan-detail[hidden]{display:none}
+.plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
+/* 設定左欄底部的帳號區 */
+.set-cats{display:flex;flex-direction:column}
+.set-cats .set-acct{margin-top:auto;padding:var(--space-8) var(--space-12) var(--space-4);border-top:1px solid var(--border-hairline)}
+.set-acct .lbl{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
+.set-acct .mail{margin:0;font-size:12px;line-height:1.5;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.set-acct .btn-quiet{margin-top:var(--space-4);padding:0}
+/* 連結畫面尾註下那一句 */
+.cn-foot-data{width:560px;max-width:100%;margin:var(--space-8) 0 0;padding:0 var(--space-16);font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
 .del-body.lines p+p{margin-top:var(--space-8)}

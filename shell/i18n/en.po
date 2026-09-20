@@ -502,26 +502,8 @@ msgstr "Blave’s AI needs a card on file, so this turn didn’t run."
 msgid "fault.checking"
 msgstr "This turn didn’t run — checking your account."
 
-msgid "data.needBlave"
-msgstr "Blave data is only available when you connect with Blave’s AI. This computer is using {name}."
-
-msgid "data.connSettings"
-msgstr "Connection Settings"
-
 msgid "set.cat.plan"
-msgstr "Cloud plan"
-
-msgid "plan.title"
-msgstr "Blave Agent Cloud Plan"
-
-msgid "plan.st.trial"
-msgstr "Not started · Trial, {n} days left"
-
-msgid "plan.st.none"
-msgstr "Not started"
-
-msgid "plan.st.starting"
-msgstr "Starting · usually a few minutes"
+msgstr "Data & cloud plan"
 
 msgid "plan.st.running"
 msgstr "Active · machine running"
@@ -531,39 +513,6 @@ msgstr "Stopped · balance under {m} TWD"
 
 msgid "plan.st.stoppedNoAmt"
 msgstr "Stopped · balance too low"
-
-msgid "plan.st.nocard"
-msgstr "Not started · no card on file"
-
-msgid "plan.lead"
-msgstr "The desktop app works without it. Blave data and 24-hour running come with this plan."
-
-msgid "plan.lead.trial"
-msgstr "The desktop app works without it. Blave data is already included during your trial. After {d}, it comes with this plan."
-
-msgid "plan.lead.starting"
-msgstr "Blave data is available now. The cloud machine is still starting. You can close this window. You’ll see a note in the chat when it’s ready."
-
-msgid "plan.lead.running"
-msgstr "Blave data is now available in the desktop app."
-
-msgid "plan.lead.stopped"
-msgstr "A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies and data on it."
-
-msgid "plan.signedOut"
-msgstr "Sign in to Blave to start this plan."
-
-msgid "plan.inc"
-msgstr "Included"
-
-msgid "plan.inc.1"
-msgstr "Blave data, in the desktop app and on the cloud machine"
-
-msgid "plan.inc.2"
-msgstr "A cloud machine that stays on 24 hours, so strategies keep running"
-
-msgid "plan.inc.3"
-msgstr "The same machine, also reachable from the browser workspace"
 
 msgid "plan.bill"
 msgstr "Billing"
@@ -579,15 +528,6 @@ msgstr "No machine fee until {d}. After that, the price above applies."
 
 msgid "plan.topup"
 msgstr "Under a balance of {a} TWD, your card is charged {b} TWD automatically. You can turn this off on the web."
-
-msgid "plan.rule"
-msgstr "Billed for as long as the machine exists, in use or not. A stopped machine still bills. Only deleting it ends the charges."
-
-msgid "plan.rule.running"
-msgstr "Billed for as long as the machine exists, in use or not. Turning the plan off means deleting the machine, along with the strategies and data on it."
-
-msgid "plan.cardSub"
-msgstr "A first card comes with {t} days of no machine fee and {q} TWD of AI credit."
 
 msgid "plan.start"
 msgstr "Start Plan"
@@ -610,14 +550,11 @@ msgstr "Turn off on the web"
 msgid "plan.manageStopped"
 msgstr "Manage on the web"
 
-msgid "plan.connSettings"
-msgstr "Connection Settings"
-
 msgid "cf.title"
 msgstr "Start the Blave Agent Cloud Plan?"
 
 msgid "cf.body1"
-msgstr "A cloud machine will be set up for this account. It takes a few minutes."
+msgstr "This opens a cloud machine for this account, usually in about a minute. Blave data is available as soon as you start."
 
 msgid "cf.body2"
 msgstr "Once it’s up, {h} TWD comes out of your balance every hour ({p} TWD a month, 30 days), for as long as the machine exists, in use or not."
@@ -655,15 +592,6 @@ msgstr "Taking longer than usual. The machine is still starting, so there’s no
 msgid "plan.recheck"
 msgstr "Check Again"
 
-msgid "data.inPlan"
-msgstr "Blave data comes with the Blave Agent Cloud Plan."
-
-msgid "data.seePlan"
-msgstr "See the Plan"
-
-msgid "data.planSub"
-msgstr "{p} TWD a month, including a cloud machine that stays on 24 hours. Billed hourly for as long as the machine exists."
-
 msgid "data.starting"
 msgstr "Your cloud machine is starting. Blave data will be available in a moment."
 
@@ -681,3 +609,174 @@ msgstr "Stopped"
 
 msgid "data.ready"
 msgstr "Blave data is now available."
+
+msgid "pv.h.offer"
+msgstr "Your first card comes with {t} days of Blave data"
+
+msgid "pv.h.offerNoNum"
+msgstr "Your first card comes with a trial period of Blave data"
+
+msgid "pv.h.plan"
+msgstr "A cloud machine where strategies go live, Blave data included"
+
+msgid "pv.h.ready"
+msgstr "Blave data is now available"
+
+msgid "pv.h.starting"
+msgstr "Your cloud machine is starting. It usually takes about a minute"
+
+msgid "pv.h.running"
+msgstr "Your strategies can now go live on the cloud machine"
+
+msgid "pv.h.stopped"
+msgstr "The machine is stopped but still billing"
+
+msgid "pv.h.unknown"
+msgstr "Couldn’t check this account"
+
+msgid "pv.d.offer.cli"
+msgstr "AI stays on your {name}. When a strategy has to run around the clock, the cloud machine has no machine fee for those {t} days."
+
+msgid "pv.d.offer.blave"
+msgstr "Plus {q} TWD of AI credit. When a strategy has to run around the clock, the cloud machine has no machine fee for those {t} days."
+
+msgid "pv.d.noTrial"
+msgstr "The Blave Agent Cloud Plan, {p} TWD a month. This account has no first-card trial: add a card, then start the plan here to get data."
+
+msgid "pv.d.trial"
+msgstr "Until {d}, there’s no need to start the plan. After that, data comes with the Blave Agent Cloud Plan: {p} TWD a month."
+
+msgid "pv.d.plan"
+msgstr "The Blave Agent Cloud Plan, {p} TWD a month. Strategies run on schedule and place orders on this machine. The desktop app works without it, just without Blave data."
+
+msgid "pv.d.included"
+msgstr "You only need the Blave Agent Cloud Plan when a strategy has to run around the clock: {p} TWD a month."
+
+msgid "pv.d.starting"
+msgstr "Blave data is available right now, before the machine is up. You can close this window."
+
+msgid "pv.d.running"
+msgstr "Add strategies, set up scheduled reports and connect an exchange on this machine from the workspace. Strategies built on this computer stay on this computer."
+
+msgid "pv.d.stopped"
+msgstr "A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies and data on it."
+
+msgid "pv.d.noPrice"
+msgstr "Your AI setup stays as it is. After the trial, data comes with the Blave Agent Cloud Plan, if you start it."
+
+msgid "pv.d.unknown"
+msgstr "This may be a network problem. Checking again costs nothing."
+
+msgid "pv.f.out"
+msgstr "After {t} days, data comes with the cloud plan ({p} TWD a month), if you start it."
+
+msgid "pv.f.offer"
+msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. After {t} days, data comes with the cloud plan ({p} TWD a month), if you start it."
+
+msgid "pv.f.noTrial"
+msgstr "Adding the card tops up at least {b} TWD, all of it added to your balance, and turns on auto top-up."
+
+msgid "pv.f.trial"
+msgstr "When a strategy has to run around the clock, you can start now: no machine fee until {d}, then billed while the machine exists. Only deleting it ends the charges."
+
+msgid "pv.f.plan"
+msgstr "{h} TWD from your balance every hour, for as long as the machine exists. A stopped machine still bills. Only deleting it ends the charges."
+
+msgid "pv.f.running"
+msgstr "{h} TWD an hour from your balance ({p} TWD a month). Turning it off means deleting the machine on the web, with the strategies and data on it."
+
+msgid "pv.w.out.cli"
+msgstr "Signing in costs nothing and keeps your AI. Next: add a card."
+
+msgid "pv.w.noTrial"
+msgstr "Next: come back and start the plan."
+
+msgid "pv.w.waiting"
+msgstr "Your browser is open. Press Allow there."
+
+msgid "pv.st.trial"
+msgstr "Trial · {n} days left"
+
+msgid "pv.st.none"
+msgstr "Not started"
+
+msgid "pv.st.ok"
+msgstr "Available"
+
+msgid "pv.st.starting"
+msgstr "Starting"
+
+msgid "pv.more"
+msgstr "What’s included and billing"
+
+msgid "plan.inc"
+msgstr "Included"
+
+msgid "plan.rule"
+msgstr "Billed for as long as the machine exists, in use or not. A stopped machine still bills. Only deleting it ends the charges."
+
+msgid "plan.rule.running"
+msgstr "Billed for as long as the machine exists, in use or not. Turning the plan off means deleting the machine, along with the strategies and data on it."
+
+msgid "pv.more.once"
+msgstr "The first-card trial is once per person and once per card."
+
+msgid "pv.inc.1"
+msgstr "A cloud machine that stays on 24 hours: strategies run on schedule and place orders"
+
+msgid "pv.inc.2"
+msgstr "Blave data, in the desktop app and on the cloud machine"
+
+msgid "pv.inc.3"
+msgstr "Operate the machine from the browser workspace"
+
+msgid "pv.inc.note"
+msgstr "Strategies built on this computer stay on this computer. Strategies on the machine are built in the workspace, where exchange keys are connected too."
+
+msgid "pv.signin"
+msgstr "Sign in to Blave"
+
+msgid "pv.e.out"
+msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card comes with {t} days of it. AI stays on your {name}."
+
+msgid "pv.e.outNoNum"
+msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card comes with a trial period of it. AI stays on your {name}."
+
+msgid "pv.e.card"
+msgstr "This computer can’t reach Blave data yet. Your first card comes with {t} days of it."
+
+msgid "pv.e.card.cli"
+msgstr "This computer can’t reach Blave data yet. Your first card comes with {t} days of it. AI stays on your {name}."
+
+msgid "pv.e.noTrial"
+msgstr "This computer can’t reach Blave data yet. It comes with the Blave Agent Cloud Plan."
+
+msgid "pv.e.sub"
+msgstr "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a month."
+
+msgid "pv.e.subN"
+msgstr "{p} TWD a month: a cloud machine where strategies run around the clock, Blave data included. Billed hourly for as long as the machine exists."
+
+msgid "pv.e.unknown"
+msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Open Data & Cloud Plan to check again."
+
+msgid "pv.e.btn"
+msgstr "Data & Cloud Plan"
+
+msgid "cn.blave.signinSwitch"
+msgstr "Sign In and Switch"
+
+msgid "cn.foot.data"
+msgstr "Your first card comes with {t} days of Blave data, whichever AI you use: after connecting, see Settings › Data & cloud plan."
+
+msgid "acct.lbl"
+msgstr "Blave account"
+
+msgid "acct.signedIn"
+msgstr "Signed in"
+
+msgid "acct.out"
+msgstr "Sign out"
+
+msgid "acct.outDone"
+msgstr "Signed out. This computer no longer gets Blave data."

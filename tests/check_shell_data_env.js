@@ -50,5 +50,10 @@ t("沒留下暫存檔", !fs.existsSync(f + ".blave-tmp"));
 fs.rmSync(f); fs.mkdirSync(f);
 syncDataEnv(true);
 t("rename 失敗 → 暫存檔不留", !fs.existsSync(f + ".blave-tmp"));
+
+// 兩把 key 各看各的:帳號 token(能燒 AI 額度)只在連的是 Blave 時才進 agent 的 env;資料 key 看的是
+// 有沒有登入,自帶 CLI 的人也拿得到。兩個條件對調任何一個,這裡就紅。
+t("帳號 token 只在 conn.kind === blave 時帶", /const acct = useBlave \? loadToken\(\) : null;/.test(src) && /\.\.\.\(acct \? \{ BLAVE_PROXY_TOKEN: acct \} : \{\}\)/.test(src));
+t("資料 key 看登入、不看連的是誰", /syncDataEnv\(signedIn && await dataIncluded\(\)\)/.test(src) && !/syncDataEnv\([^)]*useBlave/.test(src));
 fs.rmSync(WS, { recursive: true, force: true });
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
