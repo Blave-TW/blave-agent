@@ -6,10 +6,14 @@
   "license": "Apache-2.0",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "fetch-python": "sh tools/fetch-python.sh",
+    "pack": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dir",
+    "dist": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dmg"
   },
   "devDependencies": {
-    "electron": "38.2.1"
+    "electron": "38.2.1",
+    "electron-builder": "26.15.3"
   },
   "dependencies": {
     "lightweight-charts": "5.2.1"

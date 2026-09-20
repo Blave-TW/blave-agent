@@ -10,6 +10,11 @@ const path = require("path");
 const os = require("os");
 const fs = require("fs");
 
+// 打包版的名字 = userData 目錄名(~/Library/Application Support/Blave)與 Keychain 項目名。
+// electron-builder 的 productName 不會寫進 asar 裡的 package.json,不設的話打包版會跟開發版
+// 共用 blave-desktop(連 single-instance lock 都撞在一起)。開發版刻意不改名:既有資料留在原地。
+if (app.isPackaged) app.setName("Blave");
+
 // macOS GUI app 的 PATH 是極簡的(實測 /usr/bin:/bin 下找不到 claude),
 // 所以先跑一次使用者的登入 shell 解析出真正的 PATH,偵測與之後 spawn 引擎共用。
 // 見 .claude/output/desktop-v1/2026-09-18-agent-detection.md。
@@ -394,8 +399,15 @@ async function startOAuth(lang) {
   if (r.status !== 200 || !r.body.access_token) {
     throw new Error("TOKEN_EXCHANGE_FAILED");
   }
+  // 重新登入(方案頁的「重新登入」、登入失效後的原地登入)時手上還有上一顆 token:新的換到手之後把舊的
+  // 撤銷掉——不然伺服器上那顆連同它的資料 key 會一直活著,「已授權的電腦」也會多一列同名的裝置。
+  // best-effort:撤不掉不影響這次登入。
+  const prevToken = loadToken();
   if (!saveToken(r.body.access_token)) {
     throw new Error("KEYCHAIN_UNAVAILABLE");
+  }
+  if (prevToken && prevToken !== r.body.access_token) {
+    postJSON(`${API_BASE}/oauth/desktop/revoke`, { token: prevToken }).catch(() => {});
   }
   // 資料 key 只在這一次回應裡出現;舊版 api 沒有這兩欄就是沒有資料權限,不算失敗
   // 先清掉上一次登入留下的那組:那顆 token 換掉之後,舊 key 可能已經被撤銷,留著會把死 key
@@ -411,15 +423,28 @@ async function startOAuth(lang) {
 }
 
 // ── 第 4 步:引擎 ─────────────────────────────────────────────
-// dev 佈局:repo checkout 就在 shell/ 上一層;打包版之後改成 app 資源路徑。
-const REPO = path.join(__dirname, "..");
-const BASE = path.join(os.homedir(), "Blave");
+// 官方檔案(runtime、lib、references…)從哪裡取:開發時 repo checkout 就在 shell/ 上一層;
+// 打包版在 Contents/Resources/agent(extraResources,**不進 asar**——Python 要直接讀、
+// fs.cpSync 也要真的目錄)。清單見 electron-builder.config.js。
+const resourceRoot = () => (app.isPackaged
+  ? path.join(process.resourcesPath, "agent") : path.join(__dirname, ".."));
+const REPO = resourceRoot();
+// BLAVE_HOME:把整個 ~/Blave 換到別處(測乾淨狀態用)。只認絕對路徑。
+const BASE = path.isAbsolute(process.env.BLAVE_HOME || "")
+  ? process.env.BLAVE_HOME : path.join(os.homedir(), "Blave");
 const WS = path.join(BASE, "workspace");
 const VENV_PY = path.join(BASE, "venv", "bin", "python");
+// 乾淨的 Mac 沒有 python3(要先裝 Xcode CLT):打包版隨包一顆(tools/fetch-python.sh),
+// venv 用它建;開發時照舊用系統的。
+const BUNDLED_PY = path.join(process.resourcesPath || "", "python", "bin", "python3");
+const basePython = () => (app.isPackaged && fs.existsSync(BUNDLED_PY) ? BUNDLED_PY : "python3");
+// 打包版的 runtime/ 與隨包 Python 都在 .app 裡:不讓 Python 把 __pycache__ 寫進去
+// (簽章後 bundle 內容一變就驗不過;唯讀位置也寫不進)。
+const PY_ENV = app.isPackaged ? { PYTHONPYCACHEPREFIX: path.join(BASE, "state", "pycache") } : {};
 
 function sh(cmd, envPath, timeout = 300000) {
   return new Promise((resolve, reject) => {
-    execFile("/bin/sh", ["-c", cmd], { timeout, env: { ...process.env, PATH: envPath } },
+    execFile("/bin/sh", ["-c", cmd], { timeout, env: { ...process.env, ...PY_ENV, PATH: envPath } },
       (err, stdout, stderr) => err ? reject(new Error(String(stderr || err))) : resolve(String(stdout)));
   });
 }
@@ -457,7 +482,14 @@ async function ensureEngine(progress) {
   for (const d of ["state", "config"]) fs.mkdirSync(path.join(BASE, d), { recursive: true });
   if (!fs.existsSync(VENV_PY)) {
     progress("engine.preparing");
-    await sh(`python3 -m venv "${path.join(BASE, "venv")}"`, envPath);
+    // .app 被搬走 / 改名 / 被 Gatekeeper translocate 之後,venv/bin/python* 是斷掉的連結,
+    // venv 模組撞到會直接報錯(實測)。先清掉斷的,site-packages 留著,重建只要幾秒。
+    const vbin = path.join(BASE, "venv", "bin");
+    for (const n of fs.existsSync(vbin) ? fs.readdirSync(vbin) : []) {
+      const f = path.join(vbin, n);
+      if (fs.lstatSync(f).isSymbolicLink() && !fs.existsSync(f)) fs.unlinkSync(f);
+    }
+    await sh(`"${basePython()}" -m venv "${path.join(BASE, "venv")}"`, envPath);
     await sh(`"${VENV_PY}" -m pip -q install claude-agent-sdk==0.2.144`, envPath, 600000);
   }
   // workspace 的 lib/ 與 manager/ 要的第三方套件(從它們的 import 列出來的)。原本只裝
@@ -558,7 +590,7 @@ async function deleteStrategy(name) {
 // 只讀它來列清單、把舊對話畫回畫面,不另存一份。寫入只有「刪除」一種,而且 renderer
 // 在回合進行中不給刪,不會跟 runtime 搶同一列。
 // 只認外殼自己發的 id(desktop-xxxx):這個值會進 SQL 參數與 runtime 的命令列。
-const SESSION_DB = path.join(os.homedir(), "Blave", "state", "session.db");
+const SESSION_DB = path.join(BASE, "state", "session.db");
 const okSessionId = (id) => typeof id === "string" && /^desktop-[a-z0-9]{4,16}$/.test(id);
 function sessionDb(readOnly) {
   if (!fs.existsSync(SESSION_DB)) return null;      // 還沒跑過任何回合
@@ -605,7 +637,7 @@ function deleteSession(id) {
 // 參數掃描的熱圖、agent 自己 savefig 的圖,全部不用改一行就會出現。
 // 圖落地在 state/chat-images/<session>/,旁邊一份 index.jsonl(時間、檔名、說明):重開 app、
 // 切回舊對話時照時間插回逐字稿中間。token 每次啟動重抽,只活在記憶體與子行程的環境變數裡。
-const IMG_DIR = path.join(os.homedir(), "Blave", "state", "chat-images");
+const IMG_DIR = path.join(BASE, "state", "chat-images");
 const IMG_EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
 const IMG_MAX_BODY = 6 * 1024 * 1024;       // notify 那邊自己擋 3MB 原檔,base64 後約 4MB
 const imgToken = crypto.randomBytes(24).toString("hex");
@@ -847,6 +879,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
     LANG: process.env.LANG || "zh_TW.UTF-8",
+    ...PY_ENV,
   };
   const child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
