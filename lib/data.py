@@ -1260,6 +1260,39 @@ def fetch_liquidation(symbol, interval, start, end, headers, timeframe='24h'):
                         headers, start, end)
 
 
+def fetch_liquidation_coin(symbol, headers):
+    """每幣爆倉 Liquidation by coin — one coin's forced liquidations across the exchange
+    feeds Blave collects (binance / bybit / gate / okx / htx / bitfinex), as USD notional.
+    Returns a dict — NOT a DataFrame, since it is a point-in-time snapshot with no date
+    range to index on:
+      windows{'1'|'4'|'12'|'24'}: rolling window ending at the latest 5-minute bucket —
+        total_liq_usd / long_liq_usd / short_liq_usd, long_pct / short_pct (None when the
+        window is 0), covered_hours, by_exchange{name: {total/long/short_liq_usd}} (an
+        exchange with no event in the window has no key)
+      series: bucket_seconds=3600, points = 24 hourly {ts, long_liq_usd, short_liq_usd},
+        old → new on clock hours, the last one = the current hour so far (zeros, never gaps)
+      exchanges[]: exchange, listed (True / False / None = unknown), last_event_at,
+        price_basis, coverage, time_basis — every feed, including ones with no event
+      rank (1–50 by 24 h total across exchanges, else None), detail_complete (False when
+        the coin may have been cut from a full bucket → windows can under-count),
+        updated_at
+    `windows['24']` is the same rolling frame as the exchange matrix (same number for the
+    same coin); `series` is clock hours, so Σ points ≠ windows['24'] by design — read
+    totals from windows, timing from points.
+    `symbol` accepts BTC / BTCUSDT / btc. Returns None for a symbol no feed lists (the
+    API's 404). A 503 (upstream feed not answering) propagates as requests.HTTPError after
+    _retry_get's backoff. No local cache — the server holds a 5-minute cache; every call
+    means "now"."""
+    try:
+        r = _retry_get(f'{BASE}/liquidation/get_coin', headers=headers,
+                       params={'symbol': symbol}, timeout=30)
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            return None
+        raise
+    return r.json().get('data', {})
+
+
 def fetch_market_direction(interval, start, end, headers):
     """市場方向 Market Direction (market-wide, no symbol). Returns DataFrame with 'alpha' column."""
     return _fetch_alpha('market_direction/get_alpha',

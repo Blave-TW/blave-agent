@@ -25,6 +25,7 @@ hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_se
 - `fetch_unusual_movement(symbol, interval, start, end, headers, timeframe='24h')` → DataFrame with `alpha`
 - `fetch_squeeze_momentum(symbol, start, end, headers)` → DataFrame with `alpha` (period fixed to 1d)
 - `fetch_liquidation(symbol, interval, start, end, headers, timeframe='24h')` → DataFrame with `alpha`
+- `fetch_liquidation_coin(symbol, headers)` → dict snapshot (not a DataFrame): one coin's USD liquidations across the six exchange feeds — `windows` 1/4/12/24 h rolling (total/long/short, `by_exchange`), `series.points` 24 hourly bars (last = current hour so far), `exchanges[]` (`listed`, price basis, coverage), `rank`, `detail_complete`. `windows['24']` is the same number as the exchange matrix; Σ `series.points` is a different (clock-hour) frame. `None` = symbol no feed lists; no local cache (server 5-min cache)
 - `fetch_market_direction(interval, start, end, headers)` → DataFrame with `alpha` (no symbol)
 - `fetch_capital_shortage(interval, start, end, headers)` → DataFrame with `alpha` (no symbol)
 - `fetch_market_sentiment(symbol, interval, start, end, headers)` → DataFrame with `alpha`
