@@ -152,6 +152,82 @@ function loadToken() {
 }
 function clearToken() {
   try { fs.unlinkSync(tokenPath()); } catch (_) {}
+  clearDataKey();
+}
+
+/* Blave 資料 key(api-key / secret-key 一組):換 token 時 api 一併發下來,只此一次。
+   跟 token 一樣進 Keychain;**只有連的是「用 Blave 的 AI」時**才寫進 workspace 的 `.env`
+   (lib 與範例讀的就是 `blave_api_key` / `blave_secret_key` 這兩行)——用自己 Claude Code /
+   Codex 的人拿不到 Blave 資料(Wei 拍板)。K 線不受影響,照舊走 Binance 公開端點。 */
+const dataKeyPath = () => path.join(app.getPath("userData"), "blave-data.bin");
+function saveDataKey(apiKey, secretKey) {
+  if (!apiKey || !secretKey || !safeStorage.isEncryptionAvailable()) return false;
+  fs.writeFileSync(dataKeyPath(),
+    safeStorage.encryptString(JSON.stringify({ api_key: String(apiKey), secret_key: String(secretKey) })),
+    { mode: 0o600 });
+  return true;
+}
+function loadDataKey() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const k = JSON.parse(safeStorage.decryptString(fs.readFileSync(dataKeyPath())));
+    // 進 .env 的值只認 key 該有的字元:一個換行就能在 .env 裡多塞一行設定
+    const ok = (v) => typeof v === "string" && /^[A-Za-z0-9_\-]{8,200}$/.test(v);
+    return ok(k.api_key) && ok(k.secret_key) ? k : null;
+  } catch (_) { return null; }
+}
+function clearDataKey() {
+  try { fs.unlinkSync(dataKeyPath()); } catch (_) {}
+  syncDataEnv(false);
+}
+/* 讓 workspace/.env 跟「現在該不該有 Blave 資料」一致。**只動外殼自己那一塊**(前後兩行
+   標記包起來的兩行):用戶自己手放的 `blave_api_key`(API 方案戶用自己的 Claude Code 時靠的
+   就是它——secret 在伺服器端是雜湊,刪了拿不回來)、交易所 key 等一律原樣保留。我們那塊放
+   檔尾,同名時後者為準。每一輪開跑前都對一次,切換連結對象、登出之後不會留下舊 key。
+   回傳這一輪 workspace 裡的 Blave 資料 key 是誰的:ours(外殼發的)/ own(用戶自己放的)/ none。 */
+const ENV_BEGIN = "# >>> blave desktop data key (managed, do not edit) >>>";
+const ENV_END = "# <<< blave desktop data key <<<";
+function syncDataEnv(want) {
+  const envFile = path.join(WS, ".env");
+  const key = want ? loadDataKey() : null;
+  let cur = "";
+  try { cur = fs.readFileSync(envFile, "utf8"); }
+  catch (e) {
+    // 讀不到不等於沒有:權限/IO 問題時照「空檔」往下寫,會用兩行 key 蓋掉放交易所 key 的檔
+    if (e.code !== "ENOENT") return "none";
+    if (!key) return "none";                 // 沒檔、也沒東西要寫
+  }
+  const lines = cur.split(/\r?\n/);
+  const kept = []; let inBlock = false;
+  for (const l of lines) {
+    if (l.trim() === ENV_BEGIN) { inBlock = true; continue; }
+    if (l.trim() === ENV_END) { inBlock = false; continue; }
+    if (!inBlock) kept.push(l);
+  }
+  while (kept.length && kept[kept.length - 1] === "") kept.pop();
+  // 用戶自己放的 key(API 方案戶)也算「這台有 Blave 資料」:不然 prompt 會跟 agent 說沒有,
+  // 而 .env 裡明明有一組能用的
+  const own = kept.some((l) => /^\s*(export\s+)?blave_api_key\s*=\s*\S/.test(l));
+  if (key) kept.push(ENV_BEGIN, `blave_api_key=${key.api_key}`, `blave_secret_key=${key.secret_key}`, ENV_END);
+  const next = kept.length ? kept.join("\n") + "\n" : "";
+  const state = key ? "ours" : own ? "own" : "none";
+  if (next === cur) return state;
+  try {
+    if (!next) fs.unlinkSync(envFile);        // 整個檔只有我們那塊:不留空檔
+    else {
+      // 先寫暫存檔再 rename:背景策略可能正在讀這個檔,寫到一半 crash 也不能留半個檔
+      const tmp = envFile + ".blave-tmp";
+      try {
+        fs.writeFileSync(tmp, next, { mode: 0o600 });
+        fs.chmodSync(tmp, 0o600);
+        fs.renameSync(tmp, envFile);
+      } catch (e) {
+        try { fs.unlinkSync(tmp); } catch (_) {}   // rename 沒成功:暫存檔裡是明文 key,不能留著
+        throw e;
+      }
+    }
+  } catch (_) { return own ? "own" : "none"; }   // workspace 還沒建好 / 寫不進去:只剩用戶自己那組算數
+  return state;
 }
 
 /* 登出 Blave:先請伺服器撤銷這顆 token(RFC 7009 的形狀:POST /oauth/desktop/revoke,持有 token
@@ -167,6 +243,7 @@ async function signOutBlave() {
     catch (_) { /* 離線 / 逾時:照樣登出本機 */ }
   }
   clearToken();
+  lastAcct = null;
   return { revoked };
 }
 
@@ -283,6 +360,12 @@ async function startOAuth(lang) {
   if (!saveToken(r.body.access_token)) {
     throw new Error("KEYCHAIN_UNAVAILABLE");
   }
+  // 資料 key 只在這一次回應裡出現;舊版 api 沒有這兩欄就是沒有資料權限,不算失敗
+  // 先清掉上一次登入留下的那組:那顆 token 換掉之後,舊 key 可能已經被撤銷,留著會把死 key
+  // 寫進 .env 還告訴 agent「你有資料」
+  clearDataKey();
+  saveDataKey(r.body.data_api_key, r.body.data_secret_key);
+  lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
   return { ok: true };
@@ -599,6 +682,32 @@ const BLAVE_NAMES = {
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash", "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
 };
 const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /deepseek.*flash/];
+/* 帳號能不能用 Blave 的 AI(綁卡流程用)。回 api 的 account_status 原樣,或 null(沒 token / 打不到 /
+   舊 api)。null 時 renderer 不猜——沿用「沒額度 → 儲值」那組舊文案。 */
+async function accountStatus() {
+  const acct = loadToken();
+  if (!acct) return null;
+  try {
+    const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/account_status`, { "x-api-key": `proxy-${acct}` });
+    if (r.status !== 200) return null;
+    const b = r.body && (r.body.data || r.body);
+    if (!(b && typeof b.can_run === "boolean")) return null;
+    lastAcct = { at: Date.now(), body: b };
+    return b;
+  } catch (_) { return null; }
+}
+/* 這個帳號現在含不含 Blave 資料(試用中 / 名下有主機 / API 方案)。畫面的預檢與回前景重查
+   都會打 account_status,這裡吃它最後一次的結果;太舊(或還沒打過)才自己補打一次——這支跟
+   LLM 共用每分鐘 30 次的桶,不能每一輪都打。查不到就當沒有:寧可這一輪少資料,也不要把 key
+   寫給一個已經不含資料的帳號(伺服器那邊對不含資料的桌面 key 本來就回 403)。 */
+let lastAcct = null;
+const ACCT_FRESH_MS = 5 * 60 * 1000;
+async function dataIncluded() {
+  const fresh = () => lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS;
+  if (!fresh()) await accountStatus();
+  return !!(fresh() && lastAcct.body.data_included === true);   // 補打失敗就是查不到:舊答案不沿用
+}
+
 async function blaveModels() {
   const acct = loadToken();
   if (!acct) return [];
@@ -665,7 +774,11 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const useCodex = conn.kind === "codex" && conn.path;
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
-  const acct = loadToken();
+  // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
+  // token 還在 Keychain 裡——照「有 token 就帶」會讓他以為在用自己的訂閱、實際上燒 Blave 額度
+  const useBlave = conn.kind === "blave";
+  const acct = useBlave ? loadToken() : null;
+  const dataAccess = syncDataEnv(useBlave && !!acct && await dataIncluded());
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -688,6 +801,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
     // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
     BLAVE_KLINE_SOURCE: "binance",
+    // runtime 依這個在 prompt 裡明講「這台有/沒有 Blave 資料」(變數不存在 = 雲端機,行為不變)
+    // 用戶自己放的完整 key:不設這個變數,runtime 不加那段——「桌面 key 只能讀策略庫」對它不成立
+    ...(dataAccess === "own" ? {} : { BLAVE_DATA_ACCESS: dataAccess === "ours" ? "1" : "0" }),
     // 聊天裡的圖:見上面「聊天裡的圖」。接收端還沒起來(port 0)就不帶,notify 那邊會 no-op
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
@@ -788,6 +904,7 @@ app.whenReady().then(() => {
   ipcMain.handle("list-strategies", () => listStrategies());
   ipcMain.handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
   ipcMain.handle("model-options", (_e, kind) => modelOptions(kind));
+  ipcMain.handle("account-status", () => accountStatus());
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
@@ -805,6 +922,9 @@ app.whenReady().then(() => {
     return { started: true };
   });
   createWindow();
+  // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
+  // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
+  app.on("browser-window-focus", () => { lastAcct = null; });
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => app.quit());

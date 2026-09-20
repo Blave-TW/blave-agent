@@ -31,13 +31,37 @@
 .cn { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 /* 44px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色) */
 .cn-bar { flex: none; height: 44px; display: flex; align-items: center; padding: 0 var(--space-16); }
+/* 語言 segment(設計師 spec):跟 .mp-rail 同配方,但軌不裁切——每格靠 ::before 把熱區補到 44,
+   裁切會把它切掉;圓角改由首末格自己畫。上溢的 7px 落在跟卡之間的 16 裡,不蓋卡 */
+.cn-lang {
+  display: flex;
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs);
+}
+.cn-lang button {
+  position: relative; height: 30px; padding: 0 var(--space-8);
+  font-size: 12px; color: var(--ink-3); white-space: nowrap;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.cn-lang button::before { content: ""; position: absolute; inset: -7px 0; }
+.cn-lang button + button { border-left: 1px solid var(--border-frame); }
+.cn-lang button:hover { color: var(--ink); }
+.cn-lang button[aria-checked="true"] { background: var(--surface-control-on); color: var(--ink); font-weight: 600; }
+.cn-lang button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
+.cn-lang button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
+.cn-lang button:focus-visible { outline-offset: -2px; }
 .cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 44px; }
 .cn-mid h4 {
   margin: 0 0 var(--space-24);
   font-size: 20px; font-weight: 600; line-height: 1.4;  /* Terminal h4(canon › Type scale) */
   color: var(--ink);
 }
-.cn-foot { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }
+/* 尾註列跟卡同寬;左右 16 = .cn-sec 內距,文字跟卡內標題同一左線、segment 跟「登入 Blave」同一右線 */
+.cn-foot {
+  width: 560px; max-width: 100%; min-height: 30px;
+  margin: var(--space-16) 0 0; padding: 0 var(--space-16);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-16);
+}
+.cn-foot p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 
 /* 連結卡:靜止表面 → shadow-md、無邊框(canon › Elevation:ring 就是那條線) */
 .cn-card {

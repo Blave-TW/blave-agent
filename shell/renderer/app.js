@@ -45,21 +45,19 @@ function detectingRows() {
   });
 }
 
+let lastDetect = null;   // 換語言重畫列用,不重跑偵測
 async function detect() {
   detectingRows();
   $("cn-hint").hidden = true;
-  const d = await window.blave.detectAgents();
+  lastDetect = await window.blave.detectAgents();
+  paintRows(lastDetect);
+}
+function paintRows(d) {
   const rows = $("agent-rows"); rows.innerHTML = "";
   localReady = !!((d.claude.installed && d.claude.loggedIn) || (d.codex.installed && d.codex.loggedIn));
-  // 填色只給**第一個**能用的本機 agent:兩個都裝好的人(Claude Code + Codex)
-  // 會看到兩顆填色鈕並排,等於沒有焦點(canon › 每視野一個焦點)。
-  let fillGiven = false;
-  const localBtnCls = () => {
-    // 已經連著一個(設定裡的切換):沒有「建議選哪個」,全部描邊——一顆填色一顆描邊
-    // 讀起來像兩顆鈕不一樣,其實只是排第一
-    if (cur || !localReady || fillGiven) return "btn-out";
-    fillGiven = true; return "btn-fill";
-  };
+  // 本機兩顆「連結」一律描邊:填色只給其中一顆,兩顆讀起來像不一樣的東西(Wei 兩次點名)。
+  // 唯一的填色留給「登入 Blave」——而且只在沒有任何本機 agent 可用時(paintBlaveBtn)。
+  const localBtnCls = () => "btn-out";
   paintBlaveBtn();
 
   // Claude Code 三態:已登入 / 裝了沒登入 / 沒裝
@@ -146,7 +144,8 @@ function enterWorkspace(kind, info) {
   cur = kind;
   mpInit(kind);
   stratRefresh(false);
-  if (!csReady) { csReady = true; csInit(); }   // 換 agent 不換對話:只在第一次進工作頁接回
+  if (!csReady) { csReady = true; csInit(); }
+  acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   // 從設定 modal 裡換的:留在 modal、重畫那張卡(「目前使用」換列),焦點不搶去輸入框
   if (!$("set-scrim").hidden) { paintBlaveBtn(); detect(); return; }
   autosize();          // 進工作頁先把輸入框高度對齊一行
@@ -252,10 +251,44 @@ function setClose() {
 }
 // 選項是各語言自己的名字(不翻譯、不進 .po);中文那個用跳脫碼寫,字串閘門不准
 // 程式行出現中文字面。\u7e41\u9ad4\u4e2d\u6587 = 「繁體中文」
-[["en", "English"], ["zh", "\u7e41\u9ad4\u4e2d\u6587"]].forEach(([v, name]) => {
+const LANGS = [["en", "English"], ["zh", "\u7e41\u9ad4\u4e2d\u6587"]];
+LANGS.forEach(([v, name]) => {
   const o = document.createElement("option"); o.value = v; o.textContent = name;
   $("set-lang").appendChild(o);
+  // 連結畫面右上的同一組選項,做成 segment(設計師:看得到自己語言那個字,不用開選單)
+  const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "radio");
+  b.lang = v === "zh" ? "zh-TW" : v; b.textContent = name; b.dataset.lang = v;
+  b.addEventListener("click", () => applyLangChoice(v));
+  $("cn-lang").appendChild(b);
 });
+// 語言:當場換,不重載(重載會丟掉對話)。已經印出來的對話不回頭翻;agent 列用上次
+// 偵測結果重畫,不重跑偵測。設定 modal 的 select 與連結畫面的 segment 兩邊同步。
+function applyLangChoice(v) {
+  // 存不了就只換這一次
+  try { localStorage.setItem("ws_lang", v); } catch (_) { /* noop */ }
+  setLang(v);
+  syncLangControls();
+  applyStatic();
+  mpPaint(); csRenderHead(); if (!$("cs-list").hidden) csRenderList();
+  paintBlaveBtn();
+  if (lastDetect) paintRows(lastDetect); else detectingRows();
+  stratRefresh(false).then(() => { if (RP.name) stratSelect(RP.name, true); });
+}
+// radiogroup 的鍵盤慣例:左右鍵換格並套用(只有兩格,不繞圈也夠)
+$("cn-lang").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const i = LANGS.findIndex(([v]) => v === LANG) + (e.key === "ArrowRight" ? 1 : -1);
+  if (i < 0 || i >= LANGS.length) return;
+  applyLangChoice(LANGS[i][0]); $("cn-lang").children[i].focus();
+});
+function syncLangControls() {
+  $("set-lang").value = LANG;
+  $("cn-lang").querySelectorAll("button").forEach((b) => {
+    const on = b.dataset.lang === LANG;
+    b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+  });
+}
 $("ws-conn").addEventListener("click", setOpen);
 $("set-close").addEventListener("click", setClose);
 $("set-scrim").addEventListener("mousedown", (e) => { if (e.target === $("set-scrim")) setClose(); });
@@ -266,16 +299,7 @@ $("set-scrim").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); setClose(); return; }
   trapTab(e, $("set-modal"));
 });
-// 語言:當場換,不重載(重載會丟掉對話)。已經印出來的對話不回頭翻。
-$("set-lang").addEventListener("change", () => {
-  // 存不了就只換這一次
-  try { localStorage.setItem("ws_lang", $("set-lang").value); } catch (_) { /* noop */ }
-  setLang($("set-lang").value);
-  applyStatic();
-  mpPaint(); csRenderHead(); if (!$("cs-list").hidden) csRenderList();
-  paintBlaveBtn(); detect();
-  stratRefresh(false).then(() => { if (RP.name) stratSelect(RP.name, true); });
-});
+$("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").value));
 $("btn-send").addEventListener("click", sendDraft);
 // 注音/日文選字時的 Enter 是「確定候選字」,不是送出。逐字照 web 工作頁
 // (workspace.html:21913-21933)的三道守衛:Safari 會在這個 keydown 之前就發
@@ -582,6 +606,7 @@ function csLock(on) {
 function csClearChat() {
   $("chat-scroll").innerHTML = "";
   liveBubble = null; busy = null;
+  acctCard = null; creditCards.length = 0;   // 卡片跟著聊天欄一起清掉
 }
 function csStartNew() {
   sessionId = csNewId(); csTitle = "";
@@ -1016,12 +1041,7 @@ function classifyFault(text) {
   if (cur === "claude" && /^Not logged in\b|Please run \/login/.test(text || "")) return localAuthFault("claude");
   const m = /^(?:Failed to authenticate\. )?API Error: (40[123])\b/.exec(text || "");
   if (!m) return null;
-  if (m[1] === "402") {
-    return { text: t("fault.noCredit"), label: t("fault.noCreditBtn"), resend: true,
-             // #topup:用量頁自己會在餘額回來之後捲到儲值區(web 那邊已經處理過
-             // 原生 hash 捲動的時序),直接落在該按的地方。語言段跟著介面走(原本寫死 zh)。
-             act: () => window.blave.openExternal("https://blave.org/agent/" + LANG + "/usage#topup") };
-  }
+  if (m[1] === "402") return { flow: "credit" };
   // 401/403 是誰的授權沒了,看現在連的是誰。原本一律當成 Blave 的:用自己 Claude Code 的人
   // 登入過期,會看到「Blave 授權已失效」,按下去還把 Blave 的 token 清掉。
   if (cur !== "blave") return localAuthFault(cur);
@@ -1057,12 +1077,13 @@ function faultCard() {
   act.append(b1, b2); body.append(text, act, sub); el.append(mark, body);
   $("chat-scroll").appendChild(el); busyPin(); scrollChat();
   return {
-    b1, b2,
+    el, b1, b2,
     // s = { calm, text, label, out, disabled, on, sub(Node|string|null), second:{label,on}|null }
     set(s) {
       el.classList.toggle("is-calm", !!s.calm);
       text.textContent = s.text; srSay(s.text);
-      b1.textContent = s.label; b1.className = s.out ? "btn-out" : "btn-fill";
+      b1.hidden = !s.label;                     // 沒有鈕的狀態(例如「可以開始了。」)
+      b1.textContent = s.label || ""; b1.className = s.out ? "btn-out" : "btn-fill";
       b1.disabled = !!s.disabled; h1 = s.on || null;
       b2.hidden = !s.second; if (s.second) { b2.textContent = s.second.label; b2.disabled = false; h2 = s.second.on; }
       sub.hidden = !s.sub; sub.textContent = "";
@@ -1128,6 +1149,7 @@ function blaveLoginFlow(card) {
       oauthPending = false;
       mpInit("blave");                         // 失效期間型錄抓回來是空的
       card.set(resendState(card, t("fault.authOk")));
+      acctPrecheck();
     } catch (e) {
       oauthPending = false;
       const m = (e && e.message) || "";
@@ -1138,10 +1160,83 @@ function blaveLoginFlow(card) {
   fault(null);
 }
 
+/* ── Blave 的 AI 能不能用:綁卡 / 儲值 ──────────────────────
+   進工作頁(用 Blave 的 AI)先問一次 api 的 account_status:不能跑就先放一張灰記號的預檢卡,
+   不等他打完第一句才失敗;輸入框不鎖。402 的失敗卡也照同一份狀態換句子與鈕(沒卡 → 前往綁卡,
+   有卡沒餘額 → 儲值);查不到就沿用舊的「沒額度 → 儲值」那組,不猜。
+   數字(100 / 14 / 100 / 300)全部來自 api,這裡不寫死。
+   視窗回到前景時自動重查(節流 10 秒;還是不能跑就 5 秒後再查,最多 3 次):綁完卡回來,卡片
+   自己換成「可以開始了 / 額度到了」。不自動重送——那句話可能是下單。 */
+let acct = null, acctCard = null, acctAt = 0, acctRetry = 0;
+const creditCards = [];                     // 402 那張(可能不只一張:他連送了兩句)
+const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
+const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
+function acctSub(s) { return s && s.trial_eligible ? t("acct.sub", acctVars(s)) : null; }
+// 不能跑時的鈕與句子(預檢卡與 402 卡共用的那半)
+function acctAction(s) {
+  // 查不到(s 為 null)不猜:沿用「儲值」
+  const noCard = !!s && s.reason === "NO_CARD";
+  return { label: t(noCard ? "acct.addCard" : "fault.noCreditBtn"), on: () => window.blave.openExternal(acctUrl()) };
+}
+function acctPaint() {
+  const s = acct;
+  if (!s) return;                           // 這次查不到:畫面維持上一次的狀態,不亂翻
+  if (acctCard) {
+    if (s.can_run) acctCard.set({ calm: true, text: t("acct.ready") });
+    else acctCard.set({ calm: true, text: t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s) });
+  }
+  creditCards.forEach((card) => {
+    if (s.can_run) card.set(resendState(card, t("acct.creditIn")));
+    else if (s.reason === "NO_CARD") card.set({ text: t("fault.needCard"), sub: acctSub(s), ...acctAction(s), second: resendSecond() });
+    else card.set({ text: t("fault.noCredit"), ...acctAction(s), second: resendSecond() });
+  });
+  // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
+  // 長任務跑到 25+ 次時多幾次預檢會把一筆 LLM 擠成 429——稽核抓的)
+  if (s.can_run) creditCards.length = 0;
+}
+function resendSecond() { return { label: t("fault.resend"), on: () => { if (!running && lastUserText) submitMessage(lastUserText); } }; }
+async function acctCheck() {
+  if (cur !== "blave") return;
+  acctAt = Date.now();
+  const s = await window.blave.accountStatus();
+  if (s) acct = s;                          // 查不到就留著上一次的
+  acctPaint();
+  // 問不到、手上也沒有狀態:中性句不能一直掛著,退回「沒額度 → 儲值」那組(不猜沒卡)
+  if (!acct) creditCards.forEach((card) => card.set({ text: t("fault.noCredit"), ...acctAction(null), second: resendSecond() }));
+  // 還是不能跑:再等 5 秒查一次,最多 3 次(藍新回呼到我們這邊有幾秒延遲)
+  if (acct && !acct.can_run && acctRetry < 3) { acctRetry++; setTimeout(acctCheck, 5000); }
+  else acctRetry = 0;
+}
+/* 進工作頁(或切到 Blave)時的預檢:只有查到「不能跑」才放卡 */
+async function acctPrecheck() {
+  if (acctCard && acctCard.el.isConnected) acctCard.el.remove();
+  acctCard = null;
+  if (cur !== "blave") return;
+  acct = await window.blave.accountStatus(); acctAt = Date.now();
+  if (!acct || acct.can_run) return;
+  acctCard = faultCard();
+  acctPaint();
+}
+function creditFlow(card) {
+  creditCards.push(card);
+  // 手上有「不能跑」的狀態就直接畫;沒有就先畫中性句、鈕先鎖著,等 account_status 回來再換——
+  // 對從沒綁過卡的人先說「餘額用完了」是錯話,而且讀屏會念兩次(設計師 L3)
+  if (acct && !acct.can_run) acctPaint();
+  else card.set({ calm: true, text: t("fault.checking"), label: t("fault.noCreditBtn"), disabled: true });
+  // 先照手上(可能過期)的狀態畫,再去問一次最新的
+  acctCheck();
+}
+window.addEventListener("focus", () => {
+  if (cur !== "blave" || !(acctCard || creditCards.length)) return;
+  if (Date.now() - acctAt < 10000) return;
+  acctCheck();
+});
+
 function addFault(f) {
   const card = faultCard();
   if (f.flow === "local") return localLoginFlow(card, f.kind);
   if (f.flow === "blave") return blaveLoginFlow(card);
+  if (f.flow === "credit") return creditFlow(card);
   card.set({ text: f.text, label: f.label, on: f.act,
              second: f.resend ? { label: t("fault.resend"), on: () => { if (!running && lastUserText) submitMessage(lastUserText); } } : null });
 }
@@ -1348,6 +1443,7 @@ function applyStatic() {
   let savedLang = null;
   try { savedLang = localStorage.getItem("ws_lang"); } catch (_) { /* noop */ }
   setLang(savedLang || pickLang(await window.blave.getLocale()));
+  syncLangControls();
   applyStatic();
   hasToken = await window.blave.hasBlaveToken();
   const prev = await window.blave.loadConnection();

@@ -36,7 +36,13 @@
           <p class="cn-hint" id="cn-hint" hidden></p>
         </div>
       </div>
-      <p class="cn-foot" id="cn-foot" data-i18n="cn.foot"></p>
+      <!-- 尾註列:左邊「連結後可以隨時更換」、右邊介面語言 segment(設計師:視線只走這 560 一欄,
+           角落是死區;尾註跟語言是同一種次要的話,同一列)。segment 由 JS 建(各語言自己的名字,
+           不進 .po),設定 modal 的 select 是同一件事、兩邊同步。 -->
+      <div class="cn-foot" id="cn-foot">
+        <p data-i18n="cn.foot"></p>
+        <div class="cn-lang" id="cn-lang" role="radiogroup" data-i18n-aria="set.lang"></div>
+      </div>
     </div>
   </div>
 </div>

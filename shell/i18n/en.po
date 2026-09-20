@@ -10,7 +10,7 @@ msgid "cn.blave.title"
 msgstr "Use Blave's AI"
 
 msgid "cn.blave.desc"
-msgstr "Pay per use"
+msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
@@ -124,10 +124,10 @@ msgid "fault.authBtn"
 msgstr "Sign In Again"
 
 msgid "fault.noCredit"
-msgstr "Your Blave credit is empty. This turn did not run."
+msgstr "Your Blave balance is empty, so this turn didn’t run."
 
 msgid "fault.noCreditBtn"
-msgstr "Top up"
+msgstr "Top Up"
 
 msgid "conn.expired"
 msgstr "Your Blave sign-in is no longer valid. Sign in again to continue."
@@ -476,3 +476,28 @@ msgstr "Sign out"
 
 msgid "cn.blave.signOutLocalOnly"
 msgstr "Signed out on this computer, but the server couldn’t be reached to revoke this device. Revoke it under Settings › Devices on blave.org."
+
+# Blave 的 AI:綁卡 / 儲值預檢
+msgid "acct.noCard"
+msgstr "Blave’s AI isn’t ready yet: this account has no card on file."
+
+msgid "acct.noCredit"
+msgstr "Blave’s AI isn’t ready yet: the balance is 0."
+
+msgid "acct.addCard"
+msgstr "Add a Card"
+
+msgid "acct.sub"
+msgstr "A first card comes with {q} TWD of AI credit."
+
+msgid "acct.ready"
+msgstr "Ready to go."
+
+msgid "acct.creditIn"
+msgstr "Credit is in. You can send again."
+
+msgid "fault.needCard"
+msgstr "Blave’s AI needs a card on file, so this turn didn’t run."
+
+msgid "fault.checking"
+msgstr "This turn didn’t run — checking your account."

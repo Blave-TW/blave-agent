@@ -10,7 +10,7 @@ msgid "cn.blave.title"
 msgstr "用 Blave 的 AI"
 
 msgid "cn.blave.desc"
-msgstr "按用量計費"
+msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
@@ -124,7 +124,7 @@ msgid "fault.authBtn"
 msgstr "重新登入 Blave"
 
 msgid "fault.noCredit"
-msgstr "Blave 額度不足，這一輪沒有跑。"
+msgstr "Blave 餘額用完了，這一輪沒有跑。"
 
 msgid "fault.noCreditBtn"
 msgstr "儲值"
@@ -476,3 +476,28 @@ msgstr "登出"
 
 msgid "cn.blave.signOutLocalOnly"
 msgstr "這台電腦已登出，但連不上伺服器、沒能撤銷這台裝置的授權。到 blave.org 的設定 › 裝置再撤銷一次。"
+
+# Blave 的 AI:綁卡 / 儲值預檢
+msgid "acct.noCard"
+msgstr "Blave 的 AI 還不能用：這個帳號還沒綁卡。"
+
+msgid "acct.noCredit"
+msgstr "Blave 的 AI 還不能用：餘額是 0。"
+
+msgid "acct.addCard"
+msgstr "前往綁卡"
+
+msgid "acct.sub"
+msgstr "首次綁卡有 {q} TWD 的 AI 額度。"
+
+msgid "acct.ready"
+msgstr "可以開始了。"
+
+msgid "acct.creditIn"
+msgstr "額度到了，可以再送了。"
+
+msgid "fault.needCard"
+msgstr "用 Blave 的 AI 要先綁卡，這一輪沒有跑。"
+
+msgid "fault.checking"
+msgstr "這一輪沒有跑，正在確認帳號狀態。"

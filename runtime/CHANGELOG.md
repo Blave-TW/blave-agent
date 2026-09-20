@@ -8,6 +8,15 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 電腦版 Blave 資料:`data_access_rule()` 讀外殼 spawn 時設的 `BLAVE_DATA_ACCESS`——`1`
+  (用 Blave 的 AI 登入,資料 key 已寫進 workspace `.env`):指標與台股照 AGENTS.md 取,加密 K 線
+  仍走 Binance 公開端點、不准換來源,403 `DATA_NOT_INCLUDED`(試用結束且沒主機／API 方案)照實告訴用戶,403 `Invalid API key` = key 已被刪／撤銷、請用戶在 app 重新登入(不找別的 key),
+  上架／分享／刪除／報告上傳回 403 `KEY_SCOPE` 時請用戶到網站或雲端機做;`0`(沒有 key:自己的 Claude Code / Codex、
+  沒登入,或登入了但帳號不含資料):平實講一次「資料在綁卡試用中、或名下有雲端主機／API 方案時才有」
+  (可提 blave.org 的 Agent 頁;不報價、不催促、同一段對話不重複),做完公開 K 線做得到的部分、不捏造、不去別處找憑證
+  (不 SSH、不碰別台機器)。兩條引擎都帶;變數不存在(機隊)回空字串,system prompt 零改變
+  (閘門:`tests/check_codex_engine.py`)。api 側要先上線(`/oauth/desktop/token` 回資料 key)。
+
 - 電腦版隔離(只在 `--delivery local`,LocalSink;機隊行為零改變):`setting_sources=[]`、
   `strict_mcp_config`、`--disable-slash-commands`、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`。
   電腦版的 agent 跑在用戶自己的 Claude Code 帳號上,CLI 預設會把用戶全域的

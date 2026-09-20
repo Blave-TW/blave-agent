@@ -250,6 +250,27 @@ assert rule in sysprompts[-1] and rule in seen["prompt"], "兩條引擎都要帶
 assert sysprompts[-1].endswith(at.WEB_FORMATTING_RULE), "建議規則必須維持在最尾端"
 assert len(sysprompts) == 2, "codex 路徑不該寫 system prompt 檔"
 os.environ.pop("BLAVE_PYTHON")
+
+# BLAVE_DATA_ACCESS: unset (fleet) = not a byte; "1"/"0" reach both engines and differ.
+os.environ.pop("BLAVE_DATA_ACCESS", None)
+assert at.data_access_rule() == ""
+os.environ["BLAVE_DATA_ACCESS"] = "bogus"
+assert at.data_access_rule() == "", "an unknown value must not invent a rule"
+rules = {}
+for flag in ("1", "0"):
+    os.environ["BLAVE_DATA_ACCESS"] = flag
+    run_local_turn()
+    run_local_turn(engine="codex", codex_bin="/x/codex")
+    rules[flag] = at.data_access_rule()
+    assert rules[flag] in sysprompts[-1] and rules[flag] in seen["prompt"], "both engines"
+    assert sysprompts[-1].endswith(at.WEB_FORMATTING_RULE)
+assert "BLAVE_KLINE_SOURCE=binance" in rules["1"] and "403" in rules["1"]
+assert "Invalid API key" in rules["1"] and "sign in" in rules["1"]
+assert "NO Blave data access" in rules["0"] and "no SSH" in rules["0"]
+assert "card trial" in rules["0"] and "cloud machine" in rules["0"] and "ONCE" in rules["0"]
+assert "own agent" not in rules["0"] and "TWD" not in rules["0"], "0 also covers signed-in-but-no-data; no prices"
+assert "credentials" not in rules["0"].split("Never look")[0], "0 must not claim a key exists"
+os.environ.pop("BLAVE_DATA_ACCESS")
 at._write_system_prompt_file = _real_write
 codex_engine.run = real_run
 

@@ -2023,6 +2023,53 @@ def python_rule():
     )
 
 
+def data_access_rule():
+    """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
+    是哪一種。三態:
+      `1`  = 桌面 key(用 Blave 的 AI 登入時 api 發的那組,外殼寫進 `.env`)——縮權、不計時費,
+             所以這段可以直接講 `DATA_NOT_INCLUDED` / `KEY_SCOPE` / 重新登入。
+      `0`  = 沒有 key:用自己的 Claude Code / Codex、沒登入,或登入了但帳號不含資料
+             (試用結束且沒主機／API 方案)。
+      未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
+             的預設敘述走,system prompt 一個字都不變。
+    AGENTS.md 是雲端/桌面共用的,它預設 Blave 資料一定拿得到;沒有這段,`0` 的 agent 會在 403
+    之後到處找憑證(2026-09-19 那次是 SSH 進雲端機)。"""
+    access = os.environ.get("BLAVE_DATA_ACCESS")
+    if access == "1":
+        body = (
+            "Blave data API credentials (`blave_api_key` / `blave_secret_key`) are in the "
+            "workspace `.env`, so `lib/data.py` reaches Blave indicators and Taiwan-market "
+            "data as AGENTS.md describes. Crypto klines still come from Binance public "
+            "endpoints through `fetch_kline` (`BLAVE_KLINE_SOURCE=binance`) — do not switch "
+            "the kline source. If a Blave data call returns 403 (`DATA_NOT_INCLUDED`), tell "
+            "the user plainly that Blave data is included during the card trial or with a "
+            "Blave Agent cloud machine (or an API plan); do not work around it. A 403 "
+            "`Invalid API key` means this key was deleted or revoked: ask the user to sign in "
+            "to Blave again in the app, and do not go looking for another key. This desktop key "
+            "is read-mostly on the strategy library: loading purchased / official / shared / "
+            "private strategies and uploading a private one work, but submit-for-sale, share / "
+            "unshare, delete and report upload return 403 `KEY_SCOPE` — tell the user to do "
+            "those on the Blave website or from a cloud machine.\n"
+        )
+    elif access == "0":
+        body = (
+            "This desktop has NO Blave data access right now. Blave data comes with signing "
+            "in to Blave's AI while the card trial is active, or with an account that owns a "
+            "Blave Agent cloud machine or an API plan. Blave-only datasets — holder "
+            "concentration, whale hunter, taker intensity, liquidation, Taiwan stock / "
+            "futures data and the rest of the Blave indicators — are not reachable. When the "
+            "user asks for one of them, say this plainly ONCE (you may mention that a cloud "
+            "machine can be started from the Agent page on blave.org): quote no prices, do "
+            "not push, and do not repeat it later in the same conversation. Then finish the "
+            "part that public klines allow (`fetch_kline`, Binance public endpoints). Never "
+            "fabricate the missing data. Never look for credentials elsewhere: no SSH, no "
+            "other machines, no other directories.\n"
+        )
+    else:
+        return ""
+    return "\n\n---\n\n## Blave data on this desktop (runtime rule)\n" + body
+
+
 def _codex_prompt(prompt, sink):
     """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
@@ -2030,7 +2077,7 @@ def _codex_prompt(prompt, sink):
     model_catalog_rule is left out on purpose — it teaches switching between the proxy's
     models; this engine's model is picked in the shell (or is the user's Codex default)."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
-            + python_rule() + preferences_rule() + sink.formatting_rule
+            + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
             + "\n\n---\n\n" + prompt)
 
 
@@ -2120,7 +2167,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         turn_env["BLAVE_WEB_SESSION"] = sink.session_id
 
     sysprompt_path = _write_system_prompt_file(
-        agents_md + model_catalog_rule(session_id) + python_rule() + preferences_rule()
+        agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
+        + preferences_rule()
         + sink.formatting_rule
     ) if agents_md and not use_codex else None
     options = sdk.ClaudeAgentOptions(
