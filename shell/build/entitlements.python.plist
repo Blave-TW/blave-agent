@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 只給隨包的 python 執行檔。pip 裝進用戶 venv 的 wheel(numpy、pandas、pyarrow…)是 ad-hoc 簽章、
+       沒有 Team ID;沒有這條,hardened runtime 的 library validation 會擋掉 dlopen(實測:import numpy 直接
+       「different Team IDs」)。Electron 本體不載入外部函式庫,所以不給它。 -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

@@ -15,6 +15,12 @@ const fs = require("fs");
 // 共用 blave-desktop(連 single-instance lock 都撞在一起)。開發版刻意不改名:既有資料留在原地。
 if (app.isPackaged) app.setName("Blave");
 
+// 發佈版(npm run release 在 package.json 蓋 blaveRelease)拒絕 Chromium 的遠端除錯開關。fuses 只關得掉
+// Node 那一側(--inspect、RUN_AS_NODE、NODE_OPTIONS);--remote-debugging-port 不歸 fuses 管(實測翻完
+// 仍然開著),而接上它就等於拿到 renderer、能呼叫 preload 開出去的每一個 IPC。pack 產物不擋,測試要用。
+if (app.isPackaged && require("./package.json").blaveRelease
+    && ["remote-debugging-port", "remote-debugging-pipe"].some((f) => app.commandLine.hasSwitch(f))) app.exit(1);
+
 // macOS GUI app 的 PATH 是極簡的(實測 /usr/bin:/bin 下找不到 claude),
 // 所以先跑一次使用者的登入 shell 解析出真正的 PATH,偵測與之後 spawn 引擎共用。
 // 見 .claude/output/desktop-v1/2026-09-18-agent-detection.md。
@@ -455,7 +461,7 @@ function sh(cmd, envPath, timeout = 300000) {
 // 只覆寫這些;strategies/<name>/、state/、.env、cache/ 一律不碰,而且用 cpSync
 // (覆寫但不刪除)——agent 可以合法新增 lib/order_<新交易所>.py 這種用戶自己的
 // 整合(updating.md:「reference clone 裡不存在的那些完全不碰」),不能被清掉。
-const OFFICIAL_DIRS = ["lib", "manager", "references", "examples"];
+const OFFICIAL_DIRS = ["lib", "manager", "references", "examples", "allocators"];
 const OFFICIAL_FILES = [
   "strategies/TEMPLATE_A.py", "strategies/TEMPLATE_C.py",
   "AGENTS.md", "CLAUDE.md", "VERSION",
@@ -467,6 +473,7 @@ function copyOfficial() {
   for (const f of OFFICIAL_FILES) fs.cpSync(path.join(REPO, f), path.join(WS, f));
 }
 
+const AGENT_SDK = "claude-agent-sdk==0.2.144";
 async function ensureEngine(progress) {
   const envPath = await loginShellPath();
   const fresh = !fs.existsSync(WS);
@@ -490,7 +497,13 @@ async function ensureEngine(progress) {
       if (fs.lstatSync(f).isSymbolicLink() && !fs.existsSync(f)) fs.unlinkSync(f);
     }
     await sh(`"${basePython()}" -m venv "${path.join(BASE, "venv")}"`, envPath);
-    await sh(`"${VENV_PY}" -m pip -q install claude-agent-sdk==0.2.144`, envPath, 600000);
+  }
+  // 記號檔而不是「venv 在就當裝好了」:pip 中途失敗(斷網)時 venv 已經在,下次啟動要重試。
+  const sdkMark = path.join(BASE, "venv", ".blave-sdk");
+  if (!fs.existsSync(sdkMark) || fs.readFileSync(sdkMark, "utf8") !== AGENT_SDK) {
+    progress("engine.preparing");
+    await sh(`"${VENV_PY}" -m pip -q install ${AGENT_SDK}`, envPath, 600000);
+    fs.writeFileSync(sdkMark, AGENT_SDK);
   }
   // workspace 的 lib/ 與 manager/ 要的第三方套件(從它們的 import 列出來的)。原本只裝
   // SDK:agent 能聊天、能寫策略,一回測就炸(「Python 環境缺少 pandas」,實測)。
@@ -508,8 +521,10 @@ async function ensureEngine(progress) {
 // 第一版憑 grep 少了 python-dotenv(lib/runner.py 第一行就要它)與 scipy。
 // 刻意不裝:shioaji(永豐下單 SDK,有綁該券商的人才需要)、comtypes / pythoncom
 // (群益的 COM 介面,只有 Windows 有)。
+// 釘版本:打包版在實機裝到、並跑過一輪回測的那組(隨包 CPython 3.12、arm64)。升版要重跑那輪驗證。
 const WORKSPACE_DEPS = [
-  "pandas", "numpy", "matplotlib", "pyarrow", "requests", "python-dotenv", "scipy",
+  "pandas==3.0.6", "numpy==2.5.3", "matplotlib==3.11.2", "pyarrow==25.0.1",
+  "requests==2.34.2", "python-dotenv==1.2.3", "scipy==1.18.1",
 ];
 
 
