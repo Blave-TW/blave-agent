@@ -1214,10 +1214,15 @@ def fetch_holder_concentration(symbol, interval, start, end, headers):
                         {'symbol': symbol, 'period': interval}, headers, start, end)
 
 
-def fetch_funding_rate(symbol, interval, start, end, headers):
-    """資金費率 Funding Rate (Binance). Returns DataFrame with 'alpha' column (alpha = funding rate × 100)."""
-    return _fetch_alpha('funding_rate/get_alpha',
-                        {'symbol': symbol, 'period': interval}, headers, start, end)
+def fetch_funding_rate(symbol, interval, start, end, headers, exchange='binance'):
+    """資金費率 Funding Rate. Returns DataFrame with 'alpha' column (alpha = funding rate × 100).
+    exchange: 'binance' (default) / 'okx' / 'bingx' / 'bybit' — the perp whose funding is read;
+    close price is always the Binance perp."""
+    params = {'symbol': symbol, 'period': interval}
+    # default omitted so the cache dir of every existing Binance fetch stays valid
+    if exchange != 'binance':
+        params['exchange'] = exchange
+    return _fetch_alpha('funding_rate/get_alpha', params, headers, start, end)
 
 
 def fetch_taker_intensity(symbol, interval, start, end, headers, timeframe='24h'):
