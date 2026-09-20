@@ -58,7 +58,7 @@ except ImportError:  # Windows — the desktop build does not run there yet
 # fails when the two drift). `telegram_reset` stays out here for the same
 # reason it stays out there.
 ALLOWED = frozenset({
-    "halt", "resume", "resume_wait", "amounts", "execution", "credentials",
+    "halt", "resume", "resume_wait", "downtime_hold", "amounts", "execution", "credentials",
     "credentials_remove", "restart_reconciler", "retest_accounts", "close_all",
     "delete_strategy", "manage_optimize", "manage_backtest", "manage_cancel",
     "report_pause", "report_resume", "report_run_now", "report_delete",

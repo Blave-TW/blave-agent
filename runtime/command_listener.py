@@ -156,9 +156,46 @@ def _cmd_halt(args):
     return "halted"
 
 
+# ── downtime pause (lib/downtime.py; rule: references/manager.md) ────────────
+# A stop that crossed a live strategy's bar close freezes every live strategy
+# until the user decides per strategy. `resume` / `resume_wait` take
+# {"strategies": [names]} for that; without it they stay whole-machine commands
+# and additionally end every pause — so a page that only knows the two
+# whole-machine buttons can always get a machine out of one.
+
+def _strategy_names_arg(args):
+    """None when the command is whole-machine, else the validated name list."""
+    names = args.get("strategies")
+    if names is None:
+        return None
+    if (not isinstance(names, list) or not 1 <= len(names) <= 200
+            or not all(isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", n)
+                       for n in names)):
+        raise ValueError("bad strategies")
+    return names
+
+
+def _downtime_lib(optional=False):
+    """optional=True → None on a workspace that predates lib/downtime.py
+    (nothing there ever writes a pause, so there is nothing to honour)."""
+    try:
+        from lib import downtime
+    except ImportError:
+        if optional:
+            return None
+        raise RuntimeError("this workspace has no lib/downtime.py — "
+                           "run 更新 blave agent first") from None
+    return downtime
+
+
 def _cmd_resume(args):
     from lib.guard import clear_halt
 
+    names = _strategy_names_arg(args)
+    if names is not None:
+        # one strategy's decision never touches the machine-wide HALT
+        done = _downtime_lib().decide(names, "sync")
+        return f"resumed strategies={len(done)}"
     # 「啟動並補齊部位」must honor the choice: a signal gate left over from an
     # earlier resume_wait would silently keep excluding those strategies from
     # reconciling — remove it BEFORE clearing HALT (mirror of resume_wait's
@@ -170,8 +207,21 @@ def _cmd_resume(args):
         os.remove(gate_path)
     except FileNotFoundError:
         pass
+    downtime = _downtime_lib(optional=True)
+    if downtime is not None:
+        downtime.clear_all()
     clear_halt("web")
     return "resumed"
+
+
+def _cmd_downtime_hold(args):
+    """繼續暫停: the user has seen the pause and keeps these strategies frozen.
+    Unlike a signal gate it never lifts by itself."""
+    names = _strategy_names_arg(args)
+    if names is None:
+        raise ValueError("bad strategies")
+    done = _downtime_lib().decide(names, "hold")
+    return f"held strategies={len(done)}"
 
 
 def _cmd_resume_wait(args):
@@ -191,9 +241,29 @@ def _cmd_resume_wait(args):
     from lib.guard import clear_halt
     from lib.portfolio import load_portfolio_config, strategy_amounts
 
+    names = _strategy_names_arg(args)
+    if names is not None:
+        done = _downtime_lib().decide(names, "wait")
+        return f"resumed_wait strategies={len(done)}"
     cfg = load_portfolio_config()
     amounts = strategy_amounts(cfg)
     exchanges = cfg.get("exchanges", {})
+    downtime = _downtime_lib(optional=True)
+    if downtime is not None:
+        # A strategy paused by a stop still has its PRE-stop state.json: a
+        # baseline taken now lifts on the first recompute and chases the stale
+        # signal. lib/downtime marks those 'wait' and writes their baseline
+        # after they recompute; everything else gets its baseline here, as ever.
+        funded = [n for n, amt in amounts.items()
+                  if exchanges.get(n) and float(amt) != 0]
+        try:
+            gated, waiting = downtime.wait_all(funded)
+        except (ValueError, TypeError, OSError) as e:
+            raise RuntimeError(
+                f"resume_wait: could not read a strategy state ({e}) — not resuming; "
+                f"press start again in a few seconds") from e
+        clear_halt("web")
+        return f"resumed_wait gated={gated} waiting={waiting}"
     gate = {}
     for name, amt in amounts.items():
         if not exchanges.get(name) or float(amt) == 0:
@@ -817,6 +887,137 @@ def _strategy_subprocess_env():
             if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": "live"}
 
 
+# ── downtime watch ───────────────────────────────────────────────────────────
+# This process is the one that is up whenever the machine (cloud) or the app
+# (desktop) is — so "when was I last alive" is the stop detector. A thread with
+# nothing else to do stamps state/heartbeat/downtime_watch every few seconds; a
+# stamp older than the workspace's own floor means the machine, the app or the
+# process was away for that long (sleep, VM stop, app closed, crash). Whether
+# that crossed a bar close — and the pause itself — is lib/downtime's call,
+# reached through a subprocess like every other piece of workspace code.
+# No stamp at all = this feature has never run here = NOT a stop: the first
+# start after the runtime update must not pause a fleet that was never down.
+# lib/downtime.runtime_supports() byte-greps THIS file for the assignment
+# below before it ever pauses anything — a runtime without the per-strategy
+# resume handlers and the whole-machine clear above could not get a machine
+# back out. It stands for those handlers: remove them, remove it.
+DOWNTIME_RESUME_PROTOCOL = 1
+DOWNTIME_WATCH = os.path.join(WORKSPACE_STATE, "heartbeat", "downtime_watch")
+DOWNTIME_TICK_S = 5
+DOWNTIME_MIN_GAP_S = 90  # only saves a subprocess per tick: lib/downtime.MIN_GAP_S
+                         # is the rule, and wins if the two ever differ
+# While a gap cannot be handed over, NO strategy is ticked (a recompute ahead
+# of the pause is the stale-signal chase itself). That cannot last forever — a
+# workspace whose lib cannot even start would silently stop every strategy —
+# so after this many tries the gap is dropped and let through, leaving a log
+# line + a state/audit.jsonl record (P3: on the machine only). 15 tries
+# at the 5 s watch cadence outlasts the lib's own 30 s stale-lock window, so a
+# lock left by a killed process is not what makes it give up.
+DOWNTIME_REPORT_TRIES = 15
+_downtime_lock = threading.Lock()
+_downtime_last = None  # wall clock at the previous check, this process
+_downtime_failures = 0
+
+
+def _downtime_read_stamp():
+    try:
+        with open(DOWNTIME_WATCH) as f:
+            return float(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _downtime_write_stamp(now):
+    try:
+        os.makedirs(os.path.dirname(DOWNTIME_WATCH), exist_ok=True)
+        tmp = f"{DOWNTIME_WATCH}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            f.write(repr(now))
+        os.replace(tmp, DOWNTIME_WATCH)  # a torn stamp would read as "no history"
+    except OSError:
+        pass
+
+
+def _downtime_report(down_from, down_to):
+    """Hand the gap to the workspace. False = could not be delivered (the
+    caller keeps its baseline and tries again); an old workspace without
+    lib/downtime.py is a delivered no-op."""
+    if not os.path.isfile(os.path.join(WORKSPACE, "lib", "downtime.py")):
+        return True
+    interp = sys.executable if _local_mode() else (
+        "python" if platform.system() == "Windows" else "python3")
+    try:
+        r = subprocess.run(
+            [interp, "-m", "lib.downtime", "gap", repr(down_from), repr(down_to), "runtime"],
+            cwd=WORKSPACE, env=_strategy_subprocess_env(),
+            capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as e:
+        _log(f"downtime check failed to run: {type(e).__name__}")
+        return False
+    if r.returncode != 0:
+        _log(f"downtime check exited {r.returncode}: {(r.stderr or '').strip()[-200:]}")
+        return False
+    _log(f"offline {int(down_to - down_from)}s — downtime check: {(r.stdout or '').strip()[-200:]}")
+    return True
+
+
+def _downtime_check(now=None):
+    """Called by the watch thread AND at the top of every scheduler cycle, so
+    whichever wakes first after a sleep settles it before a strategy is ticked.
+    Returns the gap it reported, or None."""
+    global _downtime_last, _downtime_failures
+    with _downtime_lock:
+        now = time.time() if now is None else now
+        prev = _downtime_last if _downtime_last is not None else _downtime_read_stamp()
+        gap = None
+        if prev is not None and now - prev >= DOWNTIME_MIN_GAP_S:
+            gap = (prev, now)
+            if _bound_venue() and not _downtime_report(prev, now):
+                _downtime_failures += 1
+                if _downtime_failures < DOWNTIME_REPORT_TRIES:
+                    return gap  # baseline kept: the next check reports it again
+                _log("downtime check undeliverable — giving up on this gap; "
+                     "this stop is NOT protected by the pause")
+                _downtime_unprotected(prev, now)
+        _downtime_failures = 0
+        # first ever run, a short tick, or a clock set backwards: just re-base
+        _downtime_last = now
+        _downtime_write_stamp(now)
+        return gap
+
+
+def _downtime_pending():
+    """A gap is waiting to be handed to the workspace: the scheduler must not
+    tick a strategy until it is (or until it is given up on)."""
+    return _downtime_failures > 0
+
+
+def _downtime_unprotected(down_from, down_to):
+    """The check could not run and the gap is let through: P3 (canon
+    notifications.md) — a record on the machine, never an event. One line in
+    the workspace's state/audit.jsonl (same shape as lib/guard.audit) beside
+    the log line; the platform is not told."""
+    try:
+        line = json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+                           "event": "downtime_check_failed",
+                           "offline_s": int(down_to - down_from),
+                           "down_from": int(down_from), "down_to": int(down_to)})
+        os.makedirs(WORKSPACE_STATE, exist_ok=True)
+        with open(os.path.join(WORKSPACE_STATE, "audit.jsonl"), "a") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        _log(f"downtime_check_failed audit line not written: {type(e).__name__}")
+
+
+def _downtime_watch_loop():
+    while True:
+        try:
+            _downtime_check()
+        except Exception as e:
+            _log(f"downtime watch failed: {type(e).__name__}: {e}")
+        time.sleep(DOWNTIME_TICK_S)
+
+
 def _bound_venue():
     """True if ANY exchange is bound on this machine right now. Gates the
     whole scheduler cycle: after a full unbind, _cmd_credentials_remove may
@@ -1092,9 +1293,20 @@ def _scheduler_loop():
     lines it removes exist whatever the workspace looks like, and every one of
     them would double-fire a job from this release onwards."""
     _sweep_legacy_report_schedules()
+    # Before the first tick, synchronously: a strategy recomputed ahead of the
+    # pause is exactly the stale-signal chase the pause exists to stop.
+    try:
+        _downtime_check()
+    except Exception as e:
+        _log(f"downtime startup check failed: {type(e).__name__}: {e}")
+    threading.Thread(target=_downtime_watch_loop, daemon=True, name="downtime-watch").start()
     while True:
         try:
-            _run_scheduler_cycle()
+            _downtime_check()
+            if _downtime_pending():
+                _log("scheduler cycle skipped — a downtime gap is not settled yet")
+            else:
+                _run_scheduler_cycle()
         except Exception as e:
             _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
         _fire_due_reports()  # independent of venue binding — reports run unbound too
@@ -2137,6 +2349,15 @@ def _cmd_delete_strategy(args):
             os.remove(p)
             entries.add(base[:-3] if base.endswith(".py") else base)
     _purge_strategy_schedules(entries)
+    # a deleted strategy must not stay on the downtime-pause card, freezing its
+    # symbol with nobody left to decide. Best-effort: the files are gone already.
+    try:
+        downtime = _in_workspace(_downtime_lib, True)
+        for n in entries | {name}:
+            if downtime is not None:
+                _in_workspace(downtime.forget, n)
+    except Exception as e:
+        _log(f"downtime pause cleanup failed: {type(e).__name__}")
     return f"delete_strategy={len(doomed)}"
 
 
@@ -3346,6 +3567,7 @@ HANDLERS = {
     "halt": _cmd_halt,
     "resume": _cmd_resume,
     "resume_wait": _cmd_resume_wait,
+    "downtime_hold": _cmd_downtime_hold,
     "close_all": _cmd_close_all,
     "amounts": _cmd_amounts,
     "execution": _cmd_execution,
@@ -3383,8 +3605,8 @@ def dispatch(command):
     # for its unbind-halt (audit H2: outside it, that halt was inert — either
     # a swallowed ImportError or a HALT file in the wrong cwd); credentials for
     # the same reason (its rebind-eviction halt).
-    if cmd in ("halt", "resume", "resume_wait", "close_all", "credentials",
-               "credentials_remove"):
+    if cmd in ("halt", "resume", "resume_wait", "downtime_hold", "close_all",
+               "credentials", "credentials_remove"):
         return _in_workspace(fn, args)
     return fn(args)
 

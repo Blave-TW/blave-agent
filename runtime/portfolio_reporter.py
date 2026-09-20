@@ -982,6 +982,12 @@ def build_report():
         # start mode the machine would silently ignore (an old workspace
         # ignoring the gate degrades resume_wait to a full catch-up resume).
         "can_wait_start": _workspace_has_signal_gate(),
+        # downtime pause (lib/downtime.py): a stop that crossed a bar close
+        # froze every live strategy until the user decides per strategy. Both
+        # pages draw the same confirmation card from `downtime_pause`; without
+        # the capability the workspace never pauses and the card has no data.
+        "can_downtime_pause": _workspace_has_downtime_pause(),
+        "downtime_pause": downtime_pause_view(cfg, last),
         # 策略管理 subtab: member figures, allocators, the last proposal and
         # the walk-forward job/result (see manager_view). can_manage keys the
         # web's 「機器尚未更新」 fallback exactly like can_flatten/can_wait_start.
@@ -996,6 +1002,88 @@ def build_report():
         "events": events.unsent(),
         "reported_at": int(time.time()),
     }
+
+
+def downtime_pause_view(cfg, last):
+    """state/downtime_pause.json joined with what the card needs per strategy:
+    what the strategy wants now, what the account holds, and where the current
+    direction began. None when nothing is paused. Read as JSON only — the
+    workspace's own code is never imported here."""
+    doc = _read_json(os.path.join(WORKSPACE_STATE, "downtime_pause.json"))
+    entries = doc.get("strategies") if isinstance(doc, dict) else None
+    if not isinstance(entries, dict) or not entries:
+        return None
+    # the UI-authoritative amounts, same precedence as lib.portfolio
+    mirror = _read_json(os.path.join(WORKSPACE, "manager", "amounts.ui.json"))
+    amounts = (mirror or {}).get("amounts") if isinstance(mirror, dict) else None
+    if not isinstance(amounts, dict):
+        amounts = (cfg or {}).get("amounts") if isinstance(cfg, dict) else None
+    amounts = amounts if isinstance(amounts, dict) else {}
+    snap_target = (last or {}).get("target") if isinstance(last, dict) else None
+    snap_actual = (last or {}).get("actual") if isinstance(last, dict) else None
+    rows = []
+    for name in sorted(entries):
+        entry = entries[name]
+        if not isinstance(entry, dict):
+            entry = {}  # an entry shape this runtime does not know is still FROZEN — show it
+        state = _read_json(os.path.join(WORKSPACE, "strategies", name, "state.json"))
+        state = state if isinstance(state, dict) else {}
+        symbol = state.get("symbol")
+        key = symbol.replace("-", "").upper() if isinstance(symbol, str) and symbol else None
+        if key and _strategy_market(name) == "spot":
+            key += "@spot"
+        try:
+            position = float(state.get("position", 0))
+            amount = float(amounts.get(name, 0))
+        except (TypeError, ValueError):
+            position, amount = None, None
+        t_row = snap_target.get(key) if isinstance(snap_target, dict) and key else None
+        others = sorted(
+            c.get("strategy") for c in (t_row or {}).get("contributors") or []
+            if isinstance(c, dict) and c.get("paused") and c.get("strategy") != name)
+        since = state.get("direction_since")
+        rows.append({
+            "name": name,
+            "status": entry.get("status") if entry.get("status") in ("pending", "hold", "wait") else "pending",
+            "interval": entry.get("interval"),
+            "missed_bars": entry.get("missed_bars"),
+            "decided_at": entry.get("decided_at"),
+            "symbol": key,
+            # every key frozen on this strategy's account — the one it trades
+            # now plus any it traded when paused (a SYMBOL changed mid-pause)
+            "frozen_keys": sorted((entry.get("keys") or {}) if isinstance(entry.get("keys"), dict) else {}),
+            "position": position,
+            "amount": amount,
+            "target_usd": None if position is None else round(position * amount, 2),
+            # the ACCOUNT's position on that symbol (all strategies netted) —
+            # None until a reconcile round has read it
+            "actual": snap_actual.get(key) if isinstance(snap_actual, dict) and key else None,
+            "symbol_frozen_by": others,
+            "direction_since": since if isinstance(since, dict) else None,
+            "signal_updated_at": _mtime(os.path.join(WORKSPACE, "strategies", name, "state.json")),
+        })
+    gaps = [g for g in doc.get("gaps") or [] if isinstance(g, list) and len(g) >= 2
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in g[:2])]
+    return {
+        "detected_at": doc.get("detected_at"),
+        "down_from": min((g[0] for g in gaps), default=None),
+        "down_to": max((g[1] for g in gaps), default=None),
+        "offline_s": int(sum(g[1] - g[0] for g in gaps)) if gaps else None,
+        "sources": sorted({str(g[2]) for g in gaps if len(g) > 2}),
+        "strategies": rows,
+    }
+
+
+def _workspace_has_downtime_pause():
+    """lib/downtime.py AND a portfolio.py that freezes on it — the workspace
+    updates file by file, and lib/downtime.freeze_wired refuses to pause on the
+    same condition. Bytes for the reason given below."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), "rb") as f:
+            wired = b"downtime.frozen()" in f.read()
+    except OSError:
+        return False
+    return wired and os.path.isfile(os.path.join(WORKSPACE, "lib", "downtime.py"))
 
 
 def _workspace_has_signal_gate():

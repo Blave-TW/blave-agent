@@ -8,6 +8,27 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 停機跨 K 棒收盤 → 全部暫停等用戶逐支確認(雲端與電腦版同一條;設計:blave-canon
+  `output/specs/downtime-pause-design-2026-09.md`)。runtime 這一半:`command_listener` 加
+  downtime watch(5 秒一跳寫 `state/heartbeat/downtime_watch`;行程啟動時、每輪排程開頭、watch
+  執行緒各判一次,空窗 ≥ 90 秒就把區間交給 workspace 的 `python -m lib.downtime gap`,跨不跨棒與
+  暫停本身都在 lib);**沒有戳記=首次啟動,不判**(既有機隊升級不會被暫停);workspace 沒有
+  `lib/downtime.py` 時只寫戳記、什麼都不做。`resume` / `resume_wait` 收
+  `{"strategies": [...]}`=逐支(不碰整機 HALT),不帶=整機舊行為＋結束所有暫停;`resume_wait`
+  對暫停中的策略不再當下寫基準(交給 lib 在重算後寫)。新指令 `downtime_hold`(`api` 的
+  `ALLOWED` 要先上)。`portfolio_reporter.build_report()` 多 `can_downtime_pause` 與
+  `downtime_pause`(`local_status.json` 同一份)。lib 端靠 byte-grep 本檔的
+  `DOWNTIME_RESUME_PROTOCOL = ` 賦值判斷 runtime 支不支援——它代表逐支 resume 與整機清暫停那幾個
+  handler 存在,**拿掉 handler 就一起拿掉它**。gap 交不出去(子行程起不來/鎖被佔)時:重試期間排程
+  不 tick 任何策略,15 次(≈75 秒,長過 lib 的 30 秒過期鎖)後放棄、**放行這段停機**,只留機上紀錄(log ＋ workspace `state/audit.jsonl` 一行 `downtime_check_failed`;P3,不寫事件、不上平台)。
+  `delete_strategy` 順手清掉該策略的暫停 entry。閘門:`tests/check_downtime_watch.py`
+  (只靠 runtime 就要綠——跑在沒有 `lib/downtime.py` 的 workspace 上,正是 runtime 先發之後機隊的狀態);
+  lib 那一半的 `check_downtime_pause.py`／`check_downtime_pause_chain.py` 跟著 lib 那筆 commit 走。
+  **出貨順序(定案):api(`ALLOWED` ＋ `agent_events.SPECS` 的 `downtime_paused` = P1)→ runtime →
+  web／shell 確認卡(含「運轉中」狀態列顯示暫停)→ 最後才是 lib ＋ `VERSION`。**
+  runtime 單獨上線對機隊零變化(沒有新 lib 就只寫戳記);lib 先於確認卡=頁面綠燈、實際連出場都凍結、
+  用戶只能 停止→啟動;lib 的 TG 文案也以確認卡已上線為前提。
+
 - 電腦版實盤鏈第 1 步(paper):新增 `local_daemon.py`——在用戶電腦上跑**同一份**排程執行緒
   (`_scheduler_loop`)、同一組 `_cmd_*` handler、同一支 `manager/reconciler.py`、同一個
   `build_report()`;只換傳輸(`state/local_cmd/in|ack` 檔案佇列,HMAC 簽章、secret 走 stdin,
