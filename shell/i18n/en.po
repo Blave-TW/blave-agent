@@ -542,7 +542,7 @@ msgid "plan.lead.trial"
 msgstr "The desktop app works without it. Blave data is already included during your trial. After {d}, it comes with this plan."
 
 msgid "plan.lead.starting"
-msgstr "Once the machine is up, the desktop app gets Blave data. You can close this window. You’ll see a note in the chat when it’s ready."
+msgstr "Blave data is available now. The cloud machine is still starting. You can close this window. You’ll see a note in the chat when it’s ready."
 
 msgid "plan.lead.running"
 msgstr "Blave data is now available in the desktop app."
@@ -665,10 +665,10 @@ msgid "data.planSub"
 msgstr "{p} TWD a month, including a cloud machine that stays on 24 hours. Billed hourly for as long as the machine exists."
 
 msgid "data.starting"
-msgstr "Your cloud machine is starting. Blave data will be available once it’s up."
+msgstr "Your cloud machine is starting. Blave data will be available in a moment."
 
 msgid "plan.done"
-msgstr "Your cloud machine is up. Blave data is now available."
+msgstr "Your cloud machine is up."
 
 msgid "side.trial"
 msgstr "{n} days left"
@@ -678,3 +678,6 @@ msgstr "Starting"
 
 msgid "side.stopped"
 msgstr "Stopped"
+
+msgid "data.ready"
+msgstr "Blave data is now available."

@@ -542,7 +542,7 @@ msgid "plan.lead.trial"
 msgstr "電腦版不啟動也能用。試用期間已經有 Blave 的資料；{d}之後，資料在這個方案裡。"
 
 msgid "plan.lead.starting"
-msgstr "主機開好後，電腦版就拿得到 Blave 的資料。可以關掉這個視窗，開好了會在聊天欄告訴你。"
+msgstr "Blave 的資料現在就能用。雲端主機還在啟動，可以關掉這個視窗，開好了會在聊天欄告訴你。"
 
 msgid "plan.lead.running"
 msgstr "Blave 的資料已經可以在電腦版使用。"
@@ -665,10 +665,10 @@ msgid "data.planSub"
 msgstr "每月 {p} TWD，含一台 24 小時的雲端主機；存在就按小時扣。"
 
 msgid "data.starting"
-msgstr "雲端主機啟動中，開好後 Blave 的資料就能用。"
+msgstr "雲端主機啟動中；Blave 的資料馬上就能用。"
 
 msgid "plan.done"
-msgstr "雲端主機開好了，Blave 的資料可以用了。"
+msgstr "雲端主機開好了。"
 
 msgid "side.trial"
 msgstr "試用剩 {n} 天"
@@ -678,3 +678,6 @@ msgstr "啟動中"
 
 msgid "side.stopped"
 msgstr "已停機"
+
+msgid "data.ready"
+msgstr "Blave 的資料可以用了。"

@@ -1254,8 +1254,10 @@ function acctPaint() {
     else card.set({ text: t("fault.noCredit"), ...acctAction(s), second: resendSecond() });
   });
   if (dataCard && cur === "blave" && s.data_included === true) {
-    dataCard.set(resendState(dataCard, t("plan.done")));
-    dataCard = null; planDoneSaid = true;     // 到手了就不再盯;「開好了」這句已經講過
+    // 資料在按下啟動後就給(不等主機開好):這張卡講的是「資料可以用了」;「雲端主機開好了」是另一件事,
+    // 由 planWatch 在 starting → running 時另外講
+    dataCard.set(resendState(dataCard, t("data.ready")));
+    dataCard = null;                          // 到手了就不再盯
   } else if (dataCard && cur === "blave") dataCard.set(dataCardState());   // none ↔ starting 跟著換
   planWatch(s);
   // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
