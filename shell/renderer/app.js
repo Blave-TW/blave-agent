@@ -771,6 +771,7 @@ async function stratSelect(name, force) {
   // 只放說明,不附資料夾代號(Wei):代號滑過 sidebar 那一列的 title 看得到
   $("rp-desc").textContent = RP.data.description || "";
   $("rp-name").title = $("rp-name").textContent; $("rp-desc").title = RP.data.description || "";   // 單行截斷,全文放 title
+  hoPaintUp();   // 頁首右側的「送上雲端」(renderer/handoff.js;功能關、沒回測過、資料夾名不合規時不畫)
   $("rp-code-pre").textContent = RP.data.code || "";
   rpShowTab(RP.data.stats ? RP.tab : "code");   // 還沒回測過 → 只有程式碼可看
 }
@@ -1266,14 +1267,14 @@ async function sendDraft() {
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
 async function submitMessage(msg) {
   if (!msg || running) return false;
-  running = true; $("btn-send").disabled = true;
+  running = true; $("btn-send").disabled = true; hoBusy();
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
   addMsg("you", msg); lastUserText = msg;
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
-  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); };
+  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); };
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
@@ -1895,7 +1896,7 @@ window.blave.onTurnEnd(async (r) => {
   if (loggedOut) addFault(localAuthFault(cur));
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); }
   pendingErr = [];
-  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false);
+  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy();
 });
 
 /* 側欄 / 聊天欄:拖拉調寬 + 收合(雲端工作頁那套移植,數字相同)。
@@ -2036,6 +2037,7 @@ function applyStatic() {
   syncLangControls();
   applyStatic();
   hasToken = await window.blave.hasBlaveToken();
+  hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
   pubLoad().then(acctPaintAcct);   // 連結畫面尾註那句要的天數;拿不到就不出
   const prev = await window.blave.loadConnection();
   // kind 說「用 Blave 的 AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了

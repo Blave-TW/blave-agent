@@ -1839,3 +1839,66 @@ msgstr "These are the data sources on your cloud machine; only names are listed.
 
 msgid "src.cloudEmpty"
 msgstr "There are no data sources on the cloud machine."
+
+msgid "ho.up.btn"
+msgstr "Send to Cloud"
+
+msgid "ho.down.btn"
+msgstr "Bring Back"
+
+msgid "ho.down.aria"
+msgstr "Bring back to this computer"
+
+msgid "ho.up.title"
+msgstr "Send to Cloud: {id}"
+
+msgid "ho.down.title"
+msgstr "Bring Back to This Computer: {id}"
+
+msgid "ho.row.moves"
+msgstr "Moves"
+
+msgid "ho.row.movesV"
+msgstr "Strategy code, and the data-source keys it uses"
+
+msgid "ho.row.stays"
+msgstr "Doesn’t move"
+
+msgid "ho.row.staysV"
+msgstr "Exchange keys, amounts, trading state"
+
+msgid "ho.over.up"
+msgstr "Replaces the strategy with the same name in the cloud."
+
+msgid "ho.over.down"
+msgstr "Replaces the strategy with the same name on this computer."
+
+msgid "ho.over.maybeUp"
+msgstr "If the cloud already has a strategy with this name, it is replaced."
+
+msgid "ho.block.up"
+msgstr "The one in the cloud is trading and can’t be replaced. Pause it there and set its amount to 0 first."
+
+msgid "ho.block.down"
+msgstr "The one on this computer is trading and can’t be replaced. Pause it and set its amount to 0 first."
+
+msgid "ho.block.goCloud"
+msgstr "View in Cloud"
+
+msgid "ho.block.goLocal"
+msgstr "View on This Computer"
+
+msgid "ho.note"
+msgstr "The agent takes it from here and reports progress in the chat."
+
+msgid "ho.ok"
+msgstr "Confirm"
+
+msgid "ho.emptyHint"
+msgstr "No strategies in the cloud yet. Open one on this computer and press Send to Cloud."
+
+msgid "ho.msg.up"
+msgstr "Send the strategy {id} to my cloud machine. Re-run the backtest there once it’s moved, and show me both sets of numbers side by side."
+
+msgid "ho.msg.down"
+msgstr "Bring the strategy {id} from my cloud machine back to this computer. Re-run the backtest here afterwards, and show me both sets of numbers side by side."

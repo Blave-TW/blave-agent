@@ -1667,7 +1667,8 @@ function envPaint() {
   const gate = cloud && kind !== "running" && kind !== "stopped";
   $("side-nav").hidden = gate; $("strat-head").hidden = gate; $("side-gate").hidden = !gate;
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
-  $("chat-tgt").hidden = !cloud;
+  // 「這一版 agent 還不能操作雲端主機」:送上雲端的功能開著時這句就不成立了,整行不出(規格:輸入框上方不再放說明行);功能關著照舊
+  $("chat-tgt").hidden = !cloud || (typeof HO !== "undefined" && HO.on);
   if (cloud) envPaintSide(kind, C.st);
   const cur = cells[ENV.cur];
   // 視窗標題:{money} 是空的就連同前面的「 · 」一起省略
@@ -1716,18 +1717,21 @@ function envPaintCell(env, c) {
 function envPaintSide(kind, st) {
   // 側欄頂不寫「雲端 / 這台電腦」(Wei:最上面的切換器已經有了);這裡只畫雲端那幾份策略
   const list = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
-  const sig = LANG + "|" + JSON.stringify([kind, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
+  const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();   // 列尾的「拉回」:功能開著、而且雲端看得到現況才畫
+  const sig = LANG + "|" + JSON.stringify([kind, ho, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
   // 第一刀:只當清單看(單支策略的端點還沒做)——不是鈕、沒有 hover、Tab 不會停
   const box = $("strat-list-cloud"); box.textContent = ""; box.setAttribute("role", "list");
-  if (!list.length) { box.appendChild(trEl("p", "pf-state", t("side.cloud.emptyCut1"))); return; }
+  if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
   list.forEach((x) => {
     const row = trEl("div", "strat-row is-static"); row.setAttribute("role", "listitem");
     const nm = trEl("span", "strat-name", x.displayName); nm.title = x.name; row.appendChild(nm);
     const w = envStratWord(x.name, st); if (w) row.appendChild(trEl("span", "stx", t(w)));
+    const hb = ho ? hoDownBtn(x.name) : null; if (hb) row.appendChild(hb);
     box.appendChild(row);
   });
+  if (ho) hoBusy();
 }
 /* 開通頁(規格 §3;Wei 選定 A 案):電腦版把人帶進雲端方案的主要入口。主鈕**直接開已上線的那一套**——登入走 planLogin、
    啟動走 planAsk(花錢的確認框 cf.*,一步不少)、綁卡外開瀏覽器;這裡不另寫一條開通流程。價格數字來自方案頁同一個來源

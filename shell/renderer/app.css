@@ -515,7 +515,24 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 
 /* ── 策略報告的骨架(分頁內容由 report-*.css 各自負責)──── */
 .rp { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.rp-head { flex: none; min-width: 0; padding: var(--space-16) var(--space-24) var(--space-12); }
+.rp-head { flex: none; min-width: 0; padding: var(--space-16) var(--space-24) var(--space-12); display: flex; align-items: flex-start; gap: var(--space-16); }
+.rp-head .txt { flex: 1; min-width: 0; }
+.rp-head .act { flex: none; }
+.rp-head .act[hidden] { display: none; }
+/* 「送上雲端 / 拉回」(renderer/handoff.js)。icon + 字的描邊鈕:左 8、右 12——icon 自帶留白,視覺才對稱 */
+.btn-out.has-ic { display: inline-flex; align-items: center; gap: var(--space-6); padding-left: var(--space-8); }
+.ho-down { position: relative; flex: none; display: inline-flex; align-items: center; gap: var(--space-4); font-size: 11px; text-decoration: none; color: var(--ink-3); white-space: nowrap; }
+.ho-down:hover { color: var(--ink); }
+.ho-down::before { content: ""; position: absolute; inset: -8px -4px; }   /* 視覺高約 14,熱區高 ≥ 28 */
+.ho-down .ic { width: 14px; height: 14px; }
+.strat-row.is-static { gap: var(--space-6); padding-right: var(--space-8); }
+#rp-ho[aria-disabled="true"], .ho-down[aria-disabled="true"] { color: var(--ink-3); cursor: default; }
+#rp-ho[aria-disabled="true"]:hover { background: transparent; }
+.ho-down[aria-disabled="true"]:hover { color: var(--ink-3); }
+/* 確認框的兩欄變體:「標籤｜左對齊內容」(.cf-row 原本是「名稱｜右對齊數字」) */
+.cf-rows.kv dt { flex: 0 0 56px; color: var(--ink-3); }
+:lang(en) .cf-rows.kv dt { flex-basis: 84px; }
+.cf-rows.kv dd { flex: 1; min-width: 0; text-align: left; white-space: normal; font: inherit; color: var(--ink); }
 .rp-name { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 底線分頁(canon › 底線分頁):目前項 = ink + 2px 底線,其餘 ink-3;不用橘 */
 .rp-tabs { flex: none; display: flex; gap: var(--space-24); padding: 0 var(--space-24); border-bottom: 1px solid var(--border-hairline); }

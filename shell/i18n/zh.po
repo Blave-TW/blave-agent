@@ -1839,3 +1839,66 @@ msgstr "這是你的雲端主機上的資料來源，這裡只列名稱。這一
 
 msgid "src.cloudEmpty"
 msgstr "雲端主機上沒有資料來源。"
+
+msgid "ho.up.btn"
+msgstr "送上雲端"
+
+msgid "ho.down.btn"
+msgstr "拉回"
+
+msgid "ho.down.aria"
+msgstr "拉回這台電腦"
+
+msgid "ho.up.title"
+msgstr "送上雲端 {id}"
+
+msgid "ho.down.title"
+msgstr "拉回這台電腦 {id}"
+
+msgid "ho.row.moves"
+msgstr "會搬"
+
+msgid "ho.row.movesV"
+msgstr "策略程式碼、它用到的資料來源金鑰"
+
+msgid "ho.row.stays"
+msgstr "不會搬"
+
+msgid "ho.row.staysV"
+msgstr "交易所金鑰、投入金額、下單狀態"
+
+msgid "ho.over.up"
+msgstr "會整份覆蓋雲端上的同名策略。"
+
+msgid "ho.over.down"
+msgstr "會整份覆蓋這台電腦上的同名策略。"
+
+msgid "ho.over.maybeUp"
+msgstr "若雲端已有同名策略，會整份覆蓋。"
+
+msgid "ho.block.up"
+msgstr "雲端的同名策略正在下單，不能覆蓋。先在雲端暫停，把它的金額改成 0。"
+
+msgid "ho.block.down"
+msgstr "這台電腦的同名策略正在下單，不能覆蓋。先暫停，把它的金額改成 0。"
+
+msgid "ho.block.goCloud"
+msgstr "去雲端看"
+
+msgid "ho.block.goLocal"
+msgstr "回這台電腦看"
+
+msgid "ho.note"
+msgstr "接下來由 agent 執行，過程會在聊天裡回報。"
+
+msgid "ho.ok"
+msgstr "確認"
+
+msgid "ho.emptyHint"
+msgstr "雲端還沒有策略。在這台電腦打開一支策略，按「送上雲端」。"
+
+msgid "ho.msg.up"
+msgstr "把策略 {id} 送上我的雲端主機。搬完在雲端重跑回測，把兩邊的數字並排給我看。"
+
+msgid "ho.msg.down"
+msgstr "把雲端主機上的策略 {id} 拉回這台電腦。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
