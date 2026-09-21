@@ -148,6 +148,7 @@ function enterWorkspace(kind, info) {
   stratRefresh(false);
   if (!csReady) { csReady = true; csInit(); }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
+  trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   // 從設定 modal 裡換的:留在 modal、重畫那張卡(「目前使用」換列),焦點不搶去輸入框
   if (!$("set-scrim").hidden) { paintBlaveBtn(); detect(); return; }
   autosize();          // 進工作頁先把輸入框高度對齊一行
@@ -236,6 +237,7 @@ function setCat(cat) {
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
+  if (cat === "conn") cxPaint();   // 設定 › 連線(trade.js)
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
@@ -283,6 +285,7 @@ function applyLangChoice(v) {
   paintBlaveBtn();
   if (lastDetect) paintRows(lastDetect); else detectingRows();
   stratRefresh(false).then(() => { if (RP.name) stratSelect(RP.name, true); });
+  trRepaint();   // 自動下單頁、狀態帶、設定 › 連線(trade.js)
 }
 // radiogroup 的鍵盤慣例:左右鍵換格並套用(只有兩格,不繞圈也夠)
 $("cn-lang").addEventListener("keydown", (e) => {
@@ -552,6 +555,7 @@ async function stratRefresh(selectTouched) {
 
 async function stratSelect(name, force) {
   if (name === RP.name && !force) return;
+  if (name) trLeave();   // 中欄一次只有一個視圖:選了策略就離開自動下單頁(trade.js)
   RP.name = name; RP.drawn = {};
   $("strat-list").querySelectorAll(".strat-row").forEach((b) => {
     if (b.dataset.name === name) b.setAttribute("aria-current", "true");
@@ -694,12 +698,20 @@ function delConfirm(m, opener) {
 /* 同一個確認框,第二個用途:花錢的動作(啟動雲端方案)。不養第二份 DOM——標題、幾段字、主鈕的字
    與要做的事由呼叫端給;其餘(焦點預設在「取消」、Esc / 點框外 / ✕ = 取消、Tab 圈在框內)完全沿用。
    設定 modal 留在底下不關,確認框蓋在上面;取消後焦點回到開它的那顆鈕。 */
-function confirmBox({ title, lines, ok, onOk, opener }) {
+/* 第三個用途:自動下單的啟動/暫停/儲存金額(trade.js)。多三個選用參數,不給就跟原本一模一樣:
+   alt = { label, onOk, danger } 第二動作鈕(排在取消與主要鈕之間;danger = 紅字,同雲端 .cf-alt);
+   mark = 標題左邊的帳戶記號文字(「模擬」);extra = 接在段落後面的一個 DOM 節點(呼叫端自己用 textContent 建)。 */
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, extra }) {
   $("del-title").textContent = title;
   const body = $("del-body"); body.className = "del-body lines"; body.textContent = "";
   lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; body.appendChild(p); });
+  if (extra) body.appendChild(extra);
   $("del-ok").textContent = ok;
-  delCtx = { custom: true, onOk, opener };
+  $("del-mark").hidden = !mark; $("del-mark").textContent = mark || "";
+  $("del-alt").hidden = !alt; $("del-alt").textContent = alt ? alt.label : "";
+  $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
+  $("del-modal").classList.toggle("has-alt", !!alt);
+  delCtx = { custom: true, onOk, onAlt: alt && alt.onOk, opener };
   $("view-ws").inert = true; $("set-scrim").inert = true;
   const sc = $("del-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
@@ -710,6 +722,7 @@ function delClose(deleted) {
   sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
+  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt");   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕
   if (deleted) $("cs-newrow").focus();
   else if (c && c.opener && c.opener.isConnected) c.opener.focus();
 }
@@ -720,6 +733,7 @@ $("del-scrim").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); delClose(false); return; }
   trapTab(e, $("del-modal"));
 });
+$("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
   if (delCtx && delCtx.custom) { const go = delCtx.onOk; delClose(false); go(); return; }
   const m = delCtx && delCtx.m; if (!m) return;

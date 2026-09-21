@@ -9,6 +9,7 @@ const { execFile } = require("child_process");
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
+const { createDaemonHost } = require("./daemon.js");
 
 // 打包版的名字 = userData 目錄名(~/Library/Application Support/Blave)與 Keychain 項目名。
 // electron-builder 的 productName 不會寫進 asar 裡的 package.json,不設的話打包版會跟開發版
@@ -866,6 +867,25 @@ const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
 const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
 
 let activeTurn = null, turnStarting = false;
+/* 本機常駐程式的宿主(daemon.js)。環境只給 daemon 需要的:路徑、PATH、K 線來源——**不含**帳號 token
+   與任何 Blave 憑證(策略碼跑在它底下)。引擎還沒裝好(沒有 venv)就不起。 */
+let _tradeHost = null;
+function tradeHost() {
+  if (!_tradeHost) {
+    _tradeHost = createDaemonHost({
+      python: VENV_PY, script: path.join(REPO, "runtime", "local_daemon.py"), base: BASE, workspace: WS,
+      env: { PATH: path.join(BASE, "venv", "bin") + path.delimiter + (process.env.PATH || "/usr/bin:/bin"), HOME: os.homedir(),
+        USER: process.env.USER || os.userInfo().username, LANG: process.env.LANG || "en_US.UTF-8",
+        TMPDIR: process.env.TMPDIR || os.tmpdir(), BLAVE_KLINE_SOURCE: "binance",
+        BLAVE_AGENT_HOME: BASE, BLAVE_AGENT_STATE: path.join(BASE, "state") },
+      log: (m) => console.error("[trade]", m),
+    });
+  }
+  return _tradeHost;
+}
+function tradeStartIfReady() {
+  try { if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) tradeHost().start(); } catch (e) { console.error("[trade] start failed", e && e.message); }
+}
 async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
@@ -999,7 +1019,8 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("ensure-engine", (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    return ensureEngine((t) => win.webContents.send("engine-progress", t));
+    // 引擎裝好(或本來就在)之後才起本機常駐程式
+    return ensureEngine((t) => win.webContents.send("engine-progress", t)).then((r) => { tradeStartIfReady(); return r; });
   });
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
@@ -1015,11 +1036,23 @@ app.whenReady().then(() => {
   ipcMain.handle("account-status", () => accountStatus());
   ipcMain.handle("public-pricing", () => publicPricing());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
-  ipcMain.handle("plan-start", (e) => {
-    const from = e.senderFrame && e.senderFrame.url;
-    const mine = "file://" + path.join(__dirname, "renderer", "index.html").split(path.sep).map(encodeURIComponent).join("/");
-    if (!from || from.split(/[?#]/)[0] !== mine || e.senderFrame !== e.sender.mainFrame) return { error: "SERVER" };
-    return planStart();
+  // 只認我們自己那一頁的主 frame:花錢(plan-start)與動交易(trade-send)的 IPC 共用這道
+  const fromOurPage = (e) => {
+    // 比「解出來的檔案路徑」而不是比字串:安裝路徑含 & + , = @ 時 encodeURIComponent 拼出來的 URL 跟
+    // Chromium 給的不相等,會連 halt 都被拒(稽核 S7)
+    let file = null;
+    try { const u = new URL((e.senderFrame && e.senderFrame.url) || ""); if (u.protocol === "file:") file = require("url").fileURLToPath(u.href.split(/[?#]/)[0]); } catch (_) { /* 不是我們的頁 */ }
+    return file === path.join(__dirname, "renderer", "index.html") && e.senderFrame === e.sender.mainFrame;
+  };
+  ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart() : { error: "SERVER" }));
+  /* 本機交易:狀態是唯讀的檔案內容;指令由 daemon.js 簽章後寫進佇列(secret 不出主行程)。
+     daemon 在引擎裝好之後才起(它要 workspace 與 venv),而且**不會自己啟動對帳器**——要用戶按「啟動下單」。 */
+  ipcMain.handle("trade-status", () => tradeHost().status());
+  ipcMain.handle("trade-events", (_e, q) => tradeHost().events({ days: q && Number(q.days) }));
+  ipcMain.handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
+  ipcMain.handle("trade-send", (e, cmd, args) => {
+    if (!fromOurPage(e) || typeof cmd !== "string") return { ok: false, error: "NOT_ALLOWED" };
+    return tradeHost().send(cmd, args && typeof args === "object" ? args : {});
   });
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
@@ -1042,6 +1075,7 @@ app.whenReady().then(() => {
     return { started: true };
   });
   createWindow();
+  tradeStartIfReady();   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   app.on("browser-window-focus", () => { lastAcct = null; });
@@ -1052,3 +1086,11 @@ app.whenReady().then(() => {
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on("second-instance", () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
 app.on("window-all-closed", () => app.quit());
+// 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
+// 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
+let quitting = false;
+app.on("before-quit", (e) => {
+  if (quitting || !_tradeHost || !_tradeHost.isRunning()) return;
+  e.preventDefault(); quitting = true;
+  _tradeHost.stop().finally(() => app.quit());
+});

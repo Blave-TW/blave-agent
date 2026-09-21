@@ -780,3 +780,472 @@ msgstr "登出"
 
 msgid "acct.outDone"
 msgstr "已登出。這台不再拿得到 Blave 的資料。"
+
+# ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
+
+msgid "set.cat.conn"
+msgstr "連線"
+
+msgid "cx.lead"
+msgstr "這一頁的東西只存在這台電腦的工作區（~/Blave/workspace/.env），Blave 不會上傳。agent 和你的策略程式讀得到，這樣才能替你下單、抓資料。"
+
+msgid "cx.acct.title"
+msgstr "交易帳戶"
+
+msgid "cx.acct.meta"
+msgstr "可以下單、讀帳戶，也會用來抓這家交易所的資料。一次只能連一個。"
+
+msgid "cx.venue"
+msgstr "交易所／券商"
+
+msgid "cx.paper"
+msgstr "模擬交易（免金鑰）"
+
+msgid "cx.paperShort"
+msgstr "模擬交易"
+
+msgid "cx.paperNote"
+msgstr "不用任何 API 金鑰。模擬帳戶起始 10,000 USDT，用你策略的行情資料即時成交、計手續費（不含滑價），不動真錢；策略、下單設定、部位與績效頁全部照真實帳戶的方式運作。"
+
+msgid "cx.connect"
+msgstr "連接交易所"
+
+msgid "cx.connecting"
+msgstr "串接中…"
+
+msgid "cx.connected"
+msgstr "已連接"
+
+msgid "cx.perfNote"
+msgstr "模擬交易的績效不代表真實成交的結果（不含滑價）。"
+
+msgid "cx.unbindHint"
+msgstr "解除綁定在「{link}」。"
+
+msgid "cx.unbindLink"
+msgstr "自動下單 › 設定"
+
+msgid "cx.retest"
+msgstr "重新測試"
+
+msgid "cx.retesting"
+msgstr "測試中…"
+
+msgid "cx.fail"
+msgstr "{id} 串接失敗（{stage}）：{msg}"
+
+msgid "cx.failShort"
+msgstr "串接失敗"
+
+msgid "cx.sendFail"
+msgstr "連接沒有完成（{err}）。再按一次試試。"
+
+msgid "cx.down"
+msgstr "這台電腦的下單機沒有在跑。過幾秒再試；一直這樣就重開 Blave。"
+
+msgid "tr.mode.paper"
+msgstr "模擬"
+
+msgid "tr.tb"
+msgstr "{state} · {venue}"
+
+msgid "tr.tbAria"
+msgstr "自動下單：{state}"
+
+msgid "tr.paperCcy"
+msgstr "模擬 {c}"
+
+msgid "tr.nav"
+msgstr "自動下單"
+
+msgid "tr.autoOn"
+msgstr "自動下單執行中"
+
+msgid "tr.halted"
+msgstr "已暫停"
+
+msgid "tr.recDead"
+msgstr "對帳沒有在跑"
+
+msgid "tr.lastBeat"
+msgstr "最後心跳 {t}"
+
+msgid "tr.notStarted"
+msgstr "尚未啟動下單"
+
+msgid "tr.noAccount"
+msgstr "還沒連接交易所"
+
+msgid "tr.loading"
+msgstr "載入中…"
+
+msgid "tr.stop"
+msgstr "暫停下單"
+
+msgid "tr.start"
+msgstr "啟動下單"
+
+msgid "tr.stopping"
+msgstr "暫停中…"
+
+msgid "tr.starting"
+msgstr "啟動中…"
+
+msgid "tr.cmdNotDelivered"
+msgstr "指令沒有送到，它還在交易。再按一次試試；一直失敗的話，到交易所撤銷這台電腦的 API key——它就再也送不出單（既有部位仍需你自己在交易所平倉）。"
+
+msgid "tr.cmdUnavailable"
+msgstr "這台電腦的指令通道沒有回應，現在送不出指令。"
+
+msgid "tr.cmdFailed"
+msgstr "指令沒有送到，什麼都沒有改變。再按一次試試。"
+
+msgid "tr.cmdUnknown"
+msgstr "指令送出去了，但這台電腦還沒回報結果，可能已經執行。先看這一頁的狀態，再決定要不要重按。"
+
+msgid "tr.cmdRejected"
+msgstr "這台電腦沒有接受這個指令（{err}）。"
+
+msgid "tr.hostRetry"
+msgstr "這台電腦的下單機停了，正在重新啟動，這段時間不會下單。起來之後看這裡的狀態；如果顯示尚未啟動，再按一次「啟動下單」。"
+
+msgid "tr.hostShort"
+msgstr "下單機沒有在跑"
+
+msgid "tr.hostDown"
+msgstr "這台電腦的下單機起不來，自動下單沒有在跑。請重開 Blave。"
+
+msgid "tr.unknown"
+msgstr "讀不到這台電腦的下單狀態"
+
+msgid "tr.unknownBody"
+msgstr "這一輪讀不到下單狀態，所以帳戶與部位暫時顯示不出來，過幾秒會再試。"
+
+msgid "tr.unknownStop"
+msgstr "下單機可能還在跑；要停的話，按上面的「暫停下單」。"
+
+msgid "tr.badAmount"
+msgstr "看不懂這個金額。只收數字，例如 1500 或 1,500.50；上限 1,000,000,000。"
+
+msgid "tr.stopChoiceSelf"
+msgstr "暫停後不會再開任何新倉。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
+
+msgid "tr.stopChoice"
+msgstr "暫停後不會再開任何新倉。「關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
+
+msgid "tr.closeAllWarn2"
+msgstr "策略金額會保留：之後按「啟動下單」，下單機會照現有金額把部位重建回來；不想重建，先把金額歸零。"
+
+msgid "tr.stopKeep"
+msgstr "暫停，不動部位"
+
+msgid "tr.stopFlat"
+msgstr "暫停並關閉部位"
+
+msgid "tr.startChoice"
+msgstr "「補齊部位」會立刻用市價把部位補到策略目前的訊號狀態——策略若已在場內，等於中途上車；「等新訊號」現在不下單，每條策略等它下次進場、出場或翻向才開始交易。"
+
+msgid "tr.startWarn1"
+msgstr "會重新開始送出真實委託，照目前的權重把交易所部位調到目標。"
+
+msgid "tr.startWarn2"
+msgstr "策略跟權重在暫停期間照常更新，所以第一次對帳可能一次調整多個部位。"
+
+msgid "tr.startCatchUp"
+msgstr "啟動並補齊部位"
+
+msgid "tr.startWait"
+msgstr "啟動，等新訊號才進場"
+
+msgid "tr.means.l"
+msgstr "在這台電腦上跑，代表："
+
+msgid "tr.means.1"
+msgstr "自動下單只在電腦醒著、Blave 開著、連得上網的時候跑。"
+
+msgid "tr.means.2"
+msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，部位留在{venue}，不會自動平倉。"
+
+msgid "tr.means.2p"
+msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，模擬部位留著，不會自動平倉。"
+
+msgid "tr.means.3"
+msgstr "恢復後如果錯過了 K 棒收盤，會自動暫停下單，連減倉都不會做，等你逐支確認。"
+
+msgid "tr.means.4"
+msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
+
+msgid "tr.tab.over"
+msgstr "總覽"
+
+msgid "tr.tab.pos"
+msgstr "部位"
+
+msgid "tr.tab.assets"
+msgstr "資產"
+
+msgid "tr.tab.hist"
+msgstr "交易歷史"
+
+msgid "tr.tab.set"
+msgstr "設定"
+
+msgid "tr.onboard"
+msgstr "下單金額是從交易所的淨值算出來的，所以這頁要先接一個交易所帳戶。接好之後，每檔策略填一個金額就會開始下單。"
+
+msgid "tr.strategies"
+msgstr "策略"
+
+msgid "tr.zeroMeansOff"
+msgstr "填 0 就是不下單——策略照常跑、照常算訊號，只是不會有部位。"
+
+msgid "tr.col.strategy"
+msgstr "策略"
+
+msgid "tr.col.symbol"
+msgstr "標的"
+
+msgid "tr.col.amount"
+msgstr "部位大小"
+
+msgid "tr.col.targetPos"
+msgstr "目標部位"
+
+msgid "tr.col.target"
+msgstr "目標"
+
+msgid "tr.col.actual"
+msgstr "實際"
+
+msgid "tr.col.diff"
+msgstr "差額"
+
+msgid "tr.mkt.spot"
+msgstr "現貨"
+
+msgid "tr.mkt.swap"
+msgstr "合約"
+
+msgid "tr.amountAria"
+msgstr "金額（{ccy}）"
+
+msgid "tr.noStrategies"
+msgstr "還沒有可以下單的策略。先請代理做一檔，回測跑完就能設金額。"
+
+msgid "tr.typeC"
+msgstr "投資組合策略暫不支援自動下單"
+
+msgid "tr.gateHint"
+msgstr "低於最小進場 {m} {c}，不會進場"
+
+msgid "tr.total"
+msgstr "合計"
+
+msgid "tr.ofEquity"
+msgstr "你淨值的"
+
+msgid "tr.unitNote"
+msgstr "金額單位：{c}"
+
+msgid "tr.unsaved"
+msgstr "金額尚未儲存，按「儲存」才會生效。"
+
+msgid "tr.revert"
+msgstr "還原"
+
+msgid "tr.save"
+msgstr "儲存"
+
+msgid "tr.saving"
+msgstr "儲存中…"
+
+msgid "tr.saved"
+msgstr "已儲存，這台電腦已套用新金額。"
+
+msgid "tr.saveTitle"
+msgstr "確認下單金額"
+
+msgid "tr.saveWarn"
+msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單。"
+
+msgid "tr.saveRemoved"
+msgstr "移出組合：{names}——其合約部位將自動平倉、現貨庫存將自動賣出。"
+
+msgid "tr.saveLine"
+msgstr "{name}：{amt}"
+
+msgid "tr.exchPositions"
+msgstr "交易所部位"
+
+msgid "tr.threshold"
+msgstr "差額小於 {amt}，或換算後不到該標的在交易所的最小下單量，對帳都不下單；兩個都達到就自動送出委託。"
+
+msgid "tr.posEmpty"
+msgstr "目前無未平倉部位。"
+
+msgid "tr.noPositions"
+msgstr "還沒有部位，策略金額都是 0，先在上面填一個金額再回來看。"
+
+msgid "tr.noReconcile"
+msgstr "還沒有對帳紀錄，實際部位要等自動下單跑起來才看得到。"
+
+msgid "tr.gateFootLead"
+msgstr "這輪不下單："
+
+msgid "tr.gateFootEntry"
+msgstr "{sym} 差額不到 {m}"
+
+msgid "tr.gateFootReduce"
+msgstr "{sym} 超出不到半口"
+
+msgid "tr.orderFailed"
+msgstr "下單失敗：{sym}——{err}"
+
+msgid "tr.account"
+msgstr "帳戶"
+
+msgid "tr.equity"
+msgstr "淨值"
+
+msgid "tr.recentOrders"
+msgstr "最近下單"
+
+msgid "tr.noOrders"
+msgstr "還沒有下過單。"
+
+msgid "tr.contributors"
+msgstr "由 {names} 觸發"
+
+msgid "tr.orderTarget"
+msgstr "下單目標 {amount}"
+
+msgid "tr.unbind"
+msgstr "解除綁定"
+
+msgid "tr.unbinding"
+msgstr "解除中…"
+
+msgid "tr.unbindDesc"
+msgstr "移除這台電腦上的交易所金鑰，下單機不再能用這個帳戶交易。"
+
+msgid "tr.unbindWarn"
+msgstr "會把這個交易所的金鑰從這台電腦移除，下單機將無法再用這個帳戶交易。下單設定也會一併清空，重新串接後需重新設定。"
+
+msgid "tr.ov.equity"
+msgstr "總權益"
+
+msgid "tr.ov.equityTip"
+msgstr "全帳戶合計，含未實現損益。"
+
+msgid "tr.ov.day"
+msgstr "當日損益"
+
+msgid "tr.ov.curve"
+msgstr "權益曲線"
+
+msgid "tr.ov.modeEquity"
+msgstr "權益"
+
+msgid "tr.ov.modePnl"
+msgstr "累積損益"
+
+msgid "tr.ov.rangeAll"
+msgstr "全部"
+
+msgid "tr.ov.empty"
+msgstr "還沒有權益紀錄。Blave 開著的時候，這台電腦每個整點記一筆；關著的時段不會有紀錄。"
+
+msgid "tr.ov.emptyBaseline"
+msgstr "紀錄還不夠畫出曲線，要兩筆。Blave 開著的時候每個整點記一筆；關著的時段不會有紀錄。"
+
+msgid "tr.ov.gapNote"
+msgstr "曲線斷開的地方＝Blave 沒開著，沒有紀錄。"
+
+msgid "tr.ov.range"
+msgstr "區間"
+
+msgid "tr.ov.curveAria"
+msgstr "權益曲線，{a} 到 {b}，{n} 筆"
+
+msgid "tr.ov.evResume"
+msgstr "已恢復下單"
+
+msgid "tr.ov.evResumeNote"
+msgstr "恢復開新倉"
+
+msgid "tr.ov.evConnected"
+msgstr "已連接 {venue}"
+
+msgid "tr.ov.evDisconnected"
+msgstr "已解除 {venue}"
+
+msgid "tr.ov.events"
+msgstr "事件"
+
+msgid "tr.ov.evEmpty"
+msgstr "這段期間沒有事件。"
+
+msgid "tr.ov.today"
+msgstr "今天"
+
+msgid "tr.ov.yesterday"
+msgstr "昨天"
+
+msgid "tr.ov.evHalt"
+msgstr "已暫停下單"
+
+msgid "tr.ov.evHaltAuto"
+msgstr "已自動暫停下單"
+
+msgid "tr.ov.evHaltNote"
+msgstr "停開新倉；平倉與停損停利照常執行"
+
+msgid "tr.ov.evErr"
+msgstr "下單失敗"
+
+msgid "tr.ov.evBarStale"
+msgstr "K 棒沒到位"
+
+msgid "tr.ov.evBarStaleNote"
+msgstr "等了 {minutes} 分鐘，仍在重試，訊號會晚發"
+
+msgid "tr.ov.evExUnreach"
+msgstr "{venue} 已連續 {minutes} 分鐘連不上"
+
+msgid "tr.ov.evExUnreachNote"
+msgstr "這段時間不會下單，恢復後自動繼續；交易所暫時故障通常不需要處理，持續很久的話請確認交易所公告"
+
+msgid "tr.ov.evExBack"
+msgstr "{venue} 已恢復連線"
+
+msgid "tr.ov.evExecFallback"
+msgstr "已改用市價單"
+
+msgid "tr.ov.evExecFallbackNote"
+msgstr "原本設定的下單方式無法執行，成交價可能與預期不同"
+
+msgid "tr.ov.evExecInterrupted"
+msgstr "前次執行中斷"
+
+msgid "tr.ov.evExecInterruptedNote"
+msgstr "成交可能沒記進帳本，重新啟動前先核對部位"
+
+msgid "tr.ov.evExecStuck"
+msgstr "執行卡住"
+
+msgid "tr.ov.evExecStuckNote"
+msgstr "這個標的的後續下單都在等它"
+
+msgid "tr.ov.evSchedErr"
+msgstr "排程器出錯"
+
+msgid "tr.ov.evSchedErrNote"
+msgstr "修好之前這支策略可能完全不會跑"
+
+msgid "tr.ov.evStrategyFailed"
+msgstr "策略執行失敗"
+
+msgid "tr.ov.evStrategyFailedNote"
+msgstr "排程還是照跑，但這一輪沒有產生訊號"
+
+# ── trade:end ──

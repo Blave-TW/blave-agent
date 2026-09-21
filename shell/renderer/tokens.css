@@ -22,6 +22,9 @@
   /* trading */
   --color-green: #31a86a;
   --color-red: #d94f5c;        /* crimson — 3.8:1 on surface, 4.5:1 on darkBody */
+  /* 文字用的紅綠(light 加深過 AA;dark 重上回亮值)——自動下單頁的買賣/損益字 */
+  --color-greenText: #247b4d;
+  --color-redText: #b8434e;
   /* categorical data(多序列、非交易語意;canon › Color › Categorical data)——指標線用 */
   --color-data-1: #ff9960;     /* = --color-primary,主序列 */
   --color-data-2: #5b7a9e;     /* 暖鋼藍 */
@@ -50,6 +53,7 @@
   /* motion */
   --motion-fast: 0.15s;
   --motion-base: 0.18s;
+  --motion-blink: 1.05s;       /* 呼吸點/游標閃爍的共用節拍(canon › Motion) */
   --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
 
   /* elevation */
@@ -78,6 +82,8 @@
   --color-black: #222d33;
   --color-greyDark: #546168;
   --color-greyMedium: #818f97;
+  --color-greenText: #31a86a;
+  --color-redText: #d94f5c;
 
   --bg-body: var(--color-darkBody);
   --surface-card: var(--color-darkCard);

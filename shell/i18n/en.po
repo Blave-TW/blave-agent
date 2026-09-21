@@ -780,3 +780,472 @@ msgstr "Sign out"
 
 msgid "acct.outDone"
 msgstr "Signed out. This computer no longer gets Blave data."
+
+# ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
+
+msgid "set.cat.conn"
+msgstr "Connections"
+
+msgid "cx.lead"
+msgstr "Everything on this page is saved only in the workspace on this computer (~/Blave/workspace/.env). Blave does not upload it. The agent and your strategy code can read it; that is how they trade and fetch data for you."
+
+msgid "cx.acct.title"
+msgstr "Trading account"
+
+msgid "cx.acct.meta"
+msgstr "Can place orders and read the account, and is also used to fetch this exchange's data. One at a time."
+
+msgid "cx.venue"
+msgstr "Exchange / broker"
+
+msgid "cx.paper"
+msgstr "Paper trading (no keys)"
+
+msgid "cx.paperShort"
+msgstr "Paper trading"
+
+msgid "cx.paperNote"
+msgstr "No API keys needed. The simulated account starts with 10,000 USDT, fills at your strategy's own market data with fees (no slippage), and never touches real money; strategies, order settings, positions and the performance page all work exactly as with a real account."
+
+msgid "cx.connect"
+msgstr "Connect an exchange"
+
+msgid "cx.connecting"
+msgstr "Connecting…"
+
+msgid "cx.connected"
+msgstr "Connected"
+
+msgid "cx.perfNote"
+msgstr "Paper results do not represent real fills (no slippage)."
+
+msgid "cx.unbindHint"
+msgstr "To disconnect, go to {link}."
+
+msgid "cx.unbindLink"
+msgstr "Auto trading › Settings"
+
+msgid "cx.retest"
+msgstr "Retest connection"
+
+msgid "cx.retesting"
+msgstr "Testing…"
+
+msgid "cx.fail"
+msgstr "Connecting {id} failed ({stage}): {msg}"
+
+msgid "cx.failShort"
+msgstr "Connection failed"
+
+msgid "cx.sendFail"
+msgstr "Could not connect ({err}). Try again."
+
+msgid "cx.down"
+msgstr "The order engine on this computer isn't running. Try again in a few seconds; if it stays this way, restart Blave."
+
+msgid "tr.mode.paper"
+msgstr "Paper"
+
+msgid "tr.tb"
+msgstr "{state} · {venue}"
+
+msgid "tr.tbAria"
+msgstr "Auto trading: {state}"
+
+msgid "tr.paperCcy"
+msgstr "paper {c}"
+
+msgid "tr.nav"
+msgstr "Auto trading"
+
+msgid "tr.autoOn"
+msgstr "Auto-trading running"
+
+msgid "tr.halted"
+msgstr "Paused"
+
+msgid "tr.recDead"
+msgstr "Reconciler not running"
+
+msgid "tr.lastBeat"
+msgstr "last heartbeat {t}"
+
+msgid "tr.notStarted"
+msgstr "Trading not started yet"
+
+msgid "tr.noAccount"
+msgstr "No exchange connected"
+
+msgid "tr.loading"
+msgstr "Loading…"
+
+msgid "tr.stop"
+msgstr "Pause trading"
+
+msgid "tr.start"
+msgstr "Start trading"
+
+msgid "tr.stopping"
+msgstr "Pausing…"
+
+msgid "tr.starting"
+msgstr "Starting…"
+
+msgid "tr.cmdNotDelivered"
+msgstr "The command was never delivered — it is still trading. Try again; if it keeps failing, revoke this computer's API key at the exchange and it can no longer send orders (existing positions still need closing there yourself)."
+
+msgid "tr.cmdUnavailable"
+msgstr "This computer’s command channel is not responding — commands can’t be sent from here right now."
+
+msgid "tr.cmdFailed"
+msgstr "The command was not delivered — nothing changed. Try again."
+
+msgid "tr.cmdUnknown"
+msgstr "The command was sent, but this computer has not reported a result yet — it may already have run. Check the status on this page before pressing again."
+
+msgid "tr.cmdRejected"
+msgstr "This computer rejected the command ({err})."
+
+msgid "tr.hostRetry"
+msgstr "The order engine on this computer stopped and is restarting; no orders go out meanwhile. Once it is back, check the status here — if it shows not started, press Start trading again."
+
+msgid "tr.hostShort"
+msgstr "Order engine not running"
+
+msgid "tr.hostDown"
+msgstr "The order engine on this computer won't start, so auto-trading is not running. Restart Blave."
+
+msgid "tr.unknown"
+msgstr "Can't read the trading status on this computer"
+
+msgid "tr.unknownBody"
+msgstr "The trading status couldn’t be read this round, so the account and positions can’t be shown for now. It will try again in a few seconds."
+
+msgid "tr.unknownStop"
+msgstr " The order engine may still be running; to stop it, press Pause trading above."
+
+msgid "tr.badAmount"
+msgstr "That amount can't be read. Numbers only, e.g. 1500 or 1,500.50; the limit is 1,000,000,000."
+
+msgid "tr.stopChoiceSelf"
+msgstr "No new positions will be opened after pausing. Closing positions only closes positions opened by auto-trading — anything you opened manually is left untouched."
+
+msgid "tr.stopChoice"
+msgstr "No new positions will be opened after pausing. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
+
+msgid "tr.closeAllWarn2"
+msgstr "Strategy amounts are kept: pressing Start trading later rebuilds positions to those amounts. If you don't want that, zero the amounts first."
+
+msgid "tr.stopKeep"
+msgstr "Pause, leave positions untouched"
+
+msgid "tr.stopFlat"
+msgstr "Pause and close positions"
+
+msgid "tr.startChoice"
+msgstr "Catch up places market orders now to match each strategy’s current signal — if a strategy is already in a position, you board it mid-trade. Wait for new signals places no orders now; each strategy starts trading only at its next entry, exit, or flip."
+
+msgid "tr.startWarn1"
+msgstr "Real orders resume immediately, moving your exchange positions to the current targets."
+
+msgid "tr.startWarn2"
+msgstr "Strategies and weights kept updating while paused, so the first reconcile may move several positions at once."
+
+msgid "tr.startCatchUp"
+msgstr "Start and catch up positions"
+
+msgid "tr.startWait"
+msgstr "Start, wait for new signals"
+
+msgid "tr.means.l"
+msgstr "Running on this computer means:"
+
+msgid "tr.means.1"
+msgstr "Auto-trading runs only while the computer is awake, Blave is open and the network is up."
+
+msgid "tr.means.2"
+msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops, positions stay on {venue} and are not closed."
+
+msgid "tr.means.2p"
+msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
+
+msgid "tr.means.3"
+msgstr "If a bar close was missed while away, trading is auto-paused, not even reductions are made, until you confirm each strategy."
+
+msgid "tr.means.4"
+msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
+
+msgid "tr.tab.over"
+msgstr "Overview"
+
+msgid "tr.tab.pos"
+msgstr "Positions"
+
+msgid "tr.tab.assets"
+msgstr "Assets"
+
+msgid "tr.tab.hist"
+msgstr "Order History"
+
+msgid "tr.tab.set"
+msgstr "Settings"
+
+msgid "tr.onboard"
+msgstr "Order sizes are derived from your exchange equity, so this page needs an exchange account first. Once connected, give each strategy an amount and it starts trading."
+
+msgid "tr.strategies"
+msgstr "Strategies"
+
+msgid "tr.zeroMeansOff"
+msgstr "0 means no orders — the strategy still runs and computes its signal; it just holds no position."
+
+msgid "tr.col.strategy"
+msgstr "Strategy"
+
+msgid "tr.col.symbol"
+msgstr "Symbol"
+
+msgid "tr.col.amount"
+msgstr "Position size"
+
+msgid "tr.col.targetPos"
+msgstr "Target position"
+
+msgid "tr.col.target"
+msgstr "Target"
+
+msgid "tr.col.actual"
+msgstr "Actual"
+
+msgid "tr.col.diff"
+msgstr "Difference"
+
+msgid "tr.mkt.spot"
+msgstr "Spot"
+
+msgid "tr.mkt.swap"
+msgstr "Perp"
+
+msgid "tr.amountAria"
+msgstr "Amount ({ccy})"
+
+msgid "tr.noStrategies"
+msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has a backtest you can give it a size."
+
+msgid "tr.typeC"
+msgstr "portfolio strategies do not support auto-trading yet"
+
+msgid "tr.gateHint"
+msgstr "Below the {m} {c} minimum entry — no position will open"
+
+msgid "tr.total"
+msgstr "Total"
+
+msgid "tr.ofEquity"
+msgstr "of your equity"
+
+msgid "tr.unitNote"
+msgstr "Amounts in {c}"
+
+msgid "tr.unsaved"
+msgstr "Amounts not saved yet — they take effect on Save."
+
+msgid "tr.revert"
+msgstr "Revert"
+
+msgid "tr.save"
+msgstr "Save"
+
+msgid "tr.saving"
+msgstr "Saving…"
+
+msgid "tr.saved"
+msgstr "Saved — this computer now uses the new amounts."
+
+msgid "tr.saveTitle"
+msgstr "Confirm trade amounts"
+
+msgid "tr.saveWarn"
+msgstr "Once saved, the order engine reconciles to these amounts — orders may fire immediately."
+
+msgid "tr.saveRemoved"
+msgstr "Removing: {names} — their futures positions will be closed and spot holdings sold."
+
+msgid "tr.saveLine"
+msgstr "{name}: {amt}"
+
+msgid "tr.exchPositions"
+msgstr "Exchange positions"
+
+msgid "tr.threshold"
+msgstr "Reconciliation skips a difference under {amt}, or one that converts to less than the exchange's minimum order size for that symbol; once both are cleared, it submits the order automatically."
+
+msgid "tr.posEmpty"
+msgstr "No open positions."
+
+msgid "tr.noPositions"
+msgstr "No positions yet — every strategy's order amount is 0. Set an amount above and check back."
+
+msgid "tr.noReconcile"
+msgstr "No reconcile yet — actual positions appear once auto-trading runs."
+
+msgid "tr.gateFootLead"
+msgstr "Skipped this round: "
+
+msgid "tr.gateFootEntry"
+msgstr "{sym} difference under {m}"
+
+msgid "tr.gateFootReduce"
+msgstr "{sym} over by under half a lot"
+
+msgid "tr.orderFailed"
+msgstr "Order failed: {sym} — {err}"
+
+msgid "tr.account"
+msgstr "Account"
+
+msgid "tr.equity"
+msgstr "Equity"
+
+msgid "tr.recentOrders"
+msgstr "Recent orders"
+
+msgid "tr.noOrders"
+msgstr "No orders yet."
+
+msgid "tr.contributors"
+msgstr "Triggered by {names}"
+
+msgid "tr.orderTarget"
+msgstr "Order target {amount}"
+
+msgid "tr.unbind"
+msgstr "Disconnect"
+
+msgid "tr.unbinding"
+msgstr "Disconnecting…"
+
+msgid "tr.unbindDesc"
+msgstr "Removes the exchange keys from this computer — the order engine can no longer trade this account."
+
+msgid "tr.unbindWarn"
+msgstr "This removes the exchange keys from this computer — the order engine can no longer trade this account. Your order settings are also cleared; you'll need to set them up again after reconnecting."
+
+msgid "tr.ov.equity"
+msgstr "Total equity"
+
+msgid "tr.ov.equityTip"
+msgstr "All accounts combined, incl. unrealized PnL."
+
+msgid "tr.ov.day"
+msgstr "Today's PnL"
+
+msgid "tr.ov.curve"
+msgstr "Equity curve"
+
+msgid "tr.ov.modeEquity"
+msgstr "Equity"
+
+msgid "tr.ov.modePnl"
+msgstr "Cumulative PnL"
+
+msgid "tr.ov.rangeAll"
+msgstr "All"
+
+msgid "tr.ov.empty"
+msgstr "No equity records yet. While Blave is open, this computer records one on the hour; nothing is recorded while it is closed."
+
+msgid "tr.ov.emptyBaseline"
+msgstr "Not enough records to draw the curve yet — it takes two. While Blave is open, one is recorded on the hour; nothing is recorded while it is closed."
+
+msgid "tr.ov.gapNote"
+msgstr "Gaps in the curve are times Blave wasn't open — nothing was recorded."
+
+msgid "tr.ov.range"
+msgstr "Range"
+
+msgid "tr.ov.curveAria"
+msgstr "Equity curve, {a} to {b}, {n} records"
+
+msgid "tr.ov.evResume"
+msgstr "Trading resumed"
+
+msgid "tr.ov.evResumeNote"
+msgstr "new entries resumed"
+
+msgid "tr.ov.evConnected"
+msgstr "Connected {venue}"
+
+msgid "tr.ov.evDisconnected"
+msgstr "Disconnected {venue}"
+
+msgid "tr.ov.events"
+msgstr "Events"
+
+msgid "tr.ov.evEmpty"
+msgstr "No events in this range."
+
+msgid "tr.ov.today"
+msgstr "Today"
+
+msgid "tr.ov.yesterday"
+msgstr "Yesterday"
+
+msgid "tr.ov.evHalt"
+msgstr "Trading paused"
+
+msgid "tr.ov.evHaltAuto"
+msgstr "Trading auto-paused"
+
+msgid "tr.ov.evHaltNote"
+msgstr "new entries paused; exits and stops still run"
+
+msgid "tr.ov.evErr"
+msgstr "Order failed"
+
+msgid "tr.ov.evBarStale"
+msgstr "Bar has not arrived"
+
+msgid "tr.ov.evBarStaleNote"
+msgstr "waited {minutes} min and still retrying; the signal will be late"
+
+msgid "tr.ov.evExUnreach"
+msgstr "{venue} unreachable for {minutes} min"
+
+msgid "tr.ov.evExUnreachNote"
+msgstr "no orders go out meanwhile and trading resumes by itself once it is back; a temporary exchange fault usually needs nothing from you, but if it drags on, check the exchange's announcements"
+
+msgid "tr.ov.evExBack"
+msgstr "{venue} reachable again"
+
+msgid "tr.ov.evExecFallback"
+msgstr "Fell back to a market order"
+
+msgid "tr.ov.evExecFallbackNote"
+msgstr "the execution style set for this order could not run, so the fill price may differ from what you expected"
+
+msgid "tr.ov.evExecInterrupted"
+msgstr "Previous execution interrupted"
+
+msgid "tr.ov.evExecInterruptedNote"
+msgstr "fills may be missing from the ledger; check positions before resuming"
+
+msgid "tr.ov.evExecStuck"
+msgstr "Execution stuck"
+
+msgid "tr.ov.evExecStuckNote"
+msgstr "further orders for this symbol are waiting on it"
+
+msgid "tr.ov.evSchedErr"
+msgstr "Scheduler errored"
+
+msgid "tr.ov.evSchedErrNote"
+msgstr "this strategy may not run at all until it is fixed"
+
+msgid "tr.ov.evStrategyFailed"
+msgstr "Strategy crashed"
+
+msgid "tr.ov.evStrategyFailedNote"
+msgstr "the schedule keeps firing, but this run produced no signal"
+
+# ── trade:end ──
