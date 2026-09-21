@@ -304,6 +304,16 @@ _CRED_ENV_RE = re.compile(
 # away from being read as a "bound venue" and silently evicted by an unrelated
 # rebind — see the RDP Password Incident this fleet already had.
 _CRED_KEEP_IDS = {"BLAVE", "ADMIN"}
+# Data-source credentials are named DATA_<SOURCE>_<FIELD> (BYO Data). A
+# DATA_POLYGON_API_KEY + DATA_POLYGON_SECRET_KEY pair has the exact shape of a
+# bound venue, and read as one it gets evicted by the next exchange bind — with
+# a HALT for a venue that never existed. A prefix, not a _CRED_KEEP_IDS entry:
+# the source list is open-ended and that set is an exact match.
+_DATA_CRED_PREFIX = "DATA_"
+
+
+def _is_data_cred_id(cred_id):
+    return cred_id.upper().startswith(_DATA_CRED_PREFIX)
 
 
 @contextlib.contextmanager
@@ -330,7 +340,10 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     {ID}_SECRET_KEY / {ID}_PASSWORD / {ID}_PASSPHRASE) in these .env lines —
     the pair IS a bound venue, TW brokers same pool; a lone key with no
     secret-shaped sibling is a service key (OPENAI_API_KEY), not a venue.
-    Single source for both the eviction sweep and bound/unbound checks.
+    Single source for both the eviction sweep and bound/unbound checks — so
+    DATA_* ids (data sources, never a venue) are dropped here, once, for the
+    eviction sweep, the bind manifest, routing inheritance and the scheduler's
+    bound check alike.
     Capital's shape is {ID}_API_KEY + {ID}_PASSWORD (canonical env names
     decided 2026-08-14, references/capital-broker.md) — PASSWORD joined the
     accepted secret suffixes for this (fixes audit B6: capital never read as
@@ -338,7 +351,8 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     suffixes = {}
     for l in lines:
         m = _CRED_ENV_RE.match(l.split("=", 1)[0].strip())
-        if m and m.group(1).upper() not in _CRED_KEEP_IDS | skip_ids:
+        if (m and m.group(1).upper() not in _CRED_KEEP_IDS | skip_ids
+                and not _is_data_cred_id(m.group(1))):
             suffixes.setdefault(m.group(1).upper(), set()).add(m.group(2).upper())
     return {
         i for i, s in suffixes.items()
@@ -2071,8 +2085,14 @@ def _cmd_credentials_remove(args):
     # Prune the unbound venues from account.json right away — the account
     # reader only rewrites it every 2 min, and until then the web would keep
     # showing a live-looking equity for an account that no longer has a key.
+    # DATA_* excluded: removing a data-source key is not an unbind — no venue
+    # to prune, and it must not halt trading. Judged on the ID (suffix off),
+    # the same thing _venue_cred_ids judges: the env NAME of a venue called
+    # "DATA" (DATA_API_KEY) starts with the prefix, its id does not.
     dropped_ids = {
-        n[: -len("_API_KEY")].lower() for n in drop if n.upper().endswith("_API_KEY")
+        n[: -len("_API_KEY")].lower() for n in drop
+        if n.upper().endswith("_API_KEY")
+        and not _is_data_cred_id(n[: -len("_API_KEY")])
     }
     if dropped_ids:
         apath = os.path.join(WORKSPACE, "manager", "account.json")

@@ -179,7 +179,10 @@ def _venues(env):
         if not m:
             continue
         prefix = m.group(1)
-        if prefix.upper() in _RESERVED_PREFIXES:
+        # DATA_<SOURCE>_* = data-source keys, never a venue
+        # (command_listener._DATA_CRED_PREFIX) — even if an agent someday
+        # writes a lib/account_data_<source>.py
+        if prefix.upper() in _RESERVED_PREFIXES or prefix.upper().startswith("DATA_"):
             continue
         vid = prefix.lower()
         if os.path.isfile(os.path.join(WORKSPACE, "lib", f"account_{vid}.py")):

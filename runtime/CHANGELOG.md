@@ -94,6 +94,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   §1、§4)。實測備忘(CLI 2.1.239,mock upstream):不帶 `--effort` 時 CLI 本來就送
   `output_config.effort="high"` + `effort-2025-11-24` beta(含 deepseek 模型名);haiku 則完全
   不送 effort,`--effort` 對它是 no-op。
+- 資料來源金鑰(BYO Data,命名 `DATA_<SOURCE>_<FIELD>`)不再被當成交易所。成對的
+  `DATA_X_API_KEY`+`DATA_X_SECRET_KEY/PASSWORD/PASSPHRASE` 形狀跟已綁場所一模一樣,舊行為是:下次
+  綁/換交易所時被當成「另一個場所」整對驅逐,還為一個不存在的場所觸發 HALT。改在
+  `command_listener._venue_cred_ids` 一處跳過 `DATA_` 開頭的 id(驅逐掃描、
+  `credentials.ui.json`、routing 繼承、排程的 bound 判斷、`lib/venue.py` 的 `_bound_ids` 全部吃這支);
+  `_cmd_credentials_remove` 移除 `DATA_*` 不算解除綁定(不 HALT、不動 account.json)——判斷對象是
+  去掉 `_API_KEY` 尾碼後的 **id**,跟綁定側同一個口徑(id 恰為 `DATA` 的自訂場所仍是場所,綁/解一致);
+  `portfolio_reporter.venues()` 與 `account_reader._venues()` 不回報/不讀 `data_x`。**必須早於任何 `DATA_` 金鑰落到機器**(出貨順序
+  runtime → api → lib → shell/web)。這一版只有「認得並跳過」,沒有 `data_credentials` 指令。
+  閘門:`tests/check_data_cred_skip.py`。
 
 ## 1.1.82 — 2026-09-18
 

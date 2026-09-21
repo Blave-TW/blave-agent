@@ -282,7 +282,9 @@ def venues():
     suffixes = {}
     for line in lines:
         m = _ENV_CRED_RE.match(line)
-        if m and m.group(1).upper() not in _RESERVED_PREFIXES:
+        # DATA_<SOURCE>_* = data-source keys (command_listener._DATA_CRED_PREFIX)
+        if (m and m.group(1).upper() not in _RESERVED_PREFIXES
+                and not m.group(1).upper().startswith("DATA_")):
             suffixes.setdefault(m.group(1).lower(), set()).add(m.group(2).upper())
     out = {}
     for venue_id, sfx in suffixes.items():
