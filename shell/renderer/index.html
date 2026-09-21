@@ -58,7 +58,6 @@
   <div class="ws-bar"></div>
   <div class="ws">
     <aside class="pane-strategies">
-      <div class="ws-brand"><a class="ws-home" id="ws-home" target="_blank" rel="noopener"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></a></div>
       <!-- 自動下單入口:位置照雲端 #pf_nav(策略清單上方)。不放圖示——這個側欄的列本來就沒有圖示 -->
       <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span><span class="mode" id="tr-nav-mode" hidden></span><i class="run-dot live" id="tr-nav-dot" aria-hidden="true" hidden></i></button></nav>
       <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
@@ -229,16 +228,13 @@
       <nav class="set-cats" id="set-cats" data-i18n-aria="set.cats">
         <button type="button" class="set-cat" data-set-cat="display" aria-current="true" data-i18n="set.cat.display"></button>
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
-        <!-- 連線:交易帳戶(這一版只有模擬交易)。內容由 trade.js 的 cxPaint 畫 -->
-        <button type="button" class="set-cat" data-set-cat="conn" data-i18n="set.cat.conn"></button>
         <!-- 會花錢的一類排最後:前兩類是偏好。聊天裡的情境卡會直接開到這裡 -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
-        <!-- 帳號區:登入是帳號的事,不是某一種 AI 的事——登出從「用 Blave 的 AI」那一列搬到這裡,
-             三個分類都看得到。有 token 才出現;沒登入時這裡不放登入鈕(登入只從講得出後果的地方進) -->
-        <div class="set-acct" id="set-acct" hidden>
-          <p class="lbl" data-i18n="acct.lbl"></p>
-          <p class="mail" data-i18n="acct.signedIn"></p>
-          <button type="button" class="btn-quiet" id="set-acct-out" data-i18n="acct.out"></button>
+        <!-- 帳號區:登入是帳號的事,不是某一種 AI 的事。兩態都顯示(已登入 / 未登入),字與鈕由 app.js 的 acctPaintAcct 畫。
+             那顆鈕吃 .set-cat 的樣子但不是分類(沒有 data-set-cat、不給 aria-current) -->
+        <div class="set-acct" id="set-acct">
+          <div class="who"><p class="l1" id="set-acct-who"></p><p class="l2" id="set-acct-st"></p></div>
+          <button type="button" class="set-cat" id="set-acct-btn"></button>
         </div>
       </nav>
       <div class="set-content">
@@ -250,15 +246,13 @@
               <select class="set-sel" id="set-lang"></select>
             </span>
           </div>
-          <!-- 版本與更新:字與鈕由 app.js 的 upPaint 依狀態畫 -->
-          <div class="set-row set-up" id="set-up">
-            <span class="set-gl" data-i18n="up.label"></span>
-            <span class="set-up-txt" id="set-up-txt" role="status"></span>
+          <!-- 關於(這一頁最下面):版號、更新狀態、右邊一顆鈕。字與鈕由 app.js 的 upPaint 依狀態畫 -->
+          <div class="set-about" id="set-up">
+            <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p></div>
             <button type="button" class="btn-quiet" id="set-up-btn" hidden></button>
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
-        <div class="set-pane" data-set-cat="conn" id="set-conn" hidden></div>
         <!-- 雲端方案:內容由 app.js 的 planPaint 畫(依 account_status.plan)。上半自己捲,
              底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
         <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden></div>
@@ -274,6 +268,22 @@
 <div class="scrim lb-scrim" id="lb-scrim" role="dialog" aria-modal="true" data-i18n-aria="chat.imageZoom" hidden>
   <button type="button" class="modal-close lb-close" id="lb-close" data-i18n-aria="set.close">✕</button>
   <img class="lb-img" id="lb-img" alt="">
+</div>
+
+<!-- 連接交易所(自動下單頁的「連接交易所」直接開這個框;結構照雲端版)。內容由 trade.js 的 cxModalPaint 畫。
+     只在「這台電腦」視角開得起來——雲端第一刀唯讀,trade.js 的 cxModalOpen 硬擋 -->
+<div class="scrim" id="cx-scrim" role="dialog" aria-modal="true" aria-labelledby="cx-title" hidden>
+  <div class="set-modal cx-modal" id="cx-modal">
+    <div class="modal-head">
+      <h6 id="cx-title" data-i18n="cx.connect"></h6>
+      <button type="button" class="modal-close" id="cx-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="cx-body" id="cx-body"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn-out" id="cx-cancel" data-i18n="del.cancel"></button>
+      <button type="button" class="btn-fill" id="cx-go"></button>
+    </div>
+  </div>
 </div>
 
 <!-- 刪對話的確認框(外框沿用 .scrim / .set-modal;寬 440 = 雲端 .ns-modal) -->

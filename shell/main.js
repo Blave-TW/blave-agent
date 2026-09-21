@@ -897,18 +897,37 @@ async function accountStatus() {
    憑證;月價 = Starter 時價 × 720(跟 api 的 plan.monthly 同一個算法)。舊 api 沒有 trial 欄 → 回 null,
    畫面用不帶數字的退化句。 */
 let pubCache = null;
-async function publicPricing() {
-  if (pubCache && Date.now() - pubCache.at < 3600000) return pubCache.body;
+/* public_tiers 的原始回應(匿名端點)。方案頁的數字與最低版本閘讀的是同一支:只有這一條讀取、這一份一小時的快取。
+   回 body 或 null(打不到 / 不是 200 / 不是物件)。force = 不看快取(版本閘在動作前補問用);問不到時舊快取不動。 */
+async function publicTiers(force) {
+  if (!force && pubCache && Date.now() - pubCache.at < 3600000) return pubCache.body;
   try {
     const r = await getJSON(`${API_BASE}/openclaw/public_tiers`, {});
     const b = r.status === 200 && r.body && (r.body.data || r.body);
-    if (!(b && b.trial && Number(b.trial.days) > 0)) return null;
-    const st = (Array.isArray(b.linux) ? b.linux : []).find((x) => x && x.label === "Starter");
-    const hr = st && Number(st.twd_per_hour) > 0 ? Number(st.twd_per_hour) : null;
-    const body = { trial: b.trial, starter_hourly: hr, starter_monthly: hr ? Math.round(hr * 720) : null };
-    pubCache = { at: Date.now(), body };
-    return body;
+    if (!b || typeof b !== "object" || Array.isArray(b)) return null;
+    pubCache = { at: Date.now(), body: b };
+    return b;
   } catch (_) { return null; }
+}
+async function publicPricing() {
+  const b = await publicTiers(false);
+  if (!(b && b.trial && Number(b.trial.days) > 0)) return null;
+  const st = (Array.isArray(b.linux) ? b.linux : []).find((x) => x && x.label === "Starter");
+  const hr = st && Number(st.twd_per_hour) > 0 ? Number(st.twd_per_hour) : null;
+  return { trial: b.trial, starter_hourly: hr, starter_monthly: hr ? Math.round(hr * 720) : null };
+}
+// ── 最低版本閘(minversion.js;spec §13 第 4 點)──────────────────
+// 安全事故用:api 說這個版本已停用 → 擋新的下單啟動與 Blave 的 AI,只留更新。失敗方向一律放行(檔頭有完整規則)。
+let _gate = null;
+function minGate() {
+  if (_gate) return _gate;
+  _gate = require("./minversion").createGate({
+    currentVersion: app.getVersion(), fetchTiers: (force) => publicTiers(force),
+    onChange: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("min-version-state", st); },
+    onBlocked: () => { try { updater().check(); } catch (_) { /* 沒有更新來源的包:畫面只會說需要更新 */ } },   // 被擋的那一刻就去找新版,不等 4 小時的節拍
+    log: (m) => console.error("[min-version] " + m),
+  });
+  return _gate;
 }
 /* 這個帳號現在含不含 Blave 資料(試用中 / 名下有主機 / API 方案)。畫面的預檢與回前景重查
    都會打 account_status,這裡吃它最後一次的結果;太舊(或還沒打過)才自己補打一次——這支跟
@@ -1006,6 +1025,13 @@ function viewingArgs(v) {
   if (name) return ["--viewing-strategy=" + name, ...(v.tab === "code" || v.tab === "data" ? ["--viewing-tab=" + v.tab] : [])];
   return v.view === "portfolio" ? ["--viewing-view=portfolio"] : [];
 }
+/* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。兩顆各看各的:
+     proxyToken(帳號 token,會燒 Blave 的 AI 額度)= **連的是 Blave 的 AI** 而且有登入;
+     dataKey(縮權的資料 key,不能呼叫 LLM)= **有登入而且帳號含資料**,不看連的是誰——自帶 Claude Code / Codex 的人登入後也拿得到資料。
+   沒登入兩個都沒有;included 查不到(null / undefined)當沒有。 */
+function turnCreds(kind, signedIn, included) {
+  return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true };
+}
 async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
@@ -1022,10 +1048,11 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // token 還在 Keychain 裡——照「有 token 就帶」會讓他以為在用自己的訂閱、實際上燒 Blave 額度
   // 資料則相反——**看有沒有登入,不看連的是誰**:登入 Blave 是帳號的事,資料 key 是另一把縮權的 key
   // (不能呼叫 LLM、不產生 usage_blave),給自帶 CLI 的人不會燒到他的 AI 額度。
-  const useBlave = conn.kind === "blave";
   const signedIn = !!loadToken();
-  const acct = useBlave ? loadToken() : null;
-  const dataAccess = syncDataEnv(signedIn && await dataIncluded());
+  const plan = turnCreds(conn.kind, signedIn, signedIn && await dataIncluded());
+  const useBlave = conn.kind === "blave";
+  const acct = plan.proxyToken ? loadToken() : null;
+  const dataAccess = syncDataEnv(plan.dataKey);
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -1126,6 +1153,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true, nodeIntegration: false, sandbox: true,
+      // 發佈版連 DevTools 本身都關掉(選單已經不放;這是縱深:哪天有人加回快捷鍵或 openDevTools 也開不起來)
+      devTools: !(app.isPackaged && require("./package.json").blaveRelease),
     },
   });
   guardNavigation(win);
@@ -1173,8 +1202,10 @@ app.whenReady().then(() => {
   ipcMain.handle("trade-status", () => tradeHost().status());
   ipcMain.handle("trade-events", (_e, q) => tradeHost().events({ days: q && Number(q.days) }));
   ipcMain.handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
-  ipcMain.handle("trade-send", (e, cmd, args) => {
+  ipcMain.handle("trade-send", async (e, cmd, args) => {
     if (!fromOurPage(e) || typeof cmd !== "string") return { ok: false, error: "NOT_ALLOWED" };
+    // 最低版本閘:只擋啟動類(resume / resume_wait);暫停、改金額、移除金鑰永遠放行,已在跑的下單不主動停
+    if (require("./minversion").START_CMDS.has(cmd)) { await minGate().ensureFresh(); if (!minGate().tradeAllowed(cmd)) return { ok: false, error: "UPDATE_REQUIRED" }; }
     const out = tradeHost().send(cmd, args && typeof args === "object" ? args : {});
     if (cmd === "resume" || cmd === "resume_wait") Promise.resolve(out).then((r) => {
       if (!r || !r.ok) return;
@@ -1189,6 +1220,7 @@ app.whenReady().then(() => {
   // 懶啟動:第一次有人要雲端狀態才開始輪詢。refresh 有最小間隔,renderer 寫壞的迴圈打不爆帳號的速率桶
   ipcMain.handle("cloud-status", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().status(); });
   ipcMain.handle("cloud-refresh", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().refresh().then(() => cloudHost().status()); });
+  ipcMain.handle("min-version-state", () => minGate().state());
   ipcMain.handle("update-state", () => updater().state());
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
   ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
@@ -1203,13 +1235,19 @@ app.whenReady().then(() => {
   ipcMain.handle("sign-out-blave", () => signOutBlave());
   ipcMain.handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   ipcMain.handle("cancel-agent-login", () => cancelAgentLogin());
-  ipcMain.handle("send-message", (e, payload) => {
+  ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
     if (activeTurn || turnStarting) return { busy: true };
     const win = BrowserWindow.fromWebContents(e.sender);
     // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
-    // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db
+    // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
     turnStarting = true;
+    // 最低版本閘:只擋 Blave 的 AI;連自己 CLI 的人照常聊
+    const kind = (loadConnection() || {}).kind;
+    if (kind === "blave") {
+      try { await minGate().ensureFresh(); } catch (_) { /* 問不到 = 照手上的答案 */ }
+      if (!minGate().turnAllowed(kind)) { turnStarting = false; return { blocked: "UPDATE_REQUIRED" }; }
+    }
     runTurn(win, payload).catch((err) => {
       if (win && !win.isDestroyed()) win.webContents.send("turn-end", { code: 1, errTail: String((err && err.message) || err) });
     }).finally(() => { turnStarting = false; });
@@ -1228,10 +1266,13 @@ app.whenReady().then(() => {
   trayStart();
   tm().start();
   updater().start();
+  minGate().start();
+  appMenuSync();
   ipcMain.on("trade-labels", (e, labels) => {
     if (!fromOurPage(e) || !labels || typeof labels !== "object") return;
     for (const k of Object.keys(tmLabels)) if (typeof labels[k] === "string" && labels[k] && labels[k].length <= 400) tmLabels[k] = labels[k];
-    traySync();
+    if (labels.lang === "zh" || labels.lang === "en") uiLang = labels.lang;   // 只拿來組官網網址的語言段:白名單兩個值
+    traySync(); appMenuSync();
   });
 });
 // 一次只跑一份:第二份會跟第一份搶同一個 workspace 與 session.db,也讓「用同一顆 binary 再開一份」這條
@@ -1260,7 +1301,44 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
-  ev_downtime_paused: "Trading was paused automatically", ev_downtime_paused_n: "Everything is frozen after the downtime. Press Start trading to resume." };
+  ev_downtime_paused: "Trading was paused automatically", ev_downtime_paused_n: "Everything is frozen after the downtime. Press Start trading to resume.",
+  // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
+  // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
+  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", moneyPaper: "", moneyReal: "",
+  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "" };
+const TT = require("./traytext");
+let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
+const siteLang = () => uiLang || (/^zh/i.test(app.getLocale() || "") ? "zh" : "en");
+const pauseLabel = () => tmLabels.pauseLocal || tmLabels.pause;   // 有雲端之後「暫停下單」不夠明確:講清楚是這台電腦
+/* 雲端那一行:**不為了選單列去啟動雲端輪詢**——雲端宿主是懶啟動的(沒打開過雲端視角的人不該每分鐘打 api),
+   沒啟動過就沒有這一行。啟動過之後吃它手上那份(主行程自己的輪詢,不靠 renderer)。 */
+const cloudSt = () => (_cloud && _cloud.isRunning() ? _cloud.status() : null);
+function envSwitchFromMenu(env) {
+  showMain();
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("env-switch", env);
+}
+/* app 選單:系統預設那一份 + 「顯示」裡的兩個視角、「輔助說明」裡的官網(側欄字標拿掉之後,官網入口搬到這裡)。
+   ⌘1 / ⌘2 在 renderer 也有 keydown:macOS 上選單的快捷鍵先吃,頁面多半收不到;就算兩邊都觸發,切到「已經在的那一邊」
+   是 no-op(renderer 的 envSwitch 開頭就擋),不會切兩次。確認框開著時該不該切由 renderer 收到 env-switch 後自己判(同 keydown 的規則)。 */
+function appMenuSync() {
+  const key = [tmLabels.menuLocal, tmLabels.menuCloud, tmLabels.menuSite].join("|");
+  if (key === appMenuKey && Menu.getApplicationMenu()) return;
+  appMenuKey = key;
+  const dev = !(app.isPackaged && require("./package.json").blaveRelease);   // 發佈版的選單不放重新載入與開發者工具
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" },
+    { label: "View", submenu: [
+      { label: tmLabels.menuLocal || "This Computer", accelerator: "Cmd+1", click: () => envSwitchFromMenu("local") },
+      { label: tmLabels.menuCloud || "Cloud", accelerator: "Cmd+2", click: () => envSwitchFromMenu("cloud") },
+      { type: "separator" },
+      ...(dev ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, { type: "separator" }] : []),
+      { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" },
+    ] },
+    { role: "windowMenu" },
+    { role: "help", submenu: [{ label: tmLabels.menuSite || "Blave Website", click: () => shell.openExternal(SITE_URL[siteLang()]) }] },
+  ]));
+}
+const SITE_URL = { zh: "https://blave.org/zh", en: "https://blave.org/en" };   // 固定常數(結尾不加斜線:/zh/ 是 404);語言段只有這兩個值
 const venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);   // 同 renderer:四個都在才算連上的帳戶
 function tradeLive() {
   if (!_tradeHost) return null;
@@ -1292,21 +1370,26 @@ async function pauseFromMenu() {
   let r = null;
   try { r = await tradeHost().send("halt", { reason: "menu bar" }); } catch (_) { /* 當成沒送到 */ }
   traySync();
-  if (r && r.ok) { if (Notification.isSupported()) new Notification({ title: tmLabels.notifTitle, body: tmLabels.notifBody }).show(); return; }
+  if (r && r.ok) { if (Notification.isSupported()) new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels.notifTitle), body: tmLabels.notifBody }).show(); return; }
   // 沒成功不能只靠系統通知(權限關掉 / 專注模式會被吞):把視窗叫出來、掛一個框講清楚(稽核 M1)
   showMain();
-  dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.pause,
+  dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: pauseLabel(),
     detail: r && r.error === "UNKNOWN_RESULT" ? tmLabels.pauseUnknown : tmLabels.pauseFail, buttons: ["OK"] });
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
+// 選單列的狀態行。這台電腦那一行:選單列只在這台電腦「確定在下單」時出現,所以狀態一定是 on。字還沒交 → null,退回舊的那一句
+const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", state: "on" }, tmLabels);
+const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);
 function trayMenu(live) {
+  const cloud = trayCloudLine();
   return Menu.buildFromTemplate([
-    { label: tmLabels.running, enabled: false },
+    { label: trayLocalLine(live) || tmLabels.running, enabled: false },
     ...(updateWaiting() ? [{ label: tmLabels.updateReady, enabled: false }] : []),
     { label: venueName(live.venue), enabled: false },   // 模擬帳戶的名字本身就寫著「模擬交易」,不再疊一個「模擬」記號
+    ...(cloud ? [{ label: cloud, enabled: false }] : []),
     { type: "separator" },
-    { label: tmLabels.pause, click: pauseFromMenu },
+    { label: pauseLabel(), click: pauseFromMenu },   // 暫停只給這台電腦:雲端的暫停要用戶在雲端視角親手做
     { type: "separator" },
     { label: tmLabels.open, click: showMain },
     { label: tmLabels.quit, click: () => app.quit() },
@@ -1315,7 +1398,7 @@ function trayMenu(live) {
 function traySync() {
   const live = tradeLive();
   if (live) lastVenue = live.venue;
-  const key = live ? live.venue + "|" + tmLabels.running + "|" + tmLabels.pause + "|" + (updateWaiting() ? tmLabels.updateReady : "") : "";
+  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", trayCloudLine() || ""].join("|") : "";
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
   trayKey = key;
   if (!live) {
@@ -1331,7 +1414,7 @@ function traySync() {
   tray.setToolTip(updateWaiting() ? tmLabels.updateReady : tmLabels.running);
   tray.setTitle(updateWaiting() ? "•" : "");   // 圖示旁的小點(macOS 選單列的 title):有新版在等
   tray.setContextMenu(trayMenu(live));
-  if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: tmLabels.pause, click: pauseFromMenu }]));
+  if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: pauseLabel(), click: pauseFromMenu }]));
 }
 /* ── 本機 P1 通知(canon notifications.md 的 P1 清單;電腦版沒有平台那一層,這是唯一會叫人的出口)──────
    來源有兩個(稽核 M1),跟選單列共用 5 秒那個 timer:
@@ -1403,7 +1486,8 @@ function p1Sync() {
     p1LastShown[e.type] = Date.now();
     const sym = e.payload && typeof e.payload.symbol === "string" ? e.payload.symbol.replace(/@spot$/, "").slice(0, 24) : "";
     if (!Notification.isSupported()) continue;
-    const n = new Notification({ title: tmLabels["ev_" + e.type] + (sym ? " · " + sym : ""), body: tmLabels["ev_" + e.type + "_n"] });
+    // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
+    const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels["ev_" + e.type] + (sym ? " · " + sym : "")), body: tmLabels["ev_" + e.type + "_n"] });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
     n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop);
     if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
@@ -1431,7 +1515,8 @@ app.on("before-quit", (e) => {
     quitAsking = true;
     showMain();
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
-      detail: tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
+      // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
+      detail: TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
       .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
     return;
   }

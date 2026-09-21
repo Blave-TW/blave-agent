@@ -27,6 +27,13 @@ for (const v of ["BLAVE_MAC_IDENTITY", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APP
   console.log((ok ? "PASS  " : "FAIL  ") + "config 從 process.env." + v + " 讀"); if (!ok) red++;
 }
 // 選單列圖示:檔案缺了 Tray 是看不見的空圖、不丟錯(稽核 M4)——圖要在、也要被打進包
+// 列舉:main.js require 的每一個自家模組都要在打包清單裡(漏一個 = 打包版一啟動就找不到模組;開發版看不出來)
+{ const mainSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "main.js"), "utf8");
+  const mods = [...new Set((mainSrc.match(/require\("\.\/([a-z_]+)(?:\.js)?"\)/g) || []).map((m) => m.match(/\.\/([a-z_]+)/)[1] + ".js"))];
+  const filesLine = (cfg.match(/files:\s*\[[^\]]*\]/) || [""])[0];
+  const missing = mods.filter((m) => !filesLine.includes('"' + m + '"'));
+  const ok = mods.length >= 5 && missing.length === 0;
+  console.log((ok ? "PASS  " : "FAIL  ") + "main.js require 的自家模組都在 files 裡" + (missing.length ? " → 缺 " + missing.join(", ") : "")); if (!ok) process.exitCode = 1; }
 for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s*\[[^\]]*"updater\.js"/.test(cfg), "files 含 cloud.js 與 updater.js(main.js require 它們)"], [/files:\s*\[[^\]]*"telemetry\.js"/.test(cfg), "files 含 telemetry.js(main.js require 它,漏了打包版一開就炸)"], [/files:\s*\[[^\]]*"assets\/\*\*\/\*"/.test(cfg), "files 含 assets/**/*"],
   ...["trayTemplate.png", "trayTemplate@2x.png"].map((f) => [fs.existsSync(path.join(SHELL, "assets", f)), "assets/" + f + " 在"])]) {
   console.log((ok ? "PASS  " : "FAIL  ") + what); if (!ok) red++;

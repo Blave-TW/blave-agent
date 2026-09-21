@@ -53,7 +53,21 @@ t("rename 失敗 → 暫存檔不留", !fs.existsSync(f + ".blave-tmp"));
 
 // 兩把 key 各看各的:帳號 token(能燒 AI 額度)只在連的是 Blave 時才進 agent 的 env;資料 key 看的是
 // 有沒有登入,自帶 CLI 的人也拿得到。兩個條件對調任何一個,這裡就紅。
-t("帳號 token 只在 conn.kind === blave 時帶", /const acct = useBlave \? loadToken\(\) : null;/.test(src) && /\.\.\.\(acct \? \{ BLAVE_PROXY_TOKEN: acct \} : \{\}\)/.test(src));
-t("資料 key 看登入、不看連的是誰", /syncDataEnv\(signedIn && await dataIncluded\(\)\)/.test(src) && !/syncDataEnv\([^)]*useBlave/.test(src));
+// 決定本身是一支純函式(turnCreds),從原文切出來跑整張表;接線另外用原文斷言釘住。
+{ const i = src.indexOf("function turnCreds("); let d = 0, j = src.indexOf("{", i), end = -1;
+  for (let k = j; k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) { end = k + 1; break; } }
+  const turnCreds = eval("(" + src.slice(i, end) + ")");
+  const row = (kind, signedIn, included) => { const r = turnCreds(kind, signedIn, included); return (r.proxyToken ? "T" : "-") + (r.dataKey ? "D" : "-"); };
+  t("連 Blave AI + 已登入 + 含資料 → 帳號 token 與資料 key 都帶", row("blave", true, true) === "TD");
+  t("連 Blave AI + 已登入 + 不含資料 → 只帶帳號 token", row("blave", true, false) === "T-");
+  t("連自己的 Claude Code + 已登入 + 含資料 → **只帶資料 key**(不燒 Blave 的 AI 額度,但拿得到資料)", row("claude", true, true) === "-D" && row("codex", true, true) === "-D");
+  t("連自己的 CLI + 已登入 + 不含資料 → 兩個都不帶", row("claude", true, false) === "--" && row("codex", true, false) === "--");
+  t("未登入 → 兩個都不帶(不管連的是誰、不管 included 傳了什麼)", ["blave", "claude", "codex", undefined].every((k) => row(k, false, true) === "--"));
+  t("含不含資料查不到(null / undefined / 非布林)→ 當沒有", [null, undefined, 1, "true"].every((v) => row("claude", true, v) === "--"));
+  t("signedIn 不是布林 true → 當沒登入", row("blave", "yes", true) === "--"); }
+t("接線:帳號 token 吃 plan.proxyToken、只進 BLAVE_PROXY_TOKEN", /const acct = plan\.proxyToken \? loadToken\(\) : null;/.test(src) && /\.\.\.\(acct \? \{ BLAVE_PROXY_TOKEN: acct \} : \{\}\)/.test(src));
+t("接線:資料 key 吃 plan.dataKey,而且只經 syncDataEnv 進 workspace .env 的 managed block", /const dataAccess = syncDataEnv\(plan\.dataKey\);/.test(src) && (src.match(/syncDataEnv\(/g) || []).length === 3 && !/syncDataEnv\([^)]*useBlave/.test(src));
+t("接線:含不含資料只在有登入時才去問", /turnCreds\(conn\.kind, signedIn, signedIn && await dataIncluded\(\)\)/.test(src));
+t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份 + syncDataEnv(false)", /async function signOutBlave\(\)[\s\S]{0,600}?\n  clearToken\(\);/.test(src) && /function clearToken\(\) \{[\s\S]{0,120}?\n  clearDataKey\(\);/.test(src) && /function clearDataKey\(\) \{\s*\n\s*try \{ fs\.unlinkSync\(dataKeyPath\(\)\); \} catch \(_\) \{\}\s*\n\s*syncDataEnv\(false\);/.test(src));
 fs.rmSync(WS, { recursive: true, force: true });
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

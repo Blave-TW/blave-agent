@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("blave", {
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
+  // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
+  minVersionState: () => ipcRenderer.invoke("min-version-state"),
+  onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),
+  // app 選單「顯示」的兩項:"local" | "cloud"
+  onEnvSwitch: (fn) => ipcRenderer.on("env-switch", (_e, env) => fn(env)),
   updateState: () => ipcRenderer.invoke("update-state"),
   updateCheck: () => ipcRenderer.invoke("update-check"),
   updateInstall: () => ipcRenderer.invoke("update-install"),

@@ -304,9 +304,11 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 .means li { position: relative; padding-left: var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
 .means li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
 
-/* ---- 設定 › 連線 ---- */
-.keys-lead { margin: 0 0 var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
-.cx .cn-meta { color: var(--ink-2); }   /* 能力說明是必讀的次要字:暗底升一階(canon › Neutrals 註) */
+/* ---- 連接交易所的框(#cx-modal,寬 480)+ 設定分頁的帳戶列 ---- */
+.cx-modal { width: min(480px, 92vw); }
+.cx-body { padding: var(--space-4) var(--space-16) var(--space-16); }   /* 左右同 .del-body */
+.cx-body .plan-err, #tr-set .plan-err { margin: var(--space-12) 0 0; }
+.cx-row .cn-st .fault-mark { margin-top: 0; }
 .fld { display: block; margin-top: var(--space-12); }
 .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }
 .f-selw { position: relative; display: block; }
@@ -322,12 +324,9 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 }
 .f-input:focus { outline: none; border-color: var(--ink); }
 .cx-manual-note { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.form-act { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-12); margin-top: var(--space-16); }
 .cx-row { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
 .cx-row .n { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
 .cx-row .cn-st { color: var(--ink-2); }
-.row-act { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
-.cx .pf-alert { margin-top: var(--space-12); }
 
 @media (prefers-reduced-motion: reduce) {
   .run-dot.live { animation: none; }

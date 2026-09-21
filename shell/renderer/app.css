@@ -112,7 +112,6 @@
   display: flex; align-items: center; gap: var(--space-12);
   min-height: 44px;                  /* Fitts 熱區 */
 }
-.cn-row + .cn-row { border-top: 1px solid var(--border-hairline); }
 .cn-row .n { flex: 1; min-width: 0; font-size: 13px; color: var(--ink); }
 .cn-row.off .n { color: var(--ink-3); }
 .cn-st { flex: none; display: flex; align-items: center; gap: var(--space-6); font-size: 12px; color: var(--ink-3); }
@@ -143,16 +142,6 @@
   display: flex; flex-direction: column;
   padding: 0 var(--space-12) var(--space-16);
 }
-/* 字標在拖曳條**下面**:紅綠燈佔 x 12–71.5 / y 10–23.5,字標原本在 y 16–33.5,
-   重疊 55×7.5 —— b、l 的上伸部正好住在那一帶,產品名被讀成「olave」。 */
-.ws-brand {
-  flex: none; height: 32px; display: flex; align-items: center;
-  padding: 0 var(--space-4);
-}
-.ws-brand .wm { color: var(--ink); }
-/* 字標是連到官網的連結;熱區上下各補 8(視覺 16 高,點得到的是 32) */
-.ws-home { display: flex; align-items: center; height: 100%; border-radius: var(--radius-xs); transition: opacity var(--motion-fast) var(--ease-standard); }
-.ws-home:hover { opacity: .8; }
 .strat-head { display: flex; align-items: center; padding: var(--space-16) var(--space-4) var(--space-8); }
 .strat-head .label { font-size: 12px; color: var(--ink-3); }
 .strat-list { flex: 1; overflow-y: auto; }
@@ -597,9 +586,9 @@ body.resizing .pane-strategies, body.resizing .pane-chat { transition: none; }
 /* 側欄收合 = 44px 細軌,只留「展開」 */
 .side-rail { display: none; }
 html.ws-sc .pane-strategies { width: 44px; padding: 44px var(--space-8) var(--space-16); }
-html.ws-sc .ws-brand, html.ws-sc .strat-head, html.ws-sc .strat-list, html.ws-sc .ws-foot { display: none; }
+html.ws-sc .strat-head, html.ws-sc .strat-list, html.ws-sc .ws-foot { display: none; }
 /* padding-top 2:按鈕中心對到字標原本的中心(y=54),收合/展開時左上角不跳 */
-html.ws-sc .side-rail { display: flex; flex-direction: column; align-items: center; padding-top: var(--space-2); }
+html.ws-sc .side-rail { display: flex; flex-direction: column; align-items: center; padding-top: var(--space-12); }   /* 收合鈕的上緣跟展開時第一列(自動下單)的上緣同一條線 */
 .rail-btn {
   width: 28px; height: 28px; min-height: 0; padding: 0; position: relative;
   display: flex; align-items: center; justify-content: center;
@@ -718,8 +707,15 @@ body.resizing * { cursor: col-resize !important; }
 }
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
 .set-row + .set-row { margin-top: var(--space-16); }
-.set-up-txt { color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.set-up .btn-quiet { margin-left: auto; }
+/* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
+.set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
+.set-about { margin-top: auto; padding-top: var(--space-16); display: flex; align-items: flex-start; gap: var(--space-12); }
+.set-about .t { flex: 1; min-width: 0; }
+.set-about .ver { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.set-about .st { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); max-width: 44ch; font-variant-numeric: tabular-nums; }
+.set-about .st:empty { display: none; }
+.set-about .st.up { color: var(--ink-2); }   /* ready / blocked / error / installFailed:要人讀的句子升一階 */
+.set-about button { flex: none; }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
    上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
    這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */
@@ -765,10 +761,10 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}
-.set-cats .set-acct{margin-top:auto;padding:var(--space-8) var(--space-12) var(--space-4);border-top:1px solid var(--border-hairline)}
-.set-acct .lbl{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
-.set-acct .mail{margin:0;font-size:12px;line-height:1.5;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.set-acct .btn-quiet{margin-top:var(--space-4);padding:0}
+.set-cats .set-acct{margin-top:auto;padding:var(--space-8) 0 0;display:flex;flex-direction:column;gap:var(--space-2)}
+.set-acct .who{padding:var(--space-4) var(--space-12) var(--space-2)}
+.set-acct .l1{margin:0;font-size:13px;line-height:1.5;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.set-acct .l2{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
 /* 連結畫面尾註下那一句 */
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
@@ -886,6 +882,8 @@ body.resizing * { cursor: col-resize !important; }
 
 /* 刪對話確認框。不用紅鈕:canon 沒有 Danger 按鈕 recipe(紅只當文字色),破壞性由標題動詞
    與內文的「無法復原」承擔;確認鈕是中性反白(同雲端 .modal-send)。 */
+/* 設定 modal 裡的分隔線只留三種:標題列下緣、左右欄之間那條直線、「上面會捲、下面不動」的腳(方案頁)。
+   新增區塊一律先用間距分組(區塊間 --space-24、釘底的用 margin-top:auto),不畫線。 */
 .del-modal { width: min(440px, 92vw); }
 .del-modal .modal-head h6 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .del-body { margin: 0; padding: var(--space-16); font-size: 13px; line-height: 1.7; color: var(--ink-2); }

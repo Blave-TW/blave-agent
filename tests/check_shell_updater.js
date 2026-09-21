@@ -64,7 +64,7 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("常駐程式的 env 帶 PY_ENV(不把 __pycache__ 寫進 .app)", /BLAVE_AGENT_STATE: path\.join\(BASE, "state"\),\s*\.\.\.PY_ENV/.test(mainSrc));
   t("防回滾:Squirrel 層比版號", /ElectronSquirrelPreventDowngrades: true/.test(cfg));
   t("package.json 版號是嚴格 A.B.C(Squirrel 防降版要求)", /^[0-9]+\.[0-9]+\.[0-9]+$/.test(require("../shell/package.json").version));
-  t("選單列:新版在等的時候選單多一行、圖示旁加小點,而且會觸發重畫(進 trayKey)", /updateWaiting\(\) \? \[\{ label: tmLabels\.updateReady/.test(mainSrc) && /tray\.setTitle\(updateWaiting\(\) \? "•" : ""\)/.test(mainSrc) && /\(updateWaiting\(\) \? tmLabels\.updateReady : ""\)/.test(mainSrc));
+  t("選單列:新版在等的時候選單多一行、圖示旁加小點,而且會觸發重畫(進 trayKey)", /updateWaiting\(\) \? \[\{ label: tmLabels\.updateReady/.test(mainSrc) && /tray\.setTitle\(updateWaiting\(\) \? "•" : ""\)/.test(mainSrc) && /const key = live \? \[[^\]]*updateWaiting\(\) \? tmLabels\.updateReady : ""[^\]]*\]\.join\("\|"\)/.test(mainSrc));
   // 覆寫前備份被改過的官方檔:把 main.js 的兩個函式切出來,對臨時目錄真的跑一次
   {
     const os = require("os"), a0 = mainSrc.indexOf("function listFiles("), b0 = mainSrc.indexOf("const readVersion =");

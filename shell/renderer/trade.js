@@ -1,4 +1,4 @@
-/* 自動下單頁、設定 › 連線、常駐狀態帶(模擬交易版)。
+/* 自動下單頁、連接交易所的框、頂列切換器與狀態句(模擬交易版)。
    基準是雲端工作頁的自動下單頁(web/app/main/templates/agent/workspace.html 的 renderPfHead /
    buildExecControl / buildAmountTable / buildPositionsSection / buildOrderLogSection / renderOverTab),
    字串逐字取自雲端翻譯檔(只把「主機」換成「這台電腦」、「停止」統一成「暫停」)。
@@ -12,7 +12,7 @@
 /* tradeSend 的 error → 三種說法。宿主保證:TIMEOUT / DAEMON_DOWN = 指令檔已收回,**確定沒執行**;
    UNKNOWN_RESULT = 常駐程式已經收走、20 秒內沒回,**可能已執行**(不能說「沒送到」);其餘大寫代碼 = 沒出得了主行程;
    不是代碼的 = handler 自己的拒絕原因(中英混雜的 runtime 字串,畫面包一層本地化前導,不頂替整句)。 */
-const TR_UNDELIVERED = ["NOT_ALLOWED", "DAEMON_DOWN", "TIMEOUT", "TOO_LARGE", "WRITE_FAILED", "BAD_ARGS"];
+const TR_UNDELIVERED = ["NOT_ALLOWED", "DAEMON_DOWN", "TIMEOUT", "TOO_LARGE", "WRITE_FAILED", "BAD_ARGS", "UPDATE_REQUIRED"];   // UPDATE_REQUIRED = 最低版本閘在主行程就擋下,沒出得了門
 function trErrorKind(error) {
   const e = error ? String(error) : "";
   if (e === "UNKNOWN_RESULT") return "unknown";
@@ -281,7 +281,7 @@ const ENV_POLL_SEEN = 15000, ENV_POLL_OTHER = 60000;
 // 字串表的漂移閘門(check_shell_strings.js)只認得寫成字面值的 key:會變的 key 走這兩支,每個 key 都以字面值出現一次
 const envName = (env) => (env === "cloud" ? t("env.cloud") : t("env.local"));
 const envMoneyText = (m) => (m === "real" ? t("tr.mode.real") : m === "paper" ? t("tr.mode.paper") : "");
-// 同步的畫面函式借另一邊的狀態跑一次(設定 › 連線這一刀永遠是這台電腦的;過場檢查永遠看本機那一份)
+// 同步的畫面函式借另一邊的狀態跑一次(過場檢查永遠看本機那一份)
 function trWith(bag, fn) { const prev = TR; TR = bag; try { return fn(); } finally { TR = prev; } }
 const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONFIRM_MS = 60000;
 const TR_TABS = ["over", "pos", "assets", "hist", "set"];
@@ -355,7 +355,7 @@ function trShould(key, box, data) {
 function trInit() {
   if (TRP.started) return; TRP.started = true;
   TR_BAGS.local.api = envApi("local", window.blave); TR_BAGS.cloud.api = envApi("cloud", window.blave);
-  trWire(); envWire(); trPoll();
+  trWire(); envWire(); cxWire(); trPoll();
 }
 /* 選單列 / Dock / 結束攔截的字:主行程沒有翻譯表,由這裡依目前語言交過去(換語言時 app.js 的 applyStatic 會再叫一次) */
 function trPushLabels() {
@@ -368,7 +368,11 @@ function trPushLabels() {
     ev_execution_interrupted: t("tr.ov.evExecInterrupted"), ev_execution_interrupted_n: t("tr.ov.evExecInterruptedNote"),
     ev_execution_fallback_market: t("tr.ov.evExecFallback"), ev_execution_fallback_market_n: t("tr.ov.evExecFallbackNote"),
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
-    ev_downtime_paused: t("tr.ov.evHaltAuto"), ev_downtime_paused_n: t("tr.ov.evDowntimeNote") });
+    ev_downtime_paused: t("tr.ov.evHaltAuto"), ev_downtime_paused_n: t("tr.ov.evDowntimeNote"),
+    // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
+    lang: LANG, stLocal: t("tm.stLocal"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"),
+    moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
+    notifPrefixLocal: t("tm.notifPrefixLocal"), notifPrefixCloud: t("tm.notifPrefixCloud"), menuLocal: t("env.local"), menuCloud: t("env.cloud"), menuSite: t("menu.site") });
 }
 function trWire() {
   $("tr-tabs").addEventListener("click", (e) => { const b = e.target.closest(".main-tab"); if (b) trSetTab(b.dataset.tab); });
@@ -405,11 +409,11 @@ async function trPoll() {
     if (S === L && S.open) { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
     trWith(L, trPendingCheck);
     trPaint();
-    if (!$("set-scrim").hidden && !$("set-conn").hidden) cxPaint();
+    if (!$("cx-scrim").hidden) cxModalPaint();
   } finally {
     // 排下一輪放在 finally(稽核 N7):畫面函式就算丟例外,輪詢鏈也不能斷——斷了本機的狀態帶與綠點會凍在舊值
     TRP.polling = false;
-    const cxOn = !$("set-scrim").hidden && !$("set-conn").hidden;   // 連線頁開著也算「在看」:剛連上要幾秒內看到已連接
+    const cxOn = !$("cx-scrim").hidden;   // 連接交易所的框開著也算「在看」:剛連上要幾秒內看到已連接
     clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll, TRP.again ? 0 : L.pending ? TR_POLL_PENDING : TR_BAGS[ENV.cur].open || cxOn ? TR_POLL_OPEN : TR_POLL_IDLE);
   }
 }
@@ -461,7 +465,7 @@ function trLeave() {
   L.open = false;
   if (ENV.cur === "local") { $("tr").hidden = true; $("tr-nav").removeAttribute("aria-current"); }
 }
-function trRepaint() { TR.sig = {}; TR_BAGS.local.sig = {}; ENV.sig = {}; ENV.cells = {}; trPaint(); if (!$("set-conn").hidden) cxPaint(); }
+function trRepaint() { TR.sig = {}; TR_BAGS.local.sig = {}; ENV.sig = {}; ENV.cells = {}; trPaint(); if (!$("cx-scrim").hidden) cxModalPaint(); }
 
 /* ── 標題列 / 狀態帶 ───────────────────────────────────────── */
 function trStateText(state) {
@@ -482,7 +486,7 @@ function trStateText(state) {
   let s = t("tr.autoOn");
   if (state === "halted") s = envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted");
   else if (state === "dead") s = rec.heartbeat_at ? t("tr.recDead") + " · " + t("tr.lastBeat", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
-  // 讀帳失敗標在狀態行最前面(細節在 設定 › 連線);頁面與暫停鈕照常在
+  // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
   return trFailedIds(r).length ? t("cx.failShort") + " · " + s : s;
 }
 // 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉
@@ -497,6 +501,7 @@ function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden
 // kind:"stop" = 暫停那兩個指令(沒送到 = 它還在交易,要講撤 API key 那句);其餘一般失敗不講那句(稽核 S2-B)
 function trSendError(res, kind) {
   const e = res && res.error ? String(res.error) : "", k = trErrorKind(e);
+  if (e === "UPDATE_REQUIRED") return t("minv.trade");   // 最低版本閘:只擋啟動,暫停不受影響;叫人重按沒有用,要講去哪裡更新
   if (k === "unknown") return t("tr.cmdUnknown");
   if (k === "rejected") return t("tr.cmdRejected", { err: e.slice(0, 200) });
   return kind === "stop" ? t("tr.cmdNotDelivered") : t("tr.cmdFailed");
@@ -716,7 +721,7 @@ function trPaintOnboard(state) {
   const b = trEl("button", "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect";
   // 雲端第一刀:連接交易所要到網頁做(說明在標題下那一行);鈕留著但不能按
   if (TR.env === "cloud") { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); }
-  else b.addEventListener("click", cxOpen);
+  else b.addEventListener("click", () => cxModalOpen(b));
   ob.appendChild(b); box.appendChild(ob);
 }
 
@@ -1011,17 +1016,39 @@ function trPaintHist() {
   if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
 function trPaintSet() {
-  const box = $("tr-set"), id = trVenueId();
+  const box = $("tr-set"), r = trReport(), id = trVenueId(), e = id ? trLiveEntry(r, id) : null;
   const ro = TR.env === "cloud";
-  if (!trShould("set", box, [id, TR.unbinding, ro])) return;
+  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error]])) return;
+  const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
-  const sec = trSec(trEl("span", "label", t("tr.account")));
-  const acts = trEl("span", "pf-acts"), b = trEl("button", "pf-act", TR.unbinding ? t("tr.unbinding") : t("tr.unbind"));
-  b.type = "button";
-  if (ro) { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); }
-  else { b.disabled = !!TR.unbinding || !id || !trEnvNames(id).length; b.addEventListener("click", () => trUnbind(b)); }
-  acts.appendChild(b); sec.appendChild(acts); box.appendChild(sec);
+  box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
+  // 一列:交易所名 + 錢記號 + 連線狀態;右邊兩顆動作。雲端第一刀唯讀:兩顆都不能按(說明在標題下那一行)
+  const row = trEl("div", "cx-row");
+  row.appendChild(trEl("span", "n", trVenueLabel(id)));
+  if (id === PAPER) row.appendChild(trEl("span", "mode paper", t("tr.mode.paper")));
+  const failed = !!e && !e.ok, st = trEl("span", "cn-st" + (failed ? "" : " on"));
+  if (e && e.ok) st.appendChild(trEl("i", "dot"));   // 綠點 = 讀得到帳戶;「串接中…」還沒有
+  else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
+  st.appendChild(trEl("span", "", failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
+  row.appendChild(st);
+  const acts = trEl("span", "pf-acts");
+  const rt = trEl("button", "pf-act", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); rt.type = "button"; rt.id = "cx-retest";
+  const ub = trEl("button", "pf-act", TR.unbinding ? t("tr.unbinding") : t("tr.unbind")); ub.type = "button"; ub.id = "tr-unbind";
+  if (ro) [rt, ub].forEach((b) => { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); });
+  else {
+    rt.disabled = TR.cx.retest || !id; rt.addEventListener("click", cxRetest);
+    ub.disabled = !!TR.unbinding || !id || !trEnvNames(id).length; ub.addEventListener("click", () => trUnbind(ub));
+  }
+  acts.append(rt, ub); row.appendChild(acts); box.appendChild(row);
+  // 失敗原因放在這一列下面(紅記號 + 次要字),不佔用標題區那個唯一的紅字槽
+  const errLine = (text) => { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", text)); return p; };
+  if (failed) {
+    const m = /^([a-z_]+):\s*(.*)$/i.exec(String(e.error || ""));
+    box.appendChild(errLine(t("cx.fail", { id: trVenueLabel(id, true), stage: m ? m[1] : "—", msg: (m ? m[2] : String(e.error || "")).slice(0, 200) })));
+  }
+  if (!ro && TR.cx.err) box.appendChild(errLine(TR.cx.err));
   box.appendChild(trEl("div", "pf-foot", ro ? t("tr.cloud.unbindDesc") : t("tr.unbindDesc")));
+  const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus(); else if (hadFocus) $("tr-tab-set").focus();
 }
 // 解除綁定要移掉的環境變數名。宿主(daemon.js argsOk)只放行這一版認得的 key,多送一個就整包 BAD_ARGS;
 // Binance 那批上線時跟宿主的白名單一起加。
@@ -1273,63 +1300,55 @@ function trOvEvents(r) {
   return frag;
 }
 
-/* ── 設定 › 連線:交易帳戶(這一版只有模擬交易;資料來源那一段這批不做、也不放預告)────────── */
-function cxOpen() { setOpen().then(() => { setCat("conn"); const b = document.querySelector('.set-cat[data-set-cat="conn"]'); if (b) b.focus(); }); }
-function cxPaint() { return trWith(TR_BAGS.local, cxPaint0); }
-function cxPaint0() {
-  const box = $("set-conn"), r = trReport();
-  const ids = trVenueIds(r), id = ids[0] || null, e = id ? trLiveEntry(r, id) : null;
-  const data = [!!r, TR.st && TR.st.alive, ids, e && [e.ok, e.error, e.equity], TR.cx];
-  const sig = LANG + "|" + JSON.stringify(data);
-  if (TR.sig.cx === sig && box.firstChild) return;
-  TR.sig.cx = sig;
-  const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
-  box.textContent = ""; box.classList.add("cx");
-  box.appendChild(trEl("p", "keys-lead", t("cx.lead")));
-  const head = trEl("p", "cn-head");
-  head.append(trEl("span", "cn-ttl", t("cx.acct.title")), trEl("span", "cn-meta", t("cx.acct.meta")));
-  box.appendChild(head);
-  if (id) cxPaintBound(box, id, e); else cxPaintForm(box);
-  if (TR.cx.err) box.appendChild(trEl("p", "pf-alert", TR.cx.err));
-  const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus();
-  else if (hadFocus) { const b = document.querySelector('.set-cat[data-set-cat="conn"]'); if (b) b.focus(); }
+/* ── 連接交易所(這一版只有模擬交易)────────────────────────────────────
+   入口在自動下單頁的 onboard(照雲端版):#tr-connect 直接開 #cx-scrim 這個框;連好之後的「重新測試 / 解除綁定」在 設定 分頁的帳戶段(trPaintSet)。
+   設定 modal 不再有「連線」分類(批次 ④ 會以「資料來源」回來)。這個框只連**這台電腦**:狀態固定用 TR_BAGS.local 那一袋,
+   雲端視角開不起來(第一刀唯讀)——cxModalOpen 硬擋,不只靠那顆鈕的 aria-disabled。IPC 不變(tradeSend credentials / retest_accounts)。 */
+let cxOpener = null;
+function cxModalOpen(opener) {
+  if (ENV.cur !== "local" || TR.env !== "local" || !$("cx-scrim").hidden) return;
+  const L = TR_BAGS.local; L.cx = { busy: false, err: null, retest: false };
+  cxOpener = opener || null;
+  $("view-ws").inert = true;
+  const sc = $("cx-scrim"); sc.hidden = false;
+  requestAnimationFrame(() => sc.classList.add("open"));
+  cxModalPaint();
+  $("cx-venue").focus();
 }
-function cxPaintForm(box) {
+function cxModalClose(connected) {
+  const sc = $("cx-scrim"); if (sc.hidden) return;
+  sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false;
+  const o = cxOpener; cxOpener = null;
+  // 連上之後 onboard(連同那顆鈕)會整個換成分頁:焦點退到側欄的入口,不能掉到 BODY
+  if (!connected && o && o.isConnected) o.focus(); else $("tr-nav").focus();
+}
+function cxModalPaint() {
+  const L = TR_BAGS.local, box = $("cx-body"), go = $("cx-go");
+  const venue = ($("cx-venue") && $("cx-venue").value) || PAPER, sig = LANG + "|" + JSON.stringify([venue, L.cx]);
+  go.textContent = L.cx.busy ? t("cx.connecting") : t("cx.connect");
+  go.setAttribute("aria-disabled", L.cx.busy ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy);
+  if (L.sig.cxm === sig && box.firstChild) return;
+  L.sig.cxm = sig;
+  const hadFocus = box.contains(document.activeElement);
+  box.textContent = "";
   const lab = trEl("label", "fld"); lab.appendChild(trEl("span", "fld-l", t("cx.venue")));
   const w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
-  const o = trEl("option", "", t("cx.paper")); o.value = PAPER; sel.appendChild(o);
+  const o = trEl("option", "", t("cx.paper")); o.value = PAPER; sel.appendChild(o);   // 模擬交易排最上面;真的交易所之後的批次加在後面
+  sel.value = venue; sel.addEventListener("change", cxModalPaint);
   w.appendChild(sel); lab.appendChild(w); box.appendChild(lab);
-  box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));
-  const act = trEl("div", "form-act");
-  const b = trEl("button", "btn-fill", TR.cx.busy ? t("cx.connecting") : t("cx.connect")); b.type = "button"; b.id = "cx-go";
-  b.disabled = TR.cx.busy;
-  b.addEventListener("click", cxConnect);
-  act.appendChild(b); box.appendChild(act);
+  box.appendChild(trEl("p", "cx-manual-note", t("cx.acct.meta")));
+  if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));
+  // 金鑰存在哪裡、誰讀得到:只在選了真的交易所時講(模擬交易沒有金鑰,講了反而讓人以為有)
+  else box.appendChild(trEl("p", "cx-manual-note", t("cx.lead")));
+  if (L.cx.err) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", L.cx.err)); box.appendChild(p); }
+  if (hadFocus) sel.focus();
 }
-function cxPaintBound(box, id, e) {
-  const row = trEl("div", "cx-row");
-  row.appendChild(trEl("span", "n", trVenueLabel(id)));
-  if (id === PAPER) row.appendChild(trEl("span", "mode paper", t("tr.mode.paper")));
-  const failed = !!e && !e.ok;
-  const st = trEl("span", "cn-st" + (failed ? "" : " on"));
-  if (e && e.ok) st.appendChild(trEl("i", "dot"));   // 綠點 = 讀得到帳戶;「串接中…」還沒有
-  st.appendChild(trEl("span", "", failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
-  row.appendChild(st); box.appendChild(row);
-  if (failed) {
-    const m = /^([a-z_]+):\s*(.*)$/i.exec(String(e.error || ""));
-    box.appendChild(trEl("p", "pf-alert", t("cx.fail", { id: trVenueLabel(id, true), stage: m ? m[1] : "—", msg: (m ? m[2] : String(e.error || "")).slice(0, 200) })));
-  }
-  if (id === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.perfNote")));
-  const act = trEl("div", "row-act");
-  const b = trEl("button", "btn-out", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); b.type = "button"; b.id = "cx-retest";
-  b.disabled = TR.cx.retest;
-  b.addEventListener("click", cxRetest);
-  act.appendChild(b); box.appendChild(act);
-  // 指路那一句裡的「自動下單 › 設定」是可按的:關設定、直接開到那個分頁
-  const hint = trEl("p", "cx-manual-note"), parts = t("cx.unbindHint").split("{link}");
-  const go = trEl("button", "btn-quiet", t("cx.unbindLink")); go.type = "button"; go.id = "cx-to-set";
-  go.addEventListener("click", () => { setClose(); envSwitch("local", "link"); trOpen("set").then(() => $("tr-tab-set").focus()); });
-  hint.append(parts[0] || "", go, parts[1] || ""); box.appendChild(hint);
+function cxWire() {
+  $("cx-cancel").addEventListener("click", () => cxModalClose(false));
+  $("cx-close").addEventListener("click", () => cxModalClose(false));
+  $("cx-go").addEventListener("click", cxConnect);
+  $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) cxModalClose(false); });
+  $("cx-scrim").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); cxModalClose(false); return; } trapTab(e, $("cx-modal")); });
 }
 function cxSendFail(res) {
   const e = res && res.error ? String(res.error) : "", k = trErrorKind(e), L = TR_BAGS.local;
@@ -1339,41 +1358,54 @@ function cxSendFail(res) {
 }
 async function cxConnect() {
   const L = TR_BAGS.local;
-  if (L.cx.busy) return;
-  L.cx = { busy: true, err: null, retest: false }; cxPaint();
+  if (L.cx.busy || ENV.cur !== "local" || $("cx-scrim").hidden) return;
+  L.cx = { busy: true, err: null, retest: false }; cxModalPaint();
   // 模擬交易的綁定:同雲端,寫一組固定值的 PAPER_* 進 workspace 的 .env(不是金鑰,是「已啟用」的記號)
   const res = await L.api.tradeSend("credentials", { env: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(Date.now() / 1000)) } });
   L.cx.busy = false;
-  if (!res || !res.ok) { L.cx.err = cxSendFail(res); srSay(L.cx.err); cxPaint(); return; }
+  if (!res || !res.ok) { L.cx.err = cxSendFail(res); srSay(L.cx.err); cxModalPaint(); return; }
   srSay(t("cx.connected"));
   try { L.st = await L.api.tradeStatus(); } catch (_) { }   // 輪詢會補
-  L.sig = {}; cxPaint(); trPaint(); trPollSoon(1500);
+  L.sig = {}; cxModalClose(true); trPaint(); trPollSoon(1500);
 }
 async function cxRetest() {
   const L = TR_BAGS.local;
-  if (L.cx.retest) return;
-  L.cx = { busy: false, err: null, retest: true }; cxPaint();
+  if (L.cx.retest || ENV.cur !== "local") return;
+  L.cx = { busy: false, err: null, retest: true }; L.sig.set = null; trPaint();
   const res = await L.api.tradeSend("retest_accounts", {});
   L.cx.retest = false;
   if (!res || !res.ok) { L.cx.err = cxSendFail(res); srSay(L.cx.err); }
-  cxPaint(); trPollSoon(1500);
+  L.sig.set = null; trPaint(); trPollSoon(1500);
 }
 
 /* ── 視角:「這台電腦｜雲端」切換器、頂列灰底、雲端側欄、雲端空態(spec-desktop-local-and-cloud §1–§4.1)────────
    除了切換器、⌘1/⌘2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
    雲端來的字串(策略名)一律 textContent。 */
 function envWire() {
-  $("envsw").addEventListener("click", (e) => { const b = e.target.closest("button[data-env]"); if (b) envSwitch(b.dataset.env); });
+  // 切視角的三個入口(切換器、⌘1/⌘2、app 選單「顯示」)都走 envSwitchGuarded:守門規則只有一份
+  $("envsw").addEventListener("click", (e) => { const b = e.target.closest("button[data-env]"); if (b) envSwitchGuarded(b.dataset.env); });
   // ⌘1 / ⌘2:輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以
   document.addEventListener("keydown", (e) => {
     if (e.isComposing || e.keyCode === 229) return;   // 輸入法組字中:不搶(搬焦點會把組到一半的字提交或丟掉)
     if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || (e.key !== "1" && e.key !== "2")) return;
-    if ($("view-ws").hidden || !$("del-scrim").hidden || !$("lb-scrim").hidden) return;
-    e.preventDefault(); envSwitch(e.key === "1" ? "local" : "cloud");
+    if (envSwitchGuarded(e.key === "1" ? "local" : "cloud")) e.preventDefault();
   });
+  if (typeof window.blave.onEnvSwitch === "function") window.blave.onEnvSwitch((env) => { envSwitchGuarded(env); });
   // 主行程說雲端那邊變了(另一邊出事、登入登出):下一輪就去拿新的那一份
   if (typeof window.blave.onCloudState === "function") window.blave.onCloudState(() => { ENV.cloudDirty = true; trPollSoon(0); });
   document.documentElement.dataset.env = "local";
+}
+/* 現在能不能切視角:還沒進工作頁不行;確認框、連接交易所的框、圖片放大開著不行(先讓人處理眼前那個框)。
+   設定開著可以(envSwitch 自己不搬焦點)。回 true = 有切(或本來就在那一邊)。 */
+// 組字中不切:app 選單有了 ⌘1/⌘2 之後 macOS 先讓選單吃鍵,keydown 上的 isComposing 守門看不到那一次——
+// 所以改成自己記「現在有沒有在組字」,三個入口(點、鍵、選單)都看它。切過去會搬焦點,組到一半的字會丟
+let ENV_COMPOSING = false;
+document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, true);
+document.addEventListener("compositionend", () => { ENV_COMPOSING = false; }, true);
+function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("lb-scrim").hidden; }
+function envSwitchGuarded(env) {
+  if ((env !== "local" && env !== "cloud") || !envCanSwitch()) return false;
+  envSwitch(env); return true;
 }
 function envSwitch(env, via) {
   if (env !== "local" && env !== "cloud") return;

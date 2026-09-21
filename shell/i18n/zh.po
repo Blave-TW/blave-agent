@@ -349,23 +349,20 @@ msgstr "模型接入"
 msgid "set.lang"
 msgstr "語言"
 
-msgid "up.label"
-msgstr "版本"
-
-msgid "up.current"
-msgstr "{v}"
+msgid "up.app"
+msgstr "Blave {v}"
 
 msgid "up.latest"
-msgstr "{v} · 已是最新版"
+msgstr "已是最新版"
 
 msgid "up.checking"
-msgstr "{v} · 正在檢查更新…"
+msgstr "正在檢查更新…"
 
 msgid "up.downloading"
-msgstr "{v} · 正在下載 {nv}…"
+msgstr "正在下載 {nv}…"
 
 msgid "up.downloadingPct"
-msgstr "{v} · 正在下載 {nv}（{pct}%）"
+msgstr "正在下載 {nv}（{pct}%）"
 
 msgid "up.ready"
 msgstr "{nv} 已下載，重新啟動後生效"
@@ -374,10 +371,10 @@ msgid "up.blocked"
 msgstr "{nv} 已下載。自動下單執行中不會更新；暫停下單後可以更新，或結束 Blave 時自動安裝"
 
 msgid "up.error"
-msgstr "{v} · 這次沒檢查成功"
+msgstr "這次沒檢查成功"
 
 msgid "up.staging"
-msgstr "{v} · {nv} 下載完成，正在準備安裝…"
+msgstr "{nv} 下載完成，正在準備安裝…"
 
 msgid "up.installFailed"
 msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用程式」資料夾裡（不是從下載的磁碟映像直接開），再檢查一次"
@@ -808,6 +805,9 @@ msgstr "登入並切換"
 msgid "acct.lbl"
 msgstr "Blave 帳號"
 
+msgid "acct.signedOut"
+msgstr "未登入"
+
 msgid "acct.signedIn"
 msgstr "已登入"
 
@@ -819,14 +819,8 @@ msgstr "已登出。這台不再拿得到 Blave 的資料。"
 
 # ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
 
-msgid "set.cat.conn"
-msgstr "連線"
-
 msgid "cx.lead"
 msgstr "這一頁的東西只存在這台電腦的工作區（~/Blave/workspace/.env），Blave 不會上傳。agent 和你的策略程式讀得到，這樣才能替你下單、抓資料。"
-
-msgid "cx.acct.title"
-msgstr "交易帳戶"
 
 msgid "cx.acct.meta"
 msgstr "可以下單、讀帳戶，也會用來抓這家交易所的資料。一次只能連一個。"
@@ -854,12 +848,6 @@ msgstr "已連接"
 
 msgid "cx.perfNote"
 msgstr "模擬交易的績效不代表真實成交的結果（不含滑價）。"
-
-msgid "cx.unbindHint"
-msgstr "解除綁定在「{link}」。"
-
-msgid "cx.unbindLink"
-msgstr "自動下單 › 設定"
 
 msgid "cx.retest"
 msgstr "重新測試"
@@ -1432,3 +1420,43 @@ msgstr "操作對象"
 
 msgid "chat.tgt.cut1"
 msgstr "這一版 agent 還不能操作雲端主機。"
+
+msgid "tm.stLocal"
+msgstr "這台電腦：{money} · {state}"
+
+msgid "tm.stCloud"
+msgstr "雲端：{money} · {state}"
+
+msgid "tm.stOn"
+msgstr "執行中"
+
+msgid "tm.stPaused"
+msgstr "已暫停"
+
+msgid "tm.stUnknown"
+msgstr "讀不到狀態"
+
+msgid "tm.pauseLocal"
+msgstr "暫停這台電腦的下單（不動部位）"
+
+msgid "tm.quitCloudNote"
+msgstr "雲端的下單不受影響，照常執行。"
+
+msgid "tm.notifPrefixLocal"
+msgstr "這台電腦："
+
+msgid "tm.notifPrefixCloud"
+msgstr "雲端："
+
+msgid "menu.site"
+msgstr "Blave 官網"
+
+# 最低版本閘(最小版畫面;字待設計師過目)
+msgid "minv.chat"
+msgstr "這個版本的 Blave 需要更新，才能繼續用 Blave 的 AI。這則訊息沒有送出，沒有用到 AI。"
+
+msgid "minv.trade"
+msgstr "這個版本的 Blave 需要更新，才能啟動下單。暫停不受影響。到 設定 › 顯示 最下面更新。"
+
+msgid "minv.btn"
+msgstr "去更新"

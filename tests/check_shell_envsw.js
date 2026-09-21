@@ -125,13 +125,28 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
 
   // ── 稽核 N8:兩袋不串(原文列舉;這些東西不起 DOM 測不到行為,只守住寫法)──
   const kd = code.slice(code.indexOf('document.addEventListener("keydown"', code.indexOf("function envWire(")), code.indexOf("onCloudState", code.indexOf("function envWire(")));
-  ok("N8 ⌘1/⌘2:確認框、圖片放大開著不生效;組字中不生效", /del-scrim/.test(kd) && /lb-scrim/.test(kd) && /isComposing/.test(kd));
-  ok("N8 設定 › 連線固定借這台電腦那一袋", /function cxPaint\(\) \{ return trWith\(TR_BAGS\.local, cxPaint0\); \}/.test(code));
+  // 切視角的入口列舉:切換器的 click、⌘1/⌘2、app 選單的 IPC——全部走 envSwitchGuarded;守門規則只有 envCanSwitch 一份
+  const wire = fn("envWire"), direct = (code.match(/[^\w]envSwitch\(/g) || []).length;
+  ok("N8 守門只有一份:確認框 / 連接交易所的框 / 圖片放大開著、還沒進工作頁都不切;組字中不生效", ["view-ws", "del-scrim", "cx-scrim", "lb-scrim"].every((id) => fn("envCanSwitch").includes(id)) && /!envCanSwitch\(\)\) return false;/.test(fn("envSwitchGuarded")) && /isComposing/.test(kd));
+  ok("三個入口都走 envSwitchGuarded(click / keydown / onEnvSwitch),envWire 裡沒有人直接叫 envSwitch", (wire.match(/envSwitchGuarded\(/g) || []).length === 3 && !/[^\w]envSwitch\(/.test(wire) && /onEnvSwitch\(\(env\) => \{ envSwitchGuarded\(env\); \}\)/.test(wire));
+  ok("直接叫 envSwitch 的只有兩處:宣告本身與守門那一支(renderer 沒有別的後門)", direct === 2 && !/[^\w]envSwitch\(/.test(app));
+  // 連接交易所的框只連這台電腦:狀態固定用本機那一袋;雲端視角開不起來(硬擋,不只靠那顆鈕的 aria-disabled)
+  ok("N8 連接交易所的框固定用這台電腦那一袋", ["cxModalOpen", "cxModalPaint", "cxConnect", "cxRetest"].every((n) => /const L = TR_BAGS\.local[,;]/.test(fn(n))) && !/\bTR\.(cx|st|api)\b/.test(fn("cxModalPaint") + fn("cxConnect") + fn("cxRetest")));
+  ok("連接交易所的框在雲端視角開不起來、也送不出去", /^function cxModalOpen\(opener\) \{\s*if \(ENV\.cur !== "local" \|\| TR\.env !== "local"/.test(fn("cxModalOpen")) && /if \(L\.cx\.busy \|\| ENV\.cur !== "local"/.test(fn("cxConnect")) && /ENV\.cur !== "local"\) return;/.test(fn("cxRetest")));
+  ok("雲端的「連接交易所」「重新測試」「解除綁定」都不接 click(aria-disabled + 說明)", /if \(TR\.env === "cloud"\) \{ b\.classList\.add\("is-ro"\);[^\n]*\}\s*else b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\)/.test(fn("trPaintOnboard")) && /if \(ro\) \[rt, ub\]\.forEach/.test(fn("trPaintSet")));
+  ok("設定 › 連線分類清乾淨:DOM、程式、字串都沒有", !/set-conn|data-set-cat="conn"/.test(html) && !/cxPaint\(|cxOpen\(|set-conn|"conn"/.test(code + app) && !/"(set\.cat\.conn|cx\.unbindHint|cx\.unbindLink|cx\.acct\.title)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
+  ok("金鑰存放說明(cx.lead)搬進框裡,而且只在不是模擬交易時出現", /if \(venue === PAPER\)[^\n]*cx\.paperNote[^\n]*\n[^\n]*\n\s*else box\.appendChild\(trEl\("p", "cx-manual-note", t\("cx\.lead"\)\)\)/.test(src));
   const afterAwait = ["trPoll", "trOpen", "trRun", "trSaveAmounts", "trUnbind", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
   const leaks = afterAwait.filter((x) => /\bTR\b/.test(x[1])).map((x) => x[0]);
   ok("N8 跨 await 的流程在第一個 await 之後不碰裸的 TR(只准 TR === S 與 TR_BAGS):" + (leaks.join() || "無"), afterAwait.every((x) => x[1].length > 0) && leaks.length === 0);
   ok("N3/N4/N7 寫法:設定開著不搬焦點、切視角前放掉輸入框焦點、排下一輪在 finally", /if \(!\$\("set-scrim"\)\.hidden\) \{[^}]*\}\s*else if \(via === "link"\)/.test(fn("envSwitch")) && /\.blur\(\)/.test(fn("envSwitch")) && /finally \{[\s\S]*TRP\.timer = setTimeout\(trPoll/.test(fn("trPoll")));
   ok("N5 雲端清單每次拿到狀態就跟著換(不管看哪一邊)", /C\.st = await C\.api\.tradeStatus\(\);[\s\S]{0,300}await trLoadStrategies\(C\)/.test(fn("trPoll")));
+
+  // ── 最低版本閘 / 交給主行程的字 ──
+  ok("UPDATE_REQUIRED:確定沒執行(不留過場)、講更新那一句,不叫人重按", trErrorKind("UPDATE_REQUIRED") === "undelivered" && /if \(e === "UPDATE_REQUIRED"\) return t\("minv\.trade"\);/.test(fn("trSendError")));
+  ok("聊天被擋:不再誤畫成「上一輪還在跑」", /if \(r\.blocked === "UPDATE_REQUIRED"\) \{[\s\S]{0,400}t\("minv\.chat"\)[\s\S]{0,300}unlock\(\); return false;\s*\}\s*addMsg\("sys", t\("turn\.busy"\)\)/.test(app));
+  const labels = fn("trPushLabels");
+  ok("tradeLabels 多交的 15 個 key 都在(換語言時 applyStatic 會重叫 trPushLabels)", ["lang: LANG", "stLocal", "stCloud", "stOn", "stPaused", "stUnknown", "moneyPaper", "moneyReal", "pauseLocal", "quitCloudNote", "notifPrefixLocal", "notifPrefixCloud", "menuLocal", "menuCloud", "menuSite"].every((k) => labels.includes(k)) && /trPushLabels\(\)/.test(fn.call(null, "trInit") + app));
 
   // ── 側欄列尾 ──
   ok("列尾狀態字:有投入金額的才講;下單中 / 已停;主機沒在下單就不講", envStratWord("a", cloudSt(okc("running"))) === "side.cloud.st.trading" && envStratWord("b", cloudSt(okc("running"))) === null && envStratWord("zz", cloudSt(okc("running"))) === null

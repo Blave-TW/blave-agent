@@ -18,7 +18,8 @@ t("tab 只認白名單:不會把任意字串放上命令列", j({ strategy: "a",
 t("目錄名以 - 開頭:單一 argv,不會被 argparse 當成旗標(分開寫整輪 exit 2)", j({ strategy: "--engine" }) === '["--viewing-strategy=--engine"]' && viewingArgs({ strategy: "-x", tab: "code" }).every((a) => a.startsWith("--viewing-")));
 t("用戶的訊息放在 -- 之後(「--help」不會被當成旗標)", /"--", sessionId, message,\s*\], \{ env, cwd: WS \}/.test(mainSrc));
 t("runTurn 真的把它接上 spawn 的參數", /\.\.\.viewingArgs\(viewing\),/.test(mainSrc) && /effort: rawEffort, viewing \}/.test(mainSrc));
-t("send-message 只收自家頁面(會 spawn agent、花 AI 額度)", /ipcMain\.handle\("send-message", \(e, payload\) => \{\s*if \(!fromOurPage\(e\)\) return/.test(mainSrc));
+t("send-message:turnStarting 在第一個 await 之前就立起(挪到後面,連按兩下會 spawn 兩顆 agent 搶同一個 session.db)", (() => { const i = mainSrc.indexOf('ipcMain.handle("send-message"'), body = mainSrc.slice(i, mainSrc.indexOf("runTurn(win, payload)", i)).replace(/\/\/.*$/gm, ""); const a = body.indexOf("turnStarting = true"), w = body.indexOf("await "); return a > 0 && w > 0 && a < w; })());
+t("send-message 只收自家頁面(會 spawn agent、花 AI 額度)", /ipcMain\.handle\("send-message", async \(e, payload\) => \{\s*if \(!fromOurPage\(e\)\) return/.test(mainSrc));
 
 // renderer:送出當下的畫面 → payload
 const chatViewing = (ctx) => vm.runInNewContext("(" + cut(appSrc, "chatViewing") + ")()", ctx);

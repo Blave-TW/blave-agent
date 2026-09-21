@@ -161,18 +161,21 @@ $("btn-redetect").addEventListener("click", detect);
    用戶到 blave.org 設定 › 裝置 補撤。
    正在用 Blave 的話,登出之後這個工作頁就沒有 agent 可用(沒有 token 時引擎會退回本機模式、
    改吃用戶自己的訂閱——那不是他選的),所以連線設定一起清、回連結畫面重選。 */
-$("set-acct-out").addEventListener("click", async () => {
+$("set-acct-btn").addEventListener("click", async () => {
+  // 未登入時這顆是「登入 Blave」:走方案頁同一條登入流程(等待中再按 = 取消),不另寫一條
+  if (!hasToken) { await planLogin(); acctPaintAcct(); return; }
   if (running || oauthPending || planLoginBusy) return;
-  $("set-acct-out").disabled = true;
+  $("set-acct-btn").disabled = true;
   const r = await window.blave.signOutBlave();
-  $("set-acct-out").disabled = false;
+  $("set-acct-btn").disabled = false;
   hasToken = false; acct = null; planErr = null; planBusy = false;
   // 伺服器那顆沒撤到(離線、逾時):本機已經登出,但要講清楚還差一步、去哪裡補
   const warn = () => { if (!r.revoked) { $("cn-hint").textContent = t("cn.blave.signOutLocalOnly"); $("cn-hint").hidden = false; srSay($("cn-hint").textContent); } };
-  // 用自己的 CLI 的人:AI 不受影響,留在原地;帳號區收掉之後焦點退到分類鈕(掉到 BODY 的話 Esc 關不掉設定)
+  acctPaintAcct();
+  // 用自己的 CLI 的人:AI 不受影響,留在原地;帳號區還在(換成未登入那一態),焦點留在同一顆鈕上
   if (cur !== "blave") {
     paintBlaveBtn(); planWatchIdle(); srSay(t("acct.outDone"));
-    const catBtn = document.querySelector('.set-cat[aria-current="true"]'); if (catBtn) catBtn.focus();
+    $("set-acct-btn").focus();
     await detect(); warn(); return;
   }
   await window.blave.clearConnection();
@@ -237,7 +240,6 @@ function setCat(cat) {
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
-  if (cat === "conn") cxPaint();   // 設定 › 連線(trade.js)
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
@@ -307,7 +309,7 @@ $("ws-conn").addEventListener("click", setOpen);
 $("set-close").addEventListener("click", setClose);
 $("set-scrim").addEventListener("mousedown", (e) => { if (e.target === $("set-scrim")) setClose(); });
 $("set-cats").addEventListener("click", (e) => {
-  const b = e.target.closest(".set-cat"); if (b) setCat(b.dataset.setCat);
+  const b = e.target.closest(".set-cat"); if (b && b.dataset.setCat) setCat(b.dataset.setCat);   // 帳號區那顆吃同一個樣子,但不是分類
 });
 $("set-scrim").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); setClose(); return; }
@@ -319,18 +321,23 @@ $("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").val
    主行程的 updater.js 管下載;這裡只畫狀態。新版在背景下載,永遠不自己重啟:
    已下載 → 「重新啟動並更新」;自動下單執行中那顆鈕是擋下來的(暫停之後,或正常結束 Blave 時才裝)。 */
 var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的 TDZ 會連 typeof 都丟例外)
+/* 「一般」頁最下面的「關於」:版號永遠在;下一行是更新狀態;右邊一顆鈕——平常是安靜的「檢查更新」,新版已下載才換成描邊的
+   「重新啟動並更新」。換 class 不換節點(焦點不掉)。off(沒有更新來源)= 只有版號。 */
 function upPaint() {
-  const txt = $("set-up-txt"), btn = $("set-up-btn"), st = UP || {}, v = { v: st.current || "", nv: st.version || "" };
-  let msg = t("up.current", v), label = null, act = null;
-  if (st.phase === "checking") msg = t("up.checking", v);
+  const txt = $("set-up-txt"), btn = $("set-up-btn"), st = UP || {}, v = { nv: st.version || "" };
+  const check = () => window.blave.updateCheck().then(upRefresh);
+  let msg = "", up = false, label = null, act = null, out = false;
+  if (st.phase === "checking") msg = t("up.checking");
   else if (st.phase === "downloading") msg = st.percent == null ? t("up.downloading", v) : t("up.downloadingPct", { ...v, pct: st.percent });
-  else if (st.phase === "ready") { msg = t("up.ready", v); label = t("up.install"); act = () => window.blave.updateInstall().then((r) => { if (r && !r.ok) upRefresh(); }); }
-  else if (st.phase === "blocked") msg = t("up.blocked", v);
   else if (st.phase === "staging") msg = t("up.staging", v);
-  else if (st.phase === "error") { msg = st.error === "INSTALL_FAILED" ? t("up.installFailed", v) : t("up.error", v); label = t("up.check"); act = () => window.blave.updateCheck().then(upRefresh); }
-  else if (st.phase === "idle") { msg = t("up.latest", v); label = t("up.check"); act = () => window.blave.updateCheck().then(upRefresh); }
-  txt.textContent = msg;
+  else if (st.phase === "ready") { msg = t("up.ready", v); up = out = true; label = t("up.install"); act = () => window.blave.updateInstall().then((r) => { if (r && !r.ok) upRefresh(); }); }
+  else if (st.phase === "blocked") { msg = t("up.blocked", v); up = true; }
+  else if (st.phase === "error") { msg = st.error === "INSTALL_FAILED" ? t("up.installFailed", v) : t("up.error"); up = true; label = t("up.check"); act = check; }
+  else if (st.phase === "idle") { msg = t("up.latest"); label = t("up.check"); act = check; }
+  $("set-up-ver").textContent = st.current ? t("up.app", { v: st.current }) : "";
+  txt.textContent = msg; txt.classList.toggle("up", up);
   btn.hidden = !label; btn.textContent = label || ""; btn.onclick = act;
+  btn.classList.toggle("btn-out", out); btn.classList.toggle("btn-quiet", !out);
 }
 function upRefresh() { return window.blave.updateState().then((st) => { UP = st; upPaint(); }).catch(() => {}); }
 window.blave.onUpdateState((st) => { UP = st; upPaint(); });
@@ -1102,8 +1109,13 @@ async function submitMessage(msg) {
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = [];
     const r = await window.blave.sendMessage({
       sessionId, message: msg, model: MP.model, effort: mpEffort(), viewing: chatViewing() });
-    // main.js 的契約只有這兩種回覆:busy 或 started
+    // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
     if (r.started) { busyStart(); return true; }
+    if (r.blocked === "UPDATE_REQUIRED") {
+      // 不是「上一輪還在跑」:這個版本被停用了,要更新才能繼續。鈕帶去 設定 › 一般 最下面的「關於」(那裡有更新鈕)
+      faultCard().set({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) });
+      unlock(); return false;
+    }
     addMsg("sys", t("turn.busy")); unlock(); return false;
   } catch (e) {
     busyEnd();
@@ -1556,7 +1568,10 @@ function planSayDone() { planDonePending = false; const c = faultCard(); c.set({
 function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint(); sidePaint(); }
 /* 設定左欄底部的帳號區:有登入才出。(連結畫面最底下那句「首次綁卡送 N 天資料」已拿掉——Wei:選 AI 的地方不放宣傳文) */
 function acctPaintAcct() {
-  $("set-acct").hidden = !hasToken;
+  // 兩態都顯示。主行程拿不到 Blave 帳號的 email,所以第一行是「Blave 帳號」、第二行講有沒有登入
+  $("set-acct-who").textContent = t("acct.lbl");
+  $("set-acct-st").textContent = hasToken ? t("acct.signedIn") : t("acct.signedOut");
+  $("set-acct-btn").textContent = hasToken ? t("acct.out") : t("cn.blave.btn");
 }
 function sidePaint() {
   const n = $("ws-conn-note"); if (!n) return;
@@ -1805,12 +1820,10 @@ panesInit();
 function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
+  acctPaintAcct();   // 設定的帳號區(兩態的字跟著語言換)
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
-  // 字標 → 官網,跟著介面語言走(官網的 <lang> 段跟我們的語系代號同一組)。
-  // target=_blank 由主行程的 setWindowOpenHandler 接走、交給系統瀏覽器開
-  $("ws-home").href = "https://blave.org/" + LANG;   // 結尾不加斜線:/zh/ 是 404
 }
 
 (async () => {

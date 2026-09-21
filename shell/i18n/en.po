@@ -349,23 +349,20 @@ msgstr "Model access"
 msgid "set.lang"
 msgstr "Language"
 
-msgid "up.label"
-msgstr "Version"
-
-msgid "up.current"
-msgstr "{v}"
+msgid "up.app"
+msgstr "Blave {v}"
 
 msgid "up.latest"
-msgstr "{v} · Up to date"
+msgstr "Up to date"
 
 msgid "up.checking"
-msgstr "{v} · Checking for updates…"
+msgstr "Checking for updates…"
 
 msgid "up.downloading"
-msgstr "{v} · Downloading {nv}…"
+msgstr "Downloading {nv}…"
 
 msgid "up.downloadingPct"
-msgstr "{v} · Downloading {nv} ({pct}%)"
+msgstr "Downloading {nv} ({pct}%)"
 
 msgid "up.ready"
 msgstr "{nv} is downloaded and takes effect after a restart"
@@ -374,10 +371,10 @@ msgid "up.blocked"
 msgstr "{nv} is downloaded. Blave won’t update while auto trading is running — pause trading to update, or it installs when you quit Blave"
 
 msgid "up.error"
-msgstr "{v} · The update check didn’t go through"
+msgstr "The update check didn’t go through"
 
 msgid "up.staging"
-msgstr "{v} · {nv} downloaded, preparing to install…"
+msgstr "{nv} downloaded, preparing to install…"
 
 msgid "up.installFailed"
 msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in your Applications folder (not opened straight from the disk image), then check again"
@@ -808,6 +805,9 @@ msgstr "Sign In and Switch"
 msgid "acct.lbl"
 msgstr "Blave account"
 
+msgid "acct.signedOut"
+msgstr "Signed out"
+
 msgid "acct.signedIn"
 msgstr "Signed in"
 
@@ -819,14 +819,8 @@ msgstr "Signed out. This computer no longer gets Blave data."
 
 # ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
 
-msgid "set.cat.conn"
-msgstr "Connections"
-
 msgid "cx.lead"
 msgstr "Everything on this page is saved only in the workspace on this computer (~/Blave/workspace/.env). Blave does not upload it. The agent and your strategy code can read it; that is how they trade and fetch data for you."
-
-msgid "cx.acct.title"
-msgstr "Trading account"
 
 msgid "cx.acct.meta"
 msgstr "Can place orders and read the account, and is also used to fetch this exchange's data. One at a time."
@@ -854,12 +848,6 @@ msgstr "Connected"
 
 msgid "cx.perfNote"
 msgstr "Paper results do not represent real fills (no slippage)."
-
-msgid "cx.unbindHint"
-msgstr "To disconnect, go to {link}."
-
-msgid "cx.unbindLink"
-msgstr "Auto trading › Settings"
 
 msgid "cx.retest"
 msgstr "Retest connection"
@@ -1432,3 +1420,43 @@ msgstr "Target"
 
 msgid "chat.tgt.cut1"
 msgstr "In this version the agent can’t work on the cloud machine yet."
+
+msgid "tm.stLocal"
+msgstr "This computer: {money} · {state}"
+
+msgid "tm.stCloud"
+msgstr "Cloud: {money} · {state}"
+
+msgid "tm.stOn"
+msgstr "Running"
+
+msgid "tm.stPaused"
+msgstr "Paused"
+
+msgid "tm.stUnknown"
+msgstr "Status unavailable"
+
+msgid "tm.pauseLocal"
+msgstr "Pause trading on this computer (leave positions)"
+
+msgid "tm.quitCloudNote"
+msgstr "Trading in the cloud isn’t affected and keeps running."
+
+msgid "tm.notifPrefixLocal"
+msgstr "This computer: "
+
+msgid "tm.notifPrefixCloud"
+msgstr "Cloud: "
+
+msgid "menu.site"
+msgstr "Blave Website"
+
+# 最低版本閘(最小版畫面;字待設計師過目)
+msgid "minv.chat"
+msgstr "This version of Blave needs an update before it can keep using Blave’s AI. This message was not sent and used no AI."
+
+msgid "minv.trade"
+msgstr "This version of Blave needs an update before it can start trading. Pausing isn’t affected. Update at the bottom of Settings › Display."
+
+msgid "minv.btn"
+msgstr "Go to Update"
