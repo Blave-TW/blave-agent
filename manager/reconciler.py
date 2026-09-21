@@ -70,9 +70,10 @@ def _symbol_threshold(symbol, reduce_only=False):
     position of exactly one lot could then not be closed or flipped AT ALL
     (the flat-10 rule this replaces was itself the fix for that P0), and any
     stale-mark buffer on top pushes toward that line — so none. 0.5 leaves a
-    50% margin on a 60s-old mark. Under self_ledger _reduce_qty floors, so a
-    sub-lot reduce was already a quiet no-op; the gate only saves its round
-    trip. Spot and a failed lookup stay on the flat THRESHOLD.
+    50% margin on a 60s-old mark. Under self_ledger a reduce leg is sized from
+    the bot's own book and rounded to a lot (venue_wiring._book_reduce_qty), and
+    the diff it is gated on is in the book's cost, not the mark — the gate is
+    the same half lot, valued at the mark. Spot and a failed lookup stay on the flat THRESHOLD.
 
     Lot-based (capital/TW futures) rows never reach here — lib.portfolio skips
     the account-currency threshold for them entirely.

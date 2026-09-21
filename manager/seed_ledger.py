@@ -70,7 +70,22 @@ if __name__ == '__main__':
 
     if args.absorb:
         print("Reading current account position (absorb mode)...")
-        seeded = seed_ledger(_reconciler.get_positions, absorb=True)
+        # the book needs the QUANTITY adopted, not only its value today; a
+        # lot-based (capital) account's size already is its quantity
+        if _reconciler._is_capital_routed():
+            def _qty():
+                return {k: (v['size'] if v.get('side') == 'long' else -v['size'])
+                        for k, v in (_reconciler.get_positions() or {}).items()}
+        else:
+            from lib.venue_wiring import auto_position_qty as _qty
+        seeded = seed_ledger(_reconciler.get_positions, absorb=True, get_qty_fn=_qty)
+        from lib.portfolio import ledger_positions
+        no_qty = sorted(k for k, v in ledger_positions().items() if v.get('legacy'))
+        if no_qty:
+            print(f"⚠️  No base quantity could be read for {no_qty} — these are "
+                  f"LEGACY rows: closes convert USD at the current mark (can "
+                  f"strand or oversell) until the position is next flat. See "
+                  f"references/manager.md § self_ledger.")
         if not seeded:
             print("Account is flat — baseline seeded empty (same as fresh start).")
         else:

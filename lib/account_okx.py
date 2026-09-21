@@ -272,10 +272,13 @@ def get_positions(env: dict) -> list:
         inst_id = p.get("instId", "")
         pos_side = p.get("posSide", "")
         notional = float(p.get("notionalUsd", 0))
-        mark_px = float(p.get("markPx", 0))
+        mark_px = float(p.get("markPx") or 0)
 
+        # A non-zero position we cannot value must RAISE, never be skipped: a
+        # dropped row reads as flat — the reconciler re-buys on top of it, and
+        # a self_ledger close reads "the account holds none of it".
         if mark_px <= 0:
-            continue
+            raise Exception(f"okx position {inst_id}: no markPx on a non-zero position")
 
         # Determine direction from posSide
         if pos_side == "short":

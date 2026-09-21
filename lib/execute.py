@@ -786,12 +786,26 @@ def _launch(key, style, target, args, signed_diff, reduce_only, deadline_s):
     return False
 
 
+def _sold_kw(venue_seen):
+    """`sold=` for the wiring, only once it has answered from the book
+    (self_ledger reduce leg) — every other call keeps its old shape."""
+    return {"sold": venue_seen.get("base", 0.0)} if venue_seen.get("book") else {}
+
+
 def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_seen,
                    why=None):
     """USD-denominated market slice via the venue wiring. fill_qty is returned
     in USD (not base units) so run_twap's target/filled accounting stays in
     one currency. `why` (optional dict) records the stop reason so the caller
-    can pick the right recovery (below_min → one market shot; halt → wait)."""
+    can pick the right recovery (below_min → one market shot; halt → wait).
+
+    self_ledger reduce legs: the order's USD is the book's COST, so a slice's
+    progress is counted at the book's rate (the wiring reports it as
+    'unit_cost'), not at the fill price — at the fill price a close 20% above
+    entry would call itself done with a sixth of the position still open.
+    venue_seen['base'] accumulates the real base filled (the book's other
+    half, and the `sold` the next slice is capped against); venue_seen
+    ['writeoff'] carries the wiring's verdict on a remainder, applied by _finish."""
     from lib import guard
     from lib.venue_wiring import auto_place_order
     is_entry = not reduce_only
@@ -805,7 +819,12 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
             stop.set()
             raise RuntimeError("state/HALT set — stopping execution")
         signed = usd if side == "buy" else -usd
-        placed = auto_place_order(symbol, signed, asset_spec, reduce_only, exchange)
+        placed = auto_place_order(symbol, signed, asset_spec, reduce_only, exchange,
+                                  **_sold_kw(venue_seen))
+        if isinstance(placed, dict) and placed.get("writeoff"):
+            venue_seen["writeoff"] = placed["writeoff"]
+            if not float(placed.get("executed_qty") or 0):
+                placed = False  # nothing was sent
         if placed is False:
             if why is not None:
                 why["stop"] = "below_min"
@@ -815,15 +834,19 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
         if not price:
             raise RuntimeError(f"venue returned no fill price: {placed}")
         venue_seen["id"] = placed.get("exchange") or venue_seen["id"]
+        base = float(placed.get("executed_qty") or 0)
+        venue_seen["base"] = venue_seen.get("base", 0.0) + base
+        if placed.get("unit_cost"):
+            venue_seen["book"] = True
         return {"fill_price": price,
-                "fill_qty": float(placed.get("executed_qty") or 0) * price}
+                "fill_qty": base * float(placed.get("unit_cost") or price)}
 
     return _slice
 
 
 def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors,
             style, filled_usd, vwap, aborted, below_min=False,
-            already_reported=False):
+            already_reported=False, filled_base=None, writeoff=None):
     """Async completion: one orders.jsonl entry (the web 交易歷史 source of
     truth) mirroring the synchronous reconcile entry shape.
 
@@ -834,9 +857,27 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
     Recording it as an order_error instead made it the loudest thing on the
     workspace: measured 2026-09-08, 76% of the whole fleet's 30-day
     order_error events were this one non-failure, one every reconcile round,
-    forever."""
+    forever.
+
+    self_ledger: `filled_base` is the real base filled, recorded as the leg's
+    signed_qty (the quantity half of the book — lib.portfolio UNIT OF THE
+    BOOK); filled_usd may be the book's USD there (_make_slice_fn), so the
+    leg's notional is rebuilt from base × vwap. `writeoff` is the wiring's
+    verdict that what is left of a full close can never be sold: applied
+    here, AFTER the fill is logged (the zero row is a cutoff). Off, neither
+    argument is read."""
     from lib.portfolio import _append_reconciler_log, _record_order_error
+    # files reach a machine one at a time: beside a lib.portfolio from before
+    # the quantity book this must still log the fill exactly as it used to
+    try:
+        from lib.portfolio import apply_ledger_writeoff, load_portfolio_config
+        book_on = bool(load_portfolio_config().get("self_ledger"))
+    except Exception:
+        book_on = False
     if filled_usd <= 0:
+        if book_on and writeoff and reduce_only:
+            apply_ledger_writeoff(symbol, writeoff, execution=style)
+            return
         if below_min:
             logging.info(f"[execute] {symbol} {style}: nothing the venue would "
                          f"accept at this size — skipped")
@@ -855,6 +896,11 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
     if vwap:
         leg["fill_price"] = vwap
         leg["executed_qty"] = round(filled_usd / vwap, 8)
+    if book_on and filled_base:
+        leg["executed_qty"] = filled_base
+        leg["signed_qty"] = filled_base if signed_diff > 0 else -filled_base
+        if vwap and reduce_only:
+            leg["signed_diff"] = round((1 if signed_diff > 0 else -1) * filled_base * vwap, 2)
     entry = {
         "action": "BUY" if signed_diff > 0 else "SELL",
         "symbol": symbol,
@@ -875,6 +921,8 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
                    > max(_RESIDUAL_USD, _venue_min_slice_usd(symbol))):
         entry["failed"] = True  # partial — the residual re-reconciles
     _append_reconciler_log(entry)
+    if book_on and writeoff and reduce_only:
+        apply_ledger_writeoff(symbol, writeoff, execution=style)
 
 
 def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
@@ -905,10 +953,15 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         remaining = total - filled
         if why.get("stop") == "below_min" and remaining > _RESIDUAL_USD:
             placed = auto_place_order(symbol, remaining if signed_diff > 0 else -remaining,
-                                      asset_spec, reduce_only, exchange)
+                                      asset_spec, reduce_only, exchange,
+                                      **_sold_kw(venue_seen))
             if isinstance(placed, dict):
+                if placed.get("writeoff"):
+                    venue_seen["writeoff"] = placed["writeoff"]
                 price = float(placed.get("avg_price") or 0)
-                usd = float(placed.get("executed_qty") or 0) * price
+                base = float(placed.get("executed_qty") or 0)
+                venue_seen["base"] = venue_seen.get("base", 0.0) + base
+                usd = base * float(placed.get("unit_cost") or price)
                 if usd > 0:
                     vwap = (round(((vwap or 0) * filled + price * usd) / (filled + usd), 8)
                             if filled + usd > 0 else price)
@@ -920,7 +973,8 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             # nothing to do, stay quiet (matches the market path's semantics)
         _finish(symbol, signed_diff, asset_spec, reduce_only, venue_seen["id"],
                 contributors, style, filled, vwap, aborted,
-                below_min=why.get("stop") == "below_min")
+                below_min=why.get("stop") == "below_min",
+                filled_base=venue_seen.get("base"), writeoff=venue_seen.get("writeoff"))
     except Exception as e:
         logging.error(f"[execute] {key} {style} crashed: {e}")
         from lib.portfolio import _record_order_error
@@ -980,7 +1034,15 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
     is_entry = not reduce_only
     total = abs(round(signed_diff, 2))
     remaining = total
-    fills = []          # {'fill_price', 'fill_qty'(USD)}
+    fills = []          # {'fill_price', 'fill_qty'(USD), 'base'}
+    # self_ledger reduce leg: `total` is the book's COST, so fills count at the
+    # book's rate, not their own price (see _make_slice_fn). None otherwise.
+    try:
+        rate = tools["unit_cost"](buy) if reduce_only and "unit_cost" in tools else None
+    except Exception as e:
+        logging.warning(f"[execute] {key} chase: book rate unavailable ({e})")
+        rate = None
+    seen = {"book": bool(rate)}   # _sold_kw / writeoff carrier
     notify = _get_notify()
     aborted = False
     crashed = False
@@ -1000,9 +1062,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             logging.warning(f"[execute] {key} chase status read failed ({e}) — "
                             f"order {oid} unaccounted")
             return 0.0
-        filled_usd = st["executed_qty"] * (st["avg_price"] or 0)
+        filled_usd = st["executed_qty"] * (rate or st["avg_price"] or 0)
         if filled_usd > 0:
-            fills.append({"fill_price": st["avg_price"], "fill_qty": filled_usd})
+            fills.append({"fill_price": st["avg_price"], "fill_qty": filled_usd,
+                          "base": st["executed_qty"]})
         return filled_usd
 
     _CANCEL_GONE = ("already_gone", "gone", "canceled", "cancelled",
@@ -1047,7 +1110,8 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                 break
             bid, ask = tools["bbo"]()
             px = bid if buy else ask
-            placed = tools["place"](remaining, px, None, buy)
+            seen["base"] = sum(f["base"] for f in fills)
+            placed = tools["place"](remaining, px, None, buy, **_sold_kw(seen))
             if placed is False:
                 reason = "below venue minimum"
                 below_min = True
@@ -1074,10 +1138,11 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     # canceled = venue-side (expiry/ADL) — account either way,
                     # from the row we already hold (a re-read that fails would
                     # silently drop a KNOWN fill)
-                    filled_usd = st["executed_qty"] * (st["avg_price"] or 0)
+                    filled_usd = st["executed_qty"] * (rate or st["avg_price"] or 0)
                     if filled_usd > 0:
                         fills.append({"fill_price": st["avg_price"],
-                                      "fill_qty": filled_usd})
+                                      "fill_qty": filled_usd,
+                                      "base": st["executed_qty"]})
                     active_oid = oid = None
                     break
                 nbid, nask = tools["bbo"]()
@@ -1107,13 +1172,18 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         # or the old resting order's fate is unknown (double-fill risk).
         remaining = max(0.0, total - sum(f["fill_qty"] for f in fills))
         if remaining > _RESIDUAL_USD and not stop.is_set() and not cancel_uncertain:
+            seen["base"] = sum(f["base"] for f in fills)
             placed = auto_place_order(symbol, remaining if buy else -remaining,
-                                      asset_spec, reduce_only, exchange)
+                                      asset_spec, reduce_only, exchange,
+                                      **_sold_kw(seen))
             if isinstance(placed, dict):
+                if placed.get("writeoff"):
+                    seen["writeoff"] = placed["writeoff"]
                 price = float(placed.get("avg_price") or 0)
                 qty = float(placed.get("executed_qty") or 0)
                 if price and qty:
-                    fills.append({"fill_price": price, "fill_qty": qty * price})
+                    fills.append({"fill_price": price, "base": qty,
+                                  "fill_qty": qty * float(placed.get("unit_cost") or price)})
                 reason = reason or "window expired — remainder filled at market"
 
         filled = sum(f["fill_qty"] for f in fills)
@@ -1162,7 +1232,9 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     if filled > 0 else None)
             _finish(symbol, signed_diff, asset_spec, reduce_only, tools.get("venue"),
                     contributors, "chase", filled, vwap, aborted or crashed,
-                    below_min=below_min, already_reported=crashed)
+                    below_min=below_min, already_reported=crashed,
+                    filled_base=sum(f["base"] for f in fills),
+                    writeoff=seen.get("writeoff"))
         except Exception as e2:
             logging.error(f"[execute] {key} chase completion record failed: {e2}")
         _reap_own(key)
@@ -1260,7 +1332,9 @@ def _custom_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             # the accounting record comes FIRST — a notify hiccup must never
             # leave real fills out of orders.jsonl
             _finish(symbol, signed_diff, asset_spec, reduce_only, venue_seen["id"],
-                    contributors, style, filled, vwap, aborted or stop.is_set())
+                    contributors, style, filled, vwap, aborted or stop.is_set(),
+                    filled_base=venue_seen.get("base"),
+                    writeoff=venue_seen.get("writeoff"))
             notify(f"Executor {module} done: {side.upper()} "
                    f"${filled:,.2f}/${total:,.2f} {symbol} | VWAP={vwap}")
         except Exception as e:

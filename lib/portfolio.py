@@ -128,13 +128,29 @@ def _record_order_error(symbol, exchange, error):
 # — this only fixes "bot ignores what it doesn't own", not "bot always knows
 # the true account state"; margin/liquidation checks still need the real
 # get_positions_fn() read, never the ledger.
+#
+# UNIT OF THE BOOK — two numbers per symbol, never one. `cost` (signed USD:
+# what the fills were worth WHEN THEY HAPPENED) answers "should I trade":
+# target is diffed against it, so a held position never moves with the mark
+# (Wei 2026-09-21: fixed quantity — what was bought is held until the signal
+# changes). `qty` (signed base units the bot bought) answers "how much": a
+# reduce leg sells qty × |diff| ÷ |cost|, a close sells the whole qty. The
+# book used to be `cost` alone, and a close converted it back at the CURRENT
+# mark — measured 2026-09-21 on paper: closing 20% above entry stranded 16.7%
+# of the position, closing 20% below left a phantom long that re-sent a dead
+# reduce leg every round, and with a manual holding in the same symbol it
+# sold the USER's coins (the cap was the whole account, not the bot's share).
 _LEDGER_SEED_PATH = 'manager/ledger_seed.json'
 _ORDERS_LOG_PATH  = 'manager/orders.jsonl'
+_LEDGER_ADOPTION_PATH = 'manager/ledger_migration.json'
 
 
 def _load_ledger_seed():
     """{'seeded_at': iso_str, 'symbols': {symbol: {'size': signed_float,
-    'ts': iso_str}}} — 'seeded_at' is the whole-account cutoff from
+    'qty': signed_float|None, 'ts': iso_str}}} — 'size' is the signed USD cost
+    (the name predates `qty` and stays: a build from before the quantity book
+    reads this same file and must keep finding its number there). 'qty' is
+    None on a row written by such a build. 'seeded_at' is the whole-account cutoff from
     seed_ledger(): orders.jsonl entries at/before it are excluded for EVERY
     symbol, including symbols with no per-symbol row (a flat account seeds an
     empty symbols map, but its history must still be cut off — measured live
@@ -152,6 +168,8 @@ def _load_ledger_seed():
         return {
             'seeded_at': str(raw.get('seeded_at') or ''),
             'symbols': {k: {'size': float(v.get('size', 0) or 0),
+                            'qty': (float(v['qty']) if v.get('qty') is not None
+                                    else None),
                             'ts': str(v.get('ts') or '')}
                         for k, v in (raw.get('symbols') or {}).items()},
         }
@@ -173,7 +191,7 @@ def _save_ledger_seed(seed):
     os.replace(tmp, _LEDGER_SEED_PATH)
 
 
-def seed_ledger(get_positions_fn, absorb=False):
+def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None):
     """One-time baseline for the self-ledger. Two modes — picking the wrong
     one on an account that HOLDS positions trades real money, so the default
     is the one that never touches what the user already owns:
@@ -198,17 +216,30 @@ def seed_ledger(get_positions_fn, absorb=False):
     reconcile(). To reset only SOME symbols (e.g. after a flatten), use
     zero_ledger_symbols() instead.
 
+    get_qty_fn (absorb only): () -> {symbol: signed base qty}. An absorbed
+    row needs the QUANTITY adopted, not just its value today — without it the
+    row is a legacy USD-only row (see ledger_book) and closes at the mark
+    until it is first flat. lib.venue_wiring.auto_position_qty is the auto-
+    wired reader; a lot-based account's `size` already is its quantity.
+
     Returns the seeded {symbol: signed_size} ({} for fresh start) for the
     caller to show the user.
     """
     now = datetime.utcnow().isoformat()
     symbols = {}
     if absorb:
+        qtys = (get_qty_fn() or {}) if get_qty_fn else {}
         for symbol, pos in (get_positions_fn() or {}).items():
             size = float(pos.get('size', 0) or 0)
             side = pos.get('side')
             signed = size if side == 'long' else (-size if side == 'short' else 0.0)
-            symbols[symbol] = {'size': signed, 'ts': now}
+            qty = qtys.get(symbol)
+            # a quantity on the other side of the value is not this position
+            if qty is not None and float(qty) * signed <= 0:
+                qty = None
+            symbols[symbol] = {'size': signed,
+                               'qty': float(qty) if qty is not None else None,
+                               'ts': now}
     # 'seeded_at' cuts off history for EVERY symbol, incl. ones with no row —
     # pre-seed orders.jsonl history must never leak into the ledger
     _save_ledger_seed({'seeded_at': now, 'symbols': symbols})
@@ -233,29 +264,80 @@ def zero_ledger_symbols(symbols):
     seed = _load_ledger_seed()
     now = datetime.utcnow().isoformat()
     for symbol in symbols:
-        seed['symbols'][symbol] = {'size': 0.0, 'ts': now}
+        seed['symbols'][symbol] = {'size': 0.0, 'qty': 0.0, 'ts': now}
     _save_ledger_seed(seed)
 
 
-def ledger_positions():
-    """The bot's OWN tracked position per symbol: each symbol's seed_ledger()/
-    zero_ledger_symbols() baseline plus every fill logged for it since (manager/
-    orders.jsonl `legs[].signed_diff`, summed) — never the exchange's raw
-    account position.
+def _sign(x):
+    return 1 if x > 0 else (-1 if x < 0 else 0)
 
-    A symbol with no seed at all (self_ledger turned on but seed_ledger() never
-    run) sums EVERY orders.jsonl entry for it from the start of the file —
-    on a flat account that is harmlessly correct, but on an account that
-    already holds a live bot position it is WRONG unless every fill really is
-    in that file (seed_ledger() MUST run first on an account with an existing
-    position, or reconcile() re-buys the whole target on top of what already
-    exists — see references/manager.md § self_ledger).
 
-    Returns the same shape get_positions_fn() returns:
-    {symbol: {'side': 'long'|'short'|None, 'size': float}}.
+def _ledger_walk():
+    """({symbol: {'qty', 'cost', 'legacy'}}, notes) — the seed baseline plus
+    every fill logged after it, replayed in file order. `notes` is what the
+    replay had to decide on its own, for the adoption report.
+
+    Two leg formats. One carrying `signed_qty` was written by this build: an
+    add grows qty and cost together, a reduce shrinks cost BY THE SHARE OF QTY
+    SOLD (average cost — not by what the sale fetched, which is where the old
+    book went wrong), so both reach zero together. One without it predates the
+    quantity book: cost moves by `signed_diff` exactly as it always did, so the
+    book a machine wakes up with after updating is the book it went to sleep
+    with and the update itself never trades; its qty is `executed_qty` signed
+    like `signed_diff` — the exchange-confirmed fill, a record, not a guess.
+
+    LEGACY row = a position whose quantity cannot be known: a non-zero seed
+    row without `qty` (seed_ledger --absorb from an older build), a fill with
+    no `executed_qty` (hand-written place_order returning None), or a replay
+    whose qty and cost ended up on opposite sides (the old close oversold into
+    a manual holding). Never estimated — such a row keeps the old USD
+    arithmetic and the wiring keeps sizing it at the mark, until it is next
+    flat or reconcile closes it and writes it off; from there it is a quantity
+    row like any other.
+
+    Lot-based rows (capital) need no case of their own: signed_diff and
+    executed_qty are both LOTS there, so qty == cost and the share sold is the
+    lot count.
     """
     seed = _load_ledger_seed()
-    totals = {symbol: row['size'] for symbol, row in seed['symbols'].items()}
+    book, notes = {}, {}
+
+    def _row(symbol):
+        return book.setdefault(symbol, {'qty': 0.0, 'cost': 0.0, 'legacy': False,
+                                        'gross': 0.0})
+
+    def _note(symbol, **kw):
+        notes.setdefault(symbol, {}).update(kw)
+
+    for symbol, srow in seed['symbols'].items():
+        r = _row(symbol)
+        r['cost'] = srow['size']
+        if srow['qty'] is not None:
+            r['qty'] = srow['qty']
+            r['gross'] = abs(srow['qty'])
+        elif abs(srow['size']) > 1e-9:
+            r['legacy'] = True
+            _note(symbol, old_format=True, legacy='seed row has no qty')
+
+    def _tol(r):
+        return max(1e-12, 1e-9 * r['gross'])
+
+    def _settle(symbol, r):
+        """Between fills of THIS build and at the end — never between old-
+        format fills, whose running total must stay exactly the old book."""
+        if r['legacy']:
+            return
+        flat_qty = abs(r['qty']) <= _tol(r)
+        if flat_qty and abs(r['cost']) > 1e-9:
+            # the bot holds none of it, so it cannot have cost anything: the
+            # phantom the old close left behind (sold everything, booked less)
+            _note(symbol, phantom_cost_dropped=round(r['cost'], 2))
+            r['qty'] = r['cost'] = 0.0
+        elif flat_qty:
+            r['qty'] = r['cost'] = 0.0
+        elif r['qty'] * r['cost'] < 0:
+            r['legacy'] = True
+            _note(symbol, legacy='qty and cost on opposite sides')
 
     try:
         with open(_ORDERS_LOG_PATH) as f:
@@ -290,16 +372,223 @@ def ledger_positions():
             continue
         for leg in entry.get('legs') or []:
             try:
-                totals[symbol] = totals.get(symbol, 0.0) + float(leg.get('signed_diff') or 0)
+                d = float(leg.get('signed_diff') or 0)
+                sq = leg.get('signed_qty')
+                new_fmt = sq is not None
+                if new_fmt:
+                    sq = float(sq)
+                elif leg.get('executed_qty') is not None and d:
+                    sq = _sign(d) * abs(float(leg['executed_qty']))
             except (TypeError, ValueError):
                 continue
+            if not d and not sq:
+                continue
+            r = _row(symbol)
+            if not new_fmt:
+                _note(symbol, old_format=True)
+                if sq is None and not r['legacy']:
+                    r['legacy'] = True
+                    _note(symbol, legacy='a fill has no executed_qty')
+            else:
+                _settle(symbol, r)
+            if sq is not None:
+                r['gross'] += abs(sq)
 
-    return {
-        symbol: {'side': 'long' if size > 0 else ('short' if size < 0 else None),
-                 'size': abs(size)}
-        for symbol, size in totals.items()
-        if abs(size) > 1e-9
-    }
+            if r['legacy'] or not new_fmt:
+                r['cost'] += d
+                if sq is not None:
+                    r['qty'] += sq
+                if abs(r['cost']) < 1e-9:
+                    # flat in the old book. Whatever quantity the replay still
+                    # shows is what the old close stranded on the account; the
+                    # bot stopped counting it as its own then, and adopting it
+                    # now would sell coins the user has been looking at as
+                    # theirs. Reported, not traded.
+                    if not r['legacy'] and abs(r['qty']) > _tol(r):
+                        _note(symbol, stranded_qty_not_adopted=r['qty'])
+                    r['qty'] = r['cost'] = 0.0
+                    r['legacy'] = False
+            elif r['qty'] == 0 or r['qty'] * sq > 0:
+                r['qty'] += sq
+                r['cost'] += d
+            elif abs(sq) <= abs(r['qty']) + _tol(r):
+                r['cost'] -= r['cost'] * min(1.0, abs(sq) / abs(r['qty']))
+                r['qty'] += sq
+            else:
+                # sold through zero: the excess opens the other side at this
+                # fill's own price
+                over = sq + r['qty']
+                r['cost'] = d * (over / sq)
+                r['qty'] = over
+
+    for symbol, r in book.items():
+        _settle(symbol, r)
+    # 12 significant digits: 0.003 + 0.007 is 0.009999999999999998 in floats,
+    # and an order lib flooring THAT to a 0.001 step closes 0.009 of a 0.01
+    # position. Far finer than any venue's step, far coarser than the noise.
+    return ({k: {'qty': float(f"{r['qty']:.12g}"), 'cost': r['cost'],
+                 'legacy': r['legacy']}
+             for k, r in book.items()}, notes)
+
+
+def ledger_book():
+    """{symbol: {'qty': signed base, 'cost': signed USD, 'legacy': bool}} for
+    every symbol the bot holds — see _ledger_walk. A legacy row's qty is
+    whatever could be replayed and must not be sized from."""
+    return {k: r for k, r in _ledger_walk()[0].items() if abs(r['cost']) > 1e-9}
+
+
+def ledger_positions():
+    """The bot's OWN tracked position per symbol: each symbol's seed_ledger()/
+    zero_ledger_symbols() baseline plus every fill logged for it since
+    (manager/orders.jsonl legs) — never the exchange's raw account position.
+
+    A symbol with no seed at all (self_ledger turned on but seed_ledger() never
+    run) sums EVERY orders.jsonl entry for it from the start of the file —
+    on a flat account that is harmlessly correct, but on an account that
+    already holds a live bot position it is WRONG unless every fill really is
+    in that file (seed_ledger() MUST run first on an account with an existing
+    position, or reconcile() re-buys the whole target on top of what already
+    exists — see references/manager.md § self_ledger).
+
+    Returns the shape get_positions_fn() returns, {symbol: {'side', 'size'}},
+    where `size` is the COST in USD (what compute_diff works in — see UNIT OF
+    THE BOOK above), plus 'qty' (unsigned base units; compare it to the
+    account's own base size to see drift, no price involved) and
+    'legacy': True on a row whose qty is not known.
+    """
+    out = {}
+    for symbol, r in ledger_book().items():
+        out[symbol] = {'side': 'long' if r['cost'] > 0 else 'short',
+                       'size': abs(r['cost']), 'qty': abs(r['qty'])}
+        if r['legacy']:
+            out[symbol]['legacy'] = True
+    return out
+
+
+# "The account no longer holds it" zeroes a book without an order, so one read
+# is not enough to act on: a position endpoint that answers successfully but
+# wrong (a row dropped, a read one beat behind a fill) would orphan a live
+# position. The wiring reports every such read here; only a second one, at
+# least one reconciler poll after the first and with no contradicting read in
+# between, counts. Same file shape and helpers as state/signal_gate.json.
+_ACCOUNT_SHORT_PATH = 'state/ledger_account_short.json'
+_ACCOUNT_SHORT_MIN_S = 5      # manager/reconciler.py POLL_INTERVAL: never the same round
+_ACCOUNT_SHORT_MAX_S = 900    # unseen for 3 heartbeat rounds = not consecutive any more
+
+
+def _load_account_short():
+    try:
+        with open(_ACCOUNT_SHORT_PATH) as f:
+            raw = json.load(f)
+        return {str(k): {'first': float(v['first']), 'last': float(v['last'])}
+                for k, v in (raw or {}).items()}
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return {}
+
+
+def _save_account_short(pending):
+    try:
+        os.makedirs(os.path.dirname(_ACCOUNT_SHORT_PATH), exist_ok=True)
+        tmp = _ACCOUNT_SHORT_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(pending, f, indent=2)
+        os.replace(tmp, _ACCOUNT_SHORT_PATH)
+    except OSError as e:
+        logging.warning(f'ledger_account_short persist failed: {e}')
+
+
+def note_account_short(symbol, short):
+    """One account read for a self_ledger reduce leg: `short` = it showed less
+    than the book says the bot holds. Returns True when that is CONFIRMED (see
+    above) — until then the caller must not treat the book as wrong. A read
+    that is not short clears the symbol."""
+    pending = _load_account_short()
+    now = time.time()
+    seen = pending.get(symbol)
+    if not short:
+        if seen:
+            del pending[symbol]
+            _save_account_short(pending)
+        return False
+    first_read = not seen or now - seen['last'] > _ACCOUNT_SHORT_MAX_S
+    if first_read:
+        seen = {'first': now, 'last': now}
+    seen['last'] = now
+    pending[symbol] = seen
+    _save_account_short(pending)
+    return not first_read and now - seen['first'] >= _ACCOUNT_SHORT_MIN_S
+
+
+def account_short_pending(symbol):
+    """True while a short read of `symbol` is on file and unresolved. A record
+    older than _ACCOUNT_SHORT_MAX_S is not pending any more (the same expiry
+    note_account_short uses): nobody clears it when the close leg is skipped
+    before the account is read, and a stale one would hold the entry back
+    every round, silently, for good."""
+    seen = _load_account_short().get(symbol)
+    try:
+        return bool(seen) and time.time() - float(seen['last']) <= _ACCOUNT_SHORT_MAX_S
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def apply_ledger_writeoff(symbol, reason, **detail):
+    """Zero one symbol's book and say so. For what is left after a CLOSE that
+    can never be sold: less than one lot, under the venue's minimum, or a
+    quantity the account no longer holds (the user closed it by hand, a
+    liquidation took it). Carrying it would re-send a reduce leg that cannot
+    fill every round — and, worse, read as "already long" at the next entry
+    signal, so the strategy would silently sit out. Only ever called when the
+    target for that side is flat: bringing the book to what the bot wanted AND
+    what the account shows is not a trade and needs nobody's decision.
+    Call AFTER the closing fill is in orders.jsonl — the zero row's timestamp
+    is the cutoff, and a fill logged after it would be counted on top."""
+    try:
+        row = ledger_book().get(symbol) or {}
+    except Exception:
+        row = {}
+    zero_ledger_symbols({symbol})
+    seen = _load_account_short()
+    short = seen.pop(symbol, None)
+    if short:
+        _save_account_short(seen)
+        # what a later notification has to go on: when the account was first
+        # and last read short of the book (notifications.md: not yet graded)
+        detail['short_first'] = datetime.utcfromtimestamp(short['first']).isoformat()
+        detail['short_last'] = datetime.utcfromtimestamp(short['last']).isoformat()
+    logging.warning(f"[ledger] {symbol}: wrote off qty={row.get('qty', 0):g} "
+                    f"cost={row.get('cost', 0):.2f} ({reason})")
+    guard.audit('ledger_writeoff', symbol=symbol, reason=reason,
+                qty=row.get('qty', 0), cost=round(row.get('cost', 0) or 0, 2),
+                **detail)
+
+
+def _report_ledger_adoption():
+    """Once per machine: what the quantity book made of a book that predates
+    it (manager/ledger_migration.json + one audit line). Nothing is rewritten —
+    the replay is a pure function of files this build did not change — so this
+    is the record of a decision, not a migration step that can half-run."""
+    if os.path.exists(_LEDGER_ADOPTION_PATH):
+        return
+    try:
+        book, notes = _ledger_walk()
+        old = {k: v for k, v in notes.items() if v.get('old_format')}
+        if not old:
+            return
+        rows = {k: {'cost': round(book[k]['cost'], 2), 'qty': book[k]['qty'],
+                    'mode': 'legacy' if book[k]['legacy'] else 'qty',
+                    **{n: v for n, v in old[k].items() if n != 'old_format'}}
+                for k in old}
+        os.makedirs('manager', exist_ok=True)
+        tmp = _LEDGER_ADOPTION_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump({'ts': datetime.utcnow().isoformat(), 'symbols': rows}, f, indent=2)
+        os.replace(tmp, _LEDGER_ADOPTION_PATH)
+        guard.audit('ledger_adopted', symbols=rows)
+        logging.warning(f"[ledger] quantity book adopted a pre-quantity ledger: {rows}")
+    except Exception as e:
+        logging.warning(f"[ledger] adoption report failed: {e}")
 
 
 # ── signal gate (啟動,等新訊號才進場 — resume_wait) ─────────────────────────
@@ -926,6 +1215,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 "run `python3 manager/seed_ledger.py` first (see "
                 "references/manager.md § self_ledger); refusing to trade on an "
                 "unseeded ledger")
+        _report_ledger_adoption()
         ledger = {_canon_key(k): v for k, v in (ledger_positions() or {}).items()}
     diff_actual = ledger if ledger is not None else actual
 
@@ -1038,6 +1328,34 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         failed = False
         legs = []  # per-leg exchange-confirmed fills for orders.jsonl / the web 交易歷史
         notices = []  # (key, default, kwargs), sent after the ledger write below
+        logged = [False]
+
+        def _flush_legs():
+            # Log whenever ANYTHING filled — a flip whose close leg executed but
+            # whose entry leg then failed (or was halted) moved real money; hiding
+            # it because the order "failed" would desync the history from the
+            # exchange. `failed` marks the partial. Nothing filled + nothing
+            # failed = every leg skipped below-min: no phantom entry.
+            if not legs:
+                return
+            entry = {
+                'action':      'BUY' if diff > 0 else 'SELL',
+                'symbol':      symbol,
+                'signed_diff': diff,
+                # place_order knows which venue it actually routed to — trust
+                # the fill over the config when both exist
+                'exchange':    next((l.get('exchange') for l in legs if l.get('exchange')),
+                                    order.get('exchange')),
+                'asset_spec':  asset_spec,
+                'contributors': order.get('contributors', []),
+                'legs':        list(legs),
+            }
+            if failed:
+                entry['failed'] = True
+            _append_reconciler_log(entry)
+            logged[0] = True
+            del legs[:]
+
         for sub_diff, reduce_only, is_entry in sub_orders:
             leg_threshold = (0 if is_lot_based else
                              _resolve_threshold(threshold, symbol, reduce_only))
@@ -1056,6 +1374,18 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                     f"[reconcile] {symbol} entry {sub_diff:+.2f} denied — state/HALT is set "
                     f"({guard.halt_info()})"
                 )
+                failed = True
+                break
+
+            # self_ledger flip: the close leg just read the account short of
+            # the book and that is not confirmed yet (note_account_short), so
+            # whether the old side is closed is not known. Opening the new side
+            # on top of that guess is how a 0.01 long became a net −0.002 with
+            # a book saying −0.012; the next round settles it either way.
+            if (is_entry and ledger is not None and len(sub_orders) == 2
+                    and account_short_pending(symbol)):
+                logging.warning(f"[reconcile] {symbol} entry {sub_diff:+.2f} held back — "
+                                f"the close leg's account read is unconfirmed")
                 failed = True
                 break
 
@@ -1078,6 +1408,25 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 # either way nothing filled synchronously, nothing to log here
                 logging.info(f"[reconcile] {symbol} skipped by place_order — "
                              f"below minimum or async execution in flight")
+                continue
+
+            # self_ledger: the wiring closed the bot's whole book on this side
+            # and says what is left can never be sold (see
+            # apply_ledger_writeoff). Honoured only for a leg that takes the
+            # book to flat — the one case where flat is also what was asked for.
+            writeoff = None
+            if (ledger is not None and reduce_only and isinstance(placed, dict)
+                    and abs(sub_diff) >= abs(a_signed) - 1e-9):
+                writeoff = placed.get('writeoff')
+                if not writeoff and a.get('legacy') and placed.get('executed_qty'):
+                    # a legacy row has no quantity to check the close against;
+                    # its close is where it ends (references/manager.md)
+                    writeoff = 'legacy row closed'
+            if (isinstance(placed, dict) and placed.get('writeoff')
+                    and not float(placed.get('executed_qty') or 0)):
+                # nothing was sent: no fill to log, no "Closed" to announce
+                if writeoff:
+                    apply_ledger_writeoff(symbol, writeoff)
                 continue
 
             # 進出場價格:order libs return the exchange-confirmed fill — record
@@ -1126,7 +1475,23 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                     logging.warning(f"[reconcile] {symbol}: fill-based signed_diff "
                                     f"unavailable ({e}) — recording the requested "
                                     f"amount instead")
+                # The quantity half of the book (see UNIT OF THE BOOK). Only
+                # from an exchange-confirmed fill: a place_order that reports
+                # none leaves the field out, and ledger_book then treats the
+                # row as legacy rather than inventing a quantity for it.
+                if ledger is not None:
+                    try:
+                        if leg.get('executed_qty') is not None:
+                            leg['signed_qty'] = ((1.0 if sub_diff >= 0 else -1.0)
+                                                 * abs(float(leg['executed_qty'])))
+                    except (TypeError, ValueError):
+                        pass
             legs.append(leg)
+            if writeoff:
+                # the zero row's timestamp is a cutoff: this close must be in
+                # the log before it, and a flip's entry leg after it
+                _flush_legs()
+                apply_ledger_writeoff(symbol, writeoff)
 
             # is_lot_based rows (capital/TW futures) are sized in LOTS, not
             # account-currency notional — the $-formatted default badly
@@ -1147,28 +1512,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {abs(sub_diff):.2f}")
             notices.append((key, default, {'symbol': symbol, 'amount': abs(sub_diff)}))
 
-        # Log whenever ANYTHING filled — a flip whose close leg executed but
-        # whose entry leg then failed (or was halted) moved real money; hiding
-        # it because the order "failed" would desync the history from the
-        # exchange. `failed` marks the partial. Nothing filled + nothing
-        # failed = every leg skipped below-min: no phantom entry.
-        if legs:
-            direction = 'BUY' if diff > 0 else 'SELL'
-            entry = {
-                'action':      direction,
-                'symbol':      symbol,
-                'signed_diff': diff,
-                # place_order knows which venue it actually routed to — trust
-                # the fill over the config when both exist
-                'exchange':    next((l.get('exchange') for l in legs if l.get('exchange')),
-                                    order.get('exchange')),
-                'asset_spec':  asset_spec,
-                'contributors': order.get('contributors', []),
-                'legs':        legs,
-            }
-            if failed:
-                entry['failed'] = True
-            _append_reconciler_log(entry)
+        _flush_legs()
+        if logged[0]:
             executed.append(order)
 
         for key, default, kw in notices:

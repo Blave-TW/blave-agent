@@ -11,9 +11,10 @@ Scope — what "the bot's positions" means depends on self_ledger
     (lib.portfolio.ledger_positions) are closed — the user's manual positions
     on the same account are never touched, not even by this button. Matches
     the 3Commas/Cryptohopper panic semantics the 暫停下單 dialog was modeled
-    on. Each close is capped at what the account actually holds on that side
-    (a manually-shrunk position closes what exists; the ledger records the
-    real fill either way).
+    on. Each close is the QUANTITY the book says the bot bought, capped at
+    what the account actually holds on that side (a manually-shrunk position
+    closes what exists). Only a legacy row — a book with no quantity, see
+    lib.portfolio.ledger_book — still converts its USD at the mark.
   - self_ledger OFF (every pre-feature machine): EVERY open position on the
     account — under the old alignment logic the whole account is the bot's
     world, and there is no ledger to scope by.
@@ -267,7 +268,14 @@ def flatten():
                     if not led or led.get("side") != side:
                         logging.info(f"[{vid}] {sym} {side} {size} not the bot's — untouched")
                         continue
-                    if not price:
+                    # no 'qty' at all = a lib.portfolio from before the
+                    # quantity book (files reach a machine one at a time)
+                    qty = None if led.get("legacy") else led.get("qty")
+                    if qty is not None:
+                        # the bot's own quantity — no price in between, so the
+                        # close is what was bought whatever the mark did since
+                        size = min(size, float(qty))
+                    elif not price:
                         # can't convert the ledger's USD book to base units —
                         # skipping is the safe direction (never widen to the
                         # account row, that's the manual-position bite)
@@ -275,7 +283,8 @@ def flatten():
                         _record_order_error(sym, vid, "close-all: no mark price for ledger scope")
                         errors += 1
                         continue
-                    size = min(size, float(led["size"]) / price)
+                    else:
+                        size = min(size, float(led["size"]) / price)
                 try:
                     # step/min_qty gate ONLY — deliberately no price arg: with
                     # it format_qty also enforces MIN_NOTIONAL, which Binance

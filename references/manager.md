@@ -167,6 +167,105 @@ the user's own money:**
 4. No reconciler restart needed — it re-reads the config every poll, same as
    every other `portfolio_config.json` field.
 
+**The book is QUANTITY and COST, never one number** (`lib/portfolio.py` —
+`ledger_book()`). Per symbol the bot keeps `cost` (signed USD: what its fills
+were worth when they happened) and `qty` (signed base units it bought):
+- *Whether to trade* compares the target with `cost`. The mark is not in that
+  comparison, so a held position never trades because the price moved — **fixed
+  quantity: what was bought is held until the signal changes** (account-read
+  mode, by contrast, rebalances to a fixed notional).
+- *How much* a reduce leg sells is the same SHARE of the coins:
+  `qty × |diff| ÷ |cost|`; a close is the whole `qty`. Never `USD ÷ mark` — that
+  was the old book (cost only), and measured on paper a close 20% above entry
+  stranded 16.7% of the position, a close 20% below left a phantom long that
+  re-sent a dead reduce leg every round, and beside a manual holding it sold
+  the user's coins.
+- Where the cap `min(book qty, what the account holds on that side)` holds —
+  never more than the bot bought, never more than is there: swap reduce legs
+  sized by `lib/venue_wiring.py` (market, TWAP slices, chase re-posts, custom
+  executors) and the swap half of `manager/flatten.py`. Where it does NOT:
+  - a legacy row (below) — `USD ÷ mark`, capped at the whole account side;
+  - a hand-wired `place_order` — sized however it was written;
+  - `manager/close_symbol.py` — closes the ACCOUNT's whole position on that
+    symbol and side, the user's manual part included;
+  - `manager/flatten.py`'s spot half — sells the whole inventory of every
+    strategy-targeted spot symbol;
+  - spot sells through the wiring: sized from the book, but spot + self_ledger
+    is not verified on a real account, and a spot buy's fee is taken out of
+    the coins received, so the book can run a fee above the wallet. Do not
+    tell a user their own spot coins are protected.
+- An add grows both numbers from the exchange-confirmed fill (`executed_qty`,
+  `executed_qty × fill_price`); a reduce shrinks `cost` by the share of `qty`
+  sold (average cost), so both reach zero together. A flip closes the whole
+  `qty`, then opens the new side.
+- Fills carry `signed_qty` in `manager/orders.jsonl` legs (self_ledger on only;
+  `signed_diff` stays the fill's notional for the web trade history).
+- Sizing lives in `lib/venue_wiring.py` (`_book_row` / `_book_reduce_qty`),
+  which reads the book itself — so TWAP slices, chase re-posts and the market
+  path all size the same way, and `manager/reconciler.py` needs no change. **A hand-wired `place_order` (a venue without official libs) does
+  not get this sizing**: its book stays truthful if it returns `executed_qty`,
+  but it converts USD however it was written to.
+- Reduce legs ROUND to the nearest lot (entries already do). Flooring left a
+  0.5–1 lot remainder that passed the half-lot reduce gate and then floored to
+  nothing, every round.
+
+**What is left after a close that can never be sold is written off**
+(`lib.portfolio.apply_ledger_writeoff`: the symbol's row is zeroed, one
+`ledger_writeoff` line in `state/audit.jsonl` with the quantity and reason, a
+WARNING in the log — no order, no notification). Only on a leg that takes the
+book to FLAT, and only for: a remainder under one lot; a close the venue
+refuses as below its minimum; a quantity the account no longer holds (the user
+closed it by hand, a liquidation took it). That last reason rests on an account
+read, and ONE read is not believed: a venue can answer successfully and wrong.
+The first read short of the book is only noted (`state/ledger_account_short.json`)
+and the leg goes out as if the read had failed — an empty read sends the
+reduce-only order at the book's quantity and lets the venue fill or refuse it
+(a refusal is one ordinary order error); a non-empty short read sells what is
+there. A second short read at least 5 s later, with no contradicting read in
+between and none missing for 15 min, confirms it and the row is written off
+(`short_first` / `short_last` in the audit line). While unconfirmed, a flip
+does NOT open its new side — the next round settles it. Not written off: a partial fill —
+that is a real position and the next round retries it. Why not keep it: a row
+that cannot be sold re-sends a dead reduce leg forever and, worse, reads as
+"already in" at the next entry signal, so the strategy silently sits out. A
+partial reduce whose share rounds to zero lots is skipped without any venue
+call and without touching the book. When the user asks why the book and the
+account differ by a fraction of a lot, read `state/audit.jsonl`.
+
+**A book from before the quantity book** needs no migration step and the
+update does not trade: nothing is rewritten, the book is a replay of the same
+two files. Legs without `signed_qty` move `cost` by `signed_diff` exactly as
+they always did (so the book after the update equals the book before it) and
+give `qty` from their exchange-confirmed `executed_qty`. What the replay
+decides is written ONCE to `manager/ledger_migration.json` (+ a
+`ledger_adopted` audit line) — show it to the user when they ask what changed:
+- `mode: "qty"` — quantity known; closes are exact from now on.
+- `phantom_cost_dropped` — the old book still showed USD for a position whose
+  coins were all sold (the phantom long above); dropped.
+- `stranded_qty_not_adopted` — the old book was flat but the replay shows coins
+  the old close left on the account. NOT adopted: the bot stopped counting
+  them then, and selling them now could sell what the user regards as theirs.
+  Tell the user the amount; closing it is their call.
+- `mode: "legacy"` — the quantity cannot be known (a `seed_ledger.py --absorb`
+  row from an older build, a fill with no `executed_qty`, or qty and cost on
+  opposite sides because the old close oversold). Never estimated. A legacy
+  row keeps the OLD arithmetic and the old `USD ÷ mark` sizing — including its
+  exposure to the three bugs above — until it is next flat, or until reconcile
+  closes it (any fill on its closing leg, or the account holding none of it,
+  writes the row off). After that the symbol is a quantity row. There is no
+  safe shortcut to end a legacy row sooner: `manager/close_symbol.py` closes
+  the account's WHOLE position on that symbol — if the user holds any of it
+  themselves (the usual reason a row went legacy), that sells their coins. Let
+  the row close on its own signal, or tell the user what it is and let them
+  decide.
+`seed_ledger.py --absorb` now records the account's base quantity
+(`lib.venue_wiring.auto_position_qty`), and prints a warning for any row it
+could not read one for.
+
+**Drift:** `ledger_positions()[sym]["qty"]` and `auto_position_qty()[sym]` are
+both base units — compare them directly, no price in between. Nothing does
+yet; `manager/last_reconcile.json["ledger"]` now carries `qty` per row.
+
 **Workspace update ⇒ reconciler restart (REQUIRED, audit #3):** the reconciler
 imports `lib/portfolio.py` once at process start — updating the workspace
 files does NOT reload a running daemon. The runtime's `can_wait_start`
@@ -196,9 +295,9 @@ real `get_positions_fn()` (kept for the `manager/last_reconcile.json` snapshot,
 and `manager/reconciler.py`'s own disconnect/auto-halt wrapper around it is
 untouched) — but when `self_ledger` is on, `compute_diff()` and every
 downstream flip/reduce-only decision in the per-order loop are computed
-against `lib.portfolio.ledger_positions()` instead. `ledger_positions()` sums
-`ledger_seed.json`'s baseline plus every `manager/orders.jsonl` entry logged
-after the seed's timestamp — nothing else. `manager/reconciler.py` itself
+against `lib.portfolio.ledger_positions()` instead (its `size` is the book's
+COST). `ledger_positions()` replays `ledger_seed.json`'s baseline plus every
+`manager/orders.jsonl` entry logged after the seed's timestamp — nothing else. `manager/reconciler.py` itself
 needs NO changes; the branch lives entirely in `lib/portfolio.py` and is
 config-gated per account.
 
@@ -237,11 +336,11 @@ fill could silently go missing from the book now fail loud instead:
   outright when the halt can't persist, keeping its markers for the next boot
   to retry (halt/notify first, marker cleanup last).
 
-**Capital (群益) / lot-based rows:** `ledger_positions()` is unit-agnostic —
-it sums whatever `signed_diff` values `manager/orders.jsonl` legs carry, which
-for a capital-routed strategy are already LOTS (see *`amounts` semantics*
-below), so `self_ledger` composes with the hand-wired capital path with no
-extra work. Not yet live-tested on a capital account — verify on the first
+**Capital (群益) / lot-based rows:** the book needs no case of its own there —
+a capital-routed leg's `signed_diff` and `executed_qty` are both LOTS (see
+*`amounts` semantics* below), so `qty` equals `cost`, the share sold IS the lot
+count, and the hand-wired capital path places exactly the orders it did before
+the quantity book (pinned in `tests/check_self_ledger_qty.py`). Not yet live-tested on a capital account — verify on the first
 real capital `self_ledger` deployment.
 
 **Fixed (2026-08-20, audit P0-2):** `reconcile()` used to log the leg's
@@ -267,7 +366,8 @@ anything live.** What `manager/flatten.py` closes depends on `self_ledger`
 modeled on): with `self_ledger` ON it closes ONLY the bot's own ledger
 positions (`lib.portfolio.ledger_positions`) — a manually-opened position
 self_ledger was never told about is untouched even by this button, and each
-close is capped at what the account actually holds on that side. Spot stays on
+close is the book's `qty` capped at what the account actually holds on that
+side (a legacy row still converts its USD at the mark). Spot stays on
 the inventory scope either way (`spot_scope` — strategy-targeted symbols only;
 personal coins are never sold). If the ledger is unreadable on the panic path,
 swap closes are skipped loudly rather than silently widening scope to the
@@ -290,8 +390,9 @@ close everything.
 calls `lib.portfolio.zero_ledger_symbols(closed_symbols)` once at the end,
 resetting exactly those symbols' ledger baseline to flat, timestamped now.
 Every other symbol's seed and accumulated history is untouched — this is a
-per-symbol operation (`manager/ledger_seed.json` stores a `{'size', 'ts'}` row
-per symbol, not one global timestamp), unlike the whole-account
+per-symbol operation (`manager/ledger_seed.json` stores a `{'size', 'qty',
+'ts'}` row per symbol — `size` is the USD cost, the name predates `qty` — not
+one global timestamp), unlike the whole-account
 `seed_ledger()`. The call is unconditional (runs even when `self_ledger` is
 currently off) — harmless, and correct the moment the account switches it on
 later. Same fix pattern as MultiCharts' "Strategy Positions Tab Mismatch"
