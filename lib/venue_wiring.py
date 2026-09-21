@@ -130,6 +130,10 @@ def official_venues(env):
         vid = m.group(1).lower()
         if m.group(1).upper() in _RESERVED_PREFIXES or vid in _NON_AUTO:
             continue
+        # DATA_<SOURCE>_* = data-source keys, never a venue
+        # (command_listener._DATA_CRED_PREFIX) — even with matching libs on disk
+        if m.group(1).upper().startswith("DATA_"):
+            continue
         if os.path.isfile(f"lib/account_{vid}.py") and os.path.isfile(f"lib/order_{vid}.py"):
             if allowed is not None and vid not in allowed:
                 _manifest_filtered_alert(vid)
