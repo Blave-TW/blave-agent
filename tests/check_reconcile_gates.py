@@ -172,5 +172,35 @@ legs, gates = run({SYM: (LOT_USD * 3, LOT_USD * 2.5), SPOT: (60, 0)})
 check(legs == {SPOT: [60.0]} and list(gates) == [SYM],
       "in a mixed round only the venue-gated entry is recorded")
 
+# ⑦ close_usd: a whole-position close (target flat, or the close leg of a flip)
+#    is gated flat, not at half a lot. A reader holding only entry_usd /
+#    reduce_usd paints "won't trade" on a close that does go out.
+def reader_gate(row, tgt, act):
+    """The documented rule for colouring a live diff against a snapshot row."""
+    side = row["reduce_usd"] if abs(tgt) < abs(act) else row["entry_usd"]
+    return min(side, row["close_usd"]) if act != 0 and (tgt == 0 or tgt * act < 0) else side
+
+
+CASES = {
+    "entry": (LOT_USD * 3, LOT_USD * 2.5), "shrink": (LOT_USD * 2, LOT_USD * 2.4),
+    "close 0.3 lot": (0, LOT_USD * 0.3), "flip 0.3 long -> 0.1 short": (-LOT_USD * 0.1, LOT_USD * 0.3),
+    "flip 0.3 short -> 3 long": (LOT_USD * 3, -LOT_USD * 0.3),
+}
+for label, (tgt, act) in CASES.items():
+    legs, gates = run({SYM: (tgt, act)})
+    row = gates.get(SYM) or {}
+    check(near(row.get("close_usd"), 10), f"{label}: the row carries close_usd = the flat 10")
+    check(near(reader_gate(row, tgt, act), row.get("usd")),
+          f"{label}: min(side gate, close_usd) on a close/flip, the side gate otherwise == the gate applied (usd)")
+legs, gates = run({SYM: (0, LOT_USD * 0.3)})
+check(legs == {SYM: [round(-LOT_USD * 0.3, 2)]} and abs(gates[SYM]["diff"]) < gates[SYM]["reduce_usd"],
+      "a 0.3-lot full close is UNDER reduce_usd and still places — the case reduce_usd alone mis-colours")
+legs, gates = run({SYM: (-LOT_USD * 0.1, LOT_USD * 0.3)})
+check(legs == {SYM: [round(-LOT_USD * 0.3, 2)]} and abs(gates[SYM]["diff"]) < gates[SYM]["reduce_usd"],
+      "a flip's close leg places the same way (its 0.1-lot entry leg stays gated)")
+legs, gates = run({SYM: (LOT_USD * 0.2, LOT_USD * 0.5)})
+check(legs == {} and near(gates[SYM]["usd"], RGATE),
+      "a PARTIAL reduce of 0.3 lot is still gated at half a lot — close_usd does not apply to it")
+
 print("\n" + ("PASS" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)

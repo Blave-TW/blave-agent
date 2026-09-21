@@ -64,7 +64,7 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None):
     ever seeing whichever one reconcile() happened to diff against.
 
     `gates` (compute_diff's out-param, {symbol: {usd, diff, entry_usd,
-    reduce_usd[, side]}}) is the only way the workspace can explain the silent
+    reduce_usd, close_usd[, side]}}) is the only way the workspace can explain the silent
     case: target 100 / actual 78 / diff 22 with no order and no error, because
     22 is under that instrument's ENTRY gate (or, with side "reduce", an
     over-target under half a lot). `usd` is the side this round actually used;
@@ -1053,7 +1053,7 @@ def compute_diff(target, actual, threshold=10, gates=None):
     `gates` is an optional OUT dict (return value unchanged — hand-written
     callers exist): a row with either side above the flat threshold is recorded
     as {symbol: {'usd': gate this round, 'diff': signed_diff,
-    'entry_usd': .., 'reduce_usd': ..[, 'side': 'reduce']}}, placed or not, so
+    'entry_usd': .., 'reduce_usd': .., 'close_usd': ..[, 'side': 'reduce']}}, placed or not, so
     the workspace can show the number instead of leaving "diff 22, no order, no
     error" unexplained. `usd`/`diff`/`side` are the shipped shape and do not
     move; BOTH sides are carried because the live diff a reader colours can
@@ -1094,7 +1094,8 @@ def compute_diff(target, actual, threshold=10, gates=None):
             # Target flat, or a flip: the row carries a whole-position close,
             # gated flat (_close_threshold). `usd` below records what was
             # applied; entry_usd / reduce_usd stay the symbol's two side gates.
-            applied = (min(gate, _close_threshold(threshold, symbol))
+            close_gate = _close_threshold(threshold, symbol)
+            applied = (min(gate, close_gate)
                        if a_signed != 0 and t_signed * a_signed <= 0 else gate)
             # Recorded only when above the flat threshold — the workspace
             # reads absence as "the flat gate, nothing to explain". The
@@ -1116,9 +1117,15 @@ def compute_diff(target, actual, threshold=10, gates=None):
                 # diff flips sign. (Not equivalent to `gate > flat` — that is
                 # only this round's side.)
                 if entry_gate > flat or reduce_gate > flat:
+                    # close_usd: what a reader must colour the LIVE diff against
+                    # when it holds a position and the target is flat or on the
+                    # other side — min(that side's gate, close_usd), the `applied`
+                    # above. With the two side gates alone it paints "won't
+                    # trade" on a close that does go out.
                     gates[symbol] = {'usd': applied, 'diff': diff,
                                      'entry_usd': entry_gate,
-                                     'reduce_usd': reduce_gate}
+                                     'reduce_usd': reduce_gate,
+                                     'close_usd': close_gate}
                     if reduces:
                         gates[symbol]['side'] = 'reduce'
             if abs(diff) < applied:
@@ -1535,9 +1542,14 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 default = (f'📈 Bought {{symbol}} {unit}' if sub_diff > 0 else
                            f'📉 Sold {{symbol}} {unit}')
 
+            # What filled, not what was asked: leg['signed_diff'] is the
+            # exchange-confirmed amount when the order lib reported one (a
+            # partial close that sold 0.0003 BTC must not announce the 0.0007
+            # it asked for), the rounded request otherwise.
+            filled = abs(leg['signed_diff'])
             log_dir = 'BUY' if sub_diff > 0 else 'SELL'
-            logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {abs(sub_diff):.2f}")
-            notices.append((key, default, {'symbol': symbol, 'amount': abs(sub_diff)}))
+            logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {filled:.2f}")
+            notices.append((key, default, {'symbol': symbol, 'amount': filled}))
 
         _flush_legs()
         if logged[0]:
