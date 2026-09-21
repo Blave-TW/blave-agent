@@ -19,10 +19,10 @@ msgid "cn.blave.switch"
 msgstr "Switch"
 
 msgid "cn.local.label"
-msgstr "Local agent"
+msgstr "Agents on this computer"
 
 msgid "cn.local.desc"
-msgstr "Your Claude Code or Codex — no Blave AI fee"
+msgstr "No AI charges from Blave"
 
 msgid "cn.redetect"
 msgstr "Detect again"
@@ -340,8 +340,9 @@ msgstr "Close"
 msgid "set.cats"
 msgstr "Settings categories"
 
+# key 是 display、字是「一般」:刻意不改 key(不做無謂的 key churn)
 msgid "set.cat.display"
-msgstr "Display"
+msgstr "General"
 
 msgid "set.cat.model"
 msgstr "Model access"
@@ -801,6 +802,36 @@ msgstr "Data & Cloud Plan"
 
 msgid "cn.blave.signinSwitch"
 msgstr "Sign In and Switch"
+
+msgid "set.cat.acct"
+msgstr "Account"
+
+msgid "cn.blave.name"
+msgstr "Blave’s AI"
+
+msgid "cn.blave.group"
+msgstr "Provided by Blave"
+
+msgid "acct.out.1"
+msgstr "After signing out, this computer no longer gets Blave data."
+
+msgid "acct.out.2"
+msgstr "Chats and strategies stay on this computer and aren’t affected."
+
+msgid "acct.out.3"
+msgstr "You’re using Blave’s AI, so signing out returns you to the AI picker. You’ll need to pick one again before you can carry on."
+
+msgid "acct.in.1"
+msgstr "Signing in is what gives you Blave data and the cloud plan."
+
+msgid "acct.in.2"
+msgstr "Signing in costs nothing and doesn’t change the AI you use."
+
+msgid "acct.toPlan"
+msgstr "Balance, card and the cloud plan are under Data & cloud plan."
+
+msgid "acct.toPlanBtn"
+msgstr "Open"
 
 msgid "acct.lbl"
 msgstr "Blave account"
@@ -1465,7 +1496,7 @@ msgid "minv.chat"
 msgstr "This version of Blave needs an update before it can keep using Blave’s AI. This message was not sent and used no AI."
 
 msgid "minv.trade"
-msgstr "This version of Blave needs an update before it can start trading. Pausing isn’t affected. Update at the bottom of Settings › Display."
+msgstr "This version of Blave needs an update before it can start trading. Pausing isn’t affected. Update at the bottom of Settings › General."
 
 msgid "minv.btn"
 msgstr "Go to Update"

@@ -19,10 +19,10 @@ msgid "cn.blave.switch"
 msgstr "切換"
 
 msgid "cn.local.label"
-msgstr "本機 agent"
+msgstr "這台電腦上的 agent"
 
 msgid "cn.local.desc"
-msgstr "你的 Claude Code 或 Codex，Blave 不收 AI 費用"
+msgstr "Blave 不收 AI 費用"
 
 msgid "cn.redetect"
 msgstr "重新偵測"
@@ -340,8 +340,9 @@ msgstr "關閉"
 msgid "set.cats"
 msgstr "設定分類"
 
+# key 是 display、字是「一般」:刻意不改 key(不做無謂的 key churn)
 msgid "set.cat.display"
-msgstr "顯示"
+msgstr "一般"
 
 msgid "set.cat.model"
 msgstr "模型接入"
@@ -801,6 +802,36 @@ msgstr "資料與雲端方案"
 
 msgid "cn.blave.signinSwitch"
 msgstr "登入並切換"
+
+msgid "set.cat.acct"
+msgstr "帳號"
+
+msgid "cn.blave.name"
+msgstr "Blave 的 AI"
+
+msgid "cn.blave.group"
+msgstr "由 Blave 提供"
+
+msgid "acct.out.1"
+msgstr "登出之後，這台電腦不再取得 Blave 的資料。"
+
+msgid "acct.out.2"
+msgstr "對話與策略都留在這台電腦，不受影響。"
+
+msgid "acct.out.3"
+msgstr "你現在用的是 Blave 的 AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"
+
+msgid "acct.in.1"
+msgstr "登入之後才拿得到 Blave 的資料與雲端方案。"
+
+msgid "acct.in.2"
+msgstr "登入不花錢，也不改你用的 AI。"
+
+msgid "acct.toPlan"
+msgstr "餘額、綁卡與雲端方案在「資料與雲端方案」。"
+
+msgid "acct.toPlanBtn"
+msgstr "前往"
 
 msgid "acct.lbl"
 msgstr "Blave 帳號"
@@ -1465,7 +1496,7 @@ msgid "minv.chat"
 msgstr "這個版本的 Blave 需要更新，才能繼續用 Blave 的 AI。這則訊息沒有送出，沒有用到 AI。"
 
 msgid "minv.trade"
-msgstr "這個版本的 Blave 需要更新，才能啟動下單。暫停不受影響。到 設定 › 顯示 最下面更新。"
+msgstr "這個版本的 Blave 需要更新，才能啟動下單。暫停不受影響。到 設定 › 一般 最下面更新。"
 
 msgid "minv.btn"
 msgstr "去更新"

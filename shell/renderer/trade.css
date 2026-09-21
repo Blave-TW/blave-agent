@@ -27,7 +27,6 @@ html.ws-sc .side-nav { display: none; }
 .pane-main > .tb {
   flex: none; height: 44px; margin-top: -44px;
   display: flex; align-items: center; padding: 0 var(--space-16) 0 var(--space-24);
-  border-bottom: 1px solid var(--border-hairline);
 }
 html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起時中欄貼到紅綠燈旁邊,讓開 */
 .pane-main > .tb { gap: var(--space-8); }
@@ -74,11 +73,11 @@ html[data-env="cloud"] .pane-strategies::before { background: var(--surface-mute
 html[data-env="cloud"] .pane-main > .tb {
   position: relative; z-index: 1; margin-left: -1px; margin-right: -1px;
   padding-left: calc(var(--space-24) + 1px); padding-right: calc(var(--space-16) + 1px);
-  background: var(--surface-muted); border-bottom-color: transparent;
+  background: var(--surface-muted);
 }
 html[data-env="cloud"].ws-sc .pane-main > .tb { padding-left: calc(var(--space-48) + 1px); }
 html[data-env="cloud"] .tb-txt { color: var(--ink-2); }   /* --ink-3 壓在灰底上只有 3.6:1 */
-html[data-env="cloud"] .chat-head { background: var(--surface-muted); border-bottom-color: transparent; }
+html[data-env="cloud"] .chat-head { background: var(--surface-muted); }
 html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--surface-muted) 44px, var(--surface-card) 44px); }
 /* 切視角:側欄與中欄內容淡入,無位移、無滑動 */
 .env-fade > :not(.tb) { animation: envFade var(--motion-fast) var(--ease-standard); }

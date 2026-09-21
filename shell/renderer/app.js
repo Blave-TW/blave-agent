@@ -1,8 +1,9 @@
 /* v1 骨架:偵測 → 三態渲染 → 連結 → 進工作頁。引擎接線是第 4 步。 */
 const $ = (id) => document.getElementById(id);
 
-function row({ name, st, stClass, action, cur }) {
+function row({ name, st, stClass, action, cur, kind }) {
   const div = document.createElement("div");
+  if (kind) div.dataset.kind = kind;
   div.className = "cn-row" + (stClass === "" ? " off" : "") + (cur ? " is-cur" : "");
   const stSpan = stClass === "on"
     ? `<span class="cn-st on"><span class="dot"></span>${st}</span>`
@@ -40,15 +41,16 @@ let localReady = false;
    高度彈跳很吵,而且第一次開啟也會閃一下。列數固定,就沒有 reflow。 */
 function detectingRows() {
   const rows = $("agent-rows"); rows.innerHTML = "";
-  ["Claude Code", "Codex"].forEach((name) => {
-    rows.appendChild(row({ name, st: t("cn.detecting"), stClass: "" }));
+  [["claude", "Claude Code"], ["codex", "Codex"]].forEach(([kind, name]) => {
+    rows.appendChild(row({ name, kind, st: t("cn.detecting"), stClass: "" }));
   });
+  MDL.busy = true; mdlPaint();
 }
 
 let lastDetect = null;   // 換語言重畫列用,不重跑偵測
 async function detect() {
   detectingRows();
-  $("cn-hint").hidden = true;
+  setHint(null);
   lastDetect = await window.blave.detectAgents();
   paintRows(lastDetect);
 }
@@ -62,27 +64,41 @@ function paintRows(d) {
 
   // Claude Code 三態:已登入 / 裝了沒登入 / 沒裝
   if (d.claude.installed && d.claude.loggedIn) {
-    rows.appendChild(row({ name: "Claude Code", st: t("st.signedIn"), stClass: "on",
+    rows.appendChild(row({ name: "Claude Code", kind: "claude", st: t("st.signedIn"), stClass: "on",
       cur: cur === "claude",
       action: cur === "claude" ? null : btn(localBtnCls(), t("cn.connect"), () => connect("claude", d.claude)) }));
   } else if (d.claude.installed) {
-    rows.appendChild(row({ name: "Claude Code", st: t("st.notSignedIn"), stClass: "up",
+    rows.appendChild(row({ name: "Claude Code", kind: "claude", st: t("st.notSignedIn"), stClass: "up",
       action: btn("btn-out", t("cn.signIn"), (e) => localLogin("claude", e.currentTarget)) }));
   } else {
-    const r = row({ name: "Claude Code", st: t("st.notFound"), stClass: "" });
+    const r = row({ name: "Claude Code", kind: "claude", st: t("st.notFound"), stClass: "" });
     rows.appendChild(r);
   }
 
   if (d.codex.installed && d.codex.loggedIn) {
-    rows.appendChild(row({ name: "Codex", st: t("st.signedIn"), stClass: "on",
+    rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.signedIn"), stClass: "on",
       cur: cur === "codex",
       action: cur === "codex" ? null : btn(localBtnCls(), t("cn.connect"), () => connect("codex", d.codex)) }));
   } else if (d.codex.installed) {
-    rows.appendChild(row({ name: "Codex", st: t("st.notSignedIn"), stClass: "up",
+    rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notSignedIn"), stClass: "up",
       action: btn("btn-out", t("cn.signIn"), (e) => localLogin("codex", e.currentTarget)) }));
   } else {
-    rows.appendChild(row({ name: "Codex", st: t("st.notFound"), stClass: "" }));
+    rows.appendChild(row({ name: "Codex", kind: "codex", st: t("st.notFound"), stClass: "" }));
   }
+  MDL.busy = false; mdlPaint();
+}
+
+/* 連結畫面的 #cn-hint 與設定 › 模型接入 是兩個地方、同一句話:狀態記在這裡,兩邊各畫各的。
+   h = null 或 { text, cmd?(kind:失敗時附上終端機指令) }。 */
+let HINT = null;
+function setHint(h) {
+  HINT = h || null;
+  const n = $("cn-hint"); n.textContent = ""; n.hidden = !HINT;
+  if (HINT) { n.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) n.append(cmdLine(HINT.cmd)); }
+  // 另外兩個表面各自重畫(兩支都會自己判斷那一塊在不在);帳號頁那一格只由 acctPaintAcct 寫,不讓兩個人碰同一個節點
+  mdlPaint();
+  acctPaintAcct();
+  if (HINT) srSay(HINT.text);
 }
 
 /* 連結畫面上「已安裝、未登入」那一列的登入鈕:替用戶跑 CLI 的登入指令(開瀏覽器),
@@ -91,23 +107,23 @@ const LOGIN_CMD = { claude: "claude auth login", codex: "codex login" };
 async function localLogin(kind, b) {
   if (loginPending || oauthPending) return;
   const name = kind === "codex" ? "Codex" : "Claude Code";
+  // 從哪一個表面按的(連結畫面 / 設定 › 模型接入):鎖鈕與事後放焦點都回同一個表面
+  const host = () => $(b.closest(".cn-opts") ? "set-model" : "agent-rows");
   loginPending = kind;
   // 等的那一顆變「取消等待」(不是變灰),其他登入鈕鎖住
   b.textContent = t("login.cancel");
   const cancel = () => window.blave.cancelAgentLogin();
   b.addEventListener("click", cancel);
-  $("agent-rows").querySelectorAll("button").forEach((x) => { if (x !== b) x.disabled = true; });
-  $("cn-hint").textContent = t("login.opened", { name }); $("cn-hint").hidden = false; srSay($("cn-hint").textContent);
+  const box = host();
+  if (box) box.querySelectorAll("button").forEach((x) => { if (x !== b) x.disabled = true; });
+  setHint({ text: t("login.opened", { name }) });
   const r = await window.blave.agentLogin(kind);
   loginPending = null;
   await detect();
-  if (!r.ok && !r.cancelled) {
-    $("cn-hint").textContent = ""; $("cn-hint").append(t("login.failed", { name }) + " ", cmdLine(kind));
-    $("cn-hint").hidden = false; srSay($("cn-hint").textContent);
-  }
+  if (!r.ok && !r.cancelled) setHint({ text: t("login.failed", { name }), cmd: kind });
   // detect() 把整列重畫了,焦點會掉回 body:放回這一列的鈕(成功=「連結」,失敗=「登入」)
-  const row = $("agent-rows").children[kind === "codex" ? 1 : 0];
-  const nb = row && row.querySelector("button"); if (nb) nb.focus();
+  const again = host() && host().querySelector('[data-kind="' + kind + '"] button');
+  if (again) again.focus();
 }
 
 // 目前連的是哪一種(連結畫面用來標「目前使用」、決定 Blave 那顆鈕的字)。
@@ -127,16 +143,86 @@ function paintBlaveBtn() {
   const b = $("btn-blave");
   const sec = document.querySelector(".cn-blave");
   b.hidden = cur === "blave";
-  acctPaintAcct();                           // 登出在設定左欄底部的帳號區(登入是帳號的事)
+  acctPaintAcct();                           // 設定 › 帳號 的那一頁(登入 / 登出是帳號的事,不是某一種 AI 的事)
   $("cn-blave-cur").hidden = cur !== "blave";
   $("cn-blave-cur").textContent = t("cn.current");
   sec.classList.toggle("is-cur", cur === "blave");
   if (cur === "blave") { sec.setAttribute("aria-current", "true"); }
   else { sec.removeAttribute("aria-current"); }
-  // 設定裡這一列是「換 AI」:沒登入 = 登入並切換;連結畫面還沒有 cur 可保留,照舊「登入 Blave」
-  const inSettings = !$("set-scrim").hidden;
-  b.textContent = hasToken && cur !== "blave" ? t("cn.blave.switch") : t(inSettings && cur ? "cn.blave.signinSwitch" : "cn.blave.btn");
+  b.textContent = hasToken && cur !== "blave" ? t("cn.blave.switch") : t("cn.blave.btn");
   b.className = localReady ? "btn-out" : "btn-fill";
+  mdlPaint();                                // 設定 › 模型接入 是另一份 DOM(那張卡不再搬家),同一份狀態各畫各的
+}
+
+/* ── 設定 › 模型接入 ───────────────────────────────────────
+   這一頁 = 三個選項選一個(Blave 的 AI / Claude Code / Codex),不是連結畫面那張卡。
+   **那張卡不再搬進設定**:連結畫面是第一次要做決定的地方(動詞句、填色鈕),設定頁是回來換的地方(三列平權、
+   「使用中」用灰填 + 加粗標出來)。兩邊共用的是底下的邏輯(detect / connect / localLogin / blaveGo),不是 DOM。
+   mdlOptions 是純邏輯(tests/check_shell_settings.js 從原文切出來跑),不碰 DOM。 */
+const MDL = { busy: false };
+/* pend = { login:"claude"|"codex"|null, oauth:bool }:等待中的那一列,鈕變「取消等待」而不是變灰——
+   這一頁每次重畫都是新節點(setHint 會觸發),等待狀態要在資料裡,不能只靠改那顆鈕的字(改完就被重畫吃掉)。 */
+function mdlOptions(d, curKind, tok, pend) {
+  const p = pend || {};
+  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: "cn.blave.desc",
+    st: tok ? { key: "st.signedIn", on: true } : { key: "st.notSignedIn", on: false },
+    // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權
+    act: p.oauth ? "oauth.cancel" : curKind === "blave" ? null : tok ? "cn.blave.switch" : curKind ? "cn.blave.signinSwitch" : "cn.blave.btn",
+    isCur: curKind === "blave" }];
+  [["claude", "Claude Code"], ["codex", "Codex"]].forEach(([kind, name]) => {
+    const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
+    out.push({ kind, name, desc: null,
+      // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
+      st: d === null ? { key: "cn.detecting", on: false } : ready ? { key: "st.signedIn", on: true } : { key: x.installed ? "st.notSignedIn" : "st.notFound", on: false },
+      act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.connect",
+      isCur: ready && curKind === kind });
+  });
+  return out;
+}
+/* ── 設定 › 模型接入 的純邏輯到此 ─────────────────────────── */
+function mdlAct(o, b) {
+  // 等待中的那一顆是「取消」(不是變灰):瀏覽器分頁被關掉之後不會有人按「允許」,沒有取消就卡到逾時
+  if (o.act === "login.cancel") return window.blave.cancelAgentLogin();
+  if (o.act === "oauth.cancel") return window.blave.cancelOAuth();
+  if (o.kind === "blave") return blaveGo(b);
+  if (o.act === "cn.signIn") return localLogin(o.kind, b);
+  return connect(o.kind, (lastDetect && lastDetect[o.kind]) || {});
+}
+function mdlPaint() {
+  const box = $("set-model"); if (!box) return;
+  const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
+  const focusKind = box.contains(document.activeElement) ? (document.activeElement.closest("[data-kind]") || {}).dataset : null;
+  box.textContent = "";
+  const pend = { login: loginPending, oauth: oauthPending };
+  const opts = mdlOptions(MDL.busy ? null : lastDetect, cur, hasToken, pend);
+  const waiting = !!(pend.login || pend.oauth);
+  const grp = (headKey, descKey, redetect) => {
+    const g = el("div", "cn-grp"), h = el("div", "cn-grp-h");
+    h.appendChild(el("span", null, t(headKey)));
+    // 小標與後面那句同為 12px --ink-3,只隔 8px 會連起來讀成一句:中間放一個「·」分開
+    if (descKey) { const sep = el("span", "sep", "·"); sep.setAttribute("aria-hidden", "true"); h.append(sep, el("span", "m", t(descKey))); }
+    if (redetect) { const b = el("button", "pf-act", t("cn.redetect")); b.type = "button"; b.disabled = MDL.busy || waiting; b.addEventListener("click", detect); g.dataset.kind = "redetect"; h.appendChild(b); }
+    g.appendChild(h); g.appendChild(el("div", "cn-opts")); box.appendChild(g); return g.lastChild;
+  };
+  const put = (into, o) => {
+    const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "")); r.dataset.kind = o.kind;
+    if (o.isCur) r.setAttribute("aria-current", "true");
+    const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
+    if (o.desc) tc.appendChild(el("p", "m", t(o.desc)));
+    r.appendChild(tc);
+    if (o.st) { const st = el("span", "st" + (o.st.on ? " on" : "")); if (o.st.on) { const d = el("i", "dot"); d.setAttribute("aria-hidden", "true"); st.appendChild(d); } st.append(t(o.st.key)); r.appendChild(st); }
+    if (o.isCur) r.appendChild(el("span", "cn-cur", t("cn.current")));
+    // 等待中:只有那一顆能按(取消),其餘鎖住
+    else if (o.act) { const b = el("button", "pf-act", t(o.act)); b.type = "button"; b.disabled = waiting && o.act !== "login.cancel" && o.act !== "oauth.cancel"; b.addEventListener("click", () => mdlAct(o, b)); r.appendChild(b); }
+    into.appendChild(r);
+  };
+  put(grp("cn.blave.group"), opts[0]);
+  const local = grp("cn.local.label", "cn.local.desc", true);
+  opts.slice(1).forEach((o) => put(local, o));
+  if (HINT) { const p = el("p", "cn-hint"); p.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) p.append(cmdLine(HINT.cmd)); box.appendChild(p); }
+  // 重畫前焦點在這一頁:還給同一列的鈕(沒有的話退到左側的分類鈕——掉到 BODY 的話 Esc 關不掉設定)
+  if (focusKind) { const again = box.querySelector('[data-kind="' + focusKind.kind + '"] button'); if (again && !again.disabled) again.focus(); }
+  setFocusGuard();
 }
 
 let csReady = false;
@@ -149,7 +235,7 @@ function enterWorkspace(kind, info) {
   if (!csReady) { csReady = true; csInit(); }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
-  // 從設定 modal 裡換的:留在 modal、重畫那張卡(「目前使用」換列),焦點不搶去輸入框
+  // 從設定 modal 裡換的:留在 modal、重畫模型接入那一頁(「使用中」換列),焦點不搶去輸入框
   if (!$("set-scrim").hidden) { paintBlaveBtn(); detect(); return; }
   autosize();          // 進工作頁先把輸入框高度對齊一行
   $("ta").focus();
@@ -162,15 +248,20 @@ $("btn-redetect").addEventListener("click", detect);
    正在用 Blave 的話,登出之後這個工作頁就沒有 agent 可用(沒有 token 時引擎會退回本機模式、
    改吃用戶自己的訂閱——那不是他選的),所以連線設定一起清、回連結畫面重選。 */
 $("set-acct-btn").addEventListener("click", async () => {
-  // 未登入時這顆是「登入 Blave」:走方案頁同一條登入流程(等待中再按 = 取消),不另寫一條
-  if (!hasToken) { await planLogin(); acctPaintAcct(); return; }
+  // 未登入時這顆是「登入 Blave」:走方案頁同一條登入流程(等待中再按 = 取消),不另寫一條。
+  // 等待是從別的表面(模型接入那一列)開始的話,planLogin 會靜默 return——那顆鈕寫著「取消」卻按不動,
+  // 所以直接取消:等的是同一件事、同一個瀏覽器分頁,誰按取消都一樣
+  if (!hasToken) {
+    if (oauthPending && !planLoginBusy) { window.blave.cancelOAuth(); return; }
+    await planLogin(); acctPaintAcct(); return;
+  }
   if (running || oauthPending || planLoginBusy) return;
   $("set-acct-btn").disabled = true;
   const r = await window.blave.signOutBlave();
   $("set-acct-btn").disabled = false;
   hasToken = false; acct = null; planErr = null; planBusy = false;
   // 伺服器那顆沒撤到(離線、逾時):本機已經登出,但要講清楚還差一步、去哪裡補
-  const warn = () => { if (!r.revoked) { $("cn-hint").textContent = t("cn.blave.signOutLocalOnly"); $("cn-hint").hidden = false; srSay($("cn-hint").textContent); } };
+  const warn = () => { if (!r.revoked) setHint({ text: t("cn.blave.signOutLocalOnly") }); };
   acctPaintAcct();
   // 用自己的 CLI 的人:AI 不受影響,留在原地;帳號區還在(換成未登入那一態),焦點留在同一顆鈕上
   if (cur !== "blave") {
@@ -181,15 +272,14 @@ $("set-acct-btn").addEventListener("click", async () => {
   await window.blave.clearConnection();
   cur = null;
   setClose();
-  $("cn-foot").before(document.querySelector(".cn-card"));   // 設定 modal 借走的卡搬回連結畫面
   $("view-ws").hidden = true; $("view-connect").hidden = false;
   paintBlaveBtn(); await detect(); warn();
 });
 // 等待期間這顆鈕變成「取消」而不是變灰:用戶把瀏覽器分頁關掉之後不會有人按
 // 「允許」,沒有取消的話這裡就卡到五分鐘逾時為止。
 let oauthPending = false;
-$("btn-blave").addEventListener("click", async () => {
-  const b = $("btn-blave");
+$("btn-blave").addEventListener("click", () => blaveGo($("btn-blave")));
+async function blaveGo(b) {
   if (oauthPending) { window.blave.cancelOAuth(); return; }
   // 手上已經有 token:直接切過去,不再開一次瀏覽器。
   if (await window.blave.hasBlaveToken()) {
@@ -200,8 +290,8 @@ $("btn-blave").addEventListener("click", async () => {
   const was = b.textContent;
   oauthPending = true;
   b.textContent = t("oauth.cancel");
-  $("cn-hint").textContent = t("oauth.opened");
-  $("cn-hint").hidden = false;
+  setHint({ text: t("oauth.opened") });   // setHint 會重畫兩個表面
+  waitChanged();
   try {
     // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。
     await window.blave.startOAuth(LANG);
@@ -213,18 +303,36 @@ $("btn-blave").addEventListener("click", async () => {
     // IPC 會把訊息包成「Error invoking remote method …: Error: X」,所以比對記號
     // 而不是整串相等;主行程丟的是穩定代號,在這裡才變成當下語系的句子。
     const code = (m.match(/\b[A-Z][A-Z_]{3,}\b/) || [])[0];
-    $("cn-hint").textContent = code && t(code) !== code ? t(code) : (m || t("oauth.failed"));
+    setHint({ text: code && t(code) !== code ? t(code) : (m || t("oauth.failed")) });
   } finally {
     oauthPending = false;
     b.textContent = was;
+    waitChanged();                           // 等待結束:兩個表面都要把「取消」換回來
   }
-});
+}
 
 /* ── 設定 modal ───────────────────────────────
    左下角的設定鈕直接開(雲端是「更多」選單裡的一項;桌面版只有這一項,不展開)。
    跑到一半整顆 disabled——引擎的環境變數是開子行程那一刻決定的,中途換 agent
    等於在活著的子行程底下抽掉設定。
-   「模型接入」不另畫一份:把連結畫面的 .cn-card 搬進來,偵測/連結/OAuth 都是同一套。 */
+   「模型接入」自己畫一份(mdlPaint):連結畫面那張卡不搬家——那裡是第一次做決定的地方,這裡是回來換的地方。
+   共用的是底下的邏輯(detect / connect / localLogin / blaveGo),不是 DOM。 */
+/* 設定裡任何一塊重畫之後的保險:焦點掉到 BODY(或掉出 modal)就放回 modal 內一個合理的落點。
+   Esc 與 Tab 都綁在 #set-scrim 上,焦點在 BODY 時事件冒泡不到它——那時設定關不掉、Tab 也不再圈在框裡。
+   不靠個別欄位名猜得對不對:重畫完一律過這一關。 */
+/* 等待瀏覽器那邊按「允許」是**一件事**,可是「模型接入」與「帳號」是兩份 DOM:
+   只要 oauthPending / planLoginBusy 變了,兩邊都得重畫,否則一邊還留著「取消」、另一邊的鈕按了沒反應。
+   規矩:凡是改這兩個旗標的地方,收尾一律叫這一支(tests/check_shell_settings.js 會列舉檢查)。 */
+function waitChanged() { mdlPaint(); acctPaintAcct(); }
+function setFocusGuard() {
+  // 確認框 / 圖片放大開著時不管:那兩個是更上層的框,焦點歸它們(現在靠 view-ws 的 inert 讓 focus() 變 no-op 撐著,寫成明文)
+  if (!$("del-scrim").hidden || !$("lb-scrim").hidden) return;
+  if ($("set-scrim").hidden) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && $("set-modal").contains(a)) return;
+  const back = document.querySelector('.set-cat[aria-current="true"]') || $("set-close");
+  if (back) back.focus();
+}
 // 焦點圈在 modal 裡(aria-modal 只管讀屏,不管 Tab)。設定與刪除確認共用。
 function trapTab(e, box) {
   if (e.key !== "Tab") return;
@@ -240,13 +348,14 @@ function setCat(cat) {
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
+  if (cat === "model") mdlPaint();
+  if (cat === "acct") acctPaintAcct();
   if (cat === "priv") privLoad();
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
   if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
   if (running) return;
-  $("set-model").appendChild(document.querySelector(".cn-card"));
   $("set-lang").value = LANG;
   setCat("display");
   const sc = $("set-scrim");
@@ -310,7 +419,7 @@ $("ws-conn").addEventListener("click", setOpen);
 $("set-close").addEventListener("click", setClose);
 $("set-scrim").addEventListener("mousedown", (e) => { if (e.target === $("set-scrim")) setClose(); });
 $("set-cats").addEventListener("click", (e) => {
-  const b = e.target.closest(".set-cat"); if (b && b.dataset.setCat) setCat(b.dataset.setCat);   // 帳號區那顆吃同一個樣子,但不是分類
+  const b = e.target.closest(".set-cat"); if (b && b.dataset.setCat) setCat(b.dataset.setCat);   // 只有帶 data-set-cat 的才是分類鈕
 });
 $("set-scrim").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.preventDefault(); setClose(); return; }
@@ -355,6 +464,7 @@ function privPaint() {
   });
   box.append(two, mk("p", "priv-fine", off ? t("priv.kept") : t("priv.fine")));
   if (had) sw.focus();
+  setFocusGuard();
 }
 /* 「一般」頁最下面的「關於」:版號永遠在;下一行是更新狀態;右邊一顆鈕——平常是安靜的「檢查更新」,新版已下載才換成描邊的
    「重新啟動並更新」。換 class 不換節點(焦點不掉)。off(沒有更新來源)= 只有版號。 */
@@ -819,6 +929,13 @@ async function csRenderList() {
   const box = $("cs-rows"); box.innerHTML = "";
   csItems.forEach((m) => box.appendChild(csRow(m)));
 }
+/* 捲到頭底下才浮一條線(靜止沒有線):清單那一層也會捲,兩層都掛,以現在看得見的那一層為準 */
+function chatEdge() {
+  const list = $("cs-list"), box = list.hidden ? $("chat-scroll") : list;
+  $("cs-head").classList.toggle("is-scrolled", box.scrollTop > 0);
+}
+$("chat-scroll").addEventListener("scroll", chatEdge);
+$("cs-list").addEventListener("scroll", chatEdge);
 function csShowList(on) {
   $("cs-list").hidden = !on;
   $("cs-head").classList.toggle("is-list", on);
@@ -827,6 +944,7 @@ function csShowList(on) {
   // 被清單蓋住的聊天本體退出 Tab 順序與輔具樹
   $("chat-scroll").inert = on; document.querySelector(".chat-input-wrap").inert = on;
   if (on) csRenderList();
+  chatEdge();
 }
 $("cs-toggle").addEventListener("click", () => csShowList($("cs-list").hidden));
 $("cs-new").addEventListener("click", csStartNew);
@@ -842,7 +960,7 @@ async function csInit() {
 let running = false;
 let liveBubble = null;
 
-function scrollChat() { $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight; }
+function scrollChat() { $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight; chatEdge(); }
 
 // 起手範例:點了直接送,不要只是把字填進去讓人再按一次。
 $("chat-eg").addEventListener("click", () => {
@@ -1306,16 +1424,16 @@ function blaveLoginFlow(card) {
   const fault = (subText) => card.set({ text: t("fault.authInvalid"), label: t("fault.authBtn"), sub: subText || null, on: start });
   async function start() {
     if (loginPending || oauthPending) return;
-    oauthPending = true;
+    oauthPending = true; waitChanged();
     card.set({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() });
     try {
       await window.blave.startOAuth(LANG);
-      oauthPending = false; acct = null;
+      oauthPending = false; waitChanged(); acct = null;
       mpInit("blave");                         // 失效期間型錄抓回來是空的
       card.set(resendState(card, t("fault.authOk")));
       acctPrecheck();
     } catch (e) {
-      oauthPending = false;
+      oauthPending = false; waitChanged();
       const m = (e && e.message) || "";
       const code = (m.match(/\b[A-Z][A-Z_]{3,}\b/) || [])[0];
       fault(code === "OAUTH_CANCELLED" ? null : (code && t(code) !== code ? t(code) : (m || t("oauth.failed"))));
@@ -1461,6 +1579,7 @@ function planView() {
 }
 let planMoreOpen = false, planLoginBusy = false, planLastView = null;
 function planPaint() {
+  acctPaintAcct();                           // 登入等待中那顆鈕是「取消」:帳號頁跟著同一份狀態
   if (typeof envPlanChanged === "function") envPlanChanged();   // 開通頁跟著同一份狀態重畫(trade.js);放最前面:下面有提早 return
   const box = $("set-plan"); if (!box) return;
   // 登入回來、狀態還在查:留著上一格,查完(或失敗)那次重畫才換——不閃「查不到」
@@ -1539,11 +1658,12 @@ function planPaint() {
 async function planLogin() {
   if (planLoginBusy) { window.blave.cancelOAuth(); return; }
   if (oauthPending || running) return;
-  planLoginBusy = oauthPending = true; planErr = null; planPaint();
+  setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
+  planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
   try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; acctPaintAcct(); await acctCheck(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
-  planLoginBusy = oauthPending = false; planPaint();
+  planLoginBusy = oauthPending = false; planPaint(); waitChanged();
 }
 /* 花錢動作的唯一確認點。每一次送出前都過這個框(失敗後重按也一樣):規則只有一條。 */
 function planAsk(e) {
@@ -1572,12 +1692,12 @@ async function planGo() {
    要他自己再按一次「啟動方案」、再過一次確認框。 */
 async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
-  oauthPending = true;
+  oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
   try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; await acctCheck(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
-  oauthPending = false;
+  oauthPending = false; waitChanged();
   planPaint();
 }
 /* 每次拿到新的 account_status 都走這裡:啟動中 → 每 20 秒重查(不論設定有沒有開,完成的那句話靠它);
@@ -1603,12 +1723,35 @@ function planSayDone() { planDonePending = false; const c = faultCard(); c.set({
 /* 「設定」右邊那行安靜的字:只在試用最後 3 天 / 啟動中 / 已停機出現。不是通知(不推播、不打斷)。 */
 function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint(); sidePaint(); }
 /* 設定左欄底部的帳號區:有登入才出。(連結畫面最底下那句「首次綁卡送 N 天資料」已拿掉——Wei:選 AI 的地方不放宣傳文) */
+/* 設定 › 帳號。兩態同一副骨架:身分兩行 + 一顆鈕 + 「會怎樣」的短清單 + 一行指往「資料與雲端方案」。
+   主行程拿不到 Blave 帳號的 email(那裡的 email 是 Claude Code 的),所以第一行先寫「Blave 帳號」;
+   之後 account_status 帶得回 email 再換成 email,版面不用動。 */
 function acctPaintAcct() {
-  // 兩態都顯示。主行程拿不到 Blave 帳號的 email,所以第一行是「Blave 帳號」、第二行講有沒有登入
-  $("set-acct-who").textContent = t("acct.lbl");
-  $("set-acct-st").textContent = hasToken ? t("acct.signedIn") : t("acct.signedOut");
-  $("set-acct-btn").textContent = hasToken ? t("acct.out") : t("cn.blave.btn");
+  if (!$("set-acct-pane")) return;
+  const el = (id) => $(id);
+  el("acct-a1").textContent = t("acct.lbl"); el("acct-a1").title = t("acct.lbl");
+  const a2 = el("acct-a2"); a2.textContent = ""; a2.className = "a2" + (hasToken ? " on" : "");
+  if (hasToken) { const d = document.createElement("i"); d.className = "dot"; d.setAttribute("aria-hidden", "true"); a2.appendChild(d); }
+  a2.append(t(hasToken ? "acct.signedIn" : "acct.signedOut"));
+  const b = el("set-acct-btn"), waiting = !hasToken && (planLoginBusy || oauthPending);
+  b.textContent = hasToken ? t("acct.out") : waiting ? t("oauth.cancel") : t("cn.blave.btn");
+  b.className = hasToken || waiting ? "btn-out" : "btn-fill";
+  // 登出會怎樣 / 登入拿得到什麼。用 Blave 的 AI 的人登出之後會被送回選 AI 的畫面(見登出那支的 cur === "blave" 分支),
+  // 對話要換成這台電腦上的 agent 或重新登入才接得下去;用自己 CLI 的人不受影響,所以那一條只對前者出
+  const keys = hasToken ? (cur === "blave" ? ["acct.out.3", "acct.out.1", "acct.out.2"] : ["acct.out.1", "acct.out.2"]) : ["acct.in.1", "acct.in.2"];
+  const ul = el("acct-list"); ul.textContent = "";
+  keys.forEach((k) => { const li = document.createElement("li"); li.textContent = t(k); ul.appendChild(li); });
+  // 這一頁唯一的訊息格:等待登入時講「瀏覽器已開啟」(同方案頁那條路),其餘時候放共用的那一則
+  // (登出時伺服器那顆沒撤成的提醒就是靠它——登出鈕住在這一頁,那句話只有這裡看得到)
+  const hint = el("acct-hint"); hint.textContent = "";
+  const msg = waiting ? { text: t("pv.w.waiting") } : HINT;
+  hint.hidden = !msg;
+  if (msg) { hint.append(msg.text + (msg.cmd ? " " : "")); if (msg.cmd) hint.append(cmdLine(msg.cmd)); }
+  el("acct-to-plan").textContent = t("acct.toPlan");
+  el("acct-to-plan-btn").textContent = t("acct.toPlanBtn");
+  setFocusGuard();
 }
+$("acct-to-plan-btn").addEventListener("click", () => { setCat("plan"); const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus(); });
 function sidePaint() {
   if (typeof envPlanChanged === "function") envPlanChanged();   // 雲端視角的開通頁吃同一份帳號 / 方案狀態(trade.js)
   const n = $("ws-conn-note"); if (!n) return;
@@ -1857,7 +2000,8 @@ panesInit();
 function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
-  acctPaintAcct();   // 設定的帳號區(兩態的字跟著語言換)
+  acctPaintAcct();   // 設定 › 帳號(兩態的字跟著語言換)
+  if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
@@ -1882,8 +2026,7 @@ function applyStatic() {
     hasToken = false;
     paintBlaveBtn();
     detect();
-    $("cn-hint").textContent = t("conn.expired");
-    $("cn-hint").hidden = false;
+    setHint({ text: t("conn.expired") });
     return;
   }
   if (prev && prev.kind) { enterWorkspace(prev.kind, prev); return; }

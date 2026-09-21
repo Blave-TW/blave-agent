@@ -779,10 +779,43 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}
-.set-cats .set-acct{margin-top:auto;padding:var(--space-8) 0 0;display:flex;flex-direction:column;gap:var(--space-2)}
-.set-acct .who{padding:var(--space-4) var(--space-12) var(--space-2)}
-.set-acct .l1{margin:0;font-size:13px;line-height:1.5;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.set-acct .l2{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
+/* 設定 › 帳號:身分 + 登入 / 登出 + 登出會怎樣。錢的事(餘額、綁卡、方案)留在「資料與雲端方案」,這裡只給一行字與一顆「前往」。整頁沒有分隔線 */
+.acct-id{display:flex;align-items:center;gap:var(--space-12)}
+.acct-id .t{flex:1;min-width:0}
+.acct-id .a1{margin:0;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct-id .a2{margin:var(--space-2) 0 0;display:flex;align-items:center;gap:var(--space-6);font-size:12px;line-height:1.5;color:var(--ink-3)}
+.acct-id .a2.on{color:var(--ink-2)}
+.acct-id .a2 .dot{flex:none;width:7px;height:7px;border-radius:var(--radius-pill);background:var(--color-green)}
+.acct-id button{flex:none}
+#acct-hint{margin:var(--space-12) 0 0}
+.acct-list{margin:var(--space-16) 0 0;padding:0;list-style:none;max-width:52ch}
+.acct-list li{position:relative;padding-left:var(--space-12);font-size:12px;line-height:1.7;color:var(--ink-2)}
+.acct-list li+li{margin-top:var(--space-2)}
+.acct-list li::before{content:"";position:absolute;left:0;top:11px;width:6px;height:1px;background:var(--ink-3)}
+.acct-link{margin-top:var(--space-24);display:flex;align-items:center;gap:var(--space-12)}
+.acct-link p{margin:0;flex:1;min-width:0;font-size:12px;line-height:1.6;color:var(--ink-3)}
+
+/* 設定 › 模型接入:整頁 = 三選一。群組小標(12/400/--ink-3)→ 選項列(名稱 13/--ink,說明 12/--ink-3)→ 列尾(狀態 12 或一顆小框鈕)。
+   「使用中」= 整列灰填 + 名稱加粗 + 列尾三個字(canon 的 Active:同左欄分類、側欄策略)。不畫線 */
+#set-model{display:flex;flex-direction:column;gap:var(--space-24)}
+.cn-grp-h{display:flex;align-items:center;gap:var(--space-8);min-height:24px;font-size:12px;font-weight:400;color:var(--ink-3)}
+.cn-grp-h .sep{color:var(--color-greyDark)}
+.cn-grp-h .pf-act{margin-left:auto}
+.cn-opts{margin-top:var(--space-4);display:flex;flex-direction:column;gap:var(--space-4)}
+.cn-opt{display:flex;align-items:center;gap:var(--space-12);min-height:44px;margin:0 calc(-1 * var(--space-12));padding:var(--space-6) var(--space-12);border-radius:var(--radius-md)}
+.cn-opt .t{flex:1;min-width:0}
+.cn-opt .n{margin:0;font-size:13px;font-weight:400;line-height:1.5;color:var(--ink)}
+.cn-opt .m{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
+.cn-opt .st{flex:none;display:flex;align-items:center;gap:var(--space-6);font-size:12px;color:var(--ink-3)}
+.cn-opt .st.on{color:var(--ink-2)}
+.cn-opt .st .dot{flex:none;width:7px;height:7px;border-radius:var(--radius-pill);background:var(--color-green)}
+.cn-opt.is-cur{background:var(--surface-muted)}
+.cn-opt.is-cur .n{font-weight:600}
+.cn-opt.is-cur .m{color:var(--ink-2)}
+.cn-opt .cn-cur{flex:none;min-width:52px;text-align:right;font-size:12px;font-weight:600;color:var(--ink)}
+/* 這一頁的小框鈕比別處亮一階:它是這一列的主要動作 */
+#set-model .pf-act{min-width:52px;text-align:center;color:var(--ink-2);border-color:var(--border-frame)}
+#set-model .cn-hint{margin:0}
 /* 連結畫面尾註下那一句 */
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
@@ -810,12 +843,6 @@ body.resizing * { cursor: col-resize !important; }
 }
 .set-sel:hover { background: var(--surface-muted); }
 
-/* 「模型接入」借用連結畫面那張卡:在 modal 裡它不是卡,是內容——拿掉卡面,
-   內距交給 .set-content 的 16 */
-.set-pane .cn-card { width: auto; background: none; border-radius: 0; box-shadow: none; }
-.set-pane .cn-sec { padding: 0; }
-/* 組間只用間距不畫線:段內的 agent 列已經用 hairline 分隔,再用同一條線就分不出層級 */
-.set-pane .cn-sec + .cn-sec { border-top: 0; margin-top: var(--space-24); padding-top: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .ws-more, .scrim, .set-modal, .modal-close, .set-cat, .set-sel { transition: none; }
@@ -830,8 +857,10 @@ body.resizing * { cursor: col-resize !important; }
   flex: none; height: 44px; min-width: 320px;
   display: flex; align-items: center; gap: var(--space-4);
   padding: 0 var(--space-12);
-  border-bottom: 1px solid var(--border-hairline);
 }
+/* 聊天欄是唯一有內容直接捲到這 44px 底下的地方,而且頭跟捲動區同底色:靜止沒有線(Wei),
+   真的捲起來才浮一條——不是「永遠有一條線」。雲端的灰底上同樣看得到(hairline 比卡面亮一階) */
+.chat-head.is-scrolled { box-shadow: 0 1px 0 var(--border-hairline); }
 .cs-btn {
   flex: none; width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;

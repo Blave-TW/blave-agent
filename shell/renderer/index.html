@@ -218,8 +218,8 @@
 </div>
 
 <!-- ============ 設定 modal(樣式照雲端 .scrim / .ns-modal.set-modal) ============
-     兩個分類:顯示(語言)、模型接入(換 agent——內容就是連結畫面那張卡,開的時候
-     把 .cn-card 整個搬進來,同一份 DOM 與邏輯,不養第二份)。 -->
+     分類:一般(語言、關於)、模型接入、資料與雲端方案、帳號、隱私。每一類的內容各自由 app.js 畫;
+     「模型接入」不借用連結畫面那張卡(那裡是第一次做決定的地方,這裡是回來換的地方)。 -->
 <div class="scrim" id="set-scrim" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
   <div class="set-modal" id="set-modal">
     <div class="modal-head">
@@ -232,14 +232,10 @@
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
         <!-- 會花錢的一類排最後:前兩類是偏好。聊天裡的情境卡會直接開到這裡 -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
+        <!-- 帳號:身分與登入 / 登出(錢的事在「資料與雲端方案」)。內容由 app.js 的 acctPaintAcct 畫 -->
+        <button type="button" class="set-cat" data-set-cat="acct" data-i18n="set.cat.acct"></button>
         <!-- 隱私:使用資料的開關與「會收 / 不收」(排最後;與視角無關)。內容由 app.js 的 privPaint 畫 -->
         <button type="button" class="set-cat" data-set-cat="priv" data-i18n="set.cat.priv"></button>
-        <!-- 帳號區:登入是帳號的事,不是某一種 AI 的事。兩態都顯示(已登入 / 未登入),字與鈕由 app.js 的 acctPaintAcct 畫。
-             那顆鈕吃 .set-cat 的樣子但不是分類(沒有 data-set-cat、不給 aria-current) -->
-        <div class="set-acct" id="set-acct">
-          <div class="who"><p class="l1" id="set-acct-who"></p><p class="l2" id="set-acct-st"></p></div>
-          <button type="button" class="set-cat" id="set-acct-btn"></button>
-        </div>
       </nav>
       <div class="set-content">
         <div class="set-pane" data-set-cat="display">
@@ -260,6 +256,17 @@
         <!-- 雲端方案:內容由 app.js 的 planPaint 畫(依 account_status.plan)。上半自己捲,
              底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
         <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden></div>
+        <div class="set-pane" data-set-cat="acct" id="set-acct-pane" hidden>
+          <div class="acct-id">
+            <div class="t"><p class="a1" id="acct-a1"></p><p class="a2" id="acct-a2"></p></div>
+            <!-- 同一個位置的同一顆鈕:已登入 = 登出(不跳確認框,可逆、沒有東西會被刪);未登入 = 登入 Blave -->
+            <button type="button" class="btn-out" id="set-acct-btn"></button>
+          </div>
+          <!-- 這一頁唯一放訊息的地方(登出沒撤成、登入等待中):只由 acctPaintAcct 寫,不讓第二個人碰 -->
+          <p class="cn-hint" id="acct-hint" hidden></p>
+          <ul class="acct-list" id="acct-list"></ul>
+          <div class="acct-link"><p id="acct-to-plan"></p><button type="button" class="pf-act" id="acct-to-plan-btn"></button></div>
+        </div>
         <div class="set-pane" data-set-cat="priv" id="set-priv" hidden></div>
       </div>
     </div>
