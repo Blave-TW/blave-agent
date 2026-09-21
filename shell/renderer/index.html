@@ -46,8 +46,6 @@
         <p data-i18n="cn.foot"></p>
         <div class="cn-lang" id="cn-lang" role="radiogroup" data-i18n-aria="set.lang"></div>
       </div>
-      <!-- 對兩條路都成立的一句,所以放尾註、不掛在任何一列底下(數字來自 api,拿不到就不出) -->
-      <p class="cn-foot-data" id="cn-foot-data" hidden></p>
     </div>
   </div>
 </div>
@@ -235,6 +233,12 @@
               <!-- option 由 app.js 建(原生語名,不進 .po) -->
               <select class="set-sel" id="set-lang"></select>
             </span>
+          </div>
+          <!-- 版本與更新:字與鈕由 app.js 的 upPaint 依狀態畫 -->
+          <div class="set-row set-up" id="set-up">
+            <span class="set-gl" data-i18n="up.label"></span>
+            <span class="set-up-txt" id="set-up-txt" role="status"></span>
+            <button type="button" class="btn-quiet" id="set-up-btn" hidden></button>
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>

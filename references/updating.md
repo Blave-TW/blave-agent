@@ -2,6 +2,10 @@
 
 Trigger: user says 更新 blaveclaw / 更新 blave agent / 更新系統 / 更新 config / update blaveclaw / update blave agent / update workspace — no link required.
 
+## 0. Desktop app — stop here
+
+If this workspace runs inside the Blave desktop app (the runtime's local mode; the workspace lives under the user's home, e.g. `~/Blave/workspace`, not `/opt/blave-agent`), **do not run this procedure**. On the desktop the framework ships with the app as one versioned bundle: the app updates itself, and on the next launch it refreshes the official files in this workspace (anything it overwrites that differed is backed up under `.official-backup/`). Do not clone the repo, do not merge `lib/`, and do not edit `VERSION` — a workspace `VERSION` newer than the app's makes the app skip its own refresh and leaves a new `lib/` running under an old runtime. Tell the user: updates arrive with the app — Settings › Display shows the version and the update status. Everything below is for cloud machines only.
+
 ## 1. Skill
 
 Nothing to install — the platform re-clones the blave-quant skill into `skills/blave-quant` once a day (a systemd timer / scheduled task on Blave Agent machines, a crontab entry on older openclaw boxes). Just check that `skills/blave-quant/SKILL.md` is there; if it is missing, say so in the report and stop — a hand-install would put it somewhere the daily job then overwrites.

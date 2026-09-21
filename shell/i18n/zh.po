@@ -349,6 +349,45 @@ msgstr "模型接入"
 msgid "set.lang"
 msgstr "語言"
 
+msgid "up.label"
+msgstr "版本"
+
+msgid "up.current"
+msgstr "{v}"
+
+msgid "up.latest"
+msgstr "{v} · 已是最新版"
+
+msgid "up.checking"
+msgstr "{v} · 正在檢查更新…"
+
+msgid "up.downloading"
+msgstr "{v} · 正在下載 {nv}…"
+
+msgid "up.downloadingPct"
+msgstr "{v} · 正在下載 {nv}（{pct}%）"
+
+msgid "up.ready"
+msgstr "{nv} 已下載，重新啟動後生效"
+
+msgid "up.blocked"
+msgstr "{nv} 已下載。自動下單執行中不會更新；暫停下單後可以更新，或結束 Blave 時自動安裝"
+
+msgid "up.error"
+msgstr "{v} · 這次沒檢查成功"
+
+msgid "up.staging"
+msgstr "{v} · {nv} 下載完成，正在準備安裝…"
+
+msgid "up.installFailed"
+msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用程式」資料夾裡（不是從下載的磁碟映像直接開），再檢查一次"
+
+msgid "up.install"
+msgstr "重新啟動並更新"
+
+msgid "up.check"
+msgstr "檢查更新"
+
 msgid "cn.current"
 msgstr "使用中"
 
@@ -765,9 +804,6 @@ msgstr "資料與雲端方案"
 
 msgid "cn.blave.signinSwitch"
 msgstr "登入並切換"
-
-msgid "cn.foot.data"
-msgstr "首次綁卡送 {t} 天 Blave 的資料，用哪一種 AI 都拿得到：連結後到設定 › 資料與雲端方案。"
 
 msgid "acct.lbl"
 msgstr "Blave 帳號"

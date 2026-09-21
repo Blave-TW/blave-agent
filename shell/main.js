@@ -156,6 +156,23 @@ function tm() {
   return _tm;
 }
 
+// ── 自動更新(updater.js;規則見 spec §13)────────────────────
+// 更新來源由打包時的 BLAVE_UPDATE_URL 蓋進 package.json(blaveUpdateUrl);開發版與沒設的包 = 不更新,畫面只顯示版號。
+let _up = null;
+function updater() {
+  if (_up) return _up;
+  const feedUrl = app.isPackaged ? require("./package.json").blaveUpdateUrl || null : null;
+  _up = require("./updater").createUpdater({
+    autoUpdater: feedUrl ? require("electron-updater").autoUpdater : null,
+    nativeUpdater: feedUrl ? require("electron").autoUpdater : null,   // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭)
+    feedUrl, currentVersion: app.getVersion(),
+    isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
+    onState: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", st); },
+    log: (m) => console.error("[updater] " + m),
+  });
+  return _up;
+}
+
 // ── OAuth(用 Blave 的 AI)─────────────────────────────────────
 // RFC 8252 原生 app 的 loopback 流程:軟體開源所以沒有 client secret,
 // 用 PKCE(S256)。同意頁在 blave.org,換 token 打 api.blave.org。
@@ -491,7 +508,56 @@ function copyOfficial() {
   fs.mkdirSync(path.join(WS, "strategies"), { recursive: true });
   for (const d of OFFICIAL_DIRS)
     fs.cpSync(path.join(REPO, d), path.join(WS, d), { recursive: true });
+  // VERSION 必須最後寫(OFFICIAL_FILES 的最後一項):前面任何一步中途失敗,workspace 的版號還是舊的,下次啟動會整個重來
   for (const f of OFFICIAL_FILES) fs.cpSync(path.join(REPO, f), path.join(WS, f));
+}
+/* 覆寫之前,把「workspace 裡跟隨包不一樣的官方檔」備份起來(Wei 2026-09-21:覆寫,但先備份被改過的檔)。
+   電腦版的官方檔跟著 app 走(一包一個版號),所以更新一定覆寫;但 agent 或用戶可能改過 lib/——那份改動不能無聲消失。
+   備份放 workspace/.official-backup/<舊版號>-<時間>/,只收內容不同的檔;用戶自己加的檔(隨包沒有的)本來就不會被碰。 */
+function listFiles(root, rel = "") {
+  const out = [];
+  for (const e of fs.readdirSync(path.join(root, rel), { withFileTypes: true })) {
+    if (e.name === "__pycache__" || e.name === ".DS_Store") continue;
+    const r = path.join(rel, e.name);
+    if (e.isDirectory()) out.push(...listFiles(root, r)); else if (e.isFile()) out.push(r);
+  }
+  return out;
+}
+function backupChangedOfficial(tag) {
+  const files = [...OFFICIAL_FILES];
+  for (const d of OFFICIAL_DIRS) if (fs.existsSync(path.join(REPO, d))) files.push(...listFiles(REPO, d));
+  const dest = path.join(WS, ".official-backup", tag), saved = [];
+  for (const f of files) {
+    if (f === "VERSION") continue;
+    let mine; try { mine = fs.readFileSync(path.join(WS, f)); } catch (_) { continue; }   // workspace 沒有這個檔:沒東西可備份
+    if (mine.equals(fs.readFileSync(path.join(REPO, f)))) continue;
+    fs.mkdirSync(path.dirname(path.join(dest, f)), { recursive: true });
+    fs.writeFileSync(path.join(dest, f), mine); saved.push(f);
+  }
+  return { dest, saved };
+}
+
+/* app 更新之後把 workspace 的官方檔案跟上(自動更新的另一半):
+   runtime/ 在 .app 裡、跟著 app 一起換;lib / manager / references / AGENTS.md 是**拷進 workspace 的副本**——
+   不重拷的話,更新完是「新 runtime + 舊 lib」的混搭(雲端同樣的兩層,各有各的更新通道;電腦版是一包,所以要一起換)。
+   - 只在 app 啟動時做、而且在常駐程式起來之前:這一刻沒有任何東西在下單(重開 app 後要用戶自己按啟動),
+     符合「實盤中不換版」。
+   - 只往上不往下:隨包的 VERSION 比 workspace 的新才拷。有人裝回舊版 app 時不把 workspace 降版
+     (策略可能已經用到新 lib 的東西);VERSION 是日期字串(YYYY-MM-DD[-b]),字串比較即可。
+   - 照 copyOfficial 的規則:只覆寫官方清單,strategies/<name>/、state/、.env、cache/、用戶自己加的 lib 檔都不碰。 */
+const readVersion = (dir) => { try { return fs.readFileSync(path.join(dir, "VERSION"), "utf8").trim(); } catch (_) { return ""; } };
+const officialStale = (bundled, ws) => !!bundled && bundled > (ws || "");
+function syncOfficialOnUpdate() {
+  if (!app.isPackaged || !fs.existsSync(WS)) return false;   // 開發版每次啟動本來就重拷;還沒有 workspace = 首次連結時會拷
+  const bundled = readVersion(REPO), ws = readVersion(WS);
+  if (!officialStale(bundled, ws)) { if (bundled && ws && bundled < ws) console.error(`[update] workspace ${ws} is newer than this app's ${bundled} — left as is`); return false; }
+  try {
+    // 備份不成就不覆寫:寧可這次停在舊 lib(下次啟動再試),也不要把改動弄丟
+    const bk = backupChangedOfficial(`${ws || "none"}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+    copyOfficial();
+    console.error(`[update] workspace framework ${ws || "(none)"} → ${bundled}` + (bk.saved.length ? `; ${bk.saved.length} changed official file(s) backed up to ${bk.dest}` : ""));
+    return true;
+  } catch (e) { console.error("[update] workspace sync failed: " + (e && e.message)); return false; }
 }
 
 const AGENT_SDK = "claude-agent-sdk==0.2.144";
@@ -529,8 +595,10 @@ async function ensureEngine(progress) {
   // workspace 的 lib/ 與 manager/ 要的第三方套件(從它們的 import 列出來的)。原本只裝
   // SDK:agent 能聊天、能寫策略,一回測就炸(「Python 環境缺少 pandas」,實測)。
   // 用一個記號檔而不是每次都問 pip——pip 光是確認「都裝了」也要好幾秒。
+  // 記號檔比內容:app 更新後清單變了(多一個套件、換版本)要重裝,只看檔案在不在會永遠跳過(稽核 S8)
   const depsMark = path.join(BASE, "venv", ".blave-deps-1");
-  if (!fs.existsSync(depsMark)) {
+  let depsHave = ""; try { depsHave = fs.readFileSync(depsMark, "utf8"); } catch (_) { /* 還沒裝過 */ }
+  if (depsHave !== WORKSPACE_DEPS.join("\n")) {
     progress("engine.deps");
     await sh(`"${VENV_PY}" -m pip -q install ${WORKSPACE_DEPS.join(" ")}`, envPath, 900000);
     fs.writeFileSync(depsMark, WORKSPACE_DEPS.join("\n"));
@@ -898,7 +966,8 @@ function tradeHost() {
       env: { PATH: path.join(BASE, "venv", "bin") + path.delimiter + (process.env.PATH || "/usr/bin:/bin"), HOME: os.homedir(),
         USER: process.env.USER || os.userInfo().username, LANG: process.env.LANG || "en_US.UTF-8",
         TMPDIR: process.env.TMPDIR || os.tmpdir(), BLAVE_KLINE_SOURCE: "binance",
-        BLAVE_AGENT_HOME: BASE, BLAVE_AGENT_STATE: path.join(BASE, "state") },
+        BLAVE_AGENT_HOME: BASE, BLAVE_AGENT_STATE: path.join(BASE, "state"),
+        ...PY_ENV },   // 打包版不讓 Python 把 __pycache__ 寫進 .app(簽章後 bundle 一變 codesign --verify 就不過)
       log: (m) => console.error("[trade]", m),
     });
   }
@@ -1083,6 +1152,9 @@ app.whenReady().then(() => {
   });
   // 告知畫面顯示過才開始送(稽核 M2'):在那之前 start()/track() 一則都不出門。由 renderer 在告知真的畫出來之後叫這支
   ipcMain.handle("telemetry-noticed", (e) => { if (!fromOurPage(e)) return false; tm().setNoticed(); return true; });
+  ipcMain.handle("update-state", () => updater().state());
+  ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
+  ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
   ipcMain.handle("telemetry-get", () => tm().isEnabled());
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
@@ -1106,6 +1178,9 @@ app.whenReady().then(() => {
     return { started: true };
   });
   createWindow();
+  // 要在常駐程式起來之前:它 import 的就是 workspace 裡的 lib。只有拿到單一實例鎖的那一份才做——
+  // 第二份 app 在結束前也會走到 whenReady,不能讓它把新 lib 拷進第一份正在下單的 workspace(稽核 S7)
+  if (app.hasSingleInstanceLock()) syncOfficialOnUpdate();
   tradeStartIfReady();   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
@@ -1113,6 +1188,7 @@ app.whenReady().then(() => {
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   trayStart();
   tm().start();
+  updater().start();
   ipcMain.on("trade-labels", (e, labels) => {
     if (!fromOurPage(e) || !labels || typeof labels !== "object") return;
     for (const k of Object.keys(tmLabels)) if (typeof labels[k] === "string" && labels[k] && labels[k].length <= 400) tmLabels[k] = labels[k];

@@ -717,6 +717,9 @@ body.resizing * { cursor: col-resize !important; }
   overflow-y: auto;
 }
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
+.set-row + .set-row { margin-top: var(--space-16); }
+.set-up-txt { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.set-up .btn-quiet { margin-left: auto; }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
    上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
    這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */
@@ -767,7 +770,6 @@ body.resizing * { cursor: col-resize !important; }
 .set-acct .mail{margin:0;font-size:12px;line-height:1.5;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .set-acct .btn-quiet{margin-top:var(--space-4);padding:0}
 /* 連結畫面尾註下那一句 */
-.cn-foot-data{width:560px;max-width:100%;margin:var(--space-8) 0 0;padding:0 var(--space-16);font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
 .del-body.lines p+p{margin-top:var(--space-8)}

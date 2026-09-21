@@ -10,13 +10,14 @@
     "fetch-python": "sh tools/fetch-python.sh",
     "pack": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dir",
     "dist": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dmg",
-    "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac dmg --publish never"
+    "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac --publish never"
   },
   "devDependencies": {
     "electron": "38.2.1",
     "electron-builder": "26.15.3"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "lightweight-charts": "5.2.1"
   },
   "author": "Blave"

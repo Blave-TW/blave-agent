@@ -241,6 +241,7 @@ function setCat(cat) {
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
+  if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
   if (running) return;
   $("set-model").appendChild(document.querySelector(".cn-card"));
   $("set-lang").value = LANG;
@@ -313,6 +314,27 @@ $("set-scrim").addEventListener("keydown", (e) => {
   trapTab(e, $("set-modal"));
 });
 $("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").value));
+
+/* ── 版本與更新(設定 › 顯示)──────────────────────────────────
+   主行程的 updater.js 管下載;這裡只畫狀態。新版在背景下載,永遠不自己重啟:
+   已下載 → 「重新啟動並更新」;自動下單執行中那顆鈕是擋下來的(暫停之後,或正常結束 Blave 時才裝)。 */
+var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的 TDZ 會連 typeof 都丟例外)
+function upPaint() {
+  const txt = $("set-up-txt"), btn = $("set-up-btn"), st = UP || {}, v = { v: st.current || "", nv: st.version || "" };
+  let msg = t("up.current", v), label = null, act = null;
+  if (st.phase === "checking") msg = t("up.checking", v);
+  else if (st.phase === "downloading") msg = st.percent == null ? t("up.downloading", v) : t("up.downloadingPct", { ...v, pct: st.percent });
+  else if (st.phase === "ready") { msg = t("up.ready", v); label = t("up.install"); act = () => window.blave.updateInstall().then((r) => { if (r && !r.ok) upRefresh(); }); }
+  else if (st.phase === "blocked") msg = t("up.blocked", v);
+  else if (st.phase === "staging") msg = t("up.staging", v);
+  else if (st.phase === "error") { msg = st.error === "INSTALL_FAILED" ? t("up.installFailed", v) : t("up.error", v); label = t("up.check"); act = () => window.blave.updateCheck().then(upRefresh); }
+  else if (st.phase === "idle") { msg = t("up.latest", v); label = t("up.check"); act = () => window.blave.updateCheck().then(upRefresh); }
+  txt.textContent = msg;
+  btn.hidden = !label; btn.textContent = label || ""; btn.onclick = act;
+}
+function upRefresh() { return window.blave.updateState().then((st) => { UP = st; upPaint(); }).catch(() => {}); }
+window.blave.onUpdateState((st) => { UP = st; upPaint(); });
+upRefresh();
 $("btn-send").addEventListener("click", sendDraft);
 // 注音/日文選字時的 Enter 是「確定候選字」,不是送出。逐字照 web 工作頁
 // (workspace.html:21913-21933)的三道守衛:Safari 會在這個 keydown 之前就發
@@ -1523,11 +1545,9 @@ function planWatch(s) {
 function planSayDone() { planDonePending = false; const c = faultCard(); c.set({ calm: true, text: t("plan.done") }); }
 /* 「設定」右邊那行安靜的字:只在試用最後 3 天 / 啟動中 / 已停機出現。不是通知(不推播、不打斷)。 */
 function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint(); sidePaint(); }
-/* 設定左欄底部的帳號區 + 連結畫面尾註那一句:有沒有登入、公開數字拿不拿得到,決定出不出 */
+/* 設定左欄底部的帳號區:有登入才出。(連結畫面最底下那句「首次綁卡送 N 天資料」已拿掉——Wei:選 AI 的地方不放宣傳文) */
 function acctPaintAcct() {
   $("set-acct").hidden = !hasToken;
-  const f = $("cn-foot-data"), tr = pub && pub.trial;
-  if (f) { f.hidden = !(tr && tr.days); if (!f.hidden) f.textContent = t("cn.foot.data", { t: tr.days }); }
 }
 function sidePaint() {
   const n = $("ws-conn-note"); if (!n) return;
@@ -1775,6 +1795,7 @@ panesInit();
    在任何畫面顯示之前做完,不然會閃一下 key。 */
 function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
+  if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });

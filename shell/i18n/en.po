@@ -349,6 +349,45 @@ msgstr "Model access"
 msgid "set.lang"
 msgstr "Language"
 
+msgid "up.label"
+msgstr "Version"
+
+msgid "up.current"
+msgstr "{v}"
+
+msgid "up.latest"
+msgstr "{v} · Up to date"
+
+msgid "up.checking"
+msgstr "{v} · Checking for updates…"
+
+msgid "up.downloading"
+msgstr "{v} · Downloading {nv}…"
+
+msgid "up.downloadingPct"
+msgstr "{v} · Downloading {nv} ({pct}%)"
+
+msgid "up.ready"
+msgstr "{nv} is downloaded and takes effect after a restart"
+
+msgid "up.blocked"
+msgstr "{nv} is downloaded. Blave won’t update while auto trading is running — pause trading to update, or it installs when you quit Blave"
+
+msgid "up.error"
+msgstr "{v} · The update check didn’t go through"
+
+msgid "up.staging"
+msgstr "{v} · {nv} downloaded, preparing to install…"
+
+msgid "up.installFailed"
+msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in your Applications folder (not opened straight from the disk image), then check again"
+
+msgid "up.install"
+msgstr "Restart and update"
+
+msgid "up.check"
+msgstr "Check for updates"
+
 msgid "cn.current"
 msgstr "In use"
 
@@ -765,9 +804,6 @@ msgstr "Data & Cloud Plan"
 
 msgid "cn.blave.signinSwitch"
 msgstr "Sign In and Switch"
-
-msgid "cn.foot.data"
-msgstr "Your first card comes with {t} days of Blave data, whichever AI you use: after connecting, see Settings › Data & cloud plan."
 
 msgid "acct.lbl"
 msgstr "Blave account"
