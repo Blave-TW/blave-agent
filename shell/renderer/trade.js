@@ -178,6 +178,21 @@ function trDeadKind(report) {
   const sup = report && report.daemon && report.daemon.reconciler;
   return sup && sup.wanted === true ? "died" : "off";
 }
+/* 表底那行紅字要不要出。`order_errors` 是「最近 5 筆下單失敗」,機器端**從來不清**(lib/portfolio._record_order_error 只 append、留最後 5 筆),
+   所以照最新那一筆畫 = 把一筆歷史當成現況:用戶把金額從 110,000 改成 20,000、單也成交了,22:26 那句「部位要到 110,000…」
+   還掛在寫著 20,000 的表下面,兩個數字互相矛盾(Wei 在 Electron 44 實機看到的)。
+   規則:**只顯示還沒被解決的那一筆**——它的標的現在仍然有一筆會觸發下單的差額(= 那張沒送出去的單還欠著)。
+   單真的沒成交 → 差額還在 → 照樣叫人;改了金額或後來補成交 → 差額進門檻內 / 歸零 → 這筆失敗已經是歷史。
+   歷史不會不見:總覽的事件清單照舊逐筆列(那裡每一列都有時間,讀起來就是 log)。
+   pending = 這張表上還有可下單差額的標的(canon 過的 key)。回最後一筆還沒解決的,沒有就 null。 */
+function trLiveOrderErr(errs, pending) {
+  if (!Array.isArray(errs) || !pending || !pending.size) return null;
+  for (let i = errs.length - 1; i >= 0; i--) {
+    const e = errs[i];
+    if (e && typeof e === "object" && pending.has(trCanonKey(e.symbol))) return e;
+  }
+  return null;
+}
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
 /* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
@@ -1002,7 +1017,7 @@ function trPositions(r, stored, states) {
   }
   const scroll = trEl("div", "pf-scroll"), tbl = trEl("table", "pf-tbl");
   tbl.appendChild(trHead([[t("tr.col.symbol"), ""], [t("tr.col.target"), "n"], [t("tr.col.actual"), "n"], [t("tr.col.diff"), "n"]]));
-  const tb = document.createElement("tbody"), gated = [];
+  const tb = document.createElement("tbody"), gated = [], pending = new Set();
   syms.forEach((sym) => {
     const ts = target[sym] || 0, as = actual[sym] || 0, d = ts - as;
     const row = document.createElement("tr");
@@ -1015,6 +1030,7 @@ function trPositions(r, stored, states) {
     const held = !acts && Math.round(Math.abs(d)) > 0;
     const dc = trEl("td", "n " + (acts ? (d > 0 ? "buy" : "sell") : "hold"));   // 0 是有意義的值(對上了),不用佔位符那階灰
     trMoneyInto(dc, d, true);
+    if (acts) pending.add(sym);   // 這一列還欠一張單:表底那行失敗紅字只在它的標的還欠著時才出(見 trLiveOrderErr)
     row.append(sc, tc, ac, dc); tb.appendChild(row);
     if (gs && held && !((gs.reduce || gs.close) && gs.usd <= 10)) gated.push({ sym, gs });   // 平坦的 10 是每一列共通的門檻,不另外解釋
   });
@@ -1024,10 +1040,9 @@ function trPositions(r, stored, states) {
     frag.appendChild(trEl("div", "pf-foot", t("tr.gateFootLead") + gated.map((g) =>
       g.gs.reduce ? t("tr.gateFootReduce", { sym: short(g.sym) }) : t("tr.gateFootEntry", { sym: short(g.sym), m: trFmt(g.gs.usd) })).join(" · ")));
   }
-  // 下單失敗不能靜悄悄:最新一筆掛在表底(紅字腳注,同雲端)
-  const errs = Array.isArray(r.order_errors) ? r.order_errors : [];
-  const le = errs[errs.length - 1];
-  if (le && typeof le === "object") {
+  // 下單失敗不能靜悄悄:掛在表底(紅字腳注,同雲端)。但只掛**還沒被解決**的那一筆——過期的那些已經跟表上的數字對不起來了
+  const le = trLiveOrderErr(r.order_errors, pending);
+  if (le) {
     frag.appendChild(trEl("div", "pf-foot err", trOrderErrText(String(le.symbol || "—").replace(/@spot$/, ""), String(le.error || le.message || ""))));
   }
   return frag;

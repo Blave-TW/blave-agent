@@ -92,6 +92,21 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
   ok("輸入途中不報錯:input 事件裡沒有標紅(只有「已經紅、現在看得懂」才消紅);blur 與 Enter 才驗,Enter 不送出", (() => { const i = src.indexOf('inp.addEventListener("input"'), j = src.indexOf('const settle = ', i), body = src.slice(i, j).replace(/\/\/.*$/gm, "");
     return i > 0 && j > i && !/markBad\((?!null\))/.test(body) && /if \(v != null && TR\.bad\[n\]\) markBad\(null\);/.test(body) && /bar\.hidden = false;/.test(body)
       && /const settle = \(\) => \{ const why = trAmountError\(inp\.value\); markBad\(why\);/.test(src) && /if \(e\.key === "Enter" && !e\.isComposing\) \{ e\.preventDefault\(\); settle\(\); \}/.test(src); })());
+// 過期的拒單紅字不可以留在表底(Wei 在 Electron 44 實機看到:22:26 的「部位要到 110,000」掛在寫著 20,000 的表下面)。
+// 機器端 lib/portfolio._record_order_error 只 append、留最後 5 筆,從來不清 → 規則在 renderer:只顯示**標的還欠著一張單**的那一筆
+{ const E = (sym, err) => ({ ts: "2026-09-21T14:26:00", symbol: sym, error: err });
+  const P = (...k) => new Set(k);
+  ok("那筆失敗還欠著(標的仍有可下單差額)→ 照樣掛出來", trLiveOrderErr([E("BTCUSDT", "boom")], P("BTCUSDT")).error === "boom");
+  ok("用戶把金額改小 / 後來補成交,差額已在門檻內 → 那筆失敗是歷史,不掛(這就是 Wei 撞到的那一個)", trLiveOrderErr([E("BTCUSDT", "boom")], P("ETHUSDT")) === null && trLiveOrderErr([E("BTCUSDT", "boom")], P()) === null);
+  ok("最新那筆已解決、較舊那筆還欠著 → 掛還欠著的那一筆(不是無腦取最後一筆)", trLiveOrderErr([E("ETHUSDT", "old"), E("BTCUSDT", "new")], P("ETHUSDT")).error === "old");
+  ok("兩筆都還欠著 → 取比較新的那一筆", trLiveOrderErr([E("ETHUSDT", "old"), E("BTCUSDT", "new")], P("ETHUSDT", "BTCUSDT")).error === "new");
+  ok("標的寫法不一致(小寫、帶 - 、@spot)也對得起來", trLiveOrderErr([E("btc-usdt@spot", "s")], P("BTCUSDT@spot")).error === "s" && trLiveOrderErr([E("BTCUSDT@spot", "s")], P("BTCUSDT")) === null);
+  ok("壞輸入不拋:不是陣列 / 列裡不是物件 / 沒有 symbol", trLiveOrderErr(null, P("BTCUSDT")) === null && trLiveOrderErr(undefined, P("BTCUSDT")) === null && trLiveOrderErr([null, 5, "x"], P("BTCUSDT")) === null
+    && trLiveOrderErr([E(undefined, "b")], P("BTCUSDT")) === null && trLiveOrderErr([E("BTCUSDT", "b")], null) === null);
+  ok("接線:表底那行吃 trLiveOrderErr,pending 就是「這一列會觸發下單」那個判斷", /const le = trLiveOrderErr\(r\.order_errors, pending\);/.test(src)
+    && /if \(acts\) pending\.add\(sym\);/.test(src) && !/errs\[errs\.length - 1\]/.test(src));
+  ok("總覽的事件清單不受影響:歷史照舊逐筆列(那裡每一列都有時間)", /\(Array\.isArray\(r\.order_errors\) \? r\.order_errors : \[\]\)\.forEach/.test(src)); }
+
   ok("稽核 R3:blur 不重建儲存列(打完直接點「儲存」,mousedown 要落在還活著的那顆鈕上)——只更新鈕的 disabled", /if \(svBtn && svBtn\.isConnected\) svBtn\.disabled = anyBad\(\); else paintBar\(\); \};/.test(src) && /sv\.disabled = anyBad\(\); svBtn = sv;/.test(src));
   ok("「模擬」只留頂列記號與確認框標題:單位只寫幣別、側欄記號與綠點的節點拿掉、資產與設定帳戶列不掛、cx.perfNote 只剩總覽一處", /function trUnit\(\) \{ return trCcy\(\); \}/.test(src) && !/tr-nav-mode|tr-nav-dot/.test(html + src)
     && (src.match(/"mode paper"/g) || []).length === 0 && (src.match(/t\("cx\.perfNote"\)/g) || []).length === 1 && /mark: trIsPaper\(\) \? t\("tr\.mode\.paper"\) : null/.test(src));
