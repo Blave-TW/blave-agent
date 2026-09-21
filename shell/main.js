@@ -1292,6 +1292,19 @@ app.whenReady().then(() => {
   // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
+  /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
+     之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
+     不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */
+  const dataSrc = require("./datasrc").createDataSrc({
+    envFile: path.join(WS, ".env"),
+    lock: require("./datasrc").pyLock({ python: VENV_PY, lockFile: path.join(WS, ".env.lock") }),
+    strategies: () => listStrategies().map((s) => ({ name: s.name, displayName: s.displayName, file: path.join(STRAT_DIR(), s.name, "strategy.py") })),
+    trading: () => { const r = tradeLive() && tradeHost().status().report; return { live: !!r, amounts: r && r.config && r.config.amounts }; },
+  });
+  handle("datasrc-list", () => dataSrc.list(), { ok: false, error: "NOT_ALLOWED", sources: [] });
+  handle("datasrc-save", (_e, input) => (fs.existsSync(WS) ? dataSrc.save(input) : { ok: false, error: "NO_WORKSPACE" }), { ok: false, error: "NOT_ALLOWED" });
+  handle("datasrc-blockers", (_e, name) => dataSrc.blockers(name), []);
+  handle("datasrc-remove", (_e, name) => dataSrc.remove(name), { ok: false, error: "NOT_ALLOWED" });
   handle("load-model-prefs", () => loadModelPrefs());
   handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   handle("start-oauth", (_e, lang) => startOAuth(lang === "en" ? "en" : "zh"));   // 語言段會拼進同意頁的路徑:只認兩個值(稽核 R6)

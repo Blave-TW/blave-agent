@@ -100,7 +100,7 @@ if (i > 0) {   // 對照組:把 renderer 裡同名的那一支換成指定的檔
 
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 const own = scripts.filter((s) => !s.startsWith("../"));
-ok("index.html 載入的自家 script 有六支(多了 / 少了要回來看這支測試的前提)", own.length === 6);
+ok("index.html 載入的自家 script 有七支(多了 / 少了要回來看這支測試的前提)", own.length === 7);   // 第七支 = datasrc.js(設定 › 資料來源)
 const r = show(analyze(own.map((s) => parse(path.join(SHELL, "renderer", s))), RENDERER_GLOBALS));
 ok("renderer(" + own.join(" ") + ")沒有未宣告的識別字" + (r.length ? ":\n        " + r.join("\n        ") : ""), r.length === 0);
 const MAIN = fs.readdirSync(SHELL).filter((f) => f.endsWith(".js") && f !== "electron-builder.config.js").concat(fs.readdirSync(path.join(SHELL, "tools")).filter((f) => f.endsWith(".js")).map((f) => "tools/" + f));

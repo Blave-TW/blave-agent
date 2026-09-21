@@ -1708,3 +1708,134 @@ msgstr "This key has no spot trading permission: futures strategies can trade, b
 
 msgid "cx.ip.copyThis"
 msgstr "Copy this IP"
+
+# ---- 設定 › 資料來源(自帶資料來源;renderer/datasrc.js) ----
+
+msgid "src.title"
+msgstr "Data sources"
+
+msgid "src.add"
+msgstr "Add Data Source"
+
+msgid "src.name"
+msgstr "Name (letters and digits; can’t be changed later)"
+
+msgid "src.nameLocked"
+msgstr "Name"
+
+msgid "src.fields"
+msgstr "Fields"
+
+msgid "src.addField"
+msgstr "Add a field"
+
+msgid "src.howto"
+msgstr "Strategies read it as {vars}; just tell the agent to “use {name} data”. Values aren’t shown again after saving."
+
+msgid "src.edit"
+msgstr "Edit"
+
+msgid "src.del"
+msgstr "Delete"
+
+msgid "src.back"
+msgstr "Data sources"
+
+msgid "src.fieldName"
+msgstr "Field name"
+
+msgid "src.value"
+msgstr "Paste the key"
+
+msgid "src.common"
+msgstr "Common names"
+
+msgid "src.show"
+msgstr "Show"
+
+msgid "src.hide"
+msgstr "Hide"
+
+msgid "src.saved"
+msgstr "Saved"
+
+msgid "src.replace"
+msgstr "Replace"
+
+msgid "src.save"
+msgstr "Save"
+
+msgid "src.saving"
+msgstr "Saving…"
+
+msgid "src.errName"
+msgstr "The name can’t be empty."
+
+msgid "src.errReserved"
+msgstr "Names can’t start with DATA (the environment variable prefix is already DATA_). Choose another."
+
+msgid "src.errDup"
+msgstr "There is already a data source called “{name}”. To change its keys, go back and press Edit on it."
+
+msgid "src.errField"
+msgstr "Field names use uppercase letters, digits and underscores only, and start with a letter."
+
+msgid "src.errFieldDup"
+msgstr "This source already has a field called {field}."
+
+msgid "src.errSave"
+msgstr "It wasn’t saved, and nothing changed. Try again."
+
+msgid "src.delTitle"
+msgstr "Delete the {source} key?"
+
+msgid "src.delBody1"
+msgstr "This deletes the {source} key from this computer. It can’t be undone; to use it again you paste the key in again."
+
+msgid "src.delBody2"
+msgstr "Used by: {names}. After deletion they can’t fetch this data in backtests or live runs."
+
+msgid "src.delBlocked"
+msgstr "It can’t be deleted right now. {name} is trading and uses {source}; without the key its next run can’t fetch the data. Set that strategy’s amount to 0 under Auto trading › Positions first, then come back."
+
+msgid "src.gotIt"
+msgstr "Got It"
+
+msgid "src.lead"
+msgstr "Keys for data services you signed up for yourself (such as FRED or Coinglass) go here; strategies use them to fetch data. They are stored in the workspace on this computer, where the agent and your strategy code can read them. They are never used to place orders."
+
+msgid "src.empty1"
+msgstr "Blave’s built-in data needs no key. Add something here only when a strategy uses another provider’s data and that provider requires your own key."
+
+msgid "src.empty2"
+msgstr "Once it’s added, just tell the agent to “use {ex} data”. Don’t paste the key into the chat."
+
+msgid "src.rowLocal.one"
+msgstr "{n} field · used by: {names}"
+
+msgid "src.rowLocal.other"
+msgstr "{n} fields · used by: {names}"
+
+msgid "src.rowLocalNone.one"
+msgstr "{n} field · not used by any strategy yet"
+
+msgid "src.rowLocalNone.other"
+msgstr "{n} fields · not used by any strategy yet"
+
+msgid "src.rmField"
+msgstr "Remove this field"
+
+msgid "src.errValue"
+msgstr "The value for {field} contains characters that can’t be used (spaces, quotes or backslashes). Check that you pasted the key itself."
+
+msgid "src.errFieldReserved"
+msgstr "The field name {field} can’t be used with this source. Choose another, such as TOKEN."
+
+msgid "src.errBusy"
+msgstr "The workspace settings file is in use, so nothing was saved. Wait a few seconds and try again."
+
+msgid "src.cloudLead"
+msgstr "These are the data sources on your cloud machine; only names are listed. This version can’t add or delete them here."
+
+msgid "src.cloudEmpty"
+msgstr "There are no data sources on the cloud machine."
