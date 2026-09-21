@@ -2,8 +2,9 @@
    基準是雲端工作頁的自動下單頁(web/app/main/templates/agent/workspace.html 的 renderPfHead /
    buildExecControl / buildAmountTable / buildPositionsSection / buildOrderLogSection / renderOverTab),
    字串逐字取自雲端翻譯檔(只把「主機」換成「這台電腦」、「停止」統一成「暫停」)。
-   資料只有兩個來源:window.blave.tradeStatus()(state/local_status.json 原樣)與 listStrategies/loadStrategy。
-   指令只走 window.blave.tradeSend()。這個檔跟 app.js 同一個全域 scope:直接用 $ / t / srSay / confirmBox /
+   資料與指令一律經過 envApi()(下面「視角純邏輯」):這台電腦那份轉給主行程的 tradeStatus / listStrategies / loadStrategy / tradeSend…,
+   雲端那份讀主行程的 cloudStatus()、而且寫不出去。這個檔裡不直接叫 window.blave 的那幾支(tests/check_shell_envsw.js 會列舉)。
+   這個檔跟 app.js 同一個全域 scope:直接用 $ / t / srSay / confirmBox /
    setOpen / setCat / stratSelect / RP,不另外包一層。
    安全:狀態檔、策略名、handler 的錯誤字串都是不可信輸入——一律 DOM 節點 + textContent,沒有 innerHTML。 */
 
@@ -148,16 +149,115 @@ function trMs(ts) {
 }
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
-const TR = {
-  st: null, open: false, tab: null, landed: false, started: false, timer: null, polling: false,
-  pending: null,                 // { want, until }:按了啟動/暫停之後,等狀態檔自己說它變了
-  list: [], listLoaded: false, meta: new Map(),     // 回測過的策略與它們的 symbol / market / 是不是 Type C
-  edits: {}, save: null, saveErr: null, saveTimer: null,
-  sig: {},                       // 各面板上次畫的資料指紋:沒變就不重畫(輸入框的焦點、捲動位置都留著)
-  cx: { busy: false, err: null, retest: false },
-  ov: { mode: "equity", days: 30, curve: null, ui: [], geo: null },
-  bad: {},                       // 金額輸入框裡看不懂的字(name → true):有任何一格就不給儲存
-};
+/* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
+   傳輸層:每個視角一份**同介面**的 api,自動下單頁換一個來源就能畫(雲端回的形狀跟本機 status() 相同)。
+   雲端那份第一刀**唯讀**:tradeSend 在這一層就擋掉(回 NOT_ALLOWED,跟主行程拒絕同一個代碼),完全不碰 host 的 tradeSend——
+   鈕的 aria-disabled 只是畫面,這裡才是「雲端視角下任何寫入指令都送不出去」的那道牆。權益曲線、畫面事件、單支策略的端點還沒做:回空的,
+   **不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。 */
+const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity", "tradeEvents", "tradeSend"];
+function envApi(env, host) {
+  if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); }); return o; }
+  let last = null;
+  return {
+    env: "cloud",
+    tradeStatus: async () => { last = await host.cloudStatus(); return last; },
+    listStrategies: async () => envCloudList(last),
+    loadStrategy: async () => null,
+    tradeEquity: async () => ({ curve: [] }),
+    tradeEvents: async () => [],
+    tradeSend: async () => ({ ok: false, error: "NOT_ALLOWED" }),
+  };
+}
+// 雲端策略清單(strategies_summary)→ 跟本機 listStrategies 同形狀;標的與是不是投資組合直接帶著(沒有 loadStrategy 可問)
+function envCloudList(st) {
+  const a = st && st.cloud && Array.isArray(st.cloud.strategies) ? st.cloud.strategies : [];
+  return a.filter((x) => x && typeof x.name === "string" && x.name).map((x) => ({
+    name: x.name, displayName: typeof x.display_name === "string" && x.display_name ? x.display_name : x.name,
+    hasBacktest: x.has_backtest === true, mtime: x.updated_at == null ? null : x.updated_at, remote: true,
+    symbol: typeof x.symbol === "string" && x.symbol ? x.symbol : null, portfolio: x.is_portfolio === true }));
+}
+/* 雲端那一邊現在是哪一種(主行程 cloud.js 的 code + machine.state):
+   loading(還沒問到)| signedOut(沒登入 / 舊登入沒有 app 專用密鑰 / 憑證被撤銷——都要登入才看得到)| unreach(還沒成功讀到過)|
+   none | starting | stopped | running。「連不上但手上有上一份」不在這裡:那時 code 還是 OK,另外看 cloud.transient。 */
+function envCloudKind(st) {
+  const c = st && st.cloud;
+  if (!c || !c.code) return "loading";
+  if (c.code === "NO_LOGIN" || c.code === "NO_APP_SECRET" || c.code === "REVOKED") return "signedOut";
+  if (c.code !== "OK" || !c.machine) return "unreach";
+  return ["none", "starting", "stopped", "running"].indexOf(c.machine.state) >= 0 ? c.machine.state : "none";
+}
+// 錢的記號:連了模擬帳戶 = paper,連了真的交易所 = real,沒連 = null
+function envMoney(st) { const id = trVenueIds(st && st.report)[0] || null; return !id ? null : id === "paper" ? "paper" : "real"; }
+// 不是人按的暫停(對帳器 / 健檢 / 停機保護自己踩的):切換器上要出紅記號叫人
+function envAutoHalt(st) {
+  const h = st && st.report && st.report.halt;
+  return !!(h && h.halted && typeof h.source === "string" && h.source && ["web", "user", "flatten"].indexOf(h.source) < 0);
+}
+/* 切換器一格的內容。回 { money, run, dot: null | "busy" | "bad", word: i18n key | null, sig }。
+   sig = 這個「出事」是哪一件(看過才消:切過去就記下 sig,同一件事不再亮紅記號;換了一件才會再亮)。 */
+function envCell(env, st, pending) {
+  const kind = env === "cloud" ? envCloudKind(st) : "running";
+  const out = { money: null, run: false, dot: null, word: null, sig: null };
+  if (kind === "loading" || kind === "unreach") return out;
+  if (kind === "signedOut") { out.word = "env.st.signedOut"; return out; }
+  if (kind === "none") { out.word = "env.st.none"; return out; }
+  if (kind === "starting") { out.dot = "busy"; out.word = "side.starting"; return out; }
+  out.money = envMoney(st);
+  if (kind === "stopped") { out.dot = "bad"; out.word = "side.stopped"; out.sig = "stopped"; return out; }
+  const state = trExecState(st);
+  if (state === "halted" && envAutoHalt(st)) { out.dot = "bad"; out.word = "env.st.autoPaused"; out.sig = "halt:" + String(st.report.halt.at || ""); return out; }
+  out.run = state === "running" && !pending && !trFailedIds(st.report).length;
+  return out;
+}
+/* 標題列的狀態字與主鈕的字用哪個狀態(稽核 N1)。雲端的 alive=false 只代表「我不知道現在怎樣」(連不上、回報過舊),
+   不是本機那種「常駐程式不在 = 真的沒在跑」:主機還在運行時,文字用上一份回報**自己說的**狀態(後面由畫面接「最後更新」),
+   不可以翻成肯定句「對帳沒有在跑」、把鈕字換成「啟動下單」——用戶會以為雲端沒在下單。
+   綠點、切換器的 run、側欄列尾一律不走這裡,維持保守判定(trExecState:不知道就不亮)。 */
+function envHeadState(st) {
+  const c = st && st.cloud;
+  // 看 !st.alive 而不是 transient/stale:睡眠醒來的那幾秒,主行程已經因為太久沒同步把 alive 壓成 false,但 snapshot 上兩個旗標都還沒立
+  if (c && envCloudKind(st) === "running" && !st.alive) return trExecState({ ...st, alive: true });
+  return trExecState(st);
+}
+/* 「連續讀不到」的紅字要不要出(稽核 N2):看離上一次成功同步多久,不是數畫面讀了幾次——主行程失敗後 60 秒才重試,
+   畫面每十幾秒讀的是同一份,數次數的話一次網路抖動就會出紅字。三個背景輪詢週期都沒成功才算。 */
+const ENV_UNREACH_MS = 3 * 60 * 1000;
+function envUnreachAlert(c, nowMs) { return !!(c && c.transient && c.last_ok_at > 0 && nowMs - c.last_ok_at > ENV_UNREACH_MS); }
+// 側欄雲端清單列尾的狀態字:有投入金額的才講(下單中 / 已停);其餘不講
+function envStratWord(name, st) {
+  const r = st && st.report, a = r && r.config && r.config.amounts;
+  if (!a || !(a[name] > 0)) return null;
+  const state = trExecState(st);
+  return state === "running" ? "side.cloud.st.trading" : state === "halted" ? "side.cloud.st.halted" : null;
+}
+/* ── 視角純邏輯到此 ───────────────────────────────────────────── */
+
+/* 每個視角各一份狀態(spec §1.3):分頁、權益曲線的區間與模式、打到一半的金額、過場…各記各的;TR 指向「現在看得見的那一份」。
+   跨 await 的流程(送指令、儲存、連接)開頭先 `const S = TR` 抓住自己那一份——等回應的時候用戶可能已經切到另一邊,
+   回來的結果不可以寫進另一邊的狀態。 */
+function trNewBag(env) {
+  return {
+    env, api: null, st: null, open: false, tab: null, landed: false,
+    pending: null,                 // { want, until }:按了啟動/暫停之後,等狀態檔自己說它變了
+    list: [], listLoaded: false, meta: new Map(),     // 回測過的策略與它們的 symbol / market / 是不是 Type C
+    edits: {}, save: null, saveErr: null, saveTimer: null,
+    sig: {},                       // 各面板上次畫的資料指紋:沒變就不重畫(輸入框的焦點、捲動位置都留著)
+    cx: { busy: false, err: null, retest: false }, unbinding: false,
+    ov: { mode: "equity", days: 30, curve: null, ui: [], geo: null, at: 0 },
+    bad: {},                       // 金額輸入框裡看不懂的字(name → true):有任何一格就不給儲存
+    alertText: "", alertWant: null, lastSaid: null, scroll: {},
+  };
+}
+let TR = trNewBag("local");
+const TR_BAGS = { local: TR, cloud: trNewBag("cloud") };
+const TRP = { started: false, timer: null, polling: false, again: false };
+const ENV = { cur: "local", cloudAt: 0, cloudDirty: true, seen: {}, cells: {}, said: {}, sig: {} };
+const ENV_POLL_SEEN = 15000, ENV_POLL_OTHER = 60000;
+// 字串表的漂移閘門(check_shell_strings.js)只認得寫成字面值的 key:會變的 key 走這兩支,每個 key 都以字面值出現一次
+const envName = (env) => (env === "cloud" ? t("env.cloud") : t("env.local"));
+const envMoneyText = (m) => (m === "real" ? t("tr.mode.real") : m === "paper" ? t("tr.mode.paper") : "");
+// 同步的畫面函式借另一邊的狀態跑一次(設定 › 連線這一刀永遠是這台電腦的;過場檢查永遠看本機那一份)
+function trWith(bag, fn) { const prev = TR; TR = bag; try { return fn(); } finally { TR = prev; } }
 const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONFIRM_MS = 60000;
 const TR_TABS = ["over", "pos", "assets", "hist", "set"];
 const PAPER = "paper";
@@ -227,7 +327,11 @@ function trShould(key, box, data) {
 /* ── 輪詢 ───────────────────────────────────────────── */
 // 這支檔比 app.js 先載入(app.js 的開場一路 await,會在後面的 <script> 載入之前就走到 enterWorkspace),
 // 所以載入當下不碰 DOM 與 app.js 的東西:接線全部放在第一次 trInit() 裡。
-function trInit() { if (TR.started) return; TR.started = true; trWire(); trPoll(); }
+function trInit() {
+  if (TRP.started) return; TRP.started = true;
+  TR_BAGS.local.api = envApi("local", window.blave); TR_BAGS.cloud.api = envApi("cloud", window.blave);
+  trWire(); envWire(); trPoll();
+}
 /* 選單列 / Dock / 結束攔截的字:主行程沒有翻譯表,由這裡依目前語言交過去(換語言時 app.js 的 applyStatic 會再叫一次) */
 function trPushLabels() {
   if (typeof window.blave.tradeLabels !== "function") return;
@@ -250,45 +354,63 @@ function trWire() {
     e.preventDefault(); trSetTab(TR_TABS[j], true);
   });
   $("tr-nav").addEventListener("click", () => trOpen());
-  $("tr-tb-btn").addEventListener("click", () => trOpen());
 
   window.addEventListener("resize", () => { if (TR.open && TR.tab === "over") { TR.sig.over = null; trPaintOver(); } });
 }
 async function trPoll() {
-  clearTimeout(TR.timer);
-  if (TR.polling) return;
-  TR.polling = true;
-  try { TR.st = await window.blave.tradeStatus(); } catch (_) { }   // 主行程沒回:下一輪再問,畫面維持上一份
-  // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)
-  if (TR.open) { try { await trLoadStrategies(); TR.listLoaded = true; } catch (_) { } }
-  TR.polling = false;
-  trPendingCheck();
-  trPaint();
-  if (!$("set-scrim").hidden && !$("set-conn").hidden) cxPaint();
-  const cxOn = !$("set-scrim").hidden && !$("set-conn").hidden;   // 連線頁開著也算「在看」:剛連上要幾秒內看到已連接
-  TR.timer = setTimeout(trPoll, TR.pending ? TR_POLL_PENDING : TR.open || cxOn ? TR_POLL_OPEN : TR_POLL_IDLE);
+  clearTimeout(TRP.timer);
+  if (TRP.polling) { TRP.again = true; return; }   // 在途那一輪結束後立刻再跑一次(剛切視角:新的那一邊不必多等一輪才載入清單)
+  TRP.polling = true; TRP.again = false;
+  const L = TR_BAGS.local, C = TR_BAGS.cloud, S = TR_BAGS[ENV.cur], now = Date.now();
+  try {
+    try { L.st = await L.api.tradeStatus(); } catch (_) { }   // 主行程沒回:下一輪再問,畫面維持上一份
+    /* 雲端:這裡問的是主行程手上那一份(不打網路;主行程自己輪詢、自己節流)。看得見雲端時每 15 秒問一次;
+       看這台電腦時靠主行程的推送(onCloudState → cloudDirty)+ 60 秒一次,只為了更新切換器那一格。
+       app 一開就問第一次:主行程是懶啟動,有人問了才開始輪詢。 */
+    if (ENV.cloudDirty || now - ENV.cloudAt >= (ENV.cur === "cloud" ? ENV_POLL_SEEN : ENV_POLL_OTHER)) {
+      ENV.cloudDirty = false; ENV.cloudAt = now;
+      try {
+        C.st = await C.api.tradeStatus();
+        // 雲端的清單就在那份狀態裡(沒有 I/O):不管現在看哪一邊都跟著換——登出 / 換帳號之後切過去的第一幀不可以是上一個人的策略名(稽核 N5)
+        await trLoadStrategies(C); C.listLoaded = true;
+        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; }
+      } catch (_) { }
+    }
+    // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)
+    if (S === L && S.open) { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
+    trWith(L, trPendingCheck);
+    trPaint();
+    if (!$("set-scrim").hidden && !$("set-conn").hidden) cxPaint();
+  } finally {
+    // 排下一輪放在 finally(稽核 N7):畫面函式就算丟例外,輪詢鏈也不能斷——斷了本機的狀態帶與綠點會凍在舊值
+    TRP.polling = false;
+    const cxOn = !$("set-scrim").hidden && !$("set-conn").hidden;   // 連線頁開著也算「在看」:剛連上要幾秒內看到已連接
+    clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll, TRP.again ? 0 : L.pending ? TR_POLL_PENDING : TR_BAGS[ENV.cur].open || cxOn ? TR_POLL_OPEN : TR_POLL_IDLE);
+  }
 }
-function trPollSoon(ms) { clearTimeout(TR.timer); TR.timer = setTimeout(trPoll, ms || 0); }
+function trPollSoon(ms) { clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll, ms || 0); }
 
 /* 金額表要的三件事(標的、合約/現貨、是不是投資組合策略)不在 listStrategies 裡,從 loadStrategy 的 stats 與
    程式碼頂層常數讀;照 mtime 快取,策略沒動就不重讀。分類規則同 runtime 的 strategy_reporter.is_portfolio_stats。 */
-async function trLoadStrategies() {
-  const list = await window.blave.listStrategies();
+async function trLoadStrategies(S) {
+  const list = await S.api.listStrategies();
   const out = [];
+  if (S.env === "cloud") S.meta = new Map();      // 雲端的 meta 全部來自清單本身、重建不花錢:不留上一個帳號同名策略的標的
   for (const x of list) {
-    let m = TR.meta.get(x.name);
+    let m = S.meta.get(x.name);
     if (!m || m.mtime !== x.mtime) {
-      const d = x.hasBacktest ? await window.blave.loadStrategy(x.name) : null;
+      // 雲端的清單自己帶著標的與類別(沒有單支策略可讀);合約 / 現貨由主機回報的 states 補
+      const d = !x.remote && x.hasBacktest ? await S.api.loadStrategy(x.name) : null;
       const s = (d && d.stats) || {};
-      const sym = typeof s.symbol === "string" && s.symbol ? s.symbol : null;
+      const sym = x.remote ? x.symbol : typeof s.symbol === "string" && s.symbol ? s.symbol : null;
       const mk = /^MARKET\s*=\s*["'](spot|swap)["']/m.exec((d && d.code) || "");
       m = { mtime: x.mtime, symbol: sym, market: mk ? mk[1] : "swap",
-            portfolio: !sym && Object.keys(s).some((k) => k.indexOf("benchmark_") === 0) };
-      TR.meta.set(x.name, m);
+            portfolio: x.remote ? !!x.portfolio : !sym && Object.keys(s).some((k) => k.indexOf("benchmark_") === 0) };
+      S.meta.set(x.name, m);
     }
     out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio });
   }
-  TR.list = out;
+  S.list = out;
 }
 function trStored() { const c = (trReport() || {}).config || {}; return c.amounts && typeof c.amounts === "object" ? c.amounts : {}; }
 // 表上列哪些:回測過的全列(這一版沒有「選擇策略」),加上已經在組合裡、而且還在這台電腦上的
@@ -297,24 +419,33 @@ function trDisplay(n) { const x = TR.list.find((y) => y.name === n); return x ? 
 
 /* ── 開/關視圖 ─────────────────────────────────────────── */
 async function trOpen(tab) {
-  await stratSelect(null);                       // 中欄一次只有一個視圖:先把策略報告收掉
+  const S = TR;
+  if (S.env === "local") await stratSelect(null);   // 中欄一次只有一個視圖:先把策略報告收掉(雲端視角不動這台電腦選中的那支)
+  if (S !== TR_BAGS[ENV.cur]) { S.open = true; return; }   // 等的時候切走了:只記下這一邊是開著的,不碰另一邊的畫面
   $("main-empty").hidden = true; $("tr").hidden = false;
   $("tr-nav").setAttribute("aria-current", "page");
-  TR.open = true; TR.sig = {};
+  S.open = true; S.sig = {};
   trPaint();
   if (tab && !$("tr-tabs").hidden) trSetTab(tab);   // 指定分頁的入口(之後的通知、狀態帶)一律走 trSetTab:底線、tabindex、面板三件事一起換
   trPollSoon(0);
 }
+// app.js 選了策略時叫的:離開的是「這台電腦」的自動下單頁(雲端視角的那一頁不歸它管)
 function trLeave() {
-  if (!TR.open) return;
-  TR.open = false; $("tr").hidden = true;
-  $("tr-nav").removeAttribute("aria-current");
+  const L = TR_BAGS.local;
+  if (!L.open) return;
+  L.open = false;
+  if (ENV.cur === "local") { $("tr").hidden = true; $("tr-nav").removeAttribute("aria-current"); }
 }
-function trRepaint() { TR.sig = {}; trPaint(); if (!$("set-conn").hidden) cxPaint(); }
+function trRepaint() { TR.sig = {}; TR_BAGS.local.sig = {}; ENV.sig = {}; ENV.cells = {}; trPaint(); if (!$("set-conn").hidden) cxPaint(); }
 
 /* ── 標題列 / 狀態帶 ───────────────────────────────────────── */
 function trStateText(state) {
   const r = trReport() || {}, rec = r.reconciler || {};
+  // 雲端:主機停機就講停機(心跳那一句在這裡沒有意義);主機那一輪沒回報成功 = 讀不到,不沿用寫死「這台電腦」的那兩句
+  if (TR.env === "cloud") {
+    if (envCloudKind(TR.st) === "stopped") return t("side.cloud.stopped");
+    if (state === "unknown") return t("env.empty.unreach");
+  }
   // 過場中講過場(設計師 A-2):不能一邊亮綠點一邊寫「對帳沒有在跑」
   if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting");
   // 常駐程式不在跑:誠實講,並給出口(重試中 / 起不來請重開 Blave)。灰字,同其他故障
@@ -330,12 +461,14 @@ function trStateText(state) {
   return trFailedIds(r).length ? t("cx.failShort") + " · " + s : s;
 }
 // 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉
-function trAlert(text, want) {
-  const a = $("tr-alert");
-  a.hidden = !text; a.textContent = text || "";
-  TR.alertWant = text ? want || null : null;
-  if (text) srSay(text);
+function trAlert(text, want, bag) {
+  const S = bag || TR, was = S.alertText;
+  S.alertText = text || ""; S.alertWant = text ? want || null : null;
+  if (S !== TR_BAGS[ENV.cur]) return;              // 另一邊的事:記著,切過去才出現
+  trAlertShow();
+  if (text && text !== was) srSay(text);
 }
+function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden = !S.alertText; a.textContent = S.alertText; }
 // kind:"stop" = 暫停那兩個指令(沒送到 = 它還在交易,要講撤 API key 那句);其餘一般失敗不講那句(稽核 S2-B)
 function trSendError(res, kind) {
   const e = res && res.error ? String(res.error) : "", k = trErrorKind(e);
@@ -343,7 +476,6 @@ function trSendError(res, kind) {
   if (k === "rejected") return t("tr.cmdRejected", { err: e.slice(0, 200) });
   return kind === "stop" ? t("tr.cmdNotDelivered") : t("tr.cmdFailed");
 }
-let trLastSaid = null;
 function trPendingCheck() {
   const state = trExecState(TR.st);
   if (TR.alertWant && state === TR.alertWant) trAlert("");
@@ -354,58 +486,77 @@ function trPendingCheck() {
 /* 送「會改變執行狀態」的指令(稽核 S3):一進來就掛 pending——確認框一關、ack 還沒回來的那段時間鈕就已經是過場態,
    不會再開第二個確認框、送第二個 close_all / restart_reconciler。失敗才把 pending 拿掉。 */
 async function trRun(want, steps) {
-  if (TR.pending) return;
-  TR.pending = { want, until: Date.now() + TR_CONFIRM_MS };
-  trAlert(""); trPaint();
+  const S = TR;
+  if (S.env === "cloud" || S.pending) return;      // 雲端第一刀唯讀:任何會改變執行狀態的指令都不從這裡出去
+  S.pending = { want, until: Date.now() + TR_CONFIRM_MS };
+  trAlert("", null, S); trPaint();
   let res = null;
-  for (const step of steps) { res = await step(); if (!res || !res.ok) break; }
+  for (const step of steps) { res = await step(S); if (!res || !res.ok) break; }
   const kind = want === "halted" ? "stop" : "start";
   if (res && res.ok) {
     // 常駐程式沒在跑時的 halt 只是排進佇列(下次啟動才吃):沒有東西在交易,不必等狀態
-    if (res.result && res.result.queued) TR.pending = null;
+    if (res.result && res.result.queued) S.pending = null;
   } else if (trErrorKind(res && res.error) === "unknown") {
     // 可能已經執行:不說「沒送到」、不叫人重按;留著 pending 看狀態檔,到了就自己清
-    TR.pending.unknown = true; trAlert(t("tr.cmdUnknown"), want);
-  } else { TR.pending = null; trAlert(trSendError(res, kind), want); }
+    if (S.pending) S.pending.unknown = true;
+    trAlert(t("tr.cmdUnknown"), want, S);
+  } else { S.pending = null; trAlert(trSendError(res, kind), want, S); }
   trPaint(); trPollSoon(800);
 }
 
 function trPaintHead() {
-  const state = trExecState(TR.st), text = trStateText(state);
-  // 綠點 = 一切正常在下單:過場中、下單機不在跑、讀不到帳戶時都不成立(設計師複查 R3-1)
-  const live = state === "running" && !TR.pending && !trHostDown(TR.st, Date.now()) && !trFailedIds(trReport()).length;
-  // 標題列狀態行
+  // state = 文字與鈕字用的(雲端讀不到新狀態時 = 上一份回報自己說的,見 envHeadState);綠點另外看保守的 trExecState
+  const state = envHeadState(TR.st), text = trStateText(state), ro = TR.env === "cloud";
+  const kind = ro ? envCloudKind(TR.st) : null, stopped = kind === "stopped";
+  // 綠點 = 一切正常在下單:過場中、下單機不在跑、讀不到帳戶、雲端讀不到新狀態時都不成立(設計師複查 R3-1)
+  const live = trExecState(TR.st) === "running" && !TR.pending && !trHostDown(TR.st, Date.now()) && !trFailedIds(trReport()).length;
+  // 標題列狀態行。雲端讀不到新狀態時,後面接「最後更新」(保留上一次的數字,但要講它不是現況)
+  const c = (ro && TR.st && TR.st.cloud) || null;
+  const staleAt = c && (c.transient ? c.last_ok_at : c.stale && !stopped && c.reported_at ? c.reported_at * 1000 : !st.alive && !stopped && envCloudKind(st) === "running" ? c.last_ok_at : 0);
+  const full = staleAt ? text + " · " + t("tr.cloud.stale", { t: trStamp(staleAt / 1000) }) : text;
   const desc = $("tr-desc"); desc.textContent = "";
   if (live) { const d = trEl("span", "run-dot live"); d.setAttribute("aria-hidden", "true"); desc.appendChild(d); }
-  desc.appendChild(trEl("span", "txt", text)); desc.title = text;   // 單行截斷,全文放 title
+  desc.appendChild(trEl("span", "txt", full)); desc.title = full;   // 單行截斷,全文放 title
   // 常駐程式不在跑的那兩句帶著出口(「請重開 Blave」),不能被截斷:這時候狀態行可以換行
-  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()));
+  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown"));
   // 狀態變了講一次(輪詢每幾秒重畫,不能每次都講)
-  if (trLastSaid !== null && trLastSaid !== text && TR.open && state !== "loading") srSay(text);
-  trLastSaid = text;
-  // 常駐狀態帶:沒連接交易所時整條是空的
+  if (TR.lastSaid !== null && TR.lastSaid !== text && TR.open && state !== "loading") srSay(text);
+  TR.lastSaid = text;
+  // 雲端連續讀不到:全頁唯一的紅字槽(讀得到了就自己收掉;這一刀雲端沒有別的東西會用這一格)
+  if (ro) trAlert(envUnreachAlert(c, Date.now()) ? t("tr.cloud.unreach", { t: trStamp((c.last_ok_at || 0) / 1000) }) : "");
+  trAlertShow();
+  // 切換器右邊那一句:這一邊的狀態。沒連接交易所時是空的
   const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
-  $("tr-tb").classList.toggle("empty", !has);
-  $("tr-tb-btn").hidden = !has;
-  if (has) {
-    $("tr-tb-mode").hidden = id !== PAPER; $("tr-tb-mode").textContent = t("tr.mode.paper");
-    $("tr-tb-dot").hidden = !live;
-    // 44px 的狀態帶放不下「下單機停了…請重開 Blave」那種長句(出口會被截掉):這裡用短句,完整句在標題列
-    const tbState = trHostDown(TR.st, Date.now()) ? t("tr.hostShort") : text;
-    $("tr-tb-txt").textContent = t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) });
-    $("tr-tb-btn").title = $("tr-tb-txt").textContent;
-    $("tr-tb-btn").setAttribute("aria-label", t("tr.tbAria", { state: $("tr-tb-txt").textContent }));
-  }
+  // 44px 的狀態帶放不下「下單機停了…請重開 Blave」那種長句(出口會被截掉):這裡用短句,完整句在標題列
+  const tbState = trHostDown(TR.st, Date.now()) ? t("tr.hostShort") : text;
+  $("tr-tb-txt").textContent = has ? t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) }) : "";
+  $("tr-tb-txt").title = $("tr-tb-txt").textContent; $("tr-tb-sep").hidden = !has;
+  // 雲端第一刀唯讀:全頁唯一的說明(不能按的鈕都用 aria-describedby 指到它)。停機時那顆鈕是可按的「加值」,說明不出
+  trPaintRoNote(ro && state === "noaccount" ? "tr.ro.noteEmpty" : ro && !stopped ? "tr.ro.note" : null);
+  trPaintVerdict(stopped);
   // 執行鈕:沒帳戶時不放(那顆「連接交易所」在 onboard 裡,同畫面不出現兩顆主要鈕)。
   // 同一顆鈕就地更新、不重建:確認框關掉之後焦點要回得到它,輪詢重畫也不能把焦點洗掉。
   const act = $("tr-act");
   let b = $("tr-go");
-  if (state === "noaccount" || state === "loading") { if (b) b.remove(); return; }
+  if (!stopped && (state === "noaccount" || state === "loading")) { if (b) b.remove(); return; }
   if (!b) {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
-    b.addEventListener("click", () => { if (TR.pending) return; if (trStopSide(trExecState(TR.st))) trAskStop(b); else trAskStart(b); });
+    b.addEventListener("click", () => {
+      // 雲端:停機時這顆是「加值」(外開瀏覽器,不是寫雲端);其餘時候是唯讀的,點了無動作
+      if (TR.env === "cloud") { if (envCloudKind(TR.st) === "stopped") window.blave.openExternal(acctUrl()); return; }
+      if (TR.pending) return; if (trStopSide(envHeadState(TR.st))) trAskStop(b); else trAskStart(b);
+    });
     act.appendChild(b);
   }
+  if (ro) {
+    // aria-disabled(不是 disabled):鍵盤要停得上去、讀屏要唸得到原因
+    b.textContent = stopped ? t("plan.addCredit") : trStopSide(state) ? t("tr.stop") : t("tr.start");
+    b.disabled = false; b.title = ""; b.classList.remove("is-busy"); b.classList.toggle("is-ro", !stopped);
+    b.setAttribute("aria-disabled", stopped ? "false" : "true");
+    if (stopped) b.removeAttribute("aria-describedby"); else b.setAttribute("aria-describedby", "tr-ro-note");
+    return;
+  }
+  b.classList.remove("is-ro"); b.removeAttribute("aria-describedby");
   const up = trChannelUp(TR.st);
   b.textContent = TR.pending ? (TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting")) : trStopSide(state) ? t("tr.stop") : t("tr.start");
   // 過場中用 aria-disabled(不是 disabled):disabled 的鈕會把焦點丟到 BODY
@@ -415,17 +566,38 @@ function trPaintHead() {
   const usable = state === "unknown" ? !!(TR.st && TR.st.alive) : up;
   b.disabled = !busy && !usable; b.title = !busy && !usable ? t("tr.cmdUnavailable") : "";
 }
+function trPaintRoNote(key) {
+  const n = $("tr-ro-note"), sig = LANG + "|" + key;
+  if (ENV.sig.ro === sig) return;
+  ENV.sig.ro = sig; n.textContent = ""; n.hidden = !key;
+  if (!key) return;
+  const go = trEl("button", "btn-quiet", t("plan.openWs")); go.type = "button";
+  go.addEventListener("click", () => window.blave.openExternal(planWebUrl()));
+  n.append(t(key) + " ", go);
+}
+// 停機:紅記號 + 一段話(數字來自方案頁同一個來源;拿不到數字就用不帶數字的那句,不寫死)
+function trPaintVerdict(on) {
+  const box = $("tr-verdict"), v = on ? planVars() : null, sig = LANG + "|" + (on ? v.m + "|" + v.h : "");
+  box.hidden = !on;
+  if (ENV.sig.verdict === sig) return;
+  ENV.sig.verdict = sig; box.textContent = "";
+  if (!on) return;
+  const row = trEl("div", "verdict"), mark = trEl("span", "fault-mark"); mark.setAttribute("aria-hidden", "true");
+  row.append(mark, trEl("span", "", v.m && v.h ? t("tr.cloud.stoppedBody", v) : t("tr.cloud.stoppedBody0")));
+  box.appendChild(row);
+}
 // 這個狀態下鈕是「暫停」那一側嗎。狀態不明時給暫停:不知道有沒有在跑,就給安全方向的那顆(稽核 S5)
 function trStopSide(state) { return state === "running" || state === "unknown"; }
 
 function trAskStop(opener) {
+  if (TR.env !== "local") return;
   const r = trReport() || {};
   confirmBox({
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lines: [r.self_ledger === true ? t("tr.stopChoiceSelf") : t("tr.stopChoice"), t("tr.closeAllWarn2")],
-    ok: t("tr.stopKeep"), onOk: () => trRun("halted", [() => window.blave.tradeSend("halt", { reason: "desktop ui" })]),
+    ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => S.api.tradeSend("halt", { reason: "desktop ui" })]),
     // 沒有平倉層的 workspace 不給「看起來成功但沒平」的鈕(同雲端 can_flatten)
-    alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [() => window.blave.tradeSend("close_all", {})]) } : null,
+    alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => S.api.tradeSend("close_all", {})]) } : null,
   });
 }
 // 中文句子裡夾英文名(Binance)前後要空一格;英文句子本來就有空格
@@ -441,11 +613,12 @@ function trMeans() {
   box.appendChild(ul); return box;
 }
 function trAskStart(opener) {
+  if (TR.env !== "local") return;
   const r = trReport() || {}, canWait = r.can_wait_start === true;
   // 順序照雲端:先送所選指令(resume_wait 的 gate 要先落地),對帳器沒在跑再叫它起來
   const go = (cmd) => trRun("running", [
-    () => window.blave.tradeSend(cmd, {}),
-    () => { return trRecRunning(TR.st) ? { ok: true } : window.blave.tradeSend("restart_reconciler", {}); },
+    (S) => S.api.tradeSend(cmd, {}),
+    (S) => { return trRecRunning(S.st) ? { ok: true } : S.api.tradeSend("restart_reconciler", {}); },
   ]);
   confirmBox({
     title: t("tr.start"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
@@ -472,6 +645,7 @@ function trSetTab(tab, focus) {
   trPaintTab();
 }
 function trPaint() {
+  if (!envPaint()) return;                         // 雲端沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):中欄是空態,這一頁不畫
   trPaintHead();
   if (!TR.open) return;
   // unknown(狀態檔這一輪沒寫出來)也走這個版面,但畫的是一段說明、不是 onboard——標題列的暫停鈕還在
@@ -497,15 +671,17 @@ function trPaintTab() {
 function trPaintOnboard(state) {
   const box = $("tr-onboard");
   const fails = trFailedIds(trReport());
-  if (!trShould("onboard", box, [state, fails])) return;
+  if (!trShould("onboard", box, [state, fails, TR.env])) return;
   box.textContent = "";
   if (state === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
   // 「要停就按暫停下單」只在那顆鈕真的能按的時候才講(下單機不在跑時鈕是 disabled,那句就是假話)
-  if (state === "unknown") { box.appendChild(trEl("div", "pf-state", t("tr.unknownBody") + (TR.st && TR.st.alive ? t("tr.unknownStop") : ""))); return; }
+  if (state === "unknown") { box.appendChild(trEl("div", "pf-state", TR.env === "cloud" ? t("env.empty.unreach") : t("tr.unknownBody") + (TR.st && TR.st.alive ? t("tr.unknownStop") : ""))); return; }
   const ob = trEl("div", "pf-onboard");
   ob.appendChild(trEl("p", "", t("tr.onboard")));
   const b = trEl("button", "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect";
-  b.addEventListener("click", cxOpen);
+  // 雲端第一刀:連接交易所要到網頁做(說明在標題下那一行);鈕留著但不能按
+  if (TR.env === "cloud") { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); }
+  else b.addEventListener("click", cxOpen);
   ob.appendChild(b); box.appendChild(ob);
 }
 
@@ -513,7 +689,7 @@ function trPaintOnboard(state) {
 function trPaintPos() {
   const box = $("tr-pos"), r = trReport() || {};
   const names = trNames(), stored = trStored(), states = r.states || {};
-  const data = [TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.order_errors, trExecState(TR.st)];
+  const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.order_errors, trExecState(TR.st)];
   if (!trShould("pos", box, data)) return;
   box.textContent = "";
   if (!TR.listLoaded) {
@@ -527,7 +703,7 @@ function trPaintPos() {
 function trAmountTable(names, stored, states) {
   const frag = document.createDocumentFragment();
   frag.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff"))));
-  const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar");
+  const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar"), ro = TR.env === "cloud";
   const gates = ((trReport() || {}).last_reconcile || {}).gates || {};
   const paintTotal = () => {
     const tt = trTotals(trCurrentAmounts(names, stored, TR.edits), trEquity());
@@ -551,7 +727,8 @@ function trAmountTable(names, stored, states) {
     bar.append(rv, sv);
   };
   if (!names.length) {
-    frag.appendChild(trEl("div", "pf-state", t("tr.noStrategies")));
+    frag.appendChild(trEl("div", "pf-state", ro ? t("side.cloud.emptyCut1") : t("tr.noStrategies")));
+    if (ro) return frag;
     paintBar(); frag.appendChild(bar);             // 空狀態也可能有「移出組合」等著儲存(策略被刪了)
     if (trRemoved(stored, {}).length && !TR.save) bar.hidden = false;   // 走得到這裡 = 清單已載入而且真的空了
     return frag;
@@ -569,9 +746,16 @@ function trAmountTable(names, stored, states) {
     first.appendChild(trEl("span", "sub-sym mono", sym || "—"));
     // 投資組合策略沒有實盤路徑:0 → >0 是機器端必拒的轉換,從源頭鎖掉並講原因;已經 >0 的存量不鎖
     const locked = !!x.portfolio && !(stored[n] > 0);
-    if (locked) first.appendChild(trEl("span", "pf-note", t("tr.typeC")));
+    if (locked && !ro) first.appendChild(trEl("span", "pf-note", t("tr.typeC")));
     row.appendChild(first);
     row.appendChild(trEl("td", "sym c-sym", sym || "—"));
+    if (ro) {
+      // 唯讀:金額畫成純數字(同「目標部位」欄),不畫輸入框——看起來不能改的東西就不要長得像能改
+      const ac = trEl("td", "n"), tc = trEl("td", "n na", "—"), v = (stored[n] || 0) * (typeof st.position === "number" ? st.position : 0);
+      trMoneyInto(ac, stored[n] || 0);
+      if (v !== 0) { tc.className = "n " + (v > 0 ? "buy" : "sell"); trMoneyInto(tc, v, true); }
+      row.append(ac, tc); tb.appendChild(row); return;
+    }
     const c = trEl("td", "n"), wrap = trEl("span", "amt-inw"), inp = trEl("input", "amt-in");
     inp.type = "text"; inp.inputMode = "decimal"; inp.disabled = locked || TR.save === "saving";
     inp.setAttribute("aria-label", trDisplay(n) + " — " + t("tr.amountAria", { ccy: trUnit() }));
@@ -626,11 +810,12 @@ function trAmountTable(names, stored, states) {
   tbl.appendChild(tb); scroll.appendChild(tbl); frag.appendChild(scroll);
   frag.appendChild(trEl("div", "pf-foot unit-note", t("tr.unitNote", { c: trUnit() })));
   paintTotal(); frag.appendChild(total);
-  paintBar(); frag.appendChild(bar);
+  if (!ro) { paintBar(); frag.appendChild(bar); }
   return frag;
 }
 function trSaveAmounts(names, stored, opener) {
-  if (!TR.listLoaded || Object.keys(TR.bad).length) return;
+  const S = TR;
+  if (S.env !== "local" || !TR.listLoaded || Object.keys(TR.bad).length) return;
   const sending = trAmountsToSend(names, stored, TR.edits, TR.listLoaded), removed = trRemoved(stored, sending);
   const lines = [];
   Object.keys(sending).forEach((n) => { if (sending[n] > 0) lines.push(t("tr.saveLine", { name: trDisplay(n), amt: trFmt(sending[n]) + " " + trUnit() })); });
@@ -641,22 +826,22 @@ function trSaveAmounts(names, stored, opener) {
   confirmBox({
     title: t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines, ok: t("tr.save"), opener,
     onOk: async () => {
-      TR.save = "saving"; TR.saveErr = null; TR.sig.pos = null; trPaintPos();
+      const mine = () => TR === S && S.open && S.tab === "pos";   // 等回應的時候可能已經切到另一邊:那時不碰畫面
+      S.save = "saving"; S.saveErr = null; S.sig.pos = null; if (mine()) trPaintPos();
       // 這一版沒有「下單方式」欄(一律市價),所以只送 amounts,不送 execution
-      const res = await window.blave.tradeSend("amounts", { amounts: sending });
-      clearTimeout(TR.saveTimer);
+      const res = await S.api.tradeSend("amounts", { amounts: sending });
+      clearTimeout(S.saveTimer);
       if (res && res.ok) {
-        TR.save = "saved"; TR.edits = {};
+        S.save = "saved"; S.edits = {};
         srSay(t("tr.saved"));
-        TR.saveTimer = setTimeout(() => { if (TR.save === "saved") { TR.save = null; TR.sig.pos = null; if (TR.open && TR.tab === "pos") trPaintPos(); } }, 4000);
+        S.saveTimer = setTimeout(() => { if (S.save === "saved") { S.save = null; S.sig.pos = null; if (mine()) trPaintPos(); } }, 4000);
       } else {
         // 沒送到 / 結果不明 / 被拒絕(拒絕原因是不可信輸入,包在本地化前導裡、走 textContent)
-        TR.save = "failed"; TR.saveErr = trSendError(res, "save"); srSay(TR.saveErr);
+        S.save = "failed"; S.saveErr = trSendError(res, "save"); srSay(S.saveErr);
       }
-      TR.sig.pos = null;
-      try { TR.st = await window.blave.tradeStatus(); } catch (_) { }   // 下一輪輪詢會補
-      if (TR.open && TR.tab === "pos") trPaintPos();
-      $("tr-tab-pos").focus();                     // 儲存列可能收掉了:焦點不能掉到 BODY
+      S.sig.pos = null;
+      try { S.st = await S.api.tradeStatus(); } catch (_) { }   // 下一輪輪詢會補
+      if (mine()) { trPaintPos(); $("tr-tab-pos").focus(); }   // 儲存列可能收掉了:焦點不能掉到 BODY
       trPollSoon(1500);
     },
   });
@@ -792,29 +977,32 @@ function trPaintHist() {
 }
 function trPaintSet() {
   const box = $("tr-set"), id = trVenueId();
-  if (!trShould("set", box, [id, TR.unbinding])) return;
+  const ro = TR.env === "cloud";
+  if (!trShould("set", box, [id, TR.unbinding, ro])) return;
   box.textContent = "";
   const sec = trSec(trEl("span", "label", t("tr.account")));
   const acts = trEl("span", "pf-acts"), b = trEl("button", "pf-act", TR.unbinding ? t("tr.unbinding") : t("tr.unbind"));
-  b.type = "button"; b.disabled = !!TR.unbinding || !id || !trEnvNames(id).length;
-  b.addEventListener("click", () => trUnbind(b));
+  b.type = "button";
+  if (ro) { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); }
+  else { b.disabled = !!TR.unbinding || !id || !trEnvNames(id).length; b.addEventListener("click", () => trUnbind(b)); }
   acts.appendChild(b); sec.appendChild(acts); box.appendChild(sec);
-  box.appendChild(trEl("div", "pf-foot", t("tr.unbindDesc")));
+  box.appendChild(trEl("div", "pf-foot", ro ? t("tr.cloud.unbindDesc") : t("tr.unbindDesc")));
 }
 // 解除綁定要移掉的環境變數名。宿主(daemon.js argsOk)只放行這一版認得的 key,多送一個就整包 BAD_ARGS;
 // Binance 那批上線時跟宿主的白名單一起加。
 function trEnvNames(id) { return id === PAPER ? ["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"] : []; }
 function trUnbind(opener) {
-  const id = trVenueId(); if (!id) return;
+  const S = TR, id = trVenueId(); if (S.env !== "local" || !id) return;
   confirmBox({
     title: t("tr.unbind"), mark: id === PAPER ? t("tr.mode.paper") : null, lines: [t("tr.unbindWarn")], ok: t("tr.unbind"), opener,
     onOk: async () => {
-      TR.unbinding = true; trPaintSet();
-      const res = await window.blave.tradeSend("credentials_remove", { env: trEnvNames(id) });
-      TR.unbinding = false; TR.sig = {};
-      if (!res || !res.ok) { trAlert(trSendError(res, "unbind"), "noaccount"); trPaintSet(); $("tr-tab-set").focus(); trPollSoon(1500); return; }
-      trAlert(""); TR.edits = {};
-      $("tr-nav").focus();                         // 這個分頁馬上會整個換成 onboard:焦點先停在入口
+      const mine = () => TR === S && S.open;
+      S.unbinding = true; if (mine()) trPaintSet();
+      const res = await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
+      S.unbinding = false; S.sig = {};
+      if (!res || !res.ok) { trAlert(trSendError(res, "unbind"), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
+      trAlert("", null, S); S.edits = {};
+      if (mine()) $("tr-nav").focus();             // 這個分頁馬上會整個換成 onboard:焦點先停在入口
       trPollSoon(300);
     },
   });
@@ -827,9 +1015,10 @@ function trUnbind(opener) {
 const TR_RANGES = [["1D", 1], ["1W", 7], ["1M", 30], [null, 90]];
 const TR_GAP_S = 7200;            // 每個整點一筆:相鄰點超過 2 小時 = Blave 沒開著,斷線不連(不插值)
 async function trLoadCurve() {
-  try { TR.ov.curve = (await window.blave.tradeEquity({ days: TR.ov.days })) || { curve: [] }; } catch (_) { TR.ov.curve = { curve: [] }; }
-  try { const ev = await window.blave.tradeEvents({ days: TR.ov.days }); TR.ov.ui = Array.isArray(ev) ? ev : []; } catch (_) { TR.ov.ui = []; }
-  TR.sig.over = null; if (TR.open && TR.tab === "over") trPaintOver();
+  const S = TR;
+  try { S.ov.curve = (await S.api.tradeEquity({ days: S.ov.days })) || { curve: [] }; } catch (_) { S.ov.curve = { curve: [] }; }
+  try { const ev = await S.api.tradeEvents({ days: S.ov.days }); S.ov.ui = Array.isArray(ev) ? ev : []; } catch (_) { S.ov.ui = []; }
+  S.sig.over = null; if (TR === S && S.open && S.tab === "over") trPaintOver();
 }
 function trCurvePoints() {
   const raw = TR.ov.curve && Array.isArray(TR.ov.curve.curve) ? TR.ov.curve.curve : [];
@@ -841,11 +1030,12 @@ function trCurvePoints() {
 function trPaintOver() {
   const box = $("tr-over"), r = trReport() || {};
   if (!TR.ov.curve || (TR.ov.at || 0) < Date.now() - 60000) { TR.ov.at = Date.now(); trLoadCurve(); }
-  const data = [trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.ui, r.orders, r.halt, r.events, r.order_errors];
+  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.ui, r.orders, r.halt, r.events, r.order_errors];
   if (!trShould("over", box, data)) return;
   box.textContent = "";
   box.appendChild(trOvStats());
-  box.appendChild(trOvCurve());
+  // 雲端第一刀:每小時權益的端點還沒做,不畫曲線(也不畫「還沒有紀錄」——紀錄是有的,只是這一版讀不到)
+  if (TR.env !== "cloud") box.appendChild(trOvCurve());
   box.appendChild(trOvEvents(r));
   if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
@@ -868,6 +1058,7 @@ function trPct(p) { const r = Math.round(p * 100) / 100; return (r > 0 ? "+" : r
 function trOvStats() {
   const grid = trEl("div", "bt-stats ov-stats"), cv = TR.ov.curve || {};
   grid.appendChild(trStatCell(t("tr.ov.equity"), trEquity(), { hero: true }, null, t("tr.ov.equityTip")));
+  if (TR.env === "cloud") return grid;             // 當日損益要有每小時權益才算得出來:同上,這一版不畫
   // today = null:沒有夠新的基準(app 好幾天沒開)→「—」,不拿好幾天前的點冒充「當日」
   const today = cv.today && typeof cv.today === "object" ? cv.today : {};
   const dp = typeof today.pnl === "number" && isFinite(today.pnl) ? today.pnl : null;
@@ -1049,7 +1240,8 @@ function trOvEvents(r) {
 
 /* ── 設定 › 連線:交易帳戶(這一版只有模擬交易;資料來源那一段這批不做、也不放預告)────────── */
 function cxOpen() { setOpen().then(() => { setCat("conn"); const b = document.querySelector('.set-cat[data-set-cat="conn"]'); if (b) b.focus(); }); }
-function cxPaint() {
+function cxPaint() { return trWith(TR_BAGS.local, cxPaint0); }
+function cxPaint0() {
   const box = $("set-conn"), r = trReport();
   const ids = trVenueIds(r), id = ids[0] || null, e = id ? trLiveEntry(r, id) : null;
   const data = [!!r, TR.st && TR.st.alive, ids, e && [e.ok, e.error, e.equity], TR.cx];
@@ -1101,31 +1293,191 @@ function cxPaintBound(box, id, e) {
   // 指路那一句裡的「自動下單 › 設定」是可按的:關設定、直接開到那個分頁
   const hint = trEl("p", "cx-manual-note"), parts = t("cx.unbindHint").split("{link}");
   const go = trEl("button", "btn-quiet", t("cx.unbindLink")); go.type = "button"; go.id = "cx-to-set";
-  go.addEventListener("click", () => { setClose(); trOpen("set").then(() => $("tr-tab-set").focus()); });
+  go.addEventListener("click", () => { setClose(); envSwitch("local", "link"); trOpen("set").then(() => $("tr-tab-set").focus()); });
   hint.append(parts[0] || "", go, parts[1] || ""); box.appendChild(hint);
 }
 function cxSendFail(res) {
-  const e = res && res.error ? String(res.error) : "", k = trErrorKind(e);
+  const e = res && res.error ? String(res.error) : "", k = trErrorKind(e), L = TR_BAGS.local;
   if (k === "unknown") return t("tr.cmdUnknown");
-  if (e === "DAEMON_DOWN" || !TR.st || !TR.st.alive) return t("cx.down");
+  if (e === "DAEMON_DOWN" || !L.st || !L.st.alive) return t("cx.down");
   return k === "rejected" ? t("tr.cmdRejected", { err: e.slice(0, 200) }) : t("cx.sendFail", { err: e.slice(0, 200) || "—" });
 }
 async function cxConnect() {
-  if (TR.cx.busy) return;
-  TR.cx = { busy: true, err: null, retest: false }; cxPaint();
+  const L = TR_BAGS.local;
+  if (L.cx.busy) return;
+  L.cx = { busy: true, err: null, retest: false }; cxPaint();
   // 模擬交易的綁定:同雲端,寫一組固定值的 PAPER_* 進 workspace 的 .env(不是金鑰,是「已啟用」的記號)
-  const res = await window.blave.tradeSend("credentials", { env: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(Date.now() / 1000)) } });
-  TR.cx.busy = false;
-  if (!res || !res.ok) { TR.cx.err = cxSendFail(res); srSay(TR.cx.err); cxPaint(); return; }
+  const res = await L.api.tradeSend("credentials", { env: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(Date.now() / 1000)) } });
+  L.cx.busy = false;
+  if (!res || !res.ok) { L.cx.err = cxSendFail(res); srSay(L.cx.err); cxPaint(); return; }
   srSay(t("cx.connected"));
-  try { TR.st = await window.blave.tradeStatus(); } catch (_) { }   // 輪詢會補
-  TR.sig = {}; cxPaint(); trPaint(); trPollSoon(1500);
+  try { L.st = await L.api.tradeStatus(); } catch (_) { }   // 輪詢會補
+  L.sig = {}; cxPaint(); trPaint(); trPollSoon(1500);
 }
 async function cxRetest() {
-  if (TR.cx.retest) return;
-  TR.cx = { busy: false, err: null, retest: true }; cxPaint();
-  const res = await window.blave.tradeSend("retest_accounts", {});
-  TR.cx.retest = false;
-  if (!res || !res.ok) { TR.cx.err = cxSendFail(res); srSay(TR.cx.err); }
+  const L = TR_BAGS.local;
+  if (L.cx.retest) return;
+  L.cx = { busy: false, err: null, retest: true }; cxPaint();
+  const res = await L.api.tradeSend("retest_accounts", {});
+  L.cx.retest = false;
+  if (!res || !res.ok) { L.cx.err = cxSendFail(res); srSay(L.cx.err); }
   cxPaint(); trPollSoon(1500);
+}
+
+/* ── 視角:「這台電腦｜雲端」切換器、頂列灰底、雲端側欄、雲端空態(spec-desktop-local-and-cloud §1–§4.1)────────
+   除了切換器、⌘1/⌘2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
+   雲端來的字串(策略名)一律 textContent。 */
+function envWire() {
+  $("envsw").addEventListener("click", (e) => { const b = e.target.closest("button[data-env]"); if (b) envSwitch(b.dataset.env); });
+  $("envhead-cloud").addEventListener("click", () => planOpen());
+  // ⌘1 / ⌘2:輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以
+  document.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return;   // 輸入法組字中:不搶(搬焦點會把組到一半的字提交或丟掉)
+    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || (e.key !== "1" && e.key !== "2")) return;
+    if ($("view-ws").hidden || !$("del-scrim").hidden || !$("lb-scrim").hidden) return;
+    e.preventDefault(); envSwitch(e.key === "1" ? "local" : "cloud");
+  });
+  // 主行程說雲端那邊變了(另一邊出事、登入登出):下一輪就去拿新的那一份
+  if (typeof window.blave.onCloudState === "function") window.blave.onCloudState(() => { ENV.cloudDirty = true; trPollSoon(0); });
+  document.documentElement.dataset.env = "local";
+}
+function envSwitch(env, via) {
+  if (env !== "local" && env !== "cloud") return;
+  const head = () => { const h = $("cv-empty").hidden ? $("tr-h") : $("cv-h"); if (h && h.offsetParent) h.focus(); };
+  if (env === ENV.cur) { if (via === "link") head(); return; }
+  // 順序(spec §1.4):關確認框(等同取消,焦點不回 opener)→ 存這一邊 → 換 → 畫 → 標題 → 播報
+  // 關確認框這一行**目前走不到**:確認框開著時 ⌘1/⌘2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
+  // 批次 ② 選單列的「顯示」兩項進來之後,才有確認框開著也能切視角的入口。
+  if (!$("del-scrim").hidden) { if (delCtx) delCtx.opener = null; delClose(false); }
+  const from = TR_BAGS[ENV.cur], list = $(ENV.cur === "cloud" ? "strat-list-cloud" : "strat-list");
+  from.scroll = { list: list.scrollTop, tab: from.tab && !$("tr-" + from.tab).hidden ? $("tr-" + from.tab).scrollTop : 0 };
+  // 焦點在面板裡的輸入框時 trShould 會跳過重畫(打到一半不能被輪詢洗掉)——切視角不是輪詢:先放掉焦點,
+  // 不然另一邊的金額表(含輸入框、儲存列)會留在這一邊的標題底下(稽核 N4)
+  const ae = document.activeElement; if (ae && ae.tagName === "INPUT" && $("tr").contains(ae)) ae.blur();
+  ENV.cur = env; TR = TR_BAGS[env]; TR.sig = {}; ENV.sig = {};
+  document.documentElement.dataset.env = env;
+  if (env === "cloud") { ENV.cloudDirty = true; TR.open = true; }
+  envShowLocalMain();
+  trPaint(); trAlertShow();
+  if (TR.open && TR.tab && !$("tr-tabs").hidden) trSetTab(TR.tab);   // 分頁列是共用的 DOM:底線與 tabindex 換成這一邊的
+  // 策略報告的圖若是在看雲端時畫的(agent 那一輪剛改了策略),那時容器是藏著的、量不到寬:切回來重畫一次
+  if (env === "local" && !$("rp").hidden && RP.data) { RP.drawn = {}; rpShowTab(RP.data.stats ? RP.tab : "code"); }
+  // 每邊各自的捲動位置(面板是共用的 DOM,剛重畫完)
+  const to = $(env === "cloud" ? "strat-list-cloud" : "strat-list"); to.scrollTop = (TR.scroll && TR.scroll.list) || 0;
+  if (TR.open && TR.tab && !$("tr-" + TR.tab).hidden) $("tr-" + TR.tab).scrollTop = (TR.scroll && TR.scroll.tab) || 0;
+  // 動效:側欄與中欄內容淡入,無位移(prefers-reduced-motion 時 CSS 直接換)
+  document.querySelectorAll(".pane-strategies, .pane-main").forEach((n) => { n.classList.remove("env-fade"); void n.offsetWidth; n.classList.add("env-fade"); });
+  srSay(envName(env));
+  // 設定開著時不搬焦點(稽核 N3):切換器在遮罩後面,焦點過去之後 Esc 關不掉設定、Tab 在遮罩後面走
+  if (!$("set-scrim").hidden) { /* noop */ }
+  else if (via === "link") head(); else $("env-" + env).focus();   // 鍵盤使用者可以馬上切回
+  trPollSoon(0);
+}
+// 這台電腦的中欄三個視圖(自動下單 / 策略報告 / welcome)誰該出現;雲端視角時三個都收起來(各自的狀態不動,切回來原樣)
+function envShowLocalMain() {
+  const L = TR_BAGS.local, cloud = ENV.cur === "cloud", rp = !L.open && !!(RP.name && RP.data);
+  $("rp").hidden = cloud || !rp;
+  $("main-empty").hidden = cloud || L.open || rp;
+  if (!cloud) { $("tr").hidden = !L.open; if (L.open) $("tr-nav").setAttribute("aria-current", "page"); else $("tr-nav").removeAttribute("aria-current"); }
+}
+/* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
+   每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */
+function envPaint() {
+  const cloud = ENV.cur === "cloud", C = TR_BAGS.cloud, kind = envCloudKind(C.st);
+  const cells = { local: envCell("local", TR_BAGS.local.st, !!TR_BAGS.local.pending), cloud: envCell("cloud", C.st, false) };
+  ["local", "cloud"].forEach((env) => envPaintCell(env, cells[env]));
+  // 側欄
+  const gate = cloud && kind !== "running" && kind !== "stopped";
+  $("envhead-local").hidden = cloud; $("envhead-cloud").hidden = !cloud;
+  $("side-nav").hidden = gate; $("strat-head").hidden = gate;
+  $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
+  $("chat-tgt").hidden = !cloud;
+  if (cloud) envPaintSide(kind, C.st);
+  const cur = cells[ENV.cur];
+  $("tr-nav-mode").hidden = !cur.money; $("tr-nav-mode").className = "mode " + (cur.money || "paper"); $("tr-nav-mode").textContent = envMoneyText(cur.money);
+  $("tr-nav-dot").hidden = !cur.run;
+  // 視窗標題:{money} 是空的就連同前面的「 · 」一起省略
+  const money = envMoneyText(cur.money);
+  document.title = money ? t("env.winTitle", { where: envName(ENV.cur), money }) : t("env.winTitle0", { where: envName(ENV.cur) });
+  // 中欄
+  $("cv-empty").hidden = !gate;
+  if (gate) { $("tr").hidden = true; $("tr-tb-txt").textContent = ""; $("tr-tb-sep").hidden = true; envPaintEmpty(kind); return false; }
+  if (cloud) { TR.open = true; $("tr").hidden = false; $("tr-nav").setAttribute("aria-current", "page"); }
+  return true;
+}
+const ENV_ICONS = {   // lucide monitor / cloud(寫死的常數,不吃任何外來資料)
+  local: ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"],
+  cloud: ["M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"],
+};
+function envIcon(env) {
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "envsw-ic"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+  for (const d of ENV_ICONS[env]) { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); svg.appendChild(p); }
+  return svg;
+}
+function envPaintCell(env, c) {
+  const b = $("env-" + env), on = ENV.cur === env;
+  // 看過才消:現在看得見的那一邊 = 看過了;同一件事(sig)之後不再亮紅記號。只消記號,狀態詞留著
+  if (c.sig && on) ENV.seen[env] = c.sig;
+  if (!c.sig) delete ENV.seen[env];
+  const alarm = c.dot === "bad" && ENV.seen[env] !== c.sig;
+  const word = c.word ? t(c.word) : "", money = envMoneyText(c.money);
+  const state = word || (c.run ? t("tr.autoOn") : "");
+  const sig = LANG + "|" + JSON.stringify([c, on, alarm]);
+  if (ENV.cells[env] === sig) return;
+  const first = ENV.cells[env] == null; ENV.cells[env] = sig;
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  // 格子的名字用圖示、不用字(Wei):螢幕 = 這台電腦、雲 = 雲端。名字仍在 aria-label 與 title 裡
+  b.textContent = ""; b.appendChild(envIcon(env)); b.title = envName(env) + " " + (env === "cloud" ? "\u23182" : "\u23181");   // 快捷鍵由程式接,不進譯文
+  if (c.money) b.appendChild(trEl("span", "mode " + c.money, money));
+  if (c.run) { const d = trEl("i", "run-dot live"); d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
+  if (c.dot === "busy" || alarm) { const d = trEl("i", "dot " + (alarm ? "bad" : "busy")); d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
+  if (word) b.appendChild(trEl("span", "w" + (alarm ? " up" : ""), word));
+  const where = envName(env);
+  b.setAttribute("aria-label", money && state ? t("env.cellAria", { where, money, state }) : money || state ? t("env.cellAria1", { where, x: money || state }) : where);
+  // 狀態詞變了播報一次(例:「雲端：已自動暫停」);第一次畫不算變化
+  if (!first && word && ENV.said[env] !== word) srSay(t("env.cellAria1", { where, x: word }));
+  ENV.said[env] = word;
+}
+function envPaintSide(kind, st) {
+  const word = kind === "running" ? "side.cloud.running" : kind === "starting" ? "side.cloud.starting" : kind === "stopped" ? "side.cloud.stopped" : null;
+  const list = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
+  const sig = LANG + "|" + JSON.stringify([kind, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
+  if (ENV.sig.side === sig) return;
+  ENV.sig.side = sig;
+  const stEl = $("envhead-st"); stEl.hidden = !word; stEl.className = "st" + (kind === "stopped" ? " up" : "");
+  stEl.querySelector(".dot").className = "dot " + (kind === "running" ? "on" : kind === "starting" ? "busy" : "bad");
+  $("envhead-txt").textContent = word ? t(word) : "";
+  $("envhead-cloud").setAttribute("aria-label", word ? t("side.cloud.headAria", { state: t(word) }) : t("env.cloud"));
+  // 第一刀:只當清單看(單支策略的端點還沒做)——不是鈕、沒有 hover、Tab 不會停
+  const box = $("strat-list-cloud"); box.textContent = ""; box.setAttribute("role", "list");
+  if (!list.length) { box.appendChild(trEl("p", "pf-state", t("side.cloud.emptyCut1"))); return; }
+  list.forEach((x) => {
+    const row = trEl("div", "strat-row is-static"); row.setAttribute("role", "listitem");
+    const nm = trEl("span", "strat-name", x.displayName); nm.title = x.name; row.appendChild(nm);
+    const w = envStratWord(x.name, st); if (w) row.appendChild(trEl("span", "stx", t(w)));
+    box.appendChild(row);
+  });
+}
+function envPaintEmpty(kind) {
+  // 有 token 卻被當成沒登入 = 舊登入沒有 app 專用密鑰,或憑證被撤銷:請他重新登入一次(不是「登入」)
+  const relogin = kind === "signedOut" && hasToken;
+  const sig = LANG + "|" + kind + "|" + relogin + "|" + (kind === "signedOut" ? oauthPending : "");
+  if (ENV.sig.empty === sig) return;
+  ENV.sig.empty = sig;
+  $("cv-desc").textContent = kind === "starting" ? t("side.cloud.starting") : kind === "loading" || kind === "unreach" ? "" : t("env.empty.desc");
+  const box = $("cv-body"); box.textContent = "";
+  if (kind === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
+  const ob = trEl("div", "pf-onboard");
+  const body = kind === "none" ? "env.empty.p1" : kind === "starting" ? "env.empty.starting" : kind === "unreach" ? "env.empty.unreach" : relogin ? "env.empty.relogin" : "env.empty.signedOut";
+  ob.appendChild(trEl("p", "", t(body)));
+  let b = null;
+  if (kind === "none") { b = trEl("button", "btn-out", t("env.empty.plan")); b.addEventListener("click", () => planOpen()); }
+  else if (kind === "signedOut") {
+    b = trEl("button", "btn-out", relogin ? t("plan.relogin") : t("cn.blave.btn"));
+    // 登入成功後主行程會自己重問雲端並推送過來;這裡只要把這一頁重畫
+    b.addEventListener("click", () => Promise.resolve(relogin ? planRelogin() : planLogin()).then(() => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); }));
+  }
+  if (b) { b.type = "button"; ob.appendChild(b); }
+  box.appendChild(ob);
 }

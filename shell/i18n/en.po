@@ -1329,3 +1329,109 @@ msgstr "A new version is ready: pause trading to update, or it installs when you
 
 msgid "tm.evOrderErrNote"
 msgstr "The exchange rejected an order. Open Blave to see why."
+
+# 這台電腦｜雲端(線 B 第一刀;字以 blave-canon designer/strings-desktop-local-and-cloud-2026-09.md 為準)
+msgid "env.aria"
+msgstr "Environment"
+
+msgid "env.local"
+msgstr "This computer"
+
+msgid "env.cloud"
+msgstr "Cloud"
+
+msgid "env.st.signedOut"
+msgstr "Signed out"
+
+msgid "env.st.none"
+msgstr "Not started"
+
+msgid "env.st.autoPaused"
+msgstr "Auto-paused"
+
+msgid "env.cellAria"
+msgstr "{where}: {money}, {state}"
+
+msgid "env.cellAria1"
+msgstr "{where}: {x}"
+
+msgid "env.winTitle"
+msgstr "Blave — {where} · {money}"
+
+msgid "env.winTitle0"
+msgstr "Blave — {where}"
+
+msgid "tr.mode.real"
+msgstr "Real"
+
+msgid "side.cloud.running"
+msgstr "Machine running"
+
+msgid "side.cloud.starting"
+msgstr "Machine starting"
+
+msgid "side.cloud.stopped"
+msgstr "Machine stopped"
+
+msgid "side.cloud.headAria"
+msgstr "Cloud: {state}. Open the plan page"
+
+msgid "side.cloud.emptyCut1"
+msgstr "No strategies in the cloud yet."
+
+msgid "side.cloud.st.trading"
+msgstr "Trading"
+
+msgid "side.cloud.st.halted"
+msgstr "Halted"
+
+msgid "env.empty.title"
+msgstr "Cloud"
+
+msgid "env.empty.desc"
+msgstr "No cloud machine yet"
+
+msgid "env.empty.p1"
+msgstr "The cloud is where strategies go live: a machine that stays on, running them on schedule around the clock and placing orders. Shutting down this computer changes nothing."
+
+msgid "env.empty.plan"
+msgstr "See the Plan"
+
+msgid "env.empty.signedOut"
+msgstr "Sign in to Blave to see your cloud machine. The AI stays the one you’re connected to now."
+
+msgid "env.empty.starting"
+msgstr "The cloud machine is starting, usually about a minute. This page changes to the cloud’s content once it is up."
+
+msgid "env.empty.relogin"
+msgstr "Sign in to Blave again to see your cloud machine. Chats and strategies on this computer aren’t affected."
+
+msgid "env.empty.unreach"
+msgstr "The cloud’s state can’t be read right now. Trading already running in the cloud isn’t affected."
+
+msgid "tr.ro.note"
+msgstr "In this version the app can only view the cloud. To set amounts, start or pause trading, use the cloud workspace on the web for now."
+
+msgid "tr.ro.noteEmpty"
+msgstr "In this version the app can only view the cloud. To connect an exchange, use the cloud workspace on the web for now."
+
+msgid "tr.cloud.stale"
+msgstr "Last updated {t}"
+
+msgid "tr.cloud.unreach"
+msgstr "Couldn’t read the cloud’s trading state. What’s shown is from {t}. Trading already running in the cloud isn’t affected."
+
+msgid "tr.cloud.stoppedBody"
+msgstr "The balance fell under {m} TWD and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies, data and keys on it."
+
+msgid "tr.cloud.stoppedBody0"
+msgstr "The balance ran low and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. A stopped machine is still billed. At a balance of 0 the machine is deleted, along with the strategies, data and keys on it."
+
+msgid "tr.cloud.unbindDesc"
+msgstr "Removes the exchange keys from the cloud machine — the order engine can no longer trade this account."
+
+msgid "chat.tgt.label"
+msgstr "Target"
+
+msgid "chat.tgt.cut1"
+msgstr "In this version the agent can’t work on the cloud machine yet."

@@ -1,0 +1,106 @@
+// 電腦版「這台電腦｜雲端」第一刀(shell/renderer/trade.js 的「視角純邏輯」+ 原文列舉)。
+//   1. 雲端視角唯讀:envApi("cloud") 這一層就把寫入擋掉,而且不會退回去讀這台電腦的東西
+//   2. 列舉:trade.js / app.js 裡每一個送指令的地方都經過 envApi、每一個會送指令的入口都先擋雲端
+//   3. 雲端那一邊是哪一種、切換器每格畫什麼、側欄列尾的狀態字
+// 跑法:node tests/check_shell_envsw.js
+const fs = require("fs"), path = require("path");
+const R = path.join(__dirname, "..", "shell", "renderer");
+const src = fs.readFileSync(path.join(R, "trade.js"), "utf8");
+const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b); if (i < 0 || j < 0) throw new Error("找不到標記:" + a); return src.slice(i, j); };
+const noComments = (x) => x.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+const pure = cut("/* ── 純邏輯(", "/* ── 純邏輯到此"), env = cut("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
+if (/\bdocument\b|\$\(|window\./.test(noComments(env))) throw new Error("視角純邏輯區塊碰了 DOM / window");
+eval((pure + env).replace(/^const /gm, "var "));
+let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
+process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到結尾"); process.exit(1); });
+
+const V = { binance: { credentials: true, pair: true, order: true, account: true } }, P = { paper: V.binance };
+const rep = (o = {}) => ({ venues: V, halt: {}, reconciler: { alive: true }, account: { venues: { binance: { ok: true, equity: 1000 } } }, config: { amounts: { a: 100, b: 0 } }, ...o });
+const cloudSt = (c, report, alive = true) => ({ alive, running: true, report: report === undefined ? rep() : report, lastExit: null, restarts: 0, cloud: c });
+const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies: [], ...extra });
+
+(async () => {
+  // ── 1. 傳輸層 ──
+  const touched = [];
+  const host = { cloudStatus: async () => cloudSt(okc("running", { strategies: [{ name: "a", display_name: "Alpha", has_backtest: true, symbol: "BTCUSDT", updated_at: 5 }, { name: "" }, null, { nope: 1 }] })) };
+  ENV_API.forEach((k) => { host[k] = (...a) => { touched.push(k); return Promise.resolve({ ok: true, from: "local", a }); }; });
+  const C = envApi("cloud", host);
+  // 雲端視角下每一個寫入類指令(本機 daemon.js UI_COMMANDS 那一組 + 連線頁那幾支)都送不出去
+  const CMDS = ["halt", "close_all", "resume", "resume_wait", "restart_reconciler", "amounts", "credentials", "credentials_remove", "retest_accounts"];
+  const res = []; for (const c of CMDS) res.push(await C.tradeSend(c, { amounts: { a: 1 } }));
+  ok("雲端:每一個寫入指令都回 NOT_ALLOWED(跟主行程拒絕同一個代碼 → 畫面講「沒送到、什麼都沒變」)", res.every((r) => r && r.ok === false && r.error === "NOT_ALLOWED") && trErrorKind("NOT_ALLOWED") === "undelivered");
+  const st = await C.tradeStatus(), list = await C.listStrategies(), one = await C.loadStrategy("a"), eq = await C.tradeEquity({ days: 30 }), ev = await C.tradeEvents({ days: 30 });
+  ok("雲端:沒有任何一支碰到這台電腦的 api(不寫、也不把本機的數字畫在雲端那一頁)", touched.length === 0);
+  ok("雲端:狀態讀 cloudStatus;清單來自同一份狀態,壞的列濾掉、形狀同本機 listStrategies", st.cloud.code === "OK" && list.length === 1 && list[0].name === "a" && list[0].displayName === "Alpha" && list[0].hasBacktest === true && list[0].symbol === "BTCUSDT" && list[0].remote === true && list[0].mtime === 5);
+  ok("雲端:還沒做的端點回空的(單支策略 / 權益曲線 / 畫面事件)", one === null && JSON.stringify(eq) === '{"curve":[]}' && Array.isArray(ev) && ev.length === 0);
+  const cloudHalf = noComments(env).slice(noComments(env).indexOf("let last = null;"), noComments(env).indexOf("function envCloudList("));
+  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus");
+  const L = envApi("local", host); await L.tradeSend("halt", {}); await L.tradeStatus();
+  ok("這台電腦:原樣轉給主行程", touched.join() === "tradeSend,tradeStatus" && L.env === "local" && C.env === "cloud");
+  ok("兩份 api 介面相同(自動下單頁換一個來源就能畫)", ENV_API.every((k) => typeof C[k] === "function" && typeof L[k] === "function"));
+
+  // ── 2. 原文列舉 ──
+  const code = noComments(src), app = noComments(fs.readFileSync(path.join(R, "app.js"), "utf8"));
+  ok("trade.js 不直接叫主行程的那六支(一律經過 envApi)", !new RegExp("window\\.blave\\.(" + ENV_API.join("|") + ")\\b").test(code));
+  ok("app.js 不送交易指令、不讀交易狀態", !/\btrade(Send|Status|Equity|Events)\b/.test(app));
+  const sends = code.match(/[\w.]*\btradeSend\(/g) || [];
+  ok("每一個送指令的地方都是「自己那一份狀態的 api」(S.api / L.api),共 " + sends.length + " 處", sends.length >= 7 && sends.every((x) => x === "S.api.tradeSend(" || x === "L.api.tradeSend("));
+  // L = TR_BAGS.local(設定 › 連線這一刀永遠是這台電腦的);S = 進來那一刻的 TR,所以每個用 S.api 送指令的入口都要先擋雲端
+  const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
+  const entries = ["trRun", "trAskStop", "trAskStart", "trSaveAmounts", "trUnbind"];
+  ok("會送指令的入口都先擋雲端:" + entries.join(" / "), entries.every((n) => /(S|TR)\.env (!== "local"|=== "cloud")[^;]*\) return;/.test(fn(n).split("\n").slice(0, 3).join("\n"))));
+  const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
+  ok("用 S.api 送指令的函式就是上面那幾個(多一個就要有人看過它擋了沒):" + users.join(), users.every((n) => entries.indexOf(n) >= 0));
+  ok("用 L.api 送指令的函式:L 一定是這台電腦那一份", code.split(/\n(?:async )?function /).filter((b) => /L\.api\.tradeSend\(/.test(b)).every((b) => /const L = TR_BAGS\.local[,;]/.test(b)));
+  ok("trade.js 沒有 innerHTML / insertAdjacentHTML(雲端來的字串一律 textContent)", !/innerHTML|insertAdjacentHTML|outerHTML/.test(code));
+  ok("重開一律回這台電腦:現在看哪一邊不寫進 localStorage / sessionStorage", !/(local|session)Storage[^\n]*ws_env/.test(code) && /const ENV = \{ cur: "local"/.test(code));
+  const html = fs.readFileSync(path.join(R, "index.html"), "utf8");
+  ok("index.html:切換器是兩顆 aria-pressed 的鈕、開場在這台電腦;舊的狀態帶鈕已退場", /id="env-local" data-env="local" aria-pressed="true"/.test(html) && /id="env-cloud" data-env="cloud" aria-pressed="false"/.test(html) && !/tr-tb-btn/.test(html + code));
+
+  // ── 3. 雲端那一邊是哪一種 ──
+  ok("還沒問到 = loading", envCloudKind(null) === "loading" && envCloudKind({ cloud: {} }) === "loading");
+  ok("沒登入 / 舊登入 / 被撤銷 = signedOut", ["NO_LOGIN", "NO_APP_SECRET", "REVOKED"].every((c) => envCloudKind(cloudSt({ code: c }, null)) === "signedOut"));
+  ok("還沒成功讀到過 = unreach", ["OFFLINE", "RATE_LIMITED", "BAD_RESPONSE"].every((c) => envCloudKind(cloudSt({ code: c }, null)) === "unreach"));
+  ok("主機四態;不認得的當 none", ["none", "starting", "stopped", "running"].every((s) => envCloudKind(cloudSt(okc(s))) === s) && envCloudKind(cloudSt(okc("weird"))) === "none");
+
+  // ── 切換器每格 ──
+  const cell = (e, s, p) => { const c = envCell(e, s, p); return [c.money, c.run, c.dot, c.word].join(); };
+  ok("這台電腦:沒連帳戶 = 只有字;模擬 / 真錢記號;下單中才有綠點", cell("local", { alive: true, report: rep({ venues: {} }) }) === ",false,," && cell("local", { alive: true, report: rep({ venues: P, account: null }) }) === "paper,true,," && cell("local", { alive: true, report: rep() }) === "real,true,,");
+  ok("過場中 / 讀帳失敗 / 常駐程式不在:沒有綠點", cell("local", { alive: true, report: rep() }, true) === "real,false,," && cell("local", { alive: true, report: rep({ account: { venues: { binance: { ok: false } } } }) }) === "real,false,," && cell("local", { alive: false, report: rep() }) === "real,false,,");
+  ok("人按的暫停不叫人;不是人按的(對帳器 / 健檢)才出紅記號", cell("local", { alive: true, report: rep({ halt: { halted: true, source: "web", at: "t1" } }) }) === "real,false,," && cell("local", { alive: true, report: rep({ halt: { halted: true, source: "reconciler", at: "t1" } }) }) === "real,false,bad,env.st.autoPaused");
+  ok("看過才消:同一件事 sig 相同,換一件 sig 不同", envCell("cloud", cloudSt(okc("running"), rep({ halt: { halted: true, source: "reconciler", at: "t1" } }))).sig === "halt:t1" && envCell("cloud", cloudSt(okc("running"), rep({ halt: { halted: true, source: "reconciler", at: "t2" } }))).sig === "halt:t2" && envCell("cloud", cloudSt(okc("running"))).sig === null);
+  ok("雲端:未登入 / 未啟動只有字(格子照樣可按);啟動中 = busy;已停機 = 錢記號 + 紅記號", cell("cloud", cloudSt({ code: "NO_LOGIN" }, null)) === ",false,,env.st.signedOut" && cell("cloud", cloudSt(okc("none"), null)) === ",false,,env.st.none" && cell("cloud", cloudSt(okc("starting"), null)) === ",false,busy,side.starting" && cell("cloud", cloudSt(okc("stopped"), rep(), false)) === "real,false,bad,side.stopped");
+  ok("雲端:停機主機的舊快取(alive=false)不可以亮綠點;讀不到 / 還沒問到什麼都不講", cell("cloud", cloudSt(okc("running"), rep(), false)) === "real,false,," && cell("cloud", cloudSt({ code: "OFFLINE" }, null)) === ",false,," && cell("cloud", null) === ",false,,");
+  ok("雲端:運行中 + 回報夠新才是下單中", cell("cloud", cloudSt(okc("running"))) === "real,true,,");
+
+  // ── 稽核 N1:雲端讀不到新狀態時,文字不可以斷言「沒在跑」;綠點照樣不亮 ──
+  const tr0 = okc("running", { transient: "OFFLINE", stale: true, last_ok_at: 1000 });
+  ok("N1 連不上 + 上一份說在下單:文字用的狀態是 running(不是 dead → 不寫「對帳沒有在跑」、鈕字不變「啟動下單」)", envHeadState(cloudSt(tr0, rep(), false)) === "running" && trExecState(cloudSt(tr0, rep(), false)) === "dead");
+  ok("N1 同一份:切換器的綠點、側欄列尾仍然保守(不亮、不講)", envCell("cloud", cloudSt(tr0, rep(), false)).run === false && envStratWord("a", cloudSt(tr0, rep(), false)) === null);
+  ok("N1 回報過舊(不是連不上)、主機仍運行:同樣用回報自己說的", envHeadState(cloudSt(okc("running", { stale: true }), rep(), false)) === "running");
+  ok("R2 睡眠醒來的空窗(alive 已被壓成 false,但 transient / stale 都還沒立):仍用回報自己說的,不寫「對帳沒有在跑」", envHeadState(cloudSt(okc("running"), rep(), false)) === "running" && envCell("cloud", cloudSt(okc("running"), rep(), false)).run === false);
+  ok("N1 上一份說已暫停 → halted", envHeadState(cloudSt(tr0, rep({ halt: { halted: true, source: "web" } }), false)) === "halted");
+  ok("N1 停機不變(舊快取不被扶正);讀得到時 = trExecState;這台電腦不受影響", envHeadState(cloudSt(okc("stopped", { stale: true }), rep(), false)) === "dead" && envCloudKind(cloudSt(okc("stopped", { stale: true }), rep(), false)) === "stopped"
+    && envHeadState(cloudSt(okc("running"))) === "running" && envHeadState({ alive: false, report: rep() }) === "dead");
+  // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
+  const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
+  ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true
+    && envUnreachAlert({ last_ok_at: T }, T + 1e9) === false && envUnreachAlert(null, T) === false && envUnreachAlert({ transient: "OFFLINE", last_ok_at: 0 }, T) === false);
+
+  // ── 稽核 N8:兩袋不串(原文列舉;這些東西不起 DOM 測不到行為,只守住寫法)──
+  const kd = code.slice(code.indexOf('document.addEventListener("keydown"', code.indexOf("function envWire(")), code.indexOf("onCloudState", code.indexOf("function envWire(")));
+  ok("N8 ⌘1/⌘2:確認框、圖片放大開著不生效;組字中不生效", /del-scrim/.test(kd) && /lb-scrim/.test(kd) && /isComposing/.test(kd));
+  ok("N8 設定 › 連線固定借這台電腦那一袋", /function cxPaint\(\) \{ return trWith\(TR_BAGS\.local, cxPaint0\); \}/.test(code));
+  const afterAwait = ["trPoll", "trOpen", "trRun", "trSaveAmounts", "trUnbind", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
+  const leaks = afterAwait.filter((x) => /\bTR\b/.test(x[1])).map((x) => x[0]);
+  ok("N8 跨 await 的流程在第一個 await 之後不碰裸的 TR(只准 TR === S 與 TR_BAGS):" + (leaks.join() || "無"), afterAwait.every((x) => x[1].length > 0) && leaks.length === 0);
+  ok("N3/N4/N7 寫法:設定開著不搬焦點、切視角前放掉輸入框焦點、排下一輪在 finally", /if \(!\$\("set-scrim"\)\.hidden\) \{[^}]*\}\s*else if \(via === "link"\)/.test(fn("envSwitch")) && /\.blur\(\)/.test(fn("envSwitch")) && /finally \{[\s\S]*TRP\.timer = setTimeout\(trPoll/.test(fn("trPoll")));
+  ok("N5 雲端清單每次拿到狀態就跟著換(不管看哪一邊)", /C\.st = await C\.api\.tradeStatus\(\);[\s\S]{0,300}await trLoadStrategies\(C\)/.test(fn("trPoll")));
+
+  // ── 側欄列尾 ──
+  ok("列尾狀態字:有投入金額的才講;下單中 / 已停;主機沒在下單就不講", envStratWord("a", cloudSt(okc("running"))) === "side.cloud.st.trading" && envStratWord("b", cloudSt(okc("running"))) === null && envStratWord("zz", cloudSt(okc("running"))) === null
+    && envStratWord("a", cloudSt(okc("running"), rep({ halt: { halted: true } }))) === "side.cloud.st.halted" && envStratWord("a", cloudSt(okc("stopped"), rep(), false)) === null && envStratWord("a", null) === null);
+
+  process.removeAllListeners("beforeExit");
+  console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+})();

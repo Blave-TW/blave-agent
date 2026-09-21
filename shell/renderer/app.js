@@ -583,11 +583,12 @@ async function stratSelect(name, force) {
     if (b.dataset.name === name) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
   });
-  if (!name) { RP.data = null; $("rp").hidden = true; $("main-empty").hidden = false; return; }
+  // 中欄誰該出現由 envShowLocalMain 決定(trade.js):雲端視角時這台電腦的三個視圖都收著,選中的那支照記、切回來才出現
+  if (!name) { RP.data = null; envShowLocalMain(); return; }
   RP.data = await window.blave.loadStrategy(name);
   if (RP.name !== name) return;                 // 等資料的時候用戶又點了別支
   if (!RP.data) { stratSelect(null); return; }
-  $("main-empty").hidden = true; $("rp").hidden = false;
+  envShowLocalMain();
   $("rp-name").textContent = RP.data.displayName || name;
   // 只放說明,不附資料夾代號(Wei):代號滑過 sidebar 那一列的 title 看得到
   $("rp-desc").textContent = RP.data.description || "";

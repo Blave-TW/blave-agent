@@ -60,9 +60,14 @@
     <aside class="pane-strategies">
       <div class="ws-brand"><a class="ws-home" id="ws-home" target="_blank" rel="noopener"><svg class="wm" viewBox="0 0 588 180" aria-label="Blave" role="img"><g fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg></a></div>
       <!-- 自動下單入口:位置照雲端 #pf_nav(策略清單上方)。不放圖示——這個側欄的列本來就沒有圖示 -->
-      <nav class="side-nav"><button class="strat-row" id="tr-nav" type="button"><span class="strat-name" data-i18n="tr.nav"></span></button></nav>
-      <div class="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
+      <!-- 現在在哪一邊(兩邊骨架一致,切換時清單不會上下跳)。雲端那顆開 設定 › 資料與雲端方案;內容由 trade.js 畫 -->
+      <div class="envhead" id="envhead-local"><span data-i18n="env.local"></span></div>
+      <button class="envhead" id="envhead-cloud" type="button" hidden><span data-i18n="env.cloud"></span><span class="st" id="envhead-st"><i class="dot" aria-hidden="true"></i><span id="envhead-txt"></span></span></button>
+      <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span><span class="mode" id="tr-nav-mode" hidden></span><i class="run-dot live" id="tr-nav-dot" aria-hidden="true" hidden></i></button></nav>
+      <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
+      <!-- 雲端那幾份:第一刀只當清單看(單支策略的端點還沒做),名字是雲端來的字串,一律 textContent -->
+      <div class="strat-list" id="strat-list-cloud" hidden></div>
       <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button></div>
       <!-- 左下角:設定(照雲端 .ws-foot / .ws-more 的樣式;雲端是「更多」選單,
            桌面版只有設定一項,所以直接開 modal 不展開) -->
@@ -77,15 +82,22 @@
     </aside>
     <div class="pane-div" id="div-side" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria="ws.resizeSide"><button class="handle" type="button" tabindex="-1" data-i18n-aria="ws.sideCollapse"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="9.8,3.6 5.4,8 9.8,12.4"/></svg></button></div>
     <section class="pane-main">
-      <!-- 常駐狀態帶(電腦版獨有):佔用中欄上方本來就在的 44px 拖曳區。只顯示、不放鈕;點了進自動下單頁。
-           沒連接交易所時整條是空的(.empty,裡面的鈕 hidden)。內容由 trade.js 畫 -->
-      <div class="tb empty" id="tr-tb"><button class="tb-main" id="tr-tb-btn" type="button" hidden><span class="mode paper" id="tr-tb-mode"></span><span class="tb-txt"><i class="run-dot live" id="tr-tb-dot" aria-hidden="true" hidden></i><span id="tr-tb-txt"></span></span></button></div>
+      <!-- 中欄上方本來就在的 44px 拖曳區:最左是「這台電腦｜雲端」切換器(整個 workspace 跟著換),右邊一句這一邊的狀態。
+           兩格永遠可按;格內的錢記號與狀態由 trade.js 畫。整條仍可拖視窗,只有切換器 no-drag -->
+      <div class="tb" id="tr-tb">
+        <div class="envsw" id="envsw" role="group" data-i18n-aria="env.aria"><button type="button" id="env-local" data-env="local" aria-pressed="true"></button><button type="button" id="env-cloud" data-env="cloud" aria-pressed="false"></button></div>
+        <span class="tb-sep" id="tr-tb-sep" aria-hidden="true" hidden>·</span><span class="tb-txt" id="tr-tb-txt"></span>
+      </div>
       <!-- 自動下單頁:骨架照雲端工作頁(標題列 + 五分頁),內容由 trade.js 畫,一律 DOM 節點 + textContent -->
       <div class="trv" id="tr" hidden>
         <div class="main-head">
           <div class="txt">
-            <h5 class="main-head-name" data-i18n="tr.nav"></h5>
+            <h5 class="main-head-name" id="tr-h" tabindex="-1" data-i18n="tr.nav"></h5>
             <div class="main-head-desc" id="tr-desc"></div>
+            <!-- 雲端第一刀唯讀:全頁唯一的說明(不能按的鈕用 aria-describedby 指到這裡) -->
+            <p class="tr-ro-note" id="tr-ro-note" hidden></p>
+            <!-- 主機停機:講的是整頁的事,放在標題描述下、分頁列上(停機時上面那行說明本來就不出) -->
+            <div id="tr-verdict" hidden></div>
             <p class="pf-alert" id="tr-alert" hidden></p>
           </div>
           <div class="act" id="tr-act"></div>
@@ -103,6 +115,11 @@
         <div class="pf" id="tr-assets" role="tabpanel" aria-labelledby="tr-tab-assets" tabindex="0" hidden></div>
         <div class="pf" id="tr-hist" role="tabpanel" aria-labelledby="tr-tab-hist" tabindex="0" hidden></div>
         <div class="pf" id="tr-set" role="tabpanel" aria-labelledby="tr-tab-set" tabindex="0" hidden></div>
+      </div>
+      <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):內容由 trade.js 畫 -->
+      <div class="trv" id="cv-empty" hidden>
+        <div class="main-head"><div class="txt"><h5 class="main-head-name" id="cv-h" tabindex="-1" data-i18n="env.empty.title"></h5><div class="main-head-desc" id="cv-desc"></div></div></div>
+        <div class="pf" id="cv-body"></div>
       </div>
       <!-- 策略報告(選了策略才出現;沒選時是下面的 welcome)。三個分頁:回測 / 進出場 /
            程式碼。回測與進出場各自一支檔(report-backtest.js / report-trades.js),
@@ -167,6 +184,8 @@
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
+        <!-- 只在雲端視角顯示(第一刀):整窗是灰的雲端,但 agent 這一版只操作這台電腦,不講會被誤會 -->
+        <div class="chat-tgt" id="chat-tgt" hidden><p><span data-i18n="chat.tgt.label"></span> <b data-i18n="env.local"></b></p><p data-i18n="chat.tgt.cut1"></p></div>
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
           <div class="ci-bar">

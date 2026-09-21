@@ -12,10 +12,14 @@
   border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap;
 }
 .mode.paper { border: 1px dashed var(--ink-3); color: var(--ink-2); }
+.mode.real { background: var(--control-fill); color: var(--control-fill-text); }
 .mode[hidden] { display: none; }
 
 /* ---- 側欄入口(策略清單上方)---- */
 .side-nav { margin-top: var(--space-12); padding-bottom: var(--space-8); }   /* 不畫分隔線(Wei):靠間距與「策略」小標分開 */
+/* 入口的圖示:同雲端工作頁那一顆(lucide chart-pie、16px、線寬 1.75)——有圖示才讀得出這是一顆按鈕,不是清單的標題(Wei) */
+.side-nav .strat-row { display: flex; align-items: center; gap: var(--space-8); }
+.side-nav-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 html.ws-sc .side-nav { display: none; }
 
 /* ---- 常駐狀態帶:佔用中欄上方本來就在的 44px 拖曳區(.pane-main 的 padding-top)。
@@ -25,18 +29,104 @@ html.ws-sc .side-nav { display: none; }
   display: flex; align-items: center; padding: 0 var(--space-16) 0 var(--space-24);
   border-bottom: 1px solid var(--border-hairline);
 }
-.pane-main > .tb.empty { border-bottom-color: transparent; }
 html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起時中欄貼到紅綠燈旁邊,讓開 */
-.tb-main {
-  -webkit-app-region: no-drag; position: relative; z-index: 21;   /* 壓過 .ws-bar(z 20) */
-  min-width: 0; max-width: 100%; display: flex; align-items: center; gap: var(--space-8);
-  height: 32px; margin-left: calc(-1 * var(--space-8)); padding: 0 var(--space-8);
-  border-radius: var(--radius-xs); text-align: left;
-  transition: background var(--motion-fast) var(--ease-standard);
-}
-.tb-main[hidden] { display: none; }
-.tb-main:hover { background: var(--surface-muted); }
+.pane-main > .tb { gap: var(--space-8); }
+.tb-sep { flex: none; font-size: 12px; color: var(--ink-3); }
+.tb-sep[hidden] { display: none; }
 .tb-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-3); }
+
+/* ---- 小圓點 / 出事短劃(同方案頁 .plan-st .dot 的語言;這裡給切換器與側欄用)---- */
+.envsw .dot, .envhead .dot { flex: none; display: inline-block; width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--ink-3); }
+.envsw .dot.on, .envhead .dot.on { background: var(--color-green); }
+.envsw .dot.busy, .envhead .dot.busy { animation: trRunPulse calc(var(--motion-blink) * 1.2) ease-in-out infinite; }
+.envsw .dot.bad, .envhead .dot.bad { width: 8px; height: 2px; border-radius: 0; background: var(--color-red); }
+
+/* ---- 「這台電腦｜雲端」切換器:視覺高 28、熱區 44(::before 上下各補 8,寬 = 視覺寬,兩格不重疊)。
+   選中格是全 app 最高對比(--control-fill);兩格永遠可按,沒有 disabled 態;按下不縮放 ---- */
+.envsw {
+  -webkit-app-region: no-drag; position: relative; z-index: 21;   /* 壓過 .ws-bar(z 20) */
+  flex: none; display: inline-flex; border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--bg-body);
+}
+.envsw button {
+  position: relative; display: flex; align-items: center; gap: var(--space-6); height: 28px;
+  padding: 0 var(--space-8) 0 var(--space-12); font-size: 12px; color: var(--ink-3); white-space: nowrap;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.envsw button::before { content: ""; position: absolute; inset: -8px 0; }
+.envsw button + button { border-left: 1px solid var(--border-frame); }
+.envsw button:first-child { border-radius: 5px 0 0 5px; }
+.envsw button:last-child { border-radius: 0 5px 5px 0; }
+.envsw button:hover { color: var(--ink); }
+.envsw button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; z-index: 1; }
+.envsw button[aria-pressed="true"] { background: var(--control-fill); color: var(--control-fill-text); font-weight: 600; }
+.envsw button[aria-pressed="true"] .mode.real { background: var(--control-fill-text); color: var(--control-fill); }
+.envsw button[aria-pressed="true"] .mode.paper { border-color: var(--control-fill-text); color: var(--control-fill-text); }
+.envsw .w { font-weight: 400; color: var(--ink-3); }
+.envsw button[aria-pressed="true"] .w { color: var(--control-fill-text); }
+.envsw .w.up { color: var(--ink); font-weight: 600; }
+.envsw button[aria-pressed="true"] .w.up { color: var(--control-fill-text); }
+.envsw-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+/* 只有圖示的格子:左右各 12(格寬 40、圖示置中);圖示後面還有記號 / 字時維持 12 / 8 */
+.envsw button:has(> .envsw-ic:only-child) { padding: 0 var(--space-12); }
+.envsw .mode { height: 18px; }
+.envsw .run-dot { margin: 0; }
+
+/* ---- 雲端視角:三段 44px 頂列同時上灰底(整塊表面變化,不加第二個強調色)。
+   側欄是 overflow: hidden,蓋不到自己右邊那條線;由中欄的 .tb 左右各伸出 1px 蓋掉兩條分隔線的頂端,三段才連成一條 ---- */
+.pane-strategies { position: relative; }
+.pane-strategies::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 44px; background: transparent; transition: background var(--motion-fast) var(--ease-standard); }
+.pane-main > .tb, .chat-head { transition: background var(--motion-fast) var(--ease-standard); }
+html[data-env="cloud"] .pane-strategies::before { background: var(--surface-muted); }
+html[data-env="cloud"] .pane-main > .tb {
+  position: relative; z-index: 1; margin-left: -1px; margin-right: -1px;
+  padding-left: calc(var(--space-24) + 1px); padding-right: calc(var(--space-16) + 1px);
+  background: var(--surface-muted); border-bottom-color: transparent;
+}
+html[data-env="cloud"].ws-sc .pane-main > .tb { padding-left: calc(var(--space-48) + 1px); }
+html[data-env="cloud"] .tb-txt, html[data-env="cloud"] .tb-sep { color: var(--ink-2); }   /* --ink-3 壓在灰底上只有 3.6:1 */
+html[data-env="cloud"] .chat-head { background: var(--surface-muted); border-bottom-color: transparent; }
+html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--surface-muted) 44px, var(--surface-card) 44px); }
+/* 切視角:側欄與中欄內容淡入,無位移、無滑動 */
+.env-fade > :not(.tb) { animation: envFade var(--motion-fast) var(--ease-standard); }
+@keyframes envFade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- 側欄:現在在哪一邊(兩邊骨架一致)。雲端那顆是鈕(開方案頁),熱區 = 整列寬 × 44 ---- */
+.envhead {
+  flex: none; position: relative; display: flex; align-items: center; gap: var(--space-8); width: 100%;
+  padding: var(--space-12) var(--space-4) var(--space-8); font-size: 13px; line-height: 20px; font-weight: 600; color: var(--ink); text-align: left;   /* 行高寫死:div 與 button 兩種都是 12+20+8=40,切換時側欄不跳 */
+}
+.envhead[hidden], .strat-head[hidden], .strat-list[hidden], .side-nav[hidden] { display: none; }
+button.envhead::before { content: ""; position: absolute; inset: -2px 0; }
+button.envhead { border-radius: var(--radius-xs); }
+.envhead .st { margin-left: auto; display: flex; align-items: center; gap: var(--space-6); font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.envhead .st[hidden] { display: none; }
+.envhead .st.up { color: var(--ink-2); }
+html.ws-sc .envhead { display: none; }
+.envhead + .side-nav, .envhead + .envhead + .side-nav { margin-top: 0; }
+.side-nav .strat-name { flex: 1; min-width: 0; }
+.side-nav .mode { height: 18px; }
+.side-nav .run-dot { margin: 0 var(--space-2) 0 0; }
+/* 雲端清單(第一刀只當清單看):不是鈕,沒有 hover、沒有手指游標 */
+.strat-row.is-static { display: flex; align-items: center; gap: var(--space-8); cursor: default; }
+.strat-row.is-static:hover { background: transparent; color: inherit; }
+.strat-row.is-static .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
+.strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+
+/* ---- 雲端第一刀唯讀:說明行、不能按的鈕(aria-disabled,不是 disabled:鍵盤停得上去、讀屏唸得到原因)、停機那一段 ---- */
+.tr-ro-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.tr-ro-note[hidden] { display: none; }
+.tr-ro-note .btn-quiet { font-size: inherit; padding: 0; }
+.btn-fill.is-ro, .btn-fill.is-ro:hover { background: var(--surface-muted); color: var(--ink-3); cursor: default; }
+.pf-act.is-ro, .pf-act.is-ro:hover { color: var(--ink-3); background: transparent; cursor: default; }
+#tr-verdict[hidden] { display: none; }
+.verdict { display: flex; align-items: flex-start; gap: var(--space-8); margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); max-width: 64ch; }
+.verdict .fault-mark { margin-top: 10px; }
+/* 聊天輸入框上方:操作對象(只在雲端視角)。輸入框本身不灰——agent 這一版只操作這台電腦 */
+.chat-tgt { margin: 0 0 var(--space-8); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.chat-tgt[hidden] { display: none; }
+.chat-tgt p { margin: 0; }
+.chat-tgt b { font-weight: 600; color: var(--ink); }
 
 /* ---- 頁面骨架 ---- */
 .trv { flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
@@ -154,6 +244,8 @@ html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起
 .ov-stats .stat:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
 .ov-stats .stat:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
 .ov-stats .stat.hero, .ov-stats .stat.wide { grid-column: span 2; }   /* 本機沒有「未實現」這個數字:兩格各佔一半 */
+/* 雲端第一刀只有權益一格:佔滿,不留半邊空灰塊(選擇器多一階:要贏過窄欄那組 first/last-child 的圓角) */
+.bt-stats.ov-stats > .stat:only-child { grid-column: 1 / -1; border-radius: var(--radius-lg); }
 .ov-stats .sl { font-weight: 600; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-stats .sl .tr-tipb { font-size: 11px; font-weight: 600; }
 .ov-stats .sl.sl-tip { overflow: visible; }
@@ -256,7 +348,8 @@ html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起
 
 @media (prefers-reduced-motion: reduce) {
   .run-dot.live { animation: none; }
-  .tb-main, .main-tab, .pf-act, .rng { transition: none; }
+  .main-tab, .pf-act, .rng, .envsw button, .pane-strategies::before, .pane-main > .tb, .chat-head { transition: none; }
+  .envsw .dot.busy, .envhead .dot.busy, .env-fade > :not(.tb) { animation: none; }
 }
 /* 確認框標題列多了記號之後:標題貼著記號靠左(.modal-head 是 space-between,三個子元素會把標題擠到中間) */
 #del-mark:not([hidden]) + h6 { margin-right: auto; }
