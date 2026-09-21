@@ -851,7 +851,13 @@ msgstr "已登出。這台不再拿得到 Blave 的資料。"
 # ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
 
 msgid "cx.lead"
-msgstr "這一頁的東西只存在這台電腦的工作區（~/Blave/workspace/.env），Blave 不會上傳。agent 和你的策略程式讀得到，這樣才能替你下單、抓資料。"
+msgstr "只存在這台電腦的工作區（~/Blave/workspace/.env），Blave 不會上傳。agent 和你的策略程式讀得到，才能替你下單、抓資料。"
+
+msgid "cx.note.one"
+msgstr "在 Binance 建金鑰時：只開交易權限、提領務必關閉，並把這個 IP 加進白名單。"
+
+msgid "cx.store.q"
+msgstr "金鑰存在哪？"
 
 msgid "cx.acct.meta"
 msgstr "可以下單、讀帳戶，也會用來抓這家交易所的資料。一次只能連一個。"
@@ -1583,29 +1589,17 @@ msgstr "Secret Key"
 msgid "cx.group.crypto"
 msgstr "加密貨幣"
 
-msgid "cx.perm"
-msgstr "金鑰只開交易權限，提領務必關閉。"
-
-msgid "cx.whitelist"
-msgstr "在交易所把這個 IP 加進白名單："
-
-msgid "cx.ip.copy"
-msgstr "複製"
-
 msgid "cx.ip.copied"
 msgstr "已複製"
 
-msgid "cx.ip.local"
-msgstr "這是這台電腦目前的對外 IP。家用網路的 IP 會變；變了 Blave 會通知你來更新白名單。"
-
-msgid "cx.ip.localNoIp"
-msgstr "白名單要填這台電腦的對外 IP。家用網路的 IP 會變；變了 Blave 會通知你來更新白名單。"
-
 msgid "cx.ip.loading"
-msgstr "正在查這台電腦的對外 IP…"
+msgstr "查詢中…"
 
 msgid "cx.ip.fail"
-msgstr "查不到這台電腦的 IPv4 對外 IP（查詢服務沒有回應，或這個網路只有 IPv6）。"
+msgstr "可能是還沒登入 Blave，或這個網路只有 IPv6。白名單要填這台電腦的對外 IPv4。"
+
+msgid "cx.ip.noneLong"
+msgstr "查不到這台電腦的對外 IP"
 
 msgid "cx.ip.retry"
 msgstr "再查一次"
@@ -1614,10 +1608,10 @@ msgid "cx.chk.withdraw"
 msgstr "這把金鑰的提領權限是開著的，沒有儲存。到 Binance 把提領關掉，再回來連一次。"
 
 msgid "cx.chk.trading"
-msgstr "這把金鑰沒有開交易權限，沒有儲存。最常見的原因是還沒設 IP 白名單：Binance 要先有白名單才讓你開交易權限。把上面的 IP 加進白名單、勾選交易權限，再連一次。"
+msgstr "這把金鑰沒開交易權限，沒有儲存。通常是還沒設 IP 白名單：把上面的 IP 加進白名單、勾選交易權限，再連一次。"
 
 msgid "cx.chk.tradingNoIp"
-msgstr "這把金鑰沒有開交易權限，沒有儲存。最常見的原因是還沒設 IP 白名單：Binance 要先有白名單才讓你開交易權限。設好白名單、勾選交易權限，再連一次。"
+msgstr "這把金鑰沒開交易權限，沒有儲存。通常是還沒設 IP 白名單：設好白名單、勾選交易權限，再連一次。"
 
 msgid "cx.chk.ipOrKey"
 msgstr "Binance 拒絕了這把金鑰，沒有儲存。Binance 不區分這三種原因：白名單裡沒有上面這個 IP、API Key 貼錯、金鑰已被刪除。先核對白名單裡的 IP。"
@@ -1653,7 +1647,7 @@ msgid "cx.re.withdrawOn"
 msgstr "提領權限被打開了。請到 Binance 關掉，再按「重新測試」。"
 
 msgid "cx.re.ipChanged"
-msgstr "對外 IP 換成 {ip} 了。到 Binance 把白名單改成這個 IP，再按「重新測試」。"
+msgstr "對外 IP 換了。到 Binance 把白名單改成下面這個 IP，再按「重新測試」。"
 
 msgid "cx.re.rejected"
 msgstr "Binance 拒絕了這把金鑰，下單送不出去。核對白名單的 IP；金鑰不在了就重新連接。"

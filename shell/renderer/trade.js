@@ -1079,12 +1079,11 @@ function trPaintSet() {
   if (bn && bn.verdict) {   // 重查出事(spec §5.4):講哪一種+下一步;IP 換了就把新 IP 連同複製鈕給他
     // 照 reason 講;同一個 reason 底下再照出事那一次的代號講對的原因(存著的金鑰壞了 ≠ 被 Binance 拒絕;合約被關 ≠ 交易權限全關)
     const v = bn.verdict, code = v.code || (bn.last && bn.last.code);
-    const text = v.reason === "IP_CHANGED" ? t("cx.re.ipChanged", { ip: v.ip || "—" }) : v.reason === "WITHDRAW_ENABLED" ? t("cx.re.withdrawOn")
+    const text = v.reason === "IP_CHANGED" ? t("cx.re.ipChanged") : v.reason === "WITHDRAW_ENABLED" ? t("cx.re.withdrawOn")
       : v.reason === "TRADING_LOST" ? t("cx.re.tradingOff")
       : code === "BAD_SECRET" || code === "BAD_KEY_FORMAT" ? t("cx.re.badKey") : t("cx.re.rejected");
-    const line = errLine(text);
-    if (v.reason === "IP_CHANGED" && v.ip) line.lastChild.append(" ", cxCopyBtn(v.ip, t("cx.ip.copyThis")));   // 鈕跟著句子走(.plan-err 是 flex,直接 append 會被拉成整段高)
-    box.appendChild(line);
+    box.appendChild(errLine(text));
+    if (v.reason === "IP_CHANGED" && v.ip) { const w = trEl("div", "cx-re-ip"); w.appendChild(cxIpChip(v.ip)); box.appendChild(w); }   // IP 放句子下面(句子不再夾 {ip}):拿不到 IP 就只有句子
   } else if (bn && bn.last && bn.last.ok) {   // 連得上:沒設白名單、現貨或合約其中一個沒開,如實講(灰記號,不是錯)
     const calm = (text) => { const p = errLine(text); p.classList.add("is-calm"); box.appendChild(p); }, d = bn.last.detail || {};
     if (bn.last.code === "NO_IP_RESTRICT") calm(t("cx.chk.noWhitelist"));
@@ -1354,12 +1353,12 @@ function trOvEvents(r) {
 let cxOpener = null;
 /* 表單自己的狀態(不放進袋子的 sig:金鑰不該變成一個到處被複製的字串)。ip:undefined = 還沒查 / null = 查不到 / 字串 = IPv4。
    bn = 主行程 binance_link 的 state(重查結果),設定分頁的帳戶那一列用。 */
-const CXF = { venue: PAPER, apiKey: "", secret: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null };
+const CXF = { venue: PAPER, apiKey: "", secret: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, storeOpen: false };
 function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.res = null; }
 function cxModalOpen(opener) {
   if (ENV.cur !== "local" || TR.env !== "local" || !$("cx-scrim").hidden) return;
   const L = TR_BAGS.local; L.cx = { busy: false, err: null, retest: false };
-  cxOpener = opener || null; cxForget(); CXF.venue = PAPER;
+  cxOpener = opener || null; cxForget(); CXF.venue = PAPER; CXF.storeOpen = false;
   $("view-ws").inert = true;
   const sc = $("cx-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
@@ -1382,13 +1381,25 @@ async function cxIpLookup() {
   CXF.ipBusy = false; CXF.ip = typeof ip === "string" && /^[0-9.]{7,15}$/.test(ip) ? ip : null;   // 只收 IPv4;主行程已經驗過,這裡再守一次
   if (!$("cx-scrim").hidden) cxModalPaint();
 }
-function cxCopyBtn(ip, label) {
-  const idle = label || t("cx.ip.copy"), b = trEl("button", "btn-quiet", idle); b.type = "button";
+/* IP 的複製元件(連接框與設定分頁「IP 換了」共用;設計師規格 v2 方案 C):chip 裡是 IP + 一顆 icon 鈕(視覺 24、熱區 28),
+   旁邊一個 status 槽——複製成功才換成勾、講「已複製」2 秒。可及名稱固定講出複製的是什麼。icon 用 DOM 組(這個檔不用 innerHTML)。 */
+const CX_ICONS = { copy: [["rect", { width: 14, height: 14, x: 8, y: 8, rx: 2, ry: 2 }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]], check: [["path", { d: "M20 6 9 17l-5-5" }]] };
+function cxIcon(name) {
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "ic ic-" + name); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+  for (const [tag, attrs] of CX_ICONS[name]) { const n = document.createElementNS(NS, tag); Object.keys(attrs).forEach((k) => n.setAttribute(k, String(attrs[k]))); svg.appendChild(n); }
+  return svg;
+}
+function cxIpChip(ip) {
+  const w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip"), b = trEl("button", "cx-icb"), said = trEl("span", "cx-said");
+  b.type = "button"; b.setAttribute("aria-label", t("cx.ip.copyThis")); b.append(cxIcon("copy"), cxIcon("check")); said.setAttribute("role", "status");
   b.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(ip); } catch (_) { return; }
-    b.textContent = t("cx.ip.copied"); srSay(t("cx.ip.copied")); setTimeout(() => { if (b.isConnected) b.textContent = idle; }, 2000);
+    b.classList.add("is-done"); said.textContent = t("cx.ip.copied");
+    setTimeout(() => { if (b.isConnected) { b.classList.remove("is-done"); said.textContent = ""; } }, 2000);
   });
-  return b;
+  chip.append(trEl("span", "v", ip), b); w.append(chip, said);
+  return w;
 }
 // 檢查結果 → 那一句(spec §5.3)。字面 key 一個一個寫:check_shell_strings 靠字面掃「用到的 key」
 function cxChkText(r) {
@@ -1420,8 +1431,6 @@ function cxModalPaint() {
   box.appendChild(trEl("p", "cx-manual-note", t("cx.acct.meta")));
   if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));
   else {
-    // 金鑰存在哪裡、誰讀得到:只在選了真的交易所時講(模擬交易沒有金鑰,講了反而讓人以為有)
-    box.appendChild(trEl("p", "cx-manual-note", t("cx.lead")));
     const fld = (id, label, key) => {
       const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", label));
       const i = trEl("input", "f-input"); i.id = id; i.type = "password"; i.autocomplete = "off"; i.spellcheck = false; i.setAttribute("autocapitalize", "off");
@@ -1432,12 +1441,22 @@ function cxModalPaint() {
     };
     fld("cx-api", t("cx.apiKey"), "apiKey"); fld("cx-secret", t("cx.secretKey"), "secret");
     const note = trEl("div", "cx-note");
-    note.appendChild(trEl("p", "", t("cx.perm")));
-    const ipLine = trEl("p", "");
-    if (CXF.ip) { const ipw = trEl("span", "cx-ipw"); ipw.append(trEl("span", "cx-ip", CXF.ip), cxCopyBtn(CXF.ip)); ipLine.append(trEl("span", "", t("cx.whitelist")), ipw); }
-    else if (CXF.ipBusy || CXF.ip === undefined) ipLine.textContent = t("cx.ip.loading");
-    else { const rb = trEl("button", "btn-quiet", t("cx.ip.retry")); rb.type = "button"; rb.id = "cx-ip-retry"; rb.addEventListener("click", cxIpLookup); ipLine.append(trEl("span", "", t("cx.ip.fail")), rb); }
-    note.append(ipLine, trEl("p", "", CXF.ip ? t("cx.ip.local") : t("cx.ip.localNoIp")));
+    note.appendChild(trEl("p", "", t("cx.note.one")));
+    if (CXF.ip) note.appendChild(cxIpChip(CXF.ip));
+    else {   // 查詢中 / 查不到:同一個 chip 殼、灰字;查不到才有「再查一次」與一句原因
+      const lost = !(CXF.ipBusy || CXF.ip === undefined), w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip is-empty");
+      chip.appendChild(trEl("span", "v", lost ? t("cx.ip.noneLong") : t("cx.ip.loading"))); w.appendChild(chip);
+      if (lost) { const rb = trEl("button", "btn-quiet", t("cx.ip.retry")); rb.type = "button"; rb.id = "cx-ip-retry"; rb.addEventListener("click", cxIpLookup); w.appendChild(rb); }
+      note.appendChild(w);
+      if (lost) note.appendChild(trEl("p", "cx-hint", t("cx.ip.fail")));
+    }
+    // 金鑰存在哪、誰讀得到:收進展開列(真的 button + aria-expanded)。「agent 和你的策略程式讀得到」那句在展開內容裡原文保留。
+    // 展開狀態記在 CXF:框重畫(查到 IP、出錯)時不會自己收回去;按的時候就地切,不重畫(焦點不掉)
+    const disc = trEl("button", "cx-disc", t("cx.store.q")), store = trEl("p", "cx-disc-p", t("cx.lead"));
+    disc.type = "button"; disc.id = "cx-store-q"; store.id = "cx-store"; disc.setAttribute("aria-controls", "cx-store");
+    disc.setAttribute("aria-expanded", CXF.storeOpen ? "true" : "false"); store.hidden = !CXF.storeOpen;
+    disc.addEventListener("click", () => { CXF.storeOpen = !CXF.storeOpen; disc.setAttribute("aria-expanded", CXF.storeOpen ? "true" : "false"); store.hidden = !CXF.storeOpen; });
+    note.append(disc, store);
     box.appendChild(note);
   }
   const slot = trEl("div", ""); slot.setAttribute("role", "status"); box.appendChild(slot);

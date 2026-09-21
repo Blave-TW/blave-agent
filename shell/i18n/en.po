@@ -851,7 +851,13 @@ msgstr "Signed out. This computer no longer gets Blave data."
 # ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
 
 msgid "cx.lead"
-msgstr "Everything on this page is saved only in the workspace on this computer (~/Blave/workspace/.env). Blave does not upload it. The agent and your strategy code can read it; that is how they trade and fetch data for you."
+msgstr "Only in this computer’s workspace (~/Blave/workspace/.env). Blave does not upload them. The agent and your strategy code can read them; that is how they trade and fetch data for you."
+
+msgid "cx.note.one"
+msgstr "When you create the key on Binance: enable trading only, keep withdrawals off, and whitelist this IP."
+
+msgid "cx.store.q"
+msgstr "Where are my keys stored?"
 
 msgid "cx.acct.meta"
 msgstr "Can place orders and read the account, and is also used to fetch this exchange's data. One at a time."
@@ -1583,29 +1589,17 @@ msgstr "Secret Key"
 msgid "cx.group.crypto"
 msgstr "Crypto"
 
-msgid "cx.perm"
-msgstr "Grant trading permission only — leave withdrawals disabled."
-
-msgid "cx.whitelist"
-msgstr "Whitelist this IP at the exchange:"
-
-msgid "cx.ip.copy"
-msgstr "Copy"
-
 msgid "cx.ip.copied"
 msgstr "Copied"
 
-msgid "cx.ip.local"
-msgstr "This is this computer’s current public IP. Home network IPs change. When yours does, Blave notifies you so you can update the whitelist."
-
-msgid "cx.ip.localNoIp"
-msgstr "The whitelist needs this computer’s public IP. Home network IPs change. When yours does, Blave notifies you so you can update the whitelist."
-
 msgid "cx.ip.loading"
-msgstr "Looking up this computer’s public IP…"
+msgstr "Looking up…"
 
 msgid "cx.ip.fail"
-msgstr "Couldn’t find an IPv4 public IP for this computer (the lookup service didn’t respond, or this network is IPv6-only)."
+msgstr "You may not be signed in to Blave, or this network is IPv6-only. The whitelist needs this computer’s public IPv4."
+
+msgid "cx.ip.noneLong"
+msgstr "Couldn’t find this computer’s public IP"
 
 msgid "cx.ip.retry"
 msgstr "Look Up Again"
@@ -1614,10 +1608,10 @@ msgid "cx.chk.withdraw"
 msgstr "This key has withdrawals enabled, so it was not saved. Turn withdrawals off at Binance, then connect again."
 
 msgid "cx.chk.trading"
-msgstr "This key has no trading permission, so it was not saved. The usual cause is a missing IP whitelist: Binance only lets you enable trading once a whitelist is set. Add the IP above to the whitelist, enable trading, then connect again."
+msgstr "This key has no trading permission, so it was not saved. Usually the IP whitelist is missing: add the IP above to the whitelist, enable trading, then connect again."
 
 msgid "cx.chk.tradingNoIp"
-msgstr "This key has no trading permission, so it was not saved. The usual cause is a missing IP whitelist: Binance only lets you enable trading once a whitelist is set. Set the whitelist, enable trading, then connect again."
+msgstr "This key has no trading permission, so it was not saved. Usually the IP whitelist is missing: set the whitelist, enable trading, then connect again."
 
 msgid "cx.chk.ipOrKey"
 msgstr "Binance rejected this key, so it was not saved. Binance doesn’t tell these three causes apart: the IP above isn’t on the whitelist, the API Key was pasted wrong, or the key was deleted. Check the whitelisted IP first."
@@ -1653,7 +1647,7 @@ msgid "cx.re.withdrawOn"
 msgstr "Withdrawals were turned on. Turn them off at Binance, then press Retest connection."
 
 msgid "cx.re.ipChanged"
-msgstr "The public IP is now {ip}. Update the whitelist at Binance to this IP, then press Retest connection."
+msgstr "The public IP changed. Update the whitelist at Binance to the IP below, then press Retest connection."
 
 msgid "cx.re.rejected"
 msgstr "Binance rejected this key, so orders can’t be placed. Check the whitelisted IP. If the key is gone, reconnect."

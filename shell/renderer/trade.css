@@ -364,8 +364,28 @@ html.ws-sc .side-gate { display: none; }
 .cx-note { margin: var(--space-16) 0 0; padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cx-note p { margin: 0; }
 .cx-note p + p { margin-top: var(--space-4); }
-.cx-ip { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 13px; color: var(--ink); user-select: all; -webkit-user-select: all; margin: 0 0 0 var(--space-4); line-height: 1; }
-.cx-ipw { white-space: nowrap; }   /* IP+複製包成一組,換行時一起走 */
-.cx-note .btn-quiet { font-size: 12px; padding: 0; margin-left: var(--space-4); }   /* 熱區靠 app.css 的 .btn-quiet::before,不用 min-height 撐行高 */
-.plan-err .btn-quiet { padding: 0; margin-left: var(--space-4); }
+/* IP chip + icon 複製鈕、「金鑰存在哪?」展開列(設計師規格 v2 方案 C) */
+.cx-chipw { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-8); }
+.cx-chip { display: inline-flex; align-items: center; gap: var(--space-4); height: 28px; padding: 0 var(--space-2) 0 var(--space-8); border-radius: var(--radius-xs); background: var(--surface-muted); }
+.cx-chip .v { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 13px; color: var(--ink); user-select: all; -webkit-user-select: all; }
+.cx-chip.is-empty { padding-right: var(--space-8); }
+.cx-chip.is-empty .v { font-family: inherit; font-size: 12px; color: var(--ink-3); user-select: none; -webkit-user-select: none; }
+.cx-icb { position: relative; flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-micro); color: var(--ink-2); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.cx-icb::before { content: ""; position: absolute; inset: -2px; }   /* 視覺 24×24,熱區 28×28 */
+.cx-icb:hover { background: var(--surface-card); color: var(--ink); }
+.cx-icb .ic-check, .cx-icb.is-done .ic-copy { display: none; }
+.cx-icb.is-done .ic-check { display: block; }
+.cx-said { font-size: 12px; color: var(--ink-2); }
+.cx-note .btn-quiet { font-size: 12px; padding: 0; }   /* 「再查一次」:熱區靠 app.css 的 .btn-quiet::before,不用 min-height 撐行高 */
+.cx-hint { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cx-note p.cx-hint { margin-top: var(--space-6); }
+.cx-disc { position: relative; display: inline-flex; align-items: center; gap: var(--space-6); margin-top: var(--space-12); padding: 0; font-size: 12px; color: var(--ink-2); }
+.cx-disc::before { content: ""; position: absolute; inset: -6px -4px; }   /* 視覺高 17,熱區高約 30 */
+.cx-disc:hover { color: var(--ink); }
+.cx-disc::after { content: ""; width: 6px; height: 6px; margin-top: -3px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); }
+.cx-disc[aria-expanded="true"]::after { margin-top: 3px; transform: rotate(-135deg); }
+.cx-note p.cx-disc-p { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cx-disc-p[hidden] { display: none; }
+.cx-re-ip { margin: 0 0 0 var(--space-16); }   /* 16 = 短劃 8 + gap 8,跟錯誤句的字對齊;上方間距由 .cx-chipw 自己的 margin-top 給 */
+@media (prefers-reduced-motion: reduce) { .cx-icb { transition: none; } }
 .f-input[readonly] { color: var(--ink-3); }

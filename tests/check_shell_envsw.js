@@ -144,7 +144,15 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("連接交易所的框在雲端視角開不起來、也送不出去", /^function cxModalOpen\(opener\) \{\s*if \(ENV\.cur !== "local" \|\| TR\.env !== "local"/.test(fn("cxModalOpen")) && /if \(L\.cx\.busy \|\| ENV\.cur !== "local"/.test(fn("cxConnect")) && /ENV\.cur !== "local"\) return;/.test(fn("cxRetest")));
   ok("雲端的「連接交易所」「重新測試」「解除綁定」都不接 click(aria-disabled + 說明)", /if \(TR\.env === "cloud"\) \{ b\.classList\.add\("is-ro"\);[^\n]*\}\s*else b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\)/.test(fn("trPaintOnboard")) && /if \(ro\) \[rt, ub\]\.forEach/.test(fn("trPaintSet")));
   ok("設定 › 連線分類清乾淨:DOM、程式、字串都沒有", !/set-conn|data-set-cat="conn"/.test(html) && !/cxPaint\(|cxOpen\(|set-conn|"conn"/.test(code + app) && !/"(set\.cat\.conn|cx\.unbindHint|cx\.unbindLink|cx\.acct\.title)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
-  ok("金鑰存放說明(cx.lead)搬進框裡,而且只在不是模擬交易時出現", /if \(venue === PAPER\)[^\n]*cx\.paperNote[^\n]*\n\s*else \{\n[^\n]*\n\s*box\.appendChild\(trEl\("p", "cx-manual-note", t\("cx\.lead"\)\)\)/.test(src));
+  // 設計師規格 v2 方案 C:存放說明收進「金鑰存在哪?」展開列——仍然只在不是模擬交易時出現,而且誠實揭露那句原文要在
+  ok("金鑰存放說明(cx.lead)在框裡的展開列,只在不是模擬交易時出現;展開狀態重畫時保住", (() => { const i = src.indexOf('if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));'), j = src.indexOf('box.appendChild(note);', i), body = src.slice(i, j);
+    return i > 0 && j > i && /\n\s*else \{/.test(body) && /trEl\("button", "cx-disc", t\("cx\.store\.q"\)\), store = trEl\("p", "cx-disc-p", t\("cx\.lead"\)\)/.test(body) && /aria-expanded", CXF\.storeOpen \? "true" : "false"\); store\.hidden = !CXF\.storeOpen;/.test(body)
+      && (src.match(/t\("cx\.lead"\)/g) || []).length === 1; })());
+  { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+    ok("誠實揭露原文保留(zh / en):agent 和策略程式讀得到金鑰;沒有「永遠不經過 agent」這類說法", /"cx\.lead": "[^"]*agent 和你的策略程式讀得到/.test(S) && /"cx\.lead": "[^"]*The agent and your strategy code can read them/.test(S) && !/不經過 agent|不會經過 agent|never (reach|pass through|go through) the agent/i.test(S));
+    ok("規格刪掉的 key 兩語都刪了;錯誤句保留「通常是」不寫成斷言", !/"cx\.(perm|whitelist|ip\.local|ip\.localNoIp|ip\.copy)"/.test(S) && /"cx\.chk\.trading": "[^"]*通常是/.test(S) && /"cx\.chk\.trading": "[^"]*Usually/.test(S));
+    ok("複製元件:icon 鈕有可及名稱、成功才換勾並在 status 槽講「已複製」2 秒;「IP 換了」句子不再夾 {ip}", /b\.setAttribute\("aria-label", t\("cx\.ip\.copyThis"\)\)/.test(src) && /said\.setAttribute\("role", "status"\)/.test(src)
+      && /await navigator\.clipboard\.writeText\(ip\); \} catch \(_\) \{ return; \}\s*b\.classList\.add\("is-done"\); said\.textContent = t\("cx\.ip\.copied"\);\s*setTimeout\([^\n]*2000\)/.test(src) && !/"cx\.re\.ipChanged": "[^"]*\{ip\}/.test(S) && /t\("cx\.re\.ipChanged"\) :/.test(src)); }
   const afterAwait = ["trPoll", "trOpen", "trRun", "trSaveAmounts", "trUnbind", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
   const leaks = afterAwait.filter((x) => /\bTR\b/.test(x[1])).map((x) => x[0]);
   ok("N8 跨 await 的流程在第一個 await 之後不碰裸的 TR(只准 TR === S 與 TR_BAGS):" + (leaks.join() || "無"), afterAwait.every((x) => x[1].length > 0) && leaks.length === 0);
