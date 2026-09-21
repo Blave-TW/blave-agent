@@ -156,6 +156,23 @@ function tm() {
   return _tm;
 }
 
+// ── 雲端宿主(cloud.js;線 B 第一刀:唯讀)──────────────────────
+// 用帳號 token + app_secret 讀用戶雲端主機的狀態。兩顆憑證只在這個行程裡:不進 renderer、不進 agent 的環境、不寫檔。
+// 回應也不落地——agent 讀得到 workspace,落地就等於把部位與權益交給它。renderer 拿到的是畫面用的狀態(沒有憑證)。
+let _cloud = null;
+function isOurPageUrl(u) {
+  try { const x = new URL(u || ""); return x.protocol === "file:" && require("url").fileURLToPath(x.href.split(/[?#]/)[0]) === path.join(__dirname, "renderer", "index.html"); } catch (_) { return false; }
+}
+function cloudHost() {
+  if (!_cloud) _cloud = require("./cloud").createCloudHost({
+    apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
+    // 送的是部位與權益:只送給載入自家 index.html 的視窗(今天全 app 只有一個視窗;哪天多了第二個,也不會漏過去)
+    onChange: (snap) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("cloud-state", snap); },
+  });
+  return _cloud;
+}
+
 // ── 自動更新(updater.js;規則見 spec §13)────────────────────
 // 更新來源由打包時的 BLAVE_UPDATE_URL 蓋進 package.json(blaveUpdateUrl);開發版與沒設的包 = 不更新,畫面只顯示版號。
 let _up = null;
@@ -328,6 +345,7 @@ async function signOutBlave() {
     catch (_) { /* 離線 / 逾時:照樣登出本機 */ }
   }
   clearToken();
+  if (_cloud) _cloud.reset();   // 登出:不留上一個帳號的部位在記憶體裡
   lastAcct = null;
   return { revoked };
 }
@@ -460,6 +478,8 @@ async function startOAuth(lang) {
   saveDataKey(r.body.data_api_key, r.body.data_secret_key);
   clearAppSecret();
   saveAppSecret(r.body.app_secret);      // 舊版 api 沒有這欄:之後按「啟動方案」會被要求重新登入
+  // 換了帳號:cloud.js 自己會認出 token 換了、把上一個人的東西丟掉(不靠這一行);這一行只是讓畫面不必等下一輪輪詢
+  if (_cloud && _cloud.isRunning()) _cloud.refresh(true).catch(() => {});
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
@@ -1152,6 +1172,10 @@ app.whenReady().then(() => {
   });
   // 告知畫面顯示過才開始送(稽核 M2'):在那之前 start()/track() 一則都不出門。由 renderer 在告知真的畫出來之後叫這支
   ipcMain.handle("telemetry-noticed", (e) => { if (!fromOurPage(e)) return false; tm().setNoticed(); return true; });
+  // 雲端(唯讀):畫面要的狀態。只收自家頁面——回的是部位與權益
+  // 懶啟動:第一次有人要雲端狀態才開始輪詢。refresh 有最小間隔,renderer 寫壞的迴圈打不爆帳號的速率桶
+  ipcMain.handle("cloud-status", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().status(); });
+  ipcMain.handle("cloud-refresh", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().refresh().then(() => cloudHost().status()); });
   ipcMain.handle("update-state", () => updater().state());
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
   ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
@@ -1184,7 +1208,8 @@ app.whenReady().then(() => {
   tradeStartIfReady();   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
-  app.on("browser-window-focus", () => { lastAcct = null; p1Badge = 0; if (app.dock) app.dock.setBadge(""); });
+  app.on("browser-window-focus", () => { lastAcct = null; p1Badge = 0; if (app.dock) app.dock.setBadge(""); cloudHost().setForeground(true); });
+  app.on("browser-window-blur", () => cloudHost().setForeground(false));   // 背景時輪詢放慢到 60 秒
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   trayStart();
   tm().start();
