@@ -230,6 +230,21 @@ for drift in (1.02, 0.98):
           and run(-LOT_USD, LOT_USD, keep_gate=True) == [-78.31],
           f"a one-lot position still closes and flips against a {drift:.2f}x-stale "
           f"reduce gate (${stale_rgate:.2f})")
+
+# ⑦ a WHOLE-position close (target flat, or a flip's close leg) is gated flat,
+#    not at half a lot: under self_ledger the held size is the book's cost, and
+#    a one-lot position that more than doubled reads as under half a lot at the
+#    mark — it could never be closed. Nothing buys a full close back, so the
+#    churn gate has nothing to protect there; a PARTIAL reduce keeps it (⑤).
+check(run(0, LOT_USD * 0.4) == [round(-LOT_USD * 0.4, 2)]
+      and run(None, LOT_USD * 0.4) == [round(-LOT_USD * 0.4, 2)],
+      "a position booked at 0.4 lot of today's mark still closes on a flat target")
+check(run(-LOT_USD * 0.2, LOT_USD * 0.4) == [round(-LOT_USD * 0.4, 2)],
+      "...and its flip closes it, the sub-lot new side not opened")
+check(run(LOT_USD * 0.01, LOT_USD * 0.4) == [],
+      "a target that is merely SMALL is a partial reduce — half-lot gate, no order")
+check(run(0, 8) == [] and run(None, 8) == [] and run(-8, 8) == [],
+      "dust under the flat threshold is still never sent, flat target or not")
 check(errors == [], "none of the above recorded an order_error")
 
 # ⑦ and the same, end to end: with no lot to be read the entry gate still holds

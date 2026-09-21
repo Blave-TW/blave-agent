@@ -1010,6 +1010,26 @@ def _resolve_threshold(threshold, symbol, reduce_only=False):
     return threshold(symbol, reduce_only) if callable(threshold) else threshold
 
 
+def _close_threshold(threshold, symbol):
+    """The gate for a leg that takes the WHOLE position off — target flat, or
+    the close leg of a flip: the flat threshold, not the half-lot reduce gate.
+
+    Half a lot is there to stop a PARTIAL reduce from ceil-selling a lot that
+    gets bought straight back; a full close has no remainder and nothing buys
+    it back (target 0 → no entry leg; a flip's entry leg is gated on its own
+    side). Under self_ledger the diff is the book's COST while half a lot is
+    priced at the mark, so a one-lot position that more than doubled could
+    never be closed — the signal said flat and no order went out, every round.
+    Account-read mode is untouched by construction: a swap position is whole
+    lots, already over half of one. The flat floor stays, so dust under it is
+    left alone exactly as before. A callable without `.flat` (hand-written)
+    keeps answering for itself."""
+    if not callable(threshold):
+        return threshold
+    flat = getattr(threshold, 'flat', None)
+    return threshold(symbol, True) if flat is None else flat
+
+
 def compute_diff(target, actual, threshold=10, gates=None):
     """
     Compute required position adjustments.
@@ -1071,6 +1091,11 @@ def compute_diff(target, actual, threshold=10, gates=None):
             # Resolved once and reused: on the reconciler's callable this is a
             # venue round-trip (cached, but only per symbol per round).
             gate = _resolve_threshold(threshold, symbol, reduces)
+            # Target flat, or a flip: the row carries a whole-position close,
+            # gated flat (_close_threshold). `usd` below records what was
+            # applied; entry_usd / reduce_usd stay the symbol's two side gates.
+            applied = (min(gate, _close_threshold(threshold, symbol))
+                       if a_signed != 0 and t_signed * a_signed <= 0 else gate)
             # Recorded only when above the flat threshold — the workspace
             # reads absence as "the flat gate, nothing to explain". The
             # reconciler's callable carries its flat value as `.flat`; a bare
@@ -1091,12 +1116,12 @@ def compute_diff(target, actual, threshold=10, gates=None):
                 # diff flips sign. (Not equivalent to `gate > flat` — that is
                 # only this round's side.)
                 if entry_gate > flat or reduce_gate > flat:
-                    gates[symbol] = {'usd': gate, 'diff': diff,
+                    gates[symbol] = {'usd': applied, 'diff': diff,
                                      'entry_usd': entry_gate,
                                      'reduce_usd': reduce_gate}
                     if reduces:
                         gates[symbol]['side'] = 'reduce'
-            if abs(diff) < gate:
+            if abs(diff) < applied:
                 continue
 
         orders.append({
@@ -1357,7 +1382,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             del legs[:]
 
         for sub_diff, reduce_only, is_entry in sub_orders:
+            whole = reduce_only and abs(sub_diff) >= abs(a_signed) - 1e-9
             leg_threshold = (0 if is_lot_based else
+                             _close_threshold(threshold, symbol) if whole else
                              _resolve_threshold(threshold, symbol, reduce_only))
             if abs(sub_diff) < leg_threshold:
                 continue

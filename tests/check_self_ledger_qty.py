@@ -382,6 +382,38 @@ def on_mode_checks(root):
           and s[3]["paper_qty"] == 0 and s[3]["book"] == {},
           "short: held through +25%, then covered exactly", str(s[3]))
 
+    # A whole-position close is gated flat, not at half a lot: the diff is the
+    # book's COST, half a lot is priced at the MARK, so one lot that more than
+    # doubled (cost 100 < 0.5 × 250) was never closed — no order, every round.
+    for side, close in ((1, "sell"), (-1, "buy")):
+        r = run(root, {"self_ledger": True, "lot": 0.001, "amount": 110, "steps": [
+            {"mark": 100000, "pos": side}, {"mark": 250000, "pos": 0, "idle_round": True}]})
+        s = r["steps"]
+        check(s[1]["fills"] == [[close, 0.001, 250000.0]] and s[1]["paper_qty"] == 0
+              and s[1]["book"] == {} and not s[1]["idle_calls"],
+              f"one lot {'long' if side > 0 else 'short'}, mark x2.5, signal flat: "
+              f"the close goes out and the book is empty", str(s[1]))
+    r = run(root, {"self_ledger": True, "lot": 0.001, "amount": 110, "steps": [
+        {"mark": 100000, "pos": 1}, {"mark": 250000, "pos": -1, "idle_round": True}]})
+    s = r["steps"]
+    check(s[1]["fills"] == [["sell", 0.001, 250000.0]] and s[1]["book"] == {}
+          and not s[1]["idle_calls"],
+          "one lot long, mark x2.5, flip: the close leg goes out; the 0.44-lot short "
+          "stays under the entry gate and nothing is re-sent", str(s[1]))
+    # ...and only the whole-position close: a partial reduce keeps half a lot
+    # (the 2026-09-09 churn gate), and cost under the flat floor stays dust
+    r = run(root, {"self_ledger": True, "lot": 0.001, "steps": [
+        {"mark": 100000, "pos": 1}, {"mark": 100000, "pos": 0.96, "idle_round": True}]})
+    s = r["steps"]
+    check(not s[1]["calls"] and not s[1]["idle_calls"] and s[1]["paper_qty"] == 0.01,
+          "partial reduce of 0.4 lot: still under the half-lot gate, no order", str(s[1]))
+    dust = [old_leg("2026-02-01T00:00:00", 5.0, 0.00005, 100000.0)]
+    r = run(root, {"self_ledger": True, "pre_seed": OLD_SEED, "pre_log": dust, "steps": [
+        {"mark": 100000, "manual": 0.00005}, {"mark": 250000, "pos": 0, "idle_round": True}]})
+    s = r["steps"]
+    check(not s[1]["calls"] and not s[1]["idle_calls"] and s[1]["book"] != {},
+          "a book costing less than the flat threshold is still left alone", str(s[1]))
+
     # a remainder under one lot: written off once, audited, never re-sent
     r = run(root, {"self_ledger": True, "steps": [
         {"mark": 97000, "pos": 1}, {"lot": 0.001, "mark": 97000, "pos": 0, "idle_round": True}]})
@@ -584,6 +616,36 @@ def off_mode_checks(head):
             n = sum(len(x["fills"]) for x in a["steps"])
             check(same and n > 0, f"OFF {name} lot={lot or 'native'}: {n} orders, fills + "
                                   f"orders.jsonl identical to {BASELINE}")
+    # The flat gate on a whole-position close changes nothing here: an
+    # account-read diff is at the mark, so one lot is already over half of one…
+    for side in (1, -1):
+        case = {"self_ledger": False, "lot": 0.001, "amount": 110, "steps": [
+            {"mark": 100000, "pos": side}, {"mark": 250000, "pos": 0}]}
+        a, b = run(ROOT, case), run(head, case)
+        same = all(x["fills"] == y["fills"] and x["log"] == y["log"]
+                   and x["calls"] == y["calls"] for x, y in zip(a["steps"], b["steps"]))
+        check(same and a["steps"][1]["paper_qty"] == 0 and len(a["steps"][1]["fills"]) == 1,
+              f"OFF one lot {'long' if side > 0 else 'short'}, mark x2.5, signal flat: "
+              f"closes, identical to {BASELINE}", str(a["steps"][1]))
+    # …and dust under the flat threshold is still never sent to the venue
+    for name, case in {
+        "one 5-USD lot": {"lot": 0.001, "steps": [{"mark": 5000, "manual": 0.001},
+                                                  {"mark": 5000, "pos": 0, "idle_round": True}]},
+        "5 USD, no lot grid": {"steps": [{"mark": 100000, "manual": 0.00005},
+                                         {"mark": 100000, "pos": 0, "idle_round": True}]},
+        "5 USD of spot": {"spot": True, "steps": [{"mark": 100000, "manual": 0.00005},
+                                                  {"mark": 100000, "pos": 0, "idle_round": True}]},
+    }.items():
+        case["self_ledger"] = False
+        a, b = run(ROOT, case), run(head, case)
+        quiet = all(not x["calls"] and not x["idle_calls"] and not x["fills"] and not x["log"]
+                    for x in a["steps"][1:])
+        same = all(x["calls"] == y["calls"] and x["idle_calls"] == y["idle_calls"]
+                   and x["paper_qty"] == y["paper_qty"] and x["spot"] == y["spot"]
+                   for x, y in zip(a["steps"], b["steps"]))
+        check(quiet and same, f"OFF dust ({name}), target flat: no place_order call, "
+                              f"same as {BASELINE}", str(a["steps"][1]))
+
     for style in ({"type": "twap", "duration_min": 4}, {"type": "chase"}):
         case = {"self_ledger": False, "lot": 0.001, "fast_async": True, "amount": 2000,
                 "execution": style, "steps": scripts["A"]}

@@ -58,8 +58,11 @@ def _symbol_threshold(symbol, reduce_only=False):
     back off, and the churn is back. Do not "simplify" it to 1.0 (pinned in
     tests/check_reconcile_threshold.py).
 
-    REDUCE legs (shrink, close, and the close leg of a flip): THRESHOLD, or
-    HALF a lot when larger. The entry gate alone only shuts one direction of
+    REDUCE legs that leave part of the position (a shrink): THRESHOLD, or
+    HALF a lot when larger. A leg that takes the WHOLE position off — target
+    flat, or the close leg of a flip — never asks this function: lib.portfolio
+    gates it at the flat THRESHOLD (`.flat` below, _close_threshold), see the
+    end of this paragraph. The entry gate alone only shuts one direction of
     the churn — measured 2026-09-09 (uid 32321, 3 lots vs a $227 target): the
     mark drifted the position $10 over target, _reduce_qty ceiled that to a
     whole $79 lot, the flat gate let it through, and the resulting $69 gap was
@@ -73,7 +76,15 @@ def _symbol_threshold(symbol, reduce_only=False):
     50% margin on a 60s-old mark. Under self_ledger a reduce leg is sized from
     the bot's own book and rounded to a lot (venue_wiring._book_reduce_qty), and
     the diff it is gated on is in the book's cost, not the mark — the gate is
-    the same half lot, valued at the mark. Spot and a failed lookup stay on the flat THRESHOLD.
+    the same half lot, valued at the mark. That mismatch is why a whole-position
+    close is NOT gated here: a one-lot book that more than doubled costs less
+    than half a lot at the mark, so the signal said flat and no order went out,
+    every round (N lots: mark/entry > 2N). Exempting it cannot bring the churn
+    back — a full close leaves no ceil remainder, target 0 has no entry leg to
+    buy it back, and a flip's entry leg is still gated at 1.05 lots. On an
+    account-read book it changes nothing: a swap position is whole lots, always
+    over half of one. Dust under the flat THRESHOLD is left alone either way.
+    Spot and a failed lookup stay on the flat THRESHOLD.
 
     Lot-based (capital/TW futures) rows never reach here — lib.portfolio skips
     the account-currency threshold for them entirely.
@@ -97,7 +108,8 @@ def _symbol_threshold(symbol, reduce_only=False):
 
 # lib.portfolio.compute_diff records a gate for the workspace only when it is
 # above the flat one; with both sides venue-scaled now, neither side IS the
-# flat value any more, so the callable carries it.
+# flat value any more, so the callable carries it. It is also the gate
+# lib.portfolio applies to a whole-position close (_close_threshold).
 _symbol_threshold.flat = THRESHOLD
 
 
