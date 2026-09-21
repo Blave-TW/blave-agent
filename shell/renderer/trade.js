@@ -821,6 +821,7 @@ function trAmountTable(names, stored, states) {
     }
   };
   const anyBad = () => Object.keys(TR.bad).length > 0;
+  let svBtn = null;   // 儲存鈕:blur 時只更新它的 disabled,不重建整列——打完直接點「儲存」時,mousedown 要落在還活著的那顆鈕上(稽核 R3)
   const paintBar = () => {
     bar.textContent = ""; bar.hidden = false;
     if (TR.save === "saving") { bar.appendChild(trEl("span", "txt", t("tr.saving"))); return; }
@@ -830,7 +831,7 @@ function trAmountTable(names, stored, states) {
     const rv = trEl("button", "pf-cancel", t("tr.revert")); rv.type = "button";
     rv.addEventListener("click", () => { TR.edits = {}; TR.bad = {}; TR.save = null; TR.saveErr = null; TR.sig.pos = null; trPaintPos(); $("tr-tab-pos").focus(); });
     const sv = trEl("button", "btn-fill", t("tr.save")); sv.type = "button";
-    sv.disabled = anyBad();                        // 有一格看不懂就不給存:確認框列的必須是用戶打的那個數
+    sv.disabled = anyBad(); svBtn = sv;            // 有一格看不懂就不給存:確認框列的必須是用戶打的那個數
     sv.addEventListener("click", () => trSaveAmounts(names, stored, sv));
     bar.append(rv, sv);
   };
@@ -915,7 +916,7 @@ function trAmountTable(names, stored, states) {
       paintTotal(); repaint(); paintBar(); bar.hidden = false;   // 打到一半看不懂時 edits 沒變,儲存列也不能消失
     });
     // 離開(或按 Enter)才驗:看不懂 → 紅框 + 一句原因;看得懂 → 回寫正規化後的值(「1500.5」→「1,500.50」)。Enter 只驗、不送出
-    const settle = () => { const why = trAmountError(inp.value); markBad(why); if (!why) inp.value = trFmt(trParseAmount(inp.value)); paintBar(); };
+    const settle = () => { const why = trAmountError(inp.value); markBad(why); if (!why) inp.value = trFmt(trParseAmount(inp.value)); if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad(); else paintBar(); };
     inp.addEventListener("blur", settle);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); settle(); } });
     row.appendChild(tgt); tb.appendChild(row); repaint();

@@ -27,6 +27,14 @@ const write = (dir, obj) => fs.writeFileSync(path.join(dir, FILE), JSON.stringif
   write(a.dir, { kind: "blave", mac: "0".repeat(64), tok: "fpA" });
   t("S1:亂填一個 mac → 不認", a.reopen().store.load() === null); }
 
+// 稽核 R1:agent 寫一個「長度對、內容怪」的 mac——load() 不可以拋(它拋 = send-message 永遠回 busy)
+{ const a = mk(); a.store.save({ kind: "claude", path: "/usr/local/bin/claude" }); const j = read(a.dir);
+  const bads = ["é".repeat(64), "😀".repeat(32), "G".repeat(64), "0".repeat(63), "0".repeat(65), "", 5, null, {}, [], "0".repeat(64).toUpperCase().replace(/0/g, "A")];
+  t("壞 mac 各種形狀(非 ASCII、非 hex、長度不對、不是字串):load() 不拋,一律當成沒連", bads.every((m) => { write(a.dir, { ...j, mac: m }); let r, threw = false; try { r = a.reopen().store.load(); } catch (_) { threw = true; } return !threw && r === null; }));
+  write(a.dir, j); t("原本的 mac 放回去 → 照樣讀得回來(形狀檢查沒有誤殺)", (a.reopen().store.load() || {}).kind === "claude");
+  const boom = createConnStore({ dir: a.dir, seal: { available: () => true, encrypt: () => { throw new Error("x"); }, decrypt: () => { throw new Error("keychain"); } }, tokenFp: () => { throw new Error("fp"); } });
+  let threw = false, r; try { r = boom.load(); } catch (_) { threw = true; } t("Keychain / 指紋那邊拋例外:load() 也不拋(金鑰拿不到 = 走舊明文檔那條路:自帶 CLI 照認、blave 不認)", !threw && (r === null || r.kind !== "blave")); }
+
 { const a = mk(); a.store.save({ kind: "claude", path: "/usr/local/bin/claude" });
   write(a.dir, { ...read(a.dir), kind: "blave", path: null });
   t("跑到一半改檔不生效:這個行程裡以記憶體為準", a.store.load().kind === "claude"); }
@@ -60,6 +68,8 @@ const write = (dir, obj) => fs.writeFileSync(path.join(dir, FILE), JSON.stringif
 { const main = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
   t("main.js 沒有第二條讀寫 connect.json 的路", !/connect\.json/.test(main) && /const loadConnection = \(\) => connStore\(\)\.load\(\);/.test(main));
   t("save-connection:過 fromOurPage,path 用當下偵測到的、不用畫面送來的", /handle\("save-connection"/.test(main) && /agentPath = \(\(await detectAgents\(\)\)\[kind\] \|\| \{\}\)\.path \|\| null; if \(!agentPath\) return false;/.test(main) && !/save\(\{[^}]*choice\.path/.test(main));
+  t("send-message:版本閘那一段拋例外也會還原 turnStarting(不然之後每次送出都回 busy)", /\} catch \(err\) \{ turnStarting = false; throw err; \}/.test(main));
+  t("codex 的執行檔用當下偵測到的,不用連結紀錄裡的 path(舊明文檔遷移來的 path 是 agent 寫得到的字)", /const codexBin = conn\.kind === "codex" \? \(\(\(await detectAgents\(\)\)\.codex \|\| \{\}\)\.path \|\| null\) : null;/.test(main) && /"--codex-bin", codexBin\]/.test(main) && !/"--codex-bin", conn\.path/.test(main));
   t("重新登入之後 reseal", /saveToken\(r\.body\.access_token\)[\s\S]{0,600}connStore\(\)\.reseal\(\);/.test(main));
   const unguarded = (main.match(/ipcMain\.handle\("([^"]+)",\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*(\{?[^\n]*)/g) || []).filter((l) => !/fromOurPage\(e\)/.test(l) && !/ipcMain\.handle\(channel,/.test(l));
   // 直接用 ipcMain.handle 的只剩「拒絕時要回特定形狀」的那幾支,每一支第一行就要驗

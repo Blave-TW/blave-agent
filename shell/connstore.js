@@ -28,7 +28,8 @@ function normalize(choice) {
   return { kind: choice.kind, path: choice.kind === "blave" ? null : p, email: clean(choice.email, 254) };
 }
 const macOf = (key, r) => crypto.createHmac("sha256", key).update(JSON.stringify([r.kind, r.path, r.email, r.at, r.tok])).digest("hex");
-const macEq = (a, b) => typeof a === "string" && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+// 先驗形狀才比:檔案是 agent 寫得到的——64 個非 ASCII 字元長度對、轉成 Buffer 卻不一樣長,timingSafeEqual 會直接拋(稽核 R1)
+const macEq = (a, b) => typeof a === "string" && /^[0-9a-f]{64}$/.test(a) && /^[0-9a-f]{64}$/.test(b) && crypto.timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
 
 /* opts:{ dir, seal: { available(), encrypt(str) → Buffer, decrypt(Buffer) → str }, tokenFp() → string | null, now? } */
 function createConnStore(opts) {
@@ -73,7 +74,8 @@ function createConnStore(opts) {
   }
 
   return {
-    load() { if (cached === undefined) cached = readFile(); return pub(cached); },
+    // 任何例外 = 當成沒連(回連結頁再選一次)。這支在每一輪送訊息前都會被叫到:它拋 = 整個 app 永遠回「忙碌中」
+    load() { if (cached === undefined) { try { cached = readFile(); } catch (_) { cached = null; } } return pub(cached); },
     save(choice) {
       const n = normalize(choice); if (!n) return null;
       cached = { ...n, at: now(), tok: n.kind === "blave" ? opts.tokenFp() : null };

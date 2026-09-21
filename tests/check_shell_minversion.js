@@ -55,7 +55,7 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   // 接線(main.js 原文)
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   t("main.js:trade-send 的啟動類先補問、被擋回 UPDATE_REQUIRED,而且在送給常駐程式之前", /START_CMDS\.has\(cmd\)\) \{ await minGate\(\)\.ensureFresh\(\); if \(!minGate\(\)\.tradeAllowed\(cmd\)\) return \{ ok: false, error: "UPDATE_REQUIRED" \}; \}\s*\n\s*const out = tradeHost\(\)\.send\(/.test(src));
-  t("main.js:send-message 在 runTurn 之前擋 Blave 的 AI,而且被擋時把 turnStarting 放掉", /if \(!minGate\(\)\.turnAllowed\(kind\)\) \{ turnStarting = false; return \{ blocked: "UPDATE_REQUIRED" \}; \}\s*\n\s*\}\s*\n\s*runTurn\(win, payload\)/.test(src));
+  t("main.js:send-message 在 runTurn 之前擋 Blave 的 AI,而且被擋時把 turnStarting 放掉", /if \(!minGate\(\)\.turnAllowed\(kind\)\) \{ turnStarting = false; return \{ blocked: "UPDATE_REQUIRED" \}; \}\s*\n\s*\}\s*\n\s*\} catch \(err\) \{ turnStarting = false; throw err; \}[^\n]*\n\s*runTurn\(win, payload\)/.test(src));
   t("main.js:會啟動下單的入口只有 trade-send 這一個(選單列那條只送 halt)", (src.match(/tradeHost\(\)\.send\(/g) || []).length === 3 && /tradeHost\(\)\.send\("halt"/.test(src)
     && /tradeHost\(\)\.send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(src));   // 第三個是 Binance 連接(binance_link):只送 credentials,啟動不了下單
   t("main.js:會開回合的入口只有 send-message 這一個", (src.match(/[^a-zA-Z]runTurn\(/g) || []).length === 2);

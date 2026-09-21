@@ -1068,16 +1068,21 @@ function viewingArgs(v) {
 function turnCreds(kind, signedIn, included) {
   return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true };
 }
+const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
 async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
+  // 訊息走 stdin:不是字串的話 stdin.end() 會拋、留下一支等不到 EOF 的子行程(稽核 R4)。上限同 runtime 的 --message-stdin
+  if (typeof message !== "string" || Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
   imgWin = win;
   const envPath = await loginShellPath();
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
   // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
   const conn = loadConnection() || {};
-  const useCodex = conn.kind === "codex" && conn.path;
+  // codex 的執行檔一律用**當下偵測到的**,不用連結紀錄裡那個路徑:舊版明文檔遷移過來的 path 是 agent 寫得到的字(稽核 R4)
+  const codexBin = conn.kind === "codex" ? (((await detectAgents()).codex || {}).path || null) : null;
+  const useCodex = !!codexBin;
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
@@ -1134,14 +1139,14 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 帶的那一版:介面切英文的人用中文問,拿到英文回覆。
     // 契約(runtime 那邊同一份):不帶 --engine = claude,行為跟以前一模一樣;
     // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
-    ...(useCodex ? ["--engine", "codex", "--codex-bin", conn.path] : []),
+    ...(useCodex ? ["--engine", "codex", "--codex-bin", codexBin] : []),
     ...viewingArgs(viewing),
     // 用戶打的字**不進 argv**(稽核 S5):同一台電腦上任何人 `ps` 都看得到命令列,而聊天貼 key 是支援的流程。走 stdin。
     // runtime 往下那一段本來就不走 argv(Claude 走 SDK 的 stream-json stdin、Codex 走 `exec -`)。
     "--message-stdin", "--", sessionId,
   ], { env, cwd: WS });
   child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
-  child.stdin.end(message);
+  try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } throw err; }   // 不留一支卡在讀 stdin 的子行程
   activeTurn = child;
   let buf = "";
   child.stdout.on("data", (d) => {
@@ -1322,11 +1327,13 @@ app.whenReady().then(() => {
     // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
     turnStarting = true;
     // 最低版本閘:只擋 Blave 的 AI;連自己 CLI 的人照常聊
-    const kind = (loadConnection() || {}).kind;
-    if (kind === "blave") {
-      try { await minGate().ensureFresh(); } catch (_) { /* 問不到 = 照手上的答案 */ }
-      if (!minGate().turnAllowed(kind)) { turnStarting = false; return { blocked: "UPDATE_REQUIRED" }; }
-    }
+    try {
+      const kind = (loadConnection() || {}).kind;
+      if (kind === "blave") {
+        try { await minGate().ensureFresh(); } catch (_) { /* 問不到 = 照手上的答案 */ }
+        if (!minGate().turnAllowed(kind)) { turnStarting = false; return { blocked: "UPDATE_REQUIRED" }; }
+      }
+    } catch (err) { turnStarting = false; throw err; }   // 這一段拋了不還原的話,之後每一次送出都回 busy(稽核 R1)
     runTurn(win, payload).catch((err) => {
       if (win && !win.isDestroyed()) win.webContents.send("turn-end", { code: 1, errTail: String((err && err.message) || err) });
     }).finally(() => { turnStarting = false; });

@@ -2502,6 +2502,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     return reply_text
 
 
+MESSAGE_STDIN_MAX = 1024 * 1024  # --message-stdin 讀的上限(同電腦版外殼的 MESSAGE_MAX_BYTES):不無上限地把 stdin 讀進記憶體
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
@@ -2532,7 +2535,10 @@ def main():
     parser.add_argument("--effort", default=None)
     args = parser.parse_args()
     if args.message_stdin:
-        args.message = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+        raw = sys.stdin.buffer.read(MESSAGE_STDIN_MAX + 1)
+        if len(raw) > MESSAGE_STDIN_MAX:
+            parser.error("message on stdin exceeds %d bytes" % MESSAGE_STDIN_MAX)
+        args.message = raw.decode("utf-8", errors="replace")
     if args.message is None:
         parser.error("message is required (positional, or --message-stdin)")
     viewing_widgets = parse_viewing_widgets(args.viewing_widgets)

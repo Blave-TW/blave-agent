@@ -130,7 +130,8 @@ async function localLogin(kind, b) {
 let cur = null;
 
 async function connect(kind, info) {
-  await window.blave.saveConnection({ kind, path: info.path, email: info.email || null });
+  // 主行程用它當下偵測到的路徑存;偵測不到了(CLI 剛被移掉)回 false:留在連結頁重新偵測,不進一個送不出訊息的工作頁
+  if ((await window.blave.saveConnection({ kind, path: info.path, email: info.email || null })) === false) { detect(); return; }
   cur = kind;
   enterWorkspace(kind, info);
 }
