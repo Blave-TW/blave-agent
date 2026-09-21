@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.83 — 2026-09-21
+
 - 停機跨 K 棒收盤 → 全部暫停等用戶逐支確認(雲端與電腦版同一條;設計:blave-canon
   `output/specs/downtime-pause-design-2026-09.md`)。runtime 這一半:`command_listener` 加
   downtime watch(5 秒一跳寫 `state/heartbeat/downtime_watch`;行程啟動時、每輪排程開頭、watch
