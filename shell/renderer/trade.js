@@ -213,16 +213,41 @@ function envCell(env, st, pending) {
    不是本機那種「常駐程式不在 = 真的沒在跑」:主機還在運行時,文字用上一份回報**自己說的**狀態(後面由畫面接「最後更新」),
    不可以翻成肯定句「對帳沒有在跑」、把鈕字換成「啟動下單」——用戶會以為雲端沒在下單。
    綠點、切換器的 run、側欄列尾一律不走這裡,維持保守判定(trExecState:不知道就不亮)。 */
-function envHeadState(st) {
+const ENV_TRUST_MS = 60 * 60 * 1000;
+function envHeadState(st, nowMs) {
   const c = st && st.cloud;
   // 看 !st.alive 而不是 transient/stale:睡眠醒來的那幾秒,主行程已經因為太久沒同步把 alive 壓成 false,但 snapshot 上兩個旗標都還沒立
-  if (c && envCloudKind(st) === "running" && !st.alive) return trExecState({ ...st, alive: true });
+  if (c && envCloudKind(st) === "running" && !st.alive) {
+    // 上一份回報說的話最多信 1 小時(Wei):超過就不再用肯定句,退成「不知道」——數字照留、時間照標,但不說它在下單、也不說它停了。
+    // 從來沒成功同步過(last_ok_at 為 0)= 沒有可以信的東西,同樣是不知道
+    const link = c.last_ok_at > 0 ? nowMs - c.last_ok_at : Infinity;
+    // 連得上、但主機上的回報器停了(stale、非連不上):last_ok_at 每一輪都是新的,量不到「那份回報本身多舊」(稽核 R3)。
+    // 回報的年紀用伺服器自己的兩個時間相減(避開這台電腦與伺服器的時鐘差),再加上拿到之後過了多久;兩個年紀取較舊的
+    const rep = c.stale && c.reported_at > 0 && c.server_time > 0 ? (c.server_time - c.reported_at) * 1000 + (c.fetched_at > 0 ? Math.max(0, nowMs - c.fetched_at) : 0) : 0;
+    const age = link < 0 ? link : Math.max(link, rep);
+    return age >= 0 && age <= ENV_TRUST_MS ? trExecState({ ...st, alive: true }) : "unknown";
+  }
   return trExecState(st);
 }
 /* 「連續讀不到」的紅字要不要出(稽核 N2):看離上一次成功同步多久,不是數畫面讀了幾次——主行程失敗後 60 秒才重試,
    畫面每十幾秒讀的是同一份,數次數的話一次網路抖動就會出紅字。三個背景輪詢週期都沒成功才算。 */
 const ENV_UNREACH_MS = 3 * 60 * 1000;
 function envUnreachAlert(c, nowMs) { return !!(c && c.transient && c.last_ok_at > 0 && nowMs - c.last_ok_at > ENV_UNREACH_MS); }
+/* 切換器 A 案(安靜分段):格內只留**一個**記號,掛在圖示右上角。優先序:還沒看過的出事 > 啟動中 > 下單中。
+   seenSig = 這一格上次被看過的那件事;同一件事看過就不再亮紅短劃(只消記號,詞還在 title / aria-label 與那一邊的頁面上)。 */
+function envCellMark(c, seenSig) {
+  if (c.dot === "bad" && c.sig !== seenSig) return "bad";
+  if (c.dot === "busy") return "busy";
+  return c.run ? "run" : null;
+}
+// 錢記號與狀態詞不進格內:看得見的那一邊寫在切換器右邊那一句,另一邊的進 title 與 aria-label。回 i18n key(沒有就 null)
+function envCellWords(c) { return { money: c.money === "real" ? "tr.mode.real" : c.money === "paper" ? "tr.mode.paper" : null, state: c.word || (c.run ? "tr.autoOn" : null) }; }
+/* 標題描述與頂列右邊那一句用的狀態詞,要跟切換器那一格(envCell().word → tooltip / aria-label)是**同一個詞**(設計師 R2-1):
+   自動暫停三處都寫「已自動暫停」——只有 tooltip 這樣寫的話,紅短劃一消就看不出它不是人按的。回 i18n key;沒有特別的詞回 null(照原本的句子)。 */
+function envHeadWord(state, st) {
+  if (st && st.cloud && envCloudKind(st) === "stopped") return "side.stopped";
+  return state === "halted" && envAutoHalt(st) ? "env.st.autoPaused" : null;
+}
 // 側欄雲端清單列尾的狀態字:有投入金額的才講(下單中 / 已停);其餘不講
 function envStratWord(name, st) {
   const r = st && st.report, a = r && r.config && r.config.amounts;
@@ -443,8 +468,8 @@ function trStateText(state) {
   const r = trReport() || {}, rec = r.reconciler || {};
   // 雲端:主機停機就講停機(心跳那一句在這裡沒有意義);主機那一輪沒回報成功 = 讀不到,不沿用寫死「這台電腦」的那兩句
   if (TR.env === "cloud") {
-    if (envCloudKind(TR.st) === "stopped") return t("side.cloud.stopped");
-    if (state === "unknown") return t("env.empty.unreach");
+    if (envCloudKind(TR.st) === "stopped") return t("side.stopped");
+    if (state === "unknown") return t("tr.cloud.unknown");
   }
   // 過場中講過場(設計師 A-2):不能一邊亮綠點一邊寫「對帳沒有在跑」
   if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting");
@@ -455,7 +480,7 @@ function trStateText(state) {
   if (state === "unknown") return t("tr.unknown");
   if (state === "noaccount") return t("tr.noAccount");
   let s = t("tr.autoOn");
-  if (state === "halted") s = t("tr.halted");
+  if (state === "halted") s = envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted");
   else if (state === "dead") s = rec.heartbeat_at ? t("tr.recDead") + " · " + t("tr.lastBeat", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 › 連線);頁面與暫停鈕照常在
   return trFailedIds(r).length ? t("cx.failShort") + " · " + s : s;
@@ -506,13 +531,13 @@ async function trRun(want, steps) {
 
 function trPaintHead() {
   // state = 文字與鈕字用的(雲端讀不到新狀態時 = 上一份回報自己說的,見 envHeadState);綠點另外看保守的 trExecState
-  const state = envHeadState(TR.st), text = trStateText(state), ro = TR.env === "cloud";
+  const state = envHeadState(TR.st, Date.now()), text = trStateText(state), ro = TR.env === "cloud";
   const kind = ro ? envCloudKind(TR.st) : null, stopped = kind === "stopped";
   // 綠點 = 一切正常在下單:過場中、下單機不在跑、讀不到帳戶、雲端讀不到新狀態時都不成立(設計師複查 R3-1)
   const live = trExecState(TR.st) === "running" && !TR.pending && !trHostDown(TR.st, Date.now()) && !trFailedIds(trReport()).length;
   // 標題列狀態行。雲端讀不到新狀態時,後面接「最後更新」(保留上一次的數字,但要講它不是現況)
   const c = (ro && TR.st && TR.st.cloud) || null;
-  const staleAt = c && (c.transient ? c.last_ok_at : c.stale && !stopped && c.reported_at ? c.reported_at * 1000 : !st.alive && !stopped && envCloudKind(st) === "running" ? c.last_ok_at : 0);
+  const staleAt = c && (c.transient ? c.last_ok_at : c.stale && !stopped && c.reported_at ? c.reported_at * 1000 : !TR.st.alive && !stopped && kind === "running" ? c.last_ok_at : 0);
   const full = staleAt ? text + " · " + t("tr.cloud.stale", { t: trStamp(staleAt / 1000) }) : text;
   const desc = $("tr-desc"); desc.textContent = "";
   if (live) { const d = trEl("span", "run-dot live"); d.setAttribute("aria-hidden", "true"); desc.appendChild(d); }
@@ -529,8 +554,17 @@ function trPaintHead() {
   const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
   // 44px 的狀態帶放不下「下單機停了…請重開 Blave」那種長句(出口會被截掉):這裡用短句,完整句在標題列
   const tbState = trHostDown(TR.st, Date.now()) ? t("tr.hostShort") : text;
-  $("tr-tb-txt").textContent = has ? t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) }) : "";
-  $("tr-tb-txt").title = $("tr-tb-txt").textContent; $("tr-tb-sep").hidden = !has;
+  // 出事(這一格有紅短劃那種事)時,狀態詞那一段加重;其餘整句灰字。句型照 tr.tb,只把 {state} 那一段換成節點
+  const txt = $("tr-tb-txt"), tbFull = has ? t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) }) : "";
+  const tbUp = has && envCell(TR.env, TR.st, !!TR.pending).dot === "bad", tsig = LANG + "|" + tbFull + "|" + tbUp;
+  if (ENV.sig.tb !== tsig) {
+    ENV.sig.tb = tsig; txt.textContent = ""; txt.title = tbFull;
+    if (tbUp) { const parts = t("tr.tb", { state: "\u0000", venue: trVenueLabel(id, true) }).split("\u0000"); txt.append(parts[0] || "", trEl("span", "up", tbState), parts[1] || ""); }
+    else txt.textContent = tbFull;
+  }
+  // 錢記號排在這一句的最前面(切換器格內不放):看得見的這一邊用的是模擬還是真錢
+  const mny = has ? envMoney(TR.st) : null, tm = $("tr-tb-mode");
+  tm.hidden = !mny; tm.className = "mode " + (mny || "paper"); tm.textContent = envMoneyText(mny);
   // 雲端第一刀唯讀:全頁唯一的說明(不能按的鈕都用 aria-describedby 指到它)。停機時那顆鈕是可按的「加值」,說明不出
   trPaintRoNote(ro && state === "noaccount" ? "tr.ro.noteEmpty" : ro && !stopped ? "tr.ro.note" : null);
   trPaintVerdict(stopped);
@@ -538,13 +572,14 @@ function trPaintHead() {
   // 同一顆鈕就地更新、不重建:確認框關掉之後焦點要回得到它,輪詢重畫也不能把焦點洗掉。
   const act = $("tr-act");
   let b = $("tr-go");
-  if (!stopped && (state === "noaccount" || state === "loading")) { if (b) b.remove(); return; }
+  // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
+  if (!stopped && (state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) b.remove(); return; }
   if (!b) {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
     b.addEventListener("click", () => {
       // 雲端:停機時這顆是「加值」(外開瀏覽器,不是寫雲端);其餘時候是唯讀的,點了無動作
       if (TR.env === "cloud") { if (envCloudKind(TR.st) === "stopped") window.blave.openExternal(acctUrl()); return; }
-      if (TR.pending) return; if (trStopSide(envHeadState(TR.st))) trAskStop(b); else trAskStart(b);
+      if (TR.pending) return; if (trStopSide(envHeadState(TR.st, Date.now()))) trAskStop(b); else trAskStart(b);
     });
     act.appendChild(b);
   }
@@ -1329,7 +1364,6 @@ async function cxRetest() {
    雲端來的字串(策略名)一律 textContent。 */
 function envWire() {
   $("envsw").addEventListener("click", (e) => { const b = e.target.closest("button[data-env]"); if (b) envSwitch(b.dataset.env); });
-  $("envhead-cloud").addEventListener("click", () => planOpen());
   // ⌘1 / ⌘2:輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以
   document.addEventListener("keydown", (e) => {
     if (e.isComposing || e.keyCode === 229) return;   // 輸入法組字中:不搶(搬焦點會把組到一半的字提交或丟掉)
@@ -1388,7 +1422,6 @@ function envPaint() {
   ["local", "cloud"].forEach((env) => envPaintCell(env, cells[env]));
   // 側欄
   const gate = cloud && kind !== "running" && kind !== "stopped";
-  $("envhead-local").hidden = cloud; $("envhead-cloud").hidden = !cloud;
   $("side-nav").hidden = gate; $("strat-head").hidden = gate;
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
   $("chat-tgt").hidden = !cloud;
@@ -1401,7 +1434,7 @@ function envPaint() {
   document.title = money ? t("env.winTitle", { where: envName(ENV.cur), money }) : t("env.winTitle0", { where: envName(ENV.cur) });
   // 中欄
   $("cv-empty").hidden = !gate;
-  if (gate) { $("tr").hidden = true; $("tr-tb-txt").textContent = ""; $("tr-tb-sep").hidden = true; envPaintEmpty(kind); return false; }
+  if (gate) { $("tr").hidden = true; $("tr-tb-txt").textContent = ""; ENV.sig.tb = null; $("tr-tb-mode").hidden = true; envPaintEmpty(kind); return false; }
   if (cloud) { TR.open = true; $("tr").hidden = false; $("tr-nav").setAttribute("aria-current", "page"); }
   return true;
 }
@@ -1420,35 +1453,31 @@ function envPaintCell(env, c) {
   // 看過才消:現在看得見的那一邊 = 看過了;同一件事(sig)之後不再亮紅記號。只消記號,狀態詞留著
   if (c.sig && on) ENV.seen[env] = c.sig;
   if (!c.sig) delete ENV.seen[env];
-  const alarm = c.dot === "bad" && ENV.seen[env] !== c.sig;
-  const word = c.word ? t(c.word) : "", money = envMoneyText(c.money);
-  const state = word || (c.run ? t("tr.autoOn") : "");
-  const sig = LANG + "|" + JSON.stringify([c, on, alarm]);
+  const mark = envCellMark(c, ENV.seen[env]), w = envCellWords(c);
+  const sig = LANG + "|" + JSON.stringify([c, on, mark]);
   if (ENV.cells[env] === sig) return;
   const first = ENV.cells[env] == null; ENV.cells[env] = sig;
   b.setAttribute("aria-pressed", on ? "true" : "false");
-  // 格子的名字用圖示、不用字(Wei):螢幕 = 這台電腦、雲 = 雲端。名字仍在 aria-label 與 title 裡
-  b.textContent = ""; b.appendChild(envIcon(env)); b.title = envName(env) + " " + (env === "cloud" ? "\u23182" : "\u23181");   // 快捷鍵由程式接,不進譯文
-  if (c.money) b.appendChild(trEl("span", "mode " + c.money, money));
-  if (c.run) { const d = trEl("i", "run-dot live"); d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
-  if (c.dot === "busy" || alarm) { const d = trEl("i", "dot " + (alarm ? "bad" : "busy")); d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
-  if (word) b.appendChild(trEl("span", "w" + (alarm ? " up" : ""), word));
-  const where = envName(env);
-  b.setAttribute("aria-label", money && state ? t("env.cellAria", { where, money, state }) : money || state ? t("env.cellAria1", { where, x: money || state }) : where);
+  // 格內 = 圖示 + 至多一個記號(格寬固定 40,不會忽寬忽窄)。名字、錢記號、狀態詞都在 title 與 aria-label:
+  // 另一邊的事靠它們讀得到;看得見的這一邊另外寫在切換器右邊那一句
+  b.textContent = ""; b.appendChild(envIcon(env));
+  if (mark) { const d = trEl("i", mark === "run" ? "run-dot live" : "dot " + mark); d.setAttribute("aria-hidden", "true"); b.appendChild(d); }
+  const money = w.money ? envMoneyText(c.money) : "", state = w.state ? t(w.state) : "";
+  const where = envName(env), tip = money && state ? t("env.tip", { where, money, state }) : money || state ? t("env.tip1", { where, x: money || state }) : where;
+  // 快捷鍵由程式接、不進譯文;只接在 title。讀屏會把符號唸出來,所以 aria-label 不接,改用 aria-keyshortcuts
+  b.title = tip + "  " + (env === "cloud" ? "\u23182" : "\u23181");
+  b.setAttribute("aria-label", tip); b.setAttribute("aria-keyshortcuts", env === "cloud" ? "Meta+2" : "Meta+1");
   // 狀態詞變了播報一次(例:「雲端：已自動暫停」);第一次畫不算變化
-  if (!first && word && ENV.said[env] !== word) srSay(t("env.cellAria1", { where, x: word }));
+  const word = c.word ? t(c.word) : "";
+  if (!first && word && ENV.said[env] !== word) srSay(t("env.cellAria1", { where: envName(env), x: word }));
   ENV.said[env] = word;
 }
 function envPaintSide(kind, st) {
-  const word = kind === "running" ? "side.cloud.running" : kind === "starting" ? "side.cloud.starting" : kind === "stopped" ? "side.cloud.stopped" : null;
+  // 側欄頂不寫「雲端 / 這台電腦」(Wei:最上面的切換器已經有了);這裡只畫雲端那幾份策略
   const list = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
   const sig = LANG + "|" + JSON.stringify([kind, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
-  const stEl = $("envhead-st"); stEl.hidden = !word; stEl.className = "st" + (kind === "stopped" ? " up" : "");
-  stEl.querySelector(".dot").className = "dot " + (kind === "running" ? "on" : kind === "starting" ? "busy" : "bad");
-  $("envhead-txt").textContent = word ? t(word) : "";
-  $("envhead-cloud").setAttribute("aria-label", word ? t("side.cloud.headAria", { state: t(word) }) : t("env.cloud"));
   // 第一刀:只當清單看(單支策略的端點還沒做)——不是鈕、沒有 hover、Tab 不會停
   const box = $("strat-list-cloud"); box.textContent = ""; box.setAttribute("role", "list");
   if (!list.length) { box.appendChild(trEl("p", "pf-state", t("side.cloud.emptyCut1"))); return; }

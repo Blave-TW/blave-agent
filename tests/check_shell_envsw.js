@@ -73,15 +73,51 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("雲端:停機主機的舊快取(alive=false)不可以亮綠點;讀不到 / 還沒問到什麼都不講", cell("cloud", cloudSt(okc("running"), rep(), false)) === "real,false,," && cell("cloud", cloudSt({ code: "OFFLINE" }, null)) === ",false,," && cell("cloud", null) === ",false,,");
   ok("雲端:運行中 + 回報夠新才是下單中", cell("cloud", cloudSt(okc("running"))) === "real,true,,");
 
+  // ── 切換器 A 案:格內只留一個記號;錢記號與狀態詞進 title / aria-label ──
+  const halted = envCell("cloud", cloudSt(okc("running"), rep({ halt: { halted: true, source: "reconciler", at: "t1" } })));
+  ok("A 記號優先序:沒看過的出事 = 紅短劃;看過同一件 = 沒有記號;換一件再亮", envCellMark(halted, undefined) === "bad" && envCellMark(halted, "halt:t1") === null && envCellMark(halted, "halt:t0") === "bad");
+  ok("A 啟動中 = 呼吸點;下單中 = 綠點;平常 / 未登入 / 未啟動 = 什麼都沒有", envCellMark(envCell("cloud", cloudSt(okc("starting"), null))) === "busy" && envCellMark(envCell("cloud", cloudSt(okc("running")))) === "run"
+    && [cloudSt(okc("none"), null), cloudSt({ code: "NO_LOGIN" }, null), cloudSt(okc("running"), rep({ halt: { halted: true, source: "web" } }))].every((x) => envCellMark(envCell("cloud", x)) === null));
+  const W = (x) => { const w = envCellWords(x); return w.money + "|" + w.state; };
+  ok("A 另一邊的詞進得了 title / aria-label:真錢 + 已自動暫停(看過之後詞還在);下單中;未登入;平常什麼都沒有", W(halted) === "tr.mode.real|env.st.autoPaused" && W(envCell("cloud", cloudSt(okc("running")))) === "tr.mode.real|tr.autoOn"
+    && W(envCell("cloud", cloudSt({ code: "NO_LOGIN" }, null))) === "null|env.st.signedOut" && W(envCell("local", { alive: true, report: rep({ venues: P, account: null, halt: { halted: true, source: "web" } }) })) === "tr.mode.paper|null");
+  ok("trPaintHead 裡沒有未宣告的 st(踩過:雲端正常讀得到時整頁丟 ReferenceError、標題停在上一邊的字)", !/(^|[^.\w])st\b/.test(fn("trPaintHead")));
+  // 設計師 R2-1:同一份狀態下,切換器那一格的詞(tooltip)= 標題描述 = 頂列右邊那一句(後兩者都出自 trStateText)
+  const same = (st) => envCell(st.cloud ? "cloud" : "local", st, false).word === envHeadWord(envHeadState(st, 1e12), st);
+  const autoH = { halt: { halted: true, source: "reconciler", at: "t1" } }, userH = { halt: { halted: true, source: "web", at: "t1" } };
+  ok("R2-1 三處同一個詞:自動暫停(雲端 / 這台電腦)、已停機;人按的暫停與下單中都沒有特別的詞", [cloudSt(okc("running"), rep(autoH)), { alive: true, report: rep(autoH) }, cloudSt(okc("stopped", { stale: true }), rep(), false), cloudSt(okc("running"), rep(userH)), cloudSt(okc("running")), { alive: true, report: rep() }].every(same)
+    && envHeadWord("halted", cloudSt(okc("running"), rep(autoH))) === "env.st.autoPaused" && envHeadWord("halted", cloudSt(okc("running"), rep(userH))) === null && envHeadWord("dead", cloudSt(okc("stopped"), rep(), false)) === "side.stopped");
+  ok("R2-1 寫法:trStateText 的暫停與停機兩句都出自 envHeadWord 那兩個 key", /envHeadWord\(state, TR\.st\) === "env\.st\.autoPaused" \? t\("env\.st\.autoPaused"\)/.test(fn("trStateText")) && /=== "stopped"\) return t\("side\.stopped"\)/.test(fn("trStateText")));
+  ok("側欄頂不再寫「雲端 / 這台電腦」(Wei):DOM、CSS、程式、字串都沒有 envhead 與「主機運行中」", !/envhead/.test(html + code + fs.readFileSync(path.join(R, "trade.css"), "utf8")) && !/side\.cloud\.(running|headAria|stopped)/.test(code + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
+  const cellSrc = fn("envPaintCell");
+  ok("A 格內不再放錢記號與狀態詞(只 append 圖示與一個記號);詞進 title 與 aria-label", (cellSrc.match(/b\.appendChild\(/g) || []).length === 2 && !/"mode |"w"|"w /.test(cellSrc) && /b\.title = tip \+/.test(cellSrc) && /setAttribute\("aria-label", tip\)/.test(cellSrc) && /aria-keyshortcuts/.test(cellSrc));
+  const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
+  ok("A 選中格不反白(不用 --control-fill)、格寬固定 40", !/\.envsw[^{]*\{[^}]*--control-fill/.test(css) && /\.envsw button \{[^}]*width: 40px/.test(css) && /\.envsw button\[aria-pressed="true"\] \{[^}]*--surface-control-on/.test(css));
+  ok("A 看得見的這一邊:錢記號在切換器右邊那一句的最前面", /<\/div>\s*<span class="mode" id="tr-tb-mode"[^>]*><\/span><span class="tb-txt"/.test(html) && !/tb-sep/.test(html + code + css));
+
   // ── 稽核 N1:雲端讀不到新狀態時,文字不可以斷言「沒在跑」;綠點照樣不亮 ──
-  const tr0 = okc("running", { transient: "OFFLINE", stale: true, last_ok_at: 1000 });
-  ok("N1 連不上 + 上一份說在下單:文字用的狀態是 running(不是 dead → 不寫「對帳沒有在跑」、鈕字不變「啟動下單」)", envHeadState(cloudSt(tr0, rep(), false)) === "running" && trExecState(cloudSt(tr0, rep(), false)) === "dead");
+  const NOW = 1e12, MIN = 60000;
+  const tr0 = okc("running", { transient: "OFFLINE", stale: true, last_ok_at: NOW - 40000 });
+  ok("N1 連不上 + 上一份說在下單:文字用的狀態是 running(不是 dead → 不寫「對帳沒有在跑」、鈕字不變「啟動下單」)", envHeadState(cloudSt(tr0, rep(), false), NOW) === "running" && trExecState(cloudSt(tr0, rep(), false)) === "dead");
   ok("N1 同一份:切換器的綠點、側欄列尾仍然保守(不亮、不講)", envCell("cloud", cloudSt(tr0, rep(), false)).run === false && envStratWord("a", cloudSt(tr0, rep(), false)) === null);
-  ok("N1 回報過舊(不是連不上)、主機仍運行:同樣用回報自己說的", envHeadState(cloudSt(okc("running", { stale: true }), rep(), false)) === "running");
-  ok("R2 睡眠醒來的空窗(alive 已被壓成 false,但 transient / stale 都還沒立):仍用回報自己說的,不寫「對帳沒有在跑」", envHeadState(cloudSt(okc("running"), rep(), false)) === "running" && envCell("cloud", cloudSt(okc("running"), rep(), false)).run === false);
-  ok("N1 上一份說已暫停 → halted", envHeadState(cloudSt(tr0, rep({ halt: { halted: true, source: "web" } }), false)) === "halted");
-  ok("N1 停機不變(舊快取不被扶正);讀得到時 = trExecState;這台電腦不受影響", envHeadState(cloudSt(okc("stopped", { stale: true }), rep(), false)) === "dead" && envCloudKind(cloudSt(okc("stopped", { stale: true }), rep(), false)) === "stopped"
-    && envHeadState(cloudSt(okc("running"))) === "running" && envHeadState({ alive: false, report: rep() }) === "dead");
+  ok("N1 回報過舊(不是連不上)、主機仍運行:同樣用回報自己說的", envHeadState(cloudSt(okc("running", { stale: true, last_ok_at: NOW - 40000 }), rep(), false), NOW) === "running");
+  ok("R2 睡眠醒來的空窗(alive 已被壓成 false,但 transient / stale 都還沒立):仍用回報自己說的,不寫「對帳沒有在跑」", envHeadState(cloudSt(okc("running", { last_ok_at: NOW - 4 * MIN }), rep(), false), NOW) === "running" && envCell("cloud", cloudSt(okc("running"), rep(), false)).run === false);
+  ok("N1 上一份說已暫停 → halted", envHeadState(cloudSt(tr0, rep({ halt: { halted: true, source: "web" } }), false), NOW) === "halted");
+  ok("N1 停機不變(舊快取不被扶正);讀得到時 = trExecState;這台電腦不受影響", envHeadState(cloudSt(okc("stopped", { stale: true }), rep(), false), NOW) === "dead" && envCloudKind(cloudSt(okc("stopped", { stale: true }), rep(), false)) === "stopped"
+    && envHeadState(cloudSt(okc("running")), NOW) === "running" && envHeadState({ alive: false, report: rep() }, NOW) === "dead");
+  // Wei:上一份回報說的話最多信 1 小時
+  const aged = (ms) => cloudSt(okc("running", { transient: "OFFLINE", stale: true, last_ok_at: NOW - ms }), rep(), false);
+  ok("信任上限:59 分鐘仍 running;61 分鐘退成 unknown(不說在下單、也不說停了);剛好 1 小時仍信", envHeadState(aged(59 * MIN), NOW) === "running" && envHeadState(aged(61 * MIN), NOW) === "unknown" && envHeadState(aged(ENV_TRUST_MS), NOW) === "running" && ENV_TRUST_MS === 3600000);
+  ok("信任上限:last_ok_at 為 0 / 缺席 / 在未來(時鐘被調)= 沒有可以信的東西 → unknown;沒給 now 也不會被當成可信", envHeadState(aged(NOW), NOW) === "unknown" && envHeadState(cloudSt(okc("running", { stale: true }), rep(), false), NOW) === "unknown"
+    && envHeadState(aged(-5 * MIN), NOW) === "unknown" && envHeadState(aged(59 * MIN)) === "unknown");
+  ok("信任上限:過了之後綠點照樣不亮、停機與讀得到的情況不受影響", envCell("cloud", aged(61 * MIN)).run === false && envHeadState(cloudSt(okc("running")), NOW) === "running" && envHeadState(cloudSt(okc("stopped", { stale: true, last_ok_at: 1 }), rep(), false), NOW) === "dead");
+  // 稽核 R3:連得上、但主機上的回報器停了——last_ok_at 每輪都是新的,要看回報本身多舊(用伺服器的兩個時間相減)
+  const repAged = (h, extra = {}) => cloudSt(okc("running", { stale: true, last_ok_at: NOW - 1000, fetched_at: NOW - 1000, reported_at: (NOW - h * 3600e3) / 1000, server_time: NOW / 1000, ...extra }), rep(), false);
+  ok("R3 回報 2 小時前 → unknown;30 分鐘前 → 照信;時鐘差不影響(這台電腦快 3 小時、伺服器的兩個時間照舊)", envHeadState(repAged(2), NOW) === "unknown" && envHeadState(repAged(0.5), NOW) === "running"
+    && envHeadState(repAged(0.5, { last_ok_at: NOW + 3 * 3600e3 - 1000, fetched_at: NOW + 3 * 3600e3 - 1000 }), NOW + 3 * 3600e3) === "running");
+  ok("R3 拿到之後又擱了很久也算進去(50 分鐘前的回報 + 擱了 20 分鐘);沒有 server_time 就只看連線那一條", envHeadState(repAged(50 / 60, { last_ok_at: NOW - 20 * MIN, fetched_at: NOW - 20 * MIN, server_time: (NOW - 20 * MIN) / 1000, reported_at: (NOW - 70 * MIN) / 1000 }), NOW) === "unknown"
+    && envHeadState(repAged(2, { server_time: null }), NOW) === "running");
+  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) b\.remove\(\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
   // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
   const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
   ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true

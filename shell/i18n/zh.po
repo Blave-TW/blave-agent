@@ -1349,8 +1349,11 @@ msgstr "未啟動"
 msgid "env.st.autoPaused"
 msgstr "已自動暫停"
 
-msgid "env.cellAria"
-msgstr "{where}：{money}，{state}"
+msgid "env.tip"
+msgstr "{where} — {money}，{state}"
+
+msgid "env.tip1"
+msgstr "{where} — {x}"
 
 msgid "env.cellAria1"
 msgstr "{where}：{x}"
@@ -1364,17 +1367,8 @@ msgstr "Blave — {where}"
 msgid "tr.mode.real"
 msgstr "真錢"
 
-msgid "side.cloud.running"
-msgstr "主機運行中"
-
 msgid "side.cloud.starting"
 msgstr "主機啟動中"
-
-msgid "side.cloud.stopped"
-msgstr "主機已停機"
-
-msgid "side.cloud.headAria"
-msgstr "雲端：{state}。打開方案頁"
 
 msgid "side.cloud.emptyCut1"
 msgstr "雲端還沒有策略。"
@@ -1414,6 +1408,9 @@ msgstr "這一版在 app 裡只能看。要設金額、啟動或暫停下單，�
 
 msgid "tr.ro.noteEmpty"
 msgstr "這一版在 app 裡只能看。要連接交易所，先到網頁的雲端工作頁。"
+
+msgid "tr.cloud.unknown"
+msgstr "讀不到雲端狀態"
 
 msgid "tr.cloud.stale"
 msgstr "最後更新 {t}"

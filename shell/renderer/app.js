@@ -449,7 +449,7 @@ function mpPaint() {
       const na = document.createElement("span"); na.className = "mp-def"; na.textContent = t("mp.na"); b.appendChild(na);
     }
     if (x.id === MP.defaultModel) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
-    b.addEventListener("click", () => mpPickModel(x.id));
+    b.addEventListener("click", (e) => mpPickModel(x.id, e.detail > 0));   // detail > 0 = 真的滑鼠點;鍵盤的 Enter / Space 是 0
     box.appendChild(b);
   });
 
@@ -476,7 +476,7 @@ function mpPaint() {
   note.hidden = !note.textContent;
 }
 
-function mpPickModel(id) {
+function mpPickModel(id, viaMouse) {
   if (id === MP.model) return;
   const before = mpEffort();
   MP.model = id;

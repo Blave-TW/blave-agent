@@ -1349,8 +1349,11 @@ msgstr "Not started"
 msgid "env.st.autoPaused"
 msgstr "Auto-paused"
 
-msgid "env.cellAria"
-msgstr "{where}: {money}, {state}"
+msgid "env.tip"
+msgstr "{where} — {money}, {state}"
+
+msgid "env.tip1"
+msgstr "{where} — {x}"
 
 msgid "env.cellAria1"
 msgstr "{where}: {x}"
@@ -1364,17 +1367,8 @@ msgstr "Blave — {where}"
 msgid "tr.mode.real"
 msgstr "Real"
 
-msgid "side.cloud.running"
-msgstr "Machine running"
-
 msgid "side.cloud.starting"
 msgstr "Machine starting"
-
-msgid "side.cloud.stopped"
-msgstr "Machine stopped"
-
-msgid "side.cloud.headAria"
-msgstr "Cloud: {state}. Open the plan page"
 
 msgid "side.cloud.emptyCut1"
 msgstr "No strategies in the cloud yet."
@@ -1414,6 +1408,9 @@ msgstr "In this version the app can only view the cloud. To set amounts, start o
 
 msgid "tr.ro.noteEmpty"
 msgstr "In this version the app can only view the cloud. To connect an exchange, use the cloud workspace on the web for now."
+
+msgid "tr.cloud.unknown"
+msgstr "Can’t read the cloud’s state"
 
 msgid "tr.cloud.stale"
 msgstr "Last updated {t}"
