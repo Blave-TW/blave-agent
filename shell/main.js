@@ -63,6 +63,11 @@ async function which(name, envPath) {
 
 // 偵測結果契約(renderer 據此畫 a/b/c 三態):
 // { claude: {installed, loggedIn, authMethod, email, path}, codex: {installed, loggedIn, path} }
+const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
+const codexPath = async (envPath) => (await which("codex", envPath)) || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
+/* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
+   連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
+async function codexBinNow() { return codexPath(await loginShellPath()); }
 async function detectAgents() {
   const envPath = await loginShellPath();
   const out = {
@@ -86,9 +91,7 @@ async function detectAgents() {
   // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
   // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
   // 「有 Codex」的人會看到「未偵測到」。
-  const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
-  const codexBin = (await which("codex", envPath))
-    || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
+  const codexBin = await codexPath(envPath);
   if (codexBin) {
     out.codex.installed = true;
     out.codex.path = codexBin;
@@ -1096,8 +1099,11 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
   // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
   const conn = loadConnection() || {};
-  // codex 的執行檔一律用**當下偵測到的**,不用連結紀錄裡那個路徑:舊版明文檔遷移過來的 path 是 agent 寫得到的字(稽核 R4)
-  const codexBin = conn.kind === "codex" ? (((await detectAgents()).codex || {}).path || null) : null;
+  // codex 的執行檔一律用**當下偵測到的**,不用連結紀錄裡那個路徑:舊版明文檔遷移過來的 path 是 agent 寫得到的字(稽核 R4)。
+  // 偵測不到就**整輪失敗**,絕不退回去跑 Claude(稽核 ①):用戶連的是 Codex,靜默換一家供應商 = 換一條帳、換一個模型,
+  // 而畫面上的連線狀態還寫著 Codex。畫面會請他重新偵測 / 重連。
+  const codexBin = conn.kind === "codex" ? await codexBinNow() : null;
+  if (conn.kind === "codex" && !codexBin) throw new Error("AGENT_BIN_MISSING");
   const useCodex = !!codexBin;
   // 本機模式契約(runtime CHANGELOG Unreleased):不帶 BLAVE_PROXY_TOKEN、
   // 不帶 ANTHROPIC_*;PATH/HOME 必帶(GUI app 的 PATH 極簡)。

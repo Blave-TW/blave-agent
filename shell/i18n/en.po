@@ -114,6 +114,9 @@ msgstr "Engine setup failed: {msg}"
 msgid "turn.exit"
 msgstr "Engine exited with code {code}"
 
+msgid "AGENT_BIN_MISSING"
+msgstr "The AI command-line tool you’re connected to can’t be found any more (moved or uninstalled). Re-detect it in Connect, or connect a different one. Nothing was sent this turn."
+
 msgid "turn.error"
 msgstr "Something went wrong: {msg}"
 

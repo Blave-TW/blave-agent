@@ -88,4 +88,4 @@ function createConnStore(opts) {
   };
 }
 
-module.exports = { createConnStore, normalize, KINDS, FILE, KEY_FILE };
+module.exports = { createConnStore, normalize, macEq, KINDS, FILE, KEY_FILE };

@@ -114,6 +114,9 @@ msgstr "引擎準備失敗：{msg}"
 msgid "turn.exit"
 msgstr "引擎退出碼 {code}"
 
+msgid "AGENT_BIN_MISSING"
+msgstr "找不到你連的那個 AI 指令列工具了（可能被移走或解除安裝）。到「連結」重新偵測一次，或改連別的。這一輪沒有送出。"
+
 msgid "turn.error"
 msgstr "出錯了：{msg}"
 
