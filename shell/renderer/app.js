@@ -240,6 +240,7 @@ function setCat(cat) {
   });
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
+  if (cat === "priv") privLoad();
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
@@ -321,6 +322,40 @@ $("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").val
    主行程的 updater.js 管下載;這裡只畫狀態。新版在背景下載,永遠不自己重啟:
    已下載 → 「重新啟動並更新」;自動下單執行中那顆鈕是擋下來的(暫停之後,或正常結束 Blave 時才裝)。 */
 var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的 TDZ 會連 typeof 都丟例外)
+/* 設定 › 隱私:使用資料。一顆即時生效的開關(沒有儲存鈕)、一行為什麼收、會收 / 不收兩份短清單、一行保留多久。
+   app 裡不做首次告知(Wei);關掉之後清單留著——看得到自己關掉的是什麼。全段不寫「匿名」:登入後安裝編號會跟帳號對上。
+   開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
+let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
+const PRIV_COLLECT = ["priv.collect.1", "priv.collect.2", "priv.collect.3", "priv.collect.4"];
+const PRIV_NEVER = ["priv.never.1", "priv.never.2", "priv.never.3", "priv.never.4", "priv.never.5", "priv.never.6"];
+async function privLoad() { try { PRIV = (await window.blave.telemetryGet()) === true; } catch (_) { PRIV = null; } privPaint(); }
+async function privToggle() {
+  if (PRIV == null) return;
+  const want = !PRIV;
+  try { PRIV = (await window.blave.telemetrySet(want)) === true; } catch (_) { /* noop */ }   // 沒切成:畫面維持原狀
+  privPaint(); $("priv-sw").focus();
+  srSay(PRIV ? t("priv.lead") : t("priv.leadOff"));
+}
+function privPaint() {
+  const box = $("set-priv"); if (!box) return;
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const had = box.contains(document.activeElement);
+  box.textContent = "";
+  const row = mk("div", "sw-row"); row.append(mk("span", "sw-l", t("priv.switch")));
+  const sw = mk("button", "sw" + (PRIV ? "" : " off")); sw.type = "button"; sw.id = "priv-sw";
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", PRIV ? "true" : "false"); sw.setAttribute("aria-label", t("priv.switch"));
+  sw.disabled = PRIV == null; sw.addEventListener("click", privToggle);
+  row.append(sw); box.append(row);
+  const off = PRIV === false;
+  box.append(mk("p", "priv-lead", off ? t("priv.leadOff") : t("priv.lead")));
+  const two = mk("div", "priv-two");
+  [[off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT], [t("priv.never.h"), PRIV_NEVER]].forEach(([head, keys]) => {
+    const col = mk("div"), ul = mk("ul"); col.append(mk("h6", "", head));
+    keys.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col);
+  });
+  box.append(two, mk("p", "priv-fine", off ? t("priv.kept") : t("priv.fine")));
+  if (had) sw.focus();
+}
 /* 「一般」頁最下面的「關於」:版號永遠在;下一行是更新狀態;右邊一顆鈕——平常是安靜的「檢查更新」,新版已下載才換成描邊的
    「重新啟動並更新」。換 class 不換節點(焦點不掉)。off(沒有更新來源)= 只有版號。 */
 function upPaint() {
@@ -1426,6 +1461,7 @@ function planView() {
 }
 let planMoreOpen = false, planLoginBusy = false, planLastView = null;
 function planPaint() {
+  if (typeof envPlanChanged === "function") envPlanChanged();   // 開通頁跟著同一份狀態重畫(trade.js);放最前面:下面有提早 return
   const box = $("set-plan"); if (!box) return;
   // 登入回來、狀態還在查:留著上一格,查完(或失敗)那次重畫才換——不閃「查不到」
   if (hasToken && !acct && acctPending && box.firstChild) return;
@@ -1574,6 +1610,7 @@ function acctPaintAcct() {
   $("set-acct-btn").textContent = hasToken ? t("acct.out") : t("cn.blave.btn");
 }
 function sidePaint() {
+  if (typeof envPlanChanged === "function") envPlanChanged();   // 雲端視角的開通頁吃同一份帳號 / 方案狀態(trade.js)
   const n = $("ws-conn-note"); if (!n) return;
   let text = "", up = false;
   if (hasToken && acct) {
@@ -1608,7 +1645,7 @@ function creditFlow(card) {
   acctCheck();
 }
 window.addEventListener("focus", () => {
-  if (!hasToken || !(acctCard || creditCards.length || dataCard || planState() === "starting")) return;
+  if (!hasToken || !(acctCard || creditCards.length || dataCard || planState() === "starting" || envOpenVisible())) return;
   if (Date.now() - acctAt < 10000) return;
   acctCheck();
 });
@@ -1821,6 +1858,7 @@ function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
   acctPaintAcct();   // 設定的帳號區(兩態的字跟著語言換)
+  if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });

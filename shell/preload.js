@@ -28,7 +28,6 @@ contextBridge.exposeInMainWorld("blave", {
   updateCheck: () => ipcRenderer.invoke("update-check"),
   updateInstall: () => ipcRenderer.invoke("update-install"),
   onUpdateState: (fn) => ipcRenderer.on("update-state", (_e, st) => fn(st)),
-  telemetryNoticed: () => ipcRenderer.invoke("telemetry-noticed"),
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
   tradeStatus: () => ipcRenderer.invoke("trade-status"),

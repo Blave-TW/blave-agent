@@ -1373,14 +1373,23 @@ msgstr "雲端"
 msgid "env.empty.desc"
 msgstr "還沒有雲端主機"
 
-msgid "env.empty.p1"
-msgstr "雲端是策略上線的地方：一台一直開著的主機，策略全天候照排程跑、自動下單。這台電腦關機也不影響。"
+msgid "env.open.h"
+msgstr "把策略放上雲端，電腦關機也照跑"
 
-msgid "env.empty.plan"
-msgstr "看方案內容"
+msgid "env.open.1"
+msgstr "一台一直開著的主機，策略全天候照排程執行、自動下單。"
 
-msgid "env.empty.signedOut"
-msgstr "登入 Blave 之後才看得到你的雲端主機。AI 照用你現在連的這一個。"
+msgid "env.open.2"
+msgstr "這台電腦關機、闔蓋、沒網路，都不影響。"
+
+msgid "env.open.3"
+msgstr "Blave 的行情與籌碼資料含在裡面，不另外收。"
+
+msgid "env.open.more"
+msgstr "看完整方案內容"
+
+msgid "side.cloud.emptyGate"
+msgstr "雲端主機開好之後，策略會列在這裡。"
 
 msgid "env.empty.starting"
 msgstr "雲端主機啟動中，通常 1 分鐘左右。開好後這一頁會自己換成雲端的內容。"
@@ -1460,3 +1469,61 @@ msgstr "這個版本的 Blave 需要更新，才能啟動下單。暫停不受�
 
 msgid "minv.btn"
 msgstr "去更新"
+
+# 設定 › 隱私(使用資料;字以 blave-canon designer 字串表「MVP 補:使用資料」為準。任何語言都不可出現「匿名」)
+msgid "set.cat.priv"
+msgstr "隱私"
+
+msgid "priv.switch"
+msgstr "傳送使用資料"
+
+msgid "priv.lead"
+msgstr "用來知道大家卡在哪一步。關掉就立刻停止傳送。"
+
+msgid "priv.leadOff"
+msgstr "已關閉，這台電腦不再傳送。其他功能不受影響。"
+
+msgid "priv.collect.h"
+msgstr "會收"
+
+msgid "priv.collect.hOff"
+msgstr "開啟時會收"
+
+msgid "priv.collect.1"
+msgstr "做到哪一步：首次開啟、每日開啟、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行"
+
+msgid "priv.collect.2"
+msgstr "發生的時間"
+
+msgid "priv.collect.3"
+msgstr "app 版本、macOS 版本、系統語言"
+
+msgid "priv.collect.4"
+msgstr "這份安裝的隨機編號；登入後會跟你的帳號對上"
+
+msgid "priv.never.h"
+msgstr "不收"
+
+msgid "priv.never.1"
+msgstr "對話內容"
+
+msgid "priv.never.2"
+msgstr "策略的程式碼與名稱"
+
+msgid "priv.never.3"
+msgstr "標的、金額、部位"
+
+msgid "priv.never.4"
+msgstr "任何金鑰"
+
+msgid "priv.never.5"
+msgstr "檔案路徑"
+
+msgid "priv.never.6"
+msgstr "事件紀錄不含 IP 位址"
+
+msgid "priv.fine"
+msgstr "紀錄保留 25 個月。送不出去就丟掉，不影響任何功能。"
+
+msgid "priv.kept"
+msgstr "關掉之前送出的紀錄仍保留 25 個月。"

@@ -4,8 +4,9 @@
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
-// 送不出去就丟:不重試、不排隊、不擋任何功能;用戶在設定關掉 → 一則都不送(含 app_first_open)。
-// **告知畫面看過之前一則都不送**(noticed):預設開是「告知過的預設開」,不是「沒講就開始送」。
+// 送不出去就丟:不重試、不排隊、不擋任何功能;用戶在設定 › 隱私 關掉 → 一則都不送(含 app_first_open、含關掉那一刻已經排進去還沒出門的)。
+// app 裡不做首次告知(Wei 2026-09-21;告知落在隱私權政策與設定 › 隱私那一段):預設開就送、關掉就停。
+// 舊版狀態檔裡的 noticed 欄位照讀不壞、但不再有作用;「曾經關掉」的人更新後仍是關的。
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -42,16 +43,16 @@ function createTelemetry(opts) {
     try { const txt = fs.readFileSync(file, "utf8"); exists = true; raw = JSON.parse(txt); } catch (_) { /* 沒檔 = 新安裝;有檔但壞了 = 見下 */ }
     const ok = raw && typeof raw === "object" && UUID.test(raw.install_id);
     // 檔案在、但讀不出來:不知道用戶關過沒有 → 當成關(「關掉」這個決定不能因為壞檔就靜默變回開)
-    st = ok ? { install_id: raw.install_id, enabled: raw.enabled !== false && (raw.enabled === true || DEFAULT_ON), noticed: raw.noticed === true,
+    st = ok ? { install_id: raw.install_id, enabled: raw.enabled !== false && (raw.enabled === true || DEFAULT_ON),
         sent: Array.isArray(raw.sent) ? raw.sent.filter((e) => ONCE.indexOf(e) >= 0) : [] }
-      : { install_id: crypto.randomUUID(), enabled: exists ? false : DEFAULT_ON, noticed: false, sent: [] };
+      : { install_id: crypto.randomUUID(), enabled: exists ? false : DEFAULT_ON, sent: [] };
     if (!ok) save();
     return st;
   }
   function save() {
     try {   // tmp + rename:寫到一半當機不會留下壞檔
       const tmp = file + ".tmp";
-      fs.writeFileSync(tmp, JSON.stringify({ install_id: st.install_id, enabled: st.enabled, noticed: st.noticed, sent: st.sent }), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ install_id: st.install_id, enabled: st.enabled, sent: st.sent }), { mode: 0o600 });
       fs.renameSync(tmp, file);
     } catch (_) { /* 記不住=下次多送一則,api 會去重 */ }
   }
@@ -70,14 +71,15 @@ function createTelemetry(opts) {
   function track(event, props) {
     try {
       const s = load();
-      if (!s.enabled || !s.noticed) return false;
+      if (!s.enabled) return false;
       const once = ONCE.indexOf(event) >= 0;
       if (once && (s.sent.indexOf(event) >= 0 || inflight.has(event))) return false;
       const b = body(event, props);
       if (!b) return false;
       // fire-and-forget。只送一次的那兩型在 2xx 之後才記帳:離線的第一次啟動不該讓 app_first_open 永遠消失(api 會去重)
       if (once) inflight.add(event);
-      Promise.resolve().then(() => opts.post(opts.endpoint, b)).then((r) => {
+      // 出門前再看一次開關:排進去之後、真的送出之前被關掉的,也不送(「關掉就立刻停止傳送」是寫給用戶看的承諾)
+      Promise.resolve().then(() => (s.enabled ? opts.post(opts.endpoint, b) : null)).then((r) => {
         if (once && r && r.status >= 200 && r.status < 300 && s.sent.indexOf(event) < 0) { s.sent.push(event); save(); }
       }).catch(() => {}).then(() => inflight.delete(event));
       return true;
@@ -85,11 +87,10 @@ function createTelemetry(opts) {
   }
   return {
     track,
-    start() { track("app_first_open"); track("app_open"); },   // 沒看過告知 / 關掉 / 已送過:track 自己會擋
-    setNoticed() { if (load().noticed) return; st.noticed = true; save(); this.start(); },   // 告知畫面顯示過:從這一刻才開始送
-    isNoticed: () => load().noticed,
+    start() { track("app_first_open"); track("app_open"); },   // 關掉 / 已送過:track 自己會擋
     isEnabled: () => load().enabled,
-    setEnabled(on) { load(); st.enabled = !!on; save(); },
+    // 重新打開立即恢復:這次啟動的那兩則補送(app_open 由 api 每日去重;app_first_open 送過就不會再送)
+    setEnabled(on) { const was = load().enabled; st.enabled = !!on; save(); if (st.enabled && !was) this.start(); },
     installId: () => load().install_id,
   };
 }

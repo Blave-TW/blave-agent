@@ -1373,14 +1373,23 @@ msgstr "Cloud"
 msgid "env.empty.desc"
 msgstr "No cloud machine yet"
 
-msgid "env.empty.p1"
-msgstr "The cloud is where strategies go live: a machine that stays on, running them on schedule around the clock and placing orders. Shutting down this computer changes nothing."
+msgid "env.open.h"
+msgstr "Put your strategies in the cloud and they keep running with this computer off"
 
-msgid "env.empty.plan"
-msgstr "See the Plan"
+msgid "env.open.1"
+msgstr "A machine that stays on, running your strategies on schedule around the clock and placing orders."
 
-msgid "env.empty.signedOut"
-msgstr "Sign in to Blave to see your cloud machine. The AI stays the one you’re connected to now."
+msgid "env.open.2"
+msgstr "Shutting down this computer, closing the lid or losing the network changes nothing."
+
+msgid "env.open.3"
+msgstr "Blave’s market and positioning data is included at no extra charge."
+
+msgid "env.open.more"
+msgstr "See the Full Plan"
+
+msgid "side.cloud.emptyGate"
+msgstr "Once the cloud machine is up, your strategies are listed here."
 
 msgid "env.empty.starting"
 msgstr "The cloud machine is starting, usually about a minute. This page changes to the cloud’s content once it is up."
@@ -1460,3 +1469,61 @@ msgstr "This version of Blave needs an update before it can start trading. Pausi
 
 msgid "minv.btn"
 msgstr "Go to Update"
+
+# 設定 › 隱私(使用資料;字以 blave-canon designer 字串表「MVP 補:使用資料」為準。任何語言都不可出現「匿名」)
+msgid "set.cat.priv"
+msgstr "Privacy"
+
+msgid "priv.switch"
+msgstr "Send usage data"
+
+msgid "priv.lead"
+msgstr "It tells us where people get stuck. Turning it off stops sending immediately."
+
+msgid "priv.leadOff"
+msgstr "Off. This computer no longer sends anything. Nothing else in the app is affected."
+
+msgid "priv.collect.h"
+msgstr "Collected"
+
+msgid "priv.collect.hOff"
+msgstr "Collected when on"
+
+msgid "priv.collect.1"
+msgstr "Which step you reached: first open, daily open, connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"
+
+msgid "priv.collect.2"
+msgstr "When it happened"
+
+msgid "priv.collect.3"
+msgstr "The app version, macOS version and system language"
+
+msgid "priv.collect.4"
+msgstr "A random ID for this install; after you sign in it is linked to your Blave account"
+
+msgid "priv.never.h"
+msgstr "Never collected"
+
+msgid "priv.never.1"
+msgstr "Chat content"
+
+msgid "priv.never.2"
+msgstr "Strategy code and names"
+
+msgid "priv.never.3"
+msgstr "Symbols, amounts, positions"
+
+msgid "priv.never.4"
+msgstr "Any keys"
+
+msgid "priv.never.5"
+msgstr "File paths"
+
+msgid "priv.never.6"
+msgstr "Event records contain no IP address"
+
+msgid "priv.fine"
+msgstr "Records are kept for 25 months. Anything that can’t be sent is dropped, and nothing in the app depends on it."
+
+msgid "priv.kept"
+msgstr "Records sent before you turned this off are still kept for 25 months."

@@ -12,6 +12,10 @@ const pure = cut("/* ── 純邏輯(", "/* ── 純邏輯到此"), env = cut
 if (/\bdocument\b|\$\(|window\./.test(noComments(env))) throw new Error("視角純邏輯區塊碰了 DOM / window");
 eval((pure + env).replace(/^const /gm, "var "));
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
+// 稽核 Q1:從開通頁按「綁卡」外開瀏覽器,回來要重查帳號狀態(不然畫面一直停在「綁卡」,人會以為沒綁成)
+{ const appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
+  ok("Q1 回到 app 時,開通頁看得見就重查帳號狀態", /planState\(\) === "starting" \|\| envOpenVisible\(\)\)\) return;/.test(appSrc)
+    && /function envOpenVisible\(\) \{ return ENV\.cur === "cloud" && !\$\("cv-empty"\)\.hidden; \}/.test(src)); }
 process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到結尾"); process.exit(1); });
 
 const V = { binance: { credentials: true, pair: true, order: true, account: true } }, P = { paper: V.binance };
@@ -141,6 +145,18 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("N8 跨 await 的流程在第一個 await 之後不碰裸的 TR(只准 TR === S 與 TR_BAGS):" + (leaks.join() || "無"), afterAwait.every((x) => x[1].length > 0) && leaks.length === 0);
   ok("N3/N4/N7 寫法:設定開著不搬焦點、切視角前放掉輸入框焦點、排下一輪在 finally", /if \(!\$\("set-scrim"\)\.hidden\) \{[^}]*\}\s*else if \(via === "link"\)/.test(fn("envSwitch")) && /\.blur\(\)/.test(fn("envSwitch")) && /finally \{[\s\S]*TRP\.timer = setTimeout\(trPoll/.test(fn("trPoll")));
   ok("N5 雲端清單每次拿到狀態就跟著換(不管看哪一邊)", /C\.st = await C\.api\.tradeStatus\(\);[\s\S]{0,300}await trLoadStrategies\(C\)/.test(fn("trPoll")));
+
+  // ── 雲端視角的開通頁(規格 §3 對照表)──
+  const OV = (k, tok, pv) => envOpenView(k, tok, pv);
+  ok("開通頁:未登入 / 舊登入要重登 / 沒綁卡(兩種)/ 可以啟動(三種)", OV("signedOut", false, "out") === "out" && OV("signedOut", true, "plan") === "relogin" && OV("none", true, "offer") === "card" && OV("none", true, "noTrial") === "card"
+    && ["trial", "plan", "included"].every((pv) => OV("none", true, pv) === "start"));
+  ok("開通頁:任一邊說啟動中就是啟動中(剛按下啟動、cloud.js 還說沒主機);沒登入的人不會被帳號那邊的殘值帶成啟動中", OV("starting", true, "plan") === "starting" && OV("none", true, "starting") === "starting" && OV("none", false, "starting") === "out");
+  ok("開通頁:讀不到 / 還沒問到不畫開通內容;帳號狀態還沒到或兩邊對不上 = unknown(給重查,不給啟動)", OV("unreach", true, "plan") === "unreach" && OV("loading", false, "out") === "loading" && ["unknown", "out", "running", "stopped"].every((pv) => OV("none", true, pv) === "unknown"));
+  const ep = fn("envPaintEmpty");
+  ok("開通頁重用已上線的流程:登入 planLogin、重登 planRelogin、啟動 planAsk(花錢的確認框);這裡不直接碰 planStart / startOAuth / confirmBox", /planLogin/.test(ep) && /planRelogin/.test(ep) && /t\("plan\.start"\), planAsk,/.test(ep) && !/planStart|startOAuth|confirmBox\(|planGo/.test(ep + fn("envPlanChanged")));
+  ok("價格不寫死:數字只來自 planVars;拿不到月價就不畫價格段、啟動鈕 disabled", /if \(v\.p\) \{\s*const pr = trEl\("div", "plan-price"\)/.test(ep) && /main\.disabled = !\(v\.p && v\.h\)/.test(ep) && !/[0-9]{2,}\s*(TWD|USD)/.test(ep));
+  ok("查帳號 / 公開價目有間隔(查不到時不空轉)", /Date\.now\(\) - \(ENV\.askedAt \|\| 0\) > 30000/.test(ep));
+  ok("空側欄那一句在、舊空態兩個 key 清掉", /id="side-gate" data-i18n="side\.cloud\.emptyGate"/.test(html) && /\$\("side-gate"\)\.hidden = !gate/.test(code) && !/"env\.empty\.(p1|plan)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8") + code));
 
   // ── 最低版本閘 / 交給主行程的字 ──
   ok("UPDATE_REQUIRED:確定沒執行(不留過場)、講更新那一句,不叫人重按", trErrorKind("UPDATE_REQUIRED") === "undelivered" && /if \(e === "UPDATE_REQUIRED"\) return t\("minv\.trade"\);/.test(fn("trSendError")));

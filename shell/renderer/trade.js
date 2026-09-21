@@ -248,6 +248,17 @@ function envHeadWord(state, st) {
   if (st && st.cloud && envCloudKind(st) === "stopped") return "side.stopped";
   return state === "halted" && envAutoHalt(st) ? "env.st.autoPaused" : null;
 }
+/* 雲端視角、沒有主機可看時的「開通頁」現在是哪一格(規格 §3 的對照表)。兩個來源:主行程 cloud.js 的那一邊(kind)
+   與帳號狀態(方案頁的 planView)。剛按下啟動的那幾秒 cloud.js 還說「沒主機」、帳號那邊已經是 starting——任一邊說啟動中就算啟動中。
+   回:loading | unreach | starting | out(未登入)| relogin(舊登入要重登)| card(沒綁卡)| start(可以啟動)| unknown(帳號狀態還沒到 / 兩邊對不上) */
+function envOpenView(kind, hasTok, pv) {
+  if (kind === "loading" || kind === "unreach") return kind;
+  if (kind === "starting" || (hasTok && pv === "starting")) return "starting";
+  if (!hasTok) return "out";
+  if (kind === "signedOut") return "relogin";
+  if (pv === "offer" || pv === "noTrial") return "card";
+  return pv === "trial" || pv === "plan" || pv === "included" ? "start" : "unknown";
+}
 // 側欄雲端清單列尾的狀態字:有投入金額的才講(下單中 / 已停);其餘不講
 function envStratWord(name, st) {
   const r = st && st.report, a = r && r.config && r.config.amounts;
@@ -1402,6 +1413,8 @@ function envWire() {
 let ENV_COMPOSING = false;
 document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, true);
 document.addEventListener("compositionend", () => { ENV_COMPOSING = false; }, true);
+// 開通頁看得見嗎(稽核 Q1):從這一頁按「綁卡」外開瀏覽器,回來要重查帳號狀態,不然畫面一直停在「綁卡」
+function envOpenVisible() { return ENV.cur === "cloud" && !$("cv-empty").hidden; }
 function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("lb-scrim").hidden; }
 function envSwitchGuarded(env) {
   if ((env !== "local" && env !== "cloud") || !envCanSwitch()) return false;
@@ -1454,7 +1467,7 @@ function envPaint() {
   ["local", "cloud"].forEach((env) => envPaintCell(env, cells[env]));
   // 側欄
   const gate = cloud && kind !== "running" && kind !== "stopped";
-  $("side-nav").hidden = gate; $("strat-head").hidden = gate;
+  $("side-nav").hidden = gate; $("strat-head").hidden = gate; $("side-gate").hidden = !gate;
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
   $("chat-tgt").hidden = !cloud;
   if (cloud) envPaintSide(kind, C.st);
@@ -1520,25 +1533,65 @@ function envPaintSide(kind, st) {
     box.appendChild(row);
   });
 }
+/* 開通頁(規格 §3;Wei 選定 A 案):電腦版把人帶進雲端方案的主要入口。主鈕**直接開已上線的那一套**——登入走 planLogin、
+   啟動走 planAsk(花錢的確認框 cf.*,一步不少)、綁卡外開瀏覽器;這裡不另寫一條開通流程。價格數字來自方案頁同一個來源
+   (planVars:登入後 account_status、沒登入 public-pricing);拿不到 → 價格段不畫、啟動鈕 disabled,不寫死數字。 */
 function envPaintEmpty(kind) {
-  // 有 token 卻被當成沒登入 = 舊登入沒有 app 專用密鑰,或憑證被撤銷:請他重新登入一次(不是「登入」)
-  const relogin = kind === "signedOut" && hasToken;
-  const sig = LANG + "|" + kind + "|" + relogin + "|" + (kind === "signedOut" ? oauthPending : "");
+  const view = envOpenView(kind, hasToken, planView()), v = planVars();
+  // 這一頁要的數字:登入了但帳號狀態還沒到 → 去查;沒登入 → 公開價目。查回來會經 envPlanChanged 重畫
+  // 最多每 30 秒問一次:查不到(離線)時重畫又會走到這裡,不設間隔就是一個空轉的迴圈
+  if (((hasToken && !acct && !acctPending) || (!hasToken && !pub)) && Date.now() - (ENV.askedAt || 0) > 30000) {
+    ENV.askedAt = Date.now();
+    if (hasToken) acctCheck(); else pubLoad().then(envPlanChanged);
+  }
+  const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
+  const err = view === "starting" || view === "loading" || view === "unreach" ? null : planErr;
+  const sig = LANG + "|" + JSON.stringify([view, v.p, v.h, v.d, v.t, v.q, v.v, slow, err && err.key, planLoginBusy, cur]);
   if (ENV.sig.empty === sig) return;
   ENV.sig.empty = sig;
-  $("cv-desc").textContent = kind === "starting" ? t("side.cloud.starting") : kind === "loading" || kind === "unreach" ? "" : t("env.empty.desc");
-  const box = $("cv-body"); box.textContent = "";
-  if (kind === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
-  const ob = trEl("div", "pf-onboard");
-  const body = kind === "none" ? "env.empty.p1" : kind === "starting" ? "env.empty.starting" : kind === "unreach" ? "env.empty.unreach" : relogin ? "env.empty.relogin" : "env.empty.signedOut";
-  ob.appendChild(trEl("p", "", t(body)));
-  let b = null;
-  if (kind === "none") { b = trEl("button", "btn-out", t("env.empty.plan")); b.addEventListener("click", () => planOpen()); }
-  else if (kind === "signedOut") {
-    b = trEl("button", "btn-out", relogin ? t("plan.relogin") : t("cn.blave.btn"));
-    // 登入成功後主行程會自己重問雲端並推送過來;這裡只要把這一頁重畫
-    b.addEventListener("click", () => Promise.resolve(relogin ? planRelogin() : planLogin()).then(() => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); }));
+  const desc = $("cv-desc"); desc.textContent = "";
+  if (view === "starting") { const d = trEl("i", "dot busy"); d.setAttribute("aria-hidden", "true"); desc.append(d, trEl("span", "txt", t("side.cloud.starting"))); }
+  else if (view !== "loading" && view !== "unreach") desc.textContent = t("env.empty.desc");
+  const box = $("cv-body"), focusK = box.contains(document.activeElement) ? document.activeElement.dataset.k : null;
+  box.textContent = "";
+  if (view === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
+  const page = trEl("div", "cv-open"); box.appendChild(page);
+  const btn = (cls, label, on, k) => { const b = trEl("button", cls, label); b.type = "button"; b.dataset.k = k; if (on) b.addEventListener("click", on); return b; };
+  const ext = (u) => () => window.blave.openExternal(u);
+  if (view === "unreach") { page.appendChild(trEl("p", "cv-p", t("env.empty.unreach"))); return; }
+  if (view === "starting") page.appendChild(trEl("p", "cv-p", t("env.empty.starting")));
+  else {
+    page.appendChild(trEl("h4", "", t("env.open.h")));
+    const ul = trEl("ul", "cv-list"); [t("env.open.1"), t("env.open.2"), t("env.open.3")].forEach((x) => ul.appendChild(trEl("li", "", x))); page.appendChild(ul);
+    if (v.p) {
+      const pr = trEl("div", "plan-price"); pr.appendChild(trEl("span", "m", t("plan.month", v))); if (v.h) pr.appendChild(trEl("span", "h", t("plan.hour", v)));
+      page.append(pr, trEl("p", "cv-rule", t("plan.rule")));
+    }
   }
-  if (b) { b.type = "button"; ob.appendChild(b); }
-  box.appendChild(ob);
+  // 鈕上方那一行:錯誤(方案頁同一組 plan.err.*)優先;否則這顆鈕會帶來的錢 / 好消息
+  if (err) { const e = trEl("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t(err.key))); page.appendChild(e); }
+  else if (slow) { const e = trEl("p", "plan-err is-calm"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t("plan.err.slow"))); page.appendChild(e); }
+  else if (view === "relogin") page.appendChild(trEl("p", "cv-above up", t("env.empty.relogin")));
+  else if (view === "card") page.appendChild(trEl("p", "cv-above", planView() === "noTrial" ? t("pv.f.noTrial", v) : t("pv.f.offer", v)));
+  else if (view === "start" && v.d) page.appendChild(trEl("p", "cv-above up", t("plan.trialFree", v)));
+  const act = trEl("div", "cv-act"), more = () => btn("btn-quiet", t("env.open.more"), () => planOpen(), "more");
+  const after = () => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); };
+  let main = null, side = null;
+  if (err && err.key === "plan.err.relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
+  else if (err && err.key === "plan.err.nocard") main = btn("btn-fill", t("plan.addCard"), ext(acctUrl()), "main");
+  else if (err && err.key === "plan.err.credit") main = btn("btn-fill", t("plan.addCredit"), ext(acctUrl()), "main");
+  else if (view === "out") { main = planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin, "main") : btn("btn-fill", t("cn.blave.btn"), () => Promise.resolve(planLogin()).then(after), "main"); side = trEl("span", "wait", planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli")); }
+  else if (view === "relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
+  else if (view === "card") { main = btn("btn-fill", t("plan.addCard"), ext(acctUrl()), "main"); side = more(); }
+  else if (view === "start") { main = btn("btn-fill", t("plan.start"), planAsk, "main"); main.disabled = !(v.p && v.h); side = more(); }
+  else if (view === "starting") { main = slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); after(); }, "main") : btn("btn-fill", t("plan.starting"), null, "main"); main.disabled = !slow; }
+  else { main = btn("btn-out", t("plan.recheck"), () => { acctCheck(); if (typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh(); after(); }, "main"); side = more(); }
+  act.appendChild(main); if (side) act.appendChild(side); page.appendChild(act);
+  if (focusK) { const again = [...box.querySelectorAll("button")].find((b) => b.dataset.k === focusK); if (again && !again.disabled) again.focus(); else $("cv-h").focus(); }
+}
+// 帳號 / 方案狀態變了(app.js 的 planPaint、sidePaint 叫):人在雲端視角就重畫;剛按了啟動 → 請主行程馬上重問雲端,不等下一輪
+function envPlanChanged() {
+  if (!TRP.started || ENV.cur !== "cloud") return;
+  if (planView() === "starting" && envCloudKind(TR_BAGS.cloud.st) === "none" && typeof window.blave.cloudRefresh === "function") { window.blave.cloudRefresh().catch(() => {}); ENV.cloudDirty = true; }
+  trPaint();
 }

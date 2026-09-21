@@ -96,6 +96,29 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 
+/* ---- 雲端視角的開通頁(沒有主機可看;規格 §3 .cv-open)---- */
+.cv-open { max-width: 48ch; margin-top: var(--space-24); }
+.cv-open h4 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); text-wrap: balance; }
+.cv-list { margin: var(--space-16) 0 0; padding: 0; list-style: none; }
+.cv-list li { position: relative; padding-left: var(--space-12); font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+.cv-list li + li { margin-top: var(--space-4); }
+.cv-list li::before { content: ""; position: absolute; left: 0; top: 11px; width: 6px; height: 1px; background: var(--ink-3); }
+.cv-open .plan-price { margin-top: var(--space-24); }
+.cv-rule { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cv-p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+.cv-above, .cv-open .plan-err { margin: var(--space-24) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cv-above.up { color: var(--ink-2); }
+.cv-act { display: flex; align-items: center; gap: var(--space-16); margin-top: var(--space-12); }
+.cv-act .btn-fill, .cv-act .btn-out { height: 32px; }
+.cv-act .wait { font-size: 12px; color: var(--ink-3); }
+.cv-act .btn-quiet { font-size: 12px; padding: 0; }
+#cv-desc .dot { display: inline-block; width: 7px; height: 7px; margin-right: var(--space-8); border-radius: var(--radius-pill); background: var(--ink-3); vertical-align: .09em; }
+#cv-desc .dot.busy { animation: trRunPulse calc(var(--motion-blink) * 1.2) ease-in-out infinite; }
+.side-gate { margin: var(--space-12) 0 0; }
+.side-gate[hidden] { display: none; }
+html.ws-sc .side-gate { display: none; }
+@media (prefers-reduced-motion: reduce) { #cv-desc .dot.busy { animation: none; } }
+
 /* ---- 雲端第一刀唯讀:說明行、不能按的鈕(aria-disabled,不是 disabled:鍵盤停得上去、讀屏唸得到原因)、停機那一段 ---- */
 .tr-ro-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .tr-ro-note[hidden] { display: none; }

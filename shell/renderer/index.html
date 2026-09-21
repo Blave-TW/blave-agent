@@ -59,6 +59,8 @@
   <div class="ws">
     <aside class="pane-strategies">
       <!-- 自動下單入口:位置照雲端 #pf_nav(策略清單上方)。不放圖示——這個側欄的列本來就沒有圖示 -->
+      <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中):入口與清單不畫,原位置放這一句(中欄的開通頁負責說明) -->
+      <p class="pf-state side-gate" id="side-gate" data-i18n="side.cloud.emptyGate" hidden></p>
       <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span><span class="mode" id="tr-nav-mode" hidden></span><i class="run-dot live" id="tr-nav-dot" aria-hidden="true" hidden></i></button></nav>
       <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
@@ -230,6 +232,8 @@
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
         <!-- 會花錢的一類排最後:前兩類是偏好。聊天裡的情境卡會直接開到這裡 -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
+        <!-- 隱私:使用資料的開關與「會收 / 不收」(排最後;與視角無關)。內容由 app.js 的 privPaint 畫 -->
+        <button type="button" class="set-cat" data-set-cat="priv" data-i18n="set.cat.priv"></button>
         <!-- 帳號區:登入是帳號的事,不是某一種 AI 的事。兩態都顯示(已登入 / 未登入),字與鈕由 app.js 的 acctPaintAcct 畫。
              那顆鈕吃 .set-cat 的樣子但不是分類(沒有 data-set-cat、不給 aria-current) -->
         <div class="set-acct" id="set-acct">
@@ -256,6 +260,7 @@
         <!-- 雲端方案:內容由 app.js 的 planPaint 畫(依 account_status.plan)。上半自己捲,
              底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
         <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden></div>
+        <div class="set-pane" data-set-cat="priv" id="set-priv" hidden></div>
       </div>
     </div>
   </div>

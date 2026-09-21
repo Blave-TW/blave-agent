@@ -707,6 +707,24 @@ body.resizing * { cursor: col-resize !important; }
 }
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
 .set-row + .set-row { margin-top: var(--space-16); }
+/* 設定 › 隱私:整頁沒有分隔線。開關 = canon 的 Switch(黑白、無橘);視覺 36×20、熱區上下各補 12 */
+.sw-row { display: flex; align-items: center; gap: var(--space-12); }
+.sw-l { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.sw { flex: none; position: relative; width: 36px; height: 20px; border-radius: var(--radius-pill); background: var(--control-fill); transition: background var(--motion-fast) var(--ease-standard); }
+.sw::before { content: ""; position: absolute; inset: -12px -4px; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 18px; width: 16px; height: 16px; border-radius: 50%; background: var(--control-fill-text); transition: left var(--motion-fast) var(--ease-standard); }
+.sw.off { background: var(--surface-muted); }
+.sw.off::after { left: 2px; background: var(--ink-3); }
+.sw:disabled { opacity: .5; cursor: default; }
+.priv-lead { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }
+.priv-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-24); margin-top: var(--space-16); }
+.priv-two h6 { margin: 0 0 var(--space-6); font-size: 12px; font-weight: 600; color: var(--ink); }
+.priv-two ul { margin: 0; padding: 0; list-style: none; }
+.priv-two li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+.priv-two li + li { margin-top: var(--space-2); }
+.priv-two li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
+.priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
+@media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
 .set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
 .set-about { margin-top: auto; padding-top: var(--space-16); display: flex; align-items: flex-start; gap: var(--space-12); }

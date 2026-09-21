@@ -1215,7 +1215,6 @@ app.whenReady().then(() => {
     return out;
   });
   // 告知畫面顯示過才開始送(稽核 M2'):在那之前 start()/track() 一則都不出門。由 renderer 在告知真的畫出來之後叫這支
-  ipcMain.handle("telemetry-noticed", (e) => { if (!fromOurPage(e)) return false; tm().setNoticed(); return true; });
   // 雲端(唯讀):畫面要的狀態。只收自家頁面——回的是部位與權益
   // 懶啟動:第一次有人要雲端狀態才開始輪詢。refresh 有最小間隔,renderer 寫壞的迴圈打不爆帳號的速率桶
   ipcMain.handle("cloud-status", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().status(); });
@@ -1224,7 +1223,7 @@ app.whenReady().then(() => {
   ipcMain.handle("update-state", () => updater().state());
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
   ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
-  ipcMain.handle("telemetry-get", () => tm().isEnabled());
+  ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
