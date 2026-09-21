@@ -93,6 +93,29 @@ def sign(secret, body):
     return hmac.new(secret.encode(), body.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _slide_events(events_mod, evs):
+    """No platform acks events here, so events.unsent() would return the OLDEST
+    MAX_SEND lines forever and everything newer would never reach the status file
+    (the app's timeline and its P1 notifications both read from there). When the
+    window is full, ack its older half ourselves: the next build starts from the
+    middle, and the hourly rotate() can finally drop what is below the mark.
+
+    Full = truncated, by either cap: the count (MAX_SEND) or the byte cap
+    (MAX_SEND_BYTES can cut the window short of MAX_SEND lines) — so ask whether
+    the file has anything newer than the window's last line, not how long it is.
+    Call this only AFTER the status file was written: acking first would hide the
+    older half of a window nobody ever got to read."""
+    # < 20 lines cannot be a truncated window (256KB / 8KB per line ≥ 32); it is an
+    # event appended between the build and this check — leave it for the next round
+    if not isinstance(evs, list) or len(evs) < 20:
+        return
+    try:
+        if evs[-1]["id"] < events_mod._last_id():
+            events_mod.save_acked(evs[len(evs) // 2 - 1]["id"])
+    except (KeyError, TypeError, IndexError):
+        pass
+
+
 def _write_json_atomic(path, doc):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
@@ -584,6 +607,8 @@ class Daemon:
                 _write_json_atomic(self.status_path, doc)
             except (OSError, TypeError, ValueError) as e:
                 _log(f"status write failed: {type(e).__name__}")
+            else:
+                _slide_events(self.events, doc.get("events"))
 
     def _status_loop(self):
         last_rotate = time.time()

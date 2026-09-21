@@ -26,6 +26,14 @@ import tempfile
 import time
 import uuid
 
+import importlib.util
+
+# the daemon runs strategies under sys.executable; without these the strategy dies
+# inside the daemon and all that shows here is four timeouts minutes later
+_missing = [m for m in ("pandas", "dotenv") if importlib.util.find_spec(m) is None]
+if _missing:
+    sys.exit(f"wrong interpreter ({sys.executable}): missing {_missing} — run with blave-agent/.venv/bin/python")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME = os.path.join(ROOT, "runtime")
 sys.path.insert(0, RUNTIME)

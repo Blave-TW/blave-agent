@@ -1287,3 +1287,6 @@ msgstr "Cancel"
 
 msgid "tm.hidden"
 msgstr "Blave is still open and auto trading keeps running. Use the menu bar icon to pause or to open the window."
+
+msgid "tm.evOrderErrNote"
+msgstr "The exchange rejected an order. Open Blave to see why."

@@ -15,7 +15,7 @@
 .mode[hidden] { display: none; }
 
 /* ---- 側欄入口(策略清單上方)---- */
-.side-nav { margin-top: var(--space-12); padding-bottom: var(--space-8); border-bottom: 1px solid var(--border-hairline); }
+.side-nav { margin-top: var(--space-12); padding-bottom: var(--space-8); }   /* 不畫分隔線(Wei):靠間距與「策略」小標分開 */
 html.ws-sc .side-nav { display: none; }
 
 /* ---- 常駐狀態帶:佔用中欄上方本來就在的 44px 拖曳區(.pane-main 的 padding-top)。

@@ -26,16 +26,21 @@ if (app.isPackaged && require("./package.json").blaveRelease
 // 所以先跑一次使用者的登入 shell 解析出真正的 PATH,偵測與之後 spawn 引擎共用。
 // 見 .claude/output/desktop-v1/2026-09-18-agent-detection.md。
 let resolvedPath = null;
+const mergePath = (got, known) => got.concat(known.filter((d) => got.indexOf(d) < 0)).filter(Boolean).join(":");
 function loginShellPath() {
   return new Promise((resolve) => {
     if (resolvedPath) return resolve(resolvedPath);
     const sh = process.env.SHELL || "/bin/zsh";
     execFile(sh, ["-lc", "echo -n $PATH"], { timeout: 8000 }, (err, stdout) => {
-      const fallback = [
+      const known = [
         path.join(os.homedir(), ".local/bin"),
         "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
-      ].join(":");
-      resolvedPath = !err && stdout.trim() ? stdout.trim() : fallback;
+      ];
+      // 登入 shell(-l、非互動)不讀 .zshrc,而 Claude Code 官方安裝器正是把 ~/.local/bin 寫進 .zshrc——
+      // 從 Finder 開 app 的人會「未偵測到」(從終端機 npm start 會繼承 PATH,所以開發時看不到)。
+      // 已知的安裝位置一律補在後面:shell 給的順序優先,補的只是它漏掉的。
+      const got = !err && stdout.trim() ? stdout.trim().split(":") : [];
+      resolvedPath = mergePath(got, known);
       resolve(resolvedPath);
     });
   });
@@ -127,6 +132,7 @@ function cancelAgentLogin() {
 const statePath = () => path.join(app.getPath("userData"), "connect.json");
 function saveConnection(choice) {
   fs.writeFileSync(statePath(), JSON.stringify({ ...choice, at: new Date().toISOString() }));
+  tm().track("connect_done", { kind: choice && choice.kind });   // kind 不在列舉內(blave/claude/codex)track 自己會丟掉
   return true;
 }
 function clearConnection() {
@@ -135,6 +141,19 @@ function clearConnection() {
 }
 function loadConnection() {
   try { return JSON.parse(fs.readFileSync(statePath(), "utf8")); } catch (_) { return null; }
+}
+
+// ── 使用追蹤(telemetry.js:七個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
+let _tm = null;
+function tm() {
+  if (!_tm) _tm = require("./telemetry").createTelemetry({
+    dir: app.getPath("userData"), endpoint: `${API_BASE}/oauth/desktop/telemetry`,
+    appVersion: app.getVersion(), osVersion: process.getSystemVersion(), lang: app.getLocale(),   // 契約:系統語系原值;不吃 BLAVE_LANG(任意字串會原樣離開電腦)
+    getToken: () => loadToken(),
+    // 開發版(npm start、測試用的 BLAVE_HOME)不送:不然每次開發重啟都在灌正式的漏斗。要實測送出設 BLAVE_TELEMETRY=1
+    post: (u, b) => (app.isPackaged || process.env.BLAVE_TELEMETRY === "1" ? postJSON(u, b) : Promise.resolve()),
+  });
+  return _tm;
 }
 
 // ── OAuth(用 Blave 的 AI)─────────────────────────────────────
@@ -416,6 +435,7 @@ async function startOAuth(lang) {
   if (prevToken && prevToken !== r.body.access_token) {
     postJSON(`${API_BASE}/oauth/desktop/revoke`, { token: prevToken }).catch(() => {});
   }
+  tm().track("login_done");
   // 資料 key 只在這一次回應裡出現;舊版 api 沒有這兩欄就是沒有資料權限,不算失敗
   // 先清掉上一次登入留下的那組:那顆 token 換掉之後,舊 key 可能已經被撤銷,留著會把死 key
   // 寫進 .env 還告訴 agent「你有資料」
@@ -577,6 +597,7 @@ function listStrategies() {
       try {
         const st = JSON.parse(fs.readFileSync(statsPath, "utf8"));
         summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), totalReturn: num(st["Total Return [%]"]) };
+        tm().track("first_backtest_done");   // 每個安裝只會送出一次(telemetry.js 自己記)
       } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
     }
     stratCache.set(name, { mtime: sMtime, cMtime: mtime, summary });
@@ -1052,8 +1073,18 @@ app.whenReady().then(() => {
   ipcMain.handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
   ipcMain.handle("trade-send", (e, cmd, args) => {
     if (!fromOurPage(e) || typeof cmd !== "string") return { ok: false, error: "NOT_ALLOWED" };
-    return tradeHost().send(cmd, args && typeof args === "object" ? args : {});
+    const out = tradeHost().send(cmd, args && typeof args === "object" ? args : {});
+    if (cmd === "resume" || cmd === "resume_wait") Promise.resolve(out).then((r) => {
+      if (!r || !r.ok) return;
+      const v = (_tradeHost && _tradeHost.status().report || {}).venues || {}, ids = Object.keys(v).filter((k) => venueReady(v[k]));
+      if (ids.length) tm().track("trade_started", { venue_kind: ids.every((k) => k === "paper") ? "paper" : "real" });
+    }).catch(() => {});
+    return out;
   });
+  // 告知畫面顯示過才開始送(稽核 M2'):在那之前 start()/track() 一則都不出門。由 renderer 在告知真的畫出來之後叫這支
+  ipcMain.handle("telemetry-noticed", (e) => { if (!fromOurPage(e)) return false; tm().setNoticed(); return true; });
+  ipcMain.handle("telemetry-get", () => tm().isEnabled());
+  ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
@@ -1078,9 +1109,10 @@ app.whenReady().then(() => {
   tradeStartIfReady();   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
-  app.on("browser-window-focus", () => { lastAcct = null; });
+  app.on("browser-window-focus", () => { lastAcct = null; p1Badge = 0; if (app.dock) app.dock.setBadge(""); });
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   trayStart();
+  tm().start();
   ipcMain.on("trade-labels", (e, labels) => {
     if (!fromOurPage(e) || !labels || typeof labels !== "object") return;
     for (const k of Object.keys(tmLabels)) if (typeof labels[k] === "string" && labels[k] && labels[k].length <= 400) tmLabels[k] = labels[k];
@@ -1106,12 +1138,21 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
   quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel",
-  hidden: "Blave is still running in the menu bar." };
+  hidden: "Blave is still running in the menu bar.",
+  ev_halt: "Trading was paused automatically", ev_halt_n: "No new positions are opened. Open Blave to check.",
+  ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
+  ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
+  ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
+  ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
+  ev_downtime_paused: "Trading was paused automatically", ev_downtime_paused_n: "Everything is frozen after the downtime. Press Start trading to resume." };
+const venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);   // 同 renderer:四個都在才算連上的帳戶
 function tradeLive() {
   if (!_tradeHost) return null;
   const st = _tradeHost.status(), r = st.report;
   if (!st.alive || !r || r.error || !r.venues || (r.halt && r.halt.halted) || !(r.reconciler && r.reconciler.alive)) return null;
-  const id = Object.keys(r.venues).filter((k) => { const v = r.venues[k]; return v && v.credentials && v.pair && v.order && v.account; }).sort()[0];
+  // 心跳檔的新鮮期是 300 秒:app 重開後那 5 分鐘,上一次的心跳還「新鮮」但對帳器根本沒起來。監督者說沒在跑就是沒在跑。
+  if (r.daemon && r.daemon.reconciler && r.daemon.reconciler.running === false) return null;
+  const id = Object.keys(r.venues).filter((k) => venueReady(r.venues[k])).sort()[0];
   return id ? { venue: id } : null;
 }
 function tradeMaybeLive() {
@@ -1120,7 +1161,9 @@ function tradeMaybeLive() {
   if (!_tradeHost) return null;
   const st = _tradeHost.status(), r = st.report;
   if (!st.running || !r || (r.halt && r.halt.halted)) return null;   // 子行程不在 = 沒有東西在下單;已暫停 = 不必攔
-  if (r.venues && typeof r.venues === "object" && !Object.keys(r.venues).some((k) => r.venues[k] && r.venues[k].credentials)) return null;   // 確定沒帳戶
+  // 對帳器有沒有在跑,問 daemon 的監督者(daemon 區塊在 build 失敗那一輪也照寫、不看心跳新不新):
+  // 沒在跑就是沒在下單——這時攔下來說「自動下單還在執行」是假話
+  if (!(r.daemon && r.daemon.reconciler && r.daemon.reconciler.running)) return null;
   return { venue: lastVenue };
 }
 const venueName = (id) => (!id ? "" : id === "paper" ? tmLabels.paperVenue : id.charAt(0).toUpperCase() + id.slice(1));
@@ -1170,7 +1213,85 @@ function traySync() {
   tray.setContextMenu(trayMenu(live));
   if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: tmLabels.pause, click: pauseFromMenu }]));
 }
-function trayStart() { if (!trayTimer) { trayTimer = setInterval(traySync, 5000); if (trayTimer.unref) trayTimer.unref(); } }
+/* ── 本機 P1 通知(canon notifications.md 的 P1 清單;電腦版沒有平台那一層,這是唯一會叫人的出口)──────
+   來源有兩個(稽核 M1),跟選單列共用 5 秒那個 timer:
+     · 狀態檔的 events(daemon 把 state/events.jsonl 水位線以上的原樣放進去)——執行類四型;
+     · 狀態檔的現況——halt 與 order_error **從來不寫進 events.jsonl**(lib/events.py 明文禁寫;雲端是平台拿回報 diff 出來的),
+       這裡照同一個做法:halt 看 r.halt.at、拒單看 r.order_errors[].ts,各記一條水位線。
+   - 只發 P1:halt 只算自動觸發的(source 在白名單;用戶自己按的不是 P1)。
+   - 水位線存 userData:同一則不發第二次;第一次跑(沒有水位線)只記不發,不把舊事件倒出來。
+   - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
+   - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "downtime_paused"];   // 全部六型(標籤用)
+const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的四型
+const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
+const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
+let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
+const p1Num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+function p1Load() { try { const j = JSON.parse(fs.readFileSync(notifiedPath(), "utf8")); return { id: p1Num(j.id), halt: p1Num(j.halt), err: p1Num(j.err) }; } catch (_) { return { id: null, halt: null, err: null }; } }
+function p1Save(m) { try { fs.writeFileSync(notifiedPath(), JSON.stringify(m), { mode: 0o600 }); } catch (_) { /* 最壞=重開後同一則再發一次 */ } }
+// 時間 → epoch 秒(保留小數:解除後同秒再 HALT 靠微秒分得開)。真實格式是 ISO 字串(稽核 M1'):halt.at 帶時區
+// (lib/guard.py),拒單的 ts 是**不帶時區的 UTC**(lib/portfolio.py 的 utcnow().isoformat())——沒有時區尾碼要先補 Z,
+// 直接 Date.parse 會被當成本地時間(台北 = 差 8 小時,超過 900 秒門檻,一樣不發)。同 renderer 的 trMs。
+const p1Sec = (v) => {
+  if (typeof v === "number") return !Number.isFinite(v) ? NaN : v > 1e12 ? v / 1000 : v;
+  if (typeof v !== "string" || !v) return NaN;
+  if (/^[0-9.]+$/.test(v)) return p1Sec(Number(v));
+  const us = (v.match(/\.(\d{4,6})/) || [])[1];   // Date 只到毫秒:微秒那截自己補回去
+  const ms = Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(v) ? v : v + "Z");
+  return !Number.isFinite(ms) ? NaN : ms / 1000 + (us ? Number("0." + us) - Number("0." + us.slice(0, 3)) : 0);
+};
+function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔現況推導。mark = { halt, err }(null = 第一次,只記不發)
+  const out = { halt: mark.halt, err: mark.err, show: [] }, h = r && r.halt;
+  const at = h && h.halted ? p1Sec(h.at) : NaN;
+  if (at > (mark.halt == null ? -1 : mark.halt)) {
+    out.halt = at;
+    if (mark.halt != null && HALT_AUTO_SOURCES.indexOf(h.source) >= 0 && nowS - at <= 900) out.show.push({ type: "halt", ts: at, payload: {} });
+  } else if (mark.halt == null) out.halt = 0;
+  let top = mark.err == null ? -1 : mark.err;
+  for (const e of r && Array.isArray(r.order_errors) ? r.order_errors : []) {
+    const ts = e && typeof e === "object" ? p1Sec(e.ts) : NaN;
+    if (!(ts > (mark.err == null ? -1 : mark.err))) continue;
+    if (ts > top) top = ts;
+    if (mark.err != null && nowS - ts <= 900) out.show.push({ type: "order_error", ts, payload: { symbol: typeof e.symbol === "string" ? e.symbol : "" } });
+  }
+  out.err = top < 0 ? 0 : top;
+  return out;
+}
+function p1Pick(events, mark, nowS) {   // 純函式(tests/check_shell_p1_notify.js):回 { mark, show:[事件] }
+  let top = mark == null ? -1 : mark; const show = [];
+  for (const ev of Array.isArray(events) ? events : []) {
+    if (!ev || typeof ev.id !== "number" || typeof ev.type !== "string" || ev.id <= (mark == null ? -1 : mark)) continue;
+    if (ev.id > top) top = ev.id;
+    if (mark == null || P1_EVENT_TYPES.indexOf(ev.type) < 0 || !(nowS - Number(ev.ts) <= 900)) continue;
+    show.push(ev);
+  }
+  return { mark: top < 0 ? (mark == null ? 0 : mark) : top, show };
+}
+function p1Sync() {
+  if (!_tradeHost) return;
+  const r = _tradeHost.status().report; if (!r) return;
+  if (p1Marks === undefined) p1Marks = p1Load();
+  const now = Date.now() / 1000, ev = p1Pick(r.events, p1Marks.id, now);
+  // 狀態檔這輪 build 失敗(只有 error)時沒有 halt / order_errors:那一輪不動這兩條水位線
+  const stt = r.error ? { halt: p1Marks.halt, err: p1Marks.err, show: [] } : p1FromState(r, p1Marks, now);
+  if (ev.mark !== p1Marks.id || stt.halt !== p1Marks.halt || stt.err !== p1Marks.err) { p1Marks = { id: ev.mark, halt: stt.halt, err: stt.err }; p1Save(p1Marks); }
+  const show = stt.show.concat(ev.show);
+  for (const e of show) {
+    p1Badge++;
+    if (Date.now() - (p1LastShown[e.type] || 0) < 60000) continue;
+    p1LastShown[e.type] = Date.now();
+    const sym = e.payload && typeof e.payload.symbol === "string" ? e.payload.symbol.replace(/@spot$/, "").slice(0, 24) : "";
+    if (!Notification.isSupported()) continue;
+    const n = new Notification({ title: tmLabels["ev_" + e.type] + (sym ? " · " + sym : ""), body: tmLabels["ev_" + e.type + "_n"] });
+    p1Alive.add(n); const drop = () => p1Alive.delete(n);
+    n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop);
+    if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
+    n.show();
+  }
+  if (show.length && app.dock) { if (!BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(p1Badge)); else p1Badge = 0; }
+}
+function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { traySync(); p1Sync(); }, 5000); if (trayTimer.unref) trayTimer.unref(); } }
 app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
     if (quitting || quitConfirmed || !tradeMaybeLive()) return;

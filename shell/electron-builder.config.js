@@ -33,7 +33,7 @@ module.exports = {
   asar: true,
   extraMetadata: RELEASE ? { blaveRelease: true } : undefined,   // main.js 靠它認發佈版
   npmRebuild: false,
-  files: ["main.js", "daemon.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
+  files: ["main.js", "daemon.js", "telemetry.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   extraResources: [
     { from: "..", to: "agent", filter: tracked },
     { from: "vendor/python", to: "python", filter: ["**/*", "!**/__pycache__"] },

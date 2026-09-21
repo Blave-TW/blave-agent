@@ -48,7 +48,17 @@ function trExecState(st) {
   if (!trHasAccount(r)) return "noaccount";
   if (r.halt && r.halt.halted) return "halted";
   if (!st.alive || !(r.reconciler && r.reconciler.alive)) return "dead";
+  // 心跳檔新鮮期 300 秒:app 重開後那 5 分鐘,上一次的心跳還算「活著」但對帳器沒起來——以常駐程式監督者為準(同 main.js tradeLive)
+  if (r.daemon && r.daemon.reconciler && r.daemon.reconciler.running === false) return "dead";
   return "running";
+}
+/* 對帳器現在真的在跑嗎(啟動下單要不要補一個 restart 靠它)。不能單獨信心跳:心跳檔新鮮期 300 秒,app 重開後那 5 分鐘
+   舊心跳還算 alive,略過 restart 的話對帳器永遠起不來(稽核 M2)。監督者有講就聽監督者的,沒講(舊狀態檔)才退回心跳。 */
+function trRecRunning(st) {
+  const r = st && st.report;
+  if (!st || !st.alive || !r) return false;
+  const sup = r.daemon && r.daemon.reconciler;
+  return sup && typeof sup.running === "boolean" ? sup.running : !!(r.reconciler && r.reconciler.alive);
 }
 /* 常駐程式不在跑(稽核 S1):宿主會退避重啟、最多 5 次;exit 2/3(環境不對 / 別的行程握著鎖)與 spawn 失敗不重啟。
    回 null(在跑,或從來沒起過=引擎還沒裝)/ "retry"(剛死,宿主還在試)/ "down"(試完了還是沒起來,只剩重開 Blave)。 */
@@ -223,7 +233,13 @@ function trPushLabels() {
   if (typeof window.blave.tradeLabels !== "function") return;
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
-    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t("tm.hidden") });
+    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t("tm.hidden"),
+    // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
+    ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evHaltNote"), ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
+    ev_execution_interrupted: t("tr.ov.evExecInterrupted"), ev_execution_interrupted_n: t("tr.ov.evExecInterruptedNote"),
+    ev_execution_fallback_market: t("tr.ov.evExecFallback"), ev_execution_fallback_market_n: t("tr.ov.evExecFallbackNote"),
+    ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
+    ev_downtime_paused: t("tr.ov.evHaltAuto"), ev_downtime_paused_n: t("tr.ov.evDowntimeNote") });
 }
 function trWire() {
   $("tr-tabs").addEventListener("click", (e) => { const b = e.target.closest(".main-tab"); if (b) trSetTab(b.dataset.tab); });
@@ -429,7 +445,7 @@ function trAskStart(opener) {
   // 順序照雲端:先送所選指令(resume_wait 的 gate 要先落地),對帳器沒在跑再叫它起來
   const go = (cmd) => trRun("running", [
     () => window.blave.tradeSend(cmd, {}),
-    () => { const rec = (trReport() || {}).reconciler || {}; return TR.st && TR.st.alive && rec.alive ? { ok: true } : window.blave.tradeSend("restart_reconciler", {}); },
+    () => { return trRecRunning(TR.st) ? { ok: true } : window.blave.tradeSend("restart_reconciler", {}); },
   ]);
   confirmBox({
     title: t("tr.start"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
@@ -1005,7 +1021,8 @@ function trOvEvents(r) {
   });
   (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
     if (!ev || typeof ev.type !== "string") return;
-    const txt = trEventText(ev.type, ev.data && typeof ev.data === "object" ? ev.data : ev);
+    const evd = ev.payload && typeof ev.payload === "object" ? ev.payload : ev.data && typeof ev.data === "object" ? ev.data : ev;   // 機器事件的欄位叫 payload(runtime/events.py);data 是平台格式
+    const txt = trEventText(ev.type, evd);
     if (!txt) return;
     push(trMs(ev.ts), (body) => { body.appendChild(trEl("span", "hl", txt[0])); if (txt[1]) body.append(" ", trEl("span", "dim", "— " + txt[1])); });
   });
