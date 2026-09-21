@@ -103,6 +103,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   去掉 `_API_KEY` 尾碼後的 **id**,跟綁定側同一個口徑(id 恰為 `DATA` 的自訂場所仍是場所,綁/解一致);
   `portfolio_reporter.venues()` 與 `account_reader._venues()` 不回報/不讀 `data_x`。**必須早於任何 `DATA_` 金鑰落到機器**(出貨順序
   runtime → api → lib → shell/web)。這一版只有「認得並跳過」,沒有 `data_credentials` 指令。
+  `credentials` 指令的 payload 裡出現 `DATA_` 開頭的 id 直接拒收(ValueError,`.env` 不動):這種 id
+  對所有場所判斷都隱形,網頁自訂交易所名稱被 slug 成 `DATA_MARKET` 時會綁了卻不驅逐、不進 manifest、
+  不排程,全部靜默——改成大聲失敗。**機隊上既有的 `DATA_*` 自訂場所不受這道閘保護,發版前仍要查一次。**
   閘門:`tests/check_data_cred_skip.py`。
 
 ## 1.1.82 — 2026-09-18

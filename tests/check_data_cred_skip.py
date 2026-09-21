@@ -4,6 +4,7 @@ A paired DATA_POLYGON_API_KEY + DATA_POLYGON_SECRET_KEY has the exact shape of a
 exchange. Pins, against the real runtime/command_listener.py + portfolio_reporter.py:
   1. binding paper, then switching venue (paper → okx), leaves every DATA_* line byte-identical,
      evicts only the real venue, and the HALT names only that venue;
+  1b. the credentials command refuses any DATA_* id in its payload (ValueError, .env untouched);
   2. the first bind (nothing to evict) raises no HALT at all despite the DATA pair;
   3. credentials.ui.json never lists a data id; the reporter's venues() never reports one;
   4. unbinding the exchange keeps DATA_* and treats the machine as unbound (data pair is not
@@ -93,11 +94,23 @@ check(manifest_ids() == ["okx"], f"switch to okx: manifest = ['okx'] ({manifest_
 v = pr.venues()
 check(set(v) == {"okx"}, f"reporter venues() = okx only ({sorted(v)})")
 
-# ── writing a data pair through the same command binds nothing, evicts nothing
+# ── a DATA_* id is refused by the credentials command — loudly, before .env is touched
+#    (a custom exchange slugged DATA_MARKET would otherwise bind invisibly)
 os.remove(HALT)
-cl._in_workspace(cl._cmd_credentials, {"env": {"DATA_TIINGO_API_KEY": "dt-key-0f0f", "DATA_TIINGO_SECRET_KEY": "dt-sec-1e1e"}})  # gitleaks:allow (fake)
-check("OKX_API_KEY=ok-key-1d4f" in env_lines() and not os.path.exists(HALT) and manifest_ids() == ["okx"],
-      "writing a DATA pair: okx kept, no HALT, manifest unchanged")
+before = env_lines()
+for payload in ({"DATA_TIINGO_API_KEY": "dt-key-0f0f", "DATA_TIINGO_SECRET_KEY": "dt-sec-1e1e"},  # gitleaks:allow (fake)
+                {"data_market_api_key": "dt-key-0f0f"},  # gitleaks:allow (fake)
+                {"OKX_API_KEY": "ok-key-1d4f", "DATA_X_PASSPHRASE": "dt-pp-2c2c"}):  # gitleaks:allow (fake)
+    try:
+        cl._in_workspace(cl._cmd_credentials, {"env": payload})
+        err = None
+    except ValueError as e:
+        err = str(e)
+    check(err is not None and "DATA_" in err and not any(v in err for v in payload.values())
+          and env_lines() == before and not os.path.exists(HALT) and manifest_ids() == ["okx"],
+          f"credentials refuses {sorted(payload)}: ValueError names the prefix, no value, .env/HALT/manifest untouched")
+with open(ENV, "a") as f:  # a data pair that landed some other way (the future data channel)
+    f.write("DATA_TIINGO_API_KEY=dt-key-0f0f\nDATA_TIINGO_SECRET_KEY=dt-sec-1e1e\n")  # gitleaks:allow (fake)
 DATA_LINES += ["DATA_TIINGO_API_KEY=dt-key-0f0f", "DATA_TIINGO_SECRET_KEY=dt-sec-1e1e"]
 
 # ── removing a data key is not an unbind
@@ -120,8 +133,14 @@ check(pr.venues() == {}, "reporter venues() empty after unbind")
 # ── a venue whose id IS "DATA" (custom exchange named "Data"): its env names start with the
 #    prefix, its id does not — bind and unbind must agree it is a venue (same as before DATA_*)
 with open(ENV, "w") as f:
-    f.write("blave_api_key=bk\nDATA_API_KEY=dv-key-4c4c\nDATA_SECRET_KEY=dv-sec-2d2d\n")  # gitleaks:allow (fake)
-os.remove(HALT)
+    f.write("blave_api_key=bk\n")
+# bound THROUGH the command (not by writing the file): the refusal must look at the id ("DATA"),
+# not at the env name ("DATA_API_KEY") — judging the env name would refuse this legal venue
+cl._in_workspace(cl._cmd_credentials, {"env": {"DATA_API_KEY": "dv-key-4c4c", "DATA_SECRET_KEY": "dv-sec-2d2d"}})  # gitleaks:allow (fake)
+check(manifest_ids() == ["data"] and "DATA_API_KEY=dv-key-4c4c" in open(ENV).read(),
+      f"venue id DATA: binds through the command and reaches the manifest ({manifest_ids()})")
+if os.path.isfile(HALT):
+    os.remove(HALT)
 del STOPPED[:]
 cl._in_workspace(cl._cmd_credentials_remove, {"env": ["DATA_API_KEY", "DATA_SECRET_KEY"]})
 halted = os.path.isfile(HALT)

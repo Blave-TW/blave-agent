@@ -469,7 +469,9 @@ def _cmd_credentials(args):
     {ID}_PASSWORD / {ID}_PASSPHRASE sibling) — that shape IS the previously
     bound venue(s); singleton service keys (OPENAI_API_KEY — no secret sibling),
     venue support keys (SINOPAC_CA_PATH), user-added lines and comments all
-    survive, deliberately.
+    survive, deliberately. DATA_<SOURCE>_* lines (data-source keys) also
+    survive every bind — and are refused as a payload: that prefix is never a
+    venue, so writing one here would be a bind nothing can see.
 
     Also the chat-bind path: blave-agent's lib/venue.py loads this module
     from <base>/current and calls _in_workspace(_cmd_credentials, {"env": …})
@@ -493,6 +495,15 @@ def _cmd_credentials(args):
     # platform keys
     if writing & _CRED_KEEP_IDS:
         raise ValueError("platform credentials are not writable here")
+    # DATA_* ids are invisible to every venue check (_venue_cred_ids), so a
+    # custom exchange the web slugs to DATA_MARKET would bind without eviction,
+    # never reach the manifest, never schedule — all silently. Refuse loudly;
+    # data-source keys have no business on this command either.
+    if any(_is_data_cred_id(i) for i in writing):
+        raise ValueError(
+            "交易所名稱不能以「DATA_」開頭——這個前綴保留給資料來源金鑰,請換一個名稱再綁定 "
+            "(exchange names starting with DATA_ are reserved for data-source keys — "
+            "use a different name)")
     if _local_mode() and writing - LOCAL_OPEN_VENUES:
         raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
 
