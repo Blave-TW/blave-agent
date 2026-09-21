@@ -1258,6 +1258,19 @@ app.whenReady().then(() => {
   ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
+  /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
+     之後任何一支都不把值交回去——list 只有名稱與欄位名。三支都只收自家頁面;參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
+     不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */
+  const dataSrc = require("./datasrc").createDataSrc({
+    envFile: path.join(WS, ".env"),
+    lock: require("./datasrc").pyLock({ python: VENV_PY, lockFile: path.join(WS, ".env.lock") }),
+    strategies: () => listStrategies().map((s) => ({ name: s.name, displayName: s.displayName, file: path.join(STRAT_DIR(), s.name, "strategy.py") })),
+    trading: () => { const r = tradeLive() && tradeHost().status().report; return { live: !!r, amounts: r && r.config && r.config.amounts }; },
+  });
+  ipcMain.handle("datasrc-list", (e) => (fromOurPage(e) ? dataSrc.list() : { ok: false, error: "NOT_ALLOWED", sources: [] }));
+  ipcMain.handle("datasrc-save", (e, input) => (fromOurPage(e) && fs.existsSync(WS) ? dataSrc.save(input) : { ok: false, error: fromOurPage(e) ? "NO_WORKSPACE" : "NOT_ALLOWED" }));
+  ipcMain.handle("datasrc-blockers", (e, name) => (fromOurPage(e) ? dataSrc.blockers(name) : []));
+  ipcMain.handle("datasrc-remove", (e, name) => (fromOurPage(e) ? dataSrc.remove(name) : { ok: false, error: "NOT_ALLOWED" }));
   ipcMain.handle("load-model-prefs", () => loadModelPrefs());
   ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));

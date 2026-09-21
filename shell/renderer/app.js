@@ -349,6 +349,7 @@ function setCat(cat) {
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat === "model") mdlPaint();
+  if (cat === "src") srcLoad();   // 資料來源(renderer/datasrc.js)
   if (cat === "acct") acctPaintAcct();
   if (cat === "priv") privLoad();
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }

@@ -1,0 +1,33 @@
+/* 設定 › 資料來源(renderer/datasrc.js)。規格:mockup-desktop-telemetry-and-datasrc-2026-09.html 的 B。
+   沿用既有的 .priv-lead / .f-input / .plan-err / .cx-manual-note / .verdict / .btn-*;這裡只有這一頁自己的排列。列與列之間不畫線。 */
+.src-head { display: flex; align-items: flex-start; gap: var(--space-16); }
+.src-head .priv-lead { flex: 1; min-width: 0; margin: 0; max-width: 64ch; }
+.src-head .btn-out { flex: none; }
+.src-empty { max-width: 52ch; margin-top: var(--space-24); }
+.src-empty p { margin: 0 0 var(--space-12); font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+.src-rows { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-16); }
+.src-row { display: flex; align-items: center; gap: var(--space-12); min-height: 44px; padding: var(--space-6) 0; }
+.src-row .n { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.src-row .n b { font-size: 13px; font-weight: 500; color: var(--ink); }
+.src-row .n small { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-row .acts { flex: none; display: flex; gap: var(--space-12); }
+.src-back { padding: 0; text-decoration: none; }
+.src-form { margin-top: var(--space-12); max-width: 520px; }
+.src-l { display: block; margin: var(--space-16) 0 var(--space-6); font-size: 12px; color: var(--ink-3); }
+.src-form .f-input { height: 36px; padding-right: var(--space-8); }
+.src-form .f-input.is-err { border-color: var(--color-red); }
+.src-form .plan-err { margin: var(--space-8) 0 0; }
+.src-fields { display: flex; flex-direction: column; gap: var(--space-8); }
+.src-f2 { display: grid; grid-template-columns: 140px 1fr 28px; gap: var(--space-8); align-items: center; }
+.src-val { position: relative; display: flex; align-items: center; min-width: 0; height: 36px; }
+.src-val .f-input { padding-right: 56px; }
+.src-val .src-tog { position: absolute; right: var(--space-8); font-size: 12px; padding: 0; }
+.src-val .src-saved { flex: 1; font-size: 13px; color: var(--ink-3); }
+.src-rm { padding: 0; width: 28px; height: 28px; text-decoration: none; }
+.src-rm:disabled { opacity: .3; cursor: default; }
+.src-chips { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
+.src-chips .btn-quiet { margin-left: auto; font-size: 12px; padding: 0; }
+.src-chip { height: 24px; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: none; color: var(--ink-2); font-size: 12px; cursor: pointer; }
+.src-chip:hover { background: var(--surface-muted); }
+.src-foot { display: flex; justify-content: flex-end; gap: var(--space-8); margin-top: var(--space-24); }
+.src-foot .btn-fill[aria-disabled="true"] { cursor: default; }

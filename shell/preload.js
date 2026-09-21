@@ -30,6 +30,11 @@ contextBridge.exposeInMainWorld("blave", {
   onUpdateState: (fn) => ipcRenderer.on("update-state", (_e, st) => fn(st)),
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
+  // 自帶資料來源:金鑰的值只經過 dataSrcSave 一次;其餘三支只有名稱
+  dataSrcList: () => ipcRenderer.invoke("datasrc-list"),
+  dataSrcSave: (input) => ipcRenderer.invoke("datasrc-save", input),
+  dataSrcBlockers: (name) => ipcRenderer.invoke("datasrc-blockers", name),
+  dataSrcRemove: (name) => ipcRenderer.invoke("datasrc-remove", name),
   // Binance 真錢連接:金鑰只經過 binanceConnect 一次(主行程查過權限才存);其餘三支不碰金鑰
   binanceIp: () => ipcRenderer.invoke("binance-ip"),
   binanceState: () => ipcRenderer.invoke("binance-state"),

@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="report-backtest.css">
 <link rel="stylesheet" href="report-trades.css">
 <link rel="stylesheet" href="trade.css">
+<link rel="stylesheet" href="datasrc.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -230,6 +231,8 @@
       <nav class="set-cats" id="set-cats" data-i18n-aria="set.cats">
         <button type="button" class="set-cat" data-set-cat="display" aria-current="true" data-i18n="set.cat.display"></button>
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
+        <!-- 資料來源:自帶資料商的金鑰(排在「AI 接入」後面)。內容由 datasrc.js 的 srcPaint 畫 -->
+        <button type="button" class="set-cat" data-set-cat="src" data-i18n="src.title"></button>
         <!-- 會花錢的一類排最後:前兩類是偏好。聊天裡的情境卡會直接開到這裡 -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
         <!-- 帳號:身分與登入 / 登出(錢的事在「資料與雲端方案」)。內容由 app.js 的 acctPaintAcct 畫 -->
@@ -253,6 +256,7 @@
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
+        <div class="set-pane" data-set-cat="src" id="set-src" hidden></div>
         <!-- 雲端方案:內容由 app.js 的 planPaint 畫(依 account_status.plan)。上半自己捲,
              底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
         <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden></div>
@@ -322,5 +326,6 @@
 <script src="report-backtest.js"></script>
 <script src="report-trades.js"></script>
 <script src="trade.js"></script>
+<script src="datasrc.js"></script>
 <script src="app.js"></script>
 </body></html>

@@ -1690,3 +1690,134 @@ msgstr "到 Binance 關掉這把金鑰的提領權限。金鑰存在這台電腦
 
 msgid "cx.ip.copyThis"
 msgstr "複製這個 IP"
+
+# ---- 設定 › 資料來源(自帶資料來源;renderer/datasrc.js) ----
+
+msgid "src.title"
+msgstr "資料來源"
+
+msgid "src.add"
+msgstr "新增資料來源"
+
+msgid "src.name"
+msgstr "名稱（英文字母與數字，之後不能改）"
+
+msgid "src.nameLocked"
+msgstr "名稱"
+
+msgid "src.fields"
+msgstr "欄位"
+
+msgid "src.addField"
+msgstr "加一個欄位"
+
+msgid "src.howto"
+msgstr "策略裡用 {vars} 讀它；跟 agent 說「用 {name} 的資料」就可以。儲存後不再顯示內容。"
+
+msgid "src.edit"
+msgstr "修改"
+
+msgid "src.del"
+msgstr "刪除"
+
+msgid "src.back"
+msgstr "資料來源"
+
+msgid "src.fieldName"
+msgstr "欄位名稱"
+
+msgid "src.value"
+msgstr "貼上金鑰"
+
+msgid "src.common"
+msgstr "常用欄名"
+
+msgid "src.show"
+msgstr "顯示"
+
+msgid "src.hide"
+msgstr "隱藏"
+
+msgid "src.saved"
+msgstr "已儲存"
+
+msgid "src.replace"
+msgstr "取代"
+
+msgid "src.save"
+msgstr "儲存"
+
+msgid "src.saving"
+msgstr "儲存中…"
+
+msgid "src.errName"
+msgstr "名稱不能是空的。"
+
+msgid "src.errReserved"
+msgstr "名稱不能用 DATA 開頭（環境變數的前綴已經是 DATA_）。換一個。"
+
+msgid "src.errDup"
+msgstr "已經有一個叫「{name}」的資料來源。要換金鑰，回清單按它的「修改」。"
+
+msgid "src.errField"
+msgstr "欄位名稱只能用大寫英文字母、數字與底線，以字母開頭。"
+
+msgid "src.errFieldDup"
+msgstr "這個來源已經有一個叫 {field} 的欄位。"
+
+msgid "src.errSave"
+msgstr "沒有存成功，什麼都沒有改變。再按一次試試。"
+
+msgid "src.delTitle"
+msgstr "刪除 {source} 的金鑰？"
+
+msgid "src.delBody1"
+msgstr "會從這台電腦刪掉 {source} 的金鑰，刪了不能復原，要再用就得重新貼一次。"
+
+msgid "src.delBody2"
+msgstr "用到它的策略：{names}。刪除後它們回測與執行時會抓不到這份資料。"
+
+msgid "src.delBlocked"
+msgstr "現在不能刪除。{name} 正在下單，而且用到 {source}；刪了它下一次就抓不到資料。先到 自動下單 › 部位 把這支的金額設為 0，再回來刪除。"
+
+msgid "src.gotIt"
+msgstr "知道了"
+
+msgid "src.lead"
+msgstr "自己申請的資料服務（例：FRED、Coinglass）的金鑰放這裡，策略用它抓資料。金鑰存在這台電腦的工作區，agent 和你的策略程式讀得到；永遠不會拿去下單。"
+
+msgid "src.empty1"
+msgstr "Blave 內建的資料不需要金鑰。策略要用別家的資料、而那一家要你自己的金鑰時，才在這裡加。"
+
+msgid "src.empty2"
+msgstr "加好之後跟 agent 說「用 {ex} 的資料」就可以；金鑰不要貼在對話裡。"
+
+msgid "src.rowLocal.one"
+msgstr "{n} 個欄位 · 用到它的策略：{names}"
+
+msgid "src.rowLocal.other"
+msgstr "{n} 個欄位 · 用到它的策略：{names}"
+
+msgid "src.rowLocalNone.one"
+msgstr "{n} 個欄位 · 還沒有策略用到"
+
+msgid "src.rowLocalNone.other"
+msgstr "{n} 個欄位 · 還沒有策略用到"
+
+msgid "src.rmField"
+msgstr "拿掉這個欄位"
+
+msgid "src.errValue"
+msgstr "{field} 的內容有不能用的字元（空白、引號、反斜線）。請確認貼上的是金鑰本身。"
+
+msgid "src.errFieldReserved"
+msgstr "{field} 這個欄位名稱不能用在這個來源上。換一個，例如 TOKEN。"
+
+msgid "src.errBusy"
+msgstr "工作區的設定檔正在被使用，沒有儲存。等幾秒再試一次。"
+
+msgid "src.cloudLead"
+msgstr "這是你的雲端主機上的資料來源，這裡只列名稱。這一版還不能在這裡新增或刪除。"
+
+msgid "src.cloudEmpty"
+msgstr "雲端主機上沒有資料來源。"

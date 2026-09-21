@@ -24,7 +24,7 @@ const pass = (msg) => console.log("PASS  " + msg);
 // 沒列進來的話它們的 key 漂移、漏翻的字面都不會被擋到)。
 // trade.js(自動下單頁)也是手寫的畫面檔;strings.js 是產生的、i18n.js 不放字串,兩個不掃。
 const RENDERER_FILES = ["renderer/app.js", "renderer/index.html",
-  ...fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /^(report-.*|trade)\.js$/.test(f)).map((f) => "renderer/" + f)];
+  ...fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /^(report-.*|trade|datasrc)\.js$/.test(f)).map((f) => "renderer/" + f)];
 
 const src = read("renderer/strings.js");
 const block = (name) => src.split(`  ${name}: {`)[1].split("\n  },")[0];
