@@ -354,6 +354,7 @@ async function signOutBlave() {
   }
   clearToken();
   if (_cloud) _cloud.reset();   // 登出:不留上一個帳號的部位在記憶體裡
+  if (_mcp) _mcp.reset();       // 接入碼也是:伺服器那邊 /revoke 會撤掉它,這裡把記憶體裡的丟掉、作廢在途的請求
   lastAcct = null;
   return { revoked };
 }
@@ -1061,12 +1062,27 @@ function viewingArgs(v) {
   if (name) return ["--viewing-strategy=" + name, ...(v.tab === "code" || v.tab === "data" ? ["--viewing-tab=" + v.tab] : [])];
   return v.view === "portfolio" ? ["--viewing-view=portfolio"] : [];
 }
-/* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。兩顆各看各的:
+/* 自動掛上 `blave` MCP(agent 經它拿得到用戶雲端主機的 SSH)+ 畫面上的「送上雲端 / 拉回這台電腦」。
+   **預設關**(Wei 拍板:先修 sshd——SSH 憑證不可登入 root——才上線)。發佈版一律是這個常數;開發版可以用 BLAVE_CLOUD_HANDOFF=1 打開來測
+   (主行程自己的環境,agent 設不到;發佈版不看它)。 */
+const CLOUD_HANDOFF = false;
+function cloudHandoffOn() { return CLOUD_HANDOFF || (!(app.isPackaged && require("./package.json").blaveRelease) && process.env.BLAVE_CLOUD_HANDOFF === "1"); }
+/* 接入碼(mcpcode.js):只在主行程的記憶體裡。用帳號 token + app_secret 去換——那兩顆都不進 agent;換出來的碼只經由單次設定檔交給 CLI。 */
+let _mcp = null;
+const mcpDir = () => path.join(app.getPath("userData"), "mcp");   // workspace 以外:agent 的工作目錄裡看不到它
+function mcpCode() {
+  if (!_mcp) _mcp = require("./mcpcode").createMcpCode({ apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; } });
+  return _mcp;
+}
+/* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。三顆各看各的:
      proxyToken(帳號 token,會燒 Blave 的 AI 額度)= **連的是 Blave 的 AI** 而且有登入;
      dataKey(縮權的資料 key,不能呼叫 LLM)= **有登入而且帳號含資料**,不看連的是誰——自帶 Claude Code / Codex 的人登入後也拿得到資料。
-   沒登入兩個都沒有;included 查不到(null / undefined)當沒有。 */
-function turnCreds(kind, signedIn, included) {
-  return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true };
+     mcp(要不要去換接入碼、掛上 `blave` MCP)= **功能開著而且有登入**,一樣不看連的是誰(MCP 呼叫不經 LLM proxy、不計費);
+       有沒有雲端主機由換碼的端點回答(沒有 = 409 = 不掛),所以不在這裡判。它開著**不會**讓帳號 token 進環境。
+   沒登入三個都沒有;included 查不到(null / undefined)當沒有。 */
+function turnCreds(kind, signedIn, included, handoffOn) {
+  return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true, mcp: handoffOn === true && signedIn === true };
 }
 const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
 async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing }) {
@@ -1090,7 +1106,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 資料則相反——**看有沒有登入,不看連的是誰**:登入 Blave 是帳號的事,資料 key 是另一把縮權的 key
   // (不能呼叫 LLM、不產生 usage_blave),給自帶 CLI 的人不會燒到他的 AI 額度。
   const signedIn = !!loadToken();
-  const plan = turnCreds(conn.kind, signedIn, signedIn && await dataIncluded());
+  const plan = turnCreds(conn.kind, signedIn, signedIn && await dataIncluded(), cloudHandoffOn());
   const useBlave = conn.kind === "blave";
   const acct = plan.proxyToken ? loadToken() : null;
   const dataAccess = syncDataEnv(plan.dataKey);
@@ -1125,7 +1141,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     LANG: process.env.LANG || "zh_TW.UTF-8",
     ...PY_ENV,
   };
-  const child = spawn(VENV_PY, [
+  // `blave` MCP:拿得到碼才掛;拿不到(沒主機、端點還沒上線、被限速、連不上)= 這一輪不掛,回合照常。
+  // Codex 先不掛:它沒有單次設定檔,要走 `-c mcp_servers.blave.*` + 環境變數,而那幾個鍵名還沒有對著實際安裝的 codex 驗過——不猜(byo-agent-surfaces 的紀律)。
+  let mcpFile = null;
+  if (plan.mcp && !useCodex) { const mount = await mcpCode().get(); if (mount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mount); }
+  let child;
+  try { child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
     "--delivery", "local",
     // 選擇器畫得出來時,model / effort **一律明確指定**:輸入框上寫的就是送出去的,
@@ -1141,12 +1162,15 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
     ...(useCodex ? ["--engine", "codex", "--codex-bin", codexBin] : []),
     ...viewingArgs(viewing),
+    // argv 上只有設定檔的**路徑**(碼在檔案裡,0600、workspace 以外、這一輪結束就刪);runtime 只在電腦版(LocalSink)認這個旗標
+    ...(mcpFile ? ["--mcp-config=" + mcpFile] : []),
     // 用戶打的字**不進 argv**(稽核 S5):同一台電腦上任何人 `ps` 都看得到命令列,而聊天貼 key 是支援的流程。走 stdin。
     // runtime 往下那一段本來就不走 argv(Claude 走 SDK 的 stream-json stdin、Codex 走 `exec -`)。
     "--message-stdin", "--", sessionId,
-  ], { env, cwd: WS });
+  ], { env, cwd: WS }); } catch (err) { require("./mcpcode").removeConfig(mcpFile); throw err; }
+  child.on("error", () => require("./mcpcode").removeConfig(mcpFile));
   child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
-  try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } throw err; }   // 不留一支卡在讀 stdin 的子行程
+  try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } require("./mcpcode").removeConfig(mcpFile); throw err; }   // 不留一支卡在讀 stdin 的子行程
   activeTurn = child;
   let buf = "";
   child.stdout.on("data", (d) => {
@@ -1162,6 +1186,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   let errTail = "";
   child.stderr.on("data", (d) => { errTail = (errTail + d.toString()).slice(-2000); });
   child.on("close", (code) => {
+    require("./mcpcode").removeConfig(mcpFile);   // 這一輪結束:設定檔(裡面是接入碼)立刻刪
     activeTurn = null;
     win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
   });
@@ -1218,6 +1243,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   startImageServer();
+  require("./mcpcode").sweep(mcpDir());   // 上一次回合中途 crash 留下的 MCP 設定檔(裡面是一顆可能還沒過期的接入碼):開 app 就清
   // 這個 app 的網頁不需要任何瀏覽器權限(相機、麥克風、定位、通知…):Electron 預設是全部允許,這裡全部拒絕(稽核 R5)。
   // 唯一的例外是自家頁面寫剪貼簿——「複製」IP / 安裝識別碼那幾顆鈕靠它。
   const ses = require("electron").session.defaultSession;
@@ -1235,6 +1261,7 @@ app.whenReady().then(() => {
   };
   const handle = (channel, fn, denied = null) => ipcMain.handle(channel, (e, ...a) => (fromOurPage(e) ? fn(e, ...a) : denied));
   handle("detect-agents", () => detectAgents());
+  handle("feature-flags", () => ({ cloudHandoff: cloudHandoffOn() }), { cloudHandoff: false });   // 畫面只拿得到開關,拿不到碼
   handle("save-connection", (_e, choice) => saveConnection(choice), false);
   handle("load-connection", () => loadConnection());
   handle("open-external", (_e, url) => openExternalSafe(url), false);

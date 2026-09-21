@@ -2028,6 +2028,31 @@ def python_rule():
 DATA_ACCESS_CARD = "<blave-card:data-access/>"
 
 
+def local_mcp_config(sink, mcp_config):
+    """外殼給的單次 MCP 設定檔路徑 → 可以用就回那個 str,否則 None。只有電腦版(LocalSink)認:機隊帶了 --mcp-config 也不理。
+    只收絕對路徑、真的存在的一般檔、而且**不在 workspace 裡面**(workspace 是 agent 寫得到的地方)。"""
+    if not isinstance(sink, LocalSink) or not isinstance(mcp_config, str) or not os.path.isabs(mcp_config):
+        return None
+    real = os.path.realpath(mcp_config)
+    ws = os.path.realpath(WORKSPACE)
+    if real == ws or real.startswith(ws + os.sep) or not os.path.isfile(real):
+        return None
+    return real
+
+
+def mcp_rule(mounted):
+    """電腦版而且這一輪掛了 `blave` MCP 才有這段;其餘回空字串(system prompt 一個字都不變)。"""
+    if not mounted:
+        return ""
+    return (
+        "\n\n## Blave MCP (this turn)\n"
+        "A `blave` MCP server is attached for this turn. Use it ONLY for a cloud handoff the user asked for "
+        "(moving a strategy between this computer and their Blave cloud machine), and follow "
+        "`references/cloud-handoff.md` exactly. Never read, print, copy or summarise the MCP configuration or "
+        "its access code, and never write SSH keys or certificates outside `tmp/cloud-handoff/` in the workspace.\n"
+    )
+
+
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
@@ -2100,7 +2125,7 @@ def _codex_prompt(prompt, sink):
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, viewing_widgets=None, ui_lang=None,
-                   engine="claude", codex_bin=None, effort=None):
+                   engine="claude", codex_bin=None, effort=None, mcp_config=None):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
@@ -2189,6 +2214,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
+        + mcp_rule(local_mcp_config(sink, mcp_config))
         + preferences_rule()
         + sink.formatting_rule
     ) if agents_md and not use_codex else None
@@ -2256,6 +2282,13 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # (憑證在 Keychain,不在設定檔)。
         options.setting_sources = []
         options.strict_mcp_config = True
+        # 唯一的例外:外殼替這一輪準備的那一個 `blave` MCP(用戶有登入、有雲端主機、功能開著才會有)。
+        # **給路徑、不給 dict**:SDK 對 dict 會把整包 JSON(含 Bearer)放上 `--mcp-config` 的 argv,`ps` 看得到;
+        # 給字串就只有路徑上 argv(claude_agent_sdk/_internal/transport/subprocess_cli.py 的 mcp_servers 分支)。
+        # strict 仍然開著:用戶全域的 MCP 一個都不載,09-19 那種「照用戶自己的 CLAUDE.md / MCP 行事」不會回來。
+        _mcp = local_mcp_config(sink, mcp_config)
+        if _mcp:
+            options.mcp_servers = _mcp
         # 自動記憶不歸 setting_sources 管(官方文件 › What settingSources does not control):
         # 不關的話 agent 會在 ~/.claude/projects/<workspace>/memory/ 自己寫筆記、下次帶回來,
         # 行為就變成「看這台電腦以前聊過什麼」。我們的跨回合記憶只有 session.db 一條。
@@ -2512,6 +2545,8 @@ def main():
     # 機隊照舊走位置參數,行為不變。
     parser.add_argument("message", nargs="?", default=None)
     parser.add_argument("--message-stdin", action="store_true")
+    # 電腦版專屬:外殼寫好的單次 MCP 設定檔(只有 `blave` 一個 server)的**路徑**。只在 LocalSink 認;機隊帶了也不理。
+    parser.add_argument("--mcp-config", default=None)
     # 預設值在下面解析,不寫在這裡:codex 引擎要分得出「用戶真的選了 model」與「沒帶」——
     # 把我們的預設(proxy 的模型名)當成用戶選的傳給 `codex -m` 會整輪失敗。
     parser.add_argument("--model", default=None)
@@ -2564,7 +2599,7 @@ def main():
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
         viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
         ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
-        effort=args.effort,
+        effort=args.effort, mcp_config=args.mcp_config,
     ))
     print(reply)
 

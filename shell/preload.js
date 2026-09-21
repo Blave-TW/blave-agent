@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("blave", {
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
   telemetryInstallId: () => ipcRenderer.invoke("telemetry-install-id"),
+  featureFlags: () => ipcRenderer.invoke("feature-flags"),
   // 自帶資料來源:金鑰的值只經過 dataSrcSave 一次;其餘三支只有名稱
   dataSrcList: () => ipcRenderer.invoke("datasrc-list"),
   dataSrcSave: (input) => ipcRenderer.invoke("datasrc-save", input),
