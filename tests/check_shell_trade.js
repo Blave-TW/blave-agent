@@ -103,17 +103,19 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
   ok("標的寫法不一致(小寫、帶 - 、@spot)也對得起來", trLiveOrderErr([E("btc-usdt@spot", "s")], P("BTCUSDT@spot")).error === "s" && trLiveOrderErr([E("BTCUSDT@spot", "s")], P("BTCUSDT")) === null);
   ok("壞輸入不拋:不是陣列 / 列裡不是物件 / 沒有 symbol", trLiveOrderErr(null, P("BTCUSDT")) === null && trLiveOrderErr(undefined, P("BTCUSDT")) === null && trLiveOrderErr([null, 5, "x"], P("BTCUSDT")) === null
     && trLiveOrderErr([E(undefined, "b")], P("BTCUSDT")) === null && trLiveOrderErr([E("BTCUSDT", "b")], null) === null);
-  ok("接線:表底那行吃 trLiveOrderErr;pending = 會觸發下單的列,**外加拿不到 gate 而差額非 0 的列**(稽核 B0)", /const le = trLiveOrderErr\(r\.order_errors, pending\);/.test(src)
-    && /if \(acts \|\| \(!gs && Math\.round\(Math\.abs\(d\)\) > 0\)\) pending\.add\(sym\);/.test(src) && !/errs\[errs\.length - 1\]/.test(src)); }
+  ok("接線:表底那行吃 trLiveOrderErr;pending = 會觸發下單的列,外加**口數列**差額非 0 的(用 lot,不是 !gs)", /const le = trLiveOrderErr\(r\.order_errors, pending\);/.test(src)
+    && /if \(acts\) pending\.add\(sym\);/.test(src) && !/\(!gs && Math\.round/.test(src) && !/errs\[errs\.length - 1\]/.test(src));
+  ok("口數列的差額不被畫成灰色(同一個 ≥10 的誤用)", /acts = lot \? Math\.round\(Math\.abs\(d\)\) > 0 : Math\.abs\(d\) >= \(gs \? gs\.usd : 10\);/.test(src) && /const lot = trIsLot\(last, sym\);/.test(src)); }
 
 // 稽核 B0:按口數的標的(群益 / futures_contracts)——機器端不寫 gates、下單也沒門檻(差 1 口就送單),
-// 但畫面的 acts 退回用「≥ 10」比口數 → 差 1、2 口 acts 永遠 false。不補這條,那種標的的下單失敗紅字會被 100% 藏掉
-{ const pend = (rows) => { const out = new Set(); rows.forEach(([sym, d, gs]) => { const acts = Math.abs(d) >= (gs ? gs.usd : 10); if (acts || (!gs && Math.round(Math.abs(d)) > 0)) out.add(sym); }); return out; };
-  ok("口數列差 1、2 口(沒有 gate)→ 算欠著,紅字留得住", pend([["TXF", 1, null]]).has("TXF") && pend([["TXF", -2, null]]).has("TXF") && pend([["TXF", 9, null]]).has("TXF"));
-  ok("沒有 gate 但差額是 0(四捨五入後)→ 不算欠著", !pend([["TXF", 0, null]]).has("TXF") && !pend([["TXF", 0.4, null]]).has("TXF"));
-  ok("有 gate 的一般標的行為不變:過門檻才算欠著", pend([["BTCUSDT", 100, { usd: 84 }]]).has("BTCUSDT") && !pend([["BTCUSDT", 50, { usd: 84 }]]).has("BTCUSDT"));
-  ok("口數列與一般標的混在同一張表:各自照各自的規則", (() => { const p = pend([["TXF", 1, null], ["BTCUSDT", 50, { usd: 84 }]]); return p.has("TXF") && !p.has("BTCUSDT"); })());
-  ok("總覽的事件清單不受影響:歷史照舊逐筆列(那裡每一列都有時間)", /\(Array\.isArray\(r\.order_errors\) \? r\.order_errors : \[\]\)\.forEach/.test(src)); }
+// 但畫面的 acts 是拿「≥ 10」在比口數。**不可以用「沒有 gate」當口數訊號**:lib/portfolio.py:1119 是「兩側門檻都等於 flat 就不寫 gates」,
+// 那是一般加密標的的常態——用 !gs 會把每條加密列都當成口數列,過期紅字又掛回去(9749e29 白做)
+{ const snap = (t, a) => ({ ts: "2026-09-21T14:27:00", target: t, actual: a, orders: [] });
+  ok("認得出口數列:asset_spec.type、target.exchange、actual.exchange 任一個說 capital 就算", trIsLot(snap({ TXF: { amount: 3, asset_spec: { type: "futures_contracts" } } }, {}), "TXF") === true
+    && trIsLot(snap({ TXF: { amount: 3, exchange: "capital" } }, {}), "TXF") === true && trIsLot(snap({}, { TXF: { size: 1, exchange: "capital" } }), "TXF") === true);
+  ok("一般加密列不是口數列(就算它沒有 gate);壞 / 缺的快照不拋", !trIsLot(snap({ BTCUSDT: { amount: 100, exchange: "binance" } }, {}), "BTCUSDT") && !trIsLot(snap({ BTCUSDT: 100 }, {}), "BTCUSDT")
+    && !trIsLot(null, "BTCUSDT") && !trIsLot(snap(null, null), "BTCUSDT") && !trIsLot(snap({}, {}), "BTCUSDT") && !trIsLot(snap({ BTCUSDT: { asset_spec: "x" } }, {}), "BTCUSDT"));
+  ok("標的寫法不一致(小寫、帶 -、@spot)也對得起來", trIsLot(snap({ "txf@spot": { exchange: "capital" } }, {}), "TXF@spot") === true && trIsLot(snap({ "btc-usdt": { exchange: "capital" } }, {}), "BTCUSDT") === true); }
 
   ok("稽核 R3:blur 不重建儲存列(打完直接點「儲存」,mousedown 要落在還活著的那顆鈕上)——只更新鈕的 disabled", /if \(svBtn && svBtn\.isConnected\) svBtn\.disabled = anyBad\(\); else paintBar\(\); \};/.test(src) && /sv\.disabled = anyBad\(\); svBtn = sv;/.test(src));
   ok("「模擬」只留頂列記號與確認框標題:單位只寫幣別、側欄記號與綠點的節點拿掉、資產與設定帳戶列不掛、cx.perfNote 只剩總覽一處", /function trUnit\(\) \{ return trCcy\(\); \}/.test(src) && !/tr-nav-mode|tr-nav-dot/.test(html + src)

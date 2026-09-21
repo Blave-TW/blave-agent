@@ -178,6 +178,18 @@ function trDeadKind(report) {
   const sup = report && report.daemon && report.daemon.reconciler;
   return sup && sup.wanted === true ? "died" : "off";
 }
+/* 這個標的是不是按**口數**算的(群益 / futures_contracts)。判斷逐字照機器端 lib/portfolio.py:1080-1081:
+   target 的 asset_spec.type === "futures_contracts",或 target / actual 任一邊的 exchange 是 capital。
+   兩邊都吃是因為快照的 target 與 actual 各自帶 exchange(_write_reconcile_snapshot 寫的是 full_target)。
+   **不可以拿「沒有 gate」當口數訊號**(稽核 B0 複查):lib/portfolio.py:1119 是「兩側門檻都等於 flat(預設 10)就不寫 gates」,
+   而那是一般加密標的的**常態**——用 !gs 會把每一條加密列都當成口數列。 */
+function trIsLot(last, sym) {
+  const pick = (o) => { if (!o || typeof o !== "object") return null; const k = Object.keys(o).find((x) => trCanonKey(x) === sym); return k == null ? null : o[k]; };
+  const t = pick(last && last.target), a = pick(last && last.actual);
+  const spec = t && typeof t === "object" ? t.asset_spec : null;
+  return (spec && typeof spec === "object" && spec.type === "futures_contracts")
+    || (t && typeof t === "object" && t.exchange === "capital") || (a && typeof a === "object" && a.exchange === "capital");
+}
 /* 表底那行紅字要不要出。`order_errors` 是「最近 5 筆下單失敗」,機器端**從來不清**(lib/portfolio._record_order_error 只 append、留最後 5 筆),
    所以照最新那一筆畫 = 把一筆歷史當成現況:用戶把金額從 110,000 改成 20,000、單也成交了,22:26 那句「部位要到 110,000…」
    還掛在寫著 20,000 的表下面,兩個數字互相矛盾(Wei 在 Electron 44 實機看到的)。
@@ -1026,15 +1038,14 @@ function trPositions(r, stored, states) {
     const tc = trEl("td", "n"), ac = trEl("td", "n");
     trMoneyInto(tc, ts, true); trMoneyInto(ac, as, true);
     // 上色要對齊真正觸發下單的門檻:平台 10,或該標的在交易所的最小下單量(機器端回報的 gates)
-    const gs = trGateSide(gates[sym], ts, as), acts = Math.abs(d) >= (gs ? gs.usd : 10);
+    // 口數列沒有門檻:差 1 口就送單,不可以拿平台那顆 10(USD)去比,不然差額會被畫成「不會動」的灰色
+    const lot = trIsLot(last, sym);
+    const gs = trGateSide(gates[sym], ts, as), acts = lot ? Math.round(Math.abs(d)) > 0 : Math.abs(d) >= (gs ? gs.usd : 10);
     const held = !acts && Math.round(Math.abs(d)) > 0;
     const dc = trEl("td", "n " + (acts ? (d > 0 ? "buy" : "sell") : "hold"));   // 0 是有意義的值(對上了),不用佔位符那階灰
     trMoneyInto(dc, d, true);
-    // 這一列還欠一張單:表底那行失敗紅字只在它的標的還欠著時才出(見 trLiveOrderErr)。
-    // 拿不到 gate 而差額不是 0 也算欠著(稽核 B0):按**口數**的標的(群益 / futures_contracts)機器端不寫 gates
-    // (lib/portfolio:1090 只在非 is_lot_based 時寫)、下單也沒有門檻(:1393 leg_threshold = 0,差 1 口就真的送單),
-    // 這裡的 acts 卻退回用「≥ 10」比口數 → 差 1、2 口永遠 false,失敗紅字會被 100% 藏掉。藏掉的正是「單沒送出去、差額還在」
-    if (acts || (!gs && Math.round(Math.abs(d)) > 0)) pending.add(sym);
+    // 這一列還欠一張單 = 它會觸發下單(acts 已經把口數列算對了):表底那行失敗紅字只在它的標的還欠著時才出(見 trLiveOrderErr)
+    if (acts) pending.add(sym);
     row.append(sc, tc, ac, dc); tb.appendChild(row);
     if (gs && held && !((gs.reduce || gs.close) && gs.usd <= 10)) gated.push({ sym, gs });   // 平坦的 10 是每一列共通的門檻,不另外解釋
   });
