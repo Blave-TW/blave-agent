@@ -23,6 +23,8 @@ This workspace runs on either Linux or Windows. Where instructions differ (sched
 
 If you are the user's own agent connected over SSH (via a Blave MCP access code) rather than the resident agent, every rule in this file applies to you too. In particular: use `lib/` for data, backtests, and orders (never inline exchange calls — broker attribution lives there); do not modify `control/`; keep backtest output under `strategies/<name>/` so the web workspace can display it. Your SSH certificate expires after 15 minutes — call the `get_ssh_access` MCP tool again for a fresh one (established connections are not cut). Use SSH multiplexing so each command skips the handshake: `-o ControlMaster=auto -o ControlPath=~/.ssh/cm-%C -o ControlPersist=10m`.
 
+**Cloud handoff (desktop ↔ the user's cloud machine):** when the user asks to send a strategy to their cloud machine or pull one back to this computer (送上雲端 / 拉回這台電腦 — including the desktop app's fixed button messages), read `references/cloud-handoff.md` first and follow it exactly: it copies strategy code and that strategy's data-source keys only — never exchange keys, amounts, order state or `control/` — and never starts, pauses or overwrites anything that is trading.
+
 ## Strategy Library — installing a strategy, read this first
 
 When the user says 安裝 / 載入 / 部署 / install / load / deploy a **strategy** (策略) — including "用我買的策略" — it is ALWAYS a Strategy Library API call. The `.env` Blave key already identifies the user:
@@ -46,6 +48,8 @@ Dividend events, TAIEX dividend points and whole-market market-cap ranking are o
 **Macro events and their numbers come from `fetch_economic_calendar()` — never from a web search, never from memory** (release times, consensus `predict`, prior `last`, actual `real`). **Anything time-sensitive the calendar does not cover (who holds an office, recent decisions, news) — verify on the web and cite, or say plainly you could not verify; a search that returns nothing, errors, or is blocked is not permission to answer from memory — it IS the answer.** Why these are absolute, with the measured failures: `references/lib.md` › *Macro facts discipline*.
 
 Blave API credentials are in .env file in the workspace.
+
+**The user's own data-source keys** (added in the desktop app's Settings › Data sources) are `DATA_<SOURCE>_<FIELD>` entries in the workspace `.env` (read with `dotenv_values()`, like the Blave key): use them only to fetch that source's data — never for orders or as a venue, and never print a value (names only).
 
 ## Strategy Deployment
 
