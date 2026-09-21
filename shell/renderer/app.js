@@ -540,6 +540,14 @@ $("mp-panel").addEventListener("keydown", (e) => {
    報告三個分頁:回測 / 進出場 由各自的檔負責畫(window.BlaveReport),這裡只管
    選中、切分頁、程式碼分頁。 */
 const RP = { list: [], name: null, data: null, tab: "bt", drawn: {} };
+/* 送出當下中欄開著什麼 → 給 agent 釐清「這支 / 這裡」用(跟雲端工作頁同一份契約)。
+   雲端視角不帶:這一版 agent 只操作這台電腦,而雲端頁上的東西不在它的 workspace 裡。 */
+function chatViewing() {
+  if (typeof ENV !== "undefined" && ENV.cur === "cloud") return null;
+  if (typeof TR_BAGS !== "undefined" && TR_BAGS.local.open) return { view: "portfolio" };
+  if (!$("rp").hidden && RP.name && RP.data) return { strategy: RP.name, tab: RP.tab === "bt" ? "data" : RP.tab === "code" ? "code" : null };
+  return null;
+}
 
 async function stratRefresh(selectTouched) {
   const before = new Map(RP.list.map((x) => [x.name, x.mtime]));
@@ -1093,7 +1101,7 @@ async function submitMessage(msg) {
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = [];
     const r = await window.blave.sendMessage({
-      sessionId, message: msg, model: MP.model, effort: mpEffort() });
+      sessionId, message: msg, model: MP.model, effort: mpEffort(), viewing: chatViewing() });
     // main.js 的契約只有這兩種回覆:busy 或 started
     if (r.started) { busyStart(); return true; }
     addMsg("sys", t("turn.busy")); unlock(); return false;

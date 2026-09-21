@@ -996,7 +996,17 @@ function tradeHost() {
 function tradeStartIfReady() {
   try { if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) tradeHost().start(); } catch (e) { console.error("[trade] start failed", e && e.message); }
 }
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort }) {
+/* 用戶送出當下畫面上開著什麼(runtime 的 --viewing-*,跟雲端工作頁同一份契約):只用來釐清「這支 / 這裡」指的是誰,
+   不是工作指令。值來自 renderer,會進命令列與 prompt:策略名只認沒有控制字元與方括號的短字串(方括號是 runtime 包這段
+   脈絡用的界線),tab / view 只認白名單。tests/check_shell_viewing.js 從原文切出來跑。 */
+function viewingArgs(v) {
+  if (!v || typeof v !== "object") return [];
+  const name = typeof v.strategy === "string" && /^[^\u0000-\u001f\u007f\[\]「」\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]{1,200}$/.test(v.strategy) ? v.strategy : null;
+  // 一律 --flag=value 單一 argv(同雲端的 runtime/web_bridge.py):分開寫的話,目錄名以 - 開頭的策略會被 argparse 當成旗標,整輪 exit 2
+  if (name) return ["--viewing-strategy=" + name, ...(v.tab === "code" || v.tab === "data" ? ["--viewing-tab=" + v.tab] : [])];
+  return v.view === "portfolio" ? ["--viewing-view=portfolio"] : [];
+}
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
@@ -1049,7 +1059,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   };
   const child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
-    sessionId, message, "--delivery", "local",
+    "--delivery", "local",
     // 選擇器畫得出來時,model / effort **一律明確指定**:輸入框上寫的就是送出去的,
     // 不靠引擎那邊看不見的預設。只有型錄拿不到(沒畫選擇器)時兩個才是 null——
     // 那時 Claude / Blave AI 照舊送 sonnet,Codex 什麼都不帶(runtime 用「有沒有明確
@@ -1062,6 +1072,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 契約(runtime 那邊同一份):不帶 --engine = claude,行為跟以前一模一樣;
     // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
     ...(useCodex ? ["--engine", "codex", "--codex-bin", conn.path] : []),
+    ...viewingArgs(viewing),
+    // 位置參數放最後、前面放 --:用戶打的字是單一 token 又以 - 開頭(「--help」「-h」)時,不會被 argparse 當成旗標
+    "--", sessionId, message,
   ], { env, cwd: WS });
   activeTurn = child;
   let buf = "";
@@ -1191,6 +1204,7 @@ app.whenReady().then(() => {
   ipcMain.handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   ipcMain.handle("cancel-agent-login", () => cancelAgentLogin());
   ipcMain.handle("send-message", (e, payload) => {
+    if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
     if (activeTurn || turnStarting) return { busy: true };
     const win = BrowserWindow.fromWebContents(e.sender);
     // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
