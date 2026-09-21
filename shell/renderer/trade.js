@@ -154,6 +154,30 @@ function trMs(ts) {
   const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts + "Z");
   return isNaN(d.getTime()) ? null : d.getTime();
 }
+/* 金額看不懂的原因(設計 v4 §1)。null = 看得懂;"bad" = 不是數字;"big" = 是數字但超過 TR_AMOUNT_MAX。不改 trParseAmount 的回傳(別處還在用) */
+function trAmountError(s) {
+  if (trParseAmount(s) != null) return null;
+  const x = String(s == null ? "" : s).trim().replace(/^\$\s*/, "");
+  return /^(\d{1,3}(,\d{3})+|\d+)?(\.\d+)?$/.test(x) && /\d/.test(x) ? "big" : "bad";
+}
+/* 模擬帳戶的槓桿上限(§5)。over = 超過;blocked = 超過而且是往上調——**調低永遠可存**:淨值掉了以後原本合法的設定會自己變成 10.05 倍,要讓人能往下調 */
+const TR_PAPER_MAX_LEV = 10;        // 同 lib/order_paper.py MAX_LEVERAGE
+function trLevCheck(isPaper, mult, newTotal, storedTotal) {
+  const over = !!isPaper && typeof mult === "number" && isFinite(mult) && mult > TR_PAPER_MAX_LEV;
+  return { over, blocked: over && newTotal > storedTotal };
+}
+/* lib/order_paper.py 的拒單原文 → { kind, … }(比對英文原文是權宜:之後 order_errors[] 有 code 欄位就改認 code)。比不到回 null */
+function trOrderErrParse(err) {
+  const e = String(err == null ? "" : err), m = /gross notional (\d+(?:\.\d+)?) exceeds (\d+(?:\.\d+)?)× paper equity (\d+(?:\.\d+)?)/.exec(e);
+  if (m) return { kind: "paperLev", gross: +m[1], x: m[2], cap: +m[2] * +m[3] };
+  return /paper account equity would be <= 0/.test(e) ? { kind: "paperBroke" } : null;
+}
+/* trExecState 的 "dead" 分兩種(§7):監督者被叫去跑(wanted)卻沒在跑 = 異常("died");否則 = 你還沒按啟動("off")。
+   舊狀態檔沒有 wanted、雲端沒有 daemon 區塊 → 都當成正常那一種(寧可少叫一次) */
+function trDeadKind(report) {
+  const sup = report && report.daemon && report.daemon.reconciler;
+  return sup && sup.wanted === true ? "died" : "off";
+}
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
 /* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
@@ -216,6 +240,7 @@ function envCell(env, st, pending) {
   if (kind === "stopped") { out.dot = "bad"; out.word = "side.stopped"; out.sig = "stopped"; return out; }
   const state = trExecState(st);
   if (state === "halted" && envAutoHalt(st)) { out.dot = "bad"; out.word = "env.st.autoPaused"; out.sig = "halt:" + String(st.report.halt.at || ""); return out; }
+  if (state === "dead" && !pending && trDeadKind(st.report) === "died") { out.dot = "bad"; out.word = "tr.s.died"; out.sig = "died:" + String((st.report.reconciler || {}).heartbeat_at || ""); return out; }
   out.run = state === "running" && !pending && !trFailedIds(st.report).length && !trKeyBad(env);
   return out;
 }
@@ -320,7 +345,7 @@ function trVenueLabel(id, short) {
 function trIsPaper() { return trVenueId() === PAPER; }
 function trCcy() { const e = trLiveEntry(trReport(), trVenueId()); return (e && e.currency) || "USDT"; }
 // 單位:模擬帳戶寫「模擬 USDT」(三通道之一:記號、外框、單位)
-function trUnit() { return trIsPaper() ? t("tr.paperCcy", { c: trCcy() }) : trCcy(); }
+function trUnit() { return trCcy(); }   // 「模擬」記號只留頂列與動到錢的確認框標題;單位寫幣別本身(同雲端版)
 function trEquity() { const e = trLiveEntry(trReport(), trVenueId()); return e && e.ok && typeof e.equity === "number" ? e.equity : null; }
 function trFmt(v, signed) {
   if (typeof v !== "number" || !isFinite(v)) return null;
@@ -478,7 +503,7 @@ async function trOpen(tab) {
   if (S !== TR_BAGS[ENV.cur]) { S.open = true; return; }   // 等的時候切走了:只記下這一邊是開著的,不碰另一邊的畫面
   $("main-empty").hidden = true; $("tr").hidden = false;
   $("tr-nav").setAttribute("aria-current", "page");
-  S.open = true; S.sig = {};
+  S.open = true; S.sig = {}; ENV.sig.tb = null;
   trPaint();
   if (tab && !$("tr-tabs").hidden) trSetTab(tab);   // 指定分頁的入口(之後的通知、狀態帶)一律走 trSetTab:底線、tabindex、面板三件事一起換
   trPollSoon(0);
@@ -488,7 +513,7 @@ function trLeave() {
   const L = TR_BAGS.local;
   if (!L.open) return;
   L.open = false;
-  if (ENV.cur === "local") { $("tr").hidden = true; $("tr-nav").removeAttribute("aria-current"); }
+  if (ENV.cur === "local") { $("tr").hidden = true; $("tr-nav").removeAttribute("aria-current"); ENV.sig.tb = null; trPaintHead(); }   // 離開這頁:頂列換成短狀態詞
 }
 function trRepaint() { TR.sig = {}; TR_BAGS.local.sig = {}; ENV.sig = {}; ENV.cells = {}; trPaint(); if (!$("cx-scrim").hidden) cxModalPaint(); }
 
@@ -511,9 +536,20 @@ function trStateText(state) {
   if (state === "noaccount") return t("tr.noAccount");
   let s = t("tr.autoOn");
   if (state === "halted") s = envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted");
-  else if (state === "dead") s = rec.heartbeat_at ? t("tr.recDead") + " · " + t("tr.lastBeat", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
+  else if (state === "dead") s = trDeadKind(r) === "died" ? t("tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" })
+    : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
   return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + " · " + s : s;
+}
+/* 頂列用的短狀態詞(§6):不帶時間、不帶出口;完整句留給標題下那一行。字面 key 一個一個寫(check_shell_strings 靠字面掃) */
+function trShortState(state) {
+  const r = trReport() || {};
+  if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") return t("side.stopped");
+  if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting");
+  if (trHostDown(TR.st, Date.now())) return t("tr.hostShort");
+  const s = state === "running" ? t("tr.s.on") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
+    : state === "dead" ? (trDeadKind(r) === "died" ? t("tr.s.died") : t("tr.s.off")) : "";
+  return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + (s ? " · " + s : "") : s;
 }
 // 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉
 function trAlert(text, want, bag) {
@@ -564,17 +600,19 @@ function trPaintHead() {
   // state = 文字與鈕字用的(雲端讀不到新狀態時 = 上一份回報自己說的,見 envHeadState);綠點另外看保守的 trExecState
   const state = envHeadState(TR.st, Date.now()), text = trStateText(state), ro = TR.env === "cloud";
   const kind = ro ? envCloudKind(TR.st) : null, stopped = kind === "stopped";
-  // 綠點 = 一切正常在下單:過場中、下單機不在跑、讀不到帳戶、雲端讀不到新狀態時都不成立(設計師複查 R3-1)
-  const live = trExecState(TR.st) === "running" && !TR.pending && !trHostDown(TR.st, Date.now()) && !trFailedIds(trReport()).length && !trKeyBad(TR.env);
+  // 綠點只留切換器那一顆(設計 v4 §6):這一行不再畫點,它是這頁狀態的文字載體
   // 標題列狀態行。雲端讀不到新狀態時,後面接「最後更新」(保留上一次的數字,但要講它不是現況)
   const c = (ro && TR.st && TR.st.cloud) || null;
   const staleAt = c && (c.transient ? c.last_ok_at : c.stale && !stopped && c.reported_at ? c.reported_at * 1000 : !TR.st.alive && !stopped && kind === "running" ? c.last_ok_at : 0);
   const full = staleAt ? text + " · " + t("tr.cloud.stale", { t: trStamp(staleAt / 1000) }) : text;
   const desc = $("tr-desc"); desc.textContent = "";
-  if (live) { const d = trEl("span", "run-dot live"); d.setAttribute("aria-hidden", "true"); desc.appendChild(d); }
-  desc.appendChild(trEl("span", "txt", full)); desc.title = full;   // 單行截斷,全文放 title
-  // 常駐程式不在跑的那兩句帶著出口(「請重開 Blave」),不能被截斷:這時候狀態行可以換行
-  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown"));
+  // 異常停止那一句:「下單停了，不是你按的」那一段加重(句子以第一個「 · 」分段;前面若有「串接失敗 · 」就不拆)
+  const died = state === "dead" && !TR.pending && !trHostDown(TR.st, Date.now()) && trDeadKind(trReport()) === "died";
+  const cutAt = died && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) ? full.indexOf(" · ") : -1;
+  const tx = trEl("span", "txt"); if (cutAt > 0) tx.append(trEl("span", "up", full.slice(0, cutAt)), full.slice(cutAt)); else tx.textContent = full;
+  desc.appendChild(tx); desc.title = full;   // 單行截斷,全文放 title
+  // 帶著出口的句子(「請重開 Blave」「按『啟動下單』重新開始」)不能被截斷:這時候狀態行可以換行
+  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown") || died);
   // 狀態變了講一次(輪詢每幾秒重畫,不能每次都講)
   if (TR.lastSaid !== null && TR.lastSaid !== text && TR.open && state !== "loading") srSay(text);
   TR.lastSaid = text;
@@ -583,14 +621,15 @@ function trPaintHead() {
   trAlertShow();
   // 切換器右邊那一句:這一邊的狀態。沒連接交易所時是空的
   const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
-  // 頂列那條帶子放不下「下單機停了…請重開 Blave」那種長句(出口會被截掉):這裡用短句,完整句在標題列
-  const tbState = trHostDown(TR.st, Date.now()) ? t("tr.hostShort") : text;
-  // 出事(這一格有紅短劃那種事)時,狀態詞那一段加重;其餘整句灰字。句型照 tr.tb,只把 {state} 那一段換成節點
-  const txt = $("tr-tb-txt"), tbFull = has ? t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) }) : "";
-  const tbUp = has && envCell(TR.env, TR.st, !!TR.pending).dot === "bad", tsig = LANG + "|" + tbFull + "|" + tbUp;
+  // 頂列(設計 v4 §6,P1=A):自動下單頁開著時只留錢記號、不出字(完整句就在標題下,不重複);離開這頁才出**短狀態詞**。
+  // 雲端視角的頁永遠開著 → 永遠只有記號。模擬:{short};真錢:{short} · {venue}(「模擬」已經有記號,句尾不再寫「模擬交易」)
+  const pageOpen = TR_BAGS[ENV.cur].open === true, paper = id === PAPER, tbState = has && !pageOpen ? trShortState(state) : "";
+  const txt = $("tr-tb-txt"), tbFull = !tbState ? "" : paper ? tbState : t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) });
+  // 出事(這一格有紅短劃那種事)時,狀態詞那一段加重;其餘整句灰字
+  const tbUp = !!tbState && envCell(TR.env, TR.st, !!TR.pending).dot === "bad", tsig = LANG + "|" + tbFull + "|" + tbUp;
   if (ENV.sig.tb !== tsig) {
     ENV.sig.tb = tsig; txt.textContent = ""; txt.title = tbFull;
-    if (tbUp) { const parts = t("tr.tb", { state: "\u0000", venue: trVenueLabel(id, true) }).split("\u0000"); txt.append(parts[0] || "", trEl("span", "up", tbState), parts[1] || ""); }
+    if (tbUp) { const parts = (paper ? "\u0000" : t("tr.tb", { state: "\u0000", venue: trVenueLabel(id, true) })).split("\u0000"); txt.append(parts[0] || "", trEl("span", "up", tbState), parts[1] || ""); }
     else txt.textContent = tbFull;
   }
   // 錢記號排在這一句的最前面(切換器格內不放):看得見的這一邊用的是模擬還是真錢
@@ -764,7 +803,6 @@ function trPaintPos() {
     box.appendChild(trEl("div", "pf-state", t("tr.loading")));
   } else box.appendChild(trAmountTable(names, stored, states));
   box.appendChild(trPositions(r, stored, states));
-  if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
 function trAmountTable(names, stored, states) {
   const frag = document.createDocumentFragment();
@@ -776,7 +814,11 @@ function trAmountTable(names, stored, states) {
     total.textContent = "";
     total.appendChild(trEl("span", "", t("tr.total")));
     const tn = trEl("span", "n", trFmt(tt.total)); tn.appendChild(trEl("span", "ccy", trUnit())); total.appendChild(tn);
-    if (tt.mult != null) { total.append(trEl("span", "", "·"), trEl("span", "", t("tr.ofEquity")), trEl("span", "n", tt.mult.toFixed(2) + "x")); }
+    if (tt.mult != null) {
+      const over = trLevCheck(trIsPaper(), tt.mult, 0, 0).over;
+      total.append(trEl("span", "", "·"), trEl("span", "", t("tr.ofEquity")), trEl("span", over ? "n over" : "n", tt.mult.toFixed(2) + "x"));
+      if (over) total.appendChild(trEl("span", "over", t("tr.levOverShort", { x: TR_PAPER_MAX_LEV })));
+    }
   };
   const anyBad = () => Object.keys(TR.bad).length > 0;
   const paintBar = () => {
@@ -851,13 +893,14 @@ function trAmountTable(names, stored, states) {
       }
     };
     const badRow = document.createElement("tr"), btd = trEl("td", "note"); btd.colSpan = 4;
-    const bmsg = trEl("span", "pf-note err", t("tr.badAmount")); bmsg.id = "tr-bad-" + n;
+    const bmsg = trEl("span", "pf-note err", ""); bmsg.id = "tr-bad-" + n;
     btd.appendChild(bmsg); badRow.appendChild(btd);
-    const markBad = (bad) => {
-      if (bad) TR.bad[n] = true; else delete TR.bad[n];
+    const markBad = (why) => {                    // why:null / false = 沒事;"bad" = 不是數字;"big" = 超過上限
+      const bad = !!why, msg = why === "big" ? t("tr.amountTooBig") : t("tr.badAmount"), was = bmsg.textContent;
+      if (bad) { TR.bad[n] = true; bmsg.textContent = msg; } else delete TR.bad[n];
       inp.setAttribute("aria-invalid", bad ? "true" : "false");
       if (bad) inp.setAttribute("aria-describedby", bmsg.id); else inp.removeAttribute("aria-describedby");
-      if (bad && !badRow.parentNode) { row.insertAdjacentElement("afterend", badRow); srSay(t("tr.badAmount")); }
+      if (bad && (!badRow.parentNode || was !== msg)) { if (!badRow.parentNode) row.insertAdjacentElement("afterend", badRow); srSay(msg); }
       else if (!bad && badRow.parentNode) badRow.remove();
       row.classList.toggle("has-note", bad || !!(gateRow && gateRow.parentNode));
     };
@@ -866,10 +909,15 @@ function trAmountTable(names, stored, states) {
       // 看不懂的字不進 edits(上一個看得懂的值留著);整格標成無效、儲存鈕鎖住(稽核 S11)
       if (v != null) TR.edits[n] = v;
       if (TR.save === "failed" || TR.save === "saved") { TR.save = null; TR.saveErr = null; }
-      markBad(v == null); paintTotal(); repaint(); paintBar();
+      // 打到一半不報錯(「100,00」是「100,000」的半路):看不懂就什麼都不標,合計停在上一個看得懂的值。
+      // 晚罰早賞:這一格已經是紅的、現在看得懂了 → 立刻消紅
+      if (v != null && TR.bad[n]) markBad(null);
+      paintTotal(); repaint(); paintBar(); bar.hidden = false;   // 打到一半看不懂時 edits 沒變,儲存列也不能消失
     });
-    // 離開輸入框時回寫正規化後的值:用戶看到的就是會送出去的那個數(「1500.5」→「1,500.50」)
-    inp.addEventListener("blur", () => { const v = trParseAmount(inp.value); if (v != null) inp.value = trFmt(v); });
+    // 離開(或按 Enter)才驗:看不懂 → 紅框 + 一句原因;看得懂 → 回寫正規化後的值(「1500.5」→「1,500.50」)。Enter 只驗、不送出
+    const settle = () => { const why = trAmountError(inp.value); markBad(why); if (!why) inp.value = trFmt(trParseAmount(inp.value)); paintBar(); };
+    inp.addEventListener("blur", settle);
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); settle(); } });
     row.appendChild(tgt); tb.appendChild(row); repaint();
     if (TR.bad[n]) delete TR.bad[n];               // 整張表重畫 = 輸入框回到看得懂的值
   });
@@ -883,14 +931,21 @@ function trSaveAmounts(names, stored, opener) {
   const S = TR;
   if (S.env !== "local" || !TR.listLoaded || Object.keys(TR.bad).length) return;
   const sending = trAmountsToSend(names, stored, TR.edits, TR.listLoaded), removed = trRemoved(stored, sending);
-  const lines = [];
-  Object.keys(sending).forEach((n) => { if (sending[n] > 0) lines.push(t("tr.saveLine", { name: trDisplay(n), amt: trFmt(sending[n]) + " " + trUnit() })); });
-  const tt = trTotals(sending, trEquity());
-  lines.push(t("tr.total") + " " + trFmt(tt.total) + " " + trUnit() + (tt.mult != null ? " · " + t("tr.ofEquity") + " " + tt.mult.toFixed(2) + "x" : ""));
-  if (removed.length) lines.push(t("tr.saveRemoved", { names: removed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }));
-  lines.push(t("tr.saveWarn"));
+  const eq = trEquity(), tt = trTotals(sending, eq), storedTotal = Object.keys(stored).reduce((a, k) => a + (Number(stored[k]) || 0), 0);
+  const lev = trLevCheck(trIsPaper(), tt.mult, tt.total, storedTotal);
+  const money = (v) => { const dd = document.createElement("dd"); dd.textContent = trFmt(v); dd.appendChild(trEl("span", "ccy", trUnit())); return dd; };
+  const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
+  const extra = document.createDocumentFragment(), dl = trEl("dl", "cf-rows");
+  Object.keys(sending).forEach((n) => { if (sending[n] > 0) dl.appendChild(cfRow("", trDisplay(n), money(sending[n]))); });
+  dl.appendChild(cfRow("total", t("tr.total"), money(tt.total)));
+  if (tt.mult != null) { const dd = document.createElement("dd"); dd.textContent = tt.mult.toFixed(2) + "x"; dl.appendChild(cfRow("lev" + (lev.over ? " over" : ""), t("tr.lev"), dd)); }
+  extra.appendChild(dl);
+  if (removed.length) extra.appendChild(trEl("p", "cf-removed", t("tr.saveRemoved", { names: removed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
+  const capVars = { x: TR_PAPER_MAX_LEV, cap: trFmt((eq || 0) * TR_PAPER_MAX_LEV), c: trCcy() };
+  if (lev.over) extra.appendChild(trEl("p", "cf-block", lev.blocked ? t("tr.levBlock", capVars) : t("tr.levStillOver", capVars)));
+  if (!lev.blocked) extra.appendChild(trEl("p", "cf-note", t("tr.saveWarn")));   // 被擋下的時候不會存:那句「儲存後…」是假話,不出
   confirmBox({
-    title: t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines, ok: t("tr.save"), opener,
+    title: t("tr.saveTitle"), mark: trIsPaper() ? t("tr.mode.paper") : null, lines: [], extra, okDisabled: lev.blocked, ok: t("tr.save"), opener,
     onOk: async () => {
       const mine = () => TR === S && S.open && S.tab === "pos";   // 等回應的時候可能已經切到另一邊:那時不碰畫面
       S.save = "saving"; S.saveErr = null; S.sig.pos = null; if (mine()) trPaintPos();
@@ -972,7 +1027,7 @@ function trPositions(r, stored, states) {
   const errs = Array.isArray(r.order_errors) ? r.order_errors : [];
   const le = errs[errs.length - 1];
   if (le && typeof le === "object") {
-    frag.appendChild(trEl("div", "pf-foot err", t("tr.orderFailed", { sym: String(le.symbol || "—").replace(/@spot$/, ""), err: String(le.error || le.message || "").slice(0, 200) })));
+    frag.appendChild(trEl("div", "pf-foot err", trOrderErrText(String(le.symbol || "—").replace(/@spot$/, ""), String(le.error || le.message || ""))));
   }
   return frag;
 }
@@ -986,15 +1041,13 @@ function trPaintAssets() {
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
   ids.forEach((id) => {
     const e = trLiveEntry(r, id), row = trEl("div", "pf-acct");
-    row.appendChild(trEl("span", "who", trVenueLabel(id)));
-    if (id === PAPER) row.appendChild(trEl("span", "mode paper", t("tr.mode.paper")));
+    row.appendChild(trEl("span", "who", trVenueLabel(id, true)));
     const amt = trEl("span", "amt"); amt.appendChild(trEl("span", "lbl", t("tr.equity")));
     const v = e && e.ok ? trFmt2(e.equity) : null;
     amt.appendChild(document.createTextNode(v == null ? "—" : v));
     if (v != null) amt.appendChild(trEl("span", "ccy", trUnit()));
     row.appendChild(amt); box.appendChild(row);
   });
-  if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
 function trPaintHist() {
   const box = $("tr-hist"), r = trReport() || {};
@@ -1039,7 +1092,6 @@ function trPaintHist() {
   });
   box.appendChild(log);
   box.appendChild(trEl("div", "pf-foot unit-note", t("tr.unitNote", { c: trUnit() })));   // 窄欄(<520)時列內的單位收到這一行
-  if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
 function trPaintSet() {
   const box = $("tr-set"), r = trReport(), id = trVenueId(), e = id ? trLiveEntry(r, id) : null;
@@ -1051,9 +1103,8 @@ function trPaintSet() {
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
   // 一列:交易所名 + 錢記號 + 連線狀態;右邊兩顆動作。雲端第一刀唯讀:兩顆都不能按(說明在標題下那一行)
   const row = trEl("div", "cx-row");
-  row.appendChild(trEl("span", "n", trVenueLabel(id)));
-  if (id === PAPER) row.appendChild(trEl("span", "mode paper", t("tr.mode.paper")));
-  else if (id === BINANCE) row.appendChild(trEl("span", "mode real", t("tr.mode.real")));
+  row.appendChild(trEl("span", "n", trVenueLabel(id, true)));
+  if (id === BINANCE) row.appendChild(trEl("span", "mode real", t("tr.mode.real")));
   const failed = (!!e && !e.ok) || !!(bn && bn.verdict), st = trEl("span", "cn-st" + (failed ? "" : " on"));
   if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));   // 綠點 = 讀得到帳戶;「串接中…」還沒有
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
@@ -1253,6 +1304,13 @@ function trDrawCurve(canvas, pts, isPnl) {
   });
 }
 // 機器側事件 → 兩段字(標題、後果註解)。白名單:不認得的型別不畫
+// 拒單原文 → 在地化的那一句;比不到就照舊 tr.orderFailed(原文是不可信輸入:截長、走 textContent)
+function trOrderErrText(sym, err) {
+  const p = trOrderErrParse(err);
+  if (p && p.kind === "paperLev") return t("tr.err.paperLev", { sym, gross: trFmt(p.gross), cap: trFmt(p.cap), x: p.x, c: trCcy() });
+  if (p && p.kind === "paperBroke") return t("tr.err.paperBroke", { sym });
+  return t("tr.orderFailed", { sym, err: String(err == null ? "" : err).slice(0, 200) });
+}
 function trEventText(type, d) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
   if (type === "exchange_unreachable") return [t("tr.ov.evExUnreach", v), t("tr.ov.evExUnreachNote")];
@@ -1309,7 +1367,9 @@ function trOvEvents(r) {
     if (!e || typeof e !== "object") return;
     push(trMs(e.ts), (body) => {
       body.appendChild(trEl("span", "sell", t("tr.ov.evErr")));
-      body.append(" ", trEl("span", "mono", String(e.symbol || "").replace(/@spot$/, "")), " ", trEl("span", "dim", "— " + String(e.error || e.message || "").slice(0, 160)));
+      const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || "");
+      if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的)
+      else body.append(" ", trEl("span", "mono", sym), " ", trEl("span", "dim", "— " + raw.slice(0, 160)));
     });
   });
   (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
@@ -1609,8 +1669,6 @@ function envPaint() {
   $("chat-tgt").hidden = !cloud;
   if (cloud) envPaintSide(kind, C.st);
   const cur = cells[ENV.cur];
-  $("tr-nav-mode").hidden = !cur.money; $("tr-nav-mode").className = "mode " + (cur.money || "paper"); $("tr-nav-mode").textContent = envMoneyText(cur.money);
-  $("tr-nav-dot").hidden = !cur.run;
   // 視窗標題:{money} 是空的就連同前面的「 · 」一起省略
   const money = envMoneyText(cur.money);
   document.title = money ? t("env.winTitle", { where: envName(ENV.cur), money }) : t("env.winTitle0", { where: envName(ENV.cur) });

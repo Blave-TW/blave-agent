@@ -86,8 +86,6 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 /* ---- 側欄(雲端視角):沒有主機可看時入口與清單整段收起 ---- */
 .strat-head[hidden], .strat-list[hidden], .side-nav[hidden] { display: none; }
 .side-nav .strat-name { flex: 1; min-width: 0; }
-.side-nav .mode { height: 18px; }
-.side-nav .run-dot { margin: 0 var(--space-2) 0 0; }
 /* 雲端清單(第一刀只當清單看):不是鈕,沒有 hover、沒有手指游標 */
 .strat-row.is-static { display: flex; align-items: center; gap: var(--space-8); cursor: default; }
 .strat-row.is-static:hover { background: transparent; color: inherit; }
@@ -140,8 +138,9 @@ html.ws-sc .side-gate { display: none; }
 .main-head .txt { flex: 1; min-width: 0; }
 .main-head .act { flex: none; }
 .main-head-name { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.main-head-desc { margin-top: var(--space-4); font-size: 12px; color: var(--ink-3); line-height: 1.5; min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.main-head-desc { margin-top: var(--space-4); font-size: 12px; color: var(--ink-2); line-height: 1.5; min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc.wrap { white-space: normal; overflow: visible; }
+.main-head-desc .up { color: var(--ink); font-weight: 600; }
 .run-dot { display: inline-block; vertical-align: .09em; width: 7px; height: 7px; border-radius: var(--radius-pill); margin-right: var(--space-8); }
 .run-dot[hidden] { display: none; }
 .run-dot.live { background: var(--color-green); animation: trRunPulse calc(var(--motion-blink) * 3) ease-in-out infinite; }
@@ -215,6 +214,7 @@ html.ws-sc .side-gate { display: none; }
 .amt-unit { font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .pf-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
 .pf-total .n { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+.pf-total .over { color: var(--color-redText); }
 .pf-foot { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
 .pf-foot.err { color: var(--color-redText); }
 .pf-savebar { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
@@ -292,8 +292,8 @@ html.ws-sc .side-gate { display: none; }
   .main-tabs { padding: 0 var(--space-16); gap: var(--space-16); }
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
-  /* mockup 是 <400 才收單位;但模擬帳戶的單位是「模擬 USDT / paper USDT」,比 mockup 畫的「USDT」長,
-     480 寬(視窗 1024)時差額欄會被擠出去——最重要的那一欄不能要橫捲才看得到,所以提前到這一階收 */
+  /* mockup 是 <400 才收單位。單位現在只寫「USDT」(設計 v4),但這一階收單位的行為刻意不動(保守:
+     480 寬、視窗 1024 時差額欄不能被擠到要橫捲才看得到) */
   .pf-tbl .ccy, .pf-tbl .amt-unit { display: none; }
   .unit-note { display: block; }
   .sub-sym { display: block; }

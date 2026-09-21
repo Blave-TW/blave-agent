@@ -913,9 +913,6 @@ msgstr "{state} · {venue}"
 msgid "tr.tbAria"
 msgstr "Auto trading: {state}"
 
-msgid "tr.paperCcy"
-msgstr "paper {c}"
-
 msgid "tr.nav"
 msgstr "Auto trading"
 
@@ -925,14 +922,23 @@ msgstr "Auto-trading running"
 msgid "tr.halted"
 msgstr "Paused"
 
-msgid "tr.recDead"
-msgstr "Reconciler not running"
-
-msgid "tr.lastBeat"
-msgstr "last heartbeat {t}"
-
 msgid "tr.notStarted"
 msgstr "Trading not started yet"
+
+msgid "tr.lastRun"
+msgstr "last ran until {t}"
+
+msgid "tr.died"
+msgstr "Trading stopped, and not because you paused it · last ran {t}. Press Start trading to resume."
+
+msgid "tr.s.on"
+msgstr "Running"
+
+msgid "tr.s.off"
+msgstr "Not started"
+
+msgid "tr.s.died"
+msgstr "Trading stopped"
 
 msgid "tr.noAccount"
 msgstr "No exchange connected"
@@ -986,7 +992,28 @@ msgid "tr.unknownStop"
 msgstr " The order engine may still be running; to stop it, press Pause trading above."
 
 msgid "tr.badAmount"
-msgstr "That amount can't be read. Numbers only, e.g. 1500 or 1,500.50; the limit is 1,000,000,000."
+msgstr "Enter a number, e.g. 1,500.50"
+
+msgid "tr.amountTooBig"
+msgstr "The limit is 1,000,000,000"
+
+msgid "tr.lev"
+msgstr "Leverage (total ÷ equity)"
+
+msgid "tr.levBlock"
+msgstr "Over the paper account limit of {x}× equity (about {cap} {c}). Lower the amounts, then save."
+
+msgid "tr.levStillOver"
+msgstr "Still over the paper account limit of {x}× equity (about {cap} {c}) — orders beyond it will be refused."
+
+msgid "tr.levOverShort"
+msgstr "Over the {x}× paper limit"
+
+msgid "tr.err.paperLev"
+msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the position size."
+
+msgid "tr.err.paperBroke"
+msgstr "{sym} order not placed: the paper account's equity is at zero, so no new positions can open."
 
 msgid "tr.stopChoiceSelf"
 msgstr "No new positions will be opened after pausing. Closing positions only closes positions opened by auto-trading — anything you opened manually is left untouched."
@@ -1131,9 +1158,6 @@ msgstr "Once saved, the order engine reconciles to these amounts — orders may 
 
 msgid "tr.saveRemoved"
 msgstr "Removing: {names} — their futures positions will be closed and spot holdings sold."
-
-msgid "tr.saveLine"
-msgstr "{name}: {amt}"
 
 msgid "tr.exchPositions"
 msgstr "Exchange positions"

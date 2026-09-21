@@ -913,9 +913,6 @@ msgstr "{state} · {venue}"
 msgid "tr.tbAria"
 msgstr "自動下單：{state}"
 
-msgid "tr.paperCcy"
-msgstr "模擬 {c}"
-
 msgid "tr.nav"
 msgstr "自動下單"
 
@@ -925,14 +922,23 @@ msgstr "自動下單執行中"
 msgid "tr.halted"
 msgstr "已暫停"
 
-msgid "tr.recDead"
-msgstr "對帳沒有在跑"
-
-msgid "tr.lastBeat"
-msgstr "最後心跳 {t}"
-
 msgid "tr.notStarted"
 msgstr "尚未啟動下單"
+
+msgid "tr.lastRun"
+msgstr "上次執行到 {t}"
+
+msgid "tr.died"
+msgstr "下單停了，不是你按的 · 停在 {t}。按「啟動下單」重新開始。"
+
+msgid "tr.s.on"
+msgstr "執行中"
+
+msgid "tr.s.off"
+msgstr "尚未啟動"
+
+msgid "tr.s.died"
+msgstr "下單停了"
 
 msgid "tr.noAccount"
 msgstr "還沒連接交易所"
@@ -986,7 +992,28 @@ msgid "tr.unknownStop"
 msgstr "下單機可能還在跑；要停的話，按上面的「暫停下單」。"
 
 msgid "tr.badAmount"
-msgstr "看不懂這個金額。只收數字，例如 1500 或 1,500.50；上限 1,000,000,000。"
+msgstr "請輸入數字，例如 1,500.50"
+
+msgid "tr.amountTooBig"
+msgstr "上限 1,000,000,000"
+
+msgid "tr.lev"
+msgstr "槓桿（合計 ÷ 淨值）"
+
+msgid "tr.levBlock"
+msgstr "超過模擬帳戶上限 {x} 倍（約 {cap} {c}）。請調低金額再儲存。"
+
+msgid "tr.levStillOver"
+msgstr "仍超過模擬帳戶上限 {x} 倍（約 {cap} {c}），超過的單會被拒絕。"
+
+msgid "tr.levOverShort"
+msgstr "超過模擬帳戶上限 {x} 倍"
+
+msgid "tr.err.paperLev"
+msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限 {cap} {c}（淨值的 {x} 倍）。請調低部位大小。"
+
+msgid "tr.err.paperBroke"
+msgstr "{sym} 沒有下單：模擬帳戶淨值已經歸零，不能再開倉。"
 
 msgid "tr.stopChoiceSelf"
 msgstr "暫停後不會再開任何新倉。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
@@ -1131,9 +1158,6 @@ msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單
 
 msgid "tr.saveRemoved"
 msgstr "移出組合：{names}——其合約部位將自動平倉、現貨庫存將自動賣出。"
-
-msgid "tr.saveLine"
-msgstr "{name}：{amt}"
 
 msgid "tr.exchPositions"
 msgstr "交易所部位"

@@ -823,6 +823,21 @@ body.resizing * { cursor: col-resize !important; }
 /* 確認框:三句各自一段 */
 .del-body.lines p{margin:0}
 .del-body.lines p+p{margin-top:var(--space-8)}
+/* 確認框內的通用排版(confirmBox 的 extra 用;金額確認框、之後的「送上雲端」共用):一組「說明 — 數字」列,分三個字級 */
+.cf-rows { margin: 0; }
+.cf-row { display: flex; align-items: baseline; gap: var(--space-16); padding: var(--space-6) 0; }
+.cf-row dt { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); overflow-wrap: anywhere; }
+.cf-row dd { flex: none; margin: 0; text-align: right; white-space: nowrap; color: var(--ink); font: 13px/1.5 "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.cf-row.total { margin-top: var(--space-6); padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); }
+.cf-row.total dt { color: var(--ink); font-weight: 600; }
+.cf-row.total dd { font-size: 15px; font-weight: 600; }
+.cf-row.lev { padding-top: 0; }
+.cf-row.lev dt { font-size: 12px; color: var(--ink-3); }
+.cf-row.lev dd { font-size: 12px; color: var(--ink-2); }
+.cf-row.lev.over dd { color: var(--color-redText); font-weight: 600; }
+.del-body.lines p.cf-removed { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.del-body.lines p.cf-block { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--color-redText); }
+.del-body.lines p.cf-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 /* 設定鈕右邊那行安靜的字 */
 .ws-more-note{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--ink-3);white-space:nowrap}
 .ws-more-note.up{color:var(--ink-2)}
