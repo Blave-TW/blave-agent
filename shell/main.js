@@ -1144,8 +1144,8 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 1024, minHeight: 680,
     titleBarStyle: "hiddenInset",
-    // 燈的中心對到 44px 標題帶的中線(= 對話列中心 y=22)
-    trafficLightPosition: { x: 12, y: 15 },
+    // 燈的中心對到 52px 標題帶的中線(= 對話列中心 y=26);帶子長 8,中線只移 4,所以燈是 +4 不是 +8
+    trafficLightPosition: { x: 12, y: 19 },
     // Electron 讀不到 CSS 變數,所以這裡鏡射 `--color-darkBody`(tokens.css)。
     // 改那顆就要改這裡。原本寫 #10151c —— H≈215,正是 canon › 色溫 點名要避開的
     // Tailwind slate 地帶,開窗與 resize 的瞬間看得到。

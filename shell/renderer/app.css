@@ -29,8 +29,8 @@
    畫面 1 — 連結畫面(獨立 full-screen,不是蓋在工作頁上的 modal)
    ========================================================================= */
 .cn { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-/* 44px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色) */
-.cn-bar { flex: none; height: 44px; display: flex; align-items: center; padding: 0 var(--space-16); }
+/* 52px 拖曳條:只放燈號,不畫任何 chrome(底色 = 頁面地色)。高度跟 .ws-bar 一起宣告在下面,不重複寫 */
+.cn-bar { flex: none; display: flex; align-items: center; padding: 0 var(--space-16); }
 /* 語言 segment(設計師 spec):跟 .mp-rail 同配方,但軌不裁切——每格靠 ::before 把熱區補到 44,
    裁切會把它切掉;圓角改由首末格自己畫。上溢的 7px 落在跟卡之間的 16 裡,不蓋卡 */
 .cn-lang {
@@ -49,7 +49,7 @@
 .cn-lang button:first-child { border-radius: calc(var(--radius-xs) - 1px) 0 0 calc(var(--radius-xs) - 1px); }
 .cn-lang button:last-child { border-radius: 0 calc(var(--radius-xs) - 1px) calc(var(--radius-xs) - 1px) 0; }
 .cn-lang button:focus-visible { outline-offset: -2px; }
-.cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 44px; }
+.cn-mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 52px; }
 .cn-mid h4 {
   margin: 0 0 var(--space-24);
   font-size: 20px; font-weight: 600; line-height: 1.4;  /* Terminal h4(canon › Type scale) */
@@ -225,14 +225,15 @@
 html, body { margin: 0; height: 100%; background: var(--bg-body); }
 .app { height: 100vh; width: 100vw; border: none; border-radius: 0; }
 [hidden] { display: none !important; }
-/* 44 = 對話列的高度:整個視窗頂是同一條標題帶,側欄與中欄的內容起點 = 對話列底線(設計師 M1) */
-.cn-bar, .ws-bar { -webkit-app-region: drag; height: 44px; flex: none; }
+/* 52 = 對話列的高度:整個視窗頂是同一條標題帶,側欄與中欄的內容起點 = 對話列底線(設計師 M1)。
+   52 是 macOS 整合式工具列的慣例高度——v3 拿掉底線之後那條帶子不再被畫出來,44 只剩「離視窗硬邊 6.5」這一個參照,太貼 */
+.cn-bar, .ws-bar { -webkit-app-region: drag; height: 52px; flex: none; }
 /* 工作頁的拖曳條浮在三欄上面、不佔版面:聊天欄的卡面與對話列才能頂到視窗最上緣(Wei)。
-   紅綠燈只在左邊,側欄與中欄自己留 44px;右邊那欄沒有東西要避。pointer-events: none
+   紅綠燈只在左邊,側欄與中欄自己留 52px;右邊那欄沒有東西要避。pointer-events: none
    讓底下的按鈕照常收到滑鼠(拖曳區是系統層的,不靠 DOM 事件)。 */
 #view-ws { position: relative; }
 .ws-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 20; pointer-events: none; }
-.pane-strategies, .pane-main { padding-top: 44px; }
+.pane-strategies, .pane-main { padding-top: 52px; }
 /* 互動元素要能點:整條 drag 之外的東西一律退出拖曳區 */
 button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 自動長高:高度由 JS 量 scrollHeight 寫進 style,這裡只定上限與節奏
@@ -585,7 +586,7 @@ body.resizing .pane-strategies, body.resizing .pane-chat { transition: none; }
 
 /* 側欄收合 = 44px 細軌,只留「展開」 */
 .side-rail { display: none; }
-html.ws-sc .pane-strategies { width: 44px; padding: 44px var(--space-8) var(--space-16); }
+html.ws-sc .pane-strategies { width: 44px; padding: 52px var(--space-8) var(--space-16); }   /* 寬度那個 44 是細軌的寬,跟頂列無關 */
 html.ws-sc .strat-head, html.ws-sc .strat-list, html.ws-sc .ws-foot { display: none; }
 /* padding-top 2:按鈕中心對到字標原本的中心(y=54),收合/展開時左上角不跳 */
 html.ws-sc .side-rail { display: flex; flex-direction: column; align-items: center; padding-top: var(--space-12); }   /* 收合鈕的上緣跟展開時第一列(自動下單)的上緣同一條線 */
@@ -651,7 +652,7 @@ body.resizing * { cursor: col-resize !important; }
   background: var(--scrim);
   opacity: 0;
   transition: opacity var(--motion-base) var(--ease-standard);
-  -webkit-app-region: no-drag;     /* 蓋在 44px 拖曳條上的那一段也要能點 */
+  -webkit-app-region: no-drag;     /* 蓋在 52px 拖曳條上的那一段也要能點 */
 }
 .scrim.open { opacity: 1; }
 .set-modal {
@@ -854,11 +855,11 @@ body.resizing * { cursor: col-resize !important; }
    ========================================================================= */
 .ic { display: block; flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .chat-head {
-  flex: none; height: 44px; min-width: 320px;
+  flex: none; height: 52px; min-width: 320px;
   display: flex; align-items: center; gap: var(--space-4);
   padding: 0 var(--space-12);
 }
-/* 聊天欄是唯一有內容直接捲到這 44px 底下的地方,而且頭跟捲動區同底色:靜止沒有線(Wei),
+/* 聊天欄是唯一有內容直接捲到這 52px 底下的地方,而且頭跟捲動區同底色:靜止沒有線(Wei),
    真的捲起來才浮一條——不是「永遠有一條線」。雲端的灰底上同樣看得到(hairline 比卡面亮一階) */
 .chat-head.is-scrolled { box-shadow: 0 1px 0 var(--border-hairline); }
 .cs-btn {

@@ -568,7 +568,7 @@ function trPaintHead() {
   trAlertShow();
   // 切換器右邊那一句:這一邊的狀態。沒連接交易所時是空的
   const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
-  // 44px 的狀態帶放不下「下單機停了…請重開 Blave」那種長句(出口會被截掉):這裡用短句,完整句在標題列
+  // 頂列那條帶子放不下「下單機停了…請重開 Blave」那種長句(出口會被截掉):這裡用短句,完整句在標題列
   const tbState = trHostDown(TR.st, Date.now()) ? t("tr.hostShort") : text;
   // 出事(這一格有紅短劃那種事)時,狀態詞那一段加重;其餘整句灰字。句型照 tr.tb,只把 {state} 那一段換成節點
   const txt = $("tr-tb-txt"), tbFull = has ? t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) }) : "";

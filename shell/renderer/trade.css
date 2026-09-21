@@ -22,10 +22,10 @@
 .side-nav-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 html.ws-sc .side-nav { display: none; }
 
-/* ---- 常駐狀態帶:佔用中欄上方本來就在的 44px 拖曳區(.pane-main 的 padding-top)。
+/* ---- 常駐狀態帶:佔用中欄上方本來就在的 52px 拖曳區(.pane-main 的 padding-top)。
    整條仍可拖視窗,只有那顆鈕 no-drag。只顯示、不放控制鈕。 ---- */
 .pane-main > .tb {
-  flex: none; height: 44px; margin-top: -44px;
+  flex: none; height: 52px; margin-top: -52px;
   display: flex; align-items: center; padding: 0 var(--space-16) 0 var(--space-24);
 }
 html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起時中欄貼到紅綠燈旁邊,讓開 */
@@ -64,10 +64,10 @@ html.ws-sc .pane-main > .tb { padding-left: var(--space-48); }   /* 側欄收起
 .envsw .dot.bad { top: 7px; }
 .envsw-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 
-/* ---- 雲端視角:三段 44px 頂列同時上灰底(整塊表面變化,不加第二個強調色)。
+/* ---- 雲端視角:三段 52px 頂列同時上灰底(整塊表面變化,不加第二個強調色)。
    側欄是 overflow: hidden,蓋不到自己右邊那條線;由中欄的 .tb 左右各伸出 1px 蓋掉兩條分隔線的頂端,三段才連成一條 ---- */
 .pane-strategies { position: relative; }
-.pane-strategies::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 44px; background: transparent; transition: background var(--motion-fast) var(--ease-standard); }
+.pane-strategies::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 52px; background: transparent; transition: background var(--motion-fast) var(--ease-standard); }
 .pane-main > .tb, .chat-head { transition: background var(--motion-fast) var(--ease-standard); }
 html[data-env="cloud"] .pane-strategies::before { background: var(--surface-muted); }
 html[data-env="cloud"] .pane-main > .tb {
@@ -78,7 +78,7 @@ html[data-env="cloud"] .pane-main > .tb {
 html[data-env="cloud"].ws-sc .pane-main > .tb { padding-left: calc(var(--space-48) + 1px); }
 html[data-env="cloud"] .tb-txt { color: var(--ink-2); }   /* --ink-3 壓在灰底上只有 3.6:1 */
 html[data-env="cloud"] .chat-head { background: var(--surface-muted); }
-html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--surface-muted) 44px, var(--surface-card) 44px); }
+html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--surface-muted) 52px, var(--surface-card) 52px); }
 /* 切視角:側欄與中欄內容淡入,無位移、無滑動 */
 .env-fade > :not(.tb) { animation: envFade var(--motion-fast) var(--ease-standard); }
 @keyframes envFade { from { opacity: 0; } to { opacity: 1; } }
