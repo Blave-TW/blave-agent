@@ -17,9 +17,10 @@ const a = src.indexOf("/* ── 純邏輯("), b = src.indexOf("/* ── 純邏
 if (a < 0 || b < 0) throw new Error("找不到純邏輯區塊的標記");
 const block = src.slice(a, b);
 if (/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))) throw new Error("純邏輯區塊碰了 DOM / i18n");
-const ctx = { HO_ID_RE: eval(/const HO_ID_RE = (\/.*?\/);/.exec(src)[1]) };
-vm.createContext(ctx); vm.runInContext(block.replace(/^const /gm, "var "), ctx);
-const { hoMsg, hoState, hoDataSources } = ctx;
+const ctx = { HO_ID_RE: eval(/const HO_ID_RE = (\/.*?\/);/.exec(src)[1]), LANG: "zh" };   // hoMovesRow 只用 LANG 決定頓號 / 逗號
+const cutFn = (name) => { const i = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + name); };
+vm.createContext(ctx); vm.runInContext((block + "\n" + cutFn("hoMovesRow")).replace(/^const /gm, "var "), ctx);
+const { hoMsg, hoState, hoMovesRow } = ctx;
 
 const TPL = { up: "把策略 {id} 送上我的雲端主機。", down: "把雲端主機上的策略 {id} 拉回這台電腦。" };
 t("好的資料夾名:句子裡代進去的就是那個名字", hoMsg("up", "btc_rsi", TPL) === "把策略 btc_rsi 送上我的雲端主機。" && hoMsg("down", "A-1_b", TPL) === "把雲端主機上的策略 A-1_b 拉回這台電腦。"
@@ -33,14 +34,22 @@ t("確認框四態:目的地那份正在下單 → block(最優先);有同名 �
   && hoState(true, 0) === "over" && hoState(null, 0) === "maybe" && hoState(false, 0) === "plain"
   && hoState(true, null) === "over" && hoState(false, undefined) === "plain" && hoState(false, NaN) === "plain" && hoState(false, -3) === "plain" && hoState(false, "9") === "plain");
 
-// 稽核 C1:沒用到 DATA_ 的策略不可以多告知一句「會搬金鑰」(references/cloud-handoff.md §5:agent 那一步會跳過)
-t("抓得出策略用到的資料來源,去重 + 排序", JSON.stringify(hoDataSources("k = os.environ['DATA_FRED_KEY']\nx = DATA_POLYGON_API_KEY\ny = DATA_FRED_SECRET")) === JSON.stringify(["FRED", "POLYGON"]));
-t("沒用到 → 空陣列;壞輸入不拋", JSON.stringify(hoDataSources("import pandas\nBINANCE_API_KEY = 1")) === "[]" && JSON.stringify(hoDataSources("")) === "[]" && JSON.stringify(hoDataSources(null)) === "[]" && JSON.stringify(hoDataSources(5)) === "[]");
-t("只認 DATA_<來源>_<欄位> 這個形狀(小寫、缺欄位、超長來源名都不算)", JSON.stringify(hoDataSources("data_fred_key\nDATA_FRED\nDATA__KEY\nDATA_" + "X".repeat(25) + "_KEY")) === "[]");
-t("用到 / 沒用到各走一句;拉回那個方向不看 RP.data(那不一定是要拉的那支)", /const srcs = dir === "up" && RP\.data \? hoDataSources\(RP\.data\.code\) : \[\];/.test(src)
-  && /srcs\.length \? t\("ho\.row\.movesKeys", \{ sources: srcs\.join\(LANG === "zh" \? "、" : ", "\) \}\) : t\("ho\.row\.movesV"\)/.test(src));
-t("兩句的內容:沒用到的那句不提金鑰;用到的那句有 {sources}", /"ho\.row\.movesV": "策略程式碼"/.test(strings) && /"ho\.row\.movesV": "Strategy code"/.test(strings)
-  && !/"ho\.row\.movesV": "[^"]*金鑰/.test(strings) && /"ho\.row\.movesKeys": "[^"]*\{sources\}/.test(strings));
+// 稽核 C1:金鑰是**雙向**都搬(references/cloud-handoff.md §5),但沒用到 DATA_ 的策略 agent 會跳過那一步
+{ const D = (...s2) => ({ dataSources: s2 });
+  t("送上雲端 + 掃到來源 → 講金鑰並列出是哪幾個", JSON.stringify(hoMovesRow("up", D("FRED", "POLYGON"))) === JSON.stringify(["ho.row.movesKeys", { sources: "FRED、POLYGON" }]));
+  t("送上雲端 + 沒掃到 → 只講程式碼(這支確定用不到)", JSON.stringify(hoMovesRow("up", D())) === JSON.stringify(["ho.row.movesV", null]) && JSON.stringify(hoMovesRow("up", {})) === JSON.stringify(["ho.row.movesV", null]));
+  t("拉回 → 中性句:雲端那支的程式碼這台電腦掃不到,不可以宣稱「只搬程式碼」", JSON.stringify(hoMovesRow("down", D("FRED"))) === JSON.stringify(["ho.row.movesMaybe", null])
+    && JSON.stringify(hoMovesRow("down", null)) === JSON.stringify(["ho.row.movesMaybe", null]));
+  t("壞 dataSources 不拋(不是陣列、列裡不是字串)", JSON.stringify(hoMovesRow("up", { dataSources: "FRED" })) === JSON.stringify(["ho.row.movesV", null])
+    && JSON.stringify(hoMovesRow("up", { dataSources: [null, "", 5, "FRED"] })) === JSON.stringify(["ho.row.movesKeys", { sources: "FRED" }]) && JSON.stringify(hoMovesRow("up", null)) === JSON.stringify(["ho.row.movesV", null]));
+  t("接線:up 才看 RP.data(拉回那支不在這台電腦上)", /const mv = hoMovesRow\(dir, dir === "up" \? RP\.data : null\);/.test(src));
+  t("三句的內容:沒用到的不提金鑰、用到的有 {sources}、中性那句不說死", /"ho\.row\.movesV": "策略程式碼"/.test(strings) && !/"ho\.row\.movesV": "[^"]*金鑰/.test(strings)
+    && /"ho\.row\.movesKeys": "[^"]*\{sources\}/.test(strings) && /"ho\.row\.movesMaybe": "[^"]*如果有/.test(strings) && /"ho\.row\.movesMaybe": "[^"]*if any/.test(strings)); }
+
+// ② 掃描範圍對齊 §5 的 grep strategies/<name>/*.py(不只 strategy.py)
+{ const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  t("主行程掃資料夾內所有 .py,只回來源名、不碰值;loadStrategy 帶出 dataSources", /readdirSync\(dir\)\.filter\(\(f\) => f\.endsWith\("\.py"\)\)/.test(mainSrc2)
+    && /dataSources: stratDataSources\(dir\)/.test(mainSrc2) && /out\.add\(m\[1\]\)/.test(mainSrc2) && /lstatSync\(p\)\.isFile\(\)/.test(mainSrc2)); }
 
 // ── 接線(原文)──
 t("功能預設關:HO.on 起手是 false,由主行程的 feature-flags 決定(renderer 自己打不開)", /^const HO = \{ on: false \};$/m.test(src) && /window\.blave\.featureFlags\(\)/.test(src) && /HO\.on = !!\(f && f\.cloudHandoff === true\)/.test(src) && /catch \(_\) \{ HO\.on = false; \}/.test(src));
@@ -74,7 +83,7 @@ t("trade.js:雲端清單每列掛「拉回」、空態換成新的那一句;功�
 t("trade.js:輸入框上方那句「agent 還不能操作雲端主機」在功能開著時不出(它已經不成立)", /\$\("chat-tgt"\)\.hidden = !cloud \|\| \(typeof HO !== "undefined" && HO\.on\);/.test(trSrc));
 t("重畫:雲端清單的 sig 把 ho 算進去(功能剛問到 / 雲端剛連上時會重畫)", /JSON\.stringify\(\[kind, ho, list\.map/.test(trSrc));
 t("字串 zh / en 都齊(20 個 ho.* key),而且訊息那兩句各只有一個 {id}", (() => {
-  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down"];
+  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '":', "g")) || []).length === 2)
     && (strings.match(/"ho\.msg\.(up|down)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

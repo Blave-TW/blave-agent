@@ -1867,6 +1867,9 @@ msgstr "Strategy code"
 msgid "ho.row.movesKeys"
 msgstr "Strategy code, and the data-source keys it uses ({sources})"
 
+msgid "ho.row.movesMaybe"
+msgstr "Strategy code, and the data-source keys it uses (if any)"
+
 msgid "ho.row.stays"
 msgstr "Doesn’t move"
 

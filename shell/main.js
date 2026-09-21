@@ -716,7 +716,21 @@ function loadStrategy(name) {
   let stats = null, code = "";
   try { stats = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8")); } catch (_) {}
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, code, ...stratMeta(code) };
+  return { name, stats, code, dataSources: stratDataSources(dir), ...stratMeta(code) };
+}
+/* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的
+   `grep -oE "DATA_[A-Z0-9]+_" strategies/<name>/*.py` —— 只掃 strategy.py 的話,helper 檔用到的來源會被漏講(稽核 C1)。
+   只回**來源名**,永遠不碰值。 */
+function stratDataSources(dir) {
+  const out = new Set();
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".py")).slice(0, 50); } catch (_) { return []; }
+  for (const f of files) {
+    let src = "";
+    try { const p = path.join(dir, f); if (!fs.lstatSync(p).isFile()) continue; src = fs.readFileSync(p, "utf8"); } catch (_) { continue; }
+    for (const m of src.matchAll(/\bDATA_([A-Z0-9]{1,24})_[A-Z][A-Z0-9_]{0,31}\b/g)) out.add(m[1]);
+  }
+  return [...out].sort();
 }
 
 // 刪策略 = 整個資料夾丟進系統的垃圾桶(shell.trashItem),不是 rm:裡面有用戶的程式碼

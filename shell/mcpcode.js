@@ -48,9 +48,10 @@ function createMcpCode(opts) {
   const creds = () => { let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到 = 沒登入 */ } return c && c.token && c.appSecret ? c : null; };
   const age = () => (held ? now() - held.at : Infinity);
   const usable = () => !!held && age() >= 0 && age() < held.expiresInMs - SAFETY_MS;
-  // 退讓**不跟著清**(稽核登記):帳號桶是 12 次 / 小時,而 drop() 在換人 / 登出時會被叫到——歸零的話,
-  // 登出再登入就能把剛被 429 擋下的那一次立刻再送一次。碼本身該丟的照丟
-  function drop() { gen++; held = null; owner = null; lastFail = null; }
+  /* 退讓跟著**人**走(稽核登記):
+       - 同一個人登出再登入:退讓留著。帳號桶是 12 次 / 小時,清掉的話「登出再登入」就成了繞過 429 的按鈕。
+       - 換成別的帳號:退讓清掉。桶是帳號桶,A 被限速不該讓 B 也等 30 分鐘。 */
+  function drop(nextOwner) { gen++; held = null; if (nextOwner !== owner) { retryAt = 0; lastFail = null; } owner = null; }
 
   async function fetchOne(c) {
     const mine = ++gen; owner = c.token;
@@ -68,17 +69,17 @@ function createMcpCode(opts) {
     async get() {
       const c = creds();
       if (!c) { if (held || owner) drop(); return null; }
-      if (owner !== null && owner !== c.token) drop();               // 換了人:先丟掉上一個人的
+      if (owner !== null && owner !== c.token) drop(c.token);        // 換了人:先丟掉上一個人的(連同他的退讓——桶是帳號桶)
       const needs = !usable() || age() >= held.renewAfterMs;
       if (needs && now() >= retryAt) {
         if (!inflight) inflight = fetchOne(c).catch(() => {}).finally(() => { inflight = null; });
         await inflight;
       }
       const again = creds();
-      if (!again || again.token !== c.token) { drop(); return null; }
+      if (!again || again.token !== c.token) { drop(again && again.token); return null; }
       return usable() ? { accessCode: held.accessCode, url: held.url } : null;
     },
-    reset() { drop(); },                                             // 登出:立刻丟掉,並作廢還在路上的請求
+    reset() { drop(owner); },                                        // 登出:丟掉碼、作廢在途的請求;**退讓留著**(同一個人再登入不能繞過 429)
     state: () => ({ has: usable(), lastFail, retryInMs: Math.max(0, retryAt - now()) }),   // 給 log / 測試看的:沒有碼本身
   };
 }

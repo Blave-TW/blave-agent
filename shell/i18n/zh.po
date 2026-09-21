@@ -1867,6 +1867,9 @@ msgstr "策略程式碼"
 msgid "ho.row.movesKeys"
 msgstr "策略程式碼、它用到的資料來源金鑰（{sources}）"
 
+msgid "ho.row.movesMaybe"
+msgstr "策略程式碼，以及它用到的資料來源金鑰（如果有）"
+
 msgid "ho.row.stays"
 msgstr "不會搬"
 

@@ -42,9 +42,20 @@ function paint(report) {
 const ERR = { ts: "2026-09-21T14:26:00", symbol: "BTCUSDT", error: "order rejected: gross notional 110000 exceeds 10x paper equity 9945" };
 const base = (o) => ({ venues: { paper: { credentials: true, pair: true, order: true, account: true } }, halt: {}, reconciler: { alive: true },
   account: { venues: { paper: { ok: true, equity: 50000, positions: {} } } }, config: { amounts: {} }, states: {}, orders: [], events: [], order_errors: [ERR], ...o });
-// 一般加密列:機器端對它**不寫 gates**(兩側門檻都等於 flat),所以 last_reconcile.gates 是空的
+
+/* 下面兩個 fixture 的欄位**照真的快照**,不是手寫的模型:在暫存 workspace 用真的 portfolio_config + state.json
+   跑了一次 lib.portfolio.reconcile(假的 place_order_fn、不連交易所),dump 出來的 manager/last_reconcile.json 長這樣——
+     target[sym] = { side, size, exchange, asset_spec, market, contributors, gated }
+     actual[sym] = { side, size, exchange }
+     加密列 exchange="binance"、asset_spec=null;口數列 exchange="capital"、asset_spec.type="futures_contracts"
+     **gates 兩邊都是 {}** ← 這就是為什麼不能拿「沒有 gate」當口數訊號
+   那一輪也證實了口數列差 1 口真的會送單(place_order_fn 收到 ("TXF", 1.0, {...futures_contracts...}, False))。 */
+const tRow = (size, exchange, spec) => ({ side: "long", size, exchange, asset_spec: spec || null, market: "swap",
+  contributors: [{ strategy: "s", position: 1, amount: size, contribution: size }], gated: false });
+const aRow = (size, exchange) => ({ side: "long", size, exchange });
+// 一般加密列:機器端對它**不寫 gates**(兩側門檻都等於 flat),所以 gates 是 {}
 const crypto = (target, actual) => base({ config: { amounts: { s: target } }, states: { s: { symbol: "BTCUSDT", market: "swap", position: 1 } },
-  last_reconcile: { ts: "2026-09-21T14:27:00", target: { BTCUSDT: { amount: target, exchange: "binance" } }, actual: { BTCUSDT: { size: actual, side: "long" } }, orders: [], gates: {} } });
+  last_reconcile: { ts: "2026-09-21T14:27:00", target: { BTCUSDT: tRow(target, "binance", null) }, actual: { BTCUSDT: aRow(actual, "binance") }, orders: [], gates: {} } });
 
 // ① + ② Wei 撞到的那個:金額改成 20,000、已成交、目標與實際相符 → 過期紅字不可以留
 t("① 加密列:差額已歸零 → 過期的失敗紅字不掛(這就是 Wei 在 Electron 44 看到的那個)", paint(crypto(20000, 20000)).red === null);
@@ -52,11 +63,12 @@ t("② 加密列、沒有 gate、差額 3 → **不**算欠著(不可以拿「�
 t("加密列差額真的過了門檻(單還沒送出去)→ 紅字照掛", /ERR:BTCUSDT/.test(paint(crypto(30000, 20000)).red || ""));
 
 // ③ 口數列:機器端不寫 gates、下單沒門檻,差 1 口就送單
+// 口數列:真快照是 exchange="capital" **而且** asset_spec.type="futures_contracts" 兩個都有;分開測是為了確認兩條路各自都認得出來
 const lots = (target, actual, how) => base({ order_errors: [{ ts: "2026-09-21T14:26:00", symbol: "TXF", error: "capital rejected" }],
   config: { amounts: { s: target } }, states: { s: { symbol: "TXF", market: "swap", position: 1 } },
   last_reconcile: { ts: "2026-09-21T14:27:00", orders: [], gates: {},
-    target: { TXF: { amount: target, ...(how === "spec" ? { asset_spec: { type: "futures_contracts", contract_value: 200 } } : { exchange: "capital" }) } },
-    actual: { TXF: { size: actual, side: "long", ...(how === "spec" ? {} : { exchange: "capital" }) } } } });
+    target: { TXF: how === "spec" ? tRow(target, "sinopac", { type: "futures_contracts", contract_value: 200, currency: "TWD", lot_size: 1 }) : tRow(target, "capital", null) },
+    actual: { TXF: aRow(actual, how === "spec" ? "sinopac" : "capital") } } });
 t("③ 口數列差 1 口(asset_spec 認出來)→ 失敗紅字留得住", /ERR:TXF/.test(paint(lots(3, 2, "spec")).red || ""));
 t("③ 口數列差 2 口(exchange=capital 認出來)→ 失敗紅字留得住", /ERR:TXF/.test(paint(lots(5, 3, "cap")).red || ""));
 t("口數列差額歸零 → 過期紅字照樣不掛", paint(lots(3, 3, "spec")).red === null);
