@@ -59,6 +59,10 @@ function parse(text) {
     if (s === BEGIN) { inBlock = true; continue; }
     if (s === END) { inBlock = false; continue; }
     if (!inBlock) { outside.push(l); continue; }
+    // 我們的結尾行不見了(截斷的寫入、被人刪掉)而後面接著別人的塊:遇到任何 `# >>>` / `# <<<` 標記就當這一塊到此為止,
+    // 那一行原樣留在塊外。不這樣做的話 syncDataEnv 那一塊的兩行標記會被當成塊內的註解丟掉,Blave 資料金鑰變成裸行、
+    // 被判成「用戶自己放的」,登出 / 換帳號時就不再被清掉(稽核 S2)
+    if (/^# (>>>|<<<)/.test(s)) { inBlock = false; outside.push(l); continue; }
     const meta = /^# source ([A-Z0-9]{1,24}) added=(\d{1,12})$/.exec(s);
     if (meta) { if (!checkName(meta[1])) touch(sources, meta[1]).added = Number(meta[2]); continue; }
     const kv = /^DATA_([A-Z0-9]{1,24})_([A-Z][A-Z0-9_]{0,31})=/.exec(s);

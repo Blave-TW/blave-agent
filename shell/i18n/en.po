@@ -1826,7 +1826,7 @@ msgid "src.rmField"
 msgstr "Remove this field"
 
 msgid "src.errValue"
-msgstr "The value for {field} contains characters that can’t be used (spaces, quotes or backslashes). Check that you pasted the key itself."
+msgstr "The value for {field} contains characters that can’t be used: letters, digits and symbols only — no spaces, non-ASCII characters, single quotes, backslashes or ${. Check that you pasted the key itself."
 
 msgid "src.errFieldReserved"
 msgstr "The field name {field} can’t be used with this source. Choose another, such as TOKEN."

@@ -12,7 +12,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   `_local_real_key_gate`):寫入前向 Binance 查 `apiRestrictions`,提領開著、現貨與合約都沒開、查不到或看不懂 → 不寫(fail-closed)。
   `LOCAL_OPEN_VENUES` 預設仍只有 paper;Binance 只在 `local_daemon` 自己的行程裡打開,聊天綁定那條路打不開真錢。雲端行為不變。
 - `agent_turn.py` 新增 `--message-stdin`:訊息從 stdin 讀、不放 argv(電腦版用;同一台電腦上的人 `ps` 看得到命令列,而聊天貼 key 是支援的流程)。
-  訊息的位置參數變成選填;機隊照舊帶位置參數,行為不變。
+  訊息的位置參數變成選填;機隊照舊帶位置參數,行為不變。stdin 最多讀 1 MiB(`MESSAGE_STDIN_MAX`),超過就以用法錯誤結束,不無上限地讀進記憶體。
 - 電腦版:`local_daemon` 的孤兒修正——app 被強殺時不再留下沒人管的下單機(stdin EOF 之外另外輪詢父行程;`_log` 不因 stderr 斷掉而中止收工)。
 
 ## 1.1.83 — 2026-09-21

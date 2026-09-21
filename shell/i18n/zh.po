@@ -1826,7 +1826,7 @@ msgid "src.rmField"
 msgstr "拿掉這個欄位"
 
 msgid "src.errValue"
-msgstr "{field} 的內容有不能用的字元（空白、引號、反斜線）。請確認貼上的是金鑰本身。"
+msgstr "{field} 的內容有不能用的字元：只收英數與符號，不能有空白、中文、單引號、反斜線或 ${。請確認貼上的是金鑰本身。"
 
 msgid "src.errFieldReserved"
 msgstr "{field} 這個欄位名稱不能用在這個來源上。換一個，例如 TOKEN。"

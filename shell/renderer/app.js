@@ -350,7 +350,7 @@ function setCat(cat) {
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat === "model") mdlPaint();
-  if (cat === "src") srcLoad();   // 資料來源(renderer/datasrc.js)
+  if (cat === "src") srcLoad(); else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "acct") acctPaintAcct();
   if (cat === "priv") privLoad();
   if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
@@ -372,6 +372,7 @@ function setClose() {
   const sc = $("set-scrim");
   if (sc.hidden) return;
   if (oauthPending || planLoginBusy) window.blave.cancelOAuth();   // 關掉 modal 就沒有地方按取消了
+  srcClear();   // 資料來源的表單:貼了沒存的金鑰不留在關掉的框裡
   sc.classList.remove("open");
   sc.hidden = true;
   $("ws-conn").focus();

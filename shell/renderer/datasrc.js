@@ -72,6 +72,8 @@ function srcOpenForm(it) {
   srcPaint();
   const first = $("set-src").querySelector(it ? ".src-val .btn-quiet" : "#src-name"); if (first) first.focus();
 }
+/* 離開表單(關設定、切到別的分類)時把表單連同輸入框一起丟掉:貼了沒存的明文金鑰不留在 DOM 裡(稽核 S3)。不搶焦點 */
+function srcClear() { if (SRC.view === "list" && !SRC.rows.length) return; SRC.view = "list"; SRC.edit = null; SRC.rows = []; SRC.err = null; $("set-src").querySelectorAll(".src-value").forEach((el) => { el.value = ""; }); srcPaint(); }
 function srcBack() { SRC.view = "list"; SRC.edit = null; SRC.rows = []; SRC.err = null; srcPaint(); const b = $("set-src").querySelector(".btn-out, .btn-quiet"); if (b) b.focus(); }
 function srcVars(name, rows) { return rows.filter((r) => r.name).map((r) => `DATA_${name || "…"}_${r.name}`).join("、"); }
 function srcPaintForm(box) {

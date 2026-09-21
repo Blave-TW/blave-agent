@@ -134,6 +134,20 @@ const ds = D.createDataSrc({ envFile: ENVF, lock, strategies: () => STRATS, trad
     }
   }
 
+  // ---- 稽核 S2:我們的結尾行不見了,後面接著 syncDataEnv 的那一塊——不可以把別人的標記吃掉 ----
+  { const { BEGIN, END, parse, render } = D; const KEYBLK = ["# >>> blave desktop data key (managed) >>>", "blave_api_key=aaaaaaaa", "blave_secret_key=bbbbbbbb", "# <<< blave desktop data key <<<"];
+    const broken = ["BINANCE_API_KEY=x", BEGIN, "# source FRED added=1", "DATA_FRED_KEY='k'", /* END 不見了 */ ...KEYBLK, "# 用戶自己的註解", "FOO=1"].join("\n") + "\n";
+    const p = parse(broken), out = render(p);
+    t("S2 結尾行不見:別人的 >>> / <<< 標記原樣留在塊外、順序不變,Blave 資料金鑰仍然被它自己的標記包著", KEYBLK.every((l) => p.outside.includes(l)) && p.outside.indexOf(KEYBLK[0]) < p.outside.indexOf(KEYBLK[1]) && p.outside.indexOf(KEYBLK[2]) < p.outside.indexOf(KEYBLK[3])
+      && p.outside.includes("# 用戶自己的註解") && p.outside.includes("FOO=1") && p.sources.has("FRED") && p.sources.get("FRED").fields.has("KEY"));
+    t("S2 寫回去之後:我們那塊補上結尾行,而且再 parse 一次結果一樣(不會每存一次就多搬一點)", out.split("\n").filter((l) => l === END).length === 1 && JSON.stringify(parse(out).outside) === JSON.stringify(p.outside) && parse(out).sources.size === 1);
+    t("S2 正常的檔不受影響:塊內的一般註解照舊不留、塊外的 >>> 標記照舊原樣", (() => { const ok = ["A=1", BEGIN, "# source FRED added=1", "# 手寫的註解", "DATA_FRED_KEY='k'", END, ...KEYBLK].join("\n") + "\n", q = parse(ok); return !q.outside.includes("# 手寫的註解") && KEYBLK.every((l) => q.outside.includes(l)) && q.sources.has("FRED"); })()); }
+
+  // ---- 稽核 S3:離開表單時把沒存的金鑰從 DOM 清掉 ----
+  { const rsrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "datasrc.js"), "utf8"), app = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
+    t("S3 srcClear:清狀態、清輸入框的值、重畫,不搶焦點", /function srcClear\(\) \{[^\n]*SRC\.rows = \[\];[^\n]*querySelectorAll\("\.src-value"\)\.forEach\(\(el\) => \{ el\.value = ""; \}\); srcPaint\(\); \}/.test(rsrc) && !/function srcClear\(\) \{[^\n]*\.focus\(/.test(rsrc));
+    t("S3 切到別的分類、關設定都會叫 srcClear", /if \(cat === "src"\) srcLoad\(\); else srcClear\(\);/.test(app) && /function setClose\(\) \{[\s\S]{0,400}?srcClear\(\);/.test(app)); }
+
   // ---- IPC 只收自家頁面;值不進 log / argv / userData ----
   const main = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   // 走 main.js 的 handle(channel, fn, denied):預設就過 fromOurPage,拒絕時回各自的形狀(第三個參數)
