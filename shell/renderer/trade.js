@@ -233,7 +233,7 @@ function trPushLabels() {
   if (typeof window.blave.tradeLabels !== "function") return;
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
-    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t("tm.hidden"),
+    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t("tm.hidden"), updateReady: t("tm.updateReady"),
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
     ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evHaltNote"), ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
     ev_execution_interrupted: t("tr.ov.evExecInterrupted"), ev_execution_interrupted_n: t("tr.ov.evExecInterruptedNote"),

@@ -1215,6 +1215,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
   quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel",
   hidden: "Blave is still running in the menu bar.",
+  updateReady: "A new version is ready: pause trading to update, or it installs when you quit Blave",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No new positions are opened. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
@@ -1258,9 +1259,12 @@ async function pauseFromMenu() {
   dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.pause,
     detail: r && r.error === "UNKNOWN_RESULT" ? tmLabels.pauseUnknown : tmLabels.pauseFail, buttons: ["OK"] });
 }
+// 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
+const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
 function trayMenu(live) {
   return Menu.buildFromTemplate([
     { label: tmLabels.running, enabled: false },
+    ...(updateWaiting() ? [{ label: tmLabels.updateReady, enabled: false }] : []),
     { label: venueName(live.venue), enabled: false },   // 模擬帳戶的名字本身就寫著「模擬交易」,不再疊一個「模擬」記號
     { type: "separator" },
     { label: tmLabels.pause, click: pauseFromMenu },
@@ -1272,7 +1276,7 @@ function trayMenu(live) {
 function traySync() {
   const live = tradeLive();
   if (live) lastVenue = live.venue;
-  const key = live ? live.venue + "|" + tmLabels.running + "|" + tmLabels.pause : "";
+  const key = live ? live.venue + "|" + tmLabels.running + "|" + tmLabels.pause + "|" + (updateWaiting() ? tmLabels.updateReady : "") : "";
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
   trayKey = key;
   if (!live) {
@@ -1285,7 +1289,8 @@ function traySync() {
     if (img.isEmpty()) console.error("tray icon missing: shell/assets/trayTemplate.png");   // 空圖 = 看不見的圖示;選單還在,但要留下痕跡(稽核 M4)
     tray = new Tray(img);
   }
-  tray.setToolTip(tmLabels.running);
+  tray.setToolTip(updateWaiting() ? tmLabels.updateReady : tmLabels.running);
+  tray.setTitle(updateWaiting() ? "•" : "");   // 圖示旁的小點(macOS 選單列的 title):有新版在等
   tray.setContextMenu(trayMenu(live));
   if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: tmLabels.pause, click: pauseFromMenu }]));
 }

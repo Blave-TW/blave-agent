@@ -442,6 +442,7 @@ const STRINGS = {
     "tm.quitGo": "Quit Blave",
     "tm.quitStay": "Cancel",
     "tm.hidden": "Blave is still open and auto trading keeps running. Use the menu bar icon to pause or to open the window.",
+    "tm.updateReady": "A new version is ready: pause trading to update, or it installs when you quit Blave",
     "tm.evOrderErrNote": "The exchange rejected an order. Open Blave to see why.",
   },
   zh: {
@@ -881,6 +882,7 @@ const STRINGS = {
     "tm.quitGo": "結束 Blave",
     "tm.quitStay": "取消",
     "tm.hidden": "Blave 還開著，自動下單照常執行。從選單列的圖示可以暫停或打開視窗。",
+    "tm.updateReady": "新版已就緒：暫停下單後可以更新，或結束 Blave 時自動安裝",
     "tm.evOrderErrNote": "交易所拒絕了這筆單；打開 Blave 看原因",
   },
 };

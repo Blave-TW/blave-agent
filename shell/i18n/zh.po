@@ -1324,5 +1324,8 @@ msgstr "取消"
 msgid "tm.hidden"
 msgstr "Blave 還開著，自動下單照常執行。從選單列的圖示可以暫停或打開視窗。"
 
+msgid "tm.updateReady"
+msgstr "新版已就緒：暫停下單後可以更新，或結束 Blave 時自動安裝"
+
 msgid "tm.evOrderErrNote"
 msgstr "交易所拒絕了這筆單；打開 Blave 看原因"
