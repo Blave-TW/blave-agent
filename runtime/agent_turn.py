@@ -2505,7 +2505,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
-    parser.add_argument("message")
+    # 電腦版用 --message-stdin 把訊息從 stdin 送進來(argv 同機的人 `ps` 看得到,而聊天貼 key 是支援的流程);
+    # 機隊照舊走位置參數,行為不變。
+    parser.add_argument("message", nargs="?", default=None)
+    parser.add_argument("--message-stdin", action="store_true")
     # 預設值在下面解析,不寫在這裡:codex 引擎要分得出「用戶真的選了 model」與「沒帶」——
     # 把我們的預設(proxy 的模型名)當成用戶選的傳給 `codex -m` 會整輪失敗。
     parser.add_argument("--model", default=None)
@@ -2528,6 +2531,10 @@ def main():
     # 選填,值域由外殼依引擎/模型保證,這裡原樣轉發。沒帶 = 引擎自己的預設。
     parser.add_argument("--effort", default=None)
     args = parser.parse_args()
+    if args.message_stdin:
+        args.message = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    if args.message is None:
+        parser.error("message is required (positional, or --message-stdin)")
     viewing_widgets = parse_viewing_widgets(args.viewing_widgets)
 
     # Secrets come from env, never argv — argv is world-visible in `ps`. The web

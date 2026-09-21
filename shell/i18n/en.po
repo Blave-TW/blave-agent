@@ -892,6 +892,9 @@ msgstr "Connecting {id} failed ({stage}): {msg}"
 msgid "cx.failShort"
 msgstr "Connection failed"
 
+msgid "cx.keyAttn"
+msgstr "Key needs attention"
+
 msgid "cx.sendFail"
 msgstr "Could not connect ({err}). Try again."
 
@@ -1530,7 +1533,7 @@ msgid "priv.collect.3"
 msgstr "The app version, macOS version and system language"
 
 msgid "priv.collect.4"
-msgstr "A random ID for this install; after you sign in it is linked to your Blave account"
+msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
 
 msgid "priv.never.h"
 msgstr "Never collected"
@@ -1558,6 +1561,18 @@ msgstr "Records are kept for 25 months. Anything that can’t be sent is dropped
 
 msgid "priv.kept"
 msgstr "Records sent before you turned this off are still kept for 25 months."
+
+msgid "priv.id"
+msgstr "Installation ID"
+
+msgid "priv.idCopy"
+msgstr "Copy"
+
+msgid "priv.idCopied"
+msgstr "Copied"
+
+msgid "priv.idNote"
+msgstr "Include this ID when you email us to delete the usage data sent from this computer."
 
 msgid "cx.apiKey"
 msgstr "API Key"
@@ -1603,9 +1618,6 @@ msgstr "This key has no trading permission, so it was not saved. The usual cause
 
 msgid "cx.chk.tradingNoIp"
 msgstr "This key has no trading permission, so it was not saved. The usual cause is a missing IP whitelist: Binance only lets you enable trading once a whitelist is set. Set the whitelist, enable trading, then connect again."
-
-msgid "cx.chk.futures"
-msgstr "This key can trade spot but not futures, so it was not saved. It was most likely created before you opened your futures account. Such a key can’t be given futures permission later; create a new one at Binance."
 
 msgid "cx.chk.ipOrKey"
 msgstr "Binance rejected this key, so it was not saved. Binance doesn’t tell these three causes apart: the IP above isn’t on the whitelist, the API Key was pasted wrong, or the key was deleted. Check the whitelisted IP first."
@@ -1673,14 +1685,11 @@ msgstr "The previous order engine is still shutting down; retrying automatically
 msgid "cx.re.badKey"
 msgstr "The key saved on this computer no longer matches Binance (the secret or the API Key is wrong), so orders can’t be placed. Press Unbind, then connect again."
 
-msgid "cx.re.futuresOff"
-msgstr "Futures trading permission was turned off, so futures orders can’t be placed. Turn it back on at Binance, then press Retest connection."
-
 msgid "cx.note.noFutures"
-msgstr "This key has no futures trading permission: spot strategies can trade, but Binance will reject orders from futures strategies. To run futures strategies, enable it at Binance, then press Retest connection."
+msgstr "This key has no futures trading permission: spot strategies can trade, but Binance will reject orders from futures strategies. To run futures strategies, enable it at Binance, then press Retest connection. If it can’t be enabled (keys created before you opened a futures account can’t), create a new key and connect again."
 
 msgid "cx.note.noSpot"
-msgstr "This key has no spot trading permission: futures strategies can trade, but Binance will reject orders from spot strategies."
+msgstr "This key has no spot trading permission: futures strategies can trade, but Binance will reject orders from spot strategies. To run spot strategies, enable it at Binance, then press Retest connection. If it can’t be enabled, create a new key and connect again."
 
 msgid "tm.key.wdTitle"
 msgstr "{where}: withdrawals were turned on for the Binance key"

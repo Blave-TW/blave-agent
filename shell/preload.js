@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("blave", {
   onUpdateState: (fn) => ipcRenderer.on("update-state", (_e, st) => fn(st)),
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
+  telemetryInstallId: () => ipcRenderer.invoke("telemetry-install-id"),
   // Binance 真錢連接:金鑰只經過 binanceConnect 一次(主行程查過權限才存);其餘三支不碰金鑰
   binanceIp: () => ipcRenderer.invoke("binance-ip"),
   binanceState: () => ipcRenderer.invoke("binance-state"),

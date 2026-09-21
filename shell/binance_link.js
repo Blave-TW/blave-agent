@@ -66,8 +66,9 @@ function createBinanceLink(opts) {
       if (j.prev && typeof j.prev.code === "string") st.prev = { ok: j.prev.ok === true, code: j.prev.code };
       if (typeof j.ipThen === "string" && IPV4_RE.test(j.ipThen)) st.ipThen = j.ipThen;
       if (j.last && typeof j.last.code === "string") st.last = pub(j.last);
-      if (j.verdict && typeof j.verdict.reason === "string") st.verdict = { reason: j.verdict.reason, ip: typeof j.verdict.ip === "string" && IPV4_RE.test(j.verdict.ip) ? j.verdict.ip : null,
-        level: j.verdict.level === "P1" ? "P1" : "P2", code: typeof j.verdict.code === "string" ? j.verdict.code.slice(0, 40) : null, notified: j.verdict.notified === true };
+      // 這個檔同一個用戶寫得到:reason 只認表上有的(稽核登記),級別照表、不照檔案寫的
+      if (j.verdict && Object.prototype.hasOwnProperty.call(BC.VERDICT_LEVEL, j.verdict.reason)) st.verdict = { reason: j.verdict.reason, ip: typeof j.verdict.ip === "string" && IPV4_RE.test(j.verdict.ip) ? j.verdict.ip : null,
+        level: BC.VERDICT_LEVEL[j.verdict.reason], code: typeof j.verdict.code === "string" ? j.verdict.code.slice(0, 40) : null, notified: j.verdict.notified === true };
       if (typeof j.checkedAt === "number") st.checkedAt = j.checkedAt;
     }
     return st; }

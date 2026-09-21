@@ -128,20 +128,28 @@ function cancelAgentLogin() {
   return true;
 }
 
-// v1:連結選擇只落在本機設定檔,引擎接線是第 4 步
-const statePath = () => path.join(app.getPath("userData"), "connect.json");
-function saveConnection(choice) {
-  fs.writeFileSync(statePath(), JSON.stringify({ ...choice, at: new Date().toISOString() }));
-  tm().track("connect_done", { kind: choice && choice.kind });   // kind 不在列舉內(blave/claude/codex)track 自己會丟掉
+// 連的是哪個 AI(connstore.js):檔案帶 Keychain 金鑰算的 MAC,agent 改得了檔、改不了這個決定(稽核 S1)
+let _conn = null;
+function connStore() {
+  if (!_conn) _conn = require("./connstore").createConnStore({
+    dir: app.getPath("userData"),
+    seal: { available: () => safeStorage.isEncryptionAvailable(), encrypt: (v) => safeStorage.encryptString(v), decrypt: (b) => safeStorage.decryptString(b) },
+    tokenFp: () => { const t = loadToken(); return t ? crypto.createHash("sha256").update(t).digest("hex").slice(0, 32) : null; },
+  });
+  return _conn;
+}
+/* path 會被拿去 spawn:只收「現在偵測得到的那一個」,畫面送什麼路徑來都不算數 */
+async function saveConnection(choice) {
+  const kind = choice && choice.kind;
+  let agentPath = null;
+  if (kind === "claude" || kind === "codex") { agentPath = ((await detectAgents())[kind] || {}).path || null; if (!agentPath) return false; }
+  const saved = connStore().save({ kind, path: agentPath, email: choice && choice.email });
+  if (!saved) return false;
+  tm().track("connect_done", { kind: saved.kind });
   return true;
 }
-function clearConnection() {
-  try { fs.unlinkSync(statePath()); } catch (_) {}
-  return true;
-}
-function loadConnection() {
-  try { return JSON.parse(fs.readFileSync(statePath(), "utf8")); } catch (_) { return null; }
-}
+const clearConnection = () => connStore().clear();
+const loadConnection = () => connStore().load();
 
 // ── 使用追蹤(telemetry.js:七個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
@@ -471,6 +479,7 @@ async function startOAuth(lang) {
   if (prevToken && prevToken !== r.body.access_token) {
     postJSON(`${API_BASE}/oauth/desktop/revoke`, { token: prevToken }).catch(() => {});
   }
+  connStore().reseal();   // 連的是 Blave AI 的人重新登入:連結紀錄綁的是 token 指紋,要跟著換到新的這一顆
   tm().track("login_done");
   // 資料 key 只在這一次回應裡出現;舊版 api 沒有這兩欄就是沒有資料權限,不算失敗
   // 先清掉上一次登入留下的那組:那顆 token 換掉之後,舊 key 可能已經被撤銷,留著會把死 key
@@ -587,6 +596,9 @@ async function ensureEngine(progress) {
   const fresh = !fs.existsSync(WS);
   if (fresh) {
     progress("engine.workspace");
+    // 0700:裡面有 session.db(對話)、.env(金鑰)、狀態檔,同一台電腦的其他用戶不該讀得到(稽核 R9)。
+    // 只在我們自己建立的時候設;用戶既有的目錄不動他的權限。
+    if (!fs.existsSync(BASE)) fs.mkdirSync(BASE, { recursive: true, mode: 0o700 });
     fs.mkdirSync(WS, { recursive: true });
     copyOfficial();
   } else if (!app.isPackaged) {
@@ -1124,9 +1136,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
     ...(useCodex ? ["--engine", "codex", "--codex-bin", conn.path] : []),
     ...viewingArgs(viewing),
-    // 位置參數放最後、前面放 --:用戶打的字是單一 token 又以 - 開頭(「--help」「-h」)時,不會被 argparse 當成旗標
-    "--", sessionId, message,
+    // 用戶打的字**不進 argv**(稽核 S5):同一台電腦上任何人 `ps` 都看得到命令列,而聊天貼 key 是支援的流程。走 stdin。
+    // runtime 往下那一段本來就不走 argv(Claude 走 SDK 的 stream-json stdin、Codex 走 `exec -`)。
+    "--message-stdin", "--", sessionId,
   ], { env, cwd: WS });
+  child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
+  child.stdin.end(message);
   activeTurn = child;
   let buf = "";
   child.stdout.on("data", (d) => {
@@ -1151,16 +1166,27 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
    連結(K 線圖左下角的 TradingView 標誌是 lightweight-charts 依授權放的 <a>),沒有
    這兩道的話,點它會在 app 裡開一個沒有 preload 隔離設定的新視窗、或把整個 app 導走。
    https 的交給系統瀏覽器開,其餘一律擋。 */
+/* 交給系統瀏覽器開的網址只認白名單(稽核 R4):畫面上會出現 LLM 與雲端主機寫的字,哪天有一段變成了連結,
+   也不能把用戶帶到任意網站。清單 = 程式裡實際用到的:blave.org(綁卡、方案、官網)與 K 線圖依授權放的那顆標誌。 */
+const EXTERNAL_HOSTS = ["blave.org", "www.tradingview.com"];
+function externalUrl(raw) {
+  let u; try { u = new URL(String(raw)); } catch (_) { return null; }
+  if (u.protocol !== "https:" || u.username || u.password || (u.port && u.port !== "443")) return null;
+  const h = u.hostname.toLowerCase();
+  return EXTERNAL_HOSTS.indexOf(h) >= 0 || h.endsWith(".blave.org") ? u.href : null;
+}
+function openExternalSafe(raw) { const u = externalUrl(raw); if (u) shell.openExternal(u); return !!u; }
+
 function guardNavigation(win) {
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//.test(url)) shell.openExternal(url);
+    openExternalSafe(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (e, url) => {
     // 自己重載自己要放行:「重新登入」那顆鈕用的是 location.reload()
     if (url.split("#")[0] === win.webContents.getURL().split("#")[0]) return;
     e.preventDefault();
-    if (/^https:\/\//.test(url)) shell.openExternal(url);
+    openExternalSafe(url);
   });
 }
 
@@ -1187,32 +1213,14 @@ function createWindow() {
 
 app.whenReady().then(() => {
   startImageServer();
-  ipcMain.handle("detect-agents", () => detectAgents());
-  ipcMain.handle("save-connection", (_e, choice) => saveConnection(choice));
-  ipcMain.handle("load-connection", () => loadConnection());
-  ipcMain.handle("open-external", (_e, url) => {
-    if (/^https:\/\//.test(url)) shell.openExternal(url);
-  });
-  ipcMain.handle("ensure-engine", (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
-    // 引擎裝好(或本來就在)之後才起本機常駐程式
-    return ensureEngine((t) => win.webContents.send("engine-progress", t)).then((r) => { tradeStartIfReady(); return r; });
-  });
-  // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
-  // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
-  ipcMain.handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
-  ipcMain.handle("delete-strategy", (_e, name) => deleteStrategy(String(name || "")));
-  ipcMain.handle("list-sessions", () => listSessions());
-  ipcMain.handle("load-session-images", (_e, id) => loadSessionImages(id));
-  ipcMain.handle("load-session", (_e, id) => loadSession(id));
-  ipcMain.handle("delete-session", (_e, id) => deleteSession(id));
-  ipcMain.handle("list-strategies", () => listStrategies());
-  ipcMain.handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
-  ipcMain.handle("model-options", (_e, kind) => modelOptions(kind));
-  ipcMain.handle("account-status", () => accountStatus());
-  ipcMain.handle("public-pricing", () => publicPricing());
-  // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
-  // 只認我們自己那一頁的主 frame:花錢(plan-start)與動交易(trade-send)的 IPC 共用這道
+  // 這個 app 的網頁不需要任何瀏覽器權限(相機、麥克風、定位、通知…):Electron 預設是全部允許,這裡全部拒絕(稽核 R5)。
+  // 唯一的例外是自家頁面寫剪貼簿——「複製」IP / 安裝識別碼那幾顆鈕靠它。
+  const ses = require("electron").session.defaultSession;
+  const permOk = (wc, perm, url) => perm === "clipboard-sanitized-write" && isOurPageUrl(url || (wc && wc.getURL()));
+  ses.setPermissionRequestHandler((wc, perm, cb, details) => cb(permOk(wc, perm, details && details.requestingUrl)));
+  ses.setPermissionCheckHandler((wc, perm, origin, details) => permOk(wc, perm, details && details.requestingUrl));
+  // 只認我們自己那一頁的主 frame。**每一支 IPC 預設都過這道**(稽核 R3:原本是「記得的才驗」):用 handle() 註冊的不必自己寫;
+  // 下面直接用 ipcMain.handle 的那幾支是因為拒絕時要回特定形狀,它們自己驗。
   const fromOurPage = (e) => {
     // 比「解出來的檔案路徑」而不是比字串:安裝路徑含 & + , = @ 時 encodeURIComponent 拼出來的 URL 跟
     // Chromium 給的不相等,會連 halt 都被拒(稽核 S7)
@@ -1220,12 +1228,36 @@ app.whenReady().then(() => {
     try { const u = new URL((e.senderFrame && e.senderFrame.url) || ""); if (u.protocol === "file:") file = require("url").fileURLToPath(u.href.split(/[?#]/)[0]); } catch (_) { /* 不是我們的頁 */ }
     return file === path.join(__dirname, "renderer", "index.html") && e.senderFrame === e.sender.mainFrame;
   };
+  const handle = (channel, fn, denied = null) => ipcMain.handle(channel, (e, ...a) => (fromOurPage(e) ? fn(e, ...a) : denied));
+  handle("detect-agents", () => detectAgents());
+  handle("save-connection", (_e, choice) => saveConnection(choice), false);
+  handle("load-connection", () => loadConnection());
+  handle("open-external", (_e, url) => openExternalSafe(url), false);
+  handle("ensure-engine", (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    // 引擎裝好(或本來就在)之後才起本機常駐程式
+    return ensureEngine((t) => win.webContents.send("engine-progress", t)).then((r) => { tradeStartIfReady(); return r; });
+  });
+  // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
+  // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
+  handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
+  handle("delete-strategy", (_e, name) => deleteStrategy(String(name || "")));
+  handle("list-sessions", () => listSessions());
+  handle("load-session-images", (_e, id) => loadSessionImages(id));
+  handle("load-session", (_e, id) => loadSession(id));
+  handle("delete-session", (_e, id) => deleteSession(id));
+  handle("list-strategies", () => listStrategies());
+  handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
+  handle("model-options", (_e, kind) => modelOptions(kind));
+  handle("account-status", () => accountStatus());
+  handle("public-pricing", () => publicPricing());
+  // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
   ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart() : { error: "SERVER" }));
   /* 本機交易:狀態是唯讀的檔案內容;指令由 daemon.js 簽章後寫進佇列(secret 不出主行程)。
      daemon 在引擎裝好之後才起(它要 workspace 與 venv),而且**不會自己啟動對帳器**——要用戶按「啟動下單」。 */
-  ipcMain.handle("trade-status", () => tradeHost().status());
-  ipcMain.handle("trade-events", (_e, q) => tradeHost().events({ days: q && Number(q.days) }));
-  ipcMain.handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
+  handle("trade-status", () => tradeHost().status());
+  handle("trade-events", (_e, q) => tradeHost().events({ days: q && Number(q.days) }));
+  handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
   ipcMain.handle("trade-send", async (e, cmd, args) => {
     if (!fromOurPage(e) || typeof cmd !== "string") return { ok: false, error: "NOT_ALLOWED" };
     // 最低版本閘:只擋啟動類(resume / resume_wait);暫停、改金額、移除金鑰永遠放行,已在跑的下單不主動停
@@ -1252,21 +1284,23 @@ app.whenReady().then(() => {
     if (!fromOurPage(e) || !a || typeof a !== "object" || Array.isArray(a)) return { ok: false, code: "NOT_ALLOWED", detail: {} };
     return binanceLink().connect(a.apiKey, a.secret);
   });
-  ipcMain.handle("min-version-state", () => minGate().state());
-  ipcMain.handle("update-state", () => updater().state());
+  handle("min-version-state", () => minGate().state());
+  handle("update-state", () => updater().state());
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
   ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
+  // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
+  handle("telemetry-install-id", () => tm().installId());
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
-  ipcMain.handle("load-model-prefs", () => loadModelPrefs());
-  ipcMain.handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
-  ipcMain.handle("start-oauth", (_e, lang) => startOAuth(lang));
-  ipcMain.handle("cancel-oauth", () => cancelOAuth());
-  ipcMain.handle("clear-connection", () => clearConnection());
-  ipcMain.handle("has-blave-token", () => !!loadToken());
-  ipcMain.handle("sign-out-blave", () => signOutBlave());
-  ipcMain.handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
-  ipcMain.handle("cancel-agent-login", () => cancelAgentLogin());
+  handle("load-model-prefs", () => loadModelPrefs());
+  handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
+  handle("start-oauth", (_e, lang) => startOAuth(lang === "en" ? "en" : "zh"));   // 語言段會拼進同意頁的路徑:只認兩個值(稽核 R6)
+  handle("cancel-oauth", () => cancelOAuth());
+  handle("clear-connection", () => clearConnection());
+  handle("has-blave-token", () => !!loadToken());
+  handle("sign-out-blave", () => signOutBlave());
+  handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
+  handle("cancel-agent-login", () => cancelAgentLogin());
   ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
     if (activeTurn || turnStarting) return { busy: true };
@@ -1404,7 +1438,7 @@ async function pauseFromMenu() {
   let r = null;
   try { r = await tradeHost().send("halt", { reason: "menu bar" }); } catch (_) { /* 當成沒送到 */ }
   traySync();
-  if (r && r.ok) { if (Notification.isSupported()) new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels.notifTitle), body: tmLabels.notifBody }).show(); return; }
+  if (r && r.ok) { if (Notification.isSupported()) notifWatch(new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels.notifTitle), body: tmLabels.notifBody }), "paused").show(); return; }
   // 沒成功不能只靠系統通知(權限關掉 / 專注模式會被吞):把視窗叫出來、掛一個框講清楚(稽核 M1)
   showMain();
   dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: pauseLabel(),
@@ -1505,6 +1539,9 @@ function p1Pick(events, mark, nowS) {   // 純函式(tests/check_shell_p1_notify
   }
   return { mark: top < 0 ? (mark == null ? 0 : mark) : top, show };
 }
+/* Electron 42 起 macOS 通知走 UNNotification:**沒簽章的 app(npm start、不簽的 pack)一則都不會出現**,只會收到 failed。
+   使用者關掉通知權限時也是。通知是 P1 的唯一出口,失敗至少留一行 log——不然「沒收到」查不出是沒發還是被系統吃掉。 */
+function notifWatch(n, what) { n.on("failed", (_e, err) => console.error("[notify] " + what + " failed: " + String(err || "").slice(0, 200))); return n; }
 function p1Sync() {
   if (!_tradeHost) return;
   const r = _tradeHost.status().report; if (!r) return;
@@ -1523,7 +1560,7 @@ function p1Sync() {
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
     const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels["ev_" + e.type] + (sym ? " · " + sym : "")), body: tmLabels["ev_" + e.type + "_n"] });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
-    n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop);
+    n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "p1 " + e.type);
     if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
     n.show();
   }
@@ -1538,7 +1575,7 @@ function binanceNotify(v) {
   const k = map[v && v.reason]; if (!k || !tmLabels[k[0]] || !tmLabels[k[1]] || !Notification.isSupported()) return false;
   const n = new Notification({ title: tmLabels[k[0]], body: tmLabels[k[1]].replace("{ip}", () => v.ip || "—") });
   p1Alive.add(n); const drop = () => p1Alive.delete(n);
-  n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop);
+  n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "binance " + v.reason);
   n.show();
   // 級別來自 binance_check.VERDICT_LEVEL。電腦版沒有 P2 專用的出口:P2 = 只發系統通知,**不亮 Dock 紅點**(紅點留給 P1)
   if (v.level === "P1" && app.dock && !BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(++p1Badge));
@@ -1549,7 +1586,7 @@ app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
     if (quitting || quitConfirmed || !tradeMaybeLive()) return;
     e.preventDefault(); win.hide();
-    if (!hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; new Notification({ title: tmLabels.running, body: tmLabels.hidden }).show(); }
+    if (!hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
   });
 });
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。

@@ -5,6 +5,9 @@
   "description": "Blave 電腦版外殼(v1:連結畫面 → 空三欄 → 第一句話)",
   "license": "Apache-2.0",
   "main": "main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "electron .",
     "fetch-python": "sh tools/fetch-python.sh",
@@ -13,7 +16,7 @@
     "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac --publish never"
   },
   "devDependencies": {
-    "electron": "38.2.1",
+    "electron": "44.4.3",
     "electron-builder": "26.15.3"
   },
   "dependencies": {

@@ -39,7 +39,7 @@ module.exports = {
   extraMetadata: RELEASE || UPDATE_URL ? { ...(RELEASE ? { blaveRelease: true } : {}), ...(UPDATE_URL ? { blaveUpdateUrl: UPDATE_URL } : {}) } : undefined,   // main.js 靠它認發佈版 / 更新來源
   publish: UPDATE_URL ? [{ provider: "generic", url: UPDATE_URL }] : null,   // 只為了產生 latest-mac.yml;上傳是手動的(--publish never)
   npmRebuild: false,
-  files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
+  files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   extraResources: [
     { from: "..", to: "agent", filter: tracked },
     { from: "vendor/python", to: "python", filter: ["**/*", "!**/__pycache__"] },
@@ -49,6 +49,8 @@ module.exports = {
     // zip 是給自動更新吃的(macOS 的 electron-updater 只認 zip);dmg 是給人下載的
     target: [{ target: "dir", arch: [process.arch] }, { target: "dmg", arch: [process.arch] }, ...(UPDATE_URL ? [{ target: "zip", arch: [process.arch] }] : [])],
     icon: "build/icon.icns",
+    // Electron 44 起不支援 macOS 12。明寫進 Info.plist(LSMinimumSystemVersion):舊系統在 Finder 就說開不了,不是開了才閃退
+    minimumSystemVersion: "13.0",
     // 防回滾(稽核 M2):更新包的真偽靠 Squirrel 驗簽章,但「舊的合法簽章包 + yml 謊報新版號」簽章是過的。
     // 這個開關讓 Squirrel 真的比 CFBundleShortVersionString,比現在舊就不裝。代價:版號必須是嚴格的 A.B.C。
     extendInfo: { ElectronSquirrelPreventDowngrades: true },

@@ -725,6 +725,8 @@ body.resizing * { cursor: col-resize !important; }
 .priv-two li + li { margin-top: var(--space-2); }
 .priv-two li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
+.priv-id { margin-top: var(--space-16); flex-wrap: wrap; }
+.priv-idv { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); user-select: all; -webkit-user-select: all; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
 .set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }

@@ -437,7 +437,12 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
 const PRIV_COLLECT = ["priv.collect.1", "priv.collect.2", "priv.collect.3", "priv.collect.4"];
 const PRIV_NEVER = ["priv.never.1", "priv.never.2", "priv.never.3", "priv.never.4", "priv.never.5", "priv.never.6"];
-async function privLoad() { try { PRIV = (await window.blave.telemetryGet()) === true; } catch (_) { PRIV = null; } privPaint(); }
+let PRIV_ID = null;   // 安裝識別碼:只收 UUID 的形狀(它會被畫出來、放進剪貼簿)
+async function privLoad() {
+  try { PRIV = (await window.blave.telemetryGet()) === true; } catch (_) { PRIV = null; }
+  try { const id = await window.blave.telemetryInstallId(); PRIV_ID = typeof id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ? id : null; } catch (_) { PRIV_ID = null; }
+  privPaint();
+}
 async function privToggle() {
   if (PRIV == null) return;
   const want = !PRIV;
@@ -463,6 +468,16 @@ function privPaint() {
     keys.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col);
   });
   box.append(two, mk("p", "priv-fine", off ? t("priv.kept") : t("priv.fine")));
+  // 安裝識別碼:開關關著也看得到——要求刪除的是關掉之前送出去的那些
+  if (PRIV_ID) {
+    const idRow = mk("div", "sw-row priv-id"), copy = mk("button", "btn-quiet", t("priv.idCopy")); copy.type = "button";
+    copy.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(PRIV_ID); } catch (_) { return; }
+      copy.textContent = t("priv.idCopied"); srSay(t("priv.idCopied")); setTimeout(() => { if (copy.isConnected) copy.textContent = t("priv.idCopy"); }, 2000);
+    });
+    idRow.append(mk("span", "sw-l", t("priv.id")), mk("code", "priv-idv", PRIV_ID), copy);
+    box.append(idRow, mk("p", "priv-lead", t("priv.idNote")));
+  }
   if (had) sw.focus();
   setFocusGuard();
 }

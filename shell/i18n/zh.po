@@ -892,6 +892,9 @@ msgstr "{id} 串接失敗（{stage}）：{msg}"
 msgid "cx.failShort"
 msgstr "串接失敗"
 
+msgid "cx.keyAttn"
+msgstr "金鑰需要處理"
+
 msgid "cx.sendFail"
 msgstr "連接沒有完成（{err}）。再按一次試試。"
 
@@ -1530,7 +1533,7 @@ msgid "priv.collect.3"
 msgstr "app 版本、macOS 版本、系統語言"
 
 msgid "priv.collect.4"
-msgstr "這份安裝的隨機編號；登入後會跟你的帳號對上"
+msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟你的帳號對上"
 
 msgid "priv.never.h"
 msgstr "不收"
@@ -1558,6 +1561,18 @@ msgstr "紀錄保留 25 個月。送不出去就丟掉，不影響任何功能�
 
 msgid "priv.kept"
 msgstr "關掉之前送出的紀錄仍保留 25 個月。"
+
+msgid "priv.id"
+msgstr "安裝識別碼"
+
+msgid "priv.idCopy"
+msgstr "複製"
+
+msgid "priv.idCopied"
+msgstr "已複製"
+
+msgid "priv.idNote"
+msgstr "要我們刪除這台電腦送出的使用資料時，請在來信裡附上這組識別碼。"
 
 msgid "cx.apiKey"
 msgstr "API Key"
@@ -1603,9 +1618,6 @@ msgstr "這把金鑰沒有開交易權限，沒有儲存。最常見的原因是
 
 msgid "cx.chk.tradingNoIp"
 msgstr "這把金鑰沒有開交易權限，沒有儲存。最常見的原因是還沒設 IP 白名單：Binance 要先有白名單才讓你開交易權限。設好白名單、勾選交易權限，再連一次。"
-
-msgid "cx.chk.futures"
-msgstr "這把金鑰開了現貨交易，但沒有開合約，沒有儲存。多半是金鑰建在你開通合約帳戶之前；這種金鑰事後開不了合約，要在 Binance 重建一把。"
 
 msgid "cx.chk.ipOrKey"
 msgstr "Binance 拒絕了這把金鑰，沒有儲存。Binance 不區分這三種原因：白名單裡沒有上面這個 IP、API Key 貼錯、金鑰已被刪除。先核對白名單裡的 IP。"
@@ -1673,14 +1685,11 @@ msgstr "上一次的下單機還沒完全停下來，正在自動重試（{n}/{m
 msgid "cx.re.badKey"
 msgstr "這台電腦上存的金鑰對不上 Binance 了（Secret 或 API Key 的內容不對），下單送不出去。按「解除綁定」，再重新連接一次。"
 
-msgid "cx.re.futuresOff"
-msgstr "合約交易權限被關掉了，合約策略的下單送不出去。到 Binance 重新開啟，再按「重新測試」。"
-
 msgid "cx.note.noFutures"
-msgstr "這把金鑰沒有開合約交易權限：現貨策略可以下單，合約策略的下單會被 Binance 拒絕。要跑合約策略，到 Binance 開啟後按「重新測試」。"
+msgstr "這把金鑰沒有開合約交易權限：現貨策略可以下單，合約策略的下單會被 Binance 拒絕。要跑合約策略，到 Binance 開啟後按「重新測試」；開不了的話（金鑰建在開通合約帳戶之前就會這樣），重建一把金鑰再連接。"
 
 msgid "cx.note.noSpot"
-msgstr "這把金鑰沒有開現貨交易權限：合約策略可以下單，現貨策略的下單會被 Binance 拒絕。"
+msgstr "這把金鑰沒有開現貨交易權限：合約策略可以下單，現貨策略的下單會被 Binance 拒絕。要跑現貨策略，到 Binance 開啟後按「重新測試」；開不了的話，重建一把金鑰再連接。"
 
 msgid "tm.key.wdTitle"
 msgstr "{where}：Binance 金鑰的提領權限被打開了"

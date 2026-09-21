@@ -133,12 +133,16 @@ function trClientTargets(amounts, states) {
   Object.keys(out).forEach((k) => { if (/@spot$/.test(k) && out[k] < 0) out[k] = 0; });
   return out;
 }
-// 這一列現在走哪一側的門檻(雲端 pfGateSide):減倉腿 = |實際| > |目標|
+// 這一列現在走哪一側的門檻(雲端 pfGateSide,兩邊同一條規則):減倉腿 = |實際| > |目標|
 function trGateSide(g, tgt, act) {
   if (!g) return null;
   if (typeof g.entry_usd === "number" && typeof g.reduce_usd === "number") {
-    const reduce = Math.abs(act) > Math.abs(tgt);
-    return { usd: reduce ? g.reduce_usd : g.entry_usd, reduce };
+    const reduce = Math.abs(act) > Math.abs(tgt), side = reduce ? g.reduce_usd : g.entry_usd;
+    // 全平或翻向只過平坦地板(lib/portfolio 的 applied = min(該側, close_usd)):拿半口去比,會把一筆真的會送出的平倉畫成「不會動」。
+    // 舊 lib 的快照沒有 close_usd:缺席或不是有限正數就照舊用該側——不能讓 min 算出 NaN / 0 把每一列都畫成會成交
+    const closes = act !== 0 && (tgt === 0 || tgt * act < 0), cu = g.close_usd;
+    const useClose = closes && typeof cu === "number" && isFinite(cu) && cu > 0 && cu < side;
+    return { usd: useClose ? cu : side, reduce, close: useClose };
   }
   if (Math.abs(act) > Math.abs(tgt)) return null;
   return typeof g.usd === "number" ? { usd: g.usd, reduce: false } : null;
@@ -200,7 +204,11 @@ function envAutoHalt(st) {
    sig = 這個「出事」是哪一件(看過才消:切過去就記下 sig,同一件事不再亮紅記號;換了一件才會再亮)。 */
 /* Binance 金鑰重查出事了(主行程 binance_link 的 verdict;只有這台電腦有):真錢、單可能送不出去——標題列不可以還寫「自動下單執行中」、
    切換器不可以還亮綠點(設計師必改 6)。只是沒設白名單不算(那不是 verdict)。細節在設定分頁帳戶那一列。 */
-function trKeyBad(env) { return env !== "cloud" && typeof CXF !== "undefined" && !!(CXF.bn && CXF.bn.verdict); }
+function trKeyVerdict(env) { const v = env !== "cloud" && typeof CXF !== "undefined" && CXF.bn && CXF.bn.verdict; return v && typeof v.reason === "string" ? v.reason : null; }
+/* 「單可能送不出去」的那幾種。提領被打開(WITHDRAW_ENABLED)不算:金鑰照樣下得了單,那是「要你去處理」不是「壞了」——
+   說成串接失敗、把綠點熄掉,是反方向的謊。它用 cx.keyAttn 那個中性短詞。 */
+function trKeyBad(env) { const r = trKeyVerdict(env); return !!r && r !== "WITHDRAW_ENABLED"; }
+function trKeyWord(env) { const r = trKeyVerdict(env); return !r ? null : r === "WITHDRAW_ENABLED" ? "cx.keyAttn" : "cx.failShort"; }
 function envCell(env, st, pending) {
   const kind = env === "cloud" ? envCloudKind(st) : "running";
   const out = { money: null, run: false, dot: null, word: null, sig: null };
@@ -509,7 +517,8 @@ function trStateText(state) {
   if (state === "halted") s = envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted");
   else if (state === "dead") s = rec.heartbeat_at ? t("tr.recDead") + " · " + t("tr.lastBeat", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
-  return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + " · " + s : s;
+  if (trFailedIds(r).length || trKeyBad(TR.env)) return t("cx.failShort") + " · " + s;
+  return trKeyWord(TR.env) === "cx.keyAttn" ? t("cx.keyAttn") + " · " + s : s;
 }
 // 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉
 function trAlert(text, want, bag) {
@@ -956,7 +965,7 @@ function trPositions(r, stored, states) {
     const dc = trEl("td", "n " + (acts ? (d > 0 ? "buy" : "sell") : "hold"));   // 0 是有意義的值(對上了),不用佔位符那階灰
     trMoneyInto(dc, d, true);
     row.append(sc, tc, ac, dc); tb.appendChild(row);
-    if (gs && held && !(gs.reduce && gs.usd <= 10)) gated.push({ sym, gs });
+    if (gs && held && !((gs.reduce || gs.close) && gs.usd <= 10)) gated.push({ sym, gs });   // 平坦的 10 是每一列共通的門檻,不另外解釋
   });
   tbl.appendChild(tb); scroll.appendChild(tbl); frag.appendChild(scroll);
   if (gated.length) {
@@ -1053,7 +1062,8 @@ function trPaintSet() {
   const failed = (!!e && !e.ok) || !!(bn && bn.verdict), st = trEl("span", "cn-st" + (failed ? "" : " on"));
   if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));   // 綠點 = 讀得到帳戶;「串接中…」還沒有
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
-  st.appendChild(trEl("span", "", failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
+  const attn = !(e && !e.ok) && trKeyWord(TR.env) === "cx.keyAttn";   // 讀帳也失敗的話,那個比較急
+  st.appendChild(trEl("span", "", attn ? t("cx.keyAttn") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
   const rt = trEl("button", "pf-act", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); rt.type = "button"; rt.id = "cx-retest";
@@ -1070,7 +1080,7 @@ function trPaintSet() {
     // 照 reason 講;同一個 reason 底下再照出事那一次的代號講對的原因(存著的金鑰壞了 ≠ 被 Binance 拒絕;合約被關 ≠ 交易權限全關)
     const v = bn.verdict, code = v.code || (bn.last && bn.last.code);
     const text = v.reason === "IP_CHANGED" ? t("cx.re.ipChanged", { ip: v.ip || "—" }) : v.reason === "WITHDRAW_ENABLED" ? t("cx.re.withdrawOn")
-      : v.reason === "TRADING_LOST" ? (code === "FUTURES_DISABLED" ? t("cx.re.futuresOff") : t("cx.re.tradingOff"))
+      : v.reason === "TRADING_LOST" ? t("cx.re.tradingOff")
       : code === "BAD_SECRET" || code === "BAD_KEY_FORMAT" ? t("cx.re.badKey") : t("cx.re.rejected");
     const line = errLine(text);
     if (v.reason === "IP_CHANGED" && v.ip) line.lastChild.append(" ", cxCopyBtn(v.ip, t("cx.ip.copyThis")));   // 鈕跟著句子走(.plan-err 是 flex,直接 append 會被拉成整段高)
@@ -1384,7 +1394,7 @@ function cxCopyBtn(ip, label) {
 function cxChkText(r) {
   const c = r && r.code;
   return c === "WITHDRAW_ENABLED" ? t("cx.chk.withdraw") : c === "TRADING_DISABLED" ? (CXF.ip ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
-    : c === "FUTURES_DISABLED" ? t("cx.chk.futures") : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
+    : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clock") : c === "RATE_LIMITED" ? t("cx.chk.rate") : c === "NETWORK" ? t("cx.chk.network")
     : c === "SEND_FAILED" ? (TR_BAGS.local.st && TR_BAGS.local.st.alive ? t("cx.chk.sendFail", { err: String(r.detail && r.detail.error || "—").slice(0, 200) }) : t("cx.down"))
     : t("cx.chk.unknown");

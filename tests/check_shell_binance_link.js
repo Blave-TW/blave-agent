@@ -121,7 +121,7 @@ function world(init) {
 
   // ── main.js:四支 IPC 的信任邊界(把那一段原文切出來,配假的 ipcMain 真的跑)──
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
-  const seg = mainSrc.slice(mainSrc.indexOf('  ipcMain.handle("binance-ip"'), mainSrc.indexOf('  ipcMain.handle("min-version-state"'));
+  const seg = mainSrc.slice(mainSrc.indexOf('  ipcMain.handle("binance-ip"'), mainSrc.indexOf('  handle("min-version-state"'));
   const handlers = {}, calls = [];
   const fakeLink = { ip: async () => "203.0.113.7", state: () => ({ last: null }), recheck: async (m) => { calls.push(["recheck", m]); return {}; }, connect: async (a, b) => { calls.push(["connect", a, b]); return { ok: true, code: "OK" }; } };
   let ours = false;
