@@ -1862,7 +1862,10 @@ msgid "ho.row.moves"
 msgstr "Moves"
 
 msgid "ho.row.movesV"
-msgstr "Strategy code, and the data-source keys it uses"
+msgstr "Strategy code"
+
+msgid "ho.row.movesKeys"
+msgstr "Strategy code, and the data-source keys it uses ({sources})"
 
 msgid "ho.row.stays"
 msgstr "Doesn’t move"

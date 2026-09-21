@@ -16,6 +16,13 @@ function hoMsg(dir, id, tpl) {
   const s = tpl && typeof tpl[dir] === "string" ? tpl[dir] : null;
   return s && s.split("{id}").length === 2 ? s.split("{id}").join(id) : null;
 }
+/* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`,同 shell/datasrc.js 的命名)。回排序過的來源名陣列。
+   references/cloud-handoff.md §5:沒用到 `DATA_` 的策略,agent 跳過金鑰那一步——確認框也不能多講一句「會搬金鑰」(稽核 C1)。 */
+function hoDataSources(code) {
+  const out = new Set();
+  for (const m of String(code == null ? "" : code).matchAll(/\bDATA_([A-Z0-9]{1,24})_[A-Z][A-Z0-9_]{0,31}\b/g)) out.add(m[1]);
+  return [...out].sort();
+}
 /* 確認框是哪一態。destHas = 目的地有沒有同名(true / false / null = 不確定);destAmount = 目的地那份的投入金額。
    回 "block"(目的地那份正在下單:不准覆蓋)| "over"(會覆蓋)| "maybe"(不確定有沒有同名:用中性說法)| "plain" */
 function hoState(destHas, destAmount) {
@@ -77,7 +84,9 @@ function hoAsk(dir, id, opener) {
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const extra = document.createDocumentFragment(), dl = mk("dl", "cf-rows kv");
   const row = (k, v) => { const r = mk("div", "cf-row"); r.append(mk("dt", "", k), mk("dd", "", v)); return r; };
-  dl.append(row(t("ho.row.moves"), t("ho.row.movesV")), row(t("ho.row.stays"), t("ho.row.staysV")));
+  // 「會搬」:用到資料來源的才多講金鑰那一句(並列出是哪幾個)。拉回那個方向 RP.data 是這台電腦選中的那支、不一定是要拉的那支,所以只看送上雲端
+  const srcs = dir === "up" && RP.data ? hoDataSources(RP.data.code) : [];
+  dl.append(row(t("ho.row.moves"), srcs.length ? t("ho.row.movesKeys", { sources: srcs.join(LANG === "zh" ? "、" : ", ") }) : t("ho.row.movesV")), row(t("ho.row.stays"), t("ho.row.staysV")));
   extra.appendChild(dl);
   if (state === "block") extra.appendChild(mk("p", "cf-block", dir === "up" ? t("ho.block.up") : t("ho.block.down")));
   else {

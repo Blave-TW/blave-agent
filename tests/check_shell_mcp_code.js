@@ -43,6 +43,11 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
     t("換了帳號(token 不同)→ A 的碼丟掉,替 B 重新取;B 拿不到 A 的", w.calls === 2 && b.accessCode === CODE2);
     w.res = { status: 409, body: {} }; w.creds = { token: "tokC", appSecret: "sec" }; t("C 沒有主機 → null(不會沿用 B 的)", (await w.mc.get()) === null); }
   { const w = world(); await w.mc.get(); w.mc.reset(); w.creds = null; t("登出(reset)→ 記憶體裡的碼沒了", (await w.mc.get()) === null && w.mc.state().has === false); }
+  // 稽核登記:退讓不可以被 drop() 清掉——不然被 429 擋下之後,登出再登入就能立刻再送一次,踩帳號那個 12 次 / 小時的桶
+  { const w = world({ res: { status: 429, body: {} } }); await w.mc.get();
+    w.mc.reset(); w.creds = { token: "tokB", appSecret: "sec" }; await w.mc.get();
+    t("被限速之後登出 / 換人:仍在退讓期內,不會再打一次", w.calls === 1 && w.mc.state().retryInMs > 0);
+    w.now += 31 * 60 * 1000; w.res = ok200(); t("退讓期過了才會再打", (await w.mc.get()) !== null && w.calls === 2); }
   { const w = world(); let release; w.hang = new Promise((r) => { release = r; }); const p = w.mc.get(); w.creds = { token: "tokB", appSecret: "sec" }; release(); const r = await p;
     t("在途時換了人:回來的那份不是現在這個人的 → 丟掉、這一輪不掛", r === null && w.mc.state().has === false); }
   { const w = world(); let release; w.hang = new Promise((r) => { release = r; }); const p1 = w.mc.get(), p2 = w.mc.get(); release(); await Promise.all([p1, p2]); t("同時兩個人要 → 只打一次", w.calls === 1); }

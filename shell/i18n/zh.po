@@ -1862,7 +1862,10 @@ msgid "ho.row.moves"
 msgstr "會搬"
 
 msgid "ho.row.movesV"
-msgstr "策略程式碼、它用到的資料來源金鑰"
+msgstr "策略程式碼"
+
+msgid "ho.row.movesKeys"
+msgstr "策略程式碼、它用到的資料來源金鑰（{sources}）"
 
 msgid "ho.row.stays"
 msgstr "不會搬"

@@ -48,7 +48,9 @@ function createMcpCode(opts) {
   const creds = () => { let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到 = 沒登入 */ } return c && c.token && c.appSecret ? c : null; };
   const age = () => (held ? now() - held.at : Infinity);
   const usable = () => !!held && age() >= 0 && age() < held.expiresInMs - SAFETY_MS;
-  function drop() { gen++; held = null; owner = null; retryAt = 0; lastFail = null; }
+  // 退讓**不跟著清**(稽核登記):帳號桶是 12 次 / 小時,而 drop() 在換人 / 登出時會被叫到——歸零的話,
+  // 登出再登入就能把剛被 429 擋下的那一次立刻再送一次。碼本身該丟的照丟
+  function drop() { gen++; held = null; owner = null; lastFail = null; }
 
   async function fetchOne(c) {
     const mine = ++gen; owner = c.token;
