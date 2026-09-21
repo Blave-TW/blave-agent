@@ -16,23 +16,35 @@ const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "creden
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
+/* exit 3 = 另一支 daemon 還握著這個 workspace 的鎖。最常見的是上一個 app 的那支還在收工:它發現 app 沒了 ≤1 秒、
+   等對帳器撤單 5 秒、補 SIGKILL 3 秒,最壞約 10 秒放鎖(上一個 app 自己的 stop() 也是 9 秒強殺)。2+5+10 秒蓋過這個
+   最壞情況,再多一次 10 秒當餘裕;27 秒後還握著的就不是「在收工」,是另一個活著的實例,落到原本的失敗狀態。
+   **只等不殺**:持鎖的可能是另一個合法的 app。 */
+const LOCK_RETRY_MS = [2000, 5000, 10000, 10000];
+const LOCK_SETTLE_MS = 3000;          // exit 3 在 python 起來的頭一兩秒內就會發生;撐過這段才算拿到鎖
 
 /* renderer 送來的參數在這裡先驗形狀(稽核 S6):daemon 端的 handler 會再驗一次語意,這一層擋的是
    「renderer 被攻破時能塞什麼」——例如 credentials 帶任意 key 寫進 workspace 的 .env。
-   這一版只開放模擬交易;接 Binance 時在 CRED_KEYS 加它的那幾個 key。 */
+   **renderer 這條路只收模擬交易**。Binance 的金鑰走另一條:主行程(binance_link.js)查過權限——提領開著的 key 不存——
+   之後才用 send(…, { trusted: true }) 送,那時認 TRUSTED_CRED_KEYS。renderer 被攻破也繞不過那道檢查。
+   解除綁定是安全方向,renderer 可以拿掉兩種。 */
 const CRED_KEYS = { PAPER_API_KEY: /^paper$/, PAPER_SECRET_KEY: /^paper$/, PAPER_BOUND_TS: /^\d{9,11}$/ };
+const TRUSTED_CRED_KEYS = { BINANCE_API_KEY: /^[A-Za-z0-9]{16,128}$/, BINANCE_SECRET_KEY: /^[A-Za-z0-9]{16,128}$/ };
+const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS)]);
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
-function argsOk(cmd, a) {
+function argsOk(cmd, a, trusted) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const keys = Object.keys(a);
   if (cmd === "credentials") {
-    const env = a.env;
+    const env = a.env, allow = trusted === true ? TRUSTED_CRED_KEYS : CRED_KEYS;
+    // trusted 的那包必須剛好是一整對:只送一半會在 .env 留下半把金鑰
     return keys.length === 1 && env && typeof env === "object" && !Array.isArray(env) && Object.keys(env).length > 0
-      && Object.keys(env).every((k) => CRED_KEYS[k] && typeof env[k] === "string" && CRED_KEYS[k].test(env[k]));
+      && (trusted !== true || Object.keys(env).length === Object.keys(allow).length)
+      && Object.keys(env).every((k) => Object.prototype.hasOwnProperty.call(allow, k) && typeof env[k] === "string" && allow[k].test(env[k]));
   }
   // 解除綁定只准拿掉這一版認得的憑證 key(handler 自己也永遠不刪 blave_*)
   if (cmd === "credentials_remove") return keys.length === 1 && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
-    && a.env.every((n) => typeof n === "string" && Object.prototype.hasOwnProperty.call(CRED_KEYS, n.toUpperCase()));
+    && a.env.every((n) => typeof n === "string" && REMOVABLE.has(n.toUpperCase()));
   if (cmd === "amounts") {
     const m = a.amounts;
     return m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length <= 200
@@ -43,18 +55,21 @@ function argsOk(cmd, a) {
   if (cmd === "halt") return keys.every((k) => k === "reason") && (a.reason === undefined || (typeof a.reason === "string" && a.reason.length <= 200));
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
-function createDaemonHost({ python, script, base, workspace, env, log = () => {} }) {
+function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS }) {
   const stateDir = path.join(workspace, "state");
   const inDir = path.join(stateDir, "local_cmd", "in"), ackDir = path.join(stateDir, "local_cmd", "ack");
   const statusFile = path.join(stateDir, "local_status.json");
   let child = null, secret = null, stopping = false, lastExit = null, restarts = 0;
+  let lockTries = 0, lockTimer = null, lockNextAt = 0, startedAt = 0;
 
   function start() {
     if (child) return true;
+    if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; }   // 等鎖期間有人又叫了 start():舊的那個 timer 不清,stop() 之後它還會再冒一支出來
     stopping = false;
     secret = crypto.randomBytes(32).toString("hex");
     fs.mkdirSync(inDir, { recursive: true }); fs.mkdirSync(ackDir, { recursive: true });
-    const c = spawn(python, [script, "--secret-stdin"], {
+    startedAt = Date.now();
+    const c = spawnFn(python, [script, "--secret-stdin"], {
       cwd: workspace, stdio: ["pipe", "ignore", "pipe"],
       // BLAVE_AGENT_LOCAL 是 daemon 的啟動閘門,必須由這裡帶;其餘是呼叫端給的最小環境(不含任何 Blave 憑證)
       env: { ...env, BLAVE_AGENT_LOCAL: "1", BLAVE_AGENT_BASE: base, BLAVE_AGENT_WORKSPACE: workspace },
@@ -78,19 +93,24 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
       log(`local daemon exited code=${code} sig=${sig}`);
       if (child === c) { child = null; secret = null; }
       // 自己死掉(不是我們叫它收工)→ 退避重啟,最多 5 次;重啟只是把 daemon 帶回來,**對帳器不會自己啟動**
-      // (daemon 的規矩),用戶要再按一次「啟動下單」。exit 2/3 = 環境不對 / 別的行程握著鎖:重啟也沒用,不試。
-      if (!stopping && code !== 2 && code !== 3 && restarts < 5) {
+      // (daemon 的規矩),用戶要再按一次「啟動下單」。exit 2 = 環境不對:重啟也沒用,不試。
+      if (!stopping && code === 3 && lockTries < lockRetryMs.length) {
+        const wait = lockRetryMs[lockTries++]; lockNextAt = Date.now() + wait;
+        log(`workspace lock is held by another daemon — retry ${lockTries}/${lockRetryMs.length} in ${wait}ms`);
+        lockTimer = setTimeout(() => { lockTimer = null; if (!child && !stopping) start(); }, wait); if (lockTimer.unref) lockTimer.unref();
+      } else if (!stopping && code !== 2 && code !== 3 && restarts < 5) {
         const wait = Math.min(30000, 2000 * 2 ** restarts); restarts++;
         const tm = setTimeout(() => { if (!child && !stopping) start(); }, wait); if (tm.unref) tm.unref();
       }
     });
-    const okTimer = setTimeout(() => { if (child === c) restarts = 0; }, 120000); if (okTimer.unref) okTimer.unref();   // 穩定跑兩分鐘就歸零
+    const okTimer = setTimeout(() => { if (child === c) restarts = lockTries = 0; }, 120000); if (okTimer.unref) okTimer.unref();   // 穩定跑兩分鐘就歸零
     return true;
   }
 
   /* 收工:關 stdin(EOF)+ SIGTERM,兩條都會走到 daemon 的收工路徑(對帳器先撤自己的掛單)。
      設計 §5 的時間預算:對帳器 ≤3 秒、daemon 等它 5 秒、再補 SIGKILL 3 秒 → 這裡等 9 秒才強殺。 */
   function stop() {
+    if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; }
     const c = child; if (!c) return Promise.resolve();
     stopping = true;
     return new Promise((resolve) => {
@@ -122,9 +142,9 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   }
   /* 送一個指令並等 ack。回 {ok, result} / {ok:false, error};daemon 沒在跑、逾時也走 error。
      `halt` 在 daemon 沒跑(或 secret 不在)時照送不簽——它是安全方向,daemon 起來就會吃到。 */
-  async function send(cmd, args, { timeoutMs = 20000 } = {}) {
+  async function send(cmd, args, { timeoutMs = 20000, trusted = false } = {}) {
     if (!UI_COMMANDS.has(cmd)) return { ok: false, error: "NOT_ALLOWED" };
-    if (!argsOk(cmd, args || {})) return { ok: false, error: "BAD_ARGS" };
+    if (!argsOk(cmd, args || {}, trusted === true)) return { ok: false, error: "BAD_ARGS" };
     const live = !!(child && secret);
     if (!live && cmd !== "halt") return { ok: false, error: "DAEMON_DOWN" };
     let id;
@@ -156,7 +176,10 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     const hb = report && report.daemon && Number(report.daemon.heartbeat_at);
     const hbMs = hb ? (hb > 1e12 ? hb : hb * 1000) : 0;
     const alive = !!child && !!hbMs && Date.now() - hbMs <= HEARTBEAT_DEAD_MS;
-    return { running: !!child, alive, stopping, lastExit: lastExit && { code: lastExit.code, at: lastExit.at, error: lastExit.error || null }, restarts, report };
+    // 在等鎖(nextAt = 下一次嘗試的時間)或重試剛起、還沒撐過 settle(nextAt:null)。重試用完 → null,畫面回到 lastExit.code === 3 的失敗狀態
+    const lockRetry = lockTimer ? { attempt: lockTries, max: lockRetryMs.length, nextAt: lockNextAt }
+      : (lockTries > 0 && child && Date.now() - startedAt < lockSettleMs ? { attempt: lockTries, max: lockRetryMs.length, nextAt: null } : null);
+    return { running: !!child, alive, stopping, lockRetry, lastExit: lastExit && { code: lastExit.code, at: lastExit.at, error: lastExit.error || null }, restarts, report };
   }
 
   /* ── 權益歷史 ─────────────────────────────────────────────

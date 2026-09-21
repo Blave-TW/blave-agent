@@ -119,6 +119,54 @@ def _local_mode():
     return os.environ.get("BLAVE_AGENT_LOCAL") == "1"
 
 
+def _binance_restrictions(api_key, secret):
+    """GET /sapi/v1/account/apiRestrictions → the permission dict. Raises on
+    anything else. Mainnet only, hard-coded: the host decides which keys this
+    verdict is about, so it is never a caller's choice."""
+    import hashlib
+    import hmac
+    q = f"timestamp={int(time.time() * 1000)}&recvWindow=10000"
+    sig = hmac.new(secret.encode(), q.encode(), hashlib.sha256).hexdigest()
+    req = urllib.request.Request(
+        f"https://api.binance.com/sapi/v1/account/apiRestrictions?{q}&signature={sig}",
+        headers={"X-MBX-APIKEY": api_key})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def _local_real_key_gate(venue_id, env):
+    """Desktop only, and the ONE place it is enforced: a real exchange key is
+    written to .env only after the exchange itself says withdrawals are off.
+    The app's connect screen runs the same check first (shell/binance_check.js)
+    to explain a refusal to the user; this one is here because _cmd_credentials
+    has more than one caller, and the next one must not be able to skip it.
+    Fail-closed: no answer, or an answer that is not the permission object, is a
+    refusal. Messages never carry a key value."""
+    if venue_id != "BINANCE":
+        raise ValueError(f"no permission check exists for {venue_id.lower()} — not saved")
+    got = {k.upper(): v for k, v in env.items()}
+    key, secret = got.get("BINANCE_API_KEY"), got.get("BINANCE_SECRET_KEY")
+    if not key or not secret:
+        raise ValueError("a Binance bind needs the API key and the secret together — not saved")
+    try:
+        r = _binance_restrictions(key, secret)
+    except Exception as e:  # urllib raises half a dozen types; none may pass
+        raise ValueError(f"could not verify the key's permissions with Binance "
+                         f"({type(e).__name__}) — not saved")
+    if not isinstance(r, dict) or any(
+            not isinstance(r.get(f), bool)
+            for f in ("enableWithdrawals", "enableSpotAndMarginTrading", "enableFutures")):
+        raise ValueError("Binance's permission answer could not be read — not saved")
+    if r["enableWithdrawals"] is not False:
+        raise ValueError("這把金鑰的提領權限是開著的,沒有儲存 "
+                         "(withdrawals are enabled on this key — not saved)")
+    # spot OR futures: lib/order_binance places both (MARKET="spot" strategies),
+    # and reading the account needs neither — same rule as the app's screen
+    if not (r["enableSpotAndMarginTrading"] or r["enableFutures"]):
+        raise ValueError("這把金鑰沒有開交易權限(現貨與合約都沒開),沒有儲存 "
+                         "(neither spot nor futures trading is enabled on this key — not saved)")
+
+
 def _local_child_env(**extra):
     """Env for every workspace subprocess in local mode. Allowlist like the
     Linux one, plus the path variables that have no /opt/blave-agent default to
@@ -506,6 +554,9 @@ def _cmd_credentials(args):
             "use a different name)")
     if _local_mode() and writing - LOCAL_OPEN_VENUES:
         raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
+    if _local_mode():
+        for vid in sorted(writing - {"PAPER"}):
+            _local_real_key_gate(vid, env)  # raises = nothing written
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():

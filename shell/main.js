@@ -350,10 +350,11 @@ async function signOutBlave() {
   return { revoked };
 }
 
-function postJSON(url, body) {
+function postJSON(url, body, extra) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
     const req = require("https").request(url, {
+      ...(extra || {}),   // 目前只有 my_ip 用:{ family: 4 } 強制走 IPv4
       method: "POST",
       headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
       timeout: 20000,
@@ -1013,7 +1014,30 @@ function tradeHost() {
   return _tradeHost;
 }
 function tradeStartIfReady() {
-  try { if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) tradeHost().start(); } catch (e) { console.error("[trade] start failed", e && e.message); }
+  try { if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) { tradeHost().start(); binanceLink().start(); } } catch (e) { console.error("[trade] start failed", e && e.message); }
+}
+/* Binance 真錢連接(binance_link.js)。金鑰只從 renderer 的表單經過這裡一次:查過權限 → 用 trusted 的路交給 daemon 寫進 workspace 的 .env。
+   這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 要帳號 token(沒登入 Blave 的人查不到 IP,表單照樣能用)。 */
+let _binanceLink = null, binanceStarted = false;
+const binanceStatePath = () => path.join(app.getPath("userData"), "binance-link.json");
+function binanceLink() {
+  if (!_binanceLink) {
+    _binanceLink = require("./binance_link").createBinanceLink({
+      http: (u, h) => getJSON(u, h),
+      myIp: () => { const tok = loadToken(); if (!tok) return Promise.resolve(null); return postJSON(`${API_BASE}/oauth/desktop/my_ip`, { token: tok }, { family: 4 }); },
+      send: (env) => tradeHost().send("credentials", { env }, { trusted: true }),
+      readEnv: () => { try { return fs.readFileSync(path.join(WS, ".env"), "utf8"); } catch (_) { return null; } },
+      loadState: () => JSON.parse(fs.readFileSync(binanceStatePath(), "utf8")),
+      saveState: (o) => fs.writeFileSync(binanceStatePath(), JSON.stringify(o), { mode: 0o600 }),
+      notify: (v) => binanceNotify(v),
+      onChange: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("binance-state", st); },
+    });
+  }
+  return { ..._binanceLink, start() {
+    if (binanceStarted) return; binanceStarted = true; _binanceLink.start();
+    // 睡眠時 24 小時的 timer 不走:醒來時過期了才補查(binance_link.recheckIfDue)
+    try { require("electron").powerMonitor.on("resume", () => _binanceLink.recheckIfDue()); } catch (_) { /* 沒有 powerMonitor 就只靠 timer */ }
+  } };
 }
 /* 用戶送出當下畫面上開著什麼(runtime 的 --viewing-*,跟雲端工作頁同一份契約):只用來釐清「這支 / 這裡」指的是誰,
    不是工作指令。值來自 renderer,會進命令列與 prompt:策略名只認沒有控制字元與方括號的短字串(方括號是 runtime 包這段
@@ -1207,6 +1231,7 @@ app.whenReady().then(() => {
     // 最低版本閘:只擋啟動類(resume / resume_wait);暫停、改金額、移除金鑰永遠放行,已在跑的下單不主動停
     if (require("./minversion").START_CMDS.has(cmd)) { await minGate().ensureFresh(); if (!minGate().tradeAllowed(cmd)) return { ok: false, error: "UPDATE_REQUIRED" }; }
     const out = tradeHost().send(cmd, args && typeof args === "object" ? args : {});
+    if (cmd === "credentials_remove" || cmd === "credentials") Promise.resolve(out).then((r) => { if (r && r.ok) binanceLink().recheck(); }).catch(() => {});   // 解除綁定、或改綁模擬交易把 Binance 擠掉:.env 沒有金鑰了 → 重查那一輪會把比對基準清掉
     if (cmd === "resume" || cmd === "resume_wait") Promise.resolve(out).then((r) => {
       if (!r || !r.ok) return;
       const v = (_tradeHost && _tradeHost.status().report || {}).venues || {}, ids = Object.keys(v).filter((k) => venueReady(v[k]));
@@ -1219,6 +1244,14 @@ app.whenReady().then(() => {
   // 懶啟動:第一次有人要雲端狀態才開始輪詢。refresh 有最小間隔,renderer 寫壞的迴圈打不爆帳號的速率桶
   ipcMain.handle("cloud-status", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().status(); });
   ipcMain.handle("cloud-refresh", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().refresh().then(() => cloudHost().status()); });
+  // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
+  ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
+  ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));
+  ipcMain.handle("binance-recheck", (e) => (fromOurPage(e) ? binanceLink().recheck(true) : null));
+  ipcMain.handle("binance-connect", async (e, a) => {
+    if (!fromOurPage(e) || !a || typeof a !== "object" || Array.isArray(a)) return { ok: false, code: "NOT_ALLOWED", detail: {} };
+    return binanceLink().connect(a.apiKey, a.secret);
+  });
   ipcMain.handle("min-version-state", () => minGate().state());
   ipcMain.handle("update-state", () => updater().state());
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
@@ -1303,6 +1336,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_downtime_paused: "Trading was paused automatically", ev_downtime_paused_n: "Everything is frozen after the downtime. Press Start trading to resume.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
+  // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
+  key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "", key_wdTitle: "", key_wdBody: "",
   stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", moneyPaper: "", moneyReal: "",
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "" };
 const TT = require("./traytext");
@@ -1493,6 +1528,21 @@ function p1Sync() {
     n.show();
   }
   if (show.length && app.dock) { if (!BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(p1Badge)); else p1Badge = 0; }
+}
+/* Binance 金鑰重查出事(binance_link 兩次確認之後才叫):P1 / P2 都走這條本機通知,跟 p1Sync 同一套呈現。只通知、不自動停單、不移除金鑰。
+   {where} 由 renderer 交字時就填好(這裡的事件只會來自這台電腦);{ip} 只會是 binance_link 驗過的 IPv4。 */
+function binanceNotify(v) {
+  const map = { IP_CHANGED: ["key_ipTitle", "key_ipBody"], KEY_REJECTED: ["key_rejTitle", "key_rejSameIpBody"], REJECTED: ["key_rejTitle", "key_rejUnknownBody"],
+    TRADING_LOST: ["key_permTitle", "key_permBody"], WITHDRAW_ENABLED: ["key_wdTitle", "key_wdBody"] };
+  // 回 true = 真的交給系統了。字還沒交過來 / 系統不支援 → false,binance_link 不會記成已通知,下一輪再試
+  const k = map[v && v.reason]; if (!k || !tmLabels[k[0]] || !tmLabels[k[1]] || !Notification.isSupported()) return false;
+  const n = new Notification({ title: tmLabels[k[0]], body: tmLabels[k[1]].replace("{ip}", () => v.ip || "—") });
+  p1Alive.add(n); const drop = () => p1Alive.delete(n);
+  n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop);
+  n.show();
+  // 級別來自 binance_check.VERDICT_LEVEL。電腦版沒有 P2 專用的出口:P2 = 只發系統通知,**不亮 Dock 紅點**(紅點留給 P1)
+  if (v.level === "P1" && app.dock && !BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(++p1Badge));
+  return true;
 }
 function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { traySync(); p1Sync(); }, 5000); if (trayTimer.unref) trayTimer.unref(); } }
 app.on("browser-window-created", (_e, win) => {

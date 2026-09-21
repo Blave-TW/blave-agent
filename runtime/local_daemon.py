@@ -42,6 +42,7 @@ import hmac
 import json
 import os
 import re
+import select
 import signal
 import stat
 import subprocess
@@ -86,7 +87,28 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 def _log(msg):
     """Never takes a payload — a command body may hold an exchange key."""
-    print(f"[local_daemon] {msg}", file=sys.stderr, flush=True)
+    try:
+        print(f"[local_daemon] {msg}", file=sys.stderr, flush=True)
+    except (OSError, ValueError):
+        # stderr is a pipe to the app: a SIGKILLed app leaves it broken, and a
+        # log line that raises would abort the very shutdown it announces
+        pass
+
+
+def _wait_parent_gone(ppid):
+    """Blocks until whoever started us is gone; returns why. stdin EOF alone is
+    not enough — any other process holding the pipe's write end keeps it open
+    after the parent dies — so the parent pid is polled alongside it."""
+    while True:
+        if ppid == 1 or os.getppid() != ppid:
+            return "parent process is gone"
+        try:
+            # raw fd, not sys.stdin: a thread parked inside the buffered reader
+            # holds its lock and aborts the interpreter at shutdown
+            if select.select([0], [], [], 1)[0] and not os.read(0, 4096):
+                return "parent closed stdin"
+        except (OSError, ValueError):
+            return "parent closed stdin"
 
 
 def sign(secret, body):
@@ -217,12 +239,10 @@ def run_reconciler(script):
         t.join(SWEEP_BUDGET_S)
         os._exit(0)
 
+    ppid = os.getppid()
+
     def _watch_parent():
-        try:
-            while os.read(0, 4096):
-                pass
-        except OSError:
-            pass
+        _wait_parent_gone(ppid)
         os.kill(os.getpid(), signal.SIGTERM)
         time.sleep(SWEEP_BUDGET_S + 2)  # main thread wedged in C: leave anyway
         os._exit(0)
@@ -657,16 +677,22 @@ class Daemon:
             self.stop.wait(1)
 
     def _watch_parent(self):
-        """stdin EOF = the app that started us is gone. With no app there is no
-        stop button and nobody to confirm anything, so trading stops with it."""
-        try:
-            # raw fd, not sys.stdin: a thread parked inside the buffered reader
-            # holds its lock and aborts the interpreter at shutdown
-            while os.read(0, 4096):
+        """The app that started us is gone. With no app there is no stop button
+        and nobody to confirm anything, so trading stops with it — through the
+        same stop event SIGTERM sets, so the reconciler is stopped and the last
+        status written either way."""
+        why = _wait_parent_gone(self._ppid)
+        time.sleep(0.2)  # a dying parent's pipes close a moment before we are re-parented
+        if os.getppid() != self._ppid:
+            # nobody reads our stderr any more; anything still printing to it
+            # (command_listener does) must not raise mid-shutdown
+            try:
+                fd = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(fd, 2)
+                os.close(fd)
+            except OSError:
                 pass
-        except OSError:
-            pass
-        _log("parent closed stdin — shutting down")
+        _log(f"{why} — shutting down")
         self.stop.set()
 
     def run(self, watch_parent):
@@ -675,12 +701,21 @@ class Daemon:
             os.makedirs(d, exist_ok=True)
         self.sup.reap_orphan()
         cl._LOCAL_HOST = self.sup
+        # Real-money Binance opens for THIS process only. Every `credentials`
+        # command that reaches it is HMAC-signed by the app, and the app's main
+        # process sends Binance keys only after its permission check passed
+        # (shell/binance_link.js: a key with withdrawals enabled is never
+        # stored). command_listener.LOCAL_OPEN_VENUES itself stays paper-only,
+        # so the chat bind (lib/venue.bind, running in the agent's process,
+        # where no such check exists) still cannot bind a real exchange.
+        cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINANCE"})
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()
         loops = [cl._scheduler_loop, self._status_loop, self._account_loop,
                  self._supervise_loop]
         if watch_parent:
+            self._ppid = os.getppid()
             loops.append(self._watch_parent)
         for fn in loops:
             threading.Thread(target=fn, daemon=True, name=fn.__name__).start()

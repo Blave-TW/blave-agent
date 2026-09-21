@@ -84,6 +84,11 @@ SECRET = uuid.uuid4().hex + uuid.uuid4().hex
 ENV = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
 ENV.update(BLAVE_AGENT_BASE=BASE, BLAVE_AGENT_WORKSPACE=WS, BLAVE_AGENT_HOME=BASE,
            BLAVE_AGENT_LOCAL="1")
+# No network, the real-venue gate included: the daemon's urllib is pointed at a
+# proxy nobody listens on, so the permission check fails closed right here on
+# this machine instead of reaching Binance. (Not a hook in the product — just the
+# proxy variables every urllib honours.)
+ENV.update(https_proxy="http://127.0.0.1:9", HTTPS_PROXY="http://127.0.0.1:9", no_proxy="", NO_PROXY="")
 IN = os.path.join(WS, "state", "local_cmd", "in")
 ACK = os.path.join(WS, "state", "local_cmd", "ack")
 fails = 0
@@ -201,18 +206,22 @@ try:
     check(json.load(open(os.path.join(WS, "manager", "credentials.ui.json")))["ids"] == ["paper"],
           "bind manifest = [paper]")
     a = send("credentials", {"env": {"BINANCE_API_KEY": "kkkk", "BINANCE_SECRET_KEY": "ssss"}})
-    check(a.get("ok") is False and "模擬交易" in a["error"]
+    # the daemon's own process opens Binance, so this reaches the permission gate
+    # (check_local_real_key_gate.py covers its verdicts with a fake answer). Here
+    # nothing answers — see the proxy in ENV — and no answer is "not saved".
+    check(a.get("ok") is False and "not saved" in a["error"] and "URLError" in a["error"]
+          and "kkkk" not in a["error"]
           and "BINANCE" not in open(os.path.join(WS, ".env")).read(),
-          "signed credentials for a real venue refused — paper only in this build")
+          f"signed credentials for a real venue: unverifiable key refused by the gate: {a.get('error', '')[:90]}")
     chat = subprocess.run(
         [sys.executable, "-c",
          "from lib import venue\n"
          "try:\n venue.bind('binance', {'BINANCE_API_KEY': 'k'*20, 'BINANCE_SECRET_KEY': 's'*20})\n"
          "except ValueError as e: print('REFUSED', e)"],
         cwd=WS, env=ENV, capture_output=True, text=True, timeout=60)
-    check("REFUSED" in chat.stdout and "模擬交易" in chat.stdout
+    check("REFUSED" in chat.stdout and "連接交易所" in chat.stdout
           and "BINANCE" not in open(os.path.join(WS, ".env")).read(),
-          f"chat bind (lib.venue.bind) hits the same gate: {chat.stdout.strip()[:80]}")
+          f"chat bind (lib.venue.bind) of a real venue is refused on the desktop: {chat.stdout.strip()[:80]}")
     a = send("amounts", {"amounts": {"typeb": 100}})
     check(a.get("ok") is False and "Type B" in a["error"], "type B refused with a reason")
     a = send("amounts", {"amounts": {"fixed_long": 1000}})

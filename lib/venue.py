@@ -69,6 +69,14 @@ def bind(venue_id, env):
     names), "bound" (venue ids with a complete pair in `.env`), "evicted"
     (venue ids the bind replaced — trading was halted for them)}."""
     vid = str(venue_id or "").strip().lower()
+    # Desktop app: binding a real exchange is the user's own act on the app's
+    # connect screen (自動下單 › 連接交易所), which checks the key's permissions
+    # with the exchange first. A key pasted in chat is not bound here.
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1" and vid in VENUES:
+        raise ValueError(
+            "在電腦版,真實交易所要由你自己在 app 的「自動下單 › 連接交易所」綁定,聊天裡貼的金鑰不會被存下來 "
+            "(on the desktop app a real exchange is connected by the user on the Auto Trading page — "
+            "a key pasted in chat is not saved)")
     if vid in _ELSEWHERE:
         raise ValueError(f"{vid} is not bound from chat — see {_ELSEWHERE[vid]}")
     if vid not in VENUES:

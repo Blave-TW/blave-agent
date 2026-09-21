@@ -866,7 +866,7 @@ msgid "cx.paperShort"
 msgstr "Paper trading"
 
 msgid "cx.paperNote"
-msgstr "No API keys needed. The simulated account starts with 10,000 USDT, fills at your strategy's own market data with fees (no slippage), and never touches real money; strategies, order settings, positions and the performance page all work exactly as with a real account."
+msgstr "No API keys needed. The simulated account starts with 10,000 USDT, fills at your strategy's own market data with fees (no slippage), and never touches real money; strategies, order settings, positions and the performance page all work exactly as with a real account. To switch to a real exchange later, unbind first, then connect."
 
 msgid "cx.connect"
 msgstr "Connect an exchange"
@@ -1558,3 +1558,135 @@ msgstr "Records are kept for 25 months. Anything that can’t be sent is dropped
 
 msgid "priv.kept"
 msgstr "Records sent before you turned this off are still kept for 25 months."
+
+msgid "cx.apiKey"
+msgstr "API Key"
+
+msgid "cx.secretKey"
+msgstr "Secret Key"
+
+msgid "cx.group.crypto"
+msgstr "Crypto"
+
+msgid "cx.perm"
+msgstr "Grant trading permission only — leave withdrawals disabled."
+
+msgid "cx.whitelist"
+msgstr "Whitelist this IP at the exchange:"
+
+msgid "cx.ip.copy"
+msgstr "Copy"
+
+msgid "cx.ip.copied"
+msgstr "Copied"
+
+msgid "cx.ip.local"
+msgstr "This is this computer’s current public IP. Home network IPs change. When yours does, Blave notifies you so you can update the whitelist."
+
+msgid "cx.ip.localNoIp"
+msgstr "The whitelist needs this computer’s public IP. Home network IPs change. When yours does, Blave notifies you so you can update the whitelist."
+
+msgid "cx.ip.loading"
+msgstr "Looking up this computer’s public IP…"
+
+msgid "cx.ip.fail"
+msgstr "Couldn’t find an IPv4 public IP for this computer (the lookup service didn’t respond, or this network is IPv6-only)."
+
+msgid "cx.ip.retry"
+msgstr "Look Up Again"
+
+msgid "cx.chk.withdraw"
+msgstr "This key has withdrawals enabled, so it was not saved. Turn withdrawals off at Binance, then connect again."
+
+msgid "cx.chk.trading"
+msgstr "This key has no trading permission, so it was not saved. The usual cause is a missing IP whitelist: Binance only lets you enable trading once a whitelist is set. Add the IP above to the whitelist, enable trading, then connect again."
+
+msgid "cx.chk.tradingNoIp"
+msgstr "This key has no trading permission, so it was not saved. The usual cause is a missing IP whitelist: Binance only lets you enable trading once a whitelist is set. Set the whitelist, enable trading, then connect again."
+
+msgid "cx.chk.futures"
+msgstr "This key can trade spot but not futures, so it was not saved. It was most likely created before you opened your futures account. Such a key can’t be given futures permission later; create a new one at Binance."
+
+msgid "cx.chk.ipOrKey"
+msgstr "Binance rejected this key, so it was not saved. Binance doesn’t tell these three causes apart: the IP above isn’t on the whitelist, the API Key was pasted wrong, or the key was deleted. Check the whitelisted IP first."
+
+msgid "cx.chk.keyFormat"
+msgstr "The API Key’s format is wrong, so it was not saved. Copy it from Binance again, with no spaces before or after."
+
+msgid "cx.chk.secret"
+msgstr "The Secret Key doesn’t match this API Key, so it was not saved. Copy the secret from Binance again. It is shown only once, when the key is created; if you no longer have it, create a new key."
+
+msgid "cx.chk.clock"
+msgstr "This computer’s clock is too far off Binance’s, so the key couldn’t be checked and was not saved. Turn on automatic date and time in System Settings, then connect again."
+
+msgid "cx.chk.rate"
+msgstr "Binance is temporarily limiting requests from this IP, so the key couldn’t be checked and was not saved. Wait a few minutes before trying again. Repeated retries extend the limit."
+
+msgid "cx.chk.network"
+msgstr "Couldn’t reach Binance, so the key couldn’t be checked and was not saved. Check the network, then connect again."
+
+msgid "cx.chk.unknown"
+msgstr "Binance returned a result that couldn’t be read, so the permissions couldn’t be confirmed and the key was not saved. Try again in a few minutes."
+
+msgid "cx.chk.noWhitelist"
+msgstr "This key has no IP whitelist. Binance deletes keys that have no whitelist and sit unused for 30 days; adding this computer’s public IP to the whitelist is recommended."
+
+msgid "cx.chk.sendFail"
+msgstr "The key passed the check but was not saved on this computer ({err}). Connect again."
+
+msgid "cx.re.tradingOff"
+msgstr "Trading permission was turned off, so orders can’t be placed. Turn it back on at Binance, then press Retest connection."
+
+msgid "cx.re.withdrawOn"
+msgstr "Withdrawals were turned on. Turn them off at Binance, then press Retest connection."
+
+msgid "cx.re.ipChanged"
+msgstr "The public IP is now {ip}. Update the whitelist at Binance to this IP, then press Retest connection."
+
+msgid "cx.re.rejected"
+msgstr "Binance rejected this key, so orders can’t be placed. Check the whitelisted IP. If the key is gone, reconnect."
+
+msgid "tm.key.ipTitle"
+msgstr "{where}: public IP changed"
+
+msgid "tm.key.ipBody"
+msgstr "Update the Binance whitelist to {ip}, then press Retest connection in Auto trading › Settings. Orders can’t be placed until then."
+
+msgid "tm.key.rejTitle"
+msgstr "{where}: Binance rejected the key"
+
+msgid "tm.key.rejSameIpBody"
+msgstr "Check at Binance that the key still exists and its permissions are unchanged. If it’s gone, create a new one, then unbind and reconnect in Auto trading › Settings. Orders can’t be placed until then."
+
+msgid "tm.key.rejUnknownBody"
+msgstr "Open Auto trading › Settings to check the IP and the key: the public IP may have changed, or the key may have been deleted. Orders can’t be placed until then."
+
+msgid "tm.key.permTitle"
+msgstr "{where}: trading was turned off for the Binance key"
+
+msgid "tm.key.permBody"
+msgstr "Turn trading permission back on for this key at Binance, then press Retest connection in Auto trading › Settings. Orders can’t be placed until then."
+
+msgid "tr.hostLock"
+msgstr "The previous order engine is still shutting down; retrying automatically ({n}/{max}). No orders go out meanwhile."
+
+msgid "cx.re.badKey"
+msgstr "The key saved on this computer no longer matches Binance (the secret or the API Key is wrong), so orders can’t be placed. Press Unbind, then connect again."
+
+msgid "cx.re.futuresOff"
+msgstr "Futures trading permission was turned off, so futures orders can’t be placed. Turn it back on at Binance, then press Retest connection."
+
+msgid "cx.note.noFutures"
+msgstr "This key has no futures trading permission: spot strategies can trade, but Binance will reject orders from futures strategies. To run futures strategies, enable it at Binance, then press Retest connection."
+
+msgid "cx.note.noSpot"
+msgstr "This key has no spot trading permission: futures strategies can trade, but Binance will reject orders from spot strategies."
+
+msgid "tm.key.wdTitle"
+msgstr "{where}: withdrawals were turned on for the Binance key"
+
+msgid "tm.key.wdBody"
+msgstr "Turn withdrawals off for this key at Binance. The key is stored on this computer; with withdrawals on, a leaked key can move funds out. Blave has not paused trading or removed the key."
+
+msgid "cx.ip.copyThis"
+msgstr "Copy this IP"

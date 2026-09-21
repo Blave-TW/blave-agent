@@ -360,3 +360,12 @@ html.ws-sc .side-gate { display: none; }
 .modal-head .mode { margin-right: calc(-1 * var(--space-4)); }
 .btn-fill.is-busy { background: var(--surface-muted); color: var(--ink-3); cursor: default; opacity: 1; }
 .cx-manual-note .btn-quiet { font-size: inherit; }
+/* 連接 Binance:欄位下面那塊說明(spec §5.2):上邊線,權限句 / 白名單+IP+複製 / 這個 IP 是什麼 */
+.cx-note { margin: var(--space-16) 0 0; padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cx-note p { margin: 0; }
+.cx-note p + p { margin-top: var(--space-4); }
+.cx-ip { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 13px; color: var(--ink); user-select: all; -webkit-user-select: all; margin: 0 0 0 var(--space-4); line-height: 1; }
+.cx-ipw { white-space: nowrap; }   /* IP+複製包成一組,換行時一起走 */
+.cx-note .btn-quiet { font-size: 12px; padding: 0; margin-left: var(--space-4); }   /* 熱區靠 app.css 的 .btn-quiet::before,不用 min-height 撐行高 */
+.plan-err .btn-quiet { padding: 0; margin-left: var(--space-4); }
+.f-input[readonly] { color: var(--ink-3); }

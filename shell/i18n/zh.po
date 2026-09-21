@@ -866,7 +866,7 @@ msgid "cx.paperShort"
 msgstr "模擬交易"
 
 msgid "cx.paperNote"
-msgstr "不用任何 API 金鑰。模擬帳戶起始 10,000 USDT，用你策略的行情資料即時成交、計手續費（不含滑價），不動真錢；策略、下單設定、部位與績效頁全部照真實帳戶的方式運作。"
+msgstr "不用任何 API 金鑰。模擬帳戶起始 10,000 USDT，用你策略的行情資料即時成交、計手續費（不含滑價），不動真錢；策略、下單設定、部位與績效頁全部照真實帳戶的方式運作。要改用真實交易所時，先解除綁定再連接即可。"
 
 msgid "cx.connect"
 msgstr "連接交易所"
@@ -1558,3 +1558,135 @@ msgstr "紀錄保留 25 個月。送不出去就丟掉，不影響任何功能�
 
 msgid "priv.kept"
 msgstr "關掉之前送出的紀錄仍保留 25 個月。"
+
+msgid "cx.apiKey"
+msgstr "API Key"
+
+msgid "cx.secretKey"
+msgstr "Secret Key"
+
+msgid "cx.group.crypto"
+msgstr "加密貨幣"
+
+msgid "cx.perm"
+msgstr "金鑰只開交易權限，提領務必關閉。"
+
+msgid "cx.whitelist"
+msgstr "在交易所把這個 IP 加進白名單："
+
+msgid "cx.ip.copy"
+msgstr "複製"
+
+msgid "cx.ip.copied"
+msgstr "已複製"
+
+msgid "cx.ip.local"
+msgstr "這是這台電腦目前的對外 IP。家用網路的 IP 會變；變了 Blave 會通知你來更新白名單。"
+
+msgid "cx.ip.localNoIp"
+msgstr "白名單要填這台電腦的對外 IP。家用網路的 IP 會變；變了 Blave 會通知你來更新白名單。"
+
+msgid "cx.ip.loading"
+msgstr "正在查這台電腦的對外 IP…"
+
+msgid "cx.ip.fail"
+msgstr "查不到這台電腦的 IPv4 對外 IP（查詢服務沒有回應，或這個網路只有 IPv6）。"
+
+msgid "cx.ip.retry"
+msgstr "再查一次"
+
+msgid "cx.chk.withdraw"
+msgstr "這把金鑰的提領權限是開著的，沒有儲存。到 Binance 把提領關掉，再回來連一次。"
+
+msgid "cx.chk.trading"
+msgstr "這把金鑰沒有開交易權限，沒有儲存。最常見的原因是還沒設 IP 白名單：Binance 要先有白名單才讓你開交易權限。把上面的 IP 加進白名單、勾選交易權限，再連一次。"
+
+msgid "cx.chk.tradingNoIp"
+msgstr "這把金鑰沒有開交易權限，沒有儲存。最常見的原因是還沒設 IP 白名單：Binance 要先有白名單才讓你開交易權限。設好白名單、勾選交易權限，再連一次。"
+
+msgid "cx.chk.futures"
+msgstr "這把金鑰開了現貨交易，但沒有開合約，沒有儲存。多半是金鑰建在你開通合約帳戶之前；這種金鑰事後開不了合約，要在 Binance 重建一把。"
+
+msgid "cx.chk.ipOrKey"
+msgstr "Binance 拒絕了這把金鑰，沒有儲存。Binance 不區分這三種原因：白名單裡沒有上面這個 IP、API Key 貼錯、金鑰已被刪除。先核對白名單裡的 IP。"
+
+msgid "cx.chk.keyFormat"
+msgstr "API Key 的格式不對，沒有儲存。從 Binance 重新複製一次，前後不要帶空白。"
+
+msgid "cx.chk.secret"
+msgstr "Secret Key 對不上這把 API Key，沒有儲存。從 Binance 重新複製 Secret；它只在建立金鑰時顯示一次，找不到就要重建一把。"
+
+msgid "cx.chk.clock"
+msgstr "這台電腦的時間跟 Binance 差太多，沒辦法檢查，沒有儲存。到系統設定打開「自動設定時間」，再連一次。"
+
+msgid "cx.chk.rate"
+msgstr "Binance 暫時限制了這個 IP 的請求，沒辦法檢查，沒有儲存。請等幾分鐘再試；連續重試會讓限制變長。"
+
+msgid "cx.chk.network"
+msgstr "連不上 Binance，沒辦法檢查，沒有儲存。確認網路後再連一次。"
+
+msgid "cx.chk.unknown"
+msgstr "Binance 回了看不懂的結果，沒辦法確認權限，沒有儲存。過幾分鐘再試。"
+
+msgid "cx.chk.noWhitelist"
+msgstr "這把金鑰沒有設 IP 白名單。Binance 會刪除沒有白名單、又閒置 30 天的金鑰；建議把這台電腦的對外 IP 加進白名單。"
+
+msgid "cx.chk.sendFail"
+msgstr "金鑰通過了檢查，但沒有存進這台電腦（{err}）。再連一次。"
+
+msgid "cx.re.tradingOff"
+msgstr "交易權限被關掉了，下單送不出去。到 Binance 重新開啟，再按「重新測試」。"
+
+msgid "cx.re.withdrawOn"
+msgstr "提領權限被打開了。請到 Binance 關掉，再按「重新測試」。"
+
+msgid "cx.re.ipChanged"
+msgstr "對外 IP 換成 {ip} 了。到 Binance 把白名單改成這個 IP，再按「重新測試」。"
+
+msgid "cx.re.rejected"
+msgstr "Binance 拒絕了這把金鑰，下單送不出去。核對白名單的 IP；金鑰不在了就重新連接。"
+
+msgid "tm.key.ipTitle"
+msgstr "{where}：對外 IP 換了"
+
+msgid "tm.key.ipBody"
+msgstr "到 Binance 把白名單改成 {ip}，再到「自動下單 › 設定」按「重新測試」。改好之前下單送不出去。"
+
+msgid "tm.key.rejTitle"
+msgstr "{where}：Binance 拒絕了金鑰"
+
+msgid "tm.key.rejSameIpBody"
+msgstr "到 Binance 確認這把金鑰還在、權限沒被改；不在就重建一把，到「自動下單 › 設定」解除綁定後重新連接。改好之前下單送不出去。"
+
+msgid "tm.key.rejUnknownBody"
+msgstr "打開「自動下單 › 設定」核對 IP 與金鑰：可能是對外 IP 換了，或金鑰被刪除。改好之前下單送不出去。"
+
+msgid "tm.key.permTitle"
+msgstr "{where}：Binance 金鑰的交易權限被關掉了"
+
+msgid "tm.key.permBody"
+msgstr "到 Binance 重新打開這把金鑰的交易權限，再到「自動下單 › 設定」按「重新測試」。改好之前下單送不出去。"
+
+msgid "tr.hostLock"
+msgstr "上一次的下單機還沒完全停下來，正在自動重試（{n}/{max}）。這段時間不會下單。"
+
+msgid "cx.re.badKey"
+msgstr "這台電腦上存的金鑰對不上 Binance 了（Secret 或 API Key 的內容不對），下單送不出去。按「解除綁定」，再重新連接一次。"
+
+msgid "cx.re.futuresOff"
+msgstr "合約交易權限被關掉了，合約策略的下單送不出去。到 Binance 重新開啟，再按「重新測試」。"
+
+msgid "cx.note.noFutures"
+msgstr "這把金鑰沒有開合約交易權限：現貨策略可以下單，合約策略的下單會被 Binance 拒絕。要跑合約策略，到 Binance 開啟後按「重新測試」。"
+
+msgid "cx.note.noSpot"
+msgstr "這把金鑰沒有開現貨交易權限：合約策略可以下單，現貨策略的下單會被 Binance 拒絕。"
+
+msgid "tm.key.wdTitle"
+msgstr "{where}：Binance 金鑰的提領權限被打開了"
+
+msgid "tm.key.wdBody"
+msgstr "到 Binance 關掉這把金鑰的提領權限。金鑰存在這台電腦上，提領開著時金鑰外流就能把資產轉走。Blave 沒有停止下單，也沒有移除金鑰。"
+
+msgid "cx.ip.copyThis"
+msgstr "複製這個 IP"

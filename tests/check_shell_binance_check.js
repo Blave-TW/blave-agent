@@ -30,7 +30,9 @@ const ok200 = (b) => ({ status: 200, body: { ipRestrict: true, createTime: 17000
   const LONG = "s3cr3t-" + "x".repeat(40);
   let seen2 = null; const r2 = await check({ apiKey: "K", secret: LONG, http: async (url, h) => { seen2 = { url, h }; return ok200(); } });
   t("secret 不出現在網址、任何 header、回傳值裡", !seen2.url.includes(LONG) && !JSON.stringify(seen2.h).includes(LONG) && !JSON.stringify(r2).includes(LONG) && Object.keys(seen2.h).join() === "X-MBX-APIKEY");
-  t("testnet:不發請求、直接跳過(現貨 testnet 沒有 /sapi)", await (async () => { let called = false; const x = await check({ apiKey: "K", secret: "S", testnet: true, http: async () => { called = true; } }); return x.ok === true && x.code === "SKIPPED_TESTNET" && !called; })());
+  t("market any(連接畫面):現貨或合約至少開一個就收,細節帶哪個沒開;兩個都沒開才 TRADING_DISABLED;提領照擋", (() => { const a = classify(ok200({ enableFutures: false }), "any"), b = classify(ok200({ enableSpotAndMarginTrading: false }), "any");
+    return a.ok && a.detail.futures === false && a.detail.spot === true && b.ok && b.detail.spot === false && classify(ok200({ enableFutures: false, enableSpotAndMarginTrading: false }), "any").code === "TRADING_DISABLED" && classify(ok200({ enableWithdrawals: true }), "any").code === "WITHDRAW_ENABLED"; })());
+  t("testnet 旗標不是檢查的開關(稽核 S3):呼叫端帶 testnet:true 也照樣打正式站、照樣擋提領", await (async () => { let url = ""; const x = await check({ apiKey: "K", secret: "S", testnet: true, http: async (u) => { url = u; return ok200({ enableWithdrawals: true }); } }); return x.ok === false && x.code === "WITHDRAW_ENABLED" && url.indexOf("https://api.binance.com/") === 0; })());
   t("market 只認 spot / futures(\"SPOT\" 這種寫法直接丟錯,不默默當成合約)", await (async () => { try { await check({ apiKey: "K", secret: "S", market: "SPOT", http: async () => ok200() }); return false; } catch (_) { return true; } })());
   t("空的 key / secret 不發請求", await (async () => { let called = false; const x = await check({ apiKey: "", secret: "S", http: async () => { called = true; } }); return x.code === "BAD_KEY_FORMAT" && !called; })());
 
@@ -42,7 +44,10 @@ const ok200 = (b) => ({ status: 200, body: { ipRestrict: true, createTime: 17000
   let pv = OK; pv = nextPrev(pv, bad("NETWORK")); const third = recheckVerdict(pv, bad("IP_OR_KEY"), "1.1.1.1", "1.1.1.1");
   t("三步序列 OK → 斷網 → -2015:斷網不蓋掉上一次的結論,第三步照樣叫人", pv === OK && third && third.reason === "KEY_REJECTED");
   t("nextPrev:沒結論的(斷網/時鐘/限速/不明/testnet)都不覆寫,有結論的才覆寫", ["NETWORK", "CLOCK", "UNKNOWN", "RATE_LIMITED", "SKIPPED_TESTNET"].every((c) => nextPrev(OK, { ok: c === "SKIPPED_TESTNET", code: c }) === OK) && nextPrev(OK, bad("TRADING_DISABLED")).code === "TRADING_DISABLED");
-  t("重查:交易權限沒了 / 提領被打開 → PERMISSION_LOST(P1)", recheckVerdict(OK, bad("TRADING_DISABLED")).level === "P1" && recheckVerdict(OK, bad("WITHDRAW_ENABLED")).reason === "PERMISSION_LOST" && recheckVerdict(OK, bad("FUTURES_DISABLED")).reason === "PERMISSION_LOST");
+  t("重查:提領被打開 = WITHDRAW_ENABLED(P1);交易權限沒了 = TRADING_LOST(P2)——兩個 reason,不互相去重", (() => { const w = recheckVerdict(OK, bad("WITHDRAW_ENABLED")), a = recheckVerdict(OK, bad("TRADING_DISABLED")), f = recheckVerdict(OK, bad("FUTURES_DISABLED"));
+    return w.reason === "WITHDRAW_ENABLED" && w.level === "P1" && a.reason === "TRADING_LOST" && a.level === "P2" && f.reason === "TRADING_LOST" && w.confirm === true; })());
+  t("重查:存著的金鑰對不上(-1022 / -2014)歸金鑰被拒,不掉進權限類;-2015 三種都是 P2", recheckVerdict(OK, bad("BAD_SECRET")).reason === "KEY_REJECTED" && recheckVerdict(OK, bad("BAD_KEY_FORMAT")).reason === "KEY_REJECTED"
+    && ["1.1.1.1|2.2.2.2", "1.1.1.1|1.1.1.1", "|"].every((p) => recheckVerdict(OK, bad("IP_OR_KEY"), p.split("|")[0] || null, p.split("|")[1] || null).level === "P2"));
   t("重查:斷網、時鐘、不明錯誤都不叫人(不因為斷網就停單)", [bad("NETWORK"), bad("CLOCK"), bad("UNKNOWN"), bad("RATE_LIMITED")].every((c) => recheckVerdict(OK, c, "1", "2") === null));
   t("重查:本來就不行的、或現在還是好的 → 沒事", recheckVerdict(bad("TRADING_DISABLED"), bad("TRADING_DISABLED")) === null && recheckVerdict(OK, OK) === null && recheckVerdict(null, bad("IP_OR_KEY")) === null
     && recheckVerdict({ ok: true, code: "NO_IP_RESTRICT" }, { ok: true, code: "OK" }) === null);
