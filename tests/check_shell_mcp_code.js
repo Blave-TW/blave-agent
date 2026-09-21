@@ -73,7 +73,7 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
     && /if \(plan\.mcp && !useCodex\) \{ const mount = await mcpCode\(\)\.get\(\); if \(mount\) mcpFile = require\("\.\/mcpcode"\)\.writeConfig\(mcpDir\(\), mount\); \}/.test(main));
   t("argv 上只有路徑(--mcp-config=<檔>);環境變數裡沒有碼", /\.\.\.\(mcpFile \? \["--mcp-config=" \+ mcpFile\] : \[\]\)/.test(main) && !/accessCode/.test(main) && !/BLAVE_MCP/.test(main));
   t("設定檔在 userData 底下(workspace 以外);close / error / spawn 失敗 / stdin 失敗四條路都刪", /const mcpDir = \(\) => path\.join\(app\.getPath\("userData"\), "mcp"\);/.test(main) && (main.match(/removeConfig\(mcpFile\)/g) || []).length === 4);
-  t("登出清記憶體裡的碼;開 app 清掃;打包清單帶 mcpcode.js", /if \(_mcp\) _mcp\.reset\(\);/.test(main) && /require\("\.\/mcpcode"\)\.sweep\(mcpDir\(\)\);/.test(main) && /"mcpcode\.js"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8")));
+  t("登出清記憶體裡的碼;開 app 清掃(只有拿到單一實例鎖的那一份做:第二份 app 不可以刪掉第一份正在跑那一輪的設定檔);打包清單帶 mcpcode.js", /if \(_mcp\) _mcp\.reset\(\);/.test(main) && /if \(app\.hasSingleInstanceLock\(\)\) require\("\.\/mcpcode"\)\.sweep\(mcpDir\(\)\);/.test(main) && /"mcpcode\.js"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8")));
   t("畫面只拿得到開關(feature-flags),拿不到碼;mcpcode.js 不 log、不 require electron", /handle\("feature-flags", \(\) => \(\{ cloudHandoff: cloudHandoffOn\(\) \}\), \{ cloudHandoff: false \}\);/.test(main)
     && !/console\.|require\("electron"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "mcpcode.js"), "utf8")) && !/mcpCode|mcp_code/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
 

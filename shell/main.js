@@ -1249,7 +1249,10 @@ function createWindow() {
 
 app.whenReady().then(() => {
   startImageServer();
-  require("./mcpcode").sweep(mcpDir());   // 上一次回合中途 crash 留下的 MCP 設定檔(裡面是一顆可能還沒過期的接入碼):開 app 就清
+  // 上一次回合中途 crash 留下的 MCP 設定檔(裡面是一顆可能還沒過期的接入碼):開 app 就清。
+  // 只有拿到單一實例鎖的那一份做(稽核 S1,同 :syncOfficialOnUpdate):第二份 app 在結束前也會走到這裡,
+  // 不擋的話它會刪掉第一份**正在跑那一輪**的設定檔,那一輪的 MCP 當場失效
+  if (app.hasSingleInstanceLock()) require("./mcpcode").sweep(mcpDir());
   // 這個 app 的網頁不需要任何瀏覽器權限(相機、麥克風、定位、通知…):Electron 預設是全部允許,這裡全部拒絕(稽核 R5)。
   // 唯一的例外是自家頁面寫剪貼簿——「複製」IP / 安裝識別碼那幾顆鈕靠它。
   const ses = require("electron").session.defaultSession;

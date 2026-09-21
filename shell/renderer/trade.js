@@ -1030,7 +1030,11 @@ function trPositions(r, stored, states) {
     const held = !acts && Math.round(Math.abs(d)) > 0;
     const dc = trEl("td", "n " + (acts ? (d > 0 ? "buy" : "sell") : "hold"));   // 0 是有意義的值(對上了),不用佔位符那階灰
     trMoneyInto(dc, d, true);
-    if (acts) pending.add(sym);   // 這一列還欠一張單:表底那行失敗紅字只在它的標的還欠著時才出(見 trLiveOrderErr)
+    // 這一列還欠一張單:表底那行失敗紅字只在它的標的還欠著時才出(見 trLiveOrderErr)。
+    // 拿不到 gate 而差額不是 0 也算欠著(稽核 B0):按**口數**的標的(群益 / futures_contracts)機器端不寫 gates
+    // (lib/portfolio:1090 只在非 is_lot_based 時寫)、下單也沒有門檻(:1393 leg_threshold = 0,差 1 口就真的送單),
+    // 這裡的 acts 卻退回用「≥ 10」比口數 → 差 1、2 口永遠 false,失敗紅字會被 100% 藏掉。藏掉的正是「單沒送出去、差額還在」
+    if (acts || (!gs && Math.round(Math.abs(d)) > 0)) pending.add(sym);
     row.append(sc, tc, ac, dc); tb.appendChild(row);
     if (gs && held && !((gs.reduce || gs.close) && gs.usd <= 10)) gated.push({ sym, gs });   // 平坦的 10 是每一列共通的門檻,不另外解釋
   });
