@@ -1371,7 +1371,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
-  key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "", key_wdTitle: "", key_wdBody: "",
+  key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
   stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", moneyPaper: "", moneyReal: "",
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "" };
 const TT = require("./traytext");
@@ -1570,15 +1570,14 @@ function p1Sync() {
    {where} 由 renderer 交字時就填好(這裡的事件只會來自這台電腦);{ip} 只會是 binance_link 驗過的 IPv4。 */
 function binanceNotify(v) {
   const map = { IP_CHANGED: ["key_ipTitle", "key_ipBody"], KEY_REJECTED: ["key_rejTitle", "key_rejSameIpBody"], REJECTED: ["key_rejTitle", "key_rejUnknownBody"],
-    TRADING_LOST: ["key_permTitle", "key_permBody"], WITHDRAW_ENABLED: ["key_wdTitle", "key_wdBody"] };
+    TRADING_LOST: ["key_permTitle", "key_permBody"] };
   // 回 true = 真的交給系統了。字還沒交過來 / 系統不支援 → false,binance_link 不會記成已通知,下一輪再試
   const k = map[v && v.reason]; if (!k || !tmLabels[k[0]] || !tmLabels[k[1]] || !Notification.isSupported()) return false;
   const n = new Notification({ title: tmLabels[k[0]], body: tmLabels[k[1]].replace("{ip}", () => v.ip || "—") });
   p1Alive.add(n); const drop = () => p1Alive.delete(n);
   n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "binance " + v.reason);
   n.show();
-  // 級別來自 binance_check.VERDICT_LEVEL。電腦版沒有 P2 專用的出口:P2 = 只發系統通知,**不亮 Dock 紅點**(紅點留給 P1)
-  if (v.level === "P1" && app.dock && !BrowserWindow.getFocusedWindow()) app.dock.setBadge(String(++p1Badge));
+  // 這幾種全是 P2(binance_check.VERDICT_LEVEL):只發系統通知,**不亮 Dock 紅點**(紅點留給 P1)
   return true;
 }
 function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { traySync(); p1Sync(); }, 5000); if (trayTimer.unref) trayTimer.unref(); } }

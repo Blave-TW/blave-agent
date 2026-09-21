@@ -898,9 +898,6 @@ msgstr "Connecting {id} failed ({stage}): {msg}"
 msgid "cx.failShort"
 msgstr "Connection failed"
 
-msgid "cx.keyAttn"
-msgstr "Key needs attention"
-
 msgid "cx.sendFail"
 msgstr "Could not connect ({err}). Try again."
 
@@ -1643,9 +1640,6 @@ msgstr "The key passed the check but was not saved on this computer ({err}). Con
 msgid "cx.re.tradingOff"
 msgstr "Trading permission was turned off, so orders can’t be placed. Turn it back on at Binance, then press Retest connection."
 
-msgid "cx.re.withdrawOn"
-msgstr "Withdrawals were turned on. Turn them off at Binance, then press Retest connection."
-
 msgid "cx.re.ipChanged"
 msgstr "The public IP changed. Update the whitelist at Binance to the IP below, then press Retest connection."
 
@@ -1684,12 +1678,6 @@ msgstr "This key has no futures trading permission: spot strategies can trade, b
 
 msgid "cx.note.noSpot"
 msgstr "This key has no spot trading permission: futures strategies can trade, but Binance will reject orders from spot strategies. To run spot strategies, enable it at Binance, then press Retest connection. If it can’t be enabled, create a new key and connect again."
-
-msgid "tm.key.wdTitle"
-msgstr "{where}: withdrawals were turned on for the Binance key"
-
-msgid "tm.key.wdBody"
-msgstr "Turn withdrawals off for this key at Binance. The key is stored on this computer; with withdrawals on, a leaked key can move funds out. Blave has not paused trading or removed the key."
 
 msgid "cx.ip.copyThis"
 msgstr "Copy this IP"

@@ -898,9 +898,6 @@ msgstr "{id} 串接失敗（{stage}）：{msg}"
 msgid "cx.failShort"
 msgstr "串接失敗"
 
-msgid "cx.keyAttn"
-msgstr "金鑰需要處理"
-
 msgid "cx.sendFail"
 msgstr "連接沒有完成（{err}）。再按一次試試。"
 
@@ -1643,9 +1640,6 @@ msgstr "金鑰通過了檢查，但沒有存進這台電腦（{err}）。再連�
 msgid "cx.re.tradingOff"
 msgstr "交易權限被關掉了，下單送不出去。到 Binance 重新開啟，再按「重新測試」。"
 
-msgid "cx.re.withdrawOn"
-msgstr "提領權限被打開了。請到 Binance 關掉，再按「重新測試」。"
-
 msgid "cx.re.ipChanged"
 msgstr "對外 IP 換了。到 Binance 把白名單改成下面這個 IP，再按「重新測試」。"
 
@@ -1684,12 +1678,6 @@ msgstr "這把金鑰沒有開合約交易權限：現貨策略可以下單，合
 
 msgid "cx.note.noSpot"
 msgstr "這把金鑰沒有開現貨交易權限：合約策略可以下單，現貨策略的下單會被 Binance 拒絕。要跑現貨策略，到 Binance 開啟後按「重新測試」；開不了的話，重建一把金鑰再連接。"
-
-msgid "tm.key.wdTitle"
-msgstr "{where}：Binance 金鑰的提領權限被打開了"
-
-msgid "tm.key.wdBody"
-msgstr "到 Binance 關掉這把金鑰的提領權限。金鑰存在這台電腦上，提領開著時金鑰外流就能把資產轉走。Blave 沒有停止下單，也沒有移除金鑰。"
 
 msgid "cx.ip.copyThis"
 msgstr "複製這個 IP"

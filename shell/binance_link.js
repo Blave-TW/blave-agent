@@ -109,7 +109,7 @@ function createBinanceLink(opts) {
     if (now() < lockUntil) { schedule(lockUntil - now()); return state(); }
     busy = true;
     try {
-      const cur = await BC.check({ apiKey: keys.apiKey, secret: keys.secret, market: "any", http: opts.http, now });
+      const cur = await BC.recheck({ apiKey: keys.apiKey, secret: keys.secret, market: "any", http: opts.http, now });   // 存著的金鑰:不看提領那一格(MVP 不做那一則通知)
       keys = null;
       if (cur.code === "RATE_LIMITED") lockUntil = now() + (BACKOFF_MS[cur.detail.status] || BACKOFF_MS[429]);
       const ipNow = await ip();

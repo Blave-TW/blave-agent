@@ -1,7 +1,7 @@
 // shell/binance_check.js:連接 Binance 時的權限判讀與定期重查。不打真的 Binance(http 是假的)。
 // 跑法:node tests/check_shell_binance_check.js
 const crypto = require("crypto");
-const { classify, check, recheckVerdict, nextPrev, sign } = require("../shell/binance_check.js");
+const { classify, check, recheck, recheckVerdict, nextPrev, sign, VERDICT_LEVEL } = require("../shell/binance_check.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const ok200 = (b) => ({ status: 200, body: { ipRestrict: true, createTime: 1700000000000, enableReading: true, enableWithdrawals: false, enableSpotAndMarginTrading: true, enableFutures: true, ...b } });
 (async () => {
@@ -44,8 +44,16 @@ const ok200 = (b) => ({ status: 200, body: { ipRestrict: true, createTime: 17000
   let pv = OK; pv = nextPrev(pv, bad("NETWORK")); const third = recheckVerdict(pv, bad("IP_OR_KEY"), "1.1.1.1", "1.1.1.1");
   t("三步序列 OK → 斷網 → -2015:斷網不蓋掉上一次的結論,第三步照樣叫人", pv === OK && third && third.reason === "KEY_REJECTED");
   t("nextPrev:沒結論的(斷網/時鐘/限速/不明/testnet)都不覆寫,有結論的才覆寫", ["NETWORK", "CLOCK", "UNKNOWN", "RATE_LIMITED", "SKIPPED_TESTNET"].every((c) => nextPrev(OK, { ok: c === "SKIPPED_TESTNET", code: c }) === OK) && nextPrev(OK, bad("TRADING_DISABLED")).code === "TRADING_DISABLED");
-  t("重查:提領被打開 = WITHDRAW_ENABLED(P1);交易權限沒了 = TRADING_LOST(P2)——兩個 reason,不互相去重", (() => { const w = recheckVerdict(OK, bad("WITHDRAW_ENABLED")), a = recheckVerdict(OK, bad("TRADING_DISABLED")), f = recheckVerdict(OK, bad("FUTURES_DISABLED"));
-    return w.reason === "WITHDRAW_ENABLED" && w.level === "P1" && a.reason === "TRADING_LOST" && a.level === "P2" && f.reason === "TRADING_LOST" && w.confirm === true; })());
+  t("重查:交易權限沒了 = TRADING_LOST;全部是 P2", (() => { const a = recheckVerdict(OK, bad("TRADING_DISABLED")), f = recheckVerdict(OK, bad("FUTURES_DISABLED"));
+    return a.reason === "TRADING_LOST" && a.level === "P2" && f.reason === "TRADING_LOST" && a.confirm === true && Object.keys(VERDICT_LEVEL).every((k) => VERDICT_LEVEL[k] === "P2"); })());
+  // MVP 不做「提領後來被打開」那一則(Wei 拍板):重查不看提領那一格;連接當下照舊擋
+  t("重查時提領開著 → 沒有 verdict、表上也沒有這個 reason", recheckVerdict(OK, bad("WITHDRAW_ENABLED")) === null && !("WITHDRAW_ENABLED" in VERDICT_LEVEL)
+    && classify(ok200({ enableWithdrawals: true }), "any", true).ok === true && classify(ok200({ enableWithdrawals: true, enableSpotAndMarginTrading: false, enableFutures: false }), "any", true).code === "TRADING_DISABLED");
+  t("連接時提領開著 → 仍然不存;check() 沒有任何參數跳得過(standing / recheck / testnet 塞進物件都沒用)", await (async () => { const http = async () => ok200({ enableWithdrawals: true });
+    const a = await check({ apiKey: "K", secret: "S", market: "any", http }), b = await check({ apiKey: "K", secret: "S", market: "any", http, standing: true, recheck: true, testnet: true }), c = await check({ apiKey: "K", secret: "S", market: "any", http }, true);
+    const r = await recheck({ apiKey: "K", secret: "S", market: "any", http });
+    return a.code === "WITHDRAW_ENABLED" && a.ok === false && b.code === "WITHDRAW_ENABLED" && c.code === "WITHDRAW_ENABLED" && r.ok === true; })());
+  t("重查仍然要求四個欄位都是 boolean(提領那格缺席 / 不是 boolean → 不下結論)", classify(ok200({ enableWithdrawals: undefined }), "any", true).code === "UNKNOWN" && classify(ok200({ enableWithdrawals: "false" }), "any", true).code === "UNKNOWN");
   t("重查:存著的金鑰對不上(-1022 / -2014)歸金鑰被拒,不掉進權限類;-2015 三種都是 P2", recheckVerdict(OK, bad("BAD_SECRET")).reason === "KEY_REJECTED" && recheckVerdict(OK, bad("BAD_KEY_FORMAT")).reason === "KEY_REJECTED"
     && ["1.1.1.1|2.2.2.2", "1.1.1.1|1.1.1.1", "|"].every((p) => recheckVerdict(OK, bad("IP_OR_KEY"), p.split("|")[0] || null, p.split("|")[1] || null).level === "P2"));
   t("重查:斷網、時鐘、不明錯誤都不叫人(不因為斷網就停單)", [bad("NETWORK"), bad("CLOCK"), bad("UNKNOWN"), bad("RATE_LIMITED")].every((c) => recheckVerdict(OK, c, "1", "2") === null));

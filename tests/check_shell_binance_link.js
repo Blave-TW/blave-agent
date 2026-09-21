@@ -72,13 +72,13 @@ function world(init) {
     w.http = perm(); await w.link.recheck();
     t("用戶修好了(白名單改成新 IP)→ verdict 清掉、基準 IP 換成新的", w.link.state().verdict === null && w.saved.ipThen === "198.51.100.9");
     w.http = perm({ enableWithdrawals: true }); await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
-    t("修好之後又出事(提領被打開)→ 比得出來,再發一則 WITHDRAW_ENABLED,級別 P1(其餘是 P2)", w.notes.length === 2 && w.notes[1].reason === "WITHDRAW_ENABLED" && w.notes[1].level === "P1" && w.notes[0].level === "P2" && w.link.state().verdict.code === "WITHDRAW_ENABLED"); }
+    t("重查時提領開著 → 無 verdict、無通知、畫面狀態照舊是好的(MVP 不做這一則;連接當下照舊擋)", w.notes.length === 1 && w.link.state().verdict === null && w.link.state().last.ok === true && w.saved.verdict === null && w.saved.prev.ok === true); }
   { const w = world(); await w.link.connect(K, S); w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false });
     await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
     t("交易權限沒了 → TRADING_LOST(P2)", w.notes.length === 1 && w.notes[0].reason === "TRADING_LOST" && w.notes[0].level === "P2");
     w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false, enableWithdrawals: true }); w.now += 3600000; await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
-    t("先發過交易權限那則,之後提領又被打開 → 不被去重吃掉,再發一則 P1", w.notes.length === 2 && w.notes[1].reason === "WITHDRAW_ENABLED" && w.notes[1].level === "P1"); }
-  { const w = world({ notifyOk: false }); await w.link.connect(K, S); w.http = perm({ enableWithdrawals: true });
+    t("之後提領又被打開:不多發、也不蓋掉交易權限那一則", w.notes.length === 1 && w.link.state().verdict.reason === "TRADING_LOST"); }
+  { const w = world({ notifyOk: false }); await w.link.connect(K, S); w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false });
     await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
     t("通知沒真的送出去(字還沒交過來 / 系統不支援)→ 不記成已通知,5 分鐘後再試", w.notes.length === 1 && w.link.state().verdict.notified === false && w.saved.verdict.notified === false && w.timers[w.timers.length - 1] === BL.CONFIRM_MS);
     w.now += BL.CONFIRM_MS; await w.link.recheck(); t("下一輪還是沒送出去 → 再試一次", w.notes.length === 2 && w.link.state().verdict.notified === false);
@@ -137,7 +137,7 @@ function world(init) {
   t("main.js:Binance 金鑰只經 trusted 那條路送;renderer 的 trade-send 不帶第三個參數", /send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(mainSrc) && (mainSrc.match(/trusted: true/g) || []).length === 1
     && /const out = tradeHost\(\)\.send\(cmd, args && typeof args === "object" \? args : \{\}\);/.test(mainSrc));
   t("main.js:my_ip 強制走 IPv4", /my_ip`, \{ token: tok \}, \{ family: 4 \}\)/.test(mainSrc));
-  t("main.js:通知真的交給系統才回 true;字沒到 / 不支援 → false;只有 P1 亮 Dock 紅點", /isSupported\(\)\) return false;/.test(mainSrc) && /v\.level === "P1" && app\.dock/.test(mainSrc) && /n\.show\(\);\n[^\n]*\n[^\n]*\n  return true;/.test(mainSrc));
+  t("main.js:通知真的交給系統才回 true;字沒到 / 不支援 → false;重查的通知全是 P2,不亮 Dock 紅點", /isSupported\(\)\) return false;/.test(mainSrc) && !/v\.level === "P1"/.test(mainSrc) && /n\.show\(\);\n[^\n]*\n  return true;/.test(mainSrc));
   t("main.js:binance-state 只推給自家頁面;睡眠醒來補查", /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("binance-state"/.test(mainSrc) && /powerMonitor\.on\("resume", \(\) => _binanceLink\.recheckIfDue\(\)\)/.test(mainSrc));
   t("main.js / binance_link.js:金鑰不進 log", !/console\.(log|error|warn)\([^)]*(apiKey|secret\b|BINANCE_)/.test(mainSrc) && !/console\./.test(fs.readFileSync(path.join(__dirname, "..", "shell", "binance_link.js"), "utf8")));
   const filesLine = (fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8").match(/^\s*files: \[[^\n]*$/m) || [""])[0];

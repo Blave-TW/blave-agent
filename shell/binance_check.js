@@ -35,7 +35,7 @@ const sign = (secret, query) => crypto.createHmac("sha256", secret).update(query
         testnet 的 key 查正式站會被拒絕,而 lib/account_binance 本來就只連正式站——存一把用不了的 key 沒有意義。
         INCONCLUSIVE / recheckVerdict 裡留著這個代號只為了讀得懂舊的 state 檔。)
        "NETWORK" / "UNKNOWN"   UNKNOWN 含「HTTP 200 但回來的不是權限物件」:必要欄位不是 boolean 一律不下結論 */
-function classify(res, market) {
+function classify(res, market, standing) {
   const b = res && res.body && typeof res.body === "object" ? res.body : {};
   if (!res || !res.status) return { ok: false, code: "NETWORK", detail: {} };
   if (res.status === 429 || res.status === 418) return { ok: false, code: "RATE_LIMITED", detail: { status: res.status } };
@@ -48,7 +48,9 @@ function classify(res, market) {
   // 「缺席當 false」對交易權限是保守的,對提領方向相反,而這是「提領開著的 key 不存」唯一的一道檢查(稽核 B2-1、B2-2)
   for (const k of ["enableWithdrawals", "enableSpotAndMarginTrading", "enableFutures", "ipRestrict"]) if (typeof b[k] !== "boolean") return { ok: false, code: "UNKNOWN", detail: { status: 200, missing: k } };
   const detail = { ipRestrict: b.ipRestrict, createTime: Number(b.createTime) || null };
-  if (b.enableWithdrawals !== false) return { ok: false, code: "WITHDRAW_ENABLED", detail };
+  // standing = 已經存著的金鑰的定期重查(只有 recheck() 會帶):MVP 不對「提領後來被打開」下結論、不通知(Wei 拍板)。
+  // 連接那條路(check())永遠不帶它——提領開著的 key 一律不存;真正寫入 .env 的那一層(command_listener 的 gate)另外自己再擋一次。
+  if (!standing && b.enableWithdrawals !== false) return { ok: false, code: "WITHDRAW_ENABLED", detail };
   const spotOn = b.enableSpotAndMarginTrading, futOn = b.enableFutures;
   detail.spot = spotOn; detail.futures = futOn;
   // "any"(連接畫面用):lib/order_binance 現貨(MARKET="spot")與合約都下得了,帳戶讀取不需要交易權限(實測)——
@@ -62,14 +64,18 @@ function classify(res, market) {
   return { ok: true, code: "OK", detail };
 }
 
-/* 查一次。http(url, headers) → Promise<{status, body}>;secret 只用來簽章。market 只認 "spot" / "futures"。 */
-async function check({ apiKey, secret, market, http, now }) {
+/* 查一次(連接用)。http(url, headers) → Promise<{status, body}>;secret 只用來簽章。market 只認 "spot" / "futures" / "any"。
+   這個函式**沒有**任何能跳過提領檢查的參數(稽核 S3 的教訓:呼叫端給得了的旗標就是檢查的開關)。 */
+const check = (a) => query(a, false);
+/* 已經存著的金鑰的定期重查:同一支 API、同一套判讀,只差不看提領那一格。只給 binance_link.recheck 用。 */
+const recheck = (a) => query(a, true);
+async function query({ apiKey, secret, market, http, now }, standing) {
   if (market !== undefined && market !== "spot" && market !== "futures" && market !== "any") throw new Error("market must be \"spot\", \"futures\" or \"any\"");
   if (typeof apiKey !== "string" || typeof secret !== "string" || !apiKey || !secret) return { ok: false, code: "BAD_KEY_FORMAT", detail: {} };
   const q = `timestamp=${(now || Date.now)()}&recvWindow=10000`;
   let res = null;
   try { res = await http(`${SPOT}/sapi/v1/account/apiRestrictions?${q}&signature=${sign(secret, q)}`, { "X-MBX-APIKEY": apiKey }); } catch (_) { /* 連不上 */ }
-  return classify(res, market || "futures");
+  return classify(res, market || "futures", standing === true);
 }
 
 /* 沒有結論的結果:不叫人、也不准蓋掉上一次的結論。 */
@@ -78,16 +84,14 @@ const INCONCLUSIVE = ["NETWORK", "CLOCK", "UNKNOWN", "RATE_LIMITED", "SKIPPED_TE
    如果呼叫端把 NETWORK 存成 prev,第三步就不會叫人、金鑰被刪沒人知道。呼叫端一律用 nextPrev() 更新 prev。 */
 const nextPrev = (prev, cur) => (cur && INCONCLUSIVE.indexOf(cur.code) < 0 ? cur : prev);
 
-/* 重查出事的歸級(canon notifications.md 的級別;**這張表還要 Wei 點頭**,要改只改這裡)。
-   提領被打開 = 要錢的事:金鑰明文住在這台電腦,提領一開,外流的後果從「被亂下單」變成「錢被轉走」,而且沒有別的發送點會發現它。
-   其餘是「下單送不出去」:真的有單被拒時既有的 P1(下單失敗 → HALT)會接手,這裡只是提早講。 */
-const VERDICT_LEVEL = { WITHDRAW_ENABLED: "P1", TRADING_LOST: "P2", IP_CHANGED: "P2", KEY_REJECTED: "P2", REJECTED: "P2" };
+/* 重查出事的歸級(canon notifications.md 的級別;要改只改這裡)。全部是「下單送不出去」:真的有單被拒時既有的 P1
+   (下單失敗 → HALT)會接手,這裡只是提早講——所以都是 P2(只發系統通知、不亮 Dock 紅點)。
+   MVP 不做「提領後來被打開」這一則(Wei 拍板):重查不看那一格;連接當下照舊擋。 */
+const VERDICT_LEVEL = { TRADING_LOST: "P2", IP_CHANGED: "P2", KEY_REJECTED: "P2", REJECTED: "P2" };
 
 /* 定期重查的判讀(純函式):上一次有結論的結果 → 這一次的結果,要不要叫人。
    回 null(沒事)或 { level, reason, confirm: true }:
-     "WITHDRAW_ENABLED" 原本可以下單,現在提領被打開了
-     "TRADING_LOST"     原本可以,現在交易權限沒了。跟上一個**分開**:去重鍵是 reason,共用一個的話先發過交易權限那則、
-                        之後提領再被打開會被吃掉(漏報的正是最要緊的那一件)
+     "TRADING_LOST"     原本可以,現在交易權限沒了
      "IP_CHANGED"       原本可以,現在 -2015,而且對外 IP 確定跟上次連上時不一樣(家用 IP 換了)
      "KEY_REJECTED"     原本可以,現在 -2015 而且兩次的對外 IP 都拿得到、確定沒變(金鑰被刪——含「沒白名單又閒置 30 天」——或權限被改);
                         或 -1022 / -2014:存著的金鑰本身對不上了(.env 被改壞)。這不是權限變了,不可以說成權限
@@ -99,8 +103,9 @@ const VERDICT_LEVEL = { WITHDRAW_ENABLED: "P1", TRADING_LOST: "P2", IP_CHANGED: 
 function recheckVerdict(prev, cur, ipThen, ipNow) {
   if (!prev || !prev.ok || prev.code === "SKIPPED_TESTNET" || !cur || cur.ok || INCONCLUSIVE.indexOf(cur.code) >= 0) return null;
   const reason = cur.code === "IP_OR_KEY" ? (!ipThen || !ipNow ? "REJECTED" : ipThen !== ipNow ? "IP_CHANGED" : "KEY_REJECTED")
-    : cur.code === "WITHDRAW_ENABLED" ? "WITHDRAW_ENABLED" : cur.code === "BAD_SECRET" || cur.code === "BAD_KEY_FORMAT" ? "KEY_REJECTED" : "TRADING_LOST";
+    : cur.code === "BAD_SECRET" || cur.code === "BAD_KEY_FORMAT" ? "KEY_REJECTED" : cur.code === "WITHDRAW_ENABLED" ? null : "TRADING_LOST";   // WITHDRAW_ENABLED 只會來自連接那條路;走到這裡也不叫人
+  if (!reason) return null;
   return { level: VERDICT_LEVEL[reason], confirm: true, reason };
 }
 
-module.exports = { classify, check, recheckVerdict, nextPrev, sign, RECHECK_MS, INCONCLUSIVE, VERDICT_LEVEL };
+module.exports = { classify, check, recheck, recheckVerdict, nextPrev, sign, RECHECK_MS, INCONCLUSIVE, VERDICT_LEVEL };

@@ -204,11 +204,7 @@ function envAutoHalt(st) {
    sig = 這個「出事」是哪一件(看過才消:切過去就記下 sig,同一件事不再亮紅記號;換了一件才會再亮)。 */
 /* Binance 金鑰重查出事了(主行程 binance_link 的 verdict;只有這台電腦有):真錢、單可能送不出去——標題列不可以還寫「自動下單執行中」、
    切換器不可以還亮綠點(設計師必改 6)。只是沒設白名單不算(那不是 verdict)。細節在設定分頁帳戶那一列。 */
-function trKeyVerdict(env) { const v = env !== "cloud" && typeof CXF !== "undefined" && CXF.bn && CXF.bn.verdict; return v && typeof v.reason === "string" ? v.reason : null; }
-/* 「單可能送不出去」的那幾種。提領被打開(WITHDRAW_ENABLED)不算:金鑰照樣下得了單,那是「要你去處理」不是「壞了」——
-   說成串接失敗、把綠點熄掉,是反方向的謊。它用 cx.keyAttn 那個中性短詞。 */
-function trKeyBad(env) { const r = trKeyVerdict(env); return !!r && r !== "WITHDRAW_ENABLED"; }
-function trKeyWord(env) { const r = trKeyVerdict(env); return !r ? null : r === "WITHDRAW_ENABLED" ? "cx.keyAttn" : "cx.failShort"; }
+function trKeyBad(env) { return env !== "cloud" && typeof CXF !== "undefined" && !!(CXF.bn && CXF.bn.verdict); }
 function envCell(env, st, pending) {
   const kind = env === "cloud" ? envCloudKind(st) : "running";
   const out = { money: null, run: false, dot: null, word: null, sig: null };
@@ -398,7 +394,7 @@ function trPushLabels() {
     lang: LANG, stLocal: t("tm.stLocal"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
     // Binance 金鑰重查的通知(主行程 binanceNotify):這些事件只會來自這台電腦,{where} 在這裡就填好;{ip} 留給主行程填
-    key_ipTitle: t("tm.key.ipTitle", { where: t("env.local") }), key_wdTitle: t("tm.key.wdTitle", { where: t("env.local") }), key_wdBody: t("tm.key.wdBody"), key_ipBody: t("tm.key.ipBody", { ip: "{ip}" }), key_rejTitle: t("tm.key.rejTitle", { where: t("env.local") }),
+    key_ipTitle: t("tm.key.ipTitle", { where: t("env.local") }), key_ipBody: t("tm.key.ipBody", { ip: "{ip}" }), key_rejTitle: t("tm.key.rejTitle", { where: t("env.local") }),
     key_rejSameIpBody: t("tm.key.rejSameIpBody"), key_rejUnknownBody: t("tm.key.rejUnknownBody"),
     key_permTitle: t("tm.key.permTitle", { where: t("env.local") }), key_permBody: t("tm.key.permBody"),
     notifPrefixLocal: t("tm.notifPrefixLocal"), notifPrefixCloud: t("tm.notifPrefixCloud"), menuLocal: t("env.local"), menuCloud: t("env.cloud"), menuSite: t("menu.site") });
@@ -517,8 +513,7 @@ function trStateText(state) {
   if (state === "halted") s = envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted");
   else if (state === "dead") s = rec.heartbeat_at ? t("tr.recDead") + " · " + t("tr.lastBeat", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
-  if (trFailedIds(r).length || trKeyBad(TR.env)) return t("cx.failShort") + " · " + s;
-  return trKeyWord(TR.env) === "cx.keyAttn" ? t("cx.keyAttn") + " · " + s : s;
+  return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + " · " + s : s;
 }
 // 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉
 function trAlert(text, want, bag) {
@@ -1062,8 +1057,7 @@ function trPaintSet() {
   const failed = (!!e && !e.ok) || !!(bn && bn.verdict), st = trEl("span", "cn-st" + (failed ? "" : " on"));
   if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));   // 綠點 = 讀得到帳戶;「串接中…」還沒有
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
-  const attn = !(e && !e.ok) && trKeyWord(TR.env) === "cx.keyAttn";   // 讀帳也失敗的話,那個比較急
-  st.appendChild(trEl("span", "", attn ? t("cx.keyAttn") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
+  st.appendChild(trEl("span", "", failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
   const rt = trEl("button", "pf-act", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); rt.type = "button"; rt.id = "cx-retest";
@@ -1079,7 +1073,7 @@ function trPaintSet() {
   if (bn && bn.verdict) {   // 重查出事(spec §5.4):講哪一種+下一步;IP 換了就把新 IP 連同複製鈕給他
     // 照 reason 講;同一個 reason 底下再照出事那一次的代號講對的原因(存著的金鑰壞了 ≠ 被 Binance 拒絕;合約被關 ≠ 交易權限全關)
     const v = bn.verdict, code = v.code || (bn.last && bn.last.code);
-    const text = v.reason === "IP_CHANGED" ? t("cx.re.ipChanged") : v.reason === "WITHDRAW_ENABLED" ? t("cx.re.withdrawOn")
+    const text = v.reason === "IP_CHANGED" ? t("cx.re.ipChanged")
       : v.reason === "TRADING_LOST" ? t("cx.re.tradingOff")
       : code === "BAD_SECRET" || code === "BAD_KEY_FORMAT" ? t("cx.re.badKey") : t("cx.re.rejected");
     box.appendChild(errLine(text));
