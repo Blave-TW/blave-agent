@@ -1,7 +1,7 @@
 // shell/tools/release.js 的不變量:yml 之前的失敗不影響線上、帶版號的檔不覆寫、yml 之後的失敗不報成發版失敗、不自動動 git。
 // 跑法:node tests/check_shell_release.js
 const fs = require("fs"), path = require("path");
-const { uploadPlan, publish, newer, semver } = require("../shell/tools/release.js");
+const { uploadPlan, publish, newer, semver, resolveTrack } = require("../shell/tools/release.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 (async () => {
   const plan = uploadPlan("0.4.0", "arm64"), keys = plan.map((p) => p.key), iLive = plan.findIndex((p) => p.goLive);
@@ -12,6 +12,20 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("全部落在 desktop/mac/ 底下(發版金鑰只該碰這裡)", keys.every((k) => k.startsWith("desktop/mac/")));
   t("版號比較:只收嚴格 A.B.C、要比現在大", newer("0.0.2", "0.0.1") && newer("0.1.0", "0.0.9") && newer("1.0.0", "0.9.9") && newer("0.0.10", "0.0.9") && !newer("0.0.1", "0.0.1") && !newer("0.0.1", "0.0.2")
     && semver("1.2").length === 0 && semver("1.2.3-beta.1").length === 0 && semver("v1.2.3").length === 0);
+
+  // 測試軌(BLAVE_RELEASE_PREFIX):整條發到另一個前綴,正式的 latest-mac.yml 一個 byte 都不碰
+  const PROD = "https://download.blave.org/desktop/mac", J = JSON.stringify;
+  t("沒設(或空字串)= 正式軌,跟以前一模一樣;自訂的 BLAVE_UPDATE_URL 照用", J(resolveTrack({})) === J({ prefix: "desktop/mac", url: PROD, test: false }) && J(resolveTrack({ BLAVE_RELEASE_PREFIX: "" })) === J(resolveTrack({}))
+    && J(resolveTrack({ BLAVE_UPDATE_URL: "https://x.example/y" })) === J({ prefix: "desktop/mac", url: "https://x.example/y", test: false }) && J(uploadPlan("0.4.0", "arm64", "desktop/mac")) === J(plan));
+  const tt = resolveTrack({ BLAVE_RELEASE_PREFIX: "mac-test/" }), tplan = uploadPlan("0.4.0", "arm64", tt.prefix);
+  t("mac-test/ → 檔案全在 desktop/mac-test/、更新網址跟著指過去(https)、沒有任何 key 落在正式前綴", tt.test === true && tt.prefix === "desktop/mac-test" && tt.url === "https://download.blave.org/desktop/mac-test"
+    && tplan.every((p) => p.key.startsWith("desktop/mac-test/")) && !tplan.some((p) => p.key.startsWith("desktop/mac/")) && tplan.length === plan.length);
+  t("前綴只認 ^[a-z0-9-]+/$;不能是正式那一條", ["mac/", "mac-test", "/mac-test/", "a/b/", "../mac/", "Mac-test/", "mac test/", "mac-test//", ".", 5, null].every((v) => !!resolveTrack({ BLAVE_RELEASE_PREFIX: v }).error));
+  t("同時設了對不上的 BLAVE_UPDATE_URL → 拒絕(不然檔案在測試軌、app 卻去正式軌找更新)", !!resolveTrack({ BLAVE_RELEASE_PREFIX: "mac-test/", BLAVE_UPDATE_URL: PROD }).error
+    && resolveTrack({ BLAVE_RELEASE_PREFIX: "mac-test/", BLAVE_UPDATE_URL: PROD + "-test" }).test === true);
+  { const rel = fs.readFileSync(path.join(__dirname, "..", "shell", "tools", "release.js"), "utf8");
+    t("接線:打包讀到的更新網址 = 這條軌的網址;上傳計畫、清快取、演練輸出都用這條軌的前綴", /process\.env\.BLAVE_UPDATE_URL = track\.url;/.test(rel) && /uploadPlan\(version, arch, track\.prefix\)/.test(rel)
+      && /`\/\$\{track\.prefix\}\/latest-mac\.yml`/.test(rel) && !/`\/\$\{PREFIX\}\/latest-mac\.yml`/.test(rel) && /演練模式:會上傳這些[^`]*\$\{track\.test \? "測試軌" : "正式軌"\}/.test(rel)); }
 
   // 上傳迴圈用假的 io 真的跑
   const mkio = (o = {}) => { const up = []; return { up, io: { say: () => {}, exists: async (k) => (o.existing || []).includes(k), upload: async (p) => { if ((o.failOn || []).includes(p.key)) throw new Error("boom"); up.push(p.key); },

@@ -13,6 +13,9 @@
 //   BLAVE_MAC_IDENTITY、APPLE_API_KEY、APPLE_API_KEY_ID、APPLE_API_ISSUER(簽章與公證,同 npm run release)
 //   AWS_PROFILE(預設 blave-release:只能寫這個 bucket、只能清這個 distribution 的快取)
 //   BLAVE_UPDATE_URL(預設下面那個)、BLAVE_RELEASE_BUCKET、BLAVE_RELEASE_DISTRIBUTION
+//   BLAVE_RELEASE_PREFIX(測試軌,例:mac-test/):設了就整條發到 desktop/<前綴> 底下,包裡的更新網址也指到那裡——
+//     正式的 desktop/mac/latest-mac.yml 一個 byte 都不碰,已安裝的正式版讀不到。沒設 = 正式軌,行為跟以前一模一樣。
+//     其他護欄(https、AWS 身分、工作樹乾淨、版號、簽章公證)一條都不放寬。
 const { execFileSync } = require("child_process");
 const fs = require("fs"), os = require("os"), path = require("path"), crypto = require("crypto");
 
@@ -20,6 +23,20 @@ const SHELL = path.join(__dirname, ".."), REPO = path.join(SHELL, "..");
 const DEFAULTS = { BLAVE_UPDATE_URL: "https://download.blave.org/desktop/mac", BLAVE_RELEASE_BUCKET: "blave-desktop-releases",
   BLAVE_RELEASE_DISTRIBUTION: "E2VCUSQ69E5KK5", AWS_PROFILE: "blave-release" };
 const PREFIX = "desktop/mac";
+
+/* 純函式(tests/check_shell_release.js):這次發到哪一條軌。回 { prefix, url, test } 或 { error }。
+   測試軌的前綴只認 ^[a-z0-9-]+/$(不能有第二層、不能有 ..),而且不能就是正式那一條。
+   同時自己設了 BLAVE_UPDATE_URL 的話兩個要對得上——不然會發出一個「檔案在測試軌、app 卻去正式軌找更新」的包。 */
+function resolveTrack(env) {
+  const raw = env.BLAVE_RELEASE_PREFIX, givenUrl = env.BLAVE_UPDATE_URL || null;
+  if (raw === undefined || raw === "") return { prefix: PREFIX, url: givenUrl || DEFAULTS.BLAVE_UPDATE_URL, test: false };
+  if (typeof raw !== "string" || !/^[a-z0-9-]+\/$/.test(raw)) return { error: "BLAVE_RELEASE_PREFIX 的格式要是 ^[a-z0-9-]+/$(例:mac-test/)" };
+  const prefix = "desktop/" + raw.slice(0, -1);
+  if (prefix === PREFIX) return { error: "BLAVE_RELEASE_PREFIX 不能是正式那一條(mac/)。要發正式版就不要設它" };
+  const url = DEFAULTS.BLAVE_UPDATE_URL.slice(0, -PREFIX.length) + prefix;
+  if (givenUrl && givenUrl !== url) return { error: `BLAVE_RELEASE_PREFIX 與 BLAVE_UPDATE_URL 對不上:前綴 ${raw} 對應的是 ${url}` };
+  return { prefix, url, test: true };
+}
 
 const die = (m) => { console.error("\n✗ " + m); process.exit(1); };
 const step = (m) => console.log("\n▸ " + m);
@@ -39,8 +56,8 @@ function loadEnvFile() {
 const sha512 = (f) => crypto.createHash("sha512").update(fs.readFileSync(f)).digest("base64");
 
 // 純函式(tests/check_shell_release.js):上傳計畫。順序就是安全性——對外生效的兩個檔(yml、下載頁的固定檔名 dmg)永遠最後。
-function uploadPlan(version, arch) {
-  const base = `Blave-${version}-${arch}`, IMM = "public, max-age=31536000, immutable";
+function uploadPlan(version, arch, prefix = PREFIX) {
+  const PREFIX = prefix, base = `Blave-${version}-${arch}`, IMM = "public, max-age=31536000, immutable";
   return [
     { file: `${base}-mac.zip`, key: `${PREFIX}/${base}-mac.zip`, cache: IMM, versioned: true },
     { file: `${base}-mac.zip.blockmap`, key: `${PREFIX}/${base}-mac.zip.blockmap`, cache: IMM, versioned: true },
@@ -77,6 +94,9 @@ async function main() {
   if (!semver(version || "").length) die("用法:node tools/release.js <A.B.C> [--dry-run] [--first-release]   (版號必須是嚴格的三段數字:Squirrel 的防降版要求)");
   if (process.arch !== "arm64") die(`這支腳本只發 arm64(現在的 node 是 ${process.arch}——Rosetta 下的 node?)。用錯架構會發出一份只列 x64 的 yml,arm64 用戶會被換成 x64 包`);
   loadEnvFile();
+  const track = resolveTrack(process.env);
+  if (track.error) die(track.error);
+  process.env.BLAVE_UPDATE_URL = track.url;   // 打包的子行程讀的就是這個:包裡的更新網址跟上傳的位置永遠是同一條軌
   for (const k of Object.keys(DEFAULTS)) if (!process.env[k]) process.env[k] = DEFAULTS[k];
   const { BLAVE_UPDATE_URL: URL_BASE, BLAVE_RELEASE_BUCKET: BUCKET, BLAVE_RELEASE_DISTRIBUTION: DIST } = process.env;
   const pkgPath = path.join(SHELL, "package.json"), lockPath = path.join(SHELL, "package-lock.json");
@@ -89,6 +109,7 @@ async function main() {
   const buildEnv = { ...process.env }; for (const k of Object.keys(buildEnv)) if (/^AWS_/.test(k)) delete buildEnv[k];   // 打包的子行程不需要 AWS 憑證
 
   step(`檢查(現在 ${current} → 要發 ${version}${dry ? ",演練模式:不上傳" : ""})`);
+  console.log(track.test ? `  ⚠ 測試軌:發到 s3://${BUCKET}/${track.prefix}/ ,更新網址 ${URL_BASE}(正式的 ${PREFIX}/ 不會被碰到)` : `  正式軌:s3://${BUCKET}/${track.prefix}/ ,更新網址 ${URL_BASE}`);
   if (!newer(version, current)) die(`新版號 ${version} 沒有比現在的 ${current} 大`);
   if (run("git", ["-C", REPO, "status", "--porcelain"]).trim()) die("工作樹不乾淨:先 commit 或清掉再發版(發出去的包要對得回一個 commit)");
   if (run("git", ["-C", REPO, "rev-parse", "--abbrev-ref", "HEAD"]).trim() !== "main") die("不在 main");
@@ -123,7 +144,7 @@ async function main() {
     execFileSync("npm", ["run", "release"], { cwd: SHELL, stdio: "inherit", env: buildEnv });
 
     step("驗產物");
-    const plan = uploadPlan(version, arch), app = path.join(dist, `mac-${arch}`, "Blave.app");
+    const plan = uploadPlan(version, arch, track.prefix), app = path.join(dist, `mac-${arch}`, "Blave.app");
     for (const p of plan) if (!fs.existsSync(path.join(dist, p.file))) throw new Error(`沒有產出 ${p.file}`);
     const plist = (a, k) => run("/usr/libexec/PlistBuddy", ["-c", `Print :${k}`, path.join(a, "Contents", "Info.plist")]).trim();
     const checkApp = (a, label) => {
@@ -143,7 +164,7 @@ async function main() {
     if (asarPkg.blaveUpdateUrl !== URL_BASE || asarPkg.blaveRelease !== true) throw new Error("包裡的更新網址或發佈旗標不對:" + JSON.stringify({ blaveUpdateUrl: asarPkg.blaveUpdateUrl, blaveRelease: asarPkg.blaveRelease }));
     execFileSync(process.execPath, [path.join(REPO, "tests", "check_shell_paths.js")], { stdio: "inherit" });   // signed 段:同 Team、fuses、staple
 
-    if (dry) { step("演練模式:會上傳這些(順序就是下面這樣)"); for (const p of plan) console.log(`  s3://${BUCKET}/${p.key}   [${p.cache}]`); restore(); step("演練完成,版號已還原"); return; }
+    if (dry) { step(`演練模式:會上傳這些(順序就是下面這樣;${track.test ? "測試軌" : "正式軌"},對外網址 ${URL_BASE}/)`); for (const p of plan) console.log(`  s3://${BUCKET}/${p.key}   [${p.cache}]`); restore(); step("演練完成,版號已還原"); return; }
 
     const res = await publish(plan, {
       say: (m) => { wentLive = true; step(m); },
@@ -153,14 +174,14 @@ async function main() {
       fetchSha512: async (key) => { step("從正式網址把 zip 抓回來比對"); const r = await fetch(`${URL_BASE}/${path.basename(key)}`, { cache: "no-store" }); if (r.status !== 200) throw new Error(`正式網址上抓不到 zip(status ${r.status})。latest-mac.yml 還沒換,線上不受影響`); return crypto.createHash("sha512").update(Buffer.from(await r.arrayBuffer())).digest("base64"); },
     });
     // 從這裡開始新版已經對外:失敗只警告
-    try { aws(["cloudfront", "create-invalidation", "--distribution-id", DIST, "--paths", `/${PREFIX}/latest-mac.yml`, `/${PREFIX}/Blave-${arch}.dmg`]); } catch (e) { res.warnings.push("清 CDN 快取沒成功(yml 是 no-cache,通常不影響):" + e.message.split("\n")[0]); }
+    try { aws(["cloudfront", "create-invalidation", "--distribution-id", DIST, "--paths", `/${track.prefix}/latest-mac.yml`, `/${track.prefix}/Blave-${arch}.dmg`]); } catch (e) { res.warnings.push("清 CDN 快取沒成功(yml 是 no-cache,通常不影響):" + e.message.split("\n")[0]); }
     let seen = null;
     for (let i = 0; i < 20 && seen !== version; i++) {
       await new Promise((r) => setTimeout(r, 6000));
       try { seen = (/^version:\s*(\S+)/m.exec(await (await fetch(`${URL_BASE}/latest-mac.yml?t=${Date.now()}`, { cache: "no-store" })).text()) || [])[1]; } catch (_) { /* 再試 */ }
     }
     if (seen !== version) res.warnings.push(`兩分鐘後從外面看到的 latest-mac.yml 還是 ${seen}(CDN 還沒換完?)——新版已經上傳,**不要還原版號**,過幾分鐘再看`);
-    step(`✓ ${version} 已上線:已安裝的 app 會在 4 小時內開始下載`);
+    step(track.test ? `✓ ${version} 已放上測試軌(${URL_BASE}/):只有更新網址指到這裡的包會拿到` : `✓ ${version} 已上線:已安裝的 app 會在 4 小時內開始下載`);
     for (const w of res.warnings) console.log("  ⚠ " + w);
     console.log("接下來(不自動做):把 shell/package.json 與 package-lock.json 的版號改動提交、打標籤、推上去。");
   } catch (e) {
@@ -169,4 +190,4 @@ async function main() {
   }
 }
 if (require.main === module) main().catch((e) => die(e && e.stack || String(e)));
-module.exports = { uploadPlan, publish, newer, semver };
+module.exports = { uploadPlan, publish, newer, semver, resolveTrack };
