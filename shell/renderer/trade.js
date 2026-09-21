@@ -218,6 +218,13 @@ function trShould(key, box, data) {
 // 這支檔比 app.js 先載入(app.js 的開場一路 await,會在後面的 <script> 載入之前就走到 enterWorkspace),
 // 所以載入當下不碰 DOM 與 app.js 的東西:接線全部放在第一次 trInit() 裡。
 function trInit() { if (TR.started) return; TR.started = true; trWire(); trPoll(); }
+/* 選單列 / Dock / 結束攔截的字:主行程沒有翻譯表,由這裡依目前語言交過去(換語言時 app.js 的 applyStatic 會再叫一次) */
+function trPushLabels() {
+  if (typeof window.blave.tradeLabels !== "function") return;
+  window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
+    notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
+    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t("tm.hidden") });
+}
 function trWire() {
   $("tr-tabs").addEventListener("click", (e) => { const b = e.target.closest(".main-tab"); if (b) trSetTab(b.dataset.tab); });
   $("tr-tabs").addEventListener("keydown", (e) => {
@@ -947,7 +954,7 @@ function trEventText(type, d) {
   if (type === "execution_stuck") return [t("tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote")];
   if (type === "scheduler_error") return [t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote")];
   if (type === "strategy_failed") return [t("tr.ov.evStrategyFailed"), t("tr.ov.evStrategyFailedNote")];
-  if (type === "downtime_paused") return [t("tr.ov.evHaltAuto"), t("tr.ov.evHaltNote")];
+  if (type === "downtime_paused") return [t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote")];   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
   return null;
 }
 function trOvEvents(r) {

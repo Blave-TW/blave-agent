@@ -1,7 +1,7 @@
 // Blave 電腦版 — Electron 主行程(v1 骨架)
 // 只做三件事:開視窗、偵測本機 agent(IPC)、記住使用者的連結選擇。
 // 引擎 spawn 在第 4 步接,不在這裡。
-const { app, BrowserWindow, ipcMain, shell, safeStorage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage } = require("electron");
 const http = require("http");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
@@ -1079,17 +1079,121 @@ app.whenReady().then(() => {
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   app.on("browser-window-focus", () => { lastAcct = null; });
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
+  trayStart();
+  ipcMain.on("trade-labels", (e, labels) => {
+    if (!fromOurPage(e) || !labels || typeof labels !== "object") return;
+    for (const k of Object.keys(tmLabels)) if (typeof labels[k] === "string" && labels[k] && labels[k].length <= 400) tmLabels[k] = labels[k];
+    traySync();
+  });
 });
 // 一次只跑一份:第二份會跟第一份搶同一個 workspace 與 session.db,也讓「用同一顆 binary 再開一份」這條
 // 旁路少一點(稽核 M1)
 if (!app.requestSingleInstanceLock()) app.quit();
-else app.on("second-instance", () => { const w = BrowserWindow.getAllWindows()[0]; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });
+else app.on("second-instance", () => showMain());   // 視窗可能被紅燈收起來了:show 也要做
 app.on("window-all-closed", () => app.quit());
+
+/* ── 視窗之外的暫停(設計師提案 §3-6)─────────────────────────────
+   自動下單在跑的時候,用戶不一定在看這個視窗:選單列圖示(只在執行中出現)、Dock 右鍵、結束攔截。
+   - 「執行中」由主行程自己看狀態檔判定(renderer 在背景會被節流,不能靠它):tradeLive() = renderer trExecState 的 running。
+   - 「結束 / 關窗前要不要攔」走保守方向(tradeMaybeLive):狀態檔這輪 build 失敗、睡眠醒來心跳還沒更新時 tradeLive() 是 null,
+     但可能還在下單——這時不攔就是沒問一聲就停止下單(稽核 M3)。
+   - 從選單暫停 = 直接送 halt、不跳框(暫停是安全方向),事後一則系統通知;沒送到也要講,不能讓人以為停了。
+   - 執行中按紅燈只收視窗、不結束 app(app 結束 = 停止下單);Cmd+Q 先問一次。
+   - 字由 renderer 依目前語言交過來(.po 是唯一的字串來源);還沒交之前用英文退路。 */
+let tray = null, trayTimer = null, quitConfirmed = false, quitAsking = false, hiddenSaid = false, lastVenue = null, trayKey = "";
+let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading", pause: "Pause trading (keep positions)", open: "Open Blave", quit: "Quit Blave…",
+  notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
+  pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
+  quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel",
+  hidden: "Blave is still running in the menu bar." };
+function tradeLive() {
+  if (!_tradeHost) return null;
+  const st = _tradeHost.status(), r = st.report;
+  if (!st.alive || !r || r.error || !r.venues || (r.halt && r.halt.halted) || !(r.reconciler && r.reconciler.alive)) return null;
+  const id = Object.keys(r.venues).filter((k) => { const v = r.venues[k]; return v && v.credentials && v.pair && v.order && v.account; }).sort()[0];
+  return id ? { venue: id } : null;
+}
+function tradeMaybeLive() {
+  const live = tradeLive();
+  if (live) return live;
+  if (!_tradeHost) return null;
+  const st = _tradeHost.status(), r = st.report;
+  if (!st.running || !r || (r.halt && r.halt.halted)) return null;   // 子行程不在 = 沒有東西在下單;已暫停 = 不必攔
+  if (r.venues && typeof r.venues === "object" && !Object.keys(r.venues).some((k) => r.venues[k] && r.venues[k].credentials)) return null;   // 確定沒帳戶
+  return { venue: lastVenue };
+}
+const venueName = (id) => (!id ? "" : id === "paper" ? tmLabels.paperVenue : id.charAt(0).toUpperCase() + id.slice(1));
+function showMain() {
+  const w = BrowserWindow.getAllWindows()[0];
+  if (!w) { createWindow(); return; }
+  if (w.isMinimized()) w.restore(); w.show(); w.focus();
+}
+async function pauseFromMenu() {
+  let r = null;
+  try { r = await tradeHost().send("halt", { reason: "menu bar" }); } catch (_) { /* 當成沒送到 */ }
+  traySync();
+  if (r && r.ok) { if (Notification.isSupported()) new Notification({ title: tmLabels.notifTitle, body: tmLabels.notifBody }).show(); return; }
+  // 沒成功不能只靠系統通知(權限關掉 / 專注模式會被吞):把視窗叫出來、掛一個框講清楚(稽核 M1)
+  showMain();
+  dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.pause,
+    detail: r && r.error === "UNKNOWN_RESULT" ? tmLabels.pauseUnknown : tmLabels.pauseFail, buttons: ["OK"] });
+}
+function trayMenu(live) {
+  return Menu.buildFromTemplate([
+    { label: tmLabels.running, enabled: false },
+    { label: venueName(live.venue), enabled: false },   // 模擬帳戶的名字本身就寫著「模擬交易」,不再疊一個「模擬」記號
+    { type: "separator" },
+    { label: tmLabels.pause, click: pauseFromMenu },
+    { type: "separator" },
+    { label: tmLabels.open, click: showMain },
+    { label: tmLabels.quit, click: () => app.quit() },
+  ]);
+}
+function traySync() {
+  const live = tradeLive();
+  if (live) lastVenue = live.venue;
+  const key = live ? live.venue + "|" + tmLabels.running + "|" + tmLabels.pause : "";
+  if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
+  trayKey = key;
+  if (!live) {
+    if (tray) { tray.destroy(); tray = null; }
+    if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([]));
+    return;
+  }
+  if (!tray) {
+    const img = nativeImage.createFromPath(path.join(__dirname, "assets", "trayTemplate.png"));   // 檔名結尾 Template = macOS 自動依選單列明暗上色
+    if (img.isEmpty()) console.error("tray icon missing: shell/assets/trayTemplate.png");   // 空圖 = 看不見的圖示;選單還在,但要留下痕跡(稽核 M4)
+    tray = new Tray(img);
+  }
+  tray.setToolTip(tmLabels.running);
+  tray.setContextMenu(trayMenu(live));
+  if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: tmLabels.pause, click: pauseFromMenu }]));
+}
+function trayStart() { if (!trayTimer) { trayTimer = setInterval(traySync, 5000); if (trayTimer.unref) trayTimer.unref(); } }
+app.on("browser-window-created", (_e, win) => {
+  win.on("close", (e) => {
+    if (quitting || quitConfirmed || !tradeMaybeLive()) return;
+    e.preventDefault(); win.hide();
+    if (!hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; new Notification({ title: tmLabels.running, body: tmLabels.hidden }).show(); }
+  });
+});
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
 // 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
 let quitting = false;
 app.on("before-quit", (e) => {
+  // 自動下單還在跑:結束 = 停止下單、部位留著不平——先問一次(從選單列「結束 Blave…」、Cmd+Q、Dock 結束都走這裡)
+  const live = !quitting && !quitConfirmed && tradeMaybeLive();
+  if (live) {
+    e.preventDefault();
+    if (quitAsking) return;   // 框還開著又按一次 Cmd+Q:不疊第二個(稽核 M2)
+    quitAsking = true;
+    showMain();
+    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
+      detail: tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
+      .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
+    return;
+  }
   if (quitting || !_tradeHost || !_tradeHost.isRunning()) return;
   e.preventDefault(); quitting = true;
   _tradeHost.stop().finally(() => app.quit());

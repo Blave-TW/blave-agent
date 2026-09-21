@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("blave", {
   accountStatus: () => ipcRenderer.invoke("account-status"),
   planStart: () => ipcRenderer.invoke("plan-start"),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
+  tradeLabels: (labels) => ipcRenderer.send("trade-labels", labels),
   tradeStatus: () => ipcRenderer.invoke("trade-status"),
   tradeEvents: (q) => ipcRenderer.invoke("trade-events", q),
   tradeEquity: (q) => ipcRenderer.invoke("trade-equity", q),

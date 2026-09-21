@@ -1200,6 +1200,9 @@ msgstr "Trading auto-paused"
 msgid "tr.ov.evHaltNote"
 msgstr "new entries paused; exits and stops still run"
 
+msgid "tr.ov.evDowntimeNote"
+msgstr "Everything is frozen — no reducing or closing either. To resume, press “Start trading” and choose whether to sync positions."
+
 msgid "tr.ov.evErr"
 msgstr "Order failed"
 
@@ -1249,3 +1252,38 @@ msgid "tr.ov.evStrategyFailedNote"
 msgstr "the schedule keeps firing, but this run produced no signal"
 
 # ── trade:end ──
+
+# ── 視窗之外:選單列 / Dock / 結束攔截(字由 renderer 交給主行程)──
+
+msgid "tm.pause"
+msgstr "Pause trading (keep positions)"
+
+msgid "tm.open"
+msgstr "Open Blave"
+
+msgid "tm.quit"
+msgstr "Quit Blave…"
+
+msgid "tm.notifTitle"
+msgstr "Trading paused"
+
+msgid "tm.notifBody"
+msgstr "No new positions will be opened; existing positions are untouched. To resume, press Start trading on the Auto trading page in Blave."
+
+msgid "tm.pauseFail"
+msgstr "The pause command didn’t go through, so it may still be trading. Open Blave and press Pause trading again."
+
+msgid "tm.quitTitle"
+msgstr "Auto trading is still running"
+
+msgid "tm.quitBody"
+msgstr "After Blave quits, this computer places no more orders and closes nothing; positions stay at {venue}. When you open Blave again, press Start trading to resume."
+
+msgid "tm.quitGo"
+msgstr "Quit Blave"
+
+msgid "tm.quitStay"
+msgstr "Cancel"
+
+msgid "tm.hidden"
+msgstr "Blave is still open and auto trading keeps running. Use the menu bar icon to pause or to open the window."

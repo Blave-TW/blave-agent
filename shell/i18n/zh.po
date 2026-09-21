@@ -1200,6 +1200,9 @@ msgstr "已自動暫停下單"
 msgid "tr.ov.evHaltNote"
 msgstr "停開新倉；平倉與停損停利照常執行"
 
+msgid "tr.ov.evDowntimeNote"
+msgstr "全部凍結，減倉與平倉也不會自動做；要恢復請按「啟動下單」，由你決定要不要補齊部位"
+
 msgid "tr.ov.evErr"
 msgstr "下單失敗"
 
@@ -1249,3 +1252,38 @@ msgid "tr.ov.evStrategyFailedNote"
 msgstr "排程還是照跑，但這一輪沒有產生訊號"
 
 # ── trade:end ──
+
+# ── 視窗之外:選單列 / Dock / 結束攔截(字由 renderer 交給主行程)──
+
+msgid "tm.pause"
+msgstr "暫停下單（不動部位）"
+
+msgid "tm.open"
+msgstr "打開 Blave"
+
+msgid "tm.quit"
+msgstr "結束 Blave…"
+
+msgid "tm.notifTitle"
+msgstr "已暫停下單"
+
+msgid "tm.notifBody"
+msgstr "停開新倉；部位沒有動。要恢復，到 Blave 的「自動下單」按「啟動下單」。"
+
+msgid "tm.pauseFail"
+msgstr "暫停的指令沒有送到，它可能還在交易。打開 Blave 再按一次「暫停下單」。"
+
+msgid "tm.quitTitle"
+msgstr "自動下單還在執行"
+
+msgid "tm.quitBody"
+msgstr "結束 Blave 之後，這台電腦就不會再下單，也不會平倉；部位留在{venue}。再開 Blave 時要重新按「啟動下單」。"
+
+msgid "tm.quitGo"
+msgstr "結束 Blave"
+
+msgid "tm.quitStay"
+msgstr "取消"
+
+msgid "tm.hidden"
+msgstr "Blave 還開著，自動下單照常執行。從選單列的圖示可以暫停或打開視窗。"
