@@ -39,4 +39,12 @@ t("main.js:發佈版的選單不放重新載入與開發者工具", /const dev =
 t("main.js:選單保留編輯選單(沒有它,輸入框的複製貼上快捷鍵會失效)", /\{ role: "editMenu" \}/.test(src) && /\{ role: "appMenu" \}/.test(src) && /\{ role: "windowMenu" \}/.test(src));
 const pre = fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8");
 t("preload:renderer 待接的三個入口都在", /minVersionState:/.test(pre) && /onMinVersionState:/.test(pre) && /onEnvSwitch:/.test(pre));
+// app 選單不中英混語:自家的 label 走 app 的 i18n(renderer 交字),Electron 內建 role 的項目不自訂 label
+{ const fs = require("fs"), path = require("path");
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), a = mainSrc.indexOf("function appMenuSync()"), body = mainSrc.slice(a, mainSrc.indexOf("\n}\n", a)).replace(/\/\/.*$/gm, "");
+  const labels = [...body.matchAll(/label:\s*([^,}]+)/g)].map((m) => m[1].trim());
+  t("app 選單:每一個自家 label 都來自 tmLabels(英文只當還沒交字之前的退路),沒有寫死的字", labels.length === 4 && labels.every((l) => /^tmLabels\.menu(View|Local|Cloud|Site) \|\| "[^"]+"$/.test(l)));
+  t("app 選單:帶 role 的項目都沒有自訂 label", [...body.matchAll(/\{[^{}]*role:[^{}]*\}/g)].every((m) => !/label:/.test(m[0])));
+  t("換語言會重建選單(四個字都進 key);renderer 交 menuView", /\[tmLabels\.menuLocal, tmLabels\.menuCloud, tmLabels\.menuSite, tmLabels\.menuView\]\.join/.test(body)
+    && /menuView: t\("menu\.view"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8")) && /menuView: ""/.test(mainSrc)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

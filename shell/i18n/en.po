@@ -1497,6 +1497,9 @@ msgstr "Cloud: "
 msgid "menu.site"
 msgstr "Blave Website"
 
+msgid "menu.view"
+msgstr "View"
+
 # 最低版本閘(最小版畫面;字待設計師過目)
 msgid "minv.chat"
 msgstr "This version of Blave needs an update before it can keep using Blave’s AI. This message was not sent and used no AI."

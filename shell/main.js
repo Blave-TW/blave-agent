@@ -1373,7 +1373,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
   key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
   stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", moneyPaper: "", moneyReal: "",
-  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "" };
+  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "", menuView: "" };
 const TT = require("./traytext");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
 const siteLang = () => uiLang || (/^zh/i.test(app.getLocale() || "") ? "zh" : "en");
@@ -1389,13 +1389,15 @@ function envSwitchFromMenu(env) {
    ⌘1 / ⌘2 在 renderer 也有 keydown:macOS 上選單的快捷鍵先吃,頁面多半收不到;就算兩邊都觸發,切到「已經在的那一邊」
    是 no-op(renderer 的 envSwitch 開頭就擋),不會切兩次。確認框開著時該不該切由 renderer 收到 env-switch 後自己判(同 keydown 的規則)。 */
 function appMenuSync() {
-  const key = [tmLabels.menuLocal, tmLabels.menuCloud, tmLabels.menuSite].join("|");
+  const key = [tmLabels.menuLocal, tmLabels.menuCloud, tmLabels.menuSite, tmLabels.menuView].join("|");
   if (key === appMenuKey && Menu.getApplicationMenu()) return;
   appMenuKey = key;
   const dev = !(app.isPackaged && require("./package.json").blaveRelease);   // 發佈版的選單不放重新載入與開發者工具
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" },
-    { label: "View", submenu: [
+    // 自家的 label(顯示、兩個視角、官網)跟 **app 的語言**走(renderer 交過來的字;還沒交之前用英文退路)。
+    // Electron 內建 role 的項目一律不自訂 label——那些由 Electron / 系統決定,自己翻一半會變成中英混語。
+    { label: tmLabels.menuView || "View", submenu: [
       { label: tmLabels.menuLocal || "This Computer", accelerator: "Cmd+1", click: () => envSwitchFromMenu("local") },
       { label: tmLabels.menuCloud || "Cloud", accelerator: "Cmd+2", click: () => envSwitchFromMenu("cloud") },
       { type: "separator" },

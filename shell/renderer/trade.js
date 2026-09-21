@@ -397,7 +397,7 @@ function trPushLabels() {
     key_ipTitle: t("tm.key.ipTitle", { where: t("env.local") }), key_ipBody: t("tm.key.ipBody", { ip: "{ip}" }), key_rejTitle: t("tm.key.rejTitle", { where: t("env.local") }),
     key_rejSameIpBody: t("tm.key.rejSameIpBody"), key_rejUnknownBody: t("tm.key.rejUnknownBody"),
     key_permTitle: t("tm.key.permTitle", { where: t("env.local") }), key_permBody: t("tm.key.permBody"),
-    notifPrefixLocal: t("tm.notifPrefixLocal"), notifPrefixCloud: t("tm.notifPrefixCloud"), menuLocal: t("env.local"), menuCloud: t("env.cloud"), menuSite: t("menu.site") });
+    notifPrefixLocal: t("tm.notifPrefixLocal"), notifPrefixCloud: t("tm.notifPrefixCloud"), menuLocal: t("env.local"), menuCloud: t("env.cloud"), menuSite: t("menu.site"), menuView: t("menu.view") });
 }
 function trWire() {
   $("tr-tabs").addEventListener("click", (e) => { const b = e.target.closest(".main-tab"); if (b) trSetTab(b.dataset.tab); });
