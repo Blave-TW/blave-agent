@@ -82,7 +82,7 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
   // ── main.js 接線(原文) ──
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), main = mainSrc.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
   const cut = (name) => { const i = mainSrc.indexOf("function " + name + "("); let d = 0; for (let k = mainSrc.indexOf("{", i); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(i, k + 1); } };
-  t("功能旗標預設關(先修 sshd 才上線)", /const CLOUD_HANDOFF = false;/.test(main));
+  t("功能旗標已開(sshd 方案 A 上全機隊、撤銷端點、金鑰過濾三件都到位才翻的)", /const CLOUD_HANDOFF = true;/.test(main));
   { const mk = (packaged, release, envv) => new Function("app", "require", "process", "CLOUD_HANDOFF", "return (" + cut("cloudHandoffOn") + ")()")({ isPackaged: packaged }, () => ({ blaveRelease: release }), { env: envv }, false);
     t("發佈版:設了 BLAVE_CLOUD_HANDOFF=1 也不開;開發版才認", mk(true, true, { BLAVE_CLOUD_HANDOFF: "1" }) === false && mk(true, true, {}) === false && mk(false, false, { BLAVE_CLOUD_HANDOFF: "1" }) === true && mk(true, false, { BLAVE_CLOUD_HANDOFF: "1" }) === true
       && mk(false, false, {}) === false && mk(false, false, { BLAVE_CLOUD_HANDOFF: "true" }) === false); }

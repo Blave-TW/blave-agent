@@ -1082,9 +1082,10 @@ function viewingArgs(v) {
   return v.view === "portfolio" ? ["--viewing-view=portfolio"] : [];
 }
 /* 自動掛上 `blave` MCP(agent 經它拿得到用戶雲端主機的 SSH)+ 畫面上的「送上雲端 / 拉回這台電腦」。
-   **預設關**(Wei 拍板:先修 sshd——SSH 憑證不可登入 root——才上線)。發佈版一律是這個常數;開發版可以用 BLAVE_CLOUD_HANDOFF=1 打開來測
+   **2026-09-22 Wei 拍板打開**:三個前置都完成了——sshd 方案 A 已推上全機隊 20 台(憑證只登得進 blaveagent、root 被 Match 擋掉)、
+   接入碼撤銷端點上線、確認框只列真正會搬的資料來源金鑰。發佈版一律是這個常數;開發版另可用 BLAVE_CLOUD_HANDOFF=1
    (主行程自己的環境,agent 設不到;發佈版不看它)。 */
-const CLOUD_HANDOFF = false;
+const CLOUD_HANDOFF = true;
 function cloudHandoffOn() { return CLOUD_HANDOFF || (!(app.isPackaged && require("./package.json").blaveRelease) && process.env.BLAVE_CLOUD_HANDOFF === "1"); }
 /* 接入碼(mcpcode.js):只在主行程的記憶體裡。用帳號 token + app_secret 去換——那兩顆都不進 agent;換出來的碼只經由單次設定檔交給 CLI。 */
 let _mcp = null;
