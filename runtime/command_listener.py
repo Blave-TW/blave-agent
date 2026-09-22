@@ -2916,10 +2916,61 @@ def _cmd_restart_reconciler(args):
     return "reconciler restarted"
 
 
+def _flatten_already_running():
+    """Is a manager/flatten.py holding state/flatten.lock right now?
+
+    ADVISORY — it only shapes the ack. The real single-flight guard is
+    flatten.py's own lock (manager/flatten.py › SINGLE-FLIGHT): between this
+    probe and the child actually taking the lock there is a window, so two
+    presses can both be told "started" and the loser will exit on its own.
+    That degrades the message, never the safety — and the first flatten IS
+    running either way, which is what the user asked for.
+
+    Unreadable / no lock primitive → False: never let this probe be the reason
+    a panic close isn't launched."""
+    path = os.path.join(WORKSPACE, "state", "flatten.lock")
+    if not os.path.isfile(path):
+        return False
+    try:
+        fh = open(path, "a+")
+    except OSError:
+        return False
+    try:
+        if platform.system() == "Windows":
+            import msvcrt
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            # a fresh open() = a separate open-file-description, so flock here
+            # contends with the child's exactly like another process would
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    except ImportError:
+        return False
+    finally:
+        fh.close()
+
+
 def _cmd_close_all(args):
     """Panic: trip HALT synchronously, then flatten every venue position in a
     detached process (fills can take a while — the command loop must not wait;
-    results surface through orders.jsonl → the report, like everything else)."""
+    results surface through orders.jsonl → the report, like everything else).
+
+    Ack vocabulary (opaque `close_all=<state>` string, same shape throughout —
+    nothing downstream matches on the value, so new states are additive):
+      started        — HALT tripped, a flatten was launched
+      already_running — HALT tripped, but one flatten is already working; this
+                       press launched nothing. The 暫停/全部平倉 buttons stay
+                       pressable on purpose (Wei), so a second press is normal
+                       and means "stop faster" — the UI should say 已經在平倉了
+                       rather than pretend it sent another one, because a
+                       second flatten on 群益 would open a reversed position
+                       (manager/flatten.py › SINGLE-FLIGHT)
+      halted_only    — this workspace has no manager/flatten.py"""
     from lib.guard import trip_halt
 
     trip_halt("close all positions", "web")
@@ -2927,6 +2978,8 @@ def _cmd_close_all(args):
         # workspace 還沒更新到有平倉層——誠實回報只掛了 halt(reporter 的
         # can_flatten 同一判準,前端本來就不會給這顆選項;這裡是最後防線)
         return "close_all=halted_only"
+    if _flatten_already_running():
+        return "close_all=already_running"
     # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
     # 除了 order_errors.json 外,還要有完整紀錄可查
     log_path = os.path.join(WORKSPACE, "state", "flatten.log")

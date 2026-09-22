@@ -34,6 +34,22 @@ Semantics — panic button, not portfolio management:
     minimum is logged and left, same rule as swap. (self_ledger ON: spot
     strategies' ledger keys carry the @spot suffix and are closed from the
     ledger like everything else.)
+  - SINGLE-FLIGHT. 暫停 and 全部平倉 are always pressable (a kill switch that
+    greys out because the last press is still in flight is not a kill switch),
+    so close_all IS re-sent — and a second flatten is not a harmless repeat.
+    It re-reads positions, and every venue whose close cannot be expressed as
+    reduce-only re-sends a plain market order into a book the first flatten is
+    already emptying: on 群益 (lib/order_capital) the close is sNewClose=2
+    「auto 新倉/平倉」, which on an already-closed position opens a NEW position
+    the other way — and its positions come from lib/capital_worker's snapshot,
+    good for up to 300s, so the second flatten doesn't even need to win a race
+    to read a position that is already gone. (Crypto is narrower: the venue
+    itself refuses the duplicate — reduceOnly on one-way/net, and in hedge mode
+    positionSide/posSide pins the slot so an oversized close is rejected, never
+    flipped — but it still doubles the orders.jsonl close legs the user reads
+    as 交易歷史, and races zero_ledger_symbols.) So: one flatten per machine,
+    enforced by state/flatten.lock; a second one exits immediately rather than
+    queueing — the user pressing again means "stop faster", not "stop twice".
   - Every close is appended to manager/orders.jsonl with its confirmed fill,
     so the web 交易歷史 and the order toast show exactly what happened; the
     closed symbols' ledger baselines are zeroed afterwards
@@ -59,6 +75,51 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 _ENV_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_]+)_API_KEY\s*=", re.IGNORECASE)
 _RESERVED = {"BLAVE"}
+
+LOCK_PATH = "state/flatten.lock"  # relative — this module chdir'd to the workspace above
+ALREADY_RUNNING = "already_running"  # flatten()'s return when another one holds the lock
+EXIT_ALREADY_RUNNING = 3  # ...and the exit code for it, distinct from 1 = ran with errors
+_LOCK = None  # the open lock file, pinned for the life of the process (see _singleflight)
+
+
+def _singleflight(path=None):
+    """Take the close-all lock (see the docstring's SINGLE-FLIGHT rule), or
+    return None when another flatten already holds it — the caller must then
+    exit, not wait.
+
+    Never released by hand: the OS drops it on ANY exit, SIGKILL and reboot
+    included, so there is no stale-lock case to reason about and nothing to
+    clean up. The pid written inside is for humans reading state/, never for
+    liveness. Same shape as runtime/local_daemon.SingleInstance.
+
+    Fails OPEN: a platform with neither fcntl nor msvcrt runs the flatten
+    unlocked. A panic button that refuses to close real positions because it
+    could not take a lock is worse than the double-close the lock prevents.
+    """
+    path = path or LOCK_PATH
+    if os.path.dirname(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    fh = open(path, "a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return fh  # locking() holds a byte range — leave the file untouched
+        import fcntl
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except ImportError:
+        return fh
+    except OSError:
+        fh.close()
+        return None
+    try:
+        fh.seek(0)
+        fh.truncate()
+        fh.write(str(os.getpid()))
+        fh.flush()
+    except OSError:
+        pass  # the lock is the contract; the pid is a comment
+    return fh
 
 
 def _read_env(path=".env"):
@@ -181,6 +242,16 @@ def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
 
 
 def flatten():
+    """Returns True (flat, no errors), False (ran, hit errors) or
+    ALREADY_RUNNING (did nothing — another flatten holds the lock)."""
+    global _LOCK
+    _LOCK = _singleflight()
+    if _LOCK is None:
+        # Deliberately before the HALT trip: whoever holds the lock tripped it
+        # already, and command_listener._cmd_close_all trips it synchronously
+        # before launching us — the stop half of the button is never skipped.
+        logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
+        return ALREADY_RUNNING
     env = _read_env()
     if not guard.halted():
         guard.trip_halt("close all positions", "flatten")
@@ -336,4 +407,5 @@ def flatten():
 
 
 if __name__ == "__main__":
-    sys.exit(0 if flatten() else 1)
+    _result = flatten()
+    sys.exit(EXIT_ALREADY_RUNNING if _result == ALREADY_RUNNING else (0 if _result else 1))

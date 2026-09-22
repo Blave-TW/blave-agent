@@ -8,6 +8,20 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **全部平倉單飛鎖**(真錢路徑):兩顆鈕永遠可按 → `close_all` 本來就會被重送,而 `_cmd_close_all` 每一筆都
+  `Popen` 一支 detached `manager/flatten.py`,全無互斥。第二支不是無害重播——**群益的平倉是
+  `sNewClose=2`「auto 新倉/平倉」**,而它的持倉來自 `capital_worker` 快照(可舊到 300 秒),所以第二支讀到
+  一個已經被平掉的部位、送出同方向市價單 = **真的開出一口反向倉**。(加密較窄:交易所自己會擋掉重複平倉——
+  單向倉有 `reduceOnly`,hedge 模式 `positionSide`/`posSide` 釘住槽位,超量平倉是被拒不是翻倉——但仍會把
+  `orders.jsonl` 的平倉腿記兩次、和 `zero_ledger_symbols` 搶寫。)
+  修法:`flatten.flatten()` 開頭取 `state/flatten.lock`(`flock`/`msvcrt` 非阻塞,同
+  `local_daemon.SingleInstance`),**拿不到就立刻安靜退出**(回 `ALREADY_RUNNING`,exit 3)——不等、不排隊,
+  用戶按第二次是「快停」不是「停兩次」。鎖由 OS 在行程結束時釋放,SIGKILL / 重開機都不會留下殘鎖;
+  平台上沒有 `fcntl`/`msvcrt` 時**故意 fail-open**(不鎖照跑:panic 鈕不能因為拿不到鎖就不平倉)。
+  ack 多一個狀態 `close_all=already_running`(字串形狀不變、下游沒有比對值,純加法),前端可據此說
+  「已經在平倉了」而不是假裝又送了一次;`_flatten_already_running()` 只是探測、只決定文案,真正的互斥在子行程
+  自己那把鎖(探測到子行程真的上鎖之間有窗,輸的那支會自行退場——退化的是訊息不是安全)。
+  閘門:`tests/check_flatten_singleflight.py`。
 - 新機出廠開帳本:`command_listener` 第一次建立 `manager/portfolio_config.json`(`_cmd_amounts` / `_cmd_execution` 的
   fresh-machine 分支)改從 `_fresh_portfolio_config()` 起手——先寫 fresh-start 的 `manager/ledger_seed.json`(已有就不動),
   再回 `{"self_ledger": true}` 給 caller 寫進 config;兩筆寫入之間 crash 只會留下「有 seed 沒旗標」(無害),不會反過來。
