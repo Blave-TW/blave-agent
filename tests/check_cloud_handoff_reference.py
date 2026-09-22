@@ -241,5 +241,26 @@ check("for anything but a handoff" not in DOC,
 check(DOC.count("what the user asked for in this conversation") >= 1,
       "#31 still binds every use of the connection to this turn's request")
 
+# ── 6. 「更新」:電腦版 agent 講兩邊版本、指到 app 那顆鈕,自己不動雲端(#27 不因此開例外)
+UPD = open(os.path.join(ROOT, "references", "updating.md"), encoding="utf-8").read()
+upd0 = UPD.split("## 0.", 1)[1].split("\n## 1.", 1)[0]
+for label, needle in {
+    "both versions": "Which version each side is on",
+    "cloud version read from the app, not SSH": "do not open an SSH session just to read it",
+    "chat-input link, same words as the web": "「立即更新到最新版本」",
+    "settings button": "Settings › General › About",
+    "one press does both sides": "One press does both",
+    "cloud restarts only an already-running order program": "only if that was already running",
+    "busy: waits for a replying conversation": "the button waits",
+    "says it will not touch the cloud program": "you will not change the cloud machine's program from here",
+    "never updates the cloud side itself": "Never update the cloud machine yourself: no SSH writes to its `lib/`, `manager/` or `VERSION`, no `blave` MCP tool for it",
+    "not sent to the website": "Do not send the user to the website to update",
+}.items():
+    check(needle in upd0, f"updating.md §0: {label}")
+check("tell the cloud agent" not in DOC and "「更新」 to the cloud agent" not in DOC,
+      "cloud-handoff no longer sends the user to the cloud agent to update")
+check(DOC.count("never update either side yourself") == 1 and "the app's one Update button" in DOC,
+      "cloud-handoff version gap points at the app's button and forbids self-updating")
+
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)

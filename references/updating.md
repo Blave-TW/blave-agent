@@ -4,7 +4,14 @@ Trigger: user says 更新 blaveclaw / 更新 blave agent / 更新系統 / 更新
 
 ## 0. Desktop app — stop here
 
-If this workspace runs inside the Blave desktop app (the runtime's local mode; the workspace lives under the user's home, e.g. `~/Blave/workspace`, not `/opt/blave-agent`), **do not run this procedure**. On the desktop the framework ships with the app as one versioned bundle: the app updates itself, and on the next launch it refreshes the official files in this workspace (anything it overwrites that differed is backed up under `.official-backup/`). Do not clone the repo, do not merge `lib/`, and do not edit `VERSION` — a workspace `VERSION` newer than the app's makes the app skip its own refresh and leaves a new `lib/` running under an old runtime. Tell the user: updates arrive with the app — Settings › Display shows the version and the update status. Everything below is for cloud machines only.
+If this workspace runs inside the Blave desktop app (the runtime's local mode; the workspace lives under the user's home, e.g. `~/Blave/workspace`, not `/opt/blave-agent`), **do not run this procedure**. On the desktop the framework ships with the app as one versioned bundle: the app updates itself, and on the next launch it refreshes the official files in this workspace (anything it overwrites that differed is backed up under `.official-backup/`). Do not clone the repo, do not merge `lib/`, and do not edit `VERSION` — a workspace `VERSION` newer than the app's makes the app skip its own refresh and leaves a new `lib/` running under an old runtime.
+
+Updating is one button in the app, for both sides at once. When the user says 更新 / update, reply with:
+- **Which version each side is on.** This computer: the workspace `VERSION`. The cloud machine (only if the user has one): the app shows it next to this computer's under Settings › General › About — point there; do not open an SSH session just to read it.
+- **Where the button is.** 「立即更新到最新版本」 ("Update to the latest version now") at the top right of the chat input, shown while either side has a newer version, or the Update button under Settings › General › About. One press does both: the cloud machine runs its own official update (it restarts its order program only if that was already running), and this computer installs the new app version when it restarts. While a conversation is still replying on the cloud machine the button waits — its turn would be cut off.
+- **That you will not change the cloud machine's program from here.** Never update the cloud machine yourself: no SSH writes to its `lib/`, `manager/` or `VERSION`, no `blave` MCP tool for it, never pressing the button for the user (`references/cloud-handoff.md` › NEVER, the write rule). Do not send the user to the website to update either.
+
+Everything below is for cloud machines only.
 
 ## 1. Skill
 
