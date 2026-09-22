@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.84 — 2026-09-22
+
 - **Binance 綁定不再查提領權限**(Wei 09-22 拍板:電腦版 MVP 全面不查提領):`_binance_bind_check` 拿掉
   `WITHDRAW_ENABLED` 那道——提領開著的 key 照寫 `.env`,不擋、不提醒;web 連接、電腦版、聊天綁定三條路都走這支,一起生效。
   其餘照擋:交易權限全關(`TRADING_DISABLED`)、半套、查不到/看不懂、429/418 退讓;沒白名單照舊只提醒。ack 的 `binance` 形狀不變。
