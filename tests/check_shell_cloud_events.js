@@ -45,7 +45,8 @@ ok("其他型別不受影響(機器事件照舊)", trEventText("exchange_recover
   ok("desktop_action 的 " + need.length + " 個 key 兩語都在:" + (miss.join() || "無缺"), miss.length === 0);
   const valsOf = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)].map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));
   const enV = valsOf(block("en")), zhV = valsOf(block("zh"));
-  ok("文案講的是「送出」不是「已生效」(平台收下 ≠ 機器已套用)", need.filter((k) => k !== "tr.ov.evDtDevice").every((k) => /送出/.test(zhV[k]) && /Sent from|sent from/.test(enV[k])));
+  ok("文案講的是「送出」不是「已生效」(平台收下 ≠ 機器已套用)", need.filter((k) => k !== "tr.ov.evDtDevice" && k !== "tr.ov.evDtUpdate").every((k) => /送出/.test(zhV[k]) && /Sent from|sent from/.test(enV[k])));
+  ok("update 那一句不說「電腦版送出」:這個 app 不再送 update,這筆只會是網頁那顆膠囊送的", !/電腦版|Blave Desktop/.test(zhV["tr.ov.evDtUpdate"] + enV["tr.ov.evDtUpdate"]));
   ok("裝置名那一句兩語都留著 {device} 這個位置", /\{device\}/.test(zhV["tr.ov.evDtDevice"]) && /\{device\}/.test(enV["tr.ov.evDtDevice"]));
   ok("renderer 不出現中文字面(map 裡放的是 key,不是句子)", !/[一-鿿]/.test(cut("const TR_DT_ACTION = {", "function trEventText(").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""))); }
 

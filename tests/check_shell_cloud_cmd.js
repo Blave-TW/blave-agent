@@ -156,21 +156,6 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     t("同一個人同時送兩個指令:兩個都正常收到回條,各自一顆 request_id", a.ok === true && b.ok === true
       && w.posts[0].b.request_id !== w.posts[1].b.request_id); }
 
-  // ── update 專用的 409:有回合在忙(TURN_BUSY)不是主機沒在跑;兩種都真的沒入列 ──
-  { const busy = M.interpret({ status: 409, body: { error_code: "TURN_BUSY", machine_state: "running" } });
-    t("409 TURN_BUSY → TURN_BUSY(不是 MACHINE_NOT_RUNNING),machine_state running 照樣往上交",
-      busy.code === "TURN_BUSY" && busy.machineState === "running"
-      && M.interpret({ status: 409, body: { error_code: "MACHINE_NOT_RUNNING", machine_state: "stopped" } }).code === "MACHINE_NOT_RUNNING"
-      && M.interpret({ status: 409, body: { machine_state: "none" } }).code === "MACHINE_NOT_RUNNING");
-    t("TURN_BUSY / 不支援從 app 更新 都是 undelivered(api 沒入列、沒佔 request_id)",
-      M.KIND.TURN_BUSY === "undelivered" && M.KIND[M.UPDATE_UNSUPPORTED] === "undelivered"
-      && M.interpret({ status: 409, body: { error_code: M.UPDATE_UNSUPPORTED } }).code === M.UPDATE_UNSUPPORTED
-      && M.interpret({ status: 400, body: { error_code: M.UPDATE_UNSUPPORTED } }).code === M.UPDATE_UNSUPPORTED);
-    const w = world({ cmdRes: { status: 409, body: { error_code: "TURN_BUSY", machine_state: "running" } } });
-    const r = await w.cmd.send("update", {});
-    t("send update 撞到 TURN_BUSY → undelivered、不去問 ack", r.ok === false && r.error === "TURN_BUSY" && r.kind === "undelivered"
-      && r.machineState === "running" && ackCalls(w) === 0); }
-
   // ── POST 照按下順序排隊、ack 照舊並行(start-pending-stop §1.1) ──
   { let release = null; const hold = new Promise((r) => { release = r; });
     const w = world({ ackRes: (n) => (n >= 1 ? ackDone() : null) });
@@ -216,6 +201,53 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     t("登出再登入後的暫停不插隊:前一個 POST 還在路上時不出門", w.posts.filter((p) => p.u.indexOf("/ack") < 0).length === 1);
     release(); await pa; const b = await pb;
     t("…放行後照順序出門、照樣收得到回條", w.posts.filter((p) => p.u.indexOf("/ack") < 0).map((p) => p.b.cmd).join(",") === "resume,halt" && b.ok === true); }
+
+  // ── 只給雲端的指令的參數(delete_strategy / update)──
+  t("delete_strategy 只收 {name},name 過機器端那條 regex;update 不再是這個 app 送的指令(用本機 app 不觸發雲端 agent 回合)",
+    M.cloudArgsOk("delete_strategy", { name: "btc_4h-v2" }) && !M.cloudArgsOk("delete_strategy", { name: "../x" }) && !M.cloudArgsOk("delete_strategy", { name: "a".repeat(65) })
+    && !M.cloudArgsOk("delete_strategy", { name: "a", x: 1 }) && !M.cloudArgsOk("delete_strategy", {}) && !M.cloudArgsOk("delete_strategy", { name: 3 })
+    && !M.cloudArgsOk("update", {}) && !M.cloudArgsOk("halt", {}) && !M.cloudArgsOk("delete_strategy", null) && JSON.stringify(M.CLOUD_ONLY_COMMANDS) === '["delete_strategy"]');
+
+  // ── 雲端連交易所(S5)──
+  { const shape = (k, s) => /^[A-Za-z0-9]{8,}$/.test(k) && /^[A-Za-z0-9]{8,}$/.test(s);
+    const p = M.connectSecrets({ venue: "paper", apiKey: "x", secret: "y", env: { BLAVE_X: "1" } }, shape, 1700000000.7);
+    t("連接:模擬交易的名字由主行程決定(renderer 帶什麼都不影響),只有三個 PAPER_*", JSON.stringify(p) === JSON.stringify({ venue: "paper", secrets: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: "1700000000" } }));
+    const b = M.connectSecrets({ venue: "binance", apiKey: " KEYaaaaaaaa ", secret: "SECbbbbbbbb", BLAVE_TOKEN: "evil", env: { BLAVE_X: "1" } }, shape, 1);
+    t("連接:Binance 只放兩個 BINANCE_*,值 trim 過;renderer 多塞的鍵不會進 secrets", JSON.stringify(b.secrets) === JSON.stringify({ BINANCE_API_KEY: "KEYaaaaaaaa", BINANCE_SECRET_KEY: "SECbbbbbbbb" }));
+    t("連接:形狀不對 / 少一欄 / 不認得的交易所 → 不送出", M.connectSecrets({ venue: "binance", apiKey: "k", secret: "" }, shape, 1).error === "BAD_KEY_FORMAT"
+      && M.connectSecrets({ venue: "binance", apiKey: "short", secret: "SECbbbbbbbb" }, shape, 1).error === "BAD_KEY_FORMAT"
+      && M.connectSecrets({ venue: "okx" }, shape, 1).error === "BAD_ARGS" && M.connectSecrets(null, shape, 1).error === "BAD_ARGS"); }
+  { const R = (e) => M.interpretConnect({ ok: false, kind: "rejected", error: e });
+    t("連接結果:ok + binance dict → OK / NO_IP_RESTRICT,帶 spot / futures", (() => { const a = M.interpretConnect({ ok: true, result: { credentials: 2, binance: { checked: true, code: "NO_IP_RESTRICT", spot: false, futures: true } } });
+      return a.ok && a.code === "NO_IP_RESTRICT" && a.detail.spot === false && a.detail.futures === true && M.interpretConnect({ ok: true, result: { credentials: 3, binance: null } }).code === "OK"; })());
+    t("連接結果:舊 runtime 回字串也算 OK(Wei:這版不撤 key)", M.interpretConnect({ ok: true, result: "credentials=2" }).ok === true);
+    t("連接結果:認得的拒絕碼原樣往上交;限速依說明字串分三種",
+      R("ValueError: IP_OR_KEY: rejected by binance").code === "IP_OR_KEY" && R("ValueError: BAD_SECRET: x").code === "BAD_SECRET"
+      && R("ValueError: RATE_LIMITED: HTTPError 429").code === "RATE_LIMITED" && R("ValueError: RATE_LIMITED: HTTPError 418 banned").code === "RATE_BANNED"
+      && R("ValueError: RATE_LIMITED: backing off 40s").code === "RATE_BACKOFF");
+    t("連接結果:MVP 不查提領——WITHDRAW_ENABLED 不是認得的代號,走一般拒絕(原文截 200)", R("ValueError: WITHDRAW_ENABLED: x").code === "REJECTED" && !M.CONNECT_CODES.includes("WITHDRAW_ENABLED")
+      && R("ValueError: EVIL_CODE: " + "z ".repeat(500)).code === "REJECTED" && R("boom " + "z ".repeat(500)).detail.error.length === 200);
+    t("連接結果:被拒原文用這一次送出的金鑰值再遮一次(模擬那三個不是祕密,不遮)", (() => {
+      const r = M.interpretConnect({ ok: false, kind: "rejected", error: "boom KEYaaaaaaaa / SECbbbbbbbb paper" }, { BINANCE_API_KEY: "KEYaaaaaaaa", BINANCE_SECRET_KEY: "SECbbbbbbbb", PAPER_API_KEY: "paper" });
+      return r.code === "REJECTED" && !/KEYaaaaaaaa|SECbbbbbbbb/.test(r.detail.error) && /paper/.test(r.detail.error); })()
+      && (() => { const K = "Ab1CdE2fGh3IjK4lMn5OpQ6rSt7UvW8x";   // 真的金鑰英數混雜(規則只遮混合的片段)
+        const low = M.interpretConnect({ ok: false, kind: "rejected", error: "x " + K.toLowerCase() + " y" }, { BINANCE_API_KEY: K }).detail.error;
+        const part = M.interpretConnect({ ok: false, kind: "rejected", error: "key " + K.slice(0, 20) + "..." }, { BINANCE_API_KEY: K }).detail.error;
+        const edge = M.interpretConnect({ ok: false, kind: "rejected", error: "q ".repeat(95) + K }, { BINANCE_API_KEY: "zz" + K }).detail.error;   // 跨在第 200 字上:先遮再截
+        const code = M.interpretConnect({ ok: false, kind: "rejected", error: "ValueError: SOMETHING_ODD: HTTPError 418" }, {}).detail.error;
+        const cls = M.interpretConnect({ ok: false, kind: "rejected", error: "BinanceAPIExceptionWrapper: APIErrorCodeUnauthorized" }, {}).detail.error;
+        if (cls !== "BinanceAPIExceptionWrapper: APIErrorCodeUnauthorized") return false;   // 只遮字母數字混合的:例外類名照原樣
+        return !/ab1cde2fgh3/i.test(low) && !/Ab1CdE2fGh3IjK4/.test(part) && !/Ab1CdE2f/.test(edge) && code === "ValueError: SOMETHING_ODD: HTTPError 418"; })()
+      && /CC\.interpretConnect\(r, built\.secrets\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
+    t("連接結果:沒送到 / 結果不明分開,帶 machineState 給畫面選句",
+      M.interpretConnect({ ok: false, kind: "undelivered", error: "MACHINE_NOT_RUNNING", machineState: "stopped" }).detail.machineState === "stopped"
+      && M.interpretConnect({ ok: false, kind: "undelivered", error: "RATE_LIMITED" }).code === "UNDELIVERED"
+      && M.interpretConnect({ ok: false, kind: "unknown", error: "UNKNOWN_RESULT" }).code === "CMD_UNKNOWN" && M.interpretConnect(null).code === "UNDELIVERED"); }
+  { const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    const h = (mainSrc.match(/\n  handle\("cloud-connect"[\s\S]*?\n  \}, cxDenied\);/) || [""])[0];
+    t("main.js:cloud-connect 走 handle()(只收自家頁面)、送的是 credentials + connectSecrets 的 secrets、每次新的 request_id(不帶第四個參數)、不跑本機 Binance 檢查",
+      h.length > 100 && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets\);/.test(h) && !/binanceLink|binance_check|requestId/.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""))
+      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
 
   // ── 原文:不 require electron、不 log、不落地 ──
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8");

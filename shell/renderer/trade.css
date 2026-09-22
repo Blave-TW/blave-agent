@@ -86,12 +86,8 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 /* ---- 側欄(雲端視角):沒有主機可看時入口與清單整段收起 ---- */
 .strat-head[hidden], .strat-list[hidden], .side-nav[hidden] { display: none; }
 .side-nav .strat-name { flex: 1; min-width: 0; }
-/* 雲端清單:列是鈕(點了中欄畫那支的報告),列尾的「拉回」(.ho-down)絕對定位、常駐,名字給它留位置 */
-#strat-list-cloud .strat-wrap .ho-down { position: absolute; right: var(--space-8); top: 50%; transform: translateY(-50%); }
-/* 列選中 / hover 的底(--surface-muted)上,「拉回」的 --ink-3 只有 3.61:1:升到 --ink-2。
-   兩個 :not 不能省——這條帶 id,會蓋過 app.css 的 .ho-down:hover(--ink)與停用的 --ink-3 */
-#strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible), :has([aria-current="true"])) .ho-down:not(:hover):not([aria-disabled="true"]) { color: var(--ink-2); }
-#strat-list-cloud .strat-wrap:has(.ho-down) .strat-row { padding-right: var(--space-64); }
+/* 雲端列尾只有一顆 ✕(按下開框,不在列內武裝成「刪除?」),名字讓出 ✕ 的位置就夠,不必留本機那 72 */
+#strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { padding-right: calc(var(--space-32) + var(--space-8)); }
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 
@@ -117,6 +113,11 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 .side-gate[hidden] { display: none; }
 html.ws-sc .side-gate { display: none; }
 @media (prefers-reduced-motion: reduce) { #cv-desc .dot.busy { animation: none; } }
+/* 雲端連接之後「已存到、等回報」那一句(S5 §4.1):同 #cv-desc 的呼吸點 */
+.cx-saved { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.cx-saved .dot { display: inline-block; width: 7px; height: 7px; margin-right: var(--space-8); border-radius: var(--radius-pill); background: var(--ink-3); vertical-align: .09em; }
+.cx-saved .dot.busy { animation: trRunPulse calc(var(--motion-blink) * 1.2) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .cx-saved .dot.busy { animation: none; } }
 
 /* ---- 雲端第一刀唯讀:說明行、不能按的鈕(aria-disabled,不是 disabled:鍵盤停得上去、讀屏唸得到原因)、停機那一段 ---- */
 .tr-ro-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
@@ -127,6 +128,7 @@ html.ws-sc .side-gate { display: none; }
 #tr-verdict[hidden] { display: none; }
 .verdict { display: flex; align-items: flex-start; gap: var(--space-8); margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); max-width: 64ch; }
 .verdict .fault-mark { margin-top: 10px; }
+.verdict.is-calm .fault-mark { background: var(--ink-3); }   /* 灰記號(提醒,不是錯):紅只給出事 */
 /* 雲端視角輸入框灰底、框線透明——跟頂列同一套語言(灰 = 雲端) */
 html[data-env="cloud"] .chat-input { background: var(--surface-muted); border-color: transparent; }
 /* 上一條的權重蓋過 app.css 的 .chat-input:focus-within:雲端要自己補回焦點框;placeholder 在灰底上重算成 --ink-2(AA) */
@@ -140,10 +142,14 @@ html[data-env="cloud"] .chat-input textarea::placeholder { color: var(--ink-2); 
 .main-head .txt { flex: 1; min-width: 0; }
 /* 啟動在途時主鈕右邊多一顆「暫停下單」文字鈕(#tr-go-stop),間距 8 */
 .main-head .act { flex: none; display: flex; align-items: center; gap: var(--space-8); }
+/* 「暫停下單」要在恐慌時看得到:比一般文字鈕亮一階,熱區跟主鈕等高(視覺仍是一行字);hover 照 .btn-quiet:hover 轉 --ink */
+.main-head .tr-go-stop { color: var(--ink-2); min-height: 32px; padding: 0 var(--space-8); }
+.main-head .tr-go-stop:hover { color: var(--ink); }
 .main-head-name { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc { margin-top: var(--space-4); font-size: 12px; color: var(--ink-2); line-height: 1.5; min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc.wrap { white-space: normal; overflow: visible; }
 .main-head-desc .up { color: var(--ink); font-weight: 600; }
+.main-head-desc .ink { color: var(--ink); }   /* 已暫停的「重開過」原因行:正文墨色,不用紅、不加粗 */
 .run-dot { display: inline-block; vertical-align: .09em; width: 7px; height: 7px; border-radius: var(--radius-pill); margin-right: var(--space-8); }
 .run-dot[hidden] { display: none; }
 .run-dot.live { background: var(--color-green); animation: trRunPulse calc(var(--motion-blink) * 3) ease-in-out infinite; }

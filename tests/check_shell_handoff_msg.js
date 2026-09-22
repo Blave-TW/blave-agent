@@ -65,8 +65,10 @@ t("確認框四態:目的地那份正在下單 → block(最優先);有同名 �
 
 // ── 接線(原文)──
 t("功能預設關:HO.on 起手是 false,由主行程的 feature-flags 決定(renderer 自己打不開)", /^const HO = \{ on: false, pending: null \};/m.test(src) && /window\.blave\.featureFlags\(\)/.test(src) && /HO\.on = !!\(f && f\.cloudHandoff === true\)/.test(src) && /catch \(_\) \{ HO\.on = false; \}/.test(src));
-t("兩顆鈕都先問 HO.on:關著就不畫", /const show = HO\.on && /.test(src) && /if \(!HO\.on \|\| !HO_ID_RE\.test\(name\) \|\| !hoCloudLive\(\)\) return null;/.test(src) && /if \(!HO\.on \|\| !HO_ID_RE\.test\(id\)\) return;/.test(src));
-t("送上雲端那顆:要回測過、資料夾名合規才畫", /!!RP\.data\.stats && HO_ID_RE\.test\(RP\.name\)/.test(src));
+t("頁首那顆先問 HO.on:關著就不畫;拉回還要雲端看得到現況", /const show = HO\.on && !!B\.name && HO_ID_RE\.test\(B\.name\) && hoHasCode\(B\.data\) && \(!cloud \|\| hoCloudLive\(\)\);/.test(src) && /if \(!HO\.on \|\| !HO_ID_RE\.test\(id\)\) return;/.test(src));
+// Wei 09-22:上傳 / 拉回只要有程式碼就出鈕(不要求回測過——搬過去之後 agent 會在那邊重跑一次)
+{ eval(src.slice(src.indexOf("function hoHasCode("), src.indexOf("\n", src.indexOf("function hoHasCode("))));
+  t("有程式碼就出鈕:沒有 stats 也算;空白程式碼 / 沒資料不算", hoHasCode({ code: "x = 1", stats: null }) === true && hoHasCode({ code: "  \n" }) === false && hoHasCode(null) === false && hoHasCode({ stats: {} }) === false); }
 t("hoAsk 的順序(規格 §2):回合進行中 → 不動作;別的框開著 / 選字中 → 不動作;雲端沒在運行 → 切過去不開框", (() => {
   const i = src.indexOf("function hoAsk("), body = src.slice(i, src.indexOf("\n}", i)).replace(/\/\/.*$/gm, "");
   const o = (re) => body.search(re);
@@ -99,8 +101,8 @@ t("目的地那份的金額讀對邊(up 讀雲端、down 讀這台電腦),壞值
   t("hoPendingId 的原文裡沒有 RP(承重牆:那一判已經移到按主鈕那一刻)", !/\bRP\b/.test(cutFn("hoPendingId")));
   t("功能關著 → 卡不出", run({ on: false, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })[0] === null); }
 t("意圖只在記憶體:不寫 localStorage / sessionStorage(重開 app 一律回這台電腦)", !/Storage/.test(src));
-t("切完才記下要送哪一支(envSwitch 會清 pending,先記會被洗掉);記的是 hoPaintUp 給的 RP.name;切不成就不記", /if \(envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/.test(src)
-  && /hoAsk\("up", RP\.name, b\)/.test(src));
+t("切完才記下要送哪一支(envSwitch 會清 pending,先記會被洗掉);記的是 hoPaint 給的那一支(B.name);切不成就不記", /if \(envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/.test(src)
+  && /b\.addEventListener\("click", \(\) => hoAsk\(dir, id, b\)\);/.test(src));
 t("框真的開得起來就清掉(按確認送出也走這條);handoff.js 裡清的地方只有 hoAsk 與 hoStay", /if \(dir === "up"\) \{ HO\.pending = null; hoNote\(null\); \}/.test(src)
   && (src.match(/HO\.pending = (null|\{)/g) || []).length === 3 && src.indexOf('if (dir === "up") { HO.pending = null;') < src.indexOf("confirmBox({"));
 // 承重牆①(設計 eval:四條清除條件都要):人自己切視角(切換器 / ⌘1⌘2 / 選單)也要清——沒有 TTL,少了這條殘留無上限。
@@ -163,20 +165,24 @@ t("那一行:#rp-desc 下面、不切視角、鈕字沿用既有的「去雲端�
   return /<p class="rp-ho-note" id="rp-ho-note" role="status" hidden><\/p>/.test(html) && html.indexOf('id="rp-ho-note"') > html.indexOf('id="rp-desc"')
     && /b\.textContent = t\("ho\.block\.goCloud"\);/.test(n) && /hoNote\(null\); envSwitchGuarded\("cloud"\);/.test(n) && !/HO\.pending/.test(n)
     && /\.rp-ho-note \.btn-quiet \{ font-size: inherit; \}/.test(css); })());
-t("那一行不留在別支策略的頁首:換策略重畫頁首時清掉", /hoNote\(null\);\s+\/\/ 換了策略/.test(src) && src.indexOf("hoNote(null)") > src.indexOf("function hoPaintUp("));
+t("那一行不留在別支策略的頁首:換策略重畫頁首時清掉", /hoNote\(null\);\s+\/\/ 換了策略/.test(src) && src.indexOf("function hoPaint(") > 0 && src.indexOf("hoNote(null)", src.indexOf("function hoPaint(")) > src.indexOf("function hoPaint(")
+  && src.indexOf("hoNote(null)", src.indexOf("function hoPaint(")) < src.indexOf("\n}", src.indexOf("function hoPaint(")));
 
 t("index.html:載入 handoff.js;報告頁首分成 .txt / .act 兩塊(鈕不畫時 .act 藏起來,頁首高度不跳)", /<script src="handoff\.js"><\/script>/.test(html) && /<div class="act" id="rp-act" hidden><\/div>/.test(html) && /<div class="txt">/.test(html));
-t("app.css:icon + 字的描邊鈕、列尾那顆的熱區 ≥ 28、確認框的兩欄變體", /\.btn-out\.has-ic \{ display: inline-flex;/.test(css) && /\.ho-down::before \{ content: ""; position: absolute; inset: -8px -4px; \}/.test(css)
+t("app.css:icon + 字的描邊鈕、確認框的兩欄變體;列尾的「拉回」退場(.ho-down 家族清掉)", /\.btn-out\.has-ic \{ display: inline-flex;/.test(css) && !/\.ho-down/.test(css)
   && /\.cf-rows\.kv dt \{ flex: 0 0 56px;/.test(css) && /:lang\(en\) \.cf-rows\.kv dt \{ flex-basis: 84px; \}/.test(css));
 // 列現在是鈕(點了畫雲端那支的報告),鈕不能包鈕:「拉回」掛在同一個 wrap 裡、不在列裡
-t("trade.js:雲端清單每列掛「拉回」(在 wrap 裡,不在鈕裡)、空態換成新的那一句;功能關著時兩者都照舊", /const hb = ho \? hoDownBtn\(x\.name\) : null; if \(hb\) wrap\.appendChild\(hb\);/.test(trSrc)
+t("trade.js:雲端清單列尾是刪除鈕(在 wrap 裡,不在鈕裡;跟 HO 無關)、拉回搬到頁首;空態換成新的那一句", /wrap\.appendChild\(armedDelete\(wrap, t\("cdel\.aria"/.test(trSrc) && !/hoDownBtn/.test(trSrc + src)
   && /ho \? t\("ho\.emptyHint"\) : t\("side\.cloud\.emptyCut1"\)/.test(trSrc) && /const ho = typeof HO !== "undefined" && HO\.on && typeof hoCloudLive === "function" && hoCloudLive\(\);/.test(trSrc));
 // A′:輸入框上方「操作對象」那行已整列拿掉(tests/check_shell_envsw.js 釘);「agent 還不能操作雲端主機」那句已刪
 t("trade.js:envPaint 不再看 HO.on;chat.tgt.cut1 從程式、DOM、字串表全部消失", !/HO\.on\)/.test(trSrc.slice(trSrc.indexOf("function envPaint("), trSrc.indexOf("function envPaintSide(")))
   && !/chat\.tgt\.cut1/.test(trSrc + html + strings));
-t("重畫:雲端清單的 sig 把 ho 與選中的那支算進去(功能剛問到 / 雲端剛連上 / 點了別支時會重畫)", /JSON\.stringify\(\[kind, ho, sel, list\.map/.test(trSrc));
+t("重畫:雲端清單的 sig 把 ho、能不能刪、選中的那支、刪除中的那幾支算進去", /JSON\.stringify\(\[kind, ho, canDel, sel, \[\.\.\.CDEL\.busy\.keys\(\)\], list\.map/.test(trSrc));
 t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id}", (() => {
-  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped"];
+  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note.up", "note.down", "ok", "emptyHint", "msg.up", "msg.down", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '":', "g")) || []).length === 2)
     && (strings.match(/"ho\.(msg\.(up|down)|ready\.body)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
+t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down 講「在這台電腦重跑」;舊的 ho.note 退場",
+  /extra\.appendChild\(mk\("p", "cf-note", dir === "up" \? t\("ho\.note\.up"\) : t\("ho\.note\.down"\)\)\);/.test(src) && !/"ho\.note":/.test(strings)
+  && /"ho\.note\.up": "[^"]*在雲端重跑一次回測/.test(strings) && /"ho\.note\.down": "[^"]*在這台電腦重跑一次回測/.test(strings));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

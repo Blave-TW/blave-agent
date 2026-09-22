@@ -127,7 +127,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
     && !trIsLot(null, "BTCUSDT") && !trIsLot(snap(null, null), "BTCUSDT") && !trIsLot(snap({}, {}), "BTCUSDT") && !trIsLot(snap({ BTCUSDT: { asset_spec: "x" } }, {}), "BTCUSDT"));
   ok("標的寫法不一致(小寫、帶 -、@spot)也對得起來", trIsLot(snap({ "txf@spot": { exchange: "capital" } }, {}), "TXF@spot") === true && trIsLot(snap({ "btc-usdt": { exchange: "capital" } }, {}), "BTCUSDT") === true); }
 
-  ok("稽核 R3:blur 不重建儲存列(打完直接點「儲存」,mousedown 要落在還活著的那顆鈕上)——只更新鈕的 disabled", /if \(svBtn && svBtn\.isConnected\) svBtn\.disabled = anyBad\(\) \|\| stale; else paintBar\(\); \};/.test(src) && /sv\.disabled = anyBad\(\) \|\| stale; svBtn = sv;/.test(src));
+  ok("稽核 R3:blur 不重建儲存列(打完直接點「儲存」,mousedown 要落在還活著的那顆鈕上)——只更新鈕的 disabled", /if \(svBtn && svBtn\.isConnected\) svBtn\.disabled = anyBad\(\) \|\| stale \|\| cfgBad; else paintBar\(\); \};/.test(src) && /sv\.disabled = anyBad\(\) \|\| stale \|\| cfgBad; svBtn = sv;/.test(src));
   ok("「模擬」只留頂列記號與確認框標題:單位只寫幣別、側欄記號與綠點的節點拿掉、資產與設定帳戶列不掛、cx.perfNote 只剩總覽一處", /function trUnit\(\) \{ return trCcy\(\); \}/.test(src) && !/tr-nav-mode|tr-nav-dot/.test(html + src)
     && (src.match(/"mode paper"/g) || []).length === 0 && (src.match(/t\("cx\.perfNote"\)/g) || []).length === 1 && /mark: trIsPaper\(\) \? t\("tr\.mode\.paper"\) : null/.test(src));
   ok("綠燈只留切換器那顆:標題下那一行不再畫 run-dot", !/trEl\("span", "run-dot live"\)/.test(src));
@@ -271,7 +271,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S4 §4 輸入框的 input 事件清掉 reqIds.amounts", /inp\.addEventListener\("input", \(\) => \{[\s\S]*?delete TR\.reqIds\.amounts;/.test(tbl));
     ok("S4 §4 還原也清掉 reqIds.amounts", /rv\.addEventListener\("click", \(\) => \{[^\n]*delete TR\.reqIds\.amounts;/.test(tbl));
     ok("S4 §4 雲端存檔走 trSend(單飛 + request_id 沿用),不直叫 tradeSend", /cloud \? await trSend\(S, "amounts", \{ amounts: sending \}\)/.test(fnOf("trSaveAmounts")));
-    ok("S4 §1.1 ① 讀不到新狀態不給存:儲存鈕 disabled、儲存函式也擋", /sv\.disabled = anyBad\(\) \|\| stale;/.test(tbl)
+    ok("S4 §1.1 ① 讀不到新狀態不給存:儲存鈕 disabled、儲存函式也擋", /sv\.disabled = anyBad\(\) \|\| stale \|\| cfgBad;/.test(tbl)
       && /if \(cloud && \(!\(S\.st && S\.st\.alive\) \|\| trCfgUnread\(trReport\(\)\)\)\) return;/.test(fnOf("trSaveAmounts")));
     ok("S4 §1.1 ② 雲端清單走 trCloudListOk(strategies_ok + 空清單有金額不算)", /C\.listLoaded = trCloudListOk\(C\.st && C\.st\.cloud && C\.st\.cloud\.strategies_ok, C\.list,/.test(tsrc) && !/C\.listLoaded = true/.test(tsrc));
     ok("#1 存檔走 trSendAmounts(依視角);④ 雲端送出前內容變了就換 request_id", /const sending = trSendAmounts\(S\.env, /.test(fnOf("trSaveAmounts"))
@@ -280,10 +280,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /trTotals\(cloud \? trSendAmounts\("cloud", names, stored, TR\.edits, false\) : trCurrentAmounts/.test(tbl)
       && /if \(cloud && \(!\(S\.st && S\.st\.alive\) \|\| trCfgUnread\(trReport\(\)\)\)\) return;/.test(fnOf("trSaveAmounts")));
     { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
-      ok("設計稽核必修 ①②③:雲端輸入框焦點框、placeholder --ink-2、選中/hover 列上「拉回」--ink-2(兩個 :not 都在)",
+      ok("設計稽核必修 ①②:雲端輸入框焦點框、placeholder --ink-2(③ 那條隨列尾「拉回」退場一起拿掉)",
         /html\[data-env="cloud"\] \.chat-input:focus-within \{ border-color: var\(--ink\); \}/.test(css)
-        && /html\[data-env="cloud"\] \.chat-input textarea::placeholder \{ color: var\(--ink-2\); \}/.test(css)
-        && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\), :has\(\[aria-current="true"\]\)\) \.ho-down:not\(:hover\):not\(\[aria-disabled="true"\]\) \{ color: var\(--ink-2\); \}/.test(css)); }
+        && /html\[data-env="cloud"\] \.chat-input textarea::placeholder \{ color: var\(--ink-2\); \}/.test(css) && !/\.ho-down/.test(css)); }
     ok("#2 trPendingCheck 不再整包清 reqIds", !/reqIds = \{\}/.test(fnOf("trPendingCheck")) && (fnOf("trPendingCheck").match(/trClearRunIds\(TR\.reqIds\)/g) || []).length === 3);
     // trSentCheck 的行為:收斂清記號並播一次讀屏、主機停了清掉、逾時不清記號但清 request_id
     let said = []; var srSay = (x) => said.push(x); var envCloudKind = (st) => st.kind; var t = (k) => k;
@@ -299,7 +298,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     C = bag({ sent: null, save: "failed", saveUnknownAt: 1e12 }); trSentCheck(C, 1e12 + 1000);
     ok("S4 §4 ack 逾時之後、收斂窗口內:同一份內容重按沿用同一顆", C.reqIds.amounts === "R");
     trSentCheck(C, 1e12 + 241000);
-    const alertCalls = []; var trAlert = (...a) => alertCalls.push(a);
+    const alertCalls = []; var trAlert = (...a) => alertCalls.push(a); var CDEL = { gone: new Map([["x", 1]]), busy: new Map([["y", {}]]), ids: { y: "R" } };
     eval(fnOf("trCloudOwnerCheck"));
     const ob = (ep, kind) => ({ epoch: 3, sent: { a: 1 }, sentRep: 5, save: "sent", saveErr: null, saveUnknownAt: 7, reqIds: { amounts: "R", halt: "H" }, reqFor: { amounts: "k" }, sig: {},
       st: { kind: kind || "running", cloud: { epoch: ep } } });
@@ -309,9 +308,99 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("#8 換帳號(epoch 變了):sent / save / saveUnknownAt / reqIds 全清", O.sent === null && O.save === null && O.saveUnknownAt === 0 && J(O.reqIds) === "{}" && J(O.reqFor) === "{}" && O.epoch === 4);
     ok("M2 換帳號:上一個人的過場、在途那一趟、紅字也清(B 的暫停不會併進 A 那一趟)", (() => { const X = Object.assign(ob(9), { pending: { want: "running" }, sending: { halt: 1 } });
       trCloudOwnerCheck(X); return X.pending === null && J(X.sending) === "{}" && alertCalls.some((c) => c[0] === "" && c[2] === X); })());
+    ok("換帳號也清雲端刪除的在途 / 壓抑 / request_id(上一個人的)", CDEL.gone.size === 0 && CDEL.busy.size === 0 && J(CDEL.ids) === "{}");
     O = ob(3, "signedOut"); trCloudOwnerCheck(O);
     ok("#8 登出:一樣全清", O.sent === null && J(O.reqIds) === "{}");
     ok("S4 §4 過了收斂窗口:request_id 換掉(再按是新的意圖)", C.reqIds.amounts === undefined && C.saveUnknownAt === 0); }
+  /* ── 09-22 第三批 ── */
+  { // 「暫停中…」真的停用(Wei):暫停在途、機器還沒收下 → disabled;收下之後或過了上限才恢復
+    ok("暫停在途、還沒 ack:暫停鈕停用;ack 之後 / 過了收斂上限 / 啟動過場 → 不停用",
+      trHaltInFlight({ want: "halted", until: 2e12 }, 1e12) === true && trHaltInFlight({ want: "halted", acked: true, until: 2e12 }, 1e12) === false
+      && trHaltInFlight({ want: "halted", until: 1e12 }, 2e12) === false && trHaltInFlight({ want: "running", until: 2e12 }, 1e12) === false && trHaltInFlight(null, 1) === false);
+    const head = src.slice(src.indexOf("function trPaintHead("), src.indexOf("\nfunction ", src.indexOf("function trPaintHead(") + 1));
+    ok("B1 結果不明(ack 逾時)不算在途:主鈕恢復,改得成平倉", trHaltInFlight({ want: "halted", unknown: true, until: 2e12 }, 1e12) === false);
+    ok("主鈕在暫停在途時是 disabled 屬性(不是只有 aria-disabled),click 也擋;停用前先把焦點交給標題(不掉到 BODY)",
+      /const flying = trHaltInFlight\(TR\.pending, Date\.now\(\)\);[^\n]*\n[^\n]*\n\s*if \(flying && document\.activeElement === b\) \$\("tr-h"\)\.focus\(\);\s*b\.disabled = flying \|\| /.test(head)
+      && /trHaltInFlight\(TR\.pending, Date\.now\(\)\)\) return;/.test(head) && /mine\.acked = true;/.test(src)); }
+  { // 讀不到主機設定(config: null):trStored 不退成 {};兩個視角都不給存
+    ok("config: null → trCfgUnread;config: {}(新機)→ 不算", trCfgUnread({ config: null }) === true && trCfgUnread({ config: {} }) === false);
+    const stor = src.slice(src.indexOf("function trStored("), src.indexOf("\nfunction ", src.indexOf("function trStored(") + 1));
+    eval(stor.replace("function trStored(", "var trStored = function (") );
+    var trReport = () => REP; let REP = { config: null };
+    ok("trStored:config null → null(不可退成 {});{} → {};有 amounts → 那一份", trStored() === null && ((REP = { config: {} }), JSON.stringify(trStored())) === "{}" && ((REP = { config: { amounts: { a: 1 } } }), trStored().a === 1));
+    ok("讀不到設定:存檔函式兩個視角都擋、金額表整張不畫(畫 0 是假話)", /if \(!stored \|\| trStored\(\) === null \|\| trCfgUnread\(trReport\(\)\)\) return;/.test(src)
+      && /else if \(stored === null\) \{[\s\S]{0,200}t\("tr\.cfgNull"\)/.test(src) && /const cfgBad = trCfgUnread\(trReport\(\)\);/.test(src)); }
+  { // 主機重開後對帳器停著(reconciler.stopped.reason === "machine_restart"):「已暫停」,不是「死了」;原因行帶出口
+    const V2 = { paper: { credentials: true, pair: true, order: true, account: true } };
+    const rs = { alive: true, report: { venues: V2, halt: { halted: false }, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } } };
+    ok("machine_restart → halted(按鈕是「啟動下單」);其他原因停的照舊是 dead", trExecState(rs) === "halted" && trRestartStopped(rs.report)
+      && trExecState({ alive: true, report: { venues: V2, halt: {}, reconciler: { alive: false, stopped: { reason: "other" } } } }) === "dead"
+      && trExecState({ alive: true, report: { venues: V2, halt: {}, reconciler: { alive: false, stopped: null } } }) === "dead");
+    // 定稿(eval-downtime-behavior-unified):已暫停一律帶原因行;重開那條優先、墨色;HALT 那條次要灰;常駐不截斷
+    const stx = src.slice(src.indexOf("function trStateText("), src.indexOf("\nfunction ", src.indexOf("function trStateText(") + 1));
+    ok("狀態行:重開(主機 / Blave)講 B、HALT 講 A,兩者同時講 B", /rk === "machine" \? t\("tr\.cloud\.restartStopped"\) : rk === "app" \? t\("tr\.restartStoppedLocal"\) : t\("tr\.haltReason"\)/.test(stx)
+      && /\|\| died \|\| state === "halted"\);/.test(src) && /tx\.append\(full\.slice\(0, rkCut \+ 3\), trEl\("span", "ink", full\.slice\(rkCut \+ 3\)\)\)/.test(src));
+    const Vp = { paper: { credentials: true, pair: true, order: true, account: true } };
+    const reopened = { alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
+    const never = { alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: null }, daemon: { reconciler: { running: false, wanted: false } } } };
+    ok("Blave 結束再打開(上次跑過)= 已暫停(app);從沒跑過 = 尚未啟動(dead);對帳器自己掛了(wanted)= dead",
+      trRestartKind(reopened.report) === "app" && trExecState(reopened) === "halted" && trRestartKind(never.report) === null && trExecState(never) === "dead"
+      && trExecState({ alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: true } } } }) === "dead"
+      && trExecState({ ...reopened, alive: false }) === "dead");
+    { // 稽核第三輪測試洞:HALT + 結束 app 再打開 → 判成 "app",狀態行用 tr.restartStoppedLocal(不是 HALT 那條)
+      const haltApp = { alive: true, report: { venues: Vp, halt: { halted: true, at: 1, source: "desktop ui" }, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
+      const fn2 = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
+      var TR = { env: "local", st: haltApp, pending: null }, trReport = () => TR.st.report, t = (k) => k, trStamp = () => "—", envHeadWord = () => null, trKeyBad = () => false;
+      eval(fn2("trStateText"));
+      ok("HALT + Blave 結束再打開:kind = app、狀態 halted、狀態行是 Blave 重開那條(不是 HALT 的「平倉照常」)",
+        trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal"); }
+    ok("主機重開 + 已按過暫停:講重開那條(kind = machine 優先)", trRestartKind({ halt: { halted: true }, reconciler: { stopped: { reason: "machine_restart" } } }) === "machine");
+    ok("啟動框:重開過才多那一行(主機 / Blave 各一句),HALT 後再啟動不加", /lines: \(trRestartKind\(r\) === "machine" \? \[t\("tr\.cloud\.restartStartLine"\)\] : trRestartKind\(r\) === "app" \? \[t\("tr\.restartStartLineLocal"\)\] : \[\]\)/.test(src)); }
+  { // S5 已存到、等回報:3 分鐘沒回報就換成「主機沒回報」、鈕還回來(畫面不倒數)
+    const at = 1e12, sv = { venue: "binance", at };
+    ok("S5 等回報:3 分鐘前不換、到 3 分鐘換;沒存過 / 沒有時間不換", trCxSavedStale(sv, at + 179999) === false && trCxSavedStale(sv, at + 180000) === true
+      && trCxSavedStale(null, at + 1e9) === false && trCxSavedStale({ venue: "paper" }, at + 1e9) === false && TR_CX_SAVED_MS === 180000);
+    const ob = src.slice(src.indexOf("function trPaintOnboard("), src.indexOf("\nfunction ", src.indexOf("function trPaintOnboard(") + 1));
+    ok("S5 過了上限:講「主機沒回報」+ 連接鈕回來;重畫簽章帶著這個狀態(輪詢到了才換得過去);沒有倒數", /savedStale = trCxSavedStale\(saved, Date\.now\(\)\)/.test(ob)
+      && /saved && \[saved\.venue, saved\.code, saved\.detail\], savedStale,/.test(ob) && /if \(saved && savedStale\) \{[\s\S]*?t\("tr\.cloud\.cxSavedStale"\)[\s\S]*?b\.id = "tr-connect"/.test(ob) && !/秒|countdown|remaining/.test(ob.replace(/\/\*[\s\S]*?\*\//g, ""))); }
+  { // 事件清單補兩種
+    const ev = src.slice(src.indexOf("const TR_DT_ACTION"), src.indexOf("function trOvEvents("));
+    var trVenueLabel = (x) => x, t = (k, v) => k + (v ? JSON.stringify(v) : "");
+    eval(ev.replace("const TR_DT_ACTION", "var TR_DT_ACTION"));
+    ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {})) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
+    ok("desktop_action update / delete_strategy 有自己的一句", trEventText("desktop_action", { action: "update" })[0] === "tr.ov.evDtUpdate" && trEventText("desktop_action", { action: "delete_strategy" })[0] === "tr.ov.evDtDeleteStrategy");
+    const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
+    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose · TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose"); }
+  { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
+    ok("雲端沒撥過款的投資組合策略:講「第一筆在網頁設定」,本機維持 tr.typeC", /if \(locked\) first\.appendChild\(trEl\("span", "pf-note", cloud \? t\("tr\.cloud\.typeC"\) : t\("tr\.typeC"\)\)\);/.test(src));
+    const save = src.slice(src.indexOf("function trSaveAmounts("), src.indexOf("\nfunction ", src.indexOf("function trSaveAmounts(") + 1));
+    const gate = "if (trWith(S, () => trStored() === null || trCfgUnread(trReport())))";
+    ok("L3 存金額:確認框按下之後、送出之前再查一次設定讀不讀得到", save.indexOf(gate) > save.indexOf("onOk: async () => {") && save.indexOf(gate) < save.indexOf('trSend(S, "amounts"'));
+    const run = src.slice(src.indexOf("async function cdelRun("), src.indexOf("\nfunction cdelBoth"));
+    ok("L2 刪除回 =absent:不當成刪掉了(不壓抑列),講「主機上本來就沒有」", /if \(res && res\.ok && \/=absent\$\/\.test\(String\(res\.result \|\| ""\)\)\) \{/.test(run)
+      && run.indexOf("=absent") < run.indexOf("CDEL.gone.set(") && /t\("cdel\.absent"\)/.test(run)); }
+  { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"), acss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
+    ok("設計稽核必修:灰記號真的是灰的;設定窗與確認框有字型(掛在 html, body,不只 .app);關於的小點是中性色",
+      /\.verdict\.is-calm \.fault-mark \{ background: var\(--ink-3\); \}/.test(css) && /html, body \{[^}]*font-family: -apple-system/.test(acss)
+      && /\.up-dot \{[^}]*background: var\(--ink-2\)/.test(acss) && !/\.up-dot \{[^}]*color-primary/.test(acss));
+    ok("設計稽核(版面):框標題一律貼左、確認框與連接框的腳都換行(目的地那一行獨占一列)、文字鈕停用灰階退場、關於那顆本機鈕對齊、.app 不重複宣告字型",
+      /\.modal-head > h6 \{ margin-right: auto; \}/.test(acss) && /\.del-modal \.modal-foot, \.cx-modal \.modal-foot \{ flex-wrap: wrap; \}/.test(acss)
+      && /\.btn-quiet:disabled, \.btn-quiet:disabled:hover \{ color: var\(--color-greyDark\); cursor: not-allowed; text-decoration: none; \}/.test(acss)
+      && /\.set-up-lbtn \{ margin-top: var\(--space-6\); padding: 0; \}/.test(acss) && !/\.app \{[^}]*font-family/.test(acss) && !/\.set-about \.st\.bad|\.up-cf/.test(acss)
+      && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{ padding-right: calc\(var\(--space-32\) \+ var\(--space-8\)\); \}/.test(css));
+    { const en = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
+      ok("停機那幾句 en 用彎撇號(同檔其他句)", ["tr.cloud.restartStopped", "tr.restartStoppedLocal", "tr.ov.evRestartStoppedNote", "tm.evRestartStoppedNote", "tr.cloud.means.4"]
+        .every((k) => { const m = en.match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m && !/'/.test(m[1]) && /’/.test(m[1]); })); }
+    ok("「暫停下單」文字鈕:--ink-2、熱區跟主鈕等高", /\.main-head \.tr-go-stop \{ color: var\(--ink-2\); min-height: 32px;/.test(css)); }
+  { // S5 雲端連接的結果句(MVP 不查提領:沒有提領那一句)
+    var CXF = { env: "cloud" }, cxCloudIp = () => "1.2.3.4", trSendError = (r) => (r.machineState === "stopped" ? "" : "send:" + r.error);
+    eval(src.slice(src.indexOf("function cxChkTextCloud("), src.indexOf("const cxCalm")));
+    const T = (code, detail) => cxChkTextCloud({ code, detail: detail || {} });
+    ok("S5 每個代號一句;時鐘 / 網路 / 限速三種用雲端版", T("CLOCK") === "cx.chk.clockCloud" && T("NETWORK") === "cx.chk.networkCloud" && T("RATE_LIMITED") === "cx.chk.rateCloud"
+      && T("RATE_BANNED") === "cx.chk.bannedCloud" && T("RATE_BACKOFF") === "cx.chk.backoffCloud" && T("IP_OR_KEY") === "cx.chk.ipOrKey" && T("INCOMPLETE_PAIR") === "cx.chk.incomplete" && T("TRADING_DISABLED") === "cx.chk.trading");
+    ok("S5 沒有提領那一句;拒絕原文截 200、結果不明不叫人重按、主機停了講停機", !/withdraw/.test(src.slice(src.indexOf("function cxChkTextCloud("), src.indexOf("const cxCalm")))
+      && T("REJECTED", { error: "z".repeat(300) }) === 'tr.cloud.cmdRejected{"err":"' + "z".repeat(200) + '"}' && T("CMD_UNKNOWN") === "tr.cloud.cxUnknown"
+      && T("UNDELIVERED", { error: "MACHINE_NOT_RUNNING", machineState: "stopped" }) === "side.stopped" && T("UNDELIVERED", { error: "RATE_LIMITED" }) === "send:RATE_LIMITED"); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

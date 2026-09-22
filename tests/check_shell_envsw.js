@@ -39,13 +39,13 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
      `credentials` 永遠不在裡面(金鑰不經過這條通用路,cloudcmd.js 檔頭契約 ①);
      `credentials_remove` / `retest_accounts`(S5)出貨時再加回來——
      沒有 UI 在用的指令不該是「renderer 被攻破就打得通」的面(稽核 S-2)。 */
-  const CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "restart_reconciler", "update"];
+  const CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts"];
   const sent = []; for (const c of CMDS) sent.push(await C.tradeSend(c, { reason: "x" }));
   ok("雲端:白名單內的指令都經過主行程的 cloudSend(帶 cmd / args / requestId 三個參數),回傳原樣往上交",
     sent.every((r) => r && r.ok === true) && sendCalls.length === CMDS.length
     && sendCalls.map((a) => a[0]).join() === CMDS.join() && sendCalls.every((a) => a.length === 3 && JSON.stringify(a[1]) === '{"reason":"x"}' && a[2] === null) && touched.length === 0);
-  const bad = []; for (const c of ["credentials", "credentials_remove", "retest_accounts", "", "halt2", null]) bad.push(await C.tradeSend(c, {}));
-  ok("雲端:白名單外的指令(含 credentials 與還沒出貨的那兩個)回 NOT_ALLOWED / undelivered,而且一次都沒碰到 cloudSend",
+  const bad = []; for (const c of ["credentials", "", "halt2", null, "strategy_delete", "update", "restart_reconciler"]) bad.push(await C.tradeSend(c, {}));
+  ok("雲端:白名單外的指令(含 credentials:金鑰只走 cloud-connect)回 NOT_ALLOWED / undelivered,而且一次都沒碰到 cloudSend",
     bad.every((r) => r && r.ok === false && r.error === "NOT_ALLOWED" && trKindOf(r) === "undelivered")
     && sendCalls.length === CMDS.length && trErrorKind("NOT_ALLOWED") === "undelivered");
   { const c2 = envApi("cloud", host); await c2.tradeSend("halt", {}, "rid" + "0".repeat(13));
@@ -88,7 +88,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("每一個送指令的地方都是「自己那一份狀態的 api」(S.api / L.api),共 " + sends.length + " 處", sends.length >= 5 && sends.every((x) => x === "S.api.tradeSend(" || x === "L.api.tradeSend("));
   // L = TR_BAGS.local(設定 › 連線這一刀永遠是這台電腦的);S = 進來那一刻的 TR
   const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
-  const entries = ["trSend", "trSaveAmounts", "trUnbind"];
+  // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
+  const entries = ["trSend", "trSaveAmounts", "trUnbind", "cxRetest", "cdelRun"];
   const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
   ok("用 S.api 送指令的函式就是這幾個(多一個就要有人看過它的 request_id 有沒有沿用):" + users.join(), users.length === entries.length && users.every((n) => entries.indexOf(n) >= 0));
   // 會改變執行狀態的那三個指令一律經過 trSend(冪等:重試沿用同一顆 request_id);直接叫 S.api.tradeSend 會繞過它
@@ -132,13 +133,15 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     // 白名單不另抄一份:來源仍是 daemon.js 的 UI_COMMANDS(= api 的 CLOUD_COMMANDS),再交集這一批出貨的四個
     ok("main.js:cloud-send 的白名單沿用 daemon 的 UI_COMMANDS(+ 雲端專屬的 update)、明文排除 credentials,再交集這一批出貨的",
       /cmd === "credentials" \|\| !\(require\("\.\/daemon"\)\.UI_COMMANDS\.has\(cmd\) \|\| CLOUD_ONLY\.indexOf\(cmd\) >= 0\) \|\| CLOUD_SHIPPED\.indexOf\(cmd\) < 0/.test(h)
-      && /const CLOUD_ONLY = \["update"\];/.test(mainSrc)
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "restart_reconciler", "update"\];/.test(mainSrc));
+      && /const CLOUD_ONLY = require\("\.\/cloudcmd"\)\.CLOUD_ONLY_COMMANDS;/.test(mainSrc)
+      && JSON.stringify(require("../shell/cloudcmd").CLOUD_ONLY_COMMANDS) === '["delete_strategy"]'
+      && !require("../shell/daemon").UI_COMMANDS.has("delete_strategy")
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts"\];/.test(mainSrc));
     // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
     ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
-    ok("main.js:update 送出去的參數永遠是 {}", /const argsSafe = cmd === "update" \|\| /.test(h));
+    ok("用本機 app 不觸發雲端 agent 回合:cloud-send 的白名單沒有 update / restart_reconciler", !/"update"|"restart_reconciler"/.test((mainSrc.match(/const CLOUD_SHIPPED = \[[^\]]*\]/) || [""])[0]));
     ok("#3 main.js:非雲端專屬的指令先過 daemon 的 argsOk(形狀不對 = BAD_ARGS / undelivered,不打 api)",
-      /if \(CLOUD_ONLY\.indexOf\(cmd\) < 0 && !require\("\.\/daemon"\)\.argsOk\(cmd, argsSafe\)\) return \{ ok: false, error: "BAD_ARGS", kind: "undelivered" \};/.test(h)
+      /if \(CLOUD_ONLY\.indexOf\(cmd\) >= 0 \? !require\("\.\/cloudcmd"\)\.cloudArgsOk\(cmd, argsSafe\) : !require\("\.\/daemon"\)\.argsOk\(cmd, argsSafe\)\) return \{ ok: false, error: "BAD_ARGS", kind: "undelivered" \};/.test(h)
       && require("../shell/daemon").argsOk("amounts", { amounts: { a: -1 } }) === false && require("../shell/daemon").argsOk("halt", { reason: "x" }) === true);
     { const m = mainSrc.match(/backupChangedOfficial\(`\$\{ws \|\| "none"\}-\$\{new Date\(\)\.toISOString\(\)\}`\.replace\((\/[^\n]*?\/g), "_"\)\)/);
       const re = m ? eval(m[1]) : null;
@@ -246,7 +249,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     /const busy = !!TR\.pending, locked = trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\)\) \|\| trStartPending\(TR\.pending\);/.test(fn("trPaintHead"))
     && /aria-disabled", locked \? "true" : "false"/.test(fn("trPaintHead"))
     && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\);\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return;/.test(fn("trPaintHead"))
-    && /if \(trStartPending\(TR\.pending\)\) return;/.test(fn("trPaintHead"))
+    && /if \(trStartPending\(TR\.pending\) \|\| trHaltInFlight\(TR\.pending, Date\.now\(\)\)\) return;/.test(fn("trPaintHead"))
     && /for \(const step of steps\) \{ if \(S\.pending !== mine\) break;/.test(fn("trRun"))
     && /if \(trBtnLocked\(S\.pending, want === "halted"\)\) return;/.test(fn("trRun"))
     && !/if \(TR\.pending\) return;|if \(S\.pending\) return;/.test(fn("trPaintHead") + fn("trRun")));
@@ -257,9 +260,9 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 寫進雲端的確認框要標明目的地(規格 §5:刻意講三次);本機不給那兩個參數,框逐位元組不變
   { const app2 = fs.readFileSync(path.join(R, "app.js"), "utf8"), html2 = fs.readFileSync(path.join(R, "index.html"), "utf8");
     ok("confirmBox 有 env / footWhere / lead 三個選用參數,DOM 兩個槽在,關框時一起收掉",
-      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, env, footWhere, lead \}\)/.test(app2)
+      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, env, footWhere, lead, single \}\)/.test(app2)
       && /<span class="envm" id="del-env" hidden><\/span>/.test(html2) && /<span class="del-where" id="del-where" hidden><\/span>/.test(html2)
-      && /\$\("del-env"\)\.hidden = true; \$\("del-where"\)\.hidden = true; \$\("del-modal"\)\.querySelector\("\.modal-head"\)\.classList\.remove\("cloud"\);/.test(app2.slice(app2.indexOf("function delClose"))));
+      && /\$\("del-env"\)\.hidden = true; \$\("del-where"\)\.hidden = true; \$\("del-modal"\)\.querySelector\("\.modal-head"\)\.classList\.remove\("cloud"\); \$\("del-cancel"\)\.hidden = false;/.test(app2.slice(app2.indexOf("function delClose"))));
     ok("雲端的框:灰標題列 + 「雲端」記號 + 錢記號 + 鈕上方的目的地那一行;暫停與啟動都經過同一支",
       /o\.env = "cloud"; o\.mark = envMoneyText\(money\) \|\| null; o\.markKind = money \|\| null;/.test(fn("trCloudBox"))
       && /t\("tr\.cloud\.footWhere", \{ where: t\("env\.cloud"\), money: envMoneyText\(money\), venue: trVenueLabel\(id, true\) \}\)/.test(fn("trCloudBox"))
@@ -304,7 +307,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const autoH = { halt: { halted: true, source: "reconciler", at: "t1" } }, userH = { halt: { halted: true, source: "web", at: "t1" } };
   ok("R2-1 三處同一個詞:自動暫停(雲端 / 這台電腦)、已停機;人按的暫停與下單中都沒有特別的詞", [cloudSt(okc("running"), rep(autoH)), { alive: true, report: rep(autoH) }, cloudSt(okc("stopped", { stale: true }), rep(), false), cloudSt(okc("running"), rep(userH)), cloudSt(okc("running")), { alive: true, report: rep() }].every(same)
     && envHeadWord("halted", cloudSt(okc("running"), rep(autoH))) === "env.st.autoPaused" && envHeadWord("halted", cloudSt(okc("running"), rep(userH))) === null && envHeadWord("dead", cloudSt(okc("stopped"), rep(), false)) === "side.stopped");
-  ok("R2-1 寫法:trStateText 的暫停與停機兩句都出自 envHeadWord 那兩個 key", /envHeadWord\(state, TR\.st\) === "env\.st\.autoPaused" \? t\("env\.st\.autoPaused"\)/.test(fn("trStateText")) && /=== "stopped"\) return t\("side\.stopped"\)/.test(fn("trStateText")));
+  ok("R2-1 寫法:trStateText 的暫停與停機兩句都出自 envHeadWord 那兩個 key", /envHeadWord\(state, TR\.st\) !== "env\.st\.autoPaused" \? t\("tr\.halted"\) : t\("env\.st\.autoPaused"\)/.test(fn("trStateText")) && /=== "stopped"\) return t\("side\.stopped"\)/.test(fn("trStateText")));
   ok("側欄頂不再寫「雲端 / 這台電腦」(Wei):DOM、CSS、程式、字串都沒有 envhead 與「主機運行中」", !/envhead/.test(html + code + fs.readFileSync(path.join(R, "trade.css"), "utf8")) && !/side\.cloud\.(running|headAria|stopped)/.test(code + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
   const cellSrc = fn("envPaintCell");
   ok("A 格內不再放錢記號與狀態詞(只 append 圖示與一個記號);詞進 title 與 aria-label", (cellSrc.match(/b\.appendChild\(/g) || []).length === 2 && !/"mode |"w"|"w /.test(cellSrc) && /b\.title = tip \+/.test(cellSrc) && /setAttribute\("aria-label", tip\)/.test(cellSrc) && /aria-keyshortcuts/.test(cellSrc));
@@ -356,14 +359,16 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("直接叫 envSwitch 的全 renderer 只有三處:宣告本身、守門那一支、handoff.js 的「回這台電腦」(新檔直呼會紅):" + hits.join(),
       hits.length === 3 && direct === 2 && hits.filter((f) => f === "handoff.js").length === 1 && !/[^\w]envSwitch\(/.test(app)); }
   // 連接交易所的框只連這台電腦:狀態固定用本機那一袋;雲端視角開不起來(硬擋,不只靠那顆鈕的 aria-disabled)
-  ok("N8 連接交易所的框固定用這台電腦那一袋", ["cxModalOpen", "cxModalPaint", "cxConnect", "cxRetest"].every((n) => /const L = TR_BAGS\.local[,;]/.test(fn(n))) && !/\bTR\.(cx|st|api)\b/.test(fn("cxModalPaint") + fn("cxConnect") + fn("cxRetest")));
-  ok("連接交易所的框在雲端視角開不起來、也送不出去", /^function cxModalOpen\(opener\) \{\s*if \(ENV\.cur !== "local" \|\| TR\.env !== "local"/.test(fn("cxModalOpen")) && /if \(L\.cx\.busy \|\| ENV\.cur !== "local"/.test(fn("cxConnect")) && /ENV\.cur !== "local"\) return;/.test(fn("cxRetest")));
-  ok("雲端的「重新測試」「解除綁定」不接 click(aria-disabled + 說明)", /if \(ro\) \[rt, ub\]\.forEach/.test(fn("trPaintSet")));
-  // 設計師評估 2026-09-22:雲端「還沒連接交易所」那一態,停用的「連接交易所」佔掉全頁唯一的主鈕位置,
-  // 真出口「前往工作頁」反而是段落裡的文字鈕 → 雲端不畫那顆鈕,主鈕換成「前往工作頁」;這台電腦那一態一個字不改
+  // S5:連接框兩個視角共用,狀態袋跟著開框當下的視角走(cxBag),不再寫死這台電腦那一袋
+  ok("S5 連接交易所的框吃開框當下那一袋;雲端只在主機 running 時開得起來", /const L = cxBag\(\)/.test(fn("cxModalOpen")) && /const L = cxBag\(\)/.test(fn("cxModalPaint"))
+    && /if \(env === "cloud" && envCloudKind\(TR_BAGS\.cloud\.st\) !== "running"\) return;/.test(fn("cxModalOpen")) && /CXF\.env = env;/.test(fn("cxModalOpen")));
+  ok("S5 雲端連接走主行程的 cloudConnect,不叫本機的 binanceConnect / binanceIp", /window\.blave\.cloudConnect\(/.test(fn("cxConnectCloud")) && !/binanceConnect|binanceIp|binanceRecheck/.test(fn("cxConnectCloud"))
+    && /if \(CXF\.env === "cloud"\) return;/.test(fn("cxIpLookup")));
+  ok("S5 雲端的「重新測試」「解除綁定」按得動,走雲端指令、失敗文案帶 S.env", !/is-ro/.test(fn("trPaintSet")) && /rt\.addEventListener\("click", cxRetest\)/.test(fn("trPaintSet"))
+    && /cloud \? await trSend\(S, "retest_accounts", \{\}\)/.test(fn("cxRetest")) && /trSendError\(res, "unbind", S\.env\)/.test(fn("trUnbind")) && /cloud \? t\("tr\.cloud\.unbindWarn"\)/.test(fn("trUnbind")));
   { const ob = fn("trPaintOnboard"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
-    ok("雲端 noaccount:不畫停用的「連接交易所」(整支函式沒有 is-ro / aria-disabled / cx.connect 給雲端),主鈕是描邊的「前往工作頁」、外開瀏覽器",
-      !/is-ro|aria-disabled/.test(ob) && /const cloud = TR\.env === "cloud"/.test(ob) && /if \(cloud\) \{ const g = trEl\("button", "btn-out", t\("plan\.openWs"\)\);[^\n]*window\.blave\.openExternal\(planWebUrl\(\)\)/.test(ob));
+    ok("S5 雲端 noaccount:主鈕換回「連接交易所」(同一顆 #tr-connect);送出之後換成「已存到、等回報」那一態、沒有鈕",
+      !/plan\.openWs/.test(ob) && /b\.id = "tr-connect"/.test(ob) && /const saved = TR\.env === "cloud" \? TR\.cxSaved : null, savedStale = trCxSavedStale\(saved, Date\.now\(\)\);/.test(ob) && /tr\.cloud\.cxSavedBn/.test(ob));
     // 批次 ② §6 / §8.4:那一句只講「還沒接交易所」+「這台電腦連的不會帶過來」,出口是下面那顆「前往工作頁」;不再寫「只能看」(啟動 / 暫停按得動了)
     ok("雲端 noaccount:說明換成雲端專屬那兩句(這台電腦仍是 tr.onboard);不再講「只能看」",
       /cloud \? t\("tr\.onboard\.cloud"\) \+ \(LANG === "zh" \? "" : " "\) \+ t\("tr\.cloud\.onboardExtra"\) : t\("tr\.onboard"\)/.test(ob)
@@ -376,7 +381,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("設定 › 連線分類清乾淨:DOM、程式、字串都沒有", !/set-conn|data-set-cat="conn"/.test(html) && !/cxPaint\(|cxOpen\(|set-conn|"conn"/.test(code + app) && !/"(set\.cat\.conn|cx\.unbindHint|cx\.unbindLink|cx\.acct\.title)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
   // 設計師規格 v2 方案 C:存放說明收進「金鑰存在哪?」展開列——仍然只在不是模擬交易時出現,而且誠實揭露那句原文要在
   ok("金鑰存放說明(cx.lead)在框裡的展開列,只在不是模擬交易時出現;展開狀態重畫時保住", (() => { const i = src.indexOf('if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));'), j = src.indexOf('box.appendChild(note);', i), body = src.slice(i, j);
-    return i > 0 && j > i && /\n\s*else \{/.test(body) && /trEl\("button", "cx-disc", t\("cx\.store\.q"\)\), store = trEl\("p", "cx-disc-p", t\("cx\.lead"\)\)/.test(body) && /aria-expanded", CXF\.storeOpen \? "true" : "false"\); store\.hidden = !CXF\.storeOpen;/.test(body)
+    return i > 0 && j > i && /\n\s*else \{/.test(body) && /trEl\("button", "cx-disc", t\("cx\.store\.q"\)\), store = trEl\("p", "cx-disc-p", cloud \? t\("cx\.leadCloud"\) : t\("cx\.lead"\)\)/.test(body) && /aria-expanded", CXF\.storeOpen \? "true" : "false"\); store\.hidden = !CXF\.storeOpen;/.test(body)
       && (src.match(/t\("cx\.lead"\)/g) || []).length === 1; })());
   { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
     ok("誠實揭露原文保留(zh / en):agent 和策略程式讀得到金鑰;沒有「永遠不經過 agent」這類說法", /"cx\.lead": "[^"]*agent 和你的策略程式讀得到/.test(S) && /"cx\.lead": "[^"]*The agent and your strategy code can read them/.test(S) && !/不經過 agent|不會經過 agent|never (reach|pass through|go through) the agent/i.test(S));
@@ -460,8 +465,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       /const C = TR_BAGS\.cloud;/.test(appFn("rpCloudSelect")) && /const d = await C\.api\.loadStrategy\(name\);/.test(appFn("rpCloudSelect")) && /if \(!d\) \{\s*rpCloudSelect\(null\);/.test(appFn("rpCloudSelect")) && !/window\.blave\.loadStrategy/.test(appFn("rpCloudSelect"))
       && /const B = rpBag\(\);\s*B\.tab = tab;/.test(appFn("rpShowTab")) && /if \(rpBag\(\) === RP && !\$\("rp"\)\.hidden\) \{ rpPaintHead\(RP\);/.test(appFn("stratSelect")) && /rpRepaint\(\);/.test(fn("envSwitch")));
     const ho = fs.readFileSync(path.join(R, "handoff.js"), "utf8");
-    ok("雲端報告:「送上雲端」鈕在雲端視角不畫(hoPaintUp 自己守,不只靠呼叫端);雲端那袋的頁首把 .act 收掉", /const show = HO\.on && ENV\.cur !== "cloud" && !!RP\.name/.test(ho)
-      && /if \(B === RP\) hoPaintUp\(\);\s*else \{ hoNote\(null\); const act = \$\("rp-act"\); act\.hidden = true; act\.textContent = ""; \}/.test(appFn("rpPaintHead"))); }
+    ok("報告頁首右側:這台電腦那支 = 送上雲端(up),雲端那支 = 拉回這台電腦(down);同一顆 #rp-ho,依視角選袋(hoPaint 自己守)",
+      /const B = cloud \? RPC : RP, dir = cloud \? "down" : "up";/.test(ho) && /hoPaint\(\);/.test(appFn("rpPaintHead")) && !/hoPaintUp/.test(ho + appFn("rpPaintHead"))); }
 
   process.removeAllListeners("beforeExit");
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

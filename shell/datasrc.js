@@ -136,13 +136,16 @@ function createDataSrc(opts) {
     }
     return out;
   }
+  /* 正在下單時各策略的金額;沒在下單 = null。**下單中但讀不到設定檔(cfgNull)= UNREAD**:不知道誰有金額,
+     不可以當成「沒有人在用」放行刪除 */
+  const UNREAD = "UNREAD";
   function tradingNow() {
-    try { const t = opts.trading && opts.trading(); return t && t.live ? (t.amounts && typeof t.amounts === "object" ? t.amounts : {}) : null; }
+    try { const t = opts.trading && opts.trading(); if (!t || !t.live) return null; if (t.cfgNull) return UNREAD; return t.amounts && typeof t.amounts === "object" ? t.amounts : {}; }
     catch (_) { return null; }
   }
   // 正在下單、而且有投入金額的策略用到它 → 不給刪(刪了它下一輪就抓不到資料)
   function blockers(name) {
-    const amounts = tradingNow(); if (!amounts) return [];
+    const amounts = tradingNow(); if (!amounts || amounts === UNREAD) return [];
     return usage([name]).get(name).filter((s) => Number(amounts[s.name]) > 0).map((s) => s.label);
   }
 
@@ -185,6 +188,8 @@ function createDataSrc(opts) {
     blockers: (name) => (checkName(name) ? [] : blockers(name)),
     remove(name) {
       if (checkName(name)) return Promise.resolve({ ok: false, error: "BAD_ARGS" });
+      // 讀不到設定檔、又有策略用到它:分不出有沒有在下單,擋下(沒有策略用到就照刪)
+      if (tradingNow() === UNREAD && usage([name]).get(name).length) return Promise.resolve({ ok: false, error: "CONFIG_UNREADABLE" });
       const by = blockers(name);
       if (by.length) return Promise.resolve({ ok: false, error: "IN_USE", names: by });
       return mutate((doc) => (doc.sources.delete(name) ? null : "NOT_FOUND"));

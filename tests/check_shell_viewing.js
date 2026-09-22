@@ -47,5 +47,5 @@ t("renderer:雲端視角帶 env=cloud,而且指的是雲端那一份(RPC),不是
 t("renderer:雲端視角的自動下單頁 → portfolio + env=cloud;雲端沒有主機可看(#tr 與 #rp 都藏著)→ 只有 env", JSON.stringify(chatViewing(base({ ENV: { cur: "cloud" }, $: hid(["rp"]) }))) === '{"env":"cloud","view":"portfolio"}'
   && JSON.stringify(chatViewing(base({ ENV: { cur: "cloud" }, $: hid(["rp", "tr"]) }))) === '{"env":"cloud"}');
 t("renderer:報告沒畫出來(hidden / 還沒載到)→ 只有 env", JSON.stringify(chatViewing(base({ $: hid(["rp"]) }))) === '{"env":"local"}' && JSON.stringify(chatViewing(base({ RP: { name: "s1", data: null, tab: "code" } }))) === '{"env":"local"}');
-t("renderer:送出時真的帶上,而且 viewing 在畫「你的那則」之前取一次(送出當下定案);你的那則下面不再掛 .wtag", /const viewing = chatViewing\(\);\s*addMsg\("you", msg\);/.test(appSrc) && /effort: mpEffort\(\), viewing \}\)/.test(appSrc) && !/whereTag\(viewing/.test(appSrc));
+t("renderer:送出時真的帶上,而且 viewing 在畫「你的那則」之前取一次(送出當下定案);你的那則下面不再掛 .wtag", /const viewing = opts && opts\.viewing && typeof opts\.viewing === "object" \? opts\.viewing : chatViewing\(\);\s*addMsg\("you", msg\);/.test(appSrc) && /effort: mpEffort\(\), viewing \}\)/.test(appSrc) && !/whereTag\(viewing/.test(appSrc));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

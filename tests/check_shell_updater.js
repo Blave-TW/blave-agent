@@ -48,7 +48,13 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "updater.js"), "utf8");
   t("整個檔只有 install() 一處會叫 quitAndInstall(永遠不自己重啟)", (src.match(/quitAndInstall\(/g) || []).length === 1);
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
-  t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e\) => \(fromOurPage\(e\)/.test(mainSrc));
+  t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : activeTurn \|\| turnStarting \? \{ ok: false, error: "TURN_BUSY" \} : updater\(\)\.install\(\)\)/.test(mainSrc));
+  t("tmLabels 預設物件就有回合中結束那兩句(畫面還沒交字前按結束也不會是空的)", (() => { const i = mainSrc.indexOf("let tmLabels = {"), j = mainSrc.indexOf("};", i); const d = mainSrc.slice(i, j);
+    return /quitTurnTitle: "/.test(d) && /quitTurnBody: "/.test(d); })() && !/tmLabels\.quitTurnTitle \|\|/.test(mainSrc));
+  t("關視窗:本機 agent 回合在跑時也只藏起來(同下單中);「背景照常下單」那則只在真的在下單時講",
+    /const trading = tradeMaybeLive\(\), turn = !!\(activeTurn \|\| turnStarting\);\s*if \(quitting \|\| quitConfirmed \|\| \(!trading && !turn\)\) return;\s*e\.preventDefault\(\); win\.hide\(\);/.test(mainSrc) && /if \(trading && !hiddenSaid/.test(mainSrc));
+  t("回合收尾時視窗可能已關:送 turn-end 前先看 isDestroyed", /if \(!win\.isDestroyed\(\)\) win\.webContents\.send\("turn-end"/.test(mainSrc));
+  t("結束 Blave:本機 agent 回合還在跑時先問一次(同自動下單那一道),確認過才結束", /if \(!quitting && !quitConfirmed && \(activeTurn \|\| turnStarting\)\) \{\s*e\.preventDefault\(\);/.test(mainSrc) && /message: tmLabels\.quitTurnTitle/.test(mainSrc));
   const cfg = fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8");
   t("打包:updater.js 在 files、release 沒設更新來源會 throw、來源必須 https、有來源才出 zip", /"updater\.js"/.test(cfg) && /release 要設 BLAVE_UPDATE_URL/.test(cfg) && /\^https:/.test(cfg) && /target: "zip"/.test(cfg));
   t("release 指令不再把目標寫死成 dmg(不然 zip 不會出)", !/--mac dmg --publish never/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "package.json"), "utf8").split('"release"')[1]));

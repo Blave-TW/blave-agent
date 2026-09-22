@@ -1061,7 +1061,7 @@ msgid "tr.means.2p"
 msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
 
 msgid "tr.means.3"
-msgstr "After you quit and reopen Blave, trading resumes only when you press Start trading."
+msgstr "After you quit and reopen Blave, trading stays paused — no exits or stops either — until you press Start trading. After sleep or a dropped connection, it picks up on its own."
 
 msgid "tr.means.4"
 msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
@@ -1130,7 +1130,7 @@ msgid "tr.noStrategies"
 msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has a backtest you can give it a size."
 
 msgid "tr.typeC"
-msgstr "portfolio strategies do not support auto-trading yet"
+msgstr "Portfolio strategies do not support auto-trading yet"
 
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"
@@ -1552,7 +1552,7 @@ msgid "tr.cloud.means.3"
 msgstr "The machine takes {h} TWD from your balance every hour for as long as it exists. Under {m} TWD it stops: trading halts and positions stay at the exchange."
 
 msgid "tr.cloud.means.4"
-msgstr "When the machine restarts or reconnects, it keeps trading on schedule; it does not stop to wait for you."
+msgstr "After the machine stops or restarts, trading stays paused — no exits or stops either — until you press Start trading. A brief loss of connection to the exchange doesn’t pause it."
 
 msgid "tr.cloud.bothReal.h"
 msgstr "This computer is also trading real money."
@@ -2005,9 +2005,6 @@ msgstr "View in Cloud"
 msgid "ho.block.goLocal"
 msgstr "View on This Computer"
 
-msgid "ho.note"
-msgstr "The agent takes it from here and reports progress in the chat."
-
 msgid "ho.ok"
 msgstr "Confirm"
 
@@ -2047,8 +2044,6 @@ msgstr "Update"
 msgid "up.updating"
 msgstr "Updating…"
 
-msgid "up.retry"
-msgstr "Try again"
 
 msgid "up.busy"
 msgstr "A conversation is still replying. Update after it finishes."
@@ -2069,49 +2064,23 @@ msgid "up.c.updating"
 msgstr "Updating…"
 
 msgid "up.c.note"
-msgstr "Updating the cloud leaves a conversation in the web workspace and uses some AI credit."
+msgstr "The agent on this computer connects to your cloud machine to do the update, using your own AI credit. If the trading program is running, it asks you first."
 
-msgid "up.c.recDown"
-msgstr "The new version is installed, but the trading program didn’t restart, so trading still runs on the old version."
 
-msgid "up.c.restart"
-msgstr "Restart trading program"
 
-msgid "up.c.restartSent"
-msgstr "Restart sent. Waiting for the machine’s next report."
 
-msgid "up.c.notUpdated"
-msgstr "This update didn’t go through; it’s still {v}. Your strategies keep running as before."
 
 msgid "up.c.available"
 msgstr "New version {nv} available"
 
-msgid "up.c.updatedRec"
-msgstr "Update finished. The trading program is running."
 
-msgid "up.c.notYet"
-msgstr "Updating the cloud from the app isn’t available yet. Please try again later."
 
-msgid "up.c.unsupported"
-msgstr "This cloud machine doesn’t support updates from the app. Update it from the web workspace."
 
-msgid "up.cf.titleBoth"
-msgstr "Update this computer and the cloud"
 
-msgid "up.cf.titleCloud"
-msgstr "Update the cloud"
 
-msgid "up.cf.cloud"
-msgstr "Updates now."
 
-msgid "up.cf.cloudLive"
-msgstr "Updates now. The trading program restarts once on the new version and places no orders while it restarts; strategies and positions stay as they are."
 
-msgid "up.cf.local"
-msgstr "Blave restarts on the new version."
 
-msgid "up.cf.localBlocked"
-msgstr "Auto trading is running, so this computer won’t restart now. Pause trading and press Update here, or it installs when you quit Blave."
 
 msgid "tr.cloud.pendAmounts"
 msgstr "The new amounts are saved on the cloud machine. This page shows them as current after its next report."
@@ -2147,10 +2116,193 @@ msgid "tr.startingHint"
 msgstr "The start command is on its way. To stop it, press Pause trading next to it."
 
 msgid "tr.cloud.hidden"
-msgstr "{n} strategies can’t be read right now; their amounts are kept as they are."
+msgstr "Strategies that can’t be read right now: {n}. Their amounts are kept as they are."
 
 msgid "tr.cloud.cfgUnread"
 msgstr "The cloud machine’s amount settings couldn’t be read, so saving now could clear the whole portfolio. You can save once this page updates."
 
 msgid "tr.cloud.badStored"
 msgstr "The cloud machine’s amount settings have values that can’t be read ({names}), so this can’t be saved. Fix them in the web workspace."
+
+msgid "cdel.aria"
+msgstr "Delete {name} from the cloud"
+
+msgid "cdel.title"
+msgstr "Delete “{name}”?"
+
+msgid "cdel.body"
+msgstr "This deletes the strategy’s code and backtest results from your cloud machine. It can’t be undone."
+
+msgid "cdel.only"
+msgstr "Only the cloud copy is deleted. Strategies on this computer aren’t affected."
+
+msgid "cdel.inUse"
+msgstr "This strategy is still in the cloud’s trading setup, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."
+
+msgid "cdel.goPos"
+msgstr "Open Positions"
+
+msgid "cdel.pending"
+msgstr "Deleting…"
+
+msgid "cdel.sayPending"
+msgstr "Deleting {name} from the cloud"
+
+msgid "cdel.sayDone"
+msgstr "Deleted {name} from the cloud"
+
+msgid "cdel.failed"
+msgstr "The command didn’t reach the cloud machine. The strategy wasn’t deleted."
+
+msgid "cdel.failedHint"
+msgstr "Try again."
+
+msgid "cdel.rejected"
+msgstr "The cloud machine didn’t accept this command ({err}). The strategy wasn’t deleted."
+
+msgid "cdel.rejectedHint"
+msgstr "Try again. If it keeps failing, ask the agent to delete it."
+
+msgid "cdel.unknown"
+msgstr "The command was sent, but the cloud machine hasn’t reported back. It may already be deleted. Check the list once it updates; no need to press again."
+
+msgid "cdel.retry"
+msgstr "Try Again"
+
+msgid "cdel.gotIt"
+msgstr "Got It"
+
+msgid "ho.note.up"
+msgstr "The agent moves it, re-runs the backtest on your cloud machine, and shows both sets of numbers side by side in the chat."
+
+msgid "ho.note.down"
+msgstr "The agent brings it back, re-runs the backtest on this computer, and shows both sets of numbers side by side in the chat."
+
+msgid "strat.delInPf"
+msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."
+
+msgid "strat.delCfgUnread"
+msgstr "This computer’s trading settings couldn’t be read, so it isn’t clear whether this strategy is in the portfolio. Nothing was deleted; try again in a moment."
+
+msgid "side.rowTip"
+msgstr "{name} ({id})"
+
+msgid "rp.noBt"
+msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
+
+msgid "cx.ip.cloudNote"
+msgstr "This is the cloud machine’s current public IP."
+
+msgid "cx.ip.cloudNone"
+msgstr "Couldn’t read the cloud machine’s IP"
+
+msgid "cx.leadCloud"
+msgstr "Stored in your cloud machine’s workspace (.env). The key only passes through Blave on its way to your own machine; it isn’t stored with us and never enters chat history. The agent and your strategy code can read it; that is how they trade and fetch data for you."
+
+msgid "cx.chk.incomplete"
+msgstr "The API Key and Secret Key must be sent together, and this attempt didn’t include both, so nothing was saved. Fill in both, then connect again."
+
+msgid "cx.chk.clockCloud"
+msgstr "The cloud machine’s clock is out of step with Binance’s, so the key couldn’t be checked and was not saved. Try again in a while; if it keeps happening, contact us."
+
+msgid "cx.chk.networkCloud"
+msgstr "The cloud machine couldn’t reach Binance, so the key couldn’t be checked and was not saved. Try again in a while."
+
+msgid "cx.chk.rateCloud"
+msgstr "Binance is temporarily limiting requests from the cloud machine, so the key couldn’t be checked and was not saved. Wait a few minutes, then connect again."
+
+msgid "cx.chk.bannedCloud"
+msgstr "Binance has temporarily blocked the cloud machine’s IP, so the key couldn’t be checked and was not saved. Wait a while longer, then connect again."
+
+msgid "cx.chk.backoffCloud"
+msgstr "The cloud machine was just rate-limited by Binance and is waiting it out, so it didn’t check this time and nothing was saved. Wait a few minutes, then connect again."
+
+msgid "cx.chk.noWhitelistCloud"
+msgstr "This key has no IP whitelist: Binance deletes keys that have no whitelist and sit unused for a long time. Adding the cloud machine’s IP to the whitelist is recommended."
+
+msgid "tr.cloud.cxSavedBn"
+msgstr "The key is saved on the cloud machine and passed Binance’s permission check. This page switches to the trading settings after the machine’s next report."
+
+msgid "tr.cloud.cxSavedPaper"
+msgstr "The paper account is set up on the cloud machine. This page switches to the trading settings after the machine’s next report."
+
+msgid "tr.cloud.cxUnknown"
+msgstr "The key was sent, but the cloud machine hasn’t reported the check result. Close this and watch this page: it switches to the trading settings if the connection went through. If not, connect again."
+
+msgid "tr.cloud.unbindWarn"
+msgstr "This removes the exchange keys from the cloud machine. Cloud trading pauses at once, and positions stay at the exchange with nothing managing them. Your order settings are also cleared; you’ll need to set them up again after reconnecting."
+
+msgid "tr.cloud.pendRow"
+msgstr "Sent. Waiting for the cloud machine to report back."
+
+msgid "tr.cfgNull"
+msgstr "The machine’s amount settings couldn’t be read, so amounts aren’t shown and can’t be saved. This recovers once a report reads them."
+
+msgid "tr.cfgUnreadLocal"
+msgstr "This computer’s amount settings couldn’t be read, so saving now could clear the whole portfolio. You can save once the status updates."
+
+msgid "src.delCfgUnread"
+msgstr "This computer’s trading settings couldn’t be read, so it isn’t clear whether the strategies using this source are trading. Nothing was deleted; try again in a moment."
+
+msgid "tr.ov.evDtUpdate"
+msgstr "Update to the latest version"
+
+msgid "tr.ov.evDtDeleteStrategy"
+msgstr "Sent from Blave Desktop: delete a strategy"
+
+msgid "tr.ov.evManualClose"
+msgstr "Capital positions still open"
+
+msgid "tr.ov.evManualCloseNote"
+msgstr "close them in Capital’s trading software"
+
+msgid "up.c.msg"
+msgstr "Update the cloud machine to the latest version"
+
+msgid "up.c.checking"
+msgstr "The agent is handling the cloud update; see the chat for how it went. This updates once the cloud machine reports the new version."
+
+msgid "tr.cloud.typeC"
+msgstr "Set a portfolio strategy’s first amount in the web workspace; you can adjust it here after that."
+
+msgid "cdel.absent"
+msgstr "This strategy wasn’t on the cloud machine, so nothing was deleted. The list catches up once it updates."
+
+msgid "up.installLocal"
+msgstr "Restart and update this computer"
+
+msgid "up.c.seeChat"
+msgstr "The last cloud update didn’t finish; see the chat for why and what’s next."
+
+msgid "tr.cloud.restartStopped"
+msgstr "The machine restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start trading to resume."
+
+msgid "tm.quitTurnTitle"
+msgstr "The agent is still replying"
+
+msgid "tm.quitTurnBody"
+msgstr "Quitting Blave now cuts off this turn, including any cloud update in progress. It’s safer to wait until it finishes."
+
+msgid "tr.restartStoppedLocal"
+msgstr "Blave was restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start trading to resume."
+
+msgid "tr.haltReason"
+msgstr "No new positions; exits and stops still run."
+
+msgid "tr.cloud.restartStartLine"
+msgstr "No orders have gone out since the machine restarted, so your positions may not match the current signals."
+
+msgid "tr.restartStartLineLocal"
+msgstr "No orders have gone out since Blave was restarted, so your positions may not match the current signals."
+
+msgid "tr.ov.evRestartStopped"
+msgstr "Machine restarted — trading paused"
+
+msgid "tr.ov.evRestartStoppedNote"
+msgstr "no orders at all; exits and stops won’t run either"
+
+msgid "tm.evRestartStoppedNote"
+msgstr "Your machine restarted and auto-trading is paused. No orders are going out — nothing is managing your positions, and exits and stops won’t run. Press Start trading on the Auto trading page to resume, then choose to catch up or wait for new signals. Stop orders placed on the exchange are unaffected."
+
+msgid "tr.cloud.cxSavedStale"
+msgstr "The key was sent, but the cloud machine hasn’t reported back, so this page hasn’t switched to the trading settings. You can connect again, or ask the agent in the chat to check on the machine."

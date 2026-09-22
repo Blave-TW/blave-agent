@@ -187,13 +187,15 @@ async function srcDelete(it, opener) {
   confirmBox({ title: t("src.delTitle", { source: it.name }), lines, ok: t("src.del"), opener, onOk: async () => {
     let r = null; try { r = await window.blave.dataSrcRemove(it.name); } catch (_) { r = null; }
     if (r && !r.ok && r.error === "IN_USE") { srcBlocked(it, r.names || [], opener); return; }   // 按下去之前的那一刻開始下單了
+    if (r && !r.ok && r.error === "CONFIG_UNREADABLE") { srcBlockedText(it, t("src.delCfgUnread"), opener); return; }   // 下單中但讀不到金額設定:分不出有沒有在用
     await srcLoad();
     if (!r || !r.ok) { const b = $("set-src"); const e = srcMk("p", "plan-err"); e.setAttribute("role", "status"); e.append(srcMk("span", "fault-mark"), srcMk("span", null, t(r && r.error === "BUSY" ? "src.errBusy" : "src.errSave"))); b.append(e); }
   } });
 }
 // 正在下單的策略用到它:同一個框,只有一顆「知道了」。第一句粗體由程式包(字串裡不放標籤)
-function srcBlocked(it, names, opener) {
-  const text = t("src.delBlocked", { name: names.join("、"), source: it.name }), cut = text.search(/[。.]/) + 1;
+function srcBlocked(it, names, opener) { srcBlockedText(it, t("src.delBlocked", { name: names.join("、"), source: it.name }), opener); }
+function srcBlockedText(it, text, opener) {
+  const cut = text.search(/[。.]/) + 1;
   const v = srcMk("div", "verdict"), body = srcMk("div");
   body.append(srcMk("b", "", cut > 0 ? text.slice(0, cut) : ""), document.createTextNode(cut > 0 ? text.slice(cut) : text));
   v.append(srcMk("span", "fault-mark"), body);

@@ -45,35 +45,34 @@ function hoIcon(dir) {
 function hoCloudLive() { const st = TR_BAGS.cloud.st; return envCloudKind(st) === "running" && envHeadState(st, Date.now()) !== "unknown"; }
 function hoAmount(st, id) { const a = st && st.report && st.report.config && st.report.config.amounts; const v = a && Object.prototype.hasOwnProperty.call(a, id) ? Number(a[id]) : 0; return isFinite(v) ? v : 0; }
 
-/* agent 正在回覆時兩顆鈕都是 aria-disabled(不是原生 disabled:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它 */
+/* agent 正在回覆時頁首那顆是 aria-disabled(不是原生 disabled:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它 */
 function hoBusy() {
   const busy = typeof running !== "undefined" && running === true;
-  document.querySelectorAll("#rp-ho, .ho-down").forEach((b) => {
+  document.querySelectorAll("#rp-ho").forEach((b) => {
     if (busy) { b.setAttribute("aria-disabled", "true"); b.dataset.title = b.dataset.title || b.title || ""; b.title = t("turn.busy"); }
     else { b.removeAttribute("aria-disabled"); if (b.dataset.title !== undefined) { b.title = b.dataset.title; delete b.dataset.title; } }
   });
 }
-// 策略報告頁首那顆「送上雲端」。沒回測過、資料夾名不合規、功能關 → 不畫(.act 整個藏起來,頁首高度由 .txt 決定、不跳)。
-// 雲端視角也不畫:#rp 那時開著的是雲端那一份(app.js 的 RPC),它本來就在雲端;RP 是這台電腦的,拿來畫會標錯支
-function hoPaintUp() {
+// 有程式碼就能搬(Wei 09-22:不要求回測過——搬過去之後 agent 會在那邊重跑一次回測)
+function hoHasCode(d) { return !!(d && typeof d.code === "string" && d.code.trim()); }
+/* 策略報告頁首右側那一顆(spec-desktop-cloud-strategy-row-delete-pullback §4):
+   這台電腦那支 =「送上雲端」(up);雲端那支 =「拉回這台電腦」(down,同一個位置、同一個 id,data-dir 分方向)。
+   功能關、沒有程式碼、資料夾名不合規 → 不畫(.act 整個藏起來,頁首高度由 .txt 決定、不跳)。
+   拉回另外要雲端看得到現況而且在運行(讀不到 / 逾 1 小時沒同步就不畫)。 */
+function hoPaint() {
   const act = $("rp-act"); if (!act) return;
   hoNote(null);                                       // 換了策略 / 重畫頁首 → 上一次那句「送不上去」不留在新的那一頁
-  const show = HO.on && ENV.cur !== "cloud" && !!RP.name && !!RP.data && !!RP.data.stats && HO_ID_RE.test(RP.name);
+  const cloud = ENV.cur === "cloud";
+  const B = cloud ? RPC : RP, dir = cloud ? "down" : "up";
+  const show = HO.on && !!B.name && HO_ID_RE.test(B.name) && hoHasCode(B.data) && (!cloud || hoCloudLive());
   act.hidden = !show; act.textContent = "";
   if (!show) return;
-  const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho";
-  const l = document.createElement("span"); l.textContent = t("ho.up.btn"); b.append(hoIcon("up"), l);
-  b.addEventListener("click", () => hoAsk("up", RP.name, b));
+  const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho"; b.dataset.dir = dir;
+  const l = document.createElement("span"); l.textContent = cloud ? t("ho.down.btn") : t("ho.up.btn"); b.append(hoIcon(dir), l);
+  if (cloud) { const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); }
+  const id = B.name;
+  b.addEventListener("click", () => hoAsk(dir, id, b));
   act.appendChild(b); hoBusy();
-}
-// 雲端策略清單列尾那顆「拉回」(trade.js 的 envPaintSide 每列叫一次)。回節點或 null
-function hoDownBtn(name) {
-  if (!HO.on || !HO_ID_RE.test(name) || !hoCloudLive()) return null;
-  const b = document.createElement("button"); b.type = "button"; b.className = "btn-quiet ho-down";
-  b.title = t("ho.down.aria"); b.setAttribute("aria-label", t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + name);
-  const l = document.createElement("span"); l.textContent = t("ho.down.btn"); b.append(hoIcon("down"), l);
-  b.addEventListener("click", () => hoAsk("down", name, b));
-  return b;
 }
 
 /* 還在等著送上雲端的那一支(雲端中欄的「準備好了」卡與它的 gate 都要它)。回 id 或 null。
@@ -144,7 +143,8 @@ function hoAsk(dir, id, opener) {
   else {
     if (state === "over") extra.appendChild(mk("p", "cf-removed", dir === "up" ? t("ho.over.up") : t("ho.over.down")));
     if (state === "maybe") extra.appendChild(mk("p", "cf-removed", t("ho.over.maybeUp")));
-    extra.appendChild(mk("p", "cf-note", t("ho.note")));              // 擋下的時候不會執行:覆蓋那句與這句都是假話,不出
+    // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排(擋下的時候不會執行:覆蓋那句與這句都是假話,不出)
+    extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.note.up") : t("ho.note.down")));
   }
   const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });
   const goSide = dir === "up" ? "cloud" : "local";
@@ -162,5 +162,5 @@ function hoAsk(dir, id, opener) {
 async function hoInit() {
   try { const f = await window.blave.featureFlags(); HO.on = !!(f && f.cloudHandoff === true); } catch (_) { HO.on = false; }
   document.documentElement.dataset.handoff = HO.on ? "on" : "off";
-  if (HO.on) { hoPaintUp(); ENV.sig.side = null; if (typeof trPaint === "function") trPaint(); }
+  if (HO.on) { hoPaint(); ENV.sig.side = null; if (typeof trPaint === "function") trPaint(); }
 }

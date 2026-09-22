@@ -28,16 +28,8 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
     && interpret({ status: 200, body: body({ strategies_partial: null }) }).strategies_partial === false
     && interpret({ status: 200, body: body({ strategies_partial: false }) }).strategies_ok === true
     && interpret({ status: 200, body: body() }).strategies_ok === true);
-  t("turn_active:只收 boolean,缺席 / 別的型別 = null(不知道)", interpret({ status: 200, body: body({ turn_active: true }) }).turn_active === true
-    && interpret({ status: 200, body: body({ turn_active: false }) }).turn_active === false && interpret({ status: 200, body: body() }).turn_active === null
-    && interpret({ status: 200, body: body({ turn_active: "yes" }) }).turn_active === null);
-  t("update:只留四個欄位;不認得的 result 當 updating、不認得的 state 當 running(不把沒定論的講成結果);沒有 / 空物件 = null", (() => {
-    const ok = interpret({ status: 200, body: body({ update: { state: "done", result: "reconciler_down", requested_at: 5, from_version: "1.1.80", session_id: "web-1" } }) }).update;
-    return JSON.stringify(ok) === '{"state":"done","result":"reconciler_down","requested_at":5,"from_version":"1.1.80"}'
-      && interpret({ status: 200, body: body({ update: { state: "done", result: "weird" } }) }).update.result === "updating"
-      && interpret({ status: 200, body: body({ update: { state: "x", result: "updated" } }) }).update.state === "running"
-      && interpret({ status: 200, body: body({ update: {} }) }).update === null
-      && interpret({ status: 200, body: body() }).update === null; })());
+  t("雲端「從 app 按更新」的讀數(turn_active / update)不再往上交:這個 app 不送 update(用本機 app 不觸發雲端 agent 回合)",
+    !("update" in interpret({ status: 200, body: body({ update: { state: "done", result: "updated" } }) })) && !("turn_active" in interpret({ status: 200, body: body({ turn_active: true }) })));
 
   // 宿主(時鐘是假的:refresh 有最小間隔,每一步自己把時間往前推)
   const calls = []; let clock = 1e6, creds = { token: "acct-T", appSecret: "appsec-S" }, reply = { status: 200, body: body() }, changes = [];
@@ -228,24 +220,14 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
     /\n  handle\("cloud-strategy", \(_e, q\) => cloudHost\(\)\.strategy\(q && q\.name\), \{ code: "UNREACH", strategy: null \}\);/.test(mainSrc)
     && /cloudStrategy: \(name\) => ipcRenderer\.invoke\("cloud-strategy", \{ name \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
 
-  { // 更新的進度要推給畫面:只改 update.result(其餘不變)也要叫 onChange
-    let rep = { status: 200, body: body({ update: { state: "done", result: "updated", requested_at: 1, from_version: "a" } }) }, seen = [], ck = 5e6;
+  { // 版本變了要推給畫面(關於那一行要跟上主機回報的版本)
+    let rep = { status: 200, body: body({ config_version: "1.1.80" }) }, seen = [], ck = 5e6;
     const h = createCloudHost({ apiBase: "https://x", getCreds: () => ({ token: "u", appSecret: "s" }), post: async () => rep,
-      onChange: (s) => seen.push(s.update && s.update.result), now: () => ck, setTimer: () => 0, clearTimer: () => {} });
+      onChange: (s) => seen.push(s.config_version), now: () => ck, setTimer: () => 0, clearTimer: () => {} });
     await h.refresh(true); ck += MIN_GAP_MS;
-    rep = { status: 200, body: body({ update: { state: "done", result: "reconciler_down", requested_at: 1, from_version: "a" } }) };
-    await h.refresh(true); ck += MIN_GAP_MS;
-    rep = { status: 200, body: body({ update: { state: "done", result: "reconciler_down", requested_at: 1, from_version: "a" }, turn_active: true }) };
+    rep = { status: 200, body: body({ config_version: "1.1.83" }) };
     await h.refresh(true);
-    t("update.result / turn_active 變了就推(updated 翻成 reconciler_down 不能等 60 秒)", seen.join(",") === "updated,reconciler_down,reconciler_down", seen.join(",")); }
-  { // 換人 / 登出時 epoch 會變:畫面靠它丟掉上一個人的在途金額與 request_id
-    let who = { token: "A", appSecret: "s" }, ck = 9e6;
-    const h = createCloudHost({ apiBase: "https://x", getCreds: () => who, post: async () => ({ status: 200, body: body() }), now: () => ck, setTimer: () => 0, clearTimer: () => {} });
-    await h.refresh(true); const e0 = h.snapshot().epoch; ck += MIN_GAP_MS;
-    await h.refresh(true); const e1 = h.snapshot().epoch; ck += MIN_GAP_MS;
-    who = { token: "B", appSecret: "s" }; await h.refresh(true); const e2 = h.snapshot().epoch;
-    h.reset(); const e3 = h.snapshot().epoch;
-    t("epoch:同一個人輪詢不變;換人、登出都會變", typeof e0 === "number" && e1 === e0 && e2 !== e1 && e3 !== e2); }
+    t("config_version 變了就推(不等 60 秒那一輪)", seen.join(",") === "1.1.80,1.1.83", seen.join(",")); }
 
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

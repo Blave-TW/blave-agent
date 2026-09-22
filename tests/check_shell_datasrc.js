@@ -110,7 +110,12 @@ const ds = D.createDataSrc({ envFile: ENVF, lock, strategies: () => STRATS, trad
   TRADING = { live: true, amounts: { btc_funding: 1000 } };
   const blocked = await ds.remove("COINGLASS");
   t("正在下單、有金額、用到它 → IN_USE,.env 沒動", blocked.ok === false && blocked.error === "IN_USE" && blocked.names.join() === "BTC 資金費率反轉" && /DATA_COINGLASS_KEY/.test(rd()));
+  TRADING = { live: true, amounts: undefined, cfgNull: true };
+  const unread = await ds.remove("COINGLASS");
+  t("下單中但讀不到金額設定(config: null)、有策略用到它 → CONFIG_UNREADABLE,不當成沒人用放行;.env 沒動", unread.ok === false && unread.error === "CONFIG_UNREADABLE" && /DATA_COINGLASS_KEY/.test(rd()));
+  TRADING = { live: true, amounts: { btc_funding: 1000 } };
   t("同一時間別的來源照樣刪得掉", (await ds.remove("POLYGON")).ok === true && !/POLYGON/.test(rd()));
+  t("main.js:下單中但回報的 config 是 null 時,把 cfgNull 交給資料來源那一層", /cfgNull: !!r && r\.config === null/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
   t("刪不存在的 / 名稱不合法 → 不動檔", (await ds.remove("POLYGON")).error === "NOT_FOUND" && (await ds.remove("a b")).error === "BAD_ARGS");
   t("全程沒有兩個讀-改-寫同時拿著鎖", overlap === false);
 

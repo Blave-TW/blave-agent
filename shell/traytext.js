@@ -30,6 +30,8 @@ function cloudLine(st) {
   const money = ids.every((k) => k === "paper") ? "paper" : "real";
   if (!st.alive) return { money, state: "unknown" };
   if (r.halt && r.halt.halted) return { money, state: "paused" };
+  // 主機重開後對帳器停著、等人按「啟動下單」:同畫面一律「已暫停」(不是「不明」)
+  if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart") return { money, state: "paused" };
   return { money, state: r.reconciler && r.reconciler.alive ? "on" : "unknown" };
 }
 /* 雲端現在是不是「確定在下單」(結束確認框要不要多那一句)。保守:不確定就不說——那一句是在替雲端做保證。 */

@@ -141,6 +141,8 @@
           <button class="rp-tab" type="button" role="tab" data-tab="tr" data-i18n="rp.tab.trades"></button>
           <button class="rp-tab" type="button" role="tab" data-tab="code" data-i18n="rp.tab.code"></button>
         </div>
+        <!-- 沒有回測時,講為什麼上面兩個分頁是灰的(兩個視角都出;app.js 的 rpShowTab 跟 disabled 同一處設) -->
+        <p class="rp-nobt" id="rp-nobt" data-i18n="rp.noBt" hidden></p>
         <div class="rp-panel" id="rp-bt" role="tabpanel"></div>
         <div class="rp-panel" id="rp-tr" role="tabpanel" hidden></div>
         <div class="rp-panel" id="rp-code" role="tabpanel" hidden><pre class="rp-code mono" id="rp-code-pre"></pre></div>
@@ -265,11 +267,11 @@
             </div>
             <div class="set-up-row">
               <span class="w" data-i18n="env.local"></span>
-              <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p><p class="st" id="set-up-bk"></p></div>
+              <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p><p class="st" id="set-up-bk"></p><button type="button" class="btn-quiet set-up-lbtn" id="set-up-lbtn" hidden></button></div>
             </div>
             <div class="set-up-row" id="set-up-cloud" hidden>
               <span class="w" data-i18n="env.cloud"></span>
-              <div class="t"><p class="ver mono" id="set-up-cver"></p><p class="st" id="set-up-ctxt" role="status"></p><p class="st" id="set-up-cnote"></p><div class="set-up-act" id="set-up-cact" hidden></div></div>
+              <div class="t"><p class="ver mono" id="set-up-cver"></p><p class="st" id="set-up-ctxt" role="status"></p><p class="st" id="set-up-cnote"></p></div>
             </div>
           </div>
         </div>
@@ -305,15 +307,19 @@
 </div>
 
 <!-- 連接交易所(自動下單頁的「連接交易所」直接開這個框;結構照雲端版)。內容由 trade.js 的 cxModalPaint 畫。
-     只在「這台電腦」視角開得起來——雲端第一刀唯讀,trade.js 的 cxModalOpen 硬擋 -->
+     兩個視角都開得起來:雲端那一份的金鑰只走主行程的 cloud-connect(S5),雲端主機在跑才開得起來 -->
 <div class="scrim" id="cx-scrim" role="dialog" aria-modal="true" aria-labelledby="cx-title" hidden>
   <div class="set-modal cx-modal" id="cx-modal">
     <div class="modal-head">
+      <!-- 雲端視角才出:目的地記號(標題列同時灰底,同雲端確認框) -->
+      <span class="envm" id="cx-env" hidden></span>
       <h6 id="cx-title" data-i18n="cx.connect"></h6>
       <button type="button" class="modal-close" id="cx-close" data-i18n-aria="set.close">✕</button>
     </div>
     <div class="cx-body" id="cx-body"></div>
     <div class="modal-foot">
+      <!-- 雲端:鈕正上方講目的地(雲端 · 真錢 · Binance) -->
+      <span class="del-where" id="cx-where" hidden></span>
       <button type="button" class="btn-out" id="cx-cancel" data-i18n="del.cancel"></button>
       <button type="button" class="btn-fill" id="cx-go"></button>
     </div>

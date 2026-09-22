@@ -34,10 +34,8 @@ const crypto = require("crypto");
 const ENDPOINT = "/oauth/desktop/cloud/command";
 const ACK_ENDPOINT = "/oauth/desktop/cloud/command/ack";
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;   // 契約 §2;佇列 id(sha256 前 32 碼)也落在這個形狀裡
-const MACHINE_STATES = ["none", "starting", "stopped", "running"];   // running:TURN_BUSY 帶的(主機在跑,是回合在忙)
+const MACHINE_STATES = ["none", "starting", "stopped"];
 const BAD_REQUEST_CODES = ["UNKNOWN_COMMAND", "REQUEST_ID_REQUIRED", "BAD_COMMAND"];
-/* 舊的 BlaveClaw 主機不支援從 app 更新:api 回 409 + 這個代號(update 專用;400 帶同一個代號也認,不必另起一種說法)。 */
-const UPDATE_UNSUPPORTED = "UPDATE_UNSUPPORTED";
 const ACK_FIRST_MS = 500, ACK_FACTOR = 1.6, ACK_MAX_MS = 3000, ACK_WINDOW_MS = 20 * 1000;
 
 /* 錯誤代號 → 畫面的三桶(實作地圖 §7)。`rejected` 不在這張表裡:它只可能來自 ack 的 `ok:false`,
@@ -50,8 +48,6 @@ const KIND = {
   RATE_LIMITED: "undelivered", OFFLINE: "undelivered", INVALID_CREDENTIALS: "undelivered",
   APP_SECRET_REQUIRED: "undelivered", BAD_RESPONSE: "undelivered", BAD_ARGS: "undelivered",
   NO_LOGIN: "undelivered",
-  // update 專用的兩個 409 / 拒絕:api 不入列、不佔 request_id(再按一次是新的意圖,不是重送)
-  TURN_BUSY: "undelivered", UPDATE_UNSUPPORTED: "undelivered",
   UNKNOWN_RESULT: "unknown",
   // `ACCOUNT_CHANGED` 刻意不在表裡:它的桶要看丟在哪一段(見 dropped()),查表會查到錯的那個
 };
@@ -62,10 +58,8 @@ function interpret(res) {
   if (!res || !res.status) return { code: "OFFLINE" };
   const s = res.status, b = res.body && typeof res.body === "object" ? res.body : {};
   if (s === 401) return { code: b.error_code === "APP_SECRET_REQUIRED" ? "APP_SECRET_REQUIRED" : "INVALID_CREDENTIALS" };
-  if ((s === 409 || s === 400) && b.error_code === UPDATE_UNSUPPORTED) return { code: UPDATE_UNSUPPORTED };
-  // 409 有兩種:主機沒在跑、主機在跑但有回合在忙(只有 update 會回)。沒帶代號的舊 api = 前者
-  if (s === 409) return { code: b.error_code === "TURN_BUSY" ? "TURN_BUSY" : "MACHINE_NOT_RUNNING",
-    machineState: MACHINE_STATES.indexOf(b.machine_state) >= 0 ? b.machine_state : null };
+  // 409 = 主機沒在跑(這個 app 不送 update,api 那兩個 update 專用的 409 碰不到)
+  if (s === 409) return { code: "MACHINE_NOT_RUNNING", machineState: MACHINE_STATES.indexOf(b.machine_state) >= 0 ? b.machine_state : null };
   if (s === 429) return { code: "RATE_LIMITED" };
   if (s === 413) return { code: "BODY_TOO_LARGE" };
   if (s === 400) return { code: BAD_REQUEST_CODES.indexOf(b.error_code) >= 0 ? b.error_code : "BAD_COMMAND" };
@@ -175,4 +169,59 @@ function createCloudCmd(opts) {
   };
 }
 
-module.exports = { createCloudCmd, interpret, interpretAck, KIND, UPDATE_UNSUPPORTED, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };
+/* ── 不在 daemon.js UI_COMMANDS 裡的雲端指令:參數在這裡驗(main.js 的 cloud-send 用;本機那幾個走 daemon.argsOk)──
+   delete_strategy = 只有 name,規則同機器端 `_cmd_delete_strategy` 與 api(資料夾名,不是顯示名稱)。
+   `update` 不在這裡:用本機 app 不觸發雲端 agent 回合(Wei 09-22),api 那一支留給網頁。 */
+const CLOUD_ONLY_COMMANDS = ["delete_strategy"];
+const STRAT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function cloudArgsOk(cmd, a) {
+  if (!a || typeof a !== "object" || Array.isArray(a)) return false;
+  const keys = Object.keys(a);
+  if (cmd === "delete_strategy") return keys.length === 1 && keys[0] === "name" && typeof a.name === "string" && STRAT_NAME_RE.test(a.name);
+  return false;
+}
+
+/* ── 雲端連交易所(S5;main.js 的 cloud-connect 用)──────────────────────
+   名字在主行程決定、renderer 給不了(renderer 被攻破也塞不進任意環境變數名)。模擬的三個不是祕密,契約仍要求走 secrets。
+   回 { venue, secrets } 或 { error:"BAD_KEY_FORMAT" };shapeOk 由呼叫端注入(binance_link.keyShapeOk)。 */
+function connectSecrets(a, shapeOk, nowSec) {
+  if (!a || typeof a !== "object" || Array.isArray(a)) return { error: "BAD_ARGS" };
+  if (a.venue === "paper") return { venue: "paper", secrets: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(nowSec)) } };
+  if (a.venue !== "binance") return { error: "BAD_ARGS" };
+  const k = typeof a.apiKey === "string" ? a.apiKey.trim() : "", s = typeof a.secret === "string" ? a.secret.trim() : "";
+  if (!k || !s || !shapeOk(k, s)) return { error: "BAD_KEY_FORMAT" };
+  return { venue: "binance", secrets: { BINANCE_API_KEY: k, BINANCE_SECRET_KEY: s } };
+}
+/* 機器查權限的拒絕碼(runtime `_binance_bind_check`,與 binance_check.js 同一套)。**MVP 不查提領**(Wei 09-22):
+   WITHDRAW_ENABLED 不在這張表上——萬一出現,照「其他拒絕」處理(原文截斷給人看)。 */
+const CONNECT_CODES = ["TRADING_DISABLED", "INCOMPLETE_PAIR", "IP_OR_KEY", "BAD_KEY_FORMAT", "BAD_SECRET", "CLOCK", "RATE_LIMITED", "NETWORK", "UNKNOWN"];
+/* cloudCmd.send("credentials") 的回傳 → { ok, code, detail }(純函式;detail 裡沒有金鑰——這個回傳本來就不含)。
+     ok      → OK | NO_IP_RESTRICT(沒設白名單,不擋);detail = { spot, futures }。舊 runtime 回字串 "credentials=N" 也算 OK(Wei:這版不管)
+     rejected→ 表上的代號;RATE_LIMITED 依說明字串再分 RATE_BANNED(418)/ RATE_BACKOFF(冷卻中、這次沒去問);其餘 REJECTED + 原文前 200 字
+     其他    → UNDELIVERED / CMD_UNKNOWN,detail 帶 error / kind / machineState(畫面走 trSendError 那組雲端句) */
+function interpretConnect(r, secrets) {
+  if (r && r.ok) {
+    const b = r.result && typeof r.result === "object" ? r.result.binance : null;
+    if (b && typeof b === "object") return { ok: true, code: b.code === "NO_IP_RESTRICT" ? "NO_IP_RESTRICT" : "OK", detail: { spot: b.spot === false ? false : true, futures: b.futures === false ? false : true } };
+    return { ok: true, code: "OK", detail: {} };
+  }
+  if (r && r.kind === "rejected") {
+    const raw = String(r.error || ""), m = /^\s*ValueError:\s*([A-Z_]+):/.exec(raw), c = m ? m[1] : null;
+    if (c && CONNECT_CODES.indexOf(c) >= 0) {
+      if (c === "RATE_LIMITED") return { ok: false, code: /HTTPError 418/.test(raw) ? "RATE_BANNED" : /backing off/i.test(raw) ? "RATE_BACKOFF" : "RATE_LIMITED", detail: {} };
+      return { ok: false, code: c, detail: {} };
+    }
+    // 原文是用戶主機寫的:今天的 runtime 不帶金鑰值,但這一句要畫到畫面上——用這一次送出的值再遮一次,不靠對方守規矩
+    let shown = raw;
+    Object.entries(secrets && typeof secrets === "object" ? secrets : {}).forEach(([k, v]) => { if (!/^PAPER_/.test(k) && typeof v === "string" && v.length >= 4) shown = shown.split(v).join("•••"); });
+    // 再兜一層:16 字以上、**同時有字母和數字**的連續片段都遮(金鑰被改大小寫、截一段時上面比不到)。
+    // 純字母的不遮:例外類名(BinanceAPIException)、英文長字照原樣,那是看得懂原因的關鍵
+    shown = shown.replace(/[A-Za-z0-9]{16,}/g, (m) => (/[A-Za-z]/.test(m) && /[0-9]/.test(m) ? "•••" : m));
+    return { ok: false, code: "REJECTED", detail: { error: shown.slice(0, 200) } };
+  }
+  const e = r && typeof r.error === "string" ? r.error : "OFFLINE";
+  return { ok: false, code: r && r.kind === "unknown" ? "CMD_UNKNOWN" : "UNDELIVERED",
+    detail: { error: e, kind: (r && r.kind) || "undelivered", machineState: (r && r.machineState) || null } };
+}
+
+module.exports = { createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };

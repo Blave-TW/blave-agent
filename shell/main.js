@@ -694,10 +694,11 @@ const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
 // 認不到就回 null,呼叫端退回資料夾名。
 function stratMeta(code) {
   const pick = (k) => {
-    const m = new RegExp(`^${k}\\s*=\\s*(["'])(.*?)\\1\\s*$`, "m").exec(code || "");
+    const m = new RegExp(`^${k}\\s*=\\s*(["'])(.*?)\\1\\s*(#.*)?$`, "m").exec(code || "");   // 行尾註解照收(runtime 用 ast 讀得到)
     return m && m[2].trim() ? m[2].trim().slice(0, 200) : null;
   };
-  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION") };
+  // STRATEGY_NAME:組合的 key 是它(不一定等於資料夾名,runtime `_cmd_delete_strategy` 也照它比)
+  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION"), strategyName: pick("STRATEGY_NAME") };
 }
 
 function listStrategies() {
@@ -752,8 +753,25 @@ function stratDataSources(dir) {
 
 // 刪策略 = 整個資料夾丟進系統的垃圾桶(shell.trashItem),不是 rm:裡面有用戶的程式碼
 // 與回測結果,誤刪要救得回來。回合進行中不給刪——agent 可能正在寫那個資料夾。
+/* 這支策略還在下單設定的組合裡嗎(規則同機器端 `_cmd_delete_strategy`:amounts / weights / exchanges 三張表的 key 聯集,
+   金額 0 也算——選到就跑)。回 true / false / null(檔案在但讀不懂:可能寫到一半,當成「不能確定」→ 不給刪)。
+   沒有這個檔 = 從來沒設過組合 = false。 */
+function inPortfolio(names) {
+  const want = (Array.isArray(names) ? names : [names]).filter((n) => typeof n === "string" && n);   // 資料夾名 + 檔案裡的 STRATEGY_NAME,任一個在組合裡都算
+  let cfg;
+  try { cfg = JSON.parse(fs.readFileSync(path.join(WS, "manager", "portfolio_config.json"), "utf8")); }
+  catch (e) { return e && e.code === "ENOENT" ? false : null; }
+  if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return null;
+  return ["amounts", "weights", "exchanges"].some((k) => cfg[k] && typeof cfg[k] === "object" && want.some((n) => Object.prototype.hasOwnProperty.call(cfg[k], n)));
+}
+/* 回 true(進垃圾桶了)或 { ok:false, code }:IN_PORTFOLIO(還在組合裡:對帳器照這個名字在下單,刪了訊號就凍住)/
+   CONFIG_UNREADABLE(讀不到下單設定,寧可等一下)/ 其餘失敗 false */
 async function deleteStrategy(name) {
-  if (activeTurn || !stratNames().includes(name)) return false;
+  if (activeTurn || turnStarting || !stratNames().includes(name)) return false;   // 回合正要開始也不刪(agent 可能正要讀它)
+  let sn = null; try { sn = stratMeta(fs.readFileSync(path.join(STRAT_DIR(), name, "strategy.py"), "utf8")).strategyName; } catch (_) { /* 讀不到檔:只比資料夾名 */ }
+  const inPf = inPortfolio([name, sn]);
+  if (inPf === true) return { ok: false, code: "IN_PORTFOLIO" };
+  if (inPf === null) return { ok: false, code: "CONFIG_UNREADABLE" };
   try { await shell.trashItem(path.join(STRAT_DIR(), name)); stratCache.delete(name); return true; }
   catch (_) { return false; }
 }
@@ -1240,7 +1258,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   child.on("close", (code) => {
     require("./mcpcode").removeConfig(mcpFile);   // 這一輪結束:設定檔(裡面是接入碼)立刻刪
     activeTurn = null;
-    win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
+    // 視窗可能已經關掉了(結束時回合才收尾):送到已銷毀的 webContents 會丟例外
+    if (!win.isDestroyed()) win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
   });
 }
 
@@ -1372,25 +1391,40 @@ app.whenReady().then(() => {
      **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
      金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。
      白名單的來源仍是 daemon.js 的 UI_COMMANDS(= api 的 CLOUD_COMMANDS,api/tests/check_desktop_cloud_command.py 直接讀那個檔比對),
-     不另抄一份;但**再交集一次「這一批真的有 UI 在用的」**(稽核 S-2):`credentials_remove` / `retest_accounts`(S5)出貨時再加進 CLOUD_SHIPPED。
-     `update` 是雲端專屬(= api 的 CLOUD_ONLY_COMMANDS):**不可以**加進 daemon.js 的 UI_COMMANDS(那是本機 daemon 也收的那一份,
-     api 的測試釘住 `"update" not in ui`),所以另列一份 CLOUD_ONLY,不帶任何參數。
+     不另抄一份;但**再交集一次「真的有 UI 在用的」**(稽核 S-2)。
+     `delete_strategy` 只給雲端(= api 的 CLOUD_MACHINE_ONLY_COMMANDS):**不可以**加進 daemon.js 的
+     UI_COMMANDS(那是本機 daemon 也收的那一份,api 的測試釘住它的長度),參數由 cloudcmd.cloudArgsOk 驗。
      requestId 由畫面帶回上一趟那顆(冪等;形狀不對就當沒帶,由 cloudcmd 重鑄)。
      最低版本閘不套在這裡:它擋的是**這台電腦**的下單碼,雲端跑的是主機上的 runtime(規格 §4.2-1)。 */
   const cloudDenied = { ok: false, error: "NOT_ALLOWED", kind: "undelivered" };
-  const CLOUD_ONLY = ["update"];
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "restart_reconciler", "update"];
+  const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
+  // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
+  // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
-    const argsSafe = cmd === "update" || !args || typeof args !== "object" || Array.isArray(args) ? {} : args;   // update 不帶參數:api 對任何 args 都 400
+    const argsSafe = !args || typeof args !== "object" || Array.isArray(args) ? {} : args;
     // 形狀先在這裡驗一次(同本機 daemon 那一道):renderer 被攻破時塞不進奇形怪狀的參數,也不白吃一格 api 的速率桶
-    if (CLOUD_ONLY.indexOf(cmd) < 0 && !require("./daemon").argsOk(cmd, argsSafe)) return { ok: false, error: "BAD_ARGS", kind: "undelivered" };
+    if (CLOUD_ONLY.indexOf(cmd) >= 0 ? !require("./cloudcmd").cloudArgsOk(cmd, argsSafe) : !require("./daemon").argsOk(cmd, argsSafe)) return { ok: false, error: "BAD_ARGS", kind: "undelivered" };
     const r = await cloudCmd().send(cmd, argsSafe, null, { requestId: rid });
     // 機器收下了:立刻要一份新狀態(refresh 自己有節流)。不等它——回應不該被多一趟網路拖住
     if (r && r.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return r;
   }, cloudDenied);
+  /* 雲端連交易所(S5):**金鑰只走這一條**(cloud-send 永遠拒收 credentials)。形狀在這裡驗、環境變數名在這裡決定;
+     不從這台電腦查 Binance(白名單設成雲端 IP 的好金鑰從這裡查必定被拒)——權限由雲端主機寫入前自己查。
+     每按一次新的 request_id:重送同一把只是主機多查一次。回應只有代號,金鑰值不回傳、不 log。 */
+  const cxDenied = { ok: false, code: "NOT_ALLOWED", detail: {} };
+  handle("cloud-connect", async (_e, a) => {
+    const CC = require("./cloudcmd");
+    const built = CC.connectSecrets(a, require("./binance_link").keyShapeOk, Date.now() / 1000);
+    if (built.error) return { ok: false, code: built.error, detail: {} };
+    const r = await cloudCmd().send("credentials", {}, built.secrets);
+    const out = CC.interpretConnect(r, built.secrets);
+    if (out.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
+    return out;
+  }, cxDenied);
   // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
   ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
   ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));
@@ -1402,7 +1436,8 @@ app.whenReady().then(() => {
   handle("min-version-state", () => minGate().state());
   handle("update-state", () => ({ ...updater().state(), backup: _officialBackup }));
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
-  ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
+  // 本機有 agent 回合在跑(可能正在更新雲端):不重開,重開會把它斷掉(畫面那一道之外再擋一次)
+  ipcMain.handle("update-install", (e) => (!fromOurPage(e) ? { ok: false, error: "NOT_ALLOWED" } : activeTurn || turnStarting ? { ok: false, error: "TURN_BUSY" } : updater().install()));
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
   // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
@@ -1414,7 +1449,8 @@ app.whenReady().then(() => {
     envFile: path.join(WS, ".env"),
     lock: require("./datasrc").pyLock({ python: VENV_PY, lockFile: path.join(WS, ".env.lock") }),
     strategies: () => listStrategies().map((s) => ({ name: s.name, displayName: s.displayName, file: path.join(STRAT_DIR(), s.name, "strategy.py") })),
-    trading: () => { const r = tradeLive() && tradeHost().status().report; return { live: !!r, amounts: r && r.config && r.config.amounts }; },
+    // cfgNull:下單中但回報讀不到設定檔(config: null)——擋刪清單不能當空的(datasrc.js)
+    trading: () => { const r = tradeLive() && tradeHost().status().report; return { live: !!r, amounts: r && r.config && r.config.amounts, cfgNull: !!r && r.config === null }; },
   });
   handle("datasrc-list", () => dataSrc.list(), { ok: false, error: "NOT_ALLOWED", sources: [] });
   handle("datasrc-save", (_e, input) => (fs.existsSync(WS) ? dataSrc.save(input) : { ok: false, error: "NO_WORKSPACE" }), { ok: false, error: "NOT_ALLOWED" });
@@ -1492,6 +1528,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
   quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel",
+  // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
+  quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: "Blave is still running in the menu bar.",
   updateReady: "A new version is ready: pause trading to update, or it installs when you quit Blave",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No new positions are opened. Open Blave to check.",
@@ -1499,7 +1537,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
-  ev_downtime_paused: "Trading was paused automatically", ev_downtime_paused_n: "Everything is frozen after the downtime. Press Start trading to resume.",
+  ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
@@ -1630,7 +1668,8 @@ function traySync() {
    - 水位線存 userData:同一則不發第二次;第一次跑(沒有水位線)只記不發,不把舊事件倒出來。
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "downtime_paused"];   // 全部六型(標籤用)
+// machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"];   // 全部六型(標籤用)
 const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的四型
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
@@ -1720,9 +1759,12 @@ function binanceNotify(v) {
 function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { traySync(); p1Sync(); }, 5000); if (trayTimer.unref) trayTimer.unref(); } }
 app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
-    if (quitting || quitConfirmed || !tradeMaybeLive()) return;
+    // 關視窗不等於結束:自動下單在跑、或本機 agent 回合在跑(可能正在更新雲端)時只把視窗藏起來,回合 / 下單照走
+    const trading = tradeMaybeLive(), turn = !!(activeTurn || turnStarting);
+    if (quitting || quitConfirmed || (!trading && !turn)) return;
     e.preventDefault(); win.hide();
-    if (!hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
+    // 「背景照常下單」那則只在真的在下單時講(字寫的是下單)
+    if (trading && !hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
   });
 });
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
@@ -1739,6 +1781,17 @@ app.on("before-quit", (e) => {
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
       // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
       detail: TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
+      .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
+    return;
+  }
+  // 本機 agent 回合還在跑(可能正在更新雲端主機):結束會把它斷掉,先問一次(同自動下單那一道;已經確認過就不再問)
+  if (!quitting && !quitConfirmed && (activeTurn || turnStarting)) {
+    e.preventDefault();
+    if (quitAsking) return;
+    quitAsking = true;
+    showMain();
+    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTurnTitle,
+      detail: tmLabels.quitTurnBody, buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
       .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
     return;
   }

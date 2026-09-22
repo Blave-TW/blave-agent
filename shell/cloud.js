@@ -52,22 +52,8 @@ function interpret(res) {
     strategies_partial: b.strategies_partial === true,
     config_version: typeof b.config_version === "string" ? b.config_version : null,
     latest_config_version: typeof b.latest_config_version === "string" ? b.latest_config_version : null,
-    turn_active: typeof b.turn_active === "boolean" ? b.turn_active : null,   // 舊 api 沒有這個鍵 = 不知道
-    update: interpretUpdate(b.update),
     data_sources: Array.isArray(b.data_sources) ? b.data_sources.filter((n) => typeof n === "string") : [],
   };
-}
-/* 雲端「從 app 按更新」那一次的讀數(api `_cloud_update_view`);沒按過 / 形狀不對 = null。
-   state 是那條更新對話的回合狀態,result 是 api 對結果的判讀——result 可能先是 updated、下一份回報才翻成
-   reconciler_down,所以畫面每一輪照這一份重畫,不記住第一個結果。 */
-const UPDATE_STATES = ["sent", "queued", "running", "done"];
-const UPDATE_RESULTS = ["updating", "updated", "reconciler_down", "up_to_date", "not_updated"];
-function interpretUpdate(u) {
-  if (!u || typeof u !== "object" || Array.isArray(u) || (typeof u.state !== "string" && typeof u.result !== "string")) return null;
-  // 不認得的值(api 之後加的狀態)一律當「還在更新」:寧可多轉一會兒,也不要把沒定論的東西講成結果
-  return { state: UPDATE_STATES.indexOf(u.state) >= 0 ? u.state : "running", result: UPDATE_RESULTS.indexOf(u.result) >= 0 ? u.result : "updating",
-    requested_at: typeof u.requested_at === "number" ? u.requested_at : null,
-    from_version: typeof u.from_version === "string" ? u.from_version : null };
 }
 
 /* 事件清單的回應 → { code, events }(純函式)。**「讀不到」與「真的沒有事件」是兩件事**:
@@ -118,8 +104,8 @@ function createCloudHost(opts) {
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
-    // 更新的進度與結果也要推:看這台電腦時畫面 60 秒才問一次,「更新中 → 已更新 / 沒起來」不能等那麼久
-    s.config_version, s.latest_config_version, s.turn_active, s.update && s.update.state, s.update && s.update.result].join("|");
+    // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
+    s.config_version, s.latest_config_version].join("|");
   const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
   function drop(next) { gen++; epoch++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }

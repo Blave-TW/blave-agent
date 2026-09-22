@@ -20,9 +20,10 @@ o = p1Pick([ev(20, "halt", { source: "portfolio" }), ev(21, "order_error", { sym
 t("halt / order_error 不從 events 來(lib/events.py 禁寫;走狀態檔現況),水位線照推", o.show.length === 0 && o.mark === 21);
 o = p1Pick([ev(30, "exchange_unreachable"), ev(31, "strategy_failed"), ev(32, "bar_stale")], 22, NOW);
 t("P2 不發,水位線照推", o.show.length === 0 && o.mark === 32);
-o = p1Pick([ev(40, "downtime_paused", {}, 3600), ev(41, "downtime_paused", {}, 60)], 32, NOW);
-t("超過 15 分鐘的舊事件不發", types(o) === "downtime_paused:41" && o.mark === 41);
-t("events 裡的四個 P1 型別都認得", ["execution_interrupted", "execution_fallback_market", "execution_stuck", "downtime_paused"]
+o = p1Pick([ev(40, "machine_restart_stopped", {}, 3600), ev(41, "machine_restart_stopped", {}, 60)], 32, NOW);
+t("超過 15 分鐘的舊事件不發", types(o) === "machine_restart_stopped:41" && o.mark === 41);
+t("舊型別 downtime_paused 不再發(被 machine_restart_stopped 取代),水位線照推", (() => { const x = p1Pick([ev(45, "downtime_paused", {})], 41, NOW); return x.show.length === 0 && x.mark === 45; })());
+t("events 裡的四個 P1 型別都認得", ["execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"]
   .every((ty, i) => p1Pick([ev(100 + i, ty, {})], 50, NOW).show.length === 1));
 o = p1Pick([null, 7, { id: "x", type: "halt" }, { id: 60, type: 3 }, ev(61, "execution_stuck", null)], 50, NOW);
 t("壞資料不炸、好的照發", types(o) === "execution_stuck:61" && o.mark === 61);
@@ -54,5 +55,8 @@ t("真實形狀:不帶時區的拒單 ts 當 UTC(不是本地時間——台北�
 t("真實形狀:同一輪再來一次不重發", p1FromState(R({ halted: true, at: isoAware(NOW - 5), source: "reconciler" }, [{ ts: isoNaive(NOW - 3), symbol: "BTCUSDT" }]), { halt: s0.halt, err: s0.err }, NOW).show.length === 0);
 t("真實形狀:解除後同秒再 HALT 靠微秒分得開", p1Sec("2026-09-21T03:39:08.940001+00:00") > p1Sec("2026-09-21T03:39:08.940000+00:00"));
 t("時間解析:垃圾不炸、回 NaN", [null, undefined, "", "yesterday", {}, []].every((v) => Number.isNaN(p1Sec(v))));
+{ const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  t("畫面交給主行程的字:重開那一型用定稿標題與 P1 內文(不講時間);舊的 downtime_paused 標籤退場",
+    /ev_machine_restart_stopped: t\("tr\.ov\.evRestartStopped"\), ev_machine_restart_stopped_n: t\("tm\.evRestartStoppedNote"\)/.test(tr) && !/ev_downtime_paused/.test(tr + src)); }
 t("每個 P1 型別在 tmLabels 都有標題與註解", P1_TYPES.every((ty) => src.includes("ev_" + ty + ":") && src.includes("ev_" + ty + "_n:")));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
