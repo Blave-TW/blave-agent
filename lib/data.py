@@ -1178,10 +1178,10 @@ def _fetch_alpha_raw(endpoint, params, headers, start, end):
         cursor = chunk_end
 
     def _fetch_one(cs, ce):
-        r = requests.get(f'{BASE}/{endpoint}', headers=headers, params={
+        # 3 not the default 6: worst case ~3 min instead of ~8, which would swallow a 1m/5m strategy's cycle
+        r = _retry_get(f'{BASE}/{endpoint}', max_retries=3, headers=headers, params={
             **params, 'start_date': cs, 'end_date': ce,
         }, timeout=60)
-        r.raise_for_status()
         data = r.json().get('data', {})
         return data.get('timestamp', []), data.get('alpha', [])
 
