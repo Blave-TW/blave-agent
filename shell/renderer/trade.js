@@ -205,6 +205,14 @@ function trLiveOrderErr(errs, pending) {
   }
   return null;
 }
+/* 「上次下單失敗」前面的時間(同雲端 pfErrStamp):HH:mm;逾 24 小時帶日期 MM/DD HH:mm——對帳器掛掉的失敗多半已經隔天,
+   沒有日期的話 22:26 讀起來像今天。解不了回 null(那一行就不帶時間) */
+function trErrStamp(ts, nowMs) {
+  const ms = trMs(ts);
+  if (ms == null) return null;
+  const d = new Date(ms), p = (n) => String(n).padStart(2, "0"), hm = p(d.getHours()) + ":" + p(d.getMinutes());
+  return nowMs - ms > 86400000 ? p(d.getMonth() + 1) + "/" + p(d.getDate()) + " " + hm : hm;
+}
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
 /* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
@@ -821,7 +829,9 @@ function trPaintOnboard(state) {
 function trPaintPos() {
   const box = $("tr-pos"), r = trReport() || {};
   const names = trNames(), stored = trStored(), states = r.states || {};
-  const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.order_errors, trExecState(TR.st)];
+  // 灰字的時間戳滿 24 小時才帶日期:dead 時快照凍住、app 一直開著,沒有別的資料會變——每一筆失敗的時間戳本身進簽章,跨過那一刻才會重畫
+  const now = Date.now(), stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
+  const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now)];
   if (!trShould("pos", box, data)) return;
   box.textContent = "";
   if (!TR.listLoaded) {
@@ -1055,10 +1065,20 @@ function trPositions(r, stored, states) {
     frag.appendChild(trEl("div", "pf-foot", t("tr.gateFootLead") + gated.map((g) =>
       g.gs.reduce ? t("tr.gateFootReduce", { sym: short(g.sym) }) : t("tr.gateFootEntry", { sym: short(g.sym), m: trFmt(g.gs.usd) })).join(" · ")));
   }
-  // 下單失敗不能靜悄悄:掛在表底(紅字腳注,同雲端)。但只掛**還沒被解決**的那一筆——過期的那些已經跟表上的數字對不起來了
+  // 下單失敗不能靜悄悄:掛在表底(腳注,同雲端)。但只掛**還沒被解決**的那一筆——過期的那些已經跟表上的數字對不起來了。
+  // 哪一筆要掛不看執行狀態;執行狀態只決定音量(spec 丙案):對帳器在跑 = 這張單會再送、會再失敗,紅字催人;
+  // 沒在跑(暫停或掛掉不分)= 同一筆降成灰字「上次下單失敗」留原因與時間,不催人——頁頭那句仍是唯一的狀態句,表裡只放脈絡。
+  // 狀態跟頁頭同一個來源(envHeadState):雲端讀不到新狀態時兩處才不會一紅一灰互相打架
   const le = trLiveOrderErr(r.order_errors, pending);
   if (le) {
-    frag.appendChild(trEl("div", "pf-foot err", trOrderErrText(String(le.symbol || "—").replace(/@spot$/, ""), String(le.error || le.message || ""))));
+    const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || "");
+    if (envHeadState(TR.st, Date.now()) === "running") frag.appendChild(trEl("div", "pf-foot err", trOrderErrText(sym, err)));
+    else {
+      const foot = trEl("div", "pf-foot past"), stamp = trErrStamp(le.ts, Date.now());
+      if (stamp) foot.appendChild(trEl("span", "ts mono", stamp));
+      foot.append(t("tr.orderFailedLast", { sym, err: err.slice(0, 200) }));   // 原文是不可信輸入:截長、走文字節點
+      frag.appendChild(foot);
+    }
   }
   return frag;
 }

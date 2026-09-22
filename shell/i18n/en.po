@@ -1189,6 +1189,9 @@ msgstr "{sym} over by under half a lot"
 msgid "tr.orderFailed"
 msgstr "Order failed: {sym} — {err}"
 
+msgid "tr.orderFailedLast"
+msgstr "Last order failed: {sym} — {err}"
+
 msgid "tr.account"
 msgstr "Account"
 

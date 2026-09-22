@@ -1189,6 +1189,9 @@ msgstr "{sym} 超出不到半口"
 msgid "tr.orderFailed"
 msgstr "下單失敗：{sym}——{err}"
 
+msgid "tr.orderFailedLast"
+msgstr "上次下單失敗：{sym}——{err}"
+
 msgid "tr.account"
 msgstr "帳戶"
 
