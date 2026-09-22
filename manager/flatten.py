@@ -383,8 +383,10 @@ def flatten():
             sweep_ok = False
             continue
         if vid == "capital" and positions and not _capital_order_identity_ok():
-            # never "try and see" under the wrong identity — one row per position
-            # so the page names what is still open (HALT above still holds)
+            # never "try and see" under the wrong identity (HALT above still holds).
+            # ONE merged row naming every skipped key: order_errors keeps only 5, so
+            # a row per position would push real crypto failures out
+            skipped = set()
             for p in positions:
                 key = _book_key(vid, str(p.get("symbol") or "*").upper())
                 if ledger is not None:
@@ -392,10 +394,15 @@ def flatten():
                     if not led or led.get("side") != p.get("side"):
                         continue  # not the bot's — flatten would leave it anyway
                 unclosed.add(key)
+                skipped.add(key)
                 logging.error(f"[{vid}] {key} NOT closed — this process cannot log in to SKCOM")
-                _record_order_error(key, vid, "close-all: 群益部位未平倉(此身分無法登入群益 API),"
-                                              "請在群益下單軟體手動平倉")
                 errors += 1
+            if skipped:
+                keys = ",".join(sorted(skipped))
+                _record_order_error(keys, vid, "close-all: 群益部位未平倉(此身分無法登入群益 API),"
+                                               "請在群益下單軟體手動平倉",
+                                    {"kind": "manual_close_required", "symbols": keys,
+                                     "reason": "identity"})
             continue
         order = importlib.import_module(f"lib.order_{vid}") if has_order else None
         # managed SPOT inventory sells down too(2026-08-05「現貨也賣掉」)—

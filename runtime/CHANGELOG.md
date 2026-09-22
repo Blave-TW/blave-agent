@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **群益「全部平倉刻意未平倉」變成 P1 通知(機器端)**:`order_errors` 的群益跳過列多帶
+  `kind:"manual_close_required"`、`symbols`(逗號分隔帳本 key,如 `TMF,TXF`)、`reason:"identity"`,
+  平台據此分流成新事件型別;舊欄位 `symbol`/`error` 保留給舊 api/舊電腦版。`flatten.py` 一次平倉的所有群益
+  部位**合併成一列**(原本一部位一列,會擠掉 5 筆上限裡的加密錯誤);listener 的 `halted_capital_manual`
+  那列從群益快照檔讀 symbols(不登入群益,讀不到給 `""`;self_ledger 開時只列帳本裡同方向的機器人部位,
+  與 flatten 同口徑,讀帳本失敗退回全列),自己組列、不依賴 workspace 的
+  `_record_order_error` 新簽章。**出貨順序 api → web(與電腦版 shell)→ runtime(publish)→ workspace
+  (push 同 commit bump `VERSION`)**;api 先上是硬條件,反過來舊 api 只會當一般 `order_error`(不壞)。
 - **群益「全部平倉」誠實化(止血)**:Windows 的 `blave-agent-web` 出廠是 LocalSystem(uid=1 實機查證),
   網頁／電腦版全部平倉起的 `flatten.py` 繼承這個身分 → SKCOM 602,群益部位根本沒平、畫面只看到 HALT。
   現在:`flatten.py` 在「非 Administrator 密碼登入身分」(token 查 `GetUserNameW` + INTERACTIVE/BATCH/SERVICE

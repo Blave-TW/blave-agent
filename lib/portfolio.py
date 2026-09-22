@@ -93,10 +93,11 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None):
         logging.warning(f'failed to write manager/last_reconcile.json: {e}')
 
 
-def _record_order_error(symbol, exchange, error):
+def _record_order_error(symbol, exchange, error, extra=None):
     """Last few order failures, for the workspace page — a reconciler that
     fails silently in a tmux log is indistinguishable from one that never
-    tried (measured UX complaint). Best-effort; keeps the newest 5."""
+    tried (measured UX complaint). Best-effort; keeps the newest 5.
+    `extra` adds fields (e.g. kind/symbols for the platform to route on)."""
     try:
         path = 'manager/order_errors.json'
         try:
@@ -104,7 +105,7 @@ def _record_order_error(symbol, exchange, error):
                 rows = json.load(f)
         except (OSError, ValueError):
             rows = []
-        rows.append({'ts': datetime.utcnow().isoformat(), 'symbol': symbol,
+        rows.append({**(extra or {}), 'ts': datetime.utcnow().isoformat(), 'symbol': symbol,
                      'exchange': exchange, 'error': str(error)[:200]})
         with open(path, 'w') as f:
             json.dump(rows[-5:], f, indent=2)

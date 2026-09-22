@@ -2966,6 +2966,64 @@ def _capital_only_unflattenable():
         return False
 
 
+# same mapping as manager/flatten.py _book_key (tests hold them equal) — copied,
+# not imported: this runtime may sit on an older workspace
+_CAPITAL_BOOK_KEY = {"TX": "TXF", "MTX": "MXF", "TM": "TMF"}
+_CAPITAL_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
+
+
+def _capital_open_book_keys():
+    """"TMF,TXF" from the 群益 worker's snapshot file (never logs in to SKCOM);
+    "" when it can't be read — the platform then words it without symbols.
+    self_ledger on → only the bot's own positions, same scope as flatten.py,
+    so the user isn't told to close positions they deliberately hold."""
+    try:
+        from lib.account_capital import get_positions
+        positions = dict(get_positions({}))
+    except Exception:
+        return ""
+    ledger = None
+    try:
+        from lib.portfolio import ledger_positions, load_portfolio_config
+        if load_portfolio_config().get("self_ledger"):
+            ledger = ledger_positions()
+    except Exception:
+        ledger = None  # unreadable (or pre-ledger workspace) → list them all
+    try:
+        keys = set()
+        for sym, p in positions.items():
+            sym = str(sym).upper()
+            m = _CAPITAL_FUT_RE.match(sym)
+            key = _CAPITAL_BOOK_KEY[m.group(1)] if m else sym
+            if ledger is not None:
+                led = ledger.get(key)
+                if not led or led.get("side") != (p.get("side") if isinstance(p, dict) else None):
+                    continue
+            keys.add(key)
+        return ",".join(sorted(keys))
+    except Exception:
+        return ""  # a bad row must not cost the row itself
+
+
+def _record_manual_close_row(symbols):
+    """Built here rather than via lib.portfolio._record_order_error(extra=...):
+    an older workspace's version doesn't take the extra fields."""
+    from datetime import datetime
+    path = os.path.join(WORKSPACE, "manager", "order_errors.json")
+    try:
+        with open(path) as f:
+            rows = json.load(f)
+        if not isinstance(rows, list):
+            rows = []
+    except (OSError, ValueError):
+        rows = []
+    rows.append({"kind": "manual_close_required", "symbols": symbols, "reason": "identity",
+                 "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": "capital",
+                 "error": "close-all: 群益部位未平倉(此身分無法登入群益 API),請在群益下單軟體手動平倉"})
+    with open(path, "w") as f:
+        json.dump(rows[-5:], f, indent=2)
+
+
 def _cmd_close_all(args):
     """Panic: trip HALT synchronously, then flatten every venue position in a
     detached process (fills can take a while — the command loop must not wait;
@@ -2999,9 +3057,7 @@ def _cmd_close_all(args):
         # 前端照 can_flatten 不會給這顆;舊畫面/舊報告還是可能送來。不起 flatten:
         # 還沒更新的 flatten.py 會在這個身分下硬登 SKCOM(602)
         try:
-            from lib.portfolio import _record_order_error
-            _record_order_error("*", "capital", "close-all: 群益部位未平倉(此身分無法登入群益 API),"
-                                                "請在群益下單軟體手動平倉")
+            _record_manual_close_row(_capital_open_book_keys())
         except Exception:
             pass
         return "close_all=halted_capital_manual"

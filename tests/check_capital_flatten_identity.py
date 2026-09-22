@@ -21,6 +21,7 @@ goes out as the near-month alias; a known risk Wei accepted.)
 Run: cd blave-agent && python3 tests/check_capital_flatten_identity.py
 """
 import ast
+import json
 import os
 import sys
 import tempfile
@@ -60,7 +61,8 @@ LEDGER = {}
 CFG = {}
 POS = {}      # vid -> positions (or an Exception to raise)
 CLOSE = {}    # capital resolved sym -> "raise" | "sent" | "partial"; default = filled
-flatten._record_order_error = lambda sym, vid, err: errors.append((sym, vid, err))
+flatten._record_order_error = (
+    lambda sym, vid, err, extra=None: errors.append((sym, vid, err, extra)))
 flatten._append_reconciler_log = lambda row: logged.append(row["symbol"])
 flatten.zero_ledger_symbols = lambda syms: zeroed.update(syms)
 flatten.load_portfolio_config = lambda: CFG
@@ -131,6 +133,8 @@ def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None):
 
 
 res = run_flatten(False)
+MANUAL = {"kind": "manual_close_required", "symbols": "TMF", "reason": "identity"}
+check(errors and errors[0][3] == MANUAL, f"wrong identity: row carries kind/symbols/reason ({errors})")
 check(("capital", "TM2610") not in closes, "wrong identity: 群益 close NOT sent")
 check(("binance", "BTCUSDT") in closes, "wrong identity: crypto leg still closed")
 check([e[:2] for e in errors] == [("TMF", "capital")] and "手動平倉" in errors[0][2],
@@ -139,6 +143,39 @@ check(res is False, "wrong identity: flatten reports it ran with errors")
 
 run_flatten(True)
 check(("capital", "TM2610") in closes and not errors, "Administrator password logon: 群益 closes")
+
+# several skipped 群益 positions → ONE merged row (order_errors keeps only 5)
+res = run_flatten(False, capital={"TM2610": {"side": "long", "size": 1},
+                                  "TX2610": {"side": "short", "size": 1},
+                                  "TM2611": {"side": "long", "size": 1}})
+cap_rows = [e for e in errors if e[1] == "capital"]
+check(len(cap_rows) == 1 and cap_rows[0][0] == "TMF,TXF"
+      and cap_rows[0][3] == dict(MANUAL, symbols="TMF,TXF") and "手動平倉" in cap_rows[0][2],
+      f"wrong identity, 3 positions / 2 keys → one row, symbols sorted+deduped ({errors})")
+check(res is False and not [c for c in closes if c[0] == "capital"], "merged: nothing 群益 sent")
+
+# the real writer: extra fields added, old fields (symbol/error) kept, newest 5
+import lib.portfolio as lp  # noqa: E402
+_cwd = os.getcwd()
+os.chdir(WS)
+try:
+    for i in range(6):
+        lp._record_order_error(f"S{i}", "binance", "x")
+    lp._record_order_error("TMF,TXF", "capital", "close-all: 舊原文",
+                           {"kind": "manual_close_required", "symbols": "TMF,TXF",
+                            "reason": "identity", "symbol": "X", "error": "Y",
+                            "exchange": "Z"})
+    rows = json.load(open(os.path.join(WS, "manager", "order_errors.json")))
+finally:
+    os.chdir(_cwd)
+last = rows[-1]
+check(len(rows) == 5 and last.get("kind") == "manual_close_required"
+      and last.get("symbols") == "TMF,TXF" and last.get("reason") == "identity" and "ts" in last
+      and "kind" not in rows[0], f"writer: extra fields added, rows without extra unchanged ({rows})")
+check(last.get("symbol") == "TMF,TXF" and last.get("exchange") == "capital"
+      and last.get("error") == "close-all: 舊原文",
+      f"writer: extra can't overwrite the old symbol/exchange/error fields ({last})")
+os.remove(os.path.join(WS, "manager", "order_errors.json"))
 
 # ── self_ledger: book keys + the end-of-run sweep ────────────────────────────
 BOOK = {"TMF": {"side": "long", "size": 440000.0, "qty": 2.0},
@@ -252,6 +289,7 @@ pr._capital_order_identity_ok = lambda: True
 check(pr.can_flatten({"capital": CAP}) is True, "reporter: 群益-only + right identity → true")
 
 # ── listener last line ───────────────────────────────────────────────────────
+POS["capital"] = CAP_ONE  # the snapshot the listener reads
 popens = []
 cl.subprocess.Popen = lambda *a, **k: popens.append(a) or types.SimpleNamespace(pid=1)
 pr.venues = lambda: {"capital": CAP}
@@ -259,6 +297,68 @@ pr._capital_order_identity_ok = lambda: False
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=halted_capital_manual"
       and not popens, "listener: 群益-only → halted_capital_manual, nothing launched")
 check(os.path.isfile(os.path.join(WS, "state", "HALT")), "listener: HALT still tripped")
+ERR_PATH = os.path.join(WS, "manager", "order_errors.json")
+
+
+def _listener_rows():
+    try:
+        return json.load(open(ERR_PATH))
+    except OSError:
+        return []
+
+
+row = (_listener_rows() or [{}])[-1]
+check(row.get("kind") == "manual_close_required" and row.get("exchange") == "capital"
+      and row.get("reason") == "identity" and row.get("symbols") == "TMF"
+      and row.get("symbol") == "*" and "手動平倉" in row.get("error", "") and "ts" in row,
+      f"listener: row carries kind + symbols from the snapshot, old fields kept ({row})")
+POS["capital"] = {"TM2610": {"side": "long", "size": 1}, "MTX2610": {"side": "short", "size": 1},
+                  "TXO22000J6": {"side": "long", "size": 1}}
+cl._in_workspace(cl._cmd_close_all, {})
+check((_listener_rows() or [{}])[-1].get("symbols") == "MXF,TMF,TXO22000J6",
+      f"listener: futures → book keys, others as-is, sorted ({(_listener_rows() or [{}])[-1]})")
+POS["capital"] = RuntimeError("capital snapshot stale")
+n = len(_listener_rows())
+cl._in_workspace(cl._cmd_close_all, {})
+row = (_listener_rows() or [{}])[-1]
+check(row.get("symbols") == "" and row.get("kind") == "manual_close_required"
+      and len(_listener_rows()) == min(n + 1, 5),
+      f"listener: snapshot unreadable → symbols \"\", row still written ({row})")
+json.dump([{"symbol": f"S{i}"} for i in range(5)], open(ERR_PATH, "w"))
+POS["capital"] = CAP_ONE
+cl._in_workspace(cl._cmd_close_all, {})
+rows = _listener_rows()
+check(len(rows) == 5 and rows[-1].get("kind") == "manual_close_required"
+      and rows[0].get("symbol") == "S1", f"listener: file full → still newest 5 ({rows})")
+
+# self_ledger on → only the bot's own 群益 positions (same scope as flatten)
+POS["capital"] = {"TM2610": {"side": "long", "size": 1}, "TX2610": {"side": "long", "size": 1},
+                  "MTX2610": {"side": "long", "size": 1}, "TXO22000J6": {"side": "long", "size": 1}}
+_real_cfg, _real_ledger = lp.load_portfolio_config, lp.ledger_positions
+lp.load_portfolio_config = lambda: {"self_ledger": True}
+os.remove(ERR_PATH)  # each check below must see the row IT wrote
+lp.ledger_positions = lambda: {"TMF": {"side": "long"}, "MXF": {"side": "short"},
+                               "BTCUSDT": {"side": "long"}}
+cl._in_workspace(cl._cmd_close_all, {})
+check((_listener_rows() or [{}])[-1].get("symbols") == "TMF",
+      f"listener + self_ledger: only the bot's (TMF), not the user's TXF/TXO or a wrong-side MXF "
+      f"({(_listener_rows() or [{}])[-1]})")
+
+
+def _raise():
+    raise ValueError("orders.jsonl unreadable")
+
+
+lp.ledger_positions = _raise
+os.remove(ERR_PATH)
+cl._in_workspace(cl._cmd_close_all, {})
+check((_listener_rows() or [{}])[-1].get("symbols") == "MXF,TMF,TXF,TXO22000J6",
+      f"listener + self_ledger unreadable → falls back to listing all ({(_listener_rows() or [{}])[-1]})")
+lp.load_portfolio_config, lp.ledger_positions = _real_cfg, _real_ledger
+check(cl._CAPITAL_BOOK_KEY == flatten._CAPITAL_BOOK_KEY
+      and cl._CAPITAL_FUT_RE.pattern == flatten._CAPITAL_FUT_RE.pattern,
+      "listener and flatten map 群益 contracts to the same book keys")
+POS["capital"] = CAP_ONE
 pr.venues = lambda: {"capital": CAP, "binance": BIN}
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(popens) == 1,
       "listener: mixed → flatten launched")
