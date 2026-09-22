@@ -63,9 +63,10 @@ PROXY_ENV = {
 # default toolset burned 22k+ tokens on a single trivial turn in testing.
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 # Edit(path) deny rules — hold in bypassPermissions and cover Write/NotebookEdit (SDK
-# docs › permissions). Live test on CLI 2.1.268 (2026-09-11): Edit, Write, Bash `>>`,
-# `sed -i` and `cp` onto a listed file were all denied; a script opening the file itself
-# is not covered — AGENTS.md carries the rule for that. The backtest-chain libs are what the web reads by
+# docs › permissions). They stop the agent's edit tools; Bash writes are not guaranteed to be
+# caught (2026-09-22 on 29026 the resident agent's workspace update replaced these files through
+# Bash) — AGENTS.md carries the rule for those, and a workspace update replacing them whole from the
+# official clone is intended (references/updating.md §2). The backtest-chain libs are what the web reads by
 # contract and what a config update replaces wholesale; the rest of lib/ stays writable
 # on purpose (user-built exchange helpers live there). A single leading slash anchors at
 # cwd=WORKSPACE. 2026-09-11 an agent added an `anchored` option to lib/walk_forward.py
@@ -2133,7 +2134,10 @@ def mcp_rule(mounted):
         "evidence; once per turn, never re-tripped for a reason the user has cleared; safety direction only, via that "
         "workspace's `lib.guard` with a short typed reason, then tell the user at once); clearing, "
         "resuming or starting is never yours. Write nothing on the machine outside `strategies/` and `tmp/` "
-        "except what that reference names (its step 5 `.env` script, the HALT trip). "
+        "except what that reference names (its step 5 `.env` script, the HALT trip, and its *Updating the cloud "
+        "machine* procedure — only when the user asked for the update in this conversation, only whole files "
+        "from the official reference clone, never `control/`). Never start an agent turn on the cloud machine "
+        "over SSH (no running its runtime or its agent) — a turn there charges the user's cloud AI credit. "
         "Never let a key or secret value into the chat, a log or a command line. "
         "Never read, print, copy or summarise the MCP configuration or its access code, and never write SSH keys "
         "or certificates outside `tmp/cloud-handoff/` in the workspace — delete that folder before the turn ends.\n"

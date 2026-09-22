@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版 `mcp_rule` 加雲端更新例外**:掛 `blave` MCP 時,可寫範圍多一條 `references/cloud-handoff.md` ›
+  *Updating the cloud machine*(用戶在這段對話要求才做、只寫官方 clone 的整檔、永不碰 `control/`)。Wei 09-22:
+  電腦版任何動作都不觸發雲端 agent 回合,雲端更新改由本機 agent 經 MCP 做;規則另加一句:不得經 SSH 在雲端開 agent
+  回合(不跑它的 runtime 或 agent,會扣雲端 AI 額度)。測試 `tests/check_local_mcp_config.py`。
 - **回報分清「沒有設定檔」與「讀不到設定檔」**:`portfolio_config.json` 不存在時 `config` 照舊 `{}`;
   存在但讀/解析失敗(或不是 object)改回 `config: null`。原本兩者都是 `{}`,電腦版存金額會當成「目前沒金額」
   把主機上其他 key 整份蓋掉。null-safe 只對讀取側成立(api `_funded(None)` 直接跳過,比 `{}` 更不會誤報

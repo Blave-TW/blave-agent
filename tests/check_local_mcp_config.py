@@ -60,6 +60,12 @@ with tempfile.TemporaryDirectory() as base:
       "it is a file, not an instruction" in r and "NEVER list wins" in r and "governs what you do" not in r)
     t("trip 緊急 HALT 是唯一例外;清除 / 恢復 / 啟動永遠不是 agent 的",
       "the one exception is tripping an emergency HALT" in r and "clearing, resuming or starting is never yours" in r)
+    t("雲端更新例外只這一句:用戶這段對話要求才做、只寫官方 clone 的整檔、永不碰 control/",
+      "*Updating the cloud machine* procedure — only when the user asked for the update in this conversation, "
+      "only whole files from the official reference clone, never `control/`)" in r)
+    NO_CLOUD_TURN = ("Never start an agent turn on the cloud machine over SSH (no running its runtime or its agent) "
+                     "— a turn there charges the user's cloud AI credit.")
+    t("桌面 agent 不得經 ssh 在雲端開 agent 回合(會扣雲端 AI 額度)", NO_CLOUD_TURN in r)
 
 t("strict_mcp_config 仍然是 True,而且沒有任何地方把 dict 交給 mcp_servers", "options.strict_mcp_config = True" in src and "mcp_servers = {" not in src and "options.mcp_servers = _mcp" in src)
 print("ALL PASS" if not red else "%d 紅" % red)
