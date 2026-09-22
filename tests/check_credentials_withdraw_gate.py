@@ -1,7 +1,9 @@
-"""A Binance key with withdrawals enabled never reaches .env — on a CLOUD box
-too, not just the desktop (the check has to run on the machine: the user's
-whitelist holds the machine's IP, so the same question asked from the app's
-computer comes back -2015 and decides nothing).
+"""A Binance key that cannot trade, or whose permissions cannot be read, never
+reaches .env — on a CLOUD box too, not just the desktop (the check has to run
+on the machine: the user's whitelist holds the machine's IP, so the same
+question asked from the app's computer comes back -2015 and decides nothing).
+Withdrawal permission is NOT gated (Wei 2026-09-22): a withdrawal-enabled key
+binds like any other.
 
 The gate is command_listener._binance_bind_check, called from _cmd_credentials
 — the one .env writer, shared by the web connect flow, the desktop app and the
@@ -113,7 +115,6 @@ def refused(env=ENV):
 
 # 1. the refusals — every one of them leaves the machine exactly as it was
 for name, value, code in (
-        ("withdrawals enabled", dict(GOOD, enableWithdrawals=True), "WITHDRAW_ENABLED"),
         ("withdrawals field missing",
          {k: v for k, v in GOOD.items() if k != "enableWithdrawals"}, "UNKNOWN"),
         ("withdrawals field not a bool", dict(GOOD, enableWithdrawals="false"), "UNKNOWN"),
@@ -214,12 +215,16 @@ check(299 <= armed <= 301,
 cl._binance_rl_until = 0.0
 cl.urllib.request.urlopen = real_urlopen
 
-# 3. the passing cases — spot OR futures is enough (lib/order_binance places both)
+# 3. the passing cases — spot OR futures is enough (lib/order_binance places both);
+#    withdrawals on or off makes no difference
 for name, value, verdict in (
         ("spot and futures", GOOD, "OK"),
         ("spot only", dict(GOOD, enableFutures=False), "OK"),
         ("futures only", dict(GOOD, enableSpotAndMarginTrading=False), "OK"),
         ("no IP whitelist (advise, don't block)", dict(GOOD, ipRestrict=False), "NO_IP_RESTRICT"),
+        ("withdrawals enabled (not gated)", dict(GOOD, enableWithdrawals=True), "OK"),
+        ("withdrawals enabled, no whitelist",
+         dict(GOOD, enableWithdrawals=True, ipRestrict=False), "NO_IP_RESTRICT"),
 ):
     reset()
     answer(value)
@@ -247,7 +252,7 @@ for name, env in (
         ("okx", {"OKX_API_KEY": "k", "OKX_SECRET_KEY": "s", "OKX_PASSPHRASE": "p"}),
 ):
     reset()
-    answer(dict(GOOD, enableWithdrawals=True))  # would refuse if it were asked
+    answer(dict(GOOD, enableFutures=False, enableSpotAndMarginTrading=False))  # would refuse if asked
     out = None
     try:
         out = cl._cmd_credentials({"env": dict(env)})

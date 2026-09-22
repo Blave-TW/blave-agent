@@ -25,7 +25,7 @@ const LOCK_SETTLE_MS = 3000;          // exit 3 在 python 起來的頭一兩秒
 
 /* renderer 送來的參數在這裡先驗形狀(稽核 S6):daemon 端的 handler 會再驗一次語意,這一層擋的是
    「renderer 被攻破時能塞什麼」——例如 credentials 帶任意 key 寫進 workspace 的 .env。
-   **renderer 這條路只收模擬交易**。Binance 的金鑰走另一條:主行程(binance_link.js)查過權限——提領開著的 key 不存——
+   **renderer 這條路只收模擬交易**。Binance 的金鑰走另一條:主行程(binance_link.js)查過權限(沒有交易權限的 key 不存)
    之後才用 send(…, { trusted: true }) 送,那時認 TRUSTED_CRED_KEYS。renderer 被攻破也繞不過那道檢查。
    解除綁定是安全方向,renderer 可以拿掉兩種。 */
 const CRED_KEYS = { PAPER_API_KEY: /^paper$/, PAPER_SECRET_KEY: /^paper$/, PAPER_BOUND_TS: /^\d{9,11}$/ };

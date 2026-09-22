@@ -132,8 +132,9 @@ class _BinanceCheckFailed(Exception):
 
 
 # Every field must come back a boolean or there is no verdict — "absent means
-# false" is conservative for the trading flags and the exact opposite for
-# withdrawals (shell/binance_check.js:49, the same four fields).
+# false" is conservative for the trading flags (shell/binance_check.js, the same
+# four fields). enableWithdrawals is no longer gated on; its boolean
+# requirement stays until Wei decides whether it should go too.
 _BINANCE_PERMISSION_FIELDS = ("enableWithdrawals", "enableSpotAndMarginTrading",
                               "enableFutures", "ipRestrict")
 # Cooldown after Binance rate-limits us, monotonic deadline (audit S-2). The
@@ -209,7 +210,9 @@ def _binance_restrictions(api_key, secret):
 
 def _binance_bind_check(env):
     """The ONE gate a Binance key passes before it reaches .env: the exchange
-    itself must say withdrawals are off. Runs in every deployment mode —
+    itself must say the key can trade. Withdrawal permission is NOT checked
+    (Wei 2026-09-22: a withdrawal-enabled key binds, no warning). Runs in every
+    deployment mode —
     desktop, cloud, and therefore the web 連接交易所 flow too, since that lands
     on _cmd_credentials like everything else (Wei 2026-09-22). The check has to
     happen HERE rather than on the connecting device because a cloud machine's
@@ -218,7 +221,7 @@ def _binance_bind_check(env):
 
     Returns the verdict dict on a pass (see _cmd_credentials for the shape);
     raises ValueError on a refusal, with the message starting `<CODE>: ` —
-    WITHDRAW_ENABLED, TRADING_DISABLED, INCOMPLETE_PAIR, or a
+    TRADING_DISABLED, INCOMPLETE_PAIR, or a
     _BinanceCheckFailed code. Fail-closed all the way: no answer, or an answer
     that is not the permission object, is a refusal, never a silent write.
     There is deliberately no parameter that skips any of this (binance_check.js
@@ -244,9 +247,6 @@ def _binance_bind_check(env):
             not isinstance(r.get(f), bool) for f in _BINANCE_PERMISSION_FIELDS):
         raise ValueError("UNKNOWN: Binance's permission answer could not be read "
                          "— not saved")
-    if r["enableWithdrawals"] is not False:
-        raise ValueError("WITHDRAW_ENABLED: 這把金鑰的提領權限是開著的,沒有儲存 "
-                         "(withdrawals are enabled on this key — not saved)")
     # spot OR futures: lib/order_binance places both (MARKET="spot" strategies),
     # and reading the account needs neither — same rule as the app's screen
     if not (r["enableSpotAndMarginTrading"] or r["enableFutures"]):
@@ -660,7 +660,7 @@ def _cmd_credentials(args):
     (_binance_bind_check) — in EVERY mode, so the web 連接交易所 flow and the
     desktop connect screen both go through it, since all of them end here
     (Wei 2026-09-22). Two consequences for the web path, which previously
-    wrote whatever it was handed: a key with withdrawals enabled is now
+    wrote whatever it was handed: a key with no trading permission is now
     refused, and a bind fails when Binance cannot be reached from the machine
     (fail-closed — the user retries). Everything that is not Binance (paper,
     OKX, Gate.io, Bybit, BingX, the TW brokers, data-source keys) is untouched:
@@ -674,7 +674,7 @@ def _cmd_credentials(args):
     clean" (the app labels an unchecked bind honestly rather than claiming a
     verdict it never got). `ipRestrict` is reported, never enforced: a key with
     no whitelist binds, the caller only warns. Refusal: `ok:false` and `error`
-    = "ValueError: <CODE>: <text>", CODE being WITHDRAW_ENABLED,
+    = "ValueError: <CODE>: <text>", CODE being
     TRADING_DISABLED, INCOMPLETE_PAIR, or one of binance_check.js's
     inconclusive codes (NETWORK, RATE_LIMITED, IP_OR_KEY, BAD_KEY_FORMAT,
     BAD_SECRET, CLOCK, UNKNOWN) — nothing was written in any of those cases.

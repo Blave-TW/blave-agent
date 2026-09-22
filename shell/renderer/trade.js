@@ -1777,7 +1777,7 @@ async function cxConnected() {
   try { L.st = await L.api.tradeStatus(); } catch (_) { }   // 輪詢會補
   L.sig = {}; cxModalClose(true); trPaint(); trPollSoon(1500);
 }
-/* Binance:金鑰交給主行程查權限(提領開著的 key 不存),過了才由主行程送進 daemon。這裡只拿到代號。
+/* Binance:金鑰交給主行程查權限(沒有交易權限的 key 不存),過了才由主行程送進 daemon。這裡只拿到代號。
    沒通過 = 沒有儲存;欄位怎麼處理照 spec §5.3(Secret 貼錯才清 Secret,其餘保留內容)。 */
 async function cxConnectBinance() {
   const L = TR_BAGS.local;

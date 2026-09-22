@@ -1,7 +1,7 @@
 // Blave 電腦版 — 連接 Binance 真錢帳戶的流程(主行程用)。權限怎麼判讀在 binance_check.js,這個檔只管「什麼時候查、查完做什麼」。
 //
 // 為什麼長這樣:
-//   - **檢查在主行程做,不在 renderer**:renderer 會渲染 LLM 與雲端來的文字,它被攻破時不能繞過「提領開著的 key 不存」。
+//   - **檢查在主行程做,不在 renderer**:renderer 會渲染 LLM 與雲端來的文字,它被攻破時不能繞過權限檢查(沒有交易權限的 key 不存)。
 //     所以 renderer 走的 trade-send `credentials` 仍然只收模擬交易(daemon.js CRED_KEYS);Binance 的金鑰只有這個檔
 //     在檢查通過之後、用 trusted 的那條路送進 daemon。
 //   - 金鑰的去處只有一個:daemon 寫進 workspace 的 .env(跟雲端主機、lib/ 讀的是同一個地方)。這個檔**不另存一份**——
@@ -109,7 +109,7 @@ function createBinanceLink(opts) {
     if (now() < lockUntil) { schedule(lockUntil - now()); return state(); }
     busy = true;
     try {
-      const cur = await BC.recheck({ apiKey: keys.apiKey, secret: keys.secret, market: "any", http: opts.http, now });   // 存著的金鑰:不看提領那一格(MVP 不做那一則通知)
+      const cur = await BC.recheck({ apiKey: keys.apiKey, secret: keys.secret, market: "any", http: opts.http, now });
       keys = null;
       if (cur.code === "RATE_LIMITED") lockUntil = now() + (BACKOFF_MS[cur.detail.status] || BACKOFF_MS[429]);
       const ipNow = await ip();

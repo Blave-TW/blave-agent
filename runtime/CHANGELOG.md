@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **Binance 綁定不再查提領權限**(Wei 09-22 拍板:電腦版 MVP 全面不查提領):`_binance_bind_check` 拿掉
+  `WITHDRAW_ENABLED` 那道——提領開著的 key 照寫 `.env`,不擋、不提醒;web 連接、電腦版、聊天綁定三條路都走這支,一起生效。
+  其餘照擋:交易權限全關(`TRADING_DISABLED`)、半套、查不到/看不懂、429/418 退讓;沒白名單照舊只提醒。ack 的 `binance` 形狀不變。
+  電腦版 app 那道(`shell/binance_check.js`)同步拿掉。閘門:`tests/check_credentials_withdraw_gate.py`、`tests/check_local_real_key_gate.py`。
+
 - **電腦版 Codex 引擎掛 `blave` MCP**:`codex_engine.mcp_server()` 判掛不掛,`agent_turn` 算一次、同一個值交給
   `codex_engine.run(mcp_url=)` 與 `_codex_prompt`(`mcp_rule` 圍籬接上;`--viewing-env=cloud` 的提示段 Codex 也照真的有沒有掛)。
   接入碼只走環境變數 `BLAVE_MCP_TOKEN`(`bearer_token_env_var`),argv 只有 url 與變數名;不掛就把兩個變數拔掉再 spawn。

@@ -74,7 +74,6 @@ check(msg and "模擬交易" in msg and not calls and not os.path.exists(ENV_PAT
 # 2. the daemon's process opens Binance — from here on the gate is what decides
 cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINANCE"})
 for name, value in (
-        ("withdrawals enabled", dict(GOOD, enableWithdrawals=True)),
         ("withdrawals field missing", {k: v for k, v in GOOD.items() if k != "enableWithdrawals"}),
         ("withdrawals field not a bool", dict(GOOD, enableWithdrawals="false")),
         ("neither spot nor futures trading enabled", dict(GOOD, enableFutures=False, enableSpotAndMarginTrading=False)),
@@ -109,7 +108,8 @@ check(f"BINANCE_API_KEY={KEY}" in body and f"BINANCE_SECRET_KEY={SECRET}" in bod
       and stat.S_IMODE(os.stat(ENV_PATH).st_mode) == 0o600, ".env holds the pair, mode 0600")
 
 # 4b. spot OR futures is enough (lib/order_binance places both) — same rule as the app's screen
-for name, value in (("spot only", dict(GOOD, enableFutures=False)), ("futures only", dict(GOOD, enableSpotAndMarginTrading=False))):
+for name, value in (("spot only", dict(GOOD, enableFutures=False)), ("futures only", dict(GOOD, enableSpotAndMarginTrading=False)),
+                    ("withdrawals on (not gated, Wei 2026-09-22)", dict(GOOD, enableWithdrawals=True))):
     os.remove(ENV_PATH)
     answer(value)
     check(refused() is None and os.path.exists(ENV_PATH), f"{name} trading enabled → written")
@@ -137,11 +137,11 @@ except ValueError as e:
 os.environ.pop("BLAVE_AGENT_LOCAL")
 os.remove(ENV_PATH)
 calls.clear()
-answer(dict(GOOD, enableWithdrawals=True))
+answer(dict(GOOD, enableFutures=False, enableSpotAndMarginTrading=False))
 msg = refused()
-check(msg is not None and msg.startswith("WITHDRAW_ENABLED:") and len(calls) == 1
+check(msg is not None and msg.startswith("TRADING_DISABLED:") and len(calls) == 1
       and not os.path.exists(ENV_PATH),
-      "cloud box: a withdrawal-enabled key is refused there too")
+      "cloud box: a key that cannot trade is refused there too")
 calls.clear()
 answer(GOOD)
 check(refused() is None and calls == [(KEY, SECRET)] and os.path.exists(ENV_PATH),
