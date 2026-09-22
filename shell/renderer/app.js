@@ -1587,6 +1587,8 @@ function planVars() {
     name: cur === "codex" ? "Codex" : "Claude Code" };
 }
 function planOpen() { setOpen().then(() => setCat("plan")); }
+// 主機運行中那格的主鈕:關設定、切到雲端視角(走切換器同一個守門入口 envSwitchGuarded,trade.js);不外開網頁
+function planToCloud() { setClose(); envSwitchGuarded("cloud"); }
 /* 這一頁現在是哪一格(設計師 v3 的狀態表)。登入是帳號的事、換 AI 是引擎的事:這裡只看有沒有登入與帳號
    狀態,不看 cur(cur 只決定試用說明第一句寫「AI 照用你的…」還是「另有 AI 額度」)。 */
 function planView() {
@@ -1631,7 +1633,7 @@ function planPaint() {
     starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"),
                 acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
     running:  { st: ["on", t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: t("pv.f.running", v),
-                acts: [btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.openWs"), ext(planWebUrl()))] },
+                acts: [btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
     stopped:  { st: ["bad", v.m ? t("plan.st.stopped", v) : t("plan.st.stoppedNoAmt")], h: "pv.h.stopped", lead: t("pv.d.stopped", v),
                 acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planWebUrl())), btn("btn-fill", t("plan.addCredit"), ext(acctUrl()))] },
   }[view];

@@ -584,6 +584,9 @@ msgstr "Add a Card"
 msgid "plan.openWs"
 msgstr "Open Workspace"
 
+msgid "plan.switchCloud"
+msgstr "Switch to cloud"
+
 msgid "plan.manage"
 msgstr "Turn off on the web"
 
@@ -696,7 +699,7 @@ msgid "pv.d.starting"
 msgstr "Blave data is available right now, before the machine is up. You can close this window."
 
 msgid "pv.d.running"
-msgstr "Add strategies, set up scheduled reports and connect an exchange on this machine from the workspace. Strategies built on this computer stay on this computer."
+msgstr "Switch to \"Cloud\" in the top bar to add strategies, set up scheduled reports and connect an exchange on this machine. Strategies built on this computer stay on this computer."
 
 msgid "pv.d.stopped"
 msgstr "A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies and data on it."

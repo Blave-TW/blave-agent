@@ -584,6 +584,9 @@ msgstr "前往綁卡"
 msgid "plan.openWs"
 msgstr "前往工作頁"
 
+msgid "plan.switchCloud"
+msgstr "切到雲端"
+
 msgid "plan.manage"
 msgstr "前往網頁停用"
 
@@ -696,7 +699,7 @@ msgid "pv.d.starting"
 msgstr "Blave 的資料現在就能用，不用等主機開好。可以關掉這個視窗。"
 
 msgid "pv.d.running"
-msgstr "到工作頁在這台主機上新增策略、設定定期報告、連接交易所。電腦上做的策略留在電腦上，兩邊各是一份。"
+msgstr "切到頂列的「雲端」，就能在這台主機上新增策略、設定定期報告、連接交易所。電腦上做的策略留在電腦上，兩邊各是一份。"
 
 msgid "pv.d.stopped"
 msgstr "停機期間仍每小時扣 {h} TWD。餘額歸零時主機會刪除，主機上的策略與資料一併清除。"
