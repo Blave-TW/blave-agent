@@ -161,5 +161,15 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   else fail("ho.emptyHint 要先講「送上雲端」、再講「或請 agent 做一支」");
 }
 
+// ---- 7. 停機跨棒自動暫停還沒上線(lib/downtime 在 downtime-lib 分支、沒併進 main),兩句不得承諾它 ----
+{ const PROMISE = { zh: /自動暫停|逐支確認|一張單都不下|連減倉/, en: /auto(matically)?[- ]?paus|pauses itself|until you confirm|places no orders/i };
+  const keys = ["tr.means.3", "tr.cloud.means.4"];
+  const miss = ["en", "zh"].flatMap((l) => keys.filter((k) => !(l === "en" ? enV : zhV)[k]).map((k) => l + ":" + k));
+  const hits = ["en", "zh"].flatMap((l) => keys.filter((k) => PROMISE[l].test((l === "en" ? enV : zhV)[k] || "")).map((k) => l + ":" + k));
+  if (miss.length) fail(`停機那兩句缺:[${miss}]`);
+  else if (hits.length) fail(`停機那兩句又承諾了還沒上線的自動暫停:[${hits}]`);
+  else pass("tr.means.3 / tr.cloud.means.4 不承諾自動暫停");
+}
+
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

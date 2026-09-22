@@ -1064,7 +1064,7 @@ msgid "tr.means.2p"
 msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
 
 msgid "tr.means.3"
-msgstr "If a bar close was missed while away, trading is auto-paused, not even reductions are made, until you confirm each strategy."
+msgstr "After you quit and reopen Blave, trading resumes only when you press Start trading."
 
 msgid "tr.means.4"
 msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
@@ -1555,7 +1555,7 @@ msgid "tr.cloud.means.3"
 msgstr "The machine takes {h} TWD from your balance every hour for as long as it exists. Under {m} TWD it stops: trading halts and positions stay at the exchange."
 
 msgid "tr.cloud.means.4"
-msgstr "If the machine is down across a candle close, it pauses itself on recovery and places no orders until you press Start."
+msgstr "When the machine restarts or reconnects, it keeps trading on schedule; it does not stop to wait for you."
 
 msgid "tr.cloud.bothReal.h"
 msgstr "This computer is also trading real money."

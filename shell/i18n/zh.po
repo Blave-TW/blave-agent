@@ -1064,7 +1064,7 @@ msgid "tr.means.2p"
 msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，模擬部位留著，不會自動平倉。"
 
 msgid "tr.means.3"
-msgstr "恢復後如果錯過了 K 棒收盤，會自動暫停下單，連減倉都不會做，等你逐支確認。"
+msgstr "結束 Blave 再打開後，要按「啟動下單」才會繼續下單。"
 
 msgid "tr.means.4"
 msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
@@ -1555,7 +1555,7 @@ msgid "tr.cloud.means.3"
 msgstr "主機每個整點從餘額扣 {h} TWD，存在就扣。餘額低於 {m} TWD 會停機：下單跟著停，部位留在交易所。"
 
 msgid "tr.cloud.means.4"
-msgstr "主機停機或斷線跨過 K 棒收盤，恢復後會自動暫停、一張單都不下，等你回來按啟動。"
+msgstr "主機重開或斷線恢復後，照排程接著下單，不會停下來等你確認。"
 
 msgid "tr.cloud.bothReal.h"
 msgstr "這台電腦也正在用真錢下單。"
