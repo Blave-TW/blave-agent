@@ -641,8 +641,8 @@ body.resizing * { cursor: col-resize !important; }
    ========================================================================= */
 .ws-foot {
   flex: none;
-  margin-top: var(--space-8);      /* 貼底靠 .strat-list 的 flex:1;這 8 是清單最後一列到線的距離 */
-  padding-top: var(--space-8);   /* 不畫分隔線(Wei):靠間距分開 */
+  margin-top: auto;              /* 自己釘底:雲端沒主機時兩份 .strat-list 都藏起來,沒人撐,設定會浮到 #side-gate 底下 */
+  padding-top: var(--space-16);  /* 不畫分隔線(Wei):靠間距分開;16 = 清單最後一列到鈕的距離 */
 }
 .ws-more {
   display: flex; justify-content: flex-start; align-items: center; gap: var(--space-8);
