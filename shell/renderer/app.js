@@ -1265,7 +1265,7 @@ async function sendDraft() {
   submitMessage(msg);
 }
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
-async function submitMessage(msg) {
+async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
   running = true; $("btn-send").disabled = true; hoBusy();
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
@@ -1282,7 +1282,7 @@ async function submitMessage(msg) {
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = [];
     const r = await window.blave.sendMessage({
-      sessionId, message: msg, model: MP.model, effort: mpEffort(), viewing: chatViewing() });
+      sessionId, message: msg, handoff: opts && opts.handoff, model: MP.model, effort: mpEffort(), viewing: chatViewing() });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
     if (r.started) { busyStart(); return true; }
     if (r.blocked === "UPDATE_REQUIRED") {

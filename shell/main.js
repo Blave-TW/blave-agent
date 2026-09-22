@@ -1375,6 +1375,8 @@ app.whenReady().then(() => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
     if (activeTurn || turnStarting) return { busy: true };
     const win = BrowserWindow.fromWebContents(e.sender);
+    // 使用追蹤「上雲端運行」:只認「送上雲端」確認框送的那句(payload.handoff === "up";拉回不算),而且旗標要開——關著時畫面到不了那條路,標記也不認
+    const cloudUp = cloudHandoffOn() && payload && payload.handoff === "up";
     // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
     // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
     turnStarting = true;
@@ -1386,7 +1388,7 @@ app.whenReady().then(() => {
         if (!minGate().turnAllowed(kind)) { turnStarting = false; return { blocked: "UPDATE_REQUIRED" }; }
       }
     } catch (err) { turnStarting = false; throw err; }   // 這一段拋了不還原的話,之後每一次送出都回 busy(稽核 R1)
-    runTurn(win, payload).catch((err) => {
+    runTurn(win, payload).then(() => { if (cloudUp) tm().track("cloud_started"); }).catch((err) => {   // resolve = spawn 與 stdin 都成功、話交到 agent 手上;失敗那條不送
       if (win && !win.isDestroyed()) win.webContents.send("turn-end", { code: 1, errTail: String((err && err.message) || err) });
     }).finally(() => { turnStarting = false; });
     return { started: true };

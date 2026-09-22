@@ -78,5 +78,42 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   t("main.js:lang 只取 app.getLocale()", /lang: app\.getLocale\(\)/.test(mainSrc) && !/lang: process\.env/.test(mainSrc));
   t("首次告知那條 IPC 退場;讀 / 切開關兩支都只收自家頁面", !/telemetry-noticed|telemetryNoticed|setNoticed/.test(mainSrc + fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8") + fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8"))
     && /ipcMain\.handle\("telemetry-get", \(e\) => \(fromOurPage\(e\)/.test(mainSrc) && /ipcMain\.handle\("telemetry-set", \(e, on\) => \{ if \(!fromOurPage\(e\)\) return false;/.test(mainSrc));
+
+  // ── cloud_started:「送上雲端」確認框 → submitMessage(msg, { handoff: "up" }) → send-message → runTurn 成功才送。把真的那支 handler 切出來跑 ──
+  const R = path.join(__dirname, "..", "shell", "renderer");
+  const hoSrc = fs.readFileSync(path.join(R, "handoff.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
+  t("接線:確認框 onOk 帶 handoff 方向;submitMessage 原樣轉進 payload;重送(lastUserText)不帶", /submitMessage\(msg, \{ handoff: dir \}\)/.test(hoSrc)
+    && /async function submitMessage\(msg, opts\)/.test(appSrc) && /message: msg, handoff: opts && opts\.handoff, model:/.test(appSrc) && !/submitMessage\(lastUserText, /.test(appSrc));
+  t("主行程:標記只認 \"up\" 且旗標要開;事件掛在 runTurn 的 then(spawn + stdin 成功),不在 catch", /const cloudUp = cloudHandoffOn\(\) && payload && payload\.handoff === "up";/.test(mainSrc)
+    && /runTurn\(win, payload\)\.then\(\(\) => \{ if \(cloudUp\) tm\(\)\.track\("cloud_started"\); \}\)\.catch\(/.test(mainSrc));
+  const hi = mainSrc.indexOf('ipcMain.handle("send-message", async (e, payload) => {');
+  const cutBody = (from) => { let d = 0; for (let k = mainSrc.indexOf("{", from); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(mainSrc.indexOf("{", from), k + 1); } throw new Error("no send-message body"); };
+  const handlerBody = cutBody(hi + 'ipcMain.handle("send-message", async (e, payload) =>'.length);
+  // 每個情境一份乾淨的狀態:真的 telemetry(自己的暫存目錄)+ 只 stub 主行程那幾個外部依賴
+  const scenario = async ({ flag = true, ours = true, turnOk = true, enabled = true, payload }) => {
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), x = mk(dir2); if (!enabled) x.tm.setEnabled(false);
+    const ends = [];
+    const ctx = { fromOurPage: () => ours, activeTurn: null, turnStarting: false, cloudHandoffOn: () => flag, tm: () => x.tm,
+      BrowserWindow: { fromWebContents: () => ({ isDestroyed: () => false, webContents: { send: (ch, a) => ends.push([ch, a]) } }) },
+      loadConnection: () => ({ kind: "claude" }), minGate: () => ({ ensureFresh: async () => {}, turnAllowed: () => true }),
+      runTurn: () => (turnOk ? Promise.resolve() : Promise.reject(new Error("AGENT_BIN_MISSING"))) };
+    const handler = new Function("ctx", "with (ctx) { return async (e, payload) => " + handlerBody + "; }")(ctx);
+    const r = await handler({ sender: {} }, payload); await tick(); await tick();
+    return { r, events: x.sent.map((b) => b.event).join(), ends, turnStarting: ctx.turnStarting };
+  };
+  let s = await scenario({ payload: { handoff: "up", message: "把策略 btc_rsi 送上我的雲端主機。" } });
+  t("旗標開 + 送上雲端 + 交到 agent 手上 → 送 cloud_started(只這一則、沒有 props、不含訊息)", s.r.started === true && s.events === "cloud_started" && s.turnStarting === false && !s.ends.length);
+  s = await scenario({ flag: false, payload: { handoff: "up", message: "x" } });
+  t("旗標關:就算 payload 帶了標記也不送(畫面本來到不了這條路)", s.r.started === true && s.events === "");
+  s = await scenario({ turnOk: false, payload: { handoff: "up", message: "x" } });
+  t("runTurn 失敗(引擎找不到 / spawn 失敗):不送,失敗照交給畫面", s.events === "" && s.ends.length === 1 && s.ends[0][0] === "turn-end" && s.ends[0][1].code === 1);
+  s = await scenario({ enabled: false, payload: { handoff: "up", message: "x" } });
+  t("追蹤關閉:不送", s.r.started === true && s.events === "");
+  s = await scenario({ payload: { handoff: "down", message: "x" } });
+  t("拉回這台電腦不是上雲端:不送", s.events === "");
+  s = await scenario({ payload: { message: "hi" } });
+  t("一般對話不送", s.events === "");
+  s = await scenario({ ours: false, payload: { handoff: "up", message: "x" } });
+  t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

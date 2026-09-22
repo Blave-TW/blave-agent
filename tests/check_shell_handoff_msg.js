@@ -76,7 +76,7 @@ t("擋下態:確認鈕 disabled,而且「會覆蓋」與「接下來由 agent �
   const i = src.indexOf("if (state === \"block\")"), seg = src.slice(i, src.indexOf("const title =", i));
   return /okDisabled: state === "block"/.test(src) && /if \(state === "block"\) extra\.appendChild\(mk\("p", "cf-block"/.test(seg) && /\n\s*else \{/.test(seg) && /cf-note/.test(seg) && seg.indexOf("cf-note") > seg.indexOf("else {"); })());
 t("擋下態的第二顆鈕切到目的地那一邊(用戶按的,不算自動切);拉回時順手開自動下單頁", /alt: state === "block" \? \{ label: dir === "up" \? t\("ho\.block\.goCloud"\) : t\("ho\.block\.goLocal"\), onOk: \(\) => \{ envSwitchGuarded\(goSide\); if \(goSide === "local"\) trOpen\("pos"\); \} \} : null/.test(src));
-t("按確認 = 直接送一句話:不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /submitMessage\(msg\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
+t("按確認 = 直接送一句話(帶 handoff 方向標記給主行程記事件):不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /submitMessage\(msg, \{ handoff: dir \}\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
 t("確認框不放 prompt 全文:訊息是在 onOk 裡才組的,extra 裡只有那幾句 ho.*", !/ho\.msg\./.test(src.slice(src.indexOf("const extra = document.createDocumentFragment()"), src.indexOf("onOk:"))) && /const msg = hoMsg\(dir, id, hoTpl\(\)\); if \(!msg\) return;/.test(src));
 t("agent 正在回覆:兩顆鈕是 aria-disabled(鍵盤停得上去、讀屏唸得到原因),不是原生 disabled", /b\.setAttribute\("aria-disabled", "true"\)/.test(src) && /b\.title = t\("turn\.busy"\)/.test(src) && !/\.disabled = true/.test(src));
 t("上鎖 / 解鎖的同一處叫 hoBusy(三個出口都有)", (appSrc.match(/hoBusy\(\)/g) || []).length === 3);
