@@ -5,7 +5,7 @@
    - 送給 agent 的那句話裡只放**策略資料夾名**,而且要過 HO_ID_RE:不放顯示名稱——那是 workspace / 雲端回報裡的自由文字,
      放進「用戶說的話」等於讓不可信內容冒充用戶指令(用戶在確認框裡看不到這句全文)。不符合的策略,鈕不畫。
    用到 app.js 的 $ / t / confirmBox / submitMessage / running / RP / paneToggle / paneSt、trade.js 的 ENV / TR_BAGS / env*——都在呼叫時才取。 */
-const HO = { on: false };
+const HO = { on: false, pending: null };   // pending = { id }:未登入 / 沒主機時按過「送上雲端」的那一支。只在記憶體,重開 app 就沒了
 const HO_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const HO_ICONS = { up: ["M12 13v8", "M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242", "m8 17 4-4 4 4"], down: ["M12 13v8l-4-4", "m12 21 4-4", "M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"] };
 
@@ -48,7 +48,7 @@ function hoAmount(st, id) { const a = st && st.report && st.report.config && st.
 /* agent 正在回覆時兩顆鈕都是 aria-disabled(不是原生 disabled:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它 */
 function hoBusy() {
   const busy = typeof running !== "undefined" && running === true;
-  document.querySelectorAll("#rp-ho, .ho-down").forEach((b) => {
+  document.querySelectorAll("#rp-ho, .ho-down, .ho-back").forEach((b) => {
     if (busy) { b.setAttribute("aria-disabled", "true"); b.dataset.title = b.dataset.title || b.title || ""; b.title = t("turn.busy"); }
     else { b.removeAttribute("aria-disabled"); if (b.dataset.title !== undefined) { b.title = b.dataset.title; delete b.dataset.title; } }
   });
@@ -74,11 +74,39 @@ function hoDownBtn(name) {
   return b;
 }
 
+/* 還在等著送上雲端的那一支(雲端側欄第一格用)。回 id 或 null。
+   報告頁換了策略 / 關了報告 → 回去也按不到那顆鈕,提示連同意圖一起清掉。 */
+function hoPendingId() {
+  const p = HO.pending; if (!p) return null;
+  if (!HO.on || typeof RP === "undefined" || RP.name !== p.id) { HO.pending = null; return null; }
+  return p.id;
+}
+/* 雲端側欄第一格:雲端通了之後,把人送回這台電腦那顆「送上雲端」。
+   不自動切視角、不自動開框——這是一顆人按的文字鈕(規格 §1.4-1 的「畫面上的文字鈕」)。 */
+function hoPendingCell(id) {
+  const p = document.createElement("p"); p.className = "pf-state"; p.setAttribute("role", "listitem");   // 容器是 role="list":這一格是它的第一項
+  const b = document.createElement("button"); b.type = "button"; b.className = "btn-quiet ho-back"; b.textContent = t("ho.back.btn");
+  b.addEventListener("click", () => {
+    if (typeof running !== "undefined" && running) return;             // agent 正在回覆:送過去也按不動那顆鈕(hoAsk 同一道門),留在原地
+    if (!envCanSwitch()) return;                                       // 守門同切換器那一份:組字中切過去會把組到一半的字丟掉
+    envSwitch("local", "link");
+    const up = $("rp-ho"); if (up && up.offsetParent) up.focus();      // 焦點給那顆鈕本人(不是中欄標題):按 Enter 就開框。切完才取:那一輪重畫會換掉節點
+  });
+  p.append(t("ho.back.hint", { id }) + " ", b);
+  return p;
+}
+
 function hoAsk(dir, id, opener) {
   if (!HO.on || !HO_ID_RE.test(id)) return;
   if (typeof running !== "undefined" && running) return;                 // 鈕本身是 aria-disabled;這裡再守一次
   if (!envCanSwitch()) return;                                           // IME 選字中、別的框開著
-  if (dir === "up" && !hoCloudLive()) { envSwitchGuarded("cloud"); return; }   // 雲端沒在運行(沒登入、沒綁卡、沒主機、啟動中、停機、讀不到):切過去,那一頁自己會講
+  // 雲端沒在運行(沒登入、沒綁卡、沒主機、啟動中、停機、讀不到):切過去,那一頁自己會講。
+  // 記下要送哪一支:那一頁通完(登入 / 啟動好)之後,雲端側欄第一格會給一條回來按這顆鈕的路(hoPendingCell)。
+  // **切完才記**:envSwitch 自己會清 pending(人自己切視角 = 放棄這個意圖),先記會被那一行洗掉
+  if (dir === "up" && !hoCloudLive()) { if (envSwitchGuarded("cloud")) HO.pending = { id }; return; }
+  // 走到這裡 = 框真的開得起來(接著按確認就送出):意圖已經達成,提示不必再留。
+  // 另外三個清的時機:人自己切視角(envSwitch)、回去之後開的是別支策略(hoPendingId 對不上 RP.name)、重開 app(只在記憶體、不寫檔)
+  if (dir === "up") HO.pending = null;
   const destSt = dir === "up" ? TR_BAGS.cloud.st : TR_BAGS.local.st;
   // 目的地有沒有同名。拉回:這台電腦的清單是現況。送上雲端:雲端那份清單是平台上的策略索引(24 小時快取、只含機器已經回報過摘要的策略),
   // 「清單裡沒有」不等於「雲端沒有」——所以沒看到時不說「不會覆蓋」,用中性的那一句

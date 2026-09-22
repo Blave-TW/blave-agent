@@ -64,13 +64,13 @@ t("確認框四態:目的地那份正在下單 → block(最優先);有同名 �
   t("判準走 datasrc.js 的 checkName + checkField(不另抄一份規則)", /const \{ checkName, checkField \} = require\("\.\/datasrc"\);/.test(cutMain("stratDataSources")) && /if \(!checkName\(m\[1\]\) && !checkField\(m\[1\], m\[2\]\)\) out\.add\(m\[1\]\)/.test(cutMain("stratDataSources"))); }
 
 // ── 接線(原文)──
-t("功能預設關:HO.on 起手是 false,由主行程的 feature-flags 決定(renderer 自己打不開)", /^const HO = \{ on: false \};$/m.test(src) && /window\.blave\.featureFlags\(\)/.test(src) && /HO\.on = !!\(f && f\.cloudHandoff === true\)/.test(src) && /catch \(_\) \{ HO\.on = false; \}/.test(src));
+t("功能預設關:HO.on 起手是 false,由主行程的 feature-flags 決定(renderer 自己打不開)", /^const HO = \{ on: false, pending: null \};/m.test(src) && /window\.blave\.featureFlags\(\)/.test(src) && /HO\.on = !!\(f && f\.cloudHandoff === true\)/.test(src) && /catch \(_\) \{ HO\.on = false; \}/.test(src));
 t("兩顆鈕都先問 HO.on:關著就不畫", /const show = HO\.on && /.test(src) && /if \(!HO\.on \|\| !HO_ID_RE\.test\(name\) \|\| !hoCloudLive\(\)\) return null;/.test(src) && /if \(!HO\.on \|\| !HO_ID_RE\.test\(id\)\) return;/.test(src));
 t("送上雲端那顆:要回測過、資料夾名合規才畫", /!!RP\.data\.stats && HO_ID_RE\.test\(RP\.name\)/.test(src));
 t("hoAsk 的順序(規格 §2):回合進行中 → 不動作;別的框開著 / 選字中 → 不動作;雲端沒在運行 → 切過去不開框", (() => {
   const i = src.indexOf("function hoAsk("), body = src.slice(i, src.indexOf("\n}", i)).replace(/\/\/.*$/gm, "");
   const o = (re) => body.search(re);
-  return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\); return;/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\); return;/); })());
+  return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \}; return;/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \}; return;/); })());
 t("雲端沒在運行的六種都走同一條(envCloudKind 不是 running,或逾 1 小時沒同步)", /function hoCloudLive\(\) \{ const st = TR_BAGS\.cloud\.st; return envCloudKind\(st\) === "running" && envHeadState\(st, Date\.now\(\)\) !== "unknown"; \}/.test(src));
 t("擋下態:確認鈕 disabled,而且「會覆蓋」與「接下來由 agent 執行」兩句都不出(不會執行,那兩句是假話)", (() => {
   const i = src.indexOf("if (state === \"block\")"), seg = src.slice(i, src.indexOf("const title =", i));
@@ -87,6 +87,38 @@ t("送上雲端:雲端清單找不到時用中性說法(maybe),不宣稱不會�
 t("目的地那份的金額讀對邊(up 讀雲端、down 讀這台電腦),壞值當 0", /const destSt = dir === "up" \? TR_BAGS\.cloud\.st : TR_BAGS\.local\.st;/.test(src) && /return isFinite\(v\) \? v : 0;/.test(src)
   && /Object\.prototype\.hasOwnProperty\.call\(a, id\)/.test(src));
 
+// ── C′:未登入按「送上雲端」→ 被切到雲端 → 登入完成 → 側欄第一格給一條回來按那顆鈕的路 ──
+{ const run = (ho, rp) => { const c = { HO: ho, RP: rp }; vm.createContext(c); vm.runInContext(cutFn("hoPendingId"), c); return [c.hoPendingId(), c.HO.pending]; };
+  t("記住的那一支:報告頁還開著同一支 → 提示出得來", JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })) === JSON.stringify(["btc_rsi", { id: "btc_rsi" }]));
+  t("沒按過「送上雲端」→ 沒有提示", JSON.stringify(run({ on: true, pending: null }, { name: "btc_rsi" })) === JSON.stringify([null, null]));
+  t("回去按不到那顆鈕了(換了策略 / 關了報告)→ 提示不出,意圖一起清掉", JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: "eth_ma" })) === JSON.stringify([null, null])
+    && JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: null })) === JSON.stringify([null, null]));
+  t("功能關著 → 提示不出", JSON.stringify(run({ on: false, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })) === JSON.stringify([null, null])); }
+t("意圖只在記憶體:不寫 localStorage / sessionStorage(重開 app 一律回這台電腦)", !/Storage/.test(src));
+t("切完才記下要送哪一支(envSwitch 會清 pending,先記會被洗掉);記的是 hoPaintUp 給的 RP.name;切不成就不記", /if \(dir === "up" && !hoCloudLive\(\)\) \{ if \(envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \}; return; \}/.test(src)
+  && /hoAsk\("up", RP\.name, b\)/.test(src));
+t("框真的開得起來就清掉(按確認送出也走這條);handoff.js 裡清的地方只有 hoAsk 與 hoPendingId", /if \(dir === "up"\) HO\.pending = null;/.test(src)
+  && (src.match(/HO\.pending = (null|\{)/g) || []).length === 3 && src.indexOf('if (dir === "up") HO.pending = null;') < src.indexOf("confirmBox({"));
+// 承重牆①(設計 eval:四條清除條件都要):人自己切視角(切換器 / ⌘1⌘2 / 選單)也要清——沒有 TTL,少了這條殘留無上限。
+// 收斂點是 envSwitch:三個入口都經過它,而且要排在「本來就在這一邊」那個早退之後(原地不動不算放棄意圖)
+t("人自己切視角就清掉:收斂在 envSwitch 一處,排在「本來就在這一邊」的早退之後", (() => {
+  const i = trSrc.indexOf("function envSwitch(env, via) {"), body = trSrc.slice(i, trSrc.indexOf("\n}", i));
+  return i > 0 && /if \(typeof HO !== "undefined"\) HO\.pending = null;/.test(body)
+    && body.indexOf("HO.pending = null;") > body.indexOf('if (env === ENV.cur) { if (via === "link") head(); return; }')
+    && (trSrc.match(/HO\.pending/g) || []).length === 1; })());
+t("回這台電腦那顆鈕:agent 回覆中不動作(同 hoAsk)、守門同切換器那一份、走 envSwitch(\"local\", \"link\"),焦點給 #rp-ho(切完才取節點);不自動切視角、不自動開框", (() => {
+  const cell = cutFn("hoPendingCell"), o = (re) => cell.search(re);
+  return o(/if \(typeof running !== "undefined" && running\) return;/) > 0 && o(/if \(!envCanSwitch\(\)\) return;/) > o(/if \(typeof running !== "undefined" && running\) return;/)
+    && o(/envSwitch\("local", "link"\);/) > o(/if \(!envCanSwitch\(\)\) return;/)
+    && o(/const up = \$\("rp-ho"\); if \(up && up\.offsetParent\) up\.focus\(\);/) > o(/envSwitch\("local", "link"\);/)
+    && !/confirmBox|hoAsk/.test(cell.replace(/\/\/.*$/gm, "")) && (src.match(/[^\w]envSwitch\(/g) || []).length === 1; })());
+t("agent 回覆中那顆鈕也是 aria-disabled:掛 .ho-back、進 hoBusy 的選擇器,畫出來就套一次", /b\.className = "btn-quiet ho-back";/.test(src)
+  && /querySelectorAll\("#rp-ho, \.ho-down, \.ho-back"\)/.test(src) && /if \(pid\) \{ box\.appendChild\(hoPendingCell\(pid\)\); hoBusy\(\); \}/.test(trSrc));
+t("trade.js:雲端側欄第一格換成那條路(取代 ho.emptyHint、不疊加),清單非空時排在列表上方;sig 帶 pid(清掉 / 記下都會重畫)", /const pid = ho \? hoPendingId\(\) : null;/.test(trSrc)
+  && /if \(pid\) \{ box\.appendChild\(hoPendingCell\(pid\)\);/.test(trSrc) && /if \(!list\.length\) \{ if \(!pid\) box\.appendChild\(trEl\("p", "pf-state", ho \? t\("ho\.emptyHint"\)/.test(trSrc)
+  && /JSON\.stringify\(\[kind, ho, list\.map\(\(x\) => \[x\.name, x\.displayName, envStratWord\(x\.name, st\)\]\), pid\]\)/.test(trSrc));
+t("app.css / trade.css:提示那格的文字鈕跟著那句話的字級", /#strat-list-cloud \.pf-state \.btn-quiet \{ font-size: inherit; \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8")));
+
 t("index.html:載入 handoff.js;報告頁首分成 .txt / .act 兩塊(鈕不畫時 .act 藏起來,頁首高度不跳)", /<script src="handoff\.js"><\/script>/.test(html) && /<div class="act" id="rp-act" hidden><\/div>/.test(html) && /<div class="txt">/.test(html));
 t("app.css:icon + 字的描邊鈕、列尾那顆的熱區 ≥ 28、確認框的兩欄變體", /\.btn-out\.has-ic \{ display: inline-flex;/.test(css) && /\.ho-down::before \{ content: ""; position: absolute; inset: -8px -4px; \}/.test(css)
   && /\.cf-rows\.kv dt \{ flex: 0 0 56px;/.test(css) && /:lang\(en\) \.cf-rows\.kv dt \{ flex-basis: 84px; \}/.test(css));
@@ -94,8 +126,8 @@ t("trade.js:雲端清單每列掛「拉回」、空態換成新的那一句;功�
   && /ho \? t\("ho\.emptyHint"\) : t\("side\.cloud\.emptyCut1"\)/.test(trSrc) && /const ho = typeof HO !== "undefined" && HO\.on && typeof hoCloudLive === "function" && hoCloudLive\(\);/.test(trSrc));
 t("trade.js:輸入框上方那句「agent 還不能操作雲端主機」在功能開著時不出(它已經不成立)", /\$\("chat-tgt"\)\.hidden = !cloud \|\| \(typeof HO !== "undefined" && HO\.on\);/.test(trSrc));
 t("重畫:雲端清單的 sig 把 ho 算進去(功能剛問到 / 雲端剛連上時會重畫)", /JSON\.stringify\(\[kind, ho, list\.map/.test(trSrc));
-t("字串 zh / en 都齊(20 個 ho.* key),而且訊息那兩句各只有一個 {id}", (() => {
-  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down"];
+t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id}", (() => {
+  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down", "back.hint", "back.btn"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '":', "g")) || []).length === 2)
-    && (strings.match(/"ho\.msg\.(up|down)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
+    && (strings.match(/"ho\.(msg\.(up|down)|back\.hint)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

@@ -1087,6 +1087,9 @@ msgstr "設定"
 msgid "tr.onboard"
 msgstr "下單金額是從交易所的淨值算出來的，所以這頁要先接一個交易所帳戶。接好之後，每檔策略填一個金額就會開始下單。"
 
+msgid "tr.onboard.cloud"
+msgstr "下單金額是從交易所的淨值算出來的，這台雲端主機還沒接交易所。雲端這一版在 app 裡只能看；要連接交易所，先到網頁的雲端工作頁。"
+
 msgid "tr.strategies"
 msgstr "策略"
 
@@ -1475,9 +1478,6 @@ msgstr "現在讀不到雲端的狀態。雲端上正在跑的下單不受影響
 
 msgid "tr.ro.note"
 msgstr "這一版在 app 裡只能看。要設金額、啟動或暫停下單，先到網頁的雲端工作頁。"
-
-msgid "tr.ro.noteEmpty"
-msgstr "這一版在 app 裡只能看。要連接交易所，先到網頁的雲端工作頁。"
 
 msgid "tr.cloud.unknown"
 msgstr "讀不到雲端狀態"
@@ -1914,6 +1914,12 @@ msgstr "確認"
 
 msgid "ho.emptyHint"
 msgstr "雲端還沒有策略。在這台電腦打開一支策略，按「送上雲端」。"
+
+msgid "ho.back.hint"
+msgstr "雲端準備好了。回這台電腦按「送上雲端」，把 {id} 送上來。"
+
+msgid "ho.back.btn"
+msgstr "回這台電腦"
 
 msgid "ho.msg.up"
 msgstr "把策略 {id} 送上我的雲端主機。搬完在雲端重跑回測，把兩邊的數字並排給我看。"

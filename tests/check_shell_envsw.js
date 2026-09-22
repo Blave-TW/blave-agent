@@ -144,11 +144,26 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const wire = fn("envWire"), direct = (code.match(/[^\w]envSwitch\(/g) || []).length;
   ok("N8 守門只有一份:確認框 / 連接交易所的框 / 圖片放大開著、還沒進工作頁都不切;組字中不生效", ["view-ws", "del-scrim", "cx-scrim", "lb-scrim"].every((id) => fn("envCanSwitch").includes(id)) && /!envCanSwitch\(\)\) return false;/.test(fn("envSwitchGuarded")) && /isComposing/.test(kd));
   ok("三個入口都走 envSwitchGuarded(click / keydown / onEnvSwitch),envWire 裡沒有人直接叫 envSwitch", (wire.match(/envSwitchGuarded\(/g) || []).length === 3 && !/[^\w]envSwitch\(/.test(wire) && /onEnvSwitch\(\(env\) => \{ envSwitchGuarded\(env\); \}\)/.test(wire));
-  ok("直接叫 envSwitch 的只有兩處:宣告本身與守門那一支(renderer 沒有別的後門)", direct === 2 && !/[^\w]envSwitch\(/.test(app));
+  // 「沒有別的後門」要掃整個 renderer(以前只看 trade.js + app.js,handoff.js 從來不在視野裡:稽核 F1)。
+  // 今天的三處:trade.js 的宣告與守門、handoff.js「回這台電腦」那顆鈕(它前面有同一支 envCanSwitch)
+  { const all = fs.readdirSync(R).filter((f) => f.endsWith(".js")).map((f) => [f, noComments(fs.readFileSync(path.join(R, f), "utf8"))]);
+    const hits = all.flatMap(([f, s]) => (s.match(/[^\w]envSwitch\(/g) || []).map(() => f));
+    ok("直接叫 envSwitch 的全 renderer 只有三處:宣告本身、守門那一支、handoff.js 的「回這台電腦」(新檔直呼會紅):" + hits.join(),
+      hits.length === 3 && direct === 2 && hits.filter((f) => f === "handoff.js").length === 1 && !/[^\w]envSwitch\(/.test(app)); }
   // 連接交易所的框只連這台電腦:狀態固定用本機那一袋;雲端視角開不起來(硬擋,不只靠那顆鈕的 aria-disabled)
   ok("N8 連接交易所的框固定用這台電腦那一袋", ["cxModalOpen", "cxModalPaint", "cxConnect", "cxRetest"].every((n) => /const L = TR_BAGS\.local[,;]/.test(fn(n))) && !/\bTR\.(cx|st|api)\b/.test(fn("cxModalPaint") + fn("cxConnect") + fn("cxRetest")));
   ok("連接交易所的框在雲端視角開不起來、也送不出去", /^function cxModalOpen\(opener\) \{\s*if \(ENV\.cur !== "local" \|\| TR\.env !== "local"/.test(fn("cxModalOpen")) && /if \(L\.cx\.busy \|\| ENV\.cur !== "local"/.test(fn("cxConnect")) && /ENV\.cur !== "local"\) return;/.test(fn("cxRetest")));
-  ok("雲端的「連接交易所」「重新測試」「解除綁定」都不接 click(aria-disabled + 說明)", /if \(TR\.env === "cloud"\) \{ b\.classList\.add\("is-ro"\);[^\n]*\}\s*else b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\)/.test(fn("trPaintOnboard")) && /if \(ro\) \[rt, ub\]\.forEach/.test(fn("trPaintSet")));
+  ok("雲端的「重新測試」「解除綁定」不接 click(aria-disabled + 說明)", /if \(ro\) \[rt, ub\]\.forEach/.test(fn("trPaintSet")));
+  // 設計師評估 2026-09-22:雲端「還沒連接交易所」那一態,停用的「連接交易所」佔掉全頁唯一的主鈕位置,
+  // 真出口「前往工作頁」反而是段落裡的文字鈕 → 雲端不畫那顆鈕,主鈕換成「前往工作頁」;這台電腦那一態一個字不改
+  { const ob = fn("trPaintOnboard"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+    ok("雲端 noaccount:不畫停用的「連接交易所」(整支函式沒有 is-ro / aria-disabled / cx.connect 給雲端),主鈕是描邊的「前往工作頁」、外開瀏覽器",
+      !/is-ro|aria-disabled/.test(ob) && /const cloud = TR\.env === "cloud"/.test(ob) && /if \(cloud\) \{ const g = trEl\("button", "btn-out", t\("plan\.openWs"\)\);[^\n]*window\.blave\.openExternal\(planWebUrl\(\)\)/.test(ob));
+    ok("雲端 noaccount:說明換成雲端專屬那一句(這台電腦仍是 tr.onboard);那一句要講「只能看」與「到網頁的工作頁連」",
+      /t\(cloud \? "tr\.onboard\.cloud" : "tr\.onboard"\)/.test(ob) && /"tr\.onboard\.cloud": "[^"]*只能看[^"]*雲端工作頁/.test(S) && /"tr\.onboard\.cloud": "[^"]*can only view the cloud[^"]*cloud workspace on the web/.test(S));
+    ok("這台電腦 noaccount 不變:填色的「連接交易所」直接開連接框", /else \{ const b = trEl\("button", "btn-fill", t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"; b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\); ob\.appendChild\(b\); \}/.test(ob));
+    ok("雲端 noaccount:標題底下那句唯讀說明不另出(已併進上面那一句),判準用 trExecState、不是會退成 unknown 的標題狀態;tr.ro.noteEmpty 兩語都刪了",
+      /trPaintRoNote\(ro && !stopped && trExecState\(TR\.st\) !== "noaccount" \? "tr\.ro\.note" : null\);/.test(src) && !/tr\.ro\.noteEmpty/.test(src + S)); }
   ok("設定 › 連線分類清乾淨:DOM、程式、字串都沒有", !/set-conn|data-set-cat="conn"/.test(html) && !/cxPaint\(|cxOpen\(|set-conn|"conn"/.test(code + app) && !/"(set\.cat\.conn|cx\.unbindHint|cx\.unbindLink|cx\.acct\.title)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
   // 設計師規格 v2 方案 C:存放說明收進「金鑰存在哪?」展開列——仍然只在不是模擬交易時出現,而且誠實揭露那句原文要在
   ok("金鑰存放說明(cx.lead)在框裡的展開列,只在不是模擬交易時出現;展開狀態重畫時保住", (() => { const i = src.indexOf('if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));'), j = src.indexOf('box.appendChild(note);', i), body = src.slice(i, j);

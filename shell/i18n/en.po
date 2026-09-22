@@ -1087,6 +1087,9 @@ msgstr "Settings"
 msgid "tr.onboard"
 msgstr "Order sizes are derived from your exchange equity, so this page needs an exchange account first. Once connected, give each strategy an amount and it starts trading."
 
+msgid "tr.onboard.cloud"
+msgstr "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet. In this version the app can only view the cloud; to connect an exchange, use the cloud workspace on the web."
+
 msgid "tr.strategies"
 msgstr "Strategies"
 
@@ -1475,9 +1478,6 @@ msgstr "The cloud’s state can’t be read right now. Trading already running i
 
 msgid "tr.ro.note"
 msgstr "In this version the app can only view the cloud. To set amounts, start or pause trading, use the cloud workspace on the web for now."
-
-msgid "tr.ro.noteEmpty"
-msgstr "In this version the app can only view the cloud. To connect an exchange, use the cloud workspace on the web for now."
 
 msgid "tr.cloud.unknown"
 msgstr "Can’t read the cloud’s state"
@@ -1914,6 +1914,12 @@ msgstr "Confirm"
 
 msgid "ho.emptyHint"
 msgstr "No strategies in the cloud yet. Open one on this computer and press Send to Cloud."
+
+msgid "ho.back.hint"
+msgstr "Your cloud machine is ready. Go back to this computer and press Send to Cloud for {id}."
+
+msgid "ho.back.btn"
+msgstr "Back to This Computer"
 
 msgid "ho.msg.up"
 msgstr "Send the strategy {id} to my cloud machine. Re-run the backtest there once it’s moved, and show me both sets of numbers side by side."

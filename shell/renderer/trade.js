@@ -675,7 +675,10 @@ function trPaintHead() {
   const mny = has ? envMoney(TR.st) : null, tm = $("tr-tb-mode");
   tm.hidden = !mny; tm.className = "mode " + (mny || "paper"); tm.textContent = envMoneyText(mny);
   // 雲端第一刀唯讀:全頁唯一的說明(不能按的鈕都用 aria-describedby 指到它)。停機時那顆鈕是可按的「加值」,說明不出
-  trPaintRoNote(ro && state === "noaccount" ? "tr.ro.noteEmpty" : ro && !stopped ? "tr.ro.note" : null);
+  // 還沒連接交易所那一態不在這裡講:那一句(唯讀 + 去哪裡連)已經併進 onboard 的 tr.onboard.cloud,
+  // 同一畫面不出現兩句「只能看」。用 trExecState 判(onboard 的判準),不是標題那個 state:
+  // 雲端讀不到新狀態時標題會退成 unknown,但畫出來的仍然是 onboard
+  trPaintRoNote(ro && !stopped && trExecState(TR.st) !== "noaccount" ? "tr.ro.note" : null);
   trPaintVerdict(stopped);
   // 執行鈕:沒帳戶時不放(那顆「連接交易所」在 onboard 裡,同畫面不出現兩顆主要鈕)。
   // 同一顆鈕就地更新、不重建:確認框關掉之後焦點要回得到它,輪詢重畫也不能把焦點洗掉。
@@ -820,13 +823,13 @@ function trPaintOnboard(state) {
   if (state === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
   // 「要停就按暫停下單」只在那顆鈕真的能按的時候才講(下單機不在跑時鈕是 disabled,那句就是假話)
   if (state === "unknown") { box.appendChild(trEl("div", "pf-state", TR.env === "cloud" ? t("env.empty.unreach") : t("tr.unknownBody") + (TR.st && TR.st.alive ? t("tr.unknownStop") : ""))); return; }
-  const ob = trEl("div", "pf-onboard");
-  ob.appendChild(trEl("p", "", t("tr.onboard")));
-  const b = trEl("button", "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect";
-  // 雲端第一刀:連接交易所要到網頁做(說明在標題下那一行);鈕留著但不能按
-  if (TR.env === "cloud") { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); }
-  else b.addEventListener("click", () => cxModalOpen(b));
-  ob.appendChild(b); box.appendChild(ob);
+  const cloud = TR.env === "cloud", ob = trEl("div", "pf-onboard");
+  ob.appendChild(trEl("p", "", t(cloud ? "tr.onboard.cloud" : "tr.onboard")));
+  // 雲端第一刀:連接交易所要到網頁做,所以這一區的主鈕是「前往工作頁」(描邊:外開瀏覽器,不是在這裡動手)。
+  // 停用的「連接交易所」不畫——它會佔掉全頁唯一的主鈕位置,真出口反而比假出口弱(雲端能寫的那一批回來時它就原樣回來)
+  if (cloud) { const g = trEl("button", "btn-out", t("plan.openWs")); g.type = "button"; g.id = "tr-onboard-ws"; g.addEventListener("click", () => window.blave.openExternal(planWebUrl())); ob.appendChild(g); }
+  else { const b = trEl("button", "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect"; b.addEventListener("click", () => cxModalOpen(b)); ob.appendChild(b); }
+  box.appendChild(ob);
 }
 
 /* ── 部位分頁:策略金額表 + 交易所部位表 ─────────────────────────── */
@@ -1678,6 +1681,9 @@ function envSwitch(env, via) {
   if (env !== "local" && env !== "cloud") return;
   const head = () => { const h = $("cv-empty").hidden ? $("tr-h") : $("cv-h"); if (h && h.offsetParent) h.focus(); };
   if (env === ENV.cur) { if (via === "link") head(); return; }
+  // 換了一邊 = 放棄「等著送上雲端」那個意圖(承重牆①:沒有 TTL,靠這條收斂)。
+  // hoAsk 是切完才記 pending,所以它自己那一次切過去不會被這行洗掉
+  if (typeof HO !== "undefined") HO.pending = null;
   // 順序(spec §1.4):關確認框(等同取消,焦點不回 opener)→ 存這一邊 → 換 → 畫 → 標題 → 播報
   // 關確認框這一行**目前走不到**:確認框開著時 ⌘1/⌘2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
   // 批次 ② 選單列的「顯示」兩項進來之後,才有確認框開著也能切視角的入口。
@@ -1774,12 +1780,15 @@ function envPaintSide(kind, st) {
   // 側欄頂不寫「雲端 / 這台電腦」(Wei:最上面的切換器已經有了);這裡只畫雲端那幾份策略
   const list = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
   const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();   // 列尾的「拉回」:功能開著、而且雲端看得到現況才畫
-  const sig = LANG + "|" + JSON.stringify([kind, ho, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
+  // 雲端剛通、而且有一支還在等著送上來:第一格換成「回這台電腦」那條路(取代 ho.emptyHint,不疊加)
+  const pid = ho ? hoPendingId() : null;
+  const sig = LANG + "|" + JSON.stringify([kind, ho, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)]), pid]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
   // 第一刀:只當清單看(單支策略的端點還沒做)——不是鈕、沒有 hover、Tab 不會停
   const box = $("strat-list-cloud"); box.textContent = ""; box.setAttribute("role", "list");
-  if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
+  if (pid) { box.appendChild(hoPendingCell(pid)); hoBusy(); }   // agent 回覆中:那顆鈕跟另外兩顆一樣是 aria-disabled
+  if (!list.length) { if (!pid) box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
   list.forEach((x) => {
     const row = trEl("div", "strat-row is-static"); row.setAttribute("role", "listitem");
     const nm = trEl("span", "strat-name", x.displayName); nm.title = x.name; row.appendChild(nm);

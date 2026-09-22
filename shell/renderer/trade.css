@@ -91,6 +91,7 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 .strat-row.is-static:hover { background: transparent; color: inherit; }
 .strat-row.is-static .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
+#strat-list-cloud .pf-state .btn-quiet { font-size: inherit; }             /* 句尾的文字鈕跟著那句話的字級(同 .tr-ro-note) */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 
 /* ---- 雲端視角的開通頁(沒有主機可看;規格 §3 .cv-open)---- */
