@@ -403,7 +403,7 @@ function trFmtPrice(v) {
   return v.toLocaleString("en-US", { minimumFractionDigits: v < 10 ? 4 : v < 1000 ? 2 : 1, maximumFractionDigits: v < 10 ? 4 : v < 1000 ? 2 : 1 });
 }
 const tr2 = (n) => String(n).padStart(2, "0");
-function trStamp(ts) { const ms = trMs(ts); if (ms == null) return "—"; const d = new Date(ms); return tr2(d.getMonth() + 1) + "-" + tr2(d.getDate()) + " " + tr2(d.getHours()) + ":" + tr2(d.getMinutes()); }
+function trStamp(ts) { const ms = trMs(ts); if (ms == null) return "—"; const d = new Date(ms); return tr2(d.getMonth() + 1) + "/" + tr2(d.getDate()) + " " + tr2(d.getHours()) + ":" + tr2(d.getMinutes()); }
 function trHM(ms) { const d = new Date(ms); return tr2(d.getHours()) + ":" + tr2(d.getMinutes()); }
 function trMoneyInto(node, v, signed) {
   const s = trFmt(v, signed);
