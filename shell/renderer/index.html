@@ -313,6 +313,8 @@
 <div class="scrim" id="del-scrim" role="dialog" aria-modal="true" aria-labelledby="del-title" aria-describedby="del-body" hidden>
   <div class="set-modal del-modal" id="del-modal">
     <div class="modal-head">
+      <!-- 寫進雲端的確認框才出:目的地記號 -->
+      <span class="envm" id="del-env" hidden></span>
       <span class="mode paper" id="del-mark" hidden></span>
       <h6 id="del-title"></h6>
       <button type="button" class="modal-close" id="del-close" data-i18n-aria="set.close">✕</button>
@@ -320,6 +322,8 @@
     <!-- div 不是 p:啟動方案的確認要放三段 <p>(刪對話只有一句,直接寫字) -->
     <div class="del-body" id="del-body"></div>
     <div class="modal-foot">
+      <!-- 鈕正上方那一行:整行,所以排在 flex 的最前面 -->
+      <span class="del-where" id="del-where" hidden></span>
       <button type="button" class="btn-out" id="del-cancel" data-i18n="del.cancel"></button>
       <button type="button" class="btn-out" id="del-alt" hidden></button>
       <button type="button" class="btn-fill" id="del-ok" data-i18n="del.ok"></button>

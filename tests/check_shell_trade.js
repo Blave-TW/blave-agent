@@ -150,13 +150,18 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   var trAlert = (x) => { if (x) alerts.push(x); }, trPaint = () => {}, trPollSoon = () => {}, t = (k) => k;
   var trSendError = (res, kind) => kind + ":" + trErrorKind(res && res.error);
   eval(src.slice(c0, c1).replace("async function trRun", "trRun = async function"));
-  let sent = 0, release, seenPending = null;
-  const slow = () => { sent++; seenPending = TR.pending && TR.pending.want; return new Promise((r) => { release = r; }); };
+  let sent = 0, seenPending = null; const rels = [];
+  const slow = () => { sent++; seenPending = TR.pending && TR.pending.want; return new Promise((r) => { rels.push(r); }); };
   const p1 = trRun("halted", [slow]);
   ok("S3 指令送出的當下 pending 已經掛上(鈕已是過場態)", seenPending === "halted");
-  await trRun("halted", [slow]); await trRun("running", [slow]);
-  ok("S3 在途時再呼叫一次:不送第二個指令", sent === 1);
-  release({ ok: true }); await p1;
+  await trRun("running", [slow]);
+  ok("S3 在途時再按「啟動」:不送第二個指令(那個重複送就是真的多開一次倉)", sent === 1);
+  /* 規格 §1.3(Wei 拍板):緊急停止**不可以**被自己的過場態鎖住——前一個指令還在路上不是「不能停」的理由。
+     重複送 halt 是安全的:api 那邊 halt 有自己的速率桶,本機 daemon 沒跑時照樣排隊(daemon.js:149),
+     而同一次動作的重試沿用同一顆 request_id(trSend),不會變成兩顆。 */
+  const p2 = trRun("halted", [slow]);
+  ok("S3 在途時再按「暫停」:照送得出去", sent === 2 && TR.pending && TR.pending.want === "halted");
+  rels.forEach((r) => r({ ok: true })); await p1; await p2;
   ok("S3 成功:pending 留著等狀態檔", TR.pending && TR.pending.want === "halted" && alerts.length === 0);
   TR.pending = null; await trRun("halted", [async () => ({ ok: false, error: "TIMEOUT" })]);
   ok("S3/S2 確定沒執行:pending 拿掉、暫停專用那句", TR.pending === null && alerts.pop() === "stop:undelivered");
@@ -167,6 +172,53 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   TR.pending = null; let second = 0;
   await trRun("running", [async () => ({ ok: false, error: "X" }), async () => { second++; return { ok: true }; }]);
   ok("第一步失敗:後面的步驟(restart_reconciler)不送", second === 0 && TR.pending === null);
+
+  /* 稽核 B-3:暫停側的鈕永遠可按,所以 ack 窗(最長 20 秒)之內按第二次是正常操作。那時 reqIds 還沒寫進去
+     (要等第一趟回來),再送一次會鑄出**第二顆** request_id——雲端排兩筆、本機 daemon.js:128 每次都鑄新 id 根本
+     沒有去重,兩邊都變成 close_all 跑兩次(每一筆各起一支 flatten)。在途時把同一趟的結果交給第二個呼叫端。 */
+  { const s0 = src.indexOf("async function trSend("), s1 = src.indexOf("async function trRun(");
+    if (s0 < 0 || s1 < 0 || s0 > s1) throw new Error("找不到 trSend");
+    eval(src.slice(s0, s1).replace("async function trSend", "trSend = async function"));
+    let calls = 0; const rel = [], rids = [];
+    const bag = { reqIds: {}, sending: {}, api: { tradeSend: (cmd, args, rid) => { calls++; rids.push(rid); return new Promise((r) => rel.push(r)); } } };
+    const a = trSend(bag, "close_all", {}), b = trSend(bag, "close_all", {});
+    ok("B-3 在途時第二次按同一顆指令:不再送一次(不會有第二顆 request_id 在飛)", calls === 1 && rel.length === 1);
+    rel[0]({ ok: true });
+    ok("B-3 兩個呼叫端拿到的是同一趟的結果", (await a) === (await b));
+    const c3 = trSend(bag, "close_all", {});
+    ok("B-3 飛完了就放開(下一次按照樣送得出去)", calls === 2 && rel.length === 2);
+    rel[1]({ ok: true }); await c3;
+    ok("B-3 在途標記不會留下來(留著的話這顆指令就永遠送不出去了)", Object.keys(bag.sending).length === 0 && rids.join() === ",")
+    ; }
+
+  /* 稽核 B-4:暫停側可重入 → 舊的那一趟回來時,不可以把**還在飛的那一次**的過場態清掉,
+     更不可以寫出「暫停沒送到、去交易所撤 key」——那一趟其實正要執行。 */
+  { TR.pending = null; alerts.length = 0;
+    const rel2 = [], slow2 = () => new Promise((r) => rel2.push(r));
+    const q1 = trRun("halted", [slow2]); const first = TR.pending;
+    const q2 = trRun("halted", [slow2]); const second2 = TR.pending;
+    rel2[0]({ ok: false, error: "OFFLINE" }); await q1;
+    ok("B-4 舊的那一趟回來:不清掉新的 pending、不寫假的「沒送到」", TR.pending === second2 && second2 !== first && alerts.length === 0);
+    rel2[1]({ ok: true }); await q2;
+    ok("B-4 新的那一趟自己收(pending 留著等狀態)", TR.pending === second2 && second2.acked === true); }
+
+  /* 稽核 R2-1(Wei 拍):**平倉那趟的結果永遠要講,不管後來誰蓋了 pending**。close_all 跟 halt 共用 want:"halted"
+     這個槽——先按平倉再按暫停,暫停收斂、鈕變「啟動」,而平倉其實沒送出去、部位還在;B-4 的守衛不能把這一句吞掉。 */
+  { TR.pending = null; alerts.length = 0;
+    const rel3 = [], slow3 = () => new Promise((r) => rel3.push(r));
+    const q1 = trRun("halted", [slow3], "close_all"); const q2 = trRun("halted", [slow3], "halt"); const cur = TR.pending;
+    rel3[0]({ ok: false, error: "TIMEOUT" }); await q1;
+    ok("R2-1 ① 平倉被暫停蓋掉、平倉回沒送到:紅字照出、現在的 pending(暫停那顆)不動", alerts.pop() === "stop:undelivered" && TR.pending === cur && cur.cmd === "halt");
+    rel3[1]({ ok: true }); await q2;
+    TR.pending = null; alerts.length = 0;
+    const q3 = trRun("halted", [slow3], "close_all");
+    TR.pending = null;   // 暫停先收斂:trPendingCheck 把 pending 清掉了
+    rel3[2]({ ok: false, error: "TIMEOUT" }); await q3;
+    ok("R2-1 ② 暫停先收斂清掉 pending、平倉才回 TIMEOUT:一樣要講,而且不把已經清掉的 pending 扶回來", alerts.pop() === "stop:undelivered" && TR.pending === null);
+    TR.pending = null; alerts.length = 0;
+    const q4 = trRun("halted", [slow3], "halt"); trRun("halted", [slow3], "halt");
+    rel3[3]({ ok: false, error: "TIMEOUT" }); await q4;
+    ok("R2-1 對照:被蓋掉的是 halt 就照 B-4 不講(halt 冪等,新的那趟會自己講)", alerts.length === 0); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

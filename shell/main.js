@@ -183,6 +183,16 @@ function cloudHost() {
   });
   return _cloud;
 }
+/* 雲端的寫入那一支(cloudcmd.js;線 B 第二刀)。跟讀那支分開:兩邊走不同的端點與速率桶,而且這支的
+   owner/gen 要在登出時單獨作廢(cloudcmd.js:95)。憑證同樣只在這個行程裡。 */
+let _cloudCmd = null;
+function cloudCmd() {
+  if (!_cloudCmd) _cloudCmd = require("./cloudcmd").createCloudCmd({
+    apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
+  });
+  return _cloudCmd;
+}
 
 // ── 自動更新(updater.js;規則見 spec §13)────────────────────
 // 更新來源由打包時的 BLAVE_UPDATE_URL 蓋進 package.json(blaveUpdateUrl);開發版與沒設的包 = 不更新,畫面只顯示版號。
@@ -357,6 +367,7 @@ async function signOutBlave() {
   }
   clearToken();
   if (_cloud) _cloud.reset();   // 登出:不留上一個帳號的部位在記憶體裡
+  if (_cloudCmd) _cloudCmd.reset();   // 在途的雲端指令:回應回來時丟掉(它是上一個人的)
   if (_mcp) _mcp.reset();       // 接入碼也是:伺服器那邊 /revoke 會撤掉它,這裡把記憶體裡的丟掉、作廢在途的請求
   lastAcct = null;
   return { revoked };
@@ -1337,6 +1348,24 @@ app.whenReady().then(() => {
   // 雲端的事件清單:點擊驅動的另一支(另一個速率桶),不啟動輪詢、不留在主行程、不落地。
   // 回 { code: "OK" | "UNREACH", events }——讀不到與「真的沒有事件」是兩件事,畫面要講得出是哪一種
   handle("cloud-events", (_e, q) => cloudHost().events(q && q.days), { code: "UNREACH", events: [] });
+  /* 雲端(寫入):renderer 只說「送哪個指令」,憑證與 request_id 都在主行程(cloudcmd.js)。
+     **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
+     金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。
+     白名單的來源仍是 daemon.js 的 UI_COMMANDS(= api 的 CLOUD_COMMANDS,api/tests/check_desktop_cloud_command.py 直接讀那個檔比對),
+     不另抄一份;但**再交集一次「這一批真的有 UI 在用的那四個」**(稽核 S-2):`amounts`(S4)、
+     `credentials_remove` / `retest_accounts` / `restart_reconciler`(S5)各自出貨時再加進 CLOUD_SHIPPED。
+     requestId 由畫面帶回上一趟那顆(冪等;形狀不對就當沒帶,由 cloudcmd 重鑄)。
+     最低版本閘不套在這裡:它擋的是**這台電腦**的下單碼,雲端跑的是主機上的 runtime(規格 §4.2-1)。 */
+  const cloudDenied = { ok: false, error: "NOT_ALLOWED", kind: "undelivered" };
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait"];
+  handle("cloud-send", async (_e, cmd, args, requestId) => {
+    if (typeof cmd !== "string" || cmd === "credentials" || !require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
+    const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
+    const r = await cloudCmd().send(cmd, args && typeof args === "object" && !Array.isArray(args) ? args : {}, null, { requestId: rid });
+    // 機器收下了:立刻要一份新狀態(refresh 自己有節流)。不等它——回應不該被多一趟網路拖住
+    if (r && r.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
+    return r;
+  }, cloudDenied);
   // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
   ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
   ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));

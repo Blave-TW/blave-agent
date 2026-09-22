@@ -1446,6 +1446,9 @@ msgstr "未啟動"
 msgid "env.st.autoPaused"
 msgstr "已自動暫停"
 
+msgid "env.st.sending"
+msgstr "指令送出中"
+
 msgid "env.tip"
 msgstr "{where} — {money}，{state}"
 
@@ -1532,6 +1535,60 @@ msgstr "餘額不足，主機已停機。下單已停止，部位留在交易所
 
 msgid "tr.cloud.unbindDesc"
 msgstr "移除雲端主機上的交易所金鑰，下單機不再能用這個帳戶交易。"
+
+msgid "tr.cloud.footWhere"
+msgstr "{where} · {money} · {venue}"
+
+msgid "tr.cloud.means.l"
+msgstr "在雲端跑，代表："
+
+msgid "tr.cloud.means.1"
+msgstr "主機開著就照排程跑。這台電腦關機、闔蓋、沒網路，或把這個 app 關掉，都不影響。"
+
+msgid "tr.cloud.means.2"
+msgstr "要暫停，回到這一頁按「暫停下單」。"
+
+msgid "tr.cloud.means.3"
+msgstr "主機每個整點從餘額扣 {h} TWD，存在就扣。餘額低於 {m} TWD 會停機：下單跟著停，部位留在交易所。"
+
+msgid "tr.cloud.means.4"
+msgstr "主機停機或斷線跨過 K 棒收盤，恢復後會自動暫停、一張單都不下，等你回來按啟動。"
+
+msgid "tr.cloud.bothReal.h"
+msgstr "這台電腦也正在用真錢下單。"
+
+msgid "tr.cloud.bothReal.b"
+msgstr "如果兩邊連的是同一個交易所帳戶，同一個標的的部位會互相抵銷或疊加。同一個帳戶只讓一邊跑。"
+
+msgid "tr.cloud.cmdFailed"
+msgstr "指令沒有送到雲端主機，什麼都沒有改變。再按一次試試。"
+
+msgid "tr.cloud.cmdUnknown"
+msgstr "指令送出去了，但雲端主機還沒回報結果，可能已經執行。先看這一頁的狀態，再決定要不要重按。"
+
+msgid "tr.cloud.cmdNotDelivered"
+msgstr "暫停的指令沒有送到，它還在交易。再按一次試試；一直失敗的話，到交易所撤銷雲端那把 API key——它就再也送不出單（既有部位仍需你自己在交易所平倉）。"
+
+msgid "tr.cloud.cmdRejected"
+msgstr "雲端主機沒有接受這個指令（{err}）。"
+
+msgid "tr.cloud.noMachine"
+msgstr "現在沒有雲端主機，指令沒有送出。"
+
+msgid "tr.cloud.startingNow"
+msgstr "雲端主機還在啟動，指令沒有送出。開好後再按一次。"
+
+msgid "tr.cloud.tooSoon"
+msgstr "指令送得太密，這一個沒有送出。等一下再按一次。"
+
+msgid "tr.cloud.tooSoonStop"
+msgstr "剛才已經送過暫停了，這一次沒有送出。等一下再按一次；雲端上的狀態以這一頁為準。"
+
+msgid "tr.cloud.onlyWebExec"
+msgstr "每支策略的下單方式與策略管理，在網頁的雲端工作頁。"
+
+msgid "tr.cloud.notSent"
+msgstr "這個指令沒有送出（Blave 這邊暫時記不下這筆操作紀錄）。再按一次試試。"
 
 msgid "chat.tgt.label"
 msgstr "操作對象"

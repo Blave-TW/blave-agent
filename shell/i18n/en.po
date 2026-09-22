@@ -1446,6 +1446,9 @@ msgstr "Not started"
 msgid "env.st.autoPaused"
 msgstr "Auto-paused"
 
+msgid "env.st.sending"
+msgstr "Sending a command"
+
 msgid "env.tip"
 msgstr "{where} — {money}, {state}"
 
@@ -1532,6 +1535,60 @@ msgstr "The balance ran low and the machine stopped. Trading has halted. Positio
 
 msgid "tr.cloud.unbindDesc"
 msgstr "Removes the exchange keys from the cloud machine — the order engine can no longer trade this account."
+
+msgid "tr.cloud.footWhere"
+msgstr "{where} · {money} · {venue}"
+
+msgid "tr.cloud.means.l"
+msgstr "Running in the cloud means:"
+
+msgid "tr.cloud.means.1"
+msgstr "It runs on schedule as long as the machine is on. Shutting down this computer, closing the lid, losing the network, or quitting this app changes nothing."
+
+msgid "tr.cloud.means.2"
+msgstr "To pause, come back to this page and press Pause Trading."
+
+msgid "tr.cloud.means.3"
+msgstr "The machine takes {h} TWD from your balance every hour for as long as it exists. Under {m} TWD it stops: trading halts and positions stay at the exchange."
+
+msgid "tr.cloud.means.4"
+msgstr "If the machine is down across a candle close, it pauses itself on recovery and places no orders until you press Start."
+
+msgid "tr.cloud.bothReal.h"
+msgstr "This computer is also trading real money."
+
+msgid "tr.cloud.bothReal.b"
+msgstr "If both sides use the same exchange account, positions in the same symbol will offset or stack. Run only one side per account."
+
+msgid "tr.cloud.cmdFailed"
+msgstr "The command didn’t reach the cloud machine, and nothing changed. Try again."
+
+msgid "tr.cloud.cmdUnknown"
+msgstr "The command was sent, but the cloud machine hasn’t reported back. It may already have run. Check this page’s state before pressing again."
+
+msgid "tr.cloud.cmdNotDelivered"
+msgstr "The pause command wasn’t delivered and it is still trading. Try again. If it keeps failing, revoke the cloud’s API key at the exchange — it can then place no more orders (you still need to close existing positions yourself at the exchange)."
+
+msgid "tr.cloud.cmdRejected"
+msgstr "The cloud machine didn’t accept this command ({err})."
+
+msgid "tr.cloud.noMachine"
+msgstr "There’s no cloud machine right now, so nothing was sent."
+
+msgid "tr.cloud.startingNow"
+msgstr "The cloud machine is still starting, so nothing was sent. Press again once it is up."
+
+msgid "tr.cloud.tooSoon"
+msgstr "Commands are coming too fast, so this one was not sent. Wait a moment and press again."
+
+msgid "tr.cloud.tooSoonStop"
+msgstr "A pause was just sent, so this one was not. Wait a moment and press again. This page shows the cloud’s state."
+
+msgid "tr.cloud.onlyWebExec"
+msgstr "Per-strategy order handling and strategy management are in the cloud workspace on the web."
+
+msgid "tr.cloud.notSent"
+msgstr "The command was not sent (Blave couldn’t record this action right now). Try again."
 
 msgid "chat.tgt.label"
 msgstr "Target"

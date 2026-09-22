@@ -18,6 +18,23 @@ function trErrorKind(error) {
   if (e === "UNKNOWN_RESULT") return "unknown";
   return !e || TR_UNDELIVERED.indexOf(e) >= 0 ? "undelivered" : "rejected";
 }
+/* 過場中還能不能按 / 還能不能送(規格 §1.3)。**暫停方向永遠放行**:緊急停止不可以被自己的過場態鎖住——
+   前一個指令還在路上不是「不能停」的理由。重複送是安全的:`halt` 在 api 有自己的速率桶(不會被別的指令餓死),
+   在本機 daemon 沒跑時照樣排隊(daemon.js:149),而同一次動作的重試沿用同一顆 request_id,不會變成兩顆。
+   啟動方向照舊鎖住:那個重複送就是真的多開一次倉。 */
+function trBtnLocked(pending, stopSide) { return !!pending && !stopSide; }
+// 這個狀態下鈕是「暫停」那一側嗎。狀態不明時給暫停:不知道有沒有在跑,就給安全方向的那顆(稽核 S5)
+function trStopSide(state) { return state === "running" || state === "unknown"; }
+/* 主鈕現在是不是「暫停」那一側。狀態說在跑 = 是;另外,**啟動的意圖已經被機器收下(acked)**也算——
+   那時機器已經確定在下單了,鈕卻還鎖著等收斂(最長四分鐘),跟「暫停永遠可按」的精神相反。
+   ack 之前維持鎖:還不知道有沒有送到,放行會兩顆並飛。 */
+function trStopSideNow(state, pending) { return trStopSide(state) || !!(pending && pending.want === "running" && pending.acked); }
+/* 回應落在哪一桶。雲端那條路的 kind 由 cloudcmd.js 判(它知道失敗發生在指令階段還是 ack 階段,那是這裡看不出來的:
+   同一個代號在兩個階段的意思不同),有就用它;本機沒有這個欄位,照代號查表。 */
+function trKindOf(res) {
+  const k = res && res.kind;
+  return k === "undelivered" || k === "unknown" || k === "rejected" ? k : trErrorKind(res && res.error);
+}
 const TR_AMOUNT_MAX = 1e9;            // 同主行程 argsOk 的上限
 const TR_HOST_RETRY_MS = 90 * 1000;   // 宿主退避重啟 2+4+8+16+30 秒 = 60 秒內會試完;超過還沒起來就是起不來
 const TR_STALE_MS = 10 * 60 * 1000;   // 對帳快照超過這個年紀就不拿來當「實際」(同雲端 REPORT_STALE_MS 的用途)
@@ -221,10 +238,15 @@ function trErrStamp(ts, nowMs) {
 
 /* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
    傳輸層:每個視角一份**同介面**的 api,自動下單頁換一個來源就能畫(雲端回的形狀跟本機 status() 相同)。
-   雲端那份第一刀**唯讀**:tradeSend 在這一層就擋掉(回 NOT_ALLOWED,跟主行程拒絕同一個代碼),完全不碰 host 的 tradeSend——
-   鈕的 aria-disabled 只是畫面,這裡才是「雲端視角下任何寫入指令都送不出去」的那道牆。權益曲線、單支策略的端點還沒做:回空的,
-   **不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。事件清單走主行程的 cloudEvents(平台的事件流)。 */
+   雲端的寫入走主行程的 cloudSend(→ cloudcmd.js → api 的指令佇列),**永遠不碰 host.tradeSend**:那支是寫這台電腦的。
+   白名單在這裡再擋一層(主行程也擋一次):`credentials` 不在裡面——金鑰不經過這條通用路,只走專用的連接 IPC。
+   權益曲線、單支策略的端點還沒做:回空的,**不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。
+   事件清單走主行程的 cloudEvents(平台的事件流)。 */
 const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity", "tradeEvents", "tradeSend"];
+/* 雲端送得出去的指令:**只開這一批真的有 UI 在用的那四個**(稽核 S-2)。
+   `amounts`(S4)、`credentials_remove` / `retest_accounts` / `restart_reconciler`(S5)各自出貨時再加回來——
+   沒有 UI 在用的指令不該是「renderer 被攻破就打得通」的面(同 daemon.js:12-13 那句)。主行程還會再擋一次。 */
+const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait"];
 function envApi(env, host) {
   if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
@@ -241,7 +263,11 @@ function envApi(env, host) {
     // 讀不到(401 / 429 / 5xx / 連不上 / 壞回應 / 主行程拒絕)就說讀不到,**不可以**當成「這段期間沒有事件」
     tradeEvents: async (q) => { const ev = await host.cloudEvents(q);
       return ev && ev.code === "OK" && Array.isArray(ev.events) ? { code: "OK", events: ev.events } : { code: "UNREACH", events: [] }; },
-    tradeSend: async () => ({ ok: false, error: "NOT_ALLOWED" }),
+    /* requestId:重試時把上一趟回傳那顆原樣帶回來(冪等;不沿用的話 close_all 會跑兩次)。
+       回傳形狀同本機的 { ok, error },另外多一個 kind(三桶)與 requestId / machineState——畫面當 optional 讀。 */
+    tradeSend: async (cmd, args, requestId) => (ENV_CLOUD_CMDS.indexOf(cmd) < 0
+      ? { ok: false, error: "NOT_ALLOWED", kind: "undelivered" }
+      : host.cloudSend(cmd, args && typeof args === "object" ? args : {}, requestId || null)),
   };
 }
 // 雲端策略清單(strategies_summary)→ 跟本機 listStrategies 同形狀;標的與是不是投資組合直接帶著(沒有 loadStrategy 可問)
@@ -286,6 +312,9 @@ function envCell(env, st, pending) {
   const state = trExecState(st);
   if (state === "halted" && envAutoHalt(st)) { out.dot = "bad"; out.word = "env.st.autoPaused"; out.sig = "halt:" + String(st.report.halt.at || ""); return out; }
   if (state === "dead" && !pending && trDeadKind(st.report) === "died") { out.dot = "bad"; out.word = "tr.s.died"; out.sig = "died:" + String((st.report.reconciler || {}).heartbeat_at || ""); return out; }
+  // 雲端有在途的指令:切走也看得到(規格 §1.3)。排在紅短劃後面——出事比「我按的還在路上」更該先講。
+  // 詞不可沿用 side.starting(那是主機在開機,不是指令在路上)
+  if (env === "cloud" && pending) { out.dot = "busy"; out.word = "env.st.sending"; return out; }
   out.run = state === "running" && !pending && !trFailedIds(st.report).length && !trKeyBad(env);
   return out;
 }
@@ -355,13 +384,15 @@ function trNewBag(env) {
   return {
     env, api: null, st: null, open: false, tab: null, landed: false,
     pending: null,                 // { want, until }:按了啟動/暫停之後,等狀態檔自己說它變了
+    reqIds: {},                    // 雲端:cmd → 上一趟的 request_id(重試沿用同一顆;收斂 / 被接受 / 被拒絕就換新的)
     list: [], listLoaded: false, meta: new Map(),     // 回測過的策略與它們的 symbol / market / 是不是 Type C
     edits: {}, save: null, saveErr: null, saveTimer: null,
     sig: {},                       // 各面板上次畫的資料指紋:沒變就不重畫(輸入框的焦點、捲動位置都留著)
     cx: { busy: false, err: null, retest: false }, unbinding: false,
     ov: { mode: "equity", days: 30, curve: null, ui: [], uiErr: false, geo: null, at: 0 },
     bad: {},                       // 金額輸入框裡看不懂的字(name → true):有任何一格就不給儲存
-    alertText: "", alertWant: null, lastSaid: null, scroll: {},
+    alertText: "", alertWant: null, alertSrc: null, lastSaid: null, scroll: {},
+    sending: {},                   // cmd → 還在飛的那一趟(第二次按不重複送:本機寫指令檔每次都鑄新 id、close_all 不冪等)
   };
 }
 let TR = trNewBag("local");
@@ -375,6 +406,14 @@ const envMoneyText = (m) => (m === "real" ? t("tr.mode.real") : m === "paper" ? 
 // 同步的畫面函式借另一邊的狀態跑一次(過場檢查永遠看本機那一份)
 function trWith(bag, fn) { const prev = TR; TR = bag; try { return fn(); } finally { TR = prev; } }
 const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONFIRM_MS = 60000;
+/* 雲端版的「等它自己說它變了」要多久才算沒到。本機是讀自己的狀態檔,秒級;雲端這條鏈是
+   ack(最多 20 秒)→ 主機下一次回報 → app 這邊的狀態輪詢(前景 15 秒)。
+   回報那一段的權威來源是 `api/blave_agent/systemd/blave-agent-portfolio.timer`:`OnUnitActiveSec=120`,
+   而且**沒設 `AccuracySec`**(systemd 預設 1 分鐘)→ 實際落在 120–180 秒,再加那一班自己跑掉的時間。
+   最壞鏈 ≈ 155–215 秒,所以 180 秒是落在區間**中間**,不是上緣。取 4 分鐘。
+   **寧可久也不要早收**:早收的代價是對一個其實已經執行的暫停講假話,而且每一次逾時都會把 reqIds 清掉
+   (見 trPendingCheck)、讓下一次重按變成真的再執行一次;晚收的代價只是鈕多轉一會兒。 */
+const TR_CONFIRM_CLOUD_MS = 240000;
 const TR_TABS = ["over", "pos", "assets", "hist", "set"];
 const PAPER = "paper", BINANCE = "binance";
 
@@ -492,7 +531,8 @@ async function trPoll() {
     /* 雲端:這裡問的是主行程手上那一份(不打網路;主行程自己輪詢、自己節流)。看得見雲端時每 15 秒問一次;
        看這台電腦時靠主行程的推送(onCloudState → cloudDirty)+ 60 秒一次,只為了更新切換器那一格。
        app 一開就問第一次:主行程是懶啟動,有人問了才開始輪詢。 */
-    if (ENV.cloudDirty || now - ENV.cloudAt >= (ENV.cur === "cloud" ? ENV_POLL_SEEN : ENV_POLL_OTHER)) {
+    // 雲端有在途的指令時每一輪都問(這一支只拿主行程手上那一份、不打網路;主行程自己 15 秒去要一次)
+    if (ENV.cloudDirty || C.pending || now - ENV.cloudAt >= (ENV.cur === "cloud" ? ENV_POLL_SEEN : ENV_POLL_OTHER)) {
       ENV.cloudDirty = false; ENV.cloudAt = now;
       try {
         C.st = await C.api.tradeStatus();
@@ -503,14 +543,14 @@ async function trPoll() {
     }
     // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)
     if (S === L && S.open) { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
-    trWith(L, trPendingCheck);
+    trWith(L, trPendingCheck); trWith(C, trPendingCheck);   // 兩邊各自的過場都要收(切走了照樣收斂)
     trPaint();
     if (!$("cx-scrim").hidden) cxModalPaint();
   } finally {
     // 排下一輪放在 finally(稽核 N7):畫面函式就算丟例外,輪詢鏈也不能斷——斷了本機的狀態帶與綠點會凍在舊值
     TRP.polling = false;
     const cxOn = !$("cx-scrim").hidden;   // 連接交易所的框開著也算「在看」:剛連上要幾秒內看到已連接
-    clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll, TRP.again ? 0 : L.pending ? TR_POLL_PENDING : TR_BAGS[ENV.cur].open || cxOn ? TR_POLL_OPEN : TR_POLL_IDLE);
+    clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll, TRP.again ? 0 : L.pending || C.pending ? TR_POLL_PENDING : TR_BAGS[ENV.cur].open || cxOn ? TR_POLL_OPEN : TR_POLL_IDLE);
   }
 }
 function trPollSoon(ms) { clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll, ms || 0); }
@@ -597,48 +637,107 @@ function trShortState(state) {
     : state === "dead" ? (trDeadKind(r) === "died" ? t("tr.s.died") : t("tr.s.off")) : "";
   return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + (s ? " · " + s : "") : s;
 }
-// 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉
-function trAlert(text, want, bag) {
+/* 全頁唯一的紅字槽。want = 這句話在狀態變成什麼的時候就不成立了(例:「它還在交易」在已暫停之後是假話)→ 到了就自己清掉。
+   src = 這一則是誰寫的。**指令的失敗與「讀不到雲端」共用這一格**,而 trPaintHead 每一輪都會重畫:
+   沒有這個標記的話,送完指令那一步的 trPaint() 會把剛寫上去的錯誤當場洗掉,畫面上等於一句話都沒出現過。 */
+function trAlert(text, want, bag, src) {
   const S = bag || TR, was = S.alertText;
-  S.alertText = text || ""; S.alertWant = text ? want || null : null;
+  S.alertText = text || ""; S.alertWant = text ? want || null : null; S.alertSrc = text ? src || "cmd" : null;
   if (S !== TR_BAGS[ENV.cur]) return;              // 另一邊的事:記著,切過去才出現
   trAlertShow();
   if (text && text !== was) srSay(text);
 }
 function trAlertShow() { const S = TR_BAGS[ENV.cur], a = $("tr-alert"); a.hidden = !S.alertText; a.textContent = S.alertText; }
-// kind:"stop" = 暫停那兩個指令(沒送到 = 它還在交易,要講撤 API key 那句);其餘一般失敗不講那句(稽核 S2-B)
-function trSendError(res, kind) {
-  const e = res && res.error ? String(res.error) : "", k = trErrorKind(e);
+/* kind:"stop" = 暫停那兩個指令(沒送到 = 它還在交易,要講撤 API key 那句);其餘一般失敗不講那句(稽核 S2-B)。
+   env 由呼叫端帶(跨 await 之後 TR 可能已經是另一邊了)。雲端**不可以**沿用本機那組句子:它們寫死了「這台電腦」。 */
+function trSendError(res, kind, env) {
+  const e = res && res.error ? String(res.error) : "", k = trKindOf(res);
   if (e === "UPDATE_REQUIRED") return t("minv.trade");   // 最低版本閘:只擋啟動,暫停不受影響;叫人重按沒有用,要講去哪裡更新
+  if ((env || TR.env) === "cloud") {
+    // 409:api 不排隊、不記稽核 = 真的什麼都沒送出,不可沿用本機 daemon 沒跑時「已排隊」的說法。
+    // 已停機那一態不出紅字:整頁會被下一份 state 換成停機態,那裡話講得更完整。machine_state 缺席時不臆測,走通用那句
+    if (e === "MACHINE_NOT_RUNNING") { const m = res && res.machineState;
+      if (m === "stopped") return "";
+      if (m === "starting") return t("tr.cloud.startingNow");
+      if (m === "none") return t("tr.cloud.noMachine"); }
+    if (e === "RATE_LIMITED") return kind === "stop" ? t("tr.cloud.tooSoonStop") : t("tr.cloud.tooSoon");
+    if (e === "AUDIT_UNAVAILABLE") return t("tr.cloud.notSent");
+    if (k === "unknown") return t("tr.cloud.cmdUnknown");
+    if (k === "rejected") return t("tr.cloud.cmdRejected", { err: e.slice(0, 200) });
+    return kind === "stop" ? t("tr.cloud.cmdNotDelivered") : t("tr.cloud.cmdFailed");
+  }
   if (k === "unknown") return t("tr.cmdUnknown");
   if (k === "rejected") return t("tr.cmdRejected", { err: e.slice(0, 200) });
   return kind === "stop" ? t("tr.cmdNotDelivered") : t("tr.cmdFailed");
 }
 function trPendingCheck() {
-  const state = trExecState(TR.st);
+  const state = trExecState(TR.st), cloud = TR.env === "cloud";
   if (TR.alertWant && state === TR.alertWant) trAlert("");
   const p = TR.pending; if (!p) return;
-  if (state === p.want) { TR.pending = null; trAlert(""); }
-  else if (Date.now() > p.until) { TR.pending = null; trAlert(p.unknown ? t("tr.cmdUnknown") : p.want === "halted" ? t("tr.cmdNotDelivered") : t("tr.cmdFailed"), p.want); }
+  // 雲端:等的過程中主機停機了——人要看到的是「它停了」,不是「我按的那個不知道怎樣」(規格 §1.4)
+  if (cloud && envCloudKind(TR.st) === "stopped") { TR.pending = null; TR.reqIds = {}; trAlert(""); return; }
+  // 收斂了 = 這個意圖已經完成:下一次按同一顆鈕是新的意圖,要換一顆 request_id(不換的話 15 分鐘內會被當成重送、整個不執行)
+  if (state === p.want) { TR.pending = null; TR.reqIds = {}; trAlert(""); }
+  /* 等到逾時還沒對上。本機:ack 代表指令檔已經落地,沒收斂就是真的失敗,照原本那兩句。
+     雲端:ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來——**不可以因為沒收斂就說「沒送到」**
+     (規格 §1.3);說了就是叫一個暫停其實已經生效的人去交易所撤 key。一律走「結果不明」。
+     **逾時 = 這個意圖到此為止**(Wei 拍板):`reqIds` 一起清掉。不清的話下一次按會沿用同一顆,而 api 的
+     佔位還在(900 秒)→ 回 duplicate、不再排一次,ack 回條也早過期 → 畫面只說「結果不明」,機器繼續用真錢跑。
+     代價:如果其實只是慢,重按會真的執行兩次——halt 冪等無害,close_all 由 in-flight 標記與確認框擋一層。 */
+  else if (Date.now() > p.until) { TR.pending = null; TR.reqIds = {};
+    trAlert(cloud ? t("tr.cloud.cmdUnknown")
+      : p.unknown ? t("tr.cmdUnknown") : p.want === "halted" ? t("tr.cmdNotDelivered") : t("tr.cmdFailed"), p.want); }
+}
+/* 送一個指令,順便管兩件事。
+   ① **同一顆指令同時只飛一趟**(稽核 B-3):暫停側的鈕永遠可按,所以 ack 窗(最長 20 秒)之內按第二次是正常操作。
+      那時 `reqIds` 還沒寫進去(要等第一趟回來),再送一次會鑄出**第二顆** request_id,api 的去重完全沒機會生效——
+      雲端會排兩筆、本機 daemon.js:128 每次都鑄新 id 根本沒有去重,兩邊都變成 `close_all` 跑兩次
+      (`command_listener` 每一筆都另起一支 flatten)。在途時直接把同一趟的結果交給第二個呼叫端:不重複送,鈕照樣可按。
+   ② request_id 的沿用(契約 §4):同一個意圖重試沿用同一顆——沒排進佇列的失敗(409/429/503/連不上)與 ack 逾時
+      都要沿用,否則「其實前一次已經進去了」會變成同一個動作執行兩次。被接受 / 被主機拒絕 = 這一顆用完了。
+   本機那條路沒有 requestId 這個欄位,②等於原樣轉呼。 */
+async function trSend(S, cmd, args) {
+  if (S.sending[cmd]) return S.sending[cmd];
+  const flight = (async () => {
+    const res = await S.api.tradeSend(cmd, args, S.reqIds[cmd] || null);
+    if ((res && res.ok) || trKindOf(res) === "rejected") delete S.reqIds[cmd];
+    else if (res && typeof res.requestId === "string") S.reqIds[cmd] = res.requestId;
+    return res;
+  })();
+  S.sending[cmd] = flight;
+  try { return await flight; } finally { delete S.sending[cmd]; }
 }
 /* 送「會改變執行狀態」的指令(稽核 S3):一進來就掛 pending——確認框一關、ack 還沒回來的那段時間鈕就已經是過場態,
    不會再開第二個確認框、送第二個 close_all / restart_reconciler。失敗才把 pending 拿掉。 */
-async function trRun(want, steps) {
+async function trRun(want, steps, cmd) {
   const S = TR;
-  if (S.env === "cloud" || S.pending) return;      // 雲端第一刀唯讀:任何會改變執行狀態的指令都不從這裡出去
-  S.pending = { want, until: Date.now() + TR_CONFIRM_MS };
+  if (trBtnLocked(S.pending, want === "halted")) return;   // 暫停照送(新的意圖蓋掉舊的過場);啟動在過場中不重複送
+  S.pending = { want, cmd: cmd || null, until: Date.now() + (S.env === "cloud" ? TR_CONFIRM_CLOUD_MS : TR_CONFIRM_MS) };
+  const mine = S.pending;   // 跨 await 抓住自己那一顆意圖(同 N8 的規矩,層級從「袋」下到「意圖」)
   trAlert("", null, S); trPaint();
   let res = null;
   for (const step of steps) { res = await step(S); if (!res || !res.ok) break; }
   const kind = want === "halted" ? "stop" : "start";
-  if (res && res.ok) {
-    // 常駐程式沒在跑時的 halt 只是排進佇列(下次啟動才吃):沒有東西在交易,不必等狀態
-    if (res.result && res.result.queued) S.pending = null;
-  } else if (trErrorKind(res && res.error) === "unknown") {
-    // 可能已經執行:不說「沒送到」、不叫人重按;留著 pending 看狀態檔,到了就自己清
-    if (S.pending) S.pending.unknown = true;
-    trAlert(t("tr.cmdUnknown"), want, S);
-  } else { S.pending = null; trAlert(trSendError(res, kind), want, S); }
+  /* 已經被更新的那一次意圖取代了(暫停側可重入:第二次按會蓋掉這一顆),或早就收斂清掉了:結果不歸我寫。
+     不守的話,先回來的那一趟會把**還在飛的那一次**的過場態清掉,並寫出「暫停沒送到、去交易所撤 key」——
+     而它其實正要執行。
+     **唯一的例外:平倉那一趟的結果永遠要講**,不管後來誰蓋了 pending。`close_all` 跟 `halt` 共用 `want:"halted"`
+     這個槽:先按平倉、再按暫停 → 暫停收斂、鈕變「啟動」,而平倉其實沒送出去、部位還在——沒有這一句,畫面上零提示。
+     want 給 null(不綁現在的 pending,不會被別人的收斂順手清掉)。 */
+  if (S.pending !== mine) {
+    if (mine.cmd === "close_all" && !(res && res.ok)) trAlert(trSendError(res, "stop", S.env), null, S);
+  } else {
+    if (res && res.ok) {
+      mine.acked = true;   // 機器收下了:啟動的意圖從這一刻起可以被「暫停」蓋掉(trStopSideNow)
+      // 常駐程式沒在跑時的 halt 只是排進佇列(下次啟動才吃):沒有東西在交易,不必等狀態。
+      // **只信本機那條路**:雲端的 result 是用戶主機寫的字典,照它清 pending 等於讓策略碼把過場態關掉
+      if (S.env === "local" && res.result && res.result.queued) S.pending = null;
+    } else if (trKindOf(res) === "unknown") {
+      // 可能已經執行:不說「沒送到」、不叫人重按;留著 pending 看狀態檔,到了就自己清
+      mine.unknown = true;
+      trAlert(t(S.env === "cloud" ? "tr.cloud.cmdUnknown" : "tr.cmdUnknown"), want, S);
+    } else { S.pending = null; trAlert(trSendError(res, kind, S.env), want, S); }
+  }
   trPaint(); trPollSoon(800);
 }
 
@@ -662,8 +761,13 @@ function trPaintHead() {
   // 狀態變了講一次(輪詢每幾秒重畫,不能每次都講)
   if (TR.lastSaid !== null && TR.lastSaid !== text && TR.open && state !== "loading") srSay(text);
   TR.lastSaid = text;
-  // 雲端連續讀不到:全頁唯一的紅字槽(讀得到了就自己收掉;這一刀雲端沒有別的東西會用這一格)
-  if (ro) trAlert(envUnreachAlert(c, Date.now()) ? t("tr.cloud.unreach", { t: trStamp((c.last_ok_at || 0) / 1000) }) : "");
+  /* 雲端連續讀不到:同樣寫在全頁唯一的紅字槽(讀得到了就自己收掉)。
+     **這一格現在也裝指令的失敗**(§1.4 那五種話),所以這裡只准動自己那一則:
+     不成立時只收自己寫的那句,不可以把剛送完指令寫上去的錯誤一起洗掉。 */
+  if (ro) {
+    if (envUnreachAlert(c, Date.now())) trAlert(t("tr.cloud.unreach", { t: trStamp((c.last_ok_at || 0) / 1000) }), null, TR, "unreach");
+    else if (TR.alertSrc === "unreach") trAlert("");
+  }
   trAlertShow();
   // 切換器右邊那一句:這一邊的狀態。沒連接交易所時是空的
   const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
@@ -681,11 +785,9 @@ function trPaintHead() {
   // 錢記號排在這一句的最前面(切換器格內不放):看得見的這一邊用的是模擬還是真錢
   const mny = has ? envMoney(TR.st) : null, tm = $("tr-tb-mode");
   tm.hidden = !mny; tm.className = "mode " + (mny || "paper"); tm.textContent = envMoneyText(mny);
-  // 雲端第一刀唯讀:全頁唯一的說明(不能按的鈕都用 aria-describedby 指到它)。停機時那顆鈕是可按的「加值」,說明不出
-  // 還沒連接交易所那一態不在這裡講:那一句(唯讀 + 去哪裡連)已經併進 onboard 的 tr.onboard.cloud,
-  // 同一畫面不出現兩句「只能看」。用 trExecState 判(onboard 的判準),不是標題那個 state:
-  // 雲端讀不到新狀態時標題會退成 unknown,但畫出來的仍然是 onboard
-  trPaintRoNote(ro && !stopped && trExecState(TR.st) !== "noaccount" ? "tr.ro.note" : null);
+  // 全頁級的「只能看」退場(規格 §6):啟動 / 暫停在雲端按得動之後,那一句就是假話。
+  // 金額與連接交易所這一批還沒開,各自在自己的位置講(S4 / S5),不在這裡出一句整頁級的
+  trPaintRoNote(null);
   trPaintVerdict(stopped);
   // 執行鈕:沒帳戶時不放(那顆「連接交易所」在 onboard 裡,同畫面不出現兩顆主要鈕)。
   // 同一顆鈕就地更新、不重建:確認框關掉之後焦點要回得到它,輪詢重畫也不能把焦點洗掉。
@@ -696,26 +798,28 @@ function trPaintHead() {
   if (!b) {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
     b.addEventListener("click", () => {
-      // 雲端:停機時這顆是「加值」(外開瀏覽器,不是寫雲端);其餘時候是唯讀的,點了無動作
-      if (TR.env === "cloud") { if (envCloudKind(TR.st) === "stopped") window.blave.openExternal(acctUrl()); return; }
-      if (TR.pending) return; if (trStopSide(envHeadState(TR.st, Date.now()))) trAskStop(b); else trAskStart(b);
+      // 雲端停機時這顆是「加值」(外開瀏覽器):主機不在,送什麼都是 409
+      if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") { window.blave.openExternal(acctUrl()); return; }
+      const stopSide = trStopSideNow(envHeadState(TR.st, Date.now()), TR.pending);
+      if (trBtnLocked(TR.pending, stopSide)) return;   // 過場中只鎖啟動那一側;暫停照按(啟動被收下之後也算暫停側)
+      if (stopSide) trAskStop(b); else trAskStart(b);
     });
     act.appendChild(b);
   }
-  if (ro) {
-    // aria-disabled(不是 disabled):鍵盤要停得上去、讀屏要唸得到原因
-    b.textContent = stopped ? t("plan.addCredit") : trStopSide(state) ? t("tr.stop") : t("tr.start");
-    b.disabled = false; b.title = ""; b.classList.remove("is-busy"); b.classList.toggle("is-ro", !stopped);
-    b.setAttribute("aria-disabled", stopped ? "false" : "true");
-    if (stopped) b.removeAttribute("aria-describedby"); else b.setAttribute("aria-describedby", "tr-ro-note");
+  if (ro && stopped) {
+    b.textContent = t("plan.addCredit");
+    b.disabled = false; b.title = ""; b.classList.remove("is-busy", "is-ro");
+    b.setAttribute("aria-disabled", "false"); b.removeAttribute("aria-describedby");
     return;
   }
   b.classList.remove("is-ro"); b.removeAttribute("aria-describedby");
-  const up = trChannelUp(TR.st);
+  // 指令通道通不通:本機看常駐程式;雲端看主機在不在 running(指令是 api 排進佇列、機器自己取,跟本機那支 listener 無關)
+  const up = ro ? envCloudKind(TR.st) === "running" : trChannelUp(TR.st);
   b.textContent = TR.pending ? (TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting")) : trStopSide(state) ? t("tr.stop") : t("tr.start");
-  // 過場中用 aria-disabled(不是 disabled):disabled 的鈕會把焦點丟到 BODY
-  const busy = !!TR.pending;
-  b.setAttribute("aria-disabled", busy ? "true" : "false"); b.classList.toggle("is-busy", busy);
+  // 過場中用 aria-disabled(不是 disabled):disabled 的鈕會把焦點丟到 BODY。
+  // 過場的樣子照畫(is-busy + 「暫停中…」),但**暫停那一側仍然按得下去**:鎖不鎖看 trBtnLocked,不是看 busy
+  const busy = !!TR.pending, locked = trBtnLocked(TR.pending, trStopSideNow(state, TR.pending));
+  b.setAttribute("aria-disabled", locked ? "true" : "false"); b.classList.toggle("is-busy", busy);
   // 狀態不明時鈕照給、而且不看狀態檔裡的 listener 旗標(那份檔就是不能信的那個):暫停是安全方向
   const usable = state === "unknown" ? !!(TR.st && TR.st.alive) : up;
   b.disabled = !busy && !usable; b.title = !busy && !usable ? t("tr.cmdUnavailable") : "";
@@ -740,19 +844,25 @@ function trPaintVerdict(on) {
   row.append(mark, trEl("span", "", v.m && v.h ? t("tr.cloud.stoppedBody", v) : t("tr.cloud.stoppedBody0")));
   box.appendChild(row);
 }
-// 這個狀態下鈕是「暫停」那一側嗎。狀態不明時給暫停:不知道有沒有在跑,就給安全方向的那顆(稽核 S5)
-function trStopSide(state) { return state === "running" || state === "unknown"; }
 
+/* 雲端的確認框:標題列的「雲端」記號 + 錢記號,鈕正上方再講一次目的地(規格 §5:同一件事刻意講三次——
+   花真錢的動作,人要在按下去的前一秒知道他在動哪一台)。本機不給這兩個參數,框逐位元組不變。 */
+function trCloudBox(o) {
+  if (TR.env !== "cloud") return o;
+  const id = trVenueId(), money = envMoney(TR.st);
+  o.env = "cloud"; o.mark = envMoneyText(money) || null; o.markKind = money || null;
+  o.footWhere = t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(money), venue: trVenueLabel(id, true) });
+  return o;
+}
 function trAskStop(opener) {
-  if (TR.env !== "local") return;
   const r = trReport() || {};
-  confirmBox({
+  confirmBox(trCloudBox({
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lines: [r.self_ledger === true ? t("tr.stopChoiceSelf") : t("tr.stopChoice"), t("tr.closeAllWarn2")],
-    ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => S.api.tradeSend("halt", { reason: "desktop ui" })]),
+    ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => trSend(S, "halt", { reason: "desktop ui" })], "halt"),
     // 沒有平倉層的 workspace 不給「看起來成功但沒平」的鈕(同雲端 can_flatten)
-    alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => S.api.tradeSend("close_all", {})]) } : null,
-  });
+    alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => trSend(S, "close_all", {})], "close_all") } : null,
+  }));
 }
 // 中文句子裡夾英文名(Binance)前後要空一格;英文句子本來就有空格
 function trPadLatin(name) { return LANG === "zh" && /^[\x20-\x7e]+$/.test(name) ? " " + name + " " : name; }
@@ -766,21 +876,44 @@ function trMeans() {
   pts.forEach((x) => ul.appendChild(trEl("li", "", x)));
   box.appendChild(ul); return box;
 }
+/* 雲端版的「這代表什麼」(規格 §4.1):四點裡有三點是本機那組講不出來的(關掉 app 也照跑、每小時扣主機費、
+   停機跨 K 棒收盤會自動暫停)。第 3 點的金額來自方案頁同一個來源;拿不到數字就整點不出——
+   不寫死、也不生一句沒有數字的半套說法 */
+function trCloudMeans() {
+  const box = trEl("div", "means"), v = planVars();
+  box.appendChild(trEl("span", "lbl", t("tr.cloud.means.l")));
+  const ul = document.createElement("ul");
+  const pts = [t("tr.cloud.means.1"), t("tr.cloud.means.2")];
+  if (v.h && v.m) pts.push(t("tr.cloud.means.3", v));
+  pts.push(t("tr.cloud.means.4"));
+  pts.forEach((x) => ul.appendChild(trEl("li", "", x)));
+  box.appendChild(ul); return box;
+}
+// 兩邊都在用真錢:只知道「都是真錢」,不知道是不是同一個帳戶 → 灰記號的提醒(規格 §3),不是封鎖
+function trBothReal() {
+  if (TR.env !== "cloud" || envMoney(TR.st) !== "real" || envMoney(TR_BAGS.local.st) !== "real") return null;
+  const row = trEl("div", "verdict is-calm"), mark = trEl("span", "fault-mark"); mark.setAttribute("aria-hidden", "true");
+  const box = trEl("span", "");
+  box.append(trEl("strong", "", t("tr.cloud.bothReal.h")), " " + t("tr.cloud.bothReal.b"));
+  row.append(mark, box); return row;
+}
 function trAskStart(opener) {
-  if (TR.env !== "local") return;
-  const r = trReport() || {}, canWait = r.can_wait_start === true;
-  // 順序照雲端:先送所選指令(resume_wait 的 gate 要先落地),對帳器沒在跑再叫它起來
-  const go = (cmd) => trRun("running", [
-    (S) => S.api.tradeSend(cmd, {}),
-    (S) => { return trRecRunning(S.st) ? { ok: true } : S.api.tradeSend("restart_reconciler", {}); },
-  ]);
-  confirmBox({
+  const r = trReport() || {}, canWait = r.can_wait_start === true, cloud = TR.env === "cloud";
+  /* 順序照雲端:先送所選指令(resume_wait 的 gate 要先落地),對帳器沒在跑再叫它起來。
+     **雲端不順帶送 restart_reconciler**(規格 §4.2-2):那份報告可能是一分鐘前的,照它判等於瞎猜——
+     多一個指令吃速率桶、多一筆稽核。對帳器真的沒起來由「對帳器死了」那一態 + 設定分頁的重啟鈕處理 */
+  const go = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {})] : [
+    (S) => trSend(S, cmd, {}),
+    (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
+  ], cmd);
+  confirmBox(trCloudBox({
     title: t("tr.start"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
+    lead: trBothReal(),
     lines: canWait ? [t("tr.startChoice"), t("tr.startWarn2")] : [t("tr.startWarn1"), t("tr.startWarn2")],
-    extra: trMeans(),
+    extra: cloud ? trCloudMeans() : trMeans(),
     ok: t("tr.startCatchUp"), onOk: () => go("resume"),
     alt: canWait ? { label: t("tr.startWait"), onOk: () => go("resume_wait") } : null,
-  });
+  }));
 }
 
 /* ── 分頁 ───────────────────────────────────────────── */
@@ -1181,7 +1314,9 @@ function trPaintSet() {
   const acts = trEl("span", "pf-acts");
   const rt = trEl("button", "pf-act", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); rt.type = "button"; rt.id = "cx-retest";
   const ub = trEl("button", "pf-act", TR.unbinding ? t("tr.unbinding") : t("tr.unbind")); ub.type = "button"; ub.id = "tr-unbind";
-  if (ro) [rt, ub].forEach((b) => { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "tr-ro-note"); });
+  // 這兩顆在雲端還不能按(S5)。**不掛 aria-describedby**:它原本指的 #tr-ro-note 已經永遠是空的、hidden,
+  // 指過去讀屏什麼都唸不出來,比沒有更糟。真正的理由等 S5 把它們接起來就不存在了
+  if (ro) [rt, ub].forEach((b) => { b.classList.add("is-ro"); b.setAttribute("aria-disabled", "true"); });
   else {
     rt.disabled = TR.cx.retest || !id; rt.addEventListener("click", cxRetest);
     ub.disabled = !!TR.unbinding || !id || !trEnvNames(id).length; ub.addEventListener("click", () => trUnbind(ub));
@@ -1208,6 +1343,13 @@ function trPaintSet() {
   }
   if (!ro && TR.cx.err) box.appendChild(errLine(TR.cx.err));
   box.appendChild(trEl("div", "pf-foot", ro ? t("tr.cloud.unbindDesc") : t("tr.unbindDesc")));
+  // 規格 §6:網頁限定的事各自在自己的位置講一行(一句事實 + 一顆「前往工作頁」),不集中成整頁級的免責聲明。
+  // 寫法紅線:講「這件事在網頁的雲端工作頁做」,不講「app 做不到」
+  if (ro) {
+    const p = trEl("div", "pf-foot"), go = trEl("button", "btn-quiet", t("plan.openWs")); go.type = "button";
+    go.addEventListener("click", () => window.blave.openExternal(planWebUrl()));
+    p.append(t("tr.cloud.onlyWebExec") + " ", go); box.appendChild(p);
+  }
   const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus(); else if (hadFocus) $("tr-tab-set").focus();
 }
 // 解除綁定要移掉的環境變數名。宿主(daemon.js argsOk 的 REMOVABLE)只放行這一版認得的 key,多送一個就整包 BAD_ARGS。
@@ -1755,7 +1897,7 @@ function envShowLocalMain() {
    每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */
 function envPaint() {
   const cloud = ENV.cur === "cloud", C = TR_BAGS.cloud, kind = envCloudKind(C.st);
-  const cells = { local: envCell("local", TR_BAGS.local.st, !!TR_BAGS.local.pending), cloud: envCell("cloud", C.st, false) };
+  const cells = { local: envCell("local", TR_BAGS.local.st, !!TR_BAGS.local.pending), cloud: envCell("cloud", C.st, !!C.pending) };
   ["local", "cloud"].forEach((env) => envPaintCell(env, cells[env]));
   // 側欄
   const pid = typeof hoPendingId === "function" ? hoPendingId() : null;

@@ -903,12 +903,20 @@ function delConfirm(m, opener) {
    mark = 標題左邊的帳戶記號文字(「模擬」);extra = 接在段落後面的一個 DOM 節點(呼叫端自己用 textContent 建);
    okDisabled = 主要鈕真的 disabled(內容說明為什麼不能按,例:超過上限)。框內排版有一組通用的 .cf-*(app.css):
    .cf-rows > .cf-row(dt 說明 / dd 數字靠右;.total 大一階、.lev 小一階、.over 紅)、.cf-removed、.cf-block(紅,擋下的原因)、.cf-note(最淡的警語)。 */
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, extra, okDisabled }) {
+/* env / footWhere(規格 spec-desktop-local-and-cloud §1.2):寫進雲端的確認框要標明目的地——標題列灰底 +「雲端」記號,
+   鈕正上方再一行 {哪一台} · {真錢/模擬} · {交易所}。markKind = 錢記號的顏色(real / paper),lead = 放在所有句子最上面的那一塊
+   (今天只有「兩邊都真錢」那個灰記號)。**都不給就跟以前一模一樣**。 */
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, env, footWhere, lead }) {
   $("del-title").textContent = title;
   const body = $("del-body"); body.className = "del-body lines"; body.textContent = "";
+  if (lead) body.appendChild(lead);
   lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; body.appendChild(p); });
   if (extra) body.appendChild(extra);
   $("del-ok").textContent = ok; $("del-ok").disabled = !!okDisabled;
+  $("del-modal").querySelector(".modal-head").classList.toggle("cloud", env === "cloud");
+  $("del-env").hidden = env !== "cloud"; $("del-env").textContent = env === "cloud" ? t("env.cloud") : "";
+  $("del-where").hidden = !footWhere; $("del-where").textContent = footWhere || "";
+  $("del-mark").className = "mode " + (markKind || "paper");
   $("del-mark").hidden = !mark; $("del-mark").textContent = mark || "";
   $("del-alt").hidden = !alt; $("del-alt").textContent = alt ? alt.label : "";
   $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
@@ -924,7 +932,9 @@ function delClose(deleted) {
   sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
-  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt"); $("del-ok").disabled = false;   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕
+  // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
+  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt"); $("del-ok").disabled = false;
+  $("del-env").hidden = true; $("del-where").hidden = true; $("del-modal").querySelector(".modal-head").classList.remove("cloud");
   if (deleted) $("cs-newrow").focus();
   else if (c && c.opener && c.opener.isConnected) c.opener.focus();
 }

@@ -977,6 +977,19 @@ body.resizing * { cursor: col-resize !important; }
   padding: var(--space-12) var(--space-16);
   border-top: 1px solid var(--border-hairline);
 }
+/* 寫進雲端的確認框:目的地講三次(灰標題列、「雲端」記號、鈕正上方那一行)。不給第二個強調色(canon)、鈕不變紅——
+   危險程度不隨視角改變。 */
+.modal-head.cloud { background: var(--surface-muted); }
+/* 只有這個框的腳會換行(那一行要獨占一列);連接交易所那個框的腳不動 */
+.del-modal .modal-foot { flex-wrap: wrap; }
+.envm {
+  flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-6);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-micro);
+  font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; color: var(--ink-2);
+}
+.envm[hidden] { display: none; }
+.del-where { flex-basis: 100%; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.del-where[hidden] { display: none; }
 
 /* 聊天裡的圖:跟回覆同寬,不加框(圖自己有底色);說明字同聊天的次要文字 */
 .msg.img { margin: 0 0 var(--space-24); }   /* figure 的 UA 預設是 1em 40px */
