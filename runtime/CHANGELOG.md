@@ -8,6 +8,17 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- 新機出廠開帳本:`command_listener` 第一次建立 `manager/portfolio_config.json`(`_cmd_amounts` / `_cmd_execution` 的
+  fresh-machine 分支)改從 `_fresh_portfolio_config()` 起手——先寫 fresh-start 的 `manager/ledger_seed.json`(已有就不動),
+  再回 `{"self_ledger": true}` 給 caller 寫進 config;兩筆寫入之間 crash 只會留下「有 seed 沒旗標」(無害),不會反過來。
+  **既有機的 config 沒有 `self_ledger` 鍵一律維持帳戶讀取模式**,預設值只在建檔那一刻決定,不在讀取端。閘門:`tests/check_drift_band.py`。
+  出貨順序:**runtime 先、lib 後**——lib 那筆的 paper 口數進場缺 `margin` 會拒單,而 margin 由 runtime 的 spec 表寫入;
+  反過來(lib 先)機隊會有一段「台期模擬只能平不能進」。舊 lib 拿到 `self_ledger` 旗標會照 seed 走,不會壞。
+- 模擬帳戶口數倉:`_TXF_ASSET_SPECS` 加 `margin`(期交所原始保證金,2026/08/12:TX 701,000 / MTX 175,250 / TMF 35,050),
+  paper 的槓桿檢查用口數 × margin(1×);`account_reader._norm_positions` 對 `unit == "contracts"` 的列以口數回報、不再 × mark。
+  **既有 `asset_specs` 不刷新**(`_cmd_amounts` 只在首次撥款且無 spec 時寫):升級前已寫入、沒有 `margin` 的舊 spec 在 paper 只能平不能進,
+  要進場得取消勾選再重新撥款(或手動補 `margin`)。
+
 - 電腦版:本機真錢金鑰的權限閘門下沉到 `.env` 的唯一寫入點(`command_listener._cmd_credentials` 的本機分支 →
   `_local_real_key_gate`):寫入前向 Binance 查 `apiRestrictions`,提領開著、現貨與合約都沒開、查不到或看不懂 → 不寫(fail-closed)。
   `LOCAL_OPEN_VENUES` 預設仍只有 paper;Binance 只在 `local_daemon` 自己的行程裡打開,聊天綁定那條路打不開真錢。雲端行為不變。

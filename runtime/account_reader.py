@@ -234,6 +234,13 @@ def _norm_positions(raw):
             continue
         size = _finite(p.get("size", 0), 0.0)
         mark = _finite(p.get("mark_price"))
+        if p.get("unit") == "contracts":
+            # a paper contract position: size is LOTS (lib/order_paper) —
+            # never × mark; carried as-is with its unit for the display
+            out[p["symbol"]] = {"side": p.get("side"), "size": round(size, 4),
+                                "unit": "contracts",
+                                "contract_value": _finite(p.get("contract_value"), 1.0)}
+            continue
         if mark is not None:
             size = size * mark
         out[p["symbol"]] = {"side": p.get("side"), "size": round(size, 4)}

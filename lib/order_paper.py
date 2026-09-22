@@ -22,6 +22,18 @@ PRICE (the whole model, Wei 2026-08-21):
     so PnL = qty × (mark − entry) = USD_notional × (mark/entry − 1), a unitless
     return — currency and contract unit cancel (product decision B). A TXF or
     TW-stock position needs no point value / lot / FX here.
+  * CONTRACT positions (Wei 2026-09-22): a strategy whose asset_spec.type is
+    futures_contracts / shares is reconciled in whole lots, never notional —
+    place_contract_market_order books `qty` as a LOT COUNT with the spec's
+    contract_value (TXF 200 / MXF 50 / TMF 10; shares 1), PnL = lots ×
+    contract_value × Δprice, and the position row carries unit "contracts" so
+    the wiring reports lots back. One symbol holds one unit: a contract fill
+    on a notional position (or the reverse) is refused. Leverage is judged
+    per unit, never summed across them: notional positions on gross value,
+    contract positions on lots × the spec's `margin` (TAIFEX initial margin,
+    written with the spec by the platform): notional against MAX_LEVERAGE ×
+    equity, margin against equity itself (1×, as a broker would). The account
+    is unit-less (no FX), as everywhere in paper.
 
 Contract rules are permissive (fetch_data gives OHLC, not an instrument spec):
 no min-qty / min-notional / step gating — the reconciler's own slice threshold
@@ -29,7 +41,7 @@ is the floor. Positions are tracked as base-qty + entry (qty is USD÷price, a
 notional-derived number; never floored to a crypto step).
 
 Ledger: state/paper_ledger.json (atomic writes, flock on POSIX / msvcrt on
-Windows). Seeded with PAPER_INITIAL_EQUITY (.env, default 10,000 USDT); a ledger
+Windows). Seeded with PAPER_INITIAL_EQUITY (.env, default 100,000 USDT); a ledger
 older than PAPER_BOUND_TS is re-seeded, so unbind→rebind is a fresh start.
 reset_account(env) wipes and re-seeds — agent runs it on explicit user request
 only. Reduce/close legs are NEVER refused by the equity/leverage checks.
@@ -55,7 +67,7 @@ except ImportError:  # POSIX
 VENUE = "paper"
 LEDGER_PATH = "state/paper_ledger.json"
 LOCK_PATH = "state/paper_ledger.lock"
-DEFAULT_CASH = 10_000.0
+DEFAULT_CASH = 100_000.0  # new ledgers only — an existing ledger keeps its initial_cash
 TAKER_FEE = 0.0005   # market / crossing-limit / protective-trigger
 MAKER_FEE = 0.0002   # resting-limit fill
 SPOT_FEE = 0.001     # spot both sides
@@ -310,6 +322,10 @@ def _new_order(led, sym, market, side, typ, price, qty, cid, reduce_only=False,
 
 # ── position math (base qty + entry; PnL = qty × Δprice = notional × return) ──
 
+def _cv(pos):
+    return float((pos or {}).get("contract_value") or 1.0)
+
+
 def _cap_reduce(led, sym, signed):
     q0 = float(led["positions"].get(sym, {}).get("qty", 0))
     if q0 == 0 or (q0 > 0) == (signed > 0):
@@ -336,7 +352,7 @@ def _equity(env, led, marks):
     upnl = 0.0
     for sym, p in led["positions"].items():
         mark, _ = _pos_mark(env, led, sym, marks)
-        upnl += (mark - p["entry"]) * p["qty"]
+        upnl += (mark - p["entry"]) * p["qty"] * _cv(p)
     spot_value = 0.0
     prices = {}
     for asset, amt in led["spot"].items():
@@ -352,12 +368,29 @@ def _equity(env, led, marks):
     return led["cash"] + upnl + spot_value, upnl, spot_value, prices
 
 
-def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks):
+def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_value=None,
+                     margin=None):
     """Net one-way position update; returns realized PnL. Only exposure-adding
     fills are checked against equity/leverage (computed on the would-be state,
     committed only if it passes). Reduce/close never refused — no liquidation
-    model, so a blown account must still be flatten-able."""
+    model, so a blown account must still be flatten-able.
+
+    contract_value: set for a CONTRACT fill (signed_qty is lots; see module
+    docstring) — the position then carries it and unit "contracts". None = a
+    notional fill (qty in base units, value 1). The two never mix on one
+    symbol: the held position's unit decides, and a fill in the other unit is
+    refused rather than summed lots with coins. `margin` (per lot) rides
+    with contract_value and is what the leverage check counts for the row."""
     pos = led["positions"].get(sym, {"qty": 0.0, "entry": 0.0})
+    held_cv = _cv(pos) if pos.get("unit") == "contracts" else None
+    if float(pos["qty"]) != 0 and (held_cv is None) != (contract_value is None):
+        raise PaperError(f"{sym}: position is held in "
+                         f"{'contracts' if held_cv else 'notional'} — a "
+                         f"{'notional' if held_cv else 'contract'} fill cannot be netted into it")
+    if held_cv is not None and contract_value is not None and held_cv != float(contract_value):
+        raise PaperError(f"{sym}: contract_value {contract_value} differs from the held "
+                         f"position's {held_cv}")
+    cv = float(contract_value) if contract_value is not None else 1.0
     q0, e0 = float(pos["qty"]), float(pos["entry"])
     q1 = q0 + signed_qty
     realized = 0.0
@@ -365,7 +398,7 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks):
         entry = (abs(q0) * e0 + abs(signed_qty) * price) / abs(q1)
     else:
         closed = min(abs(q0), abs(signed_qty))
-        realized = (price - e0) * closed * (1 if q0 > 0 else -1)
+        realized = (price - e0) * closed * cv * (1 if q0 > 0 else -1)
         entry = price if abs(signed_qty) > abs(q0) else e0
     new_cash = led["cash"] + realized - fee
     new_positions = dict(led["positions"])
@@ -373,6 +406,9 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks):
         new_positions.pop(sym, None)
     else:
         new_positions[sym] = {"qty": q1, "entry": entry}
+        if contract_value is not None:
+            new_positions[sym].update(unit="contracts", contract_value=cv,
+                                      margin=float(margin or pos.get("margin") or 0))
     if abs(q1) > abs(q0) + 1e-12:
         marks.setdefault(sym, price)
         trial = dict(led, cash=new_cash, positions=new_positions)
@@ -380,11 +416,19 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks):
         if equity <= 0:
             raise PaperError("paper account equity would be <= 0 — refused "
                              "(reset_account to start over)")
-        gross = sum(abs(p["qty"]) * _pos_mark(env, dict(led, positions=new_positions), s, marks)[0]
-                    for s, p in new_positions.items())
+        # two units, two checks — TWD point-value lots and USD notional are
+        # never added together (Wei 2026-09-22)
+        trial_pos = dict(led, positions=new_positions)
+        gross = sum(abs(p["qty"]) * _pos_mark(env, trial_pos, s, marks)[0]
+                    for s, p in new_positions.items() if p.get("unit") != "contracts")
         if gross > MAX_LEVERAGE * equity + 1e-9:
             raise PaperError(f"gross notional {gross:.0f} exceeds {MAX_LEVERAGE:g}× "
                              f"paper equity {equity:.0f} — refused")
+        margin_used = sum(abs(p["qty"]) * float(p.get("margin") or 0)
+                          for p in new_positions.values() if p.get("unit") == "contracts")
+        if margin_used > equity + 1e-9:  # 1×: margin must be covered, as at a broker
+            raise PaperError(f"contract margin {margin_used:.0f} exceeds paper equity "
+                             f"{equity:.0f} — refused")
     led["cash"] = new_cash
     led["positions"] = new_positions
     if sym not in new_positions:
@@ -500,11 +544,14 @@ def _settle(env, led):
         if not hit:
             continue
         signed = -pos["qty"]
-        fee = abs(signed) * mark * TAKER_FEE
+        cv = _cv(pos) if pos.get("unit") == "contracts" else None
+        fee = abs(signed) * mark * (cv or 1.0) * TAKER_FEE
         o = _new_order(led, sym, "swap", "sell" if long else "buy", "market", mark,
                        abs(signed), None, reduce_only=True,
                        direction="long" if long else "short")
-        realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks)
+        if cv is not None:
+            o["unit"], o["contract_value"] = "contracts", cv
+        realized = _apply_swap_fill(env, led, sym, signed, mark, fee, marks, contract_value=cv)
         _record_fill(led, o, abs(signed), mark, fee, realized, kind=hit)
         led["protective"].pop(sym, None)
         guard.audit("order_ok", venue=VENUE, symbol=sym, intent="protective",
@@ -531,7 +578,8 @@ def _order_view(o):
             "avg_price": float(o.get("avg_price") or 0),
             "orig_qty": float(o.get("orig_qty") or 0),
             "executed_qty": float(o.get("executed_qty") or 0),
-            "quote_qty": float(o.get("executed_qty") or 0) * float(o.get("avg_price") or 0),
+            "quote_qty": (float(o.get("executed_qty") or 0) * float(o.get("avg_price") or 0)
+                          * float(o.get("contract_value") or 1)),
             "commission": float(o.get("commission") or 0), "commission_asset": "USDT",
             "client_order_id": o.get("client_order_id") or "", "raw": dict(o)}
 
@@ -585,6 +633,68 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
             o = _new_order(led, sym, "swap", side, "market", price, abs(signed),
                            client_order_id, reduce_only=reduce_only, direction=direction)
             realized = _apply_swap_fill(env, led, sym, signed, price, fee, marks)
+            _record_fill(led, o, abs(signed), price, fee, realized)
+            guard.audit("order_ok", order_id=o["order_id"], price=price, **fields)
+            return _fill_view(o)
+    except guard.Halted:
+        raise
+    except Exception as e:
+        guard.audit("order_error", error=str(e), **fields)
+        raise
+
+
+def place_contract_market_order(env, symbol, direction, lots, contract_value,
+                                client_order_id=None, reduce_only=False, margin=None):
+    """Simulated market order in WHOLE LOTS (asset_spec.type futures_contracts /
+    shares — see module docstring). `lots` is a positive integer count; a
+    reduce leg is capped at the held lots (never flips through zero). Fee is
+    taker on lots × price × contract_value. `margin` (initial margin per lot,
+    required on an entry — the leverage check counts it; a reduce leg needs
+    none). Same idempotency as place_market_order. Returns the fill view with
+    executed_qty in lots."""
+    sym = str(symbol).upper()
+    if direction not in ("long", "short"):
+        raise ValueError(f"direction must be long|short, got {direction!r}")
+    lots = int(lots)
+    if lots <= 0:
+        return False
+    cv = float(contract_value or 0)
+    if not cv > 0:
+        raise ValueError(f"{sym}: contract_value must be positive, got {contract_value!r}")
+    mg = float(margin or 0)
+    if not reduce_only and not mg > 0:
+        raise ValueError(f"{sym}: margin (initial margin per lot) must be positive on an "
+                         f"entry, got {margin!r}")
+    buy = (direction == "long") != bool(reduce_only)
+    side = "buy" if buy else "sell"
+    fields = _gate("reduce" if reduce_only else "entry", symbol=sym, side=side,
+                   qty=float(lots), unit="contracts", contract_value=cv,
+                   client_order_id=client_order_id or "")
+    try:
+        with _txn(env) as led:
+            _settle(env, led)
+            prev = _find_order(led, client_order_id=client_order_id) if client_order_id else None
+            if prev is not None:
+                return _fill_view(prev) if prev["status"] == "filled" else False
+            marks = {}
+            if reduce_only:
+                price = _pos_mark(env, led, sym, marks)[0]
+                if not price:
+                    price = _price(env, sym, marks)
+            else:
+                price = _price(env, sym, marks)
+            signed = float(lots) if buy else -float(lots)
+            if reduce_only:
+                signed = _cap_reduce(led, sym, signed)
+                if signed == 0:
+                    guard.audit("order_ok", order_id="", note="nothing to reduce", **fields)
+                    return False
+            fee = abs(signed) * price * cv * TAKER_FEE
+            o = _new_order(led, sym, "swap", side, "market", price, abs(signed),
+                           client_order_id, reduce_only=reduce_only, direction=direction)
+            o["unit"], o["contract_value"] = "contracts", cv
+            realized = _apply_swap_fill(env, led, sym, signed, price, fee, marks,
+                                        contract_value=cv, margin=mg or None)
             _record_fill(led, o, abs(signed), price, fee, realized)
             guard.audit("order_ok", order_id=o["order_id"], price=price, **fields)
             return _fill_view(o)
@@ -866,9 +976,12 @@ def snapshot(env):
             # mark_price is ALWAYS a real number (never None) — account_paper /
             # venue_wiring float() it and size×mark_price it (audit P1-2 follow-up).
             mk, _ = _pos_mark(env, led, sym, marks)
-            positions.append({"symbol": sym, "side": "long" if p["qty"] > 0 else "short",
-                              "size": abs(p["qty"]), "entry_price": p["entry"],
-                              "mark_price": mk})
+            row = {"symbol": sym, "side": "long" if p["qty"] > 0 else "short",
+                   "size": abs(p["qty"]), "entry_price": p["entry"], "mark_price": mk}
+            if p.get("unit") == "contracts":  # size is LOTS — the wiring must not × mark
+                row.update(unit="contracts", contract_value=_cv(p),
+                           margin=float(p.get("margin") or 0))
+            positions.append(row)
         return {"equity": equity, "cash": led["cash"], "unrealized": upnl,
                 "spot_value": spot_value, "positions": positions,
                 "spot": {a: {"amount": v, "price": prices.get(a)}

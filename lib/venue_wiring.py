@@ -206,20 +206,28 @@ def auto_get_positions():
     # AND a short row for one symbol — clobbering keeps only the last and the
     # reconciler then trades against a wrong actual. The reconciler's own
     # orders never create dual-side positions, but user-opened ones exist.
-    net = {}
+    net, contracts = {}, set()
     positions = acct.get_positions(env)
     rows = (positions.items() if isinstance(positions, dict)
             else ((p["symbol"], p) for p in positions))
     for sym, p in rows:
         p = p or {}
-        usd = p.get("size", 0) if isinstance(positions, dict) \
-            else p["size"] * p["mark_price"]
+        if p.get("unit") == "contracts":
+            # a paper contract position: size is already LOTS, the unit
+            # compute_diff's native-unit path diffs in — never × mark
+            usd = p.get("size", 0)
+            contracts.add(str(sym))
+        else:
+            usd = p.get("size", 0) if isinstance(positions, dict) \
+                else p["size"] * p["mark_price"]
         signed = usd if p.get("side") == "long" else -usd if p.get("side") == "short" else 0
         net[str(sym)] = net.get(str(sym), 0) + signed
     out = {}
     for sym, v in net.items():
         out[sym] = {"side": "long" if v > 0 else ("short" if v < 0 else None),
                     "size": abs(v)}
+        if sym in contracts:
+            out[sym]["unit"] = "contracts"
 
     if hasattr(order, "get_spot_balances"):
         balances = None
@@ -655,6 +663,80 @@ def sweep_orphan_orders():
     return n
 
 
+def _paper_contract_row(env, sym):
+    """The paper account's position row for `sym` when it is held in
+    contracts (unit "contracts", size in lots, contract_value), else None."""
+    from lib import order_paper
+    for p in order_paper.snapshot(env)["positions"]:
+        if p["symbol"] == sym and p.get("unit") == "contracts":
+            return p
+    return None
+
+
+def _paper_contract_order(env, symbol, signed_diff, asset_spec, reduce_only):
+    """Paper leg of a futures_contracts / shares row: signed_diff is LOTS.
+    Same shape as manager/reconciler._capital_place_order — round-half-up to
+    a whole lot (math.floor(x + 0.5), not round(): banker's rounding sends a
+    0.5 tie down to nothing), under half a lot places nothing, reduce_only
+    caps at the held lots inside the paper lib. contract_value comes from the
+    spec (TXF 200 / MXF 50 / TMF 10 — the platform writes it with the spec;
+    shares carry 1); missing → refused loudly, never valued at a guess."""
+    from lib import order_paper
+    sym = split_key(symbol)[0]
+    cv = (asset_spec or {}).get("contract_value")
+    if (asset_spec or {}).get("type") == "shares" and cv is None:
+        cv = 1
+    try:
+        cv = float(cv)
+    except (TypeError, ValueError):
+        cv = 0.0
+    if not cv > 0:
+        raise RuntimeError(f"{symbol}: asset_spec has no usable contract_value "
+                           f"({(asset_spec or {}).get('contract_value')!r}) — a paper "
+                           f"contract fill cannot be valued; fix portfolio_config asset_specs")
+    lots = math.floor(abs(signed_diff) + 0.5)
+    if lots < 1:
+        return False
+    direction = ("long" if signed_diff < 0 else "short") if reduce_only \
+        else ("long" if signed_diff > 0 else "short")
+    if reduce_only:
+        # a position opened by the notional path before this spec existed
+        # (size = USD ÷ mark, no unit): lots cannot net into it, so the
+        # reduce closes the whole notional position instead — one order,
+        # flat, and the next entry books lots. Never a PaperError every round.
+        held = next((p for p in order_paper.snapshot(env)["positions"]
+                     if p["symbol"] == sym and p.get("unit") != "contracts"), None)
+        if held is not None:
+            logging.warning(f"[venue_wiring] {sym}: paper holds a pre-spec notional "
+                            f"position ({held['size']} base) — closing it whole")
+            result = order_paper.place_market_order(
+                env, sym, direction, float(held["size"]), client_order_id=_cid(),
+                reduce_only=True)
+            if result is False:
+                return False
+            placed = dict(result)
+            placed["exchange"] = "paper"
+            return placed
+    margin = (asset_spec or {}).get("margin")
+    if not reduce_only:
+        try:
+            margin = float(margin)
+        except (TypeError, ValueError):
+            margin = 0.0
+        if not margin > 0:
+            raise RuntimeError(f"{symbol}: asset_spec has no usable margin (initial margin "
+                               f"per lot) — a paper contract entry cannot be leverage-checked; "
+                               f"fix portfolio_config asset_specs")
+    result = order_paper.place_contract_market_order(
+        env, sym, direction, lots, cv, client_order_id=_cid(), reduce_only=reduce_only,
+        margin=margin if not reduce_only else None)
+    if result is False:
+        return False
+    placed = dict(result)
+    placed["exchange"] = "paper"
+    return placed
+
+
 def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                      exchange=None, sold=0.0):
     """Reconciler place_order: routes on the key's market. Spot buys are sized
@@ -681,6 +763,27 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     vid = detect_venue(env)
     if vid is None:
         _no_venue()
+    # Native-unit rows (lib.portfolio.NATIVE_UNIT_TYPES — spelled out here so
+    # this file still imports beside an older lib/portfolio.py) carry lots or
+    # shares in signed_diff; everything below sizes account currency at the
+    # mark, so routing one there would send a wrong-sized real order. Paper
+    # books them as lots (_paper_contract_order); no other auto-wired venue
+    # has an order path for them (shares: none shipped anywhere yet).
+    unit_type = (asset_spec or {}).get("type")
+    if unit_type in ("futures_contracts", "shares"):
+        if vid == "paper":
+            return _paper_contract_order(env, symbol, signed_diff, asset_spec, reduce_only)
+        raise RuntimeError(f"{symbol}: asset_spec.type {unit_type!r} is reconciled in "
+                           f"native units — the {vid} auto-wire has no order path for it")
+    if vid == "paper" and reduce_only and asset_spec is None:
+        # a close-on-removal row has no spec (the strategy left the config);
+        # the held paper position says what it is, and signed_diff is lots
+        held = _paper_contract_row(env, split_key(symbol)[0])
+        if held is not None:
+            return _paper_contract_order(
+                env, symbol, signed_diff,
+                {"type": "futures_contracts", "contract_value": held["contract_value"]},
+                reduce_only)
     if exchange and exchange != vid:
         if exchange in official_venues(env):
             msg = (f"target routed to {exchange} but this wiring is on {vid} — "

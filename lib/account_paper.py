@@ -29,11 +29,18 @@ def get_equity(env: dict) -> dict:
 
 
 def get_positions(env: dict) -> list:
-    """[{'symbol', 'side', 'size', 'mark_price'}, ...] — canonical symbols,
-    base units, one net row per symbol; [] if flat."""
-    return [{"symbol": p["symbol"], "side": p["side"], "size": float(p["size"]),
-             "mark_price": float(p["mark_price"])}
-            for p in _paper.snapshot(env)["positions"]]
+    """[{'symbol', 'side', 'size', 'mark_price'[, 'unit', 'contract_value']}, ...]
+    — canonical symbols, one net row per symbol; [] if flat. `size` is base
+    units, or LOTS on a row carrying unit "contracts" (a futures_contracts /
+    shares strategy — order_paper.place_contract_market_order)."""
+    rows = []
+    for p in _paper.snapshot(env)["positions"]:
+        row = {"symbol": p["symbol"], "side": p["side"], "size": float(p["size"]),
+               "mark_price": float(p["mark_price"])}
+        if p.get("unit") == "contracts":
+            row.update(unit="contracts", contract_value=float(p["contract_value"]))
+        rows.append(row)
+    return rows
 
 
 def get_holdings(env: dict) -> list:

@@ -248,8 +248,8 @@ try:
         pv = st["account"]["venues"]["paper"]
         pos = pv["positions"].get("BTCUSDT") or {}
         check(pv["ok"] and pos.get("side") == "long" and abs(pos.get("size", 0) - 1000) < 0.01
-              and abs(pv["equity"] - 9999.5) < 0.01,
-              f"status: {pos}, equity {pv['equity']} (10000 − 0.05% fee)")
+              and abs(pv["equity"] - 99999.5) < 0.01,
+              f"status: {pos}, equity {pv['equity']} (100000 − 0.05% fee)")
         check(st["halt"]["halted"] is False and st["reconciler"]["alive"]
               and st["command_listener"]["alive"] and st["scheduled"] == ["fixed_long"],
               "status: not halted, reconciler + listener alive, strategy scheduled")

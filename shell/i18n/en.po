@@ -878,7 +878,7 @@ msgid "cx.paperShort"
 msgstr "Paper trading"
 
 msgid "cx.paperNote"
-msgstr "No API keys needed. The simulated account starts with 10,000 USDT, fills at your strategy's own market data with fees (no slippage), and never touches real money; strategies, order settings, positions and the performance page all work exactly as with a real account. To switch to a real exchange later, unbind first, then connect."
+msgstr "No API keys needed. The simulated account starts with 100,000 USDT, fills at your strategy's own market data with fees (no slippage), and never touches real money; strategies, order settings, positions and the performance page all work exactly as with a real account. To switch to a real exchange later, unbind first, then connect."
 
 msgid "cx.connect"
 msgstr "Connect an exchange"

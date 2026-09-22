@@ -86,8 +86,10 @@ def _symbol_threshold(symbol, reduce_only=False):
     over half of one. Dust under the flat THRESHOLD is left alone either way.
     Spot and a failed lookup stay on the flat THRESHOLD.
 
-    Lot-based (capital/TW futures) rows never reach here — lib.portfolio skips
-    the account-currency threshold for them entirely.
+    Native-unit rows (asset_spec.type futures_contracts / shares, capital) never
+    reach here — lib.portfolio skips the account-currency threshold for them
+    entirely. In account-read mode lib.portfolio also lays its drift band
+    (max(5%, 2σ) of the target, same-side adjustments only) over both gates.
     """
     now = time.time()
     cached = _min_order_gate.get(symbol)

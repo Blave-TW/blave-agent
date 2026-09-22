@@ -146,8 +146,18 @@ what IT has bought/sold from its own order log (`manager/orders.jsonl`) and
 diffs target against that running total instead. A position opened outside
 this process never enters the ledger, so it can never be touched.
 
-**Turning it on for an account — read every step; the wrong seed mode trades
-the user's own money:**
+**New machines ship with it on.** The runtime writes `self_ledger: true` and a
+fresh-start `manager/ledger_seed.json` (baseline first, flag second) when it
+creates the machine's first `portfolio_config.json` — and only when the machine
+has never traded (no `manager/orders.jsonl`, no `manager/last_reconcile.json`):
+nothing the reconciler has ever traded is on such an account, so the zero book
+is exact. An
+existing config without the key stays in account-read mode — the default is
+decided at creation, never by the reader, so no update switches a machine to
+the book behind the user's back (`tests/check_drift_band.py` pins both).
+
+**Turning it on for an existing account — read every step; the wrong seed
+mode trades the user's own money:**
 1. **Flatten the BOT's own positions first** (set the strategies' amounts to
    0 from the web 下單設定 and let the reconciler close them, or confirm the
    bot is already flat). The user's own manual positions stay — that is the
@@ -173,7 +183,8 @@ were worth when they happened) and `qty` (signed base units it bought):
 - *Whether to trade* compares the target with `cost`. The mark is not in that
   comparison, so a held position never trades because the price moved — **fixed
   quantity: what was bought is held until the signal changes** (account-read
-  mode, by contrast, rebalances to a fixed notional).
+  mode, by contrast, rebalances to a fixed notional — softened only by the
+  drift band, see *`asset_specs[strategy]["type"]`* further down).
 - *How much* a reduce leg sells is the same SHARE of the coins:
   `qty × |diff| ÷ |cost|`; a close is the whole `qty`. Never `USD ÷ mark` — that
   was the old book (cost only), and measured on paper a close 20% above entry
@@ -512,14 +523,50 @@ routes a strategy to `"capital"`.
 `contract_value` in that table is no longer read by any code path (see *`amounts` semantics*
 below) — kept only as a documentation mirror of `capital-broker.md` Step 8's `asset_specs`.
 
-**`amounts` semantics fork on `asset_specs[strategy]["type"]` (2026-08-14).** `strategy_amounts()`
-returns `portfolio_config.json["amounts"]` verbatim (`lib/portfolio.py`); what that number MEANS
-depends on the strategy's asset spec:
-- `asset_specs[strategy]["type"] == "futures_contracts"` (currently only capital TW futures):
-  the number IS a lot count — integer, no price involved anywhere in the chain (state.json
-  `position` × `amounts[strategy]` = target lots directly; `_capital_get_positions()` reads actual
-  lots directly; `_capital_place_order()` diffs lots directly).
-- anything else (crypto, the default): the number is account-currency dollars, unchanged.
+**`asset_specs[strategy]["type"]` — the unit a symbol is reconciled in.** Three values
+(`lib/portfolio.py`: `asset_type` / `native_units`):
+- `notional` — the default when the key is absent (every existing crypto config): `amounts` is
+  account currency, `actual` is size × mark. The mark moves `actual`, so this path carries the
+  drift band below.
+- `futures_contracts` — lots (capital TW futures): `amounts` IS a lot count, no price anywhere in
+  the chain (state.json `position` × `amounts[strategy]` = target lots; `_capital_get_positions()`
+  reads lots; `_capital_place_order()` diffs lots).
+- `shares` — a share count (TW whole/odd lots, US equities): `amounts` IS shares, `actual` is
+  shares held, diffs are shares. **Type and `compute_diff` routing only for now** — no broker
+  order path ships for it; a `shares` row reaching a crypto auto-wire is refused loudly.
+
+The paper venue trades both native types as lots too (`lib/order_paper.place_contract_market_order`
+via `lib/venue_wiring._paper_contract_order`): round-half-up to a whole lot, under half a lot
+places nothing, reduce legs cap at the held lots, PnL = lots × `contract_value` × Δprice, and the
+account row comes back with `unit: "contracts"` and `size` in lots — so a paper TXF position
+never drifts with the index, and a removed strategy's close-on-removal is judged in lots in both
+account-read and `self_ledger` mode (the book row inherits the venue read's unit). Leverage on
+paper counts lots × `margin` (TAIFEX initial margin) separately from notional positions, and at
+1× — the margin must be covered by equity, as at a broker (notional keeps its 10×).
+`contract_value` and `margin` must be in the spec (the platform writes TXF/MXF/TMF specs with
+both); a spec missing either is refused as an order error, never valued at a guess. A notional
+paper position opened before the spec existed is closed whole by the first reduce leg.
+
+Principle: **reconcile in the market's native unit; convert money to quantity once, at entry.**
+`futures_contracts` and `shares` never see the account-currency gates or the drift band; a new
+market gets a native-unit type, never another notional path — the notional path is what
+`self_ledger`'s quantity book exists to replace.
+
+`strategy_amounts()` returns `portfolio_config.json["amounts"]` verbatim; the type above is what
+the number means.
+
+**Drift band (`notional` rows, `self_ledger` off).** Target is a fixed notional and `actual` is
+size × mark, so a held position reads as a gap every heartbeat and the reconciler trades the
+unrealised P&L — measured 2026-09-21 (uid 29026, 20,000 paper, signal unchanged): 34 fills in
+4h44m, 0 with the book on. `lib/portfolio.compute_diff` therefore also gates a SAME-SIDE
+adjustment at `max(5%, min(2 × 30-day daily σ, 20%)) × |target|` (`drift_band`; σ from
+`lib/data.fetch_kline` 1d bars with today's forming bar dropped, cached one day in
+`state/drift_band.json`, the 5% floor alone when it cannot be had). It never applies to a whole-position close — target flat, strategy
+removed, or a flip's close leg — nor to native-unit rows. Two things to tell a user on this
+path: the position may sit up to the band away from its target, and a same-side signal change
+smaller than the band (a vol-scaled 1.0 → 1.03) is indistinguishable from drift and is also left
+alone. The snapshot's `gates` row carries `band_usd` when it applied (`usd` already includes it).
+Gate: `tests/check_drift_band.py`.
 
 This was a same-day refactor away from a lots→TWD-notional→lots round trip (aggregate at save
 time, convert back at order time) that priced BOTH conversions off `_txf_index_price()` — a ~1min

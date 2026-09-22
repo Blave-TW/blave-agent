@@ -1,5 +1,5 @@
 import glob, hashlib, inspect, json, logging, os, re, time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from lib import guard
 
@@ -1041,6 +1041,121 @@ def aggregate_portfolio():
     return result
 
 
+# ── asset_spec.type: the unit a symbol is reconciled in ─────────────────────
+# references/manager.md § asset_spec. `notional` (the default when the key is
+# absent — every pre-existing crypto config) diffs target and actual in account
+# currency, so the mark moves `actual` and a held position reads as a gap; the
+# drift band below exists for that path alone. `futures_contracts` (lots) and
+# `shares` (share count) diff in the market's native unit: no currency gate,
+# no band, exactly what a quantity book already gives self_ledger.
+ASSET_TYPE_NOTIONAL = 'notional'
+NATIVE_UNIT_TYPES = frozenset({'futures_contracts', 'shares'})
+
+
+def asset_type(asset_spec):
+    return (asset_spec or {}).get('type') or ASSET_TYPE_NOTIONAL
+
+
+def native_units(asset_spec, *exchanges, actual=None):
+    """True for a row diffed in lots / shares rather than account currency. A
+    close-on-removal row has no asset_spec (the strategy left `target`), so
+    the capital exchange label — or the account row's own unit ("contracts",
+    which the paper venue reports) — stands in for it there."""
+    return (asset_type(asset_spec) in NATIVE_UNIT_TYPES or 'capital' in exchanges
+            or (actual or {}).get('unit') == 'contracts')
+
+
+# ── drift band (account-read mode only) ────────────────────────────────────
+# Without self_ledger, target is a fixed notional and actual is size × mark,
+# so their difference is the unrealised P&L, not a position gap — measured
+# 2026-09-21 on uid 29026: a 20,000 paper position with an unchanged signal
+# produced 34 fills in 4h44m (0 with the book on). The band leaves a SAME-SIDE
+# adjustment alone while |diff| is under max(5%, 2 × 30-day daily σ) of the
+# target. It never touches a whole-position close or a flip's close leg
+# (target flat / opposite side): "the signal said flat and no order went out"
+# is the P0 _close_threshold exists to prevent. Known cost, deliberate: a
+# same-side SIGNAL change smaller than the band (a vol-scaled 1.0 → 1.03) is
+# indistinguishable from drift here and is also left alone — the quantity
+# book has no such ambiguity, which is why new machines ship with it on.
+_DRIFT_BAND_FLOOR = 0.05
+_DRIFT_BAND_CAP = 0.20  # a σ-scaled band never lets a position sit further off target than this
+_DRIFT_SIGMA_MULT = 2.0
+_DRIFT_SIGMA_DAYS = 30
+_DRIFT_SIGMA_RETRIES = 2  # kline attempts per lookup — see _daily_sigma
+_DRIFT_BAND_PATH = 'state/drift_band.json'  # {symbol: {'sigma': float|None, 'at': epoch}}
+_DRIFT_BAND_TTL_S = 24 * 3600  # one kline fetch per symbol per day, never per round
+
+
+def _daily_sigma(symbol):
+    """Std-dev of the last _DRIFT_SIGMA_DAYS daily close-to-close returns from
+    lib/data.fetch_kline (Blave /kline, Binance USDT-M perps — the one kline
+    path every lib already uses). None when it cannot be had: no Blave key in
+    .env (nothing to call with, and no network round-trip from a bare
+    workspace), a symbol the feed does not carry, too few bars."""
+    from dotenv import dotenv_values
+    from lib import data
+    env = dotenv_values()
+    hdrs = {'api-key': env.get('blave_api_key', ''),
+            'secret-key': env.get('blave_secret_key', '')}
+    if not hdrs['api-key'] and data._kline_source() != 'binance':
+        return None
+    start = (datetime.utcnow() - timedelta(days=_DRIFT_SIGMA_DAYS + 15)).strftime('%Y-%m-%d')
+    # This runs inside a reconcile round: the default 6 retries back off for
+    # ~2 min on a 429/5xx, past the 300s heartbeat the web reads as "dead".
+    # Two attempts, then the floor for a day (_drift_sigma caches the miss).
+    df = data.fetch_kline(symbol, '1d', start, None, hdrs, max_retries=_DRIFT_SIGMA_RETRIES)
+    # the last bar is today's, still forming: a half-day move is not a daily return
+    rets = df['Close'].iloc[:-1].pct_change().dropna().tail(_DRIFT_SIGMA_DAYS)
+    if len(rets) < _DRIFT_SIGMA_DAYS // 2:
+        return None
+    return float(rets.std())
+
+
+def _drift_sigma(symbol):
+    """Cached _daily_sigma: one lookup per symbol per _DRIFT_BAND_TTL_S,
+    failures cached too (a feed that has no bars today has none in 300s)."""
+    try:
+        with open(_DRIFT_BAND_PATH) as f:
+            cache = json.load(f) or {}
+    except (OSError, ValueError):
+        cache = {}
+    now = time.time()
+    row = cache.get(symbol) if isinstance(cache, dict) else None
+    try:
+        if row and now - float(row['at']) < _DRIFT_BAND_TTL_S:
+            return row['sigma']
+    except (KeyError, TypeError, ValueError):
+        pass
+    sigma = None
+    try:
+        sigma = _daily_sigma(symbol)
+    except Exception as e:
+        logging.warning(f"[drift band] {symbol}: daily σ unavailable ({e}) — "
+                        f"floor {_DRIFT_BAND_FLOOR:.0%} applies")
+    if not isinstance(cache, dict):
+        cache = {}
+    cache[symbol] = {'sigma': sigma, 'at': now}
+    try:
+        os.makedirs(os.path.dirname(_DRIFT_BAND_PATH), exist_ok=True)
+        tmp = _DRIFT_BAND_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(cache, f, indent=2)
+        os.replace(tmp, _DRIFT_BAND_PATH)
+    except OSError as e:
+        logging.warning(f'drift_band cache persist failed: {e}')
+    return sigma
+
+
+def drift_band(symbol):
+    """Relative tolerance for one symbol's same-side notional adjustment:
+    max(_DRIFT_BAND_FLOOR, min(_DRIFT_SIGMA_MULT × 30-day daily σ, _DRIFT_BAND_CAP)),
+    the floor alone when σ cannot be had. `symbol` may carry a market suffix."""
+    sigma = _drift_sigma(split_key(symbol)[0])
+    if not sigma or sigma <= 0:
+        return _DRIFT_BAND_FLOOR
+    return max(_DRIFT_BAND_FLOOR, min(_DRIFT_SIGMA_MULT * float(sigma), _DRIFT_BAND_CAP))
+
+
 def _resolve_threshold(threshold, symbol, reduce_only=False):
     """`threshold` is either a flat number or a callable(symbol, reduce_only).
     manager/reconciler passes the callable so ENTRY legs can be gated at the
@@ -1072,7 +1187,7 @@ def _close_threshold(threshold, symbol):
     return threshold(symbol, True) if flat is None else flat
 
 
-def compute_diff(target, actual, threshold=10, gates=None):
+def compute_diff(target, actual, threshold=10, gates=None, drift_band=None):
     """
     Compute required position adjustments.
     target:  output of aggregate_portfolio()
@@ -1084,24 +1199,34 @@ def compute_diff(target, actual, threshold=10, gates=None):
 
     `threshold` is a flat number or a callable(symbol, reduce_only) (see
     _resolve_threshold); it is account-currency scale (crypto notional) and meaningless
-    for a symbol whose 'size' is a LOT COUNT (asset_specs[strategy]["type"] ==
-    "futures_contracts", e.g. capital/TW futures — see strategy_amounts):
-    diffs there are single/low-double-digit lots, so a currency threshold of
-    10 would silently swallow every order, including a close-on-removal
-    (target absent, asset_spec None — checked via `exchange` too). Those rows
-    skip `threshold` entirely; their own place_order_fn applies the real
-    minimum (e.g. reconciler.py's _capital_place_order round-half-up gate).
+    for a symbol whose 'size' is a native-unit count (asset_specs[strategy]["type"]
+    == "futures_contracts" — lots, e.g. capital/TW futures — or "shares"; see
+    native_units / strategy_amounts): diffs there are single/low-double-digit
+    lots, so a currency threshold of 10 would silently swallow every order,
+    including a close-on-removal (target absent, asset_spec None — checked via
+    `exchange` too). Those rows skip `threshold` entirely; their own
+    place_order_fn applies the real minimum (e.g. reconciler.py's
+    _capital_place_order round-half-up gate).
+
+    `drift_band` is an optional callable(symbol) -> fraction (module-level
+    drift_band; reconcile passes it in account-read mode only). A same-side
+    notional row is then also gated at that fraction of |target|: the mark
+    moving `actual` is not a position gap. Never applied to a row whose target
+    is flat or on the other side (a whole-position close), nor to a
+    native-unit row. None = today's gates alone (hand-written callers).
 
     `gates` is an optional OUT dict (return value unchanged — hand-written
     callers exist): a row with either side above the flat threshold is recorded
     as {symbol: {'usd': gate this round, 'diff': signed_diff,
-    'entry_usd': .., 'reduce_usd': .., 'close_usd': ..[, 'side': 'reduce']}}, placed or not, so
+    'entry_usd': .., 'reduce_usd': .., 'close_usd': ..[, 'side': 'reduce'][, 'band_usd': ..]}},
+    placed or not, so
     the workspace can show the number instead of leaving "diff 22, no order, no
     error" unexplained. `usd`/`diff`/`side` are the shipped shape and do not
     move; BOTH sides are carried because the live diff a reader colours can
     have flipped sign since this round — with one side only it would colour a
-    buy against the reduce gate. Flat-gate rows are left out on both sides —
-    there is nothing to explain there.
+    buy against the reduce gate. `band_usd` (the drift band valued at the
+    target) is present only on a row it applied to; `usd` already includes it.
+    Flat-gate rows are left out on both sides — there is nothing to explain there.
     """
     orders = []
     all_symbols = set(target) | set(actual)
@@ -1119,8 +1244,7 @@ def compute_diff(target, actual, threshold=10, gates=None):
         if diff == 0:
             continue
         asset_spec = t.get('asset_spec')
-        is_lot_based = ((asset_spec or {}).get('type') == 'futures_contracts'
-                         or t.get('exchange') == 'capital' or a.get('exchange') == 'capital')
+        is_lot_based = native_units(asset_spec, t.get('exchange'), a.get('exchange'), actual=a)
         # A row whose |target| is SMALLER than what is held carries a reduce
         # leg (shrink, or a close when the target is gone) — gated on its own
         # side (the reconciler's callable answers half a lot there, never a
@@ -1129,6 +1253,7 @@ def compute_diff(target, actual, threshold=10, gates=None):
         # construction (|actual| + |target|); its legs are gated per side
         # below.
         reduces = abs(t_signed) < abs(a_signed)
+        band_usd = 0.0
         if not is_lot_based:
             # Resolved once and reused: on the reconciler's callable this is a
             # venue round-trip (cached, but only per symbol per round).
@@ -1139,6 +1264,12 @@ def compute_diff(target, actual, threshold=10, gates=None):
             close_gate = _close_threshold(threshold, symbol)
             applied = (min(gate, close_gate)
                        if a_signed != 0 and t_signed * a_signed <= 0 else gate)
+            # Same side, both held: the drift band (see its section) is a
+            # second floor under this adjustment. The `<= 0` branch above —
+            # every whole-position close — is disjoint from it by construction.
+            if drift_band is not None and a_signed != 0 and t_signed * a_signed > 0:
+                band_usd = float(drift_band(symbol)) * abs(t_signed)
+                applied = max(applied, band_usd)
             # Recorded only when above the flat threshold — the workspace
             # reads absence as "the flat gate, nothing to explain". The
             # reconciler's callable carries its flat value as `.flat`; a bare
@@ -1158,7 +1289,7 @@ def compute_diff(target, actual, threshold=10, gates=None):
                 # is flat still needs its entry gate on record for the round the
                 # diff flips sign. (Not equivalent to `gate > flat` — that is
                 # only this round's side.)
-                if entry_gate > flat or reduce_gate > flat:
+                if entry_gate > flat or reduce_gate > flat or band_usd > flat:
                     # close_usd: what a reader must colour the LIVE diff against
                     # when it holds a position and the target is flat or on the
                     # other side — min(that side's gate, close_usd), the `applied`
@@ -1170,6 +1301,8 @@ def compute_diff(target, actual, threshold=10, gates=None):
                                      'close_usd': close_gate}
                     if reduces:
                         gates[symbol]['side'] = 'reduce'
+                    if band_usd:
+                        gates[symbol]['band_usd'] = band_usd
             if abs(diff) < applied:
                 continue
 
@@ -1291,6 +1424,14 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 "unseeded ledger")
         _report_ledger_adoption()
         ledger = {_canon_key(k): v for k, v in (ledger_positions() or {}).items()}
+        # A book row has no unit of its own; the venue read's does (paper
+        # reports lots as unit "contracts"). Without it a removed contract
+        # strategy's close-on-removal — no target, no asset_spec — is judged
+        # by the currency gate and 2 lots < 10 never closes.
+        for k, row in ledger.items():
+            unit = (actual.get(k) or {}).get('unit')
+            if unit:
+                row['unit'] = unit
     diff_actual = ledger if ledger is not None else actual
 
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
@@ -1307,9 +1448,11 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         diff_actual = {k: v for k, v in diff_actual.items() if k not in gated_symbols}
 
     # per-symbol venue gates, for the snapshot (unrelated to gated_symbols
-    # above — that is the SIGNAL gate)
+    # above — that is the SIGNAL gate). The drift band only when the diff is
+    # against the account read: a book's cost does not move with the mark.
     entry_gates = {}
-    orders = compute_diff(target, diff_actual, threshold, gates=entry_gates)
+    orders = compute_diff(target, diff_actual, threshold, gates=entry_gates,
+                          drift_band=drift_band if ledger is None else None)
 
     # Written before placing, so it records the state that WAS acted on. A
     # reconcile that crashes mid-loop still leaves the observation behind.
@@ -1369,8 +1512,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         # patched: a 1-lot diff passed compute_diff() only to be silently
         # `continue`d here, so place_order_fn was never even called (measured
         # live 2026-08-14 — "Converged, nothing filled" with zero attempts).
-        is_lot_based = ((asset_spec or {}).get('type') == 'futures_contracts'
-                         or order.get('exchange') == 'capital')
+        a        = diff_actual.get(symbol, {})
+        is_lot_based = native_units(asset_spec, order.get('exchange'), actual=a)
 
         # Detect position flip: split into reduce-only close + directional open
         # to avoid simultaneous long+short on hedge-mode exchanges. Must use
@@ -1378,7 +1521,6 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         # manual position visible only in the real exchange read would get
         # classified as a flip and generate a reduce-only close leg against it,
         # exactly the touch self_ledger exists to prevent.
-        a        = diff_actual.get(symbol, {})
         a_signed = (a.get('size', 0)  if a.get('side') == 'long'  else
                     -a.get('size', 0) if a.get('side') == 'short' else 0)
         t_signed = a_signed + diff
@@ -1574,7 +1716,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             # understates a real index-futures trade (would send "Bought TXF
             # $1.00" for a 1-lot TXF entry). Same flag as compute_diff()'s
             # threshold exemption above.
-            unit = '{amount:g} lots' if is_lot_based else '${amount:.2f}'
+            unit = ('{amount:g} shares' if asset_type(asset_spec) == 'shares' else
+                    '{amount:g} lots' if is_lot_based else '${amount:.2f}')
             if reduce_only:
                 key     = 'order_close_long'  if sub_diff < 0 else 'order_close_short'
                 default = (f'📉 Closed long {{symbol}} {unit}' if sub_diff < 0 else

@@ -442,6 +442,37 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
         _log(f"ui amounts mirror write failed: {type(e).__name__}: {e}")
 
 
+def _fresh_portfolio_config():
+    """The dict a machine's FIRST portfolio_config.json starts from: self_ledger
+    on — the bot diffs against its own quantity book, so a held position
+    never trades on a mark move — with the book's baseline written here,
+    BEFORE the caller writes the config. The reconciler refuses to trade on
+    the flag without a baseline (lib/portfolio.reconcile), so a crash between
+    the two writes must leave seed-without-flag (inert), never the reverse.
+    Fresh-start shape mirrors lib/portfolio.seed_ledger — duplicated, not
+    imported: this runtime never imports the workspace lib. An account that
+    already holds something is the user's by this baseline, which is the one
+    safe reading with no reconciler history on the machine. An EXISTING config
+    without the key stays in account-read mode: the default lives at creation,
+    not in the reader, so no machine is switched to the book by an update.
+    Nor is a machine that has TRADED (orders.jsonl / last_reconcile.json on
+    disk) but lost or never kept its config: its account may hold bot
+    positions a zero book would re-buy on top of — it starts as today."""
+    from datetime import datetime
+    mgr = os.path.join(WORKSPACE, "manager")
+    if any(os.path.isfile(os.path.join(mgr, f))
+           for f in ("orders.jsonl", "last_reconcile.json")):
+        return {}
+    seed_path = os.path.join(mgr, "ledger_seed.json")
+    os.makedirs(os.path.dirname(seed_path), exist_ok=True)
+    if not os.path.isfile(seed_path):  # a hand-run seed_ledger.py baseline stands
+        tmp = seed_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"seeded_at": datetime.utcnow().isoformat(), "symbols": {}}, f, indent=2)
+        os.replace(tmp, seed_path)
+    return {"self_ledger": True}
+
+
 def _write_ui_cred_manifest(lines):
     """manager/credentials.ui.json — venue ids ({"ids": [...]}) whose
     credential PAIRS this writer just put into .env — a web bind, or the chat
@@ -1626,10 +1657,18 @@ def _cmd_report_edit_pending(args):
 # same layer, already keeps the same boundary). A static SYMBOL->spec lookup,
 # no AI judgment involved — TW stock strategies (asset_specs "tw_stock" shape)
 # are intentionally NOT covered here.
+# `margin` = TAIFEX initial margin per lot in TWD (臺灣期貨交易所 保證金一覽表
+# 股價指數類, 更新日期 2026/08/12: TX 701,000 / MTX 175,250 / TMF 35,050). The
+# paper venue's leverage check counts lots × margin (lib/order_paper); the
+# exchange revises these with volatility, so refresh the three numbers and
+# this date together. Real brokers ignore the field.
 _TXF_ASSET_SPECS = {
-    "TXF": {"type": "futures_contracts", "contract_value": 200, "currency": "TWD", "lot_size": 1},
-    "MXF": {"type": "futures_contracts", "contract_value": 50, "currency": "TWD", "lot_size": 1},
-    "TMF": {"type": "futures_contracts", "contract_value": 10, "currency": "TWD", "lot_size": 1},
+    "TXF": {"type": "futures_contracts", "contract_value": 200, "currency": "TWD", "lot_size": 1,
+            "margin": 701000},
+    "MXF": {"type": "futures_contracts", "contract_value": 50, "currency": "TWD", "lot_size": 1,
+            "margin": 175250},
+    "TMF": {"type": "futures_contracts", "contract_value": 10, "currency": "TWD", "lot_size": 1,
+            "margin": 35050},
 }
 
 
@@ -1769,7 +1808,7 @@ def _cmd_amounts(args):
         with open(path) as f:
             cfg = json.load(f)
     except FileNotFoundError:
-        cfg = {}  # fresh machine — first write creates the file
+        cfg = _fresh_portfolio_config()  # fresh machine — first write creates the file
     except (OSError, ValueError) as e:
         # fail-closed like _cmd_execution: unreadable can mean manager.py
         # mid-write — rebuilding from {} here would wipe keys this command
@@ -1964,7 +2003,7 @@ def _cmd_execution(args):
         with open(path) as f:
             cfg = json.load(f)
     except FileNotFoundError:
-        cfg = {}  # fresh machine — first write creates the file
+        cfg = _fresh_portfolio_config()  # fresh machine — first write creates the file
     except (OSError, ValueError) as e:
         # fail-closed like _cmd_delete_strategy: manager.py writes this file
         # non-atomically, so unreadable can mean mid-write — falling back to {}

@@ -692,6 +692,13 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         elif run:  # finished thread that has not been reaped
             _inflight.pop(key, None)
 
+    # Native-unit rows (futures_contracts / shares — signed_diff is lots) are
+    # always a single market leg: every slicing style below sizes in account
+    # currency (_venue_min_slice_usd, chase re-posts at a USD unit), so TWAP /
+    # chase / custom would slice a lot count as dollars.
+    if (asset_spec or {}).get("type") in ("futures_contracts", "shares"):
+        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+
     spec = resolve_execution(contributors)
     if spec is None:  # config mid-write — skip, the next round re-reads
         return False

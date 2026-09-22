@@ -19,7 +19,10 @@ What must hold (references/manager.md § self_ledger):
   - self_ledger OFF places byte-for-byte the orders BASELINE places (same
     scripts run against a `git archive` export of the commit this batch was
     cut from — pinned, or the comparison is against itself once committed),
-    and so does a lot-based book.
+    and so does a lot-based book. Those OFF rounds run with the account-read
+    drift band switched off (`no_band`): the band deliberately leaves a
+    sub-5% rounding residual alone that BASELINE sold back, and it has its
+    own gate (tests/check_drift_band.py) — this comparison is about the book.
 
 Run:  cd blave-agent && .venv/bin/python tests/check_self_ledger_qty.py
       ... --root <dir>   run the ON assertions against another tree's lib/ +
@@ -82,6 +85,8 @@ def child(case):
         rec._min_order_gate.clear()
 
     set_lot(case.get("lot"))
+    if case.get("no_band") and hasattr(portfolio, "drift_band"):
+        portfolio.drift_band = lambda symbol: 0.0
     # two reads "at least one reconciler poll apart": the rounds here run back
     # to back, so the gap is 0 unless a case is about the gap itself
     if hasattr(portfolio, "_ACCOUNT_SHORT_MIN_S"):
@@ -580,6 +585,27 @@ def partial_update_checks(base):
                   f"goes out and is logged exactly as {BASELINE} does",
                   str([(x["fills"], x["error"]) for x in a["steps"]]))
 
+    # the other direction: today's lib/portfolio.py beside a lib/data.py from
+    # before _kline_source (the drift band's σ lookup reaches for it) — the
+    # AttributeError must land on the 5% floor, never in the reconcile round
+    print("== partial update: new lib/portfolio.py beside a lib/data.py without _kline_source")
+    old_data = os.path.join(TMP, "OLDDATA")
+    for d in ("lib", "manager"):
+        shutil.copytree(os.path.join(ROOT, d), os.path.join(old_data, d),
+                        ignore=shutil.ignore_patterns("__pycache__", "*.json", "*.jsonl"))
+    src = open(os.path.join(ROOT, "lib", "data.py")).read()
+    assert "def _kline_source" in src
+    open(os.path.join(old_data, "lib", "data.py"), "w").write(
+        src.replace("def _kline_source", "def _kline_source_gone"))
+    r = run(old_data, {"self_ledger": False, "lot": 0.001, "steps": [
+        {"mark": 100000, "pos": 1}, {"mark": 103000, "pos": 1, "idle_round": True},
+        {"mark": 106000, "pos": 1}]})
+    s = r["steps"]
+    check(not any(x["error"] for x in s) and not s[1]["calls"] and not s[1]["idle_calls"]
+          and s[2]["calls"],
+          "old data.py: σ lookup fails quietly, the 5% floor holds +3% and lets +6% through",
+          str([(x["calls"], x["error"]) for x in s]))
+
 
 def pending_expiry_check(root):
     """A short-read record nobody cleared must stop holding the entry back once
@@ -609,7 +635,7 @@ def off_mode_checks(head):
     }
     for name, steps in scripts.items():
         for lot in (0, 0.001):
-            case = {"self_ledger": False, "lot": lot, "steps": steps}
+            case = {"self_ledger": False, "lot": lot, "steps": steps, "no_band": True}
             a, b = run(ROOT, case), run(head, case)
             same = all(x["fills"] == y["fills"] and x["log"] == y["log"]
                        and x["calls"] == y["calls"] for x, y in zip(a["steps"], b["steps"]))
@@ -619,7 +645,7 @@ def off_mode_checks(head):
     # The flat gate on a whole-position close changes nothing here: an
     # account-read diff is at the mark, so one lot is already over half of one…
     for side in (1, -1):
-        case = {"self_ledger": False, "lot": 0.001, "amount": 110, "steps": [
+        case = {"self_ledger": False, "lot": 0.001, "amount": 110, "no_band": True, "steps": [
             {"mark": 100000, "pos": side}, {"mark": 250000, "pos": 0}]}
         a, b = run(ROOT, case), run(head, case)
         same = all(x["fills"] == y["fills"] and x["log"] == y["log"]
@@ -636,7 +662,7 @@ def off_mode_checks(head):
         "5 USD of spot": {"spot": True, "steps": [{"mark": 100000, "manual": 0.00005},
                                                   {"mark": 100000, "pos": 0, "idle_round": True}]},
     }.items():
-        case["self_ledger"] = False
+        case["self_ledger"], case["no_band"] = False, True
         a, b = run(ROOT, case), run(head, case)
         quiet = all(not x["calls"] and not x["idle_calls"] and not x["fills"] and not x["log"]
                     for x in a["steps"][1:])
@@ -648,7 +674,7 @@ def off_mode_checks(head):
 
     for style in ({"type": "twap", "duration_min": 4}, {"type": "chase"}):
         case = {"self_ledger": False, "lot": 0.001, "fast_async": True, "amount": 2000,
-                "execution": style, "steps": scripts["A"]}
+                "execution": style, "steps": scripts["A"], "no_band": True}
         a, b = run(ROOT, case), run(head, case)
         same = all(x["fills"] == y["fills"] and x["log"] == y["log"]
                    for x, y in zip(a["steps"], b["steps"]))

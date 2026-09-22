@@ -819,7 +819,7 @@ def _is_sub_5min(interval):
     return pd.Timedelta(interval) < pd.Timedelta('5min')
 
 
-def _fetch_kline_raw(symbol, interval, start, end, headers):
+def _fetch_kline_raw(symbol, interval, start, end, headers, max_retries=6):
     from concurrent.futures import ThreadPoolExecutor, as_completed
     sub_5min = _is_sub_5min(interval)
     s = datetime.strptime(start, '%Y-%m-%d')
@@ -835,7 +835,7 @@ def _fetch_kline_raw(symbol, interval, start, end, headers):
         # Sub-5min cold fetches hit Binance fapi server-side and can take minutes;
         # _retry_get also covers transient 429/5xx/timeouts a bare requests.get dropped.
         try:
-            r = _retry_get(f'{BASE}/kline', headers=headers, params={
+            r = _retry_get(f'{BASE}/kline', headers=headers, max_retries=max_retries, params={
                 'symbol': symbol, 'period': interval,
                 'start_date': cs, 'end_date': ce,
             }, timeout=300 if sub_5min else 60)
@@ -878,7 +878,7 @@ def normalize_symbol(symbol):
     return symbol.replace('/', '').replace('-', '').replace('_', '').upper()
 
 
-def fetch_kline(symbol, interval, start, end, headers):
+def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
     """Fetch OHLCV kline data from Blave API with date chunking and local cache.
 
     All intervals reach back to the symbol's Binance um-futures listing date
@@ -894,6 +894,9 @@ def fetch_kline(symbol, interval, start, end, headers):
     same bars: measured 2026-09-19, 8 of 41,335 1h BTCUSDT bars come back from
     /kline as placeholders (O=H=L=C, Volume 0) where Binance has the real bar,
     so a cache dir fed by both sources is a mixed one.
+
+    `max_retries` is _retry_get's (default 6, ~2 min of backoff on 429/5xx):
+    a caller inside a latency budget passes fewer (the reconciler's σ lookup).
     """
     # Venue forms like 'BTC/USDT' → Binance 'BTCUSDT'; the API 400s on
     # separator forms and the separator would leak into the cache dir name.
@@ -901,7 +904,7 @@ def fetch_kline(symbol, interval, start, end, headers):
     if _kline_source() == 'binance':
         fetch_raw = lambda s, e: _fetch_binance_kline_raw(symbol, interval, s, e)
     else:
-        fetch_raw = lambda s, e: _fetch_kline_raw(symbol, interval, s, e, headers)
+        fetch_raw = lambda s, e: _fetch_kline_raw(symbol, interval, s, e, headers, max_retries)
     df = _extend_cache_monthly(
         'kline2', {'symbol': symbol, 'period': interval},
         fetch_raw, start, end,
