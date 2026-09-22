@@ -45,11 +45,13 @@ DF = pd.DataFrame({"Open": close, "High": close * 1.001, "Low": close * 0.999,
                    "Close": close, "Volume": 1.0}, index=idx)
 
 
-def live_tick(signals, prev_position):
+def live_tick(signals, prev_position, env_mode="live"):
     STATE.write_text(json.dumps({"position": prev_position}))
-    config = {"MODE": "backtest", "STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
+    config = {"STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",   # no MODE key: inferred
               "INTERVAL": "1h", "START": "2024-01-01", "FEE": 0.0005, "MCPT": False}
-    os.environ["BLAVE_MODE"] = "live"
+    os.environ.pop("BLAVE_MODE", None)
+    if env_mode:
+        os.environ["BLAVE_MODE"] = env_mode
     try:
         runner.run(config, lambda hdrs: DF, lambda d: signals, send_telegram_fn=None)
     finally:
@@ -69,5 +71,14 @@ last_bar.iloc[150] = 0.0
 last_bar.iloc[-1] = -1.0
 got = live_tick(last_bar, 0.0)
 check(got == -1.0, f"signal on the last bar → that signal, as before (got {got})")
+
+# no BLAVE_MODE at all: being in the 下單設定 (amount 0 included) makes the run live + quiet
+(WS / "manager").mkdir()
+(WS / "manager" / "portfolio_config.json").write_text(
+    json.dumps({"amounts": {NAME: 0}, "exchanges": {NAME: "binance"}}))
+PNL = WS / "strategies" / NAME / "pnl.png"
+got = live_tick(missed_exit, 1.0, env_mode=None)
+check(got == 0.0 and not PNL.exists(),
+      f"picked with amount 0, no BLAVE_MODE → live tick (state converges) and quiet (no pnl.png) (got {got})")
 
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

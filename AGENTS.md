@@ -153,7 +153,7 @@ A report is a document the web workspace renders in its Reports list (More › R
 - **NEVER write `except Exception: pass`** — always `except Exception as e: print(f"Error: {e}")`
 - NEVER chain commands with `&&`, `||`, or `;` — run ONE command at a time, on Windows too
 - Use `python3 file.py [args]` or `node file.js` directly — a `tmp/` script that imports `lib` → `python3 -m tmp.x` or pin `sys.path` (`references/reports.md` §1b)
-- To run a strategy: `python3 strategies/my_strategy/strategy.py` from the workspace directory (`$BLAVE_AGENT_HOME/workspace`). How `$BLAVE_AGENT_HOME` resolves per runtime/OS — and why getting it wrong silently kills Telegram alerts — is in `references/lib.md` › *`lib/notify.py`*; when in doubt check the actual environment, don't assume
+- To run a strategy: `python3 strategies/my_strategy/strategy.py` from the workspace directory (`$BLAVE_AGENT_HOME/workspace`). No mode constant: that is a backtest unless the strategy is in the 下單設定, in which case it is a quiet live tick — `BLAVE_MODE=backtest python3 strategies/my_strategy/strategy.py` when the user wants the backtest chart of a deployed strategy (`references/deployment.md` › *Live vs Backtest*). How `$BLAVE_AGENT_HOME` resolves per runtime/OS — and why getting it wrong silently kills Telegram alerts — is in `references/lib.md` › *`lib/notify.py`*; when in doubt check the actual environment, don't assume
 
 ## Cross-Day Task Memory
 

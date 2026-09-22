@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODE          = "backtest"
 STRATEGY_NAME = "tsmc_ma"
 SYMBOL        = "2330"
 INTERVAL      = "1d"

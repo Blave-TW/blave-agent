@@ -8,7 +8,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODE          = "backtest"
 STRATEGY_NAME = "tw2317_broker_zscore"
 SYMBOL        = "2317"
 INTERVAL      = "1d"

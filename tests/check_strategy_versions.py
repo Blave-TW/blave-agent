@@ -12,6 +12,10 @@ workspace and asserts the rules that are expensive to get wrong:
   - a live tick over an edited file writes the drift flag, and the next backtest clears it
   - restore() on a funded strategy raises and leaves the file byte-identical; on an
     unfunded one it puts the old code back
+  - mode inference (no MODE constant anywhere): not in the 下單設定 and no BLAVE_MODE →
+    backtest (mints, no state.json); in it (amount 0 counts) → live, and BLAVE_MODE=backtest
+    is the escape hatch back (mints, pnl.png re-rendered); from a cwd that is not the
+    workspace root the amounts read empty → backtest, never a raise
 
 Run: cd blave-agent && .venv/bin/python tests/check_strategy_versions.py
 """
@@ -56,15 +60,18 @@ DF = pd.DataFrame({"Open": close, "High": close * 1.001, "Low": close * 0.999,
 SIGNALS = pd.Series(np.where(np.arange(n) % 40 < 20, 1.0, 0.0), index=idx)
 
 
-def backtest(note="", code="# v\n", live=False):
-    """One run() with `note` as VERSION_NOTE and `code` as the strategy file's bytes."""
+def backtest(note="", code="# v\n", live=False, env_mode=None):
+    """One run() with `note` as VERSION_NOTE and `code` as the strategy file's bytes.
+    No MODE key: the runner infers the mode from BLAVE_MODE, else the 下單設定."""
     SRC.write_text(code, encoding="utf-8")
-    config = {"MODE": "backtest", "STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
+    config = {"STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
               "INTERVAL": "1h", "START": "2024-01-01", "FEE": 0.0005, "MCPT": False,
               "VERSION_NOTE": note, "__file__": str(SRC)}
     os.environ.pop("BLAVE_MODE", None)
     if live:
-        os.environ["BLAVE_MODE"] = "live"
+        env_mode = "live"
+    if env_mode:
+        os.environ["BLAVE_MODE"] = env_mode
     try:
         runner.run(config, lambda hdrs: DF, lambda d: SIGNALS)
     finally:
@@ -157,6 +164,50 @@ try:
     check(False, "a pruned version raises")
 except FileNotFoundError as e:
     check("kept" in str(e), "a pruned version raises, naming the retention limit")
+
+# ── mode inference: no MODE constant, the 下單設定 decides ────────────────────
+STATE = WS / "strategies" / NAME / "state.json"
+PNL = WS / "strategies" / NAME / "pnl.png"
+
+
+def reset_outputs():
+    STATE.unlink(missing_ok=True)
+    PNL.unlink(missing_ok=True)
+
+
+with open(WS / "manager" / "portfolio_config.json", "w") as f:
+    json.dump({"amounts": {}, "exchanges": {}}, f)
+reset_outputs()
+cur = index()["current"]
+backtest(note="unpicked", code="# unpicked\n")
+check(index()["current"] == cur + 1 and PNL.exists() and not STATE.exists(),
+      "not in the 下單設定, no BLAVE_MODE → backtest: mints, renders pnl.png, no state.json")
+
+set_amount(0)
+reset_outputs()
+cur = index()["current"]
+backtest(note="picked", code="# unpicked\n")
+check(runner._picked_for_trading(NAME) is True, "amount 0 still counts as picked (key, not > 0)")
+check(index()["current"] == cur and STATE.exists() and not PNL.exists(),
+      "in the 下單設定 (amount 0), no BLAVE_MODE → live and quiet: state.json, no mint, no pnl.png")
+
+reset_outputs()
+backtest(note="escape", code="# escape\n", env_mode="backtest")
+check(index()["current"] == cur + 1 and PNL.exists() and not STATE.exists(),
+      "BLAVE_MODE=backtest escape hatch on a picked strategy → backtest, not quiet")
+
+set_amount(500)
+reset_outputs()
+cur = index()["current"]
+os.chdir(WS / "strategies")   # amounts read cwd-relative → empty → fail-open
+try:
+    backtest(note="elsewhere", code="# elsewhere\n")
+    check(runner._picked_for_trading(NAME) is False
+          and index()["current"] == cur + 1 and not STATE.exists(),
+          "cwd outside the workspace root → backtest, never a live tick, never a raise")
+except Exception as e:
+    check(False, f"cwd outside the workspace root must not raise (got {type(e).__name__}: {e})")
+os.chdir(WS)
 
 print("FAILED" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

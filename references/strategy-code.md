@@ -13,6 +13,7 @@ CRITICAL: Every Type A strategy MUST be based on `strategies/TEMPLATE_A.py`. Cop
    - `fetch_data(hdrs)` — fetch kline, call `_add_indicators` with module params
    - `compute_signals(df)` — vectorized signal logic, returns pd.Series
 4. Run: `python3 strategies/[strategy_name]/strategy.py`
+   - **Already in the order settings?** If the strategy is a key of `amounts` in `manager/portfolio_config.json` (an amount of 0 still counts), run `BLAVE_MODE=backtest python3 strategies/[strategy_name]/strategy.py` instead — without it the run is a quiet live tick: no version minted, no chart (`references/deployment.md` › *Live vs Backtest*).
    - **Long runs:** a large universe (Type C with 100+ symbols, cold cache) can take 10+ minutes. Run it in the foreground with an explicit long `timeout` on the Bash tool (up to 30 min) and report the stats when it finishes. Before re-running an existing strategy, delete its stale `stats.json` first (`rm -f strategies/<name>/stats.json`) — the runner overwrites it only at the end, so an old file would otherwise be mistaken for the new result. That is the ONLY moment deleting `stats.json` is allowed: immediately before a re-run you then execute in the same turn. `stats.json` is the web workspace's report — the 回測數據 and 進出場紀錄 tabs and the 下單設定 › 選擇策略 picker all read it — so never end your turn with a strategy missing its `stats.json`, and never delete one as "cleanup": if you delete it (or decide the last run's result shouldn't stand), you must run a backtest that regenerates a `stats.json` matching the current `strategy.py` before ending the turn. (Removing an entire strategy directory at the user's request is a different operation, unaffected by this rule.) If that regenerating run fails or the user interrupts, do not fabricate a `stats.json` and do not iterate past the brakes to force one — stop and tell the user the strategy is currently left without `stats.json` (its workspace tabs will be empty until the next successful run); honest failure reporting wins over this invariant. If a run does get moved to the background anyway, wait in the foreground with `until [ -f strategies/<name>/stats.json ]; do sleep 10; done` (same long timeout); never a background loop you then stop. Never end the turn while it is running: the turn's exit kills the process and the user paid for nothing. Warn the user up front when a run will take minutes — the notice / poll / elapsed-time procedure is `references/deployment.md` › *Long jobs — progress reporting*.
 
 ## Naming & description
@@ -48,7 +49,7 @@ The flow is FORK → EDIT → DEPLOY → SWITCH:
    new strategy while the original keeps trading untouched.
 2. Fork it to a new strategy under its own `STRATEGY_NAME` (same conventions
    as `references/marketplace.md` › *Forking a strategy*: own
-   `DISPLAY_NAME`/`DESCRIPTION`, `MODE = "backtest"`). Edit the fork.
+   `DISPLAY_NAME`/`DESCRIPTION`). Edit the fork.
 3. Backtest the fork; show the result next to the original's current stats.
    Not satisfied → iterate (Iteration Brakes apply as usual) or discard the
    fork; the live strategy was never touched.
@@ -130,7 +131,10 @@ Do these four, in this order:
 3. Set `VERSION_NOTE = "還原自 v{n}"` (the user's language) in that file.
 4. Re-run the backtest. That run is what produces the new version and rewrites
    `stats.json` — without it the workspace would show the old version's code beside the
-   previous run's numbers, which is worse than not restoring at all.
+   previous run's numbers, which is worse than not restoring at all. A restorable strategy
+   can still be in the order settings at amount 0 (`restore` only refuses `> 0`) — then the
+   run must be `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py`, or it is a
+   quiet live tick that mints nothing (`references/deployment.md` › *Live vs Backtest*).
 
 ## Signal Contract
 
@@ -416,7 +420,7 @@ def compute_signals(df):
 ## Key Rules
 
 - `END = None` always fetches to today — `fetch_kline` handles this automatically
-- Default is always `MODE = "backtest"` — only switch to `"live"` after user confirms
+- There is no mode constant in a strategy file — a new strategy is a draft until the user confirms; whether it trades is decided by its schedule and order settings (`references/deployment.md`), never by a flag in the code
 - NEVER truncate or cap arrays (no `[:N]` slicing)
 - Execution timing: signal fires at Close[t] → executes at Open[t+1] by default (next-bar open); use `exec_at_close` for this-bar close execution (futures settlement only)
 
@@ -482,7 +486,7 @@ CRITICAL: Every Type C strategy MUST be based on `strategies/TEMPLATE_C.py`. Cop
    - `fetch_data(hdrs)` — fetches close/open/signal data for all UNIVERSE symbols; returns a **tuple**
    - helpers (e.g. `_compute_weights`, `_rebalance_mask`) — signal → weight conversion
    - `compute_signals(data)` — unpacks tuple, builds weight matrix, returns `(weights.values, price_df)`
-4. Run: `python3 strategies/[strategy_name]/strategy.py`
+4. Run: `python3 strategies/[strategy_name]/strategy.py` — `BLAVE_MODE=backtest python3 …` when the strategy is already in the order settings (`amounts` key in `manager/portfolio_config.json`, amount 0 included); same rule as Type A step 4.
 
 ### Interface Contract
 

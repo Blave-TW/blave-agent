@@ -241,7 +241,7 @@ DF = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close,
 sig = pd.Series(np.nan, index=idx)
 sig.iloc[-1] = 1.0
 os.environ["BLAVE_MODE"] = "live"
-e = raises(lambda: runner.run({"MODE": "backtest", "STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
+e = raises(lambda: runner.run({"STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
                                "INTERVAL": "1h", "FEE": 0.0005, "MCPT": False},
                               lambda h: DF, lambda d: sig, send_telegram_fn=sender))
 os.environ.pop("BLAVE_MODE", None)

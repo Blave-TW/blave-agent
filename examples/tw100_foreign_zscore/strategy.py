@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODE          = "backtest"
 STRATEGY_NAME = "tw100_foreign_zscore"
 INTERVAL      = "1d"
 START         = "2010-01-01"

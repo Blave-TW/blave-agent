@@ -15,7 +15,7 @@ Strategy execution MUST be scheduled as a system cron job (Linux) or Scheduled T
 - If the user explicitly asks you to run the strategy on every tick via agent cron, explain the credit cost first and offer the system-cron path; only proceed if they still insist.
 
 ## Type A (Signal Strategy) — mandatory flow:
-1. Write the strategy with `MODE = "backtest"` and run a backtest — show the results
+1. Write the strategy and run a backtest — show the results. There is no mode constant to set: a run is a backtest until the strategy is in the 下單設定 (`amounts` in `portfolio_config.json`) or the schedule sets `BLAVE_MODE=live`
 2. Ask the user to confirm deployment: "Do you want to deploy this live? Reply YES to confirm."
 3. After YES, ask the following **in a single message** before writing any code:
    - **Spot or futures/perpetual?** This determines which order API and position sizing logic to use.
@@ -23,12 +23,12 @@ Strategy execution MUST be scheduled as a system cron job (Linux) or Scheduled T
 4. After all three are answered, confirm portfolio_config.json settings with the user:
    - **`amounts`**: per-strategy dollar allocation — "what this strategy trades with at position=1", in account currency (contracts for Capital Taiwan futures). `amounts` is canonical (see `lib/portfolio.py` `strategy_amounts`); ask the user for this strategy's amount directly. Legacy configs without `amounts` fall back to `account_value × leverage × weight` — do not create new deployments on the legacy fields.
    - Show current values from portfolio_config.json if it exists, and ask the user to confirm or update them before proceeding.
-5. Only after all confirmations: change `MODE = "live"`, update portfolio_config.json, and set up the schedule (cron on Linux, Scheduled Tasks on Windows — see OS check in `AGENTS.md`):
+5. Only after all confirmations: update portfolio_config.json (the strategy's key in `amounts` is what makes a run live — no file edit), and set up the schedule (cron on Linux, Scheduled Tasks on Windows — see OS check in `AGENTS.md`):
    a. Add the strategy schedule entry (see Cron Job Format / Scheduled Task Format below)
    b. **Add the healthcheck schedule if not already present** and register the deployment — see Deployment Healthcheck below
 
 Never assume the user wants to go live just because they described a strategy or said "let's try it."
-Even if the user says "deploy it" or "run it", always confirm with one message before touching the schedule or MODE = "live".
+Even if the user says "deploy it" or "run it", always confirm with one message before touching the schedule or `portfolio_config.json`.
 
 **Before any deployment (Type A, B or C), check for a scoped halt:** `ls state/HALT_<name>` plus any slug the strategy's code checks (`halted_for("…")`, `STRATEGY_SLUG`). One existing means the strategy was stopped (`manager/stop_strategy.py`) or its own breaker fired — tell the user the file's reason and time, and clear it (`lib.guard.clear_halt_for`) only with their explicit consent; code that checks it will never open a position while it exists.
 Once deployed live, send a confirmation message with: strategy name, schedule, amount, and one line noting the healthcheck will alert them if the strategy stops running.
@@ -112,7 +112,7 @@ Formatting lives in `lib/progress.py` (`Progress(tag, total, unit)` + `tick()`);
 ```
 BLAVE_AGENT_HOME=/opt/blave-agent    # or /root/.openclaw — whichever this machine's layout resolved to, see above
 */30 * * * * cd $BLAVE_AGENT_HOME/workspace && python3 manager/healthcheck.py
-* * * * * cd $BLAVE_AGENT_HOME/workspace && python3 manager/wait_for_bar.py <name>
+* * * * * cd $BLAVE_AGENT_HOME/workspace && BLAVE_MODE=live python3 manager/wait_for_bar.py <name>
 ```
 (check `crontab -l` first — if a `BLAVE_AGENT_HOME=` line already exists, don't add a second one and don't assume it's wrong; only replace it if you've confirmed the existing value doesn't match this machine's actual layout.)
 
@@ -122,17 +122,17 @@ BLAVE_AGENT_HOME=/opt/blave-agent    # or /root/.openclaw — whichever this mac
 
 Strategy execution cron (Type A/C):
 ```
-* * * * * cd $BLAVE_AGENT_HOME/workspace && python3 manager/wait_for_bar.py <name>
+* * * * * cd $BLAVE_AGENT_HOME/workspace && BLAVE_MODE=live python3 manager/wait_for_bar.py <name>
 ```
 
-Never write `python3 strategies/<name>/strategy.py` or `bash manager/run_strategy.sh <name>` directly in a cron entry for a Type A/C strategy — always go through `manager/wait_for_bar.py <name>`, and the `cd &&` prefix is still not optional.
+Never write `python3 strategies/<name>/strategy.py` or `bash manager/run_strategy.sh <name>` directly in a cron entry for a Type A/C strategy — always go through `manager/wait_for_bar.py <name>`, and the `cd &&` prefix is still not optional. `BLAVE_MODE=live` is part of every schedule entry (Linux and Windows, all types): it is what tells the runner this is a signal tick — no version minted, no MCPT, no chart pushed — independent of what the 下單設定 says at that moment.
 
 ## Scheduled Task Format (Windows)
 Same entry, via `schtasks`. The `cd /d` is mandatory for the same reason as Linux's `cd &&` — all scripts use relative paths. Resolve `%BLAVE_AGENT_HOME%` the same way as Linux (defaults to `C:\openclaw` if unset) rather than assuming a fixed path.
 
 Strategy execution task, Type A/C (every minute — `wait_for_bar.py` itself decides when the real run fires; note this calls `wait_for_bar.py`, not `strategy.py` directly — the old direct-`strategy.py` form had no crash protection on Windows at all, since `run_strategy.sh` never ran there either):
 ```
-schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_HOME%\workspace && python manager\wait_for_bar.py <name>" /sc minute /mo 1 /ru SYSTEM /f
+schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_HOME%\workspace && set BLAVE_MODE=live&& python manager\wait_for_bar.py <name>" /sc minute /mo 1 /ru SYSTEM /f
 ```
 
 ## Type B (Everything else) — mandatory flow:
@@ -142,15 +142,15 @@ Type B strategies (screener, grid, arbitrage, one-off execution, alert bot) have
 3. After YES, ask **Spot or futures/perpetual?** and **Align positions?** (same as Type A step 3) before writing any code.
 4. Only after all confirmations: agree a run cadence with the user (there's no bar to wait for, so this is just "how often"), set up the schedule, and add the healthcheck schedule if not already present:
 ```
-<M> * * * * cd $BLAVE_AGENT_HOME/workspace && bash manager/run_strategy.sh <name>
+<M> * * * * cd $BLAVE_AGENT_HOME/workspace && BLAVE_MODE=live bash manager/run_strategy.sh <name>
 ```
 ```
-schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_HOME%\workspace && python strategies\<name>\strategy.py" /sc minute /mo <N> /ru SYSTEM /f
+schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_HOME%\workspace && set BLAVE_MODE=live&& python strategies\<name>\strategy.py" /sc minute /mo <N> /ru SYSTEM /f
 ```
 (Linux still goes through `run_strategy.sh` for the same crash-safety reason as always; Windows Type B has no equivalent wrapper yet — same pre-existing gap this whole mechanism didn't set out to fix — so a Type B crash on Windows is silent. Flag this to the user if they're deploying Type B live on Windows.)
 
 ## Live vs Backtest
-Live trading uses the SAME script as backtest — only `MODE` changes. Keep `START` the same long date range as backtest so the website report shows full history. `END` is always `None` (backtest and live alike) — a pinned date caps the data fetch and freezes a deployed strategy's signals at that date, and quality_check flags it as CRITICAL.
+Live trading uses the SAME script as backtest — only the schedule and the 下單設定 change. The runner never reads a `MODE` constant (new strategies have none; a leftover line in an old file is ignored): a run is live when `BLAVE_MODE=live` is set (every schedule entry sets it) or, without it, when the strategy is a key of `amounts` in `portfolio_config.json` — an amount of 0 still counts. So `python3 strategies/<name>/strategy.py` on a deployed strategy is a quiet live tick, not a backtest; to get the backtest chart anyway, run `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py`. Keep `START` the same long date range as backtest so the website report shows full history. `END` is always `None` (backtest and live alike) — a pinned date caps the data fetch and freezes a deployed strategy's signals at that date, and quality_check flags it as CRITICAL.
 
 ## Live Position (Every Tick)
 Every live tick sets the position to `signals.ffill().fillna(0).iloc[-1]` — the same position the backtest holds on the last bar — including the first tick, when there is no `state.json` yet. A tick that skipped bars (slow tick, fetch backoff) therefore converges on the next tick instead of losing an entry/exit that landed on a skipped bar. Consequence: if a live strategy's parameters are edited in place, its position follows the new parameters on the very next tick — which is why live edits still go through fork-and-switch (`references/strategy-code.md` › *Editing a live strategy*).

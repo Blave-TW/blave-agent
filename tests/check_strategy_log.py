@@ -50,7 +50,7 @@ SIGNALS = pd.Series(0.0, index=idx)
 
 reset_root_logging()
 logging.warning("telegram notify unavailable — log-only sender")  # what make_sender() does unpaired
-config = {"MODE": "backtest", "STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
+config = {"STRATEGY_NAME": NAME, "SYMBOL": "BTCUSDT",
           "INTERVAL": "1h", "START": "2024-01-01", "FEE": 0.0005, "MCPT": False}
 os.environ["BLAVE_MODE"] = "live"
 try:

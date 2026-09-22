@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODE          = "backtest"
 STRATEGY_NAME = "[strategy_name]"
 DISPLAY_NAME  = "[human-facing name, user's language — what it trades + does]"
 DESCRIPTION   = "[one plain sentence]"

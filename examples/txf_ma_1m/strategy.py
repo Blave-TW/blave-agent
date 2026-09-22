@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODE          = "backtest"        # "backtest" | "live"
 STRATEGY_NAME = "txf_ma_1m"
 SYMBOL        = "TXF"
 INTERVAL      = "1m"

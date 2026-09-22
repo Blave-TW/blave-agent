@@ -49,7 +49,7 @@ Source = this workspace for local → cloud; the cloud workspace for cloud → l
 
 1. `<name>` matches `[A-Za-z0-9_-]{1,64}` and `strategies/<name>/strategy.py` exists. Otherwise stop and say so.
 2. It is backtested **as it is now**: `stats.json` exists and is not older than `strategy.py`. If not, stop and offer to run the backtest first — do not run it on your own (Iteration Brakes).
-3. It is Type A or Type C with `MODE = "backtest"`. A Type B script or a `MODE = "live"` file is not handed off: say why and stop (for a live one, offer to fork it first — `references/strategy-code.md` › *Editing a live strategy* — and hand off the fork).
+3. It is Type A or Type C and not trading on the SOURCE: `<name>` is not a key of `amounts` in `manager/portfolio_config.json` and not in `state/deployments.json` (`No such file` clears a check). A Type B script or a trading strategy is not handed off: say why and stop (for a trading one, offer to fork it first — `references/strategy-code.md` › *Editing a live strategy* — and hand off the fork). The file's `MODE` constant, if any, means nothing here.
 4. It is portable: outside its own folder it imports only official `lib.*` modules and reads no files. A custom `lib/` module, a custom `allocators/<x>/`, or a data file elsewhere does not travel — name what is missing and stop.
 5. Read the six source numbers from `stats.json` now with a one-line `python3 -c` — `Total Return [%]`, `Sharpe Ratio`, `Max Drawdown [%]`, `Trades`, `start`, `end`. Never retype them from memory.
 
@@ -78,14 +78,13 @@ Compare the local `VERSION` with the remote one. If they differ, say so before g
 
 `ssh <SSH_OPTS> blaveagent@<host> test -d "/opt/blave-agent/workspace/strategies/<name>"` — exit 1 = not there → 4b.
 
-There → is it **trading** on the DESTINATION? Four read-only checks; any one hit = trading:
+There → is it **trading** on the DESTINATION? Three read-only checks; any one hit = trading:
 
-1. funded — prints a number > 0: `ssh <SSH_OPTS> blaveagent@<host> cat "/opt/blave-agent/workspace/manager/portfolio_config.json" | python3 -c "print(__import__('json').load(__import__('sys').stdin).get('amounts', {}).get('<name>', 0))"`
+1. picked in the 下單設定 — prints `True` (the key, whatever its amount — an amount of 0 is still scheduled): `ssh <SSH_OPTS> blaveagent@<host> cat "/opt/blave-agent/workspace/manager/portfolio_config.json" | python3 -c "print('<name>' in __import__('json').load(__import__('sys').stdin).get('amounts', {}))"`
 2. registered — prints `True`: `ssh <SSH_OPTS> blaveagent@<host> cat "/opt/blave-agent/workspace/state/deployments.json" | python3 -c "print('<name>' in __import__('json').load(__import__('sys').stdin))"`
 3. scheduled — prints a count > 0: `ssh <SSH_OPTS> blaveagent@<host> crontab -l | grep -c -w -- "<name>"`
-4. the destination's own file is live — the printed line says `"live"`: `ssh <SSH_OPTS> blaveagent@<host> grep -m1 "'^MODE'" "/opt/blave-agent/workspace/strategies/<name>/strategy.py"`
 
-For 1–2, `No such file` means that check is clear; `no crontab for …` clears 3. Any other error → stop and report it; do not assume "not trading".
+For 1–2, `No such file` means that check is clear; `no crontab for …` clears 3. Any other error → stop and report it; do not assume "not trading". Do not grep the file for a `MODE` constant — the runner no longer reads it, new strategies do not carry one, and a leftover line says nothing about the destination.
 
 - **Trading → stop and ask; never overwrite.** Say the destination copy is trading, that replacing live code in place is what `references/strategy-code.md` › *Editing a live strategy* forbids, and offer fork-and-switch: hand it off under a new name, backtest it there, and let the user move the funding on the 自動下單 page. Wait for their choice. No message, button or typed, counts as consent here.
 - Not trading → its code is replaced entirely and re-backtested (its version history stays). The two fixed button messages above come from the app's confirm dialog, which has already told the user this — do not ask again. For any other wording, ask once unless the user's own message already says to overwrite: "`<name>` already exists on `<destination>`. Its code will be replaced entirely by this version and re-backtested. Go ahead?"

@@ -9,7 +9,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MODE          = "backtest"
 STRATEGY_NAME = "twstock_momentum"
 INTERVAL      = "1d"
 START         = "2015-01-01"

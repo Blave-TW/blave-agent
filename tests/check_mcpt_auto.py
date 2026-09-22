@@ -45,7 +45,8 @@ def compute(df, fast=10, slow=50):
     return (f > s).astype(float)
 
 def cfg(name, **extra):
-    c = {"MODE": "backtest", "STRATEGY_NAME": name, "SYMBOL": "SYN", "INTERVAL": "1h",
+    # no MODE key on purpose: the runner infers the mode (BLAVE_MODE, else the 下單設定)
+    c = {"STRATEGY_NAME": name, "SYMBOL": "SYN", "INTERVAL": "1h",
          "START": "2025-01-01", "FEE": 0.0005, "WARMUP": 50}
     c.update(extra); return c
 
@@ -64,6 +65,8 @@ def dist_ok(d, n):
 os.environ.pop("BLAVE_MODE", None)
 R.run(cfg("auto"), fetch, compute)
 st = stats_of("auto")
+check("MODE" not in cfg("auto") and not os.path.exists(os.path.join(tmp, "strategies", "auto", "state.json")),
+      "config 沒有 MODE 常數 → 跑完一次回測不 KeyError、不寫 state.json")
 check(all(k in st for k in R.MCPT_KEYS), f"backtest 寫出三個 MCPT key → {[k for k in R.MCPT_KEYS if k in st]}")
 check(isinstance(st["MCPT p-value"], float) and 0 <= st["MCPT p-value"] <= 1, f"p 值 float ∈ [0,1] → {st.get('MCPT p-value')}")
 check(st["MCPT Permutations"] == R.MCPT_N_DEFAULT == 2000, f"預設 n = MCPT_N_DEFAULT = 2000 → {st.get('MCPT Permutations')}")
@@ -201,7 +204,7 @@ finally:
 before = stats_of("auto")
 os.environ["BLAVE_MODE"] = "live"
 try:
-    R.run({**cfg("auto"), "MODE": "live"}, fetch, compute)
+    R.run(cfg("auto"), fetch, compute)
 finally:
     os.environ.pop("BLAVE_MODE", None)
 after = stats_of("auto")

@@ -602,6 +602,28 @@ def _drift_flag(config, mode):
                               'at': int(time.time())})
 
 
+def _picked_for_trading(name):
+    """Is this strategy in the 下單設定 — i.e. would the platform be scheduling it live?
+
+    Membership is the KEY in lib.portfolio.strategy_amounts(), not amount > 0: the web's
+    picker schedules on pick (「選到就跑」, runtime/command_listener._cmd_amounts), so an
+    amount of 0 is still a strategy whose signals feed the table. Same source as the
+    restore() gate in lib/strategy.py:164-177, which is why the read stays CWD-relative
+    (that gate detects a divergent cwd through it — do not make the path absolute): from
+    anywhere but the workspace root the amounts read empty and this returns False, which is
+    the fail-open direction — a hand-run becomes a backtest, never a live tick.
+
+    .claude/docs/watchboard.md §3.3a widens the scheduled set to "in the 下單設定 OR on the
+    watchboard"; once that lands, amounts alone no longer equal "scheduled" and this check
+    has to read the watch markers too."""
+    try:
+        from lib.portfolio import strategy_amounts   # lazy: heavy module; only a run WITHOUT BLAVE_MODE gets here
+        return name in strategy_amounts()
+    except Exception as e:
+        logging.warning("mode inference fell back to backtest: %s", e)
+        return False
+
+
 def _send_best_effort(send_fn, arg):
     """Everything this run produced is already on disk when it notifies, so a
     rejected send (Telegram 429 / "chat not found") must not fail the run: a
@@ -630,15 +652,20 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         price_df: MultiIndex DataFrame with 'close' and optionally 'open' as top-level keys
         exec_at_close: optional bool array (n,) in original space
     """
-    # BLAVE_MODE lets the platform's signal-refresh cron run a strategy live
-    # without editing the user's MODE constant (the file may still say
-    # "backtest" while its signals feed the 下單設定 table). A cron-driven
-    # run is also QUIET: no chart re-render, no chart/report pushed into the
-    # chat or Telegram — an hourly pnl.png would spam the conversation and
-    # re-upload images every report; the tick's job is the signal, nothing else.
-    quiet         = bool(os.environ.get('BLAVE_MODE'))
-    mode          = os.environ.get('BLAVE_MODE') or config['MODE']
-    strategy_name = config['STRATEGY_NAME']
+    # The file's MODE constant is not read: the platform's schedulers set
+    # BLAVE_MODE=live, and a run without it is live exactly when the strategy is
+    # in the 下單設定 (see _picked_for_trading) — so a hand-run of a deployed
+    # strategy cannot mint a version, re-run MCPT or announce 「回測完成」 over
+    # the live one. BLAVE_MODE=backtest is the escape hatch when the user wants
+    # that backtest anyway. A live run is also QUIET: no chart re-render, no
+    # chart/report pushed into the chat or Telegram — an hourly pnl.png would
+    # spam the conversation and re-upload images every report; the tick's job
+    # is the signal, nothing else.
+    _env_mode      = os.environ.get('BLAVE_MODE') or None   # '' counts as unset
+    _inferred_live = not _env_mode and _picked_for_trading(config['STRATEGY_NAME'])
+    mode           = _env_mode or ('live' if _inferred_live else 'backtest')
+    quiet          = (_env_mode not in (None, 'backtest')) or _inferred_live
+    strategy_name  = config['STRATEGY_NAME']
     fee           = config.get('FEE', 0.0005)
     interval      = config.get('INTERVAL', '1h')
 
