@@ -703,11 +703,17 @@ class Daemon:
         cl._LOCAL_HOST = self.sup
         # Real-money Binance opens for THIS process only. Every `credentials`
         # command that reaches it is HMAC-signed by the app, and the app's main
-        # process sends Binance keys only after its permission check passed
-        # (shell/binance_link.js: a key with withdrawals enabled is never
-        # stored). command_listener.LOCAL_OPEN_VENUES itself stays paper-only,
-        # so the chat bind (lib/venue.bind, running in the agent's process,
-        # where no such check exists) still cannot bind a real exchange.
+        # process runs its own permission check first for the UX
+        # (shell/binance_link.js) — the one that decides is the writer's,
+        # command_listener._binance_bind_check, which runs in every mode.
+        # command_listener.LOCAL_OPEN_VENUES itself stays paper-only, so the
+        # chat bind (lib/venue.bind, running in the agent's process) still
+        # cannot bind a real exchange on the desktop — that is a product rule
+        # (a key pasted in chat stays in the chat history), not a gap in the
+        # permission check. That writer's rate-limit cooldown is module state
+        # and this daemon imports it, so a desktop user pressing 連接 again is
+        # held off the wire by the same window the cloud path uses — on top of
+        # binance_link.js's own lock in the app process.
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINANCE"})
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set

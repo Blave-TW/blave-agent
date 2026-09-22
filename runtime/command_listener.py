@@ -108,10 +108,11 @@ _LOCAL_ENV_PASS = ("PATH", "HOME", "LANG", "USER", "SHELL", "TMPDIR",
                    "BLAVE_AGENT_STATE", "BLAVE_KLINE_SOURCE", "PYTHONPYCACHEPREFIX")
 
 
-# Venues a local-mode machine may bind. Paper only until the real-key step
-# ships its permission check (withdrawals must be off) — widen it HERE, the one
-# gate both bind paths (the signed `credentials` command and the chat bind,
-# lib/venue.bind → _cmd_credentials) run through.
+# Venues a local-mode machine may bind. Paper only for now — widen it HERE, the
+# one gate both bind paths (the signed `credentials` command and the chat bind,
+# lib/venue.bind → _cmd_credentials) run through. Binance's permission check
+# (_binance_bind_check) is no longer what this is waiting for: it runs in every
+# mode now, cloud included.
 LOCAL_OPEN_VENUES = frozenset({"PAPER"})
 
 
@@ -119,52 +120,151 @@ def _local_mode():
     return os.environ.get("BLAVE_AGENT_LOCAL") == "1"
 
 
+class _BinanceCheckFailed(Exception):
+    """An apiRestrictions call that produced no verdict, tagged with the code
+    token shell/binance_check.js uses for the same situation (NETWORK,
+    RATE_LIMITED, IP_OR_KEY, BAD_KEY_FORMAT, BAD_SECRET, CLOCK, UNKNOWN) so the
+    app can map a machine-side refusal with the table it already has."""
+
+    def __init__(self, code, detail):
+        super().__init__(detail)
+        self.code = code
+
+
+# Every field must come back a boolean or there is no verdict — "absent means
+# false" is conservative for the trading flags and the exact opposite for
+# withdrawals (shell/binance_check.js:49, the same four fields).
+_BINANCE_PERMISSION_FIELDS = ("enableWithdrawals", "enableSpotAndMarginTrading",
+                              "enableFutures", "ipRestrict")
+# Cooldown after Binance rate-limits us, monotonic deadline (audit S-2). The
+# caller has no back-off of its own: the web command endpoint has no rate limit
+# and a user whose connect attempt failed presses the button again — a 429
+# retried becomes a 418, which bans THIS MACHINE's IP from Binance and takes
+# the user's own strategy orders down with it. So the refusal has to cost
+# nothing on the wire. Same windows as the desktop app's own lock
+# (shell/binance_link.js:19 BACKOFF_MS). Plain module state, no lock: commands
+# are dispatched ONE AT A TIME (the poll loop's BLPOP, local_daemon's file
+# sweep) — whoever makes dispatch concurrent has to revisit this, or two
+# parallel binds both read a stale deadline and both go out.
+# SCOPE: this process. It covers the button (web command listener and the
+# desktop daemon are both long-lived), NOT the chat bind — lib/venue.py
+# exec_module()s a fresh copy of this file inside a per-turn child process, so
+# that path always starts at 0.0 while sharing the same outbound IP. Left that
+# way on purpose: a chat bind costs the user a whole turn to repeat, so it
+# cannot produce the rapid retries this window exists for, and persisting the
+# deadline to disk would need wall clock plus clamping for clock jumps — a
+# stale file or a bad clock would then lock someone out of binding entirely,
+# which is fail-closed in the wrong direction for a path nobody can spam.
+_BINANCE_RL_BACKOFF_S = {429: 60, 418: 300}
+_binance_rl_until = 0.0
+
+
 def _binance_restrictions(api_key, secret):
-    """GET /sapi/v1/account/apiRestrictions → the permission dict. Raises on
-    anything else. Mainnet only, hard-coded: the host decides which keys this
-    verdict is about, so it is never a caller's choice."""
+    """GET /sapi/v1/account/apiRestrictions → the permission dict. Raises
+    _BinanceCheckFailed on anything else. Mainnet only, hard-coded: the host
+    decides which keys this verdict is about, so it is never a caller's choice.
+    -2015 (IP_OR_KEY) is told apart from the rest on purpose — on a cloud
+    machine the user's whitelist is the machine's IP, so "your whitelist does
+    not match this machine" is the single most likely refusal. A RATE_LIMITED
+    answer also arms a module-level cooldown (_binance_rl_until) that every
+    later call refuses inside, without a request."""
     import hashlib
     import hmac
+    global _binance_rl_until
+    if time.monotonic() < _binance_rl_until:
+        # inside the cooldown: refuse without touching the network. No seconds
+        # in the message on purpose — this string is shown to the user as is,
+        # and "try again in N seconds" is a promise the exact N would have to
+        # earn; the UI says "in a few minutes" instead (audit M-1).
+        raise _BinanceCheckFailed("RATE_LIMITED", "backing off from Binance's rate limit")
     q = f"timestamp={int(time.time() * 1000)}&recvWindow=10000"
     sig = hmac.new(secret.encode(), q.encode(), hashlib.sha256).hexdigest()
     req = urllib.request.Request(
         f"https://api.binance.com/sapi/v1/account/apiRestrictions?{q}&signature={sig}",
         headers={"X-MBX-APIKEY": api_key})
-    with urllib.request.urlopen(req, timeout=10) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # 429/418 = rate limited / IP banned: the caller must back off, not
+        # retry — a 429 retried turns into a 418 that also blocks the user's
+        # order flow from this machine (binance_check.js:32)
+        if e.code in (429, 418):
+            _binance_rl_until = time.monotonic() + _BINANCE_RL_BACKOFF_S[e.code]
+            raise _BinanceCheckFailed("RATE_LIMITED", f"HTTPError {e.code}")
+        try:
+            code = int((json.loads(e.read().decode("utf-8")) or {}).get("code"))
+        except Exception:  # noqa: BLE001 — an HTML error page has no code
+            code = None
+        raise _BinanceCheckFailed(
+            {-2015: "IP_OR_KEY", -2014: "BAD_KEY_FORMAT",
+             -1022: "BAD_SECRET", -1021: "CLOCK"}.get(code, "UNKNOWN"),
+            f"HTTPError {e.code}" + (f" binance {code}" if code is not None else ""))
+    except OSError as e:
+        # URLError's parent: a read timeout after connect raises socket.timeout
+        # (an OSError) rather than URLError, and "check your connection" is a
+        # better thing to tell the user than "unknown"
+        raise _BinanceCheckFailed("NETWORK", f"{type(e).__name__}")
 
 
-def _local_real_key_gate(venue_id, env):
-    """Desktop only, and the ONE place it is enforced: a real exchange key is
-    written to .env only after the exchange itself says withdrawals are off.
-    The app's connect screen runs the same check first (shell/binance_check.js)
-    to explain a refusal to the user; this one is here because _cmd_credentials
-    has more than one caller, and the next one must not be able to skip it.
-    Fail-closed: no answer, or an answer that is not the permission object, is a
-    refusal. Messages never carry a key value."""
-    if venue_id != "BINANCE":
-        raise ValueError(f"no permission check exists for {venue_id.lower()} — not saved")
+def _binance_bind_check(env):
+    """The ONE gate a Binance key passes before it reaches .env: the exchange
+    itself must say withdrawals are off. Runs in every deployment mode —
+    desktop, cloud, and therefore the web 連接交易所 flow too, since that lands
+    on _cmd_credentials like everything else (Wei 2026-09-22). The check has to
+    happen HERE rather than on the connecting device because a cloud machine's
+    key is whitelisted to the MACHINE's IP: the same request from the user's
+    computer comes back -2015 and could never decide anything.
+
+    Returns the verdict dict on a pass (see _cmd_credentials for the shape);
+    raises ValueError on a refusal, with the message starting `<CODE>: ` —
+    WITHDRAW_ENABLED, TRADING_DISABLED, INCOMPLETE_PAIR, or a
+    _BinanceCheckFailed code. Fail-closed all the way: no answer, or an answer
+    that is not the permission object, is a refusal, never a silent write.
+    There is deliberately no parameter that skips any of this (binance_check.js
+    audit S3: a flag the caller can pass IS the off switch for the check).
+    Messages never carry a key value."""
     got = {k.upper(): v for k, v in env.items()}
     key, secret = got.get("BINANCE_API_KEY"), got.get("BINANCE_SECRET_KEY")
     if not key or not secret:
-        raise ValueError("a Binance bind needs the API key and the secret together — not saved")
+        # half a pair cannot be verified, and the sibling already in .env is
+        # not a stand-in: it is exactly what a two-step write would slip past
+        raise ValueError("INCOMPLETE_PAIR: 綁定 Binance 要 API key 與 secret 一起給,沒有儲存 "
+                         "(a Binance bind needs the API key and the secret together "
+                         "— not saved)")
     try:
         r = _binance_restrictions(key, secret)
+    except _BinanceCheckFailed as e:
+        raise ValueError(f"{e.code}: could not verify the key's permissions with "
+                         f"Binance ({e}) — not saved")
     except Exception as e:  # urllib raises half a dozen types; none may pass
-        raise ValueError(f"could not verify the key's permissions with Binance "
-                         f"({type(e).__name__}) — not saved")
+        raise ValueError(f"UNKNOWN: could not verify the key's permissions with "
+                         f"Binance ({type(e).__name__}) — not saved")
     if not isinstance(r, dict) or any(
-            not isinstance(r.get(f), bool)
-            for f in ("enableWithdrawals", "enableSpotAndMarginTrading", "enableFutures")):
-        raise ValueError("Binance's permission answer could not be read — not saved")
+            not isinstance(r.get(f), bool) for f in _BINANCE_PERMISSION_FIELDS):
+        raise ValueError("UNKNOWN: Binance's permission answer could not be read "
+                         "— not saved")
     if r["enableWithdrawals"] is not False:
-        raise ValueError("這把金鑰的提領權限是開著的,沒有儲存 "
+        raise ValueError("WITHDRAW_ENABLED: 這把金鑰的提領權限是開著的,沒有儲存 "
                          "(withdrawals are enabled on this key — not saved)")
     # spot OR futures: lib/order_binance places both (MARKET="spot" strategies),
     # and reading the account needs neither — same rule as the app's screen
     if not (r["enableSpotAndMarginTrading"] or r["enableFutures"]):
-        raise ValueError("這把金鑰沒有開交易權限(現貨與合約都沒開),沒有儲存 "
+        raise ValueError("TRADING_DISABLED: 這把金鑰沒有開交易權限(現貨與合約都沒開),沒有儲存 "
                          "(neither spot nor futures trading is enabled on this key — not saved)")
+    # no whitelist = advise, don't block (Wei): the caller reports it, the bind
+    # goes through — same verdict split as binance_check.js:63
+    return {"checked": True, "code": "OK" if r["ipRestrict"] else "NO_IP_RESTRICT",
+            "ipRestrict": r["ipRestrict"], "spot": r["enableSpotAndMarginTrading"],
+            "futures": r["enableFutures"]}
+
+
+def _local_real_key_gate(venue_id):
+    """Desktop only: a venue whose keys nobody can check does not get written
+    on the user's own computer, however LOCAL_OPEN_VENUES is widened. Binance
+    is not routed here — _binance_bind_check gates it in every mode."""
+    if venue_id != "BINANCE":
+        raise ValueError(f"no permission check exists for {venue_id.lower()} — not saved")
 
 
 def _local_child_env(**extra):
@@ -555,6 +655,29 @@ def _cmd_credentials(args):
     Also the chat-bind path: blave-agent's lib/venue.py loads this module
     from <base>/current and calls _in_workspace(_cmd_credentials, {"env": …})
     and reads _venue_cred_ids over .env — keep those names and shapes stable.
+
+    A Binance payload is checked against the exchange first
+    (_binance_bind_check) — in EVERY mode, so the web 連接交易所 flow and the
+    desktop connect screen both go through it, since all of them end here
+    (Wei 2026-09-22). Two consequences for the web path, which previously
+    wrote whatever it was handed: a key with withdrawals enabled is now
+    refused, and a bind fails when Binance cannot be reached from the machine
+    (fail-closed — the user retries). Everything that is not Binance (paper,
+    OKX, Gate.io, Bybit, BingX, the TW brokers, data-source keys) is untouched:
+    no call, same behaviour as before.
+
+    Ack shape (`_send_ack`). Success: `result` = {"credentials": N, "binance":
+    {"checked": true, "code": "OK"|"NO_IP_RESTRICT", "ipRestrict", "spot",
+    "futures"} | null} — `binance` is null when the payload was not a Binance
+    bind, and a runtime that predates this returns the STRING "credentials=N"
+    instead, which is how a caller tells "not checked here" from "checked and
+    clean" (the app labels an unchecked bind honestly rather than claiming a
+    verdict it never got). `ipRestrict` is reported, never enforced: a key with
+    no whitelist binds, the caller only warns. Refusal: `ok:false` and `error`
+    = "ValueError: <CODE>: <text>", CODE being WITHDRAW_ENABLED,
+    TRADING_DISABLED, INCOMPLETE_PAIR, or one of binance_check.js's
+    inconclusive codes (NETWORK, RATE_LIMITED, IP_OR_KEY, BAD_KEY_FORMAT,
+    BAD_SECRET, CLOCK, UNKNOWN) — nothing was written in any of those cases.
     """
     env = args.get("env")
     if not isinstance(env, dict) or not env:
@@ -586,8 +709,13 @@ def _cmd_credentials(args):
     if _local_mode() and writing - LOCAL_OPEN_VENUES:
         raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
     if _local_mode():
-        for vid in sorted(writing - {"PAPER"}):
-            _local_real_key_gate(vid, env)  # raises = nothing written
+        for vid in sorted(writing - {"PAPER", "BINANCE"}):
+            _local_real_key_gate(vid)  # raises = nothing written
+    # Binance permission gate, every mode. Last thing before the write and
+    # nothing has been read or mutated yet, so a refusal leaves the machine
+    # exactly as it was — no half-written .env, no eviction of the venue the
+    # user is currently trading on, no manifest, no rebind halt.
+    binance = _binance_bind_check(env) if "BINANCE" in writing else None
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -673,7 +801,8 @@ def _cmd_credentials(args):
             _sync_strategy_crons(set(amounts))
     except (OSError, ValueError, AttributeError):
         pass
-    return f"credentials={len(env)}"  # count only — never the keys or values
+    # count only — never the keys or values
+    return {"credentials": len(env), "binance": binance}
 
 
 # ── strategy signal-refresh scheduling(選到就跑,2026-08-03 拍板)────────────

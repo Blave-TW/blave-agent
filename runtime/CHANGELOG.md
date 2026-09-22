@@ -19,9 +19,27 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   **既有 `asset_specs` 不刷新**(`_cmd_amounts` 只在首次撥款且無 spec 時寫):升級前已寫入、沒有 `margin` 的舊 spec 在 paper 只能平不能進,
   要進場得取消勾選再重新撥款(或手動補 `margin`)。
 
+- Binance 金鑰的提領權限閘門擴到**全模式**(原本只有電腦版):`_cmd_credentials` 在寫 `.env` 之前一律用這次要寫的
+  key 向 Binance 查 `apiRestrictions`(`_binance_bind_check`)——提領開著、現貨與合約都沒開、半套 key、查不到 / 看不懂
+  一律不寫(fail-closed)。查證必須由**機器自己**做:雲端機的白名單是機器的 IP,同一個請求從用戶電腦發只會拿到 -2015。
+  **web 的連接交易所流程也會走到**(同一個處理函式,Wei 2026-09-22 已知並同意):雲端機從此也擋提領開著的 key,
+  Binance 連不上時綁定會失敗要重試。`ipRestrict` 只回報不強制(沒設白名單照樣綁,由呼叫端提醒)。
+  Binance 以外(paper、OKX、Gate.io、Bybit、BingX、台灣券商、資料來源金鑰)完全不變,不發任何請求。
+  **ack 形狀改了**:成功回 `{"credentials": N, "binance": {checked, code, ipRestrict, spot, futures} | null}`
+  (舊 runtime 回字串 `"credentials=N"`,呼叫端據此分辨「沒查過」與「查過且乾淨」);被拒是
+  `ok:false` + `error="ValueError: <CODE>: …"`,CODE 用 `shell/binance_check.js` 同一套代號
+  (WITHDRAW_ENABLED / TRADING_DISABLED / INCOMPLETE_PAIR / IP_OR_KEY / BAD_KEY_FORMAT / BAD_SECRET /
+  CLOCK / RATE_LIMITED / NETWORK / UNKNOWN)。
+  被 Binance 限速(429/418)會**上鎖**(`_binance_rl_until`,429 鎖 60 秒、418 鎖 5 分鐘,與
+  `shell/binance_link.js` 同一組窗),窗內直接拒絕、**完全不發請求**:上層沒有任何退讓
+  (web 的 command endpoint 沒有 rate limit,用戶失敗就再按一次),而 429 被重試會升級成 418
+  = 這台機器的 IP 被 Binance 封,連用戶自己策略的下單一起死。
+  窗是**行程內**的:web / 桌面那條(長駐行程)有效,聊天貼 key 那條(`lib/venue.py` 每輪重載模組、跑在子行程)沒有——
+  刻意如此,聊天綁定每重試一次要多一輪對話,產生不了這個窗要擋的連點。閘門:`tests/check_credentials_withdraw_gate.py`。
 - 電腦版:本機真錢金鑰的權限閘門下沉到 `.env` 的唯一寫入點(`command_listener._cmd_credentials` 的本機分支 →
   `_local_real_key_gate`):寫入前向 Binance 查 `apiRestrictions`,提領開著、現貨與合約都沒開、查不到或看不懂 → 不寫(fail-closed)。
-  `LOCAL_OPEN_VENUES` 預設仍只有 paper;Binance 只在 `local_daemon` 自己的行程裡打開,聊天綁定那條路打不開真錢。雲端行為不變。
+  `LOCAL_OPEN_VENUES` 預設仍只有 paper;Binance 只在 `local_daemon` 自己的行程裡打開,聊天綁定那條路打不開真錢。
+  (雲端見上面那條:同一道 Binance 檢查後來擴到全模式;留在本機的只剩「沒有檢查器的交易所一律不寫」。)
 - 電腦版:`agent_turn.py` 新增 `--mcp-config <路徑>`——外殼替這一輪準備的單次 MCP 設定檔(只有 `blave` 一個 server)。**只在 LocalSink 認**,機隊帶了也不理;
   只收 workspace 以外的真檔;交給 SDK 的是路徑字串(dict 會讓 SDK 把 Bearer 放上 argv);`strict_mcp_config` 仍為 True(用戶全域的 MCP 照舊一個都不載)。
   掛了才在 system prompt 多一段 `mcp_rule`;沒掛一個字都不變。外殼那邊這個功能預設關。

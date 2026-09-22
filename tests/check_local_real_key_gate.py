@@ -28,6 +28,14 @@ ENV = {"BINANCE_API_KEY": KEY, "BINANCE_SECRET_KEY": SECRET}
 ENV_PATH = os.path.join(WS, ".env")
 GOOD = {"ipRestrict": True, "enableWithdrawals": False,
         "enableSpotAndMarginTrading": True, "enableFutures": True}
+# an eviction clears the old venue's routing and re-syncs the schedules; with
+# no config on this fake machine the first logs a FileNotFoundError every time
+# (noise that hides a real one) and the second would shell out to the DEV BOX's
+# real crontab. Routing/eviction itself is covered by check_venue_bind.py and
+# check_credentials_withdraw_gate.py.
+with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
+    f.write("{}")
+cl._sync_strategy_crons = lambda names: None
 
 
 def check(cond, msg):
@@ -122,11 +130,22 @@ except ValueError as e:
     check("連接交易所" in str(e) and not loaded and KEY not in str(e),
           "lib.venue.bind refuses a real venue on the desktop, runtime never touched")
 
-# 7. cloud unchanged: the gate is local-only
+# 7. the cloud box runs the SAME Binance check (2026-09-22 — it used to write
+# whatever it was handed; the web connect flow lands here too). Only the
+# local-only parts above are local: the paper-only switch and the
+# no-checker-no-bind rule. Full verdict coverage: check_credentials_withdraw_gate.py
 os.environ.pop("BLAVE_AGENT_LOCAL")
+os.remove(ENV_PATH)
 calls.clear()
 answer(dict(GOOD, enableWithdrawals=True))
-check(refused() is None and not calls, "cloud box: no gate, same behaviour as before")
+msg = refused()
+check(msg is not None and msg.startswith("WITHDRAW_ENABLED:") and len(calls) == 1
+      and not os.path.exists(ENV_PATH),
+      "cloud box: a withdrawal-enabled key is refused there too")
+calls.clear()
+answer(GOOD)
+check(refused() is None and calls == [(KEY, SECRET)] and os.path.exists(ENV_PATH),
+      "cloud box: a clean key binds")
 try:
     venue.bind("binance", dict(ENV))
     check(bool(loaded), "cloud box: chat bind still goes through the runtime")

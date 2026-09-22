@@ -201,7 +201,7 @@ try:
 
     a = send("credentials", {"env": {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper",
                                      "PAPER_BOUND_TS": str(int(time.time()))}})
-    check(a.get("ok") and a.get("result") == "credentials=3"
+    check(a.get("ok") and a.get("result") == {"credentials": 3, "binance": None}
           and set(a) == {"id", "cmd", "ok", "result", "ts"}, f"credentials(paper) acked: {a}")
     check(json.load(open(os.path.join(WS, "manager", "credentials.ui.json")))["ids"] == ["paper"],
           "bind manifest = [paper]")
