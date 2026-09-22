@@ -8,6 +8,33 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版 Codex 引擎掛 `blave` MCP**:`codex_engine.mcp_server()` 判掛不掛,`agent_turn` 算一次、同一個值交給
+  `codex_engine.run(mcp_url=)` 與 `_codex_prompt`(`mcp_rule` 圍籬接上;`--viewing-env=cloud` 的提示段 Codex 也照真的有沒有掛)。
+  接入碼只走環境變數 `BLAVE_MCP_TOKEN`(`bearer_token_env_var`),argv 只有 url 與變數名;不掛就把兩個變數拔掉再 spawn。
+  **接入碼不進 agent 的 shell**:Codex 預設把整份 env 傳給 agent 跑的指令(0.150+ `ignore_default_excludes` 預設 true),
+  掛上時加 `-c shell_environment_policy.filters.BLAVE_MCP_TOKEN="exclude"` 只拔這一個(`BLAVE_WEB_REPORT_TOKEN` 聊天圖鏡射要留著);
+  0.155.x 的 `shell_snapshot`(stable、預設開)會把 policy 整個繞過(實測 `inherit="none"` 都漏),所以同時帶
+  `-c features.shell_snapshot=false`——**掛 MCP 的 Codex 回合每條指令多約 150 ms**;另一條路 `shell_snapshot_v2`(0.155 開發中、預設關,
+  用戶可開;會不會照 policy 未確立)也一併 `-c features.shell_snapshot_v2=false`。版本下限 0.146.0(`filters` 從 #34590 起);
+  另外先跑 `codex -c features.shell_snapshot=false features list` 確認真的關掉(managed requirements 釘住會無聲蓋過 `-c`),
+  關不掉、撞名(`mcp_servers.blave` 已存在)、用戶 config 用舊寫法 `exclude`/`include_only` 陣列(會被我們的 `filters` 頂掉)
+  → 這輪不掛(stderr 一行、回合照跑)。受管層在 `-c` 之上(`/etc/codex/managed_config.toml` 40、macOS MDM
+  `com.openai.codex` `config_toml_base64` 50,那裡的舊寫法陣列會反過來頂掉我們的 `filters`)→ 兩層任一碰
+  `shell_environment_policy`、或讀到但解析不了,也不掛。已接受的殘留:同 uid 以 `ps -E <codex pid>` 讀得到行程 env
+  (與 Claude 路徑 0600 設定檔同 uid 可讀對等)。`mcp_tool_call` 收據名改成 `mcp__<server>__<tool>`,`_tool_where` 才標得出雲端那步。
+  實機:codex 0.146.0 / 0.155.0-alpha.9.2 / 0.155.1 讓 agent 跑 `env | grep BLAVE_` 皆看不到碼。閘門:`tests/check_codex_engine.py`
+  第 6 節、`tests/check_shell_mcp_code.js`。
+
+- **電腦版 A′(操作對象隨視角走)runtime 那半**:`agent_turn.py` 認 `--viewing-env`(只在電腦版外殼的雲端視角
+  送 `cloud`;不設 choices,怪值與非 LocalSink 當沒送)→ prompt 多一段「這句做在雲端主機、上面的策略/頁面是
+  雲端那一份」;有掛 `blave` MCP 講「先用它取得連線,再照 cloud-handoff.md 做(含 NEVER 列表)」;這輪沒掛
+  (含 Codex 引擎)時改講「連不上雲端、不拿本機同名那支頂替,不用 ssh/scp/sftp/rsync、不用本機找到的金鑰/憑證/SSH
+  設定連線」,對齊 `mcp_rule` / cloud-handoff.md #31。沒送時 prompt 逐字不變。tool chunk(running 與 done)加 `where`:
+  `mcp__blave__*` = `cloud`;Bash 照 `|`、`;`、換行切段(不切 `&&`),剝掉 `env`/`VAR=`/`sudo`/`command`/`exec`/
+  `nohup`/`timeout` 包裝後任一段是 ssh/scp/sftp、或 rsync 帶 `[user@]host:path` 參數 = `cloud`,其餘 `local`(純加法)。
+  **出貨順序 runtime 先於 shell**:`parse_args()` 遇未知旗標 exit 2,外殼先送 `--viewing-env` 會讓雲端視角每輪都死。
+  閘門:`tests/check_viewing_env.py`、`tests/check_shell_viewing.js`。
+
 - **全部平倉單飛鎖**(真錢路徑):兩顆鈕永遠可按 → `close_all` 本來就會被重送,而 `_cmd_close_all` 每一筆都
   `Popen` 一支 detached `manager/flatten.py`,全無互斥。第二支不是無害重播——**群益的平倉是
   `sNewClose=2`「auto 新倉/平倉」**,而它的持倉來自 `capital_worker` 快照(可舊到 300 秒),所以第二支讀到

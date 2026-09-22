@@ -27,8 +27,10 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // ── 1. 傳輸層 ──
   const touched = [];
   const evCalls = [], sendCalls = [];
+  const stCalls = []; let stReply = { code: "OK", strategy: { name: "a", displayName: "Alpha", description: "", stats: { Trades: 3 }, code: "x = 1" } };
   const host = { cloudStatus: async () => cloudSt(okc("running", { strategies: [{ name: "a", display_name: "Alpha", has_backtest: true, symbol: "BTCUSDT", updated_at: 5 }, { name: "" }, null, { nope: 1 }] })),
     cloudEvents: async (q) => { evCalls.push(q); return evReply; },
+    cloudStrategy: async (n) => { stCalls.push(n); return stReply; },
     cloudSend: async (...a) => { sendCalls.push(a); return { ok: true, result: {}, requestId: "rid" + "0".repeat(13) }; } };
   let evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
   ENV_API.forEach((k) => { host[k] = (...a) => { touched.push(k); return Promise.resolve({ ok: true, from: "local", a }); }; });
@@ -51,7 +53,10 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const st = await C.tradeStatus(), list = await C.listStrategies(), one = await C.loadStrategy("a"), eq = await C.tradeEquity({ days: 30 }), ev = await C.tradeEvents({ days: 30 });
   ok("雲端:讀的那幾支也沒有碰到這台電腦的 api(不把本機的數字畫在雲端那一頁)", touched.length === 0);
   ok("雲端:狀態讀 cloudStatus;清單來自同一份狀態,壞的列濾掉、形狀同本機 listStrategies", st.cloud.code === "OK" && list.length === 1 && list[0].name === "a" && list[0].displayName === "Alpha" && list[0].hasBacktest === true && list[0].symbol === "BTCUSDT" && list[0].remote === true && list[0].mtime === 5);
-  ok("雲端:還沒做的端點回空的(單支策略 / 權益曲線)", one === null && JSON.stringify(eq) === '{"curve":[]}');
+  ok("雲端:單支策略走主行程的 cloudStrategy(帶名字),OK 就原樣往上交(形狀同本機 loadStrategy);權益曲線的端點還沒做,回空的", JSON.stringify(stCalls) === '["a"]' && one === stReply.strategy && one.stats.Trades === 3 && JSON.stringify(eq) === '{"curve":[]}');
+  { const bads = [null, undefined, { code: "UNREACH", strategy: null }, { code: "OK", strategy: null }, { code: "OK" }, {}];
+    const got = []; for (const b of bads) { stReply = b; got.push(await C.loadStrategy("a")); }
+    ok("雲端:單支策略讀不到 / 雲端沒有這一份 → null(報告頁沒有「讀不到」這一態,呼叫端收掉選取),不炸", got.every((r) => r === null)); }
   ok("雲端:事件清單打主行程的 cloudEvents(帶著 days),原樣往上交", JSON.stringify(evCalls) === '[{"days":30}]' && ev.code === "OK" && JSON.stringify(ev.events) === JSON.stringify(evReply.events));
   // 讀不到 ≠ 沒有事件:壞回應、主行程拒絕、拿到的不是陣列,一律 UNREACH(畫面照這個 code 說自己讀不到)
   { const bads = [null, undefined, { code: "UNREACH", events: [] }, { code: "OK", events: "nope" }, { events: [{ ts: 1, type: "halt" }] }, []];
@@ -69,8 +74,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("這台電腦:宿主拋出來的讀取錯誤原樣往上拋(讓畫面畫成讀不到),不在這一層吞掉", rejected); }
   evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
   const cloudHalf = noComments(env).slice(noComments(env).indexOf("let last = null;"), noComments(env).indexOf("function envCloudList("));
-  // 雲端那份 api 碰得到的主行程 api 就這三支:兩支讀 + 一支寫。多一支就是多一條雲端視角碰得到的路
-  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudEvents / cloudSend", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudEvents,host.cloudSend");
+  // 雲端那份 api 碰得到的主行程 api 就這四支:三支讀 + 一支寫。多一支就是多一條雲端視角碰得到的路
+  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudStrategy / cloudEvents / cloudSend", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudStrategy,host.cloudEvents,host.cloudSend");
   const L = envApi("local", host); await L.tradeSend("halt", {}); await L.tradeStatus();
   ok("這台電腦:原樣轉給主行程", touched.join() === "tradeSend,tradeStatus" && L.env === "local" && C.env === "cloud");
   ok("兩份 api 介面相同(自動下單頁換一個來源就能畫)", ENV_API.every((k) => typeof C[k] === "function" && typeof L[k] === "function"));
@@ -346,8 +351,11 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   { const ob = fn("trPaintOnboard"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
     ok("雲端 noaccount:不畫停用的「連接交易所」(整支函式沒有 is-ro / aria-disabled / cx.connect 給雲端),主鈕是描邊的「前往工作頁」、外開瀏覽器",
       !/is-ro|aria-disabled/.test(ob) && /const cloud = TR\.env === "cloud"/.test(ob) && /if \(cloud\) \{ const g = trEl\("button", "btn-out", t\("plan\.openWs"\)\);[^\n]*window\.blave\.openExternal\(planWebUrl\(\)\)/.test(ob));
-    ok("雲端 noaccount:說明換成雲端專屬那一句(這台電腦仍是 tr.onboard);那一句要講「只能看」與「到網頁的工作頁連」",
-      /t\(cloud \? "tr\.onboard\.cloud" : "tr\.onboard"\)/.test(ob) && /"tr\.onboard\.cloud": "[^"]*只能看[^"]*雲端工作頁/.test(S) && /"tr\.onboard\.cloud": "[^"]*can only view the cloud[^"]*cloud workspace on the web/.test(S));
+    // 批次 ② §6 / §8.4:那一句只講「還沒接交易所」+「這台電腦連的不會帶過來」,出口是下面那顆「前往工作頁」;不再寫「只能看」(啟動 / 暫停按得動了)
+    ok("雲端 noaccount:說明換成雲端專屬那兩句(這台電腦仍是 tr.onboard);不再講「只能看」",
+      /cloud \? t\("tr\.onboard\.cloud"\) \+ \(LANG === "zh" \? "" : " "\) \+ t\("tr\.cloud\.onboardExtra"\) : t\("tr\.onboard"\)/.test(ob)
+      && /"tr\.onboard\.cloud": "下單金額是從交易所的淨值算出來的，這台雲端主機還沒接交易所。"/.test(S) && /"tr\.onboard\.cloud": "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet\."/.test(S)
+      && /"tr\.cloud\.onboardExtra": "[^"]*不會帶過來/.test(S) && /"tr\.cloud\.onboardExtra": "[^"]*doesn’t carry over/.test(S) && !/"tr\.onboard\.cloud": "[^"]*(只能看|can only view)/.test(S));
     ok("這台電腦 noaccount 不變:填色的「連接交易所」直接開連接框", /else \{ const b = trEl\("button", "btn-fill", t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"; b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\); ob\.appendChild\(b\); \}/.test(ob));
     // 批次 ②:整頁級的「只能看」退場(啟動 / 暫停按得動之後那一句就是假話);#tr-ro-note 這個槽留著給停機態的 .verdict 用
     ok("整頁級的唯讀說明不再畫;tr.ro.note / tr.ro.noteEmpty 都沒有人叫",
@@ -389,6 +397,58 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // ── 側欄列尾 ──
   ok("列尾狀態字:有投入金額的才講;下單中 / 已停;主機沒在下單就不講", envStratWord("a", cloudSt(okc("running"))) === "side.cloud.st.trading" && envStratWord("b", cloudSt(okc("running"))) === null && envStratWord("zz", cloudSt(okc("running"))) === null
     && envStratWord("a", cloudSt(okc("running"), rep({ halt: { halted: true } }))) === "side.cloud.st.halted" && envStratWord("a", cloudSt(okc("stopped"), rep(), false)) === null && envStratWord("a", null) === null);
+
+  /* ── A′:同一個 agent,操作對象隨視角走(spec-desktop-local-and-cloud §6;inventory-desktop-agent-on-cloud §4)──
+     輸入框上方的「操作對象」列與你每則話下的 .wtag 已依 Wei 實機意見拿掉;留下 ③ 切視角的 .sysline 與 ④ 動作列每列的 .wtag(事實)。 */
+  ok("① 輸入框上方「操作對象」那列整列拿掉(DOM / 程式 / 樣式 / 只給它的 key);雲端視角 placeholder 仍換成 chat.ph.cloud",
+    !/chat-tgt|envTgtKey/.test(html + code + fs.readFileSync(path.join(R, "trade.css"), "utf8"))
+    && !/chat\.tgt\.(label|cloudNone|cloudSignedOut|cloudStarting|cloudStopped|cut1)\b/.test(html + code + app + fs.readFileSync(path.join(R, "strings.js"), "utf8"))
+    && /const phKey = cloud \? "chat\.ph\.cloud" : "ws\.placeholder";/.test(fn("envPaint"))
+    && /\$\("ta"\)\.dataset\.i18nPh = phKey; \$\("ta"\)\.placeholder = t\(phKey\);/.test(fn("envPaint")));
+  { const appFn = (name) => { const i = app.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 app.js 的 " + name); let d = 0, j = app.indexOf("{", i); for (let k = j; k < app.length; k++) { if (app[k] === "{") d++; else if (app[k] === "}" && --d === 0) return app.slice(i, k + 1); } throw new Error("no " + name); };
+    eval(appFn("stepWhere"));
+    // ④ 事實只認結構化訊號:runtime 帶的 where 優先;沒帶就只看工具名稱是不是 `blave` MCP 的;Bash 經 ssh 由 runtime 判(summary 優先回路徑 token,這裡比對會標錯邊)
+    ok("④ stepWhere:where 優先;mcp__blave__* = 雲端;其餘(含 Bash 的 ssh 受詞、summary 裡的字)一律這台電腦、不比對 summary",
+      stepWhere({ tool: "Bash", where: "cloud" }) === "cloud" && stepWhere({ tool: "mcp__blave__get_ssh_access", where: "local" }) === "local"
+      && stepWhere({ tool: "mcp__blave__get_ssh_access" }) === "cloud" && stepWhere({ tool: "mcp__blave__list_strategies", summary: "" }) === "cloud"
+      && stepWhere({ tool: "Bash", summary: "ssh blaveagent@1.2.3.4" }) === "local" && stepWhere({ tool: "Bash", summary: "lib/runner.py" }) === "local"
+      && stepWhere({ tool: "Read", summary: "雲端主機 cloud" }) === "local" && stepWhere({ tool: "mcp__other__x" }) === "local" && stepWhere({ where: "x" }) === "local" && stepWhere(null) === "local" && !/summary/.test(appFn("stepWhere").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")));
+    ok("④ 動作列每一列在記號與動詞之間插 .wtag;你的那則下面不再掛 .wtag(.to 整個拿掉);.wtag 走 data-i18n",
+      /li\.append\(mark, whereTag\(stepWhere\(c\)\), verb, obj, time\);/.test(app) && (app.match(/whereTag\(/g) || []).length === 2
+      && !/className = "to"|\.msg\.you \.to\b/.test(app + fs.readFileSync(path.join(R, "app.css"), "utf8"))
+      && /s\.dataset\.i18n = env === "cloud" \? "chat\.tgt\.cloud" : "env\.local"; s\.textContent = t\(s\.dataset\.i18n\);/.test(appFn("whereTag")));
+    // 雲端來的字串會進這幾支(報告頁首、雲端清單點一支、分頁、.wtag):函式體內一律 textContent。app.js 別處有合法的 innerHTML,所以逐支切出來查
+    ["rpPaintHead", "rpCloudSelect", "rpRepaint", "rpShowTab", "whereTag", "stepWhere"].forEach((n) => ok(`${n} 函式體內沒有 innerHTML / insertAdjacentHTML / outerHTML`, !/innerHTML|insertAdjacentHTML|outerHTML/.test(appFn(n))));
+    ok("rpCloudSelect 讀不到:講報告那句(tr.cloud.reportUnreach,不是下單狀態的 tr.cloud.unreach)、畫進看得見的紅字槽;槽被佔著才只唸",
+      /t\("tr\.cloud\.reportUnreach"\)/.test(appFn("rpCloudSelect")) && !/tr\.cloud\.unreach/.test(appFn("rpCloudSelect"))
+      && /if \(!C\.alertText\) trAlert\(msg, null, C, "report"\); else srSay\(msg\);/.test(appFn("rpCloudSelect")) && /if \(C\.alertSrc === "report"\) trAlert\("", null, C\);/.test(appFn("rpCloudSelect")));
+    // ③ 系統行:只在對話有內容時插;切到哪一邊都插當前方向那條;連續切(上一條仍是最後一則)只留最新一條。真的把 chatSwitched 跑起來
+    { const kids = [], box = { get children() { return kids; }, appendChild(el) { kids.push(el); el.parentNode = box; }, get lastElementChild() { return kids[kids.length - 1]; } };
+      const doc = { createElement: () => ({ dataset: {}, remove() { const i = kids.indexOf(this); if (i >= 0) kids.splice(i, 1); this.parentNode = null; } }) };
+      const ctx = { $: () => box, document: doc, t: (k) => k, busyPin: () => {}, scrollChat: () => {}, swLine: null };
+      const run = new Function("ctx", "with (ctx) { " + appFn("chatSwitched").replace(/swLine/g, "ctx.swLine") + " return chatSwitched; }")(ctx);
+      const sys = () => kids.filter((k) => k.className === "sysline").map((k) => k.dataset.i18n);
+      run("local", "cloud"); ok("③ 對話沒有內容:不插", kids.length === 0);
+      kids.push({ msg: 1 }); run("local", "cloud"); ok("③ 有內容:切到雲端插一條 chat.sw.cloud", kids.length === 2 && kids[1].dataset.i18n === "chat.sw.cloud" && kids[1].className === "sysline");
+      run("cloud", "local"); ok("③ 切回這台電腦、中間沒有新訊息:上一條換成 chat.sw.local(一定插,只留一條)", kids.length === 2 && kids[0].msg === 1 && kids[1].dataset.i18n === "chat.sw.local" && kids[1].className === "sysline");
+      run("local", "cloud"); run("cloud", "local"); ok("③ 連續切多次只留最新方向那一條", kids.length === 2 && kids[1].dataset.i18n === "chat.sw.local");
+      kids.push({ msg: 2 }); run("local", "cloud"); ok("③ 中間有新訊息:舊的留著、新的一條 chat.sw.cloud", kids.length === 4 && kids[1].dataset.i18n === "chat.sw.local" && kids[2].msg === 2 && kids[3].dataset.i18n === "chat.sw.cloud");
+      run("cloud", "cloud"); ok("③ 同一邊(沒換)不動", kids.length === 4 && sys().join() === "chat.sw.local,chat.sw.cloud"); }
+    ok("③ envSwitch 記下切之前那一邊、切完叫 chatSwitched;換對話時 swLine 歸零", /const prev = ENV\.cur;/.test(fn("envSwitch")) && /chatSwitched\(prev, env\);/.test(fn("envSwitch")) && /liveBubble = null; busy = null; swLine = null;/.test(app));
+    // 雲端中欄畫雲端那支的報告:#rp 共用、資料分兩袋;雲端列是鈕;「送上雲端」在雲端不畫;送出當下 viewing 指的是雲端那一份
+    ok("雲端報告:envShowMain 雲端分支依 RPC 掀 #rp、收 #tr(沒主機可看時兩個都收);這台電腦那一半一個字沒變",
+      /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp;/.test(fn("envShowMain"))
+      && /const L = TR_BAGS\.local, rp = !L\.open && !!\(RP\.name && RP\.data\);/.test(fn("envShowMain")) && !/envShowLocalMain/.test(code + app));
+    ok("雲端報告:側欄雲端列是 button.strat-row(點了 rpCloudSelect)、選中的帶 aria-current;is-static 退場;#tr-nav 在雲端收掉雲端那支",
+      /const wrap = trEl\("div", "strat-wrap cs-row"\), row = trEl\("button", "strat-row"\); row\.type = "button"; row\.dataset\.name = x\.name;/.test(fn("envPaintSide")) && /if \(x\.name === sel\) row\.setAttribute\("aria-current", "true"\);/.test(fn("envPaintSide"))
+      && /row\.addEventListener\("click", \(\) => \{ if \(typeof rpCloudSelect === "function"\) rpCloudSelect\(x\.name\); \}\);/.test(fn("envPaintSide")) && !/is-static/.test(code + html + css + fs.readFileSync(path.join(R, "app.css"), "utf8"))
+      && /else if \(typeof rpCloudSelect === "function"\) await rpCloudSelect\(null\);/.test(fn("trOpen")) && /rpCloudPrune\(C\.list\)/.test(fn("trPoll")));
+    ok("雲端報告:rpCloudSelect 讀的是雲端那袋的 api、讀不到就收掉選取、不退回去讀這台電腦的;rpShowTab / rpRepaint 畫現在這一邊那一袋;本機每輪的 stratRefresh 不拿 RP 蓋雲端報告的頁首",
+      /const C = TR_BAGS\.cloud;/.test(appFn("rpCloudSelect")) && /const d = await C\.api\.loadStrategy\(name\);/.test(appFn("rpCloudSelect")) && /if \(!d\) \{\s*rpCloudSelect\(null\);/.test(appFn("rpCloudSelect")) && !/window\.blave\.loadStrategy/.test(appFn("rpCloudSelect"))
+      && /const B = rpBag\(\);\s*B\.tab = tab;/.test(appFn("rpShowTab")) && /if \(rpBag\(\) === RP && !\$\("rp"\)\.hidden\) \{ rpPaintHead\(RP\);/.test(appFn("stratSelect")) && /rpRepaint\(\);/.test(fn("envSwitch")));
+    const ho = fs.readFileSync(path.join(R, "handoff.js"), "utf8");
+    ok("雲端報告:「送上雲端」鈕在雲端視角不畫(hoPaintUp 自己守,不只靠呼叫端);雲端那袋的頁首把 .act 收掉", /const show = HO\.on && ENV\.cur !== "cloud" && !!RP\.name/.test(ho)
+      && /if \(B === RP\) hoPaintUp\(\);\s*else \{ hoNote\(null\); const act = \$\("rp-act"\); act\.hidden = true; act\.textContent = ""; \}/.test(appFn("rpPaintHead"))); }
 
   process.removeAllListeners("beforeExit");
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

@@ -86,10 +86,9 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 /* ---- 側欄(雲端視角):沒有主機可看時入口與清單整段收起 ---- */
 .strat-head[hidden], .strat-list[hidden], .side-nav[hidden] { display: none; }
 .side-nav .strat-name { flex: 1; min-width: 0; }
-/* 雲端清單(第一刀只當清單看):不是鈕,沒有 hover、沒有手指游標 */
-.strat-row.is-static { display: flex; align-items: center; gap: var(--space-8); cursor: default; }
-.strat-row.is-static:hover { background: transparent; color: inherit; }
-.strat-row.is-static .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 雲端清單:列是鈕(點了中欄畫那支的報告),列尾的「拉回」(.ho-down)絕對定位、常駐,名字給它留位置 */
+#strat-list-cloud .strat-wrap .ho-down { position: absolute; right: var(--space-8); top: 50%; transform: translateY(-50%); }
+#strat-list-cloud .strat-wrap:has(.ho-down) .strat-row { padding-right: var(--space-64); }
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 
@@ -125,11 +124,8 @@ html.ws-sc .side-gate { display: none; }
 #tr-verdict[hidden] { display: none; }
 .verdict { display: flex; align-items: flex-start; gap: var(--space-8); margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); max-width: 64ch; }
 .verdict .fault-mark { margin-top: 10px; }
-/* 聊天輸入框上方:操作對象(只在雲端視角)。輸入框本身不灰——agent 這一版只操作這台電腦 */
-.chat-tgt { margin: 0 0 var(--space-8); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.chat-tgt[hidden] { display: none; }
-.chat-tgt p { margin: 0; }
-.chat-tgt b { font-weight: 600; color: var(--ink); }
+/* 雲端視角輸入框灰底、框線透明——跟頂列同一套語言(灰 = 雲端) */
+html[data-env="cloud"] .chat-input { background: var(--surface-muted); border-color: transparent; }
 
 /* ---- 頁面骨架 ---- */
 .trv { flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }

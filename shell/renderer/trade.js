@@ -240,8 +240,8 @@ function trErrStamp(ts, nowMs) {
    傳輸層:每個視角一份**同介面**的 api,自動下單頁換一個來源就能畫(雲端回的形狀跟本機 status() 相同)。
    雲端的寫入走主行程的 cloudSend(→ cloudcmd.js → api 的指令佇列),**永遠不碰 host.tradeSend**:那支是寫這台電腦的。
    白名單在這裡再擋一層(主行程也擋一次):`credentials` 不在裡面——金鑰不經過這條通用路,只走專用的連接 IPC。
-   權益曲線、單支策略的端點還沒做:回空的,**不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。
-   事件清單走主行程的 cloudEvents(平台的事件流)。 */
+   權益曲線的端點還沒做:回空的,**不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。
+   事件清單走主行程的 cloudEvents(平台的事件流);單支策略的報告走 cloudStrategy(點一支打一次、不落地)。 */
 const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity", "tradeEvents", "tradeSend"];
 /* 雲端送得出去的指令:**只開這一批真的有 UI 在用的那四個**(稽核 S-2)。
    `amounts`(S4)、`credentials_remove` / `retest_accounts` / `restart_reconciler`(S5)各自出貨時再加回來——
@@ -258,7 +258,8 @@ function envApi(env, host) {
     env: "cloud",
     tradeStatus: async () => { last = await host.cloudStatus(); return last; },
     listStrategies: async () => envCloudList(last),
-    loadStrategy: async () => null,
+    // 形狀同主行程 loadStrategy({ name, displayName, description, stats, code });讀不到 / 雲端沒有這一份都是 null——報告頁沒有「讀不到」這一態,由呼叫端收掉選取
+    loadStrategy: async (name) => { const r = await host.cloudStrategy(name); return r && r.code === "OK" && r.strategy ? r.strategy : null; },
     tradeEquity: async () => ({ curve: [] }),
     // 讀不到(401 / 429 / 5xx / 連不上 / 壞回應 / 主行程拒絕)就說讀不到,**不可以**當成「這段期間沒有事件」
     tradeEvents: async (q) => { const ev = await host.cloudEvents(q);
@@ -539,6 +540,7 @@ async function trPoll() {
         // 雲端的清單就在那份狀態裡(沒有 I/O):不管現在看哪一邊都跟著換——登出 / 換帳號之後切過去的第一幀不可以是上一個人的策略名(稽核 N5)
         await trLoadStrategies(C); C.listLoaded = true;
         if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; }   // ui 與 uiErr 是一組,一起清
+        if (typeof rpCloudPrune === "function") rpCloudPrune(C.list);   // 看著的那支被雲端刪了 / 換了帳號:報告收掉、回自動下單頁
       } catch (_) { }
     }
     // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)
@@ -585,7 +587,8 @@ function trDisplay(n) { const x = TR.list.find((y) => y.name === n); return x ? 
 /* ── 開/關視圖 ─────────────────────────────────────────── */
 async function trOpen(tab) {
   const S = TR;
-  if (S.env === "local") await stratSelect(null);   // 中欄一次只有一個視圖:先把策略報告收掉(雲端視角不動這台電腦選中的那支)
+  // 中欄一次只有一個視圖:先把這一邊的策略報告收掉(各邊各自選中的那支互不影響)
+  if (S.env === "local") await stratSelect(null); else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);
   if (S !== TR_BAGS[ENV.cur]) { S.open = true; return; }   // 等的時候切走了:只記下這一邊是開著的,不碰另一邊的畫面
   $("main-empty").hidden = true; $("tr").hidden = false;
   $("tr-nav").setAttribute("aria-current", "page");
@@ -964,8 +967,9 @@ function trPaintOnboard(state) {
   // 「要停就按暫停下單」只在那顆鈕真的能按的時候才講(下單機不在跑時鈕是 disabled,那句就是假話)
   if (state === "unknown") { box.appendChild(trEl("div", "pf-state", TR.env === "cloud" ? t("env.empty.unreach") : t("tr.unknownBody") + (TR.st && TR.st.alive ? t("tr.unknownStop") : ""))); return; }
   const cloud = TR.env === "cloud", ob = trEl("div", "pf-onboard");
-  ob.appendChild(trEl("p", "", t(cloud ? "tr.onboard.cloud" : "tr.onboard")));
-  // 雲端第一刀:連接交易所要到網頁做,所以這一區的主鈕是「前往工作頁」(描邊:外開瀏覽器,不是在這裡動手)。
+  // 雲端:只講「還沒接交易所」+「這台電腦連的不會帶過來」(spec-desktop-cloud-writable §6 / §8.4);出口是下面那顆鈕,句子裡不再寫「只能看」
+  ob.appendChild(trEl("p", "", cloud ? t("tr.onboard.cloud") + (LANG === "zh" ? "" : " ") + t("tr.cloud.onboardExtra") : t("tr.onboard")));
+  // 雲端:連接交易所還是要到網頁做(cxModalOpen 硬擋雲端),所以這一區的主鈕是「前往工作頁」(描邊:外開瀏覽器,不是在這裡動手)。
   // 停用的「連接交易所」不畫——它會佔掉全頁唯一的主鈕位置,真出口反而比假出口弱(雲端能寫的那一批回來時它就原樣回來)
   if (cloud) { const g = trEl("button", "btn-out", t("plan.openWs")); g.type = "button"; g.id = "tr-onboard-ws"; g.addEventListener("click", () => window.blave.openExternal(planWebUrl())); ob.appendChild(g); }
   else { const b = trEl("button", "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect"; b.addEventListener("click", () => cxModalOpen(b)); ob.appendChild(b); }
@@ -1867,14 +1871,17 @@ function envSwitch(env, via) {
   // 焦點在面板裡的輸入框時 trShould 會跳過重畫(打到一半不能被輪詢洗掉)——切視角不是輪詢:先放掉焦點,
   // 不然另一邊的金額表(含輸入框、儲存列)會留在這一邊的標題底下(稽核 N4)
   const ae = document.activeElement; if (ae && ae.tagName === "INPUT" && $("tr").contains(ae)) ae.blur();
+  const prev = ENV.cur;
   ENV.cur = env; TR = TR_BAGS[env]; TR.sig = {}; ENV.sig = {};
   document.documentElement.dataset.env = env;
   if (env === "cloud") { ENV.cloudDirty = true; TR.open = true; }
-  envShowLocalMain();
+  envShowMain();
   trPaint(); trAlertShow();
   if (TR.open && TR.tab && !$("tr-tabs").hidden) trSetTab(TR.tab);   // 分頁列是共用的 DOM:底線與 tabindex 換成這一邊的
-  // 策略報告的圖若是在看雲端時畫的(agent 那一輪剛改了策略),那時容器是藏著的、量不到寬:切回來重畫一次
-  if (env === "local" && !$("rp").hidden && RP.data) { RP.drawn = {}; rpShowTab(RP.data.stats ? RP.tab : "code"); }
+  // 策略報告是共用的 DOM,兩邊各自選中一支:頁首與程式碼換成這一邊的;圖若是在看另一邊時畫的(容器藏著、量不到寬)也重畫一次
+  rpRepaint();
+  // 對話裡插一條「切到 …」系統行(A′ 四層標示的 ③;只在對話有內容時,連續切只留最後一條)
+  chatSwitched(prev, env);
   // 每邊各自的捲動位置(面板是共用的 DOM,剛重畫完)
   const to = $(env === "cloud" ? "strat-list-cloud" : "strat-list"); to.scrollTop = (TR.scroll && TR.scroll.list) || 0;
   if (TR.open && TR.tab && !$("tr-" + TR.tab).hidden) $("tr-" + TR.tab).scrollTop = (TR.scroll && TR.scroll.tab) || 0;
@@ -1886,12 +1893,21 @@ function envSwitch(env, via) {
   else if (via === "link") head(); else $("env-" + env).focus();   // 鍵盤使用者可以馬上切回
   trPollSoon(0);
 }
-// 這台電腦的中欄三個視圖(自動下單 / 策略報告 / welcome)誰該出現;雲端視角時三個都收起來(各自的狀態不動,切回來原樣)
-function envShowLocalMain() {
-  const L = TR_BAGS.local, cloud = ENV.cur === "cloud", rp = !L.open && !!(RP.name && RP.data);
-  $("rp").hidden = cloud || !rp;
-  $("main-empty").hidden = cloud || L.open || rp;
-  if (!cloud) { $("tr").hidden = !L.open; if (L.open) $("tr-nav").setAttribute("aria-current", "page"); else $("tr-nav").removeAttribute("aria-current"); }
+/* 中欄誰該出現(兩邊各自的狀態不動,切回來原樣)。這台電腦:自動下單 / 策略報告 / welcome 三選一。
+   雲端:自動下單 / 雲端那支策略的報告(#rp 是共用的 DOM,資料來自 app.js 的 RPC 那一袋);沒有主機可看(開通頁 #cv-empty 開著)時兩個都收。
+   雲端沒有 welcome——沒選策略就是自動下單頁。 */
+function envShowMain() {
+  const cloud = ENV.cur === "cloud";
+  if (cloud) {
+    const gate = !$("cv-empty").hidden, rp = !gate && typeof RPC !== "undefined" && !!(RPC.name && RPC.data);
+    $("rp").hidden = !rp; $("main-empty").hidden = true; $("tr").hidden = gate || rp;
+    if (rp) $("tr-nav").removeAttribute("aria-current"); else $("tr-nav").setAttribute("aria-current", "page");
+    return;
+  }
+  const L = TR_BAGS.local, rp = !L.open && !!(RP.name && RP.data);
+  $("rp").hidden = !rp;
+  $("main-empty").hidden = L.open || rp;
+  $("tr").hidden = !L.open; if (L.open) $("tr-nav").setAttribute("aria-current", "page"); else $("tr-nav").removeAttribute("aria-current");
 }
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
    每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */
@@ -1911,8 +1927,9 @@ function envPaint() {
   const sg = $("side-gate"), sgKey = ready ? "side.cloud.emptyReady" : "side.cloud.emptyGate";
   if (sg.dataset.i18n !== sgKey) { sg.dataset.i18n = sgKey; sg.textContent = t(sgKey); }
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
-  // 「這一版 agent 還不能操作雲端主機」:送上雲端的功能開著時這句就不成立了,整行不出(規格:輸入框上方不再放說明行);功能關著照舊
-  $("chat-tgt").hidden = !cloud || (typeof HO !== "undefined" && HO.on);
+  // 雲端視角的 placeholder。走 dataset:換語言時 applyStatic 會照 data-i18n-ph 重填
+  const phKey = cloud ? "chat.ph.cloud" : "ws.placeholder";
+  if (ENV.sig.ph !== phKey) { ENV.sig.ph = phKey; $("ta").dataset.i18nPh = phKey; $("ta").placeholder = t(phKey); }
   if (cloud) envPaintSide(kind, C.st);
   const cur = cells[ENV.cur];
   // 視窗標題:{money} 是空的就連同前面的「 · 」一起省略
@@ -1920,8 +1937,8 @@ function envPaint() {
   document.title = money ? t("env.winTitle", { where: envName(ENV.cur), money }) : t("env.winTitle0", { where: envName(ENV.cur) });
   // 中欄
   $("cv-empty").hidden = !gate;
-  if (gate) { $("tr").hidden = true; $("tr-tb-txt").textContent = ""; ENV.sig.tb = null; $("tr-tb-mode").hidden = true; envPaintEmpty(kind, pid); return false; }
-  if (cloud) { TR.open = true; $("tr").hidden = false; $("tr-nav").setAttribute("aria-current", "page"); }
+  if (gate) { envShowMain(); $("tr-tb-txt").textContent = ""; ENV.sig.tb = null; $("tr-tb-mode").hidden = true; envPaintEmpty(kind, pid); return false; }
+  if (cloud) { TR.open = true; envShowMain(); }
   return true;
 }
 const ENV_ICONS = {   // lucide monitor / cloud(寫死的常數,不吃任何外來資料)
@@ -1963,18 +1980,22 @@ function envPaintSide(kind, st) {
   const list = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
   const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();   // 列尾的「拉回」:功能開著、而且雲端看得到現況才畫
   // 側欄**不放任何 handoff 提示**(Wei 看實機後拍板):等著送上來的那條回頭路住在中欄的「準備好了」卡(規格 §2)
-  const sig = LANG + "|" + JSON.stringify([kind, ho, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
+  const sel = typeof RPC !== "undefined" ? RPC.name : null;
+  const sig = LANG + "|" + JSON.stringify([kind, ho, sel, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
-  // 第一刀:只當清單看(單支策略的端點還沒做)——不是鈕、沒有 hover、Tab 不會停
-  const box = $("strat-list-cloud"); box.textContent = ""; box.setAttribute("role", "list");
+  // 點一支 → 中欄畫雲端那一份的報告(app.js 的 rpCloudSelect;資料走主行程的 cloudStrategy)。鈕不能包鈕,「拉回」放在同一個 wrap 裡(同本機清單的刪除鈕)
+  const box = $("strat-list-cloud"); box.textContent = ""; box.removeAttribute("role");
   if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
   list.forEach((x) => {
-    const row = trEl("div", "strat-row is-static"); row.setAttribute("role", "listitem");
+    const wrap = trEl("div", "strat-wrap cs-row"), row = trEl("button", "strat-row"); row.type = "button"; row.dataset.name = x.name;
+    if (x.name === sel) row.setAttribute("aria-current", "true");
     const nm = trEl("span", "strat-name", x.displayName); nm.title = x.name; row.appendChild(nm);
     const w = envStratWord(x.name, st); if (w) row.appendChild(trEl("span", "stx", t(w)));
-    const hb = ho ? hoDownBtn(x.name) : null; if (hb) row.appendChild(hb);
-    box.appendChild(row);
+    row.addEventListener("click", () => { if (typeof rpCloudSelect === "function") rpCloudSelect(x.name); });
+    wrap.appendChild(row);
+    const hb = ho ? hoDownBtn(x.name) : null; if (hb) wrap.appendChild(hb);
+    box.appendChild(wrap);
   });
   if (ho) hoBusy();
 }

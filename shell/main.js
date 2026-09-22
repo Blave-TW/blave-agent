@@ -1084,13 +1084,18 @@ function binanceLink() {
 }
 /* 用戶送出當下畫面上開著什麼(runtime 的 --viewing-*,跟雲端工作頁同一份契約):只用來釐清「這支 / 這裡」指的是誰,
    不是工作指令。值來自 renderer,會進命令列與 prompt:策略名只認沒有控制字元與方括號的短字串(方括號是 runtime 包這段
-   脈絡用的界線),tab / view 只認白名單。tests/check_shell_viewing.js 從原文切出來跑。 */
+   脈絡用的界線),tab / view 只認白名單。tests/check_shell_viewing.js 從原文切出來跑。
+   `--viewing-env=cloud`(A′:操作對象隨視角走):用戶送出時看的是雲端視角 → 這一句要做在雲端主機上,而且
+   --viewing-strategy 指的是**雲端那一份**同名策略,不是這台電腦的。只送 cloud;這台電腦是預設、不送(舊 runtime 的行為
+   逐位元組不變)。**runtime 那半(agent_turn.py 認這個旗標、進 prompt)由另一批接**——它落地之前 argparse 會把這個旗標當
+   未知選項、整輪 exit 2,所以 check_shell_viewing.js 釘著「runtime 認得 --viewing-env」,兩半沒接齊就紅。 */
 function viewingArgs(v) {
   if (!v || typeof v !== "object") return [];
+  const env = v.env === "cloud" ? ["--viewing-env=cloud"] : [];
   const name = typeof v.strategy === "string" && /^[^\u0000-\u001f\u007f\[\]「」\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]{1,200}$/.test(v.strategy) ? v.strategy : null;
   // 一律 --flag=value 單一 argv(同雲端的 runtime/web_bridge.py):分開寫的話,目錄名以 - 開頭的策略會被 argparse 當成旗標,整輪 exit 2
-  if (name) return ["--viewing-strategy=" + name, ...(v.tab === "code" || v.tab === "data" ? ["--viewing-tab=" + v.tab] : [])];
-  return v.view === "portfolio" ? ["--viewing-view=portfolio"] : [];
+  if (name) return ["--viewing-strategy=" + name, ...(v.tab === "code" || v.tab === "data" ? ["--viewing-tab=" + v.tab] : []), ...env];
+  return [...(v.view === "portfolio" ? ["--viewing-view=portfolio"] : []), ...env];
 }
 /* 自動掛上 `blave` MCP(agent 經它拿得到用戶雲端主機的 SSH)+ 畫面上的「送上雲端 / 拉回這台電腦」。
    **2026-09-22 Wei 拍板打開**:三個前置都完成了——sshd 方案 A 已推上全機隊 20 台(憑證只登得進 blaveagent、root 被 Match 擋掉)、
@@ -1144,6 +1149,16 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const useBlave = conn.kind === "blave";
   const acct = plan.proxyToken ? loadToken() : null;
   const dataAccess = syncDataEnv(plan.dataKey);
+  // `blave` MCP:拿得到碼才掛;拿不到(沒主機、端點還沒上線、被限速、連不上)= 這一輪不掛,回合照常。
+  // 兩條引擎都寫同一份單次設定檔(0600、workspace 以外、回合結束就刪),runtime 用 --mcp-config 判「這一輪有沒有掛」。
+  // Claude 經那份檔吃 MCP;Codex 不吃檔——吃 `-c mcp_servers.blave.*`(runtime/codex_engine.py 組)+ 只給 codex 子行程的
+  // 環境變數 BLAVE_MCP_TOKEN,碼連路徑都不上 argv。撞名、版本 < 0.146.0、shell_snapshot 關不掉由
+  // codex_engine 判,不掛就把變數拔掉再 spawn。
+  // 登記(blave-canon output/research/2026-09-22-codex-cli-mcp-support.md §四):Codex 沒有等價 Claude 的
+  // strict_mcp_config + setting_sources=[],用戶全域與 <workspace>/.codex/config.toml 的 MCP 照樣載入——後者 agent 寫得到,
+  // 等於能替自己加掛 MCP server。本案不改變這點,另案處理。
+  let mcpFile = null, mcpMount = null;
+  if (plan.mcp) { mcpMount = await mcpCode().get(); if (mcpMount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount); }
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -1155,6 +1170,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
     // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
     ...(acct ? { BLAVE_PROXY_TOKEN: acct } : {}),
+    // 接入碼只在 Codex 引擎進環境(Claude 走 --mcp-config 的檔)。Codex 預設會把整份環境(含 *TOKEN*)傳給 agent 跑的
+    // shell,codex_engine 掛上時用 filters 只拔這一個、並關掉會繞過 filters 的 shell_snapshot
+    ...(useCodex && mcpFile ? { BLAVE_MCP_TOKEN: mcpMount.accessCode, BLAVE_MCP_URL: mcpMount.url } : {}),
     // Keychain/暫存都認人:少了 USER,claude CLI 會回「Not logged in」(實測 repro-2/3)
     USER: process.env.USER || os.userInfo().username,
     LOGNAME: process.env.LOGNAME || os.userInfo().username,
@@ -1175,10 +1193,6 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     LANG: process.env.LANG || "zh_TW.UTF-8",
     ...PY_ENV,
   };
-  // `blave` MCP:拿得到碼才掛;拿不到(沒主機、端點還沒上線、被限速、連不上)= 這一輪不掛,回合照常。
-  // Codex 先不掛:它沒有單次設定檔,要走 `-c mcp_servers.blave.*` + 環境變數,而那幾個鍵名還沒有對著實際安裝的 codex 驗過——不猜(byo-agent-surfaces 的紀律)。
-  let mcpFile = null;
-  if (plan.mcp && !useCodex) { const mount = await mcpCode().get(); if (mount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mount); }
   let child;
   try { child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
@@ -1348,6 +1362,8 @@ app.whenReady().then(() => {
   // 雲端的事件清單:點擊驅動的另一支(另一個速率桶),不啟動輪詢、不留在主行程、不落地。
   // 回 { code: "OK" | "UNREACH", events }——讀不到與「真的沒有事件」是兩件事,畫面要講得出是哪一種
   handle("cloud-events", (_e, q) => cloudHost().events(q && q.days), { code: "UNREACH", events: [] });
+  // 雲端單支策略的報告(側欄點一支打一次;同事件清單:不留在主行程、不落地)。回 { code: "OK" | "UNREACH", strategy }——OK + null = 雲端現在沒有這一份
+  handle("cloud-strategy", (_e, q) => cloudHost().strategy(q && q.name), { code: "UNREACH", strategy: null });
   /* 雲端(寫入):renderer 只說「送哪個指令」,憑證與 request_id 都在主行程(cloudcmd.js)。
      **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
      金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。

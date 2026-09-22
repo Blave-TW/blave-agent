@@ -90,9 +90,17 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
     t("turnCreds 第三欄 mcp:功能開 + 有登入,不看連的是誰;它開著不會讓帳號 token 進環境", row("claude", true, true, true) === "-DM" && row("codex", true, false, true) === "--M" && row("blave", true, true, true) === "TDM"
       && row("claude", false, false, true) === "---" && row("blave", false, true, true) === "---");
     t("功能關:不管怎樣都不掛(兩種狀態都釘住)", ["claude", "codex", "blave"].every((k) => turnCreds(k, true, true, false).mcp === false && turnCreds(k, true, true, undefined).mcp === false && turnCreds(k, true, true, "1").mcp === false)); }
-  t("接線:旗標進 turnCreds;拿到碼才寫檔;Codex 先不掛(鍵名還沒對著實際安裝的 codex 驗過)", /turnCreds\(conn\.kind, signedIn, signedIn && await dataIncluded\(\), cloudHandoffOn\(\)\)/.test(main)
-    && /if \(plan\.mcp && !useCodex\) \{ const mount = await mcpCode\(\)\.get\(\); if \(mount\) mcpFile = require\("\.\/mcpcode"\)\.writeConfig\(mcpDir\(\), mount\); \}/.test(main));
-  t("argv 上只有路徑(--mcp-config=<檔>);環境變數裡沒有碼", /\.\.\.\(mcpFile \? \["--mcp-config=" \+ mcpFile\] : \[\]\)/.test(main) && !/accessCode/.test(main) && !/BLAVE_MCP/.test(main));
+  t("接線:旗標進 turnCreds;拿到碼才寫檔;兩條引擎都寫(Codex 也靠 --mcp-config 讓 runtime 知道這一輪有掛)", /turnCreds\(conn\.kind, signedIn, signedIn && await dataIncluded\(\), cloudHandoffOn\(\)\)/.test(main)
+    && /if \(plan\.mcp\) \{ mcpMount = await mcpCode\(\)\.get\(\); if \(mcpMount\) mcpFile = require\("\.\/mcpcode"\)\.writeConfig\(mcpDir\(\), mcpMount\); \}/.test(main) && !/!useCodex/.test(main));
+  t("argv 上只有路徑(--mcp-config=<檔>);碼進環境只在 Codex 引擎那一個 spread(Claude 的環境裡沒有),而且是同一顆檔案寫成功才給", /\.\.\.\(mcpFile \? \["--mcp-config=" \+ mcpFile\] : \[\]\)/.test(main)
+    && /\.\.\.\(useCodex && mcpFile \? \{ BLAVE_MCP_TOKEN: mcpMount\.accessCode, BLAVE_MCP_URL: mcpMount\.url \} : \{\}\)/.test(main) && (main.match(/accessCode/g) || []).length === 1 && (main.match(/BLAVE_MCP_TOKEN/g) || []).length === 1);
+  { const ce = fs.readFileSync(path.join(__dirname, "..", "runtime", "codex_engine.py"), "utf8");
+    t("codex_engine:argv 只有 url 與變數名(bearer_token_env_var);碼由 Codex 自己讀環境;不掛就把兩個變數從子行程拔掉", /MCP_TOKEN_ENV = "BLAVE_MCP_TOKEN"/.test(ce) && /mcp_servers\.blave\.url="\{mcp_url\}"/.test(ce) && /mcp_servers\.blave\.bearer_token_env_var="\{MCP_TOKEN_ENV\}"/.test(ce)
+      && /if k not in \(MCP_TOKEN_ENV, "BLAVE_MCP_URL"\)/.test(ce) && !/BLAVE_MCP_TOKEN\)\]/.test(ce));
+    t("codex_engine:版本下限 0.146.0(shell_environment_policy.filters 從 rust-v0.146.0 起);掛上時只拔接入碼+關 shell_snapshot;撞名用 tomllib 查用戶全域、<workspace>/.codex 與 -c 之上的兩個受管層", /_MCP_MIN_VERSION = \(0, 146, 0\)/.test(ce)
+      && /shell_environment_policy\.filters\.\{MCP_TOKEN_ENV\}="exclude"/.test(ce) && /"features\.shell_snapshot=false"/.test(ce) && /"features\.shell_snapshot_v2=false"/.test(ce) && !/["'`]shell_environment_policy\.ignore_default_excludes/.test(ce) && /tomllib\.load/.test(ce)
+      && /\(False, os\.path\.join\(home, "config\.toml"\)\)/.test(ce) && /\(False, os\.path\.join\(cwd, "\.codex", "config\.toml"\)\)/.test(ce)
+      && /"\/etc\/codex\/managed_config\.toml"/.test(ce) && /config_toml_base64/.test(ce) && /"blave" in servers/.test(ce)); }
   t("設定檔在 userData 底下(workspace 以外);close / error / spawn 失敗 / stdin 失敗四條路都刪", /const mcpDir = \(\) => path\.join\(app\.getPath\("userData"\), "mcp"\);/.test(main) && (main.match(/removeConfig\(mcpFile\)/g) || []).length === 4);
   t("登出清記憶體裡的碼;開 app 清掃(只有拿到單一實例鎖的那一份做:第二份 app 不可以刪掉第一份正在跑那一輪的設定檔);打包清單帶 mcpcode.js", /if \(_mcp\) _mcp\.reset\(\);/.test(main) && /if \(app\.hasSingleInstanceLock\(\)\) require\("\.\/mcpcode"\)\.sweep\(mcpDir\(\)\);/.test(main) && /"mcpcode\.js"/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8")));
   t("畫面只拿得到開關(feature-flags),拿不到碼;mcpcode.js 不 log、不 require electron", /handle\("feature-flags", \(\) => \(\{ cloudHandoff: cloudHandoffOn\(\) \}\), \{ cloudHandoff: false \}\);/.test(main)

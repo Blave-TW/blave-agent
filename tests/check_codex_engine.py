@@ -152,9 +152,9 @@ FIXTURE = [
 
 def fake_codex(events, captured):
     async def _run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
-                   model=None, effort=None):
+                   model=None, effort=None, mcp_url=None):
         captured.update(bin=codex_bin, prompt=prompt, cwd=cwd, env=env, model=model,
-                        effort=effort)
+                        effort=effort, mcp_url=mcp_url)
         tr = codex_engine.CodexTranslator(sink, on_tool_start, on_tool_done)
         for event in events:
             tr.feed(event)
@@ -284,5 +284,182 @@ assert "credentials" not in rules["0"].split("Never look")[0], "0 must not claim
 os.environ.pop("BLAVE_DATA_ACCESS")
 at._write_system_prompt_file = _real_write
 codex_engine.run = real_run
+
+# ── 6. `blave` MCP(電腦版 Codex):碼只走環境變數、argv 只有 url 與變數名;撞名 / 舊版 / 沒碼 → 不掛 ──
+import shutil, stat  # noqa: E402
+
+MCP_URL = "https://mcp.blave.org/mcp"
+CODE = "blv_" + "a" * 40
+# 後兩組是 S1:Codex 預設把整份 env 給 agent 的 shell;filters 只拔接入碼,shell_snapshot 不關的話 filters 無效(0.155 實測)
+MCP_FLAGS = ["-c", 'mcp_servers.blave.url="%s"' % MCP_URL,
+             "-c", 'mcp_servers.blave.bearer_token_env_var="BLAVE_MCP_TOKEN"',
+             "-c", 'shell_environment_policy.filters.BLAVE_MCP_TOKEN="exclude"',
+             "-c", "features.shell_snapshot=false", "-c", "features.shell_snapshot_v2=false"]
+assert codex_engine.MCP_TOKEN_ENV == "BLAVE_MCP_TOKEN"
+argv = codex_engine.build_args("/x/codex", "/ws", mcp_url=MCP_URL)
+assert argv == BASE_ARGV[:5] + MCP_FLAGS + BASE_ARGV[5:], argv
+assert "blv_" not in " ".join(argv)
+assert "ignore_default_excludes" not in " ".join(argv), "BLAVE_WEB_REPORT_TOKEN(聊天圖鏡射)要留著"
+assert codex_engine.build_args("/x/codex", "/ws") == BASE_ARGV, "沒掛時 argv 逐字不變"
+
+
+def fake_codex_bin(name, version, pinned=None, has_v2=True):
+    """A `codex` that answers --version and `features list` — each snapshot feature reads off
+    only when asked via -c, unless `pinned` like a managed requirement; v2 reads on otherwise
+    (a user who enabled it); 0.146 prints no v2 line at all (has_v2=False). The probe's env is
+    dumped next to the binary. A turn dumps argv + env + stdin to $FAKE_OUT, then completes."""
+    p = os.path.join(_tmp, name)
+
+    def line(key):
+        if pinned == key:
+            return 'echo "%s stable true"' % key
+        return ('case " $* " in *" features.%s=false "*) echo "%s stable false";; '
+                '*) echo "%s stable true";; esac' % (key, key, key))
+    snap = 'env > "$0.probe_env"; ' + line("shell_snapshot") \
+        + ("; " + line("shell_snapshot_v2") if has_v2 else "")
+    with open(p, "w") as f:
+        f.write("#!/bin/sh\n"
+                'if [ "$1" = "--version" ]; then echo "codex-cli %s"; exit 0; fi\n'
+                'case " $* " in *" features list "*) %s; exit 0;; esac\n'
+                'printf "%%s\\n" "$@" > "$FAKE_OUT/argv"\n'
+                'env > "$FAKE_OUT/env"\n'
+                'cat > "$FAKE_OUT/stdin"\n'
+                "echo '{\"type\":\"thread.started\",\"thread_id\":\"t\"}'\n"
+                "echo '{\"type\":\"item.completed\",\"item\":{\"id\":\"i\",\"type\":\"agent_message\",\"text\":\"ok\"}}'\n"
+                "echo '{\"type\":\"turn.completed\",\"usage\":{}}'\n" % (version, snap))
+    os.chmod(p, os.stat(p).st_mode | stat.S_IXUSR)
+    return p
+
+
+new_codex = fake_codex_bin("codex-new", "0.155.0-alpha.9.2")
+old_codex = fake_codex_bin("codex-old", "0.145.9")
+pinned_codex = fake_codex_bin("codex-pinned", "0.155.1", pinned="shell_snapshot")
+assert codex_engine.codex_version(new_codex) == (0, 155, 0)
+assert codex_engine.codex_version(old_codex) == (0, 145, 9)
+assert codex_engine.codex_version(os.path.join(_tmp, "no-such-codex")) is None
+
+codex_home = os.path.join(_tmp, "codex-home")
+os.makedirs(codex_home)
+ws_codex_cfg = os.path.join(at.WORKSPACE, ".codex", "config.toml")
+home_codex_cfg = os.path.join(codex_home, "config.toml")
+os.makedirs(os.path.dirname(ws_codex_cfg))
+base_env = {"CODEX_HOME": codex_home, "BLAVE_MCP_URL": MCP_URL, "BLAVE_MCP_TOKEN": CODE}
+ms = codex_engine.mcp_server
+codex_engine._MANAGED_CONFIG_PATH = os.path.join(_tmp, "managed_config.toml")  # 不讀本機 /etc
+_real_mdm = codex_engine._mdm_config_toml
+codex_engine._mdm_config_toml = lambda: None
+assert ms(new_codex, at.WORKSPACE, base_env) == MCP_URL
+assert "BLAVE_MCP_TOKEN" not in open(new_codex + ".probe_env").read(), "features list 探測不帶碼"
+assert "CODEX_HOME=" + codex_home in open(new_codex + ".probe_env").read(), "探測拿的是這一輪的 env"
+assert ms(old_codex, at.WORKSPACE, base_env) is None, "< 0.146.0(沒有 filters)不掛"
+assert ms(fake_codex_bin("codex-146", "0.146.0", has_v2=False), at.WORKSPACE, base_env) == MCP_URL, \
+    "0.146.0 是下限;它沒有 shell_snapshot_v2 那一行也要掛"
+assert ms(pinned_codex, at.WORKSPACE, base_env) is None, "shell_snapshot 被釘住關不掉 → 不掛"
+assert ms(fake_codex_bin("codex-pinned-v2", "0.155.1", pinned="shell_snapshot_v2"), at.WORKSPACE,
+          base_env) is None, "shell_snapshot_v2 被釘住 → 不掛"
+assert ms(os.path.join(_tmp, "no-such-codex"), at.WORKSPACE, base_env) is None
+assert ms(new_codex, at.WORKSPACE, {**base_env, "BLAVE_MCP_TOKEN": ""}) is None, "沒碼不掛"
+assert ms(new_codex, at.WORKSPACE, {k: v for k, v in base_env.items() if k != "BLAVE_MCP_URL"}) is None
+assert ms(new_codex, at.WORKSPACE, {**base_env, "BLAVE_MCP_URL": 'https://x/"a'}) is None, "TOML 字串不可注入"
+# 撞名:用戶全域 config.toml、workspace 的 .codex/config.toml,兩種 TOML 寫法都認;別的名字不算撞
+for cfg, body in ((home_codex_cfg, '[mcp_servers.blave]\ncommand = "npx"\n'),
+                  (ws_codex_cfg, '[mcp_servers]\nblave = { command = "npx" }\n'),
+                  (home_codex_cfg, "this is = not toml [\n"),
+                  # 舊寫法陣列會被我們的 filters 整個頂掉(merge.rs displaced_fields)= 用戶自己的過濾無聲失效
+                  (home_codex_cfg, '[shell_environment_policy]\nexclude = ["AWS_*"]\n'),
+                  (ws_codex_cfg, '[shell_environment_policy]\ninclude_only = ["PATH"]\n')):
+    with open(cfg, "w") as f:
+        f.write(body)
+    assert ms(new_codex, at.WORKSPACE, base_env) is None, cfg
+    os.remove(cfg)
+with open(home_codex_cfg, "w") as f:
+    f.write('[mcp_servers.other]\ncommand = "npx"\n')
+assert ms(new_codex, at.WORKSPACE, base_env) == MCP_URL
+os.remove(home_codex_cfg)
+# 受管層在 -c 之上(managed_config.toml 40、MDM 50):那裡的舊寫法陣列會反過來頂掉我們的 filters → 碼進 shell。
+# 所以受管層只要碰 shell_environment_policy 就不掛;讀到但解析不了也不掛。
+for body in ('[shell_environment_policy]\ninherit = "all"\n', "not = toml [\n"):
+    with open(codex_engine._MANAGED_CONFIG_PATH, "w") as f:
+        f.write(body)
+    assert ms(new_codex, at.WORKSPACE, base_env) is None, body
+with open(codex_engine._MANAGED_CONFIG_PATH, "w") as f:
+    f.write('model = "x"\n')
+assert ms(new_codex, at.WORKSPACE, base_env) == MCP_URL, "受管層沒碰 policy 照掛"
+os.remove(codex_engine._MANAGED_CONFIG_PATH)
+
+
+def _mdm_bad():
+    raise ValueError("not base64")
+
+
+for mdm in (lambda: '[shell_environment_policy]\nexclude = ["X"]\n', _mdm_bad):
+    codex_engine._mdm_config_toml = mdm
+    assert ms(new_codex, at.WORKSPACE, base_env) is None, "MDM 碰 policy 或讀到壞值 → 不掛"
+codex_engine._mdm_config_toml = lambda: 'model = "x"\n'
+assert ms(new_codex, at.WORKSPACE, base_env) == MCP_URL
+codex_engine._mdm_config_toml = _real_mdm
+assert _real_mdm() is None or isinstance(_real_mdm(), str), "真的 CFPreferences 路徑跑得起來"
+codex_engine._mdm_config_toml = lambda: None
+
+# 整條 run():codex 子行程真的拿到那兩個 -c 與環境變數;碼不在 argv。撞名那一輪:argv 沒有 -c、環境也沒有碼。
+fake_out = os.path.join(_tmp, "fake-out")
+os.makedirs(fake_out)
+os.environ.update({**base_env, "FAKE_OUT": fake_out})
+
+
+def spawned():
+    argv = open(os.path.join(fake_out, "argv")).read().splitlines()
+    env = dict(line.split("=", 1) for line in open(os.path.join(fake_out, "env")).read().splitlines()
+               if "=" in line)
+    return argv, env
+
+
+mcp_cfg_dir = tempfile.mkdtemp()  # workspace 以外(local_mcp_config 的條件)
+MCP_CFG = os.path.join(mcp_cfg_dir, "turn.json")
+open(MCP_CFG, "w").close()
+run_local_turn(engine="codex", codex_bin=new_codex)
+argv, env = spawned()
+assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in env, "沒 --mcp-config 不掛"
+
+chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG)
+assert chunks[-1]["type"] == "done", chunks
+argv, env = spawned()
+assert argv[:4] == ["exec", "--json", "--ephemeral", "--skip-git-repo-check"] and argv[-1] == "-"
+assert all(flag in argv for flag in MCP_FLAGS), argv
+assert "blv_" not in "\n".join(argv), "碼絕不進 argv"
+assert env.get("BLAVE_MCP_TOKEN") == CODE and env.get("BLAVE_MCP_URL") == MCP_URL
+stdin = open(os.path.join(fake_out, "stdin")).read()
+assert at.mcp_rule(True).strip() in stdin, "掛了就要帶圍籬規則(沒圍籬的 Codex 不能上雲端機)"
+run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, viewing_env="cloud")
+assert at._viewing_env_segment(True) in open(os.path.join(fake_out, "stdin")).read(), "雲端視角提示段跟著真的掛上"
+
+with open(ws_codex_cfg, "w") as f:
+    f.write('[mcp_servers.blave]\ncommand = "npx"\n')
+chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG)
+assert chunks[-1]["type"] == "done", "撞名不擋回合"
+argv, env = spawned()
+assert not any("mcp_servers" in a for a in argv), argv
+assert "BLAVE_MCP_TOKEN" not in env and "BLAVE_MCP_URL" not in env, "不掛就不給子行程碼"
+assert "Blave MCP (this turn)" not in open(os.path.join(fake_out, "stdin")).read(), "沒掛不帶規則"
+run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, viewing_env="cloud")
+assert at._viewing_env_segment(False) in open(os.path.join(fake_out, "stdin")).read(), "沒掛就講連不上"
+os.remove(ws_codex_cfg)
+
+chunks = run_local_turn(engine="codex", codex_bin=old_codex, mcp_config=MCP_CFG)
+assert chunks[-1]["type"] == "done"
+argv, env = spawned()
+assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in env, "舊版不掛"
+chunks = run_local_turn(engine="codex", codex_bin=pinned_codex, mcp_config=MCP_CFG)
+argv, env = spawned()
+assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in env, "snapshot 釘住不掛"
+for k in base_env:
+    os.environ.pop(k)
+os.environ.pop("FAKE_OUT")
+
+# Codex 的 mcp_tool_call 組成 Claude 同形的名字,_tool_where 才分得出雲端那一步(A′ 收據分色)
+_mcp_item = {"type": "mcp_tool_call", "server": "blave", "tool": "get_ssh_access", "status": "completed"}
+assert codex_engine.CodexTranslator._tool_calls(_mcp_item) == [("mcp__blave__get_ssh_access", {})]
+assert at._tool_where("mcp__blave__get_ssh_access", {}) == "cloud"
+shutil.rmtree(mcp_cfg_dir)
 
 print("OK check_codex_engine")

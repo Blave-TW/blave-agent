@@ -126,17 +126,40 @@ if (/t\("tr\.threshold",/.test(trjs)) fail("trade.js 又把值代進 tr.threshol
 else if (!/t\("tr\.threshold"\)/.test(trjs)) fail("trade.js 找不到 t(\"tr.threshold\") 的呼叫");
 else pass("trade.js 的 tr.threshold 不帶參數");
 
-// ---- 6. 雲端視角的能力清單必須歸給網頁工作頁 ----
-// 電腦版的雲端視角是唯讀的(側欄無新增入口、沒有定期報告、cxModalOpen 硬擋連接交易所)。
-// pv.d.running 配一顆「切到雲端」主鈕,句子裡只要提到那三件事,就得在同一句指去網頁工作頁。
-const CAP = { zh: [/新增策略/, /定期報告/, /連接交易所/], en: [/add(ing)? strateg/i, /report/i, /connect(ing)? an exchange/i] };
+// ---- 6. 雲端視角:網頁限定的事歸給網頁工作頁;agent 做得到的事不可以再歸給網頁 ----
+// A′ 之後 agent 能在雲端主機上做策略,「新增策略要到網頁」是假話。今天仍是網頁限定的:定期報告、每支策略的下單方式與
+// 策略管理(spec-desktop-cloud-writable §6 剩下的那幾列),以及連接交易所(cxModalOpen 硬擋雲端、CLOUD_SHIPPED 沒有 credentials——
+// inventory 說批次 ② 已做,code 說還沒;文案跟 code 走)。pv.d.running 配一顆「切到雲端」主鈕,句子裡只要提到這幾件事,就得在同一句指去網頁工作頁。
+const CAP = { zh: [/定期報告/, /連接交易所/, /下單方式/], en: [/report/i, /connect(ing)? an exchange/i, /order handling/i] };
+const NOT_WEB = { zh: /新增策略/, en: /add(ing)? strateg/i };
 const HOME = { zh: /工作頁/, en: /workspace/i };
 ["en", "zh"].forEach((l) => {
   const s = (l === "en" ? enV : zhV)["pv.d.running"] || "";
   const liar = s.split(/[。.]/).filter((x) => CAP[l].some((re) => re.test(x)) && !HOME[l].test(x));
   if (liar.length) fail(`pv.d.running(${l})把雲端視角做不到的事講成做得到:「${liar[0].trim()}」`);
-  else pass(`pv.d.running(${l})的能力清單歸給網頁工作頁`);
+  else if (NOT_WEB[l].test(s)) fail(`pv.d.running(${l})還在把「新增策略」歸給網頁——agent 現在能在雲端主機上做策略`);
+  else pass(`pv.d.running(${l})的網頁限定清單歸給網頁工作頁,新增策略不再歸給它`);
 });
+
+// ---- 7. A′ 落地的六句 + 那一組新 key ----
+// 四句重寫不得再講「只能看」「留在電腦上」;刪掉的 key(cut1 / tr.ro.note、「操作對象」那列的五句)不得留在表裡;
+// §2 抓不到用 dataset.i18n 指派的 key(trade.js envPaint 的 placeholder、app.js 的 .wtag / .sysline),在這裡明列。
+const GONE = ["chat.tgt.cut1", "tr.ro.note", "chat.tgt.label", "chat.tgt.cloudNone", "chat.tgt.cloudSignedOut", "chat.tgt.cloudStarting", "chat.tgt.cloudStopped"], NEW = ["chat.tgt.cloud", "chat.ph.cloud", "chat.sw.cloud", "chat.sw.local", "tr.cloud.onboardExtra"];
+const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only view|stay on this computer|can’t work on the cloud/i };
+{ const gone = GONE.filter((k) => en.has(k) || zh.has(k)), miss = NEW.filter((k) => !en.has(k) || !zh.has(k));
+  if (gone.length) fail(`已刪的 key 還在表裡:[${gone}]`); else pass("chat.tgt.cut1 / tr.ro.note / 操作對象那列的五句兩語都刪了");
+  if (miss.length) fail(`A′ 那一組 key 缺:[${miss}]`); else pass("A′ 留下的五個 key(.wtag / placeholder / 系統行 / onboardExtra)兩語都在");
+  const lies = ["en", "zh"].flatMap((l) => ["pv.d.running", "pv.inc.note", "tr.onboard.cloud", "ho.emptyHint"].filter((k) => LIE[l].test((l === "en" ? enV : zhV)[k] || "")).map((k) => l + ":" + k));
+  if (lies.length) fail(`重寫的四句還帶著已經不成立的話:[${lies}]`); else pass("四句重寫不再講「只能看」「留在電腦上」");
+  // agent 不下單(inventory §7):同一句裡 agent 後面不可以接「啟動 / 暫停」——那是用戶自己在 app 裡按的
+  const AGENT_ACT = { zh: /agent[^。；;]*(啟動|暫停)/, en: /agent[^.;]*\b(start|pause)/i };
+  const acts = ["en", "zh"].flatMap((l) => ["pv.d.running", "pv.inc.note", "tr.onboard.cloud", "ho.emptyHint"].filter((k) => AGENT_ACT[l].test((l === "en" ? enV : zhV)[k] || "")).map((k) => l + ":" + k));
+  if (acts.length) fail(`把啟動 / 暫停下單講成 agent 做的:[${acts}]`); else pass("啟動 / 暫停下單不跟 agent 同一句(主詞是用戶)");
+  // ho.emptyHint 兩條路並陳,順序仍是 handoff 在前(MVP 一句話:電腦 = 研發的地方);不可以只留「請 agent 做」
+  const hz = zhV["ho.emptyHint"] || "", he = enV["ho.emptyHint"] || "";
+  if (hz.indexOf("送上雲端") > 0 && hz.indexOf("送上雲端") < hz.indexOf("agent") && /Send to Cloud/.test(he) && he.indexOf("Send to Cloud") < he.indexOf("agent")) pass("ho.emptyHint 兩條路並陳、handoff 在前");
+  else fail("ho.emptyHint 要先講「送上雲端」、再講「或請 agent 做一支」");
+}
 
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

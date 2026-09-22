@@ -168,10 +168,13 @@ t("那一行不留在別支策略的頁首:換策略重畫頁首時清掉", /hoN
 t("index.html:載入 handoff.js;報告頁首分成 .txt / .act 兩塊(鈕不畫時 .act 藏起來,頁首高度不跳)", /<script src="handoff\.js"><\/script>/.test(html) && /<div class="act" id="rp-act" hidden><\/div>/.test(html) && /<div class="txt">/.test(html));
 t("app.css:icon + 字的描邊鈕、列尾那顆的熱區 ≥ 28、確認框的兩欄變體", /\.btn-out\.has-ic \{ display: inline-flex;/.test(css) && /\.ho-down::before \{ content: ""; position: absolute; inset: -8px -4px; \}/.test(css)
   && /\.cf-rows\.kv dt \{ flex: 0 0 56px;/.test(css) && /:lang\(en\) \.cf-rows\.kv dt \{ flex-basis: 84px; \}/.test(css));
-t("trade.js:雲端清單每列掛「拉回」、空態換成新的那一句;功能關著時兩者都照舊", /const hb = ho \? hoDownBtn\(x\.name\) : null; if \(hb\) row\.appendChild\(hb\);/.test(trSrc)
+// 列現在是鈕(點了畫雲端那支的報告),鈕不能包鈕:「拉回」掛在同一個 wrap 裡、不在列裡
+t("trade.js:雲端清單每列掛「拉回」(在 wrap 裡,不在鈕裡)、空態換成新的那一句;功能關著時兩者都照舊", /const hb = ho \? hoDownBtn\(x\.name\) : null; if \(hb\) wrap\.appendChild\(hb\);/.test(trSrc)
   && /ho \? t\("ho\.emptyHint"\) : t\("side\.cloud\.emptyCut1"\)/.test(trSrc) && /const ho = typeof HO !== "undefined" && HO\.on && typeof hoCloudLive === "function" && hoCloudLive\(\);/.test(trSrc));
-t("trade.js:輸入框上方那句「agent 還不能操作雲端主機」在功能開著時不出(它已經不成立)", /\$\("chat-tgt"\)\.hidden = !cloud \|\| \(typeof HO !== "undefined" && HO\.on\);/.test(trSrc));
-t("重畫:雲端清單的 sig 把 ho 算進去(功能剛問到 / 雲端剛連上時會重畫)", /JSON\.stringify\(\[kind, ho, list\.map/.test(trSrc));
+// A′:輸入框上方「操作對象」那行已整列拿掉(tests/check_shell_envsw.js 釘);「agent 還不能操作雲端主機」那句已刪
+t("trade.js:envPaint 不再看 HO.on;chat.tgt.cut1 從程式、DOM、字串表全部消失", !/HO\.on\)/.test(trSrc.slice(trSrc.indexOf("function envPaint("), trSrc.indexOf("function envPaintSide(")))
+  && !/chat\.tgt\.cut1/.test(trSrc + html + strings));
+t("重畫:雲端清單的 sig 把 ho 與選中的那支算進去(功能剛問到 / 雲端剛連上 / 點了別支時會重畫)", /JSON\.stringify\(\[kind, ho, sel, list\.map/.test(trSrc));
 t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id}", (() => {
   const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '":', "g")) || []).length === 2)

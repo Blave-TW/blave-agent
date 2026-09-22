@@ -53,11 +53,12 @@ function hoBusy() {
     else { b.removeAttribute("aria-disabled"); if (b.dataset.title !== undefined) { b.title = b.dataset.title; delete b.dataset.title; } }
   });
 }
-// 策略報告頁首那顆「送上雲端」。沒回測過、資料夾名不合規、功能關 → 不畫(.act 整個藏起來,頁首高度由 .txt 決定、不跳)
+// 策略報告頁首那顆「送上雲端」。沒回測過、資料夾名不合規、功能關 → 不畫(.act 整個藏起來,頁首高度由 .txt 決定、不跳)。
+// 雲端視角也不畫:#rp 那時開著的是雲端那一份(app.js 的 RPC),它本來就在雲端;RP 是這台電腦的,拿來畫會標錯支
 function hoPaintUp() {
   const act = $("rp-act"); if (!act) return;
   hoNote(null);                                       // 換了策略 / 重畫頁首 → 上一次那句「送不上去」不留在新的那一頁
-  const show = HO.on && !!RP.name && !!RP.data && !!RP.data.stats && HO_ID_RE.test(RP.name);
+  const show = HO.on && ENV.cur !== "cloud" && !!RP.name && !!RP.data && !!RP.data.stats && HO_ID_RE.test(RP.name);
   act.hidden = !show; act.textContent = "";
   if (!show) return;
   const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho";

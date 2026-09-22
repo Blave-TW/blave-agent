@@ -710,13 +710,18 @@ $("mp-panel").addEventListener("keydown", (e) => {
    報告三個分頁:回測 / 進出場 由各自的檔負責畫(window.BlaveReport),這裡只管
    選中、切分頁、程式碼分頁。 */
 const RP = { list: [], name: null, data: null, tab: "bt", drawn: {} };
-/* 送出當下中欄開著什麼 → 給 agent 釐清「這支 / 這裡」用(跟雲端工作頁同一份契約)。
-   雲端視角不帶:這一版 agent 只操作這台電腦,而雲端頁上的東西不在它的 workspace 裡。 */
+/* 雲端那一邊選中的那支(spec §1.3:選中的策略、報告分頁各邊一份)。#rp 是共用的 DOM,資料來自主行程的 cloudStrategy
+   (api 的 /cloud/strategy = 同一份 stats.json + 程式碼),用跟本機同一套 renderBacktest / renderTrades 畫。
+   雲端來的字串一律 textContent;這一袋不落地、不寫 localStorage(重開 app 一律回這台電腦)。 */
+const RPC = { name: null, data: null, tab: "bt", drawn: {} };
+const rpBag = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? RPC : RP);
+/* 送出當下畫面上開著什麼 → 給 agent 釐清「這支 / 這裡」用(跟雲端工作頁同一份契約)。
+   `env` 永遠帶(A′:操作對象隨視角走——雲端視角送出的那一句要做在雲端主機上);雲端視角指的策略是雲端那一份(RPC)。 */
 function chatViewing() {
-  if (typeof ENV !== "undefined" && ENV.cur === "cloud") return null;
-  if (typeof TR_BAGS !== "undefined" && TR_BAGS.local.open) return { view: "portfolio" };
-  if (!$("rp").hidden && RP.name && RP.data) return { strategy: RP.name, tab: RP.tab === "bt" ? "data" : RP.tab === "code" ? "code" : null };
-  return null;
+  const cloud = typeof ENV !== "undefined" && ENV.cur === "cloud", env = cloud ? "cloud" : "local", B = cloud ? RPC : RP;
+  if (typeof TR_BAGS !== "undefined" && TR_BAGS[env].open && !$("tr").hidden) return { env, view: "portfolio" };
+  if (!$("rp").hidden && B.name && B.data) return { env, strategy: B.name, tab: B.tab === "bt" ? "data" : B.tab === "code" ? "code" : null };
+  return { env };
 }
 
 async function stratRefresh(selectTouched) {
@@ -761,36 +766,72 @@ async function stratSelect(name, force) {
     if (b.dataset.name === name) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
   });
-  // 中欄誰該出現由 envShowLocalMain 決定(trade.js):雲端視角時這台電腦的三個視圖都收著,選中的那支照記、切回來才出現
-  if (!name) { RP.data = null; envShowLocalMain(); return; }
+  // 中欄誰該出現由 envShowMain 決定(trade.js):雲端視角時這台電腦的三個視圖都收著,選中的那支照記、切回來才出現
+  if (!name) { RP.data = null; envShowMain(); return; }
   RP.data = await window.blave.loadStrategy(name);
   if (RP.name !== name) return;                 // 等資料的時候用戶又點了別支
   if (!RP.data) { stratSelect(null); return; }
-  envShowLocalMain();
-  $("rp-name").textContent = RP.data.displayName || name;
-  // 只放說明,不附資料夾代號(Wei):代號滑過 sidebar 那一列的 title 看得到
-  $("rp-desc").textContent = RP.data.description || "";
-  $("rp-name").title = $("rp-name").textContent; $("rp-desc").title = RP.data.description || "";   // 單行截斷,全文放 title
-  hoPaintUp();   // 頁首右側的「送上雲端」(renderer/handoff.js;功能關、沒回測過、資料夾名不合規時不畫)
-  $("rp-code-pre").textContent = RP.data.code || "";
-  rpShowTab(RP.data.stats ? RP.tab : "code");   // 還沒回測過 → 只有程式碼可看
+  envShowMain();
+  // 在看雲端時本機這邊被 agent 動了(每輪結束的 stratRefresh):只記下,切回來 rpRepaint 再畫——那時 #rp 開著的是雲端那支,不可以拿本機的頁首去蓋它
+  if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(RP.data.stats ? RP.tab : "code"); }
 }
+/* 報告頁首(名字、說明、程式碼分頁)換成這一袋的。「送上雲端」只有這台電腦的策略才畫(雲端那份本來就在雲端);「拉回」在側欄列尾,不在這裡 */
+function rpPaintHead(B) {
+  $("rp-name").textContent = B.data.displayName || B.name;
+  // 只放說明,不附資料夾代號(Wei):代號滑過 sidebar 那一列的 title 看得到
+  $("rp-desc").textContent = B.data.description || "";
+  $("rp-name").title = $("rp-name").textContent; $("rp-desc").title = B.data.description || "";   // 單行截斷,全文放 title
+  if (B === RP) hoPaintUp();   // 頁首右側的「送上雲端」(renderer/handoff.js;功能關、沒回測過、資料夾名不合規時不畫)
+  else { hoNote(null); const act = $("rp-act"); act.hidden = true; act.textContent = ""; }
+  $("rp-code-pre").textContent = B.data.code || "";
+}
+// 切視角之後:#rp 是共用的 DOM,頁首與圖都要換成這一邊選中的那支;圖若是在另一邊時畫的(容器藏著、量不到寬)也重畫
+function rpRepaint() {
+  const B = rpBag();
+  if ($("rp").hidden || !B.data) return;
+  B.drawn = {}; rpPaintHead(B); rpShowTab(B.data.stats ? B.tab : "code");
+}
+/* 雲端清單點一支(trade.js 的 envPaintSide):中欄畫雲端那一份的報告。null = 收掉、回雲端自動下單頁(#tr-nav)。
+   讀不到 / 雲端現在沒有這一份 → 收掉選取、在回到的自動下單頁紅字槽講一句;不退回去讀這台電腦的同名那支。
+   被刪、429、斷網都壓成 null,分不出來,所以同一句、不講要等幾秒。紅字槽被指令的失敗佔著時不蓋它(那句更要緊),只唸給報讀器。 */
+async function rpCloudSelect(name, force) {
+  if (name === RPC.name && !force) return;
+  RPC.name = name; RPC.data = null; RPC.drawn = {};
+  ENV.sig.side = null;                            // 側欄的 aria-current 跟著換
+  const C = TR_BAGS.cloud;
+  if (!name) { trPaint(); return; }
+  if (C.alertSrc === "report") trAlert("", null, C);   // 再點一次:先收掉上一次那句,失敗時才會重唸
+  const d = await C.api.loadStrategy(name);
+  if (RPC.name !== name) return;                  // 等資料的時候用戶又點了別支 / 切走了
+  if (!d) {
+    rpCloudSelect(null);
+    const msg = t("tr.cloud.reportUnreach");
+    if (!C.alertText) trAlert(msg, null, C, "report"); else srSay(msg);
+    return;
+  }
+  RPC.data = d;
+  trPaint();                                      // envShowMain 會把 #rp 掀開(仍在雲端視角時)
+  if (!$("rp").hidden && ENV.cur === "cloud") { rpPaintHead(RPC); rpShowTab(d.stats ? RPC.tab : "code"); }
+}
+// 雲端清單每輪重讀:看著的那支不在了(被刪、換了帳號)→ 收掉
+function rpCloudPrune(list) { if (RPC.name && !list.some((x) => x.name === RPC.name)) rpCloudSelect(null); }
 
-/* 分頁第一次被看到才畫(進出場那張 K 線圖不便宜);同一支策略切回來不重畫。 */
+/* 分頁第一次被看到才畫(進出場那張 K 線圖不便宜);同一支策略切回來不重畫。畫的是現在這一邊那一袋(RP / RPC)。 */
 function rpShowTab(tab) {
-  RP.tab = tab;
-  const has = !!(RP.data && RP.data.stats);
+  const B = rpBag();
+  B.tab = tab;
+  const has = !!(B.data && B.data.stats);
   $("rp-tabs").querySelectorAll(".rp-tab").forEach((b) => {
     const on = b.dataset.tab === tab;
     b.setAttribute("aria-selected", on ? "true" : "false");
     b.disabled = !has && b.dataset.tab !== "code";
   });
   for (const k of ["bt", "tr", "code"]) $("rp-" + k).hidden = k !== tab;
-  if (!has || RP.drawn[tab]) return;
-  RP.drawn[tab] = true;
+  if (!has || B.drawn[tab]) return;
+  B.drawn[tab] = true;
   const R = window.BlaveReport || {};
-  if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), RP.data.stats);
-  if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), RP.data.stats);
+  if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats);
+  if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats);
 }
 $("rp-tabs").addEventListener("click", (e) => {
   const b = e.target.closest(".rp-tab"); if (b && !b.disabled) rpShowTab(b.dataset.tab);
@@ -821,7 +862,7 @@ function csLock(on) {
 }
 function csClearChat() {
   $("chat-scroll").innerHTML = "";
-  liveBubble = null; busy = null;
+  liveBubble = null; busy = null; swLine = null;
   acctCard = null; creditCards.length = 0; dataCard = null;   // 卡片跟著聊天欄一起清掉
 }
 function csStartNew() {
@@ -1221,7 +1262,7 @@ function busyStep(c) {
   const obj = document.createElement("span"); obj.className = "think-step-obj";
   obj.textContent = c.summary || "";
   const time = document.createElement("span"); time.className = "think-step-time";
-  li.append(mark, verb, obj, time);
+  li.append(mark, whereTag(stepWhere(c)), verb, obj, time);   // ④ 這一步實際做在哪(事實)
   busy.stepsEl.appendChild(li);
   if (c.id) busy.stepRows[c.id] = li;
   busyHasFold();
@@ -1279,6 +1320,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
+  // 操作對象在送出當下定案:之後切視角不改這一輪
+  const viewing = chatViewing();
   addMsg("you", msg); lastUserText = msg;
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
@@ -1290,7 +1333,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = [];
     const r = await window.blave.sendMessage({
-      sessionId, message: msg, handoff: opts && opts.handoff, model: MP.model, effort: mpEffort(), viewing: chatViewing() });
+      sessionId, message: msg, handoff: opts && opts.handoff, model: MP.model, effort: mpEffort(), viewing });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
     if (r.started) { busyStart(); return true; }
     if (r.blocked === "UPDATE_REQUIRED") {
@@ -1304,6 +1347,36 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     addMsg("sys", t("turn.engineFailed", { msg: (e && e.message) || e }));
     unlock(); return false;
   }
+}
+
+/* ── A′ 的標示:哪一邊(spec-desktop-local-and-cloud §6)────────
+   .wtag = 「這台電腦」/「雲端主機」小標,純標示、不可點;掛 data-i18n,換語言時 applyStatic 會重填。 */
+function whereTag(env) {
+  const s = document.createElement("span"); s.className = "wtag " + (env === "cloud" ? "cloud" : "local");
+  s.dataset.i18n = env === "cloud" ? "chat.tgt.cloud" : "env.local"; s.textContent = t(s.dataset.i18n);
+  return s;
+}
+/* 工具動作做在哪(④,事實):只看結構化的訊號。runtime 若在 tool chunk 帶了 `where`("cloud" | "local")就照它——Bash 經 ssh / scp
+   做在雲端只有 runtime 看得出來(它手上有完整指令;summary 優先回路徑 token,`ssh host python lib/runner.py` 的 summary 是
+   `lib/runner.py`,在這裡比對會標錯邊)。沒帶時只認工具**名稱**:`blave` MCP 的(mcp__blave__*)= 雲端,其餘一律這台電腦。
+   不比對 summary 裡的字。純函式,tests/check_shell_envsw.js 從原文切出來跑。 */
+function stepWhere(c) {
+  if (c && (c.where === "cloud" || c.where === "local")) return c.where;
+  const tool = c && typeof c.tool === "string" ? c.tool : "";
+  return tool.indexOf("mcp__blave__") === 0 ? "cloud" : "local";
+}
+/* 切視角時的系統行(③):只在對話有內容時插;切到哪一邊都插一條當前方向的;連續切(上一條仍是最後一則)只留最新一條。
+   只在記憶體(逐字稿是 runtime 存的,這一行不進 session.db):重開 app / 換對話就沒了。 */
+let swLine = null;
+function chatSwitched(from, to) {
+  if (from === to) return;
+  const box = $("chat-scroll");
+  if (swLine) { if (swLine.parentNode === box && box.lastElementChild === swLine) swLine.remove(); swLine = null; }
+  if (!box.children.length) return;
+  const el = document.createElement("div"); el.className = "sysline";
+  el.dataset.i18n = to === "cloud" ? "chat.sw.cloud" : "chat.sw.local"; el.textContent = t(el.dataset.i18n);
+  box.appendChild(el); busyPin(); scrollChat();
+  swLine = el;
 }
 
 // 主行程丟的是 strings.js 的 key(它不組句子),查不到就原樣顯示。

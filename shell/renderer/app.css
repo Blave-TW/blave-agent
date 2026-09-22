@@ -189,6 +189,14 @@
 .msg { margin-bottom: var(--space-24); }
 /* 用戶靠右淡底泡泡、agent 靠左純文字——靠對齊區分,不加角色 label */
 .msg.you { display: flex; justify-content: flex-end; }
+/* A′ 的「哪一邊」標示(spec-desktop-local-and-cloud §6):.wtag 純標示;這台電腦 = 描邊,雲端主機 = 灰填(跟頂列同一套語言)。
+   .sysline = 切視角的系統行;.wtag 放在動作列每一列的記號與動詞之間 */
+.wtag { display: inline-flex; align-items: center; height: 16px; padding: 0 var(--space-4); border-radius: var(--radius-micro); font-size: 11px; line-height: 1; white-space: nowrap; }
+.wtag.local { border: 1px solid var(--border-hairline); color: var(--ink-3); }
+.wtag.cloud { background: var(--surface-muted); color: var(--ink); }
+.sysline { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-24); font-size: 11px; line-height: 1.4; color: var(--ink-3); text-align: center; }
+.sysline::before, .sysline::after { content: ""; flex: 1; height: 1px; background: var(--border-hairline); }
+.think-step .wtag { flex: none; }
 .msg.you .bubble {
   background: var(--surface-muted); border-radius: var(--radius-lg);
   padding: var(--space-8) var(--space-16); max-width: 84%;
@@ -525,7 +533,6 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .ho-down:hover { color: var(--ink); }
 .ho-down::before { content: ""; position: absolute; inset: -8px -4px; }   /* 視覺高約 14,熱區高 ≥ 28 */
 .ho-down .ic { width: 14px; height: 14px; }
-.strat-row.is-static { gap: var(--space-6); padding-right: var(--space-8); }
 #rp-ho[aria-disabled="true"], .ho-down[aria-disabled="true"] { color: var(--ink-3); cursor: default; }
 #rp-ho[aria-disabled="true"]:hover { background: transparent; }
 .ho-down[aria-disabled="true"]:hover { color: var(--ink-3); }

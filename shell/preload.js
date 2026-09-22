@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
   cloudEvents: (q) => ipcRenderer.invoke("cloud-events", q),
+  cloudStrategy: (name) => ipcRenderer.invoke("cloud-strategy", { name }),
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }

@@ -1,7 +1,7 @@
 // shell/cloud.js:讀雲端主機狀態(唯讀)。不打真的 api(post 是假的)。
 // 跑法:node tests/check_shell_cloud.js
 const fs = require("fs"), path = require("path");
-const { createCloudHost, interpret, ENDPOINT, EVENTS_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
+const { createCloudHost, interpret, interpretStrategy, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", public_ip: "1.2.3.4" }, portfolio: { reported_at: 100, halt: { halted: false }, reconciler: { alive: true }, venues: {} },
   portfolio_reported_at: 100, portfolio_stale: false, server_time: 130, fx_rates: { USD: 1 }, currency: "USDT",
@@ -166,6 +166,46 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
         now: () => clock, setTimer: () => 0, clearTimer: () => {} });
       const pr = h3.refresh(); await Promise.resolve(); await h3.events(30); release(); await pr;
       t("事件:讀事件不動世代——在途的狀態輪詢照樣落地", h3.snapshot().currency === "LANDED"); } }
+
+  /* ── 單支策略的報告(第三支點擊驅動的端點:雲端視角側欄點一支 → 中欄畫報告)────────────
+     同事件清單:不留在主行程、不落地、不動世代;OK + null = 雲端現在沒有這一份(不是錯誤);其餘壞回應一律 UNREACH。
+     物件是雲端那台機器上的策略碼寫得進去的東西:逐欄驗型別、只留報告要畫的那幾欄(形狀對齊主行程 loadStrategy)。 */
+  const stBody = (o = {}) => ({ machine_state: "running", server_time: 130, strategy: { name: "momo", display_name: "Momentum", description: "MARKER-DESC", status: "draft", code: "MODE = 'backtest'", backtest: { "Sharpe Ratio": 1.2, candles: [[1, 2, 3, 4, 5, 6]] }, images: [{ hash: "x" }] }, ...o });
+  { const r = interpretStrategy({ status: 200, body: stBody() }, "momo");
+    t("策略:OK,只留 name / displayName / description / stats(= 整份 backtest)/ code;images 與 status 不往上交", r.code === "OK" && JSON.stringify(Object.keys(r.strategy)) === '["name","displayName","description","stats","code"]'
+      && r.strategy.displayName === "Momentum" && r.strategy.stats["Sharpe Ratio"] === 1.2 && r.strategy.stats.candles.length === 1 && r.strategy.code === "MODE = 'backtest'");
+    t("策略:雲端沒有這一份 = OK + null(api 的契約:沒這個名字 / 被逐出 / 沒主機都是 200 + null)", JSON.stringify(interpretStrategy({ status: 200, body: stBody({ strategy: null }) }, "momo")) === '{"code":"OK","strategy":null}');
+    const bad = (s) => interpretStrategy({ status: 200, body: stBody({ strategy: s }) }, "momo");
+    t("策略:display_name / description / code 不是字串 → 退回 name / 空字串;backtest 不是物件 → stats null(還沒回測過:只有程式碼可看)",
+      bad({ name: "momo", display_name: 7, description: null, code: ["x"], backtest: "nope" }).strategy.displayName === "momo" && bad({ name: "momo", backtest: [1] }).strategy.stats === null && bad({ name: "momo" }).strategy.code === "" && bad({ name: "momo", display_name: "" }).strategy.displayName === "momo");
+    t("策略:物件的 name 對不上要的名字(key 是截短雜湊,撞到就是別支)→ 讀不到,不畫成那支", bad({ name: "other", code: "x" }).code === "UNREACH" && bad("momo").code === "UNREACH" && bad(7).code === "UNREACH");
+    for (const b of [{ status: 401, body: {} }, { status: 429, body: {} }, { status: 500, body: {} }, { status: 200, body: {} }, { status: 200, body: null }, { status: 200, body: "x" }, null])
+      t("策略:壞回應 → UNREACH + strategy null(" + (b ? b.status + "/" + JSON.stringify(b.body) : "連不上") + ")", (() => { const r = interpretStrategy(b, "momo"); return r.code === "UNREACH" && r.strategy === null; })()); }
+  { const stCalls = []; let stCreds = { token: "acct-S", appSecret: "appsec-S" }, stReply = { status: 200, body: stBody() };
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => stCreds, post: async (u, b) => { stCalls.push({ u, b }); if (stReply instanceof Error) throw stReply; return stReply; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+    const r0 = await h.strategy("momo");
+    t("策略:POST 到契約的路徑,body 只有兩顆憑證 + name(原樣,api 只當比對 key)", stCalls.length === 1 && stCalls[0].u === "https://x" + STRATEGY_ENDPOINT && JSON.stringify(Object.keys(stCalls[0].b).sort()) === '["app_secret","name","token"]' && stCalls[0].b.name === "momo" && r0.code === "OK");
+    t("策略:回應不進主行程手上那一份(snapshot / status 都沒有它的字);憑證不出現在回上去的東西裡", !JSON.stringify(h.snapshot()).includes("MARKER-DESC") && !JSON.stringify(h.status()).includes("MARKER-DESC") && !JSON.stringify(r0).includes("acct-S") && !JSON.stringify(r0).includes("appsec-S"));
+    t("策略:壞名字(空 / 非字串 / 超長)不發請求", (await h.strategy("")).code === "UNREACH" && (await h.strategy(null)).code === "UNREACH" && (await h.strategy("x".repeat(201))).code === "UNREACH" && stCalls.length === 1);
+    // 連點兩支不可以被節流成「讀不到」:沒有最小間隔,重複打只靠「同一支在途共用」擋
+    stReply = { status: 200, body: stBody({ strategy: { name: "other", code: "y" } }) };
+    t("策略:緊接著點另一支照樣打(不節流;讀不到會被畫成收掉選取)", (await h.strategy("other")).code === "OK" && stCalls.length === 2);
+    { let release; const gate = new Promise((r) => { release = r; }); let c2 = 0;
+      const h2 = createCloudHost({ apiBase: "https://x", getCreds: () => stCreds, post: async () => { c2++; await gate; return { status: 200, body: stBody() }; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+      const a = h2.strategy("momo"), b2 = h2.strategy("momo"); release(); const [ra, rb] = [await a, await b2];
+      t("策略:同一支在途時共用同一個請求(只打一次)", c2 === 1 && ra === rb && ra.code === "OK");
+      t("策略:在途那一份結束後,下一次問得動", (await h2.strategy("momo")).code === "OK" && c2 === 2); }
+    { let release; const gate = new Promise((r) => { release = r; }); let who = { token: "acct-A", appSecret: "sa" };
+      const h3 = createCloudHost({ apiBase: "https://x", getCreds: () => who, post: async () => { await gate; return { status: 200, body: stBody() }; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+      const p = h3.strategy("momo"); await Promise.resolve(); who = null; release();
+      t("策略:請求在路上時登出 / 換帳號 → 這份不交給畫面(算讀不到)", (await p).code === "UNREACH"); }
+    let n = stCalls.length; stCreds = { token: "acct-S", appSecret: null };
+    t("策略:沒有 app_secret / 沒登入:不發請求,也算讀不到", (await h.strategy("momo")).code === "UNREACH" && (stCreds = null, (await h.strategy("momo")).code === "UNREACH") && stCalls.length === n);
+    stCreds = { token: "acct-A", appSecret: "sa" }; stReply = new Error("offline");
+    t("策略:連不上 → UNREACH,不拋", (await h.strategy("momo")).code === "UNREACH"); }
+  t("main.js:cloud-strategy 走 handle()(只收自家頁面),拒絕時回 { code: UNREACH, strategy: null };preload 只多暴露 cloudStrategy 一支",
+    /\n  handle\("cloud-strategy", \(_e, q\) => cloudHost\(\)\.strategy\(q && q\.name\), \{ code: "UNREACH", strategy: null \}\);/.test(mainSrc)
+    && /cloudStrategy: \(name\) => ipcRenderer\.invoke\("cloud-strategy", \{ name \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
 
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

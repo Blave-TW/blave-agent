@@ -65,7 +65,7 @@
       <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button></nav>
       <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
-      <!-- 雲端那幾份:第一刀只當清單看(單支策略的端點還沒做),名字是雲端來的字串,一律 textContent -->
+      <!-- 雲端那幾份:點一支 → 中欄畫雲端那一份的報告(app.js rpCloudSelect);名字是雲端來的字串,一律 textContent -->
       <div class="strat-list" id="strat-list-cloud" hidden></div>
       <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button></div>
       <!-- 左下角:設定(照雲端 .ws-foot / .ws-more 的樣式;雲端是「更多」選單,
@@ -190,8 +190,6 @@
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
-        <!-- 只在雲端視角顯示(第一刀):整窗是灰的雲端,但 agent 這一版只操作這台電腦,不講會被誤會 -->
-        <div class="chat-tgt" id="chat-tgt" hidden><p><span data-i18n="chat.tgt.label"></span> <b data-i18n="env.local"></b></p><p data-i18n="chat.tgt.cut1"></p></div>
         <div class="chat-input">
           <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
           <div class="ci-bar">

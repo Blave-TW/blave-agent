@@ -13,8 +13,10 @@
 // 這個檔不 require electron;HTTP 由呼叫端注入(測試用假的)。
 const ENDPOINT = "/oauth/desktop/cloud/state";
 const EVENTS_ENDPOINT = "/oauth/desktop/cloud/events";
+const STRATEGY_ENDPOINT = "/oauth/desktop/cloud/strategy";
 const EVENTS_MAX = 500;
 const UNREACHABLE = () => ({ code: "UNREACH", events: [] });
+const STRATEGY_UNREACHABLE = () => ({ code: "UNREACH", strategy: null });
 const EVENTS_MIN_GAP_MS = 5 * 1000;
 const POLL_FOREGROUND_MS = 15 * 1000, POLL_BACKGROUND_MS = 60 * 1000, BACKOFF_MS = 60 * 1000, MIN_GAP_MS = 5 * 1000;
 const MACHINE_STATES = ["none", "starting", "running", "stopped"];
@@ -60,6 +62,21 @@ function interpretEvents(res) {
     .map((e) => ({ ts: e.ts, type: e.type, data: e.data && typeof e.data === "object" ? e.data : {} })) };
 }
 
+/* 單支策略的回應 → { code, strategy }(純函式)。同事件清單:讀不到與「沒有這支」是兩件事——
+   200 + `strategy: null` 才是「雲端現在沒有這一份」(api 的契約:沒這個名字 / 物件被逐出 / 沒主機都是這個);
+   其餘一律 UNREACH。物件是雲端那台機器上的策略碼寫得進去的東西:欄位逐個驗型別,只留報告要畫的那幾欄
+   (形狀對齊主行程 loadStrategy:{ name, displayName, description, stats, code }),renderer 一律 textContent。 */
+function interpretStrategy(res, name) {
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !("strategy" in b)) return STRATEGY_UNREACHABLE();
+  const s = b.strategy;
+  if (s === null) return { code: "OK", strategy: null };
+  if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
+  const str = (v) => (typeof v === "string" ? v : "");
+  const bt = s.backtest && typeof s.backtest === "object" && !Array.isArray(s.backtest) ? s.backtest : null;
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: bt, code: str(s.code) } };
+}
+
 /* opts:{ apiBase, getCreds() → { token, appSecret } | null, post(url, body) → Promise<{status, body}>, onChange?(snapshot), now?, setTimer?, clearTimer? }
    onChange 在狀態的「摘要」變了才叫(切換器上的另一邊狀態靠它),不是每次輪詢都叫。
 
@@ -75,6 +92,7 @@ function createCloudHost(opts) {
   const EMPTY = () => ({ code: "NO_LOGIN" });
   let snap = EMPTY(), owner = null, gen = 0, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
   let evInflight = null, evLastTryAt = 0;   // 事件那一支自己的節流(它不共用上面那組:兩支走不同的速率桶)
+  let stInflight = null, stName = null;   // 單支策略:同一支在途共用。不另設最小間隔——那會把「連點兩支」畫成讀不到;重複打由在途共用擋,速率由 api 的明細桶擋
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length].join("|");
@@ -161,10 +179,28 @@ function createCloudHost(opts) {
       })().finally(() => { evInflight = null; });
       return evInflight;
     },
+    /* 單支策略的報告(點擊驅動:側欄點一支打一次)。跟事件清單同一種做法:不留在這個閉包、不進 snapshot()、不落地,
+       直接回給呼叫端;不碰 gen / owner;換人只用本地的 token 比對。名字是 renderer 給的雲端字串,原樣進 body(api 只當比對 key)。 */
+    async strategy(name) {
+      if (typeof name !== "string" || !name || name.length > 200) return STRATEGY_UNREACHABLE();
+      if (stInflight && stName === name) return stInflight;
+      let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
+      const tok = c && c.token ? c.token : null;
+      if (!tok || !c.appSecret) return STRATEGY_UNREACHABLE();
+      stName = name;
+      stInflight = (async () => {
+        let res = null;
+        try { res = await opts.post(opts.apiBase + STRATEGY_ENDPOINT, { token: tok, app_secret: c.appSecret, name }); } catch (_) { /* 連不上 */ }
+        let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
+        if ((cur && cur.token ? cur.token : null) !== tok) return STRATEGY_UNREACHABLE();
+        return interpretStrategy(res, name);
+      })().finally(() => { stInflight = null; stName = null; });
+      return stInflight;
+    },
     // 登出:立刻把手上的東西丟掉、通知畫面清掉,而且作廢還在路上的請求
     reset() { drop(); },
     _delay: delay,
   };
 }
 
-module.exports = { createCloudHost, interpret, interpretEvents, ENDPOINT, EVENTS_ENDPOINT, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };
+module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

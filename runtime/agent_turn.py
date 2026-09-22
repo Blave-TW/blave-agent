@@ -19,6 +19,7 @@ import http.client
 import json
 import os
 import re
+import shlex
 import ssl
 import sys
 import tempfile
@@ -604,9 +605,26 @@ def _viewing_view_segment(viewing_view, viewing_widgets):
     )
 
 
+def _viewing_env_segment(cloud_mcp):
+    """電腦版雲端視角(`--viewing-env=cloud`)。不看有沒有開策略都送:雲端什麼都沒開時
+    agent 仍要知道這句做在哪。沒掛 MCP 的分支對齊 mcp_rule 的圍籬(cloud-handoff.md #31):
+    連不上就講,不拿本機同名那支頂替。"""
+    if cloud_mcp:
+        how = ("讀或動雲端上的東西時,先用本輪掛上的 `blave` MCP 取得連線,"
+               "再照 references/cloud-handoff.md 做(含它的 NEVER 列表)。")
+    else:
+        how = ("但這一輪沒有連到雲端主機的通道:需要讀或動雲端上的東西時,直接告訴用戶這一輪"
+               "連不上雲端主機;不要改在這台電腦上做同名那支來代替,也不要自己找別的方式連線——"
+               "不要用 ssh/scp/sftp/rsync,也不要用這台電腦上找到的任何金鑰、憑證或 SSH 設定連線。"
+               "不用碰主機的問題(市場問答、概念說明)照常回答。")
+    return ("[工作頁狀態:使用者這次是在「雲端主機」視角下送出的——要動手的對象是他的 Blave 雲端主機,"
+            "不是這台電腦。上面提到的策略/頁面都是雲端主機上的那一份;這台電腦的 strategies/ 底下"
+            "就算有同名策略也不是它。" + how + "]")
+
+
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None, viewing_widgets=None,
-                 reply_lang=None, resume_note=None):
+                 reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -652,6 +670,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         seg = _viewing_view_segment(viewing_view, viewing_widgets)
         if seg:
             parts.append(seg)
+    if viewing_env == "cloud":  # 怪值當沒送(同 --viewing-view)
+        parts.append(_viewing_env_segment(cloud_mcp))
     parts.append("[使用者這次的訊息]")
     parts.append(message)
     # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
@@ -1319,6 +1339,57 @@ _INTERPRETERS = ("python", "python3", "node", "bash", "sh", "zsh", "perl", "ruby
 _INLINE_CODE_FLAGS = ("-c", "-e", "--command")
 TOOL_SUMMARY_MAX = 100
 TOOL_SUMMARY_BASH_MAX = 40  # 452px 的聊天欄裡一列放得下的 mono 長度
+_REMOTE_CMDS = ("ssh", "scp", "sftp")
+_WRAPPER_CMDS = ("sudo", "command", "exec", "nohup")
+_RSYNC_REMOTE_RE = re.compile(r"^(?:[^\s/@:]+@)?[^\s/@:-][^\s/@:]*:")
+_SEGMENT_SPLIT_RE = re.compile(r"[|;\n]")
+
+
+def _segment_head(seg):
+    """一段指令剝掉 env/sudo/timeout 這類包裝後,真正被跑的那個字與它的參數。"""
+    try:
+        words = shlex.split(seg)
+    except ValueError:
+        words = seg.split()
+    while words:
+        w = words[0]
+        if re.match(r"^\w+=", w):
+            words = words[1:]
+        elif w == "env":
+            words = words[1:]
+            while words and (words[0].startswith("-") or re.match(r"^\w+=", words[0])):
+                words = words[1:]
+        elif w in _WRAPPER_CMDS:
+            words = words[1:]
+            while words and words[0].startswith("-"):
+                words = words[2:] if words[0] in ("-u", "-g") else words[1:]
+        elif w == "timeout":
+            words = words[1:]
+            while words and words[0].startswith("-"):
+                words = words[2:] if words[0] in ("-s", "-k") else words[1:]
+            words = words[1:]
+        else:
+            break
+    return (os.path.basename(words[0]), words[1:]) if words else ("", [])
+
+
+def _tool_where(name, params):
+    """tool chunk 的 `where`:這一步做在雲端主機還是這台電腦(電腦版 A′ 收據分色用)。
+
+    agent 會寫 `grep x .env | ssh h …`、`sudo ssh …` 這種形狀,所以照 `|`、`;`、換行切段、
+    剝掉包裝後逐段看,任一段連到遠端就算 cloud;`ssh … | python3 … .env` 這種兩邊都碰的也標
+    cloud,可接受。不切 `&&`:`cd x && ssh h` 維持 local——只為收據分色,不值得為它把 `&&`
+    串起的本機前置步驟都染成雲端。rsync 兩端都可以是本機,參數有 `[user@]host:path` 才算。"""
+    if isinstance(name, str) and name.startswith("mcp__blave__"):
+        return "cloud"
+    if name == "Bash" and isinstance(params, dict) and isinstance(params.get("command"), str):
+        for seg in _SEGMENT_SPLIT_RE.split(params["command"]):
+            cmd, args = _segment_head(seg)
+            if cmd in _REMOTE_CMDS or (
+                cmd == "rsync" and any(_RSYNC_REMOTE_RE.match(a) for a in args)
+            ):
+                return "cloud"
+    return "local"
 
 
 def _tool_summary(name, params, workspace=None):
@@ -1595,14 +1666,16 @@ class WebSink:
         # `status: "done"` chunk from on_tool_result, `summary` says what was
         # touched. Both additive: an older frontend still only reads tool/status.
         name = getattr(block, "name", "")
-        chunk = {"type": "tool", "tool": name, "status": "running"}
-        summary = _tool_summary(name, getattr(block, "input", None))
+        params = getattr(block, "input", None)
+        where = _tool_where(name, params)
+        chunk = {"type": "tool", "tool": name, "status": "running", "where": where}
+        summary = _tool_summary(name, params)
         if summary:
             chunk["summary"] = summary
         block_id = getattr(block, "id", None)
         if block_id:
             chunk["id"] = block_id
-            self._tool_t0[block_id] = (time.monotonic(), name)
+            self._tool_t0[block_id] = (time.monotonic(), name, where)
         self._send(chunk)
 
     def on_tool_result(self, block):
@@ -1618,9 +1691,9 @@ class WebSink:
         started = self._tool_t0.pop(getattr(block, "tool_use_id", None), None)
         if not started:
             return
-        t0, name = started
+        t0, name, where = started
         self._send({
-            "type": "tool", "id": block.tool_use_id, "tool": name, "status": "done",
+            "type": "tool", "id": block.tool_use_id, "tool": name, "status": "done", "where": where,
             "ms": max(0, int((time.monotonic() - t0) * 1000)),
             "error": bool(getattr(block, "is_error", False)),
         })
@@ -2042,7 +2115,7 @@ def local_mcp_config(sink, mcp_config):
 
 def mcp_rule(mounted):
     """電腦版而且這一輪掛了 `blave` MCP 才有這段;其餘回空字串(system prompt 一個字都不變)。
-    純文字、不看引擎:Claude 走 system prompt 檔,Codex 之後掛 MCP 時把它接進 _codex_prompt 即可。
+    純文字、不看引擎:Claude 走 system prompt 檔,Codex 走 _codex_prompt 的規則前綴。
     圍籬對齊 references/cloud-handoff.md NEVER #31(用戶這一輪要求的事都可做;搬運仍只走 1–8)。"""
     if not mounted:
         return ""
@@ -2126,20 +2199,23 @@ def data_access_rule():
     return "\n\n---\n\n## Blave data on this desktop (runtime rule)\n" + body
 
 
-def _codex_prompt(prompt, sink):
+def _codex_prompt(prompt, sink, mcp_mounted):
     """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
     (codex_engine.build_args lifts its size cap), and inlining it would feed it twice.
     model_catalog_rule is left out on purpose — it teaches switching between the proxy's
-    models; this engine's model is picked in the shell (or is the user's Codex default)."""
+    models; this engine's model is picked in the shell (or is the user's Codex default).
+    mcp_mounted is the same value handed to codex_engine.run, so the fence rule and the
+    attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
-            + "\n\n---\n\n" + prompt)
+            + mcp_rule(mcp_mounted) + "\n\n---\n\n" + prompt)
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, viewing_widgets=None, ui_lang=None,
-                   engine="claude", codex_bin=None, effort=None, mcp_config=None):
+                   engine="claude", codex_bin=None, effort=None, mcp_config=None,
+                   viewing_env=None):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
@@ -2147,11 +2223,23 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     use_codex = engine == "codex"
     summary, recent = ss.get_context(session_id)
     reply_lang = _resolve_reply_lang(ui_lang)
+    # 雲端視角只有電腦版認(同 --mcp-config)。Codex 掛不掛由 codex_engine.mcp_server 判(版本、撞名、
+    # shell_snapshot 關不關得掉),同一個值交給 run() 與 _codex_prompt,提示段、圍籬規則、實際掛上三者一致。
+    if not isinstance(sink, LocalSink):
+        viewing_env = None
+    codex_mcp_url = None
+    if use_codex:
+        import codex_engine  # 只在這條路徑載入:機隊的回合連 import 都不發生
+        if local_mcp_config(sink, mcp_config):
+            codex_mcp_url = codex_engine.mcp_server(codex_bin, WORKSPACE, os.environ)
+        cloud_mcp = bool(codex_mcp_url)
+    else:
+        cloud_mcp = bool(local_mcp_config(sink, mcp_config))
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
                           viewing_view=viewing_view, viewing_widgets=viewing_widgets,
-                          reply_lang=reply_lang)
+                          reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp)
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -2334,8 +2422,6 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     strat_sig = None
     try:
         if use_codex:
-            import codex_engine  # 只在這條路徑載入:機隊的回合連 import 都不發生
-
             def _codex_tool_start(name, params):
                 nonlocal touched
                 tool_steps.append((name, _tool_summary(name, params)))
@@ -2347,10 +2433,11 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     strat_sig = _maybe_push_strategies(sink, strat_sig, touched=touched)
 
             await codex_engine.run(
-                codex_bin, _codex_prompt(prompt, sink), WORKSPACE,
+                codex_bin, _codex_prompt(prompt, sink, bool(codex_mcp_url)), WORKSPACE,
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
-                sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort)
+                sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort,
+                mcp_url=codex_mcp_url)
         # 空回合續跑是為 DeepSeek 串流斷掉設的,Codex 沒有那個症狀,不重跑。
         for attempt in () if use_codex else (1, 2):
             query_iter = sdk.query(prompt=prompt, options=options)
@@ -2487,7 +2574,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                                   suggest_directive=is_web,
                                   viewing_view=viewing_view, viewing_widgets=viewing_widgets,
-                                  reply_lang=reply_lang, resume_note=_resume_note(tool_steps))
+                                  reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
+                                  viewing_env=viewing_env, cloud_mcp=cloud_mcp)
             options.max_budget_usd = budget
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
             # A new dict, not an in-place update: the CLI child's env is built from
@@ -2575,6 +2663,8 @@ def main():
     parser.add_argument("--viewing-widgets", default=None)  # JSON 字串陣列
     # 不設 choices(同 --viewing-view):怪值只當沒送,不能 exit 2 整輪死;白名單在 _resolve_reply_lang
     parser.add_argument("--ui-lang", default=None)
+    # 電腦版 A′:只在雲端視角送 "cloud";不設 choices(同 --viewing-view),怪值在 build_prompt 當沒送
+    parser.add_argument("--viewing-env", default=None)
     # 電腦版專屬。不帶 = claude = 機隊原本的路徑;不設 choices(同 --ui-lang),"codex"
     # 以外的值一律當 claude。codex 時 --model 有帶才轉成 `codex exec -m`(外殼只在用戶
     # 真的選了 codex 型錄裡的 model 時才帶),沒帶就讓 Codex 用用戶自己設定的預設。
@@ -2613,7 +2703,7 @@ def main():
         viewing_strategy=args.viewing_strategy, viewing_tab=args.viewing_tab,
         viewing_view=args.viewing_view, viewing_widgets=viewing_widgets,
         ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
-        effort=args.effort, mcp_config=args.mcp_config,
+        effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
     ))
     print(reply)
 
