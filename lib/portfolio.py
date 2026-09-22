@@ -1,4 +1,4 @@
-import glob, inspect, json, logging, os, re, time
+import glob, hashlib, inspect, json, logging, os, re, time
 from datetime import datetime
 
 from lib import guard
@@ -742,6 +742,18 @@ _UI_ALERT_STAMP_PATH = 'state/ui_amounts_alert'
 _UI_ALERT_COOLDOWN_S = 24 * 3600
 _UI_ALERT_MSG = ('網頁儲存與機器設定不一致,以投資組合頁為準——'
                  '請重存一次下單設定')
+# The event half has its own, shorter stamp. lib/events says "cooldown is the
+# platform's job", but the platform's 6h P2 cooldown only gates the Telegram
+# exit — every event still lands and counts against DAILY_EVENT_QUOTA (500).
+# load_portfolio_config runs on every strategy tick, so a 1-min strategy with
+# a persistent mismatch is 1,440 events/day: quota gone by 08:20 and that
+# user's P1 halt / order_error silently dropped for the rest of the day.
+# 1h (not the TG 24h): 24/day per distinct diff stays far under quota, and
+# the workspace event list still sees a mismatch that reappears within the
+# day. The stamp body is the diff fingerprint, so a NEW mismatch (different
+# strategy / amount) is not hidden behind an old one's window.
+_UI_EVENT_STAMP_PATH = 'state/ui_amounts_event'
+_UI_EVENT_COOLDOWN_S = 3600
 
 
 def _load_ui_mirror():
@@ -761,15 +773,45 @@ def _load_ui_mirror():
         return None
 
 
-def _ui_override_alert():
-    """Tell the user the UI copy overrode the config — once per 24h. Stamp is
-    written BEFORE sending so a slow send can't spam; a failed stamp write
-    still sends (a broken disk already alerts loudly elsewhere — silence here
-    would hide that the agent's change didn't take)."""
-    # 事件在 24h stamp 之前落檔:那個 stamp 是給 Telegram 那一半的,平台自己去重。
+def _ui_event_due(diff):
+    """True unless a ui_override event for this same `diff` landed within
+    _UI_EVENT_COOLDOWN_S. Stamps BEFORE the caller emits (same trade-off as
+    the Telegram stamp below); any stamp read/write error → True, one extra
+    event beats a missed one."""
+    try:
+        key = hashlib.sha1(json.dumps(diff, sort_keys=True, default=str)
+                           .encode()).hexdigest()
+    except Exception as e:
+        logging.warning(f'ui override event key failed: {e}')
+        return True
+    try:
+        with open(_UI_EVENT_STAMP_PATH) as f:
+            same = f.read().strip() == key
+        if same and time.time() - os.path.getmtime(_UI_EVENT_STAMP_PATH) < _UI_EVENT_COOLDOWN_S:
+            return False
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(_UI_EVENT_STAMP_PATH), exist_ok=True)
+        with open(_UI_EVENT_STAMP_PATH, 'w') as f:
+            f.write(key)
+    except OSError as e:
+        logging.warning(f'ui override event stamp failed: {e}')
+    return True
+
+
+def _ui_override_alert(diff=None):
+    """Tell the user the UI copy overrode the config — Telegram once per 24h,
+    event once per 1h per distinct `diff`. Stamps are written BEFORE sending
+    so a slow send can't spam; a failed stamp write still sends (a broken disk
+    already alerts loudly elsewhere — silence here would hide that the agent's
+    change didn't take).
+    `diff` = whatever identifies this mismatch (config vs UI amounts/exchanges);
+    the event half dedups on it — see _UI_EVENT_STAMP_PATH."""
     try:
         from lib.events import emit
-        emit("ui_override")
+        if _ui_event_due(diff):
+            emit("ui_override")
     except Exception:
         pass
     try:
@@ -804,7 +846,7 @@ def load_portfolio_config():
     if ui is not None and isinstance(config, dict):
         if config.get('amounts') != ui['amounts'] \
                 or config.get('exchanges') != ui['exchanges']:
-            _ui_override_alert()
+            _ui_override_alert((config.get('amounts'), config.get('exchanges'), ui))
         config['amounts'] = ui['amounts']
         config['exchanges'] = ui['exchanges']
     return config

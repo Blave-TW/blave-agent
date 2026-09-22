@@ -19,6 +19,8 @@ append**:id 必須單調遞增、而且要比檔案現有最後一筆大(時鐘�
 **冷卻交給平台,不要在這裡壓。** 呼叫端現有的 24h/6h stamp 是給 Telegram 那一半用的
 (dual-write 期間照舊);事件本身每次都送,由平台依級別去重(P2 同因 6 小時)。這正是
 「機器只回報事實,平台判斷」——機器自己壓過一輪,平台就永遠看不到那些被壓掉的事實。
+例外:P2 高頻呼叫點(如每 tick 都會到的 `ui_override`)在機器端自壓配額——平台的 6h
+只壓 TG 出口,事件本體照吃 DAILY_EVENT_QUOTA;見 `lib/portfolio._ui_event_due`。
 """
 import logging
 import os
