@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.87 — 2026-09-23
+
 - **電腦版 `mcp_rule` 加雲端更新例外**:掛 `blave` MCP 時,可寫範圍多一條 `references/cloud-handoff.md` ›
   *Updating the cloud machine*(用戶在這段對話要求才做、只寫官方 clone 的整檔、永不碰 `control/`)。Wei 09-22:
   電腦版任何動作都不觸發雲端 agent 回合,雲端更新改由本機 agent 經 MCP 做;規則另加一句:不得經 SSH 在雲端開 agent
