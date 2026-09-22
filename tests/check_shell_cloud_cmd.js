@@ -156,6 +156,67 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     t("同一個人同時送兩個指令:兩個都正常收到回條,各自一顆 request_id", a.ok === true && b.ok === true
       && w.posts[0].b.request_id !== w.posts[1].b.request_id); }
 
+  // ── update 專用的 409:有回合在忙(TURN_BUSY)不是主機沒在跑;兩種都真的沒入列 ──
+  { const busy = M.interpret({ status: 409, body: { error_code: "TURN_BUSY", machine_state: "running" } });
+    t("409 TURN_BUSY → TURN_BUSY(不是 MACHINE_NOT_RUNNING),machine_state running 照樣往上交",
+      busy.code === "TURN_BUSY" && busy.machineState === "running"
+      && M.interpret({ status: 409, body: { error_code: "MACHINE_NOT_RUNNING", machine_state: "stopped" } }).code === "MACHINE_NOT_RUNNING"
+      && M.interpret({ status: 409, body: { machine_state: "none" } }).code === "MACHINE_NOT_RUNNING");
+    t("TURN_BUSY / 不支援從 app 更新 都是 undelivered(api 沒入列、沒佔 request_id)",
+      M.KIND.TURN_BUSY === "undelivered" && M.KIND[M.UPDATE_UNSUPPORTED] === "undelivered"
+      && M.interpret({ status: 409, body: { error_code: M.UPDATE_UNSUPPORTED } }).code === M.UPDATE_UNSUPPORTED
+      && M.interpret({ status: 400, body: { error_code: M.UPDATE_UNSUPPORTED } }).code === M.UPDATE_UNSUPPORTED);
+    const w = world({ cmdRes: { status: 409, body: { error_code: "TURN_BUSY", machine_state: "running" } } });
+    const r = await w.cmd.send("update", {});
+    t("send update 撞到 TURN_BUSY → undelivered、不去問 ack", r.ok === false && r.error === "TURN_BUSY" && r.kind === "undelivered"
+      && r.machineState === "running" && ackCalls(w) === 0); }
+
+  // ── POST 照按下順序排隊、ack 照舊並行(start-pending-stop §1.1) ──
+  { let release = null; const hold = new Promise((r) => { release = r; });
+    const w = world({ ackRes: (n) => (n >= 1 ? ackDone() : null) });
+    // 第一個 POST(resume)卡在網路上,直到放行
+    w.onPost = async (n) => { if (n === 1) await hold; };
+    const pa = w.cmd.send("resume", {});
+    await new Promise((r) => setImmediate(r));
+    const pb = w.cmd.send("halt", { reason: "x" });
+    await new Promise((r) => setImmediate(r));
+    t("前一個 POST 還在路上時,下一個 POST 不出門", w.posts.length === 1 && w.posts[0].b.cmd === "resume");
+    release();
+    const [a, b] = await Promise.all([pa, pb]);
+    const cmds = w.posts.filter((p) => p.u.indexOf("/ack") < 0).map((p) => p.b.cmd);
+    t("api 收到的順序 = 按下的順序(resume 然後 halt)", cmds.join(",") === "resume,halt" && a.ok && b.ok, cmds.join(",")); }
+  { // 計時器全部攔下不跑:第一個指令會停在 ack 的第一段等待裡
+    const timers = [], posts = [];
+    const cmd = M.createCloudCmd({ apiBase: "https://x", now: () => 1e12, getCreds: () => ({ token: TOKEN, appSecret: SECRET }),
+      setTimer: (fn) => { timers.push(fn); return 0; },
+      post: async (u, b) => { posts.push({ u, b }); return u.indexOf("/ack") >= 0 ? ackDone() : queued(); } });
+    let firstDone = false;
+    cmd.send("resume", {}).then(() => { firstDone = true; });
+    const pb = cmd.send("halt", {});
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    t("第二個 POST 不等第一個的 ack(第一個還卡在 ack 等待裡,第二個已經出門)",
+      !firstDone && posts.filter((p) => p.u.indexOf("/ack") < 0).map((p) => p.b.cmd).join(",") === "resume,halt");
+    while (timers.length) timers.shift()();
+    await pb; }
+  { let release = null; const hold = new Promise((r) => { release = r; });
+    const w = world({ ackRes: ackDone() }); w.onPost = async (n) => { if (n === 1) await hold; };
+    const pa = w.cmd.send("resume", {}); await new Promise((r) => setImmediate(r));
+    const pb = w.cmd.send("halt", {}); await new Promise((r) => setImmediate(r));
+    w.cmd.reset(); release();
+    const b = await pb; await pa;
+    t("排隊中登出:後面那個不打上線,算確定沒送出", b.error === "ACCOUNT_CHANGED" && b.kind === "undelivered"
+      && w.posts.filter((p) => p.u.indexOf("/ack") < 0).length === 1); }
+
+  { // 登出再登入(同一顆 token):登出前還在路上的啟動 POST,登入後按的暫停仍然要排在它後面
+    let release = null; const hold = new Promise((r) => { release = r; });
+    const w = world({ ackRes: ackDone() }); w.onPost = async (n) => { if (n === 1) await hold; };
+    const pa = w.cmd.send("resume", {}); await new Promise((r) => setImmediate(r));
+    w.cmd.reset();
+    const pb = w.cmd.send("halt", {}); await new Promise((r) => setImmediate(r));
+    t("登出再登入後的暫停不插隊:前一個 POST 還在路上時不出門", w.posts.filter((p) => p.u.indexOf("/ack") < 0).length === 1);
+    release(); await pa; const b = await pb;
+    t("…放行後照順序出門、照樣收得到回條", w.posts.filter((p) => p.u.indexOf("/ack") < 0).map((p) => p.b.cmd).join(",") === "resume,halt" && b.ok === true); }
+
   // ── 原文:不 require electron、不 log、不落地 ──
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8");
   const code = src.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");

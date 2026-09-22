@@ -383,9 +383,6 @@ msgstr "{nv} 下載完成，正在準備安裝…"
 msgid "up.installFailed"
 msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用程式」資料夾裡（不是從下載的磁碟映像直接開），再檢查一次"
 
-msgid "up.install"
-msgstr "重新啟動並更新"
-
 msgid "up.check"
 msgstr "檢查更新"
 
@@ -2040,3 +2037,120 @@ msgstr "把策略 {id} 送上我的雲端主機。搬完在雲端重跑回測，
 
 msgid "ho.msg.down"
 msgstr "把雲端主機上的策略 {id} 拉回這台電腦。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
+
+msgid "up.about"
+msgstr "關於"
+
+msgid "up.update"
+msgstr "更新"
+
+msgid "up.updating"
+msgstr "更新中…"
+
+msgid "up.retry"
+msgstr "再試一次"
+
+msgid "up.busy"
+msgstr "有對話還在回覆，結束後再更新"
+
+msgid "up.chat"
+msgstr "立即更新到最新版本"
+
+msgid "up.backup"
+msgstr "你改過的 {n} 個官方檔被新版蓋過，舊的留在 {dir}；要把改動套回來，跟 agent 說一聲。"
+
+msgid "up.c.unreach"
+msgstr "讀不到雲端的狀態，這次不會更新它。"
+
+msgid "up.c.stopped"
+msgstr "雲端主機已停機，這次不會更新它。"
+
+msgid "up.c.updating"
+msgstr "正在更新…"
+
+msgid "up.c.note"
+msgstr "雲端更新會在網頁工作頁留一條對話，這一輪會用到 AI 額度。"
+
+msgid "up.c.recDown"
+msgstr "新版已裝好，但下單程式沒有重新啟動成功，現在下單用的還是舊版的程式。"
+
+msgid "up.c.restart"
+msgstr "重新啟動下單程式"
+
+msgid "up.c.restartSent"
+msgstr "已送出重新啟動，等主機下一次回報。"
+
+msgid "up.c.notUpdated"
+msgstr "這次沒有更新成功，還是 {v}。策略照舊在跑。"
+
+msgid "up.c.available"
+msgstr "有新版 {nv}"
+
+msgid "up.c.updatedRec"
+msgstr "更新完成，下單程式在跑。"
+
+msgid "up.c.notYet"
+msgstr "還不能從 app 更新雲端，請稍後再試。"
+
+msgid "up.c.unsupported"
+msgstr "這台雲端主機不支援從 app 更新，請到網頁工作頁更新。"
+
+msgid "up.cf.titleBoth"
+msgstr "更新這台電腦與雲端"
+
+msgid "up.cf.titleCloud"
+msgstr "更新雲端"
+
+msgid "up.cf.cloud"
+msgstr "現在更新。"
+
+msgid "up.cf.cloudLive"
+msgstr "現在更新。下單程式會用新版重新啟動一次，重啟那段時間不會下單；策略與部位不動。"
+
+msgid "up.cf.local"
+msgstr "Blave 會重新啟動並換成新版。"
+
+msgid "up.cf.localBlocked"
+msgstr "自動下單執行中，不會現在重新啟動。暫停下單後回這裡按「更新」，或結束 Blave 時自動安裝。"
+
+msgid "tr.cloud.pendAmounts"
+msgstr "新金額已存到雲端主機。這一頁要等主機下一次回報，才會顯示成現況。"
+
+msgid "tr.cloud.pendTarget"
+msgstr "目標部位還是照舊金額算的，下一次回報才會更新。"
+
+msgid "tr.cloud.pendDone"
+msgstr "雲端已套用新金額。"
+
+msgid "tr.cloud.saveStale"
+msgstr "雲端的狀態不是最新的，現在儲存可能蓋掉別處剛改的金額。這一頁更新後就能存。"
+
+msgid "tr.cloud.saveLive.h"
+msgstr "雲端正在下單。"
+
+msgid "tr.cloud.saveLive.b"
+msgstr "主機一收到新金額，下一輪對帳就照它調整部位，可能馬上成交；這台電腦關著也一樣。"
+
+msgid "tr.cloud.saveIdle"
+msgstr "雲端現在沒有在下單：新金額先存在主機上，按「啟動下單」之後才照它下單。"
+
+msgid "tr.cloud.saveLag"
+msgstr "這一頁要等主機下一次回報才會顯示新金額。"
+
+msgid "tr.stopAfterStart"
+msgstr "啟動的指令已經送出，可能已經生效。暫停會排在它後面執行，所以最後會停在暫停；在那之前如果已經下了單，部位會留著。"
+
+msgid "tr.stopAfterStartFlat"
+msgstr "要一起平掉，選「暫停並關閉部位」。"
+
+msgid "tr.startingHint"
+msgstr "啟動指令還在路上。要停下來，按旁邊的「暫停下單」。"
+
+msgid "tr.cloud.hidden"
+msgstr "有 {n} 支策略暫時讀不到，金額照原樣保留。"
+
+msgid "tr.cloud.cfgUnread"
+msgstr "讀不到雲端主機的金額設定，現在儲存可能清掉整個組合。這一頁更新後就能存。"
+
+msgid "tr.cloud.badStored"
+msgstr "雲端主機上的金額設定有看不懂的值（{names}），這樣存不進去。請到網頁工作頁改正。"

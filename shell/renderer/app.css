@@ -211,6 +211,16 @@
 .msg.ai strong { font-weight: 600; }
 .msg.ai code { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
+/* 立即更新到最新版本:逐條照網頁 web/.../workspace.css 的 .ws-update——輸入列右上方靠右一行 12px 安靜文字連結
+   (無框無底無點、不用橘),熱區靠 min-height 44px,hover 灰字轉亮 + 底線,停用灰階退場、原因在 title */
+.ws-update { display: flex; align-items: center; width: fit-content; margin-left: auto; min-height: 44px;
+  padding: 0 var(--space-4); font-size: 12px; line-height: 1.5; color: var(--ink-2); text-underline-offset: 3px;
+  transition: color var(--motion-fast) var(--ease-standard); }
+.ws-update[hidden] { display: none; }
+.ws-update:hover { color: var(--ink); }
+.ws-update:hover span { text-decoration: underline; }   /* flex item 不吃容器的 text-decoration 傳播:畫在 span 上 */
+.ws-update:disabled, .ws-update:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; }
+.ws-update:disabled:hover span { text-decoration: none; }
 .chat-input {
   /* 直向:上 textarea、下工具列。外框、半徑、內距都不變,總高約 +36px。 */
   display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4);
@@ -757,13 +767,29 @@ body.resizing * { cursor: col-resize !important; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
 .set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
-.set-about { margin-top: auto; padding-top: var(--space-16); display: flex; align-items: flex-start; gap: var(--space-12); }
-.set-about .t { flex: 1; min-width: 0; }
+/* 關於:標題列(「關於」+ 右上一顆鈕)下面兩行「這台電腦」「雲端」(mockup-desktop-unified-update §1)。
+   每一行左欄是位置詞、右欄是版號 + 狀態句;行與行之間一條細線 */
+.set-about { margin-top: auto; padding-top: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
+.set-up-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin-bottom: var(--space-4); }
+.up-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--color-primary); margin-right: var(--space-6); vertical-align: 1px; }
+.up-dot[hidden] { display: none; }
+.set-up-row { display: grid; grid-template-columns: 88px 1fr; gap: var(--space-12); align-items: baseline; padding-top: var(--space-8); border-top: 1px solid var(--border-hairline); }
+.set-up-row:nth-child(2) { border-top: none; padding-top: 0; }
+.set-up-row[hidden] { display: none; }
+.set-up-row .w { font-size: 12px; color: var(--ink-3); }
+.set-about .t { min-width: 0; }
 .set-about .ver { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .set-about .st { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); max-width: 44ch; font-variant-numeric: tabular-nums; }
 .set-about .st:empty { display: none; }
-.set-about .st.up { color: var(--ink-2); }   /* ready / blocked / error / installFailed:要人讀的句子升一階 */
+.set-about .st.up { color: var(--ink-2); }   /* ready / blocked / error / installFailed / 雲端有新版:要人讀的句子升一階 */
+.set-about .st.bad { color: var(--color-redText); }   /* 雲端沒更新成功 / 下單程式沒起來 */
+.set-up-act { margin-top: var(--space-8); }
+.set-up-act[hidden] { display: none; }
 .set-about button { flex: none; }
+/* 更新的確認框:逐邊一段(位置詞 + 會發生什麼) */
+.up-cf { margin: 0; display: grid; gap: var(--space-12); }
+.up-cf dt { font-size: 12px; color: var(--ink-3); }
+.up-cf dd { margin: var(--space-2) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
    上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
    這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */

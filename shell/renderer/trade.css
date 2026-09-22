@@ -88,6 +88,9 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 .side-nav .strat-name { flex: 1; min-width: 0; }
 /* 雲端清單:列是鈕(點了中欄畫那支的報告),列尾的「拉回」(.ho-down)絕對定位、常駐,名字給它留位置 */
 #strat-list-cloud .strat-wrap .ho-down { position: absolute; right: var(--space-8); top: 50%; transform: translateY(-50%); }
+/* 列選中 / hover 的底(--surface-muted)上,「拉回」的 --ink-3 只有 3.61:1:升到 --ink-2。
+   兩個 :not 不能省——這條帶 id,會蓋過 app.css 的 .ho-down:hover(--ink)與停用的 --ink-3 */
+#strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible), :has([aria-current="true"])) .ho-down:not(:hover):not([aria-disabled="true"]) { color: var(--ink-2); }
 #strat-list-cloud .strat-wrap:has(.ho-down) .strat-row { padding-right: var(--space-64); }
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
@@ -126,13 +129,17 @@ html.ws-sc .side-gate { display: none; }
 .verdict .fault-mark { margin-top: 10px; }
 /* 雲端視角輸入框灰底、框線透明——跟頂列同一套語言(灰 = 雲端) */
 html[data-env="cloud"] .chat-input { background: var(--surface-muted); border-color: transparent; }
+/* 上一條的權重蓋過 app.css 的 .chat-input:focus-within:雲端要自己補回焦點框;placeholder 在灰底上重算成 --ink-2(AA) */
+html[data-env="cloud"] .chat-input:focus-within { border-color: var(--ink); }
+html[data-env="cloud"] .chat-input textarea::placeholder { color: var(--ink-2); }
 
 /* ---- 頁面骨架 ---- */
 .trv { flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
 .trv[hidden] { display: none; }
 .main-head { flex: none; display: flex; align-items: flex-start; gap: var(--space-16); padding: var(--space-16) var(--space-24) var(--space-12); }
 .main-head .txt { flex: 1; min-width: 0; }
-.main-head .act { flex: none; }
+/* 啟動在途時主鈕右邊多一顆「暫停下單」文字鈕(#tr-go-stop),間距 8 */
+.main-head .act { flex: none; display: flex; align-items: center; gap: var(--space-8); }
 .main-head-name { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc { margin-top: var(--space-4); font-size: 12px; color: var(--ink-2); line-height: 1.5; min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc.wrap { white-space: normal; overflow: visible; }
@@ -208,6 +215,12 @@ html[data-env="cloud"] .chat-input { background: var(--surface-muted); border-co
 .pf-note.err { color: var(--color-redText); }
 .amt-in:disabled { color: var(--ink-3); border-color: var(--border-hairline); }
 .amt-unit { font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+/* 雲端存完、報告還沒對上(.pend,spec-desktop-cloud-writable §1.2):數字灰一階 + 右邊 6×1 短線,不閃不轉;
+   記號一定配儲存列那句字。短線那格在改過的列上留位不畫,欄不跳。目標部位欄整欄降灰 */
+.amt-in.pend { color: var(--ink-2); }
+.amt-dash { display: inline-block; width: 6px; height: 1px; background: var(--ink-3); }
+.amt-dash.off { visibility: hidden; }
+.pf-tbl .pend-col, .pf-tbl .pend-col .ccy, .trv .pf-tbl .pend-col.buy, .trv .pf-tbl .pend-col.sell { color: var(--ink-3); }
 .pf-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-8); margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
 .pf-total .n { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
 .pf-total .over { color: var(--color-redText); }

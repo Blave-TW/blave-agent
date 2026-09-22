@@ -17,6 +17,9 @@
 //   - 這一份是誰的(比照 cloud.js / mcpcode.js):送出前那顆 token;換人 / 登出時世代 +1,在途的回應回來對不上就丟掉,
 //     A 按的指令不會把結果畫到 B 的頁面上。同一個人的多個指令**可以並行**(啟動 = resume + restart_reconciler),
 //     所以世代只在「換人 / 登出」時加,不是每次 send 都加。
+//   - **POST 那一段照呼叫順序排隊,ack 等待照舊並行**(spec-desktop-start-pending-stop §1.1):api 是 RPUSH、機器 BLPOP,
+//     按下順序 = 執行順序的前提是 POST 依序到 api。並行的話,啟動在路上時按的暫停可能先進佇列 → 最後停在下單中。
+//     每一節由 postJSON 的 20 秒逾時兜底——那是 socket 閒置逾時、不是總時長:回應一直慢慢滴的話會拖住後面那一個(實務上很少見)。
 //   - 憑證與金鑰的值只出現在 HTTPS body 裡:不回傳、不落地、不 log。這個檔不 require electron、不碰檔案系統。
 //
 // 給接線那一層(S2)的四條,不是實作細節,是契約:
@@ -31,8 +34,10 @@ const crypto = require("crypto");
 const ENDPOINT = "/oauth/desktop/cloud/command";
 const ACK_ENDPOINT = "/oauth/desktop/cloud/command/ack";
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;   // 契約 §2;佇列 id(sha256 前 32 碼)也落在這個形狀裡
-const MACHINE_STATES = ["none", "starting", "stopped"];
+const MACHINE_STATES = ["none", "starting", "stopped", "running"];   // running:TURN_BUSY 帶的(主機在跑,是回合在忙)
 const BAD_REQUEST_CODES = ["UNKNOWN_COMMAND", "REQUEST_ID_REQUIRED", "BAD_COMMAND"];
+/* 舊的 BlaveClaw 主機不支援從 app 更新:api 回 409 + 這個代號(update 專用;400 帶同一個代號也認,不必另起一種說法)。 */
+const UPDATE_UNSUPPORTED = "UPDATE_UNSUPPORTED";
 const ACK_FIRST_MS = 500, ACK_FACTOR = 1.6, ACK_MAX_MS = 3000, ACK_WINDOW_MS = 20 * 1000;
 
 /* 錯誤代號 → 畫面的三桶(實作地圖 §7)。`rejected` 不在這張表裡:它只可能來自 ack 的 `ok:false`,
@@ -45,6 +50,8 @@ const KIND = {
   RATE_LIMITED: "undelivered", OFFLINE: "undelivered", INVALID_CREDENTIALS: "undelivered",
   APP_SECRET_REQUIRED: "undelivered", BAD_RESPONSE: "undelivered", BAD_ARGS: "undelivered",
   NO_LOGIN: "undelivered",
+  // update 專用的兩個 409 / 拒絕:api 不入列、不佔 request_id(再按一次是新的意圖,不是重送)
+  TURN_BUSY: "undelivered", UPDATE_UNSUPPORTED: "undelivered",
   UNKNOWN_RESULT: "unknown",
   // `ACCOUNT_CHANGED` 刻意不在表裡:它的桶要看丟在哪一段(見 dropped()),查表會查到錯的那個
 };
@@ -55,7 +62,10 @@ function interpret(res) {
   if (!res || !res.status) return { code: "OFFLINE" };
   const s = res.status, b = res.body && typeof res.body === "object" ? res.body : {};
   if (s === 401) return { code: b.error_code === "APP_SECRET_REQUIRED" ? "APP_SECRET_REQUIRED" : "INVALID_CREDENTIALS" };
-  if (s === 409) return { code: "MACHINE_NOT_RUNNING", machineState: MACHINE_STATES.indexOf(b.machine_state) >= 0 ? b.machine_state : null };
+  if ((s === 409 || s === 400) && b.error_code === UPDATE_UNSUPPORTED) return { code: UPDATE_UNSUPPORTED };
+  // 409 有兩種:主機沒在跑、主機在跑但有回合在忙(只有 update 會回)。沒帶代號的舊 api = 前者
+  if (s === 409) return { code: b.error_code === "TURN_BUSY" ? "TURN_BUSY" : "MACHINE_NOT_RUNNING",
+    machineState: MACHINE_STATES.indexOf(b.machine_state) >= 0 ? b.machine_state : null };
   if (s === 429) return { code: "RATE_LIMITED" };
   if (s === 413) return { code: "BODY_TOO_LARGE" };
   if (s === 400) return { code: BAD_REQUEST_CODES.indexOf(b.error_code) >= 0 ? b.error_code : "BAD_COMMAND" };
@@ -85,7 +95,7 @@ function createCloudCmd(opts) {
   const now = opts.now || (() => Date.now());
   // 只排一次性的等待,沒有要取消的 timer(在途的指令由世代作廢,不靠清 timer)
   const setT = opts.setTimer || ((fn, ms) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); return t; });
-  let owner = null, gen = 0;
+  let owner = null, gen = 0, chain = Promise.resolve();
 
   const creds = () => { let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到 */ } return c && c.token && c.appSecret ? c : null; };
   const sleep = (ms) => new Promise((r) => setT(r, ms));
@@ -116,10 +126,19 @@ function createCloudCmd(opts) {
     const body = { token, app_secret: c.appSecret, request_id: requestId, cmd,
       args: args && typeof args === "object" ? args : {} };
     if (cmd === "credentials" && secrets && typeof secrets === "object") body.secrets = secrets;
-    let res = null;
-    try { res = await opts.post(opts.apiBase + ENDPOINT, body); } catch (_) { /* 連不上 */ }
-    // 先看回應再判要不要丟(interpret 是純函式、不帶機密,重排安全):函式開頭到這裡沒有別的 await,
-    // 所以「丟」永遠發生在請求已經打上線之後——api 已經回了 queued 卻說「沒送到」,用戶會去重按一次全部平倉
+    // 排在前一個 POST 後面(檔頭)。排隊的時候登出 / 換人了 = 不打上線,確定沒送出
+    const turn = chain.then(async () => {
+      if (mine !== gen) return { skipped: true };
+      let res = null;
+      try { res = await opts.post(opts.apiBase + ENDPOINT, body); } catch (_) { /* 連不上 */ }
+      return { res };
+    });
+    chain = turn.then(() => {}, () => {});
+    const got = await turn;
+    if (got.skipped) return dropped(false);
+    const res = got.res;
+    // 先看回應再判要不要丟(interpret 是純函式、不帶機密,重排安全)。排隊那一段的 await 已經由 skipped 處理(那時確定沒上線);
+    // 走到這裡的一定是請求已經打上線的——api 已經回了 queued 卻說「沒送到」,用戶會去重按一次全部平倉
     const r = interpret(res);
     if (!ours(mine, token)) return dropped(r.code === "QUEUED" || r.code === "UNKNOWN_RESULT");
     if (r.code !== "QUEUED")
@@ -150,8 +169,10 @@ function createCloudCmd(opts) {
 
   return {
     send,
-    reset() { gen++; owner = null; },   // 登出:在途的指令回來時丟掉(它的結果是上一個人的)
+    /* 登出:在途的指令回來時丟掉(它的結果是上一個人的)。**鏈不重設**:還沒出門的靠世代自己跳過;
+       重設的話,登出再登入後按的暫停會插到還在路上的那個啟動 POST 前面。 */
+    reset() { gen++; owner = null; },
   };
 }
 
-module.exports = { createCloudCmd, interpret, interpretAck, KIND, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };
+module.exports = { createCloudCmd, interpret, interpretAck, KIND, UPDATE_UNSUPPORTED, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };

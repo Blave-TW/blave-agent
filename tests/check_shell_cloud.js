@@ -17,6 +17,27 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   t("不認得的 machine.state 當 none", interpret({ status: 200, body: body({ machine: { state: "weird" } }) }).machine.state === "none");
   t("401 兩種、429、5xx、連不上、形狀不對", interpret({ status: 401, body: { error_code: "INVALID_CREDENTIALS" } }).code === "REVOKED" && interpret({ status: 401, body: { error_code: "APP_SECRET_REQUIRED" } }).code === "NO_APP_SECRET"
     && interpret({ status: 429, body: {} }).code === "RATE_LIMITED" && interpret({ status: 502, body: "x" }).code === "OFFLINE" && interpret(null).code === "OFFLINE" && interpret({ status: 200, body: {} }).code === "BAD_RESPONSE");
+  // S4 §1.1 ②:清單缺席 ≠ 空清單(把缺席當空的,存金額會把整個組合移出)
+  t("strategies_summary 缺席 → strategies_ok false;空陣列 → true", (() => { const b = body(); delete b.strategies_summary;
+    return interpret({ status: 200, body: b }).strategies_ok === false && interpret({ status: 200, body: body({ strategies_summary: [] }) }).strategies_ok === true
+      && interpret({ status: 200, body: body({ strategies_summary: "x" }) }).strategies_ok === false; })());
+  t("M1(Wei 拍板):只擋 summary null;partial true 照樣放行(雲端不從缺席推論移出),並把 partial 往上交給表下那句",
+    interpret({ status: 200, body: body({ strategies_summary: null, strategies_partial: false }) }).strategies_ok === false
+    && interpret({ status: 200, body: body({ strategies_partial: true }) }).strategies_ok === true
+    && interpret({ status: 200, body: body({ strategies_partial: true }) }).strategies_partial === true
+    && interpret({ status: 200, body: body({ strategies_partial: null }) }).strategies_partial === false
+    && interpret({ status: 200, body: body({ strategies_partial: false }) }).strategies_ok === true
+    && interpret({ status: 200, body: body() }).strategies_ok === true);
+  t("turn_active:只收 boolean,缺席 / 別的型別 = null(不知道)", interpret({ status: 200, body: body({ turn_active: true }) }).turn_active === true
+    && interpret({ status: 200, body: body({ turn_active: false }) }).turn_active === false && interpret({ status: 200, body: body() }).turn_active === null
+    && interpret({ status: 200, body: body({ turn_active: "yes" }) }).turn_active === null);
+  t("update:只留四個欄位;不認得的 result 當 updating、不認得的 state 當 running(不把沒定論的講成結果);沒有 / 空物件 = null", (() => {
+    const ok = interpret({ status: 200, body: body({ update: { state: "done", result: "reconciler_down", requested_at: 5, from_version: "1.1.80", session_id: "web-1" } }) }).update;
+    return JSON.stringify(ok) === '{"state":"done","result":"reconciler_down","requested_at":5,"from_version":"1.1.80"}'
+      && interpret({ status: 200, body: body({ update: { state: "done", result: "weird" } }) }).update.result === "updating"
+      && interpret({ status: 200, body: body({ update: { state: "x", result: "updated" } }) }).update.state === "running"
+      && interpret({ status: 200, body: body({ update: {} }) }).update === null
+      && interpret({ status: 200, body: body() }).update === null; })());
 
   // 宿主(時鐘是假的:refresh 有最小間隔,每一步自己把時間往前推)
   const calls = []; let clock = 1e6, creds = { token: "acct-T", appSecret: "appsec-S" }, reply = { status: 200, body: body() }, changes = [];
@@ -206,6 +227,25 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   t("main.js:cloud-strategy 走 handle()(只收自家頁面),拒絕時回 { code: UNREACH, strategy: null };preload 只多暴露 cloudStrategy 一支",
     /\n  handle\("cloud-strategy", \(_e, q\) => cloudHost\(\)\.strategy\(q && q\.name\), \{ code: "UNREACH", strategy: null \}\);/.test(mainSrc)
     && /cloudStrategy: \(name\) => ipcRenderer\.invoke\("cloud-strategy", \{ name \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
+
+  { // 更新的進度要推給畫面:只改 update.result(其餘不變)也要叫 onChange
+    let rep = { status: 200, body: body({ update: { state: "done", result: "updated", requested_at: 1, from_version: "a" } }) }, seen = [], ck = 5e6;
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => ({ token: "u", appSecret: "s" }), post: async () => rep,
+      onChange: (s) => seen.push(s.update && s.update.result), now: () => ck, setTimer: () => 0, clearTimer: () => {} });
+    await h.refresh(true); ck += MIN_GAP_MS;
+    rep = { status: 200, body: body({ update: { state: "done", result: "reconciler_down", requested_at: 1, from_version: "a" } }) };
+    await h.refresh(true); ck += MIN_GAP_MS;
+    rep = { status: 200, body: body({ update: { state: "done", result: "reconciler_down", requested_at: 1, from_version: "a" }, turn_active: true }) };
+    await h.refresh(true);
+    t("update.result / turn_active 變了就推(updated 翻成 reconciler_down 不能等 60 秒)", seen.join(",") === "updated,reconciler_down,reconciler_down", seen.join(",")); }
+  { // 換人 / 登出時 epoch 會變:畫面靠它丟掉上一個人的在途金額與 request_id
+    let who = { token: "A", appSecret: "s" }, ck = 9e6;
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => who, post: async () => ({ status: 200, body: body() }), now: () => ck, setTimer: () => 0, clearTimer: () => {} });
+    await h.refresh(true); const e0 = h.snapshot().epoch; ck += MIN_GAP_MS;
+    await h.refresh(true); const e1 = h.snapshot().epoch; ck += MIN_GAP_MS;
+    who = { token: "B", appSecret: "s" }; await h.refresh(true); const e2 = h.snapshot().epoch;
+    h.reset(); const e3 = h.snapshot().epoch;
+    t("epoch:同一個人輪詢不變;換人、登出都會變", typeof e0 === "number" && e1 === e0 && e2 !== e1 && e3 !== e2); }
 
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

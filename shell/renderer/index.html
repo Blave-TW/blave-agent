@@ -187,6 +187,8 @@
       <div class="chat-scroll" id="chat-scroll">
       </div>
       <div class="chat-input-wrap">
+        <!-- 立即更新到最新版本:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。任一邊有新版才出現,按下 = 「關於」那顆「更新」(app.js upGo) -->
+        <button type="button" class="ws-update" id="ws-update" hidden><span data-i18n="up.chat"></span></button>
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
@@ -254,10 +256,21 @@
               <select class="set-sel" id="set-lang"></select>
             </span>
           </div>
-          <!-- 關於(這一頁最下面):版號、更新狀態、右邊一顆鈕。字與鈕由 app.js 的 upPaint 依狀態畫 -->
+          <!-- 關於(這一頁最下面):「這台電腦」「雲端」兩行版本與狀態、右上一顆鈕(兩邊共用)。字與鈕由 app.js 的 upPaint 依 upPlan 畫;
+               雲端那一行沒主機 / 沒登入時整行藏起來 -->
           <div class="set-about" id="set-up">
-            <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p></div>
-            <button type="button" class="btn-quiet" id="set-up-btn" hidden></button>
+            <div class="set-up-head">
+              <h6 class="set-gl"><span class="up-dot" id="set-up-dot" aria-hidden="true" hidden></span><span data-i18n="up.about"></span></h6>
+              <button type="button" class="btn-quiet" id="set-up-btn" hidden></button>
+            </div>
+            <div class="set-up-row">
+              <span class="w" data-i18n="env.local"></span>
+              <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p><p class="st" id="set-up-bk"></p></div>
+            </div>
+            <div class="set-up-row" id="set-up-cloud" hidden>
+              <span class="w" data-i18n="env.cloud"></span>
+              <div class="t"><p class="ver mono" id="set-up-cver"></p><p class="st" id="set-up-ctxt" role="status"></p><p class="st" id="set-up-cnote"></p><div class="set-up-act" id="set-up-cact" hidden></div></div>
+            </div>
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>

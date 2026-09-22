@@ -24,8 +24,17 @@ const setFocusGuard = () => {}, cmdLine = () => "";
 const t = (k, v) => k + (v ? JSON.stringify(v) : "");
 const calls = []; const window = { blave: { updateCheck: () => { calls.push("check"); return Promise.resolve(); }, updateInstall: () => { calls.push("install"); return Promise.resolve({ ok: true }); } } };
 const upRefresh = () => {}; let UP = null, hasToken = false;
-eval(fnSrc("upPaint")); eval(fnSrc("acctPaintAcct"));
-const paint = (st) => { UP = st; upPaint(); const b = $("set-up-btn"); return { ver: $("set-up-ver").textContent, msg: $("set-up-txt").textContent, up: $("set-up-txt").classList.has("up"), btn: b.hidden ? null : b.textContent, out: b.classList.has("btn-out"), quiet: b.classList.has("btn-quiet") }; };
+// 「關於」兩行 + 一顆鈕(upPlan 決策、upPaint 照畫、upGo / upRun 動作)。雲端那一袋與 trade.js 的幾支用假的
+const TR_BAGS = { cloud: { st: null, reqIds: {} } }, ENV = { cloudDirty: false };
+let running = false, LANG = "zh", confirmed = null, cloudReply = { ok: true, result: "update=queued" }, sysMsgs = [], said = [];
+const envCloudKind = (st) => (st && st.kind) || "loading", trExecState = (st) => (st && st.exec) || "halted";
+const trKindOf = (r) => (r && r.kind) || "undelivered", trSendError = (r) => "err:" + (r && r.error);
+const trSend = async (bag, cmd) => { calls.push("cloud:" + cmd); return cloudReply; }, trPollSoon = () => {};
+const confirmBox = (o) => { confirmed = o; }, addMsg = (c, x) => sysMsgs.push(x), srSay = (x) => said.push(x);
+eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
+eval(fnSrc("upPlan")); eval(fnSrc("upNow")); eval(fnSrc("upPaint")); eval(fnSrc("upGo")); eval(fnSrc("upErrText")); eval(fnSrc("acctPaintAcct"));
+eval("async " + fnSrc("upRun"));
+const paint = (st) => { UP = st; upPaint(); const b = $("set-up-btn"); return { ver: $("set-up-ver").textContent, msg: $("set-up-txt").textContent, up: $("set-up-txt").className.includes("up"), btn: b.hidden ? null : b.textContent, out: b.classList.has("btn-out"), quiet: b.classList.has("btn-quiet") }; };
 const C = { current: "0.0.1", version: "0.0.2" };
 let p = paint({ ...C, phase: "off", version: null });
 ok("off(沒有更新來源):只有版號,沒有狀態句、沒有鈕", p.ver === 'up.app{"v":"0.0.1"}' && p.msg === "" && p.btn === null);
@@ -33,12 +42,94 @@ p = paint({ ...C, phase: "idle" }); ok("idle:已是最新版 + 安靜的「檢�
 p = paint({ ...C, phase: "checking" }); ok("checking:沒有鈕", p.msg === "up.checking" && p.btn === null);
 p = paint({ ...C, phase: "downloading", percent: 42 }); ok("downloading:有百分比用帶百分比的句子,沒有鈕;沒有百分比退回不帶的", p.msg === 'up.downloadingPct{"nv":"0.0.2","pct":42}' && p.btn === null && paint({ ...C, phase: "downloading", percent: null }).msg === 'up.downloading{"nv":"0.0.2"}');
 p = paint({ ...C, phase: "staging" }); ok("staging:沒有鈕(還沒驗完章,不能給重啟)", p.msg === 'up.staging{"nv":"0.0.2"}' && p.btn === null);
-p = paint({ ...C, phase: "ready" }); ok("ready:句子升一階、鈕換成描邊的「重新啟動並更新」", p.up && p.btn === "up.install" && p.out && !p.quiet);
-$("set-up-btn").onclick(); ok("ready 的鈕按下去是安裝,不是檢查", calls.join() === "install");
-p = paint({ ...C, phase: "blocked" }); ok("blocked(下單中):講原因、**沒有鈕**(下單中不裝)", p.msg === 'up.blocked{"nv":"0.0.2"}' && p.up && p.btn === null);
-p = paint({ ...C, phase: "error", error: "CHECK_FAILED" }); ok("error:這次沒檢查成功 + 檢查更新(鈕退回安靜的)", p.msg === "up.error" && p.up && p.btn === "up.check" && p.quiet && !p.out);
-p = paint({ ...C, phase: "error", error: "INSTALL_FAILED" }); ok("安裝失敗:講出來、可以再檢查", p.msg === 'up.installFailed{"nv":"0.0.2"}' && p.btn === "up.check");
-ok("版號每一種 phase 都在;狀態句不再帶版號前綴", ["idle", "checking", "ready", "blocked", "error"].every((ph) => paint({ ...C, phase: ph }).ver === 'up.app{"v":"0.0.1"}') && !/t\("up\.(latest|checking|error)", v\)/.test(fnSrc("upPaint")));
+p = paint({ ...C, phase: "ready" }); ok("ready:句子升一階、鈕換成描邊的「更新」(兩邊共用那一顆)", p.up && p.btn === "up.update" && p.out && !p.quiet && !$("set-up-dot").hidden);
+(async () => {
+  calls.length = 0; await $("set-up-btn").onclick(); await new Promise((r) => setImmediate(r));
+  ok("ready、兩邊都沒在下單:不跳框,按下去是安裝", calls.join() === "install" && confirmed === null);
+  p = paint({ ...C, phase: "blocked" }); ok("blocked(下單中)而雲端沒有新版:講原因、**沒有鈕**(下單中不裝)", p.msg === 'up.blocked{"nv":"0.0.2"}' && p.up && p.btn === null);
+  p = paint({ ...C, phase: "error", error: "CHECK_FAILED" }); ok("error:這次沒檢查成功 + 檢查更新(鈕退回安靜的)", p.msg === "up.error" && p.up && p.btn === "up.check" && p.quiet && !p.out);
+  p = paint({ ...C, phase: "error", error: "INSTALL_FAILED" }); ok("安裝失敗:講出來、可以再檢查", p.msg === 'up.installFailed{"nv":"0.0.2"}' && p.btn === "up.check");
+  ok("版號每一種 phase 都在", ["idle", "checking", "ready", "blocked", "error"].every((ph) => paint({ ...C, phase: ph }).ver === 'up.app{"v":"0.0.1"}'));
+  p = paint({ ...C, phase: "idle", backup: { n: 2, dir: ".official-backup/1.1.80-x/" } });
+  ok("換版時蓋掉的改動:那一行講數量與位置", $("set-up-bk").textContent === 'up.backup{"n":2,"dir":".official-backup/1.1.80-x/"}');
+
+  // ── 雲端那一行 ──
+  const cloud = (o, extra) => ({ kind: "running", exec: "halted", alive: true, report: { reconciler: { alive: true } }, ...(extra || {}),
+    cloud: { config_version: "1.1.80", latest_config_version: "1.1.83", turn_active: false, update: null, ...o } });
+  const plan = (st, up, mem, localTurn) => upPlan({ up: up || { ...C, phase: "idle" }, cloud: st && st.cloud, kind: st ? envCloudKind(st) : "loading", localTurn: !!localTurn, mem: mem || {}, recAlive: true });
+  let q = plan(cloud({}));
+  ok("雲端落後:那一行「有新版」、鈕是「更新」、小點亮、聊天入口出現", q.cloud.s[0] === "up.c.available" && q.btn.label[0] === "up.update" && q.btn.act === "go" && q.dot && q.chat.show && !q.chat.disabled);
+  ok("沒主機 / 沒登入 / 還沒讀到:雲端那一行不畫", plan({ kind: "none", cloud: {} }).cloud === null && plan({ kind: "signedOut", cloud: {} }).cloud === null && plan(null).cloud === null);
+  q = plan({ kind: "stopped", cloud: { config_version: "1.1.80" } }, { ...C, phase: "ready" });
+  ok("雲端停機:講原因,鈕照樣能更新這台電腦", q.cloud.s[0] === "up.c.stopped" && !q.cloud.has && q.doLocal && q.btn.act === "go");
+  q = plan(cloud({ turn_active: true }));
+  ok("雲端有回合在跑:鈕與聊天入口都停用,原因 up.busy", q.btn.disabled && q.btn.title[0] === "up.busy" && q.chat.disabled);
+  q = plan(cloud({}), { ...C, phase: "ready" }, {}, true);
+  ok("這台電腦有回合在跑:一樣停用", q.btn.disabled && q.chat.disabled);
+  q = plan(cloud({ config_version: "1.1.83", update: { state: "done", result: "reconciler_down", requested_at: 1, from_version: "1.1.80" } }));
+  ok("reconciler_down:紅字 + 重新啟動下單程式,絕不寫已更新", q.cloud.cls === "bad" && q.cloud.s[0] === "up.c.recDown" && q.cloud.act === "restart" && !/updated/i.test(q.cloud.s[0]));
+  q = plan(cloud({ update: { state: "done", result: "not_updated", requested_at: 1, from_version: "1.1.80" } }));
+  ok("not_updated:這次沒有更新成功 + 鈕變「再試一次」", q.cloud.s[0] === "up.c.notUpdated" && q.cloud.s[1].v === "1.1.80" && q.btn.label[0] === "up.retry");
+  q = plan(cloud({ update: { state: "running", result: "updating", requested_at: 1e9, from_version: "1.1.80" } }), null, { pressedAt: 1e12 });
+  ok("更新中(這次在這裡按的):正在更新 + 提醒句、鈕停用「更新中…」、不再算有新版", q.cloud.s[0] === "up.c.updating" && q.cloud.note[0] === "up.c.note" && q.btn.disabled && q.btn.label[0] === "up.updating" && !q.cloud.has);
+  const upd = { state: "done", result: "updated", requested_at: 2e9, from_version: "1.1.80" };
+  ok("updated:只有這次在這裡按的才講結果(對帳器活著才說重新啟動了);舊紀錄就是一般的已是最新版",
+    plan(cloud({ config_version: "1.1.83", update: upd }), null, { pressedAt: 2e12 }).cloud.s[0] === "up.c.updatedRec"
+    && plan(cloud({ config_version: "1.1.83", update: upd }), null, { pressedAt: 3e12 }).cloud.s[0] === "up.latest"
+    && upPlan({ up: { ...C, phase: "idle" }, cloud: cloud({ config_version: "1.1.83", update: upd }).cloud, kind: "running", mem: { pressedAt: 2e12 }, recAlive: false }).cloud.s[0] === "up.latest");
+  ok("按過之後聊天入口收起", plan(cloud({}), null, { chatHidden: true }).chat.show === false);
+
+  // ── 按下去:雲端先送、這台電腦後重開;只有一邊在自動下單才跳框 ──
+  UP = { ...C, phase: "ready" }; TR_BAGS.cloud.st = cloud({}); Object.assign(UPD, { pressedAt: 0, chatHidden: false, err: null, errCode: null, cloudSent: false });
+  calls.length = 0; confirmed = null; upGo($("set-up-btn"), false); await new Promise((r) => setTimeout(r, 0));
+  ok("兩邊都沒在下單:不跳框;雲端先送 update、這台電腦後安裝", confirmed === null && calls.join() === "cloud:update,install", calls.join());
+  calls.length = 0; UPD.chatHidden = false; UPD.pressedAt = 0; TR_BAGS.cloud.st = cloud({}, { exec: "running" });
+  upGo($("set-up-btn"), false);
+  ok("雲端在下單:跳確認框、逐邊講,還沒按確定前什麼都沒送", !!confirmed && calls.length === 0 && confirmed.extra.children.length === 2 && confirmed.title === "up.cf.titleBoth");
+  await confirmed.onOk(); ok("確定之後才送", calls.join() === "cloud:update,install");
+  UP = { ...C, phase: "blocked" }; confirmed = null; calls.length = 0; TR_BAGS.cloud.st = cloud({}); UPD.chatHidden = false; UPD.pressedAt = 0;
+  upGo($("set-up-btn"), false);
+  ok("這台電腦在下單(blocked)而雲端有新版:跳框;確定後只送雲端、不裝本機", !!confirmed && confirmed.title === "up.cf.titleBoth");
+  await confirmed.onOk(); ok("…blocked 不裝", calls.join() === "cloud:update");
+  UP = { ...C, phase: "idle" }; calls.length = 0; confirmed = null; UPD.chatHidden = false; UPD.pressedAt = 0; sysMsgs.length = 0;
+  await upRun(upNow(), true);
+  ok("從聊天按的:提醒句(網頁工作頁多一條對話、用到 AI 額度)放進對話", sysMsgs.join() === "up.c.note" && said.indexOf("up.c.note") >= 0);
+  // 失敗的說法
+  for (const [err, key] of [["TURN_BUSY", "up.busy"], ["UNKNOWN_COMMAND", "up.c.notYet"], ["UPDATE_UNSUPPORTED", "up.c.unsupported"], ["MACHINE_NOT_RUNNING", "up.c.stopped"]])
+    ok("雲端回 " + err + " → " + key, upErrText({ ok: false, error: err }) === key);
+  TR_BAGS.cloud.reqIds.update = "R1"; cloudReply = { ok: false, error: "TURN_BUSY", kind: "undelivered", requestId: "R1" }; UPD.pressedAt = 0;
+  await upRun(upNow(), false);
+  ok("TURN_BUSY:紅字、request_id 丟掉(再按是新的意圖)、聊天入口回來", UPD.err === "up.busy" && TR_BAGS.cloud.reqIds.update === undefined && UPD.chatHidden === false
+    && upNow().cloud.cls === "bad");
+  TR_BAGS.cloud.st = cloud({ turn_active: false, fetched_at: UPD.errAt - 1000 }); upPaint(); upPaint();
+  ok("#9 失敗之前抓到的那份(或每一輪重畫)不會讓紅字自己消失", UPD.err === "up.busy");
+  TR_BAGS.cloud.st = cloud({ turn_active: false, fetched_at: UPD.errAt + 1000, transient: "OFFLINE" }); upPaint();
+  ok("L4 這一輪沒抓到(transient:手上是舊的那份):紅字不收", UPD.err === "up.busy");
+  TR_BAGS.cloud.st = cloud({ turn_active: false, fetched_at: UPD.errAt + 1000 }); upPaint();
+  ok("…失敗之後抓到的新一份說回合結束了,那句才收掉", UPD.err === null);
+  // #11 主機起來了:「已停機」那句也要收
+  UPD.err = "up.c.stopped"; UPD.errCode = "MACHINE_NOT_RUNNING"; UPD.errAt = 5e12;
+  TR_BAGS.cloud.st = { kind: "stopped", cloud: { fetched_at: 6e12 } }; upPaint();
+  ok("#11 主機還停著:紅字留著", UPD.err === "up.c.stopped");
+  TR_BAGS.cloud.st = cloud({ fetched_at: 6e12 }); upPaint();
+  ok("#11 主機起來了:紅字收掉", UPD.err === null);
+  // #11 送出成功到讀到這一次的紀錄之前:維持更新中(鈕不閃回「更新」)
+  q = upPlan({ up: { ...C, phase: "idle" }, cloud: cloud({}).cloud, kind: "running", mem: { pressedAt: 1e12, cloudSent: true }, now: 1e12 + 3000 });
+  ok("#11 ack 之後、紀錄還沒出現:更新中、鈕停用", q.cloud.updating && q.btn.disabled && q.btn.label[0] === "up.updating" && !q.chat.show);
+  q = upPlan({ up: { ...C, phase: "idle" }, cloud: cloud({}).cloud, kind: "running", mem: { pressedAt: 1e12, cloudSent: true }, now: 1e12 + 300000 });
+  ok("#11 …紀錄一直沒出現:收斂窗口過了就回到照實畫(不永遠卡住)", !q.cloud.updating && q.btn.act === "go");
+  // spec ①:按下之前就講會留一條對話、會用到 AI 額度
+  q = plan(cloud({}));
+  ok("① 雲端有新版、還沒按:那一行已經帶著提醒句", q.cloud.note && q.cloud.note[0] === "up.c.note");
+  TR_BAGS.cloud.st = cloud({ fetched_at: 7e12 }); Object.assign(UPD, { err: null, errCode: null, chatHidden: false, cloudSent: false, pressedAt: 0 }); UP = { ...C, phase: "idle" }; upPaint();
+  ok("① 聊天那一行的 title 在按之前就是提醒句", !$("ws-update").hidden && $("ws-update").title === "up.c.note" && $("set-up-cnote").textContent === "up.c.note");
+  // #10 雲端那段在等的時候這台電腦開始了一個回合:不重開
+  UP = { ...C, phase: "ready" }; calls.length = 0; cloudReply = { ok: true, result: "update=queued" };
+  const pp = upNow(); running = true; await upRun(pp, false); 
+  ok("#10 按下之後本機開始跑回合:不重開(沒叫 install),那一行講原因", calls.indexOf("install") < 0 && UPD.localErr === "up.busy" && upNow().local.s === "up.busy");
+  running = false; upPaint(); ok("…回合結束:原因收掉", UPD.localErr === null);
+  { const S2 = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+    ok("② updatedRec 不宣稱「用新版重新啟動」(api 分不出);up.install 沒人用、刪掉", /"up\.c\.updatedRec": "更新完成，下單程式在跑。"/.test(S2) && !/"up\.c\.updatedRec": "[^"]*(新版重新啟動|restarted on the new version)/.test(S2) && !/"up\.install"/.test(S2)); }
 const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
 ok("字串:up.app / acct.signedOut 在、up.label / up.current 清掉、前綴「{v} ·」拿掉", /"up\.app"/.test(S) && /"acct\.signedOut"/.test(S) && !/"up\.(label|current)"/.test(S) && !/"up\.[a-zA-Z]+": "\{v\} /.test(S));
 
@@ -178,4 +269,6 @@ ok("全 app 的字串不出現「匿名 / anonymous」;首次告知的 priv.noti
     && /msgid "pv\.d\.running"\nmsgstr "Switch to “Cloud” in the top bar[^\n]*(web workspace|workspace on the web)/.test(PO[1]) && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
     && /msgid "plan\.switchCloud"\nmsgstr "切到雲端"/.test(PO[0]) && /msgid "plan\.switchCloud"\nmsgstr "Switch to cloud"/.test(PO[1]));
 }
+})().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+});

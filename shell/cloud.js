@@ -43,10 +43,31 @@ function interpret(res) {
     fx_rates: b.fx_rates && typeof b.fx_rates === "object" ? b.fx_rates : null,
     currency: typeof b.currency === "string" ? b.currency : null,
     strategies: Array.isArray(b.strategies_summary) ? b.strategies_summary.filter((s) => s && typeof s === "object" && typeof s.name === "string") : [],
+    /* 「讀到空的清單」跟「這一份沒帶清單」是兩件事(spec-desktop-cloud-s4 §1.1 ②):金額是整份覆蓋,
+       把缺席當成空清單,存檔會把整個組合移出。畫面只在這個旗標為真時才算清單已載入。 */
+    /* summary 是 array|null(null = 索引讀不回)。只擋 null:strategies_partial === true(有名字缺 summary,大策略可能長期如此)
+       照樣放行畫金額表(Wei 拍板)——雲端永遠不從「不在清單上」推論移出(trade.js trSendAmounts),缺的那幾支金額原樣帶著送,
+       表下另講「有 N 支暫時讀不到」。Redis 淘汰時 api 仍可能回 [](分不出),由 trCloudListOk 擋「空清單卻有金額」 */
+    strategies_ok: Array.isArray(b.strategies_summary),
+    strategies_partial: b.strategies_partial === true,
     config_version: typeof b.config_version === "string" ? b.config_version : null,
     latest_config_version: typeof b.latest_config_version === "string" ? b.latest_config_version : null,
+    turn_active: typeof b.turn_active === "boolean" ? b.turn_active : null,   // 舊 api 沒有這個鍵 = 不知道
+    update: interpretUpdate(b.update),
     data_sources: Array.isArray(b.data_sources) ? b.data_sources.filter((n) => typeof n === "string") : [],
   };
+}
+/* 雲端「從 app 按更新」那一次的讀數(api `_cloud_update_view`);沒按過 / 形狀不對 = null。
+   state 是那條更新對話的回合狀態,result 是 api 對結果的判讀——result 可能先是 updated、下一份回報才翻成
+   reconciler_down,所以畫面每一輪照這一份重畫,不記住第一個結果。 */
+const UPDATE_STATES = ["sent", "queued", "running", "done"];
+const UPDATE_RESULTS = ["updating", "updated", "reconciler_down", "up_to_date", "not_updated"];
+function interpretUpdate(u) {
+  if (!u || typeof u !== "object" || Array.isArray(u) || (typeof u.state !== "string" && typeof u.result !== "string")) return null;
+  // 不認得的值(api 之後加的狀態)一律當「還在更新」:寧可多轉一會兒,也不要把沒定論的東西講成結果
+  return { state: UPDATE_STATES.indexOf(u.state) >= 0 ? u.state : "running", result: UPDATE_RESULTS.indexOf(u.result) >= 0 ? u.result : "updating",
+    requested_at: typeof u.requested_at === "number" ? u.requested_at : null,
+    from_version: typeof u.from_version === "string" ? u.from_version : null };
 }
 
 /* 事件清單的回應 → { code, events }(純函式)。**「讀不到」與「真的沒有事件」是兩件事**:
@@ -91,14 +112,17 @@ function createCloudHost(opts) {
   const clearT = opts.clearTimer || clearTimeout;
   const EMPTY = () => ({ code: "NO_LOGIN" });
   let snap = EMPTY(), owner = null, gen = 0, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
+  let epoch = 0;   // 換人 / 登出一次 +1:畫面拿它判斷「手上那些雲端的在途狀態是不是上一個人的」
   let evInflight = null, evLastTryAt = 0;   // 事件那一支自己的節流(它不共用上面那組:兩支走不同的速率桶)
   let stInflight = null, stName = null;   // 單支策略:同一支在途共用。不另設最小間隔——那會把「連點兩支」畫成讀不到;重複打由在途共用擋,速率由 api 的明細桶擋
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
-    s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length].join("|");
-  const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt });
+    s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
+    // 更新的進度與結果也要推:看這台電腦時畫面 60 秒才問一次,「更新中 → 已更新 / 沒起來」不能等那麼久
+    s.config_version, s.latest_config_version, s.turn_active, s.update && s.update.state, s.update && s.update.result].join("|");
+  const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
-  function drop(next) { gen++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
+  function drop(next) { gen++; epoch++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
 
   async function refresh(force) {
     // 在途時又被要求「現在就要」(登入成功那一刻):等在途那份回來;它若因為換了人被丟掉(owner 被清空),馬上替現在這個人再打一次

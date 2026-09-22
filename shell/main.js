@@ -205,7 +205,7 @@ function updater() {
     nativeUpdater: feedUrl ? require("electron").autoUpdater : null,   // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭)
     feedUrl, currentVersion: app.getVersion(),
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
-    onState: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", st); },
+    onState: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup }); },
     log: (m) => console.error("[updater] " + m),
   });
   return _up;
@@ -592,15 +592,19 @@ function backupChangedOfficial(tag) {
    - 照 copyOfficial 的規則:只覆寫官方清單,strategies/<name>/、state/、.env、cache/、用戶自己加的 lib 檔都不碰。 */
 const readVersion = (dir) => { try { return fs.readFileSync(path.join(dir, "VERSION"), "utf8").trim(); } catch (_) { return ""; } };
 const officialStale = (bundled, ws) => !!bundled && bundled > (ws || "");
+/* 這次啟動換版時被蓋掉的改動(只在記憶體;經 update-state 交給「關於」那一行)。以前只寫 log,用戶看不到自己的改動被收到哪去了 */
+let _officialBackup = null;
 function syncOfficialOnUpdate() {
   if (!app.isPackaged || !fs.existsSync(WS)) return false;   // 開發版每次啟動本來就重拷;還沒有 workspace = 首次連結時會拷
   const bundled = readVersion(REPO), ws = readVersion(WS);
   if (!officialStale(bundled, ws)) { if (bundled && ws && bundled < ws) console.error(`[update] workspace ${ws} is newer than this app's ${bundled} — left as is`); return false; }
   try {
     // 備份不成就不覆寫:寧可這次停在舊 lib(下次啟動再試),也不要把改動弄丟
-    const bk = backupChangedOfficial(`${ws || "none"}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+    // 版號來自 workspace 的 VERSION(agent 寫得到):當成不可信字串,只留檔名安全的字元,免得 `../` 把備份寫到別處
+    const bk = backupChangedOfficial(`${ws || "none"}-${new Date().toISOString()}`.replace(/[^A-Za-z0-9._-]/g, "_"));
     copyOfficial();
     console.error(`[update] workspace framework ${ws || "(none)"} → ${bundled}` + (bk.saved.length ? `; ${bk.saved.length} changed official file(s) backed up to ${bk.dest}` : ""));
+    if (bk.saved.length) _officialBackup = { n: bk.saved.length, dir: path.relative(WS, bk.dest) + path.sep };
     return true;
   } catch (e) { console.error("[update] workspace sync failed: " + (e && e.message)); return false; }
 }
@@ -1368,16 +1372,21 @@ app.whenReady().then(() => {
      **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
      金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。
      白名單的來源仍是 daemon.js 的 UI_COMMANDS(= api 的 CLOUD_COMMANDS,api/tests/check_desktop_cloud_command.py 直接讀那個檔比對),
-     不另抄一份;但**再交集一次「這一批真的有 UI 在用的那四個」**(稽核 S-2):`amounts`(S4)、
-     `credentials_remove` / `retest_accounts` / `restart_reconciler`(S5)各自出貨時再加進 CLOUD_SHIPPED。
+     不另抄一份;但**再交集一次「這一批真的有 UI 在用的」**(稽核 S-2):`credentials_remove` / `retest_accounts`(S5)出貨時再加進 CLOUD_SHIPPED。
+     `update` 是雲端專屬(= api 的 CLOUD_ONLY_COMMANDS):**不可以**加進 daemon.js 的 UI_COMMANDS(那是本機 daemon 也收的那一份,
+     api 的測試釘住 `"update" not in ui`),所以另列一份 CLOUD_ONLY,不帶任何參數。
      requestId 由畫面帶回上一趟那顆(冪等;形狀不對就當沒帶,由 cloudcmd 重鑄)。
      最低版本閘不套在這裡:它擋的是**這台電腦**的下單碼,雲端跑的是主機上的 runtime(規格 §4.2-1)。 */
   const cloudDenied = { ok: false, error: "NOT_ALLOWED", kind: "undelivered" };
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait"];
+  const CLOUD_ONLY = ["update"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "restart_reconciler", "update"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
-    if (typeof cmd !== "string" || cmd === "credentials" || !require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
+    if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
-    const r = await cloudCmd().send(cmd, args && typeof args === "object" && !Array.isArray(args) ? args : {}, null, { requestId: rid });
+    const argsSafe = cmd === "update" || !args || typeof args !== "object" || Array.isArray(args) ? {} : args;   // update 不帶參數:api 對任何 args 都 400
+    // 形狀先在這裡驗一次(同本機 daemon 那一道):renderer 被攻破時塞不進奇形怪狀的參數,也不白吃一格 api 的速率桶
+    if (CLOUD_ONLY.indexOf(cmd) < 0 && !require("./daemon").argsOk(cmd, argsSafe)) return { ok: false, error: "BAD_ARGS", kind: "undelivered" };
+    const r = await cloudCmd().send(cmd, argsSafe, null, { requestId: rid });
     // 機器收下了:立刻要一份新狀態(refresh 自己有節流)。不等它——回應不該被多一趟網路拖住
     if (r && r.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return r;
@@ -1391,7 +1400,7 @@ app.whenReady().then(() => {
     return binanceLink().connect(a.apiKey, a.secret);
   });
   handle("min-version-state", () => minGate().state());
-  handle("update-state", () => updater().state());
+  handle("update-state", () => ({ ...updater().state(), backup: _officialBackup }));
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
   ipcMain.handle("update-install", (e) => (fromOurPage(e) ? updater().install() : { ok: false, error: "NOT_ALLOWED" }));
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
@@ -1571,6 +1580,9 @@ async function pauseFromMenu() {
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
+// 雲端落後也要亮小點(同一個「有新版」的記號;選單那一行字仍只講這台電腦的,那句的出口是暫停後重開)
+const cloudUpdateWaiting = () => { const c = (cloudSt() || {}).cloud; return !!(c && c.code === "OK" && c.machine && c.machine.state === "running"
+  && c.config_version && c.latest_config_version && c.config_version !== c.latest_config_version); };
 // 選單列的狀態行。這台電腦那一行:選單列只在這台電腦「確定在下單」時出現,所以狀態一定是 on。字還沒交 → null,退回舊的那一句
 const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", state: "on" }, tmLabels);
 const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);
@@ -1591,7 +1603,7 @@ function trayMenu(live) {
 function traySync() {
   const live = tradeLive();
   if (live) lastVenue = live.venue;
-  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", trayCloudLine() || ""].join("|") : "";
+  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", cloudUpdateWaiting() ? "c" : "", trayCloudLine() || ""].join("|") : "";
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
   trayKey = key;
   if (!live) {
@@ -1605,7 +1617,7 @@ function traySync() {
     tray = new Tray(img);
   }
   tray.setToolTip(updateWaiting() ? tmLabels.updateReady : tmLabels.running);
-  tray.setTitle(updateWaiting() ? "•" : "");   // 圖示旁的小點(macOS 選單列的 title):有新版在等
+  tray.setTitle(updateWaiting() || cloudUpdateWaiting() ? "•" : "");   // 圖示旁的小點(macOS 選單列的 title):任一邊有新版在等
   tray.setContextMenu(trayMenu(live));
   if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: pauseLabel(), click: pauseFromMenu }]));
 }

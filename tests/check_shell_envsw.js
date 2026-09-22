@@ -37,15 +37,15 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const C = envApi("cloud", host);
   /* 雲端的寫入:只有**這一批真的有 UI 在用**的四個走得出去,其餘一律 NOT_ALLOWED 且完全不碰 host。
      `credentials` 永遠不在裡面(金鑰不經過這條通用路,cloudcmd.js 檔頭契約 ①);
-     `amounts`(S4)、`credentials_remove` / `retest_accounts` / `restart_reconciler`(S5)各自出貨時再加回來——
+     `credentials_remove` / `retest_accounts`(S5)出貨時再加回來——
      沒有 UI 在用的指令不該是「renderer 被攻破就打得通」的面(稽核 S-2)。 */
-  const CMDS = ["halt", "close_all", "resume", "resume_wait"];
+  const CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "restart_reconciler", "update"];
   const sent = []; for (const c of CMDS) sent.push(await C.tradeSend(c, { reason: "x" }));
-  ok("雲端:白名單那四個指令都經過主行程的 cloudSend(帶 cmd / args / requestId 三個參數),回傳原樣往上交",
+  ok("雲端:白名單內的指令都經過主行程的 cloudSend(帶 cmd / args / requestId 三個參數),回傳原樣往上交",
     sent.every((r) => r && r.ok === true) && sendCalls.length === CMDS.length
     && sendCalls.map((a) => a[0]).join() === CMDS.join() && sendCalls.every((a) => a.length === 3 && JSON.stringify(a[1]) === '{"reason":"x"}' && a[2] === null) && touched.length === 0);
-  const bad = []; for (const c of ["credentials", "amounts", "credentials_remove", "retest_accounts", "restart_reconciler", "", "halt2", null]) bad.push(await C.tradeSend(c, {}));
-  ok("雲端:白名單外的指令(含 credentials 與還沒出貨的那四個)回 NOT_ALLOWED / undelivered,而且一次都沒碰到 cloudSend",
+  const bad = []; for (const c of ["credentials", "credentials_remove", "retest_accounts", "", "halt2", null]) bad.push(await C.tradeSend(c, {}));
+  ok("雲端:白名單外的指令(含 credentials 與還沒出貨的那兩個)回 NOT_ALLOWED / undelivered,而且一次都沒碰到 cloudSend",
     bad.every((r) => r && r.ok === false && r.error === "NOT_ALLOWED" && trKindOf(r) === "undelivered")
     && sendCalls.length === CMDS.length && trErrorKind("NOT_ALLOWED") === "undelivered");
   { const c2 = envApi("cloud", host); await c2.tradeSend("halt", {}, "rid" + "0".repeat(13));
@@ -130,9 +130,20 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("main.js:cloud-send 走 handle(),拒絕時回 { ok:false, error:NOT_ALLOWED, kind:undelivered }",
       /\n  handle\("cloud-send"/.test(mainSrc) && /const cloudDenied = \{ ok: false, error: "NOT_ALLOWED", kind: "undelivered" \};/.test(mainSrc) && h.length > 100);
     // 白名單不另抄一份:來源仍是 daemon.js 的 UI_COMMANDS(= api 的 CLOUD_COMMANDS),再交集這一批出貨的四個
-    ok("main.js:cloud-send 的白名單沿用 daemon 的 UI_COMMANDS、明文排除 credentials,再交集這一批出貨的四個",
-      /cmd === "credentials" \|\| !require\("\.\/daemon"\)\.UI_COMMANDS\.has\(cmd\) \|\| CLOUD_SHIPPED\.indexOf\(cmd\) < 0/.test(h)
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait"\];/.test(mainSrc));
+    ok("main.js:cloud-send 的白名單沿用 daemon 的 UI_COMMANDS(+ 雲端專屬的 update)、明文排除 credentials,再交集這一批出貨的",
+      /cmd === "credentials" \|\| !\(require\("\.\/daemon"\)\.UI_COMMANDS\.has\(cmd\) \|\| CLOUD_ONLY\.indexOf\(cmd\) >= 0\) \|\| CLOUD_SHIPPED\.indexOf\(cmd\) < 0/.test(h)
+      && /const CLOUD_ONLY = \["update"\];/.test(mainSrc)
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "restart_reconciler", "update"\];/.test(mainSrc));
+    // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
+    ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
+    ok("main.js:update 送出去的參數永遠是 {}", /const argsSafe = cmd === "update" \|\| /.test(h));
+    ok("#3 main.js:非雲端專屬的指令先過 daemon 的 argsOk(形狀不對 = BAD_ARGS / undelivered,不打 api)",
+      /if \(CLOUD_ONLY\.indexOf\(cmd\) < 0 && !require\("\.\/daemon"\)\.argsOk\(cmd, argsSafe\)\) return \{ ok: false, error: "BAD_ARGS", kind: "undelivered" \};/.test(h)
+      && require("../shell/daemon").argsOk("amounts", { amounts: { a: -1 } }) === false && require("../shell/daemon").argsOk("halt", { reason: "x" }) === true);
+    { const m = mainSrc.match(/backupChangedOfficial\(`\$\{ws \|\| "none"\}-\$\{new Date\(\)\.toISOString\(\)\}`\.replace\((\/[^\n]*?\/g), "_"\)\)/);
+      const re = m ? eval(m[1]) : null;
+      ok("#6 備份資料夾名:VERSION 是 agent 寫得到的字串,只留檔名安全字元(../ 寫不出 workspace)",
+        !!re && ("../../etc/x" + "-2026-09-22T01:02:03.000Z").replace(re, "_").indexOf("/") < 0 && "1.1.80-2026".replace(re, "_") === "1.1.80-2026"); }
     // 契約 ①:cloudcmd.js 不是 secrets 的信任邊界,閘門在這裡——第三個參數永遠是 null,renderer 塞不進金鑰
     ok("main.js:cloud-send 拒收 secrets(送進 cloudcmd 的第三個參數寫死 null)",
       /cloudCmd\(\)\.send\(cmd, args[^,]*, null, \{ requestId: rid \}\)/.test(h) && !/secret/i.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
@@ -199,11 +210,11 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 兩袋各自收斂、兩袋任一有過場就把輪詢調快(本機原本只看自己那袋)
   ok("trPoll:兩邊的過場都檢查、任一邊有過場就每 2.5 秒一輪、雲端有過場時每輪都重讀狀態",
     /trWith\(L, trPendingCheck\); trWith\(C, trPendingCheck\);/.test(fn("trPoll")) && /L\.pending \|\| C\.pending \? TR_POLL_PENDING/.test(fn("trPoll"))
-    && /ENV\.cloudDirty \|\| C\.pending \|\|/.test(fn("trPoll")) && /envCell\("cloud", C\.st, !!C\.pending\)/.test(fn("envPaint")));
+    && /ENV\.cloudDirty \|\| C\.pending \|\|/.test(fn("trPoll")) && /envCell\("cloud", C\.st, !!C\.pending \|\| C\.save === "saving"\)/.test(fn("envPaint")));
   // 等的過程中主機停機:人要看到的是「它停了」,不是「我按的那個不知道怎樣」
   ok("trPendingCheck:雲端停機 → 直接清過場、不出「結果不明」;收斂了就把 request_id 一起清掉",
-    /if \(cloud && envCloudKind\(TR\.st\) === "stopped"\) \{ TR\.pending = null; TR\.reqIds = \{\}; trAlert\(""\); return; \}/.test(fn("trPendingCheck"))
-    && /if \(state === p\.want\) \{ TR\.pending = null; TR\.reqIds = \{\}; trAlert\(""\); \}/.test(fn("trPendingCheck")));
+    /if \(cloud && envCloudKind\(TR\.st\) === "stopped"\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); return; \}/.test(fn("trPendingCheck"))
+    && /if \(state === p\.want\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
   /* 逾時還沒收斂:雲端的 ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來。
      這一條**只准**出「結果不明」——說「沒送到」就是叫一個暫停其實已經生效的人去交易所撤 key(規格 §1.3)。 */
   { const timeout = fn("trPendingCheck").slice(fn("trPendingCheck").indexOf("else if (Date.now() > p.until)"));
@@ -223,18 +234,20 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     trBtnLocked({ want: "running" }, true) === false && trBtnLocked({ want: "halted" }, true) === false
     && trBtnLocked({ want: "halted" }, false) === true && trBtnLocked({ want: "running" }, false) === true
     && trBtnLocked(null, false) === false && trBtnLocked(null, true) === false);
-  /* 稽核 R2-2:啟動的意圖被機器收下(acked)之後,機器已經確定在下單了,鈕不可以再鎖著等收斂(最長四分鐘)——
-     那時它就是「暫停」那一側。ack 之前維持鎖:還不知道有沒有送到,放行會兩顆並飛。 */
-  ok("啟動被收下之後就是暫停側(鈕解鎖、click 開的是暫停框);收下之前仍鎖;狀態說在跑的本來就是暫停側",
-    trStopSideNow("halted", { want: "running", acked: true }) === true && trBtnLocked({ want: "running", acked: true }, trStopSideNow("halted", { want: "running", acked: true })) === false
-    && trStopSideNow("halted", { want: "running" }) === false && trBtnLocked({ want: "running" }, trStopSideNow("halted", { want: "running" })) === true
-    && trStopSideNow("halted", { want: "halted", acked: true }) === false && trStopSideNow("running", null) === true && trStopSideNow("halted", null) === false);
+  /* spec-desktop-start-pending-stop(Wei 拍 B 版):按下啟動、還沒生效那一段(ack 之前也一樣)暫停要按得到——
+     有任何過場就算暫停側;主鈕在啟動在途時仍鎖著講實話(trStartPending),暫停的出口是旁邊的 #tr-go-stop。 */
+  ok("啟動在途(ack 之前)就算暫停側;暫停在途也是;沒有過場時照狀態",
+    trStopSideNow("halted", { want: "running" }) === true && trStopSideNow("halted", { want: "halted" }) === true
+    && trBtnLocked({ want: "running" }, trStopSideNow("halted", { want: "running" })) === false
+    && trStopSideNow("running", null) === true && trStopSideNow("halted", null) === false
+    && trStartPending({ want: "running" }) === true && trStartPending({ want: "halted" }) === false && trStartPending(null) === false);
   // 三個入口(鈕的可按性、click、真的送出去那一層)只認同一條規則:哪一個漏掉,停止鈕就會在某條路上被鎖住
   ok("鈕 / click / trRun 三處都走 trBtnLocked(鈕與 click 的那一側由 trStopSideNow 判),沒有人再直接用 TR.pending 或 S.pending 擋",
-    /const busy = !!TR\.pending, locked = trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\)\);/.test(fn("trPaintHead"))
+    /const busy = !!TR\.pending, locked = trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\)\) \|\| trStartPending\(TR\.pending\);/.test(fn("trPaintHead"))
     && /aria-disabled", locked \? "true" : "false"/.test(fn("trPaintHead"))
     && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\);\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return;/.test(fn("trPaintHead"))
-    && /if \(res && res\.ok\) \{\s*mine\.acked = true;/.test(fn("trRun"))
+    && /if \(trStartPending\(TR\.pending\)\) return;/.test(fn("trPaintHead"))
+    && /for \(const step of steps\) \{ if \(S\.pending !== mine\) break;/.test(fn("trRun"))
     && /if \(trBtnLocked\(S\.pending, want === "halted"\)\) return;/.test(fn("trRun"))
     && !/if \(TR\.pending\) return;|if \(S\.pending\) return;/.test(fn("trPaintHead") + fn("trRun")));
   // 主鈕:雲端不再是唯讀的擺設(停機那一態仍然是「加值」);整頁級的「只能看」退場
@@ -324,7 +337,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && envHeadState(repAged(0.5, { last_ok_at: NOW + 3 * 3600e3 - 1000, fetched_at: NOW + 3 * 3600e3 - 1000 }), NOW + 3 * 3600e3) === "running");
   ok("R3 拿到之後又擱了很久也算進去(50 分鐘前的回報 + 擱了 20 分鐘);沒有 server_time 就只看連線那一條", envHeadState(repAged(50 / 60, { last_ok_at: NOW - 20 * MIN, fetched_at: NOW - 20 * MIN, server_time: (NOW - 20 * MIN) / 1000, reported_at: (NOW - 70 * MIN) / 1000 }), NOW) === "unknown"
     && envHeadState(repAged(2, { server_time: null }), NOW) === "running");
-  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) b\.remove\(\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
+  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) b\.remove\(\); trPaintGoStop\(false\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
   // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
   const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
   ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true

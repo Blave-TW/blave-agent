@@ -383,9 +383,6 @@ msgstr "{nv} downloaded, preparing to install…"
 msgid "up.installFailed"
 msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in your Applications folder (not opened straight from the disk image), then check again"
 
-msgid "up.install"
-msgstr "Restart and update"
-
 msgid "up.check"
 msgstr "Check for updates"
 
@@ -2040,3 +2037,120 @@ msgstr "Send the strategy {id} to my cloud machine. Re-run the backtest there on
 
 msgid "ho.msg.down"
 msgstr "Bring the strategy {id} from my cloud machine back to this computer. Re-run the backtest here afterwards, and show me both sets of numbers side by side."
+
+msgid "up.about"
+msgstr "About"
+
+msgid "up.update"
+msgstr "Update"
+
+msgid "up.updating"
+msgstr "Updating…"
+
+msgid "up.retry"
+msgstr "Try again"
+
+msgid "up.busy"
+msgstr "A conversation is still replying. Update after it finishes."
+
+msgid "up.chat"
+msgstr "Update to the latest version now"
+
+msgid "up.backup"
+msgstr "The new version replaced {n} official file(s) you had changed. The old copies are in {dir}. To bring your changes back, ask the agent."
+
+msgid "up.c.unreach"
+msgstr "Couldn’t read the cloud’s status, so it won’t be updated this time."
+
+msgid "up.c.stopped"
+msgstr "The cloud machine is stopped, so it won’t be updated this time."
+
+msgid "up.c.updating"
+msgstr "Updating…"
+
+msgid "up.c.note"
+msgstr "Updating the cloud leaves a conversation in the web workspace and uses some AI credit."
+
+msgid "up.c.recDown"
+msgstr "The new version is installed, but the trading program didn’t restart, so trading still runs on the old version."
+
+msgid "up.c.restart"
+msgstr "Restart trading program"
+
+msgid "up.c.restartSent"
+msgstr "Restart sent. Waiting for the machine’s next report."
+
+msgid "up.c.notUpdated"
+msgstr "This update didn’t go through; it’s still {v}. Your strategies keep running as before."
+
+msgid "up.c.available"
+msgstr "New version {nv} available"
+
+msgid "up.c.updatedRec"
+msgstr "Update finished. The trading program is running."
+
+msgid "up.c.notYet"
+msgstr "Updating the cloud from the app isn’t available yet. Please try again later."
+
+msgid "up.c.unsupported"
+msgstr "This cloud machine doesn’t support updates from the app. Update it from the web workspace."
+
+msgid "up.cf.titleBoth"
+msgstr "Update this computer and the cloud"
+
+msgid "up.cf.titleCloud"
+msgstr "Update the cloud"
+
+msgid "up.cf.cloud"
+msgstr "Updates now."
+
+msgid "up.cf.cloudLive"
+msgstr "Updates now. The trading program restarts once on the new version and places no orders while it restarts; strategies and positions stay as they are."
+
+msgid "up.cf.local"
+msgstr "Blave restarts on the new version."
+
+msgid "up.cf.localBlocked"
+msgstr "Auto trading is running, so this computer won’t restart now. Pause trading and press Update here, or it installs when you quit Blave."
+
+msgid "tr.cloud.pendAmounts"
+msgstr "The new amounts are saved on the cloud machine. This page shows them as current after its next report."
+
+msgid "tr.cloud.pendTarget"
+msgstr "Target positions still use the old amounts and update on the next report."
+
+msgid "tr.cloud.pendDone"
+msgstr "The cloud is now using the new amounts."
+
+msgid "tr.cloud.saveStale"
+msgstr "The cloud’s state isn’t current, so saving now could overwrite amounts changed elsewhere. You can save once this page updates."
+
+msgid "tr.cloud.saveLive.h"
+msgstr "The cloud is trading."
+
+msgid "tr.cloud.saveLive.b"
+msgstr "Once the machine receives the new amounts, its next reconcile adjusts positions to them and orders may fill right away, whether or not this computer is on."
+
+msgid "tr.cloud.saveIdle"
+msgstr "The cloud isn’t trading right now. The new amounts are stored on the machine and used once you press Start trading."
+
+msgid "tr.cloud.saveLag"
+msgstr "This page shows the new amounts after the machine’s next report."
+
+msgid "tr.stopAfterStart"
+msgstr "The start command has been sent and may already be in effect. The pause runs after it, so trading ends up paused. Any orders placed before then leave their positions open."
+
+msgid "tr.stopAfterStartFlat"
+msgstr "To close them too, choose Pause and close positions."
+
+msgid "tr.startingHint"
+msgstr "The start command is on its way. To stop it, press Pause trading next to it."
+
+msgid "tr.cloud.hidden"
+msgstr "{n} strategies can’t be read right now; their amounts are kept as they are."
+
+msgid "tr.cloud.cfgUnread"
+msgstr "The cloud machine’s amount settings couldn’t be read, so saving now could clear the whole portfolio. You can save once this page updates."
+
+msgid "tr.cloud.badStored"
+msgstr "The cloud machine’s amount settings have values that can’t be read ({names}), so this can’t be saved. Fix them in the web workspace."
