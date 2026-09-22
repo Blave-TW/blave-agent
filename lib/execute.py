@@ -820,6 +820,12 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
     def _slice(_sym, _side, usd):
         if stop.is_set():
             raise RuntimeError("execution stopped")
+        if guard.restart_stopped():
+            # the machine rebooted: no further slice of either direction
+            if why is not None:
+                why["stop"] = "restart"
+            stop.set()
+            raise RuntimeError("machine restarted — stopping execution until 啟動下單")
         if is_entry and guard.halted():
             if why is not None:
                 why["stop"] = "halt"
@@ -1111,6 +1117,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         start_notified = False
         while (remaining > _RESIDUAL_USD and not stop.is_set()
                and time.time() < deadline and replaces < _CHASE_MAX_REPLACES):
+            if guard.restart_stopped():
+                stop.set()
+                reason = "machine restarted"
+                break
             if is_entry and guard.halted():
                 stop.set()
                 reason = "state/HALT set"
@@ -1140,6 +1150,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
 
             while not stop.is_set() and time.time() < deadline:
                 stop.wait(_CHASE_POLL_S)
+                if guard.restart_stopped():
+                    stop.set()  # the resting order is cancelled right below
+                    reason = "machine restarted"
+                    break
                 st = tools["status"](oid)
                 if st["status"] in ("filled", "canceled"):
                     # canceled = venue-side (expiry/ADL) — account either way,

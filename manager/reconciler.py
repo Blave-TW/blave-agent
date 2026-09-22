@@ -513,6 +513,10 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     whole lot short); asset_spec passes through from portfolio_config for
     non-fractional instruments (futures contracts etc.).
     """
+    if guard.restart_stopped():
+        # the record landed mid-round: the legs left in this round are not sent
+        logging.info(f"[reconciler] {symbol}: machine restarted — not sent until 啟動下單")
+        return False
     if exchange == 'capital':
         return _capital_place_order(symbol, signed_diff, asset_spec=asset_spec,
                                     reduce_only=reduce_only)
@@ -954,6 +958,20 @@ def send_telegram(msg):
 
 
 HEARTBEAT_PATH = Path('state/heartbeat/reconciler')
+# lib/guard.RESTART_STOP_PATH: written by the runtime when the machine rebooted
+# while trading, removed by 啟動下單. While it exists this daemon runs no round,
+# so it places no order, closes and stops included (Wei 2026-09-22: a reboot is
+# a full stop, and a kill that did not land must not change that); lib/order_*
+# refuses every order too (guard.check_restart_stop), which is what stops a
+# TWAP/chase already in flight. The one thing that still runs is the startup
+# sweep of this daemon's own resting orders — a cancel, never an order.
+# Read every round, not once: resume removes it while this process keeps running.
+RESTART_STOP_PATH = Path(guard.RESTART_STOP_PATH)
+_restart_stop_logged = False
+# Touched with the heartbeat every round, by this gated version only: the
+# runtime's proof that the RUNNING process honours RESTART_STOP_PATH (a new
+# reconciler.py on disk says nothing about an old process still running).
+GATED_MARKER_PATH = Path('state/heartbeat/reconciler.gated')
 
 
 if __name__ == '__main__':
@@ -994,6 +1012,19 @@ if __name__ == '__main__':
         # and healthy, and must not look dead to the healthcheck.
         HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
         HEARTBEAT_PATH.touch()
+        GATED_MARKER_PATH.touch()
+
+        if RESTART_STOP_PATH.exists():
+            if not _restart_stop_logged:
+                logging.info("[reconciler] machine restarted — no orders of any kind "
+                             "(closes included) until the user presses 啟動下單")
+                _restart_stop_logged = True
+            time.sleep(POLL_INTERVAL)
+            continue
+        if _restart_stop_logged:
+            logging.info("[reconciler] 啟動下單 pressed — resuming reconciliation")
+            _restart_stop_logged = False
+            force_next = True  # the rounds skipped while gated are due now
 
         # 沒綁交易所就整輪跳過 —— 見 _venue_bound。轉態時各記一行,不刷 log。
         if not _venue_bound():

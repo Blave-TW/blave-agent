@@ -563,6 +563,7 @@ def _settle(env, led):
 def _gate(intent, **fields):
     fields["venue"] = VENUE
     fields["intent"] = intent
+    guard.check_restart_stop(intent, fields)
     if intent == "entry" and guard.halted():
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
@@ -992,7 +993,7 @@ def snapshot(env):
 
 def reset_account(env, cash=None):
     """Wipe positions/orders/fills and re-seed cash. Explicit user request only."""
-    fields = _gate("reduce", symbol="*", note="reset_account")
+    fields = _gate("reset", symbol="*", note="reset_account")
     with _txn(env) as led:
         fresh = _new_ledger(env)
         # created_ts must not trail PAPER_BOUND_TS, or a machine clock behind the

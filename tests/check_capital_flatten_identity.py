@@ -28,7 +28,23 @@ import tempfile
 import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Never let this test read the repo's .env: flatten.py chdirs to the repo ROOT
+# on import, and that .env holds real exchange keys (2026-09-22 incident).
+_REPO_ENV = os.path.join(ROOT, ".env")
+
+
+def _no_repo_env(event, args):
+    if event == "open" and args and isinstance(args[0], (str, bytes)):
+        p_ = os.fsdecode(args[0])
+        if os.path.abspath(p_) == _REPO_ENV:
+            raise RuntimeError(f"test tried to open the repo .env ({p_})")
+
+
+sys.addaudithook(_no_repo_env)
 BASE = tempfile.mkdtemp(prefix="capital-flat-")
+# notify config = none: lib.notify here and in every child falls back to a log line, never a real Telegram
+os.environ["BLAVE_AGENT_HOME"] = os.environ["BLAVECLAW_HOME"] = BASE
 WS = os.path.join(BASE, "workspace")
 for d in ("manager", "state", "lib"):
     os.makedirs(os.path.join(WS, d))
@@ -68,7 +84,8 @@ flatten.zero_ledger_symbols = lambda syms: zeroed.update(syms)
 flatten.load_portfolio_config = lambda: CFG
 flatten.ledger_positions = lambda: dict(LEDGER)
 flatten._wait_for_inflight = lambda *a, **k: []
-flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None)
+flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
+                                      restart_stopped=lambda: False)
 EXTRA_ENV = {}
 flatten._read_env = lambda path=".env": dict({
     "CAPITAL_API_KEY": "x", "CAPITAL_PASSWORD": "x",

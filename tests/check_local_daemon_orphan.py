@@ -75,7 +75,8 @@ def scenario(name, err_to_pipe, hold):
     ws = os.path.join(base, "workspace")
     os.makedirs(os.path.join(ws, "manager"))
     open(os.path.join(ws, "manager", "wait_for_bar.py"), "w").write("")
-    env = dict(os.environ, BLAVE_AGENT_BASE=base, BLAVE_AGENT_WORKSPACE=ws, BLAVE_AGENT_LOCAL="1")
+    env = dict(os.environ, BLAVE_AGENT_BASE=base, BLAVE_AGENT_WORKSPACE=ws, BLAVE_AGENT_LOCAL="1",
+               BLAVE_AGENT_HOME=base, BLAVECLAW_HOME=base)  # never a real Telegram
     err = "pipe" if err_to_pipe else os.path.join(base, "daemon.err")
     parent = subprocess.Popen([sys.executable, "-c", PARENT, DAEMON, err, "1" if hold else "0"],
                               env=env, stdout=subprocess.PIPE, text=True)

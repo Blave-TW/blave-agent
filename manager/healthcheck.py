@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 REGISTRY_PATH = "state/deployments.json"
 HEARTBEAT_DIR = "state/heartbeat"
+RESTART_STOP_PATH = "state/reconciler_stopped.json"  # = lib/guard.RESTART_STOP_PATH
 ALERTS_PATH = "state/healthcheck_alerts.json"
 ALERT_COOLDOWN_HOURS = 6
 GRACE_MINUTES = 10
@@ -213,8 +214,16 @@ def health_report():
         _save_json(REGISTRY_PATH, registry)
 
     lines, problems = [], {}
+    # After a machine restart nothing runs until 啟動下單 (lib/guard.RESTART_STOP_PATH):
+    # a heartbeat going stale then is the pause itself, not a lost schedule.
+    # Structural problems (crontab line gone, strategy file missing) still count.
+    paused = os.path.exists(RESTART_STOP_PATH)
     for name, entry in sorted(registry.items()):
         problem = _check_entry(name, entry, cron_entries, now)
+        if paused and problem and (problem.startswith("no successful run")
+                                   or problem.startswith("registered but never ran")):
+            lines.append(f"  {name:<20} ⏸ paused — machine restarted, waiting for 啟動下單")
+            continue
         hb_path = os.path.join(HEARTBEAT_DIR, name)
         if problem:
             problems[name] = problem
@@ -229,7 +238,7 @@ def health_report():
     # orphan heartbeats: shown for information, never alerted
     if os.path.isdir(HEARTBEAT_DIR):
         for fn in sorted(os.listdir(HEARTBEAT_DIR)):
-            if fn not in registry:
+            if fn not in registry and not fn.endswith(".gated"):  # reconciler.gated = a proof marker
                 lines.append(f"  {fn:<20} ▫️ runs but not registered as a deployment")
     return lines, problems
 

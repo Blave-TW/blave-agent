@@ -178,6 +178,7 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
 
     fields = {k: params[k] for k in _AUDIT_PARAM_KEYS if k in (params or {})}
     fields["intent"] = intent
+    guard.check_restart_stop(intent, fields)
     fields["demo"] = _base(env) == DEMO_URL
 
     if intent == "entry" and guard.halted():

@@ -337,9 +337,13 @@ UPD_NEEDLES = {
     "VERSION last, only on full success": "**`VERSION` last — after U7 — and only if every step above succeeded and no official file was left on an older version**",
     "F4 VERSION only after the restart read active": "and, when U7 restarted the reconciler, only after it read `active`",
     "F4 restart failed: no VERSION": "Restart failed or not `active` → do not copy `VERSION` (U8), and say exactly that:",
-    "paused machine: reconciler_stopped.json → no restart": "if `ssh <SSH_OPTS> blaveagent@<host> test -f \"/opt/blave-agent/workspace/state/reconciler_stopped.json\"` succeeds, do not restart**",
-    "paused machine: tell the user to press 啟動下單": "trading stays stopped until the user presses 啟動下單 (Start trading) on the Auto trading page",
-    "paused machine: not a failure, VERSION still copied": "This is not a failure: U8 still copies `VERSION`.",
+    "paused machine: record present → restart all the same (Wei §6.1)": "check `ssh <SSH_OPTS> blaveagent@<host> test -f \"/opt/blave-agent/workspace/state/reconciler_stopped.json\"`. If it succeeds, restart all the same**",
+    "paused machine: only a gated reconciler is restarted": "as long as `ssh <SSH_OPTS> blaveagent@<host> grep -q RESTART_STOP_PATH \"/opt/blave-agent/workspace/manager/reconciler.py\"` succeeds too",
+    "paused machine: ungated → no restart": "If that `grep` fails (the reconciler was not updated), do not restart.",
+    "paused machine: tell the user it stays paused (zh)": "tell the user 「自動下單仍暫停，而且更新後連平倉與停損都不會執行；按「啟動下單」才會繼續，要先平倉請到交易所操作。」",
+    "paused machine: …and that exits and stops won't run (en)": "Auto-trading is still paused, and after the update exits and stops won't run either. Press Start Trading to resume, or close positions at the exchange first.",
+    "paused machine: tell the user to press 啟動下單": "the machine stays paused until the user presses 啟動下單 (Start trading) on the Auto trading page",
+    "paused machine: skipped restart not a failure, VERSION still copied": "A skipped restart here is not a failure: U8 still copies `VERSION`.",
     "S1 old VERSION allow-listed, else unknown": "`<old VERSION>` must match `^[A-Za-z0-9._-]{1,40}$`, otherwise use `unknown`",
     "S1 time allow-listed, else stop": "the time must match `^[0-9]{8}T[0-9]{6}Z$`, otherwise stop",
     "F3 backup failed: that file not replaced": "**If a backup `cp` fails, or `ssh <SSH_OPTS> blaveagent@<host> cmp` of the backup against the original is not silent, do not replace that file** — stop and report which file and why.",
@@ -419,8 +423,10 @@ def upd2_fails(upd):
         "F4 VERSION after the reconciler step": "Last — after the reconciler step below — copy the reference clone's `VERSION`",
         "F4 VERSION only after verified running": "(when the reconciler was restarted) only after it is verified running again",
         "F4 restart failed: no VERSION": "never \"updated and active\" — and do not copy `VERSION`.",
-        "paused machine: reconciler_stopped.json → no restart": "**If `state/reconciler_stopped.json` exists, do not restart it** — not with `systemctl`, `nssm` or tmux",
-        "paused machine: 啟動下單, not a failure": "This is not a failed restart — `VERSION` is still copied.",
+        "paused machine: record present → restart all the same (Wei §6.1)": "**If `state/reconciler_stopped.json` exists, restart it all the same** (still only a running one)",
+        "paused machine: only a gated reconciler is restarted": "provided the updated `manager/reconciler.py` contains `RESTART_STOP_PATH`",
+        "paused machine: ungated → no restart, not a failure": "If `manager/reconciler.py` does not contain it (not updated), do not restart; that is not a failed restart — `VERSION` is still copied.",
+        "paused machine: tell the user it stays paused (zh)": "tell the user 「自動下單仍暫停，而且更新後連平倉與停損都不會執行；按「啟動下單」才會繼續，要先平倉請到交易所操作。」",
         "backup before replace, relative path": "is copied there under its own relative path before it is replaced",
         "either hash column of any line": "(either hash column of any line)",
         "tag folder by plain mkdir, stop if it exists": "then a plain `mkdir` of the tag folder; if it exists, stop",
@@ -475,9 +481,16 @@ red_doc("U8 VERSION before the restart (U7/U8 swapped back)", "U8. **`VERSION` l
 red_doc("S1 old VERSION check removed", "`<old VERSION>` must match `^[A-Za-z0-9._-]{1,40}$`, otherwise use `unknown`; ", "")
 red_doc("S1 time check removed", "the time must match `^[0-9]{8}T[0-9]{6}Z$`, otherwise stop — ", "")
 red_doc("F3 backup-failure rule removed", "**If a backup `cp` fails,", "If convenient, when a backup `cp` fails,")
-red_doc("paused-machine check loosened in U7", "succeeds, do not restart** —", "succeeds, you may still restart —")
-red_upd("paused-machine check removed from §2", "- **If `state/reconciler_stopped.json` exists, do not restart it**", "- If `state/reconciler_stopped.json` exists, restart it anyway")
-red_doc("paused machine counted as a failure (no VERSION)", "This is not a failure: U8 still copies `VERSION`.", "Treat it as a failed restart.")
+red_doc("U7 back to 'record present → do not restart' (old program never replaced)", "If it succeeds, restart all the same**", "If it succeeds, do not restart**")
+red_doc("U7 gated-reconciler grep guard dropped", "as long as `ssh <SSH_OPTS> blaveagent@<host> grep -q RESTART_STOP_PATH \"/opt/blave-agent/workspace/manager/reconciler.py\"` succeeds too", "whatever the reconciler version")
+red_doc("U7 'still paused, press 啟動下單' told to nobody", "tell the user 「自動下單仍暫停，而且更新後連平倉與停損都不會執行；按「啟動下單」才會繼續，要先平倉請到交易所操作。」 / ", "")
+red_doc("U7 back to the old sentence that hid 'exits and stops won't run'", '「自動下單仍暫停，而且更新後連平倉與停損都不會執行；按「啟動下單」才會繼續，要先平倉請到交易所操作。」', '「自動下單仍暫停,按「啟動下單」才會繼續。」')
+red_doc("paused machine counted as a failure (no VERSION)", "A skipped restart here is not a failure: U8 still copies `VERSION`.", "Treat it as a failed restart.")
+red_upd("§2 back to 'record present → do not restart'", "- **If `state/reconciler_stopped.json` exists, restart it all the same**", "- **If `state/reconciler_stopped.json` exists, do not restart it**")
+red_upd("§2 gated-reconciler guard dropped", "provided the updated `manager/reconciler.py` contains `RESTART_STOP_PATH`", "whatever the reconciler version")
+red_upd("§2 'still paused, press 啟動下單' told to nobody", "tell the user 「自動下單仍暫停，而且更新後連平倉與停損都不會執行；按「啟動下單」才會繼續，要先平倉請到交易所操作。」 / ", "")
+red_upd("§2 back to the old sentence that hid 'exits and stops won't run'", '「自動下單仍暫停，而且更新後連平倉與停損都不會執行；按「啟動下單」才會繼續，要先平倉請到交易所操作。」', '「自動下單仍暫停,按「啟動下單」才會繼續。」')
+red_upd("§2 restart even a stopped reconciler", "(still only a running one)", "(start it if it is stopped)")
 red_doc("F4 restart failure still copies VERSION", "→ do not copy `VERSION` (U8), and say exactly that:", "→ say exactly that:")
 README = open(os.path.join(ROOT, "README.md"), encoding="utf-8").read().split("### Updating an existing workspace", 1)[1].split("\n#", 1)[0]
 check("Nothing is merged" in README and "`.official-backup/<old VERSION>-<UTC time>/`" in README and ".pre-update" not in README and not re.search(r"manually merge|merge it like|patch in anything", README),

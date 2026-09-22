@@ -15,6 +15,18 @@ STRATEGY_NAME="${1:?usage: run_strategy.sh <strategy_name>}"
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 mkdir -p "strategies/$STRATEGY_NAME"
+
+# Machine restarted and the user has not pressed 啟動下單 (lib/guard.RESTART_STOP_PATH):
+# every order would be refused anyway, and a run that dies on the refusal would
+# page the user as "strategy crashed". Skip quietly; the heartbeat is NOT
+# touched (it means "ran successfully") — manager/healthcheck.py holds its
+# stale-run alarm while the file exists instead.
+if [ -f state/reconciler_stopped.json ]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) skipped: machine restarted — auto-trading stays stopped until 啟動下單" \
+        >> "strategies/$STRATEGY_NAME/strategy.log"
+    exit 0
+fi
+
 OUTPUT=$(python3 "strategies/$STRATEGY_NAME/strategy.py" 2>&1)
 EXIT_CODE=$?
 

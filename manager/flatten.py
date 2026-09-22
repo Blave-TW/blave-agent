@@ -22,7 +22,10 @@ Scope — what "the bot's positions" means depends on self_ledger
 Semantics — panic button, not portfolio management:
   - HALT is (re)tripped here too, so a manual run gets the same guarantee:
     nothing re-opens after the flatten (closes always pass the guard; only the
-    user pressing 啟動下單 clears the halt).
+    user pressing 啟動下單 clears the halt). Exception: after a machine restart
+    (lib/guard.RESTART_STOP_PATH) no HALT is added and the closes pass only on
+    the one-time pass the platform's close_all hands us (guard.claim_close_all_pass);
+    the machine stays stopped afterwards.
   - Venues are discovered like the account reader: {PREFIX}_API_KEY in .env,
     flattenable iff BOTH lib/account_{id}.py and lib/order_{id}.py exist.
     A venue with positions but no order lib is reported loudly and skipped.
@@ -311,7 +314,19 @@ def flatten():
         logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
         return ALREADY_RUNNING
     env = _read_env()
-    if not guard.halted():
+    if guard.restart_stopped():
+        # Machine restarted, trading stays stopped: only the user's close_all may
+        # close, through the pass command_listener._cmd_close_all wrote just
+        # before launching us. No pass (a hand/agent run) → nothing can close;
+        # say so instead of sending orders that will all be refused. No HALT:
+        # the restart record already keeps everything else from re-opening.
+        if not guard.claim_close_all_pass():
+            _record_order_error("*", "*", "close-all: machine restarted — trading is stopped; "
+                                "close positions at the exchange yourself (啟動下單 resumes "
+                                "trading, it does not close)")
+            logging.info("close-all: restart stop without a close-all pass — nothing closed")
+            return False
+    elif not guard.halted():
         guard.trip_halt("close all positions", "flatten")
     _wait_for_inflight()
     closed = errors = 0

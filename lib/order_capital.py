@@ -240,6 +240,7 @@ def reset_session():
 
 def _send(sess, send_fn, fields):
     """Common send path: ncode check, audit, return the 13-digit seq_no."""
+    guard.check_restart_stop(fields["intent"], fields)  # backstop; the place_* check first
     msg, ncode = send_fn()
     if ncode != 0:
         err = sess.center.SKCenterLib_GetReturnCodeMessage(ncode)
@@ -332,6 +333,7 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
 
     fields = {"venue": "capital", "market": "futures", "symbol": symbol,
               "action": action, "qty": lots, "unit": "lots", "intent": intent}
+    guard.check_restart_stop(fields["intent"], fields)  # before the SKCOM login
     _check_halt(fields)
 
     sess = _get_session(env)
@@ -377,6 +379,7 @@ def place_stock_order(env, symbol, action, lots, price=None, confirm_timeout=15)
               "action": action, "qty": lots, "unit": "lots_1000sh",
               "price": price if price is not None else "market",
               "intent": "entry" if action == "buy" else "reduce"}
+    guard.check_restart_stop(fields["intent"], fields)  # before the SKCOM login
     _check_halt(fields)
 
     sess = _get_session(env)
@@ -424,6 +427,7 @@ def place_odd_lot_order(env, symbol, action, shares, price, confirm_timeout=15):
     fields = {"venue": "capital", "market": "stock_odd_lot", "symbol": symbol,
               "action": action, "qty": shares, "unit": "shares", "price": price,
               "intent": "entry" if action == "buy" else "reduce"}
+    guard.check_restart_stop(fields["intent"], fields)  # before the SKCOM login
     _check_halt(fields)
 
     sess = _get_session(env)

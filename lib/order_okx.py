@@ -139,6 +139,7 @@ def _request(method, path, env, body=None, params=None, retries=3):
         fields = {k: body[k] for k in _AUDIT_PARAM_KEYS
                   if isinstance(body, dict) and k in body}
         fields["intent"] = intent
+        guard.check_restart_stop(intent, fields)
         if intent == "entry" and guard.halted():
             guard.audit("order_denied_halt", **fields)
             raise guard.Halted(

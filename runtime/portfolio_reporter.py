@@ -46,6 +46,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 import events
 
@@ -349,6 +350,140 @@ def _fresh(ts, window=HEARTBEAT_STALE_S):
     return bool(ts and (time.time() - ts) < window)
 
 
+def _gated_marker_fresh(hb):
+    """The running reconciler proved it honours the restart record: its
+    state/heartbeat/reconciler.gated (touched with the heartbeat each round, by
+    the gated version only) is as fresh as the heartbeat. Same test as
+    command_listener._reconciler_gated for a running reconciler."""
+    marker = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler.gated"))
+    return bool(hb and marker and marker >= hb - 10)
+
+
+# Type A/C = strategy.py declares a valid INTERVAL and the workspace has
+# wait_for_bar.py: the same test command_listener._strategy_has_interval uses to
+# hand a strategy to the in-process scheduler. Value format and bar alignment
+# are wait_for_bar.py's (_INTERVAL_RE / _expected_closed_bar_open).
+_AC_INTERVAL_RE = re.compile(r'^\s*INTERVAL\s*=\s*["\']([^"\']+)["\']', re.M)
+_AC_INTERVAL_VALUE_RE = re.compile(r"^(\d+)(min|m|h|d|w)$")
+_AC_UNIT = {"min": "minutes", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
+
+
+def _ac_interval(name):
+    try:
+        with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"),
+                  encoding="utf-8", errors="replace") as f:
+            m = _AC_INTERVAL_RE.search(f.read())
+    except OSError:
+        return None
+    v = _AC_INTERVAL_VALUE_RE.match(m.group(1)) if m else None
+    if not v:
+        return None
+    try:
+        td = timedelta(**{_AC_UNIT[v.group(2)]: int(v.group(1))})
+    except OverflowError:
+        return None
+    return td if td > timedelta(0) else None  # "0m" would divide by zero below
+
+
+def _naive_utc(iso):
+    try:
+        t = datetime.fromisoformat(str(iso))
+    except (TypeError, ValueError):
+        return None
+    return t.astimezone(timezone.utc).replace(tzinfo=None) if t.tzinfo else t
+
+
+def _recomputed_since(down_to, cfg, vens):
+    """Every funded Type A/C strategy's signal is current as of the boot: its
+    last processed bar is at least the bar that had just closed when the
+    machine came back (down_to) — i.e. it has run on everything that existed
+    then, before or after the reboot. The literal "processed bar ≥ boot time"
+    would wait up to two whole bars (a 1d strategy: two days), because a bar's
+    label is its OPEN time and the newest closed bar always opened before now.
+    Also current: a post-boot check (bar_wait file written after down_to) that
+    found no newer data than it already processed (market closed, data stalled)
+    — unless that check FAILED after the boot (fetch/run failure or wrapper
+    error: wait_for_bar saves the file without touching last_seen_bar, so a
+    failure would otherwise read as "nothing newer").
+    No bound venue → True: the scheduler does not run then (the flag would stay
+    false for ever) and nothing can trade either; the reconciler idles."""
+    if not any(isinstance(v, dict) and v.get("pair") for v in (vens or {}).values()):
+        return True
+    if not os.path.isfile(os.path.join(WORKSPACE, "manager", "wait_for_bar.py")):
+        return True  # no Type A/C scheduling in this workspace at all
+    amounts = (cfg or {}).get("amounts") or {}
+    exchanges = (cfg or {}).get("exchanges") or {}
+    if not isinstance(amounts, dict) or not isinstance(exchanges, dict):
+        return False
+    boot = datetime(1970, 1, 1) + timedelta(seconds=float(down_to))
+    epoch = datetime(1970, 1, 1)
+    for name, amt in amounts.items():
+        try:
+            funded = bool(exchanges.get(name)) and float(amt) != 0
+        except (TypeError, ValueError):
+            funded = False
+        td = _ac_interval(name) if funded else None
+        if td is None:
+            continue  # unfunded or Type B — the reconciler does not trade its signal
+        need = epoch + ((boot - epoch) // td) * td - td
+        path = os.path.join(WORKSPACE_STATE, "bar_wait", f"{name}.json")
+        st = _read_json(path, {}) or {}
+        processed = _naive_utc(st.get("last_processed_bar"))
+        if processed is not None and processed >= need:
+            continue
+        seen = _naive_utc(st.get("last_seen_bar"))
+        checked_after_boot = (_mtime(path) or 0) > down_to
+        failed_after_boot = any(isinstance(st.get(k), (int, float)) and st[k] > down_to
+                                for k in ("last_attempt_failed_at", "wrapper_error_alerted_at"))
+        if (checked_after_boot and not failed_after_boot and processed is not None
+                and seen is not None and seen <= processed):
+            continue
+        return False
+    return True
+
+
+def restart_stop(hb=None, cfg=None, vens=None):
+    """Why trading is off after a machine restart, while
+    state/reconciler_stopped.json exists (command_listener._machine_restart_check
+    writes it, 啟動下單 removes it), else None:
+      {"reason": "machine_restart", "at": last heartbeat before the reboot,
+       "gated": bool, "recomputed": bool}
+    `recomputed` (see _recomputed_since): every funded Type A/C strategy has
+    computed on the bars that existed when the machine came back, so 補齊部位
+    would trade current signals; false = at least one still holds a pre-restart
+    signal (the pages grey 補齊部位 out; 等新訊號 stays available).
+    `alive` stays false the whole time (every consumer reads stopped ⇒ not
+    trading). `gated: false` is the one exception to "nothing goes out": a
+    reconciler has beaten since the stop (the kill did not land, or something
+    restarted it) and has NOT proved it honours the record (no fresh
+    state/heartbeat/reconciler.gated — an old process, even with a new
+    reconciler.py on disk) — it may be trading. Nothing running since the stop
+    is gated: nothing can send."""
+    path = os.path.join(WORKSPACE_STATE, "reconciler_stopped.json")
+    if not os.path.exists(path):
+        return None
+    info = _read_json(path, {})
+    info = info if isinstance(info, dict) else {}
+    since = info.get("stopped_at", info.get("down_to"))
+    beating = bool(hb and isinstance(since, (int, float)) and int(hb) > since and _fresh(hb))
+    at = info.get("at")
+    down_to = info.get("down_to")
+    if not isinstance(down_to, (int, float)):
+        # an old or hand-made record: the file is written at detection time,
+        # right after the boot — its mtime is the next-best "machine came back"
+        down_to = _mtime(path)
+    try:  # this flag must never cost the report itself
+        recomputed = (_recomputed_since(down_to, cfg, vens)
+                      if isinstance(down_to, (int, float)) else False)
+    except Exception as e:
+        print(f"[portfolio_reporter] recomputed check failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
+        recomputed = False
+    return {"reason": "machine_restart", "at": at if isinstance(at, int) else None,
+            "gated": not (beating and not _gated_marker_fresh(hb)),
+            "recomputed": recomputed}
+
+
 def halt_state():
     """Kill-switch state, read the same way lib/guard.py writes it: the FILE'S
     EXISTENCE is authoritative and unreadable content still counts as halted."""
@@ -412,8 +547,12 @@ def _halt_denials(since_ts):
         except ValueError:
             continue
         # Event name comes from lib/order_*.py, which is what actually refuses
-        # the order — guard.py only writes halt_tripped / halt_cleared.
-        if row.get("event") != "order_denied_halt":
+        # the order — guard.py only writes halt_tripped / halt_cleared. With a
+        # machine-restart record the lib refuses first (order_denied_restart);
+        # its entries are ones the halt would have refused too, so they count.
+        ev = row.get("event")
+        if not (ev == "order_denied_halt"
+                or (ev == "order_denied_restart" and row.get("intent") == "entry")):
             continue
         # ISO-8601 UTC on both sides, so string comparison is chronological.
         if not since_ts or str(row.get("ts", "")) >= str(since_ts):
@@ -978,6 +1117,7 @@ def build_report():
     last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     sched = scheduled_strategies()
     vens = venues()
+    stopped = restart_stop(hb, cfg if isinstance(cfg, dict) else {}, vens)
 
     return {
         "config": cfg,
@@ -997,7 +1137,10 @@ def build_report():
         "orders": recent_orders(),
         "reconciler": {
             "heartbeat_at": hb,
-            "alive": _fresh(hb),
+            # alive = trading: a reconciler gated by the restart record keeps a
+            # fresh heartbeat but sends nothing
+            "alive": _fresh(hb) and stopped is None,
+            "stopped": stopped,
         },
         # Whether the stop button will work at all. A listener that died leaves
         # a button that looks fine and does nothing — the page disables it

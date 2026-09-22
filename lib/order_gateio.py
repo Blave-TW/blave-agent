@@ -145,6 +145,7 @@ def _request(method, path, env, body=None, query="", retries=3):
     if intent is not None:
         fields = _audit_fields(body)
         fields["intent"] = intent
+        guard.check_restart_stop(intent, fields)
         if intent == "entry" and guard.halted():
             guard.audit("order_denied_halt", **fields)
             raise guard.Halted(

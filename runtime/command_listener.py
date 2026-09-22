@@ -1250,7 +1250,381 @@ def _downtime_watch_loop():
             _downtime_check()
         except Exception as e:
             _log(f"downtime watch failed: {type(e).__name__}: {e}")
+        try:  # its own try: a failing downtime check must not freeze the boot tick
+            _refresh_boot_record()
+        except Exception as e:
+            _log(f"boot record refresh failed: {type(e).__name__}: {e}")
         time.sleep(DOWNTIME_TICK_S)
+
+
+# ── machine restart = trading stopped (Wei 2026-09-22) ───────────────────────
+# After an OS boot (reboot, VM stop/start, maintenance) the reconciler stays
+# down — not HALT, which still lets closes out — until the user presses
+# 啟動下單. A runtime release restarts this process but not the OS, so the boot
+# id is unchanged and nothing happens; a dropped connection is not a boot at
+# all. The cloud reconciler already has no boot persistence (no [Install] /
+# DEMAND_START); what this adds is the stop for boxes that still autostart it,
+# the reason the pages show instead of "dead", and the event. Runs once, from
+# run(), before the scheduler thread exists: that thread's first _downtime_check
+# overwrites the stamp read here as "when was this machine last up".
+BOOT_RECORD = os.path.join(WORKSPACE_STATE, "boot_id")
+RESTART_STOP_PATH = os.path.join(WORKSPACE_STATE, "reconciler_stopped.json")
+RECONCILER_HEARTBEAT = os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler")
+RECONCILER_ALIVE_S = 300  # portfolio_reporter.HEARTBEAT_STALE_S
+# "Running right now": the reconciler touches its heartbeat every POLL_INTERVAL
+# (5 s) at the top of each round, gated or not — three beats. The 300 s window
+# above would call a reconciler that died two minutes ago alive.
+RECONCILER_RUNNING_S = 15
+# The web sends restart_reconciler right after resume whenever its (up to two
+# minutes old) report says the daemon is down; resume has just started it, and
+# a second restart would kill it mid-round. Swallows that one follow-up only.
+RESUME_START_DEDUPE_S = 60
+_resume_started_at = None
+_clock = time.time
+
+
+def _boot_marker():
+    """This boot's identity, or None when it cannot be read. Windows has no
+    boot id: its marker is the uptime tick, which restarts from 0 on every boot
+    and never moves with the wall clock — a smaller tick than the recorded one
+    means a new boot (the record is refreshed while the machine runs)."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            tick = ctypes.windll.kernel32.GetTickCount64
+            tick.restype = ctypes.c_ulonglong
+            return f"win:{int(tick())}"
+        except (AttributeError, OSError):
+            return None
+    try:
+        with open("/proc/sys/kernel/random/boot_id") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def _same_boot(prev, cur):
+    if prev == cur:
+        return True
+    if prev.startswith("win:") and cur.startswith("win:"):
+        try:
+            return int(cur[4:]) >= int(prev[4:])
+        except ValueError:
+            return False
+    return False
+
+
+def _read_boot_record():
+    try:
+        with open(BOOT_RECORD) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def _write_atomic(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def _refresh_boot_record():
+    """Windows only (the watch loop, every few seconds): keep the recorded tick
+    close to now, or a reboot whose new uptime has already passed the tick
+    recorded at the last runtime start would read as the same boot."""
+    if _local_mode() or platform.system() != "Windows":
+        return
+    cur, prev = _boot_marker(), _read_boot_record()
+    if cur and prev and prev != cur and _same_boot(prev, cur):
+        try:
+            _write_atomic(BOOT_RECORD, cur)
+        except OSError:
+            pass
+
+
+def _machine_restart_check():
+    """Returns the stop record it wrote, or None. The boot is recorded whatever
+    happens after detection: an unrecorded boot would be re-judged on the next
+    runtime restart and stop a reconciler the user has since started."""
+    if _local_mode():
+        return None  # the desktop app is stopped on every launch already
+    try:
+        return _judge_boot()
+    finally:
+        # EVERY listener start on Windows (a runtime update restarting the
+        # bridges included), reboot or not, so the service is DEMAND_START before
+        # the first reboot ever happens. After the stop: it is two more nssm
+        # calls. Never raises (run() also guards the whole check).
+        if platform.system() == "Windows":
+            _ensure_demand_start()
+
+
+def _judge_boot():
+    # record before tick: a concurrent refresh between the two reads could
+    # otherwise leave the record ahead of cur and read as a new boot
+    prev = _read_boot_record()
+    cur = _boot_marker()
+    if not cur:
+        _log("boot id unreadable — machine-restart stop skipped")
+        return None
+    if prev is not None and _same_boot(prev, cur):
+        if prev != cur:
+            try:
+                _write_atomic(BOOT_RECORD, cur)
+            except OSError:
+                pass
+        return None
+    try:
+        if prev is None:
+            return None
+        if _runtime_already_ran_this_boot():
+            # A runtime without this check (a downgrade, then back) already ran
+            # on this boot and kept the machine trading: this is an upgrade, not
+            # the boot. Only record it.
+            _log("boot id changed but a runtime already ran on this boot — "
+                 "recorded, nothing stopped")
+            return None
+        return _stop_after_restart()
+    finally:
+        try:
+            _write_atomic(BOOT_RECORD, cur)
+        except OSError as e:
+            _log(f"boot id not recorded: {type(e).__name__}")
+
+
+BOOT_SLACK_S = 60
+
+
+def _uptime_s():
+    """Seconds since this OS booted, or None."""
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            tick = ctypes.windll.kernel32.GetTickCount64
+            tick.restype = ctypes.c_ulonglong
+            return tick() / 1000.0
+        except (AttributeError, OSError):
+            return None
+    try:
+        with open("/proc/uptime") as f:
+            return float(f.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _runtime_already_ran_this_boot():
+    """The downtime stamp (written every 5 s by any runtime with the downtime
+    watch) is newer than this boot: some runtime was alive after the boot
+    already. On a real boot the check runs before this process's own watch
+    starts, so the stamp is still the pre-boot one."""
+    up, stamp = _uptime_s(), _downtime_read_stamp()
+    if up is None or stamp is None:
+        return False
+    return stamp > _clock() - up + BOOT_SLACK_S
+
+
+def _stop_after_restart():
+    """Fail-closed (Wei 2026-09-22): the record goes down FIRST — the reconciler
+    gates every round on it (manager/reconciler.py RESTART_STOP_PATH), so an
+    autostarted one that survives the kill still sends nothing, closes
+    included. Then whatever came up on this boot is stopped. The record is for
+    a machine whose reconciler was alive when it went down — halted included
+    (HALT left as it is): halted, it was still running closes and stops, which
+    this boot no longer does, and the pages must not keep saying it does. A
+    reconciler already dead stays dead, without a record."""
+    last_up = _downtime_read_stamp()
+    try:
+        hb = os.path.getmtime(RECONCILER_HEARTBEAT)
+    except OSError:
+        hb = None
+    trading = (hb is not None and last_up is not None
+               and hb >= last_up - RECONCILER_ALIVE_S)
+    info = None
+    if trading:
+        info = {"reason": "machine_restart", "at": int(hb),
+                "down_from": int(last_up), "down_to": int(_clock())}
+        try:
+            _write_atomic(RESTART_STOP_PATH, json.dumps(info))
+        except OSError as e:
+            _log(f"!!! restart stop record NOT written ({type(e).__name__}: {e}) — "
+                 "the reconciler is not gated; relying on the kill alone")
+    failed_sent = False
+    if not (_stop_reconciler() or _stop_reconciler()):
+        failed_sent = _restart_stop_failed(last_up)
+    elif info is not None:
+        # a heartbeat after this is a reconciler started since, not the one killed
+        info["stopped_at"] = int(_clock())
+        try:
+            _write_atomic(RESTART_STOP_PATH, json.dumps(info))
+        except OSError:
+            pass
+    if info is None:
+        return None
+    if failed_sent:
+        # one P1, not two that contradict each other ("stopped" vs "may be trading")
+        return info
+    import events
+    events.append("machine_restart_stopped", {
+        "at": info["at"], "down_from": info["down_from"], "down_to": info["down_to"],
+        "offline_s": max(0, info["down_to"] - info["down_from"])})
+    _log(f"machine restarted after {info['down_to'] - info['down_from']}s — "
+         "reconciler kept stopped until 啟動下單")
+    return info
+
+
+RECONCILER_GATED_MARKER = os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler.gated")
+GATED_MARKER_SLACK_S = 10  # marker and heartbeat are touched together each round
+
+
+def _mtime_or_none(path):
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return None
+
+
+def _reconciler_gated():
+    """Does the reconciler honour the restart record?
+
+    "Running" is the same test as portfolio_reporter.restart_stop's `gated`: a
+    heartbeat after the stop (stopped_at, else down_to) and within
+    RECONCILER_ALIVE_S. Not 15 s: a long reconcile round only touches the
+    heartbeat at its start. A running reconciler must prove it is gated: the
+    gated version touches
+    state/heartbeat/reconciler.gated with its heartbeat every round, an old
+    process never does — so a new reconciler.py copied onto disk under an old
+    process still reads False. A running one with no fresh marker (e.g. right
+    after it started, before its first round) is taken as NOT gated. Nothing
+    running: the next start loads the file on disk, so the file decides."""
+    hb = _mtime_or_none(RECONCILER_HEARTBEAT)
+    try:
+        with open(RESTART_STOP_PATH) as f:
+            rec = json.load(f)
+        since = rec.get("stopped_at", rec.get("down_to")) if isinstance(rec, dict) else None
+    except (OSError, ValueError):
+        since = None
+    running = (hb is not None and _clock() - hb < RECONCILER_ALIVE_S
+               and (not isinstance(since, (int, float)) or int(hb) > since))
+    if running:
+        marker = _mtime_or_none(RECONCILER_GATED_MARKER)
+        return marker is not None and marker >= hb - GATED_MARKER_SLACK_S
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "reconciler.py"), encoding="utf-8") as f:
+            return "RESTART_STOP_PATH" in f.read()
+    except OSError:
+        return False
+
+
+def _restart_stop_failed(last_up):
+    """The kill could not be confirmed. Always one audit.jsonl line. On a
+    workspace whose reconciler gates on the record that is all (P3: it sends
+    nothing anyway); on an older workspace the survivor may be trading, so it
+    also goes to the platform as an event — and then that event is the only one
+    (returns True: the caller does not also send machine_restart_stopped)."""
+    gated = _reconciler_gated()
+    _log("machine restarted but the reconciler could not be confirmed stopped — "
+         + ("it stays gated by the restart record" if gated
+            else "this workspace's reconciler has no restart gate: it may keep trading"))
+    payload = {"down_from": int(last_up) if last_up is not None else None,
+               "down_to": int(_clock())}
+    try:
+        os.makedirs(WORKSPACE_STATE, exist_ok=True)
+        with open(os.path.join(WORKSPACE_STATE, "audit.jsonl"), "a") as f:
+            f.write(json.dumps({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+                "event": "machine_restart_stop_failed", "gated": gated, **payload}) + "\n")
+    except OSError:
+        pass
+    if not gated:
+        import events
+        events.append("machine_restart_stop_failed",
+                      {k: v for k, v in payload.items() if v is not None})
+        return True
+    return False
+
+
+def _ensure_demand_start():
+    """Windows boxes installed before 2026-08-20 have an AUTO_START reconciler
+    that only gets corrected on a 啟動下單 press. Correct it on every runtime
+    start, so the next boot never brings it up at all. The outcome goes where
+    _cmd_restart_reconciler records its own (deployments.json), but only onto
+    an existing entry — a failure always reaches the log."""
+    try:
+        st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
+                            capture_output=True, timeout=15)
+        if st.returncode != 0:
+            return  # not installed
+        _nssm_run(["set", "blaveclaw-reconciler", "Start", "SERVICE_DEMAND_START"])
+        ok = True
+    except (OSError, subprocess.SubprocessError, RuntimeError) as e:
+        _log(f"start-type correction failed: {type(e).__name__}: {e}")
+        ok = False
+    try:
+        with open(os.path.join(WORKSPACE, "state", "deployments.json")) as f:
+            known = "reconciler" in json.load(f)
+    except (OSError, ValueError, TypeError):
+        known = False
+    if known:  # never register a stopped daemon (healthcheck would call it dead)
+        _register_reconciler_deployment(start_type_ok=ok)
+
+
+def _clear_restart_stop():
+    """True once the record is gone. False = it is still there: the reconciler
+    stays gated, so the caller must not report the start as done."""
+    try:
+        os.remove(RESTART_STOP_PATH)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        _log(f"restart stop record not cleared: {type(e).__name__}: {e}")
+        return False
+    return True
+
+
+def _clear_or_fail():
+    if not _clear_restart_stop():
+        raise RuntimeError(f"resumed, but {RESTART_STOP_PATH} could not be removed — "
+                           "the reconciler stays gated; press 啟動下單 again")
+
+
+def _start_after_restart_stop():
+    """A whole-machine resume / resume_wait is the user's 啟動下單 — only the
+    web and desktop start buttons queue it — and the ONLY thing that lifts a
+    restart stop. It starts the reconciler here too, because the desktop app's
+    cloud start sends no restart_reconciler. A failed start raises (the ack
+    says so) and keeps the record, so the page keeps saying why trading is off."""
+    global _resume_started_at
+    # Alive (a fresh heartbeat after the boot's stop — or after detection when
+    # the kill never confirmed): a gated reconciler that survived the kill, or
+    # one started outside the button. Deleting the record is what un-gates it;
+    # restarting it would cut its first round, so the web's follow-up
+    # restart_reconciler is swallowed as for a start.
+    try:
+        with open(RESTART_STOP_PATH) as f:
+            rec = json.load(f)
+        since = rec.get("stopped_at", rec.get("down_to"))
+        hb = os.path.getmtime(RECONCILER_HEARTBEAT)
+        # int(hb): the record holds whole seconds, and a heartbeat in that same
+        # second belongs to the stop itself, not to a new start
+        running = (isinstance(since, (int, float)) and int(hb) > since
+                   and _clock() - hb < RECONCILER_RUNNING_S)
+    except (OSError, ValueError, AttributeError):
+        running = False
+    if running:
+        _clear_or_fail()
+        _resume_started_at = time.monotonic()
+        return "reconciler already running"
+    try:
+        result = _restart_reconciler({})
+    except Exception as e:
+        _log(f"reconciler start after restart stop failed: {type(e).__name__}: {e}")
+        raise RuntimeError(f"resumed, but the reconciler did not start: "
+                           f"{type(e).__name__}: {str(e)[:200]}") from None
+    _clear_or_fail()
+    _resume_started_at = time.monotonic()
+    return result
 
 
 def _bound_venue():
@@ -2271,6 +2645,8 @@ def _stop_reconciler():
         # Type A/C (_sync_deployment_registry), whose comment left this entry
         # "untouched either way". A later 啟動下單 registers it again.
         _purge_deployment_registry(["reconciler"])
+        global _resume_started_at
+        _resume_started_at = None  # the next start is a real one, not a follow-up
     return ok
 
 
@@ -2720,6 +3096,20 @@ def _register_reconciler_deployment(start_type_ok=None):
 
 
 def _cmd_restart_reconciler(args):
+    global _resume_started_at
+    if (_resume_started_at is not None
+            and time.monotonic() - _resume_started_at < RESUME_START_DEDUPE_S):
+        _resume_started_at = None
+        return "reconciler already started by resume"
+    # Only the user's start (resume / resume_wait) lifts a restart stop; this
+    # command can come from other paths (settings 重啟, a turn) and must not.
+    if os.path.exists(RESTART_STOP_PATH):
+        raise RuntimeError("machine restarted — trading stays stopped until "
+                           "the user presses 啟動下單")
+    return _restart_reconciler(args)
+
+
+def _restart_reconciler(args):
     """Start the order daemon through its watchdog wrapper, never directly —
     the wrapper restarts on crash and alerts on each exit (references/manager.md)."""
     if _local_mode():
@@ -2915,6 +3305,19 @@ def _cmd_restart_reconciler(args):
     return "reconciler restarted"
 
 
+def _write_close_all_pass():
+    """lib/guard.CLOSE_ALL_PASS_PATH, stamped now: the flatten about to launch
+    claims it within CLOSE_ALL_PASS_TTL_S. The only writer (a test enumerates).
+    False = not written: the caller must not report a close as started."""
+    try:
+        _write_atomic(os.path.join(WORKSPACE_STATE, "close_all_pass.json"),
+                      json.dumps({"ts": time.time()}))
+        return True
+    except OSError as e:
+        _log(f"close-all pass not written ({type(e).__name__}) — nothing launched")
+        return False
+
+
 def _flatten_already_running():
     """Is a manager/flatten.py holding state/flatten.lock right now?
 
@@ -3042,16 +3445,36 @@ def _cmd_close_all(args):
       halted_capital_manual — HALT tripped, nothing launched: 群益 is the only
                        closable venue and this identity can't log in to SKCOM
                        (portfolio_reporter.can_flatten); recorded in
-                       order_errors for the user to close by hand"""
+                       order_errors for the user to close by hand
+    After a machine restart (state/reconciler_stopped.json, Wei 2026-09-22) the
+    press still closes but does NOT halt (unless this workspace's reconciler
+    has no restart gate — then it halts as before), and the machine stays stopped: the
+    flatten gets a one-time close-only pass (lib/guard.claim_close_all_pass) and
+    every state above carries a `restart_stopped:` prefix instead of the halt —
+    e.g. `close_all=restart_stopped:started`."""
     from lib.guard import trip_halt
 
-    trip_halt("close all positions", "web")
-    if not os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")):
+    restart = os.path.exists(RESTART_STOP_PATH)
+    prefix = "close_all=restart_stopped:" if restart else "close_all="
+    flatten_path = os.path.join(WORKSPACE, "manager", "flatten.py")
+    try:
+        with open(flatten_path, encoding="utf-8") as f:
+            claims_pass = "claim_close_all_pass" in f.read()
+    except OSError:
+        claims_pass = False
+    # No HALT only when the record really holds everything back: the reconciler
+    # is proven gated (_reconciler_gated) AND this flatten claims the pass.
+    # Anything else — an old reconciler that only honours HALT, an old flatten —
+    # trips it synchronously as before, or the old reconciler re-opens what the
+    # flatten closes.
+    if not (restart and claims_pass and _reconciler_gated()):
+        trip_halt("close all positions", "web")
+    if not os.path.isfile(flatten_path):
         # workspace 還沒更新到有平倉層——誠實回報只掛了 halt(reporter 的
         # can_flatten 同一判準,前端本來就不會給這顆選項;這裡是最後防線)
-        return "close_all=halted_only"
+        return prefix + ("nothing_closed" if restart else "halted_only")
     if _flatten_already_running():
-        return "close_all=already_running"
+        return prefix + "already_running"
     if _capital_only_unflattenable():
         # 前端照 can_flatten 不會給這顆;舊畫面/舊報告還是可能送來。不起 flatten:
         # 還沒更新的 flatten.py 會在這個身分下硬登 SKCOM(602)
@@ -3059,7 +3482,24 @@ def _cmd_close_all(args):
             _record_manual_close_row(_capital_open_book_keys())
         except Exception:
             pass
-        return "close_all=halted_capital_manual"
+        return prefix + ("capital_manual" if restart else "halted_capital_manual")
+    pass_written = False
+    if restart and claims_pass:
+        if not _write_close_all_pass():
+            return prefix + "nothing_closed"  # the flatten could close nothing without it
+        pass_written = True
+    try:
+        return _launch_flatten(prefix)
+    except BaseException:
+        if pass_written:  # never leave a claimable pass behind a flatten that did not start
+            try:
+                os.remove(os.path.join(WORKSPACE_STATE, "close_all_pass.json"))
+            except OSError:
+                pass
+        raise
+
+
+def _launch_flatten(prefix):
     # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
     # 除了 order_errors.json 外,還要有完整紀錄可查
     log_path = os.path.join(WORKSPACE, "state", "flatten.log")
@@ -3074,7 +3514,7 @@ def _cmd_close_all(args):
             subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
                              env=_local_child_env(), stdout=logf, stderr=logf,
                              start_new_session=True)
-        return "close_all=started"
+        return prefix + "started"
     if platform.system() == "Windows":
         # 脫離 NSSM 的 process tree:bridge 重啟時 NSSM 會殺整棵樹,平倉做一半
         # 被砍=HALT 掛著、倉平一半。經由一個立刻退場的 powershell 中轉
@@ -3088,7 +3528,7 @@ def _cmd_close_all(args):
         subprocess.Popen(["powershell", "-NoProfile", "-Command", ps_cmd],
                          cwd=WORKSPACE, env=child_env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return "close_all=started"
+        return prefix + "started"
     # Linux:bridge unit 是 KillMode=process(見 systemd/blave-agent-web.service)
     # ——重啟只殺 bridge 本體,flatten 活到收工
     with open(log_path, "ab") as logf:
@@ -3097,7 +3537,7 @@ def _cmd_close_all(args):
             cwd=WORKSPACE, env=child_env,
             stdout=logf, stderr=logf, start_new_session=True,
         )
-    return "close_all=started"
+    return prefix + "started"
 
 
 # ── 策略管理(工作頁 投資組合 › 策略管理)──────────────────────────────────────
@@ -3990,8 +4430,13 @@ def dispatch(command):
     # the same reason (its rebind-eviction halt).
     if cmd in ("halt", "resume", "resume_wait", "downtime_hold", "close_all",
                "credentials", "credentials_remove"):
-        return _in_workspace(fn, args)
-    return fn(args)
+        result = _in_workspace(fn, args)
+    else:
+        result = fn(args)
+    if (cmd in ("resume", "resume_wait") and args.get("strategies") is None
+            and os.path.exists(RESTART_STOP_PATH)):
+        result = f"{result}; {_start_after_restart_stop()}"
+    return result
 
 
 def poll_once():
@@ -4064,6 +4509,10 @@ def run(on_applied=None, on_progress=None):
         _log("BLAVE_PROXY_TOKEN not set; command listener disabled")
         return
     _log("started")
+    try:
+        _machine_restart_check()
+    except Exception as e:
+        _log(f"machine restart check failed: {type(e).__name__}: {e}")
     global _ON_APPLIED, _ON_PROGRESS
     _ON_APPLIED = on_applied
     _ON_PROGRESS = on_progress

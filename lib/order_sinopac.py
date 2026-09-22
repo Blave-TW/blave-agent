@@ -278,6 +278,9 @@ def place_odd_lot_order(env, symbol, action, shares, client_tag=None, confirm_ti
         raise ValueError(f"odd-lot order must be 1-{MAX_ODD_LOT_SHARES} shares, got {shares}")
     if client_tag is not None and not re.fullmatch(r"[A-Za-z0-9]{1,6}", client_tag):
         raise ValueError(f"client_tag must be 1-6 alphanumeric chars, got {client_tag!r}")
+    # before the broker session is even opened: after a machine restart no order goes out
+    guard.check_restart_stop("entry" if action == "buy" else "reduce",
+                             {"symbol": symbol, "action": action, "shares": shares})
 
     api, account = _get_api(env)
     contract = api.Contracts.Stocks[symbol]

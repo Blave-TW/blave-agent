@@ -26,6 +26,8 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME = os.path.join(ROOT, "runtime")
 BASE = tempfile.mkdtemp(prefix="local-daemon-")
+# notify config = none: lib.notify here and in every child falls back to a log line, never a real Telegram
+os.environ["BLAVE_AGENT_HOME"] = os.environ["BLAVECLAW_HOME"] = BASE
 WS = os.path.join(BASE, "workspace")
 os.makedirs(os.path.join(WS, "manager"))
 os.makedirs(os.path.join(WS, "strategies", "typea"))
@@ -109,7 +111,8 @@ check(halt["cmd"] == "halt", "unsigned halt accepted, even by a daemon with no s
 
 # ── 3. single instance / where it agrees to run ──────────────────────────────
 DAEMON = [sys.executable, os.path.join(RUNTIME, "local_daemon.py")]
-ENV = dict(os.environ, BLAVE_AGENT_BASE=BASE, BLAVE_AGENT_WORKSPACE=WS, BLAVE_AGENT_LOCAL="1")
+ENV = dict(os.environ, BLAVE_AGENT_BASE=BASE, BLAVE_AGENT_WORKSPACE=WS, BLAVE_AGENT_LOCAL="1",
+           BLAVE_AGENT_HOME=BASE, BLAVECLAW_HOME=BASE)
 procs = []
 
 

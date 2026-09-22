@@ -16,6 +16,55 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   存在但讀/解析失敗(或不是 object)改回 `config: null`。原本兩者都是 `{}`,電腦版存金額會當成「目前沒金額」
   把主機上其他 key 整份蓋掉。null-safe 只對讀取側成立(api `_funded(None)` 直接跳過,比 `{}` 更不會誤報
   deployed;web 顯示照舊);web 與電腦版存金額時須另擋 null(另批修)。測試 `tests/check_report_config_read.py`。
+- **主機重開機=自動下單停止(Wei 09-22,fail-closed;疊加在 downtime watch 之上,`downtime-lib-freeze` 那套 lib 擱置不出)**:
+  `command_listener.run()` 在排程執行緒與輪詢之前比對開機識別碼,記在 `state/boot_id`(Linux `boot_id`;Windows
+  `GetTickCount64`,tick 比紀錄小才算重開,watch 迴圈每 5 秒把紀錄跟上,不看 wall clock)。換了 → 重開前對帳器活著
+  (心跳在 `downtime_watch` 戳記前 300 秒內;已 HALT 也算,HALT 內容不動)就**先**寫 `state/reconciler_stopped.json`
+  與事件 `machine_restart_stopped`,**再**把這次開機起來的對帳器停掉(停不掉重試一次);停成功才在紀錄補 `stopped_at`。
+  停不掉:一律寫 `audit.jsonl`;workspace 的 `manager/reconciler.py` 沒有閘門(找不到 `RESTART_STOP_PATH`)時改送事件
+  `machine_restart_stop_failed`(`down_from`、`down_to`;api 要先登記),**只送這一則、不再送 `machine_restart_stopped`**(免兩則說法相反的 P1)。**紀錄在的期間一張單都不下**:對帳器每輪先看紀錄、
+  整輪跳過,解除那輪 `force_next`;`place_order` 開頭也擋;`lib/execute` 的 TWAP/chase/custom 切片看到紀錄就停;
+  `lib/guard.check_restart_stop` 擋在每個 `lib/order_*` 的共同關卡(進場、平倉、SL/TP 都擋,只放撤單與槓桿)——
+  Type B 策略、agent 自己的腳本一樣被擋。這幾半隨 workspace 出(要 bump blave-agent `VERSION`),沒更新 workspace 的機器
+  只靠殺。**不掛 HALT**。第一次無紀錄、runtime 換版、電腦版 local mode 都不動。回報 `reconciler.stopped =
+  {reason: "machine_restart", at, gated}`,期間 `alive: false`;`gated: false` = workspace 對帳器沒有閘門且停止後還在打
+  心跳(可能還在交易)。**只有整機 `resume`/`resume_wait`(用戶的啟動下單)能解除**:對帳器 15 秒內打過心跳且晚於
+  `stopped_at`(沒有就晚於偵測時間)→ 只刪紀錄(即解除)、不重啟;否則啟動它(電腦版雲端啟動不送 `restart_reconciler`);
+  啟動失敗或紀錄刪不掉都 raise(ack 失敗帶原因)、紀錄保留。兩種成功都吞掉網頁跟著送的那一個 `restart_reconciler`
+  (只吞一次,停止後即失效);紀錄在時單獨來的 `restart_reconciler` 一律拒絕。Windows 每次 listener 啟動(含 runtime
+  換版)在停止之後把對帳器服務校正成 DEMAND_START,結果只寫到 `deployments.json` 既有的 reconciler 那筆,失敗一律進 log。
+  平台的 `close_all`(網頁「暫停並關閉部位」)照樣平倉:listener 不掛 HALT(workspace 對帳器沒有閘門時照掛,否則舊對帳器
+  下一輪會把部位建回來)、寫一次性 `state/close_all_pass.json`(120 秒)再起
+  `flatten.py`,flatten 以 `guard.claim_close_all_pass()` 認領(原子 rename,一次性,只放行該行程的 reduce;進場與 SL/TP
+  照擋),平完紀錄仍在、機器仍停;ack 為 `close_all=restart_stopped:<狀態>`。沒有 pass 的 flatten(agent 自己跑)什麼都不平、
+  寫 order_errors(文案叫用戶到交易所自己平,啟動下單不會平倉;MVP 停止狀態沒有平倉鈕)。Type B:`run_strategy.sh` 看到紀錄就記一行 log、exit 0、不碰 heartbeat,healthcheck 把紀錄期間的過期
+  heartbeat 當暫停、不報。群益的檢查移到三個 `place_*` 開頭(SKCOM 登入之前)。paper `reset_account` 放行。HALT 拒單數
+  也算紀錄期間被拒的進場。已知行為(Wei 裁定):停損停利也擋,紀錄若恰好落在 `open_position` 進場成交與掛 SL/TP 之間,
+  該部位到按「啟動下單」前沒有停損(開機後數秒的窗口;交易所上已掛的停損不受影響)。
+  回報 `reconciler.stopped.recomputed`(bool):所有有金額的 Type A/C 策略都已經算到「開機那一刻最新收盤的那根 bar」
+  (`state/bar_wait/<name>.json` 的 `last_processed_bar` ≥ 那根的開盤標籤;或開機後檢查過、資料沒有比已處理的更新=休市/資料停住)
+  才是 true,前端在 false 時把「補齊部位」灰掉(`等新訊號` 照常);沒有這類策略=true;沒綁交易所(排程不跑)=true。
+  `_cmd_resume` 不加拒絕路徑。Type A/C 在停止期間照常由 runtime 排程計算。
+  `gated` 改看正在跑的行程:對帳器每輪跟心跳一起 touch `state/heartbeat/reconciler.gated`(只有新版會寫),listener 與
+  reporter 在對帳器正在跑時只認這個標記(≥ 心跳 − 10 秒);在跑卻沒有新鮮標記(舊行程,或剛起來還沒跑第一輪)一律當沒閘門;
+  沒在跑才看磁碟上的 `reconciler.py`(下次啟動載入的就是它)。`close_all` 只有在「對帳器確認有閘門 且 `flatten.py` 會認領
+  pass」時才不掛 HALT,其餘照舊同步掛;pass 寫不進去 ack 回 `nothing_closed` 不起 flatten,flatten 起不來就刪掉 pass。
+  開機識別碼換了、但 downtime 戳記比這次開機還新(有舊 runtime 在這次開機跑過:降版再升版)→ 只補記、不停機。
+  未來時間的 pass 無效。
+  `recomputed` 的「停滯=已最新」只在開機後那次檢查沒失敗時才算(`last_attempt_failed_at`/`wrapper_error_alerted_at` 晚於
+  `down_to` 就不算);整段包 try,任何例外=false、回報照送;`INTERVAL = "0m"` 不當 Type A/C。**「對帳器在跑」有兩條
+  路徑、兩個門檻,不是同一件事**:啟動下單(resume)判斷「已在跑、只刪紀錄不重啟」用 15 秒內的心跳;`close_all` 與停不掉時
+  判斷閘門(`_reconciler_gated`)改成跟 reporter 同一式子(停止後有心跳、300 秒內),不再是 15 秒。
+  已知行為(不修,都偏 fail-closed 或很低):① 短週期策略(例如 1m)收盤前最後一根資料晚到超過一個週期、或重開機剛好蓋住
+  那根收盤後的一個週期、或開機後第一次檢查失敗接著休市時,`recomputed` 會一路 false 到市場重開——「補齊部位」整晚/整個週末
+  灰掉,「等新訊號」照常可選;② 開機判斷可能漏判(fail-open)兩種:開機後 NTP 校時前 RTC 慢超過「停機時間 + 60 秒」;
+  Windows 上一次開機很短且這次 runtime 起得晚(僅這種 Windows 情況需要用戶在那段短開機期間按過啟動下單才會真的在跑);
+  ③ 策略的 `fetch_data` 把斷線吞成空資料(不 raise)時,`wait_for_bar` 當成「沒新資料」存檔、不寫失敗欄位,`recomputed`
+  可能提早變 true、補齊用到舊訊號。官方 TEMPLATE_C 與 examples 都有 `if close_df.empty: raise`;根治要改 `wait_for_bar`
+  (看到 None 而先前看過資料就記成失敗,或記「最近一次成功觀察資料的時間」),另案、要 bump `VERSION`。
+  **出貨順序:api(`machine_restart_stopped`、`machine_restart_stop_failed` 型別與文案、`reconciler_dead` 遇 `stopped`
+  跳過)→ runtime → web/電腦版顯示;對帳器/lib 閘門隨下一次 blave-agent `VERSION`**。測試
+  `tests/check_machine_restart_stop.py`、`tests/check_reconciler_restart_gate.py`、`tests/check_restart_stop_order_gate.py`。
 
 ## 1.1.86 — 2026-09-22
 

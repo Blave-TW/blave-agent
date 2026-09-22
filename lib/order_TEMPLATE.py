@@ -26,6 +26,10 @@
 #                    state/HALT blocks NEW-EXPOSURE orders before any network
 #                    call, but closes/reduces/cancels MUST still pass (classify
 #                    intent from the request BODY, not just the URL params).
+#                    Call guard.check_restart_stop(intent, fields) BEFORE
+#                    the HALT check: after a machine restart it refuses every
+#                    order, closes included (tests/check_restart_stop_order_gate.py
+#                    fails for any lib/order_*.py that skips it).
 #   ATTRIBUTION      the exchange's broker header/field on every order request —
 #                    its omission is silent, so include it from the first order.
 

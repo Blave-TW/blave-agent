@@ -34,6 +34,7 @@ exception to the no-silent-failure rule, and only for the LOG write).
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 
 HALT_PATH = "state/HALT"
@@ -60,6 +61,82 @@ def _now():
 
 def halted():
     return _halt_flag or os.path.exists(HALT_PATH)
+
+
+# ── machine-restart stop (Wei 2026-09-22) ────────────────────────────────────
+# Written by the runtime when the machine rebooted while trading
+# (runtime/command_listener.RESTART_STOP_PATH — same file; the runtime ships on
+# its own channel, so the string is repeated there and a check pins them equal),
+# removed only by the user's 啟動下單. Unlike HALT it blocks EVERY order —
+# entries, closes, reduces, SL/TP — from every caller that uses lib/order_*
+# (reconciler, TWAP/chase slices, Type B strategies, ad-hoc scripts): after a
+# reboot nothing trades until the user says so. Cancels and leverage changes
+# still pass: neither opens nor closes anything, and a cancel only lowers risk.
+RESTART_STOP_PATH = "state/reconciler_stopped.json"
+# cancel/leverage change nothing held; "reset" = order_paper.reset_account, the
+# user wiping their simulated book — not an order.
+_RESTART_PASS = frozenset({"cancel", "cancel_all", "leverage", "reset"})
+
+# The one exception (Wei 2026-09-22): the user's own close_all (the web's 暫停並關閉部位) still closes while
+# the machine stays stopped. command_listener._cmd_close_all writes this pass
+# right before launching manager/flatten.py; flatten claims it (claim_close_all_pass),
+# which lets THAT process's reduce orders through — nothing else, no entry, no
+# SL/TP, no other process. Strategies and the reconciler never hold it.
+CLOSE_ALL_PASS_PATH = "state/close_all_pass.json"
+CLOSE_ALL_PASS_TTL_S = 120
+_close_all_granted = False
+
+
+def restart_stopped():
+    return os.path.exists(RESTART_STOP_PATH)
+
+
+def claim_close_all_pass():
+    """manager/flatten.py only (tests/check_restart_stop_order_gate.py enumerates
+    every caller). True = this process may close positions during a restart stop.
+    The rename is atomic, so exactly one process consumes a pass; a pass older
+    than CLOSE_ALL_PASS_TTL_S is void. Code running as this user could forge the
+    file — but it could equally delete RESTART_STOP_PATH, so the pass adds no
+    power it did not already have, and it is reachable through no argument,
+    environment variable or public lib path."""
+    global _close_all_granted
+    claimed = f"{CLOSE_ALL_PASS_PATH}.{os.getpid()}"
+    try:
+        os.rename(CLOSE_ALL_PASS_PATH, claimed)
+    except OSError:
+        return False
+    try:
+        with open(claimed) as f:
+            ts = json.load(f).get("ts")
+        ok = isinstance(ts, (int, float)) and 0 <= time.time() - ts <= CLOSE_ALL_PASS_TTL_S
+    except (OSError, ValueError, AttributeError):
+        ok = False
+    finally:
+        try:
+            os.remove(claimed)
+        except OSError:
+            pass
+    if ok:
+        _close_all_granted = True
+    audit("close_all_pass_claimed" if ok else "close_all_pass_void")
+    return ok
+
+
+def check_restart_stop(intent, fields=None):
+    """Every order-lib gate calls this before its HALT check: raises Halted for
+    any order intent while the restart record exists. `fields` = the audit dict."""
+    fields = fields or {}
+    if intent in _RESTART_PASS or not restart_stopped():
+        return
+    if _close_all_granted and intent == "reduce":
+        audit("order_allowed_close_all", **{**fields, "intent": intent})
+        return
+    audit("order_denied_restart", **{**fields, "intent": intent})
+    raise Halted(
+        f"the machine restarted and trading is stopped until the user presses "
+        f"啟動下單 — {intent} order for {fields.get('symbol') or fields.get('instId') or fields.get('contract') or fields.get('currency_pair') or '?'} "
+        f"refused before reaching the venue (closes included). Never remove "
+        f"{RESTART_STOP_PATH} yourself.")
 
 
 def halt_info():
