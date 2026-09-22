@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.86 — 2026-09-22
+
 - **修 1.1.84/1.1.85 雲端機全數回滾**:`codex_engine.py` 模組頂層 `import tomllib`,雲端機是
   Python 3.10(沒有 tomllib),updater 健康檢查 import 時 `ModuleNotFoundError` → 回滾。改成讀
   config 時才 import;import 不到就不掛 blave MCP(stderr 一行,回合照跑)。新增閘門
