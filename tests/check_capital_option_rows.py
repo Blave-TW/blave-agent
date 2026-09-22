@@ -82,6 +82,30 @@ for sym in UNKNOWN:
         check(True, f"unknown {sym!r} fails the read")
     del RAW[sym]
 
+# Two contract months of one root (a roll) are signed-summed, never overwritten.
+for rows, want in (
+    ({"TM2610": ("long", 1.0), "TM2611": ("long", 1.0)}, ("long", 2.0)),
+    ({"TM2611": ("long", 1.0), "TM2610": ("long", 1.0)}, ("long", 2.0)),
+    ({"TM2610": ("long", 2.0), "TM2611": ("short", 1.0)}, ("long", 1.0)),
+    ({"TM2610": ("short", 1.0), "TM2611": ("long", 3.0)}, ("long", 2.0)),
+    ({"TM2610": ("long", 1.0), "TM2611": ("short", 1.0)}, None),
+):
+    RAW.clear()
+    RAW.update({s: {"side": side, "size": n} for s, (side, n) in rows.items()})
+    tmf = reconciler._capital_get_positions().get("TMF")
+    got_rows = (tmf["side"], tmf["size"]) if tmf else None
+    check(got_rows == want, f"multi-month {rows} -> TMF {got_rows} (want {want})")
+
+# A side the contract doesn't name must fail the read, not count as short.
+for bad in ("buy", "sell", None, ""):
+    RAW.clear()
+    RAW["TM2610"] = {"side": bad, "size": 1.0}
+    try:
+        reconciler._capital_get_positions()
+        check(False, f"side {bad!r} fails the read")
+    except RuntimeError:
+        check(True, f"side {bad!r} fails the read")
+
 
 class _FakeOrder:
     def GetOpenInterest(self, login_id, acct):
@@ -105,6 +129,16 @@ for row in ("TO,acct,TX2610,B,1,0,22000.0000,200,,,ID", " TF ,acct,MTX2610,S,1,0
         check(ok, f"worker row {row[:18]!r}: {[r['symbol'] for r in rows]}")
     except RuntimeError:
         check(row.startswith("TO"), f"worker futures code under non-TF market raises: {row[:18]!r}")
+
+# 買賣別: B/0 buy, S/1 sell; anything else fails the query instead of reading as sell.
+for code, want in (("B", "buy"), ("0", "buy"), ("S", "sell"), ("1", "sell"),
+                   ("X", None), ("", None), ("b", None)):
+    EXTRA = [f"TF,acct,MTX2610,{code},1,0,1.0,50,,,ID"]
+    try:
+        got = capital_worker.query_open_interest(_FakeOrder(), "id", "acct")[-1]["side"]
+    except RuntimeError:
+        got = None
+    check(got == want, f"worker 買賣別 {code!r} -> {got} (want {want})")
 
 print("PASS" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

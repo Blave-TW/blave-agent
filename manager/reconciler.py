@@ -334,7 +334,7 @@ def _capital_get_positions():
     from lib.order_capital import CAPITAL_FUT_RE
     raw = _acct_positions({})  # env unused — reads state/capital_account.json
     _capital_check_snapshot_caught_up(get_snapshot_read_at())
-    out = {}
+    net, months = {}, {}
     for resolved_sym, pos in raw.items():
         # Anchored root+YYMM: a TX-prefixed option row (TXO22000J6) must never
         # count as an actual TXF position — the diff would send a real 大台 order.
@@ -357,17 +357,35 @@ def _capital_get_positions():
                 # 2026-08-14 alongside this call site — pos['side'] is NOT
                 # 'buy'/'sell' here; do not re-translate or long positions
                 # silently read as short).
-                out[canon] = {
-                    'side': pos['side'],
-                    'size': float(pos['size']),
-                    'exchange': 'capital',
-                }
+                # Two months of one root (TM2610 + TM2611 across a roll) are
+                # signed-summed, not overwritten: every order goes out on the
+                # near-month alias and moves the root's net by its size
+                # whichever month it resolves to, so net is what the account-read
+                # diff and account_guard_decide must see (capital is hand-wired:
+                # venue_wiring's self_ledger short check never reads it).
+                if pos.get('side') not in ('long', 'short'):
+                    raise RuntimeError(f"capital: position {sym!r} has side "
+                                       f"{pos.get('side')!r}, expected long/short — "
+                                       f"trading paused rather than guess its direction")
+                size = float(pos['size'])
+                net[canon] = net.get(canon, 0.0) + (size if pos['side'] == 'long' else -size)
+                months.setdefault(canon, []).append(sym)
                 break
         else:
             logging.warning(f"[reconciler/capital] position {resolved_sym!r} matched no "
                             f"TXF/MXF/TMF futures contract (root + YYMM) — ignored "
                             f"(TX option or non-index product)")
-    return out
+    for canon, syms in months.items():
+        if len(syms) > 1:
+            # The alias only reaches the near month: a far leg (and a
+            # calendar spread netting to 0) can't be closed from here until
+            # it becomes the near month.
+            logging.warning(f"[reconciler/capital] {canon} held in several contract months "
+                            f"{sorted(syms)} — reading net {net[canon]:+g} lots")
+    return {
+        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': 'capital'}
+        for canon, n in net.items() if n != 0
+    }
 
 
 def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False):

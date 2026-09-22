@@ -46,6 +46,9 @@ EVENT_TIMEOUT_S = 15
 # (lib/ is sys.path[0], and order_capital does `from lib import guard`), so it
 # can't import it. tests/check_capital_option_rows.py asserts the two match.
 _CAPITAL_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
+# GetOpenInterest 買賣別: B/S live-observed; "0" was already accepted as buy, so
+# its order-struct pair "1" (which the old fallthrough read as sell) is kept.
+_OI_SIDES = {"B": "buy", "S": "sell", "0": "buy", "1": "sell"}
 
 # COM is Windows-only; deferred to main() so the module still imports for
 # structure checks on non-Windows machines (comtypes fails to import there).
@@ -216,10 +219,16 @@ def query_open_interest(order, login_id, tf_acct):
         # TW futures is hand-wired, so display keeps lots. Field meanings
         # unverified against live data until the first real fill.
         # 買賣別 is a LETTER — live row 2026-08-14: "TF,acct,TM2608,B,1,0,46138.0000,..."
-        # ("B"/"S", not the 0/1 the order structs use).
+        # ("B"/"S", not the 0/1 the order structs use). Anything else fails the
+        # query: defaulting to sell would read an unknown long as short.
+        raw_side = f[3] if len(f) > 3 else ""
+        side = _OI_SIDES.get(raw_side)
+        if side is None:
+            raise RuntimeError(f"GetOpenInterest: unknown 買賣別 {raw_side!r} for "
+                               f"{f[2] if len(f) > 2 else ''!r}, expected B/S")
         positions.append({
             "symbol": f[2],
-            "side": "buy" if f[3] in ("B", "0") else "sell",
+            "side": side,
             "lots": float(f[4]) if f[4] else 0.0,
             "avg_cost": float(f[6]) if len(f) > 6 and f[6] else None,
         })
