@@ -1186,6 +1186,9 @@ msgstr "{sym} difference under {m}"
 msgid "tr.gateFootReduce"
 msgstr "{sym} over by under half a lot"
 
+msgid "tr.gateFootBand"
+msgstr "{sym} difference within the drift band (under {m})"
+
 msgid "tr.orderFailed"
 msgstr "Order failed: {sym} — {err}"
 

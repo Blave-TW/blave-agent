@@ -69,15 +69,25 @@ ok("dirty:改回原值不算改過", trDirty(names, stored, { b: 300 }) === fals
 const states = { s1: { symbol: "BTC-USDT", position: 1 }, s2: { symbol: "BTCUSDT", position: -0.5 }, s3: { symbol: "ETHUSDT", position: -1, market: "spot" }, s4: { position: 1 } };
 ok("目標部位:同標的加總(dash 正規化)、現貨負值壓 0、沒 symbol 的跳過", J(trClientTargets({ s1: 1000, s2: 400, s3: 100, s4: 9 }, states)) === J({ BTCUSDT: 800, "ETHUSDT@spot": 0 }));
 ok("部位正負號", trSigned({ side: "long", size: 5 }) === 5 && trSigned({ side: "sell", size: 5 }) === -5 && trSigned({}) === 0 && trSigned(null) === 0);
-ok("門檻側:|實際|>|目標| 走減倉側", J(trGateSide({ entry_usd: 84, reduce_usd: 42 }, 100, 300)) === J({ usd: 42, reduce: true, close: false }) && J(trGateSide({ entry_usd: 84, reduce_usd: 42 }, 300, 100)) === J({ usd: 84, reduce: false, close: false }));
+ok("門檻側:|實際|>|目標| 走減倉側", J(trGateSide({ entry_usd: 84, reduce_usd: 42 }, 100, 300)) === J({ usd: 42, reduce: true, close: false, band: false }) && J(trGateSide({ entry_usd: 84, reduce_usd: 42 }, 300, 100)) === J({ usd: 84, reduce: false, close: false, band: false }));
 // 全平 / 翻向只過平坦地板 close_usd(跟 web 的 pfGateSide 同一條規則;web tests/check_pf_gate_side.js 的格)
 { const G = { entry_usd: 84, reduce_usd: 42, close_usd: 10 }, u = (g, t, a) => trGateSide(g, t, a);
-  ok("全平(多、空)用 min(該側, close_usd)", J(u(G, 0, 300)) === J({ usd: 10, reduce: true, close: true }) && J(u(G, 0, -300)) === J({ usd: 10, reduce: true, close: true }));
-  ok("翻向兩種大小都用 min:目標較小走減倉側、目標較大走進場側", J(u(G, -100, 300)) === J({ usd: 10, reduce: true, close: true }) && J(u(G, -500, 300)) === J({ usd: 10, reduce: false, close: true }));
-  ok("部分減倉、同向加倉、act=0 進場:不用 close_usd", J(u(G, 100, 300)) === J({ usd: 42, reduce: true, close: false }) && J(u(G, 300, 100)) === J({ usd: 84, reduce: false, close: false }) && J(u(G, 300, 0)) === J({ usd: 84, reduce: false, close: false }));
-  ok("close_usd 缺席 / null / NaN / 0 / 負 / 字串 / Infinity → 退回該側(不可算出 NaN 或 0 把每列都畫成會成交)", [undefined, null, NaN, 0, -5, "10", Infinity].every((cu) => J(u({ entry_usd: 84, reduce_usd: 42, close_usd: cu }, 0, 300)) === J({ usd: 42, reduce: true, close: false })));
-  ok("close_usd 比該側大 → 取該側", J(u({ entry_usd: 84, reduce_usd: 5, close_usd: 10 }, 0, 300)) === J({ usd: 5, reduce: true, close: false }));
+  ok("全平(多、空)用 min(該側, close_usd)", J(u(G, 0, 300)) === J({ usd: 10, reduce: true, close: true, band: false }) && J(u(G, 0, -300)) === J({ usd: 10, reduce: true, close: true, band: false }));
+  ok("翻向兩種大小都用 min:目標較小走減倉側、目標較大走進場側", J(u(G, -100, 300)) === J({ usd: 10, reduce: true, close: true, band: false }) && J(u(G, -500, 300)) === J({ usd: 10, reduce: false, close: true, band: false }));
+  ok("部分減倉、同向加倉、act=0 進場:不用 close_usd", J(u(G, 100, 300)) === J({ usd: 42, reduce: true, close: false, band: false }) && J(u(G, 300, 100)) === J({ usd: 84, reduce: false, close: false, band: false }) && J(u(G, 300, 0)) === J({ usd: 84, reduce: false, close: false, band: false }));
+  ok("close_usd 缺席 / null / NaN / 0 / 負 / 字串 / Infinity → 退回該側(不可算出 NaN 或 0 把每列都畫成會成交)", [undefined, null, NaN, 0, -5, "10", Infinity].every((cu) => J(u({ entry_usd: 84, reduce_usd: 42, close_usd: cu }, 0, 300)) === J({ usd: 42, reduce: true, close: false, band: false })));
+  ok("close_usd 比該側大 → 取該側", J(u({ entry_usd: 84, reduce_usd: 5, close_usd: 10 }, 0, 300)) === J({ usd: 5, reduce: true, close: false, band: false }));
   ok("表底腳注:被平坦的 10 擋住的列(減倉或全平/翻向)不另外解釋", /if \(gs && held && !\(\(gs\.reduce \|\| gs\.close\) && gs\.usd <= 10\)\) gated\.push/.test(src)); }
+// 漂移容忍帶(稽核 B1;lib/portfolio.compute_diff:同向且兩邊都有倉時 applied = max(該側, band_usd),快照 gates 多 band_usd、usd 已含它;
+// web 的 pfGateSide 同一條規則):帶內的差額只是 mark 在動,不畫成會下單、也不讓 trLiveOrderErr 把舊拒單當仍欠著
+{ const G = { entry_usd: 84, reduce_usd: 42, close_usd: 10, band_usd: 500, usd: 500 }, u = (g, t, a) => trGateSide(g, t, a);
+  ok("同向、兩邊都有倉:門檻 = max(該側, band_usd)——加倉側與減倉側都是;空單同向也算", J(u(G, 10000, 9900)) === J({ usd: 500, reduce: false, close: false, band: true })
+    && J(u(G, 9900, 10000)) === J({ usd: 500, reduce: true, close: false, band: true }) && J(u(G, -10000, -9900)) === J({ usd: 500, reduce: false, close: false, band: true }));
+  ok("band_usd 比該側小 → 取該側(max),不標 band", J(u({ ...G, band_usd: 20 }, 9900, 10000)) === J({ usd: 42, reduce: true, close: false, band: false }));
+  ok("act=0 進場、全平、翻向:不看帶(lib 那邊 <= 0 那支與帶互斥)", J(u(G, 10000, 0)) === J({ usd: 84, reduce: false, close: false, band: false })
+    && J(u(G, 0, 10000)) === J({ usd: 10, reduce: true, close: true, band: false }) && J(u(G, -10000, 9900)) === J({ usd: 10, reduce: false, close: true, band: false }) && J(u(G, -100, 300)) === J({ usd: 10, reduce: true, close: true, band: false }));
+  ok("band_usd 缺席 / null / NaN / 0 / 負 / 字串 / Infinity → 舊行為(該側)", [undefined, null, NaN, 0, -5, "500", Infinity].every((bu) => J(u({ entry_usd: 84, reduce_usd: 42, close_usd: 10, band_usd: bu }, 10000, 9900)) === J({ usd: 84, reduce: false, close: false, band: false })));
+  ok("表底腳注:帶內的列講「在容忍帶內」(usd 是帶不是半口,不能套「超出不到半口」)", /g\.gs\.band \? t\("tr\.gateFootBand", \{ sym: short\(g\.sym\), m: trFmt\(g\.gs\.usd\) \}\)/.test(src)); }
 // ── 設計 v4(自動下單頁 polish)──
 ok("金額錯誤分兩種:不是數字 = bad、是數字但超過上限 = big;看得懂 = null(空白 = 0;打到一半的「100,00」算 bad,但只在 blur 才會問)", trAmountError("1,500.50") === null && trAmountError("0") === null && trAmountError("abc") === "bad" && trAmountError("100,00") === "bad" && trAmountError("") === null
   && trAmountError("-5") === "bad" && trAmountError("1e9") === "bad" && trAmountError("2000000000") === "big" && trAmountError("2,000,000,000.5") === "big" && trAmountError("$ 1000000001") === "big" && trAmountError(null) === null);

@@ -142,7 +142,11 @@ function trGateSide(g, tgt, act) {
     // 舊 lib 的快照沒有 close_usd:缺席或不是有限正數就照舊用該側——不能讓 min 算出 NaN / 0 把每一列都畫成會成交
     const closes = act !== 0 && (tgt === 0 || tgt * act < 0), cu = g.close_usd;
     const useClose = closes && typeof cu === "number" && isFinite(cu) && cu > 0 && cu < side;
-    return { usd: useClose ? cu : side, reduce, close: useClose };
+    // 同向且兩邊都有倉:漂移容忍帶是該側門檻之上的第二道地板(lib/portfolio 的 applied = max(該側, band_usd));
+    // 帶內的差額只是 mark 在動、不是部位缺口,畫成綠「買/賣」會讓 trLiveOrderErr 把舊拒單當成仍欠著。
+    // 與全平/翻向互斥(那邊不看帶);缺 band_usd 或不是有限正數 = 舊快照,照該側
+    const bu = g.band_usd, useBand = act !== 0 && tgt * act > 0 && typeof bu === "number" && isFinite(bu) && bu > 0 && bu > side;
+    return { usd: useClose ? cu : useBand ? bu : side, reduce, close: useClose, band: useBand };
   }
   if (Math.abs(act) > Math.abs(tgt)) return null;
   return typeof g.usd === "number" ? { usd: g.usd, reduce: false } : null;
@@ -1062,8 +1066,10 @@ function trPositions(r, stored, states) {
   tbl.appendChild(tb); scroll.appendChild(tbl); frag.appendChild(scroll);
   if (gated.length) {
     const short = (k) => { const f = k.replace(/@spot$/i, ""), b = f.replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, ""); return b && b !== f ? b : f; };
+    // 帶內的列先講「在容忍帶內」:它的 usd 是帶不是半口,套「超出不到半口」會講錯
     frag.appendChild(trEl("div", "pf-foot", t("tr.gateFootLead") + gated.map((g) =>
-      g.gs.reduce ? t("tr.gateFootReduce", { sym: short(g.sym) }) : t("tr.gateFootEntry", { sym: short(g.sym), m: trFmt(g.gs.usd) })).join(" · ")));
+      g.gs.band ? t("tr.gateFootBand", { sym: short(g.sym), m: trFmt(g.gs.usd) })
+        : g.gs.reduce ? t("tr.gateFootReduce", { sym: short(g.sym) }) : t("tr.gateFootEntry", { sym: short(g.sym), m: trFmt(g.gs.usd) })).join(" · ")));
   }
   // 下單失敗不能靜悄悄:掛在表底(腳注,同雲端)。但只掛**還沒被解決**的那一筆——過期的那些已經跟表上的數字對不起來了。
   // 哪一筆要掛不看執行狀態;執行狀態只決定音量(spec 丙案):對帳器在跑 = 這張單會再送、會再失敗,紅字催人;

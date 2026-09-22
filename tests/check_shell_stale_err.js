@@ -6,6 +6,8 @@
 //   ③ 口數列(群益 / futures_contracts)的失敗不可以被藏掉:機器端對它們不寫 gates、下單也沒門檻,差 1 口就真的送單
 //   ④ 丙案:哪一筆要掛不看執行狀態,執行狀態只決定音量——對帳器在跑 = 紅字;沒在跑(暫停或掛掉不分)= 同一筆降灰
 //      「上次下單失敗」帶 HH:mm、逾 24 小時帶日期;本機與雲端視角同一條規則,狀態來源與頁頭同一個(envHeadState)
+//   ⑤ 稽核 B1:漂移容忍帶——同向且兩邊都有倉、差額在 band_usd 內 = 機器端不會下單(lib/portfolio.compute_diff 的 applied = max(該側, band_usd)),
+//      這一列不畫綠、舊拒單不掛;帶外照掛;翻向不看帶;舊快照沒有 band_usd 行為不變
 // 跑法:node tests/check_shell_stale_err.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
@@ -41,10 +43,10 @@ function paint(report, st = {}) {
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
   vm.runInContext(["trLivePositions", "trClientTargets", "trGateSide", "trPositions"].map(cut).join("\n").replace(/^const /gm, "var "), ctx);
   const frag = vm.runInContext("trPositions(TR.st.report, TR.st.report.config.amounts, TR.st.report.states)", ctx);
-  const all = flat(frag), errRow = all.find((n) => n.cls === "pf-foot err"), pastRow = all.find((n) => n.cls === "pf-foot past");
+  const all = flat(frag), errRow = all.find((n) => n.cls === "pf-foot err"), pastRow = all.find((n) => n.cls === "pf-foot past"), gateRow = all.find((n) => n.cls === "pf-foot");
   const holds = all.filter((n) => /(^| )hold( |$)/.test(n.cls)).length;
   const stamp = pastRow ? (pastRow.kids.find((k) => k.tag === "span" && k.cls === "ts mono") || {}).text || null : null;
-  return { red: errRow ? errRow.textContent : null, past: pastRow ? pastRow.textContent : null, stamp, holds };
+  return { red: errRow ? errRow.textContent : null, past: pastRow ? pastRow.textContent : null, stamp, holds, foot: gateRow ? gateRow.textContent : null };
 }
 
 const ERR = { ts: "2026-09-21T14:26:00", symbol: "BTCUSDT", exchange: "binance", error: "order rejected: gross notional 110000 exceeds 10x paper equity 9945" };
@@ -113,5 +115,22 @@ const CLOUD = (extra) => ({ alive: false, cloud: { code: "OK", machine: { state:
   t("④ 雲端:回報過舊、頁頭已退成「讀不到」→ 降灰", p.red === null && LAST(p)); }
 { const p = paint(crypto(30000, 20000, { halt: HALT }), { alive: true, cloud: { code: "OK", machine: { state: "running" }, strategies: [], stale: false, last_ok_at: NOW - 5000 } });
   t("④ 雲端:主機說已暫停 → 降灰(halted / dead 不分)", p.red === null && LAST(p)); }
+
+// ⑤ 漂移容忍帶。gates 列照 lib/portfolio.compute_diff 寫出的形狀:{ usd, diff, entry_usd, reduce_usd, close_usd[, side: "reduce"][, band_usd] };
+//    一般加密列兩側門檻都是 flat 10,只因 band_usd > flat 才被記下來,所以 usd === band_usd
+const banded = (target, actual, band, o) => { const diff = target - actual, g = { usd: Math.max(10, band || 0), diff, entry_usd: 10, reduce_usd: 10, close_usd: 10 };
+  if (Math.abs(target) < Math.abs(actual)) g.side = "reduce"; if (band) g.band_usd = band;
+  return base({ config: { amounts: { s: Math.abs(target) } }, states: { s: { symbol: "BTCUSDT", market: "swap", position: target < 0 ? -1 : 1 } },
+    last_reconcile: { ts: "2026-09-21T14:27:00", target: { BTCUSDT: { ...tRow(Math.abs(target), "binance", null), side: target < 0 ? "short" : "long" } },
+      actual: { BTCUSDT: { ...aRow(Math.abs(actual), "binance"), side: actual < 0 ? "short" : "long" } }, orders: [], gates: { BTCUSDT: g } }, ...o }); };
+{ const p = paint(banded(20300, 20000, 1015));
+  t("⑤ 同向加倉、差額 300 在帶(1,015)內 → 不畫綠、舊拒單不掛(這就是 B1 那格)", p.red === null && p.holds === 1);
+  t("⑤ 帶內那列的腳注講「在容忍帶內」,不是「差額不到 10」也不是「超出不到半口」", /tr\.gateFootBand/.test(p.foot || "") && /"m":"1015"/.test(p.foot || "") && !/gateFootEntry|gateFootReduce/.test(p.foot || "")); }
+{ const p = paint(banded(19800, 20000, 1000));
+  t("⑤ 同向減倉、差額 200 在帶內 → 同樣不掛、腳注是帶(不是半口)", p.red === null && p.holds === 1 && /tr\.gateFootBand/.test(p.foot || "") && !/gateFootReduce/.test(p.foot || "")); }
+t("⑤ 差額 1,500 超出帶(1,000)→ 綠字、紅字照掛", (() => { const p = paint(banded(21500, 20000, 1000)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
+t("⑤ 翻向(多 → 空)不看帶:快照那輪同向留下的 band_usd 不能把翻向畫成不會動", (() => { const p = paint(banded(-20000, 20000, 1000)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
+t("⑤ 舊快照沒有 band_usd(gates 只有兩側 10):差額 300 照舊會下單、紅字照掛", (() => { const p = paint(banded(20300, 20000, 0)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
+t("⑤ 帶內、對帳器沒在跑 → 也不會把舊拒單撿回來當灰字(判準先於音量)", (() => { const p = paint(banded(20300, 20000, 1015, { halt: HALT })); return p.red === null && p.past === null; })());
 
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

@@ -1186,6 +1186,9 @@ msgstr "{sym} 差額不到 {m}"
 msgid "tr.gateFootReduce"
 msgstr "{sym} 超出不到半口"
 
+msgid "tr.gateFootBand"
+msgstr "{sym} 差額在漂移容忍帶內（不到 {m}）"
+
 msgid "tr.orderFailed"
 msgstr "下單失敗：{sym}——{err}"
 
