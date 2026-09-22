@@ -2955,6 +2955,17 @@ def _flatten_already_running():
         fh.close()
 
 
+def _capital_only_unflattenable():
+    """Same verdict the report sends as can_flatten=false (flatten.py already
+    known present here). Unreadable → False: never let this be why a panic
+    close isn't launched — flatten.py skips the 群益 leg on its own."""
+    try:
+        import portfolio_reporter
+        return not portfolio_reporter.can_flatten(portfolio_reporter.venues())
+    except Exception:
+        return False
+
+
 def _cmd_close_all(args):
     """Panic: trip HALT synchronously, then flatten every venue position in a
     detached process (fills can take a while — the command loop must not wait;
@@ -2970,7 +2981,11 @@ def _cmd_close_all(args):
                        rather than pretend it sent another one, because a
                        second flatten on 群益 would open a reversed position
                        (manager/flatten.py › SINGLE-FLIGHT)
-      halted_only    — this workspace has no manager/flatten.py"""
+      halted_only    — this workspace has no manager/flatten.py
+      halted_capital_manual — HALT tripped, nothing launched: 群益 is the only
+                       closable venue and this identity can't log in to SKCOM
+                       (portfolio_reporter.can_flatten); recorded in
+                       order_errors for the user to close by hand"""
     from lib.guard import trip_halt
 
     trip_halt("close all positions", "web")
@@ -2980,6 +2995,16 @@ def _cmd_close_all(args):
         return "close_all=halted_only"
     if _flatten_already_running():
         return "close_all=already_running"
+    if _capital_only_unflattenable():
+        # 前端照 can_flatten 不會給這顆;舊畫面/舊報告還是可能送來。不起 flatten:
+        # 還沒更新的 flatten.py 會在這個身分下硬登 SKCOM(602)
+        try:
+            from lib.portfolio import _record_order_error
+            _record_order_error("*", "capital", "close-all: 群益部位未平倉(此身分無法登入群益 API),"
+                                                "請在群益下單軟體手動平倉")
+        except Exception:
+            pass
+        return "close_all=halted_capital_manual"
     # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
     # 除了 order_errors.json 外,還要有完整紀錄可查
     log_path = os.path.join(WORKSPACE, "state", "flatten.log")

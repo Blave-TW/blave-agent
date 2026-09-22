@@ -8,6 +8,26 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **群益「全部平倉」誠實化(止血)**:Windows 的 `blave-agent-web` 出廠是 LocalSystem(uid=1 實機查證),
+  網頁／電腦版全部平倉起的 `flatten.py` 繼承這個身分 → SKCOM 602,群益部位根本沒平、畫面只看到 HALT。
+  現在:`flatten.py` 在「非 Administrator 密碼登入身分」(token 查 `GetUserNameW` + INTERACTIVE/BATCH/SERVICE
+  群組;判斷不了一律當不行)下**不送群益單**,每個群益部位記一條「請在群益下單軟體手動平倉」到
+  `order_errors`,加密腿照平、HALT 照掛;reporter 的 `can_flatten` 在唯一可平 venue 是群益時回 false
+  (前端只剩「暫停」);listener 對舊畫面送來的 close_all 回新狀態 `close_all=halted_capital_manual`
+  (純加法,下游無比對)、不起 flatten。根治(schtasks Administrator 載具)另案。
+  同批修 workspace 層 `flatten.py` 的既有真錢洞:
+  - self_ledger 歸零只給真的平掉的:身分跳過、平倉丟例外、查不到價格、壞資料列、群益回 `sent` 或成交不足
+    (不算已平,記錯)的標的一律不歸零;同一帳本 key 一列平、一列沒平也不歸零;任一 venue 有 order lib
+    卻沒 account lib(另記一筆錯)／讀部位失敗／有部位沒 order lib／出現沒代碼的部位列時,**整個收尾掃帳本
+    不做**(帳本 key 不帶 venue,分不出是誰的)。`DATA_<來源>` 金鑰不再被當成交易所(同
+    `account_reader._venues`)。未涵蓋:加密 venue 回報的成交量不檢查(各 lib 回傳形狀不一,未逐一驗)。
+  - 群益部位改以帳本 key(TM2610→TMF,只認「前綴+YYMM」)查帳本、記紀錄、歸零;原本用解析代碼查,永遠查不到。
+  - 群益只送「TX/MTX/TM + YYMM」期貨列:選擇權列(TXO/TX1…)等其他代碼一律不送、記「請在群益下單軟體手動平倉」。
+  - **已知風險、Wei 接受**:轉倉期間的非近月期貨列照今天的行為送出——平倉只能送近月 alias,所以平遠月那列
+    實際是在近月下單(可能開出新倉、遠月那口沒動)。開 self_ledger 時轉倉期同一個帳本 key 會有兩列、兩列都會送,
+    可能超平。根治待 capital_worker 回報 alias 當下對應的合約。
+  閘門:`tests/check_capital_flatten_identity.py`(含兩份身分函式 AST 相等)。
+
 ## 1.1.84 — 2026-09-22
 
 - **Binance 綁定不再查提領權限**(Wei 09-22 拍板:電腦版 MVP 全面不查提領):`_binance_bind_check` 拿掉

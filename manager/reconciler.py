@@ -1,4 +1,4 @@
-import hashlib, importlib, json, logging, os, sys, time
+import hashlib, importlib, json, logging, os, re, sys, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -210,6 +210,12 @@ _CAPITAL_FUTURES_SPEC = {
     "MXF": {"capital_symbol": "MTX00",  "resolved_prefix": "MTX", "contract_value": 50},
     "TMF": {"capital_symbol": "TM0000", "resolved_prefix": "TM",  "contract_value": 10},
 }
+# 台指選擇權 (monthly TXO, Wednesday weeklies TX1/TX2/TX4/TX5, Friday
+# weeklies TXU/TXV/TXX/TXY/TXZ): root + strike + month
+# letter (A-L call, M-X put) + year digit, e.g. TXO22000J6. Only these are
+# safely ignorable; any other TX/MTX/TM row may be a futures contract in a
+# resolved format we haven't seen (TX/MTX are unverified, see above).
+_CAPITAL_OPTION_RE = re.compile(r"^TX[O1245UVXYZ]\d{3,6}[A-X]\d$")
 
 # reconcile()'s account-currency THRESHOLD is meaningless for lot-scale
 # diffs — capital rows skip it entirely (lib.portfolio.compute_diff) — so
@@ -325,13 +331,27 @@ def _capital_get_positions():
     CapitalCacheLagError in that narrow post-order window instead of
     returning stale positions."""
     from lib.account_capital import get_positions as _acct_positions, get_snapshot_read_at
+    from lib.order_capital import CAPITAL_FUT_RE
     raw = _acct_positions({})  # env unused — reads state/capital_account.json
     _capital_check_snapshot_caught_up(get_snapshot_read_at())
     out = {}
     for resolved_sym, pos in raw.items():
-        resolved = str(resolved_sym).upper()
+        # Anchored root+YYMM: a TX-prefixed option row (TXO22000J6) must never
+        # count as an actual TXF position — the diff would send a real 大台 order.
+        sym = str(resolved_sym).strip().upper()
+        m = CAPITAL_FUT_RE.match(sym)
+        root = m.group(1) if m else None
+        if not m and sym.startswith(("TX", "MTX", "TM")) and not _CAPITAL_OPTION_RE.match(sym):
+            # Could be a real TXF/MXF position in an unseen format; ignoring it
+            # would read as flat and re-enter on top. Fail the read (same path
+            # as a stale snapshot) so nothing trades on it.
+            raise RuntimeError(f"capital: unrecognized 群益 position code {sym!r} (not a "
+                               f"TXF/MXF/TMF contract or TX option) — trading paused so "
+                               f"it isn't mistaken for a futures position. Close or handle "
+                               f"this position in the 群益 trading app, or contact support; "
+                               f"resuming before that pauses again.")
         for canon, spec in _CAPITAL_FUTURES_SPEC.items():
-            if resolved.startswith(spec['resolved_prefix']):
+            if root == spec['resolved_prefix']:
                 # account_capital.get_positions() already normalizes to
                 # 'long'/'short' (account_TEMPLATE.py's contract, fixed
                 # 2026-08-14 alongside this call site — pos['side'] is NOT
@@ -345,7 +365,8 @@ def _capital_get_positions():
                 break
         else:
             logging.warning(f"[reconciler/capital] position {resolved_sym!r} matched no "
-                            f"known futures alias (TXF/MXF/TMF) — ignored")
+                            f"TXF/MXF/TMF futures contract (root + YYMM) — ignored "
+                            f"(TX option or non-index product)")
     return out
 
 

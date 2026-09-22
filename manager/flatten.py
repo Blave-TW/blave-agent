@@ -122,6 +122,62 @@ def _singleflight(path=None):
     return fh
 
 
+def _capital_order_identity_ok():
+    """Can THIS process log in to 群益 SKCOM? Only the built-in Administrator
+    under a password-derived logon can (lib/order_capital.py › error 602):
+    RDP/console (INTERACTIVE), schtasks /rp (BATCH), NSSM ObjectName (SERVICE).
+    The web 全部平倉 runs us under the bridge's LocalSystem, a key-auth SSH
+    session is a NETWORK/S4U logon — both 602. Read from the process token,
+    not env vars (the listener hands us a copied env). Can't tell → False:
+    a skipped 群益 close is recorded; a 602 attempt is not an honest answer.
+    Known false positive: schtasks /ru Administrator WITHOUT /rp (/np, S4U)
+    also carries BATCH but cannot unlock the cert — that case falls back to
+    the pre-check behaviour (order attempted, 602, recorded as an error).
+    Mirrored in runtime/portfolio_reporter.py (can_flatten) — keep in step;
+    tests/check_capital_flatten_identity.py fails if the two bodies differ."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        adv = ctypes.windll.advapi32
+        buf = ctypes.create_unicode_buffer(257)
+        n = wintypes.DWORD(257)
+        if not adv.GetUserNameW(buf, ctypes.byref(n)) or buf.value.lower() != "administrator":
+            return False
+        for sddl in ("S-1-5-4", "S-1-5-3", "S-1-5-6"):  # INTERACTIVE, BATCH, SERVICE
+            sid = ctypes.c_void_p()
+            if not adv.ConvertStringSidToSidW(sddl, ctypes.byref(sid)):
+                return False
+            member = wintypes.BOOL()
+            try:
+                ok = adv.CheckTokenMembership(None, sid, ctypes.byref(member))
+            finally:
+                ctypes.windll.kernel32.LocalFree(sid)
+            if ok and member.value:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+# 群益 reports the RESOLVED contract (TM2610 = TM + YYMM); the reconciler books
+# and logs the strategy symbol (manager/reconciler.py _CAPITAL_FUTURES_SPEC).
+# Anchored on the full YYMM shape, not a prefix: TAIFEX option codes also start
+# with TX (TXO/TX1..TX5 + strike + month letter) and must never become TXF.
+_CAPITAL_BOOK_KEY = {"TX": "TXF", "MTX": "MXF", "TM": "TMF"}
+_CAPITAL_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
+
+
+def _book_key(vid, sym):
+    """The self-ledger / orders.jsonl key for a venue position row."""
+    if vid == "capital":
+        m = _CAPITAL_FUT_RE.match(sym)
+        if m:
+            return _CAPITAL_BOOK_KEY[m.group(1)]
+    return sym
+
+
 def _read_env(path=".env"):
     env = {}
     try:
@@ -141,7 +197,9 @@ def _venues(env):
     out = []
     for k in env:
         m = _ENV_KEY_RE.match(k + "=")
-        if not m or m.group(1).upper() in _RESERVED:
+        # DATA_<SOURCE>_* = data-source keys, never a venue — same rule as
+        # runtime/account_reader._venues (a venue literally named DATA stays)
+        if not m or m.group(1).upper() in _RESERVED or m.group(1).upper().startswith("DATA_"):
             continue
         out.append(m.group(1).lower())
     return sorted(set(out))
@@ -283,11 +341,26 @@ def flatten():
     # ledger to a phantom position it never held and the NEXT reconcile would
     # then try to "correct" — right after the user asked to close everything.
     closed_symbols = set()
+    # bot book keys whose position is still open after this run (skipped or
+    # failed) — the end-of-run ledger sweep must not zero them, or 啟動下單
+    # re-buys the whole target on top of the position that is still there
+    unclosed = set()
+    # False once any venue's positions went unread or unclosable: ledger keys
+    # carry no venue, so the stale-entry sweep can't tell that venue's book apart
+    sweep_ok = True
     for vid in _venues(env):
         has_account = os.path.isfile(f"lib/account_{vid}.py")
         has_order = os.path.isfile(f"lib/order_{vid}.py")
         if not has_account:
-            continue  # no reader — nothing to see here either
+            if has_order:
+                # can trade but can't be read: its positions (and so which book
+                # keys are still open) are unknown
+                logging.error(f"[{vid}] has lib/order_{vid}.py but no account lib — positions unread")
+                _record_order_error("*", vid, f"close-all: no account_{vid} lib — positions not read, "
+                                              "not closed")
+                errors += 1
+                sweep_ok = False
+            continue
         try:
             acct = importlib.import_module(f"lib.account_{vid}")
             positions = acct.get_positions(env)
@@ -295,6 +368,7 @@ def flatten():
             logging.error(f"[{vid}] get_positions failed: {e}")
             _record_order_error("*", vid, f"close-all: get_positions failed: {e}")
             errors += 1
+            sweep_ok = False
             continue
         # Agent-written account libs sometimes return the reconciler dict shape
         # ({symbol: {side, size}}) instead of the contract list — iterating a
@@ -306,6 +380,22 @@ def flatten():
             logging.error(f"[{vid}] HAS POSITIONS but no lib/order_{vid}.py — cannot flatten")
             _record_order_error("*", vid, f"close-all: positions exist but no order_{vid} lib")
             errors += 1
+            sweep_ok = False
+            continue
+        if vid == "capital" and positions and not _capital_order_identity_ok():
+            # never "try and see" under the wrong identity — one row per position
+            # so the page names what is still open (HALT above still holds)
+            for p in positions:
+                key = _book_key(vid, str(p.get("symbol") or "*").upper())
+                if ledger is not None:
+                    led = ledger.get(key)
+                    if not led or led.get("side") != p.get("side"):
+                        continue  # not the bot's — flatten would leave it anyway
+                unclosed.add(key)
+                logging.error(f"[{vid}] {key} NOT closed — this process cannot log in to SKCOM")
+                _record_order_error(key, vid, "close-all: 群益部位未平倉(此身分無法登入群益 API),"
+                                              "請在群益下單軟體手動平倉")
+                errors += 1
             continue
         order = importlib.import_module(f"lib.order_{vid}") if has_order else None
         # managed SPOT inventory sells down too(2026-08-05「現貨也賣掉」)—
@@ -320,14 +410,19 @@ def flatten():
         for p in positions:
             # One bad row must not abort the rest of the flatten — every branch
             # below either closes, records dust, or records a visible error.
+            sym = ""
             try:
                 sym = (p.get("symbol") or "").replace("-", "").upper()
+                key = _book_key(vid, sym)
                 side, size = p.get("side"), float(p.get("size", 0))
                 if not sym or side not in ("long", "short") or size <= 0:
                     logging.error(f"[{vid}] unflattenable row skipped: {p!r:.120}")
                     if sym:
-                        _record_order_error(sym, vid, f"close-all: bad position row (side={side})")
+                        _record_order_error(key, vid, f"close-all: bad position row (side={side})")
                         errors += 1
+                        unclosed.add(key)
+                    else:
+                        sweep_ok = False  # a row we can't even name may be any book key
                     continue
                 price = float(p.get("mark_price", 0) or 0)
                 if ledger is not None:
@@ -335,7 +430,7 @@ def flatten():
                     # on that side) — never the account row itself. A row the
                     # ledger doesn't claim (manual position, or the bot's book
                     # is on the other side) is left completely alone.
-                    led = ledger.get(sym)
+                    led = ledger.get(key)
                     if not led or led.get("side") != side:
                         logging.info(f"[{vid}] {sym} {side} {size} not the bot's — untouched")
                         continue
@@ -351,11 +446,22 @@ def flatten():
                         # skipping is the safe direction (never widen to the
                         # account row, that's the manual-position bite)
                         logging.error(f"[{vid}] {sym}: no mark price — bot close skipped")
-                        _record_order_error(sym, vid, "close-all: no mark price for ledger scope")
+                        _record_order_error(key, vid, "close-all: no mark price for ledger scope")
                         errors += 1
+                        unclosed.add(key)
                         continue
                     else:
                         size = min(size, float(led["size"]) / price)
+                # Known, accepted (Wei): a non-near-month row is still sent — the
+                # close goes out as the near-month alias, so during a roll it can
+                # open the near month instead of closing the far one.
+                if vid == "capital" and not _CAPITAL_FUT_RE.match(sym):
+                    logging.error(f"[{vid}] {sym}: not a TX/MTX/TM futures contract — not sent")
+                    _record_order_error(key, vid, f"close-all: 群益非期貨部位({sym}),"
+                                                  "請在群益下單軟體手動平倉")
+                    errors += 1
+                    unclosed.add(key)
+                    continue
                 try:
                     # step/min_qty gate ONLY — deliberately no price arg: with
                     # it format_qty also enforces MIN_NOTIONAL, which Binance
@@ -366,14 +472,16 @@ def flatten():
                     order.format_qty(env, sym, size)
                 except ValueError:
                     logging.info(f"[{vid}] {sym} {side} {size} below minimum — dust left")
-                    closed_symbols.add(sym)  # dust is still "as flat as it gets"
+                    closed_symbols.add(key)  # dust is still "as flat as it gets"
                     continue
                 cid = f"flat{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
                 result = order.close_position_partial(env, sym, side, size, client_order_id=cid)
             except Exception as e:
                 logging.error(f"[{vid}] close {p.get('symbol')} failed: {e}")
-                _record_order_error(str(p.get("symbol") or "?"), vid, f"close-all: {e}")
+                _record_order_error(_book_key(vid, sym) if sym else "?", vid, f"close-all: {e}")
                 errors += 1
+                if sym:
+                    unclosed.add(_book_key(vid, sym))
                 continue
             notional = round(size * price, 2) if price else None
             leg = {"signed_diff": (-notional if side == "long" else notional) if notional else None,
@@ -385,23 +493,36 @@ def flatten():
                     leg["executed_qty"] = result["executed_qty"]
             _append_reconciler_log({
                 "action": "SELL" if side == "long" else "BUY",
-                "symbol": sym,
+                "symbol": key,
                 "signed_diff": leg["signed_diff"],
                 "exchange": vid,
                 "asset_spec": None,
                 "contributors": [],
                 "legs": [leg],
             })
+            if vid == "capital" and (not isinstance(result, dict) or result.get("status") != "filled"
+                                     or float(result.get("executed_qty") or 0) + 1e-9 < size):
+                # 'sent' = accepted, no fill seen within the timeout — may or
+                # may not have filled; never book an unconfirmed close as flat
+                got = result.get("executed_qty") if isinstance(result, dict) else None
+                logging.error(f"[{vid}] {sym}: close not confirmed filled ({got}/{size})")
+                _record_order_error(key, vid, f"close-all: 群益平倉未確認成交({got or 0}/{size:g} 口),"
+                                              "請到群益下單軟體確認部位")
+                errors += 1
+                unclosed.add(key)
+                continue
             closed += 1
-            closed_symbols.add(sym)
+            closed_symbols.add(key)
             logging.info(f"[{vid}] closed {side} {sym} ({size})")
-    if ledger:
+    if ledger and sweep_ok:
         # flatten's contract is "the bot's book is empty afterwards" — zero
         # every ledger symbol, including one whose account row was already
         # gone (user closed it by hand earlier; the stale book entry must not
-        # survive the button that promises a clean slate)
+        # survive the button that promises a clean slate) — except a position
+        # this run left open, whose book must keep describing it
         closed_symbols |= set(ledger)
-    zero_ledger_symbols(closed_symbols)
+    # a key with one row closed and another left open is still open
+    zero_ledger_symbols(closed_symbols - unclosed)
     logging.info(f"flatten done: {closed} closed, {errors} errors")
     return errors == 0
 

@@ -449,6 +449,21 @@ in console redirects — inside Python the BSTR is proper unicode; the mojibake 
 only. Non-empty row fields (official manual V2.13.59 §4-2-x, comma-separated): 市場別, 帳號, 商品,
 買賣別, 未平倉部位, 當沖未平倉部位, 平均成本(3 decimals), 一點價值, 單口手續費, 交易稅(萬分之X),
 LOGIN_ID — confirm against live data after the first real futures fill.
+Only `TF` has been seen live as 市場別 on these rows (`TF,acct,TM2608,B,1,0,...`).
+`lib/capital_worker.py` strips every field, keeps `TF` rows, skips other markets with a log line,
+and fails the whole query (snapshot `ok:false`) if a non-`TF` row carries a futures code — a
+futures row must never be dropped silently (an empty book re-enters on top of the real position).
+TAIFEX options live in the same futures account and are expected to arrive as `TF` rows too (not
+live-verified), with codes that also start with `TX` (`TXO22000J6`, weeklies `TX122000A6` — root
+TXO, Wednesday weeklies TX1/TX2/TX4/TX5, Friday weeklies TXU/TXV/TXX/TXY/TXZ + strike + month
+letter A–L call / M–X put + year digit). Never classify a position by prefix: a futures contract is root + YYMM, matched with
+`lib/order_capital.CAPITAL_FUT_RE` (`^(MTX|TX|TM)\d{2}(0[1-9]|1[0-2])$`). Only `TM2608` is
+live-verified; the TX/MXF resolved format (`TX2610`, `MTX2610`) is inferred — confirm on the first
+live TXF/MXF fill. The reconciler therefore ignores option-shaped rows and non-index products
+(`CDF2610`), but FAILS the read on any other `TX`/`MTX`/`TM` row it can't classify, so nothing
+trades on it (the error names the code and tells the user to handle that position in the 群益
+trading app or contact support — resuming alone halts again); close-all refuses every non-futures
+row.
 
 ## Step 6c — Futures Equity (`GetFutureRights`)
 
@@ -508,7 +523,7 @@ order frequency sane by design.
 **Live round trip 2026-08-14 (TM0000 buy 1 → close):** order accepted with `ncode=0`, `msg` =
 13-digit order seq; fills within a second. `TM0000` resolves to the actual near-month contract
 (`TM2608`) in every report AND in `GetOpenInterest` positions — reconcilers must match on the
-resolved code, not the alias. TMF original margin observed 35,050 TWD at index ≈46,100 (margin
+resolved code (anchored root + YYMM, see Step 6b — not a prefix), not the alias. TMF original margin observed 35,050 TWD at index ≈46,100 (margin
 scales with the index — don't hardcode). Same-day order acceptance confirmed (signed the
 declarations the prior evening).
 

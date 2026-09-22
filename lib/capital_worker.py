@@ -12,6 +12,7 @@ often); 60s measured safe 2026-08-13.
 """
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -41,6 +42,10 @@ REFRESH_CHECK_S = 2
 # correctness risk — only extra broker-side query traffic.
 MIN_TICK_SPACING_S = 10
 EVENT_TIMEOUT_S = 15
+# Copy of lib/order_capital.CAPITAL_FUT_RE: this file runs as a bare script
+# (lib/ is sys.path[0], and order_capital does `from lib import guard`), so it
+# can't import it. tests/check_capital_option_rows.py asserts the two match.
+_CAPITAL_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
 
 # COM is Windows-only; deferred to main() so the module still imports for
 # structure checks on non-Windows machines (comtypes fails to import there).
@@ -189,8 +194,21 @@ def query_open_interest(order, login_id, tf_acct):
         raise RuntimeError("GetOpenInterest: no ## terminator within timeout")
     positions = []
     for row in Events.oi_rows:
-        f = row.split(",")
+        f = [x.strip() for x in row.split(",")]
         if f[0] == "001":  # 查無資料
+            continue
+        if f[0] != "TF":
+            # Only TF is documented/seen live. Options likely also carry TF —
+            # consumers filter those by contract format, not here, so the
+            # dashboard still shows them. A futures code under another market
+            # code must not be dropped: an empty book re-enters a full position
+            # on top of the real one, so fail the whole query (ok:false →
+            # reconciler raises → autohalt). Market + symbol only: the row has PII.
+            sym = f[2] if len(f) > 2 else ""
+            if _CAPITAL_FUT_RE.match(sym.upper()):
+                raise RuntimeError(f"GetOpenInterest: futures code {sym!r} under "
+                                   f"market {f[0]!r}, expected TF")
+            _log(f"GetOpenInterest: skipped non-TF row market={f[0]!r} symbol={sym!r}")
             continue
         # Parsed fields only — the trailing LOGIN_ID is the user's national ID;
         # never persist the raw row (PII in a file that may be shipped later).

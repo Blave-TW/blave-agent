@@ -59,6 +59,7 @@ the first one (the hand-wired TW reconciler is single-threaded — fine).
 
 import logging
 import os
+import re
 import threading
 import time
 
@@ -453,21 +454,25 @@ def place_odd_lot_order(env, symbol, action, shares, price, confirm_timeout=15):
 # actually blocks 「全部出場」, not a hypothetical). Both are thin wrappers
 # around place_futures_market_order — no new COM calls, no new untested paths.
 
-# resolved contract prefix (as account_capital.get_positions() reports it,
-# e.g. "TM2608") -> the near-month alias place_futures_market_order takes.
+# A resolved futures contract is root + YYMM (e.g. "TM2608"). Anchored, not a
+# prefix match: 台指選擇權 share the futures account and start with "TX"
+# (TXO22000J6, TX122000A6 — strike + month letter + year digit), and a prefix
+# match would read them as 大台 and send a real TX00 order. Shared by
+# manager/reconciler.py; manager/flatten.py's _CAPITAL_FUT_RE is the same
+# pattern and should be collapsed onto this one.
+CAPITAL_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
+# resolved root -> the near-month alias place_futures_market_order takes.
 # Mirrors manager/reconciler.py's _CAPITAL_FUTURES_SPEC resolved_prefix table
 # — keep the two in sync if either changes.
 _RESOLVED_PREFIX_TO_ALIAS = {"TM": "TM0000", "MTX": "MTX00", "TX": "TX00"}
 
 
 def _alias_for_resolved(symbol):
-    resolved = str(symbol).upper()
-    for prefix, alias in _RESOLVED_PREFIX_TO_ALIAS.items():
-        if resolved.startswith(prefix):
-            return alias
-    raise ValueError(f"capital: {symbol!r} does not match any known TW futures "
-                     f"resolved-contract prefix {sorted(_RESOLVED_PREFIX_TO_ALIAS)} — "
-                     f"securities close-all is not wired")
+    m = CAPITAL_FUT_RE.match(str(symbol).upper())
+    if m:
+        return _RESOLVED_PREFIX_TO_ALIAS[m.group(1)]
+    raise ValueError(f"capital: {symbol!r} is not a TXF/MXF/TMF futures contract "
+                     f"(root + YYMM) — options and securities close-all are not wired")
 
 
 def format_qty(env: dict, symbol: str, qty: float, price: float = None) -> str:

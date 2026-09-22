@@ -299,6 +299,52 @@ def venues():
     return out
 
 
+def _capital_order_identity_ok():
+    """Verbatim mirror of manager/flatten.py's check — keep in step. The
+    flatten 全部平倉 launches inherits THIS process's identity (the bridge;
+    LocalSystem on Windows), so this is the question the button asks. Not
+    imported from the workspace: runtime and workspace ship on different
+    channels, and importing flatten.py would chdir the bridge. Same known
+    false positive (schtasks without /rp → BATCH, still 602). The two bodies
+    are pinned equal by tests/check_capital_flatten_identity.py."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        adv = ctypes.windll.advapi32
+        buf = ctypes.create_unicode_buffer(257)
+        n = wintypes.DWORD(257)
+        if not adv.GetUserNameW(buf, ctypes.byref(n)) or buf.value.lower() != "administrator":
+            return False
+        for sddl in ("S-1-5-4", "S-1-5-3", "S-1-5-6"):  # INTERACTIVE, BATCH, SERVICE
+            sid = ctypes.c_void_p()
+            if not adv.ConvertStringSidToSidW(sddl, ctypes.byref(sid)):
+                return False
+            member = wintypes.BOOL()
+            try:
+                ok = adv.CheckTokenMembership(None, sid, ctypes.byref(member))
+            finally:
+                ctypes.windll.kernel32.LocalFree(sid)
+            if ok and member.value:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def can_flatten(vens):
+    """flatten.py present, and not a machine whose only closable venue is 群益
+    under an identity that can't send 群益 orders — there the button would halt
+    and close nothing, so the page offers 暫停 only. Mixed venues stay True:
+    the crypto leg closes and flatten records the 群益 leg as not closed.
+    Closable = flatten.py's own rule (key in .env + account AND order lib)."""
+    if not os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")):
+        return False
+    closable = {vid for vid, v in (vens or {}).items() if v.get("account") and v.get("order")}
+    return not (closable == {"capital"} and not _capital_order_identity_ok())
+
+
 def _fresh(ts, window=HEARTBEAT_STALE_S):
     return bool(ts and (time.time() - ts) < window)
 
@@ -925,6 +971,7 @@ def build_report():
     hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
     last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     sched = scheduled_strategies()
+    vens = venues()
 
     return {
         "config": cfg,
@@ -963,14 +1010,16 @@ def build_report():
         # id not present in the dict = no key stored for it. Front end reads
         # this as venues[id] (web/.../workspace.html cxSupport()) — id present
         # with order/account both false = key saved, modules not built yet.
-        "venues": venues(),
+        "venues": vens,
         # capability signals: the web hides controls the machine can't honor —
         # without this the 「暫停並全部平倉」 button halts only and LOOKS
         # successful. can_flatten keys on the actual artifact (flatten.py in
         # the workspace), which is also exactly the listener's own check —
-        # true on any OS/generation whose workspace has the close-all layer.
+        # true on any OS/generation whose workspace has the close-all layer —
+        # except when 群益 is the only venue it could close and this identity
+        # can't log in to SKCOM (see can_flatten()).
         "platform": platform.system(),
-        "can_flatten": os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")),
+        "can_flatten": can_flatten(vens),
         # self_ledger: whether this machine diffs against the bot's own book
         # (portfolio_config.json flag) — the web's stop dialog phrases what
         # 「關閉 bot 部位」actually closes from this (bot's book only vs the
