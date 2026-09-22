@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.85 — 2026-09-22
+
 - **群益「全部平倉刻意未平倉」變成 P1 通知(機器端)**:`order_errors` 的群益跳過列多帶
   `kind:"manual_close_required"`、`symbols`(逗號分隔帳本 key,如 `TMF,TXF`)、`reason:"identity"`,
   平台據此分流成新事件型別;舊欄位 `symbol`/`error` 保留給舊 api/舊電腦版。`flatten.py` 一次平倉的所有群益
