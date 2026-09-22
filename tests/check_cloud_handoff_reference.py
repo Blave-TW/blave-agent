@@ -262,5 +262,23 @@ check("tell the cloud agent" not in DOC and "「更新」 to the cloud agent" no
 check(DOC.count("never update either side yourself") == 1 and "the app's one Update button" in DOC,
       "cloud-handoff version gap points at the app's button and forbids self-updating")
 
+# ── 7. 有碼就出鈕:來源端沒報告不擋、不問、不補跑;目的端那次是唯一的回測
+for label, needle in {
+    "no source report: no stop, no ask, no source backtest":
+        "A missing or stale source report does not block the handoff: do not stop, do not ask, and do not backtest on the source.",
+    "one backtest per request, on the destination": "A request runs exactly one backtest — the destination's in step 6",
+    "destination run needs no source report": "It runs whether or not the source had a report, without asking about the source report.",
+    "VERSION_NOTE is not edited in transit": "never edit it in transit",
+    "step 7: destination only, no judgement": "say plainly that the source side has no comparable report",
+}.items():
+    check(needle in DOC, f"source-report rule: {label}")
+check("stop and offer to run the backtest first" not in DOC and "offer to backtest it" not in DOC,
+      "no leftover 'stop and offer to backtest' on a missing source report")
+for label, needle in {
+    "1.3 Type B / trading source still stops": "A Type B script or a trading strategy is not handed off",
+    "4a trading destination still stops": "**Trading → stop and ask; never overwrite.**",
+}.items():
+    check(DOC.count(needle) == 1, f"existing safety stop kept: {label}")
+
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)

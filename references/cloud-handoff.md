@@ -21,7 +21,7 @@ No platform feature does this; you move the files yourself over SSH, step by ste
 - `1` → you are the **desktop** agent. Both directions are yours. Continue.
 - anything else → you are **on the cloud machine** (or an external agent SSH'd into it). Nothing on the user's computer accepts connections and you must not try to open one. Reply in one or two sentences and stop:
   - asked to pull a strategy back → "I run on your cloud machine and can't reach your computer. Open the Blave desktop app and use 'Pull back to this computer' on that strategy (or ask the agent there) — it connects out to this machine and copies it."
-  - asked to send a strategy to the cloud → it is already here; say so, and offer to backtest it if it has no `stats.json`.
+  - asked to send a strategy to the cloud → it is already here; say so. Nothing moves and nothing is run for this request; if it has no `stats.json`, mention that it has no report here yet.
   - asked for any other work "on the cloud machine" → you are already on it. Do the work right here under this workspace's own `AGENTS.md`; this file is not involved.
 
 Everything below is for the desktop agent.
@@ -70,10 +70,10 @@ Everything the user can do on that machine through their own agent, you may do f
 Source = this workspace for local → cloud; the cloud workspace for cloud → local (do step 2 first, then check with `ssh … test -f …` / `ssh … cat …`).
 
 1. `<name>` matches `[A-Za-z0-9_-]{1,64}` and `strategies/<name>/strategy.py` exists. Otherwise stop and say so.
-2. It is backtested **as it is now**: `stats.json` exists and is not older than `strategy.py`. If not, stop and offer to run the backtest first — do not run it on your own (Iteration Brakes).
+2. Does the source have a report for the code **as it is now** — `stats.json` exists and is not older than `strategy.py`? Either answer is fine; note it for step 7. **A missing or stale source report does not block the handoff: do not stop, do not ask, and do not backtest on the source.** A request runs exactly one backtest — the destination's in step 6 — and a source run would add a version on the side the user did not mean to touch. Carry on; step 6's acceptance run becomes this strategy's report.
 3. It is Type A or Type C and not trading on the SOURCE: `<name>` is not a key of `amounts` in `manager/portfolio_config.json` and not in `state/deployments.json` (`No such file` clears a check). A Type B script or a trading strategy is not handed off: say why and stop (for a trading one, offer to fork it first — `references/strategy-code.md` › *Editing a live strategy* — and hand off the fork). The file's `MODE` constant, if any, means nothing here.
 4. It is portable: outside its own folder it imports only official `lib.*` modules and reads no files. A custom `lib/` module, a custom `allocators/<x>/`, or a data file elsewhere does not travel — name what is missing and stop.
-5. Read the six source numbers from `stats.json` now with a one-line `python3 -c` — `Total Return [%]`, `Sharpe Ratio`, `Max Drawdown [%]`, `Trades`, `start`, `end`. Never retype them from memory.
+5. If 1.2 found a current source report, read its six numbers from `stats.json` now with a one-line `python3 -c` — `Total Return [%]`, `Sharpe Ratio`, `Max Drawdown [%]`, `Trades`, `start`, `end`. Never retype them from memory. No current report → there are no source numbers; do not read a stale `stats.json` in their place.
 
 ## 2. Connect
 
@@ -259,7 +259,7 @@ DATA_POLYGON_TOKEN='value'
 
 ## 6. Re-run the backtest on the destination
 
-This run is the acceptance test, and the one backtest this request covers (Iteration Brakes: one run, then stop — no tuning if the numbers disappoint).
+This run is the acceptance test, and the one backtest this request covers (Iteration Brakes: one run, then stop — no tuning if the numbers disappoint). It runs whether or not the source had a report, without asking about the source report. It becomes the destination's next version (v1 if the name was new there); the source's version history does not travel, and `VERSION_NOTE` travels as it is in `strategy.py` — never edit it in transit.
 
 - Tell the user how long it should take before starting (Long Jobs). Foreground, explicit long timeout.
 - If the destination already had a `stats.json`, delete it right before the run so you can never report the old one.
@@ -269,7 +269,7 @@ This run is the acceptance test, and the one backtest this request covers (Itera
 
 On the cloud side the workspace list refreshes by itself within about 2 minutes; do not restart services.
 
-## 7. Report — side by side, one of three states
+## 7. Report — side by side, one of three states (or destination only, when the source has no report)
 
 Always this table (a list on Telegram), numbers exactly as read:
 
@@ -284,6 +284,8 @@ Always this table (a list on Telegram), numbers exactly as read:
 | Data source | e.g. Binance public klines (`BLAVE_KLINE_SOURCE=binance`) | Blave data |
 
 Data source: desktop = what `BLAVE_KLINE_SOURCE` says (plus Blave data for indicators when the `.env` has a Blave key); cloud = Blave. If `start` / `end` differ, say that first — the runs did not cover the same period, so the other rows are not like-for-like.
+
+**No source report** (step 1.2 found none, or it was older than the code): fill only the destination column and say plainly that the source side has no comparable report. The `Data source` row is still filled for both sides as usual. No Match / Differs state, no judgement of whether the numbers are good or bad, and the closing 「兩邊資料來源不同,小幅差異是正常的。」 / "The two sides use different data sources, so small differences are normal." sentence below is left out — only Could not run still applies.
 
 State, by rule, not by feel:
 - **Match** — `Trades`, `start` and `end` are identical on both sides.
