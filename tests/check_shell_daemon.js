@@ -29,6 +29,20 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
   t("amounts:名字、有限非負數、上限", argsOk("amounts", { amounts: { a_b: 1000, c: 0 } }) && !argsOk("amounts", { amounts: { a: -1 } })
     && !argsOk("amounts", { amounts: { a: 1e12 } }) && !argsOk("amounts", { amounts: { "../x": 1 } }) && !argsOk("amounts", { amounts: { a: "1" } }));
   t("不收參數的指令帶了參數就拒", argsOk("close_all", {}) && !argsOk("close_all", { venue: "x" }) && (await host.send("close_all", { x: 1 })).error === "BAD_ARGS");
+  /* 畫面事件:**「沒有這個檔」與「讀不到這個檔」是兩件事**(同雲端那一支)。
+     檔不在 = 這台電腦上真的沒做過那幾件事 → 空清單;讀不到(EACCES / EIO / 檔壞了)要往上拋,
+     renderer 的 catch 才會把它畫成「讀不到」,而不是替資料斷言「這段期間沒有發生事情」。 */
+  { const uiFile = path.join(WS, "state", "ui_events.jsonl");
+    t("事件:檔案不在 = 真的沒有事件(空清單,不拋)", !fs.existsSync(uiFile) && JSON.stringify(host.events({ days: 30 })) === "[]");
+    fs.mkdirSync(path.join(WS, "state"), { recursive: true });
+    fs.writeFileSync(uiFile, JSON.stringify({ ts: Math.floor(Date.now() / 1000), type: "halt", venue: "paper" }) + "\n{壞行}\n");
+    t("事件:讀得到就照列,壞行跳過", host.events({ days: 30 }).length === 1 && host.events({ days: 30 })[0].type === "halt");
+    fs.chmodSync(uiFile, 0o000);
+    let threw = false; try { host.events({ days: 30 }); } catch (_) { threw = true; }
+    // root 讀得到任何檔:那種環境下這一條測不到,別假裝驗過
+    if (process.getuid && process.getuid() === 0) console.log("SKIP  事件:讀不到就往上拋(以 root 跑,chmod 擋不住)");
+    else t("事件:讀不到(EACCES)就往上拋,不可以回空清單冒充「沒有事件」", threw);
+    fs.chmodSync(uiFile, 0o600); fs.unlinkSync(uiFile); }
   // spawn 失敗(python 不在):不能是未捕捉例外,isRunning 要回 false,stop() 要馬上回來(稽核 B1)
   const bad = createDaemonHost({ python: path.join(BASE, "no-such-python"), script: "x.py", base: BASE, workspace: WS, env: {} });
   bad.start(); await sleep(300);

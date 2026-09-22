@@ -252,7 +252,9 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     try { fs.appendFileSync(uiFile, JSON.stringify({ ts: Math.floor(Date.now() / 1000), type, venue: (acc && acc.venue) || null }) + "\n", { mode: 0o600 }); } catch (_) { /* 少一筆事件 */ }
   }
   function events({ days } = {}) {
-    let txt = ""; try { txt = fs.readFileSync(uiFile, "utf8"); } catch (_) { return []; }
+    /* 檔案不在 = 這台電腦上真的沒做過那幾件事(空清單就是誠實的答案)。其餘(EACCES / EIO / 檔壞了)是**讀不到**,
+       往上拋——畫面才會說「讀不到」,而不是替資料斷言「這段期間沒有發生事情」。 */
+    let txt = ""; try { txt = fs.readFileSync(uiFile, "utf8"); } catch (e) { if (e && e.code === "ENOENT") return []; throw e; }
     const from = Date.now() / 1000 - (Number(days) > 0 ? Math.min(Number(days), 3660) : 30) * 86400, out = [];
     for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null }); } catch (_) { /* 壞行跳過 */ } }
     return out.slice(-500);

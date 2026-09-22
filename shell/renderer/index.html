@@ -127,8 +127,12 @@
         <!-- 精簡標題(同雲端):給人看的名字 + 一句說明 -->
         <div class="rp-head">
           <div class="txt">
-          <h5 class="rp-name" id="rp-name"></h5>
+          <!-- tabindex="-1":文字鈕把人送回這台電腦、而那支策略已經不在時,焦點落在中欄標題(同 #tr-h / #cv-h 的作法) -->
+          <h5 class="rp-name" id="rp-name" tabindex="-1"></h5>
           <p class="rp-desc" id="rp-desc"></p>
+          <!-- 雲端停機 / 讀不到時按「送上雲端」:不切視角,在原地講一句 + 一顆「去雲端看」(handoff.js 的 hoNote)。
+               role="status":按了鈕畫面只多這一行,讀屏不唸的話等於沒有回應 -->
+          <p class="rp-ho-note" id="rp-ho-note" role="status" hidden></p>
           </div>
           <div class="act" id="rp-act" hidden></div>
         </div>

@@ -222,11 +222,15 @@ function trErrStamp(ts, nowMs) {
 /* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
    傳輸層:每個視角一份**同介面**的 api,自動下單頁換一個來源就能畫(雲端回的形狀跟本機 status() 相同)。
    雲端那份第一刀**唯讀**:tradeSend 在這一層就擋掉(回 NOT_ALLOWED,跟主行程拒絕同一個代碼),完全不碰 host 的 tradeSend——
-   鈕的 aria-disabled 只是畫面,這裡才是「雲端視角下任何寫入指令都送不出去」的那道牆。權益曲線、畫面事件、單支策略的端點還沒做:回空的,
-   **不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。 */
+   鈕的 aria-disabled 只是畫面,這裡才是「雲端視角下任何寫入指令都送不出去」的那道牆。權益曲線、單支策略的端點還沒做:回空的,
+   **不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。事件清單走主行程的 cloudEvents(平台的事件流)。 */
 const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity", "tradeEvents", "tradeSend"];
 function envApi(env, host) {
-  if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); }); return o; }
+  if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
+    /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
+       (daemon.js events() 自己的定義),沒有「讀得到 / 讀不到」這個分別——網路那一邊才有。 */
+    const raw = o.tradeEvents; o.tradeEvents = async (...a) => { const ev = await raw(...a); return { code: "OK", events: Array.isArray(ev) ? ev : [] }; };
+    return o; }
   let last = null;
   return {
     env: "cloud",
@@ -234,7 +238,9 @@ function envApi(env, host) {
     listStrategies: async () => envCloudList(last),
     loadStrategy: async () => null,
     tradeEquity: async () => ({ curve: [] }),
-    tradeEvents: async () => [],
+    // 讀不到(401 / 429 / 5xx / 連不上 / 壞回應 / 主行程拒絕)就說讀不到,**不可以**當成「這段期間沒有事件」
+    tradeEvents: async (q) => { const ev = await host.cloudEvents(q);
+      return ev && ev.code === "OK" && Array.isArray(ev.events) ? { code: "OK", events: ev.events } : { code: "UNREACH", events: [] }; },
     tradeSend: async () => ({ ok: false, error: "NOT_ALLOWED" }),
   };
 }
@@ -353,7 +359,7 @@ function trNewBag(env) {
     edits: {}, save: null, saveErr: null, saveTimer: null,
     sig: {},                       // 各面板上次畫的資料指紋:沒變就不重畫(輸入框的焦點、捲動位置都留著)
     cx: { busy: false, err: null, retest: false }, unbinding: false,
-    ov: { mode: "equity", days: 30, curve: null, ui: [], geo: null, at: 0 },
+    ov: { mode: "equity", days: 30, curve: null, ui: [], uiErr: false, geo: null, at: 0 },
     bad: {},                       // 金額輸入框裡看不懂的字(name → true):有任何一格就不給儲存
     alertText: "", alertWant: null, lastSaid: null, scroll: {},
   };
@@ -492,7 +498,7 @@ async function trPoll() {
         C.st = await C.api.tradeStatus();
         // 雲端的清單就在那份狀態裡(沒有 I/O):不管現在看哪一邊都跟著換——登出 / 換帳號之後切過去的第一幀不可以是上一個人的策略名(稽核 N5)
         await trLoadStrategies(C); C.listLoaded = true;
-        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; }
+        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; }   // ui 與 uiErr 是一組,一起清
       } catch (_) { }
     }
     // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)
@@ -1224,15 +1230,18 @@ function trUnbind(opener) {
 }
 
 /* ── 總覽:PnL 條 + 權益曲線 + 事件時間軸 ─────────────────────────
-   雲端這一頁吃平台的兩支 api(每小時權益快照、事件流)。電腦版沒有平台那一層,由宿主(daemon.js)代勞:
-   tradeEquity = app 開著時每個整點記一筆的權益(依「這次綁定」切段);tradeEvents = 從這個 app 的畫面做的暫停/恢復/連接/解除。
+   雲端這一頁吃平台的兩支 api(每小時權益快照、事件流)。權益那支電腦版沒有平台那一層,由宿主(daemon.js)代勞:
+   tradeEquity = app 開著時每個整點記一筆的權益(依「這次綁定」切段);
+   tradeEvents 兩邊各有來源:這台電腦 = 宿主記的暫停/恢復/連接/解除,雲端 = 平台的事件流(主行程 cloudEvents → /cloud/events)。
    本機沒有「未實現損益」這個數字,所以 PnL 條只有兩格(設計師裁定 8:MVP 只少不改;數字有了再放回第三格)。 */
 const TR_RANGES = [["1D", 1], ["1W", 7], ["1M", 30], [null, 90]];
 const TR_GAP_S = 7200;            // 每個整點一筆:相鄰點超過 2 小時 = Blave 沒開著,斷線不連(不插值)
 async function trLoadCurve() {
   const S = TR;
   try { S.ov.curve = (await S.api.tradeEquity({ days: S.ov.days })) || { curve: [] }; } catch (_) { S.ov.curve = { curve: [] }; }
-  try { const ev = await S.api.tradeEvents({ days: S.ov.days }); S.ov.ui = Array.isArray(ev) ? ev : []; } catch (_) { S.ov.ui = []; }
+  // uiErr = 這一輪讀不到(不是「沒有事件」):畫面要說得出是哪一種
+  try { const ev = await S.api.tradeEvents({ days: S.ov.days }); S.ov.ui = ev && Array.isArray(ev.events) ? ev.events : []; S.ov.uiErr = !ev || ev.code !== "OK"; }
+  catch (_) { S.ov.ui = []; S.ov.uiErr = true; }
   S.sig.over = null; if (TR === S && S.open && S.tab === "over") trPaintOver();
 }
 function trCurvePoints() {
@@ -1245,7 +1254,7 @@ function trCurvePoints() {
 function trPaintOver() {
   const box = $("tr-over"), r = trReport() || {};
   if (!TR.ov.curve || (TR.ov.at || 0) < Date.now() - 60000) { TR.ov.at = Date.now(); trLoadCurve(); }
-  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.ui, r.orders, r.halt, r.events, r.order_errors];
+  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.ui, TR.ov.uiErr, r.orders, r.halt, r.events, r.order_errors];
   if (!trShould("over", box, data)) return;
   box.textContent = "";
   box.appendChild(trOvStats());
@@ -1373,8 +1382,20 @@ function trOrderErrText(sym, err) {
   if (p && p.kind === "paperBroke") return t("tr.err.paperBroke", { sym });
   return t("tr.orderFailed", { sym, err: String(err == null ? "" : err).slice(0, 200) });
 }
+/* 從電腦版送出的指令(平台的事件流才有,`{action, device}`,不帶任何值——契約 write-contract §7)。
+   記的是「平台收下了指令」不是「機器已套用」,所以文案講「送出」;真的生效由後面的 halt / resume / venue_* 那幾列表達。
+   認不得的 action(這一版的白名單比 api 舊)照樣留一列:稽核列消失比講得籠統更糟。 */
+const TR_DT_ACTION = { halt: "tr.ov.evDtHalt", close_all: "tr.ov.evDtCloseAll", resume: "tr.ov.evDtResume", resume_wait: "tr.ov.evDtResume",
+  amounts: "tr.ov.evDtAmounts", credentials: "tr.ov.evDtCredentials", credentials_remove: "tr.ov.evDtCredentialsRemove",
+  restart_reconciler: "tr.ov.evDtRestartReconciler", retest_accounts: "tr.ov.evDtRetestAccounts" };
 function trEventText(type, d) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
+  if (type === "desktop_action") {
+    const act = typeof d.action === "string" ? d.action : "";
+    const dev = typeof d.device === "string" ? d.device.trim() : "";   // 裝置名是用戶自己取的:代進句子(t() 用 split/join,不吃正規式的 $)
+    return [Object.prototype.hasOwnProperty.call(TR_DT_ACTION, act) ? t(TR_DT_ACTION[act]) : t("tr.ov.evDtOther"),
+      dev ? t("tr.ov.evDtDevice", { device: dev }) : null];
+  }
   if (type === "exchange_unreachable") return [t("tr.ov.evExUnreach", v), t("tr.ov.evExUnreachNote")];
   if (type === "exchange_recovered") return [t("tr.ov.evExBack", v), null];
   if (type === "bar_stale") return [t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v)];
@@ -1405,17 +1426,21 @@ function trOvEvents(r) {
       }
     });
   });
-  /* 從這個 app 的畫面做的動作(宿主在指令 ack 成功時記的;聊天裡做的不會有)。用雲端既有的事件句。
+  /* 這台電腦:從這個 app 的畫面做的動作(宿主在指令 ack 成功時記的;聊天裡做的不會有)。
+     雲端:平台的事件流(/cloud/events),欄位包在 data 裡、型別也多得多——認不得的型別不畫(沒有文案就是一行代號)。
      有了它,「已暫停下單」那一列在恢復之後不會消失,也才有「已恢復下單 / 已連接 / 已解除」。 */
   const ui = Array.isArray(TR.ov.ui) ? TR.ov.ui : [], uiHalts = [];
   ui.forEach((ev) => {
     if (!ev || typeof ev.ts !== "number" || typeof ev.type !== "string") return;
-    const venue = trVenueLabel(String(ev.venue || ""), true);
+    const d = ev.data && typeof ev.data === "object" ? ev.data : ev;   // 平台格式的欄位在 data;這台電腦那一份直接放最外層
+    const venue = trVenueLabel(String(d.venue || ""), true);
     let head = null, note = null;
-    if (ev.type === "halt" || ev.type === "halt_close") { head = t("tr.ov.evHalt"); note = t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
+    // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
+    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t("tr.ov.evResume"); note = t("tr.ov.evResumeNote"); }
     else if (ev.type === "venue_connected" && venue) head = t("tr.ov.evConnected", { venue });
     else if (ev.type === "venue_disconnected" && venue) head = t("tr.ov.evDisconnected", { venue });
+    else { const txt = trEventText(ev.type, d); if (txt) { head = txt[0]; note = txt[1]; } }   // 雲端才有的型別(desktop_action、交易所連不上…)
     if (!head) return;
     push(ev.ts * 1000, (body) => { body.appendChild(trEl("span", "hl", head)); if (note) body.append(" ", trEl("span", "dim", "— " + note)); });
   });
@@ -1441,7 +1466,10 @@ function trOvEvents(r) {
     if (!txt) return;
     push(trMs(ev.ts), (body) => { body.appendChild(trEl("span", "hl", txt[0])); if (txt[1]) body.append(" ", trEl("span", "dim", "— " + txt[1])); });
   });
-  if (!rows.length) { frag.appendChild(trEl("div", "pf-state", t("tr.ov.evEmpty"))); return frag; }
+  /* 讀不到就說讀不到:絕不可以把「這一輪沒讀到」畫成「這段期間沒有事件」(同權益曲線的先例——讀不到就不畫,不斷言)。
+     報告裡的那幾種(下單、現在的 HALT、下單失敗)是另一個來源,讀得到就照列,所以這一句是加在清單上面、不取代清單。 */
+  if (TR.ov.uiErr) frag.appendChild(trEl("div", "pf-state", t("tr.ov.evUnreach")));
+  if (!rows.length) { if (!TR.ov.uiErr) frag.appendChild(trEl("div", "pf-state", t("tr.ov.evEmpty"))); return frag; }
   rows.sort((a, b) => b.ms - a.ms);
   const list = trEl("div", "ev-list"); frag.appendChild(list);   // 自成一個容器:最後一列靠 :last-child 收底線
   const today = new Date().toDateString(), yest = new Date(Date.now() - 86400000).toDateString();
@@ -1686,6 +1714,8 @@ function envSwitch(env, via) {
   // 換了一邊 = 放棄「等著送上雲端」那個意圖(承重牆①:沒有 TTL,靠這條收斂)。
   // hoAsk 是切完才記 pending,所以它自己那一次切過去不會被這行洗掉
   if (typeof HO !== "undefined") HO.pending = null;
+  // 報告頁首那句「送不上去」講的是按下去那一刻的事:離開又回來時它會讀起來像現況,離開就收掉
+  if (env === "local" && typeof hoNote === "function") hoNote(null);
   // 順序(spec §1.4):關確認框(等同取消,焦點不回 opener)→ 存這一邊 → 換 → 畫 → 標題 → 播報
   // 關確認框這一行**目前走不到**:確認框開著時 ⌘1/⌘2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
   // 批次 ② 選單列的「顯示」兩項進來之後,才有確認框開著也能切視角的入口。
@@ -1728,8 +1758,16 @@ function envPaint() {
   const cells = { local: envCell("local", TR_BAGS.local.st, !!TR_BAGS.local.pending), cloud: envCell("cloud", C.st, false) };
   ["local", "cloud"].forEach((env) => envPaintCell(env, cells[env]));
   // 側欄
-  const gate = cloud && kind !== "running" && kind !== "stopped";
+  const pid = typeof hoPendingId === "function" ? hoPendingId() : null;
+  /* 雲端通了、但還有一支在等著送上來 → 中欄**不放行**到自動下單頁:留在 #cv-empty,換成「準備好了」卡(規格 §2)。
+     用 kind === "running" 判,**不可以**用 hoCloudLive():後者多要求「1 小時內同步過」,
+     於是「running 但讀不到」那一態 gate 會是 false、卡不出現、人照樣掉在自動下單頁——正是要修的那一格 */
+  const ready = cloud && kind === "running" && !!pid;
+  const gate = (cloud && kind !== "running" && kind !== "stopped") || ready;
   $("side-nav").hidden = gate; $("strat-head").hidden = gate; $("side-gate").hidden = !gate;
+  // 「雲端主機開好之後,策略會列在這裡」在 ready 那態是假話(已經開好了)。走 dataset:換語言時 applyI18n 會照 data-i18n 重填
+  const sg = $("side-gate"), sgKey = ready ? "side.cloud.emptyReady" : "side.cloud.emptyGate";
+  if (sg.dataset.i18n !== sgKey) { sg.dataset.i18n = sgKey; sg.textContent = t(sgKey); }
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
   // 「這一版 agent 還不能操作雲端主機」:送上雲端的功能開著時這句就不成立了,整行不出(規格:輸入框上方不再放說明行);功能關著照舊
   $("chat-tgt").hidden = !cloud || (typeof HO !== "undefined" && HO.on);
@@ -1740,7 +1778,7 @@ function envPaint() {
   document.title = money ? t("env.winTitle", { where: envName(ENV.cur), money }) : t("env.winTitle0", { where: envName(ENV.cur) });
   // 中欄
   $("cv-empty").hidden = !gate;
-  if (gate) { $("tr").hidden = true; $("tr-tb-txt").textContent = ""; ENV.sig.tb = null; $("tr-tb-mode").hidden = true; envPaintEmpty(kind); return false; }
+  if (gate) { $("tr").hidden = true; $("tr-tb-txt").textContent = ""; ENV.sig.tb = null; $("tr-tb-mode").hidden = true; envPaintEmpty(kind, pid); return false; }
   if (cloud) { TR.open = true; $("tr").hidden = false; $("tr-nav").setAttribute("aria-current", "page"); }
   return true;
 }
@@ -1782,15 +1820,13 @@ function envPaintSide(kind, st) {
   // 側欄頂不寫「雲端 / 這台電腦」(Wei:最上面的切換器已經有了);這裡只畫雲端那幾份策略
   const list = kind === "running" || kind === "stopped" ? envCloudList(st) : [];
   const ho = typeof HO !== "undefined" && HO.on && typeof hoCloudLive === "function" && hoCloudLive();   // 列尾的「拉回」:功能開著、而且雲端看得到現況才畫
-  // 雲端剛通、而且有一支還在等著送上來:第一格換成「回這台電腦」那條路(取代 ho.emptyHint,不疊加)
-  const pid = ho ? hoPendingId() : null;
-  const sig = LANG + "|" + JSON.stringify([kind, ho, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)]), pid]);
+  // 側欄**不放任何 handoff 提示**(Wei 看實機後拍板):等著送上來的那條回頭路住在中欄的「準備好了」卡(規格 §2)
+  const sig = LANG + "|" + JSON.stringify([kind, ho, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
   // 第一刀:只當清單看(單支策略的端點還沒做)——不是鈕、沒有 hover、Tab 不會停
   const box = $("strat-list-cloud"); box.textContent = ""; box.setAttribute("role", "list");
-  if (pid) { box.appendChild(hoPendingCell(pid)); hoBusy(); }   // agent 回覆中:那顆鈕跟另外兩顆一樣是 aria-disabled
-  if (!list.length) { if (!pid) box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
+  if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
   list.forEach((x) => {
     const row = trEl("div", "strat-row is-static"); row.setAttribute("role", "listitem");
     const nm = trEl("span", "strat-name", x.displayName); nm.title = x.name; row.appendChild(nm);
@@ -1803,8 +1839,10 @@ function envPaintSide(kind, st) {
 /* 開通頁(規格 §3;Wei 選定 A 案):電腦版把人帶進雲端方案的主要入口。主鈕**直接開已上線的那一套**——登入走 planLogin、
    啟動走 planAsk(花錢的確認框 cf.*,一步不少)、綁卡外開瀏覽器;這裡不另寫一條開通流程。價格數字來自方案頁同一個來源
    (planVars:登入後 account_status、沒登入 public-pricing);拿不到 → 價格段不畫、啟動鈕 disabled,不寫死數字。 */
-function envPaintEmpty(kind) {
-  const view = envOpenView(kind, hasToken, planView()), v = planVars();
+function envPaintEmpty(kind, pid) {
+  // 「準備好了」那一態在 envOpenView 之外另判:它的條件是「還有一支等著送上雲端」,不是帳號狀態
+  const ready = kind === "running" && !!pid;
+  const view = ready ? "ready" : envOpenView(kind, hasToken, planView()), v = planVars();
   // 這一頁要的數字:登入了但帳號狀態還沒到 → 去查;沒登入 → 公開價目。查回來會經 envPlanChanged 重畫
   // 最多每 30 秒問一次:查不到(離線)時重畫又會走到這裡,不設間隔就是一個空轉的迴圈
   if (((hasToken && !acct && !acctPending) || (!hasToken && !pub)) && Date.now() - (ENV.askedAt || 0) > 30000) {
@@ -1812,13 +1850,14 @@ function envPaintEmpty(kind) {
     if (hasToken) acctCheck(); else pubLoad().then(envPlanChanged);
   }
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
-  const err = view === "starting" || view === "loading" || view === "unreach" ? null : planErr;
-  const sig = LANG + "|" + JSON.stringify([view, v.p, v.h, v.d, v.t, v.q, v.v, slow, err && err.key, planLoginBusy, cur]);
+  const err = view === "starting" || view === "loading" || view === "unreach" || view === "ready" ? null : planErr;
+  const sig = LANG + "|" + JSON.stringify([view, pid || null, v.p, v.h, v.d, v.t, v.q, v.v, slow, err && err.key, planLoginBusy, cur]);
   if (ENV.sig.empty === sig) return;
   ENV.sig.empty = sig;
   const desc = $("cv-desc"); desc.textContent = "";
   if (view === "starting") { const d = trEl("i", "dot busy"); d.setAttribute("aria-hidden", "true"); desc.append(d, trEl("span", "txt", t("side.cloud.starting"))); }
-  else if (view !== "loading" && view !== "unreach") desc.textContent = t("env.empty.desc");
+  // ready 這一態描述**留空**:env.empty.desc「還沒有雲端主機」在這裡是假話,而「運行中」那件事 h4 已經講了
+  else if (view !== "loading" && view !== "unreach" && view !== "ready") desc.textContent = t("env.empty.desc");
   const box = $("cv-body"), focusK = box.contains(document.activeElement) ? document.activeElement.dataset.k : null;
   box.textContent = "";
   if (view === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
@@ -1826,7 +1865,9 @@ function envPaintEmpty(kind) {
   const btn = (cls, label, on, k) => { const b = trEl("button", cls, label); b.type = "button"; b.dataset.k = k; if (on) b.addEventListener("click", on); return b; };
   const ext = (u) => () => window.blave.openExternal(u);
   if (view === "unreach") { page.appendChild(trEl("p", "cv-p", t("env.empty.unreach"))); return; }
-  if (view === "starting") page.appendChild(trEl("p", "cv-p", t("env.empty.starting")));
+  // ready:行為同 starting——不畫 env.open.h 那三條賣點、不畫價格。它不是開通頁了,是一句交代
+  if (view === "ready") page.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "cv-p", t("ho.ready.body", { id: pid })));
+  else if (view === "starting") page.appendChild(trEl("p", "cv-p", t("env.empty.starting")));
   else {
     page.appendChild(trEl("h4", "", t("env.open.h")));
     const ul = trEl("ul", "cv-list"); [t("env.open.1"), t("env.open.2"), t("env.open.3")].forEach((x) => ul.appendChild(trEl("li", "", x))); page.appendChild(ul);
@@ -1847,6 +1888,8 @@ function envPaintEmpty(kind) {
   if (err && err.key === "plan.err.relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
   else if (err && err.key === "plan.err.nocard") main = btn("btn-fill", t("plan.addCard"), ext(acctUrl()), "main");
   else if (err && err.key === "plan.err.credit") main = btn("btn-fill", t("plan.addCredit"), ext(acctUrl()), "main");
+  // 主鈕的 data-k 照樣是 "main":登入前按的那顆也是 main,所以人回來時焦點正好落在它身上(下面那段依 data-k 還原焦點),按 Enter 就走
+  else if (view === "ready") { main = btn("btn-fill", t("ho.back.btn"), () => hoBack(pid), "main"); side = btn("btn-quiet", t("ho.ready.stay"), () => { hoStay(); after(); }, "stay"); }
   else if (view === "out") { main = planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin, "main") : btn("btn-fill", t("cn.blave.btn"), () => Promise.resolve(planLogin()).then(after), "main"); side = trEl("span", "wait", planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli")); }
   else if (view === "relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
   else if (view === "card") { main = btn("btn-fill", t("plan.addCard"), ext(acctUrl()), "main"); side = more(); }

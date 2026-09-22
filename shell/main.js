@@ -1334,6 +1334,9 @@ app.whenReady().then(() => {
   // 懶啟動:第一次有人要雲端狀態才開始輪詢。refresh 有最小間隔,renderer 寫壞的迴圈打不爆帳號的速率桶
   ipcMain.handle("cloud-status", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().status(); });
   ipcMain.handle("cloud-refresh", (e) => { if (!fromOurPage(e)) return null; cloudHost().start(); return cloudHost().refresh().then(() => cloudHost().status()); });
+  // 雲端的事件清單:點擊驅動的另一支(另一個速率桶),不啟動輪詢、不留在主行程、不落地。
+  // 回 { code: "OK" | "UNREACH", events }——讀不到與「真的沒有事件」是兩件事,畫面要講得出是哪一種
+  handle("cloud-events", (_e, q) => cloudHost().events(q && q.days), { code: "UNREACH", events: [] });
   // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
   ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
   ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));

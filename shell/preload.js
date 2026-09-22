@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
+  cloudEvents: (q) => ipcRenderer.invoke("cloud-events", q),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),

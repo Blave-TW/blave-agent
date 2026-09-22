@@ -1351,6 +1351,39 @@ msgstr "Strategy crashed"
 msgid "tr.ov.evStrategyFailedNote"
 msgstr "the schedule keeps firing, but this run produced no signal"
 
+msgid "tr.ov.evUnreach"
+msgstr "Can’t read the cloud’s event log right now; this will retry shortly. It does not mean nothing happened."
+
+msgid "tr.ov.evDtHalt"
+msgstr "Sent from Blave Desktop: pause trading"
+
+msgid "tr.ov.evDtResume"
+msgstr "Sent from Blave Desktop: resume trading"
+
+msgid "tr.ov.evDtCloseAll"
+msgstr "Sent from Blave Desktop: pause and close all positions"
+
+msgid "tr.ov.evDtAmounts"
+msgstr "Sent from Blave Desktop: change position sizes"
+
+msgid "tr.ov.evDtCredentials"
+msgstr "Sent from Blave Desktop: connect exchange"
+
+msgid "tr.ov.evDtCredentialsRemove"
+msgstr "Sent from Blave Desktop: disconnect exchange"
+
+msgid "tr.ov.evDtRestartReconciler"
+msgstr "Sent from Blave Desktop: restart reconciler"
+
+msgid "tr.ov.evDtRetestAccounts"
+msgstr "Sent from Blave Desktop: retest connection"
+
+msgid "tr.ov.evDtOther"
+msgstr "Command sent from Blave Desktop"
+
+msgid "tr.ov.evDtDevice"
+msgstr "device: {device}"
+
 # ── trade:end ──
 
 # ── 視窗之外:選單列 / Dock / 結束攔截(字由 renderer 交給主行程)──
@@ -1466,6 +1499,9 @@ msgstr "See the Full Plan"
 
 msgid "side.cloud.emptyGate"
 msgstr "Once the cloud machine is up, your strategies are listed here."
+
+msgid "side.cloud.emptyReady"
+msgstr "Your machine is up. Strategies you send here will be listed."
 
 msgid "env.empty.starting"
 msgstr "The cloud machine is starting, usually about a minute. This page changes to the cloud’s content once it is up."
@@ -1915,8 +1951,20 @@ msgstr "Confirm"
 msgid "ho.emptyHint"
 msgstr "No strategies in the cloud yet. Open one on this computer and press Send to Cloud."
 
-msgid "ho.back.hint"
-msgstr "Your cloud machine is ready. Go back to this computer and press Send to Cloud for {id}."
+msgid "ho.ready.h"
+msgstr "Your cloud machine is ready"
+
+msgid "ho.ready.body"
+msgstr "Go back to this computer and press Send to Cloud to put {id} up there."
+
+msgid "ho.ready.stay"
+msgstr "Stay in the Cloud"
+
+msgid "ho.gate.stale"
+msgstr "The cloud’s state can’t be read right now, so this isn’t being sent."
+
+msgid "ho.gate.stopped"
+msgstr "Your cloud machine is stopped, so nothing can be sent up right now."
 
 msgid "ho.back.btn"
 msgstr "Back to This Computer"

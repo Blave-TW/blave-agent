@@ -26,7 +26,10 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
 (async () => {
   // ── 1. 傳輸層 ──
   const touched = [];
-  const host = { cloudStatus: async () => cloudSt(okc("running", { strategies: [{ name: "a", display_name: "Alpha", has_backtest: true, symbol: "BTCUSDT", updated_at: 5 }, { name: "" }, null, { nope: 1 }] })) };
+  const evCalls = [];
+  const host = { cloudStatus: async () => cloudSt(okc("running", { strategies: [{ name: "a", display_name: "Alpha", has_backtest: true, symbol: "BTCUSDT", updated_at: 5 }, { name: "" }, null, { nope: 1 }] })),
+    cloudEvents: async (q) => { evCalls.push(q); return evReply; } };
+  let evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
   ENV_API.forEach((k) => { host[k] = (...a) => { touched.push(k); return Promise.resolve({ ok: true, from: "local", a }); }; });
   const C = envApi("cloud", host);
   // 雲端視角下每一個寫入類指令(本機 daemon.js UI_COMMANDS 那一組 + 連線頁那幾支)都送不出去
@@ -36,9 +39,25 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const st = await C.tradeStatus(), list = await C.listStrategies(), one = await C.loadStrategy("a"), eq = await C.tradeEquity({ days: 30 }), ev = await C.tradeEvents({ days: 30 });
   ok("雲端:沒有任何一支碰到這台電腦的 api(不寫、也不把本機的數字畫在雲端那一頁)", touched.length === 0);
   ok("雲端:狀態讀 cloudStatus;清單來自同一份狀態,壞的列濾掉、形狀同本機 listStrategies", st.cloud.code === "OK" && list.length === 1 && list[0].name === "a" && list[0].displayName === "Alpha" && list[0].hasBacktest === true && list[0].symbol === "BTCUSDT" && list[0].remote === true && list[0].mtime === 5);
-  ok("雲端:還沒做的端點回空的(單支策略 / 權益曲線 / 畫面事件)", one === null && JSON.stringify(eq) === '{"curve":[]}' && Array.isArray(ev) && ev.length === 0);
+  ok("雲端:還沒做的端點回空的(單支策略 / 權益曲線)", one === null && JSON.stringify(eq) === '{"curve":[]}');
+  ok("雲端:事件清單打主行程的 cloudEvents(帶著 days),原樣往上交", JSON.stringify(evCalls) === '[{"days":30}]' && ev.code === "OK" && JSON.stringify(ev.events) === JSON.stringify(evReply.events));
+  // 讀不到 ≠ 沒有事件:壞回應、主行程拒絕、拿到的不是陣列,一律 UNREACH(畫面照這個 code 說自己讀不到)
+  { const bads = [null, undefined, { code: "UNREACH", events: [] }, { code: "OK", events: "nope" }, { events: [{ ts: 1, type: "halt" }] }, []];
+    const got = []; for (const b of bads) { evReply = b; got.push(await C.tradeEvents({ days: 30 })); }
+    ok("雲端:事件讀不到 → { code: UNREACH, events: [] },不炸、也不畫成「沒有事件」", got.every((r) => r.code === "UNREACH" && Array.isArray(r.events) && r.events.length === 0)); }
+  evReply = { code: "OK", events: [] };
+  ok("雲端:真的沒有事件 = OK + 空陣列(跟讀不到分得出來)", (await C.tradeEvents({ days: 30 })).code === "OK");
+  // 這台電腦同一個形狀:本機是檔案,檔不在就是真的沒發生過事,永遠 OK
+  { const ls = await envApi("local", { tradeEvents: async () => null }).tradeEvents({ days: 30 });
+    const ls2 = await envApi("local", { tradeEvents: async () => [{ ts: 1, type: "halt" }] }).tradeEvents({ days: 30 });
+    ok("這台電腦:事件也是 { code, events } 同一個形狀,而且永遠 OK(本機檔案沒有讀不到這一態)", ls.code === "OK" && ls.events.length === 0 && ls2.code === "OK" && ls2.events.length === 1);
+    // 宿主讀不到那個檔(EACCES / 檔壞了)會往上拋:這一層**不可以**吞掉,吞了就變成「這段期間沒有事件」
+    let rejected = false;
+    try { await envApi("local", { tradeEvents: async () => { throw new Error("EACCES"); } }).tradeEvents({ days: 30 }); } catch (_) { rejected = true; }
+    ok("這台電腦:宿主拋出來的讀取錯誤原樣往上拋(讓畫面畫成讀不到),不在這一層吞掉", rejected); }
+  evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
   const cloudHalf = noComments(env).slice(noComments(env).indexOf("let last = null;"), noComments(env).indexOf("function envCloudList("));
-  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus");
+  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudEvents(兩支都是讀)", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudEvents");
   const L = envApi("local", host); await L.tradeSend("halt", {}); await L.tradeStatus();
   ok("這台電腦:原樣轉給主行程", touched.join() === "tradeSend,tradeStatus" && L.env === "local" && C.env === "cloud");
   ok("兩份 api 介面相同(自動下單頁換一個來源就能畫)", ENV_API.every((k) => typeof C[k] === "function" && typeof L[k] === "function"));

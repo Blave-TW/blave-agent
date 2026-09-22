@@ -1,7 +1,7 @@
 // shell/cloud.js:讀雲端主機狀態(唯讀)。不打真的 api(post 是假的)。
 // 跑法:node tests/check_shell_cloud.js
 const fs = require("fs"), path = require("path");
-const { createCloudHost, interpret, ENDPOINT, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
+const { createCloudHost, interpret, ENDPOINT, EVENTS_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", public_ip: "1.2.3.4" }, portfolio: { reported_at: 100, halt: { halted: false }, reconciler: { alive: true }, venues: {} },
   portfolio_reported_at: 100, portfolio_stale: false, server_time: 130, fx_rates: { USD: 1 }, currency: "USDT",
@@ -92,8 +92,10 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   t("這個檔不寫檔、不 log、不 require electron / fs(回應不落地:agent 讀得到 workspace)", !/require\(/.test(src) && !/console\.|writeFile|appendFile/.test(src));
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   // 列舉:main.js 裡每一支 cloud-* IPC 都要先過 fromOurPage(新增一支忘了加就紅)
-  const cloudIpc = mainSrc.match(/ipcMain\.handle\("cloud-[a-z-]+",[^\n]*/g) || [];
-  t("main.js:每一支 cloud IPC 都只收自家頁面(回的是部位與權益)", cloudIpc.length >= 2 && cloudIpc.every((l) => /\(e\) => \{ if \(!fromOurPage\(e\)\) return null;/.test(l)));
+  // (handle() 這個包裝自己就先過 fromOurPage;直接用 ipcMain.handle 的要自己寫那一行)
+  const cloudIpc = mainSrc.match(/(ipcMain\.)?handle\("cloud-[a-z-]+",[^\n]*/g) || [];
+  t("main.js:每一支 cloud IPC 都只收自家頁面(回的是部位與權益)", cloudIpc.length >= 3
+    && cloudIpc.every((l) => (l.startsWith("ipcMain.") ? /\(e\) => \{ if \(!fromOurPage\(e\)\) return null;/.test(l) : /^handle\("/.test(l))));
   t("main.js:雲端狀態只推給自家頁面的視窗", /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("cloud-state"/.test(mainSrc));
   t("main.js:不在啟動時就開始輪詢(懶啟動)", !/^\s*cloudHost\(\)\.start\(\);/m.test(mainSrc));
   // 列舉:app_secret 讀出來的地方就這幾個(多一個就要有人看過它交給了誰)
@@ -102,5 +104,66 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
     && /createMcpCode\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\s*getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \} \}\);/.test(mainSrc));
   t("main.js:登出時清掉雲端宿主手上的東西", /if \(_cloud\) _cloud\.reset\(\);/.test(mainSrc));
   t("main.js:app_secret 只交給 cloudHost 與 planStart,不出現在任何 webContents.send / env 裡", !/webContents\.send\([^)]*appSecret/.test(mainSrc) && !/env:[^}]*loadAppSecret/.test(mainSrc));
+
+  /* ── 事件清單(點擊驅動的第二支端點)────────────────────────────── */
+  const evBody = (o = {}) => ({ machine_state: "running", server_time: 130, events: [
+    { ts: 120, type: "desktop_action", data: { action: "halt", device: "Wei 的 MacBook" } },
+    { ts: 110, type: "halt", data: { source: "reconciler", reason: "MARKER-REASON" } },
+    { ts: "x", type: "halt", data: {} }, { ts: 100, type: 7 }, null, "nope",
+    { ts: 90, type: "resume" },
+  ], ...o });
+  { const evCalls = []; let evCreds = { token: "acct-E", appSecret: "appsec-E" }, evReply = { status: 200, body: evBody() };
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => evCreds, post: async (u, b) => { evCalls.push({ u, b }); if (evReply instanceof Error) throw evReply; return evReply; },
+      now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+    // 事件那一支有自己的最小間隔(它不共用狀態輪詢那組):每次問之前先把假時鐘推過那個間隔
+    const ask = (d) => { tick(EVENTS_MIN_GAP_MS); return h.events(d); };
+    const res0 = await h.events(30), out = res0.events;
+    t("事件:POST 到契約的路徑,body 只有兩顆憑證 + days", evCalls.length === 1 && evCalls[0].u === "https://x" + EVENTS_ENDPOINT
+      && JSON.stringify(Object.keys(evCalls[0].b).sort()) === '["app_secret","days","token"]' && evCalls[0].b.days === 30);
+    // ts 的單位是**秒**(api 的 agent_overview._epoch;畫面 ev.ts * 1000):這裡原樣往上交,不縮放
+    t("事件:讀到了就是 OK;壞的列濾掉,欄位整成 { ts, type, data },ts 原樣是秒", res0.code === "OK" && out.length === 3 && out[0].ts === 120 && out[0].type === "desktop_action" && out[0].data.action === "halt" && out[2].type === "resume" && JSON.stringify(out[2].data) === "{}");
+    // 「真的沒有事件」是 OK + 空陣列,跟「讀不到」不是同一件事(畫面各講各的話)
+    { evReply = { status: 200, body: evBody({ events: [] }) }; const r = await ask(30);
+      t("事件:真的沒有事件 = OK + 空陣列(不是讀不到)", r.code === "OK" && r.events.length === 0); evReply = { status: 200, body: evBody() }; }
+    t("事件:days 夾在 1–90(下界也夾:0<days<1 不可以送 0),沒給走預設 30", await ask(999).then(() => evCalls[evCalls.length - 1].b.days) === 90
+      && await ask(0).then(() => evCalls[evCalls.length - 1].b.days) === 30 && await ask(1.9).then(() => evCalls[evCalls.length - 1].b.days) === 1
+      && await ask(0.5).then(() => evCalls[evCalls.length - 1].b.days) === 1);
+    // 不落地:主行程手上那一份(snapshot / status)不可以留著事件的任何字
+    t("事件:回應不進主行程手上那一份(snapshot / status 都沒有它的字)", !JSON.stringify(h.snapshot()).includes("MARKER-REASON") && !JSON.stringify(h.status()).includes("MARKER-REASON"));
+    t("事件:憑證不出現在回上去的東西裡", !JSON.stringify(res0).includes("acct-E") && !JSON.stringify(res0).includes("appsec-E"));
+    // 七種壞回應各自釘成「讀不到」——不是「這段期間沒有事件」(畫面會照 code 說自己讀不到)
+    for (const bad of [{ status: 401, body: {} }, { status: 429, body: {} }, { status: 500, body: {} }, { status: 200, body: {} }, { status: 200, body: { events: "nope" } }, { status: 200, body: null }, new Error("offline")]) {
+      evReply = bad; const r = await ask(30);
+      t("事件:讀不到 → UNREACH(不是空清單),不拋(" + (bad instanceof Error ? "連不上" : bad.status + "/" + JSON.stringify(bad.body)) + ")", r.code === "UNREACH" && Array.isArray(r.events) && r.events.length === 0);
+    }
+    evReply = { status: 200, body: evBody() };
+    let n = evCalls.length; evCreds = { token: "acct-E", appSecret: null };
+    t("事件:沒有 app_secret / 沒登入:不發請求,也算讀不到", (await ask(30)).code === "UNREACH" && (evCreds = null, (await ask(30)).code === "UNREACH") && evCalls.length === n);
+    /* 自己的最小間隔:renderer 寫壞的迴圈不可以把 detail 桶打到 429(429 會讓畫面長期停在「讀不到」)。
+       擋下來的那一次回 UNREACH——這一輪確實沒讀到,但不是「沒有事件」。 */
+    { evCreds = { token: "acct-E", appSecret: "appsec-E" }; evReply = { status: 200, body: evBody() };
+      tick(EVENTS_MIN_GAP_MS); await h.events(30); const m = evCalls.length;
+      tick(EVENTS_MIN_GAP_MS - 1); const spam = [await h.events(30), await h.events(30), await h.events(30)];
+      t("事件:最小間隔內連打不發請求,而且回 UNREACH(不是空清單)", evCalls.length === m && spam.every((r) => r.code === "UNREACH" && r.events.length === 0));
+      tick(1); t("事件:過了最小間隔才再打", (await h.events(30)).code === "OK" && evCalls.length === m + 1); }
+    // 在途時共用同一個請求(兩處同時重畫只打一次)
+    { evCreds = { token: "acct-A", appSecret: "sa" }; let release; const gate = new Promise((r) => { release = r; }); let c2 = 0;
+      const h4 = createCloudHost({ apiBase: "https://x", getCreds: () => evCreds, post: async () => { c2++; await gate; return { status: 200, body: evBody() }; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+      const a = h4.events(30), b2 = h4.events(30); release(); const [ra, rb] = [await a, await b2];
+      t("事件:在途時共用同一個請求(只打一次,兩邊拿到同一份)", c2 === 1 && ra === rb && ra.code === "OK");
+      tick(EVENTS_MIN_GAP_MS); t("事件:在途那一份結束後,下一次問得動(inflight 有清掉)", (await h4.events(30)).code === "OK" && c2 === 2); }
+    // 在途換人:這一份是上一個人的,整包丟
+    { evCreds = { token: "acct-A", appSecret: "sa" }; let release; const gate = new Promise((r) => { release = r; });
+      const h2 = createCloudHost({ apiBase: "https://x", getCreds: () => evCreds, post: async () => { await gate; return { status: 200, body: evBody() }; }, now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+      const p = h2.events(30); await Promise.resolve(); evCreds = null; release();
+      t("事件:請求在路上時登出 / 換帳號 → 這份不交給畫面(算讀不到)", (await p).code === "UNREACH" && (await p).events.length === 0); }
+    // gen 不可以被事件那一支動到:動了的話在途的狀態輪詢回來會把自己丟掉(畫面永遠停在上一份)
+    { evCreds = { token: "acct-A", appSecret: "sa" }; let release; const gate = new Promise((r) => { release = r; });
+      const h3 = createCloudHost({ apiBase: "https://x", getCreds: () => evCreds,
+        post: async (u) => { if (u.endsWith(ENDPOINT)) { await gate; return { status: 200, body: body({ currency: "LANDED" }) }; } return { status: 200, body: evBody() }; },
+        now: () => clock, setTimer: () => 0, clearTimer: () => {} });
+      const pr = h3.refresh(); await Promise.resolve(); await h3.events(30); release(); await pr;
+      t("事件:讀事件不動世代——在途的狀態輪詢照樣落地", h3.snapshot().currency === "LANDED"); } }
+
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

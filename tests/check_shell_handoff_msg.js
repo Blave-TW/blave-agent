@@ -70,7 +70,7 @@ t("送上雲端那顆:要回測過、資料夾名合規才畫", /!!RP\.data\.sta
 t("hoAsk 的順序(規格 §2):回合進行中 → 不動作;別的框開著 / 選字中 → 不動作;雲端沒在運行 → 切過去不開框", (() => {
   const i = src.indexOf("function hoAsk("), body = src.slice(i, src.indexOf("\n}", i)).replace(/\/\/.*$/gm, "");
   const o = (re) => body.search(re);
-  return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \}; return;/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \}; return;/); })());
+  return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/); })());
 t("雲端沒在運行的六種都走同一條(envCloudKind 不是 running,或逾 1 小時沒同步)", /function hoCloudLive\(\) \{ const st = TR_BAGS\.cloud\.st; return envCloudKind\(st\) === "running" && envHeadState\(st, Date\.now\(\)\) !== "unknown"; \}/.test(src));
 t("擋下態:確認鈕 disabled,而且「會覆蓋」與「接下來由 agent 執行」兩句都不出(不會執行,那兩句是假話)", (() => {
   const i = src.indexOf("if (state === \"block\")"), seg = src.slice(i, src.indexOf("const title =", i));
@@ -87,18 +87,22 @@ t("送上雲端:雲端清單找不到時用中性說法(maybe),不宣稱不會�
 t("目的地那份的金額讀對邊(up 讀雲端、down 讀這台電腦),壞值當 0", /const destSt = dir === "up" \? TR_BAGS\.cloud\.st : TR_BAGS\.local\.st;/.test(src) && /return isFinite\(v\) \? v : 0;/.test(src)
   && /Object\.prototype\.hasOwnProperty\.call\(a, id\)/.test(src));
 
-// ── C′:未登入按「送上雲端」→ 被切到雲端 → 登入完成 → 側欄第一格給一條回來按那顆鈕的路 ──
+/* ── 未登入按「送上雲端」→ 被切到雲端 → 登入完成 → 中欄不放行,換成「準備好了」卡 ──
+   承重牆:hoPendingId() **不可以再讀 RP.name**。人在雲端等的時候本機那一邊會自己動(一輪 agent 回覆結束
+   stratRefresh(true) 會 stratSelect(touched.name)),在這裡判 RP.name 就會把卡偶發地拆掉。 */
 { const run = (ho, rp) => { const c = { HO: ho, RP: rp }; vm.createContext(c); vm.runInContext(cutFn("hoPendingId"), c); return [c.hoPendingId(), c.HO.pending]; };
-  t("記住的那一支:報告頁還開著同一支 → 提示出得來", JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })) === JSON.stringify(["btc_rsi", { id: "btc_rsi" }]));
-  t("沒按過「送上雲端」→ 沒有提示", JSON.stringify(run({ on: true, pending: null }, { name: "btc_rsi" })) === JSON.stringify([null, null]));
-  t("回去按不到那顆鈕了(換了策略 / 關了報告)→ 提示不出,意圖一起清掉", JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: "eth_ma" })) === JSON.stringify([null, null])
-    && JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: null })) === JSON.stringify([null, null]));
-  t("功能關著 → 提示不出", JSON.stringify(run({ on: false, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })) === JSON.stringify([null, null])); }
+  t("記住的那一支:報告頁還開著同一支 → 卡出得來", JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })) === JSON.stringify(["btc_rsi", { id: "btc_rsi" }]));
+  t("沒按過「送上雲端」→ 沒有卡", JSON.stringify(run({ on: true, pending: null }, { name: "btc_rsi" })) === JSON.stringify([null, null]));
+  t("在雲端等的時候 agent 動到別支(RP.name 被換掉)→ 意圖**不可以**被清掉,卡照出、記的還是原本那一支",
+    JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: "eth_ma" })) === JSON.stringify(["btc_rsi", { id: "btc_rsi" }])
+    && JSON.stringify(run({ on: true, pending: { id: "btc_rsi" } }, { name: null })) === JSON.stringify(["btc_rsi", { id: "btc_rsi" }]));
+  t("hoPendingId 的原文裡沒有 RP(承重牆:那一判已經移到按主鈕那一刻)", !/\bRP\b/.test(cutFn("hoPendingId")));
+  t("功能關著 → 卡不出", run({ on: false, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })[0] === null); }
 t("意圖只在記憶體:不寫 localStorage / sessionStorage(重開 app 一律回這台電腦)", !/Storage/.test(src));
-t("切完才記下要送哪一支(envSwitch 會清 pending,先記會被洗掉);記的是 hoPaintUp 給的 RP.name;切不成就不記", /if \(dir === "up" && !hoCloudLive\(\)\) \{ if \(envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \}; return; \}/.test(src)
+t("切完才記下要送哪一支(envSwitch 會清 pending,先記會被洗掉);記的是 hoPaintUp 給的 RP.name;切不成就不記", /if \(envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/.test(src)
   && /hoAsk\("up", RP\.name, b\)/.test(src));
-t("框真的開得起來就清掉(按確認送出也走這條);handoff.js 裡清的地方只有 hoAsk 與 hoPendingId", /if \(dir === "up"\) HO\.pending = null;/.test(src)
-  && (src.match(/HO\.pending = (null|\{)/g) || []).length === 3 && src.indexOf('if (dir === "up") HO.pending = null;') < src.indexOf("confirmBox({"));
+t("框真的開得起來就清掉(按確認送出也走這條);handoff.js 裡清的地方只有 hoAsk 與 hoStay", /if \(dir === "up"\) \{ HO\.pending = null; hoNote\(null\); \}/.test(src)
+  && (src.match(/HO\.pending = (null|\{)/g) || []).length === 3 && src.indexOf('if (dir === "up") { HO.pending = null;') < src.indexOf("confirmBox({"));
 // 承重牆①(設計 eval:四條清除條件都要):人自己切視角(切換器 / ⌘1⌘2 / 選單)也要清——沒有 TTL,少了這條殘留無上限。
 // 收斂點是 envSwitch:三個入口都經過它,而且要排在「本來就在這一邊」那個早退之後(原地不動不算放棄意圖)
 t("人自己切視角就清掉:收斂在 envSwitch 一處,排在「本來就在這一邊」的早退之後", (() => {
@@ -106,18 +110,60 @@ t("人自己切視角就清掉:收斂在 envSwitch 一處,排在「本來就在�
   return i > 0 && /if \(typeof HO !== "undefined"\) HO\.pending = null;/.test(body)
     && body.indexOf("HO.pending = null;") > body.indexOf('if (env === ENV.cur) { if (via === "link") head(); return; }')
     && (trSrc.match(/HO\.pending/g) || []).length === 1; })());
-t("回這台電腦那顆鈕:agent 回覆中不動作(同 hoAsk)、守門同切換器那一份、走 envSwitch(\"local\", \"link\"),焦點給 #rp-ho(切完才取節點);不自動切視角、不自動開框", (() => {
-  const cell = cutFn("hoPendingCell"), o = (re) => cell.search(re);
-  return o(/if \(typeof running !== "undefined" && running\) return;/) > 0 && o(/if \(!envCanSwitch\(\)\) return;/) > o(/if \(typeof running !== "undefined" && running\) return;/)
-    && o(/envSwitch\("local", "link"\);/) > o(/if \(!envCanSwitch\(\)\) return;/)
-    && o(/const up = \$\("rp-ho"\); if \(up && up\.offsetParent\) up\.focus\(\);/) > o(/envSwitch\("local", "link"\);/)
-    && !/confirmBox|hoAsk/.test(cell.replace(/\/\/.*$/gm, "")) && (src.match(/[^\w]envSwitch\(/g) || []).length === 1; })());
-t("agent 回覆中那顆鈕也是 aria-disabled:掛 .ho-back、進 hoBusy 的選擇器,畫出來就套一次", /b\.className = "btn-quiet ho-back";/.test(src)
-  && /querySelectorAll\("#rp-ho, \.ho-down, \.ho-back"\)/.test(src) && /if \(pid\) \{ box\.appendChild\(hoPendingCell\(pid\)\); hoBusy\(\); \}/.test(trSrc));
-t("trade.js:雲端側欄第一格換成那條路(取代 ho.emptyHint、不疊加),清單非空時排在列表上方;sig 帶 pid(清掉 / 記下都會重畫)", /const pid = ho \? hoPendingId\(\) : null;/.test(trSrc)
-  && /if \(pid\) \{ box\.appendChild\(hoPendingCell\(pid\)\);/.test(trSrc) && /if \(!list\.length\) \{ if \(!pid\) box\.appendChild\(trEl\("p", "pf-state", ho \? t\("ho\.emptyHint"\)/.test(trSrc)
-  && /JSON\.stringify\(\[kind, ho, list\.map\(\(x\) => \[x\.name, x\.displayName, envStratWord\(x\.name, st\)\]\), pid\]\)/.test(trSrc));
-t("app.css / trade.css:提示那格的文字鈕跟著那句話的字級", /#strat-list-cloud \.pf-state \.btn-quiet \{ font-size: inherit; \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8")));
+t("「準備好了」卡的主鈕:守門同切換器那一份 → envSwitch(\"local\", \"link\") → 那支還在才 stratSelect(鈕上寫哪一支就落在哪一支)→ 焦點給 #rp-ho(切完、選完才取節點);不自動切視角、不自動開框", (() => {
+  const back = cutFn("hoBack"), o = (re) => back.search(re);
+  return /async function hoBack\(id\)/.test(src) && o(/if \(!envCanSwitch\(\)\) return;/) > 0
+    && o(/const has = typeof RP !== "undefined" && RP\.list\.some\(\(x\) => x\.name === id\);/) > o(/if \(!envCanSwitch\(\)\) return;/)
+    && o(/envSwitch\("local", "link"\);/) > o(/const has = /) && o(/if \(!has\) \{/) > o(/envSwitch\("local", "link"\);/)
+    && o(/if \(RP\.name !== id\) await stratSelect\(id\);/) > o(/if \(!has\) \{/)
+    && o(/const up = \$\("rp-ho"\); if \(up && up\.offsetParent\) up\.focus\(\);/) > o(/await stratSelect\(id\);/)
+    && !/confirmBox|hoAsk/.test(back.replace(/\/\/.*$/gm, "")) && (src.match(/[^\w]envSwitch\(/g) || []).length === 1; })());
+// 焦點:那顆鈕連同整張卡會被藏起來(gate 翻 false),重畫完成之後要有人接住焦點,不然掉回 body
+t("次要出口［留在雲端］:清掉意圖 → 立刻重畫 → 焦點交給落地那一頁的標題;清的地方在 handoff.js,不散到 trade.js", (() => {
+  const st = cutFn("hoStay"), o = (re) => st.search(re);
+  return o(/HO\.pending = null;/) > 0 && o(/trPaint\(\);/) > o(/HO\.pending = null;/)
+    && o(/const h = \$\("tr-h"\); if \(h && h\.offsetParent\) h\.focus\(\);/) > o(/trPaint\(\);/)
+    && /t\("ho\.ready\.stay"\), \(\) => \{ hoStay\(\); after\(\); \}, "stay"\)/.test(trSrc) && (trSrc.match(/HO\.pending/g) || []).length === 1; })());
+// spec §2-2 / §8:那支在雲端等的時候被刪掉 → 焦點在中欄標題。envSwitch 的 head() 只認 #tr-h / #cv-h,
+// 中欄是策略報告頁時兩顆都藏著,所以 hoBack 自己給 #rp-name(它要有 tabindex 才 focus 得上去)
+t("那支被刪了:切回這台電腦、不報錯,焦點給中欄標題 #rp-name(有 tabindex=\"-1\")", /<h5 class="rp-name" id="rp-name" tabindex="-1"><\/h5>/.test(html)
+  && /if \(!has\) \{ const h = \$\("rp-name"\); if \(h && h\.offsetParent\) h\.focus\(\); return; \}/.test(src));
+// 那一行講的是「你剛才按的那一次」,不是現況:離開這台電腦又回來時不可以還掛在頁首
+t("報告頁首那一行:切回這台電腦時收掉", /if \(env === "local" && typeof hoNote === "function"\) hoNote\(null\);/.test(trSrc));
+t("側欄那一格整段刪掉(hoPendingCell / .ho-back / ho.back.hint 都不存在;envPaintSide 不再碰 pid)", !/hoPendingCell|ho-back|ho\.back\.hint/.test(src + trSrc + html + strings)
+  && !/\bpid\b/.test((() => { const i = trSrc.indexOf("function envPaintSide("); return trSrc.slice(i, trSrc.indexOf("\n}", i)); })())
+  && /if \(!list\.length\) \{ box\.appendChild\(trEl\("p", "pf-state", ho \? t\("ho\.emptyHint"\)/.test(trSrc));
+/* ⚠️ 承重牆:gate 用 kind === "running" 判,**不可以**用 hoCloudLive()——後者多要求「1 小時內同步過」,
+   「running 但讀不到」那一態卡就不出了,人照樣掉在自動下單頁(規格 §2 說這是最容易寫錯的一格) */
+t("gate 多守一格:雲端 running 而且還有一支在等 → 中欄留在 #cv-empty;判準是 kind === \"running\",不是 hoCloudLive()", (() => {
+  const i = trSrc.indexOf("function envPaint()"), body = trSrc.slice(i, trSrc.indexOf("\n}", i)).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  return /const ready = cloud && kind === "running" && !!pid;/.test(body)
+    && /const gate = \(cloud && kind !== "running" && kind !== "stopped"\) \|\| ready;/.test(body)
+    && /const pid = typeof hoPendingId === "function" \? hoPendingId\(\) : null;/.test(body) && !/hoCloudLive/.test(body); })());
+t("那一態側欄那句換成 side.cloud.emptyReady(「開好之後」在這裡是假話);走 dataset.i18n,換語言時才不會被 applyI18n 還原", /sgKey = ready \? "side\.cloud\.emptyReady" : "side\.cloud\.emptyGate"/.test(trSrc)
+  && /if \(sg\.dataset\.i18n !== sgKey\) \{ sg\.dataset\.i18n = sgKey; sg\.textContent = t\(sgKey\); \}/.test(trSrc)
+  && /"side\.cloud\.emptyReady":/.test(strings));
+t("那張卡:不畫三條賣點與價格、#cv-desc 留空、主鈕 data-k=\"main\"(登入回來焦點正好在它身上)、次鈕是［留在雲端］", (() => {
+  const i = trSrc.indexOf("function envPaintEmpty("), ep = trSrc.slice(i, trSrc.indexOf("\n}\n", i));
+  return /const ready = kind === "running" && !!pid;/.test(ep) && /const view = ready \? "ready" : envOpenView\(/.test(ep)
+    && /view !== "loading" && view !== "unreach" && view !== "ready"\) desc\.textContent = t\("env\.empty\.desc"\)/.test(ep)
+    && /if \(view === "ready"\) page\.append\(trEl\("h4", "", t\("ho\.ready\.h"\)\), trEl\("p", "cv-p", t\("ho\.ready\.body", \{ id: pid \}\)\)\);/.test(ep)
+    && !/view === "ready"[^\n]*env\.open\.h/.test(ep)
+    && /main = btn\("btn-fill", t\("ho\.back\.btn"\), \(\) => hoBack\(pid\), "main"\)/.test(ep)
+    && /\|\| view === "ready" \? null : planErr/.test(ep) && /JSON\.stringify\(\[view, pid \|\| null,/.test(ep); })());
+/* 不可以繞回同一張卡:停機 / 「running 但讀不到」兩態**不切視角**、也不記 pending,在報告頁原地講一句。
+   少了它會有迴圈——切過去 → 記 pending → gate 又開 → 又是那張卡,按幾次都一樣 */
+t("停機 / 讀不到:不切視角、不記 pending,改在報告頁首出一行(排在 envSwitchGuardedcloud 之前,否則還是會切過去)", (() => {
+  const i = src.indexOf("function hoAsk("), body = src.slice(i, src.indexOf("\n}", i)).replace(/\/\/.*$/gm, "");
+  return /if \(kind === "running" \|\| kind === "stopped"\) \{ hoNote\(kind === "running" \? "ho\.gate\.stale" : "ho\.gate\.stopped"\); return; \}/.test(body)
+    && body.indexOf("hoNote(kind ===") < body.indexOf('envSwitchGuarded("cloud")')
+    && /const kind = envCloudKind\(TR_BAGS\.cloud\.st\);/.test(body); })());
+t("那一行:#rp-desc 下面、不切視角、鈕字沿用既有的「去雲端看」;按了那顆鈕不記 pending(記了就會繞回卡);role=status(按了鈕畫面只多這一行)", (() => {
+  const n = cutFn("hoNote");
+  return /<p class="rp-ho-note" id="rp-ho-note" role="status" hidden><\/p>/.test(html) && html.indexOf('id="rp-ho-note"') > html.indexOf('id="rp-desc"')
+    && /b\.textContent = t\("ho\.block\.goCloud"\);/.test(n) && /hoNote\(null\); envSwitchGuarded\("cloud"\);/.test(n) && !/HO\.pending/.test(n)
+    && /\.rp-ho-note \.btn-quiet \{ font-size: inherit; \}/.test(css); })());
+t("那一行不留在別支策略的頁首:換策略重畫頁首時清掉", /hoNote\(null\);\s+\/\/ 換了策略/.test(src) && src.indexOf("hoNote(null)") > src.indexOf("function hoPaintUp("));
 
 t("index.html:載入 handoff.js;報告頁首分成 .txt / .act 兩塊(鈕不畫時 .act 藏起來,頁首高度不跳)", /<script src="handoff\.js"><\/script>/.test(html) && /<div class="act" id="rp-act" hidden><\/div>/.test(html) && /<div class="txt">/.test(html));
 t("app.css:icon + 字的描邊鈕、列尾那顆的熱區 ≥ 28、確認框的兩欄變體", /\.btn-out\.has-ic \{ display: inline-flex;/.test(css) && /\.ho-down::before \{ content: ""; position: absolute; inset: -8px -4px; \}/.test(css)
@@ -127,7 +173,7 @@ t("trade.js:雲端清單每列掛「拉回」、空態換成新的那一句;功�
 t("trade.js:輸入框上方那句「agent 還不能操作雲端主機」在功能開著時不出(它已經不成立)", /\$\("chat-tgt"\)\.hidden = !cloud \|\| \(typeof HO !== "undefined" && HO\.on\);/.test(trSrc));
 t("重畫:雲端清單的 sig 把 ho 算進去(功能剛問到 / 雲端剛連上時會重畫)", /JSON\.stringify\(\[kind, ho, list\.map/.test(trSrc));
 t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id}", (() => {
-  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down", "back.hint", "back.btn"];
+  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note", "ok", "emptyHint", "msg.up", "msg.down", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '":', "g")) || []).length === 2)
-    && (strings.match(/"ho\.(msg\.(up|down)|back\.hint)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
+    && (strings.match(/"ho\.(msg\.(up|down)|ready\.body)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

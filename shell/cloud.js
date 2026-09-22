@@ -12,6 +12,10 @@
 //
 // 這個檔不 require electron;HTTP 由呼叫端注入(測試用假的)。
 const ENDPOINT = "/oauth/desktop/cloud/state";
+const EVENTS_ENDPOINT = "/oauth/desktop/cloud/events";
+const EVENTS_MAX = 500;
+const UNREACHABLE = () => ({ code: "UNREACH", events: [] });
+const EVENTS_MIN_GAP_MS = 5 * 1000;
 const POLL_FOREGROUND_MS = 15 * 1000, POLL_BACKGROUND_MS = 60 * 1000, BACKOFF_MS = 60 * 1000, MIN_GAP_MS = 5 * 1000;
 const MACHINE_STATES = ["none", "starting", "running", "stopped"];
 
@@ -43,6 +47,19 @@ function interpret(res) {
   };
 }
 
+/* 事件清單的回應 → { code, events }(純函式)。**「讀不到」與「真的沒有事件」是兩件事**:
+   401 / 429 / 5xx / 形狀不對 / 連不上一律 UNREACH,畫面得說自己讀不到,不可以畫成「這段期間沒有事件」
+   (同權益曲線的先例:讀不到就不畫,不斷言)。只有真的拿到 200 + events 陣列才是 OK——空陣列就是真的沒有。
+   最新在前(api 的順序),所以取前面 EVENTS_MAX 筆。 */
+function interpretEvents(res) {
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !Array.isArray(b.events)) return { code: "UNREACH", events: [] };
+  return { code: "OK", events: b.events
+    .filter((e) => e && typeof e === "object" && typeof e.ts === "number" && typeof e.type === "string")
+    .slice(0, EVENTS_MAX)
+    .map((e) => ({ ts: e.ts, type: e.type, data: e.data && typeof e.data === "object" ? e.data : {} })) };
+}
+
 /* opts:{ apiBase, getCreds() → { token, appSecret } | null, post(url, body) → Promise<{status, body}>, onChange?(snapshot), now?, setTimer?, clearTimer? }
    onChange 在狀態的「摘要」變了才叫(切換器上的另一邊狀態靠它),不是每次輪詢都叫。
 
@@ -57,6 +74,7 @@ function createCloudHost(opts) {
   const clearT = opts.clearTimer || clearTimeout;
   const EMPTY = () => ({ code: "NO_LOGIN" });
   let snap = EMPTY(), owner = null, gen = 0, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
+  let evInflight = null, evLastTryAt = 0;   // 事件那一支自己的節流(它不共用上面那組:兩支走不同的速率桶)
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length].join("|");
@@ -119,10 +137,34 @@ function createCloudHost(opts) {
     status() { const s = publicSnapshot(), report = s.report || null; delete s.report; const alive = !!snap.alive && fresh();
       return { alive, running: snap.code === "OK" && snap.machine.state === "running", report, lastExit: null, restarts: 0, cloud: { ...s, alive } }; },
     snapshot: publicSnapshot,
+    /* 事件清單(點擊驅動:畫面問一次打一次)。跟狀態輪詢是兩個速率桶,所以不共用上面那組 inflight / 退讓。
+       手上不留一份:不寫進這個閉包、不進 snapshot()、當然也不落地——直接回給呼叫端(同檔頭第 10 行)。
+       **不碰 gen / owner**:動了的話,在途的那一輪狀態輪詢回來會對不上世代、把自己丟掉。
+       換人只用本地的 token 比對(請求在路上時登出 / 換帳號 → 這份是上一個人的,丟掉)。
+       自己的節流(同 refresh 的 MIN_GAP_MS,只是另一個桶):在途時共用同一個請求、兩次真的請求之間至少隔
+       EVENTS_MIN_GAP_MS——renderer 寫壞的迴圈不能把 detail 桶打到 429(那會讓畫面長期停在「讀不到」)。
+       擋下來的那一次回 UNREACH:這一輪確實沒讀到,但**不是**「沒有事件」。唯一的呼叫點自己就有 60 秒的閘,平常碰不到這裡。 */
+    async events(days) {
+      if (evInflight) return evInflight;
+      let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
+      const tok = c && c.token ? c.token : null;
+      if (!tok || !c.appSecret) return UNREACHABLE();                 // 沒登入 / 舊登入也是「讀不到」,不是「沒有事件」
+      if (now() - evLastTryAt < EVENTS_MIN_GAP_MS) return UNREACHABLE();
+      evLastTryAt = now();
+      const d = Math.max(1, Math.min(Math.floor(Number(days) > 0 ? Number(days) : 30), 90));
+      evInflight = (async () => {
+        let res = null;
+        try { res = await opts.post(opts.apiBase + EVENTS_ENDPOINT, { token: tok, app_secret: c.appSecret, days: d }); } catch (_) { /* 連不上 */ }
+        let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
+        if ((cur && cur.token ? cur.token : null) !== tok) return UNREACHABLE();
+        return interpretEvents(res);
+      })().finally(() => { evInflight = null; });
+      return evInflight;
+    },
     // 登出:立刻把手上的東西丟掉、通知畫面清掉,而且作廢還在路上的請求
     reset() { drop(); },
     _delay: delay,
   };
 }
 
-module.exports = { createCloudHost, interpret, ENDPOINT, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };
+module.exports = { createCloudHost, interpret, interpretEvents, ENDPOINT, EVENTS_ENDPOINT, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

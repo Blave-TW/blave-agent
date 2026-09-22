@@ -1351,6 +1351,39 @@ msgstr "策略執行失敗"
 msgid "tr.ov.evStrategyFailedNote"
 msgstr "排程還是照跑，但這一輪沒有產生訊號"
 
+msgid "tr.ov.evUnreach"
+msgstr "現在讀不到雲端的事件紀錄，稍後會再試；這不代表這段期間沒有發生事情。"
+
+msgid "tr.ov.evDtHalt"
+msgstr "電腦版送出：暫停下單"
+
+msgid "tr.ov.evDtResume"
+msgstr "電腦版送出：恢復下單"
+
+msgid "tr.ov.evDtCloseAll"
+msgstr "電腦版送出：暫停並全部平倉"
+
+msgid "tr.ov.evDtAmounts"
+msgstr "電腦版送出：更改部位大小"
+
+msgid "tr.ov.evDtCredentials"
+msgstr "電腦版送出：連接交易所"
+
+msgid "tr.ov.evDtCredentialsRemove"
+msgstr "電腦版送出：解除交易所"
+
+msgid "tr.ov.evDtRestartReconciler"
+msgstr "電腦版送出：重啟對帳器"
+
+msgid "tr.ov.evDtRetestAccounts"
+msgstr "電腦版送出：重新測試連線"
+
+msgid "tr.ov.evDtOther"
+msgstr "電腦版送出了一個指令"
+
+msgid "tr.ov.evDtDevice"
+msgstr "來自 {device}"
+
 # ── trade:end ──
 
 # ── 視窗之外:選單列 / Dock / 結束攔截(字由 renderer 交給主行程)──
@@ -1466,6 +1499,9 @@ msgstr "看完整方案內容"
 
 msgid "side.cloud.emptyGate"
 msgstr "雲端主機開好之後，策略會列在這裡。"
+
+msgid "side.cloud.emptyReady"
+msgstr "主機已經開好了。策略送上來之後，會列在這裡。"
 
 msgid "env.empty.starting"
 msgstr "雲端主機啟動中，通常 1 分鐘左右。開好後這一頁會自己換成雲端的內容。"
@@ -1915,11 +1951,23 @@ msgstr "確認"
 msgid "ho.emptyHint"
 msgstr "雲端還沒有策略。在這台電腦打開一支策略，按「送上雲端」。"
 
-msgid "ho.back.hint"
-msgstr "雲端準備好了。回這台電腦按「送上雲端」，把 {id} 送上來。"
+msgid "ho.ready.h"
+msgstr "雲端主機準備好了"
+
+msgid "ho.ready.body"
+msgstr "回這台電腦按「送上雲端」，就會把 {id} 送上來。"
+
+msgid "ho.ready.stay"
+msgstr "留在雲端"
+
+msgid "ho.gate.stale"
+msgstr "現在讀不到雲端的狀況，先不送。"
+
+msgid "ho.gate.stopped"
+msgstr "雲端主機已停機，現在送不上去。"
 
 msgid "ho.back.btn"
-msgstr "回這台電腦"
+msgstr "回這台電腦送上來"
 
 msgid "ho.msg.up"
 msgstr "把策略 {id} 送上我的雲端主機。搬完在雲端重跑回測，把兩邊的數字並排給我看。"
