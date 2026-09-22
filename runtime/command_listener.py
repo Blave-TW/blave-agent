@@ -305,11 +305,10 @@ def _cmd_halt(args):
 
 
 # ── downtime pause (lib/downtime.py; rule: references/manager.md) ────────────
-# A stop that crossed a live strategy's bar close freezes every live strategy
-# until the user decides per strategy. `resume` / `resume_wait` take
-# {"strategies": [names]} for that; without it they stay whole-machine commands
-# and additionally end every pause — so a page that only knows the two
-# whole-machine buttons can always get a machine out of one.
+# A stop that crossed a live strategy's bar close freezes every live strategy.
+# The exit the pages offer is the whole-machine start: `resume` / `resume_wait`
+# without args, which also end every pause. The per-strategy form
+# ({"strategies": [names]}) is still accepted but no page sends it.
 
 def _strategy_names_arg(args):
     """None when the command is whole-machine, else the validated name list."""
@@ -2599,8 +2598,8 @@ def _cmd_delete_strategy(args):
             os.remove(p)
             entries.add(base[:-3] if base.endswith(".py") else base)
     _purge_strategy_schedules(entries)
-    # a deleted strategy must not stay on the downtime-pause card, freezing its
-    # symbol with nobody left to decide. Best-effort: the files are gone already.
+    # a deleted strategy must not stay in the downtime pause, freezing its
+    # symbol after the strategy is gone. Best-effort: the files are gone already.
     try:
         downtime = _in_workspace(_downtime_lib, True)
         for n in entries | {name}:

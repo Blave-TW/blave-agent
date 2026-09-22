@@ -967,7 +967,13 @@ def build_report():
     # an old generation with the cleared chats (refused / harmless), never an old chat
     # with the new generation (which the api would accept and write back)
     pair_gen = tg_pair_gen()
-    cfg = _read_json(os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {})
+    # {} = never configured (new machine); None = file there but unreadable. A client
+    # that saves the whole amounts map from this report must refuse on None, or it
+    # overwrites every key it could not see.
+    cfg_path = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
+    cfg = _read_json(cfg_path) if os.path.exists(cfg_path) else {}
+    if not isinstance(cfg, dict):
+        cfg = None
     hb = _mtime(os.path.join(WORKSPACE_STATE, "heartbeat", "reconciler"))
     last = _read_json(os.path.join(WORKSPACE, "manager", "last_reconcile.json"))
     sched = scheduled_strategies()
@@ -1024,9 +1030,7 @@ def build_report():
         # (portfolio_config.json flag) — the web's stop dialog phrases what
         # 「關閉 bot 部位」actually closes from this (bot's book only vs the
         # whole account on a pre-feature machine).
-        "self_ledger": bool((_read_json(
-            os.path.join(WORKSPACE, "manager", "portfolio_config.json"), {}) or {}
-        ).get("self_ledger")),
+        "self_ledger": bool((cfg or {}).get("self_ledger")),
         # can_wait_start: whether the workspace's reconcile path understands
         # state/signal_gate.json (the 「啟動,等新訊號才進場」 option) — keyed
         # on the actual artifact like can_flatten, so the web never offers a
@@ -1034,9 +1038,10 @@ def build_report():
         # ignoring the gate degrades resume_wait to a full catch-up resume).
         "can_wait_start": _workspace_has_signal_gate(),
         # downtime pause (lib/downtime.py): a stop that crossed a bar close
-        # froze every live strategy until the user decides per strategy. Both
-        # pages draw the same confirmation card from `downtime_pause`; without
-        # the capability the workspace never pauses and the card has no data.
+        # froze every live strategy; the exit is the whole-machine start
+        # (resume / resume_wait), which ends every pause. `downtime_pause` is
+        # the per-strategy detail of what is frozen; no page renders a
+        # per-strategy confirmation card any more.
         "can_downtime_pause": _workspace_has_downtime_pause(),
         "downtime_pause": downtime_pause_view(cfg, last),
         # 策略管理 subtab: member figures, allocators, the last proposal and
@@ -1056,7 +1061,7 @@ def build_report():
 
 
 def downtime_pause_view(cfg, last):
-    """state/downtime_pause.json joined with what the card needs per strategy:
+    """state/downtime_pause.json joined per strategy with:
     what the strategy wants now, what the account holds, and where the current
     direction began. None when nothing is paused. Read as JSON only — the
     workspace's own code is never imported here."""

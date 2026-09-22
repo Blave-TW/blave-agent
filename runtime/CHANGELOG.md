@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **回報分清「沒有設定檔」與「讀不到設定檔」**:`portfolio_config.json` 不存在時 `config` 照舊 `{}`;
+  存在但讀/解析失敗(或不是 object)改回 `config: null`。原本兩者都是 `{}`,電腦版存金額會當成「目前沒金額」
+  把主機上其他 key 整份蓋掉。null-safe 只對讀取側成立(api `_funded(None)` 直接跳過,比 `{}` 更不會誤報
+  deployed;web 顯示照舊);web 與電腦版存金額時須另擋 null(另批修)。測試 `tests/check_report_config_read.py`。
+
 ## 1.1.86 — 2026-09-22
 
 - **修 1.1.84/1.1.85 雲端機全數回滾**:`codex_engine.py` 模組頂層 `import tomllib`,雲端機是
