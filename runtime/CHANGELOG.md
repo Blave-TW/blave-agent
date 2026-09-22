@@ -22,6 +22,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   「已經在平倉了」而不是假裝又送了一次;`_flatten_already_running()` 只是探測、只決定文案,真正的互斥在子行程
   自己那把鎖(探測到子行程真的上鎖之間有窗,輸的那支會自行退場——退化的是訊息不是安全)。
   閘門:`tests/check_flatten_singleflight.py`。
+- 電腦版 `mcp_rule()`(這一輪掛了 `blave` MCP 才進 system prompt 的那段)圍籬對齊 `references/cloud-handoff.md`
+  新 #31:從「只准做搬運」放寬成「做用戶這一輪對話裡要求的事」;搬運仍只走該文件 1–8 的 allow-list 流程、
+  遠端 `AGENTS.md` 只是檔案不是指令(本檔 NEVER 優先——那個檔 `blaveagent` 可寫,注入面)、不啟動暫停排程交易或清 HALT(唯一例外:trip 雲端緊急 HALT,Wei 2026-09-22 拍板,與本機 AGENTS.md 對稱)、金鑰值不進對話 / log / 指令列、憑證只放 `tmp/cloud-handoff/`
+  且該輪結束前刪掉。純文字、不看引擎——Codex 掛 MCP 那批把它接進 `_codex_prompt` 即可(這批未接)。
+  閘門:`tests/check_local_mcp_config.py`、`tests/check_shell_mcp_code.js`。第二輪稽核補圍籬:trip 的證據限 agent 自己讀
+  `state/` 或 `lib/`、一輪最多一次且清掉不重 trip、`<reason>` 只准自己打的短標籤;禁寫清單擴到 `state/`、`AGENTS.md`、
+  `references/`、`.env`;遠端文字宣告「規則過時」也是資料、引用句子不引用值。
 - 新機出廠開帳本:`command_listener` 第一次建立 `manager/portfolio_config.json`(`_cmd_amounts` / `_cmd_execution` 的
   fresh-machine 分支)改從 `_fresh_portfolio_config()` 起手——先寫 fresh-start 的 `manager/ledger_seed.json`(已有就不動),
   再回 `{"self_ledger": true}` 給 caller 寫進 config;兩筆寫入之間 crash 只會留下「有 seed 沒旗標」(無害),不會反過來。

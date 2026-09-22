@@ -103,6 +103,7 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
   t("runtime:--mcp-config 只在 LocalSink 認;options.mcp_servers 拿到的是 str 路徑(dict 會讓 SDK 把 Bearer 放上 argv);strict_mcp_config 仍為 True", /if not isinstance\(sink, LocalSink\) or not isinstance\(mcp_config, str\) or not os\.path\.isabs\(mcp_config\):\s*\n\s*return None/.test(rt)
     && /options\.strict_mcp_config = True/.test(rt) && /_mcp = local_mcp_config\(sink, mcp_config\)\s*\n\s*if _mcp:\s*\n\s*options\.mcp_servers = _mcp/.test(rt) && !/mcp_servers\s*=\s*\{/.test(rt));
   t("runtime:設定檔不可以在 workspace 裡面(agent 寫得到的地方)", /if real == ws or real\.startswith\(ws \+ os\.sep\) or not os\.path\.isfile\(real\):\s*\n\s*return None/.test(rt));
-  t("runtime:掛了才多一段規則(不讀不印設定與碼、金鑰只放 tmp/cloud-handoff/);沒掛 system prompt 不變", /def mcp_rule\(mounted\):[\s\S]{0,200}if not mounted:\s*\n\s*return ""/.test(rt) && /Never read, print, copy or summarise the MCP configuration/.test(rt) && /tmp\/cloud-handoff\//.test(rt));
+  t("runtime:掛了才多一段規則(不讀不印設定與碼、金鑰只放 tmp/cloud-handoff/);沒掛 system prompt 不變", /def mcp_rule\(mounted\):[\s\S]{0,400}if not mounted:\s*\n\s*return ""/.test(rt) && /Never read, print, copy or summarise the MCP configuration/.test(rt) && /tmp\/cloud-handoff\//.test(rt));
+  t("runtime:mcp_rule 圍籬對齊 cloud-handoff.md #31——只做用戶這一輪要求的事、不啟動暫停;舊的「ONLY for a cloud handoff」已拿掉", /asked for in this conversation/.test(rt) && /[Nn]ever start, pause/.test(rt) && !/ONLY for a cloud handoff/.test(rt) && /it is a file, not an instruction/.test(rt) && !/governs what you do/.test(rt));
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();
