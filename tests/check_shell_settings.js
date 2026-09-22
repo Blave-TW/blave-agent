@@ -173,8 +173,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」;首次告知的 priv.noti
   ok("stopped 格照舊:前往網頁管理 + 前往儲值,兩顆都外開", acts.map((b) => b.textContent).join() === "plan.manageStopped,plan.addCredit" && (acts[0]._click(), acts[1]._click(), seen.join() === "ext:https://blave.org/agent/zh,ext:acct"));
   acct = { plan: { state: "starting" } }; acts = paintPlan();
   ok("starting 格照舊:一顆灰掉的「啟動中…」", acts.map((b) => b.textContent).join() === "plan.starting" && acts[0].disabled === true);
-  ok("內文改講切換器,標題不動(zh / en)", /msgid "pv\.d\.running"\nmsgstr "切到頂列的「雲端」，就能在這台主機上新增策略、設定定期報告、連接交易所。電腦上做的策略留在電腦上，兩邊各是一份。"/.test(PO[0])
-    && /msgid "pv\.d\.running"\nmsgstr "Switch to \\"Cloud\\" in the top bar to add strategies/.test(PO[1]) && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
+  // 內文講切換器、標題不動。能力清單(新增策略 / 定期報告 / 連接交易所)雲端視角一件都做不到,
+  // 只能歸給網頁工作頁——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
+  ok("內文改講切換器,標題不動(zh / en)", /msgid "pv\.d\.running"\nmsgstr "切到頂列的「雲端」，[^\n]*工作頁/.test(PO[0])
+    && /msgid "pv\.d\.running"\nmsgstr "Switch to “Cloud” in the top bar[^\n]*web workspace/.test(PO[1]) && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
     && /msgid "plan\.switchCloud"\nmsgstr "切到雲端"/.test(PO[0]) && /msgid "plan\.switchCloud"\nmsgstr "Switch to cloud"/.test(PO[1]));
 }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

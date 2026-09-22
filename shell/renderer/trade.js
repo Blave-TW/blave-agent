@@ -403,7 +403,8 @@ function trFmtPrice(v) {
   return v.toLocaleString("en-US", { minimumFractionDigits: v < 10 ? 4 : v < 1000 ? 2 : 1, maximumFractionDigits: v < 10 ? 4 : v < 1000 ? 2 : 1 });
 }
 const tr2 = (n) => String(n).padStart(2, "0");
-function trStamp(ts) { const ms = trMs(ts); if (ms == null) return "—"; const d = new Date(ms); return tr2(d.getMonth() + 1) + "/" + tr2(d.getDate()) + " " + tr2(d.getHours()) + ":" + tr2(d.getMinutes()); }
+const trMD = (d) => tr2(d.getMonth() + 1) + "/" + tr2(d.getDate());
+function trStamp(ts) { const ms = trMs(ts); if (ms == null) return "—"; const d = new Date(ms); return trMD(d) + " " + tr2(d.getHours()) + ":" + tr2(d.getMinutes()); }
 function trHM(ms) { const d = new Date(ms); return tr2(d.getHours()) + ":" + tr2(d.getMinutes()); }
 function trMoneyInto(node, v, signed) {
   const s = trFmt(v, signed);
@@ -1023,7 +1024,8 @@ function trLivePositions(r) {
 }
 function trPositions(r, stored, states) {
   const frag = document.createDocumentFragment();
-  frag.appendChild(trSec(trTipLabel("label", t("tr.exchPositions"), t("tr.threshold", { amt: "10 " + trUnit() }))));
+  // tooltip 不提門檻數字:真正的門檻是每個標的在交易所的最小下單量(機器端 gates),前端那顆平坦的 10 只能拿來判斷、不能印出來
+  frag.appendChild(trSec(trTipLabel("label", t("tr.exchPositions"), t("tr.threshold"))));
   const last = r.last_reconcile || null, gates = (last || {}).gates || {};
   const live = trLivePositions(r), acct = r.account && r.account.venues ? r.account : null;
   const target = trClientTargets(stored, states), actual = {};
@@ -1450,7 +1452,7 @@ function trOvEvents(r) {
       curKey = key;
       const head = trEl("div", "ev-day"), human = key === today ? t("tr.ov.today") : key === yest ? t("tr.ov.yesterday") : null;
       if (human) head.append(human + " · ");
-      head.appendChild(trEl("span", "mono", tr2(d.getMonth() + 1) + "-" + tr2(d.getDate())));
+      head.appendChild(trEl("span", "mono", trMD(d)));
       list.appendChild(head);
     }
     const row = trEl("div", "ev-row"), body = trEl("span", "body");

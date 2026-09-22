@@ -111,5 +111,32 @@ if (!PY) {
   }
 }
 
+// ---- 5. 對用戶顯示的門檻不得寫死數字 ----
+// spec-desktop-positions-readable.md §2:門檻數字只能來自機器端回報的 gates,
+// 前端那顆平坦的 10 只能拿來判斷(trGateSide),永遠不可以印成文案。
+// 兩頭都守:字串本身不能有數字或參數,呼叫端不能再塞第二個參數進去。
+const valsOf = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)]
+  .map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));
+const enV = valsOf(block("en")), zhV = valsOf(block("zh"));
+const numbered = ["en", "zh"].filter((l) => /\d|\{/.test((l === "en" ? enV : zhV)["tr.threshold"] || ""));
+if (numbered.length) fail(`tr.threshold 帶了數字或參數(${numbered})—— §2:門檻只能來自 gates,文案不提數字`);
+else pass("tr.threshold 兩語都不提數字");
+const trjs = read("renderer/trade.js");
+if (/t\("tr\.threshold",/.test(trjs)) fail("trade.js 又把值代進 tr.threshold —— §2 只准不帶參數的 t(\"tr.threshold\")");
+else if (!/t\("tr\.threshold"\)/.test(trjs)) fail("trade.js 找不到 t(\"tr.threshold\") 的呼叫");
+else pass("trade.js 的 tr.threshold 不帶參數");
+
+// ---- 6. 雲端視角的能力清單必須歸給網頁工作頁 ----
+// 電腦版的雲端視角是唯讀的(側欄無新增入口、沒有定期報告、cxModalOpen 硬擋連接交易所)。
+// pv.d.running 配一顆「切到雲端」主鈕,句子裡只要提到那三件事,就得在同一句指去網頁工作頁。
+const CAP = { zh: [/新增策略/, /定期報告/, /連接交易所/], en: [/add(ing)? strateg/i, /report/i, /connect(ing)? an exchange/i] };
+const HOME = { zh: /工作頁/, en: /workspace/i };
+["en", "zh"].forEach((l) => {
+  const s = (l === "en" ? enV : zhV)["pv.d.running"] || "";
+  const liar = s.split(/[。.]/).filter((x) => CAP[l].some((re) => re.test(x)) && !HOME[l].test(x));
+  if (liar.length) fail(`pv.d.running(${l})把雲端視角做不到的事講成做得到:「${liar[0].trim()}」`);
+  else pass(`pv.d.running(${l})的能力清單歸給網頁工作頁`);
+});
+
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

@@ -845,10 +845,8 @@ async function csOpen(id) {
   $("chat-eg").hidden = true;
   csRenderHead(); csShowList(false); scrollChat();
 }
-function csTime(sec) {
-  return new Date(sec * 1000).toLocaleString(LANG === "zh" ? "zh-TW" : "en",
-    { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
+// 用 trade.js 那顆 trStamp(MM/DD HH:mm,24 小時制):toLocaleString 會跟著語系給 12 小時制與不補零的月日
+function csTime(sec) { return trStamp(sec); }
 /* 列尾的兩段式刪除鈕(對話清單與策略清單共用):✕ → 同一格變成「刪除?」,再按一次才
    執行;滑開或失焦就復原。不用原生 confirm——它會把整個視窗卡住,樣式也不是我們的。 */
 function armedDelete(row, label, onConfirm, direct) {
