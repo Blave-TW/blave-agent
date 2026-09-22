@@ -50,6 +50,24 @@ else {
     }
   })(root);
   t("packaged: 沒有本機資料混進包" + (leaked.length ? " → " + leaked.slice(0, 3).join(", ") : ""), leaked.length === 0);
+  // sign-python.js 預編完記下的清單(dist/mac-*.python-files.txt):多出來的檔 = 封裝後才被寫進來,簽章會驗不過
+  const extra = require(path.join(SHELL, "tools", "sign-python.js")).extraPythonFiles(path.dirname(appDir));
+  t("packaged: 隨包 Python 沒有清單外的檔" + (extra.length ? " → " + extra.slice(0, 3).join(", ") : ""), extra.length === 0);
+  // 預編真的做了:沒有對應 .pyc 的模組,外部程序一 import 就會寫檔
+  const pys = [], stdlib = path.join(res, "python", "lib", "python3.12");
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (e.name !== "__pycache__") walk(p); } else if (e.isFile() && e.name.endsWith(".py")) pys.push(p);
+    }
+  })(stdlib);
+  const pycOf = (p) => path.join(path.dirname(p), "__pycache__", path.basename(p, ".py") + ".cpython-312.pyc");
+  const noPyc = pys.filter((p) => !fs.existsSync(pycOf(p)));
+  t(`packaged: 隨包 Python 每個 .py 都有預編的 .pyc(${pys.length} 個)` + (noPyc.length ? " → " + noPyc.slice(0, 3).join(", ") : ""), pys.length > 0 && noPyc.length === 0);
+  // 標頭第 4–7 byte 是 flags:1 = unchecked-hash(不比對原始檔,永遠有效);0 是時間戳版,換機器 mtime 一變就重寫
+  const flags = (p) => { const b = Buffer.alloc(8), fd = fs.openSync(p, "r"); fs.readSync(fd, b, 0, 8, 0); fs.closeSync(fd); return b.readUInt32LE(4); };
+  const sample = ["json/__init__.py", "encodings/utf_8.py", "os.py"].map((f) => pycOf(path.join(stdlib, f)));
+  t("packaged: 預編的 .pyc 是 unchecked-hash", sample.every((p) => fs.existsSync(p) && flags(p) === 1));
 
   // 簽章產物(npm run release)才有的斷言;pack 產物是 ad-hoc,整段 SKIP。
   const dv = (f) => require("child_process").spawnSync("codesign", ["-dvv", "--entitlements", "-", "--xml", f], { encoding: "utf8" });

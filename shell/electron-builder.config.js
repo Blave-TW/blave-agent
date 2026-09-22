@@ -42,7 +42,7 @@ module.exports = {
   files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "cloudcmd.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "mcpcode.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   extraResources: [
     { from: "..", to: "agent", filter: tracked },
-    { from: "vendor/python", to: "python", filter: ["**/*", "!**/__pycache__"] },
+    { from: "vendor/python", to: "python", filter: ["**/*", "!**/__pycache__{,/**}"] },
   ],
   mac: {
     category: "public.app-category.finance",

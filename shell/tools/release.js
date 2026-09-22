@@ -53,6 +53,21 @@ function loadEnvFile() {
     if (m && !line.trim().startsWith("#") && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
   }
 }
+// 封裝後才被寫進 .app 的檔(外部程序就地跑了包裡的 python3):會讓 codesign --verify --strict 失敗,在這裡點名是哪幾個。
+// 隨包 Python 比對 sign-python.js 預編完記下的清單(預編的 .pyc 在清單內);其餘位置不該有任何 __pycache__
+function foreignFilesInApps(dist) {
+  const found = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) { const p = path.join(d, e.name); if (e.name === "__pycache__") found.push(p); else if (p !== skip) walk(p); } };
+  let skip;
+  for (const d of fs.existsSync(dist) ? fs.readdirSync(dist) : []) {
+    const out = path.join(dist, d), a = path.join(out, "Blave.app");
+    if (!/^mac/.test(d) || !fs.existsSync(a)) continue;
+    skip = path.join(a, "Contents", "Resources", "python");
+    walk(a);
+    for (const f of require("./sign-python.js").extraPythonFiles(out)) found.push(path.join(skip, f));
+  }
+  return found;
+}
 const sha512 = (f) => crypto.createHash("sha512").update(fs.readFileSync(f)).digest("base64");
 
 // 純函式(tests/check_shell_release.js):上傳計畫。順序就是安全性——對外生效的兩個檔(yml、下載頁的固定檔名 dmg)永遠最後。
@@ -145,6 +160,8 @@ async function main() {
 
     step("驗產物");
     const plan = uploadPlan(version, arch, track.prefix), app = path.join(dist, `mac-${arch}`, "Blave.app");
+    const foreign = foreignFilesInApps(dist);
+    if (foreign.length) throw new Error(`.app 封裝後多出檔案(有程序就地跑了包裡的 python3?):\n  ${foreign.slice(0, 5).join("\n  ")}`);
     for (const p of plan) if (!fs.existsSync(path.join(dist, p.file))) throw new Error(`沒有產出 ${p.file}`);
     const plist = (a, k) => run("/usr/libexec/PlistBuddy", ["-c", `Print :${k}`, path.join(a, "Contents", "Info.plist")]).trim();
     const checkApp = (a, label) => {
@@ -190,4 +207,4 @@ async function main() {
   }
 }
 if (require.main === module) main().catch((e) => die(e && e.stack || String(e)));
-module.exports = { uploadPlan, publish, newer, semver, resolveTrack };
+module.exports = { uploadPlan, publish, newer, semver, resolveTrack, foreignFilesInApps };
