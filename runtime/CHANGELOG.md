@@ -8,6 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **修 1.1.84/1.1.85 雲端機全數回滾**:`codex_engine.py` 模組頂層 `import tomllib`,雲端機是
+  Python 3.10(沒有 tomllib),updater 健康檢查 import 時 `ModuleNotFoundError` → 回滾。改成讀
+  config 時才 import;import 不到就不掛 blave MCP(stderr 一行,回合照跑)。新增閘門
+  `tests/check_runtime_py310_compat.py`:`runtime/*.py` 以 3.10 語法解析、擋 import 時就會跑到的
+  3.11+ stdlib 模組/名稱與 3.12 f-string 同引號巢狀。
+
 ## 1.1.85 — 2026-09-22
 
 - **群益「全部平倉刻意未平倉」變成 P1 通知(機器端)**:`order_errors` 的群益跳過列多帶

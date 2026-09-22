@@ -27,7 +27,6 @@ import re
 import shlex
 import subprocess
 import sys
-import tomllib
 from types import SimpleNamespace
 
 # Same ceiling as the Claude path's max_buffer_size: one JSONL line carries a command's
@@ -152,7 +151,13 @@ def _mcp_name_taken(cwd, env):
     legacy array as above. The desktop workspace has no `.git` above it, so the ancestor layers
     collapse to cwd, which is read. A managed requirement pinning shell_snapshot=true is caught
     by _snapshot_disabled, not here."""
-    home = env.get("CODEX_HOME") or os.path.join(env.get("HOME") or os.path.expanduser("~"),
+    # Imported here, not at module top: cloud machines run Python 3.10, and the updater's
+    # health check imports every runtime module — a top-level tomllib rolled back 1.1.84/85.
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return "Python < 3.11 has no tomllib to read config.toml"
+    home =env.get("CODEX_HOME") or os.path.join(env.get("HOME") or os.path.expanduser("~"),
                                                  ".codex")
     docs = []  # (managed, parsed)
     for managed, path in ((False, os.path.join(home, "config.toml")),
