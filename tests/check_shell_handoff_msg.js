@@ -49,7 +49,19 @@ t("確認框四態:目的地那份正在下單 → block(最優先);有同名 �
 // ② 掃描範圍對齊 §5 的 grep strategies/<name>/*.py(不只 strategy.py)
 { const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   t("主行程掃資料夾內所有 .py,只回來源名、不碰值;loadStrategy 帶出 dataSources", /readdirSync\(dir\)\.filter\(\(f\) => f\.endsWith\("\.py"\)\)/.test(mainSrc2)
-    && /dataSources: stratDataSources\(dir\)/.test(mainSrc2) && /out\.add\(m\[1\]\)/.test(mainSrc2) && /lstatSync\(p\)\.isFile\(\)/.test(mainSrc2)); }
+    && /dataSources: stratDataSources\(dir\)/.test(mainSrc2) && /out\.add\(m\[1\]\)/.test(mainSrc2) && /lstatSync\(p\)\.isFile\(\)/.test(mainSrc2));
+  // 第三輪複查 6:把真的那支函式切出來跑。§5 步驟 2 明文 DATA_API_KEY / DATA_SECRET_KEY 永不搬(機器端 name_ok 拒掉),
+  // 確認框列出「API、SECRET」就是講出做不到的事;判準直接用 datasrc.js 的白名單(同一條規則)
+  const cutMain = (name) => { const i = mainSrc2.indexOf("function " + name + "("); let d = 0; for (let k = mainSrc2.indexOf("{", i); k < mainSrc2.length; k++) { if (mainSrc2[k] === "{") d++; else if (mainSrc2[k] === "}" && --d === 0) return mainSrc2.slice(i, k + 1); } throw new Error("no " + name); };
+  const os = require("os"), stratDataSources = new Function("fs", "path", "require", "return (" + cutMain("stratDataSources") + ")")(fs, path, (m) => require(path.join(__dirname, "..", "shell", m)));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blave-ho-"));
+  fs.writeFileSync(path.join(dir, "strategy.py"), "import os\nDATA_API_KEY = os.environ['DATA_API_KEY']\nk = os.environ['DATA_SECRET_KEY']\nt = os.environ['DATA_POLYGON_TOKEN']\nx = os.environ['DATA_DATAX_TOKEN']\nf = os.environ['DATA_FRED_API_KEY']\n# DATA_POLYGON_TOKEN='sekretvalue'\n");
+  fs.writeFileSync(path.join(dir, "leg_a.py"), "q = os.environ['DATA_QUANDL_KEY']\n");
+  fs.writeFileSync(path.join(dir, "notes.txt"), "DATA_NOPE_KEY\n");
+  const got = stratDataSources(dir); fs.rmSync(dir, { recursive: true, force: true });
+  t("stratDataSources:DATA_API_KEY / DATA_SECRET_KEY(交易所形狀)與 DATA 開頭的來源名不列;一般來源、DATA_FRED_API_KEY(id 是 DATA_FRED)、helper 檔用到的都列;只掃 .py", JSON.stringify(got) === JSON.stringify(["FRED", "POLYGON", "QUANDL"]));
+  t("回傳只有來源名,沒有值", !JSON.stringify(got).includes("sekret"));
+  t("判準走 datasrc.js 的 checkName + checkField(不另抄一份規則)", /const \{ checkName, checkField \} = require\("\.\/datasrc"\);/.test(cutMain("stratDataSources")) && /if \(!checkName\(m\[1\]\) && !checkField\(m\[1\], m\[2\]\)\) out\.add\(m\[1\]\)/.test(cutMain("stratDataSources"))); }
 
 // ── 接線(原文)──
 t("功能預設關:HO.on 起手是 false,由主行程的 feature-flags 決定(renderer 自己打不開)", /^const HO = \{ on: false \};$/m.test(src) && /window\.blave\.featureFlags\(\)/.test(src) && /HO\.on = !!\(f && f\.cloudHandoff === true\)/.test(src) && /catch \(_\) \{ HO\.on = false; \}/.test(src));

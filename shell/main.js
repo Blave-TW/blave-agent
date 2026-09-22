@@ -720,15 +720,17 @@ function loadStrategy(name) {
 }
 /* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的
    `grep -oE "DATA_[A-Z0-9]+_" strategies/<name>/*.py` —— 只掃 strategy.py 的話,helper 檔用到的來源會被漏講(稽核 C1)。
-   只回**來源名**,永遠不碰值。 */
+   只回**來源名**,永遠不碰值。名字要過 datasrc.js 的白名單(同 §5 的 name_ok):`DATA_API_KEY` / `DATA_SECRET_KEY` 這種
+   交易所形狀的名字機器端不會搬(handoff_env_merge 的 name_ok 拒掉),確認框列出來就是講出做不到的事。 */
 function stratDataSources(dir) {
+  const { checkName, checkField } = require("./datasrc");
   const out = new Set();
   let files = [];
   try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".py")).slice(0, 50); } catch (_) { return []; }
   for (const f of files) {
     let src = "";
     try { const p = path.join(dir, f); if (!fs.lstatSync(p).isFile()) continue; src = fs.readFileSync(p, "utf8"); } catch (_) { continue; }
-    for (const m of src.matchAll(/\bDATA_([A-Z0-9]{1,24})_[A-Z][A-Z0-9_]{0,31}\b/g)) out.add(m[1]);
+    for (const m of src.matchAll(/\bDATA_([A-Z0-9]{1,24})_([A-Z][A-Z0-9_]{0,31})\b/g)) if (!checkName(m[1]) && !checkField(m[1], m[2])) out.add(m[1]);
   }
   return [...out].sort();
 }

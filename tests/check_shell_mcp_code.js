@@ -51,6 +51,19 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
   { const w = world({ res: { status: 429, body: {} } }); await w.mc.get();
     w.creds = { token: "tokB", appSecret: "sec" }; w.res = ok200();
     t("換成別的帳號:不被前一個人的退讓連坐,立刻替新的人取一顆", (await w.mc.get()) !== null && w.calls === 2 && w.mc.state().retryInMs === 0); }
+  // 第三輪複查 7:退讓綁在賺到它的那顆 token 上,要活過「憑證讀不到」——不然被 429 的同一輪裡 Keychain 讀失敗 / 登出搶在 await 後面,
+  // 同一顆 token 回來就立刻再打一次
+  { const w = world({ res: { status: 429, body: {} } }); const real = w.creds; let n = 0;
+    w.mc = M.createMcpCode({ apiBase: "https://api.blave.org", now: () => w.now, getCreds: () => (++n === 3 ? null : w.creds), post: async () => { w.calls++; return w.res; } });
+    t("被 429 的同一輪裡憑證讀不到(get 尾端那次讀到 null)→ 退讓還在", (await w.mc.get()) === null && w.calls === 1 && w.mc.state().retryInMs > 0 && n === 3);
+    w.creds = real; t("同一顆 token 回來:仍在退讓期內,不會再打", (await w.mc.get()) === null && w.calls === 1);
+    w.now += 31 * 60 * 1000; w.res = ok200(); t("退讓期過了才會再打", (await w.mc.get()) !== null && w.calls === 2); }
+  { const w = world({ res: { status: 429, body: {} } }); await w.mc.get(); const real = w.creds;
+    w.creds = null; await w.mc.get(); w.creds = real;
+    t("被 429 之後有一輪沒登入(沒走 reset 的登出)、再登回同一個人:退讓還在,不會再打", (await w.mc.get()) === null && w.calls === 1 && w.mc.state().retryInMs > 0);
+    w.creds = { token: "tokB", appSecret: "sec" }; w.res = ok200();
+    t("中間隔了一輪沒登入,換成 B:B 不繼承 A 的退讓,立刻取", (await w.mc.get()) !== null && w.calls === 2 && w.mc.state().retryInMs === 0); }
+  t("drop() 不碰退讓:退讓只認 token,不靠 owner 判「是不是同一個人」", /function drop\(\) \{ gen\+\+; held = null; owner = null; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "mcpcode.js"), "utf8")));
   { const w = world(); let release; w.hang = new Promise((r) => { release = r; }); const p = w.mc.get(); w.creds = { token: "tokB", appSecret: "sec" }; release(); const r = await p;
     t("在途時換了人:回來的那份不是現在這個人的 → 丟掉、這一輪不掛", r === null && w.mc.state().has === false); }
   { const w = world(); let release; w.hang = new Promise((r) => { release = r; }); const p1 = w.mc.get(), p2 = w.mc.get(); release(); await Promise.all([p1, p2]); t("同時兩個人要 → 只打一次", w.calls === 1); }
