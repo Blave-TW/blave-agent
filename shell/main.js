@@ -1542,7 +1542,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
   key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
-  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", moneyPaper: "", moneyReal: "",
+  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", moneyPaper: "", moneyReal: "",
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "", menuView: "" };
 const TT = require("./traytext");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
@@ -1619,8 +1619,7 @@ async function pauseFromMenu() {
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
 // 雲端落後也要亮小點(同一個「有新版」的記號;選單那一行字仍只講這台電腦的,那句的出口是暫停後重開)
-const cloudUpdateWaiting = () => { const c = (cloudSt() || {}).cloud; return !!(c && c.code === "OK" && c.machine && c.machine.state === "running"
-  && c.config_version && c.latest_config_version && c.config_version !== c.latest_config_version); };
+const cloudUpdateWaiting = () => TT.cloudNeedsUpdate(cloudSt());   // 規則同「關於」的 upPlan(含重開沒停住那一條),純函式在 traytext.js
 // 選單列的狀態行。這台電腦那一行:選單列只在這台電腦「確定在下單」時出現,所以狀態一定是 on。字還沒交 → null,退回舊的那一句
 const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", state: "on" }, tmLabels);
 const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);

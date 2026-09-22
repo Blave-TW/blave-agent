@@ -217,7 +217,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 等的過程中主機停機:人要看到的是「它停了」,不是「我按的那個不知道怎樣」
   ok("trPendingCheck:雲端停機 → 直接清過場、不出「結果不明」;收斂了就把 request_id 一起清掉",
     /if \(cloud && envCloudKind\(TR\.st\) === "stopped"\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); return; \}/.test(fn("trPendingCheck"))
-    && /if \(state === p\.want\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
+    && /if \(state === p\.want \|\| b0Done\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
   /* 逾時還沒收斂:雲端的 ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來。
      這一條**只准**出「結果不明」——說「沒送到」就是叫一個暫停其實已經生效的人去交易所撤 key(規格 §1.3)。 */
   { const timeout = fn("trPendingCheck").slice(fn("trPendingCheck").indexOf("else if (Date.now() > p.until)"));
@@ -246,9 +246,9 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && trStartPending({ want: "running" }) === true && trStartPending({ want: "halted" }) === false && trStartPending(null) === false);
   // 三個入口(鈕的可按性、click、真的送出去那一層)只認同一條規則:哪一個漏掉,停止鈕就會在某條路上被鎖住
   ok("鈕 / click / trRun 三處都走 trBtnLocked(鈕與 click 的那一側由 trStopSideNow 判),沒有人再直接用 TR.pending 或 S.pending 擋",
-    /const busy = !!TR\.pending, locked = trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\)\) \|\| trStartPending\(TR\.pending\);/.test(fn("trPaintHead"))
+    /const locked = trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\)\) \|\| trStartPending\(TR\.pending\) \|\| flying;/.test(fn("trPaintHead"))
     && /aria-disabled", locked \? "true" : "false"/.test(fn("trPaintHead"))
-    && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\);\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return;/.test(fn("trPaintHead"))
+    && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\);[^\n]*\n\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return;/.test(fn("trPaintHead"))
     && /if \(trStartPending\(TR\.pending\) \|\| trHaltInFlight\(TR\.pending, Date\.now\(\)\)\) return;/.test(fn("trPaintHead"))
     && /for \(const step of steps\) \{ if \(S\.pending !== mine\) break;/.test(fn("trRun"))
     && /if \(trBtnLocked\(S\.pending, want === "halted"\)\) return;/.test(fn("trRun"))
@@ -260,7 +260,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 寫進雲端的確認框要標明目的地(規格 §5:刻意講三次);本機不給那兩個參數,框逐位元組不變
   { const app2 = fs.readFileSync(path.join(R, "app.js"), "utf8"), html2 = fs.readFileSync(path.join(R, "index.html"), "utf8");
     ok("confirmBox 有 env / footWhere / lead 三個選用參數,DOM 兩個槽在,關框時一起收掉",
-      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, env, footWhere, lead, single \}\)/.test(app2)
+      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single \}\)/.test(app2)
       && /<span class="envm" id="del-env" hidden><\/span>/.test(html2) && /<span class="del-where" id="del-where" hidden><\/span>/.test(html2)
       && /\$\("del-env"\)\.hidden = true; \$\("del-where"\)\.hidden = true; \$\("del-modal"\)\.querySelector\("\.modal-head"\)\.classList\.remove\("cloud"\); \$\("del-cancel"\)\.hidden = false;/.test(app2.slice(app2.indexOf("function delClose"))));
     ok("雲端的框:灰標題列 + 「雲端」記號 + 錢記號 + 鈕上方的目的地那一行;暫停與啟動都經過同一支",
@@ -340,7 +340,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && envHeadState(repAged(0.5, { last_ok_at: NOW + 3 * 3600e3 - 1000, fetched_at: NOW + 3 * 3600e3 - 1000 }), NOW + 3 * 3600e3) === "running");
   ok("R3 拿到之後又擱了很久也算進去(50 分鐘前的回報 + 擱了 20 分鐘);沒有 server_time 就只看連線那一條", envHeadState(repAged(50 / 60, { last_ok_at: NOW - 20 * MIN, fetched_at: NOW - 20 * MIN, server_time: (NOW - 20 * MIN) / 1000, reported_at: (NOW - 70 * MIN) / 1000 }), NOW) === "unknown"
     && envHeadState(repAged(2, { server_time: null }), NOW) === "running");
-  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) b\.remove\(\); trPaintGoStop\(false\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
+  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) b\.remove\(\); trPaintGoStop\(false\); trPaintGoUpd\(false\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
   // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
   const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
   ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true
@@ -374,7 +374,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       /cloud \? t\("tr\.onboard\.cloud"\) \+ \(LANG === "zh" \? "" : " "\) \+ t\("tr\.cloud\.onboardExtra"\) : t\("tr\.onboard"\)/.test(ob)
       && /"tr\.onboard\.cloud": "下單金額是從交易所的淨值算出來的，這台雲端主機還沒接交易所。"/.test(S) && /"tr\.onboard\.cloud": "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet\."/.test(S)
       && /"tr\.cloud\.onboardExtra": "[^"]*不會帶過來/.test(S) && /"tr\.cloud\.onboardExtra": "[^"]*doesn’t carry over/.test(S) && !/"tr\.onboard\.cloud": "[^"]*(只能看|can only view)/.test(S));
-    ok("這台電腦 noaccount 不變:填色的「連接交易所」直接開連接框", /else \{ const b = trEl\("button", "btn-fill", t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"; b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\); ob\.appendChild\(b\); \}/.test(ob));
+    ok("這台電腦 noaccount 不變:填色的「連接交易所」直接開連接框", /else \{\s*const b = trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"; b\.addEventListener\("click", \(\) => cxModalOpen\(b\)\); ob\.appendChild\(b\); \}/.test(ob));
     // 批次 ②:整頁級的「只能看」退場(啟動 / 暫停按得動之後那一句就是假話);#tr-ro-note 這個槽留著給停機態的 .verdict 用
     ok("整頁級的唯讀說明不再畫;tr.ro.note / tr.ro.noteEmpty 都沒有人叫",
       /trPaintRoNote\(null\);/.test(src) && !/"tr\.ro\.note"|tr\.ro\.noteEmpty/.test(src)); }
@@ -467,6 +467,50 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     const ho = fs.readFileSync(path.join(R, "handoff.js"), "utf8");
     ok("報告頁首右側:這台電腦那支 = 送上雲端(up),雲端那支 = 拉回這台電腦(down);同一顆 #rp-ho,依視角選袋(hoPaint 自己守)",
       /const B = cloud \? RPC : RP, dir = cloud \? "down" : "up";/.test(ho) && /hoPaint\(\);/.test(appFn("rpPaintHead")) && !/hoPaintUp/.test(ho + appFn("rpPaintHead"))); }
+
+  { // audit-trading-ux 1-6:C(可能仍在下單)與 B(重開停著)時,人在這台電腦也看得到雲端的錢
+    const stp = (o) => ({ reconciler: { alive: false, stopped: { reason: "machine_restart", at: 42, ...o } } });
+    const cC = envCell("cloud", cloudSt(okc("running"), rep(stp({ gated: false })))), cB = envCell("cloud", cloudSt(okc("running"), rep(stp({ gated: true }))));
+    const cCH = envCell("cloud", cloudSt(okc("running"), rep({ ...stp({ gated: false }), halt: { halted: true, source: "web", at: 9 } })));
+    ok("1-6 切換器:C = 紅短劃 + 可能仍在下單(看過才消);B = 紅短劃 + 已暫停;都不亮綠點",
+      cC.dot === "bad" && cC.word === "tr.cloud.mayTrade" && cC.sig === "unconfirmed:42" && !cC.run
+      && cB.dot === "bad" && cB.word === "tr.halted" && cB.sig === "restart:42" && !cB.run
+      && cCH.sig !== "restart:42" && cCH.word !== "tr.cloud.mayTrade");
+    ok("1-6 側欄列尾:有金額的列在 C 講「可能仍在下單」,B 講已暫停;沒金額不講",
+      envStratWord("a", cloudSt(okc("running"), rep(stp({ gated: false })))) === "tr.cloud.mayTrade" && envStratWord("a", cloudSt(okc("running"), rep(stp({})))) === "side.cloud.st.halted"
+      && envStratWord("b", cloudSt(okc("running"), rep(stp({ gated: false })))) === null); }
+
+  { // 側欄策略列的呼吸點(Wei 09-22;照網頁 workspace.html stratRunState)
+    const N = 1.8e12, S0 = N / 1000;
+    const rp = (o = {}) => ({ alive: true, report: { venues: V, config: { amounts: { a: 100, z: 0 } }, scheduled: ["a", "z"], states: { a: { updated_at: S0 - 60 }, z: { updated_at: S0 - 60 } }, halt: {}, reconciler: { alive: true }, ...o } });
+    ok("呼吸點照網頁 `name in amounts`:在金額表裡(金額 0 也算)+ 在排程上 + state 兩小時內動過才亮;不在表裡不亮", envRunDot("a", rp(), N) === true && envRunDot("z", rp(), N) === true && envRunDot("q", rp(), N) === false
+      && envRunDot("a", rp({ config: { amounts: "x" } }), N) === false);
+    const J = (p, r) => ({ picked: p || {}, removed: r || {} });
+    ok("呼吸點 5 分鐘樂觀窗(同網頁 pfJustPicked / pfJustRemoved):剛存進先亮、剛移出先熄;過了 5 分鐘交回真實判定",
+      envRunDot("q", rp(), N, J({ q: N - 299999 })) === true && envRunDot("q", rp(), N, J({ q: N - 300000 })) === false
+      && envRunDot("a", rp(), N, J(null, { a: N - 1000 })) === false && envRunDot("a", rp(), N, J(null, { a: N - 300000 })) === true && envRunDot("a", rp(), N, J()) === true);
+    const jm = envJustMark(J(null, { b: 1 }), { a: 100, c: 50 }, { a: 100, b: 20 }, 7);
+    ok("存金額後記樂觀窗:新進的 = picked(並撤銷它的 removed),移出的 = removed(並撤銷 picked),原本就在的不動", jm.picked.b === 7 && !("b" in jm.removed) && jm.removed.c === 7 && !("a" in jm.picked) && !("a" in jm.removed));
+    ok("呼吸點前提:這台電腦常駐程式活著 / 雲端主機 running;不然整份不亮(樂觀窗也不算)", envDotsUp("local", { alive: true }) === true && envDotsUp("local", { alive: false }) === false && envDotsUp("local", null) === false
+      && envDotsUp("cloud", cloudSt(okc("running"))) === true && ["stopped", "starting", "none"].every((k) => envDotsUp("cloud", cloudSt(okc(k))) === false) && envDotsUp("cloud", cloudSt({ code: "OFFLINE" })) === false);
+    ok("呼吸點:state 過了兩小時 / 沒有 updated_at 熄;排程讀不到(null)不擋、讀得到但不在上面熄",
+      envRunDot("a", rp({ states: { a: { updated_at: S0 - 7200 } } }), N) === false && envRunDot("a", rp({ states: { a: {} } }), N) === false
+      && envRunDot("a", rp({ scheduled: null }), N) === true && envRunDot("a", rp({ scheduled: ["b"] }), N) === false);
+    ok("呼吸點:一支交易所都沒綁(venues {})熄;沒有回報 / 回報壞了熄", envRunDot("a", rp({ venues: {} }), N) === false && envRunDot("a", null, N) === false && envRunDot("a", { report: null }, N) === false && envRunDot("a", { report: "x" }, N) === false);
+    const stp = (g) => ({ reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, gated: g } } });
+    ok("呼吸點照網頁:已暫停(HALT)、重開停止、可能仍在下單都不另外判——state 在動就亮(訊號照更新)",
+      envRunDot("a", rp({ halt: { halted: true, source: "web" } }), N) === true && envRunDot("a", rp(stp(true)), N) === true && envRunDot("a", rp(stp(false)), N) === true
+      && envRunDot("a", rp({ ...stp(true), states: { a: { updated_at: S0 - 9000 } } }), N) === false);
+    const appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8"), css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
+    ok("呼吸點接線:本機列(輪詢每輪 + 清單重建後)與雲端列(簽章帶著亮不亮)都走 envRunDot → envDotInto;點放在名字 span 最前面、讀屏不唸",
+      /trPaint\(\);\n\s*envPaintLocalDots\(\);/.test(src) && /if \(typeof envPaintLocalDots === "function"\) envPaintLocalDots\(\);/.test(appSrc)
+      && /envStratWord\(x\.name, st\), dotsUp && envRunDot\(x\.name, st, Date\.now\(\), TR_BAGS\.cloud\.just\)\]\)/.test(src) && /if \(dotsUp && envRunDot\(x\.name, st, Date\.now\(\), TR_BAGS\.cloud\.just\)\) envDotInto\(nm, true\);/.test(src)
+      && /dotsUp = envDotsUp\("cloud", st\);/.test(src) && /const L = TR_BAGS\.local, up = envDotsUp\("local", st\);/.test(src)
+      && /if \(res && res\.ok\) \{ if \(!S\.just\) S\.just = \{ picked: \{\}, removed: \{\} \}; envJustMark\(S\.just, stored, sending, Date\.now\(\)\);/.test(src)
+      && /d = trEl\("span", "run-dot live"\); d\.setAttribute\("aria-hidden", "true"\); nm\.insertBefore\(d, nm\.firstChild\);/.test(src)
+      && /envDotInto\(nm, up && envRunDot\(b\.dataset\.name, st, now, L\.just\)\)/.test(src));
+    ok("呼吸點樣式沿用 .run-dot.live:--color-green、--motion-blink ×3、reduced-motion 停格", /\.run-dot\.live \{ background: var\(--color-green\); animation: trRunPulse calc\(var\(--motion-blink\) \* 3\)/.test(css)
+      && /@media \(prefers-reduced-motion: reduce\) \{\n\s*\.run-dot\.live \{ animation: none; \}/.test(css)); }
 
   process.removeAllListeners("beforeExit");
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

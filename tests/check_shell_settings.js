@@ -29,6 +29,7 @@ const upRefresh = () => {}; let UP = null, hasToken = false;
 const TR_BAGS = { cloud: { st: null, reqIds: {} } };
 let running = false, LANG = "zh", sent = [], startOk = true;
 const envCloudKind = (st) => (st && st.kind) || "loading";
+const trRestartUnconfirmed = (r) => { const x = r && r.reconciler && r.reconciler.stopped; return !!(x && x.reason === "machine_restart" && x.gated === false); };   // 同 trade.js(那邊有自己的測試)
 const submitMessage = async (msg, o) => { sent.push([msg, o]); if (startOk) running = true; return startOk; };   // 真的那支一開跑就把 running 設起來
 const paneSt = { chat: { off: false } }, paneToggle = () => {};
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
@@ -60,6 +61,17 @@ p = paint({ ...C, phase: "ready" }); ok("ready:句子升一階、鈕換成描邊
   let q = plan(cloud({}));
   ok("雲端落後:那一行「有新版」+ 按之前就講的提醒句(本機 agent 去做、用你自己的 AI 額度)、鈕是「更新」、小點亮、聊天入口出現",
     q.cloud.s[0] === "up.c.available" && q.cloud.note[0] === "up.c.note" && q.btn.label[0] === "up.update" && q.btn.act === "cloud" && q.dot && q.chat.show && !q.chat.disabled);
+  { // spec-restart-gated-false-display §6-3:報告 reconciler.stopped.gated === false(停不住的是舊版對帳器)→ 版號一樣也要出「更新」
+    const same = cloud({ config_version: "1.1.83" });
+    const q1 = upPlan({ up: { ...C, phase: "idle" }, cloud: same.cloud, kind: "running", localTurn: false, mem: {}, cloudStale: true });
+    const q0 = upPlan({ up: { ...C, phase: "idle" }, cloud: same.cloud, kind: "running", localTurn: false, mem: {}, cloudStale: false });
+    ok("§6-3 gated:false:版號一樣也算雲端有新版(鈕、聊天入口出現,那一行講舊版停不住);沒有這個旗標照舊是最新版",
+      q1.cloud.has && q1.btn.act === "cloud" && q1.chat.show && q1.cloud.s[0] === "up.c.needsUpdate" && !q0.cloud.has && q0.cloud.s[0] === "up.latest");
+    const Rs = (g) => ({ kind: "running", cloud: same.cloud, report: { reconciler: { stopped: { reason: "machine_restart", gated: g } } } });
+    TR_BAGS.cloud.st = Rs(false); ok("§6-3 upNow 從報告讀 gated(嚴格 false)交給 upPlan", upNow().cloud.has === true && ((TR_BAGS.cloud.st = Rs(undefined)), upNow().cloud.has === false));
+    TR_BAGS.cloud.st = Rs(false); Object.assign(UPD, { result: "idle", doneAt: 5, doneFor: "1.1.83" }); upPaint();
+    ok("§6-3 版號一樣、但還停不住:不算追上(上一回合的結果不清掉)", UPD.doneAt === 5);
+    Object.assign(UPD, { result: null, doneAt: 0, doneFor: null }); TR_BAGS.cloud.st = null; }
   ok("沒主機 / 沒登入 / 還沒讀到:雲端那一行不畫", plan({ kind: "none", cloud: {} }).cloud === null && plan({ kind: "signedOut", cloud: {} }).cloud === null && plan(null).cloud === null);
   q = plan({ kind: "stopped", cloud: { config_version: "1.1.80" } }, { ...C, phase: "ready" });
   ok("雲端停機:講原因,鈕照樣能更新這台電腦", q.cloud.s[0] === "up.c.stopped" && !q.cloud.has && q.doLocal && q.btn.act === "local");

@@ -1259,7 +1259,7 @@ msgid "tr.ov.emptyBaseline"
 msgstr "Not enough records to draw the curve yet — it takes two. While Blave is open, one is recorded on the hour; nothing is recorded while it is closed."
 
 msgid "tr.ov.gapNote"
-msgstr "Gaps in the curve are times Blave wasn't open — nothing was recorded."
+msgstr "No records while Blave wasn’t open; the line connects straight across those gaps."
 
 msgid "tr.ov.range"
 msgstr "Range"
@@ -1298,7 +1298,7 @@ msgid "tr.ov.evHaltAuto"
 msgstr "Trading auto-paused"
 
 msgid "tr.ov.evHaltNote"
-msgstr "new entries paused; exits and stops still run"
+msgstr "exits and stops still run; new entries paused"
 
 msgid "tr.ov.evDowntimeNote"
 msgstr "Everything is frozen — no reducing or closing either. To resume, press “Start trading” and choose whether to sync positions."
@@ -1477,7 +1477,7 @@ msgid "side.cloud.st.trading"
 msgstr "Trading"
 
 msgid "side.cloud.st.halted"
-msgstr "Halted"
+msgstr "Paused"
 
 msgid "env.empty.title"
 msgstr "Cloud"
@@ -2299,10 +2299,58 @@ msgid "tr.ov.evRestartStopped"
 msgstr "Machine restarted — trading paused"
 
 msgid "tr.ov.evRestartStoppedNote"
-msgstr "no orders at all; exits and stops won’t run either"
+msgstr "exits and stops won’t run; no orders at all"
 
 msgid "tm.evRestartStoppedNote"
 msgstr "Your machine restarted and auto-trading is paused. No orders are going out — nothing is managing your positions, and exits and stops won’t run. Press Start trading on the Auto trading page to resume, then choose to catch up or wait for new signals. Stop orders placed on the exchange are unaffected."
 
 msgid "tr.cloud.cxSavedStale"
 msgstr "The key was sent, but the cloud machine hasn’t reported back, so this page hasn’t switched to the trading settings. You can connect again, or ask the agent in the chat to check on the machine."
+
+msgid "tr.cloud.mayTrade"
+msgstr "May still be trading"
+
+msgid "tm.stMayTrade"
+msgstr "May still be trading"
+
+msgid "tr.cloud.restartUnconfirmed"
+msgstr "The machine restarted, but we couldn’t confirm trading stopped — your positions may still be traded. Press Pause trading first, then Update to the latest version now."
+
+msgid "up.c.needsUpdate"
+msgstr "The cloud’s trading program is an old version and couldn’t be confirmed stopped after the restart. It needs an update."
+
+msgid "tr.ov.evRestartStopFailed"
+msgstr "Machine restarted — trading may not have stopped"
+
+msgid "tr.ov.evRestartStopFailedNote"
+msgstr "press Pause trading first, then Update to the latest version now; the workspace is out of date"
+
+msgid "tr.haltReasonAll"
+msgstr "No orders are going out — exits and stops won’t run either. Once the problem is fixed, press Start trading; if you’re not sure what caused it, ask the agent in chat."
+
+msgid "tr.cloud.restartNoAccount"
+msgstr "The machine restarted, so no orders are going out — orders from your own strategy code are blocked too. Press Start trading to resume."
+
+msgid "tr.cloud.restartNoAccountStart"
+msgstr "Your scheduled strategy code hasn’t run since the machine restarted. Starting resumes it on schedule, and it places orders as usual."
+
+msgid "tr.cloud.closeAllWarn2Unconfirmed"
+msgstr "Strategy amounts are kept: after you update to the latest version and press Start trading, positions are rebuilt to those amounts. If you don’t want that, zero the amounts first."
+
+msgid "tr.cloud.saveIdleUnconfirmed"
+msgstr "The cloud is paused. The new amounts are stored on the machine and used after you update to the latest version and press Start trading."
+
+msgid "tr.cloud.recomputing"
+msgstr "Strategies are recomputing on post-restart data. Catch up becomes available when they finish; close this box and open it again then."
+
+msgid "tr.orderFailedLastWhy"
+msgstr "Last order failed: {why}"
+
+msgid "tr.startWarn2Local"
+msgstr "Nothing ran while Blave was closed, so strategy signals didn’t update. Catch up trades on the signals as they stand now, which may still be from before you closed Blave; each strategy switches to a fresh signal after its next scheduled run. To trade only on fresh signals, choose Start, wait for new signals."
+
+msgid "tr.cloud.haltReasonUnconfirmed"
+msgstr "An old version of the trading program may still be running. Press Update to the latest version now first; if you’re not sure why it paused, ask the agent in chat."
+
+msgid "tr.ov.curveAriaPnl"
+msgstr "Cumulative PnL curve, {a} to {b}, {n} records"

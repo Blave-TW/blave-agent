@@ -518,7 +518,10 @@ function upPlan(o) {
   else if (o.kind === "stopped") C = { v: c.config_version || null, s: ["up.c.stopped"], cls: "", has: false };
   else if (o.kind === "starting") C = { v: null, s: ["side.starting"], cls: "", has: false };
   else if (o.kind === "running") {
-    const cv = c.config_version || null, lv = c.latest_config_version || null, lag = !!(cv && lv && cv !== lv);
+    const cv = c.config_version || null, lv = c.latest_config_version || null;
+    /* 主機重開、沒能確認停住(報告 reconciler.stopped.gated === false):停不住的是舊版對帳器,就算版號已經一樣也要更新(spec-restart-gated-false-display §6-3;
+       網頁那邊 api 已經這樣算,/cloud/state 沒帶這個旗標,電腦版從報告自己讀) */
+    const stale = !!o.cloudStale, lag = !!(cv && lv && cv !== lv) || stale;
     const updating = !!mem.cloudTurn && !!o.localTurn;                                  // 按下更新送出的那一回合還在跑
     // 同一版的上一回合結束了、版本還沒追上:回合沒出錯 → 「agent 處理過了,結果看聊天,等主機回報」;出錯 → 指到聊天。都不出紅字、鈕照樣能按
     const after = !updating && !!mem.doneAt && mem.doneFor === lv && lag;
@@ -527,7 +530,7 @@ function upPlan(o) {
     else if (after && mem.result === "idle") { C.s = ["up.c.checking"]; C.note = ["up.c.note"]; }   // 提醒句照出:再按是再開一回合、再花一次額度
     else if (after && mem.result === "fault") { C.s = ["up.c.available", { nv: lv }]; C.cls = "up"; C.note = ["up.c.seeChat"]; }
     // 按之前就講:由這台電腦的 agent 去做、用你自己的 AI 額度、下單程式在跑會先問你
-    else if (lag) { C.s = ["up.c.available", { nv: lv }]; C.cls = "up"; C.note = ["up.c.note"]; }
+    else if (lag) { C.s = cv && lv && cv !== lv ? ["up.c.available", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.note"]; }
   }
   // 停用:這台電腦有回合在跑(雲端那半是本機 agent 的一回合;本機那半會重開 app——兩件都要等回合結束)
   const turn = !!o.localTurn;
@@ -546,7 +549,8 @@ function upPlan(o) {
 function upLocalTurn() { try { return running === true; } catch (_) { return false; } }   // app.js 還沒跑到 `let running` 那一行時讀它會丟 TDZ
 function upNow() {
   const cst = TR_BAGS.cloud.st, cloud = (cst && cst.cloud) || null;
-  return upPlan({ up: UP, cloud, kind: cst ? envCloudKind(cst) : "loading", localTurn: upLocalTurn(), mem: UPD, now: Date.now() });
+  return upPlan({ up: UP, cloud, kind: cst ? envCloudKind(cst) : "loading", localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
+    cloudStale: !!(cst && trRestartUnconfirmed(cst.report)) });
 }
 /* 那一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。回合根本沒跑起來也走這裡(upGo)。 */
 function upTurnEnded(faulted) {
@@ -559,7 +563,9 @@ function upTurnEnded(faulted) {
 function upPaint() {
   const cloud = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {};
   // 追上了 / 出了新一版:上一次的結果不再適用(不然下一版會直接被標成「這次沒有更新成功」)
-  if (UPD.doneAt && (cloud.config_version && cloud.config_version === cloud.latest_config_version || (cloud.latest_config_version && cloud.latest_config_version !== UPD.doneFor))) { UPD.doneAt = 0; UPD.result = null; UPD.doneFor = null; }
+  // 「追上了」要連停不住那一條一起算:版號一樣、但舊對帳器還沒停住(gated:false)不算追上
+  const caughtUp = cloud.config_version && cloud.config_version === cloud.latest_config_version && !(TR_BAGS.cloud.st && trRestartUnconfirmed(TR_BAGS.cloud.st.report));
+  if (UPD.doneAt && (caughtUp || (cloud.latest_config_version && cloud.latest_config_version !== UPD.doneFor))) { UPD.doneAt = 0; UPD.result = null; UPD.doneFor = null; }
   const p = upNow(), tx = (x) => (x == null ? "" : typeof x === "string" ? x : t(x[0], x[1]));
   $("set-up-dot").hidden = !p.dot;
   $("set-up-ver").textContent = tx(p.local.v);
@@ -875,6 +881,7 @@ async function stratRefresh(selectTouched) {
     wrap.append(b, del);
     box.appendChild(wrap);
   });
+  if (typeof envPaintLocalDots === "function") envPaintLocalDots();   // 列是重建的:呼吸點不等下一輪輪詢
   // 這一輪動過的(新出現、或 mtime 變了)→ 選最近的那支
   if (selectTouched) {
     const touched = RP.list.find((x) => before.get(x.name) !== x.mtime);
@@ -1073,13 +1080,15 @@ function delConfirm(m, opener) {
 /* env / footWhere(規格 spec-desktop-local-and-cloud §1.2):寫進雲端的確認框要標明目的地——標題列灰底 +「雲端」記號,
    鈕正上方再一行 {哪一台} · {真錢/模擬} · {交易所}。markKind = 錢記號的顏色(real / paper),lead = 放在所有句子最上面的那一塊
    (今天只有「兩邊都真錢」那個灰記號)。**都不給就跟以前一模一樣**。 */
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, env, footWhere, lead, single }) {
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single }) {
   $("del-title").textContent = title;
   const body = $("del-body"); body.className = "del-body lines"; body.textContent = "";
   if (lead) body.appendChild(lead);
-  lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; body.appendChild(p); });
+  lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; if (okDisabled && okWhy && x === okWhy) p.id = "del-ok-why"; body.appendChild(p); });
   if (extra) body.appendChild(extra);
   $("del-ok").textContent = ok; $("del-ok").disabled = !!okDisabled;
+  // okWhy = 停用的主鈕為什麼按不了(lines 裡的那一句):讀屏停在鈕上時唸得到
+  if (okDisabled && okWhy && $("del-ok-why")) $("del-ok").setAttribute("aria-describedby", "del-ok-why"); else $("del-ok").removeAttribute("aria-describedby");
   $("del-modal").querySelector(".modal-head").classList.toggle("cloud", env === "cloud");
   $("del-env").hidden = env !== "cloud"; $("del-env").textContent = env === "cloud" ? t("env.cloud") : "";
   $("del-where").hidden = !footWhere; $("del-where").textContent = footWhere || "";
@@ -1102,7 +1111,7 @@ function delClose(deleted) {
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
-  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt"); $("del-ok").disabled = false;
+  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
   $("del-env").hidden = true; $("del-where").hidden = true; $("del-modal").querySelector(".modal-head").classList.remove("cloud"); $("del-cancel").hidden = false;
   if (deleted) $("cs-newrow").focus();
   else if (c && c.opener && c.opener.isConnected) c.opener.focus();

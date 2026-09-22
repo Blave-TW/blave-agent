@@ -31,8 +31,20 @@ function cloudLine(st) {
   if (!st.alive) return { money, state: "unknown" };
   if (r.halt && r.halt.halted) return { money, state: "paused" };
   // 主機重開後對帳器停著、等人按「啟動下單」:同畫面一律「已暫停」(不是「不明」)
+  // 主機重開、但沒能確認停住(舊對帳器沒有重開閘門、停止後又有心跳;嚴格 === false):不能說已暫停——可能仍在下單。
+  // halt 排在前面先判:「重開沒停住但已按暫停」回 paused,那是真話(舊對帳器認 HALT)
+  if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart" && r.reconciler.stopped.gated === false) return { money, state: "mayTrade" };
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart") return { money, state: "paused" };
   return { money, state: r.reconciler && r.reconciler.alive ? "on" : "unknown" };
+}
+/* 雲端有沒有新版在等(選單列圖示旁那個小點)。規則同 renderer 的 upPlan:主機在跑,而且版號落後,
+   **或**報告說重開後沒能確認停住(reconciler.stopped.gated === false,嚴格)——停不住的是舊版對帳器,版號一樣也要更新 */
+function cloudNeedsUpdate(st) {
+  const c = st && st.cloud;
+  if (!c || c.code !== "OK" || !c.machine || c.machine.state !== "running") return false;
+  if (c.config_version && c.latest_config_version && c.config_version !== c.latest_config_version) return true;
+  const x = st.report && st.report.reconciler && st.report.reconciler.stopped;
+  return !!(x && typeof x === "object" && x.reason === "machine_restart" && x.gated === false);
 }
 /* 雲端現在是不是「確定在下單」(結束確認框要不要多那一句)。保守:不確定就不說——那一句是在替雲端做保證。 */
 const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state === "on"); };
@@ -42,11 +54,11 @@ const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state =
 function statusLine(tpl, line, labels) {
   if (!tpl || !line || !labels) return null;
   const money = line.money === "paper" ? labels.moneyPaper : labels.moneyReal;
-  const state = line.state === "on" ? labels.stOn : line.state === "paused" ? labels.stPaused : labels.stUnknown;
+  const state = line.state === "on" ? labels.stOn : line.state === "paused" ? labels.stPaused : line.state === "mayTrade" ? labels.stMayTrade : labels.stUnknown;
   if (!money || !state) return null;
   return clean(fmt(tpl, { money, state }), 80);
 }
 const notifTitle = (prefix, title) => (prefix ? prefix + title : title);
 const quitDetail = (body, note) => (note ? body + "\n\n" + note : body);
 
-module.exports = { clean, fmt, cloudLine, cloudTrading, statusLine, notifTitle, quitDetail, VENUE_ID };
+module.exports = { clean, fmt, cloudLine, cloudTrading, cloudNeedsUpdate, statusLine, notifTitle, quitDetail, VENUE_ID };

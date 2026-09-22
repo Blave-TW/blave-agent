@@ -24,7 +24,7 @@ function trErrorKind(error) {
    啟動方向照舊鎖住:那個重複送就是真的多開一次倉。 */
 function trBtnLocked(pending, stopSide) { return !!pending && !stopSide; }
 // 這個狀態下鈕是「暫停」那一側嗎。狀態不明時給暫停:不知道有沒有在跑,就給安全方向的那顆(稽核 S5)
-function trStopSide(state) { return state === "running" || state === "unknown"; }
+function trStopSide(state) { return state === "running" || state === "unknown" || state === "unconfirmed"; }
 /* 「暫停」現在送不送得出去。狀態說在跑 = 是;**有任何過場也算**(spec-desktop-start-pending-stop):
    按下啟動、還沒生效那一段(ack 之前也一樣)機器可能已經在下單,暫停要按得到;暫停在途、報告還沒收斂時也要能再按
    (送的是同一顆 halt,trSend 單飛)。暫停排在啟動後面執行(cloudcmd.js 的 POST 排隊 + 兩邊佇列先進先出),最後一定停在暫停。
@@ -32,10 +32,9 @@ function trStopSide(state) { return state === "running" || state === "unknown"; 
 function trStopSideNow(state, pending) { return trStopSide(state) || !!pending; }
 // 按下啟動、還沒收斂:主鈕鎖著寫「啟動中…」,旁邊多一顆「暫停下單」(B 版)
 function trStartPending(pending) { return !!pending && pending.want === "running"; }
-/* 暫停(或暫停並平倉)還在路上:主鈕「暫停中…」**真的停用**(Wei 09-22,disabled + 灰階)——在途期間不能再按;
-   ack 回來(機器收下了)或過了收斂上限才恢復,那之後再按是新的一次暫停 */
-// 結果不明(ack 逾時)不算在途:halt 已經在佇列裡(或已執行),再按沿用同一顆 request_id、api 不會重排——而且那是改成「暫停並平倉」唯一的出口
-function trHaltInFlight(pending, nowMs) { return !!pending && pending.want === "halted" && !pending.acked && !pending.unknown && nowMs < pending.until; }
+/* 暫停(或暫停並平倉)還在過場:主鈕「暫停中…」**整段真的停用**(Wei 09-22 選 B,spec-desktop-pausing §1 被取代)——
+   ack 之後、結果不明也一樣;收斂或過了收斂上限(trPendingCheck 清掉 pending)才放開,那之後再按是新的一次暫停 */
+function trHaltInFlight(pending, nowMs) { return !!pending && pending.want === "halted" && nowMs < pending.until; }
 /* 回應落在哪一桶。雲端那條路的 kind 由 cloudcmd.js 判(它知道失敗發生在指令階段還是 ack 階段,那是這裡看不出來的:
    同一個代號在兩個階段的意思不同),有就用它;本機沒有這個欄位,照代號查表。 */
 function trKindOf(res) {
@@ -75,7 +74,29 @@ function trRestartStopped(r) { const x = r && r.reconciler && r.reconciler.stopp
 /* 「重開過、什麼單都不下」是哪一種(eval-downtime-behavior-unified;Wei:電腦版結束再打開也算):
    "machine" = 雲端主機重開後對帳器停著;"app" = 這台電腦上次在下單中、Blave 被結束再打開
    (監督者說沒在跑、也沒人要它跑,但對帳器留過心跳 = 以前跑過;從來沒跑過的才叫「尚未啟動下單」);其餘 null */
+/* 主機重開、但沒能確認停住(spec-restart-gated-false-display):舊對帳器沒有重開閘門、停止之後又有心跳 = 它在跑、什麼都不擋。
+   **嚴格 === false**:缺欄位(舊 runtime)或 true 照現行(已暫停 + B)。只有雲端會有 */
+function trRestartUnconfirmed(r) { const x = r && r.reconciler && r.reconciler.stopped; return !!(x && typeof x === "object" && x.reason === "machine_restart" && x.gated === false); }
+/* 已暫停的 HALT 是不是「什麼單都不下」(A′,audit-trading-ux 1-2;規則同 api agent_event_copy):
+   portfolio / web / user / flatten / desktop 與缺欄位 = A(不開新倉、平倉停損照走);其他自動來源(reconciler、日後新增的)= A′。
+   預設保守:不認得的來源寧可講「什麼單都不下」 */
+const TR_HALT_KEEP_EXITS = ["portfolio", "web", "user", "flatten", "desktop"];
+function trHaltStopsAll(h) { const src = h && h.source; return !!(h && typeof src === "string" && src && TR_HALT_KEEP_EXITS.indexOf(src) < 0); }
+/* 沒有交易所、但主機重開後停著(audit 2-1):紀錄檔只有「啟動下單」清得掉,連用戶自己策略程式下的單也被擋。
+   不能掉進 onboard 沒有出口——狀態行照講、標頭照給「啟動下單」。沒確認停住(gated:false)那一種不在這裡 */
+function trNoAccountStopped(r) { return !!r && !!r.venues && !trHasAccount(r) && trRestartStopped(r) && !trRestartUnconfirmed(r); }
+/* 重開停著、策略還沒用開機後的資料算完第一輪(runtime 的 stopped.recomputed === false;空集合算 true):
+   「補齊部位」會照重開前的訊號下單,先鎖住;「等新訊號」照給。欄位不在(舊 runtime)= 照舊不鎖 */
+function trRecomputing(r) { const x = r && r.reconciler && r.reconciler.stopped; return !!(x && typeof x === "object" && x.recomputed === false); }
+/* 已暫停那一行的原因句(狀態行與標頭的正文墨色切段共用同一個,不各寫一份):重開過 = B(主機 / Blave 各一句,優先);
+   HALT 自動來源 = A′(C 裡沒有啟動鈕,換成指向更新那一句);其他 HALT = A */
+function trHaltReasonText(r) {
+  const rk = trRestartKind(r);
+  return rk === "machine" ? t("tr.cloud.restartStopped") : rk === "app" ? t("tr.restartStoppedLocal")
+    : trHaltStopsAll(r && r.halt) ? (trRestartUnconfirmed(r) ? t("tr.cloud.haltReasonUnconfirmed") : t("tr.haltReasonAll")) : t("tr.haltReason");
+}
 function trRestartKind(r) {
+  if (trRestartUnconfirmed(r)) return null;   // 不是「什麼單都不下」:B 的原因行、重開後的啟動框那一行都不能帶出來
   if (trRestartStopped(r)) return "machine";
   const sup = r && r.daemon && r.daemon.reconciler;
   return sup && sup.running === false && sup.wanted !== true && r.reconciler && r.reconciler.heartbeat_at ? "app" : null;
@@ -85,7 +106,9 @@ function trExecState(st) {
   if (!r) return "loading";
   if (r.error || !r.venues || typeof r.venues !== "object") return "unknown";
   if (!trHasAccount(r)) return "noaccount";
-  if (r.halt && r.halt.halted) return "halted";
+  if (r.halt && r.halt.halted) return "halted";   // 含「重開沒停住、已按暫停」:舊對帳器認 HALT,已暫停 + A 是真話
+  // 重開沒停住、還沒按暫停:可能仍在下單(不是 dead、不是 halted、也不借 running——不能亮綠點)。stopped 期間 alive 一律 false,不看它
+  if (trRestartUnconfirmed(r)) return "unconfirmed";
   // 重開過、對帳器整個停著、等人按「啟動下單」(Wei 09-22:已暫停 / 已停止是同一件事,一律「已暫停」):不是「死了」。
   // 電腦版那一種要常駐程式在跑才信(監督者的欄位是它寫的)
   const rk = trRestartKind(r);
@@ -188,6 +211,18 @@ function trTotals(amounts, equity) {
   const mult = typeof equity === "number" && equity > 0 ? total / equity : null;
   return { total, mult };
 }
+/* 累積損益的線段(照雲端 drawOvPnl):相鄰兩點都在 0 的同一側 → 一段,顏色跟著那一側(>= 0 算綠);
+   跨過 0 → 在交越點(線性內插的時間)切成兩段,各取各的顏色。回 [{ t0, v0, t1, v1, pos, cut0?, cut1? }] */
+function trPnlSegments(pts) {
+  const out = [];
+  for (let j = 1; j < pts.length; j++) {
+    const a = pts[j - 1], b = pts[j];
+    if ((a.v >= 0) === (b.v >= 0)) { out.push({ t0: a.t, v0: a.v, t1: b.t, v1: b.v, pos: b.v >= 0 }); continue; }
+    const f = Math.abs(a.v) / (Math.abs(a.v) + Math.abs(b.v)), tm = a.t + (b.t - a.t) * f;
+    out.push({ t0: a.t, v0: a.v, t1: tm, v1: 0, cut1: true, pos: a.v >= 0 }, { t0: tm, v0: 0, cut0: true, t1: b.t, v1: b.v, pos: b.v >= 0 });
+  }
+  return out;
+}
 function trDirty(names, stored, edits) { return names.some((n) => edits[n] != null && edits[n] !== (stored[n] || 0)); }
 function trCanonSym(s) { return String(s || "").replace(/-/g, "").toUpperCase(); }
 function trCanonKey(k) { k = String(k || ""); const spot = /@spot$/i.test(k); return trCanonSym(k.replace(/@spot$/i, "")) + (spot ? "@spot" : ""); }
@@ -243,6 +278,10 @@ function trAmountError(s) {
 }
 /* 模擬帳戶的槓桿上限(§5)。over = 超過;blocked = 超過而且是往上調——**調低永遠可存**:淨值掉了以後原本合法的設定會自己變成 10.05 倍,要讓人能往下調 */
 const TR_PAPER_MAX_LEV = 10;        // 同 lib/order_paper.py MAX_LEVERAGE
+/* 去向行「{where} · {money} · {venue}」:沒交易所(B0)時後兩段是空的,不留「雲端 ·  · 」(round-2 稽核 B2) */
+function trWhereTidy(s) { return String(s || "").split("·").map((x) => x.trim()).filter(Boolean).join(" · "); }
+/* 確認框的淨值:金額表上那行「你淨值的 N x」畫的時候用的那一個(同一個視角才算);沒畫過 / 讀不到才用現在的 */
+function trShownEquity(shown, env, now) { return shown && shown.env === env && typeof shown.v === "number" && isFinite(shown.v) ? shown.v : now; }
 function trLevCheck(isPaper, mult, newTotal, storedTotal) {
   const over = !!isPaper && typeof mult === "number" && isFinite(mult) && mult > TR_PAPER_MAX_LEV;
   return { over, blocked: over && newTotal > storedTotal };
@@ -285,6 +324,19 @@ function trLiveOrderErr(errs, pending) {
     if (e && typeof e === "object" && pending.has(trCanonKey(e.symbol))) return e;
   }
   return null;
+}
+/* 掛出來的那一筆用紅字現在式、還是灰字「上次」(帶時間)。紅字要三件都成立(0.0.3 實機:兩天前那筆 110,000 一按啟動就變紅):
+   ① 對帳器在跑(或重開沒停住);
+   ② 它是**最近一輪對帳**的失敗——lib/portfolio 每一輪先寫 last_reconcile.json 再下單、持續失敗每輪都會再記一筆,
+      所以這一輪的失敗 ts ≥ 快照 ts;比快照舊 = 之後又對帳過一輪、沒再失敗在它上面;
+   ③ 不是在這個視角這次按「啟動下單」之前發生的(按下到第一輪對帳之間,上一段的失敗還是「最近一輪」那筆)。
+   時間讀不出來(舊檔 / 壞欄位)就不降:失敗不能被講小 */
+function trErrLoud(e, headState, startAt, lastRec) {
+  if (headState !== "running" && headState !== "unconfirmed") return false;
+  const em = trMs(e && e.ts), lm = trMs(lastRec && lastRec.ts);
+  if (em == null) return true;
+  if (lm != null && em < lm) return false;
+  return !(startAt && em < startAt);
 }
 /* 「上次下單失敗」前面的時間(同雲端 pfErrStamp):HH:mm;逾 24 小時帶日期 MM/DD HH:mm——對帳器掛掉的失敗多半已經隔天,
    沒有日期的話 22:26 讀起來像今天。解不了回 null(那一行就不帶時間) */
@@ -371,6 +423,10 @@ function envCell(env, st, pending) {
   out.money = envMoney(st);
   if (kind === "stopped") { out.dot = "bad"; out.word = "side.stopped"; out.sig = "stopped"; return out; }
   const state = trExecState(st);
+  // 重開沒停住:錢可能正在外面跑,人在另一邊也要看得到(紅短劃 + 詞;看過一次就消,同其他出事)
+  if (state === "unconfirmed") { out.dot = "bad"; out.word = "tr.cloud.mayTrade"; out.sig = "unconfirmed:" + String(st.report.reconciler.stopped.at || ""); return out; }
+  // 重開停著(B):不是人按的、部位沒人管——同「下單停了,不是你按的」那一級
+  if (state === "halted" && trRestartKind(st.report) === "machine") { out.dot = "bad"; out.word = "tr.halted"; out.sig = "restart:" + String(st.report.reconciler.stopped.at || ""); return out; }
   if (state === "halted" && envAutoHalt(st)) { out.dot = "bad"; out.word = "env.st.autoPaused"; out.sig = "halt:" + String(st.report.halt.at || ""); return out; }
   if (state === "dead" && !pending && trDeadKind(st.report) === "died") { out.dot = "bad"; out.word = "tr.s.died"; out.sig = "died:" + String((st.report.reconciler || {}).heartbeat_at || ""); return out; }
   // 雲端有在途的指令:切走也看得到(規格 §1.3)。排在紅短劃後面——出事比「我按的還在路上」更該先講。
@@ -429,12 +485,44 @@ function envOpenView(kind, hasTok, pv) {
   if (pv === "offer" || pv === "noTrial") return "card";
   return pv === "trial" || pv === "plan" || pv === "included" ? "start" : "unknown";
 }
+/* 側欄策略列名字前的綠呼吸點——逐條照網頁 workspace.html stratRunState(Wei 09-22:照網頁現在的規則):
+   點 = 這支的訊號在更新,不是「對帳器在下單」。
+   ① 剛存進組合的 5 分鐘內先亮(排程 / 首跑 / 回報還在路上);剛移出的 5 分鐘內先熄(回報要下一輪才少掉這個名字)
+   ② 一支交易所都沒綁 = 不亮(機器端同時停掉訊號排程)
+   ③ 名字在金額表裡(**不看金額大小**,同網頁 `name in amounts`)、在排程上(排程讀不到 = 不擋)、state.json 兩小時內動過
+   已暫停(HALT)照亮——暫停期間訊號照更新;重開停止、可能仍在下單不另外判,交給 state 有沒有在動。
+   just = { picked: {name: ms}, removed: {name: ms} }(envJustMark 記) */
+const ENV_RUN_FRESH_S = 7200, ENV_JUST_MS = 300000;
+function envRunDot(name, st, nowMs, just) {
+  const g = just && just.picked && just.picked[name];
+  if (g && nowMs - g < ENV_JUST_MS) return true;
+  const x = just && just.removed && just.removed[name];
+  if (x && nowMs - x < ENV_JUST_MS) return false;
+  const r = st && st.report;
+  if (!r || typeof r !== "object") return false;
+  const vs = r.venues;
+  if (vs && typeof vs === "object" && !Object.keys(vs).length) return false;
+  const a = r.config && r.config.amounts;
+  if (!a || typeof a !== "object" || !(name in a)) return false;
+  const onSched = Array.isArray(r.scheduled) ? r.scheduled.indexOf(name) >= 0 : true;
+  const s = r.states && r.states[name], at = s && s.updated_at;
+  return onSched && typeof at === "number" && isFinite(at) && nowMs / 1000 - at < ENV_RUN_FRESH_S;
+}
+/* 呼吸點整份的前提:那台機器在跑。這台電腦 = 常駐程式活著(st.alive);雲端 = 主機 running。
+   都不成立時不看 ① 的樂觀窗——沒有東西在跑,訊號不會更新 */
+function envDotsUp(env, st) { return env === "cloud" ? envCloudKind(st) === "running" : !!(st && st.alive); }
+/* 存金額成功後記 ①(同網頁 pfJustPicked / pfJustRemoved):新進組合的名字 = picked(並撤銷它的 removed);移出的 = removed */
+function envJustMark(just, stored, sending, nowMs) {
+  Object.keys(sending || {}).forEach((n) => { if (!(n in (stored || {}))) just.picked[n] = nowMs; delete just.removed[n]; });
+  Object.keys(stored || {}).forEach((n) => { if (!(n in (sending || {}))) { delete just.picked[n]; just.removed[n] = nowMs; } });
+  return just;
+}
 // 側欄雲端清單列尾的狀態字:有投入金額的才講(下單中 / 已停);其餘不講
 function envStratWord(name, st) {
   const r = st && st.report, a = r && r.config && r.config.amounts;
   if (!a || !(a[name] > 0)) return null;
   const state = trExecState(st);
-  return state === "running" ? "side.cloud.st.trading" : state === "halted" ? "side.cloud.st.halted" : null;
+  return state === "running" ? "side.cloud.st.trading" : state === "unconfirmed" ? "tr.cloud.mayTrade" : state === "halted" ? "side.cloud.st.halted" : null;
 }
 /* ── 視角純邏輯到此 ───────────────────────────────────────────── */
 
@@ -444,6 +532,7 @@ function envStratWord(name, st) {
 function trNewBag(env) {
   return {
     env, api: null, st: null, open: false, tab: null, landed: false,
+    just: { picked: {}, removed: {} },   // 側欄呼吸點的 5 分鐘樂觀窗(envJustMark)
     pending: null,                 // { want, until }:按了啟動/暫停之後,等狀態檔自己說它變了
     reqIds: {},                    // 雲端:cmd → 上一趟的 request_id(重試沿用同一顆;收斂 / 被接受 / 被拒絕就換新的)
     list: [], listLoaded: false, meta: new Map(),     // 回測過的策略與它們的 symbol / market / 是不是 Type C
@@ -566,7 +655,7 @@ function trPushLabels() {
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
-    lang: LANG, stLocal: t("tm.stLocal"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"),
+    lang: LANG, stLocal: t("tm.stLocal"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
     // Binance 金鑰重查的通知(主行程 binanceNotify):這些事件只會來自這台電腦,{where} 在這裡就填好;{ip} 留給主行程填
     key_ipTitle: t("tm.key.ipTitle", { where: t("env.local") }), key_ipBody: t("tm.key.ipBody", { ip: "{ip}" }), key_rejTitle: t("tm.key.rejTitle", { where: t("env.local") }),
@@ -615,6 +704,7 @@ async function trPoll() {
     if (S === L && S.open) { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
     trWith(L, trPendingCheck); trWith(C, trPendingCheck);   // 兩邊各自的過場都要收(切走了照樣收斂)
     trPaint();
+    envPaintLocalDots();
     if (typeof upPaint === "function") upPaint();   // 設定 › 關於 的雲端那一行與聊天的更新入口:讀的是這一份雲端狀態
     if (!$("cx-scrim").hidden) cxModalPaint();
   } finally {
@@ -635,6 +725,7 @@ function trCloudOwnerCheck(C) {
     C.sent = null; C.sentRep = null; C.save = null; C.saveErr = null; C.saveUnknownAt = 0; C.reqIds = {}; C.reqFor = {}; C.sig.pos = null;
     // 上一個人的過場與在途那一趟也不是這個人的:不清的話,B 按的暫停會併進 A 那一趟(trSend 單飛)而根本沒送出(稽核 M2)
     C.pending = null; C.sending = {}; C.cxSaved = null; C.cxPend = null; trAlert("", null, C);
+    C.just = { picked: {}, removed: {} };   // 呼吸點 5 分鐘樂觀標記也是上一個人的
     CDEL.gone.clear(); CDEL.busy.clear(); CDEL.ids = {}; }   // 上一個人的刪除在途 / 壓抑不是這個人的
   // S5 收斂:「已存到」→ 報告裡長出交易所就換成分頁(讀屏播一次);「已送出、等回報」→ 帳戶讀取時間比送出新 / 解除的那一家消失
   const r = C.st && C.st.report;
@@ -730,13 +821,15 @@ function trStateText(state) {
   if (down) return down === "retry" ? t("tr.hostRetry") : t("tr.hostDown");
   if (state === "loading") return t("tr.loading");
   if (state === "unknown") return t("tr.unknown");
-  if (state === "noaccount") return t("tr.noAccount");
+  if (state === "noaccount") return trNoAccountStopped(r) ? t("tr.halted") + " · " + t("tr.cloud.restartNoAccount") : t("tr.noAccount");
   let s = t("tr.autoOn");
+  // 主機重開、沒能確認停住:狀態詞「可能仍在下單」+ 紅字原因行(先暫停、再更新)。不提早 return:讀帳失敗的前綴照樣要接
+  if (state === "unconfirmed") s = t("tr.cloud.mayTrade") + " · " + t("tr.cloud.restartUnconfirmed");
   /* 已暫停一律帶原因行(常駐、不截斷):重開過 = 什麼單都不下(B,優先);HALT = 不開新倉、平倉停損照走(A)。
      兩者同時成立(先按暫停、之後又重開)講 B——那時「平倉照常」已經不成立 */
-  if (state === "halted") { const rk = trRestartKind(r);
+  else if (state === "halted") { const rk = trRestartKind(r);
     s = (rk || envHeadWord(state, TR.st) !== "env.st.autoPaused" ? t("tr.halted") : t("env.st.autoPaused")) + " · "
-      + (rk === "machine" ? t("tr.cloud.restartStopped") : rk === "app" ? t("tr.restartStoppedLocal") : t("tr.haltReason")); }
+      + trHaltReasonText(r); }
   else if (state === "dead") s = trDeadKind(r) === "died" ? t("tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" })
     : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
@@ -748,7 +841,7 @@ function trShortState(state) {
   if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") return t("side.stopped");
   if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting");
   if (trHostDown(TR.st, Date.now())) return t("tr.hostShort");
-  const s = state === "running" ? t("tr.s.on") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
+  const s = state === "running" ? t("tr.s.on") : state === "unconfirmed" ? t("tr.cloud.mayTrade") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
     : state === "dead" ? (trDeadKind(r) === "died" ? t("tr.s.died") : t("tr.s.off")) : "";
   return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + (s ? " · " + s : "") : s;
 }
@@ -792,7 +885,9 @@ function trPendingCheck() {
   // 雲端:等的過程中主機停機了——人要看到的是「它停了」,不是「我按的那個不知道怎樣」(規格 §1.4)
   if (cloud && envCloudKind(TR.st) === "stopped") { TR.pending = null; trClearRunIds(TR.reqIds); trAlert(""); return; }
   // 收斂了 = 這個意圖已經完成:下一次按同一顆鈕是新的意圖,要換一顆 request_id(不換的話 15 分鐘內會被當成重送、整個不執行)
-  if (state === p.want) { TR.pending = null; trClearRunIds(TR.reqIds); trAlert(""); }
+  // B0 的啟動:沒有交易所,狀態不會變成 running——紀錄檔清掉(不再是 B0)就算完成
+  const b0Done = p.want === "running" && state === "noaccount" && !trNoAccountStopped(TR.st && TR.st.report);
+  if (state === p.want || b0Done) { TR.pending = null; trClearRunIds(TR.reqIds); trAlert(""); }
   /* 等到逾時還沒對上。本機:ack 代表指令檔已經落地,沒收斂就是真的失敗,照原本那兩句。
      雲端:ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來——**不可以因為沒收斂就說「沒送到」**
      (規格 §1.3);說了就是叫一個暫停其實已經生效的人去交易所撤 key。一律走「結果不明」。
@@ -845,7 +940,7 @@ async function trRun(want, steps, cmd) {
     if (mine.cmd === "close_all" && !(res && res.ok)) trAlert(trSendError(res, "stop", S.env), null, S);
   } else {
     if (res && res.ok) {
-      mine.acked = true;   // 機器收下了:「暫停中…」從這一刻起按得下去(trHaltInFlight)
+      mine.acked = true;   // 機器收下了(「暫停中…」照樣停用到收斂或逾時,trHaltInFlight)
       // 常駐程式沒在跑時的 halt 只是排進佇列(下次啟動才吃):沒有東西在交易,不必等狀態。
       // **只信本機那條路**:雲端的 result 是用戶主機寫的字典,照它清 pending 等於讓策略碼把過場態關掉
       if (S.env === "local" && res.result && res.result.queued) S.pending = null;
@@ -873,13 +968,21 @@ function trPaintHead() {
   const cutAt = died && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) ? full.indexOf(" · ") : -1;
   const tx = trEl("span", "txt");
   // 重開那一條原因行升為正文墨色(警示語氣但不用紅字);HALT 那一條照舊次要灰
-  const rkCut = state === "halted" && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) && trRestartKind(trReport()) ? full.indexOf(" · ") : -1;
+  // A′(自動暫停、什麼單都不下)與沒有交易所的重開停止(B0)同 B 一級
+  // 用原因句本身定位(同下面 C 的紅字):前面有「串接失敗 · 」、後面接「最後更新」都照樣升(新狀態稽核 §3-1)
+  const hr = trReport() || {};
+  const inkReason = state === "halted" && (trRestartKind(hr) || trHaltStopsAll(hr.halt)) ? trHaltReasonText(hr) : state === "noaccount" && trNoAccountStopped(hr) ? t("tr.cloud.restartNoAccount") : "";
+  const inkAt = inkReason ? full.indexOf(inkReason) : -1;
+  /* 「可能仍在下單」那一條原因行用紅字(錢可能還在外面暴露、而用戶以為停了);狀態詞本身一般墨色。
+     紅的只有原因那一句本身:前面可能有「串接失敗 · 」、後面可能接「 · 最後更新…」(回報過舊),兩種都不能讓紅字消失 */
+  const ucReason = state === "unconfirmed" ? t("tr.cloud.restartUnconfirmed") : "", ucAt = ucReason ? full.indexOf(ucReason) : -1;
   if (cutAt > 0) tx.append(trEl("span", "up", full.slice(0, cutAt)), full.slice(cutAt));
-  else if (rkCut > 0) tx.append(full.slice(0, rkCut + 3), trEl("span", "ink", full.slice(rkCut + 3)));
+  else if (ucAt > 0) tx.append(full.slice(0, ucAt), trEl("span", "danger", ucReason), full.slice(ucAt + ucReason.length));
+  else if (inkAt > 0) tx.append(full.slice(0, inkAt), trEl("span", "ink", inkReason), full.slice(inkAt + inkReason.length));
   else tx.textContent = full;
   desc.appendChild(tx); desc.title = full;   // 單行截斷,全文放 title
   // 帶著出口的句子(「請重開 Blave」「按『啟動下單』重新開始」)不能被截斷:這時候狀態行可以換行
-  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown") || died || state === "halted");   // 帶出口 / 原因行的句子不截(已暫停的原因行常駐,不可以被省略號吃掉)
+  desc.classList.toggle("wrap", !!trHostDown(TR.st, Date.now()) || (ro && state === "unknown") || died || state === "halted" || state === "unconfirmed" || (state === "noaccount" && trNoAccountStopped(trReport())));   // 帶出口 / 原因行的句子不截(已暫停的原因行常駐,不可以被省略號吃掉)
   // 狀態變了講一次(輪詢每幾秒重畫,不能每次都講)
   if (TR.lastSaid !== null && TR.lastSaid !== text && TR.open && state !== "loading") srSay(text);
   TR.lastSaid = text;
@@ -916,14 +1019,16 @@ function trPaintHead() {
   const act = $("tr-act");
   let b = $("tr-go");
   // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
-  if (!stopped && (state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) b.remove(); trPaintGoStop(false); return; }
+  // 沒有交易所、但主機重開停著(B0):照樣給「啟動下單」——紀錄檔只有它清得掉(audit 2-1)
+  const b0 = state === "noaccount" && trNoAccountStopped(trReport());
+  if (!stopped && !b0 && (state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) b.remove(); trPaintGoStop(false); trPaintGoUpd(false); return; }
   if (!b) {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
     b.addEventListener("click", () => {
       // 雲端停機時這顆是「加值」(外開瀏覽器):主機不在,送什麼都是 409
       if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") { window.blave.openExternal(acctUrl()); return; }
       if (trStartPending(TR.pending) || trHaltInFlight(TR.pending, Date.now())) return;   // 啟動在途:主鈕講實話、不能按,暫停走旁邊那顆(#tr-go-stop);暫停在途:停用
-      const stopSide = trStopSideNow(envHeadState(TR.st, Date.now()), TR.pending);
+      const stopSide = trStopSideNow(envHeadState(TR.st, Date.now()), TR.pending) || trRestartUnconfirmed(trReport());   // 重開沒停住:整段都只給暫停
       if (trBtnLocked(TR.pending, stopSide)) return;   // 過場中只鎖啟動那一側;暫停照按
       if (stopSide) trAskStop(b); else trAskStart(b);
     });
@@ -933,29 +1038,51 @@ function trPaintHead() {
     b.textContent = t("plan.addCredit");
     b.disabled = false; b.title = ""; b.classList.remove("is-busy", "is-ro");
     b.setAttribute("aria-disabled", "false"); b.removeAttribute("aria-describedby");
-    trPaintGoStop(false);
+    trPaintGoStop(false); trPaintGoUpd(false);
     return;
   }
   b.classList.remove("is-ro"); b.removeAttribute("aria-describedby");
   // 指令通道通不通:本機看常駐程式;雲端看主機在不在 running(指令是 api 排進佇列、機器自己取,跟本機那支 listener 無關)
   const up = ro ? envCloudKind(TR.st) === "running" : trChannelUp(TR.st);
-  b.textContent = TR.pending ? (TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting")) : trStopSide(state) ? t("tr.stop") : t("tr.start");
-  // 過場中用 aria-disabled(不是 disabled):disabled 的鈕會把焦點丟到 BODY。
-  // 過場的樣子照畫(is-busy + 「暫停中…」),但**暫停那一側仍然按得下去**:鎖不鎖看 trBtnLocked,不是看 busy
-  const busy = !!TR.pending, locked = trBtnLocked(TR.pending, trStopSideNow(state, TR.pending)) || trStartPending(TR.pending);
+  // 重開沒停住(含已按暫停之後):主鈕一律「暫停下單」,「啟動下單」不出現——按啟動會清掉重開紀錄、叫起一支還沒確認停下的舊程式;該做的是更新
+  b.textContent = TR.pending ? (TR.pending.want === "halted" ? t("tr.stopping") : t("tr.starting")) : trStopSide(state) || trRestartUnconfirmed(trReport()) ? t("tr.stop") : t("tr.start");
+  // 啟動過場用 aria-disabled(不是 disabled):disabled 的鈕會把焦點丟到 BODY。暫停過場整段 disabled(下面 flying),兩者都掛 is-busy
+  const busy = !!TR.pending, flying = trHaltInFlight(TR.pending, Date.now());
+  const locked = trBtnLocked(TR.pending, trStopSideNow(state, TR.pending) || trRestartUnconfirmed(trReport())) || trStartPending(TR.pending) || flying;
   b.setAttribute("aria-disabled", locked ? "true" : "false"); b.classList.toggle("is-busy", busy);
   trPaintGoStop(trStartPending(TR.pending));
+  trPaintGoUpd(ro && trRestartUnconfirmed(trReport()));
   if (trStartPending(TR.pending)) b.setAttribute("aria-describedby", "tr-go-hint");
   // 狀態不明時鈕照給、而且不看狀態檔裡的 listener 旗標(那份檔就是不能信的那個):暫停是安全方向
   const usable = state === "unknown" ? !!(TR.st && TR.st.alive) : up;
-  const flying = trHaltInFlight(TR.pending, Date.now());
   // disabled 的鈕會把焦點丟到 BODY(確認框關掉時焦點剛還給它):先把焦點交給標題(tabindex=-1),再停用
-  if (flying && document.activeElement === b) $("tr-h").focus();
-  b.disabled = flying || (!busy && !usable); b.title = !busy && !usable ? t("tr.cmdUnavailable") : "";
+  if (flying && document.activeElement === b) { $("tr-h").focus(); TR.focusParked = true; }
+  b.disabled = flying || (!busy && !usable);
+  // 暫停收斂(或逾時)放開之後,焦點還回主鈕——停在標題或掉到 body 都等於把鍵盤使用者丟在原地(新狀態稽核 §3-8)
+  if (!flying && TR.focusParked) { TR.focusParked = false; const ae = document.activeElement; if (!b.disabled && (!ae || ae === document.body || ae === $("tr-h"))) b.focus(); } b.title = !busy && !usable ? t("tr.cmdUnavailable") : "";
 }
 /* 啟動在途時主鈕右邊那顆「暫停下單」(spec-desktop-start-pending-stop §2 B)。文字鈕、不是第二顆實心鈕;
    只在 want:"running" 的過場出現,收斂或被暫停蓋掉就收。焦點不搬過來:剛按完啟動的人按 Enter 不該變成開暫停框。
    主鈕的 aria-describedby 指向旁邊那句只給讀屏的說明,過場開始時播一次。 */
+/* 重開沒停住(C):原因行叫人「先暫停、再更新」,而更新入口在聊天輸入框上方,聊天欄收著就看不到(audit 2-2)。
+   標頭主鈕右邊多一顆文字鈕,跟聊天那一行是同一個動作(app.js upGo),不是新功能。本機有回合在跑時停用、原因放 title */
+// #tr-go-upd 按下去會做的事:只有更新計畫是雲端那一支時才是「更新雲端」(同一個 upGo 在別的計畫下是裝本機更新 / 重開 app)
+function trUpdAct(plan) { const p = plan || (typeof upNow === "function" ? upNow() : null); return ((p && p.btn) || {}).act || null; }
+function trPaintGoUpd(on) {
+  let u = $("tr-go-upd");
+  if (!on) { if (u) { if (document.activeElement === u) $("tr-h").focus(); u.remove(); } TR.updParked = false; return; }
+  // click 只做雲端那一支:同一個 upGo 在別的計畫下是裝本機更新 / 重開 app(round-2 稽核 B3)
+  if (!u) { u = trEl("button", "btn-quiet tr-go-upd", ""); u.type = "button"; u.id = "tr-go-upd"; u.addEventListener("click", () => { if (typeof upGo === "function" && trUpdAct() === "cloud") { upGo(); trPaintGoUpd(true); } }); $("tr-desc").after(u); }   // 原因行下面自己一行(新狀態稽核 1-1):放在 .act 會把 1024 寬的原因行擠成窄欄
+  /* 按不了就講為什麼(不是吞掉 click):回合在跑 / 雲端正在更新 / 這一刻的更新計畫不是雲端那一支(讀不到、停機)。
+     停用的那一刻焦點在它身上就先交給標題,放開時還回來(同主鈕的 focusParked) */
+  const busy = typeof upLocalTurn === "function" && upLocalTurn(), plan = typeof upNow === "function" ? upNow() : null, act = trUpdAct(plan);
+  const why = busy ? t("up.busy") : act === "cloud" ? "" : plan && plan.cloud && plan.cloud.updating ? t("up.c.updating")
+    : envCloudKind(TR.st) === "stopped" ? t("up.c.stopped") : t("up.c.unreach");
+  u.textContent = t("up.chat");
+  if (why && document.activeElement === u) { $("tr-h").focus(); TR.updParked = true; }
+  u.disabled = !!why; u.title = why;
+  if (!why && TR.updParked) { TR.updParked = false; const ae = document.activeElement; if (!ae || ae === document.body || ae === $("tr-h")) u.focus(); }
+}
 function trPaintGoStop(on) {
   let s = $("tr-go-stop"), hint = $("tr-go-hint");
   if (!on) { if (s) s.remove(); if (hint) hint.remove(); TR.goStopSaid = false; return; }
@@ -997,7 +1124,7 @@ function trCloudBox(o) {
   if (TR.env !== "cloud") return o;
   const id = trVenueId(), money = envMoney(TR.st);
   o.env = "cloud"; o.mark = envMoneyText(money) || null; o.markKind = money || null;
-  o.footWhere = t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(money), venue: trVenueLabel(id, true) });
+  o.footWhere = trWhereTidy(t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(money), venue: trVenueLabel(id, true) }));
   return o;
 }
 /* 啟動還沒生效時按暫停:框最上面講清楚「排在啟動後面、最後停在暫停、中間若已下單部位會留著」。不寫「取消」——做不到 */
@@ -1011,7 +1138,8 @@ function trAskStop(opener) {
   confirmBox(trCloudBox({
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lead: trStartPending(TR.pending) ? trStopAfterStartLead(r.can_flatten === true) : null,
-    lines: [r.self_ledger === true ? t("tr.stopChoiceSelf") : t("tr.stopChoice"), t("tr.closeAllWarn2")],
+    // 重開沒停住(C):沒有啟動鈕,「之後按啟動下單」要先更新(audit S1)
+    lines: [r.self_ledger === true ? t("tr.stopChoiceSelf") : t("tr.stopChoice"), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t("tr.closeAllWarn2")],
     ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => trSend(S, "halt", { reason: "desktop ui" })], "halt"),
     // 沒有平倉層的 workspace 不給「看起來成功但沒平」的鈕(同雲端 can_flatten)
     alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => trSend(S, "close_all", {})], "close_all") } : null,
@@ -1056,18 +1184,30 @@ function trAskStart(opener) {
      **雲端不順帶送 restart_reconciler**:那份報告可能是一分鐘前的,照它判等於瞎猜;而主機重開後對帳器停著的情況,
      機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)。
      其他原因死掉的雲端對帳器,電腦版沒有重啟鈕:「對帳器停了」那一態照實講,重啟在網頁工作頁做 */
-  const go = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {})] : [
+  const go = (cmd) => { TR.startAt = Date.now(); return trRunStart(cmd); };   // 表底失敗:按下之前的那些不再講成現在式(trErrLoud)
+  const trRunStart = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {})] : [
     (S) => trSend(S, cmd, {}),
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
+  // B0(沒有交易所的重開停止):沒有下單設定可補,不給「補齊 / 等新訊號」,只有一顆「啟動下單」(送 resume)
+  if (trNoAccountStopped(r)) {
+    confirmBox(trCloudBox({ title: t("tr.start"), opener, lines: [t("tr.cloud.restartNoAccountStart")], ok: t("tr.start"), onOk: () => go("resume") }));
+    return;
+  }
+  const recomputing = trRecomputing(r);
+  /* 第二句:一般暫停照舊;Blave 重開(本機)換成「關著的時候沒跑」那句;主機重開(B)不出——
+     重開停止期間不一定照常更新,要緊的那件事(照舊訊號補齊)由重算那一行與閘門講(新狀態稽核 1-2) */
+  const rkS = trRestartKind(r), warn2 = rkS === "app" ? t("tr.startWarn2Local") : rkS === "machine" ? null : t("tr.startWarn2");
   confirmBox(trCloudBox({
     title: t("tr.start"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lead: trBothReal(),
     // 重開過(主機 / Blave):到現在都沒有下單,部位可能跟訊號對不上——在選「補齊 / 等新訊號」之前講
     lines: (trRestartKind(r) === "machine" ? [t("tr.cloud.restartStartLine")] : trRestartKind(r) === "app" ? [t("tr.restartStartLineLocal")] : [])
-      .concat(canWait ? [t("tr.startChoice"), t("tr.startWarn2")] : [t("tr.startWarn1"), t("tr.startWarn2")]),
+      .concat(recomputing ? [t("tr.cloud.recomputing")] : [])
+      .concat(canWait ? [t("tr.startChoice")] : [t("tr.startWarn1")]).concat(warn2 ? [warn2] : []),
     extra: cloud ? trCloudMeans() : trMeans(),
-    ok: t("tr.startCatchUp"), onOk: () => go("resume"),
+    // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
+    ok: t("tr.startCatchUp"), okDisabled: recomputing, okWhy: recomputing ? t("tr.cloud.recomputing") : null, onOk: () => { if (!trRecomputing(trReport())) go("resume"); },
     alt: canWait ? { label: t("tr.startWait"), onOk: () => go("resume_wait") } : null,
   }));
 }
@@ -1115,7 +1255,7 @@ function trPaintOnboard(state) {
   const box = $("tr-onboard");
   const fails = trFailedIds(trReport());
   const saved = TR.env === "cloud" ? TR.cxSaved : null, savedStale = trCxSavedStale(saved, Date.now());
-  if (!trShould("onboard", box, [state, fails, TR.env, saved && [saved.venue, saved.code, saved.detail], savedStale, TR.env === "cloud" && envCloudKind(TR.st)])) return;
+  if (!trShould("onboard", box, [state, fails, TR.env, saved && [saved.venue, saved.code, saved.detail], savedStale, TR.env === "cloud" && envCloudKind(TR.st), trNoAccountStopped(trReport())])) return;
   box.textContent = "";
   if (state === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
   // 「要停就按暫停下單」只在那顆鈕真的能按的時候才講(下單機不在跑時鈕是 disabled,那句就是假話)
@@ -1140,7 +1280,9 @@ function trPaintOnboard(state) {
       if (saved.code === "NO_IP_RESTRICT") calm(t("cx.chk.noWhitelistCloud"));
       if (saved.detail && saved.detail.futures === false) calm(t("cx.note.noFutures")); else if (saved.detail && saved.detail.spot === false) calm(t("cx.note.noSpot"));
     }
-  } else { const b = trEl("button", "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect"; b.addEventListener("click", () => cxModalOpen(b)); ob.appendChild(b); }
+  } else {
+    // B0:標頭已經有實心的「啟動下單」(先解停止),這顆降成描邊——一個視窗一個實心鈕
+    const b = trEl("button", trNoAccountStopped(trReport()) ? "btn-out" : "btn-fill", t("cx.connect")); b.type = "button"; b.id = "tr-connect"; b.addEventListener("click", () => cxModalOpen(b)); ob.appendChild(b); }
   box.appendChild(ob);
 }
 
@@ -1177,7 +1319,9 @@ function trAmountTable(names, stored, states) {
   const gates = ((trReport() || {}).last_reconcile || {}).gates || {};
   const paintTotal = () => {
     // 雲端:合計跟確認框同一個口徑——表上沒列出、但照原樣帶著送的那幾支也算進去(稽核 L3)
-    const tt = trTotals(cloud ? trSendAmounts("cloud", names, stored, TR.edits, false) : trCurrentAmounts(names, stored, TR.edits), trEquity());
+    // 淨值快照:確認框用這裡顯示的那一個(不再自己讀一次),同一組金額兩處的倍數才會一樣(0.0.3 實機 989.95x / 988.37x)
+    const eq = trEquity(); TR.eqShown = { env: TR.env, v: eq };
+    const tt = trTotals(cloud ? trSendAmounts("cloud", names, stored, TR.edits, false) : trCurrentAmounts(names, stored, TR.edits), eq);
     total.textContent = "";
     total.appendChild(trEl("span", "", t("tr.total")));
     const tn = trEl("span", "n", trFmt(tt.total)); tn.appendChild(trEl("span", "ccy", trUnit())); total.appendChild(tn);
@@ -1311,7 +1455,7 @@ function trSaveAmounts(names, stored, opener) {
   if (!stored || trStored() === null || trCfgUnread(trReport())) return;   // 讀不到金額設定:兩邊都不給存
   if (cloud && (!(S.st && S.st.alive) || trCfgUnread(trReport()))) return;   // 讀不到新狀態 / 設定不給存(儲存鈕已經 disabled;這裡是第二道)
   const sending = trSendAmounts(S.env, names, stored, TR.edits, TR.listLoaded), removed = trRemoved(stored, sending);
-  const eq = trEquity(), tt = trTotals(sending, eq), storedTotal = Object.keys(stored).reduce((a, k) => a + (Number(stored[k]) || 0), 0);
+  const eq = trShownEquity(TR.eqShown, TR.env, trEquity()), tt = trTotals(sending, eq), storedTotal = Object.keys(stored).reduce((a, k) => a + (Number(stored[k]) || 0), 0);
   const lev = trLevCheck(trIsPaper(), tt.mult, tt.total, storedTotal);
   const money = (v) => { const dd = document.createElement("dd"); dd.textContent = trFmt(v); dd.appendChild(trEl("span", "ccy", trUnit())); return dd; };
   const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
@@ -1327,9 +1471,12 @@ function trSaveAmounts(names, stored, opener) {
   const capVars = { x: TR_PAPER_MAX_LEV, cap: trFmt((eq || 0) * TR_PAPER_MAX_LEV), c: trCcy() };
   if (lev.over) extra.appendChild(trEl("p", "cf-block", lev.blocked ? t("tr.levBlock", capVars) : t("tr.levStillOver", capVars)));
   // 被擋下的時候不會存:那句「儲存後…」是假話,不出。雲端不出 saveWarn(暫停中它是假話;正在下單時由最上面那句講得更準)
-  const live = cloud && trExecState(S.st) === "running";
+  // 重開沒停住(unconfirmed)也算在下單:舊對帳器不認重開閘門,下一輪就照新金額調倉(spec §1「在 C 裡對帳器一律當成活著」)
+  const live = cloud && (trExecState(S.st) === "running" || trExecState(S.st) === "unconfirmed");
   const blocked = lev.blocked || badStored.length > 0;   // 存不進去的時候不講「存了之後怎樣」
-  if (!blocked) extra.appendChild(trEl("p", "cf-note", !cloud ? t("tr.saveWarn") : live ? t("tr.cloud.saveLag") : t("tr.cloud.saveIdle") + (LANG === "zh" ? "" : " ") + t("tr.cloud.saveLag")));
+  // 重開沒停住又已暫停:沒有啟動鈕,「按啟動下單之後」要先更新(audit S1)
+  const idle = cloud && trRestartUnconfirmed(S.st && S.st.report) ? t("tr.cloud.saveIdleUnconfirmed") : t("tr.cloud.saveIdle");
+  if (!blocked) extra.appendChild(trEl("p", "cf-note", !cloud ? t("tr.saveWarn") : live ? t("tr.cloud.saveLag") : idle + (LANG === "zh" ? "" : " ") + t("tr.cloud.saveLag")));
   let lead = null;
   if (live) {
     lead = trEl("div", "verdict is-calm"); const mk = trEl("span", "fault-mark"); mk.setAttribute("aria-hidden", "true");
@@ -1348,6 +1495,7 @@ function trSaveAmounts(names, stored, opener) {
       if (cloud) { const key = trAmountsKey(sending); if (S.reqFor.amounts !== key) delete S.reqIds.amounts; S.reqFor.amounts = key; }
       const res = cloud ? await trSend(S, "amounts", { amounts: sending }) : await S.api.tradeSend("amounts", { amounts: sending });
       clearTimeout(S.saveTimer);
+      if (res && res.ok) { if (!S.just) S.just = { picked: {}, removed: {} }; envJustMark(S.just, stored, sending, Date.now()); if (!cloud) envPaintLocalDots(); else ENV.sig.side = null; }
       if (res && res.ok && cloud) {
         // ack ok = 主機已經寫進設定檔,不是「已套用」:格子畫送出的值 + .pend,等報告對上(trPoll 裡的 trSentSettled)
         const rc = S.st && S.st.cloud;
@@ -1440,11 +1588,13 @@ function trPositions(r, stored, states) {
   const le = trLiveOrderErr(r.order_errors, pending);
   if (le) {
     const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || "");
-    if (envHeadState(TR.st, Date.now()) === "running") frag.appendChild(trEl("div", "pf-foot err", trOrderErrText(sym, err)));
+    const hs = envHeadState(TR.st, Date.now());   // 重開沒停住:舊對帳器還在重送、還在失敗,是現在的事,不降成「上次」
+    if (trErrLoud(le, hs, TR.startAt, r.last_reconcile)) frag.appendChild(trEl("div", "pf-foot err", trOrderErrText(sym, err)));
     else {
       const foot = trEl("div", "pf-foot past"), stamp = trErrStamp(le.ts, Date.now());
       if (stamp) foot.appendChild(trEl("span", "ts mono", stamp));
-      foot.append(t("tr.orderFailedLast", { sym, err: err.slice(0, 200) }));   // 原文是不可信輸入:截長、走文字節點
+      // 認得的原因跟事件列同一句在地化(不出英文原文);認不得才照舊帶原文(不可信輸入:截長、走文字節點)
+      foot.append(trOrderErrParse(err) ? t("tr.orderFailedLastWhy", { why: trOrderErrText(sym, err) }) : t("tr.orderFailedLast", { sym, err: err.slice(0, 200) }));
       frag.appendChild(foot);
     }
   }
@@ -1596,7 +1746,7 @@ function trUnbind(opener) {
    tradeEvents 兩邊各有來源:這台電腦 = 宿主記的暫停/恢復/連接/解除,雲端 = 平台的事件流(主行程 cloudEvents → /cloud/events)。
    本機沒有「未實現損益」這個數字,所以 PnL 條只有兩格(設計師裁定 8:MVP 只少不改;數字有了再放回第三格)。 */
 const TR_RANGES = [["1D", 1], ["1W", 7], ["1M", 30], [null, 90]];
-const TR_GAP_S = 7200;            // 每個整點一筆:相鄰點超過 2 小時 = Blave 沒開著,斷線不連(不插值)
+const TR_GAP_S = 7200;            // 每個整點一筆:相鄰點超過 2 小時 = Blave 沒開著。線照連,只用來決定要不要出圖下那句 tr.ov.gapNote
 async function trLoadCurve() {
   const S = TR;
   try { S.ov.curve = (await S.api.tradeEquity({ days: S.ov.days })) || { curve: [] }; } catch (_) { S.ov.curve = { curve: [] }; }
@@ -1678,7 +1828,7 @@ function trOvCurve() {
   // 圖本身沒有可讀的數字:起訖值與筆數放進 label
   const first = series[0], last = series[series.length - 1];
   canvas.setAttribute("role", "img");
-  canvas.setAttribute("aria-label", t("tr.ov.curveAria", { a: trFmt2(first.v, isPnl) + " " + trUnit(), b: trFmt2(last.v, isPnl) + " " + trUnit(), n: series.length }));
+  canvas.setAttribute("aria-label", t(isPnl ? "tr.ov.curveAriaPnl" : "tr.ov.curveAria", { a: trFmt2(first.v, isPnl) + " " + trUnit(), b: trFmt2(last.v, isPnl) + " " + trUnit(), n: series.length }));
   frame.append(canvas, hover); frag.appendChild(frame);
   if (series.some((p, i) => i > 0 && p.t - series[i - 1].t > TR_GAP_S)) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.gapNote")));
   requestAnimationFrame(() => trDrawCurve(canvas, series, isPnl));
@@ -1721,18 +1871,23 @@ function trDrawCurve(canvas, pts, isPnl) {
   }
   ctx.fillText(trStamp(t0), padL, H - 6);
   const endLabel = trStamp(t1); ctx.fillText(endLabel, W - padR - ctx.measureText(endLabel).width, H - 6);
-  // 線色固定用主資料序列色(同雲端):賺賠訊號歸 PnL 條的數字,曲線不隨賺賠變色
-  ctx.strokeStyle = trToken("--color-data-1"); ctx.lineWidth = 1.5; ctx.lineJoin = "round";
-  ctx.beginPath();
-  pts.forEach((p, i) => { const gap = i === 0 || p.t - pts[i - 1].t > TR_GAP_S; if (gap) ctx.moveTo(xAt(p.t), yAt(p.v)); else ctx.lineTo(xAt(p.t), yAt(p.v)); });
-  ctx.stroke();
-  // 電腦版的常態是每天開一小段:點與點之間幾乎都是缺口。只連線的話孤立點完全不出現、整張圖只剩格線(設計師 A-1)。
-  // 每一段(含只有一個點的段)的兩個端點畫實心圓點;不跨缺口連線、不插值。
-  ctx.fillStyle = trToken("--color-data-1");
-  pts.forEach((p, i) => {
-    const gapBefore = i === 0 || p.t - pts[i - 1].t > TR_GAP_S, gapAfter = i === pts.length - 1 || pts[i + 1].t - p.t > TR_GAP_S;
-    if (!gapBefore && !gapAfter) return;
-    ctx.beginPath(); ctx.arc(xAt(p.t), yAt(p.v), 2, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 1.5; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  // Blave 沒開著的時段直接連起來(Wei 09-22):不斷線、沒有孤立點。沒有紀錄這件事由圖下那一句講(tr.ov.gapNote)
+  if (!isPnl) {
+    // 權益:一條線,主資料序列色(同雲端;賺賠訊號歸 PnL 條的數字)
+    ctx.strokeStyle = trToken("--color-data-1");
+    ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(xAt(p.t), yAt(p.v)) : ctx.moveTo(xAt(p.t), yAt(p.v)))); ctx.stroke();
+    return;
+  }
+  /* 累積損益:照雲端工作頁 workspace.html drawOvPnl——0 是水位線(虛線、比格線亮一階 --color-greyMedium),
+     線逐段依 0 上下取 --color-greenText / --color-redText,跨過 0 的那一段在交越點切開。不鋪面積(雲端也沒有) */
+  const zy = Math.round(yAt(0)) + 0.5;
+  ctx.save(); ctx.setLineDash([3, 4]); ctx.strokeStyle = trToken("--color-greyMedium");
+  ctx.beginPath(); ctx.moveTo(padL, zy); ctx.lineTo(W - padR, zy); ctx.stroke(); ctx.restore();
+  const G = trToken("--color-greenText"), Rd = trToken("--color-redText");
+  trPnlSegments(pts).forEach((sg) => {
+    ctx.strokeStyle = sg.pos ? G : Rd; ctx.beginPath();
+    ctx.moveTo(xAt(sg.t0), sg.v0 === 0 && sg.cut0 ? zy : yAt(sg.v0)); ctx.lineTo(xAt(sg.t1), sg.v1 === 0 && sg.cut1 ? zy : yAt(sg.v1)); ctx.stroke();
   });
 }
 // 機器側事件 → 兩段字(標題、後果註解)。白名單:不認得的型別不畫
@@ -1768,6 +1923,8 @@ function trEventText(type, d) {
   if (type === "strategy_failed") return [t("tr.ov.evStrategyFailed"), t("tr.ov.evStrategyFailedNote")];
   // 主機重開、對帳器停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來
   if (type === "machine_restart_stopped") return [t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote")];
+  // 主機重開、自動下單可能沒停住(舊對帳器沒有重開閘門):同網頁事件列那一句(先暫停、再更新);歷史不上紅
+  if (type === "machine_restart_stop_failed") return [t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote")];
   // 群益部位要人手動平(同網頁 workspace_ov_ev_manual_close):symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的
   if (type === "manual_close_required") {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");
@@ -1805,7 +1962,7 @@ function trOvEvents(r) {
     const venue = trVenueLabel(String(d.venue || ""), true);
     let head = null, note = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
-    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
+    if (ev.type === "halt" || ev.type === "halt_close") { head = t(d.source === "reconciler" || d.source === "portfolio" ? "tr.ov.evHaltAuto" : "tr.ov.evHalt"); note = trHaltStopsAll(d) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); }
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t("tr.ov.evResume"); note = t("tr.ov.evResumeNote"); }
     else if (ev.type === "venue_connected" && venue) head = t("tr.ov.evConnected", { venue });
     else if (ev.type === "venue_disconnected" && venue) head = t("tr.ov.evDisconnected", { venue });
@@ -1817,7 +1974,7 @@ function trOvEvents(r) {
   const halt = r.halt || {}, haltMs = trMs(halt.at);
   if (halt.halted && !uiHalts.some((x) => haltMs != null && Math.abs(x - haltMs) < 120000)) push(haltMs, (body) => {
     body.appendChild(trEl("span", "hl", halt.source && halt.source !== "web" ? t("tr.ov.evHaltAuto") : t("tr.ov.evHalt")));
-    body.append(" ", trEl("span", "dim", "— " + t("tr.ov.evHaltNote")));
+    body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
   (Array.isArray(r.order_errors) ? r.order_errors : []).forEach((e) => {
     if (!e || typeof e !== "object") return;
@@ -2200,6 +2357,25 @@ function envShowMain() {
 }
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
    每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */
+/* 側欄雲端列尾:「可能仍在下單」是整台雲端的事、字又長(1024 寬時把名字吃到只剩一個字),改成切換器那個紅短劃,
+   完整的字放 title 與 aria-label(新狀態稽核 2-1)。其他詞夠短,照舊寫字 */
+function envRowMark(w) {
+  if (w !== "tr.cloud.mayTrade") return trEl("span", "stx", t(w));
+  const m = trEl("span", "dot bad"); m.setAttribute("role", "img"); m.setAttribute("aria-label", t(w)); m.title = t(w);
+  return m;
+}
+/* 呼吸點放在名字 span 裡面最前面(同網頁:名字是 ellipsis 的那一格,放外面會被擠成獨立一格);裝飾,讀屏不唸 */
+function envDotInto(nm, on) {
+  let d = nm.querySelector(".run-dot");
+  if (!on) { if (d) d.remove(); return; }
+  if (!d) { d = trEl("span", "run-dot live"); d.setAttribute("aria-hidden", "true"); nm.insertBefore(d, nm.firstChild); }
+}
+// 這台電腦的側欄(app.js stratRefresh 建的列):每輪狀態回來、清單重建後各畫一次
+function envPaintLocalDots() {
+  const st = TR_BAGS.local.st, now = Date.now();
+  const L = TR_BAGS.local, up = envDotsUp("local", st);
+  $("strat-list").querySelectorAll(".strat-row").forEach((b) => { const nm = b.querySelector(".strat-name"); if (nm) envDotInto(nm, up && envRunDot(b.dataset.name, st, now, L.just)); });
+}
 function envPaint() {
   const cloud = ENV.cur === "cloud", C = TR_BAGS.cloud, kind = envCloudKind(C.st);
   // 雲端金額只在送出中那幾秒算在途(S4 §3.1):存完等回報那段主機在正常下單,不能讓綠點消失好幾分鐘
@@ -2357,8 +2533,8 @@ function envPaintSide(kind, st) {
   // 列尾的刪除:機器停著 / agent 回合中 / 名字不合規 / 刪除中 → 不畫(跟 HO 旗標無關)
   const canDel = kind === "running" && !(typeof running !== "undefined" && running === true);
   // 側欄**不放任何 handoff 提示**(Wei 看實機後拍板):等著送上來的那條回頭路住在中欄的「準備好了」卡(規格 §2)
-  const sel = typeof RPC !== "undefined" ? RPC.name : null;
-  const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], list.map((x) => [x.name, x.displayName, envStratWord(x.name, st)])]);
+  const sel = typeof RPC !== "undefined" ? RPC.name : null, dotsUp = envDotsUp("cloud", st);
+  const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
   if (ENV.sig.side === sig) return;
   ENV.sig.side = sig;
   // 點一支 → 中欄畫雲端那一份的報告(app.js 的 rpCloudSelect;資料走主行程的 cloudStrategy)。鈕不能包鈕,刪除鈕放在同一個 wrap 裡(同本機清單)
@@ -2368,9 +2544,10 @@ function envPaintSide(kind, st) {
     const wrap = trEl("div", "strat-wrap cs-row"), row = trEl("button", "strat-row"); row.type = "button"; row.dataset.name = x.name; wrap.dataset.name = x.name;
     if (x.name === sel) row.setAttribute("aria-current", "true");
     const nm = trEl("span", "strat-name", x.displayName); nm.title = typeof stratTip === "function" ? stratTip(x.displayName, x.name) : x.name; row.appendChild(nm);
+    if (dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)) envDotInto(nm, true);
     const deleting = CDEL.busy.has(x.name);
     if (deleting) { wrap.classList.add("is-deleting"); row.setAttribute("aria-busy", "true"); row.appendChild(trEl("span", "stx", t("cdel.pending"))); }
-    else { const w = envStratWord(x.name, st); if (w) row.appendChild(trEl("span", "stx", t(w))); }
+    else { const w = envStratWord(x.name, st); if (w) row.appendChild(envRowMark(w)); }
     row.addEventListener("click", () => { if (typeof rpCloudSelect === "function") rpCloudSelect(x.name); });
     wrap.appendChild(row);
     if (canDel && !deleting && /^[A-Za-z0-9_-]{1,64}$/.test(x.name) && typeof armedDelete === "function")

@@ -1,7 +1,7 @@
 // shell/traytext.js:視窗之外的字(選單列的狀態行、結束確認框多的那一句、通知標題的前綴)。
 // 雲端那一行的資料來自雲端主機的回報 = 不可信輸入。跑法:node tests/check_shell_traytext.js
 const fs = require("fs"), path = require("path");
-const { clean, cloudLine, cloudTrading, statusLine, notifTitle, quitDetail } = require("../shell/traytext.js");
+const { clean, cloudLine, cloudTrading, cloudNeedsUpdate, statusLine, notifTitle, quitDetail } = require("../shell/traytext.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const V = { credentials: true, pair: true, order: true, account: true };
 const st = (o = {}) => ({ alive: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: { binance: V }, halt: { halted: false }, reconciler: { alive: true } }, ...o });
@@ -17,6 +17,36 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } } })).state === "paused"
   && cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "other" } } } })).state === "unknown"
   && cloudLine(st({ alive: false, report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "machine_restart" } } } })).state === "unknown");
+{ const Cg = (o, halt) => st({ report: { venues: { binance: V }, halt: halt || {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
+  const LL = { ...L, stMayTrade: "可能仍在下單" };
+  t("主機重開沒停住(gated === false 嚴格)→ 可能仍在下單:「雲端：真錢 · 可能仍在下單」;結束確認框不替它背書(cloudTrading false)",
+    cloudLine(Cg({ gated: false })).state === "mayTrade" && statusLine(TPL, cloudLine(Cg({ gated: false })), LL) === "雲端：真錢 · 可能仍在下單" && cloudTrading(Cg({ gated: false })) === false);
+  t("…已按暫停 → 已暫停;gated true / 缺欄位 → 已暫停;缺 stMayTrade 那個字 → 整行不顯示",
+    cloudLine(Cg({ gated: false }, { halted: true })).state === "paused" && cloudLine(Cg({ gated: true })).state === "paused" && cloudLine(Cg({})).state === "paused"
+    && statusLine(TPL, cloudLine(Cg({ gated: false })), L) === null); }
+{ const N = (cv, lv, stopped, state) => ({ cloud: { code: "OK", machine: { state: state || "running" }, config_version: cv, latest_config_version: lv }, report: { reconciler: { stopped } } });
+  const R = (g) => ({ reason: "machine_restart", at: 1, gated: g });
+  t("選單列小點(雲端有新版在等):版號落後亮;版號一樣但重開沒停住(gated === false 嚴格)也亮——同 upPlan",
+    cloudNeedsUpdate(N("1.1.80", "1.1.83", null)) === true && cloudNeedsUpdate(N("1.1.83", "1.1.83", R(false))) === true
+    && cloudNeedsUpdate(N("1.1.83", "1.1.83", null)) === false && cloudNeedsUpdate(N("1.1.83", "1.1.83", R(true))) === false && cloudNeedsUpdate(N("1.1.83", "1.1.83", R(undefined))) === false);
+  t("…主機沒在跑 / 讀不到:不亮", cloudNeedsUpdate(N("1.1.80", "1.1.83", R(false), "stopped")) === false && cloudNeedsUpdate(null) === false && cloudNeedsUpdate({ cloud: { code: "OFFLINE" } }) === false);
+  t("main.js 的小點走這一支(不另寫一份規則)", /const cloudUpdateWaiting = \(\) => TT\.cloudNeedsUpdate\(cloudSt\(\)\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"))); }
+{ // T1:主行程只收預設物件裡已經有的 key(for k of Object.keys(tmLabels)):畫面交過來、預設沒有的字會被靜靜丟掉
+  // (例:少了 stMayTrade,選單列的雲端那一行就在最該講話的狀態整行消失)。列舉 trPushLabels 交的每一個 key
+  const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const a = tr.indexOf("window.blave.tradeLabels({"), b = tr.indexOf("});", a);
+  const body = tr.slice(a + "window.blave.tradeLabels(".length, b + 1).replace(/,\s*\{(?:[^{}"]|"[^"]*")*\}\)/g, ")");   // t("…", { where: … }) 裡的代入值不是 key
+  const pushed = [...body.matchAll(/([A-Za-z_]\w*): /g)].map((m) => m[1]).filter((k) => k !== "lang");   // lang 另外收(main.js 直接讀 labels.lang)
+  const i = mainSrc.indexOf("let tmLabels = {"), j = mainSrc.indexOf("};", i), defs = new Set([...mainSrc.slice(i, j).matchAll(/([A-Za-z_]\w*): /g)].map((m) => m[1]));
+  const missing = pushed.filter((k) => !defs.has(k));
+  t("T1 trPushLabels 交的每一個字,tmLabels 預設物件裡都有那個 key(不然主行程收不下)" + (missing.length ? ":缺 " + missing.join() : ""), pushed.length > 40 && missing.length === 0
+    && /for \(const k of Object\.keys\(tmLabels\)\)/.test(mainSrc) && /labels\.lang === "zh"/.test(mainSrc));
+  // 反方向(round-2 稽核 T1):選單列用到的每一個字,畫面都要交——預設物件有但沒人交,換語言後那一行就停在英文預設
+  // (更糟的是 stMayTrade:預設是英文,zh 用戶在 C 裡看到的是英文)。列舉 traytext.js 的 labels.* 與 main.js 的 tmLabels.st*
+  const trayUsed = [...new Set([...fs.readFileSync(path.join(__dirname, "..", "shell", "traytext.js"), "utf8").matchAll(/\blabels\.([A-Za-z_]\w*)/g)].map((m) => m[1])
+    .concat([...mainSrc.matchAll(/\btmLabels\.(st[A-Z]\w*)/g)].map((m) => m[1])))].filter((k) => k !== "lang");
+  const unpushed = trayUsed.filter((k) => pushed.indexOf(k) < 0);
+  t("T1 反方向:選單列用到的每一個字(含 stMayTrade)trPushLabels 都有交" + (unpushed.length ? ":沒交 " + unpushed.join() : ""), trayUsed.length >= 6 && trayUsed.indexOf("stMayTrade") >= 0 && unpushed.length === 0 && trayUsed.every((k) => defs.has(k))); }
 t("對帳器心跳不在 → 不講執行中", cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false } } })).state === "unknown");
 t("沒有可講的 → null(整行不顯示):沒登入、沒主機、啟動中、停機、沒回報、沒連好交易所、還沒問到", [null, undefined, {}, st({ cloud: { code: "NO_LOGIN" } }), st({ cloud: { code: "OK", machine: { state: "none" } } }), st({ cloud: { code: "OK", machine: { state: "starting" } } }),
   st({ cloud: { code: "OK", machine: { state: "stopped" } } }), st({ report: null }), st({ report: { venues: {} } }), st({ report: { venues: { binance: { credentials: true } } } }), st({ report: "x" }), st({ report: { venues: "x" } })].every((s) => cloudLine(s) === null));

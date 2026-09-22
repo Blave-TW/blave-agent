@@ -1259,7 +1259,7 @@ msgid "tr.ov.emptyBaseline"
 msgstr "紀錄還不夠畫出曲線，要兩筆。Blave 開著的時候每個整點記一筆；關著的時段不會有紀錄。"
 
 msgid "tr.ov.gapNote"
-msgstr "曲線斷開的地方＝Blave 沒開著，沒有紀錄。"
+msgstr "Blave 沒開著的時段沒有紀錄，曲線直接連起來。"
 
 msgid "tr.ov.range"
 msgstr "區間"
@@ -1298,7 +1298,7 @@ msgid "tr.ov.evHaltAuto"
 msgstr "已自動暫停下單"
 
 msgid "tr.ov.evHaltNote"
-msgstr "停開新倉；平倉與停損停利照常執行"
+msgstr "平倉與停損停利照常執行；停開新倉"
 
 msgid "tr.ov.evDowntimeNote"
 msgstr "全部凍結，減倉與平倉也不會自動做；要恢復請按「啟動下單」，由你決定要不要補齊部位"
@@ -1477,7 +1477,7 @@ msgid "side.cloud.st.trading"
 msgstr "下單中"
 
 msgid "side.cloud.st.halted"
-msgstr "已停"
+msgstr "已暫停"
 
 msgid "env.empty.title"
 msgstr "雲端"
@@ -2299,10 +2299,58 @@ msgid "tr.ov.evRestartStopped"
 msgstr "主機重開，已暫停下單"
 
 msgid "tr.ov.evRestartStoppedNote"
-msgstr "什麼單都不下；平倉與停損也不會執行"
+msgstr "平倉與停損不會執行；什麼單都不下"
 
 msgid "tm.evRestartStoppedNote"
 msgstr "主機重開過，自動下單已暫停，什麼單都不下——部位現在沒有人在管，平倉與停損也不會執行。到「自動下單」按「啟動下單」繼續，可選補齊部位或等新訊號。交易所端的停損單不受影響。"
 
 msgid "tr.cloud.cxSavedStale"
 msgstr "金鑰已經送出，但雲端主機到現在都沒有回報，這一頁還沒換成下單設定。可以再連一次，或到聊天請 agent 看看主機怎麼了。"
+
+msgid "tr.cloud.mayTrade"
+msgstr "可能仍在下單"
+
+msgid "tm.stMayTrade"
+msgstr "可能仍在下單"
+
+msgid "tr.cloud.restartUnconfirmed"
+msgstr "主機重開後，沒能確認自動下單已經停下，部位可能還在被交易。先按「暫停下單」，再按「立即更新到最新版本」。"
+
+msgid "up.c.needsUpdate"
+msgstr "雲端的下單程式是舊版，主機重開後沒能確認它停下，需要更新。"
+
+msgid "tr.ov.evRestartStopFailed"
+msgstr "主機重開，自動下單可能沒停住"
+
+msgid "tr.ov.evRestartStopFailedNote"
+msgstr "先按「暫停下單」，再按「立即更新到最新版本」；workspace 還是舊版"
+
+msgid "tr.haltReasonAll"
+msgstr "什麼單都不下——平倉與停損也不會執行。問題處理好之後，再按「啟動下單」；不確定原因，可以在聊天請 agent 查。"
+
+msgid "tr.cloud.restartNoAccount"
+msgstr "主機重開過，什麼單都不下——連你自己的策略程式下的單也會被擋。按「啟動下單」繼續。"
+
+msgid "tr.cloud.restartNoAccountStart"
+msgstr "主機重開後，排程裡的策略程式一直沒有執行。啟動後會照排程恢復執行、照常下單。"
+
+msgid "tr.cloud.closeAllWarn2Unconfirmed"
+msgstr "策略金額會保留：更新到最新版本、再按「啟動下單」之後，下單機會照現有金額把部位重建回來；不想重建，先把金額歸零。"
+
+msgid "tr.cloud.saveIdleUnconfirmed"
+msgstr "雲端已暫停：新金額先存在主機上，更新到最新版本、再按「啟動下單」之後才照它下單。"
+
+msgid "tr.cloud.recomputing"
+msgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"
+
+msgid "tr.orderFailedLastWhy"
+msgstr "上次下單失敗：{why}"
+
+msgid "tr.startWarn2Local"
+msgstr "Blave 關著的那段時間，策略沒有執行、訊號沒有更新。「補齊部位」會照現在算到的訊號下單，可能還是關掉之前那一次；每支策略下一次排程跑完才會換成最新訊號。想等最新訊號，選「等新訊號」。"
+
+msgid "tr.cloud.haltReasonUnconfirmed"
+msgstr "舊版下單程式可能還在跑。先按「立即更新到最新版本」；不確定暫停的原因，可以在聊天請 agent 查。"
+
+msgid "tr.ov.curveAriaPnl"
+msgstr "累積損益曲線，{a} 到 {b}，{n} 筆"

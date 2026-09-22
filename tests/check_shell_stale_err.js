@@ -39,9 +39,11 @@ function paint(report, st = {}) {
   ctx.trUnit = () => "USDT"; ctx.trCcy = () => "USDT"; ctx.TR_STALE_MS = 10 * 60 * 1000;
   ctx.trVenueIds = (r) => Object.keys((r && r.venues) || {}); ctx.trLiveEntry = (r, id) => ((r && r.account && r.account.venues) || {})[id] || null;
   ctx.trOrderErrText = (sym, err) => "ERR:" + sym + ":" + err;
+  if (st.startAt) ctx.TR.startAt = st.startAt;   // 這個視角這次按下啟動的時間(trAskStart 記的)
+  if (st.realErrText) delete ctx.trOrderErrText;  // 要看真的在地化那一句:用 trade.js 自己的 trOrderErrText
   vm.createContext(ctx);
   vm.runInContext(pure.replace(/^const /gm, "var "), ctx);
-  vm.runInContext(["trLivePositions", "trClientTargets", "trGateSide", "trPositions"].map(cut).join("\n").replace(/^const /gm, "var "), ctx);
+  vm.runInContext((st.realErrText ? ["trOrderErrText"] : []).concat(["trLivePositions", "trClientTargets", "trGateSide", "trPositions"]).map(cut).join("\n").replace(/^const /gm, "var "), ctx);
   const frag = vm.runInContext("trPositions(TR.st.report, TR.st.report.config.amounts, TR.st.report.states)", ctx);
   const all = flat(frag), errRow = all.find((n) => n.cls === "pf-foot err"), pastRow = all.find((n) => n.cls === "pf-foot past"), gateRow = all.find((n) => n.cls === "pf-foot");
   const holds = all.filter((n) => /(^| )hold( |$)/.test(n.cls)).length;
@@ -68,7 +70,7 @@ const tRow = (size, exchange, spec) => ({ side: "long", size, exchange, asset_sp
 const aRow = (size, exchange) => ({ side: "long", size, exchange });
 // 一般加密列:機器端對它**不寫 gates**(兩側門檻都等於 flat),所以 gates 是 {}
 const crypto = (target, actual, o) => base({ config: { amounts: { s: target } }, states: { s: { symbol: "BTCUSDT", market: "swap", position: 1 } },
-  last_reconcile: { ts: "2026-09-21T14:27:00", target: { BTCUSDT: tRow(target, "binance", null) }, actual: { BTCUSDT: aRow(actual, "binance") }, orders: [], gates: {} }, ...o });
+  last_reconcile: { ts: "2026-09-21T14:25:59", target: { BTCUSDT: tRow(target, "binance", null) }, actual: { BTCUSDT: aRow(actual, "binance") }, orders: [], gates: {} }, ...o });
 
 // ① + ② Wei 撞到的那個:金額改成 20,000、已成交、目標與實際相符 → 過期紅字不可以留
 t("① 加密列:差額已歸零 → 過期的失敗紅字不掛(這就是 Wei 在 Electron 44 看到的那個)", paint(crypto(20000, 20000)).red === null);
@@ -79,7 +81,7 @@ t("加密列差額真的過了門檻(單還沒送出去)→ 紅字照掛", /ERR:
 // 口數列:真快照是 exchange="capital" **而且** asset_spec.type="futures_contracts" 兩個都有;分開測是為了確認兩條路各自都認得出來
 const lots = (target, actual, how) => base({ order_errors: [{ ts: "2026-09-21T14:26:00", symbol: "TXF", exchange: "capital", error: "capital rejected" }],
   config: { amounts: { s: target } }, states: { s: { symbol: "TXF", market: "swap", position: 1 } },
-  last_reconcile: { ts: "2026-09-21T14:27:00", orders: [], gates: {},
+  last_reconcile: { ts: "2026-09-21T14:25:59", orders: [], gates: {},
     target: { TXF: how === "spec" ? tRow(target, "sinopac", { type: "futures_contracts", contract_value: 200, currency: "TWD", lot_size: 1 }) : tRow(target, "capital", null) },
     actual: { TXF: aRow(actual, how === "spec" ? "sinopac" : "capital") } } });
 t("③ 口數列差 1 口(asset_spec 認出來)→ 失敗紅字留得住", /ERR:TXF/.test(paint(lots(3, 2, "spec")).red || ""));
@@ -121,7 +123,7 @@ const CLOUD = (extra) => ({ alive: false, cloud: { code: "OK", machine: { state:
 const banded = (target, actual, band, o) => { const diff = target - actual, g = { usd: Math.max(10, band || 0), diff, entry_usd: 10, reduce_usd: 10, close_usd: 10 };
   if (Math.abs(target) < Math.abs(actual)) g.side = "reduce"; if (band) g.band_usd = band;
   return base({ config: { amounts: { s: Math.abs(target) } }, states: { s: { symbol: "BTCUSDT", market: "swap", position: target < 0 ? -1 : 1 } },
-    last_reconcile: { ts: "2026-09-21T14:27:00", target: { BTCUSDT: { ...tRow(Math.abs(target), "binance", null), side: target < 0 ? "short" : "long" } },
+    last_reconcile: { ts: "2026-09-21T14:25:59", target: { BTCUSDT: { ...tRow(Math.abs(target), "binance", null), side: target < 0 ? "short" : "long" } },
       actual: { BTCUSDT: { ...aRow(Math.abs(actual), "binance"), side: actual < 0 ? "short" : "long" } }, orders: [], gates: { BTCUSDT: g } }, ...o }); };
 { const p = paint(banded(20300, 20000, 1015));
   t("⑤ 同向加倉、差額 300 在帶(1,015)內 → 不畫綠、舊拒單不掛(這就是 B1 那格)", p.red === null && p.holds === 1);
@@ -132,5 +134,20 @@ t("⑤ 差額 1,500 超出帶(1,000)→ 綠字、紅字照掛", (() => { const p
 t("⑤ 翻向(多 → 空)不看帶:快照那輪同向留下的 band_usd 不能把翻向畫成不會動", (() => { const p = paint(banded(-20000, 20000, 1000)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
 t("⑤ 舊快照沒有 band_usd(gates 只有兩側 10):差額 300 照舊會下單、紅字照掛", (() => { const p = paint(banded(20300, 20000, 0)); return /ERR:BTCUSDT/.test(p.red || "") && p.holds === 0; })());
 t("⑤ 帶內、對帳器沒在跑 → 也不會把舊拒單撿回來當灰字(判準先於音量)", (() => { const p = paint(banded(20300, 20000, 1015, { halt: HALT })); return p.red === null && p.past === null; })());
+
+// ⑥ 0.0.3 實機:兩天前的拒單(09/21 22:26 那筆 110,000)一按啟動就變成紅字現在式,讀起來像剛剛又失敗
+//    規則:紅字 = 在跑 + 是最近一輪對帳的失敗(ts ≥ last_reconcile.ts;快照在下單前寫)+ 不在這次按啟動之前。其餘降灰「上次」帶時間
+{ const old = { ...ERR, ts: "2026-09-19T14:26:00" };
+  const later = (o) => crypto(30000, 20000, { order_errors: [old], last_reconcile: { ...crypto(30000, 20000).last_reconcile, ts: "2026-09-21T14:25:59" }, ...o });
+  const p1 = paint(later());
+  t("⑥ 在跑、但之後又對帳過一輪沒再失敗在它上面 → 不是紅字,降灰「上次」帶日期", p1.red === null && LAST(p1) && /^\d\d\/\d\d \d\d:\d\d$/.test(p1.stamp || ""));
+  const same = crypto(30000, 20000, { order_errors: [{ ...ERR, ts: "2026-09-21T14:26:00" }] });
+  const p2 = paint(same, { startAt: NOW - 60000 }), p3 = paint(same, { startAt: Date.parse("2026-09-21T14:10:00Z") });
+  t("⑥ 最近一輪的失敗、但在這次按啟動之前 → 灰;按啟動之後才失敗 → 紅", p2.red === null && LAST(p2) && p3.red != null && p3.past === null);
+  const p4 = paint(crypto(30000, 20000, { order_errors: [{ ...ERR, ts: "garbage" }] }), { startAt: NOW - 60000 });
+  t("⑥ 失敗時間讀不出來 → 不降(失敗不能被講小)", p4.red != null);
+  const loc = { ...ERR, error: "gross notional 110000 exceeds 10× paper equity 9945 — refused" };
+  const p5 = paint(crypto(30000, 20000, { halt: HALT, order_errors: [loc] }), { realErrText: true });
+  t("⑥ 灰字那一行認得的原因用在地化那一句(同事件列),不出英文原文", /tr\.orderFailedLastWhy/.test(p5.past || "") && /tr\.err\.paperLev/.test(p5.past || "") && !/gross notional/.test(p5.past || "")); }
 
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
