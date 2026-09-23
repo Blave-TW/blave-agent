@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(空)
+
+## 1.1.89
+
 - **資料規則那一段不再給模型「成品句」**(`agent_turn.py` `data_access_rule()`,`access == "0"`):
   整段改寫成「給模型的事實與約束」,並明講**用戶讀到的每一句都由模型自己用該輪語言寫、不准照抄這一段**。
   原本它用英文散文把要對用戶說的話寫成成品,模型直接抄走——2026-09-23 Wei 用中文問籌碼集中度、整則回英文,
