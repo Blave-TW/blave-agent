@@ -442,6 +442,43 @@ def _recomputed_since(down_to, cfg, vens):
     return True
 
 
+def _ws_lib_read_only_guard():
+    """The workspace lib/portfolio.py on disk carries the never-configured
+    read-only guard. Only good for a reconciler that is NOT running — the next
+    start loads this file."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"),
+                  encoding="utf-8", errors="replace") as f:
+            return "def portfolio_configured(" in f.read()
+    except OSError:
+        return False
+
+
+def portfolio_configured(cfg_path, hb, last):
+    """True = amounts were saved. False = never saved AND the code that will
+    run next is the read-only one, so releasing a pause closes nothing.
+    None = can't tell → the report leaves the key out, and the pages fall back
+    to their old, harsher warning (web workspace.html: no key = old runtime).
+
+    The field and the guard ship on DIFFERENT channels — this reporter with the
+    runtime (automatic), lib/portfolio.py with the workspace (manual) — so
+    reporting `false` off this runtime's own behaviour would tell the user
+    "nothing will be closed" on every machine whose workspace is still behind
+    (audit 2026-09-23 B2). Evidence per case:
+      - reconciler running: only its own word counts — `read_only` in the
+        snapshot it wrote (lib/portfolio._write_reconcile_snapshot). A machine
+        whose update replaced the files but failed to restart (cloud-handoff U8
+        `restart_failed`) still has the OLD reconcile() in memory, and that one
+        flattens; a disk check would have called it read-only.
+      - reconciler stopped: the file on disk is what its next start loads."""
+    if os.path.exists(cfg_path) or os.path.exists(
+            os.path.join(WORKSPACE, "manager", "amounts.ui.json")):
+        return True
+    if _fresh(hb):
+        return False if isinstance(last, dict) and last.get("read_only") is True else None
+    return False if _ws_lib_read_only_guard() else None
+
+
 def restart_stop(hb=None, cfg=None, vens=None):
     """Why trading is off after a machine restart, while
     state/reconciler_stopped.json exists (command_listener._machine_restart_check
@@ -1118,8 +1155,9 @@ def build_report():
     sched = scheduled_strategies()
     vens = venues()
     stopped = restart_stop(hb, cfg if isinstance(cfg, dict) else {}, vens)
+    configured = portfolio_configured(cfg_path, hb, last)
 
-    return {
+    report = {
         "config": cfg,
         "states": strategy_states(),
         # None = couldn't tell (no crontab access), [] = genuinely nothing scheduled
@@ -1201,6 +1239,13 @@ def build_report():
         "events": events.unsent(),
         "reported_at": int(time.time()),
     }
+    # False = amounts were never saved AND the reconcile that runs next is the
+    # read-only one (places nothing, closes included, until a save). None = the
+    # key is left out: see portfolio_configured() — an absent key is the pages'
+    # old-machine branch, which warns about closing.
+    if configured is not None:
+        report["portfolio_configured"] = configured
+    return report
 
 
 def downtime_pause_view(cfg, last):

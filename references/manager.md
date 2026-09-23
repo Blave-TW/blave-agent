@@ -7,6 +7,7 @@
 - `manager/reconciler.py` — position reconciler (polling loop)
 - `manager/stop_strategy.py` / `manager/close_symbol.py` — stop one strategy / close one coin (see *Stopping one strategy / closing one coin*)
 - `manager/portfolio_config.json` — gitignored; written by manager.py; also contains `"exchanges"` dict (see below)
+  - **No `portfolio_config.json` at all (amounts never saved) = the reconciler is read-only:** it reads and reports positions and sends no order, closes included (`lib/portfolio.reconcile`). **The reconciler only** — `manager/flatten.py` (the web 暫停並全部平倉 button, and the HALT flatten) is not scoped by it: no config means no `self_ledger`, and that is exactly the case where it closes EVERY open position on the account, the user's manual ones included. Setting amounts to 0 still closes positions — that saves a config.
 
 **CRITICAL — `manager/` holds platform scripts and their own output.** All output (portfolio_config.json, pnl.png, stats.json) is written by the scripts themselves. Never create a `manager/manager/` or any other nested folder — it breaks path resolution in all three scripts. Never delete any file in `manager/` when removing strategies.
 

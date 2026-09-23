@@ -546,8 +546,12 @@ check(cfg.get("self_ledger") is True and cfg["execution"] == {},
 check(json.load(open(seed_path))["seeded_at"] == "2026-01-01T00:00:00",
       "a baseline already on disk (hand-run seed_ledger.py) is not overwritten")
 
-# S1: a machine that has traded but has no config is not a new machine
-for marker in ("orders.jsonl", "last_reconcile.json"):
+# S1: a machine that has traded but has no config is not a new machine — and
+# "traded" is orders.jsonl alone. last_reconcile.json is written by every
+# reconcile round, including the never-configured read-only ones, which place
+# nothing: counting it made the first save come out without self_ledger and the
+# next round closed the user's own positions (audit 2026-09-23 B1).
+for marker, fresh in (("orders.jsonl", False), ("last_reconcile.json", True)):
     os.remove(cfg_path)
     if os.path.exists(seed_path):
         os.remove(seed_path)
@@ -555,8 +559,11 @@ for marker in ("orders.jsonl", "last_reconcile.json"):
     open(mpath, "w").write("")
     cl._cmd_amounts({"amounts": {"s1": 100}})
     cfg = json.load(open(cfg_path))
-    check("self_ledger" not in cfg and not os.path.exists(seed_path) and cfg["amounts"] == {"s1": 100.0},
-          f"manager/{marker} on disk, no config: starts in account-read mode, no seed written")
+    check((cfg.get("self_ledger") is True) == fresh and os.path.exists(seed_path) == fresh
+          and cfg["amounts"] == {"s1": 100.0},
+          f"manager/{marker} on disk, no config: "
+          + ("still a fresh machine — a snapshot is not a trade (self_ledger on, seed written)"
+             if fresh else "starts in account-read mode, no seed written"))
     os.remove(mpath)
 
 print("\n" + ("PASS" if not fails else f"{fails} FAILED"))

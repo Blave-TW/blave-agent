@@ -182,10 +182,10 @@ python publish.py publish    # 真的上傳，機隊約 6 分鐘內吃到
 
 這一節是操作契約：`references/updating.md` 會叫 agent 照英文版 README 的 "Updating an existing workspace" 一節做，電腦版複製的也是同一張檔案清單。**生效的是英文原文**，見 [README.md › Updating an existing workspace](README.md#updating-an-existing-workspace)；下面只是摘要，兩邊不一致時以英文版為準。
 
-跟你的 agent 說：把 https://github.com/Blave-TW/blave-agent clone 到 `/tmp/oc-config` 當**參考**，逐檔比對後只補上缺的、過時的，不要整包覆蓋——
+跟你的 agent 說：把 https://github.com/Blave-TW/blave-agent clone 到 `/tmp/oc-config` 當**參考**，逐檔比對。不做合併：跟 clone 不同的官方檔（clone 裡有同路徑的檔）先備份到 `.official-backup/<舊版號>-<UTC 時間>/`（保留相對路徑、舊備份不覆寫），再整檔換成 clone 的版本；本機那份若不等於該檔任何一個歷史官方版（在 `--filter=blob:none` 的 clone 上用 `git hash-object` 對 `git log --raw`），就是在這台被改過：先問用戶，用戶要留就不動、`VERSION` 不升；替換用暫存名再 `mv`；clone 裡沒有的檔一律不碰——
 
-- `AGENTS.md`、`CLAUDE.md`、`strategies/TEMPLATE_A.py`、`strategies/TEMPLATE_C.py`、`manager/`、`examples/`：整個換掉
-- `references/`：本機有就兩份都讀、補上缺的；沒有就複製進來
-- `lib/`：補上本機缺的官方檔；回測鏈五個檔（`runner.py`、`param_scan.py`、`walk_forward.py`、`validation.py`、`analysis.py`）直接 `cp` 覆蓋、不合併；其餘你改過的官方檔，兩份都讀、手動合併。`lib/order_*.py`／`lib/account_*.py` 若參考 clone 裡**沒有**同名檔，那是用戶自己的交易所串接，**完全不碰**
-- `VERSION`：原樣複製，永遠最後做
+- `AGENTS.md`、`CLAUDE.md`、`strategies/TEMPLATE_A.py`、`strategies/TEMPLATE_C.py`、`manager/`、`examples/`、`allocators/`：整個換掉(只限 clone 裡有的檔)
+- `references/`：不同的整檔換掉（先備份到 `.official-backup/`）；缺的複製進來
+- `lib/`：補上本機缺的官方檔（`venue_errors.py` 一定要有）；不同的官方檔——回測鏈五個檔（`runner.py`、`param_scan.py`、`walk_forward.py`、`validation.py`、`analysis.py`）、`data.py`、官方下單／帳戶 lib 等——一律整檔覆蓋（先備份到 `.official-backup/`）、不合併。`lib/order_*.py`／`lib/account_*.py` 若參考 clone 裡**沒有**同名檔，那是用戶自己的交易所串接，**完全不碰**
+- `VERSION`：原樣複製，永遠最後做，而且前面每一步都成功才做
 - 做完刪掉 `/tmp/oc-config`

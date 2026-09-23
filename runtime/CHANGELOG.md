@@ -8,6 +8,69 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **回報多 `portfolio_configured`(bool,**可能整個不出現**)**:`manager/portfolio_config.json`(或平台先寫的
+  `amounts.ui.json`)存在 = true。false = 從沒存過金額**而且**確定「接下來要跑的那份碼」帶唯讀閘門:對帳器活著時只認它自己
+  寫的證據(`last_reconcile.json` 的 `read_only`),沒活著才看 workspace `lib/portfolio.py` 上有沒有閘門;兩者都答不出來
+  就**不放這個 key**(舊機器分支,前端照舊提示會平倉)。欄位隨 runtime 自動出貨、閘門隨 workspace 半手動出貨,
+  只憑 runtime 自己的行為報 false 會對「runtime 已更新、workspace 還沒」的機器說謊(稽核 09-23 B2);
+  `restart_failed`(檔換好了但舊程式還在跑)是最貴的那一格。測試 `tests/check_unconfigured_readonly.py`。
+- **`_fresh_portfolio_config()` 的「這台交易過」只看 `manager/orders.jsonl`**:不再算 `last_reconcile.json`——唯讀那輪
+  照樣寫快照,於是用戶**第一次**存金額的設定檔少了 `self_ledger`,下一輪把他自己的手動部位平掉(稽核 09-23 B1,真錢)。
+  測試 `tests/check_unconfigured_readonly.py`、`tests/check_drift_band.py`。
+- **VERSION 一變就推 strategies 回報(帶 `config_version`)**:jobs.json 新增 `blave-agent-strategies.path`(api repo
+  `blave_agent/systemd/`,監看 `workspace/VERSION` → `blave-agent-strategies.service`);Windows 的 `file_watcher`
+  同步監看 `VERSION` → `strategy_reporter.py`。雲端更新寫完 VERSION 後 app／網頁幾秒內就看到新版本,不必等 2 分鐘 timer。
+  **出貨順序:api repo 的 unit 檔要先在(publish 從 `../api/blave_agent/systemd/` 打包),再發 runtime。**
+  測試 `tests/check_update_workspace.py` §8。
+- **`manager/update_workspace.py`(雲端更新腳本)三修**(稽核 09-23):① clone 的驗證從 `git status --porcelain` 改成
+  比對 `git ls-tree -r <expect-head>` 的 blob——官方檔清單直接來自那個 commit,所以被 `.gitignore` 藏起來的植入檔不算官方檔、
+  永遠不會被複製進 workspace,`VERSION` 也一併逐 byte 驗;② Windows 的 `nssm status` 是 UTF-16,`text=True` 解出來夾著 NUL,
+  **裝過對帳器服務的 Windows 機器一律卡在 plan**(`nssm_text` 修;Windows 分支仍未在真機驗過,`updating.md` §2 已寫明);
+  ③ 例外不再吐 traceback:最外層包成 `"outcome": "error"` 並帶上已完成的步驟(備份資料夾建立失敗、VERSION 寫入失敗等),
+  另外「plan 之後才出現的檔」不再撞 `os.path.join(None, …)`,改記成 `refused`。
+  **已知、這批不修**(稽核 B5/B6/B7/B8/B10):重啟會打斷進行中的 TWAP/chase(`reap_dead_inflight` 可能直接 HALT)、
+  `restart: "ok"` 只證明 supervisor 迴圈活著而非新碼跑起來、半成品(寫到一半被 `refused` 的 `lib/`)仍會重啟、
+  plan 與 apply 之間用戶按了啟動下單時 `--restart-ok` 仍成立
+  (文件側已改成「只有拿到用戶的 yes 才帶」)、以及舊的 tmux 機器一律 fail-closed 停在 plan(沒有替代路徑)。
+  測試 `tests/check_update_workspace.py` §7b–7e。文件側順手補:`updating.md` §2 的 clone 指令加 `-c core.autocrlf=false`
+  (Windows 預設會把 clone checkout 成 CRLF,逐檔比 blob 會全數不符、第一個檔就停——`cloud-handoff.md` U2 走 `GIT_CONFIG_NOSYSTEM=1`
+  的 `env -i`,不受影響),以及 §2 第 3 步要在同一則訊息問重啟(`--restart-ok` 的 yes 只能是這個,否則要重啟時就不跑 apply)。
+- **雲端更新只在該重啟時才重啟**(承上,原列為「已知不修」):`needs_restart` 不再把「VERSION 有差」當理由——每次真實更新
+  VERSION 都會變,等於**每次更新都重啟正在跑的對帳器**,連只換 `references/` 的純文件更新也是(重啟會切掉進行中的
+  TWAP/chase,還可能觸發 HALT),原本的 `touches_code` 幾乎是死碼。改成照 `cloud-handoff.md` U7 / `updating.md` §2 的字面:
+  要換的檔裡有 `lib/` 或 `manager/` 才重啟;要換的只有 `references/` 之類則不重啟、VERSION 照寫。
+  **VERSION 落後但三個清單全空**(上一輪檔案換完了卻沒做完重啟或寫 VERSION)仍算「上次沒做完」而重啟,U8 那條補做路徑完整。
+  **「要換的檔」在 apply 是 `todo`(真的會寫的那些),不是 `changed_here` 全集**(稽核 09-23):用戶改過一個官方 `lib/` 檔
+  又選擇保留時,舊算法每一次更新都會 `sudo systemctl restart` 一次下單程式,而**一個 byte 都沒寫**,且 `outcome` 永遠 `partial`、
+  VERSION 永遠寫不下去——更新燈對那台永遠亮著、U9 的「再按一次更新就能補完」永遠不會成真。plan 看不到 `--allow`,所以 plan
+  仍照最壞情況回答(那正是 U5 要問用戶的那一題);apply 看得到,就只算真的要寫的。
+- **重啟失敗會被記住**:`state/update_restart_pending.json`——新 `lib/` 已在磁碟、舊 `lib/` 還在跑著的程序裡,而**之後任何一輪的
+  檔案清單都看不出這件事**(清單只比磁碟與 clone,磁碟已經是對的)。於是重啟沒回到 running 的那一輪自己記下來,下一輪不管清單
+  長什麼樣都欠著這次重啟;沒有這個記錄時,「上一輪換了 `lib/` 但重啟失敗、這一輪只剩一個非碼檔要換」會安靜地寫下 VERSION、
+  對平台回報「已更新」,而下單程式還在跑舊碼。重啟回到 running、或任何一輪發現對帳器沒在跑(沒有東西握著舊碼,下次啟動從磁碟讀)
+  就清掉;`not_running_anymore` 同理不寫,`skipped_not_gated` 也不寫——那裡重啟是**被禁止**而非欠著,記了只會每輪索取一個
+  腳本必定再次拒絕的同意。判準依據:對帳器是常駐 daemon,啟動下單 只刪停止記錄、程序不重載碼(`manager/reconciler.py`
+  › `RESTART_STOP_PATH`)。plan/apply 的 JSON 多一個 `restart_pending`;文件側同步:`cloud-handoff.md` U3(欄位)、U7、U8 與
+  `updating.md` §2 重啟那組各補一句。**「讀不到對帳器狀態」算重啟失敗,不算「用戶把它停掉了」**(稽核 09-23):
+  `reconciler_state()` 回 tuple(`is-active` 回 `activating`、dbus 連不上、timeout)時,舊碼 `!= "running"` 成立 →
+  走 `not_running_anymore` → 清掉記錄、寫 VERSION、回報 `updated`,而 daemon 還在跑舊 `lib/`——正是記錄存在的那一格被繞過去,
+  且同一個值在 run 開頭是 `raise Stop`(同值兩種相反處理)。複製檔案要時間,期間 systemd 在 `Restart=` 退避就會回 `activating`,
+  不罕見。測試 `tests/check_update_workspace.py` §9–§13(四格 `needs_restart`、重啟失敗四步序列、讀不到狀態、保留檔不重啟,
+  每格各帶變異驗證;另加一行把 `"RESTART_STOP_PATH"` 這個字串 probe 釘在**真的** `manager/reconciler.py` 上——
+  `runtime/command_listener.py:1519` 的孿生 probe 也吃同一個符號,改名的話兩邊一起靜默翻面而測試全綠。
+  `lib/portfolio.py` 的 `def portfolio_configured(` 同理,補在 `tests/check_unconfigured_readonly.py`)。
+  **已知、這批不修**:① 上一輪 `failed`、這一輪 `skipped_not_gated` 時記錄不清但 `complete` 仍成立,
+  機器照樣寫 VERSION、回報「已更新」,而沒有 gate 的對帳器繼續拿舊碼下單——這是 U7 現行契約(「Without the gate … that is
+  not a failure」)的後果,U7 已補一句寫明後果(舊碼續跑到用戶自己停掉對帳器、VERSION 照樣寫),要堵得先改 U7 的語意;② 記錄分不出「現在跑的是新碼還是舊碼」,daemon 自己
+  重開過(reboot / crash)之後記錄仍在,下一次更新會多問一次、多重啟一次——取捨是寧可多重啟一次,不要漏重啟一次;
+  ③ `restart_reconciler()` 把 `sudo` 的 rc 與 stderr 丟掉,只回 True/False:沒有 `provision.sh:298` 那條 sudoers 的舊機
+  會每輪 `restart_failed`、記錄永在、VERSION 永不寫,而用戶與 agent 都無從分辨這是永久性(缺 sudoers)還是暫時性的——
+  建議之後在 JSON 加 `restart_error`(rc + stderr 前 120 字);④ **S2**:腳本以 `python3` 執行,`PYTHONPATH` / user-site
+  `.pth` / shell function 都能換掉真正跑的東西(一行 `/usr/bin/python3 -I` 可收);⑤ **S3**:`write_atomic()` 的
+  `shutil.copyfile(src, tmp)` 會跟 symlink——預先放一個 `lib/data.py.update-tmp` 指到 workspace 外,官方內容會寫出去一次
+  (下一輪 `plan` 才 fail-closed);`api/blave_agent/control/updater.py` 的 `O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW` 可照抄。
+  ④⑤ 都在「攻擊者已經是機器上的 `blaveagent`」這個 Accepted limit 內,沒有提權。
+
 ## 1.1.87 — 2026-09-23
 
 - **電腦版 `mcp_rule` 加雲端更新例外**:掛 `blave` MCP 時,可寫範圍多一條 `references/cloud-handoff.md` ›

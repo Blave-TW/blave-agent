@@ -230,9 +230,9 @@ Editing the built-in looks cheaper and is not:
   `allocators/<name>/` directories the machine reports. A new flag on
   `manager.py` is invisible there, and the page also refuses to pass extra
   params to the built-in — so the user can only reach it by typing a command.
-- **It gets merged away.** Both scripts are tracked files; the next
-  `blave-agent` update compares them file by file against the reference
-  clone, and a local edit is at the mercy of that merge.
+- **It gets replaced.** Both scripts are official files; the next
+  `blave-agent` update replaces them whole with the reference clone's copy
+  (the edited one is only backed up under `.official-backup/`).
 - **It changes the default for everything.** `equal` is what every portfolio
   falls back to when no method is named; a variant nobody asked for should not
   live inside it.

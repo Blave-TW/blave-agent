@@ -41,6 +41,7 @@ DEBOUNCE_S = 5
 ACCOUNT = (SYS_PY, os.path.join(CURRENT, "account_reader.py"))
 REPORT = (VENV_PY, os.path.join(CURRENT, "portfolio_reporter.py"))
 UPLOAD = (VENV_PY, os.path.join(CURRENT, "report_uploader.py"))
+STRATEGIES = (VENV_PY, os.path.join(CURRENT, "strategy_reporter.py"))
 
 # path → jobs to run when its mtime moves (the three Linux path units +
 # one Windows-only Capital watch).
@@ -51,6 +52,10 @@ WATCHES = {
     os.path.join(WORKSPACE, ".env"): (ACCOUNT, REPORT),
     os.path.join(WORKSPACE, "manager", "last_reconcile.json"): (ACCOUNT, REPORT),
     os.path.join(WORKSPACE, "manager", "account.json"): (REPORT,),
+    # the update script writes VERSION last: push the strategy report (it carries
+    # config_version) at once instead of waiting for the 2-minute task — the
+    # Windows twin of blave-agent-strategies.path
+    os.path.join(WORKSPACE, "VERSION"): (STRATEGIES,),
     # lib/ 目錄 mtime:agent 寫出新的 lib/account_{venue}.py 的當下重讀——
     # venue 可讀性=金鑰(.env)+模組(lib/)兩件事,只看 .env 會漏後者
     # (實測串 Binance 時模組比金鑰晚 72 秒,卡到下一輪 2 分鐘 timer)。

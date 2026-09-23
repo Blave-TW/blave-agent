@@ -49,7 +49,7 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
-def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None):
+def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False):
     """Record what this reconcile actually saw, for anything that needs to show
     live positions without querying the exchange itself.
 
@@ -87,6 +87,12 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None):
             doc['ledger'] = ledger
         if gates is not None:
             doc['gates'] = gates
+        if read_only:
+            # The RUNNING reconciler's own word that it is the never-configured
+            # read-only version (the flag alone lives in the workspace lib, the
+            # report in the runtime — two update channels: a file on disk says
+            # nothing about the code the live process loaded).
+            doc['read_only'] = True
         with open('manager/last_reconcile.json', 'w') as f:
             json.dump(doc, f, indent=2)
     except Exception as e:
@@ -831,6 +837,17 @@ def _ui_override_alert(diff=None):
         logging.error(f'[notify-unavailable] ({e}) {_UI_ALERT_MSG}')
 
 
+_PORTFOLIO_CONFIG_PATH = 'manager/portfolio_config.json'
+_unconfigured_logged = False
+
+
+def portfolio_configured():
+    """True once the user has saved amounts at least once: portfolio_config.json
+    (or the UI mirror the platform writes just before it) exists. A MISSING file
+    is "never configured", not "every amount is 0" — see reconcile()."""
+    return os.path.exists(_PORTFOLIO_CONFIG_PATH) or os.path.exists(_UI_MIRROR_PATH)
+
+
 def load_portfolio_config():
     """Load portfolio_config.json from manager/ directory.
 
@@ -1455,13 +1472,33 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     orders = compute_diff(target, diff_actual, threshold, gates=entry_gates,
                           drift_band=drift_band if ledger is None else None)
 
+    # Never configured = read-only (Wei 2026-09-23). With no config the target
+    # is empty and every position on the account — the user's own manual ones
+    # included, without self_ledger — reads as "close it". Setting amounts to 0
+    # to flatten still works: that SAVES a config. Here, not in the reconciler
+    # loop: every caller of reconcile() (the daemon, a hand-run script) passes
+    # through it, and the lib order gates cannot know the caller's intent (Type
+    # B strategies trade without any portfolio config). Positions are still
+    # read and snapshotted, so the page shows them.
+    global _unconfigured_logged
+    read_only = not portfolio_configured()
+    if read_only:
+        if not _unconfigured_logged:
+            logging.info("[reconcile] no manager/portfolio_config.json — amounts were never "
+                         "saved: read-only, no orders (closes included) until they are")
+            _unconfigured_logged = True
+        orders = []
+    elif _unconfigured_logged:
+        logging.info("[reconcile] portfolio config saved — reconciling normally")
+        _unconfigured_logged = False
+
     # Written before placing, so it records the state that WAS acted on. A
     # reconcile that crashes mid-loop still leaves the observation behind.
     # full_target, not the filtered dict (audit #8): a gated strategy's target
     # must stay visible to the workspace view — carrying 'gated': True — not
     # vanish while it waits for its signal.
     _write_reconcile_snapshot(full_target, actual, orders, ledger=ledger,
-                              gates=entry_gates)
+                              gates=entry_gates, read_only=read_only)
 
     # Checked once via signature inspection (not a runtime try/except TypeError) so a
     # TypeError raised *after* place_order_fn already submitted the order — e.g. while

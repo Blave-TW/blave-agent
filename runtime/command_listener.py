@@ -554,13 +554,17 @@ def _fresh_portfolio_config():
     safe reading with no reconciler history on the machine. An EXISTING config
     without the key stays in account-read mode: the default lives at creation,
     not in the reader, so no machine is switched to the book by an update.
-    Nor is a machine that has TRADED (orders.jsonl / last_reconcile.json on
-    disk) but lost or never kept its config: its account may hold bot
-    positions a zero book would re-buy on top of — it starts as today."""
+    Nor is a machine that has TRADED but lost or never kept its config: its
+    account may hold bot positions a zero book would re-buy on top of — it
+    starts as today. Traded = manager/orders.jsonl, an order actually sent.
+    NOT last_reconcile.json: the never-configured read-only reconciler
+    (lib/portfolio.reconcile) writes that snapshot every round without placing
+    anything, and counting it made the user's FIRST save come out without
+    self_ledger — the next round then read their manual positions as the bot's
+    and closed them (audit 2026-09-23 B1, measured)."""
     from datetime import datetime
     mgr = os.path.join(WORKSPACE, "manager")
-    if any(os.path.isfile(os.path.join(mgr, f))
-           for f in ("orders.jsonl", "last_reconcile.json")):
+    if os.path.isfile(os.path.join(mgr, "orders.jsonl")):
         return {}
     seed_path = os.path.join(mgr, "ledger_seed.json")
     os.makedirs(os.path.dirname(seed_path), exist_ok=True)
