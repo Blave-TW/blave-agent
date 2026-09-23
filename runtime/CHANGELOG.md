@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(空)
+
+## 1.1.88
+
 - **回報多 `portfolio_configured`(bool,**可能整個不出現**)**:`manager/portfolio_config.json`(或平台先寫的
   `amounts.ui.json`)存在 = true。false = 從沒存過金額**而且**確定「接下來要跑的那份碼」帶唯讀閘門:對帳器活著時只認它自己
   寫的證據(`last_reconcile.json` 的 `read_only`),沒活著才看 workspace `lib/portfolio.py` 上有沒有閘門;兩者都答不出來
