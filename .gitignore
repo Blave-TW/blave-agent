@@ -26,3 +26,6 @@ examples/**/versions/
 
 # platform-managed (skill_sync re-clones this daily) — never commit a copy
 skills/
+
+# agent 本機狀態與 worktree(872MB),不是產品碼 —— 絕不進版控
+.claude/
