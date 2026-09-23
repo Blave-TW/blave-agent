@@ -20,6 +20,9 @@ ok("狀態檔還沒寫出來 = loading", trExecState({ alive: true, report: null
 ok("沒綁任何交易所 = noaccount(就算 HALT 在、對帳器活著也一樣,順序最先)", trExecState(st({ venues: {}, halt: { halted: true }, reconciler: { alive: true } })) === "noaccount");
 ok("金鑰不成對 / 缺 lib 不算帳戶", trExecState(st({ venues: { x: { credentials: true, pair: false, order: true, account: true } } })) === "noaccount"
   && trExecState(st({ venues: { x: { credentials: true, pair: true, order: false, account: true } } })) === "noaccount");
+ok("連上的規則(稽核 S-2:放寬已撤回):四個欄位都要——缺 pair 或 pair: false 都不算連上", J(trVenueIds({ venues: { paper: { credentials: true, pair: true, order: true, account: true } } })) === J(["paper"])
+  && J(trVenueIds({ venues: { x: { credentials: true, pair: false, order: true, account: true } } })) === "[]" && J(trVenueIds({ venues: { x: { credentials: true, order: true, account: true } } })) === "[]"
+  && !/pair !== false/.test(src));
 ok("剛連上、帳戶還沒讀過:算有帳戶(不閃回 onboard)", trExecState(st({ venues: V, account: null, reconciler: { alive: false } })) === "dead");
 // 稽核 S5:讀帳失敗 / 狀態檔 build 失敗時,頁面不能變成 onboard、暫停鈕不能消失
 ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", trExecState(st({ venues: V, account: acct(false), halt: {}, reconciler: { alive: true } })) === "running" && J(trFailedIds({ venues: V, account: acct(false) })) === J(["paper"]));
@@ -340,8 +343,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && trExecState({ alive: true, report: { venues: V2, halt: {}, reconciler: { alive: false, stopped: null } } }) === "dead");
     // 定稿(eval-downtime-behavior-unified):已暫停一律帶原因行;重開那條優先、墨色;HALT 那條次要灰;常駐不截斷
     const stx = src.slice(src.indexOf("function trStateText("), src.indexOf("\nfunction ", src.indexOf("function trStateText(") + 1));
-    ok("狀態行:重開(主機 / Blave)講 B、HALT 講 A,兩者同時講 B", /\+ trHaltReasonText\(r\); \}/.test(stx) && /return rk === "machine" \? t\("tr\.cloud\.restartStopped"\) : rk === "app" \? t\("tr\.restartStoppedLocal"\)\n\s*: trHaltStopsAll\(r && r\.halt\) \? \(trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.haltReasonUnconfirmed"\) : t\("tr\.haltReasonAll"\)\) : t\("tr\.haltReason"\);/.test(src)
-      && /\|\| died \|\| state === "halted" \|\| state === "unconfirmed" \|\| \(state === "noaccount" && trNoAccountStopped\(trReport\(\)\)\)\);/.test(src) && /else if \(inkAt > 0\) tx\.append\(full\.slice\(0, inkAt\), trEl\("span", "ink", inkReason\), full\.slice\(inkAt \+ inkReason\.length\)\);/.test(src) && !/rkCut/.test(src));
+    ok("狀態行:重開(主機 / Blave)講 B、HALT 講 A,兩者同時講 B", /\+ trHaltReasonText\(r\); \}/.test(stx) && /return rk === "machine" \? t\(z \? "tr\.cloud\.restartStoppedZ" : "tr\.cloud\.restartStopped"\)\n\s*: rk === "app" \? t\(z \? \(H \? "tr\.restartStoppedLocalZH" : "tr\.restartStoppedLocalZ"\) : "tr\.restartStoppedLocal"\)\n\s*: trHaltStopsAll\(r && r\.halt\) \? \(trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.haltReasonUnconfirmed"\) : t\(z \? "tr\.haltReasonAllZ" : "tr\.haltReasonAll"\)\) : t\("tr\.haltReason"\);/.test(src)
+      && /\|\| died \|\| state === "halted" \|\| state === "unconfirmed" \|\| trNoAmounts\(trReport\(\)\) \|\| \(state === "noaccount" && trNoAccountStopped\(trReport\(\)\)\)\);/.test(src) && /else if \(inkAt > 0\) tx\.append\(full\.slice\(0, inkAt\), trEl\("span", "ink", inkReason\), full\.slice\(inkAt \+ inkReason\.length\)\);/.test(src) && !/rkCut/.test(src));
     const Vp = { paper: { credentials: true, pair: true, order: true, account: true } };
     const reopened = { alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
     const never = { alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: null }, daemon: { reconciler: { running: false, wanted: false } } } };
@@ -350,7 +353,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && trExecState({ alive: true, report: { venues: Vp, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: true } } } }) === "dead"
       && trExecState({ ...reopened, alive: false }) === "dead");
     { // 稽核第三輪測試洞:HALT + 結束 app 再打開 → 判成 "app",狀態行用 tr.restartStoppedLocal(不是 HALT 那條)
-      const haltApp = { alive: true, report: { venues: Vp, halt: { halted: true, at: 1, source: "desktop ui" }, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
+      const haltApp = { alive: true, report: { venues: Vp, config: { amounts: { a: 100 } }, halt: { halted: true, at: 1, source: "desktop ui" }, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
       const fn2 = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
       var TR = { env: "local", st: haltApp, pending: null }, trReport = () => TR.st.report, t = (k) => k, trStamp = () => "—", envHeadWord = () => null, trKeyBad = () => false;
       eval(fn2("trStateText")); eval(fn2("trHaltReasonText"));
@@ -364,7 +367,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && trCxSavedStale(null, at + 1e9) === false && trCxSavedStale({ venue: "paper" }, at + 1e9) === false && TR_CX_SAVED_MS === 180000);
     const ob = src.slice(src.indexOf("function trPaintOnboard("), src.indexOf("\nfunction ", src.indexOf("function trPaintOnboard(") + 1));
     ok("S5 過了上限:講「主機沒回報」+ 連接鈕回來;重畫簽章帶著這個狀態(輪詢到了才換得過去);沒有倒數", /savedStale = trCxSavedStale\(saved, Date\.now\(\)\)/.test(ob)
-      && /saved && \[saved\.venue, saved\.code, saved\.detail\], savedStale,/.test(ob) && /if \(saved && savedStale\) \{[\s\S]*?t\("tr\.cloud\.cxSavedStale"\)[\s\S]*?b\.id = "tr-connect"/.test(ob) && !/秒|countdown|remaining/.test(ob.replace(/\/\*[\s\S]*?\*\//g, ""))); }
+      && /saved && \[saved\.venue, saved\.code, saved\.detail\], savedStale,/.test(ob) && /if \(saved && savedStale\) \{[\s\S]*?t\(saved\.venue === PAPER \? "tr\.cloud\.cxSavedStalePaper" : "tr\.cloud\.cxSavedStale"\)[\s\S]*?b\.id = "tr-connect"/.test(ob) && !/秒|countdown|remaining/.test(ob.replace(/\/\*[\s\S]*?\*\//g, ""))); }
   { // spec-restart-gated-false-display:主機重開、沒能確認停住(stopped.gated === false 嚴格)
     const Vg = { paper: { credentials: true, pair: true, order: true, account: true } };
     const C0 = (o) => ({ alive: false, report: { venues: Vg, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -444,12 +447,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && [undefined, null, {}, { halted: true }, { halted: true, source: "" }, { halted: true, source: 7 }].every((h) => !trHaltStopsAll(h))
       && trHaltStopsAll({ halted: true, source: "reconciler" }) && trHaltStopsAll({ halted: true, source: "healthcheck" }));
     const Vh = { paper: { credentials: true, pair: true, order: true, account: true } };
-    const H = (src, stopped) => ({ alive: true, report: { venues: Vh, halt: { halted: true, at: 3, source: src }, reconciler: { alive: true, ...(stopped ? { stopped } : {}) } } });
+    const H = (src, stopped) => ({ alive: true, report: { venues: Vh, config: { amounts: { a: 100 } }, halt: { halted: true, at: 3, source: src }, reconciler: { alive: true, ...(stopped ? { stopped } : {}) } } });
     TR.st = H("reconciler"); const aP = trStateText("halted"); TR.st = H("portfolio"); const pP = trStateText("halted");
     TR.st = H("reconciler", { reason: "machine_restart", at: 1 }); const bP = trStateText("halted");
     ok("A′ 狀態行:reconciler → 什麼單都不下;portfolio → A;重開(B)仍優先", aP === "tr.halted · tr.haltReasonAll" && pP === "tr.halted · tr.haltReason" && bP === "tr.halted · tr.cloud.restartStopped");
     const head = fnS("trPaintHead");
-    ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| trHaltStopsAll\(hr\.halt\)\) \? trHaltReasonText\(hr\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccount"\) : "";/.test(head)
+    ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| trHaltStopsAll\(hr\.halt\)\) \? trHaltReasonText\(hr\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
     ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
@@ -459,13 +462,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !trNoAccountStopped(B0({ gated: false }).report) && !trNoAccountStopped({ venues: {}, halt: {}, reconciler: {} })
       && !trNoAccountStopped({ ...B0({}).report, venues: { paper: { credentials: true, pair: true, order: true, account: true } } }) && !trNoAccountStopped(null) && !trNoAccountStopped({ error: "x" }));
     TR.st = B0({}); const b0t = trStateText("noaccount"); TR.st = { alive: true, report: { venues: {}, halt: {}, reconciler: {} } }; const n0 = trStateText("noaccount");
-    ok("B0 狀態行:已暫停 · B0;一般 noaccount 照舊", b0t === "tr.halted · tr.cloud.restartNoAccount" && n0 === "tr.noAccount");
+    ok("B0 狀態行(v2 §9-1:一定是 Z):已暫停 · 按「解除暫停」那一句;一般 noaccount 照舊", b0t === "tr.halted · tr.cloud.restartNoAccountZ" && n0 === "tr.noAccount");
     const head = fnS("trPaintHead"), start = fnS("trAskStart"), pc = fnS("trPendingCheck");
-    ok("B0 標頭給主鈕(啟動下單),onboard 照留、連接鈕降 btn-out", /const b0 = state === "noaccount" && trNoAccountStopped\(trReport\(\)\);\n\s*if \(!stopped && !b0 && \(state === "noaccount"/.test(head)
-      && /trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.connect"\)\)/.test(src) && /savedStale, TR\.env === "cloud" && envCloudKind\(TR\.st\), trNoAccountStopped\(trReport\(\)\)\]\)/.test(src));
-    ok("B0 啟動框:只有一顆「啟動下單」送 resume,一句說明;不給補齊 / 等新訊號", /if \(trNoAccountStopped\(r\)\) \{\n\s*confirmBox\(trCloudBox\(\{ title: t\("tr\.start"\), opener, lines: \[t\("tr\.cloud\.restartNoAccountStart"\)\], ok: t\("tr\.start"\), onOk: \(\) => go\("resume"\) \}\)\);\n\s*return;/.test(start)
-      && start.indexOf("trNoAccountStopped(r)") < start.indexOf("tr.startChoice"));
-    ok("B0 啟動後收斂:紀錄檔清掉就回 noaccount,不等 running(沒交易所永遠到不了)", /const b0Done = p\.want === "running" && state === "noaccount" && !trNoAccountStopped\(TR\.st && TR\.st\.report\);/.test(pc) && /if \(state === p\.want \|\| b0Done\)/.test(pc)); }
+    ok("B0(§12 / §13-1):不出「啟動下單」,只出**實心**的「解除暫停」;沒有原因行(出口寫在狀態句裡);onboard 照留", /const b0 = state === "noaccount" && trNoAccountStopped\(trReport\(\)\);\n\s*if \(!stopped && \(b0 \|\| state === "noaccount"[^\n]*\{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintGoUpd\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(head)
+      && /trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.connect"\)\)/.test(src));
+    ok("B0 啟動框與 b0Done 退場(沒有啟動鈕了);解除暫停一律 X0", !/restartNoAccountStart|b0Done/.test(src) && trReleaseKind({ ...B0({}).report, config: { amounts: {} }, self_ledger: true }).kind === "x0"
+      && J(trZView("noaccount", B0({}).report)) === J({ off: true, release: true, reason: null, noStart: true }) && trZView("noaccount", { ...B0({}).report, config: { amounts: { a: 5 } } }).release); }
   { // 1-4 撤回(後端:Type A/C 重開停止期間照跑):啟動框的第二句不分 B
     ok("啟動框第二句:一般暫停 tr.startWarn2;Blave 重開 tr.startWarn2Local;主機重開(B)不出(新狀態稽核 1-2)", /const rkS = trRestartKind\(r\), warn2 = rkS === "app" \? t\("tr\.startWarn2Local"\) : rkS === "machine" \? null : t\("tr\.startWarn2"\);/.test(src)
       && /\.concat\(canWait \? \[t\("tr\.startChoice"\)\] : \[t\("tr\.startWarn1"\)\]\)\.concat\(warn2 \? \[warn2\] : \[\]\),/.test(src) && !/restartStartWarn2/.test(src)); }
@@ -475,7 +477,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { // 2-2:C 期間標頭多一顆「立即更新到最新版本」(同聊天那一行的動作)
     const head = fnS("trPaintHead"), up = fnS("trPaintGoUpd");
     ok("2-2 C 才出、其他態收掉;點了走 upGo;回合在跑停用並講 up.busy", /trPaintGoUpd\(ro && trRestartUnconfirmed\(trReport\(\)\)\);/.test(head) && (head.match(/trPaintGoUpd\(false\)/g) || []).length === 2
-      && /"btn-quiet tr-go-upd"/.test(up) && /if \(typeof upGo === "function" && trUpdAct\(\) === "cloud"\) \{ upGo\(\); trPaintGoUpd\(true\); \}/.test(up) && /const why = busy \? t\("up\.busy"\) : act === "cloud" \? "" : plan && plan\.cloud && plan\.cloud\.updating \? t\("up\.c\.updating"\)\n\s*: envCloudKind\(TR\.st\) === "stopped" \? t\("up\.c\.stopped"\) : t\("up\.c\.unreach"\);/.test(up)
+      && /"btn-quiet tr-go-upd"/.test(up) && /if \(typeof upGo === "function" && trUpdAct\(\) === "cloud"\) \{ upGo\(\); trPaintGoUpd\(true\); \}/.test(up) && /const why = busy \? t\("up\.busy"\) : act === "cloud" \? "" : plan && plan\.cloud && plan\.cloud\.updating \? t\("up\.updating"\)\n\s*: envCloudKind\(TR\.st\) === "stopped" \? t\("up\.c\.stopped"\) : t\("up\.c\.unreach"\);/.test(up)
       && /u\.disabled = !!why; u\.title = why;/.test(up)
       && /if \(why && document\.activeElement === u\) \{ \$\("tr-h"\)\.focus\(\); TR\.updParked = true; \}/.test(up)
       && /if \(!why && TR\.updParked\) \{ TR\.updParked = false; const ae = document\.activeElement; if \(!ae \|\| ae === document\.body \|\| ae === \$\("tr-h"\)\) u\.focus\(\); \}/.test(up)
@@ -504,7 +506,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
     ok("曲線說明講真話(不再說斷開的地方)", get("zh", "tr.ov.gapNote") === "Blave 沒開著的時段沒有紀錄，曲線直接連起來。" && /connects straight across/.test(get("en", "tr.ov.gapNote")) && !/斷開/.test(get("zh", "tr.ov.gapNote")));
     ok("A′ / B0 / S1 文字照稽核;事件兩句 note 同網頁語序", /^什麼單都不下——平倉與停損也不會執行。/.test(get("zh", "tr.haltReasonAll")) && /^No orders are going out — exits and stops won’t run either\./.test(get("en", "tr.haltReasonAll"))
-      && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccount")) && get("zh", "tr.cloud.restartNoAccountStart") !== null
+      && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccountZ")) && get("zh", "tr.cloud.restartNoAccountStart") === null && get("zh", "tr.cloud.restartNoAccount") === null
       && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行；停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "平倉與停損不會執行；什麼單都不下"
       && /更新到最新版本、再按「啟動下單」/.test(get("zh", "tr.cloud.closeAllWarn2Unconfirmed")) && /^雲端已暫停：.*更新到最新版本、再按「啟動下單」/.test(get("zh", "tr.cloud.saveIdleUnconfirmed"))
       && /after you update to the latest version and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && /after you update to the latest version and press Start trading/.test(get("en", "tr.cloud.saveIdleUnconfirmed"))
@@ -593,6 +595,435 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
     ok("2-1 側欄雲端列尾:C 的長詞改紅短劃(title + aria-label 帶全文),其他詞照舊寫字", /function envRowMark\(w\) \{\n\s*if \(w !== "tr\.cloud\.mayTrade"\) return trEl\("span", "stx", t\(w\)\);\n\s*const m = trEl\("span", "dot bad"\); m\.setAttribute\("role", "img"\); m\.setAttribute\("aria-label", t\(w\)\); m\.title = t\(w\);/.test(src)
       && /if \(w\) row\.appendChild\(envRowMark\(w\)\);/.test(src) && /\.strat-row \.dot\.bad \{ flex: none; display: inline-block; width: 8px; height: 2px; background: var\(--color-red\); \}/.test(css)); }
+  { // v2 §8:沒有策略設金額(Z)時停用「啟動下單」+「解除暫停」
+    const Vz = { paper: { credentials: true, pair: true, order: true, account: true } };
+    ok("Z 判定:沒有任何金額 > 0(含沒有設定檔);讀不到設定檔(config: null)不算 Z(不猜)", trNoAmounts({ config: { amounts: {} } }) && trNoAmounts({ config: { amounts: { a: 0, b: "0" } } }) && trNoAmounts({})
+      && !trNoAmounts({ config: { amounts: { a: 0, b: 5 } } }) && !trNoAmounts({ config: null }) && !trNoAmounts(null));
+    // 不變式(列舉):Z 時只要主鈕會是「啟動下單」,它就一定停用
+    const halts = [{}, { halted: true, source: "web" }, { halted: true, source: "reconciler" }];
+    const recs = [{ alive: true }, { alive: false }, { alive: false, heartbeat_at: 100 }, { alive: false, stopped: { reason: "machine_restart", at: 1 } }, { alive: false, stopped: { reason: "machine_restart", at: 1, gated: true } }, { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } }];
+    const daemons = [undefined, { reconciler: { running: false, wanted: false } }, { reconciler: { running: false, wanted: true } }, { reconciler: { running: true } }];
+    const cfgs = [{ amounts: {} }, { amounts: { a: 0 } }, undefined];
+    let n = 0; const bad = [];
+    [Vz, {}].forEach((venues) => halts.forEach((halt) => recs.forEach((reconciler) => daemons.forEach((daemon) => cfgs.forEach((config) => {
+      const r = { venues, halt, reconciler, ...(daemon ? { daemon } : {}), ...(config ? { config } : {}) }, st0 = { alive: true, report: r }, state = trExecState(st0);
+      const hasBtn = !(state === "loading" || state === "unknown" || (state === "noaccount" && !trNoAccountStopped(r)));
+      const saysStart = hasBtn && !trStopSide(state) && !trRestartUnconfirmed(r);
+      if (saysStart) { n++; if (!trZView(state, r).off) bad.push(state + ":" + JSON.stringify(r)); }
+    })))));
+    ok("不變式:沒有策略設金額時「啟動下單」永遠停用(列舉 " + n + " 種會出「啟動下單」的報告)" + (bad.length ? ":" + bad[0].slice(0, 160) : ""), n > 20 && bad.length === 0);
+    const Zr = (o) => ({ venues: Vz, config: { amounts: {} }, halt: {}, reconciler: { alive: false }, ...o });
+    const zv = (o) => { const r = Zr(o); return trZView(trExecState({ alive: true, report: r }), r); };
+    const Rst = { alive: false, stopped: { reason: "machine_restart", at: 1 } };
+    ok("§8 表:dead → 停用、沒有解除暫停;HALT / 重開停止 → 停用 + 解除暫停;Blave 重開(app,沒 HALT)→ 停用、沒有解除暫停;原因行各對",
+      J(zv({})) === J({ off: true, release: false, reason: "tr.startOffNoAmt" })
+      && J(zv({ halt: { halted: true, source: "web" } })) === J({ off: true, release: true, reason: "tr.startOffNoAmtRelease" })
+      && J(zv({ reconciler: Rst })) === J({ off: true, release: true, reason: "tr.startOffNoAmtRelease" })
+      && J(zv({ reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } })) === J({ off: true, release: false, reason: "tr.startOffNoAmt" }));
+    ok("§8 表:running / 可能仍在下單(C)/ 一般 noaccount / 有金額 → 照現行(全 false);B0 = 解除暫停",
+      !zv({ reconciler: { alive: true } }).off && !zv({ reconciler: { alive: true, stopped: { reason: "machine_restart", at: 1, gated: false } } }).off
+      && !trZView("noaccount", Zr({ venues: {} })).off && !trZView("dead", Zr({ config: { amounts: { a: 5 } } })).off && trZView("noaccount", Zr({ venues: {}, reconciler: Rst })).release);
+    // 解除暫停的確認框
+    const RK = (o) => trReleaseKind(Zr({ reconciler: Rst, ...o }));
+    const act = (m) => ({ BTCUSDT: { side: "long", size: m, exchange: "binance" }, "ETHUSDT@spot": { side: "long", size: 5, exchange: "binance" } });
+    ok("§8 框:只有重開停止會開始平倉;單純 HALT、沒有設定檔(對帳器唯讀)、沒有孤兒 → X0", trReleaseKind(Zr({ halt: { halted: true } })).kind === "x0"
+      && RK({ portfolio_configured: false }).kind === "x0" && RK({ last_reconcile: { actual: act(0) } }).kind === "x0");
+    /* 稽核 R9:只認 portfolio_configured === false(逐字同網頁 pfNeverConfigured)。「設定檔在、但讀不壞」機器端照樣算設定過、
+       對帳器照跑照平倉,不可以在這裡當成安全;那一種由 trNoAmounts 的 config === null 擋在上游(Z 不成立,鈕不存在) */
+    ok("R9 讀不到設定檔(config: null)不算「從沒設定過」:走警告那一邊(X1),不說「什麼都不會平」", trReleaseKind({ ...Zr({ reconciler: Rst }), config: null, portfolio_configured: true, last_reconcile: { actual: act(300) } }).kind === "x1"
+      && trReleaseKind({ ...Zr({ reconciler: Rst }), config: undefined, last_reconcile: { actual: act(300) } }).kind === "x1"
+      && !trNoAmounts({ ...Zr({ reconciler: Rst }), config: null }));
+    ok("§8 框:重開停止 + 帳上有合約部位(self_ledger 沒開)→ X1 帶數量(現貨不算);讀不到快照 → X1 不帶數字", J(RK({ last_reconcile: { actual: act(300) } })) === J({ kind: "x1", n: 1 }) && J(RK({})) === J({ kind: "x1", n: null }));
+    ok("§8 框:self_ledger 開著、帳本上有部位 → X2;帳本空 → X0", RK({ self_ledger: true, last_reconcile: { ledger: { BTCUSDT: { size: 10 } }, actual: act(300) } }).kind === "x2"
+      && RK({ self_ledger: true, last_reconcile: { ledger: {}, actual: act(300) } }).kind === "x0");
+    const rel = fnS("trAskRelease"), head = fnS("trPaintHead"), gorel = fnS("trPaintGoRel"), noamt = fnS("trPaintNoAmt"), pend = fnS("trPendingCheck");
+    await (async () => { // 行為測試(稽核的測試缺口 ③):真的跑一次「解除暫停」,看它到底送了哪些指令——不是對原始碼比 regex
+      const sends = []; let box = null;
+      const env2 = { t: (k) => k, trReport: () => Zr({ reconciler: Rst }), trCloudBox: (o) => o, confirmBox: (o) => { box = o; }, srSay: () => {},
+        TR: { env: "local", pending: null, sending: {}, reqIds: {}, api: { tradeSend: async (cmd, args, rid, intent) => { sends.push([cmd, args, rid, intent]); return { ok: true }; } } },
+        trRun: (want, steps, cmd) => { env2.ran = { want, cmd }; return Promise.all(steps.map((f) => f(env2.TR))); },
+        trHaltStopsAll, trReleaseKind, trRestartStopped, trRestartUnconfirmed, trNoAccountStopped, trHasAccount, trCanonKey, trMs, console };
+      const vm2 = require("vm"); vm2.createContext(env2);
+      vm2.runInContext(fnS("trAskRelease") + "\n" + src.slice(src.indexOf("async function trSend("), src.indexOf("\n/* 送「會改變執行狀態」的指令")), env2);
+      vm2.runInContext("trAskRelease(null)", env2);
+      return Promise.resolve(box && box.alt ? box.alt.onOk() : box && box.onOk()).then(() => {
+        ok("§8 解除暫停真的只送一個 resume(沒有 restart_reconciler / resume_wait),而且標成 release;want 是自己的 released",
+          J(sends) === J([["resume", {}, null, "release"]]) && env2.ran && env2.ran.want === "released" && env2.ran.cmd === "resume");
+      });
+    })();
+    ok("§8 X0 自動觸發的 HALT 多一句;X1/X2 主鈕是「先不要」(single:焦點在它)、平掉並解除是破壞性次鈕", /const auto = !!\(r\.halt && r\.halt\.halted\) && trHaltStopsAll\(r\.halt\);/.test(rel) && /\.concat\(auto \? \[t\("tr\.relAuto"\)\] : \[\]\)/.test(rel)
+      && /single: true,/.test(rel) && /ok: t\("tr\.relNotNow"\), onOk: \(\) => \{\}, alt: \{ label: t\("tr\.relCloseGo"\), danger: true, onOk: go \}/.test(rel) && /k\.n \? t\("tr\.relX1Body", \{ n: k\.n \}\) : t\("tr\.relX1BodyN"\)/.test(rel));
+    ok("§8 接線:主鈕 disabled 帶 zv.off、aria-describedby 指原因行、title 不讓「連不上」蓋掉原因;原因行與解除暫停鈕每次畫", /b\.disabled = flying \|\| zv\.off \|\| \(!busy && !usable\);/.test(head)
+      && /if \(zv\.off\) b\.setAttribute\("aria-describedby", "tr-noamt"\);/.test(head) && /b\.title = zv\.off \? "" :/.test(head) && /trPaintNoAmt\(pend \|\| zv\.reason\); trPaintGoRel\(zv\.release, zv\.noStart\);/.test(head)
+      && /if \(trZView\(envHeadState\(TR\.st, Date\.now\(\)\), r\)\.off\) return;/.test(fnS("trAskStart")));
+    ok("§8 / §13-1 解除暫停鈕:B0 實心、其餘描邊;插在主鈕左邊(主鈕守住最右);在途「解除中…」停用、通道不通也停用;停用時焦點先交給標題、放開再還回來;原因行的「部位」是切分頁的連結",
+      /u\.classList\.toggle\("btn-fill", !!solid\); u\.classList\.toggle\("btn-out", !solid\);/.test(gorel) && /\$\("tr-act"\)\.insertBefore\(u, \$\("tr-go"\)\)/.test(gorel)
+      && /u\.textContent = rel \? t\("tr\.releasing"\) : t\("tr\.release"\);/.test(gorel) && /const off = !!TR\.pending \|\| !up;/.test(gorel)
+      && /if \(off && document\.activeElement === u\) \{ \$\("tr-h"\)\.focus\(\); TR\.relParked = true; \}/.test(gorel)
+      && /if \(!off && TR\.relParked\) \{ TR\.relParked = false;[^\n]*u\.focus\(\); \}/.test(gorel)
+      && /word = t\("tr\.tab\.pos"\)/.test(noamt) && /trSetTab\("pos", true\)/.test(noamt) && /\$\("tr-desc"\)\.after\(p\)/.test(noamt));
+    ok("§8 解除在途的收斂:HALT 與重開停止都清掉就算(Z 時落到 running 或 dead 都行);狀態字「解除中…」", /relDone = p\.want === "released" && !!TR\.st && !!TR\.st\.report && !\(pr\.halt && pr\.halt\.halted\) && !trRestartStopped\(pr\);/.test(pend)
+      && /TR\.pending\.want === "released" \? t\("tr\.releasing"\)/.test(fnS("trStateText")) && /TR\.pending\.want === "released" \? t\("tr\.releasing"\)/.test(fnS("trShortState")));
+    ok("§8 running + Z 的狀態行不寫「自動下單執行中」", /let s = trNoAmounts\(r\) \? t\("tr\.runningZ"\) : t\("tr\.autoOn"\);/.test(fnS("trStateText")));
+    { const S2 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+      ok("§8 破壞性次鈕的字:en「Close positions and release」(不讀成「關掉這個框」,同網頁);zh 不動", /"tr\.relCloseGo": "Close positions and release"/.test(S2) && /"tr\.relCloseGo": "平掉並解除暫停"/.test(S2) && !/Close and release/.test(S2)); }
+    const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+    ok("視覺稽核 2-4:停用的實心鈕有一條比填色亮一階的框(只靠填色對 darkBody 只有 1.5:1)", /\.btn-fill:disabled \{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\); cursor: default; opacity: 1; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")));
+    ok("稽核 R5:原因行收掉 / 重建之前,焦點在那條「部位」連結上就先交給標題(不掉到 BODY);標頭早退拿掉主鈕時同理",
+      /const hadFocus = !!p && p\.contains\(document\.activeElement\);/.test(noamt) && /if \(!key\) \{ if \(p\) \{ if \(hadFocus\) \$\("tr-h"\)\.focus\(\); p\.remove\(\); \} return; \}/.test(noamt)
+      && /if \(hadFocus\) \$\("tr-h"\)\.focus\(\);\n\s*p\.dataset\.key = key/.test(noamt)
+      && /\{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\);/.test(head));
+  { /* V2b 標頭三列(spec §12-4):列 1 標題 | 動作槽,狀態句與原因行跨滿寬;中欄 ≤520 且**兩顆**鈕時鈕自己一列。
+       舊的 flex 版在 1024 最小視窗 + 三欄全開(中欄 336)把文字欄壓到 60 px,最長的狀態 36 行 */
+    const css2 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+    const cq = css2.slice(css2.indexOf("@container (max-width: 520px)"), css2.indexOf("}\n", css2.indexOf(".pf-tbl .ccy")));
+    ok("V2b:.main-head 是 grid、.txt 走 display: contents、標題與動作槽同一列、動作槽靠右",
+      /\.main-head \{ flex: none; display: grid; grid-template-columns: minmax\(0, 1fr\) auto; column-gap: var\(--space-16\); align-items: start;/.test(css2)
+      && /\.main-head > \.txt \{ display: contents; \}/.test(css2) && /\.main-head-name \{ grid-column: 1; grid-row: 1; \}/.test(css2)
+      && /\.main-head \.act \{ grid-column: 2; grid-row: 1; justify-self: end;/.test(css2)
+      && /\.main-head:not\(:has\(\.act\)\) \{ grid-template-columns: minmax\(0, 1fr\); column-gap: 0; \}/.test(css2));
+    ok("V2b:.txt 底下每一個孩子都跨滿寬(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)——漏一個就會被塞進第二欄",
+      /\.main-head-desc, \.main-head \.tr-noamt, \.main-head \.tr-go-upd, \.main-head \.tr-ro-note, \.main-head #tr-verdict, \.main-head \.pf-alert \{ grid-column: 1 \/ -1; \}/.test(css2));
+    ok("V2b:中欄 ≤520 + 兩顆鈕才換列、各佔一半;一顆鈕留在標題列(不用無條件換行那一種)",
+      /\.main-head:has\(\.act button \+ button\) \.act \{ grid-column: 1 \/ -1; grid-row: 2; justify-self: stretch;/.test(cq)
+      && /\.main-head:has\(\.act button \+ button\) \.act > button \{ flex: 1; \}/.test(cq)
+      && !/\.main-head \.act \{ grid-column: 1 \/ -1/.test(cq));
+    { /* 陷阱的行為版:把 trPaintHead 裡那個 wrap 判斷式逐字切出來,對每一種 Z 狀態真的算一次。
+         只比 regex 的話,改成 `trNoAmounts(r) && false` 之類照樣綠 */
+      const expr = head.slice(head.indexOf('desc.classList.toggle("wrap", ') + 'desc.classList.toggle("wrap", '.length, head.indexOf(");   //", head.indexOf('desc.classList.toggle("wrap", '))).replace(/\);\s*$/, "");
+      const wrap = new Function("state", "ro", "died", "TR", "trReport", "trHostDown", "trNoAmounts", "trNoAccountStopped", "return " + expr + ";");
+      const Vw = { paper: { credentials: true, pair: true, order: true, account: true } };
+      const zCases = [["Z+主機重開", { venues: Vw, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }],
+        ["Z+自動暫停", { venues: Vw, config: { amounts: {} }, halt: { halted: true, source: "reconciler" }, reconciler: { alive: true } }],
+        ["B0", { venues: {}, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }],
+        ["Blave 重開", { venues: Vw, config: { amounts: {} }, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } }],
+        ["running+Z", { venues: Vw, config: { amounts: {} }, halt: {}, reconciler: { alive: true } }],
+        ["尚未啟動+Z", { venues: Vw, config: { amounts: {} }, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } }]];
+      const noWrap = zCases.filter(([, r]) => { const st0 = { alive: true, running: true, report: r }, state = trExecState(st0);
+        return !wrap(state, false, trDeadKind(r) === "died" && state === "dead", { st: st0, env: "local", pending: null }, () => r, () => null, trNoAmounts, trNoAccountStopped); });
+      ok("V2b 陷阱(行為):Z 的每一種狀態狀態句都會換行" + (noWrap.length ? ":" + noWrap.map((x) => x[0]).join() : ""), noWrap.length === 0); }
+    // 陷阱:狀態句預設 nowrap + 省略號,跨滿寬之後少了 .wrap 會被截成一行**而且看起來很正常**——藏掉的是「部位現在沒有人在管」
+    ok("V2b 陷阱:Z 的每一種狀態都掛 .wrap(running + Z、尚未啟動那兩種以前沒有)", /trNoAmounts\(trReport\(\)\) \|\| \(state === "noaccount" && trNoAccountStopped\(trReport\(\)\)\)\);/.test(src)
+      && /\.main-head-desc \{[^}]*white-space: nowrap; \}/.test(css2) && /\.main-head-desc\.wrap \{ white-space: normal; overflow: visible; \}/.test(css2)); }
+    ok("§8 原因行樣式:--ink-3 12px", /\.main-head \.tr-noamt \{ margin: var\(--space-4\) 0 0; font-size: 12px; line-height: 1\.5; color: var\(--ink-3\); \}/.test(css)); }
+  { // 稽核 S-1:模擬帳戶送出後直接當成已連接(不進「連接中…」等待態)
+    const paint = fnS("trPaint"), skel = fnS("trPaintSkel"), cx = src.slice(src.indexOf("async function cxConnectCloud("), src.indexOf("\nfunction ", src.indexOf("async function cxConnectCloud(")));
+    const now = 1e12;
+    ok("模擬:存下的紀錄在上限內算已連接;真實交易所不算;過了上限兩邊都不算(退回 onboard 講主機沒回報)",
+      trCxAssumed({ venue: "paper", at: now }, now + 1000) === true && trCxAssumed({ venue: "binance", at: now }, now + 1000) === false
+      && trCxAssumed({ venue: "paper", at: now }, now + TR_CX_SAVED_MS) === false && trCxAssumed(null, now) === false);
+    ok("模擬(spec-desktop-waiting-states §3):收掉分頁列與骨架,走 onboard 的等待兩行;骨架元件與 CSS 都拿掉",
+      /const bare = assumed \|\| state === "noaccount" \|\| state === "loading" \|\| state === "unknown";/.test(paint)
+      && !/trPaintSkel|tr-skel/.test(src) && !/tr-skel/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));
+    ok("模擬:送出成功後讀屏念「已連接」,不念「正在等主機確認」;真實交易所照舊念已存 + 等確認",
+      /srSay\(venue === BINANCE \? t\("tr\.cloud\.cxSavedBn"\) \+ " " \+ t\("tr\.cloud\.cxWaiting"\) : t\("cx\.connected"\)\);/.test(cx));
+    // 追加稽核 4:報告真的帶出 paper 的那一刻不可以再念一次(同一件事對讀屏講兩次);真實交易所那時才第一次念
+    ok("模擬:報告追上時不重複念「已連接」;真實交易所照念", /const said = C\.cxSaved\.venue === PAPER; C\.cxSaved = null; C\.sig = \{\}; if \(!said\) srSay\(t\("cx\.connected"\)\);/.test(src)); }
+  { /* spec-desktop-waiting-states:機器的上一份報告不可以否定用戶剛做的事。
+       存完金額到下一份報告之間,標頭原來寫「還沒有策略設定金額,先到部位設定」——那是假的,
+       而且叫人再做一次他剛做完的事;鈕照舊停用(它作用在機器實際持有的設定上),換的是理由。 */
+    const Vp2 = { paper: { credentials: true, pair: true, order: true, account: true } };
+    const rz = (o) => ({ venues: Vp2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } }, ...o });
+    /* 定稿:等回報那一行**不在 trZView 裡**。它的條件只有 sentOn && 沒再改 && 存檔沒失敗,跟 Z、
+       跟金額、跟 trExecState 都無關;非 Z(有金額,常見的那一種)也要出。trZView 繼續只決定**鈕**。 */
+    ok("§2 trZView 只吃 (state, r):原因行不再由它決定(Z 自己那一句照舊)",
+      /^function trZView\(state, r\) \{/m.test(src) && trZView("dead", rz()).reason === "tr.startOffNoAmt"
+      && trZView("halted", rz({ halt: { halted: true, source: "web" }, reconciler: { alive: true } })).reason === "tr.startOffNoAmtRelease");
+    ok("§2 鈕的行為沒變:Z 停用、非 Z 不停用(等回報那一行不動鈕)",
+      trZView("dead", rz()).off === true && trZView("dead", rz({ config: { amounts: { a: 100 } } })).off === false
+      && trZView("halted", rz({ halt: { halted: true, source: "web" }, reconciler: { alive: true } })).off === true);
+    { /* 行為:trPaintHead 那一整條組合式**從原文切出來跑**(改了就露餡)。非 Z 是常見的那一種,
+         所以它必須真的出線;又改過 / 有格子看不懂 / 存檔失敗 / 本機都不出。 */
+      const vm = require("vm");
+      let NOW = 1e12;
+      const ctx2 = { Date: { now: () => NOW }, Object, Array, String, Number, JSON, isFinite, isNaN, Set, Map };
+      vm.createContext(ctx2);
+      vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var "), ctx2);
+      // fnS 切到下一個 function 為止,所以 trAmountsPending 那一段本身就帶著 TR_PEND_SLOW_MS(不另外宣告)
+      vm.runInContext([fnS("trReport"), fnS("trStored"), fnS("trBase"), fnS("trNames"), fnS("trAmountsPending"), fnS("trPendKey"), fnS("trAmountsEdited")].join("\n"), ctx2);
+      const ZV = (src.match(/^ {2}const zv = trZView\(.+$/m) || [""])[0].trim().replace(/^const /, "var ");
+      const PEND = (src.match(/^ {2}const pend = .+$/m) || [""])[0].trim().replace(/^const /, "var ");
+      const rp = (amounts, o2) => ({ venues: V, halt: {}, reconciler: { alive: false, heartbeat_at: 100 },
+        daemon: { reconciler: { running: false, wanted: false } }, config: { amounts }, ...o2 });
+      const line = (o, amounts, state, o2) => {
+        ctx2.TR = { env: "cloud", save: "sent", sent: { a: 100 }, sentAt: 1e12, edits: {}, bad: {},
+          list: [{ name: "a", hasBacktest: true }], st: { alive: true, report: rp(amounts === undefined ? { a: 100 } : amounts, o2) }, ...o };
+        vm.runInContext("var TR = this.TR; var state = " + JSON.stringify(state || "dead"), ctx2);
+        return vm.runInContext(ZV + "\n" + PEND + "\npend", ctx2);
+      };
+      ok("§2 組合式真的切得出來(接線改名就紅,不是永遠 true)",
+        /trAmountsEdited\(\)/.test(PEND) && /trPendKey\(/.test(PEND) && /zv\.off && !zv\.noStart/.test(PEND) && /trZView\(state, trReport\(\)/.test(ZV));
+      ok("§2 非 Z(有金額,常見的那一種)也出這一行,而且是「這一頁的數字還是舊的」那一句;Z 才是「回報進來就能啟動」",
+        line({}, { a: 100 }) === "tr.cloud.startPendAmountsStale" && line({}, {}) === "tr.cloud.startPendAmounts");
+      ok("§2 非 Z 時鈕不受影響(這一行不擋人按啟動下單)", trZView("dead", rz({ config: { amounts: { a: 100 } } })).off === false);
+      /* 判準是鈕能不能按、不是有沒有金額:重開沒確認停住(C)沒有金額時 trZView 回 none(鈕照樣能按),
+         那一格必須講「這一頁的數字還是舊的」,不能講「回報進來就能啟動」——會一邊那樣說一邊讓人按下去。 */
+      ok("§2 C(重開沒確認停住)+ 沒有金額:鈕能按,所以句子不講「回報進來就能啟動」",
+        trZView("dead", rz({ reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, gated: false } } })).off === false
+        && line({}, {}, "dead", { reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, gated: false } } }) === "tr.cloud.startPendAmountsStale");
+      ok("§2 存完又改過 / 有格子看不懂 → 收起來(畫面上的數字是他正在打的,不是「舊的」)",
+        line({ edits: { a: 7 } }) === null && line({ bad: { a: 1 } }) === null && line({ edits: { a: 100 } }) !== null);
+      ok("§2 存檔失敗、本機、沒送過 → 不出(失敗要讓儲存列講失敗)",
+        line({ save: "failed" }) === null && line({ env: "local" }) === null && line({ sent: null }) === null);
+      NOW = 1e12 + 20001;
+      ok("§2 過了 20 秒:Z 與非 Z 都換成同一句升級句(時間一到就換,不另造計時器)",
+        line({}, { a: 100 }) === "tr.cloud.startPendSlow" && line({}, {}) === "tr.cloud.startPendSlow");
+      NOW = 1e12; }
+    { /* §2-3 定稿:常態那一句**不講秒數**(爆發窗之後常態約 5 秒);超過 20 秒才升級成帶「最久大約兩分鐘」那一句。
+         照 app.js 的 plan.err.slow + PLAN_SLOW_MS 那個既有形狀,不另造計時器 */
+      eval(fnS("trAmountsPending").replace(/^function /, "var trAmountsPending2 = function "));
+      eval(fnS("trPendKey").replace(/^function /, "var trPendKey = function ").replace("trAmountsPending(S)", "trAmountsPending2(S)"));
+      eval(src.match(/^const TR_PEND_SLOW_MS = [^\n]*$/m)[0].replace(/^const /, "var "));
+      const T1 = 1e12, bag = { env: "cloud", sent: { a: 1 }, save: "sent", sentAt: T1 };
+      ok("§2 20 秒之前是不講秒數那一句;之後升級成帶數字那一句", trPendKey(bag, T1 + 1000, true) === "tr.cloud.startPendAmounts"
+        && trPendKey(bag, T1 + TR_PEND_SLOW_MS, true) === "tr.cloud.startPendAmounts" && trPendKey(bag, T1 + TR_PEND_SLOW_MS + 1, true) === "tr.cloud.startPendSlow"
+        && TR_PEND_SLOW_MS === 20000);
+      // 常態句分兩版(Z / 非 Z),升級句兩版共用——慢的時候講的是「主機還在回報」,那跟有沒有金額無關
+      ok("§2 Z 與非 Z 各一句常態句;過了 20 秒兩邊都換成同一句升級句",
+        trPendKey(bag, T1 + 1000, true) === "tr.cloud.startPendAmounts" && trPendKey(bag, T1 + 1000, false) === "tr.cloud.startPendAmountsStale"
+        && trPendKey(bag, T1 + 9e6, true) === "tr.cloud.startPendSlow" && trPendKey(bag, T1 + 9e6, false) === "tr.cloud.startPendSlow");
+      /* 這條比的是**寫死的 5000**,不是 cloud.js 的 MIN_GAP_MS。它保的是「升級句的門檻不會被調到
+         跟常態等待同一個數量級」;它**不會**在有人把 MIN_GAP_MS 從 5 秒改大時變紅(那時 20 秒可能
+         已經不到三倍了,這裡照樣綠)。要連動得把 MIN_GAP_MS 從 cloud.js 讀進來比——刻意不做:
+         renderer 這支測試不該依賴 main process 那個檔的內部常數名。 */
+      ok("§2 門檻不得低於常態(約 5 秒)的三倍", TR_PEND_SLOW_MS >= 3 * 5000);
+      ok("§2 沒在等的時候兩句都不出(本機、失敗、沒送過)", trPendKey({ env: "local", sent: { a: 1 }, sentAt: T1 }, T1 + 9e6) === null
+        && trPendKey({ env: "cloud", sent: { a: 1 }, save: "failed", sentAt: T1 }, T1 + 9e6) === null && trPendKey({ env: "cloud", sent: null }, T1) === null);
+      ok("§2 送出時間有記下來(沒有它就永遠升不了級)", /S\.sent = sending; S\.sentAt = Date\.now\(\);/.test(src) && /sent: null, sentAt: 0,/.test(src)); }
+    // 送出中那一態怎麼算:只有雲端、而且存檔沒失敗
+    // trAmountsPending 讀袋子(不在純邏輯區):從原文切出來跑
+    eval(fnS("trAmountsPending").replace(/^function /, "var trAmountsPending = function "));
+    const AP = (bag) => trAmountsPending(bag);
+    ok("§2 判定:雲端 + 有 sent + 沒失敗;本機不算、失敗不算(失敗時原因行要講失敗)",
+      AP({ env: "cloud", sent: { a: 1 }, save: "sent" }) === true && AP({ env: "cloud", sent: { a: 1 }, save: "failed" }) === false
+      && AP({ env: "local", sent: { a: 1 } }) === false && AP({ env: "cloud", sent: null }) === false);
+    ok("§2 aria-describedby 照舊指到原因行(換句之後自動就對)", /if \(zv\.off\) b\.setAttribute\("aria-describedby", "tr-noamt"\);/.test(fnS("trPaintHead")));
+    const po2 = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
+    const zhOf = (k) => (po2("zh").match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^\n]*)"')) || [])[1] || "";
+    ok("§2 常態那一句:講在等誰、會自己好,**不講秒數**,也不叫人再去設定金額",
+      zhOf("tr.cloud.startPendAmounts") === "新金額已送到主機，正在等回報。回報進來就能啟動。"
+      && /You’ll be able to start once it reports back\./.test(po2("en"))
+      && !/分鐘|秒/.test(zhOf("tr.cloud.startPendAmounts")) && !/先到「部位」/.test(zhOf("tr.cloud.startPendAmounts")));
+    ok("§2 非 Z 那一句:一樣不講秒數,只說這一頁的數字還是舊的——不說「回報進來就能啟動」(鈕本來就能按),也不是警告",
+      zhOf("tr.cloud.startPendAmountsStale") === "新金額已送到主機，正在等回報。這一頁的數字還是舊的。"
+      && /The numbers on this page are still the old ones\./.test(po2("en"))
+      && !/分鐘|秒/.test(zhOf("tr.cloud.startPendAmountsStale")) && !/就能啟動|先到「部位」/.test(zhOf("tr.cloud.startPendAmountsStale")));
+    ok("§2 慢的那一句才講數字,而且叫人不要再按一次(同 plan.err.slow 的語氣)",
+      zhOf("tr.cloud.startPendSlow") === "比平常久。主機還在回報，不用再按一次；最久大約兩分鐘。"
+      && /Taking longer than usual\./.test(po2("en")) && /兩分鐘/.test(zhOf("tr.cloud.startPendSlow")));
+    // §2-3c(a):spinner 放在原因行上,**不放進鈕裡**
+    const noamt = fnS("trPaintNoAmt");
+    ok("§2-3c spinner 在等回報那一句的句首(沿用 .cx-wait / .spin16),句子整段包在一個 span 裡(不然 flex 會把它切成好幾欄)",
+      /const wait = key === "tr\.cloud\.startPendAmounts" \|\| key === "tr\.cloud\.startPendAmountsStale" \|\| key === "tr\.cloud\.startPendSlow";/.test(noamt) && /p\.classList\.toggle\("cx-wait", wait\);/.test(noamt)
+      && /if \(wait\) \{ const sp = trEl\("span", "spin16"\); sp\.setAttribute\("aria-hidden", "true"\); p\.appendChild\(sp\); \}/.test(noamt)
+      && /const line = wait \? trEl\("span", ""\) : p;/.test(noamt)
+      && /\.main-head \.tr-noamt\.cx-wait \{ display: flex; align-items: flex-start; gap: var\(--space-8\); \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));
+    /* §1 規則 6:控件只有在「用戶按了這顆控件、動作還在路上」時才可以用進行式標籤冒充狀態。
+       這一段用戶按的是儲存,不是啟動下單——所以那顆鈕從頭到尾就是「啟動下單」,只是停用。
+       列舉打包版裡每一個「…中…」的控件標籤,確認它們都只出現在自己那顆控件的在途分支裡。 */
+    const head6 = fnS("trPaintHead"), goRel = fnS("trPaintGoRel");
+    ok("§1 規則 6:等回報期間主鈕的字沒變(沒有 tr.starting / 沒有另造進行式),spinner 也不在鈕裡",
+      !/spin16/.test(head6) && !/spin16/.test(goRel)
+      && /b\.textContent = TR\.pending && TR\.pending\.want !== "released" \? \(TR\.pending\.want === "halted" \? t\("tr\.stopping"\) : t\("tr\.starting"\)\) : trStopSide\(state\)/.test(head6));
+    { /* 規則 6 的閘門:控件的字不會變成狀態。清單**從 strings.js 掃出來**(zh 值以「中…」結尾),
+         不是手寫——手寫的話新加一個進行式標籤沒有人會發現。掃 renderer 每一個檔、每一個出現處
+         (不是只查第一個),原文先剝註解(註解裡出現 pending 這個字不守任何門)。
+         要求:每個出現處前面 WIN 字內要有**自己那顆控件的在途旗標**——讀它(if / 三元)或在同一段
+         動作裡設它(SRC.busy = true 後才換字)都算,因為「使用者按了才變字」正是規則 6 要的。
+         STATUS_ONLY 是四個從來不掛在控件上的狀態字(讀取中 / 偵測中),它們本來就是狀態,不受本條管。
+         守不住的情形:WIN 字內剛好有個無關的 pending / busy。要真正的防護得做 AST,這裡換來的是
+         「新增一個沒人守的進行式標籤會紅」,那是稽核指出的那個洞。 */
+      const S2 = (() => { const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+        return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
+      const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting"];
+      const prog = Object.keys(S2.zh).filter((k) => /中…$/.test(S2.zh[k]) && STATUS_ONLY.indexOf(k) < 0);
+      const RD = path.join(__dirname, "..", "shell", "renderer");
+      const files = fs.readdirSync(RD).filter((f) => f.endsWith(".js") && f !== "strings.js" && f !== "i18n.js");
+      /* 最後一項 t("cx.connected") = 設定頁帳號列那個 failed ? … : connected ? … : 串接中…
+         的三元,「既沒失敗也還沒連上」就是它的在途條件。 */
+      const WIN = 260;  // 夠到 app.js 方案卡那張 per-state 表的 st: ["busy"](離標籤 240 字)
+      const FLAG = /pending|busy|save === "saving"|cx\.retest|unbinding|deleting|flying|updating|want === "|view === "starting"|t\("cx\.connected"\)/;
+      const bad = []; let seen = 0;
+      files.forEach((f) => {
+        const bare = fs.readFileSync(path.join(RD, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+        prog.forEach((k) => {
+          const needle = 't("' + k + '")';
+          for (let at = bare.indexOf(needle); at >= 0; at = bare.indexOf(needle, at + 1)) {
+            seen++;
+            if (!FLAG.test(bare.slice(Math.max(0, at - WIN), at))) bad.push(f + ":" + k + "@" + at);
+          }
+        });
+      });
+      ok("§1 規則 6:掃出來的 " + prog.length + " 個進行式標籤,在 renderer 全部檔案裡的 " + seen
+        + " 個出現處都有自己的在途旗標守著" + (bad.length ? ":" + bad.slice(0, 3).join(", ") : ""),
+        prog.length >= 10 && seen >= 15 && bad.length === 0);
+      ok("§1 規則 6:清單是掃出來的、跨檔掃、而且 STATUS_ONLY 真的只放狀態字(新加一個進行式標籤會自己被納入)",
+        prog.indexOf("tr.starting") >= 0 && prog.indexOf("tr.loading") < 0 && files.length >= 4
+        && files.indexOf("app.js") >= 0 && STATUS_ONLY.every((k) => /中…$/.test(S2.zh[k]))); }
+    // §2-3c(b):儲存列只講自己的職責,等待那半句交給標頭(規則 4:一個視窗只講一次)
+    ok("§2-3c 儲存列不再重複講等待", /msgid "tr\.cloud\.pendAmounts"\nmsgstr "新金額已存到雲端主機。"/.test(po2("zh"))
+      && /msgid "tr\.cloud\.pendAmounts"\nmsgstr "The new amounts are saved on the cloud machine\."/.test(po2("en"))
+      && !/回報/.test((po2("zh").match(/msgid "tr\.cloud\.pendAmounts"\nmsgstr "([^\n]*)"/) || [])[1] || ""));
+    // §2-3b:兩種「—」要分得出來
+    const pos = fnS("trAmountTable");
+    ok("§2-3b 等回報時目標部位不畫「—」(那是「策略沒有部位」的意思),改畫待回報記號;表下常駐一句說明",
+      /if \(v === 0 && sentOn\) \{ tgt\.textContent = ""; tgt\.appendChild\(trEl\("span", "amt-dash"\)\); \}\n\s*else if \(v === 0\) tgt\.textContent = "—";/.test(pos)
+      && /if \(sentOn\) frag\.appendChild\(trEl\("div", "pf-foot", t\("tr\.cloud\.pendTarget"\)\)\);/.test(pos)); }
+  { /* 動作後的爆發輪詢窗(§2-4:真正的止血)。窗是**時間**不是條件——報告永遠不來也會到期,
+       到期回到誠實的等待畫面,不會一直轉。這裡把兩個純函式真的跑一遍。 */
+    eval(fnS("trBurstBump").replace(/^function /, "var trBurstBump = function "));
+    eval(fnS("trBurstOn").replace(/^function /, "var trBurstOn = function "));
+    eval(src.match(/^const TR_BURST_MS = [^\n]*$/m)[0].replace(/^const /, "var "));
+    const T0b = 1e12;
+    const b1 = trBurstBump(null, T0b, TR_BURST_MS, TR_BURST_MAX_MS);
+    ok("按一次:窗從現在起算 30 秒", b1.until === T0b + TR_BURST_MS && trBurstOn(b1, T0b + 29999) && TR_BURST_MS === 30000);
+    // **有到期日**:這一條紅了就代表窗變成「等到好為止」,報告不來就會一直快輪詢
+    ok("窗有到期日:過了就關,不管有沒有等到東西", trBurstOn(b1, T0b + TR_BURST_MS) === false && trBurstOn(b1, T0b + 9e6) === false
+      && trBurstOn(null, T0b) === false && /until > now/.test(fnS("trBurstOn")));
+    // 連續存檔:只把到期往後推,但總長有上限
+    let b = b1;
+    for (let i = 1; i <= 40; i++) b = trBurstBump(b, T0b + i * 2000, TR_BURST_MS, TR_BURST_MAX_MS);   // 每 2 秒存一次、存 80 秒
+    ok("一直改金額不會把窗推到無限長:總長上限 " + TR_BURST_MAX_MS / 1000 + " 秒(從第一次按下起算)", b.until === T0b + TR_BURST_MAX_MS && b.start === T0b
+      && trBurstOn(b, T0b + TR_BURST_MAX_MS) === false
+      && trBurstBump(b, T0b + 85000, TR_BURST_MS, TR_BURST_MAX_MS).until === T0b + TR_BURST_MAX_MS);   // 窗還開著時再存,照樣頂在上限
+    // 兩次存檔很近:同一個窗往後延,不是開第二個(第二次的 start 還是第一次那個)
+    const b2 = trBurstBump(b1, T0b + 2000, TR_BURST_MS, TR_BURST_MAX_MS);
+    ok("兩次存檔靠很近:延長同一個窗,不開第二個", b2.start === T0b && b2.until === T0b + 2000 + TR_BURST_MS);
+    // 窗過期之後再存一次 = 新的一次(重新拿滿 30 秒與新的上限)
+    const b3 = trBurstBump(b, T0b + TR_BURST_MAX_MS + 1, TR_BURST_MS, TR_BURST_MAX_MS);
+    ok("窗過期之後再存:重新開一個(不是永遠被舊的上限綁住)", b3.start === T0b + TR_BURST_MAX_MS + 1 && b3.until === b3.start + TR_BURST_MS);
+    // 地板:畫面每 2.5 秒催一次,但真正出去的請求由主行程的 MIN_GAP_MS 擋成 5 秒一次
+    const cloudSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "cloud.js"), "utf8");
+    const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    ok("地板 5 秒:cloud-refresh 沒帶 force,所以吃得到 MIN_GAP_MS;催得再快也追不過它",
+      /const POLL_FOREGROUND_MS = 15 \* 1000, POLL_BACKGROUND_MS = 60 \* 1000, BACKOFF_MS = 60 \* 1000, MIN_GAP_MS = 5 \* 1000;/.test(cloudSrc)
+      && /if \(!force && now\(\) - lastTryAt < MIN_GAP_MS\) return snap;/.test(cloudSrc)
+      && /ipcMain\.handle\("cloud-refresh", \(e\) => \{ if \(!fromOurPage\(e\)\) return null; cloudHost\(\)\.start\(\); return cloudHost\(\)\.refresh\(\)\.then/.test(mainSrc2)
+      && !/refresh\(true\)/.test((mainSrc2.match(/ipcMain\.handle\("cloud-refresh"[^\n]*/) || [""])[0]));   // 那一支不可以帶 force——帶了就繞過地板
+    // 接線:窗期間每輪都叫主行程重抓、每輪都重讀、tick 收到 2.5 秒;等到了就提早收窗
+    const poll = fnS("trPoll");
+    /* 接線。兩條是稽核抓出來的回歸:
+       B-2 那一支**不可以 await**(它打網路、postJSON 逾時 20 秒,await 會把本機那一份狀態一起凍住);
+       B-1 **不可以早收窗**——早收只認得 C.pending / trAmountsPending,而連接交易所、解除綁定、重新測試
+       這三種雲端寫入都不設那兩個,窗一開就被下一輪當場關掉(等於沒開,而且那幾條路一個請求都沒多)。 */
+    ok("接線:窗期間重抓(不 await)→ 重讀 → 2.5 秒一輪;而且不早收窗",
+      /if \(burst && typeof window\.blave\.cloudRefresh === "function"\) window\.blave\.cloudRefresh\(\)\.catch\(\(\) => \{\}\);/.test(poll)
+      && !/await window\.blave\.cloudRefresh/.test(poll)
+      && /ENV\.cloudDirty \|\| C\.pending \|\| burst \|\|/.test(poll)
+      && !/ENV\.burst = null/.test(poll));
+    { /* 行為版:窗開著時**下一輪還活著**。B-1 的回歸只用 regex 看不出來——早收那一行在的時候
+         regex 照樣通過,而窗其實已經被關掉了。這裡真的跑一次 trPoll 的收窗那一段。 */
+      const tick = (bag, burstAt, now) => { const ENV2 = { burst: { start: burstAt, until: burstAt + TR_BURST_MS } };
+        // trPoll 裡那一段(現在應該整段不存在):照原文有沒有那一行決定要不要跑
+        if (/ENV\.burst = null/.test(poll)) { if (ENV2.burst && !bag.pending && !trAmountsPending2(bag)) ENV2.burst = null; }
+        return trBurstOn(ENV2.burst, now); };
+      const conn = { env: "cloud", cxSaved: { venue: "paper", at: T0b } };          // 連接交易所:只設 cxSaved
+      const retest = { env: "cloud", cxPend: { what: "retest", at: T0b } };          // 重新測試:只設 cxPend
+      const unbind = { env: "cloud", cxPend: { what: "unbind", at: T0b } };          // 解除綁定:同上
+      const amt = { env: "cloud", sent: { a: 1 }, save: "sent", sentAt: T0b };
+      ok("B-1 每一種雲端寫入開的窗,下一輪都還活著(連接 / 重新測試 / 解除綁定 / 存金額)",
+        [conn, retest, unbind, amt].every((bag) => tick(bag, T0b, T0b + 1) === true)); }
+    ok("觸發點:每一個雲端寫入(trSend 一處全收)+ 連接交易所;本機不開窗(本機沒有這條延遲)",
+      /if \(S\.env === "cloud" && res && res\.ok\) ENV\.burst = trBurstBump\(ENV\.burst, Date\.now\(\), TR_BURST_MS, TR_BURST_MAX_MS\);/.test(fnS("trSend"))
+      && /ENV\.burst = trBurstBump\(ENV\.burst, Date\.now\(\), TR_BURST_MS, TR_BURST_MAX_MS\);   \/\/ S5/.test(src));
+    /* **等待那一態要一直看得見**:窗只是讓它短,不是把它繞過去。窗到期之後(報告還是沒來)
+       畫面必須還是那句誠實的等待,而不是空白或永遠的 spinner——這一條紅了就代表那個狀態變成沒人看得到的狀態。 */
+    const Vb = { paper: { credentials: true, pair: true, order: true, account: true } };
+    const rb = { venues: Vb, config: { amounts: {} }, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } };
+    ok("窗到期、報告還是沒來:等待那一態照樣在(鈕停用 + 帶數字那一句),不是空白也不是一直轉",
+      trBurstOn(b1, T0b + TR_BURST_MS) === false && trZView("dead", rb).off === true
+      && trPendKey({ env: "cloud", sent: { a: 1 }, save: "sent", sentAt: T0b }, T0b + TR_BURST_MAX_MS, true) === "tr.cloud.startPendSlow"
+      && trPendKey({ env: "cloud", sent: { a: 1 }, save: "sent", sentAt: T0b }, T0b + TR_BURST_MAX_MS, false) === "tr.cloud.startPendSlow"); }
+  { /* §3 載入態:一個視窗只講一次等待,而且通用的「載入中…」只有在三件事都不知道時才用 */
+    const po3 = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
+    const get3 = (l, k) => { const m = po3(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
+    ok("§3 標頭講在等誰,不再用通用的「載入中…」(雲端第一份報告 / 模擬剛存好兩條路都是)",
+      /if \(state === "loading"\) return TR\.env === "cloud" \? t\("tr\.cloud\.hdFetching"\) : t\("tr\.loading"\);/.test(fnS("trStateText"))
+      && get3("zh", "tr.cloud.hdFetching") === "正在跟你的主機要資料" && get3("en", "tr.cloud.hdFetching") === "Fetching data from your machine");
+    const ob3 = fnS("trPaintOnboard");
+    ok("§3 等待只講一次:內文那兩行不再附第二句「載入中…」;第 1 行兩條路各講各已經完成的事",
+      !/t\("tr\.loading"\)/.test(fnS("trWaitTwoLines")) && get3("zh", "tr.cloud.machineUp") === "你的主機在跑。"
+      && get3("zh", "tr.cloud.cxSavedPaperDone") === "模擬帳戶已存到雲端主機。"
+      && (ob3.match(/tr\.loading/g) || []).length === 1);   // 只剩本機那條路的通用字
+    ok("§3 第 2 行沿用 §5 定稿那句(在等誰 / 多久 / 會自己好 / 不用做事),沒有另寫一套", /t\("tr\.cloud\.cxWaiting"\)/.test(fnS("trWaitTwoLines"))
+      && /^正在等主機確認，通常一兩分鐘。/.test(get3("zh", "tr.cloud.cxWaiting"))); }
+  { // v2 §5:雲端 S5「等主機確認」
+    const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
+    const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
+    ok("S5 標頭:真實交易所存了、還沒回報 → 連接中…;過了 3 分鐘 → 沒有收到主機確認;模擬帳戶直接當已連接(畫骨架,標頭寫讀取中)", /if \(state === "noaccount" && TR\.env === "cloud" && TR\.cxSaved\) return trCxSavedStale\(TR\.cxSaved, Date\.now\(\)\) \? t\("tr\.cloud\.hdNoConfirm"\)\n\s*: trCxAssumed\(TR\.cxSaved, Date\.now\(\)\) \? t\("tr\.cloud\.hdFetching"\) : t\("tr\.cloud\.hdConnecting"\);/.test(fnS("trStateText"))
+      && fnS("trStateText").indexOf("TR.cxSaved") < fnS("trStateText").indexOf("trNoAccountStopped(r) ?"));
+    const ob = fnS("trPaintOnboard"), css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+    // 每一個 @media (prefers-reduced-motion …) 區塊的內容(數大括號)
+    const rmBlocks = (c) => { const out = []; let i = c.indexOf("@media (prefers-reduced-motion"); while (i >= 0) { let d = 0, k = c.indexOf("{", i); const s0 = k; for (; k < c.length; k++) { if (c[k] === "{") d++; else if (c[k] === "}" && --d === 0) break; } out.push(c.slice(s0, k)); i = c.indexOf("@media (prefers-reduced-motion", k); } return out; };
+    ok("S5 內文兩行:第一行已完成的事、第二行圓環 spinner + 正在等主機確認;沒有呼吸點", /ob\.appendChild\(trWaitTwoLines\("tr\.cloud\.cxSavedBn"\)\);/.test(ob) && !/dot busy/.test(ob)
+      && /const wait = trEl\("p", "cx-saved cx-wait"\), sp = trEl\("span", "spin16"\);/.test(fnS("trWaitTwoLines")) && /t\("tr\.cloud\.cxWaiting"\)/.test(fnS("trWaitTwoLines"))
+      && /if \(assumed \|\| \(state === "loading" && TR\.env === "cloud"\)\) \{ box\.appendChild\(trWaitTwoLines\(assumed \? "tr\.cloud\.cxSavedPaperDone" : "tr\.cloud\.machineUp"\)\); return; \}/.test(ob));
+    ok("spinner 照 canon Loader:16/2、缺口 1/4、currentColor、1s linear;**沒有** reduced-motion 例外", /\.spin16 \{ flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; \}/.test(css)
+      && !rmBlocks(css).some((b) => /spin16/.test(b)) && !rmBlocks(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")).some((b) => /spin16/.test(b)) && !/cx-saved \.dot/.test(css));
+    ok("稽核 B3:最低版本閘擋下「解除暫停」時的字不叫人按啟動下單", /^這個版本的 Blave 需要更新，才能送出「解除暫停」。/.test(get("zh", "minv.release")) && !/啟動下單/.test(get("zh", "minv.release")) && !/Start trading/.test(get("en", "minv.release")));
+    ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["up.c.running", "up.c.replying", "up.c.chatRunning", "tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
+    ok("§13-2 模擬帳戶逾時自己一句:不提金鑰、講「再試一次」;真實交易所那句不動", /^模擬帳戶已經送出，.*可以再試一次/.test(get("zh", "tr.cloud.cxSavedStalePaper")) && !/金鑰/.test(get("zh", "tr.cloud.cxSavedStalePaper"))
+      && /^The paper account was sent,/.test(get("en", "tr.cloud.cxSavedStalePaper")) && /^金鑰已經送出，/.test(get("zh", "tr.cloud.cxSavedStale")));
+    ok("S5 文字(zh / en)", get("zh", "tr.cloud.hdConnecting") === "連接中…" && get("en", "tr.cloud.hdNoConfirm") === "No confirmation from the machine" && get("zh", "tr.cloud.cxSavedPaper") === null
+      && /^正在等主機確認，通常一兩分鐘。/.test(get("zh", "tr.cloud.cxWaiting")) && /^Waiting for the machine to confirm, usually a minute or two\./.test(get("en", "tr.cloud.cxWaiting"))); }
+  { // v2 §9-1(列舉):Z 時任何狀態字都不叫人按「啟動下單」——那顆停用或根本不在。真的字串表、zh / en、兩個視角
+    const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
+    const cutB = (x, y) => src.slice(src.indexOf(x), src.indexOf(y));
+    const ctx = { LANG: "zh", Date, Math, Object, Array, String, Number, JSON, isFinite, isNaN, Set, Map };
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const /gm, "var ") + "\n" + fs.readFileSync(path.join(R, "i18n.js"), "utf8").replace(/^(const|let) /gm, "var "), ctx);
+    vm.runInContext((cutB("/* ── 純邏輯(", "/* ── 純邏輯到此") + cutB("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此")).replace(/^const /gm, "var "), ctx);
+    vm.runInContext(fnS("trStateText") + fnS("trShortState") + fnS("trReport"), ctx);
+    ctx.trStamp = () => "09/21 22:26"; ctx.trKeyBad = () => false;
+    const Vz = { paper: { credentials: true, pair: true, order: true, account: true } };
+    const halts = [{}, { halted: true, source: "web" }, { halted: true, source: "reconciler" }, { halted: true, source: "portfolio" }];
+    const recs = [{ alive: true }, { alive: false }, { alive: false, heartbeat_at: 100 }, { alive: false, stopped: { reason: "machine_restart", at: 1 } }, { alive: false, stopped: { reason: "machine_restart", at: 1, gated: true } }];
+    const daemons = [undefined, { reconciler: { running: false, wanted: false } }, { reconciler: { running: false, wanted: true } }];
+    const cfgs = [{ amounts: {} }, { amounts: { a: 0 } }, undefined];
+    const hosts = [{ alive: true, running: true }, { alive: false, running: false, lastExit: { code: 1, at: Date.now() }, restarts: 1 }];
+    const bad = []; let n = 0;
+    ["zh", "en"].forEach((lang) => { vm.runInContext("LANG = " + JSON.stringify(lang), ctx);
+      [Vz, {}].forEach((venues) => halts.forEach((halt) => recs.forEach((reconciler) => daemons.forEach((daemon) => cfgs.forEach((config) => hosts.forEach((host) => ["local", "cloud"].forEach((env) => {
+        const report = { venues, halt, reconciler, ...(daemon ? { daemon } : {}), ...(config ? { config } : {}), account: { venues: { paper: { ok: true, equity: 1000 } } } };
+        const st = { ...host, report, ...(env === "cloud" ? { cloud: { code: "OK", machine: { state: "running" } } } : {}) };
+        ctx.TR = { env, st }; vm.runInContext("var TR = this.TR", ctx);
+        const state = vm.runInContext("trExecState(TR.st)", ctx), z = vm.runInContext("trNoAmounts(TR.st.report) || trNoAccountStopped(TR.st.report)", ctx);
+        if (!z) return;
+        n++;
+        const texts = [vm.runInContext("trStateText(" + JSON.stringify(state) + ")", ctx), vm.runInContext("trShortState(" + JSON.stringify(state) + ")", ctx)];
+        const zv = vm.runInContext("trZView(" + JSON.stringify(state) + ", TR.st.report)", ctx); if (zv.reason) texts.push(vm.runInContext("t(" + JSON.stringify(zv.reason) + ")", ctx));
+        // §12:「尚未啟動下單」是狀態描述(不需要 Z 變體),先拿掉再查「叫人按鈕」的字
+        const notStarted = vm.runInContext('t("tr.notStarted")', ctx);
+        if (texts.some((x) => /啟動下單|Start trading/i.test(String(x).split(notStarted).join("")))) bad.push(lang + "/" + env + "/" + state + ": " + texts[0]);
+      })))))));
+    });
+    ok("§9-1 列舉:Z 的每一種報告(" + n + " 種,zh / en × 本機 / 雲端 × 下單機在不在)狀態行、頂列短詞、原因行都沒有「啟動下單」/ Start trading" + (bad.length ? ":" + bad.slice(0, 2).join(" | ") : ""), n > 500 && bad.length === 0);
+    vm.runInContext('LANG = "zh"', ctx);
+    const one = (report, st0) => { ctx.TR = { env: "local", st: { alive: true, running: true, ...st0, report } }; vm.runInContext("var TR = this.TR", ctx); return vm.runInContext("trStateText(trExecState(TR.st))", ctx); };
+    { // §12:狀態句只講發生了什麼(不提金額、不提鈕);出口只在原因行。B0 是唯一保留出口的狀態句
+      const Vz2 = { paper: { credentials: true, pair: true, order: true, account: true } };
+      const cases = [["A′", { venues: Vz2, config: { amounts: {} }, halt: { halted: true, source: "reconciler" }, reconciler: { alive: true } }],
+        ["B(本機、有 HALT)", { venues: Vz2, config: { amounts: {} }, halt: { halted: true, source: "web" }, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } }],
+        ["B(本機、沒 HALT)", { venues: Vz2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } }],
+        ["dead", { venues: Vz2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: true } } }]];
+      vm.runInContext('LANG = "zh"', ctx);
+      const bad2 = cases.filter(([, r]) => { const txt = one(r); return /還沒有策略設定金額|解除暫停|「部位」/.test(txt); });
+      ok("§12 Z 的狀態句不提金額、不提鈕(A′ / B 雲端 / B 本機兩種 / dead)" + (bad2.length ? ":" + bad2[0][0] + " → " + one(bad2[0][1]) : ""), bad2.length === 0
+        && /主機重開過，什麼單都不下——部位現在沒有人在管/.test(one({ venues: Vz2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } })));
+      ok("§12 A(用戶自己按的暫停)與「尚未啟動下單」不需要 Z 變體:原句本來就沒提鈕", /: rec\.heartbeat_at \? t\("tr\.notStarted"\) \+ " · " \+ t\("tr\.lastRun"[^\n]*\) : t\("tr\.notStarted"\);/.test(fnS("trStateText"))
+        && !/tr\.notStartedZ|tr\.haltReasonZ/.test(src) && /不開新倉；平倉與停損停利照常執行。/.test(one({ venues: { paper: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: {} }, halt: { halted: true, source: "web" }, reconciler: { alive: true } })));
+      ok("§12 B0 是唯一保留出口的狀態句(它沒有停用的啟動鈕,也就沒有原因行)", /按「解除暫停」恢復放行。$/.test(one({ venues: {}, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }))
+        && trZView("noaccount", { venues: {}, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }).reason === null);
+      // 驗收:一個標頭裡「還沒有策略設定金額」只出現一次(狀態句 + 原因行合起來算)
+      const once = cases.concat([["B(雲端)", { venues: Vz2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }]])
+        .map(([n2, r]) => { const zv2 = trZView(vm.runInContext("trExecState({ alive: true, running: true, report: this.R })", Object.assign(ctx, { R: r })), r);
+          const full = one(r) + (zv2.reason ? vm.runInContext("t(" + JSON.stringify(zv2.reason) + ")", ctx) : ""); return [n2, (full.match(/還沒有策略設定金額/g) || []).length]; });
+      ok("§12 驗收:任一 Z 狀態的標頭裡「還沒有策略設定金額」只出現一次" + JSON.stringify(once), once.every(([, c]) => c === 1));
+      // 驗收(代理指標):en 1024 的標頭 ≤ 6 行 —— harness 量不到排版,改鎖字數(稽核量到原本 216px / 8+4 行,砍掉尾巴後約 130px)
+      vm.runInContext('LANG = "en"', ctx);
+      const lens = cases.map(([n2, r]) => [n2, one(r).length]);
+      ok("§12 驗收(代理):en 的 Z 狀態句都 ≤ 150 字元" + JSON.stringify(lens), lens.every(([, L]) => L <= 150));
+      vm.runInContext('LANG = "zh"', ctx); } }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

@@ -1,8 +1,9 @@
 // shell/traytext.js:視窗之外的字(選單列的狀態行、結束確認框多的那一句、通知標題的前綴)。
 // 雲端那一行的資料來自雲端主機的回報 = 不可信輸入。跑法:node tests/check_shell_traytext.js
 const fs = require("fs"), path = require("path");
-const { clean, cloudLine, cloudTrading, cloudNeedsUpdate, statusLine, notifTitle, quitDetail } = require("../shell/traytext.js");
+const { clean, cloudLine, cloudTrading, statusLine, notifTitle, quitDetail } = require("../shell/traytext.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
+const after = [];   // 非同步的那幾條:檔尾等它們跑完再結算
 const V = { credentials: true, pair: true, order: true, account: true };
 const st = (o = {}) => ({ alive: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: { binance: V }, halt: { halted: false }, reconciler: { alive: true } }, ...o });
 const L = { moneyPaper: "模擬", moneyReal: "真錢", stOn: "執行中", stPaused: "已暫停", stUnknown: "讀不到狀態" };
@@ -24,13 +25,78 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   t("…已按暫停 → 已暫停;gated true / 缺欄位 → 已暫停;缺 stMayTrade 那個字 → 整行不顯示",
     cloudLine(Cg({ gated: false }, { halted: true })).state === "paused" && cloudLine(Cg({ gated: true })).state === "paused" && cloudLine(Cg({})).state === "paused"
     && statusLine(TPL, cloudLine(Cg({ gated: false })), L) === null); }
-{ const N = (cv, lv, stopped, state) => ({ cloud: { code: "OK", machine: { state: state || "running" }, config_version: cv, latest_config_version: lv }, report: { reconciler: { stopped } } });
-  const R = (g) => ({ reason: "machine_restart", at: 1, gated: g });
-  t("選單列小點(雲端有新版在等):版號落後亮;版號一樣但重開沒停住(gated === false 嚴格)也亮——同 upPlan",
-    cloudNeedsUpdate(N("1.1.80", "1.1.83", null)) === true && cloudNeedsUpdate(N("1.1.83", "1.1.83", R(false))) === true
-    && cloudNeedsUpdate(N("1.1.83", "1.1.83", null)) === false && cloudNeedsUpdate(N("1.1.83", "1.1.83", R(true))) === false && cloudNeedsUpdate(N("1.1.83", "1.1.83", R(undefined))) === false);
-  t("…主機沒在跑 / 讀不到:不亮", cloudNeedsUpdate(N("1.1.80", "1.1.83", R(false), "stopped")) === false && cloudNeedsUpdate(null) === false && cloudNeedsUpdate({ cloud: { code: "OFFLINE" } }) === false);
-  t("main.js 的小點走這一支(不另寫一份規則)", /const cloudUpdateWaiting = \(\) => TT\.cloudNeedsUpdate\(cloudSt\(\)\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"))); }
+{ // 選單列圖示旁不放任何小點(Wei 09-23):本機新版、雲端新版都不點;「新版已下載」那一行留在選單裡
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
+  t("選單列圖示旁沒有小點:main.js 不呼叫 setTitle;雲端那條規則不留死碼;選單的「新版已下載」照留", !/\.setTitle\(/.test(mainSrc)
+    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /updateWaiting\(\) \? \[\{ label: tmLabels\.updateReady/.test(mainSrc)); }
+{ // 連上的規則(Wei 09-23):pair 沒帶 = 連上,只有 pair: false 不算;main.js 的 venueReady 同一條
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const S = (v) => ({ alive: true, running: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: { paper: v }, reconciler: { alive: true } } });
+  t("連上的規則(稽核 S-2 撤回放寬):四個欄位都要;缺 pair 或 pair: false 都不算連上,三處同一條", cloudLine(S({ credentials: true, pair: true, order: true, account: true })) !== null
+    && cloudLine(S({ credentials: true, order: true, account: true })) === null && cloudLine(S({ credentials: true, pair: false, order: true, account: true })) === null
+    && /const venueReady = \(v\) => !!\(v && v\.credentials && v\.pair && v\.order && v\.account\);/.test(mainSrc)
+    && !/pair !== false/.test(mainSrc) && !/pair !== false/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "traytext.js"), "utf8"))); }
+{ // 稽核 B1:「解除暫停」送的也是 resume,但不是開始下單——不可以記成 trade_started(污染開機漏斗)
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8");
+  const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  t("B1 解除暫停不記「開始下單」:主行程看 intent、preload 帶得過去、renderer 送 resume 時標 release",
+    /if \(\(cmd === "resume" \|\| cmd === "resume_wait"\) && intent !== "release"\) Promise\.resolve\(out\)/.test(mainSrc)
+    && /tradeSend: \(cmd, args, requestId, intent\) => ipcRenderer\.invoke\("trade-send", cmd, args, requestId, intent\),/.test(preload)
+    && /ipcMain\.handle\("trade-send", async \(e, cmd, args, _requestId, intent\) =>/.test(mainSrc)
+    && /trSend\(S, "resume", \{\}, "release"\)/.test(tr) && (mainSrc.match(/trade_started/g) || []).length === 1); }
+{ /* 稽核 R1:整條鏈一段都不 mock —— trAskRelease → trSend → envApi(local)→ **真的 preload.js** → main.js 的遙測判斷式。
+     上一版從 preload 起跳,漏掉 envApi 那一段(`o[k] = (...a) => host[k](...a)`):把它改成只轉兩個參數,35 支測試照樣全綠,
+     行為卻退回 B1(解除暫停被記成開始下單)。起點往上搬一層,那一段就被蓋住了 */
+  const vm = require("vm"), R = path.join(__dirname, "..", "shell");
+  const trSrc = fs.readFileSync(path.join(R, "renderer", "trade.js"), "utf8"), mainSrc = fs.readFileSync(path.join(R, "main.js"), "utf8");
+  // ① 真的 preload.js,只把 electron 換成記錄器
+  const invoked = []; let api = null;
+  const pctx = { require: (m) => (m === "electron" ? { contextBridge: { exposeInMainWorld: (_k, o) => { api = o; } }, ipcRenderer: { invoke: (...a) => { invoked.push(a); return Promise.resolve({ ok: true }); }, on: () => {}, send: () => {} } } : require(m)), console };
+  vm.createContext(pctx); vm.runInContext(fs.readFileSync(path.join(R, "preload.js"), "utf8"), pctx);
+  // ② 真的 renderer:ENV_API / envApi / trSend / trAskRelease,其餘依賴給最小替身
+  const body = (n) => { const i2 = trSrc.indexOf("function " + n + "("); let d = 0, k = trSrc.indexOf("{", i2); for (; k < trSrc.length; k++) { if (trSrc[k] === "{") d++; else if (trSrc[k] === "}" && --d === 0) break; } return trSrc.slice(i2, k + 1); };
+  const pick = (re) => trSrc.match(re)[0];
+  const env = { console, t: (k) => k, srSay: () => {}, trCloudBox: (o) => o, confirmBox: (o) => { env.box = o; }, host: api,
+    trReport: () => ({ halt: { halted: true }, venues: { paper: { credentials: 1, pair: 1, order: 1, account: 1 } } }),
+    trRun: (want, steps, cmd) => { env.ran = { want, cmd }; return Promise.all(steps.map((f) => f(env.TR))); } };
+  vm.createContext(env);
+  vm.runInContext([pick(/const ENV_API = \[[^\]]*\];/), pick(/const ENV_CLOUD_CMDS = \[[^\]]*\];/), body("envApi"), body("envCloudList"),
+    trSrc.slice(trSrc.indexOf("async function trSend("), trSrc.indexOf("\n/* 送「會改變執行狀態」的指令")),
+    body("trHaltStopsAll"), body("trReleaseKind"), body("trRestartStopped"), body("trRestartUnconfirmed"), body("trNoAccountStopped"),
+    body("trHasAccount"), body("trCanonKey"), body("trMs"), body("trAskRelease")].join("\n"), env);
+  vm.runInContext("TR = { env: 'local', pending: null, sending: {}, reqIds: {}, api: envApi('local', host) }", env);
+  vm.runInContext("trAskRelease(null)", env);
+  // ③ main.js 的參數表與遙測判斷式,逐字切出來跑
+  const params = mainSrc.match(/ipcMain\.handle\("trade-send", async \(([^)]*)\) =>/)[1];
+  const i0 = mainSrc.indexOf('if ((cmd === "resume"');
+  const cond = mainSrc.slice(i0, mainSrc.indexOf(") Promise.resolve(out)", i0) + 1).replace(/^if /, "");
+  const tracks = new Function(params, "return !!" + cond + ";");
+  const fires = (a) => tracks.apply(null, [{}].concat((a || []).slice(1)));
+  after.push(Promise.resolve(env.box && env.box.onOk()).then(() => {
+    const rel = invoked[0]; invoked.length = 0;
+    return vm.runInContext("trSend(TR, 'resume', {})", env).then(() => {
+      t("R1 全鏈(trAskRelease → trSend → envApi → 真的 preload → main 判斷式):解除暫停帶著 release 送到主行程、不記「開始下單」;啟動下單照記",
+        JSON.stringify(rel) === '["trade-send","resume",{},null,"release"]' && fires(rel) === false
+        && JSON.stringify(invoked[0]) === '["trade-send","resume",{},null,null]' && fires(invoked[0]) === true);
+    });
+  })); }
+{ // 稽核 S-6:圖示旁的點拿掉之後,雲端落後只剩選單列這一行
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
+  const L = { cloudUpdate: "雲端主機有新版 {nv}，打開 Blave 更新…", cloudUpdateStale: "雲端的下單程式需要更新，打開 Blave 更新…" };
+  const C2 = (cv, lv, stopped, state) => ({ cloud: { code: "OK", machine: { state: state || "running" }, config_version: cv, latest_config_version: lv }, report: { reconciler: { stopped: stopped || undefined } } });
+  t("S-6 版號落後 → 帶新版號那一行;版號一樣但重開沒停住(gated === false 嚴格)→ 需要更新那一句;其餘 null",
+    tt.cloudUpdateLine(L, C2("1.1.80", "1.1.83")) === "雲端主機有新版 1.1.83，打開 Blave 更新…"
+    && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: false })) === L.cloudUpdateStale
+    && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83")) === null && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: true })) === null
+    && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart" })) === null && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: 0 })) === null
+    && tt.cloudUpdateLine(L, C2("1.1.80", "1.1.83", null, "stopped")) === null && tt.cloudUpdateLine(L, null) === null);
+  t("S-6 字還沒交過來就不顯示(不出英文預設)", tt.cloudUpdateLine({}, C2("1.1.80", "1.1.83")) === null && tt.cloudUpdateLine({}, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: false })) === null);
+  t("S-6 選單有那一行、點了開設定 › 一般、也進重畫簽章;字有交、預設物件也有",
+    /\.\.\.\(cu \? \[\{ label: cu, click: openAbout \}\] : \[\]\),/.test(mainSrc) && /const cloud = trayCloudLine\(\), cu = trayCloudUpdate\(\);/.test(mainSrc)
+    && /trayCloudLine\(\) \|\| "", trayCloudUpdate\(\) \|\| ""\]\.join\("\|"\)/.test(mainSrc)
+    && /w\.webContents\.send\("open-about"\)/.test(mainSrc) && /cloudUpdate: "Cloud machine: new version \{nv\}/.test(mainSrc)
+    && /window\.blave\.onOpenAbout\(\(\) => \{ if \(running\) \{ addMsg\("sys", t\("up\.busy"\)\); return; \} setOpen\(\); \}\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"))); }
 { // T1:主行程只收預設物件裡已經有的 key(for k of Object.keys(tmLabels)):畫面交過來、預設沒有的字會被靜靜丟掉
   // (例:少了 stMayTrade,選單列的雲端那一行就在最該講話的狀態整行消失)。列舉 trPushLabels 交的每一個 key
   const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
@@ -81,4 +147,4 @@ t("preload:renderer 待接的三個入口都在", /minVersionState:/.test(pre) &
   t("app 選單:帶 role 的項目都沒有自訂 label", [...body.matchAll(/\{[^{}]*role:[^{}]*\}/g)].every((m) => !/label:/.test(m[0])));
   t("換語言會重建選單(四個字都進 key);renderer 交 menuView", /\[tmLabels\.menuLocal, tmLabels\.menuCloud, tmLabels\.menuSite, tmLabels\.menuView\]\.join/.test(body)
     && /menuView: t\("menu\.view"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8")) && /menuView: ""/.test(mainSrc)); }
-console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+Promise.all(after).then(() => { console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0); });

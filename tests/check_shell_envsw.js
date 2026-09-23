@@ -212,12 +212,12 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && envCell("local", { alive: true, report: rep() }, true).dot === null); }
   // 兩袋各自收斂、兩袋任一有過場就把輪詢調快(本機原本只看自己那袋)
   ok("trPoll:兩邊的過場都檢查、任一邊有過場就每 2.5 秒一輪、雲端有過場時每輪都重讀狀態",
-    /trWith\(L, trPendingCheck\); trWith\(C, trPendingCheck\);/.test(fn("trPoll")) && /L\.pending \|\| C\.pending \? TR_POLL_PENDING/.test(fn("trPoll"))
+    /trWith\(L, trPendingCheck\); trWith\(C, trPendingCheck\);/.test(fn("trPoll")) && /L\.pending \|\| C\.pending \|\| trBurstOn\(ENV\.burst, Date\.now\(\)\) \? TR_POLL_PENDING/.test(fn("trPoll"))
     && /ENV\.cloudDirty \|\| C\.pending \|\|/.test(fn("trPoll")) && /envCell\("cloud", C\.st, !!C\.pending \|\| C\.save === "saving"\)/.test(fn("envPaint")));
   // 等的過程中主機停機:人要看到的是「它停了」,不是「我按的那個不知道怎樣」
   ok("trPendingCheck:雲端停機 → 直接清過場、不出「結果不明」;收斂了就把 request_id 一起清掉",
     /if \(cloud && envCloudKind\(TR\.st\) === "stopped"\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); return; \}/.test(fn("trPendingCheck"))
-    && /if \(state === p\.want \|\| b0Done\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
+    && /if \(state === p\.want \|\| relDone\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
   /* 逾時還沒收斂:雲端的 ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來。
      這一條**只准**出「結果不明」——說「沒送到」就是叫一個暫停其實已經生效的人去交易所撤 key(規格 §1.3)。 */
   { const timeout = fn("trPendingCheck").slice(fn("trPendingCheck").indexOf("else if (Date.now() > p.until)"));
@@ -340,7 +340,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && envHeadState(repAged(0.5, { last_ok_at: NOW + 3 * 3600e3 - 1000, fetched_at: NOW + 3 * 3600e3 - 1000 }), NOW + 3 * 3600e3) === "running");
   ok("R3 拿到之後又擱了很久也算進去(50 分鐘前的回報 + 擱了 20 分鐘);沒有 server_time 就只看連線那一條", envHeadState(repAged(50 / 60, { last_ok_at: NOW - 20 * MIN, fetched_at: NOW - 20 * MIN, server_time: (NOW - 20 * MIN) / 1000, reported_at: (NOW - 70 * MIN) / 1000 }), NOW) === "unknown"
     && envHeadState(repAged(2, { server_time: null }), NOW) === "running");
-  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) b\.remove\(\); trPaintGoStop\(false\); trPaintGoUpd\(false\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
+  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintGoUpd\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
   // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
   const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
   ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true
@@ -404,10 +404,13 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("開通頁重用已上線的流程:登入 planLogin、重登 planRelogin、啟動 planAsk(花錢的確認框);這裡不直接碰 planStart / startOAuth / confirmBox", /planLogin/.test(ep) && /planRelogin/.test(ep) && /t\("plan\.start"\), planAsk,/.test(ep) && !/planStart|startOAuth|confirmBox\(|planGo/.test(ep + fn("envPlanChanged")));
   ok("價格不寫死:數字只來自 planVars;拿不到月價就不畫價格段、啟動鈕 disabled", /if \(v\.p\) \{\s*const pr = trEl\("div", "plan-price"\)/.test(ep) && /main\.disabled = !\(v\.p && v\.h\)/.test(ep) && !/[0-9]{2,}\s*(TWD|USD)/.test(ep));
   ok("查帳號 / 公開價目有間隔(查不到時不空轉)", /Date\.now\(\) - \(ENV\.askedAt \|\| 0\) > 30000/.test(ep));
-  ok("空側欄那一句在、舊空態兩個 key 清掉", /id="side-gate" data-i18n="side\.cloud\.emptyGate"/.test(html) && /\$\("side-gate"\)\.hidden = !gate/.test(code) && !/"env\.empty\.(p1|plan)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8") + code));
+  ok("側欄那一格只剩「準備好了」那一態:沒有主機 / 啟動中 / 讀不到都不寫字(Wei 09-23 刪 emptyGate);舊空態兩個 key 照舊不在",
+    /<p class="pf-state side-gate" id="side-gate" hidden><\/p>/.test(html) && /const sg = \$\("side-gate"\); sg\.hidden = !ready;/.test(code)
+    && !/emptyGate/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8") + code + html)
+    && !/"env\.empty\.(p1|plan)"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8") + code));
 
   // ── 最低版本閘 / 交給主行程的字 ──
-  ok("UPDATE_REQUIRED:確定沒執行(不留過場)、講更新那一句,不叫人重按", trErrorKind("UPDATE_REQUIRED") === "undelivered" && /if \(e === "UPDATE_REQUIRED"\) return t\("minv\.trade"\);/.test(fn("trSendError")));
+  ok("UPDATE_REQUIRED:確定沒執行(不留過場)、講更新那一句,不叫人重按", trErrorKind("UPDATE_REQUIRED") === "undelivered" && /if \(e === "UPDATE_REQUIRED"\) return t\(kind === "release" \? "minv\.release" : "minv\.trade"\);/.test(fn("trSendError")));
   ok("聊天被擋:不再誤畫成「上一輪還在跑」", /if \(r\.blocked === "UPDATE_REQUIRED"\) \{[\s\S]{0,400}t\("minv\.chat"\)[\s\S]{0,300}unlock\(\); return false;\s*\}\s*addMsg\("sys", t\("turn\.busy"\)\)/.test(app));
   const labels = fn("trPushLabels");
   ok("tradeLabels 多交的 15 個 key 都在(換語言時 applyStatic 會重叫 trPushLabels)", ["lang: LANG", "stLocal", "stCloud", "stOn", "stPaused", "stUnknown", "moneyPaper", "moneyReal", "pauseLocal", "quitCloudNote", "notifPrefixLocal", "notifPrefixCloud", "menuLocal", "menuCloud", "menuSite"].every((k) => labels.includes(k)) && /trPushLabels\(\)/.test(fn.call(null, "trInit") + app));

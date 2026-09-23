@@ -37,14 +37,19 @@ function cloudLine(st) {
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart") return { money, state: "paused" };
   return { money, state: r.reconciler && r.reconciler.alive ? "on" : "unknown" };
 }
-/* 雲端有沒有新版在等(選單列圖示旁那個小點)。規則同 renderer 的 upPlan:主機在跑,而且版號落後,
-   **或**報告說重開後沒能確認停住(reconciler.stopped.gated === false,嚴格)——停不住的是舊版對帳器,版號一樣也要更新 */
-function cloudNeedsUpdate(st) {
-  const c = st && st.cloud;
-  if (!c || c.code !== "OK" || !c.machine || c.machine.state !== "running") return false;
-  if (c.config_version && c.latest_config_version && c.config_version !== c.latest_config_version) return true;
+/* 雲端落後時選單列那一行(spec v2 §1;圖示旁的小點已全部拿掉,選單是唯一的提示)。
+   規則同 renderer 的 upPlan:主機在跑,而且版號落後 → 「雲端主機有新版 {nv}」;
+   版號一樣、但報告說重開後沒能確認停住(gated === false,嚴格)→ 「雲端的下單程式需要更新」。其餘回 null(整行不顯示)。
+   字缺一個就回 null(主行程的 tmLabels 有英文預設,實務上不會缺;renderer 一啟動雲端輪詢就會交上正確語言的字) */
+function cloudUpdateLine(labels, st) {
+  const c = st && st.cloud, L = labels || {};
+  if (!c || c.code !== "OK" || !c.machine || c.machine.state !== "running") return null;
+  if (c.config_version && c.latest_config_version && c.config_version !== c.latest_config_version) {
+    return L.cloudUpdate ? fmt(L.cloudUpdate, { nv: clean(c.latest_config_version, 24) }) : null;
+  }
   const x = st.report && st.report.reconciler && st.report.reconciler.stopped;
-  return !!(x && typeof x === "object" && x.reason === "machine_restart" && x.gated === false);
+  const stale = !!(x && typeof x === "object" && x.reason === "machine_restart" && x.gated === false);
+  return stale && L.cloudUpdateStale ? L.cloudUpdateStale : null;
 }
 /* 雲端現在是不是「確定在下單」(結束確認框要不要多那一句)。保守:不確定就不說——那一句是在替雲端做保證。 */
 const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state === "on"); };
@@ -61,4 +66,4 @@ function statusLine(tpl, line, labels) {
 const notifTitle = (prefix, title) => (prefix ? prefix + title : title);
 const quitDetail = (body, note) => (note ? body + "\n\n" + note : body);
 
-module.exports = { clean, fmt, cloudLine, cloudTrading, cloudNeedsUpdate, statusLine, notifTitle, quitDetail, VENUE_ID };
+module.exports = { clean, fmt, cloudLine, cloudTrading, cloudUpdateLine, statusLine, notifTitle, quitDetail, VENUE_ID };

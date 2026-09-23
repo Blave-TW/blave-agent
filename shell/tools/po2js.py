@@ -66,7 +66,13 @@ def main():
             body.append(f"    {json.dumps(key)}: {json.dumps(tables[lang][key], ensure_ascii=False)},")
         body.append("  },")
     body.append("};")
-    OUT.write_text(HEADER + "\n".join(body) + "\n", encoding="utf-8")
+    out = HEADER + "\n".join(body) + "\n"
+    # 內容一樣就不寫。打包新鮮度閘門(tests/check_shell_paths.js)比的是 mtime,而
+    # tests/check_shell_strings.js 每跑一次就呼叫這支來驗同步——無條件寫會讓「產物比來源舊」假紅。
+    if OUT.exists() and OUT.read_text(encoding="utf-8") == out:
+        print(f"{OUT.relative_to(SHELL.parent)} 已是最新 — {len(base)} 個 key × {len(LANGS)} 語")
+        return 0
+    OUT.write_text(out, encoding="utf-8")
     print(f"寫好 {OUT.relative_to(SHELL.parent)} — {len(base)} 個 key × {len(LANGS)} 語")
     return 0
 

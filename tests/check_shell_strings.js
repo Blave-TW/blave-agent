@@ -97,14 +97,19 @@ if (!PY) {
   console.log("SKIP  strings.js 同步檢查(找不到裝了 babel 的 python;可設 BLAVE_PO_PYTHON)");
 } else {
   const keep = read("renderer/strings.js");
+  const SJ = path.join(SHELL, "renderer/strings.js"), mtime0 = fs.statSync(SJ).mtimeMs;
   try {
     execFileSync(PY, [path.join(SHELL, "tools", "po2js.py")], { stdio: "pipe" });
     const now = read("renderer/strings.js");
     if (now !== keep) {
-      fs.writeFileSync(path.join(SHELL, "renderer/strings.js"), keep);  // 別動工作樹
+      fs.writeFileSync(SJ, keep);  // 別動工作樹
       fail("strings.js 跟 .po 不同步 —— 跑 `python shell/tools/po2js.py` 再 commit");
     } else {
       pass("strings.js 與 .po 同步");
+      // 同步的時候產生器不可以重寫檔案:打包新鮮度閘門比的是 mtime,
+      // 跑一次測試就把來源變新 = 「產物比來源舊」假紅(而假紅會訓練大家忽略那個閘門)
+      if (fs.statSync(SJ).mtimeMs === mtime0) pass("產生器沒有白寫一次(mtime 沒動,打包新鮮度閘門不會被測試弄紅)");
+      else fail("po2js.py 內容沒變還是重寫了 strings.js —— 打包新鮮度閘門會因此假紅");
     }
   } catch (e) {
     fail("產生器跑不起來:" + (e.stderr ? e.stderr.toString().trim() : e.message));

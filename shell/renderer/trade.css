@@ -115,9 +115,11 @@ html.ws-sc .side-gate { display: none; }
 @media (prefers-reduced-motion: reduce) { #cv-desc .dot.busy { animation: none; } }
 /* 雲端連接之後「已存到、等回報」那一句(S5 §4.1):同 #cv-desc 的呼吸點 */
 .cx-saved { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
-.cx-saved .dot { display: inline-block; width: 7px; height: 7px; margin-right: var(--space-8); border-radius: var(--radius-pill); background: var(--ink-3); vertical-align: .09em; }
-.cx-saved .dot.busy { animation: trRunPulse calc(var(--motion-blink) * 1.2) ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .cx-saved .dot.busy { animation: none; } }
+.cx-wait { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-4); }
+/* 圓環 spinner(canon › Components › Loader,最小 16/2):缺口 1/4、currentColor、1s linear。
+   **不設 reduced-motion 例外**——轉動即語意,停下來只剩一個沒意義的圓環(canon 明文) */
+.spin16 { flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; }
+@keyframes trSpin { to { transform: rotate(360deg); } }
 
 /* ---- 雲端第一刀唯讀:說明行、不能按的鈕(aria-disabled,不是 disabled:鍵盤停得上去、讀屏唸得到原因)、停機那一段 ---- */
 .tr-ro-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
@@ -138,10 +140,18 @@ html[data-env="cloud"] .chat-input textarea::placeholder { color: var(--ink-2); 
 /* ---- 頁面骨架 ---- */
 .trv { flex: 1; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
 .trv[hidden] { display: none; }
-.main-head { flex: none; display: flex; align-items: flex-start; gap: var(--space-16); padding: var(--space-16) var(--space-24) var(--space-12); }
-.main-head .txt { flex: 1; min-width: 0; }
+/* 標頭三列(spec v2 §12-4 的 V2b):列 1 = 標題 | 動作槽,列 2 = 狀態句,列 3 = 原因行,兩句都跨滿寬。
+   舊版是 flex + `.act { flex: none }`:1024 最小視窗、三欄全開時中欄只有 336,兩顆英文鈕吃掉固定寬度,
+   文字欄只剩 60 px(約八個英文字母一行)→ 最長的狀態 36 行。`.txt` 走 display: contents,
+   讓標題、狀態句、原因行直接變成 grid item;`.act` 缺席時(#cv-empty 那個標頭)收掉第二欄與欄距 */
+.main-head { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-16); align-items: start; padding: var(--space-16) var(--space-24) var(--space-12); }
+.main-head:not(:has(.act)) { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
+.main-head > .txt { display: contents; }
+.main-head-name { grid-column: 1; grid-row: 1; }
 /* 啟動在途時主鈕右邊多一顆「暫停下單」文字鈕(#tr-go-stop),間距 8 */
-.main-head .act { flex: none; display: flex; align-items: center; gap: var(--space-8); }
+.main-head .act { grid-column: 2; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: var(--space-8); }
+/* `.txt` 底下其餘的孩子(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)一律跨滿寬,自己一列 */
+.main-head-desc, .main-head .tr-noamt, .main-head .tr-go-upd, .main-head .tr-ro-note, .main-head #tr-verdict, .main-head .pf-alert { grid-column: 1 / -1; }
 /* 「暫停下單」要在恐慌時看得到:比一般文字鈕亮一階,熱區跟主鈕等高(視覺仍是一行字);hover 照 .btn-quiet:hover 轉 --ink */
 .main-head .tr-go-stop { color: var(--ink-2); min-height: 32px; padding: 0 var(--space-8); }
 .main-head .tr-go-stop:hover { color: var(--ink); }
@@ -306,6 +316,11 @@ html[data-env="cloud"] .chat-input textarea::placeholder { color: var(--ink-2); 
   .ov-stats .stat:first-child { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   .ov-stats .stat:last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
   .main-head { padding-left: var(--space-16); padding-right: var(--space-16); }
+  /* V2b:中欄窄到這一階、而且動作槽有**兩顆**鈕時,鈕自己一列、各佔一半——不然標題會被截成「Auto …」。
+     只有一顆鈕時留在標題那一列、靠右、自然寬:無條件換行會讓最常見的 running(只有「暫停下單」)憑空多一列,
+     那顆鈕還會浮在標題與狀態句之間的空白裡(spec §12-4 第 3、4 條) */
+  .main-head:has(.act button + button) .act { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; margin-top: var(--space-12); margin-bottom: var(--space-4); }
+  .main-head:has(.act button + button) .act > button { flex: 1; }
   .main-tabs { padding: 0 var(--space-16); gap: var(--space-16); }
   .pf { padding: var(--space-16); }
   .pf-tbl .c-sym { display: none; }
@@ -411,5 +426,12 @@ html[data-env="cloud"] .chat-input textarea::placeholder { color: var(--ink-2); 
    C 唯一的出口,字用 --ink-2 同 #tr-go-stop */
 .main-head .tr-go-upd { display: block; margin-top: var(--space-4); padding: 0; min-height: 32px; color: var(--ink-2); text-align: left; }
 .main-head .tr-go-upd:hover { color: var(--ink); }
+/* 沒有策略設金額時鈕旁的原因行(§8):狀態行下面自己一行,--ink-3 12px;「部位」是切分頁的文字連結 */
+.main-head .tr-noamt { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.main-head .tr-noamt-link { font-size: inherit; padding: 0; vertical-align: baseline; }
+/* 等回報那一句:spinner 在句首(§2-3c)。.cx-wait 本身是 flex + gap,這裡只補「句子會換行」那一點——
+   原因行是整段話,不像連接框那兩行只有一行高 */
+.main-head .tr-noamt.cx-wait { display: flex; align-items: flex-start; gap: var(--space-8); }
+.main-head .tr-noamt.cx-wait .spin16 { margin-top: 2px; }
 /* 側欄雲端列尾的「可能仍在下單」紅短劃(同切換器 .envsw .dot.bad) */
 .strat-row .dot.bad { flex: none; display: inline-block; width: 8px; height: 2px; background: var(--color-red); }

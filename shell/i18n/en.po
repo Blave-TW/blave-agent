@@ -1500,8 +1500,6 @@ msgstr "Blave’s market and positioning data is included at no extra charge."
 msgid "env.open.more"
 msgstr "See the Full Plan"
 
-msgid "side.cloud.emptyGate"
-msgstr "Once the cloud machine is up, your strategies are listed here."
 
 msgid "side.cloud.emptyReady"
 msgstr "Your machine is up. Strategies you send here will be listed."
@@ -2044,7 +2042,6 @@ msgstr "Update"
 msgid "up.updating"
 msgstr "Updating…"
 
-
 msgid "up.busy"
 msgstr "A conversation is still replying. Update after it finishes."
 
@@ -2060,30 +2057,14 @@ msgstr "Couldn’t read the cloud’s status, so it won’t be updated this time
 msgid "up.c.stopped"
 msgstr "The cloud machine is stopped, so it won’t be updated this time."
 
-msgid "up.c.updating"
-msgstr "Updating…"
-
 msgid "up.c.note"
 msgstr "The agent on this computer connects to your cloud machine to do the update, using your own AI credit. If the trading program is running, it asks you first."
-
-
-
-
 
 msgid "up.c.available"
 msgstr "New version {nv} available"
 
-
-
-
-
-
-
-
-
-
 msgid "tr.cloud.pendAmounts"
-msgstr "The new amounts are saved on the cloud machine. This page shows them as current after its next report."
+msgstr "The new amounts are saved on the cloud machine."
 
 msgid "tr.cloud.pendTarget"
 msgstr "Target positions still use the old amounts and update on the next report."
@@ -2221,10 +2202,8 @@ msgid "cx.chk.noWhitelistCloud"
 msgstr "This key has no IP whitelist: Binance deletes keys that have no whitelist and sit unused for a long time. Adding the cloud machine’s IP to the whitelist is recommended."
 
 msgid "tr.cloud.cxSavedBn"
-msgstr "The key is saved on the cloud machine and passed Binance’s permission check. This page switches to the trading settings after the machine’s next report."
+msgstr "API key saved to your cloud machine; Binance permissions check passed."
 
-msgid "tr.cloud.cxSavedPaper"
-msgstr "The paper account is set up on the cloud machine. This page switches to the trading settings after the machine’s next report."
 
 msgid "tr.cloud.cxUnknown"
 msgstr "The key was sent, but the cloud machine hasn’t reported the check result. Close this and watch this page: it switches to the trading settings if the connection went through. If not, connect again."
@@ -2260,7 +2239,7 @@ msgid "up.c.msg"
 msgstr "Update the cloud machine to the latest version"
 
 msgid "up.c.checking"
-msgstr "The agent is handling the cloud update; see the chat for how it went. This updates once the cloud machine reports the new version."
+msgstr "The agent has replied. See the chat; this updates once the cloud machine reports the new version."
 
 msgid "tr.cloud.typeC"
 msgstr "Set a portfolio strategy’s first amount in the web workspace; you can adjust it here after that."
@@ -2328,12 +2307,6 @@ msgstr "press Pause trading first, then Update to the latest version now; the wo
 msgid "tr.haltReasonAll"
 msgstr "No orders are going out — exits and stops won’t run either. Once the problem is fixed, press Start trading; if you’re not sure what caused it, ask the agent in chat."
 
-msgid "tr.cloud.restartNoAccount"
-msgstr "The machine restarted, so no orders are going out — orders from your own strategy code are blocked too. Press Start trading to resume."
-
-msgid "tr.cloud.restartNoAccountStart"
-msgstr "Your scheduled strategy code hasn’t run since the machine restarted. Starting resumes it on schedule, and it places orders as usual."
-
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
 msgstr "Strategy amounts are kept: after you update to the latest version and press Start trading, positions are rebuilt to those amounts. If you don’t want that, zero the amounts first."
 
@@ -2354,3 +2327,146 @@ msgstr "An old version of the trading program may still be running. Press Update
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "Cumulative PnL curve, {a} to {b}, {n} records"
+
+msgid "tr.cloud.hdConnecting"
+msgstr "Connecting…"
+
+msgid "tr.cloud.hdNoConfirm"
+msgstr "No confirmation from the machine"
+
+msgid "tr.cloud.cxWaiting"
+msgstr "Waiting for the machine to confirm, usually a minute or two. This page switches to order settings on its own; nothing to do."
+
+msgid "up.c.running"
+msgstr "Updating the cloud machine · {t}"
+
+msgid "up.c.replying"
+msgstr "Agent is replying · {t}"
+
+msgid "up.c.runNote"
+msgstr "Progress is in the chat. You can do other things; this shows when it’s done."
+
+msgid "up.c.noReport"
+msgstr "The cloud machine hasn’t reported {nv} yet. If the agent said it’s done, give it a moment; otherwise see the chat."
+
+msgid "up.c.done"
+msgstr "Updated to {nv}"
+
+msgid "up.c.doneFrom"
+msgstr "{from} → {nv}"
+
+msgid "up.c.chatRunning"
+msgstr "Updating the cloud machine · {t}"
+
+msgid "up.c.chatSeeReply"
+msgstr "See the agent’s reply"
+
+msgid "up.c.chatDone"
+msgstr "Cloud updated to {nv}"
+
+msgid "tr.startOffNoAmt"
+msgstr "No strategy has an amount, so there’s nothing to start. Set an amount under Positions first."
+
+msgid "tr.startOffNoAmtRelease"
+msgstr "No strategy has an amount, so there’s nothing to start. To let your own strategy code place orders again, press Release pause."
+
+msgid "tr.release"
+msgstr "Release pause"
+
+msgid "tr.releasing"
+msgstr "Releasing…"
+
+msgid "tr.releaseHint"
+msgstr "The release command is on its way; this updates once the machine reports back."
+
+msgid "tr.relTitle"
+msgstr "Release the pause?"
+
+msgid "tr.relBody"
+msgstr "New positions blocked during the pause, including orders from your own strategy code, are allowed again. No strategy has an amount, so no strategy will trade."
+
+msgid "tr.relAuto"
+msgstr "This pause was triggered automatically (for example a rejected key, repeated account-read failures or an account change). Release only once that’s fixed."
+
+msgid "tr.relX1Title"
+msgstr "Releasing the pause will close these positions"
+
+msgid "tr.relX1Body"
+msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the {n} futures positions on this account, including ones you opened manually. Orders from your own strategy code are allowed again."
+
+msgid "tr.relX1BodyN"
+msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the futures positions on this account, including ones you opened manually. Orders from your own strategy code are allowed again."
+
+msgid "tr.relX2Title"
+msgstr "Releasing the pause will close auto-trading positions"
+
+msgid "tr.relX2Body"
+msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the positions auto-trading opened; positions you opened manually are left alone. Orders from your own strategy code are allowed again."
+
+msgid "tr.relNotNow"
+msgstr "Not now"
+
+msgid "tr.relCloseGo"
+msgstr "Close positions and release"
+
+
+msgid "tr.diedZ"
+msgstr "Trading stopped, and not because you paused it · last ran {t}."
+
+msgid "tr.cloud.restartStoppedZ"
+msgstr "The machine restarted, so no orders are going out — nothing is managing your positions, and orders from your own strategy code are blocked too."
+
+msgid "tr.restartStoppedLocalZ"
+msgstr "Blave was restarted and the order program isn’t running."
+
+msgid "tr.restartStoppedLocalZH"
+msgstr "Blave was restarted, the order program isn’t running, and new positions are blocked, including orders from your own strategy code."
+
+msgid "tr.haltReasonAllZ"
+msgstr "No orders are going out — exits and stops won’t run either. If you’re not sure what caused it, ask the agent in chat."
+
+msgid "tr.cloud.restartNoAccountZ"
+msgstr "The machine restarted, so no orders are going out — orders from your own strategy code are blocked too. Press Release pause to allow them again."
+
+msgid "tr.hostRetryZ"
+msgstr "The order engine on this computer stopped and is restarting; no orders go out meanwhile. Once it is back, check the status here."
+
+msgid "minv.release"
+msgstr "This version of Blave needs an update before it can send Release pause. Update at the bottom of Settings › General."
+
+msgid "tm.cloudUpdate"
+msgstr "Cloud machine: new version {nv}. Open Blave to update…"
+
+msgid "tm.cloudUpdateStale"
+msgstr "The cloud’s order program needs an update. Open Blave to update…"
+
+msgid "tr.cloud.cxSavedStalePaper"
+msgstr "The paper account was sent, but the cloud machine still hasn’t reported back, so this page hasn’t switched to order settings. You can try again, or ask the agent in chat what’s going on with the machine."
+
+
+msgid "tr.runningZ"
+msgstr "Order program running · no strategy has an amount"
+
+msgid "legal.terms"
+msgstr "Terms of Service"
+
+msgid "legal.privacy"
+msgstr "Privacy Policy"
+
+msgid "tr.cloud.startPendAmounts"
+msgstr "The new amounts are on their way to the machine. You’ll be able to start once it reports back."
+
+msgid "tr.cloud.startPendAmountsStale"
+msgstr "The new amounts are on their way to the machine. The numbers on this page are still the old ones."
+
+msgid "tr.cloud.hdFetching"
+msgstr "Fetching data from your machine"
+
+msgid "tr.cloud.cxSavedPaperDone"
+msgstr "Paper account saved to your cloud machine."
+
+msgid "tr.cloud.machineUp"
+msgstr "Your machine is running."
+
+msgid "tr.cloud.startPendSlow"
+msgstr "Taking longer than usual. The machine is still reporting back — no need to press again; two minutes at the outside."

@@ -7,18 +7,23 @@ const fnSrc = (name) => { const i = src.indexOf("function " + name + "("); if (i
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 const el = () => {
   const cls = new Set(["btn-quiet"]);
-  const n = { _txt: "", hidden: false, onclick: null, title: "", _cls: "", children: [],
-    classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), has: (c) => cls.has(c) },
-    setAttribute: () => {},
+  const n = { _txt: "", hidden: false, onclick: null, title: "", _cls: "", children: [], dataset: {}, attrs: {}, focus: () => { document.activeElement = n; },
+    classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), has: (c) => cls.has(c), add: (c) => cls.add(c), remove: (c) => cls.delete(c) },
+    contains: () => false, addEventListener: (ev, fn) => { if (ev === "click") n.onclick = fn; }, focus: () => { document.activeElement = n; },
+    querySelector: () => null, querySelectorAll: () => [],
+    setAttribute: (k, v) => { n.attrs[k] = String(v); },
     append: (...x) => { x.forEach((y) => { n.children.push(y); n._txt += typeof y === "string" ? y : y.textContent || ""; }); },
     appendChild: (x) => { n.children.push(x); n._txt += x.textContent || ""; return x; } };
   Object.defineProperty(n, "className", { get: () => n._cls, set: (v) => { n._cls = v; } });
+  let first = null; Object.defineProperty(n, "firstElementChild", { get: () => first || (first = el()) });   // #ws-update 裡那個 span
   // textContent = "" 也要清掉子節點(真的 DOM 是這樣;不清的話清單重畫會越畫越長,測試就看不出漏清)
   Object.defineProperty(n, "textContent", { get: () => n._txt, set: (v) => { n._txt = v; n.children.length = 0; } });
   return n;
 };
 const dom = {}; const $ = (id) => dom[id] || (dom[id] = el());
-const document = { createElement: () => el() };
+const document = { createElement: () => el(), activeElement: null, body: {} };
+var ENV = { cloudDirty: false }; let polls = 0, refreshes = 0; const trPoll = () => { polls++; };
+var UP_TICK = null; let ticks = 0; const setInterval = () => ++ticks, clearInterval = () => {};   // S2/S3 每秒重畫:這裡只記有沒有開
 let cur = null, planLoginBusy = false, oauthPending = false, HINT = null;
 const setFocusGuard = () => {}, cmdLine = () => "";
 const t = (k, v) => k + (v ? JSON.stringify(v) : "");
@@ -33,6 +38,7 @@ const trRestartUnconfirmed = (r) => { const x = r && r.reconciler && r.reconcile
 const submitMessage = async (msg, o) => { sent.push([msg, o]); if (startOk) running = true; return startOk; };   // 真的那支一開跑就把 running 設起來
 const paneSt = { chat: { off: false } }, paneToggle = () => {};
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
+eval(src.match(/const UP_REPORT_WAIT_MS = [^\n]*;/)[0].replace(/^const /, "var ")); eval(fnSrc("upClock")); eval(fnSrc("upObserve"));
 const stepWhere = (c) => (c && c.where) || "local";
 eval(fnSrc("upPlan")); eval(fnSrc("upLocalTurn")); eval(fnSrc("upNow")); eval(fnSrc("upPaint")); eval("async " + fnSrc("upGo")); eval("async " + fnSrc("upInstallLocal"));
 eval(fnSrc("upTurnEnded")); eval(fnSrc("acctPaintAcct"));
@@ -81,55 +87,159 @@ p = paint({ ...C, phase: "ready" }); ok("ready:句子升一階、鈕換成描邊
   ok("這台電腦有回合在跑:鈕與聊天入口停用,原因 up.busy", q.btn.disabled && q.btn.title[0] === "up.busy" && q.chat.disabled);
   q = plan(cloud({ update: { state: "done", result: "reconciler_down", requested_at: 1, from_version: "1.1.80" } }));
   ok("/cloud/state 的 update 讀數不再用(紀錄說什麼都不影響畫面)", q.cloud.s[0] === "up.c.available" && q.btn.act === "cloud");
-  q = plan(cloud({}), null, { cloudTurn: true }, true);
-  ok("按下之後本機那一回合在跑 = 更新中:鈕停用「更新中…」、不再算有新版", q.cloud.s[0] === "up.c.updating" && q.btn.disabled && q.btn.label[0] === "up.updating" && !q.cloud.has);
-  // Wei 09-22 選 A:回合結束不判「有沒有真的更新」(ssh 讀檔也是雲端上的 Bash,猜不準);成功只認版本追上;真的失敗不出紅字,由聊天講
-  const idle = { result: "idle", doneAt: 1e12, doneFor: "1.1.83" }, fault = { result: "fault", doneAt: 1e12, doneFor: "1.1.83" };
-  q = plan(cloud({}), null, idle);
-  ok("A 回合沒出錯、版本還沒追上:講「agent 處理過了,結果看聊天,等主機回報」,不宣稱完成、不出紅字;鈕**不鎖**(重按只是再送一句)",
-    q.cloud.s[0] === "up.c.checking" && q.cloud.cls !== "bad" && !q.btn.disabled && q.btn.act === "cloud" && q.btn.label[0] === "up.update"
-    && q.cloud.note && q.cloud.note[0] === "up.c.note");   // 提醒句照出:再按是再開一回合、再花一次額度
-  q = plan(cloud({}), null, fault);
-  ok("A 回合出錯:回到「有新版」、指到聊天,不出紅字", q.cloud.s[0] === "up.c.available" && q.cloud.cls !== "bad" && q.cloud.note[0] === "up.c.seeChat" && q.btn.act === "cloud");
-  ok("A 沒有「這次沒有更新成功」這一態(不論回合結束多久):失敗由聊天講", !/notUpdated|up\.retry|UP_SETTLE_MS/.test(fnSrc("upPlan")));
-  q = plan(cloud({ latest_config_version: "1.1.90" }), null, idle);
-  ok("R3 出了新一版:上一次的結果不拿來判", q.cloud.s[0] === "up.c.available" && q.cloud.note[0] === "up.c.note");
-  q = plan(cloud({}), { ...C, phase: "ready" }, idle);
-  ok("R2 兩邊都有新版:主鈕是雲端那一半,這台電腦另有一顆(雲端一直沒成也裝得了本機)", q.btn.act === "cloud" && q.localBtn && q.localBtn.label[0] === "up.installLocal" && !q.localBtn.disabled);
-  q = plan(cloud({}), { ...C, phase: "ready" }, { cloudTurn: true }, true);
+  // ── v2 §2 狀態表(spec-desktop-update-experience-v2):session 內的每一種狀態都由 upPlan 決定 ──
+  const T0 = 1e12, ses = (o) => ({ session: { startAt: T0, lastTurnAt: T0, fromCv: "1.1.80", nv: "1.1.83" }, ...o });
+  q = plan(cloud({}), null, ses({ cloudTurn: true }), true, T0 + 83000);
+  ok("S2 按鈕送出的那一回合在跑:正在更新雲端主機・{t}(從按下起算)、註腳過程在聊天;鈕 spinner「更新中」停用;聊天那一行是不可點的狀態列;要每秒重畫",
+    q.cloud.s[0] === "up.c.running" && q.cloud.s[1].t === "1:23" && q.cloud.note[0] === "up.c.runNote" && q.btn.disabled && q.btn.spin && q.btn.label[0] === "up.updating" && !q.cloud.has
+    && q.chat.show && q.chat.kind === "status" && q.chat.text[0] === "up.c.chatRunning" && q.chat.text[1].t === "1:23" && q.tick);
+  q = plan(cloud({}), null, ses({ cloudTurn: false, result: "idle", doneAt: T0 + 5000 }), true, T0 + 600000);
+  ok("S3 session 內後續的回合在跑(例如回「好」):agent 回覆中・{t},時間不歸零;鈕同 S2", q.cloud.s[0] === "up.c.replying" && q.cloud.s[1].t === "10:00" && q.btn.spin && q.btn.disabled && q.chat.kind === "status" && q.chat.text[0] === "up.c.replying" && q.tick);
+  const idle = ses({ result: "idle", doneAt: T0 + 60000, doneFor: "1.1.83" }), fault = ses({ result: "fault", doneAt: T0 + 60000, doneFor: "1.1.83" });
+  q = plan(cloud({}), null, idle, false, T0 + 60000 + UP_REPORT_WAIT_MS);
+  ok("視覺稽核 2-6:S2–S5 的句子跟 S1 同一階(--ink-2),不比靜態通知暗;完成態維持綠", ["up.c.running", "up.c.replying", "up.c.checking", "up.c.noReport"].every((k) => {
+    const st2 = k === "up.c.running" ? plan(cloud({}), null, ses({ cloudTurn: true }), true, T0) : k === "up.c.replying" ? plan(cloud({}), null, ses({ cloudTurn: false, result: "idle", doneAt: T0 + 1 }), true, T0 + 2)
+      : k === "up.c.checking" ? plan(cloud({}), null, idle, false, T0 + 60001) : plan(cloud({}), null, idle, false, T0 + 60000 + UP_REPORT_WAIT_MS + 1);
+    return st2.cloud.s[0] === k && st2.cloud.cls === "up"; }) && plan(cloud({ config_version: "1.1.83" }), null, { done: { from: "1.1.80", to: "1.1.83" } }).cloud.cls === "ok");
+  ok("S4 回合結束、還沒追上、≤ 3 分鐘:「agent 回覆了,看聊天」;鈕**不鎖**;聊天那一行「看 agent 的回覆」(可點);不出紅字、不每秒重畫",
+    q.cloud.s[0] === "up.c.checking" && q.cloud.cls !== "bad" && !q.btn.disabled && q.btn.act === "cloud" && q.btn.title[0] === "up.c.note" && q.chat.kind === "reply" && q.chat.text[0] === "up.c.chatSeeReply" && !q.tick);
+  q = plan(cloud({}), null, idle, false, T0 + 60000 + UP_REPORT_WAIT_MS + 1);
+  ok("S5 過了 3 分鐘:「還沒收到雲端主機回報 {nv}」+ 提醒句;聊天那一行回到「立即更新到最新版本」", q.cloud.s[0] === "up.c.noReport" && q.cloud.s[1].nv === "1.1.83" && q.cloud.note[0] === "up.c.note" && q.chat.kind === "go" && q.chat.text[0] === "up.chat" && q.btn.act === "cloud" && UP_REPORT_WAIT_MS === 180000);
+  q = plan(cloud({}), null, fault, false, T0 + 61000);
+  ok("S6 回合出錯:回到「有新版」、指到聊天,不出紅字", q.cloud.s[0] === "up.c.available" && q.cloud.cls !== "bad" && q.cloud.note[0] === "up.c.seeChat" && q.btn.act === "cloud" && q.chat.kind === "go");
+  ok("A 沒有「這次沒有更新成功」這一態:失敗由聊天講", !/notUpdated|up\.retry|UP_SETTLE_MS/.test(fnSrc("upPlan")));
+  q = plan(cloud({ config_version: "1.1.83" }), null, { done: { from: "1.1.80", to: "1.1.83" } });
+  ok("S7 已更新到 {nv}(綠字)+ {from} → {nv};鈕回到檢查更新;聊天那一行綠字、不可點", q.cloud.s[0] === "up.c.done" && q.cloud.s[1].nv === "1.1.83" && q.cloud.cls === "ok" && q.cloud.note[0] === "up.c.doneFrom" && q.cloud.note[1].from === "1.1.80"
+    && (!q.btn || q.btn.act === "check") && q.chat.kind === "done" && q.chat.text[0] === "up.c.chatDone");
+  ok("S7 送出下一則訊息之後聊天那一行收起,「關於」照停", (() => { const x = plan(cloud({ config_version: "1.1.83" }), null, { done: { from: "1.1.80", to: "1.1.83" }, doneChatHidden: true }); return x.cloud.s[0] === "up.c.done" && x.chat.show === false; })()
+    && /if \(UPD\.done\) UPD\.doneChatHidden = true;/.test(fnSrc("submitMessage")));
+  q = plan(cloud({}), { ...C, phase: "ready" }, idle, false, T0 + 61000);
+  ok("R2 兩邊都有新版:主鈕是雲端那一半,這台電腦另有一顆", q.btn.act === "cloud" && q.localBtn && q.localBtn.label[0] === "up.installLocal" && !q.localBtn.disabled);
+  q = plan(cloud({}), { ...C, phase: "ready" }, ses({ cloudTurn: true }), true, T0);
   ok("R2 …雲端那一回合在跑時,本機那顆也停用(重開會斷掉它)", q.localBtn && q.localBtn.disabled);
   ok("R2 只有這台電腦有新版:主鈕就是本機那一半,沒有第二顆", plan(cloud({ config_version: "1.1.83" }), { ...C, phase: "ready" }).btn.act === "local" && plan(cloud({ config_version: "1.1.83" }), { ...C, phase: "ready" }).localBtn === null);
-  q = plan(cloud({ config_version: "1.1.83" }), null, idle);
-  ok("回合結束、版本追上了 = 已是最新版(不必等窗口)", q.cloud.s[0] === "up.latest" && !q.cloud.has && (!q.btn || q.btn.act === "check"));
-  ok("按過之後聊天入口收起", plan(cloud({}), null, { chatHidden: true }).chat.show === false);
+  // ── upObserve:session 什麼時候結束、什麼時候算「已更新」 ──
+  const O = (mem, cl, localTurn, now, stale) => upObserve(mem, cl.cloud, !!stale, !!localTurn, now || T0);
+  let m = O(ses({ doneAt: 5, result: "idle" }), cloud({ config_version: "1.1.83" }));
+  ok("S7 session 內追上 → done { from: 按下時的 cv, to: nv },session 結束", m.done && m.done.from === "1.1.80" && m.done.to === "1.1.83" && m.session === null && m.doneAt === 0 && m.result === null);
+  m = O(m, cloud({ config_version: "1.1.83" }), false, T0 + 9e6);
+  ok("S7 追上之後一直停著(再看幾次、過多久都不清)", m.done && m.done.to === "1.1.83");
+  m = O(m, cloud({ config_version: "1.1.83", latest_config_version: "1.1.90" }));
+  ok("S7 下一次落後出現才清掉", m.done === null && m.lagCv === "1.1.83");
+  m = O({ done: null, lagCv: null }, cloud({})); m = O(m, cloud({ config_version: "1.1.83" }));
+  ok("S7 不是按鈕觸發(用戶自己打字叫 agent 更新):原本落後、之後 cv 變了而且追上 → 一樣有「已更新」,from = 變之前那一版", m.done && m.done.from === "1.1.80" && m.done.to === "1.1.83");
+  m = O({ done: null, lagCv: null }, cloud({ config_version: "1.1.83" }));
+  ok("S0 一開就是最新版:不冒出「已更新」", m.done === null);
+  m = O(ses({ cloudTurn: false }), cloud({ latest_config_version: "1.1.90" }));
+  ok("session 內出了更新一版:session 結束(這一次的結果不拿來判下一版)", m.session === null);
+  m = O(ses({}), cloud({}), false, T0 + 30 * 60000 + 1);
+  ok("按下後 30 分鐘都沒有回合在跑:session 結束;有回合在跑就續命", m.session === null && O(ses({}), cloud({}), true, T0 + 40 * 60000).session !== null);
+  m = O(ses({}), cloud({ config_version: "1.1.83" }), false, T0, true);
+  ok("§6-3 版號一樣、但還停不住(gated:false):不算追上", m.session !== null && m.done === null);
+  { // 稽核的測試缺口 ②:{t} 從按下起累計,換回合不歸零(之前改成每回合歸零六支測試全綠)
+    const mem = ses({ cloudTurn: true }), c1 = plan(cloud({}), null, mem, true, T0 + 30000);
+    // lastTurnAt 也要推進:不推的話「把基準換成 lastTurnAt」這種歸零方式看不出來(追加稽核 3)
+    const mem2 = { ...mem, cloudTurn: false, result: "idle", doneAt: T0 + 40000, session: { ...mem.session, lastTurnAt: T0 + 40000 } }, c2 = plan(cloud({}), null, mem2, true, T0 + 90000);
+    ok("{t} 從按下起累計:第一回合 0:30,第二回合仍從按下起算(1:30,不是 0:50)", c1.cloud.s[1].t === "0:30" && c2.cloud.s[1].t === "1:30" && c2.cloud.s[0] === "up.c.replying"); }
+  { // 追加稽核 2:fault 收掉 session 之後,S6 不可以變成永久標籤——這一版的事情有結論就清掉
+    let f = O(ses({ cloudTurn: false, result: "fault", doneAt: T0 + 1000, doneFor: "1.1.83" }), cloud({}), false, T0 + 2000);
+    ok("fault:session 收掉,S6 的字還在(還沒追上、也還沒出新版)", f.session === null && f.result === "fault" && f.doneAt > 0
+      && plan(cloud({}), null, f, false, T0 + 3000).cloud.s[0] === "up.c.available");
+    const g = O({ ...f }, cloud({ config_version: "1.1.83" }), false, T0 + 4000);
+    ok("fault 之後追上了:S6 清掉,換成 S7「已更新到」", g.doneAt === 0 && g.result === null && g.doneFor === null && plan(cloud({ config_version: "1.1.83" }), null, g, false, T0 + 5000).cloud.s[0] === "up.c.done");
+    const h = O({ ...f }, cloud({ latest_config_version: "1.1.90" }), false, T0 + 4000);
+    ok("fault 之後出了更新一版:S6 清掉,回到「有新版」(不是「上一次沒完成」)", h.doneAt === 0 && h.result === null && plan(cloud({ latest_config_version: "1.1.90" }), null, h, false, T0 + 5000).cloud.note[0] === "up.c.note");
+    const k2 = O({ ...f }, cloud({}), false, T0 + 9e6);
+    ok("fault、同一版還沒有結論:過多久都還是 S6(兩個條件都要,不是靠時間)", k2.doneAt > 0 && k2.result === "fault");
+    // 這一條只治「沒有 session 的殘留」:session 還在(S4 / S5 正在等回報)時不可以順手把 doneAt 清掉,否則 S4 直接掉回 S1
+    const live = O(ses({ cloudTurn: false, result: "idle", doneAt: T0 + 1000, doneFor: "1.1.83" }), cloud({ latest_config_version: "1.1.83" }), false, T0 + 2000);
+    ok("session 還在時不清 doneAt(S4 要靠它;清掉就掉回 S1)", live.session !== null && live.doneAt > 0 && plan(cloud({}), null, live, false, T0 + 2000).cloud.s[0] === "up.c.checking");
+    // 同一條的另一半:S5(過了 3 分鐘)也靠 doneAt,session 還在時被清掉的話會退回 S1「有新版」
+    const live5 = O(ses({ cloudTurn: false, result: "idle", doneAt: T0 + 1000, doneFor: "1.1.83" }), cloud({ latest_config_version: "1.1.83" }), false, T0 + 2000);
+    ok("session 還在、過了 3 分鐘:仍是 S5(doneAt 沒被順手清掉)", plan(cloud({}), null, live5, false, T0 + 1000 + UP_REPORT_WAIT_MS + 1).cloud.s[0] === "up.c.noReport");
+    /* 這條清理只治「沒有 session 的殘留」:按下當時還讀不到 latest(session.nv / doneFor 都是 null),之後 latest 才冒出來——
+       session 還在、人還在等回報,不可以因為 lv !== doneFor 就把 S4 清成 S1 */
+    const unk = O({ session: { startAt: T0, lastTurnAt: T0, fromCv: "1.1.80", nv: null }, cloudTurn: false, result: "idle", doneAt: T0 + 1000, doneFor: null, done: null, lagCv: null },
+      cloud({}), false, T0 + 2000);
+    ok("按下時還讀不到新版號:latest 後來出現也不清掉在途的 S4", unk.session !== null && unk.doneAt > 0 && plan(cloud({}), null, unk, false, T0 + 2000).cloud.s[0] === "up.c.checking"); }
+  { /* 稽核 R2:換語言會把聊天上方那一行洗回「立即更新到最新版本」,dataset.kind 卻還是上一個狀態
+       → S4 按下去變成捲聊天、S7 的綠字被洗掉還帶 aria-disabled(看起來像壞掉的鈕)。
+       修法:那個 span 不掛 data-i18n(字由 upPaint 決定,S2/S3/S7 還帶 {t} / {nv},通用迴圈也填不出來) */
+    const span = html.slice(html.indexOf('id="ws-update"'), html.indexOf("</button>", html.indexOf('id="ws-update"')));
+    ok("R2 #ws-update 的字不走 data-i18n(換語言不會洗掉 upPaint 寫的字)", !/data-i18n/.test(span) && /<span><\/span>/.test(span));
+    // applyStatic:通用迴圈跑完之後那一行還是 upPaint 寫的字、kind 也還對得上
+    // upPaint 用真的 Date.now():fixture 也要照現在的時鐘做,才落在 S4(回合結束 3 分鐘內)
+    const N4 = Date.now();
+    const st4 = { cloudTurn: false, result: "idle", doneAt: N4 - 1000, doneFor: "1.1.83", done: null, lagCv: null, doneChatHidden: false,
+      session: { startAt: N4 - 5000, lastTurnAt: N4 - 1000, fromCv: "1.1.80", nv: "1.1.83" } };
+    TR_BAGS.cloud.st = cloud({}); Object.assign(UPD, st4); UP = { ...C, phase: "idle" }; upPaint();
+    const before = $("ws-update").firstElementChild.textContent, kind = $("ws-update").dataset.kind;
+    const staticSrc = fnSrc("applyStatic");
+    // 逐字跑 applyStatic 裡那三行通用迴圈(假 DOM 只收有 data-i18n 的節點:#ws-update 的 span 沒有就不會被碰到)
+    const nodes = /data-i18n="[^"]*"/.test(span) ? [$("ws-update").firstElementChild] : [];
+    nodes.forEach((el) => { el.textContent = "up.chat"; });
+    ok("R2 換語言之後那一行仍是「看 agent 的回覆」、kind 仍是 reply(不會變成立即更新)", kind === "reply" && before === "up.c.chatSeeReply" && $("ws-update").firstElementChild.textContent === before
+      && /if \(typeof upPaint === "function" && typeof UP !== "undefined"\) upPaint\(\);/.test(staticSrc));
+    Object.assign(UPD, { session: null, result: null, doneAt: 0, doneFor: null, done: null, lagCv: null }); }
+  { // 稽核 R3:版號讀不到(api 的 VERSION 抓失敗會快取 60 秒的 null;主機還沒回報也是 null)時不可以印出「回報 null。」
+    const stale = (mem, t2) => upPlan({ up: { ...C, phase: "idle" }, cloud: { config_version: "1.1.83", latest_config_version: null }, kind: "running", localTurn: false, mem, now: t2, cloudStale: true });
+    const ses2 = (o) => ({ session: { startAt: T0, lastTurnAt: T0, fromCv: "1.1.83", nv: null }, ...o });
+    const s5 = stale(ses2({ result: "idle", doneAt: T0 + 1000, doneFor: null }), T0 + 1000 + UP_REPORT_WAIT_MS + 1);
+    const s6 = stale(ses2({ result: "fault", doneAt: T0 + 1000, doneFor: null }), T0 + 2000);
+    ok("R3 讀不到版號:S5 / S6 都不帶 {nv},改用不指名版號那一句", s5.cloud.s[0] === "up.c.needsUpdate" && !s5.cloud.s[1] && s6.cloud.s[0] === "up.c.needsUpdate" && !s6.cloud.s[1]
+      && stale(ses2({ result: "idle", doneAt: T0 + 1000, doneFor: null }), T0 + 1001).cloud.s[0] === "up.c.checking");
+    const lv2 = (mem, t2) => upPlan({ up: { ...C, phase: "idle" }, cloud: { config_version: "1.1.80", latest_config_version: "1.1.83" }, kind: "running", localTurn: false, mem, now: t2 });
+    ok("R3 讀得到版號:S5 / S6 照樣帶 {nv}", lv2(ses2({ result: "idle", doneAt: T0 + 1000, doneFor: "1.1.83" }), T0 + 1000 + UP_REPORT_WAIT_MS + 1).cloud.s[1].nv === "1.1.83"
+      && lv2(ses2({ result: "fault", doneAt: T0 + 1000, doneFor: "1.1.83" }), T0 + 2000).cloud.s[1].nv === "1.1.83"); }
+  { // 稽核 R4:回合結束時讀不到版號(doneFor = null),之後 lv 冒出來不可以把 S6 清掉
+    const f2 = { session: null, cloudTurn: false, result: "fault", doneAt: T0 + 1000, doneFor: null, done: null, lagCv: null };
+    const a2 = O({ ...f2 }, cloud({}), false, T0 + 2000);
+    ok("R4 doneFor 是 null:lv 出現不算「出了新版」,S6 留著", a2.doneAt > 0 && a2.result === "fault");
+    const b2 = O({ ...f2 }, cloud({ config_version: "1.1.83" }), false, T0 + 2000);
+    ok("R4 …但追上了照樣清掉(不會變成永久標籤)", b2.doneAt === 0 && b2.result === null); }
+  ok("upClock:m:ss、上限 59:59", upClock(0) === "0:00" && upClock(83000) === "1:23" && upClock(9e9) === "59:59");
 
   // ── 按下去:雲端那半 = 在本機聊天送那一句(帶 viewing env:cloud),不送雲端指令;這台電腦那半這一次不重開 ──
-  UP = { ...C, phase: "ready" }; TR_BAGS.cloud.st = cloud({}); Object.assign(UPD, { cloudTurn: false, result: null, doneAt: 0, doneFor: null, chatHidden: false });
+  UP = { ...C, phase: "ready" }; TR_BAGS.cloud.st = cloud({}); Object.assign(UPD, { cloudTurn: false, result: null, doneAt: 0, doneFor: null, session: null, done: null, lagCv: null, doneChatHidden: false });
   calls.length = 0; sent.length = 0; running = false;
   await upGo();
-  ok("雲端有新版:送的是本機聊天那一句、帶 viewing env:cloud;沒有任何雲端指令;這台電腦這一次不重開(會斷掉那一回合)",
-    sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && calls.length === 0 && UPD.cloudTurn === true && UPD.chatHidden === true);
-  running = true; upPaint();
-  ok("回合在跑:關於那一行是更新中", $("set-up-ctxt").textContent === "up.c.updating" && $("set-up-btn").disabled === true);
+  ok("雲端有新版:送的是本機聊天那一句、帶 viewing env:cloud;沒有任何雲端指令;這台電腦這一次不重開;開一段 session(記下按下時的 cv / nv)",
+    sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && calls.length === 0 && UPD.cloudTurn === true
+    && UPD.session && UPD.session.fromCv === "1.1.80" && UPD.session.nv === "1.1.83");
+  running = true; ticks = 0; upPaint();
+  ok("回合在跑:關於那一行是「正在更新雲端主機・{t}」、鈕停用帶 spinner、聊天那一行是狀態列(aria-disabled、不是 disabled)、開始每秒重畫",
+    /^up\.c\.running/.test($("set-up-ctxt").textContent) && $("set-up-btn").disabled === true && $("set-up-btn").children.some((c) => c && c.className === "spin16")
+    && !$("ws-update").hidden && $("ws-update").dataset.kind === "status" && $("ws-update").attrs["aria-disabled"] === "true" && $("ws-update").disabled === false && !!UP_TICK);
   ok("A 接線:turn-end 把「出錯 / 沒回覆 / 登出」交給 upTurnEnded;工具步驟**不**拿來猜有沒有更新(busyStep 不碰 UPD)",
     /upTurnEnded\(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
-  upTurnEnded(false); running = false; upPaint();
-  ok("A 回合結束、沒出錯(就算回合裡在雲端跑過一堆指令)→ idle:聊天入口回來、那一行是「看聊天、等回報」,不是已完成",
-    UPD.cloudTurn === false && UPD.result === "idle" && UPD.doneAt > 0 && UPD.chatHidden === false && $("set-up-ctxt").textContent === "up.c.checking");
-  Object.assign(UPD, { cloudTurn: true }); upTurnEnded(true);
-  ok("A 回合出錯 → fault(不可以當成做完了)", UPD.result === "fault" && (upPaint(), $("set-up-ctxt").textContent === 'up.c.available{"nv":"1.1.83"}') && $("set-up-cnote").textContent === "up.c.seeChat");
-  Object.assign(UPD, { result: "idle", doneAt: 5, doneFor: "1.1.83" }); TR_BAGS.cloud.st = cloud({ config_version: "1.1.83" }); upPaint();
-  ok("R3 追上了:doneAt 歸零", UPD.doneAt === 0 && UPD.result === null);
+  window.blave.cloudRefresh = () => { refreshes++; return Promise.resolve(); };
+  upTurnEnded(false); running = false; upPaint(); await new Promise((r) => setImmediate(r));
+  ok("回合結束立刻強制問一次雲端,問完標記雲端要重讀並立刻輪詢一次(主機已回報就不必等下一輪)", refreshes === 1 && ENV.cloudDirty === true && polls === 1);
+  ok("A 回合結束、沒出錯 → idle、S4(不是已完成);每秒重畫停掉",
+    UPD.cloudTurn === false && UPD.result === "idle" && UPD.doneAt > 0 && $("set-up-ctxt").textContent === "up.c.checking" && $("ws-update").dataset.kind === "reply" && UP_TICK === null);
+  running = true; upPaint();
+  ok("S3 之後的回合(回「好」)也算更新中:「agent 回覆中」", /^up\.c\.replying/.test($("set-up-ctxt").textContent));
+  ok("B4 每秒跳的秒數放在 aria-hidden 的小節點裡(role=status 不會每秒重念整句)", (() => { const ct = $("set-up-ctxt"), sp = ct.children.find((c) => c && c.attrs && c.attrs["aria-hidden"] === "true"); return !!sp && /:/.test(sp.textContent) && ct.textContent.length > sp.textContent.length; })()
+    && /role="status"/.test(html.slice(html.indexOf('id="set-up-ctxt"') - 120, html.indexOf('id="set-up-ctxt"') + 40)));
+  upTurnEnded(true); running = false; upPaint();
+  ok("B8 回合出錯(S6)當場收掉更新期間,不讓它再活 30 分鐘;S6 那一行照樣講「有新版 + 看聊天」", UPD.session === null);
+  ok("session 內後續回合出錯 → fault(S6)", UPD.result === "fault" && $("set-up-ctxt").textContent === 'up.c.available{"nv":"1.1.83"}' && $("set-up-cnote").textContent === "up.c.seeChat");
+  TR_BAGS.cloud.st = cloud({ config_version: "1.1.83" }); upPaint();
+  ok("S7 追上了:「已更新到 1.1.83」停住(綠字),session 收掉", $("set-up-ctxt").textContent === 'up.c.done{"nv":"1.1.83"}' && $("set-up-ctxt").className.includes("ok") && UPD.session === null && $("ws-update").dataset.kind === "done");
+  upPaint(); upPaint();
+  ok("S7 再畫幾次也不退回「已是最新版」", $("set-up-ctxt").textContent === 'up.c.done{"nv":"1.1.83"}');
   TR_BAGS.cloud.st = cloud({});
-  Object.assign(UPD, { cloudTurn: false, doneAt: 0, result: null, chatHidden: false }); sent.length = 0; startOk = false;
+  Object.assign(UPD, { cloudTurn: false, doneAt: 0, result: null, session: null, done: null, lagCv: null }); sent.length = 0; startOk = false;
   await upGo();
-  ok("聊天沒送出去(上一輪還在跑 / 版本被停用):不進「更新中」", UPD.cloudTurn === false && sent.length === 1);
-  startOk = true; UP = { ...C, phase: "idle" }; TR_BAGS.cloud.st = cloud({}); Object.assign(UPD, { chatHidden: false, doneAt: 0 }); upPaint();
+  ok("聊天沒送出去(上一輪還在跑 / 版本被停用):不進更新期間", UPD.cloudTurn === false && UPD.session === null && sent.length === 1);
+  startOk = true; UP = { ...C, phase: "idle" }; TR_BAGS.cloud.st = cloud({}); Object.assign(UPD, { doneAt: 0 }); upPaint();
   ok("聊天那一行的 title 在按之前就是提醒句", !$("ws-update").hidden && $("ws-update").title === "up.c.note" && $("set-up-cnote").textContent === "up.c.note");
+  ok("聊天那一行:狀態列 / 已更新不可點;「看 agent 的回覆」捲到最後一則;只有 go 才送更新", /if \(k === "reply"\) \{ scrollChat\(\); return; \}/.test(src) && /if \(k === "go"\) upGo\(\);/.test(src));
   { const S2 = fs.readFileSync(path.join(R, "strings.js"), "utf8");
-    ok("提醒句與送出那一句的字(zh / en);舊的雲端指令字串(recDown / restart / updatedRec / notYet / unsupported / up.cf.*)與 up.install 都清掉",
+    ok("提醒句與送出那一句的字(zh / en);舊的雲端指令字串與 up.install / up.c.updating(換成 up.c.running)都清掉",
       /"up\.c\.note": "這台電腦的 agent 會連上雲端主機做更新，用你自己的 AI 額度；若下單程式在跑，它會先問你。"/.test(S2) && /"up\.c\.msg": "把雲端主機更新到最新版本"/.test(S2) && /"up\.c\.msg": "Update the cloud machine to the latest version"/.test(S2)
-      && !/"up\.(install|c\.(recDown|restart|restartSent|updatedRec|notYet|unsupported)|cf\.[a-zA-Z]+)"/.test(S2) && /"up\.c\.updating": "更新中…"/.test(S2)); }
+      && !/"up\.(install|c\.(recDown|restart|restartSent|updatedRec|notYet|unsupported|updating)|cf\.[a-zA-Z]+)"/.test(S2)
+      && /"up\.c\.running": "正在更新雲端主機 · \{t\}"/.test(S2) && /"up\.c\.running": "Updating the cloud machine · \{t\}"/.test(S2) && !/・/.test(S2) && /"up\.c\.done": "已更新到 \{nv\}"/.test(S2) && /"up\.c\.noReport": "還沒收到雲端主機回報 \{nv\}。/.test(S2)); }
 const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
 ok("字串:up.app / acct.signedOut 在、up.label / up.current 清掉、前綴「{v} ·」拿掉", /"up\.app"/.test(S) && /"acct\.signedOut"/.test(S) && !/"up\.(label|current)"/.test(S) && !/"up\.[a-zA-Z]+": "\{v\} /.test(S));
 
@@ -235,6 +345,41 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 ok("隱私:會收 4 條、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \[("priv\.collect\.[1-4]",? ?){4}\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src));
+{ /* 法遵入口(法遵稽核):app 裡本來連一個服務條款 / 隱私權政策的連結都沒有,而隱私權政策 §9.1 還叫人到
+     設定 › 隱私 關遙測、拿安裝識別碼。隱私權政策放隱私那一頁、服務條款跟版本資訊放「關於」;兩個都外開瀏覽器、網址帶目前語言。
+     **不加同意步驟、不擋畫面**(Wei 還沒決定任何接受流程) */
+  const seen2 = []; const realOpen = window.blave.openExternal;
+  window.blave.openExternal = (u) => { seen2.push(u); };
+  // privPaint 真的跑一次(假 DOM 夠用:它只用 createElement / append / textContent)
+  eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const /, "var ")); eval(src.match(/const PRIV_NEVER = [^\n]*;/)[0].replace(/^const /, "var "));
+  eval(src.match(/^const legalUrl = [^\n]*$/m)[0].replace(/^const /, "var "));
+  var PRIV = true, PRIV_ID = "abc", privToggle = () => {}, srSay = () => {};
+  eval(fnSrc("privPaint"));
+  LANG = "zh"; privPaint();
+  // privPaint 用 document.createElement 組節點,不經過 $():從 #set-priv 的子樹把那顆鈕找出來
+  const findBtn = () => { const out = []; const walk = (n) => { if (!n || !n.children) return; n.children.forEach((c) => { if (c && typeof c === "object") { if (c.onclick && c.textContent === "legal.privacy") out.push(c); walk(c); } }); }; walk($("set-priv")); return out[0]; };
+  const pl = findBtn();
+  if (pl && pl.onclick) pl.onclick();
+  ok("隱私那一頁有「隱私權政策」,點了外開 /disclaimer/zh/privacy_policy(不是寫死英文)", !!pl && seen2.join() === "https://blave.org/disclaimer/zh/privacy_policy");
+  LANG = "en"; privPaint(); { const b2 = findBtn(); if (b2 && b2.onclick) b2.onclick(); }
+  ok("換語言之後網址跟著換", seen2[1] === "https://blave.org/disclaimer/en/privacy_policy");
+  ok("「關於」那一塊有服務條款,點了外開 /disclaimer/<lang>/terms_of_service;走既有的 openExternal,沒有自己另開一套",
+    /<p class="set-legal"><button type="button" class="btn-quiet" id="set-terms" data-i18n="legal\.terms"><\/button><\/p>/.test(html)
+    && /\$\("set-terms"\)\.addEventListener\("click", \(\) => window\.blave\.openExternal\(legalUrl\("terms_of_service"\)\)\);/.test(src)
+    && /const legalUrl = \(page\) => "https:\/\/blave\.org\/disclaimer\/" \+ LANG \+ "\/" \+ page;/.test(src)
+    && /\.set-legal \{ margin: var\(--space-16\) 0 0; \}/.test(css));
+  ok("兩個字都在(zh / en)", /msgid "legal\.terms"\nmsgstr "服務條款"/.test(PO[0]) && /msgid "legal\.terms"\nmsgstr "Terms of Service"/.test(PO[1])
+    && /msgid "legal\.privacy"\nmsgstr "隱私權政策"/.test(PO[0]) && /msgid "legal\.privacy"\nmsgstr "Privacy Policy"/.test(PO[1]));
+  ok("**沒有**同意步驟 / 擋畫面:沒有 accept / agree / consent 那一類的閘門", !/legal\.(accept|agree|consent)|acceptTerms|consentGate/.test(src + html + PO[0] + PO[1]));
+  // 署名從 NOTICE 讀出來再去 LICENSE 找,不寫死字串:法人名稱改了(2026-09-23 從
+  // 「Blave」改成正式公司名)時,兩個檔一起改才會綠,只改一邊就紅——寫死的話
+  // 只會變成「改名字就要順手改測試」,守不到「兩份不一致」這件事
+  { const lic = fs.readFileSync(path.join(__dirname, "..", "LICENSE"), "utf8");
+    const notice = fs.readFileSync(path.join(__dirname, "..", "NOTICE"), "utf8");
+    const m = notice.match(/^Copyright .+$/m);
+    ok("LICENSE 的 Apache 樣板佔位已經填成 repo 自己的署名(同 NOTICE)",
+      !!m && lic.includes("\n   " + m[0] + "\n") && !/\[yyyy\]|\[name of copyright owner\]/.test(lic)); }
+  window.blave.openExternal = realOpen; LANG = "zh"; }
 ok("隱私:會收那一條寫到 macOS 版本與系統語言;七個事件逐項對得上契約的白名單", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 7 && /首次開啟、每日開啟、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0]));
 ok("全 app 的字串不出現「匿名 / anonymous」;首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));
 // 設定 › 資料與雲端方案 › 主機運行中那格:主鈕是「切到雲端」(關設定 + 走切換器同一個守門入口),不再外開網頁(Wei:不用前往工作頁了)

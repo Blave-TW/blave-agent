@@ -11,13 +11,13 @@
   "scripts": {
     "start": "electron .",
     "fetch-python": "sh tools/fetch-python.sh",
-    "pack": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dir",
-    "dist": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dmg",
+    "pack": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dir && BLAVE_CHECK_PACK=1 node ../tests/check_shell_paths.js",
+    "dist": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dmg && BLAVE_CHECK_PACK=1 node ../tests/check_shell_paths.js",
     "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac --publish never"
   },
   "devDependencies": {
     "electron": "44.4.3",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.16.1"
   },
   "dependencies": {
     "electron-updater": "6.8.9",

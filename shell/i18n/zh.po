@@ -1500,8 +1500,6 @@ msgstr "Blave 的行情與籌碼資料含在裡面，不另外收。"
 msgid "env.open.more"
 msgstr "看完整方案內容"
 
-msgid "side.cloud.emptyGate"
-msgstr "雲端主機開好之後，策略會列在這裡。"
 
 msgid "side.cloud.emptyReady"
 msgstr "主機已經開好了。策略送上來之後，會列在這裡。"
@@ -2044,7 +2042,6 @@ msgstr "更新"
 msgid "up.updating"
 msgstr "更新中…"
 
-
 msgid "up.busy"
 msgstr "有對話還在回覆，結束後再更新"
 
@@ -2060,30 +2057,14 @@ msgstr "讀不到雲端的狀態，這次不會更新它。"
 msgid "up.c.stopped"
 msgstr "雲端主機已停機，這次不會更新它。"
 
-msgid "up.c.updating"
-msgstr "更新中…"
-
 msgid "up.c.note"
 msgstr "這台電腦的 agent 會連上雲端主機做更新，用你自己的 AI 額度；若下單程式在跑，它會先問你。"
-
-
-
-
 
 msgid "up.c.available"
 msgstr "有新版 {nv}"
 
-
-
-
-
-
-
-
-
-
 msgid "tr.cloud.pendAmounts"
-msgstr "新金額已存到雲端主機。這一頁要等主機下一次回報，才會顯示成現況。"
+msgstr "新金額已存到雲端主機。"
 
 msgid "tr.cloud.pendTarget"
 msgstr "目標部位還是照舊金額算的，下一次回報才會更新。"
@@ -2221,10 +2202,8 @@ msgid "cx.chk.noWhitelistCloud"
 msgstr "這把金鑰沒有設 IP 白名單：Binance 會刪除沒有白名單、又長期閒置的金鑰。建議把雲端主機的 IP 加進白名單。"
 
 msgid "tr.cloud.cxSavedBn"
-msgstr "金鑰已存到雲端主機，Binance 的權限檢查通過。主機下一次回報後，這一頁會換成下單設定。"
+msgstr "金鑰已存到雲端主機，Binance 權限檢查通過。"
 
-msgid "tr.cloud.cxSavedPaper"
-msgstr "模擬帳戶已設定到雲端主機。主機下一次回報後，這一頁會換成下單設定。"
 
 msgid "tr.cloud.cxUnknown"
 msgstr "金鑰送出去了，但雲端主機還沒回報檢查結果。先關掉這個框看這一頁：接上了會自己換成下單設定；沒有的話再連一次。"
@@ -2260,7 +2239,7 @@ msgid "up.c.msg"
 msgstr "把雲端主機更新到最新版本"
 
 msgid "up.c.checking"
-msgstr "agent 在處理雲端更新，結果看聊天；雲端主機回報新版本後這裡會跟上。"
+msgstr "agent 回覆了，看聊天；雲端主機回報新版本後這裡會跟上。"
 
 msgid "tr.cloud.typeC"
 msgstr "投資組合策略的第一筆金額要在網頁工作頁設定，之後可以在這裡調整。"
@@ -2328,12 +2307,6 @@ msgstr "先按「暫停下單」，再按「立即更新到最新版本」；wor
 msgid "tr.haltReasonAll"
 msgstr "什麼單都不下——平倉與停損也不會執行。問題處理好之後，再按「啟動下單」；不確定原因，可以在聊天請 agent 查。"
 
-msgid "tr.cloud.restartNoAccount"
-msgstr "主機重開過，什麼單都不下——連你自己的策略程式下的單也會被擋。按「啟動下單」繼續。"
-
-msgid "tr.cloud.restartNoAccountStart"
-msgstr "主機重開後，排程裡的策略程式一直沒有執行。啟動後會照排程恢復執行、照常下單。"
-
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
 msgstr "策略金額會保留：更新到最新版本、再按「啟動下單」之後，下單機會照現有金額把部位重建回來；不想重建，先把金額歸零。"
 
@@ -2354,3 +2327,146 @@ msgstr "舊版下單程式可能還在跑。先按「立即更新到最新版本
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "累積損益曲線，{a} 到 {b}，{n} 筆"
+
+msgid "tr.cloud.hdConnecting"
+msgstr "連接中…"
+
+msgid "tr.cloud.hdNoConfirm"
+msgstr "沒有收到主機確認"
+
+msgid "tr.cloud.cxWaiting"
+msgstr "正在等主機確認，通常一兩分鐘。好了這一頁會自己換成下單設定，不用做任何事。"
+
+msgid "up.c.running"
+msgstr "正在更新雲端主機 · {t}"
+
+msgid "up.c.replying"
+msgstr "agent 回覆中 · {t}"
+
+msgid "up.c.runNote"
+msgstr "過程在聊天裡；可以先做別的事，完成後這裡會顯示。"
+
+msgid "up.c.noReport"
+msgstr "還沒收到雲端主機回報 {nv}。如果 agent 說已經更新好，再等一下；沒有的話看聊天說明。"
+
+msgid "up.c.done"
+msgstr "已更新到 {nv}"
+
+msgid "up.c.doneFrom"
+msgstr "{from} → {nv}"
+
+msgid "up.c.chatRunning"
+msgstr "正在更新雲端主機 · {t}"
+
+msgid "up.c.chatSeeReply"
+msgstr "看 agent 的回覆"
+
+msgid "up.c.chatDone"
+msgstr "雲端已更新到 {nv}"
+
+msgid "tr.startOffNoAmt"
+msgstr "還沒有策略設定金額，沒有東西可以啟動。先到「部位」替策略設定金額。"
+
+msgid "tr.startOffNoAmtRelease"
+msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「解除暫停」。"
+
+msgid "tr.release"
+msgstr "解除暫停"
+
+msgid "tr.releasing"
+msgstr "解除中…"
+
+msgid "tr.releaseHint"
+msgstr "解除暫停的指令送出了，主機回報後這裡會更新。"
+
+msgid "tr.relTitle"
+msgstr "解除暫停？"
+
+msgid "tr.relBody"
+msgstr "解除後，暫停時被擋下的新倉會恢復放行，包含你自己的策略程式下的單。還沒有策略設定金額，所以不會照策略下單。"
+
+msgid "tr.relAuto"
+msgstr "這次暫停是系統自動觸發的（例如金鑰被拒、讀帳連續失敗、帳戶變更）。確定問題處理好了再解除。"
+
+msgid "tr.relX1Title"
+msgstr "解除暫停會平掉這些部位"
+
+msgid "tr.relX1Body"
+msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，把這個帳戶上的 {n} 個合約部位市價平掉，包含你自己手動開的單；你自己的策略程式下的單也會恢復放行。"
+
+msgid "tr.relX1BodyN"
+msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，把這個帳戶上的合約部位市價平掉，包含你自己手動開的單；你自己的策略程式下的單也會恢復放行。"
+
+msgid "tr.relX2Title"
+msgstr "解除暫停會平掉自動下單的部位"
+
+msgid "tr.relX2Body"
+msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，把自動下單建立的部位市價平掉，你手動開的單不會被動到；你自己的策略程式下的單也會恢復放行。"
+
+msgid "tr.relNotNow"
+msgstr "先不要"
+
+msgid "tr.relCloseGo"
+msgstr "平掉並解除暫停"
+
+
+msgid "tr.diedZ"
+msgstr "下單停了，不是你按的 · 停在 {t}。"
+
+msgid "tr.cloud.restartStoppedZ"
+msgstr "主機重開過，什麼單都不下——部位現在沒有人在管，連你自己的策略程式下的單也會被擋。"
+
+msgid "tr.restartStoppedLocalZ"
+msgstr "Blave 重開過，下單程式沒在跑。"
+
+msgid "tr.restartStoppedLocalZH"
+msgstr "Blave 重開過，下單程式沒在跑，新倉也被擋著——包含你自己的策略程式下的單。"
+
+msgid "tr.haltReasonAllZ"
+msgstr "什麼單都不下——平倉與停損也不會執行。不確定原因，可以在聊天請 agent 查。"
+
+msgid "tr.cloud.restartNoAccountZ"
+msgstr "主機重開過，什麼單都不下——連你自己的策略程式下的單也會被擋。按「解除暫停」恢復放行。"
+
+msgid "tr.hostRetryZ"
+msgstr "這台電腦的下單機停了，正在重新啟動，這段時間不會下單。起來之後看這裡的狀態。"
+
+msgid "minv.release"
+msgstr "這個版本的 Blave 需要更新，才能送出「解除暫停」。到 設定 › 一般 最下面更新。"
+
+msgid "tm.cloudUpdate"
+msgstr "雲端主機有新版 {nv}，打開 Blave 更新…"
+
+msgid "tm.cloudUpdateStale"
+msgstr "雲端的下單程式需要更新，打開 Blave 更新…"
+
+msgid "tr.cloud.cxSavedStalePaper"
+msgstr "模擬帳戶已經送出，但雲端主機到現在都沒有回報，這一頁還沒換成下單設定。可以再試一次，或到聊天請 agent 看看主機怎麼了。"
+
+
+msgid "tr.runningZ"
+msgstr "下單程式在跑 · 還沒有策略設定金額"
+
+msgid "legal.terms"
+msgstr "服務條款"
+
+msgid "legal.privacy"
+msgstr "隱私權政策"
+
+msgid "tr.cloud.startPendAmounts"
+msgstr "新金額已送到主機，正在等回報。回報進來就能啟動。"
+
+msgid "tr.cloud.startPendAmountsStale"
+msgstr "新金額已送到主機，正在等回報。這一頁的數字還是舊的。"
+
+msgid "tr.cloud.hdFetching"
+msgstr "正在跟你的主機要資料"
+
+msgid "tr.cloud.cxSavedPaperDone"
+msgstr "模擬帳戶已存到雲端主機。"
+
+msgid "tr.cloud.machineUp"
+msgstr "你的主機在跑。"
+
+msgid "tr.cloud.startPendSlow"
+msgstr "比平常久。主機還在回報，不用再按一次；最久大約兩分鐘。"

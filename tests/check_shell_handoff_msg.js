@@ -142,9 +142,10 @@ t("gate 多守一格:雲端 running 而且還有一支在等 → 中欄留在 #c
   return /const ready = cloud && kind === "running" && !!pid;/.test(body)
     && /const gate = \(cloud && kind !== "running" && kind !== "stopped"\) \|\| ready;/.test(body)
     && /const pid = typeof hoPendingId === "function" \? hoPendingId\(\) : null;/.test(body) && !/hoCloudLive/.test(body); })());
-t("那一態側欄那句換成 side.cloud.emptyReady(「開好之後」在這裡是假話);走 dataset.i18n,換語言時才不會被 applyI18n 還原", /sgKey = ready \? "side\.cloud\.emptyReady" : "side\.cloud\.emptyGate"/.test(trSrc)
-  && /if \(sg\.dataset\.i18n !== sgKey\) \{ sg\.dataset\.i18n = sgKey; sg\.textContent = t\(sgKey\); \}/.test(trSrc)
-  && /"side\.cloud\.emptyReady":/.test(strings));
+t("那一態側欄出 side.cloud.emptyReady,其餘狀態整句不出(emptyGate 已刪);走 dataset.i18n,換語言時才不會被 applyI18n 還原",
+  /const sg = \$\("side-gate"\); sg\.hidden = !ready;/.test(trSrc)
+  && /if \(ready && sg\.dataset\.i18n !== "side\.cloud\.emptyReady"\) \{ sg\.dataset\.i18n = "side\.cloud\.emptyReady"; sg\.textContent = t\("side\.cloud\.emptyReady"\); \}/.test(trSrc)
+  && /"side\.cloud\.emptyReady":/.test(strings) && !/emptyGate/.test(trSrc + strings));
 t("那張卡:不畫三條賣點與價格、#cv-desc 留空、主鈕 data-k=\"main\"(登入回來焦點正好在它身上)、次鈕是［留在雲端］", (() => {
   const i = trSrc.indexOf("function envPaintEmpty("), ep = trSrc.slice(i, trSrc.indexOf("\n}\n", i));
   return /const ready = kind === "running" && !!pid;/.test(ep) && /const view = ready \? "ready" : envOpenView\(/.test(ep)

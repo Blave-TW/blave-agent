@@ -265,9 +265,11 @@ for flag in ("1", "0"):
     assert rules[flag] in sysprompts[-1] and rules[flag] in seen["prompt"], "both engines"
     assert sysprompts[-1].endswith(at.WEB_FORMATTING_RULE)
 assert "BLAVE_KLINE_SOURCE=binance" in rules["1"] and "403" in rules["1"]
-assert "Invalid API key" in rules["1"] and "sign in" in rules["1"]
-assert "NO Blave data access" in rules["0"] and "no SSH" in rules["0"]
-assert "card trial" in rules["0"] and "cloud machine" in rules["0"] and "ONCE" in rules["0"]
+# 釘錯誤碼、不釘句子:那一段的文字歸 check_data_access_lang.py 管(它也擋已經作廢的 DATA_NOT_INCLUDED)
+assert "Invalid API key" in rules["1"] and "ERR005" in rules["1"] and "ERR007" in rules["1"]
+# 那一段改成「只給約束、不給成品句」之後(check_data_access_lang.py 鎖細節),這裡只確認兩台引擎都拿得到同一段
+assert "no Blave data access this turn" in rules["0"] and "no SSH" in rules["0"]
+assert "card trial" in rules["0"] and "cloud machine" in rules["0"] and "once per conversation" in rules["0"]
 assert at.DATA_ACCESS_CARD == "<blave-card:data-access/>" and at.DATA_ACCESS_CARD in rules["0"]
 _prose = rules["0"].replace(at.DATA_ACCESS_CARD, "")
 assert "buttons" not in _prose and "a card" not in _prose, "0 must not leak what the app renders"

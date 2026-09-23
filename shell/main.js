@@ -1364,13 +1364,14 @@ app.whenReady().then(() => {
   handle("trade-status", () => tradeHost().status());
   handle("trade-events", (_e, q) => tradeHost().events({ days: q && Number(q.days) }));
   handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
-  ipcMain.handle("trade-send", async (e, cmd, args) => {
+  ipcMain.handle("trade-send", async (e, cmd, args, _requestId, intent) => {   // _requestId 只有雲端那條路在用(cloudcmd.js),本機忽略
     if (!fromOurPage(e) || typeof cmd !== "string") return { ok: false, error: "NOT_ALLOWED" };
     // 最低版本閘:只擋啟動類(resume / resume_wait);暫停、改金額、移除金鑰永遠放行,已在跑的下單不主動停
     if (require("./minversion").START_CMDS.has(cmd)) { await minGate().ensureFresh(); if (!minGate().tradeAllowed(cmd)) return { ok: false, error: "UPDATE_REQUIRED" }; }
     const out = tradeHost().send(cmd, args && typeof args === "object" ? args : {});
     if (cmd === "credentials_remove" || cmd === "credentials") Promise.resolve(out).then((r) => { if (r && r.ok) binanceLink().recheck(); }).catch(() => {});   // 解除綁定、或改綁模擬交易把 Binance 擠掉:.env 沒有金鑰了 → 重查那一輪會把比對基準清掉
-    if (cmd === "resume" || cmd === "resume_wait") Promise.resolve(out).then((r) => {
+    // 「解除暫停」(§8)送的也是 resume,但它不啟動對帳器、也不照策略下單:不可以記成開始下單(稽核 B1)
+    if ((cmd === "resume" || cmd === "resume_wait") && intent !== "release") Promise.resolve(out).then((r) => {
       if (!r || !r.ok) return;
       const v = (_tradeHost && _tradeHost.status().report || {}).venues || {}, ids = Object.keys(v).filter((k) => venueReady(v[k]));
       if (ids.length) tm().track("trade_started", { venue_kind: ids.every((k) => k === "paper") ? "paper" : "real" });
@@ -1537,6 +1538,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
+  cloudUpdate: "Cloud machine: new version {nv}. Open Blave to update…", cloudUpdateStale: "The cloud's order program needs an update. Open Blave to update…",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
@@ -1579,7 +1581,7 @@ function appMenuSync() {
   ]));
 }
 const SITE_URL = { zh: "https://blave.org/zh", en: "https://blave.org/en" };   // 固定常數(結尾不加斜線:/zh/ 是 404);語言段只有這兩個值
-const venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);   // 同 renderer:四個都在才算連上的帳戶
+const venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);   // 同 renderer trVenueIds:四個都在才算連上的帳戶
 function tradeLive() {
   if (!_tradeHost) return null;
   const st = _tradeHost.status(), r = st.report;
@@ -1618,18 +1620,23 @@ async function pauseFromMenu() {
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
-// 雲端落後也要亮小點(同一個「有新版」的記號;選單那一行字仍只講這台電腦的,那句的出口是暫停後重開)
-const cloudUpdateWaiting = () => TT.cloudNeedsUpdate(cloudSt());   // 規則同「關於」的 upPlan(含重開沒停住那一條),純函式在 traytext.js
 // 選單列的狀態行。這台電腦那一行:選單列只在這台電腦「確定在下單」時出現,所以狀態一定是 on。字還沒交 → null,退回舊的那一句
 const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", state: "on" }, tmLabels);
 const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);
+// 雲端落後(或停不住的舊下單程式):選單列補一行、點了開「設定 › 一般」的關於(圖示旁不放任何點,Wei 09-23)
+const trayCloudUpdate = () => TT.cloudUpdateLine(tmLabels, cloudSt());
+function openAbout() {
+  showMain();
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("open-about");
+}
 function trayMenu(live) {
-  const cloud = trayCloudLine();
+  const cloud = trayCloudLine(), cu = trayCloudUpdate();
   return Menu.buildFromTemplate([
     { label: trayLocalLine(live) || tmLabels.running, enabled: false },
     ...(updateWaiting() ? [{ label: tmLabels.updateReady, enabled: false }] : []),
     { label: venueName(live.venue), enabled: false },   // 模擬帳戶的名字本身就寫著「模擬交易」,不再疊一個「模擬」記號
     ...(cloud ? [{ label: cloud, enabled: false }] : []),
+    ...(cu ? [{ label: cu, click: openAbout }] : []),
     { type: "separator" },
     { label: pauseLabel(), click: pauseFromMenu },   // 暫停只給這台電腦:雲端的暫停要用戶在雲端視角親手做
     { type: "separator" },
@@ -1640,7 +1647,7 @@ function trayMenu(live) {
 function traySync() {
   const live = tradeLive();
   if (live) lastVenue = live.venue;
-  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", cloudUpdateWaiting() ? "c" : "", trayCloudLine() || ""].join("|") : "";
+  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", trayCloudLine() || "", trayCloudUpdate() || ""].join("|") : "";
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
   trayKey = key;
   if (!live) {
@@ -1654,7 +1661,6 @@ function traySync() {
     tray = new Tray(img);
   }
   tray.setToolTip(updateWaiting() ? tmLabels.updateReady : tmLabels.running);
-  tray.setTitle(updateWaiting() || cloudUpdateWaiting() ? "•" : "");   // 圖示旁的小點(macOS 選單列的 title):任一邊有新版在等
   tray.setContextMenu(trayMenu(live));
   if (app.dock) app.dock.setMenu(Menu.buildFromTemplate([{ label: pauseLabel(), click: pauseFromMenu }]));
 }

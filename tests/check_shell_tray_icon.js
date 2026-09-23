@@ -1,5 +1,10 @@
-// 選單列圖示(shell/assets/trayTemplate.png 與 @2x):字形在畫布裡垂直置中,上下留白差 ≤ 1px(Wei 09-22:圖示比旁邊的系統圖示低)。
-// 同時守住 template 圖的前提:只有黑色 + alpha(macOS 依選單列明暗自己上色),畫布 1x 18px / 2x 36px。
+// 選單列圖示(shell/assets/trayTemplate.png 與 @2x):鎖設計師 spec-desktop-update-experience-v2 §6 的數字。
+// 兩張都從母檔向量 .claude/brand-assets/mark.svg 的 path 重新點陣化(不是互相縮放):
+//   1x 18×18,translate(1,-1) scale(0.0888889) → 字形 16×12,上 / 下 3 / 3,左 / 右 1 / 1
+//   2x 36×36,translate(2,-3) scale(0.1777778) → 字形 32×24(1x 的精確兩倍),上 / 下 5 / 7,左 / 右 2 / 2
+// 2x 比 bbox 置中再往上抬 1px(0.5pt)是**光學補償**:字形下半是實心長條、上面只有右邊一座塔,重心在 bbox 中心下方,
+// 純置中讀起來還是偏低(Wei 兩次說「低」的剩餘原因);1x 抬不了半格,維持 3 / 3。
+// template 圖的前提:只有黑色 + alpha(macOS 依選單列明暗上色),檔名 *Template.png。
 // 不靠 npm 套件:用 zlib 解 PNG(8-bit RGBA、不交錯),逐列反 filter 後找 alpha > 0 的外框。
 // 跑法:node tests/check_shell_tray_icon.js
 const fs = require("fs"), path = require("path"), zlib = require("zlib");
@@ -40,10 +45,21 @@ function bbox({ w, h, px }) {
   return { top, bottom: h - 1 - bottom, left, right: w - 1 - right, onlyBlack, empty: bottom < 0 };
 }
 const dir = path.join(__dirname, "..", "shell", "assets");
-[["trayTemplate.png", 18], ["trayTemplate@2x.png", 36]].forEach(([f, size]) => {
-  const img = readPng(path.join(dir, f)), b = bbox(img);
+const SPEC = [["trayTemplate.png", 18, { w: 16, h: 12, top: 3, bottom: 3, left: 1, right: 1 }], ["trayTemplate@2x.png", 36, { w: 32, h: 24, top: 5, bottom: 7, left: 2, right: 2 }]];
+SPEC.forEach(([f, size, want]) => {
+  const img = readPng(path.join(dir, f)), b = bbox(img), gw = size - b.left - b.right, gh = size - b.top - b.bottom;
   ok(f + ":畫布 " + size + "×" + size + "、有字形、只有黑色 + alpha(template 圖)", img.w === size && img.h === size && !b.empty && b.onlyBlack);
-  ok(f + ":垂直置中,上 " + b.top + "px / 下 " + b.bottom + "px(差 ≤ 1)", Math.abs(b.top - b.bottom) <= 1);
+  ok(f + ":字形 " + gw + "×" + gh + "(要 " + want.w + "×" + want.h + ")", gw === want.w && gh === want.h);
+  ok(f + ":留白 上 " + b.top + " / 下 " + b.bottom + " / 左 " + b.left + " / 右 " + b.right + "(要 " + [want.top, want.bottom, want.left, want.right].join(" / ") + ")",
+    b.top === want.top && b.bottom === want.bottom && b.left === want.left && b.right === want.right);
+});
+/* 形狀探針(稽核的測試缺口 ①:只鎖外框的話,一張純色矩形也會全綠)。取字形語意上必然的三點:
+   左上是負空間(浪之上)必須透明;右上那座塔必須不透明;下半實心帶必須不透明。座標是 1x,2x 取兩倍 */
+const PROBES = [[[3, 4], 0], [[14, 5], 255], [[9, 13], 255], [[2, 12], 255]];
+SPEC.forEach(([f, size]) => {
+  const img = readPng(path.join(dir, f)), k = size / 18;
+  const miss = PROBES.filter(([[x, y], want]) => { const a = img.px[((y * k) * img.w + x * k) * 4 + 3]; return want === 0 ? a !== 0 : a < 200; });
+  ok(f + ":形狀探針(左上負空間透明、右上塔與下半實心帶不透明)" + (miss.length ? ":" + JSON.stringify(miss.map((m) => m[0])) : ""), miss.length === 0);
 });
 ok("main.js 用的就是這個 template 檔名(Template 結尾 = macOS 自動上色)", /nativeImage\.createFromPath\(path\.join\(__dirname, "assets", "trayTemplate\.png"\)\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

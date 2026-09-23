@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("blave", {
   updateState: () => ipcRenderer.invoke("update-state"),
   updateCheck: () => ipcRenderer.invoke("update-check"),
   updateInstall: () => ipcRenderer.invoke("update-install"),
+  onOpenAbout: (fn) => ipcRenderer.on("open-about", () => fn()),   // 選單列「雲端主機有新版」那一行
   onUpdateState: (fn) => ipcRenderer.on("update-state", (_e, st) => fn(st)),
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
@@ -52,7 +53,7 @@ contextBridge.exposeInMainWorld("blave", {
   tradeStatus: () => ipcRenderer.invoke("trade-status"),
   tradeEvents: (q) => ipcRenderer.invoke("trade-events", q),
   tradeEquity: (q) => ipcRenderer.invoke("trade-equity", q),
-  tradeSend: (cmd, args) => ipcRenderer.invoke("trade-send", cmd, args),
+  tradeSend: (cmd, args, requestId, intent) => ipcRenderer.invoke("trade-send", cmd, args, requestId, intent),   // 參數順序同 renderer 的 envApi.tradeSend;intent = "release" 時主行程不記「開始下單」
   modelOptions: (kind) => ipcRenderer.invoke("model-options", kind),
   loadModelPrefs: () => ipcRenderer.invoke("load-model-prefs"),
   saveModelPrefs: (prefs) => ipcRenderer.invoke("save-model-prefs", prefs),

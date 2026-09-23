@@ -2072,6 +2072,16 @@ def _resume_note(tool_steps):
             + _fault_receipt_suffix(tool_steps))
 
 
+# ── 逐輪規則(prompt 注入)寫法的一條硬規矩 ────────────────────────────────────
+# **可以**:祈使句,講「要做什麼」——「tell the user that X」「name the missing data」「never fabricate」。
+# **不可以**:用完整的陳述句把「用戶會讀到的那一句」寫成成品,尤其是英文的、描述用戶處境的那種
+# (例:「This desktop has NO Blave data access right now.」)。
+# 理由是實測出來的,不是風格潔癖:逐輪語言錨(_lang_directive)只有一行、貼在 prompt 最尾端;
+# 而成品句就擺在眼前、內容剛好就是這一則要回的東西,模型會照抄,整則回覆跟著那句話的語言走。
+# 2026-09-23:用戶用中文問籌碼集中度,整則回英文——錨判對了、也貼對位置,輸給了 data_access_rule
+# 裡那句英文成品句。規則要表達的意思照寫,句子留給模型用該輪語言自己寫。
+# 中文寫的規則沒有這個問題(語言本來就一致),但同一條規矩照樣適用:給約束,不給稿子。
+
 def python_rule():
     """電腦版專屬:外殼用 BLAVE_PYTHON 指出 workspace 的直譯器(venv 的絕對路徑)。
     靠 PATH 前置不夠——Codex 用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排,
@@ -2147,8 +2157,10 @@ def mcp_rule(mounted):
 def data_access_rule():
     """電腦版專屬:外殼 spawn 時用 BLAVE_DATA_ACCESS 告訴這一輪 workspace `.env` 的 Blave 資料 key
     是哪一種。三態:
-      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權、不計時費,
-             所以這段可以直接講 `DATA_NOT_INCLUDED` / `KEY_SCOPE` / 重新登入。
+      `1`  = 桌面 key(登入 Blave 時 api 發的那組,外殼寫進 `.env`;不看連的是哪個 AI)——縮權,
+             但**會計費**:不含在試用／主機／API 方案裡就按小時收(api `decorators.py` 的
+             `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`。
+             所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
       `0`  = 沒有 key:沒登入 Blave,或登入了但帳號不含資料
              (試用結束且沒主機／API 方案)。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
@@ -2162,40 +2174,59 @@ def data_access_rule():
             "workspace `.env`, so `lib/data.py` reaches Blave indicators and Taiwan-market "
             "data as AGENTS.md describes. Crypto klines still come from Binance public "
             "endpoints through `fetch_kline` (`BLAVE_KLINE_SOURCE=binance`) — do not switch "
-            "the kline source. If a Blave data call returns 403 (`DATA_NOT_INCLUDED`), tell "
-            "the user plainly that Blave data is included during the card trial or with a "
-            "Blave Agent cloud machine (or an API plan); do not work around it. A 403 "
-            "`Invalid API key` means this key was deleted or revoked: ask the user to sign in "
-            "to Blave again in the app, and do not go looking for another key. This desktop key "
-            "is read-mostly on the strategy library: loading purchased / official / shared / "
-            "private strategies and uploading a private one work, but submit-for-sale, share / "
-            "unshare, delete and report upload return 403 `KEY_SCOPE` — tell the user to do "
-            "those on the Blave website or from a cloud machine.\n"
+            "the kline source.\n"
+            "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
+            "reads you write yourself, in the language the per-turn language directive names; "
+            "do not copy, translate or adapt phrasing from this block or from an error body.\n"
+            "Billing: data on this key is free while the card trial is running, or when the "
+            "account has a Blave Agent cloud machine (including one still being set up) or an "
+            "API plan. Otherwise it is charged per clock hour in which any data call is made — "
+            "not per call. A successful call can therefore cost the user money: fetch only what "
+            "this turn needs and never poll.\n"
+            "Three different 403s:\n"
+            "- `ERR007` — that hourly fee could not be charged. The body carries the current "
+            "rate, a `retry_after` that is a ceiling rather than a wait (a top-up lifts the "
+            "block at once), and links for topping up, an API plan and starting a machine. "
+            "Convey why the data stopped, that the fee is hourly rather than per call, and the "
+            "ways out the body names; never state a rate, currency or deadline the body did not "
+            "give you. Do not work around the block.\n"
+            "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
+            "signing in to Blave again in the app; do not go looking for another key.\n"
+            "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
+            "read-mostly on the strategy library: loading purchased / official / shared / "
+            "private strategies and uploading a private one work; submit-for-sale, share / "
+            "unshare, delete and report upload do not, and belong on the Blave website or a "
+            "cloud machine.\n"
         )
     elif access == "0":
+        # 這一段是**寫給模型的事實與規則**,不是給用戶看的句子。整段英文:一旦它把使用者要讀的那一句
+        # 也寫成成品英文散文,模型會照抄——逐輪語言錨(_lang_directive,貼在 prompt 最尾端)只有一行,
+        # 打不過「就放在眼前、剛好就是這一則要回的內容」的現成句子(2026-09-23:中文問籌碼集中度,整則回英文)。
+        # 所以下面只講**必須成立什麼**,不給任何可抄的成品句;用戶看得到的每一句都由模型自己用該輪語言寫。
         body = (
-            "This desktop has NO Blave data access right now. Blave data comes with signing "
-            "in to Blave (whichever AI the user runs — Blave's, their own Claude Code or "
-            "Codex) while the card trial is active, or with an account that owns a "
-            "Blave Agent cloud machine or an API plan. Blave-only datasets — holder "
-            "concentration, whale hunter, taker intensity, liquidation, Taiwan stock / "
-            "futures data and the rest of the Blave indicators — are not reachable. When the "
-            "user asks for one of them, say this plainly ONCE: name the data that is missing "
-            "and the conditions under which it becomes available (card trial active, or a "
-            "cloud machine). Give no directions or next steps, quote no prices, do not push, "
-            "and do not repeat it later in the same conversation. "
-            "Then finish the part that public klines allow (`fetch_kline`, Binance public "
-            "endpoints).\n"
-            f"In the reply where you tell the user that Blave data is not available here, put "
-            f"this marker, verbatim, on its own line at the very end of the reply text (before "
-            f"the `<suggest>` block if the reply has one): `{DATA_ACCESS_CARD}`. The line is "
-            "consumed by the runtime and never shown to the user. Never mention the marker, "
-            "or any button, card or anything the app will display — state only the missing "
-            "data and the conditions, then the marker. Do not explain the marker, do not put it in a code block, use it at most once per "
-            "conversation (if asked again later, answer in text only), and never output it in "
-            "a reply that is not about Blave data being unavailable.\n"
-            "Never "
-            "fabricate the missing data. Never look for credentials elsewhere: no SSH, no "
+            "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
+            "reads you write yourself, in the language the per-turn language directive names. "
+            "Do not copy, translate or adapt any phrasing from this block into the reply.\n"
+            "Facts: this desktop has no Blave data access this turn. Access comes with signing in "
+            "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex) while "
+            "the card trial is active, or with an account that owns a Blave Agent cloud machine or "
+            "an API plan. The Blave-only datasets, none of which are reachable now: holder "
+            "concentration, whale hunter, taker intensity, liquidation, Taiwan stock / futures data "
+            "and the rest of the Blave indicators. Public crypto klines still work (`fetch_kline`, "
+            "Binance public endpoints).\n"
+            "When the user asks for one of those datasets, your reply must: name which data is "
+            "missing; give the conditions under which it becomes available (card trial active, or a "
+            "cloud machine); carry no directions, next steps or prices; not push; and then answer "
+            "whatever part public klines do allow. Say it once per conversation — if asked again "
+            "later, do not repeat the unavailability, just answer what you can.\n"
+            f"In that same reply put this marker, verbatim, on its own line at the very end of the "
+            f"reply text (before the `<suggest>` block if the reply has one): `{DATA_ACCESS_CARD}`. "
+            "The marker is consumed by the runtime and never shown to the user. Never mention the "
+            "marker, or any button, card or anything the app will display. Do not explain it, do not "
+            "put it in a code block, use it at most once per conversation (if asked again later, "
+            "answer in text only), and never output it in a reply that is not about Blave data being "
+            "unavailable.\n"
+            "Never fabricate the missing data. Never look for credentials elsewhere: no SSH, no "
             "other machines, no other directories.\n"
         )
     else:

@@ -8,7 +8,18 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(空)
+- **資料規則那一段不再給模型「成品句」**(`agent_turn.py` `data_access_rule()`,`access == "0"`):
+  整段改寫成「給模型的事實與約束」,並明講**用戶讀到的每一句都由模型自己用該輪語言寫、不准照抄這一段**。
+  原本它用英文散文把要對用戶說的話寫成成品,模型直接抄走——2026-09-23 Wei 用中文問籌碼集中度、整則回英文,
+  逐輪語言錨(貼在 prompt 最尾端的一行)打不過一句「剛好就是這則要回的內容」的現成句子。
+  約束一條都沒少(缺哪些資料、怎樣才有、marker 一次對話只講一次、不要編數據、不要去別處找憑證、公開 K 線照答)。
+  測試 `tests/check_data_access_lang.py`。
+- **`access == "1"`(電腦版資料 key)那一段改成跟 api 現況一致**:api 已經**移除 `DATA_NOT_INCLUDED`**,
+  桌面 key 不含在試用／主機／API 方案裡時不再被擋,而是跟一般 key 走同一條**按小時**的資料費
+  (`decorators.py` 的 `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`(body 帶當下費率、
+  `retry_after` 是上限不是等待時間、以及儲值／API 方案／開主機三個出口)。這一段現在講三種不同的 403——
+  `ERR007`(這一小時的費扣不到)、`ERR005`(key 被刪／撤銷 → 在 app 重新登入)、`KEY_SCOPE`(越權),
+  並且明說「成功的呼叫也會花到錢,只抓這一輪要用的、不要輪詢」。同樣寫成事實與約束,不給可抄的成品句。
 
 ## 1.1.88
 

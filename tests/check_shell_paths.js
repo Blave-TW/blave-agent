@@ -13,11 +13,13 @@ const cut = (from, to) => {
 let red = 0;
 const t = (name, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + name); if (!ok) red++; };
 
+let OFFICIAL = null;   // 官方檔清單(下面的新鮮度檢查也要用):check() 裡是區域變數,帶出來一份
 function check(mode, isPackaged, resourcesPath) {
   const app = { isPackaged }, __dirname = SHELL;          // main.js 原文吃這兩個名字
   const process = { resourcesPath };
   eval(cut("const resourceRoot", "const REPO"));
   eval(cut("const OFFICIAL_DIRS", "function copyOfficial"));
+  OFFICIAL = { dirs: OFFICIAL_DIRS, files: OFFICIAL_FILES };
   const root = resourceRoot();
   for (const d of OFFICIAL_DIRS)
     t(`${mode}: ${d}/ 在`, fs.existsSync(path.join(root, d)) && fs.readdirSync(path.join(root, d)).length > 0);
@@ -39,8 +41,71 @@ else {
   t("packaged: 隨包 python3 可執行", (() => {
     try { fs.accessSync(path.join(res, "python", "bin", "python3"), fs.constants.X_OK); return true; } catch (_) { return false; }
   })());
+  /* 「這個產物是不是跟現在的原始碼同一份」——三條都在問同一件事,所以一起開關。
+     平常開發時 dist/ 本來就會落後(改一行 renderer 就落後了),硬紅只會訓練大家忽略它——
+     而「被忽略」正是 2026-09-23 那次打包壞掉活了一整天的原因。所以照這個檔既有的做法
+     (簽章那段看產物自己是什麼),用產物的性質決定要不要硬:
+       · Developer ID 簽章的產物 = 發佈流程剛建好的那一份(tools/release.js 簽完才跑這支)→ 硬。
+       · 要拿 pack 的產物去實測:BLAVE_CHECK_PACK=1 → 硬。**npm run pack / npm run dist 打完就自己跑這支**
+         (shell/package.json),不靠人記得——2026-09-23 那次壞掉的正是 pack 這條路徑。
+       · 其餘(平常開發)→ 整組 SKIP,而且把「本來會檢查什麼」寫出來,免得被當成沒有這個檢查。
+     其他 packaged 斷言(隨包 python、沒有本機資料、預編 .pyc)問的是產物本身長得對不對,
+     跟新不新無關,照舊無條件跑。 */
+  const dv = (f) => require("child_process").spawnSync("codesign", ["-dvv", "--entitlements", "-", "--xml", f], { encoding: "utf8" });
+  const appInfo = dv(appDir);
+  const signedArtifact = /Authority=Developer ID Application/.test(appInfo.stderr);
+  const freshStrict = signedArtifact || process.env.BLAVE_CHECK_PACK === "1";
+  if (!freshStrict) {
+    console.log("SKIP  packaged(新鮮度三條):VERSION 與 repo 同版 / 隨包官方檔逐 byte 相同 / app.asar 比 shell/ 的來源新"
+      + " —— 平常開發不硬擋(dist 本來就會落後)。要檢查:BLAVE_CHECK_PACK=1 node tests/check_shell_paths.js;npm run pack / dist 與發佈流程的簽章產物一律自動檢查");
+  } else {
   t("packaged: VERSION 與 repo 同一版",
     fs.readFileSync(path.join(root, "VERSION"), "utf8") === fs.readFileSync(path.join(SHELL, "..", "VERSION"), "utf8"));
+  /* 產物有沒有真的跟上原始碼。打包那一步失敗時 dist/ 會留著**上一次**的 .app:VERSION 沒動的那種改動,
+     光比版號看不出來,log 掃過去也像成功(2026-09-23 的 ERR_REQUIRE_ESM 就是這樣過了一整天)。
+     ① 內容:隨包的每一個官方檔都要跟 repo 逐 byte 相同;② 時間:app.asar 要比 shell/ 的來源新。
+     清單**從 git 列舉**,不是走產物有什麼就比什麼:electron-builder 的 extraResources 用的就是
+     `git ls-files`(shell/electron-builder.config.js 的 tracked),所以「追蹤中的檔」正是應該在包裡的檔,
+     少一個就是包漏了。舊版只比兩邊都存在的檔——產物裡整個檔不見會被當成沒事(稽核的那個洞)。
+     `runtime/` 也在這份清單裡:它跟 lib/ 一樣照 `tracked` 隨包(electron-builder 的 SHIP),
+     但不在 main.js 的 OFFICIAL_DIRS(那份是啟動時複製進 workspace 的),漏掉的話
+     「包裡的 runtime 比 repo 舊」沒有人會發現——跟 stale lib/ 是同一類失敗。 */
+  const SHIPPED_DIRS = OFFICIAL.dirs.concat(["runtime"]);
+  const REPO_ROOT = path.join(SHELL, "..");
+  let tracked = null;
+  try {
+    tracked = require("child_process").execFileSync(
+      "git", ["-C", REPO_ROOT, "ls-files", "-z", "--", ...SHIPPED_DIRS, ...OFFICIAL.files],
+      { maxBuffer: 1 << 24 }).toString().split("\0").filter(Boolean);
+  } catch (e) { tracked = null; }
+  t("packaged: 官方檔清單列得出來(git ls-files;列不出來就沒有這個檢查,不是通過)",
+    !!tracked && tracked.length > 0);
+  const stale = [], missing = [];
+  for (const rel of tracked || []) {
+    const b2 = path.join(REPO_ROOT, rel);
+    if (!fs.existsSync(b2)) continue;              // 索引有、工作樹已刪:不是產物的問題
+    const a2 = path.join(root, rel);
+    if (!fs.existsSync(a2)) { missing.push(rel); continue; }
+    if (!fs.readFileSync(a2).equals(fs.readFileSync(b2))) stale.push(rel);
+  }
+  const cut3 = (a) => a.slice(0, 3).join(", ") + (a.length > 3 ? ` 等 ${a.length} 個` : "");
+  t("packaged: 追蹤中的官方檔一個都沒漏出包" + (missing.length ? " → " + cut3(missing) : "")
+    + (tracked ? `(查了 ${tracked.length} 個)` : ""), !!tracked && missing.length === 0);
+  t("packaged: 隨包的官方檔與 repo 逐 byte 相同(產物沒有停在上一次打包)" + (stale.length ? " → " + cut3(stale) : ""), stale.length === 0);
+  // app.asar 比 shell/ 的來源新。dist / node_modules / vendor 不算(產物與相依,不是來源)
+  const asar = path.join(res, "app.asar");
+  let newest = 0, newestFile = "";
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (/^(dist|node_modules|vendor)$/.test(e.name)) continue;
+      const p2 = path.join(d, e.name);
+      if (e.isDirectory()) walk(p2);
+      else if (e.isFile()) { const m = fs.statSync(p2).mtimeMs; if (m > newest) { newest = m; newestFile = path.relative(SHELL, p2); } }
+    }
+  })(SHELL);
+  const asarAt = fs.existsSync(asar) ? fs.statSync(asar).mtimeMs : 0;
+  t("packaged: app.asar 比 shell/ 的來源新" + (asarAt < newest ? ` → ${newestFile} 比產物新(重跑 cd shell && npm run pack)` : ""), asarAt >= newest);
+  }
   const leaked = [];
   (function walk(d) {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -69,10 +134,8 @@ else {
   const sample = ["json/__init__.py", "encodings/utf_8.py", "os.py"].map((f) => pycOf(path.join(stdlib, f)));
   t("packaged: 預編的 .pyc 是 unchecked-hash", sample.every((p) => fs.existsSync(p) && flags(p) === 1));
 
-  // 簽章產物(npm run release)才有的斷言;pack 產物是 ad-hoc,整段 SKIP。
-  const dv = (f) => require("child_process").spawnSync("codesign", ["-dvv", "--entitlements", "-", "--xml", f], { encoding: "utf8" });
-  const appInfo = dv(appDir);
-  if (!/Authority=Developer ID Application/.test(appInfo.stderr)) console.log("SKIP  signed: 產物沒有 Developer ID 簽章(npm run release 才有)");
+  // 簽章產物(npm run release)才有的斷言;pack 產物是 ad-hoc,整段 SKIP。dv / appInfo 在上面新鮮度那一段就算好了
+  if (!signedArtifact) console.log("SKIP  signed: 產物沒有 Developer ID 簽章(npm run release 才有)");
   else {
     const ENT = "com.apple.security.cs.";
     const py = fs.realpathSync(path.join(res, "python", "bin", "python3"));

@@ -61,7 +61,7 @@
     <aside class="pane-strategies">
       <!-- 自動下單入口:位置照雲端 #pf_nav(策略清單上方)。不放圖示——這個側欄的列本來就沒有圖示 -->
       <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中):入口與清單不畫,原位置放這一句(中欄的開通頁負責說明) -->
-      <p class="pf-state side-gate" id="side-gate" data-i18n="side.cloud.emptyGate" hidden></p>
+      <p class="pf-state side-gate" id="side-gate" hidden></p>
       <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button></nav>
       <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
@@ -190,7 +190,8 @@
       </div>
       <div class="chat-input-wrap">
         <!-- 立即更新到最新版本:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。任一邊有新版才出現,按下 = 「關於」那顆「更新」(app.js upGo) -->
-        <button type="button" class="ws-update" id="ws-update" hidden><span data-i18n="up.chat"></span></button>
+        <!-- 這一行的字由 upPaint 決定(更新中 / 看回覆 / 已更新到 {nv} / 立即更新):**不掛 data-i18n**,換語言時的通用迴圈會把它洗回「立即更新到最新版本」、行為卻還是上一個狀態的 -->
+        <button type="button" class="ws-update" id="ws-update" hidden><span></span></button>
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
@@ -273,6 +274,8 @@
               <span class="w" data-i18n="env.cloud"></span>
               <div class="t"><p class="ver mono" id="set-up-cver"></p><p class="st" id="set-up-ctxt" role="status"></p><p class="st" id="set-up-cnote"></p></div>
             </div>
+            <!-- 服務條款:app 裡唯一的入口(隱私權政策在 設定 › 隱私)。外開瀏覽器,網址帶目前語言 -->
+            <p class="set-legal"><button type="button" class="btn-quiet" id="set-terms" data-i18n="legal.terms"></button></p>
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>

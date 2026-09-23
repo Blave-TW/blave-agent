@@ -223,6 +223,11 @@
 .ws-update:hover span { text-decoration: underline; }   /* flex item 不吃容器的 text-decoration 傳播:畫在 span 上 */
 .ws-update:disabled, .ws-update:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; }
 .ws-update:disabled:hover span { text-decoration: none; }
+/* 雲端更新期間那一行(v2 §2):S2/S3 不可點的狀態列(正在更新・{t});S7 綠字「雲端已更新到 {nv}」。不是停用,不退成停用灰 */
+.ws-update.is-status, .ws-update.is-done { cursor: default; font-variant-numeric: tabular-nums; }
+.ws-update.is-status:hover { color: var(--ink-2); }
+.ws-update.is-status:hover span, .ws-update.is-done:hover span { text-decoration: none; }
+.ws-update.is-done, .ws-update.is-done:hover { color: var(--color-greenText); }
 .chat-input {
   /* 直向:上 textarea、下工具列。外框、半徑、內距都不變,總高約 +36px。 */
   display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4);
@@ -763,6 +768,8 @@ body.resizing * { cursor: col-resize !important; }
 .priv-two li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
 .priv-two li + li { margin-top: var(--space-2); }
 .priv-two li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
+/* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
+.set-legal { margin: var(--space-16) 0 0; }
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
 .priv-id { margin-top: var(--space-16); flex-wrap: wrap; }
 .priv-idv { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); user-select: all; -webkit-user-select: all; }
@@ -783,7 +790,9 @@ body.resizing * { cursor: col-resize !important; }
 .set-about .ver { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .set-about .st { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); max-width: 44ch; font-variant-numeric: tabular-nums; }
 .set-about .st:empty { display: none; }
-.set-about .st.up { color: var(--ink-2); }   /* ready / blocked / error / installFailed / 雲端有新版:要人讀的句子升一階 */
+.set-about .st.up { color: var(--ink-2); }
+.set-about .st.ok { color: var(--color-greenText); }   /* 雲端「已更新到 {nv}」(S7):完成那一刻留在畫面上 */
+#set-up-btn .spin16 { vertical-align: -3px; }   /* 更新中那顆鈕裡的圓環 */   /* ready / blocked / error / installFailed / 雲端有新版:要人讀的句子升一階 */
 .set-about button { flex: none; }
 .set-up-lbtn { margin-top: var(--space-6); padding: 0; }   /* 兩邊都有新版時,這台電腦那一行底下獨立的「重新啟動並更新這台電腦」;padding 0 = 跟版號、狀態句對齊 */
 .set-up-lbtn[hidden] { display: none; }
@@ -1053,6 +1062,7 @@ body.resizing * { cursor: col-resize !important; }
 .fault-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .fault-sub code, .cn-hint code { font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-2); }
 /* disabled 原本完全沒有樣式:鈕鎖住之後外觀不變,看不出按下去有沒有生效(設計師 M7) */
-.btn-fill:disabled { background: var(--surface-muted); color: var(--ink-3); cursor: default; opacity: 1; }
+/* 失效的實心鈕:框取比填色亮一階的灰——只靠填色的話對 darkBody 只有 1.5:1,看不出那裡有一顆鈕(canon Disabled) */
+.btn-fill:disabled { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: default; opacity: 1; }
 .btn-out:disabled { color: var(--ink-3); background: transparent; cursor: default; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
