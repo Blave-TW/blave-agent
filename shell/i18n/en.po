@@ -365,8 +365,11 @@ msgstr "Blave {v}"
 msgid "up.latest"
 msgstr "Up to date"
 
+msgid "up.latestAt"
+msgstr "Up to date · checked {t}"
+
 msgid "up.checking"
-msgstr "Checking for updates…"
+msgstr "Checking…"
 
 msgid "up.downloading"
 msgstr "Downloading {nv}…"
@@ -999,9 +1002,6 @@ msgstr "The order engine on this computer isn't running. Try again in a few seco
 
 msgid "tr.mode.paper"
 msgstr "Paper"
-
-msgid "tr.tb"
-msgstr "{state} · {venue}"
 
 msgid "tr.tbAria"
 msgstr "Auto trading: {state}"

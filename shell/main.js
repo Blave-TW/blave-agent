@@ -534,8 +534,13 @@ const PY_ENV = app.isPackaged ? { PYTHONPYCACHEPREFIX: path.join(BASE, "state", 
 
 function sh(cmd, envPath, timeout = 300000) {
   return new Promise((resolve, reject) => {
-    execFile("/bin/sh", ["-c", cmd], { timeout, env: { ...process.env, ...PY_ENV, PATH: envPath } },
-      (err, stdout, stderr) => err ? reject(new Error(String(stderr || err))) : resolve(String(stdout)));
+    execFile("/bin/sh", ["-c", cmd], { timeout, env: { ...process.env, ...PY_ENV, PATH: envPath } }, (err, stdout, stderr) => {
+      if (!err) return resolve(String(stdout));
+      // 逾時 / 輸出爆 maxBuffer 時 stderr 常是空的,err.message 是整條指令(含用戶 home 路徑)——會被畫進失敗卡,換成說得出原因的一句
+      const why = err.killed && err.signal ? `timed out after ${Math.round(timeout / 1000)}s`
+        : err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ? "output too large" : "";
+      reject(new Error(why || String(stderr || err)));
+    });
   });
 }
 
@@ -611,7 +616,32 @@ function syncOfficialOnUpdate() {
 }
 
 const AGENT_SDK = "claude-agent-sdk==0.2.144";
-async function ensureEngine(progress) {
+// cryptography 跟 SDK 一起釘:SDK → mcp → pyjwt[crypto] 拉進它,50.x 起 macOS 只出 arm64 wheel,Intel(含被 Rosetta
+// 跑成 x64)會退到從原始碼編(要 Rust,用戶機沒有)——0.0.6 通用版在 Intel 就死在這裡。48.0.1 是最後一版 universal2 wheel,
+// 兩種架構釘同一版。記號檔比的是整串,所以既有 venv 在下一則訊息(ensure-engine 每次送訊息前都跑)會重跑一次
+// SDK 那條:把 50.0.1 換成 48.0.1,下載約 8 MB。
+const SDK_PINS = `${AGENT_SDK} cryptography==48.0.1`;
+// 只收 wheel:這個架構沒有 wheel 就兩秒內大聲失敗(pip「No matching distribution」),不退到編原始碼——那條路在用戶機上
+// 跑幾分鐘然後死在看不到的地方。清單裡每一個都在 arm64 與 x64 實機用這條指令裝過。
+// --isolated:不吃用戶的 pip.conf 與 PIP_* 環境變數(PIP_INDEX_URL / PIP_NO_BINARY 都會讓引擎裝到別的東西)。
+const PIP_INSTALL = "-m pip -q --isolated install --only-binary=:all:";
+// pip 失敗的 stderr 常是整段 build / resolver log:只留 pip 自己的 ERROR 行(沒有就留最後三行)給聊天欄
+function pipError(e) {
+  const lines = String((e && e.message) || e).split("\n").map((l) => l.trim()).filter(Boolean);
+  const err = lines.filter((l) => l.startsWith("ERROR:")).map((l) => l.replace(/ \(from versions:.*\)$/, ""));
+  return (err.length ? err : lines.slice(-3)).join("\n").slice(0, 600);
+}
+// 引擎的 pip 都走這條。失敗先把完整 stderr 留在主行程的 stderr(沒有 log 檔,失敗卡上的字又是修剪過的),再丟修剪過的
+function pip(args, envPath, timeout) {
+  return sh(`"${VENV_PY}" ${PIP_INSTALL} ${args}`, envPath, timeout).catch((e) => {
+    console.error("[engine] pip install failed:", args, "\n" + String((e && e.message) || e));
+    throw new Error(pipError(e));
+  });
+}
+async function ensureEngine(report) {
+  // 建 venv 與裝 SDK 共用「正在準備引擎」這一句:兩步都要走時別印兩次
+  let said = null;
+  const progress = (k) => { if (k !== said) report(k); said = k; };
   const envPath = await loginShellPath();
   const fresh = !fs.existsSync(WS);
   if (fresh) {
@@ -640,10 +670,10 @@ async function ensureEngine(progress) {
   }
   // 記號檔而不是「venv 在就當裝好了」:pip 中途失敗(斷網)時 venv 已經在,下次啟動要重試。
   const sdkMark = path.join(BASE, "venv", ".blave-sdk");
-  if (!fs.existsSync(sdkMark) || fs.readFileSync(sdkMark, "utf8") !== AGENT_SDK) {
+  if (!fs.existsSync(sdkMark) || fs.readFileSync(sdkMark, "utf8") !== SDK_PINS) {
     progress("engine.preparing");
-    await sh(`"${VENV_PY}" -m pip -q install ${AGENT_SDK}`, envPath, 600000);
-    fs.writeFileSync(sdkMark, AGENT_SDK);
+    await pip(SDK_PINS, envPath, 600000);
+    fs.writeFileSync(sdkMark, SDK_PINS);
   }
   // workspace 的 lib/ 與 manager/ 要的第三方套件(從它們的 import 列出來的)。原本只裝
   // SDK:agent 能聊天、能寫策略,一回測就炸(「Python 環境缺少 pandas」,實測)。
@@ -653,7 +683,7 @@ async function ensureEngine(progress) {
   let depsHave = ""; try { depsHave = fs.readFileSync(depsMark, "utf8"); } catch (_) { /* 還沒裝過 */ }
   if (depsHave !== WORKSPACE_DEPS.join("\n")) {
     progress("engine.deps");
-    await sh(`"${VENV_PY}" -m pip -q install ${WORKSPACE_DEPS.join(" ")}`, envPath, 900000);
+    await pip(WORKSPACE_DEPS.join(" "), envPath, 900000);
     fs.writeFileSync(depsMark, WORKSPACE_DEPS.join("\n"));
   }
 }
@@ -663,7 +693,7 @@ async function ensureEngine(progress) {
 // 第一版憑 grep 少了 python-dotenv(lib/runner.py 第一行就要它)與 scipy。
 // 刻意不裝:shioaji(永豐下單 SDK,有綁該券商的人才需要)、comtypes / pythoncom
 // (群益的 COM 介面,只有 Windows 有)。
-// 釘版本:打包版在實機裝到、並跑過一輪回測的那組(隨包 CPython 3.12、arm64)。升版要重跑那輪驗證。
+// 釘版本:打包版在實機裝到、並跑過一輪回測的那組(隨包 CPython 3.12;arm64 與 x64/Rosetta 都只靠 wheel 裝得起來)。升版要重跑那輪驗證。
 const WORKSPACE_DEPS = [
   "pandas==3.0.6", "numpy==2.5.3", "matplotlib==3.11.2", "pyarrow==25.0.1",
   "requests==2.34.2", "python-dotenv==1.2.3", "scipy==1.18.1",
@@ -700,6 +730,36 @@ function stratMeta(code) {
   };
   // STRATEGY_NAME:組合的 key 是它(不一定等於資料夾名,runtime `_cmd_delete_strategy` 也照它比)
   return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION"), strategyName: pick("STRATEGY_NAME") };
+}
+
+/* 這支策略程式會不會自己下單(Type B 那一種:AGENTS.md 規定交易所下單一律走 lib/order_*、執行走 lib/execute,
+   Type A/C 只 import lib.runner / lib.data,單由對帳器下)。看的是 import 與 `lib.order_x` / `lib.execute` 的點呼叫,
+   註解剝掉再比。只回布林,不執行任何東西。 */
+const SELF_ORDER_RE = /\bfrom\s+lib\.(?:order_[a-z0-9_]+|execute)\s+import\b|\bimport\s+lib\.(?:order_[a-z0-9_]+|execute)\b|\blib\.(?:order_[a-z0-9_]+|execute)\.|\bfrom\s+lib\s+import\s+[^\n]*\b(?:execute|order_[a-z0-9_]+)\b/;
+function stratSelfOrdering(code) {
+  // 先剝註解,再把 `\` 續行與 `import (\n execute,\n)` 這種 black 排的多行 import 收成一行,regex 才對得到
+  const src = String(code || "").replace(/#[^\n]*/g, "").replace(/\\\n/g, " ").replace(/\bimport\s*\(([^)]*)\)/g, (_m, inner) => "import " + inner.replace(/\s+/g, " "));
+  return SELF_ORDER_RE.test(src);
+}
+// 全部策略資料夾(strategies/<name>/*.py,含 helper 檔——同 stratDataSources 掃整個資料夾)有沒有任何一支自己下單。
+// 每輪狀態輪詢(4–15 秒)都會問:按檔案 mtime 快取,沒改就不重讀
+const selfOrdCache = new Map();   // 檔案路徑 → { mtime, hit }
+function stratSelfOrderingAny() {
+  for (const name of stratNames()) {
+    const dir = path.join(STRAT_DIR(), name);
+    let files = []; try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".py")); } catch (_) { continue; }
+    for (const f of files) {
+      const p = path.join(dir, f);
+      let mtime = 0; try { mtime = fs.statSync(p).mtimeMs; } catch (_) { continue; }
+      const c = selfOrdCache.get(p);
+      if (c && c.mtime === mtime) { if (c.hit) return true; continue; }
+      let code; try { code = fs.readFileSync(p, "utf8"); } catch (_) { return true; }   // 讀不到就當「有」、也不快取:偏向藏鈕會把最需要「解除暫停」的 Type B 用戶的出口藏掉
+      const hit = stratSelfOrdering(code);
+      selfOrdCache.set(p, { mtime, hit });
+      if (hit) return true;
+    }
+  }
+  return false;
 }
 
 function listStrategies() {
@@ -1373,7 +1433,7 @@ app.whenReady().then(() => {
   ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart() : { error: "SERVER" }));
   /* 本機交易:狀態是唯讀的檔案內容;指令由 daemon.js 簽章後寫進佇列(secret 不出主行程)。
      daemon 在引擎裝好之後才起(它要 workspace 與 venv),而且**不會自己啟動對帳器**——要用戶按「啟動下單」。 */
-  handle("trade-status", () => tradeHost().status());
+  handle("trade-status", () => { const st = tradeHost().status(); if (st.report && typeof st.report === "object") st.report.selfOrdering = stratSelfOrderingAny(); return st; });
   handle("trade-events", (_e, q) => tradeHost().events({ days: q && Number(q.days) }));
   handle("trade-equity", (_e, q) => tradeHost().equity({ days: q && Number(q.days) }));
   ipcMain.handle("trade-send", async (e, cmd, args, _requestId, intent) => {   // _requestId 只有雲端那條路在用(cloudcmd.js),本機忽略
@@ -1648,7 +1708,8 @@ function tradeMaybeLive() {
   if (!(r.daemon && r.daemon.reconciler && r.daemon.reconciler.running)) return null;
   return { venue: lastVenue };
 }
-const venueName = (id) => (!id ? "" : id === "paper" ? tmLabels.paperVenue : id.charAt(0).toUpperCase() + id.slice(1));
+// 結束確認框的 {venue};選單列那一行已經寫交易所名,不再另列一行。id 長得不像 id 時退回首字大寫的原字,不能讓那句變成「部位留在。」
+const venueName = (id) => (!id ? "" : id === "paper" ? tmLabels.paperVenue : TT.venueLabel(id) || String(id).charAt(0).toUpperCase() + String(id).slice(1));
 function showMain() {
   const w = BrowserWindow.getAllWindows()[0];
   if (!w) { createWindow(); return; }
@@ -1667,7 +1728,7 @@ async function pauseFromMenu() {
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
 // 選單列的狀態行。這台電腦那一行:選單列只在這台電腦「確定在下單」時出現,所以狀態一定是 on。字還沒交 → null,退回舊的那一句
-const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", state: "on" }, tmLabels);
+const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", venue: live.venue, state: "on" }, tmLabels);
 const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);
 // 雲端落後(或停不住的舊下單程式):選單列補一行、點了開「設定 › 一般」的關於(圖示旁不放任何點,Wei 09-23)
 const trayCloudUpdate = () => TT.cloudUpdateLine(tmLabels, cloudSt());
@@ -1680,7 +1741,6 @@ function trayMenu(live) {
   return Menu.buildFromTemplate([
     { label: trayLocalLine(live) || tmLabels.running, enabled: false },
     ...(updateWaiting() ? [{ label: tmLabels.updateReady, enabled: false }] : []),
-    { label: venueName(live.venue), enabled: false },   // 模擬帳戶的名字本身就寫著「模擬交易」,不再疊一個「模擬」記號
     ...(cloud ? [{ label: cloud, enabled: false }] : []),
     ...(cu ? [{ label: cu, click: openAbout }] : []),
     { type: "separator" },

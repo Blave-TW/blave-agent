@@ -558,7 +558,7 @@ function upPlan(o) {
   else if (ph === "ready") { L.s = ["up.ready", v]; L.cls = "up"; }
   else if (ph === "blocked") { L.s = ["up.blocked", v]; L.cls = "up"; }
   else if (ph === "error") { L.s = st.error === "INSTALL_FAILED" ? ["up.installFailed", v] : ["up.error"]; L.cls = "up"; }
-  else if (ph === "idle") L.s = ["up.latest"];
+  else if (ph === "idle") L.s = st.checkedAt > 0 ? ["up.latestAt", { t: trHM(st.checkedAt) }] : ["up.latest"];   // 什麼時候查的(trade.js 的 HH:MM);還沒查過就不帶
   /* 雲端那一行。沒主機 / 沒登入 / 還沒讀到 = 整行不畫;停機 / 讀不到 = 講原因,鈕不整顆失效(這台電腦照樣能更新)。 */
   const c = o.cloud || {};
   let C = null, chatKind = null, chatText = null;
@@ -692,6 +692,8 @@ async function upGo() {
   const p = upNow();
   if (!p.btn || p.btn.disabled || (p.btn.act !== "cloud" && p.btn.act !== "local")) return;
   if (p.btn.act === "cloud") {
+    // 同一顆鈕也重查這台電腦(Wei 0.0.6):雲端有新版時那一行的「已是最新版」可能是 4 小時前查的。updater 沒來源 / 正在下載時回 false、什麼都不動
+    window.blave.updateCheck().then(upRefresh).catch(() => {});
     if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡回報
     const c = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}, now = Date.now();
     // 按下 = 新的一次 session(送出之前就開:submitMessage 一開始就重畫,那一刻要是「正在更新」)
@@ -1831,7 +1833,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     addMsg("sys", t("turn.busy")); unlock(); return false;
   } catch (e) {
     busyEnd();
-    addMsg("sys", t("turn.engineFailed", { msg: (e && e.message) || e }));
+    // 失敗卡而不是灰字:灰字排在「正在準備引擎…」下面,看起來像那一行還在跑(0.0.6 Intel 實測)
+    faultCard().set({ text: t("turn.engineFailed", { msg: (e && e.message) || e }) });
     unlock(); return false;
   }
 }

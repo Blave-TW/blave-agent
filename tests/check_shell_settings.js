@@ -27,6 +27,8 @@ var UP_TICK = null; let ticks = 0; const setInterval = () => ++ticks, clearInter
 let cur = null, planLoginBusy = false, oauthPending = false, HINT = null;
 const setFocusGuard = () => {}, cmdLine = () => "";
 const t = (k, v) => k + (v ? JSON.stringify(v) : "");
+// 「已是最新版 · {t} 檢查過」的時間用 trade.js 的 trHM(HH:MM):從原文切,不另寫一份
+{ const trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8"); eval(trSrc.match(/const tr2 = [^\n]*/)[0].replace(/^const /, "var ")); eval(trSrc.match(/function trHM\(ms\) \{[^\n]*\}/)[0]); }
 const calls = []; const window = { blave: { updateCheck: () => { calls.push("check"); return Promise.resolve(); }, updateInstall: () => { calls.push("install"); return Promise.resolve({ ok: true }); } } };
 const upRefresh = () => {}; let UP = null, hasToken = false;
 // 「關於」兩行 + 一顆鈕(upPlan 決策、upPaint 照畫、upGo 動作)。雲端那一袋、聊天送出用假的
@@ -51,6 +53,14 @@ let p = paint({ ...C, phase: "off", version: null });
 ok("off(沒有更新來源):只有版號,沒有狀態句、沒有鈕", p.ver === 'up.app{"v":"0.0.1"}' && p.msg === "" && p.btn === null);
 p = paint({ ...C, phase: "idle" }); ok("idle:已是最新版 + 安靜的「檢查更新」", p.msg === "up.latest" && p.btn === "up.check" && p.quiet && !p.out && !p.up);
 p = paint({ ...C, phase: "checking" }); ok("checking:沒有鈕", p.msg === "up.checking" && p.btn === null);
+// Wei 0.0.6:「已是最新版」旁帶上一次查的時間(updater 在 update-not-available 記 checkedAt;時間走 trade.js 的 trHM);沒查過照舊;檢查中那一句是「檢查中…」
+{ const at = new Date(2026, 8, 24, 13, 24).getTime();
+  ok("idle 而且查過:「已是最新版 · 13:24 檢查過」;沒查過 / checkedAt 0 照舊只寫已是最新版;鈕照舊是「檢查更新」", paint({ ...C, phase: "idle", checkedAt: at }).msg === 'up.latestAt{"t":"13:24"}'
+    && paint({ ...C, phase: "idle", checkedAt: at }).btn === "up.check" && paint({ ...C, phase: "idle", checkedAt: 0 }).msg === "up.latest" && paint({ ...C, phase: "idle" }).msg === "up.latest");
+  calls.length = 0; paint({ ...C, phase: "idle", checkedAt: at }); $("set-up-btn").onclick();
+  ok("「檢查更新」那顆按了就叫 updater 的 check", JSON.stringify(calls) === '["check"]');
+  const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), zhS = S.slice(S.indexOf("zh:"));
+  ok("字:zh「檢查中…」/「已是最新版 · {t} 檢查過」;en 也有兩個 key", /"up\.checking": "檢查中…"/.test(zhS) && /"up\.latestAt": "已是最新版 · \{t\} 檢查過"/.test(zhS) && /"up\.latestAt": "Up to date · checked \{t\}"/.test(S.slice(0, S.indexOf("zh:")))); }
 p = paint({ ...C, phase: "downloading", percent: 42 }); ok("downloading:有百分比用帶百分比的句子,沒有鈕;沒有百分比退回不帶的", p.msg === 'up.downloadingPct{"nv":"0.0.2","pct":42}' && p.btn === null && paint({ ...C, phase: "downloading", percent: null }).msg === 'up.downloading{"nv":"0.0.2"}');
 p = paint({ ...C, phase: "staging" }); ok("staging:沒有鈕(還沒驗完章,不能給重啟)", p.msg === 'up.staging{"nv":"0.0.2"}' && p.btn === null);
 p = paint({ ...C, phase: "ready" }); ok("ready:句子升一階、鈕換成描邊的「更新」(兩邊共用那一顆)", p.up && p.btn === "up.update" && p.out && !p.quiet);
@@ -240,7 +250,7 @@ ok("「關於」前面的點拿掉了:DOM / CSS / upPlan / upPaint 都沒有(同
   calls.length = 0; sent.length = 0; running = false;
   await upGo();
   ok("雲端有新版:送的是本機聊天那一句、帶 viewing env:cloud;沒有任何雲端指令;這台電腦這一次不重開;開一段 session(記下按下時的 cv / nv)",
-    sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && calls.length === 0 && UPD.cloudTurn === true
+    sent.length === 1 && sent[0][0] === "up.c.msg" && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}' && JSON.stringify(calls) === '["check"]' && UPD.cloudTurn === true   // Wei 0.0.6:同一顆鈕也重查這台電腦(只叫 check,不裝)
     && UPD.session && UPD.session.fromCv === "1.1.80" && UPD.session.nv === "1.1.83");
   running = true; ticks = 0; upPaint();
   ok("回合在跑:關於那一行是「正在更新雲端主機・{t}」、鈕停用帶 spinner、聊天那一行是狀態列(aria-disabled、不是 disabled)、開始每秒重畫",

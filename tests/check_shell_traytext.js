@@ -1,7 +1,7 @@
 // shell/traytext.js:視窗之外的字(選單列的狀態行、結束確認框多的那一句、通知標題的前綴)。
 // 雲端那一行的資料來自雲端主機的回報 = 不可信輸入。跑法:node tests/check_shell_traytext.js
 const fs = require("fs"), path = require("path");
-const { clean, cloudLine, cloudTrading, statusLine, notifTitle, quitDetail } = require("../shell/traytext.js");
+const { clean, cloudLine, cloudTrading, statusLine, notifTitle, quitDetail, venueLabel } = require("../shell/traytext.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const after = [];   // 非同步的那幾條:檔尾等它們跑完再結算
 const V = { credentials: true, pair: true, order: true, account: true };
@@ -10,8 +10,14 @@ const L = { moneyPaper: "模擬", moneyReal: "真錢", stOn: "執行中", stPaus
 const TPL = "雲端：{money} · {state}";
 const j = (x) => JSON.stringify(x);
 
-t("雲端在下單:真錢 · 執行中", j(cloudLine(st())) === '{"money":"real","state":"on"}' && statusLine(TPL, cloudLine(st()), L) === "雲端：真錢 · 執行中");
-t("只有模擬帳戶 → 模擬;混著真的 → 真錢", cloudLine(st({ report: { venues: { paper: V }, reconciler: { alive: true } } })).money === "paper" && cloudLine(st({ report: { venues: { paper: V, okx: V }, reconciler: { alive: true } } })).money === "real");
+t("雲端在下單:Binance · 執行中(Wei 0.0.6:{money} 槽寫交易所名,不寫「真錢」)", j(cloudLine(st())) === '{"money":"real","venue":"binance","state":"on"}' && statusLine(TPL, cloudLine(st()), L) === "雲端：Binance · 執行中");
+t("只有模擬帳戶 → 模擬(記號寫「模擬」);混著真的 → real、venue 是排序後第一家真的", cloudLine(st({ report: { venues: { paper: V }, reconciler: { alive: true } } })).money === "paper"
+  && statusLine(TPL, cloudLine(st({ report: { venues: { paper: V }, reconciler: { alive: true } } })), L) === "雲端：模擬 · 執行中"
+  && j(cloudLine(st({ report: { venues: { paper: V, okx: V }, reconciler: { alive: true } } }))) === '{"money":"real","venue":"okx","state":"on"}');
+t("交易所名照表(OKX / Gate.io / BingX 不是首字大寫);表外 id 首字大寫;長得不像 id 的回空;舊呼叫端沒帶 venue → 退回「真錢」",
+  statusLine(TPL, { money: "real", venue: "okx", state: "on" }, L) === "雲端：OKX · 執行中" && statusLine(TPL, { money: "real", venue: "gateio", state: "on" }, L) === "雲端：Gate.io · 執行中"
+  && statusLine(TPL, { money: "real", venue: "bingx", state: "on" }, L) === "雲端：BingX · 執行中" && statusLine(TPL, { money: "real", venue: "kraken", state: "on" }, L) === "雲端：Kraken · 執行中"
+  && venueLabel("<b>") === "" && venueLabel("A B") === "" && venueLabel(5) === "" && statusLine(TPL, { money: "real", state: "on" }, L) === "雲端：真錢 · 執行中");
 t("已暫停", cloudLine(st({ report: { venues: { binance: V }, halt: { halted: true }, reconciler: { alive: true } } })).state === "paused");
 t("讀不到新狀態(alive=false:連不上 / 回報過舊)→ 不講執行中也不講已暫停", cloudLine(st({ alive: false })).state === "unknown" && cloudLine(st({ alive: false, report: { venues: { binance: V }, halt: { halted: true } } })).state === "unknown");
 t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)→ 已暫停(同畫面),不是不明",
@@ -21,7 +27,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
 { const Cg = (o, halt) => st({ report: { venues: { binance: V }, halt: halt || {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
   const LL = { ...L, stMayTrade: "可能仍在下單" };
   t("主機重開沒停住(gated === false 嚴格)→ 可能仍在下單:「雲端：真錢 · 可能仍在下單」;結束確認框不替它背書(cloudTrading false)",
-    cloudLine(Cg({ gated: false })).state === "mayTrade" && statusLine(TPL, cloudLine(Cg({ gated: false })), LL) === "雲端：真錢 · 可能仍在下單" && cloudTrading(Cg({ gated: false })) === false);
+    cloudLine(Cg({ gated: false })).state === "mayTrade" && statusLine(TPL, cloudLine(Cg({ gated: false })), LL) === "雲端：Binance · 可能仍在下單" && cloudTrading(Cg({ gated: false })) === false);
   t("…已按暫停 → 已暫停;gated true / 缺欄位 → 已暫停;缺 stMayTrade 那個字 → 整行不顯示",
     cloudLine(Cg({ gated: false }, { halted: true })).state === "paused" && cloudLine(Cg({ gated: true })).state === "paused" && cloudLine(Cg({})).state === "paused"
     && statusLine(TPL, cloudLine(Cg({ gated: false })), L) === null); }
@@ -32,8 +38,8 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   const LZ = { moneyReal: "真錢", moneyPaper: "模擬", stOn: zh("tm.stOn"), stPaused: zh("tm.stPaused"), stUnknown: zh("tm.stUnknown"), stNotStarted: zh("tr.notStarted") };
   const idle = st({ report: { venues: { binance: V }, halt: { halted: false }, reconciler: { alive: false, heartbeat_at: 5 } } });
   const gone = st({ alive: false, report: { venues: { binance: V }, halt: { halted: false }, reconciler: { alive: false } } });
-  t("讀得到、下單程式沒在跑 → 「雲端：真錢 · 尚未啟動下單」(跟雲端頁同一句,不是讀不到狀態)", cloudLine(idle).state === "notStarted" && statusLine(TPL, cloudLine(idle), LZ) === "雲端：真錢 · 尚未啟動下單");
-  t("讀不到(alive=false)→ 照舊「雲端：真錢 · 讀不到狀態」", cloudLine(gone).state === "unknown" && statusLine(TPL, cloudLine(gone), LZ) === "雲端：真錢 · 讀不到狀態");
+  t("讀得到、下單程式沒在跑 → 「雲端：Binance · 尚未啟動下單」(跟雲端頁同一句,不是讀不到狀態)", cloudLine(idle).state === "notStarted" && statusLine(TPL, cloudLine(idle), LZ) === "雲端：Binance · 尚未啟動下單");
+  t("讀不到(alive=false)→ 照舊「雲端：Binance · 讀不到狀態」", cloudLine(gone).state === "unknown" && statusLine(TPL, cloudLine(gone), LZ) === "雲端：Binance · 讀不到狀態");
   t("兩條路的字不一樣(zh / en 都是):同一份報告只差 alive", zh("tr.notStarted") !== zh("tm.stUnknown") && en("tr.notStarted") && en("tr.notStarted") !== en("tm.stUnknown"));
   t("尚未啟動不替雲端背書(結束確認框不說雲端在下單)", cloudTrading(idle) === false);
   const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
@@ -44,7 +50,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   const errd = (rec, halt) => st({ report: { error: "build failed", venues: { binance: V }, halt: halt || { halted: false }, reconciler: rec } });
   t("報告帶 error:一律「讀不到狀態」(對帳器沒心跳、有心跳、已暫停都一樣),跟雲端頁同一句",
     [errd({ alive: false }), errd({ alive: true }), errd({ alive: false }, { halted: true })].every((x) => cloudLine(x).state === "unknown")
-    && statusLine(TPL, cloudLine(errd({ alive: false })), LZ) === "雲端：真錢 · 讀不到狀態" && cloudTrading(errd({ alive: true })) === false); }
+    && statusLine(TPL, cloudLine(errd({ alive: false })), LZ) === "雲端：Binance · 讀不到狀態" && cloudTrading(errd({ alive: true })) === false); }
 { // 選單列圖示旁不放任何小點(Wei 09-23):本機新版、雲端新版都不點;「新版已下載」那一行留在選單裡
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
   t("選單列圖示旁沒有小點:main.js 不呼叫 setTitle;雲端那條規則不留死碼;選單的「新版已下載」照留", !/\.setTitle\(/.test(mainSrc)
@@ -140,10 +146,24 @@ t("結束確認框那一句:只有「確定在下單」才說(那一句是在替
 
 // 不可信輸入
 t("場所 id 長得不像 id 的不算(雲端主機寫得進去的字串不拿來判斷、更不顯示)", cloudLine(st({ report: { venues: { "<img src=x>": V, "A B": V, ["x".repeat(40)]: V }, reconciler: { alive: true } } })) === null);
-t("輸出只由我們自己的字組成:回報裡塞什麼字串都進不了那一行", (() => { const s = st(); s.report.halt = { halted: false, source: "‮gnp.exe", at: "<b>" }; s.report.venues.binance.label = "EVIL"; s.cloud.machine.os_type = "EVIL"; const out = statusLine(TPL, cloudLine(s), L); return out === "雲端：真錢 · 執行中"; })());
+t("輸出只由我們自己的字組成:回報裡塞什麼字串都進不了那一行", (() => { const s = st(); s.report.halt = { halted: false, source: "‮gnp.exe", at: "<b>" }; s.report.venues.binance.label = "EVIL"; s.cloud.machine.os_type = "EVIL"; const out = statusLine(TPL, cloudLine(s), L); return out === "雲端：Binance · 執行中"; })());
 t("clean:控制字元、零寬、bidi 覆寫、換行都拿掉;過長截斷", clean("a\u0000b\nc‮d​e", 40) === "a b c d e" && clean("x".repeat(100), 10).length === 10 && clean("x".repeat(100), 10).endsWith("…") && clean(5) === "" && clean(null) === "");
-t("字還沒交(任何一個要用到的是空的)→ 整行不顯示,不拿英文硬湊", statusLine("", cloudLine(st()), L) === null && statusLine(TPL, cloudLine(st()), { ...L, stOn: "" }) === null && statusLine(TPL, cloudLine(st()), { ...L, moneyReal: "" }) === null && statusLine(TPL, null, L) === null && statusLine(TPL, cloudLine(st()), null) === null);
-t("字本身帶控制字元(renderer 交來的也過一次 clean)", statusLine("雲端：{money}\n· {state}", cloudLine(st()), L) === "雲端：真錢 · 執行中");
+t("字還沒交(任何一個要用到的是空的)→ 整行不顯示,不拿英文硬湊(模擬那一行要 moneyPaper;交易所名不是交的字,不受影響)", statusLine("", cloudLine(st()), L) === null && statusLine(TPL, cloudLine(st()), { ...L, stOn: "" }) === null
+  && statusLine(TPL, cloudLine(st({ report: { venues: { paper: V }, reconciler: { alive: true } } })), { ...L, moneyPaper: "" }) === null && statusLine(TPL, cloudLine(st()), { ...L, moneyReal: "" }) === "雲端：Binance · 執行中"
+  && statusLine(TPL, null, L) === null && statusLine(TPL, cloudLine(st()), null) === null);
+t("字本身帶控制字元(renderer 交來的也過一次 clean)", statusLine("雲端：{money}\n· {state}", cloudLine(st()), L) === "雲端：Binance · 執行中");
+{ // Wei 0.0.6 接線:這台電腦那一行帶 venue;選單列不再另列一行交易所名;結束確認框的 {venue} 走同一張表;renderer 的頂列記號 / 視窗標題也寫交易所名、tr.tb 拿掉
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  t("main.js:trayLocalLine 帶 venue、沒有那一行 venueName(live.venue)、venueName 走 TT.venueLabel;trade.js:記號與視窗標題走 envVenueText、tr.tb 不在;.po 也拿掉 tr.tb",
+    /trayLocalLine = \(live\) => TT\.statusLine\(tmLabels\.stLocal, \{ money: live\.venue === "paper" \? "paper" : "real", venue: live\.venue, state: "on" \}, tmLabels\)/.test(mainSrc)
+    && !/label: venueName\(live\.venue\)/.test(mainSrc) && /id === "paper" \? tmLabels\.paperVenue : TT\.venueLabel\(id\)/.test(mainSrc)
+    && /tm\.textContent = envVenueText\(mny, id\);/.test(trSrc) && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(trSrc) && !/"tr\.tb"/.test(trSrc)
+    && ["zh", "en"].every((l) => !/msgid "tr\.tb"\n/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"))));
+  // 結束確認框的 {venue}:表上的照表;表外 id 首字大寫;長得不像 id(venueLabel 回空)也退回首字大寫的原字——那句不能變成「部位留在。」
+  const TT = require("../shell/traytext.js"), tmLabels = { paperVenue: "模擬交易" };
+  const venueName = eval("(" + mainSrc.match(/const venueName = (\([^\n]*?);\s*$/m)[1] + ")");
+  t("main.js venueName:paper → 模擬交易;okx → OKX;kraken → Kraken;「my venue」→ My venue(不是空字串);空 → 空", venueName("paper") === "模擬交易" && venueName("okx") === "OKX" && venueName("kraken") === "Kraken"
+    && venueName("my venue") === "My venue" && venueName("") === "" && venueName(null) === ""); }
 t("通知標題的前綴:有才加;結束框的那一句:有才加、隔一行", notifTitle("這台電腦：", "下單失敗") === "這台電腦：下單失敗" && notifTitle("", "下單失敗") === "下單失敗" && quitDetail("A", "B") === "A\n\nB" && quitDetail("A", "") === "A");
 
 // 接線(main.js 原文)

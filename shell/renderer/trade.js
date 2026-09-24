@@ -150,13 +150,18 @@ function trRecomputing(r) { const x = r && r.reconciler && r.reconciler.stopped;
    看得到「解除暫停」(有 HALT / 重開停止)→ 叫人按它;只有停用的啟動鈕 → 先到「部位」設定金額再啟動。C 不算 Z(照現行) */
 /* done = 這一頁剛答完帳戶確認的結果({ venue, outcome: "kept" | "reset" }),只在記憶體、HALT 還在時用(spec §3.2):
    答完之後的暫停句講清楚「同一個」與「從零開始」各自的後果;重新載入就退回一般那句 */
+/* 這台電腦上有沒有「自己下單」的策略程式(主行程掃 strategies/<name>/*.py 是否 import lib.order_* / lib.execute,
+   寫進 report.selfOrdering)。沒有的話「解除暫停」與「包含你自己的策略程式下的單」那半句都在講一顆不存在的東西(Wei 0.0.6 實測)。
+   **嚴格 === false 才算沒有**:雲端的報告沒這個欄位、舊格式也沒有 → 照現行 */
+function trSelfOrdering(r) { return !(r && r.selfOrdering === false); }
 function trHaltReasonText(r, done) {
   const rk = trRestartKind(r), z = trNoAmounts(r) && !trRestartUnconfirmed(r), H = !!(r && r.halt && r.halt.halted);
   const vl = (v) => (typeof trVenueLabel === "function" ? trVenueLabel(v, true) : v), bh = trBookHold(r);
   if (H && bh && bh.ask !== false) return t("tr.acct.reason", { v: vl(bh.venue) });   // 要回答的那一題優先:它的出口是「確認帳戶」,不是啟動下單
   if (H && !bh && done && (done.outcome === "kept" || done.outcome === "reset")) return t(done.outcome === "kept" ? "tr.acct.doneSame" : "tr.acct.doneDiff", { v: vl(done.venue) });
+  // ZH(「新倉也被擋著——包含你自己的策略程式下的單」)只在真的有自己下單的策略時講;沒有就退回 Z 那一句
   return rk === "machine" ? t(z ? "tr.cloud.restartStoppedZ" : "tr.cloud.restartStopped")
-    : rk === "app" ? t(z ? (H ? "tr.restartStoppedLocalZH" : "tr.restartStoppedLocalZ") : "tr.restartStoppedLocal")
+    : rk === "app" ? t(z ? (H && trSelfOrdering(r) ? "tr.restartStoppedLocalZH" : "tr.restartStoppedLocalZ") : "tr.restartStoppedLocal")
     : trHaltStopsAll(r && r.halt) ? (trRestartUnconfirmed(r) ? t("tr.cloud.haltReasonUnconfirmed") : t(z ? "tr.haltReasonAllZ" : "tr.haltReasonAll")) : t("tr.haltReason");
 }
 /* ── 沒有策略設金額(spec-desktop-update-experience-v2 §8,Wei 09-23)──
@@ -181,7 +186,7 @@ function trZView(state, r) {
      而且它叫人再去做一次他剛做完的事(spec-desktop-waiting-states §2)。蓋的動作在 trPaintHead。 */
   if (state === "dead") return { off: true, release: false, reason: "tr.startOffNoAmt" };
   if (state === "halted") {
-    const rel = H || R;
+    const rel = (H || R) && trSelfOrdering(r);   // 沒有自己下單的策略程式 → 「解除暫停」沒有東西可解,不出鈕、原因行不叫人按它
     return { off: true, release: rel, reason: rel ? "tr.startOffNoAmtRelease" : "tr.startOffNoAmt" };
   }
   return none;
@@ -572,12 +577,12 @@ function envAutoHalt(st) {
 function trKeyBad(env) { return env !== "cloud" && typeof CXF !== "undefined" && !!(CXF.bn && CXF.bn.verdict); }
 function envCell(env, st, pending) {
   const kind = env === "cloud" ? envCloudKind(st) : "running";
-  const out = { money: null, run: false, dot: null, word: null, sig: null };
+  const out = { money: null, venue: null, run: false, dot: null, word: null, sig: null };
   if (kind === "loading" || kind === "unreach") return out;
   if (kind === "signedOut") { out.word = "env.st.signedOut"; return out; }
   if (kind === "none") { out.word = "env.st.none"; return out; }
   if (kind === "starting") { out.dot = "busy"; out.word = "side.starting"; return out; }
-  out.money = envMoney(st);
+  out.money = envMoney(st); out.venue = trVenueIds(st && st.report)[0] || null;   // venue:視窗標題寫交易所名(Wei 0.0.6:不寫「真錢」)
   if (kind === "stopped") { out.dot = "bad"; out.word = "side.stopped"; out.sig = "stopped"; return out; }
   const state = trExecState(st);
   // 重開沒停住:錢可能正在外面跑,人在另一邊也要看得到(紅短劃 + 詞;看過一次就消,同其他出事)
@@ -727,6 +732,8 @@ function trBurstOn(burst, now) { return !!burst && burst.until > now; }
 // 字串表的漂移閘門(check_shell_strings.js)只認得寫成字面值的 key:會變的 key 走這兩支,每個 key 都以字面值出現一次
 const envName = (env) => (env === "cloud" ? t("env.cloud") : t("env.local"));
 const envMoneyText = (m) => (m === "real" ? t("tr.mode.real") : m === "paper" ? t("tr.mode.paper") : "");
+// 頂列記號與視窗標題用的那個詞(Wei 0.0.6):模擬 = 「模擬」記號,真的交易所 = 交易所名(Binance / OKX…),不再寫「真錢」
+const envVenueText = (money, venue) => (money === "paper" ? t("tr.mode.paper") : money === "real" ? trVenueLabel(venue, true) : "");
 // 同步的畫面函式借另一邊的狀態跑一次(過場檢查永遠看本機那一份)
 function trWith(bag, fn) { const prev = TR; TR = bag; try { return fn(); } finally { TR = prev; } }
 const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONFIRM_MS = 60000;
@@ -1246,19 +1253,19 @@ function trPaintHead() {
   // 切換器右邊那一句:這一邊的狀態。沒連接交易所時是空的
   const id = trVenueId(), has = state !== "noaccount" && state !== "loading" && state !== "unknown" && !!id;
   // 頂列(設計 v4 §6,P1=A):自動下單頁開著時只留錢記號、不出字(完整句就在標題下,不重複);離開這頁才出**短狀態詞**。
-  // 雲端視角的頁永遠開著 → 永遠只有記號。模擬:{short};真錢:{short} · {venue}(「模擬」已經有記號,句尾不再寫「模擬交易」)
-  const pageOpen = TR_BAGS[ENV.cur].open === true, paper = id === PAPER, tbState = has && !pageOpen ? trShortState(state) : "";
-  const txt = $("tr-tb-txt"), tbFull = !tbState ? "" : paper ? tbState : t("tr.tb", { state: tbState, venue: trVenueLabel(id, true) });
-  // 出事(這一格有紅短劃那種事)時,狀態詞那一段加重;其餘整句灰字
-  const tbUp = !!tbState && envCell(TR.env, TR.st, !!TR.pending).dot === "bad", tsig = LANG + "|" + tbFull + "|" + tbUp;
+  // 雲端視角的頁永遠開著 → 永遠只有記號。句子只有短狀態詞:交易所名已經在前面的記號裡(Wei 0.0.6),句尾不再重複
+  const pageOpen = TR_BAGS[ENV.cur].open === true, tbState = has && !pageOpen ? trShortState(state) : "";
+  const txt = $("tr-tb-txt");
+  // 出事(這一格有紅短劃那種事)時,狀態詞加重;其餘灰字
+  const tbUp = !!tbState && envCell(TR.env, TR.st, !!TR.pending).dot === "bad", tsig = LANG + "|" + tbState + "|" + tbUp;
   if (ENV.sig.tb !== tsig) {
-    ENV.sig.tb = tsig; txt.textContent = ""; txt.title = tbFull;
-    if (tbUp) { const parts = (paper ? "\u0000" : t("tr.tb", { state: "\u0000", venue: trVenueLabel(id, true) })).split("\u0000"); txt.append(parts[0] || "", trEl("span", "up", tbState), parts[1] || ""); }
-    else txt.textContent = tbFull;
+    ENV.sig.tb = tsig; txt.textContent = ""; txt.title = tbState;
+    if (tbUp) txt.append(trEl("span", "up", tbState));
+    else txt.textContent = tbState;
   }
-  // 錢記號排在這一句的最前面(切換器格內不放):看得見的這一邊用的是模擬還是真錢
+  // 記號排在這一句的最前面(切換器格內不放):看得見的這一邊連的是模擬還是哪一家交易所
   const mny = has ? envMoney(TR.st) : null, tm = $("tr-tb-mode");
-  tm.hidden = !mny; tm.className = "mode " + (mny || "paper"); tm.textContent = envMoneyText(mny);
+  tm.hidden = !mny; tm.className = "mode " + (mny || "paper"); tm.textContent = envVenueText(mny, id);
   // 全頁級的「只能看」退場(規格 §6):啟動 / 暫停在雲端按得動之後,那一句就是假話。
   // 金額與連接交易所這一批還沒開,各自在自己的位置講(S4 / S5),不在這裡出一句整頁級的
   trPaintRoNote(null);
@@ -2114,9 +2121,11 @@ function trPaintSet() {
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
-  // 模擬帳戶連上時不畫重新測試(沒有金鑰、沒有交易所,重查也不會變);讀帳失敗(沒有價格、帳本讀不出來、鎖逾時)時照畫,
-  // 不然只能等下一輪讀帳。鈕消失時焦點由最後一行交給設定分頁
-  if (id !== PAPER || (e && !e.ok)) {
+  // 「重新測試」在讀帳失敗 / 金鑰重查出事(紅記號 + 串接失敗)時畫,Binance 重查的灰記號(沒設白名單、現貨 / 合約沒開)也畫——
+  // 它是 24 小時自動重查之前唯一能叫 binanceRecheck 的入口(Wei 0.0.6)。乾淨的已連接與串接中都沒有東西要重試;鈕消失時焦點由最後一行交給設定分頁
+  const bnD = (bn && bn.last && bn.last.ok && bn.last.detail) || {};
+  const bnNote = !!(bn && bn.last && bn.last.ok) && (bn.last.code === "NO_IP_RESTRICT" || bnD.futures === false || bnD.spot === false);
+  if (failed || bnNote) {
     const rt = trEl("button", "pf-act", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); rt.type = "button"; rt.id = "cx-retest";
     rt.disabled = TR.cx.retest || !id; rt.addEventListener("click", cxRetest);
     acts.appendChild(rt);
@@ -2915,8 +2924,8 @@ function envPaint() {
   if (ENV.sig.ph !== phKey) { ENV.sig.ph = phKey; $("ta").dataset.i18nPh = phKey; $("ta").placeholder = t(phKey); }
   if (cloud) envPaintSide(kind, C.st);
   const cur = cells[ENV.cur];
-  // 視窗標題:{money} 是空的就連同前面的「 · 」一起省略
-  const money = envMoneyText(cur.money);
+  // 視窗標題:{money} 槽放的是交易所名 / 「模擬」(Wei 0.0.6);是空的就連同前面的「 · 」一起省略
+  const money = envVenueText(cur.money, cur.venue);
   document.title = money ? t("env.winTitle", { where: envName(ENV.cur), money }) : t("env.winTitle0", { where: envName(ENV.cur) });
   // 中欄
   $("cv-empty").hidden = !gate;

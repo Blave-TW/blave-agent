@@ -18,8 +18,8 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
     && JSON.stringify(au.calls[0]) === JSON.stringify(["feed", { provider: "generic", url: "https://example.invalid/mac" }]));
   t("start 叫兩次只生效一次", up.start() === false);
   t("結束 app 時自動安裝是開的(結束=已停止下單)", au.autoInstallOnAppQuit === true);
-  up.check(); await tick();
-  t("check 會去查", au.calls.some((c) => c[0] === "check"));
+  const syncPhase = (up.check(), up.state().phase); await tick();
+  t("check 會去查;按下那一刻就先講 checking(不等 electron-updater 連上 feed 才發的事件——那之前畫面會停在舊的「已是最新版」)", au.calls.some((c) => c[0] === "check") && syncPhase === "checking");
   au.emit("update-available", { version: "0.4.0" }); au.emit("download-progress", { percent: 41.7 });
   t("下載中:帶新版號與整數百分比", up.state().phase === "downloading" && up.state().version === "0.4.0" && up.state().percent === 41 && up.state().current === "0.3.1");
   t("下載中按安裝:拒絕", up.install().error === "NOT_READY" && !au.calls.some((c) => c[0] === "install"));
@@ -42,6 +42,8 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
 
   ({ au, up } = mk()); up.start(); au.emit("error", new Error("net down"));
   t("檢查失敗:phase=error,之後可以再查", up.state().phase === "error" && up.check() === true);
+  ({ au, up } = mk()); up.start(); up.check(); au.emit("update-not-available");
+  t("沒有新版:idle + checkedAt(「已是最新版 · {t} 檢查過」的時間,經 state() 交出去);再查一次照樣可以", up.state().phase === "idle" && Math.abs(up.state().checkedAt - Date.now()) < 5000 && up.check() === true);
   ({ au, up } = mk({ onState: () => { throw new Error("renderer gone"); } })); up.start();
   t("畫面那邊丟例外不影響更新", (() => { try { au.emit("update-available", { version: "9" }); return up.state().phase === "downloading"; } catch (_) { return false; } })());
 

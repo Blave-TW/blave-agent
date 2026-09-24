@@ -38,7 +38,7 @@ function createUpdater(opts) {
     au.setFeedURL({ provider: "generic", url: opts.feedUrl });
     au.on("checking-for-update", () => set({ phase: "checking", error: null }));
     au.on("update-available", (i) => set({ phase: "downloading", version: i && i.version, percent: 0 }));
-    au.on("update-not-available", () => set({ phase: "idle", version: null }));
+    au.on("update-not-available", () => set({ phase: "idle", version: null, checkedAt: Date.now() }));   // 「已是最新版 · {t} 檢查過」用的時間
     au.on("download-progress", (p) => set({ phase: "downloading", percent: p && Number.isFinite(p.percent) ? Math.floor(p.percent) : null }));
     au.on("update-downloaded", (i) => set({ phase: "staging", version: i && i.version, percent: 100 }));
     if (opts.nativeUpdater) opts.nativeUpdater.on("update-downloaded", () => set({ phase: "ready", percent: 100 }));
@@ -53,6 +53,8 @@ function createUpdater(opts) {
   }
   function check() {
     if (!opts.feedUrl || ["checking", "downloading", "staging", "ready", "blocked"].indexOf(state.phase) >= 0) return false;
+    // 按下去那一刻就講「檢查中」:electron-updater 的 checking-for-update 事件要等它連上 feed 才發,那之前畫面還停在舊的「已是最新版」
+    set({ phase: "checking", error: null });
     Promise.resolve().then(() => au.checkForUpdates()).catch((e) => { log("check failed: " + (e && e.message)); set({ phase: "error", error: "CHECK_FAILED" }); });
     return true;
   }

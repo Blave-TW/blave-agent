@@ -365,8 +365,11 @@ msgstr "Blave {v}"
 msgid "up.latest"
 msgstr "已是最新版"
 
+msgid "up.latestAt"
+msgstr "已是最新版 · {t} 檢查過"
+
 msgid "up.checking"
-msgstr "正在檢查更新…"
+msgstr "檢查中…"
 
 msgid "up.downloading"
 msgstr "正在下載 {nv}…"
@@ -999,9 +1002,6 @@ msgstr "這台電腦的下單機沒有在跑。過幾秒再試；一直這樣就
 
 msgid "tr.mode.paper"
 msgstr "模擬"
-
-msgid "tr.tb"
-msgstr "{state} · {venue}"
 
 msgid "tr.tbAria"
 msgstr "自動下單：{state}"

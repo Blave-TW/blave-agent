@@ -1,6 +1,6 @@
 {
   "name": "blave-desktop",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "private": true,
   "description": "Blave 電腦版外殼(v1:連結畫面 → 空三欄 → 第一句話)",
   "license": "Apache-2.0",
