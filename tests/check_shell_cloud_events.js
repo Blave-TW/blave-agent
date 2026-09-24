@@ -61,7 +61,7 @@ ok("其他型別不受影響(機器事件照舊)", trEventText("exchange_recover
 /* 讀不到 ≠ 沒有事件(這條是硬規則:畫面不可以替資料說「這段期間什麼都沒發生」)。
    三態:讀到了有事件 / 讀到了真的沒有 / 讀不到——各畫各的。 */
 { const load = cut("async function trLoadCurve(", "function trCurvePoints(");
-  ok("讀不到:catch 也記成 uiErr(不是靜靜給一個空清單),不往上拋", /catch \(_\) \{ S\.ov\.ui = \[\]; S\.ov\.uiErr = true; \}/.test(load) && /S\.ov\.uiErr = !ev \|\| ev\.code !== "OK";/.test(load));
+  ok("讀不到:catch 也記成 uiErr(不是靜靜給一個空清單),不往上拋", /catch \(_\) \{ if \(S\.ov\.days !== days\) return; S\.ov\.ui = \[\]; S\.ov\.uiErr = true; \}/.test(load) && /S\.ov\.uiErr = !ev \|\| ev\.code !== "OK";/.test(load));
   const ev = cut("  if (TR.ov.uiErr) frag.appendChild", "  rows.sort(");
   ok("讀不到:畫既有語氣的那一句(pf-state,沒有新元件 / 新 token),而且**不**畫「這段期間沒有事件」",
     /frag\.appendChild\(trEl\("div", "pf-state", t\("tr\.ov\.evUnreach"\)\)\);/.test(ev) && /if \(!rows\.length\) \{ if \(!TR\.ov\.uiErr\) frag\.appendChild\(trEl\("div", "pf-state", t\("tr\.ov\.evEmpty"\)\)\); return frag; \}/.test(ev));

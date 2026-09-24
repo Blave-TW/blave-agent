@@ -14,9 +14,15 @@
 const ENDPOINT = "/oauth/desktop/cloud/state";
 const EVENTS_ENDPOINT = "/oauth/desktop/cloud/events";
 const STRATEGY_ENDPOINT = "/oauth/desktop/cloud/strategy";
+const OVERVIEW_ENDPOINT = "/oauth/desktop/cloud/overview";
+const PERFORMANCE_ENDPOINT = "/oauth/desktop/cloud/performance";
 const EVENTS_MAX = 500;
 const UNREACHABLE = () => ({ code: "UNREACH", events: [] });
 const STRATEGY_UNREACHABLE = () => ({ code: "UNREACH", strategy: null });
+const OVERVIEW_UNREACHABLE = () => ({ code: "UNREACH", curve: null });
+const PERF_UNREACHABLE = () => ({ code: "UNREACH", perf: null });
+const METRIC_KEYS = ["cumulative_return", "max_drawdown", "annual_return", "volatility", "sharpe", "trade_count"];
+const METRIC_STATUS = ["ok", "estimate", "accumulating"];
 const EVENTS_MIN_GAP_MS = 5 * 1000;
 const POLL_FOREGROUND_MS = 15 * 1000, POLL_BACKGROUND_MS = 60 * 1000, BACKOFF_MS = 60 * 1000, MIN_GAP_MS = 5 * 1000;
 const MACHINE_STATES = ["none", "starting", "running", "stopped"];
@@ -84,6 +90,56 @@ function interpretStrategy(res, name) {
   return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: bt, code: str(s.code) } };
 }
 
+/* 權益曲線的回應 → { code, curve }(純函式)。同事件清單:讀不到與「還沒有紀錄」是兩件事——只有 200 + `overview.curve`
+   是陣列才是 OK,空陣列就是真的還沒有點;其餘一律 UNREACH。
+   形狀對齊這台電腦那一份(daemon.js equity()):{ curve: [{ ts, equity, basis }], currency, baseline_ts, today, unrealized },
+   trade.js 換一個來源就能畫。api 的 `equity_usdt` 是舊欄名,值已折成回應頂層 `currency`;`today.pnl` 跨過資金異動時 api 回 null。
+   basis:這台電腦用它標「口徑換過」(曲線在那裡斷開、累積損益只從最後一段起算);雲端沒有口徑,但有 api 的
+   `anomalies`(出入金 / 綁解綁一個所:跨過它的損益 api 自己就不算)——每一個異動之後的點換一個 basis,
+   同一條斷線規則就把它畫對(累積損益不會把入金當成獲利)。
+   `currency` = 畫面釘住的計價幣(帳戶回報的幣別):api 折不出那一幣(fx 表沒有)會退回別的幣、如實寫在回應裡,
+   那份數字跟畫面上的單位對不起來 → 當讀不到,不畫錯單位的數字。 */
+function interpretOverview(res, currency) {
+  const b = res && res.status === 200 ? res.body : null;
+  const o = b && typeof b === "object" && b.overview && typeof b.overview === "object" ? b.overview : null;
+  if (!o || !Array.isArray(o.curve)) return OVERVIEW_UNREACHABLE();
+  const ccy = typeof o.currency === "string" && o.currency ? o.currency.toUpperCase() : null;
+  if (currency && ccy !== String(currency).toUpperCase()) return OVERVIEW_UNREACHABLE();
+  const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const anomalies = (Array.isArray(o.anomalies) ? o.anomalies : [])
+    .filter((a) => a && typeof a === "object" && num(a.ts) != null).map((a) => ({ ts: a.ts, note: typeof a.note === "string" ? a.note : "" })).sort((x, y) => x.ts - y.ts);
+  const curve = o.curve.filter((p) => p && typeof p === "object" && num(p.ts) != null && num(p.equity_usdt) != null)
+    .map((p) => ({ ts: p.ts, equity: p.equity_usdt, basis: "flow" + anomalies.filter((a) => a.ts <= p.ts).length }));
+  const td = o.today && typeof o.today === "object" ? o.today : null;
+  const today = td && num(td.pnl) != null && num(td.start_equity) != null ? { pnl: td.pnl, start_equity: td.start_equity } : null;
+  return { code: "OK", curve: { curve, currency: ccy || "USDT", baseline_ts: num(o.baseline_ts), today, unrealized: null, anomalies } };
+}
+
+/* 組合績效的回應 → { code, perf }(純函式)。同權益曲線:只有 200 + `performance.metrics` 物件 + `pnl_curve` 陣列才是 OK;
+   計價幣跟畫面釘住的對不上 → 讀不到。六格逐格驗型別(status 不認得就當 accumulating、value 不是有限數就 null),
+   只留畫面會讀的欄位(value / status / reason / window_days / sample_hours);`pnl_curve` 的 null 點(資金異動)照留——
+   畫面靠它知道那裡剔除過跳變。網頁工作頁 GET /openclaw/agent/performance 的同一份。 */
+function interpretPerformance(res, currency) {
+  const b = res && res.status === 200 ? res.body : null;
+  const o = b && typeof b === "object" && b.performance && typeof b.performance === "object" ? b.performance : null;
+  if (!o || !o.metrics || typeof o.metrics !== "object" || !Array.isArray(o.pnl_curve)) return PERF_UNREACHABLE();
+  const ccy = typeof o.currency === "string" && o.currency ? o.currency.toUpperCase() : null;
+  if (currency && ccy !== String(currency).toUpperCase()) return PERF_UNREACHABLE();
+  const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const metrics = {};
+  METRIC_KEYS.forEach((k) => {
+    const m = o.metrics[k] && typeof o.metrics[k] === "object" ? o.metrics[k] : {};
+    const out = { value: num(m.value), status: METRIC_STATUS.indexOf(m.status) >= 0 ? m.status : "accumulating" };
+    if (typeof m.reason === "string" && m.reason) out.reason = m.reason;
+    if (num(m.window_days) != null) out.window_days = m.window_days;
+    if (num(m.sample_hours) != null) out.sample_hours = m.sample_hours;
+    metrics[k] = out;
+  });
+  const pnl_curve = o.pnl_curve.filter((p) => p && typeof p === "object" && num(p.ts) != null)
+    .map((p) => ({ ts: p.ts, pnl: num(p.pnl_usdt) })).sort((x, y) => x.ts - y.ts);
+  return { code: "OK", perf: { metrics, pnl_curve, currency: ccy || "USDT", baseline_ts: num(o.baseline_ts) } };
+}
+
 /* opts:{ apiBase, getCreds() → { token, appSecret } | null, post(url, body) → Promise<{status, body}>, onChange?(snapshot), now?, setTimer?, clearTimer? }
    onChange 在狀態的「摘要」變了才叫(切換器上的另一邊狀態靠它),不是每次輪詢都叫。
 
@@ -100,6 +156,34 @@ function createCloudHost(opts) {
   let snap = EMPTY(), owner = null, gen = 0, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
   let epoch = 0;   // 換人 / 登出一次 +1:畫面拿它判斷「手上那些雲端的在途狀態是不是上一個人的」
   let evInflight = null, evLastTryAt = 0;   // 事件那一支自己的節流(它不共用上面那組:兩支走不同的速率桶)
+  /* 總覽那兩支(權益曲線、組合績效)共用的讀法,各自一份在途 / 節流狀態。
+     同一個區間在途就共用;不同區間排在它後面(切區間切得快,每一份都要是自己那個區間的——畫面靠 days 對號)。
+     最小間隔不像事件那樣直接回讀不到:切區間就是會在 5 秒內連問兩次,回讀不到會讓曲線掛一分鐘的「讀不到」——
+     改成等到間隔滿了再打(等的期間仍算在途,後到的共用 / 排隊),請求數不會比原本多。 */
+  function readDetail(endpoint, interpretFn, unreachable) {
+    let inflight = null, key = null, lastTryAt = 0;
+    return async function (days, currency) {
+      const d = Math.max(1, Math.min(Math.floor(Number(days) > 0 ? Number(days) : 30), 90));
+      const ccy = typeof currency === "string" && /^[A-Za-z]{2,8}$/.test(currency) ? currency.toUpperCase() : null;
+      const mine = d + "|" + (ccy || "");
+      while (inflight) { if (key === mine) return inflight; await inflight.catch(() => {}); }
+      key = mine;
+      inflight = (async () => {
+        const wait = EVENTS_MIN_GAP_MS - (now() - lastTryAt);
+        if (wait > 0) await new Promise((r) => setT(r, wait));
+        lastTryAt = now();
+        let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
+        const tok = c && c.token ? c.token : null;
+        if (!tok || !c.appSecret) return unreachable();                 // 沒登入 / 舊登入也是「讀不到」,不是「還沒有紀錄」
+        let res = null;
+        try { res = await opts.post(opts.apiBase + endpoint, { token: tok, app_secret: c.appSecret, days: d, ...(ccy ? { currency: ccy } : {}) }); } catch (_) { /* 連不上 */ }
+        let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
+        if ((cur && cur.token ? cur.token : null) !== tok) return unreachable();
+        return interpretFn(res, ccy);
+      })().finally(() => { inflight = null; key = null; });
+      return inflight;
+    };
+  }
   let stInflight = null, stName = null;   // 單支策略:同一支在途共用。不另設最小間隔——那會把「連點兩支」畫成讀不到;重複打由在途共用擋,速率由 api 的明細桶擋
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
@@ -189,6 +273,11 @@ function createCloudHost(opts) {
       })().finally(() => { evInflight = null; });
       return evInflight;
     },
+    /* 權益曲線與當日損益、組合績效(總覽分頁開著時 60 秒各問一次、切區間再問一次)。做法同事件清單:不留在這個閉包、
+       不進 snapshot()、不落地;不碰 gen / owner;換人只用本地的 token 比對;各自的最小間隔 + 在途共用(readDetail)。
+       回 { code: "OK" | "UNREACH", curve } / { code, perf }。 */
+    overview: readDetail(OVERVIEW_ENDPOINT, interpretOverview, OVERVIEW_UNREACHABLE),
+    performance: readDetail(PERFORMANCE_ENDPOINT, interpretPerformance, PERF_UNREACHABLE),
     /* 單支策略的報告(點擊驅動:側欄點一支打一次)。跟事件清單同一種做法:不留在這個閉包、不進 snapshot()、不落地,
        直接回給呼叫端;不碰 gen / owner;換人只用本地的 token 比對。名字是 renderer 給的雲端字串,原樣進 body(api 只當比對 key)。 */
     async strategy(name) {
@@ -213,4 +302,4 @@ function createCloudHost(opts) {
   };
 }
 
-module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };
+module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

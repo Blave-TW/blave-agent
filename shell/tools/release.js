@@ -9,6 +9,7 @@
 //   4. 上傳 zip / blockmap / dmg(帶版號的檔已存在就拒絕)→ 從正式網址把 zip 整個抓回來比 sha512 → 才傳 latest-mac.yml(這一刻起對外)
 //      → 下載頁的固定檔名 dmg → 清 CDN 快取 → 再抓一次確認。yml 換掉之前失敗:版號自動還原;之後失敗:只警告,不還原
 //   5. 列出要 commit 的檔。**不自動 commit / tag / push**(blave-canon app-release.md 的規矩)。
+//   整段跑在 shell/dist/.release.lock 底下:同一台機器第二支起來會直接停(2026-09-23 兩支相撞、白做兩次公證)。
 //
 // 憑證不寫在 repo:環境變數,或 ~/.config/blave/desktop-release.env(KEY=VALUE,一行一個;檔案要 0600)。
 //   BLAVE_MAC_IDENTITY、APPLE_API_KEY、APPLE_API_KEY_ID、APPLE_API_ISSUER(簽章與公證,同 npm run release)
@@ -52,6 +53,36 @@ function mayRelease(version, current, committed) {
   if (version === current && committed === current) return { bump: false };
   if (version === current) return { error: `新版號 ${version} 跟現在一樣,但 HEAD 的 shell/package.json 是 ${committed}:先把版號 commit 進去,或發更大的版號` };
   return { error: `新版號 ${version} 沒有比現在的 ${current} 大` };
+}
+
+/* 純函式(tests/check_shell_release.js):鎖檔怎麼處理。existing = 既有鎖的內容(null = 沒有鎖),isAlive(pid) = 那個 pid 還在嗎。
+   回 { take: true }(沒鎖)、{ take: true, stale: true }(殘留鎖:pid 已不在,接手)或 { error }(另一支還在跑)。
+   2026-09-23 兩支 release.js 撞在一起、白做兩次公證——同一台打包機同時只准一支。 */
+function lockDecision(existing, isAlive) {
+  if (!existing) return { take: true };
+  const { pid, version, startedAt } = existing;
+  if (Number.isInteger(pid) && pid > 0 && isAlive(pid)) return { error: `另一支 release.js 還在跑(pid ${pid},版 ${version},自 ${startedAt})` };
+  return { take: true, stale: true };
+}
+const LOCK = path.join(SHELL, "dist", ".release.lock");
+// EPERM = 程序存在但不是我們的(例如另一個使用者跑的),也算活著
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+let lockHeld = false;
+const releaseLock = () => { if (!lockHeld) return; lockHeld = false; try { fs.unlinkSync(LOCK); } catch (_) { /* 已經不在 */ } };
+function takeLock(version) {
+  fs.mkdirSync(path.dirname(LOCK), { recursive: true });
+  let fd;
+  try { fd = fs.openSync(LOCK, "wx"); } catch (e) {
+    if (e.code !== "EEXIST") throw e;
+    let existing = {}; try { existing = JSON.parse(fs.readFileSync(LOCK, "utf8")); } catch (_) { /* 讀不懂就當沒有 pid */ }
+    const d = lockDecision(existing, alive);
+    if (d.error) die(d.error);
+    console.error(`  ⚠ 殘留鎖(pid ${existing.pid} 已不在),接手`);
+    fd = fs.openSync(LOCK, "w");
+  }
+  fs.writeSync(fd, JSON.stringify({ pid: process.pid, version, startedAt: new Date().toISOString() })); fs.closeSync(fd);
+  lockHeld = true;
+  process.on("exit", releaseLock);   // 正常結束、die()、沒接到的例外都會走到這;訊號要自己轉成 exit(下面)
 }
 
 function loadEnvFile() {
@@ -118,6 +149,10 @@ async function publish(plan, io) {
 async function main() {
   const version = process.argv[2], dry = process.argv.includes("--dry-run"), first = process.argv.includes("--first-release");
   if (!semver(version || "").length) die("用法:node tools/release.js <A.B.C> [--dry-run] [--first-release]   (版號必須是嚴格的三段數字:Squirrel 的防降版要求)");
+  // 任何檢查之前先上鎖(演練也上):第二支起來就停在這,不會跑到打包、公證
+  takeLock(version);
+  let restore = () => {};   // 寫了版號之後才有東西可還原(下面重新指定)
+  for (const [sig, code] of [["SIGINT", 130], ["SIGTERM", 143]]) process.on(sig, () => { restore(); process.exit(code); });
   // 產物是 universal(一份同時給 Apple Silicon 與 Intel),但發版流程只在 arm64 打包機驗過:Rosetta 下的 node 直接擋
   if (process.arch !== "arm64") die(`這支腳本只在 arm64 打包機跑過(現在的 node 是 ${process.arch}——Rosetta 下的 node?)`);
   loadEnvFile();
@@ -161,18 +196,17 @@ async function main() {
   }
 
   step("閘門測試");
-  for (const t of fs.readdirSync(path.join(REPO, "tests")).filter((f) => /^check_shell_.*\.js$/.test(f) && f !== "check_shell_paths.js"))
+  for (const t of fs.readdirSync(path.join(REPO, "tests")).filter((f) => /^(check_shell_.*|check_version_matrix_shell)\.js$/.test(f) && f !== "check_shell_paths.js"))
     try { run(process.execPath, [path.join(REPO, "tests", t)], { stdio: "pipe" }); } catch (e) { die(`${t} 沒過:\n${e.stdout || ""}`); }
 
   step(gate.bump ? "寫入版號、打包(簽章 + 公證,要幾分鐘)" : "打包(簽章 + 公證,要幾分鐘)");
   const before = { pkg: fs.readFileSync(pkgPath, "utf8"), lock: fs.readFileSync(lockPath, "utf8") };
   let wentLive = false;
   // yml 換掉之前的任何失敗(含 Ctrl-C)→ 版號還原,回到可以重跑的狀態;換掉之後絕不還原(稽核 M2、M3)。沒寫過的就沒東西可還原
-  const restore = () => { if (wentLive || !gate.bump) return; fs.writeFileSync(pkgPath, before.pkg); fs.writeFileSync(lockPath, before.lock); console.error("  package.json / package-lock.json 的版號已還原"); };
-  process.on("SIGINT", () => { restore(); process.exit(130); });
+  restore = () => { if (wentLive || !gate.bump) return; fs.writeFileSync(pkgPath, before.pkg); fs.writeFileSync(lockPath, before.lock); console.error("  package.json / package-lock.json 的版號已還原"); };
   try {
     if (gate.bump) execFileSync("npm", ["version", version, "--no-git-tag-version", "--allow-same-version"], { cwd: SHELL, stdio: "pipe", env: buildEnv });
-    fs.rmSync(dist, { recursive: true, force: true });
+    for (const e of fs.readdirSync(dist)) if (path.join(dist, e) !== LOCK) fs.rmSync(path.join(dist, e), { recursive: true, force: true });   // 清舊產物,鎖要留著
     execFileSync("npm", ["run", "release"], { cwd: SHELL, stdio: "inherit", env: buildEnv });
 
     step("驗產物");
@@ -224,4 +258,4 @@ async function main() {
   }
 }
 if (require.main === module) main().catch((e) => die(e && e.stack || String(e)));
-module.exports = { uploadPlan, publish, newer, semver, mayRelease, resolveTrack, foreignFilesInApps };
+module.exports = { uploadPlan, publish, newer, semver, mayRelease, resolveTrack, foreignFilesInApps, lockDecision };

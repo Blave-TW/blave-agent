@@ -107,7 +107,7 @@
   transition: color var(--motion-fast) var(--ease-standard);
 }
 .btn-quiet:hover { color: var(--ink); }
-/* 停用:同 .ws-update / .rp-tab 的灰階退場(會停用的文字鈕:關於的「檢查更新」「重新啟動並更新這台電腦」;
+/* 停用:同 .ws-update / .rp-tab 的灰階退場(會停用的文字鈕:關於的「檢查更新」「重新啟動以完成更新」;
    資料來源的 ✕ 有自己的 .src-rm:disabled,權重較高、不受影響) */
 .btn-quiet:disabled, .btn-quiet:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; text-decoration: none; }
 .cn-rows { margin-top: var(--space-12); }
@@ -233,7 +233,7 @@
 .msg.ai th, .msg.ai td { padding: var(--space-8) var(--space-12); text-align: left; border-bottom: 1px solid var(--border-hairline); font-variant-numeric: tabular-nums; overflow-wrap: normal; }
 .msg.ai th { color: var(--ink-3); font-weight: 600; }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
-/* 立即更新到最新版本:逐條照網頁 web/.../workspace.css 的 .ws-update——輸入列右上方靠右一行 12px 安靜文字連結
+/* 更新那一格(重新啟動以完成更新 / 更新中…):逐條照網頁 web/.../workspace.css 的 .ws-update——輸入列右上方靠右一行 12px 安靜文字連結
    (無框無底無點、不用橘),熱區靠 min-height 44px,hover 灰字轉亮 + 底線,停用灰階退場、原因在 title */
 .ws-update { display: flex; align-items: center; width: fit-content; margin-left: auto; min-height: 44px;
   padding: 0 var(--space-4); font-size: 12px; line-height: 1.5; color: var(--ink-2); text-underline-offset: 3px;
@@ -243,11 +243,10 @@
 .ws-update:hover span { text-decoration: underline; }   /* flex item 不吃容器的 text-decoration 傳播:畫在 span 上 */
 .ws-update:disabled, .ws-update:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; }
 .ws-update:disabled:hover span { text-decoration: none; }
-/* 雲端更新期間那一行(v2 §2):S2/S3 不可點的狀態列(正在更新・{t});S7 綠字「雲端已更新到 {nv}」。不是停用,不退成停用灰 */
-.ws-update.is-status, .ws-update.is-done { cursor: default; font-variant-numeric: tabular-nums; }
+/* 「更新中…」(雲端主機正在換檔):不可點的狀態字,沒有時鐘、沒有百分比。不是停用,不退成停用灰 */
+.ws-update.is-status { cursor: default; }
 .ws-update.is-status:hover { color: var(--ink-2); }
-.ws-update.is-status:hover span, .ws-update.is-done:hover span { text-decoration: none; }
-.ws-update.is-done, .ws-update.is-done:hover { color: var(--color-greenText); }
+.ws-update.is-status:hover span { text-decoration: none; }
 .chat-input {
   /* 直向:上 textarea、下工具列。外框、半徑、內距都不變,總高約 +36px。 */
   display: flex; flex-direction: column; align-items: stretch; gap: var(--space-4);
@@ -801,24 +800,14 @@ body.resizing * { cursor: col-resize !important; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
 .set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
-/* 關於:標題列(「關於」+ 右上一顆鈕)下面兩行「這台電腦」「雲端」(mockup-desktop-unified-update §1)。
-   每一行左欄是位置詞、右欄是版號 + 狀態句;行與行之間一條細線 */
+/* 關於:標題下面一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(mockup-desktop-update-flow-v4 §2)。
+   12px、--ink-3、版號 mono 不在連字號處斷行(最長那種只能在段與段之間折);狀態字不換色 */
 .set-about { margin-top: auto; padding-top: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
-.set-up-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin-bottom: var(--space-4); }
-.set-up-row { display: grid; grid-template-columns: 88px 1fr; gap: var(--space-12); align-items: baseline; padding-top: var(--space-8); border-top: 1px solid var(--border-hairline); }
-.set-up-row:nth-child(2) { border-top: none; padding-top: 0; }
-.set-up-row[hidden] { display: none; }
-.set-up-row .w { font-size: 12px; color: var(--ink-3); }
-.set-about .t { min-width: 0; }
-.set-about .ver { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
-.set-about .st { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); max-width: 44ch; font-variant-numeric: tabular-nums; }
-.set-about .st:empty { display: none; }
-.set-about .st.up { color: var(--ink-2); }
-.set-about .st.ok { color: var(--color-greenText); }   /* 雲端「已更新到 {nv}」(S7):完成那一刻留在畫面上 */
-#set-up-btn .spin16 { vertical-align: -3px; }   /* 更新中那顆鈕裡的圓環 */   /* ready / blocked / error / installFailed / 雲端有新版:要人讀的句子升一階 */
+.set-up-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-16); min-height: 24px; }
+.set-up-line { margin: 0; min-width: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.set-up-line .mono { white-space: nowrap; }
+#set-up-btn .spin16 { vertical-align: -3px; }   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
 .set-about button { flex: none; }
-.set-up-lbtn { margin-top: var(--space-6); }   /* 兩邊都有新版時,這台電腦那一行底下獨立的「重新啟動並更新這台電腦」 */
-.set-up-lbtn[hidden] { display: none; }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
    上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
    這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */

@@ -1086,6 +1086,60 @@ GATED_MARKER_PATH = Path('state/heartbeat/reconciler.gated')
 SINGLETON_PATH = 'state/reconciler.pid'
 DUPLICATE_EXIT = 75
 
+# Present exactly while reconcile() runs — the synchronous order legs live
+# inside that call and leave no in-flight marker (only TWAP/chase do). Read by
+# manager/update_workspace.py trading_busy() so a workspace update never
+# restarts this process between a leg and its fill. Cleared at startup too: a
+# process that died mid-round would otherwise leave a marker nobody removes.
+ROUND_MARKER_PATH = Path('state/execution/round')
+
+
+def _round_marker(on):
+    try:
+        if on:
+            ROUND_MARKER_PATH.parent.mkdir(parents=True, exist_ok=True)
+            ROUND_MARKER_PATH.write_text(str(os.getpid()))
+        else:
+            ROUND_MARKER_PATH.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as e:  # the marker must never cost a round
+        logging.warning(f"[reconciler] round marker {'write' if on else 'remove'} failed: {e}")
+
+
+# Written by manager/update_workspace.py before it copies files and removed
+# when its restart is done or given up. Its busy check reads the round marker
+# above; a round that began between that check and the systemctl call would be
+# cut mid-leg, so while the hold exists no round is started. A hold older than
+# UPDATE_HOLD_STALE_S is a script that died without cleaning up: ignored and
+# removed, never a permanent stop.
+UPDATE_HOLD_PATH = Path('state/execution/hold')
+UPDATE_HOLD_STALE_S = 900  # the script waits --wait-busy 600 at most, plus the copy
+_hold_logged = False
+
+
+def _update_hold():
+    """True while a live update hold is on disk (see UPDATE_HOLD_PATH)."""
+    global _hold_logged
+    try:
+        age = time.time() - UPDATE_HOLD_PATH.stat().st_mtime
+    except OSError:
+        if _hold_logged:
+            logging.info("[reconciler] workspace update hold released — resuming reconciliation")
+            _hold_logged = False
+        return False
+    if age > UPDATE_HOLD_STALE_S:
+        logging.warning(f"[reconciler] workspace update hold is {age:.0f}s old (the script died) — removing it")
+        try:
+            UPDATE_HOLD_PATH.unlink()
+        except OSError:
+            pass
+        return False
+    if not _hold_logged:
+        logging.info("[reconciler] workspace update in progress — no round until its hold is released")
+        _hold_logged = True
+    return True
+
 
 def _hold_singleton():
     """The fd holding the lock (keep it open), or None: another one runs."""
@@ -1141,6 +1195,7 @@ if __name__ == '__main__':
     except Exception as _e:
         logging.warning(f"[reconciler] dead-inflight reap skipped: {_e}")
 
+    _round_marker(False)
     last_mtimes = {}
     last_reconcile_at = 0.0
     last_error_notify_at = 0.0  # ERROR_NOTIFY_COOLDOWN_S 的計時起點
@@ -1154,6 +1209,10 @@ if __name__ == '__main__':
         HEARTBEAT_PATH.parent.mkdir(parents=True, exist_ok=True)
         HEARTBEAT_PATH.touch()
         GATED_MARKER_PATH.touch()
+
+        if _update_hold():
+            time.sleep(POLL_INTERVAL)
+            continue
 
         if RESTART_STOP_PATH.exists():
             if not _restart_stop_logged:
@@ -1196,6 +1255,7 @@ if __name__ == '__main__':
 
         if changed or force_next or heartbeat_due:
             logging.info(f"State changed: {changed} — running reconciliation")
+            _round_marker(True)
             try:
                 orders = reconcile(
                     get_positions_fn=_get_positions_guarded,
@@ -1254,5 +1314,7 @@ if __name__ == '__main__':
                 # state change still produces a newer mtime and fires at once.
                 last_mtimes = current_mtimes
                 last_reconcile_at = time.time()
+            finally:
+                _round_marker(False)
 
         time.sleep(POLL_INTERVAL)

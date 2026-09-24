@@ -553,7 +553,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("設計稽核(版面):框標題一律貼左、確認框與連接框的腳都換行(目的地那一行獨占一列)、文字鈕停用灰階退場、關於那顆本機鈕對齊、.app 不重複宣告字型",
       /\.modal-head > h6 \{ margin-right: auto; \}/.test(acss) && /\.del-modal \.modal-foot, \.cx-modal \.modal-foot \{ flex-wrap: wrap; \}/.test(acss)
       && /\.btn-quiet:disabled, \.btn-quiet:disabled:hover \{ color: var\(--color-greyDark\); cursor: not-allowed; text-decoration: none; \}/.test(acss)
-      && /\.set-up-lbtn \{ margin-top: var\(--space-6\); \}/.test(acss) && /\.btn-quiet \{\n  flex: none; padding: 0;/.test(acss) && !/\.app \{[^}]*font-family/.test(acss) && !/\.set-about \.st\.bad|\.up-cf/.test(acss)
+      && /\.btn-quiet \{\n  flex: none; padding: 0;/.test(acss) && !/\.app \{[^}]*font-family/.test(acss) && !/\.set-about \.st\.bad|\.up-cf/.test(acss)
       && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{ padding-right: calc\(var\(--space-32\) \+ var\(--space-8\)\); \}/.test(css));
     { const en = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "en.po"), "utf8");
       ok("停機那幾句 en 用彎撇號(同檔其他句)", ["tr.cloud.restartStopped", "tr.restartStoppedLocal", "tr.ov.evRestartStoppedNote", "tm.evRestartStoppedNote", "tr.cloud.means.4"]
@@ -592,7 +592,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     TR.st = B0({}); const b0t = trStateText("noaccount"); TR.st = { alive: true, report: { venues: {}, halt: {}, reconciler: {} } }; const n0 = trStateText("noaccount");
     ok("B0 狀態行(v2 §9-1:一定是 Z):已暫停 · 按「解除暫停」那一句;一般 noaccount 照舊", b0t === "tr.halted · tr.cloud.restartNoAccountZ" && n0 === "tr.noAccount");
     const head = fnS("trPaintHead"), start = fnS("trAskStart"), pc = fnS("trPendingCheck");
-    ok("B0(§12 / §13-1):不出「啟動下單」,只出**實心**的「解除暫停」;沒有原因行(出口寫在狀態句裡);onboard 照留", /const b0 = state === "noaccount" && trNoAccountStopped\(trReport\(\)\);\n\s*if \(!stopped && \(b0 \|\| state === "noaccount"[^\n]*\{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintGoUpd\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(head)
+    ok("B0(§12 / §13-1):不出「啟動下單」,只出**實心**的「解除暫停」;沒有原因行(出口寫在狀態句裡);onboard 照留", /const b0 = state === "noaccount" && trNoAccountStopped\(trReport\(\)\);\n\s*if \(!stopped && \(b0 \|\| state === "noaccount"[^\n]*\{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(head)
       && /trEl\("button", trNoAccountStopped\(trReport\(\)\) \? "btn-out" : "btn-fill", t\("cx\.connect"\)\)/.test(src));
     ok("B0 啟動框與 b0Done 退場(沒有啟動鈕了);解除暫停一律 X0", !/restartNoAccountStart|b0Done/.test(src) && trReleaseKind({ ...B0({}).report, config: { amounts: {} }, self_ledger: true }).kind === "x0"
       && J(trZView("noaccount", B0({}).report)) === J({ off: true, release: true, reason: null, noStart: true }) && trZView("noaccount", { ...B0({}).report, config: { amounts: { a: 5 } } }).release); }
@@ -602,16 +602,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { // S1:C 裡沒有啟動鈕,框裡不能叫人「之後按啟動下單」
     ok("S1 C 的暫停框與存金額框:用不叫人按啟動的那兩句", /trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.closeAllWarn2Unconfirmed"\) : t\("tr\.closeAllWarn2"\)/.test(src)
       && /const idle = cloud && trRestartUnconfirmed\(S\.st && S\.st\.report\) \? t\("tr\.cloud\.saveIdleUnconfirmed"\) : t\("tr\.cloud\.saveIdle"\);/.test(src)); }
-  { // 2-2:C 期間標頭多一顆「立即更新到最新版本」(同聊天那一行的動作)
-    const head = fnS("trPaintHead"), up = fnS("trPaintGoUpd");
-    ok("2-2 C 才出、其他態收掉;點了走 upGo;回合在跑停用並講 up.busy", /trPaintGoUpd\(ro && trRestartUnconfirmed\(trReport\(\)\)\);/.test(head) && (head.match(/trPaintGoUpd\(false\)/g) || []).length === 2
-      && /"btn-quiet tr-go-upd"/.test(up) && /if \(typeof upGo === "function" && trUpdAct\(\) === "cloud"\) \{ upGo\(\); trPaintGoUpd\(true\); \}/.test(up) && /const why = busy \? t\("up\.busy"\) : act === "cloud" \? "" : plan && plan\.cloud && plan\.cloud\.updating \? t\("up\.updating"\)\n\s*: envCloudKind\(TR\.st\) === "stopped" \? t\("up\.c\.stopped"\) : t\("up\.c\.unreach"\);/.test(up)
-      && /u\.disabled = !!why; u\.title = why;/.test(up)
-      && /if \(why && document\.activeElement === u\) \{ \$\("tr-h"\)\.focus\(\); TR\.updParked = true; \}/.test(up)
-      && /if \(!why && TR\.updParked\) \{ TR\.updParked = false; const ae = document\.activeElement; if \(!ae \|\| ae === document\.body \|\| ae === \$\("tr-h"\)\) u\.focus\(\); \}/.test(up)
-      && /if \(!on\) \{ if \(u\) \{ if \(document\.activeElement === u\) \$\("tr-h"\)\.focus\(\); u\.remove\(\); \} TR\.updParked = false; return; \}/.test(up)
-      && /function trUpdAct\(plan\) \{ const p = plan \|\| \(typeof upNow === "function" \? upNow\(\) : null\); return \(\(p && p\.btn\) \|\| \{\}\)\.act \|\| null; \}/.test(src)
-      && /\$\("tr-desc"\)\.after\(u\); \}/.test(up) && !/tr-act"\)\.appendChild\(u\)/.test(up) && /\.main-head \.tr-go-upd \{ display: block; margin-top: var\(--space-4\); min-height: 32px; color: var\(--ink-2\); text-align: left; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"))); }
+  { // 2-2(v4 撤回):C 期間標頭不再有「立即更新到最新版本」——全 app 只有三個可見狀態,雲端的更新走「檢查更新」(app.js upCheck),標頭沒有第二個入口
+    ok("2-2 v4:標頭沒有更新鈕(trPaintGoUpd / trUpdAct / #tr-go-upd 都拿掉;trade.js 不再碰 up.* 的字)", !/trPaintGoUpd|trUpdAct|tr-go-upd|updParked/.test(src) && !/t\("up\./.test(src)
+      && !/\.main-head \.tr-go-upd \{/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"))); }
   { // 總覽曲線(Wei 09-22):沒紀錄的時段直接連起來;累積損益照雲端 drawOvPnl 零上綠、零下紅、0 是水位線
     const segs = trPnlSegments([{ t: 0, v: 10 }, { t: 10, v: 30 }, { t: 20, v: -10 }, { t: 30, v: -20 }, { t: 40, v: 0 }]);
     const near = (x, y) => Math.abs(x - y) < 1e-9;
@@ -640,14 +633,19 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /after you update to the latest version and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && /after you update to the latest version and press Start trading/.test(get("en", "tr.cloud.saveIdleUnconfirmed"))
       && get("en", "tr.cloud.restartStartWarn2") === null && get("zh", "tr.cloud.restartStartWarn2") === null);
     ok("側欄「已停」→「已暫停」;設定的雲端舊版那句照稽核", get("zh", "side.cloud.st.halted") === "已暫停" && get("en", "side.cloud.st.halted") === "Paused"
-      && get("zh", "up.c.needsUpdate") === "雲端的下單程式是舊版，主機重開後沒能確認它停下，需要更新。");
+      && get("zh", "up.c.needsUpdate") === null);   // v4:那一句退場(雲端更新走「檢查更新」,沒有第四個狀態)
     const en = po("en").split("\n").filter((l) => l.startsWith("msgstr ")).join("\n");
     // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。唯一留著的是 HEAD 本來就有的 tr.cloud.means.2
     ok("EN 鈕名維持 sentence case(同網頁):鈕字是小寫那一版,新句子引用鈕名也是", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
-      && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.chat") === "Update to the latest version now" && get("en", "cx.connect") === "Connect an exchange"
+      && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating" && get("en", "cx.connect") === "Connect an exchange"
       && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals", "Connect an Exchange"].every((x) => en.indexOf(x) < 0)
-      && (en.match(/Pause Trading/g) || []).length === 1 && /Press Pause trading first, then Update to the latest version now\./.test(get("en", "tr.cloud.restartUnconfirmed"))
-      && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"))); }
+      && (en.match(/Pause Trading/g) || []).length === 1
+      && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
+    // v4 §7 驗收:「立即更新到最新版本」那顆鈕已經不在,全 app 可見字串(兩語 .po、產出的 strings.js、renderer 與主行程的 js)都不能再叫人去按它
+    const SH = path.join(__dirname, "..", "shell"), shellSrc = [po("zh"), po("en")].concat(["renderer", "."].flatMap((d) => fs.readdirSync(path.join(SH, d)).filter((f) => /\.(js|html)$/.test(f)).map((f) => fs.readFileSync(path.join(SH, d, f), "utf8")))).join("\n");
+    ok("全 app 不再出現「立即更新到最新版本」/ Update to the latest version now(兩語);三句改講「檢查更新」", !/立即更新到最新版本|Update to the latest version now/i.test(shellSrc)
+      && ["tr.cloud.restartUnconfirmed", "tr.ov.evRestartStopFailedNote", "tr.cloud.haltReasonUnconfirmed"].every((k) => /「檢查更新」/.test(get("zh", k)) && /Check for updates/.test(get("en", k)))
+      ); }
   { // 重開停著、策略還沒用開機後的資料算完(stopped.recomputed === false):鎖「補齊部位」,「等新訊號」照給
     const SR = (o) => ({ reconciler: { stopped: { reason: "machine_restart", at: 1, ...o } } });
     ok("recomputed:只有嚴格的 false 才鎖;true / 缺欄位(舊 runtime)/ 沒有 stopped 都不鎖", trRecomputing(SR({ recomputed: false })) && !trRecomputing(SR({ recomputed: true }))
@@ -695,7 +693,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B1 列舉:C 的每一種子狀態(" + cases.length + " 種 × zh/en)看得到的狀態字都沒有「啟動下單」/ Start trading" + (bad.length ? ":" + bad.slice(0, 3).join(" | ") : ""), cases.length === 22 && bad.length === 0);
     ctx.LANG = "zh"; vm.runInContext('LANG = "zh"', ctx);
     ctx.TR = { env: "cloud", st: cases.find((c) => c.name === "reconciler").st }; vm.runInContext("var TR = this.TR", ctx);
-    ok("B1 C + 自動 HALT 的原因行指向更新(不是 A′ 那句)", /舊版下單程式可能還在跑。先按「立即更新到最新版本」；不確定暫停的原因，可以在聊天請 agent 查。$/.test(vm.runInContext('trStateText("halted")', ctx))); }
+    ok("B1 C + 自動 HALT 的原因行指向更新(不是 A′ 那句)", /舊版下單程式可能還在跑。先按「檢查更新」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。$/.test(vm.runInContext('trStateText("halted")', ctx))); }
   { // round-2 稽核 B2:B0 的去向行沒有交易所時不留空段
     ok("B2 去向行濾掉空段:「雲端 ·  · 」→「雲端」;三段齊全照原樣", trWhereTidy("雲端 ·  · ") === "雲端" && trWhereTidy("雲端 · 真錢 · Binance") === "雲端 · 真錢 · Binance"
       && trWhereTidy("Cloud · Paper · ") === "Cloud · Paper" && /o\.footWhere = trWhereTidy\(t\("tr\.cloud\.footWhere"/.test(src)); }
@@ -1089,7 +1087,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("spinner 照 canon Loader:16/2、缺口 1/4、currentColor、1s linear;**沒有** reduced-motion 例外", /\.spin16 \{ flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; \}/.test(css)
       && !rmBlocks(css).some((b) => /spin16/.test(b)) && !rmBlocks(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")).some((b) => /spin16/.test(b)) && !/cx-saved \.dot/.test(css));
     ok("稽核 B3:最低版本閘擋下「解除暫停」時的字不叫人按啟動下單", /^這個版本的 Blave 需要更新，才能送出「解除暫停」。/.test(get("zh", "minv.release")) && !/啟動下單/.test(get("zh", "minv.release")) && !/Start trading/.test(get("en", "minv.release")));
-    ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["up.c.running", "up.c.chatRunning", "tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
+    ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["up.row.readyQuit", "tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
     ok("§13-2 模擬帳戶逾時自己一句:不提金鑰、講「再試一次」;真實交易所那句不動", /^模擬帳戶已經送出，.*可以再試一次/.test(get("zh", "tr.cloud.cxSavedStalePaper")) && !/金鑰/.test(get("zh", "tr.cloud.cxSavedStalePaper"))
       && /^The paper account was sent,/.test(get("en", "tr.cloud.cxSavedStalePaper")) && /^金鑰已經送出，/.test(get("zh", "tr.cloud.cxSavedStale")));
     ok("S5 文字(zh / en)", get("zh", "tr.cloud.hdConnecting") === "連接中…" && get("en", "tr.cloud.hdNoConfirm") === "No confirmation from the machine" && get("zh", "tr.cloud.cxSavedPaper") === null
@@ -1152,6 +1150,111 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const lens = cases.map(([n2, r]) => [n2, one(r).length]);
       ok("§12 驗收(代理):en 的 Z 狀態句都 ≤ 150 字元" + JSON.stringify(lens), lens.every(([, L]) => L <= 150));
       vm.runInContext('LANG = "zh"', ctx); } }
+  /* ── 總覽:雲端也畫權益曲線與當日損益(0.1.1)。同一條畫圖路,TR.env 只決定資料來源;
+     三態分得出來:還沒讀過(載入中)/ 讀不到(讀不到,不是 0、不是「還沒有紀錄」)/ 讀到了但點不夠(還不夠畫)。 */
+  { const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
+    // 整支切出來(數大括號);async 的那支把前綴一起帶上
+    const cutF = (n) => { const i = src.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return (src.slice(i - 6, i) === "async " ? "async " : "") + src.slice(i, k + 1); } throw new Error("no " + n); };
+    const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")), envb = src.slice(src.indexOf("/* ── 視角純邏輯("), src.indexOf("/* ── 視角純邏輯到此"));
+    const consts = ["TR_RANGES", "TR_GAP_S", "tr2", "trMD", "TR_PERF_REASON", "TR_PERF_VOL_EST", "trPerfReason"].map((c) => { const m = src.match(new RegExp("^const " + c + " = [^\\n]*", "m")); if (!m) throw new Error("no " + c); return m[0].replace(/^const /, "var "); }).join("\n");
+    const fns = ["trEl", "trSec", "trReport", "trVenueId", "trVenueLabel", "trCcy", "trUnit", "trEquity", "trIsPaper", "trFmt", "trFmt2", "trStamp", "trHM", "trTipLabel", "trStatCell", "trPct", "trOvStats", "trOvCurve", "trCurvePoints", "trLoadCurve", "trPaintOver", "trWith", "trOvPerf", "trPerfFmt", "trPnlServerPoints"].map(cutF).join("\n");
+    const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
+      setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
+    const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
+    const box = node("div");
+    const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), createTextNode: (s) => s }, requestAnimationFrame: () => 0, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
+      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trDrawCurve: () => {} });
+    vm.runInContext((pure + envb).replace(/^const /gm, "var ") + "\n" + consts + "\n" + fns + "\nvar trTipSeq = 0;", ctx);
+    const REPORT = { venues: { binance: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { binance: { ok: true, equity: 1234.5, currency: "USDT" } } } };
+    // at = 現在:畫的時候不再去讀(讀是另外測);還沒讀過那一態給一個永遠不回的 api
+    const bag = (env, ov) => ({ env, st: { report: REPORT }, sig: {}, open: false, tab: "over", api: { tradeEquity: () => new Promise(() => {}), tradeEvents: () => new Promise(() => {}) }, ov: { mode: "equity", days: 30, curve: null, curveErr: false, perf: null, perfErr: false, ui: [], uiErr: false, geo: null, at: Date.now(), ...ov } });
+    const H = 3600, now = Math.floor(Date.now() / 1000);
+    // 主行程 cloud.js 對好形狀後、envApi 攤平的那一份:第三點之前有一筆入金(anomaly),點的 basis 換了
+    const CLOUD = { code: "OK", curve: [{ ts: now - 5 * H, equity: 1000, basis: "flow0" }, { ts: now - 4 * H, equity: 1010, basis: "flow0" }, { ts: now - 3 * H, equity: 2010, basis: "flow1" }, { ts: now - 2 * H, equity: 2030, basis: "flow1" }, { ts: now - H, equity: 2020, basis: "flow1" }],
+      currency: "USDT", baseline_ts: now - 5 * H, today: { pnl: 12.5, start_equity: 1000 }, unrealized: null, anomalies: [{ ts: now - 3 * H, note: "flow_detected" }] };
+    const LOCAL = { code: "OK", curve: [{ ts: now - 5 * H, equity: 1000, basis: "equity" }, { ts: now - 4 * H, equity: 1010, basis: "equity" }, { ts: now - 3 * H, equity: 2010, basis: "wallets" }, { ts: now - 2 * H, equity: 2030, basis: "wallets" }, { ts: now - H, equity: 2020, basis: "wallets" }],
+      currency: "USDT", baseline_ts: now - 5 * H, today: { pnl: 12.5, start_equity: 1000 }, unrealized: null };
+    // 主行程 cloud.js 對好形狀的組合績效:三格 ok、波動 estimate(有數字)、年化 accumulating 帶 reason、Sharpe accumulating 不帶
+    const PERF = { code: "OK", metrics: { cumulative_return: { value: 0.1234, status: "ok" }, max_drawdown: { value: 0.061, status: "ok", window_days: 12 }, annual_return: { value: null, status: "accumulating", reason: "flow_merged" },
+      volatility: { value: 0.4567, status: "estimate", reason: "insufficient_time", sample_hours: 30 }, sharpe: { value: null, status: "accumulating" }, trade_count: { value: 1234, status: "ok" } },
+      pnl_curve: [{ ts: now - 5 * H, pnl: 0 }, { ts: now - 4 * H, pnl: 10 }, { ts: now - 3 * H, pnl: null }, { ts: now - 2 * H, pnl: 30 }, { ts: now - H, pnl: 20 }], currency: "USDT", baseline_ts: null };
+    const paint = (b) => { ctx.TR = b; box.textContent = ""; vm.runInContext("TR = this.TR; trPaintOver()", ctx); return flat(box); };
+    const cls = (all, c) => all.filter((n) => (" " + n.className + " ").includes(" " + c + " "));
+    const canvasOf = (all) => all.find((n) => n.tag === "canvas");
+    const foots = (all) => cls(all, "pf-foot").map((n) => n.textContent), states = (all) => cls(all, "pf-state").map((n) => n.textContent);
+    const dayCell = (all) => { const c = cls(all, "stat"); return c.length === 2 ? cls(flat(c[1]), "sv")[0] : null; };
+    { const all = paint(bag("cloud", { curve: CLOUD }));
+      const cv = canvasOf(all), day = dayCell(all);
+      ok("雲端:畫得出曲線(canvas + 讀屏 label 5 筆)與當日損益格(+12.50、+1.25%),資金異動那一句在圖下、不講口徑那一句",
+        !!cv && cv.attrs.role === "img" && /"n":5/.test(cv.attrs["aria-label"]) && /^tr\.ov\.curveAria\|/.test(cv.attrs["aria-label"])
+        && !!day && day.textContent.startsWith("+12.50") && day.className.includes("pos") && cls(all, "sub").some((n) => n.textContent === "+1.25%")
+        && foots(all).includes("tr.ov.flowNote") && !foots(all).includes("tr.ov.basisNote") && states(all).length === 0); }
+    { const all = paint(bag("cloud", { curve: CLOUD, mode: "pnl" })), cv = canvasOf(all);
+      ok("雲端:累積損益只從資金異動之後那一段起算(3 筆,不把入金算成獲利);損益 mode 不出資金異動那一句", !!cv && /^tr\.ov\.curveAriaPnl\|/.test(cv.attrs["aria-label"]) && /"n":3/.test(cv.attrs["aria-label"]) && /"a":"0\.00 USDT"/.test(cv.attrs["aria-label"]) && foots(all).length === 0); }
+    { const all = paint(bag("local", { curve: LOCAL })), cv = canvasOf(all), day = dayCell(all);
+      ok("這台電腦不變:同一條路畫,口徑換過那一句照舊(不是資金異動)、當日損益照算", !!cv && /"n":5/.test(cv.attrs["aria-label"]) && !!day && day.textContent.startsWith("+12.50") && foots(all).includes("tr.ov.basisNote") && !foots(all).includes("tr.ov.flowNote")); }
+    { const all = paint(bag("cloud", { curve: { code: "OK", curve: [], currency: "USDT", baseline_ts: null, today: null, unrealized: null, anomalies: [] } }));
+      const one = paint(bag("cloud", { curve: { code: "OK", curve: [{ ts: now - H, equity: 5, basis: "flow0" }], currency: "USDT", baseline_ts: now - H, today: null, unrealized: null, anomalies: [] } }));
+      ok("雲端:讀到了但沒有點 →「還沒有權益紀錄」;只有一筆 →「紀錄還不夠畫出曲線」;當日損益是「—」不是 0", states(all).join() === "tr.ov.empty" && !canvasOf(all) && dayCell(all).textContent === "—"
+        && states(one).join() === "tr.ov.emptyBaseline" && !canvasOf(one)); }
+    { const all = paint(bag("cloud", { curve: { code: "UNREACH", curve: [] }, curveErr: true }));
+      ok("雲端:讀不到 →「讀不到」那一句(不是「還沒有紀錄」),當日損益「—」不上色、沒有 0.00", states(all).join() === "tr.ov.curveUnreach" && !canvasOf(all) && dayCell(all).textContent === "—" && dayCell(all).className.includes("na") && !flat(box).some((n) => /0\.00/.test(n.text)));
+      const ld = paint(bag("cloud", { curve: null }));
+      ok("雲端:還沒讀過 → 載入中(不是「還沒有紀錄」)", states(ld).join() === "tr.loading" && !canvasOf(ld)); }
+    // 組合績效六格(照網頁 buildOvPerf)
+    { const all = paint(bag("cloud", { curve: CLOUD, perf: PERF })), grid = cls(all, "perf-stats")[0], stats = grid ? cls(flat(grid), "stat") : [];
+      const sv = (i) => cls(flat(stats[i]), "sv")[0], tip = (i) => cls(flat(stats[i]), "tip")[0].textContent, lbl = (i) => flat(stats[i]).find((n) => n.tag === "button").textContent;
+      ok("雲端:組合績效六格照網頁順序、label 走網頁那組字串", !!grid && stats.length === 6 && [lbl(0), lbl(1), lbl(2), lbl(3), lbl(4), lbl(5)].join() === "tr.ov.perf.cum,tr.ov.perf.dd,tr.ov.perf.ann,tr.ov.perf.vol,tr.ov.perf.sharpe,tr.ov.perf.trades"
+        && cls(all, "label").some((n) => n.textContent === "tr.ov.perf.label"));
+      ok("ok 格:累積報酬 +12.34% 綠、最大回撤 −6.10% 紅(tooltip 帶 {n} 天)、交易次數 1,234", stats.length === 6 && sv(0).textContent === "+12.34%" && sv(0).className.includes("pos")
+        && sv(1).textContent === "−6.10%" && sv(1).className.includes("neg") && tip(1) === 'tr.ov.perf.ddTipOk|{"n":"12"}' && sv(5).textContent === "1,234" && tip(0) === "tr.ov.perf.cumTip");
+      ok("accumulating 格:「資料累積中」(gating,不是壞值);帶 reason 的 tooltip 用 reason 那句、{d} 代入定義句;不帶的用 gating 那句", stats.length === 6
+        && sv(2).textContent === "tr.ov.perf.gating" && sv(2).className.includes("gating") && tip(2) === "tr.ov.perf.reason.flowMerged" && sv(4).textContent === "tr.ov.perf.gating" && tip(4) === "tr.ov.perf.sharpeTipGating");
+      ok("estimate 格:波動印真數字 45.67%、muted(est);tooltip 講樣本 30 小時", stats.length === 6 && sv(3).textContent === "45.67%" && sv(3).className.includes("est") && tip(3) === 'tr.ov.perf.volTipEstHours|{"n":"30"}');
+      // reason 是平台給的字串:原型上的鍵不算、認不得的退回概括那句;estimate 講不出樣本量 → 退回累積中
+      const P2 = JSON.parse(JSON.stringify(PERF)); P2.metrics.annual_return.reason = "constructor"; P2.metrics.sharpe.reason = "newcode"; P2.metrics.volatility = { value: 0.1, status: "estimate", reason: "flow_merged" }; P2.metrics.max_drawdown = { value: 0.1, status: "estimate" };
+      const all2 = paint(bag("cloud", { curve: CLOUD, perf: P2 })), st2 = cls(flat(cls(all2, "perf-stats")[0]), "stat");
+      const sv2 = (i) => cls(flat(st2[i]), "sv")[0], tip2 = (i) => cls(flat(st2[i]), "tip")[0].textContent;
+      ok("reason 守門:constructor / 不認得的碼退回 gating 那句;波動 estimate 帶 flow_merged 用 volEst 那張表;沒有 estimate 文案的指標退回累積中", st2.length === 6
+        && tip2(2) === "tr.ov.perf.annTipGating" && tip2(4) === "tr.ov.perf.sharpeTipGating" && sv2(3).textContent === "10.00%" && tip2(3) === "tr.ov.perf.volEst.flowMerged" && sv2(1).textContent === "tr.ov.perf.gating");
+      const un = paint(bag("cloud", { curve: CLOUD, perf: null, perfErr: true }));
+      ok("雲端:組合績效讀不到 → 標題 + 讀不到那一句,沒有六格、也沒有 0", cls(un, "perf-stats").length === 0 && states(un).join() === "tr.ov.perfUnreach" && cls(un, "label").some((n) => n.textContent === "tr.ov.perf.label"));
+      const lo = paint(bag("local", { curve: LOCAL }));
+      ok("這台電腦:沒有組合績效這一段(沒有標題、沒有格、沒有讀不到)", cls(lo, "perf-stats").length === 0 && !cls(lo, "label").some((n) => n.textContent === "tr.ov.perf.label") && !states(lo).includes("tr.ov.perfUnreach"));
+      // 累積損益:平台那條優先(異動點的跳變已剔除;null 點不畫、出一句);沒有那一份才本機推算(最後一段減首點)
+      const pn = paint(bag("cloud", { curve: CLOUD, perf: PERF, mode: "pnl" })), cvp = canvasOf(pn);
+      ok("累積損益用平台那條:4 個有數字的點、從 0 到 20.00、圖下講跳變已剔除;不再從曲線自己推算", !!cvp && /"n":4/.test(cvp.attrs["aria-label"]) && /"a":"0\.00 USDT","b":"\+20\.00 USDT"/.test(cvp.attrs["aria-label"]) && foots(pn).includes("tr.ov.pnlAnom"));
+      const pn2 = paint(bag("cloud", { curve: CLOUD, perf: null, perfErr: true, mode: "pnl" })), cvp2 = canvasOf(pn2);
+      ok("組合績效讀不到:累積損益退回本機推算(最後一段 3 筆),不是空白", !!cvp2 && /"n":3/.test(cvp2.attrs["aria-label"]) && !foots(pn2).includes("tr.ov.pnlAnom")); }
+    // 讀取:OK 寫進 curve、UNREACH / 拋例外記成 curveErr;等的期間切了區間那份不寫進來(舊區間的);計價幣釘住帳戶回報的
+    { const load = async (api, days) => { const b = bag("cloud", {}); b.api = api; ctx.TR = b; if (days) ctx.TR.ov.days = days; await vm.runInContext("TR = this.TR; trLoadCurve()", ctx); return b.ov; };
+      const seen = [], seenPf = []; const okApi = { tradeEquity: async (q) => { seen.push(q); return CLOUD; }, tradePerformance: async (q) => { seenPf.push(q); return PERF; }, tradeEvents: async () => ({ code: "OK", events: [] }) };
+      const o1 = await load(okApi);
+      ok("trLoadCurve:OK → curve / perf 各是那一份、curveErr / perfErr false;兩支都帶著 days 與釘住的計價幣(USDT)去問", o1.curve === CLOUD && o1.curveErr === false && o1.perf === PERF && o1.perfErr === false
+        && JSON.stringify(seen) === '[{"days":30,"currency":"USDT"}]' && JSON.stringify(seenPf) === '[{"days":30,"currency":"USDT"}]');
+      const o2 = await load({ tradeEquity: async () => ({ code: "UNREACH", curve: [] }), tradePerformance: async () => ({ code: "UNREACH" }), tradeEvents: okApi.tradeEvents });
+      const o3 = await load({ tradeEquity: async () => { throw new Error("boom"); }, tradePerformance: async () => { throw new Error("boom"); }, tradeEvents: okApi.tradeEvents });
+      ok("trLoadCurve:UNREACH 與拋例外都記成 curveErr(curve 清成空的,不留上一份);組合績效同樣記成 perfErr", o2.curveErr === true && o2.curve.curve.length === 0 && o3.curveErr === true && o3.curve.curve.length === 0
+        && o2.perf === null && o2.perfErr === true && o3.perf === null && o3.perfErr === true);
+      const o5 = await load({ tradeEquity: okApi.tradeEquity, tradePerformance: async () => null, tradeEvents: okApi.tradeEvents });
+      ok("trLoadCurve:這台電腦的 tradePerformance 回 null → 沒有這一份、不是讀不到(perf null、perfErr false)", o5.perf === null && o5.perfErr === false);
+      const o4 = await (async () => { const b = bag("cloud", {}); b.api = { tradeEquity: async () => { b.ov.days = 7; return CLOUD; }, tradePerformance: okApi.tradePerformance, tradeEvents: okApi.tradeEvents }; ctx.TR = b; await vm.runInContext("TR = this.TR; trLoadCurve()", ctx); return b.ov; })();
+      ok("trLoadCurve:等回應的期間切了區間 → 這份不寫進來(curve 仍是 null,由新區間那一趟填)", o4.curve === null && o4.curveErr === false); }
+    // 原文:一條畫圖路——總覽三支不看 TR.env(只有資料來源看);曲線一律畫、不再依視角跳過;讀不到那一句與資金異動那一句兩語都在
+    ok("總覽的 trPaintOver / trOvStats / trOvCurve 原文裡沒有 TR.env 分支(一條路,TR.env 只決定資料來源)", ["trPaintOver", "trOvStats", "trOvCurve"].every((n) => !/TR\.env\s*[!=]==/.test(cutF(n).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")))
+      && /box\.appendChild\(trOvStats\(\)\);\n\s*box\.appendChild\(trOvPerf\(\)\);[^\n]*\n\s*box\.appendChild\(trOvCurve\(\)\);\n\s*box\.appendChild\(trOvEvents\(r\)\);/.test(cutF("trPaintOver")) && /TR\.ov\.curveErr,/.test(cutF("trPaintOver")));
+    { const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
+      const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
+      ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句講斷開與只從最後一段起算(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
+        && /資金異動/.test(get("zh", "tr.ov.flowNote")) && /最後一段/.test(get("zh", "tr.ov.flowNote")) && /Funds moved/.test(get("en", "tr.ov.flowNote")) && /last part/.test(get("en", "tr.ov.flowNote"))); }
+    ok("登出:curve 與 curveErr、perf 與 perfErr 一起清", /C\.ov\.curve = null; C\.ov\.ui = \[\]; C\.ov\.uiErr = false; C\.ov\.curveErr = false; C\.ov\.perf = null; C\.ov\.perfErr = false;/.test(src) && /curve: null, curveErr: false, perf: null, perfErr: false,/.test(src));
+    { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+      const block = (n) => S.split(`  ${n}: {`)[1].split("\n  },")[0], keysOf = (b) => new Set([...b.matchAll(/^\s*"([^"]+)":/gm)].map((m) => m[1]));
+      const en = keysOf(block("en")), zh = keysOf(block("zh"));
+      const need = [...new Set([...Object.values(ctx.TR_PERF_REASON), ...Object.values(ctx.TR_PERF_VOL_EST), "tr.ov.perf.label", "tr.ov.perf.gating", "tr.ov.perfUnreach", "tr.ov.pnlAnom"])];
+      const miss = need.filter((k) => !en.has(k) || !zh.has(k));
+      ok("組合績效的 reason 表那幾個 key(map 裡放的、t(\"…\") 掃不到)兩語都在:" + (miss.join() || "無缺"), miss.length === 0);
+      ok("trOvPerf 原文沒有 TR.env 分支(有沒有這一段看資料:perf / perfErr)", !/TR\.env/.test(cutF("trOvPerf")) && /if \(!TR\.ov\.perf && !TR\.ov\.perfErr\) return frag;/.test(cutF("trOvPerf"))); } }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

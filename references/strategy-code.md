@@ -220,6 +220,11 @@ def compute_signals(df):
     signal = pd.Series(np.nan, index=df.index)
     signal[golden] = 1.0
     signal[death]  = 0.0
+    # Seed the state on the bars before the first cross: a backtest that starts inside a
+    # trend otherwise sits flat until the first cross (a single seeded bar is not enough —
+    # the runner drops the first WARMUP bars before it forward-fills).
+    pre = signal.ffill().isna() & k.notna() & d.notna()
+    signal[pre] = (k > d)[pre].astype(float)
     return signal
 ```
 
@@ -488,6 +493,7 @@ is kept on purpose — never tighten one from memory:
 | Source | Known from | Basis |
 |---|---|---|
 | Blave alphas (`holder_concentration`, `taker_intensity`, `whale_hunter`, `funding_rate`, `liquidation`, `unusual_movement`, `squeeze_momentum`, `market_*`, `capital_shortage`, `top_trader_exposure`) | the close of the row's own bucket (row = bucket open); arrival lag after that **unconfirmed** | api `only_finalized_data=True`: a bucket's row exists only once its last base bar is in. Local cache files show rows present 5–57 min after close (upper bounds only) — live waits for the row and alerts 15 min after the bucket close |
+| `twstock_price` / `twstock_price_adj` (+`_batch`) — a daily stock bar used as a feed on intraday bars | D 17:35 | TWSE 每日收盤行情 is produced 14:00 / 15:30 / 17:30 (e-shop spec); the exchange pages and FinMind showed the day's bar at 15:33 (2026-09-24), but whether the 14:00 version is final is **unconfirmed** (盤後定價 trades until 14:30) → third version + 5 min. The OpenAPI mirrors lag the sites and are no time basis |
 | `twstock_institutional` (+`_batch`) | D 20:05 | TWSE 三大法人買賣超 final 20:00 (e-shop spec); FinMind 20:00; + 5 min |
 | `twstock_per` (+`_batch`) | D 18:05 | TWSE 本益比 18:00; FinMind 18:00; + 5 min (TPEx later — live waits) |
 | `twstock_foreign_shareholding_batch` | D+1 08:00 | TWSE 外資持股 final 21:30; api UTC-day cache |
@@ -504,6 +510,7 @@ is kept on purpose — never tighten one from memory:
 | `twstock_shareholding` (+`_batch`) | data date + 3 days 08:00 (unconfirmed) | TDCC / FinMind publish no time |
 | `twfutures_bid_ask_vol` | the minute's close + 30 s (UTC) | row = minute open (api tick floor); today's minutes cached 30 s |
 | `economic_calendar` | release time + 5 min; no time → next day 00:00; upstream fill delay **unconfirmed** | api cache 5 min; 鉅亨 publishes no fill time — live waits for `real` |
+| `fear_greed` | D 01:00 **UTC** | alternative.me publishes one row a day at 00:00 UTC (the API's `time_until_update` on 2026-09-24 08:16 UTC pointed exactly at 00:00); the row stamped D is a snapshot at D's open. Serving lag after 00:00 **unconfirmed** → + 1 h; live waits for the row |
 
 Sources: TWSE Data E-Shop product specs (產製時間) https://eshop.twse.com.tw/zh/category/all ·
 FinMind update times https://finmind.github.io/tutor/TaiwanMarket/Chip/ (and /Technical/,

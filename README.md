@@ -1,32 +1,71 @@
+<!-- TODO: logo light/dark — <picture> with prefers-color-scheme, width 64–80px. The repo has no light/dark logo files yet (only shell/build/icon.icns). -->
+
 # Blave Agent
 
-English | [繁體中文](README.zh-TW.md)
+**The quant workspace for your AI agent**
 
-**A quant agent workspace.** This is the directory an AI agent works in — Claude Code, Codex, or Blave's own AI — with the libraries, rules and templates it needs to turn a trading idea into a backtested strategy that can go live.
+See if it's an edge or a coin flip before it goes live.
 
-You describe the idea in plain language. Working inside this workspace, the agent fetches the data, writes the strategy, runs the backtest, checks whether the result can be told apart from luck and whether it survives nearby parameters, writes a report, and — after you connect an exchange yourself — runs it on a schedule.
+Works inside Claude Code or Codex. No LLM places your orders. macOS, beta.
 
-It is for people who have a trading idea and would rather spend their time on the idea than on API plumbing, data cleaning and bot debugging. You do not have to write code. If you do, everything here is plain Python you can read and change.
+**English** | [繁體中文](README.zh-TW.md)
 
-This one repository is two things:
+![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
 
-- the workspace and runtime on every Blave Agent cloud machine ([blave.org](https://blave.org)), and
-- the Blave desktop app for macOS (`shell/`), which runs the same workspace on your own computer.
+<!-- TODO: 30s demo GIF (1600w, shown at 800w, dark, ≤8MB): one sentence → backtest with p-value → live -->
 
-## What the agent does in here
+[Download the macOS app](https://github.com/Blave-TW/blave-agent/releases/latest) · [Quick start (from source)](#quick-start) · [Run it 24/7 in the cloud](https://blave.org/agent/en)
 
-1. **Idea.** The agent classifies the strategy before writing any code (types below).
-2. **Data.** Everything goes through `lib/data.py`: crypto klines and indicators, Taiwan stocks and futures, the economic calendar. No hand-rolled fetch scripts.
-3. **Strategy.** Written from `strategies/TEMPLATE_A.py` or `strategies/TEMPLATE_C.py`, with a fee that matches the real market. A fee of 0 is treated as a bug.
-4. **Backtest.** `lib/runner.py` runs it and writes `stats.json` and a PnL chart under `strategies/<name>/`. One backtest per request by default: a poor result is reported as it is, and the agent does not keep re-tuning on its own.
-5. **Checks.**
-   - Monte Carlo permutation test (MCPT, `lib/validation.py`) runs with every Type A backtest and records a p-value: could shuffled data have done as well?
-   - Parameter scan (`lib/param_scan.py`) looks for a plateau of parameters that all work, not the single best cell.
-   - Rolling walk-forward (`lib/walk_forward.py`) measures out-of-sample performance.
-6. **Report.** `lib/report.py` writes a structured report (KPIs, charts, tables, prose) you can come back to later.
-7. **Live.** Scheduled runs are deterministic code on the system scheduler — there is no LLM in the execution loop. `manager/reconciler.py` moves the account toward the target positions, and a kill switch (`state/HALT`) blocks new exposure at the order-library level while closes and stops still go through.
+Star the repo if this is useful — and Watch › Releases to get notified of new versions.
 
-### Strategy types
+## What Makes It Different
+
+### Backtests That Check Whether It Was Luck
+
+- Every Type A backtest runs a Monte Carlo permutation test by default (MCPT, `lib/validation.py`) and records a p-value: could shuffled data have done as well?
+- A parameter scan (`lib/param_scan.py`) looks for a plateau of parameters that all work, not the single best cell.
+- Rolling walk-forward (`lib/walk_forward.py`) measures out-of-sample performance.
+- The fee has to match the real market. A fee of 0 is flagged by `lib/quality_check.py` and treated as a bug.
+- One idea gets one backtest by default. A poor result is reported as it is; the agent does not quietly re-tune the parameters until the numbers look good (see *Iteration Brakes* in [`AGENTS.md`](AGENTS.md)).
+
+### See Whether Live Runs the Code You Backtested
+
+A backtest pins a version of the strategy. If the code running live no longer matches that version, the strategy is flagged — the web workspace shows "Live · file changed" instead of a clean "Live". The flag does not stop the strategy from running. It applies only to strategy types that are backtested (Type A and C), and only to strategies that have been versioned.
+
+### No LLM in the Order Loop
+
+The agent does the research and writes the code. Scheduled runs are deterministic code on a scheduler; `manager/reconciler.py` moves the account toward the target positions. A kill switch (`state/HALT`) blocks new exposure at the order-library level, while closes and stops still go through.
+
+<a id="quick-start"></a>
+
+## Quick Start (From Source)
+
+You need:
+
+- macOS 13 or later. The packaged app is a universal build: Apple Silicon and Intel, one download.
+- Node.js 22.12 or later, with npm (`shell/package.json` › `engines`)
+- `python3` on your `PATH`. The packaged app bundles its own Python 3.12; running from source uses your system `python3` to create the venv. <!-- TODO: minimum Python version from source (the pinned dependencies were verified on 3.12) -->
+- Claude Code or Codex installed and signed in, or a Blave account
+
+```
+git clone https://github.com/Blave-TW/blave-agent.git
+cd blave-agent/shell
+npm install
+npm start
+```
+
+On first launch you choose what powers the agent:
+
+- **Your own Claude Code or Codex.** No Blave account needed, and Blave charges nothing for the AI. The app only launches the CLI; your Claude Code or Codex credentials stay with it.
+- **Blave's AI.** Sign in with a Blave account; billed by usage.
+
+Then describe an idea. For example:
+
+- "Backtest BTCUSDT on the 4h chart: long when the 20-period SMA crosses above the 60-period SMA, flat when it crosses back below. Use a 0.05% fee per side."
+- "Build a portfolio of BTC, ETH and SOL with equal weights, rebalanced weekly, and backtest it."
+- "Scan both SMA lengths on that strategy and show me where the plateau is."
+
+The agent sorts every idea into one of three types before writing code:
 
 | Type | What it is | Backtest |
 |---|---|---|
@@ -34,7 +73,60 @@ This one repository is two things:
 | C | A portfolio: N symbols and a weight vector that sums to at most 1, rebalanced on a schedule | Required |
 | B | Everything else: screeners, grids, arbitrage, alerts, one-off execution | None |
 
-### Layout
+The interface follows the system language (English or Traditional Chinese). To override: `BLAVE_LANG=en npm start`.
+
+## News
+
+- **2026-09-24** — Desktop 0.1.1: first public release, universal build (Apple Silicon and Intel), on GitHub Releases. Taiwan stock daily bars and the Crypto Fear & Greed index now come from free public sources on the desktop.
+- **2026-09-23** — Desktop 0.0.4, signed and notarized, on the test track.
+- **2026-09-21** — The desktop app can connect a real Binance account and trade from your Mac.
+- **2026-09-19** — Licensed under Apache-2.0.
+
+## Venues and Data
+
+**Venues with a tested order library** (`lib/account_*.py` + `lib/order_*.py`, verified on real accounts):
+
+- Binance, BingX, OKX, Gate.io, Bybit — futures and spot
+- Capital Futures (群益期貨) — Taiwan index futures and Taiwan stocks; Windows workspace only (its API is a Windows COM component, see `references/capital-broker.md`)
+
+How a venue gets connected depends on where the agent runs:
+
+- **Desktop app:** Binance, OKX, BingX, Gate.io and Bybit are connected in the app under Auto trading › Connect an exchange, which checks the key with the exchange first. A key pasted in chat is rejected — use Connect an exchange instead. Anything pasted stays in your chat history, so rotate a key you pasted by mistake. Portfolio (Type C) strategies cannot be auto-traded from the desktop app yet.
+- **Cloud machine:** bind a venue on the web workspace's Auto trading page, or paste a Binance, BingX, OKX, Gate.io or Bybit key in chat and the agent binds it with `lib.venue.bind`.
+
+For any other exchange or broker with an API, the agent can write a helper from `lib/account_TEMPLATE.py` and `lib/order_TEMPLATE.py`. That code has not been tested by Blave.
+
+**Paper trading** needs no keys. It ships as `lib/account_paper.py` + `lib/order_paper.py` and fills at the latest close from the strategy's own data source (`lib/paper_data.py`).
+
+**Data.**
+
+- Desktop app, no account needed: crypto klines from Binance (USDT-M perpetuals, all intervals, back to listing) and BingX public endpoints; Taiwan stock daily bars straight from TWSE and TPEx with the exchanges' own ex-dividend adjustment (listed from 2010, OTC from the 1990s); the Crypto Fear & Greed index from alternative.me (since 2018). Blave's indicators, Taiwan intraday and flow data, futures and the macro calendar need a Blave account with data access.
+- Cloud machine: market data comes from the Blave API through `lib/data.py` — crypto klines and indicators, Taiwan stocks, futures.
+
+## Safety and Limits
+
+- **Where exchange keys live depends on the surface.** Desktop app: in the workspace `.env` on your Mac (`~/Blave/workspace/.env`). Cloud machine: in the workspace `.env` on your own dedicated machine. A venue bound on the web page: stored encrypted by Blave. The agent can read the workspace `.env`; its rules forbid printing key values (`references/exchange-connect.md`). Use trade-only keys with withdrawal disabled.
+- Funding amounts and resuming trading are done by you — in the desktop app's Auto trading page, or on the web workspace for a cloud machine. The agent refuses to do them for you, even when asked. The one thing it may always do by itself is trip the kill switch.
+- On the desktop app, orders only go out while Blave is running; after you quit and reopen it, trading stays paused until you press Start trading.
+- The agent verifies before it reports: it re-reads a file after editing it, and queries an order back from the exchange before saying it was placed. Every order attempt is logged to `state/audit.jsonl`.
+- A backtest describes the past. It does not predict or guarantee future results. MCPT and parameter scans lower the odds that you are looking at luck; they do not remove them.
+- Nothing here is investment advice. Trading can lose money, including all of it.
+
+## Run It in the Cloud (Paid)
+
+If a strategy should keep running around the clock, with your computer off, Blave Agent runs the same workspace on a dedicated cloud machine. You talk to the agent from the web workspace or Telegram; SSH is there if you want it. You can also connect your own Claude Code, Codex or another MCP-capable agent to that machine — setup is in the web workspace under Settings › Connect, guide at [blave.org/docs/en/connect](https://blave.org/docs/en/connect). Plans and prices: [blave.org/agent/en](https://blave.org/agent/en).
+
+## Running From Source: What Goes Where
+
+The first time you connect, the app prepares `~/Blave/`:
+
+- `~/Blave/workspace/` — `lib/`, `manager/`, `references/`, `examples/`, `allocators/`, the strategy templates, `AGENTS.md`, `CLAUDE.md` and `VERSION`, copied from this checkout
+- `~/Blave/venv/` — created with `python3 -m venv`, then `claude-agent-sdk`, cryptography, pandas, numpy, matplotlib, pyarrow, requests, python-dotenv and scipy are installed with pip
+- `~/Blave/state/` — chat sessions, chat images and trading state
+
+Your strategies end up in `~/Blave/workspace/strategies/<name>/`. When running from source, the official files are copied again on every launch, so edit `lib/` in the checkout, not in `~/Blave/workspace/`. Your strategies, `.env` and state are never overwritten.
+
+## Layout
 
 | Path | What is in it |
 |---|---|
@@ -45,58 +137,15 @@ This one repository is two things:
 | `references/` | What the agent reads before acting: library signatures, strategy code rules, deployment, broker guides, report contract |
 | `manager/` | Portfolio manager, reconciler, health check, stop / flatten tools |
 | `allocators/` | Template for a custom portfolio weighting method |
-| `runtime/` | The agent loop, web and Telegram bridges, reporters and job runner that ship to every cloud machine |
+| `runtime/` | The agent loop, web and Telegram bridges, reporters and job runner that ship to every cloud machine, plus the desktop app's local order daemon |
 | `shell/` | The desktop app (Electron) |
 | `tests/` | Small checks, one file per contract |
 
-## Three ways to use it
+Versions: the workspace is [`VERSION`](VERSION) (date-based); the runtime is `runtime/VERSION`, history in [`runtime/CHANGELOG.md`](runtime/CHANGELOG.md); the desktop app is `shell/package.json`.
 
-**Cloud — Blave Agent on [blave.org](https://blave.org/agent/en).** A dedicated machine that holds this workspace and keeps your strategies running whether or not you are chatting. You talk to the agent from the web workspace or Telegram; SSH is there if you want it. Plans and prices are on the website, not in this README.
+About the `openclaw` name: it is the name of an earlier framework. Config files (`openclaw.json`), API paths (`/openclaw/...`) and SSH host names still carry it because those locations really are called that. The runtime in `runtime/` has been first-party since 2026-07-25 and is unrelated to that product.
 
-**Desktop — this repo's `shell/`.** The agent runs on your Mac and the workspace lives in `~/Blave/`. You choose what powers it:
-
-- your own Claude Code or Codex, installed and signed in by you — Blave charges nothing for the AI; or
-- Blave's AI — sign in with a Blave account, billed by usage.
-
-The app only launches those CLIs. Your Claude Code or Codex credentials stay with the CLI; the app does not read them.
-
-**Bring your own agent.** If you have a cloud machine, you can connect your own Claude Code, Codex or another MCP-capable agent to it: the agent gets a short-lived SSH certificate and works in the same workspace under the same `AGENTS.md`. Setup starts in the web workspace under Settings › Connect; the guide is at [blave.org/docs/en/connect](https://blave.org/docs/en/connect).
-
-Claude Code and Codex are products of their respective owners. Blave Agent is not affiliated with or endorsed by them.
-
-## Quick start
-
-### Desktop app, from source (macOS)
-
-The desktop app is an MVP. It is macOS only and there is no packaged installer yet, so you run it from source.
-
-You need:
-
-- macOS
-- Node.js with npm (TODO: minimum version to be confirmed; the app pins Electron 38.2.1)
-- `python3` on your `PATH` (TODO: minimum version to be confirmed)
-- Claude Code or Codex installed and signed in, or a Blave account
-
-```
-git clone https://github.com/Blave-TW/blave-agent.git
-cd blave-agent/shell
-npm install
-npm start
-```
-
-The first time you connect, the app prepares `~/Blave/`:
-
-- `~/Blave/workspace/` — `lib/`, `manager/`, `references/`, `examples/`, the strategy templates, `AGENTS.md` and `VERSION`, copied from this checkout
-- `~/Blave/venv/` — created with `python3 -m venv`, then `claude-agent-sdk`, pandas, numpy, matplotlib, pyarrow, requests, python-dotenv and scipy are installed with pip
-- `~/Blave/state/` — chat sessions and images
-
-Your strategies end up in `~/Blave/workspace/strategies/<name>/`. When running from source, the official files are copied again on every launch, so edit `lib/` in the checkout, not in `~/Blave/workspace/`. Your strategies, `.env` and state are never overwritten.
-
-The interface follows the system language (English or Traditional Chinese). To override: `BLAVE_LANG=en npm start`.
-
-TODO: whether live order execution is available from the desktop app is to be confirmed. The live flow described in this README is the cloud machine's.
-
-### Just reading the code
+## Just Reading the Code
 
 1. [`AGENTS.md`](AGENTS.md) — how the agent is expected to behave
 2. [`examples/README.md`](examples/README.md) — eight complete strategies, each showing one pattern
@@ -104,36 +153,6 @@ TODO: whether live order execution is available from the desktop app is to be co
 4. [`strategies/TEMPLATE_A.py`](strategies/TEMPLATE_A.py) and [`strategies/TEMPLATE_C.py`](strategies/TEMPLATE_C.py)
 
 Each file in `tests/` states how to run it in its header, for example `python tests/check_param_scan.py` or `node tests/check_shell_strings.js`.
-
-## Data and trading venues
-
-**Data.**
-
-- On a cloud machine, market data comes from the Blave API through `lib/data.py`: crypto klines and indicators, Taiwan stocks, futures. The credentials are in the workspace `.env`.
-- On the desktop app, crypto klines come from Binance public endpoints and need no account. Blave's indicators and Taiwan market data need a Blave account with data access.
-
-**Venues with a tested order library** (`lib/account_*.py` + `lib/order_*.py`, verified on real accounts):
-
-- Binance, BingX, OKX, Gate.io, Bybit — futures and spot
-- Capital Futures (群益期貨) — Taiwan index futures and Taiwan stocks; Windows workspace only
-
-For any other exchange or broker with an API, the agent can write a helper from `lib/account_TEMPLATE.py` and `lib/order_TEMPLATE.py`. That code has not been tested by Blave.
-
-**Paper trading** needs no keys. It ships as `lib/account_paper.py` + `lib/order_paper.py` and prices fills from Binance public prices.
-
-## Safety, and what this is not
-
-- Exchange keys live in the workspace `.env` on your own machine. It is git-ignored. Use trade-only keys with withdrawal disabled.
-- Funding amounts, binding a venue and resuming trading are done by you on the web page. The agent refuses to do them for you, even when asked. The one thing it may always do by itself is trip the kill switch.
-- The agent verifies before it reports: it re-reads a file after editing it, and queries an order back from the exchange before saying it was placed. Every order attempt is logged to `state/audit.jsonl`.
-- A backtest describes the past. It does not predict or guarantee future results. MCPT and parameter scans lower the odds that you are looking at luck; they do not remove them.
-- Nothing here is investment advice. Trading can lose money, including all of it.
-
-## Project status
-
-- Workspace version: see [`VERSION`](VERSION) (date-based). Runtime version: `runtime/VERSION`, history in [`runtime/CHANGELOG.md`](runtime/CHANGELOG.md).
-- Cloud: in production. Desktop: MVP, macOS only, run from source.
-- About the `openclaw` name: it is the name of an earlier framework. Config files (`openclaw.json`), API paths (`/openclaw/...`) and SSH host names still carry it because those locations really are called that. The runtime in `runtime/` has been first-party since 2026-07-25 and is unrelated to that product.
 
 ## Contributing
 
@@ -150,6 +169,8 @@ Issues and pull requests are welcome. Before a PR:
 **The strategies you write are yours.** Anything you (or the agent on your behalf) write under `strategies/` is not part of this project and the license does not reach it.
 
 The paid parts are not in this repo: cloud machines, market data and Blave's LLM proxy are services of blave.org. This code runs on your own computer at no charge, with your own AI subscription and your own data sources.
+
+Claude Code and Codex are products of their respective owners. Blave Agent is not affiliated with or endorsed by them.
 
 ## Links
 

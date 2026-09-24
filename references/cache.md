@@ -17,6 +17,9 @@ cache/
 ├── twfutures_bav_TXF/         ← bid/ask vol (monthly since 2022-01)
 │   └── ...
 ├── twstock_price_2330.parquet      ← daily 台股/台市 datasets: ONE file per stock, coverage meta in the parquet footer (see below)
+├── twstock_daily_2330_twse/   ← 台股日K from the exchange itself (src = twse / tpex / finmind), monthly files
+├── twstock_exright_twse/      ← whole-market 除權息 table per month (twse / tpex); twstock_public_market.json = which exchange lists each id (1-day)
+├── fear_greed_alternative.me/ ← Crypto Fear & Greed index, monthly files
 ├── twstock_broker_stock_2330/ ← per-day files (broker data only)
 │   ├── 2024-01-02.parquet
 │   └── ...

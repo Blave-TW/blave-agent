@@ -191,8 +191,8 @@
       <div class="chat-scroll" id="chat-scroll">
       </div>
       <div class="chat-input-wrap">
-        <!-- 立即更新到最新版本:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。任一邊有新版才出現,按下 = 「關於」那顆「更新」(app.js upGo) -->
-        <!-- 這一行的字由 upPaint 決定(更新中 / 看回覆 / 已更新到 {nv} / 立即更新):**不掛 data-i18n**,換語言時的通用迴圈會把它洗回「立即更新到最新版本」、行為卻還是上一個狀態的 -->
+        <!-- 更新那一格:照網頁工作頁 #ws_update(輸入列右上方一行安靜小字)。只有兩種:app 新版已暫存好 → 「重新啟動以完成更新」(可點);
+             雲端主機正在換檔 → 不可點的「更新中…」。其餘時候不出。字由 upPaint 決定:**不掛 data-i18n**,換語言時的通用迴圈會把它洗成另一個狀態的字 -->
         <button type="button" class="ws-update" id="ws-update" hidden><span></span></button>
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
@@ -261,20 +261,13 @@
               <select class="set-sel" id="set-lang"></select>
             </span>
           </div>
-          <!-- 關於(這一頁最下面):「這台電腦」「雲端」兩行版本與狀態、右上一顆鈕(兩邊共用)。字與鈕由 app.js 的 upPaint 依 upPlan 畫;
-               雲端那一行沒主機 / 沒登入時整行藏起來 -->
+          <!-- 關於(這一頁最下面;版本唯一出現處):一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(檢查更新 / 重新啟動以完成更新)。
+               字與連結由 app.js 的 upPaint 依 upPlan 畫;沒主機 / 沒登入時雲端那一段不寫 -->
           <div class="set-about" id="set-up">
-            <div class="set-up-head">
-              <h6 class="set-gl" data-i18n="up.about"></h6>
-              <button type="button" class="btn-quiet" id="set-up-btn" hidden></button>
-            </div>
+            <h6 class="set-gl" data-i18n="up.about"></h6>
             <div class="set-up-row">
-              <span class="w" data-i18n="env.local"></span>
-              <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p><button type="button" class="btn-quiet set-up-lbtn" id="set-up-lbtn" hidden></button></div>
-            </div>
-            <div class="set-up-row" id="set-up-cloud" hidden>
-              <span class="w" data-i18n="env.cloud"></span>
-              <div class="t"><p class="ver mono" id="set-up-cver"></p><p class="st" id="set-up-ctxt" role="status"></p><p class="st" id="set-up-cnote"></p></div>
+              <p class="set-up-line" id="set-up-line" role="status"></p>
+              <button type="button" class="btn-quiet" id="set-up-btn"></button>
             </div>
             <!-- 法遵兩份並排、不成句(不是「使用即表示同意」那種同意文字)。服務條款只有這一個入口;隱私權政策在 設定 › 隱私 另有一個就地的。
                  外開瀏覽器,網址帶目前語言 -->

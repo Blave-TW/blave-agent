@@ -8,7 +8,20 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(空)
+## 1.1.92 — 2026-09-24
+
+- **電腦版沒資料權限那一輪,`lib/data.py` 第一次呼叫就停**(`agent_turn.py` `data_access_rule()` 補一句「同一段對話裡權限會變、
+  失敗即最終」;workspace 端 `lib/data.py` 在 `BLAVE_DATA_ACCESS=0` 時所有打 Blave 的路直接 raise,走 blave-agent VERSION)。
+  09-24 真機:餘額不夠被擋那輪 agent 不信規則、翻 .env 與環境變數 10 步才放棄,用戶等 80 秒。測試 `tests/check_data_access_gate.py`。
+- **`workspace_update` 的 `applying` 有 20 分鐘時效**(`portfolio_reporter.py` `WORKSPACE_UPDATE_APPLYING_TTL_S`):更新腳本中途被砍
+  (ssh 逾時、回合結束、機器重開)時狀態檔停在 `applying`,電腦版會顯示「更新中…」24 小時、檢查更新按不了;超過 20 分鐘轉成
+  `failed / error / "applying timed out"`。測試 `tests/check_workspace_update_status.py` §6。
+- **報告多帶 `workspace_update`**(`portfolio_reporter.py` `workspace_update()`):`manager/update_workspace.py apply` 寫的
+  `state/workspace_update.json` 原樣轉發(`state: applying|done|failed`、`outcome`、`from`/`to`、`restarted`、`reason`、
+  `replaced_changed`、`backup_dir`、`version_written`、`ts`),檔案不在或超過 24 小時就不帶——電腦版用 `applying` 畫「更新中…」、
+  用 `done` 出事後那一行(設計 v4 §3)。workspace 端同批:更新不再問人(改過的官方檔一律換、先備份)、只在安全時刻重啟下單程式
+  (`trading_busy()`:無在途執行、對帳器不在一輪之中;`--wait-busy` 輪詢),走 blave-agent VERSION。
+  測試 `tests/check_workspace_update_status.py`。
 
 ## 1.1.91 — 2026-09-24
 

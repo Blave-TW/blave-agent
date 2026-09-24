@@ -48,6 +48,10 @@ def compute_signals(df, fast=SMA_FAST, slow=SMA_SLOW):
     signal = pd.Series(np.nan, index=df.index)
     signal[golden] = 1.0
     signal[death]  = 0.0
+    # Seed the state on the bars before the first cross: a backtest that starts inside a
+    # trend otherwise sits flat until the first cross (one seeded bar is dropped with WARMUP).
+    pre = signal.ffill().isna() & f.notna() & s.notna()
+    signal[pre] = (f > s)[pre].astype(float)
     return signal
 
 

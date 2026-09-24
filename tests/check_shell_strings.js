@@ -182,5 +182,16 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   else pass("tr.means.3 / tr.cloud.means.4 不承諾自動暫停");
 }
 
+// ---- 8. 更新那一組字(up.* / tm.updateReady)沒有孤兒 ----
+// v4 把 S0–S7 那一套字拿掉之後,表裡每一個 up.* 都要有人引用:引用不只 t("key")——upPlan / upDoneLine 回的是 [key, vars],
+// 再由 upRich 翻,所以以「字面 "key" 出現在 renderer 的程式或 HTML 裡」為準。tm.updateReady 由 trade.js 交給主行程,同一條規則。
+{ const rendererSrc = RENDERER_FILES.map(read).join("\n");
+  const orphans = [...en].filter((k) => /^up\./.test(k) || k === "tm.updateReady").filter((k) => rendererSrc.indexOf('"' + k + '"') < 0);
+  if (orphans.length) fail(`更新的字沒人引用(孤兒):[${orphans}]`);
+  else pass(`更新那一組 ${[...en].filter((k) => /^up\./.test(k)).length} 個 up.* 字都有人引用`);
+  const dead = ["tm.cloudUpdate", "tm.cloudUpdateStale", "up.chat", "up.update", "up.updating", "up.c.available", "up.c.done"].filter((k) => en.has(k) || zh.has(k));
+  if (dead.length) fail(`S0–S7 那一套的字還在表裡:[${dead}]`); else pass("S0–S7 那一套的字(tm.cloudUpdate* / up.chat / up.update / up.c.*)兩語都刪了");
+}
+
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

@@ -241,7 +241,7 @@ function enterWorkspace(kind, info) {
   cur = kind;
   mpInit(kind);
   stratRefresh(false);
-  if (!csReady) { csReady = true; csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayBackup(); }); }
+  if (!csReady) { csReady = true; csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayLines(TR_BAGS.cloud.st); }); }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   // 從設定 modal 裡換的:留在 modal、重畫模型接入那一頁(「使用中」換列),焦點不搶去輸入框
@@ -436,9 +436,9 @@ $("set-cats").addEventListener("click", (e) => {
 $("set-scrim").addEventListener("keydown", (e) => trapTab(e, $("set-modal")));   // Esc 在下面那一支 document 層的 escTop
 $("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").value));
 
-/* ── 版本與更新(設定 › 顯示)──────────────────────────────────
-   主行程的 updater.js 管下載;這裡只畫狀態。新版在背景下載,永遠不自己重啟:
-   已下載 → 「重新啟動並更新」;自動下單執行中那顆鈕是擋下來的(暫停之後,或正常結束 Blave 時才裝)。 */
+/* ── 版本與更新(設定 › 一般 › 關於)──────────────────────────────────
+   主行程的 updater.js 管下載;這裡只畫狀態。新版在背景下載,永遠不自己重啟:已暫存好 → 「重新啟動以完成更新」;
+   自動下單執行中那顆不出(暫停之後,或正常結束 Blave 時才裝)。 */
 var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的 TDZ 會連 typeof 都丟例外)
 /* 設定 › 隱私:使用資料。一顆即時生效的開關(沒有儲存鈕)、一行為什麼收、會收 / 不收兩份短清單、一行保留多久。
    app 裡不做首次告知(Wei);關掉之後清單留著——看得到自己關掉的是什麼。全段不寫「匿名」:登入後安裝編號會跟帳號對上。
@@ -494,235 +494,219 @@ function privPaint() {
   if (had) sw.focus();
   setFocusGuard();
 }
-/* 「一般」頁最下面的「關於」(eval-desktop-cloud-update-ux B 案):兩行版本(這台電腦 / 雲端)+ 右上一顆鈕。
-   聊天輸入列右上方那一行(#ws-update,照網頁 #ws_update)是同一個動作。
-   - 這台電腦:electron-updater(已下載就重開換版;下單中照舊不重開,up.blocked)。
-   - 雲端(Wei 09-22 新原則:**用本機 app 不得觸發雲端 agent 回合**):不送雲端指令,改成在**本機聊天**送一句固定的話、
-     帶 --viewing-env=cloud,由這台電腦的 agent 經 MCP 照 references/cloud-handoff.md「Updating the cloud machine」去做
-     (下單程式在跑時它會先問人)。進度看本機那一回合:在跑 = 更新中;結束 = 看 /cloud/state 的 config_version 追上了沒。
-   決策全在 upPlan(純函式,tests/check_shell_settings.js 直接跑);upPaint 只照它畫。 */
-/* 更新期間(spec-desktop-update-experience-v2 §2,修訂 09-23 第二輪):session = 從按下更新開始,到雲端追上 / 回合出錯 /
-   出了更新一版 / **一個回合正常結束而整回合沒碰雲端主機** 為止(30 分鐘沒回合只是兜底)。
-   按鈕送出的那一回合(cloudTurn)= 「正在更新雲端主機」,20 秒後才接時鐘;之後的回合要出現 `where: "cloud"` 的 tool chunk
-   (turnCloud,runtime 從完整指令判的結構化訊號)才算在作業 =「agent 正在雲端主機上作業」,不帶時鐘、鈕不變成「更新中」——
-   不讀訊息內容去猜哪一回合在換檔。沒碰雲端的回合在「關於」跟平常一樣。
-   回合結束記 result:"fault"(回合出錯)| "idle"(其餘一律,Wei 09-22 選 A);**成功只認雲端回報的 config_version 追上**。
-   done = 追上那一刻的 { from, to }(「已更新到 {nv}」停住,直到 app 重開或下一次落後);不是按鈕觸發的更新(用戶自己打字叫 agent 更新)
-   也要有完成:原本落後、之後看到 config_version 變了而且追上,from 用變之前的那一版(lagCv)。 */
-var UPD = { cloudTurn: false, turnCloud: false, result: null, doneAt: 0, doneFor: null, session: null, done: null, lagCv: null, doneChatHidden: false };
-/* 回合結束後等主機回報新版本的上限:主機的報告計時器每 2 分鐘一班(runtime/web_bridge.py 變化偵測段的註解)
-   + app 背景輪詢 60 秒(shell/cloud.js POLL_BACKGROUND_MS)≈ 3 分鐘;過了就改講「還沒收到回報」,不讓時鐘停在處理中 */
-const UP_REPORT_WAIT_MS = 180000, UP_SESSION_IDLE_MS = 30 * 60000, UP_CLOCK_AFTER_MS = 20000;   // S2 前 20 秒不講時長(waiting-states §1 規則 2)
-// m:ss(tabular);上限 59:59
-function upClock(ms) { const s = Math.min(3599, Math.max(0, Math.floor(ms / 1000))); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
-/* 每次畫之前看一眼雲端:session 什麼時候結束、什麼時候算「已更新」。純函式(只改 mem),tests/check_shell_settings.js 直接跑。
+/* 「一般」頁最下面的「關於」一行 + 聊天輸入列右上那一格 + 選單列那一行(proposal-desktop-update-flow-v4 §2–§4)。
+   全 app 只有三個可見狀態:(a) 沒有東西 (b)「重新啟動以完成更新」= app 新版已暫存好(updater.js ready;下單中是 blocked,鈕不出、
+   只在關於列寫「結束 Blave 時安裝」)(c)「更新中…」= 雲端主機正在換檔(報告的 workspace_update.state = applying)。
+   雲端那半仍由本機 agent 經 MCP 去做(Wei 09-22:app 不得觸發雲端 agent 回合),但零選擇:「檢查更新」= app 重查一次 +
+   雲端強制刷新一次報告,報告說落後就在本機聊天送那一句固定的話(up.c.msg)。報告還沒有 workspace_update 欄位之前,
+   (c) 由那一回合推得(送出的那一回合在跑、或之後碰過雲端的回合在跑),事後那一行由版號追上推得(只有 from → to)。
+   決策全在 upPlan / upDoneLine(純函式,tests/check_shell_settings.js 直接跑);upPaint 只照它畫。 */
+var UPD = { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null };
+const UP_SESSION_IDLE_MS = 30 * 60000;   // 更新期間 30 分鐘沒有回合就結束(兜底)
+/* 每次畫之前看一眼雲端:更新期間什麼時候結束、版號追上時記一筆給事後那一行的退路。純函式(只改 mem)。
    cloud = snapshot 的 cloud 那一塊;stale = 報告說重開後沒能確認停住(版號一樣也算落後) */
 function upObserve(mem, cloud, stale, localTurn, now) {
   const c = cloud || {}, cv = c.config_version || null, lv = c.latest_config_version || null;
   const lag = !!(cv && lv && cv !== lv) || !!stale, caughtUp = !!(cv && lv && cv === lv) && !stale;
-  const endSession = () => { mem.session = null; mem.cloudTurn = false; mem.doneAt = 0; mem.result = null; mem.doneFor = null; };
+  const endSession = () => { mem.session = null; mem.cloudTurn = false; };
   if (mem.session && localTurn) mem.session.lastTurnAt = now;
   if (lag) { mem.done = null; if (cv) mem.lagCv = mem.lagCv || cv; }
   if (caughtUp) {
-    const from = (mem.session && mem.session.fromCv) || mem.lagCv;
-    if (mem.session || (mem.lagCv && mem.lagCv !== cv)) { mem.done = { from: from || null, to: lv }; mem.doneChatHidden = false; }
+    if (mem.session || (mem.lagCv && mem.lagCv !== cv)) mem.done = { from: (mem.session && mem.session.fromCv) || mem.lagCv || null, to: lv };
     if (mem.session) endSession();
     mem.lagCv = null;
   }
-  if (mem.session && !localTurn && mem.result === "fault") mem.session = null;   // 回合出錯(S6):更新期間到此為止,不讓它再活 30 分鐘(稽核 B8);doneAt / result 留著給 S6 那一行
-  // 沒有 session 了,上一次的結果只活到「這一版的事情有結論」為止:追上了、或出了更新一版就清掉——
-  // 不清的話 S6「這次沒更新成功」會變成永久標籤(追加稽核 2)
-  // doneFor 是 null(回合結束時讀不到版號)不算「出了新版」:那時 lv 一冒出來就會把 S6 清掉,人看不到那次沒更新成功
-  if (!mem.session && mem.doneAt && (caughtUp || (mem.doneFor && lv !== mem.doneFor))) { mem.doneAt = 0; mem.result = null; mem.doneFor = null; }
   if (mem.session && lv && mem.session.nv && lv !== mem.session.nv) endSession();   // 出了更新一版:這一次的結果不拿來判下一版
   if (mem.session && !localTurn && now - (mem.session.lastTurnAt || mem.session.startAt) > UP_SESSION_IDLE_MS) endSession();
   return mem;
 }
-/* 雲端是「沒有主機」或「啟動中」= 舊主機已經不在了(spec-desktop-005 §5):之前記的「落後在哪一版」、「已更新到」、進行中的更新期間
-   都是那台的事,清掉——不清的話新開的主機一跑起來就被當成「已更新到 b／a → b」。停機(同一台)與讀不到不清。
-   長期做法是 api 回傳主機 id、lagCv 綁在 id 上(另派後端)。純函式,tests/check_shell_settings.js 直接跑 */
+/* 雲端是「沒有主機」或「啟動中」= 舊主機已經不在了:之前記的落後、追上、更新期間都是那台的事,清掉——
+   不清的話新開的主機一跑起來就被當成「已更新到」。停機(同一台)與讀不到不清。 */
 function upMachineGone(mem, kind) {
-  if (kind !== "none" && kind !== "starting") return mem;
-  Object.assign(mem, { lagCv: null, done: null, doneChatHidden: false, session: null, cloudTurn: false, doneAt: 0, result: null, doneFor: null });
+  if (kind === "none" || kind === "starting") Object.assign(mem, { lagCv: null, done: null, session: null, cloudTurn: false });
   return mem;
 }
-/* o:{ up(updater 狀態 + backup), cloud(雲端 snapshot 的 cloud 那一塊), kind(envCloudKind), localTurn(這台電腦有回合在跑), mem(UPD), now, cloudStale }
-   回 { local, cloud, btn, localBtn, dot, chat, doLocal, doCloud, tick }。字一律回 [key, vars],由 upPaint 翻。
-   雲端狀態(v2 §2 狀態表):S0 已是最新版|S1 有新版|S2 正在更新・{t}|S3 agent 回覆中・{t}|S4 agent 回覆了|S5 還沒收到回報|S6 回合出錯|S7 已更新到 {nv} */
-function upPlan(o) {
-  const st = o.up || {}, ph = st.phase, v = { nv: st.version || "" }, mem = o.mem || {}, now = o.now || 0;
-  const L = { v: st.current ? ["up.app", { v: st.current }] : null, s: null, cls: "", has: ph === "ready" || ph === "blocked" };
-  if (ph === "checking") L.s = ["up.checking"];
-  else if (ph === "downloading") L.s = st.percent == null ? ["up.downloading", v] : ["up.downloadingPct", { ...v, pct: st.percent }];
-  else if (ph === "staging") L.s = ["up.staging", v];
-  else if (ph === "ready") { L.s = ["up.ready", v]; L.cls = "up"; }
-  else if (ph === "blocked") { L.s = ["up.blocked", v]; L.cls = "up"; }
-  else if (ph === "error") { L.s = st.error === "INSTALL_FAILED" ? ["up.installFailed", v] : ["up.error"]; L.cls = "up"; }
-  else if (ph === "idle") L.s = st.checkedAt > 0 ? ["up.latestAt", { t: trHM(st.checkedAt) }] : ["up.latest"];   // 什麼時候查的(trade.js 的 HH:MM);還沒查過就不帶
-  /* 雲端那一行。沒主機 / 沒登入 / 還沒讀到 = 整行不畫;停機 / 讀不到 = 講原因,鈕不整顆失效(這台電腦照樣能更新)。 */
-  const c = o.cloud || {};
-  let C = null, chatKind = null, chatText = null;
-  if (o.kind === "unreach") C = { v: null, s: ["up.c.unreach"], cls: "", has: false };
-  else if (o.kind === "stopped") C = { v: c.config_version || null, s: ["up.c.stopped"], cls: "", has: false };
-  else if (o.kind === "starting") C = { v: null, s: ["side.starting"], cls: "", has: false };
-  else if (o.kind === "running") {
-    const cv = c.config_version || null, lv = c.latest_config_version || null;
-    /* 主機重開、沒能確認停住(報告 reconciler.stopped.gated === false):停不住的是舊版對帳器,就算版號已經一樣也要更新(spec-restart-gated-false-display §6-3) */
-    const stale = !!o.cloudStale, lag = !!(cv && lv && cv !== lv) || stale;
-    const ses = mem.session || null, run = !!ses && !!o.localTurn;
-    const s2 = run && !!mem.cloudTurn, s3 = run && !s2 && !!mem.turnCloud;   // S2 按鈕那一回合;S3 之後的回合已碰雲端
-    const clock = s2 && now - ses.startAt > UP_CLOCK_AFTER_MS ? { t: upClock(now - ses.startAt) } : null;   // 只有 S2 有時鐘,從按下起算
-    // 回合結束、還沒追上:session 內(S4 / S5),或那一回合出錯(S6——fault 會把 session 收掉,字仍要留著)
-    const after = !o.localTurn && !!mem.doneAt && lag && (!!ses || mem.result === "fault");
-    // S3 的鈕是既有的停用「更新」(不是 spinner「更新中」:這一回合不是按那顆鈕送出的,規則 6)
-    C = { v: cv, s: ["up.latest"], cls: "", has: lag && !s2, updating: s2, note: null, tick: s2, clock };
-    if (s2) {
-      C.s = clock ? ["up.c.running", clock] : ["up.c.runningShort"]; C.cls = "up"; C.note = ["up.c.runNote"];   // 進行中的句子不比靜態通知暗(視覺稽核 2-6)
-      chatKind = "status"; chatText = clock ? ["up.c.chatRunning", clock] : ["up.c.runningShort"];
-    } else if (s3) {
-      C.s = ["up.c.onCloud"]; C.cls = "up"; C.note = ["up.c.runNote"];
-      chatKind = "status"; chatText = ["up.c.onCloud"];
-    // 版號可能讀不到(api 的 VERSION 抓失敗會快取 60 秒的 null;主機還沒回報也是 null):那時不講版號,改用不帶版號那一句
-    } else if (after && mem.result === "fault") { C.s = cv && lv && cv !== lv ? ["up.c.available", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.seeChat"]; }
-    // S4 聊天那一行不出:回覆就在它正下方;session 內每一個無關的回合結束也會走到這裡
-    else if (after && now - mem.doneAt <= UP_REPORT_WAIT_MS) { C.s = ["up.c.checking"]; C.cls = "up"; chatKind = "none"; }
-    else if (after) { C.s = cv && lv && cv !== lv ? ["up.c.noReport", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.note"]; }
-    // 按之前就講會花到 AI 額度;完整那句(誰做、下單中會先問)在鈕的 title(up.c.noteLong)
-    else if (lag) { C.s = cv && lv && cv !== lv ? ["up.c.available", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.note"]; }
-    else if (mem.done && mem.done.to) {
-      C.s = ["up.c.done", { nv: mem.done.to }]; C.cls = "ok"; C.note = mem.done.from ? ["up.c.doneFrom", { from: mem.done.from, nv: mem.done.to }] : null;
-      if (!mem.doneChatHidden) { chatKind = "done"; chatText = ["up.c.chatDone", { nv: mem.done.to }]; }
-    }
-  }
-  // 停用:這台電腦有回合在跑(雲端那半是本機 agent 的一回合;本機那半會重開 app——兩件都要等回合結束)
-  const turn = !!o.localTurn;
-  const doLocal = L.has && ph === "ready", doCloud = !!(C && C.has);
-  let btn = null;
-  if (C && C.updating) btn = { label: ["up.updating"], out: true, disabled: true, act: null, spin: true };
-  // 主鈕:雲端有新版就是雲端那一半(回合結束、等回報的那段照樣可按:重按只是再送一句,agent 看到版本一樣就會停)
-  else if (doCloud) btn = { label: ["up.update"], out: true, disabled: turn, title: turn ? ["up.busy"] : ["up.c.noteLong"], act: "cloud" };
-  else if (doLocal) btn = { label: ["up.update"], out: true, disabled: turn, title: turn ? ["up.busy"] : null, act: "local" };
-  else if (ph === "idle" || ph === "error") btn = { label: ["up.check"], out: false, disabled: false, act: "check" };
-  // 兩邊都有新版:這台電腦那一半另有一顆,雲端卡住(被拒 / 一直沒成功 / 更新中)也裝得了本機
-  const localBtn = doLocal && btn && btn.act !== "local" ? { label: ["up.installLocal"], disabled: turn || !!(C && C.updating), title: turn || (C && C.updating) ? ["up.busy"] : null } : null;
-  /* 聊天輸入列上方那一行:S2/S3 = 不可點的狀態列(帶經過時間);S4 = 不出;S7 = 綠字「雲端已更新到 {nv}」
-     (送出下一則訊息就收);其餘 = 「立即更新到最新版本」(任一邊有新版才出,回合在跑停用) */
-  const go = doLocal || doCloud;
-  const chat = chatKind === "status" || chatKind === "done" ? { show: true, kind: chatKind, text: chatText, disabled: false }
-    : chatKind === "none" ? { show: false, kind: null, text: null, disabled: false }
-    : { show: go, kind: "go", text: ["up.chat"], disabled: turn };
-  return { local: L, cloud: C, btn, localBtn, doLocal, doCloud, chat, tick: !!(C && C.tick) };
+const UP_WU_STATES = ["applying", "done", "failed"], UP_WU_OUTCOMES = ["updated", "up_to_date", "restart_failed", "restart_deferred", "stopped", "error", "partial"];
+/* 報告的 workspace_update(manager/update_workspace.py apply 寫 state/workspace_update.json,runtime/portfolio_reporter.py 一天內原樣轉出;§5-3):
+   { state: applying|done|failed, outcome, from, to, restarted, reason, replaced_changed: [paths], backup_dir, restart_stopped, ts }。
+   done = 檔已在磁碟上(含 restart_failed / restart_deferred:restarted false + reason);failed = stopped / error / partial(帶 reason)。
+   雲端那台機器上的策略碼寫得進去的東西 = 不可信輸入:只取認得的形狀、字串截長;畫面一律 textContent。
+   backup_dir 會被「查看」原樣塞進送給本機 agent 的訊息,所以只認腳本產出的形狀 .official-backup/<VERSION_RE>-<UTC 時間>(不合就當沒有,那一行就不出「查看」);
+   reason 不讀:failed 不講(P3),restart_failed / deferred 的句子也不帶它 */
+const UP_WU_DIR_RE = /^\.official-backup\/[A-Za-z0-9._-]{1,40}-\d{8}T\d{6}Z\/?$/;
+function upWu(report) {
+  const w = report && report.workspace_update;
+  if (!w || typeof w !== "object" || UP_WU_STATES.indexOf(w.state) < 0) return null;
+  const str = (v, n) => (typeof v === "string" && v ? v.slice(0, n) : null);
+  return { state: w.state, outcome: UP_WU_OUTCOMES.indexOf(w.outcome) >= 0 ? w.outcome : null, to: str(w.to, 40), restarted: w.restarted === true,
+    replaced: Array.isArray(w.replaced_changed) ? w.replaced_changed.length : 0, dir: typeof w.backup_dir === "string" && UP_WU_DIR_RE.test(w.backup_dir) ? w.backup_dir : null,
+    restartStopped: w.restart_stopped === true, ts: typeof w.ts === "number" ? w.ts : str(w.ts, 40) };
 }
-/* 換版時被蓋掉的改動(主行程 syncOfficialOnUpdate 只在換版後第一次啟動給):講數量與位置、怎麼拿回來。
-   在聊天講一次,不掛在「關於」——那一刻之後它就不是狀態了 */
+/* o:{ up(updater 狀態), cloud(雲端 snapshot 的 cloud 那一塊), kind(envCloudKind), localTurn, mem(UPD), now, cloudStale, wu(upWu), checking(按了檢查更新、還沒回來) }
+   回 { slot, row: { segs, status }, link, spin, cloudLag }。字一律回 [key, vars]。
+   slot = null | { kind: "restart" | "applying", disabled };link = { kind: "check" | "restart", disabled } */
+function upPlan(o) {
+  const st = o.up || {}, ph = st.phase, mem = o.mem || {}, c = o.cloud || {}, wu = o.wu || null, turn = !!o.localTurn;
+  const cv = o.kind === "running" ? c.config_version || null : null, lv = c.latest_config_version || null;
+  const cloudLag = o.kind === "running" && (!!(cv && lv && cv !== lv) || !!o.cloudStale);
+  // (c):報告說正在換檔;沒有那個欄位時由本機那一回合推得(檢查更新送出的那一回合在跑、或更新期間內碰過雲端的回合在跑)
+  const applying = !!(wu && wu.state === "applying") || (turn && !!mem.session && (!!mem.cloudTurn || !!mem.turnCloud));
+  // (b):Squirrel 已暫存好而且沒在下單(updater 的 publicState 每次都重看 isTrading:下單中是 blocked)。回合在跑時不能重開(會把它斷掉)
+  const ready = ph === "ready";
+  const slot = applying ? { kind: "applying", disabled: false } : ready ? { kind: "restart", disabled: turn } : null;
+  const segs = [];
+  if (st.current) segs.push(["up.row.app", { av: st.current }]);
+  if (o.kind === "stopped" || o.kind === "unreach") segs.push(["up.row.cloudOff"]);
+  else if (cv) segs.push(["up.row.cloud", { cv }]);   // 版號讀不到(舊機器 / api 快取 null)就不寫雲端那段,不印「雲端主機 null」
+  let status = null;
+  if (applying) status = ["up.row.applying"];
+  else if (ready) status = ["up.row.ready"];
+  else if (ph === "blocked") status = ["up.row.readyQuit"];
+  else if (ph === "error" && st.error === "INSTALL_FAILED") status = ["up.installFailed", { nv: st.version || "" }];
+  /* 「已是最新版」只在查過之後才接上:啟動後 30 秒(updater FIRST_CHECK_MS)才第一次查,checkedAt 只有 update-not-available 會寫;
+     檢查中沿用上一次的結論(圓環在連結上)。雲端已知落後而還沒在換檔時也不寫——那不是最新版,但沒有第四個狀態可講 */
+  else if ((ph === "idle" || ph === "checking") && st.checkedAt > 0 && !cloudLag) status = ["up.row.latest"];
+  const spin = !applying && !!(o.checking || ph === "checking");
+  const link = applying ? { kind: "check", disabled: true } : ready ? { kind: "restart", disabled: turn } : { kind: "check", disabled: spin };
+  return { slot, row: { segs, status }, link, spin, cloudLag };
+}
+/* 事後那一行(§3):做完那一刻在聊天講一次,不進關於列。回 { key(講過就不再講), head, tail, view: null | "local" | "cloud", dir } 或 null。
+   報告有 workspace_update:done 依 outcome 講——updated + 主機暫停中(restart_stopped;gated 重啟時 restarted 也會是 true,暫停那句優先——用戶得知道仍沒在下單)
+   / 重啟了 / 只換了檔;restart_deferred = 等這筆單完成後
+   再說一次「更新」就會重啟(還沒有機器端的 timer,不能講「主機會自己再試」);restart_failed = 重啟沒成;up_to_date 不講;換掉了改過的官方檔就接一句(帶「查看」)。
+   failed(stopped / error / partial)沒有 §3 的句子:不講(P3,agent 那一回合已經講過)。沒有那個欄位:只剩版號追上推得的「已更新到 {cv}」。 */
+function upDoneLine(wu, mem) {
+  if (wu && wu.state === "done" && wu.outcome && wu.outcome !== "up_to_date") {
+    const key = "wu:" + (wu.ts != null ? wu.ts : wu.to || wu.outcome);
+    const head = wu.outcome === "restart_deferred" ? ["up.done.restartDeferred"] : wu.outcome === "restart_failed" ? ["up.done.restartFailed"]
+      : !wu.to ? null : wu.restartStopped ? ["up.done.paused", { cv: wu.to }] : wu.restarted ? ["up.done.cloudRestarted", { cv: wu.to }] : ["up.done.cloud", { cv: wu.to }];
+    if (!head) return null;   // updated 卻沒帶版號:不印「更新到 null」
+    const tail = wu.replaced > 0 && wu.dir ? ["up.done.replaced", { n: wu.replaced, dir: wu.dir }] : null;
+    return { key, head, tail, view: tail ? "cloud" : null, dir: wu.dir };
+  }
+  if (!wu && mem && mem.done && mem.done.to) return { key: "v:" + mem.done.to, head: ["up.done.cloud", { cv: mem.done.to }], tail: null, view: null, dir: null };
+  return null;
+}
+/* app 換版後第一次啟動、蓋過改動(主行程 syncOfficialOnUpdate 只在那時給):同 §3 的格式,「開啟資料夾」開 Finder */
 function upBackupLine(st) {
   const bk = st && st.backup;
-  return bk && Number.isInteger(bk.n) && bk.n > 0 && typeof bk.dir === "string" ? ["up.backup", { n: bk.n, dir: bk.dir }] : null;
+  if (!(bk && Number.isInteger(bk.n) && bk.n > 0 && typeof bk.dir === "string")) return null;
+  return { key: "bk:" + bk.dir, head: ["up.backup", { av: st.current || "", n: bk.n, dir: bk.dir }], tail: null, view: "local", dir: bk.dir };
 }
-var UP_BK_SAID = false, CS_BOOTED = false;   // CS_BOOTED:對話接回之後才講,不然 csOpen 清聊天時會一起清掉
-function upSayBackup() {
-  const x = UP_BK_SAID || !CS_BOOTED ? null : upBackupLine(UP);
-  if (x) { UP_BK_SAID = true; addMsg("sys", t(x[0], x[1])); }
+/* 把一句話畫進節點:vars 裡列在 mono 的值包成 .mono(版號、路徑),{view} 的位置放鈕。值先換成記號、最後才放值——
+   雲端來的字串(路徑)裡就算長得像 {cv} 也不會被再替換一次 */
+function upRich(host, key, vars, opt) {
+  const o = opt || {}, mono = o.mono || [], v = { view: "\uE002" };   // 記號用私用區字元:不會出現在正常文字裡
+  mono.forEach((k, i) => { if (vars && k in vars) v[k] = "\uE000" + i + "\uE001"; });
+  Object.keys(vars || {}).forEach((k) => { if (!(k in v)) v[k] = vars[k]; });
+  t(key, v).split(/(\uE000\d+\uE001|\uE002)/).forEach((piece) => {
+    if (piece === "\uE002") { if (o.view) host.append(o.view); }
+    else if (piece.charCodeAt(0) === 0xE000) { const sp = document.createElement("span"); sp.className = "mono"; sp.textContent = String((vars || {})[mono[+piece.slice(1, -1)]]); host.append(sp); }
+    else if (piece) host.append(piece);
+  });
+}
+var CS_BOOTED = false;   // 對話接回之後才講事後那一行,不然 csOpen 清聊天時會一起清掉
+const UP_SAID_KEY = "ws_upd_said";   // 講過的記號(localStorage:報告的 done 會停留到下一次更新,重開 app 不重講)
+function upSayLines(cst) {
+  if (!CS_BOOTED) return;
+  let said = []; try { said = JSON.parse(lsGet(UP_SAID_KEY) || "[]"); } catch (_) { said = []; }
+  if (!Array.isArray(said)) said = [];
+  const lines = [upBackupLine(UP), cst && envCloudKind(cst) === "running" ? upDoneLine(upWu(cst.report), UPD) : null];
+  lines.forEach((L) => {
+    if (!L || said.indexOf(L.key) >= 0) return;
+    said.push(L.key); lsSet(UP_SAID_KEY, JSON.stringify(said.slice(-20)));
+    upSayLine(L);
+  });
+}
+function upSayLine(L) {
+  const el = document.createElement("div"); el.className = "msg sys";
+  let view = null;
+  if (L.view) { view = document.createElement("button"); view.type = "button"; view.className = "btn-quiet"; view.textContent = t(L.view === "local" ? "up.backup.open" : "up.done.view"); view.addEventListener("click", () => upView(L)); }
+  upRich(el, L.head[0], L.head[1], { mono: ["cv", "av", "n", "dir"], view });
+  if (L.tail) { if (LANG !== "zh") el.append(" "); upRich(el, L.tail[0], L.tail[1], { mono: ["n", "dir"], view }); }
+  srSay(el.textContent);
+  $("chat-scroll").appendChild(el); busyPin(); scrollChat();
+}
+/* 「查看」:本機備份 → 主行程開 Finder(路徑由主行程算,畫面不交路徑);雲端備份 → 在本機聊天送一句固定的話請這台電腦的 agent 列出
+   (本機回合,不碰雲端 agent);回合在跑時 submitMessage 會回 false,什麼都不做 */
+function upView(L) {
+  if (L.view === "local") { window.blave.updateShowBackup(); return; }
+  submitMessage(t("up.done.viewMsg", { dir: L.dir || "" }), { viewing: { env: "cloud" } });
 }
 function upLocalTurn() { try { return running === true; } catch (_) { return false; } }   // app.js 還沒跑到 `let running` 那一行時讀它會丟 TDZ
+var UP_CHECKING = false;   // 按了「檢查更新」、兩邊都還沒回來:連結上是圓環
 function upNow() {
-  const cst = TR_BAGS.cloud.st, cloud = (cst && cst.cloud) || null;
-  return upPlan({ up: UP, cloud, kind: cst ? envCloudKind(cst) : "loading", localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
-    cloudStale: !!(cst && trRestartUnconfirmed(cst.report)) });
+  const cst = TR_BAGS.cloud.st, kind = cst ? envCloudKind(cst) : "loading";
+  return upPlan({ up: UP, cloud: (cst && cst.cloud) || null, kind, localTurn: upLocalTurn(), mem: UPD, now: Date.now(),
+    cloudStale: !!(cst && trRestartUnconfirmed(cst.report)), wu: kind === "running" ? upWu(cst.report) : null, checking: UP_CHECKING });
 }
-/* 一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。回合根本沒跑起來也走這裡(upGo)。
-   只管 session 內的回合(按鈕那一回合、之後的回合都算)。結束時立刻強制問一次雲端:主機若已經回報,「已更新」不必等下一輪輪詢 */
+/* 一回合結束了(turn-end 叫;回合出錯 / 沒回覆 / 分類過的錯誤都算 fault)。只管更新期間內的回合。
+   回合出錯、或整回合沒碰雲端主機:什麼都沒換,更新期間到此為止(之後無關的回合不再被畫成更新中);
+   碰了雲端、正常結束:立刻強制問一次雲端(主機已回報就不必等下一輪輪詢),期間留到版號追上 / 30 分鐘沒回合 */
 function upTurnEnded(faulted) {
   if (!UPD.cloudTurn && !UPD.session) return;
-  const lv = ((TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}).latest_config_version || null;
   const touched = UPD.turnCloud;
   UPD.cloudTurn = false; UPD.turnCloud = false;
-  // 正常結束而整回合沒碰雲端主機:什麼都沒換,session 收掉(回 S1),不讓之後無關的回合掛著「更新中」(修訂 09-23 第二輪)
-  if (!faulted && !touched) { Object.assign(UPD, { session: null, result: null, doneAt: 0, doneFor: null }); return; }
-  UPD.result = faulted ? "fault" : "idle";
-  UPD.doneAt = Date.now(); UPD.doneFor = lv;
+  if (faulted || !touched) { UPD.session = null; return; }
   if (window.blave && typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh().catch(() => {}).then(() => { ENV.cloudDirty = true; if (typeof trPoll === "function") trPoll(); });
 }
-let UP_TICK = null;   // S2 每秒重畫(20 秒後接上經過時間);session 一結束就停
 function upPaint() {
-  const cst = TR_BAGS.cloud.st, cloud = (cst && cst.cloud) || null;
-  if (cst) upMachineGone(UPD, envCloudKind(cst));
-  if (cst && envCloudKind(cst) === "running") upObserve(UPD, cloud, trRestartUnconfirmed(cst.report), upLocalTurn(), Date.now());
-  const p = upNow(), tx = (x) => (x == null ? "" : typeof x === "string" ? x : t(x[0], x[1]));
-  if (p.tick && !UP_TICK) UP_TICK = setInterval(upPaint, 1000);
-  else if (!p.tick && UP_TICK) { clearInterval(UP_TICK); UP_TICK = null; }
-  $("set-up-ver").textContent = tx(p.local.v);
-  const lt = $("set-up-txt"); lt.textContent = tx(p.local.s); lt.className = "st" + (p.local.cls ? " " + p.local.cls : "");
-  upSayBackup();
-  // 這台電腦那一行底下的獨立鈕(兩邊都有新版時才有)
-  const lb = $("set-up-lbtn"), L = p.localBtn;
-  lb.hidden = !L; lb.textContent = L ? tx(L.label) : ""; lb.disabled = !!(L && L.disabled); lb.title = L && L.title ? tx(L.title) : "";
-  const row = $("set-up-cloud"); row.hidden = !p.cloud;
-  if (p.cloud) {
-    $("set-up-cver").textContent = p.cloud.v || "—";
-    /* #set-up-ctxt 是 role="status"(aria-live):每秒跳的秒數留在 aria-hidden 的小節點裡,讀屏才不會每秒重念一次整句(稽核 B4) */
-    const ct = $("set-up-ctxt"), full = tx(p.cloud.s), tail = p.cloud.clock ? p.cloud.clock.t : null, at = tail ? full.lastIndexOf(tail) : -1;
-    ct.textContent = ""; ct.className = "st" + (p.cloud.cls ? " " + p.cloud.cls : "");
-    if (at > 0) { const sp = document.createElement("span"); sp.setAttribute("aria-hidden", "true"); sp.textContent = full.slice(at); ct.append(full.slice(0, at), sp); }
-    else ct.textContent = full;
-    $("set-up-cnote").textContent = tx(p.cloud.note);
-  }
-  const btn = $("set-up-btn"), b = p.btn;
-  btn.hidden = !b; btn.textContent = "";
-  if (b) { if (b.spin) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); btn.append(sp, " "); } btn.append(tx(b.label)); }
-  btn.disabled = !!(b && b.disabled); btn.title = b && b.title ? tx(b.title) : "";
-  btn.onclick = !b || !b.act ? null : b.act === "check" ? () => window.blave.updateCheck().then(upRefresh) : () => upGo();
-  btn.classList.toggle("btn-out", !!(b && b.out)); btn.classList.toggle("btn-quiet", !(b && b.out));
-  // 聊天輸入列右上方那一行(照網頁 .ws-update)。狀態列 / 已更新那兩種不可點(aria-disabled,不是 disabled:讀屏停得上去、字色不退成停用灰)
+  const cst = TR_BAGS.cloud.st, kind = cst ? envCloudKind(cst) : "loading";
+  if (cst) upMachineGone(UPD, kind);
+  if (kind === "running") upObserve(UPD, cst.cloud, trRestartUnconfirmed(cst.report), upLocalTurn(), Date.now());
+  const p = upNow();
+  // 關於那一行:段與段之間半形「 · 」,版號 mono;狀態字不換色
+  const line = $("set-up-line"); line.textContent = "";
+  p.row.segs.concat(p.row.status ? [p.row.status] : []).forEach((s, i) => { if (i) line.append(" · "); upRich(line, s[0], s[1], { mono: ["av", "cv", "nv"] }); });
+  // 右邊那個文字連結:檢查更新 / 重新啟動以完成更新;檢查中是 16/2 圓環(被按的控件自己的回饋),不寫「檢查中」
+  const btn = $("set-up-btn"); btn.textContent = ""; btn.dataset.kind = p.link.kind;
+  if (p.spin) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); btn.append(sp); btn.setAttribute("aria-label", t("up.check")); }
+  else { btn.append(t(p.link.kind === "restart" ? "up.restart" : "up.check")); btn.removeAttribute("aria-label"); }
+  btn.disabled = !!p.link.disabled; btn.title = p.link.kind === "restart" && p.link.disabled ? t("up.busy") : "";
+  // 聊天輸入列右上那一格(照網頁 .ws-update):更新中不可點(aria-disabled,不是 disabled:讀屏停得上去、字色不退成停用灰)
   const w = $("ws-update");
   if (w) {
-    const k = p.chat.kind, still = k === "status" || k === "done", hadFocus = document.activeElement === w;
-    w.hidden = !p.chat.show; w.dataset.kind = k || "";
-    w.firstElementChild.textContent = tx(p.chat.text);
-    w.disabled = p.chat.disabled; w.setAttribute("aria-disabled", still ? "true" : "false");
-    w.classList.toggle("is-status", k === "status"); w.classList.toggle("is-done", k === "done");
-    w.title = p.chat.disabled ? t("up.busy") : k === "go" && p.doCloud ? t("up.c.noteLong") : "";
-    if (hadFocus && w.hidden) $("ta").focus();   // 那一行收掉了:焦點不能掉到 BODY
+    const k = p.slot ? p.slot.kind : "", hadFocus = document.activeElement === w;
+    w.hidden = !p.slot; w.dataset.kind = k;
+    w.firstElementChild.textContent = k === "applying" ? t("up.applying") : k === "restart" ? t("up.restart") : "";
+    w.disabled = !!(p.slot && p.slot.disabled); w.setAttribute("aria-disabled", k === "applying" ? "true" : "false");
+    w.classList.toggle("is-status", k === "applying");
+    w.title = p.slot && p.slot.disabled ? t("up.busy") : "";
+    if (hadFocus && w.hidden) $("ta").focus();   // 那一格收掉了:焦點不能掉到 BODY
   }
+  upSayLines(cst);
 }
-/* 主鈕 / 聊天那一行。雲端有新版 → 在本機聊天送那一句(本機 agent 去做;它會先問下單程式的事,這裡不跳框);
-   這台電腦那一半這一次**不重開**——重開 app 會把正在更新雲端的那一回合斷掉;兩邊都有新版時本機另有一顆(upInstallLocal)。
-   只有這台電腦有新版 → 重開換版(下單中照舊不重開,那時鈕本來就不出)。 */
-async function upGo() {
+/* 「檢查更新」:app 重查一次 + 雲端強制刷新一次報告;報告說落後(而且主機沒在換檔、這裡沒有回合在跑、也不在更新期間)就在本機聊天
+   送那一句固定的話,本機 agent 經 MCP 去做(零選擇)。結果沒變就回到原樣,什麼都不說 */
+async function upCheck() {
+  if (UP_CHECKING) return;
+  UP_CHECKING = true; upPaint();
+  try { await Promise.all([window.blave.updateCheck().then(upRefresh).catch(() => {}), upCloudRecheck()]); }
+  finally { UP_CHECKING = false; upPaint(); }
+}
+async function upCloudRecheck() {
+  if (typeof window.blave.cloudRefresh !== "function" || typeof trPoll !== "function") return;
+  try { await window.blave.cloudRefresh(); } catch (_) { return; }   // 主行程沒回:這次不動雲端
+  // app.js 不自己讀交易狀態:標記要重讀、跑一輪輪詢(trade.js 那一份就是畫面用的);在途那一輪結束會立刻再跑一次,等它把記號清掉
+  ENV.cloudDirty = true; await trPoll();
+  for (let i = 0; i < 30 && ENV.cloudDirty; i++) await new Promise((r) => setTimeout(r, 100));
   const p = upNow();
-  if (!p.btn || p.btn.disabled || (p.btn.act !== "cloud" && p.btn.act !== "local")) return;
-  if (p.btn.act === "cloud") {
-    // 同一顆鈕也重查這台電腦(Wei 0.0.6):雲端有新版時那一行的「已是最新版」可能是 4 小時前查的。updater 沒來源 / 正在下載時回 false、什麼都不動
-    window.blave.updateCheck().then(upRefresh).catch(() => {});
-    if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡回報
-    const c = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}, now = Date.now();
-    // 按下 = 新的一次 session(送出之前就開:submitMessage 一開始就重畫,那一刻要是「正在更新」)
-    Object.assign(UPD, { doneAt: 0, result: null, doneFor: null, done: null, cloudTurn: true,
-      session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
-    const started = await submitMessage(t("up.c.msg"), { viewing: { env: "cloud" } });
-    if (!started) Object.assign(UPD, { session: null, cloudTurn: false });   // 沒送出去(上一輪還在跑 / 版本被停用):不進更新期間
-    else if (!upLocalTurn()) upTurnEnded(true);   // 回合在回來之前就結束了(同步拋錯):當成沒成,不等、不出紅字
-    upPaint();
-    return;
-  }
-  return upInstallLocal();
+  if (!p.cloudLag || (p.slot && p.slot.kind === "applying") || upLocalTurn() || UPD.session) return;
+  if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
+  const c = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}, now = Date.now();
+  Object.assign(UPD, { done: null, cloudTurn: true, session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
+  await submitMessage(t("up.c.msg"), { viewing: { env: "cloud" } });
+  if (!upLocalTurn()) upTurnEnded(true);   // 沒送出去(上一輪還在跑 / 版本被停用)、或回合在回來之前就結束了(同步拋錯):不進更新期間
 }
-async function upInstallLocal() {
-  if (upLocalTurn()) return;   // 主行程也擋一次(update-install):回合在跑不重開
+async function upInstall() {
+  if (upLocalTurn()) return;   // 主行程也擋一次(update-install):回合在跑不重開(重開會把它斷掉)
   const r = await window.blave.updateInstall(); if (r && !r.ok) upRefresh();
-  upPaint();
 }
 function upRefresh() { return window.blave.updateState().then((st) => { UP = st; upPaint(); }).catch(() => {}); }
 window.blave.onUpdateState((st) => { UP = st; upPaint(); });
-/* 選單列「雲端主機有新版」那一行:打開 設定 › 一般(「關於」在那裡;setOpen 自己就會 setCat("display"))。
-   回合在跑時 setOpen 會早退(設定窗不給開),那時只把視窗叫出來等於一按沒反應——改成在聊天說一句為什麼(稽核 B-3) */
-window.blave.onOpenAbout(() => { if (running) { addMsg("sys", t("up.busy")); return; } setOpen(); });
 upRefresh();
-$("ws-update").addEventListener("click", () => {
-  const k = $("ws-update").dataset.kind;
-  if (k === "go") upGo();                        // 狀態列 / 已更新那兩種不可點
-});
-$("set-up-lbtn").addEventListener("click", () => upInstallLocal());
+$("ws-update").addEventListener("click", () => { if ($("ws-update").dataset.kind === "restart") upInstall(); });
+$("set-up-btn").addEventListener("click", () => { if ($("set-up-btn").dataset.kind === "restart") upInstall(); else upCheck(); });
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
 $("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
 $("btn-send").addEventListener("click", sendDraft);
@@ -1803,7 +1787,6 @@ async function sendDraft() {
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
-  if (UPD.done) UPD.doneChatHidden = true;   // 「雲端已更新到 {nv}」那一行:用戶送出下一則訊息就收(「關於」那一行照停)
   UPD.turnCloud = false;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where)
   running = true; $("btn-send").disabled = true; hoBusy(); upPaint();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
@@ -2133,39 +2116,16 @@ function dataCardState() {
   if (acct && acct.reason === "NO_CARD" && acct.trial_eligible) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: v.p ? t(pvK("pv.e.sub"), v) : null };
   return { ...go, text: t("pv.e.noTrial") };
 }
-/* 主機與資料費的那一行(spec-data-without-machine-flow §2-2 / §2-3):只在這個整點小時真的收了錢時講(api 的
-   account_status.data_hour_paid),一小時一次;這台電腦第一次講時多一句計費規則(之後不再講)。沒有確認框(Wei 拍板 A)。
-   純函式:回 [key, vars] 或 null。hour = UTC 整點(api 的小時 key 同一個時區) */
-function dataFeeNote(s, hour, lastHour, ruleSaid) {
-  const r = s && Number(s.data_hourly) > 0 ? Number(s.data_hourly).toLocaleString("en-US") : "";
-  if (!s || s.data_hour_paid !== true || !r || hour === lastHour) return null;
-  return [ruleSaid ? "data.fee" : "data.feeFirst", { r }];
-}
-// 兩個記號都存在 localStorage:重開 app / 換版之後同一小時不再講一次,規則也不重講。存不住就退回這一輪的記憶
-const DATA_RULE_KEY = "blave_data_rule_said", DATA_NOTE_HOUR_KEY = "blave_data_note_hour";
-let dataNoteHourMem = null;
 function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* noop */ } }
-// s = 回合結束時剛讀回來的那一份;讀不到就不講(舊的 data_hour_paid 可能是上一個小時的)
-function dataFeeShow(s) {
-  const hour = new Date().toISOString().slice(0, 13);
-  const note = dataFeeNote(s, hour, lsGet(DATA_NOTE_HOUR_KEY) || dataNoteHourMem, lsGet(DATA_RULE_KEY) === "1");
-  if (!note) return;
-  dataNoteHourMem = hour; lsSet(DATA_NOTE_HOUR_KEY, hour); lsSet(DATA_RULE_KEY, "1");
-  // 〔用量與帳務〕只跟第一次那一則(帶規則那句):之後每小時只有一行字,一段長對話不會堆出一排一樣的鈕(設計稽核 005 第 8 條)
-  const first = note[0] === "data.feeFirst";
-  faultCard().set({ calm: true, text: t(note[0], note[1]), label: first ? t("pv.usage") : null, quiet: true, on: first ? () => window.blave.openExternal(usageUrl()) : null });
-}
 /* 回合結束:有登入就重讀一次 account_status(一次;試用剛到期、餘額剛用完都只有這裡看得到——之前只在進工作頁、
-   重登、回前景時讀,「餘額夠了」會講在已經沒錢的時候,試用到期那一則也永遠出不來)。卡與費用那一行都用這一份 */
+   重登、回前景時讀,「餘額夠了」會講在已經沒錢的時候,試用到期那一則也永遠出不來)。卡用這一份 */
 async function dataTurnEnd() {
-  let fresh = null;
   if (hasToken) {
-    fresh = await window.blave.accountStatus().catch(() => null);
-    if (fresh && hasToken) { acct = fresh; acctPaint(); } else fresh = null;
+    const fresh = await window.blave.accountStatus().catch(() => null);
+    if (fresh && hasToken) { acct = fresh; acctPaint(); }
   }
   maybeDataCard();
-  if (fresh) dataFeeShow(fresh);
 }
 /* 那張卡的字跟著最新的帳號狀態走,拿到資料之後也不放手:餘額又用完了要換回儲值那一句,不能停在「餘額夠了」。
    按了〔再送一次〕才放手(那之後的事由下一輪自己講)。同一句不重設(role 會重唸) */

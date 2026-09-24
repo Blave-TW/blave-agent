@@ -156,12 +156,17 @@ def run(repo, ws, mode, head, *extra, script=None):
         return {"outcome": "crash", "stderr": r.stderr[-400:]}
 
 
+STATUS = "state/workspace_update.json"  # the run's own status line for the desktop — not a workspace write
+
+
 def snapshot(ws):
     out = {}
     for dp, _dn, fn in os.walk(ws):
         for n in fn:
             p = os.path.join(dp, n)
-            out[os.path.relpath(p, ws)] = read(p) if not os.path.islink(p) else "->"
+            rel = os.path.relpath(p, ws)
+            if rel != STATUS:
+                out[rel] = read(p) if not os.path.islink(p) else "->"
     return out
 
 
@@ -603,12 +608,12 @@ try:
           and rG["outcome"] == "updated" and not os.path.exists(markG) and not sudo_calls(),
           f"a stale record with the reconciler stopped: cleared, no restart demanded ({rG})")
 
-    WRITE = 'if restarted == "failed":\n            set_pending(workspace, v_new)'
+    WRITE = 'if restarted in ("failed", "busy", "refused"):\n        set_pending(workspace, v_new)'
     for label, (old, new), key in (
-            ("the record is never written", (WRITE, 'if False:\n            set_pending(workspace, v_new)'), "m1"),
+            ("the record is never written", (WRITE, 'if False:\n        set_pending(workspace, v_new)'), "m1"),
             ("the record is never read", ("unfinished = pending or (", "unfinished = ("), "p2"),
             ("a failed restart clears the record instead",
-             (WRITE, 'if restarted == "failed":\n            drop_pending(workspace)'), "m1")):
+             (WRITE, 'if restarted in ("failed", "busy", "refused"):\n        drop_pending(workspace)'), "m1")):
         src = SRC.replace(old, new, 1)
         check(src != SRC and SRC.count(old) == 1, f"mutation is real: {label}")
         m = failed_restart_sequence(src)

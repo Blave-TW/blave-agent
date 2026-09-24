@@ -1356,7 +1356,40 @@ def build_report():
     # old-machine branch, which warns about closing.
     if configured is not None:
         report["portfolio_configured"] = configured
+    upd = workspace_update()
+    if upd is not None:
+        report["workspace_update"] = upd
     return report
+
+
+WORKSPACE_UPDATE_TTL_S = 24 * 3600
+# `applying` is written before the run and overwritten only when the run ends;
+# a script killed in between (ssh timeout, turn end, reboot) never writes again
+# and the desktop would draw 更新中… for the whole day. A healthy run is at most
+# --wait-busy 600 plus the copy, so past this the run is dead.
+WORKSPACE_UPDATE_APPLYING_TTL_S = 20 * 60
+
+
+def workspace_update():
+    """manager/update_workspace.py's state/workspace_update.json verbatim
+    ({state: applying|done|failed, outcome, from, to, restarted, reason,
+    replaced_changed, backup_dir, ...}) while it is under a day old — the
+    desktop draws 更新中… from `applying` and the one line after from `done`.
+    Older, or unreadable: absent — a stale line must not come back every
+    report for ever. An `applying` older than WORKSPACE_UPDATE_APPLYING_TTL_S
+    is reported as the failure it is, in status_doc's shape."""
+    path = os.path.join(WORKSPACE_STATE, "workspace_update.json")
+    mt = _mtime(path)
+    if not mt or time.time() - mt >= WORKSPACE_UPDATE_TTL_S:
+        return None
+    doc = _read_json(path)
+    if not (isinstance(doc, dict) and doc.get("state")):
+        return None
+    if doc["state"] == "applying" and time.time() - mt >= WORKSPACE_UPDATE_APPLYING_TTL_S:
+        doc = dict(doc, state="failed", outcome="error", restarted=False,
+                   reason="applying timed out", replaced_changed=[], backup_dir=None,
+                   restart_stopped=False, version_written=False)
+    return doc
 
 
 def downtime_pause_view(cfg, last):

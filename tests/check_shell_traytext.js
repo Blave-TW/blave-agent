@@ -54,7 +54,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
 { // 選單列圖示旁不放任何小點(Wei 09-23):本機新版、雲端新版都不點;「新版已下載」那一行留在選單裡
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
   t("選單列圖示旁沒有小點:main.js 不呼叫 setTitle;雲端那條規則不留死碼;選單的「新版已下載」照留", !/\.setTitle\(/.test(mainSrc)
-    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /updateWaiting\(\) \? \[\{ label: tmLabels\.updateReady/.test(mainSrc)); }
+    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /updateWaiting\(\) \? \[\{ type: "separator" \}, \{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]/.test(mainSrc)); }
 { // 連上的規則(Wei 09-23):pair 沒帶 = 連上,只有 pair: false 不算;main.js 的 venueReady 同一條
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   const S = (v) => ({ alive: true, running: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: { paper: v }, reconciler: { alive: true } } });
@@ -107,22 +107,23 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
         && JSON.stringify(invoked[0]) === '["trade-send","resume",{},null,null]' && fires(invoked[0]) === true);
     });
   })); }
-{ // 稽核 S-6:圖示旁的點拿掉之後,雲端落後只剩選單列這一行
-  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
-  const L = { cloudUpdate: "雲端主機有新版 {nv}，打開 Blave 更新…", cloudUpdateStale: "雲端的下單程式需要更新，打開 Blave 更新…" };
-  const C2 = (cv, lv, stopped, state) => ({ cloud: { code: "OK", machine: { state: state || "running" }, config_version: cv, latest_config_version: lv }, report: { reconciler: { stopped: stopped || undefined } } });
-  t("S-6 版號落後 → 帶新版號那一行;版號一樣但重開沒停住(gated === false 嚴格)→ 需要更新那一句;其餘 null",
-    tt.cloudUpdateLine(L, C2("1.1.80", "1.1.83")) === "雲端主機有新版 1.1.83，打開 Blave 更新…"
-    && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: false })) === L.cloudUpdateStale
-    && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83")) === null && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: true })) === null
-    && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart" })) === null && tt.cloudUpdateLine(L, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: 0 })) === null
-    && tt.cloudUpdateLine(L, C2("1.1.80", "1.1.83", null, "stopped")) === null && tt.cloudUpdateLine(L, null) === null);
-  t("S-6 字還沒交過來就不顯示(不出英文預設)", tt.cloudUpdateLine({}, C2("1.1.80", "1.1.83")) === null && tt.cloudUpdateLine({}, C2("1.1.83", "1.1.83", { reason: "machine_restart", gated: false })) === null);
-  t("S-6 選單有那一行、點了開設定 › 一般、也進重畫簽章;字有交、預設物件也有",
-    /\.\.\.\(cu \? \[\{ label: cu, click: openAbout \}\] : \[\]\),/.test(mainSrc) && /const cloud = trayCloudLine\(\), cu = trayCloudUpdate\(\);/.test(mainSrc)
-    && /trayCloudLine\(\) \|\| "", trayCloudUpdate\(\) \|\| ""\]\.join\("\|"\)/.test(mainSrc)
-    && /w\.webContents\.send\("open-about"\)/.test(mainSrc) && /cloudUpdate: "Cloud machine: new version \{nv\}/.test(mainSrc)
-    && /window\.blave\.onOpenAbout\(\(\) => \{ if \(running\) \{ addMsg\("sys", t\("up\.busy"\)\); return; \} setOpen\(\); \}\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"))); }
+{ /* 選單列的更新那一行(v4 §4 / mockup §4):只有 app 新版已暫存好時多一行「重新啟動以完成更新」(不可點、沒有點、沒有徽章),
+     前後各一條分隔線;雲端的更新**不進選單列**(v4 全 app 只有三個可見狀態:cloudUpdateLine 與「打開 Blave 更新…」那兩句退場,open-about 也退場) */
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js"), pre2 = fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8");
+  const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"), trSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+  const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); return m && m[1]; }, en = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(0, S.indexOf("zh:"))); return m && m[1]; };
+  const menuBody = mainSrc.slice(mainSrc.indexOf("function trayMenu(live)"), mainSrc.indexOf("function traySync()"));
+  t("v4 選單列:新版已暫存好(updateWaiting = ready | blocked)才多一行,字是 tm.updateReady、enabled: false、前後各一條分隔線;那一行進 trayKey、也是 tooltip",
+    /\.\.\.\(updateWaiting\(\) \? \[\{ type: "separator" \}, \{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]\),\n\s*\{ type: "separator" \},/.test(menuBody)
+    && /const updateWaiting = \(\) => \{ try \{ const p = updater\(\)\.state\(\)\.phase; return p === "blocked" \|\| p === "ready"; \}/.test(mainSrc)
+    && /updateWaiting\(\) \? tmLabels\.updateReady : ""/.test(mainSrc) && /tray\.setToolTip\(updateWaiting\(\) \? tmLabels\.updateReady : tmLabels\.running\)/.test(mainSrc));
+  t("v4 選單列:那一行的字「重新啟動以完成更新 / Restart to finish updating」(renderer 交 tm.updateReady;主行程的英文預設同一句)",
+    zh("tm.updateReady") === "重新啟動以完成更新" && en("tm.updateReady") === "Restart to finish updating" && /updateReady: t\("tm\.updateReady"\)/.test(trSrc2) && /updateReady: "Restart to finish updating",/.test(mainSrc));
+  t("v4 選單列:雲端的更新不進選單列——traytext 沒有 cloudUpdateLine、main.js 沒有 trayCloudUpdate / openAbout / open-about、preload / app.js 沒有 onOpenAbout、trade.js 不交那兩個字、字串表也沒有",
+    !("cloudUpdateLine" in tt) && !/cloudUpdateLine|trayCloudUpdate|openAbout|open-about|cloudUpdate:|cloudUpdateStale/.test(mainSrc) && !/onOpenAbout|open-about/.test(pre2) && !/onOpenAbout/.test(appSrc)
+    && !/cloudUpdate|cloudUpdateStale/.test(trSrc2) && zh("tm.cloudUpdate") === null && zh("tm.cloudUpdateStale") === null && en("tm.cloudUpdate") === null);
+  t("v4 選單列:選單裡沒有別的更新字(沒有「打開 Blave 更新」「有新版」那類句子)", !/Open Blave to update|new version \{nv\}/.test(mainSrc)); }
 { // T1:主行程只收預設物件裡已經有的 key(for k of Object.keys(tmLabels)):畫面交過來、預設沒有的字會被靜靜丟掉
   // (例:少了 stMayTrade,選單列的雲端那一行就在最該講話的狀態整行消失)。列舉 trPushLabels 交的每一個 key
   const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");

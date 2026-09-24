@@ -13,6 +13,9 @@ Run: cd blave-agent && .venv/bin/python tests/check_future_window_no_fetch.py
 """
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# The subject is the Blave single-file layout; the key-free exchange path in front of it
+# (tests/check_tw_free_daily.py) is pinned off so nothing here can reach twse.com.tw.
+os.environ['BLAVE_TWSTOCK_DAILY_SOURCE'] = 'blave'
 from datetime import datetime as _dt, timedelta, timezone
 from pathlib import Path
 import pandas as pd

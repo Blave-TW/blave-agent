@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("blave", {
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
   cloudEvents: (q) => ipcRenderer.invoke("cloud-events", q),
+  cloudOverview: (q) => ipcRenderer.invoke("cloud-overview", q),
+  cloudPerformance: (q) => ipcRenderer.invoke("cloud-performance", q),
   cloudStrategy: (name) => ipcRenderer.invoke("cloud-strategy", { name }),
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
@@ -33,7 +35,7 @@ contextBridge.exposeInMainWorld("blave", {
   updateState: () => ipcRenderer.invoke("update-state"),
   updateCheck: () => ipcRenderer.invoke("update-check"),
   updateInstall: () => ipcRenderer.invoke("update-install"),
-  onOpenAbout: (fn) => ipcRenderer.on("open-about", () => fn()),   // 選單列「雲端主機有新版」那一行
+  updateShowBackup: () => ipcRenderer.invoke("update-show-backup"),   // 換版時備份的資料夾:主行程開 Finder(路徑不經畫面)
   onUpdateState: (fn) => ipcRenderer.on("update-state", (_e, st) => fn(st)),
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),

@@ -1265,8 +1265,8 @@ def v4_01(ctx):
                f"{len(p.get('missing') or [])} missing ({', '.join((p.get('missing') or [])[:12])})")
     t_apply = time.time()
     ap = subprocess.run([sys.executable, upd, "apply", "--clone", clone, "--workspace", ws,
-                         "--expect-head", head, "--restart-ok"], env=env, capture_output=True,
-                        text=True)
+                         "--expect-head", head, "--restart-ok", "--wait-busy", "30"], env=env,
+                        capture_output=True, text=True)  # the daemon's round marker may be up
     try:
         r = json.loads(ap.stdout)
     except ValueError:

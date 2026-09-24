@@ -24,7 +24,6 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
 /* ── V5-01 account_status:舊 api(沒有 data_access / data_hour_paid)與新 api ── */
 {
   const mainDA = eval("(" + fnSrc(main, "dataAccessOf") + ")"), appDA = eval("(" + fnSrc(app, "dataAccessOf") + ")");
-  const dataFeeNote = eval("(" + fnSrc(app, "dataFeeNote") + ")");
   const hasData = (s) => { const a = appDA(s); return a === "included" || a === "billed"; };
   const OLD_IN = { can_run: true, data_included: true }, OLD_OUT = { can_run: true, data_included: false };
   const NEW = (a, x) => Object.assign({ can_run: true, data_access: a, data_included: a === "included", data_hourly: 2 }, x || {});
@@ -33,12 +32,7 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   ok("V5-01", "main.js 與 renderer 的 dataAccessOf 對每個樣本(舊/新/怪)給同一個答案", cases.every(([s, want]) => mainDA(s) === want && appDA(s) === want));
   ok("V5-01", "舊 api 不含資料(data_included:false)→ 當作沒有:不把資料 key 寫進 .env(main.js hasBlaveData 的條件)", !hasData(OLD_OUT) && hasData(OLD_IN));
   ok("V5-01", "新 api billed 算拿得到、none 不算", hasData(NEW("billed")) && !hasData(NEW("none")));
-  ok("V5-01", "舊 api 沒有 data_hour_paid:費用那一行不出", dataFeeNote(OLD_IN, "2026-09-24T01", null, false) === null);
-  ok("V5-01", "新 api 付了這一小時:第一次講規則、之後只講費用、同一小時不重講",
-    JSON.stringify(dataFeeNote(NEW("billed", { data_hour_paid: true }), "h1", null, false)) === JSON.stringify(["data.feeFirst", { r: "2" }])
-    && dataFeeNote(NEW("billed", { data_hour_paid: true }), "h1", null, true)[0] === "data.fee"
-    && dataFeeNote(NEW("billed", { data_hour_paid: true }), "h1", "h1", true) === null);
-  ok("V5-01", "data_hour_paid 是字串 \"true\"(型別不對)→ 不講", dataFeeNote(NEW("billed", { data_hour_paid: "true" }), "h1", null, false) === null);
+  ok("V5-01", "費用那一則已拿掉:新舊 api 的 data_hour_paid 外殼都不再讀(回合結束不出那一行)", !/data_hour_paid|dataFeeNote/.test(app));
   // pvK:舊 api 用 .old 那一版句子(那時沒有主機的人真的拿不到資料);每一個 pvK key 兩語都要有兩版
   var acct = null;
   const pvK = eval("(" + /const pvK = (\(k\) => [^;]+);/.exec(app)[1] + ")");
@@ -135,20 +129,21 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   ok("V6-01", "官方檔有變時 VERSION 必須比舊的大——否則電腦版換包後不拷新 lib,雲端「更新」也不會亮(出貨前的閘)", libSame || (oldV !== null && officialStale(newV, oldV)));
 }
 
-/* ── V6-05 兩邊的「更新」指示 ── */
+/* ── V6-05 兩邊的「更新」指示(v4:關於一行 + 聊天那一格;沒有更新鈕、沒有 S0–S7)── */
 {
-  const stubs = "var UP_REPORT_WAIT_MS = 180000, UP_CLOCK_AFTER_MS = 20000;\n" + fnSrc(app, "upClock") + "\n";
-  const upPlan = eval("(function(){" + stubs + "return " + fnSrc(app, "upPlan") + "})()");
-  const P = (cv, lv, ph) => upPlan({ up: { phase: ph || "idle", current: "0.0.5" }, cloud: { config_version: cv, latest_config_version: lv }, kind: "running", localTurn: false, mem: {}, now: 0, cloudStale: false });
+  const upPlan = eval("(" + fnSrc(app, "upPlan") + ")");
+  const P = (cv, lv, ph, x) => upPlan({ up: { phase: ph || "idle", current: "0.0.5", checkedAt: 1 }, cloud: { config_version: cv, latest_config_version: lv }, kind: "running", localTurn: false, mem: {}, now: 0, cloudStale: false, wu: null, ...(x || {}) });
   const same = P("2026-09-23-b", "2026-09-23-b"), lag = P("2026-09-23-b", "2026-09-24");
-  ok("V6-05", "雲端 VERSION 落後 → 雲端那行「有新版」、主鈕是雲端更新", lag.cloud.s[0] === "up.c.available" && lag.btn.act === "cloud");
-  ok("V6-05", "雲端 VERSION 等於最新 → 已是最新、沒有更新鈕(VERSION 沒 bump 的 lib 改動雲端永遠看不到)", same.cloud.s[0] === "up.latest" && !same.cloud.has);
+  ok("V6-05", "雲端 VERSION 落後 → cloudLag、關於列不寫「已是最新版」(也沒有第四個狀態;更新走檢查更新→本機 agent)", lag.cloudLag === true && lag.row.status === null && lag.slot === null);
+  ok("V6-05", "雲端 VERSION 等於最新 → 已是最新版、沒有東西可按(VERSION 沒 bump 的 lib 改動雲端永遠看不到)", same.cloudLag === false && same.row.status[0] === "up.row.latest" && same.slot === null && same.link.kind === "check");
   const loc = P("2026-09-24", "2026-09-24", "ready");
-  ok("V6-05", "這台電腦那一行只看 app 更新器(外殼版號),跟 workspace VERSION 無關", loc.local.s[0] === "up.ready" && loc.btn.act === "local");
+  ok("V6-05", "這台電腦那一半只看 app 更新器(外殼版號),跟 workspace VERSION 無關:ready → 「重新啟動以完成更新」", loc.slot && loc.slot.kind === "restart" && loc.link.kind === "restart" && loc.row.status[0] === "up.row.ready");
   const both = P("2026-09-23-b", "2026-09-24", "ready");
-  ok("V6-05", "兩邊都有新版:主鈕雲端、另一顆裝本機", both.btn.act === "cloud" && !!both.localBtn);
+  ok("V6-05", "兩邊都有新版:app 那半照樣給重新啟動;雲端那半不擋它", both.slot && both.slot.kind === "restart" && both.cloudLag === true);
   const unk = P(null, "2026-09-24");
-  ok("V6-05", "雲端還沒回報版號(舊機器 / 讀不到)→ 不亮更新(不猜)", !unk.cloud.has);
+  ok("V6-05", "雲端還沒回報版號(舊機器 / 讀不到)→ 不算落後、不寫雲端那段(不猜)", unk.cloudLag === false && !unk.row.segs.some((s) => s[0] === "up.row.cloud"));
+  const applying = P("2026-09-23-b", "2026-09-24", "idle", { wu: { state: "applying" } });
+  ok("V6-05", "新形狀:報告帶 workspace_update.state = applying → 那一格「更新中…」;舊形狀(沒有那個欄位)沒有 (c)", applying.slot && applying.slot.kind === "applying" && lag.slot === null);
 }
 
 console.log(red ? `\n${red} FAIL` : "\nall pass");

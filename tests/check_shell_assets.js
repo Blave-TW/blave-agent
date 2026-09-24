@@ -154,7 +154,7 @@ fs.rmSync(BASE, { recursive: true, force: true });
 
 // 畫面:口徑換過的地方斷線;累積損益只從最後一段起算
 ok("曲線:口徑不同的相鄰兩點不連線(moveTo)", /i && p\.b === pts\[i - 1\]\.b \? ctx\.lineTo/.test(src));
-ok("累積損益:只取最後一次換口徑之後的點", /const pts = TR\.ov\.mode === "pnl" \? all\.slice\(cut\) : all;/.test(src)
+ok("累積損益:只取最後一次換口徑之後的點(平台算好的那條優先;這台電腦沒有,走本機推算)", /const pts = srv \? srv\.pts : isPnl \? all\.slice\(cut\) : all;/.test(src)
   && /\.map\(\(p\) => \(\{ t: p\.ts, v: p\.equity, b: p\.basis \|\| "equity" \}\)\)/.test(src));
 
 // 啟動確認框:機器端證明只碰帳本裡的部位(回報 self_ledger === true)才講「你自己開的倉不會動」;舊 lib 不講(它會平)

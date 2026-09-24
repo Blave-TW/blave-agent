@@ -5,7 +5,7 @@
 //   ② 一般中文與英文不因此在奇怪的地方斷:英文只在空白處換行、短中文一行
 //   ③ 對照:把泡泡的 overflow-wrap 蓋回 normal,①要壞(證明量得到那個 bug)
 // 文字鈕 .btn-quiet(spec-desktop-settings-cleanup §0):
-//   ④ 關於的「服務條款 · 隱私權政策」、隱私頁的「隱私權政策」:字的左緣 = 內容欄起點(「這台電腦」那條線)
+//   ④ 關於的「服務條款 · 隱私權政策」、隱私頁的「隱私權政策」:字的左緣 = 內容欄起點(關於那一行 #set-up-line 的左緣)
 //   ⑤ 對照:把 UA 的左右 padding 蓋回去,④要壞
 // 跑法:node tests/check_shell_layout.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
   const legal = async () => {
     await w.webContents.executeJavaScript(`(async () => { running = false; await setOpen(); setCat("display"); })()`, true);
     await new Promise((r) => setTimeout(r, 300));
-    const edge = await w.webContents.executeJavaScript(`document.querySelector("#set-up .set-up-row .w").getBoundingClientRect().left`, true);
+    const edge = await w.webContents.executeJavaScript(`document.querySelector("#set-up-line").getBoundingClientRect().left`, true);
     const terms = await w.webContents.executeJavaScript(textL("#set-terms"), true), priv1 = await w.webContents.executeJavaScript(textL("#set-privacy"), true);
     await w.webContents.executeJavaScript(`setCat("priv")`, true); await new Promise((r) => setTimeout(r, 400));
     const pedge = await w.webContents.executeJavaScript(`document.querySelector("#set-priv .sw-l").getBoundingClientRect().left`, true);
@@ -76,7 +76,7 @@ app.whenReady().then(async () => {
     return { edge, terms, priv1, pedge, priv2, pads };
   };
   const L1 = await legal();
-  ok(`④ 關於:「服務條款」的字在「這台電腦」那條線上(${L1.terms.toFixed(1)} vs ${L1.edge.toFixed(1)}),「隱私權政策」在它右邊`, Math.abs(L1.terms - L1.edge) < 0.5 && L1.priv1 > L1.terms);
+  ok(`④ 關於:「服務條款」的字在關於那一行的起點上(${L1.terms.toFixed(1)} vs ${L1.edge.toFixed(1)}),「隱私權政策」在它右邊`, Math.abs(L1.terms - L1.edge) < 0.5 && L1.priv1 > L1.terms);
   ok(`④ 隱私頁:「隱私權政策」的字在內容欄起點(${L1.priv2.toFixed(1)} vs ${L1.pedge.toFixed(1)})`, Math.abs(L1.priv2 - L1.pedge) < 0.5);
   ok("④ 設定裡看得到的文字鈕左右 padding 都是 0(" + L1.pads.length + " 顆)", L1.pads.length >= 2 && L1.pads.every((x) => x === "0px/0px"));
   await w.webContents.executeJavaScript(`(() => { const s = document.createElement("style"); s.textContent = ".btn-quiet { padding: 1px 6px !important; }"; document.head.appendChild(s); })()`, true);

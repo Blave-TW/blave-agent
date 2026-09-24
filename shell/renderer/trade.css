@@ -296,6 +296,16 @@ html.ws-sc .side-gate { display: none; }
 .ov-stats .sv.na { color: var(--color-greyDark); }
 .ov-stats .sv .unit { margin-left: var(--space-6); font-size: 11px; font-weight: 400; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .ov-stats .sub { margin-top: var(--space-4); font-size: 11px; color: var(--ink-3); }
+/* 組合績效六格(照網頁 .perf-stats):3 欄兩列,角落由 cell 自己收;gating = 小一號 muted sans「資料累積中」(不是壞值),
+   est = 真數字、只降到 muted(排在 .pos/.neg 之後,同特異度靠順序蓋掉漲跌色;不用 .na 的 greyDark,深色底上不到 AA) */
+.bt-stats.ov-stats.perf-stats { grid-template-columns: repeat(3, 1fr); }
+.perf-stats .stat, .perf-stats .stat:first-child, .perf-stats .stat:last-child { border-radius: 0; }
+.perf-stats .stat:nth-child(1) { border-top-left-radius: var(--radius-lg); }
+.perf-stats .stat:nth-child(3) { border-top-right-radius: var(--radius-lg); }
+.perf-stats .stat:nth-child(4) { border-bottom-left-radius: var(--radius-lg); }
+.perf-stats .stat:nth-child(6) { border-bottom-right-radius: var(--radius-lg); }
+.ov-stats .sv.gating { font-size: 13px; font-weight: 500; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--color-greyMedium); }
+.ov-stats .sv.est { color: var(--color-greyMedium); }
 .ov-modes, .ov-ranges { display: inline-flex; align-items: baseline; gap: var(--space-4); }
 .rng {
   padding: 3px var(--space-8); border: 1px solid transparent; border-radius: var(--radius-xs);
@@ -323,6 +333,12 @@ html.ws-sc .side-gate { display: none; }
   .bt-stats.ov-stats { grid-template-columns: repeat(2, 1fr); }
   .ov-stats .stat:first-child { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   .ov-stats .stat:last-child { border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+  .bt-stats.ov-stats.perf-stats { grid-template-columns: repeat(2, 1fr); }
+  .perf-stats .stat:first-child, .perf-stats .stat:last-child, .perf-stats .stat:nth-child(3), .perf-stats .stat:nth-child(4) { border-radius: 0; }
+  .perf-stats .stat:nth-child(1) { border-top-left-radius: var(--radius-lg); }
+  .perf-stats .stat:nth-child(2) { border-top-right-radius: var(--radius-lg); }
+  .perf-stats .stat:nth-child(5) { border-bottom-left-radius: var(--radius-lg); }
+  .perf-stats .stat:nth-child(6) { border-bottom-right-radius: var(--radius-lg); }
   .main-head { padding-left: var(--space-16); padding-right: var(--space-16); }
   /* V2b:中欄窄到這一階、而且動作槽有**兩顆**鈕時,鈕自己一列、各佔一半——不然標題會被截成「Auto …」。
      只有一顆鈕時留在標題那一列、靠右、自然寬:無條件換行會讓最常見的 running(只有「暫停下單」)憑空多一列,
@@ -431,11 +447,6 @@ html.ws-sc .side-gate { display: none; }
 .cx-re-ip { margin: 0 0 0 var(--space-16); }   /* 16 = 短劃 8 + gap 8,跟錯誤句的字對齊;上方間距由 .cx-chipw 自己的 margin-top 給 */
 @media (prefers-reduced-motion: reduce) { .cx-icb { transition: none; } }
 .f-input[readonly] { color: var(--ink-3); }
-/* C(重開沒停住)時標頭主鈕右邊的「立即更新到最新版本」:文字鈕,熱區跟主鈕等高 */
-/* C 的「立即更新到最新版本」:原因行下面自己一行、靠左對齊正文(.act 只放主鈕,1024 寬時原因行才不會被擠成窄欄);
-   C 唯一的出口,字用 --ink-2 同 #tr-go-stop */
-.main-head .tr-go-upd { display: block; margin-top: var(--space-4); min-height: 32px; color: var(--ink-2); text-align: left; }
-.main-head .tr-go-upd:hover { color: var(--ink); }
 /* 沒有策略設金額時鈕旁的原因行(§8):狀態行下面自己一行,--ink-3 12px;「部位」是切分頁的文字連結 */
 .main-head .tr-noamt { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .main-head .tr-noamt-link { font-size: inherit; vertical-align: baseline; }

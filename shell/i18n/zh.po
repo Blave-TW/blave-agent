@@ -359,36 +359,6 @@ msgstr "模型接入"
 msgid "set.lang"
 msgstr "語言"
 
-msgid "up.app"
-msgstr "Blave {v}"
-
-msgid "up.latest"
-msgstr "已是最新版"
-
-msgid "up.latestAt"
-msgstr "已是最新版 · {t} 檢查過"
-
-msgid "up.checking"
-msgstr "檢查中…"
-
-msgid "up.downloading"
-msgstr "正在下載 {nv}…"
-
-msgid "up.downloadingPct"
-msgstr "正在下載 {nv}（{pct}%）"
-
-msgid "up.ready"
-msgstr "{nv} 已下載，重新啟動後生效"
-
-msgid "up.blocked"
-msgstr "{nv} 已下載。自動下單執行中不會更新；暫停下單後可以更新，或結束 Blave 時自動安裝"
-
-msgid "up.error"
-msgstr "這次沒檢查成功"
-
-msgid "up.staging"
-msgstr "{nv} 下載完成，正在準備安裝…"
-
 msgid "up.installFailed"
 msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用程式」資料夾裡（不是從下載的磁碟映像直接開），再檢查一次"
 
@@ -679,12 +649,6 @@ msgstr "這個帳號還沒綁卡，資料拿不到。"
 
 msgid "data.noCardSub"
 msgstr "首次綁卡送 {t} 天，期間資料免費。"
-
-msgid "data.fee"
-msgstr "這小時用到了 Blave 的資料，主機與資料費 {r} TWD。"
-
-msgid "data.feeFirst"
-msgstr "這小時用到了 Blave 的資料，主機與資料費 {r} TWD。之後每個有用到的小時都收 {r} TWD，同一小時只收一次；沒用到的小時不收。"
 
 msgid "pv.h.offer"
 msgstr "首次綁卡，送 {t} 天 Blave 的資料"
@@ -1432,6 +1396,93 @@ msgstr "Blave 沒開著的時段沒有紀錄，曲線直接連起來。"
 msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
 
+msgid "tr.ov.flowNote"
+msgstr "偵測到資金異動（出入金或綁定、解除一個交易所）；曲線在那裡斷開，累積損益只從最後一段起算。"
+
+msgid "tr.ov.curveUnreach"
+msgstr "現在讀不到雲端的權益紀錄，稍後會再試；這不代表沒有紀錄。"
+
+msgid "tr.ov.perf.label"
+msgstr "組合績效"
+
+msgid "tr.ov.perf.gating"
+msgstr "資料累積中"
+
+msgid "tr.ov.perf.cum"
+msgstr "累積報酬(扣入金)"
+
+msgid "tr.ov.perf.cumTip"
+msgstr "已扣掉你的入金與出金，只算策略本身的賺賠。"
+
+msgid "tr.ov.perf.dd"
+msgstr "最大回撤"
+
+msgid "tr.ov.perf.ddTipOk"
+msgstr "帳戶淨值從高點回落的最大幅度(計算區間 {n} 天)。"
+
+msgid "tr.ov.perf.ddTipGating"
+msgstr "帳戶淨值從高點回落的最大幅度。資料累積中，稍後即可顯示。"
+
+msgid "tr.ov.perf.ann"
+msgstr "年化報酬"
+
+msgid "tr.ov.perf.annTipOk"
+msgstr "把目前報酬換算成一年的速度，是推估不是保證。"
+
+msgid "tr.ov.perf.annTipGating"
+msgstr "把目前報酬換算成一年的速度，是推估不是保證。需約 30 天才顯示，目前累積中。"
+
+msgid "tr.ov.perf.vol"
+msgstr "波動率(年化)"
+
+msgid "tr.ov.perf.volTipOk"
+msgstr "報酬起伏的大小，越大越震盪(年化)。"
+
+msgid "tr.ov.perf.volTipGating"
+msgstr "報酬起伏的大小，越大越震盪。需約 24 小時才顯示，目前累積中。"
+
+msgid "tr.ov.perf.volTipEstHours"
+msgstr "報酬起伏的大小，越大越震盪(年化)。目前只有 {n} 小時樣本，數字還會變動，滿 7 天後才穩定。"
+
+msgid "tr.ov.perf.volTipEstDays"
+msgstr "報酬起伏的大小，越大越震盪(年化)。目前只有 {n} 天樣本，數字還會變動，滿 7 天後才穩定。"
+
+msgid "tr.ov.perf.sharpe"
+msgstr "Sharpe"
+
+msgid "tr.ov.perf.sharpeTipOk"
+msgstr "每承受一單位波動換到的報酬，越高越好。"
+
+msgid "tr.ov.perf.sharpeTipGating"
+msgstr "每承受一單位波動換到的報酬，越高越好。需約 30 天才顯示，目前累積中。"
+
+msgid "tr.ov.perf.trades"
+msgstr "交易次數"
+
+msgid "tr.ov.perf.tradesTip"
+msgstr "執行輪次(非成交筆數):一次訊號算 1 次，拆單/追價不重複計。"
+
+msgid "tr.ov.perf.reason.insufficientSamples"
+msgstr "{d}目前的權益紀錄太稀疏、中間間隔太長，還湊不出足夠的區間可以算。"
+
+msgid "tr.ov.perf.reason.flowMerged"
+msgstr "{d}入金出金的間隔太密，相鄰區間被併在一起，剩下的獨立區間不夠算。這跟時間長短無關，要有一段出入金少的期間才會出現。"
+
+msgid "tr.ov.perf.reason.zeroVolatility"
+msgstr "{d}這段期間權益完全沒有起伏，還沒有波動可以拿來除。"
+
+msgid "tr.ov.perf.volEst.insufficientSamples"
+msgstr "報酬起伏的大小，越大越震盪(年化)。權益紀錄還太稀疏，數字會抖，等紀錄密一些就會穩定。"
+
+msgid "tr.ov.perf.volEst.flowMerged"
+msgstr "報酬起伏的大小，越大越震盪(年化)。入金出金的間隔太密，可以拿來計算的獨立區間被併掉了，數字會抖。這跟時間長短無關，要有一段出入金少的期間才會穩定。"
+
+msgid "tr.ov.perfUnreach"
+msgstr "現在讀不到雲端的組合績效，稍後會再試。"
+
+msgid "tr.ov.pnlAnom"
+msgstr "偵測到資金異動，跳變已自損益排除"
+
 msgid "tr.ov.range"
 msgstr "區間"
 
@@ -1593,7 +1644,7 @@ msgid "tm.hidden"
 msgstr "Blave 還開著，自動下單照常執行。從選單列的圖示可以暫停或打開視窗。"
 
 msgid "tm.updateReady"
-msgstr "新版已就緒：暫停下單後可以更新，或結束 Blave 時自動安裝"
+msgstr "重新啟動以完成更新"
 
 msgid "tm.evOrderErrNote"
 msgstr "交易所拒絕了這筆單；打開 Blave 看原因"
@@ -2330,35 +2381,11 @@ msgstr "把雲端主機上的策略 {id} 拉回這台電腦。拉回後在這裡
 msgid "up.about"
 msgstr "關於"
 
-msgid "up.update"
-msgstr "更新"
-
-msgid "up.updating"
-msgstr "更新中…"
-
 msgid "up.busy"
 msgstr "有對話還在回覆，結束後再更新"
 
-msgid "up.chat"
-msgstr "立即更新到最新版本"
-
 msgid "up.backup"
-msgstr "你改過的 {n} 個官方檔被新版蓋過，舊的留在 {dir}；要把改動套回來，跟 agent 說一聲。"
-
-msgid "up.c.unreach"
-msgstr "讀不到雲端的狀態，這次不會更新它。"
-
-msgid "up.c.stopped"
-msgstr "雲端主機已停機，這次不會更新它。"
-
-msgid "up.c.note"
-msgstr "更新會用到你的 AI 額度。"
-
-msgid "up.c.noteLong"
-msgstr "這台電腦的 agent 會連上雲端主機做更新，用你自己的 AI 額度；若下單程式在跑，它會先問你。"
-
-msgid "up.c.available"
-msgstr "有新版 {nv}"
+msgstr "Blave 已更新到 {av}。你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。"
 
 msgid "tr.cloud.pendAmounts"
 msgstr "新金額已存到雲端主機。"
@@ -2541,20 +2568,11 @@ msgstr "請在群益下單軟體手動平倉"
 msgid "up.c.msg"
 msgstr "把雲端主機更新到最新版本"
 
-msgid "up.c.checking"
-msgstr "agent 回覆了，看聊天；雲端主機回報新版本後這裡會跟上。"
-
 msgid "tr.cloud.typeC"
 msgstr "投資組合策略的第一筆金額要在網頁工作頁設定，之後可以在這裡調整。"
 
 msgid "cdel.absent"
 msgstr "雲端主機上本來就沒有這支策略，沒有刪除任何東西。側欄清單更新後就會對上。"
-
-msgid "up.installLocal"
-msgstr "重新啟動並更新這台電腦"
-
-msgid "up.c.seeChat"
-msgstr "上一次沒有完成雲端更新，原因與後續看聊天。"
 
 msgid "tr.cloud.restartStopped"
 msgstr "主機重開過，什麼單都不下——部位現在沒有人在管，停損也不會執行。按「啟動下單」繼續。"
@@ -2596,16 +2614,13 @@ msgid "tm.stMayTrade"
 msgstr "可能仍在下單"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "主機重開後，沒能確認自動下單已經停下，部位可能還在被交易。先按「暫停下單」，再按「立即更新到最新版本」。"
-
-msgid "up.c.needsUpdate"
-msgstr "雲端的下單程式是舊版，主機重開後沒能確認它停下，需要更新。"
+msgstr "主機重開後，沒能確認自動下單已經停下，部位可能還在被交易。先按「暫停下單」，再按「檢查更新」把主機更新到最新版本。"
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "主機重開，自動下單可能沒停住"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "先按「暫停下單」，再按「立即更新到最新版本」；workspace 還是舊版"
+msgstr "先按「暫停下單」，再按「檢查更新」；workspace 還是舊版"
 
 msgid "tr.haltReasonAll"
 msgstr "什麼單都不下——平倉與停損也不會執行。問題處理好之後，再按「啟動下單」；不確定原因，可以在聊天請 agent 查。"
@@ -2626,7 +2641,7 @@ msgid "tr.startWarn2Local"
 msgstr "Blave 關著的那段時間，策略沒有執行、訊號沒有更新。「補齊部位」會照現在算到的訊號下單，可能還是關掉之前那一次；每支策略下一次排程跑完才會換成最新訊號。想等最新訊號，選「等新訊號」。"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "舊版下單程式可能還在跑。先按「立即更新到最新版本」；不確定暫停的原因，可以在聊天請 agent 查。"
+msgstr "舊版下單程式可能還在跑。先按「檢查更新」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "累積損益曲線，{a} 到 {b}，{n} 筆"
@@ -2639,33 +2654,6 @@ msgstr "沒有收到主機確認"
 
 msgid "tr.cloud.cxWaiting"
 msgstr "正在等主機確認，通常一兩分鐘。好了這一頁會自己換成下單設定，不用做任何事。"
-
-msgid "up.c.running"
-msgstr "正在更新雲端主機 · {t}"
-
-msgid "up.c.runningShort"
-msgstr "正在更新雲端主機"
-
-msgid "up.c.onCloud"
-msgstr "agent 正在雲端主機上作業"
-
-msgid "up.c.runNote"
-msgstr "過程在聊天裡；可以先做別的事，完成後這裡會顯示。"
-
-msgid "up.c.noReport"
-msgstr "還沒收到雲端主機回報 {nv}。如果 agent 說已經更新好，再等一下；沒有的話看聊天說明。"
-
-msgid "up.c.done"
-msgstr "已更新到 {nv}"
-
-msgid "up.c.doneFrom"
-msgstr "{from} → {nv}"
-
-msgid "up.c.chatRunning"
-msgstr "正在更新雲端主機 · {t}"
-
-msgid "up.c.chatDone"
-msgstr "雲端已更新到 {nv}"
 
 msgid "tr.startOffNoAmt"
 msgstr "還沒有策略設定金額，沒有東西可以啟動。先到「部位」替策略設定金額。"
@@ -2773,12 +2761,6 @@ msgstr "這台電腦的下單機停了，正在重新啟動，這段時間不會
 msgid "minv.release"
 msgstr "這個版本的 Blave 需要更新，才能送出「解除暫停」。到 設定 › 一般 最下面更新。"
 
-msgid "tm.cloudUpdate"
-msgstr "雲端主機有新版 {nv}，打開 Blave 更新…"
-
-msgid "tm.cloudUpdateStale"
-msgstr "雲端的下單程式需要更新，打開 Blave 更新…"
-
 msgid "tr.cloud.cxSavedStalePaper"
 msgstr "模擬帳戶已經送出，但雲端主機到現在都沒有回報，這一頁還沒換成下單設定。可以再試一次，或到聊天請 agent 看看主機怎麼了。"
 
@@ -2809,3 +2791,59 @@ msgstr "你的主機在跑。"
 
 msgid "tr.cloud.startPendSlow"
 msgstr "比平常久。主機還在回報，不用再按一次；最久大約兩分鐘。"
+
+# 更新(proposal-desktop-update-flow-v4):關於那一行、聊天那一格、事後那一行
+
+msgid "up.row.app"
+msgstr "Blave {av}"
+
+msgid "up.row.cloud"
+msgstr "雲端主機 {cv}"
+
+msgid "up.row.cloudOff"
+msgstr "雲端主機（停機）"
+
+msgid "up.row.latest"
+msgstr "已是最新版"
+
+msgid "up.row.ready"
+msgstr "新版已下載"
+
+msgid "up.row.readyQuit"
+msgstr "新版已下載 · 結束 Blave 時安裝"
+
+msgid "up.row.applying"
+msgstr "更新中…"
+
+msgid "up.restart"
+msgstr "重新啟動以完成更新"
+
+msgid "up.applying"
+msgstr "更新中…"
+
+msgid "up.backup.open"
+msgstr "開啟資料夾"
+
+msgid "up.done.cloud"
+msgstr "雲端主機已更新到 {cv}。"
+
+msgid "up.done.cloudRestarted"
+msgstr "雲端主機已更新到 {cv}，下單程式已用新版重新啟動。"
+
+msgid "up.done.paused"
+msgstr "雲端主機已更新到 {cv}。自動下單仍暫停，按「啟動下單」才會繼續。"
+
+msgid "up.done.replaced"
+msgstr "你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。"
+
+msgid "up.done.restartFailed"
+msgstr "雲端主機的新檔已就位，但下單程式重新啟動失敗，仍在跑舊版；再說一次「更新」就會再試。"
+
+msgid "up.done.restartDeferred"
+msgstr "雲端主機的新檔已就位，但下單程式仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。"
+
+msgid "up.done.view"
+msgstr "查看"
+
+msgid "up.done.viewMsg"
+msgstr "列出雲端主機上 {dir} 裡的檔案"

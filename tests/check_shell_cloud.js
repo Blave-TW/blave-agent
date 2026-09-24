@@ -1,7 +1,7 @@
 // shell/cloud.js:讀雲端主機狀態(唯讀)。不打真的 api(post 是假的)。
 // 跑法:node tests/check_shell_cloud.js
 const fs = require("fs"), path = require("path");
-const { createCloudHost, interpret, interpretStrategy, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
+const { createCloudHost, interpret, interpretStrategy, interpretOverview, interpretPerformance, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, EVENTS_MIN_GAP_MS, MIN_GAP_MS, POLL_BACKGROUND_MS, POLL_FOREGROUND_MS, BACKOFF_MS } = require("../shell/cloud.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", public_ip: "1.2.3.4" }, portfolio: { reported_at: 100, halt: { halted: false }, reconciler: { alive: true }, venues: {} },
   portfolio_reported_at: 100, portfolio_stale: false, server_time: 130, fx_rates: { USD: 1 }, currency: "USDT",
@@ -219,6 +219,99 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   t("main.js:cloud-strategy 走 handle()(只收自家頁面),拒絕時回 { code: UNREACH, strategy: null };preload 只多暴露 cloudStrategy 一支",
     /\n  handle\("cloud-strategy", \(_e, q\) => cloudHost\(\)\.strategy\(q && q\.name\), \{ code: "UNREACH", strategy: null \}\);/.test(mainSrc)
     && /cloudStrategy: \(name\) => ipcRenderer\.invoke\("cloud-strategy", \{ name \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
+
+  /* ── 權益曲線與當日損益(總覽分頁的第三支端點)────────────────────────
+     api 回的是網頁 GET /openclaw/agent/overview 那一份(包在 overview 底下);這裡對成這台電腦那一份的形狀,trade.js 換來源就能畫 */
+  const ovBody = (o = {}) => ({ machine_state: "running", server_time: 130, overview: {
+    curve: [{ ts: 100, equity_usdt: 1000 }, { ts: 3700, equity_usdt: 1010 }, { ts: 7300, equity_usdt: 2010 }, { ts: 10900, equity_usdt: 2030 }, { ts: "x", equity_usdt: 1 }, { ts: 5, equity_usdt: null }, null, "nope"],
+    period: { start_ts: 100, end_ts: 10900, start_equity: 1000, end_equity: 2030, net_flows: 1000, pnl: null },
+    today: { start_ts: 100, start_equity: 1000, net_flows: 0, pnl: 12.5 },
+    currency: "USDT", anomalies: [{ ts: 7300, note: "flow_detected" }, { ts: "x", note: "flow_detected" }, null], baseline_ts: 100, unrealized_usdt: null, ...o } });
+  { const r = interpretOverview({ status: 200, body: ovBody() }, "USDT");
+    t("曲線:形狀對成這台電腦那一份(equity_usdt → equity、壞點濾掉、today 只留 pnl / start_equity、unrealized null、baseline_ts)",
+      r.code === "OK" && r.curve.curve.length === 4 && r.curve.curve[0].equity === 1000 && r.curve.curve[0].ts === 100 && r.curve.currency === "USDT" && r.curve.baseline_ts === 100
+      && JSON.stringify(r.curve.today) === '{"pnl":12.5,"start_equity":1000}' && r.curve.unrealized === null && r.curve.anomalies.length === 1 && r.curve.anomalies[0].ts === 7300);
+    t("曲線:資金異動之後的點換一個 basis(斷線規則跟這台電腦的口徑換過同一條;異動那一格自己是新段的第一點)", r.curve.curve.map((p) => p.basis).join() === "flow0,flow0,flow1,flow1");
+    t("曲線:今天的損益跨過資金異動時 api 回 null → today null(畫「—」,不是 0)", interpretOverview({ status: 200, body: ovBody({ today: { start_ts: 100, start_equity: 1000, net_flows: 0, pnl: null } }) }, "USDT").curve.today === null
+      && interpretOverview({ status: 200, body: ovBody({ today: null }) }, "USDT").curve.today === null);
+    t("曲線:真的還沒有點 = OK + 空陣列(不是讀不到);沒有異動 = 全部同一段", (() => { const x = interpretOverview({ status: 200, body: ovBody({ curve: [], anomalies: [] }) }, "USDT"); return x.code === "OK" && x.curve.curve.length === 0; })()
+      && interpretOverview({ status: 200, body: ovBody({ anomalies: [] }) }, "USDT").curve.curve.every((p) => p.basis === "flow0"));
+    t("曲線:計價幣跟畫面釘住的對不上(api 折不出那一幣退回別的)→ 當讀不到,不畫錯單位的數字;沒釘就照收", interpretOverview({ status: 200, body: ovBody({ currency: "TWD" }) }, "USDT").code === "UNREACH"
+      && interpretOverview({ status: 200, body: ovBody({ currency: "usdt" }) }, "USDT").code === "OK" && interpretOverview({ status: 200, body: ovBody({ currency: "TWD" }) }, null).curve.currency === "TWD");
+    for (const b of [{ status: 401, body: {} }, { status: 429, body: {} }, { status: 500, body: {} }, { status: 200, body: {} }, { status: 200, body: { overview: null } }, { status: 200, body: { overview: { curve: "nope" } } }, { status: 200, body: null }, null])
+      t("曲線:壞回應 → UNREACH + curve null(" + (b ? b.status + "/" + JSON.stringify(b.body) : "連不上") + ")", (() => { const x = interpretOverview(b, "USDT"); return x.code === "UNREACH" && x.curve === null; })()); }
+  { const ovCalls = []; let ovCreds = { token: "acct-O", appSecret: "appsec-O" }, ovReply = { status: 200, body: ovBody() };
+    // 曲線那一支會等最小間隔(不是回讀不到):假的 timer 把時鐘推過去、馬上叫
+    const slept = []; const ovTimer = (fn, ms) => { slept.push(ms); clock += ms; fn(); return 0; };
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => ovCreds, post: async (u, b) => { ovCalls.push({ u, b }); if (ovReply instanceof Error) throw ovReply; return ovReply; }, now: () => clock, setTimer: ovTimer, clearTimer: () => {} });
+    const ask = (d, c) => { tick(EVENTS_MIN_GAP_MS); return h.overview(d, c); };
+    const r0 = await h.overview(30, "USDT");
+    t("曲線:POST 到契約的路徑,body 只有兩顆憑證 + days + 釘住的計價幣", ovCalls.length === 1 && ovCalls[0].u === "https://x" + OVERVIEW_ENDPOINT && JSON.stringify(Object.keys(ovCalls[0].b).sort()) === '["app_secret","currency","days","token"]'
+      && ovCalls[0].b.days === 30 && ovCalls[0].b.currency === "USDT" && r0.code === "OK" && r0.curve.curve.length === 4);
+    t("曲線:回應不進主行程手上那一份(snapshot / status 都沒有它);憑證不出現在回上去的東西裡", !JSON.stringify(h.snapshot()).includes("2030") && !JSON.stringify(h.status()).includes("2030") && !JSON.stringify(r0).includes("acct-O") && !JSON.stringify(r0).includes("appsec-O"));
+    await ask(0); await ask(500); await ask("x"); await ask(7, "usdt"); await ask(7, "not a currency"); await ask(7, 5);
+    const ds = ovCalls.slice(1).map((c) => c.b.days), cs = ovCalls.slice(1).map((c) => ("currency" in c.b ? c.b.currency : "-"));
+    t("曲線:days 夾在 1–90(0 / 壞值 → 30);計價幣大寫、不像幣別代碼的不帶", ds.join() === "30,90,30,7,7,7" && cs.join() === "-,-,-,USDT,-,-");
+    { const n = ovCalls.length; tick(EVENTS_MIN_GAP_MS - 1000); slept.length = 0; const r = await h.overview(30);
+      t("曲線:最小間隔內再問不是回讀不到(切區間就是會 5 秒內連問兩次),而是等滿間隔再打一次", r.code === "OK" && ovCalls.length === n + 1 && slept.join() === "1000");
+      slept.length = 0; tick(EVENTS_MIN_GAP_MS); await h.overview(30); t("曲線:過了最小間隔就直接打、不等", slept.length === 0 && ovCalls.length === n + 2); }
+    for (const bad of [{ status: 401, body: {} }, { status: 429, body: {} }, { status: 500, body: {} }, { status: 200, body: {} }, new Error("offline")]) {
+      ovReply = bad; const r = await ask(30);
+      t("曲線:讀不到 → UNREACH(不是空曲線),不拋(" + (bad instanceof Error ? "連不上" : bad.status + "/" + JSON.stringify(bad.body)) + ")", r.code === "UNREACH" && r.curve === null); }
+    ovReply = { status: 200, body: ovBody() };
+    { let release; const gate = new Promise((r) => { release = r; }); let c2 = 0;
+      const days2 = [];
+      const h2 = createCloudHost({ apiBase: "https://x", getCreds: () => ovCreds, post: async (_u, b) => { c2++; days2.push(b.days); await gate; return { status: 200, body: ovBody() }; }, now: () => clock, setTimer: ovTimer, clearTimer: () => {} });
+      const a = h2.overview(30), b2 = h2.overview(30), c3 = h2.overview(7); const oneSoFar = c2 === 1;   // 三個呼叫只有一個出門(第三個在排隊)
+      release(); const [ra, rb] = [await a, await b2];
+      t("曲線:同一個區間在途時共用同一個請求(只打一次)", oneSoFar && ra === rb && ra.code === "OK");
+      const rc = await c3;
+      t("曲線:不同區間排在在途那份後面、自己打自己的(每一份都是自己那個區間的)", rc.code === "OK" && rc !== ra && c2 === 2 && days2.join() === "30,7");
+      tick(EVENTS_MIN_GAP_MS); t("曲線:在途那一份結束後,下一次問得動(inflight 有清掉)", (await h2.overview(30)).code === "OK" && c2 === 3); }
+    { let release; const gate = new Promise((r) => { release = r; }); let who = { token: "acct-A", appSecret: "sa" };
+      const h3 = createCloudHost({ apiBase: "https://x", getCreds: () => who, post: async () => { await gate; return { status: 200, body: ovBody() }; }, now: () => clock, setTimer: ovTimer, clearTimer: () => {} });
+      const p = h3.overview(30); await Promise.resolve(); who = null; release();
+      t("曲線:請求在路上時登出 / 換帳號 → 這份不交給畫面(算讀不到)", (await p).code === "UNREACH" && (await p).curve === null); }
+    { const n = ovCalls.length; ovCreds = { token: "acct-O", appSecret: null }; tick(EVENTS_MIN_GAP_MS);
+      const a = await h.overview(30); ovCreds = null; tick(EVENTS_MIN_GAP_MS); const b2 = await h.overview(30);
+      t("曲線:沒有 app_secret / 沒登入:不發請求,也算讀不到", a.code === "UNREACH" && b2.code === "UNREACH" && ovCalls.length === n); }
+    // 事件與曲線各自的節流桶:曲線剛打過不擋事件(總覽一次載入要兩支一起問)
+    { ovCreds = { token: "acct-O", appSecret: "appsec-O" }; tick(EVENTS_MIN_GAP_MS); const n = ovCalls.length;
+      const a = await h.overview(30); ovReply = { status: 200, body: evBody() }; const e = await h.events(30);
+      t("曲線與事件各自節流,一起問不互相擋", a.code === "OK" && e.code === "OK" && ovCalls.length === n + 2); } }
+  /* ── 組合績效(總覽分頁的第四支端點)── 網頁 GET /openclaw/agent/performance 那一份包在 performance 底下 */
+  const pfBody = (o = {}) => ({ machine_state: "running", server_time: 130, performance: {
+    metrics: { cumulative_return: { value: 0.12, status: "ok" }, max_drawdown: { value: 0.06, status: "ok", window_days: 12 }, annual_return: { value: null, status: "accumulating", reason: "insufficient_time" },
+      volatility: { value: 0.4, status: "estimate", reason: "insufficient_time", sample_hours: 30.7 }, sharpe: { value: "x", status: "weird", reason: 7 }, trade_count: { value: 5, status: "ok" } },
+    pnl_curve: [{ ts: 200, pnl_usdt: 10 }, { ts: 100, pnl_usdt: 0 }, { ts: 150, pnl_usdt: null }, { ts: "x", pnl_usdt: 1 }, null], currency: "USDT", baseline_ts: 100, ...o } });
+  { const r = interpretPerformance({ status: 200, body: pfBody() }, "USDT");
+    t("績效:六格逐格驗型別(value 非有限數 → null、status 不認得 → accumulating、reason 只留字串、window_days / sample_hours 帶著)、pnl_curve 排序且 null 點照留",
+      r.code === "OK" && r.perf.metrics.cumulative_return.value === 0.12 && r.perf.metrics.max_drawdown.window_days === 12 && r.perf.metrics.annual_return.value === null && r.perf.metrics.annual_return.reason === "insufficient_time"
+      && r.perf.metrics.volatility.status === "estimate" && r.perf.metrics.volatility.sample_hours === 30.7 && r.perf.metrics.sharpe.status === "accumulating" && r.perf.metrics.sharpe.value === null && !("reason" in r.perf.metrics.sharpe)
+      && r.perf.metrics.trade_count.value === 5 && JSON.stringify(r.perf.pnl_curve) === '[{"ts":100,"pnl":0},{"ts":150,"pnl":null},{"ts":200,"pnl":10}]' && r.perf.currency === "USDT" && r.perf.baseline_ts === 100);
+    t("績效:缺一格也給空格(accumulating、value null),畫面照畫六格", (() => { const b = pfBody(); delete b.performance.metrics.sharpe; const x = interpretPerformance({ status: 200, body: b }, "USDT"); return x.code === "OK" && x.perf.metrics.sharpe.status === "accumulating" && x.perf.metrics.sharpe.value === null; })());
+    t("績效:計價幣對不上 → 讀不到;沒釘就照收", interpretPerformance({ status: 200, body: pfBody({ currency: "TWD" }) }, "USDT").code === "UNREACH" && interpretPerformance({ status: 200, body: pfBody({ currency: "TWD" }) }, null).perf.currency === "TWD");
+    for (const b of [{ status: 401, body: {} }, { status: 429, body: {} }, { status: 500, body: {} }, { status: 200, body: {} }, { status: 200, body: { performance: null } }, { status: 200, body: { performance: { metrics: {} } } }, { status: 200, body: { performance: { metrics: "x", pnl_curve: [] } } }, null])
+      t("績效:壞回應 → UNREACH + perf null(" + (b ? b.status + "/" + JSON.stringify(b.body) : "連不上") + ")", (() => { const x = interpretPerformance(b, "USDT"); return x.code === "UNREACH" && x.perf === null; })()); }
+  { const pfCalls = []; let pfCreds = { token: "acct-P", appSecret: "appsec-P" }, pfReply = { status: 200, body: pfBody() };
+    const slept = []; const pfTimer = (fn, ms) => { slept.push(ms); clock += ms; fn(); return 0; };
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => pfCreds, post: async (u, b) => { pfCalls.push({ u, b }); if (pfReply instanceof Error) throw pfReply; return pfReply; }, now: () => clock, setTimer: pfTimer, clearTimer: () => {} });
+    tick(EVENTS_MIN_GAP_MS); const r0 = await h.performance(7, "USDT");
+    t("績效:POST 到契約的路徑,body 只有兩顆憑證 + days + 釘住的計價幣", pfCalls.length === 1 && pfCalls[0].u === "https://x" + PERFORMANCE_ENDPOINT && JSON.stringify(Object.keys(pfCalls[0].b).sort()) === '["app_secret","currency","days","token"]' && pfCalls[0].b.days === 7 && r0.code === "OK");
+    t("績效:回應不進主行程手上那一份;憑證不出現在回上去的東西裡", !JSON.stringify(h.snapshot()).includes("0.12") && !JSON.stringify(h.status()).includes("0.12") && !JSON.stringify(r0).includes("acct-P") && !JSON.stringify(r0).includes("appsec-P"));
+    // 跟權益曲線各自一份在途 / 節流(同一個 readDetail 做法):曲線剛打過不擋績效,績效自己的最小間隔照等
+    { const n = pfCalls.length; pfReply = { status: 200, body: ovBody() }; const o = await h.overview(7, "USDT"); pfReply = { status: 200, body: pfBody() }; slept.length = 0; const p = await h.performance(7, "USDT");
+      t("績效與曲線各自節流:曲線剛打過,績效不被擋、但自己等滿間隔", o.code === "OK" && p.code === "OK" && pfCalls.length === n + 2 && slept.join() === String(EVENTS_MIN_GAP_MS)); }
+    for (const bad of [{ status: 401, body: {} }, { status: 500, body: {} }, new Error("offline")]) { pfReply = bad; tick(EVENTS_MIN_GAP_MS); const r = await h.performance(7, "USDT");
+      t("績效:讀不到 → UNREACH(不是空的六格),不拋(" + (bad instanceof Error ? "連不上" : bad.status) + ")", r.code === "UNREACH" && r.perf === null); }
+    pfReply = { status: 200, body: pfBody() };
+    { const n = pfCalls.length; pfCreds = null; tick(EVENTS_MIN_GAP_MS); t("績效:沒登入不發請求,也算讀不到", (await h.performance(7)).code === "UNREACH" && pfCalls.length === n); } }
+  t("main.js:cloud-performance 走 handle()(只收自家頁面),拒絕時回 { code: UNREACH, perf: null };preload 多暴露 cloudPerformance 一支",
+    /\n  handle\("cloud-performance", \(_e, q\) => cloudHost\(\)\.performance\(q && q\.days, q && q\.currency\), \{ code: "UNREACH", perf: null \}\);/.test(mainSrc)
+    && /cloudPerformance: \(q\) => ipcRenderer\.invoke\("cloud-performance", q\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
+  t("main.js:cloud-overview 走 handle()(只收自家頁面),拒絕時回 { code: UNREACH, curve: null };preload 多暴露 cloudOverview 一支",
+    /\n  handle\("cloud-overview", \(_e, q\) => cloudHost\(\)\.overview\(q && q\.days, q && q\.currency\), \{ code: "UNREACH", curve: null \}\);/.test(mainSrc)
+    && /cloudOverview: \(q\) => ipcRenderer\.invoke\("cloud-overview", q\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8")));
 
   { // 版本變了要推給畫面(關於那一行要跟上主機回報的版本)
     let rep = { status: 200, body: body({ config_version: "1.1.80" }) }, seen = [], ck = 5e6;

@@ -1458,6 +1458,9 @@ app.whenReady().then(() => {
   // 雲端的事件清單:點擊驅動的另一支(另一個速率桶),不啟動輪詢、不留在主行程、不落地。
   // 回 { code: "OK" | "UNREACH", events }——讀不到與「真的沒有事件」是兩件事,畫面要講得出是哪一種
   handle("cloud-events", (_e, q) => cloudHost().events(q && q.days), { code: "UNREACH", events: [] });
+  // 雲端的權益曲線與當日損益(總覽分頁;同事件清單:另一個速率桶、不留在主行程、不落地)。回 { code: "OK" | "UNREACH", curve }
+  handle("cloud-overview", (_e, q) => cloudHost().overview(q && q.days, q && q.currency), { code: "UNREACH", curve: null });
+  handle("cloud-performance", (_e, q) => cloudHost().performance(q && q.days, q && q.currency), { code: "UNREACH", perf: null });
   // 雲端單支策略的報告(側欄點一支打一次;同事件清單:不留在主行程、不落地)。回 { code: "OK" | "UNREACH", strategy }——OK + null = 雲端現在沒有這一份
   handle("cloud-strategy", (_e, q) => cloudHost().strategy(q && q.name), { code: "UNREACH", strategy: null });
   /* 雲端(寫入):renderer 只說「送哪個指令」,憑證與 request_id 都在主行程(cloudcmd.js)。
@@ -1522,6 +1525,8 @@ app.whenReady().then(() => {
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
   // 本機有 agent 回合在跑(可能正在更新雲端):不重開,重開會把它斷掉(畫面那一道之外再擋一次)
   ipcMain.handle("update-install", (e) => (!fromOurPage(e) ? { ok: false, error: "NOT_ALLOWED" } : activeTurn || turnStarting ? { ok: false, error: "TURN_BUSY" } : updater().install()));
+  // 換版時備份的資料夾:在 Finder 裡選起來。路徑由主行程自己算(畫面不交路徑),沒有備份就什麼都不做
+  handle("update-show-backup", () => { if (!_officialBackup) return false; shell.showItemInFolder(path.join(WS, _officialBackup.dir)); return true; }, false);
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
   // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
@@ -1622,13 +1627,12 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: "Blave is still running in the menu bar.",
-  updateReady: "A new version is ready: pause trading to update, or it installs when you quit Blave",
+  updateReady: "Restart to finish updating",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No new positions are opened. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
-  cloudUpdate: "Cloud machine: new version {nv}. Open Blave to update…", cloudUpdateStale: "The cloud's order program needs an update. Open Blave to update…",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
@@ -1730,19 +1734,13 @@ const updateWaiting = () => { try { const p = updater().state().phase; return p 
 // 選單列的狀態行。這台電腦那一行:選單列只在這台電腦「確定在下單」時出現,所以狀態一定是 on。字還沒交 → null,退回舊的那一句
 const trayLocalLine = (live) => TT.statusLine(tmLabels.stLocal, { money: live.venue === "paper" ? "paper" : "real", venue: live.venue, state: "on" }, tmLabels);
 const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);
-// 雲端落後(或停不住的舊下單程式):選單列補一行、點了開「設定 › 一般」的關於(圖示旁不放任何點,Wei 09-23)
-const trayCloudUpdate = () => TT.cloudUpdateLine(tmLabels, cloudSt());
-function openAbout() {
-  showMain();
-  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("open-about");
-}
+// 選單列只有一行更新的字(app 新版已暫存好:「重新啟動以完成更新」,不可點、沒有點、沒有徽章);雲端的更新不進選單列(v4 §4)
 function trayMenu(live) {
-  const cloud = trayCloudLine(), cu = trayCloudUpdate();
+  const cloud = trayCloudLine();
   return Menu.buildFromTemplate([
     { label: trayLocalLine(live) || tmLabels.running, enabled: false },
-    ...(updateWaiting() ? [{ label: tmLabels.updateReady, enabled: false }] : []),
     ...(cloud ? [{ label: cloud, enabled: false }] : []),
-    ...(cu ? [{ label: cu, click: openAbout }] : []),
+    ...(updateWaiting() ? [{ type: "separator" }, { label: tmLabels.updateReady, enabled: false }] : []),
     { type: "separator" },
     { label: pauseLabel(), click: pauseFromMenu },   // 暫停只給這台電腦:雲端的暫停要用戶在雲端視角親手做
     { type: "separator" },
@@ -1753,7 +1751,7 @@ function trayMenu(live) {
 function traySync() {
   const live = tradeLive();
   if (live) lastVenue = live.venue;
-  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", trayCloudLine() || "", trayCloudUpdate() || ""].join("|") : "";
+  const key = live ? [live.venue, trayLocalLine(live) || tmLabels.running, pauseLabel(), updateWaiting() ? tmLabels.updateReady : "", trayCloudLine() || ""].join("|") : "";
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
   trayKey = key;
   if (!live) {

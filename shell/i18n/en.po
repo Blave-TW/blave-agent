@@ -359,36 +359,6 @@ msgstr "Model access"
 msgid "set.lang"
 msgstr "Language"
 
-msgid "up.app"
-msgstr "Blave {v}"
-
-msgid "up.latest"
-msgstr "Up to date"
-
-msgid "up.latestAt"
-msgstr "Up to date · checked {t}"
-
-msgid "up.checking"
-msgstr "Checking…"
-
-msgid "up.downloading"
-msgstr "Downloading {nv}…"
-
-msgid "up.downloadingPct"
-msgstr "Downloading {nv} ({pct}%)"
-
-msgid "up.ready"
-msgstr "{nv} is downloaded and takes effect after a restart"
-
-msgid "up.blocked"
-msgstr "{nv} is downloaded. Blave won’t update while auto trading is running — pause trading to update, or it installs when you quit Blave"
-
-msgid "up.error"
-msgstr "The update check didn’t go through"
-
-msgid "up.staging"
-msgstr "{nv} downloaded, preparing to install…"
-
 msgid "up.installFailed"
 msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in your Applications folder (not opened straight from the disk image), then check again"
 
@@ -679,12 +649,6 @@ msgstr "This account has no card yet, so data isn’t available."
 
 msgid "data.noCardSub"
 msgstr "Your first card comes with {t} days of free data."
-
-msgid "data.fee"
-msgstr "Blave data was used this hour: a server & data fee of {r} TWD."
-
-msgid "data.feeFirst"
-msgstr "Blave data was used this hour: a server & data fee of {r} TWD. From now on, each hour that uses data costs {r} TWD, charged once per hour; hours without data cost nothing."
 
 msgid "pv.h.offer"
 msgstr "Your first card comes with {t} days of Blave data"
@@ -1432,6 +1396,93 @@ msgstr "No records while Blave wasn’t open; the line connects straight across 
 msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
 
+msgid "tr.ov.flowNote"
+msgstr "Funds moved in or out (a deposit, withdrawal, or an exchange connected or removed); the line breaks there and cumulative PnL starts from the last part only."
+
+msgid "tr.ov.curveUnreach"
+msgstr "Can’t read the cloud’s equity records right now; this will retry shortly. It does not mean there are none."
+
+msgid "tr.ov.perf.label"
+msgstr "Portfolio performance"
+
+msgid "tr.ov.perf.gating"
+msgstr "Accumulating data"
+
+msgid "tr.ov.perf.cum"
+msgstr "Cumulative return (net of deposits)"
+
+msgid "tr.ov.perf.cumTip"
+msgstr "Deposits and withdrawals removed — only the strategy's own gains and losses."
+
+msgid "tr.ov.perf.dd"
+msgstr "Max drawdown"
+
+msgid "tr.ov.perf.ddTipOk"
+msgstr "The largest drop in account equity from its peak (over the last {n} days)."
+
+msgid "tr.ov.perf.ddTipGating"
+msgstr "The largest drop in account equity from its peak. Still accumulating data."
+
+msgid "tr.ov.perf.ann"
+msgstr "Annualized return"
+
+msgid "tr.ov.perf.annTipOk"
+msgstr "Your current return projected to a yearly pace — an estimate, not a guarantee."
+
+msgid "tr.ov.perf.annTipGating"
+msgstr "Your current return projected to a yearly pace — an estimate, not a guarantee. Needs ~30 days; still accumulating."
+
+msgid "tr.ov.perf.vol"
+msgstr "Volatility (annualized)"
+
+msgid "tr.ov.perf.volTipOk"
+msgstr "How much returns swing — larger means choppier (annualized)."
+
+msgid "tr.ov.perf.volTipGating"
+msgstr "How much returns swing — larger means choppier. Needs ~24 hours; still accumulating."
+
+msgid "tr.ov.perf.volTipEstHours"
+msgstr "How much returns swing — larger means choppier (annualized). Based on only {n} hours of data so far, so the number still moves around; it settles once there are 7 days."
+
+msgid "tr.ov.perf.volTipEstDays"
+msgstr "How much returns swing — larger means choppier (annualized). Based on only {n} days of data so far, so the number still moves around; it settles once there are 7 days."
+
+msgid "tr.ov.perf.sharpe"
+msgstr "Sharpe"
+
+msgid "tr.ov.perf.sharpeTipOk"
+msgstr "Return earned per unit of volatility — higher is better."
+
+msgid "tr.ov.perf.sharpeTipGating"
+msgstr "Return earned per unit of volatility — higher is better. Needs ~30 days; still accumulating."
+
+msgid "tr.ov.perf.trades"
+msgstr "Trades"
+
+msgid "tr.ov.perf.tradesTip"
+msgstr "Execution rounds (not fills): one signal counts as 1; split/chase orders aren't double-counted."
+
+msgid "tr.ov.perf.reason.insufficientSamples"
+msgstr "{d} Your account's equity has only been recorded a few times so far, with long gaps in between, so there aren't enough separate periods to work this out yet."
+
+msgid "tr.ov.perf.reason.flowMerged"
+msgstr "{d} Deposits and withdrawals land so close together that adjacent periods merge, leaving too few independent ones to measure. Waiting won't change this — it needs a stretch with fewer transfers."
+
+msgid "tr.ov.perf.reason.zeroVolatility"
+msgstr "{d} Equity hasn't moved at all over this period, so there's no volatility to divide by yet."
+
+msgid "tr.ov.perf.volEst.insufficientSamples"
+msgstr "How much returns swing — larger means choppier (annualized). Your equity is still being recorded too sparsely, so the number jumps around; it settles as the records fill in."
+
+msgid "tr.ov.perf.volEst.flowMerged"
+msgstr "How much returns swing — larger means choppier (annualized). Deposits and withdrawals land close enough together to merge adjacent periods, so the number jumps around. Waiting won't change this — it needs a stretch with fewer transfers."
+
+msgid "tr.ov.perfUnreach"
+msgstr "Can’t read the cloud’s portfolio performance right now; this will retry shortly."
+
+msgid "tr.ov.pnlAnom"
+msgstr "Funds moved in or out — the jump is excluded from PnL"
+
 msgid "tr.ov.range"
 msgstr "Range"
 
@@ -1593,7 +1644,7 @@ msgid "tm.hidden"
 msgstr "Blave is still open and auto trading keeps running. Use the menu bar icon to pause or to open the window."
 
 msgid "tm.updateReady"
-msgstr "A new version is ready: pause trading to update, or it installs when you quit Blave"
+msgstr "Restart to finish updating"
 
 msgid "tm.evOrderErrNote"
 msgstr "The exchange rejected an order. Open Blave to see why."
@@ -2330,35 +2381,11 @@ msgstr "Bring the strategy {id} from my cloud machine back to this computer. Re-
 msgid "up.about"
 msgstr "About"
 
-msgid "up.update"
-msgstr "Update"
-
-msgid "up.updating"
-msgstr "Updating…"
-
 msgid "up.busy"
 msgstr "A conversation is still replying. Update after it finishes."
 
-msgid "up.chat"
-msgstr "Update to the latest version now"
-
 msgid "up.backup"
-msgstr "The new version replaced {n} official file(s) you had changed. The old copies are in {dir}. To bring your changes back, ask the agent."
-
-msgid "up.c.unreach"
-msgstr "Couldn’t read the cloud’s status, so it won’t be updated this time."
-
-msgid "up.c.stopped"
-msgstr "The cloud machine is stopped, so it won’t be updated this time."
-
-msgid "up.c.note"
-msgstr "Updating uses your AI credit."
-
-msgid "up.c.noteLong"
-msgstr "The agent on this computer connects to your cloud machine to do the update, using your own AI credit. If the trading program is running, it asks you first."
-
-msgid "up.c.available"
-msgstr "New version {nv} available"
+msgstr "Blave updated to {av}. {n} official files you had changed were replaced; the old copies are in {dir} ({view})."
 
 msgid "tr.cloud.pendAmounts"
 msgstr "The new amounts are saved on the cloud machine."
@@ -2541,20 +2568,11 @@ msgstr "close them in Capital’s trading software"
 msgid "up.c.msg"
 msgstr "Update the cloud machine to the latest version"
 
-msgid "up.c.checking"
-msgstr "The agent has replied. See the chat; this updates once the cloud machine reports the new version."
-
 msgid "tr.cloud.typeC"
 msgstr "Set a portfolio strategy’s first amount in the web workspace; you can adjust it here after that."
 
 msgid "cdel.absent"
 msgstr "This strategy wasn’t on the cloud machine, so nothing was deleted. The list catches up once it updates."
-
-msgid "up.installLocal"
-msgstr "Restart and update this computer"
-
-msgid "up.c.seeChat"
-msgstr "The last cloud update didn’t finish; see the chat for why and what’s next."
 
 msgid "tr.cloud.restartStopped"
 msgstr "The machine restarted, so no orders are going out — nothing is managing your positions and stops won’t run. Press Start trading to resume."
@@ -2596,16 +2614,13 @@ msgid "tm.stMayTrade"
 msgstr "May still be trading"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "The machine restarted, but we couldn’t confirm trading stopped — your positions may still be traded. Press Pause trading first, then Update to the latest version now."
-
-msgid "up.c.needsUpdate"
-msgstr "The cloud’s trading program is an old version and couldn’t be confirmed stopped after the restart. It needs an update."
+msgstr "The machine restarted, but we couldn’t confirm trading stopped — your positions may still be traded. Press Pause trading first, then Check for updates to bring the machine up to date."
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "Machine restarted — trading may not have stopped"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "press Pause trading first, then Update to the latest version now; the workspace is out of date"
+msgstr "press Pause trading first, then Check for updates; the workspace is out of date"
 
 msgid "tr.haltReasonAll"
 msgstr "No orders are going out — exits and stops won’t run either. Once the problem is fixed, press Start trading; if you’re not sure what caused it, ask the agent in chat."
@@ -2626,7 +2641,7 @@ msgid "tr.startWarn2Local"
 msgstr "Nothing ran while Blave was closed, so strategy signals didn’t update. Catch up trades on the signals as they stand now, which may still be from before you closed Blave; each strategy switches to a fresh signal after its next scheduled run. To trade only on fresh signals, choose Start, wait for new signals."
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "An old version of the trading program may still be running. Press Update to the latest version now first; if you’re not sure why it paused, ask the agent in chat."
+msgstr "An old version of the trading program may still be running. Press Check for updates first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "Cumulative PnL curve, {a} to {b}, {n} records"
@@ -2639,33 +2654,6 @@ msgstr "No confirmation from the machine"
 
 msgid "tr.cloud.cxWaiting"
 msgstr "Waiting for the machine to confirm, usually a minute or two. This page switches to order settings on its own; nothing to do."
-
-msgid "up.c.running"
-msgstr "Updating the cloud machine · {t}"
-
-msgid "up.c.runningShort"
-msgstr "Updating the cloud machine"
-
-msgid "up.c.onCloud"
-msgstr "The agent is working on the cloud machine"
-
-msgid "up.c.runNote"
-msgstr "Progress is in the chat. You can do other things; this shows when it’s done."
-
-msgid "up.c.noReport"
-msgstr "The cloud machine hasn’t reported {nv} yet. If the agent said it’s done, give it a moment; otherwise see the chat."
-
-msgid "up.c.done"
-msgstr "Updated to {nv}"
-
-msgid "up.c.doneFrom"
-msgstr "{from} → {nv}"
-
-msgid "up.c.chatRunning"
-msgstr "Updating the cloud machine · {t}"
-
-msgid "up.c.chatDone"
-msgstr "Cloud updated to {nv}"
 
 msgid "tr.startOffNoAmt"
 msgstr "No strategy has an amount, so there’s nothing to start. Set an amount under Positions first."
@@ -2773,12 +2761,6 @@ msgstr "The order engine on this computer stopped and is restarting; no orders g
 msgid "minv.release"
 msgstr "This version of Blave needs an update before it can send Release pause. Update at the bottom of Settings › General."
 
-msgid "tm.cloudUpdate"
-msgstr "Cloud machine: new version {nv}. Open Blave to update…"
-
-msgid "tm.cloudUpdateStale"
-msgstr "The cloud’s order program needs an update. Open Blave to update…"
-
 msgid "tr.cloud.cxSavedStalePaper"
 msgstr "The paper account was sent, but the cloud machine still hasn’t reported back, so this page hasn’t switched to order settings. You can try again, or ask the agent in chat what’s going on with the machine."
 
@@ -2809,3 +2791,59 @@ msgstr "Your machine is running."
 
 msgid "tr.cloud.startPendSlow"
 msgstr "Taking longer than usual. The machine is still reporting back — no need to press again; two minutes at the outside."
+
+# Update (proposal-desktop-update-flow-v4): About line, chat slot, after-the-fact line
+
+msgid "up.row.app"
+msgstr "Blave {av}"
+
+msgid "up.row.cloud"
+msgstr "Cloud machine {cv}"
+
+msgid "up.row.cloudOff"
+msgstr "Cloud machine (stopped)"
+
+msgid "up.row.latest"
+msgstr "Up to date"
+
+msgid "up.row.ready"
+msgstr "New version downloaded"
+
+msgid "up.row.readyQuit"
+msgstr "New version downloaded · installs when you quit Blave"
+
+msgid "up.row.applying"
+msgstr "Updating…"
+
+msgid "up.restart"
+msgstr "Restart to finish updating"
+
+msgid "up.applying"
+msgstr "Updating…"
+
+msgid "up.backup.open"
+msgstr "Open folder"
+
+msgid "up.done.cloud"
+msgstr "Cloud machine updated to {cv}."
+
+msgid "up.done.cloudRestarted"
+msgstr "Cloud machine updated to {cv}; the order program restarted on the new version."
+
+msgid "up.done.paused"
+msgstr "Cloud machine updated to {cv}. Auto-trading is still paused; press Start trading to resume."
+
+msgid "up.done.replaced"
+msgstr "{n} official files you had changed were replaced; the old copies are in {dir} ({view})."
+
+msgid "up.done.restartFailed"
+msgstr "The cloud machine has the new files, but the order program failed to restart and is still on the old code; say 更新 again to retry."
+
+msgid "up.done.restartDeferred"
+msgstr "The cloud machine has the new files, but the order program is still on the old code; once this order finishes, say 更新 again and it will restart."
+
+msgid "up.done.view"
+msgstr "view"
+
+msgid "up.done.viewMsg"
+msgstr "List the files in {dir} on the cloud machine"

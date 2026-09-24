@@ -1,7 +1,7 @@
 // shell/tools/release.js 的不變量:yml 之前的失敗不影響線上、帶版號的檔不覆寫、yml 之後的失敗不報成發版失敗、不自動動 git。
 // 跑法:node tests/check_shell_release.js
 const fs = require("fs"), path = require("path");
-const { uploadPlan, publish, newer, semver, mayRelease, resolveTrack } = require("../shell/tools/release.js");
+const { uploadPlan, publish, newer, semver, mayRelease, resolveTrack, lockDecision } = require("../shell/tools/release.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 (async () => {
   const plan = uploadPlan("0.4.0", "universal"), keys = plan.map((p) => p.key), iLive = plan.findIndex((p) => p.goLive);
@@ -12,7 +12,7 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("全部落在 desktop/mac/ 底下(發版金鑰只該碰這裡)", keys.every((k) => k.startsWith("desktop/mac/")));
   t("版號比較:只收嚴格 A.B.C、要比現在大", newer("0.0.2", "0.0.1") && newer("0.1.0", "0.0.9") && newer("1.0.0", "0.9.9") && newer("0.0.10", "0.0.9") && !newer("0.0.1", "0.0.1") && !newer("0.0.1", "0.0.2")
     && semver("1.2").length === 0 && semver("1.2.3-beta.1").length === 0 && semver("v1.2.3").length === 0);
-  // 版號矩陣閘(check_version_matrix_shell V5-04)要 package.json 跟 code 同一個 commit bump:同版號只在 HEAD 已 commit 時放行,而且不寫
+  // 「版號跟 code 同一個 commit」是 mayRelease + 工作樹乾淨(release.js)守的,不是 check_version_matrix_shell:同版號只在 HEAD 已 commit 時放行,而且不寫
   const MR = (v, c, h) => JSON.stringify(mayRelease(v, c, h));
   t("比現在大 → 放行、腳本自己寫版號(HEAD 是什麼都不管)", MR("0.0.6", "0.0.5", "0.0.5") === '{"bump":true}' && MR("0.0.6", "0.0.5", "0.0.4") === '{"bump":true}');
   t("同版號且 HEAD 的 package.json 已是這版 → 放行、不寫版號", MR("0.0.5", "0.0.5", "0.0.5") === '{"bump":false}');
@@ -54,7 +54,22 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("git 只用來讀(status / rev-parse / show);沒有任何地方呼叫 commit / push / tag / add", gitCalls.length === 3 && gitCalls.every((a) => /"status"|"rev-parse"|"show"/.test(a)) && !/git["' ,]+(commit|push|tag|add)\b/.test(src) && !/execSync\(/.test(src));
   t("AWS 身分釘死:一律 --profile、清掉環境裡的金鑰、斷言是發版專用那一把", /\[\.\.\.args, "--profile", PROFILE\]/.test(src) && /AWS_\(ACCESS_KEY_ID\|SECRET_ACCESS_KEY/.test(src) && /user\\\/blave-desktop-release\$/.test(src));
   t("只在 arm64 打包機發(擋 Rosetta 下的 node);產物檔名一律 universal", /process\.arch !== "arm64"/.test(src) && /arch = "universal"/.test(src) && !/arch = process\.arch/.test(src));
-  t("yml 換掉之前失敗會還原版號、之後絕不還原;Ctrl-C 也還原;沒寫過版號就不還原", /const restore = \(\) => \{ if \(wentLive \|\| !gate\.bump\) return;/.test(src) && /process\.on\("SIGINT"/.test(src));
+  t("yml 換掉之前失敗會還原版號、之後絕不還原;Ctrl-C 也還原;沒寫過版號就不還原", /restore = \(\) => \{ if \(wentLive \|\| !gate\.bump\) return;/.test(src) && /\["SIGINT", 130\], \["SIGTERM", 143\]\]\) process\.on\(sig, \(\) => \{ restore\(\); process\.exit\(code\); \}\)/.test(src));
+
+  // 鎖檔(2026-09-23 兩支 release.js 相撞、白做兩次公證):同一台打包機同時只准一支
+  const LD = (e, alive) => JSON.stringify(lockDecision(e, () => alive));
+  t("沒有鎖 → 直接拿", LD(null, true) === '{"take":true}' && LD(undefined, false) === '{"take":true}');
+  t("鎖在、pid 活著 → 拒跑,訊息帶 pid / 版號 / 起跑時間", (() => { const d = lockDecision({ pid: 4242, version: "0.1.1", startedAt: "2026-09-24T01:02:03Z" }, (p) => p === 4242);
+    return !!d.error && !d.take && /4242/.test(d.error) && /0\.1\.1/.test(d.error) && /2026-09-24T01:02:03Z/.test(d.error); })());
+  t("殘留鎖(pid 死了、或鎖檔讀不出 pid)→ 接手並標 stale", LD({ pid: 4242, version: "0.1.1" }, false) === '{"take":true,"stale":true}' && LD({}, true) === '{"take":true,"stale":true}' && LD({ pid: "x" }, true) === '{"take":true,"stale":true}');
+  { const body = src.slice(src.indexOf("async function main()")), at = (s) => body.indexOf(s);
+    t("接線:main() 任何檢查之前先 takeLock(演練也上);O_EXCL 建檔、內容 pid+版號+時間;pid 活著用 kill(pid,0) 判(EPERM 也算活)",
+      at("takeLock(version)") > 0 && [at("loadEnvFile()"), at("mayRelease(version"), at('"status", "--porcelain"'), at("process.arch !== ")].every((i) => i > at("takeLock(version)"))
+      && /fs\.openSync\(LOCK, "wx"\)/.test(src) && /JSON\.stringify\(\{ pid: process\.pid, version, startedAt:/.test(src) && /process\.kill\(pid, 0\)/.test(src) && /e\.code === "EPERM"/.test(src)
+      && /if \(d\.error\) die\(d\.error\)/.test(src) && /殘留鎖\(pid \$\{existing\.pid\} 已不在\),接手/.test(src));
+    t("接線:每條出口都刪鎖——exit 事件(正常結束 / die / 沒接到的例外)、SIGINT、SIGTERM 都轉成 process.exit;只刪自己拿到的鎖;清 dist 時鎖要留著",
+      /process\.on\("exit", releaseLock\)/.test(src) && /if \(!lockHeld\) return; lockHeld = false; try \{ fs\.unlinkSync\(LOCK\); \}/.test(src) && /lockHeld = true;/.test(src)
+      && /const die = \(m\) => \{[^}]*process\.exit\(1\)/.test(src) && /main\(\)\.catch\(\(e\) => die\(/.test(src) && !/fs\.rmSync\(dist,/.test(src) && /!== LOCK\) fs\.rmSync\(path\.join\(dist, e\)/.test(src)); }
   t("線上讀不到 yml 就停,只有 --first-release 放行", /--first-release/.test(src) && /讀不到線上的 latest-mac\.yml/.test(src));
   t("驗 zip 解出來的那一份 app、dmg 的 staple、包裡的更新網址", /ditto/.test(src) && /stapler", "validate"/.test(src) && /asarPkg\.blaveUpdateUrl !== URL_BASE/.test(src));
   t("不寫死任何金鑰;憑證檔權限太寬會拒絕", !/AKIA[0-9A-Z]{16}/.test(src) && /mode & 0o077/.test(src));

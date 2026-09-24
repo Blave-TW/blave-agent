@@ -514,8 +514,9 @@ function trErrStamp(ts, nowMs) {
    傳輸層:每個視角一份**同介面**的 api,自動下單頁換一個來源就能畫(雲端回的形狀跟本機 status() 相同)。
    雲端的寫入走主行程的 cloudSend(→ cloudcmd.js → api 的指令佇列),**永遠不碰 host.tradeSend**:那支是寫這台電腦的。
    白名單在這裡再擋一層(主行程也擋一次):`credentials` 不在裡面——金鑰不經過這條通用路,只走專用的連接 IPC。
-   權益曲線的端點還沒做:回空的,**不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。
-   事件清單走主行程的 cloudEvents(平台的事件流);單支策略的報告走 cloudStrategy(點一支打一次、不落地)。 */
+   權益曲線走主行程的 cloudOverview(平台每小時的快照,/cloud/overview)、組合績效走 cloudPerformance(/cloud/performance);
+   讀不到就說讀不到,**不可以**退回去打本機的(那會把這台電腦的數字畫在雲端那一頁)。這台電腦沒有組合績效這一份(tradePerformance 回 null)。
+   事件清單走 cloudEvents(平台的事件流);單支策略的報告走 cloudStrategy(點一支打一次、不落地)。 */
 const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity", "tradeEvents", "tradeSend"];
 /* 雲端送得出去的指令:**只開真的有 UI 在用的**(稽核 S-2)。`amounts` = 雲端填金額(S4);`delete_strategy` = 雲端側欄的刪除;
    `credentials_remove` / `retest_accounts` = 雲端設定分頁(S5)。`credentials` 永遠不在這裡:金鑰只走主行程專用的 cloud-connect。
@@ -526,6 +527,9 @@ function envApi(env, host) {
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
        (daemon.js events() 自己的定義),沒有「讀得到 / 讀不到」這個分別——網路那一邊才有。 */
     const raw = o.tradeEvents; o.tradeEvents = async (...a) => { const ev = await raw(...a); return { code: "OK", events: Array.isArray(ev) ? ev : [] }; };
+    // 權益曲線同一個形狀 { code, curve, today, … }:這台電腦是宿主讀自己的檔,同樣永遠 OK(宿主拋出來的才是讀不到,原樣往上拋)
+    const rawEq = o.tradeEquity; o.tradeEquity = async (...a) => { const cv = await rawEq(...a); return { code: "OK", ...(cv && typeof cv === "object" ? cv : { curve: [] }) }; };
+    o.tradePerformance = async () => null;   // 這台電腦沒有這一份(null = 沒有這個區塊,不是讀不到)
     return o; }
   let last = null;
   return {
@@ -534,7 +538,12 @@ function envApi(env, host) {
     listStrategies: async () => envCloudList(last),
     // 形狀同主行程 loadStrategy({ name, displayName, description, stats, code });讀不到 / 雲端沒有這一份都是 null——報告頁沒有「讀不到」這一態,由呼叫端收掉選取
     loadStrategy: async (name) => { const r = await host.cloudStrategy(name); return r && r.code === "OK" && r.strategy ? r.strategy : null; },
-    tradeEquity: async () => ({ curve: [] }),
+    // 讀不到(同下)就說讀不到,**不可以**當成「還沒有權益紀錄」;主行程已把 api 的形狀對成這台電腦那一份
+    tradeEquity: async (q) => { const cv = await host.cloudOverview(q);
+      return cv && cv.code === "OK" && cv.curve && Array.isArray(cv.curve.curve) ? { code: "OK", ...cv.curve } : { code: "UNREACH", curve: [] }; },
+    // 組合績效六格 + 平台算好的累積損益曲線;讀不到就說讀不到(perfErr),不退回本機推算的數字冒充
+    tradePerformance: async (q) => { const pf = await host.cloudPerformance(q);
+      return pf && pf.code === "OK" && pf.perf && pf.perf.metrics ? { code: "OK", ...pf.perf } : { code: "UNREACH" }; },
     // 讀不到(401 / 429 / 5xx / 連不上 / 壞回應 / 主行程拒絕)就說讀不到,**不可以**當成「這段期間沒有事件」
     tradeEvents: async (q) => { const ev = await host.cloudEvents(q);
       return ev && ev.code === "OK" && Array.isArray(ev.events) ? { code: "OK", events: ev.events } : { code: "UNREACH", events: [] }; },
@@ -704,7 +713,7 @@ function trNewBag(env) {
     cxSaved: null, cxPend: null,   // 雲端(S5):金鑰已存到主機、等回報的那一態 / 設定分頁按過重新測試或解除、等回報
     sig: {},                       // 各面板上次畫的資料指紋:沒變就不重畫(輸入框的焦點、捲動位置都留著)
     cx: { busy: false, err: null, retest: false }, unbinding: false,
-    ov: { mode: "equity", days: 30, curve: null, ui: [], uiErr: false, geo: null, at: 0 },
+    ov: { mode: "equity", days: 30, curve: null, curveErr: false, perf: null, perfErr: false, ui: [], uiErr: false, geo: null, at: 0 },   // curve null = 還沒讀過;curveErr = 這一輪讀不到(不是「沒有紀錄」);perf null = 沒有這一份(這台電腦)或讀不到(看 perfErr)
     bad: {},                       // 金額輸入框裡看不懂的字(name → true):有任何一格就不給儲存
     alertText: "", alertWant: null, alertSrc: null, lastSaid: null, scroll: {},
     sending: {},                   // cmd → 還在飛的那一趟(第二次按不重複送:本機寫指令檔每次都鑄新 id、close_all 不冪等)
@@ -841,7 +850,7 @@ function trPushLabels() {
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
-    lang: LANG, cloudUpdate: t("tm.cloudUpdate"), cloudUpdateStale: t("tm.cloudUpdateStale"), stLocal: t("tm.stLocal"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stNotStarted: t("tr.notStarted"),
+    lang: LANG, stLocal: t("tm.stLocal"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stNotStarted: t("tr.notStarted"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
     // Binance 金鑰重查的通知(主行程 binanceNotify):這些事件只會來自這台電腦,{where} 在這裡就填好;{ip} 留給主行程填
     key_ipTitle: t("tm.key.ipTitle", { where: t("env.local") }), key_ipBody: t("tm.key.ipBody", { ip: "{ip}" }), key_rejTitle: t("tm.key.rejTitle", { where: t("env.local") }),
@@ -892,7 +901,7 @@ async function trPoll() {
         C.listLoaded = trCloudListOk(C.st && C.st.cloud && C.st.cloud.strategies_ok, C.list, ((C.st && C.st.report) || {}).config ? C.st.report.config.amounts : null);
         trCloudOwnerCheck(C);
         trSentCheck(C, now);
-        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; }   // ui 與 uiErr 是一組,一起清
+        if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; C.ov.curveErr = false; C.ov.perf = null; C.ov.perfErr = false; }   // ui 與 uiErr、curve 與 curveErr 各是一組,一起清
         if (typeof rpCloudPrune === "function") rpCloudPrune(C.list);   // 看著的那支被雲端刪了 / 換了帳號:報告收掉、回自動下單頁
       } catch (_) { }
     }
@@ -1288,7 +1297,7 @@ function trPaintHead() {
   // 雲端而且不知道現況:不放主鈕——「暫停下單」「啟動下單」哪一個字都是在替它下結論(這一刀的鈕本來就不能按,說明行還在)
   // 沒有交易所、但主機重開停著(B0):一定是 Z,不出「啟動下單」,只出「解除暫停」(v2 §9-1;紀錄檔只有 resume 清得掉)
   const b0 = state === "noaccount" && trNoAccountStopped(trReport());
-  if (!stopped && (b0 || state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); } trPaintGoStop(false); trPaintGoUpd(false); trPaintNoAmt(pend); trPaintGoRel(b0, b0); return; }
+  if (!stopped && (b0 || state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); } trPaintGoStop(false); trPaintNoAmt(pend); trPaintGoRel(b0, b0); return; }
   if (!b) {
     b = trEl("button", "btn-fill"); b.type = "button"; b.id = "tr-go";
     b.addEventListener("click", () => {
@@ -1307,7 +1316,7 @@ function trPaintHead() {
     b.textContent = t("plan.addCredit");
     b.disabled = false; b.title = ""; b.classList.remove("is-busy", "is-ro");
     b.setAttribute("aria-disabled", "false"); b.removeAttribute("aria-describedby");
-    trPaintGoStop(false); trPaintGoUpd(false); trPaintGoRel(false); trPaintNoAmt(pend);
+    trPaintGoStop(false); trPaintGoRel(false); trPaintNoAmt(pend);
     return;
   }
   b.classList.remove("is-ro"); b.removeAttribute("aria-describedby");
@@ -1321,7 +1330,6 @@ function trPaintHead() {
   const locked = ask ? pendingAcct : trBtnLocked(TR.pending, trStopSideNow(state, TR.pending) || trRestartUnconfirmed(trReport())) || trStartPending(TR.pending) || flying;
   b.setAttribute("aria-disabled", locked ? "true" : "false"); b.classList.toggle("is-busy", busy);
   trPaintGoStop(trStartPending(TR.pending));
-  trPaintGoUpd(ro && trRestartUnconfirmed(trReport()));
   // 沒有策略設金額(§8):啟動下單停用、原因行常駐(aria-describedby 指過去);暫停中另給「解除暫停」
   trPaintNoAmt(pend || zv.reason); trPaintGoRel(zv.release, zv.noStart);
   if (zv.off) b.setAttribute("aria-describedby", "tr-noamt");
@@ -1338,8 +1346,6 @@ function trPaintHead() {
 /* 啟動在途時主鈕右邊那顆「暫停下單」(spec-desktop-start-pending-stop §2 B)。文字鈕、不是第二顆實心鈕;
    只在 want:"running" 的過場出現,收斂或被暫停蓋掉就收。焦點不搬過來:剛按完啟動的人按 Enter 不該變成開暫停框。
    主鈕的 aria-describedby 指向旁邊那句只給讀屏的說明,過場開始時播一次。 */
-/* 重開沒停住(C):原因行叫人「先暫停、再更新」,而更新入口在聊天輸入框上方,聊天欄收著就看不到(audit 2-2)。
-   標頭主鈕右邊多一顆文字鈕,跟聊天那一行是同一個動作(app.js upGo),不是新功能。本機有回合在跑時停用、原因放 title */
 /* 「解除暫停」(§8):描邊鈕,在主鈕旁。只送 resume——本機不補 restart_reconciler(那是啟動下單才有的第二步);
    雲端重開停止時機器端的 resume 會自己把對帳器叫起來,這一步避不開(後端確認),所以要平倉時確認框先講 */
 function trPaintGoRel(on, solid) {
@@ -1415,23 +1421,6 @@ function trAskRelease(opener) {
   confirmBox(trCloudBox({ title: t(x1 ? "tr.relX1Title" : "tr.relX2Title"), opener, single: true,
     lines: [x1 ? (k.n ? t("tr.relX1Body", { n: k.n }) : t("tr.relX1BodyN")) : t("tr.relX2Body")],
     ok: t("tr.relNotNow"), onOk: () => {}, alt: { label: t("tr.relCloseGo"), danger: true, onOk: go } }));
-}
-// #tr-go-upd 按下去會做的事:只有更新計畫是雲端那一支時才是「更新雲端」(同一個 upGo 在別的計畫下是裝本機更新 / 重開 app)
-function trUpdAct(plan) { const p = plan || (typeof upNow === "function" ? upNow() : null); return ((p && p.btn) || {}).act || null; }
-function trPaintGoUpd(on) {
-  let u = $("tr-go-upd");
-  if (!on) { if (u) { if (document.activeElement === u) $("tr-h").focus(); u.remove(); } TR.updParked = false; return; }
-  // click 只做雲端那一支:同一個 upGo 在別的計畫下是裝本機更新 / 重開 app(round-2 稽核 B3)
-  if (!u) { u = trEl("button", "btn-quiet tr-go-upd", ""); u.type = "button"; u.id = "tr-go-upd"; u.addEventListener("click", () => { if (typeof upGo === "function" && trUpdAct() === "cloud") { upGo(); trPaintGoUpd(true); } }); $("tr-desc").after(u); }   // 原因行下面自己一行(新狀態稽核 1-1):放在 .act 會把 1024 寬的原因行擠成窄欄
-  /* 按不了就講為什麼(不是吞掉 click):回合在跑 / 雲端正在更新 / 這一刻的更新計畫不是雲端那一支(讀不到、停機)。
-     停用的那一刻焦點在它身上就先交給標題,放開時還回來(同主鈕的 focusParked) */
-  const busy = typeof upLocalTurn === "function" && upLocalTurn(), plan = typeof upNow === "function" ? upNow() : null, act = trUpdAct(plan);
-  const why = busy ? t("up.busy") : act === "cloud" ? "" : plan && plan.cloud && plan.cloud.updating ? t("up.updating")
-    : envCloudKind(TR.st) === "stopped" ? t("up.c.stopped") : t("up.c.unreach");
-  u.textContent = t("up.chat");
-  if (why && document.activeElement === u) { $("tr-h").focus(); TR.updParked = true; }
-  u.disabled = !!why; u.title = why;
-  if (!why && TR.updParked) { TR.updParked = false; const ae = document.activeElement; if (!ae || ae === document.body || ae === $("tr-h")) u.focus(); }
 }
 function trPaintGoStop(on) {
   let s = $("tr-go-stop"), hint = $("tr-go-hint");
@@ -2192,18 +2181,29 @@ function trUnbind(opener) {
 }
 
 /* ── 總覽:PnL 條 + 權益曲線 + 事件時間軸 ─────────────────────────
-   雲端這一頁吃平台的兩支 api(每小時權益快照、事件流)。權益那支電腦版沒有平台那一層,由宿主(daemon.js)代勞:
-   tradeEquity = app 開著時每個整點記一筆的權益(依「這次綁定」切段);
-   tradeEvents 兩邊各有來源:這台電腦 = 宿主記的暫停/恢復/連接/解除,雲端 = 平台的事件流(主行程 cloudEvents → /cloud/events)。
-   本機沒有「未實現損益」這個數字,所以 PnL 條只有兩格(設計師裁定 8:MVP 只少不改;數字有了再放回第三格)。 */
+   兩邊都是同一組兩支(權益曲線 + 當日損益、事件流),TR.env 只決定來源(envApi):
+   tradeEquity:這台電腦 = 宿主(daemon.js)在 app 開著時每個整點記一筆(依「這次綁定」切段);雲端 = 平台每小時的快照
+   (主行程 cloudOverview → /cloud/overview,同網頁工作頁 GET /openclaw/agent/overview 那一份);
+   tradeEvents:這台電腦 = 宿主記的暫停/恢復/連接/解除,雲端 = 平台的事件流(主行程 cloudEvents → /cloud/events)。
+   兩邊都沒有「未實現損益」這個數字,所以 PnL 條只有兩格(設計師裁定 8:MVP 只少不改;數字有了再放回第三格)。
+   tradePerformance:雲端 = 組合績效六格 + 平台算好的累積損益曲線(cloudPerformance → /cloud/performance,同網頁 GET /openclaw/agent/performance);
+   這台電腦沒有這一份(null,不畫那一條)。累積損益優先用平台那條(異動點的跳變已剔除),沒有才用本機推算(最後一段減首點)。 */
 const TR_RANGES = [["1D", 1], ["1W", 7], ["1M", 30], [null, 90]];
 const TR_GAP_S = 7200;            // 每個整點一筆:相鄰點超過 2 小時 = Blave 沒開著。線照連,只用來決定要不要出圖下那句 tr.ov.gapNote
 async function trLoadCurve() {
-  const S = TR;
-  try { S.ov.curve = (await S.api.tradeEquity({ days: S.ov.days })) || { curve: [] }; } catch (_) { S.ov.curve = { curve: [] }; }
+  const S = TR, days = S.ov.days;
+  // 計價幣釘住帳戶回報的那一個(雲端 api 會折成用戶在網頁選的幣;不釘的話曲線跟上面的總權益單位對不起來)
+  // curveErr = 這一輪讀不到(不是「還沒有紀錄」):畫面要說得出是哪一種
+  try { const cv = await S.api.tradeEquity({ days, currency: trWith(S, trUnit) }); if (S.ov.days !== days) return;   // 等的期間切了區間:這份是舊區間的
+    S.ov.curve = cv && cv.code === "OK" ? cv : { curve: [] }; S.ov.curveErr = !cv || cv.code !== "OK"; }
+  catch (_) { if (S.ov.days !== days) return; S.ov.curve = { curve: [] }; S.ov.curveErr = true; }
+  // perf null + perfErr false = 這一邊沒有這一份(這台電腦);perfErr = 這一輪讀不到
+  try { const pf = await S.api.tradePerformance({ days, currency: trWith(S, trUnit) }); if (S.ov.days !== days) return;
+    S.ov.perf = pf && pf.code === "OK" ? pf : null; S.ov.perfErr = !!pf && pf.code !== "OK"; }
+  catch (_) { if (S.ov.days !== days) return; S.ov.perf = null; S.ov.perfErr = true; }
   // uiErr = 這一輪讀不到(不是「沒有事件」):畫面要說得出是哪一種
-  try { const ev = await S.api.tradeEvents({ days: S.ov.days }); S.ov.ui = ev && Array.isArray(ev.events) ? ev.events : []; S.ov.uiErr = !ev || ev.code !== "OK"; }
-  catch (_) { S.ov.ui = []; S.ov.uiErr = true; }
+  try { const ev = await S.api.tradeEvents({ days }); if (S.ov.days !== days) return; S.ov.ui = ev && Array.isArray(ev.events) ? ev.events : []; S.ov.uiErr = !ev || ev.code !== "OK"; }
+  catch (_) { if (S.ov.days !== days) return; S.ov.ui = []; S.ov.uiErr = true; }
   S.sig.over = null; if (TR === S && S.open && S.tab === "over") trPaintOver();
 }
 function trCurvePoints() {
@@ -2216,12 +2216,12 @@ function trCurvePoints() {
 function trPaintOver() {
   const box = $("tr-over"), r = trReport() || {};
   if (!TR.ov.curve || (TR.ov.at || 0) < Date.now() - 60000) { TR.ov.at = Date.now(); trLoadCurve(); }
-  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.ui, TR.ov.uiErr, r.orders, r.halt, r.events, r.order_errors];
+  const data = [TR.env, trEquity(), trUnit(), TR.ov.mode, TR.ov.days, TR.ov.curve, TR.ov.curveErr, TR.ov.perf, TR.ov.perfErr, TR.ov.ui, TR.ov.uiErr, r.orders, r.halt, r.events, r.order_errors];
   if (!trShould("over", box, data)) return;
   box.textContent = "";
   box.appendChild(trOvStats());
-  // 雲端第一刀:每小時權益的端點還沒做,不畫曲線(也不畫「還沒有紀錄」——紀錄是有的,只是這一版讀不到)
-  if (TR.env !== "cloud") box.appendChild(trOvCurve());
+  box.appendChild(trOvPerf());   // 績效條:PnL 條與曲線之間(同網頁 mockup 序);沒有這一份就是空的
+  box.appendChild(trOvCurve());
   box.appendChild(trOvEvents(r));
   if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
@@ -2244,13 +2244,72 @@ function trPct(p) { const r = Math.round(p * 100) / 100; return (r > 0 ? "+" : r
 function trOvStats() {
   const grid = trEl("div", "bt-stats ov-stats"), cv = TR.ov.curve || {};
   grid.appendChild(trStatCell(t("tr.ov.equity"), trEquity(), { hero: true }, null, t("tr.ov.equityTip")));
-  if (TR.env === "cloud") return grid;             // 當日損益要有每小時權益才算得出來:同上,這一版不畫
-  // today = null:沒有夠新的基準(app 好幾天沒開)→「—」,不拿好幾天前的點冒充「當日」
+  // today = null:沒有夠新的基準(app 好幾天沒開;雲端今天不到兩筆快照、或跨過資金異動)→「—」,不拿好幾天前的點冒充「當日」;讀不到也是「—」,不是 0
   const today = cv.today && typeof cv.today === "object" ? cv.today : {};
   const dp = typeof today.pnl === "number" && isFinite(today.pnl) ? today.pnl : null;
   const pct = dp != null && typeof today.start_equity === "number" && today.start_equity > 0 ? (dp / today.start_equity) * 100 : null;
   grid.appendChild(trStatCell(t("tr.ov.day"), dp, { signed: true }, pct == null ? null : trPct(pct)));
   return grid;
+}
+/* 組合績效(照網頁 buildOvPerf):六格、表面只有指標名 + 數字,定義 / 口徑 / gating 全在 label 的 tooltip。
+   status 由平台判(ok = 顯示數字;estimate = 有數字但樣本不足,印真數字、muted;accumulating = 「資料累積中」),這裡不自算樣本門檻。
+   accumulating 帶 reason 時改口講「為什麼還沒有數字」({d} 代入該指標的定義句);estimate 的 reason 另一張表(同一個碼兩種意思)。
+   reason 是平台給的字串:只認表上有的(hasOwnProperty,"constructor" 這種撈到原型的不算),不認得就退回概括那句。 */
+const TR_PERF_REASON = { insufficient_samples: "tr.ov.perf.reason.insufficientSamples", flow_merged: "tr.ov.perf.reason.flowMerged", zero_volatility: "tr.ov.perf.reason.zeroVolatility" };
+const TR_PERF_VOL_EST = { insufficient_samples: "tr.ov.perf.volEst.insufficientSamples", flow_merged: "tr.ov.perf.volEst.flowMerged" };
+const trPerfReason = (table, r) => (typeof r === "string" && Object.prototype.hasOwnProperty.call(table, r) ? t(table[r]) : null);
+// 值格式器(同網頁:正號 +、負號 U+2212、兩位小數);回 { text, cls }
+function trPerfFmt(kind, v) {
+  const pct = (x) => Math.abs(x * 100).toFixed(2) + "%";
+  if (kind === "pctSigned") return { text: (v > 0 ? "+" : v < 0 ? "−" : "") + pct(v), cls: v > 0 ? "pos" : v < 0 ? "neg" : "" };
+  if (kind === "pct") return { text: pct(v), cls: "" };
+  if (kind === "drawdown") return v > 0 ? { text: "−" + pct(v), cls: "neg" } : { text: pct(v), cls: "" };   // 回撤是正比例,顯示為負;0 = 沒回撤(中性)
+  if (kind === "count") return { text: Math.round(v).toLocaleString("en-US"), cls: "" };
+  return { text: (v < 0 ? "−" : "") + Math.abs(v).toFixed(2), cls: "" };
+}
+function trOvPerf() {
+  const frag = document.createDocumentFragment();
+  if (!TR.ov.perf && !TR.ov.perfErr) return frag;   // 這一邊沒有這一份(這台電腦)
+  frag.appendChild(trSec(trEl("span", "label", t("tr.ov.perf.label"))));
+  if (!TR.ov.perf) { frag.appendChild(trEl("div", "pf-state", t("tr.ov.perfUnreach"))); return frag; }
+  const m = TR.ov.perf.metrics || {}, grid = trEl("div", "bt-stats ov-stats perf-stats");
+  // [名稱, metric, tipOk(met), tipGating | null, 格式, tipEstimate(met) | null]
+  const volEst = (met) => {
+    const byReason = trPerfReason(TR_PERF_VOL_EST, met.reason); if (byReason) return byReason;
+    const h = met.sample_hours; if (typeof h !== "number" || !isFinite(h) || h < 1) return null;   // 講不出樣本量就退回累積中:數字旁標「0 小時」是錯的標注
+    return h < 48 ? t("tr.ov.perf.volTipEstHours", { n: String(Math.round(h)) }) : t("tr.ov.perf.volTipEstDays", { n: String(Math.floor(h / 24)) });   // 天數往下取整(168h 才升 ok,round 會講成「只有 7 天」)
+  };
+  const cells = [
+    [t("tr.ov.perf.cum"), m.cumulative_return, () => t("tr.ov.perf.cumTip"), null, "pctSigned", null],
+    [t("tr.ov.perf.dd"), m.max_drawdown, (met) => t("tr.ov.perf.ddTipOk", { n: String(typeof met.window_days === "number" ? met.window_days : 0) }), t("tr.ov.perf.ddTipGating"), "drawdown", null],
+    [t("tr.ov.perf.ann"), m.annual_return, () => t("tr.ov.perf.annTipOk"), t("tr.ov.perf.annTipGating"), "pctSigned", null],
+    [t("tr.ov.perf.vol"), m.volatility, () => t("tr.ov.perf.volTipOk"), t("tr.ov.perf.volTipGating"), "pct", volEst],
+    [t("tr.ov.perf.sharpe"), m.sharpe, () => t("tr.ov.perf.sharpeTipOk"), t("tr.ov.perf.sharpeTipGating"), "fixed", null],
+    [t("tr.ov.perf.trades"), m.trade_count, () => t("tr.ov.perf.tradesTip"), null, "count", null],
+  ];
+  cells.forEach(([name, met0, tipOk, tipGate, kind, tipEst]) => {
+    const met = met0 && typeof met0 === "object" ? met0 : {};
+    const num = typeof met.value === "number" && isFinite(met.value), ok = met.status === "ok" && num;
+    // estimate:有數字但樣本不足;講不出「樣本多少」的指標退回累積中(寧可不顯示,不讓數字配到錯的標注)
+    const estTip = !ok && met.status === "estimate" && num && tipEst ? tipEst(met) : null;
+    const reason = trPerfReason(TR_PERF_REASON, met.reason);
+    const tip = ok ? tipOk(met) : estTip ? estTip : reason ? reason.split("{d}").join(tipOk(met)) : tipGate || tipOk(met);
+    const cell = trEl("div", "stat"), sl = trEl("div", "sl sl-tip");
+    sl.appendChild(trTipLabel("", name, tip)); cell.appendChild(sl);
+    if (ok || estTip) { const r = trPerfFmt(kind, met.value); cell.appendChild(trEl("div", "sv" + (r.cls ? " " + r.cls : "") + (estTip ? " est" : ""), r.text)); }
+    else cell.appendChild(trEl("div", "sv gating", t("tr.ov.perf.gating")));   // gating:小一號 muted「資料累積中」,不是壞值
+    grid.appendChild(cell);
+  });
+  frag.appendChild(grid);
+  return frag;
+}
+/* 平台算好的累積損益(異動點的跳變已剔除、從 0 起算):{ pts: [{ t, v }], anom } 或 null(這一邊沒有 / 讀不到 → 本機推算)。
+   pnl 為 null 的點是資金異動:不畫、只用來出圖下那一句 */
+function trPnlServerPoints() {
+  const pc = TR.ov.perf && Array.isArray(TR.ov.perf.pnl_curve) ? TR.ov.perf.pnl_curve : null;
+  if (!pc) return null;
+  const from = Date.now() / 1000 - TR.ov.days * 86400, win = pc.filter((p) => p && typeof p.ts === "number" && isFinite(p.ts) && p.ts >= from);
+  return { pts: win.filter((p) => typeof p.pnl === "number" && isFinite(p.pnl)).map((p) => ({ t: p.ts, v: p.pnl })).sort((a, b) => a.t - b.t), anom: win.some((p) => p.pnl == null) };
 }
 function trOvCurve() {
   const frag = document.createDocumentFragment(), sec = trEl("div", "pf-sec");
@@ -2268,17 +2327,21 @@ function trOvCurve() {
     acts.appendChild(b);
   });
   sec.append(modes, acts); frag.appendChild(sec);
+  // 還沒讀過(第一次開這一頁)/ 這一輪讀不到:各說各的,都不是「還沒有紀錄」
+  if (!TR.ov.curve) { frag.appendChild(trEl("div", "pf-state", t("tr.loading"))); return frag; }
+  if (TR.ov.curveErr) { frag.appendChild(trEl("div", "pf-state", t("tr.ov.curveUnreach"))); return frag; }
   const all = trCurvePoints();
-  // 口徑換過(0.0.4 只記下單錢包,之後記全帳戶):線在那裡斷開;累積損益只從最後一段起算,不拿兩種口徑相減
+  /* basis 換了就斷:這台電腦 = 口徑換過(0.0.4 只記下單錢包,之後記全帳戶);雲端 = 平台標的資金異動(出入金 / 綁解綁一個所,
+     主行程把每個異動之後的點換一個 basis)。線在那裡斷開;累積損益只從最後一段起算,不拿兩段相減(入金不是獲利) */
   let cut = 0;
   all.forEach((p, i) => { if (i && p.b !== all[i - 1].b) cut = i; });
-  const pts = TR.ov.mode === "pnl" ? all.slice(cut) : all;
+  const isPnl = TR.ov.mode === "pnl", srv = isPnl ? trPnlServerPoints() : null;   // 平台那條優先;沒有才本機推算
+  const pts = srv ? srv.pts : isPnl ? all.slice(cut) : all;
   if (pts.length < 2) {
     frag.appendChild(trEl("div", "pf-state", pts.length ? t("tr.ov.emptyBaseline") : t("tr.ov.empty")));
     return frag;
   }
-  const isPnl = TR.ov.mode === "pnl";
-  const series = isPnl ? pts.map((p) => ({ t: p.t, v: p.v - pts[0].v })) : pts;
+  const series = srv ? pts : isPnl ? pts.map((p) => ({ t: p.t, v: p.v - pts[0].v })) : pts;
   const frame = trEl("div", "ov-frame"), canvas = trEl("canvas", "ov-canvas"), hover = trEl("div", "ov-hover");
   // 圖本身沒有可讀的數字:起訖值與筆數放進 label
   const first = series[0], last = series[series.length - 1];
@@ -2286,7 +2349,9 @@ function trOvCurve() {
   canvas.setAttribute("aria-label", t(isPnl ? "tr.ov.curveAriaPnl" : "tr.ov.curveAria", { a: trFmt2(first.v, isPnl) + " " + trUnit(), b: trFmt2(last.v, isPnl) + " " + trUnit(), n: series.length }));
   frame.append(canvas, hover); frag.appendChild(frame);
   if (series.some((p, i) => i > 0 && p.t - series[i - 1].t > TR_GAP_S)) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.gapNote")));
-  if (cut > 0 && !isPnl) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.basisNote")));
+  // 斷在哪一種:資料自己帶 anomalies 的是平台標的資金異動,否則是這台電腦的口徑換過
+  if (cut > 0 && !isPnl) frag.appendChild(trEl("div", "pf-foot", t(Array.isArray(TR.ov.curve.anomalies) ? "tr.ov.flowNote" : "tr.ov.basisNote")));
+  if (srv && srv.anom) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.pnlAnom")));   // 平台那條:異動點的跳變已剔除,講一句
   requestAnimationFrame(() => trDrawCurve(canvas, series, isPnl));
   canvas.addEventListener("mousemove", (e) => {
     const g = TR.ov.geo; if (!g) return;

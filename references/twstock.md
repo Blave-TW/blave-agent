@@ -1,7 +1,8 @@
 # 台股資料 — Taiwan Stock Data
 
-> 台股資料（日K、三大法人、融資融券、股權分級、財報、月營收、分點買賣超）由 [FinMind](https://finmindtrade.com) 提供；
-> 股票清單/基本資料（industry_code、listing_date）例外，來自 TWSE/TPEx 官方公司資料，非 FinMind。
+> 台股資料（三大法人、融資融券、股權分級、財報、月營收、分點買賣超）由 [FinMind](https://finmindtrade.com) 提供；
+> **日K（`fetch_twstock_price` / `fetch_twstock_price_adj`）直接來自臺灣證券交易所、證券櫃檯買賣中心，在本機抓、不經 Blave、不需 Blave key**（見下節，引用時要標示資料來源）；
+> 股票清單/基本資料（industry_code、listing_date）來自 TWSE/TPEx 官方公司資料，非 FinMind。
 
 **⚠️ 一律優先用下面這些 `lib/data.py` 函式(不只是寫策略時,單純聊天問答也一樣),函式裡沒有的資料才去外面找。** `lib/data.py` 已經做好新鮮度、fallback、cache,手寫腳本沒有這層保護,拿到舊資料或直接崩潰都有可能。若 `lib/data.py` 的呼叫本身失敗,回報失敗,不要改用手寫腳本、更不要拿崩潰前的部分輸出當答案。
 
@@ -68,13 +69,15 @@ universe = sample_by_sector(by_sector, total=100)
 
 ## 台股日K — 原始 vs 還原價
 
-| 函式 | endpoint | 何時使用 |
+| 函式 | 來源 | 何時使用 |
 |---|---|---|
-| `fetch_twstock_price(sid, start, end, hdrs)` | `/twstock/price/` | **畫圖、走勢查詢** — 原始市價，符合用戶在 app 看到的價格；欄位 Open/High/Low/Close/Volume |
-| `fetch_twstock_price_adj(sid, start, end, hdrs)` | `/twstock/price_adj/` | **回測** — 向後除權息還原價，歷史報酬可比較；欄位 Open/Close |
+| `fetch_twstock_price(sid, start, end, hdrs)` | TWSE `STOCK_DAY` / TPEx `tradingStock` | **畫圖、走勢查詢** — 原始市價，符合用戶在 app 看到的價格；欄位 Open/High/Low/Close/Volume（股；上櫃為仟股 ×1,000） |
+| `fetch_twstock_price_adj(sid, start, end, hdrs)` | 同上 + TWSE `TWT49U` / TPEx `exDailyQ` 除權息表 | **回測** — 向後除權息還原價（係數 = 除權息前收盤價 ÷ 除權息參考價; for cash and stock dividends the same factor as the Blave adjusted series, but the exchange tables also carry other ex-rights events such as 現金增資 that Blave leaves out, so from such a date the two series differ by that event's factor），歷史報酬可比較；欄位 Open/Close |
 
 > 除權息後原始價格會向下跳空，還原價則平滑消除跳空，適合計算指標與回報。  
 > 用戶問「台積電最近走勢怎樣」→ `fetch_twstock_price`；要跑 SMA 回測 → `fetch_twstock_price_adj`。
+
+**免費、免 key、不經 Blave。** 日K 由本機直接向該股所屬交易所逐月抓（上市/上櫃用當日全市場檔判斷，本機快取一天），過去月份抓一次永久快取、當月每次重抓；全程 1 秒 1 次請求（2010 → 今天一檔約 200 次、3.5 分鐘，之後只重抓當月）。**引用這些數字的報告或回覆一律附「資料來源:臺灣證券交易所、證券櫃檯買賣中心(政府資料開放授權)」**——兩所條款對開放資料的豁免以標示來源為條件。限制:TWSE 端點沒有 2010-01-04 以前的資料（更早的 `start` 自動改走下一個來源）、上櫃成交量四捨五入到仟股、上櫃轉上市的股票只有轉上市後的月份。來源順序:交易所 → FinMind 免費層（raw `TaiwanStockPrice`，無 token 每小時 300 次，1994 起；還原係數仍用兩所除權息表）→ Blave 端點（訂閱戶）。**免費來源只在用戶自己的電腦上抓（電腦版 `BLAVE_AGENT_LOCAL=1`）;雲端主機用 Blave 資料**，與改版前一樣；`BLAVE_TWSTOCK_DAILY_SOURCE=public|blave` 兩個方向都可強制。`df.attrs['source']` 寫著實際供應者（`TWSE` / `TPEx` / `FinMind` / `Blave`），退到下一來源時會印 ⚠️。`*_batch` 版本與 `fetch_twstock_ohlcv(…, '1d')` 不變（Blave）。當日 K 在台北 17:35 起才算可用（`FEED_TIMING['twstock_price']`：TWSE 每日收盤行情 14:00 / 15:30 / 17:30 三版，取第三版 + 5 分）。
 
 ---
 

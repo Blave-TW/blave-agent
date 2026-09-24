@@ -30,9 +30,13 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const stCalls = []; let stReply = { code: "OK", strategy: { name: "a", displayName: "Alpha", description: "", stats: { Trades: 3 }, code: "x = 1" } };
   const host = { cloudStatus: async () => cloudSt(okc("running", { strategies: [{ name: "a", display_name: "Alpha", has_backtest: true, symbol: "BTCUSDT", updated_at: 5 }, { name: "" }, null, { nope: 1 }] })),
     cloudEvents: async (q) => { evCalls.push(q); return evReply; },
+    cloudOverview: async (q) => { ovCalls.push(q); return ovReply; },
+    cloudPerformance: async (q) => { pfCalls.push(q); return pfReply; },
     cloudStrategy: async (n) => { stCalls.push(n); return stReply; },
     cloudSend: async (...a) => { sendCalls.push(a); return { ok: true, result: {}, requestId: "rid" + "0".repeat(13) }; } };
   let evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
+  const pfCalls = []; let pfReply = { code: "OK", perf: { metrics: { trade_count: { value: 3, status: "ok" } }, pnl_curve: [{ ts: 1, pnl: 0 }], currency: "USDT", baseline_ts: null } };
+  const ovCalls = []; let ovReply = { code: "OK", curve: { curve: [{ ts: 1, equity: 10, basis: "flow0" }], currency: "USDT", baseline_ts: 1, today: { pnl: 1, start_equity: 9 }, unrealized: null, anomalies: [] } };
   ENV_API.forEach((k) => { host[k] = (...a) => { touched.push(k); return Promise.resolve({ ok: true, from: "local", a }); }; });
   const C = envApi("cloud", host);
   /* 雲端的寫入:只有**這一批真的有 UI 在用**的四個走得出去,其餘一律 NOT_ALLOWED 且完全不碰 host。
@@ -50,10 +54,30 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && sendCalls.length === CMDS.length && trErrorKind("NOT_ALLOWED") === "undelivered");
   { const c2 = envApi("cloud", host); await c2.tradeSend("halt", {}, "rid" + "0".repeat(13));
     ok("雲端:重試時呼叫端帶著上一趟那顆 request_id,這一層原樣往下傳(冪等靠它)", sendCalls[sendCalls.length - 1][2] === "rid" + "0".repeat(13)); }
-  const st = await C.tradeStatus(), list = await C.listStrategies(), one = await C.loadStrategy("a"), eq = await C.tradeEquity({ days: 30 }), ev = await C.tradeEvents({ days: 30 });
+  const st = await C.tradeStatus(), list = await C.listStrategies(), one = await C.loadStrategy("a"), eq = await C.tradeEquity({ days: 30, currency: "USDT" }), ev = await C.tradeEvents({ days: 30 });
   ok("雲端:讀的那幾支也沒有碰到這台電腦的 api(不把本機的數字畫在雲端那一頁)", touched.length === 0);
   ok("雲端:狀態讀 cloudStatus;清單來自同一份狀態,壞的列濾掉、形狀同本機 listStrategies", st.cloud.code === "OK" && list.length === 1 && list[0].name === "a" && list[0].displayName === "Alpha" && list[0].hasBacktest === true && list[0].symbol === "BTCUSDT" && list[0].remote === true && list[0].mtime === 5);
-  ok("雲端:單支策略走主行程的 cloudStrategy(帶名字),OK 就原樣往上交(形狀同本機 loadStrategy);權益曲線的端點還沒做,回空的", JSON.stringify(stCalls) === '["a"]' && one === stReply.strategy && one.stats.Trades === 3 && JSON.stringify(eq) === '{"curve":[]}');
+  ok("雲端:單支策略走主行程的 cloudStrategy(帶名字),OK 就原樣往上交(形狀同本機 loadStrategy)", JSON.stringify(stCalls) === '["a"]' && one === stReply.strategy && one.stats.Trades === 3);
+  ok("雲端:權益曲線打主行程的 cloudOverview(帶著 days 與釘住的計價幣),OK 就攤成 { code, curve, today, … }(形狀同這台電腦那一份)",
+    JSON.stringify(ovCalls) === '[{"days":30,"currency":"USDT"}]' && eq.code === "OK" && JSON.stringify(eq.curve) === JSON.stringify(ovReply.curve.curve) && eq.today.pnl === 1 && eq.baseline_ts === 1 && Array.isArray(eq.anomalies));
+  // 讀不到 ≠ 還沒有紀錄:壞回應、主行程拒絕、拿到的不是陣列,一律 UNREACH(畫面照這個 code 說自己讀不到,不畫「還沒有權益紀錄」)
+  { const bads = [null, undefined, { code: "UNREACH", curve: null }, { code: "OK", curve: null }, { code: "OK", curve: { curve: "nope" } }, { curve: { curve: [] } }, []];
+    const got = []; for (const b of bads) { ovReply = b; got.push(await C.tradeEquity({ days: 30 })); }
+    ok("雲端:權益曲線讀不到 → { code: UNREACH, curve: [] },不炸、也不畫成「還沒有紀錄」", got.every((r) => r.code === "UNREACH" && Array.isArray(r.curve) && r.curve.length === 0)); }
+  ovReply = { code: "OK", curve: { curve: [], currency: "USDT", baseline_ts: null, today: null, unrealized: null, anomalies: [] } };
+  ok("雲端:真的還沒有點 = OK + 空陣列(跟讀不到分得出來)", (await C.tradeEquity({ days: 30 })).code === "OK");
+  { const pf = await C.tradePerformance({ days: 7, currency: "USDT" });
+    ok("雲端:組合績效打主行程的 cloudPerformance(帶著 days 與計價幣),OK 就攤成 { code, metrics, pnl_curve, … }", JSON.stringify(pfCalls) === '[{"days":7,"currency":"USDT"}]' && pf.code === "OK" && pf.metrics.trade_count.value === 3 && pf.pnl_curve.length === 1);
+    const bads = [null, undefined, { code: "UNREACH", perf: null }, { code: "OK", perf: null }, { code: "OK", perf: {} }, { perf: { metrics: {} } }];
+    const got = []; for (const b of bads) { pfReply = b; got.push(await C.tradePerformance({ days: 7 })); }
+    ok("雲端:組合績效讀不到 → { code: UNREACH }(畫面畫成讀不到,不退回本機推算冒充)", got.every((r) => r && r.code === "UNREACH" && !r.metrics));
+    ok("這台電腦:沒有組合績效這一份 → null(不是讀不到)", (await envApi("local", host).tradePerformance({ days: 7 })) === null && touched.length === 0); }
+  { const lq = await envApi("local", { tradeEquity: async () => null }).tradeEquity({ days: 30 });
+    const lq2 = await envApi("local", { tradeEquity: async () => ({ curve: [{ ts: 1, equity: 5, basis: "wallets" }], today: { pnl: 2, start_equity: 3 } }) }).tradeEquity({ days: 30 });
+    ok("這台電腦:權益曲線也是 { code, curve } 同一個形狀,而且永遠 OK(本機檔案沒有讀不到這一態);宿主的欄位原樣攤進來", lq.code === "OK" && lq.curve.length === 0 && lq2.code === "OK" && lq2.curve.length === 1 && lq2.today.pnl === 2);
+    let rejected = false;
+    try { await envApi("local", { tradeEquity: async () => { throw new Error("EACCES"); } }).tradeEquity({ days: 30 }); } catch (_) { rejected = true; }
+    ok("這台電腦:宿主拋出來的讀取錯誤原樣往上拋(讓畫面畫成讀不到),不在這一層吞掉", rejected); }
   { const bads = [null, undefined, { code: "UNREACH", strategy: null }, { code: "OK", strategy: null }, { code: "OK" }, {}];
     const got = []; for (const b of bads) { stReply = b; got.push(await C.loadStrategy("a")); }
     ok("雲端:單支策略讀不到 / 雲端沒有這一份 → null(報告頁沒有「讀不到」這一態,呼叫端收掉選取),不炸", got.every((r) => r === null)); }
@@ -74,11 +98,11 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("這台電腦:宿主拋出來的讀取錯誤原樣往上拋(讓畫面畫成讀不到),不在這一層吞掉", rejected); }
   evReply = { code: "OK", events: [{ ts: 1, type: "halt", data: {} }] };
   const cloudHalf = noComments(env).slice(noComments(env).indexOf("let last = null;"), noComments(env).indexOf("function envCloudList("));
-  // 雲端那份 api 碰得到的主行程 api 就這四支:三支讀 + 一支寫。多一支就是多一條雲端視角碰得到的路
-  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudStrategy / cloudEvents / cloudSend", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudStrategy,host.cloudEvents,host.cloudSend");
+  // 雲端那份 api 碰得到的主行程 api 就這六支:五支讀 + 一支寫。多一支就是多一條雲端視角碰得到的路
+  ok("雲端那份 api 的原文裡,host 只被拿來叫 cloudStatus / cloudStrategy / cloudOverview / cloudPerformance / cloudEvents / cloudSend", cloudHalf.length > 50 && (cloudHalf.match(/host\s*[.\[]\s*\w*/g) || []).join() === "host.cloudStatus,host.cloudStrategy,host.cloudOverview,host.cloudPerformance,host.cloudEvents,host.cloudSend");
   const L = envApi("local", host); await L.tradeSend("halt", {}); await L.tradeStatus();
   ok("這台電腦:原樣轉給主行程", touched.join() === "tradeSend,tradeStatus" && L.env === "local" && C.env === "cloud");
-  ok("兩份 api 介面相同(自動下單頁換一個來源就能畫)", ENV_API.every((k) => typeof C[k] === "function" && typeof L[k] === "function"));
+  ok("兩份 api 介面相同(自動下單頁換一個來源就能畫;tradePerformance 不在 ENV_API 裡——主行程沒有本機那一支,本機那份自己回 null)", ENV_API.concat(["tradePerformance"]).every((k) => typeof C[k] === "function" && typeof L[k] === "function"));
 
   // ── 2. 原文列舉 ──
   const code = noComments(src), app = noComments(fs.readFileSync(path.join(R, "app.js"), "utf8"));
@@ -359,7 +383,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && envHeadState(repAged(0.5, { last_ok_at: NOW + 3 * 3600e3 - 1000, fetched_at: NOW + 3 * 3600e3 - 1000 }), NOW + 3 * 3600e3) === "running");
   ok("R3 拿到之後又擱了很久也算進去(50 分鐘前的回報 + 擱了 20 分鐘);沒有 server_time 就只看連線那一條", envHeadState(repAged(50 / 60, { last_ok_at: NOW - 20 * MIN, fetched_at: NOW - 20 * MIN, server_time: (NOW - 20 * MIN) / 1000, reported_at: (NOW - 70 * MIN) / 1000 }), NOW) === "unknown"
     && envHeadState(repAged(2, { server_time: null }), NOW) === "running");
-  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintGoUpd\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
+  ok("雲端不知道現況:不放主鈕(鈕字不替它下結論)、標題用中性那句", /\(ro && state === "unknown"\)\)\) \{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\); trPaintNoAmt\(pend\); trPaintGoRel\(b0, b0\); return; \}/.test(fn("trPaintHead")) && /state === "unknown"\) return t\("tr\.cloud\.unknown"\)/.test(fn("trStateText")));
   // ── 稽核 N2:紅字看「多久沒成功」,不是畫面讀了幾次 ──
   const T = 1e12, snap = { transient: "OFFLINE", last_ok_at: T };
   ok("N2 同一份 snapshot 讀三次(一次網路抖動)不出紅字;超過三個週期才出;讀得到就收", [0, 16000, 32000].every((d) => envUnreachAlert(snap, T + d) === false) && envUnreachAlert(snap, T + ENV_UNREACH_MS + 1) === true
