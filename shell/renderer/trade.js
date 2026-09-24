@@ -899,6 +899,7 @@ async function trPoll() {
     trPaint();
     envPaintLocalDots();
     if (typeof upPaint === "function") upPaint();   // 設定 › 關於 的雲端那一行與聊天的更新入口:讀的是這一份雲端狀態
+    cxGateSlowSync();
     if (!$("cx-scrim").hidden) cxModalPaint();
   } finally {
     // 排下一輪放在 finally(稽核 N7):畫面函式就算丟例外,輪詢鏈也不能斷——斷了本機的狀態帶與綠點會凍在舊值
@@ -2104,9 +2105,11 @@ function trPaintSet() {
   const row = trEl("div", "cx-row");
   row.appendChild(trEl("span", "n", trVenueLabel(id, true)));
   if (id && id !== PAPER) row.appendChild(trEl("span", "mode real", t("tr.mode.real")));   // 模擬以外都是真錢
-  const failed = (!!e && !e.ok) || !!(bn && bn.verdict), st = trEl("span", "cn-st" + (failed ? "" : " on"));
-  if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));   // 綠點 = 讀得到帳戶;「串接中…」還沒有
+  // 三態:讀得到帳戶 = 綠點;讀過而失敗 = 紅記號;還沒讀過(剛綁上那幾秒)= 圓環 + 「串接中…」(.cx-wait 那組,spec-desktop-006 §1.3 D)
+  const failed = (!!e && !e.ok) || !!(bn && bn.verdict), st = trEl("span", "cn-st" + (failed ? "" : e ? " on" : " cx-wait"));
+  if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
+  else { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); st.appendChild(sp); }
   st.appendChild(trEl("span", "", failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
@@ -2546,9 +2549,18 @@ function cxChkText(r) {
   return c === "WITHDRAW_ENABLED" ? t("cx.chk.withdraw") : c === "TRADING_DISABLED" ? (CXF.ip ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
     : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clock") : c === "RATE_LIMITED" ? t("cx.chk.rate") : c === "NETWORK" ? t("cx.chk.network")
-    : c === "SEND_FAILED" ? (TR_BAGS.local.st && TR_BAGS.local.st.alive ? t("cx.chk.sendFail", { err: String(r.detail && r.detail.error || "—").slice(0, 200) }) : t("cx.down"))
+    : c === "SEND_FAILED" ? cxSendFailText(r)
     : t("cx.chk.unknown");
 }
+/* 20 秒逾時分兩句真話(spec-desktop-006 §1.3 C):TIMEOUT = daemon 沒收走指令、撤回成功、沒存(紅,叫人再連);
+   UNKNOWN_RESULT = daemon 收走了還沒回 ack、可能還在查、可能稍後會存(灰,叫人先去 設定 › 帳戶 看)。其餘照舊 */
+function cxSendFailText(r) {
+  const e = String(r.detail && r.detail.error || "—").slice(0, 200);
+  if (e === "TIMEOUT") return t("cx.chk.engineTimeout");
+  if (e === "UNKNOWN_RESULT") return t("cx.chk.gateSlow", { venue: trVenueLabel(CXF.venue, true) });
+  return TR_BAGS.local.st && TR_BAGS.local.st.alive ? t("cx.chk.sendFail", { err: e }) : t("cx.down");
+}
+const cxGateSlow = (r) => !!r && r.code === "SEND_FAILED" && !!r.detail && r.detail.error === "UNKNOWN_RESULT";
 /* 雲端連接的結果 → 那一句(spec-desktop-cloud-s5 §4;**MVP 不查提領**:沒有提領那一句)。
    本機那組寫死「這台電腦」的(時間、網路、限速)另寫雲端版;「上面這個 IP」在雲端就是主機的 IP,沿用。 */
 function cxChkTextCloud(r) {
@@ -2571,8 +2583,15 @@ function cxModalPaint() {
   const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, off = L.cx.busy || (venue === BINANCE && locked) || down;
   const cip = cloud ? cxCloudIp() : null;
   const sig = LANG + "|" + JSON.stringify([CXF.env, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail], locked, down]);
-  go.textContent = L.cx.busy ? t("cx.connecting") : t("cx.connect");
+  // 等的時候圓環在字前(同 app.js 更新鈕);只在字換了才重組——輪詢重畫不能重啟圓環的動畫
+  const goLabel = L.cx.busy ? t("cx.connecting") : t("cx.connect");
+  if (go.textContent.trim() !== goLabel || !!go.querySelector(".spin16") !== !!L.cx.busy) {
+    go.textContent = "";
+    if (L.cx.busy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); go.append(sp, " "); }
+    go.append(goLabel);
+  }
   go.setAttribute("aria-disabled", off ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy);
+  box.setAttribute("aria-busy", L.cx.busy ? "true" : "false");
   // 雲端的五處差異之 1、4:標題列灰底 +「雲端」記號;鈕正上方講目的地
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("cx-env").hidden = !cloud; $("cx-env").textContent = cloud ? t("env.cloud") : "";
@@ -2632,8 +2651,10 @@ function cxModalPaint() {
   }
   const slot = trEl("div", ""); slot.setAttribute("role", "status"); box.appendChild(slot);
   const msg = down ? t("side.stopped") : (venue !== PAPER || cloud) && CXF.res ? cxChkText(CXF.res) : L.cx.err;
-  const calm = !down && CXF.res && (cloud ? cxCalm(CXF.res) : CXF.res.code === "RATE_LIMITED" && venue === BINANCE);
+  const calm = !down && CXF.res && (cloud ? cxCalm(CXF.res) : (CXF.res.code === "RATE_LIMITED" && venue === BINANCE) || cxGateSlow(CXF.res));
   if (msg) { const p = trEl("p", "plan-err" + (calm ? " is-calm" : "")), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", msg)); slot.appendChild(p); }
+  // 真錢的等待(交易所做簽名讀取要 2–8 秒):同一個槽講在等什麼,不加記號、不加第二個圓環;模擬是本機寫 .env、次秒完成,不放
+  else if (L.cx.busy && !cloud && venue !== PAPER) slot.appendChild(trEl("p", "cx-manual-note", t("cx.gate.checking", { venue: trVenueLabel(venue, true) })));
   const back = hadId && $(hadId); if (back && !back.disabled) back.focus(); else if (hadId) sel.focus();
 }
 function cxWire() {
@@ -2739,6 +2760,15 @@ async function cxConnectVenue() {
   CXF.res = r && typeof r.code === "string" ? r : { code: "SEND_FAILED", detail: {} };
   srSay(cxChkText(CXF.res)); L.sig.cxm = null; cxModalPaint();
   const c = CXF.res.code, f = c === "BAD_KEY_FORMAT" || c === "INCOMPLETE_PAIR" || c === "REJECTED" ? $("cx-api") : $("cx-go"); if (f) f.focus();
+}
+/* 灰句(可能還在查)期間輪詢的報告出現了這一家 → 金鑰其實存了、帳戶也讀到了:走 ok 那條路關框。
+   不關的話框裡說「可能還在查」、底下帳戶列已經「已連接」是兩套話(spec-desktop-006 §1.3 C)。每輪 trPoll 叫一次 */
+function cxGateSlowSync() {
+  if ($("cx-scrim").hidden || CXF.env !== "local" || !cxGateSlow(CXF.res)) return;
+  const L = TR_BAGS.local;
+  if (trVenueIds(L.st && L.st.report).indexOf(CXF.venue) < 0) return;
+  // 先關框(連同清金鑰):cxConnected 要等 tradeStatus 回來才關,中間 trPoll 的 cxModalPaint 會把框畫回閒置表單閃一下
+  cxModalClose(true); cxConnected(t("cx.linkOk"));
 }
 async function cxRetest() {
   const S = TR, cloud = S.env === "cloud";   // 吃當下那一袋:雲端的重新測試走雲端指令

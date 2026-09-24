@@ -2052,6 +2052,15 @@ msgstr "這把金鑰沒有設 IP 白名單。Binance 會刪除沒有白名單、
 msgid "cx.chk.sendFail"
 msgstr "金鑰通過了檢查，但沒有存進這台電腦（{err}）。再連一次。"
 
+msgid "cx.gate.checking"
+msgstr "正在向 {venue} 確認這把金鑰，通常幾秒。"
+
+msgid "cx.chk.engineTimeout"
+msgstr "這台電腦的下單機 20 秒內沒有處理這個指令，沒有儲存。再連一次；一直這樣就重開 Blave。"
+
+msgid "cx.chk.gateSlow"
+msgstr "{venue} 20 秒內還沒回覆，金鑰可能還在檢查。先別重貼：到 設定 › 帳戶 看有沒有出現 {venue}，沒有再連一次。"
+
 msgid "cx.re.tradingOff"
 msgstr "交易權限被關掉了，下單送不出去。到 Binance 重新開啟，再按「重新測試」。"
 

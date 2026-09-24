@@ -878,6 +878,14 @@ def _cmd_book_account_confirm(args):
             pass
     # kicked on every outcome: a stale question the answer could not act on is
     # re-derived by the reconciler within a poll, not at the 5-minute heartbeat
+    _kick_reconciler()
+    _log(f"book account on {venue}: {'same' if same else 'different'} → {outcome}")
+    return {"venue": venue, "same": same, "outcome": outcome}
+
+
+def _kick_reconciler():
+    """Touch state/execution/kick (a mtime the reconciler watches): a round
+    follows within one poll instead of at the 5-minute heartbeat. Best-effort."""
     try:
         kick = os.path.join(WORKSPACE, "state", "execution", "kick")
         os.makedirs(os.path.dirname(kick), exist_ok=True)
@@ -885,8 +893,6 @@ def _cmd_book_account_confirm(args):
             os.utime(kick, None)
     except OSError:
         pass
-    _log(f"book account on {venue}: {'same' if same else 'different'} → {outcome}")
-    return {"venue": venue, "same": same, "outcome": outcome}
 
 
 def _write_ui_cred_manifest(lines):
@@ -4185,6 +4191,33 @@ def _cmd_close_all(args):
         raise
 
 
+# manager/flatten.py EXIT_ALREADY_RUNNING (the runtime does not import the workspace module)
+FLATTEN_EXIT_ALREADY_RUNNING = 3
+
+
+def _kick_when_flatten_exits(proc):
+    """The positions the page shows are the reconciler's snapshot, and a
+    flatten sells without a round: the closes stayed invisible until the
+    heartbeat (29026, 2026-09-24: five minutes). manager/flatten.py kicks on
+    its own now; this covers a workspace whose flatten.py predates that (the
+    runtime updates first). Under the HALT that round only re-reads. Windows
+    launches through powershell and has no process to wait on."""
+    if not hasattr(proc, "wait"):
+        return
+
+    def _run():
+        try:
+            proc.wait()
+        finally:
+            # the loser of a double press exits within a second having sold
+            # nothing: kicking then makes the reconciler read the half-closed
+            # account while the holder is still selling. The holder's exit kicks.
+            if proc.returncode != FLATTEN_EXIT_ALREADY_RUNNING:
+                _kick_reconciler()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _launch_flatten(prefix):
     # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
     # 除了 order_errors.json 外,還要有完整紀錄可查
@@ -4197,9 +4230,10 @@ def _launch_flatten(prefix):
     if _local_mode():
         # own session: the flatten must outlive a daemon that is shutting down
         with open(log_path, "ab") as logf:
-            subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
-                             env=_local_child_env(), stdout=logf, stderr=logf,
-                             start_new_session=True)
+            proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
+                                    env=_local_child_env(), stdout=logf, stderr=logf,
+                                    start_new_session=True)
+        _kick_when_flatten_exits(proc)
         return prefix + "started"
     if platform.system() == "Windows":
         # 脫離 NSSM 的 process tree:bridge 重啟時 NSSM 會殺整棵樹,平倉做一半
@@ -4218,11 +4252,12 @@ def _launch_flatten(prefix):
     # Linux:bridge unit 是 KillMode=process(見 systemd/blave-agent-web.service)
     # ——重啟只殺 bridge 本體,flatten 活到收工
     with open(log_path, "ab") as logf:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             ["python3", "manager/flatten.py"],
             cwd=WORKSPACE, env=child_env,
             stdout=logf, stderr=logf, start_new_session=True,
         )
+    _kick_when_flatten_exits(proc)
     return prefix + "started"
 
 

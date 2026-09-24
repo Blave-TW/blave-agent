@@ -167,6 +167,56 @@ app.whenReady().then(async () => {
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "REJECTED", detail: { reason: "AccountModeError: OKX 帳戶模式不支援合約 [okx_account_mode] (OKX acctLv=1)" } })`);
   await js(`$("cx-go").click()`); await wait(300);
   ok("③ 本機 REJECTED 帶 [okx_account_mode]:講怎麼改帳戶模式,不出原文", (await js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`)) === (await js(`t("cx.err.okxMode")`)));
+
+  // ── 等待狀態(spec-desktop-006 §1.3 A):鈕內圓環 + 「串接中…」、狀態槽講在等什麼、aria-busy;結果回來那句就消失 ──
+  const slotOf = () => js(`(() => { const s = $("cx-body").querySelector("[role=status]"); return s ? s.textContent : null; })()`);
+  await run(`window.__over.venueConnect = () => new Promise((r) => { window.__release = r; })`);
+  await js(`$("cx-go").click()`); await wait(200);
+  const pend = await js(`(() => { const go = $("cx-go"), sp = go.querySelector(".spin16"), slot = $("cx-body").querySelector("[role=status]");
+    return { spin: !!sp && sp.getAttribute("aria-hidden") === "true" && go.firstChild === sp, label: go.textContent.trim(),
+      busy: go.classList.contains("is-busy") && go.getAttribute("aria-disabled") === "true" && !go.disabled, bodyBusy: $("cx-body").getAttribute("aria-busy"),
+      marks: slot ? slot.querySelectorAll(".fault-mark, .spin16").length : -1, ro: $("cx-api").readOnly && $("cx-venue").disabled }; })()`);
+  ok("③ pending:鈕內圓環在字前(aria-hidden)+「串接中…」、is-busy + aria-disabled(不是 disabled)、#cx-body aria-busy、欄位唯讀",
+    pend.spin && pend.label === (await js(`t("cx.connecting")`)) && pend.busy && pend.bodyBusy === "true" && pend.ro);
+  ok("③ pending:狀態槽講「正在向 OKX 確認這把金鑰」,不加記號、不加第二個圓環", (await slotOf()) === (await js(`t("cx.gate.checking", { venue: "OKX" })`)) && pend.marks === 0);
+  // 20 秒逾時分兩句(§1.3 C):TIMEOUT = 指令被撤回、沒存 → 紅句;UNKNOWN_RESULT = daemon 收走了、可能還在查 → 灰句
+  await js(`window.__release({ ok: false, code: "SEND_FAILED", detail: { error: "TIMEOUT" } })`); await wait(300);
+  const to = await js(`(() => { const go = $("cx-go"), p = $("cx-body").querySelector(".plan-err"); return { spin: !!go.querySelector(".spin16"), label: go.textContent.trim(), dis: go.getAttribute("aria-disabled"),
+    bodyBusy: $("cx-body").getAttribute("aria-busy"), msg: p ? p.textContent : "", calm: !!p && p.classList.contains("is-calm"), api: $("cx-api").value, open: !$("cx-scrim").hidden }; })()`);
+  ok("③ TIMEOUT:紅句「下單機 20 秒內沒有處理、沒有儲存」取代 pending 句(不漏 TIMEOUT 代號)、鈕還原可按、欄位保留、框留著",
+    to.msg === (await js(`t("cx.chk.engineTimeout")`)) && (await slotOf()) === to.msg && !/TIMEOUT/.test(to.msg) && !to.calm
+    && !to.spin && to.label === (await js(`t("cx.connect")`)) && to.dis === "false" && to.bodyBusy === "false" && to.api === "not-a-real-key-okx" && to.open);
+  await run(`window.__over.venueConnect = async () => ({ ok: false, code: "SEND_FAILED", detail: { error: "UNKNOWN_RESULT" } })`);
+  await js(`$("cx-go").click()`); await wait(300);
+  const un = await js(`(() => { const p = $("cx-body").querySelector(".plan-err"); return { msg: p ? p.textContent : "", calm: !!p && p.classList.contains("is-calm"), open: !$("cx-scrim").hidden, dis: $("cx-go").getAttribute("aria-disabled") }; })()`);
+  ok("③ UNKNOWN_RESULT:灰句帶 OKX、叫人先到 設定 › 帳戶 看、鈕可按、框留著", un.msg === (await js(`t("cx.chk.gateSlow", { venue: "OKX" })`)) && un.calm && un.open && un.dis === "false");
+  // 灰句期間輪詢的報告出現了這一家 → 走 ok 那條路自動關框(trPoll 每輪叫 cxGateSlowSync;這裡 trPoll 是空殼,直接叫)
+  const venuesOf = (id) => `{ venues: { ${id}: { credentials: true, pair: true, order: true, account: true } } }`;
+  await run(`window.__over.tradeStatus = async () => TR_BAGS.local.st; TR_BAGS.local.st = { alive: true, report: ${venuesOf("bybit")} }; cxGateSlowSync()`); await wait(200);
+  ok("③ 灰句期間報告出現的是別家(Bybit):框不關", !(await js(`$("cx-scrim").hidden`)));
+  // tradeStatus 還沒回來就要關:cxConnected 等它回來才關框,而 trPoll 在 cxGateSlowSync 之後接著 cxModalPaint,晚關就閃一次閒置表單
+  await run(`window.__over.tradeStatus = () => new Promise((r) => { window.__relStatus = r; }); TR_BAGS.local.st = { alive: true, report: ${venuesOf("okx")} }; cxGateSlowSync(); window.__closedSync = $("cx-scrim").hidden && !document.querySelector("#cx-body input")`);
+  ok("③ 灰句期間報告出現了 OKX:tradeStatus 回來前框就關了、欄位已丟(不閃一次閒置表單)", await js(`window.__closedSync`));
+  await run(`window.__relStatus(TR_BAGS.local.st); window.__over.tradeStatus = async () => TR_BAGS.local.st`); await wait(300);
+  ok("③ 灰句期間報告出現了 OKX:框自動關、金鑰清空、講「串接成功」", await js(`$("cx-scrim").hidden && CXF.apiKey === "" && CXF.secret === "" && CXF.passphrase === ""`)
+    && (await js(`$("sr-live").textContent`)) === (await js(`t("cx.linkOk")`)));
+  ok("③ trPoll 每一輪都叫 cxGateSlowSync(源碼)", /cxGateSlowSync\(\);\s*\n\s*if \(!\$\("cx-scrim"\)\.hidden\) cxModalPaint\(\);/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
+  // 模擬交易那條路:鈕短暫變灰(圓環照放)即關框,**不**出現 cx.gate.checking(本機寫 .env,次秒完成)
+  await js(`cxModalOpen(null)`); await wait(100);
+  await run(`window.__over.tradeSend = () => new Promise((r) => { window.__release = r; })`);
+  await js(`$("cx-go").click()`); await wait(200);
+  ok("③ 模擬交易 pending:鈕有圓環、狀態槽空的(沒有 cx.gate.checking)", (await js(`!!$("cx-go").querySelector(".spin16")`)) && (await slotOf()) === "");
+  await js(`window.__release({ ok: true })`); await wait(300);
+  ok("③ 模擬交易存好:框關", await js(`$("cx-scrim").hidden`));
+
+  // ── 設定 › 帳戶 那一列(§1.3 D):報告還沒有這一家的帳戶條目 → 圓環 + 「串接中…」;讀到帳戶 → 綠點、圓環消失 ──
+  const setRow = () => js(`(() => { const st = $("tr-set").querySelector(".cx-row .cn-st"); return st ? { cls: st.className, spin: !!st.querySelector(".spin16"), dot: !!st.querySelector(".dot"), text: st.textContent } : null; })()`);
+  await run(`window.__over.tradeSend = async () => ({ ok: true }); TR_BAGS.local.st = { alive: true, report: ${venuesOf("okx")} }; TR.sig.set = null; trPaintSet()`); await wait(100);
+  const linking = await setRow();
+  ok("③ 帳戶列(還沒讀到帳戶):.cn-st.cx-wait、圓環 + 「串接中…」", !!linking && /\bcx-wait\b/.test(linking.cls) && linking.spin && !linking.dot && linking.text === (await js(`t("cx.connecting")`)));
+  await run(`TR_BAGS.local.st.report.account = { venues: { okx: { ok: true, equity: 1 } } }; TR.sig.set = null; trPaintSet()`); await wait(100);
+  const linked = await setRow();
+  ok("③ 帳戶列(讀到帳戶):綠點 + 「已連接」,圓環消失", !!linked && !/\bcx-wait\b/.test(linked.cls) && linked.dot && !linked.spin && linked.text === (await js(`t("cx.connected")`)));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

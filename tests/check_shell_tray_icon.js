@@ -1,9 +1,10 @@
-// 選單列圖示(shell/assets/trayTemplate.png 與 @2x):鎖設計師 spec-desktop-update-experience-v2 §6 的數字。
+// 選單列圖示(shell/assets/trayTemplate.png 與 @2x):鎖設計師 spec-desktop-006 §2.3 的數字(尺寸同 update-experience-v2 §6)。
 // 兩張都從母檔向量 .claude/brand-assets/mark.svg 的 path 重新點陣化(不是互相縮放):
 //   1x 18×18,translate(1,-1) scale(0.0888889) → 字形 16×12,上 / 下 3 / 3,左 / 右 1 / 1
-//   2x 36×36,translate(2,-3) scale(0.1777778) → 字形 32×24(1x 的精確兩倍),上 / 下 5 / 7,左 / 右 2 / 2
-// 2x 比 bbox 置中再往上抬 1px(0.5pt)是**光學補償**:字形下半是實心長條、上面只有右邊一座塔,重心在 bbox 中心下方,
-// 純置中讀起來還是偏低(Wei 兩次說「低」的剩餘原因);1x 抬不了半格,維持 3 / 3。
+//   2x 36×36,translate(2,-2) scale(0.1777778) → 字形 32×24(1x 的精確兩倍),上 / 下 6 / 6,左 / 右 2 / 2
+// 純 bbox 置中:09-24 截圖量到抬 1px 會比電池／Wi-Fi 底邊高,見 spec-desktop-006。
+// 2x 的產法(web venv 有 cairosvg):把 path 包進 <svg width="36" height="36" viewBox="0 0 36 36"><path transform="translate(2,-2) scale(0.1777778)" d="…" fill="#000"/></svg>,
+//   然後 ~/.local/share/virtualenvs/web-SVY6yWQL/bin/python -m cairosvg tray2x.svg -o shell/assets/trayTemplate@2x.png(1x 是 0.0.5 用 headless Chromium 出的,沒重出)
 // template 圖的前提:只有黑色 + alpha(macOS 依選單列明暗上色),檔名 *Template.png。
 // 不靠 npm 套件:用 zlib 解 PNG(8-bit RGBA、不交錯),逐列反 filter 後找 alpha > 0 的外框。
 // 跑法:node tests/check_shell_tray_icon.js
@@ -45,7 +46,7 @@ function bbox({ w, h, px }) {
   return { top, bottom: h - 1 - bottom, left, right: w - 1 - right, onlyBlack, empty: bottom < 0 };
 }
 const dir = path.join(__dirname, "..", "shell", "assets");
-const SPEC = [["trayTemplate.png", 18, { w: 16, h: 12, top: 3, bottom: 3, left: 1, right: 1 }], ["trayTemplate@2x.png", 36, { w: 32, h: 24, top: 5, bottom: 7, left: 2, right: 2 }]];
+const SPEC = [["trayTemplate.png", 18, { w: 16, h: 12, top: 3, bottom: 3, left: 1, right: 1 }], ["trayTemplate@2x.png", 36, { w: 32, h: 24, top: 6, bottom: 6, left: 2, right: 2 }]];
 SPEC.forEach(([f, size, want]) => {
   const img = readPng(path.join(dir, f)), b = bbox(img), gw = size - b.left - b.right, gh = size - b.top - b.bottom;
   ok(f + ":畫布 " + size + "×" + size + "、有字形、只有黑色 + alpha(template 圖)", img.w === size && img.h === size && !b.empty && b.onlyBlack);

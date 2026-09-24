@@ -10,6 +10,19 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (空)
 
+## 1.1.91 — 2026-09-24
+
+- **關閉部位後頁面立刻看到部位歸零,不再等 5 分鐘心跳**(`command_listener.py` `_kick_when_flatten_exits`、`_kick_reconciler`;
+  workspace 端 `manager/flatten.py` `_kick_reconciler`,走 blave-agent VERSION)。頁面的「實際」欄讀的是對帳器寫的
+  `manager/last_reconcile.json`,而平倉是另一支程序、賣完就退,對帳器要等下一次心跳才重讀(29026,09-24:03:51:41 賣掉、
+  03:56:42 才不顯示 +1,000)。現在 flatten 收工時碰 `state/execution/kick`(對帳器監看的 mtime,一個 poll 內就跑一輪);
+  runtime 這邊等 flatten 程序退出後也碰一次,還沒按「更新」、flatten.py 是舊版的 workspace 一樣生效(Windows 走 powershell
+  起程序、等不到,只靠 workspace 端);兩次快按時輸的那支(退出碼 3)不碰,由持鎖那支收工碰。HALT 下那一輪只重讀、只寫快照,
+  不下任何單(本來就是:快照在下單前寫、進場腿被 HALT 擋)。flatten 留有未確認平倉的列(群益)時 workspace 端不碰、等心跳:
+  群益部位快照最舊 300 秒,馬上跑一輪會對還顯示「有倉」的同一口再送一腿 reduce(sNewClose=2 變反向開倉)。
+  解除綁定不用補:解綁本來就會重寫 `state/HALT`(mtime 變了就觸發一輪),全解綁更是直接停放並清掉快照。
+  測試 `tests/check_flatten_singleflight.py` §4/§5、`tests/check_reconciler_autohalt.py` §3.15。
+
 ## 1.1.90 — 2026-09-24
 
 - **模擬帳戶弄丟設定與帳本起點後的第一次儲存不再重買一次**(`command_listener.py` `_traded_on_a_real_venue`;版本矩陣 V1-10 / V0-02)。

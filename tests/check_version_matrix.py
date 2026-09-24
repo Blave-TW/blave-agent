@@ -26,15 +26,22 @@ started by a fake systemctl, then manager/update_workspace.py from a scratch
 clone whose last commit is the new tree.
 
 The old side: --old-src DIR (e.g. a `git worktree add --detach … <ref>`) or
---old-ref REF (default HEAD; extracted with `git archive`, the repo is only
-read). Once the new code is committed, HEAD is the new side: pass the last
-shipped commit as --old-ref.
+--old-ref REF (extracted with `git archive`, the repo is only read). Default
+OLD_REF = 8804133, the last commit before the 0.0.5 batch (電腦版 0.0.4): the
+batch is committed, so HEAD is the new side and a HEAD default would compare
+the new lib with itself. Move OLD_REF when the next batch ships.
+
+Network guard: every child runs under a sitecustomize that refuses socket
+connects and DNS; the child proves the guard is live (a loopback connect must
+be refused) before its cell runs and reports how many socket attempts the
+guard turned away. The venues' canned answers carry "[canned]" so a refusal
+in the output is never mistaken for a live venue's.
 
 A cell that fails because of a real bug asserts the intended behaviour and is
 listed in KNOWN_BUGS: reported "xfail"; it fails the run the day it passes.
 
 Run:  cd blave-agent && .venv/bin/python tests/check_version_matrix.py
-      … --old-ref 8804133   … --old-src /path/worktree   … --only V1-01,V2-03   … --keep
+      … --old-ref <ref>   … --old-src /path/worktree   … --only V1-01,V2-03   … --keep
 """
 import argparse
 import concurrent.futures
@@ -55,6 +62,17 @@ ROOT = os.path.dirname(HERE)
 DOC = os.path.join(os.path.dirname(ROOT), ".claude", "output", "specs",
                    "version-matrix-2026-09-24.md")
 CHILD_TIMEOUT_S = 240
+OLD_REF = "8804133"  # 電腦版 0.0.4 — the last commit before the 0.0.5 batch
+# registered before check_paper_scenarios' blocking hook (a raising hook ends the
+# chain), so every refused socket event is counted first
+COUNT_HOOK = r'''
+import sys
+sys._vm_net_attempts = []
+def _vm_count_hook(event, args):
+    if event in ("socket.connect", "socket.getaddrinfo", "socket.gethostbyname"):
+        sys._vm_net_attempts.append(event)
+sys.addaudithook(_vm_count_hook)
+'''
 OFFICIAL_DIRS = ("lib", "manager", "references", "examples", "allocators")
 OFFICIAL_FILES = ("AGENTS.md", "CLAUDE.md", "VERSION", "strategies/TEMPLATE_A.py",
                   "strategies/TEMPLATE_C.py")
@@ -162,7 +180,27 @@ class VWorld(PS.World):
                 for k, v in raw.items()}
 
 
+def _network_guard_live():
+    """A loopback connect (nothing leaves the box either way) must be refused by
+    the sitecustomize hook — proof the guard is on, not just that nothing was
+    logged. Resets the attempt count so the cell's own tally starts at zero."""
+    import socket
+    try:
+        with socket.socket() as s:
+            s.settimeout(0.2)
+            s.connect(("127.0.0.1", 9))
+    except PermissionError:
+        getattr(sys, "_vm_net_attempts", []).clear()
+        return True
+    except OSError:
+        pass
+    return False
+
+
 def run_child(cid, ws, rt_src, lib_side, rt_side, phase_name=None):
+    if not _network_guard_live():
+        print(f"FAIL {phase_name or cid}: the network guard is not live in this child (no sitecustomize?)")
+        return 1
     w = VWorld(ws, rt_src, lib_side, rt_side)
     try:
         if phase_name:
@@ -173,6 +211,8 @@ def run_child(cid, ws, rt_src, lib_side, rt_side, phase_name=None):
         traceback.print_exc()
         print(f"FAIL {phase_name or cid} raised")
         return 1
+    finally:
+        print(f"NOTE network guard: {len(getattr(sys, '_vm_net_attempts', []))} socket attempt(s) refused")
     return 1 if w.fails else 0
 
 
@@ -354,30 +394,31 @@ def _fake_http(routes, hits):
 
 def _venue_routes(mode):
     """mode: ok | reject. Answers shaped like each venue's own (both lib sides'
-    get_equity paths)."""
+    get_equity paths); the refusal text says [canned] so the cell's output can
+    never read as a live venue's answer."""
     def routes(method, url):
         path = url.split("?")[0]
         if "okx.com" in url:
             if mode == "reject":
-                return 401, {"code": "50111", "msg": "Invalid OK-ACCESS-KEY", "data": []}
+                return 401, {"code": "50111", "msg": "Invalid OK-ACCESS-KEY [canned]", "data": []}
             if path.endswith("/account/balance"):
                 return 200, {"code": "0", "data": [{"totalEq": "321.5"}]}
             return 200, {"code": "0", "data": []}
         if "bingx" in url:
             if mode == "reject":
-                return 200, {"code": 100001, "msg": "Signature verification failed"}
+                return 200, {"code": 100001, "msg": "Signature verification failed [canned]"}
             if path.endswith("/swap/v3/user/balance"):
                 return 200, {"code": 0, "data": [{"asset": "USDT", "equity": "210.0"}]}
             return 200, {"code": 0, "data": []}
         if "gateio" in url or "gateapi" in url:
             if mode == "reject":
-                return 401, {"label": "INVALID_KEY", "message": "Invalid key provided"}
+                return 401, {"label": "INVALID_KEY", "message": "Invalid key provided [canned]"}
             if path.endswith("/futures/usdt/accounts"):
                 return 200, {"total": "150", "unrealised_pnl": "0"}
             return 200, {"details": {}}
         if "bybit" in url:
             if mode == "reject":
-                return 200, {"retCode": 10003, "retMsg": "API key is invalid.", "result": {}}
+                return 200, {"retCode": 10003, "retMsg": "API key is invalid. [canned]", "result": {}}
             if path.endswith("/v5/user/query-api"):
                 return 200, {"retCode": 0, "result": {"uta": 1, "permissions": {"ContractTrade": ["Order"]}}}
             if path.endswith("/wallet-balance"):
@@ -422,7 +463,9 @@ def VENUE_GATE_CASES(w, cl):
                         f"{vid} refused key: REJECTED, .env byte-identical ({str(r)[:120]})")
                 w.check(not any(v in str(r) for v in keys.values() if len(v) >= 4),
                         f"{vid}: no key value in the refusal")
-            w.check(bool(hits), f"{vid} {mode}: the gate made its signed read ({len(hits)} call(s))")
+            hosts = sorted({h[1].split("/")[2] for h in hits})
+            w.check(bool(hits), f"{vid} {mode}: the gate made its signed read "
+                                f"({len(hits)} call(s) to {hosts}, answered by the stub)")
         # unbind again so the next venue is a clean bind
         w.cmd("credentials_remove", env=list(keys))
     demo_host_cases(w)
@@ -1470,7 +1513,7 @@ def parent(a):
         return 1
     base = tempfile.mkdtemp(prefix="vmatrix-", dir=a.tmp or None)
     with open(os.path.join(base, "sitecustomize.py"), "w") as f:
-        f.write(PS.SITECUSTOMIZE)
+        f.write(COUNT_HOOK + PS.SITECUSTOMIZE)
     resolve_old(a, base)
     a.new_src = os.path.abspath(a.new_src)
     print(f"   old = {a.old_src} ({a.old_ref_resolved[:9]})\n   new = {a.new_src}")
@@ -1512,7 +1555,7 @@ def main():
     ap.add_argument("--lib-side")
     ap.add_argument("--rt-side")
     ap.add_argument("--old-src")
-    ap.add_argument("--old-ref", default="HEAD")
+    ap.add_argument("--old-ref", default=OLD_REF)
     ap.add_argument("--new-src", default=ROOT)
     ap.add_argument("--tmp", help="parent dir for scratch workspaces (default: system temp)")
     ap.add_argument("--only")

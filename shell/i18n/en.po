@@ -2052,6 +2052,15 @@ msgstr "This key has no IP whitelist. Binance deletes keys that have no whitelis
 msgid "cx.chk.sendFail"
 msgstr "The key passed the check but was not saved on this computer ({err}). Connect again."
 
+msgid "cx.gate.checking"
+msgstr "Checking this key with {venue}. Usually a few seconds."
+
+msgid "cx.chk.engineTimeout"
+msgstr "The order engine on this computer didn't pick this up within 20 seconds; nothing was saved. Connect again; if it keeps happening, restart Blave."
+
+msgid "cx.chk.gateSlow"
+msgstr "{venue} hasn't replied within 20 seconds; the key may still be under check. Don't re-paste yet: look for {venue} under Settings › Account, and connect again if it doesn't show up."
+
 msgid "cx.re.tradingOff"
 msgstr "Trading permission was turned off, so orders can’t be placed. Turn it back on at Binance, then press Retest connection."
 

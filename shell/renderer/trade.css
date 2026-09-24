@@ -389,6 +389,7 @@ html.ws-sc .side-gate { display: none; }
 .cx-row { display: flex; align-items: center; gap: var(--space-12); margin-top: var(--space-12); }
 .cx-row .n { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
 .cx-row .cn-st { color: var(--ink-2); }
+.cx-row .cn-st.cx-wait { margin-top: 0; color: var(--ink-3); }   /* 串接中…:圓環 + 灰字;.cx-wait 自帶的 margin-top 在列裡會把它壓低 */
 
 @media (prefers-reduced-motion: reduce) {
   .run-dot.live { animation: none; }
@@ -399,6 +400,7 @@ html.ws-sc .side-gate { display: none; }
 #del-mark:not([hidden]) + h6 { margin-right: auto; }
 .modal-head .mode { margin-right: calc(-1 * var(--space-4)); }
 .btn-fill.is-busy { background: var(--surface-muted); color: var(--ink-3); cursor: default; opacity: 1; }
+#cx-go .spin16 { vertical-align: -3px; }   /* 串接中那顆鈕裡的圓環(同 #set-up-btn) */
 .cx-manual-note .btn-quiet { font-size: inherit; }
 /* 連接 Binance:欄位下面那塊說明(spec §5.2):上邊線,權限句 / 白名單+IP+複製 / 這個 IP 是什麼 */
 .cx-note { margin: var(--space-16) 0 0; padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); font-size: 12px; line-height: 1.6; color: var(--ink-3); }

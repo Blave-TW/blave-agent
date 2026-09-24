@@ -408,6 +408,19 @@ def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
     return remaining
 
 
+def _kick_reconciler():
+    """state/execution/kick is a watched mtime: the reconciler re-reads actuals
+    within one poll and rewrites manager/last_reconcile.json — the positions
+    column the page shows. Without it the closes sit unseen until the 5-minute
+    heartbeat (29026, 2026-09-24: sold at 03:51:41, shown as held until
+    03:56:42). Under the HALT that round places nothing; it only re-reads."""
+    try:
+        from lib.execute import _touch_kick
+        _touch_kick()
+    except Exception as e:
+        logging.warning(f"close-all: reconciler kick failed ({e})")
+
+
 def flatten():
     """Returns True (flat, no errors), False (ran, hit errors) or
     ALREADY_RUNNING (did nothing — another flatten holds the lock)."""
@@ -750,6 +763,15 @@ def flatten():
             zero_ledger_symbols(done - unclosed_by[vid], venue=vid)
         else:
             zero_ledger_symbols(done - unclosed_by[vid])
+    if any(unclosed_by.values()):
+        # a close accepted but not confirmed filled (群益) is still in the book;
+        # the reconciler's capital positions snapshot is up to 300 s old, so a
+        # round kicked now sees it as held and sends a second reduce leg — on
+        # capital sNewClose=2 opens the reverse. The heartbeat is late enough
+        # for the snapshot to refresh first.
+        logging.warning("close-all: positions left open — the heartbeat re-reads, no kick")
+    else:
+        _kick_reconciler()
     logging.info(f"flatten done: {closed} closed, {errors} errors")
     return errors == 0
 

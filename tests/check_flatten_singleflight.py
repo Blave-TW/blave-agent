@@ -21,6 +21,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 
@@ -54,6 +55,11 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 sys.path.insert(0, os.path.join(ROOT, "manager"))
 import command_listener as cl  # noqa: E402
 import flatten  # noqa: E402  (chdir's the process to ROOT — every path below is absolute)
+
+# flatten()'s own relative writes (the reconciler kick) must land in the test
+# workspace, never in the repo's state/
+os.chdir(WS)
+KICK = os.path.join(WS, "state", "execution", "kick")
 
 fails = 0
 
@@ -122,6 +128,7 @@ flatten.zero_ledger_symbols = lambda s, venue=None: touched.append("zero")
 check(flatten.flatten() == flatten.ALREADY_RUNNING,
       "flatten() under a held lock returns ALREADY_RUNNING")
 check(touched == [], f"...and did nothing at all before exiting ({touched})")
+check(not os.path.exists(KICK), "...and did not kick the reconciler (the holder will)")
 check(flatten.ALREADY_RUNNING != True and flatten.EXIT_ALREADY_RUNNING not in (0, 1),  # noqa: E712
       "ALREADY_RUNNING is distinguishable from ran-clean / ran-with-errors")
 
@@ -143,19 +150,76 @@ check(flatten.flatten() is True, "a lone flatten runs and reports success")
 # env read and the in-flight wait, both after the lock
 check("inflight" in touched and "env" in touched,
       f"...having actually done the work ({touched})")
+# 29026 2026-09-24: the closes were sold at 03:51:41 and the page showed them as
+# held until the 03:56:42 heartbeat — the reconciler's snapshot is what the page
+# reads, so a finished flatten must make it re-read now
+check(os.path.isfile(KICK), "...and kicked the reconciler: state/execution/kick exists")
+if os.path.exists(KICK):
+    os.remove(KICK)
+flatten._LOCK = None
+# a run that leaves a book row open (capital: close not confirmed filled, or no
+# SKCOM identity) must NOT kick: the reconciler's capital snapshot is up to
+# 300 s stale, so a round now still sees the position and sends a second
+# reduce leg — sNewClose=2 opens the reverse. The heartbeat re-reads later.
+saved4 = (flatten._venues, flatten.importlib, flatten._capital_order_identity_ok,
+          flatten._record_order_error)
+flatten._venues = lambda env: ["capital"]
+flatten.load_portfolio_config = lambda: {"self_ledger": False}  # account-read: every row is the bot's
+os.makedirs(os.path.join(WS, "lib"), exist_ok=True)
+for _f in ("account_capital.py", "order_capital.py"):  # the has_account / has_order probes are cwd-relative
+    open(os.path.join(WS, "lib", _f), "w").close()
+flatten.importlib = types.SimpleNamespace(import_module=lambda name: types.SimpleNamespace(
+    get_positions=lambda env: [{"symbol": "TXFA6", "side": "long", "size": 1}]))
+flatten._capital_order_identity_ok = lambda: False
+flatten._record_order_error = lambda *a, **k: None
+check(flatten.flatten() is False, "a flatten that could not close a capital row reports errors")
+check(not os.path.exists(KICK), "...and does not kick — the heartbeat re-reads that one")
+if os.path.exists(KICK):
+    os.remove(KICK)
+(flatten._venues, flatten.importlib, flatten._capital_order_identity_ok,
+ flatten._record_order_error) = saved4
 flatten._LOCK = None  # drop the lock this process now holds, for section 5
 (flatten.LOCK_PATH, flatten._read_env, flatten.guard, flatten._wait_for_inflight,
  flatten.load_portfolio_config, flatten.zero_ledger_symbols) = saved
 
 # ── 5. the ack says so, and launches nothing ───────────────────────────────
 popens = []
-cl.subprocess.Popen = lambda argv, *a, **kw: popens.append(list(argv))
+exited = threading.Event()  # the fake flatten "exits" when the test says so
+exit_code = [0]  # ...with this code
+
+
+def _fake_popen(argv, *a, **kw):
+    popens.append(list(argv))
+    proc = types.SimpleNamespace(returncode=None)
+
+    def _wait():
+        exited.wait()
+        proc.returncode = exit_code[0]
+        return proc.returncode
+
+    proc.wait = _wait
+    return proc
+
+
+cl.subprocess.Popen = _fake_popen
 open(os.path.join(WS, "manager", "flatten.py"), "w").write("")
 WS_LOCK = os.path.join(WS, "state", "flatten.lock")
 
 check(cl._flatten_already_running() is False, "no lock file → the probe says free")
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(popens) == 1,
       "close_all with nothing running: started, one process launched")
+# the runtime's own kick (a workspace whose flatten.py predates the kick): only
+# once the flatten has exited — a kick before the fills would re-read the
+# pre-flatten positions
+time.sleep(0.3)
+check(not os.path.exists(KICK), "...no kick while the flatten is still running")
+exited.set()
+for _ in range(50):
+    if os.path.exists(KICK):
+        break
+    time.sleep(0.1)
+check(os.path.isfile(KICK), "...the flatten exiting kicks the reconciler")
+exited.clear()
 
 busy, said5 = holder(WS_LOCK)
 check(said5 == "held", f"a flatten now holds the workspace lock ({said5})")
@@ -169,6 +233,28 @@ busy.wait()
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(popens) == 2,
       "once it is gone, close_all launches again")
 
+# a double press whose probe window lets both start: the loser exits 3
+# (EXIT_ALREADY_RUNNING) within a second having sold nothing — its waiter must
+# not kick, or the reconciler reads the half-closed account while the holder
+# is still selling (the holder's own exit kicks, section 4)
+if os.path.exists(KICK):
+    os.remove(KICK)
+exit_code[0] = flatten.EXIT_ALREADY_RUNNING
+exited.set()  # the launch above exits 3
+time.sleep(0.5)
+check(not os.path.exists(KICK), "a flatten exiting 3 (another one held the lock) does not kick")
+exited.clear()
+exit_code[0] = 0
+check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(popens) == 3,
+      "...a fresh close_all launches again")
+exited.set()  # ...and this one exits 0
+for _ in range(50):
+    if os.path.exists(KICK):
+        break
+    time.sleep(0.1)
+check(os.path.isfile(KICK), "...and exiting 0 kicks")
+
+exited.set()  # release the waiter threads of the later launches
 cl.subprocess.Popen = _REAL_POPEN
 for p in holders:
     if p.poll() is None:

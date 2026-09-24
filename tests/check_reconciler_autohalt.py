@@ -678,6 +678,29 @@ rec._save_account_guard({"venue": "okx", "account_id": "A", "pending": {
 check(recon(960, ETH) == "skip" and placed == [],
       "pending account-guard trip: not even the reduce leg reaches place_order_fn")
 
+# 3.15 close-all's kick: the file the flatten touches is a watched mtime, and the
+# round it triggers under the flatten's HALT re-reads the actuals into the
+# snapshot and places nothing (29026 2026-09-24: the positions sold at 03:51:41
+# read as held until the 03:56:42 heartbeat)
+from lib.execute import _touch_kick  # noqa: E402
+
+reset()
+rnd(0)
+snapshot(POS)
+before = rec._active_state_mtimes()
+_touch_kick()
+after = rec._active_state_mtimes()
+check(after["__execution__"] != before["__execution__"],
+      "state/execution/kick is a watched mtime: the round follows within one poll")
+guard.trip_halt("close all positions", "flatten")
+rec._sync_halt_flag(os.path.getmtime(guard.HALT_PATH))
+check(recon(60, {}) == "ok" and placed == [],
+      f"that round under the flatten HALT places nothing ({placed})")
+_snap = json.load(open("manager/last_reconcile.json"))
+check(_snap["actual"] == {} and _snap.get("target", {}).get("BTCUSDT", {}).get("size") == 100.0,
+      f"…and rewrites the snapshot with the empty actuals, target untouched ({_snap['actual']})")
+guard.clear_halt("test")
+
 # 3.14 the main loop releases a cleared HALT BEFORE it reconciles
 _src = open(os.path.join(ROOT, "manager", "reconciler.py"), encoding="utf-8").read()
 _main = _src[_src.index("if __name__ == '__main__':"):]
