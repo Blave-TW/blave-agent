@@ -2,8 +2,9 @@
 // Blave 電腦版發版:一支指令從打包到上線。 node tools/release.js <A.B.C> [--dry-run]
 //
 // 做的事(任何一步不過就停,前面已上傳的檔不影響線上——線上只認 latest-mac.yml,而它最後才換):
-//   1. 檢查:工作樹乾淨、在 main、新版號是嚴格 A.B.C 且比現在大、憑證與 AWS 權限到位
-//   2. 版號寫進 package.json → npm run release(簽章、公證、fuses、zip + dmg + latest-mac.yml)
+//   1. 檢查:工作樹乾淨、在 main、新版號是嚴格 A.B.C 且比現在大(或已經 commit 在 HEAD 的 package.json)、憑證與 AWS 權限到位
+//   2. 版號寫進 package.json(版號矩陣閘要求 package.json 跟 code 同一個 commit bump——已經 commit 的就略過不寫)
+//      → npm run release(簽章、公證、fuses、zip + dmg + latest-mac.yml)
 //   3. 驗產物:codesign、Gatekeeper、防降版開關、yml 版號與 sha512 對得上 zip
 //   4. 上傳 zip / blockmap / dmg(帶版號的檔已存在就拒絕)→ 從正式網址把 zip 整個抓回來比 sha512 → 才傳 latest-mac.yml(這一刻起對外)
 //      → 下載頁的固定檔名 dmg → 清 CDN 快取 → 再抓一次確認。yml 換掉之前失敗:版號自動還原;之後失敗:只警告,不還原
@@ -43,6 +44,15 @@ const step = (m) => console.log("\n▸ " + m);
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: SHELL, stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", ...opts });
 const semver = (v) => (/^(\d+)\.(\d+)\.(\d+)$/.exec(v) || []).slice(1).map(Number);
 const newer = (a, b) => { const x = semver(a), y = semver(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
+/* 純函式(tests/check_shell_release.js):這個版號能不能發、要不要由這支腳本寫版號。回 { bump } 或 { error }。
+   比現在大 → 照舊,腳本自己 bump。跟現在一樣 → 只有 HEAD 已經 commit 的 package.json 也是這個版號才放行(版號矩陣閘
+   要求 package.json 跟 code 同一個 commit),而且不寫、不還原。工作樹改了版號但沒 commit 的,還是擋。重複發同一版由上傳那一步擋。 */
+function mayRelease(version, current, committed) {
+  if (newer(version, current)) return { bump: true };
+  if (version === current && committed === current) return { bump: false };
+  if (version === current) return { error: `新版號 ${version} 跟現在一樣,但 HEAD 的 shell/package.json 是 ${committed}:先把版號 commit 進去,或發更大的版號` };
+  return { error: `新版號 ${version} 沒有比現在的 ${current} 大` };
+}
 
 function loadEnvFile() {
   const f = path.join(os.homedir(), ".config", "blave", "desktop-release.env");
@@ -125,7 +135,10 @@ async function main() {
 
   step(`檢查(現在 ${current} → 要發 ${version}${dry ? ",演練模式:不上傳" : ""})`);
   console.log(track.test ? `  ⚠ 測試軌:發到 s3://${BUCKET}/${track.prefix}/ ,更新網址 ${URL_BASE}(正式的 ${PREFIX}/ 不會被碰到)` : `  正式軌:s3://${BUCKET}/${track.prefix}/ ,更新網址 ${URL_BASE}`);
-  if (!newer(version, current)) die(`新版號 ${version} 沒有比現在的 ${current} 大`);
+  const committed = JSON.parse(run("git", ["-C", REPO, "show", "HEAD:shell/package.json"])).version;
+  const gate = mayRelease(version, current, committed);
+  if (gate.error) die(gate.error);
+  if (!gate.bump) console.log(`  版號 ${version} 已經 commit 在 HEAD 的 package.json:不再寫入`);
   if (run("git", ["-C", REPO, "status", "--porcelain"]).trim()) die("工作樹不乾淨:先 commit 或清掉再發版(發出去的包要對得回一個 commit)");
   if (run("git", ["-C", REPO, "rev-parse", "--abbrev-ref", "HEAD"]).trim() !== "main") die("不在 main");
   for (const k of ["BLAVE_MAC_IDENTITY", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) if (!process.env[k]) die(`缺 ${k}(環境變數或 ~/.config/blave/desktop-release.env)`);
@@ -147,14 +160,14 @@ async function main() {
   for (const t of fs.readdirSync(path.join(REPO, "tests")).filter((f) => /^check_shell_.*\.js$/.test(f) && f !== "check_shell_paths.js"))
     try { run(process.execPath, [path.join(REPO, "tests", t)], { stdio: "pipe" }); } catch (e) { die(`${t} 沒過:\n${e.stdout || ""}`); }
 
-  step("寫入版號、打包(簽章 + 公證,要幾分鐘)");
+  step(gate.bump ? "寫入版號、打包(簽章 + 公證,要幾分鐘)" : "打包(簽章 + 公證,要幾分鐘)");
   const before = { pkg: fs.readFileSync(pkgPath, "utf8"), lock: fs.readFileSync(lockPath, "utf8") };
   let wentLive = false;
-  // yml 換掉之前的任何失敗(含 Ctrl-C)→ 版號還原,回到可以重跑的狀態;換掉之後絕不還原(稽核 M2、M3)
-  const restore = () => { if (wentLive) return; fs.writeFileSync(pkgPath, before.pkg); fs.writeFileSync(lockPath, before.lock); console.error("  package.json / package-lock.json 的版號已還原"); };
+  // yml 換掉之前的任何失敗(含 Ctrl-C)→ 版號還原,回到可以重跑的狀態;換掉之後絕不還原(稽核 M2、M3)。沒寫過的就沒東西可還原
+  const restore = () => { if (wentLive || !gate.bump) return; fs.writeFileSync(pkgPath, before.pkg); fs.writeFileSync(lockPath, before.lock); console.error("  package.json / package-lock.json 的版號已還原"); };
   process.on("SIGINT", () => { restore(); process.exit(130); });
   try {
-    execFileSync("npm", ["version", version, "--no-git-tag-version", "--allow-same-version"], { cwd: SHELL, stdio: "pipe", env: buildEnv });
+    if (gate.bump) execFileSync("npm", ["version", version, "--no-git-tag-version", "--allow-same-version"], { cwd: SHELL, stdio: "pipe", env: buildEnv });
     fs.rmSync(dist, { recursive: true, force: true });
     execFileSync("npm", ["run", "release"], { cwd: SHELL, stdio: "inherit", env: buildEnv });
 
@@ -181,7 +194,7 @@ async function main() {
     if (asarPkg.blaveUpdateUrl !== URL_BASE || asarPkg.blaveRelease !== true) throw new Error("包裡的更新網址或發佈旗標不對:" + JSON.stringify({ blaveUpdateUrl: asarPkg.blaveUpdateUrl, blaveRelease: asarPkg.blaveRelease }));
     execFileSync(process.execPath, [path.join(REPO, "tests", "check_shell_paths.js")], { stdio: "inherit" });   // signed 段:同 Team、fuses、staple
 
-    if (dry) { step(`演練模式:會上傳這些(順序就是下面這樣;${track.test ? "測試軌" : "正式軌"},對外網址 ${URL_BASE}/)`); for (const p of plan) console.log(`  s3://${BUCKET}/${p.key}   [${p.cache}]`); restore(); step("演練完成,版號已還原"); return; }
+    if (dry) { step(`演練模式:會上傳這些(順序就是下面這樣;${track.test ? "測試軌" : "正式軌"},對外網址 ${URL_BASE}/)`); for (const p of plan) console.log(`  s3://${BUCKET}/${p.key}   [${p.cache}]`); restore(); step(gate.bump ? "演練完成,版號已還原" : "演練完成"); return; }
 
     const res = await publish(plan, {
       say: (m) => { wentLive = true; step(m); },
@@ -200,11 +213,11 @@ async function main() {
     if (seen !== version) res.warnings.push(`兩分鐘後從外面看到的 latest-mac.yml 還是 ${seen}(CDN 還沒換完?)——新版已經上傳,**不要還原版號**,過幾分鐘再看`);
     step(track.test ? `✓ ${version} 已放上測試軌(${URL_BASE}/):只有更新網址指到這裡的包會拿到` : `✓ ${version} 已上線:已安裝的 app 會在 4 小時內開始下載`);
     for (const w of res.warnings) console.log("  ⚠ " + w);
-    console.log("接下來(不自動做):把 shell/package.json 與 package-lock.json 的版號改動提交、打標籤、推上去。");
+    console.log(gate.bump ? "接下來(不自動做):把 shell/package.json 與 package-lock.json 的版號改動提交、打標籤、推上去。" : "接下來(不自動做):版號已在 HEAD,打標籤、推上去。");
   } catch (e) {
     if (wentLive) { console.error("\n⚠ 新版已經對外,但後續步驟出錯(不要還原版號):" + (e && e.message)); process.exit(2); }
     restore(); die((e && e.message) || String(e));
   }
 }
 if (require.main === module) main().catch((e) => die(e && e.stack || String(e)));
-module.exports = { uploadPlan, publish, newer, semver, resolveTrack, foreignFilesInApps };
+module.exports = { uploadPlan, publish, newer, semver, mayRelease, resolveTrack, foreignFilesInApps };

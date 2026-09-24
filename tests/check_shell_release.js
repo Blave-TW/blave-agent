@@ -1,7 +1,7 @@
 // shell/tools/release.js 的不變量:yml 之前的失敗不影響線上、帶版號的檔不覆寫、yml 之後的失敗不報成發版失敗、不自動動 git。
 // 跑法:node tests/check_shell_release.js
 const fs = require("fs"), path = require("path");
-const { uploadPlan, publish, newer, semver, resolveTrack } = require("../shell/tools/release.js");
+const { uploadPlan, publish, newer, semver, mayRelease, resolveTrack } = require("../shell/tools/release.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 (async () => {
   const plan = uploadPlan("0.4.0", "arm64"), keys = plan.map((p) => p.key), iLive = plan.findIndex((p) => p.goLive);
@@ -12,6 +12,14 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("全部落在 desktop/mac/ 底下(發版金鑰只該碰這裡)", keys.every((k) => k.startsWith("desktop/mac/")));
   t("版號比較:只收嚴格 A.B.C、要比現在大", newer("0.0.2", "0.0.1") && newer("0.1.0", "0.0.9") && newer("1.0.0", "0.9.9") && newer("0.0.10", "0.0.9") && !newer("0.0.1", "0.0.1") && !newer("0.0.1", "0.0.2")
     && semver("1.2").length === 0 && semver("1.2.3-beta.1").length === 0 && semver("v1.2.3").length === 0);
+  // 版號矩陣閘(check_version_matrix_shell V5-04)要 package.json 跟 code 同一個 commit bump:同版號只在 HEAD 已 commit 時放行,而且不寫
+  const MR = (v, c, h) => JSON.stringify(mayRelease(v, c, h));
+  t("比現在大 → 放行、腳本自己寫版號(HEAD 是什麼都不管)", MR("0.0.6", "0.0.5", "0.0.5") === '{"bump":true}' && MR("0.0.6", "0.0.5", "0.0.4") === '{"bump":true}');
+  t("同版號且 HEAD 的 package.json 已是這版 → 放行、不寫版號", MR("0.0.5", "0.0.5", "0.0.5") === '{"bump":false}');
+  t("同版號但 HEAD 的 package.json 不是這版(改了沒 commit)→ 擋", !!mayRelease("0.0.5", "0.0.5", "0.0.4").error && !!mayRelease("0.0.5", "0.0.5", undefined).error);
+  t("比現在小 → 擋,HEAD 是什麼都救不了", !!mayRelease("0.0.4", "0.0.5", "0.0.4").error && !!mayRelease("0.0.4", "0.0.5", "0.0.5").error);
+  { const rel = fs.readFileSync(path.join(__dirname, "..", "shell", "tools", "release.js"), "utf8");
+    t("接線:HEAD 的版號用 git show 讀;不 bump 時不跑 npm version、不還原", /"show", "HEAD:shell\/package\.json"/.test(rel) && /if \(gate\.bump\) execFileSync\("npm", \["version"/.test(rel)); }
 
   // 測試軌(BLAVE_RELEASE_PREFIX):整條發到另一個前綴,正式的 latest-mac.yml 一個 byte 都不碰
   const PROD = "https://download.blave.org/desktop/mac", J = JSON.stringify;
@@ -43,10 +51,10 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
 
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "tools", "release.js"), "utf8");
   const gitCalls = [...src.matchAll(/run\("git",\s*\[([^\]]*)\]/g)].map((m) => m[1]);
-  t("git 只用來讀(status / rev-parse);沒有任何地方呼叫 commit / push / tag / add", gitCalls.length === 2 && gitCalls.every((a) => /"status"|"rev-parse"/.test(a)) && !/git["' ,]+(commit|push|tag|add)\b/.test(src) && !/execSync\(/.test(src));
+  t("git 只用來讀(status / rev-parse / show);沒有任何地方呼叫 commit / push / tag / add", gitCalls.length === 3 && gitCalls.every((a) => /"status"|"rev-parse"|"show"/.test(a)) && !/git["' ,]+(commit|push|tag|add)\b/.test(src) && !/execSync\(/.test(src));
   t("AWS 身分釘死:一律 --profile、清掉環境裡的金鑰、斷言是發版專用那一把", /\[\.\.\.args, "--profile", PROFILE\]/.test(src) && /AWS_\(ACCESS_KEY_ID\|SECRET_ACCESS_KEY/.test(src) && /user\\\/blave-desktop-release\$/.test(src));
   t("只發 arm64(擋 Rosetta 下的 node)", /process\.arch !== "arm64"/.test(src));
-  t("yml 換掉之前失敗會還原版號、之後絕不還原;Ctrl-C 也還原", /const restore = \(\) => \{ if \(wentLive\) return;/.test(src) && /process\.on\("SIGINT"/.test(src));
+  t("yml 換掉之前失敗會還原版號、之後絕不還原;Ctrl-C 也還原;沒寫過版號就不還原", /const restore = \(\) => \{ if \(wentLive \|\| !gate\.bump\) return;/.test(src) && /process\.on\("SIGINT"/.test(src));
   t("線上讀不到 yml 就停,只有 --first-release 放行", /--first-release/.test(src) && /讀不到線上的 latest-mac\.yml/.test(src));
   t("驗 zip 解出來的那一份 app、dmg 的 staple、包裡的更新網址", /ditto/.test(src) && /stapler", "validate"/.test(src) && /asarPkg\.blaveUpdateUrl !== URL_BASE/.test(src));
   t("不寫死任何金鑰;憑證檔權限太寬會拒絕", !/AKIA[0-9A-Z]{16}/.test(src) && /mode & 0o077/.test(src));
