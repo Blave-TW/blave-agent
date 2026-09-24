@@ -33,6 +33,9 @@ msgstr "偵測中…"
 msgid "cn.connect"
 msgstr "連結"
 
+msgid "cn.use"
+msgstr "使用"
+
 msgid "cn.foot"
 msgstr "連結後可以隨時更換。"
 
@@ -99,6 +102,9 @@ msgstr "設定"
 msgid "turn.process"
 msgstr "思考過程"
 
+msgid "turn.showReason"
+msgstr "顯示思考內容"
+
 msgid "turn.thinking"
 msgstr "思考中"
 
@@ -130,7 +136,7 @@ msgid "fault.noCredit"
 msgstr "Blave 餘額用完了，這一輪沒有跑。"
 
 msgid "fault.noCreditBtn"
-msgstr "儲值"
+msgstr "前往儲值"
 
 msgid "conn.expired"
 msgstr "Blave 登入已失效，重新登入後繼續。"
@@ -650,6 +656,33 @@ msgstr "已停機"
 msgid "data.ready"
 msgstr "Blave 的資料可以用了。"
 
+msgid "data.readyBilled"
+msgstr "餘額夠了。再送一次的話，有用到資料的那個小時會收一次主機與資料費 {r} TWD。"
+
+msgid "data.readyBilledNoNum"
+msgstr "餘額夠了。再送一次的話，有用到資料的那個小時會收一次主機與資料費。"
+
+msgid "data.noBalance"
+msgstr "這小時用 Blave 的資料要收主機與資料費 {r} TWD，餘額不夠付。"
+
+msgid "data.noBalanceNoNum"
+msgstr "這小時用 Blave 的資料要收主機與資料費，餘額不夠付。"
+
+msgid "data.noBalanceSub"
+msgstr "儲值後馬上恢復。"
+
+msgid "data.noCard"
+msgstr "這個帳號還沒綁卡，資料拿不到。"
+
+msgid "data.noCardSub"
+msgstr "首次綁卡送 {t} 天，期間資料免費。"
+
+msgid "data.fee"
+msgstr "這小時用到了 Blave 的資料，主機與資料費 {r} TWD。"
+
+msgid "data.feeFirst"
+msgstr "這小時用到了 Blave 的資料，主機與資料費 {r} TWD。之後每個有用到的小時都收 {r} TWD，同一小時只收一次；沒用到的小時不收。"
+
 msgid "pv.h.offer"
 msgstr "首次綁卡，送 {t} 天 Blave 的資料"
 
@@ -681,9 +714,15 @@ msgid "pv.d.offer.blave"
 msgstr "另有 {q} TWD 的 AI 額度。想讓策略全天候自動執行，這 {t} 天開雲端主機也免主機費。"
 
 msgid "pv.d.noTrial"
+msgstr "這個帳號沒有首次綁卡的試用。綁卡並儲值後就拿得到資料，按有用到的整點小時計費，不必開主機。"
+
+msgid "pv.d.noTrial.old"
 msgstr "Blave Agent 雲端方案：{p} TWD／月。這個帳號沒有首次綁卡的試用，綁卡後要回來啟動方案才有資料。"
 
 msgid "pv.d.trial"
+msgstr "到 {d}為止，資料免費。之後按有用到的整點小時計費，同一小時只收一次，不必啟動方案。"
+
+msgid "pv.d.trial.old"
 msgstr "到 {d}為止，不用啟動方案。之後，資料在 Blave Agent 雲端方案裡：{p} TWD／月。"
 
 msgid "pv.d.plan"
@@ -692,25 +731,58 @@ msgstr "Blave Agent 雲端方案：{p} TWD／月。策略在這台主機上照�
 msgid "pv.d.included"
 msgstr "想讓策略全天候自動執行，才需要啟動 Blave Agent 雲端方案：{p} TWD／月。"
 
+msgid "pv.st.noData"
+msgstr "資料暫時拿不到"
+
+msgid "pv.h.billed"
+msgstr "Blave 的資料按小時計費"
+
+msgid "pv.h.none"
+msgstr "餘額不夠付這小時的資料"
+
+msgid "pv.d.billed"
+msgstr "有用到 Blave 資料的每個整點小時，收一次主機與資料費 {r} TWD；同一小時只收一次，沒用到的小時不收。要讓策略全天候自動執行、關掉電腦也照跑，才需要開主機，那時資料含在主機費裡。"
+
+msgid "pv.d.billedNoNum"
+msgstr "有用到 Blave 資料的每個整點小時，收一次主機與資料費；同一小時只收一次，沒用到的小時不收。要讓策略全天候自動執行、關掉電腦也照跑，才需要開主機，那時資料含在主機費裡。"
+
+msgid "pv.d.none"
+msgstr "每個有用到資料的整點小時收 {r} TWD 主機與資料費。儲值後馬上恢復，不必等下一個小時。"
+
+msgid "pv.d.noneNoNum"
+msgstr "每個有用到資料的整點小時收主機與資料費。儲值後馬上恢復，不必等下一個小時。"
+
+msgid "pv.usage"
+msgstr "用量與帳務"
+
 msgid "pv.d.starting"
 msgstr "Blave 的資料現在就能用，不用等主機開好。可以關掉這個視窗。"
 
 msgid "pv.d.running"
-msgstr "切到頂列的「雲端」，可以看這台主機的策略、部位與下單狀況，也可以請 agent 在主機上做策略。啟動或暫停下單則是你自己在 app 裡按。定期報告、每支策略的下單方式與策略管理、連接交易所，在網頁的雲端工作頁。兩邊是兩台獨立的機器、各一份，不會自己同步；要搬就按「送上雲端」或「拉回」。"
+msgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"
 
 msgid "pv.d.stopped"
 msgstr "停機期間仍每小時扣 {h} TWD。餘額歸零時主機會刪除，主機上的策略與資料一併清除。"
 
 msgid "pv.d.noPrice"
+msgstr "AI 照用你現在的設定。試用結束後，資料按有用到的整點小時計費。"
+
+msgid "pv.d.noPrice.old"
 msgstr "AI 照用你現在的設定。試用結束後要資料，再啟動 Blave Agent 雲端方案。"
 
 msgid "pv.d.unknown"
 msgstr "可能是網路問題。重新查看不會花錢。"
 
 msgid "pv.f.out"
+msgstr "{t} 天後，資料按有用到的整點小時計費，同一小時只收一次。"
+
+msgid "pv.f.out.old"
 msgstr "{t} 天後要資料，再啟動雲端方案（{p} TWD／月）。"
 
 msgid "pv.f.offer"
+msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。{t} 天後，資料按有用到的整點小時計費，同一小時只收一次。"
+
+msgid "pv.f.offer.old"
 msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。{t} 天後要資料，再啟動雲端方案（{p} TWD／月）。"
 
 msgid "pv.f.noTrial"
@@ -722,6 +794,9 @@ msgstr "想讓策略全天候自動執行，現在就能啟動：{d}前免主機
 msgid "pv.f.plan"
 msgstr "每個整點從餘額扣 {h} TWD。主機存在就扣，停機照扣，刪除才停。"
 
+msgid "pv.f.billed"
+msgstr "開了主機之後，每個整點從餘額扣 {h} TWD，資料含在裡面；主機存在就扣，停機照扣，刪除才停。"
+
 msgid "pv.f.running"
 msgstr "每個整點從餘額扣 {h} TWD（{p} TWD／月）。停用＝到網頁刪除主機，主機上的策略與資料一併清除。"
 
@@ -729,6 +804,9 @@ msgid "pv.w.out.cli"
 msgstr "登入不花錢，也不改你用的 AI。下一步是綁卡。"
 
 msgid "pv.w.noTrial"
+msgstr "綁好卡就能用，不必回來啟動方案。"
+
+msgid "pv.w.noTrial.old"
 msgstr "下一步：回來啟動方案。"
 
 msgid "pv.w.waiting"
@@ -773,6 +851,9 @@ msgstr "從瀏覽器的工作頁操作這台主機"
 msgid "pv.inc.note"
 msgstr "這台電腦與雲端主機是兩台獨立的機器，各自的交易所金鑰與帳本。電腦上做好的策略可以送上雲端，也可以直接請 agent 在主機上做。"
 
+msgid "pv.inc.web"
+msgstr "定期報告、每支策略的下單方式與策略管理，在網頁的雲端工作頁。"
+
 msgid "pv.signin"
 msgstr "登入 Blave"
 
@@ -792,10 +873,10 @@ msgid "pv.e.noTrial"
 msgstr "這台還拿不到 Blave 的資料：它在 Blave Agent 雲端方案裡。"
 
 msgid "pv.e.sub"
-msgstr "之後資料在每月 {p} TWD 的 Blave Agent 雲端方案裡。"
+msgstr "之後資料按有用到的整點小時計費。"
 
-msgid "pv.e.subN"
-msgstr "每月 {p} TWD：一台讓策略全天候自動執行的雲端主機，含 Blave 的資料；主機存在就按小時扣。"
+msgid "pv.e.sub.old"
+msgstr "之後資料在每月 {p} TWD 的 Blave Agent 雲端方案裡。"
 
 msgid "pv.e.unknown"
 msgstr "這台還拿不到 Blave 的資料。現在查不到帳號狀態，到「資料與雲端方案」重新查看。"
@@ -859,6 +940,9 @@ msgstr "只存在這台電腦的工作區（~/Blave/workspace/.env），Blave �
 msgid "cx.note.one"
 msgstr "在 Binance 建金鑰時：只開交易權限、提領務必關閉，並把這個 IP 加進白名單。"
 
+msgid "cx.note.oneV"
+msgstr "在 {venue} 建金鑰時：只開交易權限，提領務必關閉。有設 IP 白名單的話，把這個 IP 加進去。"
+
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 
@@ -886,6 +970,9 @@ msgstr "串接中…"
 msgid "cx.connected"
 msgstr "已連接"
 
+msgid "cx.linkOk"
+msgstr "串接成功：金鑰讀得到帳戶。交易權限在第一筆下單時確認。"
+
 msgid "cx.perfNote"
 msgstr "模擬交易的績效不代表真實成交的結果（不含滑價）。"
 
@@ -897,6 +984,9 @@ msgstr "測試中…"
 
 msgid "cx.fail"
 msgstr "{id} 串接失敗（{stage}）：{msg}"
+
+msgid "cx.err.okxMode"
+msgstr "OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金。"
 
 msgid "cx.failShort"
 msgstr "串接失敗"
@@ -1018,6 +1108,12 @@ msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限
 msgid "tr.err.paperBroke"
 msgstr "{sym} 沒有下單：模擬帳戶淨值已經歸零，不能再開倉。"
 
+msgid "tr.err.okxMode"
+msgstr "{sym}：OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金。"
+
+msgid "tr.err.gateDeviated"
+msgstr "{sym}：Gate.io 盤口偏離標記價太遠，市價單被交易所擋下，沒有成交。多半是這個合約一時流動性不足，下一輪會自動再試。"
+
 msgid "tr.stopChoiceSelf"
 msgstr "暫停後不會再開任何新倉。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
 
@@ -1037,7 +1133,16 @@ msgid "tr.startChoice"
 msgstr "「補齊部位」會立刻用市價把部位補到策略目前的訊號狀態——策略若已在場內，等於中途上車；「等新訊號」現在不下單，每條策略等它下次進場、出場或翻向才開始交易。"
 
 msgid "tr.startWarn1"
-msgstr "會重新開始送出真實委託，照目前的權重把交易所部位調到目標。"
+msgstr "會重新開始送出真實委託，把策略的部位調到目前的目標。"
+
+msgid "tr.startOwnOnly"
+msgstr "只調整 Blave 自己那一份：第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+
+msgid "tr.unmanaged"
+msgstr "不歸 Blave 管"
+
+msgid "tr.unmanagedTip"
+msgstr "這個部位不是 Blave 下單建立的，對帳不會動它。"
 
 msgid "tr.startWarn2"
 msgstr "策略跟權重在暫停期間照常更新，所以第一次對帳可能一次調整多個部位。"
@@ -1107,6 +1212,12 @@ msgstr "部位大小"
 
 msgid "tr.col.targetPos"
 msgstr "目標部位"
+
+msgid "tr.nSyms"
+msgstr "{n} 個標的"
+
+msgid "tr.grossTip"
+msgstr "多空合計，各標的見下方交易所部位"
 
 msgid "tr.col.target"
 msgstr "目標"
@@ -1207,6 +1318,57 @@ msgstr "帳戶"
 msgid "tr.equity"
 msgstr "淨值"
 
+msgid "tr.acctBreakdown"
+msgstr "錢包分佈"
+
+msgid "tr.holdings"
+msgstr "持倉"
+
+msgid "tr.col.asset"
+msgstr "資產"
+
+msgid "tr.col.qty"
+msgstr "數量"
+
+msgid "tr.col.value"
+msgstr "價值"
+
+msgid "tr.acct.trading"
+msgstr "交易"
+
+msgid "tr.acct.swap"
+msgstr "合約"
+
+msgid "tr.acct.stdFut"
+msgstr "標準合約"
+
+msgid "tr.acct.coinm"
+msgstr "幣本位合約"
+
+msgid "tr.acct.copy"
+msgstr "跟單"
+
+msgid "tr.acct.spot"
+msgstr "現貨"
+
+msgid "tr.acct.fund"
+msgstr "資金"
+
+msgid "tr.acct.crossMargin"
+msgstr "全倉槓桿"
+
+msgid "tr.acct.isoMargin"
+msgstr "逐倉槓桿"
+
+msgid "tr.acct.earn"
+msgstr "理財"
+
+msgid "tr.acct.options"
+msgstr "期權"
+
+msgid "tr.acct.bots"
+msgstr "交易機器人"
+
 msgid "tr.recentOrders"
 msgstr "最近下單"
 
@@ -1228,8 +1390,14 @@ msgstr "解除中…"
 msgid "tr.unbindDesc"
 msgstr "移除這台電腦上的交易所金鑰，下單機不再能用這個帳戶交易。"
 
+msgid "tr.unbindDescPaper"
+msgstr "解除後可以改綁真實交易所。"
+
 msgid "tr.unbindWarn"
 msgstr "會把這個交易所的金鑰從這台電腦移除，下單機將無法再用這個帳戶交易。下單設定也會一併清空，重新串接後需重新設定。"
+
+msgid "tr.unbindWarnPaper"
+msgstr "下單設定會一併清空。之後再綁模擬交易時，模擬帳戶會從 100,000 USDT 重新開始，現在的部位與紀錄不會帶過去。"
 
 msgid "tr.ov.equity"
 msgstr "總權益"
@@ -1260,6 +1428,9 @@ msgstr "紀錄還不夠畫出曲線，要兩筆。Blave 開著的時候每個整
 
 msgid "tr.ov.gapNote"
 msgstr "Blave 沒開著的時段沒有紀錄，曲線直接連起來。"
+
+msgid "tr.ov.basisNote"
+msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
 
 msgid "tr.ov.range"
 msgstr "區間"
@@ -1523,7 +1694,7 @@ msgid "tr.cloud.unreach"
 msgstr "讀不到雲端的下單狀態。這裡顯示的是 {t} 的內容；雲端上正在跑的下單不受影響。"
 
 msgid "tr.cloud.reportUnreach"
-msgstr "讀不到這支策略的報告，稍後再點一次。"
+msgstr "讀不到這支策略的報告。"
 
 msgid "tr.cloud.stoppedBody"
 msgstr "餘額低於 {m} TWD，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。停機期間仍每小時扣 {h} TWD；餘額歸零時主機會刪除，主機上的策略、資料與金鑰一併清除。"
@@ -1563,6 +1734,9 @@ msgstr "指令沒有送到雲端主機，什麼都沒有改變。再按一次試
 
 msgid "tr.cloud.cmdUnknown"
 msgstr "指令送出去了，但雲端主機還沒回報結果，可能已經執行。先看這一頁的狀態，再決定要不要重按。"
+
+msgid "tr.cloud.startedNotRunning"
+msgstr "雲端主機已經收下啟動指令，但下單程式沒有跑起來，現在不會下單。到網頁版工作頁再按一次「啟動下單」。"
 
 msgid "tr.cloud.cmdNotDelivered"
 msgstr "暫停的指令沒有送到，它還在交易。再按一次試試；一直失敗的話，到交易所撤銷雲端那把 API key——它就再也送不出單（既有部位仍需你自己在交易所平倉）。"
@@ -1632,6 +1806,93 @@ msgstr "Blave 官網"
 
 msgid "menu.view"
 msgstr "顯示"
+
+msgid "menu.about"
+msgstr "關於 Blave"
+
+msgid "menu.services"
+msgstr "服務"
+
+msgid "menu.hide"
+msgstr "隱藏 Blave"
+
+msgid "menu.hideOthers"
+msgstr "隱藏其他"
+
+msgid "menu.showAll"
+msgstr "顯示全部"
+
+msgid "menu.quit"
+msgstr "結束 Blave"
+
+msgid "menu.file"
+msgstr "檔案"
+
+msgid "menu.close"
+msgstr "關閉視窗"
+
+msgid "menu.edit"
+msgstr "編輯"
+
+msgid "menu.undo"
+msgstr "還原"
+
+msgid "menu.redo"
+msgstr "重做"
+
+msgid "menu.cut"
+msgstr "剪下"
+
+msgid "menu.copy"
+msgstr "拷貝"
+
+msgid "menu.paste"
+msgstr "貼上"
+
+msgid "menu.pasteStyle"
+msgstr "貼上並符合樣式"
+
+msgid "menu.delete"
+msgstr "刪除"
+
+msgid "menu.selectAll"
+msgstr "全選"
+
+msgid "menu.window"
+msgstr "視窗"
+
+msgid "menu.minimize"
+msgstr "縮到最小"
+
+msgid "menu.zoom"
+msgstr "縮放"
+
+msgid "menu.front"
+msgstr "將此程式所有視窗移至最前"
+
+msgid "menu.help"
+msgstr "輔助說明"
+
+msgid "menu.local"
+msgstr "這台電腦"
+
+msgid "menu.cloud"
+msgstr "雲端"
+
+msgid "menu.actualSize"
+msgstr "實際大小"
+
+msgid "menu.zoomIn"
+msgstr "放大"
+
+msgid "menu.zoomOut"
+msgstr "縮小"
+
+msgid "menu.fullEnter"
+msgstr "進入全螢幕"
+
+msgid "menu.fullExit"
+msgstr "離開全螢幕"
 
 # 最低版本閘(最小版畫面;字待設計師過目)
 msgid "minv.chat"
@@ -1719,6 +1980,12 @@ msgstr "API Key"
 msgid "cx.secretKey"
 msgstr "Secret Key"
 
+msgid "cx.passphrase"
+msgstr "Passphrase"
+
+msgid "cx.passHint"
+msgstr "建立 API 金鑰時自己設的那組，不是 OKX 的登入密碼。"
+
 msgid "cx.group.crypto"
 msgstr "加密貨幣"
 
@@ -1751,6 +2018,18 @@ msgstr "Binance 拒絕了這把金鑰，沒有儲存。Binance 不區分這三�
 
 msgid "cx.chk.keyFormat"
 msgstr "API Key 的格式不對，沒有儲存。從 Binance 重新複製一次，前後不要帶空白。"
+
+msgid "cx.chk.keyFormatV"
+msgstr "金鑰的格式不對，沒有儲存。從 {venue} 重新複製一次，前後不要帶空白。"
+
+msgid "cx.chk.rejectedV"
+msgstr "{venue} 沒有接受這把金鑰，沒有儲存：{reason}"
+
+msgid "cx.chk.unknownV"
+msgstr "{venue} 回了看不懂的帳戶資料，沒有儲存。過幾分鐘再試。"
+
+msgid "cx.chk.noCheckV"
+msgstr "這一版還不能在這台電腦檢查 {venue} 的金鑰，沒有儲存。先更新 Blave 再試。"
 
 msgid "cx.chk.secret"
 msgstr "Secret Key 對不上這把 API Key，沒有儲存。從 Binance 重新複製 Secret；它只在建立金鑰時顯示一次，找不到就要重建一把。"
@@ -1997,6 +2276,12 @@ msgstr "雲端的同名策略正在下單，不能覆蓋。先在雲端暫停，
 msgid "ho.block.down"
 msgstr "這台電腦的同名策略正在下單，不能覆蓋。先暫停，把它的金額改成 0。"
 
+msgid "ho.block.srcDown"
+msgstr "這支策略在雲端的下單設定裡，不能直接拉回。要在這台電腦上改，請 agent 用新名字複製一份再拉回；雲端這一支不受影響。"
+
+msgid "ho.block.srcUp"
+msgstr "這支策略在這台電腦的下單設定裡，不能直接送上雲端。請 agent 用新名字複製一份再送上去；這台電腦這一支不受影響。"
+
 msgid "ho.block.goCloud"
 msgstr "去雲端看"
 
@@ -2058,6 +2343,9 @@ msgid "up.c.stopped"
 msgstr "雲端主機已停機，這次不會更新它。"
 
 msgid "up.c.note"
+msgstr "更新會用到你的 AI 額度。"
+
+msgid "up.c.noteLong"
 msgstr "這台電腦的 agent 會連上雲端主機做更新，用你自己的 AI 額度；若下單程式在跑，它會先問你。"
 
 msgid "up.c.available"
@@ -2183,6 +2471,9 @@ msgstr "存在你的雲端主機的工作區（.env）。金鑰只經過 Blave �
 msgid "cx.chk.incomplete"
 msgstr "API Key 和 Secret Key 要一起給，這一次沒有收齊，沒有儲存。兩格都填好再連一次。"
 
+msgid "cx.chk.incompletePass"
+msgstr "API Key、Secret Key 和 Passphrase 要一起給，這一次沒有收齊，沒有儲存。三格都填好再連一次。"
+
 msgid "cx.chk.clockCloud"
 msgstr "雲端主機的時間跟 Binance 對不上，沒辦法檢查，沒有儲存。過一會兒再連一次；一直這樣請聯絡我們。"
 
@@ -2203,6 +2494,9 @@ msgstr "這把金鑰沒有設 IP 白名單：Binance 會刪除沒有白名單、
 
 msgid "tr.cloud.cxSavedBn"
 msgstr "金鑰已存到雲端主機，Binance 權限檢查通過。"
+
+msgid "tr.cloud.cxSavedV"
+msgstr "金鑰已存到雲端主機。{venue} 帳戶讀不讀得到，等主機回報才知道。"
 
 
 msgid "tr.cloud.cxUnknown"
@@ -2340,8 +2634,11 @@ msgstr "正在等主機確認，通常一兩分鐘。好了這一頁會自己換
 msgid "up.c.running"
 msgstr "正在更新雲端主機 · {t}"
 
-msgid "up.c.replying"
-msgstr "agent 回覆中 · {t}"
+msgid "up.c.runningShort"
+msgstr "正在更新雲端主機"
+
+msgid "up.c.onCloud"
+msgstr "agent 正在雲端主機上作業"
 
 msgid "up.c.runNote"
 msgstr "過程在聊天裡；可以先做別的事，完成後這裡會顯示。"
@@ -2357,9 +2654,6 @@ msgstr "{from} → {nv}"
 
 msgid "up.c.chatRunning"
 msgstr "正在更新雲端主機 · {t}"
-
-msgid "up.c.chatSeeReply"
-msgstr "看 agent 的回覆"
 
 msgid "up.c.chatDone"
 msgstr "雲端已更新到 {nv}"
@@ -2381,6 +2675,42 @@ msgstr "解除暫停的指令送出了，主機回報後這裡會更新。"
 
 msgid "tr.relTitle"
 msgstr "解除暫停？"
+
+msgid "tr.acct.reason"
+msgstr "換了 {v} 的金鑰後，Blave 認不出這是不是原來的帳戶。回答之前，{v} 什麼單都不下，平倉與停損也不會執行。"
+
+msgid "tr.acct.btn"
+msgstr "確認帳戶"
+
+msgid "tr.acct.confirming"
+msgstr "確認中…"
+
+msgid "tr.acct.title"
+msgstr "這還是原來的 {v} 帳戶嗎？"
+
+msgid "tr.acct.body"
+msgstr "你換過 {v} 的 API 金鑰，而這把金鑰讀不到帳戶資料，Blave 分不出它是不是原來那個帳戶。兩個答案都不會下單；答完仍是暫停，按「啟動下單」才會恢復。"
+
+msgid "tr.acct.ifSame"
+msgstr "同一個帳戶：Blave 之前在 {v} 開的部位，照舊由 Blave 管理。"
+
+msgid "tr.acct.ifDiff"
+msgstr "不同帳戶：之前那些部位交給你自己處理，Blave 不會再動它們；Blave 在這個帳戶從零開始，現有部位一個都不碰。"
+
+msgid "tr.acct.same"
+msgstr "同一個帳戶"
+
+msgid "tr.acct.diff"
+msgstr "不同帳戶"
+
+msgid "tr.acct.sent"
+msgstr "回答送出了，主機回報後這裡會更新。"
+
+msgid "tr.acct.doneSame"
+msgstr "已確認是同一個 {v} 帳戶：Blave 的部位照舊管理，平倉與停損停利照常執行；按「啟動下單」恢復開新倉。"
+
+msgid "tr.acct.doneDiff"
+msgstr "{v} 已從零開始：之前的部位交給你處理，Blave 不會再動它們。按「啟動下單」後，策略會在這個帳戶重新開部位。"
 
 msgid "tr.relBody"
 msgstr "解除後，暫停時被擋下的新倉會恢復放行，包含你自己的策略程式下的單。還沒有策略設定金額，所以不會照策略下單。"

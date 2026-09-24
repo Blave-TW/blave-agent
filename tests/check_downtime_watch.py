@@ -38,6 +38,9 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import command_listener as cl  # noqa: E402
 import portfolio_reporter  # noqa: E402
 
+# a whole-machine start with no reconciler heartbeat starts one: never a real systemctl/tmux here
+cl._restart_reconciler = lambda args: "reconciler restarted"
+
 fails = 0
 
 
@@ -115,13 +118,14 @@ try:
         except ValueError:
             pass
     check(os.path.exists(halt), "malformed `strategies` is refused — never read as whole-machine")
-    check(cl._in_workspace(cl.dispatch, {"cmd": "resume_wait", "args": {}}) == "resumed_wait gated=1"
+    check(cl._in_workspace(cl.dispatch, {"cmd": "resume_wait", "args": {}})
+          == "resumed_wait gated=1; reconciler restarted"
           and json.load(open("state/signal_gate.json")) == {"btc_1h": 1.0} and not os.path.exists(halt),
-          "whole-machine resume_wait: byte-for-byte the old behaviour (baseline now, HALT cleared)")
+          "whole-machine resume_wait: the old gate behaviour (baseline now, HALT cleared) + reconciler start")
     open(halt, "w").write("{}")
-    check(cl._in_workspace(cl.dispatch, {"cmd": "resume", "args": {}}) == "resumed"
+    check(cl._in_workspace(cl.dispatch, {"cmd": "resume", "args": {}}) == "resumed; reconciler restarted"
           and not os.path.exists(halt) and not os.path.exists("state/signal_gate.json"),
-          "whole-machine resume: the old behaviour (gate removed, HALT cleared)")
+          "whole-machine resume: the old behaviour (gate removed, HALT cleared) + reconciler start")
     report = portfolio_reporter.build_report()
     check(report["can_downtime_pause"] is False and report["downtime_pause"] is None,
           "report: can_downtime_pause = false, downtime_pause = null — the page draws no card")

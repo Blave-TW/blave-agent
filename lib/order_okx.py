@@ -44,7 +44,7 @@ import hmac
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 
 import requests
@@ -68,6 +68,26 @@ class OKXError(Exception):
         super().__init__(f"OKX error {code}: {msg or '(empty msg)'} | {path}")
 
 
+# Same pair as lib/account_okx.py — the token is what the desktop and web match on.
+ACCOUNT_MODE_TOKEN = "okx_account_mode"
+ACCOUNT_MODE_MSG = "OKX 帳戶模式不支援合約：到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金"
+ACCOUNT_MODE_CODES = {"51010"}  # "Request unsupported under current account mode"
+
+
+class AccountModeError(OKXError):
+    """The account mode cannot trade swaps (acctLv 1 / code 51010). Nothing a
+    retry fixes — the user changes the mode in OKX settings."""
+
+    def __init__(self, code, msg, path=""):
+        super().__init__(code, msg, path)
+        self.args = (f"{ACCOUNT_MODE_MSG} [{ACCOUNT_MODE_TOKEN}] (OKX {code}: {msg} | {path})",)
+
+
+def _okx_error(code, msg, path):
+    cls = AccountModeError if str(code) in ACCOUNT_MODE_CODES else OKXError
+    return cls(code, msg, path)
+
+
 class OrderNotConfirmed(Exception):
     """Order accepted but not terminal within timeout. It may still fill —
     query again, never blindly resubmit."""
@@ -80,8 +100,29 @@ class ProtectionFailed(Exception):
 
 # ── transport ────────────────────────────────────────────────────────────────
 
+TIMESTAMP_ERROR = "50102"  # "Timestamp request expired"
+_time_offset = {"ms": 0}  # OKX's clock − ours, set by _sync_time
+
+
+def _sync_time(env):
+    """After a 50102 ("Timestamp request expired": OKX accepts ±30 s): offset
+    against OKX's own clock (/api/v5/public/time), best-effort — a failed read
+    keeps the old offset and the retry still goes out with a fresh timestamp."""
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if str(env.get("OKX_DEMO", os.environ.get("OKX_DEMO", ""))).lower() == "true":
+        headers["x-simulated-trading"] = "1"
+    try:
+        t0 = time.time()
+        r = requests.get(f"{BASE_URL}/api/v5/public/time", headers=headers, timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["data"][0]["ts"])
+        _time_offset["ms"] = server_ms - int((t0 + t1) / 2 * 1000)
+    except Exception:
+        pass
+
+
 def _timestamp():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(milliseconds=_time_offset["ms"])
     return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 
@@ -140,7 +181,8 @@ def _request(method, path, env, body=None, params=None, retries=3):
                   if isinstance(body, dict) and k in body}
         fields["intent"] = intent
         guard.check_restart_stop(intent, fields)
-        if intent == "entry" and guard.halted():
+        guard.check_account_hold("okx", intent, fields)
+        if intent == "entry" and guard.entry_blocked():
             guard.audit("order_denied_halt", **fields)
             raise guard.Halted(
                 f"state/HALT is set ({guard.halt_info()}) — entry order for "
@@ -175,6 +217,7 @@ def _send(method, path, env, body=None, params=None, retries=3):
     request_path = path + qs
 
     last_err = None
+    resynced = False
     for attempt in range(retries):
         ts = _timestamp()
         prehash = ts + method.upper() + request_path + body_str
@@ -215,11 +258,17 @@ def _send(method, path, env, body=None, params=None, retries=3):
             row = rows[0] if rows else {}
             s_code = row.get("sCode") or code
             s_msg = row.get("sMsg") or data.get("msg") or ""
-            raise OKXError(s_code, s_msg, path)
+            if str(s_code) == TIMESTAMP_ERROR and not resynced and attempt < retries - 1:
+                # refused at authentication — resending cannot double anything
+                resynced = True
+                _sync_time(env)
+                last_err = OKXError(s_code, s_msg, path)
+                continue
+            raise _okx_error(s_code, s_msg, path)
         # code 0 can still carry per-row failures on order endpoints
         for row in rows if isinstance(rows, list) else []:
             if isinstance(row, dict) and row.get("sCode") not in (None, "0", ""):
-                raise OKXError(row.get("sCode"), row.get("sMsg") or "", path)
+                raise _okx_error(row.get("sCode"), row.get("sMsg") or "", path)
         return rows
     raise last_err
 
@@ -316,11 +365,16 @@ def format_spot_price(env, symbol, price):
 # ── position mode ───────────────────────────────────────────────────────────
 
 def get_position_mode(env):
-    """'net_mode' | 'long_short_mode' (hedge). Cached per api key."""
+    """'net_mode' | 'long_short_mode' (hedge). Cached per api key. Every swap
+    order reads it first, so an account in Spot mode (acctLv 1) raises
+    AccountModeError here — before any order goes out — and is not cached."""
     key = env.get("OKX_API_KEY", "")
     if key not in _pos_mode_cache:
         rows = _send("GET", "/api/v5/account/config", env)
-        _pos_mode_cache[key] = (rows[0] if rows else {}).get("posMode", "net_mode")
+        cfg = rows[0] if rows else {}
+        if str(cfg.get("acctLv") or "") == "1":
+            raise AccountModeError("acctLv=1", "Spot mode", "/api/v5/account/config")
+        _pos_mode_cache[key] = cfg.get("posMode", "net_mode")
     return _pos_mode_cache[key]
 
 
@@ -356,6 +410,13 @@ TERMINAL_STATES = {"filled", "canceled", "mmp_canceled"}
 
 
 def _confirm(env, symbol, ord_id, getter, timeout=15):
+    """Poll a market order to a terminal state. `canceled` is terminal but not
+    necessarily empty: OKX cancels the unfilled rest of a market order that runs
+    into its price limit / 5% slippage guard (cancelSource 14 / 15 / 27), and
+    accFillSz then carries what DID fill (docs: "accFillSz may be non-zero").
+    That fill is real money on the account, so it is returned with
+    'partial': True — raising would keep it out of the ledger and the next round
+    would buy it again. Nothing filled → raise with the venue's own reason."""
     deadline = time.time() + timeout
     order = None
     while time.time() < deadline:
@@ -363,7 +424,16 @@ def _confirm(env, symbol, ord_id, getter, timeout=15):
         if order["status"] == "filled":
             return order
         if order["status"] in TERMINAL_STATES:
-            raise OKXError("N/A", f"order {ord_id} ended {order['status']}", "confirm")
+            raw = order.get("raw") or {}
+            order["cancel_source"] = str(raw.get("cancelSource") or "")
+            order["cancel_reason"] = str(raw.get("cancelSourceReason") or "")
+            if float(order.get("executed_qty") or 0) > 0:
+                order["partial"] = True
+                return order
+            why = order["cancel_reason"] or "no reason given"
+            raise OKXError("N/A", f"order {ord_id} ended {order['status']} with nothing filled "
+                                  f"(cancelSource {order['cancel_source'] or '?'}: {why})",
+                           "confirm")
         time.sleep(1)
     raise OrderNotConfirmed(
         f"order {ord_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
@@ -377,6 +447,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     (when reduce_only, the position it reduces). Below min sz → False
     (intentional skip). Net mode sends native reduceOnly; hedge mode has none
     — closing is expressed by posSide opposite to the order side."""
+    guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     inst = _swap_inst(symbol)
     mode = get_position_mode(env)
     try:

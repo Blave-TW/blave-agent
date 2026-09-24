@@ -20,8 +20,9 @@ const venueReady = (v) => !!(v && typeof v === "object" && v.credentials && v.pa
 const VENUE_ID = /^[a-z][a-z0-9_]{0,31}$/;   // 回報裡的場所 id 是小寫的 env 前綴;長得不像的不拿來顯示
 
 /* 雲端宿主的 status() → 選單列那一行要的東西,或 null(沒有可講的:沒登入、沒主機、沒連交易所、讀不到)。
-   回 { money: "paper" | "real", state: "on" | "paused" | "unknown" }。
-   unknown = 主機在運行、有連好的帳戶,但現在讀不到新狀態(連不上 / 回報過舊):不講「執行中」也不講「已暫停」。 */
+   回 { money: "paper" | "real", state: "on" | "paused" | "mayTrade" | "notStarted" | "unknown" }。
+   unknown = 主機在運行、有連好的帳戶,但現在讀不到新狀態(連不上 / 回報過舊):不講「執行中」也不講「已暫停」。
+   notStarted = 讀得到、對帳器沒在跑:雲端頁同一份資料寫「尚未啟動下單」(trade.js trStateText 的 dead 且不是 died——雲端沒有監督者欄位),這裡同一句。 */
 function cloudLine(st) {
   const c = st && st.cloud, r = st && st.report;
   if (!c || c.code !== "OK" || !c.machine || c.machine.state !== "running" || !r || typeof r !== "object" || !r.venues || typeof r.venues !== "object") return null;
@@ -29,13 +30,14 @@ function cloudLine(st) {
   if (!ids.length) return null;
   const money = ids.every((k) => k === "paper") ? "paper" : "real";
   if (!st.alive) return { money, state: "unknown" };
+  if (r.error) return { money, state: "unknown" };   // 這一輪報告 build 失敗:雲端頁同樣講讀不到(trExecState 第一條),不猜執行中 / 尚未啟動
   if (r.halt && r.halt.halted) return { money, state: "paused" };
   // 主機重開後對帳器停著、等人按「啟動下單」:同畫面一律「已暫停」(不是「不明」)
   // 主機重開、但沒能確認停住(舊對帳器沒有重開閘門、停止後又有心跳;嚴格 === false):不能說已暫停——可能仍在下單。
   // halt 排在前面先判:「重開沒停住但已按暫停」回 paused,那是真話(舊對帳器認 HALT)
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart" && r.reconciler.stopped.gated === false) return { money, state: "mayTrade" };
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart") return { money, state: "paused" };
-  return { money, state: r.reconciler && r.reconciler.alive ? "on" : "unknown" };
+  return { money, state: r.reconciler && r.reconciler.alive ? "on" : "notStarted" };
 }
 /* 雲端落後時選單列那一行(spec v2 §1;圖示旁的小點已全部拿掉,選單是唯一的提示)。
    規則同 renderer 的 upPlan:主機在跑,而且版號落後 → 「雲端主機有新版 {nv}」;
@@ -59,7 +61,8 @@ const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state =
 function statusLine(tpl, line, labels) {
   if (!tpl || !line || !labels) return null;
   const money = line.money === "paper" ? labels.moneyPaper : labels.moneyReal;
-  const state = line.state === "on" ? labels.stOn : line.state === "paused" ? labels.stPaused : line.state === "mayTrade" ? labels.stMayTrade : labels.stUnknown;
+  const state = line.state === "on" ? labels.stOn : line.state === "paused" ? labels.stPaused : line.state === "mayTrade" ? labels.stMayTrade
+    : line.state === "notStarted" ? labels.stNotStarted : labels.stUnknown;
   if (!money || !state) return null;
   return clean(fmt(tpl, { money, state }), 80);
 }

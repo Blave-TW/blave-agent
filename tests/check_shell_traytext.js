@@ -16,7 +16,7 @@ t("已暫停", cloudLine(st({ report: { venues: { binance: V }, halt: { halted: 
 t("讀不到新狀態(alive=false:連不上 / 回報過舊)→ 不講執行中也不講已暫停", cloudLine(st({ alive: false })).state === "unknown" && cloudLine(st({ alive: false, report: { venues: { binance: V }, halt: { halted: true } } })).state === "unknown");
 t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)→ 已暫停(同畫面),不是不明",
   cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } } })).state === "paused"
-  && cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "other" } } } })).state === "unknown"
+  && cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "other" } } } })).state === "notStarted"
   && cloudLine(st({ alive: false, report: { venues: { binance: V }, reconciler: { alive: false, stopped: { reason: "machine_restart" } } } })).state === "unknown");
 { const Cg = (o, halt) => st({ report: { venues: { binance: V }, halt: halt || {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
   const LL = { ...L, stMayTrade: "可能仍在下單" };
@@ -25,6 +25,26 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   t("…已按暫停 → 已暫停;gated true / 缺欄位 → 已暫停;缺 stMayTrade 那個字 → 整行不顯示",
     cloudLine(Cg({ gated: false }, { halted: true })).state === "paused" && cloudLine(Cg({ gated: true })).state === "paused" && cloudLine(Cg({})).state === "paused"
     && statusLine(TPL, cloudLine(Cg({ gated: false })), L) === null); }
+{ // 「讀不到狀態」只給真的讀不到(連不上 / 回報過舊);讀得到、對帳器只是沒在跑 = 雲端頁同一句「尚未啟動下單」(trade.js trStateText 的 dead)
+  const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+  const zh = (k) => { const i = S.indexOf("zh:"), m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(i)); return m && m[1]; };
+  const en = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(0, S.indexOf("zh:"))); return m && m[1]; };
+  const LZ = { moneyReal: "真錢", moneyPaper: "模擬", stOn: zh("tm.stOn"), stPaused: zh("tm.stPaused"), stUnknown: zh("tm.stUnknown"), stNotStarted: zh("tr.notStarted") };
+  const idle = st({ report: { venues: { binance: V }, halt: { halted: false }, reconciler: { alive: false, heartbeat_at: 5 } } });
+  const gone = st({ alive: false, report: { venues: { binance: V }, halt: { halted: false }, reconciler: { alive: false } } });
+  t("讀得到、下單程式沒在跑 → 「雲端：真錢 · 尚未啟動下單」(跟雲端頁同一句,不是讀不到狀態)", cloudLine(idle).state === "notStarted" && statusLine(TPL, cloudLine(idle), LZ) === "雲端：真錢 · 尚未啟動下單");
+  t("讀不到(alive=false)→ 照舊「雲端：真錢 · 讀不到狀態」", cloudLine(gone).state === "unknown" && statusLine(TPL, cloudLine(gone), LZ) === "雲端：真錢 · 讀不到狀態");
+  t("兩條路的字不一樣(zh / en 都是):同一份報告只差 alive", zh("tr.notStarted") !== zh("tm.stUnknown") && en("tr.notStarted") && en("tr.notStarted") !== en("tm.stUnknown"));
+  t("尚未啟動不替雲端背書(結束確認框不說雲端在下單)", cloudTrading(idle) === false);
+  const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"), mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  t("接線:renderer 交 stNotStarted = tr.notStarted(雲端頁那一句);主行程的 tmLabels 有這個 key(沒有的話 trade-labels 會把它濾掉)",
+    /stNotStarted: t\("tr\.notStarted"\)/.test(trSrc) && /\bstNotStarted: ""/.test(mainSrc2.slice(mainSrc2.indexOf("let tmLabels = {"), mainSrc2.indexOf("};", mainSrc2.indexOf("let tmLabels = {")))));
+  t("缺 stNotStarted 那個字 → 整行不顯示(不拿讀不到狀態頂替)", statusLine(TPL, cloudLine(idle), L) === null);
+  // 稽核 L2:報告帶 error(這一輪 build 失敗)= 雲端頁的 trExecState 第一條就回 unknown;選單列同一句,不講尚未啟動 / 執行中 / 已暫停
+  const errd = (rec, halt) => st({ report: { error: "build failed", venues: { binance: V }, halt: halt || { halted: false }, reconciler: rec } });
+  t("報告帶 error:一律「讀不到狀態」(對帳器沒心跳、有心跳、已暫停都一樣),跟雲端頁同一句",
+    [errd({ alive: false }), errd({ alive: true }), errd({ alive: false }, { halted: true })].every((x) => cloudLine(x).state === "unknown")
+    && statusLine(TPL, cloudLine(errd({ alive: false })), LZ) === "雲端：真錢 · 讀不到狀態" && cloudTrading(errd({ alive: true })) === false); }
 { // 選單列圖示旁不放任何小點(Wei 09-23):本機新版、雲端新版都不點;「新版已下載」那一行留在選單裡
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
   t("選單列圖示旁沒有小點:main.js 不呼叫 setTitle;雲端那條規則不留死碼;選單的「新版已下載」照留", !/\.setTitle\(/.test(mainSrc)
@@ -113,7 +133,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
     .concat([...mainSrc.matchAll(/\btmLabels\.(st[A-Z]\w*)/g)].map((m) => m[1])))].filter((k) => k !== "lang");
   const unpushed = trayUsed.filter((k) => pushed.indexOf(k) < 0);
   t("T1 反方向:選單列用到的每一個字(含 stMayTrade)trPushLabels 都有交" + (unpushed.length ? ":沒交 " + unpushed.join() : ""), trayUsed.length >= 6 && trayUsed.indexOf("stMayTrade") >= 0 && unpushed.length === 0 && trayUsed.every((k) => defs.has(k))); }
-t("對帳器心跳不在 → 不講執行中", cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false } } })).state === "unknown");
+t("對帳器心跳不在(報告讀得到)→ 不講執行中,講尚未啟動下單", cloudLine(st({ report: { venues: { binance: V }, reconciler: { alive: false } } })).state === "notStarted");
 t("沒有可講的 → null(整行不顯示):沒登入、沒主機、啟動中、停機、沒回報、沒連好交易所、還沒問到", [null, undefined, {}, st({ cloud: { code: "NO_LOGIN" } }), st({ cloud: { code: "OK", machine: { state: "none" } } }), st({ cloud: { code: "OK", machine: { state: "starting" } } }),
   st({ cloud: { code: "OK", machine: { state: "stopped" } } }), st({ report: null }), st({ report: { venues: {} } }), st({ report: { venues: { binance: { credentials: true } } } }), st({ report: "x" }), st({ report: { venues: "x" } })].every((s) => cloudLine(s) === null));
 t("結束確認框那一句:只有「確定在下單」才說(那一句是在替雲端做保證)", cloudTrading(st()) === true && cloudTrading(st({ alive: false })) === false && cloudTrading(st({ report: { venues: { binance: V }, halt: { halted: true }, reconciler: { alive: true } } })) === false && cloudTrading(null) === false);
@@ -133,18 +153,47 @@ t("main.js:雲端那一行進 trayKey(狀態變了才會重畫)", /const key = l
 t("main.js:暫停只給這台電腦——選單列、Dock、失敗框三處都用 pauseLabel(),而且都只送本機的 halt", (src.match(/pauseLabel\(\)/g) || []).length >= 4 && !/label: tmLabels\.pause,/.test(src) && (src.match(/click: pauseFromMenu/g) || []).length === 2);
 t("main.js:本機 P1 通知與暫停通知的標題都過前綴", (src.match(/TT\.notifTitle\(tmLabels\.notifPrefixLocal,/g) || []).length === 2 && !/new Notification\(\{ title: tmLabels\["ev_"/.test(src));
 t("main.js:結束確認框多的那一句只在雲端確定在下單時加", /TT\.quitDetail\([^\n]*TT\.cloudTrading\(cloudSt\(\)\) \? tmLabels\.quitCloudNote : ""\)/.test(src));
-t("main.js:app 選單的兩個視角送 env-switch,只送自家頁面、只有兩個固定值", /envSwitchFromMenu\("local"\)/.test(src) && /envSwitchFromMenu\("cloud"\)/.test(src) && (src.match(/envSwitchFromMenu\(/g) || []).length === 3 && /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("env-switch", env\)/.test(src));
+t("main.js:app 選單的兩個視角送 env-switch,只送自家頁面、只有兩個固定值", /click: \(\) => onEnv\("local"\)/.test(src) && /click: \(\) => onEnv\("cloud"\)/.test(src) && (src.match(/onEnv\(/g) || []).length === 2 && /appMenuTemplate\(tmLabels, dev, full, envSwitchFromMenu,/.test(src) && (src.match(/envSwitchFromMenu\(/g) || []).length === 1 && /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("env-switch", env\)/.test(src));
 t("main.js:官網入口是固定常數、語言段只有兩個值(renderer 交來的 lang 走白名單)", /const SITE_URL = \{ zh: "https:\/\/blave\.org\/zh", en: "https:\/\/blave\.org\/en" \};/.test(src) && /if \(labels\.lang === "zh" \|\| labels\.lang === "en"\) uiLang = labels\.lang;/.test(src) && /shell\.openExternal\(SITE_URL\[siteLang\(\)\]\)/.test(src));
 t("main.js:發佈版的選單不放重新載入與開發者工具", /const dev = !\(app\.isPackaged && require\("\.\/package\.json"\)\.blaveRelease\);/.test(src) && /\.\.\.\(dev \? \[\{ role: "reload" \}/.test(src));
-t("main.js:選單保留編輯選單(沒有它,輸入框的複製貼上快捷鍵會失效)", /\{ role: "editMenu" \}/.test(src) && /\{ role: "appMenu" \}/.test(src) && /\{ role: "windowMenu" \}/.test(src));
 const pre = fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8");
 t("preload:renderer 待接的三個入口都在", /minVersionState:/.test(pre) && /onMinVersionState:/.test(pre) && /onEnvSwitch:/.test(pre));
-// app 選單不中英混語:自家的 label 走 app 的 i18n(renderer 交字),Electron 內建 role 的項目不自訂 label
+// app 選單不中英混語(設計師 spec-desktop-005 §1):每一格都帶 label、字跟 app 的語言走;編輯選單沒有替代 / 語音;全螢幕只有一格、字跟著狀態換
 { const fs = require("fs"), path = require("path");
-  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), a = mainSrc.indexOf("function appMenuSync()"), body = mainSrc.slice(a, mainSrc.indexOf("\n}\n", a)).replace(/\/\/.*$/gm, "");
-  const labels = [...body.matchAll(/label:\s*([^,}]+)/g)].map((m) => m[1].trim());
-  t("app 選單:每一個自家 label 都來自 tmLabels(英文只當還沒交字之前的退路),沒有寫死的字", labels.length === 4 && labels.every((l) => /^tmLabels\.menu(View|Local|Cloud|Site) \|\| "[^"]+"$/.test(l)));
-  t("app 選單:帶 role 的項目都沒有自訂 label", [...body.matchAll(/\{[^{}]*role:[^{}]*\}/g)].every((m) => !/label:/.test(m[0])));
-  t("換語言會重建選單(四個字都進 key);renderer 交 menuView", /\[tmLabels\.menuLocal, tmLabels\.menuCloud, tmLabels\.menuSite, tmLabels\.menuView\]\.join/.test(body)
-    && /menuView: t\("menu\.view"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8")) && /menuView: ""/.test(mainSrc)); }
+  const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const cutM = (a, b) => { const i = mainSrc.indexOf(a); return mainSrc.slice(i, mainSrc.indexOf(b, i)); };
+  const app = { name: "Blave" };
+  const MENU_EN = eval("(" + cutM("const MENU_EN = ", " };\n").replace("const MENU_EN = ", "") + " })");
+  const appMenuTemplate = eval("(" + cutM("function appMenuTemplate", "\nfunction appMenuSync") + ")");
+  const po = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8"), zh = {};
+  for (const m of po.matchAll(/msgid "menu\.([A-Za-z]+)"\nmsgstr "([^"]*)"/g)) zh["menu" + m[1][0].toUpperCase() + m[1].slice(1)] = m[2];
+  const items = (tpl) => { const out = []; const walk = (xs, top) => xs.forEach((x) => { if (x.type !== "separator") out.push({ ...x, top }); if (x.submenu) walk(x.submenu, false); }); walk(tpl, true); return out; };
+  const dev = (tpl) => items(tpl).filter((x) => ["reload", "forceReload", "toggleDevTools"].includes(x.role));
+  const onFull = () => {};
+  const tz = appMenuTemplate(zh, false, false, () => {}, () => {}, onFull), tzFull = appMenuTemplate(zh, false, true, () => {}, () => {}, onFull), ten = appMenuTemplate({}, false, false, () => {}, () => {}, onFull);
+  const noLabel = items(tz).filter((x, i) => !(i === 0 && x.top) && !x.label);
+  t("app 選單:除了 app 名稱那一格(系統放名字),每一格都有 label", noLabel.length === 0);
+  t("app 選單:zh 介面每一格的字都來自 zh.po(沒有一格退回英文)", items(tz).slice(1).every((x) => Object.values(zh).includes(x.label)) && Object.keys(MENU_EN).every((k) => zh[k]));
+  t("app 選單:字照 spec §1.2 / Wei 拍板(顯示;隱藏 Blave、結束 Blave 帶空格,同選單列圖示與結束確認框;拷貝;沒有「設定⋯」)",
+    tz[3].label === "顯示" && items(tz).some((x) => x.role === "hide" && x.label === "隱藏 Blave") && items(tz).some((x) => x.role === "quit" && x.label === "結束 Blave")
+    && /msgid "tm\.quitGo"\nmsgstr "結束 Blave"/.test(po)
+    && items(tz).some((x) => x.role === "copy" && x.label === "拷貝") && !items(tz).some((x) => /設定|Settings/.test(x.label || "")));
+  t("app 選單:還沒交字時整份是英文退路(Title Case 的 This Computer)", items(ten).slice(1).every((x) => Object.values(MENU_EN).includes(x.label)) && items(ten).some((x) => x.label === "This Computer"));
+  t("編輯選單逐項列:沒有 editMenu 整包(不帶 Substitutions / Speech),複製貼上的 role 都在", !items(tz).some((x) => /Menu$/.test(x.role || ""))
+    && ["undo", "redo", "cut", "copy", "paste", "pasteAndMatchStyle", "delete", "selectAll"].every((r) => items(tz).some((x) => x.role === r)));
+  const fs1 = (tpl) => items(tpl).filter((x) => /全螢幕|Full Screen/.test(x.label || ""));
+  t("全螢幕只有一格、不帶 role(帶 togglefullscreen role 時 macOS 會再插一份 🌐F 的),自己的 click + ⌃⌘F;字跟著狀態換(進入 / 離開)",
+    !items(tz).some((x) => /fullscreen/i.test(x.role || "")) && fs1(tz).length === 1 && fs1(tz)[0].label === "進入全螢幕" && fs1(tz)[0].accelerator === "Ctrl+Cmd+F" && fs1(tz)[0].click === onFull
+    && fs1(tzFull).length === 1 && fs1(tzFull)[0].label === "離開全螢幕" && fs1(ten)[0].label === "Enter Full Screen");
+  t("視窗與輔助說明選單帶 role(系統認得,自己加視窗清單與搜尋)", tz.some((x) => x.top !== false && x.role === "window") && tz.some((x) => x.role === "help"));
+  t("發佈版的選單不放重新載入與開發者工具", dev(tz).length === 0 && dev(appMenuTemplate(zh, true, false, () => {}, () => {})).length === 3
+    && /const dev = !\(app\.isPackaged && require\("\.\/package\.json"\)\.blaveRelease\);/.test(mainSrc));
+  const body = cutM("function appMenuSync()", "\n}\n");
+  t("換語言、進出全螢幕會重建選單(key 含語言、全螢幕、每一個 menu 字);視窗的 enter/leave-full-screen 叫它", /JSON\.stringify\(\[uiLang, full, Object\.keys\(MENU_EN\)\.map\(\(k\) => tmLabels\[k\]\)\]\)/.test(body)
+    && /win\.on\("enter-full-screen", appMenuSync\); win\.on\("leave-full-screen", appMenuSync\);/.test(mainSrc));
+  t("renderer 交每一個 menu 字;主行程每一個 menu 鍵預設空的(= 用英文退路)", /\.\.\.Object\.fromEntries\(TR_MENU_KEYS\.map/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))
+    && /\.\.\.Object\.fromEntries\(Object\.keys\(MENU_EN\)\.map\(\(k\) => \[k, ""\]\)\)/.test(mainSrc));
+  const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  const keys = eval(/const TR_MENU_KEYS = (\[[\s\S]*?\]);/.exec(trSrc)[1]).map((k) => "menu" + k.charAt(5).toUpperCase() + k.slice(6));
+  t("renderer 交的鍵跟主行程的鍵一模一樣(少一個 = 那一格永遠是英文)", JSON.stringify(keys.slice().sort()) === JSON.stringify(Object.keys(MENU_EN).sort())); }
 Promise.all(after).then(() => { console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0); });

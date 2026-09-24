@@ -295,6 +295,7 @@ CODE = "blv_" + "a" * 40
 # 後兩組是 S1:Codex 預設把整份 env 給 agent 的 shell;filters 只拔接入碼,shell_snapshot 不關的話 filters 無效(0.155 實測)
 MCP_FLAGS = ["-c", 'mcp_servers.blave.url="%s"' % MCP_URL,
              "-c", 'mcp_servers.blave.bearer_token_env_var="BLAVE_MCP_TOKEN"',
+             "-c", 'mcp_servers.blave.default_tools_approval_mode="approve"',
              "-c", 'shell_environment_policy.filters.BLAVE_MCP_TOKEN="exclude"',
              "-c", "features.shell_snapshot=false", "-c", "features.shell_snapshot_v2=false"]
 assert codex_engine.MCP_TOKEN_ENV == "BLAVE_MCP_TOKEN"

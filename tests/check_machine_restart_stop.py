@@ -21,6 +21,14 @@ What it protects:
      web's follow-up is swallowed once, and only after a resume start or a
      live survivor; "already running" = a FRESH heartbeat newer than stopped_at
      (or than detection, when the kill never confirmed);
+  6b. 啟動下單 with no record (a fresh box, an unbind, a death): the cloud start
+     leaves a reconciler running — never ran / heartbeat older than the report's
+     alive window = started; fresh = left alone; in between the service manager
+     decides; local mode starts nothing; a resume_wait's gate still holds through
+     the new reconciler's first round (paper: zero orders; resume, the control: one);
+     a reconciler process outside every supervisor (systemd / tmux / NSSM) is
+     never started beside, on any start path; a supervised one, hung included,
+     is replaced by the supervised restart;
   7. the report: stopped {reason, at} iff the record exists (fresh heartbeat or
      not), alive false meanwhile.
 
@@ -526,10 +534,280 @@ try:
           and starts == [1, 1, 1],
           "…a stop after the resume start ends the window: the next restart is not swallowed")
     cl._stop_reconciler = lambda: stops.append(1) or stop_ok["v"]
+
+    # ── 6b. 啟動下單 with no restart record (uid 29026, 2026-09-23) ──────────
+    sup = {"v": None, "asked": 0}
+    real_sup = cl._reconciler_supervised
+    cl._reconciler_supervised = lambda: sup.__setitem__("asked", sup["asked"] + 1) or sup["v"]
+    procs = {"strays": []}
+    real_strays = cl._unsupervised_reconciler_pids
+    cl._unsupervised_reconciler_pids = lambda proc="/proc": procs["strays"]
+
+    def no_record(hb_age, supervised=None):
+        del starts[:]
+        cl._resume_started_at = None
+        sup.update(v=supervised, asked=0)
+        procs.update(strays=[])
+        clock["t"] = time.time()
+        if hb_age is None:
+            if os.path.exists(HB):
+                os.remove(HB)
+        else:
+            open(HB, "a").close()
+            os.utime(HB, (clock["t"] - hb_age, clock["t"] - hb_age))
+        check(not os.path.exists(cl.RESTART_STOP_PATH), "(no restart record)")
+
+    no_record(None)
+    r = cl.dispatch({"cmd": "resume_wait", "args": {}})
+    check(r.endswith("reconciler restarted") and starts == [1] and cl._resume_started_at is not None,
+          "fresh machine, no restart record, reconciler never ran: resume_wait requests the "
+          "reconciler start (desktop cloud start sends nothing else)")
+    check(cl.dispatch({"cmd": "restart_reconciler", "args": {}}) == "reconciler already started by resume"
+          and starts == [1],
+          "…the web's follow-up restart_reconciler is swallowed, not a second restart")
+    no_record(None)
+    check(cl.dispatch({"cmd": "resume", "args": {}}).endswith("reconciler restarted") and starts == [1],
+          "…resume (啟動並補齊部位) the same")
+    no_record(3)
+    check(cl.dispatch({"cmd": "resume", "args": {}}).endswith("reconciler already running")
+          and not starts and sup["asked"] == 0 and cl._resume_started_at is not None,
+          "no record, heartbeat 3 s old (a live reconciler, e.g. resume after 暫停): not restarted "
+          "mid-round; the web's follow-up off a stale report is swallowed")
+    for sv, want in ((True, False), (None, False), (False, True)):
+        no_record(60, supervised=sv)
+        cl.dispatch({"cmd": "resume", "args": {}})
+        check(bool(starts) == want and sup["asked"] == 1,
+              f"no record, heartbeat 60 s old (a long round, or stopped by an unbind a minute ago), "
+              f"service manager says {sv}: {'started' if want else 'left alone'}")
+    no_record(cl.RECONCILER_ALIVE_S + 5, supervised=True)
+    check(cl.dispatch({"cmd": "resume", "args": {}}).endswith("reconciler restarted") and starts == [1],
+          "no record, heartbeat older than the report's alive window: started (the report calls it "
+          "dead and the web would restart it too)")
+    no_record(None)
+    cl._restart_reconciler = lambda args: (_ for _ in ()).throw(RuntimeError("sudo rc=1 no rule"))
+    try:
+        cl.dispatch({"cmd": "resume_wait", "args": {}})
+        failed = ""
+    except RuntimeError as e:
+        failed = str(e)
+    cl._restart_reconciler = lambda args: starts.append(1) or "reconciler restarted"
+    check("did not start" in failed and "sudo rc=1 no rule" in failed and cl._resume_started_at is None,
+          "no record, start fails: the ack FAILS with the reason; nothing armed to swallow the follow-up")
+    no_record(None)
+    open(HALT, "w").write("{}")
+    real_dl = cl._downtime_lib
+    cl._downtime_lib = lambda optional=False: types.SimpleNamespace(decide=lambda names, how: names)
+    try:
+        r = cl.dispatch({"cmd": "resume_wait", "args": {"strategies": ["x"]}})
+    finally:
+        cl._downtime_lib = real_dl
+    check(not starts and "reconciler" not in r and os.path.exists(HALT),
+          "per-strategy resume_wait (strategies set): no start")
+    os.remove(HALT)
+    no_record(None)
+    os.environ["BLAVE_AGENT_LOCAL"] = "1"
+    try:
+        r = cl.dispatch({"cmd": "resume", "args": {}})
+    finally:
+        os.environ.pop("BLAVE_AGENT_LOCAL", None)
+    check(r == "resumed" and not starts,
+          "local desktop daemon: resume starts nothing (the app supervises its own reconciler and "
+          "sends its own restart_reconciler)")
+
+    # the gate holds: resume_wait on paper, the reconciler starts, its first round places nothing
+    from lib import portfolio as ws_portfolio  # the workspace copy, as the reconciler imports it
+    os.makedirs(os.path.join("strategies", "e2e_ma"), exist_ok=True)
+    json.dump({"position": 1.0, "symbol": "BTCUSDT"}, open("strategies/e2e_ma/state.json", "w"))
+    json.dump({"amounts": {"e2e_ma": 500}, "exchanges": {"e2e_ma": "paper"}},
+              open("manager/portfolio_config.json", "w"))
+    sent = []
+
+    def _start_and_round(args):
+        starts.append(1)
+        ws_portfolio.reconcile(get_positions_fn=lambda: {},
+                               place_order_fn=lambda *a, **k: sent.append(a) or {"filled": True},
+                               threshold=10)
+        return "reconciler restarted"
+
+    cl._restart_reconciler = _start_and_round
+    for cmd, want_orders in (("resume_wait", 0), ("resume", 1)):
+        no_record(None)
+        del sent[:]
+        open(HALT, "w").write("{}")
+        for p in ("state/signal_gate.json", "manager/orders.jsonl", "manager/ledger_seed.json"):
+            if os.path.exists(p):
+                os.remove(p)  # each case starts from the same empty book
+        r = cl.dispatch({"cmd": cmd, "args": {}})
+        gate_left = json.load(open("state/signal_gate.json")) if os.path.exists("state/signal_gate.json") else {}
+        check(starts == [1] and len(sent) == want_orders and not os.path.exists(HALT)
+              and gate_left == ({"e2e_ma": 1.0} if cmd == "resume_wait" else {}),
+              f"paper, strategy long, flat account, {cmd}: reconciler started, its first round "
+              f"placed {len(sent)} order(s) — want {want_orders}"
+              + (" (gate {'e2e_ma': 1.0} holds)" if cmd == "resume_wait" else " (control: no gate)"))
+    cl._restart_reconciler = lambda args: starts.append(1) or "reconciler restarted"
+    shutil.rmtree(os.path.join("strategies", "e2e_ma"))
+    for p in ("state/signal_gate.json", "manager/orders.jsonl", "manager/ledger_seed.json"):
+        if os.path.exists(p):
+            os.remove(p)
+    json.dump({"amounts": {}, "exchanges": {}}, open("manager/portfolio_config.json", "w"))
+    # a reconciler process no supervisor restart would replace (an old reconciler.py has
+    # no singleton lock: the runtime auto-updates, the workspace only on 更新): never a second one
+    no_record(None)
+    procs.update(strays=[4242])
+    r = cl.dispatch({"cmd": "resume_wait", "args": {}})
+    check(not starts and r.endswith(cl.STRAY_RESULT) and cl._resume_started_at is not None,
+          "a reconciler running outside every supervisor, no heartbeat: resume_wait starts NO second one")
+    check(cl.dispatch({"cmd": "restart_reconciler", "args": {}}) == "reconciler already started by resume"
+          and not starts, "…and the web's follow-up restart_reconciler is swallowed, not stacked either")
+    no_record(60, supervised=False)
+    procs.update(strays=[4242])
+    cl.dispatch({"cmd": "resume", "args": {}})
+    check(not starts, "…same in the 15-300 s band when the service manager says it is not running")
+    for label, strays in (("no reconciler process, or only supervised ones (a hung one under systemd / "
+                           "tmux is REPLACED by the supervised restart)", []),
+                          ("process list unreadable", None)):
+        no_record(None)
+        procs.update(strays=strays)
+        cl.dispatch({"cmd": "resume", "args": {}})
+        check(starts == [1], f"{label}: started")
+    # the restart-stop path: a stray that outlived the boot's supervisor kill
+    no_record(None)
+    now = time.time()
+    json.dump({"reason": "machine_restart", "down_to": int(now) - 3600}, open(cl.RESTART_STOP_PATH, "w"))
+    procs.update(strays=[4242])
+    r = cl.dispatch({"cmd": "resume", "args": {}})
+    check(not starts and r.endswith(cl.STRAY_RESULT) and not os.path.exists(cl.RESTART_STOP_PATH)
+          and cl._resume_started_at is not None,
+          "restart record + a stray outside the supervisor: 啟動下單 lifts the record, starts no second one")
+    # the explicit restart (settings 重啟, a turn): refused, the ack says why
+    no_record(None)
+    procs.update(strays=[4242])
+    try:
+        cl.dispatch({"cmd": "restart_reconciler", "args": {}})
+        refused = ""
+    except RuntimeError as e:
+        refused = str(e)
+    check("double every order" in refused and "4242" in refused and not starts,
+          "explicit restart_reconciler beside a stray: refused with the pid, nothing started")
+    procs.update(strays=[])
+    check(cl.dispatch({"cmd": "restart_reconciler", "args": {}}) == "reconciler restarted" and starts == [1],
+          "…no stray: the restart runs as before")
+    no_record(None)
+    procs.update(strays=[4242])
+    os.environ["BLAVE_AGENT_LOCAL"] = "1"
+    try:
+        cl.dispatch({"cmd": "restart_reconciler", "args": {}})
+    finally:
+        os.environ.pop("BLAVE_AGENT_LOCAL", None)
+    check(starts == [1], "…local desktop daemon: not asked (its own lock guards its reconciler)")
+    cl._unsupervised_reconciler_pids = real_strays
+
+    # the process list: /proc read directly (a pgrep -f pattern matches its own command line)
+    fake = os.path.join(BASE, "proc")
+    other = os.path.join(BASE, "elsewhere")
+    os.makedirs(os.path.join(other, "manager"))
+    open(os.path.join(other, "manager", "reconciler.py"), "w").close()
+
+    def fake_proc(pid, argv, cwd, ppid=1, cgroup="0::/user.slice/user-1000.slice/session-3.scope", raw=None):
+        d = os.path.join(fake, str(pid))
+        os.makedirs(d)
+        open(os.path.join(d, "cmdline"), "wb").write(
+            raw if raw is not None else b"\0".join(a.encode() for a in argv) + b"\0")
+        open(os.path.join(d, "stat"), "w").write(f"{pid} (a (b) c) S {ppid} 1 1 0 -1\n")
+        open(os.path.join(d, "cgroup"), "w").write(cgroup + "\n")
+        if cwd:
+            os.symlink(cwd, os.path.join(d, "cwd"))
+
+    run = ["python3", "manager/reconciler.py"]
+    fake_proc(101, run, WS)                                                          # hand-run, unsupervised
+    fake_proc(102, ["/opt/venv/bin/python", os.path.join(WS, "manager", "reconciler.py")], "/")
+    fake_proc(103, ["bash", "manager/start_reconciler.sh"], WS)
+    fake_proc(104, run, other)                                                       # another workspace
+    fake_proc(105, ["python3", "-c", "print('manager/reconciler.py')"], WS)
+    fake_proc(106, ["pgrep", "-f", "manager/reconciler.py"], WS)
+    fake_proc(107, run, None)                                                        # cwd unreadable
+    fake_proc(108, ["python3", "/opt/blave-agent/runtime/local_daemon.py", "--run-reconciler",
+                    "manager/reconciler.py"], WS)
+    fake_proc(109, ["python3", "-m", "py_compile", "manager/reconciler.py"], WS)      # a syntax check
+    fake_proc(110, ["python3", "-mpy_compile", "manager/reconciler.py"], WS)
+    fake_proc(111, ["python3", "-Bc", "import runpy", "manager/reconciler.py"], WS)
+    fake_proc(112, ["python3", "-u", "-X", "utf8", "-W", "ignore", "manager/reconciler.py"], WS)
+    fake_proc(113, run, WS, ppid=130,                                                # hung, under the unit
+              cgroup="0::/system.slice/blave-agent-reconciler.service")
+    fake_proc(130, ["bash", "manager/start_reconciler.sh"], WS,
+              cgroup="0::/system.slice/blave-agent-reconciler.service")
+    fake_proc(114, run, WS, ppid=131)                                                # under tmux
+    fake_proc(131, ["sh", "-c", "cd ws && bash manager/start_reconciler.sh"], WS, ppid=132)
+    fake_proc(132, None, "/", raw=b"tmux: server (/tmp/tmux-1000/default)")
+    fake_proc(115, run, WS, ppid=133)                                                # nohup bash, no tmux
+    fake_proc(133, ["bash", "manager/start_reconciler.sh"], WS)
+    fake_proc(os.getpid(), run, WS)                                                  # this process
+    os.makedirs(os.path.join(fake, "self"))
+    got = sorted(cl._unsupervised_reconciler_pids(fake))
+    check(got == [101, 102, 107, 108, 112, 115],
+          f"process scan: this workspace's reconciler RUNS outside systemd / tmux only — not py_compile, "
+          f"python -c, bash, pgrep, another workspace, this process, nor the hung one the unit or tmux "
+          f"supervises (the restart replaces those): {got}")
+    check(cl._unsupervised_reconciler_pids(os.path.join(BASE, "no-proc")) is None,
+          "…no process list: None, not []")
+    win = ("301\t4\tnssm.exe\tC:\\nssm\\nssm.exe\n"
+           "302\t301\tpowershell.exe\tpowershell -File manager\\start_reconciler_windows.ps1\n"
+           "303\t302\tpython.exe\tC:\\venv\\python.exe manager\\reconciler.py\n"
+           "304\t900\tpython.exe\tpython manager\\reconciler.py\n"
+           "305\t999\tpython.exe\t\"C:\\Program Files\\Python\\python.exe\" \"C:\\bw\\manager\\reconciler.py\"\n"
+           "306\t900\tpython.exe\tpython -m py_compile manager\\reconciler.py\n"
+           "307\t900\tpowershell.exe\tpowershell -Command Get-CimInstance ... reconciler.py\n"
+           "900\t4\texplorer.exe\tC:\\Windows\\explorer.exe\n"
+           f"{os.getpid()}\t900\tpython.exe\tpython manager\\reconciler.py\n"
+           "not a row\n")
+    got = sorted(cl._parse_windows_unsupervised(win, os.getpid()))
+    check(got == [304, 305],
+          f"Windows: a hand-started (old) reconciler counts whatever its lock — judged by supervision, "
+          f"not by the lock; the one under the NSSM service and py_compile do not: {got}")
+    shutil.rmtree(fake)
+
+    cl._reconciler_supervised = real_sup
+    open(HB, "a").close()
+
+    # what the service manager is asked, and how its answer is read
+    import platform as _pf
+    real_run, real_system, real_unit = cl.subprocess.run, _pf.system, cl.RECONCILER_UNIT_PATH
+    unit_file = os.path.join(BASE, "reconciler.service")
+    open(unit_file, "w").close()
+
+    def fake_run(answers):
+        def _run(argv, **kw):
+            a = answers.get(argv[0])
+            if isinstance(a, BaseException):
+                raise a
+            rc, out = a
+            return types.SimpleNamespace(returncode=rc, stdout=out, stderr="")
+        return _run
+
+    cases = [
+        ("Linux, unit active", True, {"systemctl": (0, "active\n")}, True),
+        ("Linux, unit inactive, no tmux session", True, {"systemctl": (3, "inactive\n"), "tmux": (1, b"")}, False),
+        ("Linux, unit failed, legacy tmux session up", True, {"systemctl": (3, "failed\n"), "tmux": (0, b"")}, True),
+        ("Linux, unit state unknown", True, {"systemctl": (0, "maintenance\n")}, None),
+        ("Linux, systemctl timed out", True, {"systemctl": subprocess.TimeoutExpired("systemctl", 15)}, None),
+        ("Linux, no unit, no tmux binary", False, {"tmux": FileNotFoundError()}, False),
+        ("Windows, service not installed", False, {"nssm": (3, b"")}, False),
+        ("Windows, SERVICE_STOPPED (UTF-16)", False, {"nssm": (0, "SERVICE_STOPPED\r\n".encode("utf-16-le"))}, False),
+        ("Windows, SERVICE_RUNNING (UTF-16)", False, {"nssm": (0, "SERVICE_RUNNING\r\n".encode("utf-16-le"))}, True),
+        ("Windows, SERVICE_START_PENDING", False, {"nssm": (0, "SERVICE_START_PENDING\r\n".encode("utf-16-le"))}, None),
+        ("Windows, SERVICE_STOP_PENDING", False, {"nssm": (0, "SERVICE_STOP_PENDING\r\n".encode("utf-16-le"))}, None),
+    ]
+    try:
+        for label, has_unit, answers, want in cases:
+            _pf.system = lambda n=label.split(",")[0]: n
+            cl.RECONCILER_UNIT_PATH = unit_file if has_unit else os.path.join(BASE, "absent")
+            cl.subprocess.run = fake_run(answers)
+            check(cl._reconciler_supervised() is want, f"service manager: {label} → {want}")
+    finally:
+        cl.subprocess.run, _pf.system, cl.RECONCILER_UNIT_PATH = real_run, real_system, real_unit
+
     del starts[:]
     cl._resume_started_at = None
-    check(cl.dispatch({"cmd": "resume", "args": {}}) == "resumed" and not starts,
-          "resume with no restart record: exactly the old behaviour, nothing started")
     json.dump({"reason": "machine_restart"}, open(cl.RESTART_STOP_PATH, "w"))
     cl._restart_reconciler = lambda args: (_ for _ in ()).throw(RuntimeError("sudo rc=1 no rule"))
     try:

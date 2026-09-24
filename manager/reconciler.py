@@ -33,7 +33,7 @@ RECONCILE_EVERY_S = 300  # 定期心跳對帳:就算沒有任何 mtime 變動也
                          # 變動(可能一小時後)才被發現
 
 
-_min_order_gate = {}  # symbol -> (expires_at, entry-side gate, reduce-side gate)
+_min_order_gate = {}  # symbol -> (expires_at, entry gate, reduce gate, whole-close gate)
 
 
 def _symbol_threshold(symbol, reduce_only=False):
@@ -86,6 +86,17 @@ def _symbol_threshold(symbol, reduce_only=False):
     over half of one. Dust under the flat THRESHOLD is left alone either way.
     Spot and a failed lookup stay on the flat THRESHOLD.
 
+    The whole-position close gate itself (`.close`, _close_gate) is THRESHOLD
+    less half a lot while a lot is under 2×THRESHOLD, else THRESHOLD. An entry
+    rounds half-up to whole lots, so the smallest position the bot opens from a
+    THRESHOLD-sized gap is about THRESHOLD − ½ lot: one Gate.io / OKX BTC
+    contract (0.0001 BTC ≈ $8.4) out of a $10 gap. Gated at the flat
+    THRESHOLD, that position — the bot's own — could never be closed. The gate
+    compares the book's cost to a lot at today's mark, so the band runs to two
+    lots' worth, not one: the same contract still closes after the mark rose
+    past $10 a lot. Dust under the line (a fine-grained instrument, where the
+    line is ~THRESHOLD) is left alone as before.
+
     Native-unit rows (asset_spec.type futures_contracts / shares, capital) never
     reach here — lib.portfolio skips the account-currency threshold for them
     entirely. In account-read mode lib.portfolio also lays its drift band
@@ -103,9 +114,20 @@ def _symbol_threshold(symbol, reduce_only=False):
             # the behaviour before this function existed.
             logging.warning(f"[reconciler] venue minimum unavailable for {symbol} ({e})")
             entry, lot_usd = THRESHOLD, 0.0
-        cached = (now + MIN_ORDER_TTL_S, entry, max(THRESHOLD, 0.5 * lot_usd))
+        cached = (now + MIN_ORDER_TTL_S, entry, max(THRESHOLD, 0.5 * lot_usd),
+                  THRESHOLD - 0.5 * lot_usd if 0 < lot_usd < 2 * THRESHOLD else THRESHOLD)
         _min_order_gate[symbol] = cached
     return cached[2] if reduce_only else cached[1]
+
+
+def _close_gate(symbol):
+    """The gate for a leg that takes the WHOLE position off (lib.portfolio
+    _close_threshold): see the end of _symbol_threshold's docstring. Never a
+    size: what the close sells is the bot's own book quantity, floored to a lot
+    (venue_wiring._book_reduce_qty), so a lower gate cannot reach the user's
+    share."""
+    _symbol_threshold(symbol, True)  # fills the cache
+    return _min_order_gate[symbol][3]
 
 
 # lib.portfolio.compute_diff records a gate for the workspace only when it is
@@ -113,6 +135,7 @@ def _symbol_threshold(symbol, reduce_only=False):
 # flat value any more, so the callable carries it. It is also the gate
 # lib.portfolio applies to a whole-position close (_close_threshold).
 _symbol_threshold.flat = THRESHOLD
+_symbol_threshold.close = _close_gate
 
 
 # ── 該不該對帳 ───────────────────────────────────────────────────────────────
@@ -576,7 +599,9 @@ def _key_fingerprint(env):
         ku = k.upper()
         if ku.startswith('BLAVE_'):
             continue
-        if ku.endswith(('_API_KEY', '_SECRET_KEY', '_API_SECRET', '_PASSPHRASE', '_PASSWORD')):
+        # _BOUND_TS: a paper rebind keeps the fixed marker keys
+        if ku.endswith(('_API_KEY', '_SECRET_KEY', '_API_SECRET', '_PASSPHRASE', '_PASSWORD',
+                        '_BOUND_TS')):
             h.update(f"{ku}={env[k]}\n".encode())
     return h.hexdigest()
 
@@ -601,19 +626,23 @@ def _classify(venue, exc):
 _halt_file_seen = False
 
 
-def _halt(reason, message, retrip=False):
+def _halt(reason, message, retrip=False, notify=True):
     """Trip HALT once; True when this call tripped it. retrip=True rewrites the
     reason of a HALT the reconciler itself tripped (an account-guard trip: the
     user must read THIS reason before resuming, since clearing the HALT is what
     confirms the account) — never anyone else's: a user's stop (web / flatten /
-    chat) keeps its source, or the platform reads it as an automatic P1."""
+    chat) keeps its source, or the platform reads it as an automatic P1.
+    notify=False: the HALT itself is the notice — the platform's `halt` P1
+    event carries this reason to the page, email and Telegram — so no machine
+    Telegram on top (the account-changed trip; canon notifications.md)."""
     global _halt_file_seen
     if guard.halted():
         if not retrip or (guard.halt_info() or {}).get('source') != 'reconciler':
             return False
     guard.trip_halt(reason, 'reconciler')  # raises if the file did not land
     _halt_file_seen = True
-    send_telegram(message)
+    if notify:
+        send_telegram(message)
     return True
 
 
@@ -777,35 +806,17 @@ def _last_actual():
 
 
 def _read_account_id(venue, env):
-    """Exchange account id for venues whose account lib ships get_account_id
-    (OKX / Bybit / BingX), or None. FAIL-SOFT: any error or an empty id is
-    logged and returns None — that skips only the account-id check for this
-    trigger. It never counts as a read failure and never halts: those
-    endpoints are unverified with real keys, and a permission-scoped key
-    (OKX 50120, Bybit 10005) must not stop a machine whose positions read fine."""
+    """(id, error, transient) — lib.portfolio._read_account_id, recorded for the
+    portfolio reporter. id None + error None = the venue's account lib cannot
+    read an id (no lib, or no get_account_id: capital)."""
     if not venue:
-        return None
-    try:
-        fn = getattr(importlib.import_module(f"lib.account_{venue}"), 'get_account_id', None)
-    except ImportError as e:
-        logging.warning(f"[reconciler] account-id check skipped (lib.account_{venue} "
-                        f"unavailable: {e})")
-        _save_account_id_read(venue, False, None)
-        return None
-    try:
-        uid = fn(env) if fn else None
-    except Exception as e:
-        code = getattr(e, 'code', None)
-        if code is None:
-            code = venue_errors.http_status(e)
-        logging.warning(f"[reconciler] account-id check skipped ({venue} {type(e).__name__} "
-                        f"code={code}): {e} — the empty-read check still runs")
-        _save_account_id_read(venue, True, f"{type(e).__name__} code={code}")
-        return None
-    if fn and not uid:
-        logging.warning(f"[reconciler] account-id check skipped ({venue}: no id returned)")
-    _save_account_id_read(venue, bool(fn), "no id returned" if fn and not uid else None)
-    return str(uid) if uid else None
+        return None, None, False
+    from lib import portfolio as _pf
+    uid, err, transient = _pf._read_account_id(venue, env)
+    if err:
+        logging.warning(f"[reconciler] {venue} account id unreadable ({err})")
+    _save_account_id_read(venue, uid is not None or err is not None, err)
+    return uid, err, transient
 
 
 def _save_account_id_read(venue, supported, error):
@@ -833,14 +844,18 @@ def _live(rows):
                for v in (rows or {}).values())
 
 
-def account_guard_decide(state, venue, account_id, prev_actual, target, actual, halted):
+def account_guard_decide(state, venue, account_id, prev_actual, target, actual, halted,
+                         reset_reason=None):
     """Pure. Returns (new_state, reason, fresh): reason = why this round must
     place nothing (None = trade on); fresh = a new trip, vs one still waiting.
 
-    A trip stores `pending` and holds every round while HALT stands — HALT
-    alone still lets reduce legs through, and those would trade an account
-    nobody has confirmed. The user clearing HALT IS the confirmation: the
-    pending account id is adopted and the empty-read check is not re-run that
+    Which account the bot's book belongs to is decided before this, by
+    lib.portfolio.book_account_check: another account id resets that venue's
+    book at once and arrives here as `reset_reason`. That trip stores
+    `pending` and holds every round while HALT stands; the user clearing HALT
+    resumes on the new account from an empty book — it confirms nothing about
+    the old book, which is already gone. `account_id` is only kept for the
+    report. Clearing any pending trip also skips the empty-read check that
     round (the snapshot it compares against is still pre-trip, so it would
     re-trip on every resume otherwise).
 
@@ -855,15 +870,11 @@ def account_guard_decide(state, venue, account_id, prev_actual, target, actual, 
             state['pending'] = pending
             return state, pending.get('reason') or 'awaiting account confirmation', False
         confirmed = True
-        if pending.get('account_id') and pending.get('venue') == venue:
-            state.update(venue=venue, account_id=pending['account_id'])
     if account_id is not None:
-        if state.get('venue') != venue or not state.get('account_id'):
-            state.update(venue=venue, account_id=account_id)
-        elif str(state['account_id']) != str(account_id):
-            reason = "exchange account changed — confirm the account before resuming"
-            state['pending'] = {'reason': reason, 'venue': venue, 'account_id': account_id}
-            return state, reason, True
+        state.update(venue=venue, account_id=account_id)
+    if reset_reason:
+        state['pending'] = {'reason': reset_reason, 'venue': venue}
+        return state, reset_reason, True
     if not confirmed and not halted and _live(prev_actual) and _live(target) \
             and not _live(actual):
         reason = ("positions read back empty while strategies still hold targets — "
@@ -872,6 +883,65 @@ def account_guard_decide(state, venue, account_id, prev_actual, target, actual, 
         state['pending'] = {'reason': reason, 'venue': venue}
         return state, reason, True
     return state, None, False
+
+
+def _bind_reset_marked(venue):
+    """runtime `bind_reset` for `venue`, read from the file (the runtime writes
+    it; this process's copy of the state predates it)."""
+    try:
+        with open(ACCOUNT_GUARD_PATH) as f:
+            mark = (json.load(f) or {}).get('bind_reset')
+    except (OSError, ValueError, AttributeError):
+        return False
+    if not venue or not isinstance(mark, dict) or mark.get('venue') != venue:
+        return False
+    return 'acked' if mark.get('acked') else True
+
+
+BOOK_HOLD_TRANSIENT_S = 600     # a network-class id-read failure this long…
+BOOK_HOLD_TRANSIENT_ROUNDS = 3  # …over this many held rounds in a row (≈ 2 heartbeats) asks
+
+
+def _book_hold(venue, verdict, detail, now=None):
+    """The account id could not be told after a credentials change while the
+    bot's book on this venue holds positions: nothing trades until it reads or
+    the user answers whether it is the same account (runtime
+    `book_account_confirm`). Unreadable → HALT once, with the reason, and
+    `ask` = the report asks the user; transient → wait for the next round, but
+    only BOOK_HOLD_TRANSIENT_S / _ROUNDS: a read that keeps failing is treated
+    as unreadable, so a venue that skips every round never sits behind a page
+    that reads 執行中. Either way the check stays due, so every round retries."""
+    global _guard_due
+    now = time.time() if now is None else now
+    held = _account_guard.get('book_hold') or {}
+    same_hold = held.get('venue') == venue
+    t_since = held.get('transient_since') if same_hold else None
+    t_rounds = int(held.get('transient_rounds') or 0) if same_hold else 0
+    if verdict == 'transient':
+        t_since, t_rounds = t_since or now, t_rounds + 1
+        if t_rounds >= BOOK_HOLD_TRANSIENT_ROUNDS and now - t_since >= BOOK_HOLD_TRANSIENT_S:
+            verdict = 'unreadable'
+            detail = (f"{detail} (the account id read has failed for "
+                      f"{int((now - t_since) // 60)} minutes)")
+    # an unanswered question re-HALTs after any resume (chat, a runtime that
+    # predates its own check): the page must never read 執行中 over a held venue
+    fresh = verdict == 'unreadable' and not (same_hold and held.get('halted') and guard.halted())
+    state = dict(_account_guard)
+    state['book_hold'] = {'venue': venue, 'reason': detail,
+                          'since': held.get('since') if same_hold and held.get('since')
+                          else int(now),
+                          'transient_since': t_since, 'transient_rounds': t_rounds,
+                          'ask': bool(same_hold and held.get('ask')) or verdict == 'unreadable',
+                          'halted': bool(same_hold and held.get('halted'))
+                          or verdict == 'unreadable'}
+    if state != _account_guard:
+        _save_account_guard(state)
+    if fresh:
+        logging.error(f"[reconciler] {detail}")
+        if not _halt(detail, f"🚨 HALT engaged: {detail}", retrip=True):
+            send_telegram(f"⚠️ {detail}")
+    _guard_due = True
+    raise ReadSkipped(f"account id unverified: {detail}")
 
 
 def _get_positions_guarded(now=None):
@@ -886,7 +956,7 @@ def _get_positions_guarded(now=None):
         if _key_fp is not None:
             logging.info("[reconciler] exchange credentials changed — account guard due")
         _key_fp, _guard_due = fp, True
-    check = _guard_due or bool(_account_guard.get('pending'))
+    check = _guard_due or bool(_account_guard.get('pending')) or bool(_account_guard.get('book_hold'))
     try:
         result = get_positions()
     except Exception as e:
@@ -909,18 +979,52 @@ def _get_positions_guarded(now=None):
         venue = _current_venue()
     except Exception as ve:
         logging.warning(f"[reconciler] venue lookup failed ({ve}) — account-id check skipped")
-    account_id = _read_account_id(venue, env)
+    account = _read_account_id(venue, env)
+    verdict, detail = 'unsupported', None
+    if venue:
+        from lib import portfolio as _pf
+        try:
+            verdict, detail = _pf.book_account_check(env, venue, account=account)
+        except Exception as e:
+            verdict, detail = 'unreadable', (f"{venue} book account check failed "
+                                             f"({type(e).__name__}: {e})")
+    if verdict in ('unreadable', 'transient'):
+        _book_hold(venue, verdict, detail, now)
+    elif _account_guard.get('book_hold'):
+        state = dict(_account_guard)
+        state.pop('book_hold')
+        _save_account_guard(state)
+    reset_reason, prev_actual = None, _last_actual()
+    # a bind that already reset this venue's book for another account
+    # (runtime _mark_bind_account_change) is the same event, found earlier
+    bound_reset = _bind_reset_marked(venue)
+    if verdict == 'reset' or bound_reset:
+        logging.warning(f"[reconciler] {detail or f'{venue}: another account bound at bind'}")
+        # the last snapshot is the previous account's: no empty-read check against it
+        prev_actual = {}
+        if venue != 'paper':  # a paper rebind or reset is always the user's own act
+            from lib import portfolio as _pf
+            reset_reason = _pf.account_changed_reason(venue)
+            if verdict != 'reset' and bound_reset == 'acked':
+                # the user already pressed 啟動下單 after that bind: the bind's own
+                # HALT (reported right after the credentials command) was the
+                # notice — the platform `halt` P1 carried this reason; nothing
+                # more to send, and no second HALT
+                reset_reason = None
     state, reason, fresh = account_guard_decide(
-        _account_guard, venue, account_id, _last_actual(), aggregate_portfolio(), result,
-        guard.halted())
-    if state != _account_guard:
+        _account_guard, venue, account[0], prev_actual, aggregate_portfolio(), result,
+        guard.halted(), reset_reason=reset_reason)
+    state.pop('bind_reset', None)
+    if state != _account_guard or bound_reset:  # the runtime's marker lives only in the file
         _save_account_guard(state)
     _guard_due = False
     if reason:
         if fresh:
-            logging.error(f"[reconciler] account guard tripped on {venue}: {reason} "
-                          f"(stored={_account_guard.get('account_id')}, read={account_id})")
-            if not _halt(reason, f"🚨 HALT engaged: {reason}", retrip=True):
+            logging.error(f"[reconciler] account guard tripped on {venue}: {reason}")
+            # an account change: the HALT is the notice (platform `halt` P1 with
+            # this reason) — one notice, no machine Telegram beside it
+            if not _halt(reason, f"🚨 HALT engaged: {reason}", retrip=True,
+                         notify=not reset_reason):
                 # someone else's HALT stands and keeps its source; still say why
                 # resuming now also confirms the account
                 send_telegram(f"⚠️ {reason} (trading is already stopped — resuming "
@@ -973,8 +1077,45 @@ _restart_stop_logged = False
 # reconciler.py on disk says nothing about an old process still running).
 GATED_MARKER_PATH = Path('state/heartbeat/reconciler.gated')
 
+# One reconciler per workspace, whoever started it (systemd, tmux, NSSM, the
+# desktop app, a hand run): two would each place the same diff — every order
+# doubled — and the second one's startup sweep would cancel the first one's
+# resting chase orders. The lock lives exactly as long as the process (the OS
+# drops it on any exit, SIGKILL included), so a crash leaves nothing stale.
+# DUPLICATE_EXIT tells the watchdog wrappers to retry quietly, not alert.
+SINGLETON_PATH = 'state/reconciler.pid'
+DUPLICATE_EXIT = 75
+
+
+def _hold_singleton():
+    """The fd holding the lock (keep it open), or None: another one runs."""
+    os.makedirs(os.path.dirname(SINGLETON_PATH), exist_ok=True)
+    fd = os.open(SINGLETON_PATH, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        try:
+            import fcntl
+        except ImportError:
+            import msvcrt
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        return None
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, str(os.getpid()).encode())
+    except OSError:
+        pass  # the pid is for humans; the lock is what counts
+    return fd
+
 
 if __name__ == '__main__':
+    _singleton_fd = _hold_singleton()
+    if _singleton_fd is None:
+        logging.warning(f"[reconciler] another reconciler holds {SINGLETON_PATH} — "
+                        f"exiting without a round")
+        sys.exit(DUPLICATE_EXIT)
     logging.info(f"Reconciler started (poll={POLL_INTERVAL}s, "
                  f"threshold=max({THRESHOLD}, per-symbol venue minimum))")
 

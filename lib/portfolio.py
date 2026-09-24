@@ -23,7 +23,7 @@ def _append_reconciler_log(order):
     except OSError as e:
         logging.error(f"orders.jsonl append failed: {e}")
         try:
-            if load_portfolio_config().get('self_ledger') and not guard.halted():
+            if own_positions_only(load_portfolio_config()) and not guard.halted():
                 # trip_halt sets its in-memory flag FIRST (lib/guard) — even
                 # when its own file write also fails (same full disk), this
                 # process stops opening exposure on a book missing a fill
@@ -49,7 +49,8 @@ def _notify_best_effort(msg):
         logging.error(f"[notify-unavailable] ({e}) {msg}")
 
 
-def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False):
+def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, read_only=False,
+                              own_only=False, needs_baseline=None, baseline_pending=None):
     """Record what this reconcile actually saw, for anything that needs to show
     live positions without querying the exchange itself.
 
@@ -93,6 +94,14 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, r
             # report in the runtime — two update channels: a file on disk says
             # nothing about the code the live process loaded).
             doc['read_only'] = True
+        if own_only:
+            # same reason as read_only: the running code's own word that it
+            # never touches a position outside its book (the runtime reports it)
+            doc['own_only'] = True
+        if needs_baseline is not None:
+            doc['needs_baseline'] = needs_baseline
+        if baseline_pending:
+            doc['baseline_pending'] = baseline_pending
         with open('manager/last_reconcile.json', 'w') as f:
             json.dump(doc, f, indent=2)
     except Exception as e:
@@ -165,23 +174,312 @@ def _load_ledger_seed():
     test-trade history into a phantom position). A per-symbol 'ts'
     (zero_ledger_symbols) overrides the global cutoff for that symbol.
     Corrupt/missing file reads as no seed at all: every entry in orders.jsonl
-    counts, from the start of the file."""
-    empty = {'seeded_at': '', 'symbols': {}}
+    counts, from the start of the file.
+
+    Rows are per VENUE (2026-09-23): key "<venue>|<symbol>" with a 'venue'
+    field. A key without a venue is a row from before that and applies to every
+    venue. `own_only_basis` = this baseline was written for the own-positions
+    rule (by this lib, never by the runtime or an older lib) — see book_ready()."""
+    empty = {'seeded_at': '', 'own_only_basis': None, 'symbols': {}, 'pending': {},
+             'venue_reset': {}, 'venue_account': {}}
     try:
         with open(_LEDGER_SEED_PATH) as f:
             raw = json.load(f)
         if not isinstance(raw, dict):
             return empty
-        return {
-            'seeded_at': str(raw.get('seeded_at') or ''),
-            'symbols': {k: {'size': float(v.get('size', 0) or 0),
-                            'qty': (float(v['qty']) if v.get('qty') is not None
-                                    else None),
-                            'ts': str(v.get('ts') or '')}
-                        for k, v in (raw.get('symbols') or {}).items()},
-        }
+        rows = {}
+        for k, v in (raw.get('symbols') or {}).items():
+            venue = v.get('venue') or None
+            rows[k] = {'size': float(v.get('size', 0) or 0),
+                       'qty': (float(v['qty']) if v.get('qty') is not None else None),
+                       'ts': str(v.get('ts') or ''),
+                       'venue': venue,
+                       'symbol': k.split('|', 1)[1] if venue and '|' in k else k}
+        pending = raw.get('pending')
+        resets = raw.get('venue_reset')
+        accounts = raw.get('venue_account')
+        return {'seeded_at': str(raw.get('seeded_at') or ''),
+                'own_only_basis': raw.get('own_only_basis'),
+                'symbols': rows,
+                'pending': pending if isinstance(pending, dict) else {},
+                # {venue: ts}: that venue's book restarts at ts (another account
+                # bound there, or the user reset it) — earlier rows and fills are gone
+                'venue_reset': ({str(k): str(v) for k, v in resets.items()}
+                                if isinstance(resets, dict) else {}),
+                # {venue: {'id', 'fp', 'at'}}: the account the book was built on
+                # (book_account_check)
+                'venue_account': ({str(k): v for k, v in accounts.items() if isinstance(v, dict)}
+                                  if isinstance(accounts, dict) else {})}
     except (OSError, ValueError, AttributeError):
         return empty
+
+
+def _seed_key(symbol, venue):
+    return f"{venue}|{symbol}" if venue else symbol
+
+
+_CURRENT = object()  # "the venue this machine trades on" — see book_venue()
+
+
+def book_venue():
+    """The venue the bot's book is read and written for: the one the reconciler
+    trades on (capital when strategies route there, else the auto-wired venue).
+    None when no venue can be told — the book is then read across venues, as
+    before books were per venue."""
+    try:
+        if any(v == 'capital' for v in (load_portfolio_config().get('exchanges') or {}).values()):
+            return 'capital'
+        from lib.venue_wiring import detect_venue, read_env
+        return detect_venue(read_env())
+    except Exception:
+        return None
+
+
+def _resolve_venue(venue):
+    return book_venue() if venue is _CURRENT else venue
+
+
+def _creds_fp(env, venue):
+    """Digest of this venue's credential values (.env `<VENUE>_*`, the prefix
+    flatten/_venues and the account reader discover venues by) — only ever
+    compared to itself: it tells "the same key as the last id read" (so an
+    unreadable id changes nothing), never which account the book is (that is
+    the exchange's id)."""
+    h = hashlib.sha256()
+    prefix = f"{venue.upper()}_"
+    for k in sorted(env or {}):
+        ku = str(k).upper()
+        if not ku.startswith(prefix):
+            continue
+        if ku.endswith(('_API_KEY', '_SECRET_KEY', '_API_SECRET', '_PASSPHRASE', '_PASSWORD',
+                        '_BOUND_TS')):
+            h.update(f"{ku}={env[k]}\n".encode())
+    return h.hexdigest()
+
+
+def _read_account_id(venue, env):
+    """(id, error, transient). id None + error None = no account lib, or one
+    without get_account_id (capital) — nothing to compare."""
+    import importlib
+    try:
+        mod = importlib.import_module(f"lib.account_{venue}")
+    except ImportError:
+        return None, None, False
+    fn = getattr(mod, 'get_account_id', None)
+    if fn is None:
+        return None, None, False
+    try:
+        uid = fn(env)
+    except Exception as e:
+        from lib import venue_errors
+        try:
+            kind = (getattr(mod, 'classify', None) or venue_errors.classify)(e) \
+                or venue_errors.classify(e)
+        except Exception:
+            kind = venue_errors.UNKNOWN
+        code = getattr(e, 'code', None) or venue_errors.http_status(e)
+        # class and code only: an exception message can carry a signed URL
+        return None, f"{type(e).__name__} code={code}", kind == venue_errors.TRANSIENT
+    if not uid:
+        return None, "no id returned", False
+    return str(uid), None, False
+
+
+def _venue_book_open(venue):
+    return any(float(r.get('size') or 0) or float(r.get('qty') or 0)
+               for r in (ledger_positions(venue) or {}).values())
+
+
+def book_account_check(env=None, venue=_CURRENT, account=_CURRENT):
+    """Is the bot's book on `venue` the book of the account these credentials
+    open? Run before anything trades out of the book after a credentials write
+    (the bind, manager/reconciler at start and on every key change, flatten.py).
+    Identity is the exchange's own account id
+    (lib.account_<venue>.get_account_id), kept per venue in the seed's
+    `venue_account` — never the key, so a key rotation keeps the book:
+      same id        → 'ok';
+      another id     → 'reset': that venue's book restarts now (`venue_reset`)
+                       and the new id is recorded, before the caller reads the
+                       book and whatever any HALT or its clearing says later;
+      no record      → 'ok', id recorded (a book from before ids were kept is
+                       taken as this account's);
+      id unreadable  → 'ok' only when nothing rides on it: the same credentials
+                       as the last read (one key opens one account), no open
+                       row in this venue's book, or no record at all (the first
+                       check after this lib lands — taken as this key's, as a
+                       readable id would be). Else 'unreadable' ('transient'
+                       for a network-class error): the caller must not trade
+                       this venue's book until the id reads, or until the user
+                       answers whether it is the same account
+                       (book_account_confirm, runtime `book_account_confirm`).
+    'unsupported' = the venue's account lib has no get_account_id (capital).
+    `account` = an id the caller already read ((id, error, transient) tuple),
+    so the reconciler's guard and this check share one request.
+    Returns (verdict, detail)."""
+    venue = _resolve_venue(venue)
+    if not venue:
+        return 'unsupported', 'no venue'
+    if env is None:
+        from lib.venue_wiring import read_env
+        env = read_env()
+    uid, err, transient = _read_account_id(venue, env) if account is _CURRENT else account
+    if uid is None and err is None:
+        return 'unsupported', f"lib.account_{venue} has no get_account_id"
+    fp = _creds_fp(env, venue)
+    seed = _load_ledger_seed()
+    accounts = dict(seed.get('venue_account') or {})
+    rec = accounts.get(venue)
+    now = datetime.utcnow().isoformat()
+    verdict, detail = 'ok', None
+    if uid is not None:
+        if rec is not None and rec.get('id') and str(rec['id']) != uid:
+            verdict = 'reset'
+            detail = f"another {venue} account is bound — that venue's book was reset"
+        elif rec is not None and not rec.get('id') and rec.get('fp') != fp \
+                and _venue_book_open(venue):
+            verdict = 'unreadable'
+            detail = (f"{venue}: Blave's positions there were recorded under a key whose "
+                      f"account id could not be read, and the key has changed — confirm "
+                      f"whether the new key is the same {venue} account")
+        if verdict != 'unreadable':
+            new = {'id': uid, 'fp': fp, 'at': now}
+            if verdict == 'reset':
+                seed['venue_reset'] = {**(seed.get('venue_reset') or {}), venue: now}
+                # a symbol still waiting to be migrated would adopt the NEW account's holding
+                seed['pending'] = {k: v for k, v in (seed.get('pending') or {}).items()
+                                   if not str(k).startswith(f"{venue}|")}
+                guard.audit("book_reset", venue=venue, reason="account_changed")
+            if verdict == 'reset' or rec is None or rec.get('id') != uid or rec.get('fp') != fp:
+                accounts[venue] = new
+                seed['venue_account'] = accounts
+                _save_ledger_seed(seed)
+        return verdict, detail
+    if rec is not None and rec.get('fp') == fp:
+        return 'ok', f"{venue} account id unreadable ({err}); credentials unchanged"
+    if rec is None or not _venue_book_open(venue):
+        # nothing recorded yet (a book from before ids were kept is taken as this
+        # key's, as with a readable id), or nothing to protect: remember the key.
+        # A verified id stays: an unreadable read is no evidence against it, and
+        # a later key of another account must still be told apart by the exchange
+        accounts[venue] = {'id': (rec or {}).get('id'), 'fp': fp, 'at': now}
+        seed['venue_account'] = accounts
+        _save_ledger_seed(seed)
+        return 'ok', f"{venue} account id unreadable ({err}); recorded against this key"
+    return ('transient' if transient else 'unreadable',
+            f"{venue}: the new key's account id could not be read ({err}), so Blave "
+            f"cannot tell whether its {venue} positions are on this account — confirm "
+            f"whether the new key is the same {venue} account")
+
+
+def account_changed_reason(venue):
+    """The HALT reason (and notice) when another exchange account is found on
+    `venue` — at bind (runtime) or by the reconciler; one sentence for both."""
+    return (f"another {venue} account is bound — Blave's {venue} book was reset and Blave no "
+            f"longer manages the positions it opened on the previous account (close them "
+            f"there yourself if needed). Press 啟動下單 to trade this account from an empty book")
+
+
+def _account_guard_state():
+    try:
+        with open(guard.ACCOUNT_GUARD_PATH) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def book_hold_asking(venue):
+    """Is the report asking the user about `venue` right now
+    (account_guard.book_hold with `ask`)?"""
+    hold = _account_guard_state().get('book_hold')
+    return isinstance(hold, dict) and bool(hold.get('ask')) and hold.get('venue') == venue
+
+
+def book_account_confirm(venue, same, env=None):
+    """The user's answer to a book hold (book_account_check → 'unreadable'):
+    is the key now bound on `venue` the same exchange account the bot's book
+    there was built on? Never places an order.
+      same=True  → the book is kept; the current key (and its id, else the one
+                   recorded) becomes the book's account.
+      same=False → that venue's book restarts now (`venue_reset`): what the bot
+                   held there is the user's; the current key becomes the book's
+                   account.
+    Idempotent: the answer is stored with the key it was given for, and the
+    same answer again changes nothing ('unchanged'). It acts only while the
+    report is asking about this venue right now (book_hold_asking) and the
+    exchange cannot decide itself; otherwise it changes nothing
+    ('nothing_to_confirm'), so a stale or replayed answer can never empty — or
+    keep — a book.
+    A 'same' after a 'different' for the same key is refused: the reset cannot
+    be undone. Audited. Returns the outcome string."""
+    venue = str(venue or "").lower()
+    if env is None:
+        from lib.venue_wiring import read_env
+        env = read_env()
+    fp = _creds_fp(env, venue)
+    seed = _load_ledger_seed()
+    accounts = dict(seed.get('venue_account') or {})
+    rec = accounts.get(venue)
+    answer = 'same' if same else 'different'
+
+    def _refuse(why):
+        guard.audit("book_account_confirm", venue=venue, same=bool(same), outcome="refused")
+        raise ValueError(why)
+
+    uid = None
+    answered = rec is not None and rec.get('fp') == fp and rec.get('answer')
+    if answered == answer:
+        outcome = 'unchanged'
+    elif answered == 'different' and same:
+        _refuse(f"{venue}: already answered 'different account' for this key — "
+                f"the book was reset and cannot be restored")
+    elif not book_hold_asking(venue):
+        # only the question being asked right now can be answered: a stale or
+        # replayed answer (another device, an old dialog) must never touch a book
+        outcome = 'nothing_to_confirm'
+    elif rec is None or not _venue_book_open(venue):
+        outcome = 'nothing_to_confirm'
+    else:
+        uid = _read_account_id(venue, env)[0]
+        # both ids readable: the exchange decides (book_account_check), not the user
+        outcome = 'nothing_to_confirm' if uid is not None and rec.get('id') else None
+    if outcome:
+        guard.audit("book_account_confirm", venue=venue, same=bool(same), outcome=outcome)
+        return outcome
+    if uid is None:
+        uid = _read_account_id(venue, env)[0]
+    now = datetime.utcnow().isoformat()
+    if same:
+        if uid is not None and rec and rec.get('id') and str(rec['id']) != uid:
+            _refuse(f"{venue}: the exchange reports another account for this key — "
+                    f"not the same account")
+        accounts[venue] = {'id': uid or (rec or {}).get('id'), 'fp': fp, 'at': now,
+                           'answer': answer}
+        outcome = 'kept'
+    else:
+        seed['venue_reset'] = {**(seed.get('venue_reset') or {}), venue: now}
+        seed['pending'] = {k: v for k, v in (seed.get('pending') or {}).items()
+                           if not str(k).startswith(f"{venue}|")}
+        accounts[venue] = {'id': uid, 'fp': fp, 'at': now, 'answer': answer}
+        outcome = 'reset'
+    seed['venue_account'] = accounts
+    _save_ledger_seed(seed)
+    guard.audit("book_account_confirm", venue=venue, same=bool(same), outcome=outcome)
+    return outcome
+
+
+def book_ready(config=None):
+    """The book has a baseline the own-positions rule can trust: written by this
+    lib (`own_only_basis`), or a machine that was already on the book
+    (`"self_ledger": true`, whose seed the runtime or seed_ledger.py wrote).
+    A bare `seeded_at` is not enough: a newer runtime writes one on a full
+    unbind beside an older lib that keeps trading the whole account, and those
+    fills are not the bot's book."""
+    seed = _load_ledger_seed()
+    if not seed['seeded_at']:
+        return False
+    cfg = load_portfolio_config() if config is None else config
+    return seed.get('own_only_basis') == 1 or (cfg or {}).get('self_ledger') is True
 
 
 def _save_ledger_seed(seed):
@@ -192,13 +490,98 @@ def _save_ledger_seed(seed):
     # orders.jsonl from the top (a much larger phantom ledger), and that
     # mis-read would land exactly during a panic close-all.
     os.makedirs('manager', exist_ok=True)
+    out = {'seeded_at': seed.get('seeded_at') or '',
+           'symbols': {k: {n: v for n, v in r.items() if n != 'symbol' and (n != 'venue' or v)}
+                       for k, r in (seed.get('symbols') or {}).items()}}
+    if seed.get('own_only_basis') is not None:
+        out['own_only_basis'] = seed['own_only_basis']
+    if seed.get('pending'):
+        out['pending'] = seed['pending']
+    if seed.get('venue_reset'):
+        out['venue_reset'] = seed['venue_reset']
+    if seed.get('venue_account'):
+        out['venue_account'] = seed['venue_account']
     tmp = _LEDGER_SEED_PATH + '.tmp'
     with open(tmp, 'w') as f:
-        json.dump(seed, f, indent=2)
+        json.dump(out, f, indent=2)
     os.replace(tmp, _LEDGER_SEED_PATH)
 
 
-def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None):
+def claim_unvenued_rows(venue=_CURRENT):
+    """Rows written before books were per venue (seed_ledger --absorb, older
+    zero rows) carry no venue and would read as the bot's on EVERY bound venue
+    — close-all would then close the same quantity on a second venue, out of
+    the user's position there. Each is claimed, once, for the venue it belongs
+    to:
+      - one venue bound: that venue (the row was written for the only one);
+      - several: the venue every logged fill of that symbol names
+        (orders.jsonl `exchange`). The current route is not evidence — it may
+        have moved since. No fill, or fills on two venues: the row is parked
+        as "?" — no venue's book reads it (the bot's old share there is left
+        alone, never sold on the wrong venue) — and said once.
+    A newer row of the same symbol on the claimed venue wins."""
+    venue = _resolve_venue(venue)
+    if not venue:
+        return
+    seed = _load_ledger_seed()
+    rows = seed['symbols']
+    old = [k for k, r in rows.items() if r['venue'] is None]
+    if not old:
+        return
+    bound = _bound_venues(venue)
+    fills = _fill_venues() if len(bound) > 1 else None
+    parked = []
+    for k in old:
+        r = rows.pop(k)
+        if fills is None:
+            v = venue
+        else:
+            seen = fills.get(r['symbol'], set())
+            v = next(iter(seen)) if len(seen) == 1 and next(iter(seen)) in bound else None
+        if v is None:
+            rows[_seed_key(r['symbol'], '?')] = {**r, 'venue': '?'}
+            parked.append(r['symbol'])
+            continue
+        key = _seed_key(r['symbol'], v)
+        if key in rows and rows[key]['ts'] >= r['ts']:
+            continue
+        rows[key] = {**r, 'venue': v}
+    _save_ledger_seed(seed)
+    logging.info(f"[ledger] rows without a venue claimed: {sorted(old)}; parked: {parked}")
+    if parked:
+        guard.audit('ledger_row_parked', symbols=parked, bound=sorted(bound))
+        _record_order_error(','.join(sorted(parked)), '*', "ledger: an old book row doesn't say "
+                            "which exchange it is on, and the fills don't either — Blave leaves "
+                            "that position alone on every exchange; reseed the book to hand it back")
+
+
+def _bound_venues(venue):
+    """The venues this machine has bound — the one it trades on included."""
+    try:
+        from lib.venue_wiring import official_venues, read_env
+        return set(official_venues(read_env())) | {venue}
+    except Exception:
+        return {venue}
+
+
+def _fill_venues():
+    """{symbol: {exchange, …}} over every fill logged in orders.jsonl."""
+    out = {}
+    try:
+        with open(_ORDERS_LOG_PATH) as f:
+            for line in f:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if e.get('symbol') and e.get('exchange'):
+                    out.setdefault(e['symbol'], set()).add(e['exchange'])
+    except OSError:
+        pass
+    return out
+
+
+def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None, venue=_CURRENT):
     """One-time baseline for the self-ledger. Two modes — picking the wrong
     one on an account that HOLDS positions trades real money, so the default
     is the one that never touches what the user already owns:
@@ -233,6 +616,7 @@ def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None):
     caller to show the user.
     """
     now = datetime.utcnow().isoformat()
+    venue = _resolve_venue(venue)
     symbols = {}
     if absorb:
         qtys = (get_qty_fn() or {}) if get_qty_fn else {}
@@ -244,16 +628,19 @@ def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None):
             # a quantity on the other side of the value is not this position
             if qty is not None and float(qty) * signed <= 0:
                 qty = None
-            symbols[symbol] = {'size': signed,
-                               'qty': float(qty) if qty is not None else None,
-                               'ts': now}
+            symbols[_seed_key(symbol, venue)] = {
+                'size': signed, 'qty': float(qty) if qty is not None else None,
+                'ts': now, 'venue': venue, 'symbol': symbol}
     # 'seeded_at' cuts off history for EVERY symbol, incl. ones with no row —
     # pre-seed orders.jsonl history must never leak into the ledger
-    _save_ledger_seed({'seeded_at': now, 'symbols': symbols})
-    return {k: v['size'] for k, v in symbols.items()}
+    # which account each venue's book belongs to outlives a re-seed: fills from
+    # here on are still that account's (book_account_check)
+    _save_ledger_seed({'seeded_at': now, 'own_only_basis': 1, 'symbols': symbols,
+                       'venue_account': _load_ledger_seed()['venue_account']})
+    return {v['symbol']: v['size'] for v in symbols.values()}
 
 
-def zero_ledger_symbols(symbols):
+def zero_ledger_symbols(symbols, venue=_CURRENT):
     """Reset the self-ledger baseline to flat, timestamped now, for exactly
     these symbols — every OTHER symbol's seed and accumulated history is left
     untouched. Use after closing a real position OUTSIDE the normal target-vs-
@@ -268,18 +655,389 @@ def zero_ledger_symbols(symbols):
     """
     if not symbols:
         return
+    venue = _resolve_venue(venue)
     seed = _load_ledger_seed()
     now = datetime.utcnow().isoformat()
     for symbol in symbols:
-        seed['symbols'][symbol] = {'size': 0.0, 'qty': 0.0, 'ts': now}
+        seed['symbols'][_seed_key(symbol, venue)] = {'size': 0.0, 'qty': 0.0, 'ts': now,
+                                                     'venue': venue, 'symbol': symbol}
     _save_ledger_seed(seed)
+
+
+def _row_signed(row):
+    row = row or {}
+    size = float(row.get('size') or 0)
+    side = row.get('side')
+    return size if side in ('long', 'buy') else (-size if side in ('short', 'sell') else 0.0)
+
+
+def _spot_holding(sym):
+    """Base units of `sym`'s coin in the bound venue's spot wallet. Raises when
+    it can't be read — the baseline then waits a round (a spot row without a
+    quantity can never be sold, lib.venue_wiring._spot_legacy_refused)."""
+    import importlib
+    from lib.venue_wiring import _spot_base, detect_venue, read_env
+    env = read_env()
+    order = importlib.import_module(f"lib.order_{detect_venue(env)}")
+    return float(order.get_spot_balances(env).get(_spot_base(sym), 0.0))
+
+
+def _row_signed(row):
+    row = row or {}
+    size = float(row.get('size') or 0)
+    side = row.get('side')
+    return size if side in ('long', 'buy') else (-size if side in ('short', 'sell') else 0.0)
+
+
+def _funded_states_unreadable(config):
+    """Funded strategies whose state.json is on disk but can't be parsed this
+    round (half-written, corrupt): aggregate_portfolio skips them, so the target
+    silently lacks their position. Not counted: a strategy that never ran (no
+    file), and a parsed state with no `symbol` — aggregate_portfolio skips that
+    one by design every round (a Type C portfolio strategy writes no
+    single-symbol state; lib/runner's Type C live branch only writes stats), so
+    it is never a position of a single symbol here and waiting on it would
+    never end."""
+    exchanges = (config or {}).get('exchanges') or {}
+    bad = []
+    for name, amt in strategy_amounts(config).items():
+        if not amt or not exchanges.get(name):
+            continue
+        path = f'strategies/{name}/state.json'
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                st = json.load(f)
+            if not isinstance(st, dict):
+                bad.append(name)
+        except (OSError, ValueError):
+            bad.append(name)
+    return sorted(bad)
+
+
+def _venue_quantize(venue, key, qty, lots):
+    """Floor an unsigned BASE quantity to what the venue can trade; below its
+    minimum → 0. Lot-based rows → whole lots.
+
+    Swap: floored to lib.venue_wiring._lot_base (one step in BASE units, the
+    contract value already applied — the unit every official lib's sizing uses),
+    then format_qty only as the minimum gate. Its return value is never used:
+    OKX and Gate.io return CONTRACTS there (0.035 BTC comes back as "3.5" /
+    "350"), and each lib's docstring says the same. Spot: format_spot_qty floors
+    to the spot step and returns BASE units on every official lib."""
+    import importlib
+    import math
+    if lots:
+        return float(math.floor(qty + 1e-9))
+    from lib.venue_wiring import _lot_base, read_env
+    env = read_env()
+    order = importlib.import_module(f"lib.order_{venue}")
+    sym, market = split_key(key)
+    if market == 'spot':
+        try:
+            out = order.format_spot_qty(env, sym, qty)
+        except ValueError:
+            return 0.0
+        return float(out) if out else 0.0
+    lot = _lot_base(order, env, sym)
+    if not lot > 0:
+        raise ValueError(f"{sym}: no lot size from lib.order_{venue}")
+    q = float(f"{math.floor(qty / lot + 1e-9) * lot:.12g}")
+    if q <= 0:
+        return 0.0
+    try:
+        ok = order.format_qty(env, sym, q)
+    except ValueError:
+        return 0.0
+    return q if ok else 0.0
+
+
+_baseline_seen = None  # the held set the previous round saw, for the two-read confirmation
+
+
+# a wait that no amount of waiting ends by itself (confirming / inflight / unconfigured do)
+_STUCK_REASONS = ('state_unreadable', 'error', 'qty_mismatch', 'no_venue')
+_BASELINE_FALLBACK_ROUNDS = 3
+_BASELINE_FALLBACK_S = 600
+_baseline_wait = None  # {'reason', 'since', 'rounds'} of the current stuck wait
+
+
+def _baseline_stuck(waiting):
+    """True once the baseline has waited on the same non-transient reason for
+    _BASELINE_FALLBACK_ROUNDS rounds AND _BASELINE_FALLBACK_S seconds."""
+    global _baseline_wait
+    reason = (waiting or {}).get('reason')
+    if reason not in _STUCK_REASONS:
+        _baseline_wait = None
+        return False
+    now = time.time()
+    if not _baseline_wait or _baseline_wait['reason'] != reason:
+        _baseline_wait = {'reason': reason, 'since': now, 'rounds': 0}
+    _baseline_wait['rounds'] += 1
+    stuck = (_baseline_wait['rounds'] >= _BASELINE_FALLBACK_ROUNDS
+             and now - _baseline_wait['since'] >= _BASELINE_FALLBACK_S)
+    if stuck:
+        _baseline_wait = None
+    return stuck
+
+
+class _BaselineWait(Exception):
+    def __init__(self, reason, symbol):
+        super().__init__(reason)
+        self.reason, self.symbol = reason, symbol
+
+
+# account notional up to this × the target notional (same side) is adopted whole
+_ADOPT_WHOLE_RATIO = 1.5
+
+
+def _auto_baseline(target, actual, config, fallback=False):
+    """Write the book's baseline on the first round of the own-positions rule
+    (a machine from before it, or a lost seed). None = written, reconcile
+    normally; otherwise {'reason', 'symbols'} for the snapshot's
+    `needs_baseline`, and this round stays read-only.
+
+    Such a machine has been reading the WHOLE account as its own, so its bot
+    and manual positions are mixed. The bot's share of each symbol is taken as
+    min(|account|, |target|) when the two are on the SAME side (Wei 2026-09-23)
+    — the most a strategy can own of what is there — and the rest is the
+    user's. Everything else is the user's: a symbol no funded strategy trades
+    (a removed strategy's leftover included), a flat target, and an account on
+    the other side of its target (a short under a long target: the bot owns 0
+    and buys its target from there). Nothing in this rule ever sells: the
+    adopted cost is never above the target.
+
+    How much of the quantity (Wei 2026-09-23): up to _ADOPT_WHOLE_RATIO × the
+    target's notional, the WHOLE account quantity is the bot's (a profitable
+    bot position is worth more than its target; splitting it would leave the
+    bot's own last lot to the user). Above that, the target's share, floored to
+    the venue step in base units (_venue_quantize); the rest is the user's. A
+    venue that reports no quantity (a dict-contract lib) gets a legacy row.
+
+    The decision is permanent, so it waits for inputs it can trust: the
+    portfolio is configured, every funded strategy's state is readable, every
+    quantity read succeeds, and two rounds in a row saw the same positions (an
+    empty or short answer from the venue would make the bot's own positions the
+    user's for good). TWAP / chase in flight waits too — seeding now would
+    double-count their fills.
+
+    fallback=True (reconcile, after _baseline_stuck): a wait that would never
+    end is not waited out — a read-only machine sends no exit either. Every
+    symbol whose inputs are fine is decided as above; a symbol whose quantity
+    can't be read, and an unreadable strategy's position, are left to the user
+    (never guessed as the bot's), recorded in the audit line and one order
+    error."""
+    global _baseline_seen
+
+    def wait(reason, symbols=(), **kw):
+        return {'reason': reason, 'symbols': list(symbols), **kw}
+
+    try:
+        from lib.execute import list_inflight
+        if list_inflight():
+            return wait('inflight')
+    except Exception as e:
+        return wait('error', error=str(e)[:200])
+    if not portfolio_configured():
+        return wait('unconfigured')
+    held = {k: _row_signed(a) for k, a in (actual or {}).items() if _row_signed(a)}
+    seen = sorted((k, _sign(v)) for k, v in held.items())
+    if seen != _baseline_seen:
+        _baseline_seen = seen
+        return wait('confirming')
+    bad = _funded_states_unreadable(config)
+    # a broken strategy's own symbol waits alone (known from stats.json /
+    # strategy.py); only a strategy whose symbol can't be found holds everything
+    pending, unknown = {}, []
+    for name in bad:
+        key = _strategy_key(name)
+        if key:
+            pending[key] = name
+        else:
+            unknown.append(name)
+    if unknown and not fallback:
+        return wait('state_unreadable', unknown)
+    venue = book_venue()
+    now = datetime.utcnow().isoformat()
+    rows, left = {}, {}
+    qty_of = _qty_reader()
+    try:
+        for k, a_s in held.items():
+            if k in pending:
+                continue
+            try:
+                row = _adopt_row(k, a_s, (target or {}).get(k), actual[k], venue, now, qty_of)
+            except Exception as e:
+                if not fallback:
+                    raise
+                left[k] = (e.reason if isinstance(e, _BaselineWait) else f"{type(e).__name__}: {e}")[:120]
+                continue
+            if row:
+                rows[_seed_key(k, venue)] = row
+        doc = {'seeded_at': now, 'own_only_basis': 1, 'symbols': rows}
+        if pending:
+            doc['pending'] = {_seed_key(k, venue): {'strategy': n, 'since': now}
+                              for k, n in pending.items()}
+        _save_ledger_seed(doc)
+    except _BaselineWait as e:
+        return wait(e.reason, [e.symbol])
+    except Exception as e:
+        return wait('error', error=f"{type(e).__name__}: {e}"[:200])
+    _baseline_seen = None
+    adopted = {v['symbol']: {'size': round(v['size'], 2), 'qty': v['qty']} for v in rows.values()}
+    guard.audit('ledger_baseline', venue=venue, adopted=adopted, held=sorted(held),
+                **({'pending': sorted(pending)} if pending else {}),
+                **({'fallback': True, 'left_to_user': left, 'symbol_unknown': unknown}
+                   if fallback else {}))
+    logging.warning(f"[ledger] baseline written for {venue}: the bot owns {adopted or 'nothing'}; "
+                    f"waiting on {sorted(pending) or 'nothing'}; everything else on the account "
+                    f"({sorted(held)}) is the user's and is never traded")
+    if fallback:
+        _record_order_error('*', venue, "ledger: Blave waited and could not read "
+                            f"{sorted(left) + sorted(unknown)} (for a strategy: nor tell which coin "
+                            "it trades) — those positions are left to you (never traded by Blave); "
+                            "everything else trades normally again")
+    return None
 
 
 def _sign(x):
     return 1 if x > 0 else (-1 if x < 0 else 0)
 
 
-def _ledger_walk():
+def _qty_reader():
+    """One auto_position_qty read per decision, lazily: (sym) -> signed base
+    qty, 0.0 when not held, None when the venue reports no quantity."""
+    cache = []
+
+    def qty_of(sym):
+        if not cache:
+            from lib.venue_wiring import auto_position_qty
+            cache.append(auto_position_qty())
+        return None if cache[0] is None else (cache[0].get(sym) or 0.0)
+    return qty_of
+
+
+def _adopt_row(k, a_s, t, actual_row, venue, now, qty_of):
+    """The bot's share of one held symbol under the migration rule
+    (_auto_baseline), as a seed row — or None when it owns none of it.
+    Raises _BaselineWait / the read's own error when it can't be decided."""
+    t = t or {}
+    t_s = _row_signed(t)
+    if a_s * t_s <= 0:
+        return None
+    lots = native_units(t.get('asset_spec'), t.get('exchange'),
+                        (actual_row or {}).get('exchange'), actual=actual_row)
+    sym, market = split_key(k)
+    q = a_s if lots else _spot_holding(sym) if market == 'spot' else qty_of(sym)
+    if q is not None and float(q) * a_s <= 0:
+        raise _BaselineWait('qty_mismatch', k)  # the quantity read disagrees with the position read
+    if q is not None and venue is None and not lots:
+        raise _BaselineWait('no_venue', k)
+    # cost is never above the target: the round after never sells what was adopted
+    size = _sign(a_s) * min(abs(a_s), abs(t_s))
+    if q is None:  # a venue that reports no quantity: legacy row, as before
+        return {'size': size, 'qty': None, 'ts': now, 'venue': venue, 'symbol': k}
+    if abs(a_s) <= _ADOPT_WHOLE_RATIO * abs(t_s):
+        # close to the target: the whole position is the bot's (Wei 2026-09-23) —
+        # a profitable bot position is worth more than its target, and splitting
+        # it would leave the bot's own last lot to the user. Already whole lots.
+        qq = abs(float(q))
+    else:
+        # 12 significant digits first: 0.0014 × 50/70 is 0.000999…, and a
+        # step floor would take a whole lot off it (same reason as _ledger_walk)
+        raw = float(f"{abs(float(q)) * abs(t_s) / abs(a_s):.12g}")
+        qq = _venue_quantize(venue, k, raw, lots)
+        if qq <= 0:
+            return None
+        size = a_s * qq / abs(float(q))
+    return {'size': size, 'qty': _sign(a_s) * qq, 'ts': now, 'venue': venue, 'symbol': k}
+
+
+def _strategy_key(name):
+    """The book key ("SYM" / "SYM@spot") a strategy trades, without its
+    state.json: stats.json (written on every run), else strategy.py's SYMBOL
+    constant. None when neither says."""
+    sym = None
+    try:
+        with open(f'strategies/{name}/stats.json') as f:
+            sym = (json.load(f) or {}).get('symbol')
+    except (OSError, ValueError, AttributeError):
+        pass
+    if not sym:
+        try:
+            with open(f'strategies/{name}/strategy.py') as f:
+                m = _SYMBOL_RE.search(f.read())
+            sym = m.group(1) if m else None
+        except OSError:
+            sym = None
+    if not sym or not isinstance(sym, str):
+        return None
+    return market_key(sym.replace('-', '').upper(), strategy_market(name))
+
+
+def _pending_symbols(venue):
+    """Symbols waiting in the seed's `pending` — this venue's (None: every venue's)."""
+    out = set()
+    for pk in (_load_ledger_seed().get('pending') or {}):
+        v, sym = pk.split('|', 1) if '|' in pk else (None, pk)
+        if venue is None or v == venue:
+            out.add(sym)
+    return out
+
+
+_SYMBOL_RE = re.compile(r'^\s*SYMBOL\s*=\s*["\']([^"\']+)["\']', re.M)
+_pending_seen = {}  # pending key -> the side seen last round (two reads before deciding)
+
+
+def resolve_pending(target, actual, config):
+    """Symbols the baseline left waiting on a strategy whose state was
+    unreadable (seed `pending`). Each is decided by the migration rule once its
+    strategy reads again and two rounds saw the same side — the strategy's own
+    position is then adopted, not bought a second time. Returns the keys of
+    this venue still waiting: reconcile keeps them out of both sides of the
+    diff, like a signal-gated symbol."""
+    venue = book_venue()
+    seed = _load_ledger_seed()
+    mine = {pk: info for pk, info in (seed.get('pending') or {}).items()
+            if (pk.split('|', 1)[0] if '|' in pk else None) == venue}
+    if not mine:
+        return set()
+    unread = set(_funded_states_unreadable(config))
+    still, done = set(), {}
+    now = datetime.utcnow().isoformat()
+    qty_of = _qty_reader()
+    for pk, info in mine.items():
+        sym = pk.split('|', 1)[1] if '|' in pk else pk
+        if (info or {}).get('strategy') in unread:
+            still.add(sym)
+            continue
+        a_s = _row_signed((actual or {}).get(sym))
+        if _pending_seen.get(pk) != _sign(a_s):
+            _pending_seen[pk] = _sign(a_s)
+            still.add(sym)
+            continue
+        try:
+            row = _adopt_row(sym, a_s, (target or {}).get(sym), (actual or {}).get(sym),
+                             venue, now, qty_of) if a_s else None
+        except Exception as e:
+            logging.warning(f"[ledger] {sym}: pending baseline not decided yet ({e})")
+            still.add(sym)
+            continue
+        done[pk] = row or {'size': 0.0, 'qty': 0.0, 'ts': now, 'venue': venue, 'symbol': sym}
+    if done:
+        for pk, row in done.items():
+            seed['pending'].pop(pk, None)
+            _pending_seen.pop(pk, None)
+            seed['symbols'][pk] = row
+        _save_ledger_seed(seed)
+        decided = {r['symbol']: {'size': round(r['size'], 2), 'qty': r['qty']} for r in done.values()}
+        guard.audit('ledger_baseline_pending', venue=venue, decided=decided)
+        logging.warning(f"[ledger] waited-on symbols decided for {venue}: {decided}")
+    return still
+
+
+def _ledger_walk(venue=_CURRENT):
     """({symbol: {'qty', 'cost', 'legacy'}}, notes) — the seed baseline plus
     every fill logged after it, replayed in file order. `notes` is what the
     replay had to decide on its own, for the adoption report.
@@ -311,12 +1069,26 @@ def _ledger_walk():
 
     def _row(symbol):
         return book.setdefault(symbol, {'qty': 0.0, 'cost': 0.0, 'legacy': False,
-                                        'gross': 0.0})
+                                        'gross': 0.0, 'netted': 0.0})
 
     def _note(symbol, **kw):
         notes.setdefault(symbol, {}).update(kw)
 
-    for symbol, srow in seed['symbols'].items():
+    # one venue's book: its own rows and fills, plus rows from before books were
+    # per venue (no venue at all). The latest row of a symbol is its baseline.
+    venue = _resolve_venue(venue)
+    reset_at = seed.get('venue_reset', {}).get(venue, '') if venue else ''
+    base = {}
+    for srow in seed['symbols'].values():
+        if venue is not None and srow['venue'] not in (None, venue):
+            continue
+        if reset_at and srow['ts'] <= reset_at:
+            continue  # written for the account that was bound here before
+        prev = base.get(srow['symbol'])
+        if prev is None or srow['ts'] >= prev['ts']:
+            base[srow['symbol']] = srow
+
+    for symbol, srow in base.items():
         r = _row(symbol)
         r['cost'] = srow['size']
         if srow['qty'] is not None:
@@ -342,6 +1114,8 @@ def _ledger_walk():
             r['qty'] = r['cost'] = 0.0
         elif flat_qty:
             r['qty'] = r['cost'] = 0.0
+        if flat_qty:
+            r['netted'] = 0.0
         elif r['qty'] * r['cost'] < 0:
             r['legacy'] = True
             _note(symbol, legacy='qty and cost on opposite sides')
@@ -374,7 +1148,11 @@ def _ledger_walk():
         # seeded_at, so zeroing one symbol never discards another symbol's
         # history — and seeded_at covers symbols flat at seed time, whose
         # pre-seed history must be excluded too (measured live 2026-08-20).
-        cutoff = seed['symbols'].get(symbol, {}).get('ts') or seed['seeded_at']
+        if venue is not None and entry.get('exchange') not in (None, venue):
+            continue  # another venue's fill: never this venue's position
+        if reset_at and str(entry.get('ts') or '') <= reset_at:
+            continue  # the previous account's fill on this venue
+        cutoff = base.get(symbol, {}).get('ts') or seed['seeded_at']
         if cutoff and str(entry.get('ts') or '') <= cutoff:
             continue
         for leg in entry.get('legs') or []:
@@ -418,15 +1196,25 @@ def _ledger_walk():
             elif r['qty'] == 0 or r['qty'] * sq > 0:
                 r['qty'] += sq
                 r['cost'] += d
+                # the part of this entry that netted into the user's opposite
+                # position on a one-way account (lib.venue_wiring._netted_room)
+                try:
+                    r['netted'] += min(abs(sq), abs(float(leg.get('netted_qty') or 0)))
+                except (TypeError, ValueError):
+                    pass
             elif abs(sq) <= abs(r['qty']) + _tol(r):
                 r['cost'] -= r['cost'] * min(1.0, abs(sq) / abs(r['qty']))
                 r['qty'] += sq
+                if leg.get('netted_exit'):
+                    r['netted'] = max(0.0, r['netted'] - abs(sq))
+                r['netted'] = min(r['netted'], abs(r['qty']))
             else:
                 # sold through zero: the excess opens the other side at this
                 # fill's own price
                 over = sq + r['qty']
                 r['cost'] = d * (over / sq)
                 r['qty'] = over
+                r['netted'] = 0.0
 
     for symbol, r in book.items():
         _settle(symbol, r)
@@ -434,18 +1222,18 @@ def _ledger_walk():
     # and an order lib flooring THAT to a 0.001 step closes 0.009 of a 0.01
     # position. Far finer than any venue's step, far coarser than the noise.
     return ({k: {'qty': float(f"{r['qty']:.12g}"), 'cost': r['cost'],
-                 'legacy': r['legacy']}
+                 'legacy': r['legacy'], 'netted': float(f"{r['netted']:.12g}")}
              for k, r in book.items()}, notes)
 
 
-def ledger_book():
+def ledger_book(venue=_CURRENT):
     """{symbol: {'qty': signed base, 'cost': signed USD, 'legacy': bool}} for
     every symbol the bot holds — see _ledger_walk. A legacy row's qty is
     whatever could be replayed and must not be sized from."""
-    return {k: r for k, r in _ledger_walk()[0].items() if abs(r['cost']) > 1e-9}
+    return {k: r for k, r in _ledger_walk(venue)[0].items() if abs(r['cost']) > 1e-9}
 
 
-def ledger_positions():
+def ledger_positions(venue=_CURRENT):
     """The bot's OWN tracked position per symbol: each symbol's seed_ledger()/
     zero_ledger_symbols() baseline plus every fill logged for it since
     (manager/orders.jsonl legs) — never the exchange's raw account position.
@@ -465,9 +1253,10 @@ def ledger_positions():
     'legacy': True on a row whose qty is not known.
     """
     out = {}
-    for symbol, r in ledger_book().items():
+    for symbol, r in ledger_book(venue).items():
         out[symbol] = {'side': 'long' if r['cost'] > 0 else 'short',
-                       'size': abs(r['cost']), 'qty': abs(r['qty'])}
+                       'size': abs(r['cost']), 'qty': abs(r['qty']),
+                       'netted': r.get('netted', 0.0)}
         if r['legacy']:
             out[symbol]['legacy'] = True
     return out
@@ -540,7 +1329,7 @@ def account_short_pending(symbol):
         return False
 
 
-def apply_ledger_writeoff(symbol, reason, **detail):
+def apply_ledger_writeoff(symbol, reason, venue=_CURRENT, **detail):
     """Zero one symbol's book and say so. For what is left after a CLOSE that
     can never be sold: less than one lot, under the venue's minimum, or a
     quantity the account no longer holds (the user closed it by hand, a
@@ -552,10 +1341,10 @@ def apply_ledger_writeoff(symbol, reason, **detail):
     Call AFTER the closing fill is in orders.jsonl — the zero row's timestamp
     is the cutoff, and a fill logged after it would be counted on top."""
     try:
-        row = ledger_book().get(symbol) or {}
+        row = ledger_book(venue).get(symbol) or {}
     except Exception:
         row = {}
-    zero_ledger_symbols({symbol})
+    zero_ledger_symbols({symbol}, venue)
     seen = _load_account_short()
     short = seen.pop(symbol, None)
     if short:
@@ -703,10 +1492,12 @@ def spot_scope(inventory_value_fn, threshold=10):
     only when its inventory value drops below the reconcile threshold — so
     after removal the actual-only row keeps generating sell orders until the
     inventory is gone. Personal coins in symbols no strategy targets never
-    enter; but a targeted symbol's spot inventory is ONE pool — coins the
-    user holds in the same symbol are co-managed with the strategy's (incl.
-    the removal sell-down). Say so when a user asks; it is the accepted
-    trade-off of inventory-based reconciling (audit M5).
+    enter. A targeted symbol's wallet is one pool of the bot's and the user's
+    coins, so what the bot may sell is never read from it: under
+    own_positions_only the diff is against the book and a spot sell is capped
+    at min(book quantity, wallet) — a book row without a quantity is not sold
+    at all (lib.venue_wiring._spot_legacy_refused). Only the explicit
+    `"self_ledger": false` opt-out still trades the whole pool (audit M5).
     inventory_value_fn(symbol) -> USD value; its errors PROPAGATE
     (a failed read silently dropping a symbol from scope would strand
     inventory — same error contract as get_positions)."""
@@ -848,6 +1639,18 @@ def portfolio_configured():
     return os.path.exists(_PORTFOLIO_CONFIG_PATH) or os.path.exists(_UI_MIRROR_PATH)
 
 
+def own_positions_only(config):
+    """True = the bot diffs, sizes and closes against its OWN book (the
+    self-ledger), never the account's whole position — a position the bot did
+    not open is never touched (Wei 2026-09-23). Every machine, whatever its
+    config says, except one whose config explicitly carries
+    `"self_ledger": false` (account-read mode kept as an explicit opt-out;
+    nothing in Blave writes that value). A missing key used to mean
+    account-read, which read a user's manual positions as the bot's and closed
+    them whenever no strategy targeted them."""
+    return (config or {}).get('self_ledger') is not False
+
+
 def load_portfolio_config():
     """Load portfolio_config.json from manager/ directory.
 
@@ -963,7 +1766,57 @@ def aggregate_portfolio():
     gate          = _load_signal_gate()
     lifted        = set()
 
+    def _add(key, market, exchange, asset_spec, contribution, contributor, gated):
+        if key not in totals:
+            totals[key] = {'signed': 0.0, 'exchange': exchange,
+                           'asset_spec': asset_spec, 'market': market,
+                           'contributors': [], 'gated': False}
+        totals[key]['signed'] += contribution
+        totals[key]['gated'] = totals[key]['gated'] or gated
+        totals[key]['contributors'].append(contributor)
+
     for name, state in states.items():
+        if isinstance(state.get('weights'), dict):
+            # Type C (lib/runner.typec_live_state): {SYMBOL: weight} held from the
+            # rebalance bar `rebalance_at` on. Each asset nets with every other
+            # strategy on its key exactly like a single-symbol contribution.
+            exchange = exchanges.get(name)
+            amount = float(amounts.get(name, 0))
+            asset_spec = asset_specs.get(name)
+            if not exchange or amount == 0:
+                continue
+            if asset_type(asset_spec) in NATIVE_UNIT_TYPES:
+                # amount × weight is account currency; a lots/shares row would take it as a count
+                logging.warning(f"[portfolio] {name}: a portfolio (Type C) sized in "
+                                f"{asset_type(asset_spec)} is not traded — skipped")
+                continue
+            gated = False
+            if name in gate:
+                # the portfolio's "new signal" is its next rebalance
+                if float(state.get('rebalance_at') or 0) != gate[name]:
+                    logging.info(f"[portfolio] signal gate lifted for {name} (rebalanced) "
+                                 f"— trading normally")
+                    lifted.add(name)
+                else:
+                    gated = True
+            market = strategy_market(name)
+            for sym, w in state['weights'].items():
+                try:
+                    w = float(w)
+                except (TypeError, ValueError):
+                    continue
+                if w != w:  # NaN
+                    w = 0.0
+                if market == 'spot' and w < 0:
+                    # this strategy's own short intent must not cancel another
+                    # strategy's long on the same coin — spot cannot short
+                    w = 0.0
+                key = market_key(str(sym).replace('-', '').upper(), market)
+                _add(key, market, exchange, asset_spec, amount * w,
+                     {'strategy': name, 'position': w, 'amount': amount,
+                      'contribution': round(amount * w, 4), 'portfolio': True}, gated)
+            continue
+
         symbol     = state.get('symbol')
         # canonical symbol key: dashless uppercase (BTCUSDT) — strategies write
         # Binance-style, OKX reports dashed; without one canon the reconciler
@@ -1197,10 +2050,16 @@ def _close_threshold(threshold, symbol):
     never be closed — the signal said flat and no order went out, every round.
     Account-read mode is untouched by construction: a swap position is whole
     lots, already over half of one. The flat floor stays, so dust under it is
-    left alone exactly as before. A callable without `.flat` (hand-written)
-    keeps answering for itself."""
+    left alone exactly as before — except that the reconciler's `.close` lowers
+    it by half a lot on a coarse instrument, where a position the bot opened
+    can itself cost less than the floor (manager/reconciler._symbol_threshold).
+    A callable without
+    `.flat` (hand-written) keeps answering for itself."""
     if not callable(threshold):
         return threshold
+    close = getattr(threshold, 'close', None)
+    if callable(close):
+        return close(symbol)
     flat = getattr(threshold, 'flat', None)
     return threshold(symbol, True) if flat is None else flat
 
@@ -1427,21 +2286,44 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # future workspace view — it is only skipped as the DIFFING input here.
     # See references/manager.md § self_ledger.
     ledger = None
-    if config.get('self_ledger'):
-        # Fail loud without a seed (audit P1-6, mandatory since users enable
-        # this themselves): an unseeded ledger silently sums the ENTIRE
-        # orders.jsonl history — on any machine with prior trading that is a
-        # plausible-looking but wrong book, and the bot would trade to
-        # "correct" it. Raising here surfaces as the reconciler's normal
-        # error path (Telegram + retreat to heartbeat), no orders placed.
-        if not _load_ledger_seed()['seeded_at']:
-            raise RuntimeError(
-                "self_ledger is on but manager/ledger_seed.json has no baseline — "
-                "run `python3 manager/seed_ledger.py` first (see "
-                "references/manager.md § self_ledger); refusing to trade on an "
-                "unseeded ledger")
+    needs_baseline = None
+    pending_keys = set()
+    own_only = own_positions_only(config)
+    if own_only and not book_ready(config):
+        # Never replay an unseeded book (audit P1-6: the ENTIRE orders.jsonl
+        # history is a plausible-looking but wrong book). Write the baseline
+        # from the account read; read-only only while it can't be written.
+        needs_baseline = _auto_baseline(target, actual, config)
+        if _baseline_stuck(needs_baseline):
+            # the same non-transient wait for too long: a read-only machine sends
+            # no exit either. Adopt what is certain; what could not be read is
+            # left to the user, and said so (never guessed as the bot's).
+            needs_baseline = _auto_baseline(target, actual, config, fallback=True)
+        if needs_baseline is None:
+            # the coins this baseline just left waiting stay out of THIS round too —
+            # another, readable strategy on the same coin must not trade it now
+            pending_keys = _pending_symbols(book_venue())
+    elif own_only:
+        claim_unvenued_rows()
+        try:
+            pending_keys = resolve_pending(target, actual, config)
+        except Exception as e:
+            # can't tell what is still waiting: keep every waited-on symbol out
+            logging.warning(f"[ledger] pending baseline read failed ({e})")
+            pending_keys = _pending_symbols(None)
+    if own_only and needs_baseline is None:
         _report_ledger_adoption()
         ledger = {_canon_key(k): v for k, v in (ledger_positions() or {}).items()}
+        # A spot row without a quantity can never be sold (the wallet is one pool
+        # of the bot's and the user's coins) and would read as "already bought"
+        # at every entry. Written off once, said once: the coins stay in the
+        # wallet as the user's, and the strategy trades from zero again.
+        for k in [k for k, row in ledger.items() if k.endswith('@spot') and row.get('legacy')]:
+            _record_order_error(k, book_venue(), "spot: the bot's share of this coin had no recorded "
+                                "quantity and can't be told from yours — it is left to you; the "
+                                "strategy trades from zero")
+            apply_ledger_writeoff(k, 'spot row without a quantity')
+            del ledger[k]
         # A book row has no unit of its own; the venue read's does (paper
         # reports lots as unit "contracts"). Without it a removed contract
         # strategy's close-on-removal — no target, no asset_spec — is judged
@@ -1450,7 +2332,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             unit = (actual.get(k) or {}).get('unit')
             if unit:
                 row['unit'] = unit
-    diff_actual = ledger if ledger is not None else actual
+    # no baseline = no book to diff against; the round is read-only anyway,
+    # and the account read must not stand in for the book
+    diff_actual = ledger if ledger is not None else ({} if own_only else actual)
 
     # signal gate (resume_wait): a gated symbol is excluded from BOTH sides of
     # the diff — no catch-up entry (absent target would be wrong: it exists,
@@ -1464,13 +2348,19 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                      f"{sorted(gated_symbols)}")
         target = {k: v for k, v in target.items() if k not in gated_symbols}
         diff_actual = {k: v for k, v in diff_actual.items() if k not in gated_symbols}
+    if pending_keys:
+        # a symbol whose strategy's state was unreadable when the baseline was
+        # written: neither bought nor sold until resolve_pending decides it
+        logging.info(f"[reconcile] waiting on an unreadable strategy's state: {sorted(pending_keys)}")
+        target = {k: v for k, v in target.items() if k not in pending_keys}
+        diff_actual = {k: v for k, v in diff_actual.items() if k not in pending_keys}
 
     # per-symbol venue gates, for the snapshot (unrelated to gated_symbols
     # above — that is the SIGNAL gate). The drift band only when the diff is
     # against the account read: a book's cost does not move with the mark.
     entry_gates = {}
     orders = compute_diff(target, diff_actual, threshold, gates=entry_gates,
-                          drift_band=drift_band if ledger is None else None)
+                          drift_band=None if own_only else drift_band)
 
     # Never configured = read-only (Wei 2026-09-23). With no config the target
     # is empty and every position on the account — the user's own manual ones
@@ -1491,6 +2381,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     elif _unconfigured_logged:
         logging.info("[reconcile] portfolio config saved — reconciling normally")
         _unconfigured_logged = False
+    if needs_baseline is not None:
+        orders = []
 
     # Written before placing, so it records the state that WAS acted on. A
     # reconcile that crashes mid-loop still leaves the observation behind.
@@ -1498,7 +2390,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
     # must stay visible to the workspace view — carrying 'gated': True — not
     # vanish while it waits for its signal.
     _write_reconcile_snapshot(full_target, actual, orders, ledger=ledger,
-                              gates=entry_gates, read_only=read_only)
+                              gates=entry_gates, read_only=read_only,
+                              own_only=own_only, needs_baseline=needs_baseline,
+                              baseline_pending=sorted(pending_keys))
 
     # Checked once via signature inspection (not a runtime try/except TypeError) so a
     # TypeError raised *after* place_order_fn already submitted the order — e.g. while
@@ -1539,6 +2433,11 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
         return place_order_fn(symbol, sub_diff, asset_spec)
 
     executed = []  # orders with ≥1 confirmed fill — the return value
+    try:  # a lib.execute from before market markers: no marker, as before
+        from lib.execute import (_remove_inflight_marker as unmark_inflight,
+                                 _write_inflight_marker as mark_inflight)
+    except ImportError:
+        mark_inflight = unmark_inflight = None
     for order in orders:
         symbol     = order['symbol']
         diff       = order['signed_diff']
@@ -1580,6 +2479,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             sub_orders = [(diff, shrink, abs(t_signed) > abs(a_signed))]
 
         failed = False
+        marked = False
         legs = []  # per-leg exchange-confirmed fills for orders.jsonl / the web 交易歷史
         notices = []  # (key, default, kwargs), sent after the ledger write below
         logged = [False]
@@ -1645,6 +2545,13 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 failed = True
                 break
 
+            # A market fill is only in the book once its orders.jsonl line is: a
+            # process killed in between would leave the fill out and buy it again
+            # after the restart. The marker (the one TWAP / chase write) outlives
+            # such a kill, and the next start's reap_dead_inflight HALTs on it.
+            if mark_inflight and not marked:
+                mark_inflight(f"{symbol}#market", "market", sub_diff)
+                marked = True
             try:
                 placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
                                      exchange=order.get('exchange'),
@@ -1692,7 +2599,10 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             if isinstance(placed, dict):
                 for src, dst in (('avg_price', 'fill_price'),
                                  ('executed_qty', 'executed_qty'),
-                                 ('exchange', 'exchange')):
+                                 ('exchange', 'exchange'),
+                                 # one-way netting (lib.venue_wiring._netted_room / _netted_exit)
+                                 ('netted_qty', 'netted_qty'),
+                                 ('netted_exit', 'netted_exit')):
                     if placed.get(src) is not None:
                         leg[dst] = placed[src]
                 # self_ledger accounting (2026-08-20 audit P0-2): sub_diff is
@@ -1735,11 +2645,17 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 # from an exchange-confirmed fill: a place_order that reports
                 # none leaves the field out, and ledger_book then treats the
                 # row as legacy rather than inventing a quantity for it.
+                # A spot fill's coins moved = book_qty (lib.venue_wiring.spot_book_qty:
+                # a buy's fee comes out of the coin bought) — executed_qty stays the
+                # venue's pre-fee fill for the trade history.
                 if ledger is not None:
                     try:
-                        if leg.get('executed_qty') is not None:
+                        moved = placed.get('book_qty') if isinstance(placed, dict) else None
+                        if moved is None:
+                            moved = leg.get('executed_qty')
+                        if moved is not None:
                             leg['signed_qty'] = ((1.0 if sub_diff >= 0 else -1.0)
-                                                 * abs(float(leg['executed_qty'])))
+                                                 * abs(float(moved)))
                     except (TypeError, ValueError):
                         pass
             legs.append(leg)
@@ -1775,6 +2691,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
             notices.append((key, default, {'symbol': symbol, 'amount': filled}))
 
         _flush_legs()
+        if marked:
+            unmark_inflight(f"{symbol}#market")
         if logged[0]:
             executed.append(order)
 

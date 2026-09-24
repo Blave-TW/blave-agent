@@ -133,18 +133,24 @@ else pass("trade.js 的 tr.threshold 不帶參數");
 
 // ---- 6. 雲端視角:網頁限定的事歸給網頁工作頁;agent 做得到的事不可以再歸給網頁 ----
 // A′ 之後 agent 能在雲端主機上做策略,「新增策略要到網頁」是假話。今天仍是網頁限定的:定期報告、每支策略的下單方式與
-// 策略管理(spec-desktop-cloud-writable §6 剩下的那幾列),以及連接交易所(cxModalOpen 硬擋雲端、CLOUD_SHIPPED 沒有 credentials——
-// inventory 說批次 ② 已做,code 說還沒;文案跟 code 走)。pv.d.running 配一顆「切到雲端」主鈕,句子裡只要提到這幾件事,就得在同一句指去網頁工作頁。
+// 策略管理(spec-desktop-cloud-writable §6 剩下的那幾列)。連接交易所**不再是**網頁限定:cxModalOpen 在主機 running 時兩個視角都開得起來
+// (cxConnectCloud)。網頁限定那一句從 pv.d.running 搬進「方案內容與計費」(pv.inc.web,spec-desktop-settings-cleanup §4);
+// 兩句都查:提到這幾件事就得在同一句指去網頁工作頁,而且不可以再把連接交易所歸給網頁。
 const CAP = { zh: [/定期報告/, /連接交易所/, /下單方式/], en: [/report/i, /connect(ing)? an exchange/i, /order handling/i] };
 const NOT_WEB = { zh: /新增策略/, en: /add(ing)? strateg/i };
 const HOME = { zh: /工作頁/, en: /workspace/i };
-["en", "zh"].forEach((l) => {
-  const s = (l === "en" ? enV : zhV)["pv.d.running"] || "";
+const CX_WEB = { zh: /連接交易所/, en: /connect(ing)? an exchange/i };
+["en", "zh"].forEach((l) => ["pv.d.running", "pv.inc.web"].forEach((k) => {
+  const s = (l === "en" ? enV : zhV)[k] || "";
   const liar = s.split(/[。.]/).filter((x) => CAP[l].some((re) => re.test(x)) && !HOME[l].test(x));
-  if (liar.length) fail(`pv.d.running(${l})把雲端視角做不到的事講成做得到:「${liar[0].trim()}」`);
-  else if (NOT_WEB[l].test(s)) fail(`pv.d.running(${l})還在把「新增策略」歸給網頁——agent 現在能在雲端主機上做策略`);
-  else pass(`pv.d.running(${l})的網頁限定清單歸給網頁工作頁,新增策略不再歸給它`);
-});
+  if (!s) fail(`${k}(${l})不在表裡`);
+  else if (liar.length) fail(`${k}(${l})把雲端視角做不到的事講成做得到:「${liar[0].trim()}」`);
+  else if (NOT_WEB[l].test(s)) fail(`${k}(${l})還在把「新增策略」歸給網頁——agent 現在能在雲端主機上做策略`);
+  else if (s.split(/[。.]/).some((x) => CX_WEB[l].test(x) && HOME[l].test(x))) fail(`${k}(${l})還在把「連接交易所」歸給網頁——app 在雲端視角就連得了`);
+  else pass(`${k}(${l})的網頁限定清單歸給網頁工作頁,新增策略、連接交易所不再歸給它`);
+}));
+if (/定期報告/.test(zhV["pv.inc.web"] || "") && /工作頁/.test(zhV["pv.inc.web"] || "") && !/定期報告/.test(zhV["pv.d.running"] || "")) pass("網頁限定那一句從運行中搬進方案內容(pv.inc.web),運行中那段不再講");
+else fail("網頁限定那一句要在 pv.inc.web、不在 pv.d.running");
 
 // ---- 7. A′ 落地的六句 + 那一組新 key ----
 // 四句重寫不得再講「只能看」「留在電腦上」;刪掉的 key(cut1 / tr.ro.note、「操作對象」那列的五句)不得留在表裡;

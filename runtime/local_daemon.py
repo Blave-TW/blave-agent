@@ -64,6 +64,7 @@ ALLOWED = frozenset({
     "delete_strategy", "manage_optimize", "manage_backtest", "manage_cancel",
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
+    "book_account_confirm",
 })
 UNSIGNED_OK = frozenset({"halt"})
 
@@ -714,7 +715,10 @@ class Daemon:
         # and this daemon imports it, so a desktop user pressing 連接 again is
         # held off the wire by the same window the cloud path uses — on top of
         # binance_link.js's own lock in the app process.
-        cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINANCE"})
+        # OKX / BingX / Gate.io / Bybit: command_listener._local_real_key_gate
+        # (the venue's own signed account read) decides, before any write.
+        cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
+                                         | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"})
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()

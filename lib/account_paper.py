@@ -28,6 +28,16 @@ def get_equity(env: dict) -> dict:
     return {"equity": float(s["equity"]), "currency": "USDT"}
 
 
+def get_account_id(env: dict) -> str:
+    """The simulated account's identity: the ledger's created_ts. A new bind
+    (PAPER_BOUND_TS later than the ledger) or reset_account re-seeds the ledger
+    and so yields a new id; a key write that keeps the ledger keeps it. Read
+    under the ledger lock so a re-seed is persisted before its stamp is
+    reported (lib.portfolio.book_account_check)."""
+    with _paper._txn(env) as led:
+        return "paper:%d" % int(led.get("created_ts") or 0)
+
+
 def get_positions(env: dict) -> list:
     """[{'symbol', 'side', 'size', 'mark_price'[, 'unit', 'contract_value']}, ...]
     — canonical symbols, one net row per symbol; [] if flat. `size` is base

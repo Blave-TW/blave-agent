@@ -19,7 +19,12 @@ def load_state(strategy_name):
 
 
 def save_state(strategy_name, state):
-    json.dump(state, open(f'strategies/{strategy_name}/state.json', 'w'), indent=2)
+    # tmp + replace: the reconciler reads this file every round, and a half-written
+    # one is a strategy whose target silently drops out of that round
+    path = f'strategies/{strategy_name}/state.json'
+    with open(path + '.tmp', 'w') as f:
+        json.dump(state, f, indent=2)
+    os.replace(path + '.tmp', path)
 
 
 def update_state(candle, signal, state, mode, symbol=None, send_telegram_fn=None):
@@ -392,6 +397,15 @@ def list_inflight():
     return out
 
 
+
+def _own_only():
+    """lib.portfolio.own_positions_only, or the bare flag beside a lib.portfolio
+    from before it (lib files can land on a machine one at a time)."""
+    from lib import portfolio
+    cfg = portfolio.load_portfolio_config()
+    own = getattr(portfolio, "own_positions_only", None)
+    return own(cfg) if own else bool(cfg.get("self_ledger"))
+
 def reap_dead_inflight():
     """Reconciler STARTUP ONLY (before any dispatch): every marker on disk at
     this point belongs to a previous process whose threads died with it — the
@@ -411,8 +425,7 @@ def reap_dead_inflight():
         return 0
     labels = ", ".join(f"{m.get('key')}({m.get('style')})" for m in dead)
     try:
-        from lib.portfolio import load_portfolio_config
-        self_ledger = bool(load_portfolio_config().get("self_ledger"))
+        self_ledger = _own_only()
     except Exception:
         self_ledger = True  # can't read config — assume the risky mode
     if self_ledger:
@@ -434,7 +447,7 @@ def reap_dead_inflight():
         try:
             if not guard.halted():
                 guard.trip_halt(
-                    f"async execution died mid-flight ({labels}) — ledger may be "
+                    f"an order or async execution died mid-flight ({labels}) — ledger may be "
                     f"missing fills; verify positions before resuming", "execute")
         except Exception as e:
             msg = (f"🚨 前次執行中斷({labels})且 HALT 寫入失敗({e})——"
@@ -799,6 +812,21 @@ def _sold_kw(venue_seen):
     return {"sold": venue_seen.get("base", 0.0)} if venue_seen.get("book") else {}
 
 
+def _account_held(exchange):
+    """lib.guard.account_held for the venue this order goes to (the auto-wired
+    one when the leg names none) — checked before each child order, closes
+    included: an unconfirmed account gets no Blave order at all."""
+    from lib import guard
+    venue = exchange
+    if not venue:
+        try:
+            from lib.venue_wiring import detect_venue, read_env
+            venue = detect_venue(read_env())
+        except Exception:
+            venue = None
+    return bool(venue) and guard.account_held(str(venue).lower())
+
+
 def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_seen,
                    why=None):
     """USD-denominated market slice via the venue wiring. fill_qty is returned
@@ -831,6 +859,13 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
                 why["stop"] = "halt"
             stop.set()
             raise RuntimeError("state/HALT set — stopping execution")
+        if _account_held(venue_seen.get("id") or exchange):
+            # exits too: the fills so far are booked (_finish), the rest re-diffs
+            # once the account is confirmed and 啟動下單 is pressed
+            if why is not None:
+                why["stop"] = "account_hold"
+            stop.set()
+            raise RuntimeError("exchange account unconfirmed — stopping execution")
         signed = usd if side == "buy" else -usd
         placed = auto_place_order(symbol, signed, asset_spec, reduce_only, exchange,
                                   **_sold_kw(venue_seen))
@@ -848,7 +883,9 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
             raise RuntimeError(f"venue returned no fill price: {placed}")
         venue_seen["id"] = placed.get("exchange") or venue_seen["id"]
         base = float(placed.get("executed_qty") or 0)
-        venue_seen["base"] = venue_seen.get("base", 0.0) + base
+        # the book gets the coins that moved (a spot buy's fee comes out of the coin)
+        venue_seen["base"] = venue_seen.get("base", 0.0) + float(placed.get("book_qty", base))
+        venue_seen["netted"] = venue_seen.get("netted", 0.0) + float(placed.get("netted_qty") or 0)
         if placed.get("unit_cost"):
             venue_seen["book"] = True
         return {"fill_price": price,
@@ -859,7 +896,7 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
 
 def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors,
             style, filled_usd, vwap, aborted, below_min=False,
-            already_reported=False, filled_base=None, writeoff=None):
+            already_reported=False, filled_base=None, writeoff=None, netted_qty=0.0):
     """Async completion: one orders.jsonl entry (the web 交易歷史 source of
     truth) mirroring the synchronous reconcile entry shape.
 
@@ -883,8 +920,8 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
     # files reach a machine one at a time: beside a lib.portfolio from before
     # the quantity book this must still log the fill exactly as it used to
     try:
-        from lib.portfolio import apply_ledger_writeoff, load_portfolio_config
-        book_on = bool(load_portfolio_config().get("self_ledger"))
+        from lib.portfolio import apply_ledger_writeoff
+        book_on = _own_only()
     except Exception:
         book_on = False
     if filled_usd <= 0:
@@ -912,6 +949,9 @@ def _finish(symbol, signed_diff, asset_spec, reduce_only, exchange, contributors
     if book_on and filled_base:
         leg["executed_qty"] = filled_base
         leg["signed_qty"] = filled_base if signed_diff > 0 else -filled_base
+        if netted_qty and not reduce_only:
+            # the slices' entries that netted into the user's opposite position
+            leg["netted_qty"] = min(float(netted_qty), float(filled_base))
         if vwap and reduce_only:
             leg["signed_diff"] = round((1 if signed_diff > 0 else -1) * filled_base * vwap, 2)
     entry = {
@@ -973,7 +1013,8 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     venue_seen["writeoff"] = placed["writeoff"]
                 price = float(placed.get("avg_price") or 0)
                 base = float(placed.get("executed_qty") or 0)
-                venue_seen["base"] = venue_seen.get("base", 0.0) + base
+                venue_seen["base"] = venue_seen.get("base", 0.0) + float(placed.get("book_qty", base))
+                venue_seen["netted"] = venue_seen.get("netted", 0.0) + float(placed.get("netted_qty") or 0)
                 usd = base * float(placed.get("unit_cost") or price)
                 if usd > 0:
                     vwap = (round(((vwap or 0) * filled + price * usd) / (filled + usd), 8)
@@ -987,7 +1028,8 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         _finish(symbol, signed_diff, asset_spec, reduce_only, venue_seen["id"],
                 contributors, style, filled, vwap, aborted,
                 below_min=why.get("stop") == "below_min",
-                filled_base=venue_seen.get("base"), writeoff=venue_seen.get("writeoff"))
+                filled_base=venue_seen.get("base"), writeoff=venue_seen.get("writeoff"),
+                netted_qty=venue_seen.get("netted", 0.0))
     except Exception as e:
         logging.error(f"[execute] {key} {style} crashed: {e}")
         from lib.portfolio import _record_order_error
@@ -1000,9 +1042,8 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         # audit #2). `filled` stays 0 so the finally below never kicks a
         # re-diff against the understated book.
         try:
-            from lib.portfolio import load_portfolio_config
             from lib import guard
-            if load_portfolio_config().get("self_ledger") and not guard.halted():
+            if _own_only() and not guard.halted():
                 try:
                     from lib.events import emit
                     emit("execution_interrupted", keys=f"{symbol}(twap)"[:200])
@@ -1056,6 +1097,13 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         logging.warning(f"[execute] {key} chase: book rate unavailable ({e})")
         rate = None
     seen = {"book": bool(rate)}   # _sold_kw / writeoff carrier
+    # how much of this entry nets into the user's opposite position (one-way
+    # account): read before the first fill, capped by what fills at the end
+    try:
+        room = float(tools["netted_room"](buy)) if is_entry and "netted_room" in tools else 0.0
+    except Exception as e:
+        logging.warning(f"[execute] {key} chase: netted room unreadable ({e})")
+        room = 0.0
     notify = _get_notify()
     aborted = False
     crashed = False
@@ -1078,7 +1126,8 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         filled_usd = st["executed_qty"] * (rate or st["avg_price"] or 0)
         if filled_usd > 0:
             fills.append({"fill_price": st["avg_price"], "fill_qty": filled_usd,
-                          "base": st["executed_qty"]})
+                          "base": st["executed_qty"],
+                          "book": st.get("book_qty", st["executed_qty"])})
         return filled_usd
 
     _CANCEL_GONE = ("already_gone", "gone", "canceled", "cancelled",
@@ -1125,6 +1174,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                 stop.set()
                 reason = "state/HALT set"
                 break
+            if _account_held(tools.get("venue") or exchange):
+                stop.set()
+                reason = "exchange account unconfirmed"
+                break
             bid, ask = tools["bbo"]()
             px = bid if buy else ask
             seen["base"] = sum(f["base"] for f in fills)
@@ -1154,6 +1207,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     stop.set()  # the resting order is cancelled right below
                     reason = "machine restarted"
                     break
+                if _account_held(tools.get("venue") or exchange):
+                    stop.set()  # cancelled right below; a cancel is not an order
+                    reason = "exchange account unconfirmed"
+                    break
                 st = tools["status"](oid)
                 if st["status"] in ("filled", "canceled"):
                     # canceled = venue-side (expiry/ADL) — account either way,
@@ -1163,7 +1220,8 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     if filled_usd > 0:
                         fills.append({"fill_price": st["avg_price"],
                                       "fill_qty": filled_usd,
-                                      "base": st["executed_qty"]})
+                                      "base": st["executed_qty"],
+                                      "book": st.get("book_qty", st["executed_qty"])})
                     active_oid = oid = None
                     break
                 nbid, nask = tools["bbo"]()
@@ -1204,7 +1262,10 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                 qty = float(placed.get("executed_qty") or 0)
                 if price and qty:
                     fills.append({"fill_price": price, "base": qty,
+                                  "book": float(placed.get("book_qty", qty)),
                                   "fill_qty": qty * float(placed.get("unit_cost") or price)})
+                if not room:
+                    room = float(placed.get("netted_qty") or 0)
                 reason = reason or "window expired — remainder filled at market"
 
         filled = sum(f["fill_qty"] for f in fills)
@@ -1254,8 +1315,9 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             _finish(symbol, signed_diff, asset_spec, reduce_only, tools.get("venue"),
                     contributors, "chase", filled, vwap, aborted or crashed,
                     below_min=below_min, already_reported=crashed,
-                    filled_base=sum(f["base"] for f in fills),
-                    writeoff=seen.get("writeoff"))
+                    filled_base=sum(f.get("book", f["base"]) for f in fills),
+                    writeoff=seen.get("writeoff"),
+                    netted_qty=min(room, sum(f["base"] for f in fills)))
         except Exception as e2:
             logging.error(f"[execute] {key} chase completion record failed: {e2}")
         _reap_own(key)
@@ -1355,6 +1417,7 @@ def _custom_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             _finish(symbol, signed_diff, asset_spec, reduce_only, venue_seen["id"],
                     contributors, style, filled, vwap, aborted or stop.is_set(),
                     filled_base=venue_seen.get("base"),
+                    netted_qty=venue_seen.get("netted", 0.0),
                     writeoff=venue_seen.get("writeoff"))
             notify(f"Executor {module} done: {side.upper()} "
                    f"${filled:,.2f}/${total:,.2f} {symbol} | VWAP={vwap}")

@@ -63,7 +63,17 @@ import time
 
 OFFICIAL_DIRS = ("lib", "manager", "references", "examples", "allocators")
 OFFICIAL_FILES = ("AGENTS.md", "CLAUDE.md", "strategies/TEMPLATE_A.py", "strategies/TEMPLATE_C.py")
-NEVER = ("manager/portfolio_config.json", "manager/amounts.ui.json")
+# Machine state the runtime and lib write under manager/: never official, even if
+# one gets committed by mistake — copying it would hand one machine's config, book
+# or errors to every other, and "changed here" on the rest would block VERSION.
+NEVER = ("manager/portfolio_config.json", "manager/amounts.ui.json",
+         "manager/credentials.ui.json", "manager/account.json", "manager/order_errors.json",
+         "manager/orders.jsonl", "manager/last_reconcile.json", "manager/ledger_seed.json",
+         "manager/ledger_migration.json", "manager/spot_scope.json", "manager/flow_state.json",
+         "manager/venue_ever_ok.json", "manager/proposal.json", "manager/mgmt_progress.json")
+# user modules, and data files with no official counterpart (manager/ ships code only)
+NEVER_PREFIXES = ("manager/executors/",)
+MANAGER_STATE_RE = re.compile(r"^manager/[^/]+\.(json|jsonl|tmp)$")
 ORIGIN = "https://github.com/Blave-TW/blave-agent"
 PATH_RE = re.compile(r"^[A-Za-z0-9_./-]{1,160}$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
@@ -128,7 +138,8 @@ def tree_blobs(clone, head):
 
 
 def is_official(rel):
-    if rel in NEVER or rel.endswith(".pyc") or "__pycache__" in rel.split("/"):
+    if (rel in NEVER or rel.startswith(NEVER_PREFIXES) or MANAGER_STATE_RE.match(rel)
+            or rel.endswith(".pyc") or "__pycache__" in rel.split("/")):
         return False
     return rel in OFFICIAL_FILES or rel.split("/")[0] in OFFICIAL_DIRS
 

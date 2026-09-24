@@ -564,7 +564,8 @@ def _gate(intent, **fields):
     fields["venue"] = VENUE
     fields["intent"] = intent
     guard.check_restart_stop(intent, fields)
-    if intent == "entry" and guard.halted():
+    guard.check_account_hold("paper", intent, fields)
+    if intent == "entry" and guard.entry_blocked():
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — paper entry order for "
@@ -597,6 +598,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
                        reduce_only=False):
     """Confirmed simulated market order: whole qty at the current price (no
     spread). Same client_order_id → the earlier fill (idempotent)."""
+    guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     sym = str(symbol).upper()
     if direction not in ("long", "short"):
         raise ValueError(f"direction must be long|short, got {direction!r}")

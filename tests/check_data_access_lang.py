@@ -58,6 +58,8 @@ for need, label in [
     (r"holder concentration", "哪些是 Blave 專屬資料"),
     (r"card trial", "什麼條件才有(試用)"),
     (r"cloud machine", "什麼條件才有(雲端主機)"),
+    (r"charged per clock hour of use", "沒有主機也拿得到:按有用到的整點小時收(沒有主機也能買資料)"),
+    (r"balance that covers the hourly data fee", "條件裡有「餘額付得起這一小時」,不只試用與主機"),
     (r"name which data is missing", "要講缺哪一項"),
     (r"no directions, next steps or prices", "不給指路 / 不報價"),
     (r"once per conversation", "一次對話只講一次(marker)"),
@@ -100,6 +102,57 @@ t("英文訊息照樣錨成英文(不是一律中文)", "English" in en.rstrip()
 os.environ["BLAVE_DATA_ACCESS"] = "0"
 whole = agent_turn.data_access_rule() + "\n" + agent_turn.build_prompt("", [], msg)
 t("語言錨在資料規則之後", whole.rindex("[用中文回覆這則訊息]") > whole.rindex("Blave-only datasets"))
+
+# ③ 有漢字就是中文,除非有英文句子的證據(文法字)。兩個方向都用真實形狀的訊息:
+#   2026-09-23 兩次判錯——「做vol target到30%」(2 個漢字、9 個字母,整則回英文)與貼金鑰那一句
+zh_msgs = [
+    "做vol target到30%",
+    "幫我看一下 BTC 的 Sharpe",
+    "把 MCPT 跑一次",
+    "幫我把這組 Binance 金鑰綁到真錢帳戶:BINANCE_API_KEY=FAKE_not_a_real_key_0000 BINANCE_SECRET_KEY=FAKE_not_a_real_secret_0000",
+    "幫我把這組 Binance 金鑰綁到真錢帳戶：BINANCE_API_KEY=FAKE_not_a_real_key_0000 BINANCE_SECRET_KEY=FAKE_not_a_real_secret_0000",
+    "drawdown 太大了,改一下",
+    "用 lib/data.py 抓 BTCUSDT 1h 的資料",
+    "打開 https://blave.org/zh/agent/workspace 看一下",
+    "這個識別碼 a3f9c2e1-7b04-4d6e-9e21-5c0b8d4f1a77 要附在信裡嗎",
+    "幫我做一個 buy the dip 策略",
+    "現在是 risk on 還是 risk off",
+    "這個 out of sample 表現怎樣",
+    "現在btc籌碼集中度如何",
+    "好",
+    # 稽核 M1:貼上的錯誤訊息 / 程式碼是別人寫的英文,不算用戶的英文句
+    "幫我看這個錯誤:ValueError: cannot convert the series to <class 'float'>",
+    "這個錯誤是什麼意思 KeyError: 'close' is not in the index",
+    "跑回測出現 Traceback (most recent call last): File \"lib/data.py\", line 12, in <module>",
+    "這段為什麼錯 / for i in range(10): print(i)",
+    "這段為什麼錯\n```\nfor i in range(10):\n    print(i)\n```",
+    "`df.loc[i] is None` 為什麼會這樣",
+    "如果 price is above the MA 就進場",
+    "錯誤訊息: Order would immediately trigger. 怎麼辦",
+]
+for m in zh_msgs:
+    t("→ 中文:" + m[:28].replace("\n", " "), agent_turn._is_zh(m))
+for m in zh_msgs[:4]:
+    t("prompt 尾端是中文錨:" + m[:20], agent_turn.build_prompt("", [], m).rstrip().endswith("[用中文回覆這則訊息]"))
+en_msgs = [
+    "what is 台積電 price",
+    "run a backtest on 2330",
+    "How has 台積電 performed this week compared with 鴻海 and 聯發科?",
+    "Show me the BTCUSDT funding rate history on 幣安 for the last week",
+    "Is 做多 good right now?",
+    "run a backtest on 均線交叉",
+    "what's the Sharpe of my strategy",
+    "for i in range(10)",   # 沒有漢字:不管裡面是什麼,都不是中文句
+    "What does this mean? ValueError: cannot convert 台積電 data",   # 英文句在前、貼上的錯誤在後:照樣英文
+    # 稽核 Delta 2:英文句裡的括號不是程式碼;只有股名在頭尾、沒有中文虛字的英文句不是「中文句夾英文」
+    "Buy 台積電 (2330) if RSI < 30 and price is above the MA",
+    "Is 台積電 [2330] above the 200-day MA?",
+    "台積電 looks weak today, should I switch to 聯發科",
+    "「台積電」 is looking stronger than 「鴻海」",
+]
+for m in en_msgs:
+    t("→ 不是中文:" + m[:30], not agent_turn._is_zh(m))
+    t("prompt 尾端是英文錨:" + m[:24], "English" in agent_turn.build_prompt("", [], m).rstrip().split("\n")[-1])
 
 print(("\n%d 紅" % red) if red else "\nALL PASS")
 sys.exit(1 if red else 0)

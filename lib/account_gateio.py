@@ -15,6 +15,7 @@ every-wallet breakdown so transferred money never vanishes from display.
 import hashlib
 import hmac
 import json
+import os
 import time
 
 import requests
@@ -29,8 +30,36 @@ def _tag(exc, code=None, http_status=None):
     return venue_errors.tag(exc, code, http_status) if venue_errors else exc
 
 
-HOST = "https://api.gateio.ws"
+LIVE_HOST = "https://api.gateio.ws"
+DEMO_HOST = "https://api-testnet.gateapi.io"  # TestNet — same flag and host as order_gateio
 PREFIX = "/api/v4"
+
+
+def _demo(env):
+    return any(str(env.get(k, os.environ.get(k, ""))).lower() == "true"
+               for k in ("GATEIO_DEMO", "GATE_DEMO"))
+
+
+def _host(env):
+    return DEMO_HOST if _demo(env) else LIVE_HOST
+
+
+_time_offset = {"s": 0.0}  # Gate.io's clock − ours — same scheme as lib/order_gateio.py
+
+
+def _sync_time(env):
+    """After a REQUEST_EXPIRED (Gate.io accepts a Timestamp within 60 s of its
+    clock): offset against Gate.io's own clock (/spot/time, public), best-effort —
+    see lib/order_gateio._sync_time."""
+    try:
+        t0 = time.time()
+        r = requests.get(_host(env) + PREFIX + "/spot/time",
+                         headers={"X-Gate-Channel-Id": "blave"}, timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["server_time"])
+        _time_offset["s"] = (server_ms - int((t0 + t1) / 2 * 1000)) / 1000.0
+    except Exception:
+        pass
 
 
 def _creds(env):
@@ -41,12 +70,13 @@ def _creds(env):
     return api_key, secret
 
 
-def _request(env, method, path, query="", body=None, timeout=10):
+def _request(env, method, path, query="", body=None, timeout=10, _resynced=False):
     """Signed APIv4 request. The signed path includes the /api/v4 prefix and
-    the query string must byte-match what is sent (unencoded form)."""
+    the query string must byte-match what is sent (unencoded form). A
+    REQUEST_EXPIRED resyncs against Gate.io's clock and retries once."""
     api_key, secret = _creds(env)
     body_str = "" if body is None else json.dumps(body)
-    ts = str(int(time.time()))
+    ts = str(int(time.time() + _time_offset["s"]))
     payload_hash = hashlib.sha512(body_str.encode()).hexdigest()
     sign_str = "\n".join([method.upper(), PREFIX + path, query, payload_hash, ts])
     sig = hmac.new(secret.encode(), sign_str.encode(), hashlib.sha512).hexdigest()
@@ -57,7 +87,7 @@ def _request(env, method, path, query="", body=None, timeout=10):
         "Content-Type": "application/json",
         "X-Gate-Channel-Id": "blave",  # broker attribution — every request
     }
-    url = HOST + PREFIX + path + ("?" + query if query else "")
+    url = _host(env) + PREFIX + path + ("?" + query if query else "")
     r = requests.request(method, url, headers=headers,
                          data=body_str or None, timeout=timeout)
     if not r.ok:
@@ -65,11 +95,26 @@ def _request(env, method, path, query="", body=None, timeout=10):
             err = r.json()
         except ValueError:
             err = {}
+        if err.get("label") == "REQUEST_EXPIRED" and not _resynced:
+            _sync_time(env)
+            return _request(env, method, path, query, body, timeout, _resynced=True)
         raise _tag(Exception(
             f"Gate.io error {err.get('label', r.status_code)}: "
             f"{err.get('message', r.text[:120])} | {method} {path}"
         ), code=err.get("label"), http_status=r.status_code)
     return r.json()
+
+
+def get_account_id(env: dict) -> str:
+    """The Gate.io user id the key belongs to — `user_id` in GET
+    /api/v4/account/detail (authenticated), per
+    https://www.gate.com/docs/developers/apiv4/en/ ("Get account detail"). The
+    same id for every key of the account (lib.portfolio.book_account_check).
+    Raises when the field is missing rather than skipping that check."""
+    uid = (_request(env, "GET", "/account/detail") or {}).get("user_id")
+    if not uid:
+        raise Exception("Gate.io account/detail returned no user_id")
+    return str(uid)
 
 
 def get_equity(env: dict) -> dict:

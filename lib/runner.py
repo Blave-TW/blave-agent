@@ -488,7 +488,7 @@ def _chart_refresh_due(out_dir, tail_first_ts, tail_last_ts):
 def _version_fields(stats):
     """The six numbers plus the backtest window a version carries, read straight off the
     stats.json just written — canon §4 is explicit that nothing here is recomputed. A key
-    the branch never writes (Sortino and MCPT on Type C) stays null, never 0: the UI shows
+    the branch never writes (MCPT on Type C) stays null, never 0: the UI shows
     "—" for missing, and a 0 Sortino is a claim about the strategy."""
     return {
         'ret':     stats.get('Total Return [%]'),
@@ -637,6 +637,528 @@ def _send_best_effort(send_fn, arg):
         print(f"⚠️ Telegram send failed, nothing was delivered: {e}")
 
 
+# ── Look-ahead (truncation-invariance) check — every backtest ─────────────────
+# A causal strategy gives the same position at bar t whether or not bars after t exist.
+# MCPT cannot see a look-ahead (it permutes returns under a fixed position), so this is the
+# only automatic guard. The check re-runs fetch_data + compute_signals with the tail cut
+# off at a few points and compares every bar the two runs share. fetch_data is re-run on
+# REPLAYED lib.data results (recorded during the real fetch, truncated per cut, network
+# blocked), so indicators built in _add_indicators inside fetch_data are covered too at no
+# extra fetch cost. What it cannot see: a feed whose own timestamps overstate when it was
+# published — truncating keeps that value, the lag lives in the source (R2 territory).
+LOOKAHEAD_CUTS     = 5         # truncation points, one of them "drop the last bar"
+LOOKAHEAD_SEED     = MCPT_SEED
+LOOKAHEAD_BUDGET_S = 30.0      # stop adding cuts past this; the verdict says how many ran
+LOOKAHEAD_RTOL     = 1e-6
+LOOKAHEAD_ATOL     = 1e-9
+_LOOKAHEAD_PATTERNS = (
+    ('shift(-',             'negative shift reads a later bar'),
+    ('bfill',               'backward fill copies a later value onto earlier bars'),
+    ("method='bfill'",      'backward fill copies a later value onto earlier bars'),
+    ('center=True',         'a centred window reads later bars'),
+    ("label='left'",        "resample(label='left') stamps a bucket's final value on its first bar"),
+    ("direction='forward'", "merge_asof(direction='forward') attaches a later row"),
+    ("direction='nearest'", "merge_asof(direction='nearest') can attach a later row"),
+)
+
+
+class _ReplayMiss(Exception):
+    """The replayed fetch_data asked for something the real run never fetched through
+    lib.data (or tried the network) — replay cannot stand in for it."""
+
+
+def _cut_for(idx, cut, ref):
+    """cut (a timestamp of the signal index `ref`) expressed on idx's axis. Same awareness:
+    as is. Otherwise a naive axis is either UTC (lib.data's convention) or wall-clock in the
+    signal's zone (a Taipei feed) — pick the reading under which idx lines up with the signal
+    bars; if it lines up with neither (a daily feed under hourly bars), take the LATER
+    candidate: cutting a frame late can only hide a leak, cutting it early invents one."""
+    if (idx.tz is None) == (cut.tz is None):
+        return cut
+    try:
+        if idx.tz is None:        # naive frame, aware signal
+            cands = [(cut.tz_convert('UTC').tz_localize(None), ref.tz_convert('UTC').tz_localize(None)),
+                     (cut.tz_localize(None), ref.tz_localize(None))]
+        else:                     # aware frame, naive signal
+            cands = [(cut.tz_localize('UTC'), ref.tz_localize('UTC'))]
+            try:
+                cands.append((cut.tz_localize(idx.tz), ref.tz_localize(idx.tz)))
+            except Exception:     # DST-ambiguous wall clock: that reading is not usable
+                pass
+    except Exception:
+        return None
+    hits = [int(idx.isin(mapped).sum()) for _, mapped in cands]
+    if max(hits) > 0:
+        return cands[hits.index(max(hits))][0]
+    return max(c for c, _ in cands)
+
+
+def _cut_by_availability(obj, cut, source):
+    """A recorded lib.data feed (a FEED_TIMING source) cut to the rows PUBLISHED by `cut`
+    rather than the rows STAMPED before it: a row stamped D 00:00 but published D 20:00 did
+    not exist at a D 10:00 cut, so a strategy that let a D 09:00 bar read it shows up as a
+    look-ahead. `cut` is the first removed bar's label = the last kept bar's close; a naive
+    cut takes the later of its UTC / feed-tz readings (cutting late hides, never invents).
+    None when the frame's times cannot be computed — the caller falls back to stamps."""
+    try:
+        from lib.data import FEED_TIMING, feed_available_at
+        avail = feed_available_at(obj, source)
+        if cut.tz is None:
+            at = max(cut.tz_localize('UTC'), cut.tz_localize(FEED_TIMING[source]['tz']))
+        else:
+            at = cut
+        return obj.loc[np.asarray(avail <= at)].copy()
+    except Exception:
+        return None
+
+
+def _truncate(obj, cut, ref=None, source=None):
+    """Copy of obj with every time-indexed pandas object cut to index < cut (cut=None:
+    plain copy); `ref` is the signal index the cut came from (see _cut_for). A frame whose
+    axis cannot be related to the cut is left whole — hides, never invents. `source` (a
+    FEED_TIMING key) cuts by publication time instead, see _cut_by_availability."""
+    if cut is not None and source is not None and isinstance(obj, (pd.DataFrame, pd.Series)):
+        cut_obj = _cut_by_availability(obj, cut, source)
+        if cut_obj is not None:
+            return cut_obj
+    if isinstance(obj, (pd.DataFrame, pd.Series)):
+        idx = obj.index
+        if cut is not None and isinstance(idx, pd.DatetimeIndex):
+            c = _cut_for(idx, cut, ref) if ref is not None else (
+                cut if (idx.tz is None) == (cut.tz is None) else None)
+            if c is not None:
+                return obj.loc[idx < c].copy()
+        return obj.copy()
+    if isinstance(obj, dict):
+        return {k: _truncate(v, cut, ref, source) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_truncate(v, cut, ref, source) for v in obj]
+    if type(obj) is tuple:
+        return tuple(_truncate(v, cut, ref, source) for v in obj)
+    return obj
+
+
+def _feed_source(fetcher_name):
+    """lib.data fetcher name → its FEED_TIMING key, or None for price / snapshot fetchers."""
+    try:
+        from lib.data import FEED_TIMING
+    except ImportError:
+        return None
+    key = fetcher_name[len('fetch_'):] if fetcher_name.startswith('fetch_') else fetcher_name
+    return key if key in FEED_TIMING else None
+
+
+class _Raised:
+    """A recorded fetcher call that raised in the real run."""
+    def __init__(self, exc):
+        self.exc = exc
+
+
+class _FetchRecorder:
+    """Wraps every lib.data fetch_* for the duration of one fetch_data call — and the
+    strategy module's own global of the same function, for a top-level
+    `from lib.data import fetch_kline`. Records (call → copy of result) on the real run;
+    replays truncated copies during the look-ahead check. Top-level calls only: a fetcher
+    calling another fetcher is recorded once, as the outer call."""
+
+    def __init__(self, config):
+        import threading
+        self.config  = config
+        self.records = {}
+        self.usable  = True
+        self._depth  = threading.local()
+
+    @staticmethod
+    def _key(name, args, kwargs):
+        return repr((name, args, sorted(kwargs.items())))
+
+    def _patched(self, make):
+        import contextlib
+        import lib.data as D
+        recorder = self
+
+        @contextlib.contextmanager
+        def cm():
+            originals = {n: f for n, f in vars(D).items() if n.startswith('fetch_') and callable(f)}
+            in_cfg = [n for n, f in originals.items() if recorder.config.get(n) is f]
+            try:
+                for n, f in originals.items():
+                    setattr(D, n, make(n, f))
+                for n in in_cfg:
+                    recorder.config[n] = getattr(D, n)
+                yield
+            finally:
+                for n, f in originals.items():
+                    setattr(D, n, f)
+                for n in in_cfg:
+                    recorder.config[n] = originals[n]
+        return cm()
+
+    def recording(self):
+        def make(name, fn):
+            def wrapper(*args, **kwargs):
+                depth = getattr(self._depth, 'n', 0)
+                self._depth.n = depth + 1
+                try:
+                    out = fn(*args, **kwargs)
+                except Exception as e:
+                    # a symbol the real run skipped on error must be skipped the same way
+                    if depth == 0:
+                        self.records[self._key(name, args, kwargs)] = _Raised(e)
+                    raise
+                finally:
+                    self._depth.n = depth
+                if depth == 0:
+                    try:
+                        self.records[self._key(name, args, kwargs)] = _truncate(out, None)
+                    except Exception:
+                        self.usable = False
+                return out
+            return wrapper
+        return self._patched(make)
+
+    def replaying(self, cut, ref=None):
+        import contextlib
+        import requests
+
+        def make(name, fn):
+            def wrapper(*args, **kwargs):
+                key = self._key(name, args, kwargs)
+                if key not in self.records:
+                    self.missed = f"{name}() was called with arguments the real run did not use"
+                    raise _ReplayMiss(self.missed)
+                rec = self.records[key]
+                if isinstance(rec, _Raised):
+                    raise rec.exc
+                return _truncate(rec, cut, ref, _feed_source(name))
+            return wrapper
+
+        def no_network(*_a, **_k):
+            self.missed = "fetch_data reads data outside lib.data (network call)"
+            raise _ReplayMiss(self.missed)
+
+        @contextlib.contextmanager
+        def cm():
+            self.missed = None
+            orig = requests.Session.request
+            requests.Session.request = no_network
+            try:
+                with self._patched(make):
+                    yield
+            finally:
+                requests.Session.request = orig
+        return cm()
+
+
+def _lookahead_positions(result, warmup):
+    """compute_fn output → what the backtest actually trades on, post-WARMUP:
+    Type A → float Series (ffill + fillna(0), NaN = hold, as run() does);
+    Type C → DataFrame of weights with the asset columns of price_df['close'];
+    None when the shape is not one run() understands."""
+    if isinstance(result, tuple) and result and isinstance(result[0], pd.Series):
+        result = result[0]
+    if isinstance(result, pd.Series):
+        return result.iloc[warmup:].astype(float).ffill().fillna(0.0)
+    if isinstance(result, tuple) and len(result) >= 2 and isinstance(result[0], np.ndarray):
+        w, price_df = result[0], result[1]
+        try:
+            cols = list(price_df['close'].columns)
+        except Exception:
+            cols = list(range(w.shape[1]))
+        if w.ndim != 2 or len(cols) != w.shape[1] or len(price_df.index) != w.shape[0]:
+            return None
+        return pd.DataFrame(w.astype(float), index=price_df.index, columns=cols).iloc[warmup:]
+    return None
+
+
+def _lookahead_diff(full, part, cut):
+    """First bar before `cut` where the truncated run disagrees with the full one, as
+    (timestamp, column or None, full value, truncated value) — or None if they agree."""
+    shared = full.index[full.index < cut]
+    if isinstance(full, pd.Series):
+        a = full.loc[shared].to_numpy()
+        b = part.reindex(shared).to_numpy()
+        bad = ~np.isclose(a, b, rtol=LOOKAHEAD_RTOL, atol=LOOKAHEAD_ATOL, equal_nan=True)
+        if bad.any():
+            i = int(np.flatnonzero(bad)[0])
+            return shared[i], None, a[i], b[i]
+        return None
+    f = full.loc[shared]
+    a = f.to_numpy(dtype=float)
+    b = part.reindex(index=shared, columns=f.columns).to_numpy(dtype=float, copy=True)
+    # an asset the truncated run never saw counts as flat there — it must not have held
+    # weight before the cut in the full run either
+    unseen = ~np.asarray(f.columns.isin(part.columns))
+    b[:, unseen] = np.nan_to_num(b[:, unseen], nan=0.0)
+    bad = ~np.isclose(np.nan_to_num(a, nan=0.0), np.nan_to_num(b, nan=0.0),
+                      rtol=LOOKAHEAD_RTOL, atol=LOOKAHEAD_ATOL) | (np.isnan(a) != np.isnan(b))
+    if bad.any():
+        i, j = (int(x[0]) for x in np.nonzero(bad))
+        return shared[i], f.columns[j], a[i, j], b[i, j]
+    return None
+
+
+def _lookahead_skip_mask(result, data, index):
+    """Bars that must not be the LAST bar of a truncated run: settlement bars. Both
+    settlement helpers mark the bar before a roll only once the roll is visible
+    (settlement_signals_from_db needs the next bar's instrument_id; txf_settlement_mask
+    stops at index.max()), so cutting right after one would read as a look-ahead. That
+    dependence is a real live gap of its own, tracked separately — not this check's call."""
+    n    = len(index)
+    skip = np.zeros(n, dtype=bool)
+    ea   = None
+    if isinstance(result, tuple) and len(result) >= 2 and isinstance(result[0], pd.Series):
+        ea = result[1]
+    elif isinstance(result, tuple) and len(result) >= 3 and isinstance(result[0], np.ndarray):
+        ea = result[2]
+    if ea is not None:
+        try:
+            if hasattr(ea, 'reindex'):
+                skip |= ea.reindex(index).fillna(False).to_numpy(dtype=bool)
+            else:
+                arr = np.asarray(ea, dtype=bool)
+                if len(arr) == n:
+                    skip |= arr
+        except Exception:
+            pass
+    if isinstance(data, pd.DataFrame) and 'instrument_id' in data.columns:
+        inst = data['instrument_id'].reindex(index)
+        skip |= (inst != inst.shift(-1)).fillna(False).to_numpy(dtype=bool)
+    return skip
+
+
+def _lookahead_source_hints(config):
+    """Lines of the strategy file that match a known look-ahead pattern — attached to a
+    refusal only (never a finding on their own: `shift(-1)` in a comment is harmless)."""
+    path = config.get('__file__')
+    if not path:
+        return []
+    try:
+        lines = Path(path).read_text(encoding='utf-8').splitlines()
+    except OSError:
+        return []
+    hints = []
+    for no, line in enumerate(lines, 1):
+        code = line.split('#', 1)[0]
+        for pat, why in _LOOKAHEAD_PATTERNS:
+            if pat in code:
+                hints.append(f"line {no}: {line.strip()[:120]}  ← {why}")
+                break
+    return hints[:8]
+
+
+def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, recorder, compute_s=0.0):
+    """Truncation-invariance verdict for this backtest:
+      ('pass', detail) | ('skip', reason) | ('leak', (cut, ts, col, full_v, part_v, how)).
+
+    Two replay modes, best first: 'fetch' re-runs fetch_data on recorded lib.data results
+    (covers _add_indicators), 'compute' re-runs compute_signals on the truncated fetch_data
+    output. A mode is used only if its untruncated replay reproduces the real result
+    exactly — that control is what separates a look-ahead from a nondeterministic strategy
+    or a fetch_data the replay cannot stand in for. Checker trouble never refuses a
+    backtest ('skip'); only a reproduced, cut-dependent difference does ('leak')."""
+    import contextlib, io
+    if compute_s > 2 * LOOKAHEAD_BUDGET_S:
+        return 'skip', (f'compute_signals took {compute_s:.0f}s — the check re-runs it at least '
+                        f'twice, over the {LOOKAHEAD_BUDGET_S:.0f}s budget')
+    warmup = int(config.get('WARMUP', 0) or 0)
+    full   = _lookahead_positions(result, warmup)
+    if full is None or len(full) == 0:
+        return 'skip', 'compute_signals output is not a shape the check understands'
+    if isinstance(result, pd.Series):
+        index = result.index
+    elif isinstance(result[0], pd.Series):
+        index = result[0].index
+    else:
+        index = result[1].index
+    if not isinstance(index, pd.DatetimeIndex) or not index.is_monotonic_increasing:
+        return 'skip', 'the bar index is not a sorted DatetimeIndex'
+
+    def via_fetch(cut):
+        with recorder.replaying(cut, index):
+            out = compute_fn(fetch_data_fn(hdrs))
+        if recorder.missed:
+            raise _ReplayMiss(recorder.missed)
+        return out
+
+    def via_compute(cut):
+        return compute_fn(_truncate(data, cut, index))
+
+    def quiet(fn, cut):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return _lookahead_positions(fn(cut), warmup)
+
+    started, why_not = time.monotonic(), []
+    modes = ([('fetch', via_fetch)] if recorder is not None and recorder.usable and recorder.records
+             else []) + [('compute', via_compute)]
+    for how, fn in modes:
+        try:
+            same = quiet(fn, None)
+        except (Exception, SystemExit) as e:
+            why_not.append(f"{how}: {e}"[:160])
+            continue
+        if same is None or _lookahead_diff(full, same, index[-1] + pd.Timedelta(days=36500)) is not None:
+            why_not.append(f"{how}: re-running on identical data gave a different result "
+                           f"(nondeterministic strategy?)")
+            continue
+        n    = len(index)
+        lo   = max(warmup + 20, n // 3)
+        if n - 1 <= lo:
+            return 'skip', f'only {n} bars (WARMUP {warmup}) — too short to test'
+        skip = _lookahead_skip_mask(result, data, index)
+        rng  = np.random.default_rng(LOOKAHEAD_SEED)
+        pool = [n - 1] + list(rng.permutation(np.arange(lo, n - 1)))
+        cuts = [k for k in pool if not skip[k - 1]][:LOOKAHEAD_CUTS]
+        if not cuts:
+            return 'skip', 'every candidate cut sits on a settlement bar'
+        ran, errors = 0, []
+        for k in cuts:
+            if ran and time.monotonic() - started > LOOKAHEAD_BUDGET_S:
+                break
+            cut = index[k]
+            try:
+                part = quiet(fn, cut)
+            except (Exception, SystemExit) as e:
+                errors.append(str(e)[:120])
+                continue
+            if part is None:
+                errors.append('truncated run returned an unexpected shape')
+                continue
+            if len(part) >= len(full):  # the replay did not actually lose the tail
+                errors.append('truncation did not shorten the data')
+                continue
+            ran += 1
+            d = _lookahead_diff(full, part, cut)
+            if d is not None:
+                return 'leak', (cut,) + d + (how,)
+        if ran == 0:
+            why_not.append(f"{how}: every truncated run failed ({'; '.join(errors[:2])})")
+            continue
+        scope = 'fetch_data + compute_signals' if how == 'fetch' else 'compute_signals only'
+        return 'pass', f"{ran} truncation point(s), {scope}"
+    return 'skip', '; '.join(why_not) or 'no replay mode available'
+
+
+def _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, recorder, compute_s=0.0):
+    """Backtest gate. A reproduced look-ahead refuses the backtest (SystemExit before any
+    stats.json / version / chart is written — same shape as the settlement-mask guard): the
+    numbers of a strategy that reads the future are fiction, and a version frozen from them
+    would be the one that gets deployed. Anything short of a proven difference only warns."""
+    try:
+        verdict, info = _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data,
+                                         result, recorder, compute_s)
+    except Exception as e:  # the checker itself broke — never take the backtest down with it
+        verdict, info = 'skip', f'checker error: {e}'
+    if verdict == 'pass':
+        logging.info("look-ahead check passed: %s", info)
+        print(f"  Look-ahead check: passed ({info})")
+        return
+    if verdict == 'skip':
+        logging.warning("look-ahead check skipped: %s", info)
+        print(f"  ⚠️ Look-ahead check skipped — this backtest is NOT verified free of look-ahead: {info}")
+        return
+    cut, ts, col, full_v, part_v, how = info
+    where = f"{ts}" + (f" [{col}]" if col is not None else "")
+    scope = ('fetch_data (incl. _add_indicators) + compute_signals' if how == 'fetch'
+             else 'compute_signals')
+    lines = [
+        "❌ 偷看未來 (look-ahead): a bar's position changed when LATER bars were removed.",
+        f"❌ Removed every bar from {cut} on and re-ran {scope}: at {where} the full data "
+        f"gives {full_v:g}, the data that existed at that time gives {part_v:g}.",
+        "❌ A causal strategy gives the same value at bar t whether or not bars after t exist. "
+        "Usual causes: shift(-n), bfill, rolling(center=True), a mean/std/min/max/percentile/rank "
+        "over the WHOLE series (use rolling/expanding), resample(label='left') joined back onto "
+        "shorter bars (use label='right', closed='left'), merge_asof(direction='forward'), an "
+        "external feed (三大法人, 融資, PCR, alpha…) join/ffilled onto bars that close before it "
+        "is published (attach it with lib.data.align_feed). "
+        "Type C: the old _rebalance_mask `(s != s.shift(-1)).fillna(True)` does this — use "
+        "`(s != s.shift(1)).to_numpy()` (first bar of each period).",
+    ]
+    lines += [f"❌ {h}" for h in _lookahead_source_hints(config)]
+    lines.append("❌ Backtest refused — fix it so every bar uses only data up to its own close, then re-run.")
+    msg = '\n'.join(lines)
+    logging.error(msg)
+    raise SystemExit(msg)
+
+
+def _weight_row_warnings(weights, index):
+    """Type C weight rows the backtest will silently mis-book: gross above 1 (tied ranks
+    under rank()'s default method='average' give 1.5 for a top-2 of [3,3,3,1]) and
+    non-finite entries (NaN turns the whole equity curve NaN). Warn, not refuse — a
+    deliberately levered portfolio is legal, it just has to be said out loud."""
+    out = []
+    w = np.asarray(weights, dtype=float)
+    if w.ndim != 2 or not len(w):
+        return out
+    bad = ~np.isfinite(w).all(axis=1)
+    if bad.any():
+        out.append(f"{int(bad.sum())} weight row(s) contain NaN/inf (first {index[int(np.flatnonzero(bad)[0])]}) "
+                   f"— fill them (0.0 = flat) or the equity curve turns NaN")
+    gross = np.nansum(np.abs(w), axis=1)
+    over = gross > 1 + 1e-6
+    if over.any():
+        i = int(np.flatnonzero(over)[0])
+        out.append(f"{int(over.sum())} weight row(s) sum above 1 in absolute value (max {gross.max():.3f}, "
+                   f"first {index[i]}) — that is leverage. Tied ranks do this: use "
+                   f"rank(method='first'), or divide each row by max(1, its gross).")
+    return out
+
+
+def typec_live_state(weights, price_df, now=None, market='swap'):
+    """The state.json a Type C live tick writes (lib.portfolio.aggregate_portfolio
+    reads it): {'type': 'portfolio', 'weights': {SYMBOL: w}, 'rebalance_at',
+    'bar_at', 'updated_at'}.
+
+    weights = the LAST row of the weight matrix — the backtest holds row t
+    during bar t+1, so the row the live tick computes at bar t's close is the
+    target from now on (Type A takes its last signal the same way). NaN = 0.
+    Symbols are price_df['close']'s columns, dashless upper like single-symbol
+    states. rebalance_at = the first bar of the trailing run of identical rows:
+    with the template's rebalance mask it is the period's rebalance bar and
+    stays put until the next one — the "new signal" marker (resume_wait)."""
+    w = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    close = price_df['close']
+    idx = close.index
+    last = w[-1]
+    i = len(w) - 1
+    while i > 0 and np.allclose(w[i - 1], last, rtol=0, atol=1e-12):
+        i -= 1
+    syms = [str(c).replace('-', '').upper() for c in close.columns]
+    total = float(np.abs(last).sum())
+    if total > 1 + 1e-9:
+        logging.warning(f"Type C weights sum to {total:.4f} > 1 — traded as computed "
+                        f"(the backtest does the same)")
+    return {'type': 'portfolio', 'market': market,
+            'weights': {s: round(float(x), 10) for s, x in zip(syms, last)},
+            'rebalance_at': int(pd.Timestamp(idx[i]).timestamp()),
+            'bar_at': int(pd.Timestamp(idx[-1]).timestamp()),
+            'updated_at': int(now if now is not None else time.time())}
+
+
+def _fill_invalid_cells(close_v, open_v):
+    """Type C price arrays (n, k) with invalid cells repaired per asset — the portfolio
+    cannot drop a bar for one asset the way Type A drops it. Left alone, an Open-0 cell books
+    overnight -100% on that asset and a Close-0 cell intraday -100%.
+      Close NaN / <= 0 → Open and Close = the asset's last valid Close (a no-move bar; the
+                         next valid bar's overnight leg spans the gap)
+      Open  NaN / <= 0, Close valid → Open = the last valid Close (overnight 0, the bar's
+                         real move lands in its intraday leg)
+    Cells before the asset's first valid Close stay NaN (0 return, as before). open_v None =
+    no Open column, Close is used for both."""
+    close = np.asarray(close_v, dtype=float)
+    opn   = close if open_v is None else np.asarray(open_v, dtype=float)
+    with np.errstate(invalid='ignore'):
+        c_ok = np.isfinite(close) & (close > 0)
+        o_ok = np.isfinite(opn) & (opn > 0)
+    if (c_ok & o_ok).all():
+        return close, opn
+    last_valid = pd.DataFrame(np.where(c_ok, close, np.nan)).ffill().to_numpy()
+    prev_valid = np.vstack([np.full((1, close.shape[1]), np.nan), last_valid[:-1]])
+    new_close = np.where(c_ok, close, last_valid)
+    new_open  = np.where(c_ok & o_ok, opn, np.where(c_ok, prev_valid, last_valid))
+    return new_close, new_open
+
+
 def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     """
     Unified runner for Type A and Type C strategies.
@@ -731,8 +1253,24 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     except Exception as e:
         logging.warning("version drift check skipped: %s", e)
 
-    data   = fetch_data_fn(hdrs)
+    import contextlib
+    try:  # a still-forming crypto bar must not become the live tick's iloc[-1]
+        from lib.data import closed_bars_only
+    except ImportError:
+        closed_bars_only = contextlib.nullcontext
+    try:  # live: align_feed refuses a bar whose external row has not been published yet
+        from lib.data import live_feeds
+    except ImportError:
+        live_feeds = contextlib.nullcontext
+    recorder = _FetchRecorder(config) if mode == 'backtest' else None
+    with closed_bars_only(), (live_feeds() if mode != 'backtest' else contextlib.nullcontext()), \
+            (recorder.recording() if recorder else contextlib.nullcontext()):
+        data = fetch_data_fn(hdrs)
+    compute_t0 = time.monotonic()
     result = compute_fn(data)
+    if mode == 'backtest':
+        _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, recorder,
+                           time.monotonic() - compute_t0)
 
     # Unpack optional exec_at_close for Type A: (signals, exec_at_close) → signals
     exec_at_close_orig = None
@@ -745,6 +1283,9 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     if isinstance(result, pd.Series):
         df      = data
         signals = result
+        if mode == 'backtest':  # live clamps the NET spot target in lib/portfolio (after netting strategies)
+            from lib.exits import clamp_spot
+            signals = clamp_spot(signals, config.get('MARKET'))
 
         # ── Full PnL computation (always) ──────────────────────────────────────
         warmup = config.get('WARMUP', 0)
@@ -752,8 +1293,11 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             df      = df.iloc[warmup:]
             signals = signals.iloc[warmup:]
 
-        # Drop bars with invalid prices (e.g. futures overnight gaps)
-        valid = df['Close'].notna() & (df['Close'] > 0)
+        # Drop bars with invalid prices (e.g. futures overnight gaps). Open counts too: a
+        # valid Close on an Open-0 bar would book overnight = 0/close[t-1] - 1 = -100%.
+        # Dropping loses nothing — the next bar's overnight leg spans the gap.
+        valid = (df['Close'].notna() & (df['Close'] > 0)
+                 & df['Open'].notna() & (df['Open'] > 0))
         if not valid.all():
             df      = df[valid]
             signals = signals.reindex(df.index).ffill()
@@ -877,6 +1421,16 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             for p in (plot_series_findings(config['__file__']) if plot_series_findings else []):
                 logging.warning(p['msg'])
                 print(f"  ⚠️ WARNING: {p['msg']}")
+
+        # Hand-written exit loop → WARNING line only, never blocks (lib/quality_check.py).
+        if mode == 'backtest' and config.get('__file__'):
+            try:
+                from lib.quality_check import exit_loop_findings
+                for p in exit_loop_findings(config['__file__']):
+                    logging.warning(p['msg'])
+                    print(f"  ⚠️ WARNING: {p['msg']}")
+            except Exception as e:  # stale quality_check / parse trouble: skip the hint, keep the run
+                logging.warning("exit-loop hint skipped: %s", e)
 
         equity   = np.cumprod(1 + np.nan_to_num(pf_ret))
         result_d = {
@@ -1004,6 +1558,11 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             if exec_at_close_orig_c is not None:
                 exec_at_close_orig_c = exec_at_close_orig_c[warmup:]
 
+        if mode == 'backtest':
+            for msg in _weight_row_warnings(weights_orig, price_df.index):
+                logging.warning(msg)
+                print(f"  ⚠️ WARNING: {msg}")
+
         close_df = price_df['close']
         open_df  = price_df['open'] if 'open' in price_df.columns.get_level_values(0) else None
 
@@ -1020,8 +1579,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         else:
             exec_shifted_c = np.zeros(n, dtype=bool)
 
-        close_v = close_df.values
-        open_v  = open_df.values if open_df is not None else close_v
+        close_v, open_v = _fill_invalid_cells(
+            close_df.values, open_df.values if open_df is not None else None)
 
         pf_ret, overnight, delta_w, tc_daily = precise_pnl(
             close_v, open_v, w_curr, w_prev, exec_shifted_c, fee
@@ -1032,7 +1591,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         pf_equity = np.cumprod(1 + pf_ret)
         pf_series = pd.Series(pf_ret, index=close_df.index)
         total_ret = pf_equity[-1] - 1
-        sharpe, _, _, mdd, ann_ret = compute_stats(pf_ret, close_df.index)
+        sharpe, sortino, omega, mdd, ann_ret = compute_stats(pf_ret, close_df.index)
 
         n_trades = int(np.count_nonzero(np.nan_to_num(delta_w)))
 
@@ -1062,10 +1621,13 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         stats = {'strategy': strategy_name, 'interval': interval,
                  'start': close_df.index[0].strftime('%Y-%m-%d'),
                  'end':   close_df.index[-1].strftime('%Y-%m-%d'),
-                 'fee': fee,
+                 'fee': fee,                        # pre-existing key, kept for older readers
+                 'fee [%]': round(fee * 100, 4),    # the key the workspace report reads (as Type A)
                  'Total Return [%]':    _v(total_ret * 100),
                  'Ann. Return [%]':     _v(ann_ret   * 100),
                  'Sharpe Ratio':        _v(sharpe),
+                 'Sortino Ratio':       _v(sortino),
+                 'Omega Ratio':         _v(omega),
                  'Max Drawdown [%]':    _v(mdd       * 100),
                  'Total Fees Paid [%]': round(float(tc_daily.sum()) * 100, 4),
                  'Trades':              n_trades,
@@ -1087,6 +1649,15 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             # Telegram gate below.
             from lib.notify import report_photo_web
             report_photo_web(str(out_dir / 'pnl.png'))
+
+        if mode != 'backtest':
+            # the live target (lib.portfolio.aggregate_portfolio): per-asset
+            # weights of the last computed row, and the rebalance bar they began on
+            live = typec_live_state(weights_orig, price_df, market=config.get('MARKET', 'swap'))
+            prev = load_state(strategy_name) or {}
+            if prev.get('rebalance_at') != live['rebalance_at']:
+                logging.info(f"Type C rebalance at {live['rebalance_at']}: {live['weights']}")
+            save_state(strategy_name, live)
 
         if send_telegram_fn and not quiet:
             from lib.notify import send_photo

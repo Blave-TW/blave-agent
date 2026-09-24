@@ -191,8 +191,40 @@ def _strategy_market(name):
         return "swap"
 
 
+# a portfolio (Type C) state's weights, as forwarded: the report is cached by the
+# api and has hit 413 before — never an unbounded map
+PORTFOLIO_WEIGHTS_MAX = 100
+_WEIGHT_SYM_RE = re.compile(r"^[A-Z0-9]{1,30}$")
+
+
+def _portfolio_weights(raw):
+    """{SYMBOL: finite float} from a Type C state's `weights` (lib/runner.
+    typec_live_state), or None when there are none. Keys canonical (dashless
+    upper), non-finite / non-numeric values and malformed keys dropped; zero
+    weights dropped (they target nothing); at most PORTFOLIO_WEIGHTS_MAX
+    symbols, the largest |weight| first so a truncated map keeps what trades
+    most. The machine's own targets always use the full file — this is display."""
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for k, v in raw.items():
+        sym = str(k).replace("-", "").upper()
+        if not _WEIGHT_SYM_RE.match(sym) or isinstance(v, bool):
+            continue
+        try:
+            w = float(v)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(w) or w == 0:
+            continue
+        out[sym] = round(w, 8)
+    top = sorted(out.items(), key=lambda kv: -abs(kv[1]))[:PORTFOLIO_WEIGHTS_MAX]
+    return dict(top)
+
+
 def strategy_states():
-    """{name: {symbol, position, market, updated_at}} from strategies/*/state.json."""
+    """{name: {symbol, position, market, updated_at}} from strategies/*/state.json;
+    a portfolio (Type C) state also carries `type`, `weights` and `rebalance_at`."""
     root = os.path.join(WORKSPACE, "strategies")
     states = {}
     try:
@@ -210,6 +242,15 @@ def strategy_states():
             "market": _strategy_market(name),
             "updated_at": _mtime(path),
         }
+        weights = _portfolio_weights(data.get("weights"))
+        if weights is not None:
+            states[name]["type"] = "portfolio"
+            states[name]["weights"] = weights
+            try:
+                ra = int(data.get("rebalance_at"))
+                states[name]["rebalance_at"] = ra if ra > 0 else None
+            except (TypeError, ValueError):
+                states[name]["rebalance_at"] = None
     return states
 
 
@@ -479,6 +520,51 @@ def portfolio_configured(cfg_path, hb, last):
     return False if _ws_lib_read_only_guard() else None
 
 
+def can_trade_portfolio():
+    """The workspace lib trades Type C portfolios live: its runner writes the
+    per-asset weights (lib/runner.typec_live_state) and its aggregation reads
+    them. Both files ship on the manual channel, so the runtime asks the disk —
+    a runtime that allowed funding a portfolio beside an older lib would show
+    it as trading while nothing ever does."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "runner.py"), encoding="utf-8",
+                  errors="replace") as f:
+            runner = "def typec_live_state(" in f.read()
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), encoding="utf-8",
+                  errors="replace") as f:
+            agg = "Type C (lib/runner.typec_live_state)" in f.read()
+        return runner and agg
+    except OSError:
+        return False
+
+
+def _ws_lib_own_only():
+    """The workspace lib/portfolio.py on disk has the own-positions-only rule
+    (every config without "self_ledger": false diffs against the book)."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"),
+                  encoding="utf-8", errors="replace") as f:
+            return "def own_positions_only(" in f.read()
+    except OSError:
+        return False
+
+
+def own_positions_only(cfg, hb, last):
+    """Does the code that trades on this machine leave every position it did
+    not open alone? The flag says so when it is written; a missing key is the
+    lib's call, and the lib ships on the manual channel — so, as with
+    portfolio_configured: a running reconciler's own word (`own_only` in its
+    snapshot), else the lib on disk its next start loads. Reporting true off
+    this runtime alone would tell a user on an old lib that their manual
+    positions are safe while it closes them."""
+    flag = (cfg or {}).get("self_ledger")
+    if flag is not None:
+        return bool(flag)
+    if _fresh(hb):
+        return isinstance(last, dict) and last.get("own_only") is True
+    return _ws_lib_own_only()
+
+
 def restart_stop(hb=None, cfg=None, vens=None):
     """Why trading is off after a machine restart, while
     state/reconciler_stopped.json exists (command_listener._machine_restart_check
@@ -528,12 +614,23 @@ def halt_state():
     if not os.path.exists(path):
         return {"halted": False}
     info = _read_json(path, {}) or {}
+    guard_state = _read_json(os.path.join(WORKSPACE_STATE, "venue_account.json"), {})
+    guard_state = guard_state if isinstance(guard_state, dict) else {}
+    hold, mark = guard_state.get("book_hold"), guard_state.get("bind_reset")
     return {
         "halted": True,
         "at": info.get("ts"),
         "reason": info.get("reason"),
         "source": info.get("source"),
         "blocked": _halt_denials(info.get("ts")),
+        # true = the reconciler skips every round: no Blave order of any kind,
+        # closes and exits included (an account-guard trip awaiting confirmation,
+        # or a book hold awaiting book_account_confirm). false = a plain HALT:
+        # entries refused, closes / exits still go out. Orders resting on the
+        # exchange (SL/TP) fire either way — they are the exchange's.
+        "holds_all": bool(guard_state.get("pending"))
+        or bool(isinstance(mark, dict) and mark.get("venue") and not mark.get("acked"))
+        or bool(isinstance(hold, dict) and hold.get("venue")),
     }
 
 
@@ -562,7 +659,19 @@ def account_guard():
         "last_read_error": str(error)[:120] if error else None,
         "last_read_at": read.get("at"),
         "pending": bool(stored.get("pending")),
+        # a key change the machine could not match to the account Blave's
+        # positions there are on: nothing trades on that venue until the user
+        # answers `book_account_confirm {venue, same}` (or the id reads). Only
+        # a question worth asking — a network hiccup holds silently.
+        "book_hold": _book_hold(stored.get("book_hold")),
     }
+
+
+def _book_hold(hold):
+    if not isinstance(hold, dict) or not hold.get("ask") or not hold.get("venue"):
+        return None
+    return {"venue": str(hold["venue"]), "reason": str(hold.get("reason") or "")[:300],
+            "since": hold.get("since")}
 
 
 def _halt_denials(since_ts):
@@ -1207,11 +1316,13 @@ def build_report():
         # can't log in to SKCOM (see can_flatten()).
         "platform": platform.system(),
         "can_flatten": can_flatten(vens),
-        # self_ledger: whether this machine diffs against the bot's own book
-        # (portfolio_config.json flag) — the web's stop dialog phrases what
-        # 「關閉 bot 部位」actually closes from this (bot's book only vs the
-        # whole account on a pre-feature machine).
-        "self_ledger": bool((cfg or {}).get("self_ledger")),
+        # self_ledger: whether this machine diffs against the bot's own book —
+        # the web's stop dialog phrases what 「關閉 bot 部位」actually closes
+        # from this (bot's book only vs the whole account), the desktop's
+        # start dialog whether manual positions can be touched.
+        "self_ledger": own_positions_only(cfg, hb, last),
+        # can_trade_portfolio: a Type C strategy may be funded (the pages unlock it)
+        "can_trade_portfolio": can_trade_portfolio(),
         # can_wait_start: whether the workspace's reconcile path understands
         # state/signal_gate.json (the 「啟動,等新訊號才進場」 option) — keyed
         # on the actual artifact like can_flatten, so the web never offers a

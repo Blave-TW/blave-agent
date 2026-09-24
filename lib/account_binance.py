@@ -16,6 +16,7 @@ looks lost.
 import calendar
 import hashlib
 import hmac
+import os
 import time
 from urllib.parse import urlencode
 
@@ -31,8 +32,25 @@ def _tag(exc, code=None, http_status=None):
     return venue_errors.tag(exc, code, http_status) if venue_errors else exc
 
 
-SPOT_URL = "https://api.binance.com"
-FAPI_URL = "https://fapi.binance.com"
+SPOT_LIVE_URL = "https://api.binance.com"
+FAPI_LIVE_URL = "https://fapi.binance.com"
+# BINANCE_DEMO=true: the same hosts as lib/order_binance.py. Neither serves
+# /sapi, so the wallet breakdown, the funding wallet and flows are skipped there.
+SPOT_DEMO_URL = "https://demo-api.binance.com"
+FAPI_DEMO_URL = "https://demo-fapi.binance.com"
+
+
+def _demo(env):
+    return str(env.get("BINANCE_DEMO", os.environ.get("BINANCE_DEMO", ""))).lower() == "true"
+
+
+def _spot(env):
+    return SPOT_DEMO_URL if _demo(env) else SPOT_LIVE_URL
+
+
+def _fapi(env):
+    return FAPI_DEMO_URL if _demo(env) else FAPI_LIVE_URL
+
 
 # walletName (from /sapi/v1/asset/wallet/balance) -> breakdown key. Keys the
 # web already has labels for are reused (spot / funding / futures / coinm_perp
@@ -93,7 +111,7 @@ def _signed(method, base, path, env, params=None):
 def _sync_time(base):
     """-1021 = our clock drifted outside recvWindow. Correct against the
     venue's clock instead of failing the whole read on machine drift."""
-    path = "/fapi/v1/time" if base == FAPI_URL else "/api/v3/time"
+    path = "/fapi/v1/time" if base in (FAPI_LIVE_URL, FAPI_DEMO_URL) else "/api/v3/time"
     server = requests.get(f"{base}{path}", timeout=10).json()["serverTime"]
     _time_offset["ms"] = int(server) - int(time.time() * 1000)
 
@@ -109,8 +127,8 @@ def _wallets_usdt(env):
     row decomposes exactly into margin balance + the BNB sitting in the futures
     wallet — i.e. unlike BingX's allAccountBalance, every row here is usable.
     """
-    rows = _signed("GET", SPOT_URL, "/sapi/v1/asset/wallet/balance", env) or []
-    btc = float(requests.get(f"{SPOT_URL}/api/v3/ticker/price",
+    rows = _signed("GET", _spot(env), "/sapi/v1/asset/wallet/balance", env) or []
+    btc = float(requests.get(f"{_spot(env)}/api/v3/ticker/price",
                              params={"symbol": "BTCUSDT"}, timeout=10).json()["price"])
     out = {}
     for r in rows:
@@ -131,16 +149,24 @@ def get_equity(env: dict) -> dict:
     can exceed it: the wallet may also hold non-USDT assets (BNB kept for fee
     discounts), which are not margin in single-asset mode.
     """
-    acct = _signed("GET", FAPI_URL, "/fapi/v2/account", env)
+    acct = _signed("GET", _fapi(env), "/fapi/v2/account", env)
     equity = float(acct.get("totalMarginBalance") or 0)
 
     accounts = {"futures": round(equity, 2)}
+    partial = True
     # Best-effort: a failing breakdown must never take the main equity down.
     try:
-        accounts = _wallets_usdt(env) or accounts
+        wallets = None if _demo(env) else _wallets_usdt(env)
+        if wallets:
+            accounts, partial = wallets, False
     except Exception:
         pass
-    return {"equity": equity, "currency": "USDT", "accounts": accounts}
+    out = {"equity": equity, "currency": "USDT", "accounts": accounts}
+    if partial:
+        # the whole-account total is futures only this read: a consumer that
+        # tracks the total over time must not record it as the whole account
+        out["accounts_partial"] = True
+    return out
 
 
 def get_holdings(env: dict) -> list:
@@ -160,17 +186,18 @@ def get_holdings(env: dict) -> list:
     disagree with it by exactly the unrealized PnL, reading as a bug).
     """
     out = []
-    for b in _signed("GET", FAPI_URL, "/fapi/v2/balance", env) or []:
+    for b in _signed("GET", _fapi(env), "/fapi/v2/balance", env) or []:
         amt = float(b.get("balance") or 0) + float(b.get("crossUnPnl") or 0)
         if amt != 0:
             out.append({"asset": b.get("asset"), "amount": amt, "wallet": "futures"})
-    spot = _signed("GET", SPOT_URL, "/api/v3/account", env,
+    spot = _signed("GET", _spot(env), "/api/v3/account", env,
                    {"omitZeroBalances": "true"})
     for b in spot.get("balances", []):
         amt = float(b.get("free") or 0) + float(b.get("locked") or 0)
         if amt > 0:
             out.append({"asset": b.get("asset"), "amount": amt, "wallet": "spot"})
-    fund = _signed("POST", SPOT_URL, "/sapi/v1/asset/get-funding-asset", env) or []
+    fund = [] if _demo(env) else (
+        _signed("POST", _spot(env), "/sapi/v1/asset/get-funding-asset", env) or [])
     for b in fund:
         amt = float(b.get("free") or 0) + float(b.get("locked") or 0)
         if amt > 0:
@@ -180,7 +207,7 @@ def get_holdings(env: dict) -> list:
 
     # one bulk call for every pair — per-asset lookups would be N round-trips
     prices = {r["symbol"]: float(r["price"])
-              for r in requests.get(f"{SPOT_URL}/api/v3/ticker/price", timeout=10).json()}
+              for r in requests.get(f"{_spot(env)}/api/v3/ticker/price", timeout=10).json()}
 
     def _value(asset, amount):
         if asset in ("USDT",):
@@ -203,7 +230,7 @@ def _flow_pages(env, path, start_ms, end_ms):
     (limit is 1000, default AND max). Raises rather than silently truncating."""
     rows, offset = [], 0
     while True:
-        page = _signed("GET", SPOT_URL, path, env,
+        page = _signed("GET", _spot(env), path, env,
                        {"startTime": start_ms, "endTime": end_ms,
                         "limit": 1000, "offset": offset}) or []
         rows.extend(page)
@@ -231,7 +258,11 @@ def get_flows(env: dict, since: int) -> list:
     missing. Withdrawal `ts` is applyTime (UTC — when the balance left the
     account); withdrawal `amount` excludes the network fee (Binance reports it
     separately), so fee-sized residue lands in PnL as a cost.
+
+    BINANCE_DEMO: [] — no on-chain money there and no /sapi to ask.
     """
+    if _demo(env):
+        return []
     since_ms = int(since) * 1000
     now_ms = int(time.time() * 1000)
     flows = []
@@ -273,13 +304,28 @@ def get_flows(env: dict, since: int) -> list:
     return flows
 
 
+def get_account_id(env: dict) -> str:
+    """The Binance account uid the key belongs to — `uid` in the spot
+    GET /api/v3/account (USER_DATA) response, per
+    https://developers.binance.com/docs/binance-spot-api-docs/rest-api/account-endpoints
+    ("Account information"). Readable by any key with reading enabled; the same
+    uid for every key of the account, so a key rotation keeps it and a key of
+    another account changes it (lib.portfolio.book_account_check). Raises when
+    the field is missing: a silent None would skip that check."""
+    data = _signed("GET", _spot(env), "/api/v3/account", env, {"omitZeroBalances": "true"}) or {}
+    uid = data.get("uid")
+    if not uid:
+        raise Exception("Binance /api/v3/account returned no uid")
+    return str(uid)
+
+
 def get_positions(env: dict) -> list:
     """Open USDⓈ-M futures positions.
 
     Returns [{'symbol', 'side', 'size', 'mark_price'}, ...], [] if flat.
     Binance already reports canonical dashless uppercase symbols (BTCUSDT).
     """
-    rows = _signed("GET", FAPI_URL, "/fapi/v2/positionRisk", env) or []
+    rows = _signed("GET", _fapi(env), "/fapi/v2/positionRisk", env) or []
     out = []
     for p in rows:
         amt = float(p.get("positionAmt") or 0)

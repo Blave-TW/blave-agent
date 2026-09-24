@@ -548,11 +548,35 @@ def run_close(ctx, dry_run=False):
                     leg["fill_price"] = r["avg_price"]
                 if r.get("executed_qty") is not None:
                     leg["executed_qty"] = r["executed_qty"]
+                got = r.get("executed_qty")
+                partial = got is not None and float(got) + max(1e-12, size * 1e-9) < size
+                if partial:
+                    # a canceled-with-fill close (OKX _confirm returns those): what did
+                    # not fill is still open, and the bot's share of it stays in the
+                    # book — reduced by what filled, at most the book's own quantity
+                    try:
+                        import lib.portfolio as _pf
+                        book = (_pf.ledger_positions(ctx.venue) if hasattr(_pf, "book_ready")
+                                else _pf.ledger_positions())
+                        own = float((book.get(sym) or {}).get("qty") or 0)
+                    except Exception:
+                        own = 0.0
+                    cut = min(float(got), own)
+                    leg["signed_qty"] = -cut if side == "long" else cut
+                    if price:
+                        leg["signed_diff"] = round(leg["signed_qty"] * float(r.get("avg_price") or price), 2)
                 _append_reconciler_log({"action": "SELL" if side == "long" else "BUY",
                                         "symbol": sym, "signed_diff": leg["signed_diff"],
                                         "exchange": ctx.venue, "asset_spec": None,
                                         "contributors": [], "legs": [leg]})
-                zero_ledger_symbols({sym})
+                if partial:
+                    print(f"close filled {got}/{size} — {sym} 未平完; the rest is still open")
+                    print(unprotected)
+                    _record_order_error(sym, ctx.venue, f"close_symbol: {sym} 未平完(成交 "
+                                                        f"{float(got):g} / {size:g})")
+                    ok = False
+                else:
+                    zero_ledger_symbols({sym})
 
     try:
         rows, regular, algo = read_state(ctx, "after")

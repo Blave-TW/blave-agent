@@ -33,6 +33,9 @@ msgstr "Detecting…"
 msgid "cn.connect"
 msgstr "Connect"
 
+msgid "cn.use"
+msgstr "Use"
+
 msgid "cn.foot"
 msgstr "You can switch at any time."
 
@@ -99,6 +102,9 @@ msgstr "Settings"
 msgid "turn.process"
 msgstr "Thought process"
 
+msgid "turn.showReason"
+msgstr "Show reasoning"
+
 msgid "turn.thinking"
 msgstr "Thinking"
 
@@ -130,7 +136,7 @@ msgid "fault.noCredit"
 msgstr "Your Blave balance is empty, so this turn didn’t run."
 
 msgid "fault.noCreditBtn"
-msgstr "Top Up"
+msgstr "Add Credit"
 
 msgid "conn.expired"
 msgstr "Your Blave sign-in is no longer valid. Sign in again to continue."
@@ -650,6 +656,33 @@ msgstr "Stopped"
 msgid "data.ready"
 msgstr "Blave data is now available."
 
+msgid "data.readyBilled"
+msgstr "Your balance covers it now. If you send again, the hour that uses data costs one server & data fee of {r} TWD."
+
+msgid "data.readyBilledNoNum"
+msgstr "Your balance covers it now. If you send again, the hour that uses data costs one server & data fee."
+
+msgid "data.noBalance"
+msgstr "Using Blave data this hour costs a server & data fee of {r} TWD, and your balance can’t cover it."
+
+msgid "data.noBalanceNoNum"
+msgstr "Using Blave data this hour costs a server & data fee, and your balance can’t cover it."
+
+msgid "data.noBalanceSub"
+msgstr "Top up and it’s back right away."
+
+msgid "data.noCard"
+msgstr "This account has no card yet, so data isn’t available."
+
+msgid "data.noCardSub"
+msgstr "Your first card comes with {t} days of free data."
+
+msgid "data.fee"
+msgstr "Blave data was used this hour: a server & data fee of {r} TWD."
+
+msgid "data.feeFirst"
+msgstr "Blave data was used this hour: a server & data fee of {r} TWD. From now on, each hour that uses data costs {r} TWD, charged once per hour; hours without data cost nothing."
+
 msgid "pv.h.offer"
 msgstr "Your first card comes with {t} days of Blave data"
 
@@ -681,9 +714,15 @@ msgid "pv.d.offer.blave"
 msgstr "Plus {q} TWD of AI credit. When a strategy has to run around the clock, the cloud machine has no machine fee for those {t} days."
 
 msgid "pv.d.noTrial"
+msgstr "This account has no first-card trial. Add a card and top up to get data, billed per clock hour of use, with no machine needed."
+
+msgid "pv.d.noTrial.old"
 msgstr "The Blave Agent Cloud Plan, {p} TWD a month. This account has no first-card trial: add a card, then start the plan here to get data."
 
 msgid "pv.d.trial"
+msgstr "Until {d}, data is free. After that it’s billed per clock hour of use, once per hour, with no plan to start."
+
+msgid "pv.d.trial.old"
 msgstr "Until {d}, there’s no need to start the plan. After that, data comes with the Blave Agent Cloud Plan: {p} TWD a month."
 
 msgid "pv.d.plan"
@@ -692,25 +731,58 @@ msgstr "The Blave Agent Cloud Plan, {p} TWD a month. Strategies run on schedule 
 msgid "pv.d.included"
 msgstr "You only need the Blave Agent Cloud Plan when a strategy has to run around the clock: {p} TWD a month."
 
+msgid "pv.st.noData"
+msgstr "Data paused"
+
+msgid "pv.h.billed"
+msgstr "Blave data, billed by the hour"
+
+msgid "pv.h.none"
+msgstr "Not enough balance for this hour of data"
+
+msgid "pv.d.billed"
+msgstr "Each clock hour in which you use Blave data costs one server & data fee of {r} TWD, charged once per hour; hours without data cost nothing. You only need a machine to run strategies around the clock with your computer off, and then its fee covers the data."
+
+msgid "pv.d.billedNoNum"
+msgstr "Each clock hour in which you use Blave data costs one server & data fee, charged once per hour; hours without data cost nothing. You only need a machine to run strategies around the clock with your computer off, and then its fee covers the data."
+
+msgid "pv.d.none"
+msgstr "Each clock hour that uses data costs a {r} TWD server & data fee. Top up and it’s back right away, without waiting for the next hour."
+
+msgid "pv.d.noneNoNum"
+msgstr "Each clock hour that uses data costs a server & data fee. Top up and it’s back right away, without waiting for the next hour."
+
+msgid "pv.usage"
+msgstr "Usage & billing"
+
 msgid "pv.d.starting"
 msgstr "Blave data is available right now, before the machine is up. You can close this window."
 
 msgid "pv.d.running"
-msgstr "Switch to “Cloud” in the top bar to see the strategies, positions and trading status on this machine, and ask the agent to build strategies there. Starting or pausing trading is something you do yourself in the app. Scheduled reports, per-strategy order handling and strategy management, and connecting an exchange are in the cloud workspace on the web. The two sides are two separate machines, each with its own copy; nothing syncs by itself — use Send to Cloud or Pull Back to move a strategy."
+msgstr "On the cloud side you can see the strategies, positions and orders on the machine, and ask the agent to build strategies there."
 
 msgid "pv.d.stopped"
 msgstr "A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies and data on it."
 
 msgid "pv.d.noPrice"
+msgstr "Your AI setup stays as it is. After the trial, data is billed per clock hour of use."
+
+msgid "pv.d.noPrice.old"
 msgstr "Your AI setup stays as it is. After the trial, data comes with the Blave Agent Cloud Plan, if you start it."
 
 msgid "pv.d.unknown"
 msgstr "This may be a network problem. Checking again costs nothing."
 
 msgid "pv.f.out"
+msgstr "After {t} days, data is billed per clock hour of use, once per hour."
+
+msgid "pv.f.out.old"
 msgstr "After {t} days, data comes with the cloud plan ({p} TWD a month), if you start it."
 
 msgid "pv.f.offer"
+msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. After {t} days, data is billed per clock hour of use, once per hour."
+
+msgid "pv.f.offer.old"
 msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. After {t} days, data comes with the cloud plan ({p} TWD a month), if you start it."
 
 msgid "pv.f.noTrial"
@@ -722,6 +794,9 @@ msgstr "When a strategy has to run around the clock, you can start now: no machi
 msgid "pv.f.plan"
 msgstr "{h} TWD from your balance every hour, for as long as the machine exists. A stopped machine still bills. Only deleting it ends the charges."
 
+msgid "pv.f.billed"
+msgstr "With a machine, {h} TWD comes out of your balance every hour, data included. It’s billed while the machine exists, even when stopped, until it’s deleted."
+
 msgid "pv.f.running"
 msgstr "{h} TWD an hour from your balance ({p} TWD a month). Turning it off means deleting the machine on the web, with the strategies and data on it."
 
@@ -729,6 +804,9 @@ msgid "pv.w.out.cli"
 msgstr "Signing in costs nothing and keeps your AI. Next: add a card."
 
 msgid "pv.w.noTrial"
+msgstr "Once the card is added, data works. No plan to start."
+
+msgid "pv.w.noTrial.old"
 msgstr "Next: come back and start the plan."
 
 msgid "pv.w.waiting"
@@ -773,6 +851,9 @@ msgstr "Operate the machine from the browser workspace"
 msgid "pv.inc.note"
 msgstr "This computer and the cloud machine are two separate machines, each with its own exchange keys and ledger. A strategy built here can be sent to the cloud, or you can ask the agent to build one on the machine directly."
 
+msgid "pv.inc.web"
+msgstr "Scheduled reports, per-strategy order handling and strategy management are in the cloud workspace on the web."
+
 msgid "pv.signin"
 msgstr "Sign in to Blave"
 
@@ -792,10 +873,10 @@ msgid "pv.e.noTrial"
 msgstr "This computer can’t reach Blave data yet. It comes with the Blave Agent Cloud Plan."
 
 msgid "pv.e.sub"
-msgstr "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a month."
+msgstr "After that, data is billed per clock hour of use."
 
-msgid "pv.e.subN"
-msgstr "{p} TWD a month: a cloud machine where strategies run around the clock, Blave data included. Billed hourly for as long as the machine exists."
+msgid "pv.e.sub.old"
+msgstr "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a month."
 
 msgid "pv.e.unknown"
 msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Open Data & Cloud Plan to check again."
@@ -859,6 +940,9 @@ msgstr "Only in this computer’s workspace (~/Blave/workspace/.env). Blave does
 msgid "cx.note.one"
 msgstr "When you create the key on Binance: enable trading only, keep withdrawals off, and whitelist this IP."
 
+msgid "cx.note.oneV"
+msgstr "When you create the key on {venue}: allow trading only and keep withdrawals off. If you set an IP whitelist, add this IP."
+
 msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
@@ -886,6 +970,9 @@ msgstr "Connecting…"
 msgid "cx.connected"
 msgstr "Connected"
 
+msgid "cx.linkOk"
+msgstr "Connected: the key can read the account. Trading permission is confirmed on the first order."
+
 msgid "cx.perfNote"
 msgstr "Paper results do not represent real fills (no slippage)."
 
@@ -897,6 +984,9 @@ msgstr "Testing…"
 
 msgid "cx.fail"
 msgstr "Connecting {id} failed ({stage}): {msg}"
+
+msgid "cx.err.okxMode"
+msgstr "This OKX account mode can't trade futures. In OKX, go to Settings → Account mode and switch to Futures mode or Multi-currency margin."
 
 msgid "cx.failShort"
 msgstr "Connection failed"
@@ -1018,6 +1108,12 @@ msgstr "{sym} order not placed: the position would reach {gross} {c}, over the p
 msgid "tr.err.paperBroke"
 msgstr "{sym} order not placed: the paper account's equity is at zero, so no new positions can open."
 
+msgid "tr.err.okxMode"
+msgstr "{sym}: this OKX account mode can't trade futures. In OKX, go to Settings → Account mode and switch to Futures mode or Multi-currency margin."
+
+msgid "tr.err.gateDeviated"
+msgstr "{sym}: Gate.io's order book was too far from the mark price, so the exchange refused the market order and nothing filled. This contract is usually just thin for a moment; the next round retries on its own."
+
 msgid "tr.stopChoiceSelf"
 msgstr "No new positions will be opened after pausing. Closing positions only closes positions opened by auto-trading — anything you opened manually is left untouched."
 
@@ -1037,7 +1133,16 @@ msgid "tr.startChoice"
 msgstr "Catch up places market orders now to match each strategy’s current signal — if a strategy is already in a position, you board it mid-trade. Wait for new signals places no orders now; each strategy starts trading only at its next entry, exit, or flip."
 
 msgid "tr.startWarn1"
-msgstr "Real orders resume immediately, moving your exchange positions to the current targets."
+msgstr "Real orders resume immediately, moving your strategies’ positions to the current targets."
+
+msgid "tr.startOwnOnly"
+msgstr "Only Blave’s own share is traded. On the first reconcile, an existing same-side position counts as Blave’s in full if it’s at most 1.5× the target, otherwise up to the target; the rest is yours and won’t be closed. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+
+msgid "tr.unmanaged"
+msgstr "Outside Blave"
+
+msgid "tr.unmanagedTip"
+msgstr "Blave didn’t open this position; reconciling never touches it."
 
 msgid "tr.startWarn2"
 msgstr "Strategies and weights kept updating while paused, so the first reconcile may move several positions at once."
@@ -1107,6 +1212,12 @@ msgstr "Position size"
 
 msgid "tr.col.targetPos"
 msgstr "Target position"
+
+msgid "tr.nSyms"
+msgstr "{n} symbols"
+
+msgid "tr.grossTip"
+msgstr "Long and short combined; see exchange positions below for each symbol"
 
 msgid "tr.col.target"
 msgstr "Target"
@@ -1207,6 +1318,57 @@ msgstr "Account"
 msgid "tr.equity"
 msgstr "Equity"
 
+msgid "tr.acctBreakdown"
+msgstr "Wallets"
+
+msgid "tr.holdings"
+msgstr "Holdings"
+
+msgid "tr.col.asset"
+msgstr "Asset"
+
+msgid "tr.col.qty"
+msgstr "Amount"
+
+msgid "tr.col.value"
+msgstr "Value"
+
+msgid "tr.acct.trading"
+msgstr "Trading"
+
+msgid "tr.acct.swap"
+msgstr "Perp"
+
+msgid "tr.acct.stdFut"
+msgstr "Standard futures"
+
+msgid "tr.acct.coinm"
+msgstr "Coin-M futures"
+
+msgid "tr.acct.copy"
+msgstr "Copy trading"
+
+msgid "tr.acct.spot"
+msgstr "Spot"
+
+msgid "tr.acct.fund"
+msgstr "Fund"
+
+msgid "tr.acct.crossMargin"
+msgstr "Cross margin"
+
+msgid "tr.acct.isoMargin"
+msgstr "Isolated margin"
+
+msgid "tr.acct.earn"
+msgstr "Earn"
+
+msgid "tr.acct.options"
+msgstr "Options"
+
+msgid "tr.acct.bots"
+msgstr "Trading bots"
+
 msgid "tr.recentOrders"
 msgstr "Recent orders"
 
@@ -1228,8 +1390,14 @@ msgstr "Disconnecting…"
 msgid "tr.unbindDesc"
 msgstr "Removes the exchange keys from this computer — the order engine can no longer trade this account."
 
+msgid "tr.unbindDescPaper"
+msgstr "Unbind to connect a real exchange instead."
+
 msgid "tr.unbindWarn"
 msgstr "This removes the exchange keys from this computer — the order engine can no longer trade this account. Your order settings are also cleared; you'll need to set them up again after reconnecting."
+
+msgid "tr.unbindWarnPaper"
+msgstr "Your order settings are cleared. If you connect paper trading again, the paper account starts fresh at 100,000 USDT — current positions and history don’t carry over."
 
 msgid "tr.ov.equity"
 msgstr "Total equity"
@@ -1260,6 +1428,9 @@ msgstr "Not enough records to draw the curve yet — it takes two. While Blave i
 
 msgid "tr.ov.gapNote"
 msgstr "No records while Blave wasn’t open; the line connects straight across those gaps."
+
+msgid "tr.ov.basisNote"
+msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
 
 msgid "tr.ov.range"
 msgstr "Range"
@@ -1523,7 +1694,7 @@ msgid "tr.cloud.unreach"
 msgstr "Couldn’t read the cloud’s trading state. What’s shown is from {t}. Trading already running in the cloud isn’t affected."
 
 msgid "tr.cloud.reportUnreach"
-msgstr "Couldn’t load this strategy’s report. Try clicking it again in a moment."
+msgstr "Couldn’t load this strategy’s report."
 
 msgid "tr.cloud.stoppedBody"
 msgstr "The balance fell under {m} TWD and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies, data and keys on it."
@@ -1563,6 +1734,9 @@ msgstr "The command didn’t reach the cloud machine, and nothing changed. Try a
 
 msgid "tr.cloud.cmdUnknown"
 msgstr "The command was sent, but the cloud machine hasn’t reported back. It may already have run. Check this page’s state before pressing again."
+
+msgid "tr.cloud.startedNotRunning"
+msgstr "The cloud machine accepted the start, but its order program didn’t start, so nothing is trading. Press Start trading once more from the workspace on the web."
 
 msgid "tr.cloud.cmdNotDelivered"
 msgstr "The pause command wasn’t delivered and it is still trading. Try again. If it keeps failing, revoke the cloud’s API key at the exchange — it can then place no more orders (you still need to close existing positions yourself at the exchange)."
@@ -1632,6 +1806,93 @@ msgstr "Blave Website"
 
 msgid "menu.view"
 msgstr "View"
+
+msgid "menu.about"
+msgstr "About Blave"
+
+msgid "menu.services"
+msgstr "Services"
+
+msgid "menu.hide"
+msgstr "Hide Blave"
+
+msgid "menu.hideOthers"
+msgstr "Hide Others"
+
+msgid "menu.showAll"
+msgstr "Show All"
+
+msgid "menu.quit"
+msgstr "Quit Blave"
+
+msgid "menu.file"
+msgstr "File"
+
+msgid "menu.close"
+msgstr "Close Window"
+
+msgid "menu.edit"
+msgstr "Edit"
+
+msgid "menu.undo"
+msgstr "Undo"
+
+msgid "menu.redo"
+msgstr "Redo"
+
+msgid "menu.cut"
+msgstr "Cut"
+
+msgid "menu.copy"
+msgstr "Copy"
+
+msgid "menu.paste"
+msgstr "Paste"
+
+msgid "menu.pasteStyle"
+msgstr "Paste and Match Style"
+
+msgid "menu.delete"
+msgstr "Delete"
+
+msgid "menu.selectAll"
+msgstr "Select All"
+
+msgid "menu.window"
+msgstr "Window"
+
+msgid "menu.minimize"
+msgstr "Minimize"
+
+msgid "menu.zoom"
+msgstr "Zoom"
+
+msgid "menu.front"
+msgstr "Bring All to Front"
+
+msgid "menu.help"
+msgstr "Help"
+
+msgid "menu.local"
+msgstr "This Computer"
+
+msgid "menu.cloud"
+msgstr "Cloud"
+
+msgid "menu.actualSize"
+msgstr "Actual Size"
+
+msgid "menu.zoomIn"
+msgstr "Zoom In"
+
+msgid "menu.zoomOut"
+msgstr "Zoom Out"
+
+msgid "menu.fullEnter"
+msgstr "Enter Full Screen"
+
+msgid "menu.fullExit"
+msgstr "Exit Full Screen"
 
 # 最低版本閘(最小版畫面;字待設計師過目)
 msgid "minv.chat"
@@ -1719,6 +1980,12 @@ msgstr "API Key"
 msgid "cx.secretKey"
 msgstr "Secret Key"
 
+msgid "cx.passphrase"
+msgstr "Passphrase"
+
+msgid "cx.passHint"
+msgstr "The one you set when creating the API key, not your OKX login password."
+
 msgid "cx.group.crypto"
 msgstr "Crypto"
 
@@ -1751,6 +2018,18 @@ msgstr "Binance rejected this key, so it was not saved. Binance doesn’t tell t
 
 msgid "cx.chk.keyFormat"
 msgstr "The API Key’s format is wrong, so it was not saved. Copy it from Binance again, with no spaces before or after."
+
+msgid "cx.chk.keyFormatV"
+msgstr "That key doesn’t look right, so nothing was saved. Copy it from {venue} again, with no spaces before or after."
+
+msgid "cx.chk.rejectedV"
+msgstr "{venue} didn’t accept this key, so nothing was saved: {reason}"
+
+msgid "cx.chk.unknownV"
+msgstr "{venue} sent back account data that couldn’t be read, so nothing was saved. Try again in a few minutes."
+
+msgid "cx.chk.noCheckV"
+msgstr "This version can’t check {venue} keys on this computer yet, so nothing was saved. Update Blave and try again."
 
 msgid "cx.chk.secret"
 msgstr "The Secret Key doesn’t match this API Key, so it was not saved. Copy the secret from Binance again. It is shown only once, when the key is created; if you no longer have it, create a new key."
@@ -1997,6 +2276,12 @@ msgstr "The one in the cloud is trading and can’t be replaced. Pause it there 
 msgid "ho.block.down"
 msgstr "The one on this computer is trading and can’t be replaced. Pause it and set its amount to 0 first."
 
+msgid "ho.block.srcDown"
+msgstr "This strategy is in the cloud's order settings, so it can't be pulled back as is. To work on it here, ask the agent to copy it under a new name and pull that copy back; the cloud one stays as it is."
+
+msgid "ho.block.srcUp"
+msgstr "This strategy is in this computer's order settings, so it can't be sent to the cloud as is. Ask the agent to copy it under a new name and send that copy; the one here stays as it is."
+
 msgid "ho.block.goCloud"
 msgstr "View in Cloud"
 
@@ -2058,6 +2343,9 @@ msgid "up.c.stopped"
 msgstr "The cloud machine is stopped, so it won’t be updated this time."
 
 msgid "up.c.note"
+msgstr "Updating uses your AI credit."
+
+msgid "up.c.noteLong"
 msgstr "The agent on this computer connects to your cloud machine to do the update, using your own AI credit. If the trading program is running, it asks you first."
 
 msgid "up.c.available"
@@ -2183,6 +2471,9 @@ msgstr "Stored in your cloud machine’s workspace (.env). The key only passes t
 msgid "cx.chk.incomplete"
 msgstr "The API Key and Secret Key must be sent together, and this attempt didn’t include both, so nothing was saved. Fill in both, then connect again."
 
+msgid "cx.chk.incompletePass"
+msgstr "The API key, secret key and passphrase have to come together. Not all three arrived, so nothing was saved. Fill in all three and connect again."
+
 msgid "cx.chk.clockCloud"
 msgstr "The cloud machine’s clock is out of step with Binance’s, so the key couldn’t be checked and was not saved. Try again in a while; if it keeps happening, contact us."
 
@@ -2203,6 +2494,9 @@ msgstr "This key has no IP whitelist: Binance deletes keys that have no whitelis
 
 msgid "tr.cloud.cxSavedBn"
 msgstr "API key saved to your cloud machine; Binance permissions check passed."
+
+msgid "tr.cloud.cxSavedV"
+msgstr "The key is saved on your cloud machine. Whether the {venue} account can be read shows once the machine reports."
 
 
 msgid "tr.cloud.cxUnknown"
@@ -2340,8 +2634,11 @@ msgstr "Waiting for the machine to confirm, usually a minute or two. This page s
 msgid "up.c.running"
 msgstr "Updating the cloud machine · {t}"
 
-msgid "up.c.replying"
-msgstr "Agent is replying · {t}"
+msgid "up.c.runningShort"
+msgstr "Updating the cloud machine"
+
+msgid "up.c.onCloud"
+msgstr "The agent is working on the cloud machine"
 
 msgid "up.c.runNote"
 msgstr "Progress is in the chat. You can do other things; this shows when it’s done."
@@ -2357,9 +2654,6 @@ msgstr "{from} → {nv}"
 
 msgid "up.c.chatRunning"
 msgstr "Updating the cloud machine · {t}"
-
-msgid "up.c.chatSeeReply"
-msgstr "See the agent’s reply"
 
 msgid "up.c.chatDone"
 msgstr "Cloud updated to {nv}"
@@ -2381,6 +2675,42 @@ msgstr "The release command is on its way; this updates once the machine reports
 
 msgid "tr.relTitle"
 msgstr "Release the pause?"
+
+msgid "tr.acct.reason"
+msgstr "After the {v} key change, Blave can't tell whether this is the same account. Until you answer, nothing trades on {v} — exits and stops won't run either."
+
+msgid "tr.acct.btn"
+msgstr "Confirm account"
+
+msgid "tr.acct.confirming"
+msgstr "Confirming…"
+
+msgid "tr.acct.title"
+msgstr "Is this still the same {v} account?"
+
+msgid "tr.acct.body"
+msgstr "Your {v} API key changed, and the new key doesn't show which account it belongs to, so Blave can't tell whether it's the same one. Neither answer places an order; you stay paused until you press Start trading."
+
+msgid "tr.acct.ifSame"
+msgstr "Same account: the positions Blave opened on {v} stay under Blave's management."
+
+msgid "tr.acct.ifDiff"
+msgstr "Different account: the positions Blave opened before are yours to handle — Blave won't touch them again. It starts from zero on this account and leaves every existing position alone."
+
+msgid "tr.acct.same"
+msgstr "Same account"
+
+msgid "tr.acct.diff"
+msgstr "Different account"
+
+msgid "tr.acct.sent"
+msgstr "Your answer is on its way; this updates once the machine reports back."
+
+msgid "tr.acct.doneSame"
+msgstr "Confirmed as the same {v} account: Blave keeps managing its positions, and exits and stops run as usual. Press Start trading to open new positions again."
+
+msgid "tr.acct.doneDiff"
+msgstr "{v} starts from zero: the earlier positions are yours to handle and Blave won't touch them. Once you press Start trading, strategies open positions on this account again."
 
 msgid "tr.relBody"
 msgstr "New positions blocked during the pause, including orders from your own strategy code, are allowed again. No strategy has an amount, so no strategy will trade."

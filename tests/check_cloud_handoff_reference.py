@@ -7,7 +7,10 @@
      held under .env.lock, and refuses venue-shaped names / unsafe values / empty stdin without writing;
   3. what it wrote is a fixed point of datasrc.js parse→render (the app will not rewrite or drop it);
   4. enumeration over every command line in the reference: no sudo, no ~/.ssh, no chaining except
-     the two registered `cd … &&` (step 6 backtest, NEVER #26 HALT trip).
+     the four registered `cd … &&` (step 6 backtest, NEVER #26 HALT trip, step 2.5 one-call
+     script, general-work edit-and-run);
+  4b. the step 4a trading-check script, extracted from the reference and really run against a
+     temp workspace with a fake `crontab`: every hit / clear / error case of the three checks.
 Run: cd blave-agent && .venv/bin/python tests/check_cloud_handoff_reference.py
 """
 import json, os, re, shutil, stat, subprocess, sys, tempfile
@@ -161,10 +164,12 @@ cmds += [c for c in re.findall(r"`([^`\n]+)`", DOC) if re.match(r"(ssh|scp|grep|
 ALLOWED_CHAIN = {
     'ssh <SSH_OPTS> blaveagent@<host> "cd /opt/blave-agent/workspace && python3 strategies/<name>/strategy.py"',
     'ssh <SSH_OPTS> blaveagent@<host> "cd /opt/blave-agent/workspace && python3 -c \\"__import__(\'lib.guard\').guard.trip_halt(\'<reason>\', \'desktop-agent\')\\""',
+    'ssh <SSH_OPTS> blaveagent@<host> "cd /opt/blave-agent/workspace && python3 - <name>" <<\'PY\'',
+    'ssh <SSH_OPTS> blaveagent@<host> "cd /opt/blave-agent/workspace && mv strategies/<name>/<f>.handoff strategies/<name>/<f> && rm -f strategies/<name>/stats.json && python3 strategies/<name>/strategy.py"',
 }
 ALLOWED_SUDO = set()  # the one sudo runs inside manager/update_workspace.py, never typed by the agent
 check(len(cmds) >= 20, f"enumerated {len(cmds)} command lines")
-check(all(a in cmds for a in ALLOWED_CHAIN), "both registered `cd … &&` commands are written out in full (not left to the agent to compose)")
+check(all(a in cmds for a in ALLOWED_CHAIN), "every registered `cd … &&` command is written out in full (not left to the agent to compose)")
 check(not any("sudo" in c for c in cmds), "no command the agent runs carries sudo (the restart runs inside the U6 script)")
 for c in cmds:
     bad = [t for t in ("sudo", "~/.ssh", "root@") if t in c and not (t == "sudo" and c in ALLOWED_SUDO)]
@@ -187,7 +192,50 @@ check(DOC.count("Drop `DATA_API_KEY` and `DATA_SECRET_KEY`") == 1, "5.2 names th
 check({c for c in cmds if "rm -r" in c and c != "rm -rf"} == {"rm -rf tmp/cloud-handoff", 'ssh <SSH_OPTS> blaveagent@<host> rm -rf "/tmp/oc-config"'},
       "the only recursive rm are the fixed tmp/cloud-handoff and the remote /tmp/oc-config clone")
 check(r"^[A-Za-z0-9_.-]{1,64}\.py$" in DOC and "rmdir" in DOC, "file-name allow-list and rmdir-only cleanup are stated")
-check(DOC.count("&&") == 4, f"'&&' appears only in the two rule sentences and the two registered commands ({DOC.count('&&')})")
+check(DOC.count("&&") == 8, f"'&&' appears only in the step 2.2 rule sentence and the registered commands ({DOC.count('&&')})")
+# one list of chained forms (step 2.2); any other sentence that counts them drifts when a form is added
+rule = re.search(r"chaining happens only inside the single quoted remote command of the forms this file spells out \(([^)]*)\)", DOC)
+check(rule is not None and [x.strip() for x in rule.group(1).split(",")] == ["step 2.5", "step 6", "*Anything else* item 4", "the HALT trip"]
+      and len(ALLOWED_CHAIN) == 4, "step 2.2 lists the four chained forms, one per registered command")
+counted = re.findall(r"(?:one of the|only) (?:two|three|four|five|\d) (?:places|forms|commands)[^.]*", DOC)
+check(not counted, f"no other sentence counts the chained forms itself ({counted[:1]})")
+check("chained remote forms step 2.2 lists" in DOC, "step 6 defers to the step 2.2 list")
+
+# ── 4b. the 4a trading check: a false "not trading" here lets the agent overwrite live code
+m = re.search(r"\n(import json, os, re, subprocess, sys\n.*?)\nPY\n", DOC, re.S)
+check(m is not None, "step 4a carries the trading-check script")
+TW = tempfile.mkdtemp()
+os.makedirs(os.path.join(TW, "bin")); os.makedirs(os.path.join(TW, "strategies", "s1")); os.makedirs(os.path.join(TW, "manager")); os.makedirs(os.path.join(TW, "state"))
+with open(os.path.join(TW, "bin", "crontab"), "w") as f:
+    f.write('#!/bin/sh\ncase "$CRON" in\n  none) echo "no crontab for blaveagent" >&2; exit 1;;\n'
+            '  broken) echo "crontab: permission denied" >&2; exit 1;;\n  *) printf "%s\\n" "$CRON";;\nesac\n')
+os.chmod(os.path.join(TW, "bin", "crontab"), 0o755)
+def trading_check(cron="none", amounts=None, deployments=None, name="s1"):
+    for rel, obj in (("manager/portfolio_config.json", amounts), ("state/deployments.json", deployments)):
+        p = os.path.join(TW, rel)
+        if os.path.exists(p):
+            os.unlink(p)
+        if obj is not None:
+            with open(p, "w") as f:
+                f.write(obj if isinstance(obj, str) else json.dumps(obj))
+    env = dict(os.environ, PATH=os.path.join(TW, "bin") + os.pathsep + os.environ["PATH"], CRON=cron)
+    r = subprocess.run([sys.executable, "-", name], input=m.group(1), cwd=TW, env=env, capture_output=True, text=True)
+    return r.returncode, (json.loads(r.stdout) if r.returncode == 0 else r.stderr)
+CLEAR = {"exists": True, "in_amounts": False, "deployed": False, "cron_lines": 0}
+check(trading_check() == (0, CLEAR), "no config, no deployments, no crontab → exists and clear")
+check(trading_check(name="nope")[1]["exists"] is False, "a missing folder reports exists: false")
+check(trading_check(amounts={"amounts": {"s1": 0}})[1]["in_amounts"] is True, "a 0 amount is still picked (in_amounts)")
+check(trading_check(amounts={"amounts": {"s10": 5}}) == (0, CLEAR), "another strategy's amount does not hit")
+check(trading_check(deployments={"s1": {}})[1]["deployed"] is True, "registered in deployments.json → deployed")
+check(trading_check(cron="*/5 * * * * cd /opt/blave-agent/workspace && python3 strategies/s1/strategy.py")[1]["cron_lines"] == 1,
+      "a cron line running strategies/s1/ counts")
+check(trading_check(cron="*/5 * * * * python3 strategies/s1_v2/strategy.py\n0 * * * * run s10")[1]["cron_lines"] == 0,
+      "s1_v2 / s10 are not s1 (whole-word, like grep -w)")
+rc, _ = trading_check(cron="broken")
+check(rc != 0, "a crontab error other than 'no crontab' exits non-zero (stop, never 'not trading')")
+rc, _ = trading_check(deployments="{not json")
+check(rc != 0, "an unreadable deployments.json exits non-zero (stop, never 'not trading')")
+shutil.rmtree(TW)
 
 # ── 5. the NEVER list survives — the fence is wider now (general cloud work, not only a handoff),
 #      so these lines are the only thing left between an SSH session and the user's money.

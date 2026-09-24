@@ -69,6 +69,12 @@ Notify (Get-Msg 'watchdog_started' '✅ Auto-trading started')
 while ($true) {
     python manager\reconciler.py
     $ExitCode = $LASTEXITCODE
+    if ($ExitCode -eq 75) {
+        # reconciler.py DUPLICATE_EXIT: another reconciler already runs here
+        Write-Output 'another reconciler is running - retrying in 10s'
+        Start-Sleep -Seconds 10
+        continue
+    }
     $Msg = Get-Msg 'watchdog_restart' '⚠️ System restarted (code {code}), resuming in 10s' $ExitCode
     Write-Output $Msg
     Notify $Msg

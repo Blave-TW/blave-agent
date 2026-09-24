@@ -42,6 +42,12 @@ notify "$(get_msg watchdog_started '✅ Auto-trading started')"
 while true; do
     python3 manager/reconciler.py
     EXIT_CODE=$?
+    if [ "$EXIT_CODE" -eq 75 ]; then
+        # reconciler.py DUPLICATE_EXIT: another reconciler already runs here
+        echo "another reconciler is running — retrying in 10s"
+        sleep 10
+        continue
+    fi
     MSG="$(get_msg watchdog_restart '⚠️ System restarted (code {code}), resuming in 10s' "$EXIT_CODE")"
     echo "$MSG"
     notify "$MSG"

@@ -23,6 +23,7 @@ never verified against a real account, so it raises instead of guessing.
 import hashlib
 import hmac
 import json
+import os
 import time
 
 import requests
@@ -37,9 +38,33 @@ def _tag(exc, code=None, http_status=None):
     return venue_errors.tag(exc, code, http_status) if venue_errors else exc
 
 
-HOST = "https://api.bybit.com"
-RECV_WINDOW = "5000"
+LIVE_HOST = "https://api.bybit.com"
+DEMO_HOST = "https://api-demo.bybit.com"  # Demo Trading — same flag and host as order_bybit
+RECV_WINDOW = "5000"  # Bybit's documented default; a late request retries once (_sync_time)
 BROKER_REFERER = "Ue001036"  # broker attribution — mandatory on every request
+_time_offset = {"ms": 0}  # Bybit's clock − ours — same scheme as lib/order_bybit.py
+
+
+def _demo(env):
+    return str(env.get("BYBIT_DEMO", os.environ.get("BYBIT_DEMO", ""))).lower() == "true"
+
+
+def _host(env):
+    return DEMO_HOST if _demo(env) else LIVE_HOST
+
+
+def _sync_time(env):
+    """After a 10002 (timestamp outside the window): offset against Bybit's own
+    clock, best-effort — see lib/order_bybit._sync_time."""
+    try:
+        t0 = time.time()
+        r = requests.get(f"{_host(env)}/v5/market/time", headers={"referer": BROKER_REFERER},
+                         timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["result"]["timeNano"]) // 1_000_000
+        _time_offset["ms"] = server_ms - int((t0 + t1) / 2 * 1000)
+    except Exception:
+        pass
 
 
 def _creds(env):
@@ -55,18 +80,20 @@ def _creds(env):
     return api_key, secret
 
 
-def _request(env, method, path, params=None, body=None, timeout=10):
+def _request(env, method, path, params=None, body=None, timeout=10, _resynced=False):
     """Signed v5 request. The signed payload is the query string (GET) or the
-    compact JSON body (POST) — it must byte-match what is sent."""
+    compact JSON body (POST) — it must byte-match what is sent. A 10002
+    (timestamp outside the window — a slow request or a drifting clock) resyncs
+    against Bybit's clock and retries once."""
     api_key, secret = _creds(env)
-    ts = str(int(time.time() * 1000))
+    ts = str(int(time.time() * 1000) + _time_offset["ms"])
     if method.upper() == "GET":
         payload = "&".join(f"{k}={v}" for k, v in (params or {}).items())
-        url = f"{HOST}{path}" + (f"?{payload}" if payload else "")
+        url = f"{_host(env)}{path}" + (f"?{payload}" if payload else "")
         data = None
     else:
         payload = json.dumps(body or {}, separators=(",", ":"))
-        url = f"{HOST}{path}"
+        url = f"{_host(env)}{path}"
         data = payload
     sign = hmac.new(secret.encode(), (ts + api_key + RECV_WINDOW + payload).encode(),
                     hashlib.sha256).hexdigest()
@@ -89,6 +116,9 @@ def _request(env, method, path, params=None, body=None, timeout=10):
         # Bybit's 10004 message echoes the signed origin_string, which CONTAINS
         # THE API KEY — this string reaches logs and the web connect-failure
         # page, so redact the key out of it before it ever leaves this function.
+        if code == 10002 and not _resynced:
+            _sync_time(env)
+            return _request(env, method, path, params, body, timeout, _resynced=True)
         msg = str(payload_json.get("retMsg") or "")
         if api_key and api_key in msg:
             msg = msg.replace(api_key, "***")
@@ -106,7 +136,12 @@ def _assert_uta(env):
     endpoint returns marginMode/unifiedMarginStatus/dcpStatus and no `uta`
     key at all, so guarding on it would pass vacuously for every account.
     The same call carries `permissions`, used below for a readable
-    missing-permission error instead of a bare venue code."""
+    missing-permission error instead of a bare venue code.
+
+    Demo Trading does not serve query-api, and a demo account is UTA by
+    construction, so the check is skipped there (ccxt makes the same call)."""
+    if _demo(env):
+        return
     api = _request(env, "GET", "/v5/user/query-api")
     if str(api.get("uta") or "") != "1":
         raise Exception(
@@ -225,7 +260,7 @@ def _spot_prices(env):
     """Public spot last prices, one call. Best-effort: pricing failure means
     usdt_value None, never a dropped holding."""
     try:
-        r = requests.get(f"{HOST}/v5/market/tickers", params={"category": "spot"},
+        r = requests.get(f"{_host(env)}/v5/market/tickers", params={"category": "spot"},
                          headers={"referer": BROKER_REFERER}, timeout=10)
         r.raise_for_status()
         return {t["symbol"]: float(t["lastPrice"])
@@ -279,7 +314,11 @@ def get_flows(env: dict, since: int) -> list:
     /v5/account/transaction-log: one TRANSFER_OUT of -11). The contract wants
     the FULL balance debit, so the out leg reports amount + withdrawFee.
     Withdrawals are debited from UNIFIED, not FUND, even when FUND is funded.
+
+    Demo Trading has no on-chain money and does not serve either endpoint: [].
     """
+    if _demo(env):
+        return []
     now = int(time.time())
     window = 29 * 24 * 3600
     since = max(int(since), now - 730 * 24 * 3600)

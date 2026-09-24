@@ -259,12 +259,69 @@ def _binance_bind_check(env):
             "futures": r["enableFutures"]}
 
 
-def _local_real_key_gate(venue_id):
-    """Desktop only: a venue whose keys nobody can check does not get written
-    on the user's own computer, however LOCAL_OPEN_VENUES is widened. Binance
-    is not routed here — _binance_bind_check gates it in every mode."""
-    if venue_id != "BINANCE":
-        raise ValueError(f"no permission check exists for {venue_id.lower()} — not saved")
+# The desktop's check for each venue it may bind besides Binance (which has its
+# own, every mode: _binance_bind_check): the fields the payload itself must
+# carry. The check is one signed read — lib/account_<id>.get_equity — with
+# those fields; the sibling already in .env is no stand-in, same rule as Binance.
+_LOCAL_KEY_CHECKS = {
+    "OKX": ("OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"),
+    "BINGX": ("BINGX_API_KEY", "BINGX_SECRET_KEY"),
+    "GATEIO": ("GATEIO_API_KEY", "GATEIO_SECRET_KEY"),
+    "BYBIT": ("BYBIT_API_KEY", "BYBIT_SECRET_KEY"),
+}
+
+
+def _env_flags():
+    """.env's non-credential lines (BYBIT_DEMO, GATEIO_DEMO … pick the host)."""
+    try:
+        with open(os.path.join(WORKSPACE, ".env")) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return {}
+    out = {}
+    for line in lines:
+        k, sep, v = line.partition("=")
+        k = k.strip()
+        if sep and k and not k.startswith("#") and not _CRED_ENV_RE.match(k):
+            out[k.upper()] = v.strip()
+    return out
+
+
+def _local_real_key_gate(venue_id, env):
+    """Desktop only: a real venue's keys reach .env only after that venue
+    accepted them — the check runs before anything is read for the write or
+    mutated, so a refusal leaves the machine as it was. A venue with no entry
+    in _LOCAL_KEY_CHECKS (or no lib/account_<id> on this workspace) is never
+    written on the user's own computer, however LOCAL_OPEN_VENUES is widened.
+    Binance is not routed here — _binance_bind_check gates it in every mode.
+
+    Raises ValueError `<CODE>: <text>`: INCOMPLETE_PAIR, REJECTED (the venue's
+    own error, key values and URLs scrubbed), UNKNOWN (an answer that is not an
+    equity). Fail-closed: no answer is a refusal."""
+    venue = venue_id.lower()
+    need = _LOCAL_KEY_CHECKS.get(venue_id)
+    if need is None:
+        raise ValueError(f"no permission check exists for {venue} — not saved")
+    got = {k.upper(): v for k, v in env.items()}
+    if not all(got.get(k) for k in need):
+        raise ValueError(f"INCOMPLETE_PAIR: {venue} needs {' + '.join(need)} together — not saved")
+    try:
+        getter = __import__(f"lib.account_{venue}", fromlist=["get_equity"]).get_equity
+    except (ImportError, AttributeError):
+        raise ValueError(f"no permission check exists for {venue} on this workspace "
+                         "(run 更新 blave agent first) — not saved") from None
+    try:
+        r = getter({**_env_flags(), **got})
+    except Exception as e:  # requests / venue errors: any of them is a refusal
+        msg = f"{type(e).__name__}: {e}"
+        for v in got.values():
+            if len(v) >= 4:
+                msg = msg.replace(v, "•••")
+        msg = re.sub(r"https?://\S+", "<url>", msg)[:200]
+        raise ValueError(f"REJECTED: {venue} did not accept this key ({msg}) — not saved") from None
+    if not isinstance(r, dict) or isinstance(r.get("equity"), bool) \
+            or not isinstance(r.get("equity"), (int, float)):
+        raise ValueError(f"UNKNOWN: {venue}'s account answer could not be read — not saved")
 
 
 def _local_child_env(**extra):
@@ -335,6 +392,43 @@ def _downtime_lib(optional=False):
     return downtime
 
 
+def _book_hold_asking():
+    """The report's account_guard.book_hold, or None: a key change the machine
+    could not match to the account Blave's positions are on, awaiting the
+    user's book_account_confirm."""
+    try:
+        with open(_ACCOUNT_GUARD_PATH) as f:
+            hold = (json.load(f) or {}).get("book_hold")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return hold if isinstance(hold, dict) and hold.get("ask") and hold.get("venue") else None
+
+
+def _held_for_book(hold):
+    """啟動下單 while a book hold is unanswered: the HALT stays, carrying the
+    hold's reason — the page must not read 執行中 while that venue trades
+    nothing. Only book_account_confirm resolves it; then 啟動下單 again."""
+    from lib.guard import trip_halt
+
+    trip_halt(hold.get("reason") or f"{hold['venue']}: account unconfirmed", "reconciler")
+    return f"held: {hold['venue']} awaits book_account_confirm"
+
+
+def _ack_bind_reset():
+    """The user's 啟動下單 after a bind found another account: that start is the
+    confirmation. The reconciler still owes the notice (it sends it when it
+    next takes the marker); the marker no longer holds anything."""
+    try:
+        with open(_ACCOUNT_GUARD_PATH) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        return
+    mark = state.get("bind_reset") if isinstance(state, dict) else None
+    if isinstance(mark, dict) and not mark.get("acked"):
+        mark["acked"] = True
+        _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
+
+
 def _cmd_resume(args):
     from lib.guard import clear_halt
 
@@ -343,6 +437,9 @@ def _cmd_resume(args):
         # one strategy's decision never touches the machine-wide HALT
         done = _downtime_lib().decide(names, "sync")
         return f"resumed strategies={len(done)}"
+    hold = _book_hold_asking()
+    if hold:
+        return _held_for_book(hold)
     # 「啟動並補齊部位」must honor the choice: a signal gate left over from an
     # earlier resume_wait would silently keep excluding those strategies from
     # reconciling — remove it BEFORE clearing HALT (mirror of resume_wait's
@@ -357,6 +454,7 @@ def _cmd_resume(args):
     downtime = _downtime_lib(optional=True)
     if downtime is not None:
         downtime.clear_all()
+    _ack_bind_reset()
     clear_halt("web")
     return "resumed"
 
@@ -392,6 +490,9 @@ def _cmd_resume_wait(args):
     if names is not None:
         done = _downtime_lib().decide(names, "wait")
         return f"resumed_wait strategies={len(done)}"
+    hold = _book_hold_asking()
+    if hold:
+        return _held_for_book(hold)
     cfg = load_portfolio_config()
     amounts = strategy_amounts(cfg)
     exchanges = cfg.get("exchanges", {})
@@ -409,6 +510,7 @@ def _cmd_resume_wait(args):
             raise RuntimeError(
                 f"resume_wait: could not read a strategy state ({e}) — not resuming; "
                 f"press start again in a few seconds") from e
+        _ack_bind_reset()
         clear_halt("web")
         return f"resumed_wait gated={gated} waiting={waiting}"
     gate = {}
@@ -420,7 +522,12 @@ def _cmd_resume_wait(args):
             continue  # no state yet = nothing to gate; it trades on first signal
         try:
             with open(state_path) as f:
-                gate[name] = float(_json.load(f).get("position", 0))
+                st = _json.load(f)
+            # a portfolio (Type C, lib/runner.typec_live_state) has no single position:
+            # its "new signal" is the next rebalance, so the baseline is the bar it
+            # last rebalanced on (lib/portfolio.aggregate_portfolio compares it)
+            gate[name] = float(st.get("rebalance_at") or 0) if isinstance(st.get("weights"), dict) \
+                else float(st.get("position", 0))
         except (ValueError, TypeError, OSError) as e:
             # A CORRUPT/mid-write state.json is not "nothing to gate" — silently
             # skipping would leave this strategy un-gated and it would catch up
@@ -435,6 +542,7 @@ def _cmd_resume_wait(args):
     with open(tmp, "w") as f:
         _json.dump(gate, f, indent=2)
     os.replace(tmp, gate_path)
+    _ack_bind_reset()
     clear_halt("web")
     return f"resumed_wait gated={len(gate)}"
 
@@ -552,28 +660,233 @@ def _fresh_portfolio_config():
     imported: this runtime never imports the workspace lib. An account that
     already holds something is the user's by this baseline, which is the one
     safe reading with no reconciler history on the machine. An EXISTING config
-    without the key stays in account-read mode: the default lives at creation,
-    not in the reader, so no machine is switched to the book by an update.
-    Nor is a machine that has TRADED but lost or never kept its config: its
-    account may hold bot positions a zero book would re-buy on top of — it
-    starts as today. Traded = manager/orders.jsonl, an order actually sent.
+    is not touched here: a missing key is decided by the workspace lib
+    (lib/portfolio.own_positions_only — the book, since 2026-09-23; account-read
+    on an older lib). Nor is a machine that has TRADED on a real venue but lost
+    or never kept its config: its account may hold bot positions a zero book
+    would re-buy on top of — the lib's first round sorts that out. Traded = a
+    non-paper fill in manager/orders.jsonl, or any fill while paper is bound;
+    paper fills say nothing about a real account.
     NOT last_reconcile.json: the never-configured read-only reconciler
     (lib/portfolio.reconcile) writes that snapshot every round without placing
     anything, and counting it made the user's FIRST save come out without
     self_ledger — the next round then read their manual positions as the bot's
     and closed them (audit 2026-09-23 B1, measured)."""
-    from datetime import datetime
-    mgr = os.path.join(WORKSPACE, "manager")
-    if os.path.isfile(os.path.join(mgr, "orders.jsonl")):
+    if _traded_on_a_real_venue():
         return {}
-    seed_path = os.path.join(mgr, "ledger_seed.json")
-    os.makedirs(os.path.dirname(seed_path), exist_ok=True)
-    if not os.path.isfile(seed_path):  # a hand-run seed_ledger.py baseline stands
-        tmp = seed_path + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump({"seeded_at": datetime.utcnow().isoformat(), "symbols": {}}, f, indent=2)
-        os.replace(tmp, seed_path)
+    if not _ledger_seeded():
+        _write_fresh_ledger_seed()  # a hand-run seed_ledger.py baseline stands
     return {"self_ledger": True}
+
+
+def _traded_on_a_real_venue():
+    """manager/orders.jsonl has a fill on anything but the paper account — or on
+    paper too, when paper is the venue bound now: those fills ARE this account's
+    bot position, and a zero book would buy it again (version matrix V1-10).
+    Paper fills say nothing about a real account (2026-09-23: two paper fills
+    kept Wei's Binance config off the book, and his manual longs read as the
+    bot's). Unreadable counts as traded — the conservative answer."""
+    paper_bound = False
+    try:
+        with open(os.path.join(WORKSPACE, ".env")) as f:
+            paper_bound = "PAPER" in _venue_cred_ids(f.read().splitlines())
+    except OSError:
+        pass
+    path = os.path.join(WORKSPACE, "manager", "orders.jsonl")
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    if paper_bound or json.loads(line).get("exchange") != "paper":
+                        return True
+                except (ValueError, AttributeError):
+                    return True
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return False
+
+
+def _ledger_seeded():
+    """ledger_seed.json carries a whole-account cutoff. A file with per-symbol
+    rows only (lib zero_ledger_symbols after a flatten) is no baseline."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "ledger_seed.json")) as f:
+            return bool((json.load(f) or {}).get("seeded_at"))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _write_fresh_ledger_seed():
+    """The bot's book starts at zero from now: everything on the account is the
+    user's. Same shape as lib/portfolio.seed_ledger(absorb=False) — duplicated,
+    this runtime never imports the workspace lib."""
+    from datetime import datetime
+    seed_path = os.path.join(WORKSPACE, "manager", "ledger_seed.json")
+    os.makedirs(os.path.dirname(seed_path), exist_ok=True)
+    doc = {"seeded_at": datetime.utcnow().isoformat(), "symbols": {}}
+    tmp = seed_path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(doc, f, indent=2)
+    os.replace(tmp, seed_path)
+
+
+def _ws_lib_resets_by_account():
+    """The workspace lib/portfolio.py keeps each venue's book per exchange
+    account (seed `venue_account`, reset through `venue_reset`)."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), encoding="utf-8",
+                  errors="replace") as f:
+            return "def book_account_check" in f.read()
+    except OSError:
+        return False
+
+
+_ws_portfolio_mtime = {}
+
+
+def _ws_portfolio():
+    """The workspace lib/portfolio.py — re-read when the file changed since it
+    was imported (更新 can replace it under this long-lived process). Called
+    only inside _in_workspace (cwd + sys.path)."""
+    import importlib
+    mod = importlib.import_module("lib.portfolio")
+    try:
+        mtime = os.path.getmtime(mod.__file__)
+    except (OSError, TypeError):
+        return mod
+    seen = _ws_portfolio_mtime.setdefault(mod.__file__, mtime)
+    if mtime != seen:
+        mod = importlib.reload(mod)
+        _ws_portfolio_mtime[mod.__file__] = mtime
+    return mod
+
+
+def _mark_book_hold(venue, reason):
+    """state/venue_account.json `book_hold`, so the report asks the user at once
+    even while no reconciler runs; a running one re-derives the same hold on
+    its next round (the key changed) and HALTs once."""
+    try:
+        with open(_ACCOUNT_GUARD_PATH) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    held = state.get("book_hold") if isinstance(state.get("book_hold"), dict) else {}
+    since = held.get("since") if held.get("venue") == venue else None
+    state["book_hold"] = {"venue": venue, "reason": str(reason or "")[:300],
+                          "since": since or int(_clock()), "ask": True,
+                          "halted": bool(held.get("halted")) if held.get("venue") == venue else False}
+    _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
+
+
+def _mark_bind_account_change(venue, reason):
+    """A bind found another exchange account on `venue`. HALT now (source
+    reconciler, its own account-changed reason) and leave `bind_reset` in the
+    account-guard state: the reconciler's next check takes it exactly like an
+    account change it found itself — pending trip, HALT re-sent with the
+    notice (manager/reconciler._get_positions_guarded). Raises if the HALT did
+    not land: the caller then leaves the book for the reconciler to reset."""
+    from lib.guard import trip_halt
+
+    trip_halt(reason, "reconciler")
+    try:
+        with open(_ACCOUNT_GUARD_PATH) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    if not isinstance(state, dict):
+        state = {}
+    state["bind_reset"] = {"venue": venue, "at": int(_clock())}
+    _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
+
+
+def _bind_book_accounts(venue_ids):
+    """After a bind: read each newly bound venue's exchange account id with the
+    keys just written and record it as that venue's book account
+    (lib.portfolio.book_account_check) — later key changes are then decided
+    without asking. An unreadable id never refuses the bind: the key's
+    fingerprint is recorded instead, or — when the key changed under an open
+    book — the report asks the user (book_hold). Paper is exempt (the
+    reconciler reads its ledger stamp); a venue without get_account_id
+    (群益, a custom exchange) records nothing. Best-effort: the keys are
+    already written. Returns {venue: verdict}."""
+    out = {}
+    ids = sorted(v.lower() for v in venue_ids if v.upper() != "PAPER")
+    if not ids or not _ws_lib_resets_by_account():
+        return out
+    try:
+        pf = _ws_portfolio()
+        from lib.venue_wiring import read_env
+        env = read_env(os.path.join(WORKSPACE, ".env"))
+    except Exception as e:
+        _log(f"book account not recorded ({type(e).__name__})")
+        return out
+    for v in ids:
+        try:
+            acct = pf._read_account_id(v, env)
+            if acct[0] is None and acct[1] is None:
+                continue
+            rec_id = ((pf._load_ledger_seed().get("venue_account") or {}).get(v) or {}).get("id")
+            if acct[0] is not None and rec_id and str(rec_id) != acct[0]:
+                # another account: HALT first — nothing may trade the new account on
+                # the reset book before the user's 啟動下單 — then reset
+                _mark_bind_account_change(v, pf.account_changed_reason(v))
+            verdict, detail = pf.book_account_check(env, v, account=acct)
+        except Exception as e:
+            _log(f"book account not recorded for {v} ({type(e).__name__})")
+            continue
+        out[v] = verdict
+        if verdict == "unreadable":
+            try:
+                _mark_book_hold(v, detail)
+            except OSError as e:
+                _log(f"book hold not recorded for {v} ({type(e).__name__})")
+    return out
+
+
+def _cmd_book_account_confirm(args):
+    """The user's one-tap answer to a book hold (report `account_guard.book_hold`):
+    is the key now bound on `venue` the same exchange account Blave's positions
+    there were opened on? {"venue": "<id>", "same": true|false}. true keeps the
+    bot's book; false starts it empty (what the bot held becomes the user's).
+    Never places or cancels an order; idempotent; audited
+    (lib.portfolio.book_account_confirm). Clears the hold and kicks a running
+    reconciler so it re-checks now; a HALT stays for the user's 啟動下單."""
+    venue = str(args.get("venue") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9]{2,20}", venue):
+        raise ValueError("bad venue")
+    same = args.get("same")
+    if not isinstance(same, bool):
+        raise ValueError("same must be true or false")
+    if not _ws_lib_resets_by_account():
+        raise ValueError("this workspace lib keeps no per-account book — update the workspace")
+    from lib.venue_wiring import read_env
+    outcome = _ws_portfolio().book_account_confirm(
+        venue, same, env=read_env(os.path.join(WORKSPACE, ".env")))
+    if outcome in ("kept", "reset"):
+        try:
+            with open(_ACCOUNT_GUARD_PATH) as f:
+                state = json.load(f)
+            hold = state.get("book_hold") if isinstance(state, dict) else None
+            if isinstance(hold, dict) and hold.get("venue") == venue:
+                state.pop("book_hold")
+                _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
+        except (OSError, ValueError):
+            pass
+    # kicked on every outcome: a stale question the answer could not act on is
+    # re-derived by the reconciler within a poll, not at the 5-minute heartbeat
+    try:
+        kick = os.path.join(WORKSPACE, "state", "execution", "kick")
+        os.makedirs(os.path.dirname(kick), exist_ok=True)
+        with open(kick, "a"):
+            os.utime(kick, None)
+    except OSError:
+        pass
+    _log(f"book account on {venue}: {'same' if same else 'different'} → {outcome}")
+    return {"venue": venue, "same": same, "outcome": outcome}
 
 
 def _write_ui_cred_manifest(lines):
@@ -667,11 +980,15 @@ def _cmd_credentials(args):
     refused, and a bind fails when Binance cannot be reached from the machine
     (fail-closed — the user retries). Everything that is not Binance (paper,
     OKX, Gate.io, Bybit, BingX, the TW brokers, data-source keys) is untouched:
-    no call, same behaviour as before.
+    no call, same behaviour as before — except on the desktop, where OKX,
+    BingX, Gate.io and Bybit first pass _local_real_key_gate.
 
     Ack shape (`_send_ack`). Success: `result` = {"credentials": N, "binance":
     {"checked": true, "code": "OK"|"NO_IP_RESTRICT", "ipRestrict", "spot",
-    "futures"} | null} — `binance` is null when the payload was not a Binance
+    "futures"} | null, "book_account"?: {venue: "ok"|"reset"|"unreadable"|
+    "transient"}} — `book_account` = what the bind-time account-id read decided
+    for each venue's book (_bind_book_accounts; absent when nothing was read);
+    `binance` is null when the payload was not a Binance
     bind, and a runtime that predates this returns the STRING "credentials=N"
     instead, which is how a caller tells "not checked here" from "checked and
     clean" (the app labels an unchecked bind honestly rather than claiming a
@@ -713,7 +1030,7 @@ def _cmd_credentials(args):
         raise ValueError("這一版電腦版只開放模擬交易(paper),真實交易所的綁定尚未開放")
     if _local_mode():
         for vid in sorted(writing - {"PAPER", "BINANCE"}):
-            _local_real_key_gate(vid)  # raises = nothing written
+            _local_real_key_gate(vid, env)  # raises = nothing written
     # Binance permission gate, every mode. Last thing before the write and
     # nothing has been read or mutated yet, so a refusal leaves the machine
     # exactly as it was — no half-written .env, no eviction of the venue the
@@ -760,6 +1077,10 @@ def _cmd_credentials(args):
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
     _write_ui_cred_manifest(kept)  # final lines = the UI-confirmed bound set
+    book_account = {}
+    if binding:
+        _unpark_account_state(_account_identity(kept))
+        book_account = _bind_book_accounts(binding)
     if evicted_ids:
         # eviction == unbind for the old venue: halt like credentials_remove
         # does, or strategies still routed there run blind until auto-halt
@@ -805,7 +1126,10 @@ def _cmd_credentials(args):
     except (OSError, ValueError, AttributeError):
         pass
     # count only — never the keys or values
-    return {"credentials": len(env), "binance": binance}
+    out = {"credentials": len(env), "binance": binance}
+    if book_account:
+        out["book_account"] = book_account
+    return out
 
 
 # ── strategy signal-refresh scheduling(選到就跑,2026-08-03 拍板)────────────
@@ -1283,6 +1607,16 @@ RECONCILER_RUNNING_S = 15
 # minutes old) report says the daemon is down; resume has just started it, and
 # a second restart would kill it mid-round. Swallows that one follow-up only.
 RESUME_START_DEDUPE_S = 60
+STRAY_RESULT = "reconciler running outside the supervisor — not started again"
+# Touched when an unbind confirmed the reconciler stopped: a heartbeat not newer
+# than this is the stopped one's, however fresh (TC-28: unbind → rebind → start
+# inside RECONCILER_RUNNING_S read the dead daemon as running).
+RECONCILER_STOP_MARK = os.path.join(WORKSPACE_STATE, "reconciler_stop_mark")
+# A full unbind parks the old account's snapshot and guard state here; the
+# rebind restores them only for the same account (TC-13).
+PARKED_ACCOUNT_STATE = os.path.join(WORKSPACE_STATE, "unbound_account_state.json")
+_SNAPSHOT_PATH = os.path.join(WORKSPACE, "manager", "last_reconcile.json")
+_ACCOUNT_GUARD_PATH = os.path.join(WORKSPACE_STATE, "venue_account.json")
 _resume_started_at = None
 _clock = time.time
 
@@ -1597,8 +1931,9 @@ def _start_after_restart_stop():
     """A whole-machine resume / resume_wait is the user's 啟動下單 — only the
     web and desktop start buttons queue it — and the ONLY thing that lifts a
     restart stop. It starts the reconciler here too, because the desktop app's
-    cloud start sends no restart_reconciler. A failed start raises (the ack
-    says so) and keeps the record, so the page keeps saying why trading is off."""
+    cloud start sends no restart_reconciler (without a record:
+    _ensure_reconciler_running). A failed start raises (the ack says so) and
+    keeps the record, so the page keeps saying why trading is off."""
     global _resume_started_at
     # Alive (a fresh heartbeat after the boot's stop — or after detection when
     # the kill never confirmed): a gated reconciler that survived the kill, or
@@ -1620,6 +1955,11 @@ def _start_after_restart_stop():
         _clear_or_fail()
         _resume_started_at = time.monotonic()
         return "reconciler already running"
+    if _stray_reconciler_pids():
+        # it outlived the boot's supervisor kill; lifting the record is the start
+        _clear_or_fail()
+        _resume_started_at = time.monotonic()
+        return STRAY_RESULT
     try:
         result = _restart_reconciler({})
     except Exception as e:
@@ -1629,6 +1969,325 @@ def _start_after_restart_stop():
     _clear_or_fail()
     _resume_started_at = time.monotonic()
     return result
+
+
+def _reconciler_supervised():
+    """Does the service manager say the reconciler process is up? None = it
+    cannot tell. Read-only (is-active / has-session / nssm status need no root)."""
+    try:
+        if platform.system() == "Windows":
+            st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
+                                capture_output=True, timeout=30)
+            if st.returncode != 0:
+                return False  # service never installed
+            out = (st.stdout or b"").replace(b"\x00", b"").decode("ascii", "ignore")
+            if "SERVICE_STOPPED" in out:
+                return False
+            # *_PENDING (start / stop / pause / continue) is a transition: can't tell
+            return True if "SERVICE_RUNNING" in out else None
+        if os.path.isfile(RECONCILER_UNIT_PATH):
+            state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
+                                   capture_output=True, text=True, timeout=15).stdout.strip()
+            if state in ("active", "activating", "reloading"):
+                return True
+            # deactivating / failed read as NOT running here, on purpose, unlike
+            # _stop_reconciler's set: that one promises "nothing is watching";
+            # this one only decides whether `systemctl restart` may run, which
+            # waits a stop out and replaces a failed unit — safe on both.
+            if state not in ("inactive", "failed", "deactivating"):
+                return None
+        try:
+            has = subprocess.run(["tmux", "has-session", "-t", "reconciler"],
+                                 capture_output=True, timeout=20)
+        except FileNotFoundError:
+            return False
+        return has.returncode == 0
+    except Exception as e:  # TimeoutExpired, OSError, …
+        _log(f"reconciler status unreadable: {type(e).__name__}")
+        return None
+
+
+def _reconciler_script(argv):
+    """The reconciler path this argv RUNS, or None. A run is `python [options]
+    <script>` or the desktop daemon's `local_daemon.py --run-reconciler
+    <script>`; -m / -c (py_compile, a one-liner) only read the file."""
+    if len(argv) < 2 or not os.path.basename(argv[0].replace("\\", "/")).lower().startswith("python"):
+        return None
+    i = 1
+    while i < len(argv) and argv[i].startswith("-") and argv[i] != "-":
+        opt = argv[i]
+        i += 1
+        if opt == "--":
+            break
+        if opt.startswith("--"):
+            continue
+        for k, ch in enumerate(opt[1:], 1):
+            if ch in "cm":
+                return None
+            if ch in "WX":
+                if k == len(opt) - 1:
+                    i += 1  # its value is the next word
+                break
+    if i >= len(argv):
+        return None
+    script = argv[i]
+    name = os.path.basename(script.replace("\\", "/"))
+    if name == "reconciler.py":
+        return script
+    if name == "local_daemon.py" and argv[i + 1:i + 2] == ["--run-reconciler"] and len(argv) > i + 2:
+        return argv[i + 2] if os.path.basename(argv[i + 2].replace("\\", "/")) == "reconciler.py" else None
+    return None
+
+
+def _runs_reconciler(argv, cwd, target):
+    """argv runs this workspace's manager/reconciler.py. A relative path is
+    resolved against the process's cwd; with no cwd (unreadable, or Windows,
+    where target is None too) naming manager/reconciler.py is enough: one
+    workspace per machine."""
+    script = _reconciler_script(argv)
+    if script is None:
+        return False
+    norm = script.replace("\\", "/")
+    if target is None or (cwd is None and not os.path.isabs(script)):
+        return norm.endswith("manager/reconciler.py")
+    if os.path.isabs(script):
+        return os.path.realpath(script) == target
+    return os.path.realpath(os.path.join(cwd, script)) == target
+
+
+def _proc_supervised(proc, pid):
+    """Linux: will _restart_reconciler replace this process? Yes when it runs in
+    the systemd unit's cgroup (systemctl restart) or under tmux (kill-session)."""
+    try:
+        with open(os.path.join(proc, str(pid), "cgroup")) as f:
+            if RECONCILER_UNIT in f.read():
+                return True
+    except OSError:
+        pass
+    seen = set()
+    while pid > 1 and pid not in seen and len(seen) < 32:
+        seen.add(pid)
+        try:
+            with open(os.path.join(proc, str(pid), "stat")) as f:
+                pid = int(f.read().rsplit(")", 1)[1].split()[1])
+            with open(os.path.join(proc, str(pid), "cmdline"), "rb") as f:
+                arg0 = f.read().split(b"\0", 1)[0].decode("utf-8", "replace")
+        except (OSError, ValueError, IndexError):
+            return False
+        # the tmux server retitles itself "tmux: server (/tmp/tmux-N/default)"
+        if os.path.basename(arg0.split(" ", 1)[0]).startswith("tmux"):
+            return True
+    return False
+
+
+def _unsupervised_reconciler_pids(proc="/proc"):
+    """pids running this workspace's reconciler that no supervisor restart would
+    replace (ours excluded), or None when the process list cannot be read.
+    /proc is read directly, not pgrep -f: a pattern on a command line also
+    matches whatever runs the pattern."""
+    target = os.path.realpath(os.path.join(WORKSPACE, "manager", "reconciler.py"))
+    me = os.getpid()
+    if platform.system() == "Windows":
+        return _windows_unsupervised_pids(me)
+    try:
+        entries = os.listdir(proc)
+    except OSError:
+        return None
+    pids = []
+    for d in entries:
+        if not d.isdigit() or int(d) == me:
+            continue
+        try:
+            with open(os.path.join(proc, d, "cmdline"), "rb") as f:
+                argv = [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+        except OSError:
+            continue  # gone meanwhile
+        try:
+            cwd = os.readlink(os.path.join(proc, d, "cwd"))
+        except OSError:
+            cwd = None
+        if _runs_reconciler(argv, cwd, target) and not _proc_supervised(proc, int(d)):
+            pids.append(int(d))
+    return pids
+
+
+def _windows_unsupervised_pids(me):
+    ps = ("Get-CimInstance Win32_Process | ForEach-Object { "
+          "\"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.Name)`t$($_.CommandLine)\" }")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return _parse_windows_unsupervised(out.stdout, me)
+
+
+def _parse_windows_unsupervised(text, me):
+    """Win32_Process rows `pid<TAB>ppid<TAB>name<TAB>cmdline`. There is no cwd:
+    a python whose command line runs manager\\reconciler.py counts (one
+    workspace per machine). Supervised = an nssm.exe ancestor (the service
+    that nssm stop/start replaces)."""
+    rows = {}
+    for line in (text or "").splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) == 4 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
+            rows[int(parts[0])] = (int(parts[1]), parts[2].strip().lower(), parts[3])
+    pids = []
+    for pid, (ppid, _, cmdline) in rows.items():
+        if pid == me:
+            continue
+        argv = [q or u for q, u in re.findall(r'"([^"]*)"|(\S+)', cmdline)]
+        if not _runs_reconciler(argv, None, None):
+            continue
+        seen, up, supervised = {pid}, ppid, False
+        while up in rows and up not in seen:
+            seen.add(up)
+            if rows[up][1] == "nssm.exe":
+                supervised = True
+                break
+            up = rows[up][0]
+        if not supervised:
+            pids.append(pid)
+    return pids
+
+
+def _stray_reconciler_pids():
+    """Reconciler processes a supervisor restart would not replace: starting
+    another beside them doubles every order (a reconciler.py from before the
+    singleton lock never takes it, and the runtime updates on its own while the
+    workspace updates only on 更新). A new one would exit on the lock instead,
+    so refusing loses nothing. [] when none or unreadable (logged)."""
+    pids = _unsupervised_reconciler_pids()
+    if pids is None:
+        _log("process list unreadable — reconciler duplicate check skipped")
+        return []
+    return pids
+
+
+def _ensure_reconciler_running():
+    """The whole-machine start with no restart record: a machine whose
+    reconciler never ran (a fresh box) or was stopped without a record (an
+    unbind, a death) must not come out of 啟動下單 with HALT cleared and nothing
+    trading — the desktop's cloud start sends only this command.
+
+    Alive is never restarted: a restart mid-round kills an order in flight and
+    the next start's reap trips HALT. A heartbeat inside RECONCILER_RUNNING_S is
+    alive; missing or older than the report's RECONCILER_ALIVE_S is dead (what
+    the web's own follow-up restart goes by). In between a round may just be
+    long, so the service manager decides, and "cannot tell" counts as alive.
+    Either way the web's follow-up restart_reconciler is swallowed once. A
+    reconciler process outside every supervisor is never started beside
+    (_stray_reconciler_pids). A failed start raises: HALT is already
+    cleared, but with nothing running nothing trades, and the ack is what
+    tells the page."""
+    global _resume_started_at
+    hb = _mtime_or_none(RECONCILER_HEARTBEAT)
+    stopped = _mtime_or_none(RECONCILER_STOP_MARK)
+    if hb is not None and stopped is not None and hb <= stopped:
+        hb = None  # the beat of the daemon an unbind stopped, not of a live one
+    age = None if hb is None else _clock() - hb
+    if age is not None and age < RECONCILER_RUNNING_S:
+        alive = True
+    elif age is None or age >= RECONCILER_ALIVE_S:
+        alive = False
+    else:
+        alive = _reconciler_supervised() is not False
+    if alive:
+        _resume_started_at = time.monotonic()
+        return "reconciler already running"
+    strays = _stray_reconciler_pids()
+    if strays:
+        # a supervised one (systemd / tmux / NSSM) is replaced by the restart below;
+        # one outside them would run beside it. The web's follow-up is swallowed too
+        _log(f"reconciler running outside the supervisor (pid {strays[0]}) — not starting another")
+        _resume_started_at = time.monotonic()
+        return STRAY_RESULT
+    try:
+        result = _restart_reconciler({})
+    except Exception as e:
+        _log(f"reconciler start on resume failed: {type(e).__name__}: {e}")
+        raise RuntimeError(f"resumed, but the reconciler did not start: "
+                           f"{type(e).__name__}: {str(e)[:200]}") from None
+    _resume_started_at = time.monotonic()
+    return result
+
+
+def _mark_reconciler_stopped():
+    try:
+        _write_atomic(RECONCILER_STOP_MARK, str(int(_clock())))
+    except OSError as e:
+        _log(f"reconciler stop mark not written: {type(e).__name__}")
+
+
+def _account_identity(lines):
+    """Which exchange account these .env lines trade: a digest of the venue
+    credential values (the reconciler's _key_fingerprint rule) plus
+    PAPER_BOUND_TS — a newer paper bind re-seeds the paper account, so it is a
+    different account under the same fixed keys. None = no credential at all."""
+    import hashlib
+    h, any_cred = hashlib.sha256(), False
+    for line in sorted(lines):
+        k, sep, v = line.partition("=")
+        ku = k.strip().upper()
+        if not sep or ku.startswith(("BLAVE_", _DATA_CRED_PREFIX)):
+            continue
+        if ku.endswith(("_API_KEY", "_SECRET_KEY", "_API_SECRET", "_PASSPHRASE", "_PASSWORD")) \
+                or ku == "PAPER_BOUND_TS":
+            h.update(f"{ku}={v.strip()}\n".encode())
+            any_cred = True
+    return h.hexdigest() if any_cred else None
+
+
+def _park_account_state(identity):
+    """Full unbind: the old account's last snapshot and account-guard state go
+    aside, so a rebind to another account starts fresh instead of tripping the
+    guard on the old account's positions (TC-13). Parked first, removed
+    second: a failed park leaves both in place (today's behaviour)."""
+    parked = {"identity": identity, "files": {}}
+    for path in (_SNAPSHOT_PATH, _ACCOUNT_GUARD_PATH):
+        try:
+            with open(path) as f:
+                parked["files"][path] = f.read()
+        except FileNotFoundError:
+            pass
+    if not parked["files"]:
+        return
+    try:
+        _write_atomic(PARKED_ACCOUNT_STATE, json.dumps(parked))
+    except OSError as e:
+        _log(f"account state not parked ({type(e).__name__}) — left in place")
+        return
+    for path in parked["files"]:
+        try:
+            os.remove(path)
+        except OSError as e:
+            _log(f"account state not cleared ({type(e).__name__}): {os.path.basename(path)}")
+
+
+def _unpark_account_state(identity):
+    """Rebind: the same account gets its parked state back (the guard judges it
+    as before the unbind); any other account drops it."""
+    try:
+        with open(PARKED_ACCOUNT_STATE) as f:
+            parked = json.load(f)
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError):
+        parked = {}
+    if isinstance(parked, dict) and identity and parked.get("identity") == identity:
+        for path, text in (parked.get("files") or {}).items():
+            if path in (_SNAPSHOT_PATH, _ACCOUNT_GUARD_PATH) and not os.path.exists(path):
+                try:
+                    _write_atomic(path, text)
+                except OSError as e:
+                    _log(f"parked account state not restored ({type(e).__name__})")
+                    return  # parked copy kept: the next bind tries again
+    try:
+        os.remove(PARKED_ACCOUNT_STATE)
+    except OSError:
+        pass
 
 
 def _bound_venue():
@@ -2201,6 +2860,12 @@ def _strategy_futures_symbol(name):
     return None
 
 
+def _portfolio_trading_supported():
+    """portfolio_reporter.can_trade_portfolio — the workspace lib trades Type C."""
+    import portfolio_reporter  # same runtime dir
+    return portfolio_reporter.can_trade_portfolio()
+
+
 def _strategy_is_portfolio(name):
     """True only when strategies/<name>/stats.json positively identifies a
     Type C portfolio strategy — read straight off disk like
@@ -2302,10 +2967,10 @@ def _cmd_amounts(args):
             was_funded = False  # a garbage stored value is not a funded config
         if was_funded:
             continue
-        if _strategy_is_portfolio(k):
+        if _strategy_is_portfolio(k) and not _portfolio_trading_supported():
             raise ValueError(
-                f"「{k}」是投資組合(Type C)策略,暫不支援自動下單——"
-                f"請取消勾選這支策略後再儲存"
+                f"「{k}」是投資組合(Type C)策略,這台機器的程式還不能讓它自動下單——"
+                f"請先更新 blave agent,或取消勾選這支策略後再儲存"
             )
         newly_funded.add(k)
 
@@ -2765,6 +3430,8 @@ def _cmd_credentials_remove(args):
             # Partial unbind on a multi-venue machine keeps daemon and
             # portfolio as-is.
             if _stop_reconciler():
+                _mark_reconciler_stopped()
+                _park_account_state(_account_identity(lines))
                 # mirror first, config second (P2-2 write order) — and if the
                 # config write below then fails, a {}/{} mirror over a stale
                 # config fails in the SAFE direction (nothing funded).
@@ -2785,6 +3452,10 @@ def _cmd_credentials_remove(args):
                     pass  # no portfolio was ever written — nothing to clear
                 except (OSError, ValueError) as e:
                     _log(f"membership clear failed: {type(e).__name__}: {e}")
+                # The book is kept per venue, so it survives the unbind: binding the
+                # SAME exchange account back finds the bot's own positions still its
+                # own; a DIFFERENT account resets that venue's book the first time
+                # the workspace lib reads its id (lib.portfolio.book_account_check).
             else:
                 _log("reconciler not confirmed stopped — membership kept")
 
@@ -3110,6 +3781,12 @@ def _cmd_restart_reconciler(args):
     if os.path.exists(RESTART_STOP_PATH):
         raise RuntimeError("machine restarted — trading stays stopped until "
                            "the user presses 啟動下單")
+    if not _local_mode():  # the desktop daemon's own lock guards its reconciler
+        strays = _stray_reconciler_pids()
+        if strays:
+            raise RuntimeError(f"a reconciler not run by this machine's supervisor is running "
+                               f"(pid {strays[0]}) — starting another would double every "
+                               f"order; stop that process first")
     return _restart_reconciler(args)
 
 
@@ -3390,9 +4067,14 @@ def _capital_open_book_keys():
         return ""
     ledger = None
     try:
-        from lib.portfolio import ledger_positions, load_portfolio_config
-        if load_portfolio_config().get("self_ledger"):
-            ledger = ledger_positions()
+        import lib.portfolio as _pf
+        cfg = _pf.load_portfolio_config()
+        own = getattr(_pf, "own_positions_only", None)
+        # no baseline = no trustworthy book (flatten.py closes nothing then) → list them all
+        ready = _pf.book_ready(cfg) if hasattr(_pf, "book_ready") else bool(_pf._load_ledger_seed()["seeded_at"])
+        if (own(cfg) if own else cfg.get("self_ledger")) and ready:
+            ledger = (_pf.ledger_positions("capital") if hasattr(_pf, "book_ready")
+                      else _pf.ledger_positions())
     except Exception:
         ledger = None  # unreadable (or pre-ledger workspace) → list them all
     try:
@@ -4415,6 +5097,7 @@ HANDLERS = {
     "reply_lang_set": _cmd_reply_lang_set,
     "tz_set": _cmd_tz_set,
     "telegram_reset": _cmd_telegram_reset,
+    "book_account_confirm": _cmd_book_account_confirm,
 }
 
 
@@ -4433,13 +5116,19 @@ def dispatch(command):
     # a swallowed ImportError or a HALT file in the wrong cwd); credentials for
     # the same reason (its rebind-eviction halt).
     if cmd in ("halt", "resume", "resume_wait", "downtime_hold", "close_all",
-               "credentials", "credentials_remove"):
+               "credentials", "credentials_remove", "book_account_confirm"):
         result = _in_workspace(fn, args)
     else:
         result = fn(args)
-    if (cmd in ("resume", "resume_wait") and args.get("strategies") is None
-            and os.path.exists(RESTART_STOP_PATH)):
-        result = f"{result}; {_start_after_restart_stop()}"
+    # a start held for an unanswered account question changed nothing: the
+    # restart-stop record and a stopped reconciler stay as they are
+    if cmd in ("resume", "resume_wait") and args.get("strategies") is None \
+            and not str(result).startswith("held:"):
+        if os.path.exists(RESTART_STOP_PATH):
+            result = f"{result}; {_start_after_restart_stop()}"
+        elif not _local_mode():
+            # the local app supervises its own reconciler and sends its own follow-up
+            result = f"{result}; {_ensure_reconciler_running()}"
     return result
 
 

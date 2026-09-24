@@ -196,7 +196,7 @@ def scan_grid(data, compute_signals_fn, row_vals, col_vals,
     col_vals          : iterable of col parameter values
     row_param         : kwarg name for row values (default 'entry_th')
     col_param         : kwarg name for col values (default 'exit_th')
-    fee               : per-trade fee rate (default 0.0005)
+    fee               : per-side (one-way) fee rate, charged on every |Δw| (default 0.0005)
     valid_fn          : (row_val, col_val) → bool; skips invalid combos.
                         Type A threshold default: row > col (entry > exit).
                         Type C default: all combos valid (lambda r, c: True).
@@ -469,7 +469,7 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
                  (the web builds "把 ENTRY_TH 改成 …" prompts from it — use the
                  module constant name, not the compute_signals kwarg)
     col_param  : the strategy constant name swept along cols, e.g. 'EXIT_TH'
-    fee        : per-trade fee rate used for the scan (s.FEE)
+    fee        : per-side (one-way) fee rate used for the scan (s.FEE)
     start, end : scan data range as 'YYYY-MM-DD' strings (end = df.index[-1] date;
                  pass None if unknown)
     current    : (row_val, col_val) — the constants the strategy file holds RIGHT

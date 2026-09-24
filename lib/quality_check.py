@@ -35,7 +35,7 @@ def check(filepath: str) -> list[dict]:
     findings = (
         _check_fee(tree) + _check_compute_signals(tree)
         + _check_txf_settlement_mask(tree) + _check_plot_series(tree)
-        + _check_end(tree)
+        + _check_end(tree) + _check_spot_short(tree) + _check_exit_loop(tree)
     )
     return sorted(findings, key=lambda f: f["line"])
 
@@ -60,6 +60,12 @@ def plot_series_findings(filepath: str) -> list[dict]:
     """PLOT_SERIES check only — the runner's non-blocking backtest hint."""
     tree = _parse_for_runner(filepath)
     return _check_plot_series(tree) if tree is not None else []
+
+
+def exit_loop_findings(filepath: str) -> list[dict]:
+    """Hand-written exit loop check only — the runner's non-blocking backtest warning."""
+    tree = _parse_for_runner(filepath)
+    return _check_exit_loop(tree) if tree is not None else []
 
 
 def end_pinned_findings(filepath: str) -> list[dict]:
@@ -177,8 +183,10 @@ def _check_compute_signals(tree: ast.AST) -> list[dict]:
     # (_add_indicators, _compute_weights) — but NOT at module level, where the
     # boilerplate `if __name__ == '__main__'` is itself a Compare node. WARNING
     # only — a strategy whose comparisons all live in numpy calls could trip this.
+    # `if MARKET == "spot": signal = signal.clip(lower=0.0)` ships in TEMPLATE_A — not signal logic.
     has_logic = any(
-        isinstance(n, (ast.Compare, ast.For, ast.While))
+        (isinstance(n, ast.Compare) and not (isinstance(n.left, ast.Name) and n.left.id == "MARKET"))
+        or isinstance(n, (ast.For, ast.While))
         for f in ast.walk(tree) if isinstance(f, ast.FunctionDef)
         for n in ast.walk(f)
     )
@@ -362,6 +370,134 @@ def _check_plot_series(tree: ast.AST) -> list[dict]:
         "the web workspace chart gets no indicator pane, so the user cannot see "
         "why it traded. " + _PLOT_SERIES_FIX,
     )]
+
+
+# ── Hand-written exit loop check ────────────────────────────────────────────────
+
+# Name tokens (split on "_" and case): a stop/target level vs an entry price. Token-exact so
+# `slow` / `stopped_at_bar` style words are not read as `sl` / `stop` by accident.
+_STOP_TOKENS = {"sl", "tp", "tsl", "stop", "stoploss", "takeprofit", "take", "target", "profit",
+                "trail", "trailing", "limit"}
+_ENTRY_NAMES = {"ep", "avg_price", "avg_cost", "buy_price", "fill_price", "cost_basis", "cost_price",
+                "open_price", "entry"}
+
+
+def _tokens(name: str) -> list[str]:
+    import re
+    return [t.lower() for t in re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+", name)]
+
+
+def _is_stop_name(name: str) -> bool:
+    return any(t in _STOP_TOKENS for t in _tokens(name))
+
+
+def _is_entry_name(name: str) -> bool:
+    return name.lower() in _ENTRY_NAMES or "entry" in _tokens(name)
+
+
+def _names(node) -> set:
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _check_exit_loop(tree: ast.AST) -> list[dict]:
+    # A per-bar loop that assigns an entry price and compares it (or a level derived from it)
+    # against a stop / target — the shape of the 2026-09-23 no-op stop and the 29026
+    # e2e_exit_test SL/TP loop. lib.exits.apply_exits does this with invalid-bar, roll and
+    # no-same-bar-re-entry handling; any apply_exits call in the file clears the check.
+    # WARNING only: a hand-written loop can be correct, it just is not the sanctioned path.
+    if any(isinstance(n, ast.Call) and _call_name(n) == "apply_exits" for n in ast.walk(tree)):
+        return []
+    for loop in ast.walk(tree):
+        if not isinstance(loop, (ast.For, ast.While)):
+            continue
+        assigns = [n for n in ast.walk(loop) if isinstance(n, (ast.Assign, ast.AugAssign, ast.AnnAssign))]
+
+        def targets(a):
+            ts = a.targets if isinstance(a, ast.Assign) else [a.target]
+            return {n.id for t in ts for n in ast.walk(t) if isinstance(n, ast.Name)}
+
+        entry = {name for a in assigns for name in targets(a) if _is_entry_name(name)}
+        if not entry:
+            continue
+        tainted, stopish = set(entry), set()
+        changed = True
+        while changed:
+            changed = False
+            for a in assigns:
+                if a.value is None or not (_names(a.value) & tainted):
+                    continue
+                for name in targets(a) - tainted:
+                    tainted.add(name)
+                    changed = True
+                    if _is_stop_name(name) or any(_is_stop_name(x) for x in _names(a.value)):
+                        stopish.add(name)
+        for cmp in (n for n in ast.walk(loop) if isinstance(n, ast.Compare)):
+            used = _names(cmp)
+            if not (used & tainted):
+                continue
+            if used & stopish or any(_is_stop_name(x) for x in used):
+                return [_w(cmp.lineno,
+                           "hand-written exit loop — tracks an entry price ("
+                           + ", ".join(sorted(entry)) + ") and compares it to a stop / target "
+                           "level. Use lib.exits.apply_exits(signal, df, stop_pct=..., tp_pct=..., "
+                           "trail_pct=..., max_bars=..., trigger=\"intrabar\" or \"close\"); it handles "
+                           "High/Low touches, gaps, invalid bars, rolls and no same-bar re-entry. If the "
+                           "rule is one it cannot model, tell the user that instead of hand-rolling a "
+                           "loop (references/strategy-code.md › Exits on top of an existing signal).")]
+    return []
+
+
+# ── Spot short check ────────────────────────────────────────────────────────────
+
+def _module_str(tree: ast.AST, name: str):
+    # value of the LAST module-level `NAME = "<str>"`, else None
+    val = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            val = node.value.value if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str) else None
+    return val
+
+
+def _negative_const(node) -> bool:
+    return (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub)
+            and isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, (int, float))
+            and node.operand.value > 0)
+
+
+def _check_spot_short(tree: ast.AST) -> list[dict]:
+    # Type A only (Type C weights are checked elsewhere). The backtest runner clamps a spot
+    # strategy's shorts to flat (lib/exits.clamp_spot), but param_scan / walk_forward call
+    # compute_signals directly and would still score short profits — so the file itself must
+    # be long-only. Triggers: `x[...] = -<n>` or threshold_position with a reachable short
+    # side; `.clip(lower=0...)` / clamp_spot anywhere in the file clears it.
+    if _module_str(tree, "MARKET") != "spot" or not _assigns(tree, "SYMBOL") or _assigns(tree, "UNIVERSE"):
+        return []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if _call_name(node) == "clamp_spot":
+                return []
+            if _call_name(node) == "clip" and any(
+                    k.arg == "lower" and isinstance(k.value, ast.Constant) and k.value.value == 0
+                    for k in node.keywords):
+                return []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign) and _negative_const(node.value)
+                and any(isinstance(t, ast.Subscript) for t in node.targets)):
+            return [_w(node.lineno, "MARKET is spot but compute_signals sets a short (negative) "
+                                    "signal — spot cannot short. " + _SPOT_FIX)]
+        if isinstance(node, ast.Call) and _call_name(node) == "threshold_position":
+            short = node.args[4] if len(node.args) > 4 else next(
+                (k.value for k in node.keywords if k.arg == "short_th"), None)
+            off = (_negative_const(short) and short.operand.value >= 1e8)
+            if not off:
+                return [_w(node.lineno, "MARKET is spot but threshold_position has a reachable short "
+                                        "side — spot cannot short. " + _SPOT_FIX)]
+    return []
+
+
+_SPOT_FIX = ("The backtest clamps it to flat, same as live, but scans and walk-forward "
+             "call compute_signals directly and still score it: end compute_signals with "
+             "`signal = signal.clip(lower=0.0)` (or pass short_th=-1e9).")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -186,4 +186,32 @@ t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個
 t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down 講「在這台電腦重跑」;舊的 ho.note 退場",
   /extra\.appendChild\(mk\("p", "cf-note", dir === "up" \? t\("ho\.note\.up"\) : t\("ho\.note\.down"\)\)\);/.test(src) && !/"ho\.note":/.test(strings)
   && /"ho\.note\.up": "[^"]*在雲端重跑一次回測/.test(strings) && /"ho\.note\.down": "[^"]*在這台電腦重跑一次回測/.test(strings));
+// spec-desktop-005 §4:來源那一支在它那一邊的下單設定裡(判準同雲端刪除 cdelInUse)→ 框直接是擋下態、指向「用新名字複製一份」;
+// 讀不到設定(null)不預判。真的跑 hoAsk(假 DOM + 假 confirmBox),看框裡放了什麼
+{ const cut = (s, name) => { const i = s.indexOf("function " + name + "("); return s.slice(i, s.indexOf("\n}\n", i) + 3); };
+  const el = () => { const n = { kids: [], textContent: "", className: "", append(...x) { n.kids.push(...x); }, appendChild(x) { n.kids.push(x); return x; } }; return n; };
+  const texts = (n) => (n && typeof n === "object" ? [n.textContent || "", ...(n.kids || []).flatMap(texts)] : []);
+  const run = (dir, cloudCfg, localCfg) => {
+    const boxes = [];
+    const c = { HO: { on: true, pending: null }, HO_ID_RE: /^[A-Za-z0-9_-]{1,64}$/, running: false, ENV: { cur: dir === "up" ? "local" : "cloud" },
+      envCanSwitch: () => true, hoCloudLive: () => true, envCloudKind: () => "running", hoNote: () => {}, envSwitchGuarded: () => true,
+      TR_BAGS: { cloud: { st: { report: { config: cloudCfg } } }, local: { st: { report: { config: localCfg } } } },
+      t: (k) => k, confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
+      envCloudList: () => [], RP: { list: [], data: null }, LANG: "zh", hoTpl: () => ({}), hoMsg: () => "m", paneSt: { chat: {} } };
+    vm.createContext(c);
+    vm.runInContext(["hoMovesRow", "hoState", "hoAmount", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse"), c);
+    c.hoAsk(dir, "btc_rsi", {});
+    const b = boxes[0]; return b ? { single: !!b.single, ok: b.ok, dis: !!b.okDisabled, txt: texts(b.extra).join("|"), env: b.env } : null;
+  };
+  let r = run("down", { amounts: { btc_rsi: 0 } }, {});
+  t("拉回:雲端的 amounts 有這支(金額 0 也算)→ 擋下態:只有 ho.block.srcDown 那一句、單一出口「知道了」、雲端記號", r && r.single && r.ok === "cdel.gotIt" && r.txt === "ho.block.srcDown" && r.env === "cloud");
+  r = run("down", { weights: { btc_rsi: 0.5 } }, {});
+  t("拉回:在 weights 或 exchanges 裡也算", r && r.txt === "ho.block.srcDown" && run("down", { exchanges: { btc_rsi: "okx" } }, {}).txt === "ho.block.srcDown");
+  r = run("up", {}, { amounts: { btc_rsi: 5000 } });
+  t("送上雲端:這台電腦的下單設定有這支 → ho.block.srcUp", r && r.single && r.txt === "ho.block.srcUp" && r.env === undefined);
+  r = run("down", null, {});
+  t("雲端設定讀不到(null)→ 不預判,照舊開一般的框(會搬 / 不會搬兩列)", r && !r.single && /ho\.row\.moves/.test(r.txt) && !/srcDown/.test(r.txt));
+  r = run("down", { amounts: { eth_ma: 1000 } }, {});
+  t("別支在下單設定裡 → 這支照常開一般的框", r && !r.single && !/src(Up|Down)/.test(r.txt));
+  t("擋下態的字:講「用新名字複製一份」,兩個方向各一句", /"ho\.block\.srcDown": "[^"]*用新名字複製一份再拉回/.test(strings) && /"ho\.block\.srcUp": "[^"]*用新名字複製一份再送上去/.test(strings)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

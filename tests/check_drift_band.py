@@ -6,10 +6,11 @@ on): in account-read mode target is a fixed notional and actual is size × mark,
 so the mark alone opens a "gap" every heartbeat.
 
 Asserts:
-  (a) a config WITHOUT the self_ledger key (every pre-existing machine) still
-      diffs against the account read — the mark still rebalances it past the
-      band, no baseline is required, the snapshot carries no ledger; `false`
-      behaves the same; only `true` is the book (and refuses without a seed);
+  (a) a config WITHOUT the self_ledger key diffs against the book now (own
+      positions only, 2026-09-23 — tests/check_own_positions_only.py): with no
+      baseline the first round adopts min(held, target) and sells nothing;
+      `true` is the same; only an explicit `false` still reads the account
+      (the opt-out), and (b)–(d) run under it;
   (b) a same-side drift inside max(5%, 2σ) of the target places nothing and is
       recorded with `band_usd`; past the band it trades; σ widens the band, is
       read once a day (failures included), and a spot key resolves its symbol;
@@ -63,6 +64,10 @@ class _FakeOrder:
 
     def get_mark_price(self, env, sym):
         return MARK
+
+    def format_qty(self, env, sym, qty, price=None):
+        # the venue's floor-to-step, as lib.order_binance.format_qty does
+        return format(int(qty / self.rules["step"] + 1e-9) * self.rules["step"], ".3f")
 
 
 sys.modules["lib.order_binance"] = _FakeOrder()
@@ -125,21 +130,32 @@ def run(target_usd, held_usd, asset_spec=None, exchange=None, key=SYM, config=No
 
 
 # ── (a) an old config keeps today's mode ────────────────────────────────────
-print("== (a) no self_ledger key → account-read mode, as today")
+print("== (a) no self_ledger key → the book; only an explicit false reads the account")
 reset_sigma()
+real_pos_qty = venue_wiring.auto_position_qty
+venue_wiring.auto_position_qty = lambda: {SYM: TARGET * 1.20 / MARK}
+portfolio._baseline_seen = None
+run(TARGET, TARGET * 1.20)  # the first read is only noted (two-read confirmation)
 legs, gate, err, snap = run(TARGET, TARGET * 1.20)
-check(legs == [-4000.0] and err is None,
-      "no key: a +20% mark move is rebalanced to the fixed notional (account-read)")
-check("ledger" not in snap, "no key: the snapshot carries no ledger — the book is not in play")
-check(not os.path.exists("manager/ledger_seed.json"),
-      "no key: no baseline was needed or written")
+row = json.load(open("manager/ledger_seed.json"))["symbols"].get("binance|" + SYM, {})
+check(legs == [] and err is None and "needs_baseline" not in snap
+      and abs(row.get("qty", 0) - TARGET * 1.20 / MARK) < 1e-12 and row.get("size") == TARGET,
+      f"no key, no baseline: 1.2× the target is within 1.5× — the whole position is the bot's, its "
+      f"cost recorded at the target, so no order goes out ({legs}, {row})")
+check(sigma_calls == [], "no key: the book has no band — no σ asked")
+os.remove("manager/ledger_seed.json")
+portfolio._baseline_seen = None
+run(TARGET, TARGET * 1.20, config={"self_ledger": True})
+legs_t, _, err_t, snap_t = run(TARGET, TARGET * 1.20, config={"self_ledger": True})
+check(legs_t == [] and err_t is None and os.path.exists("manager/ledger_seed.json"),
+      "self_ledger: true is the same as the missing key (no longer a raise)")
+os.remove("manager/ledger_seed.json")
 legs_f, _, err_f, snap_f = run(TARGET, TARGET * 1.20, config={"self_ledger": False})
-check(legs_f == legs and err_f is None and "ledger" not in snap_f,
-      "self_ledger: false behaves exactly like the missing key")
-legs_t, _, err_t, _ = run(TARGET, TARGET * 1.20, config={"self_ledger": True})
-check(legs_t == [] and err_t and "ledger_seed" in err_t,
-      "self_ledger: true is the only switch — and refuses to trade without a baseline")
-json.dump({}, open("manager/portfolio_config.json", "w"))
+check(legs_f == [-4000.0] and err_f is None and "ledger" not in snap_f and "own_only" not in snap_f
+      and not os.path.exists("manager/ledger_seed.json"),
+      "self_ledger: false (opt-out): a +20% mark move is rebalanced to the fixed notional, no baseline")
+json.dump({"self_ledger": False}, open("manager/portfolio_config.json", "w"))
+venue_wiring.auto_position_qty = real_pos_qty
 
 # ── (b) the band ─────────────────────────────────────────────────────────────
 print("== (b) drift inside max(5%, 2σ) of the target is left alone")
@@ -460,7 +476,7 @@ check(legs == [(-2.0, True)] and [f[:2] for f in fills] == [("sell", 2.0)] and p
       f"book mode, strategy removed: the book row inherits unit contracts and closes 2 lots ({legs})")
 os.remove("manager/orders.jsonl")
 os.remove("manager/ledger_seed.json")
-json.dump({}, open("manager/portfolio_config.json", "w"))
+json.dump({"self_ledger": False}, open("manager/portfolio_config.json", "w"))
 venue_wiring.detect_venue = lambda env: "binance"
 venue_wiring.read_env = lambda path=".env": {"BINANCE_API_KEY": "k"}
 portfolio._record_order_error = lambda s, x, e: None
@@ -491,7 +507,7 @@ book = portfolio.ledger_book()[SYM]
 check(book_legs == [600.0] and abs(book["cost"] - TARGET * 1.03) < 0.01 and sigma_calls == [],
       f"book mode: the 600 top-up goes out (no band, no σ asked), book cost {book['cost']:.0f}")
 os.remove("manager/orders.jsonl")
-json.dump({}, open("manager/portfolio_config.json", "w"))
+json.dump({"self_ledger": False}, open("manager/portfolio_config.json", "w"))
 
 # ── (e) a new machine's first config ─────────────────────────────────────────
 print("== (e) first portfolio_config.json: self_ledger on, seed written first")
@@ -546,24 +562,31 @@ check(cfg.get("self_ledger") is True and cfg["execution"] == {},
 check(json.load(open(seed_path))["seeded_at"] == "2026-01-01T00:00:00",
       "a baseline already on disk (hand-run seed_ledger.py) is not overwritten")
 
-# S1: a machine that has traded but has no config is not a new machine — and
-# "traded" is orders.jsonl alone. last_reconcile.json is written by every
-# reconcile round, including the never-configured read-only ones, which place
-# nothing: counting it made the first save come out without self_ledger and the
-# next round closed the user's own positions (audit 2026-09-23 B1).
-for marker, fresh in (("orders.jsonl", False), ("last_reconcile.json", True)):
+# S1: a machine that has traded on a REAL venue but has no config is not a new
+# machine — "traded" is a non-paper fill in orders.jsonl. last_reconcile.json is
+# written by every reconcile round, including the never-configured read-only
+# ones, which place nothing: counting it made the first save come out without
+# self_ledger and the next round closed the user's own positions (audit
+# 2026-09-23 B1). Paper fills say nothing about a real account either (Wei,
+# 2026-09-23: two paper fills kept his Binance config off the book).
+PAPER_FILL = '{"exchange": "paper", "symbol": "BTCUSDT", "legs": []}\n'
+REAL_FILL = '{"exchange": "binance", "symbol": "BTCUSDT", "legs": []}\n'
+for marker, body, fresh in (("orders.jsonl", PAPER_FILL + REAL_FILL, False),
+                            ("orders.jsonl", PAPER_FILL, True),
+                            ("orders.jsonl", "", True),
+                            ("last_reconcile.json", "", True)):
     os.remove(cfg_path)
     if os.path.exists(seed_path):
         os.remove(seed_path)
     mpath = os.path.join(WS2, "manager", marker)
-    open(mpath, "w").write("")
+    open(mpath, "w").write(body)
     cl._cmd_amounts({"amounts": {"s1": 100}})
     cfg = json.load(open(cfg_path))
     check((cfg.get("self_ledger") is True) == fresh and os.path.exists(seed_path) == fresh
           and cfg["amounts"] == {"s1": 100.0},
-          f"manager/{marker} on disk, no config: "
-          + ("still a fresh machine — a snapshot is not a trade (self_ledger on, seed written)"
-             if fresh else "starts in account-read mode, no seed written"))
+          f"manager/{marker} {body.count(chr(10))} fill(s) ({'real' if 'binance' in body else 'paper/none'}), "
+          f"no config: " + ("a fresh machine (self_ledger on, seed written)"
+                            if fresh else "no key, no seed — the lib's first round decides"))
     os.remove(mpath)
 
 print("\n" + ("PASS" if not fails else f"{fails} FAILED"))

@@ -995,16 +995,24 @@ function minGate() {
   });
   return _gate;
 }
-/* 這個帳號現在含不含 Blave 資料(試用中 / 名下有主機 / API 方案)。畫面的預檢與回前景重查
+/* account_status 的資料狀態:"included"(試用 / 名下有主機 / API 方案,免費)、"billed"(按有用到的整點小時收)、
+   "none"(這一小時付不出來),或 null。舊 api 沒有 data_access(外殼比 api 先出)、或值認不得:退回布林 data_included,
+   跟以前一模一樣——讀不到新欄位就照舊,不自己發明狀態(同 desktop.min_version 契約的失敗方向)。renderer 有同一支 */
+function dataAccessOf(b) {
+  if (!b) return null;
+  return ["included", "billed", "none"].includes(b.data_access) ? b.data_access : b.data_included === true ? "included" : null;
+}
+/* 這個帳號現在拿不拿得到 Blave 資料:免費含在裡面、或按小時付得起,都算。畫面的預檢與回前景重查
    都會打 account_status,這裡吃它最後一次的結果;太舊(或還沒打過)才自己補打一次——這支跟
    LLM 共用每分鐘 30 次的桶,不能每一輪都打。查不到就當沒有:寧可這一輪少資料,也不要把 key
-   寫給一個已經不含資料的帳號(伺服器那邊對不含資料的桌面 key 本來就回 403)。 */
+   寫給一個拿不到資料的帳號。 */
 let lastAcct = null;
 const ACCT_FRESH_MS = 5 * 60 * 1000;
-async function dataIncluded() {
+async function hasBlaveData() {
   const fresh = () => lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS;
   if (!fresh()) await accountStatus();
-  return !!(fresh() && lastAcct.body.data_included === true);   // 補打失敗就是查不到:舊答案不沿用
+  const a = fresh() ? dataAccessOf(lastAcct.body) : null;   // 補打失敗就是查不到:舊答案不沿用
+  return a === "included" || a === "billed";
 }
 
 async function blaveModels() {
@@ -1085,12 +1093,14 @@ function tradeStartIfReady() {
    這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 要帳號 token(沒登入 Blave 的人查不到 IP,表單照樣能用)。 */
 let _binanceLink = null, binanceStarted = false;
 const binanceStatePath = () => path.join(app.getPath("userData"), "binance-link.json");
+// 真實交易所的金鑰只從這裡進 daemon(trusted:daemon.js TRUSTED_SETS 一家一組);renderer 的 trade-send 只收模擬交易
+const sendTrustedCreds = (env) => tradeHost().send("credentials", { env }, { trusted: true });
 function binanceLink() {
   if (!_binanceLink) {
     _binanceLink = require("./binance_link").createBinanceLink({
       http: (u, h) => getJSON(u, h),
       myIp: () => { const tok = loadToken(); if (!tok) return Promise.resolve(null); return postJSON(`${API_BASE}/oauth/desktop/my_ip`, { token: tok }, { family: 4 }); },
-      send: (env) => tradeHost().send("credentials", { env }, { trusted: true }),
+      send: sendTrustedCreds,
       readEnv: () => { try { return fs.readFileSync(path.join(WS, ".env"), "utf8"); } catch (_) { return null; } },
       loadState: () => JSON.parse(fs.readFileSync(binanceStatePath(), "utf8")),
       saveState: (o) => fs.writeFileSync(binanceStatePath(), JSON.stringify(o), { mode: 0o600 }),
@@ -1165,9 +1175,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // **看連的是誰,不是看手上有沒有 token**:登入過 Blave、後來改連自己的 Claude Code 的人,
   // token 還在 Keychain 裡——照「有 token 就帶」會讓他以為在用自己的訂閱、實際上燒 Blave 額度
   // 資料則相反——**看有沒有登入,不看連的是誰**:登入 Blave 是帳號的事,資料 key 是另一把縮權的 key
-  // (不能呼叫 LLM、不產生 usage_blave),給自帶 CLI 的人不會燒到他的 AI 額度。
+  // (不能呼叫 LLM),給自帶 CLI 的人不會燒到他的 AI 額度;沒有主機 / 試用 / 方案時它按小時收資料費,不碰 AI 額度。
   const signedIn = !!loadToken();
-  const plan = turnCreds(conn.kind, signedIn, signedIn && await dataIncluded(), cloudHandoffOn());
+  const plan = turnCreds(conn.kind, signedIn, signedIn && await hasBlaveData(), cloudHandoffOn());
   const useBlave = conn.kind === "blave";
   const acct = plan.proxyToken ? loadToken() : null;
   const dataAccess = syncDataEnv(plan.dataKey);
@@ -1309,6 +1319,7 @@ function createWindow() {
     },
   });
   guardNavigation(win);
+  win.on("enter-full-screen", appMenuSync); win.on("leave-full-screen", appMenuSync);   // 全螢幕那一格的字跟著換
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
@@ -1401,7 +1412,7 @@ app.whenReady().then(() => {
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
   // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
@@ -1426,6 +1437,17 @@ app.whenReady().then(() => {
     if (out.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return out;
   }, cxDenied);
+  /* OKX / BingX / Gate.io / Bybit 綁在這台電腦:金鑰只在這裡經過一次(形狀與 env 名同雲端那條:cloudcmd.connectSecrets),
+     不回傳、不 log。寫入前 runtime(_local_real_key_gate)用那一家的 lib/account_* 讀一次帳戶,讀不到就不寫;
+     回覆怎麼對到畫面的代號、怎麼遮金鑰,在 cloudcmd.interpretVenueBind */
+  handle("venue-connect", async (_e, a) => {
+    const CC = require("./cloudcmd");
+    if (!a || typeof a !== "object" || a.venue === "binance" || a.venue === "paper") return { ok: false, code: "BAD_ARGS", detail: {} };
+    const built = CC.connectSecrets(a, () => false, Date.now() / 1000);
+    if (built.error) return { ok: false, code: built.error, detail: {} };
+    let r = null; try { r = await sendTrustedCreds(built.secrets); } catch (_) { /* 當沒送到 */ }
+    return CC.interpretVenueBind(r, built.secrets);
+  }, { ok: false, code: "NOT_ALLOWED", detail: {} });
   // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
   ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
   ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));
@@ -1524,6 +1546,13 @@ app.on("window-all-closed", () => app.quit());
    - 從選單暫停 = 直接送 halt、不跳框(暫停是安全方向),事後一則系統通知;沒送到也要講,不能讓人以為停了。
    - 執行中按紅燈只收視窗、不結束 app(app 結束 = 停止下單);Cmd+Q 先問一次。
    - 字由 renderer 依目前語言交過來(.po 是唯一的字串來源);還沒交之前用英文退路。 */
+/* app 選單的英文退路(renderer 還沒交字之前,不到一秒)。字串表 menu.* 是唯一來源,這裡只是退路 */
+const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: "Hide Blave", menuHideOthers: "Hide Others", menuShowAll: "Show All",
+  menuQuit: "Quit Blave", menuFile: "File", menuClose: "Close Window", menuEdit: "Edit", menuUndo: "Undo", menuRedo: "Redo", menuCut: "Cut",
+  menuCopy: "Copy", menuPaste: "Paste", menuPasteStyle: "Paste and Match Style", menuDelete: "Delete", menuSelectAll: "Select All",
+  menuView: "View", menuLocal: "This Computer", menuCloud: "Cloud", menuActualSize: "Actual Size", menuZoomIn: "Zoom In", menuZoomOut: "Zoom Out",
+  menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
+  menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website" };
 let tray = null, trayTimer = null, quitConfirmed = false, quitAsking = false, hiddenSaid = false, lastVenue = null, trayKey = "";
 let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading", pause: "Pause trading (keep positions)", open: "Open Blave", quit: "Quit Blave…",
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
@@ -1541,11 +1570,11 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   cloudUpdate: "Cloud machine: new version {nv}. Open Blave to update…", cloudUpdateStale: "The cloud's order program needs an update. Open Blave to update…",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
-  // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單那三個例外(整個 app 選單本來就是系統給的英文),有英文退路。
+  // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
   key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
-  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", moneyPaper: "", moneyReal: "",
-  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", menuLocal: "", menuCloud: "", menuSite: "", menuView: "" };
+  stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", stNotStarted: "", moneyPaper: "", moneyReal: "",
+  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
 const siteLang = () => uiLang || (/^zh/i.test(app.getLocale() || "") ? "zh" : "en");
@@ -1557,28 +1586,44 @@ function envSwitchFromMenu(env) {
   showMain();
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("env-switch", env);
 }
-/* app 選單:系統預設那一份 + 「顯示」裡的兩個視角、「輔助說明」裡的官網(側欄字標拿掉之後,官網入口搬到這裡)。
+/* app 選單。Electron 內建 role 的預設字是寫死的英文(electron_api_menu_roles.cc),不跟系統語言翻,
+   所以每一個 role 項目都帶 label,字跟 **app 的語言**走(renderer 交過來;字照 macOS zh_TW 系統用字,設計師 spec §1.2)。
+   編輯選單逐項列:editMenu 整包會帶「Substitutions」「Speech」兩個寫死英文、聊天輸入用不到的子選單。
+   系統自己插的項目(服務的內容、聽寫、表情符號、視窗清單、說明搜尋)跟**系統**語言走,不歸這裡管。
+   全螢幕那一格的字跟著視窗狀態換(進入 / 離開),視窗的 enter/leave-full-screen 會叫 appMenuSync 重建。
+   全螢幕**不用 role**:帶 togglefullscreen role(= toggleFullScreen: selector)時,macOS 26 會在同一個選單再插一份自己的
+   (🌐F 那一格,字照抄我們的),0.0.4 上實際看到兩個「Toggle Full Screen」(Electron 44.4.3 的修正沒蓋到)。
+   改成自己的 click + ⌃⌘F,實測選單裡只剩一格;系統那份 🌐F 快捷鍵跟著不見,⌃⌘F 與視窗綠燈照常。
    ⌘1 / ⌘2 在 renderer 也有 keydown:macOS 上選單的快捷鍵先吃,頁面多半收不到;就算兩邊都觸發,切到「已經在的那一邊」
    是 no-op(renderer 的 envSwitch 開頭就擋),不會切兩次。確認框開著時該不該切由 renderer 收到 env-switch 後自己判(同 keydown 的規則)。 */
+function appMenuTemplate(L, dev, full, onEnv, onSite, onFull) {
+  const l = (k) => L[k] || MENU_EN[k], sep = { type: "separator" }, r = (role, k, extra) => ({ role, label: l(k), ...extra });
+  return [
+    { label: app.name, submenu: [r("about", "menuAbout"), sep, r("services", "menuServices"), sep,
+      r("hide", "menuHide"), r("hideOthers", "menuHideOthers"), r("unhide", "menuShowAll"), sep, r("quit", "menuQuit")] },
+    { label: l("menuFile"), submenu: [r("close", "menuClose")] },
+    { label: l("menuEdit"), submenu: [r("undo", "menuUndo"), r("redo", "menuRedo"), sep, r("cut", "menuCut"), r("copy", "menuCopy"), r("paste", "menuPaste"),
+      r("pasteAndMatchStyle", "menuPasteStyle"), r("delete", "menuDelete"), r("selectAll", "menuSelectAll")] },
+    { label: l("menuView"), submenu: [
+      { label: l("menuLocal"), accelerator: "Cmd+1", click: () => onEnv("local") },
+      { label: l("menuCloud"), accelerator: "Cmd+2", click: () => onEnv("cloud") },
+      sep,
+      ...(dev ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, sep] : []),   // 開發版才有,維持英文
+      r("resetZoom", "menuActualSize"), r("zoomIn", "menuZoomIn"), r("zoomOut", "menuZoomOut"), sep,
+      { label: l(full ? "menuFullExit" : "menuFullEnter"), accelerator: "Ctrl+Cmd+F", click: onFull },
+    ] },
+    r("window", "menuWindow", { submenu: [r("minimize", "menuMinimize"), r("zoom", "menuZoom"), sep, r("front", "menuFront")] }),
+    r("help", "menuHelp", { submenu: [{ label: l("menuSite"), click: onSite }] }),
+  ];
+}
 function appMenuSync() {
-  const key = [tmLabels.menuLocal, tmLabels.menuCloud, tmLabels.menuSite, tmLabels.menuView].join("|");
+  const w = BrowserWindow.getAllWindows()[0], full = !!(w && !w.isDestroyed() && w.isFullScreen());
+  const key = JSON.stringify([uiLang, full, Object.keys(MENU_EN).map((k) => tmLabels[k])]);   // 換語言、進出全螢幕都重建
   if (key === appMenuKey && Menu.getApplicationMenu()) return;
   appMenuKey = key;
   const dev = !(app.isPackaged && require("./package.json").blaveRelease);   // 發佈版的選單不放重新載入與開發者工具
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { role: "appMenu" }, { role: "fileMenu" }, { role: "editMenu" },
-    // 自家的 label(顯示、兩個視角、官網)跟 **app 的語言**走(renderer 交過來的字;還沒交之前用英文退路)。
-    // Electron 內建 role 的項目一律不自訂 label——那些由 Electron / 系統決定,自己翻一半會變成中英混語。
-    { label: tmLabels.menuView || "View", submenu: [
-      { label: tmLabels.menuLocal || "This Computer", accelerator: "Cmd+1", click: () => envSwitchFromMenu("local") },
-      { label: tmLabels.menuCloud || "Cloud", accelerator: "Cmd+2", click: () => envSwitchFromMenu("cloud") },
-      { type: "separator" },
-      ...(dev ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, { type: "separator" }] : []),
-      { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" }, { type: "separator" }, { role: "togglefullscreen" },
-    ] },
-    { role: "windowMenu" },
-    { role: "help", submenu: [{ label: tmLabels.menuSite || "Blave Website", click: () => shell.openExternal(SITE_URL[siteLang()]) }] },
-  ]));
+  const onFull = () => { const f = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]; if (f && !f.isDestroyed()) f.setFullScreen(!f.isFullScreen()); };
+  Menu.setApplicationMenu(Menu.buildFromTemplate(appMenuTemplate(tmLabels, dev, full, envSwitchFromMenu, () => shell.openExternal(SITE_URL[siteLang()]), onFull)));
 }
 const SITE_URL = { zh: "https://blave.org/zh", en: "https://blave.org/en" };   // 固定常數(結尾不加斜線:/zh/ 是 404);語言段只有這兩個值
 const venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);   // 同 renderer trVenueIds:四個都在才算連上的帳戶

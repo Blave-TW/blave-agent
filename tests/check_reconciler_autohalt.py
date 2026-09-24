@@ -27,7 +27,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(tempfile.mkdtemp(prefix="autohalt-"))
 os.makedirs("manager", exist_ok=True)
-open("manager/portfolio_config.json", "w").write("{}")
+# account-read opt-out ("self_ledger": false): these checks are about
+# gate arithmetic against the account read, not about ownership
+open("manager/portfolio_config.json", "w").write('{"self_ledger": false}')
 
 from lib import (account_binance, account_bingx, account_bybit, account_gateio,  # noqa: E402
                  account_okx, guard, order_binance, order_bingx, order_bybit, order_gateio,
@@ -192,6 +194,8 @@ def reset(venue="okx"):
     if os.path.exists(rec.ACCOUNT_GUARD_PATH):
         os.remove(rec.ACCOUNT_GUARD_PATH)
     rec._account_guard = {}
+    if os.path.exists("manager/ledger_seed.json"):
+        os.remove("manager/ledger_seed.json")
     rec._consecutive_failures = 0
     rec._reset_outage()
     if os.path.exists(rec.OUTAGE_PATH):
@@ -373,15 +377,25 @@ check(S["acct_calls"] == calls and not guard.halted(),
       "no trigger → account id not read, nothing trips")
 ENV["OKX_API_KEY"], ENV["OKX_SECRET_KEY"] = "key-B", "sekret-B"
 check(rnd(120) == "skip" and guard.halted()
-      and "account changed" in guard.halt_info()["reason"], "key change + new account → HALT")
-raw = open(rec.ACCOUNT_GUARD_PATH).read()
-check("key-B" not in raw and "sekret-B" not in raw, "raw keys never reach the state file")
-check(rec._load_account_guard().get("pending", {}).get("account_id") == "B",
+      and "another okx account is bound" in guard.halt_info()["reason"],
+      "key change + new account → HALT")
+_seed = json.load(open("manager/ledger_seed.json"))
+check("okx" in _seed.get("venue_reset", {}) and _seed["venue_account"]["okx"]["id"] == "B",
+      "…and the okx book is reset at detection, account B recorded — before any resume")
+raw = open(rec.ACCOUNT_GUARD_PATH).read() + open("manager/ledger_seed.json").read()
+check("key-B" not in raw and "sekret-B" not in raw, "raw keys never reach the state files")
+check("another okx account" in rec._load_account_guard().get("pending", {}).get("reason", ""),
       "pending survives a restart")
 check(rnd(420) == "skip", "held while HALT stands")
 ext_clear()
 check(rnd(480) == "ok" and rec._account_guard == {"venue": "okx", "account_id": "B"},
-      "user clearing HALT adopts account B")
+      "user clearing HALT resumes on account B")
+check(json.load(open("manager/ledger_seed.json"))["venue_reset"] == _seed["venue_reset"],
+      "the resume confirms nothing about the book: no second reset, no old book back")
+ENV["OKX_API_KEY"], ENV["OKX_SECRET_KEY"] = "key-B2", "sekret-B2"
+check(rnd(500) == "ok" and not guard.halted()
+      and json.load(open("manager/ledger_seed.json"))["venue_reset"] == _seed["venue_reset"],
+      "key rotation on the same account (id B) keeps the book, no HALT")
 ENV["BLAVE_API_KEY"] = "blave-rotated"
 calls = S["acct_calls"]
 rnd(540)
@@ -392,7 +406,7 @@ reset()
 S["acct"] = order_okx.OKXError("50120", "API key has no permission", "p")
 check(rnd(0) == "ok" and not guard.halted() and not rec._guard_due
       and rec._consecutive_failures == 0,
-      "account-id read with a CREDENTIAL-looking code → round proceeds, no halt, trigger cleared")
+      "account-id unreadable with an EMPTY book → round proceeds, no halt, trigger cleared")
 S["acct"] = order_okx.OKXError("50013", "busy", "p")
 ENV["OKX_API_KEY"] = "key-C"
 check(rnd(60) == "ok" and not rec._guard_due, "account-id read transient → round proceeds")
@@ -403,6 +417,130 @@ S["acct"] = order_okx.OKXError("50120", "perm", "p")
 ENV["OKX_API_KEY"] = "key-E"
 check(rnd(180, {}) == "skip" and "read back empty" in guard.halt_info()["reason"],
       "3a still runs when the account-id read fails")
+
+# 3.7b an unreadable id after a key change, with the bot's book open on the venue:
+# nobody can tell whose account this is — HALT once, hold every round, never guess
+def seed_open_book():
+    os.makedirs("manager", exist_ok=True)
+    with open("manager/ledger_seed.json", "w") as f:
+        json.dump({"seeded_at": "2026-01-01T00:00:00", "own_only_basis": 1, "symbols": {
+            "okx|BTCUSDT": {"size": 100.0, "qty": 0.001, "ts": "2026-01-01T00:00:00",
+                            "venue": "okx"}}}, f)
+
+
+reset()
+seed_open_book()
+check(rnd(0) == "ok" and json.load(open("manager/ledger_seed.json"))["venue_account"]["okx"]["id"]
+      == "A", "open book, first id read → recorded as the book's account")
+S["acct"] = order_okx.OKXError("50120", "API key has no permission", "p")
+ENV["OKX_API_KEY"] = "key-H"
+check(rnd(60) == "skip" and guard.halted()
+      and "could not be read" in guard.halt_info()["reason"]
+      and rec._account_guard.get("book_hold", {}).get("venue") == "okx",
+      "key change + id unreadable + open book → HALT with the reason, round held")
+check(rnd(120) == "skip", "held on the next round too")
+ext_clear()
+check(rnd(180) == "skip" and guard.halted() and "could not be read" in guard.halt_info()["reason"],
+      "clearing HALT does not release the hold: the next round re-HALTs with the hold's reason")
+n_sent = len(sent)
+check(rnd(200) == "skip" and len(sent) == n_sent, "…once: a HALT that stands is not re-sent")
+S["acct"] = "A"
+check(rnd(240) == "ok" and not rec._account_guard.get("book_hold")
+      and "okx" not in json.load(open("manager/ledger_seed.json")).get("venue_reset", {}),
+      "id readable again and the same → hold released, book kept")
+ext_clear()  # the user's 啟動下單, once the question is gone
+S["acct"] = order_okx.OKXError("50120", "perm", "p")
+rec._guard_due = True  # a restart, same key
+check(rnd(300) == "ok" and not guard.halted(),
+      "restart with the same key: an unreadable id holds nothing (one key = one account)")
+S["acct"] = order_okx.OKXError("50013", "busy", "p")
+ENV["OKX_API_KEY"] = "key-I"
+check(rnd(360) == "skip" and not guard.halted(),
+      "key change + TRANSIENT id error + open book → round held, no HALT")
+S["acct"] = "B"
+check(rnd(420) == "skip" and "another okx account" in guard.halt_info()["reason"]
+      and "okx" in json.load(open("manager/ledger_seed.json")).get("venue_reset", {}),
+      "…and when it reads another account, that book is reset and HALT says so")
+
+# 3.7c the first check after this lib lands, on a key that cannot read the id, with the
+# bot's book open: taken as this key's (as a readable id would be) — no upgrade HALT;
+# the strict hold starts at the next key change
+reset()
+seed_open_book()
+S["acct"] = order_okx.OKXError("50120", "API key has no permission", "p")
+check(rnd(0) == "ok" and not guard.halted()
+      and json.load(open("manager/ledger_seed.json"))["venue_account"]["okx"]["id"] is None,
+      "upgrade, id unreadable, open book: recorded against this key, trading goes on")
+ENV["OKX_API_KEY"] = "key-J"
+check(rnd(60) == "skip" and guard.halted() and "could not be read" in guard.halt_info()["reason"],
+      "…and a later key change with the id still unreadable holds")
+S["acct"] = "A"
+hold = rec._account_guard.get("book_hold", {})
+check(rnd(120) == "skip" and "recorded under a key whose account id could not be read"
+      in rec._account_guard.get("book_hold", {}).get("reason", "")
+      and hold.get("ask") and rec._account_guard["book_hold"]["since"] == hold.get("since"),
+      "…an id that reads now cannot be matched to a book built without one: still held, "
+      "the question keeps its `since`")
+from lib import portfolio as _pf  # noqa: E402
+check(_pf.book_account_confirm("okx", True, env=dict(ENV)) == "kept"
+      and rnd(180) == "ok" and not rec._account_guard.get("book_hold"),
+      "the user answers 'same': the next round trades on with the book, the hold is gone")
+check(json.load(open("manager/ledger_seed.json"))["venue_account"]["okx"]["id"] == "A",
+      "…and the id that now reads is the book's, so the next key change decides itself")
+ext_clear()
+
+# 3.7d a network-class id-read failure after a key change, over an open book, holds
+# silently only ~10 minutes: then it asks and HALTs like an unreadable one (D6 #5)
+reset()
+seed_open_book()
+rnd(0)
+S["acct"] = order_okx.OKXError("50013", "busy", "p")
+ENV["OKX_API_KEY"] = "key-T"
+check(rnd(60) == "skip" and not guard.halted() and rnd(360) == "skip" and not guard.halted()
+      and not rec._account_guard["book_hold"]["ask"],
+      "transient id errors: held, no HALT, nothing asked — for now")
+check(rnd(660) == "skip" and guard.halted() and rec._account_guard["book_hold"]["ask"]
+      and "failed for 10 minutes" in guard.halt_info()["reason"],
+      "…10 minutes / 3 rounds of them: HALT and the report asks — never 執行中 over a dead venue")
+check(rnd(700) == "skip" and rec._account_guard["book_hold"]["ask"], "…and it keeps asking")
+
+# 3.7e a bind that found another account (runtime marker `bind_reset`) goes through the
+# same account-changed path: pending trip, HALT re-sent with the notice (D6 #3)
+from lib import portfolio as _pf2  # noqa: E402
+reset()
+rnd(0)
+guard.trip_halt(_pf2.account_changed_reason("okx"), "reconciler")
+rec._sync_halt_flag(os.path.getmtime(guard.HALT_PATH))
+json.dump({**rec._account_guard, "bind_reset": {"venue": "okx", "at": 1}}, open(rec.ACCOUNT_GUARD_PATH, "w"))
+rec._guard_due = True
+del sent[:]
+check(rnd(60) == "skip" and guard.halted()
+      and "no longer manages the positions it opened" in guard.halt_info()["reason"]
+      and "another okx account" in rec._account_guard.get("pending", {}).get("reason", "")
+      and not sent
+      and "bind_reset" not in json.load(open(rec.ACCOUNT_GUARD_PATH)),
+      f"bind marker: pending trip, the HALT (source reconciler, this reason) IS the notice — "
+      f"the platform's halt event carries it; no machine Telegram beside it ({sent})")
+check(rnd(120) == "skip", "…held until the user's 啟動下單")
+ext_clear()
+check(rnd(180) == "ok", "…which resumes on the new account")
+reset()
+rnd(0)
+json.dump({**rec._account_guard, "bind_reset": {"venue": "okx", "at": 1, "acked": True}},
+          open(rec.ACCOUNT_GUARD_PATH, "w"))
+rec._guard_due = True
+del sent[:]
+check(rnd(60) == "ok" and not guard.halted() and not sent
+      and "bind_reset" not in json.load(open(rec.ACCOUNT_GUARD_PATH)),
+      "…a marker the user already started over: the bind's HALT was the notice — no second "
+      "HALT, no second notice, trading goes on")
+reset()
+rnd(0)
+S["acct"] = "B"
+ENV["OKX_API_KEY"] = "key-R"
+check(rnd(60) == "skip" and guard.halted() and not sent
+      and "no longer manages" in guard.halt_info()["reason"],
+      "the reconciler finding the change itself: same — HALT with the reason, no machine Telegram")
 
 # 3.8 3a stays quiet under a HALT the user already set (全部平倉: the account
 # empties under a flatten HALT while last_reconcile.json is pre-flatten)
@@ -421,7 +559,7 @@ S["acct"] = "Z"
 ENV["OKX_API_KEY"] = "key-F"
 check(rnd(60) == "skip" and guard.halt_info()["source"] == "web"
       and guard.halt_info()["reason"] == "user request"
-      and rec._account_guard.get("pending", {}).get("account_id") == "Z",
+      and "another okx account" in rec._account_guard.get("pending", {}).get("reason", ""),
       "account change under the user's HALT → held; that HALT keeps source web")
 check(sent and "resuming confirms this account" in sent[-1], "…and the user is told why")
 ext_clear()
@@ -432,7 +570,7 @@ rnd(60, order_okx.OKXError("50111", "Invalid OK-ACCESS-KEY", "p"))  # our own HA
 S["acct"] = "Y"
 ENV["OKX_API_KEY"] = "key-G"
 check(rnd(120) == "skip" and guard.halt_info()["source"] == "reconciler"
-      and "account changed" in guard.halt_info()["reason"],
+      and "another okx account" in guard.halt_info()["reason"],
       "the reconciler's own HALT is re-tripped with the account reason")
 
 # 3.10 only a transient error is an outage; no "resumes by itself" while halted

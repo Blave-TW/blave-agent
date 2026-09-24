@@ -163,23 +163,27 @@ function paintBlaveBtn() {
 const MDL = { busy: false };
 /* pend = { login:"claude"|"codex"|null, oauth:bool }:等待中的那一列,鈕變「取消等待」而不是變灰——
    這一頁每次重畫都是新節點(setHint 會觸發),等待狀態要在資料裡,不能只靠改那顆鈕的字(改完就被重畫吃掉)。 */
+/* 就緒是預設,不講:能用的列 st = null,只有不能用的列講狀態(尚未登入 / 未偵測到)。
+   「改成用這個」三列同一個字「使用」(cn.use)——Blave 走 blaveGo、本機走 connect,對用戶是同一個動作 */
 function mdlOptions(d, curKind, tok, pend) {
   const p = pend || {};
   const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: "cn.blave.desc",
-    st: tok ? { key: "st.signedIn", on: true } : { key: "st.notSignedIn", on: false },
+    st: tok ? null : { key: "st.notSignedIn" },
     // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權
-    act: p.oauth ? "oauth.cancel" : curKind === "blave" ? null : tok ? "cn.blave.switch" : curKind ? "cn.blave.signinSwitch" : "cn.blave.btn",
+    act: p.oauth ? "oauth.cancel" : curKind === "blave" ? null : tok ? "cn.use" : curKind ? "cn.blave.signinSwitch" : "cn.blave.btn",
     isCur: curKind === "blave" }];
   [["claude", "Claude Code"], ["codex", "Codex"]].forEach(([kind, name]) => {
     const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
     out.push({ kind, name, desc: null,
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
-      st: d === null ? { key: "cn.detecting", on: false } : ready ? { key: "st.signedIn", on: true } : { key: x.installed ? "st.notSignedIn" : "st.notFound", on: false },
-      act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.connect",
+      st: d === null ? { key: "cn.detecting" } : ready ? null : { key: x.installed ? "st.notSignedIn" : "st.notFound" },
+      act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
       isCur: ready && curKind === kind });
   });
   return out;
 }
+// 「重新偵測」只在本機有一個不能用的時候出:兩個都就緒時再偵測也不會有不同的結果。d = 上一次偵測的結果(偵測中照上一次的畫,鈕停用)
+function mdlNeedsRedetect(d) { return !!d && ["claude", "codex"].some((k) => { const x = d[k] || {}; return !(x.installed && x.loggedIn); }); }
 /* ── 設定 › 模型接入 的純邏輯到此 ─────────────────────────── */
 function mdlAct(o, b) {
   // 等待中的那一顆是「取消」(不是變灰):瀏覽器分頁被關掉之後不會有人按「允許」,沒有取消就卡到逾時
@@ -197,13 +201,12 @@ function mdlPaint() {
   const pend = { login: loginPending, oauth: oauthPending };
   const opts = mdlOptions(MDL.busy ? null : lastDetect, cur, hasToken, pend);
   const waiting = !!(pend.login || pend.oauth);
-  const grp = (headKey, descKey, redetect) => {
+  const grp = (headKey, descKey) => {
     const g = el("div", "cn-grp"), h = el("div", "cn-grp-h");
     h.appendChild(el("span", null, t(headKey)));
     // 小標與後面那句同為 12px --ink-3,只隔 8px 會連起來讀成一句:中間放一個「·」分開
     if (descKey) { const sep = el("span", "sep", "·"); sep.setAttribute("aria-hidden", "true"); h.append(sep, el("span", "m", t(descKey))); }
-    if (redetect) { const b = el("button", "pf-act", t("cn.redetect")); b.type = "button"; b.disabled = MDL.busy || waiting; b.addEventListener("click", detect); g.dataset.kind = "redetect"; h.appendChild(b); }
-    g.appendChild(h); g.appendChild(el("div", "cn-opts")); box.appendChild(g); return g.lastChild;
+    const o = el("div", "cn-opts"); g.append(h, o); box.appendChild(g); return [g, o];
   };
   const put = (into, o) => {
     const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "")); r.dataset.kind = o.kind;
@@ -211,15 +214,20 @@ function mdlPaint() {
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
     if (o.desc) tc.appendChild(el("p", "m", t(o.desc)));
     r.appendChild(tc);
-    if (o.st) { const st = el("span", "st" + (o.st.on ? " on" : "")); if (o.st.on) { const d = el("i", "dot"); d.setAttribute("aria-hidden", "true"); st.appendChild(d); } st.append(t(o.st.key)); r.appendChild(st); }
+    if (o.st) r.appendChild(el("span", "st", t(o.st.key)));
     if (o.isCur) r.appendChild(el("span", "cn-cur", t("cn.current")));
     // 等待中:只有那一顆能按(取消),其餘鎖住
     else if (o.act) { const b = el("button", "pf-act", t(o.act)); b.type = "button"; b.disabled = waiting && o.act !== "login.cancel" && o.act !== "oauth.cancel"; b.addEventListener("click", () => mdlAct(o, b)); r.appendChild(b); }
     into.appendChild(r);
   };
-  put(grp("cn.blave.group"), opts[0]);
-  const local = grp("cn.local.label", "cn.local.desc", true);
+  put(grp("cn.blave.group")[1], opts[0]);
+  const [lg, local] = grp("cn.local.label", "cn.local.desc");
   opts.slice(1).forEach((o) => put(local, o));
+  // 本機那一組最後一列底下的安靜文字鈕(不佔組標題)
+  if (mdlNeedsRedetect(lastDetect)) {
+    const m = el("p", "cn-more"), b = el("button", "btn-quiet", t("cn.redetect")); m.dataset.kind = "redetect";
+    b.type = "button"; b.disabled = MDL.busy || waiting; b.addEventListener("click", detect); m.appendChild(b); lg.appendChild(m);
+  }
   if (HINT) { const p = el("p", "cn-hint"); p.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) p.append(cmdLine(HINT.cmd)); box.appendChild(p); }
   // 重畫前焦點在這一頁:還給同一列的鈕(沒有的話退到左側的分類鈕——掉到 BODY 的話 Esc 關不掉設定)
   if (focusKind) { const again = box.querySelector('[data-kind="' + focusKind.kind + '"] button'); if (again && !again.disabled) again.focus(); }
@@ -233,7 +241,7 @@ function enterWorkspace(kind, info) {
   cur = kind;
   mpInit(kind);
   stratRefresh(false);
-  if (!csReady) { csReady = true; csInit(); }
+  if (!csReady) { csReady = true; csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayBackup(); }); }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   // 從設定 modal 裡換的:留在 modal、重畫模型接入那一頁(「使用中」換列),焦點不搶去輸入框
@@ -261,6 +269,7 @@ $("set-acct-btn").addEventListener("click", async () => {
   const r = await window.blave.signOutBlave();
   $("set-acct-btn").disabled = false;
   hasToken = false; acct = null; planErr = null; planBusy = false;
+  RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
   // 伺服器那顆沒撤到(離線、逾時):本機已經登出,但要講清楚還差一步、去哪裡補
   const warn = () => { if (!r.revoked) setHint({ text: t("cn.blave.signOutLocalOnly") }); };
   acctPaintAcct();
@@ -424,10 +433,7 @@ $("set-scrim").addEventListener("mousedown", (e) => { if (e.target === $("set-sc
 $("set-cats").addEventListener("click", (e) => {
   const b = e.target.closest(".set-cat"); if (b && b.dataset.setCat) setCat(b.dataset.setCat);   // 只有帶 data-set-cat 的才是分類鈕
 });
-$("set-scrim").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { e.preventDefault(); setClose(); return; }
-  trapTab(e, $("set-modal"));
-});
+$("set-scrim").addEventListener("keydown", (e) => trapTab(e, $("set-modal")));   // Esc 在下面那一支 document 層的 escTop
 $("set-lang").addEventListener("change", () => applyLangChoice($("set-lang").value));
 
 /* ── 版本與更新(設定 › 顯示)──────────────────────────────────
@@ -495,16 +501,18 @@ function privPaint() {
      帶 --viewing-env=cloud,由這台電腦的 agent 經 MCP 照 references/cloud-handoff.md「Updating the cloud machine」去做
      (下單程式在跑時它會先問人)。進度看本機那一回合:在跑 = 更新中;結束 = 看 /cloud/state 的 config_version 追上了沒。
    決策全在 upPlan(純函式,tests/check_shell_settings.js 直接跑);upPaint 只照它畫。 */
-/* 更新期間(spec-desktop-update-experience-v2 §2):session = 從按下更新開始,到雲端追上 / 出了更新一版 / 30 分鐘沒有回合在跑為止。
-   session 內**這台電腦任何一個在跑的回合**都算更新中:按鈕送出的那一回合(cloudTurn)= 「正在更新雲端主機」;
-   之後的回合(例如 agent 先問、用戶回「好」)= 中性的「agent 回覆中」——app 看不出哪一回合在換檔,不讀訊息內容去猜。
+/* 更新期間(spec-desktop-update-experience-v2 §2,修訂 09-23 第二輪):session = 從按下更新開始,到雲端追上 / 回合出錯 /
+   出了更新一版 / **一個回合正常結束而整回合沒碰雲端主機** 為止(30 分鐘沒回合只是兜底)。
+   按鈕送出的那一回合(cloudTurn)= 「正在更新雲端主機」,20 秒後才接時鐘;之後的回合要出現 `where: "cloud"` 的 tool chunk
+   (turnCloud,runtime 從完整指令判的結構化訊號)才算在作業 =「agent 正在雲端主機上作業」,不帶時鐘、鈕不變成「更新中」——
+   不讀訊息內容去猜哪一回合在換檔。沒碰雲端的回合在「關於」跟平常一樣。
    回合結束記 result:"fault"(回合出錯)| "idle"(其餘一律,Wei 09-22 選 A);**成功只認雲端回報的 config_version 追上**。
    done = 追上那一刻的 { from, to }(「已更新到 {nv}」停住,直到 app 重開或下一次落後);不是按鈕觸發的更新(用戶自己打字叫 agent 更新)
    也要有完成:原本落後、之後看到 config_version 變了而且追上,from 用變之前的那一版(lagCv)。 */
-var UPD = { cloudTurn: false, result: null, doneAt: 0, doneFor: null, session: null, done: null, lagCv: null, doneChatHidden: false };
+var UPD = { cloudTurn: false, turnCloud: false, result: null, doneAt: 0, doneFor: null, session: null, done: null, lagCv: null, doneChatHidden: false };
 /* 回合結束後等主機回報新版本的上限:主機的報告計時器每 2 分鐘一班(runtime/web_bridge.py 變化偵測段的註解)
    + app 背景輪詢 60 秒(shell/cloud.js POLL_BACKGROUND_MS)≈ 3 分鐘;過了就改講「還沒收到回報」,不讓時鐘停在處理中 */
-const UP_REPORT_WAIT_MS = 180000, UP_SESSION_IDLE_MS = 30 * 60000;
+const UP_REPORT_WAIT_MS = 180000, UP_SESSION_IDLE_MS = 30 * 60000, UP_CLOCK_AFTER_MS = 20000;   // S2 前 20 秒不講時長(waiting-states §1 規則 2)
 // m:ss(tabular);上限 59:59
 function upClock(ms) { const s = Math.min(3599, Math.max(0, Math.floor(ms / 1000))); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
 /* 每次畫之前看一眼雲端:session 什麼時候結束、什麼時候算「已更新」。純函式(只改 mem),tests/check_shell_settings.js 直接跑。
@@ -530,12 +538,20 @@ function upObserve(mem, cloud, stale, localTurn, now) {
   if (mem.session && !localTurn && now - (mem.session.lastTurnAt || mem.session.startAt) > UP_SESSION_IDLE_MS) endSession();
   return mem;
 }
+/* 雲端是「沒有主機」或「啟動中」= 舊主機已經不在了(spec-desktop-005 §5):之前記的「落後在哪一版」、「已更新到」、進行中的更新期間
+   都是那台的事,清掉——不清的話新開的主機一跑起來就被當成「已更新到 b／a → b」。停機(同一台)與讀不到不清。
+   長期做法是 api 回傳主機 id、lagCv 綁在 id 上(另派後端)。純函式,tests/check_shell_settings.js 直接跑 */
+function upMachineGone(mem, kind) {
+  if (kind !== "none" && kind !== "starting") return mem;
+  Object.assign(mem, { lagCv: null, done: null, doneChatHidden: false, session: null, cloudTurn: false, doneAt: 0, result: null, doneFor: null });
+  return mem;
+}
 /* o:{ up(updater 狀態 + backup), cloud(雲端 snapshot 的 cloud 那一塊), kind(envCloudKind), localTurn(這台電腦有回合在跑), mem(UPD), now, cloudStale }
    回 { local, cloud, btn, localBtn, dot, chat, doLocal, doCloud, tick }。字一律回 [key, vars],由 upPaint 翻。
    雲端狀態(v2 §2 狀態表):S0 已是最新版|S1 有新版|S2 正在更新・{t}|S3 agent 回覆中・{t}|S4 agent 回覆了|S5 還沒收到回報|S6 回合出錯|S7 已更新到 {nv} */
 function upPlan(o) {
   const st = o.up || {}, ph = st.phase, v = { nv: st.version || "" }, mem = o.mem || {}, now = o.now || 0;
-  const L = { v: st.current ? ["up.app", { v: st.current }] : null, s: null, cls: "", has: ph === "ready" || ph === "blocked", bk: null };
+  const L = { v: st.current ? ["up.app", { v: st.current }] : null, s: null, cls: "", has: ph === "ready" || ph === "blocked" };
   if (ph === "checking") L.s = ["up.checking"];
   else if (ph === "downloading") L.s = st.percent == null ? ["up.downloading", v] : ["up.downloadingPct", { ...v, pct: st.percent }];
   else if (ph === "staging") L.s = ["up.staging", v];
@@ -543,9 +559,6 @@ function upPlan(o) {
   else if (ph === "blocked") { L.s = ["up.blocked", v]; L.cls = "up"; }
   else if (ph === "error") { L.s = st.error === "INSTALL_FAILED" ? ["up.installFailed", v] : ["up.error"]; L.cls = "up"; }
   else if (ph === "idle") L.s = ["up.latest"];
-  // 換版時被蓋掉的改動:講數量與位置、怎麼拿回來(以前只寫 log)
-  const bk = st.backup;
-  if (bk && Number.isInteger(bk.n) && bk.n > 0 && typeof bk.dir === "string") L.bk = ["up.backup", { n: bk.n, dir: bk.dir }];
   /* 雲端那一行。沒主機 / 沒登入 / 還沒讀到 = 整行不畫;停機 / 讀不到 = 講原因,鈕不整顆失效(這台電腦照樣能更新)。 */
   const c = o.cloud || {};
   let C = null, chatKind = null, chatText = null;
@@ -556,20 +569,25 @@ function upPlan(o) {
     const cv = c.config_version || null, lv = c.latest_config_version || null;
     /* 主機重開、沒能確認停住(報告 reconciler.stopped.gated === false):停不住的是舊版對帳器,就算版號已經一樣也要更新(spec-restart-gated-false-display §6-3) */
     const stale = !!o.cloudStale, lag = !!(cv && lv && cv !== lv) || stale;
-    const ses = mem.session || null, busy = !!ses && !!o.localTurn;
-    const clock = ses ? { t: upClock(now - ses.startAt) } : null;   // S2 / S3 從按下起一路累計,換回合不歸零
+    const ses = mem.session || null, run = !!ses && !!o.localTurn;
+    const s2 = run && !!mem.cloudTurn, s3 = run && !s2 && !!mem.turnCloud;   // S2 按鈕那一回合;S3 之後的回合已碰雲端
+    const clock = s2 && now - ses.startAt > UP_CLOCK_AFTER_MS ? { t: upClock(now - ses.startAt) } : null;   // 只有 S2 有時鐘,從按下起算
     // 回合結束、還沒追上:session 內(S4 / S5),或那一回合出錯(S6——fault 會把 session 收掉,字仍要留著)
     const after = !o.localTurn && !!mem.doneAt && lag && (!!ses || mem.result === "fault");
-    C = { v: cv, s: ["up.latest"], cls: "", has: lag && !busy, updating: busy, note: null, tick: busy, clock: busy ? clock : null };
-    if (busy) {
-      const first = !!mem.cloudTurn;
-      C.s = first ? ["up.c.running", clock] : ["up.c.replying", clock]; C.cls = "up"; C.note = ["up.c.runNote"];   // 進行中的句子不比靜態通知暗(視覺稽核 2-6)
-      chatKind = "status"; chatText = first ? ["up.c.chatRunning", clock] : ["up.c.replying", clock];
+    // S3 的鈕是既有的停用「更新」(不是 spinner「更新中」:這一回合不是按那顆鈕送出的,規則 6)
+    C = { v: cv, s: ["up.latest"], cls: "", has: lag && !s2, updating: s2, note: null, tick: s2, clock };
+    if (s2) {
+      C.s = clock ? ["up.c.running", clock] : ["up.c.runningShort"]; C.cls = "up"; C.note = ["up.c.runNote"];   // 進行中的句子不比靜態通知暗(視覺稽核 2-6)
+      chatKind = "status"; chatText = clock ? ["up.c.chatRunning", clock] : ["up.c.runningShort"];
+    } else if (s3) {
+      C.s = ["up.c.onCloud"]; C.cls = "up"; C.note = ["up.c.runNote"];
+      chatKind = "status"; chatText = ["up.c.onCloud"];
     // 版號可能讀不到(api 的 VERSION 抓失敗會快取 60 秒的 null;主機還沒回報也是 null):那時不講版號,改用不帶版號那一句
     } else if (after && mem.result === "fault") { C.s = cv && lv && cv !== lv ? ["up.c.available", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.seeChat"]; }
-    else if (after && now - mem.doneAt <= UP_REPORT_WAIT_MS) { C.s = ["up.c.checking"]; C.cls = "up"; chatKind = "reply"; chatText = ["up.c.chatSeeReply"]; }
+    // S4 聊天那一行不出:回覆就在它正下方;session 內每一個無關的回合結束也會走到這裡
+    else if (after && now - mem.doneAt <= UP_REPORT_WAIT_MS) { C.s = ["up.c.checking"]; C.cls = "up"; chatKind = "none"; }
     else if (after) { C.s = cv && lv && cv !== lv ? ["up.c.noReport", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.note"]; }
-    // 按之前就講:由這台電腦的 agent 去做、用你自己的 AI 額度、下單程式在跑會先問你
+    // 按之前就講會花到 AI 額度;完整那句(誰做、下單中會先問)在鈕的 title(up.c.noteLong)
     else if (lag) { C.s = cv && lv && cv !== lv ? ["up.c.available", { nv: lv }] : ["up.c.needsUpdate"]; C.cls = "up"; C.note = ["up.c.note"]; }
     else if (mem.done && mem.done.to) {
       C.s = ["up.c.done", { nv: mem.done.to }]; C.cls = "ok"; C.note = mem.done.from ? ["up.c.doneFrom", { from: mem.done.from, nv: mem.done.to }] : null;
@@ -582,18 +600,29 @@ function upPlan(o) {
   let btn = null;
   if (C && C.updating) btn = { label: ["up.updating"], out: true, disabled: true, act: null, spin: true };
   // 主鈕:雲端有新版就是雲端那一半(回合結束、等回報的那段照樣可按:重按只是再送一句,agent 看到版本一樣就會停)
-  else if (doCloud) btn = { label: ["up.update"], out: true, disabled: turn, title: turn ? ["up.busy"] : ["up.c.note"], act: "cloud" };
+  else if (doCloud) btn = { label: ["up.update"], out: true, disabled: turn, title: turn ? ["up.busy"] : ["up.c.noteLong"], act: "cloud" };
   else if (doLocal) btn = { label: ["up.update"], out: true, disabled: turn, title: turn ? ["up.busy"] : null, act: "local" };
   else if (ph === "idle" || ph === "error") btn = { label: ["up.check"], out: false, disabled: false, act: "check" };
   // 兩邊都有新版:這台電腦那一半另有一顆,雲端卡住(被拒 / 一直沒成功 / 更新中)也裝得了本機
   const localBtn = doLocal && btn && btn.act !== "local" ? { label: ["up.installLocal"], disabled: turn || !!(C && C.updating), title: turn || (C && C.updating) ? ["up.busy"] : null } : null;
-  /* 聊天輸入列上方那一行:S2/S3 = 不可點的狀態列(帶經過時間);S4 = 「看 agent 的回覆」(捲到最後一則);S7 = 綠字「雲端已更新到 {nv}」
+  /* 聊天輸入列上方那一行:S2/S3 = 不可點的狀態列(帶經過時間);S4 = 不出;S7 = 綠字「雲端已更新到 {nv}」
      (送出下一則訊息就收);其餘 = 「立即更新到最新版本」(任一邊有新版才出,回合在跑停用) */
   const go = doLocal || doCloud;
   const chat = chatKind === "status" || chatKind === "done" ? { show: true, kind: chatKind, text: chatText, disabled: false }
-    : chatKind === "reply" ? { show: true, kind: "reply", text: chatText, disabled: false }
+    : chatKind === "none" ? { show: false, kind: null, text: null, disabled: false }
     : { show: go, kind: "go", text: ["up.chat"], disabled: turn };
-  return { local: L, cloud: C, btn, localBtn, dot: L.has || !!(C && C.has), doLocal, doCloud, chat, tick: !!(C && C.tick) };
+  return { local: L, cloud: C, btn, localBtn, doLocal, doCloud, chat, tick: !!(C && C.tick) };
+}
+/* 換版時被蓋掉的改動(主行程 syncOfficialOnUpdate 只在換版後第一次啟動給):講數量與位置、怎麼拿回來。
+   在聊天講一次,不掛在「關於」——那一刻之後它就不是狀態了 */
+function upBackupLine(st) {
+  const bk = st && st.backup;
+  return bk && Number.isInteger(bk.n) && bk.n > 0 && typeof bk.dir === "string" ? ["up.backup", { n: bk.n, dir: bk.dir }] : null;
+}
+var UP_BK_SAID = false, CS_BOOTED = false;   // CS_BOOTED:對話接回之後才講,不然 csOpen 清聊天時會一起清掉
+function upSayBackup() {
+  const x = UP_BK_SAID || !CS_BOOTED ? null : upBackupLine(UP);
+  if (x) { UP_BK_SAID = true; addMsg("sys", t(x[0], x[1])); }
 }
 function upLocalTurn() { try { return running === true; } catch (_) { return false; } }   // app.js 還沒跑到 `let running` 那一行時讀它會丟 TDZ
 function upNow() {
@@ -606,22 +635,25 @@ function upNow() {
 function upTurnEnded(faulted) {
   if (!UPD.cloudTurn && !UPD.session) return;
   const lv = ((TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}).latest_config_version || null;
-  UPD.cloudTurn = false;
+  const touched = UPD.turnCloud;
+  UPD.cloudTurn = false; UPD.turnCloud = false;
+  // 正常結束而整回合沒碰雲端主機:什麼都沒換,session 收掉(回 S1),不讓之後無關的回合掛著「更新中」(修訂 09-23 第二輪)
+  if (!faulted && !touched) { Object.assign(UPD, { session: null, result: null, doneAt: 0, doneFor: null }); return; }
   UPD.result = faulted ? "fault" : "idle";
   UPD.doneAt = Date.now(); UPD.doneFor = lv;
   if (window.blave && typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh().catch(() => {}).then(() => { ENV.cloudDirty = true; if (typeof trPoll === "function") trPoll(); });
 }
-let UP_TICK = null;   // S2 / S3 每秒重畫經過時間;session 一結束就停
+let UP_TICK = null;   // S2 每秒重畫(20 秒後接上經過時間);session 一結束就停
 function upPaint() {
   const cst = TR_BAGS.cloud.st, cloud = (cst && cst.cloud) || null;
+  if (cst) upMachineGone(UPD, envCloudKind(cst));
   if (cst && envCloudKind(cst) === "running") upObserve(UPD, cloud, trRestartUnconfirmed(cst.report), upLocalTurn(), Date.now());
   const p = upNow(), tx = (x) => (x == null ? "" : typeof x === "string" ? x : t(x[0], x[1]));
   if (p.tick && !UP_TICK) UP_TICK = setInterval(upPaint, 1000);
   else if (!p.tick && UP_TICK) { clearInterval(UP_TICK); UP_TICK = null; }
-  $("set-up-dot").hidden = !p.dot;
   $("set-up-ver").textContent = tx(p.local.v);
   const lt = $("set-up-txt"); lt.textContent = tx(p.local.s); lt.className = "st" + (p.local.cls ? " " + p.local.cls : "");
-  $("set-up-bk").textContent = tx(p.local.bk);
+  upSayBackup();
   // 這台電腦那一行底下的獨立鈕(兩邊都有新版時才有)
   const lb = $("set-up-lbtn"), L = p.localBtn;
   lb.hidden = !L; lb.textContent = L ? tx(L.label) : ""; lb.disabled = !!(L && L.disabled); lb.title = L && L.title ? tx(L.title) : "";
@@ -649,7 +681,7 @@ function upPaint() {
     w.firstElementChild.textContent = tx(p.chat.text);
     w.disabled = p.chat.disabled; w.setAttribute("aria-disabled", still ? "true" : "false");
     w.classList.toggle("is-status", k === "status"); w.classList.toggle("is-done", k === "done");
-    w.title = p.chat.disabled ? t("up.busy") : k === "go" && p.doCloud ? t("up.c.note") : "";
+    w.title = p.chat.disabled ? t("up.busy") : k === "go" && p.doCloud ? t("up.c.noteLong") : "";
     if (hadFocus && w.hidden) $("ta").focus();   // 那一行收掉了:焦點不能掉到 BODY
   }
 }
@@ -686,11 +718,11 @@ window.blave.onOpenAbout(() => { if (running) { addMsg("sys", t("up.busy")); ret
 upRefresh();
 $("ws-update").addEventListener("click", () => {
   const k = $("ws-update").dataset.kind;
-  if (k === "reply") { scrollChat(); return; }   // S4:把聊天捲到最後一則(agent 的回覆)
   if (k === "go") upGo();                        // 狀態列 / 已更新那兩種不可點
 });
 $("set-up-lbtn").addEventListener("click", () => upInstallLocal());
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
+$("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
 $("btn-send").addEventListener("click", sendDraft);
 // 注音/日文選字時的 Enter 是「確定候選字」,不是送出。逐字照 web 工作頁
 // (workspace.html:21913-21933)的三道守衛:Safari 會在這個 keydown 之前就發
@@ -876,8 +908,16 @@ $("mp-trigger").addEventListener("keydown", (e) => {
 });
 document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target)) mpClose(false); });
 // APG radio group:方向鍵在組內移動**並選取**,Tab 在 model 組 ↔ effort 組之間切換
+/* Esc 關最上面那一層,焦點在哪都一樣:點了框裡的字、從對話清單的 ✕ 開、視窗切回來,焦點會落在 body,
+   掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
+function escTop() {
+  return !$("del-scrim").hidden ? () => delClose(false) : !$("cx-scrim").hidden ? () => cxModalClose(false)
+    : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? setClose : !$("mp-panel").hidden ? () => mpClose(true)
+    : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
+}
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$("mp-panel").hidden) { e.preventDefault(); mpClose(true); }
+  if (e.key !== "Escape" || e.isComposing || e.keyCode === 229) return;   // 輸入法組字中的 Esc 是取消選字(同 trade.js envWire)
+  const close = escTop(); if (close) { e.preventDefault(); close(); }
 });
 $("mp-panel").addEventListener("keydown", (e) => {
   const group = e.target.closest('[role="radiogroup"]'); if (!group) return;
@@ -934,7 +974,8 @@ async function stratRefresh(selectTouched) {
     const nm = document.createElement("span"); nm.className = "strat-name";
     nm.textContent = x.displayName || x.name; nm.title = stratTip(x.displayName, x.name);
     b.append(nm);
-    b.addEventListener("click", () => stratSelect(x.name));
+    // 再點一次選中的那支 = 取消選取、回 welcome(Enter / Space 在按鈕上就是 click)。列不重建,焦點留在這一列
+    b.addEventListener("click", () => stratSelect(x.name === RP.name ? null : x.name));
     // 列尾是刪除鈕,不是 Sharpe(Wei):數字在報告裡就有,清單上要的是能整理。
     // 按鈕不能包按鈕,所以外面多一層 wrap,刪除鈕絕對定位在列尾(同對話清單)。
     const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";
@@ -992,37 +1033,90 @@ function rpPaintHead(B) {
 function rpRepaint() {
   const B = rpBag();
   if ($("rp").hidden || !B.data) return;
-  B.drawn = {}; rpPaintHead(B); rpShowTab(B.data.stats ? B.tab : "code");
+  B.drawn = {}; rpPaintHead(B); rpBodyPaint(B);
+}
+/* 報告本體:雲端那一份還在路上(pending: "loading")或讀不到("error")時,分頁列與三個分頁收起來,
+   只放一行等待(沿用 .cx-wait + .spin16,同自動下單頁等回報那一句)或讀不到 +〔重新查看〕 */
+/* 等待那一行的時機(canon › Loader › 時機;設計稽核 005 第 7 條):200ms 內拿到就不畫(網路快時不閃一下);畫了就至少撐 300ms。
+   rpWaitShownAt = 這一次的等待真的出現在畫面上的時間(0 = 還沒出現) */
+const RP_WAIT_DELAY_MS = 200, RP_WAIT_MIN_MS = 300;
+let rpWaitShownAt = 0;
+// 拿到報告時還要再等多久才換掉等待那一行:沒出現過 → 0;出現了 → 補滿 300ms。純函式
+function rpWaitHold(shownAt, now) { return shownAt ? Math.max(0, RP_WAIT_MIN_MS - (now - shownAt)) : 0; }
+function rpBodyPaint(B) {
+  const w = $("rp-wait"), pend = B.data && B.data.pending;
+  if (!pend) { rpShowTab(B.data.stats ? B.tab : "code"); return; }
+  $("rp-tabs").hidden = true; $("rp-nobt").hidden = true;
+  for (const k of ["bt", "tr", "code"]) $("rp-" + k).hidden = true;
+  w.hidden = false; w.textContent = "";
+  const line = document.createElement("p");
+  if (pend === "loading") {
+    line.className = "cx-wait"; const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true");
+    line.append(sp, t("tr.loading")); line.hidden = true; w.appendChild(line);
+    rpWaitShownAt = 0;
+    setTimeout(() => { if (line.isConnected && !w.hidden) { line.hidden = false; rpWaitShownAt = Date.now(); } }, RP_WAIT_DELAY_MS);   // 已經換成報告(w 收起)就不翻出來
+    return;
+  }
+  // 讀不到:句子只講事實(旁邊就是〔重新查看〕,不再叫人「再點一次」);重試是資料 panel 的 Retry = 描邊鈕,放在句子下一行
+  line.className = "plan-err"; const m = document.createElement("span"); m.className = "fault-mark"; m.setAttribute("aria-hidden", "true");
+  const again = document.createElement("button"); again.type = "button"; again.className = "btn-out"; again.id = "rp-retry"; again.textContent = t("plan.recheck");
+  again.addEventListener("click", () => rpCloudSelect(RPC.name, true));
+  line.append(m, t("tr.cloud.reportUnreach")); w.append(line, again);
 }
 /* 雲端清單點一支(trade.js 的 envPaintSide):中欄畫雲端那一份的報告。null = 收掉、回雲端自動下單頁(#tr-nav)。
    讀不到 / 雲端現在沒有這一份 → 收掉選取、在回到的自動下單頁紅字槽講一句;不退回去讀這台電腦的同名那支。
    被刪、429、斷網都壓成 null,分不出來,所以同一句、不講要等幾秒。紅字槽被指令的失敗佔著時不蓋它(那句更要緊),只唸給報讀器。 */
+/* 點過的雲端報告留一份:再點同一支先畫這份、背景再抓(同網頁工作頁「先有東西、抓到才換」);rpcSeq = 最後一次點的那一趟 */
+const RPC_CACHE = new Map();
+let rpcSeq = 0;
+// 還沒拿到報告時那一袋的 data:頁首先放清單上的名字,本體由 rpBodyPaint 畫等待 / 讀不到
+function rpPending(name, state) {
+  const x = envCloudList(TR_BAGS.cloud.st).find((y) => y.name === name);
+  return { name, displayName: x ? x.displayName : name, description: "", code: "", stats: null, pending: state };
+}
+function rpCloudPaint() {
+  trPaint();                                      // envShowMain 會把 #rp 掀開(仍在雲端視角時)
+  if (!$("rp").hidden && ENV.cur === "cloud") { rpPaintHead(RPC); rpBodyPaint(RPC); }
+}
 async function rpCloudSelect(name, force) {
   if (name === RPC.name && !force) return;
-  RPC.name = name; RPC.data = null; RPC.drawn = {};
+  const seq = ++rpcSeq;
+  RPC.name = name; RPC.drawn = {};
   ENV.sig.side = null;                            // 側欄的 aria-current 跟著換
   const C = TR_BAGS.cloud;
-  if (!name) { trPaint(); return; }
-  if (C.alertSrc === "report") trAlert("", null, C);   // 再點一次:先收掉上一次那句,失敗時才會重唸
+  if (!name) { RPC.data = null; trPaint(); return; }
+  if (C.alertSrc === "report") trAlert("", null, C);   // 上一版讀不到時講在自動下單頁的那句:收掉
+  // 先換頁,不等雲端:有快取就畫快取,沒有就畫「載入中…」
+  const cached = RPC_CACHE.get(name) || null;
+  RPC.data = cached || rpPending(name, "loading");
+  rpCloudPaint();
   const d = await C.api.loadStrategy(name);
-  if (RPC.name !== name) return;                  // 等資料的時候用戶又點了別支 / 切走了
+  if (seq !== rpcSeq || RPC.name !== name) return;   // 等的時候又點了別支 / 切走了:最後一次點的算,這一份不畫
+  if (!cached) {                                  // 等待那一行出現過:撐滿 300ms 再換,不閃
+    const hold = rpWaitHold(rpWaitShownAt, Date.now());
+    if (hold) { await new Promise((r) => setTimeout(r, hold)); if (seq !== rpcSeq || RPC.name !== name) return; }
+  }
   if (!d) {
-    rpCloudSelect(null);
-    const msg = t("tr.cloud.reportUnreach");
-    if (!C.alertText) trAlert(msg, null, C, "report"); else srSay(msg);
+    if (cached) return;                           // 背景重抓失敗:手上那份照留
+    RPC.data = rpPending(name, "error"); rpCloudPaint();   // #rp-wait 是 role=status:換成讀不到那一句時就會唸,不再另外 srSay(會唸兩遍)
     return;
   }
-  RPC.data = d;
-  trPaint();                                      // envShowMain 會把 #rp 掀開(仍在雲端視角時)
-  if (!$("rp").hidden && ENV.cur === "cloud") { rpPaintHead(RPC); rpShowTab(d.stats ? RPC.tab : "code"); }
+  RPC_CACHE.set(name, d);
+  if (cached && JSON.stringify(cached) === JSON.stringify(d)) return;   // 背景重抓沒變:不重畫(圖不閃)
+  RPC.data = d; RPC.drawn = {};
+  rpCloudPaint();
 }
 // 雲端清單每輪重讀:看著的那支不在了(被刪、換了帳號)→ 收掉
-function rpCloudPrune(list) { if (RPC.name && !list.some((x) => x.name === RPC.name)) rpCloudSelect(null); }
+function rpCloudPrune(list) {
+  for (const k of [...RPC_CACHE.keys()]) if (!list.some((x) => x.name === k)) RPC_CACHE.delete(k);   // 不在清單上的報告不留
+  if (RPC.name && !list.some((x) => x.name === RPC.name)) rpCloudSelect(null);
+}
 
 /* 分頁第一次被看到才畫(進出場那張 K 線圖不便宜);同一支策略切回來不重畫。畫的是現在這一邊那一袋(RP / RPC)。 */
 function rpShowTab(tab) {
   const B = rpBag();
   B.tab = tab;
+  $("rp-wait").hidden = true; $("rp-tabs").hidden = false;   // 等待 / 讀不到那一行(rpBodyPaint)收起
   const has = !!(B.data && B.data.stats);
   $("rp-tabs").querySelectorAll(".rp-tab").forEach((b) => {
     const on = b.dataset.tab === tab;
@@ -1190,10 +1284,7 @@ function delClose(deleted) {
 $("del-cancel").addEventListener("click", () => delClose(false));
 $("del-close").addEventListener("click", () => delClose(false));
 $("del-scrim").addEventListener("mousedown", (e) => { if (e.target === $("del-scrim")) delClose(false); });
-$("del-scrim").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { e.preventDefault(); delClose(false); return; }
-  trapTab(e, $("del-modal"));
-});
+$("del-scrim").addEventListener("keydown", (e) => trapTab(e, $("del-modal")));
 $("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
   if (delCtx && delCtx.custom) { const go = delCtx.onOk; delClose(false); go(); return; }
@@ -1227,7 +1318,6 @@ function csShowList(on) {
 $("cs-toggle").addEventListener("click", () => csShowList($("cs-list").hidden));
 $("cs-new").addEventListener("click", csStartNew);
 $("cs-newrow").addEventListener("click", csStartNew);
-$("cs-list").addEventListener("keydown", (e) => { if (e.key === "Escape") { csShowList(false); $("cs-toggle").focus(); } });
 /* 開場:接回上次那條。db 裡找不到(被刪了、或還沒講過話)就是一條新的 */
 async function csInit() {
   let saved = null;
@@ -1251,13 +1341,14 @@ $("chat-eg").addEventListener("click", () => {
    原文留在 el._raw(串流是一段一段接上來的),畫面由 paintAi 重畫。做兩件事:
    1. 拿掉給外殼看的標記(`<blave-card:…/>`,runtime 要 agent 在「拿不到 Blave 資料」時附上;
       串流到一半的半截標記也先藏起來),有標記就記在 el._cards。
-   2. 最小的行內 markdown:**粗體** 與 `程式碼`。一律用 DOM 節點組,不把 LLM 的字串當 HTML。
-      其餘(清單、標題)照原文顯示——.msg.ai 是 pre-wrap,換行與縮排本來就在。 */
+   2. markdown 照網頁工作頁(marked,gfm + breaks)的規則排:標題、清單(含巢狀)、表格、``` 圍欄、引言、分隔線,
+      行內粗體 / 斜體 / 刪除線(只認 ~~,單一個 ~ 是「0.1~2.38」的範圍符號)/ 程式碼 / 連結 / 換行。
+      網頁是 marked 產 HTML 再過 DOMPurify;這裡不解讀 HTML:只產結構,DOM 由 mdPaint 一個節點一個節點組,
+      字串一律走 textContent。agent 寫的 `<img onerror=…>`、`<b>` 原樣當文字顯示。 */
 const CARD_TAG = /<blave-card:([a-z-]+)\/>/g;
-/* 純函式(tests/check_shell_paint.js 直接測它):原文 → { cards, parts }。parts 只有三種:
-   { text } / { code } / { strong }。``` 圍欄裡的東西一個字都不動——`f(**a, **b)`、`2**3` 被當成粗體
-   吃掉星號的話,用戶照畫面抄策略碼會抄錯。`live` = 還在串流:尾端半截的標記先藏起來;回合結束後
-   用 live=false 重畫一次,真的以 `<` 結尾的回覆才不會被永久吃掉。 */
+/* 純函式(tests/check_shell_paint.js 直接測它):原文 → { cards, blocks }。``` 圍欄裡的東西一個字都不動——
+   `f(**a, **b)`、`2**3` 被當成粗體吃掉星號的話,用戶照畫面抄策略碼會抄錯。`live` = 還在串流:尾端半截的標記
+   先藏起來;回合結束後用 live=false 重畫一次,真的以 `<` 結尾的回覆才不會被永久吃掉。 */
 function aiParts(raw, live) {
   const cards = [];
   let text = String(raw).replace(CARD_TAG, (_m, name) => { cards.push(name); return ""; });
@@ -1266,27 +1357,202 @@ function aiParts(raw, live) {
     if (lt >= 0 && text.length - lt <= 40 && "<blave-card:".startsWith(text.slice(lt, lt + 12)) && !text.slice(lt).includes(">")) text = text.slice(0, lt);
   }
   if (cards.length) text = text.replace(/\s+$/, "");
-  const parts = [];
-  text.split(/(```[\s\S]*?(?:```|$))/g).forEach((seg, i) => {
-    if (!seg) return;
-    if (i % 2) { parts.push({ text: seg }); return; }            // 圍欄內:原樣
-    seg.split(/(`[^`\n]+`|\*\*[^*\n]+?\*\*)/g).forEach((part) => {
-      if (!part) return;
-      const code = /^`([^`\n]+)`$/.exec(part), bold = /^\*\*([^*\n]+?)\*\*$/.exec(part);
-      parts.push(code ? { code: code[1] } : bold ? { strong: bold[1] } : { text: part });
-    });
-  });
-  return { cards, parts };
+  return { cards, blocks: mdBlocks(text, 0) };
+}
+const MD_FENCE = /^( {0,3})(`{3,}|~{3,})([^`]*)$/;
+const MD_HEAD = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
+const MD_HR = /^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/;
+const MD_QUOTE = /^ {0,3}> ?(.*)$/;
+const MD_LI = /^( *)([-*+]|\d{1,9}[.)])( +|$)(.*)$/;
+const MD_DEPTH = 12;     // 巢狀上限:再深的當純文字,病態輸入(幾萬個 >)不會把堆疊撐爆
+const mdIndent = (s) => /^ */.exec(s)[0].length;
+function mdCells(line) {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+  return s.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+}
+/* 表頭 + 分隔列(|---|:--:|)成立、欄數一樣才是表格(GFM);回傳每欄的對齊 */
+function mdTableAt(lines, i) {
+  if (i + 1 >= lines.length || lines[i].indexOf("|") < 0 || lines[i + 1].indexOf("|") < 0) return null;
+  const head = mdCells(lines[i]), delim = mdCells(lines[i + 1]);
+  if (head.length !== delim.length || !delim.every((c) => /^:?-+:?$/.test(c))) return null;
+  return delim.map((c) => (/^:-+:$/.test(c) ? "center" : /-:$/.test(c) ? "right" : /^:/.test(c) ? "left" : ""));
+}
+/* 會打斷段落的行(同 marked:清單只有「非空的 - * + 或 1.」才打斷,「2. 」接在段落裡是字) */
+function mdStarts(lines, i) {
+  const s = lines[i], li = MD_LI.exec(s);
+  return MD_FENCE.test(s) || MD_HEAD.test(s) || MD_HR.test(s) || MD_QUOTE.test(s) || !!mdTableAt(lines, i) ||
+    (!!li && li[1].length < 4 && li[4].trim() !== "" && (!/\d/.test(li[2]) || /^1[.)]$/.test(li[2])));
+}
+function mdBlocks(text, depth) {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n").map((l) => l.replace(/^\t+/, (t) => "    ".repeat(t.length)));
+  if (depth > MD_DEPTH) return [{ p: [{ text: lines.join("\n") }] }];
+  const out = [];
+  let i = 0, m;
+  while (i < lines.length) {
+    const s = lines[i];
+    if (!s.trim()) { i++; continue; }
+    if ((m = MD_FENCE.exec(s))) {
+      const ind = m[1].length, fence = m[2], body = [];
+      const closes = (l) => { const x = l.trim(); return mdIndent(l) < 4 && x.length >= fence.length && x === fence[0].repeat(x.length); };
+      for (i++; i < lines.length && !closes(lines[i]); i++) body.push(lines[i].slice(Math.min(ind, mdIndent(lines[i]))));
+      i++;                                                   // 收尾那行;串流中還沒收尾 = 一路到底
+      out.push({ code: body.join("\n"), lang: m[3].trim().split(/\s+/)[0] });
+    } else if ((m = MD_HEAD.exec(s))) {
+      out.push({ h: m[1].length, inl: mdInline(m[2] || "", 0) }); i++;
+    } else if (MD_HR.test(s)) {
+      out.push({ hr: true }); i++;
+    } else if (MD_QUOTE.test(s)) {
+      const body = [];
+      for (; i < lines.length && lines[i].trim(); i++) {
+        const q = MD_QUOTE.exec(lines[i]);
+        if (q) body.push(q[1]); else if (!mdStarts(lines, i)) body.push(lines[i]); else break;
+      }
+      out.push({ quote: mdBlocks(body.join("\n"), depth + 1) });
+    } else if (mdTableAt(lines, i)) {
+      const align = mdTableAt(lines, i), head = mdCells(s).map((c) => mdInline(c, 0)), rows = [];
+      for (i += 2; i < lines.length && lines[i].trim() && !mdStarts(lines, i); i++) {
+        const c = mdCells(lines[i]); rows.push(align.map((_a, k) => mdInline(c[k] || "", 0)));
+      }
+      out.push({ table: { align, head, rows } });
+    } else if ((m = MD_LI.exec(s)) && m[1].length < 4) {
+      const r = mdList(lines, i, depth); out.push(r.block); i = r.next;
+    } else {
+      const para = [s];
+      let setext = 0;
+      for (i++; i < lines.length && lines[i].trim(); i++) {
+        if (/^ {0,3}=+[ \t]*$/.test(lines[i])) { setext = 1; i++; break; }
+        if (/^ {0,3}-+[ \t]*$/.test(lines[i])) { setext = 2; i++; break; }
+        if (mdStarts(lines, i)) break;
+        para.push(lines[i]);
+      }
+      const inl = mdInline(para.map((l) => l.replace(/^ +/, "")).join("\n").replace(/\s+$/, ""), 0);
+      out.push(setext ? { h: setext, inl } : { p: inl });
+    }
+  }
+  return out;
+}
+/* 一份清單:每項的內容 = 縮排到內容欄(記號後面那格)以上的行,去掉縮排後遞迴排版——巢狀清單、項目裡的圍欄都從這裡來。
+   換記號(- 換 *、1. 換 1))= 另一份清單,同 CommonMark。 */
+function mdList(lines, i, depth) {
+  const first = MD_LI.exec(lines[i]), ordered = /\d/.test(first[2]), mark = first[2].slice(-1), items = [];
+  const same = (x) => !!x && x[1].length < 4 && x[2].slice(-1) === mark && /\d/.test(x[2]) === ordered;
+  while (i < lines.length) {
+    const m = MD_LI.exec(lines[i]);
+    if (!same(m)) break;
+    const sp = m[3].length, col = m[1].length + m[2].length + (sp === 0 || sp > 4 ? 1 : sp), body = [m[4]];
+    let j = i + 1;
+    while (j < lines.length) {
+      const l = lines[j];
+      if (!l.trim()) {
+        let k = j + 1; while (k < lines.length && !lines[k].trim()) k++;
+        if (k < lines.length && mdIndent(lines[k]) >= col) { for (; j < k; j++) body.push(""); continue; }
+        break;
+      }
+      if (mdIndent(l) >= col) { body.push(l.slice(col)); j++; continue; }
+      if (body[body.length - 1].trim() && !MD_LI.test(l) && !mdStarts(lines, j)) { body.push(l.trim()); j++; continue; }   // 段落的懶散續行
+      break;
+    }
+    items.push(mdBlocks(body.join("\n"), depth + 1));
+    i = j;
+    if (i < lines.length && !lines[i].trim()) {           // 項目之間隔空行:下一個非空行是同一種記號才還是這份清單
+      let k = i; while (k < lines.length && !lines[k].trim()) k++;
+      if (k < lines.length && same(MD_LI.exec(lines[k]))) i = k; else break;
+    }
+  }
+  return { block: { list: { ordered, start: ordered ? parseInt(first[2], 10) : 1, items } }, next: i };
+}
+/* 行內:最左邊先配到的那個贏;同一個位置照這個順序(程式碼 > 跳脫 > 連結 > 網址 > 粗體 > 斜體 > 刪除線 > 換行) */
+const MD_INL = new RegExp([
+  /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/.source,                                                           // 1,2 程式碼
+  /\\([!-/:-@[-`{-~])/.source,                                                                           // 3 跳脫
+  /(!?)\[((?:[^[\]\n]|\[[^[\]\n]*\])*)\]\(\s*<?([^\s<>()]*(?:\([^\s()]*\)[^\s<>()]*)*)>?(?:\s+"[^"\n]*")?\s*\)/.source,  // 4,5,6 連結 / 圖
+  /<(https?:\/\/[^\s<>]+)>/.source,                                                                      // 7
+  /(https?:\/\/[^\s<>"]*[^\s<>"?!.,:;*_~)'\]}。，、；：！？）」』])/.source,                                 // 8 裸網址
+  /\*\*(?=\S)([\s\S]*?\S)\*\*/.source,                                                                   // 9
+  /(?<!\w)__(?=\S)([\s\S]*?\S)__(?!\w)/.source,                                                          // 10
+  /\*(?=[^\s*])([\s\S]*?[^\s*])\*/.source,                                                               // 11
+  /(?<!\w)_(?=[^\s_])([\s\S]*?[^\s_])_(?!\w)/.source,                                                    // 12
+  /~~(?=[^\s~])([\s\S]*?[^\s~])~~/.source,                                                               // 13
+  /<[bB][rR]\s*\/?>|\n/.source,                                                                         // 換行;表格儲存格裡常見的 <br> 也當換行(其餘 HTML 一律當字)
+].join("|"), "g");
+/* 連結只收 http(s)。其餘(javascript:、相對路徑)只顯示字。點下去由主行程的導覽守門決定開不開(只放行 blave.org) */
+const mdHref = (u) => (/^https?:\/\/[^\s]+$/i.test(u) ? u : null);
+function mdInline(s, depth) {
+  const out = [];
+  if (!s) return out;
+  if (depth > MD_DEPTH) return [{ text: s }];
+  const re = new RegExp(MD_INL.source, "g");
+  let last = 0, m;
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push({ text: s.slice(last, m.index) });
+    last = re.lastIndex;
+    const sub = (x) => mdInline(x, depth + 1);
+    if (m[1] != null) out.push({ code: /^ [\s\S]*[^ ][\s\S]* $/.test(m[2]) ? m[2].slice(1, -1) : m[2] });
+    else if (m[3] != null) out.push({ text: m[3] });
+    else if (m[5] != null) {
+      const href = mdHref(m[6]), kids = sub(m[5] || m[6]);
+      out.push(href ? { a: href, kids } : { span: kids });
+    } else if (m[7] != null || m[8] != null) { const u = m[7] || m[8]; out.push({ a: u, kids: [{ text: u }] }); }
+    else if (m[9] != null || m[10] != null) out.push({ strong: sub(m[9] != null ? m[9] : m[10]) });
+    else if (m[11] != null || m[12] != null) out.push({ em: sub(m[11] != null ? m[11] : m[12]) });
+    else if (m[13] != null) out.push({ del: sub(m[13]) });
+    else out.push({ br: true });
+  }
+  if (last < s.length) out.push({ text: s.slice(last) });
+  return out;
 }
 function paintAi(el, raw, live) {
   el._raw = raw;
   const r = aiParts(raw, live !== false);
   el._cards = r.cards;
   el.textContent = "";
-  r.parts.forEach((p) => {
-    if (p.code != null) { const c = document.createElement("code"); c.textContent = p.code; el.appendChild(c); }
-    else if (p.strong != null) { const b = document.createElement("strong"); b.textContent = p.strong; el.appendChild(b); }
-    else el.appendChild(document.createTextNode(p.text));
+  mdPaint(el, r.blocks);
+}
+/* 結構 → DOM。一個節點一個節點組:字只經 textContent / createTextNode 進畫面,不經任何「把字串當 HTML 解析」的 API */
+const mdEl = (tag) => document.createElement(tag);
+function mdPaint(host, blocks) {
+  blocks.forEach((b) => {
+    let n;
+    if (b.p) { n = mdEl("p"); mdPaintInl(n, b.p); }
+    else if (b.h) { n = mdEl("h" + b.h); mdPaintInl(n, b.inl); }
+    else if (b.hr) n = mdEl("hr");
+    else if (b.code != null) { n = mdEl("pre"); const c = mdEl("code"); c.textContent = b.code; n.appendChild(c); }
+    else if (b.quote) { n = mdEl("blockquote"); mdPaint(n, b.quote); }
+    else if (b.list) {
+      n = mdEl(b.list.ordered ? "ol" : "ul");
+      if (b.list.ordered && b.list.start !== 1) n.start = b.list.start;
+      b.list.items.forEach((it) => { const li = mdEl("li"); mdPaint(li, it); n.appendChild(li); });
+    } else if (b.table) {
+      // 表格包一層自己的橫向捲動容器(同網頁 .md-tblwrap):欄位多時在表格裡橫捲,不把聊天欄撐寬
+      n = mdEl("div"); n.className = "md-tblwrap";
+      const tb = mdEl("table"), th = mdEl("thead"), bd = mdEl("tbody");
+      const row = (cells, tag) => {
+        const tr = mdEl("tr");
+        cells.forEach((c, k) => { const x = mdEl(tag); if (b.table.align[k]) x.style.textAlign = b.table.align[k]; mdPaintInl(x, c); tr.appendChild(x); });
+        return tr;
+      };
+      th.appendChild(row(b.table.head, "th"));
+      b.table.rows.forEach((r) => bd.appendChild(row(r, "td")));
+      tb.appendChild(th); if (b.table.rows.length) tb.appendChild(bd);
+      n.appendChild(tb);
+    }
+    if (n) host.appendChild(n);
+  });
+}
+function mdPaintInl(host, parts) {
+  parts.forEach((p) => {
+    if (p.text != null) host.appendChild(document.createTextNode(p.text));
+    else if (p.code != null) { const c = mdEl("code"); c.textContent = p.code; host.appendChild(c); }
+    else if (p.br) host.appendChild(mdEl("br"));
+    else if (p.a) {
+      const a = mdEl("a"); a.href = p.a; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = p.a;
+      mdPaintInl(a, p.kids); host.appendChild(a);
+    } else {
+      const x = mdEl(p.strong ? "strong" : p.em ? "em" : p.del ? "del" : "span");
+      mdPaintInl(x, p.strong || p.em || p.del || p.span); host.appendChild(x);
+    }
   });
 }
 
@@ -1329,7 +1595,6 @@ function lbClose() {
 }
 $("lb-scrim").addEventListener("click", lbClose);
 $("lb-scrim").addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { e.preventDefault(); lbClose(); }
   if (e.key === "Tab") e.preventDefault();      // 裡面只有一顆鈕,焦點不離開
 });
 
@@ -1495,7 +1760,7 @@ function busyReason(text) {
 function busyHide() {
   if (busy) busy.el.hidden = true;    // 回覆在串流了,字本身就是「還在跑」
 }
-function busyEnd() {
+function busyEnd(faulted) {
   if (!busy) return;
   const b = busy; busy = null;
   clearInterval(b.timer);
@@ -1508,6 +1773,7 @@ function busyEnd() {
     b.el.removeAttribute("role"); b.el.removeAttribute("aria-live");
     b.verb.textContent = t("turn.process");
     if (b.anchor && b.anchor.parentNode) b.anchor.parentNode.insertBefore(b.el, b.anchor);
+    if (faulted && b.stepsEl.children.length) busyOpenReceipts(b);
     return;
   }
   if (b.el.hidden || reducedMotion()) { b.el.remove(); return; }
@@ -1515,6 +1781,17 @@ function busyEnd() {
   setTimeout(() => b.el.remove(), motionBaseMs() + 30);
 }
 
+/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):工具收據自己攤開——「做到哪」不該還要多按一下;思考文字維持收起
+   (那是模型自己的獨白,多半是英文,出錯時要的是收據)。有思考文字才在收據下面留一顆「顯示思考內容」,按了才出 */
+function busyOpenReceipts(b) {
+  b.el.classList.add("is-open"); b.head.setAttribute("aria-expanded", "true");
+  if (!b.reason.textContent.trim()) return;
+  b.el.classList.add("reason-held");
+  const show = document.createElement("button");
+  show.type = "button"; show.className = "btn-quiet think-reason-show"; show.textContent = t("turn.showReason");
+  show.addEventListener("click", () => { b.el.classList.remove("reason-held"); show.remove(); b.reason.setAttribute("tabindex", "-1"); b.reason.focus(); });   // 鈕消失,焦點接到剛出來的字
+  b.reason.before(show);
+}
 async function sendDraft() {
   const msg = $("ta").value.trim();
   if (!msg || running) return;
@@ -1525,6 +1802,7 @@ async function sendDraft() {
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
   if (UPD.done) UPD.doneChatHidden = true;   // 「雲端已更新到 {nv}」那一行:用戶送出下一則訊息就收(「關於」那一行照停)
+  UPD.turnCloud = false;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where)
   running = true; $("btn-send").disabled = true; hoBusy(); upPaint();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
@@ -1671,12 +1949,12 @@ function faultCard() {
   $("chat-scroll").appendChild(el); busyPin(); scrollChat();
   return {
     el, b1, b2,
-    // s = { calm, text, label, out, disabled, on, sub(Node|string|null), second:{label,on}|null }
+    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on}|null }
     set(s) {
       el.classList.toggle("is-calm", !!s.calm);
       text.textContent = s.text; srSay(s.text);
       b1.hidden = !s.label;                     // 沒有鈕的狀態(例如「可以開始了。」)
-      b1.textContent = s.label || ""; b1.className = s.out ? "btn-out" : "btn-fill";
+      b1.textContent = s.label || ""; b1.className = s.quiet ? "btn-quiet" : s.out ? "btn-out" : "btn-fill";
       b1.disabled = !!s.disabled; h1 = s.on || null;
       b2.hidden = !s.second; if (s.second) { b2.textContent = s.second.label; b2.disabled = false; h2 = s.second.on; }
       sub.hidden = !s.sub; sub.textContent = "";
@@ -1764,6 +2042,22 @@ let acct = null, acctCard = null, acctAt = 0, acctRetry = 0;
 const creditCards = [];                     // 402 那張(可能不只一張:他連送了兩句)
 const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
 const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
+const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
+/* 資料狀態(同 main.js dataAccessOf):"included" 免費含在裡面、"billed" 按有用到的整點小時收、"none" 這一小時付不出來;
+   null = 舊 api 沒有 data_access(或值認不得)→ 照舊只看布林 data_included。included 與 billed 都算拿得到資料 */
+function dataAccessOf(s) {
+  if (!s) return null;
+  return ["included", "billed", "none"].includes(s.data_access) ? s.data_access : s.data_included === true ? "included" : null;
+}
+const hasData = (s) => { const a = dataAccessOf(s); return a === "included" || a === "billed"; };
+/* 講「資料按小時計費」的那幾句只在 api 是新制時用(account_status 帶著 data_access);舊 api(外殼先出的那段時間)
+   或還沒登入、查不到時用 `.old` 那一版——那時沒有主機的人真的拿不到資料,新句子會是假話 */
+const pvK = (k) => (acct && typeof acct.data_access === "string" ? k : k + ".old");
+// 拿到資料之後那張卡的話:按小時付的那條要講「會收錢」(剛因為沒錢被擋過,不能只說「可以用了」);免費那條照舊
+function dataReadyText(s) {
+  if (dataAccessOf(s) !== "billed") return t("data.ready");
+  const v = planVars(); return v.r ? t("data.readyBilled", v) : t("data.readyBilledNoNum");
+}
 /* 服務條款 / 隱私權政策(法遵稽核:app 裡本來一個入口都沒有)。網址帶目前的介面語言,zh 的人不會落到英文頁
    (web 的路由是 /disclaimer/<lang>/…)。外開走既有的 openExternal(主行程的 externalUrl 已經認得 blave.org) */
 const legalUrl = (page) => "https://blave.org/disclaimer/" + LANG + "/" + page;
@@ -1786,12 +2080,7 @@ function acctPaint() {
     else if (s.reason === "NO_CARD") card.set({ text: t("fault.needCard"), sub: acctSub(s), ...acctAction(s), second: resendSecond() });
     else card.set({ text: t("fault.noCredit"), ...acctAction(s), second: resendSecond() });
   });
-  if (dataCard && s.data_included === true) {
-    // 資料在按下啟動後就給(不等主機開好):這張卡講的是「資料可以用了」;「雲端主機開好了」是另一件事,
-    // 由 planWatch 在 starting → running 時另外講
-    dataCard.set(resendState(dataCard, t("data.ready")));
-    dataCard = null;                          // 到手了就不再盯
-  } else if (dataCard) dataCard.set(dataCardState());   // 登入 / 綁卡 / 啟動中,卡上的話跟著換
+  dataCardSync(s);
   planWatch(s);
   // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
   // 長任務跑到 25+ 次時多幾次預檢會把一筆 LLM 擠成 429——稽核抓的)
@@ -1819,27 +2108,79 @@ async function acctCheck() {
 /* ── 沒有 Blave 資料權限的情境卡(設計師定稿)──────────────────
    agent 因為這台沒有資料權限而拿不到 Blave 資料的那一輪,回覆尾端會帶 `<blave-card:data-access/>`
    (runtime 的規則;paintAi 把它從畫面上拿掉、記在 turnCards)。**agent 只講事實,錢與動作由這張卡講**。
-   - 連的是 Blave 的 AI(帳號不含資料):資料含在雲端主機裡 → 描邊鈕外開開機頁;sub 講月費(數字來自
-     api 的 starter_monthly,沒有就不報價)——下一步是花錢的動作,事前講清楚。
-   - 連的是自己的 Claude Code / Codex:只講原因,出口是 app 內的連線設定;不承諾「切過去就有」。
+   - 這一小時付不出資料費(data_access = none):出口是儲值(沒綁卡是綁卡),不提主機。
+   - 沒登入 / 查不到 / 舊 api:描邊鈕開「資料與雲端方案」那一頁。
    同一段對話只出一次;不擋輸入、不搶焦點。同一輪有錢的阻擋卡(402 / 還沒解的預檢卡)就讓位,
-   而且不算用掉那一次。視窗回前景重查到 data_included → 換成「資料可以用了」+ 再送一次。 */
+   而且不算用掉那一次。視窗回前景重查到拿得到資料 → 換成 dataReadyText + 再送一次(不自動重送)。 */
 const dataCardSessions = new Set();
 let dataCard = null;
 function dataCardState() {
   const v = planVars(), go = { label: t("pv.e.btn"), on: () => planOpen(), out: true, calm: true };
-  if (!hasToken) return { ...go, text: v.t ? t("pv.e.out", v) : t("pv.e.outNoNum", v), sub: v.t && v.p ? t("pv.e.sub", v) : null };
+  if (!hasToken) return { ...go, text: v.t ? t("pv.e.out", v) : t("pv.e.outNoNum", v), sub: v.t && v.p ? t(pvK("pv.e.sub"), v) : null };
   if (planState() === "starting") return { calm: true, text: t("data.starting") };   // 已經按過啟動:不再叫他去看方案
   if (!acct) return { ...go, text: t("pv.e.unknown") };                              // 狀態查不到:不斷言它在哪個方案裡
-  if (acct && acct.reason === "NO_CARD" && acct.trial_eligible) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: v.p ? t("pv.e.sub", v) : null };
-  return { ...go, text: t("pv.e.noTrial"), sub: v.p ? t("pv.e.subN", v) : null };
+  /* 付不出這一小時(spec-data-without-machine-flow §3):出口是錢包,不是主機——沒綁卡 → 綁卡(有試用就講送幾天);
+     有卡 → 儲值。兩格都不提主機。account_status 刻意不回餘額,所以不講「餘額 N TWD」 */
+  if (dataAccessOf(acct) === "none") {
+    const top = { label: t(acct.reason === "NO_CARD" ? "acct.addCard" : "fault.noCreditBtn"), on: () => window.blave.openExternal(acctUrl()) };
+    if (acct.reason === "NO_CARD") return { ...top, text: t("data.noCard"), sub: acct.trial_eligible && v.t ? t("data.noCardSub", v) : null };
+    return { ...top, text: v.r ? t("data.noBalance", v) : t("data.noBalanceNoNum"), sub: t("data.noBalanceSub") };
+  }
+  // 以下只有舊 api(沒有 data_access)走得到:那時資料真的只在試用 / 方案裡
+  if (acct && acct.reason === "NO_CARD" && acct.trial_eligible) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: v.p ? t(pvK("pv.e.sub"), v) : null };
+  return { ...go, text: t("pv.e.noTrial") };
+}
+/* 主機與資料費的那一行(spec-data-without-machine-flow §2-2 / §2-3):只在這個整點小時真的收了錢時講(api 的
+   account_status.data_hour_paid),一小時一次;這台電腦第一次講時多一句計費規則(之後不再講)。沒有確認框(Wei 拍板 A)。
+   純函式:回 [key, vars] 或 null。hour = UTC 整點(api 的小時 key 同一個時區) */
+function dataFeeNote(s, hour, lastHour, ruleSaid) {
+  const r = s && Number(s.data_hourly) > 0 ? Number(s.data_hourly).toLocaleString("en-US") : "";
+  if (!s || s.data_hour_paid !== true || !r || hour === lastHour) return null;
+  return [ruleSaid ? "data.fee" : "data.feeFirst", { r }];
+}
+// 兩個記號都存在 localStorage:重開 app / 換版之後同一小時不再講一次,規則也不重講。存不住就退回這一輪的記憶
+const DATA_RULE_KEY = "blave_data_rule_said", DATA_NOTE_HOUR_KEY = "blave_data_note_hour";
+let dataNoteHourMem = null;
+function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* noop */ } }
+// s = 回合結束時剛讀回來的那一份;讀不到就不講(舊的 data_hour_paid 可能是上一個小時的)
+function dataFeeShow(s) {
+  const hour = new Date().toISOString().slice(0, 13);
+  const note = dataFeeNote(s, hour, lsGet(DATA_NOTE_HOUR_KEY) || dataNoteHourMem, lsGet(DATA_RULE_KEY) === "1");
+  if (!note) return;
+  dataNoteHourMem = hour; lsSet(DATA_NOTE_HOUR_KEY, hour); lsSet(DATA_RULE_KEY, "1");
+  // 〔用量與帳務〕只跟第一次那一則(帶規則那句):之後每小時只有一行字,一段長對話不會堆出一排一樣的鈕(設計稽核 005 第 8 條)
+  const first = note[0] === "data.feeFirst";
+  faultCard().set({ calm: true, text: t(note[0], note[1]), label: first ? t("pv.usage") : null, quiet: true, on: first ? () => window.blave.openExternal(usageUrl()) : null });
+}
+/* 回合結束:有登入就重讀一次 account_status(一次;試用剛到期、餘額剛用完都只有這裡看得到——之前只在進工作頁、
+   重登、回前景時讀,「餘額夠了」會講在已經沒錢的時候,試用到期那一則也永遠出不來)。卡與費用那一行都用這一份 */
+async function dataTurnEnd() {
+  let fresh = null;
+  if (hasToken) {
+    fresh = await window.blave.accountStatus().catch(() => null);
+    if (fresh && hasToken) { acct = fresh; acctPaint(); } else fresh = null;
+  }
+  maybeDataCard();
+  if (fresh) dataFeeShow(fresh);
+}
+/* 那張卡的字跟著最新的帳號狀態走,拿到資料之後也不放手:餘額又用完了要換回儲值那一句,不能停在「餘額夠了」。
+   按了〔再送一次〕才放手(那之後的事由下一輪自己講)。同一句不重設(role 會重唸) */
+function dataCardSync(s) {
+  if (!dataCard) return;
+  const ready = hasData(s), st = ready ? resendState(dataCard, dataReadyText(s)) : dataCardState();
+  const key = JSON.stringify([st.text, st.sub || null, st.label || null]);
+  if (dataCard._key === key) return;
+  dataCard._key = key;
+  if (ready) { const card = dataCard, go = st.on; st.on = async () => { if (running || !lastUserText) return; if (dataCard === card) dataCard = null; await go(); }; }
+  dataCard.set(st);
 }
 function maybeDataCard() {
   if (!turnCards.includes("data-access") || dataCardSessions.has(sessionId)) return;
   if (turnFaulted || creditCards.length || (acctCard && acct && !acct.can_run)) return;
   dataCardSessions.add(sessionId);
   dataCard = faultCard();
-  dataCard.set(dataCardState());
+  dataCardSync(acct);   // 卡出來的那一刻帳號已經拿得到資料(剛儲值):直接是〔再送一次〕
 }
 
 /* ── 設定 › 雲端方案(設計師定稿)──────────────────────────
@@ -1875,7 +2216,7 @@ function planVars() {
   return { p: num(pl.monthly || s.starter_monthly || (pub && pub.starter_monthly)), h: num(pl.hourly || (pub && pub.starter_hourly)), m: num(pl.stop_below),
     a: num(s.auto_topup_min || tr.auto_topup_min), b: num(s.bind_min_topup || s.min_topup),
     v: num(s.verify_amount || tr.verify_amount), t: s.trial_days || tr.days || "", q: num(s.trial_ai_credit || tr.ai_credit),
-    top: num(s.auto_topup_amount || tr.auto_topup_amount),
+    top: num(s.auto_topup_amount || tr.auto_topup_amount), r: num(s.data_hourly),
     d: left > 0 ? planDate(pl.trial_free_until) : "", n: left > 0 ? left : 0,
     name: cur === "codex" ? "Codex" : "Claude Code" };
 }
@@ -1889,9 +2230,12 @@ function planView() {
   if (!acct) return "unknown";
   const st = planBusy ? "starting" : planState();
   if (st !== "none") return st;                                   // starting / running / stopped
+  const da = dataAccessOf(acct);
+  if (da === "billed") return "billed";                           // 沒綁卡但有餘額也付得起:不叫他去綁卡
   if (acct.reason === "NO_CARD") return acct.trial_eligible ? "offer" : "noTrial";
   if (planVars().n > 0) return "trial";
-  return acct.data_included === true ? "included" : "plan";
+  if (da === "none") return "none";
+  return da === "included" ? "included" : "plan";                 // plan = 舊 api(沒有 data_access)且不含資料
 }
 let planMoreOpen = false, planLoginBusy = false, planLastView = null;
 function planPaint() {
@@ -1915,14 +2259,20 @@ function planPaint() {
   // 每一格:狀態點(有才出)/ 標題句 / 說明 / 鈕上方那行 / 鈕左小字 / 鈕
   const offerLead = () => (cur === "blave" ? t("pv.d.offer.blave", v) : t("pv.d.offer.cli", v));
   const V = {
-    out:      { h: hasNum ? "pv.h.offer" : "pv.h.offerNoNum", lead: hasNum ? offerLead() : t("pv.d.noPrice"), rule: hasNum ? t("pv.f.out", v) : "", wait: planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli"),
+    out:      { h: hasNum ? "pv.h.offer" : "pv.h.offerNoNum", lead: hasNum ? offerLead() : t(pvK("pv.d.noPrice")), rule: hasNum ? t(pvK("pv.f.out"), v) : "", wait: planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli"),
                 acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
-    offer:    { h: "pv.h.offer", lead: offerLead(), rule: t("pv.f.offer", v), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
-    noTrial:  { h: "pv.h.plan", lead: t("pv.d.noTrial", v), rule: t("pv.f.noTrial", v), wait: t("pv.w.noTrial"), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
-    trial:    { st: ["on", t("pv.st.trial", v)], h: "pv.h.ready", lead: t("pv.d.trial", v), rule: t("pv.f.trial", v), acts: [btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
+    offer:    { h: "pv.h.offer", lead: offerLead(), rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
+    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
+    trial:    { st: ["on", t("pv.st.trial", v)], h: "pv.h.ready", lead: t(pvK("pv.d.trial"), v), rule: t("pv.f.trial", v), acts: [btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
     plan:     { st: ["", t("pv.st.none")], h: "pv.h.plan", lead: t("pv.d.plan", v), rule: t("pv.f.plan", v), acts: [btn("btn-fill", t("plan.start"), planAsk, !(v.p && v.h))] },
     included: { st: ["on", t("pv.st.ok")], h: "pv.h.ready", lead: t("pv.d.included", v), rule: t("pv.f.plan", v), acts: [btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
+    // 沒有主機、按有用到的整點小時付資料:資料的事講在前面,主機退到「要全天候自動執行才需要」(spec-data-without-machine-flow §4 / §5)
+    billed:   { st: ["on", t("pv.st.ok")], h: "pv.h.billed", lead: v.r ? t("pv.d.billed", v) : t("pv.d.billedNoNum"), rule: v.h ? t("pv.f.billed", v) : "",
+                acts: [btn("btn-quiet", t("pv.usage"), ext(usageUrl())), btn("btn-out", t("plan.start"), planAsk, !(v.p && v.h))] },
+    // 付不出這一小時:唯一的主鈕是儲值;主機降成安靜文字鈕——這一刻推銷一台更貴的東西是錯的
+    none:     { st: ["bad", t("pv.st.noData")], h: "pv.h.none", lead: v.r ? t("pv.d.none", v) : t("pv.d.noneNoNum"),
+                acts: [btn("btn-quiet", t("plan.start"), planAsk, !(v.p && v.h)), btn("btn-fill", t("fault.noCreditBtn"), ext(acctUrl()))] },
     starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"),
                 acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
     running:  { st: ["on", t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: t("pv.f.running", v),
@@ -1941,7 +2291,7 @@ function planPaint() {
     const det = el("div", "plan-detail"); det.id = "plan-detail"; det.hidden = !planMoreOpen;
     const inc = el("div", "plan-sec"); inc.append(el("p", "plan-lbl", t("plan.inc"))); const ul = el("ul", "plan-list");
     [t("pv.inc.1"), t("pv.inc.2"), t("pv.inc.3")].forEach((x) => ul.append(el("li", null, x)));
-    inc.append(ul, el("p", "plan-fine", t("pv.inc.note")));
+    inc.append(ul, el("p", "plan-fine", t("pv.inc.note")), el("p", "plan-fine", t("pv.inc.web")));   // 網頁限定的事:從運行中那一段搬來,講一次就好
     const bill = el("div", "plan-sec"); bill.append(el("p", "plan-lbl", t("plan.bill")));
     const pr = el("div", "plan-price"); pr.append(el("span", "m", t("plan.month", v))); if (v.h) pr.append(el("span", "h", t("plan.hour", v))); bill.append(pr);
     if (v.d) bill.append(el("p", "plan-fine", t("plan.trialFree", v)));
@@ -2149,6 +2499,8 @@ window.blave.onTurnEvent((c) => {
       liveBubble.remove();
     }
     liveBubble = null;
+    // 這一回合第一次碰雲端主機:在收到 chunk 這一層記(busyStep 在 !busy 時直接 return),更新那一行當場換成 S3
+    if (!UPD.turnCloud && stepWhere(c) === "cloud") { UPD.turnCloud = true; upPaint(); }
     busyStep(c);
   } else if (c.type === "thinking") {
     busySet(t("turn.thinking"));
@@ -2188,13 +2540,14 @@ window.blave.onTurnEnd(async (r) => {
     catch (_) { /* noop */ }
   }
   if (liveBubble && liveBubble._raw != null) paintAi(liveBubble, liveBubble._raw, false);   // 定稿:不再藏半截標記
-  busyEnd();
-  if (!loggedOut && r.code === 0) maybeDataCard();
+  const faulted = r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut;   // 同 upTurnEnded 的判準
+  busyEnd(faulted);
+  if (!loggedOut && r.code === 0) dataTurnEnd();
   if (planDonePending) planSayDone();
   if (loggedOut) addFault(localAuthFault(cur));
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); }
   pendingErr = [];
-  upTurnEnded(r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);
+  upTurnEnded(faulted);
   running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint();
 });
 

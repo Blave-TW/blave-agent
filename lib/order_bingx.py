@@ -96,9 +96,27 @@ def _bases(env):
     return [LIVE_URL, LIVE_FALLBACK]
 
 
+TIMESTAMP_ERROR = 100421  # timestamp / recvWindow rejected
+_time_offset = {"ms": 0}  # BingX's clock − ours, set by _sync_time
+
+
+def _sync_time(env):
+    """After a 100421: offset against BingX's own clock (server/time, public),
+    best-effort — a failed read keeps the old offset and the retry still goes out."""
+    try:
+        t0 = time.time()
+        r = requests.get(f"{_bases(env)[0]}/openApi/swap/v2/server/time",
+                         headers={"X-SOURCE-KEY": "BX-AI-SKILL"}, timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["data"]["serverTime"])
+        _time_offset["ms"] = server_ms - int((t0 + t1) / 2 * 1000)
+    except Exception:
+        pass
+
+
 def _sign(secret_key, params):
     params = dict(params)
-    params["timestamp"] = str(int(time.time() * 1000))
+    params["timestamp"] = str(int(time.time() * 1000) + _time_offset["ms"])
     params.setdefault("recvWindow", RECV_WINDOW)
     canonical = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     sig = hmac.new(secret_key.encode(), canonical.encode(), hashlib.sha256).hexdigest()
@@ -165,9 +183,10 @@ def _request(method, path, env, params=None, signed=True, retries=3):
     fields = {k: params[k] for k in _AUDIT_PARAM_KEYS if k in (params or {})}
     fields["intent"] = intent
     guard.check_restart_stop(intent, fields)
+    guard.check_account_hold("bingx", intent, fields)
     fields["demo"] = _bases(env) == [DEMO_URL]
 
-    if intent == "entry" and guard.halted():
+    if intent == "entry" and guard.entry_blocked():
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
@@ -198,6 +217,7 @@ def _send(method, path, env, params=None, signed=True, retries=3):
         headers["X-BX-APIKEY"] = api_key
 
     last_err = None
+    resynced = False
     for attempt in range(retries):
         for base in _bases(env):
             try:
@@ -222,6 +242,12 @@ def _send(method, path, env, params=None, signed=True, retries=3):
                     last_err = BingXError(code, data.get("msg"), path)
                     time.sleep(1 + attempt)
                     break  # retry outer loop from primary base
+                if code == TIMESTAMP_ERROR and signed and not resynced and attempt < retries - 1:
+                    # refused at authentication — resending cannot double anything
+                    resynced = True
+                    _sync_time(env)
+                    last_err = BingXError(code, data.get("msg"), path)
+                    break
                 raise BingXError(code, data.get("msg"), path)
             except requests.exceptions.ConnectionError as e:
                 last_err = e
@@ -398,6 +424,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     request param spelling is clientOrderID (official docs mix both spellings;
     capital ID is what ccxt ships in production), while query RESPONSES come
     back as clientOrderId."""
+    guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     symbol = _bingx_symbol(symbol)
     mode = get_position_mode(env)
     if reduce_only:

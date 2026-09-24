@@ -216,7 +216,23 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     t("連接:Binance 只放兩個 BINANCE_*,值 trim 過;renderer 多塞的鍵不會進 secrets", JSON.stringify(b.secrets) === JSON.stringify({ BINANCE_API_KEY: "KEYaaaaaaaa", BINANCE_SECRET_KEY: "SECbbbbbbbb" }));
     t("連接:形狀不對 / 少一欄 / 不認得的交易所 → 不送出", M.connectSecrets({ venue: "binance", apiKey: "k", secret: "" }, shape, 1).error === "BAD_KEY_FORMAT"
       && M.connectSecrets({ venue: "binance", apiKey: "short", secret: "SECbbbbbbbb" }, shape, 1).error === "BAD_KEY_FORMAT"
-      && M.connectSecrets({ venue: "okx" }, shape, 1).error === "BAD_ARGS" && M.connectSecrets(null, shape, 1).error === "BAD_ARGS"); }
+      && ["capital", "kraken", "crypto_other", "__proto__", "toString"].every((v) => M.connectSecrets({ venue: v, apiKey: "not-a-real-key", secret: "not-a-real-secret" }, shape, 1).error === "BAD_ARGS")
+      && M.connectSecrets(null, shape, 1).error === "BAD_ARGS"); }
+  { // 電腦版開放的另外四家(OKX / BingX / Gate.io / Bybit):env 名同網頁 CX_VENUES;OKX 多一個 passphrase
+    const K = "not-a-real-key-0001", S = "not-a-real-secret-0001", P = "not a real passphrase";
+    const shape = () => { throw new Error("binance shape check used for another venue"); };
+    const got = (v, o) => M.connectSecrets({ venue: v, apiKey: " " + K + " ", secret: S, passphrase: P, extra: "x", ...o }, shape, 1);
+    const J = JSON.stringify;
+    t("連接:OKX 三個 OKX_*(含 PASSPHRASE,值 trim 過);BingX / Gate.io / Bybit 各兩個,多塞的鍵與 passphrase 不會進 secrets",
+      J(got("okx").secrets) === J({ OKX_API_KEY: K, OKX_SECRET_KEY: S, OKX_PASSPHRASE: P })
+      && J(got("bingx").secrets) === J({ BINGX_API_KEY: K, BINGX_SECRET_KEY: S }) && J(got("gateio").secrets) === J({ GATEIO_API_KEY: K, GATEIO_SECRET_KEY: S })
+      && J(got("bybit").secrets) === J({ BYBIT_API_KEY: K, BYBIT_SECRET_KEY: S }) && got("okx").venue === "okx");
+    t("連接:少一欄 → INCOMPLETE_PAIR(OKX 沒有 passphrase 也是);帶空白 / 換行的金鑰 → BAD_KEY_FORMAT;都不送出",
+      got("okx", { passphrase: "" }).error === "INCOMPLETE_PAIR" && got("bybit", { secret: "" }).error === "INCOMPLETE_PAIR"
+      && got("bingx", { apiKey: "not a key" }).error === "BAD_KEY_FORMAT" && got("okx", { passphrase: "a\nb" }).error === "BAD_KEY_FORMAT"
+      && !got("gateio", { apiKey: "" }).secrets);
+    t("解除 / daemon 白名單共用的 env 名:venueEnvNames", J(M.venueEnvNames("okx")) === J(["OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"])
+      && J(M.venueEnvNames("gateio")) === J(["GATEIO_API_KEY", "GATEIO_SECRET_KEY"]) && J(M.venueEnvNames("paper")) === "[]" && J(M.venueEnvNames("capital")) === "[]"); }
   { const R = (e) => M.interpretConnect({ ok: false, kind: "rejected", error: e });
     t("連接結果:ok + binance dict → OK / NO_IP_RESTRICT,帶 spot / futures", (() => { const a = M.interpretConnect({ ok: true, result: { credentials: 2, binance: { checked: true, code: "NO_IP_RESTRICT", spot: false, futures: true } } });
       return a.ok && a.code === "NO_IP_RESTRICT" && a.detail.spot === false && a.detail.futures === true && M.interpretConnect({ ok: true, result: { credentials: 3, binance: null } }).code === "OK"; })());
@@ -247,7 +263,7 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     const h = (mainSrc.match(/\n  handle\("cloud-connect"[\s\S]*?\n  \}, cxDenied\);/) || [""])[0];
     t("main.js:cloud-connect 走 handle()(只收自家頁面)、送的是 credentials + connectSecrets 的 secrets、每次新的 request_id(不帶第四個參數)、不跑本機 Binance 檢查",
       h.length > 100 && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets\);/.test(h) && !/binanceLink|binance_check|requestId/.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""))
-      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
+      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret, passphrase: a && a\.passphrase \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
 
   // ── 原文:不 require electron、不 log、不落地 ──
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8");

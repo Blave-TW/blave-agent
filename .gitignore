@@ -13,6 +13,11 @@ manager/executors/
 manager/portfolio_config.json
 manager/orders.jsonl
 manager/last_reconcile.json
+# every other machine-state file the runtime / lib write under manager/
+# (manager/update_workspace.py NEVER never ships these either)
+manager/*.json
+manager/*.jsonl
+manager/*.tmp
 examples/**/strategy.log
 examples/**/state.json
 examples/**/stats.json

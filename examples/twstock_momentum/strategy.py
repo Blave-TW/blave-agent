@@ -2,7 +2,7 @@
 # Type:     C (multi-asset, weight-based, weekly rebalancing)
 # Universe: 台股藍籌 20 支（跨產業）
 # Signal:   60 日價格動能排名，每週選前 5 名等權配置
-# Rebalance: 每週最後一個交易日
+# Rebalance: 每週第一個交易日(收盤定權重、隔日開盤成交)
 
 import sys
 from pathlib import Path
@@ -13,7 +13,7 @@ STRATEGY_NAME = "twstock_momentum"
 INTERVAL      = "1d"
 START         = "2015-01-01"
 END           = None
-FEE           = 0.005          # ~0.3% 證交稅 + 手續費
+FEE           = 0.003          # 單邊(per side):手續費 0.1425% ×2 + 證交稅 0.3%(賣方)平均 ≈ 0.29%
 
 MOM_WINDOW     = 120           # 動能回望窗格（交易日）
 TOP_N          = 30            # 每週持有前 N 名
@@ -97,9 +97,9 @@ def _momentum(close_df, window=MOM_WINDOW):
 def _top_n_weights(signal_df, n, is_rebalance):
     """signal_df 排名前 n 的欄位等權配置；非調倉日 ffill，資料不足全 0。"""
     import numpy as np
-    rank = signal_df.rank(axis=1, ascending=False, na_option='bottom')
+    rank = signal_df.rank(axis=1, ascending=False, method='first', na_option='bottom')  # 同分不可用預設 'average':權重和會變 1.5 / 0.5
     w = signal_df.__class__(
-        np.where(rank <= n, 1.0 / n, 0.0),
+        np.where((rank <= n) & signal_df.notna(), 1.0 / n, 0.0),
         index=signal_df.index, columns=signal_df.columns
     )
     w[signal_df.isna().all(axis=1)] = 0.0
@@ -108,13 +108,13 @@ def _top_n_weights(signal_df, n, is_rebalance):
 
 
 def _rebalance_mask(idx, freq='W'):
-    """Return bool numpy array — True on rebalance bars (last bar of each period)."""
+    """Return bool numpy array — True on rebalance bars (first bar of each period)."""
     import pandas as pd
     import numpy as np
     if freq == 'D':
         return np.ones(len(idx), dtype=bool)
     s = pd.Series(idx.to_period(freq), index=idx)
-    return (s != s.shift(-1)).fillna(True).to_numpy()
+    return (s != s.shift(1)).to_numpy()
 
 
 # ── fetch_data ────────────────────────────────────────────────────────────────

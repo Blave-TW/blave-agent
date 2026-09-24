@@ -109,6 +109,11 @@ pcr = foreign["賣權"] / foreign["買權"]
 
 ## 期貨三大法人（TaiwanFuturesInstitutionalInvestors）
 
+**In a strategy, attach it with `lib.data.join_tw_flow(df, 'futures_institutional', INTERVAL, START, END, hdrs, id='TX')`**
+(one call: fetch + attach by publication time, columns `fut_*`) — copy the recipe in
+`references/strategy-code.md` › *Taiwan daily flows*. Joining the frame below by date onto intraday
+bars reads the evening's numbers in the morning and the backtest is refused.
+
 **Use `lib.data.fetch_twfutures_institutional` — do not hand-roll the request.** It caches like the
 `twmarket_*` daily series and pivots the endpoint's 3-rows-per-day layout into one row per date:
 

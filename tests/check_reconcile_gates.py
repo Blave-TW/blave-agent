@@ -26,7 +26,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(tempfile.mkdtemp(prefix="recongates-"))
 os.makedirs("manager", exist_ok=True)
-open("manager/portfolio_config.json", "w").write("{}")
+# account-read opt-out ("self_ledger": false): these checks are about
+# gate arithmetic against the account read, not about ownership
+open("manager/portfolio_config.json", "w").write('{"self_ledger": false}')
 
 from lib import portfolio, venue_wiring  # noqa: E402
 from manager import reconciler  # noqa: E402

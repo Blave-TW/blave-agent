@@ -136,7 +136,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /const CLOUD_ONLY = require\("\.\/cloudcmd"\)\.CLOUD_ONLY_COMMANDS;/.test(mainSrc)
       && JSON.stringify(require("../shell/cloudcmd").CLOUD_ONLY_COMMANDS) === '["delete_strategy"]'
       && !require("../shell/daemon").UI_COMMANDS.has("delete_strategy")
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts"\];/.test(mainSrc));
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm"\];/.test(mainSrc));
     // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
     ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
     ok("用本機 app 不觸發雲端 agent 回合:cloud-send 的白名單沒有 update / restart_reconciler", !/"update"|"restart_reconciler"/.test((mainSrc.match(/const CLOUD_SHIPPED = \[[^\]]*\]/) || [""])[0]));
@@ -204,6 +204,25 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     TR = { env: "cloud", st: cloudSt(okc("running"), rep({ halt: { halted: true, source: "web" } })), pending: { want: "halted", until: Date.now() + 1e6 }, reqIds: { halt: "R1" }, alertText: "", alertWant: null, alertSrc: null };
     TR_BAGS.cloud = TR; trPendingCheck();
     ok("B-2 收斂:同樣清掉(下一次按是新的意圖)", TR.pending === null && Object.keys(TR.reqIds).length === 0 && TR.alertText === "");
+    /* 29026(09-23):雲端啟動收過 ok 回條、對帳器從沒起來(dead)——結果是知道的,逾時那一句不可以說「還沒回報」。
+       但只信回條**之後**存的回報(稽核 B):伺服器時鐘刻意比這台電腦快一小時,不換算時鐘的比法會把回條前的舊回報當成新的 */
+    const deadRep = rep({ reconciler: { alive: false } }), NOW = Date.now(), SKEW = 3600 * 1000, ACK = NOW - 250 * 1000;
+    const ackSt = (repAfterAckMs, report, alive = true) => cloudSt(okc("running", {
+      reported_at: (ACK + SKEW + repAfterAckMs) / 1000, server_time: (NOW + SKEW) / 1000, fetched_at: NOW }), report, alive);
+    const timedOut = (st, pend) => { TR = { env: "cloud", st, pending: { want: "running", until: NOW - 1, ...pend }, reqIds: { resume_wait: "R2" }, alertText: "", alertWant: null, alertSrc: null };
+      TR_BAGS.cloud = TR; trPendingCheck(); return TR.alertText; };
+    ok("啟動收過 ok 回條、回條 60 秒後存的回報說下單程式沒起來:逾時說「收下了但沒在跑」,不說「還沒回報」",
+      timedOut(ackSt(60000, deadRep), { acked: true, ackedAt: ACK }) === "tr.cloud.startedNotRunning" && TR.pending === null && TR.alertWant === "running");
+    ok("…手上那份回報比回條早(60 秒前存的):照舊「結果不明」", timedOut(ackSt(-60000, deadRep), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
+    ok("…回報只比回條晚 5 秒(可能是回條前就在送的舊回報,20 秒的邊):照舊「結果不明」", timedOut(ackSt(5000, deadRep), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
+    ok("…沒有回條時間 / 沒有伺服器時間:不能證明回報比較新,照舊「結果不明」",
+      timedOut(ackSt(60000, deadRep), { acked: true }) === "tr.cloud.cmdUnknown"
+      && timedOut(cloudSt(okc("running", { reported_at: (ACK + SKEW + 60000) / 1000, fetched_at: NOW }), deadRep), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
+    ok("…沒收到回條(結果不明)的啟動逾時:照舊「結果不明」", timedOut(ackSt(60000, deadRep), { unknown: true }) === "tr.cloud.cmdUnknown");
+    ok("…收過回條、但狀態不是 dead(例:還是已暫停):照舊「結果不明」",
+      timedOut(ackSt(60000, rep({ reconciler: { alive: false }, halt: { halted: true, source: "web" } })), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
+    ok("…收過回條、但雲端狀態讀不到新的(alive:false):不斷言沒在跑,照舊「結果不明」",
+      timedOut(ackSt(60000, deadRep, false), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
     delete globalThis.t; }
   // 在途的指令:切換器那一格出呼吸點(切走也看得到)。詞不可沿用 side.starting——那是主機在開機,不是指令在路上
   { const c1 = envCell("cloud", cloudSt(okc("running")), true), c2 = envCell("cloud", cloudSt(okc("running"), rep({ halt: { halted: true, source: "reconciler", at: "t1" } })), true);
@@ -217,13 +236,13 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 等的過程中主機停機:人要看到的是「它停了」,不是「我按的那個不知道怎樣」
   ok("trPendingCheck:雲端停機 → 直接清過場、不出「結果不明」;收斂了就把 request_id 一起清掉",
     /if \(cloud && envCloudKind\(TR\.st\) === "stopped"\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); return; \}/.test(fn("trPendingCheck"))
-    && /if \(state === p\.want \|\| relDone\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
+    && /if \(state === p\.want \|\| relDone \|\| acctDone\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
   /* 逾時還沒收斂:雲端的 ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來。
      這一條**只准**出「結果不明」——說「沒送到」就是叫一個暫停其實已經生效的人去交易所撤 key(規格 §1.3)。 */
   { const timeout = fn("trPendingCheck").slice(fn("trPendingCheck").indexOf("else if (Date.now() > p.until)"));
-    const cloudArm = timeout.slice(0, timeout.indexOf(":"));
-    ok("雲端逾時只說「結果不明」,不說「沒送到」、不說「失敗」;這台電腦那兩句原封不動",
-      /cloud \? t\("tr\.cloud\.cmdUnknown"\)/.test(cloudArm) && !/cmdNotDelivered|cmdFailed/.test(cloudArm)
+    const cloudArm = timeout.slice(0, timeout.indexOf("\n      : p.unknown"));
+    ok("雲端逾時只說「結果不明」(或收過回條的啟動:「收下了但沒在跑」),不說「沒送到」、不說「失敗」;這台電腦那兩句原封不動",
+      /cloud \? \(p\.acked && p\.want === "running" && state === "dead" && TR\.st\.alive && repAfterAck \? t\("tr\.cloud\.startedNotRunning"\) : t\("tr\.cloud\.cmdUnknown"\)\)/.test(cloudArm) && !/cmdNotDelivered|cmdFailed/.test(cloudArm)
       && !/tr\.cloud\.cmdNotDelivered|tr\.cloud\.cmdFailed/.test(timeout)
       && /p\.unknown \? t\("tr\.cmdUnknown"\) : p\.want === "halted" \? t\("tr\.cmdNotDelivered"\) : t\("tr\.cmdFailed"\)/.test(timeout)); }
   /* 雲端啟動**不順帶送 restart_reconciler**(規格 §4.2-2):那份報告可能是一分鐘前的,照它判等於瞎猜——
@@ -246,7 +265,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && trStartPending({ want: "running" }) === true && trStartPending({ want: "halted" }) === false && trStartPending(null) === false);
   // 三個入口(鈕的可按性、click、真的送出去那一層)只認同一條規則:哪一個漏掉,停止鈕就會在某條路上被鎖住
   ok("鈕 / click / trRun 三處都走 trBtnLocked(鈕與 click 的那一側由 trStopSideNow 判),沒有人再直接用 TR.pending 或 S.pending 擋",
-    /const locked = trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\)\) \|\| trStartPending\(TR\.pending\) \|\| flying;/.test(fn("trPaintHead"))
+    /const locked = ask \? pendingAcct : trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\)\) \|\| trStartPending\(TR\.pending\) \|\| flying;/.test(fn("trPaintHead"))
     && /aria-disabled", locked \? "true" : "false"/.test(fn("trPaintHead"))
     && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\);[^\n]*\n\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return;/.test(fn("trPaintHead"))
     && /if \(trStartPending\(TR\.pending\) \|\| trHaltInFlight\(TR\.pending, Date\.now\(\)\)\) return;/.test(fn("trPaintHead"))
@@ -413,7 +432,9 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("UPDATE_REQUIRED:確定沒執行(不留過場)、講更新那一句,不叫人重按", trErrorKind("UPDATE_REQUIRED") === "undelivered" && /if \(e === "UPDATE_REQUIRED"\) return t\(kind === "release" \? "minv\.release" : "minv\.trade"\);/.test(fn("trSendError")));
   ok("聊天被擋:不再誤畫成「上一輪還在跑」", /if \(r\.blocked === "UPDATE_REQUIRED"\) \{[\s\S]{0,400}t\("minv\.chat"\)[\s\S]{0,300}unlock\(\); return false;\s*\}\s*addMsg\("sys", t\("turn\.busy"\)\)/.test(app));
   const labels = fn("trPushLabels");
-  ok("tradeLabels 多交的 15 個 key 都在(換語言時 applyStatic 會重叫 trPushLabels)", ["lang: LANG", "stLocal", "stCloud", "stOn", "stPaused", "stUnknown", "moneyPaper", "moneyReal", "pauseLocal", "quitCloudNote", "notifPrefixLocal", "notifPrefixCloud", "menuLocal", "menuCloud", "menuSite"].every((k) => labels.includes(k)) && /trPushLabels\(\)/.test(fn.call(null, "trInit") + app));
+  const trSrcAll = fs.readFileSync(path.join(R, "trade.js"), "utf8");   // app 選單的字改成整份 TR_MENU_KEYS 交(spec-desktop-005 §1)
+  ok("tradeLabels 多交的 15 個 key 都在(換語言時 applyStatic 會重叫 trPushLabels)", ["lang: LANG", "stLocal", "stCloud", "stOn", "stPaused", "stUnknown", "moneyPaper", "moneyReal", "pauseLocal", "quitCloudNote", "notifPrefixLocal", "notifPrefixCloud"].every((k) => labels.includes(k))
+    && /\.\.\.Object\.fromEntries\(TR_MENU_KEYS\.map/.test(labels) && ["local", "cloud", "site", "view"].every((k) => new RegExp('"menu\\.' + k + '"').test(/const TR_MENU_KEYS = \[[\s\S]*?\];/.exec(trSrcAll)[0])) && /trPushLabels\(\)/.test(fn.call(null, "trInit") + app));
 
   // ── 側欄列尾 ──
   ok("列尾狀態字:有投入金額的才講;下單中 / 已停;主機沒在下單就不講", envStratWord("a", cloudSt(okc("running"))) === "side.cloud.st.trading" && envStratWord("b", cloudSt(okc("running"))) === null && envStratWord("zz", cloudSt(okc("running"))) === null
@@ -440,9 +461,10 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /s\.dataset\.i18n = env === "cloud" \? "chat\.tgt\.cloud" : "env\.local"; s\.textContent = t\(s\.dataset\.i18n\);/.test(appFn("whereTag")));
     // 雲端來的字串會進這幾支(報告頁首、雲端清單點一支、分頁、.wtag):函式體內一律 textContent。app.js 別處有合法的 innerHTML,所以逐支切出來查
     ["rpPaintHead", "rpCloudSelect", "rpRepaint", "rpShowTab", "whereTag", "stepWhere"].forEach((n) => ok(`${n} 函式體內沒有 innerHTML / insertAdjacentHTML / outerHTML`, !/innerHTML|insertAdjacentHTML|outerHTML/.test(appFn(n))));
-    ok("rpCloudSelect 讀不到:講報告那句(tr.cloud.reportUnreach,不是下單狀態的 tr.cloud.unreach)、畫進看得見的紅字槽;槽被佔著才只唸",
-      /t\("tr\.cloud\.reportUnreach"\)/.test(appFn("rpCloudSelect")) && !/tr\.cloud\.unreach/.test(appFn("rpCloudSelect"))
-      && /if \(!C\.alertText\) trAlert\(msg, null, C, "report"\); else srSay\(msg\);/.test(appFn("rpCloudSelect")) && /if \(C\.alertSrc === "report"\) trAlert\("", null, C\);/.test(appFn("rpCloudSelect")));
+    // Wei 09-23:點下去就換頁;讀不到在那一頁原地講(讀不到 +〔重新查看〕,rpBodyPaint),不再跳回自動下單頁的紅字槽。行為測試在 check_shell_strat_delete.js
+    ok("rpCloudSelect 讀不到:講報告那句(tr.cloud.reportUnreach,不是下單狀態的 tr.cloud.unreach),在報告頁原地講;讀屏由 #rp-wait 的 role=status 唸一次(不另外 srSay);上一版留在紅字槽的那句先收掉",
+      !/srSay\(t\("tr\.cloud\.reportUnreach"\)\)/.test(appFn("rpCloudSelect")) && /id="rp-wait" role="status"/.test(fs.readFileSync(path.join(R, "index.html"), "utf8")) && /t\("tr\.cloud\.reportUnreach"\)/.test(appFn("rpBodyPaint")) && !/tr\.cloud\.unreach/.test(appFn("rpCloudSelect") + appFn("rpBodyPaint"))
+      && /if \(C\.alertSrc === "report"\) trAlert\("", null, C\);/.test(appFn("rpCloudSelect")));
     // ③ 系統行:只在對話有內容時插;切到哪一邊都插當前方向那條;連續切(上一條仍是最後一則)只留最新一條。真的把 chatSwitched 跑起來
     { const kids = [], box = { get children() { return kids; }, appendChild(el) { kids.push(el); el.parentNode = box; }, get lastElementChild() { return kids[kids.length - 1]; } };
       const doc = { createElement: () => ({ dataset: {}, remove() { const i = kids.indexOf(this); if (i >= 0) kids.splice(i, 1); this.parentNode = null; } }) };
@@ -464,8 +486,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       /const wrap = trEl\("div", "strat-wrap cs-row"\), row = trEl\("button", "strat-row"\); row\.type = "button"; row\.dataset\.name = x\.name;/.test(fn("envPaintSide")) && /if \(x\.name === sel\) row\.setAttribute\("aria-current", "true"\);/.test(fn("envPaintSide"))
       && /row\.addEventListener\("click", \(\) => \{ if \(typeof rpCloudSelect === "function"\) rpCloudSelect\(x\.name\); \}\);/.test(fn("envPaintSide")) && !/is-static/.test(code + html + css + fs.readFileSync(path.join(R, "app.css"), "utf8"))
       && /else if \(typeof rpCloudSelect === "function"\) await rpCloudSelect\(null\);/.test(fn("trOpen")) && /rpCloudPrune\(C\.list\)/.test(fn("trPoll")));
-    ok("雲端報告:rpCloudSelect 讀的是雲端那袋的 api、讀不到就收掉選取、不退回去讀這台電腦的;rpShowTab / rpRepaint 畫現在這一邊那一袋;本機每輪的 stratRefresh 不拿 RP 蓋雲端報告的頁首",
-      /const C = TR_BAGS\.cloud;/.test(appFn("rpCloudSelect")) && /const d = await C\.api\.loadStrategy\(name\);/.test(appFn("rpCloudSelect")) && /if \(!d\) \{\s*rpCloudSelect\(null\);/.test(appFn("rpCloudSelect")) && !/window\.blave\.loadStrategy/.test(appFn("rpCloudSelect"))
+    ok("雲端報告:rpCloudSelect 讀的是雲端那袋的 api、讀不到就在原地講(有快取就留著那份)、不退回去讀這台電腦的;rpShowTab / rpRepaint 畫現在這一邊那一袋;本機每輪的 stratRefresh 不拿 RP 蓋雲端報告的頁首",
+      /const C = TR_BAGS\.cloud;/.test(appFn("rpCloudSelect")) && /const d = await C\.api\.loadStrategy\(name\);/.test(appFn("rpCloudSelect")) && /if \(!d\) \{\s*if \(cached\) return;/.test(appFn("rpCloudSelect")) && !/window\.blave\.loadStrategy/.test(appFn("rpCloudSelect"))
       && /const B = rpBag\(\);\s*B\.tab = tab;/.test(appFn("rpShowTab")) && /if \(rpBag\(\) === RP && !\$\("rp"\)\.hidden\) \{ rpPaintHead\(RP\);/.test(appFn("stratSelect")) && /rpRepaint\(\);/.test(fn("envSwitch")));
     const ho = fs.readFileSync(path.join(R, "handoff.js"), "utf8");
     ok("報告頁首右側:這台電腦那支 = 送上雲端(up),雲端那支 = 拉回這台電腦(down);同一顆 #rp-ho,依視角選袋(hoPaint 自己守)",

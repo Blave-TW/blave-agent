@@ -74,15 +74,21 @@ def check(cond, msg):
 flatten.LOCK_PATH = os.path.join(BASE, "flatten.lock")
 errors, closes, logged, zeroed = [], [], [], set()
 LEDGER = {}
-CFG = {}
+CFG = {"self_ledger": False}  # account-read opt-out unless a case turns the book on
 POS = {}      # vid -> positions (or an Exception to raise)
 CLOSE = {}    # capital resolved sym -> "raise" | "sent" | "partial"; default = filled
 flatten._record_order_error = (
     lambda sym, vid, err, extra=None: errors.append((sym, vid, err, extra)))
 flatten._append_reconciler_log = lambda row: logged.append(row["symbol"])
-flatten.zero_ledger_symbols = lambda syms: zeroed.update(syms)
+flatten.zero_ledger_symbols = lambda syms, venue=None: zeroed.update(syms)
 flatten.load_portfolio_config = lambda: CFG
-flatten.ledger_positions = lambda: dict(LEDGER)
+# the book is per venue (lib/portfolio): 群益's keys are its futures, the rest are Binance's
+flatten.ledger_positions = lambda vid=None: {k: v for k, v in LEDGER.items()
+                                             if vid is None or (vid == "capital") == (k in ("TMF", "TXF", "MXF"))}
+flatten._load_ledger_seed = lambda: {"seeded_at": "2026-01-01T00:00:00", "symbols": {}}
+import lib.portfolio as _lp0  # noqa: E402
+_real_ready = _lp0.book_ready
+_lp0.book_ready = lambda config=None: True  # the book cases below have a baseline
 flatten._wait_for_inflight = lambda *a, **k: []
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
                                       restart_stopped=lambda: False)
@@ -134,6 +140,7 @@ def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None):
     for bucket in (errors, closes, logged, zeroed):
         bucket.clear()
     CFG.clear()
+    CFG["self_ledger"] = False  # account-read opt-out unless a case turns the book on
     LEDGER.clear()
     CLOSE.clear()
     CLOSE.update(close or {})
@@ -292,6 +299,8 @@ check(_identity_body(os.path.join(ROOT, "manager", "flatten.py"))
       == _identity_body(os.path.join(ROOT, "runtime", "portfolio_reporter.py")),
       "flatten and reporter identity checks are the same code (docstrings aside)")
 
+_lp0.book_ready = _real_ready  # the flatten cases are done
+
 # ── reporter can_flatten ─────────────────────────────────────────────────────
 open(os.path.join(WS, "manager", "flatten.py"), "w").close()
 CAP = {"account": True, "order": True}
@@ -352,9 +361,11 @@ check(len(rows) == 5 and rows[-1].get("kind") == "manual_close_required"
 POS["capital"] = {"TM2610": {"side": "long", "size": 1}, "TX2610": {"side": "long", "size": 1},
                   "MTX2610": {"side": "long", "size": 1}, "TXO22000J6": {"side": "long", "size": 1}}
 _real_cfg, _real_ledger = lp.load_portfolio_config, lp.ledger_positions
+_real_seed = lp._load_ledger_seed
 lp.load_portfolio_config = lambda: {"self_ledger": True}
+lp._load_ledger_seed = lambda: {"seeded_at": "2026-01-01T00:00:00", "symbols": {}}
 os.remove(ERR_PATH)  # each check below must see the row IT wrote
-lp.ledger_positions = lambda: {"TMF": {"side": "long"}, "MXF": {"side": "short"},
+lp.ledger_positions = lambda *a: {"TMF": {"side": "long"}, "MXF": {"side": "short"},
                                "BTCUSDT": {"side": "long"}}
 cl._in_workspace(cl._cmd_close_all, {})
 check((_listener_rows() or [{}])[-1].get("symbols") == "TMF",
@@ -372,6 +383,7 @@ cl._in_workspace(cl._cmd_close_all, {})
 check((_listener_rows() or [{}])[-1].get("symbols") == "MXF,TMF,TXF,TXO22000J6",
       f"listener + self_ledger unreadable → falls back to listing all ({(_listener_rows() or [{}])[-1]})")
 lp.load_portfolio_config, lp.ledger_positions = _real_cfg, _real_ledger
+lp._load_ledger_seed = _real_seed
 check(cl._CAPITAL_BOOK_KEY == flatten._CAPITAL_BOOK_KEY
       and cl._CAPITAL_FUT_RE.pattern == flatten._CAPITAL_FUT_RE.pattern,
       "listener and flatten map 群益 contracts to the same book keys")

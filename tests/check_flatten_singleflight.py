@@ -117,7 +117,7 @@ flatten.guard = types.SimpleNamespace(
     restart_stopped=lambda: False)
 flatten._wait_for_inflight = lambda *a, **k: touched.append("inflight") or []
 flatten.load_portfolio_config = lambda: touched.append("cfg") or {}
-flatten.zero_ledger_symbols = lambda s: touched.append("zero")
+flatten.zero_ledger_symbols = lambda s, venue=None: touched.append("zero")
 
 check(flatten.flatten() == flatten.ALREADY_RUNNING,
       "flatten() under a held lock returns ALREADY_RUNNING")
@@ -139,7 +139,9 @@ third.wait()
 # ── 4. alone, it runs to the end ───────────────────────────────────────────
 touched.clear()
 check(flatten.flatten() is True, "a lone flatten runs and reports success")
-check("zero" in touched and "env" in touched,
+# no venue bound → nothing to zero (the book is zeroed per venue); the work is the
+# env read and the in-flight wait, both after the lock
+check("inflight" in touched and "env" in touched,
       f"...having actually done the work ({touched})")
 flatten._LOCK = None  # drop the lock this process now holds, for section 5
 (flatten.LOCK_PATH, flatten._read_env, flatten.guard, flatten._wait_for_inflight,

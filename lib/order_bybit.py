@@ -9,6 +9,8 @@ halt + audit built into the transport.
 
 All functions take `env` (dotenv dict) first. `direction` is always the POSITION's
 direction ('long' / 'short'); position mode (one-way vs hedge) is auto-detected.
+BYBIT_DEMO=true routes every request to Bybit Demo Trading (api-demo.bybit.com,
+demo keys).
 
 Bybit facts, all measured live on a UTA account 2026-09-09:
 - SL/TP are NATIVE and atomic — passed on /v5/order/create itself, no algo-order
@@ -24,6 +26,7 @@ Bybit facts, all measured live on a UTA account 2026-09-09:
 """
 
 import json
+import os
 import time
 from decimal import ROUND_DOWN, Decimal
 
@@ -31,9 +34,15 @@ import requests
 
 from lib import guard
 
-HOST = "https://api.bybit.com"
-RECV_WINDOW = "5000"
+LIVE_HOST = "https://api.bybit.com"
+# Demo Trading, not testnet: keys come from the mainnet login and prices track
+# the live book. It serves only a listed subset of v5 (no /v5/user/query-api,
+# no FUND wallet, no deposit/withdraw history) — see lib/account_bybit.py.
+DEMO_HOST = "https://api-demo.bybit.com"
+RECV_WINDOW = "5000"  # Bybit's documented default; a late request retries once (_sync_time)
 BROKER_REFERER = "Ue001036"  # broker attribution — MANDATORY on every request
+TIMESTAMP_ERROR = 10002  # timestamp outside [server − recv_window, server + 1000)
+_time_offset = {"ms": 0}  # Bybit's clock − ours, set by _sync_time
 
 _RULES_CACHE = {}
 
@@ -48,6 +57,35 @@ _GONE = {"cancelled", "canceled", "rejected", "deactivated",
 _POST_ONLY_REJECT = "ec_postonlywilltakeliquidity"
 # cancel of an order that is already gone (filled/cancelled) OR never existed
 _CANCEL_GONE_CODE = 110001
+
+
+def _demo(env):
+    return str(env.get("BYBIT_DEMO", os.environ.get("BYBIT_DEMO", ""))).lower() == "true"
+
+
+def _host(env):
+    return DEMO_HOST if _demo(env) else LIVE_HOST
+
+
+def _now_ms():
+    return int(time.time() * 1000) + _time_offset["ms"]
+
+
+def _sync_time(env):
+    """After a 10002: measure our clock against Bybit's (/v5/market/time, public)
+    so the retry and every later request carry a timestamp it accepts. Measured
+    on demo: a request that took 6.1 s to arrive (clock itself 0.1 s off) — the
+    retry's fresh timestamp is what fixes that one. A failed read keeps the old
+    offset; the retry still goes out."""
+    try:
+        t0 = time.time()
+        r = requests.get(f"{_host(env)}/v5/market/time", headers={"referer": BROKER_REFERER},
+                         timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["result"]["timeNano"]) // 1_000_000
+        _time_offset["ms"] = server_ms - int((t0 + t1) / 2 * 1000)
+    except Exception:
+        pass
 
 
 class BybitError(Exception):
@@ -118,7 +156,9 @@ def _request(env, method, path, params=None, body=None, retries=3):
     fields = {k: (body or {})[k] for k in _AUDIT_KEYS if k in (body or {})}
     fields["intent"] = intent
     guard.check_restart_stop(intent, fields)
-    if intent == "entry" and guard.halted():
+    guard.check_account_hold("bybit", intent, fields)
+    fields["demo"] = _demo(env)
+    if intent == "entry" and guard.entry_blocked():
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
@@ -141,15 +181,16 @@ def _send(env, method, path, params=None, body=None, retries=3):
     import hashlib
     import hmac
     last_err = None
+    resynced = False
     for attempt in range(retries):
-        ts = str(int(time.time() * 1000))
+        ts = str(_now_ms())
         if method.upper() == "GET":
             payload = "&".join(f"{k}={v}" for k, v in (params or {}).items())
-            url = f"{HOST}{path}" + (f"?{payload}" if payload else "")
+            url = f"{_host(env)}{path}" + (f"?{payload}" if payload else "")
             data = None
         else:
             payload = json.dumps(body or {}, separators=(",", ":"))
-            url = f"{HOST}{path}"
+            url = f"{_host(env)}{path}"
             data = payload
         sign = hmac.new(secret.encode(),
                         (ts + api_key + RECV_WINDOW + payload).encode(),
@@ -197,6 +238,13 @@ def _send(env, method, path, params=None, body=None, retries=3):
         # API KEY — it reaches logs and the web connect-failure page.
         if api_key and api_key in msg:
             msg = msg.replace(api_key, "***")
+        if code == TIMESTAMP_ERROR and not resynced and attempt < retries - 1:
+            # rejected before it was processed — resending cannot double anything
+            resynced = True
+            _sync_time(env)
+            last_err = BybitError(f"bybit {path} retCode={code}: {msg}",
+                                  code=code, http_status=r.status_code)
+            continue
         if code == 10006 and attempt < retries - 1:  # rate limited — back off
             time.sleep(1 + attempt * 2)
             last_err = BybitError(f"bybit {path} retCode={code}: {msg}",
@@ -222,8 +270,8 @@ def _lookup_by_link_id(env, category, link_id):
     return None
 
 
-def _public(path, params):
-    r = requests.get(f"{HOST}{path}", params=params,
+def _public(env, path, params):
+    r = requests.get(f"{_host(env)}{path}", params=params,
                      headers={"referer": BROKER_REFERER}, timeout=10)
     r.raise_for_status()
     body = r.json()
@@ -267,7 +315,7 @@ def get_contract_rules(env: dict, symbol: str) -> dict:
     Bybit linear qty IS base units, never a contract count."""
     key = ("linear", symbol)
     if key not in _RULES_CACHE:
-        rows = _public("/v5/market/instruments-info",
+        rows = _public(env, "/v5/market/instruments-info",
                        {"category": "linear", "symbol": symbol}).get("list") or []
         if not rows:
             raise BybitError(f"bybit: unknown linear symbol {symbol}")
@@ -376,6 +424,7 @@ def place_market_order(env: dict, symbol: str, direction: str, qty: float,
     """Confirmed market order. qty is BASE currency. Returns exchange-reported
     fills, or False when the size is below the venue minimum (intentional skip,
     not an error — no phantom-trade notification)."""
+    guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     rules = get_contract_rules(env, symbol)
     step = rules["step"]
     sized = _floor_to(abs(float(qty)), step)
@@ -493,7 +542,7 @@ def open_position(env: dict, symbol: str, direction: str, qty: float,
 def get_bbo(env: dict, symbol: str) -> dict:
     """True best bid/ask — the ticker carries them directly; never substitute
     mark or last price."""
-    t = (_public("/v5/market/tickers",
+    t = (_public(env, "/v5/market/tickers",
                  {"category": "linear", "symbol": symbol}).get("list") or [{}])[0]
     return {"bid": float(t["bid1Price"]), "ask": float(t["ask1Price"])}
 
@@ -504,14 +553,14 @@ def get_mark_price(env: dict, symbol: str) -> float:
     lib/execute._venue_min_slice_usd. Falls back to lastPrice: a ticker without
     markPrice must not read as 0, which would collapse the min-slice gate to
     the flat floor and re-open the abort/re-dispatch loop it exists to stop."""
-    t = (_public("/v5/market/tickers",
+    t = (_public(env, "/v5/market/tickers",
                  {"category": "linear", "symbol": symbol}).get("list") or [{}])[0]
     return float(t.get("markPrice") or t.get("lastPrice"))
 
 
 def get_spot_price(env: dict, symbol: str) -> float:
     """Last spot price (public)."""
-    t = (_public("/v5/market/tickers",
+    t = (_public(env, "/v5/market/tickers",
                  {"category": "spot", "symbol": symbol}).get("list") or [{}])[0]
     return float(t["lastPrice"])
 
@@ -667,7 +716,7 @@ def get_spot_rules(env: dict, symbol: str) -> dict:
     rejected with retCode 170140)."""
     key = ("spot", symbol)
     if key not in _RULES_CACHE:
-        rows = _public("/v5/market/instruments-info",
+        rows = _public(env, "/v5/market/instruments-info",
                        {"category": "spot", "symbol": symbol}).get("list") or []
         if not rows:
             raise BybitError(f"bybit: unknown spot symbol {symbol}")
@@ -689,7 +738,7 @@ def format_spot_qty(env: dict, symbol: str, qty: float) -> str:
 
 
 def get_spot_bbo(env: dict, symbol: str) -> dict:
-    t = (_public("/v5/market/tickers",
+    t = (_public(env, "/v5/market/tickers",
                  {"category": "spot", "symbol": symbol}).get("list") or [{}])[0]
     return {"bid": float(t["bid1Price"]), "ask": float(t["ask1Price"])}
 
@@ -800,6 +849,8 @@ def get_spot_order(env: dict, symbol: str, order_id: str) -> dict:
         "orig_qty": float(row.get("qty") or 0),
         "executed_qty": float(row.get("cumExecQty") or 0),
         "avg_price": float(avg) if avg not in (None, "") else 0.0,
+        # the order's fee (a spot buy's is the base coin — place_spot_market_order)
+        "commission": float(row.get("cumExecFee") or 0),
     }
 
 

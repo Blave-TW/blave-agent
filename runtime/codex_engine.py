@@ -242,8 +242,13 @@ def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None):
         picked += ["-c", f"model_reasoning_effort={effort}"]
     if mcp_url:
         # `-c` values are TOML, so strings carry their own quotes (spawn has no shell).
+        # exec pins approval_policy=never, and Codex treats an MCP tool with no annotations as
+        # needing approval — so without this every `blave` call is denied before it is sent
+        # (core/src/mcp_tool_call.rs). Scoped to this one server; a misspelled key is silently
+        # ignored, which only tests/check_codex_mcp_live.py (real binary) would catch.
         picked += ["-c", f'mcp_servers.blave.url="{mcp_url}"',
                    "-c", f'mcp_servers.blave.bearer_token_env_var="{MCP_TOKEN_ENV}"',
+                   "-c", 'mcp_servers.blave.default_tools_approval_mode="approve"',
                    *_MCP_ENV_FLAGS]
     return [
         codex_bin, "exec", "--json", "--ephemeral", "--skip-git-repo-check", *picked,

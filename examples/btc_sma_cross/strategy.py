@@ -14,7 +14,7 @@ SYMBOL        = "BTCUSDT"
 INTERVAL      = "1h"
 START         = "2022-01-01"
 END           = None
-FEE           = 0.0005
+FEE           = 0.0005            # per side: Binance USDT-M taker 0.05%
 
 SMA_FAST = 45
 SMA_SLOW = 100

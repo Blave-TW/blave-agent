@@ -12,7 +12,7 @@ const { spawn } = require("child_process");
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
-  "restart_reconciler", "retest_accounts", "close_all"]);
+  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm"]);
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -29,18 +29,30 @@ const LOCK_SETTLE_MS = 3000;          // exit 3 在 python 起來的頭一兩秒
    之後才用 send(…, { trusted: true }) 送,那時認 TRUSTED_CRED_KEYS。renderer 被攻破也繞不過那道檢查。
    解除綁定是安全方向,renderer 可以拿掉兩種。 */
 const CRED_KEYS = { PAPER_API_KEY: /^paper$/, PAPER_SECRET_KEY: /^paper$/, PAPER_BOUND_TS: /^\d{9,11}$/ };
-const TRUSTED_CRED_KEYS = { BINANCE_API_KEY: /^[A-Za-z0-9]{16,128}$/, BINANCE_SECRET_KEY: /^[A-Za-z0-9]{16,128}$/ };
+/* trusted(主行程送的)那條路,一家一組:payload 必須**剛好是其中一組**(多一個、少一個都不收——半把金鑰留在 .env 比沒有更糟)。
+   Binance 的形狀照 binance_link;OKX / BingX / Gate.io / Bybit 的金鑰長相各不同(OKX 是帶連字號的 UUID),只擋明顯不是金鑰的,
+   同 cloudcmd.js KEY_SHAPE / PASS_SHAPE;名字同 cloudcmd.CONNECT_VENUES(= 網頁 CX_VENUES) */
+const BN_KEY = /^[A-Za-z0-9]{16,128}$/, ANY_KEY = /^[\x21-\x7e]{4,256}$/, PASSPHRASE = /^[^\r\n]{1,256}$/;
+const TRUSTED_SETS = [
+  { BINANCE_API_KEY: BN_KEY, BINANCE_SECRET_KEY: BN_KEY },
+  { OKX_API_KEY: ANY_KEY, OKX_SECRET_KEY: ANY_KEY, OKX_PASSPHRASE: PASSPHRASE },
+  { BINGX_API_KEY: ANY_KEY, BINGX_SECRET_KEY: ANY_KEY },
+  { GATEIO_API_KEY: ANY_KEY, GATEIO_SECRET_KEY: ANY_KEY },
+  { BYBIT_API_KEY: ANY_KEY, BYBIT_SECRET_KEY: ANY_KEY },
+];
+const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
 const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS)]);
+const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
 function argsOk(cmd, a, trusted) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const keys = Object.keys(a);
   if (cmd === "credentials") {
-    const env = a.env, allow = trusted === true ? TRUSTED_CRED_KEYS : CRED_KEYS;
-    // trusted 的那包必須剛好是一整對:只送一半會在 .env 留下半把金鑰
-    return keys.length === 1 && env && typeof env === "object" && !Array.isArray(env) && Object.keys(env).length > 0
-      && (trusted !== true || Object.keys(env).length === Object.keys(allow).length)
-      && Object.keys(env).every((k) => Object.prototype.hasOwnProperty.call(allow, k) && typeof env[k] === "string" && allow[k].test(env[k]));
+    const env = a.env;
+    if (!(keys.length === 1 && env && typeof env === "object" && !Array.isArray(env) && Object.keys(env).length > 0)) return false;
+    // trusted 的那包必須剛好是某一家的一整組:只送一半會在 .env 留下半把金鑰
+    const allow = trusted === true ? TRUSTED_SETS.find((s) => sameKeys(env, s)) : CRED_KEYS;
+    return !!allow && Object.keys(env).every((k) => Object.prototype.hasOwnProperty.call(allow, k) && typeof env[k] === "string" && allow[k].test(env[k]));
   }
   // 解除綁定只准拿掉這一版認得的憑證 key(handler 自己也永遠不刪 blave_*)
   if (cmd === "credentials_remove") return keys.length === 1 && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
@@ -52,6 +64,8 @@ function argsOk(cmd, a, trusted) {
   }
   if (cmd === "resume" || cmd === "resume_wait") return keys.every((k) => k === "strategies") && (a.strategies === undefined
     || (Array.isArray(a.strategies) && a.strategies.length > 0 && a.strategies.length <= 200 && a.strategies.every((n) => typeof n === "string" && NAME_RE.test(n))));
+  // 換金鑰後「還是同一個帳戶嗎」的回答:剛好 venue + same 兩個欄位,不帶任何祕密(同機器端 _cmd_book_account_confirm 的規則)
+  if (cmd === "book_account_confirm") return keys.length === 2 && typeof a.venue === "string" && /^[a-z0-9]{2,20}$/.test(a.venue) && typeof a.same === "boolean";
   if (cmd === "halt") return keys.every((k) => k === "reason") && (a.reason === undefined || (typeof a.reason === "string" && a.reason.length <= 200));
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
@@ -194,9 +208,22 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     const id = Object.keys(v).filter((k) => v[k] && v[k].credentials && v[k].account).sort()[0];
     const e = id && a[id];
     // bound:這次綁定的身分。解除後再綁同一家(不論從畫面或從聊天)bound 會換,曲線就不會連成一條(稽核 S9)
-    const bound = boundTs(id);
-    return e && e.ok && typeof e.equity === "number" && isFinite(e.equity) ? { venue: id, equity: e.equity, currency: e.currency || "USDT", bound } : null;
+    const bound = boundTs(id), tot = e && e.ok ? liveTotal(e) : null;
+    return tot ? { venue: id, equity: tot.v, basis: tot.basis, partial: tot.partial, currency: e.currency || "USDT", bound } : null;
   }
+  /* 曲線記的是整個帳戶(各錢包加總,沒有才退回 equity),跟畫面 trLiveTotal 與平台 agent_equity_snapshot 同一條:
+     equity 只是下單那個錢包,拿它畫曲線會跟上面的總權益對不起來。basis = 這個數字是哪一種:
+     "wallets" 各錢包加總、"equity" 只有下單錢包(模擬帳戶、沒有錢包分佈的 lib、0.0.4 記的每一個點)。
+     partial = lib 說這一輪錢包分佈讀失敗、accounts 只剩下單錢包:不記點、不算當日損益 */
+  function liveTotal(e) {
+    const a = e.accounts;
+    if (a && typeof a === "object" && !Array.isArray(a)) {
+      const vs = Object.keys(a).map((k) => a[k]);
+      if (vs.length && vs.every((v) => typeof v === "number" && isFinite(v))) return { v: vs.reduce((s, v) => s + v, 0), basis: "wallets", partial: e.accounts_partial === true };
+    }
+    return typeof e.equity === "number" && isFinite(e.equity) ? { v: e.equity, basis: "equity", partial: false } : null;
+  }
+  const eqBasis = (r) => r.basis || "equity";   // 沒有 basis 的點 = 0.0.4 記的,那時只算下單錢包
   // <VENUE>_BOUND_TS 是綁定當下寫進 .env 的時間戳(不是秘密);只讀這一行,不碰其他 key
   function boundTs(id) {
     try {
@@ -207,15 +234,16 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   function eqAppend(row) { try { fs.appendFileSync(eqFile, JSON.stringify(row) + "\n", { mode: 0o600 }); } catch (_) { /* 記不到就少一個點 */ } }
   function eqTick() {
     const st = status(); if (!st.alive) return;
-    const acc = liveAccount(st.report); if (!acc) return;
+    const acc = liveAccount(st.report); if (!acc || acc.partial) return;
     const ts = Math.floor(Date.now() / 1000), bucket = Math.floor(ts / 3600);
-    if (eqLast && eqLast.venue === acc.venue && eqLast.bucket === bucket) return;
+    // 同一小時同一帳戶只記一筆——口徑換了(升級那一刻)照記,新口徑的第一個點不等到下一個整點
+    if (eqLast && eqLast.venue === acc.venue && eqLast.bucket === bucket && eqLast.basis === acc.basis) return;
     if (!eqLast) {   // 行程剛起來:看檔尾,同一小時已經記過就不重記
       const rows = eqRead(); const last = rows[rows.length - 1];
-      if (last && !last.reset && last.venue === acc.venue && Math.floor(last.ts / 3600) === bucket) { eqLast = { venue: acc.venue, bucket }; return; }
+      if (last && !last.reset && last.venue === acc.venue && Math.floor(last.ts / 3600) === bucket && eqBasis(last) === acc.basis) { eqLast = { venue: acc.venue, bucket, basis: acc.basis }; return; }
     }
-    eqAppend({ ts, venue: acc.venue, equity: acc.equity, currency: acc.currency, ...(acc.bound ? { bound: acc.bound } : {}) });
-    eqLast = { venue: acc.venue, bucket };
+    eqAppend({ ts, venue: acc.venue, equity: acc.equity, basis: acc.basis, currency: acc.currency, ...(acc.bound ? { bound: acc.bound } : {}) });
+    eqLast = { venue: acc.venue, bucket, basis: acc.basis };
   }
   function eqRead() {
     let txt = ""; try { txt = fs.readFileSync(eqFile, "utf8"); } catch (_) { return []; }
@@ -232,14 +260,19 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     let pts = rows.slice(from).filter((r) => !r.reset && typeof r.equity === "number" && isFinite(r.equity) && (!acc || r.venue === acc.venue));
     if (acc && acc.bound) { const i = pts.findIndex((r) => r.bound === acc.bound); pts = i >= 0 ? pts.slice(i).filter((r) => r.bound === acc.bound) : pts.filter((r) => !r.bound); }
     const baseline = pts.length ? pts[0].ts : null;
+    // 當日損益只在同一個口徑裡算:從最後一次換口徑之後的點找基準(只算合約錢包的舊點減全帳戶的新值 = 把現貨、資金當成獲利)
+    const cur = acc ? acc.basis : pts.length ? eqBasis(pts[pts.length - 1]) : null;
+    let run = pts.length;
+    while (run > 0 && eqBasis(pts[run - 1]) === cur) run--;
+    const same = pts.slice(run);
     const mid = new Date(); mid.setHours(0, 0, 0, 0); const midS = mid.getTime() / 1000;
-    const before = pts.filter((r) => r.ts < midS).pop(), first = pts.find((r) => r.ts >= midS);
+    const before = same.filter((r) => r.ts < midS).pop(), first = same.find((r) => r.ts >= midS);
     // 「昨天最後一點」太舊(app 好幾天沒開)就不是今天的基準:退到今天第一點;兩個都沒有 → 不報當日損益
     const start = (before && midS - before.ts <= 12 * 3600 ? before : null) || first || null;
-    const today = acc && start ? { pnl: acc.equity - start.equity, start_equity: start.equity } : null;
+    const today = acc && !acc.partial && start ? { pnl: acc.equity - start.equity, start_equity: start.equity } : null;
     const d = Number(days) > 0 ? Math.min(Number(days), 3660) : 90;
     pts = pts.filter((r) => r.ts >= Date.now() / 1000 - d * 86400);
-    return { curve: pts.map((r) => ({ ts: r.ts, equity: r.equity })), currency: (acc && acc.currency) || "USDT", baseline_ts: baseline, today, unrealized: null };
+    return { curve: pts.map((r) => ({ ts: r.ts, equity: r.equity, basis: eqBasis(r) })), currency: (acc && acc.currency) || "USDT", baseline_ts: baseline, today, unrealized: null };
   }
 
   /* 用戶在畫面上做的事(暫停 / 恢復 / 連接 / 解除)。雲端這些來自平台的事件流;電腦版沒有那一層,

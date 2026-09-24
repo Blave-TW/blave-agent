@@ -2,7 +2,7 @@
 # Type:     C (multi-asset, weight-based)
 # Universe: Taiwan 100 stocks across sectors
 # Signal:   外資買超 time-series z-score → positive z → proportional weight
-# Rebalance: weekly (last trading day of each ISO week)
+# Rebalance: weekly (first trading day of each ISO week)
 
 import sys
 from pathlib import Path
@@ -13,7 +13,7 @@ STRATEGY_NAME = "tw100_foreign_zscore"
 INTERVAL      = "1d"
 START         = "2010-01-01"
 END           = None
-FEE           = 0.003        # ~0.3% 證交稅 + 手續費（賣方含稅）
+FEE           = 0.003        # 單邊(per side):手續費 0.1425% ×2 + 證交稅 0.3%(賣方)平均 ≈ 0.29%
 
 ACCUM_WINDOW   = 40
 ZSCORE_WINDOW  = 252         # 標準化視窗：1 年
@@ -62,19 +62,19 @@ def _compute_weights(signal_df, is_rebalance):
 
 
 def _rebalance_mask(idx, freq='W'):
-    """Return bool numpy array — True on rebalance bars (last bar of each period)."""
+    """Return bool numpy array — True on rebalance bars (first bar of each period)."""
     import pandas as pd
     import numpy as np
     if freq == 'D':
         return np.ones(len(idx), dtype=bool)
     s = pd.Series(idx.to_period(freq), index=idx)
-    return (s != s.shift(-1)).fillna(True).to_numpy()
+    return (s != s.shift(1)).to_numpy()
 
 
 # ── fetch_data ────────────────────────────────────────────────────────────────
 def fetch_data(hdrs):
     import pandas as pd
-    from lib.data import fetch_twstock_price_adj_batch, fetch_twstock_institutional_batch
+    from lib.data import fetch_twstock_price_adj_batch, fetch_twstock_institutional_batch, align_feed
 
     # Batch fetch — one /batch request per ≤50 ids (concurrent), not one per stock.
     # 100 stocks: ~minutes (per-stock single fetch) → seconds. See references/twstock.md.
@@ -95,8 +95,13 @@ def fetch_data(hdrs):
     close_df   = pd.DataFrame(closes).sort_index().dropna(how='all')
     if close_df.empty:
         raise RuntimeError("fetch_data: no price data — check UNIVERSE, credentials, and START/END dates")
+    # 法人資料依「公布時間」接到 K 棒(當日 20:00 公布 → 日 K 當根可用);上線時當日資料
+    # 還沒進來就拒算,不拿前一天的數字頂替(references/strategy-code.md › External data)
+    foreign_df = (align_feed(close_df, pd.DataFrame(foreign_nets), 'twstock_institutional_batch',
+                             INTERVAL, bar_tz='Asia/Taipei').fillna(0)
+                  if foreign_nets else pd.DataFrame(index=close_df.index))
+    close_df   = close_df.loc[foreign_df.index]
     open_df    = pd.DataFrame(opens).reindex(close_df.index)
-    foreign_df = pd.DataFrame(foreign_nets).reindex(close_df.index).fillna(0)
     return close_df, open_df, foreign_df
 
 
@@ -110,6 +115,9 @@ def compute_signals(data, accum_window=ACCUM_WINDOW, zscore_window=ZSCORE_WINDOW
     signal       = _compute_signal(foreign_df, accum_window, zscore_window)
     is_rebalance = _rebalance_mask(close_df.index, freq=rebalance_freq)
     weights      = _compute_weights(signal, is_rebalance)
+    # foreign_df only has stocks with flow data; the runner pairs weight column j with
+    # price_df column j, so align by name and give the rest 0
+    weights      = weights.reindex(columns=close_df.columns, fill_value=0.0)
 
     price_df = pd.concat({'close': close_df, 'open': open_df}, axis=1)
     return weights.values, price_df   # weights MUST be numpy array

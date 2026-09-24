@@ -13,7 +13,7 @@ SYMBOL        = "2317"
 INTERVAL      = "1d"
 START         = "2022-01-01"
 END           = None
-FEE           = 0.003
+FEE           = 0.003          # 單邊(per side):手續費 0.1425% ×2 + 證交稅 0.3%(賣方)平均 ≈ 0.29%
 
 WINDOW     = 5
 ZSCORE_WIN = 120
@@ -46,7 +46,7 @@ def _add_indicators(df, window=WINDOW, zscore_win=ZSCORE_WIN):
 
 # ── fetch_data ────────────────────────────────────────────────────────────────
 def fetch_data(hdrs):
-    from lib.data import fetch_twstock_price_adj_batch, fetch_twstock_branch_daily_net
+    from lib.data import fetch_twstock_price_adj_batch, fetch_twstock_branch_daily_net, align_feed
 
     print(f"Fetching price data for {SYMBOL}...")
     price_all = fetch_twstock_price_adj_batch([SYMBOL], START, END, hdrs)
@@ -56,6 +56,11 @@ def fetch_data(hdrs):
 
     print("Fetching branch data...")
     branch_df = fetch_twstock_branch_daily_net(SYMBOL, START, END, hdrs)
+    # 分點資料依「公布時間」接到 K 棒;上線時當日資料還沒進來就拒算,不拿前一天頂替
+    # (references/strategy-code.md › External data)
+    branch_df = align_feed(price_df, branch_df, 'twstock_branch_daily_net', INTERVAL,
+                           bar_tz='Asia/Taipei')
+    price_df  = price_df.loc[branch_df.index]
     price_df.attrs['branch_df'] = branch_df
     return price_df
 

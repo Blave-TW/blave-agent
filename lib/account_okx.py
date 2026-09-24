@@ -12,7 +12,9 @@ import base64
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+import os
+import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import requests
@@ -29,10 +31,39 @@ def _tag(exc, code=None, http_status=None):
 
 BASE_URL = "https://www.okx.com"
 
+# acctLv "1" (Spot mode) cannot hold perpetual swaps: every swap order is refused
+# with 51010. The message is what the user sees; the token is what the desktop and
+# web match on. Same pair in lib/order_okx.py (files update one at a time).
+ACCOUNT_MODE_TOKEN = "okx_account_mode"
+ACCOUNT_MODE_MSG = "OKX 帳戶模式不支援合約：到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金"
+
+
+class AccountModeError(Exception):
+    """The OKX account is in a mode that cannot trade perpetual swaps."""
+
+
+_time_offset = {"ms": 0}  # OKX's clock − ours — same scheme as lib/order_okx.py
+
+
+def _sync_time(env):
+    """After a 50102 ("Timestamp request expired": OKX accepts ±30 s): offset
+    against OKX's own clock (/api/v5/public/time), best-effort — see lib/order_okx._sync_time."""
+    headers = {"User-Agent": "Mozilla/5.0"}
+    if str(env.get("OKX_DEMO", os.environ.get("OKX_DEMO", ""))).lower() == "true":
+        headers["x-simulated-trading"] = "1"
+    try:
+        t0 = time.time()
+        r = requests.get(f"{BASE_URL}/api/v5/public/time", headers=headers, timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["data"][0]["ts"])
+        _time_offset["ms"] = server_ms - int((t0 + t1) / 2 * 1000)
+    except Exception:
+        pass
+
 
 def _timestamp():
     """ISO 8601 ms UTC: 2024-01-01T00:00:00.000Z"""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(milliseconds=_time_offset["ms"])
     return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
 
@@ -43,7 +74,7 @@ def _sign(secret, ts, method, path, body=""):
     ).decode()
 
 
-def _request(env, method, path, body=None, timeout=10):
+def _request(env, method, path, body=None, timeout=10, _resynced=False):
     api_key = env.get("OKX_API_KEY")
     secret = env.get("OKX_SECRET_KEY")
     passphrase = env.get("OKX_PASSPHRASE")
@@ -65,7 +96,7 @@ def _request(env, method, path, body=None, timeout=10):
         "User-Agent": "Mozilla/5.0",
     }
     # OKX demo trading (paired with demo-mode keys) — same flag as order_okx.py
-    if str(env.get("OKX_DEMO", "")).lower() == "true":
+    if str(env.get("OKX_DEMO", os.environ.get("OKX_DEMO", ""))).lower() == "true":
         headers["x-simulated-trading"] = "1"
 
     if method == "POST":
@@ -81,9 +112,28 @@ def _request(env, method, path, body=None, timeout=10):
     code = data.get("code", "")
     if code != "0":
         msg = data.get("msg", "")
+        if str(code) == "50102" and not _resynced:  # timestamp expired: resync, retry once
+            _sync_time(env)
+            return _request(env, method, path, body, timeout, _resynced=True)
+        if str(code) == "51010":  # "Request unsupported under current account mode"
+            raise _tag(AccountModeError(f"{ACCOUNT_MODE_MSG} [{ACCOUNT_MODE_TOKEN}] "
+                                        f"(OKX {code}: {msg} | {method} {path})"),
+                       code=code, http_status=r.status_code)
         raise _tag(Exception(f"OKX error {code}: {msg} | {method} {path}"),
                                code=code, http_status=r.status_code)
     return data.get("data", [])
+
+
+def check_account_mode(env: dict) -> str:
+    """acctLv of the account ('2' futures, '3' multi-currency, '4' portfolio
+    margin). Raises AccountModeError on '1' (Spot mode): the bind and every
+    account read then say what to change before the first order is refused."""
+    rows = _request(env, "GET", "/api/v5/account/config")
+    lv = str((rows[0] if rows else {}).get("acctLv") or "")
+    if lv == "1":
+        raise _tag(AccountModeError(f"{ACCOUNT_MODE_MSG} [{ACCOUNT_MODE_TOKEN}] (acctLv=1)"),
+                   code=ACCOUNT_MODE_TOKEN)
+    return lv
 
 
 def get_equity(env: dict) -> dict:
@@ -94,7 +144,11 @@ def get_equity(env: dict) -> dict:
     account (spot and derivatives share it; `totalEq` is USD-denominated),
     and /api/v5/asset/balances is the separate FUNDING wallet (USDT summed
     here). `equity` = the trading account — the wallet orders draw on.
+
+    Raises AccountModeError on an account in Spot mode (check_account_mode) —
+    this is the read the bind, the desktop gate and the cloud retest go through.
     """
+    check_account_mode(env)
     rows = _request(env, "GET", "/api/v5/account/balance")
     trading = 0.0
     for acct in rows:

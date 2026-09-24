@@ -9,29 +9,50 @@ const cut = (from, to) => { const a = src.indexOf(from), b = src.indexOf(to, a);
 let red = 0; const t_ = (name, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + name); if (!ok) red++; };
 const J = (x) => JSON.stringify(x);
 
-// ── aiParts ──
+// ── aiParts(原文 → { cards, blocks }) ──
 eval(cut("const CARD_TAG", "function paintAi").replace(/^const /gm, "var "));
-const kinds = (r) => r.parts.map((p) => Object.keys(p)[0]).join(",");
+// 整份結構裡的字(依序接起來)與所有節點種類
+const walk = (x, f) => { if (Array.isArray(x)) return x.forEach((y) => walk(y, f)); if (x && typeof x === "object") { f(x); Object.values(x).forEach((y) => walk(y, f)); } };
+const textOf = (r) => { let o = ""; walk(r.blocks, (n) => { if (typeof n.text === "string") o += n.text; if (typeof n.code === "string") o += n.code; if (n.br) o += "\n"; }); return o; };
+const kinds = (r) => { const k = new Set(); walk(r.blocks, (n) => Object.keys(n).forEach((x) => k.add(x))); return k; };
 let r = aiParts("這是 **粗體** 與 `code`。", false);
-t_("粗體與行內程式碼各自成段", kinds(r) === "text,strong,text,code,text" && r.parts[1].strong === "粗體" && r.parts[3].code === "code");
+t_("粗體與行內程式碼各自成段", J(r.blocks) === J([{ p: [{ text: "這是 " }, { strong: [{ text: "粗體" }] }, { text: " 與 " }, { code: "code" }, { text: "。" }] }]));
 r = aiParts("看這段:\n```python\nf(**a, **b)\nx = 2**3**2\n```\n完", false);
-t_("``` 圍欄裡的 ** 一個字都不動", r.parts.some((p) => p.text && p.text.includes("f(**a, **b)") && p.text.includes("2**3**2")) && !r.parts.some((p) => p.strong));
+t_("``` 圍欄裡的 ** 一個字都不動", r.blocks[1].code === "f(**a, **b)\nx = 2**3**2" && !kinds(r).has("strong"));
 r = aiParts("沒收尾的圍欄\n```\na**b**c", true);
-t_("串流中還沒收尾的圍欄也不動", !r.parts.some((p) => p.strong) && r.parts.some((p) => p.text && p.text.includes("a**b**c")));
+t_("串流中還沒收尾的圍欄也不動", r.blocks[1] && r.blocks[1].code === "a**b**c" && !kinds(r).has("strong"));
 r = aiParts("拿不到資料。\n<blave-card:data-access/>", false);
-t_("標記被剝掉、記進 cards、尾端空白收掉", J(r.cards) === J(["data-access"]) && r.parts.map((p) => p.text).join("") === "拿不到資料。");
+t_("標記被剝掉、記進 cards、尾端空白收掉", J(r.cards) === J(["data-access"]) && textOf(r) === "拿不到資料。");
 r = aiParts("拿不到資料。\n<blave-ca", true);
-t_("串流中的半截標記先藏起來", r.parts.map((p) => p.text).join("") === "拿不到資料。\n" && r.cards.length === 0);
+t_("串流中的半截標記先藏起來", textOf(r) === "拿不到資料。" && r.cards.length === 0);
 r = aiParts("結論是 a <", true);
-t_("串流中尾端單一個 < 先藏", r.parts.map((p) => p.text).join("") === "結論是 a ");
+t_("串流中尾端單一個 < 先藏", textOf(r) === "結論是 a");
 r = aiParts("結論是 a <", false);
-t_("定稿時真的以 < 結尾的回覆不被吃掉", r.parts.map((p) => p.text).join("") === "結論是 a <");
+t_("定稿時真的以 < 結尾的回覆不被吃掉", textOf(r) === "結論是 a <");
 r = aiParts("<b>不是標記</b> 與 <blave 開頭但不是", true);
-t_("不是標記的 < 不受影響", r.parts.map((p) => p.text || "").join("").includes("<b>不是標記</b>"));
-r = aiParts("<img src=x onerror=alert(1)> **x**", false);
-t_("只會產生 text / code / strong 三種片段(HTML 原樣當文字)", r.parts.every((p) => ["text", "code", "strong"].includes(Object.keys(p)[0])) && r.parts[0].text.includes("<img"));
+t_("不是標記的 < 不受影響", textOf(r).includes("<b>不是標記</b>"));
+r = aiParts("<img src=x onerror=alert(1)> **x** [y](javascript:alert(1))", false);
+t_("HTML 原樣當文字、javascript: 連結只剩字(結構裡沒有 html 這種節點、沒有非 http(s) 的 href)",
+  textOf(r).startsWith("<img src=x onerror=alert(1)>") && !kinds(r).has("html") && (() => { let bad = false; walk(r.blocks, (n) => { if (n.a && !/^https?:\/\//.test(n.a)) bad = true; }); return !bad; })());
+r = aiParts("| | 這台電腦 | 雲端主機 |\n|---|---|---|\n| 總報酬 | −17.54% | −17.55% |\n| 交易筆數 | 331 | 331 |", false);
+t_("GFM 表格:表頭 3 欄(第一格空白)、2 列", r.blocks.length === 1 && r.blocks[0].table && r.blocks[0].table.head.length === 3 &&
+  J(r.blocks[0].table.head[0]) === "[]" && r.blocks[0].table.rows.length === 2 && J(r.blocks[0].table.rows[0][1]) === J([{ text: "−17.54%" }]));
+r = aiParts("| a | b |\n|---|\n| 1 | 2 |", false);
+t_("分隔列欄數對不上就不是表格(GFM)", !kinds(r).has("table"));
+r = aiParts("- 一\n  - 一之一\n- 二\n\n1. x\n2. y", false);
+t_("巢狀清單:第一項底下有一份子清單;有序清單另成一份", r.blocks.length === 2 && r.blocks[0].list.items.length === 2 &&
+  r.blocks[0].list.items[0][1].list.items.length === 1 && r.blocks[1].list.ordered && r.blocks[1].list.items.length === 2);
+r = aiParts("### 標題\n範圍 0.1~2.38,~~刪掉~~", false);
+t_("### 標題;單一個 ~ 是字、~~ 才是刪除線(同網頁的 del 覆寫)", r.blocks[0].h === 3 && textOf(r).includes("0.1~2.38") && kinds(r).has("del"));
+r = aiParts("第一行\n第二行", false);
+t_("段落裡的換行畫成 <br>(同網頁 breaks: true)", J(r.blocks) === J([{ p: [{ text: "第一行" }, { br: true }, { text: "第二行" }] }]));
+r = aiParts("| a |\n|---|\n| 一<br>二<BR/>三 <b>四</b> |", false);
+t_("儲存格裡的 <br> 當換行(agent 在表格裡常用),其他標籤照樣是字", J(r.blocks[0].table.rows[0][0]) === J([{ text: "一" }, { br: true }, { text: "二" }, { br: true }, { text: "三 <b>四</b>" }]));
 const big = "<blave-card".repeat(20000); const t0 = Date.now(); aiParts(big, true);
 t_("大量未閉合標記不會卡住(< 500ms)", Date.now() - t0 < 500);
+const deep = ">".repeat(20000) + " x\n" + "- ".repeat(5000) + "y"; const t1 = Date.now(); let deepOk = true;
+try { aiParts(deep, false); } catch (_) { deepOk = false; }
+t_("幾萬層的 > 與 - 不會把堆疊撐爆、也不會卡住(< 1s)", deepOk && Date.now() - t1 < 1000);
 
 // ── planWatch ──
 var timers = [], now = 1_000_000, said = [], sr = [], painted = 0, checks = 0;

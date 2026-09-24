@@ -35,7 +35,7 @@ HOME = WS / "home"
 os.environ["BLAVECLAW_HOME"] = str(HOME)
 os.chdir(WS)
 os.makedirs("manager", exist_ok=True)
-open("manager/portfolio_config.json", "w").write("{}")
+open("manager/portfolio_config.json", "w").write('{"self_ledger": false}')  # account-read opt-out
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -167,14 +167,14 @@ check(e is None and len(rows) == 1 and rows[0].get("failed") is True
 # broken custom template: KeyError from .format must not raise or drop the fill
 if os.path.exists("manager/orders.jsonl"):
     os.remove("manager/orders.jsonl")
-json.dump({"messages": {"order_buy": "Bought {sym} {oops}"}},
+json.dump({"self_ledger": False, "messages": {"order_buy": "Bought {sym} {oops}"}},
           open("manager/portfolio_config.json", "w"))
 portfolio.aggregate_portfolio = lambda: {"AAAUSDT": TARGET["AAAUSDT"]}
 e = raises(lambda: portfolio.reconcile(lambda: {}, place_ok, threshold=10,
                                        send_telegram_fn=lambda m: None))
 check(e is None and [r["symbol"] for r in ledger_rows()] == ["AAAUSDT"],
       f"broken messages template: no exception, fill still in orders.jsonl ({e})")
-open("manager/portfolio_config.json", "w").write("{}")
+open("manager/portfolio_config.json", "w").write('{"self_ledger": false}')  # account-read opt-out
 
 # ── 3. reconciler: sender and HALT never raise ─────────────────────────────
 check(raises(lambda: rec.send_telegram("⚠️ round failed")) is None,
@@ -193,7 +193,9 @@ class _AcctLib:
 
 
 sys.modules["lib.account_fakevenue"] = _AcctLib
-check(rec._read_account_id("fakevenue", {}) is None, "account-id read stays fail-soft")
+_got = rec._read_account_id("fakevenue", {})
+check(_got[0] is None and _got[1].startswith("RuntimeError") and "SECRETSIG" not in _got[1],
+      f"account-id read never raises; the error is class and code only ({_got})")
 doc = (json.load(open(rec.ACCOUNT_ID_READ_PATH))
        if os.path.exists(rec.ACCOUNT_ID_READ_PATH) else {})
 check(doc.get("venue") == "fakevenue" and doc.get("supported") is True

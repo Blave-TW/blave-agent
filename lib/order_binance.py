@@ -3,8 +3,9 @@ Binance USDⓈ-M futures order execution library.
 
 Companion to lib/account_binance.py (equity/positions). Credentials:
 BINANCE_API_KEY, BINANCE_SECRET_KEY in .env. Set BINANCE_DEMO=true to run the
-same code against the futures testnet (demo-fapi.binance.com — needs testnet
-keys, unlike BingX's VST which reuses live keys).
+same code on Binance Demo Trading — futures demo-fapi.binance.com, spot
+demo-api.binance.com — with keys from demo.binance.com (unlike BingX's VST,
+which reuses live keys).
 
 Broker attribution (Blave) is PER ORDER on Binance, not a header: every order
 placement carries newClientOrderId starting with x-52DDFAFN (USDS-M futures
@@ -59,7 +60,9 @@ from lib import guard
 LIVE_URL = "https://fapi.binance.com"
 DEMO_URL = "https://demo-fapi.binance.com"  # futures testnet (testnet keys)
 SPOT_LIVE_URL = "https://api.binance.com"
-SPOT_DEMO_URL = "https://testnet.binance.vision"  # spot testnet (own keys)
+# Spot Demo Mode, same demo.binance.com keys as demo-fapi. Not testnet.binance.vision:
+# that is the separate Spot Test Network, whose keys demo keys are not.
+SPOT_DEMO_URL = "https://demo-api.binance.com"
 
 BROKER_PREFIX = "x-52DDFAFN"  # Blave USDS-M futures broker ID — every order
 CID_MAX = 36                  # Binance newClientOrderId hard limit
@@ -179,9 +182,10 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
     fields = {k: params[k] for k in _AUDIT_PARAM_KEYS if k in (params or {})}
     fields["intent"] = intent
     guard.check_restart_stop(intent, fields)
+    guard.check_account_hold("binance", intent, fields)
     fields["demo"] = _base(env) == DEMO_URL
 
-    if intent == "entry" and guard.halted():
+    if intent == "entry" and guard.entry_blocked():
         guard.audit("order_denied_halt", **fields)
         raise guard.Halted(
             f"state/HALT is set ({guard.halt_info()}) — entry order for "
@@ -382,6 +386,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     are rejected by Binance only while the original order is OPEN; a terminal
     order's id is reusable, so treat this as a retry-window guard, not a
     permanent ledger (see OrderNotConfirmed)."""
+    guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     symbol = _canonical(symbol)
     mode = get_position_mode(env)
     try:
@@ -525,6 +530,32 @@ def confirm_order(env, symbol, order_id, timeout=15):
     raise OrderNotConfirmed(
         f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
     )
+
+
+def _sum_by_asset(fills):
+    out = {}
+    for f in fills or []:
+        a = str(f.get("commissionAsset") or "").upper()
+        if a:
+            out[a] = out.get(a, 0.0) + abs(float(f.get("commission") or 0))
+    return out
+
+
+def get_spot_fill_fees(env, symbol, order_id):
+    """{ASSET: fee} over a spot order's fills (/api/v3/myTrades) — the spot
+    order query carries no fee. Summed per commissionAsset: a BNB-discount
+    account whose BNB runs out mid-order pays part in BNB, part in the coin.
+    myTrades lags the fill by a moment: retried once. None when it can't be
+    read (the caller falls back)."""
+    for attempt in range(2):
+        fills = _request("GET", "/api/v3/myTrades", env,
+                         {"symbol": _canonical(symbol), "orderId": str(order_id)},
+                         spot=True) or []
+        if fills:
+            return _sum_by_asset(fills)
+        if attempt == 0:
+            time.sleep(1)
+    return None
 
 
 def _order_commission(env, symbol, order_id):
@@ -912,6 +943,8 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
         commission = sum(abs(float(f.get("commission") or 0)) for f in fills
                          if f.get("commissionAsset") == commission_asset)
     return {
+        # every asset the fills paid in (BNB can run out mid-order: part BNB, part coin)
+        "commissions": _sum_by_asset(fills),
         "order_id": o.get("orderId", ""),
         "status": status,
         "avg_price": (quote / executed) if executed else 0.0,

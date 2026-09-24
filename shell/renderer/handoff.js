@@ -128,6 +128,18 @@ function hoAsk(dir, id, opener) {
   // 走到這裡 = 框真的開得起來(接著按確認就送出):意圖已經達成,那條回頭路不必再留。
   // 另外三個清的時機:人自己切視角(envSwitch)、按了「留在雲端」(hoStay)、重開 app(只在記憶體、不寫檔)
   if (dir === "up") { HO.pending = null; hoNote(null); }
+  // 來源那一支在它那一邊的下單設定裡(amounts / weights / exchanges 任一張表有這個名字,金額 0 也算;判準同雲端刪除 cdelInUse):
+  // agent 照 references/cloud-handoff.md 前置條件 3 不會搬——先在這裡講,不讓人按確認、等一輪、花額度才聽到。
+  // 讀不到設定(null)不預判,照舊交給 agent;deployments.json 這裡讀不到,那一半仍由 agent 把關。鈕不停用(同 51b 刪除)
+  const srcSt = dir === "up" ? TR_BAGS.local.st : TR_BAGS.cloud.st;
+  if (cdelInUse(srcSt && srcSt.report ? srcSt.report.config : null, id) === true) {
+    const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });
+    const p = document.createElement("p"); p.className = "cf-block"; p.textContent = dir === "up" ? t("ho.block.srcUp") : t("ho.block.srcDown");
+    // 什麼都不會搬:「會搬 / 不會搬」兩列不出(列出來就是假話);單一出口「知道了」
+    confirmBox({ title, lines: [], extra: p, ok: t("cdel.gotIt"), single: true, opener, env: ENV.cur === "cloud" ? "cloud" : undefined, onOk: () => {} });
+    $("del-title").title = title;
+    return;
+  }
   const destSt = dir === "up" ? TR_BAGS.cloud.st : TR_BAGS.local.st;
   // 目的地有沒有同名。拉回:這台電腦的清單是現況。送上雲端:雲端那份清單是平台上的策略索引(24 小時快取、只含機器已經回報過摘要的策略),
   // 「清單裡沒有」不等於「雲端沒有」——所以沒看到時不說「不會覆蓋」,用中性的那一句

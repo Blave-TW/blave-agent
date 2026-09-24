@@ -14,7 +14,7 @@ SYMBOL        = "TXF"
 INTERVAL      = "1m"
 START         = "2023-01-01"
 END           = None
-FEE           = 0.001             # NT$200 commission + slippage 1-2 ticks on NT$4M contract
+FEE           = 0.00005           # per side: tax 0.002% + commission + 1 tick (references/lib.md › Taiwan index futures, index ~45k)
 
 SMA_FAST   = 1500   # ~1 週 (300 min/day × 5 days)
 SMA_SLOW   = 8000   # ~3.7 週 (300 min/day × 26 days)

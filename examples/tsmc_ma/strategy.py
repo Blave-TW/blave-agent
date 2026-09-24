@@ -14,7 +14,7 @@ SYMBOL        = "2330"
 INTERVAL      = "1d"
 START         = "2015-01-01"
 END           = None
-FEE           = 0.003          # ~0.3% 證交稅 + 手續費（賣方含稅）
+FEE           = 0.003          # 單邊(per side):手續費 0.1425% ×2 + 證交稅 0.3%(賣方)平均 ≈ 0.29%
 
 SMA_FAST = 5                   # 週線
 SMA_SLOW = 60                  # 季線

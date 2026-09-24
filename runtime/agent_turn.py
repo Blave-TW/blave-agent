@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import ssl
 import sys
 import tempfile
@@ -77,6 +78,7 @@ PROTECTED_EDIT_RULES = [
     "Edit(/lib/walk_forward.py)",
     "Edit(/lib/validation.py)",
     "Edit(/lib/analysis.py)",
+    "Edit(/lib/exits.py)",
     "Edit(/control/**)",
 ]
 
@@ -438,13 +440,70 @@ def _portfolio_steps_block(workspace=None):
     return doc[i:min(j, i + _STEPS_MAX_CHARS)].strip()
 
 
+_ASCII_RUN = re.compile(r"[!-~]+")
+# 英文的「文法字」:行話(vol target、Sharpe、MCPT、drawdown)與代號裡不會有它們,英文句子少不了它們
+_EN_FUNCTION_WORDS = frozenset(
+    "a an the is are am was were be been being do does did what how why when where which who whose "
+    "can could would should will may might must please me my i you your we our they them it its "
+    "this that these those of on in at for with to from by about and or but not if than there here "
+    "has have had".split())
+
+
+def _prose_words(message):
+    """訊息裡的英文字,但不算「像識別字」的 ASCII 片段:含 _ = /(金鑰、env 名、路徑、網址)、
+    兩個以上大寫字母的全大寫片段(BTCUSDT、API、MCPT)、夾數字的長片段(雜湊、識別碼)。"""
+    words = []
+    for m in _ASCII_RUN.finditer(message):
+        tok = m.group().strip(".,;:!?()[]{}<>\"'`")
+        caps = sum(1 for ch in tok if ch.isupper())
+        if (not tok or any(c in tok for c in "_=/") or (caps >= 2 and not any(ch.islower() for ch in tok))
+                or (len(tok) >= 8 and any(ch.isdigit() for ch in tok))):
+            continue
+        words += re.findall(r"[A-Za-z]+", tok)
+    return words
+
+
+_QUOTED = (
+    re.compile(r"```.*?(?:```|$)", re.S),   # 圍欄程式碼
+    re.compile(r"`[^`\n]*`"),                # 行內程式碼
+    # 貼上的錯誤訊息 / traceback:從那個記號到行尾都是別人寫的英文
+    re.compile(r"(?:Traceback \(most recent call last\)|File \"[^\"\n]*\", line \d+|\b\w*(?:Error|Exception|Warning)\s*:).*"),
+)
+_HAN_RUN = re.compile(r"[一-鿿]+")
+# 程式的樣子:= ; { } 或「字緊接著左括號」(range(10)、print(i))。一般英文句子裡的「(2330)」「[2330]」不算
+_CODE_PUNCT = re.compile(r"[{}=;]|\w\(")
+# 中文句子才有的虛字:頭尾是漢字、裡面又有這些,才是「英文夾在中文句裡」;只有股名夾英文(「台積電 looks weak…聯發科」)不算
+_ZH_GRAMMAR = re.compile(r"[的了嗎呢吧就把我你是在要會能請幫給還也都這那]|怎麼|什麼|如果|為什麼|可以")
+
+
+def _typed_english(message):
+    """用戶自己打的英文:去掉引用進來的程式碼與錯誤訊息,再去掉帶程式標點的非中文片段
+    (「for i in range(10): print(i)」的 for / in / i 是 Python,不是英文文法字)。"""
+    for rx in _QUOTED:
+        message = rx.sub(" ", message)
+    return " ".join(seg for seg in _HAN_RUN.split(message) if not _CODE_PUNCT.search(seg))
+
+
 def _is_zh(message):
-    """這則用戶訊息是不是中文。漢字要「壓過」英文字母才算——「what is 台積電 price」
-    是英文句帶個股名,不是中文句。只在沒有回覆語言設定、也沒有 ui_lang 時才用
-    (_resolve_reply_lang 解不出語言),_lang_directive 與兜底錯誤句共用同一條判定。"""
+    """這則用戶訊息是不是中文。只看用戶打的字(電腦版刻意不帶 ui_lang,見 shell/main.js),
+    只在沒有回覆語言設定、也沒有 ui_lang 時才用;_lang_directive 與兜底錯誤句共用同一條判定。
+
+    有漢字就是中文,除非有「這是英文句子」的證據:兩個以上英文文法字(what / is / the / of …),
+    或一個文法字而且英文字母至少是漢字的四倍。台灣交易員寫「做vol target到30%」「把 MCPT 跑一次」——
+    英文是行話、中文是句子;「what is 台積電 price」才是英文句帶股名。
+    句子頭尾都是中文、而且有中文虛字(「如果 price is above the MA 就進場」)= 英文夾在中文句裡,直接算中文。
+    文法字只數用戶自己打的英文(_typed_english):貼上的錯誤訊息、traceback、程式碼不算。
+    舊判定是比字元數(漢字 >= 3 且壓過字母一半),短句與貼金鑰的句子都判錯(2026-09-23 兩次)。"""
     han = sum(1 for ch in message if "一" <= ch <= "鿿")
-    letters = sum(1 for ch in message if ch.isascii() and ch.isalpha())
-    return han >= 3 and han > letters * 0.5
+    if not han:
+        return False
+    core = re.sub(r"^[\W\d_]+|[\W\d_]+$", "", message)
+    if _HAN_RUN.match(core) and _HAN_RUN.fullmatch(core[-1]) and _ZH_GRAMMAR.search(message):
+        return True
+    words = _prose_words(_typed_english(message))
+    fn = sum(1 for w in words if w.lower() in _EN_FUNCTION_WORDS)
+    letters = sum(len(w) for w in words)
+    return not (fn >= 2 or (fn >= 1 and letters >= 4 * han))
 
 
 def _lang_directive(message, suggest=False, lang=None):
@@ -612,7 +671,9 @@ def _viewing_env_segment(cloud_mcp):
     連不上就講,不拿本機同名那支頂替。"""
     if cloud_mcp:
         how = ("讀或動雲端上的東西時,先用本輪掛上的 `blave` MCP 取得連線,"
-               "再照 references/cloud-handoff.md 做(含它的 NEVER 列表)。")
+               "再照 references/cloud-handoff.md 做(含它的 NEVER 列表)。"
+               "那份檔很長,不要一次 cat 整份(輸出會被截斷,多花一步重讀):有檔案讀取工具就用它,"
+               "沒有就分段讀(`sed -n '1,250p'`、`sed -n '251,500p'`…)。")
     else:
         how = ("但這一輪沒有連到雲端主機的通道:需要讀或動雲端上的東西時,直接告訴用戶這一輪"
                "連不上雲端主機;不要改在這台電腦上做同名那支來代替,也不要自己找別的方式連線——"
@@ -2161,8 +2222,8 @@ def data_access_rule():
              但**會計費**:不含在試用／主機／API 方案裡就按小時收(api `decorators.py` 的
              `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`。
              所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
-      `0`  = 沒有 key:沒登入 Blave,或登入了但帳號不含資料
-             (試用結束且沒主機／API 方案)。
+      `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(account_status 的 data_access = none),
+             或舊 api(沒有 data_access)且帳號不含資料。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
     AGENTS.md 是雲端/桌面共用的,它預設 Blave 資料一定拿得到;沒有這段,`0` 的 agent 會在 403
@@ -2208,15 +2269,17 @@ def data_access_rule():
             "reads you write yourself, in the language the per-turn language directive names. "
             "Do not copy, translate or adapt any phrasing from this block into the reply.\n"
             "Facts: this desktop has no Blave data access this turn. Access comes with signing in "
-            "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex) while "
-            "the card trial is active, or with an account that owns a Blave Agent cloud machine or "
-            "an API plan. The Blave-only datasets, none of which are reachable now: holder "
+            "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex): free "
+            "while the card trial is active or when the account owns a Blave Agent cloud machine or "
+            "an API plan, and otherwise charged per clock hour of use, which needs a balance that "
+            "covers that hour. The Blave-only datasets, none of which are reachable now: holder "
             "concentration, whale hunter, taker intensity, liquidation, Taiwan stock / futures data "
             "and the rest of the Blave indicators. Public crypto klines still work (`fetch_kline`, "
             "Binance public endpoints).\n"
             "When the user asks for one of those datasets, your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (card trial active, or a "
-            "cloud machine); carry no directions, next steps or prices; not push; and then answer "
+            "missing; give the conditions under which it becomes available (signed in, with a "
+            "balance that covers the hourly data fee, or the card trial, or a cloud machine); carry "
+            "no directions, next steps or prices; not push; and then answer "
             "whatever part public klines do allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
             f"In that same reply put this marker, verbatim, on its own line at the very end of the "
@@ -2245,6 +2308,25 @@ def _codex_prompt(prompt, sink, mcp_mounted):
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
             + mcp_rule(mcp_mounted) + "\n\n---\n\n" + prompt)
+
+
+def _remove_cloud_handoff_dir(workspace=None):
+    """回合結束一律清掉 `<workspace>/tmp/cloud-handoff/`(雲端交接的短效 SSH 金鑰與憑證)。
+    規則要 agent 在回合結束前自己刪,但回合出錯(撞 max_turns、半途、崩潰)時它沒機會刪,
+    金鑰就留在磁碟上等下一個回合碰巧清。只動那一個路徑:不存在就算了;它是連結就只拿掉連結;
+    `tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
+    ws = os.path.realpath(workspace or WORKSPACE)
+    tmp = os.path.join(ws, "tmp")
+    path = os.path.join(tmp, "cloud-handoff")
+    if not os.path.lexists(path) or os.path.realpath(tmp) != tmp:
+        return
+    try:
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        else:
+            os.unlink(path)
+    except OSError as e:
+        print(f"[agent_turn] 清不掉 {path}: {e}", file=sys.stderr)
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
@@ -2641,6 +2723,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
                        code=fault_code)
     finally:
+        _remove_cloud_handoff_dir()   # 出錯的回合也清:交接金鑰不能留到下一個回合
         await sink.stop()
         if sysprompt_path:
             try:

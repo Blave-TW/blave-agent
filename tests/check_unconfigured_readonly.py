@@ -3,8 +3,10 @@
 Without manager/portfolio_config.json (amounts never saved) the target is
 empty and, without self_ledger, every position on the account reads as "close
 it" — the user's manual ones included. lib/portfolio.reconcile must read and
-snapshot positions but send NOTHING. Saving amounts — even all 0, the taught
-way to flatten — makes it trade (close) as before. The report says which.
+snapshot positions but send NOTHING. Saving amounts makes it trade — but
+since 2026-09-23 only what the bot itself holds (tests/check_own_positions_only.py):
+amounts all 0 closes the bot's book, never this manual long. The report says
+which.
 
 Then the two ways that guard was still losing the user's money (audit
 2026-09-23):
@@ -100,18 +102,18 @@ try:
 
     json.dump({"amounts": {}, "exchanges": {}}, open(CFG, "w"))
     run()
-    check(len(placed) == 1 and placed[0][0] == "BTCUSDT" and placed[0][1] < 0
-          and "read_only" not in json.load(open(SNAP)),
-          "amounts saved (all 0 — the taught way to flatten): the position is closed as before, "
-          "and the snapshot no longer says read_only")
+    snap = json.load(open(SNAP))
+    check(placed == [] and "read_only" not in snap and snap.get("own_only") is True,
+          "amounts saved (all 0): configured, no longer read_only — and the manual long is still "
+          "not closed (the bot never bought it)")
     check(portfolio_reporter.build_report()["portfolio_configured"] is True,
           "…and the report says portfolio_configured: true")
 
     os.remove(CFG)
     json.dump({"amounts": {}, "exchanges": {}}, open(MIRROR, "w"))
     run()
-    check(len(placed) == 1,
-          "only the UI mirror exists (the save wrote it first): configured — it trades")
+    check("read_only" not in json.load(open(SNAP)),
+          "only the UI mirror exists (the save wrote it first): configured")
     os.remove(MIRROR)
     run()
     check(placed == [], "config gone again: back to read-only")

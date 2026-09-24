@@ -14,7 +14,7 @@ os.chdir(tempfile.mkdtemp(prefix="reconnotice-"))
 os.makedirs("manager", exist_ok=True)
 import json  # noqa: E402
 # custom templates: the amount is the only number on the line, so the test can read it back
-open("manager/portfolio_config.json", "w").write(json.dumps({"messages": {
+open("manager/portfolio_config.json", "w").write(json.dumps({"self_ledger": False, "messages": {
     k: k + "|{amount:.2f}" for k in ("order_buy", "order_sell", "order_close_long", "order_close_short")}}))
 from lib import portfolio, venue_wiring  # noqa: E402
 

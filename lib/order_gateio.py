@@ -3,7 +3,8 @@ Gate.io order execution library — USDT perpetual futures + spot.
 
 Companion to lib/account_gateio.py (equity/positions). Credentials:
 GATEIO_API_KEY / GATEIO_SECRET_KEY in .env (web 下單設定 names;
-GATE_API_KEY / GATE_SECRET_KEY accepted as a fallback).
+GATE_API_KEY / GATE_SECRET_KEY accepted as a fallback). Set GATEIO_DEMO=true to route
+every request to the Gate.io TestNet (api-testnet.gateapi.io, TestNet keys).
 
 Broker attribution (Blave) is the header `X-Gate-Channel-Id: blave` on EVERY
 request — injected by the transport here, callers never handle it.
@@ -52,6 +53,7 @@ on a real account, single and dual mode, futures + spot):
 import hashlib
 import hmac
 import json
+import os
 import time
 from decimal import Decimal, ROUND_DOWN
 
@@ -59,7 +61,10 @@ import requests
 
 from lib import guard
 
-HOST = "https://api.gateio.ws"
+LIVE_HOST = "https://api.gateio.ws"
+# TestNet (spot + futures on one host; keys are APIv4 keys created with account
+# type "TestNet"). The older fx-api-testnet.gateio.ws answers 502.
+DEMO_HOST = "https://api-testnet.gateapi.io"
 PREFIX = "/api/v4"
 
 _rules_cache = {}      # contract/pair -> rules (per-process)
@@ -76,6 +81,24 @@ class GateioError(Exception):
         super().__init__(f"Gate.io error {code}: {msg or '(empty msg)'} | {path}")
 
 
+# A market order whose worst fill would land too far from the mark price is
+# refused outright (MARKET_PRICE_TOO_DEVIATED — measured on the testnet: ask 4.7%
+# over mark, order_price_deviate 0.02). Nothing filled; the book is thin or off
+# the index for now. The token is what the desktop and web match on.
+PRICE_DEVIATED_TOKEN = "gateio_price_deviated"
+PRICE_DEVIATED_MSG = ("Gate.io 盤口偏離標記價太遠，市價單被交易所擋下（沒有成交）："
+                      "多半是這個合約一時流動性不足，下一輪會自動再試")
+
+
+class PriceDeviatedError(GateioError):
+    """MARKET_PRICE_TOO_DEVIATED — refused before matching, nothing filled."""
+
+    def __init__(self, code, msg, path=""):
+        super().__init__(code, msg, path)
+        self.args = (f"{PRICE_DEVIATED_MSG} [{PRICE_DEVIATED_TOKEN}] "
+                     f"(Gate.io {code}: {msg} | {path})",)
+
+
 class OrderNotConfirmed(Exception):
     """Order accepted but not terminal within timeout. It may still fill —
     query again, never blindly resubmit (text ids do NOT dedup here)."""
@@ -87,6 +110,35 @@ class ProtectionFailed(Exception):
 
 
 # ── transport ────────────────────────────────────────────────────────────────
+
+TIMESTAMP_ERROR = "REQUEST_EXPIRED"
+_time_offset = {"s": 0.0}  # Gate.io's clock − ours, set by _sync_time
+
+
+def _demo(env):
+    # GATE_* accepted like the key names (manager/close_symbol.py sets both)
+    return any(str(env.get(k, os.environ.get(k, ""))).lower() == "true"
+               for k in ("GATEIO_DEMO", "GATE_DEMO"))
+
+
+def _host(env):
+    return DEMO_HOST if _demo(env) else LIVE_HOST
+
+
+def _sync_time(env):
+    """After a REQUEST_EXPIRED (Gate.io accepts a Timestamp within 60 s of its
+    clock): offset against Gate.io's own clock (/spot/time, public), best-effort —
+    a failed read keeps the old offset and the retry still goes out."""
+    try:
+        t0 = time.time()
+        r = requests.get(_host(env) + PREFIX + "/spot/time",
+                         headers={"X-Gate-Channel-Id": "blave"}, timeout=5)
+        t1 = time.time()
+        server_ms = int(r.json()["server_time"])
+        _time_offset["s"] = (server_ms - int((t0 + t1) / 2 * 1000)) / 1000.0
+    except Exception:
+        pass
+
 
 def _creds(env):
     api_key = env.get("GATEIO_API_KEY") or env.get("GATE_API_KEY")
@@ -146,7 +198,9 @@ def _request(method, path, env, body=None, query="", retries=3):
         fields = _audit_fields(body)
         fields["intent"] = intent
         guard.check_restart_stop(intent, fields)
-        if intent == "entry" and guard.halted():
+        guard.check_account_hold("gateio", intent, fields)
+        fields["demo"] = _demo(env)
+        if intent == "entry" and guard.entry_blocked():
             guard.audit("order_denied_halt", **fields)
             raise guard.Halted(
                 f"state/HALT is set ({guard.halt_info()}) — entry order for "
@@ -170,8 +224,9 @@ def _send(method, path, env, body=None, query="", retries=3):
     api_key, secret = _creds(env)
     body_str = "" if body is None else json.dumps(body)
     last_err = None
+    resynced = False
     for attempt in range(retries):
-        ts = str(int(time.time()))
+        ts = str(int(time.time() + _time_offset["s"]))
         payload_hash = hashlib.sha512(body_str.encode()).hexdigest()
         sign_str = "\n".join([method.upper(), PREFIX + path, query, payload_hash, ts])
         sig = hmac.new(secret.encode(), sign_str.encode(), hashlib.sha512).hexdigest()
@@ -182,7 +237,7 @@ def _send(method, path, env, body=None, query="", retries=3):
             "Content-Type": "application/json",
             "X-Gate-Channel-Id": "blave",  # broker attribution — MANDATORY
         }
-        url = HOST + PREFIX + path + ("?" + query if query else "")
+        url = _host(env) + PREFIX + path + ("?" + query if query else "")
         try:
             r = requests.request(method, url, headers=headers,
                                  data=body_str or None, timeout=10)
@@ -205,8 +260,15 @@ def _send(method, path, env, body=None, query="", retries=3):
                 err = r.json()
             except ValueError:
                 err = {}
-            raise GateioError(err.get("label", r.status_code),
-                              err.get("message", r.text[:120]), path)
+            label = err.get("label", r.status_code)
+            if label == TIMESTAMP_ERROR and not resynced and attempt < retries - 1:
+                # refused at authentication — resending cannot double anything
+                resynced = True
+                _sync_time(env)
+                last_err = GateioError(label, err.get("message", ""), path)
+                continue
+            cls = PriceDeviatedError if label == "MARKET_PRICE_TOO_DEVIATED" else GateioError
+            raise cls(label, err.get("message", r.text[:120]), path)
         if not r.text:
             return {}  # DELETE endpoints return empty bodies
         try:
@@ -375,6 +437,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     reduces). Below min contracts → False (intentional skip). Dual (hedge)
     mode needs no posSide field — reduce_only + the order's sign uniquely
     addresses the side (a reduce-only sell can only reduce the long side)."""
+    guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     c = _contract(symbol)
     try:
         ct = int(format_qty(env, symbol, qty))

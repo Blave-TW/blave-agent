@@ -269,6 +269,34 @@ def _release_lock(lock_path):
         pass
 
 
+def _naive_utc(ts):
+    """Bar timestamp → naive UTC datetime, the frame `expected` lives in. A tz-aware label
+    (Taiwan data is Asia/Taipei) is converted first; dropping its tz as-is would read
+    Taipei wall-clock as UTC and call a bar 8h early "landed". Naive labels are taken as
+    UTC, as before."""
+    import pandas as pd
+    ts = pd.Timestamp(ts)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("UTC").tz_localize(None)
+    return ts.to_pydatetime()
+
+
+class _FeedWait(str):
+    """Straggler marker for "bars landed, an align_feed row has not been published"."""
+    def __new__(cls, exc):
+        obj = super().__new__(cls, str(getattr(exc, "source", "feed")))
+        obj.due_at = exc.due_at
+        return obj
+
+
+def _is_feed_wait(exc):
+    try:
+        from lib.data import FeedNotPublished
+    except ImportError:
+        return False
+    return isinstance(exc, FeedNotPublished)
+
+
 def _check_freshness(mod, expected):
     """Calls the strategy's own fetch_data() and returns (observed_ts, ready, straggler):
       observed_ts : the latest bar timestamp actually seen (None if there's
@@ -295,7 +323,18 @@ def _check_freshness(mod, expected):
     env = dotenv_values()
     hdrs = {"api-key": env.get("blave_api_key", ""), "secret-key": env.get("blave_secret_key", "")}
 
-    data = mod.fetch_data(hdrs)
+    # Same closed-bars-only scope as the runner's tick: a forming crypto bar must not count
+    # as the expected bar having landed.
+    try:
+        from lib.data import closed_bars_only
+    except ImportError:
+        from contextlib import nullcontext as closed_bars_only
+    try:  # this probe IS a live tick's fetch: align_feed raises on an unpublished row
+        from lib.data import live_feeds
+    except ImportError:
+        from contextlib import nullcontext as live_feeds
+    with closed_bars_only(), live_feeds():
+        data = mod.fetch_data(hdrs)
     if isinstance(data, tuple):
         close_df = data[0]
         if close_df.empty:
@@ -305,13 +344,13 @@ def _check_freshness(mod, expected):
             # at least one symbol has literally never had a data point
             return None, False, last_valid[last_valid.isna()].index[0]
         straggler_symbol = last_valid.idxmin()
-        straggler_ts = last_valid[straggler_symbol].to_pydatetime().replace(tzinfo=None)
-        ready = all(ts.to_pydatetime().replace(tzinfo=None) >= expected for ts in last_valid)
+        straggler_ts = _naive_utc(last_valid[straggler_symbol])
+        ready = all(_naive_utc(ts) >= expected for ts in last_valid)
         return straggler_ts, ready, straggler_symbol
     else:
         if data.empty:
             return None, False, None
-        last_ts = data.index[-1].to_pydatetime().replace(tzinfo=None)
+        last_ts = _naive_utc(data.index[-1])
         return last_ts, last_ts >= expected, None
 
 
@@ -362,6 +401,9 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol):
     except Exception:
         pass
     who = f"（卡住的是 {straggler_symbol}，若已下市/長期停牌請從 UNIVERSE 移除）" if straggler_symbol is not None else ""
+    if isinstance(straggler_symbol, _FeedWait):
+        who = (f"（K 棒已到，等的是外部資料 {straggler_symbol}：應在 "
+               f"{straggler_symbol.due_at.strftime('%m-%d %H:%M')} 前發布，還沒進來）")
     try:
         from lib.notify import send_text
         send_text(
@@ -446,17 +488,21 @@ def _tick(name):
         try:
             observed_ts, ready, straggler_symbol = _check_freshness(mod, expected)
         except Exception as e:
-            # fetch_data() itself raised — network error, or a strategy's own
-            # deliberate fail-loud guard (e.g. txf_composite_60m's degraded-
-            # dividend check). This is NOT a wait_for_bar.py bug, so route it
-            # through the normal failed-run alert (its own 24h cooldown) —
-            # not main()'s "wrapper itself is broken" alert — and back off
-            # like any other failed attempt instead of retrying every minute.
-            output = f"fetch_data() raised while checking freshness: {e}\n" + traceback.format_exc()
-            _alert_failure().alert(name, "fetch_error", output)
-            state["last_attempt_failed_at"] = time.time()
-            _save_state(name, state)
-            return
+            if not _is_feed_wait(e):
+                # fetch_data() itself raised — network error, or a strategy's own
+                # deliberate fail-loud guard (e.g. txf_composite_60m's degraded-
+                # dividend check). This is NOT a wait_for_bar.py bug, so route it
+                # through the normal failed-run alert (its own 24h cooldown) —
+                # not main()'s "wrapper itself is broken" alert — and back off
+                # like any other failed attempt instead of retrying every minute.
+                output = f"fetch_data() raised while checking freshness: {e}\n" + traceback.format_exc()
+                _alert_failure().alert(name, "fetch_error", output)
+                state["last_attempt_failed_at"] = time.time()
+                _save_state(name, state)
+                return
+            # Bars are in, an align_feed row they need is not published yet: "not ready",
+            # not a failed run — no fetch_error alert, no backoff.
+            observed_ts, ready, straggler_symbol = _naive_utc(e.last_bar), False, _FeedWait(e)
 
         observed_iso = observed_ts.isoformat() if observed_ts is not None else None
 
@@ -484,6 +530,13 @@ def _tick(name):
         if observed_iso is not None and observed_iso != state.get("last_seen_bar"):
             state["last_seen_bar"] = observed_iso
             state["stall_alert_at"] = None
+
+        if isinstance(straggler_symbol, _FeedWait):
+            # count lateness from when the row was DUE, not from the first poll: a daily
+            # feed due at 20:00 polled from 15:00 on must not alert at 15:15
+            due = _naive_utc(straggler_symbol.due_at)
+            if state.get("pending_since") is None or datetime.fromisoformat(state["pending_since"]) < due:
+                state["pending_since"] = due.isoformat()
 
         if state.get("pending_since") is None:
             state["pending_since"] = now.isoformat()

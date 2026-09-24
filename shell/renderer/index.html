@@ -146,6 +146,8 @@
         <div class="rp-panel" id="rp-bt" role="tabpanel"></div>
         <div class="rp-panel" id="rp-tr" role="tabpanel" hidden></div>
         <div class="rp-panel" id="rp-code" role="tabpanel" hidden><pre class="rp-code mono" id="rp-code-pre"></pre></div>
+        <!-- 雲端那一份還在路上 / 讀不到:點下去就換頁,這裡先放「載入中…」或讀不到 +〔重新查看〕(app.js rpBodyPaint) -->
+        <div class="rp-panel" id="rp-wait" role="status" hidden></div>
       </div>
       <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
            同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
@@ -263,19 +265,20 @@
                雲端那一行沒主機 / 沒登入時整行藏起來 -->
           <div class="set-about" id="set-up">
             <div class="set-up-head">
-              <h6 class="set-gl"><span class="up-dot" id="set-up-dot" aria-hidden="true" hidden></span><span data-i18n="up.about"></span></h6>
+              <h6 class="set-gl" data-i18n="up.about"></h6>
               <button type="button" class="btn-quiet" id="set-up-btn" hidden></button>
             </div>
             <div class="set-up-row">
               <span class="w" data-i18n="env.local"></span>
-              <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p><p class="st" id="set-up-bk"></p><button type="button" class="btn-quiet set-up-lbtn" id="set-up-lbtn" hidden></button></div>
+              <div class="t"><p class="ver mono" id="set-up-ver"></p><p class="st" id="set-up-txt" role="status"></p><button type="button" class="btn-quiet set-up-lbtn" id="set-up-lbtn" hidden></button></div>
             </div>
             <div class="set-up-row" id="set-up-cloud" hidden>
               <span class="w" data-i18n="env.cloud"></span>
               <div class="t"><p class="ver mono" id="set-up-cver"></p><p class="st" id="set-up-ctxt" role="status"></p><p class="st" id="set-up-cnote"></p></div>
             </div>
-            <!-- 服務條款:app 裡唯一的入口(隱私權政策在 設定 › 隱私)。外開瀏覽器,網址帶目前語言 -->
-            <p class="set-legal"><button type="button" class="btn-quiet" id="set-terms" data-i18n="legal.terms"></button></p>
+            <!-- 法遵兩份並排、不成句(不是「使用即表示同意」那種同意文字)。服務條款只有這一個入口;隱私權政策在 設定 › 隱私 另有一個就地的。
+                 外開瀏覽器,網址帶目前語言 -->
+            <p class="set-legal"><button type="button" class="btn-quiet" id="set-terms" data-i18n="legal.terms"></button> <span aria-hidden="true">·</span> <button type="button" class="btn-quiet" id="set-privacy" data-i18n="legal.privacy"></button></p>
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>

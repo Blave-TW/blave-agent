@@ -1,8 +1,8 @@
 """One-time: write the self-ledger's baseline (manager/ledger_seed.json).
-Run once when turning portfolio_config.json["self_ledger"] on — with the flag
-on and NO baseline, the reconciler refuses to trade (fail-loud guard in
-lib/portfolio.reconcile). Full onboarding recipe: references/manager.md §
-self_ledger.
+The reconciler writes the baseline itself on its first round
+(lib/portfolio._auto_baseline: min(|account|, |target|) per symbol, same side
+only). Run this only when the user says that split is wrong. Full recipe:
+references/manager.md § self_ledger.
 
 Two modes:
 
@@ -115,5 +115,4 @@ if __name__ == '__main__':
                   "of them (doubled exposure) — flatten the bot's positions "
                   "first, or use --absorb only if NOTHING here is manual.")
 
-    print("\nNow set portfolio_config.json[\"self_ledger\"] = true (if not "
-          "already) — the reconciler picks both up on its next poll.")
+    print("\nThe reconciler picks the baseline up on its next poll.")

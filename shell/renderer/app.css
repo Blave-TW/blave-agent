@@ -98,9 +98,10 @@
    同一行時說明跟「重新偵測」擠在一起,分不出哪個是字、哪個能點。 */
 .cn-head { margin: 0; display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: var(--space-8); }
 .cn-meta { grid-column: 1 / -1; grid-row: 2; margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
-/* 文字鈕:常駐底線——灰字沒有底線的話跟旁邊的說明句長得一樣,看不出能點 */
+/* 文字鈕:常駐底線——灰字沒有底線的話跟旁邊的說明句長得一樣,看不出能點。
+   padding 0:字要跟旁邊那條文字邊對齊(UA 預設左右 6px 會讓字內縮);熱區由下面的 ::before 外擴,不靠 padding */
 .btn-quiet {
-  flex: none;
+  flex: none; padding: 0;
   font-size: 12px; color: var(--ink-3);
   text-decoration: underline; text-underline-offset: 3px;
   transition: color var(--motion-fast) var(--ease-standard);
@@ -201,17 +202,36 @@
 .think-step .wtag { flex: none; }
 .msg.you .bubble {
   background: var(--surface-muted); border-radius: var(--radius-lg);
-  padding: var(--space-8) var(--space-16); max-width: 84%;
-  font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+  padding: var(--space-8) var(--space-16); max-width: 84%; min-width: 0;
+  font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;   /* 貼上的金鑰、網址、路徑沒有斷點:同 .msg.ai,不撐出泡泡 */
 }
-/* pre-wrap:agent 的回覆靠換行排版(清單、逐行結果),不保留的話
-   「references\nstrategies\nmanager」會黏成一行。 */
-.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }   /* 沒有空白的長路徑 / 行內 code 不撐破聊天欄 */
-.msg.ai p { margin: 0; }
-/* 行內 markdown(paintAi):粗體只加重不變色;行內程式碼走 mono、亮度退一階,不加底色框
+/* agent 回覆的 markdown(paintAi → mdPaint):間距與表格照網頁工作頁的 .md(web workspace.css),色換成外殼的 token。
+   換行由 <br> / <p> 表達,不再靠 pre-wrap(pre-wrap 會把段落之間的空行再畫一次)。 */
+.msg.ai { font-size: 13px; line-height: 1.7; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }   /* 沒有空白的長路徑 / 行內 code 不撐破聊天欄 */
+.msg.ai > :first-child { margin-top: 0; }
+.msg.ai > :last-child { margin-bottom: 0; }
+.msg.ai p { margin: 0 0 var(--space-8); }
+.msg.ai li > p { margin: 0; }
+.msg.ai ul, .msg.ai ol { margin: 0 0 var(--space-8); padding-left: var(--space-16); }
+.msg.ai li { margin-bottom: var(--space-4); }
+.msg.ai li > ul, .msg.ai li > ol { margin: var(--space-4) 0 0; }
+.msg.ai h1, .msg.ai h2, .msg.ai h3, .msg.ai h4, .msg.ai h5, .msg.ai h6 { font-size: 14px; font-weight: 600; line-height: 1.4; margin: var(--space-16) 0 var(--space-8); }
+.msg.ai hr { border: none; border-top: 1px solid var(--border-hairline); margin: var(--space-16) 0; }
+.msg.ai blockquote { margin: 0 0 var(--space-8); padding-left: var(--space-12); border-left: 2px solid var(--border-hairline); color: var(--ink-3); }
+/* 連結不上主色:一段裡幾個來源全上色會搶掉內容;底線是唯一線索,hover 才提到 currentColor(同網頁) */
+.msg.ai a { color: inherit; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 2px; }
+.msg.ai a:hover { text-decoration-color: currentColor; }
+/* 粗體只加重不變色;行內程式碼走 mono、亮度退一階,不加底色框
    (Terminal 平面、聊天欄窄,一行裡好幾個小框會很吵) */
 .msg.ai strong { font-weight: 600; }
 .msg.ai code { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); }
+.msg.ai pre { margin: var(--space-8) 0; padding: var(--space-12); background: var(--surface-muted); border-radius: var(--radius-md); overflow-x: auto; }
+.msg.ai pre code { color: var(--ink); line-height: 1.6; white-space: pre; overflow-wrap: normal; }
+/* 表格:欄位多到比聊天欄寬時,在 .md-tblwrap 裡自己橫捲,不把聊天欄拉寬;儲存格不從中間斷數字 */
+.msg.ai .md-tblwrap { overflow-x: auto; margin: var(--space-8) 0; }
+.msg.ai table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.msg.ai th, .msg.ai td { padding: var(--space-8) var(--space-12); text-align: left; border-bottom: 1px solid var(--border-hairline); font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+.msg.ai th { color: var(--ink-3); font-weight: 600; }
 .chat-input-wrap { flex: none; padding: var(--space-16) var(--space-24) var(--space-24); }
 /* 立即更新到最新版本:逐條照網頁 web/.../workspace.css 的 .ws-update——輸入列右上方靠右一行 12px 安靜文字連結
    (無框無底無點、不用橘),熱區靠 min-height 44px,hover 灰字轉亮 + 底線,停用灰階退場、原因在 title */
@@ -366,6 +386,9 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .think-reason:empty { display: none; }
+/* 出錯回合自動攤開時思考文字先收著(busyOpenReceipts),下面那顆文字鈕按了才出;左緣對齊收據 */
+.think-indicator.reason-held .think-reason { display: none; }
+.think-reason-show { display: block; margin: var(--space-4) 0 var(--space-4) 15px; }
 /* tick 條:一秒一格。最新那格在最右、滿墨,舊的按年齡退色並整條往左滑出
    44px 窗口——每一格都是真的過去了一秒,不是裝飾性 loader(同 web 註解) */
 .think-ticks { position: relative; flex: none; width: 44px; height: 12px; overflow: hidden; }
@@ -403,8 +426,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .chat-input:focus-within { border-color: var(--ink); }
 
 /* ── 熱區(canon › Verification:熱區與視覺分開量)──────
-   桌面指標裝置的下限是 WCAG 2.5.8 的 24×24。這兩顆是 12px 字 + UA padding
-   ≈19px 高,用透明 ::before 外擴,**不動視覺高度**。 */
+   桌面指標裝置的下限是 WCAG 2.5.8 的 24×24。文字鈕是 12px 字、沒有 padding,
+   用透明 ::before 外擴,**不動視覺高度**。 */
 .btn-quiet { position: relative; }
 .btn-quiet::before {
   content: ""; position: absolute; inset: -6px -4px;
@@ -569,8 +592,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-tab:disabled { color: var(--color-greyDark); cursor: not-allowed; }
 .rp-nobt { margin: 0; padding: var(--space-12) var(--space-24) 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .rp-nobt[hidden] { display: none; }
+.rp-tabs[hidden] { display: none; }   /* 雲端報告還在路上 / 讀不到時收起(rpBodyPaint) */
 .rp-panel { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-24); }
 .rp-panel[hidden] { display: none; }
+#rp-wait .btn-out { margin-top: var(--space-12); }   /* 讀不到那一句下面的〔重新查看〕 */
 .rp-code { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-2); white-space: pre; overflow-x: auto; tab-size: 4; }
 .rp-desc { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3);
   /* 沒描述也留一行高:有/無描述的策略互切時分頁列才不會上下跳 */
@@ -769,7 +794,7 @@ body.resizing * { cursor: col-resize !important; }
 .priv-two li + li { margin-top: var(--space-2); }
 .priv-two li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
-.set-legal { margin: var(--space-16) 0 0; }
+.set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
 .priv-id { margin-top: var(--space-16); flex-wrap: wrap; }
 .priv-idv { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); user-select: all; -webkit-user-select: all; }
@@ -780,8 +805,6 @@ body.resizing * { cursor: col-resize !important; }
    每一行左欄是位置詞、右欄是版號 + 狀態句;行與行之間一條細線 */
 .set-about { margin-top: auto; padding-top: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
 .set-up-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); margin-bottom: var(--space-4); }
-.up-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-2); margin-right: var(--space-6); vertical-align: 1px; }   /* 中性:橘在 dark 只給 CTA(canon) */
-.up-dot[hidden] { display: none; }
 .set-up-row { display: grid; grid-template-columns: 88px 1fr; gap: var(--space-12); align-items: baseline; padding-top: var(--space-8); border-top: 1px solid var(--border-hairline); }
 .set-up-row:nth-child(2) { border-top: none; padding-top: 0; }
 .set-up-row[hidden] { display: none; }
@@ -794,7 +817,7 @@ body.resizing * { cursor: col-resize !important; }
 .set-about .st.ok { color: var(--color-greenText); }   /* 雲端「已更新到 {nv}」(S7):完成那一刻留在畫面上 */
 #set-up-btn .spin16 { vertical-align: -3px; }   /* 更新中那顆鈕裡的圓環 */   /* ready / blocked / error / installFailed / 雲端有新版:要人讀的句子升一階 */
 .set-about button { flex: none; }
-.set-up-lbtn { margin-top: var(--space-6); padding: 0; }   /* 兩邊都有新版時,這台電腦那一行底下獨立的「重新啟動並更新這台電腦」;padding 0 = 跟版號、狀態句對齊 */
+.set-up-lbtn { margin-top: var(--space-6); }   /* 兩邊都有新版時,這台電腦那一行底下獨立的「重新啟動並更新這台電腦」 */
 .set-up-lbtn[hidden] { display: none; }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
    上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
@@ -828,14 +851,14 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err .fault-mark{margin-top:9px}
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
 .plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
-.plan-act .btn-quiet{margin-right:auto;padding:0}
+.plan-act .btn-quiet{margin-right:auto}
 /* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-scroll{padding:var(--space-24) var(--space-16) var(--space-16)}
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
 .plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
 .plan-pane .plan-rule{text-wrap:pretty}
-.plan-more{margin-top:var(--space-16);display:inline-block;padding:0}
+.plan-more{margin-top:var(--space-16);display:inline-block}
 .plan-detail{margin-top:var(--space-12);padding-top:var(--space-4);border-top:1px solid var(--border-hairline)}
 .plan-detail[hidden]{display:none}
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
@@ -862,15 +885,13 @@ body.resizing * { cursor: col-resize !important; }
 #set-model{display:flex;flex-direction:column;gap:var(--space-24)}
 .cn-grp-h{display:flex;align-items:center;gap:var(--space-8);min-height:24px;font-size:12px;font-weight:400;color:var(--ink-3)}
 .cn-grp-h .sep{color:var(--color-greyDark)}
-.cn-grp-h .pf-act{margin-left:auto}
+.cn-more{margin:var(--space-8) 0 0}
 .cn-opts{margin-top:var(--space-4);display:flex;flex-direction:column;gap:var(--space-4)}
 .cn-opt{display:flex;align-items:center;gap:var(--space-12);min-height:44px;margin:0 calc(-1 * var(--space-12));padding:var(--space-6) var(--space-12);border-radius:var(--radius-md)}
 .cn-opt .t{flex:1;min-width:0}
 .cn-opt .n{margin:0;font-size:13px;font-weight:400;line-height:1.5;color:var(--ink)}
 .cn-opt .m{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3)}
 .cn-opt .st{flex:none;display:flex;align-items:center;gap:var(--space-6);font-size:12px;color:var(--ink-3)}
-.cn-opt .st.on{color:var(--ink-2)}
-.cn-opt .st .dot{flex:none;width:7px;height:7px;border-radius:var(--radius-pill);background:var(--color-green)}
 .cn-opt.is-cur{background:var(--surface-muted)}
 .cn-opt.is-cur .n{font-weight:600}
 .cn-opt.is-cur .m{color:var(--ink-2)}

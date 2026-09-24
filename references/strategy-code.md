@@ -177,12 +177,10 @@ ENTRY_TH = 0.5
 EXIT_TH  = -0.5
 
 def _add_indicators(df, hdrs, entry_th=ENTRY_TH, exit_th=EXIT_TH):
-    from lib.data import fetch_taker_intensity
-    df = df.copy()
+    from lib.data import fetch_taker_intensity, align_feed
     ti = fetch_taker_intensity(SYMBOL, INTERVAL, START, END, hdrs)
-    df = df.join(ti.rename(columns={"alpha": "TI"}))
-    df["TI"] = df["TI"].ffill()
-    return df
+    ti = align_feed(df, ti, 'taker_intensity', INTERVAL, bar_tz='UTC')   # by publication time
+    return df.loc[ti.index].join(ti.rename(columns={"alpha": "TI"}))
 
 def fetch_data(hdrs):
     from lib.data import fetch_kline
@@ -226,6 +224,33 @@ def compute_signals(df):
 ```
 
 `compute_signals` must be a **pure function** (no API calls, no I/O, no side effects).
+
+## Exits on top of an existing signal — stop-loss, take-profit, trailing, time stop
+
+"Add a 3% stop-loss / take profit at 8% / a 5% trailing stop / hold at most 48 bars" = keep the strategy's own `compute_signals` logic as it is and wrap its result with **`lib.exits.apply_exits`**. Call it — never write your own exit loop, and never paste an older recipe from a strategy file:
+
+```python
+STOP_PCT = 0.03
+
+def compute_signals(df, fast=MA_FAST, slow=MA_SLOW, stop_pct=STOP_PCT):
+    from lib.exits import apply_exits
+    ...                                   # the strategy's own signal, unchanged
+    return apply_exits(signal, df, stop_pct=stop_pct, trigger="intrabar")
+```
+
+Any combination in one call: `apply_exits(signal, df, stop_pct=0.03, tp_pct=0.08, trail_pct=0.05, max_bars=48, trigger="intrabar")` (fractions, `max_bars` in bars). Make each one a `compute_signals` kwarg so a scan can sweep it. With `settlement_signals_from_db`, exits first and settlement last: `return settlement_signals_from_db(df, apply_exits(signal, df, stop_pct=stop_pct, trigger="intrabar"))`. What it guarantees (fill point, rolls, bars the runner drops) is in `references/lib.md` › `lib.exits`.
+
+**Pass `trigger` every time — which one:**
+- `"intrabar"` — a stop / take-profit as a trader means it: price *touching* the level (the bar's Low for a long stop, High for a long TP). Use it for "3% 停損", "停利 6%", "trailing 5%". Needs `High`/`Low` in `df` (every `fetch_*` OHLC has them).
+- `"close"` — the rule is about closes: "收盤跌破 3% 就出", "close below the entry by 3%", or `df` has no High/Low.
+
+In both modes the exit fills at the **next bar's Open** — the runner cannot fill at a stop price, and live works the same way (the tick after the bar exits). `result.attrs["exits"]` records, per exit, the reason and (intrabar) the price a resting order would have filled at — the level, or the Open when the bar gapped through it. When you report a stop's effect, say the backtest exits at the next Open, and quote `order_price` only as "a resting order would have filled at". A bar touching both the stop and the take-profit counts as the stop (unless it opened beyond the TP).
+
+**"`apply_exits` can't do X" is never a reason to write your own exit loop.** If the rule the user asked for is not one of its four exits (a stop at an ATR multiple, a breakeven move, partial exits, a cooldown…), say so in one sentence — what it can't model and what the closest supported exit is — and let the user choose. Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
+
+**The pitfall `apply_exits` avoids:** a hand-written loop that exits on the stop and then, on the same bar, re-checks the entry *state* (`MA_F > MA_S`, `x > BUY_TH`) re-enters at once — the position series comes out bar-for-bar identical and the stop does nothing. A trend filter stays true for hundreds of bars; after an exit the strategy must wait for a fresh entry (the base signal leaving and re-taking that side), which `apply_exits` does.
+
+**If the backtest after adding an exit comes back identical to before** (same Trades, Return, MDD), the new code never changed a position. Check that once — one script that prints how many bars differ between the old and new `compute_signals` on the same `df` — then report what it shows. Do not re-run the backtest to "confirm", and do not keep probing: one check, then tell the user.
 
 ## Indicator hygiene — standardise ratios in log space
 
@@ -363,13 +388,130 @@ Use `lib/data` fetch functions inside `fetch_data(hdrs)`:
 
 ```python
 def fetch_data(hdrs):
-    from lib.data import fetch_kline, fetch_holder_concentration
+    from lib.data import fetch_kline, fetch_holder_concentration, align_feed
     df = fetch_kline(SYMBOL, INTERVAL, START, END, hdrs)
     hc = fetch_holder_concentration(SYMBOL, INTERVAL, START, END, hdrs)
-    df = df.join(hc.rename(columns={"alpha": "HC"}))
-    df["HC"] = df["HC"].ffill()
-    return df
+    hc = align_feed(df, hc, 'holder_concentration', INTERVAL, bar_tz='UTC')
+    return df.loc[hc.index].join(hc.rename(columns={"alpha": "HC"}))
 ```
+
+A plain `df.join(hc); ffill()` gives the same backtest when the alpha's interval equals the
+bars', but live it silently reuses the previous hour when the new bucket is late —
+`align_feed` refuses that bar instead (next section).
+
+## External data — attach by publication time (`align_feed`)
+
+Every non-price feed (Blave alphas, 三大法人, 融資融券, PER, 外資持股, 分點, 期貨法人, PCR, 月營收,
+財報, 集保, economic calendar) is stamped with the period it DESCRIBES: 三大法人 for 09-23 is
+stamped `2026-09-23 00:00` but published that evening. `join` / `reindex(...).ffill()` onto
+intraday bars hands the 09:00 bar a number published at 20:00 — a look-ahead the backtest
+rewards and live cannot reproduce, and the runner refuses it as 偷看未來.
+
+### Taiwan daily flows — copy this (Type A)
+
+`lib.data.join_tw_flow` fetches the feed and attaches it in one call. Nothing else to look up —
+no timezone argument, no source name:
+
+```python
+INTERVAL = "60m"          # any TXF / MXF / TMF / stock interval; '1d' works the same
+FLOW_TH  = 3000           # 口 — a placeholder; set it from the data's range / a parameter scan
+
+def fetch_data(hdrs):
+    from lib.data import fetch_twfutures_ohlcv, join_tw_flow
+    df = fetch_twfutures_ohlcv('TXF', INTERVAL, START, END, hdrs)
+    return join_tw_flow(df, 'futures_institutional', INTERVAL, START, END, hdrs, id='TX')
+
+def compute_signals(df, flow_th=FLOW_TH):
+    import pandas as pd, numpy as np
+    flow   = df['fut_foreign_net_deal']                          # 外資台指期當日買賣超(口)
+    signal = pd.Series(np.nan, index=df.index)
+    signal[flow >  flow_th] = 1.0
+    signal[flow < -flow_th] = 0.0
+    return signal
+```
+
+`PLOT_SERIES = {"外資期貨買賣超": "fut_foreign_net_deal"}` shows it under the trade chart. The day's
+row reaches intraday bars from the first bar closing after 18:05; on `'1d'` bars, bar D carries D.
+
+| `kind` | `id` | columns added |
+|---|---|---|
+| `futures_institutional` 期貨三大法人 | `'TX'` / `'MTX'` / `'TMF'` (`TXF`/`MXF` accepted) | `fut_{foreign\|investment_trust\|dealer}_{net_oi\|long_oi\|short_oi\|net_deal}` — 外資期貨淨多單 = `fut_foreign_net_oi`, 當日淨買賣口數 = `fut_foreign_net_deal` |
+| `stock_institutional` 個股三大法人 | stock id | `inst_foreign_net` + the raw buy/sell columns |
+| `market_institutional` 大盤三大法人金額 | — | `mkt_foreign`, `mkt_investment_trust`, `mkt_dealer`, `mkt_total` |
+| `margin` 大盤融資融券 | — | `margin_balance`, `margin_balance_prev`, `margin_balance_value`, `short_balance`, `short_balance_prev` |
+| `pcr` 選擇權 PCR | — | `pcr` |
+| `per` 本益比 | stock id | `dividend_yield`, `PER`, `PBR` |
+| `broker_total` 全部分點合計 | stock id | `broker_net` |
+| `broker_branch` 各分點 | stock id | `br_<branch id>` (one column per branch) |
+
+`prefix=` renames the columns. The returned `df` is already cut to the bars whose flow row is
+published; a missing day is NaN (never yesterday's value) — do not `ffill` those columns.
+Type C (many stocks) and every other feed: `align_feed` below.
+
+### `align_feed` — any feed, any market
+
+```python
+def fetch_data(hdrs):
+    from lib.data import fetch_twfutures_ohlcv, fetch_twfutures_institutional, align_feed
+    df   = fetch_twfutures_ohlcv('TXF', '60m', START, END, hdrs)          # naive UTC index
+    flow = fetch_twfutures_institutional('TX', START, END, hdrs)
+    flow = align_feed(df, flow, 'twfutures_institutional', INTERVAL, bar_tz='UTC')
+    return df.loc[flow.index].join(flow)          # flow.index = df's bars, trailing unpublished bars cut
+```
+
+- **Rule:** a bar may use a row only if the row was published by the bar's close (label + `INTERVAL`).
+  Daily bars therefore keep same-day evening data (bar D closes at D+1 00:00; the live tick
+  runs before the next open), intraday bars get it from the first bar closing after publication.
+- `source` = the fetcher name without `fetch_` (`'twstock_institutional'`, `'twmarket_margin'`, …;
+  `_batch` names work too). 金融保險業 statements: `'twstock_financials_finance'`; 保險業 monthly
+  revenue: `'twstock_monthly_revenue_insurance'`. `bar_tz` is required for a naive index: `'UTC'`
+  for `fetch_kline` and intraday TW bars, `'Asia/Taipei'` for `fetch_twstock_price*` daily bars.
+- Pass a **wide** frame: one row per date (Type C: dates × stocks, one call for the whole frame —
+  a stock missing on a date is just NaN there; `examples/tw100_foreign_zscore` is the pattern).
+  Pivot `fetch_twstock_financials` and unstack `fetch_twstock_trader_flows` first. The economic
+  calendar goes in as returned, filtered to ONE indicator; the value is `real`.
+- **A row that is due but missing:** mid-history → that bar is NaN (a hole, not yesterday's value);
+  at the end of a backtest → those bars are cut and a `⚠️ … cut` line is printed; **live →
+  `FeedNotPublished`**: the tick refuses to trade the previous value, `wait_for_bar` keeps
+  waiting and alerts 15 minutes after the row was due, naming the feed. Monthly / quarterly /
+  weekly filings only print a warning (a late filer must not halt the strategy; the previous
+  filing is what was known).
+- Take the trimmed index for price too (`df.loc[aligned.index]`), and do not `ffill` the aligned
+  columns across a NaN — that re-creates the stale value `align_feed` just removed.
+
+Publication times (`lib/data.py` › `FEED_TIMING`, Taipei time unless noted): the LATER of the
+official publication and when Blave serves it. The api caches the TW daily endpoints for 5
+minutes, and 月營收 / 財報 / 外資持股 per UTC day (a copy fetched before the evening publish is
+served until 08:00 Taipei the next day). **Unconfirmed** = no official time exists; the late value
+is kept on purpose — never tighten one from memory:
+
+| Source | Known from | Basis |
+|---|---|---|
+| Blave alphas (`holder_concentration`, `taker_intensity`, `whale_hunter`, `funding_rate`, `liquidation`, `unusual_movement`, `squeeze_momentum`, `market_*`, `capital_shortage`, `top_trader_exposure`) | the close of the row's own bucket (row = bucket open); arrival lag after that **unconfirmed** | api `only_finalized_data=True`: a bucket's row exists only once its last base bar is in. Local cache files show rows present 5–57 min after close (upper bounds only) — live waits for the row and alerts 15 min after the bucket close |
+| `twstock_institutional` (+`_batch`) | D 20:05 | TWSE 三大法人買賣超 final 20:00 (e-shop spec); FinMind 20:00; + 5 min |
+| `twstock_per` (+`_batch`) | D 18:05 | TWSE 本益比 18:00; FinMind 18:00; + 5 min (TPEx later — live waits) |
+| `twstock_foreign_shareholding_batch` | D+1 08:00 | TWSE 外資持股 final 21:30; api UTC-day cache |
+| `twmarket_institutional` | D 19:45 | TWSE 三大法人買賣金額 約19:40 with 鉅額 (14:50 without); + 5 min. Assumes the stored history is the 19:40 version (FinMind says 15:00) — **unconfirmed**; if it is the 14:50 one this is 4.7 h late, never early |
+| `twmarket_margin` | D 21:05 | TWSE 融資融券餘額 約21:00; FinMind 21:00; + 5 min |
+| `twmarket_turnover` | D+1 00:00 (unconfirmed) | TWSE publishes no time for FMTQIK |
+| `twfutures_institutional` | D 18:05 | FinMind 18:00 (TAIFEX ~15:00); + 5 min |
+| `twfutures_pcr` | D+1 00:00 (unconfirmed) | TAIFEX publishes no time for pcRatio |
+| `twstock_all_broker_net` / `branch_daily_net` / `trader_flows` / `broker_net` | D+1 00:00 | TWSE 買賣日報表 16:00; FinMind 21:00; Blave's store is written only by its job at 21:30 with a 23:30 retry (one run observed: 2026-09-23, day written 21:31) → 00:00 covers the retry; `broker_net` is sparse → no freshness check |
+| `twstock_monthly_revenue` (+`_batch`) | the day after the 10th, 08:00 (a weekend 10th → the day after Monday) | 證券交易法 §36; FinMind weekdays 18:00; api UTC-day cache; stamp 04-01 = March. FSC may extend a holiday month (特殊適用範圍辦法 §4-1) |
+| `twstock_monthly_revenue_insurance` | as above with the 15th, from 2026 revenue | 特殊適用範圍辦法 §3(5) |
+| `twstock_financials` / `balance_sheet` (+`_batch`) | 5/16, 8/15, 11/15, next 4/1 — 08:00 | 證券交易法 §36; api UTC-day cache; FinMind's own ingest time undocumented (a late one → live warning) |
+| `twstock_financials_finance` | 5/16, **9/1**, 11/15, next 4/1 — 08:00 | 金控·銀行·證券·期貨·保險: Q2 within two months (特殊適用範圍辦法 §3(3)) |
+| `twstock_shareholding` (+`_batch`) | data date + 3 days 08:00 (unconfirmed) | TDCC / FinMind publish no time |
+| `twfutures_bid_ask_vol` | the minute's close + 30 s (UTC) | row = minute open (api tick floor); today's minutes cached 30 s |
+| `economic_calendar` | release time + 5 min; no time → next day 00:00; upstream fill delay **unconfirmed** | api cache 5 min; 鉅亨 publishes no fill time — live waits for `real` |
+
+Sources: TWSE Data E-Shop product specs (產製時間) https://eshop.twse.com.tw/zh/category/all ·
+FinMind update times https://finmind.github.io/tutor/TaiwanMarket/Chip/ (and /Technical/,
+/Derivative/, /Fundamental/) · 證券交易法 §36 https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=G0400001&flno=36 ·
+公開發行公司財務報告及營運情形公告申報特殊適用範圍辦法 https://law.fsc.gov.tw/LawContent.aspx?id=GL000593 ·
+TDCC 集保戶股權分散表 https://www.tdcc.com.tw/portal/zh/smWeb/qryStock · pages checked that publish no time: TWSE FMTQIK https://www.twse.com.tw/zh/trading/historical/fmtqik.html, TAIFEX PCR https://www.taifex.com.tw/cht/3/pcRatio.
+
+Filings (月營收, 財報) carry no per-company filing date in the data, so the legal deadline stands in: an early filer's value is used later than it was public (conservative), a filer later than the deadline is anticipated in the backtest by its lateness — live only warns about that one.
 
 
 ## Vol Targeting (optional)
@@ -423,6 +565,21 @@ def compute_signals(df):
 - There is no mode constant in a strategy file — a new strategy is a draft until the user confirms; whether it trades is decided by its schedule and order settings (`references/deployment.md`), never by a flag in the code
 - NEVER truncate or cap arrays (no `[:N]` slicing)
 - Execution timing: signal fires at Close[t] → executes at Open[t+1] by default (next-bar open); use `exec_at_close` for this-bar close execution (futures settlement only)
+- `MARKET = "spot"` cannot short. Keep `compute_signals` long-only (`signal = signal.clip(lower=0.0)`, already in `TEMPLATE_A.py`). The backtest clamps a spot short to flat and says so, same as live, but `param_scan` / `walk_forward` call `compute_signals` directly and would still score the shorts; `lib/quality_check.py` warns.
+
+### FEE is PER SIDE (one-way)
+
+The engine charges `|Δw| × FEE` on every position change, in the backtest, scans, walk-forward and MCPT alike — open then close = `2 × FEE`, a long→short flip = `2 × FEE` at once. So `FEE` is the cost of ONE side: commission + that side's tax + slippage (≈ half the spread or 1 tick). Never put a round-trip total in it. When the two sides cost differently (a tax only on the sell), use their average.
+
+| Market | Per-side `FEE` | How |
+|---|---|---|
+| Binance USDT-M perp, taker | `0.0005` | 0.05% taker per side (regular tier); lower only for a verified VIP / maker fill |
+| Taiwan stocks | `0.003` (list-price ceiling) | commission ≤ 0.1425% each side + securities transaction tax 0.3% on the sell only → (0.1425 + 0.1425 + 0.3) / 2 ≈ 0.29%. A broker's e-trading discount lowers the commission part — recompute with the user's actual discount |
+| Taiwan ETFs | `0.002` (ceiling) | same, with the ETF sell tax of 0.1% → (0.285 + 0.1) / 2 ≈ 0.19% |
+| TAIFEX index futures TXF / MXF / TMF | per instrument | `references/lib.md` › Taiwan index futures — `FEE ≈ 0.00002 + commission/(multiplier·index) + tick/index` |
+| CME / NYMEX | verify with the broker | commission + spread per side, as a fraction of notional (`examples/cl_sma` uses `0.0003`) |
+
+Rates are sources, not defaults: confirm the user's venue and tier before a backtest you will report.
 
 ---
 
@@ -516,9 +673,11 @@ def _compute_signal(close_df, param1=PARAM1):
 def _compute_weights(signal_df, param2, is_rebalance):
     """Signal → weight DataFrame. Two common patterns:
       A) Top-N equal weight:
-            rank = signal_df.rank(axis=1, ascending=False, na_option='bottom')
-            w = DataFrame(np.where(rank <= param2, 1/param2, 0), ...)
+            rank = signal_df.rank(axis=1, ascending=False, method='first', na_option='bottom')
+            w = DataFrame(np.where((rank <= param2) & signal_df.notna(), 1/param2, 0), ...)
             w[signal_df.isna().all(axis=1)] = 0.0
+         method='first' is required: the default 'average' gives tied assets the same rank,
+         so a top-2 of [3,3,3,1] weights three assets (row sum 1.5) and [3,2,2,2,2,1] only one (0.5).
       B) Proportional (z-score → normalize):
             pos = signal_df.clip(lower=0).fillna(0)
             w = pos.div(pos.sum(axis=1).where(pos.sum(axis=1) > 0), axis=0).fillna(0.0)
@@ -529,12 +688,14 @@ def _compute_weights(signal_df, param2, is_rebalance):
     return w.ffill().fillna(0.0)
 
 def _rebalance_mask(idx, freq='W'):
-    """Bool numpy array — True on last bar of each period. freq: 'W', 'M', 'D'."""
+    """Bool numpy array — True on the FIRST bar of each period. freq: 'W', 'M', 'D'.
+    Not the last bar: that needs the next bar to be known, so live would rebalance every bar
+    and the runner's look-ahead check refuses the backtest."""
     import pandas as pd, numpy as np
     if freq == 'D':
         return np.ones(len(idx), dtype=bool)
     s = pd.Series(idx.to_period(freq), index=idx)
-    return (s != s.shift(-1)).fillna(True).to_numpy()
+    return (s != s.shift(1)).to_numpy()
 
 def compute_signals(data, param1=PARAM1, param2=PARAM2):
     import pandas as pd
@@ -549,6 +710,30 @@ def compute_signals(data, param1=PARAM1, param2=PARAM2):
 ```
 
 See `examples/tw100_foreign_zscore/strategy.py` (z-score proportional) and `examples/twstock_momentum/strategy.py` (top-N equal weight) for complete working implementations.
+
+### Live trading (Type C)
+
+A funded Type C strategy (an `amounts` entry > 0 in `manager/portfolio_config.json`) trades
+like any other. Each live tick writes `strategies/<name>/state.json` as
+`{"type": "portfolio", "market", "weights": {SYMBOL: w}, "rebalance_at", "bar_at", "updated_at"}`
+(`lib/runner.typec_live_state`): `weights` is the LAST row of the weight matrix (what the backtest
+holds from the next bar), keys are the `close` columns uppercased without `-`; `rebalance_at` is the
+bar that row began on. The reconciler targets `amount × w` per asset, netted per coin with every
+other strategy; spot clamps a negative `w` to 0. Between rebalances the weights — so the targets —
+do not change, and the bot's book does not trade on price drift. An asset that leaves `weights`
+(or goes to 0) closes only the bot's own share of it; the user's positions on the same coins are
+never touched (`references/manager.md` › *self_ledger*). Not traded: a portfolio whose
+`asset_specs` entry is lots/shares (skipped with a warning). `resume_wait` (「等新訊號」) waits for
+the portfolio's next rebalance.
+
+Weights must be computed only from data up to each bar (the rebalance mask is the FIRST bar of
+each period, as in the template) — otherwise the live row differs from the backtest's.
+
+**Verify after the first live tick:** `state.json` has `weights` matching the backtest's last row
+and a sensible `rebalance_at`; `manager/last_reconcile.json` `target` lists every asset at
+`amount × w` with this strategy in `contributors` (`"portfolio": true`). A state with no `weights`
+(written before Type C traded live) is "no live target yet": nothing is traded for it until the
+next tick rewrites it.
 
 ### Lookahead Bias Warning
 

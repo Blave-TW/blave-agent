@@ -70,4 +70,117 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
 ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
   && /\$\("rp-nobt"\)\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
 
-console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+// ── 側欄:再點一次選中的那支 = 取消選取、中欄回 welcome(Wei 09-23)。真的跑 stratRefresh 畫列、按列上的 click ──
+(async () => {
+  const mkEl = (tag) => { const n = { tag, className: "", hidden: false, dataset: {}, attrs: {}, kids: [], on: {}, _text: "", title: "", type: "", parent: null,
+    get textContent() { return this._text + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this._text = String(v); this.kids = []; },
+    setAttribute(k, v) { this.attrs[k] = String(v); }, removeAttribute(k) { delete this.attrs[k]; }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
+    addEventListener(ev, fn) { (this.on[ev] = this.on[ev] || []).push(fn); }, append(...c) { c.forEach((x) => this.appendChild(x)); },
+    appendChild(c) { if (typeof c === "string") c = { tag: "#text", textContent: c, kids: [], className: "" }; if (c && typeof c === "object") { c.parent = this; this.kids.push(c); } return c; }, remove() { if (this.parent) this.parent.kids = this.parent.kids.filter((x) => x !== this); },
+    get isConnected() { return !!this.parent && this.parent.kids.includes(this); },
+    focus() { doc.activeElement = this; }, click() { (this.on.click || []).forEach((f) => f({ currentTarget: this })); },
+    querySelectorAll(sel) { const cls = sel.replace(/^\./, ""), out = []; const walk = (x) => x.kids.forEach((k) => { if ((" " + k.className + " ").includes(" " + cls + " ")) out.push(k); walk(k); }); walk(this); return out; } };
+    return n; };
+  const doc = { createElement: mkEl, activeElement: null, body: mkEl("body") };
+  const dom = {}; const $ = (id) => dom[id] || (dom[id] = mkEl("div"));
+  const RP = { list: [], name: null, data: null, tab: "bt", drawn: {} }, RPC = { name: null };
+  const ENV = { cur: "local" }, TR_BAGS = { local: { open: false } };
+  let running = false, loads = 0; const t = (k) => k;
+  const window = { blave: { listStrategies: async () => [{ name: "a", displayName: "A", mtime: 1 }, { name: "b", displayName: "B", mtime: 2 }],
+    loadStrategy: async (n) => { loads++; return { name: n, stats: null, code: "x" }; }, deleteStrategy: async () => true } };
+  const armedDelete = () => mkEl("button"), stratTip = (d) => d, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, confirmBox = () => {}, stratBlockedNote = () => mkEl("p");
+  const document = doc;
+  eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
+  eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));
+  eval("var stratSelect = async " + fnOf(appSrc, "stratSelect").replace(/^async /, ""));
+  ["rp", "main-empty", "tr"].forEach((id) => { $(id).hidden = id !== "main-empty"; });
+  await stratRefresh(false);
+  const rows = () => $("strat-list").querySelectorAll("strat-row"), rowA = () => rows().find((r) => r.dataset.name === "a");
+  const tick = () => new Promise((r) => setImmediate(r));
+  rowA().focus(); rowA().click(); await tick();
+  ok("點一支:選中、中欄是報告、welcome 收起", RP.name === "a" && rowA().attrs["aria-current"] === "true" && $("rp").hidden === false && $("main-empty").hidden === true);
+  const same = rowA(); rowA().click(); await tick();
+  ok("再點一次同一支:取消選取、中欄回 welcome、列上的 aria-current 拿掉", RP.name === null && RP.data === null && $("main-empty").hidden === false && $("rp").hidden === true && !("aria-current" in rowA().attrs));
+  ok("取消選取不重建列:焦點留在那一列(不掉到 BODY)", rowA() === same && doc.activeElement === same);
+  rowA().click(); await tick();
+  ok("取消之後再點:又選中(是切換,不是一次性)", RP.name === "a" && $("rp").hidden === false);
+  rows().find((r) => r.dataset.name === "b").click(); await tick();
+  ok("選中 a 時點 b:換成 b(不是取消)", RP.name === "b" && $("main-empty").hidden === true);
+  ok("鍵盤:列是 <button>,Enter / Space 走同一個 click", /b\.type = "button"; b\.className = "strat-row";/.test(fnOf(appSrc, "stratRefresh")));
+  // ── 雲端視角點一支策略(Wei 09-23):立刻換到那一頁、本體先放「載入中…」,不等雲端回來;讀不到 = 讀不到 +〔重新查看〕;
+  //    連點兩支 = 最後一次點的算、晚到的那份不畫;點過的有快取 = 立刻畫、背景再抓。真的跑 rpCloudSelect + envShowMain ──
+  { const dom2 = {}; const $2 = (id) => dom2[id] || (dom2[id] = mkEl("div"));
+    ["rp", "tr", "main-empty"].forEach((id) => { $2(id).hidden = id !== "tr"; }); $2("cv-empty").hidden = true; $2("rp-wait").hidden = true;
+    const pendingLoads = []; let said = [];
+    const C = { alertSrc: null, alertText: "", st: { cloud: { strategies: [{ name: "a", display_name: "策略 A" }, { name: "b", display_name: "策略 B" }] } },
+      api: { loadStrategy: (n) => new Promise((res) => pendingLoads.push({ n, res })) } };
+    const scope = { $: $2, document: doc, t: (k) => k, ENV: { cur: "cloud", sig: {} }, TR_BAGS: { cloud: C, local: { open: false } }, RP: { name: null }, RPC: { name: null, data: null, tab: "bt", drawn: {} },
+      trAlert: () => {}, srSay: (x) => said.push(x), hoPaint: () => {}, window: {} };
+    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpShowTab"),
+      appSrc.slice(appSrc.indexOf("const RPC_CACHE = new Map();"), appSrc.indexOf("async function rpCloudSelect(")).replace(/^const |^let /gm, "var "),
+      "var rpCloudSelect = async " + fnOf(appSrc, "rpCloudSelect").replace(/^async /, ""),
+      "var trPaint = () => envShowMain();"].join("\n");
+    const run = new Function(...Object.keys(scope), code + "\nreturn { rpCloudSelect, RPC_CACHE: () => RPC_CACHE, shownAt: () => rpWaitShownAt };");
+    const api = run(...Object.values(scope)), RPC = scope.RPC, tick = () => new Promise((r) => setImmediate(r));
+    const waitLine = () => { const w = $2("rp-wait"); return w.hidden ? null : w.kids.map((k) => k.className + ":" + k.textContent).join("|"); };
+    api.rpCloudSelect("a");
+    ok("點下去當下(雲端還沒回來):中欄已經換成那一支的頁面、頁首是清單上的名字、本體是「載入中…」(不是停在自動下單頁)",
+      $2("rp").hidden === false && $2("tr").hidden === true && $2("rp-name").textContent === "策略 A" && /^cx-wait:.*tr\.loading/.test(waitLine() || "") && $2("rp-tabs").hidden === true);
+    pendingLoads.shift().res({ name: "a", displayName: "策略 A", description: "d", code: "print(1)", stats: null }); await tick();
+    ok("資料回來:換成報告(等待那一行收起、分頁列回來)", RPC.data && RPC.data.code === "print(1)" && $2("rp-wait").hidden === true && $2("rp-tabs").hidden === false);
+    // 連點:先點 b、還沒回來又點 a;b 晚到不准畫
+    api.rpCloudSelect("b"); api.rpCloudSelect("a", true);
+    const lb = pendingLoads.find((x) => x.n === "b"), la = pendingLoads.filter((x) => x.n === "a").pop();
+    la.res({ name: "a", displayName: "策略 A", description: "d", code: "print(2)", stats: null }); await tick();
+    lb.res({ name: "b", displayName: "策略 B", description: "", code: "B", stats: null }); await tick();
+    ok("連點兩支:最後一次點的那支留在畫面上,晚到的那一份不畫", RPC.name === "a" && RPC.data.code === "print(2)" && $2("rp-name").textContent === "策略 A");
+    pendingLoads.length = 0;
+    // 同一支點了兩次(a → b → a):第一趟 a 比第三趟晚到,舊的那份也不准蓋掉新的(比的是第幾趟,不是名字)
+    api.RPC_CACHE().clear(); api.rpCloudSelect("a", true); api.rpCloudSelect("b"); api.rpCloudSelect("a");
+    const [a1, , a3] = pendingLoads.splice(0);
+    a3.res({ name: "a", displayName: "策略 A", description: "", code: "new", stats: null }); await tick();
+    a1.res({ name: "a", displayName: "策略 A", description: "", code: "old", stats: null }); await tick();
+    ok("a → b → a:第一趟 a 晚到不蓋掉最後一趟", RPC.data.code === "new" && api.RPC_CACHE().get("a").code === "new");
+    // 點過的(有快取):立刻畫快取、背景再抓;背景抓回新的就換
+    api.rpCloudSelect("b"); pendingLoads.shift().res({ name: "b", displayName: "策略 B", description: "", code: "B1", stats: null }); await tick();
+    api.rpCloudSelect("a");
+    ok("點過的那支:當下就是快取那一份(不出「載入中」),背景還是去抓", RPC.data.code === "new" && $2("rp-wait").hidden === true && pendingLoads.length === 1);
+    pendingLoads.shift().res({ name: "a", displayName: "策略 A", description: "d", code: "print(3)", stats: null }); await tick();
+    ok("背景抓回新的:換成新的", RPC.data.code === "print(3)");
+    api.rpCloudSelect("b"); pendingLoads.shift().res(null); await tick();
+    ok("有快取時背景重抓失敗:手上那份照留,不變成讀不到", RPC.name === "b" && RPC.data.code === "B1" && $2("rp-wait").hidden === true);
+    // 讀不到(沒有快取):讀不到 +〔重新查看〕;按下去重抓
+    api.RPC_CACHE().clear(); said = [];
+    api.rpCloudSelect("a"); pendingLoads.shift().res(null); await tick();
+    const w = $2("rp-wait"), retry = w.kids.find((k) => k.id === "rp-retry");
+    ok("讀不到:頁面留在那一支、本體講讀不到 +〔重新查看〕(不跳回自動下單頁);#rp-wait 是 role=status 自己會唸,不再另外 srSay(會唸兩遍)", $2("rp").hidden === false && RPC.name === "a" && /plan-err/.test(waitLine() || "")
+      && /tr\.cloud\.reportUnreach/.test(waitLine()) && !!retry && !said.includes("tr.cloud.reportUnreach"));
+    ok("設計稽核 005 第 7 條:〔重新查看〕是描邊鈕(資料 panel 的 Retry),在句子下一行(不是句子裡的文字鈕)",
+      retry.className === "btn-out" && w.kids[0].className === "plan-err" && !w.kids[0].kids.some((k) => k.id === "rp-retry"));
+    retry.click();
+    ok("按〔重新查看〕:重抓一次、先回到「載入中…」", pendingLoads.length === 1 && /tr\.loading/.test(waitLine() || ""));
+    pendingLoads.shift().res({ name: "a", displayName: "策略 A", description: "", code: "ok", stats: null }); await tick();
+    ok("重抓成功:換成報告", RPC.data.code === "ok" && $2("rp-wait").hidden === true);
+    // Loader 時機:200ms 內回來的不畫等待(不閃);畫了就撐滿 300ms 才換
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    api.RPC_CACHE().clear(); api.rpCloudSelect("a", true);
+    const line0 = $2("rp-wait").kids[0];
+    ok("等待那一行:剛點下去是藏著的(200ms 內不畫)", line0 && line0.hidden === true && api.shownAt() === 0);
+    pendingLoads.shift().res({ name: "a", displayName: "策略 A", description: "", code: "fast", stats: null }); await tick();
+    ok("…200ms 內就回來:直接換成報告,等待那一行從沒出現過", RPC.data.code === "fast" && line0.hidden === true);
+    await sleep(260);
+    ok("…之後那個計時器也不會把已經撤掉的那一行翻出來", line0.hidden === true && api.shownAt() === 0);
+    api.RPC_CACHE().clear(); api.rpCloudSelect("b", true);
+    const line1 = $2("rp-wait").kids[0]; await sleep(230);
+    ok("過了 200ms 還沒回來:等待那一行出現", line1.hidden === false && api.shownAt() > 0);
+    const t0 = Date.now(); pendingLoads.shift().res({ name: "b", displayName: "策略 B", description: "", code: "slow", stats: null }); await tick();
+    ok("…出現後馬上就回來:先撐著,不立刻換(至少 300ms)", RPC.data.pending === "loading");
+    await sleep(320);
+    ok("…撐滿 300ms 之後換成報告", RPC.data.code === "slow" && Date.now() - t0 >= 250);
+    { const h = new Function(fnOf(appSrc, "rpWaitHold") + appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0] + "\nreturn rpWaitHold;")();
+      ok("rpWaitHold:沒出現過 0;出現 100ms → 再等 200;出現超過 300ms → 0", h(0, 5000) === 0 && h(1000, 1100) === 200 && h(1000, 1400) === 0); }
+    api.rpCloudSelect(null);
+    ok("收掉選取:回雲端自動下單頁", $2("rp").hidden === true && $2("tr").hidden === false); }
+  console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+})();
+

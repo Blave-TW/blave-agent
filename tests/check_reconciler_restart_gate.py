@@ -71,13 +71,14 @@ def run_loop(schedule, stop_at):
     """Run the real loop; schedule = {tick: "add" | "remove"} applied as each
     POLL_INTERVAL sleep ends. Returns (ticks at which reconcile ran, heartbeat
     fresh at each tick)."""
-    rounds, hb_fresh, tick = [], [], {"n": 0}
+    rounds, hb_fresh, tick, main_ns = [], [], {"n": 0}, {}
 
     def _spy(**kw):
         rounds.append(tick["n"])
         return []
 
     def _sleep(_s):
+        main_ns.update(sys._getframe(1).f_globals)
         tick["n"] += 1
         hb_fresh.append(os.path.exists(HB) and time.time() - os.path.getmtime(HB) < 5)
         act = schedule.get(tick["n"])
@@ -96,6 +97,9 @@ def run_loop(schedule, stop_at):
         pass
     finally:
         time.sleep = real_sleep
+        # the singleton lock dies with the process in real life; this "process" runs again
+        if isinstance(main_ns.get("_singleton_fd"), int):
+            os.close(main_ns["_singleton_fd"])
     return rounds, hb_fresh
 
 

@@ -216,7 +216,9 @@
     const start = typeof stats.start === "string" && stats.start ? stats.start : null;
     const end = typeof stats.end === "string" && stats.end ? stats.end : null;
     if (start || end) parts.push([mono((start || DASH) + " \u2192 " + (end || DASH))]);
-    const fee = fmtFixed(stats["fee [%]"]);
+    // 費率:讀 fee [%];舊的投資組合(Type C)stats.json 只有小數的 fee(runner 後來才補 fee [%],舊檔不會重跑)——
+    // 讀不到就畫「手續費 —」,旁邊又寫著總手續費,兩個數字互相打臉(設計稽核 005 第 1 條)
+    const fee = fmtFixed(isNum(stats["fee [%]"]) ? stats["fee [%]"] : isNum(stats.fee) ? stats.fee * 100 : null);
     if (fee !== null) parts.push([el("span", "", t("bt.fee")), mono(fee + "%")]);
     if (!parts.length) return null;
     const meta = el("div", "bt-meta");

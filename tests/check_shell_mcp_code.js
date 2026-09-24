@@ -90,7 +90,7 @@ const world = (o = {}) => { const w = { now: 1e12, calls: 0, res: o.res || ok200
     t("turnCreds 第三欄 mcp:功能開 + 有登入,不看連的是誰;它開著不會讓帳號 token 進環境", row("claude", true, true, true) === "-DM" && row("codex", true, false, true) === "--M" && row("blave", true, true, true) === "TDM"
       && row("claude", false, false, true) === "---" && row("blave", false, true, true) === "---");
     t("功能關:不管怎樣都不掛(兩種狀態都釘住)", ["claude", "codex", "blave"].every((k) => turnCreds(k, true, true, false).mcp === false && turnCreds(k, true, true, undefined).mcp === false && turnCreds(k, true, true, "1").mcp === false)); }
-  t("接線:旗標進 turnCreds;拿到碼才寫檔;兩條引擎都寫(Codex 也靠 --mcp-config 讓 runtime 知道這一輪有掛)", /turnCreds\(conn\.kind, signedIn, signedIn && await dataIncluded\(\), cloudHandoffOn\(\)\)/.test(main)
+  t("接線:旗標進 turnCreds;拿到碼才寫檔;兩條引擎都寫(Codex 也靠 --mcp-config 讓 runtime 知道這一輪有掛)", /turnCreds\(conn\.kind, signedIn, signedIn && await hasBlaveData\(\), cloudHandoffOn\(\)\)/.test(main)
     && /if \(plan\.mcp\) \{ mcpMount = await mcpCode\(\)\.get\(\); if \(mcpMount\) mcpFile = require\("\.\/mcpcode"\)\.writeConfig\(mcpDir\(\), mcpMount\); \}/.test(main) && !/!useCodex/.test(main));
   t("argv 上只有路徑(--mcp-config=<檔>);碼進環境只在 Codex 引擎那一個 spread(Claude 的環境裡沒有),而且是同一顆檔案寫成功才給", /\.\.\.\(mcpFile \? \["--mcp-config=" \+ mcpFile\] : \[\]\)/.test(main)
     && /\.\.\.\(useCodex && mcpFile \? \{ BLAVE_MCP_TOKEN: mcpMount\.accessCode, BLAVE_MCP_URL: mcpMount\.url \} : \{\}\)/.test(main) && (main.match(/accessCode/g) || []).length === 1 && (main.match(/BLAVE_MCP_TOKEN/g) || []).length === 1);

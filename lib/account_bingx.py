@@ -32,9 +32,25 @@ BASE_URL = "https://open-api.bingx.com"
 FALLBACK = "https://open-api.bingx.pro"
 
 
+_time_offset = {"ms": 0}  # BingX's clock − ours — same scheme as lib/order_bingx.py
+
+
+def _sync_time():
+    """After a 100421 (timestamp rejected): offset against BingX's clock,
+    best-effort — see lib/order_bingx._sync_time."""
+    try:
+        t0 = time.time()
+        r = requests.get(f"{BASE_URL}/openApi/swap/v2/server/time",
+                         headers={"X-SOURCE-KEY": "BX-AI-SKILL"}, timeout=5)
+        t1 = time.time()
+        _time_offset["ms"] = int(r.json()["data"]["serverTime"]) - int((t0 + t1) / 2 * 1000)
+    except Exception:
+        pass
+
+
 def _sign(secret_key, params):
     params = dict(params)
-    params["timestamp"] = str(int(time.time() * 1000))
+    params["timestamp"] = str(int(time.time() * 1000) + _time_offset["ms"])
     canonical = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     sig = hmac.new(secret_key.encode(), canonical.encode(), hashlib.sha256).hexdigest()
     return canonical + f"&signature={sig}"
@@ -70,8 +86,13 @@ def _signed_get(path, env, params=None):
         raise ValueError("BINGX_API_KEY / BINGX_SECRET_KEY missing from .env")
 
     headers = {"X-BX-APIKEY": api_key, "X-SOURCE-KEY": "BX-AI-SKILL"}
-    qs = _sign(secret_key, params or {})
-    return _call(f"{path}?{qs}", headers)
+    try:
+        return _call(f"{path}?{_sign(secret_key, params or {})}", headers)
+    except Exception as e:
+        if str(getattr(e, "code", "")) != "100421":
+            raise
+        _sync_time()  # timestamp rejected: resync, one retry with a fresh one
+        return _call(f"{path}?{_sign(secret_key, params or {})}", headers)
 
 
 def _public_get(path, params=None):

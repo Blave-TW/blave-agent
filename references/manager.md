@@ -7,7 +7,7 @@
 - `manager/reconciler.py` — position reconciler (polling loop)
 - `manager/stop_strategy.py` / `manager/close_symbol.py` — stop one strategy / close one coin (see *Stopping one strategy / closing one coin*)
 - `manager/portfolio_config.json` — gitignored; written by manager.py; also contains `"exchanges"` dict (see below)
-  - **No `portfolio_config.json` at all (amounts never saved) = the reconciler is read-only:** it reads and reports positions and sends no order, closes included (`lib/portfolio.reconcile`). **The reconciler only** — `manager/flatten.py` (the web 暫停並全部平倉 button, and the HALT flatten) is not scoped by it: no config means no `self_ledger`, and that is exactly the case where it closes EVERY open position on the account, the user's manual ones included. Setting amounts to 0 still closes positions — that saves a config.
+  - **No `portfolio_config.json` at all (amounts never saved) = the reconciler is read-only:** it reads and reports positions and sends no order, closes included (`lib/portfolio.reconcile`). `manager/flatten.py` (the web 暫停並全部平倉 button, and the HALT flatten) is not scoped by it, but it closes only the bot's own book (see *self_ledger*) — never the user's manual positions (spot: min(book quantity, wallet); see the spot-fee caveat there). Setting amounts to 0 closes the bot's own positions — that saves a config.
 
 **CRITICAL — `manager/` holds platform scripts and their own output.** All output (portfolio_config.json, pnl.png, stats.json) is written by the scripts themselves. Never create a `manager/manager/` or any other nested folder — it breaks path resolution in all three scripts. Never delete any file in `manager/` when removing strategies.
 
@@ -102,7 +102,7 @@ Polls every 5 seconds; only reconciles when a strategy's `state.json` mtime chan
 
 A good read resets the counter and the outage clock. `CapitalCacheLagError` (capital's Read-Your-Writes guard, `_capital_check_snapshot_caught_up`) is TRANSIENT, retried on the next poll instead of the 5-minute heartbeat, and neither opens an outage nor re-arms the account guard below. A venue lib without `classify` gets only the agnostic floor (network errors and HTTP status). Never catch-and-return `{}` in `get_positions()` — the classifier can only judge exceptions it sees.
 
-**Account guard** (what "halt on any failure" used to protect): an empty positions read after the key moved to another account makes `reconcile()` re-buy the whole target. So at three moments — reconciler start (the web's start-trading button restarts it), the first good read after any failed read, and any change of the venue credentials in `.env` (compared as an in-memory hash, never stored) — the read must pass before anything trades that round: (a) previous actual (`manager/last_reconcile.json`) non-empty AND current target non-empty AND this read empty → HALT; (b) OKX / Bybit / BingX only: the exchange account id (`get_account_id`) differs from the one in `state/venue_account.json` → HALT (the first id seen is stored, not halted on). A trip is stored as `pending` in that file and the reconciler places nothing — reduce legs included — while HALT stands; the user clearing HALT is the confirmation (the new account id is adopted). An error on the account-id call is classified like a positions error and the check stays due. The reconciler never clears a HALT; only the user resumes.
+**Account guard** (what "halt on any failure" used to protect): an empty positions read after the key moved to another account makes `reconcile()` re-buy the whole target. So at three moments — reconciler start (the web's start-trading button restarts it), the first good read after any failed read, and any change of the venue credentials in `.env` (compared as an in-memory hash, never stored) — the read must pass before anything trades that round: (a) previous actual (`manager/last_reconcile.json`) non-empty AND current target non-empty AND this read empty → HALT; (b) every crypto venue: the exchange account id differs from the one the bot's book was built on → that venue's book is reset first, then HALT (paper: the reset only — a paper rebind is always the user's own act); an id that cannot be read after a key change, with the bot's book open there → HALT and hold (see *Which account a book belongs to* under self_ledger). A trip is stored as `pending` in `state/venue_account.json` and the reconciler places nothing — reduce legs included — while HALT stands; clearing HALT resumes, and never brings an old account's book back. The reconciler never clears a HALT; only the user resumes.
 
 **Qty precision (most common cause of rejected orders):** before placing any order, the order library must know the symbol's qty step, min qty, and min notional — fetch them from the exchange and cache at startup:
 
@@ -123,7 +123,7 @@ params['quantity'] = format(qty, 'f')   # plain string — never 1e-05 notation
 
 After flooring: if qty < min qty or `qty * price` < min notional → `return False` (skip, no phantom-trade notification). Never guess precision from memory — read it from the exchange API or the relevant `skills/blave-quant/references/` file.
 
-**The order lib floors; the auto-wiring decides the lot count.** `lib/venue_wiring.py` sizes every leg to a whole lot BEFORE it reaches `format_qty`, so the floor above is a safety net, not the sizing rule: reduce legs CEIL and cap at the position (`_reduce_qty`), entry legs ROUND half-up (`_entry_qty`). Entries used to inherit the floor, which strands the sub-lot remainder forever whenever an allocation is only a few lots wide — measured 2026-09-08 on uid 32321, `$289` on BTC perps is 3.7 lots of ~`$78`, so a `$227` target floored to `$157` and left a `$70` gap that was over reconcile's `$10` `THRESHOLD` but under one lot: every round re-dispatched an order the venue could never accept, and the gap could not shrink because the next fillable size was a whole lot away. Rounding lands the position on the nearest grid point, so the leftover is at most half a lot — and the leftover is converged by the PER-SYMBOL **entry** gate, not by the flat `THRESHOLD` (half a BTC lot is ~`$39`, well over `10`: on its own the next round would ceil-sell a whole lot back and the one after would buy it again — real fills, real fees, every 300s). `manager/reconciler.py::_symbol_threshold` gates ENTRY legs at `max(THRESHOLD, venue minimum)`, so a leftover under one lot is never bought back; PARTIAL reduce legs (a shrink that leaves some of the position) at `max(THRESHOLD, half a lot)` — the entry gate alone only shut one direction (measured 2026-09-09 on uid 32321, 3 lots vs a `$227` target: a `$10` mark drift over target was ceil-sold as a whole `$79` lot by `_reduce_qty`, the flat gate let it through, and the `$69` gap was bought straight back — 442 real fills). Half a lot converges on its own (after a ceil-sell the gap is `ceil(x) - x`, i.e. < 1 lot < the 1.05-lot entry gate) and is the only safe scale: a reduce gate of ONE lot would make a position of exactly one lot impossible to close or flip (the P0 the flat rule was itself the fix for), so it must never be raised to a lot or given a stale-mark buffer on top. A leg that takes the WHOLE position off — target flat (`0`, or the strategy removed), or the close leg of a flip — is gated at the flat `THRESHOLD` instead (`lib/portfolio.py::_close_threshold`): under `self_ledger` the diff is the book's COST while half a lot is priced at the mark, so a one-lot position that more than doubled (N lots: mark/entry > 2N) was under the gate forever — the signal said flat and no order went out. A full close leaves no ceil remainder and nothing buys it back (no entry leg at target 0; a flip's entry leg keeps the 1.05-lot gate), so the churn above cannot restart; on an account-read book nothing changes, a swap position being whole lots; and dust under `THRESHOLD` is still never sent. The snapshot row's `usd` is the gate that was applied (flat for such a row); `entry_usd` / `reduce_usd` stay the symbol's two side gates. Every recorded row also carries `close_usd` (that flat gate): a reader colouring a LIVE diff uses `min(side gate, close_usd)` when a position is held and the target is flat or on the other side (`act != 0 and (tgt == 0 or tgt * act < 0)`), and the plain side gate otherwise — with `reduce_usd` alone it paints "won't trade" on a close that does go out. A partial reduce after a large move is still judged cost-against-mark — known, and deliberately left on the half-lot gate. Spot / lot-based rows / a failed lookup stay on the flat `THRESHOLD`. The snapshot's `gates` records the reduce side too, with `side: "reduce"` (entry rows carry no `side`), and every recorded row now carries BOTH sides as `entry_usd` / `reduce_usd` — a reader colours a LIVE diff, whose sign can have flipped since that round, so one side alone had it colouring a buy-back against the reduce gate. `usd` (the side that round used) and `diff` are unchanged for the hand-written callers. The trade-off is deliberate: a position can sit under half a lot OVER its target (`$289` allocated, up to ~`$313` held on BTC), the same round-half-up capital lots have always used.
+**The order lib floors; the auto-wiring decides the lot count.** `lib/venue_wiring.py` sizes every leg to a whole lot BEFORE it reaches `format_qty`, so the floor above is a safety net, not the sizing rule: reduce legs CEIL and cap at the position (`_reduce_qty`), entry legs ROUND half-up (`_entry_qty`). Entries used to inherit the floor, which strands the sub-lot remainder forever whenever an allocation is only a few lots wide — measured 2026-09-08 on uid 32321, `$289` on BTC perps is 3.7 lots of ~`$78`, so a `$227` target floored to `$157` and left a `$70` gap that was over reconcile's `$10` `THRESHOLD` but under one lot: every round re-dispatched an order the venue could never accept, and the gap could not shrink because the next fillable size was a whole lot away. Rounding lands the position on the nearest grid point, so the leftover is at most half a lot — and the leftover is converged by the PER-SYMBOL **entry** gate, not by the flat `THRESHOLD` (half a BTC lot is ~`$39`, well over `10`: on its own the next round would ceil-sell a whole lot back and the one after would buy it again — real fills, real fees, every 300s). `manager/reconciler.py::_symbol_threshold` gates ENTRY legs at `max(THRESHOLD, venue minimum)`, so a leftover under one lot is never bought back; PARTIAL reduce legs (a shrink that leaves some of the position) at `max(THRESHOLD, half a lot)` — the entry gate alone only shut one direction (measured 2026-09-09 on uid 32321, 3 lots vs a `$227` target: a `$10` mark drift over target was ceil-sold as a whole `$79` lot by `_reduce_qty`, the flat gate let it through, and the `$69` gap was bought straight back — 442 real fills). Half a lot converges on its own (after a ceil-sell the gap is `ceil(x) - x`, i.e. < 1 lot < the 1.05-lot entry gate) and is the only safe scale: a reduce gate of ONE lot would make a position of exactly one lot impossible to close or flip (the P0 the flat rule was itself the fix for), so it must never be raised to a lot or given a stale-mark buffer on top. A leg that takes the WHOLE position off — target flat (`0`, or the strategy removed), or the close leg of a flip — is gated at the flat `THRESHOLD` instead (`lib/portfolio.py::_close_threshold`; the reconciler's `.close` lowers it to `THRESHOLD` − half a lot while a lot is under 2×`THRESHOLD`, because an entry rounds half-up to whole lots and so the bot itself can open a position under `THRESHOLD` — one Gate.io / OKX BTC contract, ~`$8.4`, from a `$10` gap — which a flat gate would never let it close; the close still sells only the book's quantity): under `self_ledger` the diff is the book's COST while half a lot is priced at the mark, so a one-lot position that more than doubled (N lots: mark/entry > 2N) was under the gate forever — the signal said flat and no order went out. A full close leaves no ceil remainder and nothing buys it back (no entry leg at target 0; a flip's entry leg keeps the 1.05-lot gate), so the churn above cannot restart; on an account-read book nothing changes, a swap position being whole lots; and dust under `THRESHOLD` is still never sent. The snapshot row's `usd` is the gate that was applied (flat for such a row); `entry_usd` / `reduce_usd` stay the symbol's two side gates. Every recorded row also carries `close_usd` (that flat gate): a reader colouring a LIVE diff uses `min(side gate, close_usd)` when a position is held and the target is flat or on the other side (`act != 0 and (tgt == 0 or tgt * act < 0)`), and the plain side gate otherwise — with `reduce_usd` alone it paints "won't trade" on a close that does go out. A partial reduce after a large move is still judged cost-against-mark — known, and deliberately left on the half-lot gate. Spot / lot-based rows / a failed lookup stay on the flat `THRESHOLD`. The snapshot's `gates` records the reduce side too, with `side: "reduce"` (entry rows carry no `side`), and every recorded row now carries BOTH sides as `entry_usd` / `reduce_usd` — a reader colours a LIVE diff, whose sign can have flipped since that round, so one side alone had it colouring a buy-back against the reduce gate. `usd` (the side that round used) and `diff` are unchanged for the hand-written callers. The trade-off is deliberate: a position can sit under half a lot OVER its target (`$289` allocated, up to ~`$313` held on BTC), the same round-half-up capital lots have always used.
 
 ```
 bash manager/start_reconciler.sh
@@ -147,25 +147,159 @@ what IT has bought/sold from its own order log (`manager/orders.jsonl`) and
 diffs target against that running total instead. A position opened outside
 this process never enters the ledger, so it can never be touched.
 
-**New machines ship with it on.** The runtime writes `self_ledger: true` and a
-fresh-start `manager/ledger_seed.json` (baseline first, flag second) when it
-creates the machine's first `portfolio_config.json` — and only when the machine
-has never traded (no `manager/orders.jsonl`, no `manager/last_reconcile.json`):
-nothing the reconciler has ever traded is on such an account, so the zero book
-is exact. An
-existing config without the key stays in account-read mode — the default is
-decided at creation, never by the reader, so no update switches a machine to
-the book behind the user's back (`tests/check_drift_band.py` pins both).
+**Every machine runs on it** (Wei 2026-09-23: the reconciler never touches a
+position it did not open). `lib.portfolio.own_positions_only(config)` is true
+for every config except one that explicitly says `"self_ledger": false` — an
+account-read opt-out nothing in Blave writes; never set it yourself. Ownership
+is decided by the book (what the bot actually filled), never by the symbol: a
+manual long on a symbol a strategy trades — at amount 0 or more — is not the
+bot's. Spot too: the wallet is one pool, and the bot sells only its book's
+quantity of it (a spot book row without a quantity is never sold). A removed
+strategy's position that IS in the book still closes. The
+runtime also writes a fresh-start `manager/ledger_seed.json` when it creates a
+machine's first `portfolio_config.json` and the machine has never filled on a
+real venue (paper fills don't count).
 
-**Turning it on for an existing account — read every step; the wrong seed
-mode trades the user's own money:**
-1. **Flatten the BOT's own positions first** (set the strategies' amounts to
-   0 from the web 下單設定 and let the reconciler close them, or confirm the
-   bot is already flat). The user's own manual positions stay — that is the
-   point. Why required: the fresh-start seed below treats everything on the
-   account as the USER's; a live bot position at seed time becomes the
-   user's, and the bot then re-buys its full target ON TOP of it — doubled
-   exposure.
+**Which account a book belongs to.** Each venue's book records the exchange
+account it was built on — the exchange's own id (`lib/account_<venue>.
+get_account_id`: Binance spot `/api/v3/account` `uid`, OKX `/api/v5/account/
+config` `uid`, Bybit `/v5/user/query-api` `userID`, BingX `/openApi/account/
+v1/uid`, Gate.io `/api/v4/account/detail` `user_id`, paper the ledger's
+`created_ts`), never the key — in the seed's `venue_account`. Every bind
+reads it with the keys just written and records it (runtime
+`_bind_book_accounts`; paper exempt); an id that cannot be read never refuses
+the bind — the key's fingerprint is recorded instead, and a verified id is
+never replaced by a fingerprint-only record.
+`lib.portfolio.book_account_check` compares it at bind, at the reconciler's
+start, on every credentials change, and in close-all before it sells anything:
+- same id → the book is kept. A rotated key on the same account keeps it; a
+  full unbind keeps it too.
+- another id → that venue's book restarts empty at once (seed `venue_reset`),
+  before anything reads it — binding over the old account, or unbind → another
+  venue → back with another account, alike. On a real venue the machine also
+  HALTs (source `reconciler`) with the reason that Blave no longer manages its
+  positions on the previous account (`lib.portfolio.account_changed_reason`).
+  That HALT is the notice: the platform's `halt` P1 event carries the reason
+  to the page, email and Telegram, so no machine Telegram is sent beside it.
+  Found at bind, the runtime HALTs at once (reported right after the command)
+  and leaves `bind_reset` for the reconciler, which turns it into its own
+  pending trip; if the user already pressed 啟動下單 the bind's HALT was the
+  notice and nothing more is sent. Nothing is sent to the new account until
+  啟動下單; that HALT-clear resumes from the empty book, it confirms nothing
+  about the old one.
+- the two cannot be matched (the new key's id unreadable, or the book was
+  recorded under a key whose id was unreadable) → decided without asking only
+  when nothing rides on it: the same key as the last read (one key opens one
+  account), or no open row in that venue's book. Otherwise nothing trades on
+  that venue — the reconciler HALTs once and holds every round (a
+  network-class error holds silently for at most 10 minutes / 3 rounds, then
+  asks like an unreadable id); close-all closes nothing there and says why;
+  the report's `account_guard.book_hold` {venue, reason, since} asks the user,
+  and runtime `book_account_confirm {venue, same}` answers: same → the book is
+  kept under the new key; different → it restarts empty (what the bot held
+  there is the user's). An answer acts only while that question is being
+  asked and the exchange cannot tell the keys apart itself — a stale or
+  replayed one returns `nothing_to_confirm` and writes nothing. Neither answer
+  trades; both are idempotent and audited; every answer kicks the reconciler
+  so a stale question clears within a poll; the HALT stays for 啟動下單, and a
+  start pressed while the question is open changes nothing (`held:`).
+- while a venue is held (`book_hold`, or an account-changed trip awaiting
+  啟動下單) NO Blave order reaches it — entries, closes and protective orders
+  are refused at every order lib's gate (`lib.guard.check_account_hold`; paper
+  is never held), and a running TWAP / chase stops before its next child
+  order, its fills booked.
+  That is what the report's `halt.holds_all: true` means. Orders already
+  resting on the exchange (SL/TP) are the exchange's.
+- capital (群益) reads no id: not checked.
+
+**One-way accounts: netted entries.** On a one-way (net) account an entry
+opposite a position already there nets into it. The entry records how much
+netted (`netted_qty` on the leg → the book row's `netted`). Exiting such a
+share is a PLAIN order of at most that recorded amount — which restores the
+user's position — and only when the account shows none of the bot's side and
+some of the other, the venue's mode reads one-way (`venue_wiring.
+_net_position_mode`; unreadable → never), and two reads agree
+(`venue_wiring._netted_exit`). A book row with no recorded netted amount (the
+user closed the bot's position by hand and opened their own opposite one) takes
+the reduce-only path and, confirmed, the write-off — never an order that grows
+the user's position. Close-all restores a netted share the same way under HALT:
+`lib.guard.netted_restore` opens a pass for that one order — this thread only,
+the named symbol and direction, at most the recorded quantity; each order lib's
+`place_market_order` arms it with its own order and the HALT gate spends it
+(the restart stop still blocks it). TWAP / custom / chase (limit) entries
+record it too; a chase reads the netted room once, before its first fill.
+
+**Partial closes.** A close the venue only partly fills (OKX returns
+canceled-with-fill) is not a close: close-all and `close_symbol.py` compare
+`executed_qty` with the size asked, keep the unfilled rest in the book, and
+report 「未平完」.
+
+**The book is per venue.** Every book row and every fill belongs to one venue
+(`orders.jsonl` `exchange`; seed rows keyed `<venue>|<symbol>`); the reconciler
+reads and writes the book of the venue it trades on
+(`lib.portfolio.book_venue()`), and close-all closes each bound venue's own
+share on that venue only. A position on another venue — or on this venue before
+a strategy was rerouted here — is never this venue's book: rerouting paper →
+Binance starts Binance's book at zero, it does not sell the user's Binance
+coins. Seed rows without a venue (an old `--absorb`) are claimed the first time
+the new lib reads them: with one venue bound, for it; with several, for the
+venue every logged fill of that symbol names — the current route is not
+evidence. No fill, or fills on two venues: the row is parked as `?|SYMBOL`, no
+venue's book reads it (that position is left alone everywhere), and one order
+error says so — reseed to hand it back.
+
+**No baseline yet** (a machine from before the rule, or a lost seed): the
+reconciler writes one itself (`lib.portfolio._auto_baseline`, Wei 2026-09-23).
+Per symbol, the bot owns `min(|account|, |target|)` when the two are on the
+SAME side; the rest is the user's. The bot owns nothing of a symbol no funded
+strategy trades (a removed strategy's leftover included), of a flat target,
+or of an account on the other side of its target (a short under a long target
+is the user's; the bot buys its target from zero — on a one-way account the
+exchange nets that buy against the user's short). How much of the quantity:
+up to 1.5× the target's notional (`_ADOPT_WHOLE_RATIO`) the WHOLE account
+quantity is the bot's (a profitable bot position is worth more than its
+target); above that, the target's proportion of it (spot: of the wallet's
+coins), FLOORED in base units to the venue step (`venue_wiring._lot_base`;
+`format_qty` is only the minimum gate — OKX and Gate.io return contracts), and
+the rest is the user's. The adopted cost is never above the target, so nothing
+in this rule ever sells.
+It waits (read-only round, `needs_baseline: {"reason": …}` in the snapshot)
+until its inputs can be trusted: `unconfigured` (no amounts saved yet),
+`state_unreadable` (a funded strategy's `state.json` is half-written),
+`confirming` (two rounds in a row must see the same positions — an empty or
+short read would make the bot's own positions the user's for good), `error` (a
+quantity read threw), `inflight` (a TWAP / chase is running). A strategy whose
+state has no `symbol` (a Type C portfolio) is skipped, as aggregation skips it.
+A strategy whose `state.json` won't parse but whose coin is known
+(`stats.json` `symbol`, or `SYMBOL` in `strategy.py`) holds only that coin: the
+baseline is written for everything else, the coin sits in the seed's `pending`
+(kept out of both sides of the diff; snapshot `baseline_pending`) and is decided
+by the same rule once the state reads again — the bot's own position is adopted,
+never bought twice. A non-transient wait (`state_unreadable` for a strategy
+whose coin is unknown, `error`, `qty_mismatch`) that lasts 3 rounds and 10
+minutes stops waiting: what can be read is decided as above, what
+can't is left to the user — one audit line (`fallback`, `left_to_user`) and one
+order error say which. The baseline is
+marked `own_only_basis: 1`; a `seeded_at` without that mark (a newer runtime's
+unbind reset beside an older lib, an old hand-run seed) is not a baseline and
+the machine migrates. What was adopted is one `ledger_baseline` line in
+`state/audit.jsonl` — show it when the user asks what the bot considers its
+own. If the user says the split is wrong, reseed by hand (below).
+
+**A spot row without a quantity** (a seed from before quantities, a fill with
+no `executed_qty`) is written off the first time the reconciler builds the
+book: one order error saying so, one `ledger_writeoff` audit line, the coins
+stay in the wallet as the user's, and the strategy trades from zero — it never
+blocks the next entry and is never sold.
+
+**Reseeding the baseline by hand (the user says the adopted split is wrong)
+— read every step; the wrong seed mode trades the user's own money:**
+1. **Close the BOT's own part first** (let the reconciler close it with the
+   strategies' amounts at 0, or confirm the bot is already flat). The user's
+   own manual positions stay — that is the point. Why required: the
+   fresh-start seed below treats everything on the account as the USER's; a
+   live bot position at seed time becomes the user's, and the bot then
+   re-buys its full target ON TOP of it — doubled exposure.
 2. `python3 manager/seed_ledger.py` — ONE TIME, default (fresh-start) mode:
    the bot's book starts at ZERO and everything currently on the account is
    the user's. This is the correct mode for the feature's target user (holds
@@ -174,9 +308,8 @@ mode trades the user's own money:**
    for migrating a bot-only account with no manual positions mixed in — on a
    mixed account it adopts the user's manual positions into the bot's book
    and the bot will later trade them away. **When unsure, never --absorb.**
-3. Set `portfolio_config.json["self_ledger"] = true`.
-4. No reconciler restart needed — it re-reads the config every poll, same as
-   every other `portfolio_config.json` field.
+3. No flag to set and no reconciler restart needed — the next round reads
+   the baseline.
 
 **The book is QUANTITY and COST, never one number** (`lib/portfolio.py` —
 `ledger_book()`). Per symbol the bot keeps `cost` (signed USD: what its fills
@@ -195,17 +328,29 @@ were worth when they happened) and `qty` (signed base units it bought):
 - Where the cap `min(book qty, what the account holds on that side)` holds —
   never more than the bot bought, never more than is there: swap reduce legs
   sized by `lib/venue_wiring.py` (market, TWAP slices, chase re-posts, custom
-  executors) and the swap half of `manager/flatten.py`. Where it does NOT:
-  - a legacy row (below) — `USD ÷ mark`, capped at the whole account side;
+  executors), spot sells through the wiring (market, TWAP, chase) and both
+  halves of `manager/flatten.py`. A spot book row WITHOUT a quantity (legacy)
+  is never sold — the reconciler writes it off once (see *A spot row without a
+  quantity*), close-all skips it and says why (the wallet is one pool of the
+  bot's and the user's coins, and spot has no reduce-only side to stop at the
+  bot's share). Where
+  the cap does NOT hold:
+  - a legacy SWAP row (below) — `USD ÷ mark`, capped at the whole account side;
   - a hand-wired `place_order` — sized however it was written;
   - `manager/close_symbol.py` — closes the ACCOUNT's whole position on that
     symbol and side, the user's manual part included;
-  - `manager/flatten.py`'s spot half — sells the whole inventory of every
-    strategy-targeted spot symbol;
-  - spot sells through the wiring: sized from the book, but spot + self_ledger
-    is not verified on a real account, and a spot buy's fee is taken out of
-    the coins received, so the book can run a fee above the wallet. Do not
-    tell a user their own spot coins are protected.
+  - a spot buy's fee paid in the coin itself is booked net: the book holds
+    what arrived (`lib/venue_wiring.spot_book_qty` — `executed_qty` stays the
+    venue's pre-fee fill), so a full close sells exactly the bot's coins. A fee
+    paid in BNB / the quote leaves the coin whole, and a fee split across
+    assets (BNB ran out mid-order) is taken per fill. Where the order query
+    has no fee, the fills are read (Binance `myTrades`; Bybit's order row
+    carries `cumExecFee`). BingX has neither: booked 0.2% under the fill and
+    flagged (`spot_fee_unknown` in `state/audit.jsonl`) — the bot may leave that
+    sliver behind, never the user's. Spot + the book is not verified on a real
+    account yet.
+  - the `"self_ledger": false` opt-out — the whole account (and the whole
+    managed spot inventory) is the bot's.
 - An add grows both numbers from the exchange-confirmed fill (`executed_qty`,
   `executed_qty × fill_price`); a reduce shrinks `cost` by the share of `qty`
   sold (average cost), so both reach zero together. A flip closes the whole
@@ -294,13 +439,9 @@ this as a step of every update. Also why a daemon that tripped its own HALT
 needs the restart once: builds before `guard.release_memory_halt` keep that
 HALT in memory after the web resume removes the file.
 
-**Fail-loud guard:** with `self_ledger` on and no baseline in
-`manager/ledger_seed.json` (seed_ledger.py never run, or the file corrupt),
-`reconcile()` REFUSES to trade — it raises, which surfaces through the
-reconciler's normal error path (Telegram + retreat to heartbeat), and no
-orders are placed. It does NOT fall back to summing the whole orders.jsonl
-history (a plausible-looking but wrong book on any machine with prior
-trading). If the user reports this error, run step 2.
+**No replay without a baseline:** `reconcile()` never falls back to summing
+the whole orders.jsonl history (a plausible-looking but wrong book on any
+machine with prior trading) — see *No baseline yet* above.
 
 **What changes, exactly** (`lib/portfolio.py`): `reconcile()` still calls the
 real `get_positions_fn()` (kept for the `manager/last_reconcile.json` snapshot,
@@ -375,16 +516,19 @@ it does not change what the frontend computes.
 **The flatten (全部平倉) interaction — read this before wiring self_ledger to
 anything live.** What `manager/flatten.py` closes depends on `self_ledger`
 (matching the 3Commas/Cryptohopper panic semantics the 暫停下單 dialog was
-modeled on): with `self_ledger` ON it closes ONLY the bot's own ledger
+modeled on): on every machine (own positions only — every config without
+an explicit `"self_ledger": false`) it closes ONLY the bot's own ledger
 positions (`lib.portfolio.ledger_positions`) — a manually-opened position
 self_ledger was never told about is untouched even by this button, and each
 close is the book's `qty` capped at what the account actually holds on that
-side (a legacy row still converts its USD at the mark). Spot stays on
-the inventory scope either way (`spot_scope` — strategy-targeted symbols only;
-personal coins are never sold). If the ledger is unreadable on the panic path,
-swap closes are skipped loudly rather than silently widening scope to the
+side (a legacy swap row still converts its USD at the mark). Spot is
+book-scoped the same way: each `SYM@spot` book row sells min(book quantity,
+wallet), a spot row without a quantity is not sold (it says why), and the
+user's coins of the same kind are left in the wallet. If the ledger is
+unreadable, or there is no baseline yet, on the panic path, swap AND spot
+closes are skipped loudly rather than silently widening scope to the
 whole account — the failure mode must never close the manual positions the
-feature exists to protect. With `self_ledger` OFF (every pre-feature machine)
+feature exists to protect. With the explicit `"self_ledger": false` opt-out
 it closes every open position on the account — under the old alignment logic
 the whole account is the bot's world.
 

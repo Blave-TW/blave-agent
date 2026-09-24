@@ -184,13 +184,28 @@ function cloudArgsOk(cmd, a) {
 /* ── 雲端連交易所(S5;main.js 的 cloud-connect 用)──────────────────────
    名字在主行程決定、renderer 給不了(renderer 被攻破也塞不進任意環境變數名)。模擬的三個不是祕密,契約仍要求走 secrets。
    回 { venue, secrets } 或 { error:"BAD_KEY_FORMAT" };shapeOk 由呼叫端注入(binance_link.keyShapeOk)。 */
+/* 電腦版連得了的真實交易所(env 名同網頁 CX_VENUES、同 lib/order_* / account_*;群益在 Mac 上跑不起來,不在這裡)。
+   pass = 要第三個欄位 <ENV>_PASSPHRASE(OKX)。Binance 的形狀由 binance_link.keyShapeOk 驗;其餘四家金鑰長相各不同
+   (OKX 是帶連字號的 UUID),只擋明顯不是金鑰的:4–256 個可見 ASCII、不含空白;passphrase 是用戶自訂的字,只擋換行與長度 */
+const CONNECT_VENUES = { binance: { env: "BINANCE" }, okx: { env: "OKX", pass: true }, bingx: { env: "BINGX" }, gateio: { env: "GATEIO" }, bybit: { env: "BYBIT" } };
+const KEY_SHAPE = /^[\x21-\x7e]{4,256}$/, PASS_SHAPE = /^[^\r\n]{1,256}$/;
+// 一家的憑證 env 名(送出、解除綁定、daemon 白名單共用這一份)
+function venueEnvNames(venue) {
+  const v = CONNECT_VENUES[venue]; if (!v) return [];
+  return [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []);
+}
 function connectSecrets(a, shapeOk, nowSec) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return { error: "BAD_ARGS" };
   if (a.venue === "paper") return { venue: "paper", secrets: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(nowSec)) } };
-  if (a.venue !== "binance") return { error: "BAD_ARGS" };
+  const v = typeof a.venue === "string" && Object.prototype.hasOwnProperty.call(CONNECT_VENUES, a.venue) ? CONNECT_VENUES[a.venue] : null;
+  if (!v) return { error: "BAD_ARGS" };
   const k = typeof a.apiKey === "string" ? a.apiKey.trim() : "", s = typeof a.secret === "string" ? a.secret.trim() : "";
-  if (!k || !s || !shapeOk(k, s)) return { error: "BAD_KEY_FORMAT" };
-  return { venue: "binance", secrets: { BINANCE_API_KEY: k, BINANCE_SECRET_KEY: s } };
+  const p = typeof a.passphrase === "string" ? a.passphrase.trim() : "";
+  if (!k || !s || (v.pass && !p)) return { error: a.venue === "binance" ? "BAD_KEY_FORMAT" : "INCOMPLETE_PAIR" };   // Binance 照舊(空欄 = 格式不對)
+  if (a.venue === "binance" ? !shapeOk(k, s) : !(KEY_SHAPE.test(k) && KEY_SHAPE.test(s) && (!v.pass || PASS_SHAPE.test(p)))) return { error: "BAD_KEY_FORMAT" };
+  const secrets = { [v.env + "_API_KEY"]: k, [v.env + "_SECRET_KEY"]: s };
+  if (v.pass) secrets[v.env + "_PASSPHRASE"] = p;
+  return { venue: a.venue, secrets };
 }
 /* 機器查權限的拒絕碼(runtime `_binance_bind_check`,與 binance_check.js 同一套)。**MVP 不查提領**(Wei 09-22):
    WITHDRAW_ENABLED 不在這張表上——萬一出現,照「其他拒絕」處理(原文截斷給人看)。 */
@@ -224,4 +239,21 @@ function interpretConnect(r, secrets) {
     detail: { error: e, kind: (r && r.kind) || "undelivered", machineState: (r && r.machineState) || null } };
 }
 
-module.exports = { createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };
+/* 這台電腦綁 OKX / BingX / Gate.io / Bybit 的 daemon 回覆 → { ok, code, detail }(純函式)。runtime 的 _local_real_key_gate
+   在寫入前用那一家的 lib/account_* 讀一次帳戶:成功的 ack(binance: null)= 讀得到帳戶(不等於交易權限已確認);
+   拒絕是 "ValueError: <CODE>: …"——INCOMPLETE_PAIR / UNKNOWN 照代號;REJECTED 取括號裡那家的原因(先過 interpretConnect 的遮罩);
+   「no permission check exists」(這台的 lib 缺那一支)→ NO_CHECK;daemon 自己的代號(DAEMON_DOWN…)→ SEND_FAILED */
+function interpretVenueBind(r, secrets) {
+  if (r && r.ok) return { ok: true, code: "READ_OK", detail: {} };
+  const err = r && typeof r.error === "string" ? r.error : "DAEMON_DOWN";
+  if (/^[A-Z_]+$/.test(err)) return { ok: false, code: "SEND_FAILED", detail: { error: err } };
+  const out = interpretConnect({ ok: false, kind: "rejected", error: err }, secrets);
+  if (out.code === "INCOMPLETE_PAIR" || out.code === "UNKNOWN") return { ok: false, code: out.code, detail: {} };
+  const shown = (out.detail && out.detail.error) || "";
+  if (/no permission check exists/.test(shown)) return { ok: false, code: "NO_CHECK", detail: {} };
+  const m = /^\s*ValueError:\s*REJECTED:[^(]*\((.*)\)\s*—\s*not saved\s*$/.exec(shown) || /^\s*ValueError:\s*REJECTED:\s*(.*)$/.exec(shown);
+  if (m) return { ok: false, code: "REJECTED", detail: { reason: m[1].slice(0, 200) } };
+  return { ok: false, code: "SEND_FAILED", detail: { error: shown } };
+}
+
+module.exports = { interpretVenueBind, createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, CONNECT_VENUES, venueEnvNames, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };

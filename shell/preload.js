@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld("blave", {
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
   // 雲端連交易所:金鑰只走這一支(cloud-send 拒收 credentials);回應只有 { ok, code, detail },沒有金鑰值
-  cloudConnect: (a) => ipcRenderer.invoke("cloud-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret }),
+  cloudConnect: (a) => ipcRenderer.invoke("cloud-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase }),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),
@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld("blave", {
   binanceState: () => ipcRenderer.invoke("binance-state"),
   binanceRecheck: () => ipcRenderer.invoke("binance-recheck"),
   binanceConnect: (apiKey, secret) => ipcRenderer.invoke("binance-connect", { apiKey, secret }),
+  // OKX / BingX / Gate.io / Bybit 綁在這台電腦:金鑰只經過這一次(主行程驗形狀、送 daemon),回應只有代號
+  venueConnect: (a) => ipcRenderer.invoke("venue-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase }),
   onBinanceState: (fn) => ipcRenderer.on("binance-state", (_e, st) => fn(st)),
   tradeStatus: () => ipcRenderer.invoke("trade-status"),
   tradeEvents: (q) => ipcRenderer.invoke("trade-events", q),

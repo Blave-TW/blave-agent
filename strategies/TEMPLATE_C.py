@@ -19,7 +19,7 @@ MARKET        = "spot"          # "spot" | "swap" — ask the user at creation; 
 INTERVAL      = "1d"            # '1d' for equities, '1h'/'4h' for crypto; the platform's signal-refresh schedule follows this
 START         = "2015-01-01"
 END           = None
-FEE           = 0.003           # VERIFIED real rate for this asset class — never 0 (TW equities ≈ 0.3% round-trip)
+FEE           = 0.003           # PER SIDE (one-way) — VERIFIED, never 0; TW stocks ≈ 0.29% per side at list commission (strategy-code.md › Key Rules)
 
 PARAM1         = ...             # primary signal parameter (e.g. lookback window)
 PARAM2         = ...             # secondary parameter (e.g. top-N, threshold)
@@ -51,8 +51,8 @@ def _compute_weights(signal_df, param2, is_rebalance):
 
     Two common patterns:
       A) Top-N equal weight:
-            rank = signal_df.rank(axis=1, ascending=False, na_option='bottom')
-            w = DataFrame(np.where(rank <= param2, 1/param2, 0), ...)
+            rank = signal_df.rank(axis=1, ascending=False, method='first', na_option='bottom')  # ties: 'average' makes a row sum 1.5 / 0.5
+            w = DataFrame(np.where((rank <= param2) & signal_df.notna(), 1/param2, 0), ...)
             w[signal_df.isna().all(axis=1)] = 0.0
 
       B) Proportional (z-score / score → normalize):
@@ -68,7 +68,9 @@ def _compute_weights(signal_df, param2, is_rebalance):
 
 
 def _rebalance_mask(idx, freq='W'):
-    """Return bool numpy array — True on rebalance bars (last bar of each period).
+    """Return bool numpy array — True on rebalance bars (FIRST bar of each period: the
+    weights are set at its close and filled at the next open. "Last bar of the period" needs
+    the next bar to be known, so live would rebalance every bar — the runner refuses it).
     freq: 'W' = weekly, 'M' = monthly, 'D' = daily (all bars).
     """
     import pandas as pd
@@ -76,7 +78,7 @@ def _rebalance_mask(idx, freq='W'):
         import numpy as np
         return np.ones(len(idx), dtype=bool)
     s = pd.Series(idx.to_period(freq), index=idx)
-    return (s != s.shift(-1)).fillna(True).to_numpy()
+    return (s != s.shift(1)).to_numpy()
 
 
 # ── fetch_data ────────────────────────────────────────────────────────────────

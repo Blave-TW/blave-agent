@@ -289,6 +289,10 @@ def read_venue(vid, env, flow_state=None):
                 str(k): _finite(v, 0.0) for k, v in eq["accounts"].items()
                 if isinstance(v, (int, float))
             }
+        if eq.get("accounts_partial") is True:
+            # the lib's wallet breakdown failed this read and `accounts` is only
+            # the trading wallet — the equity history must not log it as the total
+            entry["accounts_partial"] = True
     except Exception as e:
         entry["error"] = _err("get_equity", e)
         return entry

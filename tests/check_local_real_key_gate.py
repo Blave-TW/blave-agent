@@ -1,7 +1,9 @@
 """Desktop: a real exchange key reaches .env only through the permission gate
 (audit S2). The gate lives in command_listener._cmd_credentials — the one
 writer — so every caller shares it; the chat bind is refused outright on the
-desktop. No network: _binance_restrictions is replaced.
+desktop. No network: _binance_restrictions is replaced, and for OKX / BingX /
+Gate.io / Bybit (checked by the venue's own lib/account_<id>.get_equity) the
+requests calls are stubbed. Keys are not-a-real-* strings.
 
 Run: cd blave-agent && .venv/bin/python tests/check_local_real_key_gate.py
 """
@@ -94,10 +96,12 @@ check(refused({"BINANCE_API_KEY": KEY}) is not None and not os.path.exists(ENV_P
       "half a pair is never a bind: refused")
 
 # 3. a venue with no checker cannot ride along when someone widens the switch
-cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINGX"})
-msg = refused({"BINGX_API_KEY": "a" * 32, "BINGX_SECRET_KEY": "b" * 32})
+cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"KUCOIN"})
+msg = refused({"KUCOIN_API_KEY": "not-a-real-kucoin-key", "KUCOIN_SECRET_KEY": "not-a-real-kucoin-secret"})
 check(bool(msg) and "no permission check" in msg and not os.path.exists(ENV_PATH),
       "a widened switch without a checker still writes nothing")
+check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BYBIT", "GATEIO", "OKX"],
+      "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit (a new one is a decision)")
 
 # 4. the passing case: written, 0600, no-whitelist keys are NOT refused (Wei: advise, don't block)
 calls.clear()
@@ -113,6 +117,97 @@ for name, value in (("spot only", dict(GOOD, enableFutures=False)), ("futures on
     os.remove(ENV_PATH)
     answer(value)
     check(refused() is None and os.path.exists(ENV_PATH), f"{name} trading enabled → written")
+
+# 4c. OKX / BingX / Gate.io / Bybit: the venue's own signed account read decides, before any write
+import requests  # noqa: E402
+import importlib  # noqa: E402
+
+VENUE_ENV = {
+    "OKX": {"OKX_API_KEY": "not-a-real-okx-key", "OKX_SECRET_KEY": "not-a-real-okx-secret",
+            "OKX_PASSPHRASE": "not-a-real-okx-pass"},
+    "BINGX": {"BINGX_API_KEY": "not-a-real-bingx-key", "BINGX_SECRET_KEY": "not-a-real-bingx-secret"},
+    "GATEIO": {"GATEIO_API_KEY": "not-a-real-gate-key", "GATEIO_SECRET_KEY": "not-a-real-gate-secret"},
+    "BYBIT": {"BYBIT_API_KEY": "not-a-real-bybit-key", "BYBIT_SECRET_KEY": "not-a-real-bybit-secret"},
+}
+wire, echo = [], []
+
+
+class _Rejected:
+    """Every venue's "bad key" shape at once: HTTP 401, OKX/BingX `code`, Gate `label`,
+    Bybit `retCode` — and a message that echoes key material, as Bybit's 10004 does."""
+    status_code, ok, url = 401, False, "https://api.example.invalid/v5/x?sign=abc"
+
+    @property
+    def text(self):
+        return "invalid key " + " ".join(echo)
+
+    def json(self):
+        return {"code": 50111, "msg": self.text, "label": "INVALID_KEY", "message": self.text,
+                "retCode": 10003, "retMsg": self.text}
+
+    def raise_for_status(self):
+        raise requests.HTTPError(f"401 Client Error: Unauthorized for url: {self.url} {self.text}")
+
+
+def _rejecting(*a, **k):
+    wire.append(a[:2])
+    return _Rejected()
+
+
+def _no_wire(*a, **k):
+    raise AssertionError("network call during a stubbed check")
+
+
+real_wire = (requests.get, requests.post, requests.request)
+cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | set(VENUE_ENV))
+before = open(ENV_PATH).read()  # the Binance pair from 4b: a refused bind must not evict it
+try:
+    for vid, venv in VENUE_ENV.items():
+        mod = importlib.import_module(f"lib.account_{vid.lower()}")
+        real_eq = mod.get_equity
+        # fails: the real lib against a venue that answers "bad key" — nothing written
+        requests.get = requests.post = requests.request = _rejecting
+        del wire[:]
+        echo[:] = venv.values()
+        msg = refused(venv)
+        check(bool(msg) and msg.startswith("REJECTED:") and wire and open(ENV_PATH).read() == before
+              and not any(v in msg for v in venv.values()) and "https://" not in msg,
+              f"{vid}: the venue refuses the key → REJECTED with its error, .env byte-for-byte as "
+              f"before (nothing written, nothing evicted), no key value or URL in the message")
+        # half a pair: refused before any call
+        requests.get = requests.post = requests.request = _no_wire
+        half = dict(list(venv.items())[:-1])
+        msg = refused(half)
+        check(bool(msg) and msg.startswith("INCOMPLETE_PAIR:") and open(ENV_PATH).read() == before,
+              f"{vid}: an incomplete payload is refused before asking (the .env sibling is no stand-in)")
+        # an answer that is not an equity: refused
+        mod.get_equity = lambda env: {"equity": "0"}
+        msg = refused(venv)
+        check(bool(msg) and msg.startswith("UNKNOWN:") and open(ENV_PATH).read() == before,
+              f"{vid}: an unreadable answer is a refusal, nothing written")
+        # passes: written
+        seen = []
+        mod.get_equity = lambda env, seen=seen: seen.append(dict(env)) or {"equity": 0.0, "currency": "USDT"}
+        check(refused(venv) is None and seen and all(seen[0].get(k) == v for k, v in venv.items()),
+              f"{vid}: the venue accepts the key (checked with the payload's own fields) → written")
+        body = open(ENV_PATH).read()
+        check(all(f"{k}={v}" in body for k, v in venv.items()) and "BINANCE_API_KEY" not in body
+              and stat.S_IMODE(os.stat(ENV_PATH).st_mode) == 0o600,
+              f"{vid}: .env holds its fields (0600) and the previous venue was evicted as for any bind")
+        mod.get_equity = real_eq
+        open(ENV_PATH, "w").write(before)
+        os.chmod(ENV_PATH, 0o600)
+    # an old workspace with no lib/account_<id>: no checker there → nothing written
+    sys.modules["lib.account_okx"] = None
+    msg = refused(VENUE_ENV["OKX"])
+    check(bool(msg) and "no permission check" in msg and open(ENV_PATH).read() == before,
+          "OKX on a workspace without lib/account_okx: refused, nothing written")
+    del sys.modules["lib.account_okx"]
+finally:
+    requests.get, requests.post, requests.request = real_wire
+daemon_src = open(os.path.join(ROOT, "runtime", "local_daemon.py"), encoding="utf-8").read()
+check('{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"}' in daemon_src,
+      "local_daemon.py opens exactly Binance + the four checked venues on the desktop")
 
 # 5. paper needs no gate
 calls.clear()

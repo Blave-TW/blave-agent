@@ -144,7 +144,8 @@ function world(init) {
   t("打包清單有 binance_link.js 與 binance_check.js(稽核 R11:缺檔 = 發佈版連不了,或檢查靜默不跑)", /"binance_link\.js"/.test(filesLine) && /"binance_check\.js"/.test(filesLine));
   t("binance_link 載入檢查模組沒有 try/catch 退路(缺檔要整個炸掉,不能變成不檢查)", /^const BC = require\("\.\/binance_check"\);$/m.test(fs.readFileSync(path.join(__dirname, "..", "shell", "binance_link.js"), "utf8")));
   const daemonPy = fs.readFileSync(path.join(__dirname, "..", "runtime", "local_daemon.py"), "utf8"), clPy = fs.readFileSync(path.join(__dirname, "..", "runtime", "command_listener.py"), "utf8");
-  t("runtime:Binance 只在 daemon 行程裡打開;聊天綁定那條路(command_listener 的預設)仍然只有模擬交易", /cl\.LOCAL_OPEN_VENUES = frozenset\(cl\.LOCAL_OPEN_VENUES \| \{"BINANCE"\}\)/.test(daemonPy) && /^LOCAL_OPEN_VENUES = frozenset\(\{"PAPER"\}\)$/m.test(clPy));
+  t("runtime:真實交易所(Binance + OKX / BingX / Gate.io / Bybit)只在 daemon 行程裡打開;聊天綁定那條路(command_listener 的預設)仍然只有模擬交易",
+    /cl\.LOCAL_OPEN_VENUES = frozenset\(cl\.LOCAL_OPEN_VENUES\s*\|\s*\{"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"\}\)/.test(daemonPy) && /^LOCAL_OPEN_VENUES = frozenset\(\{"PAPER"\}\)$/m.test(clPy));
 
   console.log(red ? `\n${red} 個失敗` : "\n全部通過"); process.exit(red ? 1 : 0);
 })();

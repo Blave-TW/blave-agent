@@ -386,6 +386,8 @@ avg_fee = df.groupby("date").apply(lambda x: x["value"].sum() / x["volume"].sum(
 
 ## Market-wide data (大盤)
 
+**In a strategy, attach 三大法人 / 融資融券 / 本益比 / 分點 / PCR with `lib.data.join_tw_flow` (one call, by publication time) — `references/strategy-code.md` › *Taiwan daily flows*; many stocks at once (Type C) → `align_feed` in the same section.**
+
 Whole-market series — no `stock_id` dimension. Use these for index level, market breadth /
 turnover, and market-wide institutional or margin flows; the per-stock `fetch_twstock_*`
 functions above answer a different question and must not be summed as a substitute.
@@ -515,3 +517,5 @@ for sid in universe:
 | Q2（4–6月） | 8/14 | 8/15 起 |
 | Q3（7–9月） | 11/14 | 11/15 起 |
 | Q4（10–12月） | 翌年 3/31 | 翌年 4/1 起 |
+
+金融控股·銀行·證券·期貨·保險 listed issuers file Q2 by **8/31** (usable 9/1; 公開發行公司財務報告及營運情形公告申報特殊適用範圍辦法 §3(3)); 保險業 monthly revenue is due the **15th** from 2026 revenue (§3(5)). Blave serves a filing from 08:00 the usable day. Attach statements / revenue with `lib.data.align_feed` (`'twstock_financials'`, `'twstock_financials_finance'`, `'twstock_monthly_revenue'`, `'twstock_monthly_revenue_insurance'`) instead of shifting dates by hand — `references/strategy-code.md` › *External data*.
