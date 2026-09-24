@@ -13,8 +13,13 @@ const cut = (src, name) => { const i = src.indexOf("function " + name + "("); if
   const externalUrl = vm.runInNewContext("const EXTERNAL_HOSTS = " + hosts + "; (" + cut(mainSrc, "externalUrl") + ")", { URL });
   t("放行:blave.org 與子網域、K 線圖依授權放的那顆標誌", ["https://blave.org/agent/zh/usage?from=desktop#topup", "https://blave.org/zh", "https://download.blave.org/desktop/mac/Blave-arm64.dmg", "https://www.tradingview.com/?utm_source=x"].every((u) => externalUrl(u) === new URL(u).href));
   t("不放行:別的網域、長得像的網域、http、帶帳密、怪 port、非網址、其他 scheme", ["https://evil.example/", "https://blave.org.evil.example/", "https://evilblave.org/", "https://notblave.org/", "http://blave.org/", "https://user:pw@blave.org/", "https://blave.org:8443/", "https://blave.org@evil.example/", "file:///etc/passwd", "javascript:alert(1)", "blave.org", "", null, undefined, 5, {}].every((u) => externalUrl(u) === null));
-  t("三個入口都走白名單(IPC、window.open、will-navigate);沒有剩下的 /^https:/ 直通", (main.match(/openExternalSafe\(/g) || []).length >= 4 && !/\/\^https:\\\/\\\/\/\.test\(url\)\) shell\.openExternal/.test(main)
-    && /handle\("open-external", \(_e, url\) => openExternalSafe\(url\), false\);/.test(main)); }
+  t("瀏覽器自己要導的兩個入口(window.open、will-navigate)走白名單;沒有剩下的 /^https:/ 直通", (main.match(/openExternalSafe\(/g) || []).length >= 3 && !/\/\^https:\\\/\\\/\/\.test\(url\)\) shell\.openExternal/.test(main)
+    && /setWindowOpenHandler\(\(\{ url \}\) => \{\s*openExternalSafe\(url\);/.test(main) && /e\.preventDefault\(\);\s*openExternalSafe\(url\);/.test(main));
+  // 對話裡的連結(新聞 Sources)是任意網站:畫面明確要開的那條(open-external IPC)只認 http(s)、不帶帳密(0.1.1 用戶回報點了沒反應)
+  const webUrl = vm.runInNewContext("(" + cut(mainSrc, "webUrl") + ")", { URL });
+  t("open-external IPC 走 webUrl:任何 http(s) 網站都放(新聞、blave.org 都一樣)", /handle\("open-external", \(_e, url\) => openWebSafe\(url\), false\);/.test(main)
+    && ["https://www.cna.com.tw/news/afe/202609233001.aspx", "http://example.com/a?b=1#c", "https://blave.org/agent/zh/usage?from=desktop#topup", "https://money.udn.com:8443/x"].every((u) => webUrl(u) === new URL(u).href));
+  t("open-external 不開別的 scheme(file:、javascript:、自訂 scheme)、不帶帳密、非網址", ["file:///etc/passwd", "javascript:alert(1)", "ssh://x", "mailto:a@b", "tg://resolve", "https://user:pw@evil.example/", "blave.org", "", null, undefined, 5, {}].every((u) => webUrl(u) === null)); }
 
 // ── R5:網頁權限 ──
 t("權限請求與權限檢查都掛了 handler,只放自家頁面的 clipboard-sanitized-write", /setPermissionRequestHandler\(/.test(main) && /setPermissionCheckHandler\(/.test(main)

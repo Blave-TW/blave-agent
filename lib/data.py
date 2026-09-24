@@ -1540,6 +1540,36 @@ def fetch_top_trader_exposure(interval, start, end, headers):
                         {'period': interval}, headers, start, end)
 
 
+_ALPHA_FETCHERS = (
+    'fetch_holder_concentration', 'fetch_funding_rate', 'fetch_taker_intensity',
+    'fetch_whale_hunter', 'fetch_unusual_movement', 'fetch_squeeze_momentum',
+    'fetch_liquidation', 'fetch_market_direction', 'fetch_capital_shortage',
+    'fetch_market_sentiment', 'fetch_top_trader_exposure',
+)
+
+
+class UnknownFetcher(ImportError):
+    """A guessed fetcher name (`fetch_alpha`, `get_alpha`, `fetch_indicator`, a misspelt
+    `fetch_<alpha>`): the message lists the real alpha fetchers with their signatures.
+    ImportError on purpose — `from lib.data import fetch_alpha` (the agent's usual first
+    guess) swallows an AttributeError raised by a module __getattr__ and prints only the
+    bare `cannot import name`; an ImportError propagates as is. Cost: hasattr(lib.data,
+    'fetch_<missing>') raises instead of answering False — no caller does that."""
+
+
+def __getattr__(name):
+    if name.startswith('__') or not (name.startswith(('fetch_', 'get_'))
+                                     or 'alpha' in name or 'indicator' in name):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import inspect
+    sigs = '; '.join(f'{n}{inspect.signature(globals()[n])}' for n in _ALPHA_FETCHERS)
+    raise UnknownFetcher(
+        f"lib.data has no {name!r}. There is no generic alpha fetcher — each Blave alpha has "
+        f"its own function (all return a DataFrame with an 'alpha' column; 'headers' is the "
+        f"api-key/secret-key dict, see references/lib.md > 'Alpha fetchers - quick reference'): "
+        f"{sigs}", name=__name__)
+
+
 # ── CME / NYMEX / ICE futures (via /studio/market/db) ────────────────────────
 
 _DB_CHUNK_DAYS = {'ohlcv-1m': 28, 'ohlcv-1h': 365, 'ohlcv-1d': 3650}

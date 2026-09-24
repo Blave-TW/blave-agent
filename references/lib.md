@@ -18,6 +18,18 @@ hdrs = {'api-key': env.get('blave_api_key', ''), 'secret-key': env.get('blave_se
 - `fetch_kline(symbol, interval, start, end, headers)` → OHLCV DataFrame (Open/High/Low/Close/Volume — Volume is real base-asset volume; individual bars may have `NaN` Volume when the source is missing it, so volume-based logic must handle NaN itself — `dropna`/`fillna`, never assume all-finite). **Binance USDT-M perps only** — a contract listed elsewhere is simply absent, so a symbol that "works" is not proof it is the user's instrument. All intervals (`1min`–`4min` included) reach back to the symbol's Binance um-futures listing date — the API backfills old months from Binance's official archive; a window before listing returns empty rows, not an error. First deep sub-5min fetch pulls history month-by-month (30-day chunks server-side), so expect the cold run to take a while; it lands in the local monthly cache and is fast afterwards. On the desktop build the environment sets `BLAVE_KLINE_SOURCE=binance` and the same bars are paged straight from Binance's public endpoint instead — same USDT-M market, same columns, same local cache, no key; nothing a strategy sees changes
 - `fetch_bingx_kline(symbol, interval, start, end)` → OHLCV DataFrame for a BingX perpetual, straight from BingX's public API (no `headers` — no key needed). Use for contracts `fetch_kline` does not carry. `symbol` is the BingX **API** symbol, not the chart's display name: GOLD(XAU)-USDT is `NCCOGOLD2USD-USDT` — resolve it via `GET https://open-api.bingx.com/openApi/swap/v3/quote/contracts` (match `displayName`, use `symbol`). Intervals: `1min`/`3min`/`5min`/`15min`/`30min`/`1h`/`2h`/`4h`/`6h`/`8h`/`12h`/`1d`/`3d`/`1w`
 - OHLC fetchers (`fetch_kline`, `fetch_db_kline`, `fetch_twfutures_ohlcv`, `fetch_twstock_price`) drop bars with impossible values (high<low, non-positive or NaN price) at read time and print the dropped timestamps — a printed `⚠️ dropped N bar(s)` warning means upstream data was corrupt, not a fetch failure; the cache keeps the raw bars
+- **Alpha fetchers — quick reference** (there is no generic `fetch_alpha` / `get_alpha`; one function per alpha, every one → DataFrame with an `alpha` column; details per function follow):
+  `fetch_holder_concentration(symbol, interval, start, end, headers)`
+  `fetch_funding_rate(symbol, interval, start, end, headers, exchange='binance')`
+  `fetch_taker_intensity(symbol, interval, start, end, headers, timeframe='24h')`
+  `fetch_whale_hunter(symbol, interval, start, end, headers, timeframe='24h', score_type='score_oi')`
+  `fetch_unusual_movement(symbol, interval, start, end, headers, timeframe='24h')`
+  `fetch_squeeze_momentum(symbol, start, end, headers)`
+  `fetch_liquidation(symbol, interval, start, end, headers, timeframe='24h')`
+  `fetch_market_direction(interval, start, end, headers)`
+  `fetch_capital_shortage(interval, start, end, headers)`
+  `fetch_market_sentiment(symbol, interval, start, end, headers)`
+  `fetch_top_trader_exposure(interval, start, end, headers)`
 - `fetch_holder_concentration(symbol, interval, start, end, headers)` → DataFrame with `alpha` column
 - `fetch_funding_rate(symbol, interval, start, end, headers, exchange='binance')` → DataFrame with `alpha` (alpha = funding rate × 100). `exchange` picks whose perp funding is read: `binance` (default) / `okx` / `bingx` / `bybit`; symbol stays the Binance form (`BTCUSDT`) and the joined close is always the Binance perp
 - `fetch_taker_intensity(symbol, interval, start, end, headers, timeframe='24h')` → DataFrame with `alpha`

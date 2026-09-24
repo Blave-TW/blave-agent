@@ -76,6 +76,10 @@
   --control-fill: var(--color-black);
   --control-fill-text: var(--color-pureWhite);
   --focus-ring: var(--color-black);
+  /* checkbox 的勾號(canon sanctioned 的白色 SVG,= web main.css 的 .form-check-input:checked 那條;data-URI 裡有 hex,只能寫在這裡)。
+     停用版 light 也是白勾(web 同),dark 才換成 greyDark 的重上值 */
+  --check-indicator: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
+  --check-indicator-disabled: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
 }
 [data-theme="dark"] {
   /* 墨階三變數的 dark 重上值(canon › Neutrals 註) */
@@ -98,6 +102,8 @@
   --control-fill: var(--color-darkText);
   --control-fill-text: var(--color-darkBody);
   --focus-ring: var(--color-darkText);
+  /* 停用的勾號:#546168 = --color-greyDark 的 dark 重上值(白勾壓在 darkBorder 上讀起來像可以按;同 web main.css dark 的重映射) */
+  --check-indicator-disabled: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23546168' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
   /* dark 保留 ring、去掉大模糊(canon › Elevation) */
   --shadow-sm: 0 0 0 1px rgba(255,255,255,.08);
   --shadow-md: 0 0 0 1px rgba(255,255,255,.08), 0 4px 16px -8px rgba(0,0,0,.5);

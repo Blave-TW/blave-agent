@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.93 — 2026-09-24
+
+- **電腦版沒資料權限那一輪,規則講真正的原因**(`agent_turn.py` `data_access_rule()` 讀外殼帶的 `BLAVE_DATA_ACCESS_WHY`:
+  `signed_out` / `no_card` / `no_balance` / `unknown`,Facts 多一句事實 + 「不是 signed_out 就不准叫用戶去登入」;
+  外殼 `shell/main.js` `dataAccessWhy()` 從 signedIn + account_status 的 `reason` 對出來、只在 `BLAVE_DATA_ACCESS=0` 時帶)。
+  09-24 真機:用戶登入著、只是餘額不夠,agent 回「需要登入 Blave 帳號才能存取」。舊外殼不帶 → 原文不變。
+  測試 `tests/check_data_access_lang.py` §④、`tests/check_shell_data_env.js` WHY 那組。
+
 ## 1.1.92 — 2026-09-24
 
 - **電腦版沒資料權限那一輪,`lib/data.py` 第一次呼叫就停**(`agent_turn.py` `data_access_rule()` 補一句「同一段對話裡權限會變、

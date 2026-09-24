@@ -7,7 +7,7 @@ msgid "cn.h"
 msgstr "Blave has no AI of its own."
 
 msgid "cn.blave.title"
-msgstr "Use Blave's AI"
+msgstr "Use Blave AI"
 
 msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
@@ -61,7 +61,7 @@ msgid "oauth.failed"
 msgstr "Authorization failed."
 
 msgid "OAUTH_CANCELLED"
-msgstr "Cancelled. Press the button again to use Blave's AI."
+msgstr "Cancelled. Press the button again to use Blave AI."
 
 msgid "OAUTH_TIMEOUT"
 msgstr "Authorization timed out (5 minutes)."
@@ -493,12 +493,12 @@ msgstr "Sign out"
 msgid "cn.blave.signOutLocalOnly"
 msgstr "Signed out on this computer, but the server couldn’t be reached to revoke this device. Revoke it under Settings › Devices on blave.org."
 
-# Blave 的 AI:綁卡 / 儲值預檢
+# Blave AI:綁卡 / 儲值預檢
 msgid "acct.noCard"
-msgstr "Blave’s AI isn’t ready yet: this account has no card on file."
+msgstr "Blave AI isn’t ready yet: this account has no card on file."
 
 msgid "acct.noCredit"
-msgstr "Blave’s AI isn’t ready yet: the balance is 0."
+msgstr "Blave AI isn’t ready yet: the balance is 0."
 
 msgid "acct.addCard"
 msgstr "Add a Card"
@@ -513,7 +513,7 @@ msgid "acct.creditIn"
 msgstr "Credit is in. You can send again."
 
 msgid "fault.needCard"
-msgstr "Blave’s AI needs a card on file, so this turn didn’t run."
+msgstr "Blave AI needs a card on file, so this turn didn’t run."
 
 msgid "fault.checking"
 msgstr "This turn didn’t run — checking your account."
@@ -858,7 +858,7 @@ msgid "set.cat.acct"
 msgstr "Account"
 
 msgid "cn.blave.name"
-msgstr "Blave’s AI"
+msgstr "Blave AI"
 
 msgid "cn.blave.group"
 msgstr "Provided by Blave"
@@ -870,7 +870,7 @@ msgid "acct.out.2"
 msgstr "Chats and strategies stay on this computer and aren’t affected."
 
 msgid "acct.out.3"
-msgstr "You’re using Blave’s AI, so signing out returns you to the AI picker. You’ll need to pick one again before you can carry on."
+msgstr "You’re using Blave AI, so signing out returns you to the AI picker. You’ll need to pick one again before you can carry on."
 
 msgid "acct.in.1"
 msgstr "Signing in is what gives you Blave data and the cloud plan."
@@ -1947,7 +1947,7 @@ msgstr "Exit Full Screen"
 
 # 最低版本閘(最小版畫面;字待設計師過目)
 msgid "minv.chat"
-msgstr "This version of Blave needs an update before it can keep using Blave’s AI. This message was not sent and used no AI."
+msgstr "This version of Blave needs an update before it can keep using Blave AI. This message was not sent and used no AI."
 
 msgid "minv.trade"
 msgstr "This version of Blave needs an update before it can start trading. Pausing isn’t affected. Update at the bottom of Settings › General."
@@ -2847,3 +2847,24 @@ msgstr "view"
 
 msgid "up.done.viewMsg"
 msgstr "List the files in {dir} on the cloud machine"
+
+msgid "tr.pick"
+msgstr "Pick strategies"
+
+msgid "tr.pick.title"
+msgstr "Pick trading strategies"
+
+msgid "tr.pick.hint"
+msgstr "Check the strategies that should enter the amounts table; leave experiments unchecked."
+
+msgid "tr.pick.ok"
+msgstr "Done"
+
+msgid "tr.pick.empty"
+msgstr "No backtested strategies yet — ask the agent in chat to build and backtest one."
+
+msgid "tr.pick.gone"
+msgstr "no longer on this computer — uncheck to remove"
+
+msgid "tr.pick.noneChosen"
+msgstr "No strategies picked yet. Use Pick strategies to add the ones you want to trade."

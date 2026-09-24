@@ -59,12 +59,12 @@ ok("S11 歐式小數不會被放大:「1,5」不是 15、「1.000,50」不是 1"
 ok("S11 科學記號 / 夾字母 / 負數 / 多個小數點 拒收", ["1e5", "1e999", "12abc", "abc", "-5", "1.2.3", ".", ",", "1 000", "Infinity", "NaN"].every((x) => trParseAmount(x) === null));
 ok("S11 上限對齊宿主 1e9", trParseAmount("1000000000") === 1e9 && trParseAmount("1000000000.01") === null && trParseAmount("1,000,000,001") === null);
 const names = ["a", "b", "c"], stored = { b: 300, gone: 50 };
-ok("送出:>0 才新加入;已在組合的改 0 仍留 key;沒碰過的 0 不送", J(trAmountsToSend(names, stored, { a: 500, b: 0 }, true)) === J({ a: 500, b: 0 }));
-ok("送出:沒改的沿用已存值", J(trAmountsToSend(names, stored, {}, true)) === J({ b: 300 }));
-ok("策略已不在這台電腦上的 = 移出組合(清單載入過才算)", J(trRemoved(stored, trAmountsToSend(names, stored, {}, true))) === J(["gone"]));
-// 稽核 S4:清單還沒載入 / 載入失敗時 names 是空的——那不是「策略都不見了」
-ok("S4 清單沒載入:一個都不准移出,已存的 key 原樣帶著", J(trRemoved(stored, trAmountsToSend([], stored, {}, false))) === J([]) && J(trAmountsToSend([], stored, {}, false)) === J({ b: 300, gone: 50 }));
-ok("S4 忘了帶 loaded(undefined)也走安全那邊", J(trRemoved(stored, trAmountsToSend([], stored, {}))) === J([]));
+ok("送出:表上的每一支都送(在表上 = 在組合裡,同網頁 currentAmounts);已在組合的改 0 仍留 key;勾了沒填錢的以 0 進去", J(trAmountsToSend(names, stored, { a: 500, b: 0 })) === J({ a: 500, b: 0, c: 0 }));
+ok("送出:沒改的沿用已存值", J(trAmountsToSend(names, stored, {})) === J({ a: 0, b: 300, c: 0 }));
+ok("表上沒列的存量 = 移出組合(picker 取消勾選是唯一的路;「清單載入後不在清單上」的推論退役)", J(trRemoved(stored, trAmountsToSend(names, stored, {}))) === J(["gone"]));
+// keep = 表上沒列、但要原樣帶著的(雲端讀不到的那幾支);不在 stored 的 keep 不憑空長出來
+ok("keep 的那幾支原樣帶著、不算移出;沒 keep / 壞 keep 就是只送表上的", J(trAmountsToSend([], stored, {}, ["b", "gone", "nope"])) === J({ b: 300, gone: 50 }) && J(trRemoved(stored, trAmountsToSend([], stored, {}, ["b", "gone"]))) === J([])
+  && J(trAmountsToSend([], stored, {}, true)) === J({}) && J(trAmountsToSend([], stored, {})) === J({}));
 ok("合計與倍數", J(trTotals({ a: 500, b: 300 }, 4000)) === J({ total: 800, mult: 0.2 }));
 ok("沒有淨值(null / 0)就沒有倍數,不拿 0 去除", trTotals({ a: 1 }, null).mult === null && trTotals({ a: 1 }, 0).mult === null);
 ok("dirty:改回原值不算改過", trDirty(names, stored, { b: 300 }) === false && trDirty(names, stored, { b: 301 }) === true && trDirty(names, stored, { a: 0 }) === false);
@@ -331,12 +331,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("#7 只拿報告對報告比:這台電腦的時鐘快一小時也不影響(參數裡根本沒有本機時間)", trSentSettled({ a: 1500 }, { a: 900 }, B + 1, B) === "changed" && trSentSettled.length === 4);
     ok("S4 §3.2 key 集合不同就不是 same(amounts 整份覆蓋,少一個 key = 移出組合)",
       trSentSettled({ a: 1500 }, { a: 1500, b: 0 }, null, B) === "wait" && trSentSettled({ a: 1500, b: 0 }, { a: 1500 }, null, B) === "wait");
-    ok("S4 §3.4 底稿用送出的那一份:沒改的格子送的是上一次送出的值", J(trAmountsToSend(["a", "b"], { a: 1500, b: 800 }, { b: 1000 }, true)) === J({ a: 1500, b: 1000 }));
-    // 稽核 #1(真錢):api 讀不到清單時回空陣列 → 外殼不可以因此把整個組合移出
+    ok("S4 §3.4 底稿用送出的那一份:沒改的格子送的是上一次送出的值", J(trAmountsToSend(["a", "b"], { a: 1500, b: 800 }, { b: 1000 })) === J({ a: 1500, b: 1000 }));
+    // 稽核 #1(真錢):api 讀不到清單時回空陣列 → 外殼不可以因此把整個組合移出。第五個參數是清單上的名字(trListNames)
     const stored1 = { momo: 1500, trend: 800 };
-    ok("#1 雲端、清單空、組合有金額:送出內容仍帶全部 key(不會變成 {})", J(trSendAmounts("cloud", [], stored1, {}, true)) === J(stored1));
-    ok("#1 雲端、清單只剩一支:另一支照樣帶著,不推論移出", J(trSendAmounts("cloud", ["momo"], stored1, { momo: 2000 }, true)) === J({ momo: 2000, trend: 800 }));
-    ok("#1 本機照舊:清單載入過、策略不在了 = 移出組合", J(trSendAmounts("local", ["momo"], stored1, {}, true)) === J({ momo: 1500 }));
+    ok("#1 雲端、清單空、組合有金額:送出內容仍帶全部 key(不會變成 {})", J(trSendAmounts("cloud", [], stored1, {}, [])) === J(stored1));
+    ok("#1 雲端、清單只剩一支:另一支(清單找不到)照樣帶著,不推論移出", J(trSendAmounts("cloud", ["momo"], stored1, { momo: 2000 }, ["momo"])) === J({ momo: 2000, trend: 800 }));
+    ok("picker:雲端清單找得到、只是被取消勾選的 = 移出(不再被當成讀不到帶回去)", J(trSendAmounts("cloud", ["momo"], stored1, {}, ["momo", "trend"])) === J({ momo: 1500 })
+      && J(trHidden(["momo"], stored1, ["momo", "trend"])) === J([]) && J(trHidden(["momo"], stored1, ["momo"])) === J(["trend"]));
+    ok("這台電腦:表上沒列的就是取消勾選的 = 移出組合(清單可信,不帶 keep)", J(trSendAmounts("local", ["momo"], stored1, {}, ["momo", "trend"])) === J({ momo: 1500 }) && J(trSendAmounts("local", ["momo"], stored1, {}, [])) === J({ momo: 1500 }));
     ok("#1 雲端清單空 + 組合有金額 = 不算載入(不給存);空組合的空清單才算", trCloudListOk(true, [], stored1) === false && trCloudListOk(true, [], {}) === true
       && trCloudListOk(true, [{ name: "momo" }], stored1) === true && trCloudListOk(false, [{ name: "momo" }], stored1) === false);
     // 稽核 #2:收斂 / 逾時只換啟動暫停那一組的 request_id
@@ -366,7 +368,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("#1 存檔走 trSendAmounts(依視角);④ 雲端送出前內容變了就換 request_id", /const sending = trSendAmounts\(S\.env, /.test(fnOf("trSaveAmounts"))
       && /if \(S\.reqFor\.amounts !== key\) delete S\.reqIds\.amounts;/.test(fnOf("trSaveAmounts")));
     ok("L3 雲端表下合計與確認框同口徑(看不見但照送的那幾支也算);讀不到設定時儲存函式也擋",
-      /trTotals\(cloud \? trSendAmounts\("cloud", names, stored, TR\.edits, false\) : trCurrentAmounts/.test(tbl)
+      /trTotals\(cloud \? trSendAmounts\("cloud", names, stored, TR\.edits, trListNames\(\)\) : trCurrentAmounts/.test(tbl)
       && /if \(cloud && \(!\(S\.st && S\.st\.alive\) \|\| trCfgUnread\(trReport\(\)\)\)\) return;/.test(fnOf("trSaveAmounts")));
     { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
       const app = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
@@ -391,6 +393,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S4 §3.2 對上了:清掉記號、讀屏播一次 pendDone", C.sent === null && C.save === null && said.join() === "tr.cloud.pendDone");
     said = []; C = bag({ st: { kind: "stopped", cloud: {}, report: null } }); trSentCheck(C, 1e12);
     ok("S4 §3.2 主機停了:清掉,不播", C.sent === null && said.length === 0);
+    // 稽核 S2:「取消勾選有錢的 X + 勾新的 Y」→ $0 那趟立即送、X 只 stage;報告對上時 picked 不能歸 null(否則 X 回到表上、staged 移除靜默丟掉)
+    const two = [{ name: "a" }, { name: "x" }], rep = (am) => ({ kind: "running", cloud: {}, report: { config: { amounts: am } } });
+    C = bag({ sent: { a: 1500, x: 900, y: 0 }, picked: new Set(["a", "y"]), list: [...two, { name: "y" }], st: rep({ a: 1500, x: 900, y: 0 }) }); trSentCheck(C, 1e12);
+    ok("S2 對上了、x 還 staged(有錢、清單上、沒勾)→ sent 清掉但 picked 保留", C.sent === null && C.save === null && C.picked instanceof Set && C.picked.has("a") && !C.picked.has("x"));
+    C = bag({ sent: { a: 1500, y: 0 }, picked: new Set(["a", "y"]), list: [...two, { name: "y" }], st: rep({ a: 1500, y: 0 }) }); trSentCheck(C, 1e12);
+    ok("S2 對上了、沒有 staged(只有勾新的 y)→ picked 歸 null(stored 又是真相)", C.sent === null && C.picked === null);
+    C = bag({ sent: { a: 1500, H9: 900 }, picked: new Set(["a"]), list: [{ name: "a" }], st: rep({ a: 1500, H9: 900 }) }); trSentCheck(C, 1e12);
+    ok("S2 對上了、H9 有錢但清單讀不到(hidden)→ 不算 staged,picked 照樣歸 null", C.sent === null && C.picked === null);
+    said = [];
     C = bag({ sent: null, save: "failed", saveUnknownAt: 1e12 }); trSentCheck(C, 1e12 + 1000);
     ok("S4 §4 ack 逾時之後、收斂窗口內:同一份內容重按沿用同一顆", C.reqIds.amounts === "R");
     trSentCheck(C, 1e12 + 241000);
@@ -866,7 +877,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       vm.createContext(ctx2);
       vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var "), ctx2);
       // fnS 切到下一個 function 為止,所以 trAmountsPending 那一段本身就帶著 TR_PEND_SLOW_MS(不另外宣告)
-      vm.runInContext([fnS("trReport"), fnS("trStored"), fnS("trBase"), fnS("trNames"), fnS("trAmountsPending"), fnS("trPendKey"), fnS("trAmountsEdited")].join("\n"), ctx2);
+      vm.runInContext([fnS("trReport"), fnS("trStored"), fnS("trBase"), fnS("trNamesOf"), fnS("trNames"), fnS("trListNames"), fnS("trAmountsPending"), fnS("trPendKey"), fnS("trAmountsEdited")].join("\n"), ctx2);
       const ZV = "var ask = false; " + (src.match(/^ {2}const zv = ask \? .+$/m) || [""])[0].trim().replace(/^const /, "var ");
       const PEND = (src.match(/^ {2}const pend = .+$/m) || [""])[0].trim().replace(/^const /, "var ");
       const rp = (amounts, o2) => ({ venues: V, halt: {}, reconciler: { alive: false, heartbeat_at: 100 },
@@ -1255,6 +1266,94 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const miss = need.filter((k) => !en.has(k) || !zh.has(k));
       ok("組合績效的 reason 表那幾個 key(map 裡放的、t(\"…\") 掃不到)兩語都在:" + (miss.join() || "無缺"), miss.length === 0);
       ok("trOvPerf 原文沒有 TR.env 分支(有沒有這一段看資料:perf / perfErr)", !/TR\.env/.test(cutF("trOvPerf")) && /if \(!TR\.ov\.perf && !TR\.ov\.perfErr\) return frag;/.test(cutF("trOvPerf"))); } }
+  /* ── 選擇策略 picker(spec-desktop-strategy-picker,照雲端工作頁 psOpen / psApply;Wei 09-24 採納 §13 三條偏離)──
+     純邏輯直接跑;trNames / 表空狀態用 vm 帶假 DOM 跑真的 trAmountTable;接線用原文的字面查。 */
+  { const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
+    const cutF = (n) => { const i = src.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return (src.slice(i - 6, i) === "async " ? "async " : "") + src.slice(i, k + 1); } throw new Error("no " + n); };
+    const N = (o) => Object.assign({ hasBacktest: true }, o);
+    const L = [N({ name: "b_new", displayName: "Zeta" }), N({ name: "a_old", displayName: "alpha" }), N({ name: "nobt", displayName: "NoBT", hasBacktest: false }), N({ name: "pf", displayName: "Port", portfolio: true }), N({ name: "pf2", displayName: "Port2", portfolio: true })];
+    const rows = trPickRows(L, ["a_old", "gone", "pf2"], false), by = Object.fromEntries(rows.map((r) => [r.name, r]));
+    ok("候選 = 有回測的 ∪ 表上的:沒回測的不列;已存但清單找不到的列出來(gone,用內部名);排序照顯示名 localeCompare 不是內部名",
+      J(rows.map((r) => r.name)) === J(["a_old", "gone", "pf", "pf2", "b_new"]) && by.gone.gone === true && by.gone.display === "gone" && by.a_old.gone === false && !("nobt" in by));
+    ok("checked = 在表裡(不看金額);Type C 不在表裡且機器不支援 = locked、已在表裡的 Type C 不鎖;機器支援(can_trade_portfolio)就都不鎖",
+      by.a_old.checked && by.gone.checked && by.pf2.checked && !by.b_new.checked && by.pf.locked && !by.pf2.locked && !by.a_old.locked
+      && trPickRows(L, ["a_old"], true).every((r) => !r.locked) && trPickRows([], [], false).length === 0);
+    const stored = { a: 100, z: 0, gone: 50 };
+    const ch = trPickApply(new Set(["a", "new1"]), stored);
+    ok("確定:勾新的 → 以 0 加進去(立即送);取消 $0 的 → 拿掉 key(立即送);取消有錢的還在 payload 裡(留到儲存的確認框才平倉)",
+      J(ch.added) === J(["new1"]) && J(ch.removedZero) === J(["z"]) && J(ch.amounts) === J({ a: 100, gone: 50, new1: 0 }));
+    ok("沒有 $0 變動 → null(只關框):全勾著、或只取消有錢的", trPickApply(new Set(["a", "z", "gone"]), stored) === null && trPickApply(new Set(["a", "z"]), stored) === null);
+    ok("staged = 有錢且被取消勾選(儲存列的 dirty 來源);picked null / 有錢的都勾著 = 沒有", J(trPickStaged(new Set(["a"]), stored)) === J(["gone"]) && trPickStaged(null, stored).length === 0
+      && trPickStaged(new Set(["a", "gone"]), stored).length === 0 && trPickStaged(new Set(), null).length === 0);
+    // 稽核 S1:雲端 stored 裡 api 清單暫時讀不到的(H0 $0、H9 有錢)框裡沒列、用戶沒看到:不算 $0 移出(key 原樣帶著)、也不算 staged
+    { const hs = { a: 100, H0: 0, H9: 900 }, list = ["a", "b"], keep = trPickKeep("cloud", new Set(["a", "b"]), hs, list), ch2 = trPickApply(new Set(["a", "b"]), hs, keep);
+      ok("S1 keep(雲端)= 清單找不到的存量 [H0, H9];這台電腦沒有 keep", J(keep) === J(["H0", "H9"]) && trPickKeep("local", new Set(["a", "b"]), hs, list).length === 0);
+      ok("S1 勾 a+b 確定:payload 帶著 H0 與 H9 原樣(H0 的 key 沒被拿掉)、removedZero 空、staged 空", J(ch2.removedZero) === "[]" && J(ch2.added) === J(["b"]) && J(ch2.amounts) === J({ a: 100, H0: 0, H9: 900, b: 0 })
+        && trPickStaged(new Set(["a", "b"]), hs, keep).length === 0);
+      const keepB = trPickKeep("cloud", new Set(["b"]), hs, list);
+      ok("S1 只勾 b:staged 只有清單上被取消勾選的 a,H9 不算;H0 仍不進 removedZero", J(trPickStaged(new Set(["b"]), hs, keepB)) === J(["a"]) && J(trPickApply(new Set(["b"]), hs, keepB).amounts) === J({ a: 100, H0: 0, H9: 900, b: 0 })); }
+    ok("trSetEq:順序無關、少一個 / 多一個都不等", trSetEq(new Set(["a", "b"]), ["b", "a"]) && !trSetEq(new Set(["a"]), ["a", "b"]) && !trSetEq(new Set(["a", "b"]), ["a"]) && trSetEq(new Set(), []));
+    // trNames:已存的 ∪ 勾的,不看 hasBacktest;雲端把清單找不到的濾掉(trHidden 那條路),這台電腦照列
+    const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, hidden: false, disabled: false, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
+      setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
+    const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
+    const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh" });
+    const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trAmountTable"].map(cutF).join("\n"), ctx);
+    const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
+    const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
+    ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
+      && J(names(bag("local", { picked: new Set(["a_old", "b_new"]) }))) === J(["a_old", "b_new"]) && J(names(bag("local", { picked: new Set() }))) === J([]));
+    ok("trNames(雲端):清單找不到的不列(走 trHidden 原樣帶著),勾了同樣過濾", J(names(bag("cloud"))) === J(["a_old"]) && J(names(bag("cloud", { picked: new Set(["a_old", "b_new", "gone"]) }))) === J(["a_old", "b_new"]));
+    // 表空狀態兩句(§13-1)+ 儲存列:全部取消勾選(staged 移除有錢的)表空但儲存列照畫;連候選都沒有才叫人去聊天
+    const paint = (b) => { ctx.TR = b; const f = vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), {})", ctx), all = flat(f);
+      const st = all.find((n) => n.className === "pf-state"), bar = all.find((n) => n.className === "pf-savebar"), pick = all.find((n) => n.className === "pf-act");
+      return { state: st ? st.textContent : null, bar: bar ? !bar.hidden : null, barTxt: bar ? bar.textContent : "", pick: pick ? { txt: pick.textContent, off: pick.disabled, id: pick.id } : null }; };
+    const p1 = paint(bag("local", { picked: new Set() }));
+    ok("全部取消勾選:表空、寫「還沒有選策略」那句、儲存列照畫(有錢的 staged 移除要送得出去)、「選擇策略」鈕照在", p1.state === "tr.pick.noneChosen" && p1.bar === true && /tr\.unsaved/.test(p1.barTxt) && p1.pick && p1.pick.txt === "tr.pick" && !p1.pick.off && p1.pick.id === "tr-pick");
+    const p2 = paint(bag("local", { list: [], st: { alive: true, report: { config: { amounts: {} } } } })), p3 = paint(bag("cloud", { list: [], st: { alive: true, report: { config: { amounts: {} } } } }));
+    ok("連候選都沒有:這台電腦講 tr.noStrategies、雲端講 side.cloud.emptyCut1,儲存列不出(沒有 dirty)", p2.state === "tr.noStrategies" && p2.bar === false && p3.state === "side.cloud.emptyCut1" && p3.bar === false);
+    const p4 = paint(bag("local", { st: { alive: true, report: { config: { amounts: {} } } } }));
+    ok("有回測過的策略、一支都沒勾(picked null、stored 空):表空寫「還沒有選策略」,不是叫人去聊天", p4.state === "tr.pick.noneChosen" && p4.bar === false);
+    const off = (o) => paint(bag(o.env || "local", { st: { alive: true, report: { config: { amounts: {} } } }, ...o })).pick.off;   // 表空那條路就夠看鈕
+    ok("「選擇策略」停用:儲存中、雲端存好等回報(sent)、清單沒載入、讀不到設定、雲端讀不到新狀態;正常時可按",
+      off({ save: "saving" }) && off({ env: "cloud", save: "sent", sent: {} }) && off({ listLoaded: false }) && off({ st: { alive: true, report: { config: null } } })
+      && off({ env: "cloud", st: { alive: false, report: { config: { amounts: {} } } } }) && !off({}) && !off({ env: "cloud" }));
+    // 接線(原文字面)
+    const apply = cutF("psApply"), tbl = cutF("trAmountTable"), save = cutF("trSaveAmounts");
+    ok("psApply:跟已存的一樣就不記 picked;$0 變動走 trPickApply、呼吸點走 envJustMark、送出走儲存那條路(本機 S.api / 雲端 trSend + reqFor 綁內容)、不開確認框",
+      /S\.picked = trSetEq\(sel, trNamesOf\(null\)\) \? null : sel;/.test(apply) && /const ch = trPickApply\(sel, stored, trPickKeep\(S\.env, sel, stored, trListNames\(\)\)\);/.test(apply) && /envJustMark\(S\.just, stored, ch\.amounts, Date\.now\(\)\);/.test(apply)
+      && /cloud \? await trSend\(S, "amounts", \{ amounts: ch\.amounts \}\) : await S\.api\.tradeSend\("amounts", \{ amounts: ch\.amounts \}\)/.test(apply) && /if \(S\.reqFor\.amounts !== key\) delete S\.reqIds\.amounts; S\.reqFor\.amounts = key;/.test(apply)
+      && !/confirmBox/.test(apply) && /if \(trStored\(\) === null \|\| trCfgUnread\(trReport\(\)\)\) \{[^\n]*return; \}/.test(apply));
+    ok("psApply:這台電腦成功不出「已儲存」(save 回 null);雲端成功照 sent 機制;失敗走 trSendError、表上的列不退回", /else if \(res && res\.ok\) S\.save = null;/.test(apply)
+      && /S\.save = "sent"; S\.sent = ch\.amounts; S\.sentAt = Date\.now\(\);/.test(apply) && /S\.save = "failed"; S\.saveErr = trSendError\(res, "save", S\.env\);/.test(apply) && !/S\.picked = null/.test(apply.split("const ch")[1]));
+    ok("dirty 含 staged 移除(儲存列 + 等回報那句的判準,兩處都帶 keep);還原與儲存成功清掉 picked;雲端報告對上時只在沒有 staged 才清(S2);換帳號清",
+      /const dirty = trDirty\(names, stored, TR\.edits\) \|\| anyBad\(\) \|\| trPickStaged\(TR\.picked, stored, hidden\)\.length > 0;/.test(tbl) && /\|\| trPickStaged\(TR\.picked, base, trPickKeep\(TR\.env, TR\.picked, base, trListNames\(\)\)\)\.length > 0 : false;/.test(cutF("trAmountsEdited"))
+      && /TR\.edits = \{\}; TR\.bad = \{\}; TR\.picked = null;/.test(tbl) && /S\.save = "saved"; S\.edits = \{\}; S\.picked = null;/.test(save)
+      && /C\.sig\.pos = null; if \(!trPickStaged\(C\.picked, amts, trPickKeep\("cloud", C\.picked, amts, .*?\)\)\.length\) C\.picked = null; \}/.test(cutF("trSentCheck")) && !/C\.sig\.pos = null; C\.picked = null; \}/.test(cutF("trSentCheck"))
+      && /C\.reqFor = \{\}; C\.sig\.pos = null; C\.picked = null;/.test(cutF("trCloudOwnerCheck")));
+    ok("儲存走 trSendAmounts(env, …, trListNames()):雲端只把清單找不到的帶著;確認框的「移出組合」段沿用 trRemoved / tr.saveRemoved", /const sending = trSendAmounts\(S\.env, names, stored, TR\.edits, trListNames\(\)\), removed = trRemoved\(stored, sending\);/.test(save)
+      && /if \(removed\.length\) extra\.appendChild\(trEl\("p", "cf-removed", t\("tr\.saveRemoved"/.test(save) && !/loaded/.test(cutF("trSendAmounts")));
+    ok("picker 的殼:框在 index.html(cx 之後、del 之前)、切視角守門含 ps-scrim、開框 inert、Esc / Tab 在 trade.js 自己接(app.js 不動)、關框焦點回開框那顆鈕",
+      (() => { const html = fs.readFileSync(path.join(R, "index.html"), "utf8"), i = html.indexOf('id="cx-scrim"'), j = html.indexOf('id="ps-scrim"'), k = html.indexOf('id="del-scrim"');
+        return i > 0 && j > i && k > j && /role="dialog" aria-modal="true" aria-labelledby="ps-title" hidden/.test(html) && /data-i18n="tr\.pick\.title"/.test(html) && /data-i18n="tr\.pick\.hint"/.test(html) && /id="ps-ok" data-i18n="tr\.pick\.ok"/.test(html); })()
+      && /\$\("ps-scrim"\)\.hidden && \$\("lb-scrim"\)\.hidden/.test(cutF("envCanSwitch")) && /\$\("view-ws"\)\.inert = true;/.test(cutF("psOpen")) && /\$\("view-ws"\)\.inert = false;/.test(cutF("psClose"))
+      && /e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229 \|\| e\.defaultPrevented \|\| \$\("ps-scrim"\)\.hidden\) return;/.test(cutF("psWire")) && /querySelectorAll\("button, input"\)/.test(cutF("psTrap"))
+      && /if \(o && o\.isConnected && !o\.disabled\) o\.focus\(\); else psRefocus\(\);/.test(cutF("psClose")) && /const first = list\.querySelector\("\.ps-cb:not\(:disabled\)"\);/.test(cutF("psOpen")));
+    ok("列:整列 label、真 disabled 的 checkbox、gone 用 tr.pick.gone、Type C 註記依視角(tr.typeC / tr.cloud.typeC);空清單 tr.pick.empty",
+      /trEl\("label", "ps-row" \+ \(r\.locked \? " is-locked" : ""\)\)/.test(cutF("psRow")) && /cb\.disabled = r\.locked;/.test(cutF("psRow")) && /if \(r\.gone\) nm\.appendChild\(trEl\("span", "ps-gone", t\("tr\.pick\.gone"\)\)\);/.test(cutF("psRow"))
+      && /cloud \? t\("tr\.cloud\.typeC"\) : t\("tr\.typeC"\)/.test(cutF("psRow")) && /list\.appendChild\(trEl\("div", "pf-state", t\("tr\.pick\.empty"\)\)\)/.test(cutF("psOpen")));
+    { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8"), tok = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
+      ok("CSS:.ps-gone 用 --ink-2 不用紅(§13-2);.pf-act:disabled 灰階不用 opacity;checkbox 勾號只引 tokens.css 的變數、trade.css 不寫 hex;modal 440",
+        /\.ps-gone \{[^}]*color: var\(--ink-2\)/.test(css) && !/\.ps-gone \{[^}]*--color-red/.test(css) && /\.pf-act:disabled \{ color: var\(--color-greyDark\); border-color: var\(--border-hairline\); cursor: not-allowed; \}/.test(css)
+        && /\.ps-cb:checked \{[^}]*background-image: var\(--check-indicator\)/.test(css) && /\.ps-cb:disabled:checked \{[^}]*var\(--check-indicator-disabled\)/.test(css) && !/#[0-9a-f]{3,6}\b/i.test(css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/#[a-z][\w-]*/g, ""))
+        && /--check-indicator: url\(/.test(tok) && (tok.match(/--check-indicator-disabled: url\(/g) || []).length === 2 && /\.ps-modal \{ width: min\(440px, 92vw\); \}/.test(css) && /\.ps-row \{[^}]*min-height: 44px/.test(css)); }
+    { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), block = (n) => S.split(`  ${n}: {`)[1].split("\n  },")[0];
+      const vals = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)].map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));
+      const en = vals(block("en")), zh = vals(block("zh")), keys = ["tr.pick", "tr.pick.title", "tr.pick.hint", "tr.pick.ok", "tr.pick.empty", "tr.pick.gone", "tr.pick.noneChosen"];
+      ok("i18n:tr.pick.* 七個 key 兩語都在;gone 的 en 講 this computer(只在這台電腦視角出現);hint 不講「儲存後才生效」($0 是按確定立即寫主機,N7);noneChosen 指向「選擇策略」那顆鈕",
+        keys.every((k) => en[k] && zh[k]) && /this computer/.test(en["tr.pick.gone"]) && !/server/.test(en["tr.pick.gone"]) && zh["tr.pick.hint"].indexOf(zh["tr.save"]) < 0 && !/\bSave\b/.test(en["tr.pick.hint"])
+        && zh["tr.pick.noneChosen"].indexOf("「" + zh["tr.pick"] + "」") >= 0 && en["tr.pick.noneChosen"].indexOf(en["tr.pick"]) >= 0 && zh["tr.pick.ok"] === "確定" && en["tr.pick.ok"] === "Done"); } }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

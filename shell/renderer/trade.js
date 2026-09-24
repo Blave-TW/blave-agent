@@ -277,25 +277,25 @@ function trCurrentAmounts(names, stored, edits) {
   names.forEach((n) => { out[n] = edits[n] != null ? edits[n] : (stored[n] || 0); });
   return out;
 }
-/* 要送出去的 amounts。key 在不在 = 在不在組合裡(runtime 的 _cmd_amounts):
-   金額 > 0 才新加入;已經在組合裡的就算改成 0 也要留著 key(0 = 收斂到空手,拿掉 key 反而會讓對帳器失去路由);
-   策略已經不在這台電腦上的(names 裡沒有)= 移出組合——**但只有在策略清單真的載入過(loaded)才算數**(稽核 S4):
-   清單還沒回來、或讀清單失敗時 names 是空的,那不是「策略都不見了」,已存的 key 原樣帶著,一個都不准移出。 */
-function trAmountsToSend(names, stored, edits, loaded) {
+/* 要送出去的 amounts。key 在不在 = 在不在組合裡(runtime 的 _cmd_amounts):表上的每一支都送(同網頁 currentAmounts)——
+   表只列已存的 ∪ picker 勾的(trNames),在表上就是在組合裡,$0 也留著 key(0 = 收斂到空手,拿掉 key 反而會讓對帳器失去路由;
+   勾了、立即送失敗的那一支也靠這一份補進去)。移出組合只剩「picker 取消勾選」一條路(spec-desktop-strategy-picker §12-5)——
+   以前「回測過就進表、金額 > 0 才新加入」「清單載入後不在清單上 = 移出」兩條推論都退役,兩個視角同一套。
+   keep = 表上沒列、但要原樣帶著的存量(雲端讀不到的那幾支,trHidden)。 */
+function trAmountsToSend(names, stored, edits, keep) {
   const cur = trCurrentAmounts(names, stored, edits), out = {};
-  names.forEach((n) => { if (cur[n] > 0 || n in stored) out[n] = cur[n]; });
-  if (!loaded) Object.keys(stored).forEach((n) => { if (!(n in out)) out[n] = stored[n]; });
+  names.forEach((n) => { out[n] = cur[n]; });
+  (Array.isArray(keep) ? keep : []).forEach((n) => { if (!(n in out) && n in stored) out[n] = stored[n]; });
   return out;
 }
 function trRemoved(stored, sending) { return Object.keys(stored).filter((n) => !(n in sending)); }
-/* 要送出去的 amounts,依視角。**雲端永遠不從「不在清單上」推論要移出**(稽核 #1,真錢):api 讀不到策略清單時也可能回
-   空陣列,照本機的規則推論會送出 `{}`、整份清空組合。所以雲端一律當清單沒載入,已存的 key 原樣帶著;
-   要把一支移出組合,改成 0(收斂到空手)或到網頁做。 */
-function trSendAmounts(env, names, stored, edits, loaded) { return trAmountsToSend(names, stored, edits, env === "cloud" ? false : loaded); }
+/* 雲端存量裡、表上沒列出來、**而且清單也找不到**的那幾支(api 讀不到 summary / 清單暫時缺):不是已刪除(稽核 #1,真錢——
+   api 讀不到清單時也可能回空陣列),金額照原樣帶著送,表下與確認框講有幾支。清單找得到、只是被取消勾選的 = 移出,不算在這裡。 */
+function trHidden(names, stored, list) { const l = Array.isArray(list) ? list : []; return Object.keys(stored || {}).filter((n) => names.indexOf(n) < 0 && l.indexOf(n) < 0); }
+// 要送出去的 amounts,依視角:雲端把讀不到的那幾支原樣帶著;這台電腦的清單是本機檔案系統、可信,表上沒列的就是取消勾選的
+function trSendAmounts(env, names, stored, edits, list) { return trAmountsToSend(names, stored, edits, env === "cloud" ? trHidden(names, stored, list) : []); }
 /* 雲端的策略清單算不算載入:這一份要真的帶了清單,而且「清單是空的、組合卻有金額」不算——那多半是 api 讀不到清單
    (見上),不是策略全被刪了。這時不給存。 */
-// 雲端存量裡、表上沒列出來的那幾支(讀不到 summary / 清單暫時缺):金額照原樣帶著送,表下與確認框要講有幾支
-function trHidden(names, stored) { return Object.keys(stored || {}).filter((n) => names.indexOf(n) < 0); }
 /* 報告看得出已經有組合(對帳跑過 / 有排程),config 卻沒有 amounts 物件 = 主機那一輪讀設定檔失敗(稽核 L1),不是新機。
    這時拿 {} 當底存,會把主機上的整份組合覆蓋掉:不給存。新機(兩個訊號都沒有)照樣可以第一次存 */
 function trCfgUnread(r) {
@@ -343,6 +343,36 @@ function trPnlSegments(pts) {
   return out;
 }
 function trDirty(names, stored, edits) { return names.some((n) => edits[n] != null && edits[n] !== (stored[n] || 0)); }
+/* ── 選擇策略 picker(spec-desktop-strategy-picker;照雲端工作頁 psOpen / psApply)──
+   候選 = 有回測的 ∪ 目前在表裡的(names)。checked = 在表裡(不看金額,$0 也算);gone = 清單找不到(已存殘留,
+   留在清單裡唯一用途是讓人取消勾選——雲端的 names 已把讀不到的濾掉,所以只有這台電腦會出);
+   locked = Type C、不在表裡、機器端不支援(判的是「能不能加進來」,跟表列的 `stored[n] > 0` 是「能不能從 0 撥錢」不同;
+   已在表裡的存量不鎖,不然存不回去)。顯示名 localeCompare 排序(§13-3:列上畫的是顯示名,照內部名排會像亂的)。 */
+function trPickRows(list, names, canTrade) {
+  const by = {}; list.forEach((x) => { by[x.name] = x; });
+  const seen = new Set(names); list.forEach((x) => { if (x.hasBacktest) seen.add(x.name); });
+  return [...seen].map((n) => { const x = by[n], inCur = names.indexOf(n) >= 0;
+    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: !!x && !!x.portfolio && !inCur && !canTrade }; })
+    .sort((a, b) => a.display.localeCompare(b.display));
+}
+/* 「確定」之後立刻送的那一份:$0 的兩個方向——勾了、不在 stored 的以 0 加進去(策略進 cron、呼吸點亮);
+   取消勾選、金額 ≤ 0 的拿掉 key(移出、點熄)。**有錢而被取消勾選的還在裡面**:那會平倉,留到儲存的確認框。
+   沒有 $0 變動回 null(只關框、什麼都不送)。
+   keep = 雲端讀不到的存量(trPickKeep):框裡沒列、用戶沒看到,既不算移出也不算 staged,原樣帶著送(同 trAmountsToSend 的 keep)。 */
+function trPickApply(picked, stored, keep) {
+  const k = Array.isArray(keep) ? keep : [];
+  const added = [...picked].filter((n) => !(n in stored)), removedZero = Object.keys(stored).filter((n) => !picked.has(n) && !(stored[n] > 0) && k.indexOf(n) < 0);
+  if (!added.length && !removedZero.length) return null;
+  const amounts = {};
+  Object.keys(stored).forEach((n) => { if (removedZero.indexOf(n) < 0) amounts[n] = stored[n]; });
+  added.forEach((n) => { amounts[n] = 0; });
+  return { added, removedZero, amounts };
+}
+// 有錢、被取消勾選、還沒送出的(儲存列要出、確認框要講平倉)。picked 為 null = 跟著 stored 走,沒有 staged;keep 同上
+function trPickStaged(picked, stored, keep) { const k = Array.isArray(keep) ? keep : []; return picked ? Object.keys(stored || {}).filter((n) => stored[n] > 0 && !picked.has(n) && k.indexOf(n) < 0) : []; }
+// picker 兩支的 keep:雲端 = trHidden(picked 就是表上的名單:雲端的 names 已濾過清單,結果同);這台電腦的清單可信,沒有
+function trPickKeep(env, picked, stored, list) { return env === "cloud" ? trHidden(picked ? [...picked] : [], stored, list) : []; }
+function trSetEq(a, b) { const s = new Set(b); return a.size === s.size && [...a].every((n) => s.has(n)); }
 function trCanonSym(s) { return String(s || "").replace(/-/g, "").toUpperCase(); }
 function trCanonKey(k) { k = String(k || ""); const spot = /@spot$/i.test(k); return trCanonSym(k.replace(/@spot$/i, "")) + (spot ? "@spot" : ""); }
 function trSigned(p) {
@@ -708,6 +738,8 @@ function trNewBag(env) {
     reqIds: {},                    // 雲端:cmd → 上一趟的 request_id(重試沿用同一顆;收斂 / 被接受 / 被拒絕就換新的)
     list: [], listLoaded: false, meta: new Map(),     // 回測過的策略與它們的 symbol / market / 是不是 Type C
     edits: {}, save: null, saveErr: null, saveTimer: null,
+    picked: null,                  // picker 勾的集合(Set);null = 表跟著已存的走。儲存成功 / 還原 / 換帳號清掉
+
     sent: null, sentAt: 0, sentRep: null, saveUnknownAt: 0,   // 雲端:存完、報告還沒對上的那一份(只在記憶體)/ ack 當下那份報告的時間 / ack 逾時的時間
     reqFor: {}, epoch: null,       // 雲端:cmd → 那顆 request_id 綁的內容 / 上一次看到的帳號世代(cloud.js 的 epoch)
     cxSaved: null, cxPend: null,   // 雲端(S5):金鑰已存到主機、等回報的那一態 / 設定分頁按過重新測試或解除、等回報
@@ -818,7 +850,7 @@ function trTipLabel(cls, text, tip) {
   b.setAttribute("aria-describedby", box.id);
   frag.append(b, box); return frag;
 }
-function trSec(labelNode) { const s = trEl("div", "pf-sec"); s.appendChild(labelNode); return s; }
+function trSec(labelNode, acts) { const s = trEl("div", "pf-sec"); s.appendChild(labelNode); if (acts) s.appendChild(acts); return s; }
 // 重畫一個面板之前:資料指紋沒變就跳過;焦點在這個面板裡的輸入框時也跳過(打到一半不能被輪詢洗掉)
 function trShould(key, box, data) {
   const sig = LANG + "|" + JSON.stringify(data);
@@ -834,7 +866,7 @@ function trShould(key, box, data) {
 function trInit() {
   if (TRP.started) return; TRP.started = true;
   TR_BAGS.local.api = envApi("local", window.blave); TR_BAGS.cloud.api = envApi("cloud", window.blave);
-  trWire(); envWire(); cxWire(); trPoll();
+  trWire(); envWire(); cxWire(); psWire(); trPoll();
 }
 /* 選單列 / Dock / 結束攔截的字:主行程沒有翻譯表,由這裡依目前語言交過去(換語言時 app.js 的 applyStatic 會再叫一次) */
 function trPushLabels() {
@@ -932,7 +964,7 @@ function trPollSoon(ms) { clearTimeout(TRP.timer); TRP.timer = setTimeout(trPoll
 function trCloudOwnerCheck(C) {
   const ep = C.st && C.st.cloud ? C.st.cloud.epoch : null;
   if (envCloudKind(C.st) === "signedOut" || (C.epoch != null && ep !== C.epoch)) {
-    C.sent = null; C.sentRep = null; C.save = null; C.saveErr = null; C.saveUnknownAt = 0; C.reqIds = {}; C.reqFor = {}; C.sig.pos = null;
+    C.sent = null; C.sentRep = null; C.save = null; C.saveErr = null; C.saveUnknownAt = 0; C.reqIds = {}; C.reqFor = {}; C.sig.pos = null; C.picked = null;
     // 上一個人的過場與在途那一趟也不是這個人的:不清的話,B 按的暫停會併進 A 那一趟(trSend 單飛)而根本沒送出(稽核 M2)
     C.pending = null; C.sending = {}; C.cxSaved = null; C.cxPend = null; trAlert("", null, C);
     C.just = { picked: {}, removed: {} };   // 呼吸點 5 分鐘樂觀標記也是上一個人的
@@ -951,9 +983,11 @@ function trCloudOwnerCheck(C) {
 function trSentCheck(C, now) {
   if (C.saveUnknownAt && now - C.saveUnknownAt > TR_CONFIRM_CLOUD_MS) { delete C.reqIds.amounts; C.saveUnknownAt = 0; }
   if (!C.sent) return;
-  const done = () => { C.sent = null; if (C.save === "sent") C.save = null; C.sig.pos = null; };
+  const amts = (((C.st || {}).report || {}).config || {}).amounts;
+  // 報告又是真相:picker 的選擇交回 stored——但「取消勾選有錢的 X」只 stage、沒跟著 $0 那趟送出,還在等儲存:對上了也不能丟
+  const done = () => { C.sent = null; if (C.save === "sent") C.save = null; C.sig.pos = null; if (!trPickStaged(C.picked, amts, trPickKeep("cloud", C.picked, amts, (C.list || []).map((x) => x.name))).length) C.picked = null; };
   if (envCloudKind(C.st) !== "running") { done(); return; }
-  const c = C.st.cloud || {}, amts = ((C.st.report || {}).config || {}).amounts;
+  const c = C.st.cloud || {};
   const v = trSentSettled(C.sent, amts, c.reported_at, C.sentRep);
   if (v === "wait") return;
   done();
@@ -1009,12 +1043,20 @@ function trPendKey(bag, now, z) {
    底稿用 trBase()——等回報期間那是送出的那一份,跟金額表、跟儲存列同一個判準(trAmountTable 的 dirty)。 */
 function trAmountsEdited() {
   const base = trBase();
-  return base ? trDirty(trNames(), base, TR.edits) || Object.keys(TR.bad).length > 0 : false;
+  return base ? trDirty(trNames(), base, TR.edits) || Object.keys(TR.bad).length > 0 || trPickStaged(TR.picked, base, trPickKeep(TR.env, TR.picked, base, trListNames())).length > 0 : false;
 }
 /* 金額表的底稿。雲端存完、報告還沒對上時是送出的那一份(S.sent):報告還是舊的,拿它當底會把剛存的那幾格送回舊值 */
 function trBase() { return TR.env === "cloud" && TR.sent ? TR.sent : trStored(); }
-// 表上列哪些:回測過的全列(這一版沒有「選擇策略」),加上已經在組合裡、而且還在這台電腦上的
-function trNames() { const st = trBase() || {}; return TR.list.filter((x) => x.hasBacktest || x.name in st).map((x) => x.name); }
+/* 表上列哪些(spec-desktop-strategy-picker §6):已存的 ∪ picker 勾的——picked 是 Set 就照它,null 就是已存的 key。
+   不再看 hasBacktest:回測過但沒勾的不進表。這台電腦:已存但清單找不到的名字也列(用內部名畫,要移掉去 picker 取消勾選);
+   雲端:清單找不到的走 trHidden(表上不列、原樣帶著送——api 讀不到 ≠ 已刪除)。 */
+function trNamesOf(picked) {
+  const base = picked ? [...picked] : Object.keys(trBase() || {});
+  if (TR.env !== "cloud") return base;
+  const list = trListNames(); return base.filter((n) => list.indexOf(n) >= 0);
+}
+function trNames() { return trNamesOf(TR.picked); }
+function trListNames() { return TR.list.map((x) => x.name); }
 function trDisplay(n) { const x = TR.list.find((y) => y.name === n); return x ? x.displayName : n; }
 
 /* ── 開/關視圖 ─────────────────────────────────────────── */
@@ -1648,36 +1690,50 @@ function trPaintPos() {
   const names = trNames(), stored = trBase(), states = r.states || {};
   // 灰字的時間戳滿 24 小時才帶日期:dead 時快照凍住、app 一直開著,沒有別的資料會變——每一筆失敗的時間戳本身進簽章,跨過那一刻才會重畫
   const now = Date.now(), stamps = (Array.isArray(r.order_errors) ? r.order_errors : []).map((e) => e && typeof e === "object" ? trErrStamp(e.ts, now) : null);
-  const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.self_ledger, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now), !!TR.sent, !!(TR.st && TR.st.alive)];
+  const data = [TR.env, TR.listLoaded, names, TR.list, stored, states, trEquity(), trUnit(), TR.save, TR.saveErr, r.last_reconcile, r.account, r.self_ledger, r.order_errors, stamps, trExecState(TR.st), envHeadState(TR.st, now), !!TR.sent, !!(TR.st && TR.st.alive),
+    TR.picked ? [...TR.picked].sort() : null, trCfgUnread(r)];
   if (!trShould("pos", box, data)) return;
   box.textContent = "";
+  // 「選擇策略」三個分支都在(後兩個停用):鈕不在不在之間跳,位置穩定(picker §2)
   if (!TR.listLoaded) {
     // 策略清單還沒回來(或讀失敗):不畫金額表、更不畫儲存列——「清單是空的」在這時候不是事實,不能邀請人把策略移出組合
-    box.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff"))));
+    box.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff")), trPickBtn()));
     box.appendChild(trEl("div", "pf-state", t("tr.loading")));
   } else if (stored === null) {
     // 主機讀不到設定檔:金額不畫(畫 0 是假話)、不給存,下一份報告讀到就自己恢復
-    box.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff"))));
+    box.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff")), trPickBtn()));
     box.appendChild(trEl("div", "pf-state", t("tr.cfgNull")));
   } else box.appendChild(trAmountTable(names, stored, states));
   box.appendChild(trPositions(r, stored || {}, states));
 }
+/* 「選擇策略」現在開不開得了(picker §2):儲存生命週期中不開(存好了還在等主機回報對上時,底稿是上一份回報,
+   這時送出去會把在路上的新金額整包蓋掉)、讀不到設定不開、清單沒載入不開、雲端讀不到新狀態不開(同儲存鈕的 stale) */
+function trPickOff() {
+  const cloud = TR.env === "cloud";
+  return TR.save === "saving" || (cloud && TR.save === "sent") || !TR.listLoaded || trStored() === null || trCfgUnread(trReport()) || (cloud && !(TR.st && TR.st.alive));
+}
+function trPickBtn() {
+  const acts = trEl("div", "pf-acts"), b = trEl("button", "pf-act", t("tr.pick")); b.type = "button"; b.id = "tr-pick";
+  b.disabled = trPickOff();
+  b.addEventListener("click", () => psOpen(b));
+  acts.appendChild(b); return acts;
+}
 function trAmountTable(names, stored, states) {
   const frag = document.createDocumentFragment();
-  frag.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff"))));
+  frag.appendChild(trSec(trTipLabel("label", t("tr.strategies"), t("tr.zeroMeansOff")), trPickBtn()));
   const total = trEl("div", "pf-total"), bar = trEl("div", "pf-savebar"), cloud = TR.env === "cloud";
   /* 雲端(spec-desktop-cloud-s4):跟本機同一張表、同一套驗證,只差三件——讀不到新狀態不給存(amounts 是整份覆蓋,
      拿舊報告當底會蓋掉別處剛改的)、存完要等主機回報才對得上(.pend 記號)、送出走 trSend(單飛 + request_id 沿用)。 */
   // 讀不到金額設定:兩個視角都擋(本機的回報也是 build_report(),amounts 一樣是整份覆蓋)
   const cfgBad = trCfgUnread(trReport());
   const stale = cloud && (!(TR.st && TR.st.alive) || cfgBad), sentOn = cloud && !!TR.sent;
-  const hidden = cloud ? trHidden(names, stored) : [];
+  const hidden = cloud ? trHidden(names, stored, trListNames()) : [];
   const gates = ((trReport() || {}).last_reconcile || {}).gates || {};
   const paintTotal = () => {
     // 雲端:合計跟確認框同一個口徑——表上沒列出、但照原樣帶著送的那幾支也算進去(稽核 L3)
     // 淨值快照:確認框用這裡顯示的那一個(不再自己讀一次),同一組金額兩處的倍數才會一樣(0.0.3 實機 989.95x / 988.37x)
     const eq = trEquity(); TR.eqShown = { env: TR.env, v: eq };
-    const tt = trTotals(cloud ? trSendAmounts("cloud", names, stored, TR.edits, false) : trCurrentAmounts(names, stored, TR.edits), eq);
+    const tt = trTotals(cloud ? trSendAmounts("cloud", names, stored, TR.edits, trListNames()) : trCurrentAmounts(names, stored, TR.edits), eq);
     total.textContent = "";
     total.appendChild(trEl("span", "", t("tr.total")));
     const tn = trEl("span", "n", trFmt(tt.total)); tn.appendChild(trEl("span", "ccy", trUnit())); total.appendChild(tn);
@@ -1693,24 +1749,25 @@ function trAmountTable(names, stored, states) {
     bar.textContent = ""; bar.hidden = false;
     if (TR.save === "saving") { bar.appendChild(trEl("span", "txt", t("tr.saving"))); return; }
     if (TR.save === "saved") { bar.appendChild(trEl("span", "txt ok", "✓ " + t("tr.saved"))); return; }
-    const dirty = trDirty(names, stored, TR.edits) || anyBad();
+    // dirty 含「有錢的策略被取消勾選還沒送出」(picker §6):那列已經從表上消失,儲存列是它唯一的出口
+    const dirty = trDirty(names, stored, TR.edits) || anyBad() || trPickStaged(TR.picked, stored, hidden).length > 0;
     // 雲端存完、還沒對上、而且沒再改:只有一句等回報的話,沒有鈕(不出「已儲存 ✓」:這台電腦沒有套用任何東西)
     if (sentOn && !dirty && TR.save !== "failed") { bar.appendChild(trEl("span", "txt", t("tr.cloud.pendAmounts"))); return; }
     if (TR.save === "failed") bar.appendChild(trEl("span", "txt err", TR.saveErr || t("tr.cmdFailed")));
     else { bar.hidden = !dirty; bar.appendChild(trEl("span", "txt", cfgBad ? (cloud ? t("tr.cloud.cfgUnread") : t("tr.cfgUnreadLocal")) : stale ? t("tr.cloud.saveStale") : t("tr.unsaved"))); }
     const rv = trEl("button", "pf-cancel", t("tr.revert")); rv.type = "button";
-    // 還原 = 回到底稿(雲端存完還沒對上時是送出的那一份);內容變了,request_id 也跟著換(S4 §4)
-    rv.addEventListener("click", () => { TR.edits = {}; TR.bad = {}; delete TR.reqIds.amounts; TR.saveUnknownAt = 0; TR.save = TR.sent && cloud ? "sent" : null; TR.saveErr = null; TR.sig.pos = null; trPaintPos(); $("tr-tab-pos").focus(); });
+    // 還原 = 回到底稿(雲端存完還沒對上時是送出的那一份);picker 的選擇一起放掉(被 staged 移除的列帶原金額回來);內容變了,request_id 也跟著換(S4 §4)
+    rv.addEventListener("click", () => { TR.edits = {}; TR.bad = {}; TR.picked = null; delete TR.reqIds.amounts; TR.saveUnknownAt = 0; TR.save = TR.sent && cloud ? "sent" : null; TR.saveErr = null; TR.sig.pos = null; trPaintPos(); $("tr-tab-pos").focus(); });
     const sv = trEl("button", "btn-fill", t("tr.save")); sv.type = "button";
     sv.disabled = anyBad() || stale || cfgBad; svBtn = sv;   // 有一格看不懂就不給存:確認框列的必須是用戶打的那個數
     sv.addEventListener("click", () => trSaveAmounts(names, stored, sv));
     bar.append(rv, sv);
   };
   if (!names.length) {
-    frag.appendChild(trEl("div", "pf-state", cloud ? t("side.cloud.emptyCut1") : t("tr.noStrategies")));
-    paintBar(); frag.appendChild(bar);             // 空狀態也可能有「移出組合」等著儲存(策略被刪了)
-    // 走得到這裡 = 清單已載入而且真的空了。雲端不從清單推論移出(trSendAmounts),所以不自己跳出儲存列
-    if (!cloud && trRemoved(stored, {}).length && !TR.save) bar.hidden = false;
+    // 兩句分開(picker §13-1):有回測過的策略、只是一支都沒勾 → 叫人按旁邊那顆「選擇策略」;連候選都沒有才叫人去聊天
+    const any = TR.list.some((x) => x.hasBacktest);
+    frag.appendChild(trEl("div", "pf-state", any ? t("tr.pick.noneChosen") : cloud ? t("side.cloud.emptyCut1") : t("tr.noStrategies")));
+    paintBar(); frag.appendChild(bar);             // 空狀態也可能有「移出組合」等著儲存(全部取消勾選):early return 會把儲存鈕吞掉,移除永遠送不出去
     return frag;
   }
   const scroll = trEl("div", "pf-scroll"), tbl = trEl("table", "pf-tbl");
@@ -1821,7 +1878,7 @@ function trSaveAmounts(names, stored, opener) {
   if (!TR.listLoaded || Object.keys(TR.bad).length) return;
   if (!stored || trStored() === null || trCfgUnread(trReport())) return;   // 讀不到金額設定:兩邊都不給存
   if (cloud && (!(S.st && S.st.alive) || trCfgUnread(trReport()))) return;   // 讀不到新狀態 / 設定不給存(儲存鈕已經 disabled;這裡是第二道)
-  const sending = trSendAmounts(S.env, names, stored, TR.edits, TR.listLoaded), removed = trRemoved(stored, sending);
+  const sending = trSendAmounts(S.env, names, stored, TR.edits, trListNames()), removed = trRemoved(stored, sending);
   const eq = trShownEquity(TR.eqShown, TR.env, trEquity()), tt = trTotals(sending, eq), storedTotal = Object.keys(stored).reduce((a, k) => a + (Number(stored[k]) || 0), 0);
   const lev = trLevCheck(trIsPaper(), tt.mult, tt.total, storedTotal);
   const money = (v) => { const dd = document.createElement("dd"); dd.textContent = trFmt(v); dd.appendChild(trEl("span", "ccy", trUnit())); return dd; };
@@ -1832,7 +1889,7 @@ function trSaveAmounts(names, stored, opener) {
   if (tt.mult != null) { const dd = document.createElement("dd"); dd.textContent = tt.mult.toFixed(2) + "x"; dl.appendChild(cfRow("lev" + (lev.over ? " over" : ""), t("tr.lev"), dd)); }
   extra.appendChild(dl);
   if (removed.length) extra.appendChild(trEl("p", "cf-removed", t("tr.saveRemoved", { names: removed.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
-  const hid = cloud ? trHidden(names, stored) : [], badStored = cloud ? trBadStored(sending) : [];
+  const hid = cloud ? trHidden(names, stored, trListNames()) : [], badStored = cloud ? trBadStored(sending) : [];
   if (hid.length) extra.appendChild(trEl("p", "cf-note", t("tr.cloud.hidden", { n: hid.length })));
   if (badStored.length) extra.appendChild(trEl("p", "cf-block", t("tr.cloud.badStored", { names: badStored.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
   const capVars = { x: TR_PAPER_MAX_LEV, cap: trFmt((eq || 0) * TR_PAPER_MAX_LEV), c: trCcy() };
@@ -1869,7 +1926,7 @@ function trSaveAmounts(names, stored, opener) {
         S.save = "sent"; S.sent = sending; S.sentAt = Date.now(); S.sentRep = rc && typeof rc.reported_at === "number" ? rc.reported_at : null; S.edits = {}; S.saveUnknownAt = 0;
         srSay(t("tr.cloud.pendAmounts"));
       } else if (res && res.ok) {
-        S.save = "saved"; S.edits = {};
+        S.save = "saved"; S.edits = {}; S.picked = null;   // 存進去了:stored 又是真相,picker 的選擇交回去(雲端在報告對上時清,trSentCheck)
         srSay(t("tr.saved"));
         S.saveTimer = setTimeout(() => { if (S.save === "saved") { S.save = null; S.sig.pos = null; if (mine()) trPaintPos(); } }, 4000);
       } else {
@@ -2858,6 +2915,105 @@ async function cxRetest() {
   S.sig.set = null; trPaint(); trPollSoon(1500);
 }
 
+/* ── 選擇下單策略的框(#ps-scrim;spec-desktop-strategy-picker,照雲端工作頁 psOpen / psApply)────────────
+   殼同 cx 框(.scrim > .set-modal);兩個視角共用,雲端視角 head 灰底 + 「雲端」記號 + 鈕上方目的地行(這個框的「確定」會寫主機設定檔)。
+   候選集合在開框時算一次,框開著不隨輪詢重建(打勾到一半被洗掉比名單慢幾秒更糟)。
+   Esc 與 Tab 圈都在這裡自己接(app.js 的 escTop / trapTab 不動):escTop 沒認得這個框時回 null、不會 preventDefault,
+   這裡就補上;它先關了別層(defaultPrevented)這裡就不再關第二層。 */
+let psOpener = null;
+function psWire() {
+  $("ps-cancel").addEventListener("click", () => psClose());
+  $("ps-close").addEventListener("click", () => psClose());
+  $("ps-ok").addEventListener("click", psApply);
+  $("ps-scrim").addEventListener("mousedown", (e) => { if (e.target === $("ps-scrim")) psClose(); });
+  $("ps-scrim").addEventListener("keydown", psTrap);
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || e.defaultPrevented || $("ps-scrim").hidden) return;
+    e.preventDefault(); psClose();
+  });
+}
+// 焦點圈在框裡(同 app.js trapTab,但 checkbox 也算——那支只抓 button / select)
+function psTrap(e) {
+  if (e.key !== "Tab") return;
+  const f = [...$("ps-modal").querySelectorAll("button, input")].filter((x) => !x.disabled && x.offsetParent);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+function psRow(r, cloud) {
+  const row = trEl("label", "ps-row" + (r.locked ? " is-locked" : "")), cb = trEl("input", "ps-cb");
+  cb.type = "checkbox"; cb.value = r.name; cb.checked = r.checked; cb.disabled = r.locked;
+  const nm = trEl("span", "ps-name", r.display);
+  if (r.gone) nm.appendChild(trEl("span", "ps-gone", t("tr.pick.gone")));
+  if (r.locked) nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.cloud.typeC") : t("tr.typeC")));
+  row.append(cb, nm); return row;
+}
+function psOpen(opener) {
+  const S = TR;
+  if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || trPickOff()) return;
+  const cloud = S.env === "cloud", names = trNames();
+  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true);
+  psOpener = opener || null;
+  $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
+  $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";
+  $("ps-where").hidden = !cloud;
+  $("ps-where").textContent = cloud ? trWhereTidy(t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(envMoney(S.st)), venue: trVenueLabel(trVenueId(), true) })) : "";
+  const list = $("ps-list"); list.textContent = "";
+  if (!rows.length) list.appendChild(trEl("div", "pf-state", t("tr.pick.empty")));
+  else rows.forEach((r) => list.appendChild(psRow(r, cloud)));
+  $("view-ws").inert = true;
+  const sc = $("ps-scrim"); sc.hidden = false;
+  requestAnimationFrame(() => sc.classList.add("open"));
+  const first = list.querySelector(".ps-cb:not(:disabled)");
+  (first || $("ps-cancel")).focus();
+}
+function psClose() {
+  const sc = $("ps-scrim"); if (sc.hidden) return;
+  sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false;
+  const o = psOpener; psOpener = null;
+  if (o && o.isConnected && !o.disabled) o.focus(); else psRefocus();
+}
+// 確定之後表重畫、開框那顆鈕已經是新的一顆:焦點落回它;沒有(讀不到設定那一態鈕停用)就退到分頁鈕,不能掉到 BODY
+function psRefocus() { const b = $("tr-pick"); if (b && b.isConnected && !b.disabled) b.focus(); else $("tr-tab-pos").focus(); }
+/* 「確定」(picker §6):勾的集合成為 picked、表只列這些;$0 的加 / 減立刻送一份 amounts(不開確認框——$0 不會下單、也不會平倉);
+   有錢的移除只 stage(表上那列消失、儲存列出現,按「儲存」的確認框講會平倉)。走跟儲存同一條送出路。 */
+async function psApply() {
+  const S = TR, cloud = S.env === "cloud";
+  const sel = new Set([...$("ps-list").querySelectorAll(".ps-cb")].filter((c) => c.checked).map((c) => c.value));
+  psClose();
+  const mine = () => TR === S && S.open && S.tab === "pos";
+  // 框開著期間報告變成 config: null / 讀不到設定:底稿已不可信,關框、什麼都不送(儲存列那句由 trAmountTable 講)
+  if (trStored() === null || trCfgUnread(trReport())) { S.sig.pos = null; if (mine()) trPaintPos(); psRefocus(); return; }
+  const stored = trBase() || {};
+  S.picked = trSetEq(sel, trNamesOf(null)) ? null : sel;   // 跟已存的一模一樣 = 沒改:stored 照舊是真相
+  const ch = trPickApply(sel, stored, trPickKeep(S.env, sel, stored, trListNames()));
+  S.sig.pos = null; if (mine()) trPaintPos();
+  if (!ch) { psRefocus(); return; }
+  // 呼吸點:新加的立刻亮、$0 移出的立刻熄(同雲端 pfJustPicked / pfJustRemoved)
+  envJustMark(S.just, stored, ch.amounts, Date.now());
+  if (!cloud) envPaintLocalDots(); else ENV.sig.side = null;
+  S.save = "saving"; S.saveErr = null; S.sig.pos = null; if (mine()) trPaintPos();
+  if (cloud) { const key = trAmountsKey(ch.amounts); if (S.reqFor.amounts !== key) delete S.reqIds.amounts; S.reqFor.amounts = key; }
+  const res = cloud ? await trSend(S, "amounts", { amounts: ch.amounts }) : await S.api.tradeSend("amounts", { amounts: ch.amounts });
+  clearTimeout(S.saveTimer);
+  if (res && res.ok && cloud) {
+    // 同 trSaveAmounts:ack ok = 主機已寫進設定檔,新加那列的 0 帶 .pend、儲存列講存好了等回報。打到一半的金額留著(這一份沒帶它們)
+    const rc = S.st && S.st.cloud;
+    S.save = "sent"; S.sent = ch.amounts; S.sentAt = Date.now(); S.sentRep = rc && typeof rc.reported_at === "number" ? rc.reported_at : null; S.saveUnknownAt = 0;
+    srSay(t("tr.cloud.pendAmounts"));
+  } else if (res && res.ok) S.save = null;   // 這台電腦:沒有金額變動,不出「已儲存」那行(講「已套用新金額」是假話)
+  else {
+    // 失敗:儲存列出錯誤,表上的列不退回(照雲端)——用戶填金額按儲存時整份會再送一次,那一份就包含它
+    S.save = "failed"; S.saveErr = trSendError(res, "save", S.env); srSay(S.saveErr);
+    S.saveUnknownAt = cloud && trKindOf(res) === "unknown" ? Date.now() : 0;
+  }
+  S.sig.pos = null;
+  try { S.st = await S.api.tradeStatus(); } catch (_) { }
+  if (mine()) { trPaintPos(); psRefocus(); }
+  trPollSoon(1500);
+}
+
 /* ── 視角:「這台電腦｜雲端」切換器、頂列灰底、雲端側欄、雲端空態(spec-desktop-local-and-cloud §1–§4.1)────────
    除了切換器、⌘1/⌘2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
    雲端來的字串(策略名)一律 textContent。 */
@@ -2884,7 +3040,7 @@ document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, t
 document.addEventListener("compositionend", () => { ENV_COMPOSING = false; }, true);
 // 開通頁看得見嗎(稽核 Q1):從這一頁按「綁卡」外開瀏覽器,回來要重查帳號狀態,不然畫面一直停在「綁卡」
 function envOpenVisible() { return ENV.cur === "cloud" && !$("cv-empty").hidden; }
-function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("lb-scrim").hidden; }
+function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden; }
 function envSwitchGuarded(env) {
   if ((env !== "local" && env !== "cloud") || !envCanSwitch()) return false;
   envSwitch(env); return true;

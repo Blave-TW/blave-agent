@@ -325,6 +325,27 @@
   </div>
 </div>
 
+<!-- 選擇下單策略(自動下單 › 部位的「選擇策略」;spec-desktop-strategy-picker,照雲端工作頁 #ps_scrim)。殼同 cx 框、寬 440;
+     列由 trade.js 的 psOpen 建。放在 cx 之後、del 之前:Esc 由 trade.js 自己接(app.js escTop 不動) -->
+<div class="scrim" id="ps-scrim" role="dialog" aria-modal="true" aria-labelledby="ps-title" hidden>
+  <div class="set-modal ps-modal" id="ps-modal">
+    <div class="modal-head">
+      <span class="envm" id="ps-env" hidden></span>
+      <h6 id="ps-title" data-i18n="tr.pick.title"></h6>
+      <button type="button" class="modal-close" id="ps-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="ps-body" id="ps-body">
+      <p class="ps-hint" data-i18n="tr.pick.hint"></p>
+      <div class="ps-list" id="ps-list"></div>
+    </div>
+    <div class="modal-foot">
+      <span class="del-where" id="ps-where" hidden></span>
+      <button type="button" class="btn-out" id="ps-cancel" data-i18n="del.cancel"></button>
+      <button type="button" class="btn-fill" id="ps-ok" data-i18n="tr.pick.ok"></button>
+    </div>
+  </div>
+</div>
+
 <!-- 刪對話的確認框(外框沿用 .scrim / .set-modal;寬 440 = 雲端 .ns-modal) -->
 <div class="scrim" id="del-scrim" role="dialog" aria-modal="true" aria-labelledby="del-title" aria-describedby="del-body" hidden>
   <div class="set-modal del-modal" id="del-modal">

@@ -156,7 +156,7 @@ function paintBlaveBtn() {
 }
 
 /* ── 設定 › 模型接入 ───────────────────────────────────────
-   這一頁 = 三個選項選一個(Blave 的 AI / Claude Code / Codex),不是連結畫面那張卡。
+   這一頁 = 三個選項選一個(Blave AI / Claude Code / Codex),不是連結畫面那張卡。
    **那張卡不再搬進設定**:連結畫面是第一次要做決定的地方(動詞句、填色鈕),設定頁是回來換的地方(三列平權、
    「使用中」用灰填 + 加粗標出來)。兩邊共用的是底下的邏輯(detect / connect / localLogin / blaveGo),不是 DOM。
    mdlOptions 是純邏輯(tests/check_shell_settings.js 從原文切出來跑),不碰 DOM。 */
@@ -1463,7 +1463,7 @@ const MD_INL = new RegExp([
   /~~(?=[^\s~])([\s\S]*?[^\s~])~~/.source,                                                               // 13
   /<[bB][rR]\s*\/?>|\n/.source,                                                                         // 換行;表格儲存格裡常見的 <br> 也當換行(其餘 HTML 一律當字)
 ].join("|"), "g");
-/* 連結只收 http(s)。其餘(javascript:、相對路徑)只顯示字。點下去由主行程的導覽守門決定開不開(只放行 blave.org) */
+/* 連結只收 http(s)。其餘(javascript:、相對路徑)只顯示字。點下去由 #chat-scroll 的委派交給系統瀏覽器(見 addMsg 下面) */
 const mdHref = (u) => (/^https?:\/\/[^\s]+$/i.test(u) ? u : null);
 function mdInline(s, depth) {
   const out = [];
@@ -1561,6 +1561,17 @@ function addMsg(cls, text) {
   scrollChat();
   return el;
 }
+/* 對話裡的連結(agent 回覆的 markdown、新聞 Sources)交給系統瀏覽器,不在 app 視窗內導覽。要 preventDefault:
+   不然 <a target=_blank> 會走主行程的導覽守門(只放行 blave.org),新聞網站點了沒反應(0.1.1 用戶回報)。
+   mdHref 已經只收 http(s),這裡再看一次是因為 href 是從 DOM 拿的 */
+const chatLink = (e) => {
+  if (e.type === "auxclick" && e.button !== 1) return;   // 中鍵才算;右鍵留給系統選單
+  const a = e.target.closest("a[href]"); if (!a) return;
+  e.preventDefault();
+  if (/^https?:\/\//i.test(a.href)) window.blave.openExternal(a.href);
+};
+// Cmd/Ctrl+click 是帶 metaKey/ctrlKey 的 click,同一條;中鍵是 auxclick,不攔會走 window.open → 白名單
+["click", "auxclick"].forEach((ev) => $("chat-scroll").addEventListener(ev, chatLink));
 
 /* 圖片放大(lightbox):點圖開、點任何地方 / Esc / ✕ 關。焦點關掉後回到原本那張圖。 */
 let lbOpener = null;
@@ -2017,8 +2028,8 @@ function blaveLoginFlow(card) {
   fault(null);
 }
 
-/* ── Blave 的 AI 能不能用:綁卡 / 儲值 ──────────────────────
-   進工作頁(用 Blave 的 AI)先問一次 api 的 account_status:不能跑就先放一張灰記號的預檢卡,
+/* ── Blave AI 能不能用:綁卡 / 儲值 ──────────────────────
+   進工作頁(用 Blave AI)先問一次 api 的 account_status:不能跑就先放一張灰記號的預檢卡,
    不等他打完第一句才失敗;輸入框不鎖。402 的失敗卡也照同一份狀態換句子與鈕(沒卡 → 前往綁卡,
    有卡沒餘額 → 儲值);查不到就沿用舊的「沒額度 → 儲值」那組,不猜。
    數字(100 / 14 / 100 / 300)全部來自 api,這裡不寫死。
@@ -2086,7 +2097,7 @@ async function acctCheck() {
   // 問不到、手上也沒有狀態:中性句不能一直掛著,退回「沒額度 → 儲值」那組(不猜沒卡)
   if (!acct) creditCards.forEach((card) => card.set({ text: t("fault.noCredit"), ...acctAction(null), second: resendSecond() }));
   // 還是不能跑:再等 5 秒查一次,最多 3 次(藍新回呼到我們這邊有幾秒延遲)
-  // 只在連的是 Blave 的 AI、而且真的有卡片在等的時候重試:自帶 CLI 的登入者 can_run=false 是常態,
+  // 只在連的是 Blave AI、而且真的有卡片在等的時候重試:自帶 CLI 的登入者 can_run=false 是常態,
   // 照舊重試會把跟 LLM 共用的每分鐘 30 次的桶打滿
   if (cur === "blave" && acct && !acct.can_run && (acctCard || creditCards.length) && acctRetry < 3) { acctRetry++; setTimeout(acctCheck, 5000); }
   else acctRetry = 0;
@@ -2365,7 +2376,7 @@ function acctPaintAcct() {
   const b = el("set-acct-btn"), waiting = !hasToken && (planLoginBusy || oauthPending);
   b.textContent = hasToken ? t("acct.out") : waiting ? t("oauth.cancel") : t("cn.blave.btn");
   b.className = hasToken || waiting ? "btn-out" : "btn-fill";
-  // 登出會怎樣 / 登入拿得到什麼。用 Blave 的 AI 的人登出之後會被送回選 AI 的畫面(見登出那支的 cur === "blave" 分支),
+  // 登出會怎樣 / 登入拿得到什麼。用 Blave AI 的人登出之後會被送回選 AI 的畫面(見登出那支的 cur === "blave" 分支),
   // 對話要換成這台電腦上的 agent 或重新登入才接得下去;用自己 CLI 的人不受影響,所以那一條只對前者出
   const keys = hasToken ? (cur === "blave" ? ["acct.out.3", "acct.out.1", "acct.out.2"] : ["acct.out.1", "acct.out.2"]) : ["acct.in.1", "acct.in.2"];
   const ul = el("acct-list"); ul.textContent = "";
@@ -2402,7 +2413,7 @@ async function acctPrecheck() {
   if (!hasToken) { acct = null; planWatchIdle(); return; }
   acct = await window.blave.accountStatus(); acctAt = Date.now();
   if (acct) planWatch(acct);                  // 方案狀態(側欄那行字、啟動中的輪詢)不看能不能跑
-  if (cur !== "blave") return;                // 預檢卡講的是「Blave 的 AI 能不能跑」,自帶 CLI 的人用不到
+  if (cur !== "blave") return;                // 預檢卡講的是「Blave AI 能不能跑」,自帶 CLI 的人用不到
   if (!acct || acct.can_run) return;
   acctCard = faultCard();
   acctPaint();
@@ -2655,7 +2666,7 @@ function applyStatic() {
   hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
   pubLoad().then(acctPaintAcct);   // 連結畫面尾註那句要的天數;拿不到就不出
   const prev = await window.blave.loadConnection();
-  // kind 說「用 Blave 的 AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
+  // kind 說「用 Blave AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
   // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走
   // 本機模式 —— 帳算在用戶自己的 Claude Code 訂閱上。那個 footer 不能說謊。
   if (prev && prev.kind === "blave" && !(await window.blave.hasBlaveToken())) {

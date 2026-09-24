@@ -113,7 +113,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // L = TR_BAGS.local(設定 › 連線這一刀永遠是這台電腦的);S = 進來那一刻的 TR
   const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
-  const entries = ["trSend", "trSaveAmounts", "trUnbind", "cxRetest", "cdelRun"];
+  // psApply:picker 的 $0 立即送——本機直送、雲端走 trSend 且同 trSaveAmounts 用 reqFor.amounts 綁內容(spec-desktop-strategy-picker §6)
+  const entries = ["trSend", "trSaveAmounts", "trUnbind", "cxRetest", "cdelRun", "psApply"];
   const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
   ok("用 S.api 送指令的函式就是這幾個(多一個就要有人看過它的 request_id 有沒有沿用):" + users.join(), users.length === entries.length && users.every((n) => entries.indexOf(n) >= 0));
   // 會改變執行狀態的那三個指令一律經過 trSend(冪等:重試沿用同一顆 request_id);直接叫 S.api.tradeSend 會繞過它

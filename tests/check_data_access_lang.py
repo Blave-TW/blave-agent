@@ -71,6 +71,29 @@ for need, label in [
 ]:
     t("access=0:約束保留 —— " + label, bool(re.search(need, block)))
 
+# ④ 外殼帶 BLAVE_DATA_ACCESS_WHY 時,Facts 多**一句事實**(給模型,不是給用戶的句子)+ 一條「講真正的原因」。
+#   2026-09-24 真機:登入著、只是餘額不夠,agent 回「需要登入 Blave 帳號才能存取」——舊規則只說「沒資料」。
+FACTS_PLAIN = "Facts: this desktop has no Blave data access this turn"
+RULE = "State the actual reason above; do not say the user must sign in unless the reason is signed_out"
+def facts(why):
+    if why is None: os.environ.pop("BLAVE_DATA_ACCESS_WHY", None)
+    else: os.environ["BLAVE_DATA_ACCESS_WHY"] = why
+    b = agent_turn.data_access_rule()
+    return b, b[b.index("Facts:"):b.index(". Access comes with")]
+for why, need in [("signed_out", "the user is not signed in to Blave in this app"),
+                  ("no_card", "no card on file"),
+                  ("no_balance", "the balance does not cover this hour's data fee"),
+                  ("unknown", "the account status could not be read this turn")]:
+    b, f = facts(why)
+    t(f"WHY={why}:Facts 那句講的是這個原因,而且有「講真正的原因」那條", need in f and RULE in b)
+    if why != "signed_out":
+        t(f"WHY={why}:事實句說「登入著」,沒有任何「sign in」條件句", "the user is signed in;" in f
+          and not re.search(r"\bsign(ing)? in\b|not signed in", f))
+for why in (None, "bogus"):
+    b, f = facts(why)
+    t(f"WHY={'未帶(舊外殼)' if why is None else '認不得'}:Facts 原文不變、沒有那條規則", f == FACTS_PLAIN and RULE not in b)
+os.environ.pop("BLAVE_DATA_ACCESS_WHY", None)
+
 os.environ["BLAVE_DATA_ACCESS"] = "1"
 one = agent_turn.data_access_rule()
 t("access=1 照舊有內容、access 未設時整段不出", bool(one)

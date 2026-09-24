@@ -2,11 +2,11 @@
 
 # Blave Agent
 
-**The quant workspace for your AI agent**
+**Agentic Quant Workspace**
 
-See if it's an edge or a coin flip before it goes live.
+## Turn Your Agent into a Quant
 
-Works inside Claude Code or Codex. No LLM places your orders. macOS, beta.
+Free and open source. Connect your Claude Code or Codex. You describe the idea; it writes the strategy, runs the backtest, and trades it live.
 
 **English** | [繁體中文](README.zh-TW.md)
 
@@ -14,7 +14,7 @@ Works inside Claude Code or Codex. No LLM places your orders. macOS, beta.
 
 <!-- TODO: 30s demo GIF (1600w, shown at 800w, dark, ≤8MB): one sentence → backtest with p-value → live -->
 
-[Download the macOS app](https://github.com/Blave-TW/blave-agent/releases/latest) · [Quick start (from source)](#quick-start) · [Run it 24/7 in the cloud](https://blave.org/agent/en)
+[Download the macOS app](https://github.com/Blave-TW/blave-agent/releases/latest) · [Quick start (from source)](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
 
 Star the repo if this is useful — and Watch › Releases to get notified of new versions.
 
@@ -57,7 +57,7 @@ npm start
 On first launch you choose what powers the agent:
 
 - **Your own Claude Code or Codex.** No Blave account needed, and Blave charges nothing for the AI. The app only launches the CLI; your Claude Code or Codex credentials stay with it.
-- **Blave's AI.** Sign in with a Blave account; billed by usage.
+- **Blave AI.** Sign in with a Blave account; billed by usage.
 
 Then describe an idea. For example:
 
@@ -114,7 +114,7 @@ For any other exchange or broker with an API, the agent can write a helper from 
 
 ## Run It in the Cloud (Paid)
 
-If a strategy should keep running around the clock, with your computer off, Blave Agent runs the same workspace on a dedicated cloud machine. You talk to the agent from the web workspace or Telegram; SSH is there if you want it. You can also connect your own Claude Code, Codex or another MCP-capable agent to that machine — setup is in the web workspace under Settings › Connect, guide at [blave.org/docs/en/connect](https://blave.org/docs/en/connect). Plans and prices: [blave.org/agent/en](https://blave.org/agent/en).
+If a strategy should keep running with your computer off, Blave Agent runs the same workspace on a dedicated cloud machine. You talk to the agent from the web workspace or Telegram; SSH is there if you want it. You can also connect your own Claude Code, Codex or another MCP-capable agent to that machine — setup is in the web workspace under Settings › Connect, guide at [blave.org/docs/en/connect](https://blave.org/docs/en/connect). Plans and prices: [blave.org/agent/en](https://blave.org/agent/en).
 
 ## Running From Source: What Goes Where
 
@@ -161,6 +161,10 @@ Issues and pull requests are welcome. Before a PR:
 - run the checks in `tests/` that cover what you changed;
 - activate secret scanning once per clone: `pip install pre-commit && pre-commit install`;
 - leave the backtest-chain files (`lib/runner.py`, `param_scan.py`, `walk_forward.py`, `validation.py`, `analysis.py`) alone unless the change is about them — the web workspace reads their output files by contract.
+
+## Code Signing Policy
+
+Free code signing on Windows provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). Releases are built by the public GitHub Actions workflow in this repository from a tagged commit; each signing request is approved by the repository owner. Roles: Authors and Reviewers — the maintainers with write access; Approver — the repository owner. This program will not transfer any information to third parties except as described in the [privacy policy](https://blave.org/disclaimer/en/privacy_policy). The macOS build is signed and notarized with Blave's own Apple identity.
 
 ## License
 

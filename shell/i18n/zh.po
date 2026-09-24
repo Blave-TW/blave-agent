@@ -7,7 +7,7 @@ msgid "cn.h"
 msgstr "Blave 不內建 AI。"
 
 msgid "cn.blave.title"
-msgstr "用 Blave 的 AI"
+msgstr "用 Blave AI"
 
 msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
@@ -61,7 +61,7 @@ msgid "oauth.failed"
 msgstr "授權失敗。"
 
 msgid "OAUTH_CANCELLED"
-msgstr "已取消。要用 Blave 的 AI 再按一次。"
+msgstr "已取消。要用 Blave AI 再按一次。"
 
 msgid "OAUTH_TIMEOUT"
 msgstr "授權逾時（5 分鐘）。"
@@ -493,12 +493,12 @@ msgstr "登出"
 msgid "cn.blave.signOutLocalOnly"
 msgstr "這台電腦已登出，但連不上伺服器、沒能撤銷這台裝置的授權。到 blave.org 的設定 › 裝置再撤銷一次。"
 
-# Blave 的 AI:綁卡 / 儲值預檢
+# Blave AI:綁卡 / 儲值預檢
 msgid "acct.noCard"
-msgstr "Blave 的 AI 還不能用：這個帳號還沒綁卡。"
+msgstr "Blave AI 還不能用：這個帳號還沒綁卡。"
 
 msgid "acct.noCredit"
-msgstr "Blave 的 AI 還不能用：餘額是 0。"
+msgstr "Blave AI 還不能用：餘額是 0。"
 
 msgid "acct.addCard"
 msgstr "前往綁卡"
@@ -513,7 +513,7 @@ msgid "acct.creditIn"
 msgstr "額度到了，可以再送了。"
 
 msgid "fault.needCard"
-msgstr "用 Blave 的 AI 要先綁卡，這一輪沒有跑。"
+msgstr "用 Blave AI 要先綁卡，這一輪沒有跑。"
 
 msgid "fault.checking"
 msgstr "這一輪沒有跑，正在確認帳號狀態。"
@@ -858,7 +858,7 @@ msgid "set.cat.acct"
 msgstr "帳號"
 
 msgid "cn.blave.name"
-msgstr "Blave 的 AI"
+msgstr "Blave AI"
 
 msgid "cn.blave.group"
 msgstr "由 Blave 提供"
@@ -870,7 +870,7 @@ msgid "acct.out.2"
 msgstr "對話與策略都留在這台電腦，不受影響。"
 
 msgid "acct.out.3"
-msgstr "你現在用的是 Blave 的 AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"
+msgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"
 
 msgid "acct.in.1"
 msgstr "登入之後才拿得到 Blave 的資料與雲端方案。"
@@ -1947,7 +1947,7 @@ msgstr "離開全螢幕"
 
 # 最低版本閘(最小版畫面;字待設計師過目)
 msgid "minv.chat"
-msgstr "這個版本的 Blave 需要更新，才能繼續用 Blave 的 AI。這則訊息沒有送出，沒有用到 AI。"
+msgstr "這個版本的 Blave 需要更新，才能繼續用 Blave AI。這則訊息沒有送出，沒有用到 AI。"
 
 msgid "minv.trade"
 msgstr "這個版本的 Blave 需要更新，才能啟動下單。暫停不受影響。到 設定 › 一般 最下面更新。"
@@ -2847,3 +2847,24 @@ msgstr "查看"
 
 msgid "up.done.viewMsg"
 msgstr "列出雲端主機上 {dir} 裡的檔案"
+
+msgid "tr.pick"
+msgstr "選擇策略"
+
+msgid "tr.pick.title"
+msgstr "選擇下單策略"
+
+msgid "tr.pick.hint"
+msgstr "勾選要進入下單金額表的策略；還在測試的先不要勾。"
+
+msgid "tr.pick.ok"
+msgstr "確定"
+
+msgid "tr.pick.empty"
+msgstr "還沒有回測完成的策略——先在聊天請代理建立並回測。"
+
+msgid "tr.pick.gone"
+msgstr "已不存在，取消勾選可移除"
+
+msgid "tr.pick.noneChosen"
+msgstr "還沒有選策略。按「選擇策略」把要下單的策略加進來。"

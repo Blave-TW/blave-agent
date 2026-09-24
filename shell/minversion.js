@@ -1,14 +1,14 @@
 // Blave 電腦版 — 最低版本閘(主行程用;spec §13 第 4 點)。
 // 契約:blave-canon output/backend/2026-09-21-desktop-min-version-contract.md
 //
-// 給安全事故用的:api 說「這個版本已停用」時,app 擋**新的下單啟動**與 **Blave 的 AI**,只留更新。平常 min_version 是 null。
+// 給安全事故用的:api 說「這個版本已停用」時,app 擋**新的下單啟動**與 **Blave AI**,只留更新。平常 min_version 是 null。
 //   - **失敗方向一律是放行(fail-open)**:打不到、不是 200、沒有 desktop 鍵、值的形狀不對、app 自己的版號解析不出來——都不擋。
 //     api 掛掉不該讓所有人的下單停擺。
 //   - 「打得到、而且明確回 null」是權威的解除;「打不到」不是——這一次執行期間已經確認被擋過,之後斷網不會因此解開
 //     (不落地:重開 app 後從「不擋」開始,再問一次)。
 //   - 擋的是**啟動類**指令(resume / resume_wait):已經在跑的下單不主動停——停單本身是有後果的動作(訊號該出場時沒人送單),
 //     而且 spec §13 第 2 點是「下單中不強制換版」;暫停、改金額、移除金鑰這些安全方向的指令永遠放行。
-//   - 聊天只擋 Blave 的 AI(那是我們的伺服器在替這個版本花錢、也是我們能負責的範圍);連自己 CLI 的人照常聊。
+//   - 聊天只擋 Blave AI(那是我們的伺服器在替這個版本花錢、也是我們能負責的範圍);連自己 CLI 的人照常聊。
 //   - 這是 client 自律的閘(外殼開源),不是硬邊界;真正斷掉舊版要在伺服器端做,不在這一批。
 //
 // 這個檔不 require electron;HTTP 由呼叫端注入(測試用假的)。
@@ -76,7 +76,7 @@ function createGate(opts) {
     refresh, ensureFresh, state,
     // 這個指令現在送不送得出去(只有啟動類會被擋)
     tradeAllowed: (cmd) => !(START_CMDS.has(cmd) && state().blocked),
-    // 這一輪聊天送不送得出去(只擋 Blave 的 AI)
+    // 這一輪聊天送不送得出去(只擋 Blave AI)
     turnAllowed: (connKind) => !(connKind === "blave" && state().blocked),
   };
 }

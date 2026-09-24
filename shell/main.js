@@ -211,7 +211,7 @@ function updater() {
   return _up;
 }
 
-// ── OAuth(用 Blave 的 AI)─────────────────────────────────────
+// ── OAuth(用 Blave AI)─────────────────────────────────────
 // RFC 8252 原生 app 的 loopback 流程:軟體開源所以沒有 client secret,
 // 用 PKCE(S256)。同意頁在 blave.org,換 token 打 api.blave.org。
 const WEB_BASE = "https://blave.org";
@@ -1005,7 +1005,7 @@ const BLAVE_NAMES = {
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash", "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
 };
 const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /deepseek.*flash/];
-/* 帳號能不能用 Blave 的 AI(綁卡流程用)。回 api 的 account_status 原樣,或 null(沒 token / 打不到 /
+/* 帳號能不能用 Blave AI(綁卡流程用)。回 api 的 account_status 原樣,或 null(沒 token / 打不到 /
    舊 api)。null 時 renderer 不猜——沿用「沒額度 → 儲值」那組舊文案。 */
 async function accountStatus() {
   const acct = loadToken();
@@ -1044,7 +1044,7 @@ async function publicPricing() {
   return { trial: b.trial, starter_hourly: hr, starter_monthly: hr ? Math.round(hr * 720) : null };
 }
 // ── 最低版本閘(minversion.js;spec §13 第 4 點)──────────────────
-// 安全事故用:api 說這個版本已停用 → 擋新的下單啟動與 Blave 的 AI,只留更新。失敗方向一律放行(檔頭有完整規則)。
+// 安全事故用:api 說這個版本已停用 → 擋新的下單啟動與 Blave AI,只留更新。失敗方向一律放行(檔頭有完整規則)。
 let _gate = null;
 function minGate() {
   if (_gate) return _gate;
@@ -1074,6 +1074,19 @@ async function hasBlaveData() {
   if (!fresh()) await accountStatus();
   const a = fresh() ? dataAccessOf(lastAcct.body) : null;   // 補打失敗就是查不到:舊答案不沿用
   return a === "included" || a === "billed";
+}
+/* BLAVE_DATA_ACCESS=0 的**原因**(BLAVE_DATA_ACCESS_WHY;hasBlaveData 之後叫):signed_out / no_card / no_balance / unknown。
+   runtime 那段規則只知道「沒資料」時,agent 會對登入著、只是餘額不夠的人說「要先登入」(09-24 真機)——外殼明明知道原因。
+   account_status 的 reason 只在 can_run=false 時有值(NO_CARD / NO_CREDIT);data_access=none 而 reason 空的組合
+   (api 沒禁)當餘額不夠。查不到(沒打到 / 太舊)就 unknown,不沿用舊答案,同 hasBlaveData。
+   舊 api 只有 data_included:false、沒有 data_access:那個布林是「不含資料」不是「餘額不夠」,也 unknown。 */
+function dataAccessWhy(signedIn) {
+  if (!signedIn) return "signed_out";
+  const b = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? lastAcct.body : null;
+  if (!b) return "unknown";
+  // 帳號有資料、本機卻沒有 key 檔(syncDataEnv 回 none):不是錢的問題,也講不出是什麼,只能說讀不到
+  if (dataAccessOf(b) !== "none") return "unknown";
+  return b.reason === "NO_CARD" ? "no_card" : "no_balance";
 }
 
 async function blaveModels() {
@@ -1205,7 +1218,7 @@ function mcpCode() {
   return _mcp;
 }
 /* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。三顆各看各的:
-     proxyToken(帳號 token,會燒 Blave 的 AI 額度)= **連的是 Blave 的 AI** 而且有登入;
+     proxyToken(帳號 token,會燒 Blave AI 額度)= **連的是 Blave AI** 而且有登入;
      dataKey(縮權的資料 key,不能呼叫 LLM)= **有登入而且帳號含資料**,不看連的是誰——自帶 Claude Code / Codex 的人登入後也拿得到資料。
      mcp(要不要去換接入碼、掛上 `blave` MCP)= **功能開著而且有登入**,一樣不看連的是誰(MCP 呼叫不經 LLM proxy、不計費);
        有沒有雲端主機由換碼的端點回答(沒有 = 409 = 不掛),所以不在這裡判。它開著**不會**讓帳號 token 進環境。
@@ -1259,7 +1272,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 「這個 workspace 的 python 是哪一顆」明寫進 prompt——環境變數不會被重排。
     PATH: path.join(BASE, "venv", "bin") + path.delimiter + envPath, HOME: os.homedir(),
     BLAVE_PYTHON: VENV_PY,
-    // 有帳號 token = 用 Blave 的 AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
+    // 有帳號 token = 用 Blave AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
     // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
     // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
     ...(acct ? { BLAVE_PROXY_TOKEN: acct } : {}),
@@ -1280,6 +1293,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // runtime 依這個在 prompt 裡明講「這台有/沒有 Blave 資料」(變數不存在 = 雲端機,行為不變)
     // 用戶自己放的完整 key:不設這個變數,runtime 不加那段——「桌面 key 只能讀策略庫」對它不成立
     ...(dataAccess === "own" ? {} : { BLAVE_DATA_ACCESS: dataAccess === "ours" ? "1" : "0" }),
+    // =0 時多帶原因,runtime 才講得出「登入著但餘額不夠」而不是一律「要先登入」
+    ...(dataAccess === "none" ? { BLAVE_DATA_ACCESS_WHY: dataAccessWhy(signedIn) } : {}),
     // 聊天裡的圖:見上面「聊天裡的圖」。接收端還沒起來(port 0)就不帶,notify 那邊會 no-op
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
@@ -1338,8 +1353,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
    連結(K 線圖左下角的 TradingView 標誌是 lightweight-charts 依授權放的 <a>),沒有
    這兩道的話,點它會在 app 裡開一個沒有 preload 隔離設定的新視窗、或把整個 app 導走。
    https 的交給系統瀏覽器開,其餘一律擋。 */
-/* 交給系統瀏覽器開的網址只認白名單(稽核 R4):畫面上會出現 LLM 與雲端主機寫的字,哪天有一段變成了連結,
-   也不能把用戶帶到任意網站。清單 = 程式裡實際用到的:blave.org(綁卡、方案、官網)與 K 線圖依授權放的那顆標誌。 */
+/* 交給系統瀏覽器開的網址分兩條(稽核 R4):
+   ① 瀏覽器自己要導的(window.open、will-navigate;K 線圖那顆 TradingView 標誌走這裡)只認白名單——畫面上有 LLM 與
+      雲端主機寫的字,哪天有一段不經我們的手變成了連結,也不能把用戶帶到任意網站。清單 = 程式裡實際用到的:
+      blave.org(綁卡、方案、官網)與那顆標誌。
+   ② 畫面自己的程式碼明確要開的(open-external IPC:帳務頁、條款,和對話裡用戶點的 markdown 連結——新聞 Sources 那種
+      本來就是任意網站)只認 http(s)、不帶帳密;別的 scheme(file:、javascript:、能拉起別的程式的自訂 scheme)不開。 */
 const EXTERNAL_HOSTS = ["blave.org", "www.tradingview.com"];
 function externalUrl(raw) {
   let u; try { u = new URL(String(raw)); } catch (_) { return null; }
@@ -1348,6 +1367,11 @@ function externalUrl(raw) {
   return EXTERNAL_HOSTS.indexOf(h) >= 0 || h.endsWith(".blave.org") ? u.href : null;
 }
 function openExternalSafe(raw) { const u = externalUrl(raw); if (u) shell.openExternal(u); return !!u; }
+function webUrl(raw) {
+  let u; try { u = new URL(String(raw)); } catch (_) { return null; }
+  return (u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password ? u.href : null;
+}
+function openWebSafe(raw) { const u = webUrl(raw); if (u) shell.openExternal(u); return !!u; }
 
 function guardNavigation(win) {
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -1410,7 +1434,7 @@ app.whenReady().then(() => {
   handle("feature-flags", () => ({ cloudHandoff: cloudHandoffOn() }), { cloudHandoff: false });   // 畫面只拿得到開關,拿不到碼
   handle("save-connection", (_e, choice) => saveConnection(choice), false);
   handle("load-connection", () => loadConnection());
-  handle("open-external", (_e, url) => openExternalSafe(url), false);
+  handle("open-external", (_e, url) => openWebSafe(url), false);
   handle("ensure-engine", (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     // 引擎裝好(或本來就在)之後才起本機常駐程式
@@ -1563,7 +1587,7 @@ app.whenReady().then(() => {
     // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
     // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
     turnStarting = true;
-    // 最低版本閘:只擋 Blave 的 AI;連自己 CLI 的人照常聊
+    // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
     try {
       const kind = (loadConnection() || {}).kind;
       if (kind === "blave") {

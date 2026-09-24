@@ -2171,6 +2171,14 @@ def python_rule():
 # 電腦版外殼把回覆文字裡的這一行換成「綁卡／開主機」的卡片(錢與動作由 app 講,agent 只講事實)。
 # 契約字串,外殼逐字比對;sink 不剝它(text / text_replace / 歷史都原樣帶著)。
 DATA_ACCESS_CARD = "<blave-card:data-access/>"
+# BLAVE_DATA_ACCESS=0 的原因(外殼 main.js dataAccessWhy 帶的 BLAVE_DATA_ACCESS_WHY)→ 給模型的事實句。
+# 事實不是文案:寫「用戶登入著」而不是「請登入」,模型才不會對餘額不夠的人叫他去登入。認不得的值當沒帶。
+DATA_ACCESS_WHY = {
+    "signed_out": "the user is not signed in to Blave in this app",
+    "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
+    "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
+    "unknown": "the user is signed in; the account status could not be read this turn",
+}
 
 
 def local_mcp_config(sink, mcp_config):
@@ -2223,7 +2231,9 @@ def data_access_rule():
              `blave_data_included` → `deduct_blave_api_credit`),扣不到才 403 `ERR007`。
              所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
       `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(account_status 的 data_access = none),
-             或舊 api(沒有 data_access)且帳號不含資料。
+             或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY 說是哪一種
+             (`signed_out` / `no_card` / `no_balance` / `unknown`):少了它,模型對登入著、只是餘額
+             不夠的人也回「要先登入」(2026-09-24 真機)。舊外殼不帶 → 原文不變。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
     AGENTS.md 是雲端/桌面共用的,它預設 Blave 資料一定拿得到;沒有這段,`0` 的 agent 會在 403
@@ -2264,11 +2274,14 @@ def data_access_rule():
         # 也寫成成品英文散文,模型會照抄——逐輪語言錨(_lang_directive,貼在 prompt 最尾端)只有一行,
         # 打不過「就放在眼前、剛好就是這一則要回的內容」的現成句子(2026-09-23:中文問籌碼集中度,整則回英文)。
         # 所以下面只講**必須成立什麼**,不給任何可抄的成品句;用戶看得到的每一句都由模型自己用該輪語言寫。
+        why = DATA_ACCESS_WHY.get(os.environ.get("BLAVE_DATA_ACCESS_WHY"))
         body = (
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names. "
             "Do not copy, translate or adapt any phrasing from this block into the reply.\n"
-            "Facts: this desktop has no Blave data access this turn. Access comes with signing in "
+            "Facts: this desktop has no Blave data access this turn"
+            + (f" — {why}" if why else "")
+            + ". Access comes with signing in "
             "to Blave (whichever AI the user runs — Blave's, their own Claude Code or Codex): free "
             "while the card trial is active or when the account owns a Blave Agent cloud machine or "
             "an API plan, and otherwise charged per clock hour of use, which needs a balance that "
@@ -2284,7 +2297,9 @@ def data_access_rule():
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public klines do allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
-            f"In that same reply put this marker, verbatim, on its own line at the very end of the "
+            + ("State the actual reason above; do not say the user must sign in unless the reason "
+               "is signed_out.\n" if why else "")
+            + f"In that same reply put this marker, verbatim, on its own line at the very end of the "
             f"reply text (before the `<suggest>` block if the reply has one): `{DATA_ACCESS_CARD}`. "
             "The marker is consumed by the runtime and never shown to the user. Never mention the "
             "marker, or any button, card or anything the app will display. Do not explain it, do not "

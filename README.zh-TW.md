@@ -2,11 +2,12 @@
 
 # Blave Agent
 
-**給你的 AI agent 用的量化工作台**
+**量化工作台**
 
-上線前，先看清楚是本事還是運氣。
+## 讓你的 AI 學會做量化
 
-在 Claude Code 或 Codex 裡用。下單不經過 LLM。macOS 測試版。
+免費開源，接上你的 Claude Code 或 Codex<br>
+你講想法，它寫策略、跑回測、上線自動交易
 
 [English](README.md) | **繁體中文**
 
@@ -14,7 +15,7 @@
 
 <!-- TODO: 30s demo GIF (1600w, shown at 800w, dark, ≤8MB): one sentence → backtest with p-value → live -->
 
-[下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [快速開始（從原始碼）](#quick-start) · [在雲端 24 小時跑](https://blave.org/agent/zh)
+[下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [快速開始（從原始碼）](#quick-start) · [關電腦也照跑](https://blave.org/agent/zh)
 
 覺得有用就按個 Star；想在新版發佈時收到通知，請按 Watch › Releases。
 
@@ -57,7 +58,7 @@ npm start
 第一次開啟時，選 agent 用哪個 AI：
 
 - **自己的 Claude Code 或 Codex。** 不需要 Blave 帳號，Blave 不收 AI 費用。app 只負責啟動 CLI，你的 Claude Code、Codex 登入憑證留在 CLI 自己手上。
-- **Blave 的 AI。** 登入 Blave 帳號，按用量計費。
+- **Blave AI。** 登入 Blave 帳號，按用量計費。
 
 接著講你的想法，例如：
 
@@ -114,7 +115,7 @@ npm start
 
 ## 雲端（付費）
 
-策略要 24 小時跑、關電腦也照跑，就用 Blave Agent 的雲端主機：同一個工作區，跑在一台專屬主機上。你從網頁工作頁或 Telegram 跟 agent 對話，想用 SSH 也可以。也可以把自己的 Claude Code、Codex 或其他支援 MCP 的 agent 接到那台主機：設定入口在網頁工作頁的「設定 › 連結」，說明見 [blave.org/docs/zh/connect](https://blave.org/docs/zh/connect)。方案與價格：[blave.org/agent/zh](https://blave.org/agent/zh)。
+策略要關電腦也照跑，就用 Blave Agent 的雲端主機：同一個工作區，跑在一台專屬主機上。你從網頁工作頁或 Telegram 跟 agent 對話，想用 SSH 也可以。也可以把自己的 Claude Code、Codex 或其他支援 MCP 的 agent 接到那台主機：設定入口在網頁工作頁的「設定 › 連結」，說明見 [blave.org/docs/zh/connect](https://blave.org/docs/zh/connect)。方案與價格：[blave.org/agent/zh](https://blave.org/agent/zh)。
 
 ## 從原始碼跑：檔案放在哪
 
@@ -161,6 +162,10 @@ npm start
 - 跑過 `tests/` 裡跟你的改動有關的檢查；
 - 每個 clone 啟用一次金鑰掃描：`pip install pre-commit && pre-commit install`；
 - 回測鏈的檔案（`lib/runner.py`、`param_scan.py`、`walk_forward.py`、`validation.py`、`analysis.py`）除非改動本身就是針對它們，否則不要動——網頁工作頁照契約讀它們輸出的檔案。
+
+## 程式碼簽章政策
+
+Windows 版的程式碼簽章由 [SignPath.io](https://signpath.io) 免費提供，憑證屬於 [SignPath Foundation](https://signpath.org)。每個版本都由本 repo 的公開 GitHub Actions workflow 從打了 tag 的 commit 建置，每次簽章由 repo 擁有者核准。角色：作者與審查者＝有寫入權限的維護者；核准者＝repo 擁有者。除[隱私權政策](https://blave.org/disclaimer/zh/privacy_policy)所述外，本程式不會把任何資訊傳給第三方。macOS 版以 Blave 自己的 Apple 身分簽章與公證。
 
 ## 授權
 

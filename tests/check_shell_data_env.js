@@ -60,7 +60,7 @@ t("rename 失敗 → 暫存檔不留", !fs.existsSync(f + ".blave-tmp"));
   const row = (kind, signedIn, included) => { const r = turnCreds(kind, signedIn, included); return (r.proxyToken ? "T" : "-") + (r.dataKey ? "D" : "-"); };
   t("連 Blave AI + 已登入 + 含資料 → 帳號 token 與資料 key 都帶", row("blave", true, true) === "TD");
   t("連 Blave AI + 已登入 + 不含資料 → 只帶帳號 token", row("blave", true, false) === "T-");
-  t("連自己的 Claude Code + 已登入 + 含資料 → **只帶資料 key**(不燒 Blave 的 AI 額度,但拿得到資料)", row("claude", true, true) === "-D" && row("codex", true, true) === "-D");
+  t("連自己的 Claude Code + 已登入 + 含資料 → **只帶資料 key**(不燒 Blave AI 額度,但拿得到資料)", row("claude", true, true) === "-D" && row("codex", true, true) === "-D");
   t("連自己的 CLI + 已登入 + 不含資料 → 兩個都不帶", row("claude", true, false) === "--" && row("codex", true, false) === "--");
   t("未登入 → 兩個都不帶(不管連的是誰、不管 included 傳了什麼)", ["blave", "claude", "codex", undefined].every((k) => row(k, false, true) === "--"));
   t("含不含資料查不到(null / undefined / 非布林)→ 當沒有", [null, undefined, 1, "true"].every((v) => row("claude", true, v) === "--"));
@@ -106,6 +106,20 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
     }
     t("查不到 account_status(null)→ 當沒有資料", (await run(null)).has === false);
     t("spawn 那一行的對應照舊由 syncDataEnv 的結果決定(ours → 1、none → 0、own → 不設)", !!m);
+    // BLAVE_DATA_ACCESS=0 的原因(BLAVE_DATA_ACCESS_WHY):09-24 真機,登入著、餘額不夠,agent 卻叫人去登入。
+    // 只在 =0(none)時帶;=1(ours)與 own 不帶。四種值全從 signedIn + account_status 對出來,不看連的是誰。
+    const w = /\.\.\.\(dataAccess === "none" \? \{ BLAVE_DATA_ACCESS_WHY: dataAccessWhy\(signedIn\) \} : \{\}\)/.exec(src);
+    t("spawn:BLAVE_DATA_ACCESS_WHY 只在 =0(none)時帶,=1(ours)/ own 不帶", !!w && w.index > m.index);
+    eval(cut("dataAccessWhy"));
+    const whyOf = (signedIn, b) => { lastAcct = b ? { at: Date.now(), body: b } : null; return dataAccessWhy(signedIn); };
+    t("WHY:沒登入 → signed_out(不看 account_status)", whyOf(false, S({ data_access: "none", reason: "NO_CREDIT" })) === "signed_out");
+    t("WHY:登入、reason NO_CARD → no_card", whyOf(true, S({ can_run: false, data_access: "none", reason: "NO_CARD" })) === "no_card");
+    t("WHY:登入、reason NO_CREDIT → no_balance", whyOf(true, S({ can_run: false, data_access: "none", reason: "NO_CREDIT" })) === "no_balance");
+    t("WHY:登入、data_access none 而 reason 空 → no_balance", whyOf(true, S({ data_access: "none", reason: null })) === "no_balance");
+    t("WHY:登入、舊 api 只有 data_included:false(沒有 data_access)→ unknown(那個布林是「不含資料」不是「餘額不夠」,N4)", whyOf(true, S({ data_included: false, reason: null })) === "unknown");
+    t("WHY:登入、account_status 查不到 → unknown", whyOf(true, null) === "unknown");
+    t("WHY:登入、答案太舊不沿用 → unknown", (() => { lastAcct = { at: Date.now() - ACCT_FRESH_MS - 1, body: S({ data_access: "none", reason: "NO_CARD" }) }; return dataAccessWhy(true) === "unknown"; })());
+    t("WHY:帳號有資料、本機卻沒 key 檔 → unknown(不是錢的問題)", whyOf(true, S({ data_access: "billed", reason: null })) === "unknown");
     fs.rmSync(WS, { recursive: true, force: true });
     console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
   })(); }

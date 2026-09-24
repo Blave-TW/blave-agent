@@ -195,7 +195,8 @@ html.ws-sc .side-gate { display: none; }
   transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .pf-act:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
-.pf-act:disabled { cursor: default; }
+/* 停用:真 disabled、灰階、不用 opacity(canon › Components › Disabled);hover 由上面的 :not(:disabled) 擋掉 */
+.pf-act:disabled { color: var(--color-greyDark); border-color: var(--border-hairline); cursor: not-allowed; }
 /* 區段標籤上的 tooltip:觸發點是一顆鈕(鍵盤到得了),氣泡沿用 app.css 的 .tip;
    這一頁的標籤都在捲動容器頂端,往上彈會被裁掉,所以改往下 */
 .tr-tipb { padding: 0; font-size: 12px; color: var(--ink-3); cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -406,6 +407,37 @@ html.ws-sc .side-gate { display: none; }
 .cx-row .n { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
 .cx-row .cn-st { color: var(--ink-2); }
 .cx-row .cn-st.cx-wait { margin-top: 0; color: var(--ink-3); }   /* 串接中…:圓環 + 灰字;.cx-wait 自帶的 margin-top 在列裡會把它壓低 */
+
+/* ---- 選擇下單策略的框(#ps-modal,寬 440 同 .del-modal;spec-desktop-strategy-picker §3、§10)。
+   殼沿用 .scrim / .set-modal / .modal-head / .modal-foot;新的只有 checkbox(shell 之前沒有這個元件)與 .ps-row 列。
+   head 與 foot 釘住,名單可能三四十列,只有 .ps-body 自己捲 ---- */
+.ps-modal { width: min(440px, 92vw); }
+.ps-modal .modal-foot { flex-wrap: wrap; }   /* 雲端視角鈕上方那一行目的地(.del-where)要獨占一列,同 cx / del 框 */
+.ps-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-16) var(--space-16); }
+.ps-hint { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.ps-list { margin-top: var(--space-8); }
+.ps-body .pf-state { padding: var(--space-16) 0; }   /* modal 內 24 太空 */
+/* 列:整列是 label,點哪裡都切換;列與列之間不畫線(44 高的列靠間距分得開) */
+.ps-row { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; cursor: pointer; }
+.ps-row.is-locked { cursor: not-allowed; }
+/* translateY(-1px):CJK 字墨中心比 checkbox 低 1px 的光學校正(照雲端抄,落地後截圖再看要不要留) */
+.ps-name { min-width: 0; font-size: 13px; color: var(--ink); overflow-wrap: anywhere; transform: translateY(-1px); }
+.ps-cb:disabled ~ .ps-name { color: var(--color-greyDark); cursor: not-allowed; }
+/* 「已不存在」是資訊不是錯誤(用戶沒做錯事):--ink-2,不用 11px 紅字(darkCard 上 4.0:1 過不了小字 AA;§13-2) */
+/* inline-block:長名填滿一行時整段註記一起換行,不會第一個字掛在名字尾(設計稽核 should-fix) */
+.ps-gone { display: inline-block; margin-left: var(--space-8); font-size: 11px; color: var(--ink-2); }
+.ps-note { display: inline-block; margin-left: var(--space-8); font-size: 11px; color: var(--ink-3); }
+/* checkbox(canon › Components › Checkbox):18 方、--radius-micro;off = 透明底 + frame 框;checked = 橘底白勾(表單選取指示,不是 CTA);
+   disabled 未勾 = card 底 + hairline 框、已勾 = muted 底 + greyDark 勾(勾號兩個變數在 tokens.css) */
+.ps-cb {
+  width: 18px; height: 18px; flex: none; margin: 0; appearance: none; -webkit-appearance: none;
+  border-radius: var(--radius-micro); cursor: pointer; background: transparent; border: 1px solid var(--border-frame);
+  background-position: center; background-size: contain; background-repeat: no-repeat;
+}
+.ps-cb:checked { background-color: var(--color-primary); border-color: var(--color-primary); background-image: var(--check-indicator); }
+.ps-cb:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ps-cb:disabled { cursor: not-allowed; background-color: var(--surface-card); border-color: var(--border-hairline); }
+.ps-cb:disabled:checked { background-color: var(--surface-muted); border-color: var(--surface-muted); background-image: var(--check-indicator-disabled); }
 
 @media (prefers-reduced-motion: reduce) {
   .run-dot.live { animation: none; }

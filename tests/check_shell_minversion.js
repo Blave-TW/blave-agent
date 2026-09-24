@@ -26,7 +26,7 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   const allowed = [...UI_COMMANDS].filter((c) => g.tradeAllowed(c)).sort().join(), denied = [...UI_COMMANDS].filter((c) => !g.tradeAllowed(c)).sort().join();
   t("被擋時:UI_COMMANDS 裡只有啟動類送不出去(" + denied + ");暫停、改金額、金鑰的增刪照常", denied === "resume,resume_wait" && ["halt", "amounts", "credentials_remove"].every((c) => allowed.split(",").includes(c)));
   t("START_CMDS 裡的每一個都是 UI_COMMANDS 認得的指令(改名會紅)", [...START_CMDS].every((c) => UI_COMMANDS.has(c)));
-  t("被擋時:只擋 Blave 的 AI;連自己 CLI 的人照常聊", g.turnAllowed("blave") === false && g.turnAllowed("claude") === true && g.turnAllowed("codex") === true && g.turnAllowed(undefined) === true);
+  t("被擋時:只擋 Blave AI;連自己 CLI 的人照常聊", g.turnAllowed("blave") === false && g.turnAllowed("claude") === true && g.turnAllowed("codex") === true && g.turnAllowed(undefined) === true);
   await g.refresh(); t("狀態沒變不重複通知", changes.length === 1 && blockedHits === 1);
   // fail-open 與「問不到不解除」
   reply = new Error("offline"); await g.refresh(true);
@@ -55,7 +55,7 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   // 接線(main.js 原文)
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   t("main.js:trade-send 的啟動類先補問、被擋回 UPDATE_REQUIRED,而且在送給常駐程式之前", /START_CMDS\.has\(cmd\)\) \{ await minGate\(\)\.ensureFresh\(\); if \(!minGate\(\)\.tradeAllowed\(cmd\)\) return \{ ok: false, error: "UPDATE_REQUIRED" \}; \}\s*\n\s*const out = tradeHost\(\)\.send\(/.test(src));
-  t("main.js:send-message 在 runTurn 之前擋 Blave 的 AI,而且被擋時把 turnStarting 放掉", /if \(!minGate\(\)\.turnAllowed\(kind\)\) \{ turnStarting = false; return \{ blocked: "UPDATE_REQUIRED" \}; \}\s*\n\s*\}\s*\n\s*\} catch \(err\) \{ turnStarting = false; throw err; \}[^\n]*\n\s*runTurn\(win, payload\)/.test(src));
+  t("main.js:send-message 在 runTurn 之前擋 Blave AI,而且被擋時把 turnStarting 放掉", /if \(!minGate\(\)\.turnAllowed\(kind\)\) \{ turnStarting = false; return \{ blocked: "UPDATE_REQUIRED" \}; \}\s*\n\s*\}\s*\n\s*\} catch \(err\) \{ turnStarting = false; throw err; \}[^\n]*\n\s*runTurn\(win, payload\)/.test(src));
   t("main.js:會啟動下單的入口只有 trade-send 這一個(選單列那條只送 halt)", (src.match(/tradeHost\(\)\.send\(/g) || []).length === 3 && /tradeHost\(\)\.send\("halt"/.test(src)
     && /tradeHost\(\)\.send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(src));   // 第三個是 Binance 連接(binance_link):只送 credentials,啟動不了下單
   t("main.js:會開回合的入口只有 send-message 這一個", (src.match(/[^a-zA-Z]runTurn\(/g) || []).length === 2);

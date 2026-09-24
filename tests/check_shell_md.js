@@ -5,6 +5,8 @@
 //   ③ 10 欄的長表格:表格在 .md-tblwrap 裡自己橫捲,聊天欄與整頁都不出現橫向捲動
 //   ④ 標題 / 巢狀清單 / 圍欄 / 行內程式碼 / 粗體 / 連結各自成元素
 //   ⑤ 畫 markdown 的那一段程式裡沒有 innerHTML / outerHTML / insertAdjacentHTML
+//   ⑥ 對話裡的連結(session.db turn 192 那則新聞 Sources 的形狀:markdown 連結 + 裸網址)點了走 window.blave.openExternal、
+//      不在視窗內導覽、不開新視窗;javascript: 那條沒有 <a>、點它什麼都不開(0.1.1 用戶回報點連結沒反應)
 // 跑法:node tests/check_shell_md.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -21,6 +23,7 @@ const os = require("os");
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-md-")));
 const STUB = `window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
   : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}
+  : k === "openExternal" ? (u) => { (window.__opened = window.__opened || []).push(u); return Promise.resolve(true); }
   : async () => ({ getLocale: "zh-TW", loadConnection: { kind: "claude" }, detectAgents: { claude: { installed: true, loggedIn: true }, codex: { installed: false } },
       listStrategies: [], listSessions: [], loadSession: [], loadSessionImages: [], updateState: { phase: "idle", current: "0.0.0" } })[k] });`;
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
@@ -51,6 +54,7 @@ const EVIL = `<img src=x onerror="window.__pwned=1"> <script>window.__pwned=2</s
 const WIDE = "| " + Array.from({ length: 10 }, (_, k) => "欄位" + k).join(" | ") + " |\n|" + "---|".repeat(10) + "\n| " +
   Array.from({ length: 10 }, (_, k) => "BTCUSDT_PERP_" + k + "_1234567.89").join(" | ") + " |";
 const MIX = "## 小標\n\n- 一\n  - 一之一\n    - 一之一之一\n- 二\n\n```python\nx = 2**3**2\n```\n\n用 `lib/data.py` 取 **K 線**,見 [官網](https://blave.org)。";
+const LINKS = "以上為搜尋結果整理，細節與後續變化請以原文為準。\n\nSources:\n- [東協財經／2026年9月23日東協快訊](https://www.cna.com.tw/news/afe/202609233001.aspx)\n- 裸網址 https://money.udn.com/money/story/5607/9025347 也要能點\n- [點我](javascript:window.__pwned=6)";
 
 app.whenReady().then(async () => {
   if (app.dock) app.dock.hide();
@@ -102,6 +106,25 @@ app.whenReady().then(async () => {
   ok("④ 圍欄成 <pre><code>、裡面的 ** 一個字都不動", x.pre === "x = 2**3**2");
   ok("④ 行內程式碼 / 粗體 / 連結(新分頁開)各自成元素", x.code === "lib/data.py" && x.strong === "K 線" && JSON.stringify(x.a) === JSON.stringify(["https://blave.org", "官網", "_blank"]));
   ok("④ 畫面上沒有殘留的 ##、- 、``` 記號", !x.raw);
+
+  id = await say(LINKS); await wait(200);
+  const l = await js(`(() => { const m = $("${id}"), as = [...m.querySelectorAll("a")]; window.__opened = [];
+    const click = (n) => n.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    as.forEach(click);
+    click([...m.querySelectorAll("li")].find((x) => x.textContent.includes("點我")));
+    return { hrefs: as.map((a) => a.getAttribute("href")), opened: window.__opened, pwned: window.__pwned || 0, url: location.href }; })()`);
+  await wait(300);   // 沒被 preventDefault 的 target=_blank 會非同步開一個新視窗
+  ok("⑥ markdown 連結與裸網址各成 <a href>(新聞網站,不是 blave.org)", JSON.stringify(l.hrefs) === JSON.stringify(["https://www.cna.com.tw/news/afe/202609233001.aspx", "https://money.udn.com/money/story/5607/9025347"]));
+  ok("⑥ 點了走 window.blave.openExternal(交給系統瀏覽器),兩條都到、順序一樣", JSON.stringify(l.opened) === JSON.stringify(l.hrefs));
+  ok("⑥ 點了不在 app 視窗內導覽、沒開新視窗", BrowserWindow.getAllWindows().length === 1 && l.url === w.webContents.getURL());
+  ok("⑥ javascript: 那條沒有 <a>、點它的字什麼都不開", l.hrefs.length === 2 && l.opened.length === 2 && l.pwned === 0);
+  const m2 = await js(`(() => { const as = [...$("${id}").querySelectorAll("a")]; window.__opened = [];
+    const ev = (n, type, init) => n.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...init }));
+    ev(as[0], "auxclick", { button: 1 }); ev(as[1], "click", { metaKey: true }); ev(as[1], "click", { ctrlKey: true }); ev(as[0], "auxclick", { button: 2 });
+    return window.__opened; })()`);
+  await wait(300);
+  ok("⑥ 中鍵(auxclick button 1)與 Cmd/Ctrl+click 也走 openExternal;右鍵不開", JSON.stringify(m2) === JSON.stringify([l.hrefs[0], l.hrefs[1], l.hrefs[1]]));
+  ok("⑥ 中鍵沒開新視窗", BrowserWindow.getAllWindows().length === 1);
 
   const src = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
   const a0 = src.indexOf("/* ── agent 回覆的顯示"), a1 = src.indexOf("function addMsg(", a0);
