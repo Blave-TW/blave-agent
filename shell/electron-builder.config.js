@@ -42,12 +42,20 @@ module.exports = {
   files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "cloudcmd.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "mcpcode.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   extraResources: [
     { from: "..", to: "agent", filter: tracked },
-    { from: "vendor/python", to: "python", filter: ["**/*", "!**/__pycache__{,/**}"] },
+    // universal 包兩顆 Python 都隨包(tools/fetch-python.sh),main.js 啟動時照 process.arch 挑。
+    // 兩個 arch 的中間包各自都收這兩顆:@electron/universal 要求兩邊檔案清單一致、非 Mach-O 檔逐 byte 相同
+    { from: "vendor/python-arm64", to: "python-arm64", filter: ["**/*", "!**/__pycache__{,/**}"] },
+    { from: "vendor/python-x64", to: "python-x64", filter: ["**/*", "!**/__pycache__{,/**}"] },
   ],
   mac: {
     category: "public.app-category.finance",
-    // zip 是給自動更新吃的(macOS 的 electron-updater 只認 zip);dmg 是給人下載的
-    target: [{ target: "dir", arch: [process.arch] }, { target: "dmg", arch: [process.arch] }, ...(UPDATE_URL ? [{ target: "zip", arch: [process.arch] }] : [])],
+    // zip 是給自動更新吃的(macOS 的 electron-updater 只認 zip);dmg 是給人下載的。
+    // universal:一個 dmg 同時給 Apple Silicon 與 Intel;electron-builder 先各打一份 x64 / arm64 再用 lipo 合併。
+    // CLI 明寫 --mac <target> 時 arch 會被 CLI 蓋掉(預設 process.arch),所以 package.json 的 pack / dist 也帶 --universal
+    target: [{ target: "dir", arch: ["universal"] }, { target: "dmg", arch: ["universal"] }, ...(UPDATE_URL ? [{ target: "zip", arch: ["universal"] }] : [])],
+    // 合併時兩邊 SHA 相同的 Mach-O 一律要在這個 glob 裡(不然 @electron/universal 直接報錯):
+    // 隨包 Python 兩顆各自單一架構、在兩個中間包裡是同一份檔,不能也不需要 lipo
+    x64ArchFiles: "Contents/Resources/python-{arm64,x64}/**",
     icon: "build/icon.icns",
     // Electron 44 起不支援 macOS 12。明寫進 Info.plist(LSMinimumSystemVersion):舊系統在 Finder 就說開不了,不是開了才閃退
     minimumSystemVersion: "13.0",
@@ -60,7 +68,7 @@ module.exports = {
     entitlements: "build/entitlements.mac.plist",
     entitlementsInherit: "build/entitlements.mac.inherit.plist",
     // 隨包 Python 由 tools/sign-python.js 自己簽(它要另一份 entitlements)
-    signIgnore: ["/Contents/Resources/python/"],
+    signIgnore: ["/Contents/Resources/python-(arm64|x64)/"],
     notarize: NOTARIZE,
   },
   afterPack: "tools/sign-python.js",

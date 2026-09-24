@@ -3,7 +3,7 @@
 //
 // 做的事(任何一步不過就停,前面已上傳的檔不影響線上——線上只認 latest-mac.yml,而它最後才換):
 //   1. 檢查:工作樹乾淨、在 main、新版號是嚴格 A.B.C 且比現在大、憑證與 AWS 權限到位
-//   2. 版號寫進 package.json → npm run release(簽章、公證、fuses、zip + dmg + latest-mac.yml)
+//   2. 版號寫進 package.json → npm run release(universal 包:簽章、公證、fuses、zip + dmg + latest-mac.yml)
 //   3. 驗產物:codesign、Gatekeeper、防降版開關、yml 版號與 sha512 對得上 zip
 //   4. 上傳 zip / blockmap / dmg(帶版號的檔已存在就拒絕)→ 從正式網址把 zip 整個抓回來比 sha512 → 才傳 latest-mac.yml(這一刻起對外)
 //      → 下載頁的固定檔名 dmg → 清 CDN 快取 → 再抓一次確認。yml 換掉之前失敗:版號自動還原;之後失敗:只警告,不還原
@@ -56,15 +56,16 @@ function loadEnvFile() {
 // 封裝後才被寫進 .app 的檔(外部程序就地跑了包裡的 python3):會讓 codesign --verify --strict 失敗,在這裡點名是哪幾個。
 // 隨包 Python 比對 sign-python.js 預編完記下的清單(預編的 .pyc 在清單內);其餘位置不該有任何 __pycache__
 function foreignFilesInApps(dist) {
-  const found = [];
-  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) { const p = path.join(d, e.name); if (e.name === "__pycache__") found.push(p); else if (p !== skip) walk(p); } };
-  let skip;
+  const found = [], signPython = require("./sign-python.js");
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) { const p = path.join(d, e.name); if (e.name === "__pycache__") found.push(p); else if (!skip.includes(p)) walk(p); } };
+  let skip = [];
   for (const d of fs.existsSync(dist) ? fs.readdirSync(dist) : []) {
     const out = path.join(dist, d), a = path.join(out, "Blave.app");
     if (!/^mac/.test(d) || !fs.existsSync(a)) continue;
-    skip = path.join(a, "Contents", "Resources", "python");
+    const res = path.join(a, "Contents", "Resources");
+    skip = signPython.PY_ARCHES.map((x) => path.join(res, `python-${x}`));
     walk(a);
-    for (const f of require("./sign-python.js").extraPythonFiles(out)) found.push(path.join(skip, f));
+    for (const f of signPython.extraPythonFiles(out)) found.push(path.join(res, f));
   }
   return found;
 }
@@ -107,7 +108,8 @@ async function publish(plan, io) {
 async function main() {
   const version = process.argv[2], dry = process.argv.includes("--dry-run"), first = process.argv.includes("--first-release");
   if (!semver(version || "").length) die("用法:node tools/release.js <A.B.C> [--dry-run] [--first-release]   (版號必須是嚴格的三段數字:Squirrel 的防降版要求)");
-  if (process.arch !== "arm64") die(`這支腳本只發 arm64(現在的 node 是 ${process.arch}——Rosetta 下的 node?)。用錯架構會發出一份只列 x64 的 yml,arm64 用戶會被換成 x64 包`);
+  // 產物是 universal(一份同時給 Apple Silicon 與 Intel),但發版流程只在 arm64 打包機驗過:Rosetta 下的 node 直接擋
+  if (process.arch !== "arm64") die(`這支腳本只在 arm64 打包機跑過(現在的 node 是 ${process.arch}——Rosetta 下的 node?)`);
   loadEnvFile();
   const track = resolveTrack(process.env);
   if (track.error) die(track.error);
@@ -115,7 +117,9 @@ async function main() {
   for (const k of Object.keys(DEFAULTS)) if (!process.env[k]) process.env[k] = DEFAULTS[k];
   const { BLAVE_UPDATE_URL: URL_BASE, BLAVE_RELEASE_BUCKET: BUCKET, BLAVE_RELEASE_DISTRIBUTION: DIST } = process.env;
   const pkgPath = path.join(SHELL, "package.json"), lockPath = path.join(SHELL, "package-lock.json");
-  const current = JSON.parse(fs.readFileSync(pkgPath, "utf8")).version, arch = process.arch, dist = path.join(SHELL, "dist");
+  // 檔名裡的架構字樣:universal 包一律 "universal"(electron-builder 的命名),不是打包機的 process.arch。
+  // 已裝的 arm64 版 electron-updater 在 yml 裡找不到帶 arm64 字樣的檔時會退而拿沒標架構的那個——universal zip 就是它
+  const current = JSON.parse(fs.readFileSync(pkgPath, "utf8")).version, arch = "universal", dist = path.join(SHELL, "dist");
   // AWS 身分釘死(稽核 M4):一律 --profile,而且把環境裡的 AWS_ACCESS_KEY_ID 之類拿掉——它們的優先權高於 profile,
   // 不拿掉的話腳本會靜靜用別把(可能是管理員)金鑰發版,「沒有 Delete、碰不到別的 bucket」那張安全網就沒了
   const PROFILE = "blave-release", awsEnv = { ...process.env };

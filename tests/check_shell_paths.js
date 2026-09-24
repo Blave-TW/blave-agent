@@ -31,16 +31,32 @@ function check(mode, isPackaged, resourcesPath) {
 check("dev", false, undefined);
 
 const dist = path.join(SHELL, "dist");
-const appDir = fs.existsSync(dist) && fs.readdirSync(dist).filter((d) => /^mac/.test(d))
+// universal 打包中途壞掉會留下 mac-universal-{x64,arm64}-temp:那不是產物,不拿它測
+const appDir = fs.existsSync(dist) && fs.readdirSync(dist).filter((d) => /^mac/.test(d) && !/-temp$/.test(d))
   .map((d) => path.join(dist, d, "Blave.app")).find((p) => fs.existsSync(p));
+const PY_ARCHES = require(path.join(SHELL, "tools", "sign-python.js")).PY_ARCHES;
+const sp = (cmd, args) => require("child_process").spawnSync(cmd, args, { encoding: "utf8" });
 if (!appDir) console.log("SKIP  packaged: shell/dist 沒有 .app(先跑 cd shell && npm run pack)");
 else {
   const res = path.join(appDir, "Contents", "Resources");
   const root = check("packaged", true, res);
   t("packaged: app.asar 在", fs.existsSync(path.join(res, "app.asar")));
-  t("packaged: 隨包 python3 可執行", (() => {
-    try { fs.accessSync(path.join(res, "python", "bin", "python3"), fs.constants.X_OK); return true; } catch (_) { return false; }
-  })());
+  // universal:主程式一定要同時有 arm64 與 x86_64(只有一種 = CLI 沒帶 --universal,dmg 在另一種 Mac 上開不了)
+  const archsOf = (f) => (sp("lipo", ["-archs", f]).stdout || "").trim().split(/\s+/).filter(Boolean).sort().join("+");
+  t("packaged: 主程式是 universal(arm64+x86_64)→ " + archsOf(path.join(appDir, "Contents", "MacOS", "Blave")),
+    archsOf(path.join(appDir, "Contents", "MacOS", "Blave")) === "arm64+x86_64");
+  // 兩顆隨包 Python 都在、可執行、而且各是自己那個架構(拿錯顆 = main.js 照 process.arch 挑到的直譯器起不來)
+  const machArch = { arm64: "arm64", x64: "x86_64" };
+  for (const a of PY_ARCHES) {
+    const py = path.join(res, `python-${a}`, "bin", "python3");
+    t(`packaged: 隨包 python-${a}/bin/python3 可執行`, (() => { try { fs.accessSync(py, fs.constants.X_OK); return true; } catch (_) { return false; } })());
+    t(`packaged: python-${a} 的直譯器是 ${machArch[a]}(→ ${fs.existsSync(py) ? archsOf(fs.realpathSync(py)) : "不在"})`,
+      fs.existsSync(py) && archsOf(fs.realpathSync(py)) === machArch[a]);
+  }
+  t("packaged: shell/vendor 兩顆 Python 都抓好了(fetch-python.sh)", PY_ARCHES.every((a) => fs.existsSync(path.join(SHELL, "vendor", `python-${a}`, ".blave-pbs"))));
+  // 主程式跑得起來的那顆,實際叫一次(-I:不吃打包機的 PYTHON* 變數)
+  const native = sp(path.join(res, `python-${process.arch}`, "bin", "python3"), ["-I", "-c", "import sys, platform; print(sys.version_info[:3], platform.machine())"]);
+  t("packaged: 本機架構那顆 Python 跑得起來 → " + (native.stdout || native.stderr || "").trim(), native.status === 0 && /3, 12/.test(native.stdout));
   /* 「這個產物是不是跟現在的原始碼同一份」——三條都在問同一件事,所以一起開關。
      平常開發時 dist/ 本來就會落後(改一行 renderer 就落後了),硬紅只會訓練大家忽略它——
      而「被忽略」正是 2026-09-23 那次打包壞掉活了一整天的原因。所以照這個檔既有的做法
@@ -118,28 +134,28 @@ else {
   // sign-python.js 預編完記下的清單(dist/mac-*.python-files.txt):多出來的檔 = 封裝後才被寫進來,簽章會驗不過
   const extra = require(path.join(SHELL, "tools", "sign-python.js")).extraPythonFiles(path.dirname(appDir));
   t("packaged: 隨包 Python 沒有清單外的檔" + (extra.length ? " → " + extra.slice(0, 3).join(", ") : ""), extra.length === 0);
-  // 預編真的做了:沒有對應 .pyc 的模組,外部程序一 import 就會寫檔
-  const pys = [], stdlib = path.join(res, "python", "lib", "python3.12");
-  (function walk(d) {
-    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      const p = path.join(d, e.name);
-      if (e.isDirectory()) { if (e.name !== "__pycache__") walk(p); } else if (e.isFile() && e.name.endsWith(".py")) pys.push(p);
-    }
-  })(stdlib);
+  // 預編真的做了(兩顆都要):沒有對應 .pyc 的模組,外部程序一 import 就會寫檔
   const pycOf = (p) => path.join(path.dirname(p), "__pycache__", path.basename(p, ".py") + ".cpython-312.pyc");
-  const noPyc = pys.filter((p) => !fs.existsSync(pycOf(p)));
-  t(`packaged: 隨包 Python 每個 .py 都有預編的 .pyc(${pys.length} 個)` + (noPyc.length ? " → " + noPyc.slice(0, 3).join(", ") : ""), pys.length > 0 && noPyc.length === 0);
   // 標頭第 4–7 byte 是 flags:1 = unchecked-hash(不比對原始檔,永遠有效);0 是時間戳版,換機器 mtime 一變就重寫
   const flags = (p) => { const b = Buffer.alloc(8), fd = fs.openSync(p, "r"); fs.readSync(fd, b, 0, 8, 0); fs.closeSync(fd); return b.readUInt32LE(4); };
-  const sample = ["json/__init__.py", "encodings/utf_8.py", "os.py"].map((f) => pycOf(path.join(stdlib, f)));
-  t("packaged: 預編的 .pyc 是 unchecked-hash", sample.every((p) => fs.existsSync(p) && flags(p) === 1));
+  for (const a of PY_ARCHES) {
+    const pys = [], stdlib = path.join(res, `python-${a}`, "lib", "python3.12");
+    (function walk(d) {
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        const p = path.join(d, e.name);
+        if (e.isDirectory()) { if (e.name !== "__pycache__") walk(p); } else if (e.isFile() && e.name.endsWith(".py")) pys.push(p);
+      }
+    })(stdlib);
+    const noPyc = pys.filter((p) => !fs.existsSync(pycOf(p)));
+    t(`packaged: python-${a} 每個 .py 都有預編的 .pyc(${pys.length} 個)` + (noPyc.length ? " → " + noPyc.slice(0, 3).join(", ") : ""), pys.length > 0 && noPyc.length === 0);
+    const sample = ["json/__init__.py", "encodings/utf_8.py", "os.py"].map((f) => pycOf(path.join(stdlib, f)));
+    t(`packaged: python-${a} 預編的 .pyc 是 unchecked-hash`, sample.every((p) => fs.existsSync(p) && flags(p) === 1));
+  }
 
   // 簽章產物(npm run release)才有的斷言;pack 產物是 ad-hoc,整段 SKIP。dv / appInfo 在上面新鮮度那一段就算好了
   if (!signedArtifact) console.log("SKIP  signed: 產物沒有 Developer ID 簽章(npm run release 才有)");
   else {
     const ENT = "com.apple.security.cs.";
-    const py = fs.realpathSync(path.join(res, "python", "bin", "python3"));
-    const pyInfo = dv(py);
     const team = (s) => (s.match(/TeamIdentifier=(\S+)/) || [])[1];
     t("signed: --verify --deep --strict 過", require("child_process")
       .spawnSync("codesign", ["--verify", "--deep", "--strict", appDir]).status === 0);
@@ -147,25 +163,29 @@ else {
     t("signed: app 只有 allow-jit", appInfo.stdout.includes(ENT + "allow-jit")
       && !appInfo.stdout.includes(ENT + "disable-library-validation")
       && !appInfo.stdout.includes(ENT + "allow-unsigned-executable-memory"));
-    t("signed: python 同一個 Team、hardened runtime、有 secure timestamp",
-      team(pyInfo.stderr) && team(pyInfo.stderr) === team(appInfo.stderr)
-      && /flags=0x10000\(runtime\)/.test(pyInfo.stderr) && /Timestamp=/.test(pyInfo.stderr));
-    t("signed: python 只有 disable-library-validation", pyInfo.stdout.includes(ENT + "disable-library-validation")
-      && !pyInfo.stdout.includes(ENT + "allow-jit") && !pyInfo.stdout.includes(ENT + "allow-unsigned-executable-memory"));
-    // 列舉隨包 Python 底下每一顆 Mach-O:漏簽一顆公證就退件
-    const unsigned = [];
-    (function walk(d) {
-      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        const p = path.join(d, e.name);
-        if (e.isDirectory()) walk(p);
-        else if (e.isFile()) {
-          const b = Buffer.alloc(4), fd = fs.openSync(p, "r"); fs.readSync(fd, b, 0, 4, 0); fs.closeSync(fd);
-          if (["cffaedfe", "cafebabe"].includes(b.toString("hex")) && team(dv(p).stderr) !== team(appInfo.stderr)) unsigned.push(p);
+    // 兩顆隨包 Python 分開簽(tools/sign-python.js),所以兩顆分開驗
+    for (const a of PY_ARCHES) {
+      const pyInfo = dv(fs.realpathSync(path.join(res, `python-${a}`, "bin", "python3")));
+      t(`signed: python-${a} 同一個 Team、hardened runtime、有 secure timestamp`,
+        team(pyInfo.stderr) && team(pyInfo.stderr) === team(appInfo.stderr)
+        && /flags=0x10000\(runtime\)/.test(pyInfo.stderr) && /Timestamp=/.test(pyInfo.stderr));
+      t(`signed: python-${a} 只有 disable-library-validation`, pyInfo.stdout.includes(ENT + "disable-library-validation")
+        && !pyInfo.stdout.includes(ENT + "allow-jit") && !pyInfo.stdout.includes(ENT + "allow-unsigned-executable-memory"));
+      // 列舉隨包 Python 底下每一顆 Mach-O:漏簽一顆公證就退件
+      const unsigned = [];
+      (function walk(d) {
+        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+          const p = path.join(d, e.name);
+          if (e.isDirectory()) walk(p);
+          else if (e.isFile()) {
+            const b = Buffer.alloc(4), fd = fs.openSync(p, "r"); fs.readSync(fd, b, 0, 4, 0); fs.closeSync(fd);
+            if (["cffaedfe", "cafebabe"].includes(b.toString("hex")) && team(dv(p).stderr) !== team(appInfo.stderr)) unsigned.push(p);
+          }
         }
-      }
-    })(path.join(res, "python"));
-    t("signed: 隨包 Python 的每顆 Mach-O 都是同一個 Team 簽的" + (unsigned.length ? " → " + unsigned.slice(0, 3).join(", ") : ""),
-      unsigned.length === 0);
+      })(path.join(res, `python-${a}`));
+      t(`signed: python-${a} 的每顆 Mach-O 都是同一個 Team 簽的` + (unsigned.length ? " → " + unsigned.slice(0, 3).join(", ") : ""),
+        unsigned.length === 0);
+    }
     // 有簽章就必須是發佈版:fuses 六顆翻好、asar 裡帶 blaveRelease(main.js 靠它擋 debug port)。
     // 少了這段,「有簽、已公證、但除錯口全開」的產物會整段 PASS(稽核 S1)
     const nm = path.join(__dirname, "..", "shell", "node_modules");
