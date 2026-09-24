@@ -523,9 +523,10 @@ const BASE = path.isAbsolute(process.env.BLAVE_HOME || "")
   ? process.env.BLAVE_HOME : path.join(os.homedir(), "Blave");
 const WS = path.join(BASE, "workspace");
 const VENV_PY = path.join(BASE, "venv", "bin", "python");
-// 乾淨的 Mac 沒有 python3(要先裝 Xcode CLT):打包版隨包一顆(tools/fetch-python.sh),
-// venv 用它建;開發時照舊用系統的。
-const BUNDLED_PY = path.join(process.resourcesPath || "", "python", "bin", "python3");
+// 乾淨的 Mac 沒有 python3(要先裝 Xcode CLT):打包版隨包(tools/fetch-python.sh),
+// venv 用它建;開發時照舊用系統的。universal 包兩顆都在(python-arm64 / python-x64),
+// 照 Electron 實際跑起來的架構挑——Apple Silicon 上被 Rosetta 跑成 x64 時 process.arch 也是 x64,挑到的顆才對得上 venv
+const BUNDLED_PY = path.join(process.resourcesPath || "", `python-${process.arch}`, "bin", "python3");
 const basePython = () => (app.isPackaged && fs.existsSync(BUNDLED_PY) ? BUNDLED_PY : "python3");
 // 打包版的 runtime/ 與隨包 Python 都在 .app 裡:不讓 Python 把 __pycache__ 寫進去
 // (簽章後 bundle 內容一變就驗不過;唯讀位置也寫不進)。
