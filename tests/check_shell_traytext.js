@@ -79,6 +79,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   // ① 真的 preload.js,只把 electron 換成記錄器
   const invoked = []; let api = null;
   const pctx = { require: (m) => (m === "electron" ? { contextBridge: { exposeInMainWorld: (_k, o) => { api = o; } }, ipcRenderer: { invoke: (...a) => { invoked.push(a); return Promise.resolve({ ok: true }); }, on: () => {}, send: () => {} } } : require(m)), console };
+  pctx.process = { platform: process.platform };   // preload 讀 process.platform(Windows 捲軸記號);vm 裡沒有 Node 的 process
   vm.createContext(pctx); vm.runInContext(fs.readFileSync(path.join(R, "preload.js"), "utf8"), pctx);
   // ② 真的 renderer:ENV_API / envApi / trSend / trAskRelease,其餘依賴給最小替身
   const body = (n) => { const i2 = trSrc.indexOf("function " + n + "("); let d = 0, k = trSrc.indexOf("{", i2); for (; k < trSrc.length; k++) { if (trSrc[k] === "{") d++; else if (trSrc[k] === "}" && --d === 0) break; } return trSrc.slice(i2, k + 1); };
