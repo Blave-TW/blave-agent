@@ -1,5 +1,3 @@
-<!-- TODO: logo light/dark — <picture> with prefers-color-scheme, width 64–80px. The repo has no light/dark logo files yet (only shell/build/icon.icns). -->
-
 # Blave Agent
 
 **Agentic Quant Workspace**
@@ -44,7 +42,7 @@ You need:
 
 - macOS 13 or later. The packaged app is a universal build: Apple Silicon and Intel, one download.
 - Node.js 22.12 or later, with npm (`shell/package.json` › `engines`)
-- `python3` on your `PATH`. The packaged app bundles its own Python 3.12; running from source uses your system `python3` to create the venv. <!-- TODO: minimum Python version from source (the pinned dependencies were verified on 3.12) -->
+- `python3` on your `PATH`. The packaged app bundles its own Python 3.12; running from source uses your system `python3` to create the venv.
 - Claude Code or Codex installed and signed in, or a Blave account
 
 ```

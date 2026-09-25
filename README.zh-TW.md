@@ -1,5 +1,3 @@
-<!-- TODO: logo 亮暗兩版——<picture> + prefers-color-scheme，寬 64–80px。repo 內目前沒有亮暗版 logo 檔（只有 shell/build/icon.icns）。 -->
-
 # Blave Agent
 
 **量化工作台**
@@ -45,7 +43,7 @@ AI 負責研究與寫程式。排程跑的是確定性的程式，`manager/recon
 
 - macOS 13 以上。打包版是通用版：Apple Silicon 與 Intel 同一個安裝檔。
 - Node.js 22.12 以上與 npm（`shell/package.json` › `engines`）
-- `PATH` 上有 `python3`。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 `python3`。<!-- TODO: 從原始碼跑的 Python 最低版本（釘版的套件是在 3.12 上驗過的） -->
+- `PATH` 上有 `python3`。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 `python3`。
 - 已安裝並登入的 Claude Code 或 Codex，或一個 Blave 帳號
 
 ```
