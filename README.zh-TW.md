@@ -13,7 +13,7 @@
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
 
-<!-- TODO: 30s demo GIF (1600w, shown at 800w, dark, ≤8MB): one sentence → backtest with p-value → live -->
+https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
 [下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [快速開始（從原始碼）](#quick-start) · [關電腦也照跑](https://blave.org/agent/zh)
 
