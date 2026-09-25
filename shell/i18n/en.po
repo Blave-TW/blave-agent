@@ -3016,3 +3016,315 @@ msgstr "Send"
 
 msgid "rob.msgScan"
 msgstr "Please scan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Choose the ranges from the indicator distribution, then report the peak and the robust point."
+
+msgid "lib.nav"
+msgstr "Strategy Library"
+
+msgid "lib.chip"
+msgstr "See free strategies"
+
+msgid "lib.desc"
+msgstr "Official strategies are free. Verified first, then longest backtest."
+
+msgid "lib.mkt.aria"
+msgstr "Market"
+
+msgid "lib.mkt.all"
+msgstr "All"
+
+msgid "lib.mkt.crypto"
+msgstr "Crypto"
+
+msgid "lib.mkt.tw"
+msgstr "TW Stocks"
+
+msgid "lib.web"
+msgstr "Open the full library on the web ↗"
+
+msgid "lib.free"
+msgstr "Free"
+
+msgid "lib.verified"
+msgstr "Verified"
+
+msgid "lib.installed"
+msgstr "Installed"
+
+msgid "lib.price"
+msgstr "{price}"
+
+msgid "lib.official"
+msgstr "Blave Official"
+
+msgid "lib.community"
+msgstr "Community author"
+
+msgid "lib.years"
+msgstr "{n}-yr sample"
+
+msgid "lib.annLabel"
+msgstr "Annualized · backtest"
+
+msgid "lib.installs"
+msgstr "{n} installs"
+
+msgid "lib.hiddenNote"
+msgstr "{n} unverified community strategies are listed on the web only."
+
+msgid "lib.error"
+msgstr "Couldn't load the library."
+
+msgid "lib.retry"
+msgstr "Retry"
+
+msgid "lib.empty"
+msgstr "The library is empty right now."
+
+msgid "lib.emptyMkt"
+msgstr "No strategies for this market yet."
+
+msgid "lib.noCurve"
+msgstr "— No equity curve for this strategy yet"
+
+msgid "lib.kv.bt"
+msgstr "Backtest"
+
+msgid "lib.kv.listed"
+msgstr "Listed"
+
+msgid "lib.kv.ann"
+msgstr "Annualized"
+
+msgid "lib.kv.sharpe"
+msgstr "Sharpe"
+
+msgid "lib.kv.mdd"
+msgstr "Max DD"
+
+msgid "lib.kv.sample"
+msgstr "Sample"
+
+msgid "lib.kv.days"
+msgstr "Days listed"
+
+msgid "lib.kv.installs"
+msgstr "Installs"
+
+msgid "lib.sampleYrs"
+msgstr "{n} yrs"
+
+msgid "lib.gates.title"
+msgstr "Quality Gates"
+
+msgid "lib.gate1"
+msgstr "Honest backtest"
+
+msgid "lib.gate1d"
+msgstr "Fees at or above the exchange's normal rate, no fake history"
+
+msgid "lib.gate2"
+msgstr "Statistically significant"
+
+msgid "lib.gate2d"
+msgstr "MCPT permutation test p < 0.05"
+
+msgid "lib.gate3"
+msgstr "Robust parameters"
+
+msgid "lib.gate3d"
+msgstr "Neighboring parameters hold up too — not a lucky point"
+
+msgid "lib.gate.pass"
+msgstr "Passed"
+
+msgid "lib.gate.fail"
+msgstr "Not passed"
+
+msgid "lib.gate.na"
+msgstr "MCPT n/a (portfolio strategy)"
+
+msgid "lib.gates.community"
+msgstr "Community strategies are listed by their authors after manual review. This one hasn't been through the quality gates yet."
+
+msgid "lib.how"
+msgstr "How it trades"
+
+msgid "lib.meta.period"
+msgstr "Backtest period"
+
+msgid "lib.meta.symbol"
+msgstr "Symbol & timeframe"
+
+msgid "lib.meta.direction"
+msgstr "Direction"
+
+msgid "lib.meta.exposure"
+msgstr "Max exposure"
+
+msgid "lib.exposure"
+msgstr "{n}×"
+
+msgid "lib.dir.long"
+msgstr "Long only"
+
+msgid "lib.dir.long_short"
+msgstr "Long & short"
+
+msgid "lib.dir.short"
+msgstr "Short only"
+
+msgid "lib.mk.perp"
+msgstr "Perp"
+
+msgid "lib.mk.txf"
+msgstr "futures"
+
+msgid "lib.mk.tw"
+msgstr "TW stock"
+
+msgid "lib.mk.multi"
+msgstr "Multi-asset"
+
+msgid "lib.iv.5m"
+msgstr "5m"
+
+msgid "lib.iv.15m"
+msgstr "15m"
+
+msgid "lib.iv.1h"
+msgstr "1h"
+
+msgid "lib.iv.4h"
+msgstr "4h"
+
+msgid "lib.iv.1d"
+msgstr "Daily"
+
+msgid "lib.after"
+msgstr "What happens next"
+
+msgid "lib.after1"
+msgstr "The agent downloads it into strategies/ on {where}"
+
+msgid "lib.after2"
+msgstr "It reruns the backtest on fresh data; the result shows up in the sidebar"
+
+msgid "lib.after3"
+msgstr "Whether to run it — paper or live — is your call"
+
+msgid "lib.use"
+msgstr "Use This"
+
+msgid "lib.open"
+msgstr "Open Strategy"
+
+msgid "lib.again"
+msgstr "Download Again"
+
+msgid "lib.pending"
+msgstr "Downloading & Backtesting…"
+
+msgid "lib.buy"
+msgstr "Buy & Use · {price}"
+
+msgid "lib.buy.title"
+msgstr "Buy \"{title}\""
+
+msgid "lib.buy.price"
+msgstr "Price {price}"
+
+msgid "lib.buy.lead"
+msgstr "Charged to your Blave Agent balance; the download and backtest start right after."
+
+msgid "lib.buy.ok"
+msgstr "Confirm Purchase"
+
+msgid "lib.buy.busy"
+msgstr "Purchasing…"
+
+msgid "lib.buy.topup"
+msgstr "Balance {balance} — not enough. Your card will be charged {price} before purchase."
+
+msgid "lib.buy.charge"
+msgstr "Charge & Purchase"
+
+msgid "lib.buy.noCard"
+msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Data & cloud plan, then come back."
+
+msgid "lib.buy.inProgress"
+msgstr "This purchase is already being processed. Check back in a moment."
+
+msgid "lib.buy.failed"
+msgstr "Purchase failed. Please try again."
+
+msgid "lib.fxRate"
+msgstr "30"
+
+msgid "lib.currency"
+msgstr "USD"
+
+msgid "lib.fxNote"
+msgstr "Amounts shown in USD; billed in TWD."
+
+msgid "lib.note.owned"
+msgstr "Purchased. The agent downloads it to {where} and runs a backtest. No orders are placed."
+
+msgid "lib.gate.signedOutBuy"
+msgstr "Sign in to Blave to buy it and download to this computer."
+
+msgid "lib.note.free"
+msgstr "Free. The agent downloads it to {where} and runs a backtest. No orders are placed."
+
+msgid "lib.note.billed"
+msgstr "If the backtest uses Blave data, the data fee is charged per clock hour of use."
+
+msgid "lib.note.paid"
+msgstr "Charged to your Blave Agent balance. After purchase it downloads to {where} and runs a backtest. No orders are placed."
+
+msgid "lib.note.installed"
+msgstr "Already in the strategy list on {where}. Downloading again overwrites the one with the same name and reruns the backtest."
+
+msgid "lib.note.pending"
+msgstr "Progress is in the chat on the right. When it finishes, the strategy appears in the sidebar."
+
+msgid "lib.err.noNew"
+msgstr "The turn ended without a new strategy. See what the agent said in the chat."
+
+msgid "lib.gate.signedOut"
+msgstr "Sign in to Blave to download to this computer."
+
+msgid "lib.gate.login"
+msgstr "Sign in"
+
+msgid "lib.gate.noData"
+msgstr "The data fee for this hour couldn't be charged, so the agent can't reach the library."
+
+msgid "lib.cf.title"
+msgstr "Download \"{title}\"?"
+
+msgid "lib.cf.l1"
+msgstr "The agent downloads it into strategies/ on {where}, then runs a backtest on fresh data; the result shows up in the sidebar."
+
+msgid "lib.cf.l2"
+msgstr "No orders are placed — whether to run it is your call."
+
+msgid "lib.cf.cloudNote"
+msgstr "This goes to the agent on your cloud machine; this computer isn't affected."
+
+msgid "lib.cf.ok"
+msgstr "Download & Backtest"
+
+msgid "lib.msg"
+msgstr "Download the official strategy \"{title}\" (#{id}) and run a backtest to see the results."
+
+msgid "lib.msgPaid"
+msgstr "Download my purchased strategy \"{title}\" (#{id}) and run a backtest"
+
+msgid "lib.where.local"
+msgstr "this computer"
+
+msgid "lib.where.cloud"
+msgstr "your cloud machine"
+
+msgid "lib.owned"
+msgstr "Purchased"

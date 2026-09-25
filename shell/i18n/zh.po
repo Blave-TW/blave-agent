@@ -3016,3 +3016,315 @@ msgstr "送出"
 
 msgid "rob.msgScan"
 msgstr "請掃描策略 {name} 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap），範圍由你依指標分佈決定，掃完回報尖峰與穩健點。"
+
+msgid "lib.nav"
+msgstr "策略庫"
+
+msgid "lib.chip"
+msgstr "看免費策略"
+
+msgid "lib.desc"
+msgstr "官方策略免費。已驗證優先，再看回測樣本期長短。"
+
+msgid "lib.mkt.aria"
+msgstr "市場"
+
+msgid "lib.mkt.all"
+msgstr "全部"
+
+msgid "lib.mkt.crypto"
+msgstr "加密"
+
+msgid "lib.mkt.tw"
+msgstr "台股"
+
+msgid "lib.web"
+msgstr "在網頁版看完整策略庫 ↗"
+
+msgid "lib.free"
+msgstr "免費"
+
+msgid "lib.verified"
+msgstr "已驗證"
+
+msgid "lib.installed"
+msgstr "已安裝"
+
+msgid "lib.price"
+msgstr "{price}"
+
+msgid "lib.official"
+msgstr "Blave 官方"
+
+msgid "lib.community"
+msgstr "社群作者"
+
+msgid "lib.years"
+msgstr "樣本 {n} 年"
+
+msgid "lib.annLabel"
+msgstr "年化・回測"
+
+msgid "lib.installs"
+msgstr "{n} 人安裝"
+
+msgid "lib.hiddenNote"
+msgstr "另有 {n} 支未驗證的社群策略，在網頁版看。"
+
+msgid "lib.error"
+msgstr "讀不到策略庫。"
+
+msgid "lib.retry"
+msgstr "重試"
+
+msgid "lib.empty"
+msgstr "策略庫目前沒有策略。"
+
+msgid "lib.emptyMkt"
+msgstr "這個市場還沒有策略。"
+
+msgid "lib.noCurve"
+msgstr "— 這支策略尚未提供權益曲線"
+
+msgid "lib.kv.bt"
+msgstr "回測"
+
+msgid "lib.kv.listed"
+msgstr "上架"
+
+msgid "lib.kv.ann"
+msgstr "年化"
+
+msgid "lib.kv.sharpe"
+msgstr "Sharpe"
+
+msgid "lib.kv.mdd"
+msgstr "最大回撤"
+
+msgid "lib.kv.sample"
+msgstr "樣本"
+
+msgid "lib.kv.days"
+msgstr "上架天數"
+
+msgid "lib.kv.installs"
+msgstr "安裝"
+
+msgid "lib.sampleYrs"
+msgstr "{n} 年"
+
+msgid "lib.gates.title"
+msgstr "三道品質關卡"
+
+msgid "lib.gate1"
+msgstr "誠實回測"
+
+msgid "lib.gate1d"
+msgstr "手續費不低於交易所一般費率、沒有假歷史"
+
+msgid "lib.gate2"
+msgstr "統計顯著"
+
+msgid "lib.gate2d"
+msgstr "MCPT 隨機置換檢定 p < 0.05"
+
+msgid "lib.gate3"
+msgstr "參數穩健"
+
+msgid "lib.gate3d"
+msgstr "鄰近參數也要站得住，不是單點僥倖"
+
+msgid "lib.gate.pass"
+msgstr "通過"
+
+msgid "lib.gate.fail"
+msgstr "未通過"
+
+msgid "lib.gate.na"
+msgstr "MCPT 不適用（組合策略）"
+
+msgid "lib.gates.community"
+msgstr "社群策略由作者上架、經人工審核後公開；這支策略尚未跑過品質關卡。"
+
+msgid "lib.how"
+msgstr "它怎麼交易"
+
+msgid "lib.meta.period"
+msgstr "回測期間"
+
+msgid "lib.meta.symbol"
+msgstr "標的與頻率"
+
+msgid "lib.meta.direction"
+msgstr "方向"
+
+msgid "lib.meta.exposure"
+msgstr "最高曝險"
+
+msgid "lib.exposure"
+msgstr "{n} 倍"
+
+msgid "lib.dir.long"
+msgstr "純做多"
+
+msgid "lib.dir.long_short"
+msgstr "多空"
+
+msgid "lib.dir.short"
+msgstr "純做空"
+
+msgid "lib.mk.perp"
+msgstr "永續"
+
+msgid "lib.mk.txf"
+msgstr "台指期"
+
+msgid "lib.mk.tw"
+msgstr "台股"
+
+msgid "lib.mk.multi"
+msgstr "多標的"
+
+msgid "lib.iv.5m"
+msgstr "5 分 K"
+
+msgid "lib.iv.15m"
+msgstr "15 分 K"
+
+msgid "lib.iv.1h"
+msgstr "1 小時"
+
+msgid "lib.iv.4h"
+msgstr "4 小時"
+
+msgid "lib.iv.1d"
+msgstr "日線"
+
+msgid "lib.after"
+msgstr "用了之後"
+
+msgid "lib.after1"
+msgstr "agent 把策略下載到{where}的 strategies/ 資料夾"
+
+msgid "lib.after2"
+msgstr "用最新資料重跑一次回測，結果出現在左側欄"
+
+msgid "lib.after3"
+msgstr "要不要上線、用模擬還是實盤，由你決定"
+
+msgid "lib.use"
+msgstr "用這支"
+
+msgid "lib.open"
+msgstr "打開這支策略"
+
+msgid "lib.again"
+msgstr "再下載一份"
+
+msgid "lib.pending"
+msgstr "下載與回測中…"
+
+msgid "lib.buy"
+msgstr "購買並使用 {price}"
+
+msgid "lib.buy.title"
+msgstr "購買「{title}」"
+
+msgid "lib.buy.price"
+msgstr "價格 {price}"
+
+msgid "lib.buy.lead"
+msgstr "從 Blave Agent 餘額扣款；買了就會開始下載並回測。"
+
+msgid "lib.buy.ok"
+msgstr "確認購買"
+
+msgid "lib.buy.busy"
+msgstr "購買中…"
+
+msgid "lib.buy.topup"
+msgstr "目前餘額 {balance}，不足。將向你的信用卡扣取 {price} 後完成購買。"
+
+msgid "lib.buy.charge"
+msgstr "扣款並購買"
+
+msgid "lib.buy.noCard"
+msgstr "餘額不足，而且這個帳號還沒綁卡。到「設定 › 資料與雲端方案」綁卡後再回來買。"
+
+msgid "lib.buy.inProgress"
+msgstr "這筆購買正在處理中，稍後再看一次結果。"
+
+msgid "lib.buy.failed"
+msgstr "購買失敗，請再試一次。"
+
+msgid "lib.fxRate"
+msgstr "1"
+
+msgid "lib.currency"
+msgstr "TWD"
+
+msgid "lib.fxNote"
+msgstr "金額以 TWD 計價。"
+
+msgid "lib.note.owned"
+msgstr "已購買。agent 會把策略下載到{where}並跑一次回測，不會自動下單。"
+
+msgid "lib.gate.signedOutBuy"
+msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
+
+msgid "lib.note.free"
+msgstr "免費。agent 會把策略下載到{where}並跑一次回測，不會自動下單。"
+
+msgid "lib.note.billed"
+msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
+
+msgid "lib.note.paid"
+msgstr "從 Blave Agent 餘額扣款。購買後會下載到{where}並跑一次回測，不會自動下單。"
+
+msgid "lib.note.installed"
+msgstr "已在{where}的策略清單。再下載一份會整份覆蓋同名的那支，並重跑回測。"
+
+msgid "lib.note.pending"
+msgstr "進度在右邊的對話。完成後這支會出現在左側欄。"
+
+msgid "lib.err.noNew"
+msgstr "這一輪結束了，但沒看到新策略。看對話裡 agent 怎麼說。"
+
+msgid "lib.gate.signedOut"
+msgstr "登入 Blave 之後才能下載到這台電腦。"
+
+msgid "lib.gate.login"
+msgstr "登入"
+
+msgid "lib.gate.noData"
+msgstr "這一小時付不出資料費，agent 拿不到策略庫。"
+
+msgid "lib.cf.title"
+msgstr "下載「{title}」？"
+
+msgid "lib.cf.l1"
+msgstr "agent 會把策略下載到{where}的 strategies/ 資料夾，接著用最新資料跑一次回測，結果會出現在左側欄。"
+
+msgid "lib.cf.l2"
+msgstr "不會自動下單，要不要上線由你決定。"
+
+msgid "lib.cf.cloudNote"
+msgstr "這一句會送給雲端主機上的 agent；這台電腦不受影響。"
+
+msgid "lib.cf.ok"
+msgstr "下載並回測"
+
+msgid "lib.msg"
+msgstr "幫我下載官方策略「{title}」（#{id}），跑一次回測看看結果"
+
+msgid "lib.msgPaid"
+msgstr "幫我下載已購買的策略「{title}」（#{id}），跑一次回測看看結果"
+
+msgid "lib.where.local"
+msgstr "這台電腦"
+
+msgid "lib.where.cloud"
+msgstr "雲端主機"
+
+msgid "lib.owned"
+msgstr "已購買"

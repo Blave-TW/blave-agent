@@ -28,6 +28,9 @@
   /* 風險 badge 那一對(canon › Badge;= web main.css 的 redLight / redBlack)——參數掃描分頁「尖峰上」tag 用 */
   --color-redLight: #f8dfe2;
   --color-redBlack: #ae3f4a;
+  /* 綠的那一對(= web main.css 的 greenLight / greenBlack)——策略庫「已驗證」tag 用 */
+  --color-greenLight: #d6eee1;
+  --color-greenBlack: #227449;
   /* categorical data(多序列、非交易語意;canon › Color › Categorical data)——指標線用 */
   --color-data-1: #ff9960;     /* = --color-primary,主序列 */
   --color-data-2: #5b7a9e;     /* 暖鋼藍 */
@@ -97,6 +100,8 @@
   --color-redText: #d94f5c;
   --color-redLight: #3f2329;
   --color-redBlack: #e1727d;
+  --color-greenLight: #1a362c;
+  --color-greenBlack: #3dad73;
 
   --bg-body: var(--color-darkBody);
   --surface-card: var(--color-darkCard);

@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="report-robust.css">
 <link rel="stylesheet" href="trade.css">
 <link rel="stylesheet" href="datasrc.css">
+<link rel="stylesheet" href="library.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -63,7 +64,9 @@
       <!-- 自動下單入口:位置照雲端 #pf_nav(策略清單上方)。不放圖示——這個側欄的列本來就沒有圖示 -->
       <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中):入口與清單不畫,原位置放這一句(中欄的開通頁負責說明) -->
       <p class="pf-state side-gate" id="side-gate" hidden></p>
-      <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button></nav>
+      <nav class="side-nav" id="side-nav"><button class="strat-row" id="tr-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.998.398-.998.95v8a1 1 0 0 0 1 1z"/><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/></svg><span class="strat-name" data-i18n="tr.nav"></span></button>
+        <!-- 策略庫入口(spec-desktop-library §2):同一顆 .strat-row 解剖,icon 是 lucide library-big;內容由 library.js 畫 -->
+        <button class="strat-row" id="lib-nav" type="button"><svg class="side-nav-ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="18" x="3" y="3" rx="1"/><path d="M7 3v18"/><path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/></svg><span class="strat-name" data-i18n="lib.nav"></span></button></nav>
       <div class="strat-head" id="strat-head"><span class="label" data-i18n="ws.strategies"></span></div>
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
       <!-- 雲端那幾份:點一支 → 中欄畫雲端那一份的報告(app.js rpCloudSelect);名字是雲端來的字串,一律 textContent -->
@@ -152,6 +155,32 @@
         <!-- 雲端那一份還在路上 / 讀不到:點下去就換頁,這裡先放「載入中…」或讀不到 +〔重新查看〕(app.js rpBodyPaint) -->
         <div class="rp-panel" id="rp-wait" role="status" hidden></div>
       </div>
+      <!-- 策略庫(spec-desktop-library):中欄第五個視圖,清單 → 詳情兩層都在 #lib-body 裡、由 library.js 建
+           (名稱 / 說明 / 標的是 api 來的字,一律 textContent)。誰該出現由 trade.js 的 envShowMain 決定 -->
+      <div class="lib" id="lib" role="region" aria-labelledby="lib-h" hidden>
+        <div class="lib-head" id="lib-head">
+          <div class="lib-head-list" id="lib-head-list">
+            <h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib.nav"></h5>
+            <p class="lib-desc" data-i18n="lib.desc"></p>
+            <div class="lib-tools">
+              <div class="lib-seg" id="lib-seg" role="group" data-i18n-aria="lib.mkt.aria">
+                <button type="button" data-mkt="all" aria-pressed="true" data-i18n="lib.mkt.all"></button>
+                <button type="button" data-mkt="crypto" aria-pressed="false" data-i18n="lib.mkt.crypto"></button>
+                <button type="button" data-mkt="tw" aria-pressed="false" data-i18n="lib.mkt.tw"></button>
+              </div>
+              <button class="btn-quiet" id="lib-web" type="button" data-i18n="lib.web"></button>
+            </div>
+          </div>
+          <!-- 詳情模式:頁首只剩返回鈕 -->
+          <button class="lib-back" id="lib-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span data-i18n="lib.nav"></span></button>
+        </div>
+        <div class="lib-body" id="lib-body" tabindex="0">
+          <div class="lib-rows" id="lib-rows"></div>
+          <p class="lib-state" id="lib-state" role="status" hidden></p>
+          <p class="lib-foot" id="lib-foot" hidden></p>
+          <div class="lib-det" id="lib-det" hidden></div>
+        </div>
+      </div>
       <!-- 起手範例放在中欄(Wei):聊天欄只留一句話;中欄本來就空著,範例鈕在這裡
            同時交代了「這一欄之後會出現什麼」。點了直接送出。 -->
       <div class="main-empty" id="main-empty">
@@ -162,6 +191,8 @@
             <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
           </svg>
           <div class="wc-chips">
+            <!-- 「看免費策略」開策略庫(不送訊息;同雲端歡迎頁那顆 workspace_chip_free) -->
+            <button class="wc-chip" id="chat-lib" type="button" data-i18n="lib.chip"></button>
             <button class="wc-chip" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
           </div>
         </div>
@@ -380,5 +411,6 @@
 <script src="trade.js"></script>
 <script src="datasrc.js"></script>
 <script src="handoff.js"></script>
+<script src="library.js"></script>
 <script src="app.js"></script>
 </body></html>
