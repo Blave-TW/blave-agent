@@ -186,7 +186,7 @@ html.ws-sc .side-gate { display: none; }
 #tr > .main-head { max-width: calc(760px + 2 * var(--space-24)); }
 .pf[hidden] { display: none; }
 .pf:focus-visible { outline-offset: -2px; }
-.pf-sec { position: relative; display: flex; align-items: baseline; gap: var(--space-12); margin: var(--space-32) 0 var(--space-8); }
+.pf-sec { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-12); margin: var(--space-32) 0 var(--space-8); }   /* 288 寬放不下時整組區間 chips 掉到第二行,鈕本身不折(設計師稽核 09-25 必修 5) */
 .pf-sec:first-child { margin-top: 0; }
 .pf-sec .label { font-size: 12px; color: var(--ink-3); }
 .pf-acts { margin-left: auto; display: flex; align-items: baseline; gap: var(--space-16); }
@@ -310,7 +310,7 @@ html.ws-sc .side-gate { display: none; }
 .ov-modes, .ov-ranges { display: inline-flex; align-items: baseline; gap: var(--space-4); }
 .rng {
   padding: 3px var(--space-8); border: 1px solid transparent; border-radius: var(--radius-xs);
-  font: 12px "Roboto Mono", ui-monospace, monospace; color: var(--ink-3);
+  font: 12px "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); white-space: nowrap;
   transition: color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .ov-modes .rng { font-family: inherit; }
@@ -318,7 +318,17 @@ html.ws-sc .side-gate { display: none; }
 .rng[aria-pressed="true"] { color: var(--ink); font-weight: 600; border-color: var(--border-frame); }
 .ov-frame { position: relative; }
 .ov-canvas { display: block; width: 100%; height: 240px; }
-.ov-hover { position: absolute; top: 0; right: 0; font: 11px "Roboto Mono", ui-monospace, monospace; color: var(--ink-2); pointer-events: none; }
+/* 曲線 hover 小卡(設計師 spec-desktop-ov-curve-hover-2026-09-25,同網頁 .cv-tip):材質同 app .tip(canon › Tooltip;dark 靠比卡片亮一階的底分層),
+   垂直釘在圖框頂、水平由 trade.js 依繪圖區定位;日期次要色、數值主色、不加粗 */
+.cv-tip { position: absolute; top: 0; z-index: 5; pointer-events: none; padding: 6px 10px; max-width: 260px; border-radius: var(--radius-sm);
+  background: var(--surface-muted); box-shadow: var(--shadow-overlay); font: 12px/1.45 "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums;
+  text-align: left; white-space: nowrap; animation: mp-in var(--motion-fast) var(--ease-standard); }
+.cv-tip[hidden], .cv-tip span[hidden] { display: none; }
+.cv-tip span { display: block; }
+.cv-tip .d { color: var(--ink-2); }
+.cv-tip .v { color: var(--ink); }
+.cv-tip .d:last-child { white-space: normal; word-break: keep-all; }   /* 288 寬:卡寬釘在繪圖區(trade.js 設 maxWidth),第三行「相對區間起點」可以換行、數字不斷 */
+@media (prefers-reduced-motion: reduce) { .cv-tip { animation: none; } }
 .ev-day { margin: var(--space-12) 0 var(--space-4); font-size: 11px; color: var(--ink-3); }
 .ev-row { display: flex; gap: var(--space-16); padding: var(--space-4) 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); border-bottom: 1px solid var(--border-hairline); }
 .ev-row:last-child { border-bottom: none; }

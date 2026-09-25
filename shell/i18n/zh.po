@@ -210,6 +210,9 @@ msgstr "進出場紀錄"
 msgid "rp.tab.code"
 msgstr "程式碼"
 
+msgid "rp.tab.rob"
+msgstr "參數掃描"
+
 msgid "bt.fee"
 msgstr "手續費"
 
@@ -364,6 +367,9 @@ msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用
 
 msgid "up.check"
 msgstr "檢查更新"
+
+msgid "up.check.cloudTip"
+msgstr "也會檢查雲端主機；落後就直接更新，不再問"
 
 msgid "cn.current"
 msgstr "使用中"
@@ -1385,10 +1391,10 @@ msgid "tr.ov.rangeAll"
 msgstr "全部"
 
 msgid "tr.ov.empty"
-msgstr "還沒有權益紀錄。Blave 開著的時候，這台電腦每個整點記一筆；關著的時段不會有紀錄。"
+msgstr "還沒有權益紀錄。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
 
 msgid "tr.ov.emptyBaseline"
-msgstr "紀錄還不夠畫出曲線，要兩筆。Blave 開著的時候每個整點記一筆；關著的時段不會有紀錄。"
+msgstr "紀錄還不夠畫出曲線，要兩筆。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
 
 msgid "tr.ov.gapNote"
 msgstr "Blave 沒開著的時段沒有紀錄，曲線直接連起來。"
@@ -1398,6 +1404,12 @@ msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不
 
 msgid "tr.ov.flowNote"
 msgstr "偵測到資金異動（出入金或綁定、解除一個交易所）；曲線在那裡斷開，累積損益只從最後一段起算。"
+
+msgid "tr.ov.vsStart"
+msgstr "相對區間起點"
+
+msgid "tr.ov.vsSeg"
+msgstr "相對這一段起點（資金異動後）"
 
 msgid "tr.ov.curveUnreach"
 msgstr "現在讀不到雲端的權益紀錄，稍後會再試；這不代表沒有紀錄。"
@@ -2868,3 +2880,132 @@ msgstr "已不存在，取消勾選可移除"
 
 msgid "tr.pick.noneChosen"
 msgstr "還沒有選策略。按「選擇策略」把要下單的策略加進來。"
+
+msgid "rob.metaScan"
+msgstr "掃描"
+
+msgid "rob.tag.peak"
+msgstr "目前參數：尖峰上"
+
+msgid "rob.tag.inside"
+msgstr "目前參數：穩健區內"
+
+msgid "rob.tag.outside"
+msgstr "目前參數：穩健區外"
+
+msgid "rob.tag.outscan"
+msgstr "目前參數：不在掃描範圍"
+
+msgid "rob.tag.atPlateau"
+msgstr "目前參數：就是穩健參數"
+
+msgid "rob.verdict.peak"
+msgstr "稍微偏掉表現就掉很多，建議換成穩健參數。"
+
+msgid "rob.verdict.inside"
+msgstr "離穩健格只差一點，換不換差別不大。"
+
+msgid "rob.verdict.outside"
+msgstr "鄰近參數表現不穩，建議換成穩健參數。"
+
+msgid "rob.verdict.outscan"
+msgstr "無法判斷穩不穩，先看掃描內最穩的一格。"
+
+msgid "rob.verdict.atPlateau"
+msgstr "已是最穩的一格，不用換。"
+
+msgid "rob.verdict.stale"
+msgstr "回測已重跑，重新掃描後才會更新目前位置。"
+
+msgid "rob.cmp.peak"
+msgstr "尖峰"
+
+msgid "rob.cmp.plateau"
+msgstr "穩健"
+
+msgid "rob.cmp.cur"
+msgstr "目前"
+
+msgid "rob.cmp.sharpe"
+msgstr "Sharpe"
+
+msgid "rob.cmp.nbr"
+msgstr "鄰域平均"
+
+msgid "rob.cmp.nbrTip"
+msgstr "參數偏一格（{k}×{k} 格）的平均 Sharpe；越接近 Sharpe，參數偏掉時越撐得住"
+
+msgid "rob.heatRaw"
+msgstr "參數掃描 · Sharpe"
+
+msgid "rob.heatNbr"
+msgstr "參數掃描 · 鄰域平均 Sharpe（{k}×{k}）"
+
+msgid "rob.segRaw"
+msgstr "原始 Sharpe"
+
+msgid "rob.segNbr"
+msgstr "鄰域平均"
+
+msgid "rob.segLabel"
+msgstr "顯示模式"
+
+msgid "rob.heatAria"
+msgstr "{rp} × {cp} 參數掃描 Sharpe 熱圖"
+
+msgid "rob.legend.peak"
+msgstr "尖峰 {prm}（全格最高）"
+
+msgid "rob.legend.plateau"
+msgstr "穩健 {prm}（鄰域平均最高）"
+
+msgid "rob.legend.cur"
+msgstr "目前參數"
+
+msgid "rob.legend.curPeak"
+msgstr "目前參數（與尖峰同格）"
+
+msgid "rob.legend.curPlateau"
+msgstr "目前參數 = 穩健參數"
+
+msgid "rob.legend.curOff"
+msgstr "目前參數 {prm} 不在網格上，無標記"
+
+msgid "rob.legend.na"
+msgstr "— 沒有交易"
+
+msgid "rob.role.peak"
+msgstr "尖峰"
+
+msgid "rob.role.plateau"
+msgstr "穩健"
+
+msgid "rob.role.cur"
+msgstr "目前參數"
+
+msgid "rob.tipSharpe"
+msgstr "Sharpe {s} · 鄰域平均 {n}"
+
+msgid "rob.tipNa"
+msgstr "沒有交易"
+
+msgid "rob.empty"
+msgstr "還沒掃過參數。"
+
+msgid "rob.btnScan"
+msgstr "開始掃描"
+
+msgid "rob.btnSent"
+msgstr "已送出，看對話"
+
+msgid "rob.busy"
+msgstr "agent 正在回覆上一則訊息，稍等幾秒再送出。"
+
+msgid "rob.emptyCap"
+msgstr "agent 掃完後，這裡會出現結論與熱圖。"
+
+msgid "rob.cfOk"
+msgstr "送出"
+
+msgid "rob.msgScan"
+msgstr "請掃描策略 {name} 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap），範圍由你依指標分佈決定，掃完回報尖峰與穩健點。"

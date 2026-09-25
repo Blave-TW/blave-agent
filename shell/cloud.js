@@ -78,7 +78,8 @@ function interpretEvents(res) {
 /* 單支策略的回應 → { code, strategy }(純函式)。同事件清單:讀不到與「沒有這支」是兩件事——
    200 + `strategy: null` 才是「雲端現在沒有這一份」(api 的契約:沒這個名字 / 物件被逐出 / 沒主機都是這個);
    其餘一律 UNREACH。物件是雲端那台機器上的策略碼寫得進去的東西:欄位逐個驗型別,只留報告要畫的那幾欄
-   (形狀對齊主行程 loadStrategy:{ name, displayName, description, stats, code }),renderer 一律 textContent。 */
+   (形狀對齊主行程 loadStrategy:{ name, displayName, description, stats, scan, code }),renderer 一律 textContent。
+   scan = 參數掃描(機器端 scan.json 經 api 併進來):只驗到「是物件」,逐欄的型別檢查在 report-robust.js 的 sanitizeScan(本機那份同一套)。 */
 function interpretStrategy(res, name) {
   const b = res && res.status === 200 ? res.body : null;
   if (!b || typeof b !== "object" || !("strategy" in b)) return STRATEGY_UNREACHABLE();
@@ -86,8 +87,8 @@ function interpretStrategy(res, name) {
   if (s === null) return { code: "OK", strategy: null };
   if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
   const str = (v) => (typeof v === "string" ? v : "");
-  const bt = s.backtest && typeof s.backtest === "object" && !Array.isArray(s.backtest) ? s.backtest : null;
-  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: bt, code: str(s.code) } };
+  const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), code: str(s.code) } };
 }
 
 /* 權益曲線的回應 → { code, curve }(純函式)。同事件清單:讀不到與「還沒有紀錄」是兩件事——只有 200 + `overview.curve`

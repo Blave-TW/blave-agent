@@ -210,6 +210,9 @@ msgstr "Trades"
 msgid "rp.tab.code"
 msgstr "Code"
 
+msgid "rp.tab.rob"
+msgstr "Param scan"
+
 msgid "bt.fee"
 msgstr "fee"
 
@@ -364,6 +367,9 @@ msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in y
 
 msgid "up.check"
 msgstr "Check for updates"
+
+msgid "up.check.cloudTip"
+msgstr "Also checks the cloud machine; if it is behind, it is updated right away, no questions"
 
 msgid "cn.current"
 msgstr "In use"
@@ -1385,10 +1391,10 @@ msgid "tr.ov.rangeAll"
 msgstr "All"
 
 msgid "tr.ov.empty"
-msgstr "No equity records yet. While Blave is open, this computer records one on the hour; nothing is recorded while it is closed."
+msgstr "No equity records yet. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
 
 msgid "tr.ov.emptyBaseline"
-msgstr "Not enough records to draw the curve yet — it takes two. While Blave is open, one is recorded on the hour; nothing is recorded while it is closed."
+msgstr "Not enough records to draw the curve yet — it takes two. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
 
 msgid "tr.ov.gapNote"
 msgstr "No records while Blave wasn’t open; the line connects straight across those gaps."
@@ -1398,6 +1404,12 @@ msgstr "Earlier points count only the trading wallet; later ones the whole accou
 
 msgid "tr.ov.flowNote"
 msgstr "Funds moved in or out (a deposit, withdrawal, or an exchange connected or removed); the line breaks there and cumulative PnL starts from the last part only."
+
+msgid "tr.ov.vsStart"
+msgstr "vs range start"
+
+msgid "tr.ov.vsSeg"
+msgstr "vs start of this stretch (after funds moved)"
 
 msgid "tr.ov.curveUnreach"
 msgstr "Can’t read the cloud’s equity records right now; this will retry shortly. It does not mean there are none."
@@ -2868,3 +2880,132 @@ msgstr "no longer on this computer — uncheck to remove"
 
 msgid "tr.pick.noneChosen"
 msgstr "No strategies picked yet. Use Pick strategies to add the ones you want to trade."
+
+msgid "rob.metaScan"
+msgstr "scan"
+
+msgid "rob.tag.peak"
+msgstr "Current: on a peak"
+
+msgid "rob.tag.inside"
+msgstr "Current: in the plateau"
+
+msgid "rob.tag.outside"
+msgstr "Current: outside the plateau"
+
+msgid "rob.tag.outscan"
+msgstr "Current: outside the scan"
+
+msgid "rob.tag.atPlateau"
+msgstr "Current: the robust pair"
+
+msgid "rob.verdict.peak"
+msgstr "A small drift costs a lot — switch to the robust pair."
+
+msgid "rob.verdict.inside"
+msgstr "One cell from the robust pair — switching changes little."
+
+msgid "rob.verdict.outside"
+msgstr "Nearby parameters are unstable — switch to the robust pair."
+
+msgid "rob.verdict.outscan"
+msgstr "Robustness can't be judged — see the steadiest scanned cell."
+
+msgid "rob.verdict.atPlateau"
+msgstr "Already the steadiest cell — nothing to change."
+
+msgid "rob.verdict.stale"
+msgstr "The backtest was re-run — the current position updates after a rescan."
+
+msgid "rob.cmp.peak"
+msgstr "Peak"
+
+msgid "rob.cmp.plateau"
+msgstr "Robust"
+
+msgid "rob.cmp.cur"
+msgstr "Current"
+
+msgid "rob.cmp.sharpe"
+msgstr "Sharpe"
+
+msgid "rob.cmp.nbr"
+msgstr "Nbhd. mean"
+
+msgid "rob.cmp.nbrTip"
+msgstr "Mean Sharpe of the {k}×{k} cells one step off; the closer to Sharpe, the better it holds when parameters drift"
+
+msgid "rob.heatRaw"
+msgstr "Parameter scan · Sharpe"
+
+msgid "rob.heatNbr"
+msgstr "Parameter scan · neighbourhood mean Sharpe ({k}×{k})"
+
+msgid "rob.segRaw"
+msgstr "Raw Sharpe"
+
+msgid "rob.segNbr"
+msgstr "Neighbourhood mean"
+
+msgid "rob.segLabel"
+msgstr "Display mode"
+
+msgid "rob.heatAria"
+msgstr "{rp} × {cp} parameter scan Sharpe heatmap"
+
+msgid "rob.legend.peak"
+msgstr "Peak {prm} (highest cell)"
+
+msgid "rob.legend.plateau"
+msgstr "Robust {prm} (highest neighbourhood mean)"
+
+msgid "rob.legend.cur"
+msgstr "Current parameters"
+
+msgid "rob.legend.curPeak"
+msgstr "Current parameters (same cell as peak)"
+
+msgid "rob.legend.curPlateau"
+msgstr "Current parameters = robust parameters"
+
+msgid "rob.legend.curOff"
+msgstr "Current parameters {prm} are off the grid — no marker"
+
+msgid "rob.legend.na"
+msgstr "— no trades"
+
+msgid "rob.role.peak"
+msgstr "Peak"
+
+msgid "rob.role.plateau"
+msgstr "Robust"
+
+msgid "rob.role.cur"
+msgstr "Current"
+
+msgid "rob.tipSharpe"
+msgstr "Sharpe {s} · neighbourhood {n}"
+
+msgid "rob.tipNa"
+msgstr "No trades"
+
+msgid "rob.empty"
+msgstr "No parameter scan yet."
+
+msgid "rob.btnScan"
+msgstr "Start scan"
+
+msgid "rob.btnSent"
+msgstr "Sent — see chat"
+
+msgid "rob.busy"
+msgstr "The agent is still answering your last message. Wait a few seconds and send again."
+
+msgid "rob.emptyCap"
+msgstr "When the agent finishes, the verdict and heatmap appear here."
+
+msgid "rob.cfOk"
+msgstr "Send"
+
+msgid "rob.msgScan"
+msgstr "Please scan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Choose the ranges from the indicator distribution, then report the peak and the robust point."

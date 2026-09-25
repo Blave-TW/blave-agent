@@ -8,6 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.94 — 2026-09-25
+
+- **電腦版雲端視角:純資料查詢一律本機查**(`agent_turn.py` `_viewing_env_segment`):行情、指標、Blave 資料、
+  公開 K 線、跟主機無關的研究問題在這台電腦用本機 `lib/` 查,不交接到雲端跑(之前一律 SSH 交接,16 步/80 秒);
+  只有那台主機自己的東西(部位、單、log、策略檔、回測結果、狀態)才去雲端讀。按「問的是什麼」分,不做失敗再繞的 fallback。
+
 ## 1.1.93 — 2026-09-24
 
 - **電腦版沒資料權限那一輪,規則講真正的原因**(`agent_turn.py` `data_access_rule()` 讀外殼帶的 `BLAVE_DATA_ACCESS_WHY`:

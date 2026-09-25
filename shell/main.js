@@ -770,8 +770,12 @@ function listStrategies() {
     try { mtime = fs.statSync(path.join(dir, "strategy.py")).mtimeMs; } catch (_) {}
     let sMtime = 0;
     try { sMtime = fs.statSync(statsPath).mtimeMs; } catch (_) {}
+    // scan.json 只影響「最近動過」的時間(renderer 靠 mtime 變了才重載):只掃參數、沒重跑回測的那一輪也要算動過
+    let scMtime = 0;
+    try { scMtime = fs.statSync(path.join(dir, "scan.json")).mtimeMs; } catch (_) {}
+    const touched = Math.max(mtime, sMtime, scMtime);
     const hit = stratCache.get(name);
-    if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, mtime: Math.max(mtime, sMtime) };
+    if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, mtime: touched };
     let displayName = null;
     try { displayName = stratMeta(fs.readFileSync(path.join(dir, "strategy.py"), "utf8")).displayName; } catch (_) {}
     let summary = { name, displayName, hasBacktest: false, sharpe: null, totalReturn: null };
@@ -783,17 +787,20 @@ function listStrategies() {
       } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
     }
     stratCache.set(name, { mtime: sMtime, cMtime: mtime, summary });
-    return { ...summary, mtime: Math.max(mtime, sMtime) };
+    return { ...summary, mtime: touched };
   }).sort((a, b) => b.mtime - a.mtime);      // 最近動過的在上面
 }
 
 function loadStrategy(name) {
   if (!stratNames().includes(name)) return null;
   const dir = path.join(STRAT_DIR(), name);
-  let stats = null, code = "";
+  let stats = null, scan = null, code = "";
   try { stats = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8")); } catch (_) {}
+  // 參數掃描(lib/param_scan.write_scan 的 scan.json):沒掃過 / 寫到一半 / 不是物件 → null,renderer 畫空狀態
+  try { scan = JSON.parse(fs.readFileSync(path.join(dir, "scan.json"), "utf8")); } catch (_) {}
+  if (!scan || typeof scan !== "object" || Array.isArray(scan)) scan = null;
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, code, dataSources: stratDataSources(dir), ...stratMeta(code) };
+  return { name, stats, scan, code, dataSources: stratDataSources(dir), ...stratMeta(code) };
 }
 /* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的
    `grep -oE "DATA_[A-Z0-9]+_" strategies/<name>/*.py` —— 只掃 strategy.py 的話,helper 檔用到的來源會被漏講(稽核 C1)。

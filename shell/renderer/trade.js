@@ -2399,24 +2399,44 @@ function trOvCurve() {
     return frag;
   }
   const series = srv ? pts : isPnl ? pts.map((p) => ({ t: p.t, v: p.v - pts[0].v })) : pts;
-  const frame = trEl("div", "ov-frame"), canvas = trEl("canvas", "ov-canvas"), hover = trEl("div", "ov-hover");
+  const frame = trEl("div", "ov-frame"), canvas = trEl("canvas", "ov-canvas"), tip = trEl("div", "cv-tip");
+  const tipD = trEl("span", "d"), tipV = trEl("span", "v"), tipS = trEl("span", "d"); tip.append(tipD, tipV, tipS); tip.hidden = true;
   // 圖本身沒有可讀的數字:起訖值與筆數放進 label
   const first = series[0], last = series[series.length - 1];
   canvas.setAttribute("role", "img");
   canvas.setAttribute("aria-label", t(isPnl ? "tr.ov.curveAriaPnl" : "tr.ov.curveAria", { a: trFmt2(first.v, isPnl) + " " + trUnit(), b: trFmt2(last.v, isPnl) + " " + trUnit(), n: series.length }));
-  frame.append(canvas, hover); frag.appendChild(frame);
+  frame.append(canvas, tip); frag.appendChild(frame);
   if (series.some((p, i) => i > 0 && p.t - series[i - 1].t > TR_GAP_S)) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.gapNote")));
   // 斷在哪一種:資料自己帶 anomalies 的是平台標的資金異動,否則是這台電腦的口徑換過
   if (cut > 0 && !isPnl) frag.appendChild(trEl("div", "pf-foot", t(Array.isArray(TR.ov.curve.anomalies) ? "tr.ov.flowNote" : "tr.ov.basisNote")));
   if (srv && srv.anom) frag.appendChild(trEl("div", "pf-foot", t("tr.ov.pnlAnom")));   // 平台那條:異動點的跳變已剔除,講一句
   requestAnimationFrame(() => trDrawCurve(canvas, series, isPnl));
+  /* hover(設計師 spec-desktop-ov-curve-hover-2026-09-25,照網頁 ovHover):重畫底圖再疊垂直指示線 + 線上圓點;小卡跟著點水平走、
+     垂直釘在圖框頂(不跟 y 走才不抖),只落在繪圖區 [padL, W−padR](不進右軸欄、chips 在框外碰不到),右邊放不下翻左、都放不下貼 padL */
   canvas.addEventListener("mousemove", (e) => {
-    const g = TR.ov.geo; if (!g) return;
-    const x = e.offsetX; let best = null;
-    series.forEach((p) => { const d = Math.abs(g.xAt(p.t) - x); if (!best || d < best.d) best = { d, p }; });
-    if (best) hover.textContent = trStamp(best.p.t) + "  " + trFmt2(best.p.v, isPnl) + " " + trUnit();
+    if (!TR.ov.geo) return;   // 還沒畫過(requestAnimationFrame 之前)
+    trDrawCurve(canvas, series, isPnl);   // 先重畫(清掉上一條線、幾何跟著目前尺寸)再讀 geo:canvas 剛被拉寬時第一個 mousemove 才不會畫錯位
+    const g = TR.ov.geo, x = e.offsetX; let bi = -1, bd = Infinity;
+    series.forEach((p, i) => { const d = Math.abs(g.xAt(p.t) - x); if (d < bd) { bd = d; bi = i; } });
+    if (bi < 0) return;
+    const p = series[bi], px = g.xAt(p.t), py = g.yAt(p.v);
+    const ctx = canvas.getContext("2d");
+    ctx.strokeStyle = trToken("--color-greyDark"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(Math.round(px) + 0.5, g.padT); ctx.lineTo(Math.round(px) + 0.5, g.padT + g.ih); ctx.stroke();
+    ctx.fillStyle = trToken(isPnl ? (p.v >= 0 ? "--color-greenText" : "--color-redText") : "--color-data-1");   // 點色跟線段同色
+    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill();
+    tipD.textContent = trStamp(p.t); tipV.textContent = trFmt2(p.v, isPnl) + " " + trUnit();
+    // 權益模式第三行:相對「同一個 basis 段」的起點(跨過斷點相減等於把入金算成獲利;沒有斷點時就是區間起點)
+    let s = bi; while (s > 0 && series[s - 1].b === p.b) s--;
+    tipS.hidden = isPnl; tipS.textContent = isPnl ? "" : trFmt2(p.v - series[s].v, true) + " " + trUnit() + " " + t(s > 0 ? "tr.ov.vsSeg" : "tr.ov.vsStart");   // 有斷點:字也說是「這一段」
+    const right = g.W - g.padR;
+    tip.style.maxWidth = (right - g.padL) + "px";   // 卡不得比繪圖區寬(288 欄:貼 padL 後右緣仍會探進右軸欄)
+    tip.hidden = false;   // 先顯示才量得到寬
+    const tw = tip.offsetWidth;
+    let left = px + 16; if (left + tw > right) left = px - 16 - tw; if (left < g.padL) left = g.padL;
+    tip.style.left = left + "px";
   });
-  canvas.addEventListener("mouseleave", () => { hover.textContent = ""; });
+  canvas.addEventListener("mouseleave", () => { tip.hidden = true; trDrawCurve(canvas, series, isPnl); });
   return frag;
 }
 // 重畫之後把焦點放回同一顆鈕(整段是重建的,不放回去焦點會掉到 BODY)
@@ -2439,7 +2459,7 @@ function trDrawCurve(canvas, pts, isPnl) {
   const t0 = pts[0].t, t1 = pts[pts.length - 1].t || t0 + 1;
   const xAt = (tt) => padL + ((tt - t0) / Math.max(1, t1 - t0)) * (W - padL - padR);
   const yAt = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
-  TR.ov.geo = { xAt };
+  TR.ov.geo = { xAt, yAt, padL, padR, padT, ih: H - padT - padB, W };   // hover 疊圖與小卡定位用
   ctx.font = "10px " + (getComputedStyle(canvas).fontFamily || "sans-serif");
   ctx.fillStyle = trToken("--ink-3"); ctx.strokeStyle = trToken("--border-hairline"); ctx.lineWidth = 1;
   for (let i = 0; i <= 3; i++) {

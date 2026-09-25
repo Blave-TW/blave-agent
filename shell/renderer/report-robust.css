@@ -1,0 +1,288 @@
+/* 報告頁「參數掃描」分頁。視覺語言移植自雲端工作頁(web workspace.css 的 .rob-* 家族,
+   spec-workspace-robust-params 變體 B):結論卡 → 比較表 → 熱圖 → legend。
+   顏色 / 半徑 / 間距一律引 tokens.css 的角色變數(亮暗都要對),這個檔不寫 hex;
+   雲端寫死的 darkCard / darkText 這裡對應 --surface-card / --ink。 */
+
+/* ---- 結論卡:card 底、radius lg、無邊框無陰影(Terminal) ---- */
+.rob-card {
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-16);
+}
+.rob-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-8);
+}
+/* Mini tag:18px 定高 / micro 角 / 11px。尖峰上 = 風險語意;其餘落點是陳述,中性。
+   風險那一對 = tokens.css 的 redLight / redBlack(canon Badge,亮暗各自過 AA) */
+.rob-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-micro);
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.rob-tag.is-risk {
+  background: var(--color-redLight);
+  color: var(--color-redBlack);
+}
+.rob-tag.is-neutral {
+  background: var(--surface-muted);
+  color: var(--ink-2);
+}
+/* 一句話結論 = 這個視窗的焦點:14px/600,唯一粗體長句 */
+.rob-verdict {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 62ch;
+}
+/* 候選比較表:列 = ▲ 尖峰 / ● 穩健 / 目前,欄 = 參數對 / Sharpe / 鄰域平均。
+   表寬隨內容不拉滿;比較值不是策略自身損益 → 全中性不上漲跌色。 */
+.rob-cmp {
+  margin-top: var(--space-16);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-hairline);
+  overflow-x: auto;   /* 288 寬時四欄放不下:橫捲,「鄰域平均」欄才拿得到;欄頭的泡泡走 body 層單例,不怕被裁 */
+}
+.rob-cmp-tbl {
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.rob-cmp-tbl th,
+.rob-cmp-tbl td {
+  padding: var(--space-4) 0 var(--space-4) var(--space-24);
+  text-align: right;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.rob-cmp-tbl th:first-child,
+.rob-cmp-tbl td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.rob-cmp-tbl th {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.rob-cmp-tbl td:first-child { color: var(--ink-2); }
+.rob-cmp-tbl td:first-child .who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.rob-cmp-tbl .rob-glyph { color: var(--ink); }
+.rob-cmp-tbl td.num { color: var(--ink); }
+.rob-cmp-tbl td.num.prm { color: var(--ink-2); }   /* 參數對是身分不是量 */
+.rob-cmp-tbl td.num.na { color: var(--color-greyDark); }
+/* 欄頭「鄰域平均」的觸發點(泡泡是 body 層的 .rob-tip 單例,同熱圖格) */
+.rob-cmp-tbl th .mp-tip { font-size: 11px; font-weight: 500; }
+
+/* ---- 熱圖區塊:label 列(左 label、右 segment 切換)+ frame + legend ---- */
+.rob-heat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  margin-bottom: var(--space-8);
+}
+.rob-heat-head .rob-heat-label { display: block; margin: 0; }
+.rob-heat-label .mono { color: var(--ink-2); }
+/* Segment 切換(Outlined control 的並排版):active 一律灰階填色 + 加粗,不用橘;高頻切換,不加動畫 */
+.rob-seg {
+  display: inline-flex;
+  border: 1px solid var(--border-frame);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+.rob-seg button {
+  appearance: none;
+  background: none;
+  border: none;
+  height: 28px;
+  padding: 0 var(--space-12);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.rob-seg button + button { border-left: 1px solid var(--border-frame); }
+.rob-seg button:hover { color: var(--ink); }
+.rob-seg button[aria-pressed="true"] {
+  background: var(--surface-control-on);
+  color: var(--ink);
+  font-weight: 600;
+}
+.rob-seg button:focus-visible { outline-offset: -2px; }
+/* frame 同 .bt-frame(內距 16、hairline、radius lg),多一個橫捲:欄數 >7 的掃描靠它捲,不縮字 */
+.rob-frame {
+  padding: var(--space-16);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-body);
+  overflow-x: auto;
+}
+/* 真 <table>:fixed layout / 4px spacing / mono tabular */
+.rob-tbl {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: var(--space-4);
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.rob-tbl th {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: center;
+  white-space: nowrap;
+}
+/* 第一欄(角落 + 列標)固定 84px:fixed layout 只認這裡的寬,JS 的 table min-width 也用同一個 84 算 */
+.rob-tbl th.corner {
+  width: 84px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+.rob-tbl th.corner span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* 參數名比 84px 長就截尾,不讓它被欄寬無聲裁掉 */
+}
+.rob-tbl th.corner .r,
+.rob-tbl tbody th { color: var(--ink-2); }
+/* 橫捲時列標釘住(同 .bt-heat);td 是 position:relative 又排在 th 之後,抬一層讓列標壓住捲過去的格 */
+.rob-tbl tbody th,
+.rob-tbl thead th.corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-body);
+  box-shadow:
+    var(--space-4) 0 0 var(--bg-body),
+    calc((var(--space-16) + var(--space-4)) * -1) 0 0 var(--bg-body);
+}
+.rob-tbl td {
+  position: relative;   /* glyph 絕對定位的錨 */
+  height: 32px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-micro);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink);
+  background: var(--surface-card);   /* 色階由 JS 以 token + alpha 現算蓋上(report-backtest 月熱圖同做法) */
+}
+/* 沒交易的參數格 = 無資訊 */
+.rob-tbl td.is-na {
+  color: var(--color-greyDark);
+  background: transparent;
+}
+/* 標記分兩層(色不是唯一載體;legend、tooltip、aria-label 都有文字):glyph = 候選角色(▲ 尖峰 / ● 穩健);
+   框 = 目前參數(虛線)。glyph 是 CSS 幾何不是 Unicode(Roboto Mono 沒有 ▲/●),絕對定位貼格左上角,不進文字流 */
+.rob-glyph {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  flex: none;
+}
+.rob-glyph.plateau { border-radius: 50%; }
+.rob-glyph.peak { clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+/* 垂直置中貼左緣(spec §4):與 legend 色塊、比較表列名裡的 glyph 同一個對齊 */
+.rob-tbl td .rob-glyph {   /* 貼左上角、走格上緣的空氣(同 web):格窄、數字置中,glyph 置中就壓到數字(設計師複核 09-25) */
+  position: absolute;
+  left: 4px;
+  top: 2px;
+}
+.rob-tbl td.is-current {
+  outline: 2px dashed var(--ink-2);
+  outline-offset: 0;
+}
+.rob-tbl td[tabindex]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+/* hover 提示:1px inset 線,不是陰影 */
+.rob-tbl td.is-hover { box-shadow: inset 0 0 0 1px var(--ink-2); }
+.rob-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6) var(--space-16);
+  margin-top: var(--space-8);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.rob-legend .it {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+/* 不叫 .sw:app.css 的 toggle 開關用掉了(::after 那顆圓會伸出來蓋字) */
+.rob-legend .rob-sw {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 16px;
+  border-radius: var(--radius-micro);
+  background: var(--surface-card);
+  color: var(--ink);
+}
+.rob-legend .rob-sw.dash {
+  outline: 2px dashed var(--ink-2);
+  outline-offset: -1px;
+}
+.rob-legend .mono { color: var(--ink-2); }
+/* 熱圖格的 tooltip:app.css 的 .tip 材質,改成 body 層級的 fixed 單例(格子 overflow:hidden + frame 橫捲會裁掉行內氣泡) */
+.rob-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: auto;
+  z-index: 60;
+}
+.rob-tip.is-on { display: block; }
+.rob-tip .mono { color: var(--ink); }
+.rob-tip .tl { color: var(--ink-3); }
+
+/* ---- 空狀態:一句 + 一顆填色鈕,回合進行中鈕停用 + 一行說明 ---- */
+.rob-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  min-height: 200px;
+  padding: var(--space-24);
+  text-align: center;
+}
+.rob-empty-txt {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.rob-cap {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}

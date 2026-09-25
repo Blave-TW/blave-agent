@@ -662,7 +662,9 @@ function upPaint() {
   const btn = $("set-up-btn"); btn.textContent = ""; btn.dataset.kind = p.link.kind;
   if (p.spin) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); btn.append(sp); btn.setAttribute("aria-label", t("up.check")); }
   else { btn.append(t(p.link.kind === "restart" ? "up.restart" : "up.check")); btn.removeAttribute("aria-label"); }
-  btn.disabled = !!p.link.disabled; btn.title = p.link.kind === "restart" && p.link.disabled ? t("up.busy") : "";
+  // 「檢查更新」在有雲端主機在跑時也會把它更新掉(v4 零選擇):hover 先講,用戶才不會以為只查了 app
+  const tip = p.link.kind === "check" && kind === "running" ? t("up.check.cloudTip") : "";
+  btn.disabled = !!p.link.disabled; btn.title = p.link.kind === "restart" && p.link.disabled ? t("up.busy") : tip;
   // 聊天輸入列右上那一格(照網頁 .ws-update):更新中不可點(aria-disabled,不是 disabled:讀屏停得上去、字色不退成停用灰)
   const w = $("ws-update");
   if (w) {
@@ -1033,7 +1035,7 @@ function rpBodyPaint(B) {
   const w = $("rp-wait"), pend = B.data && B.data.pending;
   if (!pend) { rpShowTab(B.data.stats ? B.tab : "code"); return; }
   $("rp-tabs").hidden = true; $("rp-nobt").hidden = true;
-  for (const k of ["bt", "tr", "code"]) $("rp-" + k).hidden = true;
+  for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = true;
   w.hidden = false; w.textContent = "";
   const line = document.createElement("p");
   if (pend === "loading") {
@@ -1110,12 +1112,30 @@ function rpShowTab(tab) {
     b.disabled = !has && b.dataset.tab !== "code";
   });
   $("rp-nobt").hidden = has;   // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)
-  for (const k of ["bt", "tr", "code"]) $("rp-" + k).hidden = k !== tab;
+  for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = k !== tab;
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;
   const R = window.BlaveReport || {};
   if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats);
   if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats);
+  // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
+  if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
+}
+// 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
+function rpRobOpts() {
+  const R = window.BlaveReport || {};
+  return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, buildMeta: R.buildMeta };
+}
+/* 「開始掃描」:確認框 → 固定訊息進對話(同雲端工作頁 robAskScan)。不覆寫 viewing:rpBag()===RPC ⇔ ENV.cur==="cloud" ⇔ chatViewing 本來就回 env:cloud,
+   而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面) */
+function rpRobAsk(name, opener) {
+  return new Promise((resolve) => confirmBox({ title: t("rob.btnScan"), lines: [t("rob.emptyCap")], ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
+    onOk: () => submitMessage(t("rob.msgScan", { name })).then((ok) => resolve(ok ? turnSeq : false)) }));
+}
+/* 回合開始 / 結束:參數掃描分頁的空狀態要跟著換鈕態(回合中鎖鈕、結束解鎖)。就地改鈕、不整塊重畫(焦點不掉到 body;有掃描結果的頁沒有鈕,模組自己略過) */
+function rpRobSync() {
+  const B = rpBag(), R = window.BlaveReport || {};
+  if (B.drawn.rob && R.robSync) R.robSync($("rp-rob"), rpRobOpts());
 }
 $("rp-tabs").addEventListener("click", (e) => {
   const b = e.target.closest(".rp-tab"); if (b && !b.disabled) rpShowTab(b.dataset.tab);
@@ -1312,6 +1332,7 @@ async function csInit() {
   else csRenderHead();
 }
 let running = false;
+let turnSeq = 0;   // 回合序號:每跑起來一輪 +1。參數掃描分頁的「已送出」只認送出那一輪(掃描回合沒產出,下一輪無關的回合不可以又鎖回「已送出」)
 let liveBubble = null;
 
 function scrollChat() { $("chat-scroll").scrollTop = $("chat-scroll").scrollHeight; chatEdge(); }
@@ -1798,8 +1819,8 @@ async function sendDraft() {
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
-  UPD.turnCloud = false;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where)
-  running = true; $("btn-send").disabled = true; hoBusy(); upPaint();   // 回合在跑:更新入口停用(更新會重開 app)
+  UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
+  running = true; $("btn-send").disabled = true; hoBusy(); upPaint(); rpRobSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
@@ -1808,7 +1829,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   addMsg("you", msg); lastUserText = msg;
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
-  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); };
+  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); };
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
@@ -2521,8 +2542,11 @@ window.blave.onTurnEnd(async (r) => {
   if (loggedOut) addFault(localAuthFault(cur));
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); }
   pendingErr = [];
+  const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   upTurnEnded(faulted);
-  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint();
+  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync();
+  // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
+  if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
 });
 
 /* 側欄 / 聊天欄:拖拉調寬 + 收合(雲端工作頁那套移植,數字相同)。
