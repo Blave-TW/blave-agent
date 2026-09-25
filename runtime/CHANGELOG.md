@@ -8,6 +8,22 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.96 — 2026-09-25
+
+- **有提領權限的金鑰一律拒收(Wei 2026-09-25 拍板,推翻 09-22「不擋」)**:`_binance_bind_check` 在四個 boolean 之後、交易那格之前
+  看 `enableWithdrawals`,開著就 `WITHDRAW_ENABLED:` 拒絕(每個模式:電腦版、雲端、web 連接交易所都經這條);
+  OKX / BingX / Bybit 也每個模式都查(`_withdraw_gate`:電腦版在 `_local_real_key_gate` 讀完帳戶之後、雲端主機／web 綁定
+  在 `_cmd_credentials` 寫入前只打這一支)——`lib/account_<id>.withdraw_enabled`(OKX `/account/config` perm、
+  Bybit `/user/query-api` permissions.Wallet、BingX `/account/apiPermissions` 的 `permissions` 整數代碼:三把真機實測 [2]、[2,5]、[1,2,3,5] → 1、3 = 現貨／合約交易、2 = 讀取、5 = 提領,未映射代碼一律拒;`apiRestrictions` 的 enableFutures／enableSpotAndMarginTrading 開了交易也回 False,不能拿它判交易),True → `WITHDRAW_ENABLED`、
+  讀不到 / 不是 bool → `UNKNOWN`,fail-closed;`_WITHDRAW_CHECKED` 列的那家 lib 缺這支函式照「no permission check」拒絕。
+  Gate.io 沒有可查的欄位,不在表上、外殼連結框改提示用戶自己確認。只在綁定當下擋:電腦版 24 小時重查不看提領、不通知。
+  測試 `tests/check_credentials_withdraw_gate.py`、`tests/check_local_real_key_gate.py`。
+- **已知窗口(刻意不放行)**:雲端主機 runtime 發版後 ~5 分鐘全機隊吃到,workspace 只在用戶說「更新」才換——
+  workspace 還是這一批之前的版本(lib 沒 `withdraw_enabled`)時,綁 OKX / BingX / Bybit(web 連接、聊天貼 key 都算)
+  一律 `no permission check … run 更新 blave agent first` 拒絕、不寫入,更新 workspace 後即可;已綁的金鑰不受影響。
+  電腦版沒有這個窗口(runtime 與 lib 同一包出貨)。出貨順序:先 push repo(VERSION 亮提示)再 publish runtime。
+  矩陣 `tests/check_version_matrix.py` V1-11 / V1-05 把這條拒絕釘成預期。
+
 ## 1.1.95 — 2026-09-25
 
 - **daemon 開的子程序一律 `stdin=DEVNULL`,Windows 再加 `CREATE_NO_WINDOW`**(`command_listener._child_kw`,

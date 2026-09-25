@@ -1,0 +1,485 @@
+{
+  "schema_version": "1.1",
+  "id": "wk-2026-08-31",
+  "type": "performance",
+  "title": "績效週報 08/25–08/31",
+  "created_at": 1788220800,
+  "blocks": [
+    {
+      "type": "meta",
+      "title": "績效週報 08/25–08/31",
+      "report_type": "績效週報",
+      "generated_at": 1788220800,
+      "period": {
+        "from": "08/25",
+        "to": "08/31"
+      },
+      "account": {
+        "aum": 24318.77,
+        "currency": "USDT"
+      },
+      "benchmark": "BTC buy-hold",
+      "origin": "scheduled",
+      "machine": "blave-agent-01"
+    },
+    {
+      "type": "text",
+      "variant": "lead",
+      "markdown": "本週 +1.82%，跑贏基準；貢獻主要來自 `btc_whale_follow`。整體曝險偏多、波動處於低檔 regime，維持現有配置；唯 `txf_composite_60m` 已連續一週無訊號，見文末風險提示。"
+    },
+    {
+      "type": "kpi_row",
+      "title": "SUMMARY",
+      "items": [
+        {
+          "label": "週報酬",
+          "value": "+1.82%",
+          "tone": "pos"
+        },
+        {
+          "label": "CAGR",
+          "value": "+38.61%",
+          "tone": "pos"
+        },
+        {
+          "label": "Sharpe",
+          "value": "2.10",
+          "tone": "neutral"
+        },
+        {
+          "label": "Max DD",
+          "value": "−9.84%",
+          "tone": "neg"
+        },
+        {
+          "label": "勝率",
+          "value": "58.33%",
+          "tone": "neutral"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "markdown": "## 本週評述\n\n本週行情延續低波動盤整，BTC 週振幅僅 4.1%。**鯨魚跟單策略在週三的鏈上大額轉帳訊號後加倉**，吃到週後段的緩漲段，是本週最大貢獻來源；基差策略維持中性收租，無異常。\n\n- 資金費率全週為正且平穩，`eth_basis_carry` 年化收租約 +8.9%，符合預期。\n- `sol_momentum` 週四停損一次(−0.14%)，屬參數內正常回撤，不調整。\n- 下週關注 09/05 非農；若波動 regime 切換，鯨魚跟單的加倉上限將自動降半。\n"
+    },
+    {
+      "type": "line_chart",
+      "title": "累積報酬（近 90 天）",
+      "series": [
+        {
+          "name": "策略組合",
+          "role": "primary",
+          "points": [
+            [
+              1780358400,
+              0.0
+            ],
+            [
+              1781006400,
+              0.77
+            ],
+            [
+              1781654400,
+              2.46
+            ],
+            [
+              1782302400,
+              1.54
+            ],
+            [
+              1782950400,
+              3.85
+            ],
+            [
+              1783598400,
+              5.38
+            ],
+            [
+              1784246400,
+              4.62
+            ],
+            [
+              1784894400,
+              7.85
+            ],
+            [
+              1785542400,
+              9.85
+            ],
+            [
+              1786190400,
+              12.46
+            ],
+            [
+              1786838400,
+              11.23
+            ],
+            [
+              1787486400,
+              15.23
+            ],
+            [
+              1788134400,
+              18.42
+            ]
+          ]
+        },
+        {
+          "name": "BTC buy-hold",
+          "role": "benchmark",
+          "points": [
+            [
+              1780358400,
+              0.0
+            ],
+            [
+              1781006400,
+              2.15
+            ],
+            [
+              1781654400,
+              5.54
+            ],
+            [
+              1782302400,
+              3.23
+            ],
+            [
+              1782950400,
+              -1.85
+            ],
+            [
+              1783598400,
+              1.38
+            ],
+            [
+              1784246400,
+              4.15
+            ],
+            [
+              1784894400,
+              8.92
+            ],
+            [
+              1785542400,
+              6.15
+            ],
+            [
+              1786190400,
+              10.77
+            ],
+            [
+              1786838400,
+              7.85
+            ],
+            [
+              1787486400,
+              11.54
+            ],
+            [
+              1788134400,
+              9.71
+            ]
+          ]
+        }
+      ],
+      "y_unit": "%",
+      "caption": "單位：%；起點對齊 06/02 為 0%"
+    },
+    {
+      "type": "drawdown",
+      "title": "回撤（近 90 天）",
+      "points": [
+        [
+          1780358400,
+          0.0
+        ],
+        [
+          1781006400,
+          -1.22
+        ],
+        [
+          1781654400,
+          -0.33
+        ],
+        [
+          1782302400,
+          -3.56
+        ],
+        [
+          1782950400,
+          -2.11
+        ],
+        [
+          1783598400,
+          -5.78
+        ],
+        [
+          1784246400,
+          -9.84
+        ],
+        [
+          1784894400,
+          -4.22
+        ],
+        [
+          1785542400,
+          -1.89
+        ],
+        [
+          1786190400,
+          -2.78
+        ],
+        [
+          1786838400,
+          -0.89
+        ],
+        [
+          1787486400,
+          -1.44
+        ],
+        [
+          1788134400,
+          -0.89
+        ]
+      ],
+      "maxdd": {
+        "value": -9.84,
+        "from": 1783598400,
+        "to": 1784246400
+      }
+    },
+    {
+      "type": "heatmap",
+      "variant": "calendar",
+      "title": "月報酬",
+      "rows": [
+        "2025",
+        "2026"
+      ],
+      "cols": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05",
+        "06",
+        "07",
+        "08",
+        "09",
+        "10",
+        "11",
+        "12",
+        "年度"
+      ],
+      "values": [
+        [
+          1.94,
+          -0.72,
+          3.28,
+          0.61,
+          -6.51,
+          2.13,
+          5.02,
+          0.88,
+          -1.47,
+          4.36,
+          1.66,
+          7.19,
+          18.93
+        ],
+        [
+          4.21,
+          -1.32,
+          2.8,
+          0.94,
+          -0.42,
+          3.16,
+          1.05,
+          1.82,
+          null,
+          null,
+          null,
+          null,
+          12.71
+        ]
+      ],
+      "emphasis_cols": [
+        12
+      ],
+      "caption": "單位：%；色深=|月報酬| 四階（<1 / <2.5 / <4.5 / ≥4.5）"
+    },
+    {
+      "type": "bar_chart",
+      "variant": "bars",
+      "title": "分策略貢獻（本週）",
+      "items": [
+        {
+          "label": "btc_whale_follow",
+          "value": 1.21
+        },
+        {
+          "label": "eth_basis_carry",
+          "value": 0.52
+        },
+        {
+          "label": "sol_momentum",
+          "value": -0.14
+        },
+        {
+          "label": "doge_range_alert",
+          "value": 0.23
+        }
+      ],
+      "caption": "單位：百分點（對週報酬 +1.82% 的貢獻）；已停止策略不列入"
+    },
+    {
+      "type": "bar_chart",
+      "variant": "stacked",
+      "title": "多空敞口",
+      "segments": [
+        {
+          "label": "多",
+          "value": 62
+        },
+        {
+          "label": "空",
+          "value": 38
+        }
+      ]
+    },
+    {
+      "type": "metric_table",
+      "title": "RISK METRICS",
+      "items": [
+        {
+          "label": "Sortino",
+          "value": "2.41",
+          "format": "number"
+        },
+        {
+          "label": "Calmar",
+          "value": "1.87",
+          "format": "number"
+        },
+        {
+          "label": "年化波動",
+          "value": "12.40%",
+          "format": "percent"
+        },
+        {
+          "label": "週 VaR(95%)",
+          "value": "−1.12%",
+          "format": "percent"
+        },
+        {
+          "label": "Gross Exposure",
+          "value": "1.42×"
+        },
+        {
+          "label": "Net Exposure",
+          "value": "+0.62×",
+          "format": "text"
+        },
+        {
+          "label": "Beta(BTC)",
+          "value": "0.34",
+          "format": "number"
+        },
+        {
+          "label": "相關性（BTC）",
+          "value": "0.41",
+          "format": "number"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "各策略分項績效",
+      "columns": [
+        {
+          "key": "strategy",
+          "label": "策略",
+          "align": "left"
+        },
+        {
+          "key": "week_return",
+          "label": "週報酬",
+          "align": "right",
+          "format": "percent"
+        },
+        {
+          "key": "contribution",
+          "label": "貢獻",
+          "align": "right",
+          "format": "number"
+        },
+        {
+          "key": "sharpe_30d",
+          "label": "Sharpe(30d)",
+          "align": "right",
+          "format": "number"
+        },
+        {
+          "key": "maxdd_30d",
+          "label": "Max DD(30d)",
+          "align": "right",
+          "format": "percent"
+        },
+        {
+          "key": "status",
+          "label": "狀態",
+          "align": "left"
+        }
+      ],
+      "rows": [
+        {
+          "strategy": "btc_whale_follow",
+          "week_return": "+2.94%",
+          "contribution": "+1.21",
+          "sharpe_30d": "2.10",
+          "maxdd_30d": "−2.31%",
+          "status": "運行中"
+        },
+        {
+          "strategy": "eth_basis_carry",
+          "week_return": "+0.71%",
+          "contribution": "+0.52",
+          "sharpe_30d": "1.75",
+          "maxdd_30d": "−0.62%",
+          "status": "運行中"
+        },
+        {
+          "strategy": "sol_momentum",
+          "week_return": "−0.48%",
+          "contribution": "−0.14",
+          "sharpe_30d": "1.12",
+          "maxdd_30d": "−1.88%",
+          "status": "運行中"
+        },
+        {
+          "strategy": "doge_range_alert",
+          "week_return": "+0.62%",
+          "contribution": "+0.23",
+          "sharpe_30d": "1.34",
+          "maxdd_30d": "−0.95%",
+          "status": "運行中"
+        },
+        {
+          "strategy": "txf_composite_60m",
+          "week_return": null,
+          "contribution": null,
+          "sharpe_30d": null,
+          "maxdd_30d": null,
+          "status": "已停止"
+        }
+      ]
+    },
+    {
+      "type": "callout",
+      "tone": "warning",
+      "title": "txf_composite_60m 連續 7 日無訊號",
+      "text": "該策略自 08/25 起未產生任何進出場訊號，低於歷史頻率（週均 4.2 次）。可能原因：台指期波動壓縮至參數死區。建議在對話中要求 agent 檢查訊號管線，或暫停該策略釋出保證金。"
+    }
+  ]
+}

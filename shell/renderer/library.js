@@ -6,7 +6,9 @@
      在最後一步問 libShowMain。選策略 / 開自動下單會 libLeave。
    - 「已安裝」(§1.2):外殼在 userData 記 { marketplace id → 本機策略資料夾名 };送出「用這支」那一輪結束、本機清單多了一支就記下;
      名字被刪就從表裡拿掉。雲端視角不寫檔:同一套「送出前記清單、之後看多了誰」的比法,只記在這次 app 開著的期間(libCloudChanged)。
-   - 不導流(§13):未驗證的社群策略也列(收合的「社群策略(N)」段),詳情用 /report 補到 400 點曲線、總報酬、關卡數值、回測期間;沒有任何開網頁的入口。
+   - 不導流(§13):未驗證的社群策略也列(平鋪在同一份清單的尾段,帶「未驗證」tag;spec-desktop-0.1.6 §2),詳情用 /report 補到 400 點曲線、
+     總報酬、關卡數值、回測期間;沒有任何開網頁的入口。
+   - 付不出資料費(spec-desktop-0.1.6 §3):why 只有一個來源(主行程 libraryList 回的 why),詳情的主鈕與清單頂端的閘門卡照它分流。
    - 付費策略在 app 內買(§4.4):購買框兩段對齊網頁 libBuy / libPurchase;憑證只在主行程(帳號 token + app 專用密鑰)。
    用到 app.js 的 $ / t / LANG / hasToken / running / RP / RPC / csTitle / csStartNew / submitMessage / confirmBox / delClose / setOpen / setCat /
    planOpen / stratSelect / rpCloudSelect / paneSt / paneToggle、trade.js 的 ENV / TR_BAGS / trLeave / envShowMain / envCanSwitch / envCloudKind /
@@ -41,12 +43,11 @@ function libCompare(a, b) {
   if (ca === cb) return 0; if (ca === null) return 1; if (cb === null) return -1;
   return cb - ca;
 }
-// 這個分段要畫的兩段(規格 §13.1):rows = 官方 ∪ 已驗證(主段);community = 未驗證的社群策略(收合的那一段);同一套排序
+/* 這個分段要畫的一份清單(spec-desktop-0.1.6 §2.1):主鍵「官方或已驗證」在前,其後照 libCompare。主鍵寫成 code 是因為 libCompare
+   第一階只看 verified——「官方但沒跑關卡」在純 libCompare 下會掉到未驗證那一段;Wei 說的是「官方與已驗證在前」 */
 function libVisible(list, mkt) {
   const inMkt = (Array.isArray(list) ? list : []).filter((s) => s && (mkt === "all" || libMarket(s) === mkt));
-  const rows = inMkt.filter((s) => s.is_official || s.verified).sort(libCompare);
-  const community = inMkt.filter((s) => !s.is_official && !s.verified).sort(libCompare);
-  return { rows, community };
+  return inMkt.sort((a, b) => (Number(!!(b.is_official || b.verified)) - Number(!!(a.is_official || a.verified))) || libCompare(a, b));
 }
 // 關卡數值的字(抄 web library_rules.rate / fillP):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p < 0.001 整段換成「p < 0.001」
 function libRate(v) {
@@ -62,12 +63,13 @@ function libP(tpl, p) {
   return tpl.replace("{p}", p.toFixed(4));
 }
 function libGateFails(gc) { return gc ? ["fee", "mcpt", "robust"].filter((k) => gc[k] === "fail").length : 0; }
-/* CTA 態(規格 §1.3 + §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, cloud: "live"|"stale"|"stopped"|null,
-   pending, noNew, buying, installedName }。回 { state, paid, name, err }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略。
+/* CTA 態(規格 §1.3 + §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, why, cloud: "live"|"stale"|"stopped"|null,
+   pending, noNew, buying, installedName }。回 { state, paid, name, err, why }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略;
+   why = noData 態的原因(no_card / no_balance / unknown;主行程算的,只在 noData 帶)。
    installedName 兩個視角各有來源(本機 = userData 的對照表、雲端 = 這次開 app 期間看到雲端清單多出來的那支),這裡只認有沒有 */
 function libCta(s, c) {
   const paid = !libIsFree(s) && !s.purchased && !s.is_owner, local = c.env !== "cloud";
-  const st = (state, name) => ({ state, paid, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed") });
+  const st = (state, name) => ({ state, paid, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed"), why: state === "noData" ? (c.why === "no_card" || c.why === "no_balance" ? c.why : "unknown") : null });
   if (c.pending === s.id) return st("pending");   // 正在下載的那支:回合當然在跑,它講的是自己的進度,不是「上一輪還在跑」
   if (c.running) return st("busy");
   if (local && c.signedIn === false) return st("signedOut");
@@ -140,13 +142,15 @@ const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, load
   pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
   cloudInstalled: {}, cloudWait: null, cloudNames: null };   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
-function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null, comm: false }; }
+function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null }; }
 const libEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
 const libBag = (env) => LIB.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
 const libWhere = () => t(libEnv() === "cloud" ? "lib.where.cloud" : "lib.where.local");
 const libFx = () => Number(t("lib.fxRate")) !== 1;
 const libPriceText = (s) => libAmount(s.price, t("lib.fxRate"), t("lib.currency"), LANG, true);
 const libBalanceText = (v) => libAmount(v, t("lib.fxRate"), t("lib.currency"), LANG, false) || "—";
+// 兩句接起來:zh 全形句號後不留空格、en 留一個(brand 全形標點);不在字串表裡塞空格
+function libJoin(a, b) { return b ? a + (LANG === "zh" ? "" : " ") + b : a; }
 function libTrack(name) { try { if (window.blave && typeof window.blave.trackFeature === "function") window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
 function libEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 // 範本裡的 {k} 換成節點(數字要進 .mono、字留在 sans):t() 沒給的變數會原樣留著,這裡再切
@@ -217,7 +221,7 @@ function libCtaOf(s) {
   return libCta(s, {
     running: typeof running !== "undefined" && running === true, env,
     signedIn: typeof hasToken !== "undefined" ? !!hasToken : !!(LIB.data && LIB.data.signedIn),
-    dataAccess: LIB.data ? LIB.data.dataAccess : null, cloud: env === "cloud" ? libCloud() : null,
+    dataAccess: LIB.data ? LIB.data.dataAccess : null, why: LIB.data ? LIB.data.why : null, cloud: env === "cloud" ? libCloud() : null,
     pending: LIB.pending ? LIB.pending.id : null, noNew: LIB.noNew, buying: LIB.buying,
     installedName: libInstalledOf(s, env),
   });
@@ -227,6 +231,7 @@ function libCtaOf(s) {
 async function libOpen() {
   const B = libBag();
   if (typeof trLeave === "function") trLeave();
+  if (typeof rptLeave === "function") rptLeave();   // 報告與策略庫互斥(renderer/reports.js)
   if (libEnv() === "local") { if (typeof stratSelect === "function") await stratSelect(null); }
   else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);
   B.open = true;
@@ -271,7 +276,7 @@ async function libLoad(force) {
   }
   LIB.loading = false; LIB.skel = false;
   const prev = LIB.data ? JSON.stringify(LIB.data) : null;
-  if (r && Array.isArray(r.strategies)) LIB.data = { strategies: r.strategies, signedIn: r.signedIn === true, dataAccess: r.dataAccess || null, lang: LANG };
+  if (r && Array.isArray(r.strategies)) LIB.data = { strategies: r.strategies, signedIn: r.signedIn === true, dataAccess: r.dataAccess || null, why: typeof r.why === "string" ? r.why : null, lang: LANG };
   else LIB.failed = true;   // 手上有舊清單就照畫舊的;沒有才畫「讀不到」
   if (!$("lib").hidden && (prev === null || prev !== JSON.stringify(LIB.data) || LIB.paintedEnv !== libEnv())) libPaint();   // 沒變就不重畫(捲動、焦點、曲線都留著)
 }
@@ -317,7 +322,7 @@ function libPaint() {
   const det = B.detail ? libFind(B.detail) : null;
   $("lib-head-list").hidden = !!det; $("lib-back").hidden = !det;
   $("lib-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mkt === B.mkt ? "true" : "false"));
-  if (det) { $("lib-rows").textContent = ""; $("lib-comm-wrap").hidden = true; $("lib-state").hidden = true; $("lib-foot").hidden = true; libPaintDetail(det); }
+  if (det) { $("lib-rows").textContent = ""; $("lib-gate").hidden = true; $("lib-state").hidden = true; $("lib-foot").hidden = true; libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
 }
 function libTags(s) {
@@ -366,8 +371,8 @@ function libRow(s) {
   return b;
 }
 function libPaintList() {
-  const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), foot = $("lib-foot"), wrap = $("lib-comm-wrap"), crows = $("lib-comm-rows");
-  rows.textContent = ""; state.hidden = true; state.textContent = ""; foot.hidden = true; foot.textContent = ""; wrap.hidden = true; crows.textContent = "";
+  const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), foot = $("lib-foot"), gate = $("lib-gate");
+  rows.textContent = ""; state.hidden = true; state.textContent = ""; foot.hidden = true; foot.textContent = ""; gate.hidden = true; gate.textContent = "";
   if (!LIB.data) {
     if (LIB.skel) {
       [94, 82, 90, 76, 87].forEach((w) => {
@@ -382,17 +387,33 @@ function libPaintList() {
     }
     return;
   }
+  // 閘門卡(§3.3):只在本機視角、登入著、付不出資料費時出;沒登入的清單是公開清單,人可以先逛
+  if (libEnv() === "local" && LIB.data.signedIn && LIB.data.dataAccess === "none") { gate.hidden = false; gate.appendChild(libGateNode(LIB.data.why)); }
   const v = libVisible(LIB.data.strategies, B.mkt);
-  if (!v.rows.length && !v.community.length) { state.hidden = false; state.textContent = t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"); }   // 主段空但社群段有:只出社群段
-  v.rows.forEach((s) => rows.appendChild(libRow(s)));
-  if (v.community.length) {
-    wrap.hidden = false;
-    const tt = $("lib-comm-t"); tt.textContent = ""; tt.appendChild(libRich("lib.comm.title", { n: libMono(String(v.community.length)) }));
-    $("lib-comm").setAttribute("aria-expanded", String(B.comm));
-    crows.hidden = !B.comm;
-    if (B.comm) v.community.forEach((s) => crows.appendChild(libRow(s)));
-  }
+  if (!v.length) { state.hidden = false; state.textContent = t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"); }
+  v.forEach((s) => rows.appendChild(libRow(s)));
   foot.hidden = false; foot.textContent = t("lib.foot");   // 投稿是賣家流程、app 沒有:純文字腳注,不是入口
+}
+/* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「資料與雲端方案」
+   (查不到狀態時不擺一顆要錢的主鈕)。鈕都開 設定 › 資料與雲端方案。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
+function libGateBtn(why) {
+  const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true;
+  const tDays = typeof planVars === "function" ? planVars().t : "";
+  const b = libEl("button", why === "unknown" ? "btn-out" : "btn-fill", why === "no_balance" ? t("lib.gate.topup") : why === "unknown" ? t("set.cat.plan") : trial && tDays ? t("lib.gate.bindCard", { t: tDays }) : t("plan.addCard"));
+  b.type = "button"; b.addEventListener("click", () => planOpen());
+  return b;
+}
+function libGateText(why) {
+  if (why === "no_balance") return [t("lib.gate.noBalance"), ""];
+  if (why === "unknown") return [t("lib.gate.unknown"), ""];
+  const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true, tDays = typeof planVars === "function" ? planVars().t : "";
+  return [t("lib.gate.noCard"), trial && tDays ? t("data.noCardSub", { t: tDays }) : ""];
+}
+// 清單頂端那一張(§3.3):左一句(同詳情鈕下說明的第一句)、右同一顆主鈕
+function libGateNode(why) {
+  const f = document.createDocumentFragment();
+  f.append(libEl("p", "", libGateText(why)[0]), libGateBtn(why));
+  return f;
 }
 function libShowDetail(id) {
   const B = libBag(); B.row = id; B.detail = id;
@@ -504,10 +525,10 @@ function libPaintCta(s) {
   const btn = (cls, label, on) => { const b = libEl("button", cls, label); b.type = "button"; if (on) b.addEventListener("click", () => on(b)); return b; };
   const dis = (label) => { const b = btn("btn-fill", label); b.disabled = true; return b; };
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
-  const paidNote = () => note.append(t("lib.note.paid", { where }), libFx() ? " " + t("lib.fxNote") : "");
+  const paidNote = () => { note.textContent = libJoin(t("lib.note.paid", { where }), libFx() ? t("lib.fxNote") : ""); };
   switch (c.state) {
-    case "signedOut": note.classList.add("up"); note.append(t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"), " ", btn("btn-quiet", t("lib.gate.login"), () => setOpen().then(() => setCat("acct")))); break;
-    case "noData": note.classList.add("up"); note.append(t("lib.gate.noData"), " ", btn("btn-quiet", t("set.cat.plan"), () => planOpen())); break;
+    case "signedOut": row.appendChild(btn("btn-fill", t("cn.blave.btn"), () => setOpen().then(() => setCat("acct")))); note.classList.add("up"); note.textContent = t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"); break;   // 主鈕「登入 Blave」→ 設定 › 帳號(§3.2 末,同 noData 一個重量)
+    case "noData": { const [main, sub] = libGateText(c.why); row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libJoin(main, sub); break; }
     case "busy": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t("turn.busy"); break;
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
     case "pending": row.appendChild(dis(t("lib.pending"))); note.textContent = t("lib.note.pending"); break;
@@ -519,7 +540,7 @@ function libPaintCta(s) {
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); note.textContent = t("lib.note.owned", { where }); break;
     default:
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));
-      note.textContent = t("lib.note.free", { where }) + (LIB.data && LIB.data.dataAccess === "billed" && libEnv() === "local" ? " " + t("lib.note.billed") : "");
+      note.textContent = libJoin(t("lib.note.free", { where }), LIB.data && LIB.data.dataAccess === "billed" && libEnv() === "local" ? t("lib.note.billed") : "");
   }
   if (row.childNodes.length) box.appendChild(row);
   box.appendChild(note);
@@ -627,7 +648,6 @@ function libChartDraw(host, r) {
   g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); });
   g("chat-lib").addEventListener("click", () => libOpen());
   g("lib-back").addEventListener("click", libBack);
-  g("lib-comm").addEventListener("click", () => { const B = libBag(); B.comm = !B.comm; libPaintList(); g("lib-comm").focus(); if (B.comm) libTrack("library_comm"); });   // 靜態節點不用委派;libPaintList 不動 #lib-body 的捲動
   g("lib-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mkt]"); if (!b) return; libBag().mkt = b.dataset.mkt; libPaint(); });
   g("lib-body").addEventListener("scroll", () => { const B = libBag(); if (!B.detail) B.scroll = g("lib-body").scrollTop; });
   window.addEventListener("focus", () => libRefresh());   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)

@@ -1,0 +1,728 @@
+/* Blave Agent — 報告閱讀視圖 block 樣式(從 web/app/static/css/agent/report.css 搬進外殼;spec-desktop-0.1.6 §1.7)。
+   web 那份是恆暗、寫死 dark 值;這裡 token 一律換成語意角色(--ink / --ink-2 / --ink-3 / --border-hairline /
+   --surface-card / --surface-muted),app 兩態都對。刻意不換的:.is-na 無資訊格的 --color-greyDark(tokens.css 兩態都有)。
+   搬運 delta 另有兩處:熱圖 td 加 white-space: nowrap(480 欄會把 +2.1 折成四行;橫捲交給 .rb-heat-wrap)、
+   web 的 768 手機斷點拿掉(桌面中欄最窄 480,由 kpi 的 3+3 網格與表 / 熱圖自己的橫捲承接)。
+   圖表走 SVG,顏色全部由下方的 class 供給(presentation attribute 吃不到 CSS 變數的引擎差異,一律不用 fill="var(...)")。 */
+
+/* ---------- 閱讀欄 ---------- */
+.rb-report {
+  max-width: 680px;
+  margin: 0 auto;
+  color: var(--ink-2);
+}
+
+/* block 間距一律由 wrapper 給；wrapper 無 padding/border，故與子元素的
+   上邊距合併（h2 的 32、quote 的 24、chart 的 8 各自勝出），一條規則就有
+   了 mockup 逐 block 的節奏 */
+.rb-block {
+  margin-top: var(--space-16);
+}
+.rb-block:first-child {
+  margin-top: 0;
+}
+/* overflow 容器自成 BFC、邊距不合併，會與 wrapper 相加 */
+.rb-report .rb-heat-wrap,
+.rb-report .rb-table-wrap {
+  margin-top: 0;
+}
+
+/* 無長度上限的機器字串（策略名、代碼、來源網址）不得撐破欄寬。這些是裸文字
+   節點，只能靠斷行——報告是拿來讀的，截斷的策略名沒有用，所以斷行不做
+   ellipsis。anywhere（非 break-word）才會一併縮小 flex/grid 項目的 min-content
+   寬度。整欄一次給，不再逐個 block 列舉:漏掉一個就會把整個 .main-panel 撐出
+   橫捲(2026-09-17 就是註腳的來源網址沒進清單)，而報告 block 型別會一直增加。
+   表格/熱圖有自己的 overflow 容器，資料格改成硬斷行等於把該橫捲的表壓扁，
+   所以這兩個排除；程式碼是 white-space:pre，本來就不吃斷行 */
+.rb-report {
+  overflow-wrap: anywhere;
+}
+.rb-report .rb-table,
+.rb-report .rb-heat {
+  overflow-wrap: normal;
+}
+
+/* ---------- meta 頭 ---------- */
+.rb-report .rb-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+.rb-report .rb-meta-line {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: var(--space-4);
+}
+/* tag 自成一行:留在標題文字後面時左緣由標題長度決定(實測 24–350 都可能),
+   那條邊不是設計出來的。改 flex + fit-content 後恆等於欄左緣 */
+.rb-report .rb-type-tag {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-micro);
+  background: var(--surface-muted);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-2);
+  margin-top: var(--space-4);
+}
+.rb-report .rb-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-32);
+  margin-top: var(--space-16);
+  padding: var(--space-12) 0;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.rb-report .rb-strip-label {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-bottom: var(--space-2);
+}
+.rb-report .rb-strip-value {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* ---------- 區段標（h2 = block 標，h3 = 段內小標） ---------- */
+.rb-report .rb-h,
+.rb-report .rb-text h2 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+  margin: var(--space-32) 0 var(--space-12);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--border-hairline);
+}
+.rb-report .rb-text h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: var(--space-24) 0 var(--space-8);
+}
+
+/* ---------- kpi_row ---------- */
+.rb-report .rb-kpi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-16) var(--space-32);
+  align-items: flex-end;
+}
+.rb-report .rb-kpi-cell {
+  min-width: 96px;
+}
+.rb-report .rb-kpi-label {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-bottom: var(--space-2);
+}
+.rb-report .rb-kpi-value {
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.rb-report .rb-kpi-cell.is-focus .rb-kpi-value {
+  font-size: 28px;
+}
+.rb-report .rb-kpi-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-3);
+  margin-left: var(--space-4);
+}
+/* delta 走值下方第三行(值=現況、delta=變化,兩件事不同排),因此退出寬度計算;
+   同樣不上漲跌色——一格一個色訊號,正負由已格式化字串的符號承載 */
+.rb-report .rb-kpi-delta {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: var(--space-2);
+}
+/* 列內任一格有 delta → 全列保留該行高,否則底對齊會把缺席那格的值往下拉 */
+.rb-report .rb-kpi.has-delta .rb-kpi-delta {
+  min-height: 1.5em;
+}
+/* 6 格(契約上限)固定折成 3+3 兩排等寬網格,不放任自由 wrap 折出 5+1 孤兒 */
+.rb-report .rb-kpi.is-n6 .rb-kpi-cell {
+  flex: 0 0 calc((100% - var(--space-32) * 2) / 3);
+  min-width: 0;
+}
+
+/* ---------- 圖表（SVG） ---------- */
+.rb-report .rb-chart {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-8);
+}
+/* 圖內文字是值欄位:字體由渲染器逐片段決定(命中封閉形狀集的片段包成
+   tspan.mono),所以這裡刻意不宣告 font-family——宣告了就會把 buy-hold /
+   Sharpe 這種該留 sans 的詞一起拖進 mono */
+.rb-report .rb-chart text {
+  font-size: 10px;
+  fill: var(--ink-3);
+}
+.rb-report .rb-chart .rb-wm {
+  fill: var(--color-watermark);
+  font-size: 11px;
+}
+.rb-report .rb-chart .rb-grid {
+  stroke: var(--border-hairline);
+  stroke-width: 1;
+}
+.rb-report .rb-chart .rb-band {
+  fill: var(--surface-card);
+}
+.rb-report .rb-chart .rb-s1 {
+  fill: none;
+  stroke: var(--color-data-1);
+  stroke-width: 2;
+}
+.rb-report .rb-chart .rb-s2 {
+  fill: none;
+  stroke: var(--color-data-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+/* 註記線家族：預設 greyMedium 虛線；承載顯著性/警示語意才升 2px red 實線 */
+.rb-report .rb-chart .rb-ref {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.rb-report .rb-chart .rb-ref.is-em {
+  stroke: var(--color-red);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+.rb-report .rb-chart .rb-ref-label.is-em {
+  fill: var(--color-red);
+}
+.rb-report .rb-chart .rb-dd-area {
+  fill: var(--color-red);
+  fill-opacity: 0.18;
+}
+.rb-report .rb-chart .rb-dd-line {
+  fill: none;
+  stroke: var(--color-red);
+  stroke-width: 1.5;
+}
+.rb-report .rb-chart .rb-dd-note {
+  fill: var(--color-red);
+}
+.rb-report .rb-chart .rb-bar-up {
+  fill: var(--color-green);
+}
+.rb-report .rb-chart .rb-bar-dn {
+  fill: var(--color-red);
+}
+.rb-report .rb-chart .rb-val-up {
+  fill: var(--color-green);
+}
+.rb-report .rb-chart .rb-val-dn {
+  fill: var(--color-red);
+}
+.rb-report .rb-chart .rb-hist-bar {
+  fill: var(--color-data-1);
+}
+.rb-report .rb-chart .rb-box {
+  fill: none;
+  stroke: var(--color-data-1);
+  stroke-width: 1.5;
+}
+/* 單筆觀測 vs 匯總圖形的重量階差:空心 + 描線細一階(箱體 1.5px) */
+.rb-report .rb-chart .rb-out {
+  fill: none;
+  stroke: var(--color-data-1);
+  stroke-width: 1;
+}
+.rb-report .rb-chart .rb-box-med {
+  stroke: var(--color-data-1);
+  stroke-width: 3;
+}
+.rb-report .rb-chart .rb-pt1 {
+  fill: var(--color-data-1);
+}
+.rb-report .rb-chart .rb-pt2 {
+  fill: var(--color-data-2);
+}
+.rb-report .rb-chart .rb-pt-label.is-focus {
+  fill: var(--ink);
+}
+
+.rb-report .rb-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6) var(--space-16);
+  margin-top: var(--space-6);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.rb-report .rb-legend-sw {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  margin-right: var(--space-6);
+  vertical-align: 0.22em;
+  background: var(--color-data-1);
+}
+.rb-report .rb-legend-sw.is-dash {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-data-2) 0 3px,
+    transparent 3px 5px
+  );
+}
+.rb-report .rb-legend-val {
+  color: var(--ink);
+  margin-left: var(--space-4);
+}
+.rb-report .rb-cap {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: var(--space-6);
+}
+
+/* ---------- heatmap（calendar / matrix 共用色階） ---------- */
+.rb-report .rb-heat-wrap {
+  overflow-x: auto;
+}
+.rb-report .rb-heat {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px;
+}
+/* 欄／列標籤是值欄位(資料自己的身分),字體同樣逐片段決定;td 的值一律是
+   渲染器產的數字,整格必然命中形狀集,容器級 mono 與逐片段同結果,留著 */
+.rb-report .rb-heat th {
+  font-weight: 500;
+  font-size: 10px;
+  color: var(--ink-3);
+  padding: var(--space-4) var(--space-2);
+}
+.rb-report .rb-heat th.rb-heat-row {
+  font-size: 10.5px;
+  text-align: left;
+  padding-right: var(--space-8);
+  white-space: nowrap;
+}
+.rb-report .rb-heat td {
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--ink);
+  text-align: center;
+  padding: var(--space-6) 3px;
+  border-radius: var(--radius-micro);
+  background: var(--surface-card);
+}
+/* emphasis_cols(calendar 限定):年度／總計欄加重,只加字重不改色階 */
+.rb-report .rb-heat td.is-em {
+  font-weight: 500;
+}
+/* 以下 is-na 與八階色階不掛 .rb-report:工作頁穩健參數分頁的參數掃描熱圖
+   (workspace.html buildRobustHeat,table 帶 rb-heat 類)共用同一組值,
+   色階常數只此一份。同特異度下靠 source order 蓋過上面的 darkCard 底 */
+/* 未到月份 / 對角線自相關 / 沒交易的參數格 = 無資訊 */
+.rb-heat td.is-na {
+  color: var(--color-greyDark);
+  background: transparent;
+}
+/* 端點=token（green/red ↔ darkCard），|值| 四階 12/23/34/45%——上限 45%
+   是 darkText 在最深 cell 仍 ≥6:1 的實算邊界 */
+.rb-heat td.rb-g1 {
+  background: color-mix(in srgb, var(--color-green) 12%, var(--surface-card));
+}
+.rb-heat td.rb-g2 {
+  background: color-mix(in srgb, var(--color-green) 23%, var(--surface-card));
+}
+.rb-heat td.rb-g3 {
+  background: color-mix(in srgb, var(--color-green) 34%, var(--surface-card));
+}
+.rb-heat td.rb-g4 {
+  background: color-mix(in srgb, var(--color-green) 45%, var(--surface-card));
+}
+.rb-heat td.rb-r1 {
+  background: color-mix(in srgb, var(--color-red) 12%, var(--surface-card));
+}
+.rb-heat td.rb-r2 {
+  background: color-mix(in srgb, var(--color-red) 23%, var(--surface-card));
+}
+.rb-heat td.rb-r3 {
+  background: color-mix(in srgb, var(--color-red) 34%, var(--surface-card));
+}
+.rb-heat td.rb-r4 {
+  background: color-mix(in srgb, var(--color-red) 45%, var(--surface-card));
+}
+
+/* ---------- bar_chart · stacked（多空敞口） ---------- */
+.rb-report .rb-exposure {
+  margin-top: var(--space-8);
+}
+.rb-report .rb-bar {
+  display: flex;
+  height: 12px;
+  border-radius: var(--radius-micro);
+  overflow: hidden;
+}
+/* 2 段 = 多空敞口(型錄 recipe,走交易語意色);3 段以上是一般構成比 → 類別序列色 */
+.rb-report .rb-bar-seg.is-up {
+  background: var(--color-green);
+}
+.rb-report .rb-bar-seg.is-dn {
+  background: var(--color-red);
+}
+.rb-report .rb-bar-seg.is-d1,
+.rb-report .rb-sw2.is-d1 {
+  background: var(--color-data-1);
+}
+.rb-report .rb-bar-seg.is-d2,
+.rb-report .rb-sw2.is-d2 {
+  background: var(--color-data-2);
+}
+.rb-report .rb-bar-seg.is-d3,
+.rb-report .rb-sw2.is-d3 {
+  background: var(--color-data-3);
+}
+.rb-report .rb-bar-seg.is-d4,
+.rb-report .rb-sw2.is-d4 {
+  background: var(--color-data-4);
+}
+/* 第 5 段起併成的「其他」:灰色中性退場,絕不循環重用 data-1~4 */
+.rb-report .rb-bar-seg.is-rest,
+.rb-report .rb-sw2.is-rest {
+  background: var(--ink-3);
+}
+.rb-report .rb-sw2 {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-micro);
+  margin-right: var(--space-4);
+  vertical-align: 0.02em;
+}
+.rb-report .rb-sw2.is-up {
+  background: var(--color-green);
+}
+.rb-report .rb-sw2.is-dn {
+  background: var(--color-red);
+}
+
+/* ---------- metric_table（一名一值網格） ---------- */
+.rb-report .rb-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: var(--space-32);
+}
+.rb-report .rb-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-12);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.rb-report .rb-metric-label {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.rb-report .rb-metric-value {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+/* ---------- table（明細表） ---------- */
+.rb-report .rb-table-wrap {
+  overflow-x: auto;
+}
+.rb-report .rb-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+.rb-report .rb-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  padding: var(--space-4) var(--space-12) var(--space-4) 0;
+  border-bottom: 1px solid var(--border-frame);
+  white-space: nowrap;
+}
+.rb-report .rb-table td {
+  padding: 7px var(--space-12) 7px 0;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.rb-report .rb-table tr:last-child td {
+  border-bottom: none;
+}
+.rb-report .rb-table .rb-num {
+  text-align: right;
+}
+.rb-report .rb-table .rb-mid {
+  text-align: center;
+}
+
+/* ---------- text（markdown 子集） ---------- */
+.rb-report .rb-text p {
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 0 0 var(--space-12);
+}
+.rb-report .rb-text ul {
+  margin: 0 0 var(--space-12);
+  padding: 0;
+  list-style: none;
+}
+.rb-report .rb-text ul li {
+  font-size: 14px;
+  line-height: 1.7;
+  padding-left: 1.2em;
+  position: relative;
+  margin-bottom: var(--space-4);
+}
+.rb-report .rb-text ul li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--ink-3);
+}
+.rb-report .rb-text ol {
+  margin: 0 0 var(--space-12);
+  padding: 0;
+  list-style: none;
+  counter-reset: rbol;
+}
+.rb-report .rb-text ol li {
+  counter-increment: rbol;
+  font-size: 14px;
+  line-height: 1.7;
+  padding-left: 1.7em;
+  position: relative;
+  margin-bottom: var(--space-4);
+}
+.rb-report .rb-text ol li::before {
+  content: counter(rbol) ".";
+  position: absolute;
+  left: 0;
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+/* 強調用提亮不用色相——報告內色相全留給數據 */
+.rb-report .rb-text strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.rb-report .rb-text code {
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: var(--surface-card);
+  border-radius: var(--radius-micro);
+  padding: 1px var(--space-4);
+}
+.rb-report .rb-lead {
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface-card);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.rb-report .rb-lead p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* ---------- callout ---------- */
+.rb-report .rb-callout {
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface-card);
+  border-left: 2px solid var(--color-red);
+  border-radius: var(--radius-sm);
+}
+.rb-report .rb-callout.is-info {
+  border-left-color: var(--border-frame);
+}
+.rb-report .rb-callout-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.rb-report .rb-callout-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-micro);
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 400;
+  background: var(--color-redLight);
+  color: var(--color-redBlack);
+}
+.rb-report .rb-callout-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  margin-top: var(--space-4);
+}
+
+/* ---------- quote ---------- */
+.rb-report .rb-quote {
+  margin: var(--space-24) 0;
+  padding-left: var(--space-16);
+  border-left: 2px solid var(--border-frame);
+  font-size: 17px;
+  line-height: 1.6;
+  font-weight: 500;
+  color: var(--ink);
+}
+/* 出處歸屬:與 footnote 同屬「標注」家族 → 12px(此視圖標注類文字的下限),
+   不是 caption 的 11px;與引文共用左界內縮,不加破折號／引號／斜體 */
+.rb-report .rb-quote-cite {
+  display: block;
+  margin-top: var(--space-6);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* ---------- footnote ---------- */
+.rb-report .rb-footnotes {
+  margin-top: var(--space-32);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-hairline);
+}
+.rb-report .rb-fn {
+  display: flex;
+  gap: var(--space-8);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  margin-bottom: var(--space-6);
+}
+.rb-report .rb-fn-no {
+  flex: none;
+  font-size: 10.5px;
+  padding-top: var(--space-2);
+}
+/* 上標序號：結構性符號慣例，不加底線（密集底線在內文是噪音） */
+.rb-report .rb-fnref {
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--ink-3);
+  text-decoration: none;
+  vertical-align: super;
+  margin-left: 1px;
+}
+.rb-report a.rb-fnref:hover {
+  color: var(--ink);
+}
+
+/* ---------- code ---------- */
+.rb-report .rb-code {
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface-card);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.rb-report .rb-code pre {
+  margin: 0;
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.rb-report .rb-tok-k {
+  color: var(--color-code-keyword);
+}
+.rb-report .rb-tok-s {
+  color: var(--color-code-string);
+}
+.rb-report .rb-tok-n {
+  color: var(--color-code-number);
+}
+.rb-report .rb-tok-c {
+  color: var(--color-code-comment);
+}
+
+/* ---------- divider ---------- */
+.rb-report .rb-divider {
+  border: 0;
+  border-top: 1px solid var(--border-hairline);
+  margin: var(--space-32) 0;
+}
+
+/* ---------- image ---------- */
+/* max-width 不用 width:絕不把小圖放大成糊圖。半徑 lg=媒體容器與 Terminal
+   panel 上限的同一階,不在同一個閱讀視圖裡開第三種收角;hairline 讓深底圖
+   不與 darkBody 融成一片。絕不對圖上濾鏡／反白／調色——圖裡的顏色是資料本身 */
+.rb-report .rb-image {
+  margin-top: var(--space-8);
+}
+.rb-report .rb-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-hairline);
+}
+/* 破圖 icon 留在報告裡比沒有更糟:就地換成扁平框,內容是 alt(這張圖本來要
+   說什麼)。不放 Retry——整頁重載即重試,圖以 sha256 定址,取不到多半是真的不在了 */
+.rb-report .rb-image-fail {
+  padding: var(--space-16);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+}
+.rb-report .rb-image-fail-l {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-bottom: var(--space-4);
+}
+.rb-report .rb-image-fail-alt {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+/* ---------- 報告腳注 ---------- */
+.rb-report .rb-foot {
+  margin-top: var(--space-32);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-hairline);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* ---------- 語意色（tone）的特異性歸位 ----------
+   .rb-up / .rb-dn 必須贏過各消費點自己的文字色。`.rb-report td.rb-up` 與
+   `.rb-report .rb-table td` 特異性相同(0,2,1),靠的是**排在後面**——這一段
+   一律留在檔尾,新增的消費點也照此模式加在這裡,不要往上搬。 */
+.rb-report .rb-up,
+.rb-report td.rb-up,
+.rb-report .rb-kpi-value.rb-up,
+.rb-report .rb-metric-value.rb-up {
+  color: var(--color-green);
+}
+.rb-report .rb-dn,
+.rb-report td.rb-dn,
+.rb-report .rb-kpi-value.rb-dn,
+.rb-report .rb-metric-value.rb-dn {
+  color: var(--color-red);
+}

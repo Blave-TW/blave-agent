@@ -921,7 +921,8 @@ class Daemon:
         # held off the wire by the same window the cloud path uses — on top of
         # binance_link.js's own lock in the app process.
         # OKX / BingX / Gate.io / Bybit: command_listener._local_real_key_gate
-        # (the venue's own signed account read) decides, before any write.
+        # (the venue's own signed account read, plus the key's withdrawal
+        # permission where the venue exposes it) decides, before any write.
         cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES
                                          | {"BINANCE", "OKX", "BINGX", "GATEIO", "BYBIT"})
         cl._send_ack = self.write_ack  # the transport swap, ack side

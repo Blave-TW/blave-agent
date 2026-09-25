@@ -1,0 +1,286 @@
+{
+  "schema_version": "1.1",
+  "id": "mcpt-eth-funding-reversal-20260901",
+  "type": "research",
+  "title": "MCPT 顯著性檢定：eth_funding_reversal",
+  "created_at": 1788242760,
+  "blocks": [
+    {
+      "type": "meta",
+      "title": "MCPT 顯著性檢定：eth_funding_reversal",
+      "report_type": "一次性",
+      "generated_at": 1788242760,
+      "period": {
+        "from": "2024/09",
+        "to": "2026/08"
+      },
+      "origin": "chat",
+      "machine": "blave-agent-01",
+      "extra": [
+        {
+          "label": "置換次數",
+          "value": "1,000"
+        },
+        {
+          "label": "檢定統計量",
+          "value": "年化 Sharpe"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "variant": "lead",
+      "markdown": "實測 Sharpe 2.10 落在 null 分布第 99.2 百分位（p = 0.008）；參數四組無懸崖、與現有組合最大相關僅 +0.31——**建議進入 paper trading 驗證**。[^1]"
+    },
+    {
+      "type": "text",
+      "markdown": "## 方法\n\nMCPT（Monte Carlo Permutation Test）回答的問題是：**這條策略的報酬來自訊號，還是這段行情裡隨便進出也拿得到？**做法是保留持倉的「量」、打亂持倉的「時點」——*timing* 被抽掉之後，null 分布就是「同樣曝險、零擇時資訊」能拿到的運氣上限。[^2]\n\n1. 保留逐日持倉權重的分布，隨機置換其時間順序（打亂 `position` 序列，不動報酬序列）。\n2. 用置換後的持倉重算整段績效，得到一個「零擇時資訊」的年化 Sharpe。\n3. 重複 1,000 次構成 null 分布；實測值的落點百分位即 p 值。\n\n### 參數設定\n\n檢定與回測共用同一組參數；費用與滑價口徑見文末註。[^3]\n"
+    },
+    {
+      "type": "code",
+      "lang": "python",
+      "source": "# eth_funding_reversal — 檢定用參數(與回測一致)\nparams = {\n    \"lookback\":     20,   # 資金費率均線窗(bar)\n    \"entry_z\":      1.5,  # 進場 z-score 門檻\n    \"exit_z\":       0.3,\n    \"max_leverage\": 2.0,\n}\nN_PERM = 1000\n"
+    },
+    {
+      "type": "histogram",
+      "title": "NULL 分布（1,000 次置換）",
+      "bins": [
+        {
+          "x0": -1.3,
+          "x1": -1.1,
+          "count": 5
+        },
+        {
+          "x0": -1.1,
+          "x1": -0.9,
+          "count": 14
+        },
+        {
+          "x0": -0.9,
+          "x1": -0.7,
+          "count": 30
+        },
+        {
+          "x0": -0.7,
+          "x1": -0.5,
+          "count": 59
+        },
+        {
+          "x0": -0.5,
+          "x1": -0.3,
+          "count": 103
+        },
+        {
+          "x0": -0.3,
+          "x1": -0.1,
+          "count": 149
+        },
+        {
+          "x0": -0.1,
+          "x1": 0.1,
+          "count": 178
+        },
+        {
+          "x0": 0.1,
+          "x1": 0.3,
+          "count": 168
+        },
+        {
+          "x0": 0.3,
+          "x1": 0.5,
+          "count": 130
+        },
+        {
+          "x0": 0.5,
+          "x1": 0.7,
+          "count": 86
+        },
+        {
+          "x0": 0.7,
+          "x1": 0.9,
+          "count": 49
+        },
+        {
+          "x0": 0.9,
+          "x1": 1.1,
+          "count": 22
+        },
+        {
+          "x0": 1.1,
+          "x1": 1.3,
+          "count": 7
+        }
+      ],
+      "reflines": [
+        {
+          "x": 2.1,
+          "label": "2.10",
+          "emphasis": true
+        }
+      ],
+      "y_unit": "次",
+      "caption": "橫軸：置換樣本的年化 Sharpe；縱軸：次數。紅色參考線=實測值 2.10（第 99.2 百分位）"
+    },
+    {
+      "type": "box",
+      "title": "參數穩健性（lookback 四組）",
+      "groups": [
+        {
+          "label": "10",
+          "min": -3.2,
+          "q1": -0.8,
+          "median": 1.1,
+          "q3": 2.6,
+          "max": 5.2
+        },
+        {
+          "label": "15",
+          "min": -2.8,
+          "q1": -0.5,
+          "median": 1.5,
+          "q3": 3.0,
+          "max": 6.0
+        },
+        {
+          "label": "20",
+          "min": -2.4,
+          "q1": -0.3,
+          "median": 1.7,
+          "q3": 3.2,
+          "max": 6.4
+        },
+        {
+          "label": "30",
+          "min": -3.6,
+          "q1": -0.9,
+          "median": 1.2,
+          "q3": 2.7,
+          "max": 5.6
+        }
+      ],
+      "y_unit": "%",
+      "caption": "各組=該 lookback 下的月報酬分布（箱=四分位、粗線=中位數、鬚=P5–P95）；現用參數 lookback=20。四組中位數相近、無參數懸崖"
+    },
+    {
+      "type": "scatter",
+      "title": "風險/報酬（vs 現有組合）",
+      "points": [
+        {
+          "x": 12.4,
+          "y": 30.5,
+          "label": "eth_funding_reversal",
+          "role": "focus"
+        },
+        {
+          "x": 16.0,
+          "y": 32.0,
+          "label": "btc_whale_follow",
+          "role": "context"
+        },
+        {
+          "x": 6.5,
+          "y": 9.0,
+          "label": "eth_basis_carry",
+          "role": "context"
+        },
+        {
+          "x": 21.0,
+          "y": 24.0,
+          "label": "sol_momentum",
+          "role": "context"
+        },
+        {
+          "x": 11.0,
+          "y": 14.0,
+          "label": "doge_range_alert",
+          "role": "context"
+        }
+      ],
+      "regression": {
+        "slope": 1.5,
+        "intercept": 1.87
+      },
+      "x_unit": "%",
+      "y_unit": "%",
+      "caption": "橫軸：年化波動；縱軸：年化報酬（近 24 個月）。虛線=五點 OLS 回歸（斜率 1.5）；橘點=候選策略，位於回歸線上方"
+    },
+    {
+      "type": "heatmap",
+      "variant": "matrix",
+      "title": "與現有組合的相關（日報酬，近 12 個月）",
+      "labels": [
+        "eth_funding_reversal",
+        "btc_whale_follow",
+        "eth_basis_carry",
+        "sol_momentum",
+        "doge_range_alert"
+      ],
+      "values": [
+        [
+          null,
+          0.31,
+          0.08,
+          0.22,
+          -0.12
+        ],
+        [
+          0.31,
+          null,
+          0.18,
+          0.56,
+          0.44
+        ],
+        [
+          0.08,
+          0.18,
+          null,
+          0.11,
+          0.05
+        ],
+        [
+          0.22,
+          0.56,
+          0.11,
+          null,
+          0.38
+        ],
+        [
+          -0.12,
+          0.44,
+          0.05,
+          0.38,
+          null
+        ]
+      ],
+      "caption": "Pearson ρ；綠=正相關、紅=負相關，色深=|ρ| 四階（<0.25 / <0.5 / <0.75 / ≥0.75）——只編碼方向與強度，不帶好壞判斷；對角線自相關恆為 1、以 — 略去"
+    },
+    {
+      "type": "divider"
+    },
+    {
+      "type": "quote",
+      "text": "1,000 次置換裡只有 8 次追上實測值——這條策略的報酬來自訊號，不是這段行情的運氣。"
+    },
+    {
+      "type": "text",
+      "markdown": "綜合三項證據（顯著性 p = 0.008、參數無懸崖、與組合低相關），建議以 0.10 權重進入 paper trading；兩週後依實測滑價覆核第 3 註的費用假設。"
+    },
+    {
+      "type": "footnote",
+      "items": [
+        {
+          "id": "1",
+          "text": "年化 Sharpe 以日報酬 × √365 計，無風險利率設 0；與 Studio 回測面板同口徑。"
+        },
+        {
+          "id": "2",
+          "text": "置換保留逐日持倉權重分布、只打亂時間順序（Masters 型 MCPT）；多空比例與槓桿上限不變，故 null 已內含同等曝險。"
+        },
+        {
+          "id": "3",
+          "text": "回測含 taker 費 0.06% 與單邊滑價 2 bp；未計資金費率結算時點誤差，實盤報酬可能略低於回測。"
+        }
+      ]
+    }
+  ]
+}

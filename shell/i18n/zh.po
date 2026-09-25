@@ -916,6 +916,10 @@ msgstr "在 Binance 建金鑰時：只開交易權限、提領務必關閉，並
 msgid "cx.note.oneV"
 msgstr "在 {venue} 建金鑰時：只開交易權限，提領務必關閉。有設 IP 白名單的話，把這個 IP 加進去。"
 
+# 查不到提領權限的那家(Gate.io):Blave 不會替他擋,講明要自己確認
+msgid "cx.note.wdUnchecked"
+msgstr "Blave 查不到 {venue} 金鑰有沒有提領權限，不會替你擋下：連接前請自己確認這把金鑰的提領是關閉的。"
+
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 
@@ -2075,7 +2079,10 @@ msgid "cx.ip.retry"
 msgstr "再查一次"
 
 msgid "cx.chk.withdraw"
-msgstr "這把金鑰的提領權限是開著的，沒有儲存。到 Binance 把提領關掉，再回來連一次。"
+msgstr "這把金鑰有提領權限，沒有儲存。到 Binance 把這把金鑰的提領關掉，或換一把沒有提領權限的金鑰，再回來連一次。"
+
+msgid "cx.chk.withdrawV"
+msgstr "這把金鑰有提領權限，沒有儲存。到 {venue} 把這把金鑰的提領關掉，或換一把沒有提領權限的金鑰，再回來連一次。"
 
 msgid "cx.chk.trading"
 msgstr "這把金鑰沒開交易權限，沒有儲存。通常是還沒設 IP 白名單：把上面的 IP 加進白名單、勾選交易權限，再連一次。"
@@ -3050,12 +3057,6 @@ msgstr "已安裝"
 msgid "lib.unverified"
 msgstr "未驗證"
 
-msgid "lib.comm.title"
-msgstr "社群策略（{n}）"
-
-msgid "lib.comm.sub"
-msgstr "未驗證，作者自行上架"
-
 msgid "lib.foot"
 msgstr "想上架自己的策略？在網頁版投稿。"
 
@@ -3329,9 +3330,6 @@ msgstr "登入 Blave 之後才能下載到這台電腦。"
 msgid "lib.gate.login"
 msgstr "登入"
 
-msgid "lib.gate.noData"
-msgstr "這一小時付不出資料費，agent 拿不到策略庫。"
-
 msgid "lib.cf.title"
 msgstr "下載「{title}」？"
 
@@ -3361,3 +3359,256 @@ msgstr "雲端主機"
 
 msgid "lib.owned"
 msgstr "已購買"
+
+# ── 報告(spec-desktop-0.1.6 §1;renderer/reports.js)──
+msgid "rpt.nav"
+msgstr "報告"
+
+msgid "rpt.desc"
+msgstr "agent 把回測、晨報、研究整理成可以回頭讀的文件，寫好會出現在這裡。"
+
+msgid "rpt.count.one"
+msgstr "{n} 份報告"
+
+msgid "rpt.count.other"
+msgstr "{n} 份報告"
+
+msgid "rpt.ask"
+msgstr "新增報告"
+
+msgid "rpt.askAria"
+msgstr "新增報告——請 agent 產出一份"
+
+msgid "rpt.asking"
+msgstr "agent 寫作中…"
+
+msgid "rpt.more"
+msgstr "更早的報告 · {n} 份"
+
+msgid "rpt.empty"
+msgstr "還沒有報告。"
+
+msgid "rpt.emptyHint"
+msgstr "按右上角「新增報告」描述你要的內容，或直接在右邊對話裡跟 agent 說。"
+
+msgid "rpt.error"
+msgstr "讀不到雲端的報告清單。"
+
+msgid "rpt.retry"
+msgstr "重試"
+
+msgid "rpt.readErr"
+msgstr "讀不到這份報告。"
+
+msgid "rpt.note.pending"
+msgstr "進度在右邊的對話；寫好會出現在這裡。"
+
+msgid "rpt.err.noNew"
+msgstr "這一輪沒有產出新報告，原因在右邊的對話。"
+
+msgid "rpt.type.performance"
+msgstr "績效"
+
+msgid "rpt.type.morning"
+msgstr "晨報"
+
+msgid "rpt.type.research"
+msgstr "研究"
+
+# 側欄「報告」入口的記號(等待期間人在別的視圖,報告好了不拉回、只標記)
+msgid "rpt.newMark"
+msgstr "有新報告"
+
+# 新增報告 modal(§1.5;字逐字抄 web 的 workspace_rp_*,拿掉排程與「更多 › 報告」的地點詞)
+msgid "rpt.new.title"
+msgstr "新增報告"
+
+msgid "rpt.new.descLabel"
+msgstr "報告需求"
+
+msgid "rpt.new.descPh"
+msgstr "描述你要的報告，例如：每天收盤後幫我做台股持倉晨報，含法人買賣超。"
+
+msgid "rpt.new.examples"
+msgstr "範例："
+
+msgid "rpt.new.chip.tw"
+msgstr "台股大盤晨報"
+
+msgid "rpt.new.tpl.tw"
+msgstr "台股大盤晨報：加權指數與量能、三大法人、融資餘額、台指期與外資期貨淨多單，加上今天的判讀與觀察重點（該留意哪些指標、在什麼條件下）。"
+
+msgid "rpt.new.chip.close"
+msgstr "台股收盤報告"
+
+msgid "rpt.new.tpl.close"
+msgstr "台股收盤報告：今日加權指數收盤與量能、三大法人與融資（尚未公布則註明）、外資期貨淨多單，加上今天的判讀與觀察重點。休市日不出報告。"
+
+msgid "rpt.new.chip.crypto"
+msgstr "加密市場晨報"
+
+msgid "rpt.new.tpl.crypto"
+msgstr "加密市場晨報：BTC/ETH 走勢、資金費率、清算與 Blave 市場指標，加上今天的判讀。"
+
+msgid "rpt.new.chip.symbol"
+msgstr "單標的晨報"
+
+msgid "rpt.new.tpl.symbol"
+msgstr "單標的晨報（2330）：隔夜走勢、近期高低與均線（統計）、籌碼，以及觀察重點與條件。"
+
+msgid "rpt.new.chip.research"
+msgstr "研究報告"
+
+msgid "rpt.new.tpl.research"
+msgstr "研究報告：探討一個市場問題——<例：「Sell in May」在台股成立嗎／除息後平均幾天填息／外資連賣 5 天後，加權指數接下來 10 天過去怎麼走>。給我可被反駁的結論、支持與反對的數據、穩健性檢驗，以及什麼情況會推翻它。"
+
+msgid "rpt.new.honest"
+msgstr "報告由{where}的 agent 產出。首份報告非即時，完成後才會出現在左側欄的「報告」。"
+
+msgid "rpt.new.send"
+msgstr "請 agent 建立"
+
+msgid "rpt.new.sending"
+msgstr "送出中…"
+
+msgid "rpt.new.msgLead"
+msgstr "幫我建立報告"
+
+msgid "rpt.new.msgOnce"
+msgstr "這份只要產出一次，不用建立排程。"
+
+msgid "rpt.queued"
+msgstr "已送出。首份報告非即時，完成後會出現在左側欄的「報告」。"
+
+# 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
+msgid "modal.sendFailed"
+msgstr "送不出去，原因在右邊的對話。"
+
+# 報告渲染器的字串包(report-blocks.js 的 REPORT_I18N;zh 逐字同 web 的 workspace_report_*,腳注兩句改帶 {where})
+msgid "rb.originScheduled"
+msgstr "排程任務產出"
+
+msgid "rb.originChat"
+msgstr "對話產出"
+
+msgid "rb.machine"
+msgstr "主機"
+
+msgid "rb.footScheduled"
+msgstr "本報告由{where}的 agent 排程產出"
+
+msgid "rb.footChat"
+msgstr "本報告由{where}的 agent 對話產出"
+
+msgid "rb.metaPeriod"
+msgstr "期間"
+
+msgid "rb.metaAum"
+msgstr "AUM"
+
+msgid "rb.metaBenchmark"
+msgstr "基準"
+
+msgid "rb.calloutRisk"
+msgstr "風險"
+
+msgid "rb.footnoteRef"
+msgstr "註"
+
+msgid "rb.imageError"
+msgstr "圖片載入失敗"
+
+msgid "rb.segOther"
+msgstr "其他"
+
+# ── 新增策略 modal(spec-desktop-0.1.6 §4;renderer/newstrategy.js;字逐字抄 web 的 workspace_ns_*)──
+msgid "ns.title"
+msgstr "新增策略"
+
+msgid "ns.chip"
+msgstr "新增策略"
+
+msgid "ns.hint"
+msgstr "至少填寫一項，其餘交給 agent 判斷。"
+
+msgid "ns.name"
+msgstr "策略名稱"
+
+msgid "ns.namePh"
+msgstr "例如：均線黃金交叉"
+
+msgid "ns.symbol"
+msgstr "標的"
+
+msgid "ns.symbolPh"
+msgstr "台指期、鴻海、BTC"
+
+msgid "ns.timeframe"
+msgstr "週期"
+
+msgid "ns.timeframePh"
+msgstr "1h"
+
+msgid "ns.indicators"
+msgstr "指標"
+
+msgid "ns.indicatorsPh"
+msgstr "如 RSI、布林通道、taker intensity"
+
+msgid "ns.logic"
+msgstr "邏輯描述"
+
+msgid "ns.logicPh"
+msgstr "白話講進出場，例如：RSI 超賣且觸及布林下軌時做多，回到中軌平倉。"
+
+msgid "ns.previewLabel"
+msgstr "將送出到對話的訊息"
+
+msgid "ns.previewEmpty"
+msgstr "（至少填寫一項）"
+
+msgid "ns.libHint"
+msgstr "不知道從哪開始？"
+
+msgid "ns.libLink"
+msgstr "看策略庫的現成策略"
+
+msgid "ns.submit"
+msgstr "送出到對話"
+
+msgid "ns.sending"
+msgstr "送出中…"
+
+msgid "ns.msgLead"
+msgstr "幫我建立策略"
+
+msgid "ns.msgSymbol"
+msgstr "標的"
+
+msgid "ns.msgTimeframe"
+msgstr "週期"
+
+msgid "ns.msgIndicators"
+msgstr "指標"
+
+msgid "ns.msgLogic"
+msgstr "邏輯"
+
+msgid "ns.msgDefault"
+msgstr "加密貨幣標的未註明市場時，預設 USDT 本位永續合約。"
+
+# ── 策略庫「付不出資料費」的出口(spec-desktop-0.1.6 §3;取代 lib.gate.noData)──
+msgid "lib.gate.bindCard"
+msgstr "綁卡，送 {t} 天資料"
+
+msgid "lib.gate.topup"
+msgstr "儲值"
+
+msgid "lib.gate.noCard"
+msgstr "這個帳號還沒綁卡，agent 拿不到策略庫。"
+
+msgid "lib.gate.noBalance"
+msgstr "這一小時付不出資料費，agent 拿不到策略庫。儲值後馬上恢復。"
+
+msgid "lib.gate.unknown"
+msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「資料與雲端方案」重新查看。"

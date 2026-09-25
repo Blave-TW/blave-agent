@@ -47,6 +47,7 @@ if (!process.versions.electron) (async () => {
         (await codeOf("ValueError: INCOMPLETE_PAIR: okx needs OKX_API_KEY + OKX_SECRET_KEY + OKX_PASSPHRASE together — not saved")) === "INCOMPLETE_PAIR"
         && (await codeOf("ValueError: UNKNOWN: okx's account answer could not be read — not saved")) === "UNKNOWN"
         && (await codeOf("ValueError: no permission check exists for okx on this workspace (run 更新 blave agent first) — not saved")) === "NO_CHECK"
+        && (await codeOf("ValueError: WITHDRAW_ENABLED: 這把 okx 金鑰有提領權限,沒有儲存 (this okx key has withdrawal permission — not saved)")) === "WITHDRAW_ENABLED"
         && (await codeOf("RuntimeError: .env unreadable (OSError) — try again")) === "SEND_FAILED");
       reply = { ok: false, error: "DAEMON_DOWN" };
       ok("①b daemon 自己的代號原樣", J((await H({}, okx)).detail) === J({ error: "DAEMON_DOWN" }));
@@ -62,6 +63,11 @@ if (!process.versions.electron) (async () => {
   ok("② trEnvNames 與主行程 cloudcmd.venueEnvNames 同一組(解除綁定送的就是機器寫的)", ["binance", "okx", "bingx", "gateio", "bybit"].every((v) => J(trEnvNames(v)) === J(CC.venueEnvNames(v)))
     && J(trEnvNames("paper")) === J(["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"]));
   ok("② 名字表與主行程那份同一組交易所", J(Object.keys(CX_VENUES).sort()) === J(Object.keys(CC.CONNECT_VENUES).sort()) && CX_VENUES.okx.pass === true && !CX_VENUES.bybit.pass);
+  // 查不到提領權限的那家:renderer 的旗標要跟 runtime 的 _WITHDRAW_CHECKED 互補(tests/check_local_real_key_gate.py 從這邊反向釘)
+  { const cl = fs.readFileSync(path.join(SHELL, "..", "runtime", "command_listener.py"), "utf8"), m = /_WITHDRAW_CHECKED = frozenset\(\{([^}]*)\}\)/.exec(cl);
+    const checked = m ? m[1].split(",").map((s) => s.trim().replace(/"/g, "").toLowerCase()).filter(Boolean).sort() : null;
+    const flagged = Object.keys(CX_VENUES).filter((v) => CX_VENUES[v].noWdCheck), unflagged = Object.keys(CX_VENUES).filter((v) => v !== "binance" && !CX_VENUES[v].noWdCheck).sort();
+    ok("② noWdCheck 只標 Gate.io = runtime 查得到提領權限的那三家以外", J(flagged) === J(["gateio"]) && !!checked && J(unflagged) === J(checked)); }
   ok("② 顯示名:Gate.io / OKX / BingX(首字大寫會寫錯)", trVenueLabel("gateio") === "Gate.io" && trVenueLabel("okx") === "OKX" && trVenueLabel("bingx") === "BingX" && trVenueLabel("paper", true) === "cx.paperShort");
   ok("② 兩個視角都列五家(runtime 已在電腦版開放這四家,寫入前讀一次帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
 
@@ -116,6 +122,9 @@ app.whenReady().then(async () => {
     !!ph && ph[0] === (await js(`t("cx.passHint")`)) && /不是 OKX 的登入密碼/.test(await js(`STRINGS.zh["cx.passHint"]`)) && ph[1] === "cx-pass-hint" && ph[2] === true);
   await pick("bingx");
   ok("③ 沒有 Passphrase 的交易所:沒有那一行", await js(`!document.querySelector("#cx-body .cx-hint[id$='-hint']")`));
+  // 雲端主機同樣查 OKX / BingX / Bybit 的提領權限(runtime _withdraw_gate 每個模式都跑):框裡只有 Gate.io 講「Blave 查不到,請自己確認」
+  const wdHint = async (venue, label) => (await js(`[...document.querySelectorAll("#cx-body .cx-note .cx-hint")].map((p) => p.textContent)`)).indexOf(await js(`t("cx.note.wdUnchecked", { venue: ${J(label)} })`)) >= 0;
+  ok("③ 雲端:只有 Gate.io 有「查不到提領權限」那行,OKX / Binance 沒有", (await pick("gateio"), await wdHint("gateio", "Gate.io")) && (await pick("okx"), !(await wdHint("okx", "OKX"))) && (await pick("binance"), !(await wdHint("binance", "Binance"))));
   ok("③ 三格都是密碼欄、不自動完成", await js(`[...document.querySelectorAll("#cx-body input")].length > 0 && [...document.querySelectorAll("#cx-body input")].every((i) => i.type === "password" && i.autocomplete === "off")`));
   await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
@@ -164,6 +173,11 @@ app.whenReady().then(async () => {
     return js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`); };
   ok("③ 沒填齊(OKX):講三格要一起給", (await say("INCOMPLETE_PAIR")).indexOf(await js(`t("cx.chk.incompletePass")`)) >= 0);
   ok("③ UNKNOWN / NO_CHECK:那一家的句子", (await say("UNKNOWN")) === (await js(`t("cx.chk.unknownV", { venue: "OKX" })`)) && (await say("NO_CHECK")) === (await js(`t("cx.chk.noCheckV", { venue: "OKX" })`)));
+  ok("③ WITHDRAW_ENABLED:講 OKX 這把金鑰有提領權限、沒有儲存(不是 Binance 的句子)", (await say("WITHDRAW_ENABLED")) === (await js(`t("cx.chk.withdrawV", { venue: "OKX" })`)) && !/Binance/.test(await say("WITHDRAW_ENABLED")));
+  await pick("gateio");
+  ok("③ Gate.io:連接框多一行「Blave 查不到提領權限,請自己確認」;OKX 沒有", (await js(`[...document.querySelectorAll("#cx-body .cx-note .cx-hint")].map((p) => p.textContent)`)).indexOf(await js(`t("cx.note.wdUnchecked", { venue: "Gate.io" })`)) >= 0
+    && (await pick("okx"), (await js(`[...document.querySelectorAll("#cx-body .cx-note .cx-hint")].map((p) => p.textContent)`)).indexOf(await js(`t("cx.note.wdUnchecked", { venue: "OKX" })`)) < 0));
+  await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });   // 換家會清欄位;下面的等待狀態要它們在
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "REJECTED", detail: { reason: "AccountModeError: OKX 帳戶模式不支援合約 [okx_account_mode] (OKX acctLv=1)" } })`);
   await js(`$("cx-go").click()`); await wait(300);
   ok("③ 本機 REJECTED 帶 [okx_account_mode]:講怎麼改帳戶模式,不出原文", (await js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`)) === (await js(`t("cx.err.okxMode")`)));

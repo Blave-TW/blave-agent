@@ -570,13 +570,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("停機那幾句 en 用彎撇號(同檔其他句)", ["tr.cloud.restartStopped", "tr.restartStoppedLocal", "tr.ov.evRestartStoppedNote", "tm.evRestartStoppedNote", "tr.cloud.means.4"]
         .every((k) => { const m = en.match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m && !/'/.test(m[1]) && /’/.test(m[1]); })); }
     ok("「暫停下單」文字鈕:--ink-2、熱區跟主鈕等高", /\.main-head \.tr-go-stop \{ color: var\(--ink-2\); min-height: 32px;/.test(css)); }
-  { // S5 雲端連接的結果句(MVP 不查提領:沒有提領那一句)
+  { // S5 雲端連接的結果句(提領開著主機一樣擋,同一句)
     var CXF = { env: "cloud" }, cxCloudIp = () => "1.2.3.4", trSendError = (r) => (r.machineState === "stopped" ? "" : "send:" + r.error);
     eval(src.slice(src.indexOf("function cxChkTextCloud("), src.indexOf("const cxCalm")));
     const T = (code, detail) => cxChkTextCloud({ code, detail: detail || {} });
     ok("S5 每個代號一句;時鐘 / 網路 / 限速三種用雲端版", T("CLOCK") === "cx.chk.clockCloud" && T("NETWORK") === "cx.chk.networkCloud" && T("RATE_LIMITED") === "cx.chk.rateCloud"
       && T("RATE_BANNED") === "cx.chk.bannedCloud" && T("RATE_BACKOFF") === "cx.chk.backoffCloud" && T("IP_OR_KEY") === "cx.chk.ipOrKey" && T("INCOMPLETE_PAIR") === "cx.chk.incomplete" && T("TRADING_DISABLED") === "cx.chk.trading");
-    ok("S5 沒有提領那一句;拒絕原文截 200、結果不明不叫人重按、主機停了講停機", !/withdraw/.test(src.slice(src.indexOf("function cxChkTextCloud("), src.indexOf("const cxCalm")))
+    ok("S5 提領開著主機一樣擋,同一句;拒絕原文截 200、結果不明不叫人重按、主機停了講停機", T("WITHDRAW_ENABLED") === "cx.chk.withdraw"
       && T("REJECTED", { error: "z".repeat(300) }) === 'tr.cloud.cmdRejected{"err":"' + "z".repeat(200) + '"}' && T("CMD_UNKNOWN") === "tr.cloud.cxUnknown"
       && T("UNDELIVERED", { error: "MACHINE_NOT_RUNNING", machineState: "stopped" }) === "side.stopped" && T("UNDELIVERED", { error: "RATE_LIMITED" }) === "send:RATE_LIMITED"); }
   var fnS = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));

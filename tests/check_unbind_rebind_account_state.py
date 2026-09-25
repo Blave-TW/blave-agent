@@ -49,6 +49,7 @@ def _no_account_id(env):
 
 
 _okx.get_account_id = _no_account_id
+_okx.withdraw_enabled = lambda env: False  # the cloud withdrawal gate has its own test (check_credentials_withdraw_gate)
 
 fails = 0
 

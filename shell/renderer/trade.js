@@ -794,9 +794,10 @@ const TR_TAB_FEATURE = { over: "trade_overview", pos: "trade_positions", assets:
 const PAPER = "paper", BINANCE = "binance";
 /* 連接框列得出來的真實交易所(env 名同 cloudcmd.CONNECT_VENUES、網頁 CX_VENUES;群益在 Mac 上跑不起來,不列)。
    pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;另外四家的金鑰
-   由 command_listener._local_real_key_gate 在寫入前讀一次帳戶) */
+   由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。noWdCheck = 那家的 API 查不到自己有沒有提領權限
+   (runtime _WITHDRAW_CHECKED 沒列的那幾家;tests/check_shell_connect_venues 釘兩邊一致),連接框多講一句要用戶自己確認 */
 const CX_VENUES = { binance: { label: "Binance", env: "BINANCE" }, okx: { label: "OKX", env: "OKX", pass: true },
-  bingx: { label: "BingX", env: "BINGX" }, gateio: { label: "Gate.io", env: "GATEIO" }, bybit: { label: "Bybit", env: "BYBIT" } };
+  bingx: { label: "BingX", env: "BINGX" }, gateio: { label: "Gate.io", env: "GATEIO", noWdCheck: true }, bybit: { label: "Bybit", env: "BYBIT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit"];
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0);
 
@@ -1070,6 +1071,7 @@ async function trOpen(tab) {
   // 中欄一次只有一個視圖:先把這一邊的策略報告收掉(各邊各自選中的那支互不影響)
   if (S.env === "local") await stratSelect(null); else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);
   if (typeof libLeave === "function") libLeave(S.env);   // 策略庫也收(renderer/library.js)
+  if (typeof rptLeave === "function") rptLeave(S.env);   // 報告也收(renderer/reports.js)
   if (S !== TR_BAGS[ENV.cur]) { S.open = true; return; }   // 等的時候切走了:只記下這一邊是開著的,不碰另一邊的畫面
   $("main-empty").hidden = true; $("tr").hidden = false;
   $("tr-nav").setAttribute("aria-current", "page");
@@ -2692,6 +2694,7 @@ function cxIpChip(ip) {
 function cxChkTextVenue(r) {
   const c = r && r.code, name = trVenueLabel(CXF.venue, true), d = (r && r.detail) || {};
   if (c === "BAD_KEY_FORMAT") return t("cx.chk.keyFormatV", { venue: name });
+  if (c === "WITHDRAW_ENABLED") return t("cx.chk.withdrawV", { venue: name });
   if (c === "INCOMPLETE_PAIR") return CX_VENUES[CXF.venue] && CX_VENUES[CXF.venue].pass ? t("cx.chk.incompletePass") : t("cx.chk.incomplete");
   if (c === "REJECTED") return trErrToken(d.reason) === "okx_account_mode" ? t("cx.err.okxMode") : t("cx.chk.rejectedV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
   if (c === "UNKNOWN") return t("cx.chk.unknownV", { venue: name });
@@ -2719,11 +2722,11 @@ function cxSendFailText(r) {
   return TR_BAGS.local.st && TR_BAGS.local.st.alive ? t("cx.chk.sendFail", { err: e }) : t("cx.down");
 }
 const cxGateSlow = (r) => !!r && r.code === "SEND_FAILED" && !!r.detail && r.detail.error === "UNKNOWN_RESULT";
-/* 雲端連接的結果 → 那一句(spec-desktop-cloud-s5 §4;**MVP 不查提領**:沒有提領那一句)。
+/* 雲端連接的結果 → 那一句(spec-desktop-cloud-s5 §4;提領開著主機一樣擋,同一句)。
    本機那組寫死「這台電腦」的(時間、網路、限速)另寫雲端版;「上面這個 IP」在雲端就是主機的 IP,沿用。 */
 function cxChkTextCloud(r) {
   const c = r && r.code, d = (r && r.detail) || {};
-  return c === "TRADING_DISABLED" ? (cxCloudIp() ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
+  return c === "WITHDRAW_ENABLED" ? t("cx.chk.withdraw") : c === "TRADING_DISABLED" ? (cxCloudIp() ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
     : c === "INCOMPLETE_PAIR" ? t("cx.chk.incomplete") : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clockCloud") : c === "NETWORK" ? t("cx.chk.networkCloud")
     : c === "RATE_LIMITED" ? t("cx.chk.rateCloud") : c === "RATE_BANNED" ? t("cx.chk.bannedCloud") : c === "RATE_BACKOFF" ? t("cx.chk.backoffCloud")
@@ -2786,6 +2789,8 @@ function cxModalPaint() {
     if (CX_VENUES[venue] && CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", t("cx.passHint"));
     const note = trEl("div", "cx-note");
     note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
+    // 查不到提領權限的那家(runtime _WITHDRAW_CHECKED 沒有它 = Gate.io;本機與雲端主機同一張表):講明 Blave 不會替他擋,要自己確認
+    if (CX_VENUES[venue] && CX_VENUES[venue].noWdCheck) note.appendChild(trEl("p", "cx-hint", t("cx.note.wdUnchecked", { venue: trVenueLabel(venue, true) })));
     if (cloud) {   // 雲端的五處差異之 2:主機的 IP,不查、沒有「再查一次」;拿不到不擋(白名單本來就不強制)
       if (cip) note.appendChild(cxIpChip(cip));
       else { const w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip is-empty"); chip.appendChild(trEl("span", "v", t("cx.ip.cloudNone"))); w.appendChild(chip); note.appendChild(w); }
@@ -3068,7 +3073,7 @@ document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, t
 document.addEventListener("compositionend", () => { ENV_COMPOSING = false; }, true);
 // 開通頁看得見嗎(稽核 Q1):從這一頁按「綁卡」外開瀏覽器,回來要重查帳號狀態,不然畫面一直停在「綁卡」
 function envOpenVisible() { return ENV.cur === "cloud" && !$("cv-empty").hidden; }
-function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden; }
+function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden && $("ns-scrim").hidden && $("rpn-scrim").hidden; }   // 兩個表單 modal(新增策略 / 新增報告)開著也不切:送出時才讀視角,切了會送去另一台
 function envSwitchGuarded(env) {
   if ((env !== "local" && env !== "cloud") || !envCanSwitch()) return false;
   envSwitch(env); return true;
@@ -3124,6 +3129,7 @@ function envShowMain() {
     $("rp").hidden = !rp; $("main-empty").hidden = true; $("tr").hidden = gate || rp;
     if (rp) $("tr-nav").removeAttribute("aria-current"); else $("tr-nav").setAttribute("aria-current", "page");
     if (typeof libShowMain === "function") libShowMain(gate);   // 策略庫(第五個視圖)開著就蓋掉上面那幾個;開通頁開著時跟側欄入口一起收
+    if (typeof rptShowMain === "function") rptShowMain(gate);   // 報告(第六個視圖;renderer/reports.js)同一條
     return;
   }
   const L = TR_BAGS.local, rp = !L.open && !!(RP.name && RP.data);
@@ -3131,6 +3137,7 @@ function envShowMain() {
   $("main-empty").hidden = L.open || rp;
   $("tr").hidden = !L.open; if (L.open) $("tr-nav").setAttribute("aria-current", "page"); else $("tr-nav").removeAttribute("aria-current");
   if (typeof libShowMain === "function") libShowMain(false);
+  if (typeof rptShowMain === "function") rptShowMain(false);
 }
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
    每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */

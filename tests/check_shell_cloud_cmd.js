@@ -241,7 +241,7 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
       R("ValueError: IP_OR_KEY: rejected by binance").code === "IP_OR_KEY" && R("ValueError: BAD_SECRET: x").code === "BAD_SECRET"
       && R("ValueError: RATE_LIMITED: HTTPError 429").code === "RATE_LIMITED" && R("ValueError: RATE_LIMITED: HTTPError 418 banned").code === "RATE_BANNED"
       && R("ValueError: RATE_LIMITED: backing off 40s").code === "RATE_BACKOFF");
-    t("連接結果:MVP 不查提領——WITHDRAW_ENABLED 不是認得的代號,走一般拒絕(原文截 200)", R("ValueError: WITHDRAW_ENABLED: x").code === "REJECTED" && !M.CONNECT_CODES.includes("WITHDRAW_ENABLED")
+    t("連接結果:WITHDRAW_ENABLED 是認得的代號(提領開著主機擋下);不認得的代號走一般拒絕(原文截 200)", R("ValueError: WITHDRAW_ENABLED: 這把金鑰有提領權限").code === "WITHDRAW_ENABLED" && M.CONNECT_CODES.includes("WITHDRAW_ENABLED")
       && R("ValueError: EVIL_CODE: " + "z ".repeat(500)).code === "REJECTED" && R("boom " + "z ".repeat(500)).detail.error.length === 200);
     t("連接結果:被拒原文用這一次送出的金鑰值再遮一次(模擬那三個不是祕密,不遮)", (() => {
       const r = M.interpretConnect({ ok: false, kind: "rejected", error: "boom KEYaaaaaaaa / SECbbbbbbbb paper" }, { BINANCE_API_KEY: "KEYaaaaaaaa", BINANCE_SECRET_KEY: "SECbbbbbbbb", PAPER_API_KEY: "paper" });

@@ -18,10 +18,10 @@ const cut = (src, name) => { const i = src.indexOf("function " + name + "("); if
   t("交易權限沒了(P2):真的 show、標題內文對、回 true、不亮 Dock 紅點", r === true && x.made.length === 1 && x.made[0].shown && x.made[0].a.title === "交易權限沒了" && x.made[0].a.body === "b3" && x.badge() === null);
   x = mk(); r = x.call({ reason: "IP_CHANGED", level: "P2", ip: "203.0.113.7" });
   t("IP 換了(P2):{ip} 代進去、不亮紅點", r === true && x.made[0].a.body === "新的 IP 是 203.0.113.7" && x.badge() === null);
-  x = mk(); t("MVP 不做「提領後來被打開」那一則:沒有這個 reason 的字、叫了也不發;就算有人傳 level:P1 也不亮紅點", x.call({ reason: "WITHDRAW_ENABLED", level: "P1" }) === false && x.made.length === 0 && x.call({ reason: "IP_CHANGED", level: "P1", ip: "1.1.1.1" }) === true && x.badge() === null && !/key_wd|WITHDRAW_ENABLED/.test(cut(mainSrc, "binanceNotify")));
+  x = mk(); t("沒有「提領後來被打開」那一則(重查不看提領):沒有這個 reason 的字、叫了也不發;就算有人傳 level:P1 也不亮紅點", x.call({ reason: "WITHDRAW_ON", level: "P1" }) === false && x.made.length === 0 && x.call({ reason: "IP_CHANGED", level: "P1", ip: "1.1.1.1" }) === true && x.badge() === null && !/key_wd|WITHDRAW/.test(cut(mainSrc, "binanceNotify")));
   x = mk(); x.call({ reason: "IP_CHANGED", level: "P2", ip: "$&$1" });
   t("{ip} 用函式代入:$& 這類替換樣式不會被展開", x.made[0].a.body === "新的 IP 是 $&$1");
-  x = mk(); t("四種 reason 都有對應的字;表外的 reason 不發、回 false", ["IP_CHANGED", "KEY_REJECTED", "REJECTED", "TRADING_LOST"].every((k) => x.call({ reason: k, level: "P2" }) === true) && x.call({ reason: "constructor" }) === false && x.call({ reason: "NOPE" }) === false && x.call(null) === false);
+  x = mk(); t("四種 reason(= binance_check.VERDICT_LEVEL 全部)都有對應的字;表外的 reason 不發、回 false", (() => { const L = Object.keys(require("../shell/binance_check.js").VERDICT_LEVEL); return L.length === 4 && L.every((k) => x.call({ reason: k, level: "P2" }) === true); })() && x.call({ reason: "constructor" }) === false && x.call({ reason: "NOPE" }) === false && x.call(null) === false);
   x = mk({ labels: {} }); t("字還沒交過來 → 不發、回 false(binance_link 不會記成已通知,下一輪再試)", x.call({ reason: "TRADING_LOST", level: "P2" }) === false && x.made.length === 0);
   x = mk({ supported: false }); t("系統不支援通知 → 不發、回 false", x.call({ reason: "TRADING_LOST", level: "P2" }) === false && x.made.length === 0);
   x = mk(); x.call({ reason: "TRADING_LOST", level: "P2" }); x.made[0].emit("failed", {}, "not signed");
