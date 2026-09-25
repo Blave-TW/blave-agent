@@ -939,6 +939,7 @@ async function trPoll() {
         trSentCheck(C, now);
         if (envCloudKind(C.st) === "signedOut") { C.edits = {}; C.ov.curve = null; C.ov.ui = []; C.ov.uiErr = false; C.ov.curveErr = false; C.ov.perf = null; C.ov.perfErr = false; }   // ui 與 uiErr、curve 與 curveErr 各是一組,一起清
         if (typeof rpCloudPrune === "function") rpCloudPrune(C.list);   // 看著的那支被雲端刪了 / 換了帳號:報告收掉、回自動下單頁
+        if (typeof libCloudChanged === "function") libCloudChanged(C.list);   // 策略庫雲端視角的「已安裝」(renderer/library.js):清單多了那支才算下載完成
       } catch (_) { }
     }
     // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)

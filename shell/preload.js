@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld("blave", {
   hasBlaveToken: () => ipcRenderer.invoke("has-blave-token"),
   // 策略庫(renderer/library.js):清單由主行程打 api(畫面的 CSP 不外連);購買帶登入憑證、只在主行程;已安裝對照表存 userData
   libraryList: (lang, force) => ipcRenderer.invoke("library-list", lang, force),
+  libraryReport: (id, lang) => ipcRenderer.invoke("library-report", id, lang),
   libraryPurchase: (id, confirmTopup) => ipcRenderer.invoke("library-purchase", id, confirmTopup),
   libraryInstalled: (patch) => ipcRenderer.invoke("library-installed", patch),
   cancelAgentLogin: () => ipcRenderer.invoke("cancel-agent-login"),

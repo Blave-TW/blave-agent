@@ -1180,15 +1180,19 @@ function dataAccessWhy(signedIn) {
    清單 = GET /openclaw/marketplace/strategies(公開端點,renderer 的 CSP 不外連,所以在這裡打)。登入了就帶桌面資料 key
    (token_optional 認它、GET 一律放行)才拿得到 purchased / is_owner;沒有 key 就匿名。回應當不可信輸入:逐欄驗型別、
    壞的那一筆整筆丟掉、清單不是陣列 → null(畫面畫「讀不到」)。快取 5 分鐘(同 ACCT_FRESH_MS);身分或語言換了就重打。 */
-const LIB_TITLE_MAX = 200, LIB_TEXT_MAX = 5000, LIB_STR_MAX = 60, LIB_SPARK_MAX = 512;
+const LIB_TITLE_MAX = 200, LIB_TEXT_MAX = 5000, LIB_STR_MAX = 60, LIB_SPARK_MAX = 512, LIB_EQUITY_MAX = 400;
+const LIB_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const libFin = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+const libDay = (v) => (typeof v === "string" && LIB_DAY_RE.test(v) ? v : null);
+// 權益曲線:2 點起、上限給定、全部有限正數(累積報酬倍數)
+const libCurveOk = (v, max) => (Array.isArray(v) && v.length >= 2 && v.length <= max && v.every((x) => typeof x === "number" && isFinite(x) && x > 0) ? v.slice() : null);
 function libSanitize(body) {
   const list = body && typeof body === "object" && Array.isArray(body.strategies) ? body.strategies : null;
   if (!list) return null;
   // 控制字元一律拿掉;multi = 保留換行(說明要分段),否則連換行都拿掉(標題會進送給 agent 的那句話)
   const str = (v, max, multi) => (typeof v === "string" ? v.replace(multi ? /[\u0000-\u0009\u000b-\u001f\u007f]/g : /[\u0000-\u001f\u007f]/g, " ").slice(0, max) : null);
-  const fin = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const fin = libFin, day = libDay;
   const gate = (v) => (v === "pass" || v === "fail" || v === "na" ? v : null);
-  const day = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
   const out = [];
   for (const s of list) {
     if (!s || typeof s !== "object") continue;
@@ -1199,9 +1203,12 @@ function libSanitize(body) {
     if (s.report && typeof s.report === "object") {
       const r = s.report, g = r.gate_checks && typeof r.gate_checks === "object" ? r.gate_checks : null;
       const gc = g ? { mcpt: gate(g.mcpt), robust: gate(g.robust), fee: gate(g.fee) } : null;
-      const spark = Array.isArray(r.spark) && r.spark.length >= 2 && r.spark.length <= LIB_SPARK_MAX && r.spark.every((v) => typeof v === "number" && isFinite(v) && v > 0) ? r.spark.slice() : null;
-      report = { annual_return: fin(r.annual_return), sharpe: fin(r.sharpe), max_drawdown: fin(r.max_drawdown), symbol: str(r.symbol, LIB_STR_MAX), interval: str(r.interval, LIB_STR_MAX),
-        gate_checks: gc && gc.mcpt && gc.robust && gc.fee ? gc : null, spark, equity_from: day(r.equity_from), equity_to: day(r.equity_to) };
+      // 關卡的原始數值只收畫面要印的四個(p 值、鄰域保留比、假設 / 交易所費率);判定仍只認 api 的 gate_checks
+      const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+      const gw = obj(r.gates), rob = (gw && obj(gw.robust)) || {}, fee = (gw && obj(gw.fee)) || {};
+      report = { total_return: fin(r.total_return), annual_return: fin(r.annual_return), sharpe: fin(r.sharpe), max_drawdown: fin(r.max_drawdown), symbol: str(r.symbol, LIB_STR_MAX), interval: str(r.interval, LIB_STR_MAX),
+        gate_checks: gc && gc.mcpt && gc.robust && gc.fee ? gc : null, gates: gw ? { mcpt_p: fin(gw.mcpt_p), robust: { ratio: fin(rob.ratio) }, fee: { rate: fin(fee.rate), actual: fin(fee.actual) } } : null,
+        spark: libCurveOk(r.spark, LIB_SPARK_MAX), equity_from: day(r.equity_from), equity_to: day(r.equity_to) };
     }
     out.push({ id, title, summary: str(s.summary, LIB_TEXT_MAX, true), description: str(s.description, LIB_TEXT_MAX, true), price, category: str(s.category, LIB_STR_MAX),
       created_at: str(s.created_at, LIB_STR_MAX), purchase_count: Number.isInteger(s.purchase_count) && s.purchase_count >= 0 ? s.purchase_count : 0,
@@ -1230,6 +1237,31 @@ async function libraryList(langRaw, force) {
   if (!strategies) return null;
   libCache = { at: Date.now(), lang, signedIn, strategies };
   return { strategies, signedIn, dataAccess };
+}
+/* 詳情的完整報告:GET /openclaw/marketplace/strategies/<id>/report——只取 400 點權益曲線與回測期間(總報酬、關卡數值走清單:
+   一支資料一個來源)。公開策略匿名也拿得到;內容不隨身分變,快取 5 分鐘 per (id, lang)、登出 / 購買不用清。非 200 / 形狀不對 → null。 */
+function libReportSanitize(body) {
+  if (!body || typeof body !== "object") return null;
+  const r = { equity: libCurveOk(body.equity, LIB_EQUITY_MAX), equity_from: libDay(body.equity_from), equity_to: libDay(body.equity_to), backtest_start: libDay(body.backtest_start), backtest_end: libDay(body.backtest_end) };
+  return r.equity || r.backtest_start || r.backtest_end ? r : null;   // 全空(S3 暫時讀不到時 api 回 200 + 全 null)= 沒東西可套:當失敗、不進快取,下次再問
+}
+const libReportCache = new Map();   // `${id}:${lang}` → { at, report }
+async function libraryReport(id, langRaw) {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const lang = langRaw === "en" ? "en" : "zh", ck = `${id}:${lang}`, hit = libReportCache.get(ck);
+  if (hit && Date.now() - hit.at < ACCT_FRESH_MS) return hit.report;
+  const url = `${API_BASE}/openclaw/marketplace/strategies/${id}/report?lang=${lang}`;
+  const key = loadToken() ? loadDataKey() : null;
+  let r = null;
+  try {
+    r = await getJSON(url, key ? { "api-key": key.api_key, "secret-key": key.secret_key } : {});
+    if (key && r.status === 403) r = await getJSON(url, {});
+  } catch (_) { return null; }
+  if (r.status !== 200) return null;
+  const report = libReportSanitize(r.body);
+  if (!report) return null;
+  libReportCache.set(ck, { at: Date.now(), report });
+  return report;
 }
 /* 購買付費策略:POST /oauth/desktop/marketplace/purchase,帶帳號 token + app_secret(同 planStart:會動餘額與信用卡,
    帳號 token 單獨不准)。回 { status, body }:body 只留畫面分支要的幾欄;打不到 → { status: 0, body: null }。 */
@@ -1760,6 +1792,7 @@ app.whenReady().then(() => {
   handle("has-blave-token", () => !!loadToken());
   // 策略庫(renderer/library.js):清單與已安裝表只收自家頁面;購買會動到餘額與信用卡,拒絕時回「打不到」的形狀
   handle("library-list", (_e, lang, force) => libraryList(lang, force === true), null);
+  handle("library-report", (_e, id, lang) => libraryReport(id, lang), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   handle("sign-out-blave", () => signOutBlave());

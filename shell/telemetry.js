@@ -20,14 +20,14 @@ const EVENTS = {
   trade_started: { venue_kind: ["paper", "real"] },
   cloud_started: null,
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
-  // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 兩個先登記、還沒有送出點
+  // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 三個的送出點在 renderer/library.js(libTrack)
   feature_used: { name: ["report_backtest", "report_trades", "report_scan", "report_code", "scan_requested",
     "trade_overview", "trade_positions", "trade_assets", "trade_history", "trade_settings", "strategy_picker",
-    "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "settings_datasrc", "settings_plan", "library_open", "library_use"] },
+    "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "settings_datasrc", "settings_plan", "library_open", "library_use", "library_comm"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
-// 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 19 次,搶不到 api 那顆全域熔斷
+// 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關

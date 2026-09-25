@@ -5,7 +5,8 @@
    - 兩個視角各記一份「開著 / 詳情那支 / 分段 / 捲動」(LIB.bags,同 TR_BAGS 的作法);中欄誰該出現由 trade.js 的 envShowMain
      在最後一步問 libShowMain。選策略 / 開自動下單會 libLeave。
    - 「已安裝」(§1.2):外殼在 userData 記 { marketplace id → 本機策略資料夾名 };送出「用這支」那一輪結束、本機清單多了一支就記下;
-     名字被刪就從表裡拿掉。只有這台電腦視角在用;雲端只認 purchased / is_owner。
+     名字被刪就從表裡拿掉。雲端視角不寫檔:同一套「送出前記清單、之後看多了誰」的比法,只記在這次 app 開著的期間(libCloudChanged)。
+   - 不導流(§13):未驗證的社群策略也列(收合的「社群策略(N)」段),詳情用 /report 補到 400 點曲線、總報酬、關卡數值、回測期間;沒有任何開網頁的入口。
    - 付費策略在 app 內買(§4.4):購買框兩段對齊網頁 libBuy / libPurchase;憑證只在主行程(帳號 token + app 專用密鑰)。
    用到 app.js 的 $ / t / LANG / hasToken / running / RP / RPC / csTitle / csStartNew / submitMessage / confirmBox / delClose / setOpen / setCat /
    planOpen / stratSelect / rpCloudSelect / paneSt / paneToggle、trade.js 的 ENV / TR_BAGS / trLeave / envShowMain / envCanSwitch / envCloudKind /
@@ -40,14 +41,30 @@ function libCompare(a, b) {
   if (ca === cb) return 0; if (ca === null) return 1; if (cb === null) return -1;
   return cb - ca;
 }
-// 這個分段要畫的列 + 沒畫的未驗證社群策略數(規格 §3.1:未驗證的社群策略不列,只留一句導去網頁版)
+// 這個分段要畫的兩段(規格 §13.1):rows = 官方 ∪ 已驗證(主段);community = 未驗證的社群策略(收合的那一段);同一套排序
 function libVisible(list, mkt) {
   const inMkt = (Array.isArray(list) ? list : []).filter((s) => s && (mkt === "all" || libMarket(s) === mkt));
   const rows = inMkt.filter((s) => s.is_official || s.verified).sort(libCompare);
-  return { rows, hidden: inMkt.length - rows.length };
+  const community = inMkt.filter((s) => !s.is_official && !s.verified).sort(libCompare);
+  return { rows, community };
 }
+// 關卡數值的字(抄 web library_rules.rate / fillP):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p < 0.001 整段換成「p < 0.001」
+function libRate(v) {
+  if (typeof v !== "number" || !isFinite(v)) return "—";
+  let s = (v * 100).toFixed(4).replace(/0+$/, "");
+  if (/\.\d$/.test(s)) s += "0";
+  if (/\.$/.test(s)) s += "00";
+  return s + "%";
+}
+function libP(tpl, p) {
+  if (typeof p !== "number" || !isFinite(p)) return "—";
+  if (p < 0.001) return tpl.replace(/=\s*\{p\}/, "< 0.001").replace("{p}", "< 0.001");
+  return tpl.replace("{p}", p.toFixed(4));
+}
+function libGateFails(gc) { return gc ? ["fee", "mcpt", "robust"].filter((k) => gc[k] === "fail").length : 0; }
 /* CTA 態(規格 §1.3 + §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, cloud: "live"|"stale"|"stopped"|null,
-   pending, noNew, buying, installedName }。回 { state, paid, name, err }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略 */
+   pending, noNew, buying, installedName }。回 { state, paid, name, err }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略。
+   installedName 兩個視角各有來源(本機 = userData 的對照表、雲端 = 這次開 app 期間看到雲端清單多出來的那支),這裡只認有沒有 */
 function libCta(s, c) {
   const paid = !libIsFree(s) && !s.purchased && !s.is_owner, local = c.env !== "cloud";
   const st = (state, name) => ({ state, paid, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed") });
@@ -57,7 +74,7 @@ function libCta(s, c) {
   if (local && c.dataAccess === "none") return st("noData");
   if (!local && c.cloud !== "live") return st(c.cloud === "stopped" ? "stopped" : "stale");
   if (c.buying === s.id) return st("buying");
-  if (local && c.installedName) return st("installed", c.installedName);
+  if (c.installedName) return st("installed", c.installedName);
   if (paid) return st("paid");
   if (!libIsFree(s)) return st("owned");
   return st("free");
@@ -79,14 +96,17 @@ function libAmount(twd, rate, ccy, lang, ceil) {
 }
 function libPct(v) { return typeof v === "number" && isFinite(v) ? (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2) + "%" : "—"; }
 function libFixed(v, d) { return typeof v === "number" && isFinite(v) ? v.toFixed(d) : "—"; }
-const LIB_IV_KEYS = { "5m": "lib.iv.5m", "15m": "lib.iv.15m", "1h": "lib.iv.1h", "4h": "lib.iv.4h", "1d": "lib.iv.1d" };
+const LIB_IV_KEYS = { "5m": "lib.iv.5m", "15m": "lib.iv.15m", "1h": "lib.iv.1h", "2h": "lib.iv.2h", "4h": "lib.iv.4h", "8h": "lib.iv.8h", "12h": "lib.iv.12h", "1d": "lib.iv.1d" };
 const LIB_DIR_KEYS = { long: "lib.dir.long", long_short: "lib.dir.long_short", short: "lib.dir.short" };
 function libIvKey(iv) {
   const v = String(iv || "").toLowerCase().replace(/\s+/g, "");
   if (v === "5min" || v === "5m") return "5m";
   if (v === "15min" || v === "15m") return "15m";
   if (v === "60m" || v === "60min" || v === "1h") return "1h";
+  if (v === "2h" || v === "120m" || v === "120min") return "2h";
   if (v === "4h" || v === "240m" || v === "240min") return "4h";
+  if (v === "8h" || v === "480m" || v === "480min") return "8h";
+  if (v === "12h" || v === "720m" || v === "720min") return "12h";
   if (v === "1d" || v === "d" || v === "1day") return "1d";
   return null;
 }
@@ -117,8 +137,10 @@ function libCurve(spark, from, to) {
 /* ── 純邏輯到此 ── */
 
 const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, loading: false, skel: false, failed: false, stale: false, seq: 0,
-  pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null };
-function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null }; }
+  pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
+  cloudInstalled: {}, cloudWait: null, cloudNames: null };   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
+const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
+function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null, comm: false }; }
 const libEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
 const libBag = (env) => LIB.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
 const libWhere = () => t(libEnv() === "cloud" ? "lib.where.cloud" : "lib.where.local");
@@ -157,6 +179,39 @@ function libInstalledName(s) {
   window.blave.libraryInstalled({ id: s.id, name: null }).catch(() => {});
   return null;
 }
+/* 雲端視角的「已安裝」:沒有檔、沒有端點——送出「用這支」時記下雲端清單(名字 → mtime),回合結束後看清單多了哪一支(同本機的比法);
+   雲端清單跟著主機的回報走、可能晚幾輪才帶到新的那支,所以回合結束時比不到就掛著等(libCloudChanged,有上限)。那支從雲端清單消失就拿掉 */
+// 「這一份沒帶清單」≠ 空清單(同 trade.js trCloudListOk 那道門:索引讀不回、登出那一輪都是缺席)——缺席回 null,四個用的地方對 null 不刪、不記、不動
+const libCloudOk = () => !!(TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud && TR_BAGS.cloud.st.cloud.strategies_ok === true);
+const libCloudList = () => (libCloudOk() && typeof envCloudList === "function" ? envCloudList(TR_BAGS.cloud.st) : null);
+function libCloudInstalledName(s) {
+  const key = String(s.id), name = LIB.cloudInstalled[key], list = libCloudList();
+  if (!name) return null;
+  if (!list || list.some((x) => x.name === name)) return name;
+  delete LIB.cloudInstalled[key];
+  return null;
+}
+const libInstalledOf = (s, env) => ((env || libEnv()) === "cloud" ? libCloudInstalledName(s) : libInstalledName(s));
+// 雲端清單裡新出現、或同名 mtime 變了的那支就是這次下載的;記下了回 true。送出時或現在缺席就不猜
+function libCloudSettle(p, list) {
+  if (!p.before || !list) return false;
+  // 雲端的 mtime 是 api 的 updated_at:內容 hash 變、索引過期重報都會動,不能拿「mtime 變了」認策略——只認名字不在送出前清單裡的(新下載),或名字就是對照表已記的那支(再下載一份)
+  const known = LIB.cloudInstalled[String(p.id)], hit = list.find((x) => !p.before.has(x.name)) || list.find((x) => x.name === known && p.before.get(x.name) !== x.mtime);
+  if (!hit) return false;
+  LIB.cloudInstalled[String(p.id)] = hit.name;
+  return true;
+}
+function libCloudRepaintList() { if (!$("lib").hidden && libEnv() === "cloud" && !libBag().detail) libPaintList(); }
+// trade.js 每次讀到雲端清單都叫(trPoll):掛著的下載比一次;記下了或成員變了才重畫列(每輪重畫會把焦點打掉)
+function libCloudChanged(list) {
+  if (!libCloudOk() || !Array.isArray(list)) return;
+  const w = LIB.cloudWait;
+  let changed = false;
+  if (w) { if (libCloudSettle(w, list)) { LIB.cloudWait = null; changed = true; libSync(); } else if (Date.now() > w.until) LIB.cloudWait = null; }
+  const names = list.map((x) => x.name).join("\n");
+  if (names !== LIB.cloudNames) { LIB.cloudNames = names; changed = true; }
+  if (changed) libCloudRepaintList();
+}
 function libCtaOf(s) {
   const env = libEnv();
   return libCta(s, {
@@ -164,7 +219,7 @@ function libCtaOf(s) {
     signedIn: typeof hasToken !== "undefined" ? !!hasToken : !!(LIB.data && LIB.data.signedIn),
     dataAccess: LIB.data ? LIB.data.dataAccess : null, cloud: env === "cloud" ? libCloud() : null,
     pending: LIB.pending ? LIB.pending.id : null, noNew: LIB.noNew, buying: LIB.buying,
-    installedName: env === "cloud" ? null : libInstalledName(s),
+    installedName: libInstalledOf(s, env),
   });
 }
 
@@ -221,7 +276,7 @@ async function libLoad(force) {
   if (!$("lib").hidden && (prev === null || prev !== JSON.stringify(LIB.data) || LIB.paintedEnv !== libEnv())) libPaint();   // 沒變就不重畫(捲動、焦點、曲線都留著)
 }
 // 登入 / 登出 / 換帳號 / 買了(app.js 在 hasToken 翻轉的地方叫;購買成功自己叫):手上那份作廢,開著就立刻重問
-function libInvalidate() { LIB.stale = true; libRefresh(); }
+function libInvalidate() { LIB.stale = true; LIB.cloudInstalled = {}; LIB.cloudWait = null; LIB.cloudNames = null; libRefresh(); }   // 雲端「已安裝」是這個帳號的記憶:換人就丟
 // 視圖開著時重問一次(設定關掉、視窗回前景:綁卡 / 儲值後閘門要解)
 function libRefresh() { if (!$("lib").hidden) libLoad(false); }
 // 送出「用這支」那一輪結束(app.js onTurnEnd,stratRefresh(true) 之後):本機多了一支就記下對照表;沒有就出灰字。雲端只重問一次狀態
@@ -234,7 +289,11 @@ function libTurnEnd() {
     const touched = RP.list.filter((x) => p.before.get(x.name) !== x.mtime);
     const known = LIB.installed[String(p.id)], hit = touched.find((x) => x.name === known) || touched[0];
     if (hit) libInstalledSet(p.id, hit.name); else LIB.noNew = p.id;
-  } else if (window.blave && typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh().catch(() => {});
+  } else {
+    if (window.blave && typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh().catch(() => {});
+    if (libCloudSettle(p, libCloudList())) libCloudRepaintList();
+    else LIB.cloudWait = { id: p.id, before: p.before, until: Date.now() + LIB_CLOUD_WAIT_MS };   // 清單還沒跟上:等輪詢帶新的來
+  }
   libSync();
 }
 function libInstalledSet(id, name) {
@@ -249,7 +308,7 @@ function libSync() {
 }
 // 本機清單重建了(app.js stratRefresh):列上的「已安裝」跟著變、刪掉的從表裡拿掉
 function libStratChanged() { if (!$("lib").hidden && !libBag().detail) libPaintList(); }
-function libRepaint() { if ($("lib").hidden) return; libPaint(); if (LIB.data && LIB.data.lang !== LANG) libLoad(false); }   // api 給的標題 / 說明也要換語言
+function libRepaint() { if ($("lib").hidden) return; LIB.reports.clear(); libPaint(); if (LIB.data && LIB.data.lang !== LANG) libLoad(false); }   // api 給的標題 / 說明也要換語言;報告快取跟著語言走(主行程 per id:lang,沒問過的語言會再打一次)
 
 /* ── 畫 ──────────────────────────────────────────────── */
 function libPaint() {
@@ -258,16 +317,17 @@ function libPaint() {
   const det = B.detail ? libFind(B.detail) : null;
   $("lib-head-list").hidden = !!det; $("lib-back").hidden = !det;
   $("lib-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mkt === B.mkt ? "true" : "false"));
-  if (det) { $("lib-rows").textContent = ""; $("lib-state").hidden = true; $("lib-foot").hidden = true; libPaintDetail(det); }
+  if (det) { $("lib-rows").textContent = ""; $("lib-comm-wrap").hidden = true; $("lib-state").hidden = true; $("lib-foot").hidden = true; libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
 }
 function libTags(s) {
   const out = [];
   if (s.verified) out.push(libEl("span", "tag is-verified", t("lib.verified")));
+  else if (!s.is_official) out.push(libEl("span", "tag", t("lib.unverified")));   // 社群且沒過關卡:單層灰、純文字;官方未驗證不標
   if (libIsFree(s)) out.push(libEl("span", "tag", t("lib.free")));
   else if (s.purchased || s.is_owner) out.push(libEl("span", "tag", t("lib.owned")));
   else { const p = libEl("span", "tag is-price"); p.append(libPriceNode(s)); out.push(p); }
-  if (libEnv() !== "cloud" && libInstalledName(s)) out.push(libEl("span", "tag", t("lib.installed")));
+  if (libInstalledOf(s)) out.push(libEl("span", "tag", t("lib.installed")));
   return out;
 }
 // 「1,200 TWD」= .mono 數字 + 一般字幣別(同網頁 .lib-tag.is-price)
@@ -295,7 +355,7 @@ function libRow(s) {
   l1.appendChild(libEl("span", "t", s.title)); libTags(s).forEach((x) => l1.appendChild(x));
   l2.append(t(s.is_official ? "lib.official" : "lib.community"), " · ", ...libSymbolNodes(s));
   const y = libYears(s);
-  if (y !== null) l2.append(" · ", libRich("lib.years", { n: libMono(String(y)) }));
+  if (y !== null) l2.append(" · ", libRich("lib.years", { n: libMono(y.toFixed(1)) }));   // 同一組數字位數相同:1.0 年,不是 1 年
   l.append(l1, l2);
   const r = s.report, ann = r ? r.annual_return : null;
   const num = libEl("div", "num");
@@ -306,8 +366,8 @@ function libRow(s) {
   return b;
 }
 function libPaintList() {
-  const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), foot = $("lib-foot");
-  rows.textContent = ""; state.hidden = true; state.textContent = ""; foot.hidden = true; foot.textContent = "";
+  const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), foot = $("lib-foot"), wrap = $("lib-comm-wrap"), crows = $("lib-comm-rows");
+  rows.textContent = ""; state.hidden = true; state.textContent = ""; foot.hidden = true; foot.textContent = ""; wrap.hidden = true; crows.textContent = "";
   if (!LIB.data) {
     if (LIB.skel) {
       [94, 82, 90, 76, 87].forEach((w) => {
@@ -323,9 +383,16 @@ function libPaintList() {
     return;
   }
   const v = libVisible(LIB.data.strategies, B.mkt);
-  if (!v.rows.length) { state.hidden = false; state.textContent = t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"); }
+  if (!v.rows.length && !v.community.length) { state.hidden = false; state.textContent = t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"); }   // 主段空但社群段有:只出社群段
   v.rows.forEach((s) => rows.appendChild(libRow(s)));
-  if (v.hidden > 0) { foot.hidden = false; foot.textContent = t("lib.hiddenNote", { n: v.hidden }); }
+  if (v.community.length) {
+    wrap.hidden = false;
+    const tt = $("lib-comm-t"); tt.textContent = ""; tt.appendChild(libRich("lib.comm.title", { n: libMono(String(v.community.length)) }));
+    $("lib-comm").setAttribute("aria-expanded", String(B.comm));
+    crows.hidden = !B.comm;
+    if (B.comm) v.community.forEach((s) => crows.appendChild(libRow(s)));
+  }
+  foot.hidden = false; foot.textContent = t("lib.foot");   // 投稿是賣家流程、app 沒有:純文字腳注,不是入口
 }
 function libShowDetail(id) {
   const B = libBag(); B.row = id; B.detail = id;
@@ -335,7 +402,7 @@ function libShowDetail(id) {
 function libBack() {
   const B = libBag(); B.detail = null; LIB.noNew = null;
   libPaint();
-  const r = $("lib-rows").querySelector('.lib-row[data-id="' + B.row + '"]');
+  const r = $("lib-body").querySelector('.lib-row[data-id="' + B.row + '"]');   // 主段或(展開著的)社群段
   if (r) r.focus(); else $("lib-h").focus();
 }
 function libKv(rows) {
@@ -365,31 +432,38 @@ function libPaintDetail(s) {
   const split = libEl("div", "lib-split"), colA = libEl("div", "lib-kvcol"), colB = libEl("div", "lib-kvcol");
   const y = libYears(s), days = libListedDays(s, now);
   colA.append(libEl("div", "gh", t("lib.kv.bt")), libKv([
-    [t("lib.kv.ann"), libPct(r ? r.annual_return : null)], [t("lib.kv.sharpe"), libFixed(r ? r.sharpe : null, 2)],
-    [t("lib.kv.mdd"), libPct(r ? r.max_drawdown : null)], [t("lib.kv.sample"), y === null ? "—" : t("lib.sampleYrs", { n: String(y) })]]));
+    [t("lib.kv.total"), libPct(r ? r.total_return : null)], [t("lib.kv.ann"), libPct(r ? r.annual_return : null)], [t("lib.kv.sharpe"), libFixed(r ? r.sharpe : null, 2)],
+    [t("lib.kv.mdd"), libPct(r ? r.max_drawdown : null)], [t("lib.kv.sample"), y === null ? "—" : t("lib.sampleYrs", { n: y.toFixed(1) })]]));
   colB.append(libEl("div", "gh", t("lib.kv.listed")), libKv([[t("lib.kv.days"), days === null ? "—" : String(days)], [t("lib.kv.installs"), String(s.purchase_count)]]));
   split.append(colA, colB); c1.appendChild(split); det.appendChild(c1);
-  // 卡 2:三道品質關卡——只依 api 的 gate_checks 渲染,前端不重算;官方沒有就整張不出,社群沒有出一句
+  // 卡 2:三道品質關卡——只依 api 的 gate_checks 渲染,前端不重算;官方沒有就整張不出。社群:先講結論(沒過幾道 / 沒跑過),再列三道
   const gc = r && r.gate_checks;
   if (gc || !s.is_official) {
     const c2 = libEl("div", "lib-card"); c2.appendChild(libEl("h6", "", t("lib.gates.title")));
+    if (!s.is_official && !gc) c2.appendChild(libEl("p", "lib-p", t("lib.gates.community")));
+    else if (!s.is_official && libGateFails(gc) > 0) { const p = libEl("p", "lib-p"); p.appendChild(libRich("lib.gates.failed", { k: libMono(String(libGateFails(gc))) })); c2.appendChild(p); }
     if (gc) {
+      const g = r.gates || {}, fee = g.fee || {}, rob = g.robust || {};
+      const vals = { fee: [t("lib.gate.feeAssumed", { v: libRate(fee.rate) }), t("lib.gate.feeActual", { v: libRate(fee.actual) })], mcpt: gc.mcpt === "na" ? [] : [libP(t("lib.gate.p"), g.mcpt_p)],
+        robust: [typeof rob.ratio === "number" && isFinite(rob.ratio) ? t("lib.gate.robustVal", { ratio: String(Math.round(rob.ratio * 100)) }) : "—"] };
       const ul = libEl("ul", "gates");
       [["fee", "lib.gate1", "lib.gate1d"], ["mcpt", "lib.gate2", "lib.gate2d"], ["robust", "lib.gate3", "lib.gate3d"]].forEach(([key, n, d]) => {
-        const li = libEl("li"), v = gc[key];
-        const gv = libEl("span", "gv " + (v === "pass" ? "up" : v === "fail" ? "down" : "na"), t(v === "pass" ? "lib.gate.pass" : v === "fail" ? "lib.gate.fail" : "lib.gate.na"));
-        li.append(libEl("span", "gn", t(n)), gv, libEl("span", "gd", t(d))); ul.appendChild(li);
+        const li = libEl("li"), v = gc[key], gr = libEl("span", "gr");
+        gr.appendChild(libEl("span", "gv " + (v === "pass" ? "up" : v === "fail" ? "down" : "na"), t(v === "pass" ? "lib.gate.pass" : v === "fail" ? "lib.gate.fail" : "lib.gate.na")));
+        vals[key].forEach((x) => gr.appendChild(libEl("span", "gx mono", x)));
+        li.append(libEl("span", "gn", t(n)), gr, libEl("span", "gd", t(d))); ul.appendChild(li);
       });
       c2.appendChild(ul);
-    } else c2.appendChild(libEl("p", "lib-p", t("lib.gates.community")));
+    }
     det.appendChild(c2);
   }
   // 卡 3:它怎麼交易
   const c3 = libEl("div", "lib-card"); c3.appendChild(libEl("h6", "", t("lib.how")));
   if (s.description && s.description.trim()) c3.appendChild(libEl("p", "lib-p", s.description.trim()));
   const dl = libEl("dl", "lib-dl");
-  const dd = (k, v) => { dl.appendChild(libEl("dt", "", k)); const d = libEl("dd"); if (v instanceof Node) d.appendChild(v); else d.textContent = v; dl.appendChild(d); };
-  if (r && r.equity_from && r.equity_to) dd(t("lib.meta.period"), libMono(r.equity_from + " — " + r.equity_to));
+  const dd = (k, v, id) => { dl.appendChild(libEl("dt", "", k)); const d = libEl("dd"); if (id) d.id = id; if (v instanceof Node) d.appendChild(v); else d.textContent = v; dl.appendChild(d); };
+  // 回測期間:先用清單的曲線區間,/report 回來就地換成 backtest_start/end(有報告列就留一格,沒曲線先寫 —)
+  if (r) dd(t("lib.meta.period"), r.equity_from && r.equity_to ? libMono(r.equity_from + " — " + r.equity_to) : "—", "lib-period");
   const symWrap = libEl("span"); symWrap.append(...libSymbolNodes(s)); dd(t("lib.meta.symbol"), symWrap);
   if (s.direction && LIB_DIR_KEYS[s.direction]) dd(t("lib.meta.direction"), t(LIB_DIR_KEYS[s.direction]));
   if (typeof s.max_exposure === "number") dd(t("lib.meta.exposure"), libRich("lib.exposure", { n: libMono(String(+s.max_exposure.toFixed(2))) }));
@@ -400,6 +474,27 @@ function libPaintDetail(s) {
   [t("lib.after1", { where }), t("lib.after2"), t("lib.after3")].forEach((x, i) => { const li = libEl("li"); li.append(libEl("span", "n mono", String(i + 1)), libEl("span", "", x)); ol.appendChild(li); });
   c4.appendChild(ol); det.appendChild(c4);
   if (chartHost) libChartDraw(chartHost, r);
+  if (r) libReportLoad(s);   // 兩段式:先用 64 點 spark 畫,/report 回來換 400 點——同一支才動、只換曲線與回測期間,不整頁重畫
+}
+function libReportLoad(s) {
+  let p = LIB.reports.get(s.id);
+  if (!p) {
+    p = window.blave.libraryReport(s.id, LANG).then((rep) => (rep && typeof rep === "object" ? rep : null)).catch(() => null);
+    LIB.reports.set(s.id, p);
+    p.then((rep) => { if (!rep) LIB.reports.delete(s.id); });   // 失敗不記:下次進詳情再問(主行程失敗也不記,會真的再打一次);畫面停在 spark、不出錯誤字
+  }
+  p.then((rep) => { if (rep && !$("lib").hidden && libBag().detail === s.id) libReportApply(rep); });
+}
+function libReportApply(rep) {
+  const det = $("lib-det"), curve = rep.equity ? { spark: rep.equity, equity_from: rep.equity_from, equity_to: rep.equity_to } : null;
+  if (curve && libCurve(curve.spark, curve.equity_from, curve.equity_to)) {   // 先確認畫得出來:換不成就留著 spark,不能從有圖退成沒圖
+    let host = $("lib-chart");
+    if (host) libChartDrop();
+    else { const none = det.querySelector(".lib-card .chart-none"); if (none) { host = libEl("div", "chart"); host.id = "lib-chart"; none.replaceWith(host); } }
+    if (host) libChartDraw(host, curve);
+  }
+  const per = $("lib-period");
+  if (per && rep.backtest_start && rep.backtest_end) { per.textContent = ""; per.appendChild(libMono(rep.backtest_start + " — " + rep.backtest_end)); }
 }
 function libCtaMain() { const c = $("lib-cta"); return c ? c.querySelector(".btn-fill") : null; }
 function libPaintCta(s) {
@@ -418,7 +513,7 @@ function libPaintCta(s) {
     case "pending": row.appendChild(dis(t("lib.pending"))); note.textContent = t("lib.note.pending"); break;
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); paidNote(); break;
     case "installed":
-      row.append(btn("btn-fill", t("lib.open"), () => stratSelect(c.name)), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
+      row.append(btn("btn-fill", t("lib.open"), () => (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name))), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
       note.textContent = t("lib.note.installed", { where }); break;
     case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); paidNote(); break;
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); note.textContent = t("lib.note.owned", { where }); break;
@@ -449,7 +544,8 @@ function libSend(s) {
   if (!msg) return;
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡回報
   if (csTitle) csStartNew();
-  const env = libEnv(), before = new Map(RP.list.map((x) => [x.name, x.mtime]));   // 同 stratRefresh 的比法:名字 + mtime
+  const env = libEnv(), cl = env === "cloud" ? libCloudList() : RP.list, before = cl ? new Map(cl.map((x) => [x.name, x.mtime])) : null;   // 同 stratRefresh 的比法:名字 + mtime;雲端清單缺席就不記(之後不猜)
+  if (env === "cloud") LIB.cloudWait = null;   // 上一支還在等清單跟上就放掉:寧可它沒標「已安裝」,也不能把第二支的資料夾記到第一支
   submitMessage(msg).then((ok) => { if (ok) { LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use"); } libSync(); });
 }
 
@@ -531,7 +627,7 @@ function libChartDraw(host, r) {
   g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); });
   g("chat-lib").addEventListener("click", () => libOpen());
   g("lib-back").addEventListener("click", libBack);
-  g("lib-web").addEventListener("click", () => window.blave.openExternal("https://blave.org/agent/" + LANG + "/library"));
+  g("lib-comm").addEventListener("click", () => { const B = libBag(); B.comm = !B.comm; libPaintList(); g("lib-comm").focus(); if (B.comm) libTrack("library_comm"); });   // 靜態節點不用委派;libPaintList 不動 #lib-body 的捲動
   g("lib-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mkt]"); if (!b) return; libBag().mkt = b.dataset.mkt; libPaint(); });
   g("lib-body").addEventListener("scroll", () => { const B = libBag(); if (!B.detail) B.scroll = g("lib-body").scrollTop; });
   window.addEventListener("focus", () => libRefresh());   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
