@@ -11,7 +11,7 @@
 // 跑法:node tests/check_shell_library.js(找不到 shell/node_modules 的 Electron 時 ④ SKIP,①②③ 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
-let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 300))); if (!c) red++; };
+let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 2000))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
 const src = read(path.join(R, "library.js")), appSrc = read(path.join(R, "app.js")), trSrc = read(path.join(R, "trade.js"));
 const html = read(path.join(R, "index.html")), strings = read(path.join(R, "strings.js")), mainSrc = read(path.join(SHELL, "main.js")), pre = read(path.join(SHELL, "preload.js"));
@@ -27,13 +27,18 @@ const WEB_MSG = {
 const SPARK = Array.from({ length: 64 }, (_, i) => +(1 + i * 0.03).toFixed(4));
 const S = (o) => Object.assign({ id: 1, title: "x", summary: null, description: null, price: 0, category: "Crypto", created_at: "2026-06-10 00:00:00", purchase_count: 0,
   purchased: false, is_owner: false, is_official: true, verified: true, direction: null, max_exposure: null, report: null }, o);
-const REP = (o) => Object.assign({ annual_return: 24.61, sharpe: 1.5, max_drawdown: -20, symbol: "BTCUSDT", interval: "5m", gate_checks: { mcpt: "pass", robust: "pass", fee: "pass" }, spark: SPARK, equity_from: "2020-01-01", equity_to: "2026-06-30" }, o);
+const EQ400 = Array.from({ length: 400 }, (_, i) => +(1 + i * 0.005).toFixed(4));
+const GATES = { mcpt_status: "pass", mcpt_p: 0.0004, mcpt_n: 1000, robust: { ratio: 0.91, raw_sharpe: 1.5, plateau_sharpe: 1.37 }, fee: { rate: 0.0005, actual: 0.0004 } };
+const REP = (o) => Object.assign({ total_return: 312.5, annual_return: 24.61, sharpe: 1.5, max_drawdown: -20, symbol: "BTCUSDT", interval: "5m", gate_checks: { mcpt: "pass", robust: "pass", fee: "pass" }, gates: GATES, spark: SPARK, equity_from: "2020-01-01", equity_to: "2026-06-30" }, o);
+const REPORT = { strategy_id: 101, title: "x", equity: EQ400, equity_from: "2020-01-01", equity_to: "2026-06-30", backtest_start: "2019-12-02", backtest_end: "2026-06-30", created_at: "2026-06-10 00:00:00", gates: GATES };
 const LIST = [
   S({ id: 101, title: "BTC 通道動能共振", summary: "通道 + 動能。", description: "第一段。\n第二段。", created_at: "2026-06-10 00:00:00", purchase_count: 7, direction: "long", max_exposure: 1, report: REP({}) }),
   S({ id: 74, title: "台指期 PCR 未平倉籌碼偏多", category: "TW Stock", created_at: "2026-06-14 00:00:00", purchase_count: 12, report: REP({ symbol: "TXF", interval: "1d", annual_return: 12.28, gate_checks: { mcpt: "na", robust: "pass", fee: "pass" }, equity_from: "2014-04-08", equity_to: "2026-08-28" }) }),
   S({ id: 72, title: "DOGE 籌碼集中度", created_at: "2026-06-10 00:00:00", purchase_count: 18, report: REP({ symbol: "DOGEUSDT", interval: "1h", equity_from: "2023-03-02", equity_to: "2026-08-31" }) }),
   S({ id: 86, title: "ETH 多空力道動能", verified: false, created_at: "2026-07-12 00:00:00", report: REP({ symbol: "ETHUSDT", interval: "1h", gate_checks: null, spark: null, equity_from: null, equity_to: null }) }),
-  S({ id: 8, title: "BTC Taker Bundle", is_official: false, verified: false, price: 1200, created_at: "2026-05-16 00:00:00", report: REP({ gate_checks: null }) }),
+  S({ id: 8, title: "BTC Taker Bundle", is_official: false, verified: false, price: 1200, created_at: "2026-05-16 00:00:00", report: REP({ gate_checks: null, gates: null }) }),
+  // 社群、跑過關卡但兩道沒過(費率低於交易所、p 不顯著):列在社群段、詳情先講「2 道關卡未通過」
+  S({ id: 12, title: "SOL 動能 二道未過", is_official: false, verified: false, price: 800, created_at: "2026-05-20 00:00:00", report: REP({ symbol: "SOLUSDT", interval: "1h", gate_checks: { mcpt: "fail", robust: "pass", fee: "fail" }, gates: { mcpt_status: "fail", mcpt_p: 0.12, mcpt_n: 1000, robust: { ratio: 0.82 }, fee: { rate: 0.0003, actual: 0.0004 } } }) }),
   S({ id: 5, title: "Cash-and-Carry <img onerror=x> Arbitrage", is_official: false, verified: true, price: 1500, created_at: "2026-05-02 00:00:00", purchase_count: 3, report: null }),
   S({ id: 9, title: "已買的社群策略", is_official: false, verified: true, price: 900, purchased: true, created_at: "2026-04-02 00:00:00", report: null }),
 ];
@@ -49,18 +54,21 @@ if (!process.versions.electron) {
     && P.libMarket({ category: "trend", report: { symbol: "TXF" } }) === "tw" && P.libMarket({ category: "bundle", report: { symbol: "2330" } }) === "tw" && P.libMarket({ category: "Crypto", report: { symbol: "BTCUSDT" } }) === "crypto"
     && P.libMarket({ category: "network", report: { symbol: "" } }) === "crypto" && P.libMarket({}) === "crypto" && P.libMarket(null) === "crypto");
   const v = P.libVisible(LIST, "all");
-  ok("① 排序 = 已驗證 → 樣本長 → 新;未驗證的社群策略不列、算進 hidden;未驗證的官方照列", v.rows.map((s) => s.id).join() === "74,101,72,5,9,86" && v.hidden === 1);
-  ok("① 分段:台股 1 支;加密 5 支 + hidden 1;沒有的市場空陣列", P.libVisible(LIST, "tw").rows.map((s) => s.id).join() === "74" && P.libVisible(LIST, "crypto").rows.length === 5 && P.libVisible(LIST, "crypto").hidden === 1 && P.libVisible([], "tw").rows.length === 0 && P.libVisible(null, "all").hidden === 0);
+  ok("① 主段排序 = 已驗證 → 樣本長 → 新;未驗證的官方照列;未驗證的社群策略進 community(同一套排序:樣本同長就新的先)、不再有 hidden", v.rows.map((s) => s.id).join() === "74,101,72,5,9,86" && v.community.map((s) => s.id).join() === "12,8" && !("hidden" in v));
+  ok("① 分段:台股 1 支、社群 0;加密 5 支 + 社群 2;沒有的市場兩段都空陣列", P.libVisible(LIST, "tw").rows.map((s) => s.id).join() === "74" && P.libVisible(LIST, "tw").community.length === 0 && P.libVisible(LIST, "crypto").rows.length === 5 && P.libVisible(LIST, "crypto").community.length === 2
+    && P.libVisible([], "tw").rows.length === 0 && P.libVisible(null, "all").community.length === 0);
+  ok("① 關卡數值的字:費率 0.0005 → 0.05%、0.001 → 0.10%、0.00125 → 0.125%、壞值 —;p 照範本四位小數、< 0.001 整段換成 p < 0.001、壞值 —;fail 計數", P.libRate(0.0005) === "0.05%" && P.libRate(0.001) === "0.10%" && P.libRate(0.00125) === "0.125%" && P.libRate(0) === "0.00%" && P.libRate(null) === "—" && P.libRate("x") === "—"
+    && P.libP("p = {p}", 0.0012) === "p = 0.0012" && P.libP("p = {p}", 0.0004) === "p < 0.001" && P.libP("p = {p}", null) === "—" && P.libGateFails({ mcpt: "fail", robust: "pass", fee: "fail" }) === 2 && P.libGateFails({ mcpt: "na", robust: "pass", fee: "pass" }) === 0 && P.libGateFails(null) === 0);
   ok("① 樣本年數一位小數;沒有區間 → null;上架天數", P.libYears(LIST[0]) === 6.5 && P.libYears(LIST[1]) === 12.4 && P.libYears(LIST[3]) === null && P.libListedDays(LIST[0], Date.parse("2026-09-25T00:00:00Z")) === 107 && P.libListedDays({}, 0) === null);
   const C = (s, c) => P.libCta(s, Object.assign({ running: false, env: "local", signedIn: true, dataAccess: "included", cloud: null, pending: null, noNew: null, buying: null, installedName: null }, c));
-  const free = LIST[0], paid = LIST[5], owned = LIST[6];
+  const free = LIST[0], paid = LIST[6], owned = LIST[7];
   ok("① CTA 先後:進行中(那支自己)> 回合中 > 未登入 > 付不出 > 購買中 > 已安裝 > 付費 > 已購 > 免費", C(free, { running: true, pending: 101 }).state === "pending" && C(free, { running: true, pending: 72 }).state === "busy" && C(free, { running: true, signedIn: false }).state === "busy" && C(free, { signedIn: false, dataAccess: "none" }).state === "signedOut"
     && C(free, { dataAccess: "none", pending: 72 }).state === "noData" && C(free, { pending: 101, installedName: "a" }).state === "pending" && C(paid, { buying: 5, installedName: "a" }).state === "buying"
     && C(free, { installedName: "btc" }).state === "installed" && C(free, { installedName: "btc" }).name === "btc" && C(paid, {}).state === "paid" && C(owned, {}).state === "owned" && C(free, {}).state === "free");
   ok("① 付費旗標只在「付費且沒買」;未登入時 paid 決定講哪一句", C(paid, { signedIn: false }).paid === true && C(owned, { signedIn: false }).paid === false && C(free, {}).paid === false && C(Object.assign({}, paid, { is_owner: true }), {}).state === "owned");
-  ok("① 雲端視角:不看登入 / 資料費;停機 → stopped、逾時 → stale、活著才往下;已購在雲端也是 owned(對照表只有本機)", C(free, { env: "cloud", signedIn: false, dataAccess: "none", cloud: "live" }).state === "free"
-    && C(free, { env: "cloud", cloud: "stopped" }).state === "stopped" && C(free, { env: "cloud", cloud: "stale" }).state === "stale" && C(free, { env: "cloud", cloud: null }).state === "stale"
-    && C(free, { env: "cloud", cloud: "live", installedName: "x" }).state === "free" && C(owned, { env: "cloud", cloud: "live" }).state === "owned");
+  ok("① 雲端視角:不看登入 / 資料費;停機 → stopped、逾時 → stale、活著才往下;雲端清單多出來的那支 → installed(名字帶著);已購沒裝過是 owned", C(free, { env: "cloud", signedIn: false, dataAccess: "none", cloud: "live" }).state === "free"
+    && C(free, { env: "cloud", cloud: "stopped" }).state === "stopped" && C(free, { env: "cloud", cloud: "stale" }).state === "stale" && C(free, { env: "cloud", cloud: null }).state === "stale" && C(free, { env: "cloud", cloud: "stale", installedName: "x" }).state === "stale"
+    && C(free, { env: "cloud", cloud: "live", installedName: "x" }).state === "installed" && C(free, { env: "cloud", cloud: "live", installedName: "x" }).name === "x" && C(owned, { env: "cloud", cloud: "live" }).state === "owned");
   ok("① 剛跑完沒新策略:只在免費 / 已購 / 已安裝態上加 err,別支不算", C(free, { noNew: 101 }).err === true && C(free, { noNew: 72 }).err === false && C(owned, { noNew: 9 }).err === true && C(paid, { noNew: 5 }).err === false && C(free, { noNew: 101, running: true }).err === false);
   ["zh", "en"].forEach((L) => {
     ok(`① ${L} lib.msg / lib.msgPaid 逐字同 web 的 workspace_lib_msg / _paid`, STR[L]["lib.msg"] === WEB_MSG[L].msg && STR[L]["lib.msgPaid"] === WEB_MSG[L].paid, STR[L]["lib.msg"]);
@@ -79,14 +87,23 @@ if (!process.versions.electron) {
   const cv = P.libCurve(SPARK, "2020-01-01", "2026-06-30");
   ok("① 曲線:64 點均勻落在區間、時間嚴格遞增、首尾對齊;區間太短就併點;壞輸入 null", cv && cv.length === 64 && cv[0].time === "2020-01-01" && cv[63].time === "2026-06-30" && cv.every((p, i) => !i || p.time > cv[i - 1].time)
     && P.libCurve(SPARK, "2026-01-01", "2026-01-10").length === 10 && P.libCurve(SPARK, "2026-01-10", "2026-01-01") === null && P.libCurve([1], "2020-01-01", "2021-01-01") === null && P.libCurve([1, 0], "2020-01-01", "2021-01-01") === null && P.libCurve(SPARK, null, "2021-01-01") === null);
-  ok("① 週期正規化同 web intervalKey", P.libIvKey("5min") === "5m" && P.libIvKey("60m") === "1h" && P.libIvKey("1d") === "1d" && P.libIvKey("240min") === "4h" && P.libIvKey("3m") === null && P.libIvKey(null) === null);
+  ok("① 週期正規化同 web intervalKey", P.libIvKey("5min") === "5m" && P.libIvKey("60m") === "1h" && P.libIvKey("1d") === "1d" && P.libIvKey("240min") === "4h" && P.libIvKey("8h") === "8h" && P.libIvKey("480min") === "8h" && P.libIvKey("2h") === "2h" && P.libIvKey("720m") === "12h" && P.libIvKey("3m") === null && P.libIvKey(null) === null);
 
   // ── ② 主行程 ──
   const M = {}; vm.createContext(M);
-  vm.runInContext(mainSrc.match(/^const LIB_TITLE_MAX = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + mainSrc.match(/^const LIB_NAME_RE = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libInstalledClean"), M);
+  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize"), M);
   ok("② 清單不是陣列 / body 不是物件 → null", M.libSanitize(null) === null && M.libSanitize({}) === null && M.libSanitize({ strategies: "x" }) === null && M.libSanitize([]) === null);
   const good = M.libSanitize({ strategies: LIST });
-  ok("② 好的清單逐筆過、欄位齊、多出來的欄位不帶", good.length === LIST.length && good[0].id === 101 && good[0].report.spark.length === 64 && good[0].report.gate_checks.mcpt === "pass" && !("success_note_ids" in good[0]) && good[5].report === null);
+  ok("② 好的清單逐筆過、欄位齊、多出來的欄位不帶;report 多收 total_return 與 gates 的四個數字(其餘不帶)", good.length === LIST.length && good[0].id === 101 && good[0].report.spark.length === 64 && good[0].report.gate_checks.mcpt === "pass" && !("success_note_ids" in good[0]) && good[6].report === null
+    && good[0].report.total_return === 312.5 && JSON.stringify(good[0].report.gates) === '{"mcpt_p":0.0004,"robust":{"ratio":0.91},"fee":{"rate":0.0005,"actual":0.0004}}' && good[4].report.gates === null);
+  ok("② gates 有格壞 / 缺格 → 那格 null、其餘照收;gates 不是物件 → null;total_return 不是數 → null", JSON.stringify(M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: { mcpt_p: "x", robust: 5, fee: { rate: 0.0005 } } }) })] })[0].report.gates) === '{"mcpt_p":null,"robust":{"ratio":null},"fee":{"rate":0.0005,"actual":null}}'
+    && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: [] }) })] })[0].report.gates === null && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9" }) })] })[0].report.total_return === null);
+  const rep = M.libReportSanitize(REPORT);
+  ok("② libReportSanitize:只留 400 點曲線 + 兩組日期、其餘欄位不帶;曲線 401 點 / 有 0 / 不是陣列 → null;日期只認 YYYY-MM-DD;body 不是物件 → null", JSON.stringify(Object.keys(rep)) === '["equity","equity_from","equity_to","backtest_start","backtest_end"]' && rep.equity.length === 400 && rep.backtest_start === "2019-12-02" && rep.equity_to === "2026-06-30"
+    && M.libReportSanitize(Object.assign({}, REPORT, { equity: Array(401).fill(1) })).equity === null && M.libReportSanitize(Object.assign({}, REPORT, { equity: [1, 0] })).equity === null && M.libReportSanitize(Object.assign({}, REPORT, { equity: null, backtest_start: "2019-12-02 00:00:00" })).backtest_start === null
+    && M.libReportSanitize(null) === null && M.libReportSanitize("x") === null);
+  ok("② 全空的報告(200 + 全 null,S3 暫時讀不到)→ null、不進快取;只有回測期間也算有東西", M.libReportSanitize({}) === null && M.libReportSanitize({ equity: null, equity_from: null, equity_to: null, backtest_start: null, backtest_end: null }) === null
+    && M.libReportSanitize({ equity: [1, 0], backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).equity === null && M.libReportSanitize({ backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).backtest_end === "2021-01-01");
   const bad = M.libSanitize({ strategies: [null, 5, "x", { id: "101", title: "a", price: 0 }, { id: 101, title: "", price: 0 }, { id: 101, title: "a", price: -1 }, { id: 101, title: "a", price: "0" }, { id: 1.5, title: "a", price: 0 }, { id: true, title: "a", price: 0 }, LIST[0]] });
   ok("② 壞的那一筆整筆丟掉(id 不是正整數 / 標題空 / 價格負或不是數字),好的照留", bad.length === 1 && bad[0].id === 101);
   const ctl = M.libSanitize({ strategies: [S({ id: 3, title: "a\u0000b\nc\u007fd", description: "l1\nl2\u0000x", summary: "s\ts", category: 7, created_at: 9, purchase_count: -2, purchased: "yes", is_official: 1, verified: "true", direction: 3, max_exposure: "1",
@@ -114,6 +131,10 @@ if (!process.versions.electron) {
     /postJSON\(`\$\{API_BASE\}\/oauth\/desktop\/marketplace\/purchase`, \{ token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true \}\)/.test(cutFn(mainSrc, "libraryPurchase"))
     && /if \(!token\) return \{ status: 401/.test(cutFn(mainSrc, "libraryPurchase")) && /if \(!secret\) return \{ status: 401/.test(cutFn(mainSrc, "libraryPurchase")) && /catch \(_\) \{ return \{ status: 0, body: null \}; \}/.test(cutFn(mainSrc, "libraryPurchase"))
     && /libCache = null;/.test(cutFn(mainSrc, "libraryPurchase")) && /return \{ status: r\.status, body: libPurchaseBody\(r\.body\) \};/.test(cutFn(mainSrc, "libraryPurchase")));
+  { const lr = cutFn(mainSrc, "libraryReport");
+    ok("② libraryReport:id 要正整數、打 /strategies/<id>/report?lang=、登入才帶桌面資料 key、403 退匿名、非 200 / 打不到 / 形狀不對 → null、快取 5 分鐘 per id:lang", /if \(!Number\.isInteger\(id\) \|\| id <= 0\) return null;/.test(lr) && /\/openclaw\/marketplace\/strategies\/\$\{id\}\/report\?lang=\$\{lang\}/.test(lr)
+      && /const key = loadToken\(\) \? loadDataKey\(\) : null;/.test(lr) && /if \(key && r\.status === 403\) r = await getJSON\(url, \{\}\);/.test(lr) && /catch \(_\) \{ return null; \}/.test(lr) && /if \(r\.status !== 200\) return null;/.test(lr)
+      && /const report = libReportSanitize\(r\.body\);\s*if \(!report\) return null;/.test(lr) && /ck = `\$\{id\}:\$\{lang\}`/.test(lr) && /Date\.now\(\) - hit\.at < ACCT_FRESH_MS/.test(lr)); }
 
   // ── ③ 接線 ──
   ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁多一顆 #chat-lib 在 #chat-eg 前;#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後、app.js 前",
@@ -121,23 +142,30 @@ if (!process.versions.electron) {
     && html.indexOf('id="lib"') > html.indexOf('id="rp"') && html.indexOf('id="lib"') < html.indexOf('id="main-empty"') && /<link rel="stylesheet" href="library\.css">/.test(html) && /<script src="handoff\.js"><\/script>\s*<script src="library\.js"><\/script>\s*<script src="app\.js">/.test(html));
   ok("③ #lib 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、分段 group 三顆、返回鈕、#lib-body tabindex=0、#lib-state role=status", /<div class="lib" id="lib" role="region" aria-labelledby="lib-h" hidden>/.test(html) && /<h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib\.nav">/.test(html)
     && (html.match(/data-mkt="(all|crypto|tw)"/g) || []).length === 3 && /<button class="lib-back" id="lib-back" type="button" hidden>/.test(html) && /<div class="lib-body" id="lib-body" tabindex="0">/.test(html) && /<p class="lib-state" id="lib-state" role="status" hidden>/.test(html));
+  ok("③ 社群段骨架在 #lib-rows 與 #lib-state 之間:真 <button> + aria-expanded=false + aria-controls 指到 #lib-comm-rows(預設 hidden)、不帶 aria-haspopup;副句走 data-i18n", html.indexOf('id="lib-comm-wrap"') > html.indexOf('id="lib-rows"') && html.indexOf('id="lib-comm-wrap"') < html.indexOf('id="lib-state"')
+    && /<button class="lib-comm" id="lib-comm" type="button" aria-expanded="false" aria-controls="lib-comm-rows">/.test(html) && /<div class="lib-rows" id="lib-comm-rows" hidden>/.test(html) && !/lib-comm"[^>]*aria-haspopup/.test(html) && /<span class="lib-comm-s" data-i18n="lib\.comm\.sub">/.test(html));
+  ok("③ 不導流:沒有 #lib-web、library.js 不 openExternal / 不寫 blave.org、lib.web / lib.hiddenNote 兩語都刪了;lib.* 裡提到網頁版的只剩投稿那句腳注(純文字)", !/lib-web|lib\.web/.test(html) && !/openExternal|blave\.org/.test(src) && ["lib.web", "lib.hiddenNote"].every((k) => !(k in STR.zh) && !(k in STR.en))
+    && Object.keys(STR.zh).filter((k) => k.startsWith("lib.") && /網頁/.test(STR.zh[k])).join() === "lib.foot" && Object.keys(STR.en).filter((k) => k.startsWith("lib.") && /\bweb\b/i.test(STR.en[k])).join() === "lib.foot");
   { const esm = cutFn(trSrc, "envShowMain");
     ok("③ envShowMain:雲端分支帶 gate 問 libShowMain、本機分支問 libShowMain(false);原本被別支測試釘住的那幾行一字不動", /if \(typeof libShowMain === "function"\) libShowMain\(gate\);\s*\/\/[^\n]*\n\s*return;/.test(esm) && /libShowMain\(false\);\n\}$/.test(esm)
       && /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(esm) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp;/.test(esm)); }
   ok("③ 開別的視圖就 libLeave:trOpen(那一邊)、stratSelect(本機,選了才)、rpCloudSelect(雲端,選了才)", /if \(typeof libLeave === "function"\) libLeave\(S\.env\);/.test(cutFn(trSrc, "trOpen"))
     && /if \(name && typeof libLeave === "function"\) libLeave\("local"\);/.test(cutFn(appSrc, "stratSelect")) && /if \(name && typeof libLeave === "function"\) libLeave\("cloud"\);/.test(cutFn(appSrc, "rpCloudSelect")));
-  ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
-    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\); \}\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd("))));
+  ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
+    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\); \}\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
+    && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 快取作廢的四個事件都接了:登出 / 兩條登入路徑 → libInvalidate;設定關掉 → libRefresh;主行程登出(clearToken)與換 token 都清 libCache;購買成功後 libRefresh", (appSrc.match(/if \(typeof libInvalidate === "function"\) libInvalidate\(\);/g) || []).length === 3
     && /if \(typeof libRefresh === "function"\) libRefresh\(\);/.test(cutFn(appSrc, "setClose")) && /libCache = null;/.test(cutFn(mainSrc, "clearToken")) && (mainSrc.match(/^\s*libCache = null;/gm) || []).length === 3
-    && /libSend\(s\); libRefresh\(\); return;/.test(src) && /function libRepaint\(\) \{ if \(\$\("lib"\)\.hidden\) return; libPaint\(\); if \(LIB\.data && LIB\.data\.lang !== LANG\) libLoad\(false\); \}/.test(src) && /window\.addEventListener\("focus", \(\) => libRefresh\(\)\);/.test(src));
+    && /libSend\(s\); libRefresh\(\); return;/.test(src) && /function libRepaint\(\) \{ if \(\$\("lib"\)\.hidden\) return; LIB\.reports\.clear\(\); libPaint\(\); if \(LIB\.data && LIB\.data\.lang !== LANG\) libLoad\(false\); \}/.test(src) && /window\.addEventListener\("focus", \(\) => libRefresh\(\)\);/.test(src));
   ok("③ 每次進視圖都重問主行程;切視角時畫的是這一邊那袋;pending 記的是 name → mtime 的 Map", /envShowMain\(\);\n\s*libLoad\(false\);/.test(src) && /if \(on && \(!was \|\| LIB\.paintedEnv !== libEnv\(\)\)\) \{ libPaint\(\); if \(was\) libLoad\(false\); \}/.test(src)
-    && /before = new Map\(RP\.list\.map\(\(x\) => \[x\.name, x\.mtime\]\)\)/.test(src) && /p\.before\.get\(x\.name\) !== x\.mtime/.test(src) && !/libShort/.test(src));
+    && /cl = env === "cloud" \? libCloudList\(\) : RP\.list, before = cl \? new Map\(cl\.map\(\(x\) => \[x\.name, x\.mtime\]\)\) : null;/.test(src) && /p\.before\.get\(x\.name\) !== x\.mtime/.test(src) && !/libShort/.test(src)
+    && /const libCloudOk = \(\) => !!\(TR_BAGS\.cloud\.st && TR_BAGS\.cloud\.st\.cloud && TR_BAGS\.cloud\.st\.cloud\.strategies_ok === true\);/.test(src) && /function libInvalidate\(\) \{ LIB\.stale = true; LIB\.cloudInstalled = \{\}; LIB\.cloudWait = null; LIB\.cloudNames = null; libRefresh\(\); \}/.test(src));
   ok("③ applyStatic 換語言重畫;stratRefresh 重建列後 libStratChanged;delClose 認 dataset.lock(購買中 Esc / ✕ / 框外都不關)", /if \(typeof libRepaint === "function"\) libRepaint\(\);/.test(cutFn(appSrc, "applyStatic"))
     && /if \(typeof libStratChanged === "function"\) libStratChanged\(\);/.test(cutFn(appSrc, "stratRefresh")) && /if \(sc\.hidden \|\| sc\.dataset\.lock\) return;/.test(cutFn(appSrc, "delClose")));
-  ok("③ preload 三支;main:清單與已安裝走 handle()(只收自家頁面)、購買用 ipcMain.handle + fromOurPage、拒絕回打不到的形狀", /libraryList: \(lang, force\) => ipcRenderer\.invoke\("library-list", lang, force\)/.test(pre) && /libraryPurchase: \(id, confirmTopup\) => ipcRenderer\.invoke\("library-purchase", id, confirmTopup\)/.test(pre) && /libraryInstalled: \(patch\) => ipcRenderer\.invoke\("library-installed", patch\)/.test(pre)
-    && /handle\("library-list", \(_e, lang, force\) => libraryList\(lang, force === true\), null\);/.test(mainSrc) && /ipcMain\.handle\("library-purchase", \(e, id, confirmTopup\) => \(fromOurPage\(e\) \? libraryPurchase\(id, confirmTopup\) : \{ status: 0, body: null \}\)\);/.test(mainSrc) && /handle\("library-installed", \(_e, patch\) => libraryInstalled\(patch\), \{\}\);/.test(mainSrc));
-  ok("③ library.js 只走 textContent / DOM,沒有 innerHTML;埋點只在 trackFeature 存在時叫(library_open / library_use);不寫 localStorage", !/innerHTML/.test(src) && /libTrack\("library_open"\)/.test(src) && /libTrack\("library_use"\)/.test(src) && /typeof window\.blave\.trackFeature === "function"/.test(src) && !/Storage/.test(src));
+  ok("③ preload 四支;main:清單、報告與已安裝走 handle()(只收自家頁面)、購買用 ipcMain.handle + fromOurPage、拒絕回打不到的形狀", /libraryList: \(lang, force\) => ipcRenderer\.invoke\("library-list", lang, force\)/.test(pre) && /libraryReport: \(id, lang\) => ipcRenderer\.invoke\("library-report", id, lang\)/.test(pre) && /libraryPurchase: \(id, confirmTopup\) => ipcRenderer\.invoke\("library-purchase", id, confirmTopup\)/.test(pre) && /libraryInstalled: \(patch\) => ipcRenderer\.invoke\("library-installed", patch\)/.test(pre)
+    && /handle\("library-list", \(_e, lang, force\) => libraryList\(lang, force === true\), null\);/.test(mainSrc) && /handle\("library-report", \(_e, id, lang\) => libraryReport\(id, lang\), null\);/.test(mainSrc) && /ipcMain\.handle\("library-purchase", \(e, id, confirmTopup\) => \(fromOurPage\(e\) \? libraryPurchase\(id, confirmTopup\) : \{ status: 0, body: null \}\)\);/.test(mainSrc) && /handle\("library-installed", \(_e, patch\) => libraryInstalled\(patch\), \{\}\);/.test(mainSrc));
+  ok("③ library.js 只走 textContent / DOM,沒有 innerHTML;埋點只在 trackFeature 存在時叫(library_open / library_use / library_comm,三個都在 telemetry.js 白名單);不寫 localStorage", !/innerHTML/.test(src) && /libTrack\("library_open"\)/.test(src) && /libTrack\("library_use"\)/.test(src) && /if \(B\.comm\) libTrack\("library_comm"\)/.test(src) && /typeof window\.blave\.trackFeature === "function"/.test(src) && !/Storage/.test(src)
+    && ["library_open", "library_use", "library_comm"].every((n) => require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.includes(n)));
   { const keys = [...new Set([...src.matchAll(/\bt\("(lib\.[^"]+)"/g)].map((m) => m[1]).concat([...html.matchAll(/data-i18n(?:-aria)?="(lib\.[^"]+)"/g)].map((m) => m[1])))];
     const missing = keys.filter((k) => !(k in STR.zh) || !(k in STR.en));
     ok("③ 用到的 " + keys.length + " 個 lib.* key zh / en 都齊;lib.fxRate zh 1 / en 30、幣別 TWD / USD", missing.length === 0 && STR.zh["lib.fxRate"] === "1" && STR.en["lib.fxRate"] === "30" && STR.zh["lib.currency"] === "TWD" && STR.en["lib.currency"] === "USD", missing);
@@ -157,7 +185,8 @@ if (!process.versions.electron) {
 
 const { app, BrowserWindow } = require("electron");
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-library-")));
-const STUB = `window.__lib = { calls: [], list: ${JSON.stringify({ strategies: LIST, signedIn: true, dataAccess: "included" })}, patches: [], installed: {}, sent: [], sendResult: { started: true }, strats: [], buys: [], buyResult: { status: 0, body: null }, buyRelease: null, hasToken: true };
+const STUB = `window.__lib = { calls: [], list: ${JSON.stringify({ strategies: LIST, signedIn: true, dataAccess: "included" })}, patches: [], installed: {}, sent: [], sendResult: { started: true }, strats: [], buys: [], buyResult: { status: 0, body: null }, buyRelease: null, hasToken: true,
+  reportCalls: [], report: ${JSON.stringify(REPORT)} };
 const __fixed = {
   getLocale: async () => "zh-TW", loadConnection: async () => ({ kind: "claude" }), detectAgents: async () => ({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }),
   listStrategies: async () => window.__lib.strats, listSessions: async () => [], loadSession: async () => [], loadSessionImages: async () => [], updateState: async () => ({ phase: "idle", current: "0.0.0" }),
@@ -165,6 +194,8 @@ const __fixed = {
   libraryList: async (lang) => { window.__lib.calls.push(lang); return window.__lib.list; }, libraryInstalled: async (p) => { if (p) { window.__lib.patches.push(p); if (p.name === null) delete window.__lib.installed[String(p.id)]; else window.__lib.installed[String(p.id)] = p.name; } return Object.assign({}, window.__lib.installed); },
   sendMessage: async (p) => { window.__lib.sent.push(p); return window.__lib.sendResult; },
   libraryPurchase: (id, c) => new Promise((res) => { window.__lib.buys.push([id, c]); window.__lib.buyRelease = () => res(window.__lib.buyResult); }),
+  // 報告:report 是物件就回它、"throw" 就丟例外(打不到)、函式就依 id 決定;主行程失敗回 null
+  libraryReport: async (id, lang) => { window.__lib.reportCalls.push([id, lang]); const r = window.__lib.report; if (r === "throw") throw new Error("x"); return typeof r === "function" ? r(id) : r; },
   openExternal: async (u) => { window.__lib.opened = u; return true; },
 };
 window.blave = new Proxy(__fixed, { get: (o, k) => (k in o ? o[k] : typeof k !== "string" ? undefined : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {} : async () => undefined) });`;
@@ -184,28 +215,88 @@ app.whenReady().then(async () => {
   // 開
   let r = await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 80)); const q = (x) => [...document.querySelectorAll(x)];
     return { on: !document.getElementById("lib").hidden, cur: document.getElementById("lib-nav").getAttribute("aria-current"), empty: document.getElementById("main-empty").hidden, tr: document.getElementById("tr").hidden,
-      ids: q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), foot: document.getElementById("lib-foot").textContent, hiddenFoot: document.getElementById("lib-foot").hidden,
+      ids: q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), foot: document.getElementById("lib-foot").textContent, hiddenFoot: document.getElementById("lib-foot").hidden, footLinks: q("#lib-foot a, #lib-foot button").length, web: document.getElementById("lib-web"),
+      commWrap: document.getElementById("lib-comm-wrap").hidden, commExp: document.getElementById("lib-comm").getAttribute("aria-expanded"), commRows: document.getElementById("lib-comm-rows").hidden, commTitle: document.getElementById("lib-comm-t").textContent, commMono: q("#lib-comm-t .mono").map((x) => x.textContent).join(), commSub: q("#lib-comm .lib-comm-s")[0].textContent, commJust: getComputedStyle(document.getElementById("lib-comm")).justifyContent, commH: document.getElementById("lib-comm").getBoundingClientRect().height,
       tags101: q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), tags5: q('#lib-rows .lib-row[data-id="5"] .tag').map((x) => x.textContent).join("|"), tags9: q('#lib-rows .lib-row[data-id="9"] .tag').map((x) => x.textContent).join("|"), tag5gap: (() => { const p = q('#lib-rows .lib-row[data-id="5"] .tag.is-price')[0]; const a = p.children[0].getBoundingClientRect(), b = p.children[1].getBoundingClientRect(); return p.children.length === 2 && p.children[1].textContent === "TWD" && b.left - a.right >= 3; })(),
       l2: q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent, ann: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].textContent, annCls: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].className, annColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .num .v')[0]).color, inkColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .t')[0]).color, greenText: getComputedStyle(document.documentElement).getPropertyValue("--color-greenText").trim(),
-      imgs: q("#lib img").length, title5: q('#lib-rows .lib-row[data-id="5"] .t')[0].textContent, focus: document.activeElement && document.activeElement.id }; })()`);
-  ok("④ 開策略庫:#lib 出、入口 aria-current、歡迎頁與自動下單收;6 列照推薦排序、底下「另有 1 支未驗證」;焦點在 h5", r.on && r.cur === "page" && r.empty && r.tr && r.ids === "74,101,72,5,9,86" && !r.hiddenFoot && r.foot === (await T("lib.hiddenNote", { n: 1 })) && r.focus === "lib-h", JSON.stringify(r));
+      imgs: q("#lib img").length, title5: q('#lib-rows .lib-row[data-id="5"] .t')[0].textContent, tags86: q('#lib-rows .lib-row[data-id="86"] .tag').map((x) => x.textContent).join("|"), focus: document.activeElement && document.activeElement.id }; })()`);
+  ok("④ 開策略庫:#lib 出、入口 aria-current、歡迎頁與自動下單收;主段 6 列照推薦排序;焦點在 h5;沒有「在網頁版看」鈕;清單底只有投稿那句純文字腳注(沒有連結 / 鈕)", r.on && r.cur === "page" && r.empty && r.tr && r.ids === "74,101,72,5,9,86" && r.focus === "lib-h"
+    && r.web === null && !r.hiddenFoot && r.foot === (await T("lib.foot")) && r.footLinks === 0, JSON.stringify(r));
+  ok("④ 社群段:出「社群策略（2）」(計數進 .mono)+ 副句、預設收合(aria-expanded=false、#lib-comm-rows hidden)、列高 ≥ 44", !r.commWrap && r.commTitle === (await T("lib.comm.title", { n: 2 })) && r.commMono === "2" && r.commSub === (await T("lib.comm.sub")) && r.commExp === "false" && r.commRows && r.commH >= 44 && r.commJust === "flex-start", JSON.stringify(r));
   ok("④ 列:tag(已驗證 + 免費 / 價格 1,500 TWD / 已購買)、第二行「Blave 官方 · BTC/USDT 永續 · 5 分 K · 樣本 6.5 年」、年化 +24.61% 綠字;api 來的字只進 textContent(沒有 img)",
     r.tags101 === (await T("lib.verified")) + "|" + (await T("lib.free")) && r.tags5 === (await T("lib.verified")) + "|1,500TWD" && r.tag5gap && r.tags9 === (await T("lib.verified")) + "|" + (await T("lib.owned"))
-    && r.l2 === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 樣本 6.5 年" && r.ann === "+24.61%" && /\bup\b/.test(r.annCls) && r.annColor !== r.inkColor && r.imgs === 0 && r.title5 === "Cash-and-Carry <img onerror=x> Arbitrage", JSON.stringify(r));
-  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q('#lib-seg button[data-mkt="tw"]')[0].click(); const tw = q("#lib-rows .lib-row").map((b) => b.dataset.id).join();
-    q('#lib-seg button[data-mkt="crypto"]')[0].click(); const cr = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(); const foot = document.getElementById("lib-foot").textContent; const pressed = q("#lib-seg button").map((b) => b.getAttribute("aria-pressed")).join();
-    q('#lib-seg button[data-mkt="all"]')[0].click(); return { tw, cr, foot, pressed, all: q("#lib-rows .lib-row").length }; })()`);
-  ok("④ 分段:台股 1 支、加密 5 支(未驗證那支照樣收進「另有」)、按下的那格 aria-pressed、回全部 6 支", r.tw === "74" && r.cr === "101,72,5,9,86" && r.foot === (await T("lib.hiddenNote", { n: 1 })) && r.pressed === "false,true,false" && r.all === 6, JSON.stringify(r));
+    && r.l2 === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 樣本 6.5 年" && r.ann === "+24.61%" && /\bup\b/.test(r.annCls) && r.annColor !== r.inkColor && r.imgs === 0 && r.title5 === "Cash-and-Carry <img onerror=x> Arbitrage"
+    && r.tags86 === (await T("lib.free")), JSON.stringify(r));   // 官方但未驗證(#86):既無「已驗證」也無「未驗證」
+  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const top = document.getElementById("lib-body").scrollTop; q("#lib-comm")[0].click();
+    const a = { exp: document.getElementById("lib-comm").getAttribute("aria-expanded"), rows: document.getElementById("lib-comm-rows").hidden, ids: q("#lib-comm-rows .lib-row").map((b) => b.dataset.id).join(), tags12: q('#lib-comm-rows .lib-row[data-id="12"] .tag').map((x) => x.textContent).join("|"), tags8: q('#lib-comm-rows .lib-row[data-id="8"] .tag').map((x) => x.textContent + ":" + x.className).join("|"),
+      l2: q('#lib-comm-rows .lib-row[data-id="12"] .l2')[0].textContent, main: q("#lib-rows .lib-row").length, focus: document.activeElement && document.activeElement.id, bag: libBag().comm, scroll: document.getElementById("lib-body").scrollTop === top };
+    q("#lib-comm")[0].click(); const b = { exp: document.getElementById("lib-comm").getAttribute("aria-expanded"), rows: document.getElementById("lib-comm-rows").hidden, n: q("#lib-comm-rows .lib-row").length, bag: libBag().comm };
+    q("#lib-comm")[0].click(); return { a, b }; })()`);
+  ok("④ 點社群段 → 展開:aria-expanded=true、列出 2 支(新的先)、tag 順序「未驗證」(單層灰、沒有 is-verified)→ 價格、第二行「社群作者」;主段不動、焦點留在列上、bag 記著;再點 → 收回", r.a.exp === "true" && !r.a.rows && r.a.ids === "12,8" && r.a.tags12 === (await T("lib.unverified")) + "|800TWD" && /^未驗證:tag\|1,200TWD:tag is-price$/.test(r.a.tags8)
+    && r.a.l2.startsWith((await T("lib.community")) + " · ") && r.a.main === 6 && r.a.focus === "lib-comm" && r.a.bag === true && r.a.scroll && r.b.exp === "false" && r.b.rows && r.b.n === 0 && r.b.bag === false, JSON.stringify(r));
+  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q('#lib-seg button[data-mkt="tw"]')[0].click(); const tw = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), twComm = document.getElementById("lib-comm-wrap").hidden, twState = document.getElementById("lib-state").hidden;
+    q('#lib-seg button[data-mkt="crypto"]')[0].click(); const cr = q("#lib-rows .lib-row").map((b) => b.dataset.id).join(); const comm = q("#lib-comm-rows .lib-row").map((b) => b.dataset.id).join(), title = document.getElementById("lib-comm-t").textContent, foot = document.getElementById("lib-foot").textContent; const pressed = q("#lib-seg button").map((b) => b.getAttribute("aria-pressed")).join();
+    q('#lib-seg button[data-mkt="all"]')[0].click(); return { tw, twComm, twState, cr, comm, title, foot, pressed, all: q("#lib-rows .lib-row").length, allComm: q("#lib-comm-rows .lib-row").length }; })()`);
+  ok("④ 分段同時套在兩段:台股 1 支、社群段整個不出;加密 5 支 + 社群段 2 支(展開態記著,切回來還在);腳注照在;按下的那格 aria-pressed;回全部 6 + 2", r.tw === "74" && r.twComm && r.twState && r.cr === "101,72,5,9,86" && r.comm === "12,8" && r.title === (await T("lib.comm.title", { n: 2 })) && r.foot === (await T("lib.foot")) && r.pressed === "false,true,false" && r.all === 6 && r.allComm === 2, JSON.stringify(r));
+  // 主段 0 列但社群段有:不出 lib.emptyMkt、只出社群段;兩段都 0 才出空狀態
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; const keep = window.__lib.list; window.__lib.list = { strategies: ${JSON.stringify([LIST[4], LIST[5]])}, signedIn: true, dataAccess: "included" }; await libLoad(true);
+    const a = { state: document.getElementById("lib-state").hidden, main: q("#lib-rows .lib-row").length, comm: document.getElementById("lib-comm-wrap").hidden, n: q("#lib-comm-rows .lib-row").length, foot: document.getElementById("lib-foot").hidden };
+    q('#lib-seg button[data-mkt="tw"]')[0].click(); const b = { state: document.getElementById("lib-state").hidden, text: document.getElementById("lib-state").textContent, comm: document.getElementById("lib-comm-wrap").hidden };
+    q('#lib-seg button[data-mkt="all"]')[0].click(); window.__lib.list = keep; libBag().comm = false; await libLoad(true); return { a, b, back: q("#lib-rows .lib-row").length }; })()`);
+  ok("④ 只有社群策略時:主段空、不出 lib.emptyMkt、社群段出(展開著就列出);切到台股兩段都空 → lib.emptyMkt、社群段不出", r.a.state && r.a.main === 0 && !r.a.comm && r.a.n === 2 && !r.a.foot && !r.b.state && r.b.text === (await T("lib.emptyMkt")) && r.b.comm && r.back === 6, JSON.stringify(r));
   // 詳情
-  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q('#lib-rows .lib-row[data-id="101"]')[0].click();
-    return { back: !document.getElementById("lib-back").hidden, headList: document.getElementById("lib-head-list").hidden, rows: q("#lib-rows .lib-row").length, h5: q("#lib-det h5")[0].textContent, meta: q("#lib-det .lib-meta")[0].textContent, sum: q("#lib-det .lib-sum")[0].textContent,
-      chart: q("#lib-det .lib-card .chart").length, canvas: q("#lib-det .lib-card .chart canvas").length, kv: q("#lib-det .lib-kv .v").map((x) => x.textContent).join("|"), gates: q("#lib-det .gates li").map((li) => li.querySelector(".gn").textContent + "=" + li.querySelector(".gv").textContent).join("|"),
-      how: q("#lib-det .lib-p")[0].textContent, dl: q("#lib-det .lib-dl dd").map((x) => x.textContent).join("|"), steps: q("#lib-det .steps li").length, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent, focus: document.activeElement && document.activeElement.id }; })()`);
-  ok("④ 詳情:返回鈕出、清單頭收;標題 / meta(7 人安裝)/ 摘要;曲線畫出來(canvas);四個數字 + 上架兩格;三道關卡都通過;說明留換行;dl 回測期間 / 標的 / 方向 / 曝險;三步;焦點在返回鈕",
-    r.back && r.headList && r.rows === 0 && r.h5 === "BTC 通道動能共振" && r.meta === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 7 人安裝" && r.sum === "通道 + 動能。" && r.chart === 1 && r.canvas >= 1
-    && r.kv === "+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000)))) && r.gates === "誠實回測=通過|統計顯著=通過|參數穩健=通過"
-    && r.how === "第一段。\n第二段。" && r.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && r.steps === 3 && r.focus === "lib-back", JSON.stringify(r));
-  ok("④ 免費態:主鈕「用這支」、說明句帶「這台電腦」", r.cta === (await T("lib.use")) && r.note === (await T("lib.note.free", { where: await T("lib.where.local") })));
+  const gatesOf = `q("#lib-det .gates li").map((li) => li.querySelector(".gn").textContent + "=" + li.querySelector(".gr > .gv").textContent + "[" + [...li.querySelectorAll(".gr > .gx")].map((x) => x.textContent).join(";") + "]").join("|")`;
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; window.__lib.reportCalls = []; q('#lib-rows .lib-row[data-id="101"]')[0].click(); const c0 = LIB.chart;
+    const sync = { back: !document.getElementById("lib-back").hidden, headList: document.getElementById("lib-head-list").hidden, rows: q("#lib-rows .lib-row").length, comm: document.getElementById("lib-comm-wrap").hidden, foot: document.getElementById("lib-foot").hidden, h5: q("#lib-det h5")[0].textContent, meta: q("#lib-det .lib-meta")[0].textContent, sum: q("#lib-det .lib-sum")[0].textContent,
+      chart: q("#lib-det .lib-card .chart").length, chartH: q("#lib-det .lib-card .chart")[0].getBoundingClientRect().height, canvas: q("#lib-det .lib-card .chart canvas").length, kv: q("#lib-det .lib-kv .k").map((x) => x.textContent).join("|") + " / " + q("#lib-det .lib-kv .v").map((x) => x.textContent).join("|"), gates: ${gatesOf}, lead: q("#lib-det .lib-card")[1].querySelector(".lib-p"),
+      how: q("#lib-det .lib-p")[0].textContent, dl: q("#lib-det .lib-dl dd").map((x) => x.textContent).join("|"), period: document.getElementById("lib-period").textContent, steps: q("#lib-det .steps li").length, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent, focus: document.activeElement && document.activeElement.id, c0: !!c0 };
+    await new Promise((r) => setTimeout(r, 80));
+    const after = { calls: window.__lib.reportCalls, swapped: LIB.chart !== c0 && !!LIB.chart, chart: q("#lib-det #lib-chart").length, canvas: q("#lib-det #lib-chart canvas").length, period: document.getElementById("lib-period").textContent, periodMono: q("#lib-period .mono").length, focus: document.activeElement && document.activeElement.id, h5: q("#lib-det h5").length, cta: q("#lib-cta .btn-fill")[0].textContent };
+    return { sync, after }; })()`);
+  { const s = r.sync;
+    ok("④ 詳情:返回鈕出、清單頭 / 社群段 / 腳注收;標題 / meta(7 人安裝)/ 摘要;曲線先用 spark 畫出來(canvas、圖高 200);回測欄總報酬在第一列 + 四個數字 + 上架兩格;三道關卡都通過、右欄帶數值(費率兩行、p < 0.001、鄰域 91%);官方不出結論段;說明留換行;dl 回測期間先用曲線區間 / 標的 / 方向 / 曝險;三步;焦點在返回鈕",
+      s.back && s.headList && s.rows === 0 && s.comm && s.foot && s.h5 === "BTC 通道動能共振" && s.meta === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 7 人安裝" && s.sum === "通道 + 動能。" && s.chart === 1 && s.chartH === 200 && s.canvas >= 1 && s.c0
+      && s.kv === "總報酬|年化|Sharpe|最大回撤|樣本|上架天數|安裝 / +312.50%|+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000))))
+      && s.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
+      && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 3 && s.focus === "lib-back", JSON.stringify(s));
+    ok("④ 免費態:主鈕「用這支」、說明句帶「這台電腦」", s.cta === (await T("lib.use")) && s.note === (await T("lib.note.free", { where: await T("lib.where.local") }))); }
+  ok("④ /report 回來(問一次、帶語言):只換曲線(#lib-chart 還在、LIB.chart 換新、canvas 在)與回測期間(backtest_start — backtest_end、.mono);頭部 / CTA / 焦點都沒重畫", JSON.stringify(r.after.calls) === "[[101,\"zh\"]]" && r.after.swapped && r.after.chart === 1 && r.after.canvas >= 1
+    && r.after.period === "2019-12-02 — 2026-06-30" && r.after.periodMono === 1 && r.after.focus === "lib-back" && r.after.h5 === 1 && r.after.cta === (await T("lib.use")), JSON.stringify(r.after));
+  // 降級:主行程回 null / 打不到 → 停在 spark、回測期間留曲線區間、不出任何錯誤字;下次進詳情再問(失敗不記)
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; document.getElementById("lib-back").click(); window.__lib.report = null; window.__lib.reportCalls = []; q('#lib-rows .lib-row[data-id="72"]')[0].click(); const c0 = LIB.chart;
+    await new Promise((r) => setTimeout(r, 80)); const a = { same: LIB.chart === c0 && !!c0, canvas: q("#lib-det #lib-chart canvas").length, period: document.getElementById("lib-period").textContent, err: q("#lib-det .err, #lib-det .plan-err, #lib-det [role=alert]").length, none: q("#lib-det .chart-none").length, cached: LIB.reports.has(72) };
+    document.getElementById("lib-back").click(); window.__lib.report = "throw"; q('#lib-rows .lib-row[data-id="72"]')[0].click(); const c1 = LIB.chart;
+    await new Promise((r) => setTimeout(r, 80)); const b = { same: LIB.chart === c1 && !!c1, canvas: q("#lib-det #lib-chart canvas").length, period: document.getElementById("lib-period").textContent, calls: window.__lib.reportCalls.length, cached: LIB.reports.has(72) };
+    document.getElementById("lib-back").click(); return { a, b }; })()`);
+  ok("④ 降級:report 為 null → spark 曲線留著、期間 2023-03-02 — 2026-08-31、沒有錯誤字、不記快取;打不到(例外)→ 同樣;兩次進詳情各問一次", r.a.same && r.a.canvas >= 1 && r.a.period === "2023-03-02 — 2026-08-31" && r.a.err === 0 && r.a.none === 0 && !r.a.cached
+    && r.b.same && r.b.canvas >= 1 && r.b.period === "2023-03-02 — 2026-08-31" && r.b.calls === 2 && !r.b.cached, JSON.stringify(r));
+  // M1:/report 回來時已經換看別支 → 不套(守門 libBag().detail === s.id);M3:MCPT 不適用那列右欄只留狀態、不印 —
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; let rel = null; window.__lib.report = (id) => (id === 101 ? new Promise((res) => { rel = () => res(${JSON.stringify(REPORT)}); }) : null); LIB.reports.clear();
+    q('#lib-rows .lib-row[data-id="101"]')[0].click(); document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="72"]')[0].click(); const c0 = LIB.chart; rel(); await new Promise((r) => setTimeout(r, 60));
+    const a = { same: LIB.chart === c0 && !!c0, period: document.getElementById("lib-period").textContent, detail: libBag().detail, h5: q("#lib-det h5")[0].textContent };
+    document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="74"]')[0].click(); const b = { gates: ${gatesOf}, na: q("#lib-det .gates .gv.na").length };
+    document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = ${JSON.stringify(REPORT)}; return { a, b }; })()`);
+  ok("④ #101 的 /report 晚到、人已在 #72 → #72 的曲線與期間不被動到;#74(MCPT 不適用)右欄只有狀態那一行、沒有 —", r.a.same && r.a.period === "2023-03-02 — 2026-08-31" && r.a.detail === 72 && r.a.h5 === "DOGE 籌碼集中度"
+    && r.b.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=MCPT 不適用（組合策略）[]|參數穩健=通過[鄰域保留 91%]" && r.b.na === 1, JSON.stringify(r));
+  // 清單沒曲線(#86:spark null)但 /report 有:「尚未提供權益曲線」那行換成圖;報告只有壞曲線 → 留著那行
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; window.__lib.report = (id) => (id === 86 ? ${JSON.stringify(Object.assign({}, REPORT, { equity_from: "2021-01-01", equity_to: "2026-06-30" }))} : null); q('#lib-rows .lib-row[data-id="86"]')[0].click();
+    const before = { none: q("#lib-det .chart-none").length, chart: q("#lib-det #lib-chart").length, period: document.getElementById("lib-period").textContent };
+    await new Promise((r) => setTimeout(r, 80)); const after = { none: q("#lib-det .chart-none").length, chart: q("#lib-det #lib-chart").length, canvas: q("#lib-det #lib-chart canvas").length, inCard1: q("#lib-det .lib-card")[0].querySelector("#lib-chart") !== null, period: document.getElementById("lib-period").textContent };
+    document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = (id) => (id === 86 ? { equity: [1, 2], equity_from: null, equity_to: null, backtest_start: null, backtest_end: null } : null); q('#lib-rows .lib-row[data-id="86"]')[0].click();
+    await new Promise((r) => setTimeout(r, 80)); const bad = { none: q("#lib-det .chart-none").length, chart: q("#lib-det #lib-chart").length, period: document.getElementById("lib-period").textContent };
+    document.getElementById("lib-back").click(); window.__lib.report = ${JSON.stringify(REPORT)}; LIB.reports.clear(); return { before, after, bad }; })()`);
+  ok("④ 沒 spark 的策略:先出「尚未提供權益曲線」、期間 —;/report 有曲線 → 換成圖(在卡 1)、期間換成報告的;報告的曲線畫不出來(沒日期)→ 留著那行、期間仍 —", r.before.none === 1 && r.before.chart === 0 && r.before.period === "—"
+    && r.after.none === 0 && r.after.chart === 1 && r.after.canvas >= 1 && r.after.inCard1 && r.after.period === "2019-12-02 — 2026-06-30" && r.bad.none === 1 && r.bad.chart === 0 && r.bad.period === "—", JSON.stringify(r));
+  // 未驗證的詳情(規格 §13.4):沒跑過關卡 → 一句 lib.gates.community、不列三道;跑過但有 fail → 先講「k 道關卡未通過」再列三道(未通過紅字 + 數值)
+  r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; libBag().comm = true; libPaintList(); q('#lib-comm-rows .lib-row[data-id="8"]')[0].click();
+    const a = { tags: q("#lib-det .lib-badges .tag").map((x) => x.textContent).join("|"), card: q("#lib-det .lib-card")[1].querySelector("h6").textContent, p: q("#lib-det .lib-card")[1].querySelector(".lib-p").textContent, lis: q("#lib-det .gates li").length, cta: q("#lib-cta .btn-fill")[0].textContent };
+    document.getElementById("lib-back").click(); const focus8 = document.activeElement && document.activeElement.dataset.id; q('#lib-comm-rows .lib-row[data-id="12"]')[0].click();
+    const c2 = q("#lib-det .lib-card")[1]; const b = { tags: q("#lib-det .lib-badges .tag").map((x) => x.textContent).join("|"), p: c2.querySelector(".lib-p").textContent, k: c2.querySelector(".lib-p .mono") && c2.querySelector(".lib-p .mono").textContent, first: c2.children[1].className, gates: ${gatesOf},
+      down: q("#lib-det .gates .gv.down").map((x) => x.textContent).join("|"), downColor: getComputedStyle(q("#lib-det .gates .gv.down")[0]).color, redText: getComputedStyle(document.documentElement).getPropertyValue("--color-redText").trim(), gxColor: getComputedStyle(q("#lib-det .gates .gx")[0]).color, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent };
+    document.getElementById("lib-back").click(); libBag().comm = false; libPaintList(); q('#lib-rows .lib-row[data-id="101"]')[0].click(); return { a, focus8, b }; })()`);   // 後面的閘門態測試接著看 #101 的詳情
+  ok("④ #8(沒 gate_checks):badge「未驗證」在最前、關卡卡只有一句 lib.gates.community、不列三道、CTA 仍「購買並使用 1,200 TWD」;返回焦點回社群段那一列", r.a.tags === (await T("lib.unverified")) + "|1,200TWD" && r.a.card === (await T("lib.gates.title")) && r.a.p === (await T("lib.gates.community")) && r.a.lis === 0 && r.a.cta === (await T("lib.buy", { price: "1,200 TWD" })) && r.focus8 === "8", JSON.stringify(r));
+  ok("④ #12(兩道 fail):關卡卡第一段「未驗證：2 道關卡未通過…」(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.1200、鄰域 82%);CTA「購買並使用 800 TWD」、說明句沒有恐嚇語", r.b.tags === (await T("lib.unverified")) + "|800TWD" && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
+    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === (await T("lib.note.paid", { where: await T("lib.where.local") })), JSON.stringify(r));
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
@@ -312,12 +403,51 @@ app.whenReady().then(async () => {
     LIB.bags.cloud.open = false; LIB.bags.cloud.detail = null; return { c, l }; })()`);
   ok("④ 兩邊都開著策略庫:切到雲端畫雲端那袋的詳情(#72、說明句講雲端主機、停機 / 讀不到那句);切回本機回到 #101、說明句講這台電腦", r.c.lib && r.c.h5 === "DOGE 籌碼集中度" && r.c.painted === "cloud" && (r.c.where === (await T("ho.gate.stale")) || r.c.where === (await T("ho.gate.stopped")))
     && r.l.h5 === "BTC 通道動能共振" && r.l.painted === "local" && r.l.where === (await T("lib.note.free", { where: await T("lib.where.local") })), JSON.stringify(r));
+  // 雲端視角的「已安裝」(Windows 真機補測):送出時記雲端清單(名字 → mtime)、回合結束比不到就掛著等、輪詢帶新清單來才記;不寫檔、不打端點;那支從雲端消失就拿掉;等太久就放掉。
+  // 清單「缺席」(strategies_ok 不為 true)那一輪:不刪、不記、不動;等待中再送第二支 → 第一支的等待放掉;回合結束當場比到 → 清單當場重畫;同名 mtime 變了(再下載一份)→ 也算、也重畫;登出清掉
+  r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; running = false; LIB.pending = null; LIB.bags.cloud.open = true; LIB.bags.cloud.detail = null; document.getElementById("cv-empty").hidden = true; ENV.cur = "cloud";
+    const st = (ok, list) => ({ cloud: { strategies_ok: ok, strategies: list || [{ name: "old", updated_at: 1 }] } }); const tag = (id) => q('#lib-rows .lib-row[data-id="' + id + '"] .tag').map((x) => x.textContent).join("|"); const ch = (x) => libCloudChanged(envCloudList(TR_BAGS.cloud.st = x));
+    TR_BAGS.cloud.st = st(true); envShowMain(); await new Promise((r) => setTimeout(r, 60));
+    const n0 = window.__lib.sent.length, p0 = window.__lib.patches.length; TR_BAGS.cloud.st = st(true); libSend(libFind(101)); await new Promise((r) => setTimeout(r, 60));
+    const a = { env: LIB.pending && LIB.pending.env, before: LIB.pending && [...LIB.pending.before.entries()].join(), viewing: window.__lib.sent[n0] && window.__lib.sent[n0].viewing && window.__lib.sent[n0].viewing.env };
+    TR_BAGS.cloud.st = st(true); libTurnEnd(); const b = { pending: LIB.pending, wait: LIB.cloudWait && LIB.cloudWait.id, installed: LIB.cloudInstalled["101"] };
+    ch(st(true)); const c = { wait: LIB.cloudWait && LIB.cloudWait.id, tag: tag(101) };
+    ch(st(false, [])); const absent = { wait: LIB.cloudWait && LIB.cloudWait.id, installed: LIB.cloudInstalled["101"], names: LIB.cloudNames };   // 缺席那一輪:等待還掛著、不猜
+    ch(st(true, [{ name: "old", updated_at: 1 }, { name: "btc_cloud", updated_at: 2 }]));
+    const d = { wait: LIB.cloudWait, installed: LIB.cloudInstalled["101"], tag: tag(101), cta: libInstalledOf(libFind(101)), patches: window.__lib.patches.length - p0 };
+    q('#lib-rows .lib-row[data-id="101"]')[0].focus(); ch(st(true, [{ name: "old", updated_at: 1 }, { name: "btc_cloud", updated_at: 2 }])); const same = { focus: document.activeElement && document.activeElement.dataset.id };
+    ch(st(false, [])); const keep = { installed: LIB.cloudInstalled["101"], tag: tag(101), name: libInstalledOf(libFind(101)) };   // 缺席:已安裝不掉
+    ch(st(true)); const e = { installed: LIB.cloudInstalled["101"], tag: tag(101) };
+    LIB.cloudWait = { id: 72, before: new Map([["old", 1]]), until: Date.now() - 1 }; ch(st(true)); const f = { wait: LIB.cloudWait };
+    // 送出當下缺席 → before 不記;清單回來也不猜
+    running = false; TR_BAGS.cloud.st = st(false, []); libSend(libFind(72)); await new Promise((r) => setTimeout(r, 60)); const g0 = { before: LIB.pending && LIB.pending.before };
+    TR_BAGS.cloud.st = st(true); libTurnEnd(); ch(st(true, [{ name: "old", updated_at: 1 }, { name: "x72", updated_at: 3 }])); const g = { before: g0.before, wait: LIB.cloudWait && LIB.cloudWait.id, installed: LIB.cloudInstalled["72"] };
+    LIB.cloudWait = null;
+    // 等待中再送第二支 → 第一支的等待放掉、不會被第二支的資料夾記走
+    running = false; TR_BAGS.cloud.st = st(true); libSend(libFind(101)); await new Promise((r) => setTimeout(r, 60)); TR_BAGS.cloud.st = st(true); libTurnEnd(); const h0 = LIB.cloudWait && LIB.cloudWait.id;
+    running = false; libSend(libFind(72)); await new Promise((r) => setTimeout(r, 60)); const h1 = LIB.cloudWait; TR_BAGS.cloud.st = st(true, [{ name: "old", updated_at: 1 }, { name: "s72", updated_at: 4 }]); libTurnEnd();
+    const h = { h0, h1, i101: LIB.cloudInstalled["101"], i72: LIB.cloudInstalled["72"], tag72: tag(72), tag101: tag(101) };   // turn-end 當場比到 → 列當場重畫
+    // 舊策略只有 mtime 變 → 不記、等待繼續掛著(雲端 updated_at 會因內容 hash / 索引重報而動);對照表已記的那支同名 mtime 變(再下載一份)→ 算、成員沒變也重畫
+    LIB.cloudInstalled = {}; LIB.cloudWait = { id: 72, before: new Map([["old", 1], ["s72", 4]]), until: Date.now() + 60000 }; LIB.cloudNames = "old\\ns72"; libPaintList(); const m0 = tag(72);
+    ch(st(true, [{ name: "old", updated_at: 7 }, { name: "s72", updated_at: 4 }])); const m1 = { wait: LIB.cloudWait && LIB.cloudWait.id, installed: Object.keys(LIB.cloudInstalled).length, tag: tag(72) };
+    LIB.cloudInstalled["72"] = "s72"; ch(st(true, [{ name: "old", updated_at: 7 }, { name: "s72", updated_at: 9 }])); const m = { m0, m1, wait: LIB.cloudWait, installed: LIB.cloudInstalled["72"], tag: tag(72) };
+    running = false; libInvalidate(); await new Promise((r) => setTimeout(r, 60)); const inv = { installed: Object.keys(LIB.cloudInstalled).length, wait: LIB.cloudWait, names: LIB.cloudNames };
+    LIB.pending = null; ENV.cur = "local"; LIB.bags.cloud.open = false; TR_BAGS.cloud.st = null; envShowMain(); return { a, b, c, absent, d, same, keep, e, f, g, h, m, inv }; })()`);
+  { const V = await T("lib.verified"), F = await T("lib.free"), I = await T("lib.installed");
+    ok("④ 雲端「用這支」:pending 記 env=cloud + 雲端清單(old→1)、送到雲端;turn-end → pending 收掉、比不到就掛 cloudWait;清單沒變 → 還掛著、列沒「已安裝」;缺席那一輪 → 不動;清單多了 btc_cloud → 記下(不寫檔)、列上「已安裝」、CTA 拿到名字;成員沒變不重畫(焦點留著)",
+      r.a.env === "cloud" && r.a.before === "old,1" && r.a.viewing === "cloud" && r.b.pending === null && r.b.wait === 101 && r.b.installed === undefined && r.c.wait === 101 && r.c.tag === V + "|" + F
+      && r.absent.wait === 101 && r.absent.installed === undefined && r.absent.names === "old" && r.d.wait === null && r.d.installed === "btc_cloud" && r.d.tag === V + "|" + F + "|" + I && r.d.cta === "btc_cloud" && r.d.patches === 0 && r.same.focus === "101", JSON.stringify(r));
+    ok("④ 雲端已安裝:缺席那一輪不刪(tag 與名字都留著);那支真的消失 → 拿掉;等過期 → 放掉;送出當下缺席 → before=null、清單回來不猜;等待中再送第二支 → 第一支放掉、第二支 turn-end 當場比到 → 只記第二支、列當場重畫;舊策略只有 mtime 變 → 不記、繼續等;已記的那支同名 mtime 變 → 算、成員沒變也重畫;登出全清",
+      r.keep.installed === "btc_cloud" && r.keep.tag === V + "|" + F + "|" + I && r.keep.name === "btc_cloud" && r.e.installed === undefined && r.e.tag === V + "|" + F && r.f.wait === null
+      && r.g.before === null && r.g.wait === 72 && r.g.installed === undefined && r.h.h0 === 101 && r.h.h1 === null && r.h.i101 === undefined && r.h.i72 === "s72" && r.h.tag72 === V + "|" + F + "|" + I && r.h.tag101 === V + "|" + F
+      && r.m.m0 === V + "|" + F && r.m.m1.wait === 72 && r.m.m1.installed === 0 && r.m.m1.tag === V + "|" + F && r.m.wait === null && r.m.installed === "s72" && r.m.tag === V + "|" + F + "|" + I && r.inv.installed === 0 && r.inv.wait === null && r.inv.names === null, JSON.stringify(r)); }
   // 讀不到 / 重試
   r = await js(`(async () => { running = false; LIB.pending = null; LIB.data = null; LIB.stale = true; window.__lib.list = null; document.getElementById("lib-back").click(); await libLoad(true); const q = (x) => [...document.querySelectorAll(x)];
-    const err = { state: document.getElementById("lib-state").textContent, hidden: document.getElementById("lib-state").hidden, retry: q("#lib-state .btn-out").length, rows: q("#lib-rows .lib-row").length };
+    const err = { state: document.getElementById("lib-state").textContent, hidden: document.getElementById("lib-state").hidden, retry: q("#lib-state .btn-out").length, rows: q("#lib-rows .lib-row").length, foot: document.getElementById("lib-foot").hidden };
+    LIB.skel = true; libPaintList(); err.skFoot = document.getElementById("lib-foot").hidden; err.sk = q("#lib-rows .sk-row").length; LIB.skel = false; libPaintList();
     window.__lib.list = { strategies: [], signedIn: true, dataAccess: "included" }; q("#lib-state .btn-out")[0].click(); await new Promise((r) => setTimeout(r, 400));
     return { err, empty: document.getElementById("lib-state").textContent, rows: q("#lib-rows .lib-row").length }; })()`);
-  ok("④ 讀不到 → 「讀不到策略庫。」+ 重試鈕、沒有列;重試成功但整庫空 → lib.empty", !r.err.hidden && r.err.state.startsWith(await T("lib.error")) && r.err.retry === 1 && r.err.rows === 0 && r.empty === (await T("lib.empty")) && r.rows === 0, JSON.stringify(r));
+  ok("④ 讀不到 → 「讀不到策略庫。」+ 重試鈕、沒有列、腳注不出;skeleton 時腳注也不出;重試成功但整庫空 → lib.empty", !r.err.hidden && r.err.state.startsWith(await T("lib.error")) && r.err.retry === 1 && r.err.rows === 0 && r.err.foot === true && r.err.skFoot === true && r.err.sk === 5 && r.empty === (await T("lib.empty")) && r.rows === 0, JSON.stringify(r));
   r = await js(`(async () => { LIB.data = null; window.__lib.list = { strategies: ${JSON.stringify(LIST)}, signedIn: true, dataAccess: "included" }; const p = libLoad(true); await new Promise((r) => setTimeout(r, 40)); const q = (x) => [...document.querySelectorAll(x)];
     const early = q("#lib-rows .sk-row").length; await p; return { early, rows: q("#lib-rows .lib-row").length, sk: q("#lib-rows .sk-row").length }; })()`);
   ok("④ 200ms 內回來:不畫 skeleton 就直接換清單", r.early === 0 && r.rows === 6 && r.sk === 0, JSON.stringify(r));
@@ -325,9 +455,9 @@ app.whenReady().then(async () => {
   r = await js(`(async () => { await trOpen("over"); const a = { lib: document.getElementById("lib").hidden, tr: document.getElementById("tr").hidden, cur: document.getElementById("lib-nav").getAttribute("aria-current"), open: libBag().open };
     await libOpen(); const b = { lib: document.getElementById("lib").hidden, tr: document.getElementById("tr").hidden, trOpen: TR_BAGS.local.open }; return { a, b }; })()`);
   ok("④ 互斥:開自動下單 → 策略庫收(入口 aria-current 拿掉);再開策略庫 → 自動下單收", r.a.lib && !r.a.tr && r.a.cur === null && r.a.open === false && !r.b.lib && r.b.tr && r.b.trOpen === false, JSON.stringify(r));
-  r = await js(`(() => { document.getElementById("chat-lib").click(); document.getElementById("lib-web").click(); return { opened: window.__lib.opened, sent: window.__lib.sent.length }; })()`);
+  r = await js(`(() => { document.getElementById("chat-lib").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
   await wait(30);
-  ok("④ 歡迎頁 chip 只開策略庫不送訊息;「在網頁版看完整策略庫」外開 blave.org/agent/<lang>/library", (await js("window.__lib.opened")) === "https://blave.org/agent/zh/library" && r.sent === (await js("window.__lib.sent.length")), JSON.stringify(r));
+  ok("④ 歡迎頁 chip 只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場分段", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-seg", JSON.stringify(r));
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
   app.exit(red ? 1 : 0);

@@ -3024,7 +3024,7 @@ msgid "lib.chip"
 msgstr "看免費策略"
 
 msgid "lib.desc"
-msgstr "官方策略免費。已驗證優先，再看回測樣本期長短。"
+msgstr "官方策略免費，社群策略可直接購買。已驗證優先，再看樣本期長短。"
 
 msgid "lib.mkt.aria"
 msgstr "市場"
@@ -3038,9 +3038,6 @@ msgstr "加密"
 msgid "lib.mkt.tw"
 msgstr "台股"
 
-msgid "lib.web"
-msgstr "在網頁版看完整策略庫 ↗"
-
 msgid "lib.free"
 msgstr "免費"
 
@@ -3049,6 +3046,36 @@ msgstr "已驗證"
 
 msgid "lib.installed"
 msgstr "已安裝"
+
+msgid "lib.unverified"
+msgstr "未驗證"
+
+msgid "lib.comm.title"
+msgstr "社群策略（{n}）"
+
+msgid "lib.comm.sub"
+msgstr "未驗證，作者自行上架"
+
+msgid "lib.foot"
+msgstr "想上架自己的策略？在網頁版投稿。"
+
+msgid "lib.kv.total"
+msgstr "總報酬"
+
+msgid "lib.gate.feeAssumed"
+msgstr "假設 {v}"
+
+msgid "lib.gate.feeActual"
+msgstr "交易所 {v}"
+
+msgid "lib.gate.p"
+msgstr "p = {p}"
+
+msgid "lib.gate.robustVal"
+msgstr "鄰域保留 {ratio}%"
+
+msgid "lib.gates.failed"
+msgstr "未驗證：{k} 道關卡未通過。回測數字是作者提供的，Blave 沒有替它把關。"
 
 msgid "lib.price"
 msgstr "{price}"
@@ -3067,9 +3094,6 @@ msgstr "年化・回測"
 
 msgid "lib.installs"
 msgstr "{n} 人安裝"
-
-msgid "lib.hiddenNote"
-msgstr "另有 {n} 支未驗證的社群策略，在網頁版看。"
 
 msgid "lib.error"
 msgstr "讀不到策略庫。"
@@ -3144,7 +3168,7 @@ msgid "lib.gate.na"
 msgstr "MCPT 不適用（組合策略）"
 
 msgid "lib.gates.community"
-msgstr "社群策略由作者上架、經人工審核後公開；這支策略尚未跑過品質關卡。"
+msgstr "未驗證：這支策略尚未跑過品質關卡。社群策略由作者上架、經人工審核後公開；回測數字是作者提供的。"
 
 msgid "lib.how"
 msgstr "它怎麼交易"
@@ -3197,6 +3221,15 @@ msgstr "1 小時"
 msgid "lib.iv.4h"
 msgstr "4 小時"
 
+msgid "lib.iv.2h"
+msgstr "2 小時"
+
+msgid "lib.iv.8h"
+msgstr "8 小時"
+
+msgid "lib.iv.12h"
+msgstr "12 小時"
+
 msgid "lib.iv.1d"
 msgstr "日線"
 
@@ -3207,7 +3240,7 @@ msgid "lib.after1"
 msgstr "agent 把策略下載到{where}的 strategies/ 資料夾"
 
 msgid "lib.after2"
-msgstr "用最新資料重跑一次回測，結果出現在左側欄"
+msgstr "用最新資料重跑一次回測；完整報告（權益與回撤、月報酬、進出場）出現在左側欄"
 
 msgid "lib.after3"
 msgstr "要不要上線、用模擬還是實盤，由你決定"

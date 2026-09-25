@@ -3024,7 +3024,7 @@ msgid "lib.chip"
 msgstr "See free strategies"
 
 msgid "lib.desc"
-msgstr "Official strategies are free. Verified first, then longest backtest."
+msgstr "Official strategies are free; community strategies can be bought right here. Verified first, then longest backtest."
 
 msgid "lib.mkt.aria"
 msgstr "Market"
@@ -3038,9 +3038,6 @@ msgstr "Crypto"
 msgid "lib.mkt.tw"
 msgstr "TW Stocks"
 
-msgid "lib.web"
-msgstr "Open the full library on the web ↗"
-
 msgid "lib.free"
 msgstr "Free"
 
@@ -3049,6 +3046,36 @@ msgstr "Verified"
 
 msgid "lib.installed"
 msgstr "Installed"
+
+msgid "lib.unverified"
+msgstr "Unverified"
+
+msgid "lib.comm.title"
+msgstr "Community strategies ({n})"
+
+msgid "lib.comm.sub"
+msgstr "Unverified, listed by their authors"
+
+msgid "lib.foot"
+msgstr "Want to list your own strategy? Submit it on the web."
+
+msgid "lib.kv.total"
+msgstr "Total return"
+
+msgid "lib.gate.feeAssumed"
+msgstr "Assumed {v}"
+
+msgid "lib.gate.feeActual"
+msgstr "Exchange {v}"
+
+msgid "lib.gate.p"
+msgstr "p = {p}"
+
+msgid "lib.gate.robustVal"
+msgstr "Keeps {ratio}%"
+
+msgid "lib.gates.failed"
+msgstr "Unverified: {k} of the three gates not passed. The backtest figures are the author's; Blave has not vouched for them."
 
 msgid "lib.price"
 msgstr "{price}"
@@ -3067,9 +3094,6 @@ msgstr "Annualized · backtest"
 
 msgid "lib.installs"
 msgstr "{n} installs"
-
-msgid "lib.hiddenNote"
-msgstr "{n} unverified community strategies are listed on the web only."
 
 msgid "lib.error"
 msgstr "Couldn't load the library."
@@ -3144,7 +3168,7 @@ msgid "lib.gate.na"
 msgstr "MCPT n/a (portfolio strategy)"
 
 msgid "lib.gates.community"
-msgstr "Community strategies are listed by their authors after manual review. This one hasn't been through the quality gates yet."
+msgstr "Unverified: this strategy hasn't been through the quality gates. Community strategies are listed by their authors after manual review; the backtest figures are the author's."
 
 msgid "lib.how"
 msgstr "How it trades"
@@ -3197,6 +3221,15 @@ msgstr "1h"
 msgid "lib.iv.4h"
 msgstr "4h"
 
+msgid "lib.iv.2h"
+msgstr "2h"
+
+msgid "lib.iv.8h"
+msgstr "8h"
+
+msgid "lib.iv.12h"
+msgstr "12h"
+
 msgid "lib.iv.1d"
 msgstr "Daily"
 
@@ -3207,7 +3240,7 @@ msgid "lib.after1"
 msgstr "The agent downloads it into strategies/ on {where}"
 
 msgid "lib.after2"
-msgstr "It reruns the backtest on fresh data; the result shows up in the sidebar"
+msgstr "Reruns the backtest on fresh data; the full report (equity & drawdown, monthly returns, trades) shows up in the sidebar"
 
 msgid "lib.after3"
 msgstr "Whether to run it — paper or live — is your call"

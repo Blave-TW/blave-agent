@@ -8,7 +8,6 @@
 .lib-head-list[hidden] { display: none; }
 .lib-desc { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); min-height: 18px; }
 .lib-tools { display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; margin-top: var(--space-12); }
-.lib-tools .btn-quiet { margin-left: auto; }
 /* 市場分段 = .cn-lang 同配方(Outlined control segment) */
 .lib-seg { display: inline-flex; border: 1px solid var(--border-frame); border-radius: var(--radius-xs); }
 .lib-seg button { position: relative; height: 30px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: color var(--motion-fast) var(--ease-standard); }
@@ -43,6 +42,15 @@
 .lib .tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; background: var(--surface-muted); color: var(--ink-2); }
 .lib .tag.is-verified { background: var(--color-greenLight); color: var(--color-greenBlack); }
 .lib .tag.is-price { color: var(--ink); gap: var(--space-4); }
+/* 社群策略(未驗證)那一段:單列 disclosure(canon Accordion 單列變體),列本身 44 高、chevron 純 CSS;展開不做高度動畫 */
+.lib-comm-wrap[hidden], .lib-rows[hidden] { display: none; }
+.lib-comm { position: relative; width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: var(--space-8); padding: var(--space-8) var(--space-32) var(--space-8) var(--space-8); border-top: 1px solid var(--border-hairline); text-align: left; border-radius: 0; color: var(--ink); transition: color var(--motion-fast) var(--ease-standard); }
+.lib-comm:hover { color: var(--ink-2); }
+.lib-comm:focus-visible { outline-offset: -2px; }
+.lib-comm-t { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.lib-comm-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.lib-comm::after { content: ""; position: absolute; right: var(--space-12); top: 50%; width: 7px; height: 7px; margin-top: -5px; border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3); transform: rotate(45deg); transition: transform var(--motion-fast) var(--ease-standard); }
+.lib-comm[aria-expanded="true"]::after { margin-top: -1px; transform: rotate(-135deg); }
 .lib-foot { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .lib-state { margin: 0; padding: var(--space-24) 0; font-size: 13px; color: var(--ink-3); }
 .lib-state .btn-out { display: inline-flex; align-items: center; margin-top: var(--space-12); }
@@ -77,7 +85,7 @@
 .lib-cta .err .fault-mark { background: var(--ink-3); margin-top: 8px; }   /* 灰記號:不是錯誤,是「沒發生」 */
 .lib-card { background: var(--surface-card); border-radius: var(--radius-lg); padding: var(--space-16); min-width: 0; }
 .lib-card h6 { margin: 0 0 var(--space-8); font-size: 12px; font-weight: 400; color: var(--ink-3); }
-.lib-card .chart { width: 100%; height: 168px; }   /* lightweight-charts 容器:150 圖 + 18 年份軸 */
+.lib-card .chart { width: 100%; height: 200px; }   /* lightweight-charts 容器:182 圖 + 18 年份軸(詳情的主要證據,不是縮圖) */
 .lib-card .chart-none { margin: 0; font-size: 12px; color: var(--ink-3); }
 .lib-split { margin-top: var(--space-12); display: grid; grid-template-columns: 1fr 1fr; }
 .lib-kvcol { min-width: 0; padding: 0 var(--space-12); }
@@ -92,9 +100,13 @@
 .lib .gates li:first-child { border-top: 0; padding-top: 0; }
 .lib .gates .gn { grid-column: 1; grid-row: 1; font-size: 13px; font-weight: 600; color: var(--ink); }
 .lib .gates .gd { grid-column: 1; grid-row: 2; font-size: 12px; color: var(--ink-3); }
-.lib .gates .gv { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12px; white-space: nowrap; }
+/* 右欄 = 狀態 + 數值:費率固定兩行(假設 / 交易所),480 欄一行版會把左邊說明擠成三行 */
+.lib .gates .gr { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: var(--space-2); }
+.lib .gates .gv { font-size: 12px; white-space: nowrap; }
 .lib .gates .gv.na { color: var(--ink-3); }
+.lib .gates .gx { font-size: 11px; line-height: 1.4; color: var(--ink-3); text-align: right; white-space: nowrap; }
 .lib-p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-2); white-space: pre-line; overflow-wrap: anywhere; }
+.lib-p + .gates { margin-top: var(--space-12); }   /* 關卡卡先講結論那一段,再列三道 */
 .lib-dl { margin: var(--space-12) 0 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-4) var(--space-12); }
 .lib-dl dt { font-size: 12px; color: var(--ink-3); }
 .lib-dl dd { margin: 0; font-size: 12px; color: var(--ink); }
@@ -103,4 +115,4 @@
 .lib .steps .n { flex: none; width: 18px; height: 18px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
 /* 購買框裡的購買中那一行(spin16 來自 trade.css) */
 .cf-busy { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-8) 0 0; font-size: 12px; color: var(--ink-2); }
-@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back { transition: none; } .sk { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back, .lib-comm, .lib-comm::after { transition: none; } .sk { animation: none; } }

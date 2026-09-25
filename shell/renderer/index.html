@@ -168,7 +168,6 @@
                 <button type="button" data-mkt="crypto" aria-pressed="false" data-i18n="lib.mkt.crypto"></button>
                 <button type="button" data-mkt="tw" aria-pressed="false" data-i18n="lib.mkt.tw"></button>
               </div>
-              <button class="btn-quiet" id="lib-web" type="button" data-i18n="lib.web"></button>
             </div>
           </div>
           <!-- 詳情模式:頁首只剩返回鈕 -->
@@ -176,6 +175,11 @@
         </div>
         <div class="lib-body" id="lib-body" tabindex="0">
           <div class="lib-rows" id="lib-rows"></div>
+          <!-- 未驗證的社群策略:收合的一段(spec §13.1),預設收合、展開狀態記在 library.js 的 bag -->
+          <div class="lib-comm-wrap" id="lib-comm-wrap" hidden>
+            <button class="lib-comm" id="lib-comm" type="button" aria-expanded="false" aria-controls="lib-comm-rows"><span class="lib-comm-t" id="lib-comm-t"></span><span class="lib-comm-s" data-i18n="lib.comm.sub"></span></button>
+            <div class="lib-rows" id="lib-comm-rows" hidden></div>
+          </div>
           <p class="lib-state" id="lib-state" role="status" hidden></p>
           <p class="lib-foot" id="lib-foot" hidden></p>
           <div class="lib-det" id="lib-det" hidden></div>
