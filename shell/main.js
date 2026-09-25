@@ -289,6 +289,7 @@ function loadToken() {
 }
 function clearToken() {
   try { fs.unlinkSync(tokenPath()); } catch (_) {}
+  libCache = null;   // 策略庫清單帶著這個帳號的 purchased:登出就丟
   clearDataKey();
   clearAppSecret();
 }
@@ -557,6 +558,7 @@ async function startOAuth(lang) {
   // 換了帳號:cloud.js 自己會認出 token 換了、把上一個人的東西丟掉(不靠這一行);這一行只是讓畫面不必等下一輪輪詢
   if (_cloud && _cloud.isRunning()) _cloud.refresh(true).catch(() => {});
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
+  libCache = null;                    // 同理:策略庫的 purchased / is_owner 是帳號的
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
   return { ok: true };
@@ -1174,6 +1176,100 @@ function dataAccessWhy(signedIn) {
   return b.reason === "NO_CARD" ? "no_card" : "no_balance";
 }
 
+/* ── 策略庫(renderer/library.js)──────────────────────────────
+   清單 = GET /openclaw/marketplace/strategies(公開端點,renderer 的 CSP 不外連,所以在這裡打)。登入了就帶桌面資料 key
+   (token_optional 認它、GET 一律放行)才拿得到 purchased / is_owner;沒有 key 就匿名。回應當不可信輸入:逐欄驗型別、
+   壞的那一筆整筆丟掉、清單不是陣列 → null(畫面畫「讀不到」)。快取 5 分鐘(同 ACCT_FRESH_MS);身分或語言換了就重打。 */
+const LIB_TITLE_MAX = 200, LIB_TEXT_MAX = 5000, LIB_STR_MAX = 60, LIB_SPARK_MAX = 512;
+function libSanitize(body) {
+  const list = body && typeof body === "object" && Array.isArray(body.strategies) ? body.strategies : null;
+  if (!list) return null;
+  // 控制字元一律拿掉;multi = 保留換行(說明要分段),否則連換行都拿掉(標題會進送給 agent 的那句話)
+  const str = (v, max, multi) => (typeof v === "string" ? v.replace(multi ? /[\u0000-\u0009\u000b-\u001f\u007f]/g : /[\u0000-\u001f\u007f]/g, " ").slice(0, max) : null);
+  const fin = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const gate = (v) => (v === "pass" || v === "fail" || v === "na" ? v : null);
+  const day = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+  const out = [];
+  for (const s of list) {
+    if (!s || typeof s !== "object") continue;
+    const id = Number.isInteger(s.id) && s.id > 0 ? s.id : null, title = (str(s.title, LIB_TITLE_MAX) || "").trim();
+    const price = fin(s.price);
+    if (!id || !title || price === null || price < 0) continue;
+    let report = null;
+    if (s.report && typeof s.report === "object") {
+      const r = s.report, g = r.gate_checks && typeof r.gate_checks === "object" ? r.gate_checks : null;
+      const gc = g ? { mcpt: gate(g.mcpt), robust: gate(g.robust), fee: gate(g.fee) } : null;
+      const spark = Array.isArray(r.spark) && r.spark.length >= 2 && r.spark.length <= LIB_SPARK_MAX && r.spark.every((v) => typeof v === "number" && isFinite(v) && v > 0) ? r.spark.slice() : null;
+      report = { annual_return: fin(r.annual_return), sharpe: fin(r.sharpe), max_drawdown: fin(r.max_drawdown), symbol: str(r.symbol, LIB_STR_MAX), interval: str(r.interval, LIB_STR_MAX),
+        gate_checks: gc && gc.mcpt && gc.robust && gc.fee ? gc : null, spark, equity_from: day(r.equity_from), equity_to: day(r.equity_to) };
+    }
+    out.push({ id, title, summary: str(s.summary, LIB_TEXT_MAX, true), description: str(s.description, LIB_TEXT_MAX, true), price, category: str(s.category, LIB_STR_MAX),
+      created_at: str(s.created_at, LIB_STR_MAX), purchase_count: Number.isInteger(s.purchase_count) && s.purchase_count >= 0 ? s.purchase_count : 0,
+      purchased: s.purchased === true, is_owner: s.is_owner === true, is_official: s.is_official === true, verified: s.verified === true,
+      direction: str(s.direction, LIB_STR_MAX), max_exposure: fin(s.max_exposure), report });
+  }
+  return out;
+}
+let libCache = null;   // { at, lang, signedIn, strategies }
+async function libraryList(langRaw, force) {
+  const lang = langRaw === "en" ? "en" : "zh";
+  const signedIn = !!loadToken();
+  let dataAccess = null;
+  // 閘門要的「含不含資料」跟每一輪開跑前問的是同一份(hasBlaveData 太舊才補打);查不到就 null,畫面不猜
+  if (signedIn) { await hasBlaveData(); dataAccess = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? dataAccessOf(lastAcct.body) : null; }
+  if (!force && libCache && libCache.lang === lang && libCache.signedIn === signedIn && Date.now() - libCache.at < ACCT_FRESH_MS) return { strategies: libCache.strategies, signedIn, dataAccess };
+  const url = `${API_BASE}/openclaw/marketplace/strategies?lang=${lang}`;
+  const key = signedIn ? loadDataKey() : null;
+  let r = null;
+  try {
+    r = await getJSON(url, key ? { "api-key": key.api_key, "secret-key": key.secret_key } : {});
+    if (key && r.status === 403) r = await getJSON(url, {});   // key 被撤了(別台登出、換帳號):退成匿名清單,purchased 一律 false
+  } catch (_) { return null; }
+  if (r.status !== 200) return null;
+  const strategies = libSanitize(r.body);
+  if (!strategies) return null;
+  libCache = { at: Date.now(), lang, signedIn, strategies };
+  return { strategies, signedIn, dataAccess };
+}
+/* 購買付費策略:POST /oauth/desktop/marketplace/purchase,帶帳號 token + app_secret(同 planStart:會動餘額與信用卡,
+   帳號 token 單獨不准)。回 { status, body }:body 只留畫面分支要的幾欄;打不到 → { status: 0, body: null }。 */
+function libPurchaseBody(b) {
+  if (!b || typeof b !== "object") return null;
+  const s = (v) => (typeof v === "string" ? v.slice(0, 200) : null), n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  return { status: s(b.status), error: s(b.error), error_code: s(b.error_code), needs_topup: b.needs_topup === true, has_card: b.has_card === true, balance: n(b.balance), required: n(b.required) };
+}
+async function libraryPurchase(strategyId, confirmTopup) {
+  if (!Number.isInteger(strategyId) || strategyId <= 0) return { status: 400, body: { error_code: "STRATEGY_ID_REQUIRED" } };
+  const token = loadToken(), secret = loadAppSecret();
+  if (!token) return { status: 401, body: libPurchaseBody({ error_code: "INVALID_CREDENTIALS" }) };
+  if (!secret) return { status: 401, body: libPurchaseBody({ error_code: "APP_SECRET_REQUIRED" }) };
+  let r = null;
+  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/purchase`, { token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true }); }
+  catch (_) { return { status: 0, body: null }; }
+  libCache = null;   // 買了(或另一台正在買)之後 purchased 會變:下次開清單重打
+  return { status: r.status, body: libPurchaseBody(r.body) };
+}
+/* 「已安裝」對照表(規格 §1.2):{ marketplace id → 本機策略資料夾名 },只有這台電腦視角在用。存 userData、不進 workspace
+   (agent 讀得到 workspace;這張表是外殼自己的記憶)。patch = { id, name } 記一筆、{ id, name: null } 拿掉一筆、不給只讀。 */
+const libInstalledPath = () => path.join(app.getPath("userData"), "library-installed.json");
+const LIB_NAME_RE = /^[^./\\\u0000-\u001f][^/\\\u0000-\u001f]{0,127}$/;   // 資料夾名:同 stratNames 的排除(不以 . 開頭)、不含路徑分隔
+function libInstalledClean(m) {
+  const out = {};
+  if (!m || typeof m !== "object" || Array.isArray(m)) return out;
+  for (const k of Object.keys(m)) if (/^[1-9]\d{0,9}$/.test(k) && typeof m[k] === "string" && LIB_NAME_RE.test(m[k])) out[k] = m[k];
+  return out;
+}
+function libraryInstalled(patch) {
+  let m = {};
+  try { m = libInstalledClean(JSON.parse(fs.readFileSync(libInstalledPath(), "utf8"))); } catch (_) { /* 沒有檔 / 壞掉:當空表 */ }
+  if (!patch || typeof patch !== "object" || !Number.isInteger(patch.id) || patch.id <= 0) return m;
+  if (patch.name === null) delete m[String(patch.id)];
+  else if (typeof patch.name === "string" && LIB_NAME_RE.test(patch.name)) m[String(patch.id)] = patch.name;
+  else return m;
+  try { fs.writeFileSync(libInstalledPath(), JSON.stringify(m), { mode: 0o600 }); } catch (_) { /* 寫不進去:這一次的記憶只在畫面上 */ }
+  return m;
+}
+
 async function blaveModels() {
   const acct = loadToken();
   if (!acct) return [];
@@ -1660,6 +1756,10 @@ app.whenReady().then(() => {
   handle("cancel-oauth", () => cancelOAuth());
   handle("clear-connection", () => clearConnection());
   handle("has-blave-token", () => !!loadToken());
+  // 策略庫(renderer/library.js):清單與已安裝表只收自家頁面;購買會動到餘額與信用卡,拒絕時回「打不到」的形狀
+  handle("library-list", (_e, lang, force) => libraryList(lang, force === true), null);
+  ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
+  handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   handle("sign-out-blave", () => signOutBlave());
   handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   handle("cancel-agent-login", () => cancelAgentLogin());

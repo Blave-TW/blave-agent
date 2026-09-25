@@ -1064,6 +1064,7 @@ async function trOpen(tab) {
   const S = TR;
   // 中欄一次只有一個視圖:先把這一邊的策略報告收掉(各邊各自選中的那支互不影響)
   if (S.env === "local") await stratSelect(null); else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);
+  if (typeof libLeave === "function") libLeave(S.env);   // 策略庫也收(renderer/library.js)
   if (S !== TR_BAGS[ENV.cur]) { S.open = true; return; }   // 等的時候切走了:只記下這一邊是開著的,不碰另一邊的畫面
   $("main-empty").hidden = true; $("tr").hidden = false;
   $("tr-nav").setAttribute("aria-current", "page");
@@ -3114,12 +3115,14 @@ function envShowMain() {
     const gate = !$("cv-empty").hidden, rp = !gate && typeof RPC !== "undefined" && !!(RPC.name && RPC.data);
     $("rp").hidden = !rp; $("main-empty").hidden = true; $("tr").hidden = gate || rp;
     if (rp) $("tr-nav").removeAttribute("aria-current"); else $("tr-nav").setAttribute("aria-current", "page");
+    if (typeof libShowMain === "function") libShowMain(gate);   // 策略庫(第五個視圖)開著就蓋掉上面那幾個;開通頁開著時跟側欄入口一起收
     return;
   }
   const L = TR_BAGS.local, rp = !L.open && !!(RP.name && RP.data);
   $("rp").hidden = !rp;
   $("main-empty").hidden = L.open || rp;
   $("tr").hidden = !L.open; if (L.open) $("tr-nav").setAttribute("aria-current", "page"); else $("tr-nav").removeAttribute("aria-current");
+  if (typeof libShowMain === "function") libShowMain(false);
 }
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
    每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */

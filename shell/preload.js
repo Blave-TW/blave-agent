@@ -65,6 +65,10 @@ contextBridge.exposeInMainWorld("blave", {
   cancelOAuth: () => ipcRenderer.invoke("cancel-oauth"),
   clearConnection: () => ipcRenderer.invoke("clear-connection"),
   hasBlaveToken: () => ipcRenderer.invoke("has-blave-token"),
+  // 策略庫(renderer/library.js):清單由主行程打 api(畫面的 CSP 不外連);購買帶登入憑證、只在主行程;已安裝對照表存 userData
+  libraryList: (lang, force) => ipcRenderer.invoke("library-list", lang, force),
+  libraryPurchase: (id, confirmTopup) => ipcRenderer.invoke("library-purchase", id, confirmTopup),
+  libraryInstalled: (patch) => ipcRenderer.invoke("library-installed", patch),
   cancelAgentLogin: () => ipcRenderer.invoke("cancel-agent-login"),
   agentLogin: (kind) => ipcRenderer.invoke("agent-login", kind),
   signOutBlave: () => ipcRenderer.invoke("sign-out-blave"),

@@ -114,7 +114,7 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   // 列舉:app_secret 讀出來的地方就這幾個(多一個就要有人看過它交給了誰)
   // 第 4 個 = mcpCode() 的 getCreds(換 `blave` MCP 的接入碼;只交給 mcpcode.js 去打 api,不進 agent、不進 renderer——tests/check_shell_mcp_code.js)
   // 第 5 個 = cloudCmd() 的 getCreds(對雲端主機下指令;同樣只交給 cloudcmd.js 去打 api——tests/check_shell_cloud_cmd.js)
-  t("main.js:loadAppSecret( 的出現次數沒有變多", (mainSrc.match(/loadAppSecret\(/g) || []).length === 5
+  t("main.js:loadAppSecret( 的出現次數沒有變多(第六處 = 策略庫購買 libraryPurchase,同 planStart 那一級)", (mainSrc.match(/loadAppSecret\(/g) || []).length === 6
     && /createMcpCode\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\s*getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \} \}\);/.test(mainSrc));
   t("main.js:登出時清掉雲端宿主手上的東西(讀、寫兩支都要:在途的指令回來時是上一個人的)",
     /if \(_cloud\) _cloud\.reset\(\);/.test(mainSrc) && /if \(_cloudCmd\) _cloudCmd\.reset\(\);/.test(mainSrc));

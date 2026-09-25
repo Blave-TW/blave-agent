@@ -270,6 +270,7 @@ $("set-acct-btn").addEventListener("click", async () => {
   $("set-acct-btn").disabled = false;
   hasToken = false; acct = null; planErr = null; planBusy = false;
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
+  if (typeof libInvalidate === "function") libInvalidate();   // 策略庫的 purchased / 閘門是這個帳號的
   // 伺服器那顆沒撤到(離線、逾時):本機已經登出,但要講清楚還差一步、去哪裡補
   const warn = () => { if (!r.revoked) setHint({ text: t("cn.blave.signOutLocalOnly") }); };
   acctPaintAcct();
@@ -384,6 +385,7 @@ function setClose() {
   srcClear();   // 資料來源的表單:貼了沒存的金鑰不留在關掉的框裡
   sc.classList.remove("open");
   sc.hidden = true;
+  if (typeof libRefresh === "function") libRefresh();   // 在設定裡綁了卡 / 儲了值 / 登入了:策略庫的閘門要跟上
   $("ws-conn").focus();
 }
 // 選項是各語言自己的名字(不翻譯、不進 .po);中文那個用跳脫碼寫,字串閘門不准
@@ -982,6 +984,7 @@ async function stratRefresh(selectTouched) {
     box.appendChild(wrap);
   });
   if (typeof envPaintLocalDots === "function") envPaintLocalDots();   // 列是重建的:呼吸點不等下一輪輪詢
+  if (typeof libStratChanged === "function") libStratChanged();      // 策略庫列上的「已安裝」跟著本機清單走(renderer/library.js)
   // 這一輪動過的(新出現、或 mtime 變了)→ 選最近的那支
   if (selectTouched) {
     const touched = RP.list.find((x) => before.get(x.name) !== x.mtime);
@@ -994,6 +997,7 @@ async function stratRefresh(selectTouched) {
 async function stratSelect(name, force) {
   if (name === RP.name && !force) return;
   if (name) trLeave();   // 中欄一次只有一個視圖:選了策略就離開自動下單頁(trade.js)
+  if (name && typeof libLeave === "function") libLeave("local");   // 策略庫也收(renderer/library.js)
   RP.name = name; RP.drawn = {};
   $("strat-list").querySelectorAll(".strat-row").forEach((b) => {
     if (b.dataset.name === name) b.setAttribute("aria-current", "true");
@@ -1070,6 +1074,7 @@ async function rpCloudSelect(name, force) {
   if (name === RPC.name && !force) return;
   const seq = ++rpcSeq;
   RPC.name = name; RPC.drawn = {};
+  if (name && typeof libLeave === "function") libLeave("cloud");   // 雲端視角的策略庫也收(renderer/library.js)
   ENV.sig.side = null;                            // 側欄的 aria-current 跟著換
   const C = TR_BAGS.cloud;
   if (!name) { RPC.data = null; trPaint(); return; }
@@ -1277,7 +1282,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   if (single) $("del-ok").focus(); else $("del-cancel").focus();
 }
 function delClose(deleted) {
-  const sc = $("del-scrim"); if (sc.hidden) return;
+  const sc = $("del-scrim"); if (sc.hidden || sc.dataset.lock) return;   // lock:策略庫購買扣款在路上(library.js libPurchase),Esc / ✕ / 框外都不關
   sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
@@ -1820,7 +1825,7 @@ async function sendDraft() {
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; $("btn-send").disabled = true; hoBusy(); upPaint(); rpRobSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; $("btn-send").disabled = true; hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
@@ -1829,7 +1834,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   addMsg("you", msg); lastUserText = msg;
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
-  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); };
+  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); };
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
@@ -2321,7 +2326,7 @@ async function planLogin() {
   if (oauthPending || running) return;
   setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
   planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
-  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; acctPaintAcct(); await acctCheck(); }
+  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); acctPaintAcct(); await acctCheck(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = false; planPaint(); waitChanged();
@@ -2355,7 +2360,7 @@ async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
   oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
-  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; await acctCheck(); }
+  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); await acctCheck(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
   oauthPending = false; waitChanged();
@@ -2520,7 +2525,7 @@ const holdErrors = () => (cur === "claude" || cur === "codex") && !turnGotReply 
 window.blave.onTurnEnd(async (r) => {
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
   if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
-  stratRefresh(true);
+  stratRefresh(true).catch(() => {}).then(() => { if (typeof libTurnEnd === "function") libTurnEnd(); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const exitLine = r.code !== 0
     ? (/AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
@@ -2544,7 +2549,7 @@ window.blave.onTurnEnd(async (r) => {
   pendingErr = [];
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   upTurnEnded(faulted);
-  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync();
+  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync();
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
 });
@@ -2674,6 +2679,7 @@ function applyStatic() {
   acctPaintAcct();   // 設定 › 帳號(兩態的字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
+  if (typeof libRepaint === "function") libRepaint();   // 策略庫的清單 / 詳情(renderer/library.js 用 t() 現組的字)
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
