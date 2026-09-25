@@ -38,6 +38,7 @@ const WIN_PUBLISHER = process.env.BLAVE_WIN_PUBLISHER || null;
 if (T.win && RELEASE && !WIN_PUBLISHER && process.env.BLAVE_WIN_UNSIGNED !== "1")
   throw new Error("release(win)要設 BLAVE_WIN_PUBLISHER(簽章憑證的 CN;刻意不簽:BLAVE_WIN_UNSIGNED=1)");
 
+const WIN_ONLY = T.win && !T.mac;   // extraMetadata.name 的閘:同一次同時打 mac 就不蓋(mac 不能碰)
 const REPO = path.join(__dirname, "..");
 // 隨包的官方檔案 = main.js 的 OFFICIAL_DIRS / OFFICIAL_FILES + runtime/ + allocators/。
 // 只收 **git 追蹤中**的檔(內容取工作樹):repo 目錄同時是開發者自己的 workspace,
@@ -55,7 +56,13 @@ module.exports = {
   productName: "Blave",
   directories: { output: "dist" },
   asar: true,
-  extraMetadata: RELEASE || UPDATE_URL ? { ...(RELEASE ? { blaveRelease: true } : {}), ...(UPDATE_URL ? { blaveUpdateUrl: UPDATE_URL } : {}) } : undefined,   // main.js 靠它認發佈版 / 更新來源
+  // main.js 靠 blaveRelease / blaveUpdateUrl 認發佈版 / 更新來源。
+  // name(只在打 win 包時蓋):one-click per-user 的安裝目錄是 %LOCALAPPDATA%\Programs\<package name>,不看 productName——
+  // app-builder-lib targetUtil.getWindowsInstallationDirName(appInfo, !oneClick || perMachine) 只在 assisted / per-machine 才用
+  // productFilename,NsisOptions 也沒有任何安裝目錄選項(allowToChangeInstallationDirectory 是 assisted 專用)。
+  // 0.1.3 真機裝進了 blave-desktop\。不改 package.json 的 name:開發版 userData / single-instance lock 與 mac 的
+  // updater 快取目錄(<name>-updater)都掛在它上面,mac 產物與行為一個都不能動。
+  extraMetadata: RELEASE || UPDATE_URL || WIN_ONLY ? { ...(RELEASE ? { blaveRelease: true } : {}), ...(UPDATE_URL ? { blaveUpdateUrl: UPDATE_URL } : {}), ...(WIN_ONLY ? { name: "Blave" } : {}) } : undefined,
   publish: UPDATE_URL ? [{ provider: "generic", url: UPDATE_URL }] : null,   // 只為了產生 latest-mac.yml / latest.yml;上傳是手動的(--publish never)
   npmRebuild: false,
   files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "cloudcmd.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "mcpcode.js", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],

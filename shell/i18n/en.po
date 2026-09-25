@@ -964,6 +964,10 @@ msgstr "This OKX account mode can't trade futures. In OKX, go to Settings → Ac
 msgid "cx.failShort"
 msgstr "Connection failed"
 
+# Shown in the status line under the title (the top bar keeps the short cx.failShort) when the Binance recheck verdict is IP_CHANGED (other reasons keep cx.failShort); {ip} = the IPv4 binance_link verified
+msgid "cx.failIp"
+msgstr "Connection failed: your public IP changed to {ip}. Add it to this API key's whitelist at Binance."
+
 msgid "cx.sendFail"
 msgstr "Could not connect ({err}). Try again."
 
@@ -1985,6 +1989,9 @@ msgstr "Collected"
 
 msgid "priv.collect.hOff"
 msgstr "Collected when on"
+
+msgid "priv.collect.5"
+msgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"
 
 msgid "priv.collect.1"
 msgstr "Which step you reached: first open, daily open, connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"

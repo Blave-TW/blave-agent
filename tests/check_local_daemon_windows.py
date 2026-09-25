@@ -339,7 +339,7 @@ def fake_popen(argv, **kw):
 
 real_popen = ld.subprocess.Popen
 ld.subprocess.Popen = fake_popen
-sup = ld.ReconcilerSupervisor(WS2, lambda: {}, lambda pid: "")
+sup = ld.ReconcilerSupervisor(WS2, lambda: {}, lambda pid: "", lambda **kw: kw)
 children.append(FakeChild())
 sup.restart_reconciler()
 c1 = sup._proc

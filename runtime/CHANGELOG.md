@@ -8,6 +8,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **daemon 開的子程序一律 `stdin=DEVNULL`,Windows 再加 `CREATE_NO_WINDOW`**(`command_listener._child_kw`,
+  50 個 `subprocess.run/Popen` 呼叫點全部經它;`local_daemon` 的對帳器 spawn 保留 `stdin=PIPE`(EOF 是它的 parent watch)
+  只加 flag、帳戶讀取器與 `_pid_cwd` 同樣不繼承;`portfolio_reporter._run` / schtasks / crontab 三處也補上)。
+  0.1.3 Windows 真機(Lightsail Server 2022):`_tick_one` 每分鐘開的 `wait_for_bar.py` 卡在直譯器啟動(3–8MB、單執行緒、
+  只載 15 個 DLL),一小時累積 36 支,30 分鐘 timeout 的 `kill()` 只殺到 venv 啟動器、真 python 變孤兒;同一支腳本用 SSH /
+  排程工作開都 0.2 秒退。差別只有一個:daemon 的 stdin 是 Electron 給的 overlapped pipe(`--secret-stdin`,parent-watch
+  執行緒還 `read(0)` 掛在上面),子程序繼承了它。改 `stdin=DEVNULL` 後真機 0.2 秒退、`state/bar_wait/<name>.json` 正常更新。
+  子程序本來就不該拿到 secret 通道,雲端 Linux 機一樣適用。測試 `tests/check_child_stdin.py`(AST 列舉三個檔的每個 spawn 點、
+  nt 模式的 flag、`_tick_one` 真的帶 DEVNULL)。
+
 - **`local_daemon.py` 能在 Windows 跑(電腦版 Windows x64 MVP,未經真機驗證)**:「app 沒了=停單+撤掛單」的三重保證各有 Windows
   對應——parent watch 改成阻塞 `read(0)` 執行緒 + `WaitForSingleObject(ppid)` 兩道(`select` 對 pipe 無效、父死不會 re-parent);
   鎖走 `fcntl`/`msvcrt` 雙軌,對帳器在 Windows 自己拿鎖、daemon 只確認(`pass_fds` 不可用);撤單 sweep 掛在 EOF/parent-gone 路徑

@@ -326,7 +326,17 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // Binance 金鑰重查出事:單可能送不出去 → 這台電腦那格不亮綠點(原本 trKeyBad 沒有任何測試:變異成恆 false 這裡會紅)
   { const live = { alive: true, report: rep() }, withV = (reason, fn) => { globalThis.CXF = { bn: { verdict: reason ? { reason } : null } }; try { return fn(); } finally { delete globalThis.CXF; } };
     ok("金鑰出事(IP 換了 / 交易權限沒了 / 被拒)→ 這台電腦那格不亮綠點;雲端那格不受影響", ["IP_CHANGED", "TRADING_LOST", "KEY_REJECTED", "REJECTED"].every((r) => withV(r, () => cell("local", live) === "real,false,," && trKeyBad("local") === true && trKeyBad("cloud") === false)));
-    ok("沒有 verdict / CXF 還沒載入 → 不算出事", withV(null, () => trKeyBad("local") === false) && trKeyBad("local") === false && cell("local", live) === "real,true,,"); }
+    ok("沒有 verdict / CXF 還沒載入 → 不算出事", withV(null, () => trKeyBad("local") === false) && trKeyBad("local") === false && cell("local", live) === "real,true,,");
+    // 頂列 / 狀態行那個詞:IP 換了就講新 IP(cx.failIp 帶 {ip});其他 reason、沒 IP、雲端視角都是短詞。只改呈現,不動 binance_link 的判定
+    { const tOld = globalThis.t; globalThis.t = (k, v) => k + (v && v.ip ? ":" + v.ip : "");
+      const withVI = (verdict, fn) => { globalThis.CXF = { bn: { verdict } }; try { return fn(); } finally { delete globalThis.CXF; } };
+      ok("reason → 文案 key:IP_CHANGED + ip = cx.failIp:{ip};其餘 = cx.failShort", withVI({ reason: "IP_CHANGED", ip: "203.0.113.9" }, () => cxFailWord("local")) === "cx.failIp:203.0.113.9"
+        && withVI({ reason: "IP_CHANGED", ip: null }, () => cxFailWord("local")) === "cx.failShort"
+        && ["TRADING_LOST", "KEY_REJECTED", "REJECTED"].every((r) => withVI({ reason: r, ip: "203.0.113.9" }, () => cxFailWord("local")) === "cx.failShort")
+        && withVI({ reason: "IP_CHANGED", ip: "203.0.113.9" }, () => cxFailWord("cloud")) === "cx.failShort" && cxFailWord("local") === "cx.failShort");
+      ok("完整句只在標題下的狀態行(trStateText 出自 cxFailWord);頂列 trShortState 仍是短詞 cx.failShort(稽核 S3:en 版 IP 會被省略號切掉)", /\? cxFailWord\(TR\.env\) \+ " · " \+ s : s;/.test(fn("trStateText")) && !/t\("cx\.failShort"\)/.test(fn("trStateText"))
+        && /\? t\("cx\.failShort"\) \+ \(s \? " · " \+ s : ""\) : s;/.test(fn("trShortState")) && !/cxFailWord/.test(fn("trShortState")));
+      globalThis.t = tOld; } }
   // 設計 v4 §7:下單停了而且不是人按的(監督者被叫去跑、卻沒在跑)= 出事,沿用「已自動暫停」那一套;你還沒按啟動 = 沒有記號
   { const dead = (wanted, hb) => ({ alive: true, report: rep({ reconciler: { alive: false, heartbeat_at: hb }, daemon: { reconciler: { wanted, running: false } } }) });
     ok("異常停止 → 紅短劃 + tr.s.died,sig 帶最後執行的時間(看過才消);過場中不算", cell("local", dead(true, 1700000000)) === "real,false,bad,tr.s.died" && envCell("local", dead(true, 1700000000)).sig === "died:1700000000" && cell("local", dead(true, 1), true) === "real,false,,");

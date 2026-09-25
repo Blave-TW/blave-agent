@@ -301,7 +301,7 @@ Dead zones now behave correctly: a long is **held** through `(sell_th, buy_th)` 
 
 `threshold_position` is the per-bar state machine (exit checked before entry, NaN holds). It is a Python loop — ~0.5 s per 390k bars (5-min since 2023, measured on a Lightsail medium) — which is nothing once per backtest. Never hand-write the loop in `strategy.py`; call the lib. For scans see *Scanning four thresholds* below: with one side pushed out of range the lib takes a vectorized path, so a scan cell costs milliseconds, not the loop.
 
-**Scanning any pair — the flow is always `scan_grid → find_plateau → (on_edge → extend_axis → scan_grid → find_plateau, once) → write_scan → plot_heatmap`** (`write_scan` feeds the web 穩健參數 tab; details and the two web prompts in `references/lib.md` › *Parameter scan workflow*).
+**Scanning any pair — the flow is always `scan_grid → find_plateau → (on_edge → extend_axis → scan_grid → find_plateau, once) → write_scan → plot_heatmap`** (`write_scan` feeds the 參數掃描 tab (web and desktop); details and the two web prompts in `references/lib.md` › *Parameter scan workflow*).
 
 **Grid size — three principles** (Pardo's plateau-search practice / industry convention): **10–20 values per axis** (the `nice_grid` / `percentile_thresholds` defaults: ≈ 15 → 100–400 combos — scan time is linear in combos × bars × the cost of ONE `compute_signals` call: vectorized signals (`hysteresis`, rolling/where/ffill) run 100–400 cells in ≤ 10 s on any bar count, 40×40 on two years of 5-min bars in ~45 s; a per-bar Python loop inside `compute_signals` costs ~0.5 s per cell on 390k bars (minutes per grid) — vectorize before widening the grid, never the other way round); **the step must have trading meaning** (whole bars for windows, a threshold move a trader would notice — a finer step makes neighbours differ by noise and the plateau's neighbourhood mean degenerate into a single cell); **coarse first, then fine** (zoom a second scan into the plateau's neighbourhood only if it needs resolving). 40 per axis is the hard cap.
 
@@ -328,7 +328,7 @@ buy_vals  = nice_grid(0.2, HI, current=s.BUY_TH,  step=step)    # entry on the s
 sell_vals = nice_grid(LO,  HI, current=s.SELL_TH, step=step)    # exit: full range, BOTH sides
 ```
 
-**Axes are always `nice_grid` axes** (never a raw `linspace` / percentile list): look at the distribution to choose the range, but the cells must be integers or multiples of 1/2/2.5/5 (`step` = span/(n-1) rounded to `{1, 2, 2.5, 5}×10^k`) **and the strategy's current constant must be a cell** — `nice_grid` anchors the lattice on `current`. The web 穩健參數 tab marks "you are here" by locating `current` on the axis; a linspace like `[0.065, 0.543, 1.022, 1.5, 1.979]` never contains the file's `0.5`, so the tab shows 「不在掃描範圍」 and cannot highlight the current cell. Bar-count parameters use `integer=True` (step ≥ 1, int cells). `nice_grid` coarsens an axis that would exceed the 40-cell api cap instead of truncating it.
+**Axes are always `nice_grid` axes** (never a raw `linspace` / percentile list): look at the distribution to choose the range, but the cells must be integers or multiples of 1/2/2.5/5 (`step` = span/(n-1) rounded to `{1, 2, 2.5, 5}×10^k`) **and the strategy's current constant must be a cell** — `nice_grid` anchors the lattice on `current`. The 參數掃描 tab (web and desktop) marks "you are here" by locating `current` on the axis; a linspace like `[0.065, 0.543, 1.022, 1.5, 1.979]` never contains the file's `0.5`, so the tab shows 「不在掃描範圍」 and cannot highlight the current cell. Bar-count parameters use `integer=True` (step ≥ 1, int cells). `nice_grid` coarsens an axis that would exceed the 40-cell api cap instead of truncating it.
 
 Because each scan turns the **other side OFF**, the long scan and short scan are fully decoupled — so optimising each in isolation is valid no matter how `SELL_TH` and `COVER_TH` end up ordered relative to each other. Turn a side off by pushing its thresholds out of range (`compute_signals` already takes all four as kwargs):
 
@@ -345,7 +345,7 @@ grid_L = scan_grid(df, long_fn, buy_vals, sell_vals,
                    fee=s.FEE, freq='1d', warmup=s.WARMUP,
                    valid_fn=lambda b, sll: b > sll)
 best_L, nbr_L, *_ = find_plateau(grid_L, buy_vals, sell_vals)
-# scan.json holds ONE grid (the web 穩健參數 tab shows one heatmap): write the side you
+# scan.json holds ONE grid (the 參數掃描 tab (web and desktop) shows one heatmap): write the side you
 # are recommending — here the long side; the short side stays heatmap-only.
 write_scan(grid_L, buy_vals, sell_vals, nbr_L, best_L, 'strategies/<name>',
            row_param='BUY_TH', col_param='SELL_TH', fee=s.FEE, start=s.START,
@@ -369,7 +369,7 @@ After combining, the only hard checks are the per-side ones — `BUY_TH > SELL_T
 
 **Scanning three or more parameters — pairwise coordinate descent, max two rounds, ONE `scan.json`.** Canonical example: `examples/tw2317_broker_zscore/scan.py` (four constants: `ENTRY_Z`, `EXIT_Z`, `WINDOW`, `ZSCORE_WIN`).
 
-`scan_grid` / `plot_heatmap` / `scan.json` are 2D, and the web's 穩健參數 tab draws exactly one grid. Do not try to flatten N parameters into one chart; sweep them a pair at a time with the others pinned:
+`scan_grid` / `plot_heatmap` / `scan.json` are 2D, and the 參數掃描 tab (web and desktop) draws exactly one grid. Do not try to flatten N parameters into one chart; sweep them a pair at a time with the others pinned:
 
 1. **Round 1 — the two most likely sensitive constants**, everything else pinned at the values `strategy.py` holds now. Thresholds first (entry/exit levels move the Sharpe most), then window lengths, then the rest. Every constant must be a `compute_signals` kwarg so the pinned ones are just passed through. `find_plateau` → pin that pair at its plateau.
 2. **Round 2 — the next pair** (or, with three constants, the remaining one paired with the most sensitive one from round 1), thresholds pinned at the round-1 plateau. `find_plateau` → done.

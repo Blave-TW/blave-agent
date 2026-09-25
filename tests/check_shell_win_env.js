@@ -95,4 +95,17 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
     && turn.PATH === "/Users/u/Blave/venv/bin:/opt/homebrew/bin:/usr/bin" && turn.BLAVE_DATA_ACCESS === "1");
   t("agent 回合的物件本身沒有 ...process.env(白名單的本意)", !/\.\.\.process\.env/.test(src.slice(a, b)));
 }
+// ── 捲軸(0.1.3 真機):Windows 的捲軸不是浮動式——側欄多一條橫向捲軸(.cs-del 熱區伸出列外 4px)、報告區是系統粗捲軸。
+//    修法:overflow-x 明寫 hidden;細版捲軸只掛在 <html data-platform="win32">,記號由 preload 的 process.platform 經 app.js 掛上;寬度是 tokens.css 的 token。
+{
+  const R = path.join(__dirname, "..", "shell", "renderer");
+  const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), tokens = fs.readFileSync(path.join(R, "tokens.css"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"), appJs = fs.readFileSync(path.join(R, "app.js"), "utf8");
+  const sbRules = css.split("\n").filter((l) => /::-webkit-scrollbar/.test(l));
+  t("preload 交出 platform: process.platform;app.js 掛到 <html data-platform>", /platform: process\.platform,/.test(preload) && /if \(window\.blave\.platform\) document\.documentElement\.dataset\.platform = window\.blave\.platform;/.test(appJs));
+  t("捲軸樣式每一條都掛在 html[data-platform=\"win32\"] 底下(mac 一行都不吃)→ " + sbRules.length + " 條", sbRules.length >= 4 && sbRules.every((l) => l.trim().split(",").every((sel) => /^\s*html\[data-platform="win32"\]/.test(sel))));
+  t("寬度走 token(--scrollbar-w 在 tokens.css)、thumb 用 --border-frame、軌透明、沒寫死 hex", /--scrollbar-w: 8px;/.test(tokens) && /::-webkit-scrollbar,[^{]*\{ width: var\(--scrollbar-w\); height: var\(--scrollbar-w\); \}/.test(css) && /::-webkit-scrollbar-thumb \{ background: var\(--border-frame\)/.test(css) && /::-webkit-scrollbar-track[^{]*\{ background: transparent; \}/.test(css) && !sbRules.some((l) => /#[0-9a-f]{3,8}\b/i.test(l)));
+  t("側欄策略清單與對話清單 overflow-x: hidden(刪除鈕熱區伸出列外那 4px 不再撐出橫向捲軸)", /\.strat-list \{ flex: 1; overflow-y: auto; overflow-x: hidden; \}/.test(css) && /\.chat-list \{\n  position: absolute; inset: 0; z-index: 5; overflow-y: auto; overflow-x: hidden;/.test(css));
+  t("撐寬的元凶還在原位(.cs-del::before right:-10px width:44px;熱區規格不改,只裁)", /\.cs-del::before \{[^}]*right: -10px; width: 44px; \}/.test(css));
+}
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

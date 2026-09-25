@@ -359,10 +359,10 @@ function setCat(cat) {
   $("set-modal").querySelectorAll(".set-pane").forEach((p) => { p.hidden = p.dataset.setCat !== cat; });
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat === "model") mdlPaint();
-  if (cat === "src") srcLoad(); else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
+  if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "acct") acctPaintAcct();
   if (cat === "priv") privLoad();
-  if (cat === "plan") { planPaint(); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
+  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
   if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
@@ -444,7 +444,10 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
    app 裡不做首次告知(Wei);關掉之後清單留著——看得到自己關掉的是什麼。全段不寫「匿名」:登入後安裝編號會跟帳號對上。
    開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
-const PRIV_COLLECT = ["priv.collect.1", "priv.collect.2", "priv.collect.3", "priv.collect.4"];
+const PRIV_COLLECT = ["priv.collect.1", "priv.collect.5", "priv.collect.2", "priv.collect.3", "priv.collect.4"];
+/* 功能被使用(canon .claude/docs/product-telemetry.md):只交一個白名單裡的名字給主行程,不帶內容、不計次(api 每安裝每 name 每日一列)。
+   送出點放在「功能被使用」那一層(分頁切換、主要動作的 handler),不放 render;名字的字面在 tests/check_shell_telemetry.js 對兩端白名單掃 */
+function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
 const PRIV_NEVER = ["priv.never.1", "priv.never.2", "priv.never.3", "priv.never.4", "priv.never.5", "priv.never.6"];
 let PRIV_ID = null;   // 安裝識別碼:只收 UUID 的形狀(它會被畫出來、放進剪貼簿)
 async function privLoad() {
@@ -1130,15 +1133,16 @@ function rpRobOpts() {
    而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面) */
 function rpRobAsk(name, opener) {
   return new Promise((resolve) => confirmBox({ title: t("rob.btnScan"), lines: [t("rob.emptyCap")], ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
-    onOk: () => submitMessage(t("rob.msgScan", { name })).then((ok) => resolve(ok ? turnSeq : false)) }));
+    onOk: () => submitMessage(t("rob.msgScan", { name })).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }) }));
 }
 /* 回合開始 / 結束:參數掃描分頁的空狀態要跟著換鈕態(回合中鎖鈕、結束解鎖)。就地改鈕、不整塊重畫(焦點不掉到 body;有掃描結果的頁沒有鈕,模組自己略過) */
 function rpRobSync() {
   const B = rpBag(), R = window.BlaveReport || {};
   if (B.drawn.rob && R.robSync) R.robSync($("rp-rob"), rpRobOpts());
 }
-$("rp-tabs").addEventListener("click", (e) => {
-  const b = e.target.closest(".rp-tab"); if (b && !b.disabled) rpShowTab(b.dataset.tab);
+const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", code: "report_code" };
+$("rp-tabs").addEventListener("click", (e) => {   // 只有人點的才算用過:程式自動選預設分頁(stratSelect / rpCloudSelect)不記
+  const b = e.target.closest(".rp-tab"); if (b && !b.disabled) { rpShowTab(b.dataset.tab); trackFeature(RP_TAB_FEATURE[b.dataset.tab]); }
 });
 
 /* ── 第 4 步:真的接線 ───────────────────────────── */
@@ -1839,7 +1843,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     const r = await window.blave.sendMessage({
       sessionId, message: msg, handoff: opts && opts.handoff, model: MP.model, effort: mpEffort(), viewing });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
-    if (r.started) { busyStart(); return true; }
+    if (r.started) { busyStart(); trackFeature("chat_sent"); return true; }
     if (r.blocked === "UPDATE_REQUIRED") {
       // 不是「上一輪還在跑」:這個版本被停用了,要更新才能繼續。鈕帶去 設定 › 一般 最下面的「關於」(那裡有更新鈕)
       faultCard().set({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) });
@@ -2680,6 +2684,8 @@ function applyStatic() {
 }
 
 (async () => {
+  // 平台記號:app.css 只在 win32 換掉系統的粗捲軸(preload 給的 process.platform;沒有就不掛,mac 一律走預設)
+  if (window.blave.platform) document.documentElement.dataset.platform = window.blave.platform;
   // 用戶在設定裡選過的語言優先,沒選過才跟系統
   let savedLang = null;
   try { savedLang = localStorage.getItem("ws_lang"); } catch (_) { /* noop */ }

@@ -319,7 +319,8 @@ def _pid_cwd(pid):
         pass
     try:  # macOS: no /proc
         out = subprocess.run(["lsof", "-a", "-p", str(int(pid)), "-d", "cwd", "-Fn"],
-                             capture_output=True, text=True, timeout=10).stdout
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                             timeout=10).stdout
     except (OSError, subprocess.SubprocessError, ValueError):
         return ""
     for line in out.splitlines():
@@ -447,9 +448,9 @@ class ReconcilerSupervisor:
     an orphan left by a SIGKILLed daemon. A new reconciler is never started
     while the lock is held."""
 
-    def __init__(self, workspace, child_env, pid_cmdline):
+    def __init__(self, workspace, child_env, pid_cmdline, child_kw):
         self.ws = os.path.realpath(workspace)
-        self._child_env, self._pid_cmdline = child_env, pid_cmdline
+        self._child_env, self._pid_cmdline, self._child_kw = child_env, pid_cmdline, child_kw
         self._lock = threading.RLock()
         self._proc = None
         self._wanted = False
@@ -629,8 +630,9 @@ class ReconcilerSupervisor:
                 self._proc = subprocess.Popen(
                     [sys.executable, os.path.abspath(__file__), "--run-reconciler",
                      os.path.join("manager", "reconciler.py")],
-                    cwd=self.ws, env=self._child_env(), stdin=subprocess.PIPE,
-                    stdout=logf, stderr=logf, **({} if _nt() else {"pass_fds": (fd,)}))
+                    cwd=self.ws, env=self._child_env(), stdout=logf, stderr=logf,
+                    **self._child_kw(stdin=subprocess.PIPE,
+                                     **({} if _nt() else {"pass_fds": (fd,)})))
         finally:
             _release_fd(fd)  # POSIX: the child's copy keeps the lock; Windows: the child takes it now
         if _nt():
@@ -681,7 +683,8 @@ class Daemon:
         import events
         import portfolio_reporter
         self.cl, self.events, self.reporter = cl, events, portfolio_reporter
-        self.sup = ReconcilerSupervisor(workspace, cl._local_child_env, cl._pid_cmdline)
+        self.sup = ReconcilerSupervisor(workspace, cl._local_child_env, cl._pid_cmdline,
+                                        cl._child_kw)
         try:
             with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")) as f:
                 self.version = f.read().strip()
@@ -866,9 +869,9 @@ class Daemon:
                 self.account_kick.clear()
                 try:
                     subprocess.run([sys.executable, reader], cwd=self.ws,
-                                   env=self.cl._local_child_env(), stdin=subprocess.DEVNULL,
+                                   env=self.cl._local_child_env(),
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   timeout=ACCOUNT_TIMEOUT_S)
+                                   timeout=ACCOUNT_TIMEOUT_S, **self.cl._child_kw())
                 except (OSError, subprocess.SubprocessError) as e:
                     _log(f"account read failed: {type(e).__name__}")
                 self.dirty.set()

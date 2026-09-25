@@ -159,7 +159,7 @@ const ds = D.createDataSrc({ envFile: ENVF, lock, strategies: () => STRATS, trad
   // ---- 稽核 S3:離開表單時把沒存的金鑰從 DOM 清掉 ----
   { const rsrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "datasrc.js"), "utf8"), app = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
     t("S3 srcClear:清狀態、清輸入框的值、重畫,不搶焦點", /function srcClear\(\) \{[^\n]*SRC\.rows = \[\];[^\n]*querySelectorAll\("\.src-value"\)\.forEach\(\(el\) => \{ el\.value = ""; \}\); srcPaint\(\); \}/.test(rsrc) && !/function srcClear\(\) \{[^\n]*\.focus\(/.test(rsrc));
-    t("S3 切到別的分類、關設定都會叫 srcClear", /if \(cat === "src"\) srcLoad\(\); else srcClear\(\);/.test(app) && /function setClose\(\) \{[\s\S]{0,400}?srcClear\(\);/.test(app)); }
+    t("S3 切到別的分類、關設定都會叫 srcClear", /if \(cat === "src"\) \{ srcLoad\(\); trackFeature\("settings_datasrc"\); \} else srcClear\(\);/.test(app) && /function setClose\(\) \{[\s\S]{0,400}?srcClear\(\);/.test(app)); }
 
   // ---- IPC 只收自家頁面;值不進 log / argv / userData ----
   const main = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");

@@ -137,7 +137,7 @@ def scheduled_strategies():
         # deployment.md's task-name convention: blaveclaw-strategy-<name>
         try:
             out = subprocess.run(
-                ["schtasks", "/query", "/fo", "csv", "/nh"],
+                ["schtasks", "/query", "/fo", "csv", "/nh"], stdin=subprocess.DEVNULL,
                 # errors="replace" like every schtasks/crontab call in
                 # command_listener.py: text=True decodes with the locale
                 # encoding and STRICT errors, and a UnicodeDecodeError is
@@ -160,7 +160,7 @@ def scheduled_strategies():
     try:
         out = subprocess.run(
             ["crontab", "-l"],  # errors="replace": see the schtasks call above
-            capture_output=True, text=True, errors="replace", timeout=10,
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace", timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -1128,7 +1128,7 @@ def _run(cmd, timeout=10):
     呼叫的理由:cp950 的 Windows 上嚴格解碼會丟 UnicodeDecodeError,那不是 OSError
     也不是 SubprocessError,會從 except 逃出去把整份回報帶走。"""
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True,
+        out = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                              errors="replace", timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         return None

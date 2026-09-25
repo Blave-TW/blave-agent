@@ -614,6 +614,9 @@ function envAutoHalt(st) {
 /* Binance 金鑰重查出事了(主行程 binance_link 的 verdict;只有這台電腦有):真錢、單可能送不出去——標題列不可以還寫「自動下單執行中」、
    切換器不可以還亮綠點(設計師必改 6)。只是沒設白名單不算(那不是 verdict)。細節在設定分頁帳戶那一列。 */
 function trKeyBad(env) { return env !== "cloud" && typeof CXF !== "undefined" && !!(CXF.bn && CXF.bn.verdict); }
+// 標題下狀態行的「串接失敗」那個詞:IP 換了就把新 IP 講進去(光寫「串接失敗」用戶不知道是去 Binance 改白名單);其他 reason 照舊短詞。
+// 只改呈現,判定仍是 binance_link 的 verdict;拿不到 IP(verdict.ip 只收驗過的 IPv4)就退回短詞。頂列(trShortState)不用它:那裡是短詞、en 版會被省略號切掉 IP
+function cxFailWord(env) { const v = trKeyBad(env) ? CXF.bn.verdict : null; return v && v.reason === "IP_CHANGED" && v.ip ? t("cx.failIp", { ip: v.ip }) : t("cx.failShort"); }
 function envCell(env, st, pending) {
   const kind = env === "cloud" ? envCloudKind(st) : "running";
   const out = { money: null, venue: null, run: false, dot: null, word: null, sig: null };
@@ -787,6 +790,7 @@ const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONF
    (見 trPendingCheck)、讓下一次重按變成真的再執行一次;晚收的代價只是鈕多轉一會兒。 */
 const TR_CONFIRM_CLOUD_MS = 240000;
 const TR_TABS = ["over", "pos", "assets", "hist", "set"];
+const TR_TAB_FEATURE = { over: "trade_overview", pos: "trade_positions", assets: "trade_assets", hist: "trade_history", set: "trade_settings" };   // 使用追蹤的名字(feature_used)
 const PAPER = "paper", BINANCE = "binance";
 /* 連接框列得出來的真實交易所(env 名同 cloudcmd.CONNECT_VENUES、網頁 CX_VENUES;群益在 Mac 上跑不起來,不列)。
    pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;另外四家的金鑰
@@ -1116,7 +1120,7 @@ function trStateText(state) {
   else if (state === "dead") s = trDeadKind(r) === "died" ? t(zS ? "tr.diedZ" : "tr.died", { t: rec.heartbeat_at ? trStamp(rec.heartbeat_at) : "—" })
     : rec.heartbeat_at ? t("tr.notStarted") + " · " + t("tr.lastRun", { t: trStamp(rec.heartbeat_at) }) : t("tr.notStarted");
   // 讀帳失敗標在狀態行最前面(細節在 設定 分頁的帳戶段);頁面與暫停鈕照常在
-  return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + " · " + s : s;
+  return trFailedIds(r).length || trKeyBad(TR.env) ? cxFailWord(TR.env) + " · " + s : s;
 }
 /* 頂列用的短狀態詞(§6):不帶時間、不帶出口;完整句留給標題下那一行。字面 key 一個一個寫(check_shell_strings 靠字面掃) */
 function trShortState(state) {
@@ -1598,6 +1602,7 @@ function trNeedsSetup() {
 }
 function trSetTab(tab, focus) {
   TR.tab = tab; TR.landed = true;
+  trackFeature(TR_TAB_FEATURE[tab]);   // 每次都記:進到這一頁的落點、人切分頁、切視角後同步都是「這個分頁在他眼前」;api 每日去重,多記無妨
   $("tr-tabs").querySelectorAll(".main-tab").forEach((b) => {
     const on = b.dataset.tab === tab;
     b.setAttribute("aria-selected", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
@@ -2972,6 +2977,7 @@ function psRow(r, cloud) {
 function psOpen(opener) {
   const S = TR;
   if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || trPickOff()) return;
+  trackFeature("strategy_picker");
   const cloud = S.env === "cloud", names = trNames();
   const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true);
   psOpener = opener || null;
@@ -3069,6 +3075,7 @@ function envSwitch(env, via) {
   if (env !== "local" && env !== "cloud") return;
   const head = () => { const h = $("cv-empty").hidden ? $("tr-h") : $("cv-h"); if (h && h.offsetParent) h.focus(); };
   if (env === ENV.cur) { if (via === "link") head(); return; }
+  if (env === "cloud") trackFeature("view_cloud");
   // 換了一邊 = 放棄「等著送上雲端」那個意圖(承重牆①:沒有 TTL,靠這條收斂)。
   // hoAsk 是切完才記 pending,所以它自己那一次切過去不會被這行洗掉
   if (typeof HO !== "undefined") HO.pending = null;

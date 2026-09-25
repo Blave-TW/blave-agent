@@ -92,6 +92,22 @@ for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s
     [(() => { const s = ico(path.join(SHELL, "assets", "tray.ico")); return !!s && s.join() === "16,24,32"; })(), "assets/tray.ico 是 ICO、16 / 24 / 32 三階(工作列 100% / 150% / 200%)"],
   ]) { console.log((ok ? "PASS  " : "FAIL  ") + what); if (!ok) red++; }
 }
+// 安裝目錄(0.1.3 真機裝進 %LOCALAPPDATA%\Programs\blave-desktop):one-click per-user 的目錄名是 package name,不是 productName
+// (app-builder-lib targetUtil.getWindowsInstallationDirName 只在 assisted / per-machine 才用 productFilename)。修法是打 win 包時
+// 用 extraMetadata 蓋 name;package.json 的 name 不動(開發版 userData、mac 的 updater 快取目錄都掛在它上面)。真的 require 一次看結果。
+{
+  const meta = (argv) => { const r = require("child_process").spawnSync(process.execPath, ["-e", 'console.log(JSON.stringify(require(process.argv[1]).extraMetadata || null))', path.join(SHELL, "electron-builder.config.js"), ...argv],
+    { encoding: "utf8", env: { ...process.env, BLAVE_MAC_IDENTITY: "", BLAVE_RELEASE: "", BLAVE_UPDATE_URL: "", APPLE_API_KEY: "", APPLE_API_KEY_ID: "", APPLE_API_ISSUER: "", BLAVE_WIN_PUBLISHER: "" } }); return r.status === 0 ? JSON.parse(r.stdout.trim()) : { error: r.stderr }; };
+  const pkg = JSON.parse(fs.readFileSync(path.join(SHELL, "package.json"), "utf8")), mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
+  const win = meta(["--win", "nsis", "--x64"]), mac = meta(["--mac", "dir", "--universal"]), both = meta(["--mac", "--win"]);
+  for (const [ok, what] of [
+    [win && win.name === "Blave", "--win:extraMetadata.name = Blave(安裝目錄 %LOCALAPPDATA%\\Programs\\Blave)→ " + JSON.stringify(win)],
+    [mac === null, "--mac:extraMetadata 不存在(mac 的 name / 產物 / updater 快取目錄一個都不動)→ " + JSON.stringify(mac)],
+    [both === null || !("name" in both), "--mac --win 同一次:不蓋 name(mac 不能碰)"],
+    [pkg.name === "blave-desktop" && /if \(app\.isPackaged\) app\.setName\("Blave"\)/.test(mainSrc), "package.json 的 name 仍是 blave-desktop、main.js 打包版仍 setName(\"Blave\")(userData 兩個平台都還是 Blave)"],
+    [/nsis: \{ oneClick: true, perMachine: false \}/.test(cfg), "nsis 區塊沒多任何安裝目錄選項(沒有這種選項);仍是 oneClick per-user"],
+  ]) { console.log((ok ? "PASS  " : "FAIL  ") + what); if (!ok) red++; }
+}
 // Intel / Rosetta(0.0.6 通用版實測):SDK → mcp → pyjwt[crypto] 拉進 cryptography,50.x 起 macOS 只出 arm64 wheel,x64 退到
 // 編原始碼(maturin 會自己抓一套 Rust 下來編,幾分鐘)、venv 半套。引擎的每一條 pip 都只收 wheel(--only-binary=:all:,
 // 沒 wheel 就兩秒內大聲失敗)且 --isolated(不吃用戶 pip.conf / PIP_*),cryptography 釘 48.0.1(最後一版 universal2 wheel),

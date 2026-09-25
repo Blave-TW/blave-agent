@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("blave", {
+  platform: process.platform,   // app.js 掛到 <html data-platform>:Windows 的捲軸樣式只認這個記號
   detectAgents: () => ipcRenderer.invoke("detect-agents"),
   saveConnection: (choice) => ipcRenderer.invoke("save-connection", choice),
   loadConnection: () => ipcRenderer.invoke("load-connection"),
@@ -40,6 +41,7 @@ contextBridge.exposeInMainWorld("blave", {
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
   telemetryInstallId: () => ipcRenderer.invoke("telemetry-install-id"),
+  trackFeature: (name) => ipcRenderer.send("track-feature", name),   // 功能被使用:只有白名單裡的名字會落表(主行程驗)
   featureFlags: () => ipcRenderer.invoke("feature-flags"),
   // 自帶資料來源:金鑰的值只經過 dataSrcSave 一次;其餘三支只有名稱
   dataSrcList: () => ipcRenderer.invoke("datasrc-list"),

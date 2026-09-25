@@ -351,6 +351,25 @@ def _local_child_env(**extra):
     return env
 
 
+def _child_kw(**kw):
+    """Keyword arguments every subprocess this process starts must carry, on
+    top of the call's own. stdin is /dev/null unless the caller chose one: a
+    child inherits our stdin otherwise, and in the desktop app that is the
+    overlapped pipe Electron hands local_daemon for `--secret-stdin`, with the
+    parent-watch thread blocked in read(0) on it. A python that inherits it
+    hangs at interpreter start on Windows (0.1.3 Lightsail, 2026-09-25: every
+    wait_for_bar tick stuck at 3–8 MB, 36 orphaned interpreters an hour, and
+    the 30-minute kill() only reached the venv launcher) — and no child has
+    any business holding the secret channel anyway. Windows children also get
+    CREATE_NO_WINDOW: a console child of a GUI app would flash a console per
+    tick. Same shape on the cloud boxes; there it is merely hygiene."""
+    if "input" not in kw:  # run() refuses stdin= next to input=
+        kw.setdefault("stdin", subprocess.DEVNULL)
+    if os.name == "nt":
+        kw["creationflags"] = kw.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
+    return kw
+
+
 def _in_workspace(fn, *a, **kw):
     """lib/guard.py resolves state/HALT relative to the cwd, and this thread has
     no business changing the process-wide cwd out from under the bridge — so the
@@ -1360,7 +1379,7 @@ def _sync_strategy_tasks_windows(names):
         with _cron_lock:
             out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
                                  capture_output=True, text=True, errors="replace",
-                                 timeout=30)
+                                 timeout=30, **_child_kw())
             existing = set()
             for line in (out.stdout or "").splitlines():
                 tn = line.split('","')[0].strip('"').lstrip("\\")
@@ -1372,7 +1391,7 @@ def _sync_strategy_tasks_windows(names):
             for n in sorted(existing - wanted):
                 r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_TASK_PREFIX + n, "/f"],
                                    capture_output=True, text=True, errors="replace",
-                                   timeout=30)
+                                   timeout=30, **_child_kw())
                 if r.returncode != 0:  # a survivor keeps refreshing signals unseen
                     _log(f"task sync: delete {n} failed: "
                          f"{(r.stderr or r.stdout or '').strip()[:120]}")
@@ -1383,7 +1402,7 @@ def _sync_strategy_tasks_windows(names):
                 r = subprocess.run(["schtasks", "/create", "/tn", _WIN_TASK_PREFIX + n,
                                     "/tr", tr, "/ru", "SYSTEM", "/f"] + cadence,
                                    capture_output=True, text=True, errors="replace",
-                                   timeout=30)
+                                   timeout=30, **_child_kw())
                 if r.returncode != 0:
                     _log(f"task sync: create {n} failed: "
                          f"{(r.stderr or r.stdout or '').strip()[:120]}")
@@ -1395,7 +1414,7 @@ def _sync_strategy_tasks_windows(names):
                     # kicking those too can race two writers into state.json,
                     # which lib/execute writes non-atomically (audit B1)
                     subprocess.run(["schtasks", "/run", "/tn", _WIN_TASK_PREFIX + n],
-                                   capture_output=True, timeout=30)
+                                   capture_output=True, timeout=30, **_child_kw())
             _log(f"task sync: {len(wanted)} strategy task(s)")
     except Exception as e:
         _log(f"task sync failed: {type(e).__name__}: {e}")
@@ -1427,7 +1446,8 @@ def _sync_strategy_crons(names):
         return
     try:
         with _cron_lock:
-            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10,
+                                 **_child_kw())
             lines = out.stdout.splitlines() if out.returncode == 0 else []
             kept = [l for l in lines if _CRON_TAG not in l]
             for n in sorted(b):
@@ -1569,7 +1589,7 @@ def _downtime_report(down_from, down_to):
         r = subprocess.run(
             [interp, "-m", "lib.downtime", "gap", repr(down_from), repr(down_to), "runtime"],
             cwd=WORKSPACE, env=_strategy_subprocess_env(),
-            capture_output=True, text=True, timeout=60)
+            capture_output=True, text=True, timeout=60, **_child_kw())
     except (OSError, subprocess.SubprocessError) as e:
         _log(f"downtime check failed to run: {type(e).__name__}")
         return False
@@ -1947,7 +1967,7 @@ def _ensure_demand_start():
     an existing entry — a failure always reaches the log."""
     try:
         st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
-                            capture_output=True, timeout=15)
+                            capture_output=True, timeout=15, **_child_kw())
         if st.returncode != 0:
             return  # not installed
         _nssm_run(["set", "blaveclaw-reconciler", "Start", "SERVICE_DEMAND_START"])
@@ -2033,7 +2053,7 @@ def _reconciler_supervised():
     try:
         if platform.system() == "Windows":
             st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
-                                capture_output=True, timeout=30)
+                                capture_output=True, timeout=30, **_child_kw())
             if st.returncode != 0:
                 return False  # service never installed
             out = (st.stdout or b"").replace(b"\x00", b"").decode("ascii", "ignore")
@@ -2043,7 +2063,8 @@ def _reconciler_supervised():
             return True if "SERVICE_RUNNING" in out else None
         if os.path.isfile(RECONCILER_UNIT_PATH):
             state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
-                                   capture_output=True, text=True, timeout=15).stdout.strip()
+                                   capture_output=True, text=True, timeout=15,
+                                   **_child_kw()).stdout.strip()
             if state in ("active", "activating", "reloading"):
                 return True
             # deactivating / failed read as NOT running here, on purpose, unlike
@@ -2054,7 +2075,7 @@ def _reconciler_supervised():
                 return None
         try:
             has = subprocess.run(["tmux", "has-session", "-t", "reconciler"],
-                                 capture_output=True, timeout=20)
+                                 capture_output=True, timeout=20, **_child_kw())
         except FileNotFoundError:
             return False
         return has.returncode == 0
@@ -2172,7 +2193,7 @@ def _windows_unsupervised_pids(me):
           "\"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.Name)`t$($_.CommandLine)\" }")
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, timeout=30, **_child_kw())
     except (OSError, subprocess.SubprocessError):
         return None
     if out.returncode != 0:
@@ -2475,7 +2496,7 @@ def _tick_one(name):
             [interp, os.path.join("manager", "wait_for_bar.py"), name],
             cwd=WORKSPACE, env=_strategy_subprocess_env(),
             capture_output=True, text=True,
-            timeout=SCHEDULER_TICK_TIMEOUT_SECONDS,
+            timeout=SCHEDULER_TICK_TIMEOUT_SECONDS, **_child_kw()
         )
         if r.returncode != 0:
             _log(f"scheduler tick {name}: wait_for_bar.py exited {r.returncode} "
@@ -2572,7 +2593,7 @@ def _migrate_legacy_ac_crons():
             with _cron_lock:
                 out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
                                      capture_output=True, text=True, errors="replace",
-                                     timeout=30)
+                                     timeout=30, **_child_kw())
                 existing = set()
                 for line in (out.stdout or "").splitlines():
                     tn = line.split('","')[0].strip('"').lstrip("\\")
@@ -2581,7 +2602,8 @@ def _migrate_legacy_ac_crons():
                 stale = {n for n in existing if _strategy_has_interval(n)}
                 for n in sorted(stale):
                     r = subprocess.run(["schtasks", "/delete", "/tn", _WIN_TASK_PREFIX + n, "/f"],
-                                       capture_output=True, text=True, errors="replace", timeout=30)
+                                       capture_output=True, text=True, errors="replace", timeout=30,
+                                       **_child_kw())
                     if r.returncode != 0:
                         _log(f"cron migration: delete task {n} failed: "
                              f"{(r.stderr or r.stdout or '').strip()[:120]}")
@@ -2592,7 +2614,8 @@ def _migrate_legacy_ac_crons():
         return
     try:
         with _cron_lock:
-            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10,
+                                 **_child_kw())
             if out.returncode != 0:
                 return  # no crontab at all — nothing to migrate
             kept, dropped = [], 0
@@ -2728,7 +2751,8 @@ def _fire_due_reports():
                 continue
             try:
                 subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 **_child_kw())
                 _log(f"report trigger: started {job_id}")
             except Exception as e:
                 _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
@@ -2747,7 +2771,7 @@ def _sweep_legacy_report_schedules():
             with _cron_lock:
                 out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
                                      capture_output=True, text=True, errors="replace",
-                                     timeout=30)
+                                     timeout=30, **_child_kw())
                 stale = set()
                 for line in (out.stdout or "").splitlines():
                     tn = line.split('","')[0].strip('"').lstrip("\\")
@@ -2756,7 +2780,7 @@ def _sweep_legacy_report_schedules():
                 for tn in sorted(stale):
                     r = subprocess.run(["schtasks", "/delete", "/tn", tn, "/f"],
                                        capture_output=True, text=True, errors="replace",
-                                       timeout=30)
+                                       timeout=30, **_child_kw())
                     if r.returncode != 0:
                         _log(f"report sweep: delete task {tn} failed: "
                              f"{(r.stderr or r.stdout or '').strip()[:120]}")
@@ -2767,7 +2791,8 @@ def _sweep_legacy_report_schedules():
         return
     try:
         with _cron_lock:
-            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10,
+                                 **_child_kw())
             if out.returncode != 0:
                 return  # no crontab at all — nothing to sweep
             lines = out.stdout.splitlines()
@@ -2833,7 +2858,7 @@ def _cmd_report_run_now(args):
     carries the outcome from runs.jsonl. A paused job may be run this way."""
     job_id, _d = _report_job(args)
     subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
     return {"started": True}
 
 
@@ -3154,7 +3179,7 @@ def _cmd_amounts(args):
                     # strategies a bare env too, so this also matches prod)
                     env=_strategy_subprocess_env(),
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    start_new_session=True,
+                    start_new_session=True, **_child_kw()
                 )
             except OSError as e:
                 _log(f"kickoff run failed for {n}: {type(e).__name__}")
@@ -3294,11 +3319,11 @@ def _stop_reconciler():
             return _LOCAL_HOST is not None and _LOCAL_HOST.stop_reconciler()
         if platform.system() == "Windows":
             st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
-                                capture_output=True, timeout=30)
+                                capture_output=True, timeout=30, **_child_kw())
             if st.returncode != 0:
                 return True  # service never installed — nothing watching
             r = subprocess.run(["nssm", "stop", "blaveclaw-reconciler"],
-                               capture_output=True, timeout=60)
+                               capture_output=True, timeout=60, **_child_kw())
             return r.returncode == 0
 
         # unit file absent = never installed here, nothing systemd can be
@@ -3306,7 +3331,7 @@ def _stop_reconciler():
         # this may promise that nothing is watching.
         if os.path.isfile(RECONCILER_UNIT_PATH):
             state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
-                                   capture_output=True, text=True, timeout=15)
+                                   capture_output=True, text=True, timeout=15, **_child_kw())
             # deactivating counts as RUNNING: stop is in flight but the process
             # can live up to TimeoutStopSec more — treating it as stopped would
             # let the full-unbind path clear membership while the daemon gets
@@ -3327,7 +3352,7 @@ def _stop_reconciler():
                 # _cmd_restart_reconciler hits the same wall from the other side.
                 stop = subprocess.run(["sudo", "-n", "/usr/bin/systemctl", "stop",
                                        RECONCILER_UNIT],
-                                      capture_output=True, text=True, timeout=30)
+                                      capture_output=True, text=True, timeout=30, **_child_kw())
                 if stop.returncode != 0:
                     _log("reconciler stop failed: sudo systemctl stop rc="
                          f"{stop.returncode} {(stop.stderr or '').strip()[:150]}")
@@ -3335,7 +3360,7 @@ def _stop_reconciler():
 
         try:
             has = subprocess.run(["tmux", "has-session", "-t", "reconciler"],
-                                 capture_output=True, timeout=20)
+                                 capture_output=True, timeout=20, **_child_kw())
         except FileNotFoundError:
             return True  # no tmux binary on this machine = no session possible
         if has.returncode != 0:
@@ -3350,7 +3375,7 @@ def _stop_reconciler():
             # "kill failed" must stay distinguishable here.
             return True
         kill = subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, timeout=20, **_child_kw())
         if kill.returncode != 0:
             _log(f"reconciler stop failed: tmux kill-session rc={kill.returncode} "
                  f"{(kill.stderr or '').strip()[:150]}")
@@ -3569,7 +3594,7 @@ def _purge_strategy_schedules(entries):
             if platform.system() == "Windows":
                 out = subprocess.run(["schtasks", "/query", "/fo", "csv", "/nh"],
                                      capture_output=True, text=True, errors="replace",
-                                     timeout=30)
+                                     timeout=30, **_child_kw())
                 existing = set()
                 for line in (out.stdout or "").splitlines():
                     existing.add(line.split('","')[0].strip('"').lstrip("\\"))
@@ -3580,12 +3605,13 @@ def _purge_strategy_schedules(entries):
                             continue
                         r = subprocess.run(["schtasks", "/delete", "/tn", tn, "/f"],
                                            capture_output=True, text=True,
-                                           errors="replace", timeout=30)
+                                           errors="replace", timeout=30, **_child_kw())
                         if r.returncode != 0:  # a survivor keeps alerting unseen
                             _log(f"schedule purge: delete {tn} failed: "
                                  f"{(r.stderr or r.stdout or '').strip()[:120]}")
                 return
-            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10)
+            out = subprocess.run(["crontab", "-l"], capture_output=True, text=True, timeout=10,
+                                 **_child_kw())
             if out.returncode != 0:
                 return  # no crontab at all — nothing scheduled
             pats = []
@@ -3729,10 +3755,10 @@ def _cmd_retest_accounts(args):
     sys_py = "python" if platform.system() == "Windows" else "/usr/bin/python3"
     if _local_mode():
         subprocess.Popen([sys.executable, reader], cwd=WORKSPACE, env=_local_child_env(),
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
         return "retesting"
     subprocess.Popen([sys_py, reader], cwd=WORKSPACE,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
     return "retesting"
 
 
@@ -3778,7 +3804,7 @@ def _nssm_run(step, timeout=15):
     dispatch loop's generic `except Exception as e: _log(...)`."""
     try:
         out = subprocess.run(["nssm"] + step, capture_output=True,
-                             text=True, timeout=timeout)
+                             text=True, timeout=timeout, **_child_kw())
     except subprocess.TimeoutExpired:
         raise RuntimeError(f"nssm {' '.join(step[:3])} timed out")
     if out.returncode != 0:
@@ -3876,7 +3902,7 @@ def _restart_reconciler(args):
         # way: installing a unit needs root, which blaveagent doesn't have.
         # It's covered by the release channel instead, see below.)
         st = subprocess.run(["nssm", "status", "blaveclaw-reconciler"],
-                            capture_output=True, timeout=30)
+                            capture_output=True, timeout=30, **_child_kw())
         if st.returncode != 0:
             ps1 = os.path.join(WORKSPACE, "manager",
                                "start_reconciler_windows.ps1")
@@ -3914,7 +3940,7 @@ def _restart_reconciler(args):
             # kill the restart (start is what decides)
             try:
                 subprocess.run(["nssm", "stop", "blaveclaw-reconciler"],
-                               capture_output=True, timeout=60)
+                               capture_output=True, timeout=60, **_child_kw())
             except subprocess.TimeoutExpired:
                 pass
             if admin_pw is not None:
@@ -3939,7 +3965,7 @@ def _restart_reconciler(args):
                      "this machine still auto-resumes trading on reboot")
                 _register_reconciler_deployment(start_type_ok=False)
         cmd = ["nssm", "start", "blaveclaw-reconciler"]
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **_child_kw())
         if out.returncode != 0:
             raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
         return "reconciler restarted"
@@ -3969,10 +3995,10 @@ def _restart_reconciler(args):
         # kill any existing session first: a crash-looping one would
         # otherwise keep its name and this would silently no-op
         subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
-                       capture_output=True, timeout=20)
+                       capture_output=True, timeout=20, **_child_kw())
         cmd = ["tmux", "new-session", "-d", "-s", "reconciler",
                f"cd {WORKSPACE} && bash manager/start_reconciler.sh"]
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=60, **_child_kw())
         if out.returncode != 0:
             raise RuntimeError((out.stderr or out.stdout or "").strip()[:200])
         _register_reconciler_deployment()
@@ -3997,7 +4023,7 @@ def _restart_reconciler(args):
     # must not require it).
     try:
         subprocess.run(["tmux", "kill-session", "-t", "reconciler"],
-                       capture_output=True, timeout=20)
+                       capture_output=True, timeout=20, **_child_kw())
     except FileNotFoundError:
         pass
 
@@ -4010,7 +4036,7 @@ def _restart_reconciler(args):
     # this fails fast (no password prompt).
     restart = subprocess.run(
         ["sudo", "-n", "/usr/bin/systemctl", "restart", RECONCILER_UNIT],
-        capture_output=True, text=True, timeout=30)
+        capture_output=True, text=True, timeout=30, **_child_kw())
     if restart.returncode != 0:
         # sudo failing does NOT mean the unit isn't running: the sudoers rule
         # may have been removed/broken AFTER an earlier successful start.
@@ -4019,7 +4045,7 @@ def _restart_reconciler(args):
         # Wei 2026-08-20: when the unit IS running but uncontrollable, the
         # button must fail honestly, not silently double the daemons.
         state = subprocess.run(["systemctl", "is-active", RECONCILER_UNIT],
-                               capture_output=True, text=True, timeout=15)
+                               capture_output=True, text=True, timeout=15, **_child_kw())
         # Kept identical to _stop_reconciler's running-set on purpose — three
         # audit rounds in a row caught a gap in exactly one of these two sets
         # not matching the other, so: deactivating raises too (the dying
@@ -4282,7 +4308,7 @@ def _launch_flatten(prefix):
         with open(log_path, "ab") as logf:
             proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
                                     env=_local_child_env(), stdout=logf, stderr=logf,
-                                    start_new_session=True)
+                                    start_new_session=True, **_child_kw())
         _kick_when_flatten_exits(proc)
         return prefix + "started"
     if platform.system() == "Windows":
@@ -4297,7 +4323,7 @@ def _launch_flatten(prefix):
         )
         subprocess.Popen(["powershell", "-NoProfile", "-Command", ps_cmd],
                          cwd=WORKSPACE, env=child_env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
         return prefix + "started"
     # Linux:bridge unit 是 KillMode=process(見 systemd/blave-agent-web.service)
     # ——重啟只殺 bridge 本體,flatten 活到收工
@@ -4305,7 +4331,7 @@ def _launch_flatten(prefix):
         proc = subprocess.Popen(
             ["python3", "manager/flatten.py"],
             cwd=WORKSPACE, env=child_env,
-            stdout=logf, stderr=logf, start_new_session=True,
+            stdout=logf, stderr=logf, start_new_session=True, **_child_kw()
         )
     _kick_when_flatten_exits(proc)
     return prefix + "started"
@@ -4661,7 +4687,7 @@ def _pid_cmdline(pid):
             r = subprocess.run(
                 ["powershell", "-NoProfile", "-Command",
                  f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
-                capture_output=True, text=True, timeout=5)  # runs on the poll loop
+                capture_output=True, text=True, timeout=5, **_child_kw())  # runs on the poll loop
         except (OSError, subprocess.SubprocessError, ValueError):
             return ""
         return r.stdout or ""
@@ -4672,7 +4698,7 @@ def _pid_cmdline(pid):
         pass
     try:  # no /proc (dev macOS)
         r = subprocess.run(["ps", "-o", "args=", "-p", str(int(pid))],
-                           capture_output=True, text=True, timeout=10)
+                           capture_output=True, text=True, timeout=10, **_child_kw())
     except (OSError, subprocess.SubprocessError, ValueError):
         return ""
     return r.stdout or ""
@@ -4851,7 +4877,7 @@ def _cmd_manage_optimize(args):
         try:
             r = subprocess.run(argv, cwd=WORKSPACE, env=_strategy_subprocess_env(),
                                capture_output=True, encoding="utf-8", errors="replace",
-                               timeout=_MANAGE_OPTIMIZE_TIMEOUT_S)
+                               timeout=_MANAGE_OPTIMIZE_TIMEOUT_S, **_child_kw())
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"optimizer timed out after {_MANAGE_OPTIMIZE_TIMEOUT_S}s")
         if r.returncode != 0:
@@ -4897,7 +4923,7 @@ def _cmd_manage_backtest(args):
     env = _strategy_subprocess_env() | {"PYTHONUNBUFFERED": "1"}
     with open(paths["log"], "wb") as logf:
         proc = subprocess.Popen(argv, cwd=WORKSPACE, env=env,
-                                stdout=logf, stderr=logf, **popen_kw)
+                                stdout=logf, stderr=logf, **_child_kw(**popen_kw))
     doc = {
         "status": "running", "pid": proc.pid, "members": members,
         # only what was actually pinned — see _mgmt_result_matches on why an
@@ -4982,7 +5008,7 @@ def _cmd_manage_cancel(args):
         try:
             if platform.system() == "Windows":
                 subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
-                               capture_output=True, timeout=30, check=True)
+                               capture_output=True, timeout=30, check=True, **_child_kw())
             else:
                 os.killpg(pid, signal.SIGTERM)
         except (OSError, subprocess.SubprocessError) as e:

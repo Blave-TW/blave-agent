@@ -166,7 +166,8 @@ function hoAsk(dir, id, opener) {
     onOk: () => {
       const msg = hoMsg(dir, id, hoTpl()); if (!msg) return;
       if (paneSt.chat.off) paneToggle("chat", false);                   // 聊天欄收著就先展開:過程在那裡回報
-      submitMessage(msg, { handoff: dir });                             // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算)
+      submitMessage(msg, { handoff: dir })                              // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算)
+        .then((ok) => { if (ok) trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull"); });   // 跑起來才算用過(busy / 被最低版本擋下不算),同 rpRobAsk
     },
   });
   $("del-title").title = title;                                         // 標題單行截尾,全文放 title

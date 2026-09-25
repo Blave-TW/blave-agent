@@ -459,7 +459,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const haltApp = { alive: true, report: { venues: Vp, config: { amounts: { a: 100 } }, halt: { halted: true, at: 1, source: "desktop ui" }, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
       const fn2 = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
       var TR = { env: "local", st: haltApp, pending: null }, trReport = () => TR.st.report, t = (k) => k, trStamp = () => "—", envHeadWord = () => null, trKeyBad = () => false;
-      eval(fn2("trStateText")); eval(fn2("trHaltReasonText"));
+      eval(fn2("trStateText")); eval(fn2("trHaltReasonText")); eval(fn2("cxFailWord"));
       ok("HALT + Blave 結束再打開:kind = app、狀態 halted、狀態行是 Blave 重開那條(不是 HALT 的「平倉照常」)",
         trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal"); }
     ok("主機重開 + 已按過暫停:講重開那條(kind = machine 優先)", trRestartKind({ halt: { halted: true }, reconciler: { stopped: { reason: "machine_restart" } } }) === "machine");
@@ -521,7 +521,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /: trStopSide\(state\) \|\| trRestartUnconfirmed\(trReport\(\)\) \? t\("tr\.stop"\) : t\("tr\.start"\);/.test(src));
     const fn3 = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
     var TR = { env: "cloud", st: C0({ gated: false }), pending: null }, trReport = () => TR.st.report, t = (k) => k, trStamp = () => "—", envHeadWord = () => null, trKeyBad = () => false;
-    eval(fn3("trStateText")); eval(fn3("trShortState")); eval(fn3("trHaltReasonText"));
+    eval(fn3("trStateText")); eval(fn3("trShortState")); eval(fn3("trHaltReasonText")); eval(fn3("cxFailWord"));
     ok("狀態行:可能仍在下單 + 紅字原因行;頂列短詞同一個詞;已按暫停後是「已暫停 · A」",
       trStateText("unconfirmed") === "tr.cloud.mayTrade · tr.cloud.restartUnconfirmed" && trShortState("unconfirmed") === "tr.cloud.mayTrade"
       && ((TR.st = Ch), trStateText("halted") === "tr.halted · tr.haltReason"));

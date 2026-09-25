@@ -59,6 +59,9 @@
   --motion-blink: 1.05s;       /* 呼吸點/游標閃爍的共用節拍(canon › Motion) */
   --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
 
+  /* scrollbar(只有 Windows 用到:mac 是系統的浮動捲軸,app.css 不碰) */
+  --scrollbar-w: 8px;
+
   /* elevation */
   --shadow-sm: 0 0 0 1px rgba(26,34,44,.07), 0 1px 2px -1px rgba(26,34,44,.10);
   --shadow-md: 0 0 0 1px rgba(26,34,44,.06), 0 2px 3px -2px rgba(26,34,44,.08),

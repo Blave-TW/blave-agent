@@ -204,7 +204,7 @@ async function saveConnection(choice) {
 const clearConnection = () => connStore().clear();
 const loadConnection = () => connStore().load();
 
-// ── 使用追蹤(telemetry.js:七個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
+// ── 使用追蹤(telemetry.js:八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
 function tm() {
   if (!_tm) _tm = require("./telemetry").createTelemetry({
@@ -1640,6 +1640,8 @@ app.whenReady().then(() => {
   // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
+  // 功能被使用(renderer 的 trackFeature):name 由 telemetry.js 對 feature_used 白名單驗,renderer 給的字不可信、不在表上就整則不送
+  ipcMain.on("track-feature", (e, name) => { if (fromOurPage(e)) tm().track("feature_used", { name }); });
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
      之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
      不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */

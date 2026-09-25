@@ -147,7 +147,9 @@
 }
 .strat-head { display: flex; align-items: center; padding: var(--space-16) var(--space-4) var(--space-8); }
 .strat-head .label { font-size: 12px; color: var(--ink-3); }
-.strat-list { flex: 1; overflow-y: auto; }
+/* overflow-x 明寫 hidden:列尾刪除鈕的 44px 熱區(.cs-del::before,right:-10px)伸出列外 4px,
+   overflow-y:auto 會把另一軸算成 auto,Windows 的非浮動捲軸就多畫一條橫向的(0.1.3 真機);mac 的浮動捲軸看不見它 */
+.strat-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
 /* 三態(載入/空/錯誤)同一行灰字,無插圖(canon › States › Empty) */
 .pf-state { padding: var(--space-24) var(--space-4); font-size: 13px; color: var(--ink-3); }
 
@@ -967,7 +969,7 @@ body.resizing * { cursor: col-resize !important; }
 /* 聊天本體 + 蓋在上面的清單層 */
 .chat-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-list {
-  position: absolute; inset: 0; z-index: 5; overflow-y: auto; min-width: 320px;
+  position: absolute; inset: 0; z-index: 5; overflow-y: auto; overflow-x: hidden; min-width: 320px;   /* overflow-x:同 .strat-list(.cs-del 的熱區) */
   padding: var(--space-12) var(--space-12) var(--space-24);
   background: var(--surface-card);
 }
@@ -1076,3 +1078,11 @@ body.resizing * { cursor: col-resize !important; }
 .btn-fill:disabled { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: default; opacity: 1; }
 .btn-out:disabled { color: var(--ink-3); background: transparent; cursor: default; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ── Windows 捲軸 ─────────────────────────────────
+   Windows 的捲軸不是浮動式:系統預設 17px 灰軌壓在版面上(側欄、報告區都是粗捲軸)。細版:寬 8、軌透明、
+   thumb 用 frame 色;只掛在 <html data-platform="win32">(app.js 從 preload 的 process.platform 掛上),mac 一行都不吃。 */
+html[data-platform="win32"] ::-webkit-scrollbar, html[data-platform="win32"]::-webkit-scrollbar { width: var(--scrollbar-w); height: var(--scrollbar-w); }
+html[data-platform="win32"] ::-webkit-scrollbar-track, html[data-platform="win32"] ::-webkit-scrollbar-corner { background: transparent; }
+html[data-platform="win32"] ::-webkit-scrollbar-thumb { background: var(--border-frame); border-radius: var(--radius-pill); }
+html[data-platform="win32"] ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }

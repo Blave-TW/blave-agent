@@ -964,6 +964,10 @@ msgstr "OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改�
 msgid "cx.failShort"
 msgstr "串接失敗"
 
+# Binance 重查判定 IP_CHANGED 時標題下狀態行用的那句(頂列仍是短詞 cx.failShort)(其他 reason 仍是 cx.failShort);{ip} = binance_link 驗過的 IPv4
+msgid "cx.failIp"
+msgstr "串接失敗：你的對外 IP 換成 {ip}，到 Binance 把它加進這把 API key 的白名單"
+
 msgid "cx.sendFail"
 msgstr "連接沒有完成（{err}）。再按一次試試。"
 
@@ -1988,6 +1992,9 @@ msgstr "開啟時會收"
 
 msgid "priv.collect.1"
 msgstr "做到哪一步：首次開啟、每日開啟、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行"
+
+msgid "priv.collect.5"
+msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"
 
 msgid "priv.collect.2"
 msgstr "發生的時間"
