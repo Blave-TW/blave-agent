@@ -246,7 +246,7 @@ jobs:
       # 從正式網址整個抓回來比 sha512,才傳 latest.yml(這一刻起對外);之後的固定檔名失敗只警告,不能報成發版失敗。
       - name: Upload to S3
         env:
-          BUCKET: ${{ secrets.BLAVE_RELEASE_AWS_BUCKET }}
+          BUCKET: ${{ secrets.BLAVE_RELEASE_BUCKET }}
           PREFIX: ${{ steps.meta.outputs.prefix }}
           URL: ${{ steps.meta.outputs.url }}
           VER: ${{ steps.meta.outputs.version }}
