@@ -22,6 +22,7 @@ const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 =
    **只等不殺**:持鎖的可能是另一個合法的 app。 */
 const LOCK_RETRY_MS = [2000, 5000, 10000, 10000];
 const LOCK_SETTLE_MS = 3000;          // exit 3 在 python 起來的頭一兩秒內就會發生;撐過這段才算拿到鎖
+const STOP_KILL_MS = 9000, STOP_GIVE_UP_MS = 11000;   // 收工預算(見 stop());只有測試會換
 
 /* renderer 送來的參數在這裡先驗形狀(稽核 S6):daemon 端的 handler 會再驗一次語意,這一層擋的是
    「renderer 被攻破時能塞什麼」——例如 credentials 帶任意 key 寫進 workspace 的 .env。
@@ -69,7 +70,8 @@ function argsOk(cmd, a, trusted) {
   if (cmd === "halt") return keys.every((k) => k === "reason") && (a.reason === undefined || (typeof a.reason === "string" && a.reason.length <= 200));
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
-function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS }) {
+function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,
+  platform = process.platform, stopKillMs = STOP_KILL_MS, stopGiveUpMs = STOP_GIVE_UP_MS }) {
   const stateDir = path.join(workspace, "state");
   const inDir = path.join(stateDir, "local_cmd", "in"), ackDir = path.join(stateDir, "local_cmd", "ack");
   const statusFile = path.join(stateDir, "local_status.json");
@@ -84,7 +86,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     fs.mkdirSync(inDir, { recursive: true }); fs.mkdirSync(ackDir, { recursive: true });
     startedAt = Date.now();
     const c = spawnFn(python, [script, "--secret-stdin"], {
-      cwd: workspace, stdio: ["pipe", "ignore", "pipe"],
+      cwd: workspace, stdio: ["pipe", "ignore", "pipe"], windowsHide: true,
       // BLAVE_AGENT_LOCAL 是 daemon 的啟動閘門,必須由這裡帶;其餘是呼叫端給的最小環境(不含任何 Blave 憑證)
       env: { ...env, BLAVE_AGENT_LOCAL: "1", BLAVE_AGENT_BASE: base, BLAVE_AGENT_WORKSPACE: workspace },
     });
@@ -122,19 +124,21 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   }
 
   /* 收工:關 stdin(EOF)+ SIGTERM,兩條都會走到 daemon 的收工路徑(對帳器先撤自己的掛單)。
-     設計 §5 的時間預算:對帳器 ≤3 秒、daemon 等它 5 秒、再補 SIGKILL 3 秒 → 這裡等 9 秒才強殺。 */
+     設計 §5 的時間預算:對帳器 ≤3 秒、daemon 等它 5 秒、再補 SIGKILL 3 秒 → 這裡等 9 秒才強殺。
+     win32:Node 的 kill() 不分訊號名,一律 TerminateProcess——沒有 handler、沒有撤單;所以只送 EOF,
+     等同一個 9 秒預算,逾時才 kill()(那時 daemon 早該走完 EOF 那條)。darwin 的順序一字不變。 */
   function stop() {
     if (lockTimer) { clearTimeout(lockTimer); lockTimer = null; }
     const c = child; if (!c) return Promise.resolve();
     stopping = true;
     return new Promise((resolve) => {
-      const kill = setTimeout(() => { try { c.kill("SIGKILL"); } catch (_) {} }, 9000);
+      const kill = setTimeout(() => { try { c.kill("SIGKILL"); } catch (_) {} }, stopKillMs);
       // 不管怎樣 11 秒內一定放行:結束 app 不能卡在一支收不掉的子行程上
-      const giveUp = setTimeout(() => { if (child === c) { child = null; secret = null; } resolve(); }, 11000);
+      const giveUp = setTimeout(() => { if (child === c) { child = null; secret = null; } resolve(); }, stopGiveUpMs);
       const done = () => { clearTimeout(kill); clearTimeout(giveUp); resolve(); };
       c.once("exit", done); c.once("error", done);
       try { c.stdin.end(); } catch (_) {}
-      try { c.kill("SIGTERM"); } catch (_) {}
+      if (platform !== "win32") { try { c.kill("SIGTERM"); } catch (_) {} }
     });
   }
 

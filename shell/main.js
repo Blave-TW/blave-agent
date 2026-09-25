@@ -15,6 +15,8 @@ const { createDaemonHost } = require("./daemon.js");
 // electron-builder 的 productName 不會寫進 asar 裡的 package.json,不設的話打包版會跟開發版
 // 共用 blave-desktop(連 single-instance lock 都撞在一起)。開發版刻意不改名:既有資料留在原地。
 if (app.isPackaged) app.setName("Blave");
+// Windows:NSIS 裝的 app 要有 AppUserModelId(= appId)系統通知才會出 toast;沒有這行 Notification 一則都不顯示
+if (process.platform === "win32") app.setAppUserModelId("org.blave.desktop");
 
 // 發佈版(npm run release 在 package.json 蓋 blaveRelease)拒絕 Chromium 的遠端除錯開關。fuses 只關得掉
 // Node 那一側(--inspect、RUN_AS_NODE、NODE_OPTIONS);--remote-debugging-port 不歸 fuses 管(實測翻完
@@ -26,10 +28,24 @@ if (app.isPackaged && require("./package.json").blaveRelease
 // 所以先跑一次使用者的登入 shell 解析出真正的 PATH,偵測與之後 spawn 引擎共用。
 // 見 .claude/output/desktop-v1/2026-09-18-agent-detection.md。
 let resolvedPath = null;
-const mergePath = (got, known) => got.concat(known.filter((d) => got.indexOf(d) < 0)).filter(Boolean).join(":");
+const mergePath = (got, known, sep = path.delimiter) => got.concat(known.filter((d) => got.indexOf(d) < 0)).filter(Boolean).join(sep);
+/* Windows(純函式;tests/check_shell_login_path.js):GUI app 直接繼承登錄檔的使用者 PATH,不必開登入 shell。
+   補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm,codex.cmd 在這)、Git for Windows
+   的兩種裝法(Claude Code 的 Bash 工具靠它)。環境變數缺的那項會是相對路徑,不補。 */
+function winPath(env) {
+  const got = String(env.PATH || env.Path || "").split(";").map((s) => s.trim());
+  const known = [
+    path.win32.join(env.USERPROFILE || "", ".local", "bin"),
+    path.win32.join(env.APPDATA || "", "npm"),
+    path.win32.join(env.LOCALAPPDATA || "", "Programs", "Git", "cmd"),
+    path.win32.join(env.ProgramFiles || "", "Git", "cmd"),
+  ].filter((d) => path.win32.isAbsolute(d));
+  return mergePath(got, known, ";");
+}
 function loginShellPath() {
   return new Promise((resolve) => {
     if (resolvedPath) return resolve(resolvedPath);
+    if (process.platform === "win32") { resolvedPath = winPath(process.env); return resolve(resolvedPath); }
     const sh = process.env.SHELL || "/bin/zsh";
     execFile(sh, ["-lc", "echo -n $PATH"], { timeout: 8000 }, (err, stdout) => {
       const known = [
@@ -46,9 +62,13 @@ function loginShellPath() {
   });
 }
 
+/* Windows 的 npm 全域 CLI 是 .cmd 包裝檔,Node 不經 shell 開不了(EINVAL)。只有這種才走 shell;命令列裡只有我們寫死的字
+   與 where.exe 給的路徑(引號包住,路徑含空白也行)。 */
+const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: `"${bin}"`, shell: true } : { file: bin, shell: false });
 function run(cmd, args, envPath, timeout = 10000) {
+  const w = cmdWrap(cmd);
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout, env: { ...process.env, PATH: envPath } },
+    execFile(w.file, args, { timeout, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
       (err, stdout, stderr) => resolve({
         code: err ? (err.code === undefined ? -1 : err.code) : 0,
         stdout: String(stdout || ""), stderr: String(stderr || ""),
@@ -56,7 +76,16 @@ function run(cmd, args, envPath, timeout = 10000) {
   });
 }
 
+// where.exe 依 PATH 順序列出每個符合 PATHEXT 的檔:優先拿 .exe(原生安裝器),npm 的 .cmd 只在沒有 .exe 時拿(純函式)
+function pickWinBin(stdout) {
+  const lines = String(stdout || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  return lines.find((l) => /\.exe$/i.test(l)) || lines[0] || null;
+}
 async function which(name, envPath) {
+  if (process.platform === "win32") {
+    const r = await run(path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32", "where.exe"), [name], envPath, 5000);
+    return r.code === 0 ? pickWinBin(r.stdout) : null;
+  }
   const r = await run("/usr/bin/env", ["sh", "-c", `command -v ${name}`], envPath, 5000);
   return r.code === 0 ? r.stdout.trim() : null;
 }
@@ -64,7 +93,27 @@ async function which(name, envPath) {
 // 偵測結果契約(renderer 據此畫 a/b/c 三態):
 // { claude: {installed, loggedIn, authMethod, email, path}, codex: {installed, loggedIn, path} }
 const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
-const codexPath = async (envPath) => (await which("codex", envPath)) || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
+/* Windows 的 codex.cmd 要解到真的 codex.exe:runtime/codex_engine.py 用 create_subprocess_exec 起它,吃不了 .cmd。
+   npm 的 bin/codex.js(0.156.1)找的是 <平台套件>/vendor/<triple>/bin/codex.exe,退路是 @openai/codex 自己的 vendor/;
+   兩個都相對於 .cmd 所在的全域 node_modules。解不到就當沒裝(留一行 log),不把 .cmd 交給 runtime 去炸。純函式。 */
+const CODEX_WIN_EXE = (arch) => {
+  const triple = arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc";
+  return [`codex-win32-${arch === "arm64" ? "arm64" : "x64"}`, "codex"].map((pkg) => path.win32.join("node_modules", "@openai", pkg, "vendor", triple, "bin", "codex.exe"));
+};
+function winRealExe(bin, arch, exists = fs.existsSync) {
+  if (!bin || !/\.(cmd|bat)$/i.test(bin)) return bin;
+  const dir = path.win32.dirname(bin);
+  return CODEX_WIN_EXE(arch).map((rel) => path.win32.join(dir, rel)).find((p) => exists(p)) || null;
+}
+async function codexPath(envPath) {
+  const found = await which("codex", envPath);
+  if (process.platform === "win32") {
+    const exe = winRealExe(found, process.arch);
+    if (found && !exe) console.error("[detect] codex is a .cmd shim with no codex.exe next to it: " + found);
+    return exe;
+  }
+  return found || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
+}
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
    連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
 async function codexBinNow() { return codexPath(await loginShellPath()); }
@@ -114,8 +163,9 @@ async function agentLogin(kind) {
   if (!bin) return { ok: false };
   const envPath = await loginShellPath();
   return new Promise((resolve) => {
-    const child = spawn(bin, kind === "claude" ? ["auth", "login"] : ["login"],
-      { env: { ...process.env, PATH: envPath }, stdio: "ignore" });
+    const w = cmdWrap(bin);
+    const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
+      { env: { ...process.env, PATH: envPath }, stdio: "ignore", shell: w.shell, windowsHide: true });
     loginChild = child;
     const timer = setTimeout(() => child.kill(), 5 * 60 * 1000);
     // cancelled:用戶自己按了「取消等待」——不是失敗,renderer 不顯示失敗句
@@ -202,7 +252,8 @@ function updater() {
   const feedUrl = app.isPackaged ? require("./package.json").blaveUpdateUrl || null : null;
   _up = require("./updater").createUpdater({
     autoUpdater: feedUrl ? require("electron-updater").autoUpdater : null,
-    nativeUpdater: feedUrl ? require("electron").autoUpdater : null,   // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭)
+    // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭);Windows 是 NSIS,沒有原生這一層 → 不給,electron-updater 下載完就算 ready
+    nativeUpdater: feedUrl && process.platform === "darwin" ? require("electron").autoUpdater : null,
     feedUrl, currentVersion: app.getVersion(),
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
     onState: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup }); },
@@ -522,19 +573,45 @@ const REPO = resourceRoot();
 const BASE = path.isAbsolute(process.env.BLAVE_HOME || "")
   ? process.env.BLAVE_HOME : path.join(os.homedir(), "Blave");
 const WS = path.join(BASE, "workspace");
-const VENV_PY = path.join(BASE, "venv", "bin", "python");
+// venv 的執行檔目錄:POSIX 是 bin/、Windows 是 Scripts\(python.exe 是 launcher,不是 symlink)
+const WIN = process.platform === "win32";
+const VENV_BIN = WIN ? "Scripts" : "bin";
+const VENV_PY = path.join(BASE, "venv", VENV_BIN, WIN ? "python.exe" : "python");
 // 乾淨的 Mac 沒有 python3(要先裝 Xcode CLT):打包版隨包(tools/fetch-python.sh),
 // venv 用它建;開發時照舊用系統的。universal 包兩顆都在(python-arm64 / python-x64),
-// 照 Electron 實際跑起來的架構挑——Apple Silicon 上被 Rosetta 跑成 x64 時 process.arch 也是 x64,挑到的顆才對得上 venv
-const BUNDLED_PY = path.join(process.resourcesPath || "", `python-${process.arch}`, "bin", "python3");
-const basePython = () => (app.isPackaged && fs.existsSync(BUNDLED_PY) ? BUNDLED_PY : "python3");
+// 照 Electron 實際跑起來的架構挑——Apple Silicon 上被 Rosetta 跑成 x64 時 process.arch 也是 x64,挑到的顆才對得上 venv。
+// Windows 的 python-build-standalone 沒有 bin/:python.exe 就在根目錄(python-x64\python.exe)
+const BUNDLED_PY = WIN ? path.join(process.resourcesPath || "", `python-${process.arch}`, "python.exe")
+  : path.join(process.resourcesPath || "", `python-${process.arch}`, "bin", "python3");
+const basePython = () => (app.isPackaged && fs.existsSync(BUNDLED_PY) ? BUNDLED_PY : WIN ? "python" : "python3");
 // 打包版的 runtime/ 與隨包 Python 都在 .app 裡:不讓 Python 把 __pycache__ 寫進去
 // (簽章後 bundle 內容一變就驗不過;唯讀位置也寫不進)。
 const PY_ENV = app.isPackaged ? { PYTHONPYCACHEPREFIX: path.join(BASE, "state", "pycache") } : {};
 
-function sh(cmd, envPath, timeout = 300000) {
+/* 子行程(常駐程式、agent 回合)的環境(純函式;tests/check_shell_win_env.js)。
+   darwin:呼叫端手寫的白名單物件原樣回去——**不含** ...process.env,帳號憑證與用戶 shell 的雜物都進不去。
+   win32:白名單起不來——Python 少了 SystemRoot 直接死,還要 USERPROFILE / APPDATA / LOCALAPPDATA / TEMP / TMP / PATHEXT /
+   COMSPEC(runtime/command_listener.py 的 _launch_flatten 踩過同一個坑)。改成放行整份 process.env、拔掉敏感的
+   (AI 供應商的 key、Blave 自己的、會改變 Python / Node 行為的),白名單物件蓋在最後;HOME 對映到 USERPROFILE
+   (claude.exe 讀 ~/.claude 靠 USERPROFILE,HOME 只是給 POSIX 慣例的碼)。Windows 的環境變數不分大小寫:
+   跟白名單同名(不分大小寫)的先拔掉,不留 Path / PATH 兩份讓 Node 自己挑。
+   PYTHONUTF8=1:Windows 的 Python 接 pipe 時用的是 ANSI code page(cp950 / cp1252),agent 回合 stdout 第一個 emoji
+   就 UnicodeEncodeError;UTF-8 mode 一併修 stdio 與 open() 的預設編碼,整棵子行程樹(daemon → 對帳器 → 策略)都繼承。 */
+const WIN_ENV_DROP = /^(ANTHROPIC_|OPENAI_|BLAVE_|CODEX_|CLAUDE_|PYTHON|NODE_OPTIONS$|ELECTRON_)/i;
+const WIN_PY_ENV = { PYTHONUTF8: "1" };
+function childEnv(own, platform = process.platform, penv = process.env) {
+  if (platform !== "win32") return own;
+  const taken = new Set(Object.keys(own).map((k) => k.toUpperCase()));
+  const env = {};
+  for (const k of Object.keys(penv)) if (!WIN_ENV_DROP.test(k) && !taken.has(k.toUpperCase())) env[k] = penv[k];
+  if (!env.SystemRoot && !taken.has("SYSTEMROOT")) env.SystemRoot = "C:\\Windows";
+  return { ...env, ...WIN_PY_ENV, ...own, HOME: penv.USERPROFILE || own.HOME };
+}
+
+// 跑一顆 Python(建 venv、pip):argv 陣列直接交給 execFile,沒有 shell、沒有引號問題
+function pyExec(bin, args, envPath, timeout = 300000) {
   return new Promise((resolve, reject) => {
-    execFile("/bin/sh", ["-c", cmd], { timeout, env: { ...process.env, ...PY_ENV, PATH: envPath } }, (err, stdout, stderr) => {
+    execFile(bin, args, { timeout, windowsHide: true, env: { ...process.env, ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}), PATH: envPath } }, (err, stdout, stderr) => {
       if (!err) return resolve(String(stdout));
       // 逾時 / 輸出爆 maxBuffer 時 stderr 常是空的,err.message 是整條指令(含用戶 home 路徑)——會被畫進失敗卡,換成說得出原因的一句
       const why = err.killed && err.signal ? `timed out after ${Math.round(timeout / 1000)}s`
@@ -633,7 +710,7 @@ function pipError(e) {
 }
 // 引擎的 pip 都走這條。失敗先把完整 stderr 留在主行程的 stderr(沒有 log 檔,失敗卡上的字又是修剪過的),再丟修剪過的
 function pip(args, envPath, timeout) {
-  return sh(`"${VENV_PY}" ${PIP_INSTALL} ${args}`, envPath, timeout).catch((e) => {
+  return pyExec(VENV_PY, [...PIP_INSTALL.split(" "), ...args.split(" ")], envPath, timeout).catch((e) => {
     console.error("[engine] pip install failed:", args, "\n" + String((e && e.message) || e));
     throw new Error(pipError(e));
   });
@@ -661,12 +738,13 @@ async function ensureEngine(report) {
     progress("engine.preparing");
     // .app 被搬走 / 改名 / 被 Gatekeeper translocate 之後,venv/bin/python* 是斷掉的連結,
     // venv 模組撞到會直接報錯(實測)。先清掉斷的,site-packages 留著,重建只要幾秒。
-    const vbin = path.join(BASE, "venv", "bin");
-    for (const n of fs.existsSync(vbin) ? fs.readdirSync(vbin) : []) {
+    // Windows 的 venv 沒有連結(Scripts\python.exe 是 launcher + pyvenv.cfg 的 home=),而且 NSIS 裝在固定位置:整段跳過
+    const vbin = path.join(BASE, "venv", VENV_BIN);
+    for (const n of !WIN && fs.existsSync(vbin) ? fs.readdirSync(vbin) : []) {
       const f = path.join(vbin, n);
       if (fs.lstatSync(f).isSymbolicLink() && !fs.existsSync(f)) fs.unlinkSync(f);
     }
-    await sh(`"${basePython()}" -m venv "${path.join(BASE, "venv")}"`, envPath);
+    await pyExec(basePython(), ["-m", "venv", path.join(BASE, "venv")], envPath);
   }
   // 記號檔而不是「venv 在就當裝好了」:pip 中途失敗(斷網)時 venv 已經在,下次啟動要重試。
   const sdkMark = path.join(BASE, "venv", ".blave-sdk");
@@ -1157,11 +1235,11 @@ function tradeHost() {
   if (!_tradeHost) {
     _tradeHost = createDaemonHost({
       python: VENV_PY, script: path.join(REPO, "runtime", "local_daemon.py"), base: BASE, workspace: WS,
-      env: { PATH: path.join(BASE, "venv", "bin") + path.delimiter + (process.env.PATH || "/usr/bin:/bin"), HOME: os.homedir(),
+      env: childEnv({ PATH: path.join(BASE, "venv", VENV_BIN) + path.delimiter + (process.env.PATH || "/usr/bin:/bin"), HOME: os.homedir(),
         USER: process.env.USER || os.userInfo().username, LANG: process.env.LANG || "en_US.UTF-8",
         TMPDIR: process.env.TMPDIR || os.tmpdir(), BLAVE_KLINE_SOURCE: "binance",
         BLAVE_AGENT_HOME: BASE, BLAVE_AGENT_STATE: path.join(BASE, "state"),
-        ...PY_ENV },   // 打包版不讓 Python 把 __pycache__ 寫進 .app(簽章後 bundle 一變 codesign --verify 就不過)
+        ...PY_ENV }),   // 打包版不讓 Python 把 __pycache__ 寫進 .app(簽章後 bundle 一變 codesign --verify 就不過)
       log: (m) => console.error("[trade]", m),
     });
   }
@@ -1277,7 +1355,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
     // (實測:前置的路徑被擠到 Homebrew 後面)。所以另外給 BLAVE_PYTHON,runtime 會把
     // 「這個 workspace 的 python 是哪一顆」明寫進 prompt——環境變數不會被重排。
-    PATH: path.join(BASE, "venv", "bin") + path.delimiter + envPath, HOME: os.homedir(),
+    PATH: path.join(BASE, "venv", VENV_BIN) + path.delimiter + envPath, HOME: os.homedir(),
     BLAVE_PYTHON: VENV_PY,
     // 有帳號 token = 用 Blave AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
     // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
@@ -1330,7 +1408,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 用戶打的字**不進 argv**(稽核 S5):同一台電腦上任何人 `ps` 都看得到命令列,而聊天貼 key 是支援的流程。走 stdin。
     // runtime 往下那一段本來就不走 argv(Claude 走 SDK 的 stream-json stdin、Codex 走 `exec -`)。
     "--message-stdin", "--", sessionId,
-  ], { env, cwd: WS }); } catch (err) { require("./mcpcode").removeConfig(mcpFile); throw err; }
+  ], { env: childEnv(env), cwd: WS, windowsHide: true }); } catch (err) { require("./mcpcode").removeConfig(mcpFile); throw err; }
   child.on("error", () => require("./mcpcode").removeConfig(mcpFile));
   child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
   try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } require("./mcpcode").removeConfig(mcpFile); throw err; }   // 不留一支卡在讀 stdin 的子行程
@@ -1791,8 +1869,10 @@ function traySync() {
     return;
   }
   if (!tray) {
-    const img = nativeImage.createFromPath(path.join(__dirname, "assets", "trayTemplate.png"));   // 檔名結尾 Template = macOS 自動依選單列明暗上色
-    if (img.isEmpty()) console.error("tray icon missing: shell/assets/trayTemplate.png");   // 空圖 = 看不見的圖示;選單還在,但要留下痕跡(稽核 M4)
+    // Windows 不認 Template 命名(黑色單色圖在深色工作列看不見),給彩色的 .ico(16 / 24 / 32)
+    const img = WIN ? nativeImage.createFromPath(path.join(__dirname, "assets", "tray.ico"))
+      : nativeImage.createFromPath(path.join(__dirname, "assets", "trayTemplate.png"));   // 檔名結尾 Template = macOS 自動依選單列明暗上色
+    if (img.isEmpty()) console.error("tray icon missing: shell/assets/" + (WIN ? "tray.ico" : "trayTemplate.png"));   // 空圖 = 看不見的圖示;選單還在,但要留下痕跡(稽核 M4)
     tray = new Tray(img);
   }
   tray.setToolTip(updateWaiting() ? tmLabels.updateReady : tmLabels.running);

@@ -34,6 +34,38 @@ Ack: state/local_cmd/ack/<id>.json = {id, cmd, ok, result | error, ts} — the
 same shape the api's /ack stores.
 Status: state/local_status.json = build_report() + a "daemon" block.
 
+"App gone = trading stops" rests on three guarantees, and Windows has none of
+the primitives macOS uses for them — each has an equivalent here, chosen by
+_nt(), the POSIX path untouched:
+  1. parent watch   POSIX: select() on stdin + getppid() polling. Windows:
+                    select() takes sockets only and a dead parent is never
+                    re-parented, so _wait_parent_gone_nt runs two threads —
+                    one blocked in read(0) (EOF / broken pipe = "parent closed
+                    stdin"), one parked in WaitForSingleObject on the parent's
+                    process handle (Task Manager kill, crash: the pipe is not
+                    guaranteed to break first). First to return wins.
+  2. lock           POSIX: flock, and the reconciler inherits the daemon's
+                    locked fd (pass_fds) so the lock lives exactly as long as
+                    that process. Windows: msvcrt.locking (byte 0, per handle,
+                    released by the OS when the process ends) and no fd
+                    inheritance — the reconciler takes the lock ITSELF at start
+                    (retrying while the daemon lets go of its check-lock) and
+                    the daemon only confirms it is held after spawning; a
+                    reconciler that exits drops it and tick() restarts one.
+  3. signal         POSIX: SIGTERM runs the exit sweep on the main thread.
+                    Windows: os.kill / terminate() are TerminateProcess, no
+                    handler ever runs, SIGKILL does not exist — so the sweep is
+                    reached only through guarantee 1 (EOF or parent gone), off
+                    the watch thread; the daemon stops its reconciler by closing
+                    the child's stdin first and terminates only on timeout, and
+                    shell/daemon.js does the same to the daemon (stdin.end(),
+                    wait, kill). A new reconcile round can start during that
+                    off-main-thread sweep; what it leaves behind is what the
+                    next start's startup sweep + reap_dead_inflight exist for.
+  Also: <base>/current is a junction (no symlink privilege needed);
+  Win32_Process carries no cwd, so an orphan reconciler is recognised by this
+  install's own script on its command line (one install, one workspace).
+
 Import-safe (the cloud updater imports every runtime module as a health
 check): nothing runs until main().
 """
@@ -52,8 +84,12 @@ import time
 
 try:
     import fcntl
-except ImportError:  # Windows — the desktop build does not run there yet
+except ImportError:  # Windows
     fcntl = None
+try:
+    import msvcrt
+except ImportError:  # POSIX
+    msvcrt = None
 
 # Mirror of api/openclaw/agent_command.py ALLOWED (tests/check_local_daemon.py
 # fails when the two drift). `telegram_reset` stays out here for the same
@@ -83,7 +119,90 @@ RESTART_DELAY_S = 10       # = manager/start_reconciler.sh's `sleep 10`
 SWEEP_BUDGET_S = 3
 STOP_GRACE_S = 5
 SEEN_KEEP_S = 3600         # replay memory, well past TS_WINDOW_S
+LOCK_TAKE_S = 10           # Windows: how long a starting reconciler may wait for its lock
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+RECONCILER_LOCK = os.path.join("state", "local_reconciler.lock")
+
+# Win32 constants for the parent watch (kernel32)
+_SYNCHRONIZE = 0x00100000
+_INFINITE = 0xFFFFFFFF
+_WAIT_OBJECT_0 = 0
+_ERROR_INVALID_PARAMETER = 87  # OpenProcess: no such pid
+
+
+def _nt():
+    return os.name == "nt"
+
+
+def _lock_fd(fd):
+    """Exclusive, non-blocking; OSError when another process holds it. Either
+    way the OS releases it when the process ends — no stale-pid case."""
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    else:
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+
+def _release_fd(fd):
+    """close(); on Windows unlock byte 0 first (the CRT lock sits at the position
+    the fd had when it was taken, and pid writes have moved it since)."""
+    if fcntl is None and msvcrt is not None:
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+    os.close(fd)
+
+
+def _kernel32():
+    import ctypes
+    k = ctypes.WinDLL("kernel32")
+    k.OpenProcess.restype = ctypes.c_void_p  # a HANDLE is pointer-sized; the int default truncates it
+    k.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
+    k.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+    k.CloseHandle.argtypes = [ctypes.c_void_p]
+    return k
+
+
+def _wait_pid_nt(pid):
+    """Blocks until `pid` exits. True = it is gone (or never was there); False =
+    it cannot be watched, and only the stdin watch stands. The handle is opened
+    while the parent is alive, so the pid cannot be recycled under us."""
+    k = _kernel32()
+    h = k.OpenProcess(_SYNCHRONIZE, False, pid)
+    if not h:
+        return k.GetLastError() == _ERROR_INVALID_PARAMETER
+    try:
+        return k.WaitForSingleObject(h, _INFINITE) == _WAIT_OBJECT_0
+    finally:
+        k.CloseHandle(h)
+
+
+def _wait_parent_gone_nt(ppid, fd=0, wait_pid=None):
+    """See the module docstring, guarantee 1. Both threads are daemon threads:
+    the one still blocked when the other returns is abandoned with the process."""
+    why = []
+    got = threading.Event()
+
+    def _eof():
+        try:
+            while os.read(fd, 4096):
+                pass  # the app writes the secret line only; anything else is drained
+        except (OSError, ValueError):
+            pass
+        why.append("parent closed stdin")
+        got.set()
+
+    def _proc():
+        if (wait_pid or _wait_pid_nt)(ppid):
+            why.append("parent process is gone")
+            got.set()
+
+    for fn in (_eof, _proc):
+        threading.Thread(target=fn, daemon=True, name=f"parent-watch-{fn.__name__}").start()
+    got.wait()
+    return why[0]
 
 
 def _log(msg):
@@ -100,6 +219,8 @@ def _wait_parent_gone(ppid):
     """Blocks until whoever started us is gone; returns why. stdin EOF alone is
     not enough — any other process holding the pipe's write end keeps it open
     after the parent dies — so the parent pid is polled alongside it."""
+    if _nt():
+        return _wait_parent_gone_nt(ppid)
     while True:
         if ppid == 1 or os.getppid() != ppid:
             return "parent process is gone"
@@ -188,7 +309,10 @@ def parse_command(raw, stem, secret, now, seen, not_before=0):
 
 
 def _pid_cwd(pid):
-    """realpath of a process's cwd, "" when it cannot be read."""
+    """realpath of a process's cwd, "" when it cannot be read — always on
+    Windows (Win32_Process has no cwd; _orphan_pid uses another mark there)."""
+    if _nt():
+        return ""
     try:
         return os.path.realpath(os.readlink(f"/proc/{int(pid)}/cwd"))
     except (OSError, ValueError):
@@ -233,7 +357,10 @@ def run_reconciler(script):
             _log(f"exit sweep skipped: {type(e).__name__}: {e}")
 
     def _leave(*_):
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if threading.current_thread() is threading.main_thread():
+            # a second SIGTERM must not re-enter; off the main thread (the
+            # Windows watch) signal.signal() raises and nothing can re-enter anyway
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
         _log("reconciler leaving")
         t = threading.Thread(target=_sweep, daemon=True)
         t.start()
@@ -244,13 +371,50 @@ def run_reconciler(script):
 
     def _watch_parent():
         _wait_parent_gone(ppid)
-        os.kill(os.getpid(), signal.SIGTERM)
+        if _nt():
+            _leave()  # no signal delivery on Windows: the sweep runs right here
+        else:
+            os.kill(os.getpid(), signal.SIGTERM)
         time.sleep(SWEEP_BUDGET_S + 2)  # main thread wedged in C: leave anyway
         os._exit(0)
 
+    if _nt() and _take_reconciler_lock(ws) is None:
+        _log("another reconciler holds the lock — not starting a second one")
+        os._exit(3)
     signal.signal(signal.SIGTERM, _leave)
     threading.Thread(target=_watch_parent, daemon=True, name="parent-watch").start()
     runpy.run_path(script, run_name="__main__")
+
+
+_RECONCILER_LOCK_FD = None  # Windows: the reconciler's own hold, kept for the life of the process
+
+
+def _take_reconciler_lock(ws):
+    """Windows only: no fd inheritance, so the reconciler locks the file itself.
+    The daemon still holds its check-lock for a moment after spawning us, hence
+    the retry. The fd on success (also parked in a global), None when someone
+    else keeps it past LOCK_TAKE_S."""
+    global _RECONCILER_LOCK_FD
+    path = os.path.join(ws, RECONCILER_LOCK)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.time() + LOCK_TAKE_S
+    while True:
+        try:
+            _lock_fd(fd)
+            break
+        except OSError:
+            if time.time() >= deadline:
+                os.close(fd)
+                return None
+            time.sleep(0.1)
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, str(os.getpid()).encode())
+    except OSError:
+        pass  # the pid is for humans; the lock is what counts
+    _RECONCILER_LOCK_FD = fd
+    return fd
 
 
 class SingleInstance:
@@ -264,7 +428,7 @@ class SingleInstance:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_fd(fd)
         except OSError:
             os.close(fd)
             return False
@@ -278,9 +442,10 @@ class ReconcilerSupervisor:
     """What systemd's Restart=always / start_reconciler.sh are on the cloud box.
 
     Double-order guard: the reconciler inherits the flock on
-    state/local_reconciler.lock, so the lock lives exactly as long as that
-    process — including an orphan left by a SIGKILLed daemon. A new reconciler
-    is never started while the lock is held."""
+    state/local_reconciler.lock (Windows: takes it itself, see the module
+    docstring), so the lock lives exactly as long as that process — including
+    an orphan left by a SIGKILLed daemon. A new reconciler is never started
+    while the lock is held."""
 
     def __init__(self, workspace, child_env, pid_cmdline):
         self.ws = os.path.realpath(workspace)
@@ -292,7 +457,7 @@ class ReconcilerSupervisor:
         self.restarts = 0
         self.last_exit_code = None
         self.last_exit_at = None
-        self._lock_path = os.path.join(workspace, "state", "local_reconciler.lock")
+        self._lock_path = os.path.join(workspace, RECONCILER_LOCK)
         self._pid_path = os.path.join(workspace, "state", "local_reconciler.pid")
 
     # — the two hooks command_listener calls —
@@ -318,7 +483,7 @@ class ReconcilerSupervisor:
             if fd is None:
                 _log("a reconciler from a previous daemon is still running and could not be stopped")
                 return False
-            os.close(fd)
+            _release_fd(fd)
             return True
 
     def info(self):
@@ -333,7 +498,7 @@ class ReconcilerSupervisor:
                     running = orphan = True
                     pid = self._orphan_pid()
                 else:
-                    os.close(fd)
+                    _release_fd(fd)
             return {"wanted": self._wanted, "running": running, "orphan": orphan,
                     "pid": pid,
                     "restarts": self.restarts, "last_exit_code": self.last_exit_code,
@@ -365,7 +530,7 @@ class ReconcilerSupervisor:
         os.makedirs(os.path.dirname(self._lock_path), exist_ok=True)
         fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_fd(fd)
             return fd
         except OSError:
             os.close(fd)
@@ -387,8 +552,13 @@ class ReconcilerSupervisor:
                 pid = int(f.read().strip())
         except (OSError, ValueError):
             return None
-        if pid <= 0 or "reconciler.py" not in self._pid_cmdline(pid):
+        cmdline = self._pid_cmdline(pid)
+        if pid <= 0 or "reconciler.py" not in cmdline:
             return None
+        if _nt():
+            # no cwd to read: "started by this install's daemon" stands in for
+            # "this workspace" — a desktop install has exactly one of each
+            return pid if os.path.abspath(__file__) in cmdline else None
         return pid if _pid_cwd(pid) == self.ws else None  # someone else's workspace
 
     def _free_lock(self):
@@ -400,7 +570,11 @@ class ReconcilerSupervisor:
         if pid is None:
             return None
         _log(f"stopping a reconciler left by a previous daemon (pid {pid})")
-        for sig, wait in ((signal.SIGTERM, STOP_GRACE_S), (signal.SIGKILL, 3)):
+        # Windows: SIGTERM here is TerminateProcess already and SIGKILL does not exist
+        steps = [(signal.SIGTERM, STOP_GRACE_S)]
+        if hasattr(signal, "SIGKILL"):
+            steps.append((signal.SIGKILL, 3))
+        for sig, wait in steps:
             try:
                 os.kill(pid, sig)
             except OSError:
@@ -413,7 +587,13 @@ class ReconcilerSupervisor:
     def _stop_locked(self):
         p = self._proc
         if p is not None and p.poll() is None:
-            p.terminate()
+            if _nt():
+                # terminate() would be TerminateProcess, skipping the exit
+                # sweep: EOF on its stdin is the only graceful way in
+                if p.stdin:
+                    p.stdin.close()
+            else:
+                p.terminate()
             try:
                 p.wait(STOP_GRACE_S)
             except subprocess.TimeoutExpired:
@@ -428,7 +608,7 @@ class ReconcilerSupervisor:
         fd = self._free_lock()  # ours is gone; this is about anyone else's
         if fd is None:
             return False
-        os.close(fd)
+        _release_fd(fd)
         return True
 
     def _spawn_locked(self):
@@ -450,14 +630,35 @@ class ReconcilerSupervisor:
                     [sys.executable, os.path.abspath(__file__), "--run-reconciler",
                      os.path.join("manager", "reconciler.py")],
                     cwd=self.ws, env=self._child_env(), stdin=subprocess.PIPE,
-                    stdout=logf, stderr=logf, pass_fds=(fd,))
+                    stdout=logf, stderr=logf, **({} if _nt() else {"pass_fds": (fd,)}))
         finally:
-            os.close(fd)  # the child's copy keeps the lock
+            _release_fd(fd)  # POSIX: the child's copy keeps the lock; Windows: the child takes it now
+        if _nt():
+            self._confirm_child_lock()
         tmp = f"{self._pid_path}.{os.getpid()}.tmp"
         with open(tmp, "w") as f:
             f.write(str(self._proc.pid))
         os.replace(tmp, self._pid_path)
         _log(f"reconciler started (pid {self._proc.pid})")
+
+    def _confirm_child_lock(self):
+        """Windows: the child locks the file itself — wait until it is held (by
+        anyone: orphans were reaped just before, so that is the child) or the
+        child is gone. A child that never takes it is killed and reported."""
+        deadline = time.time() + LOCK_TAKE_S + 2
+        while time.time() < deadline:
+            if self._proc.poll() is not None:
+                self._proc = None
+                raise RuntimeError("reconciler exited before taking its lock")
+            fd = self._try_lock()
+            if fd is None:
+                return
+            _release_fd(fd)
+            time.sleep(0.2)
+        self._proc.kill()
+        self._proc.wait(3)
+        self._proc = None
+        raise RuntimeError("reconciler did not take its lock — stopped")
 
 
 class Daemon:
@@ -530,7 +731,8 @@ class Daemon:
         user runs: a FIFO there would park a plain open() forever (and with it
         `halt`), a directory named x.json would be retried twice a second."""
         try:
-            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            # both flags are POSIX-only; Windows has no FIFOs to park on
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
         except OSError:
             fd = None
         try:
@@ -684,7 +886,7 @@ class Daemon:
         status written either way."""
         why = _wait_parent_gone(self._ppid)
         time.sleep(0.2)  # a dying parent's pipes close a moment before we are re-parented
-        if os.getppid() != self._ppid:
+        if why == "parent process is gone" or os.getppid() != self._ppid:  # Windows never re-parents
             # nobody reads our stderr any more; anything still printing to it
             # (command_listener does) must not raise mid-shutdown
             try:
@@ -757,16 +959,36 @@ def _link_current(base):
     link = os.path.join(base, "current")
     # On a cloud box `current` IS a symlink (the updater swaps releases through
     # it) — main() refuses to run there at all, so by here a link is ours.
-    if os.path.lexists(link) and not os.path.islink(link):
+    if os.path.lexists(link) and not _is_link(link):
         return
     try:
-        if os.path.islink(link) and os.path.realpath(link) == os.path.realpath(here):
+        if _is_link(link) and os.path.realpath(link) == os.path.realpath(here):
+            return
+        if _nt():
+            # a junction is a directory entry: rename cannot replace one, so the
+            # old one is dropped (rmdir removes the point, never its target)
+            if _is_link(link):
+                os.rmdir(link)
+            _make_junction(here, link)
             return
         tmp = f"{link}.{os.getpid()}.tmp"
         os.symlink(here, tmp)
         os.replace(tmp, link)
     except OSError as e:
         _log(f"could not link {link}: {type(e).__name__}")
+
+
+def _is_link(path):
+    """Symlink, or on Windows a junction — the link type that needs no
+    privilege there (os.path.islink is False for junctions since 3.8)."""
+    if os.path.islink(path):
+        return True
+    return _nt() and os.path.isjunction(path)
+
+
+def _make_junction(target, path):
+    import _winapi
+    _winapi.CreateJunction(target, path)
 
 
 def _read_line_fd0():
@@ -783,8 +1005,8 @@ def _read_line_fd0():
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if fcntl is None:
-        _log("needs a POSIX system")
+    if fcntl is None and msvcrt is None:
+        _log("needs fcntl (POSIX) or msvcrt (Windows) for the workspace lock")
         return 2
     if argv[:1] == ["--run-reconciler"] and len(argv) == 2:
         run_reconciler(argv[1])

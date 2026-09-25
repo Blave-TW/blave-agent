@@ -1,0 +1,271 @@
+# Blave 電腦版 Windows x64(NSIS)建置與發佈。mac 版走 shell/tools/release.js(本機打包機);Windows 沒有 release.js 那條,
+# 整條在這裡:閘門測試 → 打包(未簽章)→ 產物驗證 → artifact → S3。S3 的 key 佈局照 release.js:
+#   desktop/<track>/Blave-Setup-<ver>.exe(帶版號,immutable,已存在就拒絕)、.exe.blockmap(差量更新用)、
+#   desktop/<track>/latest.yml(最後傳,傳上去那一刻對外)、desktop/<track>/Blave-Setup.exe(固定檔名,給下載頁)。
+# 軌道:win-test(dispatch 預設)/ win(正式;tag desktop-v* 推上來一律正式)。包裡的更新網址 = https://download.blave.org/desktop/<track>。
+# 簽章(SignPath)那一步先留骨架,審核過再開;現在的包是未簽章的(BLAVE_WIN_UNSIGNED=1),SmartScreen 會擋一次。
+name: desktop-win
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "發到哪條軌(win-test 只有更新網址指到它的包會拿到;win 是正式)"
+        type: choice
+        options: [win-test, win]
+        default: win-test
+      ref:
+        description: "要打包的 commit / branch / tag(空 = 觸發時的 ref)"
+        type: string
+        required: false
+        default: ""
+  # 先不用 tag 觸發:mac 的 desktop-v* tag 每版都會推,Windows 在真機驗過、SignPath 接上之前不能跟著自動發正式軌。
+  # 要開的時候加回:push: { tags: ["desktop-v*"] }(下面 meta 那步已經會核對 tag 與版號)
+
+permissions:
+  contents: read
+
+# 同一條軌不並行:兩支同時上傳會互相蓋 latest.yml
+concurrency:
+  group: desktop-win-${{ inputs.track || 'win' }}
+  cancel-in-progress: false
+
+env:
+  TRACK: ${{ inputs.track || 'win' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # 閘門測試跟 release.js 的「閘門測試」一模一樣(全部 check_shell_*.js + check_version_matrix_shell.js,除了 check_shell_paths.js),
+  # 加上兩支 Windows 語意的 Python 測試。放 mac runner 不放 Windows:這些測試在 POSIX 上假造 win32(check_local_daemon_windows.py
+  # 還會 import 真的 fcntl 來比 POSIX 分支;check_shell_daemon.js 靠 symlink + chmod 000;Electron 測試經 node_modules/.bin/electron
+  # 這個 sh shim 起 Electron),搬到 Windows 上跑等於半套 SKIP,不是更嚴。
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: shell/package-lock.json
+      - uses: actions/setup-python@v5
+        id: py
+        with:
+          python-version: "3.12"
+      - name: npm ci
+        working-directory: shell
+        # npm 11 跳過 electron 的 postinstall,Electron 本體要自己抓(mac 打包機踩過)
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+      - name: Gate tests
+        env:
+          BLAVE_TEST_PYTHON: ${{ steps.py.outputs.python-path }}
+        run: |
+          red=0
+          for t in tests/check_shell_*.js tests/check_version_matrix_shell.js; do
+            [ "$t" = tests/check_shell_paths.js ] && continue
+            echo "::group::$t"
+            if node "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
+          done
+          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py; do
+            echo "::group::$t"
+            if "$BLAVE_TEST_PYTHON" "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
+          done
+          exit $red
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      # Windows runner 的 git 預設 autocrlf=true:checkout 會把隨包的 lib/ runtime/ 全轉成 CRLF(runtime CHANGELOG 記過這個坑),
+      # 也會讓下面 sed 的 $ 錨點對不上。要在 checkout 之前關
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: shell/package-lock.json
+
+      - name: Resolve version and track
+        id: meta
+        run: |
+          ver="$(node -p 'require("./shell/package.json").version')"
+          [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::shell/package.json 的版號 $ver 不是嚴格的 A.B.C"; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            [ "$tag" = "desktop-v$ver" ] || { echo "::error::tag $tag 跟 shell/package.json 的 $ver 對不上(要先把版號 commit 進去再打 tag)"; exit 1; }
+          fi
+          [[ "$TRACK" =~ ^win(-test)?$ ]] || { echo "::error::track 只能是 win-test 或 win(現在是 $TRACK)"; exit 1; }
+          url="https://download.blave.org/desktop/$TRACK"
+          # 線上版號:正式軌與測試軌都查——同版或更舊的 yml 傳上去,已裝的 app 不會更新、還會把人搞混。讀不到 = 這條軌第一次發
+          live="$(curl -fsSL "$url/latest.yml?t=$(date +%s)" 2>/dev/null | sed -n 's/^version: *//p' | tr -d '\r' || true)"
+          if [ -n "$live" ]; then
+            node -e 'const [a,b]=process.argv.slice(1).map(v=>v.split(".").map(Number));for(let i=0;i<3;i++){if(a[i]!==b[i])process.exit(a[i]>b[i]?0:1)}process.exit(1)' "$ver" "$live" \
+              || { echo "::error::$url 上已經是 $live,$ver 沒有比它大"; exit 1; }
+            echo "線上 $live → 要發 $ver"
+          else
+            echo "$url 還沒有 latest.yml:這條軌第一次發版"
+          fi
+          { echo "version=$ver"; echo "url=$url"; echo "prefix=desktop/$TRACK"; } >> "$GITHUB_OUTPUT"
+          echo "軌道 $TRACK,版 $ver,更新網址 $url"
+
+      - name: npm ci
+        working-directory: shell
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+
+      # 隨包 Python:只抓 Windows 那顆。版本與 SHA256 從 tools/fetch-python.sh 讀(單一真相),不在這裡另釘一份;
+      # 不直接跑那支腳本是因為它三顆都抓,mac 那兩顆的 tar 裡有 symlink,Git Bash 的 tar 解出來不可靠。
+      - name: Fetch bundled Python (win-x64)
+        run: |
+          fp=shell/tools/fetch-python.sh
+          tag="$(sed -n 's/^PBS_TAG="\(.*\)"$/\1/p' "$fp")"
+          pyv="$(sed -n 's/^PY_VERSION="\(.*\)"$/\1/p' "$fp")"
+          sha="$(sed -n 's/^fetch win-x64 *x86_64-pc-windows-msvc *\([0-9a-f]\{64\}\)$/\1/p' "$fp")"
+          [ -n "$tag" ] && [ -n "$pyv" ] && [ -n "$sha" ] || { echo "::error::從 $fp 讀不到 PBS_TAG / PY_VERSION / win-x64 的 SHA256(格式變了?)"; exit 1; }
+          file="cpython-${pyv}+${tag}-x86_64-pc-windows-msvc-install_only.tar.gz"
+          url="https://github.com/astral-sh/python-build-standalone/releases/download/${tag}/${file/+/%2B}"
+          out=shell/vendor/python-win-x64
+          mkdir -p shell/vendor
+          curl -fsSL --retry 3 -o "shell/vendor/$file" "$url"
+          got="$(sha256sum "shell/vendor/$file" | cut -d' ' -f1)"
+          [ "$got" = "$sha" ] || { echo "::error::$file SHA256 不符(拿到 $got,要 $sha)"; exit 1; }
+          rm -rf shell/vendor/.stage "$out"
+          mkdir -p shell/vendor/.stage
+          tar -xzf "shell/vendor/$file" -C shell/vendor/.stage
+          mv shell/vendor/.stage/python "$out"
+          rm -rf shell/vendor/.stage "shell/vendor/$file"
+          printf '%s' "$file $sha" > "$out/.blave-pbs"
+          [ -x "$out/python.exe" ] || { echo "::error::$out/python.exe 不在(tar 的 layout 變了?)"; exit 1; }
+          "$out/python.exe" -I -c "import sys; print(sys.version)"
+
+      # 未簽章的正式形狀:BLAVE_RELEASE=1 翻 fuses、蓋 blaveRelease,BLAVE_UPDATE_URL 蓋進包裡的更新網址並讓 electron-builder 產 latest.yml;
+      # --publish never 保證它不自己上傳。SignPath 接上後:拿掉 BLAVE_WIN_UNSIGNED、改設 BLAVE_WIN_PUBLISHER="SignPath Foundation"。
+      - name: Build NSIS installer (unsigned)
+        working-directory: shell
+        env:
+          BLAVE_RELEASE: "1"
+          BLAVE_WIN_UNSIGNED: "1"
+          BLAVE_UPDATE_URL: ${{ steps.meta.outputs.url }}
+        run: npx electron-builder --config electron-builder.config.js --win nsis --x64 --publish never
+
+      # 產物驗證(照 release.js 的「驗產物」):隨包 python / 官方檔在 win-unpacked 裡、包裡的更新網址與發佈旗標、yml 版號與 sha512。
+      # 檔名:electron-builder 預設 "Blave Setup <ver>.exe"(有空格);S3 上用無空格的 Blave-Setup-<ver>.exe,所以這裡改名並改 yml 的 url / path
+      # (內容沒動,sha512 / size 不變)。config 若之後改了 artifactName 直接產無空格檔名,這段自動變 no-op。
+      - name: Verify and stage artifacts
+        id: stage
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+          URL: ${{ steps.meta.outputs.url }}
+        run: |
+          node tests/check_shell_paths.js
+          asar="$(node -e 'const a=require("./shell/node_modules/@electron/asar");const p=JSON.parse(a.extractFile("shell/dist/win-unpacked/resources/app.asar","package.json").toString());console.log(JSON.stringify({u:p.blaveUpdateUrl,r:p.blaveRelease,v:p.version}))')"
+          [ "$asar" = "{\"u\":\"$URL\",\"r\":true,\"v\":\"$VER\"}" ] || { echo "::error::包裡的更新網址 / 發佈旗標 / 版號不對:$asar"; exit 1; }
+          src="shell/dist/Blave Setup $VER.exe"; [ -f "$src" ] || src="shell/dist/Blave-Setup-$VER.exe"
+          [ -f "$src" ] || { echo "::error::找不到安裝檔(shell/dist 裡有:$(ls shell/dist))"; exit 1; }
+          up=shell/dist/upload; rm -rf "$up"; mkdir -p "$up"
+          cp "$src" "$up/Blave-Setup-$VER.exe"
+          cp "$src.blockmap" "$up/Blave-Setup-$VER.exe.blockmap"
+          sed "s/Blave Setup $VER\.exe/Blave-Setup-$VER.exe/g" shell/dist/latest.yml > "$up/latest.yml"
+          yml="$up/latest.yml"
+          grep -q "^version: $VER\$" "$yml" || { echo "::error::latest.yml 的版號不是 $VER"; exit 1; }
+          grep -q "url: Blave-Setup-$VER\.exe\$" "$yml" && grep -q "^path: Blave-Setup-$VER\.exe\$" "$yml" || { echo "::error::latest.yml 的 url / path 不是 Blave-Setup-$VER.exe"; cat "$yml"; exit 1; }
+          sha="$(node -e 'console.log(require("crypto").createHash("sha512").update(require("fs").readFileSync(process.argv[1])).digest("base64"))' "$up/Blave-Setup-$VER.exe")"
+          grep -qF "$sha" "$yml" || { echo "::error::latest.yml 的 sha512 跟安裝檔對不上"; exit 1; }
+          echo "sha512=$sha" >> "$GITHUB_OUTPUT"
+          ls -l "$up"; cat "$yml"
+
+      - name: Upload workflow artifact
+        id: unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: blave-desktop-win-${{ steps.meta.outputs.version }}-${{ env.TRACK }}
+          path: shell/dist/upload/
+          retention-days: 7
+          if-no-files-found: error
+
+      # ── SignPath(審核過再開)────────────────────────────────────────────────────────────────────────────
+      # SignPath 只簽最上層安裝檔;它吃 GitHub artifact 的 id,所以要另傳一份**只含 exe** 的 artifact(不含 yml / blockmap,
+      # 不然 artifact configuration 對不上)。organization-id / project-slug / signing-policy-slug / artifact-configuration-slug
+      # 由 SignPath 後台給、放 repo variables;api-token 放 secret、只給這一步。簽完 exe 內容變了:
+      #   ① 用簽好的檔覆蓋 shell/dist/upload/ 那份;② 重算 latest.yml 的 sha512 與 size(files[0] 與頂層各一份);
+      #   ③ blockmap 是照檔案內容算的,要重產(app-builder-bin 的 `app-builder blockmap --input <exe> --output <exe>.blockmap`)
+      #      或乾脆不傳 blockmap(electron-updater 找不到就退回整包下載)。
+      # 同時 Build 那步改成 BLAVE_WIN_PUBLISHER="SignPath Foundation"(electron-updater 拿它驗更新包的 Authenticode)、拿掉 BLAVE_WIN_UNSIGNED。
+      #
+      # - name: Upload unsigned installer for SignPath
+      #   id: for-signing
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: blave-desktop-win-${{ steps.meta.outputs.version }}-unsigned-exe
+      #     path: shell/dist/upload/Blave-Setup-${{ steps.meta.outputs.version }}.exe
+      #     retention-days: 1
+      # - name: Sign installer (SignPath)
+      #   id: signpath
+      #   uses: SignPath/github-action-submit-signing-request@v3
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      #     project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+      #     signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+      #     artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+      #     github-artifact-id: ${{ steps.for-signing.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: shell/dist/signed
+      # - name: Replace installer with signed one, recompute latest.yml
+      #   env:
+      #     VER: ${{ steps.meta.outputs.version }}
+      #   run: |
+      #     cp "shell/dist/signed/Blave-Setup-$VER.exe" "shell/dist/upload/Blave-Setup-$VER.exe"
+      #     rm -f "shell/dist/upload/Blave-Setup-$VER.exe.blockmap"   # 或用 app-builder 重產
+      #     node -e '...重算 sha512(base64)與 size,寫回 latest.yml 的 files[0].sha512 / size 與頂層 sha512...'
+      # ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+      # 只有這裡以後看得到 AWS 憑證(action 會把它們 export 到之後的 step 環境,所以上傳放最後、後面不再有 step)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.BLAVE_RELEASE_AWS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.BLAVE_RELEASE_AWS_SECRET }}
+          aws-region: ${{ secrets.BLAVE_RELEASE_AWS_REGION }}
+
+      # 順序就是安全性(同 release.js 的 uploadPlan / publish):帶版號的檔先傳(已存在就拒絕——immutable 快取一年,覆寫後 CDN 邊緣還是舊檔),
+      # 從正式網址整個抓回來比 sha512,才傳 latest.yml(這一刻起對外);之後的固定檔名失敗只警告,不能報成發版失敗。
+      - name: Upload to S3
+        env:
+          BUCKET: ${{ secrets.BLAVE_RELEASE_AWS_BUCKET }}
+          PREFIX: ${{ steps.meta.outputs.prefix }}
+          URL: ${{ steps.meta.outputs.url }}
+          VER: ${{ steps.meta.outputs.version }}
+          SHA: ${{ steps.stage.outputs.sha512 }}
+        run: |
+          up=shell/dist/upload; exe="Blave-Setup-$VER.exe"
+          IMM="public, max-age=31536000, immutable"
+          for k in "$exe" "$exe.blockmap"; do
+            if aws s3api head-object --bucket "$BUCKET" --key "$PREFIX/$k" >/dev/null 2>&1; then
+              echo "::error::s3://$BUCKET/$PREFIX/$k 已經在 bucket 裡。帶版號的檔不能覆寫,這個版號作廢,請發下一個版號"; exit 1
+            fi
+          done
+          aws s3 cp "$up/$exe" "s3://$BUCKET/$PREFIX/$exe" --cache-control "$IMM" --only-show-errors
+          aws s3 cp "$up/$exe.blockmap" "s3://$BUCKET/$PREFIX/$exe.blockmap" --cache-control "$IMM" --only-show-errors
+          curl -fsSL --retry 3 -o "$up/.roundtrip.exe" "$URL/$exe"
+          got="$(node -e 'console.log(require("crypto").createHash("sha512").update(require("fs").readFileSync(process.argv[1])).digest("base64"))' "$up/.roundtrip.exe")"
+          [ "$got" = "$SHA" ] || { echo "::error::正式網址上的 $exe 跟本機的不一樣(sha512 不符)。latest.yml 還沒換,線上不受影響"; exit 1; }
+          aws s3 cp "$up/latest.yml" "s3://$BUCKET/$PREFIX/latest.yml" --cache-control no-cache --only-show-errors --content-type text/yaml
+          echo "✓ $PREFIX/latest.yml 已換——$VER 從這一刻起對外生效($URL/)"
+          aws s3 cp "$up/$exe" "s3://$BUCKET/$PREFIX/Blave-Setup.exe" --cache-control no-cache --only-show-errors \
+            || echo "::warning::固定檔名 $PREFIX/Blave-Setup.exe 沒傳成(新版已對外,不要還原版號;手動補傳這一個檔即可)"
+          echo "::notice::$VER 已放上 $PREFIX/(更新網址 $URL);接下來不自動做:commit / tag / GitHub Release"

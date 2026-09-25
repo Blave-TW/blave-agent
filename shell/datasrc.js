@@ -84,13 +84,29 @@ function render({ outside, sources }) {
   return out.length ? out.join("\n") + "\n" : "";
 }
 
-/* 借 python 拿 .env.lock:拿到才 resolve 一個 release();等太久 = BUSY(不硬寫)。python 起不來(沒有 venv)= 沒有人搶,直接過。 */
-const LOCK_PY = "import fcntl,os,sys\nfd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR,0o600)\nfcntl.flock(fd,fcntl.LOCK_EX)\nsys.stdout.write('L\\n');sys.stdout.flush()\nsys.stdin.read()\n";
+/* 借 python 拿 .env.lock:拿到才 resolve 一個 release();等太久 = BUSY(不硬寫)。python 起不來(沒有 venv)= 沒有人搶,直接過。
+   鎖走 fcntl / msvcrt 雙軌(同 lib/order_paper.py):Windows 沒有 fcntl,msvcrt.locking 一次等 10 秒、等不到就丟 OSError,
+   所以包成迴圈一直等——「等太久」由這邊的 timeoutMs 殺掉子行程來判 BUSY,兩個平台同一套語意。 */
+const LOCK_PY = [
+  "import os,sys",
+  "fd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR,0o600)",
+  "try:",
+  " import fcntl;fcntl.flock(fd,fcntl.LOCK_EX)",
+  "except ImportError:",
+  " import msvcrt",
+  " while True:",
+  "  try:",
+  "   msvcrt.locking(fd,msvcrt.LK_LOCK,1);break",
+  "  except OSError:",
+  "   pass",
+  "sys.stdout.write('L\\n');sys.stdout.flush()",
+  "sys.stdin.read()",
+].join("\n") + "\n";
 function pyLock({ python, lockFile, timeoutMs = 10000, spawnFn = spawn, exists = fs.existsSync }) {
   return () => new Promise((resolve, reject) => {
     if (!python || !exists(python)) return resolve(() => {});
     let done = false, child;
-    try { child = spawnFn(python, ["-c", LOCK_PY, lockFile], { stdio: ["pipe", "pipe", "ignore"] }); }
+    try { child = spawnFn(python, ["-c", LOCK_PY, lockFile], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true }); }
     catch (_) { return reject(new Error("LOCK_FAILED")); }
     const release = () => { try { child.stdin.end(); } catch (_) { /* 已經結束 */ } };
     const fail = (code) => { if (done) return; done = true; clearTimeout(tm); release(); try { child.kill(); } catch (_) {} reject(new Error(code)); };

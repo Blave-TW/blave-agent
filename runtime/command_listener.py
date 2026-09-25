@@ -49,8 +49,12 @@ import turn_slots
 
 try:
     import fcntl
-except ImportError:  # Windows — no concurrent .env writer there (first-boot
-    fcntl = None     # secret injection is a Linux systemd unit)
+except ImportError:  # Windows — _env_lock goes through msvcrt instead
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:  # POSIX
+    msvcrt = None
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 WORKSPACE_STATE = os.path.join(WORKSPACE, "state")
@@ -106,6 +110,9 @@ _LOCAL_HOST = None  # local_daemon registers its reconciler supervisor here
 _LOCAL_ENV_PASS = ("PATH", "HOME", "LANG", "USER", "SHELL", "TMPDIR",
                    "BLAVE_AGENT_BASE", "BLAVE_AGENT_WORKSPACE", "BLAVE_AGENT_HOME",
                    "BLAVE_AGENT_STATE", "BLAVE_KLINE_SOURCE", "PYTHONPYCACHEPREFIX")
+# Windows only (see _local_child_env): prefixes stripped from the pass-through
+# environment; the _LOCAL_ENV_PASS names survive even when they match.
+_LOCAL_ENV_DROP = ("BLAVE_", "ANTHROPIC_", "OPENAI_")
 
 
 # Venues a local-mode machine may bind. Paper only for now — widen it HERE, the
@@ -327,8 +334,18 @@ def _local_real_key_gate(venue_id, env):
 def _local_child_env(**extra):
     """Env for every workspace subprocess in local mode. Allowlist like the
     Linux one, plus the path variables that have no /opt/blave-agent default to
-    fall back on here. Any other BLAVE_* stays out of strategy code."""
-    env = {k: v for k, v in os.environ.items() if k in _LOCAL_ENV_PASS}
+    fall back on here. Any other BLAVE_* stays out of strategy code.
+
+    Windows: the allowlist starves python (no SystemRoot → it will not even
+    start; USERPROFILE / APPDATA / TEMP / PATHEXT / COMSPEC likewise), so there
+    it is a denylist — pass the environment through and strip the secrets,
+    the same shape _launch_flatten uses. Env names are case-insensitive on
+    Windows, hence the upper()."""
+    if os.name == "nt":
+        env = {k: v for k, v in os.environ.items()
+               if k in _LOCAL_ENV_PASS or not k.upper().startswith(_LOCAL_ENV_DROP)}
+    else:
+        env = {k: v for k, v in os.environ.items() if k in _LOCAL_ENV_PASS}
     env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
     env.update(extra)
     return env
@@ -578,9 +595,18 @@ def _env_lock():
     injector's write can land inside our read→replace window (or vice versa)
     and either side's lines get eaten — 29026 2026-08-07 lost blave_api_key
     exactly this way. Lock file, not .env itself: our writes os.replace the
-    .env inode, and a lock on a replaced inode guards nothing."""
+    .env inode, and a lock on a replaced inode guards nothing.
+
+    Windows (desktop app): the other writer is the shell's data-source form
+    (shell/datasrc.js LOCK_PY), which holds msvcrt LK_LOCK on byte 0 of the
+    same .env.lock — _env_lock_nt takes exactly that byte, so the two exclude
+    each other. Only that file and that byte count, so keep them in sync."""
     if fcntl is None:
-        yield
+        if msvcrt is None:
+            yield
+            return
+        with _env_lock_nt():
+            yield
         return
     fd = os.open(os.path.join(WORKSPACE, ".env.lock"), os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -588,6 +614,30 @@ def _env_lock():
         yield
     finally:
         os.close(fd)  # closing the fd releases the flock
+
+
+@contextlib.contextmanager
+def _env_lock_nt():
+    """msvcrt twin of _env_lock (same shape as lib/order_paper.py): LK_LOCK
+    gives up with OSError after ~10s, so loop until it lands — flock(LOCK_EX)
+    waits forever too. Unlock needs the position the lock was taken at (0),
+    and the OS drops the lock with the process either way."""
+    fd = os.open(os.path.join(WORKSPACE, ".env.lock"), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        while True:
+            try:
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+                break
+            except OSError:
+                pass
+        yield
+    finally:
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        os.close(fd)
 
 
 def _venue_cred_ids(lines, skip_ids=frozenset()):

@@ -136,6 +136,14 @@ const ds = D.createDataSrc({ envFile: ENVF, lock, strategies: () => STRATS, trad
       let third = null; try { const rel3 = await mk(3000)(); third = "got"; rel3(); } catch (e) { third = e.message; }
       t("pyLock:放了之後拿得到", third === "got");
       t("pyLock:鎖檔 0600", (fs.statSync(lf).mode & 0o777) === 0o600);
+      // Windows 那條(假造:fcntl 裝成不存在、msvcrt 換成假模組):走 msvcrt.locking 的迴圈,第一次 OSError 要重試、拿到才印 L
+      const LOCK_PY = /const LOCK_PY = \[([\s\S]*?)\]\.join\("\\n"\) \+ "\\n";/.exec(fs.readFileSync(path.join(__dirname, "..", "shell", "datasrc.js"), "utf8"));
+      const lockSrc = LOCK_PY ? JSON.parse("[" + LOCK_PY[1].replace(/,\s*$/, "") + "]").join("\n") + "\n" : null;
+      const shim = "import sys,types\nsys.modules['fcntl']=None\nm=types.ModuleType('msvcrt');m.LK_LOCK=0;m.n=0\n"
+        + "def lk(fd,mode,n):\n m.n+=1\n if m.n==1: raise OSError('busy')\n open(sys.argv[2],'w').write(str(m.n))\nm.locking=lk;sys.modules['msvcrt']=m\n";
+      const marks = path.join(WS, "msvcrt.calls");
+      const r = require("child_process").spawnSync(py, ["-c", shim + lockSrc, lf, marks], { input: "", encoding: "utf8", timeout: 10000 });
+      t("LOCK_PY(win32 模擬):fcntl 不在就走 msvcrt.locking,OSError 重試、第二次拿到、印 L", !!lockSrc && r.status === 0 && r.stdout === "L\n" && fs.readFileSync(marks, "utf8") === "2");
     }
   }
 

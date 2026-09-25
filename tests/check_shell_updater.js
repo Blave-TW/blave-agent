@@ -40,6 +40,13 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   ({ au, up } = mk()); up.start(); au.emit("update-downloaded", { version: "0.4.0" }); native.emit("update-downloaded"); au.emit("error", new Error("install failed"));
   t("已暫存之後的 error 也講出來(不留一顆按了沒反應的鈕)", up.state().phase === "error" && up.state().error === "INSTALL_FAILED" && up.install().error === "NOT_READY");
 
+  // Windows(NSIS):沒有 Squirrel 那一層,main.js 給 nativeUpdater=null → electron-updater 的 update-downloaded 直接 = ready(不然永遠卡 staging)
+  ({ au, up } = mk({ nativeUpdater: null })); up.start(); au.emit("update-available", { version: "0.4.0" }); au.emit("update-downloaded", { version: "0.4.0" });
+  t("win32(nativeUpdater=null):update-downloaded 就是 ready、可以裝", up.state().phase === "ready" && up.state().version === "0.4.0" && up.state().percent === 100 && up.install().ok === true);
+  ({ au, up } = mk({ nativeUpdater: null })); up.start(); trading = true; au.emit("update-downloaded", { version: "0.4.0" });
+  t("win32:下單中一樣 blocked、不裝", up.state().phase === "blocked" && up.install().error === "TRADING"); trading = false;
+  ({ au, up } = mk({ nativeUpdater: null })); up.start(); au.emit("update-downloaded", { version: "0.4.0" }); au.emit("error", new Error("sig mismatch"));
+  t("win32:暫存後的 error 一樣講 INSTALL_FAILED", up.state().phase === "error" && up.state().error === "INSTALL_FAILED");
   ({ au, up } = mk()); up.start(); au.emit("error", new Error("net down"));
   t("檢查失敗:phase=error,之後可以再查", up.state().phase === "error" && up.check() === true);
   ({ au, up } = mk()); up.start(); up.check(); au.emit("update-not-available");
@@ -50,6 +57,7 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "updater.js"), "utf8");
   t("整個檔只有 install() 一處會叫 quitAndInstall(永遠不自己重啟)", (src.match(/quitAndInstall\(/g) || []).length === 1);
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  t("main.js:原生 Squirrel 那顆只在 darwin 注入(win32 是 null)", /nativeUpdater: feedUrl && process\.platform === "darwin" \? require\("electron"\)\.autoUpdater : null/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
   t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : activeTurn \|\| turnStarting \? \{ ok: false, error: "TURN_BUSY" \} : updater\(\)\.install\(\)\)/.test(mainSrc));
   t("tmLabels 預設物件就有回合中結束那兩句(畫面還沒交字前按結束也不會是空的)", (() => { const i = mainSrc.indexOf("let tmLabels = {"), j = mainSrc.indexOf("};", i); const d = mainSrc.slice(i, j);
     return /quitTurnTitle: "/.test(d) && /quitTurnBody: "/.test(d); })() && !/tmLabels\.quitTurnTitle \|\|/.test(mainSrc));

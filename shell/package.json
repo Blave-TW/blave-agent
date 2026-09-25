@@ -13,6 +13,7 @@
     "fetch-python": "sh tools/fetch-python.sh",
     "pack": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dir --universal && BLAVE_CHECK_PACK=1 node ../tests/check_shell_paths.js",
     "dist": "npm run fetch-python && electron-builder --config electron-builder.config.js --mac dmg --universal && BLAVE_CHECK_PACK=1 node ../tests/check_shell_paths.js",
+    "pack:win": "npm run fetch-python && electron-builder --config electron-builder.config.js --win nsis --x64",
     "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac --publish never"
   },
   "devDependencies": {

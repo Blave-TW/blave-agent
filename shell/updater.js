@@ -19,7 +19,9 @@ const FIRST_CHECK_MS = 30 * 1000;   // 啟動後先讓 app 把該做的做完
    **ready 的定義是「Squirrel 已經驗過簽章、暫存好了」,不是「zip 下載完」**(稽核 M1):electron-updater 在 macOS 先 emit
    自己的 update-downloaded,之後才交給 Squirrel 抓 zip、驗章、暫存;那一步會失敗的情況很常見(從 DMG / Downloads 直接開
    = 唯讀的 translocation、沒簽章的包、磁碟滿、/Applications 沒寫入權)。所以要聽 electron 原生 autoUpdater 的
-   update-downloaded 才算 ready;在那之後的 error 是安裝失敗,要講出來、也要能再試,不能吞掉。 */
+   update-downloaded 才算 ready;在那之後的 error 是安裝失敗,要講出來、也要能再試,不能吞掉。
+   **Windows(NSIS)沒有 Squirrel 那一層**:electron-updater 自己下載 Setup.exe、驗 sha512 與簽章,它的 update-downloaded 就是
+   「已暫存」;main.js 在 win32 不給 nativeUpdater(null),這裡就把那個事件直接當 ready——不然 phase 永遠卡在 staging。 */
 function createUpdater(opts) {
   const au = opts.autoUpdater, log = opts.log || (() => {});
   const timer = opts.setTimer || ((fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); return t; });
@@ -40,7 +42,7 @@ function createUpdater(opts) {
     au.on("update-available", (i) => set({ phase: "downloading", version: i && i.version, percent: 0 }));
     au.on("update-not-available", () => set({ phase: "idle", version: null, checkedAt: Date.now() }));   // 「已是最新版 · {t} 檢查過」用的時間
     au.on("download-progress", (p) => set({ phase: "downloading", percent: p && Number.isFinite(p.percent) ? Math.floor(p.percent) : null }));
-    au.on("update-downloaded", (i) => set({ phase: "staging", version: i && i.version, percent: 100 }));
+    au.on("update-downloaded", (i) => set({ phase: opts.nativeUpdater ? "staging" : "ready", version: i && i.version, percent: 100 }));
     if (opts.nativeUpdater) opts.nativeUpdater.on("update-downloaded", () => set({ phase: "ready", percent: 100 }));
     au.on("error", (e) => {
       log("update error: " + (e && e.message));

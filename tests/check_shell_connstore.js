@@ -88,7 +88,7 @@ const write = (dir, obj) => fs.writeFileSync(path.join(dir, FILE), JSON.stringif
     && main.indexOf('throw new Error("AGENT_BIN_MISSING")') < main.indexOf('const useCodex = !!codexBin;')
     && main.indexOf('const useCodex = !!codexBin;') < main.indexOf('path.join(REPO, "runtime", "agent_turn.py")'));
   t("每一輪只解路徑、不跑 login status(detectAgents 一次開到四個子行程);連 Claude 的人一次都不開", /async function codexBinNow\(\) \{ return codexPath\(await loginShellPath\(\)\); \}/.test(mainSrc)
-    && !/detectAgents\(\)/.test(mainSrc.slice(mainSrc.indexOf("async function runTurn("), mainSrc.indexOf('], { env, cwd: WS })'))));
+    && !/detectAgents\(\)/.test(mainSrc.slice(mainSrc.indexOf("async function runTurn("), mainSrc.indexOf('], { env: childEnv(env), cwd: WS, windowsHide: true })'))));
   { const app = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
     t("畫面把它講成人話,不丟代碼給用戶看", /AGENT_BIN_MISSING\/\.test\(r\.errTail \|\| ""\) \? t\("AGENT_BIN_MISSING"\)/.test(app)); }
   t("重新登入之後 reseal", /saveToken\(r\.body\.access_token\)[\s\S]{0,600}connStore\(\)\.reseal\(\);/.test(main));

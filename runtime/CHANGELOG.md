@@ -8,6 +8,18 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **`local_daemon.py` 能在 Windows 跑(電腦版 Windows x64 MVP,未經真機驗證)**:「app 沒了=停單+撤掛單」的三重保證各有 Windows
+  對應——parent watch 改成阻塞 `read(0)` 執行緒 + `WaitForSingleObject(ppid)` 兩道(`select` 對 pipe 無效、父死不會 re-parent);
+  鎖走 `fcntl`/`msvcrt` 雙軌,對帳器在 Windows 自己拿鎖、daemon 只確認(`pass_fds` 不可用);撤單 sweep 掛在 EOF/parent-gone 路徑
+  (TerminateProcess 沒有 handler),daemon 停對帳器先關它 stdin、逾時才 kill;`<base>/current` 用 junction;L786「needs a POSIX
+  system」改成「缺 fcntl 且缺 msvcrt」才拒。POSIX 路徑一字不變(`_nt()` 分支)。外殼 `shell/daemon.js` win32 收工只送 EOF、
+  9 秒逾時才 kill()(darwin 不變)。測試 `tests/check_local_daemon_windows.py`、`tests/check_shell_daemon_win32.js`。
+  同批:`command_listener._local_child_env` 在 Windows 從 allowlist 改 denylist(只拔 `BLAVE_*` / `ANTHROPIC_*` / `OPENAI_*`,
+  SystemRoot 等系統變數才進得來);外殼對 Windows 子行程帶 `PYTHONUTF8=1`(整棵 Python 樹繼承,不然 stdout 遇 emoji 就
+  UnicodeEncodeError)並對每個 spawn 帶 `windowsHide`(不彈黑色主控台);`command_listener._env_lock` 在 Windows 走 msvcrt
+  鎖 `.env.lock` byte 0,與 `shell/datasrc.js` 那把互斥(之前直接不上鎖)。測試 `tests/check_local_env_windows.py`、
+  `tests/check_shell_win_env.js`。
+
 ## 1.1.94 — 2026-09-25
 
 - **電腦版雲端視角:純資料查詢一律本機查**(`agent_turn.py` `_viewing_env_segment`):行情、指標、Blave 資料、

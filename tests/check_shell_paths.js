@@ -30,7 +30,41 @@ function check(mode, isPackaged, resourcesPath) {
 
 check("dev", false, undefined);
 
+/* 路徑常數依平台(假造 process.platform;沒有 Windows 機器):venv 的 python 在 Windows 是 venv\Scripts\python.exe、
+   隨包 Python 是 python-x64\python.exe(python-build-standalone 的 Windows 版沒有 bin/);darwin 一字不變。 */
+function consts(platform, arch, resourcesPath) {
+  const app = { isPackaged: true }, os = { homedir: () => (platform === "win32" ? "C:\\Users\\u" : "/Users/u") };
+  const path = require("path")[platform === "win32" ? "win32" : "posix"];
+  const process = { platform, arch, resourcesPath, env: {} }, fs = { existsSync: () => true };
+  eval(cut("const BASE = ", "// 打包版的 runtime/ 與隨包 Python 都在 .app 裡"));
+  return { BASE, WS, VENV_BIN, VENV_PY, BUNDLED_PY, base: basePython() };
+}
+{
+  const w = consts("win32", "x64", "C:\\Users\\u\\AppData\\Local\\Programs\\Blave\\resources");
+  t("win32: BASE / WS 在 %USERPROFILE%\\Blave", w.BASE === "C:\\Users\\u\\Blave" && w.WS === "C:\\Users\\u\\Blave\\workspace");
+  t("win32: VENV_PY = venv\\Scripts\\python.exe", w.VENV_BIN === "Scripts" && w.VENV_PY === "C:\\Users\\u\\Blave\\venv\\Scripts\\python.exe");
+  t("win32: BUNDLED_PY = resources\\python-x64\\python.exe(沒有 bin/)", w.BUNDLED_PY === "C:\\Users\\u\\AppData\\Local\\Programs\\Blave\\resources\\python-x64\\python.exe" && w.base === w.BUNDLED_PY);
+  const d = consts("darwin", "arm64", "/Applications/Blave.app/Contents/Resources");
+  t("darwin: VENV_PY = venv/bin/python、BUNDLED_PY = python-arm64/bin/python3(不變)", d.VENV_BIN === "bin" && d.VENV_PY === "/Users/u/Blave/venv/bin/python" && d.BUNDLED_PY === "/Applications/Blave.app/Contents/Resources/python-arm64/bin/python3");
+  t("darwin: 隨包 Python 照 process.arch 挑(x64 → python-x64)", consts("darwin", "x64", "/R").BUNDLED_PY === "/R/python-x64/bin/python3");
+  t("venv 建立與 pip 都走 execFile 陣列(pyExec),沒有 /bin/sh -c 字串", /await pyExec\(basePython\(\), \["-m", "venv", path\.join\(BASE, "venv"\)\], envPath\);/.test(src) && !/"\/bin\/sh"/.test(src));
+  t("venv 斷掉的 symlink 修復只在非 Windows 做(Scripts\\ 沒有連結)", /for \(const n of !WIN && fs\.existsSync\(vbin\)/.test(src) && /const vbin = path\.join\(BASE, "venv", VENV_BIN\)/.test(src));
+  t("選單列圖示:win32 用 assets/tray.ico、darwin 仍是 trayTemplate.png;Windows 有 setAppUserModelId(不然通知不出 toast)",
+    /WIN \? nativeImage\.createFromPath\(path\.join\(__dirname, "assets", "tray\.ico"\)\)/.test(src) && fs.existsSync(path.join(SHELL, "assets", "tray.ico"))
+    && /if \(process\.platform === "win32"\) app\.setAppUserModelId\("org\.blave\.desktop"\);/.test(src));
+}
+
 const dist = path.join(SHELL, "dist");
+// Windows 產物(npm run pack:win → dist/win-unpacked):有才驗——隨包 Python 的 layout、官方檔都在;沒有就 SKIP
+const winDir = path.join(dist, "win-unpacked");
+if (!fs.existsSync(winDir)) console.log("SKIP  packaged(win): shell/dist 沒有 win-unpacked(先跑 cd shell && npm run pack:win)");
+else {
+  const res = path.join(winDir, "resources");
+  check("packaged(win)", true, res);
+  t("packaged(win): app.asar 在", fs.existsSync(path.join(res, "app.asar")));
+  t("packaged(win): 隨包 python-x64\\python.exe 在(沒有 bin/)", fs.existsSync(path.join(res, "python-x64", "python.exe")) && !fs.existsSync(path.join(res, "python-x64", "bin")));
+  t("packaged(win): 沒有 mac 那兩顆 Python 混進來", !fs.existsSync(path.join(res, "python-arm64")));
+}
 // universal 打包中途壞掉會留下 mac-universal-{x64,arm64}-temp:那不是產物,不拿它測
 const appDir = fs.existsSync(dist) && fs.readdirSync(dist).filter((d) => /^mac/.test(d) && !/-temp$/.test(d))
   .map((d) => path.join(dist, d, "Blave.app")).find((p) => fs.existsSync(p));
