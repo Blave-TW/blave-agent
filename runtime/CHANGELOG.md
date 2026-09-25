@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.95 — 2026-09-25
+
 - **daemon 開的子程序一律 `stdin=DEVNULL`,Windows 再加 `CREATE_NO_WINDOW`**(`command_listener._child_kw`,
   50 個 `subprocess.run/Popen` 呼叫點全部經它;`local_daemon` 的對帳器 spawn 保留 `stdin=PIPE`(EOF 是它的 parent watch)
   只加 flag、帳戶讀取器與 `_pid_cwd` 同樣不繼承;`portfolio_reporter._run` / schtasks / crontab 三處也補上)。
