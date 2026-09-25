@@ -25,6 +25,10 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 sys.path.insert(0, ROOT)
 os.chdir(WS)
 import command_listener as cl  # noqa: E402
+import importlib  # noqa: E402
+
+for _v in cl._WITHDRAW_CHECKED:   # the cloud withdrawal gate has its own test (check_credentials_withdraw_gate)
+    importlib.import_module(f"lib.account_{_v.lower()}").withdraw_enabled = lambda env: False
 
 # 驅逐舊交易所時會清路由、重排排程:這台假機器沒有那些東西,別讓它去碰開發機的 crontab
 with open(os.path.join(WS, "manager", "portfolio_config.json"), "w") as f:
@@ -114,6 +118,7 @@ def fake_lib(venue):
             raise RuntimeError(f"401 invalid key {env.get(venue.upper() + '_API_KEY')}")
         return {"equity": 100.0} if how == "ok" else {"equity": "n/a"}
     m.get_equity = get_equity
+    m.withdraw_enabled = lambda env: False  # the withdrawal gate has its own test (check_local_real_key_gate)
     return m
 
 

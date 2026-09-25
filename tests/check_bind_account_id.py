@@ -254,6 +254,7 @@ check("book_account" not in r and "paper" not in seed().get("venue_account", {})
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
 cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"OKX"})
 account_okx.get_equity = lambda env: {"equity": 100.0, "currency": "USDT"}
+account_okx.withdraw_enabled = lambda env: False  # the withdrawal gate has its own test (check_local_real_key_gate)
 r = bind("okx-key", "OKX", OKX_PASSPHRASE="pp")
 check(isinstance(r, dict) and r.get("book_account") == {"okx": "ok"}
       and seed()["venue_account"]["okx"]["id"] is None and "OKX_API_KEY=okx-key" in

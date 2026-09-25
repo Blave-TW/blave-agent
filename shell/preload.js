@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("blave", {
   cloudOverview: (q) => ipcRenderer.invoke("cloud-overview", q),
   cloudPerformance: (q) => ipcRenderer.invoke("cloud-performance", q),
   cloudStrategy: (name) => ipcRenderer.invoke("cloud-strategy", { name }),
+  // 雲端的報告清單 / 本體(renderer/reports.js):主行程打 api、圖換成 data URI 才交過來;force = 送出「新增報告」後的輪詢,跳過 5 分鐘快取
+  cloudReports: (force) => ipcRenderer.invoke("cloud-reports", force),
+  cloudReport: (id, ver) => ipcRenderer.invoke("cloud-report", id, ver),   // ver = 清單的 stored_at(同 id 覆寫後換一份)
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
   // 雲端連交易所:金鑰只走這一支(cloud-send 拒收 credentials);回應只有 { ok, code, detail },沒有金鑰值
@@ -72,6 +75,9 @@ contextBridge.exposeInMainWorld("blave", {
   libraryReport: (id, lang) => ipcRenderer.invoke("library-report", id, lang),
   libraryPurchase: (id, confirmTopup) => ipcRenderer.invoke("library-purchase", id, confirmTopup),
   libraryInstalled: (patch) => ipcRenderer.invoke("library-installed", patch),
+  // 本機報告(renderer/reports.js):信封清單 / 一份本體 + sidecar 圖(data URI);renderer 不碰 fs
+  reportsList: () => ipcRenderer.invoke("reports-list"),
+  reportLoad: (id) => ipcRenderer.invoke("report-load", id),
   cancelAgentLogin: () => ipcRenderer.invoke("cancel-agent-login"),
   agentLogin: (kind) => ipcRenderer.invoke("agent-login", kind),
   signOutBlave: () => ipcRenderer.invoke("sign-out-blave"),

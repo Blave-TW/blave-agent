@@ -56,7 +56,7 @@ if (!process.versions.electron) {
   ok("③ app.js:rpShowTab / rpBodyPaint 的分頁清單含 rob,rob 交給 renderRobust(t / busy / onScan / buildMeta 都從外面交進去);index.html 有分頁鈕、面板、css、js", (app.match(/\["bt", "tr", "rob", "code"\]/g) || []).length === 2
     && /R\.renderRobust\(\$\("rp-rob"\), \{ stats: B\.data\.stats, scan: B\.data\.scan \|\| null, code: B\.data\.code, name: B\.name \}, rpRobOpts\(\)\)/.test(app)
     && /return \{ t, busy: running, turn: turnSeq, scope: rpBag\(\) === RPC \? "cloud" : "local", onScan: rpRobAsk, buildMeta: R\.buildMeta \};/.test(app)
-    && /data-tab="rob" data-i18n="rp\.tab\.rob"/.test(html) && /id="rp-rob" role="tabpanel" hidden/.test(html) && /report-robust\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="trade\.js">/.test(html));
+    && /data-tab="rob" data-i18n="rp\.tab\.rob"/.test(html) && /id="rp-rob" role="tabpanel" hidden/.test(html) && /report-robust\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*(?:<script src="(?:report-blocks|reports|newstrategy)\.js"><\/script>\s*)*<script src="trade\.js">/.test(html));
   ok("③ app.js:掃描鈕走確認框 → submitMessage(不覆寫 viewing:chatViewing 在雲端視角本來就回 env:cloud + strategy)、resolve 回合序號;回合開始 / 結束三處都叫 rpRobSync(就地改鈕,不重畫);每輪 turnSeq++",
     /onOk: \(\) => submitMessage\(t\("rob\.msgScan", \{ name \}\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(app) && !/viewing/.test(app.slice(app.indexOf("function rpRobAsk"), app.indexOf("function rpRobSync"))) && (app.match(/rpRobSync\(\);/g) || []).length === 3
     && /R\.robSync\(\$\("rp-rob"\), rpRobOpts\(\)\)/.test(app) && /UPD\.turnCloud = false; turnSeq\+\+;/.test(app));

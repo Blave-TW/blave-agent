@@ -87,7 +87,9 @@ PHASES = {}     # name -> fn(world) for orchestrated cells
 KNOWN_BUGS = {
     "V1-05": "old lib/account_gateio + account_bybit have no demo host: with GATEIO_DEMO / BYBIT_DEMO in "
              ".env the desktop gate checks a testnet key on the LIVE host and refuses it (fail-closed; only "
-             "reachable when the desktop workspace was not re-synced — V6-01)",
+             "reachable when the desktop workspace was not re-synced — V6-01). Not a bug and asserted as "
+             "expected in the same cell: OKX / BingX / Bybit refused with 'no permission check' on a lib "
+             "without withdraw_enabled",
 }
 
 
@@ -448,6 +450,13 @@ def VENUE_GATE_CASES(w, cl):
             w.check(vid + "_API_KEY" not in open(".env").read() if os.path.exists(".env") else True,
                     f"{vid}: nothing written")
         return
+    # a _WITHDRAW_CHECKED venue on a lib without withdraw_enabled: the account read
+    # passes, then the withdrawal gate refuses (fail-closed, by design — the text
+    # tells the user to run 更新); a desktop only gets here with a workspace older
+    # than its runtime, which the app's bundle never produces (runtime + lib ship
+    # as one package)
+    no_check = {vid for vid in getattr(cl, "_WITHDRAW_CHECKED", ())
+                if not hasattr(importlib.import_module(f"lib.account_{vid.lower()}"), "withdraw_enabled")}
     for vid, keys in GATE_KEYS.items():
         for mode in ("ok", "reject"):
             hits = []
@@ -455,7 +464,12 @@ def VENUE_GATE_CASES(w, cl):
             before = open(".env").read() if os.path.exists(".env") else ""
             r = w.cmd("credentials", env=keys)
             after = open(".env").read() if os.path.exists(".env") else ""
-            if mode == "ok":
+            if mode == "ok" and vid in no_check:
+                w.check(isinstance(r, Exception) and "no permission check" in str(r) and "更新" in str(r)
+                        and after == before,
+                        f"{vid} good key, {w.lib_side} lib without withdraw_enabled: refused with "
+                        f"'no permission check', .env byte-identical ({str(r)[:120]})")
+            elif mode == "ok":
                 w.check(not isinstance(r, Exception) and keys[vid + "_API_KEY"] in after,
                         f"{vid} good key: gate passes on the {w.lib_side} lib and .env is written ({r})")
             else:
@@ -655,16 +669,27 @@ def v0_05(w):
 
 @cell("V1-11", lib="old", rt="new")
 def v1_11(w):
-    """Park/unpark for a real-venue account (cloud bind of OKX needs no venue
-    call): same keys back → the old lib's snapshot and guard state return;
-    other keys → dropped. The restored files are the old lib's own format."""
-    keys = dict(GATE_KEYS["OKX"])
+    """Cloud bind on the old lib. OKX / BingX / Bybit (_WITHDRAW_CHECKED): the
+    runtime asks lib.account_<id>.withdraw_enabled, the old lib has none →
+    refused before anything is written, the text says 更新 (fail-closed by
+    design; the fleet sits in this state from the runtime publish until the
+    user updates the workspace). Then park/unpark for a real-venue account
+    on Gate.io (no withdrawal check, so no venue call): same keys back → the
+    old lib's snapshot and guard state return; other keys → dropped. The
+    restored files are the old lib's own format."""
+    for vid in sorted(w.cl._WITHDRAW_CHECKED):
+        r = w.cmd("credentials", env=GATE_KEYS[vid])
+        w.check(isinstance(r, Exception) and "no permission check" in str(r) and "更新" in str(r),
+                f"{vid} on the cloud, old lib: refused, told to update ({str(r)[:100]})")
+        w.check(not os.path.exists(".env") or f"{vid}_API_KEY" not in open(".env").read(),
+                f"{vid}: nothing written")
+    keys = dict(GATE_KEYS["GATEIO"])
     r = w.cmd("credentials", env=keys)
-    w.check(not isinstance(r, Exception), f"bind OKX on the cloud ({r})")
+    w.check(not isinstance(r, Exception), f"bind Gate.io on the cloud ({r})")
     w.sup["running"] = True
     snap = {"ts": "2026-09-23T00:00:00", "target": {}, "actual": {B: {"side": "long", "size": 10}}}
     json.dump(snap, open("manager/last_reconcile.json", "w"))
-    json.dump({"venue": "okx", "account": "x"}, open("state/venue_account.json", "w"))
+    json.dump({"venue": "gateio", "account": "x"}, open("state/venue_account.json", "w"))
     w.cmd("credentials_remove", env=list(keys))
     w.check(os.path.exists("state/unbound_account_state.json") and not os.path.exists("manager/last_reconcile.json"),
             "unbind: parked and cleared")
@@ -673,7 +698,7 @@ def v1_11(w):
     w.check(os.path.exists("state/venue_account.json"), "…and the guard state")
     w.sup["running"] = True
     w.cmd("credentials_remove", env=list(keys))
-    other = dict(keys, OKX_API_KEY="okxkey-OTHER")
+    other = dict(keys, GATEIO_API_KEY="gatekey-OTHER")
     w.cmd("credentials", env=other)
     w.check(not os.path.exists("manager/last_reconcile.json") and not os.path.exists("state/unbound_account_state.json"),
             "other keys: parked state dropped, not restored")

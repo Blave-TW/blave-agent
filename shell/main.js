@@ -292,6 +292,7 @@ function clearToken() {
   libCache = null;   // 策略庫清單帶著這個帳號的 purchased:登出就丟
   clearDataKey();
   clearAppSecret();
+  rptCloudInvalidate();   // 雲端報告的清單與本體是這個帳號的
 }
 
 /* app_secret:登入時 api 多發的一顆、**只有這支主行程拿得到**的憑證。帳號 token 會進 agent 的
@@ -1031,6 +1032,129 @@ function loadSessionImages(id) {
   return out;
 }
 
+/* ── 報告(renderer/reports.js;spec-desktop-0.1.6 §1.1)────────────────────────────
+   本機視角的「袋」就是檔案系統:agent 照 references/reports.md 把報告寫進 <WS>/reports/<id>.json、圖放 <id>.files/。
+   電腦版的 local_daemon 沒有起 report_uploader,所以報告永遠留在 drop dir、image block 永遠是 file 不是 sha256;
+   reports/sent/ 今天是空的,但 uploader 哪天上桌面也不用改。renderer 不碰 fs:這裡讀好信封 / 本體 / 圖(data URI)才交過去。
+   檔名 regex、2 MB 上限、mime 白名單都在這一層;block 內容不驗(那是 api 的事,渲染器對不認得的 block 本來就跳過)。 */
+const RPT_DIR = () => path.join(WS, "reports");
+const RPT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/, RPT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+const RPT_BYTES_MAX = 2 * 1024 * 1024, RPT_MAX = 200, RPT_IMAGES_MAX = 20, RPT_TITLE_MAX = 200, RPT_TYPE_MAX = 32;
+const RPT_TS_MIN = 946684800, RPT_TS_MAX = 4102444800;   // created_at 只認 2000–2100 年的 unix 秒:agent 寫的 1e13 會讓 renderer 畫出 NaN
+const RPT_IMAGES_BUDGET_MS = 60 * 1000, RPT_CLOUD_DOCS_MAX = 8;   // 雲端一份報告的圖加總最多等 60 秒(postJSON 單張 20 秒逾時 × 20 張太久);本體快取留 8 份(每份含 base64 圖)
+const RPT_EXT_MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
+// 一份報告的信封(清單只讀這幾欄):id 缺就用檔名、有且不同 → 略過(同 uploader 的立場);標題 1–200 字,缺 → 略過;created_at 不是合理範圍的整數 → 檔案 mtime。
+// mtime(ms)一併交出:同 id 覆寫(lib/report.py 明寫重用 id = 覆蓋)renderer 靠它認出「這份換過了」——本體快取與「有沒有新報告」都比它
+function rptEnvelope(fileId, doc, mtimeMs) {
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+  if (doc.id !== undefined && doc.id !== fileId) return null;
+  const title = typeof doc.title === "string" ? doc.title.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, RPT_TITLE_MAX) : "";
+  if (!title) return null;
+  const created = Number.isInteger(doc.created_at) && doc.created_at >= RPT_TS_MIN && doc.created_at <= RPT_TS_MAX ? doc.created_at : Math.floor(mtimeMs / 1000);
+  return { id: fileId, title, type: typeof doc.type === "string" ? doc.type.slice(0, RPT_TYPE_MAX) : null, created_at: created, mtime: Math.floor(mtimeMs) };
+}
+// 讀一份 <dir>/<id>.json:不是普通檔 / 超過 2 MB / JSON 壞 → null
+function rptReadDoc(dir, id) {
+  const f = path.join(dir, id + ".json");
+  let st = null;
+  try { st = fs.statSync(f); } catch (_) { return null; }
+  if (!st.isFile() || st.size > RPT_BYTES_MAX) return null;
+  try { const doc = JSON.parse(fs.readFileSync(f, "utf8")); return doc && typeof doc === "object" && !Array.isArray(doc) ? { doc, mtimeMs: st.mtimeMs } : null; } catch (_) { return null; }
+}
+const rptDirs = () => [RPT_DIR(), path.join(RPT_DIR(), "sent")];   // 同 id 以 drop dir 那份為準(先掃)
+function reportsList() {
+  const out = [], seen = new Set();
+  for (const dir of rptDirs()) {
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch (_) { continue; }   // 沒有目錄 / 讀不到 = 沒有報告,不畫錯誤
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;   // .json.tmp(半寫檔)、<id>.files/(sidecar)、failed/ 都不是報告
+      const id = name.slice(0, -5);
+      if (!RPT_ID_RE.test(id) || seen.has(id)) continue;
+      const r = rptReadDoc(dir, id);
+      const env = r ? rptEnvelope(id, r.doc, r.mtimeMs) : null;
+      if (!env) continue;
+      seen.add(id); out.push(env);
+    }
+  }
+  out.sort((a, b) => b.created_at - a.created_at);
+  return { reports: out.slice(0, RPT_MAX) };
+}
+// 本機一張圖 → data URI:file 只能是檔名(不含路徑)、副檔名決定 mime、≤ 2 MB;任一條不合就當沒有這張(渲染器畫失敗框)
+function rptImageUri(dir, id, file) {
+  if (typeof file !== "string" || !RPT_FILE_RE.test(file)) return null;
+  const mime = RPT_EXT_MIME[file.slice(file.lastIndexOf(".") + 1).toLowerCase()];
+  if (!mime || file.indexOf(".") < 0) return null;
+  try {
+    const f = path.join(dir, id + ".files", file), st = fs.statSync(f);
+    if (!st.isFile() || st.size === 0 || st.size > RPT_BYTES_MAX) return null;
+    return `data:${mime};base64,${fs.readFileSync(f).toString("base64")}`;
+  } catch (_) { return null; }
+}
+function reportLoad(id) {
+  if (typeof id !== "string" || !RPT_ID_RE.test(id)) return null;
+  for (const dir of rptDirs()) {
+    const r = rptReadDoc(dir, id);
+    if (!r || !rptEnvelope(id, r.doc, r.mtimeMs)) continue;
+    const images = {};
+    let n = 0;
+    for (const b of Array.isArray(r.doc.blocks) ? r.doc.blocks : []) {
+      if (!b || typeof b !== "object" || b.type !== "image" || typeof b.file !== "string" || b.sha256 !== undefined || images[b.file] !== undefined) continue;   // 有 sha256 的不解析(本機不會有,防呆)
+      if (++n > RPT_IMAGES_MAX) break;
+      const uri = rptImageUri(dir, id, b.file);
+      if (uri) images[b.file] = uri;
+    }
+    return { report: r.doc, images, mtime: Math.floor(r.mtimeMs) };
+  }
+  return null;
+}
+/* 雲端視角:平台的索引與 S3 本體(停機也讀得到)。兩支各快取 5 分鐘(清單 per 帳號、本體 per id),綁著拿到它的那顆 token——
+   換帳號就對不上、登出時 clearToken 整組清掉;「新增報告」送出後的等待期間 renderer 帶 force 重問。
+   圖:對 image block 的每個 sha256 打一次 /cloud/strategy_image(同一份去重、逐張、最多 20 張——超過的留給渲染器畫失敗框),
+   單張失敗不擋整份。回 { code, report, images };report: null = 平台沒這份 */
+let rptCloudList = null;   // { owner, at, r }
+const rptCloudDocs = new Map();   // id → { owner, at, r }
+function rptCloudInvalidate() { rptCloudList = null; rptCloudDocs.clear(); }
+async function cloudReports(force) {
+  const token = loadToken();
+  if (!token) return { code: "UNREACH", reports: [] };
+  if (!force && rptCloudList && rptCloudList.owner === token && Date.now() - rptCloudList.at < ACCT_FRESH_MS) return rptCloudList.r;
+  const r = await cloudHost().reports();
+  if (r.code === "OK") rptCloudList = { owner: token, at: Date.now(), r };
+  return r;
+}
+// ver = renderer 從清單拿到的 stored_at(同 id 覆寫後索引會換),進快取 key:沒帶就只以 id 快取
+async function cloudReport(id, ver) {
+  const miss = { code: "UNREACH", report: null, images: {} };
+  if (typeof id !== "string" || !RPT_ID_RE.test(id)) return miss;
+  const token = loadToken();
+  if (!token) return miss;
+  const ck = id + "|" + (Number.isInteger(ver) ? ver : ""), hit = rptCloudDocs.get(ck);
+  if (hit && hit.owner === token && Date.now() - hit.at < ACCT_FRESH_MS) return hit.r;
+  const r = await cloudHost().report(id);
+  if (r.code !== "OK") return miss;
+  const images = {};
+  if (r.report) {
+    const shas = [];
+    for (const b of r.report.blocks) {
+      if (b && typeof b === "object" && b.type === "image" && typeof b.sha256 === "string" && /^[0-9a-f]{64}$/.test(b.sha256) && shas.indexOf(b.sha256) < 0) shas.push(b.sha256);
+      if (shas.length >= RPT_IMAGES_MAX) break;
+    }
+    const t0 = Date.now();
+    for (const sha of shas) {
+      if (Date.now() - t0 > RPT_IMAGES_BUDGET_MS) break;   // 預算用完:剩下的留給渲染器畫失敗框,閱讀頁不能只掛著 spinner
+      const im = await cloudHost().image(sha);
+      if (im.code === "OK" && im.image) images[sha] = `data:${im.image.mime};base64,${im.image.b64}`;
+    }
+  }
+  const out = { code: "OK", report: r.report, images };
+  if (r.report) {   // 「平台沒這份」不記 5 分鐘:uploader 下一輪就可能把它送上去
+    rptCloudDocs.set(ck, { owner: token, at: Date.now(), r: out });
+    while (rptCloudDocs.size > RPT_CLOUD_DOCS_MAX) rptCloudDocs.delete(rptCloudDocs.keys().next().value);
+  }
+  return out;
+}
+
 // ── model / effort ─────────────────────────────────────────
 // 三個引擎的選項來源不同,但交給 renderer 的形狀一樣:
 //   { models: [{ id, name, efforts: [level…], defaultEffort }], defaultModel }
@@ -1224,7 +1348,9 @@ async function libraryList(langRaw, force) {
   let dataAccess = null;
   // 閘門要的「含不含資料」跟每一輪開跑前問的是同一份(hasBlaveData 太舊才補打);查不到就 null,畫面不猜
   if (signedIn) { await hasBlaveData(); dataAccess = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? dataAccessOf(lastAcct.body) : null; }
-  if (!force && libCache && libCache.lang === lang && libCache.signedIn === signedIn && Date.now() - libCache.at < ACCT_FRESH_MS) return { strategies: libCache.strategies, signedIn, dataAccess };
+  // why:付不出資料費的原因(no_card / no_balance / unknown)——renderer 的 CTA 照它分流,不自己從 acct 再算一套
+  const why = dataAccess === "none" ? dataAccessWhy(signedIn) : null;
+  if (!force && libCache && libCache.lang === lang && libCache.signedIn === signedIn && Date.now() - libCache.at < ACCT_FRESH_MS) return { strategies: libCache.strategies, signedIn, dataAccess, why };
   const url = `${API_BASE}/openclaw/marketplace/strategies?lang=${lang}`;
   const key = signedIn ? loadDataKey() : null;
   let r = null;
@@ -1236,7 +1362,7 @@ async function libraryList(langRaw, force) {
   const strategies = libSanitize(r.body);
   if (!strategies) return null;
   libCache = { at: Date.now(), lang, signedIn, strategies };
-  return { strategies, signedIn, dataAccess };
+  return { strategies, signedIn, dataAccess, why };
 }
 /* 詳情的完整報告:GET /openclaw/marketplace/strategies/<id>/report——只取 400 點權益曲線與回測期間(總報酬、關卡數值走清單:
    一支資料一個來源)。公開策略匿名也拿得到;內容不隨身分變,快取 5 分鐘 per (id, lang)、登出 / 購買不用清。非 200 / 形狀不對 → null。 */
@@ -1700,6 +1826,9 @@ app.whenReady().then(() => {
   handle("cloud-performance", (_e, q) => cloudHost().performance(q && q.days, q && q.currency), { code: "UNREACH", perf: null });
   // 雲端單支策略的報告(側欄點一支打一次;同事件清單:不留在主行程、不落地)。回 { code: "OK" | "UNREACH", strategy }——OK + null = 雲端現在沒有這一份
   handle("cloud-strategy", (_e, q) => cloudHost().strategy(q && q.name), { code: "UNREACH", strategy: null });
+  // 雲端的報告清單與本體(renderer/reports.js;同單支策略:不啟動輪詢、憑證只在主行程)。OK + report: null = 平台現在沒有這一份
+  handle("cloud-reports", (_e, force) => cloudReports(force === true), { code: "UNREACH", reports: [] });
+  handle("cloud-report", (_e, id, ver) => cloudReport(id, ver), { code: "UNREACH", report: null, images: {} });
   /* 雲端(寫入):renderer 只說「送哪個指令」,憑證與 request_id 都在主行程(cloudcmd.js)。
      **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
      金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。
@@ -1795,6 +1924,9 @@ app.whenReady().then(() => {
   handle("library-report", (_e, id, lang) => libraryReport(id, lang), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
+  // 本機報告(renderer/reports.js):讀 <WS>/reports 的信封 / 本體 + sidecar 圖(data URI);renderer 不碰 fs
+  handle("reports-list", () => reportsList(), { reports: [] });
+  handle("report-load", (_e, id) => reportLoad(id), null);
   handle("sign-out-blave", () => signOutBlave());
   handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   handle("cancel-agent-login", () => cancelAgentLogin());
@@ -2100,6 +2232,7 @@ function p1Sync() {
 /* Binance 金鑰重查出事(binance_link 兩次確認之後才叫):P1 / P2 都走這條本機通知,跟 p1Sync 同一套呈現。只通知、不自動停單、不移除金鑰。
    {where} 由 renderer 交字時就填好(這裡的事件只會來自這台電腦);{ip} 只會是 binance_link 驗過的 IPv4。 */
 function binanceNotify(v) {
+  // 每一個 binance_check.VERDICT_LEVEL 的 reason 都要在這張表上(tests/check_shell_binance_link 列舉):對不到就回 false = 每 5 分鐘重試到永遠
   const map = { IP_CHANGED: ["key_ipTitle", "key_ipBody"], KEY_REJECTED: ["key_rejTitle", "key_rejSameIpBody"], REJECTED: ["key_rejTitle", "key_rejUnknownBody"],
     TRADING_LOST: ["key_permTitle", "key_permBody"] };
   // 回 true = 真的交給系統了。字還沒交過來 / 系統不支援 → false,binance_link 不會記成已通知,下一輪再試

@@ -76,6 +76,7 @@ check(msg and "模擬交易" in msg and not calls and not os.path.exists(ENV_PAT
 # 2. the daemon's process opens Binance — from here on the gate is what decides
 cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"BINANCE"})
 for name, value in (
+        ("withdrawals enabled", dict(GOOD, enableWithdrawals=True)),
         ("withdrawals field missing", {k: v for k, v in GOOD.items() if k != "enableWithdrawals"}),
         ("withdrawals field not a bool", dict(GOOD, enableWithdrawals="false")),
         ("neither spot nor futures trading enabled", dict(GOOD, enableFutures=False, enableSpotAndMarginTrading=False)),
@@ -102,6 +103,13 @@ check(bool(msg) and "no permission check" in msg and not os.path.exists(ENV_PATH
       "a widened switch without a checker still writes nothing")
 check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BYBIT", "GATEIO", "OKX"],
       "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit (a new one is a decision)")
+check(sorted(cl._WITHDRAW_CHECKED) == ["BINGX", "BYBIT", "OKX"] and cl._WITHDRAW_CHECKED <= set(cl._LOCAL_KEY_CHECKS),
+      "withdrawal permission is checked for exactly OKX, BingX, Bybit (Gate.io exposes no such field)")
+trade_src = open(os.path.join(ROOT, "shell", "renderer", "trade.js"), encoding="utf-8").read()
+import re  # noqa: E402
+flagged = {m.group(1).upper() for m in re.finditer(r'(\w+): \{[^}]*noWdCheck: true', trade_src)}
+check(flagged == set(cl._LOCAL_KEY_CHECKS) - cl._WITHDRAW_CHECKED,
+      f"the app flags exactly the unchecked venues (noWdCheck) so the user is told to check by hand: {sorted(flagged)}")
 
 # 4. the passing case: written, 0600, no-whitelist keys are NOT refused (Wei: advise, don't block)
 calls.clear()
@@ -112,8 +120,7 @@ check(f"BINANCE_API_KEY={KEY}" in body and f"BINANCE_SECRET_KEY={SECRET}" in bod
       and stat.S_IMODE(os.stat(ENV_PATH).st_mode) == 0o600, ".env holds the pair, mode 0600")
 
 # 4b. spot OR futures is enough (lib/order_binance places both) — same rule as the app's screen
-for name, value in (("spot only", dict(GOOD, enableFutures=False)), ("futures only", dict(GOOD, enableSpotAndMarginTrading=False)),
-                    ("withdrawals on (not gated, Wei 2026-09-22)", dict(GOOD, enableWithdrawals=True))):
+for name, value in (("spot only", dict(GOOD, enableFutures=False)), ("futures only", dict(GOOD, enableSpotAndMarginTrading=False))):
     os.remove(ENV_PATH)
     answer(value)
     check(refused() is None and os.path.exists(ENV_PATH), f"{name} trading enabled → written")
@@ -185,6 +192,31 @@ try:
         msg = refused(venv)
         check(bool(msg) and msg.startswith("UNKNOWN:") and open(ENV_PATH).read() == before,
               f"{vid}: an unreadable answer is a refusal, nothing written")
+        # the account reads; then the key's withdrawal permission decides (Wei 2026-09-25):
+        # on / unreadable / not a bool → refused, nothing written; off → written
+        mod.get_equity = lambda env: {"equity": 0.0, "currency": "USDT"}
+        real_wd = getattr(mod, "withdraw_enabled", None)
+        if vid in cl._WITHDRAW_CHECKED:
+            check(callable(real_wd), f"{vid}: lib/account_{vid.lower()} ships withdraw_enabled")
+            for wname, wval, wcode in (("withdrawals on", True, "WITHDRAW_ENABLED:"),
+                                       ("permission endpoint refuses", Exception("40001 " + list(venv.values())[0]), "UNKNOWN:"),
+                                       ("answer is not a bool", "false", "UNKNOWN:")):
+                def _wd(env, wval=wval):
+                    if isinstance(wval, Exception):
+                        raise wval
+                    return wval
+                mod.withdraw_enabled = _wd
+                msg = refused(venv)
+                check(bool(msg) and msg.startswith(wcode) and open(ENV_PATH).read() == before
+                      and not any(v in msg for v in venv.values()),
+                      f"{vid}: {wname} → {wcode} nothing written, no key value in the message")
+            del mod.withdraw_enabled
+            msg = refused(venv)
+            check(bool(msg) and "no permission check" in msg and open(ENV_PATH).read() == before,
+                  f"{vid}: a lib without withdraw_enabled is refused, never silently unchecked")
+            mod.withdraw_enabled = lambda env: False
+        else:
+            check(real_wd is None, f"{vid}: no withdrawal check exists (the app tells the user to check by hand)")
         # passes: written
         seen = []
         mod.get_equity = lambda env, seen=seen: seen.append(dict(env)) or {"equity": 0.0, "currency": "USDT"}
@@ -195,6 +227,8 @@ try:
               and stat.S_IMODE(os.stat(ENV_PATH).st_mode) == 0o600,
               f"{vid}: .env holds its fields (0600) and the previous venue was evicted as for any bind")
         mod.get_equity = real_eq
+        if real_wd is not None:
+            mod.withdraw_enabled = real_wd
         open(ENV_PATH, "w").write(before)
         os.chmod(ENV_PATH, 0o600)
     # an old workspace with no lib/account_<id>: no checker there → nothing written

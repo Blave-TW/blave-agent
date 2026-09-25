@@ -56,7 +56,11 @@ def _sign(secret_key, params):
     return canonical + f"&signature={sig}"
 
 
-def _call(path_and_query, headers):
+def _call(path_and_query, headers, bare=False):
+    """`bare`: the two /openApi/v1/account/api* permission endpoints answer HTTP
+    200 with the object itself — no {code,msg,data} envelope (measured on a
+    real key 2026-09-25) — so a dict without `code` is the payload there and
+    only there; an error still comes wrapped with a code."""
     for base in (BASE_URL, FALLBACK):
         try:
             r = requests.get(f"{base}{path_and_query}", headers=headers, timeout=10)
@@ -67,6 +71,8 @@ def _call(path_and_query, headers):
             # /openApi/api/v3/capital/* history endpoints return a bare JSON
             # array with no {code,msg,data} envelope (official docs + ccxt)
             if isinstance(data, list):
+                return data
+            if bare and r.status_code == 200 and isinstance(data, dict) and "code" not in data:
                 return data
             if data.get("code") != 0:
                 raise _tag(
@@ -79,7 +85,7 @@ def _call(path_and_query, headers):
     return None
 
 
-def _signed_get(path, env, params=None):
+def _signed_get(path, env, params=None, bare=False):
     api_key = env.get("BINGX_API_KEY")
     secret_key = env.get("BINGX_SECRET_KEY")
     if not api_key or not secret_key:
@@ -87,12 +93,26 @@ def _signed_get(path, env, params=None):
 
     headers = {"X-BX-APIKEY": api_key, "X-SOURCE-KEY": "BX-AI-SKILL"}
     try:
-        return _call(f"{path}?{_sign(secret_key, params or {})}", headers)
+        return _call(f"{path}?{_sign(secret_key, params or {})}", headers, bare)
     except Exception as e:
         if str(getattr(e, "code", "")) != "100421":
             raise
         _sync_time()  # timestamp rejected: resync, one retry with a fresh one
-        return _call(f"{path}?{_sign(secret_key, params or {})}", headers)
+        return _call(f"{path}?{_sign(secret_key, params or {})}", headers, bare)
+
+
+# GET /openApi/v1/account/apiPermissions → {"permissions": [int, …], "ipAddresses",
+# "note", "apiKey"} (bare). The integer codes are not documented anywhere
+# reachable; the table is filled from real keys only (same account, three keys
+# measured 2026-09-25: read-only → [2], read + withdraw → [2, 5], read + spot
+# trading + futures trading + withdraw → [1, 2, 3, 5] — so 1 and 3 are the two
+# trading permissions; which is spot and which is futures does not matter to
+# the gate). Anything outside the two tables is a refusal until it has been
+# seen on a key whose permissions are known. /apiRestrictions is no help for
+# trading: enableFutures / enableSpotAndMarginTrading read False on the key
+# that had both trading permissions on.
+_BINGX_PERMISSION_CODES = frozenset({1, 2, 3})   # 1, 3 = spot / futures trading, 2 = read
+_BINGX_WITHDRAW_CODES = frozenset({5})           # 5 = withdraw
 
 
 def _public_get(path, params=None):
@@ -120,6 +140,30 @@ def _wallet_value(data, list_key, marks):
             if px:
                 total += amt * px
     return round(total, 2)
+
+
+def withdraw_enabled(env: dict) -> bool:
+    """Whether the calling key may withdraw. Two reads, both bare (see _call):
+    1. /openApi/v1/account/apiRestrictions — BingX's docs list an
+       `enableWithdrawals` bool like Binance's, but a real answer carried
+       only ipRestrict / createTime / permitsUniversalTransfer / enableReading /
+       enableFutures / enableSpotAndMarginTrading. If the bool is ever there it
+       wins; its absence is not "off".
+    2. /openApi/v1/account/apiPermissions — `permissions` integer list, read
+       against the code tables above. Missing / not all ints / a code not in
+       _BINGX_PERMISSION_CODES → raise (fail-closed: no verdict, never "off")."""
+    r = _signed_get("/openApi/v1/account/apiRestrictions", env, bare=True)
+    if isinstance(r, dict) and isinstance(r.get("enableWithdrawals"), bool):
+        return r["enableWithdrawals"]
+    p = _signed_get("/openApi/v1/account/apiPermissions", env, bare=True)
+    codes = p.get("permissions") if isinstance(p, dict) else None
+    if not isinstance(codes, list) or not codes \
+            or not all(isinstance(c, int) and not isinstance(c, bool) for c in codes):
+        raise Exception("BingX account/apiPermissions returned no permissions list")
+    unknown = set(codes) - _BINGX_PERMISSION_CODES - _BINGX_WITHDRAW_CODES
+    if unknown:
+        raise Exception(f"BingX account/apiPermissions has unmapped permission codes {sorted(unknown)}")
+    return bool(set(codes) & _BINGX_WITHDRAW_CODES)
 
 
 def get_equity(env: dict) -> dict:

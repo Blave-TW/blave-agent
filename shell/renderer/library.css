@@ -42,15 +42,10 @@
 .lib .tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; background: var(--surface-muted); color: var(--ink-2); }
 .lib .tag.is-verified { background: var(--color-greenLight); color: var(--color-greenBlack); }
 .lib .tag.is-price { color: var(--ink); gap: var(--space-4); }
-/* 社群策略(未驗證)那一段:單列 disclosure(canon Accordion 單列變體),列本身 44 高、chevron 純 CSS;展開不做高度動畫 */
-.lib-comm-wrap[hidden], .lib-rows[hidden] { display: none; }
-.lib-comm { position: relative; width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: flex-start; gap: var(--space-8); padding: var(--space-8) var(--space-32) var(--space-8) var(--space-8); border-top: 1px solid var(--border-hairline); text-align: left; border-radius: 0; color: var(--ink); transition: color var(--motion-fast) var(--ease-standard); }
-.lib-comm:hover { color: var(--ink-2); }
-.lib-comm:focus-visible { outline-offset: -2px; }
-.lib-comm-t { font-size: 13px; font-weight: 600; white-space: nowrap; }
-.lib-comm-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 400; color: var(--ink-3); }
-.lib-comm::after { content: ""; position: absolute; right: var(--space-12); top: 50%; width: 7px; height: 7px; margin-top: -5px; border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3); transform: rotate(45deg); transition: transform var(--motion-fast) var(--ease-standard); }
-.lib-comm[aria-expanded="true"]::after { margin-top: -1px; transform: rotate(-135deg); }
+/* 閘門卡(spec-desktop-0.1.6 §3.3):本機視角、付不出資料費時清單頂端那一張 Terminal card——一句 + 同一顆主鈕;不用 banner / alert 語氣 */
+.lib-gate { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-12); margin: var(--space-4) 0 var(--space-12); padding: var(--space-12) var(--space-16); background: var(--surface-card); border-radius: var(--radius-lg); }   /* 一句在上、鈕在下:中欄 480–512 兩欄放不下,直排寫死(設計稽核 建-3) */
+.lib-gate[hidden] { display: none; }
+.lib-gate p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
 .lib-foot { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .lib-state { margin: 0; padding: var(--space-24) 0; font-size: 13px; color: var(--ink-3); }
 .lib-state .btn-out { display: inline-flex; align-items: center; margin-top: var(--space-12); }
@@ -115,4 +110,4 @@
 .lib .steps .n { flex: none; width: 18px; height: 18px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
 /* 購買框裡的購買中那一行(spin16 來自 trade.css) */
 .cf-busy { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-8) 0 0; font-size: 12px; color: var(--ink-2); }
-@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back, .lib-comm, .lib-comm::after { transition: none; } .sk { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back { transition: none; } .sk { animation: none; } }

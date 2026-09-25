@@ -39,6 +39,9 @@ def load(name):
 
 
 cl = load("command_listener")
+import lib.account_okx as _okx  # noqa: E402
+
+_okx.withdraw_enabled = lambda env: False  # the cloud withdrawal gate has its own test (check_credentials_withdraw_gate)
 pr = load("portfolio_reporter")
 # never touch this machine's crontab / services from a test
 SYNCED, STOPPED = [], []

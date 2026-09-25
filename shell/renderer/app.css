@@ -559,7 +559,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   transition: background var(--motion-fast) var(--ease-standard);
 }
 .strat-row:hover { background: var(--surface-muted); color: var(--ink); }
-.strat-row[aria-current="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }
+.strat-row[aria-current="true"], .strat-row[aria-current="page"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }   /* 側欄入口(自動下單 / 策略庫 / 報告)用 page:nav 的正確語意 */
 /* 名字是識別字(snake_case),過長截尾;數字靠右、等寬,上下列才對得齊 */
 .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1087,3 +1087,32 @@ html[data-platform="win32"] ::-webkit-scrollbar, html[data-platform="win32"]::-w
 html[data-platform="win32"] ::-webkit-scrollbar-track, html[data-platform="win32"] ::-webkit-scrollbar-corner { background: transparent; }
 html[data-platform="win32"] ::-webkit-scrollbar-thumb { background: var(--border-frame); border-radius: var(--radius-pill); }
 html[data-platform="win32"] ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
+
+/* ── 兩個表單 modal(新增策略 #ns-modal、新增報告 #rpn-modal;spec-desktop-0.1.6 §1.5 / §4.2)共用的殼:
+   .del-modal 的 440 框 + 可捲的 .modal-body + 腳最前面一行常駐的 .foot-msg(role=status;空時高 0、不 display:none)。
+   欄位 recipe:.f-input.txt(純文字欄:沒有 select 的 chevron,padding 兩邊都 8)、.f-area(同 .f-input 的框 / 底 / focus)、
+   .f-row(兩格並排)、.cf-quote(「將送出到對話的訊息」的引用格——全 app「引用即將送給 agent 的句子」只有這一種長相) */
+.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-12); padding: var(--space-16); }
+.modal-body .fld { margin-top: 0; }   /* trade.css 的 .fld 帶 margin-top 12;這裡 gap 已給間距 */
+.modal-body .fld-l { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.f-input.txt { padding: 0 var(--space-8); }
+.f-area { display: block; width: 100%; min-height: 64px; padding: var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--surface-field); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; -webkit-appearance: none; appearance: none; }
+.f-area:focus { outline: none; border-color: var(--ink); }
+.f-input::placeholder, .f-area::placeholder { color: var(--ink-3); }
+.f-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
+.ns-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.cf-quote { margin: 0; padding: var(--space-8) var(--space-12); border-left: 2px solid var(--border-frame); font-size: 12px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cf-quote.empty { color: var(--ink-3); }
+.foot-msg { flex-basis: 100%; min-height: 0; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
+.foot-msg:empty { margin: calc(-1 * var(--space-8)) 0 0; }   /* 空時不占一列(flex gap 那 8px 一起收掉) */
+.foot-msg .cf-busy { margin: 0; }
+.ns-lib-hint { margin-right: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-4) var(--space-6); font-size: 12px; color: var(--ink-3); }
+.modal-btns { display: flex; gap: var(--space-8); margin-left: auto; }   /* 取消 + 主鈕不拆:放不下時整組掉到下一列(EN 的腳注長) */
+/* 側欄「報告」入口的新報告記號:等待期間人在別的視圖,報告好了只標記、不拉回(同策略列的 8×2 記號語言,顏色用墨階) */
+.nav-new { flex: none; display: inline-block; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink-2); }
+.nav-new[hidden] { display: none; }
+/* 側欄「策略」標題旁的 ＋(照 web .strat-add,值換語意角色):28×28、hover 灰填 */
+.strat-add { margin-left: auto; flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.strat-add:hover { background: var(--surface-muted); color: var(--ink); }
+.strat-add .ic { stroke-width: 1.75; }
+@media (prefers-reduced-motion: reduce) { .strat-add { transition: none; } }

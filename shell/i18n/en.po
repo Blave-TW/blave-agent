@@ -916,6 +916,10 @@ msgstr "When you create the key on Binance: enable trading only, keep withdrawal
 msgid "cx.note.oneV"
 msgstr "When you create the key on {venue}: allow trading only and keep withdrawals off. If you set an IP whitelist, add this IP."
 
+# 查不到提領權限的那家(Gate.io):Blave 不會替他擋,講明要自己確認
+msgid "cx.note.wdUnchecked"
+msgstr "Blave can’t tell whether a {venue} key has withdrawal permission, so it won’t refuse one: check that withdrawals are off for this key before you connect."
+
 msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
@@ -2075,7 +2079,10 @@ msgid "cx.ip.retry"
 msgstr "Look Up Again"
 
 msgid "cx.chk.withdraw"
-msgstr "This key has withdrawals enabled, so it was not saved. Turn withdrawals off at Binance, then connect again."
+msgstr "This key has withdrawal permission, so it was not saved. Turn withdrawals off for this key at Binance, or use a key without withdrawal permission, then connect again."
+
+msgid "cx.chk.withdrawV"
+msgstr "This key has withdrawal permission, so it was not saved. Turn withdrawals off for this key at {venue}, or use a key without withdrawal permission, then connect again."
 
 msgid "cx.chk.trading"
 msgstr "This key has no trading permission, so it was not saved. Usually the IP whitelist is missing: add the IP above to the whitelist, enable trading, then connect again."
@@ -3050,12 +3057,6 @@ msgstr "Installed"
 msgid "lib.unverified"
 msgstr "Unverified"
 
-msgid "lib.comm.title"
-msgstr "Community strategies ({n})"
-
-msgid "lib.comm.sub"
-msgstr "Unverified, listed by their authors"
-
 msgid "lib.foot"
 msgstr "Want to list your own strategy? Submit it on the web."
 
@@ -3329,9 +3330,6 @@ msgstr "Sign in to Blave to download to this computer."
 msgid "lib.gate.login"
 msgstr "Sign in"
 
-msgid "lib.gate.noData"
-msgstr "The data fee for this hour couldn't be charged, so the agent can't reach the library."
-
 msgid "lib.cf.title"
 msgstr "Download \"{title}\"?"
 
@@ -3361,3 +3359,255 @@ msgstr "your cloud machine"
 
 msgid "lib.owned"
 msgstr "Purchased"
+
+# ── 報告(spec-desktop-0.1.6 §1;renderer/reports.js)──
+msgid "rpt.nav"
+msgstr "Reports"
+
+msgid "rpt.desc"
+msgstr "The agent turns backtests, briefings and research into documents you can come back to; they show up here."
+
+msgid "rpt.count.one"
+msgstr "{n} report"
+
+msgid "rpt.count.other"
+msgstr "{n} reports"
+
+msgid "rpt.ask"
+msgstr "Add Report"
+
+msgid "rpt.askAria"
+msgstr "Add a report — ask the agent to produce one"
+
+msgid "rpt.asking"
+msgstr "Agent is writing…"
+
+msgid "rpt.more"
+msgstr "Older reports · {n}"
+
+msgid "rpt.empty"
+msgstr "No reports yet."
+
+msgid "rpt.emptyHint"
+msgstr "Use Add Report top-right to describe what you want, or just tell the agent in the chat on the right."
+
+msgid "rpt.error"
+msgstr "Couldn't load the cloud report list."
+
+msgid "rpt.retry"
+msgstr "Retry"
+
+msgid "rpt.readErr"
+msgstr "Couldn't load this report."
+
+msgid "rpt.note.pending"
+msgstr "Progress is in the chat on the right; it shows up here when done."
+
+msgid "rpt.err.noNew"
+msgstr "This turn didn't produce a report; the reason is in the chat on the right."
+
+msgid "rpt.type.performance"
+msgstr "Performance"
+
+msgid "rpt.type.morning"
+msgstr "Briefing"
+
+msgid "rpt.type.research"
+msgstr "Research"
+
+msgid "rpt.newMark"
+msgstr "New report"
+
+# 新增報告 modal(§1.5;字逐字抄 web 的 workspace_rp_*,拿掉排程與「更多 › 報告」的地點詞)
+msgid "rpt.new.title"
+msgstr "Add Report"
+
+msgid "rpt.new.descLabel"
+msgstr "What the report should cover"
+
+msgid "rpt.new.descPh"
+msgstr "Describe the report you want — e.g. a daily TW-stock holdings brief after the close, including institutional net buying."
+
+msgid "rpt.new.examples"
+msgstr "Examples:"
+
+msgid "rpt.new.chip.tw"
+msgstr "TW Market Brief"
+
+msgid "rpt.new.tpl.tw"
+msgstr "TW market brief: TAIEX and volume, the three institutional investors, margin balance, TAIEX futures and foreign net long positions, plus today's read and what to watch (which indicators, under what conditions)."
+
+msgid "rpt.new.chip.close"
+msgstr "TW Market Close"
+
+msgid "rpt.new.tpl.close"
+msgstr "TW market close: today's TAIEX close and volume, the three institutional investors and margin balance (noted if not yet published), foreign net long positions in TAIEX futures, plus today's read and what to watch. No report on market holidays."
+
+msgid "rpt.new.chip.crypto"
+msgstr "Crypto Market Brief"
+
+msgid "rpt.new.tpl.crypto"
+msgstr "Crypto market brief: BTC/ETH price action, funding rates, liquidations and Blave market indicators, plus today's read."
+
+msgid "rpt.new.chip.symbol"
+msgstr "Single-Symbol Brief"
+
+msgid "rpt.new.tpl.symbol"
+msgstr "Single-symbol brief (2330): overnight moves, recent highs/lows and moving averages (statistics), flows, plus what to watch and under what conditions."
+
+msgid "rpt.new.chip.research"
+msgstr "Research Report"
+
+msgid "rpt.new.tpl.research"
+msgstr "Research report: look into a market question — <e.g. does 'Sell in May' hold for Taiwan stocks / how many days does a stock take on average to recover its ex-dividend gap / how did the TAIEX move over the next 10 days after foreign investors sold 5 days in a row>. Give me a falsifiable conclusion, the data for and against it, robustness checks, and what would overturn it."
+
+msgid "rpt.new.honest"
+msgstr "The agent on {where} writes the report. The first report is not instant — it shows up under Reports in the sidebar when it is done."
+
+msgid "rpt.new.send"
+msgstr "Ask the Agent"
+
+msgid "rpt.new.sending"
+msgstr "Sending…"
+
+msgid "rpt.new.msgLead"
+msgstr "Write me a report"
+
+msgid "rpt.new.msgOnce"
+msgstr "Produce it once — no schedule needed."
+
+msgid "rpt.queued"
+msgstr "Sent. The first report is not instant — it will appear under Reports in the sidebar once it is done."
+
+# 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
+msgid "modal.sendFailed"
+msgstr "Couldn't send; the reason is in the chat on the right."
+
+# 報告渲染器的字串包(report-blocks.js 的 REPORT_I18N;zh 逐字同 web 的 workspace_report_*,腳注兩句改帶 {where})
+msgid "rb.originScheduled"
+msgstr "Scheduled"
+
+msgid "rb.originChat"
+msgstr "From chat"
+
+msgid "rb.machine"
+msgstr "Machine"
+
+msgid "rb.footScheduled"
+msgstr "Produced on schedule by the agent on {where}"
+
+msgid "rb.footChat"
+msgstr "Produced in chat by the agent on {where}"
+
+msgid "rb.metaPeriod"
+msgstr "Period"
+
+msgid "rb.metaAum"
+msgstr "AUM"
+
+msgid "rb.metaBenchmark"
+msgstr "Benchmark"
+
+msgid "rb.calloutRisk"
+msgstr "Risk"
+
+msgid "rb.footnoteRef"
+msgstr "Note"
+
+msgid "rb.imageError"
+msgstr "Image failed to load"
+
+msgid "rb.segOther"
+msgstr "Other"
+
+# ── 新增策略 modal(spec-desktop-0.1.6 §4;renderer/newstrategy.js;字逐字抄 web 的 workspace_ns_*)──
+msgid "ns.title"
+msgstr "Add Strategy"
+
+msgid "ns.chip"
+msgstr "Add Strategy"
+
+msgid "ns.hint"
+msgstr "Fill in at least one field — the agent works out the rest."
+
+msgid "ns.name"
+msgstr "Strategy name"
+
+msgid "ns.namePh"
+msgstr "e.g. MA golden cross"
+
+msgid "ns.symbol"
+msgstr "Symbol"
+
+msgid "ns.symbolPh"
+msgstr "BTC, TXF, TSMC"
+
+msgid "ns.timeframe"
+msgstr "Timeframe"
+
+msgid "ns.timeframePh"
+msgstr "1h"
+
+msgid "ns.indicators"
+msgstr "Indicators"
+
+msgid "ns.indicatorsPh"
+msgstr "e.g. RSI, Bollinger Bands, taker intensity"
+
+msgid "ns.logic"
+msgstr "Logic"
+
+msgid "ns.logicPh"
+msgstr "Plain-language entry/exit, e.g. long when RSI is oversold and price touches the lower band; exit at the middle band."
+
+msgid "ns.previewLabel"
+msgstr "Message to send"
+
+msgid "ns.previewEmpty"
+msgstr "(fill in at least one field)"
+
+msgid "ns.libHint"
+msgstr "Not sure where to start?"
+
+msgid "ns.libLink"
+msgstr "Browse ready-made strategies"
+
+msgid "ns.submit"
+msgstr "Send to Chat"
+
+msgid "ns.sending"
+msgstr "Sending…"
+
+msgid "ns.msgLead"
+msgstr "Create a strategy"
+
+msgid "ns.msgSymbol"
+msgstr "Symbol"
+
+msgid "ns.msgTimeframe"
+msgstr "Timeframe"
+
+msgid "ns.msgIndicators"
+msgstr "Indicators"
+
+msgid "ns.msgLogic"
+msgstr "Logic"
+
+msgid "ns.msgDefault"
+msgstr "For crypto symbols, default to USDT-margined perpetual futures unless stated otherwise."
+
+# ── 策略庫「付不出資料費」的出口(spec-desktop-0.1.6 §3;取代 lib.gate.noData)──
+msgid "lib.gate.bindCard"
+msgstr "Add a Card, Get {t} Days of Data"
+
+msgid "lib.gate.topup"
+msgstr "Top Up"
+
+msgid "lib.gate.noCard"
+msgstr "This account has no card yet, so the agent can't reach the library."
+
+msgid "lib.gate.noBalance"
+msgstr "The data fee for this hour couldn't be charged, so the agent can't reach the library. Top up and it's back right away."
+
+msgid "lib.gate.unknown"
+msgstr "The account's data status couldn't be checked, so the agent may not reach the library. Open Data & Cloud Plan to check again."

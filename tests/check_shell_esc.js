@@ -30,6 +30,9 @@ const MODALS = [
   { name: "連接交易所", open: `(ENV.cur = "local", cxModalOpen(null))`, isOpen: `!$("cx-scrim").hidden`, text: "#cx-title" },
   { name: "設定", open: `(running = false, setOpen())`, isOpen: `!$("set-scrim").hidden`, text: "#set-title" },
   { name: "圖片放大", open: `lbOpen("data:image/gif;base64,R0lGODlhAQABAAAAACw=", "x", $("ta"))`, isOpen: `!$("lb-scrim").hidden`, text: null },
+  // 0.1.6 的兩個表單 modal(欄位可聚焦:焦點在框裡那一格會落在描述欄 / 名稱欄上)
+  { name: "新增策略", open: `(running = false, nsOpen($("strat-add")))`, isOpen: `!$("ns-scrim").hidden`, text: "#ns-modal .ns-hint" },
+  { name: "新增報告", open: `(running = false, rptNewOpen($("rpt-ask")))`, isOpen: `!$("rpn-scrim").hidden`, text: "#rpn-honest" },
   // 模型選單沒有型錄時整塊沒有版面(量到 0×0),點不到字;它的點擊路徑跟「焦點在 body」同一條(document 層),由那一格代表
   { name: "模型選單", open: `mpOpen(false)`, isOpen: `!$("mp-panel").hidden`, text: null },
 ];
@@ -56,7 +59,7 @@ app.whenReady().then(async () => {
       await esc();
       const closed = !(await js(m.isOpen));
       ok(`${m.name}:焦點${how === "inside" ? "在框裡" : how === "body" ? "在 body" : "在點過的字上(" + st.active + ")"}按 Esc → 關掉`, st.open && closed);
-      if (!closed) await js(`try { delClose(false); cxModalClose(false); lbClose(); setClose(); mpClose(false); } catch (_) {}`);
+      if (!closed) await js(`try { delClose(false); cxModalClose(false); lbClose(); setClose(); mpClose(false); nsClose(); rptNewClose(); } catch (_) {}`);
     }
   }
   // 一次只關一層:設定開著、確認框疊上去

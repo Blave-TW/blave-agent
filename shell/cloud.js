@@ -16,7 +16,18 @@ const EVENTS_ENDPOINT = "/oauth/desktop/cloud/events";
 const STRATEGY_ENDPOINT = "/oauth/desktop/cloud/strategy";
 const OVERVIEW_ENDPOINT = "/oauth/desktop/cloud/overview";
 const PERFORMANCE_ENDPOINT = "/oauth/desktop/cloud/performance";
+// 報告(spec-desktop-0.1.6 §1.1):清單與本體兩支新端點(形狀照 /cloud/strategy),圖片走既有的 strategy_image
+const REPORTS_ENDPOINT = "/oauth/desktop/cloud/reports";
+const REPORT_ENDPOINT = "/oauth/desktop/cloud/report";
+const IMAGE_ENDPOINT = "/oauth/desktop/cloud/strategy_image";
 const EVENTS_MAX = 500;
+const REPORTS_MAX = 200, REPORT_TITLE_MAX = 200, REPORT_TYPE_MAX = 32;
+const REPORT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/, IMAGE_HASH_RE = /^[0-9a-f]{64}$/;
+const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const IMAGE_B64_MAX = Math.ceil((2 * 1024 * 1024) / 3) * 4;   // 單張 ≤ 2 MB(api 的 IMG_MAX_BYTES)的 base64 長度
+const REPORTS_UNREACHABLE = () => ({ code: "UNREACH", reports: [] });
+const REPORT_UNREACHABLE = () => ({ code: "UNREACH", report: null });
+const IMAGE_UNREACHABLE = () => ({ code: "UNREACH", image: null });
 const UNREACHABLE = () => ({ code: "UNREACH", events: [] });
 const STRATEGY_UNREACHABLE = () => ({ code: "UNREACH", strategy: null });
 const OVERVIEW_UNREACHABLE = () => ({ code: "UNREACH", curve: null });
@@ -141,6 +152,45 @@ function interpretPerformance(res, currency) {
   return { code: "OK", perf: { metrics, pnl_curve, currency: ccy || "USDT", baseline_ts: num(o.baseline_ts) } };
 }
 
+/* 報告清單的回應 → { code, reports }(純函式)。同事件清單:讀不到與「真的沒有報告」是兩件事——只有 200 + reports 陣列才是 OK。
+   每筆只留清單要畫的信封(id / title / type / created_at / stored_at);id 不合契約字元集、標題空的整筆丟;
+   標題是機器上的 agent 寫的字:控制字元拿掉、截 200,renderer 一律 textContent。順序照 api(stored_at 新到舊),取前 REPORTS_MAX */
+function interpretReports(res) {
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !Array.isArray(b.reports)) return REPORTS_UNREACHABLE();
+  const out = [];
+  for (const r of b.reports) {
+    if (!r || typeof r !== "object" || typeof r.id !== "string" || !REPORT_ID_RE.test(r.id)) continue;
+    const title = typeof r.title === "string" ? r.title.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, REPORT_TITLE_MAX) : "";
+    if (!title) continue;
+    const int = (v) => (Number.isInteger(v) && v >= 946684800 && v <= 4102444800 ? v : null);   // 只認 2000–2100 年的 unix 秒(renderer 對 null 印 —,對 1e13 會畫出 NaN)
+    out.push({ id: r.id, title, type: typeof r.type === "string" ? r.type.slice(0, REPORT_TYPE_MAX) : null, created_at: int(r.created_at), stored_at: int(r.stored_at) });
+    if (out.length >= REPORTS_MAX) break;
+  }
+  return { code: "OK", reports: out };
+}
+/* 單份報告的回應 → { code, report }(純函式)。200 + `report: null` = 平台現在沒有這一份(同 /cloud/strategy 的「讀不到不是錯誤」);
+   其餘一律 UNREACH。本體是 api 驗過(validate_report)才存的文件,這裡只確認信封形狀(id 對得上、blocks 是陣列),
+   block 內容由渲染器逐欄讀、不認得就跳過;字串一律 textContent */
+function interpretReport(res, id) {
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !("report" in b)) return REPORT_UNREACHABLE();
+  const r = b.report;
+  if (r === null) return { code: "OK", report: null };
+  if (!r || typeof r !== "object" || Array.isArray(r) || r.id !== id || !Array.isArray(r.blocks)) return REPORT_UNREACHABLE();
+  return { code: "OK", report: r };
+}
+/* 一張圖的回應 → { code, image }(純函式)。api 回 { image: { mime, b64 } | null }:null = 沒這張圖(配額清掉、hash 對不上)。
+   mime 只認白名單、b64 只認 base64 字元且不超過 2 MB 的長度——renderer 拿到的只能組成 data: URL,沒有任何網址可載 */
+function interpretImage(res) {
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !("image" in b)) return IMAGE_UNREACHABLE();
+  const im = b.image;
+  if (im === null) return { code: "OK", image: null };
+  if (!im || typeof im !== "object" || IMAGE_MIMES.indexOf(im.mime) < 0 || typeof im.b64 !== "string" || !im.b64 || im.b64.length > IMAGE_B64_MAX || !/^[A-Za-z0-9+/]+={0,2}$/.test(im.b64)) return IMAGE_UNREACHABLE();
+  return { code: "OK", image: { mime: im.mime, b64: im.b64 } };
+}
+
 /* opts:{ apiBase, getCreds() → { token, appSecret } | null, post(url, body) → Promise<{status, body}>, onChange?(snapshot), now?, setTimer?, clearTimer? }
    onChange 在狀態的「摘要」變了才叫(切換器上的另一邊狀態靠它),不是每次輪詢都叫。
 
@@ -186,6 +236,25 @@ function createCloudHost(opts) {
     };
   }
   let stInflight = null, stName = null;   // 單支策略:同一支在途共用。不另設最小間隔——那會把「連點兩支」畫成讀不到;重複打由在途共用擋,速率由 api 的明細桶擋
+  /* 報告那三支(清單 / 本體 / 圖)共用的讀法:同 strategy()——不留在這個閉包、不進 snapshot()、不落地;不碰 gen / owner;
+     換人只用本地的 token 比對;同一個 key 在途就共用。快取在 main.js(5 分鐘、登出清掉),不在這裡 */
+  const rptInflight = new Map();   // key → Promise
+  function readOnce(endpoint, key, extra, interpretFn, unreachable) {
+    const k = endpoint + "|" + key;
+    if (rptInflight.has(k)) return rptInflight.get(k);
+    let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
+    const tok = c && c.token ? c.token : null;
+    if (!tok || !c.appSecret) return Promise.resolve(unreachable());
+    const p = (async () => {
+      let res = null;
+      try { res = await opts.post(opts.apiBase + endpoint, { token: tok, app_secret: c.appSecret, ...extra }); } catch (_) { /* 連不上 */ }
+      let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
+      if ((cur && cur.token ? cur.token : null) !== tok) return unreachable();
+      return interpretFn(res);
+    })().finally(() => { rptInflight.delete(k); });
+    rptInflight.set(k, p);
+    return p;
+  }
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
@@ -297,10 +366,21 @@ function createCloudHost(opts) {
       })().finally(() => { stInflight = null; stName = null; });
       return stInflight;
     },
+    // 報告(renderer/reports.js;spec-desktop-0.1.6 §1.1):清單 / 本體 / 圖各一支,回 { code: "OK" | "UNREACH", … }
+    reports() { return readOnce(REPORTS_ENDPOINT, "", {}, interpretReports, REPORTS_UNREACHABLE); },
+    report(id) {
+      if (typeof id !== "string" || !REPORT_ID_RE.test(id)) return Promise.resolve(REPORT_UNREACHABLE());
+      return readOnce(REPORT_ENDPOINT, id, { id }, (res) => interpretReport(res, id), REPORT_UNREACHABLE);
+    },
+    image(hash) {
+      if (typeof hash !== "string" || !IMAGE_HASH_RE.test(hash)) return Promise.resolve(IMAGE_UNREACHABLE());
+      return readOnce(IMAGE_ENDPOINT, hash, { hash }, interpretImage, IMAGE_UNREACHABLE);
+    },
     // 登出:立刻把手上的東西丟掉、通知畫面清掉,而且作廢還在路上的請求
     reset() { drop(); },
     _delay: delay,
   };
 }
 
-module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };
+module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
+  ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, REPORTS_ENDPOINT, REPORT_ENDPOINT, IMAGE_ENDPOINT, REPORTS_MAX, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

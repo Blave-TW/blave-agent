@@ -126,7 +126,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   // ── feature_used:名字是白名單,兩端同一份;renderer 每個送出點的名字都在表上;主行程拒絕表外的名字 ──
   const FEATURES = EVENTS.feature_used.name, trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8");
-  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 20 個", ONCE_OF(fs) && FEATURES.length === 20 && FEATURES[0] === "report_backtest" && FEATURES[FEATURES.length - 1] === "library_comm");
+  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 24 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;library_comm 沒送出點但 0.1.5 還在送,留到它退場)", ONCE_OF(fs) && FEATURES.length === 24 && FEATURES[0] === "report_backtest" && FEATURES[FEATURES.length - 1] === "strategy_new" && FEATURES[19] === "library_comm");
   // 兩端漂移:api/openclaw/desktop_telemetry.py 的 EVENTS["feature_used"] 逐字同一份(同 check_runtime_mirror:要 monorepo 版面)
   const apiPy = path.join(__dirname, "..", "..", "api", "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
@@ -152,8 +152,9 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   }
   t("renderer 每個 trackFeature 送出點的名字都在白名單上、都是字面(沒有拿變數當名字)", bad.length === 0 && used.size > 0);
   if (bad.length) console.log("      " + bad.join("\n      "));
-  const noSender = FEATURES.filter((n) => !used.has(n));
-  t("白名單上每個名字都有送出點", noSender.length === 0); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
+  const LEGACY = ["library_comm"];   // 0.1.6 起沒送出點(社群段平鋪),但 0.1.5 舊外殼還在送、api 要繼續收、兩端順序要一致:留到 0.1.5 退場
+  const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0);
+  t("白名單上每個名字都有送出點(library_comm 例外:留給 0.1.5 舊外殼)", noSender.length === 0 && LEGACY.every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
   t("送出點只在功能那一層:report 四個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、聊天在 started、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(b && !b\.disabled\) \{ rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\); \}/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))
@@ -169,7 +170,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   { const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")));
     t("主行程拒絕表外的 name:策略名 / 空字串 / 非字串 / 大小寫不對 / 缺 props 都不送", [{ name: "my alpha v7" }, { name: "" }, { name: ["chat_sent"] }, { name: { toString: () => "chat_sent" } }, { name: "Chat_Sent" }, {}, null].every((p) => x.tm.track("feature_used", p) === false) && x.sent.length === 0);
     t("表內的 name 送;每一個都送得出去;props 只有 name 一格、不帶多塞的欄位", FEATURES.every((n) => x.tm.track("feature_used", { name: n, strategy: "SECRET", symbol: "BTCUSDT" }) === true)); await tick();
-    t("…送出去的 20 則 props 各是 {name}、不含多塞的字", x.sent.length === 20 && x.sent.every((b, i) => b.event === "feature_used" && JSON.stringify(b.props) === JSON.stringify({ name: FEATURES[i] }) && !JSON.stringify(b).includes("SECRET"))); }
+    t("…送出去的 " + FEATURES.length + " 則 props 各是 {name}、不含多塞的字", x.sent.length === FEATURES.length && x.sent.every((b, i) => b.event === "feature_used" && JSON.stringify(b.props) === JSON.stringify({ name: FEATURES[i] }) && !JSON.stringify(b).includes("SECRET"))); }
   // ── 外殼端每安裝每 name 每 UTC 日只送一次(契約;api 那顆 3,000/hr 熔斷算的是 POST 數,前提就是這裡) ──
   { const dirD = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")); let clock = Date.UTC(2026, 8, 25, 23, 59, 30);
     const mkD = (extra = {}) => mk(dirD, { now: () => clock, ...extra });

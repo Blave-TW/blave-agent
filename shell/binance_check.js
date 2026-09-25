@@ -3,7 +3,8 @@
 // 依據:blave-canon output/research/binance-unrestricted-ip-key-expiry-2026-09.md(Binance 官方文件與公告)
 //   - 2023-01-30 起,系統產生的一般 key(HMAC)沒設 IP 白名單就只能開讀取:交易權限開不了。
 //     → 電腦版的做法(Wei 2026-09-21):收用戶習慣的一般 key,畫面列出目前的對外 IP 讓他設白名單(同雲端版)。
-//   - 提領權限:MVP 不查、不擋、不提醒(Wei 2026-09-22 拍板);提領開著的 key 照存。
+//   - 提領權限開著的 key 連接時不收(Wei 2026-09-25 拍板,推翻 09-22「不擋」):這把 key 外洩就是錢被提走,
+//     跟交易對不對無關,所以提領先於交易那格判。**只在綁定當下擋**:24 小時重查不看提領、不通知(Wei:已綁的不管)。
 //   - 「交易權限 90 天到期」已於 2023-10-24 作廢;`tradingAuthorityExpirationTime` 已從官方文件消失,不依賴它。
 //     可靠的訊號只有一個:定期重查,權限從 true 變 false 就是出事了。
 //   - 家用 IP 會變:白名單裡的 IP 不是現在的 IP 時,Binance 回 -2015(跟金鑰無效同一個碼),所以要把
@@ -17,10 +18,12 @@ const RECHECK_MS = 24 * 3600 * 1000;
 
 const sign = (secret, query) => crypto.createHmac("sha256", secret).update(query).digest("hex");
 
-/* 分類(純函式)。input:{ status, body }(apiRestrictions 的 HTTP 回應)、market:"futures" | "spot" | "any"(現貨或合約至少開一個)
+/* 分類(純函式)。input:{ status, body }(apiRestrictions 的 HTTP 回應)、market:"futures" | "spot" | "any"(現貨或合約至少開一個)、
+   bind:true = 連接當下(看提領那格)、false = 重查(不看)
    回 { ok, code, detail }:
      ok=true  code="OK"
      ok=false code=
+       "WITHDRAW_ENABLED"   提領權限開著:不收,先於交易那格(交易開不開都一樣不收);只有 bind 會出
        "TRADING_DISABLED"   交易權限沒開(最常見:沒設 IP 白名單所以開不了)
        "FUTURES_DISABLED"   要做合約但 Futures 沒開(key 建在開通合約帳戶之前就開不了,只能重建)
        "NO_IP_RESTRICT"     交易權限開著但沒有白名單(用戶自己關了預設安全管控):放行,但 detail.warn=true 提醒
@@ -34,7 +37,7 @@ const sign = (secret, query) => crypto.createHmac("sha256", secret).update(query
         testnet 的 key 查正式站會被拒絕,而 lib/account_binance 本來就只連正式站——存一把用不了的 key 沒有意義。
         INCONCLUSIVE / recheckVerdict 裡留著這個代號只為了讀得懂舊的 state 檔。)
        "NETWORK" / "UNKNOWN"   UNKNOWN 含「HTTP 200 但回來的不是權限物件」:必要欄位不是 boolean 一律不下結論 */
-function classify(res, market) {
+function classify(res, market, bind) {
   const b = res && res.body && typeof res.body === "object" ? res.body : {};
   if (!res || !res.status) return { ok: false, code: "NETWORK", detail: {} };
   if (res.status === 429 || res.status === 418) return { ok: false, code: "RATE_LIMITED", detail: { status: res.status } };
@@ -44,11 +47,12 @@ function classify(res, market) {
     return { ok: false, code, detail: { binance: Number.isFinite(c) ? c : null, status: res.status } };
   }
   // 200 但不是權限物件(HTML、沒 parse 的字串、{}、欄位型別不對):不下結論(稽核 B2-1、B2-2)。
-  // 提領那一格已不擋(Wei 2026-09-22),但仍要求是 boolean——要不要一起拿掉待 Wei 決定
+  // 四格都要是 boolean:提領那格缺席不能當成「沒開」放行
   for (const k of ["enableWithdrawals", "enableSpotAndMarginTrading", "enableFutures", "ipRestrict"]) if (typeof b[k] !== "boolean") return { ok: false, code: "UNKNOWN", detail: { status: 200, missing: k } };
   const detail = { ipRestrict: b.ipRestrict, createTime: Number(b.createTime) || null };
   const spotOn = b.enableSpotAndMarginTrading, futOn = b.enableFutures;
   detail.spot = spotOn; detail.futures = futOn;
+  if (bind && b.enableWithdrawals) return { ok: false, code: "WITHDRAW_ENABLED", detail };
   // "any"(連接畫面用):lib/order_binance 現貨(MARKET="spot")與合約都下得了,帳戶讀取不需要交易權限(實測)——
   // 所以至少開一個就收;沒開的那一個由畫面如實講(灰字),對應市場的策略下單會被 Binance 拒絕
   if (market === "any") { if (!spotOn && !futOn) return { ok: false, code: "TRADING_DISABLED", detail }; }
@@ -60,16 +64,17 @@ function classify(res, market) {
   return { ok: true, code: "OK", detail };
 }
 
-/* 查一次(連接與重查共用)。http(url, headers) → Promise<{status, body}>;secret 只用來簽章。market 只認 "spot" / "futures" / "any"。 */
-async function check({ apiKey, secret, market, http, now }) {
+/* 查一次。http(url, headers) → Promise<{status, body}>;secret 只用來簽章。market 只認 "spot" / "futures" / "any"。
+   check = 連接當下(擋提領);recheck = 定期重查(同一個請求,不看提領)。 */
+async function query({ apiKey, secret, market, http, now }, bind) {
   if (market !== undefined && market !== "spot" && market !== "futures" && market !== "any") throw new Error("market must be \"spot\", \"futures\" or \"any\"");
   if (typeof apiKey !== "string" || typeof secret !== "string" || !apiKey || !secret) return { ok: false, code: "BAD_KEY_FORMAT", detail: {} };
   const q = `timestamp=${(now || Date.now)()}&recvWindow=10000`;
   let res = null;
   try { res = await http(`${SPOT}/sapi/v1/account/apiRestrictions?${q}&signature=${sign(secret, q)}`, { "X-MBX-APIKEY": apiKey }); } catch (_) { /* 連不上 */ }
-  return classify(res, market || "futures");
+  return classify(res, market || "futures", bind);
 }
-const recheck = check;
+const check = (o) => query(o, true), recheck = (o) => query(o, false);
 
 /* 沒有結論的結果:不叫人、也不准蓋掉上一次的結論。 */
 const INCONCLUSIVE = ["NETWORK", "CLOCK", "UNKNOWN", "RATE_LIMITED", "SKIPPED_TESTNET"];
@@ -79,7 +84,8 @@ const nextPrev = (prev, cur) => (cur && INCONCLUSIVE.indexOf(cur.code) < 0 ? cur
 
 /* 重查出事的歸級(canon notifications.md 的級別;要改只改這裡)。全部是「下單送不出去」:真的有單被拒時既有的 P1
    (下單失敗 → HALT)會接手,這裡只是提早講——所以都是 P2(只發系統通知、不亮 Dock 紅點)。
-   MVP 不查提領(Wei 拍板),所以沒有「提領後來被打開」這一則。 */
+   沒有「提領後來被打開」這一則:重查不看提領(Wei 2026-09-25:已綁的不管)。
+   **這張表每一個 reason 都要在 main.js binanceNotify 的 map 上**:對不到的 reason 那邊回 false,binance_link 會每 5 分鐘重試到永遠。 */
 const VERDICT_LEVEL = { TRADING_LOST: "P2", IP_CHANGED: "P2", KEY_REJECTED: "P2", REJECTED: "P2" };
 
 /* 定期重查的判讀(純函式):上一次有結論的結果 → 這一次的結果,要不要叫人。

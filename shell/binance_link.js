@@ -10,7 +10,8 @@
 //   - 對外 IP 只認 IPv4:Binance 的白名單只收 IPv4;拿到 IPv6 就當成沒拿到,不把一個貼了也沒用的位址給用戶。
 //     呼叫端打 my_ip 時也要強制走 IPv4(family: 4),否則雙棧網路會回 IPv6。
 //   - 重查只通知、不自動停單、不移除金鑰(binance_check.recheckVerdict 的契約;Wei 拍板);要連續兩次都中才發(CONFIRM_MS 之後再打一次)。
-//   - 權限:現貨交易或合約交易至少開一個就收(lib/order_binance 兩種都下得了);沒開的那個由畫面如實講。
+//   - 權限:提領開著連接時不收(WITHDRAW_ENABLED);重查不看提領(binance_check.recheck);
+//     現貨交易或合約交易至少開一個就收(lib/order_binance 兩種都下得了);沒開的那個由畫面如實講。
 //
 // 這個檔不 require electron;HTTP、檔案、計時器、通知都由呼叫端注入(tests/check_shell_binance_link.js 用假的)。
 const BC = require("./binance_check");

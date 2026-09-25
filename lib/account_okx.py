@@ -136,6 +136,19 @@ def check_account_mode(env: dict) -> str:
     return lv
 
 
+def withdraw_enabled(env: dict) -> bool:
+    """Whether the calling key may withdraw: /api/v5/account/config `perm` is
+    the requesting key's own permissions, comma-separated out of read_only /
+    trade / withdraw (OKX v5 docs, "Get account configuration"; ccxt's
+    fetchAccounts sample shows "read_only,withdraw,trade"). Raises when the
+    field is missing — no answer must not read as "cannot withdraw"."""
+    rows = _request(env, "GET", "/api/v5/account/config")
+    perm = (rows[0] if rows else {}).get("perm")
+    if not isinstance(perm, str):
+        raise Exception("OKX account/config returned no perm")
+    return "withdraw" in [p.strip() for p in perm.split(",")]
+
+
 def get_equity(env: dict) -> dict:
     """Trading-account equity plus per-wallet breakdown.
 

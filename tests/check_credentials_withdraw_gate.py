@@ -1,9 +1,9 @@
-"""A Binance key that cannot trade, or whose permissions cannot be read, never
-reaches .env — on a CLOUD box too, not just the desktop (the check has to run
-on the machine: the user's whitelist holds the machine's IP, so the same
-question asked from the app's computer comes back -2015 and decides nothing).
-Withdrawal permission is NOT gated (Wei 2026-09-22): a withdrawal-enabled key
-binds like any other.
+"""A Binance key that can withdraw, cannot trade, or whose permissions cannot
+be read, never reaches .env — on a CLOUD box too, not just the desktop (the
+check has to run on the machine: the user's whitelist holds the machine's IP,
+so the same question asked from the app's computer comes back -2015 and
+decides nothing). Withdrawal permission is gated since Wei 2026-09-25 (a
+leaked key must not be able to move money out; reverses 09-22).
 
 The gate is command_listener._binance_bind_check, called from _cmd_credentials
 — the one .env writer, shared by the web connect flow, the desktop app and the
@@ -115,6 +115,10 @@ def refused(env=ENV):
 
 # 1. the refusals — every one of them leaves the machine exactly as it was
 for name, value, code in (
+        ("withdrawals enabled", dict(GOOD, enableWithdrawals=True), "WITHDRAW_ENABLED"),
+        ("withdrawals enabled beats every trading flag (checked first)",
+         dict(GOOD, enableWithdrawals=True, enableSpotAndMarginTrading=False,
+              enableFutures=False, ipRestrict=False), "WITHDRAW_ENABLED"),
         ("withdrawals field missing",
          {k: v for k, v in GOOD.items() if k != "enableWithdrawals"}, "UNKNOWN"),
         ("withdrawals field not a bool", dict(GOOD, enableWithdrawals="false"), "UNKNOWN"),
@@ -216,15 +220,12 @@ cl._binance_rl_until = 0.0
 cl.urllib.request.urlopen = real_urlopen
 
 # 3. the passing cases — spot OR futures is enough (lib/order_binance places both);
-#    withdrawals on or off makes no difference
+#    withdrawals must be off in every one of them
 for name, value, verdict in (
         ("spot and futures", GOOD, "OK"),
         ("spot only", dict(GOOD, enableFutures=False), "OK"),
         ("futures only", dict(GOOD, enableSpotAndMarginTrading=False), "OK"),
         ("no IP whitelist (advise, don't block)", dict(GOOD, ipRestrict=False), "NO_IP_RESTRICT"),
-        ("withdrawals enabled (not gated)", dict(GOOD, enableWithdrawals=True), "OK"),
-        ("withdrawals enabled, no whitelist",
-         dict(GOOD, enableWithdrawals=True, ipRestrict=False), "NO_IP_RESTRICT"),
 ):
     reset()
     answer(value)
@@ -246,10 +247,14 @@ for name, value, verdict in (
           and out["credentials"] == 2,
           f"{name} → ack says it was checked: {out['binance']}")
 
-# 4. everything that is not Binance is untouched: no call, no verdict
+# 4. everything that is not Binance is untouched by the Binance gate: no call, no verdict
+import lib.account_okx as okx  # noqa: E402
+
+okx.withdraw_enabled = lambda env: False  # the cloud withdrawal gate runs on OKX too (5.)
 for name, env in (
         ("paper", {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper"}),
         ("okx", {"OKX_API_KEY": "k", "OKX_SECRET_KEY": "s", "OKX_PASSPHRASE": "p"}),
+        ("gateio", {"GATEIO_API_KEY": "k", "GATEIO_SECRET_KEY": "s"}),
 ):
     reset()
     answer(dict(GOOD, enableFutures=False, enableSpotAndMarginTrading=False))  # would refuse if asked
@@ -261,6 +266,174 @@ for name, env in (
     check(out is not None and not calls and out["binance"] is None
           and f"{sorted(env)[0]}=" in open(ENV_PATH).read(),
           f"{name}: bound without asking Binance anything, binance=None in the ack")
+
+# 5. a cloud box refuses an OKX / BingX / Bybit key that can withdraw too (Wei 2026-09-25):
+#    one request to the venue, no account read; unreadable = refusal; Gate.io has no check
+import importlib  # noqa: E402
+
+ENV_OF = {"OKX": {"OKX_API_KEY": "k", "OKX_SECRET_KEY": "s", "OKX_PASSPHRASE": "p"},
+          "BINGX": {"BINGX_API_KEY": "k", "BINGX_SECRET_KEY": "s"},
+          "BYBIT": {"BYBIT_API_KEY": "k", "BYBIT_SECRET_KEY": "s"}}
+check(sorted(cl._WITHDRAW_CHECKED) == sorted(ENV_OF), "withdrawal is checked for exactly OKX, BingX, Bybit")
+for vid, venv in ENV_OF.items():
+    mod = importlib.import_module(f"lib.account_{vid.lower()}")
+    real_wd, real_eq = mod.withdraw_enabled, mod.get_equity
+    mod.get_equity = lambda env: (_ for _ in ()).throw(AssertionError("cloud bind must not read the account"))
+    seen = []
+    for wname, wval, wcode in (("withdrawals on", True, "WITHDRAW_ENABLED:"),
+                               ("permission endpoint refuses", Exception("40001 " + venv[f"{vid}_API_KEY"]), "UNKNOWN:"),
+                               ("answer is not a bool", "false", "UNKNOWN:")):
+        reset()
+        before = state()
+
+        def _wd(env, wval=wval):
+            seen.append(dict(env))
+            if isinstance(wval, Exception):
+                raise wval
+            return wval
+        mod.withdraw_enabled = _wd
+        msg = refused(venv)
+        check(bool(msg) and msg.startswith(wcode) and state() == before and not crons and "k" * 4 not in msg,
+              f"cloud {vid}: {wname} → {wcode} nothing written, okx not evicted")
+    if vid == "BYBIT":
+        # audit A-1: a stale BYBIT_DEMO=true in .env (or in the payload) must not turn the
+        # check off — the real withdraw_enabled asks the LIVE host; a live key answering
+        # "Withdraw" is refused, a key the live host rejects as a credential is a demo key
+        import requests
+        mod.withdraw_enabled = real_wd
+        real_req = requests.request
+        wire = []
+
+        class _Live:
+            status_code, ok = 200, True
+
+            def __init__(self, payload):
+                self.payload = payload
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self.payload
+
+        def _answer(payload):
+            def fake(method, url, **kw):
+                wire.append((method, url))
+                return _Live(payload)
+            requests.request = fake
+        try:
+            for where, seed_extra, payload_extra in (("in .env", ["BYBIT_DEMO=true"], {}),
+                                                     ("in the payload", [], {"BYBIT_DEMO": "true"})):
+                reset()
+                with open(ENV_PATH, "a") as f:
+                    f.write("".join(l + "\n" for l in seed_extra))
+                before = state()
+                del wire[:]
+                _answer({"retCode": 0, "result": {"permissions": {"Wallet": ["AccountTransfer", "Withdraw"]}}})
+                msg = refused(dict(venv, **payload_extra))
+                check(bool(msg) and msg.startswith("WITHDRAW_ENABLED:") and state() == before
+                      and wire and all(u.startswith(mod.LIVE_HOST + "/v5/user/query-api") for _, u in wire),
+                      f"cloud BYBIT: demo flag {where} + live key with Withdraw → asked the LIVE host, refused")
+                reset()
+                with open(ENV_PATH, "a") as f:
+                    f.write("".join(l + "\n" for l in seed_extra))
+                del wire[:]
+                _answer({"retCode": 10003, "retMsg": "API key is invalid."})
+                check(refused(dict(venv, **payload_extra)) is None and wire
+                      and f"BYBIT_API_KEY={venv['BYBIT_API_KEY']}" in open(ENV_PATH).read(),
+                      f"cloud BYBIT: demo flag {where} + a key the live host rejects as a credential = demo key → written")
+                reset()
+                with open(ENV_PATH, "a") as f:
+                    f.write("".join(l + "\n" for l in seed_extra))
+                _answer({"retCode": 10006, "retMsg": "Too many visits!"})
+                msg = refused(dict(venv, **payload_extra))
+                check(bool(msg) and msg.startswith("UNKNOWN:"),
+                      f"cloud BYBIT: demo flag {where} + live host answers something else (rate limit) → no verdict, refused")
+            reset()
+            _answer({"retCode": 10003, "retMsg": "API key is invalid."})
+            msg = refused(venv)
+            check(bool(msg) and msg.startswith("UNKNOWN:"),
+                  "cloud BYBIT: no demo flag + live host rejects the credential → refused (not a demo key)")
+        finally:
+            requests.request = real_req
+    if vid == "BINGX":
+        # the real withdraw_enabled against BingX's real answer shapes (three keys measured
+        # 2026-09-25): both permission endpoints are HTTP 200 with NO {code,msg,data} envelope;
+        # apiRestrictions carries no enableWithdrawals (and its enableFutures /
+        # enableSpotAndMarginTrading read False even on a key with both trading permissions —
+        # useless for trading); apiPermissions.permissions is an int list: [2] read-only,
+        # [2, 5] read + withdraw, [1, 2, 3, 5] read + spot + futures + withdraw
+        import requests
+        mod.withdraw_enabled = real_wd
+        real_get = requests.get
+        RESTR = {"ipRestrict": False, "createTime": 1758700000000, "permitsUniversalTransfer": False,
+                 "enableReading": True, "enableFutures": False, "enableSpotAndMarginTrading": False}
+
+        class _Bare:
+            status_code = 200
+
+            def __init__(self, payload):
+                self.payload = payload
+
+            def json(self):
+                return self.payload
+
+        def _answer(restr, perms):
+            def fake(url, **kw):
+                if "/account/apiRestrictions?" in url:
+                    return _Bare(restr)
+                if "/account/apiPermissions?" in url:
+                    return _Bare(perms)
+                raise AssertionError(f"unexpected BingX call {url.split('?')[0]}")
+            requests.get = fake
+        try:
+            check(mod._BINGX_WITHDRAW_CODES == frozenset({5}) and mod._BINGX_PERMISSION_CODES == frozenset({1, 2, 3}),
+                  "cloud BINGX: code tables = measured 2026-09-25 (1, 3 = trading, 2 = read, 5 = withdraw)")
+            for wname, restr, perms, wcode in (
+                    ("read-only key: [2], no enableWithdrawals", RESTR, {"permissions": [2], "ipAddresses": [], "note": "n", "apiKey": "k"}, None),
+                    ("read + withdraw key: [2, 5] (measured)", RESTR, {"permissions": [2, 5], "ipAddresses": [], "note": "n", "apiKey": "k"}, "WITHDRAW_ENABLED:"),
+                    ("read + spot + futures trading key: [1, 2, 3]", RESTR, {"permissions": [1, 2, 3], "ipAddresses": [], "note": "n", "apiKey": "k"}, None),
+                    ("read + spot + futures + withdraw key: [1, 2, 3, 5] (measured)", RESTR, {"permissions": [1, 2, 3, 5], "ipAddresses": [], "note": "n", "apiKey": "k"}, "WITHDRAW_ENABLED:"),
+                    ("apiRestrictions carries the bool → it wins (True)", dict(RESTR, enableWithdrawals=True), {"permissions": [2]}, "WITHDRAW_ENABLED:"),
+                    ("apiRestrictions carries the bool → it wins (False)", dict(RESTR, enableWithdrawals=False), {"permissions": [2, 5]}, None),
+                    ("an unmapped code", RESTR, {"permissions": [2, 99]}, "UNKNOWN:"),
+                    ("permissions missing", RESTR, {"ipAddresses": []}, "UNKNOWN:"),
+                    ("permissions not ints", RESTR, {"permissions": ["2"]}, "UNKNOWN:"),
+                    ("permissions empty", RESTR, {"permissions": []}, "UNKNOWN:"),
+                    ("enveloped error", RESTR, {"code": 100001, "msg": "signature error", "data": None}, "UNKNOWN:")):
+                reset()
+                before = state()
+                _answer(restr, perms)
+                msg = refused(venv)
+                if wcode is None:
+                    check(msg is None and f"BINGX_API_KEY={venv['BINGX_API_KEY']}" in open(ENV_PATH).read(),
+                          f"cloud BINGX: {wname} → written ({msg})")
+                else:
+                    check(bool(msg) and msg.startswith(wcode) and state() == before,
+                          f"cloud BINGX: {wname} → {wcode} nothing written ({msg})")
+            reset()
+            _answer(RESTR, {"permissions": [2, 4]})
+            check((refused(venv) or "").startswith("UNKNOWN:"),
+                  "cloud BINGX: a code outside both tables (4 has never been seen on a key) → refused until mapped")
+        finally:
+            requests.get = real_get
+    reset()
+    mod.withdraw_enabled = lambda env: (_ for _ in ()).throw(AssertionError("half a pair must be refused before asking"))
+    half = dict(list(venv.items())[:-1])
+    msg = refused(half)
+    check(bool(msg) and msg.startswith("INCOMPLETE_PAIR:") and state()[0] == "\n".join(SEED) + "\n",
+          f"cloud {vid}: half a pair is refused before asking the venue (the .env sibling is no stand-in)")
+    reset()
+    mod.withdraw_enabled = lambda env: False
+    out = cl._cmd_credentials({"env": dict(venv)})
+    check(out["binance"] is None and all(f"{k}={v}" in open(ENV_PATH).read() for k, v in venv.items()),
+          f"cloud {vid}: withdrawals off → written")
+    del mod.withdraw_enabled
+    reset()
+    msg = refused(venv)
+    check(bool(msg) and "no permission check" in msg and state()[0] == "\n".join(SEED) + "\n",
+          f"cloud {vid}: a lib without withdraw_enabled is refused, never silently unchecked")
+    mod.withdraw_enabled, mod.get_equity = real_wd, real_eq
 
 print("all ok" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

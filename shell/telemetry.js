@@ -20,10 +20,13 @@ const EVENTS = {
   trade_started: { venue_kind: ["paper", "real"] },
   cloud_started: null,
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
-  // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 三個的送出點在 renderer/library.js(libTrack)
+  // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
+  // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
+  // library_comm:0.1.6 起沒有送出點(社群段平鋪了),但 0.1.5 舊外殼還在送、api 端要繼續收,兩端順序又要一致——等 0.1.5 退場再拿掉
   feature_used: { name: ["report_backtest", "report_trades", "report_scan", "report_code", "scan_requested",
     "trade_overview", "trade_positions", "trade_assets", "trade_history", "trade_settings", "strategy_picker",
-    "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "settings_datasrc", "settings_plan", "library_open", "library_use", "library_comm"] },
+    "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "settings_datasrc", "settings_plan", "library_open", "library_use", "library_comm",
+    "reports_list", "reports_read", "reports_ask", "strategy_new"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

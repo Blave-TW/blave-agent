@@ -168,6 +168,10 @@ def _reset(mods):
 # get_flows short-circuits to [] on Binance / Bybit demo (no on-chain money,
 # endpoints not served there) — no request at all is the demo-safe outcome.
 NO_HTTP_ON_DEMO = {"account_binance.get_flows", "account_bybit.get_flows"}
+# Bybit withdraw_enabled asks the LIVE host on purpose even with the demo flag
+# (a stale BYBIT_DEMO=true must not wave a live withdrawal key through; the
+# demo host does not serve query-api). Read-only GET, never an order path.
+LIVE_ON_DEMO = {"account_bybit.withdraw_enabled"}
 
 _ARGS = {"symbol": "BTCUSDT", "direction": "long", "side": "buy", "qty": 0.01,
          "base_qty": 0.01, "price": 50000.0, "order_id": "1", "ord_id": "1",
@@ -241,6 +245,11 @@ for vid, (mods, flag, creds, demo_hosts, live_hosts, _sel) in VENUES.items():
                         silent.append(qual)
                     continue
                 mutated += any(c["method"] in ("POST", "DELETE") for c in CALLS)
+                if qual in LIVE_ON_DEMO:
+                    ok = _hosts() <= live_hosts and all(c["method"] == "GET" for c in CALLS)
+                    if not ok:
+                        bad.append(f"{name} -> {sorted(_hosts())} (live read expected)")
+                    continue
                 ok = _hosts() <= demo_hosts
                 if vid == "okx":
                     ok = ok and _okx_simulated()

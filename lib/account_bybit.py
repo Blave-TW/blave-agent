@@ -156,6 +156,32 @@ def _assert_uta(env):
         )
 
 
+def withdraw_enabled(env: dict) -> bool:
+    """Whether the calling key may withdraw: /v5/user/query-api (readable with
+    any permission) `permissions.Wallet` lists "Withdraw" for a master-account
+    key that can (Bybit v5 docs, "Get API Key Information"; sub-account keys
+    cannot carry it).
+
+    ALWAYS asked on the LIVE host, whatever BYBIT_DEMO says: the flag is a
+    line in .env (or the bind payload) that a live key can arrive with —
+    a stale one from an earlier Demo Trading bind — and Demo Trading does
+    not serve query-api, so a demo-host round trip could never answer.
+    With the flag set, a credential-class refusal from the live host is what a
+    demo key looks like there (demo money cannot leave the exchange) → False;
+    any other failure, or the flag unset, raises — no answer never reads as
+    "cannot withdraw"."""
+    live = dict(env, BYBIT_DEMO="false")  # _host reads the env key first
+    try:
+        perms = _request(live, "GET", "/v5/user/query-api").get("permissions")
+    except Exception as e:
+        if _demo(env) and str(getattr(e, "code", "")) in _CREDENTIAL:
+            return False
+        raise
+    if not isinstance(perms, dict):
+        raise Exception("bybit user/query-api returned no permissions")
+    return "Withdraw" in (perms.get("Wallet") or [])
+
+
 def _unified(env):
     """UNIFIED wallet row: totalEquity plus the coin array (which is also the
     spot inventory on UTA)."""

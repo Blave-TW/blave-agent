@@ -32,8 +32,9 @@ function world(init) {
 
   // ── 連接:查過才存 ──
   { const w = world({ http: perm({ enableWithdrawals: true }) }); const r = await w.link.connect(K, S);
-    t("提領權限開著 → 照存(Wei 2026-09-22 拍板 MVP 不查提領):交給 daemon、state 記成可以下單", r.ok === true && r.code === "OK" && w.sent.length === 1 && w.saved && w.saved.prev.ok === true); }
+    t("提領權限開著 → WITHDRAW_ENABLED,不存(Wei 2026-09-25 拍板):沒交給 daemon、沒寫 state", r.ok === false && r.code === "WITHDRAW_ENABLED" && w.sent.length === 0 && w.saved === null); }
   for (const [name, http, code] of [["交易權限沒開", perm({ enableSpotAndMarginTrading: false, enableFutures: false, ipRestrict: false }), "TRADING_DISABLED"],
+    ["提領開著且交易沒開", perm({ enableWithdrawals: true, enableSpotAndMarginTrading: false, enableFutures: false }), "WITHDRAW_ENABLED"],
     ["-2015", { status: 401, body: { code: -2015 } }, "IP_OR_KEY"], ["-1022", { status: 400, body: { code: -1022 } }, "BAD_SECRET"], ["-1021", { status: 400, body: { code: -1021 } }, "CLOCK"],
     ["200 但看不懂", { status: 200, body: {} }, "UNKNOWN"], ["連不上", "throw", "NETWORK"]]) {
     const w = world({ http }); const r = await w.link.connect(K, S);
@@ -72,12 +73,12 @@ function world(init) {
     w.http = perm(); await w.link.recheck();
     t("用戶修好了(白名單改成新 IP)→ verdict 清掉、基準 IP 換成新的", w.link.state().verdict === null && w.saved.ipThen === "198.51.100.9");
     w.http = perm({ enableWithdrawals: true }); await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
-    t("重查時提領開著 → 無 verdict、無通知、畫面狀態照舊是好的(MVP 不查提領)", w.notes.length === 1 && w.link.state().verdict === null && w.link.state().last.ok === true && w.saved.verdict === null && w.saved.prev.ok === true); }
+    t("重查時提領開著 → 無 verdict、無通知、畫面狀態照舊是好的(只在連接當下擋;Wei:已綁的不管)", w.notes.length === 1 && w.link.state().verdict === null && w.link.state().last.ok === true && w.saved.verdict === null && w.saved.prev.ok === true); }
   { const w = world(); await w.link.connect(K, S); w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false });
     await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
     t("交易權限沒了 → TRADING_LOST(P2)", w.notes.length === 1 && w.notes[0].reason === "TRADING_LOST" && w.notes[0].level === "P2");
     w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false, enableWithdrawals: true }); w.now += 3600000; await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
-    t("之後提領又被打開:不多發、也不蓋掉交易權限那一則", w.notes.length === 1 && w.link.state().verdict.reason === "TRADING_LOST"); }
+    t("之後提領又被打開:不多發、也不蓋掉交易權限那一則(重查不看提領)", w.notes.length === 1 && w.link.state().verdict.reason === "TRADING_LOST"); }
   { const w = world({ notifyOk: false }); await w.link.connect(K, S); w.http = perm({ enableSpotAndMarginTrading: false, enableFutures: false });
     await w.link.recheck(); w.now += BL.CONFIRM_MS; await w.link.recheck();
     t("通知沒真的送出去(字還沒交過來 / 系統不支援)→ 不記成已通知,5 分鐘後再試", w.notes.length === 1 && w.link.state().verdict.notified === false && w.saved.verdict.notified === false && w.timers[w.timers.length - 1] === BL.CONFIRM_MS);
@@ -138,6 +139,14 @@ function world(init) {
     && /const out = tradeHost\(\)\.send\(cmd, args && typeof args === "object" \? args : \{\}\);/.test(mainSrc));
   t("main.js:my_ip 強制走 IPv4", /my_ip`, \{ token: tok \}, \{ family: 4 \}\)/.test(mainSrc));
   t("main.js:通知真的交給系統才回 true;字沒到 / 不支援 → false;重查的通知全是 P2,不亮 Dock 紅點", /isSupported\(\)\) return false;/.test(mainSrc) && !/v\.level === "P1"/.test(mainSrc) && /n\.show\(\);\n[^\n]*\n  return true;/.test(mainSrc));
+  // 列舉:VERDICT_LEVEL 的每個 reason 都對得到一組字(標題 + 內文)、字的 key 在 tmLabels 預設表上、renderer 交字那段也交了——
+  // 對不到的 reason binanceNotify 回 false,binance_link 會每 5 分鐘重試到永遠
+  { const BC = require("../shell/binance_check.js");
+    const seg2 = mainSrc.slice(mainSrc.indexOf("function binanceNotify("), mainSrc.indexOf("function trayStart("));
+    const map = eval("(" + /const map = (\{[\s\S]*?\});\n/.exec(seg2)[1] + ")");
+    const defaults = /key_ipTitle: ""[^\n]*/.exec(mainSrc)[0], tradeSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+    t("main.js binanceNotify:VERDICT_LEVEL 每個 reason 都在 map 上,字的 key 都在 tmLabels 預設表與 renderer 交字那段", Object.keys(BC.VERDICT_LEVEL).every((r) => Array.isArray(map[r]) && map[r].length === 2
+      && map[r].every((k) => defaults.indexOf(k + ': ""') >= 0 && new RegExp("\\b" + k + ": t\\(\"tm\\.key\\.").test(tradeSrc)))); }
   t("main.js:binance-state 只推給自家頁面;睡眠醒來補查", /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("binance-state"/.test(mainSrc) && /powerMonitor\.on\("resume", \(\) => _binanceLink\.recheckIfDue\(\)\)/.test(mainSrc));
   t("main.js / binance_link.js:金鑰不進 log", !/console\.(log|error|warn)\([^)]*(apiKey|secret\b|BINANCE_)/.test(mainSrc) && !/console\./.test(fs.readFileSync(path.join(__dirname, "..", "shell", "binance_link.js"), "utf8")));
   const filesLine = (fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8").match(/^\s*files: \[[^\n]*$/m) || [""])[0];

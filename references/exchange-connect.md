@@ -27,6 +27,10 @@ do not assume casing or invent names.
 
 1. **Never echo a key.** Read credentials with `dotenv_values()` inside code only. Key
    values must never appear in chat, logs, Telegram, error messages, or committed files.
+   The `.env` writer refuses a key that has withdrawal permission (`WITHDRAW_ENABLED`;
+   Binance, OKX, BingX and Bybit in every mode; Gate.io cannot be checked).
+   When a bind fails with that code, tell the user to turn withdrawals off for the key at
+   the exchange or create a key without it — never suggest working around the check.
 
 2. **Check what already ships before writing anything.** BingX
    (`lib/account_bingx.py` + `lib/order_bingx.py`), Binance

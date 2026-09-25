@@ -22,6 +22,9 @@ os.environ["BLAVE_AGENT_WORKSPACE"] = WS
 sys.path.insert(0, ROOT)
 os.chdir(WS)
 from lib import venue
+import lib.account_okx as _okx  # noqa: E402
+
+_okx.withdraw_enabled = lambda env: False  # the cloud withdrawal gate has its own test (check_credentials_withdraw_gate)
 
 ENV = os.path.join(WS, ".env")
 with open(ENV, "w") as f:
