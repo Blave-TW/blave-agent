@@ -401,7 +401,6 @@ def run_once():
     try:
         _refuse_if_blocked(login_id, password, consume_retry=True)
         _center, order, tf, ts, _handles = _connect(login_id, password)
-        capital_vault.clear_block(login_id, password)
         snap = _tick_snapshot(order, login_id, tf, ts)
         _write_probe({"ok": True, "stage": "done", "error": None,
                       "login_code": 0, "accounts": {"futures": tf, "securities": ts},

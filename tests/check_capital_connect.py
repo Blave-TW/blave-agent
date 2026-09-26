@@ -630,26 +630,6 @@ check("R-5 both read allow_once, only the first creates the claim: one login, no
       first is None and second == 307, f"{first} {second}")
 cc.clear_block()
 check("runtime clear_block also removes claim files", not glob.glob(cv.BLOCK + ".claim-*"))
-# R-6: a --once login that succeeds clears the block itself (the runtime may have timed out)
-cc.block_login(307)
-wk6 = load("r6_worker", os.path.join(ROOT, "lib", "capital_worker.py"))
-wk6.capital_vault = cv
-wk6._init_com = lambda: None
-wk6._parse_env = lambda: {"capital_api_key": "Z123456789", "capital_password": "trade-pw"}
-wk6._refuse_if_blocked = lambda i, p, consume_retry=False: None   # the retry was granted and claimed
-wk6._connect = lambda i, p: (None, None, "F1", None, None)
-wk6._tick_snapshot = lambda *a: {"equity": 1, "available": 1, "currency": "TWD", "positions": [], "holdings": []}
-wk6._write_probe = lambda payload: None
-try:
-    wk6.run_once()
-except SystemExit:
-    pass
-check("R-6 --once clears the block for these credentials after a successful login", cc.pw_blocked() is None)
-cv.block_login("Other", "pw", 300)
-cv.clear_block("Z123456789", "trade-pw")
-check("R-6 …but never another credential's block", os.path.exists(cv.BLOCK))
-os.remove(cv.BLOCK)
-# R-7: a login that answers anything but 300/307 clears the block, in both login paths
 class FakeLib:
     def __init__(self, login_code, fail=None):
         self.login_code, self.fail = login_code, fail
@@ -684,6 +664,30 @@ def fake_com(lib):
 
 
 SK = type("sk", (), {"__getattr__": lambda s, n: n})()
+
+
+# R-6: a --once login that succeeds clears the block itself (the runtime may have timed out)
+cc.block_login(307)
+wk6 = load("r6_worker", os.path.join(ROOT, "lib", "capital_worker.py"))
+wk6.capital_vault = cv
+wk6._init_com = lambda: None
+wk6._parse_env = lambda: {"capital_api_key": "Z123456789", "capital_password": "trade-pw"}
+wk6._refuse_if_blocked = lambda i, p, consume_retry=False: None   # the retry was granted and claimed
+wk6.comtypes, wk6.sk = fake_com(FakeLib(0)), SK   # the real _connect: login answers 0
+wk6.pythoncom = type("pc", (), {"PumpWaitingMessages": staticmethod(lambda: None)})
+wk6.Events.futures_accounts = ["F1"]
+wk6._tick_snapshot = lambda *a: {"equity": 1, "available": 1, "currency": "TWD", "positions": [], "holdings": []}
+wk6._write_probe = lambda payload: None
+try:
+    wk6.run_once()
+except SystemExit:
+    pass
+check("R-6 --once clears the block for these credentials after a successful login", cc.pw_blocked() is None)
+cv.block_login("Other", "pw", 300)
+cv.clear_block("Z123456789", "trade-pw")
+check("R-6 …but never another credential's block", os.path.exists(cv.BLOCK))
+os.remove(cv.BLOCK)
+# R-7: a login that answers anything but 300/307 clears the block, in both login paths
 wk7 = load("r7_worker", os.path.join(ROOT, "lib", "capital_worker.py"))
 oc7 = load("r7_order", os.path.join(ROOT, "lib", "order_capital.py"))
 wk7.capital_vault = cv
@@ -716,6 +720,25 @@ for path, run in (("worker", lambda: (setattr(wk7, "comtypes", fake_com(FakeLib(
     except Exception:
         pass
     check(f"R-7 {path}: a 300 still blocks", cv.login_blocked("Z123456789", "trade-pw") == 300)
+for code in (9996, 1, 2017, 99999):
+    cv.block_login("Z123456789", "trade-pw", 307)
+    cv.record_login("Z123456789", "trade-pw", code)
+    check(f"R-8 an unknown / non-password answer ({code}) keeps the block", cv.login_blocked("Z123456789", "trade-pw") == 307)
+for code in cv.PASSWORD_OK_CODES:
+    cv.block_login("Z123456789", "trade-pw", 307)
+    cv.record_login("Z123456789", "trade-pw", code)
+    check(f"R-8 {code} (password already checked) clears it", cv.login_blocked("Z123456789", "trade-pw") is None)
+check("R-8 the clear-list is exactly the codes that come after the password check",
+      set(cv.PASSWORD_OK_CODES) == {0, 2003, 321, 507, 600, 602, 604})
+for path, run in (("worker", lambda: (setattr(wk7, "comtypes", fake_com(FakeLib(9996))), wk7._connect("Z123456789", "trade-pw"))),
+                  ("order lib", lambda: (setattr(oc7, "comtypes", fake_com(FakeLib(9996))), setattr(oc7, "_session", None),
+                                         oc7._get_session({"capital_api_key": "Z123456789", "capital_password": "trade-pw"})))):
+    cv.block_login("Z123456789", "trade-pw", 307)
+    try:
+        run()
+    except Exception:
+        pass
+    check(f"R-8 {path}: login answers 9996 → the block stays", cv.login_blocked("Z123456789", "trade-pw") == 307)
 os.remove(cv.BLOCK)
 check("after_unlock must be exactly True on the machine too (1 is refused)",
       refused(lambda: cc.dispatch("capital_probe", {"after_unlock": 1}, D), "BAD_ARGS") is True)

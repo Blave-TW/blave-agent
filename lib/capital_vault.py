@@ -82,15 +82,20 @@ def block_login(login_id, password, code):
                   "unlock_used": bool(prev.get("unlock_used"))})
 
 
+# Answers that come only after 群益 has checked the password: the password is
+# fine, so a block on these credentials goes. Anything unknown (connection or
+# server errors, 9996 old component, …) proves nothing and leaves it in place.
+PASSWORD_OK_CODES = (0, 2003, 321, 507, 600, 602, 604)
+
+
 def record_login(login_id, password, code):
     """Right after SKCenterLib_Login, in every login path: 300/307 blocks these
-    credentials; ANY other answer (0, 321, 600, 602, 604, …) proves the password
-    is not the problem, so their block goes — otherwise a post-unlock retry
-    that got past the password but failed later leaves the user stuck behind
-    a spent 307."""
+    credentials; a PASSWORD_OK_CODES answer clears their block (a post-unlock
+    retry that got past the password but failed later must not leave the user
+    stuck behind a spent 307); any other code leaves the block as it is."""
     if code in BLOCK_CODES:
         block_login(login_id, password, code)
-    else:
+    elif code in PASSWORD_OK_CODES:
         clear_block(login_id, password)
 
 
