@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.97 — 2026-09-26
+
 - **電腦版排程報告帶 `BLAVE_AGENT_LOCAL=1`、`BLAVE_SCHEDULED_RUN=1` 與電腦版策略同一份放行名單(含 `BLAVE_KLINE_SOURCE`,
   排程的加密報告跟聊天一樣走 Binance K 線)**(`report_runner._subprocess_env`;策略子程序不變):
   沒有 Blave 資料權限時,排程的台股大盤晨報／收盤報告改走 TWSE／TAIFEX 免費資料,不再 401 整份 failed。權限狀態由
