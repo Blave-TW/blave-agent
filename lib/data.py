@@ -1164,7 +1164,7 @@ _BINANCE_LIMITER = _RateLimiter(400, 60)
 _BINANCE_INTERVALS = {**_BINGX_INTERVALS, **{v: v for v in _BINGX_INTERVALS.values()}}
 
 
-def _binance_get(url, params, max_retries=6, timeout=30):
+def _binance_get(url, params, max_retries=6, timeout=30, max_wait=None):
     """GET a public Binance endpoint, honouring Retry-After on 429/418.
 
     Deliberately not _retry_get: that one is the fleet's path to our own API and
@@ -1191,7 +1191,9 @@ def _binance_get(url, params, max_retries=6, timeout=30):
             except ValueError:
                 wait = 2 ** (attempt + 1)
             print(f'  {r.status_code} from Binance — retrying in {wait}s')
-            time.sleep(min(wait, 300))
+            if max_wait is not None and wait > max_wait:
+                break   # a caller that cannot wait (a report brick) gives up instead
+            time.sleep(min(wait, 300 if max_wait is None else max_wait))
             continue
         try:
             r.raise_for_status()
@@ -3828,8 +3830,10 @@ _TWSE_SOURCE_EN   = 'Source: Taiwan Stock Exchange website'
 _TAIFEX_SOURCE_ZH = '資料來源:臺灣期貨交易所(政府資料開放授權)'
 _TAIFEX_SOURCE_EN = 'Source: Taiwan Futures Exchange (Open Government Data License)'
 # zh attribution line → its en twin, for a report published with lang="en".
+_TWSE_OPENDATA_SOURCE_ZH = '資料來源:臺灣證券交易所(政府資料開放授權)'
+_TWSE_OPENDATA_SOURCE_EN = 'Source: Taiwan Stock Exchange (Open Government Data License)'
 PUBLIC_SOURCE_EN = {_TW_PUBLIC_SOURCE_ZH: _TW_PUBLIC_SOURCE_EN, _TWSE_SOURCE_ZH: _TWSE_SOURCE_EN,
-                    _TAIFEX_SOURCE_ZH: _TAIFEX_SOURCE_EN}
+                    _TWSE_OPENDATA_SOURCE_ZH: _TWSE_OPENDATA_SOURCE_EN, _TAIFEX_SOURCE_ZH: _TAIFEX_SOURCE_EN}
 # TWSE answers 200 + stat for everything: these mean "no rows for that date", anything
 # else non-OK (throttle, layout change) raises and is never cached as an empty day.
 _TWSE_NO_DATA = ('很抱歉', '沒有符合條件', '查詢日期大於', '查詢日期小於')
@@ -4233,6 +4237,117 @@ def fetch_twstock_trader_flows(trader_id, start, end, headers,
         return pd.DataFrame(columns=['date', 'stock_id', 'net']).set_index(['date', 'stock_id'])
     result = pd.concat(frames, ignore_index=True)
     return result.groupby(['date', 'stock_id'])['net'].sum().to_frame()
+
+
+_TWSE_OPENAPI = 'https://openapi.twse.com.tw/v1'
+
+
+def _twse_openapi(path):
+    """One TWSE open-data JSON list (openapi.twse.com.tw). Keys are stripped: the feeds carry
+    stray spaces in field names (t187ap04_L's 「主旨 」)."""
+    _tw_market_public_gate()
+    rows = _tw_public_get(f'{_TWSE_OPENAPI}/{path}', {}).json()
+    if not isinstance(rows, list):
+        raise TwPublicUnavailable(f'TWSE openapi {path}: not a list')
+    return [{str(k).strip(): v for k, v in r.items()} for r in rows if isinstance(r, dict)]
+
+
+def fetch_tw_announcements_public():
+    """上市公司重大訊息 (TWSE open data t187ap04_L) — the latest publication day only, straight
+    from TWSE, desktop only (BLAVE_AGENT_LOCAL=1; TwPublicUnavailable elsewhere). DataFrame,
+    newest first: time (Taipei, tz-aware), stock_id, name, subject, clause (「第51款」),
+    fact_date ('YYYY-MM-DD' or None). The long 說明 text is left out.
+    attrs['source'] is the attribution line to keep with anything that shows it."""
+    cols = ['time', 'stock_id', 'name', 'subject', 'clause', 'fact_date']
+    out = []
+    for r in _twse_openapi('opendata/t187ap04_L'):
+        try:
+            day = _roc_ymd(r.get('發言日期'))
+            hms = str(r.get('發言時間') or '0').strip().zfill(6)
+            t = day + pd.Timedelta(hours=int(hms[:2]), minutes=int(hms[2:4]), seconds=int(hms[4:6]))
+        except (TypeError, ValueError):
+            continue
+        subject = ' '.join(str(r.get('主旨') or '').split())
+        if not subject:
+            continue
+        try:
+            fact = _roc_ymd(r.get('事實發生日')).strftime('%Y-%m-%d')
+        except (TypeError, ValueError):
+            fact = None
+        out.append({'time': t.tz_localize('Asia/Taipei'), 'stock_id': str(r.get('公司代號') or '').strip(),
+                    'name': str(r.get('公司名稱') or '').strip(), 'subject': subject,
+                    'clause': str(r.get('符合條款') or '').strip(), 'fact_date': fact})
+    df = pd.DataFrame(out, columns=cols).sort_values('time', ascending=False).reset_index(drop=True)
+    df.attrs['source'] = _TWSE_OPENDATA_SOURCE_ZH
+    return df
+
+
+def fetch_twse_day_all_public():
+    """Every TWSE-listed security's last trading day (TWSE open data STOCK_DAY_ALL), desktop
+    only. DataFrame indexed by stock_id: name, value (成交金額, NTD), volume (股), close, change
+    (points), trades; attrs['date'] ('YYYY-MM-DD'), attrs['source'] (attribution). ETFs and
+    other listed securities are in it — the feed has no type column."""
+    rows, day = [], None
+    for r in _twse_openapi('exchangeReport/STOCK_DAY_ALL'):
+        code = str(r.get('Code') or '').strip()
+        if not code:
+            continue
+        day = day or r.get('Date')
+        rows.append({'stock_id': code, 'name': str(r.get('Name') or '').strip(),
+                     'value': _tw_num(r.get('TradeValue')), 'volume': _tw_num(r.get('TradeVolume')),
+                     'close': _tw_num(r.get('ClosingPrice')), 'change': _tw_num(r.get('Change')),
+                     'trades': _tw_num(r.get('Transaction'))})
+    df = pd.DataFrame(rows, columns=['stock_id', 'name', 'value', 'volume', 'close', 'change', 'trades'])
+    df = df.set_index('stock_id')
+    df.attrs['date'] = _roc_ymd(day).strftime('%Y-%m-%d') if day else None
+    df.attrs['source'] = _TWSE_OPENDATA_SOURCE_ZH
+    return df
+
+
+def _roc_ymd(s):
+    """民國 'YYYMMDD' ('1150925') → Timestamp 2026-09-25."""
+    s = str(s).strip()
+    if not s.isdigit() or len(s) not in (6, 7):
+        raise ValueError(f'not a ROC yyyMMdd date: {s!r}')
+    return pd.Timestamp(year=int(s[:-4]) + 1911, month=int(s[-4:-2]), day=int(s[-2:]))
+
+
+_BINANCE_TICKER_24H = 'https://fapi.binance.com/fapi/v1/ticker/24hr'
+
+
+def fetch_binance_ticker_24h():
+    """Binance USDT-M perpetuals, rolling 24 h (public, no key, any machine). DataFrame indexed
+    by symbol (BTCUSDT): last, change_pct (percent, +3.2 = +3.2 %), quote_volume (USDT).
+    Only symbols ending in USDT; one request."""
+    # A report brick, not a backtest: two tries, then the caller drops the table (a blocked region must
+    # not stall every brief for minutes of backoff).
+    rows = _binance_get(_BINANCE_TICKER_24H, {}, max_retries=2, timeout=15, max_wait=5).json()
+    out = [{'symbol': r['symbol'], 'last': float(r['lastPrice']), 'change_pct': float(r['priceChangePercent']),
+            'quote_volume': float(r['quoteVolume'])}
+           for r in rows if isinstance(r, dict) and str(r.get('symbol', '')).endswith('USDT')]
+    return pd.DataFrame(out, columns=['symbol', 'last', 'change_pct', 'quote_volume']).set_index('symbol')
+
+
+def fetch_news(headers, q=None, since=None, limit=None):
+    """鉅亨 B2B news candidates via Blave (licensed; needs Blave data access like the paid
+    series — DataAccessError without it). DataFrame newest first: id, title, published_at
+    (unix s), source, tags (list), stocks (list). Titles and times only, no article text and
+    no link: the licence covers the headline. `q` matches title / tags (whole word for
+    Latin: SOL does not match Solidigm), `since` unix seconds. A down upstream is a 503
+    (requests.HTTPError after retries), never an empty frame."""
+    params = {}
+    if q:
+        params['q'] = q
+    if since is not None:
+        params['since'] = int(since)
+    if limit is not None:
+        params['limit'] = int(limit)
+    # A report brick: give up in seconds (two tries, ~6 s of backoff) and let the brief go out
+    # without the candidates, rather than hold every brief for two minutes while the source is down.
+    r = _retry_get(f'{BASE}/studio/market/anue/news', headers=headers, params=params, timeout=10,
+                   max_retries=2)
+    data = r.json().get('data') or []
+    return pd.DataFrame(data, columns=['id', 'title', 'published_at', 'source', 'tags', 'stocks'])
 
 
 def fetch_economic_calendar(headers, start=None, end=None, countries=None,

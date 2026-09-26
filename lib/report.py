@@ -183,9 +183,14 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
         head.update(meta or {})
         blocks.insert(0, head)
     # Each bump only when its content is present, so a report without it is still accepted
-    # by an api one version behind. The 1.3 meta flags count by presence: an explicit false
+    # by an api one version behind. 1.4 = a news block, a `private` block or a footnote link. The 1.3 meta flags count by presence: an explicit false
     # is still a prop a 1.1/1.2 validator refuses.
-    if "shareable" in blocks[0] or "involves_futures" in blocks[0]:
+    if any(isinstance(b, dict) and (b.get("type") == "news" or "private" in b
+                                    or (b.get("type") == "footnote"
+                                        and any("url" in i for i in b.get("items") or [])))
+           for b in blocks):
+        version = "1.4"
+    elif "shareable" in blocks[0] or "involves_futures" in blocks[0]:
         version = "1.3"
     elif any(isinstance(b, dict) and b.get("type") == "candlestick" for b in blocks):
         version = "1.2"

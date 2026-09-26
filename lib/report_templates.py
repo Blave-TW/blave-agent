@@ -86,13 +86,18 @@ class Pack:
     (label → display string) that `describe()` prints for you to cite."""
 
     def __init__(self, report_id, title, type_, report_type, blocks, context, notes=None,
-                 meta=None, skip=None, missing=None):
+                 meta=None, skip=None, missing=None, owners=None, news=None):
         self.report_id = report_id
         self.title = title
         self.type = type_
         self.report_type = report_type
-        self.blocks = blocks
-        self.context = context
+        self.blocks = [_fw_block(b) for b in blocks]
+        # 休市表出處是授權條件要原文照附的一句,不動它的標點
+        self.context = {k: (v if k in _VERBATIM_CTX or not isinstance(v, str) else _fw(v)) for k, v in context.items()}
+        # which brick laid out each block (kpi_row / footnote for the assembler's own) — lead_chart reads it
+        self.owners = list(owners) if owners else ["?"] * len(self.blocks)
+        # {"market", "n", "candidates", "at"}: the agent-filled news slot and where its block goes
+        self.news = news
         self.notes = notes or []          # what is missing and why
         self.meta = meta or {}
         self.skip = skip                  # reason this pack must not be published, or None
@@ -100,6 +105,8 @@ class Pack:
         # "signed_out" / "no_data_access". publish() names them in the footnote.
         self.missing = missing or []
         self.slots = dict(SLOTS)
+        if news is not None:
+            self.slots["news"] = ("新聞", None)
 
     def describe(self):
         lines = [f"[{self.report_id}] {self.title}"]
@@ -111,10 +118,17 @@ class Pack:
         if self.missing:
             lines.append(f"  無 Blave 資料權限({self.missing[0]['reason']}),省略:{_missing_names(self)}"
                          " — 照樣 publish(尾註會列出),對話裡講一句就好;不要因此不產報告")
-        slots = [f"{k}=表格 {WATCH_ROWS[0]}–{WATCH_ROWS[1]} 列(條件/門檻/現在值)" if cap is None
-                 else f"{k}≤{cap}" + (f"({_SLOT_FORM[k]})" if k in _SLOT_FORM else "")
+        if self.news is not None:
+            lines += _news_describe(self.news)
+        slots = [f"{k}=表格 {WATCH_ROWS[0]}–{WATCH_ROWS[1]} 列(條件/門檻/現在值)" if k == "watch"
+                 else f"news=≤{self.news['n']} 則" + "{title, summary≤40, tag, sources[(名稱, https 連結)], published_at}"
+                 if k == "news" else f"{k}≤{cap}" + (f"({_SLOT_FORM[k]})" if k in _SLOT_FORM else "")
                  for k, (_, cap) in self.slots.items()]
         lines.append("  narrative slots: " + ", ".join(slots))
+        charts = list(dict.fromkeys(o for o, b in zip(self.owners, self.blocks)
+                                    if b.get("type") in _CHART_TYPES and o != "?"))
+        if len(charts) > 1:
+            lines.append("  lead_chart(選填,論點圖排第一): " + " / ".join(charts))
         return "\n".join(lines)
 
 
@@ -272,7 +286,14 @@ def callout(text_, tone="warning", title=None):
 
 
 def footnote(items):
-    return {"type": "footnote", "items": [{"id": i, "text": t[:1000]} for i, t in items][:30]}
+    """items: (id, text) or (id, text, https url) — a url makes the report schema 1.4."""
+    out = []
+    for it in items:
+        d = {"id": it[0], "text": it[1][:1000]}
+        if len(it) > 2 and it[2]:
+            d["url"] = it[2]
+        out.append(d)
+    return {"type": "footnote", "items": out[:30]}
 
 
 # ─── formatting helpers ───────────────────────────────────────────────────────
@@ -325,7 +346,7 @@ def _vs7(ser, fmt=lambda v: f"{v:+.2f}"):
     """指標圖的比較句:最新值對自己的 7 日均(與 KPI delta 同一組數字)。"""
     if ser is None or len(ser) == 0:
         return None
-    return f"最新 {fmt(float(ser.iloc[-1]))},7 日均 {fmt(float(ser.tail(7).mean()))}"
+    return f"最新 {fmt(float(ser.iloc[-1]))}，7 日均 {fmt(float(ser.tail(7).mean()))}"
 
 
 def _where(ctx, last, pairs):
@@ -392,13 +413,6 @@ def _no_access(name, notes, missing):
 
 def _missing_names(pack):
     return "、".join(dict.fromkeys(m["name"] for m in pack.missing))
-
-
-def _skip_no_access(rid, title, report_type, what):
-    """A template whose base series is Blave-only and unreachable: nothing to publish.
-    The sentence carries no internal code: the agent relays it as is."""
-    skip = f"沒有 Blave 資料,{what}全部經 Blave,這份產不出來。{_access_fix('zh')}"
-    return Pack(rid, title, "morning", report_type, [], {}, [skip], skip=skip)
 
 
 _TW_MARKET_SERIES = "加權指數、成交值、三大法人、融資、期貨法人"
@@ -493,7 +507,7 @@ _CAL_COLUMNS = [("time", "時間", "left"), ("country", "國家", "left"), ("sub
                 ("predict", "預期", "right"), ("last", "前值", "right")]
 
 
-def _indicator(fn, args, name, ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.2f}"):
+def _indicator(fn, args, name, ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.2f}", gloss=None):
     """One Blave indicator series → context line + KPI; None (and a note) when the
     fetch fails or is empty. Indicator values are not P&L, so the KPI stays neutral."""
     try:
@@ -509,162 +523,234 @@ def _indicator(fn, args, name, ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.2
         notes.append(f"{name} 無資料")
         return None
     v, m7 = float(ser.iloc[-1]), float(ser.tail(7).mean())
-    ctx[name] = f"{fmt(v)}(7 日均 {fmt(m7)},{ser.index[-1].date()})"
-    kpis.append(kpi(name, fmt(v), "neutral", delta=f"7日均 {fmt(m7)}"))
+    ctx[name] = f"{fmt(v)}（7 日均 {fmt(m7)}，{ser.index[-1].date()}）"
+    # gloss:自家指標第一次出現時的白話讀法(R9 W3),寫在 delta 裡,不另寫說明段
+    kpis.append(kpi(name, fmt(v), "neutral", delta=(f"{gloss},7日均 {fmt(m7)}" if gloss else f"7日均 {fmt(m7)}")))
     return ser
 
 
-# ─── template 1: 台股大盤晨報 ─────────────────────────────────────────────────
+# ─── recipes: the four templates ──────────────────────────────────────────────
+# A recipe is data: which bricks (lib/report_bricks.py), in which order, with which
+# parameters; `kpi` names the bricks whose KPI cells make the row, the first one the focus.
+
+_TW_FLOW = [["tw_turnover", {}], ["tw_institutional", {}], ["tw_margin", {}], ["tw_futures_inst", {}]]
+_TW_KPI = ["price_chart", "tw_turnover", "tw_institutional", "tw_margin", "tw_futures_inst"]
+
+RECIPES = {
+    # 晨報 v2(spec 2026-09-26 §2.2):沿用 id tw-market-YYYYMMDD。指數計算窗口仍 90 天(60 日均、前 20 日高
+    # 要 60 個交易日),K 線只畫最後 45 天;融資只留 KPI,圖留在收盤報告。
+    "tw_market_brief": {
+        "id": "tw-market", "title": "台股大盤晨報", "lookback_days": 45,
+        "kpi": _TW_KPI + ["txf_night"],
+        "bricks": [["price_chart", {"symbol": "TAIEX", "display_days": 45}], ["tw_turnover", {}],
+                   ["tw_institutional", {}], ["tw_margin", {"chart": False}], ["movers", {"market": "tw", "n": 10}],
+                   ["tw_futures_inst", {}], ["txf_night", {}], ["tw_announcements", {"n": 5}],
+                   ["news", {"market": "tw", "n": 5}],
+                   ["event_calendar", {"countries": ["US", "CN", "TW", "JP", "EU"], "dividends": True}]],
+    },
+    "tw_close_brief": {
+        "id": "tw-close", "title": "台股收盤報告", "lookback_days": 45, "mode": "close",
+        "kpi": _TW_KPI,
+        "bricks": [["price_chart", {"symbol": "TAIEX"}]] + _TW_FLOW + [
+            ["event_calendar", {"countries": ["US", "CN", "TW", "JP", "EU"], "today_only": True}]],
+    },
+    # 恐懼貪婪的條款確認前,KPI 第六格放交易員曝險(spec §2.2)。
+    "crypto_market_brief": {
+        "id": "crypto-market", "title": "加密市場晨報", "lookback_days": 30,
+        "kpi": ["quote_table", "liquidation", "funding", "blave_indicators"],
+        "bricks": [["quote_table", {"top_mcap": 5}], ["funding", {"symbol": "BTC", "chart": False}],
+                   ["derivs_table", {}], ["liquidation", {"hours": 24}], ["movers", {"market": "crypto", "n": 5}],
+                   ["blave_indicators", {"names": ["市場方向", "資金稀缺", "頂尖交易員曝險"],
+                                         "kpi": ["市場方向", "頂尖交易員曝險"], "raw_chart": False}],
+                   ["news", {"market": "crypto", "n": 5}],
+                   ["event_calendar", {"countries": ["US", "CN", "EU", "JP"]}]],
+    },
+}
+
+
+def _recipe(name, **over):
+    r = dict(RECIPES[name])
+    r.update(over)
+    return r
+
+
+def _with_symbols(recipe, symbols):
+    syms = list(symbols)
+    recipe["bricks"] = [[n, dict(p, symbols=syms) if n in ("relative_perf", "quote_table") else p]
+                        for n, p in recipe["bricks"]]
+    return recipe
+
+
+def build(recipe, date=None, headers=None):
+    """Run a recipe → `Pack` (see lib/report_bricks.py)."""
+    from lib import report_bricks
+    return report_bricks.build(recipe, date, headers)
+
+
+# ─── 自組配方:report_jobs/<id>/recipe.json ─────────────────────────────────────
+
+_BUILTIN_PREFIXES = ("tw-market", "tw-close", "crypto-market", "symbol-")
+_RECIPE_ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+# 只出 KPI、不佔版面的積木不算進 R4 的 8 塊
+_KPI_ONLY = {"tw_turnover", "txf_night"}
+RECIPE_MAX_BRICKS = 8
+# run.py of a recipe job: fixed text, the recipe is the job's data (references/reports.md §8)
+RECIPE_RUN_PY = (
+    "import os, sys\n"
+    "sys.path.insert(0, os.getcwd())\n"
+    "from lib.report_templates import build, load_recipe, publish\n"
+    "publish(build(load_recipe(__file__)))\n"
+)
+
+
+def check_recipe(recipe):
+    """Raise ValueError unless `recipe` is a runnable custom recipe: id (slug, not a built-in
+    template's prefix), title, known bricks with known parameters, ≤8 bricks that lay out a
+    block, `kpi` naming bricks in it. Returns the recipe."""
+    import inspect
+    from lib import report_bricks
+    if not isinstance(recipe, dict):
+        raise ValueError("a recipe is a dict {id, title, kpi, bricks}")
+    extra = sorted(set(recipe) - set(_RECIPE_KEYS))
+    if extra:
+        # report_id / type / report_type stay the built-ins' own: a custom id overwriting tw-market-*, or a
+        # `performance` type carrying news, is exactly what this check is for
+        raise ValueError(f"recipe has unknown key(s) {extra}; a custom recipe takes {', '.join(_RECIPE_KEYS)}")
+    lb = recipe.get("lookback_days", 45)
+    if isinstance(lb, bool) or not isinstance(lb, int) or not 1 <= lb <= 365:
+        raise ValueError(f"recipe lookback_days must be an integer 1–365, got {lb!r}")
+    rid = recipe.get("id")
+    if not isinstance(rid, str) or not _RECIPE_ID_RE.fullmatch(rid):
+        raise ValueError(f"recipe id {rid!r} must match [a-z0-9][a-z0-9-]{{0,39}}")
+    if any(rid == p.rstrip("-") or rid.startswith(p if p.endswith("-") else p + "-") for p in _BUILTIN_PREFIXES):
+        raise ValueError(f"recipe id {rid!r} collides with a built-in template ({', '.join(_BUILTIN_PREFIXES)}): "
+                         "the same id on the same day overwrites that template's report")
+    title = recipe.get("title")
+    if not isinstance(title, str) or not 1 <= len(title) <= 80:
+        raise ValueError("recipe title must be 1–80 characters")
+    bricks = recipe.get("bricks")
+    if not isinstance(bricks, list) or not bricks:
+        raise ValueError("recipe bricks must be a non-empty list of [name, {params}]")
+    laid = 0
+    for i, entry in enumerate(bricks):
+        if not (isinstance(entry, (list, tuple)) and len(entry) == 2 and isinstance(entry[1], dict)):
+            raise ValueError(f"bricks[{i}] must be [name, {{params}}]")
+        name, params = entry
+        fn = report_bricks.BRICKS.get(name)
+        if fn is None:
+            raise ValueError(f"bricks[{i}]: unknown brick {name!r}; bricks: {', '.join(report_bricks.BRICKS)}")
+        allowed = [p for p in inspect.signature(fn).parameters if p != "b"]
+        bad = sorted(set(params) - set(allowed))
+        if bad:
+            raise ValueError(f"bricks[{i}] {name}: unknown parameter(s) {bad}; takes {allowed}")
+        for k, v in params.items():
+            _check_param(f"bricks[{i}] {name}.{k}", k, v)
+        if name not in _KPI_ONLY and params.get("chart", True):
+            laid += 1
+    if laid > RECIPE_MAX_BRICKS:
+        raise ValueError(f"recipe lays out {laid} bricks, at most {RECIPE_MAX_BRICKS} (references/reports.md §1b R4): "
+                         "drop the ones the lead does not use")
+    names = [n for n, _ in bricks]
+    for k in recipe.get("kpi", []):
+        if k not in names:
+            raise ValueError(f"kpi names {k!r}, which is not a brick of this recipe")
+    if recipe.get("mode", "morning") not in ("morning", "close"):
+        raise ValueError("recipe mode is 'morning' or 'close'")
+    if recipe.get("mode") == "close" and not any(
+            n == "price_chart" and str(p.get("symbol", "TAIEX")).upper() == "TAIEX" for n, p in bricks):
+        raise ValueError("a 'close' recipe needs [\"price_chart\", {\"symbol\": \"TAIEX\"}]: it decides whether "
+                         "the day was a trading day with a landed close; without it a holiday publishes nothing")
+    return recipe
+
+
+_RECIPE_KEYS = ("id", "title", "kpi", "bricks", "mode", "lookback_days")
+
+
+def _check_param(where, key, v):
+    """Value rules for brick parameters a recipe.json may carry — refused at save time, not
+    on the first scheduled run."""
+    from lib import report_bricks
+
+    def whole(lo, hi):
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+            raise ValueError(f"{where} must be an integer {lo}–{hi}, got {v!r}")
+
+    def listof(lo, hi, item_ok, what):
+        if not isinstance(v, list) or not lo <= len(v) <= hi or not all(item_ok(x) for x in v):
+            raise ValueError(f"{where} must be a list of {lo}–{hi} {what}, got {v!r}")
+
+    def one_of(*choices):
+        if v not in choices:
+            raise ValueError(f"{where} must be one of {', '.join(map(repr, choices))}, got {v!r}")
+
+    sym = lambda x: isinstance(x, str) and re.fullmatch(r"[A-Za-z0-9]{1,20}", x) is not None
+    if key == "names":
+        listof(1, 6, lambda x: x in report_bricks._INDICATORS, f"indicator names ({', '.join(report_bricks._INDICATORS)})")
+    elif key == "kpi":
+        if v is not None:
+            listof(0, 6, lambda x: x in report_bricks._INDICATORS, "indicator names")
+    elif key == "symbols":
+        if v is not None:
+            listof(1, 8, sym, "symbols")
+    elif key == "symbol":
+        if v is not None and not sym(v):
+            raise ValueError(f"{where} must be a symbol like TAIEX, 2330 or BTC, got {v!r}")
+    elif key == "market":
+        one_of("tw", "crypto")
+    elif key == "variant":
+        one_of("market", "symbol")
+    elif key == "countries":
+        listof(1, 10, lambda x: isinstance(x, str) and re.fullmatch(r"[A-Z]{2}", x) is not None, "ISO country codes")
+    elif key == "q":
+        if v is not None and (not isinstance(v, str) or not 1 <= len(v) <= 40):
+            raise ValueError(f"{where} must be 1–40 characters")
+    elif key == "n":
+        whole(1, 10)
+    elif key == "hours":
+        whole(1, 168)
+    elif key == "bars":
+        whole(2, 120)
+    elif key in ("top_mcap", "kpi_n"):
+        whole(0, 6)
+    elif key == "display_days":
+        if v is not None:
+            whole(5, 365)
+    elif key in ("chart", "raw_chart", "today_only", "dividends"):
+        if not isinstance(v, bool):
+            raise ValueError(f"{where} must be true or false, got {v!r}")
+    elif key == "contract":
+        if not (isinstance(v, str) and re.fullmatch(r"[A-Z]{2,4}", v)):
+            raise ValueError(f"{where} must be a TAIFEX product id like TX, got {v!r}")
+
+
+def save_recipe(job_id, recipe):
+    """Write `report_jobs/<job_id>/recipe.json` (checked). Then register the schedule with
+    `lib.report.register_schedule(job_id, …, script=RECIPE_RUN_PY)`. Returns the path."""
+    import json
+    from lib.report import JOBS_DIR, _write_text_atomic
+    check_recipe(recipe)
+    d = os.path.join(JOBS_DIR, job_id)
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, "recipe.json")
+    _write_text_atomic(path, json.dumps(recipe, ensure_ascii=False, indent=2) + "\n")
+    return path
+
+
+def load_recipe(run_py):
+    """The recipe next to a job's run.py (report_jobs/<id>/recipe.json)."""
+    import json
+    with open(os.path.join(os.path.dirname(os.path.abspath(run_py)), "recipe.json"), encoding="utf-8") as f:
+        return check_recipe(json.load(f))
+
 
 def tw_market_brief(date=None, headers=None, lookback_days=45):
     """台股大盤晨報 data pack for the morning of `date` (Taipei; default today).
-    Reads the last trading day's close, turnover, 三大法人, 融資, 外資期貨淨多單 and
-    the TXF night session. `lookback_days` covers the flow series (20-day means, margin and
-    futures charts); the index always spans 90 days for its 60-day mean and 60-bar chart."""
-    headers = headers or headers_from_env()
-    date = date or _today_tpe()
-    start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
-    rid, title = f"tw-market-{date.replace('-', '')}", "台股大盤晨報"
-    used = set()
-
-    try:
-        idx = _clean_ohlc(_tw_market_index(_tw_index_start(date, start), date, headers, used))   # end=date 已由 fetch 端裁切
-    except _data.DataAccessError:
-        # 沒 Blave 權限、又不是電腦版(不准走免費路徑):沒有可以建的東西。
-        return _skip_no_access(rid, title, title, _TW_MARKET_SERIES)
-    if len(idx) < 2:
-        raise ValueError("加權指數資料不足兩個交易日,無法產晨報")
-    close, prev = float(idx["Close"].iloc[-1]), float(idx["Close"].iloc[-2])
-    asof = idx.index[-1].strftime("%Y-%m-%d")
-    chg = close / prev - 1
-    high20, _ = _prior20(idx, notes)
-    ma60 = _mean(idx["Close"], 60)
-    ctx["資料日"] = asof
-    ctx["加權指數"] = f"{_num(close, 2)}({_pct(chg * 100)})" + (f",前 20 日高 {_num(high20, 2)}" if high20 is not None else "")
-    if ma60 is not None:
-        ctx["60 日均"] = _num(ma60, 2)
-    _where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
-    kpis.append(kpi("加權指數", _num(close, 2), _tone(chg), delta=_pct(chg * 100)))
-
-    turn = _tw_market(lambda: _data.fetch_twmarket_turnover(start, date, headers),
-                      lambda: _data.fetch_twmarket_turnover_public(start, date), "成交值", notes, missing, used,
-                      _data._TWMARKET_TURNOVER_COLUMNS)
-    val, val_prev = _last_two(turn["value"]) if len(turn) else (None, None)
-    if val is not None:
-        avg5 = float(turn["value"].tail(5).mean())
-        ctx["成交值"] = f"{val / 1e12:.2f} 兆(5 日均 {avg5 / 1e12:.2f} 兆)"
-        kpis.append(kpi("成交值", f"{val / 1e12:.2f}", "neutral", unit="兆",
-                        delta=_pct((val / avg5 - 1) * 100) + " vs 5日均"))
-    else:
-        notes.append("成交值無資料")
-
-    inst = _tw_market(lambda: _data.fetch_twmarket_institutional(start, date, headers),
-                      lambda: _data.fetch_twmarket_institutional_public(start, date), "三大法人", notes, missing, used,
-                      _data._TWMARKET_INST_COLUMNS)
-    blocks_inst = None
-    inst_ok = len(inst) and all(_finite(inst[c].iloc[-1]) for c in ("foreign", "investment_trust", "dealer", "total"))
-    if inst_ok:
-        last = inst.iloc[-1]
-        f_prev = float(inst["foreign"].iloc[-2]) if len(inst) > 1 and _finite(inst["foreign"].iloc[-2]) else None
-        ctx["三大法人"] = (f"外資 {_tw_yi(last['foreign'])}(昨 {_tw_yi(f_prev) if f_prev is not None else '—'})、"
-                        f"投信 {_tw_yi(last['investment_trust'])}、自營 {_tw_yi(last['dealer'])}、"
-                        f"合計 {_tw_yi(last['total'])}")
-        # 指數可能已是今天、籌碼還是昨天:日期不同的 KPI 在 delta 標日期,讀者才不會把兩天讀成同一天。
-        kpis.append(kpi("外資買賣超", _tw_yi(float(last["foreign"])), _tone(float(last["foreign"])),
-                        delta=_dated("", inst.index[-1], asof)))
-        f20 = _mean(inst["foreign"], 20)
-        if f20 is not None:
-            ctx["外資 20 日均"] = _tw_yi(f20)
-        # 合計不佔 KPI 格(六格要留給夜盤),寫在長條圖說明裡。
-        blocks_inst = bar_chart("三大法人買賣超(億元)",
-                                [("外資", last["foreign"] / 1e8), ("投信", last["investment_trust"] / 1e8),
-                                 ("自營商", last["dealer"] / 1e8)],
-                                caption=_cap(f"{inst.index[-1].strftime('%Y-%m-%d')} 淨買賣超金額,億元",
-                                             f"三大法人合計 {_tw_yi(float(last['total']))}",
-                                             f"外資近 20 個交易日平均 {_tw_yi(f20)}" if f20 is not None else None))
-    else:
-        notes.append("三大法人無資料")
-
-    mg = _tw_market(lambda: _data.fetch_twmarket_margin(start, date, headers),
-                    lambda: _data.fetch_twmarket_margin_public(start, date), "融資餘額", notes, missing, used,
-                    _data._TWMARKET_MARGIN_COLUMNS)
-    m_last, m_prev = _last_two(mg["margin_balance"]) if len(mg) else (None, None)
-    m20 = _mean(mg["margin_balance"], 20) if len(mg) else None
-    if m_last is not None:
-        d_m = (m_last - m_prev) if m_prev is not None else 0.0
-        ctx["融資餘額"] = f"{m_last / 1e4:,.1f} 萬張({_signed(d_m / 1e4, 1)} 萬張)"
-        if m20 is not None:
-            ctx["融資 20 日均"] = f"{m20 / 1e4:,.1f} 萬張"
-        kpis.append(kpi("融資餘額", f"{m_last / 1e4:,.1f}", "neutral", unit="萬張",
-                        delta=_dated(f"{_signed(d_m / 1e4, 1)} 萬張", mg.index[-1], asof)))
-    else:
-        notes.append("融資餘額無資料")
-
-    fut = None
-    try:
-        fut = _tw_market(lambda: _data.fetch_twfutures_institutional("TX", start, date, headers),
-                         lambda: _data.fetch_twfutures_institutional_public("TX", start, date), "外資期貨淨多單",
-                         notes, missing, used, _data._TWFUT_INST_COLUMNS)
-    except Exception as e:
-        notes.append(f"期貨三大法人抓取失敗({type(e).__name__})")
-    n20 = _mean(fut["foreign_net_oi"], 20) if fut is not None and len(fut) else None
-    if fut is not None and len(fut):
-        f_last, f_prev = _last_two(fut["foreign_net_oi"])
-        d_f = (f_last - f_prev) if f_prev is not None else 0.0
-        ctx["外資期貨淨多單"] = f"{_signed(f_last)} 口({_signed(d_f)} 口,{fut.index[-1].strftime('%m-%d')})"
-        if n20 is not None:
-            ctx["外資期貨 20 日均"] = f"{_signed(n20)} 口"
-        # 淨部位是方向不是損益:長期淨空會永遠紅,上色沒有資訊,一律 neutral。
-        kpis.append(kpi("外資期貨淨多單", _signed(f_last), "neutral", unit="口",
-                        delta=_dated(_signed(d_f) + " 口", fut.index[-1], asof)))
-        foot.append(("futinst", "期貨三大法人為 TAIFEX 盤後統計,晨報引用的是前一交易日收盤後的未平倉淨口數(多 − 空)。"))
-
-    night = _txf_night_session(headers, asof, notes, missing)
-    if night:
-        ctx["台指期夜盤"] = (f"{_num(night['close'])}({night['state']};{_pct(night['chg'] * 100)} "
-                          f"vs 日盤收 {_num(night['day_close'])})")
-        label = "台指期夜盤" if night["done"] else f"台指期夜盤({night['state']})"
-        kpis.append(kpi(label, _num(night["close"]), _tone(night["chg"]), delta=_pct(night["chg"] * 100)))
-        foot.append(("night", "台指期夜盤 = 15:00 至次日 05:00 的交易時段,漲跌以同日日盤收盤價為基準。"
-                     + ("" if night["done"] else "數值為截至標示時點的最新價,不是收盤價。")))
-
-    blocks.append(kpi_row(kpis, title=_headline("加權指數", chg, close, high20, "前 20 日高")))
-    ck = candlestick(_price_title("加權指數", close, ma60), idx.tail(_PRICE_BARS), y_unit="點",
-                     caption=_cap(f"近 {min(len(idx), _PRICE_BARS)} 個交易日日 K",
-                                  f"參考線為前 20 日高 {_num(high20, 2)}(不含當日)" if high20 is not None else None,
-                                  f"60 日均 {_num(ma60, 2)}(含當日收盤)" if ma60 is not None else None),
-                     reflines=[(high20, "前 20 日高", False)] if high20 is not None else None)
-    if ck:
-        blocks.append(ck)
-    if blocks_inst:
-        blocks.append(blocks_inst)
-    if m_last is not None:
-        lc = line_chart("融資餘額", [("融資餘額", "primary", mg["margin_balance"] / 1e4)], y_unit="萬張",
-                        caption=_cap("TWSE 日融資餘額,張數(圖為萬張)",
-                                     f"最新 {m_last / 1e4:,.1f} 萬張,近 20 個交易日平均 {m20 / 1e4:,.1f} 萬張"
-                                     if m20 is not None else None))
-        if lc:
-            blocks.append(lc)
-    if fut is not None and len(fut):
-        lc = line_chart("外資期貨淨多單", [("外資淨多單", "primary", fut["foreign_net_oi"])], y_unit="口",
-                        caption=_cap("TAIFEX 盤後未平倉淨口數(多 − 空)",
-                                     f"最新 {_signed(f_last)} 口,近 20 個交易日平均 {_signed(n20)} 口"
-                                     if n20 is not None else None),
-                        reflines=[(0.0, "0", False)])
-        if lc:
-            blocks.append(lc)
-    cal = _calendar_rows(headers, notes, missing, countries=["US", "CN", "TW", "JP", "EU"])
-    if cal:
-        # 事件表沒有比較基準可寫:它是時刻表不是量測,caption 只留口徑(預期/前值已在欄位裡)。
-        blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    _tw_market_foot(foot, used)
-    blocks.append(footnote(foot))
-
-    # 標題不帶日期——報告清單列本身顯示建立時間(Wei 2026-09-02 拍板);id 仍帶日期,同日重跑才會覆蓋。
-    # 資料日與晨報日不同才標 period,同日就省(印「09/02–09/02」沒有資訊)。
-    meta = {} if asof == date else {"period": {"from": asof[5:].replace("-", "/"), "to": date[5:].replace("-", "/")}}
-    return Pack(rid, title, "morning", title, blocks, ctx, notes, meta=meta, missing=missing)
+    Reads the last trading day's close, turnover, 三大法人, 融資, 外資期貨淨多單, the TXF night
+    session, the 10 largest 成交值 and the day's 重大訊息 (desktop: TWSE open data), a news
+    slot (鉅亨 headlines as candidates; yours to fill in chat) and today's macro events and
+    除權息. `lookback_days` covers the flow series (20-day means, futures chart); the index
+    always spans 90 days for its 60-day mean, and the chart draws its last 45 days."""
+    return build(_recipe("tw_market_brief", lookback_days=lookback_days), date, headers)
 
 
 def _txf_night_session(headers, day, notes, missing):
@@ -713,8 +799,6 @@ def _txf_night_session(headers, day, notes, missing):
     return {"close": close, "day_close": day_close, "chg": close / day_close - 1, "state": state, "done": done}
 
 
-# ─── template 1b: 台股收盤報告 ────────────────────────────────────────────────
-
 def _on_day(frame, day):
     return frame is not None and len(frame) > 0 and frame.index[-1].strftime("%Y-%m-%d") == day
 
@@ -751,285 +835,35 @@ def tw_close_brief(date=None, headers=None, lookback_days=45):
     or an ad-hoc closure the holiday table does not list); the reason names the last
     trading day. No sector breakdown: lib has no per-industry daily series, and building
     one means a close fetch for every listed stock."""
-    headers = headers or headers_from_env()
-    # 下面拿日期字串跟資料日期逐字比對;不先正規化,「2026-9-1」會永遠對不上而被當成「收盤未入庫」跳過。
-    date = _data._taipei_date(date or _today_tpe()).strftime("%Y-%m-%d")
-    start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    rid, title = f"tw-close-{date.replace('-', '')}", "台股收盤報告"
-    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
-    used = set()
+    return build(_recipe("tw_close_brief", lookback_days=lookback_days), date, headers)
 
-    try:
-        idx = _clean_ohlc(_tw_market_index(_tw_index_start(date, start), date, headers, used))
-    except _data.DataAccessError:
-        return _skip_no_access(rid, title, title, _TW_MARKET_SERIES)
-    if len(idx) < 2:
-        raise ValueError("加權指數資料不足兩個交易日,無法產收盤報告")
-    try:
-        trading = _data.is_tw_trading_day(date, headers)
-    except _data.DataAccessError:
-        # 休市表只有 Blave 那條,但它只用來判斷是否交易日、不是報告的一塊:不進 missing(尾註不叫人綁卡),
-        # 退回「今天有沒有指數收盤」判斷(下面 trading is None 那支)。
-        trading = None
-    last_day = idx.index[-1].strftime("%Y-%m-%d")
-    if trading is None:
-        notes.append("TWSE 休市表無法取得(" + ("沒有 Blave 資料權限" if used else "端點未上線或該年度尚未公布")
-                     + "),是否交易日改以今日有無加權指數收盤判斷")
-    skip = None
-    if trading is False:
-        label, src = _closure(date, headers)
-        skip = f"{date} 非交易日({label}),不產收盤報告;上一交易日 {last_day}"
-        if src:
-            ctx["休市表出處"] = src
-            skip += f"。休市表出處(轉述時原文照附):{src}"
-    elif last_day != date:
-        skip = (f"{date} 的加權指數收盤尚未入庫,或今日臨時停市(颱風停市不在休市表內);"
-                f"最近一個有收盤資料的交易日是 {last_day}")
-    if skip:
-        notes.append(skip)
-        ctx["上一交易日"] = last_day
-        return Pack(rid, title, "morning", title, [], ctx, notes, skip=skip)
-
-    close, prev = float(idx["Close"].iloc[-1]), float(idx["Close"].iloc[-2])
-    chg = close / prev - 1
-    high20, _ = _prior20(idx, notes)
-    ma60 = _mean(idx["Close"], 60)
-    ctx["資料日"] = date
-    ctx["加權指數"] = (f"{_num(close, 2)}({_signed(close - prev, 2)} 點,{_pct(chg * 100)})"
-                    + (f",前 20 日高 {_num(high20, 2)}" if high20 is not None else ""))
-    if ma60 is not None:
-        ctx["60 日均"] = _num(ma60, 2)
-    _where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
-    kpis.append(kpi("加權指數", _num(close, 2), _tone(chg), delta=_pct(chg * 100)))
-
-    turn = _tw_market(lambda: _data.fetch_twmarket_turnover(start, date, headers),
-                      lambda: _data.fetch_twmarket_turnover_public(start, date), "成交值", notes, missing, used,
-                      _data._TWMARKET_TURNOVER_COLUMNS)
-    if _on_day(turn, date) and _finite(turn["value"].iloc[-1]):
-        val, avg5 = float(turn["value"].iloc[-1]), float(turn["value"].tail(5).mean())
-        ctx["成交值"] = f"{val / 1e12:.2f} 兆(5 日均 {avg5 / 1e12:.2f} 兆)"
-        kpis.append(kpi("成交值", f"{val / 1e12:.2f}", "neutral", unit="兆",
-                        delta=_pct((val / avg5 - 1) * 100) + " vs 5日均"))
-    else:
-        _pending("成交值", turn, date, notes)
-
-    inst = _tw_market(lambda: _data.fetch_twmarket_institutional(start, date, headers),
-                      lambda: _data.fetch_twmarket_institutional_public(start, date), "三大法人", notes, missing, used,
-                      _data._TWMARKET_INST_COLUMNS)
-    blocks_inst = None
-    if _on_day(inst, date) and all(_finite(inst[c].iloc[-1]) for c in ("foreign", "investment_trust", "dealer", "total")):
-        last = inst.iloc[-1]
-        f_prev = float(inst["foreign"].iloc[-2]) if len(inst) > 1 and _finite(inst["foreign"].iloc[-2]) else None
-        ctx["三大法人"] = (f"外資 {_tw_yi(last['foreign'])}(前一交易日 {_tw_yi(f_prev) if f_prev is not None else '—'})、"
-                        f"投信 {_tw_yi(last['investment_trust'])}、自營 {_tw_yi(last['dealer'])}、"
-                        f"合計 {_tw_yi(last['total'])}")
-        kpis.append(kpi("外資買賣超", _tw_yi(float(last["foreign"])), _tone(float(last["foreign"]))))
-        f20 = _mean(inst["foreign"], 20)
-        if f20 is not None:
-            ctx["外資 20 日均"] = _tw_yi(f20)
-        blocks_inst = bar_chart("三大法人買賣超(億元)",
-                                [("外資", last["foreign"] / 1e8), ("投信", last["investment_trust"] / 1e8),
-                                 ("自營商", last["dealer"] / 1e8)],
-                                caption=_cap(f"{date} 淨買賣超金額,億元",
-                                             f"三大法人合計 {_tw_yi(float(last['total']))}",
-                                             f"外資近 20 個交易日平均 {_tw_yi(f20)}" if f20 is not None else None))
-    else:
-        _pending("三大法人", inst, date, notes)
-
-    mg = _tw_market(lambda: _data.fetch_twmarket_margin(start, date, headers),
-                    lambda: _data.fetch_twmarket_margin_public(start, date), "融資餘額", notes, missing, used,
-                    _data._TWMARKET_MARGIN_COLUMNS)
-    margin_ok = _on_day(mg, date) and _finite(mg["margin_balance"].iloc[-1])
-    m20 = _mean(mg["margin_balance"], 20) if len(mg) else None
-    if margin_ok:
-        m_last, m_prev = _last_two(mg["margin_balance"])
-        d_m = (m_last - m_prev) if m_prev is not None else 0.0
-        ctx["融資餘額"] = f"{m_last / 1e4:,.1f} 萬張({_signed(d_m / 1e4, 1)} 萬張)"
-        if m20 is not None:
-            ctx["融資 20 日均"] = f"{m20 / 1e4:,.1f} 萬張"
-        kpis.append(kpi("融資餘額", f"{m_last / 1e4:,.1f}", "neutral", unit="萬張",
-                        delta=f"{_signed(d_m / 1e4, 1)} 萬張"))
-        foot.append(("margin", "融資增減 = 今日餘額 − 前一交易日餘額(實際餘額變化)。TWSE 的「前日餘額」欄已含"
-                     "拆分、減資等公司行動調整,這類日子兩種算法會不同。"))
-    else:
-        _pending("融資餘額", mg, date, notes)
-
-    fut = None
-    try:
-        fut = _tw_market(lambda: _data.fetch_twfutures_institutional("TX", start, date, headers),
-                         lambda: _data.fetch_twfutures_institutional_public("TX", start, date), "外資期貨淨多單",
-                         notes, missing, used, _data._TWFUT_INST_COLUMNS)
-    except Exception as e:
-        notes.append(f"期貨三大法人抓取失敗({type(e).__name__})")
-    fut_ok = fut is not None and _on_day(fut, date) and _finite(fut["foreign_net_oi"].iloc[-1])
-    n20 = _mean(fut["foreign_net_oi"], 20) if fut is not None and len(fut) else None
-    if fut_ok:
-        f_last, f_prev = _last_two(fut["foreign_net_oi"])
-        d_f = (f_last - f_prev) if f_prev is not None else 0.0
-        ctx["外資期貨淨多單"] = f"{_signed(f_last)} 口({_signed(d_f)} 口)"
-        if n20 is not None:
-            ctx["外資期貨 20 日均"] = f"{_signed(n20)} 口"
-        kpis.append(kpi("外資期貨淨多單", _signed(f_last), "neutral", unit="口", delta=_signed(d_f) + " 口"))
-        foot.append(("futinst", "期貨三大法人為 TAIFEX 日盤收盤後統計的未平倉淨口數(多 − 空)。"))
-    elif fut is not None:
-        _pending("外資期貨淨多單", fut, date, notes)
-
-    blocks.append(kpi_row(kpis, title=_headline("加權指數", chg, close, high20, "前 20 日高")))
-    ck = candlestick(_price_title("加權指數", close, ma60), idx.tail(_PRICE_BARS), y_unit="點",
-                     caption=_cap(f"近 {min(len(idx), _PRICE_BARS)} 個交易日日 K",
-                                  f"參考線為前 20 日高 {_num(high20, 2)}(不含當日)" if high20 is not None else None,
-                                  f"60 日均 {_num(ma60, 2)}(含當日收盤)" if ma60 is not None else None),
-                     reflines=[(high20, "前 20 日高", False)] if high20 is not None else None)
-    if ck:
-        blocks.append(ck)
-    if blocks_inst:
-        blocks.append(blocks_inst)
-    if margin_ok:
-        lc = line_chart("融資餘額", [("融資餘額", "primary", mg["margin_balance"] / 1e4)], y_unit="萬張",
-                        caption=_cap("TWSE 日融資餘額,張數(圖為萬張)",
-                                     f"最新 {m_last / 1e4:,.1f} 萬張,近 20 個交易日平均 {m20 / 1e4:,.1f} 萬張"
-                                     if m20 is not None else None))
-        if lc:
-            blocks.append(lc)
-    if fut_ok:
-        lc = line_chart("外資期貨淨多單", [("外資淨多單", "primary", fut["foreign_net_oi"])], y_unit="口",
-                        caption=_cap("TAIFEX 盤後未平倉淨口數(多 − 空)",
-                                     f"最新 {_signed(f_last)} 口,近 20 個交易日平均 {_signed(n20)} 口"
-                                     if n20 is not None else None),
-                        reflines=[(0.0, "0", False)])
-        if lc:
-            blocks.append(lc)
-    if date == _today_tpe():   # 經濟日曆只查得到「今天」;補產過去日期的報告不附別天的事件
-        cal = _calendar_rows(headers, notes, missing, countries=["US", "CN", "TW", "JP", "EU"])
-        if cal:
-            blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    _tw_market_foot(foot, used)
-    blocks.append(footnote(foot))
-    return Pack(rid, title, "morning", title, blocks, ctx, notes, missing=missing)
-
-
-# ─── template 2: 加密市場晨報 ─────────────────────────────────────────────────
 
 def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), lookback_days=30):
-    """加密市場晨報 data pack: BTC/ETH(/others) price and returns, funding, and the
-    market-wide Blave indicators (市場方向 / 資金稀缺 / 頂尖交易員曝險)."""
-    headers = headers or headers_from_env()
-    date = date or _today_tpe()          # 報告日與 id 一律台北日期,同日重跑才會覆蓋
-    start = _window_start(lookback_days + 2)
-    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
-    rid, title = f"crypto-market-{date.replace('-', '')}", "加密市場晨報"
-    syms = [_data.normalize_symbol(s if s.endswith("USDT") else s + "USDT") for s in symbols]
-    try:
-        klines = _data.fetch_kline_batch(syms, "1d", start, None, headers)
-    except _data.DataAccessError:
-        # Only when the kline source is Blave: the desktop sets BLAVE_KLINE_SOURCE=binance (public).
-        return _skip_no_access(rid, title, title, "日 K(BLAVE_KLINE_SOURCE 不是 binance)")
-    closes = {}
-    for s in syms:
-        df = klines.get(s)
-        if df is None or len(df) < 2:
-            notes.append(f"{s} 日 K 不足")
-            continue
-        closes[s] = df["Close"].dropna()
-    if not closes:
-        raise ValueError("沒有任何幣種的日 K,無法產晨報")
-    rows = []
-    for s, c in closes.items():
-        last = float(c.iloc[-1])
-        r1 = c.iloc[-1] / c.iloc[-2] - 1
-        r7 = c.iloc[-1] / c.iloc[-8] - 1 if len(c) > 8 else None
-        r30 = c.iloc[-1] / c.iloc[-(lookback_days + 1)] - 1 if len(c) > lookback_days else None
-        label = s.replace("USDT", "")
-        rows.append({"symbol": label, "price": _num(last, 2), "r1": _pct(r1 * 100),
-                     "r7": _pct(r7 * 100) if r7 is not None else None,
-                     "r30": _pct(r30 * 100) if r30 is not None else None})
-        ctx[label] = f"{_num(last, 2)},1d {_pct(r1 * 100)}" + (f",30d {_pct(r30 * 100)}" if r30 is not None else "")
-        if len(kpis) < 2:
-            kpis.append(kpi(label, _num(last, 2), _tone(r1), unit="USDT", delta=_pct(r1 * 100)))
-    ctx["資料日"] = str(next(iter(closes.values())).index[-1].date())
+    """加密市場晨報 data pack: price and 1 / 7 / 30-day returns of `symbols` plus the five
+    largest coins by market cap, the derivatives table (OI 24h, funding, long/short), 24h
+    liquidations, the day's movers, the market-wide Blave indicators, a news slot (yours to
+    fill in chat; a scheduled run has no licensed crypto source and lays out none) and
+    today's macro events."""
+    return build(_with_symbols(_recipe("crypto_market_brief", lookback_days=lookback_days), symbols), date, headers)
 
-    fund = _indicator(_data.fetch_funding_rate, ("BTCUSDT", "1d", start, None, headers), "BTC 資金費率",
-                      ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.4f}%")
-    direction = _indicator(_data.fetch_market_direction, ("1d", start, None, headers), "市場方向", ctx, kpis, notes, missing)
-    shortage = _indicator(_data.fetch_capital_shortage, ("1d", start, None, headers), "資金稀缺", ctx, kpis, notes, missing)
-    exposure = _indicator(_data.fetch_top_trader_exposure, ("1d", start, None, headers), "頂尖交易員曝險", ctx, kpis, notes, missing)
-
-    base = next(iter(closes))
-    base_c = closes[base]
-    base_ma = _mean(base_c, lookback_days)
-    if base_ma is not None:
-        ctx[f"{base.replace('USDT', '')} 近 {lookback_days} 日均"] = _num(base_ma, 2)
-        _where(ctx, float(base_c.iloc[-1]), [(base_ma, f"近 {lookback_days} 日均")])
-    blocks.append(kpi_row(kpis[:6], title=_headline(base.replace("USDT", ""),
-                                                    float(base_c.iloc[-1] / base_c.iloc[-2] - 1),
-                                                    float(base_c.iloc[-1]), base_ma, f"近 {lookback_days} 日均")))
-    win = {s: c.tail(lookback_days + 1) for s, c in closes.items()}   # 圖與表同一個 N 日窗口
-    series = [(base.replace("USDT", ""), "primary", win[base] / win[base].iloc[0] * 100)]
-    series += [(s.replace("USDT", ""), "benchmark", c / c.iloc[0] * 100) for s, c in win.items() if s != base][:3]
-    rel = sorted(((float(c.iloc[-1] / c.iloc[0] * 100 - 100), s.replace("USDT", "")) for s, c in win.items()),
-                 reverse=True)
-    spread = f"{rel[0][1]} 領先 {rel[-1][1]} {rel[0][0] - rel[-1][0]:,.1f} 個百分點" if len(rel) > 1 else None
-    if spread:
-        ctx[f"{lookback_days} 日相對表現"] = spread
-    lc = line_chart(f"相對表現(重定基 100,{lookback_days} 日)" + (f":{spread}" if spread else ""), series, y_unit="",
-                    caption=_cap("每個幣種以窗口第一天收盤為 100",
-                                 f"窗口報酬 {rel[0][1]} {rel[0][0]:+,.1f}%、{rel[-1][1]} {rel[-1][0]:+,.1f}%"
-                                 if len(rel) > 1 else None))
-    if lc:
-        blocks.append(lc)
-    blocks.append(table("主要幣種報價與報酬", [("symbol", "幣種", "left"), ("price", "價格", "right"),
-                                              ("r1", "1 日", "right", "percent"), ("r7", "7 日", "right", "percent"),
-                                              ("r30", f"{lookback_days} 日", "right", "percent")], rows,
-                        caption="Binance USDT 永續日 K 收盤;最後一根為今日未收盤 bar"))
-    if fund is not None:
-        lc = line_chart("BTC 資金費率", [("BTC", "primary", fund)], y_unit="%", reflines=[(0.0, "0", False)],
-                        caption=_cap("Binance BTCUSDT 日頻資金費率,單位 %",
-                                     _vs7(fund, lambda v: f"{v:+.4f}%")))
-        if lc:
-            blocks.append(lc)
-    ind = [(n, "benchmark", s) for n, s in (("市場方向", direction), ("資金稀缺", shortage)) if s is not None]
-    if ind:
-        ind[0] = (ind[0][0], "primary", ind[0][2])
-        lc = line_chart("Blave 市場指標(z-score)", ind,
-                        caption=_cap("標準化分數,0 = 樣本均值", "日頻資料只到前一個完整日",
-                                     f"{ind[0][0]} {_vs7(ind[0][2])}"))
-        if lc:
-            blocks.append(lc)
-    if exposure is not None:
-        # 這支不是 z-score(實測值約 20–30),不能跟上面同軸;單獨一張、不標單位。
-        lc = line_chart("頂尖交易員曝險", [("曝險", "primary", exposure)],
-                        caption=_cap("Blave 頂尖交易員曝險指標原始值(非標準化),日頻資料只到前一個完整日",
-                                     _vs7(exposure)))
-        if lc:
-            blocks.append(lc)
-    cal = _calendar_rows(headers, notes, missing, countries=["US", "CN", "EU", "JP"])
-    if cal:
-        blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    # 只描述報告裡有的系列:跳過的指標不留一句讀者找不到對應圖的口徑。
-    src = "價格:Binance USDT 永續日 K。"
-    if fund is not None:
-        src += "資金費率為 Binance 日頻,單位 %。"
-    if direction is not None or shortage is not None:
-        src += "市場方向 / 資金稀缺為 Blave 指標(z-score)" + (";" if exposure is not None else "。")
-    if exposure is not None:
-        src += "頂尖交易員曝險為指標原始值。"
-    if any(x is not None for x in (fund, direction, shortage, exposure)):
-        src += "日頻指標只到前一個完整日。"
-    foot += [("src", src)]
-    blocks.append(footnote(foot))
-    return Pack(rid, title, "morning", title, blocks, ctx, notes, missing=missing)
-
-
-# ─── template 3: 單標的晨報 ───────────────────────────────────────────────────
 
 def symbol_brief(symbol, date=None, headers=None, lookback_days=90):
     """單標的晨報 data pack. A 4–6 digit id is a Taiwan stock (日 K + 外資買賣超);
     anything else is a crypto USDT perp (日 K + 資金費率 + 爆倉 / 巨鯨 / 多空力道)."""
-    headers = headers or headers_from_env()
     sym = str(symbol).strip().upper()
     if sym.isdigit():
-        return _tw_symbol_brief(sym, date, headers, lookback_days)
-    return _crypto_symbol_brief(sym, date, headers, lookback_days)
+        recipe = {"id": f"symbol-{sym}", "title": f"{sym} 晨報", "report_type": "單標的晨報",
+                  "lookback_days": lookback_days, "kpi": ["price_chart", "tw_institutional"],
+                  "bricks": [["price_chart", {"symbol": sym}], ["tw_institutional", {"symbol": sym}],
+                             ["levels_table", {}]]}
+    else:
+        label = _data.normalize_symbol(sym if sym.endswith("USDT") else sym + "USDT").replace("USDT", "")
+        recipe = {"id": f"symbol-{label.lower()}", "title": f"{label} 晨報", "report_type": "單標的晨報",
+                  "lookback_days": lookback_days, "kpi": ["price_chart", "funding", "blave_indicators"],
+                  "bricks": [["price_chart", {"symbol": label}], ["funding", {"symbol": label, "variant": "symbol"}],
+                             ["blave_indicators", {"names": ["爆倉指標", "巨鯨警報", "多空力道"], "symbol": label}],
+                             ["levels_table", {}]]}
+    return build(recipe, date, headers)
 
 
 def _prior20(bars, notes):
@@ -1066,159 +900,6 @@ def _levels_table(lv, last):
     # 距現價是方向不是損益,不走 percent 的上色閘門。
     return table(_LEVELS_TITLE, [("level", "項目", "left"), ("price", "數值", "right"), ("dist", "距現價", "right")],
                  rows, caption="歷史統計值,非支撐壓力或進出場價。距現價 = 現價相對該數值的百分比,正值表示現價在其上")
-
-
-def _tw_symbol_brief(stock_id, date, headers, lookback_days):
-    date = date or _today_tpe()
-    start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
-    rid, title = f"symbol-{stock_id}-{date.replace('-', '')}", f"{stock_id} 晨報"
-    try:
-        df = _data.fetch_twstock_ohlcv(stock_id, "1d", headers, start=start, end=date)
-    except _data.DataAccessError:
-        # The daily fetcher goes to the stock's own exchange on the desktop (no key): shares → 張,
-        # naive Taipei dates → the same tz the ohlcv path carries.
-        try:
-            df = _data.fetch_twstock_price(stock_id, start, date, headers)
-        except _data.DataAccessError as e:
-            # A cause means the free chain ran and failed (lib.data chains it): that is the
-            # real error, not a data-access one — never "add a card" for an exchange outage.
-            if e.__cause__ is not None:
-                raise ValueError(f"{stock_id} 免費日線抓不到({type(e.__cause__).__name__}: "
-                                 f"{str(e.__cause__)[:120]})") from e.__cause__
-            return _skip_no_access(rid, title, "單標的晨報", "日 K")
-        if df is None or df.empty:
-            raise ValueError(f"{stock_id} 日 K 不足兩個交易日")
-        src = df.attrs.get("source")
-        if not src:
-            # The exchanges' licence makes naming the source a condition: no source, no report.
-            raise ValueError(f"{stock_id} 免費日線沒有帶 attrs['source'],無法標示資料來源")
-        df = df.copy()
-        df["Volume"] = df["Volume"] / 1000.0
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("Asia/Taipei")
-        # publish(lang="en") swaps it through lib.data.PUBLIC_SOURCE_EN.
-        foot.append(("src_free", _data._TW_PUBLIC_SOURCE_ZH if src in ("TWSE", "TPEx") else f"資料來源:{src}"))
-    df = _clean_ohlc(df) if df is not None else df
-    if df is None or len(df) < 2:
-        raise ValueError(f"{stock_id} 日 K 不足兩個交易日")
-    c = df["Close"].dropna()
-    last, prev = float(c.iloc[-1]), float(c.iloc[-2])
-    chg = last / prev - 1
-    vol, vol5 = float(df["Volume"].iloc[-1]), float(df["Volume"].tail(5).mean())
-    ctx["資料日"] = str(c.index[-1].date())
-    ctx["收盤"] = f"{_num(last, 2)}({_pct(chg * 100)}),量 {_num(vol)} 張(5 日均 {_num(vol5)})"
-    kpis.append(kpi("收盤", _num(last, 2), _tone(chg), delta=_pct(chg * 100)))
-    kpis.append(kpi("成交量", _num(vol), "neutral", unit="張", delta=_pct((vol / vol5 - 1) * 100) + " vs 5日均"))
-    lv = _levels(df, notes)
-    ctx[_LEVELS_TITLE] = ", ".join(f"{k} {_num(v, 2)}" for k, v in lv.items())
-    _where(ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
-
-    inst = None
-    try:
-        inst = _data.fetch_twstock_institutional(stock_id, start, date, headers)
-    except _data.DataAccessError:
-        _no_access("外資買賣超", notes, missing)
-    except Exception as e:
-        notes.append(f"外資買賣超抓取失敗({type(e).__name__})")
-    if inst is not None and len(inst) and "foreign_net" in inst:
-        fn = inst["foreign_net"].dropna() / 1000.0   # 股 → 張
-        if len(fn):
-            f_last = float(fn.iloc[-1])
-            f5 = float(fn.tail(5).sum())
-            ctx["外資買賣超"] = f"{_signed(f_last)} 張(近 5 日累計 {_signed(f5)} 張,{fn.index[-1].date()})"
-            kpis.append(kpi("外資買賣超", _signed(f_last), _tone(f_last), unit="張", delta=f"5日累計 {_signed(f5)}"))
-            foot.append(("inst", "外資買賣超 = 外資買進 − 賣出,資料源以股為單位,此處換算為張(÷1000)。"))
-    blocks.append(kpi_row(kpis[:6], title=_headline(stock_id, chg, last, lv.get("前 20 日高"), "前 20 日高")))
-    ck = candlestick(_price_title(f"{stock_id} 日 K", last, lv.get("60 日均")), df.tail(_PRICE_BARS), y_unit="元",
-                     caption=_cap(f"近 {min(len(df), _PRICE_BARS)} 個交易日日 K,未還原價",
-                                  ("參考線為前 20 日高 " + _num(lv["前 20 日高"], 2) + " / 低 " + _num(lv["前 20 日低"], 2)
-                                   + "(不含當日)") if "前 20 日高" in lv else None,
-                                  f"60 日均 {_num(lv['60 日均'], 2)}" if "60 日均" in lv else None),
-                     reflines=_level_lines(lv))
-    if ck:
-        blocks.append(ck)
-    if inst is not None and len(inst) and "foreign_net" in inst:
-        net = inst["foreign_net"].dropna() / 1000.0
-        tail = net.tail(10)
-        f10 = float(tail.sum())
-        prev10 = float(net.tail(20).head(10).sum()) if len(net) >= 20 else None
-        ctx["外資 10 日累計"] = f"{_signed(f10)} 張" + (f"(前 10 日 {_signed(prev10)} 張)" if prev10 is not None else "")
-        bc = bar_chart("外資近 10 日買賣超(張)", [(t.strftime("%m/%d"), v) for t, v in tail.items()],
-                       caption=_cap("每日淨買賣超,張",
-                                    f"10 日累計 {_signed(f10)} 張,前 10 個交易日累計 {_signed(prev10)} 張"
-                                    if prev10 is not None else f"10 日累計 {_signed(f10)} 張"))
-        if bc:
-            blocks.append(bc)
-    lt = _levels_table(lv, last)
-    if lt:
-        blocks.append(lt)
-    foot.append(("src", ("日 K 為未還原價" if foot and foot[0][0] == "src_free" else "日 K 為 TWSE 未還原價")
-                 + ",成交量為張。前 20 日高/低 = 不含當日的前 20 個交易日最高價/最低價,均線取收盤價(含當日)。"))
-    blocks.append(footnote(foot))
-    return Pack(rid, title, "morning", "單標的晨報", blocks, ctx, notes, missing=missing)
-
-
-def _crypto_symbol_brief(sym, date, headers, lookback_days):
-    date = date or _today_tpe()
-    start = _window_start(lookback_days + 2)
-    s = _data.normalize_symbol(sym if sym.endswith("USDT") else sym + "USDT")
-    label = s.replace("USDT", "")
-    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
-    rid, title = f"symbol-{label.lower()}-{date.replace('-', '')}", f"{label} 晨報"
-    try:
-        df = _data.fetch_kline(s, "1d", start, None, headers)
-    except _data.DataAccessError:
-        return _skip_no_access(rid, title, "單標的晨報", "日 K(BLAVE_KLINE_SOURCE 不是 binance)")
-    df = _clean_ohlc(df) if df is not None else df
-    if df is None or len(df) < 2:
-        raise ValueError(f"{s} 日 K 不足")
-    c = df["Close"].dropna()
-    last, chg = float(c.iloc[-1]), float(c.iloc[-1] / c.iloc[-2] - 1)
-    ctx["資料日"] = str(c.index[-1].date())
-    ctx["價格"] = f"{_num(last, 2)} USDT({_pct(chg * 100)})"
-    kpis.append(kpi(label, _num(last, 2), _tone(chg), unit="USDT", delta=_pct(chg * 100)))
-    lv = _levels(df, notes)
-    ctx[_LEVELS_TITLE] = ", ".join(f"{k} {_num(v, 2)}" for k, v in lv.items())
-    _where(ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
-
-    args = (s, "1d", start, None, headers)
-    fund = _indicator(_data.fetch_funding_rate, args, "資金費率", ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.4f}%")
-    liq = _indicator(_data.fetch_liquidation, args, "爆倉指標", ctx, kpis, notes, missing)
-    whale = _indicator(_data.fetch_whale_hunter, args, "巨鯨警報", ctx, kpis, notes, missing)
-    taker = _indicator(_data.fetch_taker_intensity, args, "多空力道", ctx, kpis, notes, missing)
-    blocks.append(kpi_row(kpis[:6], title=_headline(label, chg, last, lv.get("前 20 日高"), "前 20 日高")))
-    # 60 日均仍用整段收盤算,K 線只畫最後 _PRICE_BARS 根。
-    ck = candlestick(_price_title(f"{label} 日 K", last, lv.get("60 日均")), df.tail(_PRICE_BARS), y_unit="USDT",
-                     caption=_cap(f"近 {min(len(df), _PRICE_BARS)} 根日 K",
-                                  ("參考線為前 20 日高 " + _num(lv["前 20 日高"], 2) + " / 低 " + _num(lv["前 20 日低"], 2)
-                                   + "(不含當日)") if "前 20 日高" in lv else None,
-                                  f"60 日均 {_num(lv['60 日均'], 2)}" if "60 日均" in lv else None),
-                     reflines=_level_lines(lv))
-    if ck:
-        blocks.append(ck)
-    if fund is not None:
-        lc = line_chart("資金費率", [(label, "primary", fund)], y_unit="%", reflines=[(0.0, "0", False)],
-                        caption=_cap("Binance 日頻資金費率,單位 %", _vs7(fund, lambda v: f"{v:+.4f}%")))
-        if lc:
-            blocks.append(lc)
-    ind = [(n, "benchmark", x) for n, x in (("爆倉指標", liq), ("巨鯨警報", whale), ("多空力道", taker)) if x is not None]
-    if ind:
-        ind[0] = (ind[0][0], "primary", ind[0][2])
-        lc = line_chart("Blave 指標(z-score)", ind,
-                        caption=_cap("標準化分數,0 = 樣本均值", "日頻資料只到前一個完整日",
-                                     f"{ind[0][0]} {_vs7(ind[0][2])}"))
-        if lc:
-            blocks.append(lc)
-    lt = _levels_table(lv, last)
-    if lt:
-        blocks.append(lt)
-    foot.append(("src", "價格:Binance USDT 永續日 K,最後一根為今日未收盤 bar。"
-                 + ("資金費率單位 %。" if fund is not None else "")
-                 + ("爆倉 / 巨鯨 / 多空力道為 Blave 指標 z-score。" if ind else "")
-                 + "前 20 日高/低 = 不含當日(今日未收盤 bar)的前 20 根日 K 最高價/最低價,均線取收盤價(含當日)。"))
-    blocks.append(footnote(foot))
-    return Pack(rid, title, "morning", "單標的晨報", blocks, ctx, notes, missing=missing)
 
 
 # ─── publish ──────────────────────────────────────────────────────────────────
@@ -1306,15 +987,22 @@ def _missing_item(pack, lang):
 def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang="zh"):
     """Assemble the pack and the narrative into a report and drop it. Returns the path.
 
-    narrative: {"lead", "read", "watch", "risk"} — any subset. `lead` / `read` / `risk`
-    are markdown capped by `pack.slots` (600 / 300 / 100); `watch` is 2–3 rows of
-    (條件, 門檻, 現在值), not prose. `lead` becomes the opening conclusion card (right
-    after meta), `read` a section after the data blocks, `watch` the 觀察重點 table,
-    `risk` a warning callout just before the footnote. No narrative = a data-only
-    report — the honest form for a scheduled run, never a place for a made-up view.
+    narrative: {"lead", "read", "watch", "risk"} — any subset — plus, on a pack with a news
+    slot, "news", and optionally "lead_chart". `lead` / `read` / `risk` are markdown capped by
+    `pack.slots` (600 / 300 / 100); `watch` is 2–3 rows of (條件, 門檻, 現在值), not prose.
+    `lead` becomes the opening conclusion card (right after meta), `read` a section after the
+    data blocks, `watch` the 觀察重點 table, `risk` a warning callout just before the footnote.
+    `news` is a list of ≤5 items {title, title_orig?, title_orig_lang?, summary, tag, sources,
+    published_at, symbols?, channel?} (references/reports.md §1b › News); `lead_chart` names the brick
+    whose chart moves up to right after the KPI row (the chart the lead argues from).
+    No narrative = a data-only report — the honest form for a scheduled run, never a place for
+    a made-up view; its news block (if the pack has one) is the licensed headlines as they are.
+    Before anything is written, the lead's first sentence and every number the narrative
+    quotes are checked against the pack (references/reports.md §1b › Automatic checks), and
+    commas / colons / semicolons / brackets between Chinese characters become full-width.
     origin: "chat" (default) or "scheduled" — shown in the report header.
     lang: "zh" (default) or "en" — only the footnote line about missing Blave data
-    (`pack.missing`) is localised; the template blocks are Chinese.
+    (`pack.missing`) and the exchanges' attribution lines are localised; the blocks are Chinese.
     Returns None without writing when `pack.skip` is set."""
     if pack.skip:
         # 不 raise:排程跑到休市日要記成 skipped(exit 0、沒有新報告),raise 會變 failed 並發警報。
@@ -1324,27 +1012,55 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     if "action" in narrative:
         raise ValueError("'action' was renamed to 'watch' (觀察重點): conditions and indicator thresholds "
                          "only, no trade instruction, see references/reports.md §1b")
-    unknown = set(narrative) - set(pack.slots)
+    if "news" in narrative and pack.news is None:
+        raise ValueError("this pack has no news slot: add the `news` brick to the recipe, or leave 'news' out")
+    unknown = set(narrative) - set(pack.slots) - {"lead_chart"}
     if unknown:
-        raise ValueError(f"unknown narrative slot(s): {sorted(unknown)}; allowed: {sorted(pack.slots)}")
+        raise ValueError(f"unknown narrative slot(s): {sorted(unknown)}; allowed: {sorted(set(pack.slots) | {'lead_chart'})}")
+    lead_chart = narrative.pop("lead_chart", None)
+    news_given = "news" in narrative
+    news_in = narrative.pop("news", None)
     watch = narrative.pop("watch", None)
+    for k, v in narrative.items():
+        if not isinstance(v, str):
+            raise ValueError(f"narrative[{k!r}] must be a markdown string")
+    narrative = {k: _fw(v) for k, v in narrative.items()}
+    if watch and not isinstance(watch, (str, bytes)):
+        try:
+            watch = [tuple(_fw(str(c)) for c in row) if isinstance(row, (list, tuple)) else row for row in watch]
+        except TypeError:
+            pass
     watch_block = _watch_table(watch) if watch else None
     for k, v in narrative.items():
         cap = pack.slots[k][1]
-        if not isinstance(v, str):
-            raise ValueError(f"narrative[{k!r}] must be a markdown string")
         if len(v) > cap:
             raise ValueError(f"narrative[{k!r}] is {len(v)} chars, cap {cap} (over by {len(v) - cap}) — "
                              f"cut it, don't summarise the summary: {_SLOT_FORM[k]}"
                              + ("。圖表 title / caption 已經帶了結論與基準,敘事不再重述那些數字" if k == "read" else ""))
     if narrative.get("read", "").strip():
         _check_read_form(narrative["read"].strip())
-    blocks = list(pack.blocks)
-    foot = blocks.pop() if blocks and blocks[-1].get("type") == "footnote" else None
-    if pack.missing or (lang == "en" and foot):
+    if narrative.get("lead", "").strip():
+        _check_lead(narrative["lead"].strip())
+    _check_numbers(pack, narrative, watch_block)
+    narrated = bool(watch_block) or any(v.strip() for v in narrative.values()) or bool(news_in)
+    news_block, news_foot = _news_block(pack, news_in, news_given, narrated)
+    news_block = _fw_block(news_block) if news_block else None
+
+    pairs = list(zip(pack.owners, pack.blocks))
+    foot = pairs.pop()[1] if pairs and pairs[-1][1].get("type") == "footnote" else None
+    if news_block is not None:
+        at = pack.news.get("at")
+        pairs.insert(len(pairs) if at is None else min(at, len(pairs)), ("news", news_block))
+    if lead_chart is not None:
+        pairs = _lead_chart_first(pairs, lead_chart)
+    blocks = [b for _, b in pairs]
+    if pack.missing or (lang == "en" and foot) or news_foot:
         # Copy before changing anything: the pack is reusable and its footnote dict is shared.
-        items = [(i["id"], _data.PUBLIC_SOURCE_EN.get(i["text"], i["text"]) if lang == "en" else i["text"])
+        items = [dict(i, text=_data.PUBLIC_SOURCE_EN.get(i["text"], i["text"])) if lang == "en" else dict(i)
                  for i in (foot or {}).get("items", [])]
+        items = [(i["id"], i["text"], i.get("url")) for i in items]
+        if news_foot:
+            items.append(news_foot)
         foot = footnote(items + ([_missing_item(pack, lang)] if pack.missing else []))
     out = []
     if narrative.get("lead", "").strip():
@@ -1359,8 +1075,15 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
         out.append(watch_block)
     if narrative.get("risk", "").strip():
         out.append(callout(narrative["risk"].strip(), tone="warning", title=pack.slots["risk"][0]))
+    if foot and not foot.get("items"):
+        foot = None
+    if not blocks and not news_block and not narrated:
+        # 例:只放 news 的自組配方,排程時沒有授權候選 → 發出去只剩 meta,是空報告
+        print(f"[{pack.report_id}] not published: nothing in it today (no data block, no news, no narrative)")
+        return None
     if foot:
-        out.append(foot)
+        # en:缺資料那行是英文,別被轉成全形;其餘尾註在 Pack 建立時已轉過
+        out.append(_fw_block(foot) if lang != "en" else foot)
     # [^id] 是 api 唯一會拒的敘事錯誤,而 id 清單就在手上——本地先擋,免得整份進 failed/。
     known = {i["id"] for i in (foot or {}).get("items", [])}
     written = dict(narrative)
@@ -1372,8 +1095,10 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
             raise ValueError(f"narrative[{key!r}] references footnote id(s) {missing} that the pack has not got; known: {sorted(known)}")
     if origin not in (None, "chat", "scheduled"):
         raise ValueError("origin must be 'chat' or 'scheduled'")
+    if len(out) + 1 > MAX_BLOCKS:
+        print(f"WARNING: {len(out) + 1} blocks, over {MAX_BLOCKS} (references/reports.md §1b R4): "
+              "drop the bricks the lead does not use")
     meta = dict(pack.meta)
-    narrated = bool(watch_block) or any(v.strip() for v in narrative.values())
     meta["origin"] = origin or ("chat" if narrated else "scheduled")
     # 純數據包用自己的 id(-auto):排程版同一天跑,不能把早上那份有判讀的蓋掉
     # (29026 實測:cron 首跑覆蓋了對話產的 tw-market-20260902)。明給 report_id 就照給。
@@ -1382,3 +1107,357 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     # write_report prints the "moved to reports/sent/, reply now" line for both paths.
     return write_report(report_id, title or pack.title, out,
                         type=pack.type, report_type=pack.report_type, meta=meta)
+
+
+# ─── R9 W4:全形標點 ───────────────────────────────────────────────────────────
+
+_CJK = "㐀-鿿　-〿＀-￯"
+_FW_PUNCT = {",": "，", ":": "：", ";": "；"}
+# 數字裡的 , 與 :(1,234.5、20:30)與網址的 :// 不動,其餘一律轉
+_FW_SEP_RE = re.compile(r"(?<!\d),|,(?!\d)|(?<!\d):(?!//)|:(?!\d|//)|;")
+_FW_PAREN_RE = re.compile(r"\(([^()\n]*)\)")
+_HAS_CJK_RE = re.compile(f"[{_CJK}]")
+# code spans and bare links keep their punctuation (a `:` or `,` inside a URL is part of it)
+_CODE_SPAN_RE = re.compile(r"(`[^`\n]*`|https?://[^\s)）]+)")
+_VERBATIM_CTX = ("休市表出處",)
+
+
+def _fw(s):
+    """Half-width , : ; ( ) that touch Chinese → full-width (references/reports.md §1b W4).
+    Numbers (1,234.5), clock times (20:30), URLs and `code spans` are left alone. Deterministic
+    and idempotent — a conversion, never a refusal."""
+    if not isinstance(s, str) or not _HAS_CJK_RE.search(s):
+        return s
+    parts = _CODE_SPAN_RE.split(s)
+    for i in range(0, len(parts), 2):
+        p = re.sub(r"\s*([，：；])\s*", r"\1", _FW_SEP_RE.sub(lambda m: _FW_PUNCT[m.group(0)], parts[i]))
+        p = _FW_PAREN_RE.sub(lambda m: f"（{m.group(1)}）" if _HAS_CJK_RE.search(m.group(0)) or
+                             _HAS_CJK_RE.match(p[m.start() - 1:m.start()] or "x") else m.group(0), p)
+        parts[i] = p
+    return "".join(parts)
+
+
+def _verbatim(text_):
+    """Attribution lines a source's licence wants as written: never re-punctuated."""
+    return text_ in _data.PUBLIC_SOURCE_EN or text_ in _data.PUBLIC_SOURCE_EN.values() or text_.startswith("資料來源")
+
+
+def _fw_block(b):
+    """W4 over one block's own words. News titles are the source's words and stay as they are;
+    numbers, code and URLs are untouched."""
+    if not isinstance(b, dict):
+        return b
+    t = b.get("type")
+    out = dict(b)
+    for k in ("title", "caption", "text", "markdown"):
+        if isinstance(out.get(k), str) and t != "code":
+            out[k] = _fw(out[k])
+    if t == "kpi_row":
+        out["items"] = [dict(i, label=_fw(i["label"]), **({"delta": _fw(i["delta"])} if "delta" in i else {}))
+                        for i in out["items"]]
+    elif t == "table":
+        out["columns"] = [dict(c, label=_fw(c["label"])) for c in out["columns"]]
+        out["rows"] = [{k: _fw(v) for k, v in r.items()} for r in out["rows"]]
+    elif t == "footnote":
+        out["items"] = [i if _verbatim(i["text"]) else dict(i, text=_fw(i["text"])) for i in out["items"]]
+    elif t == "news":
+        out["items"] = [dict(i, **({"summary": _fw(i["summary"])} if "summary" in i else {})) for i in out["items"]]
+    elif t in ("line_chart", "bar_chart"):
+        if "series" in out:
+            out["series"] = [dict(x, name=_fw(x["name"])) for x in out["series"]]
+        if "items" in out:
+            out["items"] = [dict(x, label=_fw(x["label"])) for x in out["items"]]
+    if "reflines" in out:
+        out["reflines"] = [dict(r, label=_fw(r["label"])) for r in out["reflines"]]
+    return out
+
+
+# ─── R10:publish() 的自動檢查 ─────────────────────────────────────────────────
+
+LEAD_FIRST_MAX = 40
+LEAD_FIRST_NUMBERS = 2
+MAX_BLOCKS = 16
+# 同單位、同樣小數位數、相對差距落在 (0, 2%] = 抄錯。門檻用樣張校準:抓得到 +7.36% 對 +7.26%(1.4%);
+# 小數位數不同的是進位(46,948.7 對 46,948.72),整數多半是門檻(「淨賣超逾 150 億」對 −150.6 億、
+# 「回落到 70,000 口」對 −70,312 口),差距遠大於 2% 的是新算出來的比較——三種都放行。
+NUMBER_NEAR = 0.02
+_NUM_RE = re.compile(r"(?<![\w.])([+\-−]?)(\d[\d,]*(?:\.\d+)?)\s*(%|億|兆|萬張|口)?")
+_MD_RE = re.compile(r"[*_`#>\[\]]|\^[\w-]+")
+
+
+def _first_sentence(lead):
+    plain = _MD_RE.sub("", lead).strip()
+    return re.split(r"(?<=[。！？!?])", plain, maxsplit=1)[0].strip()
+
+
+def _check_lead(lead):
+    """R9 S1 / R10.1: the lead's first sentence stands on its own — it is the list summary,
+    the notification and the share card's description."""
+    first = _first_sentence(lead)
+    nums = [m.group(0) for m in _NUM_RE.finditer(first)]
+    words = _NUM_RE.sub("", first)
+    words = re.sub(rf"[^{_CJK}A-Za-z]|[，。：；、（）！？「」—]", "", words)
+    if len(first) > LEAD_FIRST_MAX:
+        raise ValueError(f"narrative['lead'] first sentence is {len(first)} chars, cap {LEAD_FIRST_MAX} "
+                         f"(over by {len(first) - LEAD_FIRST_MAX}): 「{first}」 — one conclusion up to the first 「。」, "
+                         "the figures go in the second sentence (references/reports.md §1b R9 S1)")
+    if len(nums) > LEAD_FIRST_NUMBERS:
+        raise ValueError(f"narrative['lead'] first sentence carries {len(nums)} numbers ({', '.join(nums)}), "
+                         f"at most {LEAD_FIRST_NUMBERS} (one comparison): move the rest after the first 「。」")
+    if len(words) < 2:
+        raise ValueError(f"narrative['lead'] first sentence is only figures: 「{first}」 — say what they mean")
+
+
+# 門檻字眼後面的數字是觀察位置,本來就該靠近現值(「跌破 845.0 萬張」對現值 848.1 萬張),不是抄錯
+# 「達／超過」不在表上:它們常是事實句(「買超達 211.9 億」),放行會讓抄錯漏網
+_THRESHOLD_BEFORE_RE = re.compile(r"(跌破|站上|站回|逾|低於|高於|回落到|回落至|降到|升到|突破|大於|小於|不到)\s*[^\d\s]{0,6}\s*$")
+
+
+def _numbers(text_, thresholds=True):
+    """[(abs value, decimals shown, unit, as written)] for the figures R10 compares: the ones
+    written with a decimal point — a copied figure keeps the pack's precision. With
+    `thresholds=False` a figure right after a threshold word (跌破 / 逾 / 高於 …) is left out."""
+    out = []
+    text_ = text_ or ""
+    for m in _NUM_RE.finditer(text_):
+        sign, digits, unit = m.group(1), m.group(2), m.group(3) or ""
+        if "." not in digits:
+            continue
+        if not thresholds and _THRESHOLD_BEFORE_RE.search(text_[max(0, m.start() - 12):m.start()]):
+            continue
+        try:
+            v = float(digits.replace(",", ""))
+        except ValueError:
+            continue
+        dec = len(digits.split(".")[1]) if "." in digits else 0
+        out.append((v, dec, unit, m.group(0).strip()))
+    return out
+
+
+def _check_numbers(pack, narrative, watch_block):
+    """R10.2: a figure that is almost — but not exactly, nor by rounding — one the pack
+    printed is a mis-copy (ETH +7.36% against describe()'s +7.26%). A figure far from every
+    pack figure is a new comparison and passes."""
+    ctx = [(v, dec, unit, raw, label) for label, val in pack.context.items() if isinstance(val, str)
+           for v, dec, unit, raw in _numbers(val)]
+    texts = dict(narrative)
+    if watch_block:
+        # 只有「現在值」是抄自 describe() 的;「門檻」是 agent 設的觀察位置
+        texts["watch"] = " ".join(r["now"] for r in watch_block["rows"])
+    for key, body in texts.items():
+        for v, dec, unit, raw in _numbers(body, thresholds=False):
+            same = [c for c in ctx if c[2] == unit and c[1] == dec]
+            if any(c[0] == v for c in same):
+                continue
+            near = [c for c in same if c[0] and 0 < abs(v - c[0]) / c[0] <= NUMBER_NEAR]
+            if near:
+                c = min(near, key=lambda c: abs(v - c[0]))
+                raise ValueError(f"narrative[{key!r}] quotes {raw} but describe() has {c[3]} ({c[4]}), "
+                                 f"{abs(v - c[0]) / c[0] * 100:.2f}% apart — a copying slip: quote the "
+                                 "describe() figure, or write a comparison that is clearly a new number")
+
+
+# ─── R5:新聞格 ────────────────────────────────────────────────────────────────
+
+NEWS_SUMMARY_MAX = 40
+NEWS_ITEM_FIELDS = ("title", "title_orig", "title_orig_lang", "summary", "tag", "sources", "published_at", "symbols",
+                    "channel")
+_LANG_TAG_RE = re.compile(r"(?=.{2,8}$)[a-z]{2,3}(-[A-Za-z0-9]{2,4})?")
+NEWS_TAGS = ("pos", "neg", "neutral")
+NEWS_MAX_AGE_DAYS = 7
+NEWS_TITLE_SIMILAR = 0.85
+# 建議語氣與操作字眼(R3):摘要只陳述事件,不評價、不指示
+_NEWS_ADVICE_RE = re.compile(r"可望|值得布局|值得關注|建議(買|賣|進場|加碼|減碼)|(宜|應|可以?|趁\S{0,4})(進場|加碼|減碼|布局)"
+                             r"|好時機|抄底|目標價|逢低|逢高")
+_URL_BAD_RE = re.compile(r"[\x00-\x20\x7f]")
+_CHART_TYPES = ("candlestick", "line_chart", "bar_chart", "table", "news", "heatmap", "histogram", "scatter", "box")
+
+
+def _news_describe(news):
+    c = news["candidates"]
+    why = {"denied": "無 Blave 資料權限,鉅亨候選省略", "failed": "鉅亨新聞抓取失敗", None: "上一個收盤之後"}[news.get("state")]
+    head = (f"  新聞候選 {len(c)} 則(鉅亨授權,{why}):"
+            if news["market"] == "tw" else "  新聞候選:加密沒有授權新聞源,新聞格只能靠你上網蒐集(見 references/reports.md §1b News)")
+    lines = [head]
+    for it in c[:15]:
+        t = datetime.fromtimestamp(it["published_at"], TPE).strftime("%m-%d %H:%M")
+        lines.append(f"    - [{it['sources'][0]['name']} {t}] {it['title']}")
+    return lines
+
+
+def _check_url(url, where):
+    from urllib.parse import urlsplit
+    if not isinstance(url, str) or not 1 <= len(url) <= 500 or _URL_BAD_RE.search(url) or "\\" in url \
+            or not url.isascii():
+        raise ValueError(f"{where}: url must be 1–500 ASCII characters with no spaces or backslashes "
+                         f"(an international domain in its xn-- form, a non-ASCII path percent-encoded first), got {url!r}")
+    try:
+        u = urlsplit(url)
+        host = u.hostname
+    except ValueError:
+        host, u = None, None
+    if u is None or u.scheme != "https" or not host or u.username is not None or u.password is not None:
+        raise ValueError(f"{where}: url must be https://host/… with no user name or password, got {url!r}")
+    return url
+
+
+def _news_time(v, where):
+    if isinstance(v, bool):
+        raise ValueError(f"{where}: published_at must be unix seconds or 'YYYY-MM-DD HH:MM' (Taipei)")
+    if isinstance(v, (int, float)):
+        if not math.isfinite(v):
+            raise ValueError(f"{where}: published_at must be a finite unix time, got {v!r}")
+        ts = int(v)
+    else:
+        try:
+            t = pd.Timestamp(str(v))
+        except (ValueError, TypeError):
+            raise ValueError(f"{where}: published_at must be unix seconds or 'YYYY-MM-DD HH:MM' (Taipei), got {v!r}")
+        ts = int((t.tz_localize(TPE) if t.tzinfo is None else t).timestamp())
+    now = _now_tpe().timestamp()
+    if ts > now + 600:
+        raise ValueError(f"{where}: published_at is in the future")
+    if ts < now - NEWS_MAX_AGE_DAYS * 86400:
+        raise ValueError(f"{where}: published_at is more than {NEWS_MAX_AGE_DAYS} days old — "
+                         "a brief takes the news since the last close")
+    return ts
+
+
+def _norm_title(t):
+    return re.sub(rf"[^{_CJK}A-Za-z0-9]", "", t).lower()
+
+
+def _news_items(items, n):
+    """narrative['news'] → contract items, or ValueError naming the item and the rule."""
+    from difflib import SequenceMatcher
+    if not isinstance(items, (list, tuple)):
+        raise ValueError("narrative['news'] is a list of items {title, summary, tag, sources, published_at}")
+    if not 1 <= len(items) <= n:
+        raise ValueError(f"narrative['news'] has {len(items)} item(s), needs 1–{n}: pick the ones that name "
+                         "this report's instruments first, then the wide-impact ones (references/reports.md §1b R5)")
+    out, urls, titles = [], {}, []
+    for i, it in enumerate(items):
+        w = f"narrative['news'][{i}]"
+        if not isinstance(it, dict):
+            raise ValueError(f"{w} must be a dict")
+        extra = sorted(set(it) - set(NEWS_ITEM_FIELDS))
+        if extra:
+            raise ValueError(f"{w} has unknown field(s) {extra}; fields: {', '.join(NEWS_ITEM_FIELDS)}")
+        title = str(it.get("title") or "").strip()
+        if not 1 <= len(title) <= 120:
+            raise ValueError(f"{w}.title must be 1–120 characters (a foreign title: your translation here, "
+                             "the original in title_orig)")
+        item = {"title": title}
+        if it.get("title_orig"):
+            orig = str(it["title_orig"]).strip()
+            if len(orig) > 120:
+                raise ValueError(f"{w}.title_orig is {len(orig)} characters, cap 120")
+            item["title_orig"] = orig
+            lang_ = it.get("title_orig_lang")
+            if not isinstance(lang_, str) or not _LANG_TAG_RE.fullmatch(lang_):
+                raise ValueError(f"{w}.title_orig_lang must name the original's language as a short BCP-47 tag "
+                                 f"(en, ja, ko, zh-Hans), got {lang_!r}")
+            item["title_orig_lang"] = lang_
+        elif it.get("title_orig_lang"):
+            raise ValueError(f"{w}.title_orig_lang without title_orig: it labels the original title's language")
+        summary = _fw(str(it.get("summary") or "").strip())
+        if not summary:
+            raise ValueError(f"{w}.summary is empty — one sentence in your own words, ≤{NEWS_SUMMARY_MAX}")
+        if len(summary) > NEWS_SUMMARY_MAX:
+            raise ValueError(f"{w}.summary is {len(summary)} chars, cap {NEWS_SUMMARY_MAX} "
+                             f"(over by {len(summary) - NEWS_SUMMARY_MAX}) — one sentence")
+        if re.search(r"[。！？!?]", summary.rstrip("。！？!? ")):
+            raise ValueError(f"{w}.summary is more than one sentence: 「{summary}」")
+        if _NEWS_ADVICE_RE.search(summary):
+            raise ValueError(f"{w}.summary 「{summary}」 reads as advice ({_NEWS_ADVICE_RE.search(summary).group(0)}): "
+                             "state what happened, never what to do (references/reports.md §1b R3)")
+        item["summary"] = summary
+        tag = it.get("tag")
+        if tag not in NEWS_TAGS:
+            raise ValueError(f"{w}.tag must be one of {', '.join(NEWS_TAGS)} — pos / neg = good or bad news for "
+                             "the instrument it names; no single instrument named, or unsure → neutral")
+        item["tag"] = tag
+        channel = it.get("channel", "web")
+        if channel not in ("web", "licensed"):
+            raise ValueError(f"{w}.channel must be 'web' (you found it) or 'licensed' (a describe() candidate)")
+        srcs = it.get("sources")
+        if not isinstance(srcs, (list, tuple)) or not 1 <= len(srcs) <= 3:
+            raise ValueError(f"{w}.sources must be 1–3 (名稱, https 連結) pairs")
+        clean = []
+        for j, sv in enumerate(srcs):
+            name, url = (sv.get("name"), sv.get("url")) if isinstance(sv, dict) else (tuple(sv) + (None,))[:2]
+            name = str(name or "").strip()
+            if not 1 <= len(name) <= 40:
+                raise ValueError(f"{w}.sources[{j}] name must be 1–40 characters")
+            s = {"name": name}
+            if url:
+                s["url"] = _check_url(url, f"{w}.sources[{j}]")
+                if s["url"] in urls:
+                    raise ValueError(f"{w} repeats {s['url']} (already item {urls[s['url']]}): one event, one item — "
+                                     "merge the reports into one item's sources")
+                urls[s["url"]] = i
+            clean.append(s)
+        if channel == "web" and not any("url" in s for s in clean):
+            raise ValueError(f"{w} has no https link: an item you found on the web carries the link to the "
+                             "article it summarises (a licensed describe() candidate is channel='licensed')")
+        item["sources"] = clean
+        item["channel"] = channel
+        item["published_at"] = _news_time(it.get("published_at"), w)
+        if it.get("symbols"):
+            if not isinstance(it["symbols"], (list, tuple)):
+                raise ValueError(f"{w}.symbols must be a list, e.g. ['2330']")
+            syms = [str(x).strip() for x in it["symbols"]]
+            if len(syms) > 5 or any(not 1 <= len(x) <= 16 for x in syms):
+                raise ValueError(f"{w}.symbols: at most 5, each 1–16 characters")
+            item["symbols"] = syms
+        nt = _norm_title(title)
+        for k, other in enumerate(titles):
+            if nt and other and (nt in other or other in nt or SequenceMatcher(None, nt, other).ratio() >= NEWS_TITLE_SIMILAR):
+                raise ValueError(f"{w} looks like item {k} again (「{title}」): one event, one item — "
+                                 "put both outlets in that item's sources")
+        titles.append(nt)
+        out.append(item)
+    return out
+
+
+def _news_title(items):
+    names = list(dict.fromkeys(s["name"] for it in items for s in it["sources"]))
+    if len(names) >= 3:
+        return f"綜合 {len(names)} 家"
+    return "、".join(names)
+
+
+def _news_block(pack, news_in, given, narrated):
+    """(news block or None, footnote item or None) for this publish."""
+    if pack.news is None:
+        if given:
+            raise ValueError("this pack has no news slot: add the `news` brick to the recipe, or leave 'news' out")
+        return None, None
+    n = pack.news["n"]
+    if given and news_in:
+        items = _news_items(news_in, n)
+        at = _now_tpe().strftime("%H:%M")
+        return ({"type": "news", "title": _news_title(items), "items": items,
+                 "caption": "上一個收盤之後;點名本報告標的的優先,其次是影響面大的"},
+                ("news", f"新聞為 agent 於 {at} 蒐集整理；標籤依事件性質分類，不是股價預測。"))
+    cands = pack.news["candidates"] if not given else []
+    if cands:
+        items = sorted(cands, key=lambda x: -x["published_at"])[:n]
+        return ({"type": "news", "title": _news_title(items), "items": items,
+                 "caption": "上一個收盤之後的授權新聞標題,依發布時間排列"},
+                ("news", "新聞為鉅亨網授權標題，依發布時間排列，未經整理、不帶判讀。"))
+    if narrated:
+        return None, ("news", "這份沒有附新聞：這次沒有可用的新聞來源。")
+    return None, None
+
+
+def _lead_chart_first(pairs, name):
+    """R9 N2: the chart the lead argues from goes right after the KPI row."""
+    idx = next((i for i, (o, b) in enumerate(pairs) if o == name and b.get("type") in _CHART_TYPES), None)
+    if idx is None:
+        have = list(dict.fromkeys(o for o, b in pairs if b.get("type") in _CHART_TYPES and o != "?"))
+        raise ValueError(f"lead_chart={name!r} lays out no chart in this pack; one of: {', '.join(have)}")
+    pair = pairs.pop(idx)
+    k = next((i for i, (_, b) in enumerate(pairs) if b.get("type") == "kpi_row"), -1)
+    pairs.insert(k + 1, pair)
+    return pairs

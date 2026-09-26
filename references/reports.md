@@ -124,31 +124,51 @@ the footnote in contract shape, and hands back a `Pack` with the figures it used
 (`pack.context`) and the narrative slots left for you (`pack.slots`). You add the
 judgement; you do not touch the blocks.
 
+A template is a **recipe** — a list of **bricks** with parameters (`RECIPES` in
+`lib/report_templates.py`, the bricks in `lib/report_bricks.py`). A brick fetches one piece,
+lays out 0–2 blocks with a conclusion `title` and a basis `caption`, adds KPI cells and
+`describe()` lines, and takes the same two roads for missing data as before
+(`pack.missing` / `pack.notes`). A request no template covers is built from the nearest
+recipe, not by hand (§1b › Custom recipes).
+
 ```python
 from lib.report_templates import tw_market_brief, tw_close_brief, crypto_market_brief, symbol_brief, publish
 
 pack = tw_market_brief()                 # today (Taipei); headers come from the workspace .env
 print(pack.describe())                   # every figure the pack carries, one line each — cite these
 #   [tw-market-20260902] 台股大盤晨報          ← title has no date: the list row shows when it was made
-#     加權指數: 46,948.72(+1.78%),前 20 日高 46,512.35
-#     收盤位置: 高於前 20 日高 0.94%,高於 60 日均 3.21%   ← the same sentence the block titles carry
-#     三大法人: 外資 +267.0 億(昨 -144.0 億)、投信 +131.0 億、自營 +163.0 億、合計 +561.0 億
+#     加權指數: 46,948.72(+1.78%)，前 20 日高 46,512.35
+#     收盤位置: 高於前 20 日高 0.94%，高於 60 日均 3.21%   ← the same sentence the block titles carry
+#     三大法人: 外資 +267.0 億（昨 -144.0 億）、投信 +131.0 億、自營 +163.0 億、合計 +561.0 億
 #     外資 20 日均: -40.2 億                              ← the caption's baseline; cite it, don't recompute
-#     外資期貨淨多單: +12,300 口(+2,500 口,09-01)
+#     外資期貨淨多單: +12,300 口（+2,500 口，09-01）
+#     新聞候選 9 則(鉅亨授權,上一個收盤之後):             ← news slot candidates, see News below
+#       - [Anue鉅亨 09-01 20:10] …
 #     缺少:  - 台指期 2026-09-01 無夜盤 bar(…)      ← a missing series is a missing block, never a guess
-#     narrative slots: lead≤600(一個可證偽的主張), read≤300(3–5 條,每條一個數字加它的基準;或 3–5 個 ### 子標), watch=表格 2–3 列(條件/門檻/現在值), risk≤100(一句可證偽的)
+#     narrative slots: lead≤600(…), read≤300(…), watch=表格 2–3 列(條件/門檻/現在值), risk≤100(…), news=≤5 則{…}
+#     lead_chart(選填,論點圖排第一): price_chart / tw_institutional / movers / …
 
 publish(pack, narrative={
-    "lead":   "外資現貨與期貨同日轉多,量能放大六成——這是資金回補,不是空窗反彈。",
-    "read":   "- 外資買超 267 億,20 日均是 −40 億。\n- 投信連三買,今日 131 億。\n- 成交值 9,000 億,較前 10 日均高六成。",
+    "lead":   "外資現貨與期貨同日轉多，這是資金回補，不是空窗反彈。量能比 5 日均多六成。",
+    "read":   "- **外資轉買**：買超 267 億，20 日均是賣超 40 億。\n- **投信連三買**：今日 131 億。\n- **量能放大**：成交值較 5 日均高六成。",
     "watch":  [("外資期貨淨多單", "回落到 1 萬口以下", "+12,300 口"),      # 2–3 列,不是散文
                ("外資現貨買超", "轉為連兩日淨賣超", "+267.0 億")],
     "risk":   "外資連兩日淨賣超逾 150 億,這份解讀作廢。",
 })
 ```
 
-- `crypto_market_brief(symbols=("BTC", "ETH", "SOL"))` — price / returns table, rebased
-  performance, BTC funding, the market-wide Blave indicators, today's macro events.
+- `crypto_market_brief(symbols=("BTC", "ETH", "SOL"))` — KPI row (BTC, ETH, 24h liquidations,
+  BTC funding, 市場方向, 頂尖交易員曝險), then: price / 1·7·30-day returns of `symbols` plus the
+  five largest coins by market cap; the derivatives table (OI 24h change, funding, Binance
+  account long/short ratio — directions, never coloured as gains); 24h liquidations by exchange;
+  the day's movers (Binance's 100 most-traded perps, top / bottom 5, + Blave 異常漲跌); the
+  market-wide Blave indicators; the **news slot** (below); today's macro events.
+- `tw_market_brief()` — KPI row (加權指數, 成交值, 外資, 融資, 外資期貨, 夜盤), then: the TAIEX
+  chart (last 45 days drawn; the 60-day mean and prior-20 high still come from 90 days), 三大法人,
+  the 10 largest 成交值 of the last session, 外資期貨淨部位, the day's 重大訊息, the **news slot**,
+  and today's macro events with 除權息. 融資 is a KPI only (its chart stays in 收盤報告). The
+  成交值 table and 重大訊息 come straight from TWSE open data and exist on the desktop only
+  (`BLAVE_AGENT_LOCAL=1`); on a cloud machine they are absent and named in `pack.notes`.
 - `symbol_brief("2330")` — Taiwan stock: close / volume / 外資買賣超 (張), recent highs / lows and
   moving averages (table 「近期高低與均線」: 前 20 日高/低 = the high / low of the 20 sessions before
   today, today excluded, so only today's bar can sit beyond it; 5/20/60 日均);
@@ -271,7 +291,149 @@ publish(pack, narrative={
     盤後 report is not this case: use `tw_close_brief`.
 
   A research report or a report the user describes in their own words (their own 週報) has
-  no template by design — build it, do not ask.
+  no template by design — build it from bricks (§1b › Custom recipes), do not ask.
+
+### News — the one slot you fill with sources
+
+`tw_market_brief` and `crypto_market_brief` carry a `news` slot. `describe()` lists the licensed
+candidates (Taiwan: 鉅亨 headlines since the last close, needs Blave data access; crypto: none —
+there is no licensed crypto source). What you add depends on where you run:
+
+| Where | What you do |
+|---|---|
+| Desktop app (`BLAVE_AGENT_LOCAL=1`) with the browser tools mounted (`mcp__blave_browser__*`, `references/browser.md`) | Search and read with the built-in browser (any model). For headlines: `browser_open` a news list page → `browser_read(part="links")` → `browser_read(part="meta")` on the few you keep for the published time → `part="section"` only for the paragraph a figure comes from. Do not read whole articles. |
+| Desktop app without those tools (older app, or the browser switched off) | Use the engine's own web search if it has one; otherwise fill the slot from the `describe()` candidates only, or leave it out. |
+| Cloud machine, Claude model | The web search tool (billed per search from the user's credit, `references/billing.md`). |
+| Cloud machine, DeepSeek | No web search: the `describe()` candidates only (Taiwan), none for crypto. |
+| Scheduled run (no agent) | Nothing to do: `publish(pack)` lays out the licensed headlines as they are (title, source, time — no summary, no tag); a crypto brief has none. |
+
+When no channel gives you anything, publish without `news`: the footnote says there was no
+source. Never tell the user to switch model or buy anything for it.
+
+```python
+publish(pack, narrative={
+    "lead": "...",
+    "news": [
+        {"title": "台積電 9 月營收年增 38%", "summary": "月營收創單月新高，年增近四成。", "tag": "pos",
+         "sources": [("經濟日報", "https://money.udn.com/..."), ("鉅亨", "https://news.cnyes.com/...")],
+         "published_at": "2026-09-25 18:30", "symbols": ["2330"]},
+        {"title": "聯準會理事：降息仍需更多數據", "title_orig": "Fed governor says more data needed", "title_orig_lang": "en",
+         "summary": "理事認為通膨尚未穩定回落。", "tag": "neutral",
+         "sources": [("Reuters", "https://www.reuters.com/...")], "published_at": 1790330400},
+    ],
+})
+```
+
+- **Collect** only news inside the report's window (a morning brief: since the last close).
+  Never use a source whose terms forbid AI agents or AI summaries (e.g. The Block), and never
+  exchange / broker back offices or banks.
+- **De-duplicate**: one event is one item; several outlets reporting it go into that item's
+  `sources` (1–3), `published_at` = the earliest. `publish()` refuses a repeated link and a
+  near-identical title.
+- **Pick** ≤5: items naming this report's instruments first, then wide-impact ones (macro,
+  regulation, exchange events), single small names last.
+- **Title**: a Chinese headline as written; a foreign one → your Chinese translation in
+  `title`, the original in `title_orig` and its language in `title_orig_lang` (`en`, `ja`…).
+  One translation only.
+- **Summary**: one sentence, ≤40 characters, your own words — never the article's sentence.
+  A number in it must be written in the article itself: not from a search snippet, not from
+  memory (search snippets and memory have both been wrong, see `references/lib.md` › Macro
+  facts). Unsure of a number → open the article and check; cannot open it → write the summary
+  without the number. No advice wording (可望, 值得布局, 建議加碼, 目標價…; a fact like 「外資加碼台積電」 is fine) — `publish()`
+  refuses it.
+- **Tag** answers one question: is this news good or bad **for the instrument it names**?
+  `pos` / `neg`; no single instrument named, or unsure → `neutral`. It is not a price call.
+  Tags are display only: never add them up into a direction, never use one as a `watch`
+  threshold or the `risk` signal, and they never become a `lib.data` series.
+- **Links**: every item you found on the web carries at least one `https://` link to the
+  article. A `describe()` candidate you keep is `channel="licensed"` and may have no link.
+- **The narrative does not repeat headlines.** `read` may cite one item as the cause of a
+  figure, and then writes the figure too.
+- The block title is set for you (「綜合 N 家」 with ≥3 outlets, else the outlet names), and
+  so is the footnote line (「新聞為 agent 於 HH:MM 蒐集整理；標籤依事件性質分類，不是股價預測」).
+- The 重大訊息 block (desktop) is built by the brick, tagged by the announcement's clause only.
+
+### Rules for writing on the pack (R1–R10)
+
+- **R1 Every number comes from a brick.** Each figure in the data blocks and in the narrative
+  can be found in `describe()`. A figure no brick has → add or swap a brick; never fetch,
+  compute or take it from a search result yourself. The one exception is a news summary, whose
+  number is quoted from the linked article (R5).
+- **R2 Conclusion first.** In chat, `lead` states one falsifiable claim (R9 S1). A scheduled
+  run's only conclusion is the `kpi_row` title the brick computes; never script a judgement.
+- **R3 No price levels to trade at, no advice** (the rules above). News tags are not added up
+  and are not thresholds; summaries carry no advice wording; no heading or label says 關鍵價位,
+  支撐 or 壓力.
+- **R4 At most 8 data bricks** (the KPI row not counted), **at most 16 blocks**. Extra
+  information goes into a scannable table, not a paragraph. To cut, drop the bricks the lead
+  does not use first; never the ones the user asked for. `check_recipe` refuses a 9th brick.
+- **R5 News**: collect, de-duplicate, summarise, tag — the section above.
+- **R6 Missing data is said once.** The footnote names what is missing; in the reply, once, under
+  the data-access rule. Never withhold a report because Blave data is missing. No news channel
+  → no news block, one footnote line, no advice to change model.
+- **R7 Building a custom report**: start from the nearest recipe. Decide the lead's claim first,
+  then keep only bricks that serve it — each brick is cited in `read`, holds a `watch` row, or
+  was asked for by the user. One fact, one brick; one price chart per report. A report with the
+  user's positions (`performance`) never also carries news bricks — make two reports.
+- **R8 Ask one question first** (on top of the cases below) when: the user wants something no
+  brick or source has (US single-stock news, ETF flows, token unlocks) — 「目前沒有這塊資料，先不放它，其他照做，可以嗎？」;
+  a brief and the user's positions in one report — 「放持倉的話這份就不能分享，要拆成兩份嗎？」;
+  more than 8 bricks — list the ones you would drop; a **scheduled** report with news —
+  「排程時沒有 AI 幫忙整理，只會放鉅亨的標題（要綁卡；加密沒有），這樣可以嗎？」.
+- **R9 Readable and shareable**:
+  - S1 the lead's first sentence (up to the first 「。」) stands alone: ≤40 characters, at most
+    one comparison (≤2 numbers), never only figures — it is the list summary, the notification
+    and the share card's description. The rest of the figures go in sentence two.
+  - W1 a number has one home: the narrative writes new comparisons or the "so what", never a
+    figure the KPI row or a caption already shows.
+  - W2 each `read` item opens with its conclusion in bold, the figure after a colon:
+    「- **賣壓沒有量**：成交值只有 5 日均的八成。」
+  - W3 a Blave indicator's first appearance carries its plain reading — the bricks put it in the
+    KPI delta (「0 = 歷史平均」, 「正 = 淨多」); do not add an explanation paragraph.
+  - W4 Chinese uses full-width punctuation. `publish()` converts `,` `:` `;` `()` next to Chinese
+    in your narrative (numbers, times, links and `code` stay as they are); write it right anyway.
+  - W5 「推翻這份解讀的訊號」 (`risk`) is the signature section: always one falsifiable line.
+  - N1 chart titles are conclusions the bricks write (「融資 928.0 萬張，比 20 日均多 17.4 萬張」);
+    captions hold the basis and the baseline.
+  - N2 the chart your lead argues from goes first: `narrative["lead_chart"] = "<brick>"`
+    (`describe()` lists the bricks with a chart).
+  - N3 per sentence at most 2 numbers and 1 baseline; big numbers in 萬 / 億 / 兆; ratios as
+    「幾成」「幾倍」.
+- **R10 Automatic checks** — `publish()` refuses, naming what is wrong and by how much:
+  the lead's first sentence (R9 S1); a figure written with decimals that is within 2% of a
+  `describe()` figure of the same unit and precision but not equal (「ETH +7.36%」 against
+  +7.26% — a copying slip; a rounded figure or a clearly new comparison passes); the news
+  items (count, one sentence ≤40, https link, duplicates, window).
+
+### Custom recipes
+
+A report the user describes in their own words is built from bricks, starting from the nearest
+recipe — never as hand-written blocks with numbers you fetched yourself (R1).
+
+```python
+from lib.report_templates import RECIPES, build, publish, check_recipe
+from lib.report_bricks import BRICKS          # the catalogue; each brick's docstring lists its parameters
+recipe = {"id": "btc-derivs", "title": "BTC 衍生品晨報", "lookback_days": 90,
+          "kpi": ["price_chart", "liquidation"],                      # KPI order, the first is the focus
+          "bricks": [["price_chart", {"symbol": "BTC"}], ["derivs_table", {"symbols": ["BTC", "ETH"]}],
+                     ["liquidation", {"hours": 24}], ["levels_table", {}]]}
+pack = build(check_recipe(recipe))
+print(pack.describe())
+publish(pack, narrative={...})
+```
+
+The id must not start with a built-in prefix (`tw-market`, `tw-close`, `crypto-market`,
+`symbol-`). To schedule it, save the recipe next to a fixed `run.py` (§8):
+
+```python
+from lib.report_templates import save_recipe, RECIPE_RUN_PY
+from lib.report import register_schedule
+save_recipe("btc-derivs", recipe)            # report_jobs/btc-derivs/recipe.json (checked)
+register_schedule("btc-derivs", "BTC 衍生品晨報", "<the user's words>", "30 8 * * *", "每天 08:30",
+                  RECIPE_RUN_PY)
+```
+
+A scheduled recipe with `news` lays out licensed headlines only (R8: say so when you register).
 
 **Running a script that imports `lib`.** Python puts the directory of the script it runs on
 `sys.path`, not the current directory, so `python3 tmp/make_brief.py` fails with
@@ -303,7 +465,7 @@ reads `blave_api_key` / `blave_secret_key` from the workspace `.env` (see `refer
 
 | Field | Type | Notes |
 |---|---|---|
-| `schema_version` | string | `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — a `candlestick` under `"1.1"`, or either flag under `"1.1"` / `"1.2"`, is refused. |
+| `schema_version` | string | `"1.4"` when the report has a `news` block, any block with `private`, or a footnote item with `url`; otherwise `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — anything under a version older than the one that introduced it is refused. |
 | `id` | string | `[A-Za-z0-9_-]{1,64}`, equal to the file name stem. |
 | `type` | string | `performance` / `morning` / `research` — report list grouping. **Hard rule: any report that carries the user's account assets, positions, orders or live strategy P&L is `performance`, even when it is shaped as a morning brief or a close recap.** `research` and `morning` reports can be shared publicly by the user and `performance` cannot, so a wrong `type` publishes account numbers. |
 | `title` | string | 1–200 chars. |
@@ -317,6 +479,9 @@ Whole document ≤ **2 MB** (bigger is refused, not truncated).
 A block is `{"type": "<key>", ...props}`. The array is flat — blocks never nest.
 **An unknown type or an unknown prop is refused (400), not ignored**: a typo in a
 field name loses the report, so copy names from this page rather than inventing them.
+Any block but `meta` and `footnote` may carry `private: true` (1.4): the public share page
+drops that block whole. A block that shows the user's holdings, cost prices or account
+figures is `private` — and such a report is `performance` anyway (§2).
 Strings are ≤200 chars unless stated. `?` marks optional.
 
 Most visual blocks (`kpi_row`, all charts, `metric_table`, `table`, `code`, `image`)
@@ -349,7 +514,8 @@ caption.
 | `table` | `columns[{key, label, align}]`, `rows` | ≤20 columns; `key` = `\w{1,40}` — letters of any script (Chinese included), digits, underscore; no spaces or punctuation — unique within the table; `label` ≤40; `align` = `left`/`right`/`center` (numeric columns are always `right`); optional `format` = `text` (default) / `number` / `percent` / `date` — **it gates the up/down colouring, see below the table**. ≤500 rows, values string / number / `null` (→ em-dash). **A row key not declared in `columns` is refused.** |
 | `text` | `markdown` | ≤20000 chars, subset in §4. Optional `variant: "lead"` — the opening conclusion card: **at most one, and it must be the block right after `meta`**. |
 | `quote` | `text` | ≤500; optional `cite` ≤120. Pull quote — only a sentence already made in the body, ≤2 per report. |
-| `footnote` | `items[{id, text}]` | 1–30 items; `id` = `[A-Za-z0-9_-]{1,32}`, unique in the report; `text` ≤1000. **At most one footnote block, and it must be the last block.** |
+| `footnote` | `items[{id, text}]` | 1–30 items; `id` = `[A-Za-z0-9_-]{1,32}`, unique in the report; `text` ≤1000; optional `url` (1.4) — the source's page, same link rules as `news`. **At most one footnote block, and it must be the last block.** |
+| `news` | `items[{title, sources, published_at}]` | 1.4. 1–10 items (a brief uses ≤5). `title` ≤120 — the displayed title: a Chinese headline as written, a foreign one as your translation; `title_orig?` ≤120 — the original foreign headline, only when `title` is a translation, with `title_orig_lang` — its language as a short BCP-47 tag (`en`, `ja`, `zh-Hans`, ≤8; required with `title_orig`, refused without it); `summary?` ≤80 (the rule is one sentence ≤40, your own words); `tag?` = `pos`/`neg`/`neutral` (shown as 正面消息 / 負面消息 / 中性); `sources` 1–3 `{name ≤40, url?}`; `channel?` = `licensed` / `web`; `published_at` unix seconds; `symbols?` ≤5 × ≤16. **Links:** `url` is `https://`, names a host, carries no user name or password, ≤500 characters, no spaces — anything else is refused with the field path. Built by `publish()` from the news slot (§1b › News); do not write one by hand. The public share page shows it as it is. |
 | `code` | `lang`, `source` | `lang` = `[A-Za-z0-9+#_.-]{1,20}` (`text` when there is no language); `source` ≤20000. |
 | `divider` | — | No props. **Neither de-duplicate them nor judge whether one belongs**: the web omits a divider whenever the next thing already opens itself (a block `title`, a markdown H2/H3, the head or foot of the report, a `footnote`, a second adjacent divider). Drop one wherever a break reads right; **a divider you inserted that does not appear is the expected outcome, not a bug** — do not go hunting for it. |
 | `callout` | `tone`, `text` | `tone` = `warning`/`info`; `text` ≤2000; optional `title` ≤120. |
@@ -847,7 +1013,8 @@ remove_schedule("perf-4h")   # when the user asks you in chat to delete one
 ```
 workspace/report_jobs/<id>/
   job.json      the registration — exists = registered, deleted = cancelled
-  run.py        your script
+  run.py        your script (a custom recipe's is the fixed `RECIPE_RUN_PY`)
+  recipe.json   a custom recipe's bricks (`save_recipe`, §1b › Custom recipes); none for other jobs
   runs.jsonl    written by the runtime: one line per run, read-only for you
   run.log       stdout + stderr of the last run, read-only for you
 ```
