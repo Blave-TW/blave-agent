@@ -292,4 +292,179 @@ for bad, why, must in (({"lead": "x" * 601}, "lead 超過 600", "cap 600 (over b
         T.publish(pack, dict(NAR, **bad) if set(bad) <= set(T.SLOTS) else bad); check(False, f"publish 拒絕{why}")
     except ValueError as e:
         check(must in str(e), f"publish 拒絕{why},訊息帶「{must}」")
+
+# ── 沒有 Blave 資料權限(電腦版 BLAVE_DATA_ACCESS=0):降級不失敗 ──
+# Wei 2026-09-26:沒綁卡、沒登入也要能用;缺 Blave 資料照樣 publish,缺的寫在尾註。
+PAID = ("fetch_twstock_price", "fetch_funding_rate", "fetch_market_direction", "fetch_capital_shortage", "fetch_top_trader_exposure",
+        "fetch_liquidation", "fetch_whale_hunter", "fetch_taker_intensity", "fetch_economic_calendar",
+        "fetch_twmarket_index", "fetch_twstock_ohlcv", "fetch_twstock_institutional", "fetch_twstock_holidays")
+saved = {k: getattr(d, k) for k in PAID}
+gate = lambda *a, **k: d._check_data_access()          # 真的那道閘:env=0 就 raise DataAccessError
+for k in PAID:
+    setattr(d, k, gate)
+free_tw = pd.DataFrame({"Open": tw["Open"].values, "High": tw["High"].values, "Low": tw["Low"].values,
+                        "Close": tw["Close"].values, "Volume": tw["Volume"].values * 1000}, index=tw.index.tz_localize(None))
+free_tw.attrs["source"] = "TWSE"
+d.fetch_twstock_price = lambda sid, s, e, h: free_tw
+os.environ["BLAVE_DATA_ACCESS"] = "0"
+os.environ["BLAVE_DATA_ACCESS_WHY"] = "no_card"
+
+def no_access_case(name, pack, names, nar, lang="zh"):
+    path = T.publish(pack, nar, lang=lang)
+    doc = json.load(open(path)); b = doc["blocks"]; types = [x["type"] for x in b]
+    foots = [x for x in b if x["type"] == "footnote"]
+    item = [i for i in foots[0]["items"] if i["id"] == "blave"] if foots else []
+    txt = item[0]["text"] if item else ""
+    expect = ("No Blave data in this report" if lang == "en" else "這份沒有 Blave 資料") 
+    check(pack.skip is None and os.path.exists(path) and types[-1] == "footnote" and types.count("footnote") == 1
+          and all(math.isfinite(v) for v in walk_numbers(doc))
+          and [m["name"] for m in pack.missing] == list(names) and all(m["reason"] == "no_data_access" for m in pack.missing)
+          and len(item) == 1 and txt.startswith(expect) and all(n in txt for n in names) and "14" in txt
+          and "無 Blave 資料權限(no_data_access)" in pack.describe() and "不要因此不產報告" in pack.describe(),
+          f"{name}(access=0,{'有判讀' if nar else '純數據包'},{lang}):仍 publish、missing={list(names)}、尾註列缺的資料;describe 叫 agent 照樣發")
+    return b
+
+crypto_missing = ("BTC 資金費率", "市場方向", "資金稀缺", "頂尖交易員曝險", "今日總經事件")
+p = T.crypto_market_brief("2026-09-02", H)
+b = no_access_case("加密市場晨報", p, crypto_missing, NAR)
+no_access_case("加密市場晨報", p, crypto_missing, None)
+check([x["type"] for x in b if x["type"] in ("line_chart", "table")] and not any("Blave 市場指標" in (x.get("title") or "") for x in b)
+      and [i["label"] for x in b if x["type"] == "kpi_row" for i in x["items"]] == ["BTC", "ETH"],
+      "加密市場晨報(access=0):價格、相對表現、報價表照出(Binance 公開 K 線),Blave 指標的 KPI 與圖都不在")
+foots = [x for x in b if x["type"] == "footnote"][0]["items"]
+check([i["id"] for i in foots].count("blave") == 1 and len([i for i in p.blocks[-1]["items"] if i["id"] == "blave"]) == 0,
+      "同一個 pack 發兩次:尾註那行只有一行,pack 自己的 footnote 沒被改到")
+no_access_case("BTC 晨報", T.symbol_brief("BTC", "2026-09-02", H), ("資金費率", "爆倉指標", "巨鯨警報", "多空力道"), NAR)
+p = T.symbol_brief("2330", "2026-09-02", H)
+b = no_access_case("2330 晨報", p, ("外資買賣超",), NAR)
+ks = [x for x in b if x["type"] == "candlestick"]
+vol = [i for x in b if x["type"] == "kpi_row" for i in x["items"] if i["label"] == "成交量"][0]["value"]
+src_txt = [i["text"] for i in b[-1]["items"] if i["id"] == "src"][0]
+check(len(ks) == 1 and len(ks[0]["candles"]) == 60 and ks[0]["candles"][-1][0] == T._ts(tw.index[-1]) and vol == T._num(float(tw["Volume"].iloc[-1]))
+      and any(i["text"] == d._TW_PUBLIC_SOURCE_ZH for i in b[-1]["items"]) and "TWSE 未還原價" not in src_txt,
+      "2330 晨報(access=0):日 K 改走免費日線(股→張、台北時區同 ohlcv 路徑),尾註帶交易所顯名(lib.data 常數),src 行不再說 TWSE")
+b = no_access_case("2330 晨報", T.symbol_brief("2330", "2026-09-02", H), ("外資買賣超",), None, lang="en")
+check(any(i["text"] == d._TW_PUBLIC_SOURCE_EN for i in b[-1]["items"]) and not any(i["text"] == d._TW_PUBLIC_SOURCE_ZH for i in b[-1]["items"]),
+      "lang=en:顯名換成英文常數")
+src_txt = [i["text"] for x in b if x["type"] == "footnote" for i in x["items"] if i["id"] == "src"]
+bb = json.load(open(T.publish(T.symbol_brief("BTC", "2026-09-02", H), None)))["blocks"]
+src_btc = [i["text"] for i in bb[-1]["items"] if i["id"] == "src"][0]
+check("資金費率" not in src_btc and "巨鯨" not in src_btc and "Binance USDT 永續日 K" in src_btc and "前 20 日高/低" in src_btc,
+      "BTC 晨報(access=0):src 尾註不描述已跳過的 Blave 系列")
+src_cr = [i["text"] for i in foots if i["id"] == "src"][0]
+check(src_cr == "價格:Binance USDT 永續日 K。", "加密市場晨報(access=0):src 尾註只剩價格那句")
+for fn, why in ((lambda: T.tw_market_brief("2026-09-02", H), "台股大盤晨報"), (lambda: T.tw_close_brief("2026-09-01", H), "台股收盤報告")):
+    p = fn()
+    check(bool(p.skip) and "加權指數" in p.skip and "no_data_access" not in p.skip and T.publish(p, NAR) is None and T.publish(p) is None
+          and "不發佈" in p.describe(), f"{why}(access=0、非電腦版):不准走免費路徑 → skip 而不是 traceback(句子不帶內部代碼),publish 回 None")
+# 電腦版(BLAVE_AGENT_LOCAL=1):兩份 TAIEX 報告改走 TWSE / TAIFEX 免費路徑,不再 skip;夜盤、休市表沒有免費路徑 → missing。
+MKT = ("fetch_twmarket_turnover", "fetch_twmarket_institutional", "fetch_twmarket_margin", "fetch_twfutures_institutional", "fetch_twfutures_ohlcv")
+saved_mkt = {k: getattr(d, k) for k in MKT}
+for k in MKT:
+    setattr(d, k, gate)
+def _src(df, s):
+    df = df.copy(); df.attrs["source"] = s; return df
+pub = {"fetch_twmarket_index_public": lambda s, e: _src(saved["fetch_twmarket_index"](s, e, H), "TWSE"),
+       "fetch_twmarket_turnover_public": lambda s, e: _src(saved_mkt["fetch_twmarket_turnover"](s, e, H), "TWSE"),
+       "fetch_twmarket_institutional_public": lambda s, e: _src(saved_mkt["fetch_twmarket_institutional"](s, e, H), "TWSE"),
+       "fetch_twmarket_margin_public": lambda s, e: _src(saved_mkt["fetch_twmarket_margin"](s, e, H), "TWSE"),
+       "fetch_twfutures_institutional_public": lambda fid, s, e: _src(saved_mkt["fetch_twfutures_institutional"](fid, s, e, H), "TAIFEX")}
+saved_pub = {k: getattr(d, k) for k in pub}
+for k, fn in pub.items():
+    setattr(d, k, fn)
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+asked = {}
+for k in ("fetch_twmarket_index_public", "fetch_twmarket_institutional_public", "fetch_twmarket_margin_public"):
+    setattr(d, k, (lambda k, f: lambda s, e: (asked.__setitem__(k, s), f(s, e))[1])(k, pub[k]))
+p = T.tw_market_brief("2026-09-02", H)
+check(asked == {"fetch_twmarket_index_public": "2026-06-04", "fetch_twmarket_institutional_public": "2026-07-19",
+                "fetch_twmarket_margin_public": "2026-07-19"} and "60 日均" in p.context,
+      f"回看:指數固定 90 日(60 日均算得出),逐日打的法人/融資只抓 45 日 — {asked}")
+for k, fn in pub.items():
+    setattr(d, k, fn)
+for why, fn, miss in (("台股大盤晨報", lambda: T.tw_market_brief("2026-09-02", H), ["台指期夜盤", "今日總經事件"]),
+                      ("台股收盤報告", lambda: T.tw_close_brief("2026-09-01", H), [])):
+    p = fn()
+    b = json.load(open(T.publish(p, NAR)))["blocks"]
+    items = {i["id"]: i["text"] for i in b[-1]["items"]}
+    labels = [i["label"] for x in b if x["type"] == "kpi_row" for i in x["items"]]
+    check(p.skip is None and [m["name"] for m in p.missing] == miss
+          and {"加權指數", "成交值", "外資買賣超", "融資餘額", "外資期貨淨多單"} <= set(labels)
+          and items.get("src_twse") == d._TWSE_SOURCE_ZH and items.get("src_taifex") == d._TAIFEX_SOURCE_ZH
+          and "本機直接取自交易所" in items["src"] and "經 Blave API" not in items["src"] and ("blave" in items) == bool(miss)
+          and (why != "台股收盤報告" or any("休市表無法取得(沒有 Blave 資料權限)" in n for n in p.notes)),
+          f"{why}(access=0、電腦版):走 TWSE/TAIFEX 照樣 publish,尾註帶兩所顯名、不說經 Blave,missing={miss}(休市表只進 notes,不叫人綁卡)")
+    en = {i["id"]: i["text"] for i in json.load(open(T.publish(p, NAR, lang="en")))["blocks"][-1]["items"]}
+    check(en["src_twse"] == d._TWSE_SOURCE_EN and en["src_taifex"] == d._TAIFEX_SOURCE_EN, f"{why} lang=en:兩所顯名換成英文")
+d.fetch_twmarket_margin_public = lambda s, e: (_ for _ in ()).throw(ConnectionError("twse down"))
+p = T.tw_market_brief("2026-09-02", H)
+check(p.skip is None and "融資餘額" not in [m["name"] for m in p.missing] and any("融資餘額 免費資料抓取失敗(ConnectionError" in n for n in p.notes)
+      and "融資餘額" not in p.context, "免費融資抓不到:進 notes、不進 missing(不是權限問題),其餘照出")
+d.fetch_twmarket_index_public = lambda s, e: (_ for _ in ()).throw(ConnectionError("twse down"))
+try:
+    T.tw_close_brief("2026-09-01", H); check(False, "免費指數抓不到:丟真正錯誤")
+except ValueError as e:
+    check("加權指數免費資料抓不到(ConnectionError" in str(e) and isinstance(e.__cause__, ConnectionError),
+          "免費指數抓不到:丟真正錯誤,不 skip、不叫人綁卡")
+os.environ.pop("BLAVE_AGENT_LOCAL")
+for k, fn in {**saved_mkt, **saved_pub}.items():
+    setattr(d, k, fn)
+# 非權限的錯誤(網路)不是 missing:落 notes,尾註不把它算成「沒 Blave 資料」。
+d.fetch_market_direction = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("boom"))
+p = T.crypto_market_brief("2026-09-02", H)
+check("市場方向" not in [m["name"] for m in p.missing] and any("市場方向 抓取失敗(ConnectionError)" in n for n in p.notes),
+      "access=0 下付費 fetch 丟 ConnectionError:進 notes 不進 missing")
+d.fetch_market_direction = gate
+# B1(稽核):免費日線真的壞(交易所 / FinMind 連不上)時走真實鏈路 — _twstock_daily 退到 Blave、閘門丟
+# DataAccessError 但帶 cause → 範本丟真正的錯誤,不 skip、不講綁卡。
+d.fetch_twstock_price = saved["fetch_twstock_price"]   # 真的那支:走 _twstock_daily 的來源鏈
+real_free, real_cache = d._fetch_twstock_daily_free, d._CACHE_DIR
+d._fetch_twstock_daily_free = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("twse.com.tw unreachable"))
+d._CACHE_DIR = __import__("pathlib").Path(tempfile.mkdtemp(prefix="rpt-cache-"))
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+try:
+    T.symbol_brief("2330", "2026-09-02", H); check(False, "免費日線壞掉:丟真正錯誤")
+except ValueError as e:
+    check("免費日線抓不到(ConnectionError" in str(e) and "綁卡" not in str(e) and isinstance(e.__cause__, ConnectionError),
+          f"免費日線壞掉(真實鏈路、不 stub fetch_twstock_price):丟真正錯誤而不是「沒 Blave 權限」— {str(e)[:60]}")
+except Exception as e:
+    check(False, f"免費日線壞掉:預期 ValueError,得到 {type(e).__name__}: {str(e)[:80]}")
+os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "blave"     # 強制走 Blave:第二次 DataAccessError 沒 cause,仍是真的無權限
+p = T.symbol_brief("2330", "2026-09-02", H)
+check(bool(p.skip) and "日 K" in p.skip, "BLAVE_TWSTOCK_DAILY_SOURCE=blave 強制走 Blave:沒有免費鏈,仍是無權限 skip")
+os.environ.pop("BLAVE_TWSTOCK_DAILY_SOURCE"); os.environ.pop("BLAVE_AGENT_LOCAL")
+d._fetch_twstock_daily_free, d._CACHE_DIR = real_free, real_cache
+d.fetch_twstock_price = lambda sid, s, e, h: free_tw
+os.environ["BLAVE_DATA_ACCESS_WHY"] = "signed_out"
+p = T.crypto_market_brief("2026-09-02", H)
+doc = json.load(open(T.publish(p, NAR)))
+txt = [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"]
+check(all(m["reason"] == "signed_out" for m in p.missing) and "登入" in txt and "signed_out" in p.describe(),
+      "signed_out:missing reason=signed_out,尾註才提登入")
+os.environ["BLAVE_DATA_ACCESS_WHY"] = "no_balance"
+doc = json.load(open(T.publish(T.crypto_market_brief("2026-09-02", H), NAR)))
+txt = [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"]
+skip = T.tw_market_brief("2026-09-02", H).skip
+check("綁卡" not in txt and "儲值" in txt and "綁卡" not in skip and "儲值" in skip, "no_balance:已綁卡的人不被叫去綁卡(尾註與 skip 同一句)")
+os.environ["BLAVE_DATA_ACCESS_WHY"] = "unknown"
+doc = json.load(open(T.publish(T.crypto_market_brief("2026-09-02", H), NAR)))
+txt = [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"]
+check("綁卡" not in txt and "登入" not in txt and "讀不到資料狀態" in txt, "unknown:不叫人綁卡也不叫人登入,講讀不到資料狀態")
+os.environ["BLAVE_DATA_ACCESS_WHY"] = "no_card"
+doc = json.load(open(T.publish(T.crypto_market_brief("2026-09-02", H), NAR)))
+check("綁卡送 14 天" in [i for i in doc["blocks"][-1]["items"] if i["id"] == "blave"][0]["text"], "no_card:才講綁卡")
+bare = free_tw.copy(); bare.attrs = {}
+d.fetch_twstock_price = lambda sid, s, e, h: bare
+try:
+    T.symbol_brief("2330", "2026-09-02", H); check(False, "免費日線沒帶 source:不產一份沒有顯名的報告")
+except ValueError as e:
+    check("資料來源" in str(e), "免費日線沒帶 source:不產一份沒有顯名的報告(顯名是授權條件)")
+d.fetch_twstock_price = lambda sid, s, e, h: free_tw
+os.environ.pop("BLAVE_DATA_ACCESS_WHY"); os.environ.pop("BLAVE_DATA_ACCESS")
+for k, fn in saved.items():
+    setattr(d, k, fn)
+p = T.crypto_market_brief("2026-09-02", H)
+check(not p.missing and not any(i["id"] == "blave" for i in json.load(open(T.publish(p, NAR)))["blocks"][-1]["items"]),
+      "有資料權限:missing 空、尾註沒有那行(雲端機一個位元組都不變)")
+
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

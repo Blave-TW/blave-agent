@@ -9,7 +9,7 @@ answers from tests/fixtures/tw_free_daily/ (one real fetch each, 2026-09-24).
     an empty month is a marker re-asked after a day (empty_marker_ttl_hours=24)
   - 2330 2023 factors from TWT49U = 1.00541 / 1.00468 / 1.00558 / 1.00523, applied forward;
     6488 2023 from exDailyQ; the event table is served from cache on the second call
-  - a second price call for the same month makes no request; the throttle spaces requests 1 s
+  - a second price call for the same month makes no request; the throttle spaces twse.com.tw requests 3 s, others 1 s
   - source order: exchange → FinMind free → Blave, and BLAVE_TWSTOCK_DAILY_SOURCE=blave
   - FEED_TIMING['twstock_price'] = 17:35 Taipei; align_feed hides today's bar before that
 
@@ -107,6 +107,7 @@ def fresh(down=()):
     D._CACHE_DIR = Path(tmp)
     D._TW_PUBLIC_SESSION = FakeSession(down)
     D._TW_PUBLIC_LIMITER = D._RateLimiter(1, 1.0)
+    D._TWSE_LIMITER = D._RateLimiter(1, 3.0)
     return D._TW_PUBLIC_SESSION
 
 
@@ -225,11 +226,16 @@ def t_adj_entry():
 def t_throttle():
     s = fresh()
     del sleeps[:]
-    D._tw_public_get(D._TWSE_STOCK_DAY_ALL, {"response": "open_data"})
+    D._tw_public_get(D._TPEX_MAINBOARD, {})
     D._tw_public_get(D._TPEX_MAINBOARD, {})
     check(len(s.calls) == 2 and len(sleeps) == 1 and 0 < sleeps[0] <= 1.0,
-          f"two back-to-back requests: the second waits the rest of the second (sleep {sleeps})")
-    check(s.calls[0][0] == D._TWSE_STOCK_DAY_ALL and "User-Agent" in D._TW_PUBLIC_HEADERS,
+          f"two back-to-back TPEx requests: the second waits the rest of the second (sleep {sleeps})")
+    del sleeps[:]
+    D._tw_public_get(D._TWSE_STOCK_DAY_ALL, {"response": "open_data"})
+    D._tw_public_get(D._TWSE_STOCK_DAY_ALL, {"response": "open_data"})
+    check(len(sleeps) == 1 and 2.0 < sleeps[0] <= 3.0,
+          f"two back-to-back TWSE requests: the second waits out 3 s — its own, slower bucket (sleep {sleeps})")
+    check(s.calls[0][0] == D._TPEX_MAINBOARD and "User-Agent" in D._TW_PUBLIC_HEADERS,
           "requests go through the shared session with the lib's User-Agent")
 
 

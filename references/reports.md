@@ -1,7 +1,7 @@
 # Reports — publishing a rendered report to the workspace
 
 A **report** is a JSON document this machine writes and the platform renders in the
-web workspace's Reports list (More › Reports): KPI rows, charts, tables and prose, laid out by the web from
+web workspace's Reports list (「報告」 in the sidebar): KPI rows, charts, tables and prose, laid out by the web from
 structured data — not a screenshot, not a wall of Telegram text. Use it for anything
 the user will want to read again later: a performance review, a morning briefing on a
 watchlist, an MCPT / research write-up, a post-mortem of a live week.
@@ -92,7 +92,7 @@ writes the pictures before the JSON, in the order the drop dir requires. For
 
 **The write is the finish line.** Once the JSON is in the drop dir the report is
 produced and you are done — tell the user it has been produced and will show up in the
-Reports list (More › Reports in the workspace) shortly, then move on. Shipping it is the runtime's job: a 2-minute
+Reports list (「報告」 in the workspace sidebar) shortly, then move on. Shipping it is the runtime's job: a 2-minute
 timer picks the file up, so in the normal case the report appears within about two
 minutes. **Do not poll `status()`, and do not wait for `pending` to turn into `sent`
 before replying** — every extra tool call there is the user paying to watch a timer that
@@ -168,6 +168,30 @@ publish(pack, narrative={
   *Taiwan market calendar*). A skip on a holiday-table day ends with that attribution
   (also `pack.context['休市表出處']`); a reply telling the user the market is closed carries
   it verbatim too.
+- **Missing Blave data is not a reason to withhold the report.** On a desktop without Blave data
+  access (not signed in, no card, no balance) every Blave-only series — 資金費率, 市場方向, 資金稀缺,
+  頂尖交易員曝險, 爆倉 / 巨鯨 / 多空力道, 外資買賣超, 今日總經事件 — raises `DataAccessError` inside the
+  template and is left out like any other absent series: no KPI, no chart, and `pack.missing`
+  lists each one with the reason (`signed_out` / `no_data_access`); `describe()` prints them.
+  The price half still builds — crypto klines come from Binance's public endpoint, a Taiwan
+  stock's daily bars from its own exchange (`fetch_twstock_price`, with the exchanges'
+  attribution line added to the footnote) — so you `publish()` as usual: it appends one footnote
+  line naming the missing series and what restores them (`lang="en"` for the English wording).
+  In the reply, name what is missing under the runtime's data-access rule — once per
+  conversation, no card, no directions; how to restore it is the footnote's job, not yours.
+  Do not build the missing blocks by hand and do not stop at "here is what is missing" with
+  no report written. The two TAIEX briefs (`tw_market_brief` / `tw_close_brief`) take their
+  index, turnover, 三大法人, 融資 and 期貨法人 straight from TWSE / TAIFEX on the desktop
+  (`BLAVE_AGENT_LOCAL=1`, in a chat turn and in a scheduled job alike) and add both exchanges'
+  attribution lines to the footnote; the TXF night session has no key-free path and goes to
+  `pack.missing`, and without the holiday table 收盤報告 judges the trading day by today's index
+  close. A scheduled job has no per-turn flag: `lib.data` reads "no access" from the Blave key the
+  app keeps in `.env` (absent, or rejected with 401 / 403 `ERR007` / `ERR005`). **On a cold cache
+  the first desktop TAIEX brief takes several minutes** (twse.com.tw is throttled to one request
+  every 3 s, 三大法人 and 融資 are one request per trading day): run it with a Bash `timeout` of
+  300000 or more, never in the background — an interrupted backfill is thrown away. Only on a machine
+  without that flag (cloud) does a TAIEX brief with no Blave data come back with `pack.skip` set
+  and `publish()` write nothing — tell the user that in one sentence.
 - Slots: `lead` becomes the opening card (one falsifiable claim, ≤600), `read` (判讀) the one
   section after the data (≤300), `watch` the 觀察重點 table, `risk` a warning callout before
   the footnote (≤100). **A cap is the target, not room to fill** — `publish` raises past it,
@@ -882,8 +906,11 @@ convenience):
   Python puts `report_jobs/<id>/` on `sys.path`, not the workspace: pin the workspace before
   any `from lib…` (`sys.path.insert(0, os.getcwd())`, §1b). Try it once the same way:
   `python3 report_jobs/<id>/run.py` from the workspace root.
-- Every `BLAVE_*` environment variable is stripped: no machine token, no direct API
-  call to the platform. A report reaches the platform only by landing in `reports/` —
+- Every `BLAVE_*` environment variable is stripped: no machine token, no direct API call to
+  the platform. On the desktop exactly three pass — `BLAVE_AGENT_LOCAL=1` and
+  `BLAVE_SCHEDULED_RUN=1` (the key-free TAIEX series and reading "no Blave access" from `.env`)
+  and `BLAVE_KLINE_SOURCE` (crypto klines from Binance, as in a chat turn) — plus the desktop
+  path variables (`BLAVE_AGENT_BASE` / `_WORKSPACE` / `_HOME` / `_STATE`) when set. A report reaches the platform only by landing in `reports/` —
   `write_report(...)` or a template `publish(pack)` (§1b), with pictures in the sidecar (§5).
 - Write nothing when there is nothing to report. Exit 0 with no new `reports/*.json` is
   recorded as `skipped`, which is the correct outcome for a signal-only job; a non-zero

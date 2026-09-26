@@ -59,16 +59,53 @@ def _kline_source():
     return os.environ.get('BLAVE_KLINE_SOURCE', 'blave').strip().lower()
 
 
-def _check_data_access():
+class DataAccessError(RuntimeError):
+    """No Blave data access this turn (BLAVE_DATA_ACCESS=0, or a scheduled desktop run whose `.env`
+    holds no working key). Its own type so a caller with a
+    public fallback (the report templates) can tell it from a fetch that failed."""
+
+
+def _check_data_access(headers=None):
     """Desktop shell sets BLAVE_DATA_ACCESS=0 when it withheld the Blave key this turn
     (no balance for the hourly fee / not signed in). Failing here, before any request,
     is what stops the agent from hunting for credentials after a low-level error —
-    a KeyError or 403 reads as a bug to fix, this reads as a fact. Unset or 1: no-op."""
+    a KeyError or 403 reads as a bug to fix, this reads as a fact. Unset or 1: no-op, except
+    that a scheduled desktop run with no key in `headers` fails the same way (_check_desktop_key)."""
     if os.environ.get('BLAVE_DATA_ACCESS') == '0':
-        raise RuntimeError(
-            'Blave data is not reachable on this desktop this turn (no balance for the '
-            'hourly fee / not signed in); stop here, do not look for credentials in .env, '
-            'the environment or elsewhere, and answer the user with what public klines allow.')
+        raise DataAccessError(_NO_ACCESS_MSG)
+    if headers is not None:
+        _check_desktop_key(headers)
+
+
+_NO_ACCESS_MSG = ('Blave data is not reachable on this desktop this turn (no balance for the '
+                  'hourly fee / not signed in); stop here, do not look for credentials in .env, '
+                  'the environment or elsewhere, and answer the user with what public klines allow.')
+
+
+def _daemon_on_desktop():
+    """A scheduled report job on the desktop: report_runner marks it BLAVE_SCHEDULED_RUN=1 next
+    to BLAVE_AGENT_LOCAL=1. Not inferred from BLAVE_DATA_ACCESS being absent — the shell leaves
+    that unset on a chat turn too when the user put their own key in `.env`."""
+    return os.environ.get('BLAVE_AGENT_LOCAL') == '1' and os.environ.get('BLAVE_SCHEDULED_RUN') == '1'
+
+
+def _check_desktop_key(headers):
+    """On the desktop the shell keeps workspace `.env` in step with the account — the Blave
+    key is there only while the account has data access — so an empty key is that state
+    file saying "no access", not a bug to chase. Scheduled runs have no per-turn flag and
+    read it here; nothing is sent."""
+    if _daemon_on_desktop() and not (headers or {}).get('api-key'):
+        raise DataAccessError(_NO_ACCESS_MSG)
+
+
+def _desktop_denied(r):
+    """Scheduled run on the desktop: the key in `.env` stopped working since the shell last
+    synced it (hour fee not chargeable ERR007, key revoked ERR005, 401). Same meaning as an
+    empty key. A chat turn keeps the raw 403 — its body carries what the user must be told."""
+    if not _daemon_on_desktop():
+        return
+    if r.status_code == 401 or (r.status_code == 403 and any(c in r.text for c in ('ERR007', 'ERR005'))):
+        raise DataAccessError(_NO_ACCESS_MSG)
 
 
 def _retry_get(url, max_retries=6, **kwargs):
@@ -85,8 +122,9 @@ def _retry_get(url, max_retries=6, **kwargs):
     A non-retried 4xx raises requests.HTTPError with the response body appended
     (truncated to 200 chars) — the 4xx bodies carry the only explanation there is.
     """
-    if url.startswith(BASE):  # BingX klines share this helper and stay public
-        _check_data_access()
+    blave = url.startswith(BASE)   # BingX klines share this helper and stay public
+    if blave:
+        _check_data_access(kwargs.get('headers') or {})
     for attempt in range(max_retries):
         try:
             r = requests.get(url, **kwargs)
@@ -98,6 +136,8 @@ def _retry_get(url, max_retries=6, **kwargs):
             time.sleep(wait)
             continue
         if r.status_code != 429 and r.status_code < 500:
+            if blave:
+                _desktop_denied(r)
             try:
                 r.raise_for_status()
             except requests.HTTPError as exc:
@@ -1579,7 +1619,7 @@ def _fetch_db_raw(dataset, symbol, schema, start, end, headers):
     """Fetch OHLCV — chunks fetched concurrently, chunk size by schema."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    _check_data_access()
+    _check_data_access(headers)
     s    = datetime.strptime(start, '%Y-%m-%d')
     e    = datetime.utcnow() if not end else datetime.strptime(end, '%Y-%m-%d')
     days = _DB_CHUNK_DAYS.get(schema, 30)
@@ -1679,6 +1719,9 @@ _TW_PUBLIC_SOURCE_ZH = '資料來源:臺灣證券交易所、證券櫃檯買賣�
 _TW_PUBLIC_SOURCE_EN = 'Source: Taiwan Stock Exchange, Taipei Exchange (Open Government Data License)'
 _TW_PUBLIC_HEADERS   = {'User-Agent': 'Mozilla/5.0 (compatible; blave-agent; +https://blave.org)'}
 _TW_PUBLIC_LIMITER   = _RateLimiter(1, 1.0)
+# twse.com.tw on its own, slower bucket: it blocks an IP at roughly one request a second (no
+# published number), and the IP it blocks is the user's home connection.
+_TWSE_LIMITER        = _RateLimiter(1, 3.0)
 _TW_PUBLIC_SESSION   = None
 _TW_DAILY_COLS       = ['Open', 'High', 'Low', 'Close', 'Volume']
 _TW_EXRIGHT_COLS     = ['stock_id', 'prev_close', 'ref_price']
@@ -1714,8 +1757,9 @@ def _tw_public_get(url, params, tries=3):
     """One throttled GET at an exchange site or FinMind. Timeouts, connection errors, 429
     and 5xx are retried twice with a short backoff; anything else raises — there is no
     per-user quota worth waiting on, and the caller has further sources to try."""
+    limiter = _TWSE_LIMITER if '.twse.com.tw/' in url else _TW_PUBLIC_LIMITER
     for attempt in range(tries):
-        _TW_PUBLIC_LIMITER.acquire()
+        limiter.acquire()
         try:
             r = _tw_public_session().get(url, params=params, headers=_TW_PUBLIC_HEADERS, timeout=30)
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
@@ -2019,15 +2063,24 @@ def _twstock_daily(stock_id, start, end, headers, adjust, blave_fn):
         well_formed = True
     except (TypeError, ValueError):
         well_formed = False
+    free_err = None
     if well_formed and _twstock_daily_source() != 'blave':
         try:
             df = _fetch_twstock_daily_free(stock_id, start, end, adjust)
             logging.info('%s daily bars served by %s', stock_id, df.attrs['source'])
             return df
         except Exception as e:
+            free_err = e
             print(f"  ⚠️  {stock_id} daily bars: free sources failed ({type(e).__name__}: "
                   f"{str(e)[:120]}) — trying Blave")
-    df = blave_fn()
+    try:
+        df = blave_fn()
+    except DataAccessError as e:
+        # Keep the free chain's failure on the gate error: without it a caller reads "no Blave
+        # access" where the true cause is the exchange / FinMind being down.
+        if free_err is not None:
+            raise e from free_err
+        raise
     df.attrs['source'] = 'Blave'
     logging.info('%s daily bars served by Blave', stock_id)
     return df
@@ -2419,7 +2472,7 @@ def _populate_broker_day_cache(stock_id, weekdays, headers,
     missing = [d for d in weekdays if not _broker_day_cache_path(stock_id, d.isoformat()).exists()]
     if not missing:
         return
-    _check_data_access()  # before the loop: its except Exception would swallow the raise
+    _check_data_access(headers)  # before the loop: its except Exception would swallow the raise
 
     chunks  = _make_date_chunks(missing, chunk_days)
     limiter = _RateLimiter(rate_limit, period)
@@ -2476,7 +2529,7 @@ def _populate_trader_day_cache(trader_id, weekdays, headers,
     missing = [d for d in weekdays if not _trader_day_cache_path(trader_id, d.isoformat()).exists()]
     if not missing:
         return
-    _check_data_access()  # before the loop: its except Exception would swallow the raise
+    _check_data_access(headers)  # before the loop: its except Exception would swallow the raise
 
     chunks  = _make_date_chunks(missing, chunk_days)
     limiter = _RateLimiter(rate_limit, period)
@@ -3458,7 +3511,7 @@ _TW_FUTURES_CHUNK_DAYS = {'1d': 3650, '1m': 28, '5m': 28, '15m': 28, '30m': 28, 
 
 
 def _fetch_twfutures_raw(symbol, schema, start, end, headers):
-    _check_data_access()
+    _check_data_access(headers)
     s = datetime.strptime(start, '%Y-%m-%d')
     e = datetime.utcnow() if not end else datetime.strptime(end, '%Y-%m-%d')
     chunk_days = _TW_FUTURES_CHUNK_DAYS.get(schema, 28)
@@ -3649,7 +3702,7 @@ def fetch_twfutures_ohlcv_batch(symbols, schema, start, end, headers, max_worker
 
 def _fetch_twfutures_bid_ask_vol_raw(start, end, headers):
     """Fetch raw bid/ask vol for a date range (≤31 days per chunk)."""
-    _check_data_access()
+    _check_data_access(headers)
     s = datetime.strptime(start, '%Y-%m-%d')
     e = datetime.utcnow() if not end else datetime.strptime(end, '%Y-%m-%d') + timedelta(days=1)
     chunk_days = 28
@@ -3756,6 +3809,220 @@ def fetch_twfutures_institutional(futures_id, start, end, headers):
         lambda s, e: _fetch_twfutures_institutional_raw(futures_id, s, e, headers),
         start, end,
     )
+
+
+# ── Market-wide series straight from TWSE / TAIFEX (free, no key) ────────────
+# The key-free twin of fetch_twmarket_* and fetch_twfutures_institutional, for the two TAIEX
+# report templates when this turn has no Blave data access. Same columns and units as the
+# Blave series. Runs only on the user's own computer (BLAVE_AGENT_LOCAL=1, the flag
+# _twstock_daily_source reads): a cloud machine never calls twse.com.tw / taifex.com.tw.
+_TWSE_INDEX_HIST = 'https://www.twse.com.tw/indicesReport/MI_5MINS_HIST'
+_TWSE_FMTQIK     = 'https://www.twse.com.tw/exchangeReport/FMTQIK'
+_TWSE_BFI82U     = 'https://www.twse.com.tw/fund/BFI82U'
+_TWSE_MI_MARGN   = 'https://www.twse.com.tw/exchangeReport/MI_MARGN'
+_TAIFEX_FUT_INST = 'https://www.taifex.com.tw/cht/3/futContractsDateDown'
+# Not "開放授權": BFI82U (三大法人) is not in the TWSE open-data set, so the line names the site
+# the four series are read from and claims no licence.
+_TWSE_SOURCE_ZH   = '資料來源:臺灣證券交易所網站'
+_TWSE_SOURCE_EN   = 'Source: Taiwan Stock Exchange website'
+_TAIFEX_SOURCE_ZH = '資料來源:臺灣期貨交易所(政府資料開放授權)'
+_TAIFEX_SOURCE_EN = 'Source: Taiwan Futures Exchange (Open Government Data License)'
+# zh attribution line → its en twin, for a report published with lang="en".
+PUBLIC_SOURCE_EN = {_TW_PUBLIC_SOURCE_ZH: _TW_PUBLIC_SOURCE_EN, _TWSE_SOURCE_ZH: _TWSE_SOURCE_EN,
+                    _TAIFEX_SOURCE_ZH: _TAIFEX_SOURCE_EN}
+# TWSE answers 200 + stat for everything: these mean "no rows for that date", anything
+# else non-OK (throttle, layout change) raises and is never cached as an empty day.
+_TWSE_NO_DATA = ('很抱歉', '沒有符合條件', '查詢日期大於', '查詢日期小於')
+_BFI82U_BUCKET = {'外資及陸資(不含外資自營商)': 'foreign', '外資自營商': 'dealer', '投信': 'investment_trust',
+                  '自營商(自行買賣)': 'dealer', '自營商(避險)': 'dealer', '合計': 'total'}
+_TAIFEX_INST_COMMODITY = {'TX': 'TXF', 'MTX': 'MXF', 'TMF': 'TMF'}
+_TAIFEX_INVESTOR = {'外資及陸資': 'foreign', '外資': 'foreign', '投信': 'investment_trust', '自營商': 'dealer'}
+
+
+def tw_market_public_allowed():
+    """True only on the desktop build (BLAVE_AGENT_LOCAL=1) — canon: key-free sources are
+    fetched on the user's own computer, never from a Blave-hosted machine."""
+    return os.environ.get('BLAVE_AGENT_LOCAL') == '1'
+
+
+def _tw_market_public_gate():
+    if not tw_market_public_allowed():
+        raise TwPublicUnavailable('key-free market data runs only on the desktop build (BLAVE_AGENT_LOCAL=1)')
+
+
+def _twse_json(url, params, label):
+    """TWSE JSON with stat OK → payload; a no-data stat → None; anything else raises."""
+    j = _tw_public_get(url, dict(params, response='json')).json()
+    stat = str(j.get('stat', ''))
+    if stat == 'OK':
+        return j
+    if any(m in stat for m in _TWSE_NO_DATA):
+        return None
+    raise TwPublicUnavailable(f'TWSE {label}: {stat[:60]}')
+
+
+def _in_window(df, s, e):
+    return df[(df.index >= pd.Timestamp(s)) & (df.index < pd.Timestamp(e))] if len(df) else df
+
+
+def _twse_monthly_raw(url, label, cols, parse, s, e):
+    rows = []
+    for ym in _tw_public_months(s, e):
+        j = _twse_json(url, {'date': f'{ym[:4]}{ym[5:7]}01'}, f'{label} {ym}')
+        for x in (j or {}).get('data') or []:
+            d = _roc_date(x[0])
+            if d.strftime('%Y-%m') == ym:   # TWSE sometimes pads a month with a neighbour's rows
+                rows.append((d, *parse(x)))
+    df = pd.DataFrame(rows, columns=['date'] + cols).set_index('date').sort_index()
+    return _in_window(df.astype(float), s, e)
+
+
+def _twse_daily_raw(url, label, params, cols, parse, s, e):
+    """One request per TWSE trading day in [s, e) — the days come from the public index
+    series, so holidays cost nothing. A no-data answer for an older trading day raises (it
+    would otherwise be cached as a hole for good); for today it means not published yet, and
+    so it does for yesterday within this month (MI_MARGN comes out in the evening and runs
+    past midnight on heavy days — the frame then ends a day earlier instead of failing)."""
+    now = datetime.now(_TPE)
+    today = now.strftime('%Y-%m-%d')
+    yesterday = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+    days = fetch_twmarket_index_public(s, (pd.Timestamp(e) - timedelta(days=1)).strftime('%Y-%m-%d')).index
+    rows = []
+    for d in days:
+        day = d.strftime('%Y-%m-%d')
+        j = _twse_json(url, params(day.replace('-', '')), f'{label} {day}')
+        if j is None:
+            if day < today and not (day >= yesterday and day[:7] == today[:7]):
+                raise TwPublicUnavailable(f'TWSE {label} {day}: no data for a trading day')
+            continue
+        rows.append((d, *parse(j)))
+    return pd.DataFrame(rows, columns=['date'] + cols).set_index('date').sort_index().astype(float)
+
+
+def _bfi82u_row(j):
+    net = {}
+    for x in j.get('data') or []:
+        bucket = _BFI82U_BUCKET.get(str(x[0]).strip())
+        if bucket:
+            net[bucket] = net.get(bucket, 0.0) + _tw_num(x[3])
+    if 'total' not in net:
+        raise TwPublicUnavailable('TWSE BFI82U: no 合計 row')
+    return tuple(net.get(c, float('nan')) for c in _TWMARKET_INST_COLUMNS)
+
+
+def _mi_margn_row(j):
+    # 信用交易統計: 項目, 買進, 賣出, 現金(券)償還, 前日餘額, 今日餘額 — 交易單位 = 張, 金額 仟元
+    tables = [t for t in j.get('tables') or [] if '信用交易統計' in str(t.get('title', ''))]
+    rows = {str(x[0]).strip(): x for x in (tables[0].get('data') if tables else [])}
+    try:
+        m, s, v = rows['融資(交易單位)'], rows['融券(交易單位)'], rows['融資金額(仟元)']
+    except KeyError:
+        raise TwPublicUnavailable('TWSE MI_MARGN: 信用交易統計 layout changed') from None
+    return _tw_num(m[5]), _tw_num(m[4]), _tw_num(v[5]) * 1000, _tw_num(s[5]), _tw_num(s[4])
+
+
+def _public_series(kind, raw, start, end, source):
+    _tw_market_public_gate()
+    df = _extend_cache_monthly('twmarket_public', {'kind': kind}, raw, start, end)
+    df.attrs['source'] = source
+    return df
+
+
+def fetch_twmarket_index_public(start, end):
+    """fetch_twmarket_index('TAIEX') from TWSE MI_5MINS_HIST, one month per request.
+    Desktop only (tw_market_public_allowed); attrs['source'] = 'TWSE'."""
+    raw = lambda s, e: _twse_monthly_raw(_TWSE_INDEX_HIST, 'MI_5MINS_HIST', ['Open', 'High', 'Low', 'Close'],
+                                         lambda x: tuple(_tw_num(v) for v in x[1:5]), s, e)
+    return _sanity_check_ohlc(_public_series('index', raw, start, end, 'TWSE'), 'TAIEX twse index')
+
+
+def fetch_twmarket_turnover_public(start, end):
+    """fetch_twmarket_turnover from TWSE FMTQIK (成交股數 / 成交金額 元 / 成交筆數)."""
+    raw = lambda s, e: _twse_monthly_raw(_TWSE_FMTQIK, 'FMTQIK', _TWMARKET_TURNOVER_COLUMNS,
+                                         lambda x: tuple(_tw_num(v) for v in x[1:4]), s, e)
+    return _public_series('turnover', raw, start, end, 'TWSE')
+
+
+def fetch_twmarket_institutional_public(start, end):
+    """fetch_twmarket_institutional from TWSE BFI82U, one trading day per request (net 元;
+    外資自營商 counted in dealer, as the Blave series)."""
+    raw = lambda s, e: _twse_daily_raw(_TWSE_BFI82U, 'BFI82U', lambda d: {'type': 'day', 'dayDate': d},
+                                       _TWMARKET_INST_COLUMNS, _bfi82u_row, s, e)
+    return _public_series('institutional', raw, start, end, 'TWSE')
+
+
+def fetch_twmarket_margin_public(start, end):
+    """fetch_twmarket_margin from TWSE MI_MARGN 信用交易統計, one trading day per request
+    (balances in 張, margin_balance_value 元 = 融資金額仟元 × 1,000)."""
+    raw = lambda s, e: _twse_daily_raw(_TWSE_MI_MARGN, 'MI_MARGN', lambda d: {'date': d, 'selectType': 'MS'},
+                                       _TWMARKET_MARGIN_COLUMNS, _mi_margn_row, s, e)
+    return _public_series('margin', raw, start, end, 'TWSE')
+
+
+def _tw_public_post(url, data, tries=3):
+    for attempt in range(tries):
+        _TW_PUBLIC_LIMITER.acquire()
+        try:
+            r = _tw_public_session().post(url, data=data, headers=_TW_PUBLIC_HEADERS, timeout=30)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if attempt == tries - 1:
+                raise
+            time.sleep(2 ** (attempt + 1))
+            continue
+        if (r.status_code == 429 or r.status_code >= 500) and attempt < tries - 1:
+            time.sleep(2 ** (attempt + 1))
+            continue
+        r.raise_for_status()
+        return r
+
+
+def _taifex_inst_raw(commodity, s, e):
+    """TAIFEX 三大法人-區分各期貨契約 CSV (cp950) for [s, e). TAIFEX answers an HTML page when
+    queryEndDate is past its last published day, so near today the end steps back a day at a
+    time (12 days covers the Lunar New Year closure); an HTML answer for a window that ended
+    longer ago than that is an error, not 'no data'."""
+    today = datetime.now(_TPE).date()
+    first = pd.Timestamp(s).date()
+    last = min(pd.Timestamp(e).date() - timedelta(days=1), today)
+    while last >= first:
+        r = _tw_public_post(_TAIFEX_FUT_INST, {'commodityId': commodity,
+                                               'queryStartDate': first.strftime('%Y/%m/%d'),
+                                               'queryEndDate': last.strftime('%Y/%m/%d')})
+        lines = [ln for ln in r.content.decode('cp950', errors='replace').splitlines() if ln.strip()]
+        if lines and '身份別' in lines[0]:
+            break
+        if (today - last).days >= 12:
+            raise TwPublicUnavailable(f'TAIFEX futContractsDateDown {commodity} {first}–{last}: not a CSV answer')
+        last -= timedelta(days=1)
+    else:
+        return pd.DataFrame(columns=_TWFUT_INST_COLUMNS)
+    rows = list(csv.reader(lines))
+    col = {name.strip(): i for i, name in enumerate(rows[0])}
+    need = ('日期', '身份別', '多方交易口數', '空方交易口數', '多方未平倉口數', '空方未平倉口數')
+    if any(n not in col for n in need):
+        raise TwPublicUnavailable(f'TAIFEX futContractsDateDown: unexpected header {sorted(col)[:6]}')
+    out = {}
+    for x in rows[1:]:
+        who = _TAIFEX_INVESTOR.get(x[col['身份別']].strip())
+        if who is None:
+            continue
+        rec = out.setdefault(pd.Timestamp(x[col['日期']].strip().replace('/', '-')), {})
+        lo, so = _tw_num(x[col['多方未平倉口數']]), _tw_num(x[col['空方未平倉口數']])
+        rec[f'{who}_net_oi'], rec[f'{who}_long_oi'], rec[f'{who}_short_oi'] = lo - so, lo, so
+        rec[f'{who}_net_deal'] = _tw_num(x[col['多方交易口數']]) - _tw_num(x[col['空方交易口數']])
+    df = pd.DataFrame.from_dict(out, orient='index').reindex(columns=_TWFUT_INST_COLUMNS).sort_index()
+    df.index.name = 'date'
+    return df.astype(float)
+
+
+def fetch_twfutures_institutional_public(futures_id, start, end):
+    """fetch_twfutures_institutional from TAIFEX futContractsDateDown (same 12 columns, 口數).
+    'TX'/'TXF', 'MTX'/'MXF', 'TMF' only; attrs['source'] = 'TAIFEX'."""
+    fid = _TWFUT_INST_ALIASES.get(futures_id.upper(), futures_id.upper())
+    commodity = _TAIFEX_INST_COMMODITY.get(fid)
+    if commodity is None:
+        raise TwPublicUnavailable(f'TAIFEX institutional: {futures_id} not supported on the key-free path')
+    return _public_series(f'futinst_{fid}', lambda s, e: _taifex_inst_raw(commodity, s, e), start, end, 'TAIFEX')
 
 
 def fetch_twfutures_bid_ask_vol(start, end, headers):

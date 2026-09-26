@@ -34,7 +34,13 @@ has landed) is never published: `publish()` prints why and returns None.
 Block shapes follow `references/reports.md` §3; the narrative rules are §7 (one
 claim in the lead, every number a cause or a comparison, write the other side).
 The pack never invents a value: a series the source does not have is a block
-that is not there, and `describe()` says so.
+that is not there, and `describe()` says so. A Blave-only series this machine has no
+data access to (desktop, `BLAVE_DATA_ACCESS=0`) is skipped the same way — listed in
+`pack.missing` with the reason, named in a footnote line `publish()` adds — and the
+rest of the report is published. The two TAIEX briefs take their index, turnover, 三大法人,
+融資 and 期貨法人 straight from TWSE / TAIFEX on the desktop instead (with the exchanges'
+attribution in the footnote); only where that key-free path is not allowed (a machine
+without BLAVE_AGENT_LOCAL=1) do they have nothing to publish and set `pack.skip`.
 """
 
 import math
@@ -80,7 +86,7 @@ class Pack:
     (label → display string) that `describe()` prints for you to cite."""
 
     def __init__(self, report_id, title, type_, report_type, blocks, context, notes=None,
-                 meta=None, skip=None):
+                 meta=None, skip=None, missing=None):
         self.report_id = report_id
         self.title = title
         self.type = type_
@@ -90,6 +96,9 @@ class Pack:
         self.notes = notes or []          # what is missing and why
         self.meta = meta or {}
         self.skip = skip                  # reason this pack must not be published, or None
+        # Blave-only series skipped for lack of data access: [{"name", "reason"}], reason
+        # "signed_out" / "no_data_access". publish() names them in the footnote.
+        self.missing = missing or []
         self.slots = dict(SLOTS)
 
     def describe(self):
@@ -99,6 +108,9 @@ class Pack:
         lines += [f"  {k}: {v}" for k, v in self.context.items()]
         if self.notes:
             lines += ["  缺少:"] + [f"    - {n}" for n in self.notes]
+        if self.missing:
+            lines.append(f"  無 Blave 資料權限({self.missing[0]['reason']}),省略:{_missing_names(self)}"
+                         " — 照樣 publish(尾註會列出),對話裡講一句就好;不要因此不產報告")
         slots = [f"{k}=表格 {WATCH_ROWS[0]}–{WATCH_ROWS[1]} 列(條件/門檻/現在值)" if cap is None
                  else f"{k}≤{cap}" + (f"({_SLOT_FORM[k]})" if k in _SLOT_FORM else "")
                  for k, (_, cap) in self.slots.items()]
@@ -367,12 +379,96 @@ def _today_tpe():
     return _now_tpe().strftime("%Y-%m-%d")
 
 
-def _calendar_rows(headers, notes, countries=None):
+def _access_reason():
+    """Why BLAVE_DATA_ACCESS=0 (shell's BLAVE_DATA_ACCESS_WHY): 'signed_out' or, for
+    no_card / no_balance / unknown, 'no_data_access'."""
+    return "signed_out" if os.environ.get("BLAVE_DATA_ACCESS_WHY") == "signed_out" else "no_data_access"
+
+
+def _no_access(name, notes, missing):
+    missing.append({"name": name, "reason": _access_reason()})
+    notes.append(f"{name} 無 Blave 資料權限,省略")
+
+
+def _missing_names(pack):
+    return "、".join(dict.fromkeys(m["name"] for m in pack.missing))
+
+
+def _skip_no_access(rid, title, report_type, what):
+    """A template whose base series is Blave-only and unreachable: nothing to publish.
+    The sentence carries no internal code: the agent relays it as is."""
+    skip = f"沒有 Blave 資料,{what}全部經 Blave,這份產不出來。{_access_fix('zh')}"
+    return Pack(rid, title, "morning", report_type, [], {}, [skip], skip=skip)
+
+
+_TW_MARKET_SERIES = "加權指數、成交值、三大法人、融資、期貨法人"
+
+
+def _tw_market(blave, public, name, notes, missing, used, empty_cols):
+    """One TAIEX-brief series: Blave first; with no Blave data access this turn, the key-free
+    TWSE / TAIFEX twin (desktop only) — `used` collects the exchanges that answered, for the
+    attribution line. A free-path failure is a note and an empty frame, never a stand-in."""
+    try:
+        return blave()
+    except _data.DataAccessError:
+        if not _data.tw_market_public_allowed():
+            _no_access(name, notes, missing)
+            return pd.DataFrame(columns=empty_cols)
+    try:
+        df = public()
+    except Exception as e:
+        notes.append(f"{name} 免費資料抓取失敗({type(e).__name__}: {str(e)[:80]})")
+        return pd.DataFrame(columns=empty_cols)
+    used.add(df.attrs["source"])
+    return df
+
+
+# 指數日 K 固定抓 90 個日曆日(約 60 個交易日):60 日均與 60 根 K 棒要這麼多;lookback_days 只管
+# 成交值、法人、融資、期貨法人——免費路徑上法人與融資一天一次請求,冷啟動成本跟著它走。
+_TW_INDEX_DAYS = 90
+
+
+def _tw_index_start(date, start):
+    return min(start, (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=_TW_INDEX_DAYS)).strftime("%Y-%m-%d"))
+
+
+def _tw_market_index(start, date, headers, used):
+    """TAIEX daily bars for the two briefs; DataAccessError only when the key-free path is not
+    allowed. A free-path failure raises the real error — never an 'add a card' skip for an
+    exchange outage."""
+    try:
+        return _data.fetch_twmarket_index(start, date, headers)
+    except _data.DataAccessError:
+        if not _data.tw_market_public_allowed():
+            raise
+    try:
+        df = _data.fetch_twmarket_index_public(start, date)
+    except Exception as e:
+        raise ValueError(f"加權指數免費資料抓不到({type(e).__name__}: {str(e)[:120]})") from e
+    used.add(df.attrs["source"])
+    return df
+
+
+def _tw_market_foot(foot, used):
+    """src line + the exchanges' attribution (a licence condition) when a free path served."""
+    via = "本機直接取自交易所" if used else "經 Blave API"
+    foot.append(("src", f"指數、成交值、三大法人、融資餘額:TWSE 日資料,{via}。三大法人為淨買賣超金額,融資餘額為張數。"
+                 "前 20 日高 = 不含當日的前 20 個交易日最高價;20/60 日均為含當日的簡單平均。"))
+    if "TWSE" in used:
+        foot.append(("src_twse", _data._TWSE_SOURCE_ZH))
+    if "TAIFEX" in used:
+        foot.append(("src_taifex", _data._TAIFEX_SOURCE_ZH))
+
+
+def _calendar_rows(headers, notes, missing, countries=None):
     """Today's priority-1/2 macro events as table rows; [] when none or unavailable."""
     today = _today_tpe()
     try:
         cal = _data.fetch_economic_calendar(headers, start=today, end=today, countries=countries,
                                             max_priority=2, limit=12)
+    except _data.DataAccessError:
+        _no_access("今日總經事件", notes, missing)
+        return []
     except Exception as e:  # the brief must not die on a side table
         notes.append(f"經濟日曆抓取失敗({type(e).__name__}),今日事件表省略")
         return []
@@ -397,11 +493,14 @@ _CAL_COLUMNS = [("time", "時間", "left"), ("country", "國家", "left"), ("sub
                 ("predict", "預期", "right"), ("last", "前值", "right")]
 
 
-def _indicator(fn, args, name, ctx, kpis, notes, fmt=lambda v: f"{v:+.2f}"):
+def _indicator(fn, args, name, ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.2f}"):
     """One Blave indicator series → context line + KPI; None (and a note) when the
     fetch fails or is empty. Indicator values are not P&L, so the KPI stays neutral."""
     try:
         df = fn(*args)
+    except _data.DataAccessError:
+        _no_access(name, notes, missing)
+        return None
     except Exception as e:
         notes.append(f"{name} 抓取失敗({type(e).__name__})")
         return None
@@ -417,16 +516,23 @@ def _indicator(fn, args, name, ctx, kpis, notes, fmt=lambda v: f"{v:+.2f}"):
 
 # ─── template 1: 台股大盤晨報 ─────────────────────────────────────────────────
 
-def tw_market_brief(date=None, headers=None, lookback_days=90):
+def tw_market_brief(date=None, headers=None, lookback_days=45):
     """台股大盤晨報 data pack for the morning of `date` (Taipei; default today).
     Reads the last trading day's close, turnover, 三大法人, 融資, 外資期貨淨多單 and
-    the TXF night session; charts cover `lookback_days`."""
+    the TXF night session. `lookback_days` covers the flow series (20-day means, margin and
+    futures charts); the index always spans 90 days for its 60-day mean and 60-bar chart."""
     headers = headers or headers_from_env()
     date = date or _today_tpe()
     start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    notes, ctx, blocks, kpis, foot = [], {}, [], [], []
+    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
+    rid, title = f"tw-market-{date.replace('-', '')}", "台股大盤晨報"
+    used = set()
 
-    idx = _clean_ohlc(_data.fetch_twmarket_index(start, date, headers))   # end=date 已由 fetch 端裁切
+    try:
+        idx = _clean_ohlc(_tw_market_index(_tw_index_start(date, start), date, headers, used))   # end=date 已由 fetch 端裁切
+    except _data.DataAccessError:
+        # 沒 Blave 權限、又不是電腦版(不准走免費路徑):沒有可以建的東西。
+        return _skip_no_access(rid, title, title, _TW_MARKET_SERIES)
     if len(idx) < 2:
         raise ValueError("加權指數資料不足兩個交易日,無法產晨報")
     close, prev = float(idx["Close"].iloc[-1]), float(idx["Close"].iloc[-2])
@@ -441,7 +547,9 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
     _where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
     kpis.append(kpi("加權指數", _num(close, 2), _tone(chg), delta=_pct(chg * 100)))
 
-    turn = _data.fetch_twmarket_turnover(start, date, headers)
+    turn = _tw_market(lambda: _data.fetch_twmarket_turnover(start, date, headers),
+                      lambda: _data.fetch_twmarket_turnover_public(start, date), "成交值", notes, missing, used,
+                      _data._TWMARKET_TURNOVER_COLUMNS)
     val, val_prev = _last_two(turn["value"]) if len(turn) else (None, None)
     if val is not None:
         avg5 = float(turn["value"].tail(5).mean())
@@ -451,7 +559,9 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
     else:
         notes.append("成交值無資料")
 
-    inst = _data.fetch_twmarket_institutional(start, date, headers)
+    inst = _tw_market(lambda: _data.fetch_twmarket_institutional(start, date, headers),
+                      lambda: _data.fetch_twmarket_institutional_public(start, date), "三大法人", notes, missing, used,
+                      _data._TWMARKET_INST_COLUMNS)
     blocks_inst = None
     inst_ok = len(inst) and all(_finite(inst[c].iloc[-1]) for c in ("foreign", "investment_trust", "dealer", "total"))
     if inst_ok:
@@ -476,7 +586,9 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
     else:
         notes.append("三大法人無資料")
 
-    mg = _data.fetch_twmarket_margin(start, date, headers)
+    mg = _tw_market(lambda: _data.fetch_twmarket_margin(start, date, headers),
+                    lambda: _data.fetch_twmarket_margin_public(start, date), "融資餘額", notes, missing, used,
+                    _data._TWMARKET_MARGIN_COLUMNS)
     m_last, m_prev = _last_two(mg["margin_balance"]) if len(mg) else (None, None)
     m20 = _mean(mg["margin_balance"], 20) if len(mg) else None
     if m_last is not None:
@@ -491,7 +603,9 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
 
     fut = None
     try:
-        fut = _data.fetch_twfutures_institutional("TX", start, date, headers)
+        fut = _tw_market(lambda: _data.fetch_twfutures_institutional("TX", start, date, headers),
+                         lambda: _data.fetch_twfutures_institutional_public("TX", start, date), "外資期貨淨多單",
+                         notes, missing, used, _data._TWFUT_INST_COLUMNS)
     except Exception as e:
         notes.append(f"期貨三大法人抓取失敗({type(e).__name__})")
     n20 = _mean(fut["foreign_net_oi"], 20) if fut is not None and len(fut) else None
@@ -506,7 +620,7 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
                         delta=_dated(_signed(d_f) + " 口", fut.index[-1], asof)))
         foot.append(("futinst", "期貨三大法人為 TAIFEX 盤後統計,晨報引用的是前一交易日收盤後的未平倉淨口數(多 − 空)。"))
 
-    night = _txf_night_session(headers, asof, notes)
+    night = _txf_night_session(headers, asof, notes, missing)
     if night:
         ctx["台指期夜盤"] = (f"{_num(night['close'])}({night['state']};{_pct(night['chg'] * 100)} "
                           f"vs 日盤收 {_num(night['day_close'])})")
@@ -540,26 +654,29 @@ def tw_market_brief(date=None, headers=None, lookback_days=90):
                         reflines=[(0.0, "0", False)])
         if lc:
             blocks.append(lc)
-    cal = _calendar_rows(headers, notes, countries=["US", "CN", "TW", "JP", "EU"])
+    cal = _calendar_rows(headers, notes, missing, countries=["US", "CN", "TW", "JP", "EU"])
     if cal:
         # 事件表沒有比較基準可寫:它是時刻表不是量測,caption 只留口徑(預期/前值已在欄位裡)。
         blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    foot += [("src", "指數、成交值、三大法人、融資餘額:TWSE 日資料,經 Blave API。三大法人為淨買賣超金額,融資餘額為張數。前 20 日高 = 不含當日的前 20 個交易日最高價;20/60 日均為含當日的簡單平均。")]
+    _tw_market_foot(foot, used)
     blocks.append(footnote(foot))
 
     # 標題不帶日期——報告清單列本身顯示建立時間(Wei 2026-09-02 拍板);id 仍帶日期,同日重跑才會覆蓋。
     # 資料日與晨報日不同才標 period,同日就省(印「09/02–09/02」沒有資訊)。
     meta = {} if asof == date else {"period": {"from": asof[5:].replace("-", "/"), "to": date[5:].replace("-", "/")}}
-    return Pack(f"tw-market-{date.replace('-', '')}", "台股大盤晨報", "morning", "台股大盤晨報", blocks, ctx, notes, meta=meta)
+    return Pack(rid, title, "morning", title, blocks, ctx, notes, meta=meta, missing=missing)
 
 
-def _txf_night_session(headers, day, notes):
+def _txf_night_session(headers, day, notes, missing):
     """Last TXF night session after trading day `day` (YYYY-MM-DD): close and change
     vs that day's day-session close, from 60m bars. None when the source has no
-    bars in the 15:00–05:00 window (or no bars at all)."""
+    bars in the 15:00–05:00 window (or no bars at all). Blave-only: no key-free path."""
     try:
         df = _data.fetch_twfutures_ohlcv("TXF", "60m", (pd.Timestamp(day) - timedelta(days=5)).strftime("%Y-%m-%d"),
                                          None, headers)
+    except _data.DataAccessError:
+        _no_access("台指期夜盤", notes, missing)
+        return None
     except Exception as e:
         notes.append(f"台指期 60m 抓取失敗({type(e).__name__}),夜盤省略")
         return None
@@ -603,6 +720,8 @@ def _on_day(frame, day):
 
 
 def _pending(label, frame, day, notes):
+    if (frame is None or not len(frame)) and any(n.startswith(label) for n in notes):
+        return   # already explained (fetch failed / no data access) — "not published yet" would contradict it
     last = frame.index[-1].strftime("%Y-%m-%d") if frame is not None and len(frame) else "無資料"
     notes.append(f"{label} {day} 尚未公布(資料源最新為 {last}),本報告不列,不拿前一日的數字充當今日")
 
@@ -621,7 +740,7 @@ def _closure(day, headers):
     return label, table.attrs.get("source_zh") or table.attrs.get("source")
 
 
-def tw_close_brief(date=None, headers=None, lookback_days=90):
+def tw_close_brief(date=None, headers=None, lookback_days=45):
     """台股收盤報告 data pack for trading day `date` (Taipei; default today): the day's
     TAIEX close, turnover, 三大法人, 融資 and 外資期貨淨多單. The night session is not part
     of it. A series that has not published `date` yet is left out and named in
@@ -637,15 +756,25 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
     date = _data._taipei_date(date or _today_tpe()).strftime("%Y-%m-%d")
     start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     rid, title = f"tw-close-{date.replace('-', '')}", "台股收盤報告"
-    notes, ctx, blocks, kpis, foot = [], {}, [], [], []
+    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
+    used = set()
 
-    trading = _data.is_tw_trading_day(date, headers)
-    idx = _clean_ohlc(_data.fetch_twmarket_index(start, date, headers))
+    try:
+        idx = _clean_ohlc(_tw_market_index(_tw_index_start(date, start), date, headers, used))
+    except _data.DataAccessError:
+        return _skip_no_access(rid, title, title, _TW_MARKET_SERIES)
     if len(idx) < 2:
         raise ValueError("加權指數資料不足兩個交易日,無法產收盤報告")
+    try:
+        trading = _data.is_tw_trading_day(date, headers)
+    except _data.DataAccessError:
+        # 休市表只有 Blave 那條,但它只用來判斷是否交易日、不是報告的一塊:不進 missing(尾註不叫人綁卡),
+        # 退回「今天有沒有指數收盤」判斷(下面 trading is None 那支)。
+        trading = None
     last_day = idx.index[-1].strftime("%Y-%m-%d")
     if trading is None:
-        notes.append("TWSE 休市表無法取得(端點未上線或該年度尚未公布),是否交易日改以今日有無加權指數收盤判斷")
+        notes.append("TWSE 休市表無法取得(" + ("沒有 Blave 資料權限" if used else "端點未上線或該年度尚未公布")
+                     + "),是否交易日改以今日有無加權指數收盤判斷")
     skip = None
     if trading is False:
         label, src = _closure(date, headers)
@@ -673,7 +802,9 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
     _where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
     kpis.append(kpi("加權指數", _num(close, 2), _tone(chg), delta=_pct(chg * 100)))
 
-    turn = _data.fetch_twmarket_turnover(start, date, headers)
+    turn = _tw_market(lambda: _data.fetch_twmarket_turnover(start, date, headers),
+                      lambda: _data.fetch_twmarket_turnover_public(start, date), "成交值", notes, missing, used,
+                      _data._TWMARKET_TURNOVER_COLUMNS)
     if _on_day(turn, date) and _finite(turn["value"].iloc[-1]):
         val, avg5 = float(turn["value"].iloc[-1]), float(turn["value"].tail(5).mean())
         ctx["成交值"] = f"{val / 1e12:.2f} 兆(5 日均 {avg5 / 1e12:.2f} 兆)"
@@ -682,7 +813,9 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
     else:
         _pending("成交值", turn, date, notes)
 
-    inst = _data.fetch_twmarket_institutional(start, date, headers)
+    inst = _tw_market(lambda: _data.fetch_twmarket_institutional(start, date, headers),
+                      lambda: _data.fetch_twmarket_institutional_public(start, date), "三大法人", notes, missing, used,
+                      _data._TWMARKET_INST_COLUMNS)
     blocks_inst = None
     if _on_day(inst, date) and all(_finite(inst[c].iloc[-1]) for c in ("foreign", "investment_trust", "dealer", "total")):
         last = inst.iloc[-1]
@@ -703,7 +836,9 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
     else:
         _pending("三大法人", inst, date, notes)
 
-    mg = _data.fetch_twmarket_margin(start, date, headers)
+    mg = _tw_market(lambda: _data.fetch_twmarket_margin(start, date, headers),
+                    lambda: _data.fetch_twmarket_margin_public(start, date), "融資餘額", notes, missing, used,
+                    _data._TWMARKET_MARGIN_COLUMNS)
     margin_ok = _on_day(mg, date) and _finite(mg["margin_balance"].iloc[-1])
     m20 = _mean(mg["margin_balance"], 20) if len(mg) else None
     if margin_ok:
@@ -721,7 +856,9 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
 
     fut = None
     try:
-        fut = _data.fetch_twfutures_institutional("TX", start, date, headers)
+        fut = _tw_market(lambda: _data.fetch_twfutures_institutional("TX", start, date, headers),
+                         lambda: _data.fetch_twfutures_institutional_public("TX", start, date), "外資期貨淨多單",
+                         notes, missing, used, _data._TWFUT_INST_COLUMNS)
     except Exception as e:
         notes.append(f"期貨三大法人抓取失敗({type(e).__name__})")
     fut_ok = fut is not None and _on_day(fut, date) and _finite(fut["foreign_net_oi"].iloc[-1])
@@ -763,13 +900,12 @@ def tw_close_brief(date=None, headers=None, lookback_days=90):
         if lc:
             blocks.append(lc)
     if date == _today_tpe():   # 經濟日曆只查得到「今天」;補產過去日期的報告不附別天的事件
-        cal = _calendar_rows(headers, notes, countries=["US", "CN", "TW", "JP", "EU"])
+        cal = _calendar_rows(headers, notes, missing, countries=["US", "CN", "TW", "JP", "EU"])
         if cal:
             blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    foot.append(("src", "指數、成交值、三大法人、融資餘額:TWSE 日資料,經 Blave API。三大法人為淨買賣超金額,融資餘額為張數。"
-                 "前 20 日高 = 不含當日的前 20 個交易日最高價;20/60 日均為含當日的簡單平均。"))
+    _tw_market_foot(foot, used)
     blocks.append(footnote(foot))
-    return Pack(rid, title, "morning", title, blocks, ctx, notes)
+    return Pack(rid, title, "morning", title, blocks, ctx, notes, missing=missing)
 
 
 # ─── template 2: 加密市場晨報 ─────────────────────────────────────────────────
@@ -780,9 +916,14 @@ def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), 
     headers = headers or headers_from_env()
     date = date or _today_tpe()          # 報告日與 id 一律台北日期,同日重跑才會覆蓋
     start = _window_start(lookback_days + 2)
-    notes, ctx, blocks, kpis, foot = [], {}, [], [], []
+    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
+    rid, title = f"crypto-market-{date.replace('-', '')}", "加密市場晨報"
     syms = [_data.normalize_symbol(s if s.endswith("USDT") else s + "USDT") for s in symbols]
-    klines = _data.fetch_kline_batch(syms, "1d", start, None, headers)
+    try:
+        klines = _data.fetch_kline_batch(syms, "1d", start, None, headers)
+    except _data.DataAccessError:
+        # Only when the kline source is Blave: the desktop sets BLAVE_KLINE_SOURCE=binance (public).
+        return _skip_no_access(rid, title, title, "日 K(BLAVE_KLINE_SOURCE 不是 binance)")
     closes = {}
     for s in syms:
         df = klines.get(s)
@@ -808,10 +949,10 @@ def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), 
     ctx["資料日"] = str(next(iter(closes.values())).index[-1].date())
 
     fund = _indicator(_data.fetch_funding_rate, ("BTCUSDT", "1d", start, None, headers), "BTC 資金費率",
-                      ctx, kpis, notes, fmt=lambda v: f"{v:+.4f}%")
-    direction = _indicator(_data.fetch_market_direction, ("1d", start, None, headers), "市場方向", ctx, kpis, notes)
-    shortage = _indicator(_data.fetch_capital_shortage, ("1d", start, None, headers), "資金稀缺", ctx, kpis, notes)
-    exposure = _indicator(_data.fetch_top_trader_exposure, ("1d", start, None, headers), "頂尖交易員曝險", ctx, kpis, notes)
+                      ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.4f}%")
+    direction = _indicator(_data.fetch_market_direction, ("1d", start, None, headers), "市場方向", ctx, kpis, notes, missing)
+    shortage = _indicator(_data.fetch_capital_shortage, ("1d", start, None, headers), "資金稀缺", ctx, kpis, notes, missing)
+    exposure = _indicator(_data.fetch_top_trader_exposure, ("1d", start, None, headers), "頂尖交易員曝險", ctx, kpis, notes, missing)
 
     base = next(iter(closes))
     base_c = closes[base]
@@ -861,12 +1002,22 @@ def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), 
                                      _vs7(exposure)))
         if lc:
             blocks.append(lc)
-    cal = _calendar_rows(headers, notes, countries=["US", "CN", "EU", "JP"])
+    cal = _calendar_rows(headers, notes, missing, countries=["US", "CN", "EU", "JP"])
     if cal:
         blocks.append(table("今日總經事件", _CAL_COLUMNS, cal, caption="台北時間;priority 1–2 的事件"))
-    foot += [("src", "價格:Binance USDT 永續日 K。資金費率為 Binance 日頻,單位 %。市場方向 / 資金稀缺為 Blave 指標(z-score);頂尖交易員曝險為指標原始值。日頻指標只到前一個完整日。")]
+    # 只描述報告裡有的系列:跳過的指標不留一句讀者找不到對應圖的口徑。
+    src = "價格:Binance USDT 永續日 K。"
+    if fund is not None:
+        src += "資金費率為 Binance 日頻,單位 %。"
+    if direction is not None or shortage is not None:
+        src += "市場方向 / 資金稀缺為 Blave 指標(z-score)" + (";" if exposure is not None else "。")
+    if exposure is not None:
+        src += "頂尖交易員曝險為指標原始值。"
+    if any(x is not None for x in (fund, direction, shortage, exposure)):
+        src += "日頻指標只到前一個完整日。"
+    foot += [("src", src)]
     blocks.append(footnote(foot))
-    return Pack(f"crypto-market-{date.replace('-', '')}", "加密市場晨報", "morning", "加密市場晨報", blocks, ctx, notes)
+    return Pack(rid, title, "morning", title, blocks, ctx, notes, missing=missing)
 
 
 # ─── template 3: 單標的晨報 ───────────────────────────────────────────────────
@@ -920,8 +1071,34 @@ def _levels_table(lv, last):
 def _tw_symbol_brief(stock_id, date, headers, lookback_days):
     date = date or _today_tpe()
     start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    notes, ctx, blocks, kpis, foot = [], {}, [], [], []
-    df = _data.fetch_twstock_ohlcv(stock_id, "1d", headers, start=start, end=date)
+    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
+    rid, title = f"symbol-{stock_id}-{date.replace('-', '')}", f"{stock_id} 晨報"
+    try:
+        df = _data.fetch_twstock_ohlcv(stock_id, "1d", headers, start=start, end=date)
+    except _data.DataAccessError:
+        # The daily fetcher goes to the stock's own exchange on the desktop (no key): shares → 張,
+        # naive Taipei dates → the same tz the ohlcv path carries.
+        try:
+            df = _data.fetch_twstock_price(stock_id, start, date, headers)
+        except _data.DataAccessError as e:
+            # A cause means the free chain ran and failed (lib.data chains it): that is the
+            # real error, not a data-access one — never "add a card" for an exchange outage.
+            if e.__cause__ is not None:
+                raise ValueError(f"{stock_id} 免費日線抓不到({type(e.__cause__).__name__}: "
+                                 f"{str(e.__cause__)[:120]})") from e.__cause__
+            return _skip_no_access(rid, title, "單標的晨報", "日 K")
+        if df is None or df.empty:
+            raise ValueError(f"{stock_id} 日 K 不足兩個交易日")
+        src = df.attrs.get("source")
+        if not src:
+            # The exchanges' licence makes naming the source a condition: no source, no report.
+            raise ValueError(f"{stock_id} 免費日線沒有帶 attrs['source'],無法標示資料來源")
+        df = df.copy()
+        df["Volume"] = df["Volume"] / 1000.0
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("Asia/Taipei")
+        # publish(lang="en") swaps it through lib.data.PUBLIC_SOURCE_EN.
+        foot.append(("src_free", _data._TW_PUBLIC_SOURCE_ZH if src in ("TWSE", "TPEx") else f"資料來源:{src}"))
     df = _clean_ohlc(df) if df is not None else df
     if df is None or len(df) < 2:
         raise ValueError(f"{stock_id} 日 K 不足兩個交易日")
@@ -940,6 +1117,8 @@ def _tw_symbol_brief(stock_id, date, headers, lookback_days):
     inst = None
     try:
         inst = _data.fetch_twstock_institutional(stock_id, start, date, headers)
+    except _data.DataAccessError:
+        _no_access("外資買賣超", notes, missing)
     except Exception as e:
         notes.append(f"外資買賣超抓取失敗({type(e).__name__})")
     if inst is not None and len(inst) and "foreign_net" in inst:
@@ -974,10 +1153,10 @@ def _tw_symbol_brief(stock_id, date, headers, lookback_days):
     lt = _levels_table(lv, last)
     if lt:
         blocks.append(lt)
-    foot.append(("src", "日 K 為 TWSE 未還原價,成交量為張。前 20 日高/低 = 不含當日的前 20 個交易日最高價/最低價,均線取收盤價(含當日)。"))
+    foot.append(("src", ("日 K 為未還原價" if foot and foot[0][0] == "src_free" else "日 K 為 TWSE 未還原價")
+                 + ",成交量為張。前 20 日高/低 = 不含當日的前 20 個交易日最高價/最低價,均線取收盤價(含當日)。"))
     blocks.append(footnote(foot))
-    return Pack(f"symbol-{stock_id}-{date.replace('-', '')}", f"{stock_id} 晨報", "morning", "單標的晨報",
-                blocks, ctx, notes)
+    return Pack(rid, title, "morning", "單標的晨報", blocks, ctx, notes, missing=missing)
 
 
 def _crypto_symbol_brief(sym, date, headers, lookback_days):
@@ -985,8 +1164,12 @@ def _crypto_symbol_brief(sym, date, headers, lookback_days):
     start = _window_start(lookback_days + 2)
     s = _data.normalize_symbol(sym if sym.endswith("USDT") else sym + "USDT")
     label = s.replace("USDT", "")
-    notes, ctx, blocks, kpis, foot = [], {}, [], [], []
-    df = _data.fetch_kline(s, "1d", start, None, headers)
+    notes, ctx, blocks, kpis, foot, missing = [], {}, [], [], [], []
+    rid, title = f"symbol-{label.lower()}-{date.replace('-', '')}", f"{label} 晨報"
+    try:
+        df = _data.fetch_kline(s, "1d", start, None, headers)
+    except _data.DataAccessError:
+        return _skip_no_access(rid, title, "單標的晨報", "日 K(BLAVE_KLINE_SOURCE 不是 binance)")
     df = _clean_ohlc(df) if df is not None else df
     if df is None or len(df) < 2:
         raise ValueError(f"{s} 日 K 不足")
@@ -1000,10 +1183,10 @@ def _crypto_symbol_brief(sym, date, headers, lookback_days):
     _where(ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
 
     args = (s, "1d", start, None, headers)
-    fund = _indicator(_data.fetch_funding_rate, args, "資金費率", ctx, kpis, notes, fmt=lambda v: f"{v:+.4f}%")
-    liq = _indicator(_data.fetch_liquidation, args, "爆倉指標", ctx, kpis, notes)
-    whale = _indicator(_data.fetch_whale_hunter, args, "巨鯨警報", ctx, kpis, notes)
-    taker = _indicator(_data.fetch_taker_intensity, args, "多空力道", ctx, kpis, notes)
+    fund = _indicator(_data.fetch_funding_rate, args, "資金費率", ctx, kpis, notes, missing, fmt=lambda v: f"{v:+.4f}%")
+    liq = _indicator(_data.fetch_liquidation, args, "爆倉指標", ctx, kpis, notes, missing)
+    whale = _indicator(_data.fetch_whale_hunter, args, "巨鯨警報", ctx, kpis, notes, missing)
+    taker = _indicator(_data.fetch_taker_intensity, args, "多空力道", ctx, kpis, notes, missing)
     blocks.append(kpi_row(kpis[:6], title=_headline(label, chg, last, lv.get("前 20 日高"), "前 20 日高")))
     # 60 日均仍用整段收盤算,K 線只畫最後 _PRICE_BARS 根。
     ck = candlestick(_price_title(f"{label} 日 K", last, lv.get("60 日均")), df.tail(_PRICE_BARS), y_unit="USDT",
@@ -1030,10 +1213,12 @@ def _crypto_symbol_brief(sym, date, headers, lookback_days):
     lt = _levels_table(lv, last)
     if lt:
         blocks.append(lt)
-    foot.append(("src", "價格:Binance USDT 永續日 K,最後一根為今日未收盤 bar。資金費率單位 %。爆倉 / 巨鯨 / 多空力道為 Blave 指標 z-score。前 20 日高/低 = 不含當日(今日未收盤 bar)的前 20 根日 K 最高價/最低價,均線取收盤價(含當日)。"))
+    foot.append(("src", "價格:Binance USDT 永續日 K,最後一根為今日未收盤 bar。"
+                 + ("資金費率單位 %。" if fund is not None else "")
+                 + ("爆倉 / 巨鯨 / 多空力道為 Blave 指標 z-score。" if ind else "")
+                 + "前 20 日高/低 = 不含當日(今日未收盤 bar)的前 20 根日 K 最高價/最低價,均線取收盤價(含當日)。"))
     blocks.append(footnote(foot))
-    return Pack(f"symbol-{label.lower()}-{date.replace('-', '')}", f"{label} 晨報", "morning", "單標的晨報",
-                blocks, ctx, notes)
+    return Pack(rid, title, "morning", "單標的晨報", blocks, ctx, notes, missing=missing)
 
 
 # ─── publish ──────────────────────────────────────────────────────────────────
@@ -1089,7 +1274,36 @@ def _check_read_form(body):
                      "整段散文不算:讀者是靠標題與條列找東西的 — references/reports.md §1b")
 
 
-def publish(pack, narrative=None, report_id=None, title=None, origin=None):
+# One sentence per BLAVE_DATA_ACCESS_WHY (shell/main.js dataAccessWhy): `unknown` covers a signed-in
+# account whose status could not be read this turn — likely already carded, so it is not told to
+# add one; the default (no reason given) is that neutral sentence too.
+_MISSING_FOOT = {
+    "zh": ("這份沒有 Blave 資料({names})。", {
+        "signed_out": "登入 Blave、綁卡送 14 天資料後可以補上。",
+        "no_card": "綁卡送 14 天資料後可以補上。",
+        "no_balance": "儲值後可以補上。"}, "這一輪讀不到資料狀態,下次有 Blave 資料時可以補上。"),
+    "en": ("No Blave data in this report ({names}). ", {
+        "signed_out": "Sign in to Blave and add a card for 14 days of data to fill it in.",
+        "no_card": "Adding a card starts 14 days of data that fills it in.",
+        "no_balance": "Topping up the balance fills it in."},
+        "The data status could not be read this turn; the next run with Blave data fills it in."),
+}
+
+
+def _access_fix(lang):
+    """What restores Blave data, matching the shell's reason (BLAVE_DATA_ACCESS_WHY)."""
+    _, fixes, default = _MISSING_FOOT["en" if lang == "en" else "zh"]
+    return fixes.get(os.environ.get("BLAVE_DATA_ACCESS_WHY"), default)
+
+
+def _missing_item(pack, lang):
+    """Footnote line naming the Blave-only series the report is missing."""
+    head = _MISSING_FOOT["en" if lang == "en" else "zh"][0]
+    names = _missing_names(pack) if lang != "en" else ", ".join(dict.fromkeys(m["name"] for m in pack.missing))
+    return ("blave", head.format(names=names) + _access_fix(lang))
+
+
+def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang="zh"):
     """Assemble the pack and the narrative into a report and drop it. Returns the path.
 
     narrative: {"lead", "read", "watch", "risk"} — any subset. `lead` / `read` / `risk`
@@ -1099,6 +1313,8 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None):
     `risk` a warning callout just before the footnote. No narrative = a data-only
     report — the honest form for a scheduled run, never a place for a made-up view.
     origin: "chat" (default) or "scheduled" — shown in the report header.
+    lang: "zh" (default) or "en" — only the footnote line about missing Blave data
+    (`pack.missing`) is localised; the template blocks are Chinese.
     Returns None without writing when `pack.skip` is set."""
     if pack.skip:
         # 不 raise:排程跑到休市日要記成 skipped(exit 0、沒有新報告),raise 會變 failed 並發警報。
@@ -1125,6 +1341,11 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None):
         _check_read_form(narrative["read"].strip())
     blocks = list(pack.blocks)
     foot = blocks.pop() if blocks and blocks[-1].get("type") == "footnote" else None
+    if pack.missing or (lang == "en" and foot):
+        # Copy before changing anything: the pack is reusable and its footnote dict is shared.
+        items = [(i["id"], _data.PUBLIC_SOURCE_EN.get(i["text"], i["text"]) if lang == "en" else i["text"])
+                 for i in (foot or {}).get("items", [])]
+        foot = footnote(items + ([_missing_item(pack, lang)] if pack.missing else []))
     out = []
     if narrative.get("lead", "").strip():
         out.append(text(narrative["lead"].strip(), lead=True))

@@ -103,5 +103,50 @@ e = outcome(D.fetch_holder_concentration, *ARGS)
 check(isinstance(e, Reached), "access=1: same")
 os.environ.pop("BLAVE_DATA_ACCESS")
 
+# ── scheduled report run on the desktop (report_runner: BLAVE_AGENT_LOCAL=1 + BLAVE_SCHEDULED_RUN=1) ──
+# The state comes from the key the shell keeps in .env: empty → no access, before any request;
+# a key that stopped working (401, 403 ERR007 / ERR005) means the same. KEY_SCOPE and a chat
+# turn keep the raw 403 — its body is what the model must relay.
+class R:
+    def __init__(self, status, text):
+        self.status_code, self.text = status, text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise D.requests.HTTPError(str(self.status_code), response=self)
+
+
+os.environ["BLAVE_AGENT_LOCAL"] = "1"
+os.environ["BLAVE_SCHEDULED_RUN"] = "1"
+e = outcome(D.fetch_holder_concentration, *ARGS)
+check(isinstance(e, D.DataAccessError) and not reached, "desktop schedule, empty key in .env: DataAccessError, zero requests")
+KEY = {"api-key": "k", "secret-key": "s"}
+for status, body, want, label in ((401, "unauthorized", D.DataAccessError, "401"),
+                                  (403, '{"error_code": "ERR007"}', D.DataAccessError, "403 ERR007"),
+                                  (403, '{"error_code": "ERR005"}', D.DataAccessError, "403 ERR005"),
+                                  (403, '{"error_code": "KEY_SCOPE"}', D.requests.HTTPError, "403 KEY_SCOPE")):
+    D.requests.get = lambda url, *a, _r=R(status, body), **k: _r
+    e = outcome(D._retry_get, D.BASE + "/x", headers=KEY)
+    check(type(e) is want, f"desktop schedule, {label}: {want.__name__}")
+os.environ.pop("BLAVE_SCHEDULED_RUN")
+# Own-key chat turn: the shell leaves BLAVE_DATA_ACCESS unset (dataAccess "own"); a dead key is
+# the user's own problem to see, not "no balance / not signed in".
+D.requests.get = lambda url, *a, **k: R(401, "unauthorized")
+e = outcome(D._retry_get, D.BASE + "/x", headers=KEY)
+check(type(e) is D.requests.HTTPError, "desktop own-key chat turn (no BLAVE_DATA_ACCESS, no schedule flag), 401: raw HTTPError")
+D.requests.get = lambda url, *a, **k: R(403, '{"error_code": "ERR005"}')
+e = outcome(D._retry_get, D.BASE + "/x", headers=KEY)
+check(type(e) is D.requests.HTTPError, "desktop own-key chat turn, 403 ERR005: raw HTTPError")
+os.environ["BLAVE_DATA_ACCESS"] = "1"
+D.requests.get = lambda url, *a, **k: R(403, '{"error_code": "ERR007"}')
+e = outcome(D._retry_get, D.BASE + "/x", headers=KEY)
+check(type(e) is D.requests.HTTPError and "ERR007" in str(e), "desktop chat turn (access=1), 403 ERR007: raw HTTPError with the body")
+e = outcome(D._retry_get, D.BASE + "/x", headers={"api-key": ""})
+check(type(e) is D.requests.HTTPError, "desktop chat turn: an empty key is not read as no-access (the turn flag decides)")
+os.environ.pop("BLAVE_DATA_ACCESS"); os.environ.pop("BLAVE_AGENT_LOCAL")
+e = outcome(D._retry_get, D.BASE + "/x", headers={"api-key": ""})
+check(type(e) is D.requests.HTTPError, "cloud machine (no flag): unchanged, raw HTTPError")
+D.requests.get = sentinel_get
+
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

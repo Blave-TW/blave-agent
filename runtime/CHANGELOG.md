@@ -8,6 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版排程報告帶 `BLAVE_AGENT_LOCAL=1`、`BLAVE_SCHEDULED_RUN=1` 與電腦版策略同一份放行名單(含 `BLAVE_KLINE_SOURCE`,
+  排程的加密報告跟聊天一樣走 Binance K 線)**(`report_runner._subprocess_env`;策略子程序不變):
+  沒有 Blave 資料權限時,排程的台股大盤晨報／收盤報告改走 TWSE／TAIFEX 免費資料,不再 401 整份 failed。權限狀態由
+  `lib/data.py` 讀外殼維護的 `.env` key(空 = 無權限;經 `_retry_get` 的端點回 401／403 ERR007／ERR005 同義——
+  台指期 K 線、`fetch_db_kline`、內外盤三處直接 `requests.get` 的只認空 key),只在有排程旗標時這樣讀——
+  聊天回合(含自帶 key、外殼不設 `BLAVE_DATA_ACCESS` 的那種)照舊收到原始 403／401。
+
 ## 1.1.96 — 2026-09-25
 
 - **有提領權限的金鑰一律拒收(Wei 2026-09-25 拍板,推翻 09-22「不擋」)**:`_binance_bind_check` 在四個 boolean 之後、交易那格之前

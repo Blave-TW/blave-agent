@@ -229,7 +229,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     # has moved it (uid=1: five times in three turns) — say where the file goes before they try.
     print(f"[report] {report_id}.json written. The uploader moves it to reports/sent/, so do not "
           f"read reports/{report_id}.json back; if you need it again, open "
-          f"reports/sent/{report_id}.json. It appears in the workspace Reports list (More > Reports) shortly. "
+          f"reports/sent/{report_id}.json. It appears in the workspace Reports list (Reports in the sidebar) shortly. "
           "Nothing to check; reply now.")
     return path
 

@@ -266,17 +266,36 @@ def last_run(job_id):
 # ── run ──────────────────────────────────────────────────────────────────────
 
 
+# Copy of command_listener._LOCAL_ENV_PASS (the desktop strategy allowlist) — kept inline for
+# the same stdlib-only reason; tests/check_report_runner_env.py pins the two equal.
+_LOCAL_ENV_PASS = ("PATH", "HOME", "LANG", "USER", "SHELL", "TMPDIR",
+                   "BLAVE_AGENT_BASE", "BLAVE_AGENT_WORKSPACE", "BLAVE_AGENT_HOME",
+                   "BLAVE_AGENT_STATE", "BLAVE_KLINE_SOURCE", "PYTHONPYCACHEPREFIX")
+
+
 def _subprocess_env():
     """Same rule as command_listener._strategy_subprocess_env (Linux allowlist,
     Windows drops BLAVE_* and TZ), inlined so the runner stays stdlib-only and a broken
-    listener module cannot take a run down with it. Change both together."""
+    listener module cannot take a run down with it. Change both together.
+
+    On the desktop (the local daemon started us with BLAVE_AGENT_LOCAL=1) a job gets what
+    a desktop strategy gets — the _LOCAL_ENV_PASS names, BLAVE_KLINE_SOURCE=binance among
+    them, so crypto klines come from Binance as in a chat turn — plus BLAVE_AGENT_LOCAL=1
+    and the BLAVE_SCHEDULED_RUN=1 mark, so a report job can fall back to the key-free
+    TWSE / TAIFEX series when the account has no Blave data (lib.data reads that state
+    from the key the shell keeps in `.env`, and only under that mark). Strategies get
+    neither flag."""
     if platform.system() == "Windows":
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("BLAVE_") and k != "TZ"}
-        env["BLAVE_MODE"] = "live"
-        return env
-    return {k: v for k, v in os.environ.items()
-            if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": "live"}
+    else:
+        env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "USER", "SHELL")}
+    env["BLAVE_MODE"] = "live"
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        env.update({k: v for k, v in os.environ.items() if k in _LOCAL_ENV_PASS})
+        env["BLAVE_AGENT_LOCAL"] = "1"
+        env["BLAVE_SCHEDULED_RUN"] = "1"
+    return env
 
 
 def _acquire_lock(jd):

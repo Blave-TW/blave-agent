@@ -77,7 +77,7 @@ universe = sample_by_sector(by_sector, total=100)
 > 除權息後原始價格會向下跳空，還原價則平滑消除跳空，適合計算指標與回報。  
 > 用戶問「台積電最近走勢怎樣」→ `fetch_twstock_price`；要跑 SMA 回測 → `fetch_twstock_price_adj`。
 
-**免費、免 key、不經 Blave。** 日K 由本機直接向該股所屬交易所逐月抓（上市/上櫃用當日全市場檔判斷，本機快取一天），過去月份抓一次永久快取、當月每次重抓；全程 1 秒 1 次請求（2010 → 今天一檔約 200 次、3.5 分鐘，之後只重抓當月）。**引用這些數字的報告或回覆一律附「資料來源:臺灣證券交易所、證券櫃檯買賣中心(政府資料開放授權)」**——兩所條款對開放資料的豁免以標示來源為條件。限制:TWSE 端點沒有 2010-01-04 以前的資料（更早的 `start` 自動改走下一個來源）、上櫃成交量四捨五入到仟股、上櫃轉上市的股票只有轉上市後的月份。來源順序:交易所 → FinMind 免費層（raw `TaiwanStockPrice`，無 token 每小時 300 次，1994 起；還原係數仍用兩所除權息表）→ Blave 端點（訂閱戶）。**免費來源只在用戶自己的電腦上抓（電腦版 `BLAVE_AGENT_LOCAL=1`）;雲端主機用 Blave 資料**，與改版前一樣；`BLAVE_TWSTOCK_DAILY_SOURCE=public|blave` 兩個方向都可強制。`df.attrs['source']` 寫著實際供應者（`TWSE` / `TPEx` / `FinMind` / `Blave`），退到下一來源時會印 ⚠️。`*_batch` 版本與 `fetch_twstock_ohlcv(…, '1d')` 不變（Blave）。當日 K 在台北 17:35 起才算可用（`FEED_TIMING['twstock_price']`：TWSE 每日收盤行情 14:00 / 15:30 / 17:30 三版，取第三版 + 5 分）。
+**免費、免 key、不經 Blave。** 日K 由本機直接向該股所屬交易所逐月抓（上市/上櫃用當日全市場檔判斷，本機快取一天），過去月份抓一次永久快取、當月每次重抓；證交所 3 秒 1 次、櫃買 1 秒 1 次請求（上市 2010 → 今天一檔約 200 次、約 10 分鐘，之後只重抓當月）。**引用這些數字的報告或回覆一律附「資料來源:臺灣證券交易所、證券櫃檯買賣中心(政府資料開放授權)」**——兩所條款對開放資料的豁免以標示來源為條件。限制:TWSE 端點沒有 2010-01-04 以前的資料（更早的 `start` 自動改走下一個來源）、上櫃成交量四捨五入到仟股、上櫃轉上市的股票只有轉上市後的月份。來源順序:交易所 → FinMind 免費層（raw `TaiwanStockPrice`，無 token 每小時 300 次，1994 起；還原係數仍用兩所除權息表）→ Blave 端點（訂閱戶）。**免費來源只在用戶自己的電腦上抓（電腦版 `BLAVE_AGENT_LOCAL=1`）;雲端主機用 Blave 資料**，與改版前一樣；`BLAVE_TWSTOCK_DAILY_SOURCE=public|blave` 兩個方向都可強制。`df.attrs['source']` 寫著實際供應者（`TWSE` / `TPEx` / `FinMind` / `Blave`），退到下一來源時會印 ⚠️。`*_batch` 版本與 `fetch_twstock_ohlcv(…, '1d')` 不變（Blave）。當日 K 在台北 17:35 起才算可用（`FEED_TIMING['twstock_price']`：TWSE 每日收盤行情 14:00 / 15:30 / 17:30 三版，取第三版 + 5 分）。
 
 ---
 
@@ -425,6 +425,17 @@ Notes:
   forward estimates, the correction term for TXF basis math) is documented in
   `references/twfutures.md` › Index Dividend Points, since its main consumer is
   futures fair-basis logic.
+- **Key-free twins, desktop only:** `fetch_twmarket_{index,turnover,institutional,margin}_public(start, end)`
+  and `fetch_twfutures_institutional_public('TX'|'MTX'|'TMF', start, end)` return the same columns
+  and units straight from TWSE (`MI_5MINS_HIST`, `FMTQIK`, `BFI82U`, `MI_MARGN`) and TAIFEX
+  (`futContractsDateDown`), never through a Blave server. They run only on the user's own
+  computer (`BLAVE_AGENT_LOCAL=1`; elsewhere they raise `TwPublicUnavailable`), one request every
+  3 seconds to twse.com.tw (1 s to TAIFEX); 三大法人 and 融資 cost one request per trading day on a
+  cold cache. The TAIEX report
+  templates use them when this turn has no Blave data access; prefer the Blave functions
+  otherwise. Anything citing them carries the attribution line `資料來源:臺灣證券交易所網站`
+  / `資料來源:臺灣期貨交易所(政府資料開放授權)` (`df.attrs['source']` = `TWSE` / `TAIFEX`) —
+  the TWSE line claims no open-data licence because 三大法人 (BFI82U) is not in that set.
 
 ---
 
