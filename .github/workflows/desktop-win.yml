@@ -108,6 +108,10 @@ jobs:
             [ "$tag" = "desktop-v$ver" ] || { echo "::error::tag $tag 跟 shell/package.json 的 $ver 對不上(要先把版號 commit 進去再打 tag)"; exit 1; }
           fi
           [[ "$TRACK" =~ ^win(-test)?$ ]] || { echo "::error::track 只能是 win-test 或 win(現在是 $TRACK)"; exit 1; }
+          # 早點擋省一次 45 分鐘建置(SignPath 那步取消註解就自動放行);真正的閘門是上傳前驗 exe 簽章那步
+          if [ "$TRACK" = win ] && ! grep -q '^      - name: Sign installer (SignPath)' .github/workflows/desktop-win.yml; then
+            echo "::error::SignPath 還沒接上,正式軌(win)拒發;只能發 win-test"; exit 1
+          fi
           url="https://download.blave.org/desktop/$TRACK"
           # 線上版號:正式軌與測試軌都查——同版或更舊的 yml 傳上去,已裝的 app 不會更新、還會把人搞混。讀不到 = 這條軌第一次發
           live="$(curl -fsSL "$url/latest.yml?t=$(date +%s)" 2>/dev/null | sed -n 's/^version: *//p' | tr -d '\r' || true)"
@@ -233,6 +237,22 @@ jobs:
       #     rm -f "shell/dist/upload/Blave-Setup-$VER.exe.blockmap"   # 或用 app-builder 重產
       #     node -e '...重算 sha512(base64)與 size,寫回 latest.yml 的 files[0].sha512 / size 與頂層 sha512...'
       # ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+      # 正式軌只發簽過的包:未簽章的 app.asar / Blave.exe 在 per-user 安裝目錄裡誰都換得掉,更新也驗不了來源(稽核 09-26 M3③、S-1)。
+      # 看的是要上傳的那顆 exe 本身,不是 BLAVE_WIN_UNSIGNED 旗標——SignPath 接上後這步自動放行,不用另外記得拿掉。
+      - name: Refuse unsigned installer on the release track
+        if: env.TRACK == 'win'
+        shell: pwsh
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+        run: |
+          $sig = Get-AuthenticodeSignature "shell/dist/upload/Blave-Setup-$env:VER.exe"
+          $who = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { "(無)" }
+          if ($sig.Status -ne 'Valid' -or $who -notmatch 'SignPath Foundation') {
+            Write-Output "::error::正式軌(win)只收 SignPath 簽過的安裝檔;這顆 Status=$($sig.Status) 簽署者=$who。SignPath 接上前只能發 win-test"
+            exit 1
+          }
+          Write-Output "簽章 OK:$who"
 
       # 只有這裡以後看得到 AWS 憑證(action 會把它們 export 到之後的 step 環境,所以上傳放最後、後面不再有 step)
       - name: Configure AWS credentials
