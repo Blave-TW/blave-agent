@@ -336,7 +336,7 @@ except OSError:
 os.rmdir(cc._paths()["vault"])
 check("5 A-1 drop_vault never raises on a vault it cannot delete", swallowed)
 
-# ── 5b. A-3: the libs BEFORE the vault (git HEAD) fail before any login on the sentinels ──
+# ── 5b. A-3: the libs BEFORE the vault (from git history) fail before any login on the sentinels ──
 import subprocess  # noqa: E402
 
 
@@ -355,7 +355,11 @@ class FakeCOM:
 
 
 def head(path):
-    r = subprocess.run(["git", "show", "HEAD:" + path], cwd=ROOT, capture_output=True, text=True)
+    """The file as it was just before the commit that taught it about the vault."""
+    intro = subprocess.run(["git", "log", "--reverse", "--format=%H", "-S", "capital_vault", "--", path],
+                           cwd=ROOT, capture_output=True, text=True).stdout.split()
+    rev = (intro[0] + "^") if intro else "HEAD"
+    r = subprocess.run(["git", "show", f"{rev}:{path}"], cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0 or "capital_vault" in r.stdout:
         return None
     dst = os.path.join(TMP, "old_" + os.path.basename(path))
@@ -364,7 +368,7 @@ def head(path):
 
 
 old_oc, old_wk = head("lib/order_capital.py"), head("lib/capital_worker.py")
-check("5b git HEAD still has the pre-vault libs to test against", old_oc and old_wk)
+check("5b git history still has the pre-vault libs to test against", old_oc and old_wk)
 if old_oc and old_wk:
     SENT = {"capital_api_key": "", "capital_id": "", "capital_password": "vault:0123456789abcdef"}
     oc = load("old_order_capital", old_oc)
@@ -644,6 +648,74 @@ check("R-6 --once clears the block for these credentials after a successful logi
 cv.block_login("Other", "pw", 300)
 cv.clear_block("Z123456789", "trade-pw")
 check("R-6 …but never another credential's block", os.path.exists(cv.BLOCK))
+os.remove(cv.BLOCK)
+# R-7: a login that answers anything but 300/307 clears the block, in both login paths
+class FakeLib:
+    def __init__(self, login_code, fail=None):
+        self.login_code, self.fail = login_code, fail
+
+    def SKCenterLib_Login(self, i, p):
+        return self.login_code
+
+    def SKCenterLib_GetReturnCodeMessage(self, c):
+        return "msg"
+
+    def SKOrderLib_Initialize(self):
+        return 0
+
+    def ReadCertByID(self, i):
+        return 1 if self.fail == "cert" else 0
+
+    def GetUserAccount(self):
+        return 1 if self.fail == "accounts" else 0
+
+
+def fake_com(lib):
+    class C:
+        class client:
+            @staticmethod
+            def CreateObject(*a, **k):
+                return lib
+
+            @staticmethod
+            def GetEvents(*a, **k):
+                return object()
+    return C
+
+
+SK = type("sk", (), {"__getattr__": lambda s, n: n})()
+wk7 = load("r7_worker", os.path.join(ROOT, "lib", "capital_worker.py"))
+oc7 = load("r7_order", os.path.join(ROOT, "lib", "order_capital.py"))
+wk7.capital_vault = cv
+# the order lib refuses up front while a block matches (it never takes the retry), so its own
+# after-login recording is exercised with that pre-check stubbed open
+oc7.capital_vault = type("cvp", (), {"resolve": staticmethod(cv.resolve), "record_login": staticmethod(cv.record_login),
+                                     "login_blocked": staticmethod(lambda i, p, c=False: None)})
+oc7._init_com = lambda: None
+for label, code, fail in (("321", 321, None), ("602", 602, None), ("600", 600, None),
+                          ("login 0, then reading the cert fails", 0, "cert"),
+                          ("login 0, then reading the accounts fails", 0, "accounts")):
+    for path, run in (("worker", lambda lib: (setattr(wk7, "comtypes", fake_com(lib)), setattr(wk7, "sk", SK),
+                                               wk7._connect("Z123456789", "trade-pw"))),
+                      ("order lib", lambda lib: (setattr(oc7, "comtypes", fake_com(lib)), setattr(oc7, "sk", SK),
+                                                  setattr(oc7, "_session", None),
+                                                  oc7._get_session({"capital_api_key": "Z123456789",
+                                                                    "capital_password": "trade-pw"})))):
+        cv.block_login("Z123456789", "trade-pw", 307)
+        try:
+            run(FakeLib(code, fail))
+        except Exception:
+            pass
+        check(f"R-7 {path}: {label} → the spent 307 block is cleared", cv.login_blocked("Z123456789", "trade-pw") is None)
+for path, run in (("worker", lambda: (setattr(wk7, "comtypes", fake_com(FakeLib(300))), wk7._connect("Z123456789", "trade-pw"))),
+                  ("order lib", lambda: (setattr(oc7, "comtypes", fake_com(FakeLib(300))), setattr(oc7, "_session", None),
+                                         oc7._get_session({"capital_api_key": "Z123456789", "capital_password": "trade-pw"})))):
+    cv.block_login("Z123456789", "trade-pw", 307)
+    try:
+        run()
+    except Exception:
+        pass
+    check(f"R-7 {path}: a 300 still blocks", cv.login_blocked("Z123456789", "trade-pw") == 300)
 os.remove(cv.BLOCK)
 check("after_unlock must be exactly True on the machine too (1 is refused)",
       refused(lambda: cc.dispatch("capital_probe", {"after_unlock": 1}, D), "BAD_ARGS") is True)

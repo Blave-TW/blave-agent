@@ -82,6 +82,18 @@ def block_login(login_id, password, code):
                   "unlock_used": bool(prev.get("unlock_used"))})
 
 
+def record_login(login_id, password, code):
+    """Right after SKCenterLib_Login, in every login path: 300/307 blocks these
+    credentials; ANY other answer (0, 321, 600, 602, 604, …) proves the password
+    is not the problem, so their block goes — otherwise a post-unlock retry
+    that got past the password but failed later leaves the user stuck behind
+    a spent 307."""
+    if code in BLOCK_CODES:
+        block_login(login_id, password, code)
+    else:
+        clear_block(login_id, password)
+
+
 def clear_block(login_id, password):
     """After a successful login: drop the block for exactly these credentials
     (and its claim files) — a probe the runtime gave up on (timeout) must not

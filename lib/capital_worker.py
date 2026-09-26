@@ -325,8 +325,8 @@ def _connect(login_id, password):
     order_h = comtypes.client.GetEvents(order, handler)
 
     code = center.SKCenterLib_Login(login_id, password)
+    capital_vault.record_login(login_id, password, code)
     if code not in (0, 2003):
-        capital_vault.block_login(login_id, password, code)
         raise ProbeError("login", f"login failed code={code} {center.SKCenterLib_GetReturnCodeMessage(code)}",
                          code)
     _log(f"login ok ({code})")

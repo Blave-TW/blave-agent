@@ -191,8 +191,8 @@ def _get_session(env):
                  comtypes.client.GetEvents(order, events)]
 
         code = center.SKCenterLib_Login(login_id, password)
+        capital_vault.record_login(login_id, password, code)
         if code not in (0, 2003):
-            capital_vault.block_login(login_id, password, code)
             msg = center.SKCenterLib_GetReturnCodeMessage(code)
             raise CapitalError(
                 f"login failed code={code} {msg}"
