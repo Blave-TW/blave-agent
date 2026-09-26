@@ -721,12 +721,12 @@ function envJustMark(just, stored, sending, nowMs) {
   Object.keys(stored || {}).forEach((n) => { if (!(n in (sending || {}))) { delete just.picked[n]; just.removed[n] = nowMs; } });
   return just;
 }
-// 側欄雲端清單列尾的狀態字:有投入金額的才講(下單中 / 已停);其餘不講
+// 側欄雲端清單列尾的狀態字:有投入金額的才講,而且只講出事的(已停 / 可能仍在下單);正常在下單由名字前的呼吸點表示,不再寫「下單中」(Wei 09-26,同網頁側欄只有點)
 function envStratWord(name, st) {
   const r = st && st.report, a = r && r.config && r.config.amounts;
   if (!a || !(a[name] > 0)) return null;
   const state = trExecState(st);
-  return state === "running" ? "side.cloud.st.trading" : state === "unconfirmed" ? "tr.cloud.mayTrade" : state === "halted" ? "side.cloud.st.halted" : null;
+  return state === "unconfirmed" ? "tr.cloud.mayTrade" : state === "halted" ? "side.cloud.st.halted" : null;
 }
 /* ── 視角純邏輯到此 ───────────────────────────────────────────── */
 

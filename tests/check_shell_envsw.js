@@ -472,7 +472,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && /\.\.\.Object\.fromEntries\(TR_MENU_KEYS\.map/.test(labels) && ["local", "cloud", "site", "view"].every((k) => new RegExp('"menu\\.' + k + '"').test(/const TR_MENU_KEYS = \[[\s\S]*?\];/.exec(trSrcAll)[0])) && /trPushLabels\(\)/.test(fn.call(null, "trInit") + app));
 
   // ── 側欄列尾 ──
-  ok("列尾狀態字:有投入金額的才講;下單中 / 已停;主機沒在下單就不講", envStratWord("a", cloudSt(okc("running"))) === "side.cloud.st.trading" && envStratWord("b", cloudSt(okc("running"))) === null && envStratWord("zz", cloudSt(okc("running"))) === null
+  ok("列尾狀態字:有投入金額的才講,只講出事的(已停);正常下單不寫字(呼吸點就好);主機沒在下單就不講", envStratWord("a", cloudSt(okc("running"))) === null && envStratWord("b", cloudSt(okc("running"))) === null && envStratWord("zz", cloudSt(okc("running"))) === null
     && envStratWord("a", cloudSt(okc("running"), rep({ halt: { halted: true } }))) === "side.cloud.st.halted" && envStratWord("a", cloudSt(okc("stopped"), rep(), false)) === null && envStratWord("a", null) === null);
 
   /* ── A′:同一個 agent,操作對象隨視角走(spec-desktop-local-and-cloud §6;inventory-desktop-agent-on-cloud §4)──
