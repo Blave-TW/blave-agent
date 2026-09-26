@@ -7,7 +7,6 @@
 .rpt[hidden] { display: none; }
 .rpt-head { flex: none; padding: var(--space-16) var(--space-24) var(--space-12); }
 .rpt-head-list[hidden] { display: none; }
-.rpt-desc { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); min-height: 18px; max-width: 680px; }
 /* 工具列(同 web .rp-toolbar 的 min-height 32):左份數、右「新增報告」;說明句另起一行,不塞進工具列(會把份數擠成直排) */
 .rpt-tools { display: flex; align-items: center; gap: var(--space-12); min-height: 32px; margin-top: var(--space-12); max-width: 680px; }
 .rpt-count { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-3); }

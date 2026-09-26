@@ -403,16 +403,14 @@ function libGateBtn(why) {
   b.type = "button"; b.addEventListener("click", () => planOpen());
   return b;
 }
+// 試用天數只在鈕字講(libGateBtn),說明句不重述
 function libGateText(why) {
-  if (why === "no_balance") return [t("lib.gate.noBalance"), ""];
-  if (why === "unknown") return [t("lib.gate.unknown"), ""];
-  const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true, tDays = typeof planVars === "function" ? planVars().t : "";
-  return [t("lib.gate.noCard"), trial && tDays ? t("data.noCardSub", { t: tDays }) : ""];
+  return t(why === "no_balance" ? "lib.gate.noBalance" : why === "unknown" ? "lib.gate.unknown" : "lib.gate.noCard");
 }
 // 清單頂端那一張(§3.3):左一句(同詳情鈕下說明的第一句)、右同一顆主鈕
 function libGateNode(why) {
   const f = document.createDocumentFragment();
-  f.append(libEl("p", "", libGateText(why)[0]), libGateBtn(why));
+  f.append(libEl("p", "", libGateText(why)), libGateBtn(why));
   return f;
 }
 function libShowDetail(id) {
@@ -489,11 +487,6 @@ function libPaintDetail(s) {
   if (s.direction && LIB_DIR_KEYS[s.direction]) dd(t("lib.meta.direction"), t(LIB_DIR_KEYS[s.direction]));
   if (typeof s.max_exposure === "number") dd(t("lib.meta.exposure"), libRich("lib.exposure", { n: libMono(String(+s.max_exposure.toFixed(2))) }));
   c3.appendChild(dl); det.appendChild(c3);
-  // 卡 4:用了之後
-  const c4 = libEl("div", "lib-card"); c4.appendChild(libEl("h6", "", t("lib.after")));
-  const ol = libEl("ol", "steps"), where = libWhere();
-  [t("lib.after1", { where }), t("lib.after2"), t("lib.after3")].forEach((x, i) => { const li = libEl("li"); li.append(libEl("span", "n mono", String(i + 1)), libEl("span", "", x)); ol.appendChild(li); });
-  c4.appendChild(ol); det.appendChild(c4);
   if (chartHost) libChartDraw(chartHost, r);
   if (r) libReportLoad(s);   // 兩段式:先用 64 點 spark 畫,/report 回來換 400 點——同一支才動、只換曲線與回測期間,不整頁重畫
 }
@@ -521,26 +514,26 @@ function libCtaMain() { const c = $("lib-cta"); return c ? c.querySelector(".btn
 function libPaintCta(s) {
   const box = $("lib-cta"); if (!box) return;
   box.textContent = "";
-  const c = libCtaOf(s), row = libEl("div", "row"), note = libEl("p", "note"), where = libWhere();
+  const c = libCtaOf(s), row = libEl("div", "row"), note = libEl("p", "note");
   const btn = (cls, label, on) => { const b = libEl("button", cls, label); b.type = "button"; if (on) b.addEventListener("click", () => on(b)); return b; };
   const dis = (label) => { const b = btn("btn-fill", label); b.disabled = true; return b; };
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
-  const paidNote = () => { note.textContent = libJoin(t("lib.note.paid", { where }), libFx() ? t("lib.fxNote") : ""); };
+  const paidNote = () => { note.textContent = libJoin(t("lib.note.paid"), libFx() ? t("lib.fxNote") : ""); };
   switch (c.state) {
     case "signedOut": row.appendChild(btn("btn-fill", t("cn.blave.btn"), () => setOpen().then(() => setCat("acct")))); note.classList.add("up"); note.textContent = t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"); break;   // 主鈕「登入 Blave」→ 設定 › 帳號(§3.2 末,同 noData 一個重量)
-    case "noData": { const [main, sub] = libGateText(c.why); row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libJoin(main, sub); break; }
+    case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libGateText(c.why); break;
     case "busy": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t("turn.busy"); break;
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
     case "pending": row.appendChild(dis(t("lib.pending"))); note.textContent = t("lib.note.pending"); break;
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); paidNote(); break;
     case "installed":
       row.append(btn("btn-fill", t("lib.open"), () => (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name))), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
-      note.textContent = t("lib.note.installed", { where }); break;
+      note.textContent = t("lib.note.installed", { where: libWhere() }); break;
     case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); paidNote(); break;
-    case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); note.textContent = t("lib.note.owned", { where }); break;
+    case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); note.textContent = t("lib.note.owned"); break;
     default:
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));
-      note.textContent = libJoin(t("lib.note.free", { where }), LIB.data && LIB.data.dataAccess === "billed" && libEnv() === "local" ? t("lib.note.billed") : "");
+      note.textContent = t("lib.note.free");
   }
   if (row.childNodes.length) box.appendChild(row);
   box.appendChild(note);
@@ -551,10 +544,10 @@ function libPaintCta(s) {
 function libAsk(s, opener) {
   if (typeof running !== "undefined" && running) return;
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
-  const cloud = libEnv() === "cloud", where = libWhere();
+  const cloud = libEnv() === "cloud", billed = !cloud && LIB.data && LIB.data.dataAccess === "billed";
   confirmBox({
-    title: t("lib.cf.title", { title: s.title }), lines: [t("lib.cf.l1", { where }), t("lib.cf.l2")],
-    extra: cloud ? libEl("p", "cf-note", t("lib.cf.cloudNote")) : null, ok: t("lib.cf.ok"), opener, env: cloud ? "cloud" : undefined,
+    title: t("lib.cf.title", { title: s.title }), lines: [t("lib.cf.l1"), t("lib.cf.l2"), ...(billed ? [t("lib.note.billed")] : [])],
+    ok: t("lib.cf.ok"), opener, env: cloud ? "cloud" : undefined, footWhere: cloud ? t("lib.cf.cloudNote") : undefined,
     onOk: () => libSend(s),
   });
   $("del-title").title = $("del-title").textContent;   // 只在 CSS 截一次(單行 ellipsis),全文放 title
@@ -579,6 +572,7 @@ function libBuyBox(s, stage, opener, o) {
     const lines = [t("lib.buy.price", { price })];
     const extra = document.createDocumentFragment();
     extra.appendChild(libEl("p", "cf-note", t("lib.buy.lead")));
+    if (libEnv() === "local" && LIB.data && LIB.data.dataAccess === "billed") extra.appendChild(libEl("p", "cf-note", t("lib.note.billed")));   // 條件同 libAsk:雲端的資料費已併進主機費
     if (libFx()) extra.appendChild(libEl("p", "cf-note", t("lib.fxNote")));   // fx 註是註,不跟價格同一階
     // 失敗行不寫「沒有扣款」:網路類失敗無法確定;重按由 api 的 already-purchased 擋重複扣款
     if (o.failed) { const e = libEl("p", "plan-err is-calm"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.setAttribute("role", "status"); e.append(m, libEl("span", "", t("lib.buy.failed"))); extra.appendChild(e); }

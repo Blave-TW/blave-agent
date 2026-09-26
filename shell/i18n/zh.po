@@ -1715,9 +1715,6 @@ msgstr "主機啟動中"
 msgid "side.cloud.emptyCut1"
 msgstr "雲端還沒有策略。"
 
-msgid "side.cloud.st.trading"
-msgstr "下單中"
-
 msgid "side.cloud.st.halted"
 msgstr "已暫停"
 
@@ -2552,7 +2549,7 @@ msgid "cx.chk.backoffCloud"
 msgstr "雲端主機剛被 Binance 限制過，還在等限制解除，這一次沒有去查，沒有儲存。請等幾分鐘再連一次。"
 
 msgid "cx.chk.noWhitelistCloud"
-msgstr "這把金鑰沒有設 IP 白名單：Binance 會刪除沒有白名單、又長期閒置的金鑰。建議把雲端主機的 IP 加進白名單。"
+msgstr "這把金鑰沒有設 IP 白名單：Binance 會刪除沒有白名單、又長期閒置的金鑰。"
 
 msgid "tr.cloud.cxSavedBn"
 msgstr "金鑰已存到雲端主機，Binance 權限檢查通過。"
@@ -3234,18 +3231,6 @@ msgstr "12 小時"
 msgid "lib.iv.1d"
 msgstr "日線"
 
-msgid "lib.after"
-msgstr "用了之後"
-
-msgid "lib.after1"
-msgstr "agent 把策略下載到{where}的 strategies/ 資料夾"
-
-msgid "lib.after2"
-msgstr "用最新資料重跑一次回測；完整報告（權益與回撤、月報酬、進出場）出現在左側欄"
-
-msgid "lib.after3"
-msgstr "要不要上線、用模擬還是實盤，由你決定"
-
 msgid "lib.use"
 msgstr "用這支"
 
@@ -3268,7 +3253,7 @@ msgid "lib.buy.price"
 msgstr "價格 {price}"
 
 msgid "lib.buy.lead"
-msgstr "從 Blave Agent 餘額扣款；買了就會開始下載並回測。"
+msgstr "從 Blave Agent 餘額扣款；買了就會開始下載並回測，不會自動下單。"
 
 msgid "lib.buy.ok"
 msgstr "確認購買"
@@ -3301,25 +3286,25 @@ msgid "lib.fxNote"
 msgstr "金額以 TWD 計價。"
 
 msgid "lib.note.owned"
-msgstr "已購買。agent 會把策略下載到{where}並跑一次回測，不會自動下單。"
+msgstr "已購買。"
 
 msgid "lib.gate.signedOutBuy"
 msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
 
 msgid "lib.note.free"
-msgstr "免費。agent 會把策略下載到{where}並跑一次回測，不會自動下單。"
+msgstr "免費。"
 
 msgid "lib.note.billed"
 msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
 
 msgid "lib.note.paid"
-msgstr "從 Blave Agent 餘額扣款。購買後會下載到{where}並跑一次回測，不會自動下單。"
+msgstr "從 Blave Agent 餘額扣款。"
 
 msgid "lib.note.installed"
 msgstr "已在{where}的策略清單。再下載一份會整份覆蓋同名的那支，並重跑回測。"
 
 msgid "lib.note.pending"
-msgstr "進度在右邊的對話。完成後這支會出現在左側欄。"
+msgstr "進度在右邊的對話。"
 
 msgid "lib.err.noNew"
 msgstr "這一輪結束了，但沒看到新策略。看對話裡 agent 怎麼說。"
@@ -3334,7 +3319,7 @@ msgid "lib.cf.title"
 msgstr "下載「{title}」？"
 
 msgid "lib.cf.l1"
-msgstr "agent 會把策略下載到{where}的 strategies/ 資料夾，接著用最新資料跑一次回測，結果會出現在左側欄。"
+msgstr "agent 會把策略下載到 strategies/ 資料夾，用最新資料跑一次回測，結果出現在左側欄。"
 
 msgid "lib.cf.l2"
 msgstr "不會自動下單，要不要上線由你決定。"
@@ -3364,9 +3349,6 @@ msgstr "已購買"
 msgid "rpt.nav"
 msgstr "報告"
 
-msgid "rpt.desc"
-msgstr "agent 把回測、晨報、研究整理成可以回頭讀的文件，寫好會出現在這裡。"
-
 msgid "rpt.count.one"
 msgstr "{n} 份報告"
 
@@ -3389,7 +3371,7 @@ msgid "rpt.empty"
 msgstr "還沒有報告。"
 
 msgid "rpt.emptyHint"
-msgstr "按右上角「新增報告」描述你要的內容，或直接在右邊對話裡跟 agent 說。"
+msgstr "按「新增報告」，或直接跟右邊的 agent 說。"
 
 msgid "rpt.error"
 msgstr "讀不到雲端的報告清單。"
@@ -3401,7 +3383,7 @@ msgid "rpt.readErr"
 msgstr "讀不到這份報告。"
 
 msgid "rpt.note.pending"
-msgstr "進度在右邊的對話；寫好會出現在這裡。"
+msgstr "進度在右邊的對話。"
 
 msgid "rpt.err.noNew"
 msgstr "這一輪沒有產出新報告，原因在右邊的對話。"
@@ -3463,7 +3445,7 @@ msgid "rpt.new.tpl.research"
 msgstr "研究報告：探討一個市場問題——<例：「Sell in May」在台股成立嗎／除息後平均幾天填息／外資連賣 5 天後，加權指數接下來 10 天過去怎麼走>。給我可被反駁的結論、支持與反對的數據、穩健性檢驗，以及什麼情況會推翻它。"
 
 msgid "rpt.new.honest"
-msgstr "報告由{where}的 agent 產出。首份報告非即時，完成後才會出現在左側欄的「報告」。"
+msgstr "首份報告非即時，寫好會出現在「報告」清單。"
 
 msgid "rpt.new.send"
 msgstr "請 agent 建立"
@@ -3476,9 +3458,6 @@ msgstr "幫我建立報告"
 
 msgid "rpt.new.msgOnce"
 msgstr "這份只要產出一次，不用建立排程。"
-
-msgid "rpt.queued"
-msgstr "已送出。首份報告非即時，完成後會出現在左側欄的「報告」。"
 
 # 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
 msgid "modal.sendFailed"
@@ -3565,7 +3544,7 @@ msgid "ns.previewLabel"
 msgstr "將送出到對話的訊息"
 
 msgid "ns.previewEmpty"
-msgstr "（至少填寫一項）"
+msgstr "—"
 
 msgid "ns.libHint"
 msgstr "不知道從哪開始？"

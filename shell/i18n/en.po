@@ -1715,9 +1715,6 @@ msgstr "Machine starting"
 msgid "side.cloud.emptyCut1"
 msgstr "No strategies in the cloud yet."
 
-msgid "side.cloud.st.trading"
-msgstr "Trading"
-
 msgid "side.cloud.st.halted"
 msgstr "Paused"
 
@@ -2552,7 +2549,7 @@ msgid "cx.chk.backoffCloud"
 msgstr "The cloud machine was just rate-limited by Binance and is waiting it out, so it didn’t check this time and nothing was saved. Wait a few minutes, then connect again."
 
 msgid "cx.chk.noWhitelistCloud"
-msgstr "This key has no IP whitelist: Binance deletes keys that have no whitelist and sit unused for a long time. Adding the cloud machine’s IP to the whitelist is recommended."
+msgstr "This key has no IP whitelist: Binance deletes keys that have no whitelist and sit unused for a long time."
 
 msgid "tr.cloud.cxSavedBn"
 msgstr "API key saved to your cloud machine; Binance permissions check passed."
@@ -3234,18 +3231,6 @@ msgstr "12h"
 msgid "lib.iv.1d"
 msgstr "Daily"
 
-msgid "lib.after"
-msgstr "What happens next"
-
-msgid "lib.after1"
-msgstr "The agent downloads it into strategies/ on {where}"
-
-msgid "lib.after2"
-msgstr "Reruns the backtest on fresh data; the full report (equity & drawdown, monthly returns, trades) shows up in the sidebar"
-
-msgid "lib.after3"
-msgstr "Whether to run it — paper or live — is your call"
-
 msgid "lib.use"
 msgstr "Use This"
 
@@ -3268,7 +3253,7 @@ msgid "lib.buy.price"
 msgstr "Price {price}"
 
 msgid "lib.buy.lead"
-msgstr "Charged to your Blave Agent balance; the download and backtest start right after."
+msgstr "Charged to your Blave Agent balance; the download and backtest start right after. No orders are placed."
 
 msgid "lib.buy.ok"
 msgstr "Confirm Purchase"
@@ -3301,25 +3286,25 @@ msgid "lib.fxNote"
 msgstr "Amounts shown in USD; billed in TWD."
 
 msgid "lib.note.owned"
-msgstr "Purchased. The agent downloads it to {where} and runs a backtest. No orders are placed."
+msgstr "Purchased."
 
 msgid "lib.gate.signedOutBuy"
 msgstr "Sign in to Blave to buy it and download to this computer."
 
 msgid "lib.note.free"
-msgstr "Free. The agent downloads it to {where} and runs a backtest. No orders are placed."
+msgstr "Free."
 
 msgid "lib.note.billed"
 msgstr "If the backtest uses Blave data, the data fee is charged per clock hour of use."
 
 msgid "lib.note.paid"
-msgstr "Charged to your Blave Agent balance. After purchase it downloads to {where} and runs a backtest. No orders are placed."
+msgstr "Charged to your Blave Agent balance."
 
 msgid "lib.note.installed"
 msgstr "Already in the strategy list on {where}. Downloading again overwrites the one with the same name and reruns the backtest."
 
 msgid "lib.note.pending"
-msgstr "Progress is in the chat on the right. When it finishes, the strategy appears in the sidebar."
+msgstr "Progress is in the chat on the right."
 
 msgid "lib.err.noNew"
 msgstr "The turn ended without a new strategy. See what the agent said in the chat."
@@ -3334,7 +3319,7 @@ msgid "lib.cf.title"
 msgstr "Download \"{title}\"?"
 
 msgid "lib.cf.l1"
-msgstr "The agent downloads it into strategies/ on {where}, then runs a backtest on fresh data; the result shows up in the sidebar."
+msgstr "The agent downloads it into strategies/ and runs a backtest on fresh data; the result shows up in the sidebar."
 
 msgid "lib.cf.l2"
 msgstr "No orders are placed — whether to run it is your call."
@@ -3364,9 +3349,6 @@ msgstr "Purchased"
 msgid "rpt.nav"
 msgstr "Reports"
 
-msgid "rpt.desc"
-msgstr "The agent turns backtests, briefings and research into documents you can come back to; they show up here."
-
 msgid "rpt.count.one"
 msgstr "{n} report"
 
@@ -3389,7 +3371,7 @@ msgid "rpt.empty"
 msgstr "No reports yet."
 
 msgid "rpt.emptyHint"
-msgstr "Use Add Report top-right to describe what you want, or just tell the agent in the chat on the right."
+msgstr "Use Add Report, or just tell the agent on the right."
 
 msgid "rpt.error"
 msgstr "Couldn't load the cloud report list."
@@ -3401,7 +3383,7 @@ msgid "rpt.readErr"
 msgstr "Couldn't load this report."
 
 msgid "rpt.note.pending"
-msgstr "Progress is in the chat on the right; it shows up here when done."
+msgstr "Progress is in the chat on the right."
 
 msgid "rpt.err.noNew"
 msgstr "This turn didn't produce a report; the reason is in the chat on the right."
@@ -3462,7 +3444,7 @@ msgid "rpt.new.tpl.research"
 msgstr "Research report: look into a market question — <e.g. does 'Sell in May' hold for Taiwan stocks / how many days does a stock take on average to recover its ex-dividend gap / how did the TAIEX move over the next 10 days after foreign investors sold 5 days in a row>. Give me a falsifiable conclusion, the data for and against it, robustness checks, and what would overturn it."
 
 msgid "rpt.new.honest"
-msgstr "The agent on {where} writes the report. The first report is not instant — it shows up under Reports in the sidebar when it is done."
+msgstr "The first report is not instant; it shows up in the Reports list when done."
 
 msgid "rpt.new.send"
 msgstr "Ask the Agent"
@@ -3475,9 +3457,6 @@ msgstr "Write me a report"
 
 msgid "rpt.new.msgOnce"
 msgstr "Produce it once — no schedule needed."
-
-msgid "rpt.queued"
-msgstr "Sent. The first report is not instant — it will appear under Reports in the sidebar once it is done."
 
 # 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
 msgid "modal.sendFailed"
@@ -3564,7 +3543,7 @@ msgid "ns.previewLabel"
 msgstr "Message to send"
 
 msgid "ns.previewEmpty"
-msgstr "(fill in at least one field)"
+msgstr "—"
 
 msgid "ns.libHint"
 msgstr "Not sure where to start?"

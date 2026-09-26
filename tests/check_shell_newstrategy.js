@@ -1,8 +1,8 @@
 // 新增策略 modal(shell/renderer/newstrategy.js;spec-desktop-0.1.6 §4)。
 //   ① 純邏輯(從原文切出來跑,不碰 DOM):nsCompose zh / en——只填週期(09-25 在雲端版實填 4h 量到的原句)、全填、全空 → ""、邏輯尾端的 。/ . 不重複、
-//      空格跳過;字串表 ns.* 逐字同 web 的 workspace_ns_*。
+//      空格跳過;字串表 ns.* 逐字同 web 的 workspace_ns_*(previewEmpty 除外:只放「—」佔位)。
 //   ② 接線(原文):index.html 的 ＋ / chip / 框的骨架與載入順序;trapTab 擴到 input / textarea;escTop 鏈有 #ns-scrim;telemetry 白名單有 strategy_new;沒有 innerHTML。
-//   ③ 用隨包的 Electron 開真的 index.html:＋ 開框(焦點到名稱欄、空表單送出 disabled、預覽「（至少填寫一項）」)→ 填一格預覽即時 = 組句、送出 enabled →
+//   ③ 用隨包的 Electron 開真的 index.html:＋ 開框(焦點到名稱欄、空表單送出 disabled 且 aria-describedby 指到 ns-hint、預覽「—」)→ 填一格預覽即時 = 組句、送出 enabled →
 //      送出 → 送到對話的就是那句、關框、表單清空、strategy_new;失敗 → 框留著、欄位不清、腳那一句;雲端視角三處目的地記號;停機 → 送出 disabled + 閘門句;
 //      回合中 → disabled + turn.busy;策略庫連結關框開策略庫;歡迎頁 chip 開框不送訊息;Esc / 取消關框、焦點回 ＋。
 // 跑法:node tests/check_shell_newstrategy.js(找不到 shell/node_modules 的 Electron 時 ③ SKIP,①② 照跑)
@@ -27,7 +27,7 @@ if (!process.versions.electron) {
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
-  ["zh", "en"].forEach((L) => ok(`① ${L} ns.* 的組句字逐字同 web 的 workspace_ns_msg_* / hint / preview_empty / submit`, ["lead", "symbol", "timeframe", "indicators", "logic", "dflt"].every((k) => S(L)[k] === WEB[L][k]) && STR[L]["ns.hint"] === WEB[L].hint && STR[L]["ns.previewEmpty"] === WEB[L].previewEmpty && STR[L]["ns.submit"] === WEB[L].submit));
+  ["zh", "en"].forEach((L) => ok(`① ${L} ns.* 的組句字逐字同 web 的 workspace_ns_msg_* / hint;預覽空格只放「—」(規則講在頂端 ns.hint 一次,不逐字同 web 的 preview_empty)`, ["lead", "symbol", "timeframe", "indicators", "logic", "dflt"].every((k) => S(L)[k] === WEB[L][k]) && STR[L]["ns.hint"] === WEB[L].hint && STR[L]["ns.previewEmpty"] === "—" && STR[L]["ns.submit"] === WEB[L].submit));
   ok("① zh 只填週期 4h = 雲端版實填量到的原句", P.nsCompose({ timeframe: "4h" }, "zh", S("zh")) === "幫我建立策略。週期：4h。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。");
   ok("① zh 全填:名稱進「」、每格一句、邏輯尾端的 。不重複、尾句", P.nsCompose({ name: "均線黃金交叉", symbol: "BTC", timeframe: "1h", indicators: "MA20、MA50", logic: "黃金交叉做多，死亡交叉平倉。" }, "zh", S("zh"))
     === "幫我建立策略「均線黃金交叉」。標的：BTC。週期：1h。指標：MA20、MA50。邏輯：黃金交叉做多，死亡交叉平倉。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。");
@@ -83,14 +83,14 @@ app.whenReady().then(async () => {
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const T = (k, v) => js(`t(${JSON.stringify(k)}, ${JSON.stringify(v || {})})`);
   const box = () => js(`(() => { const sc = document.getElementById("ns-scrim"), f = document.getElementById("ns-modal"); return { open: !sc.hidden, cloud: f.querySelector(".modal-head").classList.contains("cloud"), env: document.getElementById("ns-env").hidden, where: document.getElementById("ns-where").hidden,
-    preview: document.getElementById("ns-preview").textContent, empty: document.getElementById("ns-preview").classList.contains("empty"), dis: document.getElementById("ns-submit").disabled, msg: document.getElementById("ns-msg").textContent, busy: document.querySelectorAll("#ns-msg .cf-busy .spin16").length,
+    preview: document.getElementById("ns-preview").textContent, empty: document.getElementById("ns-preview").classList.contains("empty"), dis: document.getElementById("ns-submit").disabled, desc: document.getElementById("ns-submit").getAttribute("aria-describedby"), msg: document.getElementById("ns-msg").textContent, busy: document.querySelectorAll("#ns-msg .cf-busy .spin16").length,
     focus: document.activeElement && (document.activeElement.id || document.activeElement.name), inert: document.getElementById("view-ws").inert, w: f.getBoundingClientRect().width, vals: ["name", "symbol", "timeframe", "indicators", "logic"].map((n) => f.elements[n].value).join("|") }; })()`);
 
   let r = await js(`(async () => { document.getElementById("strat-add").click(); await new Promise((r) => setTimeout(r, 120)); return true; })()`);
   let b = await box();
-  ok("③ ＋ → 開框:440 寬、焦點在名稱欄、預覽「（至少填寫一項）」(.empty)、送出 disabled、本機不掛雲端記號、底下 inert", b.open && Math.round(b.w) === 440 && b.focus === "ns-name" && b.preview === (await T("ns.previewEmpty")) && b.empty && b.dis && !b.cloud && b.env && b.where && b.inert && b.msg === "", JSON.stringify(b));
+  ok("③ ＋ → 開框:440 寬、焦點在名稱欄、預覽「—」(.empty)、送出 disabled + aria-describedby=ns-hint、本機不掛雲端記號、底下 inert", b.open && Math.round(b.w) === 440 && b.focus === "ns-name" && b.preview === (await T("ns.previewEmpty")) && b.empty && b.dis && b.desc === "ns-hint" && !b.cloud && b.env && b.where && b.inert && b.msg === "", JSON.stringify(b));
   await js(`(() => { const f = document.getElementById("ns-modal"); f.elements.timeframe.value = "4h"; f.dispatchEvent(new Event("input", { bubbles: true })); })()`); b = await box();
-  ok("③ 填一格(週期 4h)→ 預覽即時 = 組句(雲端版實填量到的原句)、送出 enabled", b.preview === "幫我建立策略。週期：4h。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。" && !b.empty && !b.dis, JSON.stringify(b));
+  ok("③ 填一格(週期 4h)→ 預覽即時 = 組句(雲端版實填量到的原句)、送出 enabled、aria-describedby 拿掉", b.preview === "幫我建立策略。週期：4h。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。" && !b.empty && !b.dis && b.desc === null, JSON.stringify(b));
   // 失敗:submitMessage 回 false(上一輪還在跑那一句由對話講)→ 框留著、欄位不清、腳那一句、鈕回復
   await js(`window.__ns.sendResult = { started: false }; document.getElementById("ns-submit").click();`); await wait(120); b = await box();
   ok("③ 送出失敗:框留著、欄位不清、腳「送不出去…」、送出鈕回復", b.open && b.vals === "||4h||" && b.msg === (await T("modal.sendFailed")) && !b.dis && (await js("window.__ns.sent.length")) === 1 && !(await js("window.__ns.tracked.includes('strategy_new')")), JSON.stringify(b));

@@ -105,9 +105,6 @@
 .lib-dl { margin: var(--space-12) 0 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-4) var(--space-12); }
 .lib-dl dt { font-size: 12px; color: var(--ink-3); }
 .lib-dl dd { margin: 0; font-size: 12px; color: var(--ink); }
-.lib .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-6); }
-.lib .steps li { display: flex; gap: var(--space-8); align-items: baseline; font-size: 12px; line-height: 1.6; color: var(--ink-2); }
-.lib .steps .n { flex: none; width: 18px; height: 18px; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--ink); font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
 /* 購買框裡的購買中那一行(spin16 來自 trade.css) */
 .cf-busy { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-8) 0 0; font-size: 12px; color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back { transition: none; } .sk { animation: none; } }

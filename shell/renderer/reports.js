@@ -7,7 +7,7 @@
    - 中欄誰該出現由 trade.js 的 envShowMain 在最後一步問 rptShowMain;與策略庫互斥(rptOpen 先 libLeave,libOpen 反之)。
    - 送出後:本機 turn-end 重掃、多出新報告就自動打開;雲端 turn-end 後每 30 秒問一次清單、最多 10 分鐘,新 id 出現就停。
    用到 app.js 的 $ / t / LANG / running / csTitle / csStartNew / submitMessage / addMsg / trapTab / stratSelect / rpCloudSelect / paneSt / paneToggle /
-   rpWaitHold / mdBlocks / mdPaint、trade.js 的 trLeave / envShowMain / envCanSwitch、library.js 的 libEnv / libBag / libWhere / libCloud / libLeave / libTrack /
+   rpWaitHold / mdBlocks / mdPaint、trade.js 的 trLeave / envShowMain / envCanSwitch、library.js 的 libEnv / libBag / libCloud / libLeave / libTrack /
    libEl——都在呼叫時才取(這支比它們先載)。 */
 
 /* ── 純邏輯(tests/check_shell_reports.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
@@ -197,6 +197,7 @@ function rptPaint() {
   if (reading) { $("rpt-rows").textContent = ""; $("rpt-state").hidden = true; $("rpt-state").textContent = ""; rptFetch(env, B.reading); }
   else { $("rpt-read").textContent = ""; rptPaintList(); $("rpt-body").scrollTop = B.scroll || 0; }
 }
+// 回傳訊息槽有沒有字:有字時空狀態不畫引導(一個容器一個訊息槽)
 function rptPaintTools() {
   const env = libEnv(), data = RPT.data[env], n = data ? data.length : 0, count = $("rpt-count");
   count.textContent = t(n === 1 ? "rpt.count.one" : "rpt.count.other", { n: String(n) });
@@ -212,9 +213,10 @@ function rptPaintTools() {
   else if (st === "stopped" || st === "stale") text = t(st === "stopped" ? "ho.gate.stopped" : "ho.gate.stale");
   else if (RPT.noNew === env) { text = t("rpt.err.noNew"); err = true; }
   msg.textContent = ""; msg.className = "rpt-msg" + (err ? " err" : ""); msg.hidden = !text;
-  if (!text) return;
+  if (!text) return false;
   if (err) { const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); msg.appendChild(m); }   // 灰記號:不是錯誤,是「沒發生」
   msg.appendChild(libEl("span", "", text));
+  return true;
 }
 function rptRow(r, current) {
   const b = libEl("button", "rpt-row"); b.type = "button"; b.dataset.id = r.id;
@@ -230,7 +232,7 @@ function rptRow(r, current) {
 function rptPaintList() {
   const env = libEnv(), B = rptBag(env), rows = $("rpt-rows"), state = $("rpt-state");
   rows.textContent = ""; state.hidden = true; state.textContent = ""; state.className = "rpt-state";
-  rptPaintTools();
+  const said = rptPaintTools();
   const data = RPT.data[env];
   if (!data) {
     if (RPT.skel[env]) {
@@ -242,9 +244,10 @@ function rptPaintList() {
     }
     return;
   }
-  if (!data.length) {   // 空狀態(§1.4):兩行置中、不在中間再放一顆鈕(填充動作是右上那顆)
+  if (!data.length) {   // 空狀態(§1.4):置中、不在中間再放一顆鈕(填充動作是右上那顆);訊息槽有字時只剩名詞句
     state.hidden = false; state.className = "rpt-state rpt-empty";
-    state.append(libEl("p", "l1", t("rpt.empty")), libEl("p", "l2", t("rpt.emptyHint")));
+    state.appendChild(libEl("p", "l1", t("rpt.empty")));
+    if (!said) state.appendChild(libEl("p", "l2", t("rpt.emptyHint")));
     return;
   }
   // 剛讀的那份可能排在平鋪範圍外——多開幾批,回清單時才看得到它
@@ -379,7 +382,7 @@ function rptNewPaint() {
   $("rpn-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("rpn-env").hidden = !cloud; $("rpn-env").textContent = cloud ? t("env.cloud") : "";
   $("rpn-where").hidden = !cloud; $("rpn-where").textContent = cloud ? t("lib.cf.cloudNote") : "";
-  $("rpn-honest").textContent = t("rpt.new.honest", { where: libWhere() });
+  $("rpn-honest").textContent = t("rpt.new.honest");
   if (RPT.sending) return;
   const st = rptAskState(rptCtx(env));
   $("rpn-send").disabled = st !== "free";
@@ -404,7 +407,7 @@ function rptFillTpl(key) {
   d.style.height = Math.min(d.scrollHeight + d.offsetHeight - d.clientHeight, window.innerHeight * 0.5) + "px";
   d.focus();
 }
-// 送出(同策略庫 libSend):描述空著 → 焦點回欄、不送;閘門沒開 → 只更新那一句;成功(跑起來)才關框、記 pending、對話多一行、reports_ask
+// 送出(同策略庫 libSend):描述空著 → 焦點回欄、不送;閘門沒開 → 只更新那一句;成功(跑起來)才關框、記 pending、reports_ask(不在對話貼回音:鈕態＋訊息槽已講進度)
 async function rptSend() {
   if (RPT.sending) return;
   const d = $("rpn-desc"), desc = d.value.trim();
@@ -428,7 +431,6 @@ async function rptSend() {
   rptNewClose();
   d.value = ""; d.style.height = "";
   RPT.pending[env] = { env, before }; RPT.noNew = null;
-  addMsg("sys", t("rpt.queued"));   // web 是等 user 回音落下再貼;桌面 addMsg("you") 是同步的,直接接在後面
   libTrack("reports_ask");
   rptSync();
 }

@@ -5,7 +5,7 @@
 //   ③ 接線(原文):index.html 的入口 / 視圖 / modal 骨架 / 載入順序;preload 四支;main 四個 handle;envShowMain / trOpen / stratSelect / rpCloudSelect / onTurnEnd / escTop / hasToken 翻轉;
 //      渲染器搬運的三處 delta 與 CSS token 對照;telemetry 白名單;字串表 rpt.* / rb.* 齊、rb.* 與範本句逐字同 web。
 //   ④ 用隨包的 Electron 開真的 index.html:清單(列 / 份數 / 空態 / 13 份出「更早」/ 讀不到 + 重試)→ 閱讀(fixture 各型別 block 畫出來、markdown 接 mdPaint、
-//      尾註上標、圖缺檔失敗框、返回焦點)→ 新增報告 modal(chip 填欄、空描述不送、送出 → 逐字那句 → 關框 → 對話多一行 → 工具列「agent 寫作中…」;失敗留框)
+//      尾註上標、圖缺檔失敗框、返回焦點)→ 新增報告 modal(chip 填欄、空描述不送、送出 → 逐字那句 → 關框(對話不貼 sys 回音)→ 工具列「agent 寫作中…」;失敗留框)
 //      → turn-end(多出新報告自動打開 / 沒有就灰字)→ 雲端視角(照 api 順序、停機閘門、三處記號、讀不到 + 重試、輪詢)→ 兩袋各記各的 → en 組句。
 // 跑法:node tests/check_shell_reports.js(找不到 shell/node_modules 的 Electron 時 ④ SKIP,①②③ 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
@@ -222,7 +222,7 @@ app.whenReady().then(async () => {
   ok("④ 列:標題(agent 的字只進 textContent、全文放 title)、第二行 MM/DD HH:MM(.mono)+ 類型字;認不得的類型不出字;列高 ≥ 48", row.t === "晨報 <img onerror=x>" && row.title === row.t && row.imgs === 0 && /^\d\d\/\d\d \d\d:\d\d$/.test(row.mono) && row.m === row.mono && row.h >= 48 && (await rowOf("wk-2026-08-31")).m.endsWith(" · " + (await T("rpt.type.performance"))), JSON.stringify(row));
   // 空狀態
   await js(`window.__r.list = { reports: [] }; rptLoad("local", true);`); await wait(120); v = await view();
-  ok("④ 空狀態:兩行置中、沒有第二顆鈕;份數藏字留位(visibility hidden);工具列照常", v.state === (await T("rpt.empty")) + (await T("rpt.emptyHint")) && /rpt-empty/.test(v.stateCls) && v.stateBtns === 0 && v.ids === "" && v.countVis === "hidden" && !v.askDis, JSON.stringify(v));
+  ok("④ 空狀態(可按):兩行置中、沒有第二顆鈕;份數藏字留位(visibility hidden);工具列照常", v.state === (await T("rpt.empty")) + (await T("rpt.emptyHint")) && /rpt-empty/.test(v.stateCls) && v.stateBtns === 0 && v.ids === "" && v.countVis === "hidden" && !v.askDis, JSON.stringify(v));
   // 13 份 → 更早
   const many = Array.from({ length: 13 }, (_, i) => ({ id: "r" + i, title: "R" + i, type: "research", created_at: 1788000000 - i }));
   await js(`window.__r.list = { reports: ${JSON.stringify(many)} }; rptLoad("local", true);`); await wait(120); v = await view();
@@ -260,7 +260,7 @@ app.whenReady().then(async () => {
   const box = () => js(`(() => { ${Q} const sc = g("rpn-scrim"), f = g("rpn-modal"); return { open: !sc.hidden, cloud: f.querySelector(".modal-head").classList.contains("cloud"), env: g("rpn-env").hidden, where: g("rpn-where").hidden, honest: g("rpn-honest").textContent, chips: q("#rpn-modal .pf-act").map((b) => b.textContent).join("|"), desc: g("rpn-desc").value, descH: g("rpn-desc").getBoundingClientRect().height,
     dis: g("rpn-send").disabled, msg: g("rpn-msg").textContent, busy: q("#rpn-msg .cf-busy .spin16").length, focus: document.activeElement && document.activeElement.id, inert: g("view-ws").inert, w: f.getBoundingClientRect().width, send: g("rpn-send").textContent }; })()`);
   await js(`(async () => { document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60); let bx = await box();
-  ok("④ 「新增報告」→ 開框:440、焦點在描述欄、5 顆 .pf-act 範例 chip、誠實句帶「這台電腦」、送出鈕「請 agent 建立」常態可按、本機不掛雲端記號、底下 inert", bx.open && Math.round(bx.w) === 440 && bx.focus === "rpn-desc" && bx.chips.split("|").length === 5 && bx.chips.startsWith(await T("rpt.new.chip.tw")) && bx.honest === (await T("rpt.new.honest", { where: await T("lib.where.local") }))
+  ok("④ 「新增報告」→ 開框:440、焦點在描述欄、5 顆 .pf-act 範例 chip、誠實句(不帶目的地)、送出鈕「請 agent 建立」常態可按、本機不掛雲端記號、底下 inert", bx.open && Math.round(bx.w) === 440 && bx.focus === "rpn-desc" && bx.chips.split("|").length === 5 && bx.chips.startsWith(await T("rpt.new.chip.tw")) && bx.honest === (await T("rpt.new.honest"))
     && !bx.dis && bx.send === (await T("rpt.new.send")) && !bx.cloud && bx.env && bx.where && bx.inert && bx.msg === "", JSON.stringify(bx));
   const h0 = bx.descH;
   await js(`document.querySelector('#rpn-modal [data-tpl="rpt.new.tpl.research"]').click();`); bx = await box();
@@ -271,15 +271,17 @@ app.whenReady().then(async () => {
   // 失敗:framework 回 false → 框留著、欄位不清、腳那一句、鈕回復
   await js(`window.__r.sendResult = { started: false }; document.getElementById("rpn-desc").value = "台股晨報"; document.getElementById("rpn-send").click();`); await wait(150); bx = await box();
   ok("④ 送出失敗:框留著、描述不清、腳「送不出去…」、鈕回復;沒記 pending、沒有 reports_ask", bx.open && bx.desc === "台股晨報" && bx.msg === (await T("modal.sendFailed")) && !bx.dis && (await js("RPT.pending.local === null && !window.__r.tracked.includes('reports_ask')")), JSON.stringify(bx));
-  // 成功:逐字那句、關框、清欄、pending、對話多一行、工具列「agent 寫作中…」、reports_ask
+  // 成功:逐字那句、關框、清欄、pending、對話不貼回音、工具列「agent 寫作中…」、reports_ask
   await js(`window.__r.sendResult = new Promise((res) => { window.__r.release = () => res({ started: true }); }); running = false; RPT.fail = false; document.getElementById("rpn-send").click();`); await wait(120);
   const lock = await js(`(() => ({ send: document.getElementById("rpn-send").disabled, cancel: document.getElementById("rpn-cancel").disabled, x: document.getElementById("rpn-close").disabled, busy: document.querySelectorAll("#rpn-msg .cf-busy .spin16").length, open: !document.getElementById("rpn-scrim").hidden }))()`);
   ok("④ 送出中:送出 / 取消 / ✕ 三顆都 disabled、圓環 + 送出中…、框留著(設計稽核 必-4)", lock.send && lock.cancel && lock.x && lock.busy === 1 && lock.open, JSON.stringify(lock));
   await js(`window.__r.release();`); await wait(200); bx = await box(); v = await view();
   let s = await js(`(() => { ${Q} const m = window.__r.sent[window.__r.sent.length - 1]; const msgs = q("#chat-scroll .msg"); return { msg: m.message, env: m.viewing.env, last: msgs[msgs.length - 1].className + ":" + msgs[msgs.length - 1].textContent, pending: RPT.pending.local && RPT.pending.local.env + ":" + [...RPT.pending.local.before].join(), tracked: window.__r.tracked.includes("reports_ask") }; })()`);
-  ok("④ 送出成功:對話收到「幫我建立報告：「台股晨報」。這份只要產出一次，不用建立排程。」(viewing.env=local)、關框、欄清空、焦點退到 h5(開它的鈕已停用);pending 記著送出前的三個 id;對話最後一行 sys rpt.queued;工具列鈕「agent 寫作中…」disabled + rpt.note.pending;reports_ask",
-    s.msg === "幫我建立報告：「台股晨報」。這份只要產出一次，不用建立排程。" && s.env === "local" && !bx.open && bx.desc === "" && bx.focus === "rpt-h" && s.pending === "local:wk-2026-08-31@,mcpt-2317@,am-0901@" && s.last === "msg sys:" + (await T("rpt.queued")) && s.tracked
+  ok("④ 送出成功:對話收到「幫我建立報告：「台股晨報」。這份只要產出一次，不用建立排程。」(viewing.env=local)、關框、欄清空、焦點退到 h5(開它的鈕已停用);pending 記著送出前的三個 id;對話最後一行是用戶那句(不貼 sys 回音);工具列鈕「agent 寫作中…」disabled + rpt.note.pending;reports_ask",
+    s.msg === "幫我建立報告：「台股晨報」。這份只要產出一次，不用建立排程。" && s.env === "local" && !bx.open && bx.desc === "" && bx.focus === "rpt-h" && s.pending === "local:wk-2026-08-31@,mcpt-2317@,am-0901@" && s.last === "msg you:" + s.msg && s.tracked
     && v.ask === (await T("rpt.asking")) && v.askDis && v.msg === (await T("rpt.note.pending")) && !v.msgErr, JSON.stringify([s, bx, v]));
+  a = await js(`(() => { const keep = RPT.data.local; RPT.data.local = []; rptPaintList(); const o = { l1: document.querySelectorAll("#rpt-state.rpt-empty .l1").length, l2: document.querySelectorAll(".rpt-empty .l2").length, msg: document.getElementById("rpt-msg").textContent }; RPT.data.local = keep; rptPaintList(); return o; })()`);
+  ok("④ 空＋寫作中:訊息槽 rpt.note.pending、空狀態只剩名詞句(.rpt-empty .l2 不存在)", a.l1 === 1 && a.l2 === 0 && a.msg === (await T("rpt.note.pending")), JSON.stringify(a));
   // turn-end:多出新報告 → 自動打開
   const NEW = Object.assign({}, WEEKLY, { id: "new1", title: "新的報告" });
   await js(`window.__r.list = { reports: ${JSON.stringify([{ id: "new1", title: "新的報告", type: "performance", created_at: 1799999999 }].concat(LIST))} }; window.__r.docs.new1 = { report: ${JSON.stringify(NEW)}, images: {} }; running = false; rptTurnEnd();`); await wait(700); v = await view();
@@ -313,7 +315,7 @@ app.whenReady().then(async () => {
   await js(`(async () => { await rptOpen(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60); v = await view();
   ok("④ 雲端視角開報告:清單照 api 的順序(不重排)、鈕 disabled + ho.gate.stopped(平台有本體,清單照畫)、焦點退到 h5", v.on && v.ids === "c-old,c-new" && v.askDis && v.msg === (await T("ho.gate.stopped")) && v.focus === "rpt-h" && (await js("window.__r.cloudCalls.join()")).includes("list:false"), JSON.stringify(v));
   await js(`rptNewOpen(document.getElementById("rpt-h"));`); await wait(100); bx = await box();
-  ok("④ 雲端的新增報告框:標題列 .cloud + 「雲端」記號 + 腳的目的地句、誠實句帶「雲端主機」;停機 → 送出 disabled + ho.gate.stopped", bx.open && bx.cloud && !bx.env && !bx.where && bx.honest === (await T("rpt.new.honest", { where: await T("lib.where.cloud") })) && bx.dis && bx.msg === (await T("ho.gate.stopped")), JSON.stringify(bx));
+  ok("④ 雲端的新增報告框:標題列 .cloud + 「雲端」記號 + 腳的目的地句、誠實句與本機同一句;停機 → 送出 disabled + ho.gate.stopped", bx.open && bx.cloud && !bx.env && !bx.where && bx.honest === (await T("rpt.new.honest")) && bx.dis && bx.msg === (await T("ho.gate.stopped")), JSON.stringify(bx));
   await js(`rptNewClose();`);
   // 雲端讀一份:走 cloudReport
   await js(`window.__r.cloudDocs["c-new"] = { code: "OK", report: ${JSON.stringify(Object.assign({}, WEEKLY, { id: "c-new" }))}, images: {} }; document.querySelector('#rpt-rows .rpt-row[data-id="c-new"]').click();`); await wait(450); v = await view();

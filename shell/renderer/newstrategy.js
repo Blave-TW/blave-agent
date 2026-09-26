@@ -44,6 +44,7 @@ function nsRefresh() {
   pv.textContent = msg || t("ns.previewEmpty"); pv.classList.toggle("empty", !msg);
   const st = nsGate();
   $("ns-submit").disabled = !msg || NS.sending || st !== "free";
+  if (msg) $("ns-submit").removeAttribute("aria-describedby"); else $("ns-submit").setAttribute("aria-describedby", "ns-hint");   // 空表單停用的原因就是頂端那一句;閘門停用的原因在 ns-msg
   if (!NS.sending) $("ns-msg").textContent = st === "busy" ? t("turn.busy") : st === "stopped" ? t("ho.gate.stopped") : st === "stale" ? t("ho.gate.stale") : NS.fail ? t("modal.sendFailed") : "";
 }
 function nsPaintEnv() {

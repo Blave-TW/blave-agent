@@ -250,12 +250,12 @@ app.whenReady().then(async () => {
     const after = { calls: window.__lib.reportCalls, swapped: LIB.chart !== c0 && !!LIB.chart, chart: q("#lib-det #lib-chart").length, canvas: q("#lib-det #lib-chart canvas").length, period: document.getElementById("lib-period").textContent, periodMono: q("#lib-period .mono").length, focus: document.activeElement && document.activeElement.id, h5: q("#lib-det h5").length, cta: q("#lib-cta .btn-fill")[0].textContent };
     return { sync, after }; })()`);
   { const s = r.sync;
-    ok("④ 詳情:返回鈕出、清單頭 / 閘門卡 / 腳注收;標題 / meta(7 人安裝)/ 摘要;曲線先用 spark 畫出來(canvas、圖高 200);回測欄總報酬在第一列 + 四個數字 + 上架兩格;三道關卡都通過、右欄帶數值(費率兩行、p < 0.001、鄰域 91%);官方不出結論段;說明留換行;dl 回測期間先用曲線區間 / 標的 / 方向 / 曝險;三步;焦點在返回鈕",
+    ok("④ 詳情:返回鈕出、清單頭 / 閘門卡 / 腳注收;標題 / meta(7 人安裝)/ 摘要;曲線先用 spark 畫出來(canvas、圖高 200);回測欄總報酬在第一列 + 四個數字 + 上架兩格;三道關卡都通過、右欄帶數值(費率兩行、p < 0.001、鄰域 91%);官方不出結論段;說明留換行;dl 回測期間先用曲線區間 / 標的 / 方向 / 曝險;沒有「用了之後」卡;焦點在返回鈕",
       s.back && s.headList && s.rows === 0 && s.gate && s.foot && s.h5 === "BTC 通道動能共振" && s.meta === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 7 人安裝" && s.sum === "通道 + 動能。" && s.chart === 1 && s.chartH === 200 && s.canvas >= 1 && s.c0
       && s.kv === "總報酬|年化|Sharpe|最大回撤|樣本|上架天數|安裝 / +312.50%|+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000))))
       && s.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
-      && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 3 && s.focus === "lib-back", JSON.stringify(s));
-    ok("④ 免費態:主鈕「用這支」、說明句帶「這台電腦」", s.cta === (await T("lib.use")) && s.note === (await T("lib.note.free", { where: await T("lib.where.local") }))); }
+      && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 0 && s.focus === "lib-back", JSON.stringify(s));
+    ok("④ 免費態:主鈕「用這支」、說明句只講價格", s.cta === (await T("lib.use")) && s.note === (await T("lib.note.free")), JSON.stringify(s.note)); }
   ok("④ /report 回來(問一次、帶語言):只換曲線(#lib-chart 還在、LIB.chart 換新、canvas 在)與回測期間(backtest_start — backtest_end、.mono);頭部 / CTA / 焦點都沒重畫", JSON.stringify(r.after.calls) === "[[101,\"zh\"]]" && r.after.swapped && r.after.chart === 1 && r.after.canvas >= 1
     && r.after.period === "2019-12-02 — 2026-06-30" && r.after.periodMono === 1 && r.after.focus === "lib-back" && r.after.h5 === 1 && r.after.cta === (await T("lib.use")), JSON.stringify(r.after));
   // 降級:主行程回 null / 打不到 → 停在 spark、回測期間留曲線區間、不出任何錯誤字;下次進詳情再問(失敗不記)
@@ -292,7 +292,7 @@ app.whenReady().then(async () => {
     document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="101"]')[0].click(); return { a, focus8, b }; })()`);   // 後面的閘門態測試接著看 #101 的詳情
   ok("④ #8(沒 gate_checks):badge「未驗證」在最前、關卡卡只有一句 lib.gates.community、不列三道、CTA 仍「購買並使用 1,200 TWD」;返回焦點回那一列", r.a.tags === (await T("lib.unverified")) + "|1,200TWD" && r.a.card === (await T("lib.gates.title")) && r.a.p === (await T("lib.gates.community")) && r.a.lis === 0 && r.a.cta === (await T("lib.buy", { price: "1,200 TWD" })) && r.focus8 === "8", JSON.stringify(r));
   ok("④ #12(兩道 fail):關卡卡第一段「未驗證：2 道關卡未通過…」(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.1200、鄰域 82%);CTA「購買並使用 800 TWD」、說明句沒有恐嚇語", r.b.tags === (await T("lib.unverified")) + "|800TWD" && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
-    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === (await T("lib.note.paid", { where: await T("lib.where.local") })), JSON.stringify(r));
+    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === (await T("lib.note.paid")), JSON.stringify(r));
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
@@ -301,7 +301,7 @@ app.whenReady().then(async () => {
   ok("④ 「登入 Blave」→ 設定 › 帳號", r.set && r.cat === "acct", JSON.stringify(r));
   // 付不出資料費(0.1.6 §3.2):主鈕照 why 分流、鈕下說明升一階;試用天數來自 planVars().t(acct.trial_days),不寫死
   await js(`hasToken = true; LIB.data.dataAccess = "none"; LIB.data.why = "no_card"; acct = { trial_eligible: true, trial_days: 14 }; libSync();`); r = await cta();
-  ok("④ no_card 有試用:主鈕「綁卡，送 14 天資料」、說明「還沒綁卡…」+ 首次綁卡送 14 天那句;沒有文字鈕", r.btn === (await T("lib.gate.bindCard", { t: 14 })) && r.dis === false && r.up && r.quiet === "" && r.note === (await T("lib.gate.noCard")) + (await T("data.noCardSub", { t: 14 })), JSON.stringify(r));   // zh 全形句號後不留空格(設計稽核 必-2)
+  ok("④ no_card 有試用:主鈕「綁卡，送 14 天資料」、說明只有「還沒綁卡…」(天數鈕字已講,不接 data.noCardSub);沒有文字鈕", r.btn === (await T("lib.gate.bindCard", { t: 14 })) && r.dis === false && r.up && r.quiet === "" && r.note === (await T("lib.gate.noCard")), JSON.stringify(r));
   await js(`acct = { trial_eligible: false, trial_days: 14 }; libSync();`); r = await cta();
   ok("④ no_card 沒試用:「前往綁卡」、說明只有第一句", r.btn === (await T("plan.addCard")) && r.note === (await T("lib.gate.noCard")), JSON.stringify(r));
   await js(`acct = { trial_eligible: true }; pub = null; libSync();`); r = await cta();
@@ -319,7 +319,10 @@ app.whenReady().then(async () => {
   ok("④ 鈕開到 設定 › 資料與雲端方案;清單頂端閘門卡(§3.3):本機 none 才出——一句(同鈕下說明第一句)+ 同一顆主鈕、在第一列上方、列照樣列出、焦點不被搶;沒登入不出;雲端視角不出;有資料不出", r.a.set && r.a.cat === "plan"
     && !r.b.hidden && r.b.text === (await T("lib.gate.noBalance")) && r.b.btn === (await T("lib.gate.topup")) + ":btn-fill" && r.b.rows === 8 && r.b.focus === "lib-h" && r.b.above && r.c.hidden && r.d.lib && r.d.hidden && r.e.hidden, JSON.stringify(r));
   await js(`LIB.data.dataAccess = "billed"; libSync();`); r = await cta();
-  ok("④ 按小時付資料費的帳號:說明句多一句 lib.note.billed(zh 直接接、沒有半形空格)", r.btn === (await T("lib.use")) && r.note === (await T("lib.note.free", { where: await T("lib.where.local") })) + (await T("lib.note.billed")), JSON.stringify(r));
+  let a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); const o = { lines: q("#del-body p").map((p) => p.textContent), where: document.getElementById("del-where").hidden }; document.getElementById("del-cancel").click(); await new Promise((r) => setTimeout(r, 40)); return o; })()`);
+  ok("④ 按小時付資料費的帳號:鈕下只有「免費。」;lib.note.billed 在確認框第三行、本機不出腳的目的地句", r.btn === (await T("lib.use")) && r.note === (await T("lib.note.free")) && a.lines.length === 3 && a.lines[2] === (await T("lib.note.billed")) && a.where, JSON.stringify([r, a]));
+  a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; ENV.cur = "cloud"; libAsk({ id: 101, title: "BTC 通道動能共振" }); const o = { lines: q("#del-body p").map((p) => p.textContent), notes: q("#del-body .cf-note").length, where: document.getElementById("del-where").hidden ? null : document.getElementById("del-where").textContent, env: !document.getElementById("del-env").hidden }; document.getElementById("del-cancel").click(); ENV.cur = "local"; await new Promise((r) => setTimeout(r, 40)); return o; })()`);
+  ok("④ 雲端視角的下載確認框:內文兩段(l1 不帶目的地、雲端不出 billed)、lib.cf.cloudNote 在腳的 .del-where(不在內文 .cf-note)、「雲端」記號", a.lines.length === 2 && a.lines[0] === (await T("lib.cf.l1")) && a.notes === 0 && a.where === (await T("lib.cf.cloudNote")) && a.env, JSON.stringify(a));
   await js(`LIB.data.dataAccess = "included"; running = true; libSync();`); r = await cta();
   ok("④ 回合中:主鈕 disabled、說明句 turn.busy", r.btn === (await T("lib.use")) && r.dis === true && r.note === (await T("turn.busy")), JSON.stringify(r));
   // 用這支
@@ -328,7 +331,7 @@ app.whenReady().then(async () => {
     document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
     const b = q("#lib-cta .btn-fill")[0]; return { open, title, full, lines, okTxt, env, focus, sent: window.__lib.sent.map((p) => [p.message, p.viewing && p.viewing.env, p.sessionId && /^desktop-/.test(p.sessionId)]), pending: LIB.pending && LIB.pending.id, btn: b.textContent, dis: b.disabled, note: q("#lib-cta .note")[0].textContent, running }; })()`);
   ok("④ 「用這支」→ 確認框(標題帶策略名、兩段、「下載並回測」、焦點在取消、本機不掛雲端記號)→ 確認 → 送出的就是 web 那一句(逐字)、viewing.env=local → 進行中態",
-    r.open && r.title === (await T("lib.cf.title", { title: "BTC 通道動能共振" })) && r.full === r.title && !/…/.test(r.title) && r.lines.length === 2 && r.lines[0] === (await T("lib.cf.l1", { where: await T("lib.where.local") })) && r.okTxt === (await T("lib.cf.ok")) && r.env && r.focus === "del-cancel"
+    r.open && r.title === (await T("lib.cf.title", { title: "BTC 通道動能共振" })) && r.full === r.title && !/…/.test(r.title) && r.lines.length === 2 && r.lines[0] === (await T("lib.cf.l1")) && r.okTxt === (await T("lib.cf.ok")) && r.env && r.focus === "del-cancel"
     && r.sent.length === 1 && r.sent[0][0] === "幫我下載官方策略「BTC 通道動能共振」（#101），跑一次回測看看結果" && r.sent[0][1] === "local" && r.sent[0][2] && r.pending === 101 && r.btn === (await T("lib.pending")) && r.dis && r.note === (await T("lib.note.pending")) && r.running, JSON.stringify(r));
   // turn-end:本機多了一支 → 記對照表;stratRefresh(true) 選中新策略(策略庫收起)
   r = await js(`(async () => { window.__lib.strats = [{ name: "btc_channel", displayName: "BTC 通道", mtime: 5, hasBacktest: true }]; running = false;
@@ -360,7 +363,11 @@ app.whenReady().then(async () => {
   const box = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const sc = document.getElementById("del-scrim"); return { open: !sc.hidden, lock: !!sc.dataset.lock, title: document.getElementById("del-title").textContent, lines: q("#del-body p").map((p) => p.textContent), ok: document.getElementById("del-ok").textContent, okDis: document.getElementById("del-ok").disabled, cancelDis: document.getElementById("del-cancel").disabled, cancelHidden: document.getElementById("del-cancel").hidden, busy: q("#del-body .cf-busy .spin16").length, env: document.getElementById("del-env").hidden }; })()`);
   r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q('#lib-rows .lib-row[data-id="5"]')[0].click(); const b = q("#lib-cta .btn-fill")[0]; const out = { btn: b.textContent, note: q("#lib-cta .note")[0].textContent }; b.click(); return out; })()`);
   let bx = await box();
-  ok("④ 付費未購:主鈕「購買並使用 1,500 TWD」、說明 lib.note.paid(zh 沒有 fx 註);按下 → 第一段框:標題 / 價格 / .cf-note 導語 / 「確認購買」", r.btn === (await T("lib.buy", { price: "1,500 TWD" })) && r.note === (await T("lib.note.paid", { where: await T("lib.where.local") }))
+  await js(`(() => { document.getElementById("del-cancel").click(); LIB.data.dataAccess = "billed"; document.querySelector("#lib-cta .btn-fill").click(); })()`); const bxBilled = await box();
+  await js(`(() => { document.getElementById("del-cancel").click(); LIB.data.dataAccess = "included"; document.querySelector("#lib-cta .btn-fill").click(); })()`);
+  ok("④ 購買框:本機按時計資料費 → 導語後接 lib.note.billed;included 不出", bxBilled.open && bxBilled.lines.length === 3 && bxBilled.lines[1] === (await T("lib.buy.lead")) && bxBilled.lines[2] === (await T("lib.note.billed")) && bx.lines.length === 2 && !bx.lines.includes(await T("lib.note.billed")), JSON.stringify([bx.lines, bxBilled.lines]));
+  bx = await box();
+  ok("④ 付費未購:主鈕「購買並使用 1,500 TWD」、說明 lib.note.paid(zh 沒有 fx 註);按下 → 第一段框:標題 / 價格 / .cf-note 導語 / 「確認購買」", r.btn === (await T("lib.buy", { price: "1,500 TWD" })) && r.note === (await T("lib.note.paid"))
     && bx.open && !bx.lock && bx.title === (await T("lib.buy.title", { title: "Cash-and-Carry <img onerror=x> Arbitrage" })) && bx.lines[0] === (await T("lib.buy.price", { price: "1,500 TWD" })) && bx.lines[1] === (await T("lib.buy.lead")) && bx.ok === (await T("lib.buy.ok")) && bx.env, JSON.stringify([r, bx]));
   await js(`document.getElementById("del-ok").click();`); await wait(30); bx = await box();
   r = await js(`(() => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); document.getElementById("del-scrim").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); const q = (x) => [...document.querySelectorAll(x)]; return { still: !document.getElementById("del-scrim").hidden, cta: q("#lib-cta .btn-fill")[0].textContent, dis: q("#lib-cta .btn-fill")[0].disabled, buys: window.__lib.buys, buying: LIB.buying }; })()`);
@@ -391,7 +398,7 @@ app.whenReady().then(async () => {
   r = await js(`(async () => { running = false; LIB.pending = null; libSync(); document.getElementById("lib-back").click(); const q = (x) => [...document.querySelectorAll(x)]; q('#lib-rows .lib-row[data-id="9"]')[0].click();
     const btn = q("#lib-cta .btn-fill")[0].textContent, note = q("#lib-cta .note")[0].textContent; q("#lib-cta .btn-fill")[0].click(); const title = document.getElementById("del-title").textContent; document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
     return { btn, note, title, last: window.__lib.sent[window.__lib.sent.length - 1].message, buys: window.__lib.buys.length }; })()`);
-  ok("④ 已購的付費策略:主鈕「用這支」、說明 lib.note.owned、走下載框(不是購買框)、送 lib.msgPaid", r.btn === (await T("lib.use")) && r.note === (await T("lib.note.owned", { where: await T("lib.where.local") })) && r.title === (await T("lib.cf.title", { title: "已買的社群策略" })) && r.last === "幫我下載已購買的策略「已買的社群策略」（#9），跑一次回測看看結果" && r.buys === 5, JSON.stringify(r));
+  ok("④ 已購的付費策略:主鈕「用這支」、說明 lib.note.owned、走下載框(不是購買框)、送 lib.msgPaid", r.btn === (await T("lib.use")) && r.note === (await T("lib.note.owned")) && r.title === (await T("lib.cf.title", { title: "已買的社群策略" })) && r.last === "幫我下載已購買的策略「已買的社群策略」（#9），跑一次回測看看結果" && r.buys === 5, JSON.stringify(r));
   // en
   r = await js(`(async () => { running = false; LIB.pending = null; libFind(5).purchased = false; setLang("en"); applyStatic(); await new Promise((r) => setTimeout(r, 30)); const q = (x) => [...document.querySelectorAll(x)];
     const h = document.getElementById("lib-h").textContent; document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="5"]')[0].click(); const tag5 = q('#lib-cta').length;
@@ -417,7 +424,7 @@ app.whenReady().then(async () => {
     ENV.cur = "local"; envShowMain(); await new Promise((r) => setTimeout(r, 60)); const l = { h5: q("#lib-det h5")[0] && q("#lib-det h5")[0].textContent, where: q("#lib-cta .note")[0].textContent, painted: LIB.paintedEnv };
     LIB.bags.cloud.open = false; LIB.bags.cloud.detail = null; return { c, l }; })()`);
   ok("④ 兩邊都開著策略庫:切到雲端畫雲端那袋的詳情(#72、說明句講雲端主機、停機 / 讀不到那句);切回本機回到 #101、說明句講這台電腦", r.c.lib && r.c.h5 === "DOGE 籌碼集中度" && r.c.painted === "cloud" && (r.c.where === (await T("ho.gate.stale")) || r.c.where === (await T("ho.gate.stopped")))
-    && r.l.h5 === "BTC 通道動能共振" && r.l.painted === "local" && r.l.where === (await T("lib.note.free", { where: await T("lib.where.local") })), JSON.stringify(r));
+    && r.l.h5 === "BTC 通道動能共振" && r.l.painted === "local" && r.l.where === (await T("lib.note.free")), JSON.stringify(r));
   // 雲端視角的「已安裝」(Windows 真機補測):送出時記雲端清單(名字 → mtime)、回合結束比不到就掛著等、輪詢帶新清單來才記;不寫檔、不打端點;那支從雲端消失就拿掉;等太久就放掉。
   // 清單「缺席」(strategies_ok 不為 true)那一輪:不刪、不記、不動;等待中再送第二支 → 第一支的等待放掉;回合結束當場比到 → 清單當場重畫;同名 mtime 變了(再下載一份)→ 也算、也重畫;登出清掉
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; running = false; LIB.pending = null; LIB.bags.cloud.open = true; LIB.bags.cloud.detail = null; document.getElementById("cv-empty").hidden = true; ENV.cur = "cloud";
