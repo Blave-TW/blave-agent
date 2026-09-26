@@ -53,6 +53,8 @@ futures round trip, whole-lot + intraday odd-lot stock fills). Design rules:
 
 Credentials in .env: capital_api_key (身分證字號) + capital_password —
 canonical names, see capital-broker.md Step 4 (legacy capital_id accepted).
+On a cloud box .env may hold vault sentinels instead; lib/capital_vault.py
+resolves them (readable only as Administrator).
 COM runs single-threaded apartment: keep every call on the thread that made
 the first one (the hand-wired TW reconciler is single-threaded — fine).
 """
@@ -63,7 +65,7 @@ import re
 import threading
 import time
 
-from lib import guard
+from lib import capital_vault, guard
 
 # Touched after every accepted order/confirmed fill: lib/capital_worker.py's
 # sleep loop early-ticks on it so the account snapshot (and through the file
@@ -174,10 +176,12 @@ def _get_session(env):
             return _session
 
         _init_com()
-        login_id = env.get("capital_api_key") or env.get("capital_id")
-        password = env.get("capital_password")
+        login_id, password = capital_vault.resolve(env)
         if not login_id or not password:
             raise ValueError("capital_api_key / capital_password missing from .env")
+        if (blocked := capital_vault.login_blocked(login_id, password)):
+            raise CapitalError(f"login not attempted: 群益 answered code={blocked} to these "
+                               "credentials — re-enter the trading password first")
 
         center = comtypes.client.CreateObject(sk.SKCenterLib, interface=sk.ISKCenterLib)
         reply = comtypes.client.CreateObject(sk.SKReplyLib, interface=sk.ISKReplyLib)
@@ -188,6 +192,7 @@ def _get_session(env):
 
         code = center.SKCenterLib_Login(login_id, password)
         if code not in (0, 2003):
+            capital_vault.block_login(login_id, password, code)
             msg = center.SKCenterLib_GetReturnCodeMessage(code)
             raise CapitalError(
                 f"login failed code={code} {msg}"

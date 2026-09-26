@@ -17,6 +17,11 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    import capital_vault  # run as a script (NSSM / --once): lib/ is sys.path[0]
+except ImportError:
+    from lib import capital_vault
+
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", r"C:\blave-agent\workspace")
 OUT_PATH = os.path.join(WORKSPACE, "state", "capital_account.json")
 HEARTBEAT_PATH = Path(WORKSPACE) / "state" / "heartbeat" / "capital_worker"
@@ -260,11 +265,50 @@ def query_balance(order, login_id, ts_acct):
 class ProbeError(RuntimeError):
     """A connect step failed with a Capital return code — carries the stage
     name so --once can report WHERE it broke (login/cert/accounts) without the
-    daemon's _write_snapshot + sys.exit side effects."""
+    daemon's _write_snapshot + sys.exit side effects, and the code itself so
+    the connect flow maps it to a state without parsing the message."""
 
-    def __init__(self, stage, message):
+    def __init__(self, stage, message, code=None):
         super().__init__(message)
         self.stage = stage
+        self.code = code
+
+
+def _refuse_if_blocked(login_id, password, consume_retry=False):
+    """Before any COM object exists: no login with credentials 群益 already
+    answered 300/307 to (NSSM restarts this worker forever). Only the probe
+    (--once) may take the single post-unlock retry the runtime grants."""
+    blocked = capital_vault.login_blocked(login_id, password, consume_retry)
+    if blocked:
+        raise ProbeError("login", f"login not attempted: code={blocked} for these credentials — "
+                                  "re-enter the trading password", blocked)
+
+
+BACKOFF_PATH = os.path.join(WORKSPACE, "state", "capital_worker_backoff.json")
+BACKOFF_MAX_S = 1800
+
+
+def _backoff_s(failed_before):
+    """30s, 60s, 120s … capped at 30 min: a broker outage must not become a
+    re-login every 30s for hours."""
+    return min(30 * 2 ** max(failed_before, 0), BACKOFF_MAX_S)
+
+
+def _fail_and_exit(payload):
+    try:
+        with open(BACKOFF_PATH, encoding="utf-8") as f:
+            n = int(json.load(f).get("failures", 0))
+    except (OSError, ValueError, AttributeError, TypeError):
+        n = 0
+    try:
+        os.makedirs(os.path.dirname(BACKOFF_PATH), exist_ok=True)
+        with open(BACKOFF_PATH, "w", encoding="utf-8") as f:
+            json.dump({"failures": n + 1}, f)
+    except OSError:
+        pass
+    _write_snapshot(payload)
+    time.sleep(_backoff_s(n))
+    sys.exit(1)  # NSSM restarts us with a fresh COM session
 
 
 def _connect(login_id, password):
@@ -282,17 +326,19 @@ def _connect(login_id, password):
 
     code = center.SKCenterLib_Login(login_id, password)
     if code not in (0, 2003):
-        raise ProbeError("login", f"login failed code={code} {center.SKCenterLib_GetReturnCodeMessage(code)}")
+        capital_vault.block_login(login_id, password, code)
+        raise ProbeError("login", f"login failed code={code} {center.SKCenterLib_GetReturnCodeMessage(code)}",
+                         code)
     _log(f"login ok ({code})")
 
     if (rc := order.SKOrderLib_Initialize()) != 0:
-        raise ProbeError("init", f"SKOrderLib_Initialize code={rc}")
+        raise ProbeError("init", f"SKOrderLib_Initialize code={rc}", rc)
     if (rc := order.ReadCertByID(login_id)) != 0:
-        raise ProbeError("cert", f"ReadCertByID code={rc} (cert/identity issue — see 602 notes)")
+        raise ProbeError("cert", f"ReadCertByID code={rc} (cert/identity issue — see 602 notes)", rc)
 
     Events.futures_accounts, Events.stock_accounts = [], []
     if (rc := order.GetUserAccount()) != 0:
-        raise ProbeError("accounts", f"GetUserAccount code={rc}")
+        raise ProbeError("accounts", f"GetUserAccount code={rc}", rc)
     # One OnAccount event fires per account — the first arrival proves nothing
     # about the OTHER market's account. Keep pumping a grace window after the
     # first event or a late TS/TF row is silently dropped for the whole
@@ -344,13 +390,18 @@ def run_once():
     except OSError as e:
         _write_probe({"ok": False, "stage": "env", "error": f".env unreadable: {e}"})
         sys.exit(2)
-    login_id = env.get("capital_api_key") or env.get("capital_id")
-    password = env.get("capital_password")
+    try:
+        login_id, password = capital_vault.resolve(env)
+    except RuntimeError as e:
+        _write_probe({"ok": False, "stage": "env", "error": str(e)})
+        sys.exit(2)
     if not login_id or not password:
         _write_probe({"ok": False, "stage": "env", "error": "capital_api_key/capital_password missing in .env"})
         sys.exit(2)
     try:
+        _refuse_if_blocked(login_id, password, consume_retry=True)
         _center, order, tf, ts, _handles = _connect(login_id, password)
+        capital_vault.clear_block(login_id, password)
         snap = _tick_snapshot(order, login_id, tf, ts)
         _write_probe({"ok": True, "stage": "done", "error": None,
                       "login_code": 0, "accounts": {"futures": tf, "securities": ts},
@@ -360,7 +411,7 @@ def run_once():
         _log("probe ok")
         sys.exit(0)
     except ProbeError as e:
-        _write_probe({"ok": False, "stage": e.stage, "error": str(e)})
+        _write_probe({"ok": False, "stage": e.stage, "code": e.code, "error": str(e)})
         _log(f"probe failed at {e.stage}: {e}")
         sys.exit(2)
     except Exception as e:
@@ -372,18 +423,25 @@ def run_once():
 def main():
     _init_com()
     env = _read_env()
-    login_id = env.get("capital_api_key") or env.get("capital_id")
-    password = env.get("capital_password")
+    try:
+        login_id, password = capital_vault.resolve(env)
+    except RuntimeError as e:
+        _write_snapshot({"ok": False, "error": str(e)})
+        time.sleep(30)  # don't hot-loop through NSSM restarts
+        sys.exit(1)
     if not login_id or not password:
         _write_snapshot({"ok": False, "error": "capital_api_key/capital_password missing in .env"})
         sys.exit(1)
 
     try:
+        _refuse_if_blocked(login_id, password)
         _center, order, tf, ts, _handles = _connect(login_id, password)
     except ProbeError as e:
-        _write_snapshot({"ok": False, "error": str(e)})
-        time.sleep(30)  # don't crash-loop hot on a bad password / venue blip
-        sys.exit(1)
+        _fail_and_exit({"ok": False, "error": str(e)})
+    try:
+        os.remove(BACKOFF_PATH)
+    except OSError:
+        pass
 
     while True:
         # heartbeat for manager/healthcheck.py — a stale file means this daemon died
@@ -403,10 +461,8 @@ def main():
             # we don't tear down the COM session over a retry-worthy blip.
             _log(f"tick skipped (rate-limited): {e}")
         except Exception as e:
-            _write_snapshot({"ok": False, "error": f"{type(e).__name__}: {e}"})
             _log(f"tick failed: {e}")
-            time.sleep(30)  # broker outage must not become a 1.5s relogin storm
-            sys.exit(1)  # NSSM restarts us with a fresh COM session
+            _fail_and_exit({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
         # Sleep in small slices, early-ticking when an order just went out
         # (REFRESH_FLAG touched by lib/order_capital) so fills hit the snapshot

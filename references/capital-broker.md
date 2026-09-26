@@ -191,14 +191,29 @@ shown in the Blave Agent web dashboard (「遠端桌面連線」link: IP, Admini
    backup and private-key recovery needs both, see Step 5); **valid 1 year**, renew via
    the same RAWinApp flow (renewable from ~1 month before expiry) — warn the user it recurs.
 
-**CONFIRMED (2026-07-16 POC, uid 12890):** SKCOM binds the certificate to the **Windows identity
-that issued it** (always `Administrator` here, since issuance happens via RDP), not to a cert
-store location. Exporting the cert and importing it into the `SYSTEM`/machine store does **not**
-fix login — `SKCenterLib_Login` still returns 602 (cert validation failure) because SKCOM checks
-the account identity, not just cert presence. **The only working fix: run the reconciler/strategy
-service as the `Administrator` account, not `LocalSystem`** — see the Capital exception in
-`references/manager.md`'s NSSM section (`nssm set ... ObjectName .\Administrator <password>`). Do
-not attempt cert export/import as a workaround; it was tested and does not resolve 602.
+**CONFIRMED:** SKCOM reads the **running identity's own `CurrentUser\My`** and needs a password
+logon to unlock the private key. A cert issued elsewhere works once its pfx is imported into that
+identity's store (re-tested 2026-09-26: a pfx exported on one machine, imported into a fresh
+machine's Administrator store, logs in with code 0; both machines stay logged in, no kick-out).
+The 2026-07-16 failure was an import into the SYSTEM/machine store while login ran as someone
+else. The worker and any Capital reconciler therefore run as `Administrator` (NSSM `ObjectName
+.\Administrator <password>`, see `references/manager.md`), and the cert lives in Administrator's
+store.
+
+### Without RDP — pfx upload (only once the app's connect screen offers it)
+
+**Until the Blave app's 群益 connect screen offers "import a certificate file", this subsection does
+not apply: onboard through the RDP flow above, exactly as before.** Once it ships, a user with their
+own Windows PC issues the cert there (RAWinApp), exports it (匯出憑證), and uploads the pfx + its
+export password from the app. The upload is sealed to a one-time key only this machine holds; the
+machine's runtime commands decrypt it, import it into Administrator's store (removing expired 群益
+certs and older certs of the same ID only after the new one is in with its key), and probe.
+Progress is in `state/capital_connect.json` (the portfolio report's `capital_connect`): `setup`,
+`cert`, `probe`, `worker` sections, with `probe.state` such as `ok`, `pw_wrong` (300), `pw_locked`
+(307), `verify_needed` (321), `cert_old` (600), `cert_unusable` (602), `cert_expired` (604),
+`no_accounts`.
+- Never ask for a pfx file or its password in chat, and never import one yourself.
+- You may read `state/capital_connect.json` to tell the user where they are; do not edit it.
 
 **Also CONFIRMED: a *password logon* is required, not just the right account.** The same login
 script run as Administrator succeeds or fails depending on how the session was created:
@@ -288,6 +303,20 @@ was believed login-gated at the time; confirm `GetModule` on first real onboardi
 ---
 
 ## Step 4 — Collect Credentials & Write `.env`
+
+**If `.env` already holds `capital_password=vault:…`, the credentials are stored — do not collect
+or rewrite them.** On a cloud Windows machine the platform's `credentials` command (the app's form, or
+`lib/venue.bind`) keeps the real 身分證字號 and trading password in a separate file,
+`C:\blave-agent\credentials\capital_vault.json`, used only by the 群益 order code, and leaves
+`capital_api_key=` (empty) and `capital_password=vault:<fingerprint>` in `.env`. Do not "fix" those
+lines and do not open the vault. Otherwise collect them as below.
+
+**After a 300 (wrong trading password) or 307 (locked)** every 群益 login path on this machine refuses
+to try the same credentials again (`state/capital_login_block.json`) — three wrong passwords lock
+the account. 300: ask the user for the correct password and re-save it. 307: the user unlocks at
+群益 first; if the password did not change, the app's 「繼續」 grants exactly ONE retry
+(`capital_probe` with `after_unlock`) — if that fails too, only a changed password gets another
+try. Never delete or edit the block file to "retry", and never grant the retry yourself.
 
 **Ask the user (in one message):**
 > 請提供你的身分證字號和群益交易密碼（跟登入群益下單軟體同一組）。
@@ -634,6 +663,9 @@ the hand-wired signed-diff pattern per `references/manager.md`, and the reconcil
 the `.\Administrator` ObjectName exception there (602).
 
 ### Account Snapshot Worker (`blave-agent-capital` service)
+
+The connect flow's `capital_finish` command installs and starts this service exactly as below
+(and registers it in `state/deployments.json`); the commands here are the manual fallback.
 
 Account/position reads are split in two because the platform account_reader runs as LocalSystem,
 which SKCOM's certificate check rejects (602): `lib/capital_worker.py` polls the venue over COM

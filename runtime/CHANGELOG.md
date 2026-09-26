@@ -8,6 +8,19 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **群益雲端免 RDP 開通(新 `runtime/capital_connect.py`,五個機器指令 `capital_setup`／`capital_pfx_key`／`capital_pfx`／`capital_probe`／`capital_finish`)**:
+  用戶在自己的 Windows 匯出的 pfx 以主機一次性 RSA-OAEP 公鑰封裝上傳(api 只轉送密文),主機解密、驗是群益且未過期、經 schtasks 密碼載具
+  以 Administrator `certutil -user -importpfx … NoRoot` 匯入,刪掉同 ID 舊證與過期證、probe、再由 `capital_finish` 裝 NSSM worker(Administrator)。
+  進度寫 `state/capital_connect.json`,portfolio 報告帶 `capital_connect`(網頁與電腦版同一份)。雲端 Windows 且 workspace lib 支援時,
+  `credentials` 綁群益會把身分證字號＋交易密碼改存 `credentials/capital_vault.json`(只有 Administrator 讀得到,SYSTEM 只能刪),`.env` 只留哨兵;
+  解綁一併刪 vault(刪不掉也不中斷解綁)。哨兵的 id 是空值(舊版 lib 在送出登入前就以「missing」失敗,不會拿哨兵當密碼);
+`credentials\` 目錄先收權再寫,暫存檔任何失敗都刪。群益回 300/307 後,runtime、worker、`order_capital` 都不再用同一組帳密登入
+(`state/capital_login_block.json`;300 只有帳密換了才解除;307 另可由用戶按「我已解鎖」
+= `capital_probe {"after_unlock": true}` 放行恰好一次 probe 登入,worker 與下單 lib 期間照樣拒登,放行以獨占建立的 claim 檔搶、同時兩支 probe 只有一支登入;bridge 中斷會關掉放行窗口;成功即解除(`--once` 自己清這組帳密的 block)、失敗就回到 block 且同一組帳密不再放行),worker 失敗改指數退避(30 秒起、上限 30 分)。匯入前不刪任何有私鑰的證;
+新證比同 ID 現有的舊 → `PFX_OLDER`;同 ID 同到期日的舊那張在新證匯入後刪掉。只有 capital_* 指令會建立 `capital_connect.json`。雲端主機寫 `.env` 時一律收掉 Users 的讀取權。本機模式與非 Windows 一律拒收。測試 `tests/check_capital_connect.py`
+  (需 `cryptography`)、desktop-win-test 真機驗過(見 `.claude/output/backend/capital-cloud-progress-2026-09-26.md`)。**要 workspace 同時更新**
+  (`lib/capital_vault.py` 等),舊 workspace 照舊把帳密寫 `.env`,不會拿哨兵去登入。
+
 ## 1.1.97 — 2026-09-26
 
 - **電腦版排程報告帶 `BLAVE_AGENT_LOCAL=1`、`BLAVE_SCHEDULED_RUN=1` 與電腦版策略同一份放行名單(含 `BLAVE_KLINE_SOURCE`,

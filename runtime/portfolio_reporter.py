@@ -1359,6 +1359,11 @@ def build_report():
     upd = workspace_update()
     if upd is not None:
         report["workspace_update"] = upd
+    # 群益 cloud connect progress (runtime/capital_connect.py) — the one status
+    # the desktop app and the web both render; absent until a step has run
+    cap = _read_json(os.path.join(WORKSPACE_STATE, "capital_connect.json"))
+    if isinstance(cap, dict):
+        report["capital_connect"] = cap
     return report
 
 

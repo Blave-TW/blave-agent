@@ -44,6 +44,7 @@ _RUNTIME_DIR = os.path.dirname(os.path.abspath(__file__))
 if _RUNTIME_DIR not in sys.path:
     sys.path.append(_RUNTIME_DIR)
 
+import capital_connect
 import telegram_pairing
 import turn_slots
 
@@ -1174,6 +1175,9 @@ def _cmd_credentials(args):
     # exactly as it was — no half-written .env, no eviction of the venue the
     # user is currently trading on, no manifest, no rebind halt.
     binance = _binance_bind_check(env) if "BINANCE" in writing else None
+    # 群益 on a cloud Windows box: real values → a separate Administrator-only
+    # file for the 群益 order code, sentinels → .env (spec §6-B)
+    env = capital_connect.divert_credentials(env, local=_local_mode())
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -1212,7 +1216,9 @@ def _cmd_credentials(args):
         tmp = path + ".tmp"
         with open(tmp, "w") as f:
             f.write("\n".join(kept) + "\n")
-        os.chmod(tmp, 0o600)
+        os.chmod(tmp, 0o600)  # POSIX only; Windows gets its ACL below
+        if not _local_mode():
+            capital_connect.restrict_admins(tmp)
         os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
     _write_ui_cred_manifest(kept)  # final lines = the UI-confirmed bound set
     book_account = {}
@@ -1236,6 +1242,11 @@ def _cmd_credentials(args):
         # the mirror update sources from the mirror itself, never the config
         # (P1-3 — see _clear_evicted_in_ui_mirror).
         _clear_evicted_in_ui_mirror(evicted_ids)
+        if "capital" in evicted_ids:  # its sentinels are gone from .env; the vault goes too
+            try:
+                capital_connect.drop_vault(["capital_password"])
+            except Exception as e:
+                _log(f"capital vault drop failed: {type(e).__name__}")
         cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
         try:
             with open(cpath) as f:
@@ -3494,7 +3505,13 @@ def _cmd_credentials_remove(args):
         with open(tmp, "w") as f:
             f.write("\n".join(kept) + "\n")
         os.chmod(tmp, 0o600)
+        if not _local_mode():
+            capital_connect.restrict_admins(tmp)
         os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
+    try:  # the keys are already gone: nothing here may skip the manifest shrink / halt below
+        capital_connect.drop_vault(names)
+    except Exception as e:
+        _log(f"capital vault drop failed: {type(e).__name__}")
     # P1-2: unbind must shrink the bind manifest too, or an agent hand-writing
     # the SAME venue's keys back into .env after the unbind would still be in
     # the allowed list and route again without any UI bind.
@@ -5273,6 +5290,12 @@ HANDLERS = {
     "telegram_reset": _cmd_telegram_reset,
     "book_account_confirm": _cmd_book_account_confirm,
 }
+# 群益 cloud connect (runtime/capital_connect.py): long steps come back as Deferred
+HANDLERS.update({
+    name: (lambda args, _n=name: capital_connect.dispatch(
+        _n, args, Deferred, lambda: _push(_ON_PROGRESS, "capital connect"), _local_mode()))
+    for name in capital_connect.COMMANDS
+})
 
 
 def dispatch(command):
