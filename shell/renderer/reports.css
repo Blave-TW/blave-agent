@@ -18,14 +18,16 @@
 .rpt-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-24) var(--space-24); }
 .rpt-body > * { max-width: 680px; }
 .rpt-body:focus-visible { outline-offset: -2px; }
-/* 列:文件清單不是商品清單——48 高、兩行、列間不畫線(照 web 報告列;跟策略庫 56 高帶線的列刻意不同) */
-.rpt-row { width: 100%; min-height: 48px; display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); padding: var(--space-6) var(--space-8); border-radius: var(--radius-md); text-align: left; transition: background var(--motion-fast) var(--ease-standard); }
+/* 列:文件清單不是商品清單——52 高、兩行、列間不畫線(照 web 報告列;跟策略庫 56 高帶線的列刻意不同) */
+/* 填色往外擴 12、字不動:列內文字對齊頁首「報告」/ 份數 / 閱讀頁同一條左緣(同 .cn-opt;canon 底線分頁的負 margin+等量 padding)。.rpt-body 有 24 左右 padding,外擴 12 不溢出 */
+.rpt-row { width: calc(100% + 2 * var(--space-12)); margin-inline: calc(-1 * var(--space-12)); min-height: 52px; display: flex; flex-direction: column; justify-content: center; gap: var(--space-2); padding: var(--space-8) var(--space-12); border-radius: var(--radius-md); text-align: left; transition: background var(--motion-fast) var(--ease-standard); }
 .rpt-row:hover { background: var(--surface-card); }
 .rpt-row[aria-current="true"] { background: var(--surface-muted); }
 .rpt-row:focus-visible { outline-offset: -2px; }
-.rpt-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--ink); }
+.rpt-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
 .rpt-row .m { font-size: 11px; line-height: 1.4; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rpt-more { width: 100%; min-height: 40px; padding: 0 var(--space-8); border-radius: var(--radius-md); text-align: left; font-size: 13px; color: var(--ink-3); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.rpt-row .m .mono { line-height: 1; }   /* Roboto Mono 的 ascent/descent 跟內文字型不同,照 1.4 排會把 .m 的行框撐高 1px,列高變 53 */
+.rpt-more { width: calc(100% + 2 * var(--space-12)); margin-inline: calc(-1 * var(--space-12)); min-height: 40px; padding: 0 var(--space-12); border-radius: var(--radius-md); text-align: left; font-size: 13px; color: var(--ink-3); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .rpt-more:hover { background: var(--surface-card); color: var(--ink); }
 /* 空 / 讀不到 / 載入中(閱讀頁):同 web .rp-empty 的 240 置中;空狀態兩行、不在中間再放一顆鈕 */
 .rpt-state { padding: var(--space-24) 0; font-size: 13px; color: var(--ink-3); }
@@ -37,7 +39,7 @@
 .rpt-empty .l1 { margin: 0; font-size: 13px; color: var(--ink-3); }
 .rpt-empty .l2 { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); max-width: 36em; }
 /* skeleton(canon Loader:200ms 內回來不畫、畫了至少留 300ms;條子與微光沿用 library.css 的 .sk) */
-.rpt-sk { min-height: 48px; display: flex; flex-direction: column; justify-content: center; padding: var(--space-6) var(--space-8); }
+.rpt-sk { min-height: 52px; display: flex; flex-direction: column; justify-content: center; padding: var(--space-8) 0; }
 /* 閱讀層:頁首只剩返回鈕(同 .lib-back);內容 = report-blocks.css 的 article.rb-report */
 .rpt-back { display: inline-flex; align-items: center; gap: var(--space-4); height: 32px; padding: 0 var(--space-8) 0 var(--space-4); margin-left: calc(-1 * var(--space-4)); font-size: 13px; color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard); }
 .rpt-back:hover { color: var(--ink); }

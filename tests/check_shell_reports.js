@@ -219,7 +219,12 @@ app.whenReady().then(async () => {
   let v = await view(), row = await rowOf("am-0901");
   ok("④ 側欄「報告」→ #rpt 出、入口 aria-current、歡迎頁 / 策略庫 / 自動下單收;三列照 created_at 新到舊;份數「3 份報告」;鈕「新增報告」可按;焦點在鈕;reports_list", v.on && v.cur === "page" && v.lib && v.tr && v.empty && !v.headList && v.back && v.read && v.ids === "wk-2026-08-31,mcpt-2317,am-0901" && v.count === (await T("rpt.count.other", { n: 3 })) && v.countVis === "visible"
     && v.ask === (await T("rpt.ask")) && !v.askDis && v.msg === null && v.focus === "rpt-ask" && (await js("window.__r.tracked.includes('reports_list')")), JSON.stringify(v));
-  ok("④ 列:標題(agent 的字只進 textContent、全文放 title)、第二行 MM/DD HH:MM(.mono)+ 類型字;認不得的類型不出字;列高 ≥ 48", row.t === "晨報 <img onerror=x>" && row.title === row.t && row.imgs === 0 && /^\d\d\/\d\d \d\d:\d\d$/.test(row.mono) && row.m === row.mono && row.h >= 48 && (await rowOf("wk-2026-08-31")).m.endsWith(" · " + (await T("rpt.type.performance"))), JSON.stringify(row));
+  ok("④ 列:標題(agent 的字只進 textContent、全文放 title)、第二行 MM/DD HH:MM(.mono)+ 類型字;認不得的類型不出字;列高 ≥ 48", row.t === "晨報 <img onerror=x>" && row.title === row.t && row.imgs === 0 && /^\d\d\/\d\d \d\d:\d\d$/.test(row.mono) && row.m === row.mono && row.h >= 52 && (await rowOf("wk-2026-08-31")).m.endsWith(" · " + (await T("rpt.type.performance"))), JSON.stringify(row));
+  { const edge = (narrow) => js(`(() => { const g = (x) => document.getElementById(x), p = g("rpt"); if (${narrow}) { p.style.flex = "none"; p.style.width = "480px"; }
+      const r0 = document.querySelector("#rpt-rows .rpt-row"), body = g("rpt-body"), o = { t: r0.querySelector(".t").getBoundingClientRect().left, h: g("rpt-h").getBoundingClientRect().left, count: g("rpt-count").getBoundingClientRect().left, rowH: r0.getBoundingClientRect().height, fill: r0.getBoundingClientRect().left, sw: body.scrollWidth, cw: body.clientWidth, w: p.getBoundingClientRect().width };
+      p.style.flex = ""; p.style.width = ""; return o; })()`);
+    const wide = await edge(false), nar = await edge(true), fine = (e) => Math.abs(e.t - e.h) <= 1 && Math.abs(e.t - e.count) <= 1 && e.sw <= e.cw && Math.round(e.rowH) === 52 && Math.round(e.t - e.fill) === 12;
+    ok("④ 列留白(spec-report-row-padding §2):第一列 .t 的 left = 頁首 h5 = 份數(±1)、填色外擴 12、.rpt-body 無橫向溢出、列高 52;寬欄與中欄 480 各量一次", fine(wide) && fine(nar), JSON.stringify({ wide, nar })); }
   // 空狀態
   await js(`window.__r.list = { reports: [] }; rptLoad("local", true);`); await wait(120); v = await view();
   ok("④ 空狀態(可按):兩行置中、沒有第二顆鈕;份數藏字留位(visibility hidden);工具列照常", v.state === (await T("rpt.empty")) + (await T("rpt.emptyHint")) && /rpt-empty/.test(v.stateCls) && v.stateBtns === 0 && v.ids === "" && v.countVis === "hidden" && !v.askDis, JSON.stringify(v));

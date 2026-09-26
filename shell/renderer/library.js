@@ -322,13 +322,12 @@ function libPaint() {
   const det = B.detail ? libFind(B.detail) : null;
   $("lib-head-list").hidden = !!det; $("lib-back").hidden = !det;
   $("lib-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mkt === B.mkt ? "true" : "false"));
-  if (det) { $("lib-rows").textContent = ""; $("lib-gate").hidden = true; $("lib-state").hidden = true; $("lib-foot").hidden = true; libPaintDetail(det); }
+  if (det) { $("lib-rows").textContent = ""; $("lib-gate").hidden = true; $("lib-state").hidden = true; libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
 }
 function libTags(s) {
   const out = [];
   if (s.verified) out.push(libEl("span", "tag is-verified", t("lib.verified")));
-  else if (!s.is_official) out.push(libEl("span", "tag", t("lib.unverified")));   // 社群且沒過關卡:單層灰、純文字;官方未驗證不標
   if (libIsFree(s)) out.push(libEl("span", "tag", t("lib.free")));
   else if (s.purchased || s.is_owner) out.push(libEl("span", "tag", t("lib.owned")));
   else { const p = libEl("span", "tag is-price"); p.append(libPriceNode(s)); out.push(p); }
@@ -371,8 +370,8 @@ function libRow(s) {
   return b;
 }
 function libPaintList() {
-  const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), foot = $("lib-foot"), gate = $("lib-gate");
-  rows.textContent = ""; state.hidden = true; state.textContent = ""; foot.hidden = true; foot.textContent = ""; gate.hidden = true; gate.textContent = "";
+  const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), gate = $("lib-gate");
+  rows.textContent = ""; state.hidden = true; state.textContent = ""; gate.hidden = true; gate.textContent = "";
   if (!LIB.data) {
     if (LIB.skel) {
       [94, 82, 90, 76, 87].forEach((w) => {
@@ -392,7 +391,6 @@ function libPaintList() {
   const v = libVisible(LIB.data.strategies, B.mkt);
   if (!v.length) { state.hidden = false; state.textContent = t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"); }
   v.forEach((s) => rows.appendChild(libRow(s)));
-  foot.hidden = false; foot.textContent = t("lib.foot");   // 投稿是賣家流程、app 沒有:純文字腳注,不是入口
 }
 /* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「資料與雲端方案」
    (查不到狀態時不擺一顆要錢的主鈕)。鈕都開 設定 › 資料與雲端方案。試用天數來自 planVars().t(api 的 trial.days),不寫死 */

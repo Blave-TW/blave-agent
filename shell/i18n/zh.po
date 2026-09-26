@@ -3051,12 +3051,6 @@ msgstr "已驗證"
 msgid "lib.installed"
 msgstr "已安裝"
 
-msgid "lib.unverified"
-msgstr "未驗證"
-
-msgid "lib.foot"
-msgstr "想上架自己的策略？在網頁版投稿。"
-
 msgid "lib.kv.total"
 msgstr "總報酬"
 
@@ -3073,7 +3067,7 @@ msgid "lib.gate.robustVal"
 msgstr "鄰域保留 {ratio}%"
 
 msgid "lib.gates.failed"
-msgstr "未驗證：{k} 道關卡未通過。回測數字是作者提供的，Blave 沒有替它把關。"
+msgstr "{k} 道關卡未通過。回測數字是作者提供的，Blave 沒有替它把關。"
 
 msgid "lib.price"
 msgstr "{price}"
@@ -3166,7 +3160,7 @@ msgid "lib.gate.na"
 msgstr "MCPT 不適用（組合策略）"
 
 msgid "lib.gates.community"
-msgstr "未驗證：這支策略尚未跑過品質關卡。社群策略由作者上架、經人工審核後公開；回測數字是作者提供的。"
+msgstr "這支策略尚未跑過品質關卡。社群策略由作者上架、經人工審核後公開；回測數字是作者提供的。"
 
 msgid "lib.how"
 msgstr "它怎麼交易"

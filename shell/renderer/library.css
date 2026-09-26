@@ -46,7 +46,6 @@
 .lib-gate { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-12); margin: var(--space-4) 0 var(--space-12); padding: var(--space-12) var(--space-16); background: var(--surface-card); border-radius: var(--radius-lg); }   /* 一句在上、鈕在下:中欄 480–512 兩欄放不下,直排寫死(設計稽核 建-3) */
 .lib-gate[hidden] { display: none; }
 .lib-gate p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
-.lib-foot { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .lib-state { margin: 0; padding: var(--space-24) 0; font-size: 13px; color: var(--ink-3); }
 .lib-state .btn-out { display: inline-flex; align-items: center; margin-top: var(--space-12); }
 /* skeleton(canon Loader:200ms 內回來不畫、畫了至少留 300ms;微光靠 lib-shimmer) */
