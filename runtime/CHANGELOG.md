@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.101 — 2026-09-27
+
 - **DeepSeek 排程的固定來源加回鉅亨列表頁+官方公告頁(Wei 09-27 拍板)**:鉅亨授權涵蓋抓其網站
   新聞列表頁——`https://news.cnyes.com/news/cat/headline`(台股/通用)與
   `https://news.cnyes.com/news/cat/bc_crypto`(加密)進 prompt 點名為 licensed 固定來源;官方公告頁
