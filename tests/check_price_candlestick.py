@@ -17,7 +17,7 @@ close = pd.Series(np.linspace(0.5, 0.62, 30), index=idx)
 df = pd.DataFrame({"Open": close * 0.99, "High": close * 1.02, "Low": close * 0.97, "Close": close,
                    "Volume": np.linspace(1e6, 2e6, 30)}, index=idx)
 B._data.fetch_kline = lambda *a, **k: df.copy()
-b = types.SimpleNamespace(headers={}, notes=[], missing=[], ctx={})
+b = types.SimpleNamespace(headers={}, notes=[], missing=[], ctx={}, cache={})
 brick = B.coin_snapshot(b, "XRP", days=30)
 blocks = getattr(brick, "blocks", None) or getattr(brick, "items", None) or brick.__dict__.get("blocks") or []
 types_ = [x.get("type") for x in blocks if isinstance(x, dict)]
