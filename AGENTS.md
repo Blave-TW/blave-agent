@@ -17,7 +17,7 @@ The user cannot see your tool output. What you report IS their reality — real 
 
 ## Which OS is this machine?
 
-This workspace runs on either Linux or Windows. Where instructions differ (scheduling in `references/deployment.md`, reconciler startup in `references/manager.md`), determine the OS ONCE per session with `python -c "import platform;print(platform.system())"` and use the matching branch for the rest of the session.
+A cloud machine runs Linux or Windows; the desktop app runs on the user's own Mac or PC (`BLAVE_AGENT_LOCAL=1` — a `Darwin` answer below is always the desktop app, never the Linux branch for scheduling). Where instructions differ (scheduling in `references/deployment.md`, reconciler startup in `references/manager.md`), determine the OS ONCE per session with `python -c "import platform;print(platform.system())"` and use the matching branch for the rest of the session.
 
 ## External Agents (BYO)
 

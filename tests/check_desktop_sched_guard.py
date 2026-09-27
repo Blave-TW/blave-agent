@@ -108,6 +108,8 @@ t("② SDK 沒有 hooks 欄位 → 不掛、不炸", at._sched_guard_hooks(_NoHo
 
 agents = open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read()
 dep = open(os.path.join(ROOT, "references", "deployment.md"), encoding="utf-8").read()
+t("③ AGENTS.md › Which OS:macOS(Darwin)是電腦版,排程不走 Linux 那一支",
+  "a `Darwin` answer below is always the desktop app, never the Linux branch for scheduling" in agents)
 t("③ AGENTS.md:電腦版不碰系統排程、不叫用戶改系統權限、指到 deployment.md",
   "BLAVE_AGENT_LOCAL=1" in agents and "crontab" in agents and "launchctl" in agents and "schtasks" in agents
   and "system permission" in agents and "references/deployment.md` › *Desktop app*" in agents)
