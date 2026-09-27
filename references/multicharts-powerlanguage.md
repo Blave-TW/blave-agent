@@ -24,6 +24,8 @@ exists because the only check we have is a static one.
 5. **End the reply with the delivery marker on its own line, nothing after it:**
    `<export target="mc" path="strategies/<name>/exports/mc.txt" />`
 
+   A `<suggest>` block, when the reply carries one, goes on the lines after the marker — never drop the marker to make room for it.
+
    **After the marker, call no tool** — the marker must sit in your final message, not in
    a paragraph followed by `ls`/`cat` verification (the runtime only reads the last
    segment; verify first, then reply). Write the attributes in this order: `target`, then

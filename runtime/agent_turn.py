@@ -15,6 +15,7 @@ Prints the assistant's reply text to stdout; everything else goes to stderr.
 """
 import argparse
 import asyncio
+import calendar
 import http.client
 import json
 import os
@@ -257,6 +258,32 @@ def _export_fail_note(message, lang=None):
     if lang:
         return _EXPORT_FAIL_NOTE if lang == "zh" else _EXPORT_FAIL_NOTE_EN
     return _EXPORT_FAIL_NOTE if _is_zh(message or "") else _EXPORT_FAIL_NOTE_EN
+
+
+def unmarked_exports(since, touched, workspace=None):
+    """這一輪轉好、回覆卻沒帶 <export …/> 標記的轉出檔,各產一個 chunk。
+    模型會漏寫標記(「回覆必須以 <suggest> 結尾」跟「標記放最後」搶同一個位置時丟掉標記),
+    檔案在、卡沒出。判準不靠模型:lint 過了才寫的 sidecar,`exported_at` 落在這一輪之內,
+    且這一輪的工具碰過那支策略(同時間別條對話轉的檔不算)。"""
+    workspace = workspace or WORKSPACE
+    chunks = []
+    for name in sorted(touched or ()):
+        if not _EXPORT_NAME_RE.fullmatch(name):
+            continue
+        for target, ext in _EXPORT_EXT.items():
+            rel = f"strategies/{name}/exports/{target}.{ext}"
+            try:
+                with open(os.path.join(workspace, rel + ".meta.json"), encoding="utf-8") as f:
+                    meta = json.load(f)
+                at = calendar.timegm(time.strptime(meta["exported_at"], "%Y-%m-%dT%H:%M:%SZ"))
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            if meta.get("target") != target or at < int(since):
+                continue
+            chunk = _read_export(target, rel, workspace)
+            if chunk:
+                chunks.append(chunk)
+    return chunks
 
 
 # ── 導航指引(ui_nav)──────────────────────────────────────────────────────
@@ -1114,6 +1141,8 @@ _SUGGEST_RULE = (
     "- 模擬盤已穩定跑一段時間且執行無異常 → 建議小額實盤\n"
     "- 用戶想實際跑但還沒綁任何交易所 → 建議先綁模擬盤\n"
     "命中時，回覆**必須以 <suggest> 區塊結尾**（其後不得再有任何文字），格式：\n"
+    "這一輪有轉出檔要交付時，`<export … />` 標記照寫、放在 <suggest> 區塊的前一行——"
+    "不能因為要放 <suggest> 就省掉標記。\n"
     "<suggest>\n帶我看怎麼把〈策略名〉上模擬盤\n</suggest>\n"
     "一行一個建議、最多 3 個（通常 1 個就好）；句子＝用戶口吻的短指令"
     "（動詞＋對象＋必要參數），點了會替用戶原句送出。"
@@ -2089,6 +2118,7 @@ class WebSink:
         self.full_text = ""
         self.error_text = None
         self.error_code = None
+        self.started_at = time.time()  # wall clock:跟 lint sidecar 的 exported_at 比(unmarked_exports)
         # Set when the user hits Stop: /report piggybacks `interrupt: true` on its
         # response, or turn_stop sees the flag file web_bridge writes when the inbox
         # `interrupt` arrives (that one also reaches a turn that is silent in a tool).
@@ -2320,7 +2350,10 @@ class WebSink:
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         cleaned, suggestions = extract_suggestions(cleaned)
+        marked = "<export" in cleaned
         cleaned, exports = extract_exports(cleaned, note=getattr(self, "export_fail_note", None))
+        if not marked:
+            exports = unmarked_exports(self.started_at, getattr(self, "export_touched", None))
         cleaned = _NAV_STRIP_RE.sub("", cleaned)  # 放錯位置的標記只剝不觸發
         if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
@@ -3510,6 +3543,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         if note:
             sink.on_text(("\n\n" if sink.has_reply() else "") + note)
     sink.export_fail_note = _export_fail_note(message, reply_lang)
+    sink.export_touched = touched
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
     # 被停止的回合也要:下一輪得知道剛才做到哪、哪支還在背景跑。

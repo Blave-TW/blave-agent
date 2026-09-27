@@ -23,6 +23,8 @@ export is a template adaptation plus a static lint; the user compiles it in XQ.
 
    `<export target="xq" path="strategies/<name>/exports/xq.xs" />`
 
+   A `<suggest>` block, when the reply carries one, goes on the lines after the marker — never drop the marker to make room for it.
+
    **After the marker, call no tool** — the marker must sit in your final message, not in
    a paragraph followed by `ls`/`cat` verification (the runtime only reads the last
    segment; verify first, then reply). Write the attributes in this order: `target`, then

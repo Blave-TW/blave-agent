@@ -87,7 +87,27 @@ ok("主行程收到 export chunk 就落地、回合結束寫 index", /c\.type ==
   put(h1, "xp"); put(h2, "xp");
   ok("轉出卡在結果卡之前(xpPut);沒有結果卡就接在最後;export.js 不再直接 appendChild(xpCard", JSON.stringify(h1.kids.map((x) => (x === g ? "res" : x))) === '["text","xp","res"]' && h2.kids.join() === "text,xp" && !/appendChild\(xpCard/.test(xp));
 }
+{ // e2e 0.1.8 #49:這一輪沒有 export chunk(模型漏寫標記),檔案照樣在資料夾裡 → 回合結束仍重掃,程式碼分頁當下就多一份
+  const src = cut(xp, "function xpTurnEnd(bubble)", "function xpCard(", "xpTurnEnd / xpReload");
+  const run = async (pending, rpName) => {
+    const RP = { name: rpName, data: rpName ? { exports: [] } : null }, seen = { load: [], paint: 0, cards: 0 };
+    const env = { XP: { pending }, RP, rpBag: () => RP, xpCodePaint: () => { seen.paint++; }, scrollChat: () => {},
+      xpHost: () => ({}), xpPut: () => { seen.cards++; }, xpCard: (c) => c,
+      window: { blave: { loadStrategy: async (n) => { seen.load.push(n); return { exports: [{ target: "pine", content: "x" }], cryptoKline: false }; } } } };
+    const f = new Function(...Object.keys(env), src + "\nreturn xpTurnEnd;")(...Object.values(env));
+    f(null); await new Promise((r) => setTimeout(r, 0));
+    return { seen, RP, left: env.XP.pending.length };
+  };
+  (async () => {
+    const a = await run([], "tsmc_ma_cross");
+    ok("沒有卡的一輪:正開著的那支仍重掃 exports 並重畫檔案切換", a.seen.load.join() === "tsmc_ma_cross" && a.seen.paint === 1 && a.seen.cards === 0 && a.RP.data.exports[0].target === "pine");
+    const b = await run([{ target: "xq", strategy: "other" }], "tsmc_ma_cross");
+    ok("卡是別支策略的:卡照掛、開著的那支也重掃", b.seen.cards === 1 && b.seen.load.join() === "tsmc_ma_cross" && b.left === 0);
+    const c = await run([], null);
+    ok("沒有開著的策略:不讀檔", c.seen.load.length === 0 && c.seen.paint === 0);
+    console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
+    process.exit(red ? 1 : 0);
+  })();
+}
 ok("csOpen 把轉出卡插回舊對話", /concat\([^\n]*brs, xps, ress\)/.test(app) && /x\.xp \? xpRestore\(x\.xp\)/.test(app));
 
-console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
-process.exit(red ? 1 : 0);

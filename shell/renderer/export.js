@@ -183,12 +183,13 @@ function xpHost(bubble) {
 function xpPut(host, card) { const g = host.querySelector(":scope > .res-group"); if (g) g.before(card); else host.appendChild(card); }
 function xpTurnEnd(bubble) {
   const list = XP.pending; XP.pending = [];
+  // 正開著的那支每一輪結束都重掃轉出檔(只換 exports,不動其他分頁):檔案是 agent 寫進資料夾的,
+  // 這一輪有沒有送卡跟檔案在不在是兩件事——只在有卡時重掃,漏卡那一輪程式碼分頁要切走再切回來才看得到
+  if (RP.name) xpReload(RP.name);
   if (!list.length) return;
   const host = xpHost(bubble);
   list.forEach((c) => xpPut(host, xpCard(c)));
   scrollChat();
-  // 轉出檔是這一輪寫的:那支正開著,程式碼分頁的檔案切換跟著多一份(只換 exports,不動其他分頁)
-  if (list.some((c) => c.strategy === RP.name)) xpReload(RP.name);
 }
 async function xpReload(name) {
   let d = null; try { d = await window.blave.loadStrategy(name); } catch (_) { return; }
