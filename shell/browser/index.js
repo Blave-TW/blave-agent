@@ -553,8 +553,13 @@ function createBrowser(o) {
   const PAY_IFRAME_RE = "(^|\\.)(stripe\\.com|stripe\\.network|paypal\\.com|paypalobjects\\.com|braintreegateway\\.com|braintree-api\\.com|adyen\\.com|checkout\\.com|ecpay\\.com\\.tw|newebpay\\.com|tappaysdk\\.com|squareup\\.com|klarna\\.com)$";
   let lastMasked = -1;   // 測試看得到這一次蓋了幾格
   async function withoutMarks(v, fn) {
-    await v.page.run(IP.marksVisible, [false]).catch(() => {});
-    try { return await fn(); } finally { await v.page.run(IP.marksVisible, [true]).catch(() => {}); }
+    // 展開在中欄的那頁不做藏/放:每次擷取(縮圖 2 秒一輪+每動作補拍)都把即時頁上的游標/外框層
+    // 藏了又放,就是「開著瀏覽器畫面閃來閃去」的來源(量測:操作 8 秒 marks 層翻動 18 次;
+    // view bounds 與頁面 resize 都是 0)。代價:這頁操作中的縮圖/快照帶著標記層——縮圖上本來
+    // 就有 app 自畫的游標層,回合結束的整頁升級多半已 park、照樣拍乾淨版
+    const live = wcTab.get(v.wc.id) === expanded;
+    if (!live) await v.page.run(IP.marksVisible, [false]).catch(() => {});
+    try { return await fn(); } finally { if (!live) await v.page.run(IP.marksVisible, [true]).catch(() => {}); }
   }
   async function withMask(v, fn) {
     let list; try { list = await v.page.run(IP.fieldCandidates); } catch (_) { return null; }

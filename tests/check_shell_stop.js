@@ -90,7 +90,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     (id) => els[id], (k) => k, () => {}, () => {}, { blave: { stopTurn: async () => false } });
   await R3.stopTurn();
   ok("暖機中按停止:記住要停", R3.stopped === true);
-  ok("…submitMessage 暖機完就收掉、原句放回", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); if \(lastUserTyped\) stopRestore\(msg\); return false; \}/.test(appSrc));
+  ok("…submitMessage 暖機完就收掉、原句放回", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg\); return false; \}/.test(appSrc));
   els.ta.value = ""; R.stopRestore("幫我跑 BTC 回側");
   ok("停下後原句放回空的輸入框", els.ta.value === "幫我跑 BTC 回側" && els.ta.focused);
   els.ta.value = "改成 ETH"; R.stopRestore("幫我跑 BTC 回側");
@@ -99,7 +99,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const endCut = cutFrom(appSrc, "window.blave.onTurnEnd(async (r) => {", "/* 側欄 / 聊天欄");
   ok("turn-end:停止不算失敗(不問登入、不攤收據、保險殺掉的結束碼不顯示)", /const stopped = turnStopped; turnStopped = false;/.test(endCut)
     && /const exitLine = r\.code !== 0 && !stopped/.test(endCut) && /if \(!stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
-  ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; sendBtnSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) stopRestore\(lastUserText\);/.test(endCut));
+  ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; sendBtnSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText\);/.test(endCut));
   // 只放回用戶自己打的:把 submitMessage 裡算來源的那一行切出來跑
   const typedLine = /addMsg\("you", msg\); (lastUserTyped = [^;]+;) lastUserText = msg;/.exec(appSrc);
   ok("來源那一行在 submitMessage 裡", !!typedLine);

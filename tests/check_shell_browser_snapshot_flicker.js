@@ -35,5 +35,21 @@ ok("updateImage 換成整頁版(內容真的變了)", snaps.updateImage(sid, id,
 ok("markdown / meta 不受影響", snaps.load(sid, id).markdown === "m" && snaps.load(sid, id).title === "A");
 ok("壞參數拒收:沒圖 / 壞副檔名 / 壞 id", snaps.updateImage(sid, id, null) === false && snaps.updateImage(sid, id, { data: Buffer.from("x"), ext: "svg" }) === false && snaps.updateImage(sid, "nope", { data: Buffer.from("x"), ext: "webp" }) === false);
 
-console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
-process.exit(red ? 1 : 0);
+// ---- 展開在中欄的那頁:擷取不藏標記(藏了又放=即時頁肉眼可見的閃;量測 8 秒 18 次 → 0)
+{
+  const cut = (src.match(/async function withoutMarks\(v, fn\) \{[\s\S]*?\n  \}/) || [""])[0];
+  const runWM = (isLive) => {
+    const calls = [];
+    const env = { wcTab: { get: () => (isLive ? "T1" : "T2") }, expanded: "T1", IP: { marksVisible: "MV" } };
+    const fn = new Function(...Object.keys(env), "return (" + cut.replace(/^async function withoutMarks/, "async function") + ")")(...Object.values(env));
+    const v = { wc: { id: 9 }, page: { run: (w, a) => { calls.push(a ? a[0] : w); return Promise.resolve(); } } };
+    return fn(v, async () => calls.push("CAP")).then(() => calls);
+  };
+  Promise.all([runWM(true), runWM(false)]).then(([live, parked]) => {
+    ok("展開在看的那頁:直接拍,不藏/放標記層(不閃)", live.join(",") === "CAP", live);
+    ok("parked 的頁照舊:藏 → 拍 → 放(縮圖乾淨)", parked.join(",") === "false,CAP,true", parked);
+    console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
+    process.exit(red ? 1 : 0);
+  });
+}
+

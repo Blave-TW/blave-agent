@@ -2011,7 +2011,10 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
   const viewing = opts && opts.viewing && typeof opts.viewing === "object" ? opts.viewing : chatViewing();
-  addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
+  // 泡泡留住節點:沒送出去的路(busy / 版本閘 / 暖機中停止 / 引擎起不來)要收回泡泡+還原到輸入框,
+  // 不然那句話看起來送了兩次——留著的 ghost 泡泡跟之後真的送出的那則長一模一樣(Wei 實測截圖)
+  const bubble = addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
+  const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束自動打開(reports.js)
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
@@ -2022,9 +2025,9 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     engineWait = true;
     try { await window.blave.ensureEngine(); } finally { engineWait = false; }
     // 暖機期間按了停止:主行程還沒有回合可停,在這裡收掉,不送出
-    if (turnStopped) { turnStopped = false; unlock(); if (lastUserTyped) stopRestore(msg); return false; }
+    if (turnStopped) { turnStopped = false; unlock(); bubble.remove(); if (lastUserTyped) stopRestore(msg); return false; }
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
-    turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = [];
+    turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
     const r = await window.blave.sendMessage({
       sessionId, message: msg, handoff: opts && opts.handoff, model: MP.model, effort: mpEffort(), viewing });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
@@ -2032,14 +2035,14 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     if (r.blocked === "UPDATE_REQUIRED") {
       // 不是「上一輪還在跑」:這個版本被停用了,要更新才能繼續。鈕帶去 設定 › 一般 最下面的「關於」(那裡有更新鈕)
       faultCard().set({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) });
-      unlock(); return false;
+      unsend(); unlock(); return false;
     }
-    addMsg("sys", t("turn.busy")); unlock(); return false;
+    unsend(); addMsg("sys", t("turn.busy")); unlock(); return false;
   } catch (e) {
     busyEnd();
     // 失敗卡而不是灰字:灰字排在「正在準備引擎…」下面,看起來像那一行還在跑(0.0.6 Intel 實測)
     faultCard().set({ text: t("turn.engineFailed", { msg: (e && e.message) || e }) });
-    unlock(); return false;
+    unsend(); unlock(); return false;
   }
 }
 
@@ -2697,6 +2700,7 @@ window.blave.onTurnEvent((c) => {
   } else if (c.type === "text" || c.type === "text_replace") {
     draftShow();
   } else if (c.type === "tool") {
+    turnHadTool = true;   // 有收據摺疊了:停止時「你的那則」要留著當收據的上下文
     // `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟
     if (c.status === "done") { busyStepDone(c); scrollChat(); return; }
     // 這段文字後面接了工具呼叫 → 是過場旁白、不是回覆:從泡泡移除(同 web)。
@@ -2727,6 +2731,7 @@ window.blave.onTurnEvent((c) => {
 // turnFaulted:這一輪已經畫過分類過的錯誤卡。不能用 faultShown 判——它在吞掉 not_started 那句時
 // 就被歸零了,回合結束時再看會以為沒畫過,多畫一張登入卡。
 let turnModel = null, turnGotReply = false, turnErrored = false, turnFaulted = false;
+let turnBubble = null, turnHadTool = false;   // 這一輪「你的那則」與「有沒有工具收據」:停止收泡泡用(見 onTurnEnd)
 // 這一輪的回覆帶了哪些卡片標記(paintAi 從文字裡拿出來的);回合結束才出卡,不插在串流中間
 let turnCards = [];
 let pendingErr = [];
@@ -2762,7 +2767,12 @@ window.blave.onTurnEnd(async (r) => {
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   upTurnEnded(faulted);
   running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync();
-  if (stopped && lastUserTyped) stopRestore(lastUserText);
+  if (stopped && lastUserTyped) {
+    // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
+    // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複
+    if (!turnGotReply && !turnHadTool && turnBubble && turnBubble.parentNode) turnBubble.remove();
+    stopRestore(lastUserText);
+  }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
 });

@@ -465,7 +465,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
 
   // ── 最低版本閘 / 交給主行程的字 ──
   ok("UPDATE_REQUIRED:確定沒執行(不留過場)、講更新那一句,不叫人重按", trErrorKind("UPDATE_REQUIRED") === "undelivered" && /if \(e === "UPDATE_REQUIRED"\) return t\(kind === "release" \? "minv\.release" : "minv\.trade"\);/.test(fn("trSendError")));
-  ok("聊天被擋:不再誤畫成「上一輪還在跑」", /if \(r\.blocked === "UPDATE_REQUIRED"\) \{[\s\S]{0,400}t\("minv\.chat"\)[\s\S]{0,300}unlock\(\); return false;\s*\}\s*addMsg\("sys", t\("turn\.busy"\)\)/.test(app));
+  ok("聊天被擋:不再誤畫成「上一輪還在跑」", /if \(r\.blocked === "UPDATE_REQUIRED"\) \{[\s\S]{0,400}t\("minv\.chat"\)[\s\S]{0,300}unlock\(\); return false;\s*\}\s*unsend\(\); addMsg\("sys", t\("turn\.busy"\)\)/.test(app));
   const labels = fn("trPushLabels");
   const trSrcAll = fs.readFileSync(path.join(R, "trade.js"), "utf8");   // app 選單的字改成整份 TR_MENU_KEYS 交(spec-desktop-005 §1)
   ok("tradeLabels 多交的 15 個 key 都在(換語言時 applyStatic 會重叫 trPushLabels)", ["lang: LANG", "stLocal", "stCloud", "stOn", "stPaused", "stUnknown", "moneyPaper", "moneyReal", "pauseLocal", "quitCloudNote", "notifPrefixLocal", "notifPrefixCloud"].every((k) => labels.includes(k))
