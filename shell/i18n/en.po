@@ -4705,3 +4705,101 @@ msgstr "Please restore strategy {display_name} ({name}) to version {n} and re-ru
 
 msgid "ver.msgFork"
 msgstr "Please create a new strategy from version {n} of strategy {display_name} ({name}), leaving the original untouched; backtest the new one and run one signal so it has a state.json, then stop so I can switch the funding in Auto-trading — no further confirmation needed."
+
+# 報告存成 PDF(spec-report-pdf-0.1.8 DT2;鈕在閱讀層頁首最右)
+msgid "pdf.btn"
+msgstr "Save as PDF"
+
+msgid "pdf.saving"
+msgstr "Saving…"
+
+msgid "pdf.saved"
+msgstr "Saved"
+
+msgid "pdf.failTitle"
+msgstr "Couldn't save the PDF"
+
+msgid "pdf.failBody"
+msgstr "The file wasn't saved. Try another location, or try again later."
+
+# legal: PDF 每頁頁尾短版與文末長版聲明(spec P2;字面由 Wei 定稿)。disc2 / disc3a / disc3c = web rs_disc_3 / 4a / 4c 的文件版
+msgid "pdf.footShort"
+msgstr "Produced by Blave Agent. Not reviewed by Blave. Not investment advice."
+
+msgid "pdf.discTitle"
+msgstr "Disclaimer"
+
+msgid "pdf.disc1"
+msgstr "This document was produced by a Blave user's Blave Agent (an AI agent) and saved as a PDF by that user. It reflects only that user's and their agent's analysis and does not represent the views of WuChi Technology Company Limited (Blave). Blave has not reviewed its content or conclusions. Blave provides data and tools, not investment advice. WuChi Technology is not a licensed securities investment advisory or futures advisory enterprise."
+
+msgid "pdf.disc2"
+msgstr "This document is not a recommendation to buy or sell any security, futures contract, option, or virtual asset, and it does not guarantee any performance. Historical data and backtests do not indicate future results. Futures, leveraged products, and virtual assets are highly volatile; you may lose all or more than your initial capital."
+
+msgid "pdf.disc3a"
+msgstr "AI output may contain errors, omissions, or stale data."
+
+msgid "pdf.disc3b"
+msgstr "The notes in this document list the data sources used, so you can check them."
+
+msgid "pdf.disc3c"
+msgstr "Make your own decisions and bear your own gains and losses."
+
+msgid "pdf.stamp"
+msgstr "Saved on {time}. This is a copy of that version; later updates to the report won't change it."
+
+# 設定 › 公開連結(spec-share-list-0.1.8 A1 / C / D / E)
+msgid "set.cat.shares"
+msgstr "Public links"
+
+msgid "shl.title"
+msgstr "Public reports"
+
+msgid "shl.count"
+msgstr "{n} / {max}"
+
+msgid "shl.countAria"
+msgstr "{n} of {max} public reports"
+
+msgid "shl.kind.research"
+msgstr "Research report"
+
+msgid "shl.kind.morning"
+msgstr "Market report"
+
+msgid "shl.src.here"
+msgstr "This computer"
+
+msgid "shl.src.desktop"
+msgstr "Desktop"
+
+msgid "shl.src.cloud"
+msgstr "Cloud"
+
+msgid "shl.gone"
+msgstr "The original file isn't on this computer; the public version is still live."
+
+# 逐字同 web workspace_share_source_gone
+msgid "shl.goneCloud"
+msgstr "The original report was removed by the storage limit; the public version is still live."
+
+msgid "shl.empty"
+msgstr "No public reports right now. To publish one, open a report and choose Share."
+
+msgid "shl.loadFail"
+msgstr "Couldn't load your public links. Check your connection and try again."
+
+msgid "shl.gate"
+msgstr "Public links are tied to your Blave account. Sign in to see them."
+
+# 取消成功後讀屏念的那一句(畫面上不出字)
+msgid "shl.revoked"
+msgstr "Sharing stopped."
+
+msgid "shr.limitLive"
+msgstr "You've reached the limit of {n} public reports. Stop sharing a few, then publish this one."
+
+msgid "shr.limitLiveGo"
+msgstr "View public links"
+
+msgid "shr.limitDaily"
+msgstr "You've published {n} times today, the daily limit. Try again tomorrow."

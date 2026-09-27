@@ -1401,6 +1401,56 @@ function shareClient() {
   });
   return _share;
 }
+/* 設定 › 公開連結(renderer/report-sharelist.js):api 的清單 + 「desktop 袋那一份在不在這台電腦」(api 不知道,這裡看檔)。 */
+const rptLocalHas = (id) => typeof id === "string" && RPT_ID_RE.test(id) && rptDirs().some((dir) => { const r = rptReadDoc(dir, id); return !!(r && rptEnvelope(id, r.doc, r.mtimeMs)); });
+async function shareList() {
+  const r = await shareClient().list();
+  if (r.code !== "OK") return r;
+  return { code: "OK", limits: r.limits, shares: r.shares.map((x) => ({ ...x, local: x.origin === "desktop" && rptLocalHas(x.reportId) })) };
+}
+/* 報告存成 PDF(reportpdf.js;spec-report-pdf-0.1.8):看不見的視窗載 renderer/report-print.html、printToPDF、寫到用戶在存檔框選的位置。
+   報告本體由主行程自己讀(renderer 只給 view / id / 語言);上次存的資料夾記在 userData 的 ui-prefs.json(只記這一條路徑)。 */
+const uiPrefsPath = () => path.join(app.getPath("userData"), "ui-prefs.json");
+function pdfDirGet() {
+  try {
+    const d = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).pdfDir;
+    return typeof d === "string" && path.isAbsolute(d) && fs.statSync(d).isDirectory() ? d : null;
+  } catch (_) { return null; }   // 沒存過 / 資料夾不在了:回「下載項目」
+}
+function pdfDirSet(dir) {
+  let o = {}; try { const x = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); if (x && typeof x === "object" && !Array.isArray(x)) o = x; } catch (_) { /* 第一次 */ }
+  o.pdfDir = dir;
+  fs.writeFileSync(uiPrefsPath(), JSON.stringify(o));
+}
+// 雲端那一份:閱讀頁剛讀過的就在 rptCloudDocs 裡——同一個 stored_at 的本體不會變,過了 5 分鐘也照用(存檔框要馬上開);不在才重抓
+async function pdfLoadDoc(view, id, ver) {
+  if (view === "local") return reportLoad(id);
+  const token = loadToken(), hit = rptCloudDocs.get(id + "|" + (Number.isInteger(ver) ? ver : ""));
+  if (token && hit && hit.owner === token && hit.r.report) return hit.r;
+  const r = await cloudReport(id, ver);
+  return r.code === "OK" && r.report ? r : null;
+}
+function pdfOpenPage() {
+  const w = new BrowserWindow({
+    show: false, width: 794, height: 1123,
+    webPreferences: { preload: path.join(__dirname, "print-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+  });
+  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  w.webContents.on("will-navigate", (e) => e.preventDefault());
+  w.loadFile(path.join(__dirname, "renderer", "report-print.html"));
+  return w;
+}
+let _pdf = null;
+function reportPdf() {
+  if (!_pdf) _pdf = require("./reportpdf").createReportPdf({
+    loadDoc: pdfLoadDoc, openPage: pdfOpenPage, getDir: pdfDirGet, setDir: pdfDirSet,
+    showSave: (win, o) => dialog.showSaveDialog(win, o),
+    writeFile: (p, buf) => fs.promises.writeFile(p, buf),
+    downloads: () => app.getPath("downloads"),
+    onSaved: () => tm().track("feature_used", { name: "report_pdf" }),   // 檔案寫成功才送(取消、失敗不送)
+  });
+  return _pdf;
+}
 /* 雲端視角:平台的索引與 S3 本體(停機也讀得到)。兩支各快取 5 分鐘(清單 per 帳號、本體 per id),綁著拿到它的那顆 token——
    換帳號就對不上、登出時 clearToken 整組清掉;「新增報告」送出後的等待期間 renderer 帶 force 重問。
    圖:對 image block 的每個 sha256 打一次 /cloud/strategy_image(同一份去重、逐張、最多 20 張——超過的留給渲染器畫失敗框),
@@ -2194,6 +2244,14 @@ app.whenReady().then(() => {
   handle("share-state", (_e, view, id) => shareClient().state(view, id), { code: "UNREACH" });
   handle("share-publish", (_e, view, id, a) => shareClient().publish(view, id, { byline: a && a.byline, confirmed: !!a && a.confirmed === true, update: !!a && a.update === true }), { code: "UNREACH" });
   handle("share-revoke", (_e, view, id) => shareClient().revoke(view, id), { code: "UNREACH" });
+  // 設定 › 公開連結:清單與「只憑代碼取消」(原檔不在也撤得掉);憑證照樣只在主行程
+  handle("share-list", () => shareList(), { code: "UNREACH" });
+  handle("share-revoke-code", (_e, code) => shareClient().revokeCode(code), { code: "UNREACH" });
+  // 報告存成 PDF:畫面只給 view / id / 清單上的版本 / 介面語言;下面兩支只回應主行程自己開的那個列印視窗
+  handle("report-pdf", (e, view, id, ver, lang) => reportPdf().save(BrowserWindow.fromWebContents(e.sender), view, id, ver, lang,
+    () => { if (!e.sender.isDestroyed()) e.sender.send("report-pdf-saving"); }), { code: "FAIL" });
+  ipcMain.handle("print-payload", (e) => (_pdf ? _pdf.payload(e.sender) : null));
+  ipcMain.on("print-ready", (e, ok) => { if (_pdf) _pdf.ready(e.sender, ok); });
   /* 雲端(寫入):renderer 只說「送哪個指令」,憑證與 request_id 都在主行程(cloudcmd.js)。
      **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
      金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。

@@ -40,7 +40,9 @@ const EVENTS = {
     // 策略版本(0.1.8;renderer/versions.js):開選單、進時光機、開比較框、還原送出、守門框送出分岔
     "version_menu", "version_view", "version_compare", "version_restore", "version_fork",
     // 聊天結果卡(renderer/results.js;0.1.8):按卡上的鈕(報告 / 策略),回合結束自己出卡不算;report_pdf = 報告「存成 PDF」
-    "result_report", "result_strategy", "report_pdf"] },
+    "result_report", "result_strategy", "report_pdf",
+    // 設定 › 公開連結(renderer/report-sharelist.js;0.1.8):切到那個分類、清單畫出來時
+    "share_list_open"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

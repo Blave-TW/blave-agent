@@ -60,7 +60,7 @@ function shrDecorate(env, id, rep, host) {
 async function shrAsk(c) {
   let r = null;
   try { r = await window.blave.shareState(c.env, c.id); } catch (_) { r = null; }
-  if (r && r.code === "OK") { c.share = r.share || null; c.name = typeof r.displayName === "string" && r.displayName ? r.displayName : null; return r; }
+  if (r && r.code === "OK") { c.share = r.share || null; c.name = typeof r.displayName === "string" && r.displayName ? r.displayName : null; c.limits = r.limits || null; return r; }
   if (c.share === undefined) c.share = null;
   if (c.name === undefined) c.name = null;
   return r;
@@ -138,7 +138,7 @@ function shrOpen(c, mode, opener) {
   if (!$("shr-scrim").hidden || (typeof envCanSwitch === "function" && !envCanSwitch())) return;   // 別的框開著 / 選字中
   if (c.env === "local" && !hasToken) { shrGateAsk(opener); return; }
   const rep = c.rep, meta = rep.blocks[0] && rep.blocks[0].type === "meta" ? rep.blocks[0] : {}, kind = shrKind(rep.type);
-  const D = { c, mode, opener, busy: false, noName: false };
+  const D = { c, mode, opener, busy: false, noName: false, limit: shlLimit(c.limits, mode), limitShown: false };   // limit = 已達上限(report-sharelist.js):主鈕停用
   SHR.dlg = D;
   $("shr-title").textContent = t(mode === "update" ? "shr.dlgTitleUpdate" : "shr.dlgTitle");
   // 雲端視角:灰標題列 + 「雲端」記號(同 #rpn-modal);公開與更新是同一個框
@@ -153,9 +153,9 @@ function shrOpen(c, mode, opener) {
   $("shr-anon").checked = true; $("shr-ack").checked = false;
   $("shr-send").textContent = t(mode === "update" ? "shr.sendUpdate" : "shr.send");
   $("shr-msg").textContent = "";
-  shrLock(false); shrName(D);
-  // 名字開框時再向 api 抓一次(改名之後回來不必重開閱讀頁)
-  shrAsk(c).then(() => { if (SHR.dlg === D) shrName(D); });
+  shrLock(false); shrName(D); shrLimitPaint(D);
+  // 名字與上限開框時再向 api 抓一次(改名、別處公開 / 取消之後回來不必重開閱讀頁)
+  shrAsk(c).then(() => { if (SHR.dlg !== D) return; shrName(D); if (!D.busy) { D.limit = shlLimit(c.limits, mode); shrLock(false); shrLimitPaint(D); } });
   $("view-ws").inert = true; $("set-scrim").inert = true;
   const sc = $("shr-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
@@ -177,7 +177,7 @@ function shrName(D) {
 // 送出中:取消 / ✕ / 主鈕都停用(上傳含圖可能要幾秒,不能讓人以為沒按到;同 rptNewLock)
 function shrLock(on) {
   $("shr-cancel").disabled = on; $("shr-close").disabled = on;
-  $("shr-send").disabled = on || !$("shr-ack").checked;
+  $("shr-send").disabled = on || !$("shr-ack").checked || !!(SHR.dlg && SHR.dlg.limit);
 }
 function shrClose() {
   const sc = $("shr-scrim"), D = SHR.dlg;
@@ -190,7 +190,7 @@ function shrClose() {
 }
 async function shrSubmit() {
   const D = SHR.dlg;
-  if (!D || D.busy || !$("shr-ack").checked) return;
+  if (!D || D.busy || D.limit || !$("shr-ack").checked) return;
   const c = D.c, byline = !$("shr-named").disabled && $("shr-named").checked ? "name" : "anonymous";
   D.busy = true; shrLock(true);
   const fm = $("shr-msg"), busy = libEl("span", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
@@ -215,6 +215,9 @@ async function shrSubmit() {
   }
   if (code === "NO_DISPLAY_NAME") { D.noName = true; shrName(D); return; }   // 名字 api 不收:只剩匿名,勾選保留、可直接再送
   if (code === "NO_LOGIN") { D.opener = null; shrClose(); shrGateAsk($("rpt-share")); return; }
+  // 送出時才撞到上限(開框之後別處又公開了):同一句放同一個位置,框留著
+  const lim = shlLimitFromCode(code, r && r.limit, c.limits);
+  if (lim) { D.limit = lim; shrLimitPaint(D); return; }
   fm.textContent = t(shrErrKey(code));   // 框留著、欄位不動,原樣重送
   // api 指名的那一欄(英文、帶欄位路徑):用戶轉給 agent 就修得了;同一句主行程也寫進 reports/upload_errors.log
   if (r && typeof r.detail === "string" && r.detail) fm.appendChild(libEl("span", "shr-detail mono", r.detail));
@@ -225,7 +228,7 @@ async function shrSubmit() {
   const g = (id) => document.getElementById(id);
   g("rpt-share").addEventListener("click", () => { if (SHR.cur) shrOpen(SHR.cur, "new", g("rpt-share")); });
   g("shr-modal").addEventListener("submit", (e) => { e.preventDefault(); shrSubmit(); });   // CSP form-action 'none':原生送出一律擋
-  g("shr-ack").addEventListener("change", () => { g("shr-send").disabled = !g("shr-ack").checked || !!(SHR.dlg && SHR.dlg.busy); });
+  g("shr-ack").addEventListener("change", () => { g("shr-send").disabled = !g("shr-ack").checked || !!(SHR.dlg && (SHR.dlg.busy || SHR.dlg.limit)); });
   g("shr-cancel").addEventListener("click", shrClose);
   g("shr-close").addEventListener("click", shrClose);
   g("shr-tos").addEventListener("click", () => window.blave.openExternal(SHR_SITE + "disclaimer/" + (LANG === "zh" ? "zh" : "en") + "/terms_of_service#ugc"));
