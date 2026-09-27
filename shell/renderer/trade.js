@@ -89,7 +89,10 @@ function trHoldingRows(r, ids) {
   return out.sort((a, b) => { const x = val(a), y = val(b); return x == null ? (y == null ? 0 : 1) : y == null ? -1 : y - x; });
 }
 // 讀過而且失敗的 = 串接失敗;還沒讀過的不算失敗
-function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok; }); }
+// 群益在雲端開通中(主機回報有 capital_connect、下單程式還沒起來):帳密一存就算綁定,但讀帳要等下單程式寫出第一份快照——
+// 那段期間的讀帳失敗是預期的,不算串接失敗(設定 › 帳戶 那一列講「開通中」,標頭不能同時講「串接失敗」)
+function trCapWip(r, id) { const c = id === "capital" && r && r.capital_connect; return !!c && typeof c === "object" && !(c.worker && c.worker.status === "ok"); }
+function trFailedIds(r) { return trVenueIds(r).filter((id) => { const e = trLiveEntry(r, id); return !!e && !e.ok && !trCapWip(r, id); }); }
 // 有沒有帳戶 = 有沒有綁定,不看這一輪讀帳成不成功(稽核 S5):交易所讀帳 API 暫時失敗時對帳器可能還在下單,
 // 這時把整頁換成 onboard、把「暫停下單」拿掉,等於在最需要出口的時候拿走出口。讀帳失敗另外標在狀態行上。
 function trHasAccount(r) { return trVenueIds(r).length > 0; }
@@ -791,7 +794,7 @@ const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONF
 const TR_CONFIRM_CLOUD_MS = 240000;
 const TR_TABS = ["over", "pos", "assets", "hist", "set"];
 const TR_TAB_FEATURE = { over: "trade_overview", pos: "trade_positions", assets: "trade_assets", hist: "trade_history", set: "trade_settings" };   // 使用追蹤的名字(feature_used)
-const PAPER = "paper", BINANCE = "binance";
+const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益只在雲端視角(renderer/capital.js)
 /* 連接框列得出來的真實交易所(env 名同 cloudcmd.CONNECT_VENUES、網頁 CX_VENUES;群益在 Mac 上跑不起來,不列)。
    pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;另外四家的金鑰
    由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。noWdCheck = 那家的 API 查不到自己有沒有提領權限
@@ -808,6 +811,7 @@ function trVenueId() { return trVenueIds(trReport())[0] || null; }
 function trVenueLabel(id, short) {
   if (!id) return "";
   if (id === PAPER) return short ? t("cx.paperShort") : t("cx.paper");
+  if (id === "capital") return t("cap.venue");   // 群益(雲端視角,renderer/capital.js)
   if (Object.prototype.hasOwnProperty.call(CX_VENUES, id)) return CX_VENUES[id].label;   // Gate.io、OKX:首字大寫會寫錯
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
@@ -2159,7 +2163,7 @@ function trPaintSet() {
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
-  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what])) return;
+  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id)])) return;
   const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
@@ -2168,13 +2172,17 @@ function trPaintSet() {
   row.appendChild(trEl("span", "n", trVenueLabel(id, true)));
   if (id && id !== PAPER) row.appendChild(trEl("span", "mode real", t("tr.mode.real")));   // 模擬以外都是真錢
   // 三態:讀得到帳戶 = 綠點;讀過而失敗 = 紅記號;還沒讀過(剛綁上那幾秒)= 圓環 + 「串接中…」(.cx-wait 那組,spec-desktop-006 §1.3 D)
-  const failed = (!!e && !e.ok) || !!(bn && bn.verdict), st = trEl("span", "cn-st" + (failed ? "" : e ? " on" : " cx-wait"));
-  if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
+  // 群益在雲端開通中(spec w-row-pending):讀帳失敗是預期的,不畫紅;靜態實心點 +「開通中」+「繼續」回到清單
+  const capWip = ro && trCapWip(r, id);
+  const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
+  if (capWip) st.appendChild(trEl("span", "cap-dot"));
+  else if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
   else { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); st.appendChild(sp); }
-  st.appendChild(trEl("span", "", failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
+  st.appendChild(trEl("span", "", capWip ? t("cap.pending") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
+  if (capWip) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
   // 「重新測試」在讀帳失敗 / 金鑰重查出事(紅記號 + 串接失敗)時畫,Binance 重查的灰記號(沒設白名單、現貨 / 合約沒開)也畫——
   // 它是 24 小時自動重查之前唯一能叫 binanceRecheck 的入口(Wei 0.0.6)。乾淨的已連接與串接中都沒有東西要重試;鈕消失時焦點由最後一行交給設定分頁
@@ -2204,7 +2212,7 @@ function trPaintSet() {
     if (bn.last.code === "NO_IP_RESTRICT") calm(t("cx.chk.noWhitelist"));
     if (d.futures === false) calm(t("cx.note.noFutures")); else if (d.spot === false) calm(t("cx.note.noSpot"));
   }
-  if (e && !e.ok) {
+  if (e && !e.ok && !capWip) {
     const m = /^([a-z_]+):\s*(.*)$/i.exec(String(e.error || ""));
     // 帳戶模式不支援合約(OKX):讀帳戶就會擋,講怎麼改,不出原文
     if (trErrToken(e.error) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
@@ -2224,6 +2232,7 @@ function trPaintSet() {
 // 解除綁定要移掉的環境變數名。宿主(daemon.js argsOk 的 REMOVABLE)只放行這一版認得的 key,多送一個就整包 BAD_ARGS。
 function trEnvNames(id) {
   if (id === PAPER) return ["PAPER_API_KEY", "PAPER_SECRET_KEY", "PAPER_BOUND_TS"];
+  if (id === CAPITAL) return ["capital_api_key", "capital_password"];   // 只有雲端解得了(capUnbindSend;名字由主行程決定)
   const v = Object.prototype.hasOwnProperty.call(CX_VENUES, id) ? CX_VENUES[id] : null;
   return v ? [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []) : [];
 }
@@ -2234,7 +2243,7 @@ function trUnbind(opener) {
     onOk: async () => {
       const mine = () => TR === S && S.open;
       S.unbinding = true; if (mine()) trPaintSet();
-      const res = cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) }) : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
+      const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) }) : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
       S.unbinding = false; S.sig = {};
       // 失敗文案帶 S.env:跨 await 之後 TR 可能已經是另一邊,不帶會拿本機那組「這台電腦」的句子
       if (!res || !res.ok) { trAlert(trSendError(res, "unbind", S.env), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
@@ -2636,20 +2645,21 @@ const CXF = { env: "local", venue: PAPER, apiKey: "", secret: "", passphrase: ""
 const cxBag = () => TR_BAGS[CXF.env === "cloud" ? "cloud" : "local"];
 // 雲端主機現在的對外 IP(cloud.js 只在 running 時交出來;停機的主機沒有固定 IP)
 function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; const ip = c && c.machine && c.machine.public_ip; return typeof ip === "string" && ip ? ip : null; }
-function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; }
+function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); }
 /* 兩個視角共用這個框(spec-desktop-cloud-s5 §2:只差五處)。雲端只在主機 running 時開得起來。 */
-function cxModalOpen(opener) {
+function cxModalOpen(opener, venue) {   // venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端)
   const env = ENV.cur;
   if (TR.env !== env || !$("cx-scrim").hidden) return;
   if (env === "cloud" && envCloudKind(TR_BAGS.cloud.st) !== "running") return;
   CXF.env = env;
   const L = cxBag(); L.cx = { busy: false, err: null, retest: false };
-  cxOpener = opener || null; cxForget(); CXF.venue = PAPER; CXF.storeOpen = false;
+  cxOpener = opener || null; cxForget(); CXF.venue = venue === CAPITAL && env === "cloud" ? CAPITAL : PAPER; CXF.storeOpen = false;
+  if (CXF.venue === CAPITAL && typeof capResume === "function") capResume();
   $("view-ws").inert = true;
   const sc = $("cx-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
   L.sig.cxm = null; cxModalPaint();
-  $("cx-venue").focus();
+  const f = $("cx-venue") || $("cx-body").querySelector("input, .cap-step.is-cur button") || $("cx-close"); f.focus();
 }
 function cxModalClose(connected) {
   const sc = $("cx-scrim"); if (sc.hidden) return;
@@ -2737,7 +2747,26 @@ function cxChkTextCloud(r) {
 }
 // 灰記號(不是錯):限速兩種輕的
 const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF");
+/* 交易所選單(兩個視角共用;群益那條 capital.js 也用):雲端多一組「台股」只有群益(主機是 Windows 才連得上,不是的話選了會講) */
+function cxVenueField(L) {
+  const lab = trEl("label", "fld"); lab.appendChild(trEl("span", "fld-l", t("cx.venue")));
+  const w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
+  const o = trEl("option", "", t("cx.paper")); o.value = PAPER; sel.appendChild(o);   // 模擬交易排最上面(同雲端版),再來「加密貨幣」那一組
+  const g = document.createElement("optgroup"); g.label = t("cx.group.crypto");
+  cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
+  sel.appendChild(g);
+  if (CXF.env === "cloud") { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw"); const oc = trEl("option", "", t("cap.venue")); oc.value = CAPITAL; g2.appendChild(oc); sel.appendChild(g2); }
+  sel.value = CXF.venue; sel.disabled = !!L.cx.busy || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
+  sel.addEventListener("change", () => {
+    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") ? sel.value : PAPER;
+    cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.venue !== CAPITAL && CXF.ip === undefined) cxIpLookup();
+  });
+  w.appendChild(sel); lab.appendChild(w);
+  return lab;
+}
 function cxModalPaint() {
+  if (CXF.venue === CAPITAL && CXF.env === "cloud") return capPaint();   // 群益整個框交給 capital.js
+  if (typeof capFootRestore === "function") capFootRestore();
   const L = cxBag(), box = $("cx-body"), go = $("cx-go"), cloud = CXF.env === "cloud";
   // 雲端:框開著時主機停了 → 框不自己關(可能正在貼金鑰),主鈕鎖住、結果那一格講原因;限速不做 app 端計時鎖(主機自己在冷卻)
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
@@ -2762,15 +2791,7 @@ function cxModalPaint() {
   L.sig.cxm = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
-  const lab = trEl("label", "fld"); lab.appendChild(trEl("span", "fld-l", t("cx.venue")));
-  const w = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
-  const o = trEl("option", "", t("cx.paper")); o.value = PAPER; sel.appendChild(o);   // 模擬交易排最上面(同雲端版),再來「加密貨幣」那一組
-  const g = document.createElement("optgroup"); g.label = t("cx.group.crypto");
-  cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
-  sel.appendChild(g);
-  sel.value = venue; sel.disabled = !!L.cx.busy;
-  sel.addEventListener("change", () => { CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 ? sel.value : PAPER; cxForget(); L.cx.err = null; cxModalPaint(); if (CXF.venue !== PAPER && CXF.ip === undefined) cxIpLookup(); });
-  w.appendChild(sel); lab.appendChild(w); box.appendChild(lab);
+  const sel = box.appendChild(cxVenueField(L)).querySelector("select");
   box.appendChild(trEl("p", "cx-manual-note", t("cx.acct.meta")));
   if (venue === PAPER) box.appendChild(trEl("p", "cx-manual-note", t("cx.paperNote")));
   else {
@@ -2894,6 +2915,7 @@ async function cxConnectCloud() {
   if (f) f.focus();
 }
 async function cxConnect() {
+  if (CXF.venue === CAPITAL) { if (CXF.env === "cloud" && ENV.cur === "cloud" && !$("cx-scrim").hidden) return capPrimary(); return; }
   if (CXF.env === "cloud") { if (!TR_BAGS.cloud.cx.busy && !$("cx-scrim").hidden && ENV.cur === "cloud") return cxConnectCloud(); return; }
   const L = TR_BAGS.local;
   if (L.cx.busy || ENV.cur !== "local" || $("cx-scrim").hidden) return;

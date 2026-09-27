@@ -967,12 +967,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
          (不是只查第一個),原文先剝註解(註解裡出現 pending 這個字不守任何門)。
          要求:每個出現處前面 WIN 字內要有**自己那顆控件的在途旗標**——讀它(if / 三元)或在同一段
          動作裡設它(SRC.busy = true 後才換字)都算,因為「使用者按了才變字」正是規則 6 要的。
-         STATUS_ONLY 是四個從來不掛在控件上的狀態字(讀取中 / 偵測中),它們本來就是狀態,不受本條管。
+         STATUS_ONLY 是從來不掛在控件上的狀態字(讀取中 / 偵測中 / 群益清單列右側的安裝中、匯入中、讀取中、查詢中),它們本來就是狀態,不受本條管。
          守不住的情形:WIN 字內剛好有個無關的 pending / busy。要真正的防護得做 AST,這裡換來的是
          「新增一個沒人守的進行式標籤會紅」,那是稽核指出的那個洞。 */
       const S2 = (() => { const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
         return (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); })();
-      const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting"];
+      // 群益開通清單右側的短結果(renderer/capital.js capRow 的 .cap-r):列的狀態,不掛在任何控件上
+      const STATUS_ONLY = ["tr.loading", "cn.detecting", "cx.ip.loading", "tr.cloud.hdConnecting", "cap.s.setupRun", "cap.pfx.importing", "cap.s.readRun", "cap.s.querying"];
       const prog = Object.keys(S2.zh).filter((k) => /中…$/.test(S2.zh[k]) && STATUS_ONLY.indexOf(k) < 0);
       const RD = path.join(__dirname, "..", "shell", "renderer");
       const files = fs.readdirSync(RD).filter((f) => f.endsWith(".js") && f !== "strings.js" && f !== "i18n.js");

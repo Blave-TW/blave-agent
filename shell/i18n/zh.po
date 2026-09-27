@@ -3932,6 +3932,297 @@ msgstr "看頁面結構"
 msgid "br.pressing"
 msgstr "按 {key}"
 
+msgid "cap.venue"
+msgstr "群益"
+
+msgid "cap.group.tw"
+msgstr "台股"
+
+msgid "cap.title"
+msgstr "連接群益"
+
+msgid "cap.meta"
+msgstr "可以下單、讀帳戶。一次只能連一個。"
+
+msgid "cap.id"
+msgstr "身分證字號"
+
+msgid "cap.pw"
+msgstr "交易密碼"
+
+msgid "cap.store.q"
+msgstr "帳密存在哪？"
+
+msgid "cap.storeCloud"
+msgstr "身分證字號和交易密碼存在你雲端主機上的獨立檔案，只給群益下單程式使用，不會上傳。"
+
+msgid "cap.beforeC"
+msgstr "會在你的雲端主機安裝群益的下單元件。"
+
+msgid "cap.go"
+msgstr "開始開通"
+
+msgid "cap.needWin"
+msgstr "群益需要 Windows 主機。"
+
+msgid "cap.s.setup"
+msgstr "安裝群益元件"
+
+msgid "cap.s.setupRun"
+msgstr "安裝中…"
+
+msgid "cap.s.setupFail"
+msgstr "群益元件沒裝好。"
+
+msgid "cap.tryAgain"
+msgstr "再試一次"
+
+msgid "cap.c.pick"
+msgstr "憑證"
+
+msgid "cap.c.pfx"
+msgstr "匯入已有的憑證檔"
+
+msgid "cap.c.pfxM"
+msgstr "已在自己的 Windows 電腦申請過群益憑證。"
+
+msgid "cap.c.rdp"
+msgstr "改用遠端桌面"
+
+msgid "cap.c.rdpDo"
+msgstr "用遠端桌面連進你的主機，在主機上跑群益的憑證精靈。"
+
+msgid "cap.c.other"
+msgstr "換一種做法"
+
+msgid "cap.c.unlockDo"
+msgstr "解鎖後只能再試一次，還是不行就要到群益改密碼。"
+
+msgid "cap.unlocked"
+msgstr "我已解鎖"
+
+msgid "cap.c.verifyDo"
+msgstr "群益規定第一次要跑一次連線檢核。在你自己的 Windows 電腦打開群益的檢核工具，登入後按「模擬國內證券下單」「模擬國內期貨下單」，最後按「查詢是否已驗證」。"
+
+msgid "cap.pfx.how"
+msgstr "在你的 Windows 電腦打開群益憑證精靈，按「匯出憑證」。"
+
+msgid "cap.pfx.dl"
+msgstr "到群益網站下載精靈"
+
+msgid "cap.pfx.file"
+msgstr "憑證檔"
+
+msgid "cap.pfx.pick"
+msgstr "選擇檔案"
+
+msgid "cap.pfx.pw"
+msgstr "匯出密碼"
+
+msgid "cap.pfx.pwHint"
+msgstr "匯出憑證時設的那組，不是交易密碼。"
+
+msgid "cap.pfx.e2e"
+msgstr "憑證檔和密碼在你的電腦上加密後才送出，只有你的主機解得開，Blave 轉送時看不到。匯入後就刪掉。"
+
+msgid "cap.pfx.go"
+msgstr "上傳並匯入"
+
+msgid "cap.pfx.importing"
+msgstr "匯入中…"
+
+msgid "cap.pfx.errPw"
+msgstr "匯出密碼不對。"
+
+msgid "cap.pfx.errFile"
+msgstr "這個檔不是憑證檔（.pfx）。"
+
+msgid "cap.pfx.errIssuer"
+msgstr "這張憑證不是群益發的。"
+
+msgid "cap.pfx.errExpired"
+msgstr "這張憑證已經過期。先在群益憑證精靈展延，再匯出一次。"
+
+msgid "cap.pfx.errOlder"
+msgstr "你的主機上已經有一張比較新的群益憑證，這個檔是舊的。"
+
+msgid "cap.pfx.errRead"
+msgstr "讀不到這個檔。"
+
+msgid "cap.pfx.errKey"
+msgstr "上傳沒有完成，再上傳一次。"
+
+msgid "cap.pfx.errImport"
+msgstr "憑證沒有匯入成功。"
+
+msgid "cap.s.probe"
+msgstr "確認帳密…"
+
+msgid "cap.s.probeIdle"
+msgstr "憑證已匯入，還沒確認帳密。"
+
+msgid "cap.recheck"
+msgstr "重新確認"
+
+msgid "cap.s.pw"
+msgstr "確認帳密"
+
+msgid "cap.err.pw"
+msgstr "群益說交易密碼不對。"
+
+msgid "cap.err.pwLocked"
+msgstr "交易密碼被群益鎖住了。"
+
+msgid "cap.err.pwChange"
+msgstr "群益還是不接受這組密碼。在群益改好密碼後，在這裡重填。"
+
+msgid "cap.err.noCreds"
+msgstr "主機上讀不到身分證字號和交易密碼，重填一次。"
+
+msgid "cap.s.verify"
+msgstr "連線檢核"
+
+msgid "cap.retry"
+msgstr "再查一次"
+
+msgid "cap.s.sign"
+msgstr "簽署 API 聲明書"
+
+msgid "cap.s.signDo"
+msgstr "在群益網站簽要交易的市場：證券、期貨各一份。"
+
+msgid "cap.s.signOpen"
+msgstr "開啟簽署頁"
+
+msgid "cap.s.signDone"
+msgstr "我簽好了"
+
+msgid "cap.s.signNone"
+msgstr "還讀不到帳戶。可能還沒簽，或群益還沒開通。"
+
+msgid "cap.s.read"
+msgstr "讀取帳戶"
+
+msgid "cap.s.readRun"
+msgstr "讀取中…"
+
+msgid "cap.s.certExp"
+msgstr "到期 {date}"
+
+msgid "cap.acct.ts"
+msgstr "證券"
+
+msgid "cap.acct.tf"
+msgstr "期貨"
+
+msgid "cap.acct.exp"
+msgstr "憑證到期"
+
+msgid "cap.acct.read"
+msgstr "已開通"
+
+msgid "cap.tfMissing"
+msgstr "有期貨戶的話，要另簽期貨那份。"
+
+msgid "cap.finish"
+msgstr "完成"
+
+msgid "cap.pending"
+msgstr "開通中"
+
+msgid "cap.continue"
+msgstr "繼續"
+
+msgid "cap.err.busy"
+msgstr "主機上還有一步在跑，等它跑完再按。"
+
+msgid "cap.err.credsUnknown"
+msgstr "主機沒有回應，不確定存進去了沒。再按一次沒關係。"
+
+msgid "cap.err.idFormat"
+msgstr "身分證字號格式不對。"
+
+msgid "cap.err.notReady"
+msgstr "群益元件還沒裝好，等安裝完成再上傳。"
+
+msgid "cap.err.noMove"
+msgstr "主機還沒回報進度。"
+
+msgid "cap.err.generic"
+msgstr "主機沒有接受這一步。"
+
+msgid "cap.err.certOld"
+msgstr "主機上有一張過期的群益憑證，會讓登入失敗。匯入新的憑證檔時會一併刪掉。"
+
+msgid "cap.err.certUnusable"
+msgstr "主機上的群益憑證用不了，重新匯入一次憑證檔。"
+
+msgid "cap.err.certExpired"
+msgstr "群益憑證已過期。先在你的 Windows 電腦展延，再匯入新的憑證檔。"
+
+msgid "cap.err.timeout"
+msgstr "群益沒有及時回應。"
+
+msgid "cap.err.vehicle"
+msgstr "主機上的登入程式沒有起來。"
+
+msgid "cap.err.apiVersion"
+msgstr "主機上的群益元件太舊，要重裝。"
+
+msgid "cap.err.unknownCode"
+msgstr "群益回了沒見過的結果（代碼 {code}）。"
+
+msgid "cap.err.worker"
+msgstr "群益下單程式沒有起來。"
+
+msgid "cap.err.snapshot"
+msgstr "群益下單程式登入後讀不到帳戶。"
+
+msgid "cap.err.probeNotOk"
+msgstr "帳密還沒確認通過。"
+
+msgid "cap.ho.saved"
+msgstr "身分證字號和交易密碼已存到你的雲端主機，還不能下單。"
+
+msgid "cap.ho.left"
+msgstr "剩下 3 個步驟要你和 agent 一起完成："
+
+msgid "cap.ho.s1"
+msgstr "申請群益憑證（遠端桌面上的憑證精靈，加手機簡訊驗證）"
+
+msgid "cap.ho.s2"
+msgstr "跑 API 連線檢核（群益規定的模擬下單測試）"
+
+msgid "cap.ho.s3"
+msgstr "線上簽署 API 聲明書"
+
+msgid "cap.ho.go"
+msgstr "交給 agent 帶你完成"
+
+msgid "cap.ho.prompt"
+msgstr "我剛在電腦版把群益的身分證字號與交易密碼存到雲端主機。請帶我在雲端主機上完成剩下的開通：申請憑證、API 連線檢核、簽署聲明書，完成後先用唯讀方式確認讀得到帳戶，先不要下單。"
+
+msgid "cap.ho.promptRdp"
+msgstr "我要用遠端桌面在雲端主機上申請群益憑證，身分證字號與交易密碼已經存好了。請帶我完成：申請憑證、API 連線檢核、簽署聲明書，完成後先用唯讀方式確認讀得到帳戶，先不要下單。"
+
+msgid "cap.ho.promptVerify"
+msgstr "我的群益憑證已經匯入雲端主機，現在卡在群益的 API 連線檢核。請帶我用遠端桌面在雲端主機上跑檢核工具，跑完後先用唯讀方式確認讀得到帳戶，先不要下單。"
+
+msgid "cap.c.verifyDl"
+msgstr "下載檢核工具"
+
+msgid "cap.s.verifyNot"
+msgstr "群益還沒記到這次檢核。"
+
+msgid "cap.pfx.replace"
+msgstr "會取代主機上同一個身分證字號、較舊的群益憑證。"
+
+msgid "cap.s.querying"
+msgstr "查詢中…"
+
+msgid "cap.ho.promptRead"
+msgstr "我的群益開通在電腦版卡在「讀取帳戶」這一步。請看雲端主機上群益開通的狀態，帶我排除，完成後先用唯讀方式確認讀得到帳戶，先不要下單。"
+
 msgid "br.openPanel"
 msgstr "開到中欄"
 

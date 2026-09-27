@@ -25,6 +25,20 @@ unchanged. This stops accidental reads (a strategy's load_dotenv, `cat .env`);
 it is not a wall against a SYSTEM process set on bypassing it — SYSTEM can read
 rdp_password.txt and run as Administrator.
 
+Known limit (audit C-1, recheck 2026-09-27): two child processes still get a password on
+their command line — `schtasks /create … /rp <Administrator password>` (_as_administrator,
+the same vehicle lib/capital_probe.ps1 has always used) and `certutil -user -p <export
+password> -importpfx` (_certutil_import). Anything that can list process command lines
+sees them for the second or so the process lives, and a host with process-creation
+auditing that includes command lines (event 4688, off by default) writes them to the
+Security log. Not changed yet because both replacements (Register-ScheduledTask reading
+the password from a restricted file; Import-PfxCertificate with a SecureString read the
+same way) change HOW the key lands — SKCOM's 602 key-link failure is exactly the kind of
+difference a different importer can cause — and neither can be verified without the real
+Windows box (desktop-win-test). SYSTEM, which runs this process and the agent, can read
+both passwords anyway (vault note below). tests/check_capital_argv_secrets.py pins these
+two sites: a third place that puts a secret on argv fails it.
+
 Ack/refusal shape follows command_listener: success returns a dict, refusal
 raises ValueError("CODE: text"). Never put a secret, a pfx byte or a raw probe
 line (full account numbers) into a return value, an exception or a log.

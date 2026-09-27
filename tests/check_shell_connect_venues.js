@@ -109,9 +109,11 @@ app.whenReady().then(async () => {
     if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null); })()`);
   await wait(150);
   const cloudOpts = await js(`[...$("cx-venue").options].map((o) => o.value)`);
-  ok("③ 雲端視角:模擬 + 五家(Binance / OKX / BingX / Gate.io / Bybit)", J(cloudOpts) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit"]));
+  ok("③ 雲端視角:模擬 + 五家(Binance / OKX / BingX / Gate.io / Bybit)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["paper", "binance", "okx", "bingx", "gateio", "bybit", "capital"]));
   const labels = await js(`[...$("cx-venue").options].slice(1).map((o) => o.textContent)`);
-  ok("③ 選單上是交易所的正式名字", J(labels) === J(["Binance", "OKX", "BingX", "Gate.io", "Bybit"]));
+  const groups = await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`);
+  const capL = await js(`[t("cap.venue"), t("cap.group.tw")]`);
+  ok("③ 選單上是交易所的正式名字;群益(字串表的名字)在自己那一組", J(labels) === J(["Binance", "OKX", "BingX", "Gate.io", "Bybit", capL[0]]) && groups.length === 2 && groups[1] === capL[1] && capL[0] !== "cap.venue");
   const byVenue = {};
   for (const v of ["okx", "bingx", "gateio", "bybit"]) { await pick(v); byVenue[v] = await fields(); }
   ok("③ OKX 三格(API Key / Secret Key / Passphrase);BingX / Gate.io / Bybit 兩格", J(byVenue.okx) === J(["cx-api", "cx-secret", "cx-pass"])

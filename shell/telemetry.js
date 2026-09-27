@@ -28,7 +28,9 @@ const EVENTS = {
     "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "chat_stop", "settings_datasrc", "settings_plan", "library_open", "library_use", "library_comm",
     "reports_list", "reports_read", "reports_ask", "strategy_new",
     // 內建瀏覽器(0.1.7):browser_agent 由主行程送(回合內 agent 第一次呼叫瀏覽器工具),其餘在 renderer/browser.js
-    "browser_agent", "browser_handoff", "browser_read", "browser_wall", "browser_back", "browser_sum", "browser_takeover", "browser_source", "browser_url"] },
+    "browser_agent", "browser_handoff", "browser_read", "browser_wall", "browser_back", "browser_sum", "browser_takeover", "browser_source", "browser_url",
+    // 雲端群益開通(renderer/capital.js;spec-capital-connect-v2 §5):每開一次框每個名字最多一次,失敗不埋
+    "cap_form_saved", "cap_setup_done", "cap_pfx_upload", "cap_sign_open", "cap_ready", "cap_rdp_open"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

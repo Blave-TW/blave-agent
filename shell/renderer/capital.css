@@ -1,0 +1,49 @@
+/* 群益開通清單(spec-capital-connect-v2 §1.2 .cap-steps;雲端視角 §2)。殼沿用 .cx-modal / .fld / .plan-err / .cx-chip / .cx-row,
+   這裡只有清單、選做法、檔案列、帳戶兩列與欄下紅字。值照 mockup-capital-connect-v2(token 同 tokens.css,不寫死色) */
+.cap-steps { list-style: none; margin: var(--space-12) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-12); }
+.cap-step { display: grid; grid-template-columns: 16px 1fr auto; column-gap: var(--space-12); align-items: center; }
+.cap-step.is-cur + .cap-step { margin-top: var(--space-4); }
+.cap-mk { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; color: var(--ink-2); }
+.cap-mk .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cap-mk .cur { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink); }
+.cap-mk .todo { width: 6px; height: 6px; border-radius: var(--radius-pill); border: 1px solid var(--ink-3); }
+.cap-mk .fault-mark { margin: 0; }
+.cap-mk .spin16 { width: 14px; height: 14px; color: var(--ink-3); }
+.cap-n { font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.is-cur .cap-n { color: var(--ink); font-weight: 600; }
+.is-todo .cap-n { color: var(--ink-3); }
+.cap-r { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.cap-x { grid-column: 2 / -1; margin-top: var(--space-4); }
+.cap-x > .fld:first-child, .cap-x > .plan-err:first-child { margin-top: 0; }
+.cap-do { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
+.cap-do + .cap-do { margin-top: var(--space-8); }
+.cap-do.is-dim { color: var(--ink-3); }
+.cap-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-16); margin-top: var(--space-12); }
+.cap-x .plan-err { margin-top: var(--space-8); }
+.cap-lead { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.cap-ol { margin: var(--space-12) 0 0; padding-left: 18px; font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+/* 選做法:cn-opt 家族的列;只往左外擴(落在記號欄的 gap 裡),右緣對齊文字欄,不造成橫溢 */
+.cap-opts { display: flex; flex-direction: column; gap: var(--space-4); }
+.cap-opt { display: flex; align-items: center; gap: var(--space-12); min-height: 44px; padding: var(--space-8) var(--space-12); margin-left: calc(-1 * var(--space-12)); width: calc(100% + var(--space-12)); border-radius: var(--radius-md); text-align: left; }
+.cap-opt:hover { background: var(--surface-muted); }
+.cap-opt .t { flex: 1; min-width: 0; }
+.cap-opt .n { margin: 0; font-size: 13px; color: var(--ink); }
+.cap-opt .m { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.cap-opt .chev { flex: none; width: 6px; height: 6px; border-right: 1px solid var(--ink-3); border-bottom: 1px solid var(--ink-3); transform: rotate(-45deg); }
+.cap-file { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }
+.cap-file .cx-chip { padding-right: var(--space-8); }
+.cx-modal .f-input.is-err { border-color: var(--color-red); }
+.cap-err { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.6; color: var(--color-redText); }
+/* 完成:帳戶兩列 + 憑證到期 */
+.cap-acct { margin: var(--space-12) 0 0; padding: 0; }
+.cap-acct div { display: flex; align-items: baseline; gap: var(--space-16); padding: var(--space-4) 0; }
+.cap-acct dt { flex: 1; font-size: 13px; color: var(--ink-2); }
+.cap-acct dd { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.cap-acct dd.mono { font-family: "Roboto Mono", ui-monospace, monospace; }
+.cap-acct dd.none { color: var(--ink-3); }
+.cx-manual-note .btn-quiet { font-size: inherit; }
+/* 設定 › 帳戶 群益開通中:「繼續」是這一列的主動作 */
+.pf-act.main-act { color: var(--ink-2); border-color: var(--border-frame); }
+.cn-st .cap-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--ink); }
+.cap-e2e { color: var(--ink-2); }   /* 誠實句(spec §2.4):比說明字重一級 */
+.cap-idf { font-family: "Roboto Mono", ui-monospace, monospace; }   /* 身分證字號明碼(設計稽核 C-3) */

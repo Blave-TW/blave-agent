@@ -3931,6 +3931,297 @@ msgstr "Looking at the page structure"
 msgid "br.pressing"
 msgstr "Pressing {key}"
 
+msgid "cap.venue"
+msgstr "Capital"
+
+msgid "cap.group.tw"
+msgstr "Taiwan stocks"
+
+msgid "cap.title"
+msgstr "Connect Capital"
+
+msgid "cap.meta"
+msgstr "Can place orders and read your account. Connects one at a time."
+
+msgid "cap.id"
+msgstr "National ID number"
+
+msgid "cap.pw"
+msgstr "Trading password"
+
+msgid "cap.store.q"
+msgstr "Where is this stored?"
+
+msgid "cap.storeCloud"
+msgstr "Your ID number and trading password are kept in a separate file on your cloud machine, used only by the Capital order program, and never uploaded."
+
+msgid "cap.beforeC"
+msgstr "This installs Capital's order components on your cloud machine."
+
+msgid "cap.go"
+msgstr "Start Setup"
+
+msgid "cap.needWin"
+msgstr "Capital needs a Windows machine."
+
+msgid "cap.s.setup"
+msgstr "Install Capital components"
+
+msgid "cap.s.setupRun"
+msgstr "Installing…"
+
+msgid "cap.s.setupFail"
+msgstr "The Capital components didn't install."
+
+msgid "cap.tryAgain"
+msgstr "Try Again"
+
+msgid "cap.c.pick"
+msgstr "Certificate"
+
+msgid "cap.c.pfx"
+msgstr "Import an existing certificate file"
+
+msgid "cap.c.pfxM"
+msgstr "You already have a Capital certificate on your own Windows PC."
+
+msgid "cap.c.rdp"
+msgstr "Use Remote Desktop Instead"
+
+msgid "cap.c.rdpDo"
+msgstr "Connect to your machine over Remote Desktop and run Capital's certificate wizard there."
+
+msgid "cap.c.other"
+msgstr "Choose Another Way"
+
+msgid "cap.c.unlockDo"
+msgstr "After unlocking you get one more try; if it still fails, change the password with Capital."
+
+msgid "cap.unlocked"
+msgstr "I've Unlocked It"
+
+msgid "cap.c.verifyDo"
+msgstr "Capital requires a one-time connection check. On your own Windows PC, open Capital's check tool, sign in, press “模擬國內證券下單” and “模擬國內期貨下單”, then “查詢是否已驗證”."
+
+msgid "cap.pfx.how"
+msgstr "On your Windows PC, open Capital's certificate wizard and choose “匯出憑證” (Export certificate)."
+
+msgid "cap.pfx.dl"
+msgstr "Get the Wizard from Capital's Site"
+
+msgid "cap.pfx.file"
+msgstr "Certificate file"
+
+msgid "cap.pfx.pick"
+msgstr "Choose File"
+
+msgid "cap.pfx.pw"
+msgstr "Export password"
+
+msgid "cap.pfx.pwHint"
+msgstr "The one you set when exporting, not your trading password."
+
+msgid "cap.pfx.e2e"
+msgstr "The file and password are encrypted on this computer before they leave. Only your machine can decrypt them; Blave can't read them in transit. They're deleted after import."
+
+msgid "cap.pfx.go"
+msgstr "Upload and Import"
+
+msgid "cap.pfx.importing"
+msgstr "Importing…"
+
+msgid "cap.pfx.errPw"
+msgstr "That export password is wrong."
+
+msgid "cap.pfx.errFile"
+msgstr "This isn't a certificate file (.pfx)."
+
+msgid "cap.pfx.errIssuer"
+msgstr "This certificate wasn't issued by Capital."
+
+msgid "cap.pfx.errExpired"
+msgstr "This certificate has expired. Renew it in Capital's wizard, then export again."
+
+msgid "cap.pfx.errOlder"
+msgstr "Your machine already has a newer Capital certificate; this file is older."
+
+msgid "cap.pfx.errRead"
+msgstr "Couldn't read this file."
+
+msgid "cap.pfx.errKey"
+msgstr "The upload didn't finish. Upload again."
+
+msgid "cap.pfx.errImport"
+msgstr "The certificate didn't import."
+
+msgid "cap.s.probe"
+msgstr "Checking sign-in…"
+
+msgid "cap.s.probeIdle"
+msgstr "Certificate imported; sign-in not checked yet."
+
+msgid "cap.recheck"
+msgstr "Check Again"
+
+msgid "cap.s.pw"
+msgstr "Check sign-in"
+
+msgid "cap.err.pw"
+msgstr "Capital says the trading password is wrong."
+
+msgid "cap.err.pwLocked"
+msgstr "Capital has locked your trading password."
+
+msgid "cap.err.pwChange"
+msgstr "Capital still refuses this password. Change it with Capital, then enter it again here."
+
+msgid "cap.err.noCreds"
+msgstr "Your machine can't find the ID number and trading password. Enter them again."
+
+msgid "cap.s.verify"
+msgstr "Connection check"
+
+msgid "cap.retry"
+msgstr "Check Again"
+
+msgid "cap.s.sign"
+msgstr "Sign the API agreement"
+
+msgid "cap.s.signDo"
+msgstr "Sign on Capital's site for each market you'll trade: one for securities, one for futures."
+
+msgid "cap.s.signOpen"
+msgstr "Open Signing Page"
+
+msgid "cap.s.signDone"
+msgstr "I've Signed"
+
+msgid "cap.s.signNone"
+msgstr "No account readable yet. It may not be signed, or Capital hasn't enabled it yet."
+
+msgid "cap.s.read"
+msgstr "Read account"
+
+msgid "cap.s.readRun"
+msgstr "Reading…"
+
+msgid "cap.s.certExp"
+msgstr "Expires {date}"
+
+msgid "cap.acct.ts"
+msgstr "Securities"
+
+msgid "cap.acct.tf"
+msgstr "Futures"
+
+msgid "cap.acct.exp"
+msgstr "Certificate expires"
+
+msgid "cap.acct.read"
+msgstr "Enabled"
+
+msgid "cap.tfMissing"
+msgstr "If you have a futures account, sign the futures agreement too."
+
+msgid "cap.finish"
+msgstr "Done"
+
+msgid "cap.pending"
+msgstr "Setting up"
+
+msgid "cap.continue"
+msgstr "Continue"
+
+msgid "cap.err.busy"
+msgstr "Another step is still running on your machine. Try again when it finishes."
+
+msgid "cap.err.credsUnknown"
+msgstr "Your machine didn't answer, so it's unclear whether this was saved. It's safe to press again."
+
+msgid "cap.err.idFormat"
+msgstr "That ID number doesn't look right."
+
+msgid "cap.err.notReady"
+msgstr "The Capital components aren't installed yet. Upload once installation finishes."
+
+msgid "cap.err.noMove"
+msgstr "Your machine hasn't reported progress yet."
+
+msgid "cap.err.generic"
+msgstr "Your machine didn't accept this step."
+
+msgid "cap.err.certOld"
+msgstr "An expired Capital certificate on your machine is blocking sign-in. Importing a new certificate file removes it."
+
+msgid "cap.err.certUnusable"
+msgstr "The Capital certificate on your machine can't be used. Import the certificate file again."
+
+msgid "cap.err.certExpired"
+msgstr "The Capital certificate has expired. Renew it on your Windows PC, then import the new file."
+
+msgid "cap.err.timeout"
+msgstr "Capital didn't respond in time."
+
+msgid "cap.err.vehicle"
+msgstr "The sign-in program on your machine didn't start."
+
+msgid "cap.err.apiVersion"
+msgstr "The Capital components on your machine are too old and need reinstalling."
+
+msgid "cap.err.unknownCode"
+msgstr "Capital returned an unrecognized result (code {code})."
+
+msgid "cap.err.worker"
+msgstr "The Capital order program didn't start."
+
+msgid "cap.err.snapshot"
+msgstr "The Capital order program signed in but couldn't read the account."
+
+msgid "cap.err.probeNotOk"
+msgstr "Sign-in hasn't passed yet."
+
+msgid "cap.ho.saved"
+msgstr "Your ID number and trading password are saved on your cloud machine. It can't place orders yet."
+
+msgid "cap.ho.left"
+msgstr "Three steps left, which you'll do with the agent:"
+
+msgid "cap.ho.s1"
+msgstr "Get a Capital certificate (the wizard over Remote Desktop, plus an SMS code)"
+
+msgid "cap.ho.s2"
+msgstr "Run the API connection check (Capital's simulated order test)"
+
+msgid "cap.ho.s3"
+msgstr "Sign the API agreement online"
+
+msgid "cap.ho.go"
+msgstr "Let the Agent Walk You Through It"
+
+msgid "cap.ho.prompt"
+msgstr "I just saved my Capital ID number and trading password to my cloud machine from the desktop app. Please walk me through the rest of the setup on the cloud machine: the certificate, the API connection check and the agreement. When done, confirm read-only that the account can be read, and don't place any orders yet."
+
+msgid "cap.ho.promptRdp"
+msgstr "I want to get my Capital certificate on the cloud machine over Remote Desktop; my ID number and trading password are already saved. Please walk me through the certificate, the API connection check and the agreement. When done, confirm read-only that the account can be read, and don't place any orders yet."
+
+msgid "cap.ho.promptVerify"
+msgstr "My Capital certificate is already on the cloud machine, but I am stuck at Capital's API connection check. Please walk me through running the check tool on the cloud machine over Remote Desktop. When done, confirm read-only that the account can be read, and don't place any orders yet."
+
+msgid "cap.c.verifyDl"
+msgstr "Download the Check Tool"
+
+msgid "cap.s.verifyNot"
+msgstr "Capital hasn't recorded this check yet."
+
+msgid "cap.pfx.replace"
+msgstr "This replaces any older Capital certificate for the same ID number on your machine."
+
+msgid "cap.s.querying"
+msgstr "Checking…"
+
+msgid "cap.ho.promptRead"
+msgstr "My Capital setup in the desktop app is stuck at the “Read accounts” step. Please check the Capital setup status on the cloud machine and help me fix it. When done, confirm read-only that the account can be read, and don't place any orders yet."
+
 msgid "br.openPanel"
 msgstr "Open in panel"
 

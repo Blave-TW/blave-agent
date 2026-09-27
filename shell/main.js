@@ -236,6 +236,7 @@ function cloudHost() {
 /* 雲端的寫入那一支(cloudcmd.js;線 B 第二刀)。跟讀那支分開:兩邊走不同的端點與速率桶,而且這支的
    owner/gen 要在登出時單獨作廢(cloudcmd.js:95)。憑證同樣只在這個行程裡。 */
 let _cloudCmd = null;
+let _capital = null;   // 雲端群益開通(cloud_capital.js):選好的 pfx 只在這一份記憶體裡
 function cloudCmd() {
   if (!_cloudCmd) _cloudCmd = require("./cloudcmd").createCloudCmd({
     apiBase: API_BASE, post: (u, b) => postJSON(u, b),
@@ -421,6 +422,7 @@ async function signOutBlave() {
   clearToken();
   if (_cloud) _cloud.reset();   // 登出:不留上一個帳號的部位在記憶體裡
   if (_cloudCmd) _cloudCmd.reset();   // 在途的雲端指令:回應回來時丟掉(它是上一個人的)
+  if (_capital) _capital.forget();   // 選好還沒上傳的群益憑證檔:是上一個人的
   if (_mcp) _mcp.reset();       // 接入碼也是:伺服器那邊 /revoke 會撤掉它,這裡把記憶體裡的丟掉、作廢在途的請求
   lastAcct = null;
   return { revoked };
@@ -1932,6 +1934,21 @@ app.whenReady().then(() => {
     let r = null; try { r = await sendTrustedCreds(built.secrets); } catch (_) { /* 當沒送到 */ }
     return CC.interpretVenueBind(r, built.secrets);
   }, { ok: false, code: "NOT_ALLOWED", detail: {} });
+  /* 雲端主機的群益開通(cloud_capital.js;畫面 renderer/capital.js)。pfx 與匯出密碼只在這個行程裡封裝,renderer 只拿得到檔名與代號;
+     指令只收固定那幾步。送完不管結果都要一份新狀態:長步驟的結果在主機回報的 capital_connect 裡,不在回條裡 */
+  const capital = () => _capital || (_capital = require("./cloud_capital").createCapital({
+    send: (cmd, args, secrets) => cloudCmd().send(cmd, args, secrets),
+    pick: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx", "p12"] }] }); return r.canceled ? null : r.filePaths[0]; },
+    stat: (p) => fs.statSync(p), readFile: (p) => fs.readFileSync(p), basename: (p) => path.basename(p),
+    after: () => { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); },
+  }));
+  const capDenied = { code: "NOT_ALLOWED" };
+  handle("capital-pick", () => capital().pickPfx(), capDenied);
+  handle("capital-creds", (_e, a) => capital().saveCreds({ id: a && a.id, pw: a && a.pw }), capDenied);
+  handle("capital-step", (_e, name) => capital().step(String(name || "")), capDenied);
+  handle("capital-upload", (_e, pw) => capital().upload(pw), capDenied);
+  handle("capital-unbind", () => capital().unbind(), capDenied);
+  handle("capital-forget", () => { if (_capital) _capital.forget(); return true; }, false);
   // Binance 真錢連接:四支都只收自家頁面。金鑰只在 binance-connect 經過一次,形狀先驗(binance_link.keyShapeOk),不回傳、不 log
   ipcMain.handle("binance-ip", (e) => (fromOurPage(e) ? binanceLink().ip() : null));
   ipcMain.handle("binance-state", (e) => (fromOurPage(e) ? binanceLink().state() : null));

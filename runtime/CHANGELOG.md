@@ -79,6 +79,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   網頁路徑本機模擬(真 web_bridge + agent_turn + Claude CLI、假 api):inbox `interrupt` → `/report` 收到 `done` 0.07 秒。
   測試 `tests/check_turn_stop.py`。
 
+- **群益雲端開通:登記兩個仍把密碼放上指令列的點**(`capital_connect` 檔頭 audit C-1 註記:`schtasks /rp`、
+  `certutil -p`;換掉的做法會改變金鑰落地方式,要 desktop-win-test 真機驗過才動)。新增守門測試
+  `tests/check_capital_argv_secrets.py`:第三個把 secret 放上 argv 的點會紅。
+
 - **群益雲端免 RDP 開通(新 `runtime/capital_connect.py`,五個機器指令 `capital_setup`／`capital_pfx_key`／`capital_pfx`／`capital_probe`／`capital_finish`)**:
   用戶在自己的 Windows 匯出的 pfx 以主機一次性 RSA-OAEP 公鑰封裝上傳(api 只轉送密文),主機解密、驗是群益且未過期、經 schtasks 密碼載具
   以 Administrator `certutil -user -importpfx … NoRoot` 匯入,刪掉同 ID 舊證與過期證、probe、再由 `capital_finish` 裝 NSSM worker(Administrator)。
