@@ -2435,32 +2435,23 @@ msgstr "Doesn’t move"
 msgid "ho.row.staysV"
 msgstr "Exchange keys, amounts, trading state"
 
-msgid "ho.over.up"
-msgstr "Replaces the strategy with the same name in the cloud."
+msgid "ho.rename.up"
+msgstr "The cloud already has {id}. This copy is saved as a new strategy, {to}; the original stays as it is."
 
-msgid "ho.over.down"
-msgstr "Replaces the strategy with the same name on this computer."
+msgid "ho.rename.down"
+msgstr "This computer already has {id}. This copy is saved as a new strategy, {to}; the original stays as it is."
 
-msgid "ho.over.maybeUp"
-msgstr "If the cloud already has a strategy with this name, it is replaced."
+msgid "ho.rename.maybeUp"
+msgstr "If the cloud already has a strategy with this name, this copy is saved under a new name; the original stays as it is."
 
-msgid "ho.block.up"
-msgstr "The one in the cloud is trading and can’t be replaced. Pause it there and set its amount to 0 first."
+msgid "ho.srcLive.up"
+msgstr "The one on this computer keeps trading. The cloud copy starts trading only after you give it an amount on the cloud’s Auto trading page."
 
-msgid "ho.block.down"
-msgstr "The one on this computer is trading and can’t be replaced. Pause it and set its amount to 0 first."
-
-msgid "ho.block.srcDown"
-msgstr "This strategy is in the cloud's order settings, so it can't be pulled back as is. To work on it here, ask the agent to copy it under a new name and pull that copy back; the cloud one stays as it is."
-
-msgid "ho.block.srcUp"
-msgstr "This strategy is in this computer's order settings, so it can't be sent to the cloud as is. Ask the agent to copy it under a new name and send that copy; the one here stays as it is."
+msgid "ho.srcLive.down"
+msgstr "The one in the cloud keeps trading. The copy here starts trading only after you give it an amount on this computer’s Auto trading page."
 
 msgid "ho.block.goCloud"
 msgstr "View in Cloud"
-
-msgid "ho.block.goLocal"
-msgstr "View on This Computer"
 
 msgid "ho.ok"
 msgstr "Confirm"
@@ -2487,10 +2478,10 @@ msgid "ho.back.btn"
 msgstr "Back to This Computer"
 
 msgid "ho.msg.up"
-msgstr "Send the strategy {id} to my cloud machine. Re-run the backtest there once it’s moved, and show me both sets of numbers side by side."
+msgstr "Send the strategy {id} to my cloud machine as {to}. Re-run the backtest there once it’s moved, and show me both sets of numbers side by side."
 
 msgid "ho.msg.down"
-msgstr "Bring the strategy {id} from my cloud machine back to this computer. Re-run the backtest here afterwards, and show me both sets of numbers side by side."
+msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Re-run the backtest here afterwards, and show me both sets of numbers side by side."
 
 msgid "up.about"
 msgstr "About"

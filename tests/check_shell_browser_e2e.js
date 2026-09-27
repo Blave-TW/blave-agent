@@ -332,8 +332,8 @@ app.whenReady().then(async () => {
   t("B1 畫面送 bounds 只有 brSendBounds 一個出口(直接送 null 也更新去重快取)", (rSrc.match(/window\.blave\.browserBounds\(/g) || []).length === 1 && /function brSendBounds\(b\) \{ const key = JSON\.stringify\(b\); if \(key === brLastBounds\) return; brLastBounds = key; window\.blave\.browserBounds\(b\); \}/.test(rSrc));
   const ts3 = sent.filter((e) => e.type === "turn_sources" && e.session_id === "desktop-e2etest3").pop();
   const fpRow = ts3 && ts3.tabs.find((x) => x.url.includes("fa1.test"));
-  t("讀過之後這一格又導覽走了:這一格照樣算讀了(done),來源卡留著讀的那一頁", fpRow && fpRow.status === "done" && ts3.sources.some((x) => x.url === "http://fa1.test/favpage"));
-  t("「讀了 N 頁」與來源卡同口徑:status=done 的格數(扣掉搜尋頁)= 來源數", ts3 && ts3.tabs.filter((x) => x.status === "done" && !x.search).length === ts3.sources.length);
+  t("讀過之後這一格又導覽走了:這一格照樣算讀了(done),來源紀錄留著讀的那一頁", fpRow && fpRow.status === "done" && ts3.sources.some((x) => x.url === "http://fa1.test/favpage"));
+  t("「讀了 N 頁」與來源紀錄同口徑:status=done 的格數(扣掉搜尋頁)= 來源數", ts3 && ts3.tabs.filter((x) => x.status === "done" && !x.search).length === ts3.sources.length);
   const hist = B.history("desktop-e2etest3").pop();
   t("重開 app 的歷史:來源與分頁帶著存下來的 favicon(data URL)", hist && hist.sources.some((x) => x.url.includes("fa1.test") && /^data:image\/png;base64,/.test(x.fav || "")));
   const favDir = path.join(tmp, "snaps", "desktop-e2etest3", "favicons");

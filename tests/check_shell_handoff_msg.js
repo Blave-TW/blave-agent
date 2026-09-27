@@ -1,7 +1,7 @@
 // 「送上雲端 / 拉回這台電腦」(shell/renderer/handoff.js + 接線)。
 // 這顆按鈕會**替用戶送出一句話**給 agent,而 agent 拿得到雲端主機的 SSH:所以重點是
 //   ① 送出去的那句話裡只放過得了白名單的資料夾名(顯示名稱是 workspace / 雲端回報的自由文字,不可冒充用戶指令)
-//   ② 確認框在「目的地那份正在下單」時真的擋下(okDisabled、而且不出那兩句假話)
+//   ② 目的地同名一律不覆蓋:確認框講清楚會存成哪個新名字,送出去的那句帶那個名字
 //   ③ 功能預設關的時候,兩顆鈕一顆都不畫
 // 跑法:node tests/check_shell_handoff_msg.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -20,19 +20,22 @@ if (/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/
 const ctx = { HO_ID_RE: eval(/const HO_ID_RE = (\/.*?\/);/.exec(src)[1]), LANG: "zh" };   // hoMovesRow 只用 LANG 決定頓號 / 逗號
 const cutFn = (name) => { const i = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + name); };
 vm.createContext(ctx); vm.runInContext((block + "\n" + cutFn("hoMovesRow")).replace(/^const /gm, "var "), ctx);
-const { hoMsg, hoState, hoMovesRow } = ctx;
+const { hoMsg, hoFreeName, hoMovesRow } = ctx;
 
-const TPL = { up: "把策略 {id} 送上我的雲端主機。", down: "把雲端主機上的策略 {id} 拉回這台電腦。" };
-t("好的資料夾名:句子裡代進去的就是那個名字", hoMsg("up", "btc_rsi", TPL) === "把策略 btc_rsi 送上我的雲端主機。" && hoMsg("down", "A-1_b", TPL) === "把雲端主機上的策略 A-1_b 拉回這台電腦。"
-  && hoMsg("up", "x".repeat(64), TPL).includes("x".repeat(64)));
-t("壞 id 一律回 null(空白、中文、方括號、引號、路徑、換行、超長、控制字元、不是字串)", ["", " ", "btc rsi", "籌碼集中度", "a]b", "a\"b", "../etc/passwd", "a/b", "a\nb", "a\u0000b", "x".repeat(65), "a.b", "a;b", "$(id)", "{id}", null, undefined, 5, {}, []].every((v) => hoMsg("up", v, TPL) === null && hoMsg("down", v, TPL) === null));
-t("方向只認 up / down", ["", "UP", "cloud", null, 1, {}].every((d) => hoMsg(d, "btc_rsi", TPL) === null));
-t("範本壞掉(沒有 {id} / 兩個 {id} / 不是字串)→ null:寧可不送,也不送一句沒有標的的話", [null, {}, { up: 5 }, { up: "沒有代號" }, { up: "{id} 與 {id}" }].every((tp) => hoMsg("up", "btc_rsi", tp) === null));
-t("代入是字串切接,不是 replace:名字裡就算有 $& 這類樣式也原樣進去", hoMsg("up", "a-b", { up: "x{id}y" }) === "xa-by");
+const TPL = { up: "把策略 {id} 送上我的雲端主機，存成 {to}。", down: "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。" };
+t("好的資料夾名:句子裡代進去的就是那個名字與目標名", hoMsg("up", "btc_rsi", TPL, "btc_rsi_2") === "把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi_2。" && hoMsg("down", "A-1_b", TPL, "A-1_b") === "把雲端主機上的策略 A-1_b 拉回這台電腦，存成 A-1_b。"
+  && hoMsg("up", "x".repeat(64), TPL, "x".repeat(62) + "_2").includes("x".repeat(64)));
+const BAD = ["", " ", "btc rsi", "籌碼集中度", "a]b", "a\"b", "../etc/passwd", "a/b", "a\nb", "a\u0000b", "x".repeat(65), "a.b", "a;b", "$(id)", "{id}", "{to}", null, undefined, 5, {}, []];
+t("壞 id / 壞目標名一律回 null(空白、中文、方括號、引號、路徑、換行、超長、控制字元、不是字串)", BAD.every((v) => hoMsg("up", v, TPL, "ok") === null && hoMsg("down", v, TPL, "ok") === null && hoMsg("up", "ok", TPL, v) === null));
+t("方向只認 up / down", ["", "UP", "cloud", null, 1, {}].every((d) => hoMsg(d, "btc_rsi", TPL, "btc_rsi") === null));
+t("範本壞掉(沒有 {id} / 兩個 {id} / 沒有 {to} / 兩個 {to} / 不是字串)→ null:寧可不送,也不送一句沒有標的的話", [null, {}, { up: 5 }, { up: "沒有代號" }, { up: "{id} 與 {id} {to}" }, { up: "只有 {id}" }, { up: "{id} {to} {to}" }].every((tp) => hoMsg("up", "btc_rsi", tp, "btc_rsi") === null));
+t("代入是字串切接,不是 replace:名字裡就算有 $& 這類樣式也原樣進去", hoMsg("up", "a-b", { up: "x{id}y{to}" }, "a-b_2") === "xa-bya-b_2");
 
-t("確認框四態:目的地那份正在下單 → block(最優先);有同名 → over;不確定 → maybe;其餘 plain", hoState(true, 5) === "block" && hoState(false, 5) === "block" && hoState(null, 5) === "block"
-  && hoState(true, 0) === "over" && hoState(null, 0) === "maybe" && hoState(false, 0) === "plain"
-  && hoState(true, null) === "over" && hoState(false, undefined) === "plain" && hoState(false, NaN) === "plain" && hoState(false, -3) === "plain" && hoState(false, "9") === "plain");
+{ const tk = (...xs) => (n) => xs.indexOf(n) >= 0;
+  t("新名字:第一個沒被占的 _N(_2 被占 → _3)", hoFreeName("eth_ti_1h", tk("eth_ti_1h")) === "eth_ti_1h_2" && hoFreeName("eth_ti_1h", tk("eth_ti_1h", "eth_ti_1h_2")) === "eth_ti_1h_3"
+    && hoFreeName("a", tk("a_2", "a_3", "a_5")) === "a_4");
+  t("新名字守長度:64 字的名字從右邊截,結果仍過 HO_ID_RE", hoFreeName("x".repeat(64), tk()) === "x".repeat(62) + "_2" && ctx.HO_ID_RE.test(hoFreeName("y".repeat(64), tk("y".repeat(62) + "_2"))));
+  t("新名字:壞 id 回 null", [null, "", "a b", "x".repeat(65)].every((v) => hoFreeName(v, tk()) === null)); }
 
 // 稽核 C1:金鑰是**雙向**都搬(references/cloud-handoff.md §5),但沒用到 DATA_ 的策略 agent 會跳過那一步
 { const D = (...s2) => ({ dataSources: s2 });
@@ -74,20 +77,16 @@ t("hoAsk 的順序(規格 §2):回合進行中 → 不動作;別的框開著 / �
   const o = (re) => body.search(re);
   return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/); })());
 t("雲端沒在運行的六種都走同一條(envCloudKind 不是 running,或逾 1 小時沒同步)", /function hoCloudLive\(\) \{ const st = TR_BAGS\.cloud\.st; return envCloudKind\(st\) === "running" && envHeadState\(st, Date\.now\(\)\) !== "unknown"; \}/.test(src));
-t("擋下態:確認鈕 disabled,而且「會覆蓋」與「接下來由 agent 執行」兩句都不出(不會執行,那兩句是假話)", (() => {
-  const i = src.indexOf("if (state === \"block\")"), seg = src.slice(i, src.indexOf("const title =", i));
-  return /okDisabled: state === "block"/.test(src) && /if \(state === "block"\) extra\.appendChild\(mk\("p", "cf-block"/.test(seg) && /\n\s*else \{/.test(seg) && /cf-note/.test(seg) && seg.indexOf("cf-note") > seg.indexOf("else {"); })());
-t("擋下態的第二顆鈕切到目的地那一邊(用戶按的,不算自動切);拉回時順手開自動下單頁", /alt: state === "block" \? \{ label: dir === "up" \? t\("ho\.block\.goCloud"\) : t\("ho\.block\.goLocal"\), onOk: \(\) => \{ envSwitchGuarded\(goSide\); if \(goSide === "local"\) trOpen\("pos"\); \} \} : null/.test(src));
 t("按確認 = 直接送一句話(帶 handoff 方向標記給主行程記事件):不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /submitMessage\(msg, \{ handoff: dir \}\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
-t("確認框不放 prompt 全文:訊息是在 onOk 裡才組的,extra 裡只有那幾句 ho.*", !/ho\.msg\./.test(src.slice(src.indexOf("const extra = document.createDocumentFragment()"), src.indexOf("onOk:"))) && /const msg = hoMsg\(dir, id, hoTpl\(\)\); if \(!msg\) return;/.test(src));
+t("確認框不放 prompt 全文:訊息是在 onOk 裡才組的,extra 裡只有那幾句 ho.*", !/ho\.msg\./.test(src.slice(src.indexOf("const extra = document.createDocumentFragment()"), src.indexOf("onOk:"))) && /const msg = hoMsg\(dir, id, hoTpl\(\), to\); if \(!msg\) return;/.test(src));
 t("agent 正在回覆:兩顆鈕是 aria-disabled(鍵盤停得上去、讀屏唸得到原因),不是原生 disabled", /b\.setAttribute\("aria-disabled", "true"\)/.test(src) && /b\.title = t\("turn\.busy"\)/.test(src) && !/\.disabled = true/.test(src));
 t("上鎖 / 解鎖的同一處叫 hoBusy(三個出口都有)", (appSrc.match(/hoBusy\(\)/g) || []).length === 3);
 t("畫面只走 textContent / DOM,沒有 innerHTML", !/innerHTML/.test(src));
 
 // 目的地有沒有同名:拉回看本機清單(完整),送上雲端看雲端回報的索引——那份索引不保證涵蓋全部,所以找不到時不說「不會覆蓋」
-t("送上雲端:雲端清單找不到時用中性說法(maybe),不宣稱不會覆蓋;拉回:本機清單是完整的,可以精確講", /const destHas = dir === "up" \? \(envCloudList\(destSt\)\.some\(\(x\) => x\.name === id\) \? true : null\) : RP\.list\.some\(\(x\) => x\.name === id\);/.test(src));
-t("目的地那份的金額讀對邊(up 讀雲端、down 讀這台電腦),壞值當 0", /const destSt = dir === "up" \? TR_BAGS\.cloud\.st : TR_BAGS\.local\.st;/.test(src) && /return isFinite\(v\) \? v : 0;/.test(src)
-  && /Object\.prototype\.hasOwnProperty\.call\(a, id\)/.test(src));
+t("目的地占用:清單(送上雲端 = 雲端索引,拉回 = 本機清單)或下單設定有這個名字;雲端索引沒看到 → null(中性那句),本機清單是完整的 → false", /const names = \(dir === "up" \? envCloudList\(destSt\) : RP\.list\)\.map\(\(x\) => x\.name\);/.test(src)
+  && /const taken = \(n\) => names\.indexOf\(n\) >= 0 \|\| cdelInUse\(destCfg, n\) === true;/.test(src) && /const destHas = taken\(id\) \? true : dir === "up" \? null : false;/.test(src)
+  && /const destSt = dir === "up" \? TR_BAGS\.cloud\.st : TR_BAGS\.local\.st;/.test(src));
 
 /* ── 未登入按「送上雲端」→ 被切到雲端 → 登入完成 → 中欄不放行,換成「準備好了」卡 ──
    承重牆:hoPendingId() **不可以再讀 RP.name**。人在雲端等的時候本機那一邊會自己動(一輪 agent 回覆結束
@@ -180,38 +179,64 @@ t("trade.js:envPaint 不再看 HO.on;chat.tgt.cut1 從程式、DOM、字串表�
   && !/chat\.tgt\.cut1/.test(trSrc + html + strings));
 t("重畫:雲端清單的 sig 把 ho、能不能刪、選中的那支、刪除中的那幾支算進去", /JSON\.stringify\(\[kind, ho, canDel, sel, \[\.\.\.CDEL\.busy\.keys\(\)\], list\.map/.test(trSrc));
 t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id}", (() => {
-  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "over.up", "over.down", "over.maybeUp", "block.up", "block.down", "block.goCloud", "block.goLocal", "note.up", "note.down", "ok", "emptyHint", "msg.up", "msg.down", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped"];
+  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.movesMaybe", "row.stays", "row.staysV", "rename.up", "rename.down", "rename.maybeUp", "srcLive.up", "srcLive.down", "block.goCloud", "note.up", "note.down", "ok", "emptyHint", "msg.up", "msg.down", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '":', "g")) || []).length === 2)
-    && (strings.match(/"ho\.(msg\.(up|down)|ready\.body)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2); })());
+    && (strings.match(/"ho\.(msg\.(up|down)|ready\.body)": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2)
+    && (strings.match(/"ho\.(msg\.(up|down)|rename\.(up|down))": "[^"]*"/g) || []).length === 8
+    && (strings.match(/"ho\.(msg\.(up|down)|rename\.(up|down))": "[^"]*"/g) || []).every((l) => l.split("{to}").length === 2); })());
 t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down 講「在這台電腦重跑」;舊的 ho.note 退場",
   /extra\.appendChild\(mk\("p", "cf-note", dir === "up" \? t\("ho\.note\.up"\) : t\("ho\.note\.down"\)\)\);/.test(src) && !/"ho\.note":/.test(strings)
   && /"ho\.note\.up": "[^"]*在雲端重跑一次回測/.test(strings) && /"ho\.note\.down": "[^"]*在這台電腦重跑一次回測/.test(strings));
-// spec-desktop-005 §4:來源那一支在它那一邊的下單設定裡(判準同雲端刪除 cdelInUse)→ 框直接是擋下態、指向「用新名字複製一份」;
-// 讀不到設定(null)不預判。真的跑 hoAsk(假 DOM + 假 confirmBox),看框裡放了什麼
+// 真的跑 hoAsk(假 DOM + 假 confirmBox),看框裡放了什麼、按確認送出哪一句。
+// 來源在下單設定裡(判準同雲端刪除 cdelInUse,金額 0 也算):Wei 09-27 起照樣能搬,多一句「那邊照常下單、這份要給金額」。
+// 目的地同名(清單有、或下單設定有):Wei 09-28 起不擋、不覆蓋,一律提議存成第一個沒被占的 <id>_N,送出去的那句帶這個名字。
 { const cut = (s, name) => { const i = s.indexOf("function " + name + "("); return s.slice(i, s.indexOf("\n}\n", i) + 3); };
   const el = () => { const n = { kids: [], textContent: "", className: "", append(...x) { n.kids.push(...x); }, appendChild(x) { n.kids.push(x); return x; } }; return n; };
   const texts = (n) => (n && typeof n === "object" ? [n.textContent || "", ...(n.kids || []).flatMap(texts)] : []);
-  const run = (dir, cloudCfg, localCfg) => {
-    const boxes = [];
+  const run = (dir, cloudCfg, localCfg, cloudList = [], localList = []) => {
+    const boxes = [], sent = [];
     const c = { HO: { on: true, pending: null }, HO_ID_RE: /^[A-Za-z0-9_-]{1,64}$/, running: false, ENV: { cur: dir === "up" ? "local" : "cloud" },
       envCanSwitch: () => true, hoCloudLive: () => true, envCloudKind: () => "running", hoNote: () => {}, envSwitchGuarded: () => true,
       TR_BAGS: { cloud: { st: { report: { config: cloudCfg } } }, local: { st: { report: { config: localCfg } } } },
-      t: (k) => k, confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
-      envCloudList: () => [], RP: { list: [], data: null }, LANG: "zh", hoTpl: () => ({}), hoMsg: () => "m", paneSt: { chat: {} } };
+      t: (k, v) => k + (v ? JSON.stringify(v) : ""), confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
+      envCloudList: () => cloudList, RP: { list: localList, data: null }, LANG: "zh", hoTpl: () => TPL, paneSt: { chat: {} },
+      submitMessage: (m) => { sent.push(m); return Promise.resolve(false); }, trackFeature: () => {} };
     vm.createContext(c);
-    vm.runInContext(["hoMovesRow", "hoState", "hoAmount", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse"), c);
+    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse"), c);
     c.hoAsk(dir, "btc_rsi", {});
-    const b = boxes[0]; return b ? { single: !!b.single, ok: b.ok, dis: !!b.okDisabled, txt: texts(b.extra).join("|"), env: b.env } : null;
+    const b = boxes[0]; if (!b) return null;
+    b.onOk();
+    return { single: !!b.single, ok: b.ok, dis: !!b.okDisabled, alt: b.alt, txt: texts(b.extra).join("|"), msg: sent[0] };
   };
-  let r = run("down", { amounts: { btc_rsi: 0 } }, {});
-  t("拉回:雲端的 amounts 有這支(金額 0 也算)→ 擋下態:只有 ho.block.srcDown 那一句、單一出口「知道了」、雲端記號", r && r.single && r.ok === "cdel.gotIt" && r.txt === "ho.block.srcDown" && r.env === "cloud");
-  r = run("down", { weights: { btc_rsi: 0.5 } }, {});
-  t("拉回:在 weights 或 exchanges 裡也算", r && r.txt === "ho.block.srcDown" && run("down", { exchanges: { btc_rsi: "okx" } }, {}).txt === "ho.block.srcDown");
-  r = run("up", {}, { amounts: { btc_rsi: 5000 } });
-  t("送上雲端:這台電腦的下單設定有這支 → ho.block.srcUp", r && r.single && r.txt === "ho.block.srcUp" && r.env === undefined);
+  const sendable = (r) => r && !r.single && r.ok === "ho.ok" && !r.dis && !r.alt && /ho\.row\.moves/.test(r.txt) && /ho\.note\./.test(r.txt);
+  let r = run("up", {}, { amounts: { btc_rsi: 5000 } });
+  t("送上雲端:這台電腦的下單設定有這支 → 框照常可送出,多一句 ho.srcLive.up", sendable(r) && /ho\.srcLive\.up/.test(r.txt) && !/srcLive\.down/.test(r.txt));
+  r = run("down", { amounts: { btc_rsi: 0 } }, {});
+  t("拉回:雲端的 amounts 有這支(金額 0 也算)→ 照常可送出,多一句 ho.srcLive.down", sendable(r) && /ho\.srcLive\.down/.test(r.txt));
+  t("在 weights 或 exchanges 裡也算", /srcLive\.down/.test(run("down", { weights: { btc_rsi: 0.5 } }, {}).txt) && /srcLive\.up/.test(run("up", {}, { exchanges: { btc_rsi: "okx" } }).txt));
   r = run("down", null, {});
-  t("雲端設定讀不到(null)→ 不預判,照舊開一般的框(會搬 / 不會搬兩列)", r && !r.single && /ho\.row\.moves/.test(r.txt) && !/srcDown/.test(r.txt));
-  r = run("down", { amounts: { eth_ma: 1000 } }, {});
-  t("別支在下單設定裡 → 這支照常開一般的框", r && !r.single && !/src(Up|Down)/.test(r.txt));
-  t("擋下態的字:講「用新名字複製一份」,兩個方向各一句", /"ho\.block\.srcDown": "[^"]*用新名字複製一份再拉回/.test(strings) && /"ho\.block\.srcUp": "[^"]*用新名字複製一份再送上去/.test(strings)); }
+  t("來源設定讀不到(null)→ 一般的框,不多那一句", sendable(r) && !/srcLive/.test(r.txt));
+  r = run("up", {}, { amounts: { eth_ma: 1000 } });
+  t("別支在下單設定裡 → 這支不多那一句", sendable(r) && !/srcLive/.test(r.txt));
+  // 目的地同名 → 改存新名字(不擋、不覆蓋)
+  r = run("up", { amounts: { btc_rsi: 300 } }, { amounts: { btc_rsi: 5000 } }, [{ name: "btc_rsi" }, { name: "btc_rsi_2" }]);
+  t("送上雲端:雲端有 btc_rsi 且在下單、btc_rsi_2 也被占 → 框可送出,那一行講存成 btc_rsi_3;來源那句照出", sendable(r)
+    && r.txt.includes('ho.rename.up{"id":"btc_rsi","to":"btc_rsi_3"}') && /ho\.srcLive\.up/.test(r.txt));
+  t("送出去的那句帶目標名 btc_rsi_3", r.msg === "把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi_3。");
+  r = run("up", { weights: { btc_rsi_2: 0.5 } }, {}, [{ name: "btc_rsi" }]);
+  t("雲端下單設定裡掛著的名字(資料夾不在清單)也算被占 → btc_rsi_3", sendable(r) && r.txt.includes('"to":"btc_rsi_3"') && /存成 btc_rsi_3。$/.test(r.msg));
+  r = run("down", {}, { exchanges: { btc_rsi: "okx" } });
+  t("拉回:這台電腦的下單設定有 btc_rsi(清單沒有)→ ho.rename.down 存成 btc_rsi_2", sendable(r) && r.txt.includes('ho.rename.down{"id":"btc_rsi","to":"btc_rsi_2"}') && r.msg === "把雲端主機上的策略 btc_rsi 拉回這台電腦，存成 btc_rsi_2。");
+  r = run("down", {}, {}, [], [{ name: "btc_rsi" }]);
+  t("拉回:這台電腦清單有同名 → 存成 btc_rsi_2", sendable(r) && r.txt.includes('"to":"btc_rsi_2"'));
+  r = run("up", {}, {});
+  t("送上雲端、雲端清單沒看到 → 中性那句,送出去的名字照原名(由 agent 實查定案)", sendable(r) && /ho\.rename\.maybeUp/.test(r.txt) && !/ho\.rename\.up/.test(r.txt) && r.msg === "把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi。");
+  r = run("down", {}, {});
+  t("拉回、這台電腦沒有同名 → 沒有改名那一行,原名送出", sendable(r) && !/ho\.rename/.test(r.txt) && /存成 btc_rsi。$/.test(r.msg));
+  t("擋下態與覆蓋態整段退場(程式與字串表都沒有 ho.block.up/down、ho.over.*、goLocal、hoState、okDisabled、alt)", !/ho\.block\.(up|down)"|ho\.over\.|goLocal/.test(strings) && !/ho\.block\.(up|down)\b|ho\.over\.|goLocal|hoState|hoAmount|okDisabled|alt:/.test(src));
+  t("改名那幾句的字", /"ho\.rename\.up": "雲端已經有同名的 \{id\}，這份會存成新策略 \{to\}；原本那支不動。"/.test(strings) && /"ho\.rename\.down": "這台電腦已經有同名的 \{id\}，這份會存成新策略 \{to\}；原本那支不動。"/.test(strings)
+    && /"ho\.rename\.maybeUp": "若雲端已有同名策略，會改存成新名字，原本那支不動。"/.test(strings));
+  t("舊的來源擋下態整段退場(ho.block.srcUp / srcDown 不在程式與字串表)", !/ho\.block\.src/.test(src + strings));
+  t("那一句的字:兩個方向都講「照常下單」與「給金額才會開始下單」", ["up", "down"].every((d) => (strings.match(new RegExp('"ho\\.srcLive\\.' + d + '": "[^"]*"', "g")) || []).length === 2)
+    && /"ho\.srcLive\.up": "這台電腦這一支照常下單；雲端那份[^"]*給金額，才會開始下單。"/.test(strings) && /"ho\.srcLive\.down": "雲端那一支照常下單；[^"]*給金額，才會開始下單。"/.test(strings)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

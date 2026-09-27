@@ -1,5 +1,5 @@
 /* 「送上雲端 / 拉回這台電腦」(設計:blave-canon output/designer/spec-desktop-cloud-handoff-buttons.md)。
-   互動 = 按鈕 → 確認框(confirmBox:.cf-*、okDisabled、alt)→ 按「確認」直接把一句話送給 agent(submitMessage);不碰輸入框裡的草稿。
+   互動 = 按鈕 → 確認框(confirmBox:.cf-*;目的地同名一律改存新名字、不擋不覆蓋)→ 按「確認」直接把一句話送給 agent(submitMessage);不碰輸入框裡的草稿。
    真正搬東西的是 agent(照 references 的搬運文件、經 `blave` MCP);這個檔只負責「問一次、送一句話」。
    - **功能預設關**(主行程的 CLOUD_HANDOFF;先修 sshd 才上線):HO.on 是 false 時兩顆鈕都不畫、整個檔等於不存在。
    - 送給 agent 的那句話裡只放**策略資料夾名**,而且要過 HO_ID_RE:不放顯示名稱——那是 workspace / 雲端回報裡的自由文字,
@@ -10,11 +10,12 @@ const HO_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const HO_ICONS = { up: ["M12 13v8", "M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242", "m8 17 4-4 4 4"], down: ["M12 13v8l-4-4", "m12 21 4-4", "M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"] };
 
 /* ── 純邏輯(tests/check_shell_handoff_msg.js 從原文切出來跑;這一段不准碰 DOM)── */
-// 送給 agent 的那句話。壞 id / 壞方向回 null。tpl = 已經依 UI 語言取好的兩句範本({ up, down },各含一個 {id})
-function hoMsg(dir, id, tpl) {
-  if ((dir !== "up" && dir !== "down") || typeof id !== "string" || !HO_ID_RE.test(id)) return null;
+// 送給 agent 的那句話。壞 id / 壞目標名 / 壞方向回 null。tpl = 已經依 UI 語言取好的兩句範本({ up, down },各含一個 {id}、一個 {to});
+// to = 提議存成的名字(agent 在目的地實查後才定案,references/cloud-handoff.md step 4a)
+function hoMsg(dir, id, tpl, to) {
+  if ((dir !== "up" && dir !== "down") || typeof id !== "string" || !HO_ID_RE.test(id) || typeof to !== "string" || !HO_ID_RE.test(to)) return null;
   const s = tpl && typeof tpl[dir] === "string" ? tpl[dir] : null;
-  return s && s.split("{id}").length === 2 ? s.split("{id}").join(id) : null;
+  return s && s.split("{id}").length === 2 && s.split("{to}").length === 2 ? s.split("{id}").join(id).split("{to}").join(to) : null;
 }
 /* 「會搬」那一列講哪一句(references/cloud-handoff.md §5:金鑰是**雙向**都搬,但沒用到 `DATA_` 的策略 agent 會跳過那一步)。
    回 i18n key 與代入值。三種:
@@ -26,11 +27,12 @@ function hoMovesRow(dir, data) {
   const srcs = Array.isArray(data && data.dataSources) ? data.dataSources.filter((x) => typeof x === "string" && x) : [];
   return srcs.length ? ["ho.row.movesKeys", { sources: srcs.join(LANG === "zh" ? "、" : ", ") }] : ["ho.row.movesV", null];
 }
-/* 確認框是哪一態。destHas = 目的地有沒有同名(true / false / null = 不確定);destAmount = 目的地那份的投入金額。
-   回 "block"(目的地那份正在下單:不准覆蓋)| "over"(會覆蓋)| "maybe"(不確定有沒有同名:用中性說法)| "plain" */
-function hoState(destHas, destAmount) {
-  if (typeof destAmount === "number" && destAmount > 0) return "block";
-  return destHas === true ? "over" : destHas === null ? "maybe" : "plain";
+/* 目的地同名時提議的新名字:第一個沒被占的 <id>_2、_3…;超過 64 字就從右邊截 <id>(規則同 references/cloud-handoff.md step 4a 的 free)。
+   taken(name) = 目的地有沒有這個名字。壞 id 回 null */
+function hoFreeName(id, taken) {
+  if (typeof id !== "string" || !HO_ID_RE.test(id)) return null;
+  for (let k = 2; k < 10000; k++) { const sfx = "_" + k, n = id.slice(0, 64 - sfx.length) + sfx; if (!taken(n)) return n; }
+  return null;
 }
 /* ── 純邏輯到此 ── */
 
@@ -43,7 +45,6 @@ function hoIcon(dir) {
 }
 // 雲端那一邊「看得到現況而且在運行」:送上雲端要它、拉回那顆鈕也要它(讀不到 / 逾 1 小時沒同步就不畫)
 function hoCloudLive() { const st = TR_BAGS.cloud.st; return envCloudKind(st) === "running" && envHeadState(st, Date.now()) !== "unknown"; }
-function hoAmount(st, id) { const a = st && st.report && st.report.config && st.report.config.amounts; const v = a && Object.prototype.hasOwnProperty.call(a, id) ? Number(a[id]) : 0; return isFinite(v) ? v : 0; }
 
 /* agent 正在回覆時頁首那顆是 aria-disabled(不是原生 disabled:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它 */
 function hoBusy() {
@@ -128,43 +129,35 @@ function hoAsk(dir, id, opener) {
   // 走到這裡 = 框真的開得起來(接著按確認就送出):意圖已經達成,那條回頭路不必再留。
   // 另外三個清的時機:人自己切視角(envSwitch)、按了「留在雲端」(hoStay)、重開 app(只在記憶體、不寫檔)
   if (dir === "up") { HO.pending = null; hoNote(null); }
-  // 來源那一支在它那一邊的下單設定裡(amounts / weights / exchanges 任一張表有這個名字,金額 0 也算;判準同雲端刪除 cdelInUse):
-  // agent 照 references/cloud-handoff.md 前置條件 3 不會搬——先在這裡講,不讓人按確認、等一輪、花額度才聽到。
-  // 讀不到設定(null)不預判,照舊交給 agent;deployments.json 這裡讀不到,那一半仍由 agent 把關。鈕不停用(同 51b 刪除)
+  // 來源在它那一邊的下單設定裡(判準同雲端刪除 cdelInUse,金額 0 也算)照樣能搬(Wei 09-27):搬的只有程式碼與 DATA_ 金鑰,
+  // 金額與下單狀態不搬,目的地那份要用戶在那邊給金額才會下單——所以只多講一句,不擋
   const srcSt = dir === "up" ? TR_BAGS.local.st : TR_BAGS.cloud.st;
-  if (cdelInUse(srcSt && srcSt.report ? srcSt.report.config : null, id) === true) {
-    const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });
-    const p = document.createElement("p"); p.className = "cf-block"; p.textContent = dir === "up" ? t("ho.block.srcUp") : t("ho.block.srcDown");
-    // 什麼都不會搬:「會搬 / 不會搬」兩列不出(列出來就是假話);單一出口「知道了」
-    confirmBox({ title, lines: [], extra: p, ok: t("cdel.gotIt"), single: true, opener, env: ENV.cur === "cloud" ? "cloud" : undefined, onOk: () => {} });
-    $("del-title").title = title;
-    return;
-  }
+  const srcLive = cdelInUse(srcSt && srcSt.report ? srcSt.report.config : null, id) === true;
   const destSt = dir === "up" ? TR_BAGS.cloud.st : TR_BAGS.local.st;
-  // 目的地有沒有同名。拉回:這台電腦的清單是現況。送上雲端:雲端那份清單是平台上的策略索引(24 小時快取、只含機器已經回報過摘要的策略),
-  // 「清單裡沒有」不等於「雲端沒有」——所以沒看到時不說「不會覆蓋」,用中性的那一句
-  const destHas = dir === "up" ? (envCloudList(destSt).some((x) => x.name === id) ? true : null) : RP.list.some((x) => x.name === id);
-  const state = hoState(destHas, hoAmount(destSt, id));
+  // 目的地同名一律不覆蓋、改存新名字(Wei 09-28)。占用 = 清單有、或下單設定有(資料夾不在但設定還掛著那個名字,新資料夾一放進去就會被排程)。
+  // 拉回:這台電腦的清單是現況。送上雲端:雲端清單是 24 小時快取的索引,沒看到不等於沒有——用中性那句,由 agent 實查定案
+  const destCfg = destSt && destSt.report ? destSt.report.config : null;
+  const names = (dir === "up" ? envCloudList(destSt) : RP.list).map((x) => x.name);
+  const taken = (n) => names.indexOf(n) >= 0 || cdelInUse(destCfg, n) === true;
+  const destHas = taken(id) ? true : dir === "up" ? null : false;
+  const to = destHas ? hoFreeName(id, taken) : id;
+  if (!to) return;
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const extra = document.createDocumentFragment(), dl = mk("dl", "cf-rows kv");
   const row = (k, v) => { const r = mk("div", "cf-row"); r.append(mk("dt", "", k), mk("dd", "", v)); return r; };
   const mv = hoMovesRow(dir, dir === "up" ? RP.data : null);
   dl.append(row(t("ho.row.moves"), t(mv[0], mv[1] || undefined)), row(t("ho.row.stays"), t("ho.row.staysV")));
   extra.appendChild(dl);
-  if (state === "block") extra.appendChild(mk("p", "cf-block", dir === "up" ? t("ho.block.up") : t("ho.block.down")));
-  else {
-    if (state === "over") extra.appendChild(mk("p", "cf-removed", dir === "up" ? t("ho.over.up") : t("ho.over.down")));
-    if (state === "maybe") extra.appendChild(mk("p", "cf-removed", t("ho.over.maybeUp")));
-    // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排(擋下的時候不會執行:覆蓋那句與這句都是假話,不出)
-    extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.note.up") : t("ho.note.down")));
-  }
+  if (destHas) extra.appendChild(mk("p", "cf-removed", t(dir === "up" ? "ho.rename.up" : "ho.rename.down", { id, to })));
+  else if (destHas === null) extra.appendChild(mk("p", "cf-removed", t("ho.rename.maybeUp")));
+  if (srcLive) extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.srcLive.up") : t("ho.srcLive.down")));
+  // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排
+  extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.note.up") : t("ho.note.down")));
   const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });
-  const goSide = dir === "up" ? "cloud" : "local";
   confirmBox({
-    title, lines: [], extra, ok: t("ho.ok"), okDisabled: state === "block", opener,
-    alt: state === "block" ? { label: dir === "up" ? t("ho.block.goCloud") : t("ho.block.goLocal"), onOk: () => { envSwitchGuarded(goSide); if (goSide === "local") trOpen("pos"); } } : null,
+    title, lines: [], extra, ok: t("ho.ok"), opener,
     onOk: () => {
-      const msg = hoMsg(dir, id, hoTpl()); if (!msg) return;
+      const msg = hoMsg(dir, id, hoTpl(), to); if (!msg) return;
       if (paneSt.chat.off) paneToggle("chat", false);                   // 聊天欄收著就先展開:過程在那裡回報
       submitMessage(msg, { handoff: dir })                              // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算)
         .then((ok) => { if (ok) trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull"); });   // 跑起來才算用過(busy / 被最低版本擋下不算),同 rpRobAsk

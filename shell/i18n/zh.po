@@ -2435,32 +2435,23 @@ msgstr "不會搬"
 msgid "ho.row.staysV"
 msgstr "交易所金鑰、投入金額、下單狀態"
 
-msgid "ho.over.up"
-msgstr "會整份覆蓋雲端上的同名策略。"
+msgid "ho.rename.up"
+msgstr "雲端已經有同名的 {id}，這份會存成新策略 {to}；原本那支不動。"
 
-msgid "ho.over.down"
-msgstr "會整份覆蓋這台電腦上的同名策略。"
+msgid "ho.rename.down"
+msgstr "這台電腦已經有同名的 {id}，這份會存成新策略 {to}；原本那支不動。"
 
-msgid "ho.over.maybeUp"
-msgstr "若雲端已有同名策略，會整份覆蓋。"
+msgid "ho.rename.maybeUp"
+msgstr "若雲端已有同名策略，會改存成新名字，原本那支不動。"
 
-msgid "ho.block.up"
-msgstr "雲端的同名策略正在下單，不能覆蓋。先在雲端暫停，把它的金額改成 0。"
+msgid "ho.srcLive.up"
+msgstr "這台電腦這一支照常下單；雲端那份要在雲端的自動下單頁給金額，才會開始下單。"
 
-msgid "ho.block.down"
-msgstr "這台電腦的同名策略正在下單，不能覆蓋。先暫停，把它的金額改成 0。"
-
-msgid "ho.block.srcDown"
-msgstr "這支策略在雲端的下單設定裡，不能直接拉回。要在這台電腦上改，請 agent 用新名字複製一份再拉回；雲端這一支不受影響。"
-
-msgid "ho.block.srcUp"
-msgstr "這支策略在這台電腦的下單設定裡，不能直接送上雲端。請 agent 用新名字複製一份再送上去；這台電腦這一支不受影響。"
+msgid "ho.srcLive.down"
+msgstr "雲端那一支照常下單；拉回來的這份要在這台電腦的自動下單頁給金額，才會開始下單。"
 
 msgid "ho.block.goCloud"
 msgstr "去雲端看"
-
-msgid "ho.block.goLocal"
-msgstr "回這台電腦看"
 
 msgid "ho.ok"
 msgstr "確認"
@@ -2487,10 +2478,10 @@ msgid "ho.back.btn"
 msgstr "回這台電腦送上來"
 
 msgid "ho.msg.up"
-msgstr "把策略 {id} 送上我的雲端主機。搬完在雲端重跑回測，把兩邊的數字並排給我看。"
+msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完在雲端重跑回測，把兩邊的數字並排給我看。"
 
 msgid "ho.msg.down"
-msgstr "把雲端主機上的策略 {id} 拉回這台電腦。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
+msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
 
 msgid "up.about"
 msgstr "關於"

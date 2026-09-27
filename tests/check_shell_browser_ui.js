@@ -61,8 +61,8 @@ app.whenReady().then(async () => {
     const favRemote = brFav("https://q.example/x", "https://q.example/favicon.ico");
     ev({ type: "page_favicon", id: "p2", dataURI: PNG });
     const p2bar = document.querySelector('.bw .pt[data-id="p2"] .pt-bar .fav img');
-    const srcCard = brSources([{ url: "https://b.example/y", title: "B", snapshot_id: "s0123456789abcdef" }], null).querySelector(".fav img");
-    return { favImg: !!favImg && favImg.src === PNG, favRemote: !favRemote.querySelector("img") && favRemote.textContent === "q", p2bar: !!p2bar, srcCard: !!srcCard,
+    const sameSite = brFav("https://b.example/other").querySelector("img");
+    return { favImg: !!favImg && favImg.src === PNG, favRemote: !favRemote.querySelector("img") && favRemote.textContent === "q", p2bar: !!p2bar, sameSite: !!sameSite,
       mode: BR.exp && BR.exp.mode, expand: window.__expand, same: first.length === 3 && first.every((el, i) => el === after[i]) && after.length === 3,
       appended: withNew.length === 4 && withNew.slice(0, 3).every((el, i) => el === first[i]), p4foot, ask, ask2, addrH: t("br.blk.addr.h") };
   })()`);
@@ -72,7 +72,7 @@ app.whenReady().then(async () => {
   ok("③ summary 沒句尾標點補「。」再接「按之前再看一次。」;已經有句號的不重複", r.ask === "填好了:Email、提前 15 分鐘。按之前再看一次。" && r.ask2 === "填好了。按之前再看一次。");
   ok("④ 相似網域那一列寫「已擋下這個網址」(跟擋下頁同一句)", r.p4foot === r.addrH && r.addrH === "已擋下這個網址");
   ok("favicon:data URL 畫成 16px 圖;遠端網址一律不當 <img src>,退回字母格", r.favImg && r.favRemote);
-  ok("favicon:page_favicon 事件之後,牆格條頭與同網站的來源卡都換成圖", r.p2bar && r.srcCard);
+  ok("favicon:page_favicon 事件之後,牆格條頭與同網站之後畫的圖示都換成圖", r.p2bar && r.sameSite);
   const r2 = await js(`(() => {
     brCollapse(false);
     window.__ev({ type: "block_open" });
@@ -80,7 +80,7 @@ app.whenReady().then(async () => {
     for (const id of ["q1", "q2", "q3", "q4"]) window.__ev({ type: "page_open", id, url: "https://" + id + ".example/" });
     window.__ev({ type: "page_done", id: "q1", read: true }); window.__ev({ type: "page_done", id: "q2" });
     window.__ev({ type: "turn_sources", sources: [{ id: "q1", url: "https://q1.example/", title: "Q1", snapshot_id: "s0123456789abcdef" }, { id: "q3", url: "https://q3.example/", title: "Q3", snapshot_id: "s0123456789abcde0" }], tabs: [] });
-    return new Promise((res) => setTimeout(() => res({ sum: (document.querySelector(".bblk.sum:last-of-type summary") || b.sum || {}).textContent || b.sum.textContent }), 2500));
+    return new Promise((res) => setTimeout(() => res({ sum: (document.querySelector(".bblk.sum:last-of-type summary") || b.sum || {}).textContent || b.sum.textContent, cards: document.querySelectorAll(".srcs, .src").length }), 2500));
   })()`);
   const r3 = await js(`(() => {
     window.__ev({ type: "block_open" });
@@ -121,9 +121,9 @@ app.whenReady().then(async () => {
     brWall(b); const wallHead = document.querySelector(".bw-stat").textContent; brCollapse(false);
     return { head, wallHead, searchIcon: brStatusNode(BR.tabs.get("g1")) === null, readIcon: !!brStatusNode(BR.tabs.get("n1")) };
   })()`);
-  ok("已讀 / 總數跟來源卡同口徑:搜尋結果頁不算已讀、也不算在總數;聊天區塊頭與中欄牆頭同一個數", /1\/3/.test(r5.head) && /1\/3/.test(r5.wallHead));
+  ok("已讀 / 總數跟摘要列同口徑:搜尋結果頁不算已讀、也不算在總數;聊天區塊頭與中欄牆頭同一個數", /1\/3/.test(r5.head) && /1\/3/.test(r5.wallHead));
   ok("搜尋結果頁列出來但不打勾;真的讀過的頁打勾", r5.searchIcon && r5.readIcon);
-  ok("「讀了 N 頁」= 來源卡數(這一輪 2 張來源 → 讀了 2 頁;只開沒讀的不算)", /讀了 2 頁/.test(r2.sum));
+  ok("「讀了 N 頁」= 主行程這一輪的來源筆數(2 筆 → 讀了 2 頁;只開沒讀的不算),聊天裡沒有來源卡", /讀了 2 頁/.test(r2.sum) && !r2.cards);
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 }).catch((e) => { console.log("FAIL  " + (e && e.stack)); app.exit(1); });

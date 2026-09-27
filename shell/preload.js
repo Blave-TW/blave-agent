@@ -109,7 +109,7 @@ contextBridge.exposeInMainWorld("blave", {
   browserNavigate: (id, url) => ipcRenderer.invoke("browser-navigate", id, url),
   browserReload: (id) => ipcRenderer.invoke("browser-reload", id),
   browserOpenLive: (sessionId, snapshotId) => ipcRenderer.invoke("browser-open-live", sessionId, snapshotId),
-  browserShowLive: (url) => ipcRenderer.invoke("browser-show-live", url),   // 點瀏覽卡 / 來源卡:開即時頁(分頁還在就切過去)
+  browserShowLive: (url) => ipcRenderer.invoke("browser-show-live", url),   // 點瀏覽卡:開即時頁(分頁還在就切過去)
   browserSnapshot: (sessionId, snapshotId) => ipcRenderer.invoke("browser-snapshot", sessionId, snapshotId),
   browserHistory: (sessionId) => ipcRenderer.invoke("browser-history", sessionId),
   browserBlockVisible: (on) => ipcRenderer.send("browser-block-visible", on),

@@ -113,17 +113,6 @@
 .bblk.sum[open] .chev { transform: rotate(180deg); }
 .bblk.sum .wall { padding: 0 var(--space-8) var(--space-8); }
 
-/* ── 來源卡 .src ── */
-.srcs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-8); margin: 0 0 var(--space-24); }
-.src { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-8) var(--space-12); border: 0; border-radius: var(--radius-md); background: var(--bg-body); box-shadow: var(--shadow-sm); text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
-.src:hover { background: var(--surface-muted); }
-.src .r1 { display: flex; align-items: center; gap: var(--space-6); min-width: 0; font-size: 11px; color: var(--ink-3); }
-.src .n { flex: none; font-size: 11px; color: var(--ink-3); }
-/* 網域是這張卡最重要的辨識資訊:永遠不截;要截只截標題(兩行＋…)。聊天欄窄時一欄 */
-.src .r1 .dom { flex: none; overflow: visible; text-overflow: clip; }
-@container chat (max-width: 559px) { .srcs { grid-template-columns: minmax(0, 1fr); } }
-.src .t { font-size: 12px; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
 /* ── 中欄展開層 ── */
 .bw { position: absolute; left: 0; right: 0; bottom: 0; top: 52px; z-index: 20; display: flex; flex-direction: column; min-height: 0; background: var(--bg-body); }
 .bw-head { flex: none; display: flex; align-items: flex-start; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
@@ -194,7 +183,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pt, .src, .bblk.conv .pt, .bblk.sum.rise { animation: none; }
+  .pt, .bblk.conv .pt, .bblk.sum.rise { animation: none; }
   .br-pulse { animation: none; opacity: .5; }
   .bblk .pt-prog, .bblk.sum .chev, .pg-band, .segs i, .tc { transition: none; }
   .tr { display: none; }

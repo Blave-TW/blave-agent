@@ -1,4 +1,4 @@
-/* 內建瀏覽器的畫面(主行程 shell/browser/ 的事件 → 聊天瀏覽區塊、中欄展開層、來源卡)。
+/* 內建瀏覽器的畫面(主行程 shell/browser/ 的事件 → 聊天瀏覽區塊、中欄展開層)。
    canon:design-system.md › Components ›「電腦版內建瀏覽器(agent 瀏覽)」九條;spec:.claude/output/designer/spec-desktop-browser-2026-09-26.md。
    這一層不持有任何頁面物件:只收 browser-event、只送分頁 id 與中欄的 bounds。頁面來的字(網址、標題、擷取句)一律 textContent。
    在 app.js 之後載入(用它的 $、t、sessionId、scrollChat、busyPin、trackFeature)。 */
@@ -134,7 +134,7 @@ function brBlockNew(live) {
   return b;
 }
 function brStat(b, withSegs) {
-  // 已讀 / 總數跟摘要列與來源卡同一個口徑:真的讀過(browser_read)的頁才算已讀;搜尋結果頁列出來但不算在內
+  // 已讀 / 總數跟摘要列同一個口徑:真的讀過(browser_read)的頁才算已讀;搜尋結果頁列出來但不算在內
   const all = b.ids.map((id) => BR.tabs.get(id)).filter(Boolean), xs = all.filter((x) => !x.search);
   const d = xs.filter((x) => x.readEver).length, n = xs.length;
   const frag = document.createDocumentFragment();
@@ -241,7 +241,7 @@ function brPaintSum(b) {
   const favs = brEl("span", "favs");
   // 疊圖由左到右 z-index 遞減:左邊那格永遠在上,後面的只露出右半邊
   b.ids.map((id) => BR.tabs.get(id)).filter(brIsRead).slice(0, 4).forEach((x, i) => { const f = brFav(x.url); f.style.zIndex = String(4 - i); favs.append(f); });
-  // 讀了幾頁 = 這一輪真的 browser_read 過的頁(讀過就算,之後導覽也不收回),跟來源卡同一個口徑;有來源清單就以它為準
+  // 讀了幾頁 = 這一輪真的 browser_read 過的頁(讀過就算,之後導覽也不收回);回合結束後以主行程的來源紀錄為準(brTakeSources)
   const read = b.sourceCount != null ? b.sourceCount : b.ids.filter((id) => brIsRead(BR.tabs.get(id))).length;
   // 整輪都在操作、一頁都沒讀(Wei 實測 TradingView:貼 Pine、切週期,沒有 browser_read):
   // 「讀了 0 頁」字面不對——改講「用了 N 頁」。N = 真的開起來的頁(搜尋頁/被擋/打不開/只停中繼頁照舊不算);
@@ -267,18 +267,26 @@ function brObserve() {
   BR.io.observe(live);
 }
 
-// ── 來源卡 ───────────────────────────────────────────────────
-function brSources(list, block) {
-  if (!list || !list.length) return null;
-  const box = brEl("div", "srcs");
-  list.forEach((s, i) => {
-    const c = brEl("button", "src"); c.type = "button";
-    const r1 = brEl("span", "r1"); r1.append(brEl("span", "n mono", String(i + 1)), brFav(s.url), brEl("span", "dom mono", brReg(brHost(s.url))));
-    c.append(r1, brEl("span", "t", s.title || s.url));
-    c.addEventListener("click", () => { trackFeature("browser_source"); brLive(s, block); });
-    box.append(c);
-  });
-  return box;
+/* 回合結束收主行程的來源紀錄(一筆＝真的讀到正文的一頁;即時與重開 app 共用):來源那一格標成已讀;
+   同一格讀過又導覽到別頁時,格子只剩最後一頁——前面讀過的頁補成一列(點開照樣開即時頁、開不了退快照),
+   摘要列展開才看得到每一頁。讀了幾頁＝來源筆數扣掉搜尋結果頁,跟清單裡已讀的列數一致 */
+function brTakeSources(b, tabs, sources) {
+  const rows = (tabs || []).filter(Boolean), rowSnap = new Map(rows.map((r) => [r.id, r.snapshot_id || null]));
+  const search = new Set(rows.filter((r) => r.search).map((r) => r.id));
+  const srcs = (sources || []).filter((s) => s && s.snapshot_id && !search.has(s.id) && !(BR.tabs.get(s.id) || {}).search);
+  // 那一格現在停在的就是這一頁:主行程每格紀錄的快照說了算(導覽走會換新快照);沒有紀錄才看這一格在不在清單裡
+  const shown = (s) => (rowSnap.has(s.id) ? rowSnap.get(s.id) === s.snapshot_id : b.ids.includes(s.id));
+  const moved = new Set(), readSnaps = new Set(srcs.map((s) => s.snapshot_id));
+  for (const s of srcs) {
+    if (shown(s)) { const y = BR.tabs.get(s.id); if (y) { y.readEver = true; y.relay = false; } continue; }
+    const id = "src_" + s.snapshot_id;
+    Object.assign(brTab(id), { url: String(s.url || ""), title: String(s.title || ""), snap: s.snapshot_id, ph: "done", readEver: true, ended: true });
+    brAddRow(b, id); moved.add(s.id);
+  }
+  // 讀完才導覽走、新的那一頁沒讀:讀過的算在補上的那一列,這一格本身不再算已讀(不然同一頁數兩次)
+  moved.forEach((id) => { const y = BR.tabs.get(id); if (y && rowSnap.has(id) && !readSnaps.has(rowSnap.get(id))) { y.readEver = false; if (y.ph === "done" && !y.relay) y.ph = "open"; } });
+  b.sourceCount = srcs.length;
+  b.wall.querySelectorAll(".pt").forEach((el) => { const x = BR.tabs.get(el.dataset.id); if (x) brPaintTile(el, x); });
 }
 
 // ── 中欄展開層 ───────────────────────────────────────────────
@@ -359,15 +367,6 @@ function brWall(b) {
   window.blave.browserCollapse();
   BR.exp = { mode: "wall", block: b };
   brPaintOverlay(); BR.blocks.forEach(brPaintHead); brObserve();
-}
-/* 點來源卡 = 開即時頁(分頁還活著就切過去,不在了就重新導覽);開不了(該站後來被政策擋)才退回快照 */
-async function brLive(s, block) {
-  const r = await window.blave.browserShowLive(s.url);
-  if (!r || !r.id) return brSnap(s, block);
-  const y = brTab(r.id); y.url = s.url; y.title = y.title || s.title || "";
-  if (s.snapshot_id) y.snap = y.snap || s.snapshot_id;
-  if (!r.existing) y.ph = "load";
-  brExpand(r.id);
 }
 async function brSnap(s, block) {
   brLastBounds = ""; BR.sig = null; BR.wallBlock = null;
@@ -624,8 +623,7 @@ function brOnEvent(ev) {
     case "turn_sources": {
       const b = BR.cur; BR.cur = null;
       for (const r of (ev.tabs || []).concat(ev.sources || [])) if (r) brNoteFav(r.url, r.fav, r.plate);
-      const srcs = (ev.sources || []).filter((s) => s && s.snapshot_id);
-      if (b) { b.ids.forEach((id) => { const y = BR.tabs.get(id); if (y) { y.ended = true; brPaint(id); } }); b.sourceCount = srcs.length; brFinish(b); const box = brSources(srcs, b); if (box) brAppend(box); }
+      if (b) { b.ids.forEach((id) => { const y = BR.tabs.get(id); if (y) { y.ended = true; brPaint(id); } }); brTakeSources(b, ev.tabs, ev.sources); brFinish(b); }
       brObserve(); return;
     }
     default: return;
@@ -634,36 +632,32 @@ function brOnEvent(ev) {
 }
 window.blave.onBrowserEvent(brOnEvent);
 
-// ── 舊對話:照時間把每一輪的摘要列與來源卡插回逐字稿(app.js csOpen 用) ──
+// ── 舊對話:照時間把每一輪的摘要列插回逐字稿(app.js csOpen 用) ──
 async function brHistoryItems(sid) {
   let rows = []; try { rows = await window.blave.browserHistory(sid); } catch (_) { return []; }
   const out = [];
   for (const r of rows || []) {
     if (!r || !Array.isArray(r.tabs) || !r.tabs.length) continue;
     out.push({ ts: Number(r.ts) || 0, br: { kind: "block", row: r } });
-    if (Array.isArray(r.sources) && r.sources.length) out.push({ ts: (Number(r.end) || Number(r.ts) || 0) + 0.001, br: { kind: "src", row: r } });
   }
   return out;
 }
 function brRestore(item) {
   const r = item.row;
-  if (item.kind === "block") {
-    const b = brBlockNew(false);
-    r.tabs.forEach((tb) => {
-      if (!tb || typeof tb.id !== "string" || tb.search) return;   // 搜尋結果頁不進清單
-      const x = brTab(tb.id); x.url = String(tb.url || ""); x.title = String(tb.title || ""); x.snap = tb.snapshot_id || null;
-      x.ph = tb.status === "done" ? "done" : "open"; x.search = !!tb.search; x.readEver = tb.status === "done"; brNoteFav(tb.url, tb.fav, tb.plate);
-      if (tb.status === "blocked") x.blocked = { kind: "domain" }; else if (tb.status === "failed") x.fail = "network";
-      brAddRow(b, tb.id);
-    });
-    $("chat-scroll").appendChild(b.el); b.item = r; b.sourceCount = Array.isArray(r.sources) ? r.sources.filter((x) => x && x.snapshot_id).length : 0;
-    r.block = b;
-    brFinish(b);
-  } else {
-    const b = BR.blocks.find((k) => k.item === r) || null;
-    r.sources.forEach((s) => s && brNoteFav(s.url, s.fav, s.plate));
-    const box = brSources(r.sources.filter((s) => s && s.snapshot_id), b); if (box) $("chat-scroll").appendChild(box);
-  }
+  if (item.kind !== "block") return;
+  const b = brBlockNew(false);
+  r.tabs.forEach((tb) => {
+    if (!tb || typeof tb.id !== "string" || tb.search) return;   // 搜尋結果頁不進清單
+    const x = brTab(tb.id); x.url = String(tb.url || ""); x.title = String(tb.title || ""); x.snap = tb.snapshot_id || null;
+    x.ph = tb.status === "done" ? "done" : "open"; x.search = !!tb.search; x.readEver = tb.status === "done"; brNoteFav(tb.url, tb.fav, tb.plate);
+    if (tb.status === "blocked") x.blocked = { kind: "domain" }; else if (tb.status === "failed") x.fail = "network";
+    brAddRow(b, tb.id);
+  });
+  const srcs = Array.isArray(r.sources) ? r.sources : [];
+  srcs.forEach((s) => s && brNoteFav(s.url, s.fav, s.plate));
+  brTakeSources(b, r.tabs, srcs);
+  $("chat-scroll").appendChild(b.el);
+  brFinish(b);
 }
 /* 換對話 / 新對話:區塊跟著聊天欄一起清掉;展開在中欄的收回 */
 function brReset() { brCollapse(false); BR.blocks = []; BR.cur = null; BR.tabs.clear(); if (BR.io) BR.io.disconnect(); }

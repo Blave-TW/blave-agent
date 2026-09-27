@@ -140,7 +140,7 @@ ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;�
   });
 }
 ok("中欄狀態句講這一頁(不再重複已讀 d/n)", /if \(x\) \{ const n = brStatusNode\(x\);[^\n]*brFoot\(x\)/.test(brSrc));
-ok("來源卡:網域不截、窄聊天欄一欄", /\.src \.r1 \.dom \{ flex: none; overflow: visible; text-overflow: clip; \}/.test(brCss) && /@container chat \(max-width: 559px\) \{ \.srcs \{ grid-template-columns: minmax\(0, 1fr\); \} \}/.test(brCss));
+ok("來源卡已拿掉(0.1.8):browser.css 沒有 .src / .srcs 規則", !/(^|[\s,])\.srcs?\b/m.test(brCss));
 // 中繼頁判定(主行程)
 const C = require(path.join(__dirname, "..", "shell", "browser", "content.js"));
 const body = "x ".repeat(150);

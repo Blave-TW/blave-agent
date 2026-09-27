@@ -1250,7 +1250,7 @@ async function csOpen(id) {
   // 舊回合只有文字(工具收據與思考過程沒有存),照角色畫回去;圖另外存在
   // state/chat-images/,照時間插回去——它落在那一輪的提問與回覆之間,跟當時看到的順序一樣
   const imgs = await window.blave.loadSessionImages(id);
-  const brs = typeof brHistoryItems === "function" ? await brHistoryItems(id) : [];   // 內建瀏覽器每一輪的摘要列與來源卡
+  const brs = typeof brHistoryItems === "function" ? await brHistoryItems(id) : [];   // 內建瀏覽器每一輪的摘要列
   turns.map((x) => ({ ts: x.ts, turn: x })).concat(imgs.map((x) => ({ ts: x.ts, img: x })), brs)
     .sort((a, b) => a.ts - b.ts)
     .reduce(histFixOrder, [])
