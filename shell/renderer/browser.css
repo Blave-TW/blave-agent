@@ -80,6 +80,15 @@
   .bblk .pg { flex: none; height: 120px; min-height: 0; }
 }
 @container chat (min-width: 680px) { .bblk .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* 歷史的瀏覽列沒有縮圖(圖只存在記憶體):整塊每一格都沒有圖 → 不畫縮圖欄(browser.js brThumbClass)。
+   一頁一列:條頭與訊息槽往左補滿,列高不變;格子與中欄牆:一格只剩條頭＋訊息槽 */
+.bblk.no-thumb .pg, .wall.no-thumb .pg { display: none; }
+.bw .wall.no-thumb { grid-auto-rows: auto; }
+@container chat (max-width: 559px) {
+  .bblk.no-thumb .pt { grid-template-columns: minmax(0, 1fr) auto; }
+  .bblk.no-thumb .pt-bar, .bblk.no-thumb .pt-foot { grid-column: 1 / 3; }
+  .bblk.no-thumb .pt-prog { left: var(--space-8); }
+}
 /* 進行中也是一行(canon 第 1 條):圖示疊＋已讀 d/n＋展開。收著時只露出要你操作的那一頁;「沒讀到」的頁排最下面 */
 .bblk:not(.sum) .bblk-head .favs { display: inline-flex; }
 .bblk .favs .fav { margin-left: -4px; box-shadow: 0 0 0 2px var(--surface-card); position: relative; }

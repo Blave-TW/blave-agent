@@ -32,12 +32,13 @@ function shlFmtTime(sec, nowMs) {
   return d.getFullYear() === new Date(nowMs).getFullYear() ? md : d.getFullYear() + "/" + md;
 }
 /* 開分享框時已經知道滿了沒有(share/state 帶的四個數)。回 { kind: "live"|"daily", n } 或 null。
-   「更新公開版本」不佔份數:50 份上限不擋更新;每日次數含更新,兩種都擋。數字沒給(舊 api)= 不擋,送出時 api 再守 */
+   「更新公開版本」不佔份數:50 份上限不擋更新;每日次數含更新,兩種都擋。數字沒給(舊 api)= 不擋,送出時 api 再守。
+   兩個都滿先講每日(同 web limitOf 與 api):今天的次數用完,撤幾份也公開不了,叫人去撤是白做工 */
 function shlLimit(limits, mode) {
   const L = limits && typeof limits === "object" ? limits : {};
   const full = (n, max) => typeof n === "number" && typeof max === "number" && max > 0 && n >= max;
-  if (mode !== "update" && full(L.liveCount, L.liveLimit)) return { kind: "live", n: L.liveLimit };
   if (full(L.todayCount, L.dailyLimit)) return { kind: "daily", n: L.dailyLimit };
+  if (mode !== "update" && full(L.liveCount, L.liveLimit)) return { kind: "live", n: L.liveLimit };
   return null;
 }
 // 送出時才被擋(api 的 LIVE_LIMIT / DAILY_LIMIT)→ 同一個形狀;數字沒給就拿開框時問到的上限
@@ -166,7 +167,7 @@ function shlRevokeAsk(row, opener) {
       return;
     }
     const back = opener.isConnected ? opener : document.querySelector('.set-cat[data-set-cat="shares"]');
-    confirmBox({ title: t("shr.revokeTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailed")], ok: t("cdel.gotIt"), single: true, opener: back, onOk: () => {} });
+    confirmBox({ title: t("shr.revokeFailTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailBody")], ok: t("cdel.gotIt"), single: true, opener: back, onOk: () => {} });   // 標題寫結果,不再是問句
   } });
 }
 function shlDrop(row) {

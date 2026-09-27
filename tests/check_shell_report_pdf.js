@@ -29,8 +29,13 @@ if (!process.versions.electron) {
     ok("① 檔名:標題用信封 title;沒有才用 meta.title;清完是空的 → report", PDFLIB.pdfFileName(rep("短標題", at(2026, 1, 1))).startsWith("短標題_") && PDFLIB.pdfFileName(rep("", at(2026, 1, 1))).startsWith("meta 的長標題_") && PDFLIB.pdfFileName({ title: "...", created_at: at(2026, 1, 1), blocks: [] }) === "report_2026-01-01.pdf");
     ok("① 閘門只有一條:報告 JSON 能渲染(performance 也能存)", PDFLIB.pdfCanRender({ type: "performance", blocks: [] }) && !PDFLIB.pdfCanRender({ blocks: "x" }) && !PDFLIB.pdfCanRender(null));
     const src = read(path.join(R, "report-print.js")), A = "/* ── 純邏輯", B = "/* ── 純邏輯到此 ── */";
-    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { pdfZoom, pdfStamp, pdfHasNotes, PDF_WAIT_MS });", P);
-    ok("① 寬表:比欄寬才縮、縮到剛好;放得下 / 量不到 = 1", P.pdfZoom(673, 1346) === 0.5 && P.pdfZoom(673, 673) === 1 && P.pdfZoom(673, 400) === 1 && P.pdfZoom(0, 900) === 1);
+    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { pdfZoom, pdfStamp, pdfHasNotes, PDF_WAIT_MS, PDF_Z_MIN, PDF_WIDE_W });", P);
+    // 寬表三級(稽核 P1;案例同 web/tests/check_report_pdf.js)
+    const Z = (a, n, w) => JSON.stringify(P.pdfZoom(a, n, w)), R3 = (z, wide, note) => JSON.stringify({ z, wide, note });
+    ok("① 寬表 ①:放得下 / 量不到不縮;直式縮到剛好,下限 0.62(0.6203 還在下限內)", P.PDF_Z_MIN === 0.62 && P.PDF_WIDE_W === 1001 && Z(673, 600, 1001) === R3(1, false, false) && Z(673, 673, 1001) === R3(1, false, false) && Z(0, 600, 1001) === R3(1, false, false)
+      && Z(673, 1000, 1001) === R3(0.673, false, false) && Z(673, 1085, 1001) === R3(673 / 1085, false, false));
+    ok("① 寬表 ②:直式到下限還放不下 → 改橫式,用橫式內容寬重算(不放大超過 1)", Z(673, 1100, 1001) === R3(0.91, true, false) && Z(673, 1500, 1001) === R3(1001 / 1500, true, false) && Z(673, 1090, 1200) === R3(1, true, false));
+    ok("① 寬表 ③:橫式也到下限才繼續縮,加一行小字;沒有橫式頁可用(wideAvail 不給)= 跳過 ②", Z(673, 2000, 1001) === R3(0.5005, true, true) && Z(673, 1500, 0) === R3(673 / 1500, false, true) && Z(673, 1500) === R3(673 / 1500, false, true));
     ok("① 存成時間 YYYY/MM/DD HH:mm(本機);等字型與圖上限 10 秒", P.pdfStamp(new Date(2026, 8, 28, 14, 5).getTime()) === "2026/09/28 14:05" && P.pdfStamp(NaN) === "" && P.PDF_WAIT_MS === 10000);
     ok("① 聲明的條件句只在報告有註時才放", P.pdfHasNotes({ blocks: [{ type: "footnote", items: [{ id: "a" }] }] }) && !P.pdfHasNotes({ blocks: [{ type: "footnote", items: [] }] }) && !P.pdfHasNotes({ blocks: [{ type: "text" }] }));
 
@@ -102,6 +107,15 @@ if (!process.versions.electron) {
     ok("③ 列印頁:<html> 不帶 data-theme(light);CSP 不准 inline script / style 屬性 / 外連;用同一支 report-blocks.js 與 md.js", !/data-theme/.test(ph.replace(/<!--[\s\S]*?-->/g, "")) && /script-src 'self'; style-src 'self'; img-src data:/.test(ph) && /connect-src 'none'/.test(ph) && /<script src="md\.js"><\/script>\s*<script src="report-blocks\.js"><\/script>\s*<script src="report-print\.js">/.test(ph));
     ok("③ 列印規則(P1 / P4):A4 與邊界、margin box 頁尾與頁碼、print-color-adjust、表頭重印、列不切、圖不過頁、不寫 hex", /@page \{\s*size: A4;\s*margin: 18mm 16mm 20mm;/.test(css) && /@bottom-left \{\s*content: var\(--pdf-foot, ""\);/.test(css) && /counter\(page\) " \/ " counter\(pages\)/.test(css) && /print-color-adjust: exact/.test(css) && /-webkit-print-color-adjust: exact/.test(css)
       && /\.rb-table thead \{\s*display: table-header-group;\s*\}/.test(css) && /\.rb-table tr,\s*\.rb-heat tr \{\s*break-inside: avoid;\s*\}/.test(css) && /\.rb-image img \{\s*max-height: 200mm;\s*object-fit: contain;\s*\}/.test(css) && /orphans: 3;\s*widows: 3/.test(css) && !/#[0-9a-fA-F]{3,8}\b(?![^{]*\{)/.test(css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/#rs_content/g, "")));
+    const printJs = read(path.join(R, "report-print.js")), STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
+    ok("③ 寬表三級的接線(P1):CSS 有具名橫式頁與 --pdf-z;JS 把倍率寫在 --pdf-z、橫式加 .is-wide、③ 才插那一行小字(字面 zh / en 定稿);等字型與圖之後再量一次",
+      /@page wide \{\s*size: A4 landscape;\s*\}/.test(css) && /\.rb-block\.is-wide \{\s*page: wide;\s*\}/.test(css) && /\.rb-table-wrap > table,\s*\.rb-heat-wrap > table \{\s*zoom: var\(--pdf-z, 1\);\s*\}/.test(css)
+      && /pdfZoom\(w\.clientWidth, tb\.scrollWidth, block \? PDF_WIDE_W : 0\)/.test(printJs) && /tb\.style\.setProperty\("--pdf-z", String\(r\.z\)\)/.test(printJs) && /block\.classList\.toggle\("is-wide", r\.wide\)/.test(printJs)
+      && /note\.className = "rb-cap pdf-table-note"; note\.textContent = t\("pdf\.tableNote"\);/.test(printJs) && /pdfFitTables\(host\);\s*await pdfAssets\(\);\s*pdfFitTables\(host\);/.test(printJs) && !/style\.zoom/.test(printJs)
+      && STR.zh["pdf.tableNote"] === "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。" && STR.en["pdf.tableNote"] === "This table is scaled down to fit the page. Open the report in Blave to see it at full size.");
+    ok("③ 孤行(e2e #17):清單一條不切、最後一條不單獨落到下一頁;block 的尾註(含寬表那行小字)跟著前一列走", /\.rb-news-item,\s*\.rb-fn,\s*\.rb-text li \{\s*break-inside: avoid;\s*\}/.test(css) && /\.rb-text li:last-child,\s*\.rb-cap \{\s*break-before: avoid;\s*\}/.test(css));
+    const pdfJs = read(path.join(R, "report-pdf.js"));
+    ok("③ PDF 鈕換字前鎖原寬(稽核 P4:左邊的「分享」不位移);回到原字才解", /if \(state === "idle"\) b\.style\.minWidth = ""; else if \(!b\.hidden && b\.offsetWidth\) b\.style\.minWidth = b\.offsetWidth \+ "px";\s*clearTimeout\(PDF\.timer\); PDF\.state = state;/.test(cutFn(pdfJs, "pdfSet")));
     const WEB_PRINT = path.join(__dirname, "..", "..", "web", "app", "static", "css", "agent", "report_print.css");
     if (!fs.existsSync(WEB_PRINT)) console.log("SKIP  ③ 共用列印規則與 web 逐字比對(需要 monorepo 版面)");
     else {
@@ -132,15 +146,19 @@ if (!process.versions.electron) {
 // ── ④ Electron(看不見的視窗)──
 const { app, BrowserWindow, ipcMain } = require("electron");
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-pdf-e-")));
+// 這支測試唯一的視窗就是列印頁:它一關,Electron 預設(沒人聽 window-all-closed)就結束程式、exit 0——後面的斷言一條都沒跑到還算綠
+app.on("window-all-closed", () => {});
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const NOW = Math.floor(Date.now() / 1000);
-const wide = { type: "table", title: "寬表", columns: Array.from({ length: 20 }, (_, i) => ({ key: "c" + i, label: "欄位名稱" + i })), rows: Array.from({ length: 3 }, () => Object.fromEntries(Array.from({ length: 20 }, (_, i) => ["c" + i, "12,345.67"]))) };
+const cols = (n, title) => ({ type: "table", title, columns: Array.from({ length: n }, (_, i) => ({ key: "c" + i, label: "欄位名稱" + i })), rows: Array.from({ length: 3 }, () => Object.fromEntries(Array.from({ length: n }, (_, i) => ["c" + i, "12,345.67"]))) });
+const narrow = cols(10, "10 欄"), mid = cols(15, "15 欄"), wide = cols(20, "20 欄");   // 寬表三級各一張
 const tall = { type: "table", title: "持倉", columns: [{ key: "a", label: "代號" }, { key: "b", label: "名稱" }, { key: "c", label: "股數" }], rows: Array.from({ length: 90 }, (_, i) => ({ a: String(1000 + i), b: "標的 " + i, c: "1,000" })) };
 const FIX = { schema_version: "1.6", id: "pdf-1", type: "performance", title: "績效週報 08/25–08/31", created_at: NOW, blocks: [
-  { type: "meta", title: "績效週報 08/25–08/31(完整標題)", report_type: "performance", generated_at: NOW, origin: "scheduled", machine: "blave-agent-01" },
+  // report_type 是給人看的顯示字(lib/report.py 的參數說明),不是 type 代號——樣張上印出 performance 是這份假資料寫錯(稽核 P5)
+  { type: "meta", title: "週報 08/25–08/31(完整標題)", report_type: "績效週報", generated_at: NOW, origin: "scheduled", machine: "blave-agent-01" },
   { type: "text", variant: "lead", markdown: "本週 **+1.82%**,回撤收斂[^a]。" },
   { type: "kpi_row", items: [{ label: "報酬", value: "+1.82%", tone: "up" }, { label: "回撤", value: "-0.6%", tone: "down" }] },
-  tall, wide,
+  tall, narrow, mid, wide,
   { type: "image", file: "a.png", alt: "圖", caption: "說明" },
   { type: "text", markdown: "## 方法\n\n內文一段。", private: true },
   { type: "footnote", items: [{ id: "a", text: "資料來源:臺灣證券交易所" }] }] };
@@ -161,11 +179,13 @@ app.whenReady().then(async () => {
     const wc = win.webContents, print = wc.printToPDF.bind(wc);
     wc.printToPDF = async (o) => {
       facts = await wc.executeJavaScript(`(() => { const q = (s) => document.querySelector(s), cs = (n) => getComputedStyle(n), all = (s) => [...document.querySelectorAll(s)];
-        const tables = all(".rb-table-wrap").map((w) => { const t = w.querySelector("table"); return { zoom: t.style.zoom || "", fits: t.getBoundingClientRect().width <= w.getBoundingClientRect().width + 1 }; });
+        const tables = all(".rb-table-wrap").map((w) => { const t = w.querySelector("table"), wide = !!w.closest(".rb-block.is-wide"), n = w.nextElementSibling;
+          return { z: t.style.getPropertyValue("--pdf-z"), used: cs(t).zoom, wide, need: t.scrollWidth, width: Math.round(t.getBoundingClientRect().width), room: wide ? 1001 : Math.round(w.getBoundingClientRect().width),
+            note: n && n.classList.contains("pdf-table-note") ? n.textContent : "", page: cs(w.closest(".rb-block")).page }; });
         return { theme: document.documentElement.getAttribute("data-theme"), lang: document.documentElement.lang, bodyBg: cs(document.body).backgroundColor, ink: cs(q(".rb-title")).color, title: q(".rb-title").textContent, docTitle: document.title,
           width: Math.round(q(".pdf-sheet").getBoundingClientRect().width), foot: q(".rb-foot") ? cs(q(".rb-foot")).display : "none", stmt: !q("#pdf-statement").hidden, disc: all("#pdf-statement p").map((p) => p.textContent), discTitle: q("#pdf-disc-t").textContent,
           footVar: cs(document.documentElement).getPropertyValue("--pdf-foot"), brand: !!q(".pdf-brand svg"), tables, imgs: all(".rb-image img").length, fnref: all("a.rb-fnref").length, buttons: all("button").filter((b) => cs(b).display !== "none").length,
-          leadBorder: q(".rb-lead") ? cs(q(".rb-lead")).borderLeftWidth : "", priv: document.body.textContent.includes("內文一段"), thead: q(".rb-table thead") ? cs(q(".rb-table thead")).display : "" }; })()`);
+          leadBorder: q(".rb-lead") ? cs(q(".rb-lead")).borderLeftWidth : "", priv: document.body.textContent.includes("內文一段"), thead: q(".rb-table thead") ? cs(q(".rb-table thead")).display : "", typeTag: q(".rb-type-tag") ? q(".rb-type-tag").textContent : null }; })()`);
       return print(o);
     };
     return win;
@@ -179,15 +199,21 @@ app.whenReady().then(async () => {
   await wait(50);
   const buf = fs.existsSync(OUT) ? fs.readFileSync(OUT) : Buffer.alloc(0), txt = buf.toString("latin1");
   const pages = (txt.match(/\/Type\s*\/Page\b(?!s)/g) || []).length, box = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(txt);
+  const boxes = [...txt.matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)].map((m) => Math.round(Number(m[1])) + "x" + Math.round(Number(m[2])));
   ok("④ 產出:代號 OK、檔案是 PDF、寫成功才記一次埋點;視窗從頭到尾沒有顯示、用完已關", r.code === "OK" && txt.startsWith("%PDF-") && tracked.join() === "report_pdf" && !shown && win.isDestroyed() && BrowserWindow.getAllWindows().length === 0, JSON.stringify([r, buf.length, tracked, shown]));
-  if (SAMPLE) { console.log("INFO  樣張:" + OUT + "(" + pages + " 頁)\n      " + JSON.stringify(facts)); app.exit(red ? 1 : 0); return; }
+  if (SAMPLE) { console.log("INFO  樣張:" + OUT + "(" + pages + " 頁;各頁 " + boxes.join(" ") + ")\n      " + JSON.stringify(facts)); app.exit(red ? 1 : 0); return; }
   ok("④ A4(595×842pt);90 列的表跨頁 → 至少 3 頁", !!box && Math.abs(Number(box[1]) - 595) < 2 && Math.abs(Number(box[2]) - 842) < 2 && pages >= 3, JSON.stringify([box && box.slice(1), pages]));
   ok("④ 淺色:沒有 data-theme、紙底純白、標題是墨色;欄寬 = 178mm(673px)", facts.theme === null && facts.bodyBg === "rgb(255, 255, 255)" && facts.ink === "rgb(26, 34, 44)" && Math.abs(facts.width - 673) <= 1, JSON.stringify(facts));
-  ok("④ 頁 1 頂有 lockup;文件標題 = 信封 title;語言照畫面給的", facts.brand && facts.docTitle === "績效週報 08/25–08/31" && facts.lang === "zh-Hant");
+  ok("④ 頁 1 頂有 lockup;文件標題 = 信封 title;語言照畫面給的;類型標籤印的是 report_type 那個顯示字", facts.brand && facts.docTitle === "績效週報 08/25–08/31" && facts.lang === "zh-Hant" && facts.typeTag === "績效週報", JSON.stringify(facts.typeTag));
   ok("④ 每頁頁尾的字由字串表給(--pdf-foot);文末長版聲明四段、有註才帶條件句、存成時間", facts.footVar.includes("由 Blave Agent 產出") && facts.stmt && facts.discTitle === "聲明" && facts.disc.length === 4 && facts.disc[0].startsWith("本文件由 Blave 用戶透過其 Blave Agent") && facts.disc[1].startsWith("本文件不構成")
     && facts.disc[2] === "AI 產出可能有錯誤、遺漏或資料延遲。本文件的註列有產出時使用的資料來源，供讀者自行查核。投資前請獨立判斷，並自行承擔盈虧。" && /^本文件存成於 \d{4}\/\d\d\/\d\d \d\d:\d\d，是當下那一版的副本/.test(facts.disc[3]), JSON.stringify(facts.disc));
   ok("④ 不印:閱讀層尾行 .rb-foot、任何鈕;私人區塊保留(績效報告也能存)", facts.foot === "none" && facts.buttons === 0 && facts.priv);
-  ok("④ 寬表(20 欄)縮到欄寬內、一般的表不縮;表頭是 table-header-group(換頁重印)", facts.tables.length === 2 && facts.tables[0].zoom === "" && Number(facts.tables[1].zoom) > 0 && Number(facts.tables[1].zoom) < 1 && facts.tables.every((t) => t.fits) && facts.thead === "table-header-group", JSON.stringify(facts.tables));
+  const [t0, ta, t1, t2] = facts.tables, fits = (t) => t.width <= t.room + 1, near = (a, b) => Math.abs(Number(a) - b) < 0.001;
+  ok("④ 一般的表不縮、不換頁;表頭是 table-header-group(換頁重印)", facts.tables.length === 4 && t0.z === "" && !t0.wide && !t0.note && t0.page === "auto" && fits(t0) && facts.thead === "table-header-group", JSON.stringify(facts.tables));
+  ok("④ 寬表 ①(10 欄):直式縮到剛好(不低於 0.62),留在直式頁、不加小字", !ta.wide && ta.page === "auto" && near(ta.z, 673 / ta.need) && Number(ta.z) >= 0.62 && Number(ta.z) < 1 && near(ta.used, Number(ta.z)) && fits(ta) && !ta.note, JSON.stringify(ta));
+  ok("④ 寬表 ②(15 欄):直式要縮到下限以下 → 那一塊改橫式頁(page: wide),倍率 = 橫式內容寬 / 表寬、不低於 0.62,不加小字", t1.wide && t1.page === "wide" && 673 / t1.need < 0.62 && near(t1.z, Math.min(1, 1001 / t1.need)) && Number(t1.z) >= 0.62 && near(t1.used, Number(t1.z)) && fits(t1) && !t1.note, JSON.stringify(t1));
+  ok("④ 寬表 ③(20 欄):橫式也放不下 → 繼續縮到剛好,表下一行小字", t2.wide && t2.page === "wide" && near(t2.z, 1001 / t2.need) && Number(t2.z) < 0.62 && fits(t2) && t2.note === "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。", JSON.stringify(t2));
+  ok("④ printToPDF 認具名橫式頁:同一份 PDF 直式(595×842)與橫式(842×595)混排", boxes.includes("595x842") && boxes.includes("842x595"), boxes.join(" "));
   ok("④ 同一支渲染器:圖走主行程給的 data URI、markdown 的尾註引用是上標、lead 是左線版", facts.imgs === 1 && facts.fnref === 1 && facts.leadBorder === "2px", JSON.stringify([facts.imgs, facts.fnref, facts.leadBorder]));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

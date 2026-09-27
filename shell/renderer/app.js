@@ -1192,7 +1192,7 @@ function csLock(on) {
 function csClearChat() {
   if (typeof brReset === "function") brReset();   // 內建瀏覽器的區塊與展開層(renderer/browser.js)
   $("chat-scroll").innerHTML = "";
-  liveBubble = null; busy = null; swLine = null;
+  liveBubble = null; busy = null; swLine = null; swHeld = null;
   acctCard = null; creditCards.length = 0; dataCard = null;   // 卡片跟著聊天欄一起清掉
 }
 function csStartNew() {
@@ -1890,9 +1890,13 @@ function stepWhere(c) {
   return tool.indexOf("mcp__blave__") === 0 ? "cloud" : "local";
 }
 /* 切視角時的系統行(③):只在對話有內容時插;切到哪一邊都插一條當前方向的;連續切(上一條仍是最後一則)只留最新一條。
-   只在記憶體(逐字稿是 runtime 存的,這一行不進 session.db):重開 app / 換對話就沒了。 */
-let swLine = null;
+   只在記憶體(逐字稿是 runtime 存的,這一行不進 session.db):重開 app / 換對話就沒了。
+   回合進行中切視角:先記著(swHeld),回合結束、回覆與卡都掛好之後才插(chatSwitchFlush)——當場插會落在同一輪的瀏覽卡與回覆中間,
+   而那一行講的「之後的指示」本來就是下一輪的事。切出去又切回來 = 沒換,不插 */
+let swLine = null, swHeld = null;
 function chatSwitched(from, to) {
+  if (swHeld) { from = swHeld.from; swHeld = null; }
+  if (running === true) { swHeld = { from, to }; return; }
   if (from === to) return;
   const box = $("chat-scroll");
   if (swLine) { if (swLine.parentNode === box && box.lastElementChild === swLine) swLine.remove(); swLine = null; }
@@ -1902,6 +1906,8 @@ function chatSwitched(from, to) {
   box.appendChild(el); busyPin(); scrollChat();
   swLine = el;
 }
+
+function chatSwitchFlush() { if (swHeld) chatSwitched(swHeld.from, swHeld.to); }
 
 // 主行程丟的是 strings.js 的 key(它不組句子),查不到就原樣顯示。
 window.blave.onEngineProgress((key) => addMsg("sys", t(key)));
@@ -2607,6 +2613,7 @@ window.blave.onTurnEnd(async (r) => {
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
+  chatSwitchFlush();   // 回合中切過視角:那一行排在這一輪之後(結果卡的落點已經在上一行定了)
 });
 
 /* 側欄 / 聊天欄:拖拉調寬 + 收合(雲端工作頁那套移植,數字相同)。

@@ -5,8 +5,19 @@
 
 /* ── 純邏輯(tests/check_shell_report_pdf.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const PDF_WAIT_MS = 10 * 1000;   // 等字型與圖的上限;逾時照當下畫面產(失敗的圖 = 閱讀層既有的「圖片載入失敗」框,照印)
-// 寬表:紙上沒有橫捲,比欄寬就等比縮到剛好(不裁欄、不改橫式);放得下 = 1
-function pdfZoom(avail, need) { return avail > 0 && need > avail ? avail / need : 1; }
+const PDF_Z_MIN = 0.62;          // 12px 的表格字印出來約 6pt,再小讀不了
+const PDF_WIDE_W = 1001;         // A4 橫式扣左右 16mm(265mm)的內容寬,px
+/* 寬表三級(canon › 列印／PDF;紙上沒有橫捲、不裁欄;同 web report_pdf.js 的 zoom):
+   ① 直式縮到剛好,下限 PDF_Z_MIN  ② 還放不下 → 那張表所在的頁改橫式,同一個下限
+   ③ 橫式仍放不下才繼續縮到剛好,表下加一行小字(note)。wideAvail 不給 = 跳過 ② */
+function pdfZoom(avail, need, wideAvail) {
+  if (!(avail > 0) || !(need > avail)) return { z: 1, wide: false, note: false };
+  let z = avail / need;
+  if (z >= PDF_Z_MIN) return { z, wide: false, note: false };
+  if (!(wideAvail > avail)) return { z, wide: false, note: true };
+  z = Math.min(1, wideAvail / need);
+  return { z, wide: true, note: z < PDF_Z_MIN };
+}
 // 存成時間 YYYY/MM/DD HH:mm(本機時區)
 function pdfStamp(ms) {
   const d = new Date(ms), p = (n) => (n < 10 ? "0" + n : String(n));
@@ -39,11 +50,18 @@ function pdfStatement(p) {
   });
   g("pdf-statement").hidden = false;
 }
+// 會跑兩次(等字型與圖之前、之後):先還原再量。倍率寫在 --pdf-z、橫式靠 .rb-block.is-wide(兩條規則都在共用列印 CSS)
 function pdfFitTables(root) {
   root.querySelectorAll(".rb-table-wrap, .rb-heat-wrap").forEach((w) => {
     const tb = w.querySelector("table"); if (!tb) return;
-    const z = pdfZoom(w.clientWidth, tb.scrollWidth);
-    if (z < 1) tb.style.zoom = String(z);
+    const block = w.closest(".rb-block");
+    let note = w.nextElementSibling; if (note && !note.classList.contains("pdf-table-note")) note = null;
+    tb.style.removeProperty("--pdf-z");
+    const r = pdfZoom(w.clientWidth, tb.scrollWidth, block ? PDF_WIDE_W : 0);
+    if (r.z < 1) tb.style.setProperty("--pdf-z", String(r.z));
+    if (block) block.classList.toggle("is-wide", r.wide);
+    if (r.note && !note) { note = document.createElement("p"); note.className = "rb-cap pdf-table-note"; note.textContent = t("pdf.tableNote"); w.insertAdjacentElement("afterend", note); }
+    else if (!r.note && note) note.remove();
   });
 }
 function pdfAssets() {
@@ -64,6 +82,7 @@ function pdfAssets() {
     pdfStatement(p);
     pdfFitTables(host);
     await pdfAssets();
+    pdfFitTables(host);
     ok = true;
   } catch (e) {
     console.warn("[report-print]", e);

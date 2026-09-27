@@ -393,7 +393,7 @@ body.pdf-doc {
 .rb-text h3 {
   break-after: avoid;
 }
-/* 表格只在列與列之間切,表頭每頁重印。紙上沒有橫捲:寬表由宿主頁的 JS 量了用 zoom 縮到剛好 */
+/* 表格只在列與列之間切,表頭每頁重印 */
 .rb-table thead {
   display: table-header-group;
 }
@@ -405,14 +405,34 @@ body.pdf-doc {
 .rb-report .rb-heat-wrap {
   overflow: visible;
 }
+/* 寬表三級(紙上沒有橫捲、不裁欄):宿主頁的 JS 量了之後把倍率寫在 table 的 --pdf-z——
+   ①直式縮到剛好,下限 0.62;②還放不下,那張表的 .rb-block 加 is-wide、所在的頁改橫式
+   (表格從直式欄寬往右長到橫式內容寬 265mm),同一個下限;③仍放不下才繼續縮,
+   表下多一行 .pdf-table-note。頁尾沿用上面那組 @page */
+@page wide {
+  size: A4 landscape;
+}
+.rb-block.is-wide {
+  page: wide;
+}
+.rb-table-wrap > table,
+.rb-heat-wrap > table {
+  zoom: var(--pdf-z, 1);
+}
 .rb-news-item,
-.rb-fn {
+.rb-fn,
+.rb-text li {
   break-inside: avoid;
 }
 .rb-text p,
 .rb-text li {
   orphans: 3;
   widows: 3;
+}
+/* 清單最後一條、block 的尾註(含寬表那行小字)不單獨落到下一頁:跟著前一條／前一列一起走 */
+.rb-text li:last-child,
+.rb-cap {
+  break-before: avoid;
 }
 .rb-code,
 .rb-code pre {

@@ -122,6 +122,17 @@ function box(extra) {
   const rep = S.resReportItem({ id: "etf", title: "ETF 資金流週報", type: "research", created_at: 1790000000, stored_at: 1790000100 }, "cloud", "etf@1790000100");
   ok("② 雲端報告:雲端記號 + MM/DD HH:mm(mono)· 類型;類型認不得只放時間、時間也壞只放「報告」", S.resFacts(rep, "ok", f)[0][0].cls === "tag" && /^雲端\d\d\/\d\d \d\d:\d\d · 研究$/.test(line(rep))
     && line({ ...rep, env: "local", facts: { created_at: null, type: "x" } }) === "報告", line(rep));
+  // e2e #22:卡第二行的類型字 = 閱讀頁類型標籤的那個字(meta.report_type);主行程的信封把它交出來
+  const lrep = (o) => S.resReportItem({ id: "symbol-btc", title: "BTC 收盤高於 60 日均線", type: "morning", created_at: 1790000000, mtime: 5, ...o }, "local", "symbol-btc@5");
+  ok("② 報告卡的類型字跟閱讀頁同一個來源:有 label 用 label(「單標的晨報」,不是清單的「晨報」);沒有 label / 標題已含那個字 / label 只是 type 代號 → 退回類型詞",
+    /· 單標的晨報$/.test(line(lrep({ label: "單標的晨報" }))) && /· 晨報$/.test(line(lrep({}))) && /· 晨報$/.test(line(lrep({ label: "BTC 收盤" }))) && /· 晨報$/.test(line(lrep({ label: "morning" }))) && /· 晨報$/.test(line(lrep({ label: 7 }))),
+    [line(lrep({ label: "單標的晨報" })), line(lrep({})), line(lrep({ label: "morning" }))].join(" / "));
+  { const sb = {}; vm.runInNewContext("const RPT_TITLE_MAX = 200, RPT_TYPE_MAX = 32, RPT_LABEL_MAX = 40, RPT_TS_MIN = 946684800, RPT_TS_MAX = 4102444800;\n" + cutFn(mainSrc, "rptEnvelope") + "\nthis.E = rptEnvelope;", sb);
+    const e = (blocks) => sb.E("a", { title: "t", type: "morning", created_at: 1790000000, blocks }, 5000);
+    ok("② 主行程的信封帶 label = blocks[0](meta)的 report_type:控制字元收掉、截 40;沒有 meta / 不是字串 / 空的 → null;存檔的形狀檢查收得下(字串 ≤ 64)",
+      e([{ type: "meta", report_type: " 單標的\n晨報 " }]).label === "單標的 晨報" && e([{ type: "meta", report_type: "x".repeat(50) }]).label.length === 40 && e([{ type: "text", report_type: "x" }]).label === null
+      && e([{ type: "meta", report_type: 5 }]).label === null && e([{ type: "meta", report_type: "  " }]).label === null && e(undefined).label === null, JSON.stringify(e([{ type: "meta", report_type: " 單標的\n晨報 " }]))); }
+  ok("② 標題行高 1.45(spec §2、web .res-t 同值)", /\.res \.t \{\s*font-size: 13px; font-weight: 500; line-height: 1\.45;/.test(read("results.css")));
   const cs = S.resCloudItems(new Map([["live1", 1]]), [{ name: "tx_night", displayName: "台指期夜盤突破", mtime: Math.floor(Date.now() / 1000) }, { name: "live1", displayName: "跑著的", mtime: Math.floor(Date.now() / 1000) }], Date.now() - 1000, new Set(["live1"]), new Set());
   ok("② 雲端策略:新出現的出「雲端 新策略」(沒數字);組合裡跑著的那支 updated_at 一直變 → 不出「策略更新」", cs.length === 1 && cs[0].ref === "tx_night" && line(cs[0]) === "雲端新策略", JSON.stringify(cs));
   // 一輪 5 張:先 3 張 + 還有 2 個;鈕的可及名稱

@@ -163,6 +163,15 @@ if (!process.versions.electron) {
       ok("本機揭露小字 = spec-share-list E 定稿一(含 Wei 拍板那句)", STR.zh["shr.noteLocal"] === "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"
         && STR.en["shr.noteLocal"] === "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too.");
       ok("P1-3 畫面:detail 接在訊息槽那一句後面(textContent 建的 span)", /fm\.appendChild\(libEl\("span", "shr-detail mono", r\.detail\)\)/.test(js) && /\.shr-detail \{/.test(css));
+      // 稽核 T3:那一行是要被讀、被複製給 agent 的字 → ink-2;只在 api 指名欄位的代號才帶,上面那一句是對應的拒收句,不是「請檢查網路」
+      const DC = /const DETAIL_CODES = (\[[^\]]*\]);/.exec(read(path.join(SHELL, "reportshare.js")));
+      ok("T3 .shr-detail 墨色 ink-2;帶 detail 的代號(NOT_SHAREABLE / IMAGE_QUOTA)對到的都是拒收句,沒有一個是「請檢查網路」", /\.shr-detail \{[^}]*color: var\(--ink-2\);/.test(css)
+        && !!DC && JSON.parse(DC[1]).length > 0 && JSON.parse(DC[1]).every((c) => P.shrErrKey(c) !== "shr.failed" && P.shrErrKey(c) !== "shr.failedCloud") && JSON.parse(DC[1]).join() === "NOT_SHAREABLE,IMAGE_QUOTA", DC && DC[1]);
+      // 稽核 L5:取消失敗另開的單鈕框,標題寫結果(不再是問句)、內文講連結還在;RELOGIN 內文照舊。閱讀頁與清單兩處同一組 key
+      const sl = read(path.join(R, "report-sharelist.js")), failBox = /confirmBox\(\{ title: t\("shr\.revokeFailTitle"\), lines: \[t\(code === "RELOGIN" \? "conn\.expired" : "shr\.revokeFailBody"\)\], ok: t\("cdel\.gotIt"\), single: true,/;
+      ok("L5 取消失敗框:標題「沒有取消分享」、內文「連結仍然有效。請稍後再試一次。」(zh / en 定稿字面);閱讀頁與清單都換;舊 key 拿掉", failBox.test(js) && failBox.test(sl)
+        && STR.zh["shr.revokeFailTitle"] === "沒有取消分享" && STR.en["shr.revokeFailTitle"] === "Couldn't stop sharing" && STR.zh["shr.revokeFailBody"] === "連結仍然有效。請稍後再試一次。" && STR.en["shr.revokeFailBody"] === "The link is still live. Try again in a while."
+        && STR.zh["shr.revokeFailed"] === undefined && !/shr\.revokeFailed/.test(js + sl));
     }
 
     const bin = GATE.bin(SHELL, "④");

@@ -3664,8 +3664,11 @@ msgstr "Stop sharing"
 msgid "shr.keep"
 msgstr "Keep sharing"
 
-msgid "shr.revokeFailed"
-msgstr "Couldn't stop sharing. Please try again shortly."
+msgid "shr.revokeFailTitle"
+msgstr "Couldn't stop sharing"
+
+msgid "shr.revokeFailBody"
+msgstr "The link is still live. Try again in a while."
 
 msgid "shr.dlgTitle"
 msgstr "Publish this report"
@@ -4743,6 +4746,9 @@ msgstr "Make your own decisions and bear your own gains and losses."
 
 msgid "pdf.stamp"
 msgstr "Saved on {time}. This is a copy of that version; later updates to the report won't change it."
+
+msgid "pdf.tableNote"
+msgstr "This table is scaled down to fit the page. Open the report in Blave to see it at full size."
 
 # 設定 › 公開連結(spec-share-list-0.1.8 A1 / C / D / E)
 msgid "set.cat.shares"

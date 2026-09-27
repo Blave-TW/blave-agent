@@ -17,6 +17,9 @@ function pdfPaint() {
   $("rpt-share").disabled = busy;   // 產生中兩顆都停用:不同時開公開框
 }
 function pdfSet(state) {
+  // 換字前鎖原寬(同 shlFlash):「存成中…」「已存成」比原字短,不鎖的話左邊的「分享」會跟著位移
+  const b = $("rpt-pdf");
+  if (state === "idle") b.style.minWidth = ""; else if (!b.hidden && b.offsetWidth) b.style.minWidth = b.offsetWidth + "px";
   clearTimeout(PDF.timer); PDF.state = state;
   if (state === "saved") PDF.timer = setTimeout(() => { PDF.state = "idle"; pdfPaint(); }, PDF_FLASH_MS);
   pdfPaint();

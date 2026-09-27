@@ -125,7 +125,7 @@ function shrRevokeAsk(c, opener) {
       if (SHR.cur === c && !$("rpt-share").hidden) $("rpt-share").focus();
       return;
     }
-    confirmBox({ title: t("shr.revokeTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailed")], ok: t("cdel.gotIt"), single: true, env: c.env, opener: opener.isConnected ? opener : $("rpt-back"), onOk: () => {} });
+    confirmBox({ title: t("shr.revokeFailTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailBody")], ok: t("cdel.gotIt"), single: true, env: c.env, opener: opener.isConnected ? opener : $("rpt-back"), onOk: () => {} });   // 標題寫結果,不再是問句
   } });
 }
 // 未登入(只會發生在本機視角):鈕照出、按下才守門;主鈕開設定 › 帳號,不做登入後自動續走(spec DT3)

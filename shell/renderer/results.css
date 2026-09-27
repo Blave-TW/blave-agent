@@ -13,7 +13,7 @@
 .res .f > .ic { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--ink-3); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .res .tx { flex: 1; min-width: 0; }
 .res .t {
-  font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere;
+  font-size: 13px; font-weight: 500; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;   /* 最多兩行,全文在 title */
 }
 /* 事實列:一組「標籤 + 數字」是一個 .kv,換行只在組與組之間;數字不拆 */

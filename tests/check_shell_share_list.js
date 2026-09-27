@@ -26,7 +26,7 @@ if (!process.versions.electron) {
     const now = new Date(2026, 8, 28, 10, 0).getTime(), sec = (y, m, d, h, mi) => Math.floor(new Date(y, m - 1, d, h, mi).getTime() / 1000);
     ok("① 公開時間:今年 MM/DD HH:mm;不是今年加年份;壞值 → 空", P.shlFmtTime(sec(2026, 9, 26, 8, 12), now) === "09/26 08:12" && P.shlFmtTime(sec(2025, 12, 31, 23, 5), now) === "2025/12/31 23:05" && P.shlFmtTime(NaN, now) === "" && P.shlFmtTime("x", now) === "");
     const L = (a, b, c, d) => ({ liveCount: a, liveLimit: b, todayCount: c, dailyLimit: d });
-    ok("① 上限:50 份滿 → live;今天 20 次滿 → daily;兩個都滿先講 50 份(有出口的那句)", JSON.stringify(P.shlLimit(L(50, 50, 3, 20), "new")) === '{"kind":"live","n":50}' && JSON.stringify(P.shlLimit(L(49, 50, 20, 20), "new")) === '{"kind":"daily","n":20}' && P.shlLimit(L(50, 50, 20, 20), "new").kind === "live" && P.shlLimit(L(49, 50, 19, 20), "new") === null);
+    ok("① 上限:50 份滿 → live;今天 20 次滿 → daily;兩個都滿先講每日(同 web 與 api:撤了也公開不了)", JSON.stringify(P.shlLimit(L(50, 50, 3, 20), "new")) === '{"kind":"live","n":50}' && JSON.stringify(P.shlLimit(L(49, 50, 20, 20), "new")) === '{"kind":"daily","n":20}' && P.shlLimit(L(50, 50, 20, 20), "new").kind === "daily" && P.shlLimit(L(49, 50, 19, 20), "new") === null);
     ok("① 「更新公開版本」不佔份數:50 份上限不擋更新,每日次數照擋", P.shlLimit(L(50, 50, 3, 20), "update") === null && P.shlLimit(L(50, 50, 20, 20), "update").kind === "daily");
     ok("① 數字沒給(舊 api / 形狀不對)= 不擋,送出時 api 再守", P.shlLimit(null, "new") === null && P.shlLimit(L(null, null, null, null), "new") === null && P.shlLimit(L(60, 0, 1, 0), "new") === null);
     ok("① 送出時才被擋:代號 → 同一個形狀;api 沒給數字就拿開框時問到的上限", JSON.stringify(P.shlLimitFromCode("LIVE_LIMIT", 50, null)) === '{"kind":"live","n":50}' && P.shlLimitFromCode("DAILY_LIMIT", null, L(1, 50, 20, 20)).n === 20 && P.shlLimitFromCode("RATE_LIMITED", 5, null) === null);
@@ -176,8 +176,8 @@ app.whenReady().then(async () => {
   ok("④ 「繼續分享」:不送、列還在", (await calls("revokeCode")).length === 0 && (await pane()).rows.length === 4);
   await js(`window.__s.revoke = { code: "UNREACH" }; document.querySelectorAll("#set-shares .shl-row")[1].querySelector(".btn-quiet").click()`); await wait(150);
   await js(`document.getElementById("del-ok").click()`); await wait(300);
-  c = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("del-scrim").hidden, body: g("del-body").textContent, single: g("del-cancel").hidden }; })()`);
-  ok("④ 取消失敗:講「取消分享失敗」,列與份數不動", c.open && c.body === (await T("shr.revokeFailed")) && c.single && (await pane()).count === "4／50", JSON.stringify(c));
+  c = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("del-scrim").hidden, title: g("del-title").textContent, body: g("del-body").textContent, single: g("del-cancel").hidden }; })()`);
+  ok("④ 取消失敗:標題寫結果「沒有取消分享」、內文「連結仍然有效…」,列與份數不動", c.open && c.title === (await T("shr.revokeFailTitle")) && c.body === (await T("shr.revokeFailBody")) && c.single && (await pane()).count === "4／50", JSON.stringify(c));
   await js(`document.getElementById("del-ok").click()`); await wait(150);
   await js(`window.__s.revoke = { code: "OK" }; window.__s.tracked = []; document.querySelectorAll("#set-shares .shl-row")[1].querySelector(".btn-quiet").click()`); await wait(150);
   await js(`document.getElementById("del-ok").click()`); await wait(300);

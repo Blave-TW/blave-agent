@@ -1379,6 +1379,16 @@
     });
   }
 
+  // 直條的值標撞到右下角浮水印時的新基線:浮水印落點不動(型錄裁示 5),讓的是值標——
+  // 正值抬到浮水印之上、負值降到之下;沒撞到回原 y。wmX = 浮水印右緣、wmY = 它的基線(字級 11px)
+  function dodgeWatermark(cx, y, text, up, wmX, wmY) {
+    var half = textWidth(text) / 2;
+    var wmLeft = wmX - textWidth("blave.org") * 1.1;
+    if (cx + half < wmLeft - 4 || cx - half > wmX + 4) return y;
+    if (y < wmY - 12 || y > wmY + 14) return y;
+    return up ? wmY - 13 : wmY + 13;
+  }
+
   function verticalBars(b, d, W, H) {
     var top = 24, bottom = plotBottom(24, H - 52), nameY = H - 18;
     top = plotTopOf(top, bottom);
@@ -1387,7 +1397,8 @@
 
     var s = chartSvg(b, W, H, true);
     // bars 變體不給浮水印例外(型錄裁示 5):同樣最底層繪、落點固定右下
-    watermark(s, W - 8, bottom - 7);
+    var wmX = W - 8, wmY = bottom - 7;
+    watermark(s, wmX, wmY);
     s.appendChild(svgEl("line", { class: "rb-grid", x1: 0, y1: zeroY, x2: W, y2: zeroY }));
 
     var slot = W / d.rows.length;
@@ -1405,8 +1416,9 @@
           height: Math.max(1, h),
         })
       );
+      var valY = dodgeWatermark(cx, up ? zeroY - h - 8 : zeroY + h + 15, r.val, up, wmX, wmY);
       s.appendChild(
-        svgText(cx, up ? zeroY - h - 8 : zeroY + h + 15, r.val, {
+        svgText(cx, valY, r.val, {
           class: up ? "rb-val-up" : "rb-val-dn",
           "text-anchor": "middle",
         })

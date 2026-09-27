@@ -126,6 +126,10 @@ function brPaint(id) {
 }
 
 // ── 聊天瀏覽區塊 ─────────────────────────────────────────────
+/* 縮圖只在頁面活著時拍、只存在記憶體:歷史的區塊每一格都沒有圖 → 整塊不畫縮圖欄(.no-thumb)。
+   進行中的照舊留著那一格(圖馬上會來,先佔位才不跳);有的有圖有的沒有也不加(整塊左緣要對齊)。純函式,測試切出來跑 */
+function brNoThumb(live, thumbs) { return !live && thumbs.length > 0 && thumbs.every((x) => !x); }
+function brThumbClass(b, el) { el.classList.toggle("no-thumb", brNoThumb(b.live, b.ids.map((id) => (BR.tabs.get(id) || {}).thumb))); }
 function brBlockNew(live) {
   const el = brEl("div", "bblk"), head = brEl("div", "bblk-head"), wall = brEl("div", "wall");
   el.append(head, wall);
@@ -177,6 +181,7 @@ function brOrder(b) {
   if (want.some((el, i) => b.wall.children[i] !== el)) want.forEach((el) => b.wall.append(el));
 }
 function brPaintHead(b) {
+  brThumbClass(b, b.el);
   if (b.sum) return brPaintSum(b);
   const h = b.head; h.textContent = "";
   const inWall = BR.exp && BR.exp.mode === "wall" && BR.exp.block === b;
@@ -222,7 +227,7 @@ function brFinish(b) {
     d.append(s); b.wall.querySelectorAll(".pt").forEach((p) => { p.style.animationDelay = "0ms"; }); b.el.classList.remove("conv");
     d.append(b.wall);
     d.addEventListener("toggle", () => { if (d.open) trackFeature("browser_sum"); brObserve(); });
-    b.el.replaceWith(d); b.el = d; b.sum = s; brPaintSum(b);
+    b.el.replaceWith(d); b.el = d; b.sum = s; brPaintHead(b);
   };
   const expandedHere = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || (BR.exp.mode === "wall" && BR.exp.block === b));
   if (brReduced() || expandedHere || !b.el.isConnected || !b.open) return swap();   // 收著的卡本來就是一行:直接換成「讀了 N 頁」
@@ -478,6 +483,7 @@ function brPaintOverlay() {
   if (exp.mode === "wall" && BR.wallBlock === exp.block && bw.querySelector(".bw-body .wall")) {
     const wall = bw.querySelector(".bw-body .wall"), have = new Set([...wall.querySelectorAll(".pt")].map((el) => el.dataset.id));
     exp.block.ids.forEach((id) => { if (!have.has(id)) wall.append(brWallTile(id)); });
+    brThumbClass(exp.block, wall);
     wall.querySelectorAll(".pt").forEach((el) => { const x = BR.tabs.get(el.dataset.id); if (x) brPaintTile(el, x); });
     brStatLine(bw.querySelector(".bw-stat"));
     return;
@@ -499,6 +505,7 @@ function brPaintOverlay() {
     BR.wallBlock = exp.block;
     const body = brEl("div", "bw-body"), wall = brEl("div", "wall");
     exp.block.ids.forEach((id) => wall.append(brWallTile(id)));
+    brThumbClass(exp.block, wall);
     body.append(wall); bw.append(body); brSendBounds(null); return;
   }
   const bv = brEl("div", "bv");

@@ -3665,8 +3665,11 @@ msgstr "取消分享"
 msgid "shr.keep"
 msgstr "繼續分享"
 
-msgid "shr.revokeFailed"
-msgstr "取消分享失敗，請稍後再試。"
+msgid "shr.revokeFailTitle"
+msgstr "沒有取消分享"
+
+msgid "shr.revokeFailBody"
+msgstr "連結仍然有效。請稍後再試一次。"
 
 msgid "shr.dlgTitle"
 msgstr "公開這份報告"
@@ -4744,6 +4747,9 @@ msgstr "投資前請獨立判斷，並自行承擔盈虧。"
 
 msgid "pdf.stamp"
 msgstr "本文件存成於 {time}，是當下那一版的副本；之後 agent 更新這份報告，本文件不會跟著變。"
+
+msgid "pdf.tableNote"
+msgstr "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。"
 
 # 設定 › 公開連結(spec-share-list-0.1.8 A1 / C / D / E)
 msgid "set.cat.shares"

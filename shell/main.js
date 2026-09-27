@@ -1311,19 +1311,22 @@ function readSnap(p) {
    檔名 regex、2 MB 上限、mime 白名單都在這一層;block 內容不驗(那是 api 的事,渲染器對不認得的 block 本來就跳過)。 */
 const RPT_DIR = () => path.join(WS, "reports");
 const RPT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/, RPT_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
-const RPT_BYTES_MAX = 2 * 1024 * 1024, RPT_MAX = 200, RPT_IMAGES_MAX = 20, RPT_TITLE_MAX = 200, RPT_TYPE_MAX = 32;
+const RPT_BYTES_MAX = 2 * 1024 * 1024, RPT_MAX = 200, RPT_IMAGES_MAX = 20, RPT_TITLE_MAX = 200, RPT_TYPE_MAX = 32, RPT_LABEL_MAX = 40;   // label 上限同 api 驗證器給 meta.report_type 的 40
 const RPT_TS_MIN = 946684800, RPT_TS_MAX = 4102444800;   // created_at 只認 2000–2100 年的 unix 秒:agent 寫的 1e13 會讓 renderer 畫出 NaN
 const RPT_IMAGES_BUDGET_MS = 60 * 1000, RPT_CLOUD_DOCS_MAX = 8;   // 雲端一份報告的圖加總最多等 60 秒(postJSON 單張 20 秒逾時 × 20 張太久);本體快取留 8 份(每份含 base64 圖)
 const RPT_EXT_MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 // 一份報告的信封(清單只讀這幾欄):id 缺就用檔名、有且不同 → 略過(同 uploader 的立場);標題 1–200 字,缺 → 略過;created_at 不是合理範圍的整數 → 檔案 mtime。
 // mtime(ms)一併交出:同 id 覆寫(lib/report.py 明寫重用 id = 覆蓋)renderer 靠它認出「這份換過了」——本體快取與「有沒有新報告」都比它
+// label = 閱讀頁類型標籤畫的那個字(meta.report_type,agent 寫的顯示字,如「單標的晨報」):結果卡要跟它同一個字;沒有 → null
 function rptEnvelope(fileId, doc, mtimeMs) {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
   if (doc.id !== undefined && doc.id !== fileId) return null;
   const title = typeof doc.title === "string" ? doc.title.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, RPT_TITLE_MAX) : "";
   if (!title) return null;
   const created = Number.isInteger(doc.created_at) && doc.created_at >= RPT_TS_MIN && doc.created_at <= RPT_TS_MAX ? doc.created_at : Math.floor(mtimeMs / 1000);
-  return { id: fileId, title, type: typeof doc.type === "string" ? doc.type.slice(0, RPT_TYPE_MAX) : null, created_at: created, mtime: Math.floor(mtimeMs) };
+  const meta = Array.isArray(doc.blocks) && doc.blocks[0] && typeof doc.blocks[0] === "object" && doc.blocks[0].type === "meta" ? doc.blocks[0] : null;
+  const label = meta && typeof meta.report_type === "string" ? meta.report_type.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, RPT_LABEL_MAX) : "";
+  return { id: fileId, title, type: typeof doc.type === "string" ? doc.type.slice(0, RPT_TYPE_MAX) : null, label: label || null, created_at: created, mtime: Math.floor(mtimeMs) };
 }
 // 讀一份 <dir>/<id>.json:不是普通檔(symlink 也不收:分享會把讀到的東西公開出去)/ 超過 2 MB / JSON 壞 → null
 function rptReadDoc(dir, id) {

@@ -47,10 +47,11 @@ function resStratItems(snap, list) {
   }
   return out;
 }
-// key = 報告的版本鍵(reports.js rptKey:id + mtime / stored_at),重開時拿來比「之後有更新」
+// key = 報告的版本鍵(reports.js rptKey:id + mtime / stored_at),重開時拿來比「之後有更新」。
+// label = 閱讀頁類型標籤的那個字(meta.report_type;主行程從本機檔讀。雲端清單 api 沒給這一欄 → null)
 function resReportItem(r, env, key) {
   return { kind: "report", env, ref: r.id, ver: key, sub: "report", title: r.title,
-    facts: { created_at: resNum(r.created_at), type: typeof r.type === "string" ? r.type.slice(0, 32) : null },
+    facts: { created_at: resNum(r.created_at), type: typeof r.type === "string" ? r.type.slice(0, 32) : null, label: typeof r.label === "string" && r.label ? r.label.slice(0, 40) : null },
     at: env === "cloud" ? (resNum(r.stored_at) || 0) * 1000 : resNum(r.mtime) || 0 };
 }
 /* 雲端策略:清單只有 updated_at、沒有數字,卡上就沒有數字(spec §11-3)。
@@ -67,6 +68,14 @@ function resCloudItems(snap, list, sinceMs, live, seen) {
       facts: { is_new: isNew }, at: (typeof x.mtime === "number" ? x.mtime : since) * 1000 });
   }
   return out;
+}
+/* 報告卡第二行的類型字:跟閱讀頁的類型標籤同一個來源(label)。三種情況退回清單用的類型詞(f.typeKey):沒有 label(雲端、舊卡)、
+   標題已經含那個字(閱讀頁這時不畫標籤)、label 只是 type 代號(lib/report.py 沒給 report_type 時的預設,不是給人看的字) */
+function resTypeText(item, f) {
+  const x = item.facts || {}, lb = typeof x.label === "string" ? x.label : "";
+  if (lb && lb !== x.type && String(item.title || "").indexOf(lb) < 0) return lb;
+  const tk = f.typeKey(x.type);
+  return tk ? f.t(tk) : "";
 }
 const resSame = (a, b) => a.kind === b.kind && a.env === b.env && a.ref === b.ref;
 // 依產出時間由舊到新(報告與策略混排,跟回覆敘事的先後一致);同時間照原順序
@@ -93,10 +102,10 @@ function resFacts(item, state, f) {
   const g = [];
   const kv = (label, v) => { const s = typeof v === "number" ? f.pct(v) : null; if (s) g.push([W(f.t(label) + " "), W(s, "v")]); };
   if (item.kind === "report") {
-    const one = item.env === "cloud" ? [W(f.t("env.cloud"), "tag")] : [], stamp = f.stamp(x.created_at), tk = f.typeKey(x.type);
+    const one = item.env === "cloud" ? [W(f.t("env.cloud"), "tag")] : [], stamp = f.stamp(x.created_at), kind = resTypeText(item, f);
     if (stamp) one.push(W(stamp, "mono"));
-    if (tk) one.push(W((stamp ? " · " : "") + f.t(tk)));
-    if (!stamp && !tk) one.push(W(f.t("rpt.nav")));
+    if (kind) one.push(W((stamp ? " · " : "") + kind));
+    if (!stamp && !kind) one.push(W(f.t("rpt.nav")));
     g.push(one);
   } else if (item.env === "cloud") {
     g.push([W(f.t("env.cloud"), "tag"), W(f.t(x.is_new ? "res.kind.new" : "res.kind.cloudUpd"))]);
