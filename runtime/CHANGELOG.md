@@ -8,6 +8,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版的 agent 不碰系統排程器(0.1.8 e2e #64 #75)**:用戶回 YES 要上線 Type B,agent 照雲端文件跑 `crontab`;
+  macOS 跳系統框「想要管理你的電腦」,指令掛 4 分 33 秒,agent 接著建議用戶開完整磁碟取用權限。電腦版回合(LocalSink)多掛一個
+  PreToolUse hook(`_sched_guard_hooks`,只對 Bash):指令位置上的 `crontab` / `launchctl` / `schtasks` 一律 deny,理由回給模型
+  (不換方法重試、不叫用戶改系統權限、Type A/C 指到自動下單頁、Type B 這台不能定時跑+兩個出口)。讀文件的 `grep crontab …` 不擋;
+  agent 自己寫的腳本裡呼叫、Codex 引擎(沒有 hook 通道)擋不到,靠 AGENTS.md 與 references/deployment.md › Desktop app。
+  機隊不掛。測試 `tests/check_desktop_sched_guard.py`、`tests/check_reply_lang_rule.py`。
+- **回一句「YES」不再把整則回覆變成英文(0.1.8 e2e #65)**:回覆語言的判定只看當則訊息,中文對話裡回「YES」確認 →
+  訊息尾端的錨、系統層規則、PostToolUse 提醒三處一起點名 English(逐字稿裡每一則提醒都寫 in English,不是 hook 沒觸發)。
+  `_lang_basis(message, recent)`:當則看不出語言(沒有非 ASCII 的字、自己打的英文字 ≤ 2 個且沒有文法字)就沿用最近一則看得出來的
+  用戶訊息;其餘照舊。有回覆語言設定 / ui_lang 的回合不受影響。兩條引擎、機隊與電腦版共用。測試 `tests/check_reply_lang_rule.py`。
 - **模型漏寫 `<export …/>` 標記時轉出卡照出(0.1.8 e2e #49)**:同一則對話第二次轉出(Pine)回覆結尾是 `<suggest>` 區塊、
   標記不見了——「回覆必須以 <suggest> 結尾」跟 references 的「標記放最後、後面不准有字」搶同一個位置。檔案與 lint sidecar
   都在,runtime 沒東西可送,聊天沒有卡。兩道:① `_SUGGEST_RULE` 與三份轉出 reference 寫明兩者並存時標記在前、不准省;

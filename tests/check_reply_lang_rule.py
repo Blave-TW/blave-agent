@@ -108,10 +108,37 @@ if hooks:
           ctx["hookEventName"] == "PostToolUse" and "in Chinese" in ctx["additionalContext"]
           and "before your next tool call" in ctx["additionalContext"] and "full-width" in ctx["additionalContext"], ctx)
 check("the per-message pin is still the last line of the prompt", s["prompt"].rstrip().endswith("[用中文回覆這則訊息,<suggest> 建議句也用中文]"), s["prompt"][-80:])
+pre = (s.get("hooks") or {}).get("PreToolUse") or []
+check("desktop: a PreToolUse hook on Bash refuses the OS scheduler (tests/check_desktop_sched_guard.py has the cases)",
+      len(pre) == 1 and pre[0]["matcher"] == "Bash"
+      and asyncio.run(pre[0]["hooks"][0]({"tool_input": {"command": "crontab -l"}}, "t1", None))["hookSpecificOutput"]["permissionDecision"] == "deny", s.get("hooks"))
 
 s = turn("find me two bitcoin news items today and list the sources")
 check("English question → the rule names English", "Write everything the user sees in English" in s["system"], s["system"][-600:])
 check("English reply: no full-width rule", "full-width" not in s["system"][s["system"].find("## Reply language"):])
+
+# e2e 0.1.8 #65:中文對話裡回一句「YES」,錨、系統規則、工具後的提醒三處都點名 English,整則回覆變英文
+for sid, first, short, want in (("s-yes-zh", ZH, "YES", "Chinese"), ("s-ok-zh", ZH, "ok", "Chinese"),
+                                ("s-sym-zh", ZH, "BTCUSDT", "Chinese"),
+                                ("s-yes-en", "find me two bitcoin news items today", "YES", "English")):
+    for m in (first, short):
+        seen.clear()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            asyncio.run(at.run_turn(sid, m, "sonnet", at.LocalSink(sid)))
+    ctx = asyncio.run(seen["hooks"]["PostToolUse"][0]["hooks"][0]({}, "t1", None))["hookSpecificOutput"]["additionalContext"]
+    pin = seen["prompt"].rstrip().splitlines()[-1]
+    check(f"「{short}」 after a {want} message keeps {want}: system rule, tool reminder and the pin",
+          f"Write everything the user sees in {want}" in seen["system"] and f"is in {want}" in ctx
+          and (("用中文回覆" in pin) if want == "Chinese" else ("ENTIRELY in English" in pin)), (pin, ctx))
+check("a short reply with no earlier message is judged on its own, as before",
+      at._lang_basis("YES", []) == "YES" and at._lang_basis("YES", [("assistant", "好的,已建好")]) == "YES")
+check("a real sentence is never overridden by history (English question in a Chinese conversation → English)",
+      at._lang_basis("what is the funding rate now", [("user", ZH)]) == "what is the funding rate now"
+      and at._lang_basis("這支策略怎麼樣", [("user", "hello there, what is this")]) == "這支策略怎麼樣")
+check("a short message in another script is evidence by itself (はい / 네 / sí stay with the message)",
+      all(at._lang_basis(m, [("user", "find me two bitcoin news items today")]) == m for m in ("はい", "네", "sí", "好")))
+check("the basis is the latest earlier USER message that shows a language",
+      at._lang_basis("ok", [("user", "show me the chart of it"), ("assistant", "Done."), ("user", ZH), ("assistant", "好"), ("user", "YES")]) == ZH)
 
 check("a reply-language setting wins over the message (English text, zh setting → 繁體中文)",
       "Traditional Chinese (繁體中文)" in at.reply_lang_rule("list the sources", "zh"))

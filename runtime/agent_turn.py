@@ -548,6 +548,27 @@ def _is_zh(message):
     return not (fn >= 2 or (fn >= 1 and letters >= 4 * han))
 
 
+def _no_lang_evidence(message):
+    """這則訊息看不出用戶用什麼語言:沒有任何非 ASCII 的字(漢字、假名、韓文、西文重音字母都算證據),
+    自己打的英文字不超過兩個、而且沒有英文文法字。「YES」「ok」「BTCUSDT」屬於這一種。"""
+    if any(ch.isalpha() and not ch.isascii() for ch in message):
+        return False
+    words = _prose_words(_typed_english(message))
+    return len(words) <= 2 and not any(w.lower() in _EN_FUNCTION_WORDS for w in words)
+
+
+def _lang_basis(message, recent):
+    """判回覆語言時看哪一則用戶訊息:這一則看不出語言,就沿用最近一則看得出來的。
+    中文對話裡回一句「YES」確認,訊息尾端的錨、系統規則、工具後的提醒三處一起點名 English,
+    整則回覆變英文(e2e 0.1.8 #65)——判定原本只看當則。找不到就照舊看當則。"""
+    if not _no_lang_evidence(message):
+        return message
+    for role, content in reversed(list(recent or [])):
+        if role == "user" and isinstance(content, str) and not _no_lang_evidence(content):
+            return content
+    return message
+
+
 def _lang_directive(message, suggest=False, lang=None):
     """Deterministic per-turn language pin. `lang` (resolved reply language, see
     _resolve_reply_lang) wins outright — no per-message exception. Without it the
@@ -643,18 +664,55 @@ def lang_reminder(message, lang=None):
 _HOOK_MATCHER = getattr(sdk, "HookMatcher", None)
 
 
-def _lang_hooks(options, reminder):
-    """把 lang_reminder 掛成 PostToolUse hook。SDK 沒有 hooks / HookMatcher 的 build 不掛(回合照跑,只是少這句)。"""
+def _add_hook(options, event, matcher, fn):
+    """SDK 沒有 hooks / HookMatcher 的 build 不掛(回合照跑,只是少這一道),回 False。"""
     if _HOOK_MATCHER is None or "hooks" not in getattr(type(options), "__dataclass_fields__", {}):
         return False
+    hooks = dict(getattr(options, "hooks", None) or {})
+    hooks[event] = list(hooks.get(event) or []) + [_HOOK_MATCHER(matcher=matcher, hooks=[fn])]
+    options.hooks = hooks
+    return True
 
+
+def _lang_hooks(options, reminder):
+    """把 lang_reminder 掛成 PostToolUse hook。"""
     async def remind(_input, _tool_use_id, _context):
         return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": reminder}}
 
-    hooks = dict(getattr(options, "hooks", None) or {})
-    hooks["PostToolUse"] = list(hooks.get("PostToolUse") or []) + [_HOOK_MATCHER(matcher=None, hooks=[remind])]
-    options.hooks = hooks
-    return True
+    return _add_hook(options, "PostToolUse", None, remind)
+
+
+# 電腦版的 agent 不碰作業系統的排程器(e2e 0.1.8 #64 #75):macOS 對 `crontab <檔>` 跳系統框
+# 「想要管理你的電腦」,指令掛在框上等人按(實測 4 分 33 秒),agent 接著叫用戶去開完整磁碟取用權限。
+# 只認「指令位置」上的那三個名字(開頭,或接在 ; & | ( ` $( 引號 換行之後;前面可以有 sudo / env 指派 /
+# timeout N / 路徑)——`grep crontab references/deployment.md` 是在讀文件,不擋。
+# 擋不到的:agent 自己寫的腳本裡呼叫它們(規則層在 AGENTS.md 與 references/deployment.md)。
+_SCHED_CMD_RE = re.compile(
+    r"""(?:^|[;&|(`\n"']|\$\()\s*"""
+    r"(?:(?:sudo|command|exec|nohup|time|env)\s+|timeout\s+\S+\s+|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(?:[^\s;&|()`\"']*[/\\])?(?:crontab|launchctl|schtasks)(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
+# 給模型看的拒絕理由:只講事實與該做什麼,不給可以照抄的成品句(見下面「逐輪規則寫法」那條)
+SCHED_DENY_REASON = (
+    "Refused by the Blave runtime — this is the desktop app, where the agent never touches the operating "
+    "system's scheduler (crontab, launchd / launchctl, schtasks): on macOS the command opens a system "
+    "permission prompt in front of the user and hangs. Do not retry it another way (a script, a plist, another "
+    "tool) and do not tell the user to change any system permission. What holds here: Type A/C strategies go "
+    "live from the app's 自動下單 page (the user presses 啟動下單; the app schedules them itself); a Type B "
+    "strategy cannot run on a schedule on this computer — say so plainly and offer the two ways out (send it "
+    "to their cloud machine, or run it once by hand now). Details: references/deployment.md › Desktop app."
+)
+
+
+def _sched_guard_hooks(options):
+    """PreToolUse:Bash 指令要叫系統排程器就拒絕,理由回給模型(它不會掛在系統框上,也知道接下來怎麼講)。"""
+    async def guard(input_data, _tool_use_id, _context):
+        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
+        if not isinstance(cmd, str) or not _SCHED_CMD_RE.search(cmd):
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": SCHED_DENY_REASON}}
+
+    return _add_hook(options, "PreToolUse", "Bash", guard)
 
 
 def _foreign_pins(name):
@@ -812,7 +870,7 @@ def _viewing_env_segment(cloud_mcp):
 
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None, viewing_widgets=None,
-                 reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False):
+                 reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -924,7 +982,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     # 回成中文/中英混雜(實測兩輪)。必須排在上面所有中文逐輪指令(紅線句、建議句
     # 規則)之後——之前放在它們前面,英文回合正文是英文、<suggest> 卻照中文範例
     # 寫成中文(uid=1,2026-08-25)。
-    parts.append(_lang_directive(message, suggest=suggest_directive, lang=reply_lang))
+    parts.append(_lang_directive(lang_basis or message, suggest=suggest_directive, lang=reply_lang))
     return "\n".join(parts)
 
 
@@ -3073,6 +3131,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     use_codex = engine == "codex"
     summary, recent = ss.get_context(session_id)
     reply_lang = _resolve_reply_lang(ui_lang)
+    lang_msg = _lang_basis(message, recent)
     # 雲端視角只有電腦版認(同 --mcp-config)。Codex 掛不掛由 codex_engine.mcp_server 判(版本、撞名、
     # shell_snapshot 關不關得掉),同一個值交給 run() 與 _codex_prompt,提示段、圍籬規則、實際掛上三者一致。
     if not isinstance(sink, LocalSink):
@@ -3095,7 +3154,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
                           viewing_view=viewing_view, viewing_widgets=viewing_widgets,
-                          reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp)
+                          reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
+                          lang_basis=lang_msg)
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -3179,7 +3239,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
         + mcp_rule(cloud_mcp) + browser_rule(browser_mounted)
         + preferences_rule()
-        + reply_lang_rule(message, reply_lang)
+        + reply_lang_rule(lang_msg, reply_lang)
         + sink.formatting_rule
     ) if agents_md and not use_codex else None
     options = sdk.ClaudeAgentOptions(
@@ -3268,7 +3328,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                               "disable-slash-commands": None}
     if isinstance(sink, LocalSink):
         # 電腦版才掛(實測過 SDK 0.2.144 + 本機 CLI);機隊等 29026 驗過 hook 通道再開
-        _lang_hooks(options, lang_reminder(message, reply_lang))
+        _lang_hooks(options, lang_reminder(lang_msg, reply_lang))
+        _sched_guard_hooks(options)
     if _SUPPORTS_PARTIAL:
         options.include_partial_messages = True
     else:
@@ -3307,7 +3368,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
             await codex_engine.run(
                 codex_bin, _codex_prompt(prompt, sink, bool(codex_mcp_url), browser_mounted,
-                              reply_lang_rule(message, reply_lang)), WORKSPACE,
+                              reply_lang_rule(lang_msg, reply_lang)), WORKSPACE,
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
                 sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort,
@@ -3472,7 +3533,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   suggest_directive=is_web,
                                   viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
-                                  viewing_env=viewing_env, cloud_mcp=cloud_mcp)
+                                  viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg)
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
             # A new dict, not an in-place update: the CLI child's env is built from
@@ -3490,7 +3551,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             print(f"[agent_turn] empty reply → fault={fault_code} tools={len(tool_steps)}",
                   file=sys.stderr)
             surface = "web" if is_web else "tg"
-            sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
+            sink.set_error(_fault_message(fault_code, lang_msg, surface, lang=reply_lang),
                            code=fault_code)
     except asyncio.CancelledError:
         # turn_stop cancels the turn only after a Stop, when the stream did not end by itself
@@ -3508,7 +3569,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             fault_code = _fault_code(e, len(tool_steps), result_info)
             print(f"[agent_turn] fault={fault_code} tools={len(tool_steps)}", file=sys.stderr)
             surface = "web" if isinstance(sink, WebSink) else "tg"
-            sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
+            sink.set_error(_fault_message(fault_code, lang_msg, surface, lang=reply_lang),
                            code=fault_code)
     finally:
         if stop_watch:
@@ -3538,11 +3599,11 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     stopped = getattr(sink, "interrupted", False)
     if stopped:
         note = _stop_note(sorted(getattr(sink, "stop_left_running", None) or ()),
-                          [v[3] for v in getattr(sink, "_tool_t0", {}).values()], message, reply_lang,
+                          [v[3] for v in getattr(sink, "_tool_t0", {}).values()], lang_msg, reply_lang,
                           gave_up=getattr(sink, "stop_gave_up", ()))
         if note:
             sink.on_text(("\n\n" if sink.has_reply() else "") + note)
-    sink.export_fail_note = _export_fail_note(message, reply_lang)
+    sink.export_fail_note = _export_fail_note(lang_msg, reply_lang)
     sink.export_touched = touched
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。

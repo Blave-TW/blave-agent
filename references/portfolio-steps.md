@@ -23,6 +23,8 @@ same flow as live — walking it by hand now means nothing blocks you when you g
 
 ## Step scripts (≤4 steps; quote UI labels verbatim, 「」 as below)
 
+These three are the only scripts. A request for one order placed by hand (「現在幫我買 100 USDT 的 BTC」) has none: Blave trades through strategies only — say that in one sentence and never make up steps or a page name for it.
+
 On mobile (narrow screens) the chat fills the screen — prepend one line:
 「點下方『工作區』分頁」 (the portfolio page lives in that view).
 
