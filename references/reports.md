@@ -841,9 +841,11 @@ transient failure. Same status code, different channel, opposite handling.
   left out on purpose — the reply says so in one plain sentence.
 - `source` is only `{name, url}`
   (the domain is the top-level `host`, not part of `source`). Pages that are
-  not `https`, and elements near the size of the whole view or larger, are
-  refused (`capture_refused`). Your own generated figures (matplotlib etc.)
-  never carry `source`.
+  not `https`, elements near the size of the whole view or larger, and a
+  picture that came out blank or cut off (`reason: "incomplete"` — the chart
+  had not finished loading; wait and capture again, or pick another) are
+  refused (`capture_refused`); nothing is saved. Your own generated figures
+  (matplotlib etc.) never carry `source`.
 - **At most 2 cited images per report**, and only when the image directly
   supports a claim written in the text. Never decorative. `write_report` (and
   `publish()`, which calls it) refuses a report with more than 2, before

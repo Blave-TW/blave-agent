@@ -283,20 +283,24 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
      由宿主在指令 ack 成功時自己記一筆,總覽的時間軸才畫得出「已暫停 → 已恢復」。只記型別與時間,不記參數。 */
   const uiFile = path.join(stateDir, "ui_events.jsonl");
   const UI_EVENT = { halt: "halt", close_all: "halt_close", resume: "resume", resume_wait: "resume_wait", credentials: "venue_connected", credentials_remove: "venue_disconnected" };
-  function uiEvent(cmd) {
+  function uiEvent(cmd, extra) {
     const type = UI_EVENT[cmd]; if (!type) return;
     const acc = liveAccount(status().report);
-    try { fs.appendFileSync(uiFile, JSON.stringify({ ts: Math.floor(Date.now() / 1000), type, venue: (acc && acc.venue) || null }) + "\n", { mode: 0o600 }); } catch (_) { /* 少一筆事件 */ }
+    try { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(uiFile, JSON.stringify({ ts: Math.floor(Date.now() / 1000), type, venue: (acc && acc.venue) || null, ...extra }) + "\n", { mode: 0o600 }); } catch (_) { /* 少一筆事件 */ }
   }
+  /* 自動下單執行中結束 app(主行程的結束確認框按了「結束 Blave」):這台電腦從這一刻起什麼單都不下、也不平倉,
+     再開時是「已暫停」。不記的話時間軸上看不出下單是什麼時候停的(e2e 0.1.8 #76)。沿用 halt 那一列,
+     holds_all 讓說明換成「平倉與停損不會執行；什麼單都不下」(renderer trHaltStopsAll) */
+  function noteQuit() { uiEvent("halt", { holds_all: true }); }
   function events({ days } = {}) {
     /* 檔案不在 = 這台電腦上真的沒做過那幾件事(空清單就是誠實的答案)。其餘(EACCES / EIO / 檔壞了)是**讀不到**,
        往上拋——畫面才會說「讀不到」,而不是替資料斷言「這段期間沒有發生事情」。 */
     let txt = ""; try { txt = fs.readFileSync(uiFile, "utf8"); } catch (e) { if (e && e.code === "ENOENT") return []; throw e; }
     const from = Date.now() / 1000 - (Number(days) > 0 ? Math.min(Number(days), 3660) : 30) * 86400, out = [];
-    for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null }); } catch (_) { /* 壞行跳過 */ } }
+    for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null, ...(typeof r.holds_all === "boolean" ? { holds_all: r.holds_all } : {}) }); } catch (_) { /* 壞行跳過 */ } }
     return out.slice(-500);
   }
 
-  return { start, stop, send, status, equity, events, _eqTick: eqTick, isRunning: () => !!child };
+  return { start, stop, send, status, equity, events, noteQuit, _eqTick: eqTick, isRunning: () => !!child };
 }
 module.exports = { createDaemonHost, UI_COMMANDS, argsOk };

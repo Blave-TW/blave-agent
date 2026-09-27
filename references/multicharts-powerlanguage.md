@@ -15,7 +15,8 @@ exists because the only check we have is a static one.
    `examples/exports/mc/` (see its `README.md`), copy it, change Inputs / indicator lines /
    conditions. Keep the section markers `// --- indicators ---`, `// --- signal ---`,
    `// --- orders ---`. Header comment: what it does, which Blave strategy it came from,
-   symbol / interval, the Blave→MC caveats that apply.
+   symbol / interval, the Blave→MC caveats that apply — and the `Template :` line kept as
+   it is (lint refuses an export whose header does not name its template).
 3. **Lint until clean:** `python lib/lint_export.py --target mc strategies/<name>/exports/mc.txt`.
    Fix and rerun until it exits 0. Lint output is for you only — NEVER paste lint errors,
    warnings, or "the linter said…" to the user.

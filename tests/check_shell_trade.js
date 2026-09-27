@@ -278,7 +278,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B-3 飛完了就放開(下一次按照樣送得出去)", calls === 2 && rel.length === 2);
     rel[1]({ ok: true }); await c3;
     ok("B-3 在途標記不會留下來(留著的話這顆指令就永遠送不出去了)", Object.keys(bag.sending).length === 0 && rids.join() === ",")
-    ; }
+    ;
+    // e2e 0.1.8 #76:指令成功 = 事件流多一筆,總覽的 60 秒快取要作廢(不然剛按完啟動,事件清單還停在上一次)
+    const ovBag = (res) => ({ reqIds: {}, sending: {}, ov: { at: 12345 }, api: { tradeSend: async () => res } });
+    const okBag = ovBag({ ok: true }), badBag = ovBag({ ok: false, error: "DAEMON_DOWN" });
+    await trSend(okBag, "resume_wait", {}); await trSend(badBag, "resume_wait", {});
+    ok("#76 指令成功:總覽快取作廢(下一次畫就重讀事件);失敗不動", okBag.ov.at === 0 && badBag.ov.at === 12345
+      && /if \(!TR\.ov\.curve \|\| \(TR\.ov\.at \|\| 0\) < Date\.now\(\) - 60000\) \{ TR\.ov\.at = Date\.now\(\); trLoadCurve\(\); \}/.test(src)); }
 
   /* 稽核 B-4:暫停側可重入 → 舊的那一趟回來時,不可以把**還在飛的那一次**的過場態清掉,
      更不可以寫出「暫停沒送到、去交易所撤 key」——那一趟其實正要執行。 */

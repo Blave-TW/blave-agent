@@ -14,6 +14,8 @@ export is a template adaptation plus a static lint; the user compiles it in XQ.
    Never translate logic that has not been backtested on Blave.
 2. **Translate by adapting a template** from `examples/exports/xq/` (see its README for
    the list). Pick the closest skeleton, then change indicators / thresholds / inputs.
+   Keep the header's `// Skeleton :` line as it is and add the strategy on a line of its
+   own — lint refuses an export whose header does not name its template.
    NEVER write XS from scratch, NEVER write EasyLanguage-style `Buy`/`Sell` statements.
 3. **Lint:** `python lib/lint_export.py --target xq strategies/<name>/exports/xq.xs`.
    Fix and re-run until it passes. Lint output is for you — NEVER paste lint errors into

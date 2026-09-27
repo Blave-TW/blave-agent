@@ -148,7 +148,7 @@ function tvRepaintAll() {
 }
 function tvPaintSlot(e) {
   const c = e.ctx, slot = tvSlotEl(c); if (!slot) return;
-  (c.where === "code" ? c.row : c.wrap).querySelectorAll(".tv-x").forEach((n) => n.remove());
+  c.wrap.querySelectorAll(".tv-x").forEach((n) => n.remove());   // 程式碼分頁的句子與出口鈕在動作列後面那個容器裡,不在列裡
   const cap = c.where === "card" ? c.wrap.querySelector(".xp-cap") : null;
   if (!tvCan()) {
     if (e.btn.parentNode === slot) e.btn.remove();
@@ -163,24 +163,31 @@ function tvPaintSlot(e) {
   const mk = (tag, cls, text) => xpMk(tag, cls + " tv-x", text);
   const own = c.row.querySelector(".xp-st:not(.tv-x)");   // 存檔結果那一格(export.js);我們的東西插在它前面
   const soft = m.soft && running === true ? m.soft : null;   // 回合結束就收:那句只在「現在按不了」的時候成立
-  if (c.where === "card") {   // 卡:說明句與動作列之間;程式碼分頁:動作列裡(那一面的說明句在上面,已經有誠實句)
+  /* 卡:說明句在動作列上面,鈕與狀態在動作列裡。程式碼分頁固定三層:動作列 / 句子自己一行 / 出口鈕一行——
+     後兩層裝在動作列後面另起的 .xv-msg 裡。塞在動作列裡時同一個狀態 zh 排成一行、en 折成兩行(設計稽核 0.1.8 第三批 D2) */
+  const code = c.where === "code";
+  let box = null, exits = null;
+  const boxOf = () => { if (!box) { box = mk("div", "xv-msg"); c.row.after(box); } return box; };
+  const sentence = (p) => { if (exits) boxOf().insertBefore(p, exits); else boxOf().appendChild(p); };
+  const exit = (b) => { if (!code) { c.row.insertBefore(b, own); return; } if (!exits) { exits = mk("div", "xp-acts"); boxOf().appendChild(exits); } exits.appendChild(b); };
+  if (!code) {
     if (m.msg) { const p = mk("p", "xp-msg", t(m.msg)); p.setAttribute("role", "alert"); c.row.before(p); }
     if (soft) { const p = mk("p", "xp-msg soft", t(soft)); p.setAttribute("role", "status"); c.row.before(p); }
-  } else {
+  } else {   // 這一面的誠實句已經在上面,所以三種句子只出一句
     const line = m.msg || soft || (m.cap === "tv.sentHint" ? m.cap : null);
-    if (line) { const p = mk("span", "xp-st" + (m.msg ? " err" : ""), t(line)); p.setAttribute("role", m.msg ? "alert" : "status"); c.row.insertBefore(p, own); }
+    if (line) { const p = mk("p", "xp-st" + (m.msg ? " err" : ""), t(line)); p.setAttribute("role", m.msg ? "alert" : "status"); sentence(p); }
   }
-  for (const q of m.quiet) { const b = mk("button", "btn-quiet", t(q)); b.type = "button"; b.addEventListener("click", (ev) => { if (ev.isTrusted) tvAgentPaste(e); }); c.row.insertBefore(b, own); }
+  for (const q of m.quiet) { const b = mk("button", "btn-quiet", t(q)); b.type = "button"; b.addEventListener("click", (ev) => { if (ev.isTrusted) tvAgentPaste(e); }); exit(b); }
   if (m.nav && !tvOpenOn(s)) {   // 已經在中欄時不放文字鈕:收起靠標題列的 ✕(同 browser.js brPaintHead)
     const b = mk("button", "btn-quiet", t("br.openPanel")); b.type = "button";
     b.addEventListener("click", (ev) => { if (!ev.isTrusted) return; trackFeature("browser_read"); brExpand(s.tab); });
-    c.row.insertBefore(b, own);
+    exit(b);
   }
   if (m.st) {
-    const st = mk("span", "xp-st", null); st.setAttribute("role", "status");
+    const st = mk(code ? "p" : "span", "xp-st", null); st.setAttribute("role", "status");
     if (m.spin) st.append(brEl("span", "br-spin"));
     st.append(m.st === "returned" ? t("tv.returnedAt", { time: s.at }) + " " + t("tv.returnedLoop") : t(m.st));
-    c.row.insertBefore(st, own);
+    if (code) sentence(st); else c.row.insertBefore(st, own);
   }
 }
 

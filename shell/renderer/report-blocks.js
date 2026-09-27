@@ -641,14 +641,17 @@
   // ------------------------------------------------------------------ blocks
   var BLOCKS = {};
 
+  var TYPE_CODES = ["research", "morning", "performance"];
+
   BLOCKS.meta = function (b, ctx) {
     var head = el("header", "rb-meta");
     var title = str(b.title);
     var h1 = el("h1", "rb-title");
     monoShapes(h1, title);
     // 標題已含類型時不重複渲染 tag(型錄:週報標題自帶「績效週報」→ 無 tag)
+    // 產出端沒給 report_type 時填的是 type 代號,不是給人看的字
     var rtype = str(b.report_type);
-    if (rtype && title.indexOf(rtype) < 0) {
+    if (rtype && TYPE_CODES.indexOf(rtype) < 0 && title.indexOf(rtype) < 0) {
       h1.appendChild(el("span", "rb-type-tag", rtype));
     }
     head.appendChild(h1);

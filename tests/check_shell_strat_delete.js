@@ -67,17 +67,25 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("兩邊側欄都用它", /nm\.title = stratTip\(x\.displayName, x\.name\);/.test(appSrc) && /stratTip\(x\.displayName, x\.name\)/.test(fnOf(trSrc, "envPaintSide"))); }
 
 // ── 側欄名字截尾時留住「（2）」(e2e 0.1.8 #37:撞名另存的兩支截尾後長得一樣)──
-{ eval(fnOf(appSrc, "stratNameParts"));
+{ const STRAT_NAME_MAX = Number(/const STRAT_NAME_MAX = (\d+), STRAT_NAME_TAIL = (\d+);/.exec(appSrc)[1]), STRAT_NAME_TAIL = Number(RegExp.$2);
+  eval(fnOf(appSrc, "stratNameParts"));
   const P = (s) => { const p = stratNameParts(s); return p.head + "|" + p.tail; };
   ok("尾端的（N）/ (N) 拆成後綴;前面的空白歸後綴", P("BTC SMA50/200 均線交叉（2）") === "BTC SMA50/200 均線交叉|（2）" && P("BTC SMA cross (12)") === "BTC SMA cross| (12)" && P("x(3)") === "x|(3)");
-  ok("沒有後綴、後綴不在尾端、只有後綴、不是數字 → 不拆(跟以前一樣一段字)", P("BTC SMA50/200 均線交叉") === "BTC SMA50/200 均線交叉|" && P("均線（2）交叉") === "均線（2）交叉|" && P("（2）") === "（2）|" && P("台積電（日線）") === "台積電（日線）|" && P(null) === "|" && P("") === "|");
+  ok("短名字(≤16 字):沒有後綴、後綴不在尾端、只有後綴、不是數字 → 不拆(跟以前一樣一段字)", P("BTC SMA 均線交叉") === "BTC SMA 均線交叉|" && P("均線（2）交叉") === "均線（2）交叉|" && P("（2）") === "（2）|" && P("台積電（日線）") === "台積電（日線）|" && P(null) === "|" && P("") === "|"
+    && P("x".repeat(16)) === "x".repeat(16) + "|");
+  // 設計稽核 0.1.8 第三批 D3:後綴不是（N）的撞名(_4h 與 _4h_v2 截尾後是同一串)
+  const A = stratNameParts("btc_funding_rate_mean_reversion_4h"), B = stratNameParts("btc_funding_rate_mean_reversion_4h_v2");
+  ok("長名字:最後 6 個字是固定尾段、其餘是前段;只差尾端 3 個字的兩支,尾段不同", A.tail === "ion_4h" && B.tail === "_4h_v2" && A.tail !== B.tail
+    && A.head + A.tail === "btc_funding_rate_mean_reversion_4h" && B.head + B.tail === "btc_funding_rate_mean_reversion_4h_v2" && P("x".repeat(17)) === "x".repeat(11) + "|" + "x".repeat(6));
+  ok("（N）後綴優先(長名字也一樣);以 code point 計、不切在代理對中間;前段尾端的空白歸尾段", P("BTC SMA50/200 均線交叉（2）") === "BTC SMA50/200 均線交叉|（2）"
+    && P("策略一二三四五六七八九十一二三𠀋𠀌𠀍") === "策略一二三四五六七八九十|一二三𠀋𠀌𠀍" && P("BTC funding mean revert") === "BTC funding mean| revert" && P("BTC SMA50/200 均線交叉") === "BTC SMA50/20|0 均線交叉");
   const mk = (cls) => { const n = { className: cls || "", textContent: "", kids: [], classList: { toggle: (c, on) => { n.has = on; } }, append: (...k) => n.kids.push(...k) }; return n; };
   const document = { createElement: () => mk() };
   eval(fnOf(appSrc, "stratNameFill"));
   const a = mk("strat-name"), b = mk("strat-name");
-  stratNameFill(a, "BTC SMA50/200 均線交叉（2）"); stratNameFill(b, "BTC SMA50/200 均線交叉");
+  stratNameFill(a, "BTC SMA50/200 均線交叉（2）"); stratNameFill(b, "BTC SMA 均線交叉");
   ok("有後綴:前段 .sn-head + 後綴 .sn-tail 兩個節點;沒有:一段字、不加 class", a.has === true && a.kids.length === 2 && a.kids[0].className === "sn-head" && a.kids[0].textContent === "BTC SMA50/200 均線交叉" && a.kids[1].className === "sn-tail" && a.kids[1].textContent === "（2）"
-    && b.has === false && b.kids.length === 0 && b.textContent === "BTC SMA50/200 均線交叉");
+    && b.has === false && b.kids.length === 0 && b.textContent === "BTC SMA 均線交叉");
   const css = fs.readFileSync(path.join(R, "app.css"), "utf8");
   ok("兩邊側欄都走 stratNameFill;CSS:前段截尾、後綴不縮", /stratNameFill\(nm, x\.displayName \|\| x\.name\)/.test(fnOf(appSrc, "stratRefresh")) && /stratNameFill\(nm, x\.displayName\)/.test(fnOf(trSrc, "envPaintSide"))
     && /\.strat-name\.has-tail \{ display: flex; \}/.test(css) && /\.strat-name \.sn-head \{[^}]*text-overflow: ellipsis/.test(css) && /\.strat-name \.sn-tail \{ flex: none;/.test(css)); }
@@ -100,7 +108,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
 
 // ── 沒有回測時,分頁列正下方那一句(兩個視角同一段)──
 ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
-  && /\$\("rp-nobt"\)\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
+  && /const nb = \$\("rp-nobt"\); nb\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
 
 // ── 側欄:再點一次選中的那支 = 取消選取、中欄回 welcome(Wei 09-23)。真的跑 stratRefresh 畫列、按列上的 click ──
 (async () => {

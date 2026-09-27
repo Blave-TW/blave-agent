@@ -31,7 +31,7 @@ html { background: var(--color-pureWhite); }
   border-left: 2px solid var(--color-greyLightMedium);
   color: var(--color-black);
 }
-#rs_content .rb-report .rb-lead p {
+#rs_content .rb-report .rb-text.rb-lead p {
   font-size: 18px;
   line-height: 1.7;
   font-weight: 500;

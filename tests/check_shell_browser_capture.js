@@ -48,7 +48,7 @@ const CHART = `<!doctype html><html><head><title>Funding weekly</title><meta pro
 <figure style="margin:20px"><div id="chart" role="img" aria-label="BTC funding chart" style="box-sizing:border-box;width:612px;height:312px;background:#00c853;border:6px solid #ff0000;position:relative">
 <input type="password" aria-label="Chart password" value="hunter2" style="position:absolute;left:250px;top:130px;width:100px;height:40px;border:0;background:#ffff00;color:#000;font-size:30px"></div></figure>
 <div style="height:900px"></div><canvas id="cv" width="300" height="150" aria-label="Canvas chart" style="display:block"></canvas>
-<script>const g=document.getElementById("cv").getContext("2d");g.fillStyle="#ff00ff";g.fillRect(0,0,300,150);</script>
+<script>const g=document.getElementById("cv").getContext("2d");g.fillStyle="#ff00ff";g.fillRect(0,0,300,150);g.fillStyle="#222222";g.fillRect(20,20,60,30);</script>
 <svg id="sv" width="300" height="150"><rect width="300" height="150" fill="#00f"/></svg>
 <img alt="tiny icon" width="20" height="20" src="${PNG_1PX}">
 <div id="big" role="img" aria-label="Whole page banner" style="width:100%;height:2000px;background:#ddd"></div></body></html>`;
@@ -130,6 +130,7 @@ app.whenReady().then(async () => {
   const cvPx = (() => { if (!cvf || !fs.existsSync(cvf)) return null; const im = electron.nativeImage.createFromPath(cvf), sz = im.getSize(), bm = im.toBitmap(), i = (Math.floor(sz.height / 2) * sz.width + Math.floor(sz.width / 2)) * 4; return [bm[i + 2], bm[i + 1], bm[i]]; })();
   last = { r, cvPx };
 
+  // 畫布上有一塊深色方塊:整張同一個顏色的圖會被當成「還沒畫」而拒拍(gate.captureBlank,check_shell_capture_lazy_image.js)
   t("捲下去才看得到的 canvas 也拍得準(clip 帶捲動量:中心是它畫的洋紅)", r.ok && r.width === 600 && cvPx && cvPx[0] > 215 && cvPx[1] < 40 && cvPx[2] > 215);
   // 展開在中欄的分頁(用戶正看著):不走 awake(本來就在視窗裡),目標框畫在元素外圈、擷取落地收掉,圖裡不會帶到
   // (強制藏標記那一條由下面的原始碼斷言釘住:展開頁上的假標記層會被擷取框的 mark() 重建掉,像素驗不到)
@@ -169,7 +170,8 @@ app.whenReady().then(async () => {
   t("當下網址被 agent 政策擋(交易所後台)→ blocked_policy", !r.ok && r.error === "blocked_policy");
 
   const capSrc = fs.readFileSync(path.join(SHELL, "browser", "capture.js"), "utf8");
-  t("擷取在 awake() 裡、經過 withMask 且強制藏標記(展開中的分頁也藏)", /got = await awake\(t, v, async \(\) => \{\s*const g = await d\.withMask\(v, async \(\) => \{[\s\S]*?captureClip\(s\.c\.box, s\.c\.view, [^\n]*\n\s*\}, true\);/.test(capSrc));
+  t("擷取在 awake() 裡、經過 withMask 且強制藏標記(展開中的分頁也藏)", /const shoot = \(\) => awake\(t, v, async \(\) => \{\s*const g = await d\.withMask\(v, async \(\) => \{[\s\S]*?captureClip\(s\.c\.box, s\.c\.view, [^\n]*\n\s*\}, true\);/.test(capSrc)
+    && (capSrc.match(/got = await shoot\(\);/g) || []).length === 2 && !/captureClip\(/.test(capSrc.replace(/const shoot = [\s\S]*?\n    \}\);\n/, "")));
   const names = require(path.join(SHELL, "browser", "tools")).TOOLS.map((x) => x.name);
   t("工具清單有 browser_capture,必填 tab/ref/report", names.includes("browser_capture") && require(path.join(SHELL, "browser", "tools")).TOOLS.find((x) => x.name === "browser_capture").inputSchema.required.join() === "tab,ref,report");
 

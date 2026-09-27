@@ -27,8 +27,13 @@ function xpIsPortfolio(d) {
   if (d.stats && typeof d.stats.benchmark_n === "number") return true;
   return typeof d.code === "string" && /^#\s*Type:\s*C\b/m.test(d.code.slice(0, 2000));
 }
-// 不能選的原因(i18n key);null = 可以選。外殼只擋這兩種,其餘轉不轉得了由 agent 讀過程式碼再講
-function xpOff(target, d) { return xpIsPortfolio(d) ? "portfolio" : target === "xq" && xpIsCrypto(d) ? "crypto" : null; }
+/* Type B(警示、選股、網格…):沒有 compute_signals 那一層的進出場訊號,三個平台都沒有東西可轉(e2e 0.1.8 #68)。
+   認檔頭 `# Type: B`(AGENTS.md › Type B 要求帶這一行)。判不出來就當不是。程式碼分頁的「沒有回測」那一句也看它(app.js rpShowTab) */
+function xpIsTypeB(d) { return !!d && typeof d.code === "string" && /^#\s*Type:\s*B\b/m.test(d.code.slice(0, 2000)); }
+// 不能選的原因;null = 可以選。外殼只擋這三種,其餘轉不轉得了由 agent 讀過程式碼再講
+function xpOff(target, d) { return xpIsPortfolio(d) ? "portfolio" : xpIsTypeB(d) ? "nosignal" : target === "xq" && xpIsCrypto(d) ? "crypto" : null; }
+// 三個平台都不能選、而且是同一個原因:原因只在選單頂端講一次(設計稽核 0.1.8 第三批);否則 null,各列自己講
+function xpOffAll(d) { const r = XP_ORDER.map((k) => xpOff(k, d)); return r[0] && r.every((x) => x === r[0]) ? r[0] : null; }
 function xpAvail(target, d) { return xpOff(target, d) === null; }
 // 送給 agent 的那句。壞 id / 壞 target / 範本不是恰好一個 {id} → null
 function xpMsg(target, id, tpl) {
@@ -84,6 +89,7 @@ const xpTitle = (k) => (k === "xq" ? t("xp.cf.title.xq") : k === "mc" ? t("xp.cf
 const xpTpl = () => ({ xq: t("xp.msg.xq"), mc: t("xp.msg.mc"), pine: t("xp.msg.pine") });
 const xpLocal = () => typeof ENV === "undefined" || ENV.cur !== "cloud";
 const xpDisabled = () => running === true || !!XP.tm;
+const XP_OFF_KEY = { portfolio: "xp.off.portfolio", nosignal: "xp.off.nosignal", crypto: "xp.off.crypto" };
 
 /* ── 觸發器 + 選單(分頁列右端;同 web .tab-act)── */
 function xpDom() {
@@ -127,12 +133,13 @@ function xpNote(text) { const n = $("xp-note"); if (!n) return; n.textContent = 
 function xpOpen() {
   const b = $("xp-btn"), m = $("xp-menu");
   if (xpDisabled()) { xpNote(running === true ? t("turn.busy") : t("xp.why.tm", { v: XP.tm })); return; }
-  const d = RP.data; m.textContent = "";
+  const d = RP.data, all = xpOffAll(d); m.textContent = "";
+  if (all) m.appendChild(xpMk("p", "xp-why", t(XP_OFF_KEY[all])));
   for (const k of XP_ORDER) {
     const lang = xpMk("span", "lang", "· " + xpLang(k));
     const off = xpOff(k, d);
     if (off) {   // Unavailable info 列:不是鈕、不進 Tab 序——沒有補救動作
-      const r = xpMk("div", "xp-off"); r.append(XP_PLATFORM[k] + " ", lang, xpMk("span", "d", off === "portfolio" ? t("xp.off.portfolio") : t("xp.off.crypto"))); m.appendChild(r); continue;
+      const r = xpMk("div", "xp-off"); r.append(XP_PLATFORM[k] + " ", lang); if (!all) r.appendChild(xpMk("span", "d", t(XP_OFF_KEY[off]))); m.appendChild(r); continue;
     }
     const it = xpMk("button", "xp-it"); it.type = "button"; it.setAttribute("role", "menuitem"); it.tabIndex = -1; it.dataset.xp = k;
     it.append(XP_PLATFORM[k] + " ", lang);

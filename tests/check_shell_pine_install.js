@@ -278,6 +278,44 @@ async function main() {
   })());
   ok("請 agent 貼:只放合規的資料夾名", R.tvPasteMsg("btc_sma_cross", "paste {id} now") === "paste btc_sma_cross now" && [null, "", "a b", "a/b", "x".repeat(65), "顯示名稱"].every((id) => R.tvPasteMsg(id, "paste {id}") === null) && R.tvPasteMsg("a", "no slot") === null);
 
+  // ── ③b 程式碼分頁的排法(設計稽核 0.1.8 第三批 D2):真的跑 tvPaintSlot,看節點掛在哪 ──
+  { const mkEl = (tag, cls, text) => { const n = { tag, className: cls || "", kids: [], attrs: {}, parent: null, hidden: false, disabled: false, _t: text == null ? "" : String(text),
+      get textContent() { return this._t + this.kids.map((k) => k.textContent).join(""); }, set textContent(v) { this._t = String(v); this.kids = []; },
+      setAttribute(k, v) { this.attrs[k] = String(v); }, addEventListener() {},
+      appendChild(c) { if (typeof c === "string") c = mkEl("#text", "", c); if (c.parent) c.remove(); c.parent = this; this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.appendChild(x)); },
+      insertBefore(c, ref) { if (!ref) return this.appendChild(c); if (c.parent) c.remove(); c.parent = this; this.kids.splice(this.kids.indexOf(ref), 0, c); return c; },
+      after(c) { const p = this.parent; if (c.parent) c.remove(); c.parent = p; p.kids.splice(p.kids.indexOf(this) + 1, 0, c); },
+      before(c) { const p = this.parent; if (c.parent) c.remove(); c.parent = p; p.kids.splice(p.kids.indexOf(this), 0, c); },
+      remove() { if (this.parent) { this.parent.kids = this.parent.kids.filter((x) => x !== this); this.parent = null; } },
+      has(cls2) { return (" " + this.className + " ").includes(" " + cls2 + " "); },
+      all(f, out = []) { this.kids.forEach((k) => { if (f(k)) out.push(k); k.all(f, out); }); return out; },
+      querySelectorAll(sel) { return this.all((k) => k.has(sel.replace(/^\./, ""))); },
+      querySelector(sel) { return sel === ".xp-st:not(.tv-x)" ? this.all((k) => k.has("xp-st") && !k.has("tv-x"))[0] || null : this.querySelectorAll(sel)[0] || null; } };
+      return n; };
+    const paint = (where, state, lang, runningNow) => {
+      const host = mkEl("div", "xp-view"), row = mkEl("div", where === "code" ? "xv-acts" : "xp-acts"), grp = mkEl("div", "grp"), own = mkEl("span", "xp-st"), slot = mkEl("span", "xp-ext"), btn = mkEl("button", "btn-fill");
+      host.append(mkEl("p", "xp-cap"), row, mkEl("div", "xv-steps"));
+      if (where === "code") { grp.append(mkEl("button", "btn-fill", "copy"), slot); row.append(grp, own); } else row.append(mkEl("button", "btn-quiet", "view"), own, slot);
+      const e = { ctx: { where, wrap: host, row, base: null, strategy: "s", id: where === "card" ? "c1" : null }, btn };
+      const i = src.indexOf("function tvPaintSlot(e) {"), j = src.indexOf("/* ── 動作 ── */", i);
+      new Function("R", "STR", "lang", "xpMk", "state", "running", "e", src.slice(i, j) + "\nconst tvSlotEl = () => slot0, tvCan = () => true, tvStateOf = () => state, tvModel = R.tvModel, xpFill = () => {}, tvOpenOn = () => false,"
+        + " t = (k) => STR[lang][k] || k, brEl = xpMk, trackFeature = () => {}, brExpand = () => {}, tvAgentPaste = () => {}, slot0 = e.ctx.row.querySelector('.xp-ext');\ntvPaintSlot(e); tvPaintSlot(e);")(
+        R, new Function(read("renderer", "strings.js") + "\nreturn STRINGS;")(), lang, mkEl, state, runningNow === true, e);
+      return { host, row, grp }; };
+    const shape = (o) => { const box = o.host.kids[o.host.kids.indexOf(o.row) + 1], inRow = o.row.all((k) => k.has("tv-x")), boxes = o.host.all((k) => k.has("xv-msg"));
+      return { boxes: boxes.length, after: !!box && box.has("xv-msg"), inRow: inRow.length, kids: box && box.has("xv-msg") ? box.kids.map((k) => k.tag + "." + k.className.replace(" tv-x", "") + (k.has("xp-acts") ? "[" + k.kids.length + "]" : "")).join(" | ") : "" }; };
+    const nf = { tv: "nf", tab: "t1" };
+    const zh = shape(paint("code", nf, "zh")), en = shape(paint("code", nf, "en"));
+    ok("找不到編輯器:訊息自己一行、兩顆出口鈕在下面一行,裝在動作列後面的容器裡——動作列裡什麼都不插", zh.after && zh.inRow === 0 && zh.kids === "p.xp-st err | div.xp-acts[2]", zh);
+    ok("zh 與 en 同一個排法(同一個狀態不再兩種樣子);重畫不會疊出第二個容器", JSON.stringify(zh) === JSON.stringify(en) && zh.boxes === 1, [zh, en]);
+    ok("編譯沒過 / 有未存變更 / 正在回覆(灰字):句子一樣自己一行", ["compile", "unsaved"].every((tv) => /^p\.xp-st err( \||$)/.test(shape(paint("code", { tv, tab: "t1", errors: [] }, "zh")).kids))
+      && /^p\.xp-st( \||$)/.test(shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).kids) && shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).inRow === 0);
+    ok("送出中的狀態句也自己一行;沒有東西要講(idle)就不起容器", shape(paint("code", { tv: "sending", step: 1 }, "en")).kids.startsWith("p.xp-st") && shape(paint("code", { tv: "idle" }, "zh")).boxes === 0);
+    const card = paint("card", nf, "zh"), cs = shape(card);
+    ok("對話裡的卡不變:訊息在動作列上面、鈕在動作列裡,不起 .xv-msg", cs.boxes === 0 && cs.inRow === 2 && card.host.kids[card.host.kids.indexOf(card.row) - 1].has("xp-msg"), cs);
+    ok("樣式:容器上距 8、出口鈕那一行上距 4、間距沿用 .xp-acts 的 16", /\.xv-msg \{ margin-top: var\(--space-8\); \}/.test(read("renderer", "export.css")) && /\.xv-msg \.xp-acts \{ margin-top: var\(--space-4\); \}/.test(read("renderer", "export.css"))
+      && /\.xp-acts \{ display: flex; flex-wrap: wrap; align-items: center; gap: var\(--space-8\) var\(--space-16\);/.test(read("renderer", "export.css"))); }
+
   // ── ④ 接線 ──
   const xp = read("renderer", "export.js"), br = read("renderer", "browser.js"), mainSrc = read("main.js"), pre = read("preload.js"), idx = read("browser", "index.js"), css = read("renderer", "export.css"), html = read("renderer", "index.html");
   ok("槽:pine-install.js 往 XP_ACTIONS 推 provider;在 export.js、browser.js 之後載入", /XP_ACTIONS\.push\(tvProvide\);/.test(src) && html.indexOf('src="pine-install.js"') > html.indexOf('src="browser.js"') && html.indexOf('src="browser.js"') > html.indexOf('src="export.js"'));

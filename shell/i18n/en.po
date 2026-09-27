@@ -2600,6 +2600,9 @@ msgstr "{name} ({id})"
 msgid "rp.noBt"
 msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
 
+msgid "rp.noBtB"
+msgstr "This type of strategy isn’t backtested, so only the code is shown."
+
 msgid "cx.ip.cloudNote"
 msgstr "This is the cloud machine’s current public IP."
 
@@ -4447,6 +4450,9 @@ msgstr "XQ has no crypto market"
 
 msgid "xp.off.portfolio"
 msgstr "Single-symbol strategies only"
+
+msgid "xp.off.nosignal"
+msgstr "No entry or exit signals to export"
 
 msgid "xp.why.tm"
 msgstr "Viewing {v}. Only the current version can be exported."

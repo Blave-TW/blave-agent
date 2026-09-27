@@ -951,10 +951,16 @@ function stratTip(display, name) {
   return d && d !== name ? t("side.rowTip", { name: d, id: name }) : String(name || "");
 }
 /* 側欄名字過長截尾時,尾端的「（2）」/ " (2)" 留著:撞名另存的那一支跟原本那支只差這個後綴,一起截掉兩列就長得一樣(e2e 0.1.8 #37)。
-   前段照舊截尾、後綴固定;沒有後綴的名字跟以前一模一樣(一個文字節點) */
+   沒有那種後綴的長名字(超過 16 個字)把最後 6 個字當尾段:agent 取名常用 _4h / _4h_v2 收尾,只截尾的話兩支是同一串(設計稽核 0.1.8 第三批 D3)。
+   以 code point 計(不切在代理對中間);前段尾端的空白歸尾段(尾段是 white-space: pre,前段行尾的空白會被吃掉)。
+   前段截尾、尾段固定;放得下時頭尾相連、看不出差別。短名字跟以前一樣是一個文字節點 */
+const STRAT_NAME_MAX = 16, STRAT_NAME_TAIL = 6;
 function stratNameParts(text) {
   const s = String(text == null ? "" : text), m = /^(.*\S)(\s?[（(]\d{1,3}[）)])$/.exec(s);
-  return m ? { head: m[1], tail: m[2] } : { head: s, tail: "" };
+  if (m) return { head: m[1], tail: m[2] };
+  const cp = [...s]; if (cp.length <= STRAT_NAME_MAX) return { head: s, tail: "" };
+  let cut = cp.length - STRAT_NAME_TAIL; while (cut > 1 && /\s/.test(cp[cut - 1])) cut--;
+  return { head: cp.slice(0, cut).join(""), tail: cp.slice(cut).join("") };
 }
 function stratNameFill(nm, text) {
   const p = stratNameParts(text);
@@ -1150,7 +1156,10 @@ function rpShowTab(tab) {
     b.setAttribute("aria-selected", on ? "true" : "false");
     b.disabled = !has && b.dataset.tab !== "code";
   });
-  $("rp-nobt").hidden = has;   // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)
+  // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)。Type B 本來就沒有回測,不叫人去跑(e2e 0.1.8 #67);
+  // key 放在 data-i18n 上,切語言時 applyStatic 照這個 key 重譯
+  const nb = $("rp-nobt"); nb.hidden = has;
+  nb.dataset.i18n = typeof xpIsTypeB === "function" && xpIsTypeB(B.data) ? "rp.noBtB" : "rp.noBt"; nb.textContent = t(nb.dataset.i18n);
   for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = k !== tab;
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;

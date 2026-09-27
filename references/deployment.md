@@ -3,6 +3,15 @@
 ## Confirmation Required
 CRITICAL: You MUST NEVER deploy a live strategy or set up a cron job without explicit user confirmation.
 
+## Desktop app (`BLAVE_AGENT_LOCAL=1`) — no system scheduler
+
+Everything in this file about cron and Scheduled Tasks is for cloud machines. Check once per session: `python3 -c "print(__import__('os').environ.get('BLAVE_AGENT_LOCAL'))"` prints `1` on the desktop app. There:
+
+- **Never run `crontab`, `launchctl` / launchd, `schtasks` or any other OS scheduler, and never write a plist or a cron file.** macOS answers with a system prompt (「想要管理你的電腦」) the user never asked for and the command hangs on it; the runtime refuses these commands. Do not look for another way in.
+- **Never tell the user to change a system permission** (Full Disk Access, 「管理你的電腦」) or to schedule it themselves in a terminal.
+- **Type A/C:** the user funds the strategy and presses 「啟動下單」 on the app's 自動下單 page (`references/portfolio-steps.md`); the app runs it on every bar while it is open. None of the schedule steps below apply (Type A step 5, the healthcheck schedule), and there is no "Reply YES and I will schedule it" question — point to the page.
+- **Type B:** it cannot run on a schedule on this computer yet. Say so in one plain sentence when you deliver the strategy, and offer the two ways out: send it to the user's cloud machine, where it can be scheduled (`references/cloud-handoff.md`), or run it once by hand now (`python3 strategies/<name>/strategy.py`). Never ask for a YES to deploy it here.
+
 ## No LLM in the Execution Loop
 
 Strategy execution MUST be scheduled as a system cron job (Linux) or Scheduled Task (Windows) that runs Python directly through `manager/wait_for_bar.py` (Type A/C) or `manager/run_strategy.sh`/direct `strategy.py` (Type B — see its own section below) — NEVER as an OpenClaw agent cron that wakes the agent to "run the strategy and report the result".
@@ -136,6 +145,7 @@ schtasks /create /tn "blaveclaw-strategy-<name>" /tr "cmd /c cd /d %BLAVE_AGENT_
 ```
 
 ## Type B (Everything else) — mandatory flow:
+Cloud machines only — on the desktop app a Type B strategy is never scheduled (*Desktop app* above).
 Type B strategies (screener, grid, arbitrage, one-off execution, alert bot) have no `INTERVAL`/`fetch_data` contract to poll a bar against, so they do NOT go through `wait_for_bar.py` — they keep a plain fixed-cadence schedule, same as before this mechanism existed.
 1. Skip backtest entirely
 2. Ask the user to confirm before deploying: "Do you want to deploy this live? Reply YES to confirm."

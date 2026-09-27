@@ -1222,6 +1222,9 @@ async function trSend(S, cmd, args, intent) {
        而 C.pending 那條路只是叫畫面每 2.5 秒問主行程手上那一份,主行程照舊 15 秒才去抓一次——同一個病。
        trSend 是雲端寫入的唯一出口(envApi 的 tradeSend),掛在這裡一處就全收 */
     if (S.env === "cloud" && res && res.ok) ENV.burst = trBurstBump(ENV.burst, Date.now(), TR_BURST_MS, TR_BURST_MAX_MS);
+    /* 指令成功 = 事件流多了一筆(暫停 / 恢復 / 連接…):總覽那份 60 秒快取作廢,下一次畫總覽就重讀。
+       不作廢的話剛按完「啟動,等新訊號才進場」,事件清單最新一筆還停在上一次(e2e 0.1.8 #76) */
+    if (res && res.ok && S.ov) S.ov.at = 0;
     if ((res && res.ok) || trKindOf(res) === "rejected") delete S.reqIds[cmd];
     else if (res && typeof res.requestId === "string") S.reqIds[cmd] = res.requestId;
     return res;

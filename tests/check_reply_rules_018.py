@@ -5,6 +5,9 @@
   #29 掃描結果在「參數掃描」分頁,不是回測分頁;
   #32 策略庫安裝遇到品質掃描的警告(exit 1)照原樣跑回測,不停下來問;安全掃描的警告照舊要問;
   #36 下載的暫存檔用 mv、流程結束 tmp/ 不留。
+  #66 回覆只提真的存在的檔案 / 產出物;
+  #70 單筆手動下單不是 Blave 做的事:一句話講完,不編步驟、不編頁面名稱;
+  #67 #68 Type B 的檔頭帶 `# Type:     B`(電腦版靠它認沒有回測、沒有東西可轉出的策略)。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
 """
@@ -55,6 +58,16 @@ security = mk[mk.index("6. **Security scan**"):mk.index("7. **Quality scan**")]
 t("#32 安全掃描的警告照舊要問(不放寬)", "Exit 1 (warnings) → show findings to user, ask for confirmation" in security)
 t("#36 下載檔用 mv 不用 cp;流程結束 tmp/ 不留下載檔",
   "`mv`, never `cp`" in security and "Leave nothing of the download in `tmp/`" in mk)
+
+t("#66 AGENTS › Response Style:只提存在的檔案,觸發才寫的 log 不算已建立",
+  "Name only files and outputs that exist" in style and "has not been created yet" in style)
+redline = [l for l in agents.splitlines() if l.startswith("**Deployment redline")]
+steps = read("references", "portfolio-steps.md")
+t("#70 單筆手動下單:AGENTS 的部署紅線與 portfolio-steps 都寫一句話講完、不編步驟",
+  len(redline) == 1 and "A single order placed by hand" in redline[0] and "never describe steps or a screen for it" in redline[0]
+  and "has none" in section(steps, "## Step scripts") and "never make up steps or a page name" in section(steps, "## Step scripts"))
+type_b = [l for l in agents.splitlines() if l.startswith("**Type B:**")]
+t("#67 #68 Type B 的檔頭", len(type_b) == 1 and "`# Type:     B (…)` as its second line" in type_b[0])
 
 if fails:
     sys.exit(f"{len(fails)} failed")
