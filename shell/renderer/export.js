@@ -20,8 +20,16 @@ function xpIsCrypto(d) {
   const sym = d && typeof d.symbol === "string" ? d.symbol.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
   return /USD[TC]$/.test(sym) || !!(d && d.cryptoKline === true);
 }
-// XQ 沒有加密市場:外殼只擋這一種(Q3);其餘轉不轉得了由 agent 讀過程式碼再講
-function xpAvail(target, d) { return !(target === "xq" && xpIsCrypto(d)); }
+/* 組合策略(Type C):一份腳本只跑一個標的,三個平台都轉不了(references 三份都寫 Type A only)。
+   認法:回測的 stats 帶隨機投組基準 benchmark_n(只有 Type C 那一支寫),或檔頭 `# Type: C`。判不出來就當不是(照常給選,agent 讀過碼再拒) */
+function xpIsPortfolio(d) {
+  if (!d) return false;
+  if (d.stats && typeof d.stats.benchmark_n === "number") return true;
+  return typeof d.code === "string" && /^#\s*Type:\s*C\b/m.test(d.code.slice(0, 2000));
+}
+// 不能選的原因(i18n key);null = 可以選。外殼只擋這兩種,其餘轉不轉得了由 agent 讀過程式碼再講
+function xpOff(target, d) { return xpIsPortfolio(d) ? "portfolio" : target === "xq" && xpIsCrypto(d) ? "crypto" : null; }
+function xpAvail(target, d) { return xpOff(target, d) === null; }
 // 送給 agent 的那句。壞 id / 壞 target / 範本不是恰好一個 {id} → null
 function xpMsg(target, id, tpl) {
   if (!XP_PLATFORM[target] || typeof id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
@@ -122,8 +130,9 @@ function xpOpen() {
   const d = RP.data; m.textContent = "";
   for (const k of XP_ORDER) {
     const lang = xpMk("span", "lang", "· " + xpLang(k));
-    if (!xpAvail(k, d)) {   // Unavailable info 列:不是鈕、不進 Tab 序——沒有補救動作
-      const r = xpMk("div", "xp-off"); r.append(XP_PLATFORM[k] + " ", lang, xpMk("span", "d", t("xp.off.crypto"))); m.appendChild(r); continue;
+    const off = xpOff(k, d);
+    if (off) {   // Unavailable info 列:不是鈕、不進 Tab 序——沒有補救動作
+      const r = xpMk("div", "xp-off"); r.append(XP_PLATFORM[k] + " ", lang, xpMk("span", "d", off === "portfolio" ? t("xp.off.portfolio") : t("xp.off.crypto"))); m.appendChild(r); continue;
     }
     const it = xpMk("button", "xp-it"); it.type = "button"; it.setAttribute("role", "menuitem"); it.tabIndex = -1; it.dataset.xp = k;
     it.append(XP_PLATFORM[k] + " ", lang);

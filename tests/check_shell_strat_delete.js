@@ -66,6 +66,38 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("tooltip = 顯示名稱（資料夾代號）;名稱空或等於代號時只放代號", stratTip("BTC 4 小時動能", "btc_4h") === "BTC 4 小時動能（btc_4h）" && stratTip("", "btc_4h") === "btc_4h" && stratTip("btc_4h", "btc_4h") === "btc_4h" && stratTip(null, "x") === "x");
   ok("兩邊側欄都用它", /nm\.title = stratTip\(x\.displayName, x\.name\);/.test(appSrc) && /stratTip\(x\.displayName, x\.name\)/.test(fnOf(trSrc, "envPaintSide"))); }
 
+// ── 側欄名字截尾時留住「（2）」(e2e 0.1.8 #37:撞名另存的兩支截尾後長得一樣)──
+{ eval(fnOf(appSrc, "stratNameParts"));
+  const P = (s) => { const p = stratNameParts(s); return p.head + "|" + p.tail; };
+  ok("尾端的（N）/ (N) 拆成後綴;前面的空白歸後綴", P("BTC SMA50/200 均線交叉（2）") === "BTC SMA50/200 均線交叉|（2）" && P("BTC SMA cross (12)") === "BTC SMA cross| (12)" && P("x(3)") === "x|(3)");
+  ok("沒有後綴、後綴不在尾端、只有後綴、不是數字 → 不拆(跟以前一樣一段字)", P("BTC SMA50/200 均線交叉") === "BTC SMA50/200 均線交叉|" && P("均線（2）交叉") === "均線（2）交叉|" && P("（2）") === "（2）|" && P("台積電（日線）") === "台積電（日線）|" && P(null) === "|" && P("") === "|");
+  const mk = (cls) => { const n = { className: cls || "", textContent: "", kids: [], classList: { toggle: (c, on) => { n.has = on; } }, append: (...k) => n.kids.push(...k) }; return n; };
+  const document = { createElement: () => mk() };
+  eval(fnOf(appSrc, "stratNameFill"));
+  const a = mk("strat-name"), b = mk("strat-name");
+  stratNameFill(a, "BTC SMA50/200 均線交叉（2）"); stratNameFill(b, "BTC SMA50/200 均線交叉");
+  ok("有後綴:前段 .sn-head + 後綴 .sn-tail 兩個節點;沒有:一段字、不加 class", a.has === true && a.kids.length === 2 && a.kids[0].className === "sn-head" && a.kids[0].textContent === "BTC SMA50/200 均線交叉" && a.kids[1].className === "sn-tail" && a.kids[1].textContent === "（2）"
+    && b.has === false && b.kids.length === 0 && b.textContent === "BTC SMA50/200 均線交叉");
+  const css = fs.readFileSync(path.join(R, "app.css"), "utf8");
+  ok("兩邊側欄都走 stratNameFill;CSS:前段截尾、後綴不縮", /stratNameFill\(nm, x\.displayName \|\| x\.name\)/.test(fnOf(appSrc, "stratRefresh")) && /stratNameFill\(nm, x\.displayName\)/.test(fnOf(trSrc, "envPaintSide"))
+    && /\.strat-name\.has-tail \{ display: flex; \}/.test(css) && /\.strat-name \.sn-head \{[^}]*text-overflow: ellipsis/.test(css) && /\.strat-name \.sn-tail \{ flex: none;/.test(css)); }
+
+// ── 側欄順序:最近被人或 agent 動過的在上面,live tick 重寫 stats.json 不算(e2e 0.1.8 #30 #39 #54)──
+{ const cut = mainSrc.slice(mainSrc.indexOf("const stratTouchedAt"), mainSrc.indexOf("function listStrategies()"));
+  const { stratOrder } = new Function(cut + "\nreturn { stratOrder };")();
+  const H = 3600e3, T0 = 1790530000000;
+  // 實測那一組:btc_sma_test 01:40 回測、03:04 掃描,之後每小時 live tick 重寫 stats.json(04:00);其餘是之後才建的
+  const live = { name: "btc_sma_test", codeMtime: T0, statsMtime: T0 + 3 * H, scanMtime: T0 + 1.4 * H, generatedAt: T0 / 1000 + 5 };
+  const newer = { name: "tsmc_ma_cross", codeMtime: T0 + 2 * H, statsMtime: T0 + 2.1 * H, scanMtime: 0, generatedAt: (T0 + 2.1 * H) / 1000 };
+  const mid = { name: "btc_sma_test_2", codeMtime: T0 + 1.8 * H, statsMtime: T0 + 1.8 * H, scanMtime: 0, generatedAt: (T0 + 1.8 * H) / 1000 };
+  const names = (l) => l.slice().sort(stratOrder).map((x) => x.name).join();
+  ok("上線中的那支被 live tick 重寫 stats.json:不會跳到第一", names([live, mid, newer]) === "tsmc_ma_cross,btc_sma_test_2,btc_sma_test");
+  ok("再過一根 K(stats.json 更新):順序不變", names([{ ...live, statsMtime: T0 + 9 * H }, newer, mid]) === "tsmc_ma_cross,btc_sma_test_2,btc_sma_test");
+  ok("真的動過(重跑回測 / 改碼 / 掃參數)才往上", names([{ ...live, generatedAt: (T0 + 5 * H) / 1000 }, newer, mid]).startsWith("btc_sma_test,") && names([{ ...live, scanMtime: T0 + 5 * H }, newer, mid]).startsWith("btc_sma_test,") && names([{ ...live, codeMtime: T0 + 5 * H }, newer, mid]).startsWith("btc_sma_test,"));
+  ok("舊 stats 沒有 Generated At:退回檔案時間;沒有回測的看程式碼時間", names([{ name: "old", codeMtime: 1, statsMtime: T0 + 9 * H, scanMtime: 0, generatedAt: null }, newer]) === "old,tsmc_ma_cross" && names([{ name: "draft", codeMtime: T0 + 9 * H, statsMtime: 0, scanMtime: 0, generatedAt: null }, newer]) === "draft,tsmc_ma_cross");
+  ok("同一時間:照資料夾名,輸入順序怎麼換結果都一樣", names([{ ...mid, name: "b" }, { ...mid, name: "a" }]) === "a,b" && names([{ ...mid, name: "a" }, { ...mid, name: "b" }]) === "a,b");
+  ok("listStrategies 用它排", /\}\)\.sort\(stratOrder\);/.test(mainSrc) && !/sort\(\(a, b\) => b\.mtime - a\.mtime\)/.test(mainSrc)); }
+
 // ── 沒有回測時,分頁列正下方那一句(兩個視角同一段)──
 ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
   && /\$\("rp-nobt"\)\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
@@ -88,7 +120,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   let running = false, loads = 0; const t = (k) => k;
   const window = { blave: { listStrategies: async () => [{ name: "a", displayName: "A", mtime: 1 }, { name: "b", displayName: "B", mtime: 2 }],
     loadStrategy: async (n) => { loads++; return { name: n, stats: null, code: "x" }; }, deleteStrategy: async () => true } };
-  const armedDelete = () => mkEl("button"), stratTip = (d) => d, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, confirmBox = () => {}, stratBlockedNote = () => mkEl("p");
+  const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, confirmBox = () => {}, stratBlockedNote = () => mkEl("p");
   const document = doc;
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));

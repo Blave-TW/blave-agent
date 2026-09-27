@@ -4445,6 +4445,9 @@ msgstr "Pine Script"
 msgid "xp.off.crypto"
 msgstr "XQ has no crypto market"
 
+msgid "xp.off.portfolio"
+msgstr "Single-symbol strategies only"
+
 msgid "xp.why.tm"
 msgstr "Viewing {v}. Only the current version can be exported."
 

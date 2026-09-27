@@ -573,6 +573,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .strat-row[aria-current="true"], .strat-row[aria-current="page"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }   /* 側欄入口(自動下單 / 策略庫 / 報告)用 page:nav 的正確語意 */
 /* 名字是識別字(snake_case),過長截尾;數字靠右、等寬,上下列才對得齊 */
 .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 名字尾端的「（2）」不跟著截掉:前段截尾、後綴固定(撞名另存的兩支才分得出來) */
+.strat-name.has-tail { display: flex; }
+.strat-name .sn-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.strat-name .sn-tail { flex: none; white-space: pre; }
 
 /* ── 策略報告的骨架(分頁內容由 report-*.css 各自負責)──── */
 .rp { flex: 1; min-height: 0; display: flex; flex-direction: column; }

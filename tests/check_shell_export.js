@@ -13,10 +13,17 @@ const cut = (src, a, b, what) => { const i = src.indexOf(a), j = src.indexOf(b, 
 
 // ── ① 純邏輯 ──
 const pure = cut(xp, "const XP_ORDER", "/* ── 純邏輯到此 ── */", "export.js 純邏輯");
-const X = new Function(pure.replace(/^const XP = .*$/m, "") + "\nreturn { XP_ORDER, xpIsCrypto, xpAvail, xpMsg, xpChunkOk, xpSize, xpIvl, xpFiles };")();
+const X = new Function(pure.replace(/^const XP = .*$/m, "") + "\nreturn { XP_ORDER, xpIsCrypto, xpIsPortfolio, xpOff, xpAvail, xpMsg, xpChunkOk, xpSize, xpIvl, xpFiles };")();
 ok("SYMBOL 以 USDT 結尾 = 加密 → XQ 不能選,另外兩個照常", !X.xpAvail("xq", { symbol: "BTCUSDT" }) && X.xpAvail("mc", { symbol: "BTCUSDT" }) && X.xpAvail("pine", { symbol: "BTCUSDT" }));
 ok("BTC-USDC、fetch_kline 也算加密", X.xpIsCrypto({ symbol: "BTC-USDC" }) && X.xpIsCrypto({ symbol: "X", cryptoKline: true }));
 ok("台股 2330 / 台指 TXF / 讀不到 SYMBOL → XQ 照常給選", X.xpAvail("xq", { symbol: "2330" }) && X.xpAvail("xq", { symbol: "TXF" }) && X.xpAvail("xq", {}) && X.xpAvail("xq", null));
+// e2e 0.1.8 #26:組合策略(Type C)三個平台都可點——轉出只做單一標的
+const typeC = { stats: { benchmark_n: 1000, "Sharpe Ratio": 1.1 }, code: "# Strategy: x\nUNIVERSE = ['BTCUSDT']\n" };
+ok("組合策略(stats 帶 benchmark_n):三個平台都不能選,原因是 portfolio", X.XP_ORDER.every((k) => !X.xpAvail(k, typeC) && X.xpOff(k, typeC) === "portfolio"));
+ok("還沒回測的組合策略:認檔頭 # Type: C", X.xpIsPortfolio({ stats: null, code: "# Strategy: 輪動\n# Type:     C (multi-asset, weight-based)\nUNIVERSE = []\n" }) && X.xpOff("pine", { stats: null, code: "# Type: C\n" }) === "portfolio");
+ok("Type A / 判不出來:照常給選(加密的 XQ 仍是 crypto 那條)", !X.xpIsPortfolio({ stats: { "Sharpe Ratio": 1 }, code: "# Type:     A (single symbol)\nSYMBOL = \"2330\"\n" }) && !X.xpIsPortfolio({}) && !X.xpIsPortfolio(null)
+  && !X.xpIsPortfolio({ code: "x = 1  # Type: C\n" }) && X.xpOff("xq", { symbol: "BTCUSDT" }) === "crypto" && X.xpOff("pine", { symbol: "BTCUSDT" }) === null && X.xpOff("xq", { symbol: "2330" }) === null);
+ok("選單照原因換字(兩條原因各自的 key)", /off === "portfolio" \? t\("xp\.off\.portfolio"\) : t\("xp\.off\.crypto"\)/.test(xp));
 const tpl = { xq: "把策略 {id} 轉成 XQ XS 版。", mc: "mc {id}", pine: "pine {id}" };
 ok("固定句只代入資料夾名", X.xpMsg("xq", "btc_sma-1", tpl) === "把策略 btc_sma-1 轉成 XQ XS 版。");
 ok("資料夾名不合規(空白、引號、換行、>64)→ 不送", [" x", "a\"b", "a\nb", "x".repeat(65), ""].every((id) => X.xpMsg("pine", id, tpl) === null));

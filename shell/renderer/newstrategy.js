@@ -9,6 +9,19 @@
 const NS_FIELDS = ["name", "symbol", "timeframe", "indicators", "logic"];
 /* 五格 → 送到對話的那句(逐字照 web nsCompose):zh 全形「」：。、en 半形;空格跳過;全空 → "";邏輯尾端的 。！？ / .!? 先去掉再補。
    f = { name, symbol, timeframe, indicators, logic },s = { lead, symbol, timeframe, indicators, logic, dflt }(字串表的字,由呼叫端代) */
+/* 標的看起來是台股 / 台指期 → 不附「加密貨幣標的…預設永續」那句(e2e 0.1.8 #47:2330 也被附上)。保守:每一段都要認得出來——
+   4–6 碼數字代號(2330、00878、00679B、2330.TW)、TXF / MXF / TMF、或帶「台指 臺指 台股 臺股 大台 小台 微台 加權指數」的字;
+   另有英文代號(BTC、AAPL)或整格空的就照舊附。關鍵字寫成 \u 跳脫:這個檔的非註解行不放中文字面(tests/check_shell_strings.js) */
+const NS_TW_CODE = /^\d{4,6}[A-Za-z]?(\.TWO?)?$/i, NS_TW_FUT = /^(TXF|MXF|TMF)$/i;
+const NS_TW_WORD = /[\u53f0\u81fa]\u6307|[\u53f0\u81fa]\u80a1|[\u5927\u5c0f\u5fae]\u53f0|\u52a0\u6b0a\u6307\u6578/;
+function nsIsTw(sym) {
+  let hit = false;
+  for (const p of String(sym || "").split(/[\s,\uff0c\u3001;\uff1b/()\uff08\uff09]+/).filter(Boolean)) {
+    if (NS_TW_CODE.test(p) || NS_TW_FUT.test(p) || NS_TW_WORD.test(p)) hit = true;
+    else if (/[A-Za-z]/.test(p)) return false;
+  }
+  return hit;
+}
 function nsCompose(f, lang, s) {
   const v = (k) => String(f && f[k] != null ? f[k] : "").trim();
   const name = v("name"), sym = v("symbol"), tf = v("timeframe"), ind = v("indicators"), logic = v("logic");
@@ -20,14 +33,14 @@ function nsCompose(f, lang, s) {
     if (tf) msg += s.timeframe + "：" + tf + "。";
     if (ind) msg += s.indicators + "：" + ind + "。";
     if (logic) msg += s.logic + "：" + logic.replace(/[。！？]+$/, "") + "。";
-    msg += s.dflt;
+    if (!nsIsTw(sym)) msg += s.dflt;
   } else {
     msg = name ? s.lead + ' "' + name + '".' : s.lead + ".";
     if (sym) msg += " " + s.symbol + ": " + sym + ".";
     if (tf) msg += " " + s.timeframe + ": " + tf + ".";
     if (ind) msg += " " + s.indicators + ": " + ind + ".";
     if (logic) msg += " " + s.logic + ": " + logic.replace(/[.!?]+$/, "") + ".";
-    msg += " " + s.dflt;
+    if (!nsIsTw(sym)) msg += " " + s.dflt;
   }
   return msg;
 }
