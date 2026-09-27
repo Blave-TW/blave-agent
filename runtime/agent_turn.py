@@ -2770,8 +2770,9 @@ def _fault_receipt_suffix(steps):
 
 # 停止那一句裡「還在跑的步驟」怎麼講:工具分類(_tool_kind 的 kind)→ (繁中, 簡中, 英文)。
 # 工具名(mcp__blave_browser__browser_search、Bash)是內部名稱,不給用戶看;對不到的 kind 不列。
+# 用詞:zh / cn = 狀態列那組字拿掉「正在」;en 一律動名詞(設計師 0.1.8 第四批)。
 _STOP_STEP_TEXT = {
-    "search": ("搜尋", "搜索", "a web search"),
+    "search": ("搜尋", "搜索", "searching the web"),
     "web_read": ("讀網頁", "读网页", "reading a web page"),
     "web_read_many": ("讀網頁", "读网页", "reading a web page"),
     "web_act": ("操作網頁", "操作网页", "working on a web page"),
@@ -2782,9 +2783,9 @@ _STOP_STEP_TEXT = {
     "strategy_read": ("讀策略", "读策略", "reading a strategy"),
     "strategy_write": ("寫策略", "写策略", "writing a strategy"),
     "data": ("抓資料", "抓数据", "fetching data"),
-    "backtest": ("跑回測", "跑回测", "a backtest"),
-    "live_tick": ("跑策略", "跑策略", "a strategy run"),
-    "scan": ("掃參數", "扫参数", "a parameter scan"),
+    "backtest": ("跑回測", "跑回测", "running a backtest"),
+    "live_tick": ("跑策略", "跑策略", "running a strategy"),
+    "scan": ("掃參數", "扫参数", "scanning parameters"),
     "validate": ("驗證策略", "验证策略", "validating the strategy"),
     "check": ("檢查策略碼", "检查策略代码", "checking the strategy code"),
     "report": ("組報告", "组报告", "building the report"),
@@ -2795,7 +2796,7 @@ _STOP_STEP_TEXT = {
     "status": ("查執行狀態", "查运行状态", "checking what is running"),
     "install": ("安裝套件", "安装套件", "installing packages"),
     "cloud": ("連雲端主機", "连云端主机", "working on the cloud machine"),
-    "delegate": ("委派研究", "委派研究", "delegated research"),
+    "delegate": ("委派研究", "委派研究", "delegating research"),
 }
 
 
@@ -2822,7 +2823,7 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
             parts.append((f"{gone} 停止后两分钟仍未结束，已不再等它；它的输出已中断，可能没有跑完——请确认仓位与账本。" if simp else
                           f"{gone} 停止後兩分鐘仍未結束，已不再等它；它的輸出已中斷，可能沒有跑完——請確認部位與帳本。"))
         if steps:
-            parts.append((f"停止时还在跑的步骤：{cut}。" if simp else f"停止時還在跑的步驟：{cut}。"))
+            parts.append((f"中断的步骤：{cut}。" if simp else f"中斷的步驟：{cut}。"))
         return "".join(parts)
     parts = ["Stopped."]
     if left_running:
@@ -2832,7 +2833,7 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
         parts.append(f" {gone} was still running two minutes after the stop, so it is no longer waited on; "
                      "its output was cut and it may not have finished — check positions and the ledger.")
     if steps:
-        parts.append(f" Still running when stopped: {cut}.")
+        parts.append(f" Interrupted: {cut}.")
     return "".join(parts)
 
 
