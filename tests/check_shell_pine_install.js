@@ -1,6 +1,7 @@
 // 送進 TradingView(spec .claude/output/designer/spec-desktop-pine-install-0.1.8.md;外殼自己貼,不經 agent)。
 //   ① shell/browser/pine.js 純邏輯:網址組合、商品對應(只收確定的)、無障礙樹定位、讀回比對、錯誤行 / 數字清洗、狀態判定
 //   ② 流程(假頁面):三步 → 交接;**永遠不按「加到圖表」**;找不到入口 / 讀回不符 → nf;頁面不在畫面上、用戶動手 → 不硬貼
+//      登入態(編輯器本來開著、版面晚一步自己開回來、名字被截短、有未存變更跳確認框)、每步上限、診斷、中途被導走
 //   ③ renderer/pine-install.js 純邏輯(從原文切出來跑):狀態機、填色歸屬、送給 agent 的三種固定句
 //   ④ 接線:槽、填色切換、IPC 只傳 ref、事件、字串、樣式
 //   ⑤ 真站(選跑,發版閘門不跑:連的是別人的網站):BLAVE_LIVE_TV=1 BLAVE_TEST_WINDOW=1 → 離屏視窗(不顯示)匿名跑到交接。
@@ -33,16 +34,23 @@ async function main() {
 
   const SNAP = (o) => [
     '- button "BTCUSDT.P" [@e2]', '- button "Pine" [@e58]',
-    ...(o.editor ? ['- button "Close" [@e66]', `- button ${JSON.stringify(o.title)} [@e67] ${o.menu ? "expanded" : "collapsed"}`, `- button "${o.add || "Add to chart"}" [@e68]`, '- button "Save script" [@e82]',
-      '- button "More" [@e70] collapsed', `- textbox "Editor content;Press Alt+F1 for Accessibility Options." [@e${o.ed}] value="x"`] : []),
+    ...(o.editor ? ['- button "Close" [@e66]', `- button ${JSON.stringify(o.title)} [@e67] ${o.menu ? "expanded" : "collapsed"}`, ...(o.extra ? ['- button "Version 3" [@e69]'] : []), `- button "${o.add || "Add to chart"}" [@e68]`, '- button "Save script" [@e82]',
+      '- button "More" [@e70] collapsed', ...(o.noEd ? [] : [`- textbox "Editor content;Press Alt+F1 for Accessibility Options." [@e${o.ed}] value="secret line of the user's script"`])] : []),
     ...(o.menu ? ['- menuitem "Save script" [@e84]', `- menuitem "${o.create || "Create new"}" [@e89] ${o.sub ? "expanded" : "collapsed"}`] : []),
     ...(o.sub ? ['- menuitem "Indicator" [@e90]', `- menuitem "${o.strat || "Strategy"}" [@e91]`] : []),
+    ...(o.dialog ? ['- button "Save" [@e121]', '- button "Don\'t save" [@e122]', '- button "Cancel" [@e123]'] : []),
   ].join("\n");
   const L = P.locate(P.parseSnap(SNAP({ editor: true, title: 'My "old" script', ed: 79, menu: true, sub: true })));
   ok("定位:role + name;腳本名稱鈕認位置(加到圖表前一顆、帶展開狀態),名字有引號也讀得對",
     L.pine.ref === "@e58" && L.add.ref === "@e68" && L.title.ref === "@e67" && L.title.name === 'My "old" script' && L.editor.ref === "@e79" && L.createNew.ref === "@e89" && L.strategy.ref === "@e91", L);
   ok("定位:繁中 / 簡中的名字也認", ["新增到圖表", "添加到图表"].every((n) => P.NAMES.add.test(n)) && ["建立新的", "创建新的"].every((n) => P.NAMES.createNew.test(n)) && P.NAMES.strategy.test("策略") && ["未命名腳本", "无标题脚本"].every((n) => P.NAMES.untitled.test(n)));
   ok("定位:編輯器沒開時找不到「加到圖表」與腳本名稱鈕", (() => { const l = P.locate(P.parseSnap(SNAP({}))); return l.pine && !l.add && !l.title && !l.editor; })());
+  ok("定位:名稱鈕與「加到圖表」之間多一顆鈕也認得(往前三顆以內、帶展開狀態);名字被截短的未命名也算未命名",
+    (P.locate(P.parseSnap(SNAP({ editor: true, title: "Untitled …", ed: 79, extra: true }))).title || {}).ref === "@e67" && ["Untitled …", "Untitled script", "未命名…"].every((n) => P.NAMES.untitled.test(n)) && !P.NAMES.untitled.test("My Untitled"));
+  ok("診斷的候選元素:只有 role / 名字(≤80 字)/ 狀態,≤30 個,不帶欄位的值", (() => {
+    const c = P.candidates(P.parseSnap(SNAP({ editor: true, title: "T".repeat(99), ed: 79, menu: true, sub: true, dialog: true }) + "\n" + Array.from({ length: 60 }, (_, i) => `- menuitem "m${i}" [@e${300 + i}]`).join("\n")));
+    return c.length === 30 && c.every((n) => n.name.length <= 80 && Object.keys(n).join() === "role,name,state") && !/secret/.test(JSON.stringify(c)) && c.some((n) => n.role === "textbox") && c.some((n) => n.state === "expanded");
+  })());
   ok("定位:「加到圖表」前一顆不是帶展開狀態的鈕 → 不猜", P.locate(P.parseSnap('- button "Close" [@e1]\n- button "Add to chart" [@e2]')).title === null);
 
   const lastPage = "if fast > close\n    strategy.entry(\"L\", strategy.long)\nplot(fast)\n";
@@ -63,13 +71,18 @@ async function main() {
   // ── ② 流程(假頁面)──
   const REF = { pine: "@e58", title: "@e67", add: "@e68", create: "@e89", strat: "@e91" };
   function rig(o) {
-    o = Object.assign({ visible: true, hoverOnly: false, newScript: true, paste: "ok", enabled: true, editorOpen: false, names: {} }, o || {});
-    const st = { editor: o.editorOpen, menu: false, sub: false, ed: 79, title: "Old strategy", doc: "// old script\nplot(close)\n", cursor: "end" };
-    const log = { clicks: [], marks: [], emits: [], arms: 0, disarms: 0, fills: 0, keys: [] };
+    // selfOpen:n = 第 n 次看頁面時面板自己開回來(登入態的版面還原);edLate:n = 面板在了,但編輯器本體第 n 次看才出現;
+    // dirty = 目前的腳本有未存的變更(按「策略」跳確認框、腳本不換);leaveAfter = 按了那一顆之後頁面被導到別的站
+    o = Object.assign({ visible: true, hoverOnly: false, newScript: true, paste: "ok", enabled: true, editorOpen: false, names: {}, selfOpen: 0, edLate: 0, dirty: false, menuOpen: false }, o || {});
+    const st = { editor: o.editorOpen, menu: o.menuOpen, sub: false, ed: 79, title: o.title || "Old strategy", doc: "// old script\nplot(close)\n", cursor: "end", dialog: false, looks: 0, url: o.url || "https://www.tradingview.com/chart/w1EWngqG/?symbol=BINANCE%3ABTCUSDT.P&interval=60" };
+    const log = { clicks: [], marks: [], emits: [], arms: 0, disarms: 0, fills: 0, keys: [], lines: [] };
     const t = { id: "p1", status: "loading", visible: o.visible, userControl: false };
     const nodeOf = (ref) => Number(String(ref).slice(2));
     const page = {
-      snapshot: async () => ({ text: SNAP(Object.assign({ editor: st.editor, title: st.title, ed: st.ed, menu: st.menu, sub: st.sub }, o.names)) }),
+      snapshot: async () => {
+        st.looks++; if (o.selfOpen && st.looks >= o.selfOpen) st.editor = true;
+        return { text: SNAP(Object.assign({ editor: st.editor, title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra }, o.names)) };
+      },
       node: (ref) => nodeOf(ref),
       center: async (b, on) => ({ x: 10, y: 10, direct: !on, box: { x: 1, y: 1, w: 20, h: 10 } }),
       describe: async () => ({ tag: "textarea" }),
@@ -78,8 +91,9 @@ async function main() {
         if (ref === REF.pine) st.editor = !st.editor;
         else if (ref === REF.title) st.menu = !st.menu;
         else if (ref === REF.create) { if (!o.hoverOnly) st.sub = true; }
-        else if (ref === REF.strat) { st.menu = false; st.sub = false; if (o.newScript) { st.ed = 94; st.title = "Untitled script"; st.doc = "// template\nstrategy(\"My strategy\")\n"; } }
+        else if (ref === REF.strat) { st.menu = false; st.sub = false; if (o.dirty) st.dialog = true; else if (o.newScript) { st.ed = 94; st.title = "Untitled script"; st.doc = "// template\nstrategy(\"My strategy\")\n"; } }
         if (o.takeoverAfter === ref) t.userControl = true;
+        if (o.leaveAfter === ref) st.url = "https://accounts.example.com/login?next=tradingview.com";
         return { x: 10, y: 10 };
       },
       fill: async (b, text, d, opt) => { log.fills++; log.fillOpt = opt; if (o.paste === "error") return { error: "obscured", message: "x" }; st.doc = o.paste === "append" ? text + st.doc : text; st.cursor = "end"; return {}; },
@@ -88,10 +102,10 @@ async function main() {
         if (/dispatchEvent/.test(fn.toString())) { st.sub = true; return true; }
         const ls = st.doc.split("\n"); return st.cursor === "top" ? ls.slice(0, 10).join("\n") : ls.slice(-4).join("\n");
       },
-      run: async (fn, args) => { if (fn === P.readTv) return o.raw || { stats: [], logs: [], legend: [] }; log.marks.push(args && args[0]); return true; },
+      run: async (fn, args) => { if (fn === P.dialogUp) return st.dialog ? "warn" : o.promo ? "other" : null; if (fn === P.readTv) return o.raw || { stats: [], logs: [], legend: [] }; log.marks.push(args && args[0]); return true; },
       disarm: async () => {},
     };
-    const v = { page, wc: { getURL: () => o.url || "https://www.tradingview.com/chart/?symbol=BINANCE%3ABTCUSDT.P&interval=60", getTitle: () => o.pageTitle || "BTCUSDT.P 84,514.7 ▲ +0.13%" } };
+    const v = { page, wc: { getURL: () => st.url, getTitle: () => o.pageTitle || "BTCUSDT.P 84,514.7 ▲ +0.13%" } };
     const d = {
       open: (url) => { log.url = url; if (o.open === "blocked") return { tab: t, blocked: { reason: "x" } }; if (o.open === "error") return { error: "rate_limited" }; return { tab: t }; },
       tab: (id) => (id === t.id ? t : null), view: (id) => (id === t.id ? v : null),
@@ -99,6 +113,7 @@ async function main() {
       visible: async () => o.visible, input: (_v, fn) => fn(),
       arm: async () => { log.arms++; return true; }, disarm: async () => { log.disarms++; },
       emit: (type, p) => log.emits.push([type, p]), sensitive: () => false, enabled: () => o.enabled, lang: () => "zh", reduced: () => false, sleep: async () => {},
+      log: (e) => log.lines.push(e),
     };
     return { pine: P.createPine(d), log, t, st };
   }
@@ -118,6 +133,26 @@ async function main() {
     ok("流程:讀回前把游標移到文件開頭(mac Cmd+↑、其餘 Ctrl+Home)", r.log.keys.length === 1 && r.log.keys[0][1] === true && (process.platform === "darwin" ? r.log.keys[0][0] === "ArrowUp" && r.log.keys[0][2] === 4 : r.log.keys[0][0] === "Home" && r.log.keys[0][2] === 2), r.log.keys);
   }
   { const r = rig({ editorOpen: true }), res = await r.pine.install(JOB); ok("編輯器本來就開著:不按 Pine(那顆是開合)", res.state === "handover" && !r.log.clicks.includes(REF.pine), r.log.clicks); }
+  { const r = rig({ editorOpen: true, edLate: 4 }), res = await r.pine.install(JOB); ok("面板開著、編輯器本體還在載:只等、不按 Pine(按了會把面板關掉)", res.state === "handover" && !r.log.clicks.includes(REF.pine) && r.st.editor === true, [res, r.log.clicks]); }
+  { const r = rig({ selfOpen: 3 }), res = await r.pine.install(JOB); ok("登入態的版面晚一步自己把編輯器開回來:先等一下,開了就不按 Pine", res.state === "handover" && !r.log.clicks.includes(REF.pine) && r.st.editor === true, [res, r.log.clicks]); }
+  { const r = rig({ editorOpen: true, title: "Untitled …", extra: true }), res = await r.pine.install(JOB); ok("名稱被截短(Untitled …)、旁邊多一顆鈕:照樣開新腳本貼上", res.state === "handover" && r.log.clicks.join() === [REF.title, REF.create, REF.strat].join(), [res, r.log.clicks]); }
+  { const r = rig({ editorOpen: true, menuOpen: true }), res = await r.pine.install(JOB); ok("腳本選單本來就開著:不按名稱鈕(那顆是開合)", res.state === "handover" && !r.log.clicks.includes(REF.title), [res, r.log.clicks]); }
+  {
+    const r = rig({ editorOpen: true, dirty: true }), doc = r.st.doc, res = await r.pine.install(JOB);
+    ok("目前的腳本有未存的變更(跳確認框)→ needs_user:不按框上任何一顆、不貼、原本的內容沒動", res.state === "needs_user" && res.why === "unsaved" && r.log.fills === 0 && r.st.doc === doc && r.log.clicks.join() === [REF.title, REF.create, REF.strat].join() && r.st.dialog === true, [res, r.log.clicks]);
+    ok("診斷:結果帶卡在哪一步與當時看到的候選元素(含框上的鈕),寫一行 log", res.diag.step === 2 && res.diag.dialog === "warn" && res.diag.seen.some((n) => n.name === "Don't save") && r.log.lines.length === 1 && r.log.lines[0].why === "unsaved" && r.log.lines[0].seen.length > 0, [res.diag, r.log.lines]);
+    const line = JSON.stringify(r.log.lines[0]);
+    ok("log:不含版面代號、網址路徑、編輯器文字、策略碼;欄位固定", !/w1EWngqG|chart\/|secret|old script|strategy\.entry/.test(line) && r.log.lines[0].host === "www.tradingview.com" && r.log.lines[0].layout === true && Object.keys(r.log.lines[0]).join() === "ts,state,why,step,ms,host,layout,dialog,seen", line);
+  }
+  { const r = rig(), res = await r.pine.install(JOB); ok("成功也寫一行 log(不帶候選元素)", res.state === "handover" && r.log.lines.length === 1 && r.log.lines[0].state === "handover" && r.log.lines[0].seen.length === 0, r.log.lines); }
+  { const r = rig({ leaveAfter: REF.title }), res = await r.pine.install(JOB); ok("流程中途頁面被導到別的站 → 下一次動手前就停(不點、不貼)", res.state === "fail" && res.why === "off_site" && r.log.clicks.join() === [REF.pine, REF.title].join() && r.log.fills === 0, [res, r.log.clicks]); }
+  { const r = rig({ leaveAfter: REF.strat }), res = await r.pine.install(JOB); ok("新腳本開好之後才被導走 → 不貼", res.state === "fail" && res.why === "off_site" && r.log.fills === 0 && r.log.keys.length === 0, res); }
+  {
+    // 每一步的上限:什麼都找不到時,「正在開 Pine 編輯器」那一段不超過 15 秒(測試裡的時鐘每問一次走 500ms)
+    const span = async (o) => { const r = rig(o), t0 = clock, res = await r.pine.install(JOB); return [res, clock - t0]; };
+    const a = await span({ names: { add: "Nope" } }), b = await span({ editorOpen: true, names: { create: "Nope" } }), c = await span({ editorOpen: true, newScript: false });
+    ok("上限:編輯器開不出來 / 找不到新建入口 / 新腳本沒出現,各自 ≤15 秒就回報", [a, b, c].every((x) => x[0].state === "nf" && x[1] <= 15000 + 3000) && a[0].why === "editor" && b[0].why === "create_new" && c[0].why === "new_script", [a, b, c].map((x) => [x[0].why, x[1]]));
+  }
   { const r = rig({ hoverOnly: true, visible: false }), res = await r.pine.install(JOB); ok("頁面不在畫面上:子選單靠 hover 事件打開,但不硬貼(全選與貼上送不進去)→ 沒有送出去", res.state === "fail" && res.why === "hidden" && r.log.fills === 0 && r.log.clicks.includes(REF.strat), res); }
   { const r = rig({ names: { add: "新增到圖表", create: "建立新的", strat: "策略" }, newScript: false }); r.st.title = "舊策略"; const res = await r.pine.install(JOB); ok("開不出新腳本 → 停(不貼進用戶原本那一支)", res.state === "nf" && res.why === "new_script" && r.log.fills === 0, res); }
   { const r = rig({ names: { create: "Something else" } }), res = await r.pine.install(JOB); ok("找不到「建立新的」→ 找不到 Pine 編輯器", res.state === "nf" && res.why === "create_new" && r.log.fills === 0, res); }
@@ -150,6 +185,19 @@ async function main() {
   Date.now = realNow;
 
   const pineSrc = read("browser", "pine.js");
+  ok("每一步的上限寫在一處;整段「正在開 Pine 編輯器」有總上限", /const LOAD_MS = 20000, SYMBOL_MS = 6000, FIND_MS = 6000, GRACE_MS = 1500, OPEN_MS = 8000, MENU_MS = 3000, NEW_MS = 6000, STEP2_MS = 15000;/.test(pineSrc) && /step\(2\); x\.end = Date\.now\(\) \+ STEP2_MS;/.test(pineSrc));
+  ok("每次 click() 開頭與貼上前都再認一次網址", /async function click\(t, v, node, hover\) \{\s*guardSite\(t, v\);/.test(pineSrc) && /guardSite\(t, v\);\s*const f = await d\.input\(v, \(\) => v\.page\.fill\(/.test(pineSrc) && /if \(!onTv\(v\.wc\.getURL\(\)\)\) throw OFF;/.test(pineSrc));
+  ok("確認框上的鈕不在定位表裡(外殼找不到也按不到)", !/Don't save|不儲存|Cancel|取消/.test(pineSrc));
+  const CDP = require(path.join(SHELL, "browser", "cdp.js")), cdpSrc = read("browser", "cdp.js"), idxSrc = read("browser", "index.js");
+  ok("帶修飾鍵的按鍵寫死白名單:mac 只收 Cmd+↑、其餘只收 Ctrl+Home", CDP.modsOk("ArrowUp", 4, "darwin") && CDP.modsOk("Home", 2, "win32") && CDP.modsOk("Home", 2, "linux")
+    && [["ArrowUp", 2, "darwin"], ["Home", 2, "darwin"], ["Home", 4, "darwin"], ["ArrowUp", 4, "win32"], ["Enter", 4, "darwin"], ["Enter", 2, "win32"], ["Home", 6, "win32"], ["ArrowUp", 12, "darwin"], ["Home", "2", "win32"], ["Tab", 1, "linux"]].every((a) => !CDP.modsOk(...a)));
+  {
+    const sent = [], wc = { debugger: { sendCommand: async (m, p) => { sent.push([m, p]); return {}; }, on() {}, isAttached: () => true } }, pg = CDP.createPage(wc);
+    const bad = await pg.press("Enter", true, 4), off = await pg.press(process.platform === "darwin" ? "ArrowUp" : "Home", false, process.platform === "darwin" ? 4 : 2), n0 = sent.length;
+    const good = await pg.press(process.platform === "darwin" ? "ArrowUp" : "Home", true, process.platform === "darwin" ? 4 : 2);
+    ok("press:白名單外的組合、不在畫面上 → invalid_args,一個按鍵事件都不送", bad.error === "invalid_args" && off.error === "invalid_args" && n0 === 0 && !good.error && sent.length === 2, [bad, off, sent]);
+  }
+  ok("agent 工具那條路不帶修飾鍵", (idxSrc.match(/page\.press\(/g) || []).length === 1 && /v\.page\.press\(key, onScreenK\)\)/.test(idxSrc) && /!modsOk\(key, mods, process\.platform\)/.test(cdpSrc));
   ok("pine.js 沒有任何一處去點 / 找「存檔」「登入」「警報」:定位表只有那六個名字", Object.keys(P.NAMES).join() === "pine,add,createNew,strategy,untitled,editor" && !/alert|webhook|publish/i.test(pineSrc.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
   ok("「加到圖表」只拿來定位與掛「由你按」:click() 的呼叫點沒有 add", (pineSrc.match(/await click\(t, v, [^)]*\)/g) || []).every((c) => !/\.add\b/.test(c)) && (pineSrc.match(/await click\(/g) || []).length === 4);
 
@@ -184,6 +232,10 @@ async function main() {
     return c.msg === "tv.err.closed" && c.cap === "tv.planHint" && c.primary === "tv.read" && ["fail", "gone", "off", "busy", undefined].every((st) => { const m = M(S([{ type: "result", state: st }], ho)); return m.primary === "tv.send" && m.msg === "tv.err.unknown" && !m.pDis; });
   })());
   ok("狀態機:回合進行中按回傳 → 灰字(不是紅字),下一個事件就收", (() => { const s = S([{ type: "busy" }], ho); return M(s).soft === "tv.err.busy" && M(s).msg === null && M(S([{ type: "takeover" }], s)).soft === null; })());
+  ok("狀態機:有未存的變更 → 紅字請用戶自己處理、主鈕仍是「送進」(再試)、不給「請 agent 貼」(agent 去貼會撞上同一個框)", (() => {
+    const u = S([{ type: "result", state: "needs_user", why: "unsaved", id: "p1" }], sending), m = M(u);
+    return u.tv === "unsaved" && m.primary === "tv.send" && !m.pDis && m.msg === "tv.err.unsaved" && m.quiet.length === 0 && m.nav && R.tvStatModel(u).join("|") === "warn|tv.st.unsaved||";
+  })());
   ok("瀏覽器層狀態句:三步、交接、你在操作 + 檢查結果、完成、編譯沒過、找不到", (() => {
     const K = (s, u) => { const m = R.tvStatModel(s, u); return m ? m.join("|") : null; };
     return K({ tv: "sending", step: 1, sym: "BTCUSDT.P" }) === "spin|tv.st.chart|1|" && K({ tv: "sending", step: 1 }) === "spin|tv.st.chartN|1|" && K({ tv: "sending", step: 2 }) === "spin|tv.st.editor|2|" && K({ tv: "sending", step: 3 }) === "spin|tv.st.paste|3|"
@@ -215,6 +267,11 @@ async function main() {
   ok("填色:槽拿填色時原本那顆退描邊(xpFill);過期那一面不動;重開畫回來的卡帶 old", /function xpFill\(ctx, who\) \{ if \(ctx\.base && !ctx\.stale\) ctx\.base\.className = who === "ext" \? "btn-out" : "btn-fill"; \}/.test(xp)
     && /function xpRestore\(rec\) \{ xpPut\(xpHost\(null\), xpCard\(rec, true\)\); \}/.test(xp) && /old: !!old/.test(xp) && /base: dl/.test(xp) && /base: cp/.test(xp) && /xpFill\(c, m\.fill\)/.test(src));
   ok("不畫的時候(關了內建瀏覽器、雲端視角、時光機):不放鈕、填色還給原本那顆——不是灰掉", /const tvCan = \(\) => TV\.on === true && xpLocal\(\) && !XP\.tm;/.test(src) && /if \(!tvCan\(\)\) \{\s*if \(e\.btn\.parentNode === slot\) e\.btn\.remove\(\);\s*xpFill\(c, "base"\)/.test(src));
+  ok("每一顆鈕都只認用戶真的按(isTrusted)——含會開 agent 回合的「回傳」「請 agent 修」「請 agent 貼」", (() => {
+    const ls = src.match(/addEventListener\("click", [^\n]*/g) || [];
+    return ls.length === 5 && ls.every((l) => /^addEventListener\("click", \(ev\) => \{? ?if \(!?ev\.isTrusted\)/.test(l));
+  })(), src.match(/addEventListener\("click", [^\n]*/g));
+  ok("未存變更的卡:只有「再試一次」", /if \(s\.tv === "unsaved"\) return ask\(t\("tv\.unsaved\.h"\), t\("tv\.unsaved\.p"\), e \? \[\["tv\.retry", "btn-out", \(\) => tvSend\(e\.ctx\)\]\] : null\);/.test(src));
   ok("只有用戶真的按才動(isTrusted);中欄只在按了送進那一次自己打開", /if \(ev\.isTrusted\) tvPrimary\(e, btn\)/.test(src) && /Number\(ev\.step\) === 1 && TV\.armed && ev\.id\) \{ TV\.armed = false; brExpand/.test(src));
   ok("過期檔 / 舊卡按送進:先開確認框", /if \(\(c\.stale \|\| c\.old\) && c\.at\) \{[^}]*confirmBox\(\{ title: t\("tv\.cf\.stale\.h"\)/.test(src));
   ok("回合進行中:回傳 / 請 agent 修 / 請 agent 貼都不搶(送進不開回合,不受限)", (src.match(/if \(running === true\) \{/g) || []).length === 3 && !/async function tvSend\(c\) \{[^}]*running/.test(src));
@@ -223,6 +280,8 @@ async function main() {
     && /handle\("pine-install", \(_e, ref\) => \{ const job = pineJob\(/.test(mainSrc) && !/pineInstall\([^)]*(content|url|path)/.test(src));
   ok("主行程自己取檔:卡 → exportById 的快照、程式碼分頁 → workspace 那一份(檔名取 exportRef);只收 pine", /const r = exportById\(ref\.session, ref\.id\); if \(!r \|\| r\.target !== "pine"\) return null;/.test(mainSrc) && /const rec = exportRef\(name, "pine"\);/.test(mainSrc) && /if \(!stratNames\(\)\.includes\(name\)\) return null;/.test(mainSrc));
   ok("分頁是 user 分頁、沿用同一個隔離 session 與守門", /open: \(url\) => openUrl\(url, "user"\)/.test(idx) && /arm: markAgent/.test(idx) && /agentUntil\.delete\(v\.wc\.id\); backstop\.delete\(v\.wc\.id\); return v\.page\.disarm\(\);/.test(idx));
+  ok("診斷 log:~/Blave/state/pine-install.log,一行一筆、0600、超過 256KB 換檔;pine.js 自己不寫檔", /pineLog: path\.join\(BASE, "state", "pine-install\.log"\)/.test(mainSrc) && /log: pineLog,/.test(idx)
+    && /if \(fs\.statSync\(o\.pineLog\)\.size > 256 \* 1024\) fs\.renameSync\(o\.pineLog, o\.pineLog \+ "\.1"\);/.test(idx) && /fs\.appendFileSync\(o\.pineLog, JSON\.stringify\(entry\) \+ "\\n", \{ mode: 0o600 \}\);/.test(idx));
   ok("browser.js:狀態句、訊息槽、簽章、事件、換對話都接到 pine-install.js", /tvStat\(host, x\)\) return;/.test(br) && /const tvn = typeof tvSlot === "function" \? tvSlot\(x\) : null;/.test(br) && /tvSig\(exp\.id\)/.test(br)
     && /case "pine_open": BR\.pineNext = true; return;/.test(br) && /case "pine_step": case "pine_result": if \(typeof tvOnEvent === "function"\) tvOnEvent\(ev\); return;/.test(br) && /function brReset\(\) \{ if \(typeof tvReset === "function"\) tvReset\(\);/.test(br));
   ok("槽認「那一列還在不在」:程式碼分頁重畫後舊的那顆不會再被塞回去", /TV\.slots = TV\.slots\.filter\(\(e\) => e\.ctx\.row\.isConnected\);/.test(src) && /const tvSlotEl = \(c\) => \(c\.where === "code" \? c\.row : c\.wrap\)\.querySelector\("\.xp-ext"\);/.test(src));
@@ -258,14 +317,15 @@ function live() {
       const win = new BrowserWindow({ width: 1400, height: 900, show: false, webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, partition: "pine-live" } });
       const wc = win.webContents; wc.setAudioMuted(true);
       const P = require(path.join(SHELL, "browser", "pine.js")), page = require(path.join(SHELL, "browser", "cdp.js")).createPage(wc);
-      const t = { id: "live", status: "loading", visible: true, userControl: false }, v = { page, wc }, steps = [];
+      const t = { id: "live", status: "loading", visible: true, userControl: false }, v = { page, wc }, steps = [], lines = [];
+      let reload = true;
       wc.on("did-stop-loading", () => { t.status = "ready"; });
       const pine = P.createPine({
-        open: (url) => { wc.loadURL(url).catch(() => {}); page.attach().catch(() => {}); return { tab: t }; }, tab: () => t, view: () => v,
+        open: (url) => { if (reload) { wc.loadURL(url).catch(() => {}); page.attach().catch(() => {}); } return { tab: t }; }, tab: () => t, view: () => v,
         waitLoaded: async (tt, ms) => { const end = Date.now() + ms; while (Date.now() < end && tt.status !== "ready") await sleep(200); },
         visible: async () => { try { return (await page.run(function () { return document.visibilityState; })) === "visible"; } catch (_) { return false; } },
         input: (_v, fn) => fn(), arm: () => page.guard(3000, (req) => req.method === "GET" || req.method === "HEAD").then(() => true, () => false), disarm: () => page.disarm(),
-        emit: (type, p) => { if (type === "pine_step") steps.push(p.step); }, sensitive: require(path.join(SHELL, "browser", "gate.js")).sensitiveField, enabled: () => true, lang: () => "en", reduced: () => true, sleep,
+        emit: (type, p) => { if (type === "pine_step") steps.push(p.step); }, sensitive: require(path.join(SHELL, "browser", "gate.js")).sensitiveField, enabled: () => true, lang: () => "en", reduced: () => true, sleep, log: (e) => lines.push(e),
       });
       const r = await pine.install({ content: PINE, strategy: "btc_sma_cross", filename: "btc_sma_cross_pine.pine", symbol: "BTCUSDT", interval: "1h", cryptoKline: true });
       ok("真站:匿名跑到交接(開圖表 → Pine 編輯器 → 新腳本 → 貼上 → 讀回相符)", r.state === "handover" && r.set === true && steps.join() === "1,2,3", r);
@@ -273,6 +333,12 @@ function live() {
       ok("真站:沒有跳出登入框(沒按「加到圖表」)", (await page.run(function () { return document.querySelectorAll('[data-dialog-name="sign-in"]').length; })) === 0);
       const c = await pine.check("live");
       ok("真站:還沒加到圖表 → 檢查結果是 notyet", c.state === "notyet", c);
+      // 同一頁再送一次 = 編輯器開著、剛貼的那支還沒存(登入態再送一次就是這個樣子;匿名時換頁會重置,所以不重載)
+      reload = false;
+      const edit = async () => { const l = P.locate(P.parseSnap((await page.snapshot({ interactive_only: true }, () => false)).text)); return l.editor ? page.callOn(page.node(l.editor.ref), function () { return String(this.value); }) : null; };
+      const was = await edit(), r2 = await pine.install({ content: PINE.replace("45", "50"), strategy: "btc_sma_cross", filename: "btc_sma_cross_pine.pine", symbol: "BTCUSDT", interval: "1h", cryptoKline: true });
+      ok("真站:編輯器開著 + 有未存的變更 → needs_user(確認框留給用戶,沒貼、內容沒變)", r2.state === "needs_user" && r2.why === "unsaved" && (await edit()) === was && (await page.run(P.dialogUp)) === "warn", r2);
+      ok("真站:診斷那一行有候選元素、沒有網址路徑與編輯器文字", lines.length === 2 && lines[1].seen.length > 0 && !/\/chart|ta\.sma/.test(JSON.stringify(lines[1])), lines[1]);
     } catch (e) { ok("真站:跑完沒有例外", false, String(e && e.stack || e)); }
     app.exit(red ? 1 : 0);
   });

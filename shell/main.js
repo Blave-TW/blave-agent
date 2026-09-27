@@ -1951,7 +1951,7 @@ let _browser = null;
 const BROWSER_PREFS = () => path.join(app.getPath("userData"), "browser.json");
 function browser() {
   if (!_browser) _browser = require("./browser").createBrowser({
-    electron: require("electron"), stateDir: path.join(BASE, "state", "browser-snapshots"), reportsDir: RPT_DIR(), version: app.getVersion(),
+    electron: require("electron"), stateDir: path.join(BASE, "state", "browser-snapshots"), pineLog: path.join(BASE, "state", "pine-install.log"), reportsDir: RPT_DIR(), version: app.getVersion(),
     getWin: () => imgWin || BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) || null,
     uiLang: () => (/^zh/i.test(app.getLocale()) ? "zh" : "en"),
     track: (name) => tm().track("feature_used", { name }),

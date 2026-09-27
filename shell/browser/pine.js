@@ -2,6 +2,7 @@
 // 開圖表 → 開 Pine 編輯器 → 開新腳本 → 貼上 → 讀回比對,停在「加到圖表」由用戶按。不經 agent、不花額度。
 // 這裡永遠不按「加到圖表」、不按存檔、不碰登入;用戶操作時不讀頁面——只在他按「檢查結果」/「回傳回測結果」時讀一次。
 // 元素定位走無障礙樹的 role + name(真站 2026-09-28 匿名實測:www / tw / cn 三種語言的名字)。
+// 每次結果(成功或失敗)由 index.js 寫一行到本機 log(d.log):卡在哪一步、當時看到的候選元素 role / name——不含頁面內容、編輯器文字與網址路徑。
 "use strict";
 const IP = require("./inpage");
 
@@ -36,7 +37,7 @@ const NAMES = {
   add: /^(Add to chart|新增到圖表|添加到图表)$/,
   createNew: /^(Create new|建立新的|创建新的)$/,
   strategy: /^(Strategy|策略)$/,
-  untitled: /^(Untitled script|未命名腳本|无标题脚本)$/,
+  untitled: /^(Untitled|未命名|无标题)/,   // 只認開頭:窄面板會把名字截短
   editor: /^Editor content/,
 };
 const SNAP_LINE = /^\s*- (\S+)(?: ("(?:[^"\\]|\\.)*"))? \[(@e\d+)\](.*)$/;
@@ -49,13 +50,15 @@ function parseSnap(text) {
   }
   return out;
 }
-/* 腳本名稱鈕沒有固定名字(就是用戶那支腳本的名字):認位置——「加到圖表」前一顆、帶展開狀態的 button */
+const STATE_RE = /\b(collapsed|expanded)\b/;
+/* 腳本名稱鈕沒有固定名字(就是用戶那支腳本的名字,窄面板還會截短):認 role + 展開狀態 + 位置——「加到圖表」往前三顆以內、帶展開狀態的 button */
 function locate(nodes) {
   const by = (role, re) => nodes.find((n) => n.role === role && re.test(n.name)) || null;
-  const add = by("button", NAMES.add), i = add ? nodes.indexOf(add) : -1, prev = i > 0 ? nodes[i - 1] : null;
+  const add = by("button", NAMES.add), i = add ? nodes.indexOf(add) : -1;
+  let title = null;
+  for (let k = i - 1; k >= 0 && k >= i - 3 && !title; k--) if (nodes[k].role === "button" && STATE_RE.test(nodes[k].rest)) title = nodes[k];
   return {
-    pine: by("button", NAMES.pine), add, editor: by("textbox", NAMES.editor),
-    title: prev && prev.role === "button" && /\b(collapsed|expanded)\b/.test(prev.rest) ? prev : null,
+    pine: by("button", NAMES.pine), add, editor: by("textbox", NAMES.editor), title,
     createNew: by("menuitem", NAMES.createNew), strategy: by("menuitem", NAMES.strategy),
   };
 }
@@ -75,6 +78,13 @@ function pineTitle(content) {
 /* 網頁來的字當資料、不當指令:剝控制字元與格式字元(零寬、bidi 覆寫)、壓空白、截長 */
 function clean(s, max) {
   return String(s == null ? "" : s).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, " ").replace(/\p{Cf}/gu, "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+/* 失敗時記下來的候選元素:只有 role、名字前 80 字、狀態。欄位的值(編輯器文字)與連結網址不記 */
+function candidates(nodes) {
+  const list = Array.isArray(nodes) ? nodes : [], i = list.findIndex((n) => n.role === "button" && NAMES.add.test(n.name));
+  return list.filter((n, k) => n.role === "menuitem" || n.role === "textbox" || (n.role === "button" && (STATE_RE.test(n.rest) || NAMES.pine.test(n.name)))
+    || (i >= 0 && Math.abs(k - i) <= 4) || (n.role === "button" && k >= list.length - 6))
+    .slice(0, 30).map((n) => { const st = /\b(collapsed|expanded|disabled)\b/.exec(n.rest); return { role: n.role, name: clean(n.name, 80), state: st ? st[1] : "" }; });
 }
 const ERR_RE = /\berrors?\b|錯誤|错误/i;
 function errLines(rows) {
@@ -125,28 +135,38 @@ function hoverEl() {
   for (const t of ["pointerover", "pointerenter", "mouseover", "mouseenter", "pointermove", "mousemove"]) this.dispatchEvent(new (t.indexOf("pointer") === 0 ? PointerEvent : MouseEvent)(t, o));
   return true;
 }
+/* 「Create new」之後跳出來的確認框(目前的腳本有未存的變更;真站 2026-09-28 匿名實測:data-name="warning-dialog",沒有 role)。
+   warn = 那一種;other = 別的對話框(只記進診斷) */
+function dialogUp() {
+  const on = (sel) => Array.from(document.querySelectorAll(sel)).some((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+  return on('[data-name="warning-dialog"]') ? "warn" : on('[role="dialog"], [data-dialog-name]') ? "other" : null;
+}
 function fieldValue() { return String(this.value == null ? "" : this.value).slice(0, 20000); }
 
-const STOP = new Error("interrupted");
-const LOAD_MS = 25000, FIND_MS = 12000, MENU_MS = 4000, NEW_MS = 8000;
+const STOP = new Error("interrupted"), OFF = new Error("off_site");
+// 每一步的上限。GRACE:登入態的版面會自己把編輯器開回來(比 Pine 鈕晚出現),先等這麼久,真的沒開才按;STEP2:「正在開 Pine 編輯器」整段的上限
+const LOAD_MS = 20000, SYMBOL_MS = 6000, FIND_MS = 6000, GRACE_MS = 1500, OPEN_MS = 8000, MENU_MS = 3000, NEW_MS = 6000, STEP2_MS = 15000;
 
 /**
  * d: { open(url) → { tab } | { error } | { blocked }, tab(id), view(id), waitLoaded(t, ms), visible(t, v) → Promise<bool>,
- *      input(v, fn), arm(t) → Promise<bool>, disarm(t), emit(type, payload), sensitive(desc), enabled(), lang(), reduced(), sleep(ms) }
+ *      input(v, fn), arm(t) → Promise<bool>, disarm(t), emit(type, payload), sensitive(desc), enabled(), lang(), reduced(), sleep(ms), log(entry)? }
  * 事件:pine_open(下一個 user 分頁是這條流程開的)、pine_step { id, step: 1|2|3, sym }、pine_result { id, state, … }
  */
 function createPine(d) {
   const runs = new Map();   // 分頁 id → { strategy, filename, title }(只在記憶體:重開 app 不記,spec Q6)
   let busy = false;
   const sleep = d.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
-  const snap = async (v) => { const s = await v.page.snapshot({ interactive_only: true }, d.sensitive); return parseSnap(s && s.text); };
+  let x = null;   // 這一次流程的診斷:{ t0, step, nodes(最後一次看到的), dialog, end(這一步的期限) }
+  const snap = async (v) => { const s = await v.page.snapshot({ interactive_only: true }, d.sensitive); const n = parseSnap(s && s.text); if (x) x.nodes = n; return n; };
   const mark = (v, args) => v.page.run(IP.mark, args).catch(() => {});
   async function until(fn, ms, every) {
-    const end = Date.now() + ms;
+    const end = Math.min(Date.now() + ms, x && x.end ? x.end : Infinity);
     for (;;) { const r = await fn(); if (r) return r; if (Date.now() >= end) return null; await sleep(every || 400); }
   }
+  // 每次動手前:用戶在頁面上動手了就讓開;流程中途被導到別的站(登入轉址、頁面自己跳走)就停,不點、不貼
+  const guardSite = (t, v) => { if (t.userControl) throw STOP; if (!onTv(v.wc.getURL())) throw OFF; };
   async function click(t, v, node, hover) {
-    if (t.userControl) throw STOP;   // 用戶在頁面上動手了:這條流程讓開
+    guardSite(t, v);
     const b = v.page.node(node.ref); if (b === null) return false;
     const on = await d.visible(t, v);
     let pos; try { pos = await v.page.center(b, on); } catch (_) { return false; }
@@ -163,7 +183,7 @@ function createPine(d) {
   const value = (v, node) => { const b = v.page.node(node.ref); return b === null ? Promise.resolve("") : v.page.callOn(b, fieldValue).catch(() => ""); };
 
   async function flow(job, t, v, target) {
-    const step = (n) => d.emit("pine_step", { id: t.id, step: n, sym: target.symbol ? target.symbol.replace(/^BINANCE:/, "") : null });
+    const step = (n) => { x.step = n; d.emit("pine_step", { id: t.id, step: n, sym: target.symbol ? target.symbol.replace(/^BINANCE:/, "") : null }); };
     step(1);
     await d.waitLoaded(t, LOAD_MS);
     if (t.status !== "ready" || !onTv(v.wc.getURL())) return { state: "fail" };
@@ -171,45 +191,57 @@ function createPine(d) {
     let symbolOk = false;
     if (target.symbol) {
       const sym = target.symbol.replace(/^BINANCE:/, "");
-      symbolOk = !!(await until(() => { const ti = String(v.wc.getTitle() || ""); return ti.indexOf(sym + " ") === 0 && /\d/.test(ti.slice(sym.length)); }, 8000));
+      symbolOk = !!(await until(() => { const ti = String(v.wc.getTitle() || ""); return ti.indexOf(sym + " ") === 0 && /\d/.test(ti.slice(sym.length)); }, SYMBOL_MS));
     }
     const set = symbolOk && !!target.interval;
 
-    step(2);
-    let loc = await until(async () => { const l = locate(await snap(v)); return l.pine || l.add ? l : null; }, FIND_MS);
+    step(2); x.end = Date.now() + STEP2_MS;
+    const look = async () => locate(await snap(v));
+    const ready = (l) => (l.add && l.editor && l.title ? l : null), some = (l) => (l.add || l.editor ? l : null);
+    let loc = await until(async () => { const l = await look(); return l.pine || some(l) ? l : null; }, FIND_MS);
     if (!loc) return { state: "nf", why: "pine_button" };
-    if (!loc.add || !loc.editor) {   // 編輯器還沒開(已經開著就不按:那顆鈕是開合)
-      if (!(await click(t, v, loc.pine))) return { state: "nf", why: "pine_button" };
-      loc = await until(async () => { const l = locate(await snap(v)); return l.add && l.editor && l.title ? l : null; }, FIND_MS);
-      if (!loc) return { state: "nf", why: "editor" };
+    if (!ready(loc)) {
+      // 面板已經在(或正在自己開回來)就只等、不按:Pine 那顆鈕這時被面板蓋住,按了也不是「打開」
+      const panel = some(loc) || await until(async () => some(await look()), GRACE_MS);
+      if (!panel && (!loc.pine || !(await click(t, v, loc.pine)))) return { state: "nf", why: "pine_button" };
+      let last = panel || loc;
+      loc = ready(last) || await until(async () => ready(last = await look()), OPEN_MS);
+      if (!loc) return { state: "nf", why: last.add && last.editor ? "title" : "editor" };
     }
-    if (!loc.title) return { state: "nf", why: "title" };
     // 開新腳本再貼:不蓋用戶原本那一支。開不出來就停
     const before = { name: loc.title.name, node: v.page.node(loc.editor.ref), value: await value(v, loc.editor) };
-    if (!(await click(t, v, loc.title))) return { state: "nf", why: "title" };
-    let m = await until(async () => { const l = locate(await snap(v)); return l.createNew ? l : null; }, MENU_MS);
-    if (!m) return { state: "nf", why: "create_new" };
+    let m = loc.createNew ? loc : null;   // 選單本來就開著:不按名稱鈕(那顆也是開合)
+    if (!m) {
+      if (!(await click(t, v, loc.title))) return { state: "nf", why: "title" };
+      m = await until(async () => { const l = await look(); return l.createNew ? l : null; }, MENU_MS);
+      if (!m) return { state: "nf", why: "create_new" };
+    }
     if (!m.strategy) {
       if (!(await click(t, v, m.createNew, true))) return { state: "nf", why: "create_new" };
-      m = await until(async () => { const l = locate(await snap(v)); return l.strategy ? l : null; }, MENU_MS);
-      if (!m) return { state: "nf", why: "create_new" };
+      m = await until(async () => { const l = await look(); return l.strategy ? l : null; }, MENU_MS);
+      if (!m) return { state: "nf", why: "submenu" };
     }
     if (!(await click(t, v, m.strategy))) return { state: "nf", why: "strategy" };
     let val = "";
     loc = await until(async () => {
-      const l = locate(await snap(v)); if (!l.add || !l.editor || !l.title || !NAMES.untitled.test(l.title.name)) return null;
+      // 目前的腳本有未存的變更 → TradingView 跳確認框。存檔或放棄是用戶的決定:不按,交給他
+      x.dialog = await v.page.run(dialogUp).catch(() => null);
+      if (x.dialog === "warn") { await look().catch(() => {}); return { unsaved: true }; }   // 再看一次只為了診斷(記下框上的鈕)
+      const l = ready(await look()); if (!l || l.createNew || !NAMES.untitled.test(l.title.name)) return null;
       val = await value(v, l.editor);
       return v.page.node(l.editor.ref) !== before.node || val !== before.value || l.title.name !== before.name ? l : null;
     }, NEW_MS);
+    if (loc && loc.unsaved) return { state: "needs_user", why: "unsaved" };
     if (!loc) return { state: "nf", why: "new_script" };
 
-    step(3);
-    if (t.userControl) throw STOP;
+    step(3); x.end = 0;
+    guardSite(t, v);
     // 全選與貼上都要真鍵盤:頁面不在畫面上(視窗被蓋住、縮小)時送不進去,不硬貼
     if (!(await d.visible(t, v))) return { state: "fail", why: "hidden" };
     const b = v.page.node(loc.editor.ref); if (b === null) return { state: "nf", why: "editor" };
     let desc; try { desc = await v.page.describe(b); } catch (_) { return { state: "nf", why: "editor" }; }
     if (!(await d.arm(t))) return { state: "fail", why: "guard" };
+    guardSite(t, v);
     const f = await d.input(v, () => v.page.fill(b, job.content, desc, { clear: true, perChar: false }));
     if (f && f.error) return { state: "nf", why: "paste" };
     await sleep(300);
@@ -229,6 +261,13 @@ function createPine(d) {
     return { state: "handover", set };
   }
 
+  // 網址只記主機名與「是不是用戶存過的版面」:版面代號跟著帳號,不寫進 log
+  function logEntry(res, v) {
+    let host = "", layout = false;
+    try { const u = new URL(String(v.wc.getURL())); host = u.hostname; layout = /^\/chart\/[^/]+\//.test(u.pathname); } catch (_) { /* 分頁沒開成 */ }
+    return { ts: new Date().toISOString(), state: res.state, why: res.why || null, step: res.diag.step, ms: res.diag.ms, host, layout, dialog: res.diag.dialog, seen: res.diag.seen };
+  }
+
   /** job: { content, strategy, filename, symbol, interval, cryptoKline } */
   async function install(job) {
     if (!d.enabled()) return { state: "off" };
@@ -236,6 +275,7 @@ function createPine(d) {
     if (!job || typeof job.content !== "string" || !job.content.trim()) return { state: "fail", why: "no_file" };
     busy = true;
     let t = null, v = null, out;
+    x = { t0: Date.now(), step: 0, nodes: [], dialog: null, end: 0 };
     try {
       const target = chartUrl(job);
       d.emit("pine_open", {});
@@ -248,10 +288,14 @@ function createPine(d) {
         if (runs.size > 8) runs.delete(runs.keys().next().value);
         out = await flow(job, t, v, target);
       }
-    } catch (e) { out = { state: "fail", why: e === STOP ? "interrupted" : "error" }; }
+    } catch (e) { out = { state: "fail", why: e === STOP ? "interrupted" : e === OFF ? "off_site" : "error" }; }
     finally { busy = false; if (t) await Promise.resolve(d.disarm(t)).catch(() => {}); }
     if (v && out.state !== "handover") await mark(v, ["clear"]);
     const res = Object.assign({ id: t ? t.id : null }, out);
+    const ok = out.state === "handover";
+    res.diag = { step: x.step, ms: Date.now() - x.t0, dialog: x.dialog, seen: ok ? [] : candidates(x.nodes) };
+    if (d.log) try { d.log(logEntry(res, v)); } catch (_) { /* log 寫不進去不影響流程 */ }
+    x = null;
     d.emit("pine_result", res);
     return res;
   }
@@ -285,4 +329,4 @@ function createPine(d) {
   return { install, check, read, busy: () => busy };
 }
 
-module.exports = { createPine, chartUrl, tvSymbol, tvInterval, parseSnap, locate, pasteOk, pineTitle, clean, errLines, statRows, classify, onTv, readTv, NAMES };
+module.exports = { createPine, chartUrl, tvSymbol, tvInterval, parseSnap, locate, candidates, pasteOk, pineTitle, clean, errLines, statRows, classify, onTv, readTv, dialogUp, NAMES };

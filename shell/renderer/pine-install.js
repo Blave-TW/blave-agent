@@ -51,7 +51,8 @@ function tvPasteMsg(id, tpl) {
 }
 /* 狀態機(同 web 的 tvPaintCard,多兩態:編譯沒過、找不到編輯器):
    idle → sending(1 開圖表 / 2 開編輯器 / 3 貼上)→ handover → user(用戶在頁面上動手)→ done → reading → returned
-   岔路:nf(找不到編輯器 / 新建入口 / 讀回不符)、fail(頁面打不開、分頁不在了)、compile(編譯沒過)、closed(回傳時圖上沒有策略) */
+   岔路:nf(找不到編輯器 / 新建入口 / 讀回不符)、unsaved(目前的腳本有未存的變更,TradingView 跳了確認框:由用戶處理,外殼不按)、
+        fail(頁面打不開、分頁不在了)、compile(編譯沒過)、closed(回傳時圖上沒有策略) */
 function tvNext(s, ev) {
   const n = Object.assign({ tv: "idle", step: 0 }, s || {}); n.soft = null; n.err = null;
   if (ev.type === "send") return { tv: "sending", step: 1, ref: ev.ref, strategy: ev.strategy, filename: n.filename || null };
@@ -67,6 +68,7 @@ function tvNext(s, ev) {
   switch (ev.state) {
     case "handover": if (n.tv === "sending") { n.tv = "handover"; n.set = ev.set === true; } break;   // 同一個結果會到兩次(事件 + 回傳):用戶已經動手就不退回去
     case "nf": n.tv = "nf"; break;
+    case "needs_user": n.tv = "unsaved"; break;
     case "done": n.tv = "done"; break;
     case "compile": n.tv = "compile"; n.errors = Array.isArray(ev.errors) ? ev.errors.slice(0, 5) : []; break;
     case "notyet": n.tv = "user"; n.notyet = true; break;
@@ -82,12 +84,12 @@ function tvNext(s, ev) {
 function tvModel(s, o) {
   const tv = s && s.tv ? s.tv : "idle", old = !!(o && o.old), stale = !!(o && o.stale);
   const m = { tv, primary: null, pDis: false, fill: "ext", cap: null, msg: null, soft: null, quiet: [], st: null, spin: false, nav: false };
-  m.primary = tv === "idle" || tv === "sending" || tv === "nf" || tv === "fail" ? "tv.send"
+  m.primary = tv === "idle" || tv === "sending" || tv === "nf" || tv === "unsaved" || tv === "fail" ? "tv.send"
     : tv === "reading" ? "tv.reading" : tv === "compile" ? "tv.fix" : tv === "returned" ? "tv.readAgain" : "tv.read";
   m.pDis = tv === "sending" || tv === "reading";
   if (stale || tv === "returned" || (old && tv === "idle")) m.fill = "base";
   m.cap = tv === "idle" || tv === "sending" || tv === "fail" ? "xp.capHonest" : tv === "handover" || tv === "user" ? "tv.sentHint" : tv === "closed" ? "tv.planHint" : null;
-  m.msg = tv === "nf" ? "tv.err.editor" : tv === "compile" ? "tv.err.compile" : tv === "closed" ? "tv.err.closed" : tv === "fail" || (s && s.err === "unknown") ? "tv.err.unknown" : null;
+  m.msg = tv === "nf" ? "tv.err.editor" : tv === "unsaved" ? "tv.err.unsaved" : tv === "compile" ? "tv.err.compile" : tv === "closed" ? "tv.err.closed" : tv === "fail" || (s && s.err === "unknown") ? "tv.err.unknown" : null;
   if (s && s.soft === "busy") m.soft = "tv.err.busy";
   if (tv === "nf") m.quiet.push("tv.agentPaste");
   if (tv === "sending") { m.st = "tv.sending"; m.spin = true; }
@@ -105,6 +107,7 @@ function tvStatModel(s, userOn) {
   if (tv === "reading") return ["spin", "tv.st.reading", null, null];
   if (tv === "compile") return ["warn", "tv.st.compile", null, null];
   if (tv === "nf") return ["warn", "tv.st.nf", null, null];
+  if (tv === "unsaved") return ["warn", "tv.st.unsaved", null, null];
   return null;
 }
 /* ── 純邏輯到此 ── */
@@ -167,7 +170,7 @@ function tvPaintSlot(e) {
     const line = m.msg || soft || (m.cap === "tv.sentHint" ? m.cap : null);
     if (line) { const p = mk("span", "xp-st" + (m.msg ? " err" : ""), t(line)); p.setAttribute("role", m.msg ? "alert" : "status"); c.row.insertBefore(p, own); }
   }
-  for (const q of m.quiet) { const b = mk("button", "btn-quiet", t(q)); b.type = "button"; b.addEventListener("click", () => tvAgentPaste(e)); c.row.insertBefore(b, own); }
+  for (const q of m.quiet) { const b = mk("button", "btn-quiet", t(q)); b.type = "button"; b.addEventListener("click", (ev) => { if (ev.isTrusted) tvAgentPaste(e); }); c.row.insertBefore(b, own); }
   if (m.nav && !tvOpenOn(s)) {   // 已經在中欄時不放文字鈕:收起靠標題列的 ✕(同 browser.js brPaintHead)
     const b = mk("button", "btn-quiet", t("br.openPanel")); b.type = "button";
     b.addEventListener("click", (ev) => { if (!ev.isTrusted) return; trackFeature("browser_read"); brExpand(s.tab); });
@@ -271,14 +274,14 @@ function tvStat(host, x) {
   const s = TV.by.get(key);
   host.append(brEl("span", "", t(m[1], { sym: s.sym || "", id: s.strategy || "" })));
   if (m[2]) { const g = brEl("span", "segs"); g.setAttribute("aria-hidden", "true"); for (let i = 1; i <= 3; i++) g.append(brEl("i", i < m[2] ? "ok" : i === m[2] ? "on" : "")); host.append(g); }
-  if (m[3]) { const b = brEl("button", "btn-quiet", t(m[3])); b.type = "button"; b.addEventListener("click", () => tvCheck(key)); host.append(b); }
+  if (m[3]) { const b = brEl("button", "btn-quiet", t(m[3])); b.type = "button"; b.addEventListener("click", (ev) => { if (ev.isTrusted) tvCheck(key); }); host.append(b); }
   return true;
 }
 function tvSlot(x) {
   const key = TV.tab.get(x.id), s = key ? TV.by.get(key) : null; if (!s) return null;
   const ask = (h, p, btns) => {
     const box = brEl("div", "ask"), txt = brEl("div", "txt"); txt.append(brEl("h6", "", h), brEl("p", "", p)); box.append(txt);
-    if (btns) { const a = brEl("div", "act"); for (const [k, cls, fn] of btns) { const b = brEl("button", cls, t(k)); b.type = "button"; b.addEventListener("click", fn); a.append(b); } box.append(a); }
+    if (btns) { const a = brEl("div", "act"); for (const [k, cls, fn] of btns) { const b = brEl("button", cls, t(k)); b.type = "button"; b.addEventListener("click", (ev) => { if (ev.isTrusted) fn(); }); a.append(b); } box.append(a); }
     return box;
   };
   const honest = () => t("tv.done.p") + t("xp.honest", { platform: "TradingView" });
@@ -293,6 +296,7 @@ function tvSlot(x) {
   if (s.tv === "done") return ask(t("tv.done.h"), honest(), [["tv.read", "btn-fill", () => tvRead(key)]]);
   if (s.tv === "returned") return ask(t("tv.done.h"), honest(), [["tv.readAgain", "btn-out", () => tvRead(key)]]);
   if (s.tv === "compile") return ask(t("tv.cmp.h"), t("tv.cmp.p"), e ? [["tv.fix", "btn-fill", () => tvFix(e)]] : null);
+  if (s.tv === "unsaved") return ask(t("tv.unsaved.h"), t("tv.unsaved.p"), e ? [["tv.retry", "btn-out", () => tvSend(e.ctx)]] : null);
   if (s.tv === "nf") return ask(t("tv.nf.h"), t("tv.nf.p"), e ? [["tv.retry", "btn-out", () => tvSend(e.ctx)], ["tv.agentPaste", "btn-fill", () => tvAgentPaste(e)]] : null);
   return null;
 }

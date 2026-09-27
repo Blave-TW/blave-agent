@@ -4910,6 +4910,18 @@ msgstr "Couldn't find the Pine Editor"
 msgid "tv.nf.p"
 msgstr "TradingView may have changed its layout. The agent can look for it on screen, or download the file and paste it yourself."
 
+msgid "tv.err.unsaved"
+msgstr "The current script has unsaved changes. Save or discard them in TradingView, then try again."
+
+msgid "tv.st.unsaved"
+msgstr "The current script has unsaved changes"
+
+msgid "tv.unsaved.h"
+msgstr "The current script has unsaved changes"
+
+msgid "tv.unsaved.p"
+msgstr "Save or discard them in TradingView, then try again. Whether to keep them is your call — nothing is pressed for you."
+
 msgid "tv.notyet"
 msgstr "No strategy on the chart yet. Press “Add to chart”, save the script, then press “Check Result”."
 

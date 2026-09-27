@@ -4911,6 +4911,18 @@ msgstr "找不到 Pine 編輯器"
 msgid "tv.nf.p"
 msgstr "TradingView 可能改了版面。可以請 agent 照畫面找，或下載檔案自己貼。"
 
+msgid "tv.err.unsaved"
+msgstr "目前的腳本有未存的變更，請你在 TradingView 存檔或放棄後再試。"
+
+msgid "tv.st.unsaved"
+msgstr "目前的腳本有未存的變更"
+
+msgid "tv.unsaved.h"
+msgstr "目前的腳本有未存的變更"
+
+msgid "tv.unsaved.p"
+msgstr "請你在 TradingView 存檔或放棄後再試。要存還是放棄由你決定，這裡不會替你按。"
+
 msgid "tv.notyet"
 msgstr "還沒看到策略在圖上。按了「加到圖表」、存好檔，再按「檢查結果」。"
 

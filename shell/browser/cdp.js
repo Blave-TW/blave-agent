@@ -51,6 +51,7 @@ const KEYS = {
   PageUp: { key: "PageUp", code: "PageUp", vk: 33 }, PageDown: { key: "PageDown", code: "PageDown", vk: 34 },
   Home: { key: "Home", code: "Home", vk: 36 }, End: { key: "End", code: "End", vk: 35 },
 };
+const modsOk = (key, mods, platform) => (platform === "darwin" ? key === "ArrowUp" && mods === 4 : key === "Home" && mods === 2);
 const q = (s) => JSON.stringify(String(s).replace(/\s+/g, " ").trim().slice(0, 100));
 
 function createPage(wc) {
@@ -294,9 +295,10 @@ function createPage(wc) {
       翻頁鍵 = 捲動,其餘送一個 KeyboardEvent 給有焦點的元素。 */
   async function press(key, onScreen, mods) {
     const k = KEYS[key]; if (!k) return { error: "invalid_args" };
-    // mods(CDP modifiers:Ctrl=2 / Meta=4):只有外殼自己的流程會帶(pine.js 把游標移到文件開頭),不經 agent 工具
-    if (mods) {
-      if (!onScreen) return { error: "invalid_args" };
+    // mods(CDP modifiers:Ctrl=2 / Meta=4):只有外殼自己的流程會帶(pine.js 把游標移到文件開頭),不經 agent 工具。
+    // 寫死只收「到文件開頭」那一組——帶修飾鍵的真鍵盤能觸發頁面與瀏覽器的快捷鍵,不開放任意組合
+    if (mods !== undefined && mods !== null && mods !== 0) {
+      if (!onScreen || !modsOk(key, mods, process.platform)) return { error: "invalid_args" };
       await send("Input.dispatchKeyEvent", { type: "keyDown", key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: mods });
       await send("Input.dispatchKeyEvent", { type: "keyUp", key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: mods });
       return {};
@@ -387,4 +389,4 @@ function createPage(wc) {
   };
 }
 
-module.exports = { createPage, KEYS };
+module.exports = { createPage, KEYS, modsOk };

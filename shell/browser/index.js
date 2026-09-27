@@ -927,6 +927,16 @@ function createBrowser(o) {
     } catch (_) { return null; } finally { clearTimeout(timer); }   // 拿不到就畫字母格
   }
 
+  // 「送進 TradingView」的診斷 log:一次結果一行 JSON;超過 256KB 換檔(留一份 .1)。寫不進去就算了
+  function pineLog(entry) {
+    if (!o.pineLog) return;
+    const fs = require("fs");
+    try {
+      fs.mkdirSync(require("path").dirname(o.pineLog), { recursive: true });
+      try { if (fs.statSync(o.pineLog).size > 256 * 1024) fs.renameSync(o.pineLog, o.pineLog + ".1"); } catch (_) { /* 還沒有檔 */ }
+      fs.appendFileSync(o.pineLog, JSON.stringify(entry) + "\n", { mode: 0o600 });
+    } catch (_) { /* 唯讀磁碟、沒權限 */ }
+  }
   /* 「送進 TradingView」(pine.js):外殼自己的確定性流程,不經 agent 工具、不佔 agent 的 alias 與速率。
      分頁是 user 分頁;動手前照樣開導覽守門(動作後 3 秒內的文件層送出一律取消),交接時收掉——
      之後用戶自己按的送出與登入子視窗才不會被當成程式觸發 */
@@ -935,6 +945,7 @@ function createBrowser(o) {
     waitLoaded, visible: pageVisible, input: agentInput, arm: markAgent,
     disarm: (t) => { const v = views.get(t.id); if (!v) return null; agentUntil.delete(v.wc.id); backstop.delete(v.wc.id); return v.page.disarm(); },
     emit, sensitive: gate.sensitiveField, enabled: () => !!prefs.enabled, lang: () => o.uiLang(), reduced: () => (o.reducedMotion ? o.reducedMotion() : false), sleep,
+    log: pineLog,
   });
 
   // ── 對外 ──
