@@ -816,7 +816,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const cq = css2.slice(css2.indexOf("@container (max-width: 520px)"), css2.indexOf("}\n", css2.indexOf(".pf-tbl .ccy")));
     ok("V2b:.main-head 是 grid、.txt 走 display: contents、標題與動作槽同一列、動作槽靠右",
       /\.main-head \{ flex: none; display: grid; grid-template-columns: minmax\(0, 1fr\) auto; column-gap: var\(--space-16\); align-items: start;/.test(css2)
-      && /\.main-head > \.txt \{ display: contents; \}/.test(css2) && /\.main-head-name \{ grid-column: 1; grid-row: 1; \}/.test(css2)
+      && /\.main-head > \.txt \{ display: contents; \}/.test(css2) && /\.main-head-name \{ grid-column: 1; grid-row: 1; align-self: center; \}/.test(css2)
       && /\.main-head \.act \{ grid-column: 2; grid-row: 1; justify-self: end;/.test(css2)
       && /\.main-head:not\(:has\(\.act\)\) \{ grid-template-columns: minmax\(0, 1fr\); column-gap: 0; \}/.test(css2));
     ok("V2b:.txt 底下每一個孩子都跨滿寬(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)——漏一個就會被塞進第二欄",
