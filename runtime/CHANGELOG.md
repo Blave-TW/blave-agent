@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **上網查資料不再以對方條款 / robots 禁 AI 為由排除網站(Wei 09-28 拍板,取代 1.1.101 兩條「固定新聞站」)**:
+  DeepSeek 排程 prompt(`report_runner.scheduled_prompt`)拿掉「other news sites' terms forbid automated AI
+  access, do not fetch them」;鉅亨列表頁+TWSE/TAIFEX/Binance/OKX 公告頁改成優先清單(實測抓得到的起點),
+  1.1.101 撤下的五站(經濟日報、MoneyDJ、CoinDesk、Cointelegraph、Decrypt)以 `_OTHER_NEWS_PAGES` 列在後面當備援。
+  `_news_describe`、references/reports.md、references/browser.md、AGENTS.md 同步;電腦版瀏覽器的 agent 黑名單
+  清空(The Block 放行),名單只留給有危害的網站。內網、相似網域、交易所/券商後台、銀行、金流、授權頁、
+  blave.org、動作分級、下載、速率上限都不動。測試 `tests/check_report_runner_agent.py`、
+  `tests/check_report_bricks.py`、`tests/check_shell_browser_policy.js`。
 - **轉出檔讀不到那一句跟著回覆語言(spec-desktop-strategy-export-0.1.8 §6-3)**:`_EXPORT_FAIL_NOTE` 原本只有繁中,
   英文介面叫 agent 轉 Pine 讀檔失敗也拿到中文。`_export_fail_note(message, reply_lang)` 同 `_fault_message` 的解析
   (設定 > 看用戶打的字;zh / cn / 其餘一律英文),run_turn 在 finalize 前掛到 sink 上;`extract_exports` 多一個

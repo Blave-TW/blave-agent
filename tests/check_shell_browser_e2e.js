@@ -1,7 +1,7 @@
 // 內建瀏覽器端到端(真 Electron、真 WebContentsView、真 CDP;頁面是本機 fixture,用測試行程自己的 protocol.handle 供應,
 // production code 沒有任何測試開關)。釘住 spec §3.2 分級真的做在工具裡:
 //   密碼欄 fill 被拒且 snapshot 讀不到值、POST 送出鈕 needs_user、「下一步」其實用 JS 送 POST 被網路層後盾取消(伺服器沒收到)、
-//   透明覆蓋層擋點擊、agent 點到交易所後台的連結被取消、直接開交易所後台 / The Block 被擋、下載被擋、
+//   透明覆蓋層擋點擊、agent 點到交易所後台的連結被取消、直接開交易所後台被擋、下載被擋、
 //   上傳 needs_user、GET 搜尋框可以送出、接手期間工具回 user_in_control、read 的 meta / outline / section、8 頁上限第 9 頁排隊。
 // 跑法:node tests/check_shell_browser_e2e.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs"), os = require("os");
@@ -151,8 +151,6 @@ app.whenReady().then(async () => {
 
   r = J(await call("browser_open", { url: "https://www.binance.com/en/my/wallet" }));
   t("直接開交易所後台 → blocked_policy(有一格,不佔名額)", !r.ok && r.error === "blocked_policy" && r.reason === "sensitive_domain" && !hits.some((h) => h.includes("binance")));
-  r = J(await call("browser_open", { url: "https://www.theblock.co/post/1" }));
-  t("The Block → blocked_policy blocklist", !r.ok && r.reason === "blocklist");
   r = J(await call("browser_open", { url: "http://127.0.0.1:" + new URL(m.url).port + "/mcp" }));
   t("打回本機 MCP → blocked_policy private_address", !r.ok && r.reason === "private_address");
 

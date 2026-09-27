@@ -256,7 +256,7 @@ json.dump({"_last": "deepseek/deepseek-v4-pro"}, open(R.MODEL_PREFS_PATH, "w"))
 dds = make_job("t-lang-ds")
 R.run_job("t-lang-ds")
 dprompt = json.load(open(argv_out))[-1]
-check("WebFetch only" in dprompt and "WebSearch" not in dprompt and "coindesk" not in dprompt
+check("WebFetch only" in dprompt and "WebSearch" not in dprompt
       and "https://news.cnyes.com/news/cat/headline" in dprompt
       and "--model=deepseek/deepseek-v4-pro" in json.load(open(argv_out)),
       "當下偏好是 DeepSeek:真正起的回合(argv)拿到的是 WebFetch 版 prompt,不是 Claude 版")
@@ -264,9 +264,7 @@ json.dump({"_last": "anthropic/claude-sonnet-5", "web-1": "deepseek/x"}, open(R.
 import shutil as _sh
 _sh.rmtree(dds, ignore_errors=True)
 ds = R.scheduled_prompt(json.load(open(os.path.join(dl, "job.json"))), "deepseek/deepseek-v4-pro")
-BANNED_HOSTS = ("coindesk.com", "cointelegraph.com", "decrypt.co", "money.udn.com", "moneydj.com",
-                "coinmarketcap.com", "ctee.com.tw",   # CMC:robots Disallow /headlines/*;工商時報:robots 擋 AI 爬蟲
-                "經濟日報", "工商時報")
+OTHER_HOSTS = ("coindesk.com", "cointelegraph.com", "decrypt.co", "money.udn.com", "moneydj.com")
 FIXED_SOURCES = ("https://news.cnyes.com/news/cat/headline",
                  "https://news.cnyes.com/news/cat/bc_crypto",
                  "https://www.twse.com.tw/rwd/zh/news/newsList?response=json",
@@ -275,10 +273,11 @@ FIXED_SOURCES = ("https://news.cnyes.com/news/cat/headline",
                  "https://www.okx.com/help/section/announcements-latest-announcements")
 check("WebSearch" not in ds and "WebFetch" in ds and "licensed" in ds
       and all(u in ds for u in FIXED_SOURCES)
-      and not any(h in ds for h in BANNED_HOSTS)
+      and all(h in ds for h in OTHER_HOSTS) and ds.index("news.cnyes.com") < ds.index("coindesk.com")
+      and "forbid" not in ds and "do not fetch" not in ds and "robots" not in ds
       and "few_sources" in ds and "switching model" in ds,
-      "DeepSeek 排程 prompt:固定來源=鉅亨兩個授權列表頁+TWSE/TAIFEX/Binance/OKX 公告頁+授權候選連結"
-      "(台股 3 站、加密 3 站湊得滿);ToS/robots 禁 AI 的站(09-27 查證)一個都不點名;"
+      "DeepSeek 排程 prompt:優先清單=鉅亨兩個授權列表頁+TWSE/TAIFEX/Binance/OKX 公告頁+授權候選連結,"
+      "其他新聞站排在後面當備援;沒有「對方條款 / robots 禁 AI 所以不抓」的句子(Wei 09-28);"
       "湊不滿 3 站走 few_sources 照發,絕不提換模型")
 check(R.scheduled_prompt({"id": "x", "title": "t", "prompt": "p"}, None).count("WebFetch only") == 1
       and "WebSearch" in R.scheduled_prompt({"id": "x", "title": "t", "prompt": "p"}, "anthropic/claude-sonnet-5"),

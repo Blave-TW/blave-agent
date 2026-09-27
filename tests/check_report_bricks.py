@@ -135,6 +135,9 @@ cb = doc(pub(crypto, {"lead": "BTC 現貨撐盤,槓桿正在退場。", "few_sou
 check(not any(x["type"] == "news" for x in cb) and any(i["id"] == "news" and "沒有附新聞" in i["text"] for i in cb[-1]["items"]),
       "有說明為什麼沒新聞(few_sources):照發,不出 news block,尾註一句")
 check("先上網查:至少 3 個不同網站" in T.tw_market_brief("2026-09-02", H).describe(), "台股晨報 describe 第一句要求先上網查 3 個網站")
+_nd = "\n".join(T._news_describe({"candidates": [], "market": "crypto"}))
+check("其他新聞站都可以用" in _nd and "標明來源" in _nd and not any(w in _nd for w in ("robots", "禁令", "條款")),
+      "新聞來源:不以對方條款 / robots 禁 AI 為由排除任何站(Wei 09-28);標來源、不照抄的品質規則還在")
 check(not any(i["id"] == "news" for i in doc(pub(crypto))["blocks"][-1]["items"]), "加密晨報排程:沒有新聞、也不多一行尾註")
 sym = T.symbol_brief("BTC", "2026-09-02", H)
 sb = doc(pub(sym, {"lead": "BTC 現貨撐盤,槓桿正在退場。", "no_extra": "測試:不加做", "few_sources": "測試", "news": [dict(ITEM, symbols=["BTC"])]}, report_id="symnews"))["blocks"]

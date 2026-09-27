@@ -29,7 +29,13 @@ const adMiss = P.ADS.filter((d) => { const h = d.split("/")[0], path = d.include
 t("廣告追蹤清單每一條都擋(" + P.ADS.length + " 條)" + (adMiss.length ? " 漏:" + adMiss.join(" ") : ""), adMiss.length === 0);
 
 // ── 工具層:黑名單 / 敏感網域 / blave(列舉)──
-t("The Block 整站擋(含子網域)", reason(P.agent, "https://www.theblock.co/post/1", "main") === "blocklist" && reason(P.agent, "https://theblock.co/", "main") === "blocklist");
+// 對方條款 / robots 禁 AI 不是擋的理由(Wei 09-28):這幾站 agent 照開;名單只留給有危害的網站
+const TERMS_SITES = ["https://www.theblock.co/post/1", "https://theblock.co/", "https://www.coindesk.com/markets/", "https://cointelegraph.com/news/x", "https://decrypt.co/1",
+  "https://money.udn.com/money/story/1", "https://www.moneydj.com/kmdj/news/x", "https://www.reuters.com/markets/"];
+const termsBlocked = TERMS_SITES.filter((u) => P.agent(u) !== null);
+t("條款 / robots 禁 AI 的新聞站 agent 照開(" + TERMS_SITES.length + " 條)" + (termsBlocked.length ? " 被擋:" + termsBlocked.join(" ") : ""), termsBlocked.length === 0 && P.AGENT_BLOCKLIST.length === 0);
+t("放行條款站之後,內網 / 相似網域 / 交易所後台 / 銀行 / 授權頁照擋", reason(P.agent, "http://192.168.1.1/") === "private_address" && reason(P.agent, "https://binance-login.xyz/") === "lookalike"
+  && reason(P.agent, "https://www.binance.com/en/my/wallet") === "sensitive_domain" && reason(P.agent, "https://www.ctbcbank.com/") === "sensitive_domain" && reason(P.agent, "https://accounts.google.com/o/oauth2/auth") === "oauth");
 t("TradingView 放行(Wei 拍板)", P.agent("https://www.tradingview.com/symbols/BTCUSDT/") === null);
 t("*.blave.org 擋(資料走 lib/data.py)", ["https://blave.org/", "https://api.blave.org/x", "https://www.blave.org/zh"].every((u) => reason(P.agent, u) === "blave"));
 const sens = P.BANKS.concat(P.BROKERS, P.PAYMENTS);

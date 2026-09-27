@@ -4011,7 +4011,7 @@ msgid "br.blk.domain.p"
 msgstr "交易所與券商後台、銀行的網站，agent 一律不操作。"
 
 msgid "br.blk.list.p"
-msgstr "這個網站的條款不允許 AI 代理讀取。"
+msgstr "這個網站在有危害的網站名單上，agent 不開。"
 
 msgid "br.blk.blave.p"
 msgstr "Blave 的資料 agent 直接取用，不經網站。"

@@ -4010,7 +4010,7 @@ msgid "br.blk.domain.p"
 msgstr "Exchange and broker account areas and bank sites are never operated by the agent."
 
 msgid "br.blk.list.p"
-msgstr "This site's terms don't allow AI agents to read it."
+msgstr "This site is on the harmful-site list, so the agent does not open it."
 
 msgid "br.blk.blave.p"
 msgstr "The agent reads Blave data directly, not through the website."

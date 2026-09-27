@@ -1992,11 +1992,9 @@ _AGENT_AVAILABLE_FOOT = "升級後排程可以請 AI 整理新聞，跟 agent �
 
 def _news_describe(news):
     c = news["candidates"]
-    # 名單 09-27 逐站查證後只點名查無禁令的:經濟日報/MoneyDJ 的 robots 明文禁 LLM、CoinDesk/Reuters 的
-    # 條款禁自動化抓取——「條款禁止 AI 摘要/自動化的來源不用」是既有規則,先看目標站的 terms 與 robots。
     search = ("  先上網查:至少 3 個不同網站(優先 鉅亨(授權,列表頁 https://news.cnyes.com/news/cat/headline"
-              " 與 /news/cat/bc_crypto 可直接抓)與交易所/專案方官方公告;其他站先確認它的"
-              "條款與 robots.txt 沒有禁止 AI 使用——經濟日報、MoneyDJ、CoinDesk、Cointelegraph 都有明文禁令,不用);"
+              " 與 /news/cat/bc_crypto 可直接抓)與交易所/專案方官方公告;其他新聞站都可以用,"
+              "標明來源、摘要用自己的話、不照抄全文);"
               "下面的候選只是起點,不能代替上網")
     why = {"denied": "無 Blave 資料權限,鉅亨候選省略", "failed": "鉅亨新聞抓取失敗", None: "上一個收盤之後"}[news.get("state")]
     head = (f"  新聞候選 {len(c)} 則(鉅亨授權,{why}):"

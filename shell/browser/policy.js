@@ -1,7 +1,7 @@
 // 內建瀏覽器的網址政策(純資料 + 純函式,不 require electron;tests/check_shell_browser_policy.js 逐條列舉)。
 // 契約:.claude/output/specs/desktop-browser-agent-tools-2026-09-26.md §3.1。分兩層:
 //   network(): 該 partition 的每個請求都過(用戶與 agent 一視同仁)——scheme、帳密、內網/本機、非 80/443、廣告追蹤。
-//   agent():   只管 agent 的工具呼叫,以分頁「當下」網址判——條款禁 AI 的來源、交易所/券商後台、銀行、金流、*.blave.org。
+//   agent():   只管 agent 的工具呼叫,以分頁「當下」網址判——有危害的網站、交易所/券商後台、銀行、金流、*.blave.org。
 // 用戶自己在分頁裡開交易所後台照常;agent 對那一頁什麼都讀不到、點不到(「用戶開、agent 讀」的繞法在這層關掉)。
 "use strict";
 
@@ -13,9 +13,8 @@ const MULTI_TLD = new Set([
   "co.kr", "or.kr", "com.sg", "com.my", "co.in", "com.br", "co.nz", "com.mx", "co.za", "com.tr", "com.vn", "co.id", "com.ph",
 ]);
 
-// 【工具層】條款明文禁止 AI 代理或 AI 摘要的來源(canon data-onboarding §9「仍然不用的」第一類)。
-// tradingview.com 刻意不在這裡(Wei 拍板放行)。其餘成員待數據研究員補。
-const AGENT_BLOCKLIST = ["theblock.co"];
+// 【工具層】有危害的網站(惡意程式、詐騙)。對方條款或 robots 禁 AI 不是列進來的理由(Wei 09-28 拍板),所以目前是空的。
+const AGENT_BLOCKLIST = [];
 
 // 【工具層】D3 交易所(Wei 09-26 拍板):**公開內容頁放行**(公告、新聞、學院、Square、行情 / 價格頁、說明中心、費率),
 // **後台照擋**(登入、帳戶、資產、下單 / 交易、API 管理、充提、設定等要登入的路徑)。判斷是「網域 × 路徑」三段:

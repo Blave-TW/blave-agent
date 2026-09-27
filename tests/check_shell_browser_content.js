@@ -35,7 +35,7 @@ const google = { items: [
 ] };
 const g = C.normalizeSerp(google, 10);
 t("Google:/url?q= 剝成真網址、剔廣告、剔 google 自家頁、去重", g.length === 3 && g[0].url === "https://www.coindesk.com/markets/a?x=1" && g[0].rank === 1 && g.map((x) => x.title).join() === "CoinDesk A,The Block,鉅亨");
-t("搜尋結果不代過濾黑名單(開的時候才擋,回傳照實列出)", g.some((x) => x.url.includes("theblock.co")));
+t("搜尋結果照實列出,不代過濾", g.some((x) => x.url.includes("theblock.co")));
 const ddg = { items: [{ href: "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.reuters.com%2Fx&rut=1", title: "Reuters", snippet: "r" }, { href: "https://duckduckgo.com/y.js?ad", title: "Ad", ad: true }] };
 t("DuckDuckGo:uddg 包裝剝掉、剔廣告", JSON.stringify(C.normalizeSerp(ddg, 5).map((x) => x.url)) === JSON.stringify(["https://www.reuters.com/x"]));
 t("count 截斷", C.normalizeSerp(google, 1).length === 1);
