@@ -4706,3 +4706,101 @@ msgstr "請把策略「{display_name}」({name}) 還原到第 {n} 版,重跑回�
 
 msgid "ver.msgFork"
 msgstr "請用策略「{display_name}」({name}) 第 {n} 版的程式碼建立一支新策略,原策略不要動;新策略跑一次回測和一次訊號、確認有 state.json,然後停下來,讓我在自動下單切換金額 —— 不用再確認"
+
+# 報告存成 PDF(spec-report-pdf-0.1.8 DT2;鈕在閱讀層頁首最右)
+msgid "pdf.btn"
+msgstr "存成 PDF"
+
+msgid "pdf.saving"
+msgstr "存成中…"
+
+msgid "pdf.saved"
+msgstr "已存成"
+
+msgid "pdf.failTitle"
+msgstr "沒有存成 PDF"
+
+msgid "pdf.failBody"
+msgstr "檔案沒有寫進去。換個位置，或稍後再試一次。"
+
+# legal: PDF 每頁頁尾短版與文末長版聲明(spec P2;字面由 Wei 定稿)。disc2 / disc3a / disc3c = web rs_disc_3 / 4a / 4c 的文件版
+msgid "pdf.footShort"
+msgstr "由 Blave Agent 產出，Blave 未審核內容，不構成投資建議。"
+
+msgid "pdf.discTitle"
+msgstr "聲明"
+
+msgid "pdf.disc1"
+msgstr "本文件由 Blave 用戶透過其 Blave Agent（AI 代理）產出，並由該用戶自行存成 PDF，僅反映該用戶與其 AI 代理的分析，不代表吾集科技股份有限公司（Blave）之立場；Blave 未審核本文件內容與結論。Blave 提供資料與工具，不提供投資建議；吾集科技股份有限公司非證券投資顧問事業或期貨顧問事業。"
+
+msgid "pdf.disc2"
+msgstr "本文件不構成對任何有價證券、期貨、選擇權或虛擬資產之買賣建議或推介，亦不保證任何績效。歷史資料與回測結果不代表未來表現；期貨、槓桿商品及虛擬資產波動大，可能損失全部或超過原始投入之資金。"
+
+msgid "pdf.disc3a"
+msgstr "AI 產出可能有錯誤、遺漏或資料延遲。"
+
+msgid "pdf.disc3b"
+msgstr "本文件的註列有產出時使用的資料來源，供讀者自行查核。"
+
+msgid "pdf.disc3c"
+msgstr "投資前請獨立判斷，並自行承擔盈虧。"
+
+msgid "pdf.stamp"
+msgstr "本文件存成於 {time}，是當下那一版的副本；之後 agent 更新這份報告，本文件不會跟著變。"
+
+# 設定 › 公開連結(spec-share-list-0.1.8 A1 / C / D / E)
+msgid "set.cat.shares"
+msgstr "公開連結"
+
+msgid "shl.title"
+msgstr "公開中的報告"
+
+msgid "shl.count"
+msgstr "{n}／{max}"
+
+msgid "shl.countAria"
+msgstr "公開中 {n} 份，上限 {max} 份"
+
+msgid "shl.kind.research"
+msgstr "研究報告"
+
+msgid "shl.kind.morning"
+msgstr "市場報告"
+
+msgid "shl.src.here"
+msgstr "這台電腦"
+
+msgid "shl.src.desktop"
+msgstr "電腦版"
+
+msgid "shl.src.cloud"
+msgstr "雲端"
+
+msgid "shl.gone"
+msgstr "這台電腦上找不到原檔，公開版本仍有效。"
+
+# 逐字同 web workspace_share_source_gone
+msgid "shl.goneCloud"
+msgstr "原報告已因儲存上限被移除，公開版本仍有效。"
+
+msgid "shl.empty"
+msgstr "目前沒有公開中的報告。要公開，打開一份報告按「分享」。"
+
+msgid "shl.loadFail"
+msgstr "讀不到公開連結，請檢查網路後再試。"
+
+msgid "shl.gate"
+msgstr "公開連結掛在你的 Blave 帳號下，登入後才看得到。"
+
+# 取消成功後讀屏念的那一句(畫面上不出字)
+msgid "shl.revoked"
+msgstr "已取消分享。"
+
+msgid "shr.limitLive"
+msgstr "公開中的報告已達 {n} 份上限。先取消幾份，再公開這一份。"
+
+msgid "shr.limitLiveGo"
+msgstr "看公開連結"
+
+msgid "shr.limitDaily"
+msgstr "今天已經公開 {n} 次，達到每日上限。請明天再試。"

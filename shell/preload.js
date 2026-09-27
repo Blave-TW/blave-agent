@@ -42,6 +42,12 @@ contextBridge.exposeInMainWorld("blave", {
   shareState: (view, id) => ipcRenderer.invoke("share-state", view, id),
   sharePublish: (view, id, a) => ipcRenderer.invoke("share-publish", view, id, { byline: a && a.byline, confirmed: !!a && a.confirmed === true, update: !!a && a.update === true }),
   shareRevoke: (view, id) => ipcRenderer.invoke("share-revoke", view, id),
+  // 設定 › 公開連結(renderer/report-sharelist.js):這個帳號所有公開中的報告;取消只給代碼
+  shareList: () => ipcRenderer.invoke("share-list"),
+  shareRevokeCode: (code) => ipcRenderer.invoke("share-revoke-code", code),
+  // 報告存成 PDF(renderer/report-pdf.js):主行程開存檔框、自己讀報告、自己寫檔;回 { code: OK | CANCELED | BUSY | FAIL }
+  reportPdf: (view, id, ver, lang) => ipcRenderer.invoke("report-pdf", view, id, ver, lang),
+  onReportPdfSaving: (fn) => ipcRenderer.on("report-pdf-saving", () => fn()),   // 存檔框按了儲存、開始產
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
   // 雲端連交易所:金鑰只走這一支(cloud-send 拒收 credentials);回應只有 { ok, code, detail },沒有金鑰值

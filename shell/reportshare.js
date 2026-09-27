@@ -1,5 +1,5 @@
 // Blave 電腦版 — 報告公開分享(主行程用)。契約 blave-canon docs/report-sharing.md;端點 api openclaw/desktop_auth.py 的
-// POST /oauth/desktop/share/{state,publish,update,revoke}(body 多一個不認得的欄位就 400,所以這裡逐欄組、不轉交 renderer 的物件)。
+// POST /oauth/desktop/share/{state,publish,update,revoke,list}(body 多一個不認得的欄位就 400,所以這裡逐欄組、不轉交 renderer 的物件)。
 //
 // 為什麼在主行程:兩顆憑證(帳號 token + app_secret)只在這裡(同 cloud.js 檔頭);本機報告的全文與圖由主行程讀檔,
 // renderer 只給得了 view / id / 掛名二選一 / 有沒有勾。聲明版本與條款版本也在這裡加:那是法遵證據(契約 §2),
@@ -10,7 +10,7 @@
 const DISCLAIMER_VERSION = "rs-ack-2026.09.27";
 // = web/app/legal.py TOS_VERSION(api 沒有端點給這個值;tests/check_shell_report_share.js 在 monorepo 版面比對兩邊)
 const TOS_VERSION = "2026-09-28";
-const EP = { state: "/oauth/desktop/share/state", publish: "/oauth/desktop/share/publish", update: "/oauth/desktop/share/update", revoke: "/oauth/desktop/share/revoke" };
+const EP = { state: "/oauth/desktop/share/state", publish: "/oauth/desktop/share/publish", update: "/oauth/desktop/share/update", revoke: "/oauth/desktop/share/revoke", list: "/oauth/desktop/share/list" };
 const VIEWS = ["local", "cloud"];
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/, CODE_RE = /^[A-Za-z0-9_-]{4,64}$/;
 const NAME_MAX = 64;   // = api BYLINE_MAX
@@ -28,7 +28,8 @@ function failCode(res, op) {
   if (!res || !res.status || res.status >= 500) return "UNREACH";
   const b = res.body && typeof res.body === "object" ? res.body : {};
   if (res.status === 401) return "RELOGIN";
-  if (res.status === 429) return "RATE_LIMITED";
+  // 429 有三種,先看 error_code:同時公開的份數滿了 / 今天的次數用完 / 每分鐘限流(ERR429 與其餘)——前兩種等一分鐘也沒用,不能講成「按得太頻繁」
+  if (res.status === 429) return b.error_code === "LIVE_LIMIT" || b.error_code === "DAILY_LIMIT" ? b.error_code : "RATE_LIMITED";
   if (res.status === 409) return "ALREADY";
   if (res.status === 422) return "NOT_SHAREABLE";
   if (res.status === 403) return "NO_MACHINE";   // 雲端視角:api 的 ERR008(Blave Agent 沒在跑),同 web 的 @blave_agent_required
@@ -36,6 +37,22 @@ function failCode(res, op) {
   if (res.status === 404) return op === "publish" ? "NOT_SHAREABLE" : "NOT_PUBLIC";
   if (res.status === 400 && b.error_code === "NO_DISPLAY_NAME") return "NO_DISPLAY_NAME";
   return "NOT_SHAREABLE";   // 其餘 400 / 413:報告過不了 api 的驗證器,重送也一樣
+}
+/* 上限(share/state、share/list 的頂層四欄;LIVE_LIMIT / DAILY_LIMIT 的 limit):不是非負整數就當沒給,畫面不出數字 */
+const count = (v) => (Number.isInteger(v) && v >= 0 && v <= 100000 ? v : null);
+function cleanLimits(b) {
+  const o = b && typeof b === "object" ? b : {};
+  return { liveCount: count(o.live_count), liveLimit: count(o.live_limit), todayCount: count(o.today_count), dailyLimit: count(o.daily_limit) };
+}
+const LIST_MAX = 200, TITLE_MAX = 200, ORIGINS = ["cloud", "desktop"], TYPES = ["research", "morning"];
+/* share/list 的一列 → 畫面用的形狀;代碼 / 來源 / 時間不對 → null(那一列不畫)。
+   url_path 不轉交:公開網址由畫面拿 code 自己組(同閱讀頁的公開列),api 回什麼路徑都進不了剪貼簿 */
+function cleanListRow(r) {
+  if (!r || typeof r !== "object" || typeof r.code !== "string" || !CODE_RE.test(r.code) || ORIGINS.indexOf(r.origin) < 0 || ts(r.published_at) == null) return null;
+  const title = typeof r.title === "string" ? r.title.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, TITLE_MAX) : "";
+  return { code: r.code, origin: r.origin, reportId: typeof r.report_id === "string" && ID_RE.test(r.report_id) ? r.report_id : null, title,
+    type: TYPES.indexOf(r.type) >= 0 ? r.type : null, published_at: r.published_at, byline: typeof r.byline === "string" && r.byline.trim() ? r.byline.trim().slice(0, NAME_MAX) : null,
+    sourceExists: r.origin === "cloud" && typeof r.source_exists === "boolean" ? r.source_exists : null };   // null = 不知道(desktop 袋,或 api 讀不到雲端索引)
 }
 
 /* api 拒收時回的那一句(帶欄位路徑,例 blocks[3].source.url: must be an https URL)→ 給畫面與 upload_errors.log 的一行。
@@ -77,13 +94,17 @@ function createShareClient(opts) {
     if (!c.appSecret) return { code: "RELOGIN" };   // 舊登入沒有 app_secret
     return { token: c.token, appSecret: c.appSecret };
   }
-  // 回應回來時再看一次現在是誰:請求在路上時換了帳號,這份就是上一個人的(同 cloud.js readOnce)
   async function call(op, view, id, extra) {
     if (VIEWS.indexOf(view) < 0 || typeof id !== "string" || !ID_RE.test(id)) return { res: null, code: "BAD_ARGS" };
+    return send(op, { view, id, ...extra });
+  }
+  // 回應回來時再看一次現在是誰:請求在路上時換了帳號,這份就是上一個人的(同 cloud.js readOnce)。
+  // fields = 憑證以外的欄位(api 對多的欄位回 400;revoke 的三種指名方式混用也是 400,所以清單那條路不帶 view / id)
+  async function send(op, fields) {
     const c = creds();
     if (c.code) return { res: null, code: c.code };
     let res = null;
-    try { res = await opts.post(opts.apiBase + EP[op], { token: c.token, app_secret: c.appSecret, view, id, ...extra }); } catch (_) { /* 連不上 */ }
+    try { res = await opts.post(opts.apiBase + EP[op], { token: c.token, app_secret: c.appSecret, ...fields }); } catch (_) { /* 連不上 */ }
     let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
     if (!cur || cur.token !== c.token) return { res: null, code: "UNREACH" };
     return { res, code: res && res.status === 200 ? "OK" : failCode(res, op) };
@@ -96,7 +117,7 @@ function createShareClient(opts) {
       const b = res.body && typeof res.body === "object" ? res.body : {};
       if (!("share" in b)) return { code: "UNREACH" };
       const name = typeof b.display_name === "string" && b.display_name.trim() ? b.display_name.trim().slice(0, NAME_MAX) : null;
-      return { code: "OK", share: b.share === null ? null : withMtime(view, id, cleanShare(b.share)), displayName: name };
+      return { code: "OK", share: b.share === null ? null : withMtime(view, id, cleanShare(b.share)), displayName: name, limits: cleanLimits(b) };
     },
     /* 公開 / 更新公開版本。a = { byline: "anonymous"|"name", confirmed: true, update: bool }。本機報告的全文與圖在這裡讀、原樣送 */
     async publish(view, id, a) {
@@ -115,6 +136,8 @@ function createShareClient(opts) {
         const st = await this.state(view, id);
         if (st.code === "OK" && st.share) return done(st.share);
       }
+      // 送出時才撞到上限(開框之後別處又公開了):帶上限的數字,畫面那一句要用
+      if (code === "LIVE_LIMIT" || code === "DAILY_LIMIT") return { code, limit: count(res.body.limit) };
       if (code !== "OK") {
         const detail = DETAIL_CODES.indexOf(code) >= 0 ? failDetail(res) : "";
         if (detail && view === "local" && opts.logError) { try { opts.logError(id, "share refused (" + res.status + "): " + detail); } catch (_) { /* 寫不了不擋 */ } }
@@ -127,7 +150,20 @@ function createShareClient(opts) {
       const { code } = await call("revoke", view, id, {});
       return { code };
     },
+    /* 這個帳號所有公開中的報告(兩袋都列;設定 › 公開連結)。{ code: "OK", shares: [...], limits } / { code } */
+    async list() {
+      const { res, code } = await send("list", {});
+      if (code !== "OK") return { code };
+      const b = res.body && typeof res.body === "object" ? res.body : {};
+      if (!Array.isArray(b.shares)) return { code: "UNREACH" };
+      return { code: "OK", shares: b.shares.slice(0, LIST_MAX).map(cleanListRow).filter(Boolean), limits: cleanLimits(b) };
+    },
+    // 清單上的取消分享:只憑代碼撤(原檔不在這台電腦、不在雲端也撤得掉)
+    async revokeCode(code) {
+      if (typeof code !== "string" || !CODE_RE.test(code)) return { code: "BAD_ARGS" };
+      return { code: (await send("revoke", { code })).code };
+    },
   };
 }
 
-module.exports = { createShareClient, createShareStore, cleanShare, failCode, failDetail, DISCLAIMER_VERSION, TOS_VERSION, EP };
+module.exports = { createShareClient, createShareStore, cleanShare, cleanListRow, cleanLimits, failCode, failDetail, DISCLAIMER_VERSION, TOS_VERSION, EP };

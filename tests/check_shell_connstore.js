@@ -94,9 +94,10 @@ const write = (dir, obj) => fs.writeFileSync(path.join(dir, FILE), JSON.stringif
   t("重新登入之後 reseal", /saveToken\(r\.body\.access_token\)[\s\S]{0,600}connStore\(\)\.reseal\(\);/.test(main));
   const unguarded = (main.match(/ipcMain\.handle\("([^"]+)",\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*(\{?[^\n]*)/g) || []).filter((l) => !/fromOurPage\(e\)/.test(l) && !/ipcMain\.handle\(channel,/.test(l));
   // 直接用 ipcMain.handle 的只剩「拒絕時要回特定形狀」的那幾支,每一支第一行就要驗
-  const direct = [...main.matchAll(/ipcMain\.handle\("([^"]+)"/g)].map((m) => m[1]);
+  // print-payload 是唯一的例外:它不是主畫面叫的,是主行程自己開的那個看不見的列印視窗(報告存成 PDF);reportpdf.js 比對 sender,別的頁面拿到 null
+  const direct = [...main.matchAll(/ipcMain\.handle\("([^"]+)"/g)].map((m) => m[1]).filter((ch) => ch !== "print-payload");
   const firstLineGuard = direct.every((ch) => { const i = main.indexOf('ipcMain.handle("' + ch + '"'); return /fromOurPage\(e\)/.test(main.slice(i, i + 260)); });
-  t("R3:每一支 IPC 都過 fromOurPage(handle() 預設就驗;直接註冊的自己驗)", firstLineGuard && /const handle = \(channel, fn, denied = null\) => ipcMain\.handle\(channel, \(e, \.\.\.a\) => \(fromOurPage\(e\) \? fn\(e, \.\.\.a\) : denied\)\);/.test(main)
+  t("R3:每一支 IPC 都過 fromOurPage(handle() 預設就驗;直接註冊的自己驗;列印視窗那一支比對 sender)", firstLineGuard && /ipcMain\.handle\("print-payload", \(e\) => \(_pdf \? _pdf\.payload\(e\.sender\) : null\)\)/.test(main) && /function payload\(sender\) \{ return job && job\.wc === sender \? job\.payload : null; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "reportpdf.js"), "utf8")) && /const handle = \(channel, fn, denied = null\) => ipcMain\.handle\(channel, \(e, \.\.\.a\) => \(fromOurPage\(e\) \? fn\(e, \.\.\.a\) : denied\)\);/.test(main)
     && direct.length <= 14 && (main.match(/\n  handle\("/g) || []).length >= 30); void unguarded; }
 
 for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });

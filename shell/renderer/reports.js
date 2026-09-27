@@ -15,7 +15,6 @@
 const RPT_PAGE = 12;   // 同 web RP_PAGE:680 欄一個畫面放得下的列數
 const RPT_CLOUD_POLL_MS = 30 * 1000, RPT_CLOUD_WAIT_MS = 10 * 60 * 1000;   // 雲端:uploader 是 2 分鐘的計時器 + 平台入庫
 const RPT_TYPE_KEYS = { performance: "rpt.type.performance", morning: "rpt.type.morning", research: "rpt.type.research" };
-const RPT_FN_RE = /\[\^([A-Za-z0-9_-]{1,32})\]/g;   // 契約 §4 的尾註引用(同 report-blocks.js 的 FN_REF)
 function rptPad2(n) { return n < 10 ? "0" + n : String(n); }
 // 建立時間 MM/DD HH:MM(本地時區;格式同 web fmtStamp / fmtMD + fmtHM);不是有限數 → ""
 function rptFmtStamp(sec) {
@@ -229,6 +228,7 @@ function rptPaint() {
   const env = libEnv(), B = rptBag(env); RPT.paintedEnv = env;
   const reading = !!B.reading;
   if (typeof shrClear === "function") shrClear();   // 分享入口與公開列跟著這一份走(report-share.js);畫好本體後 rptRender 再掛回來
+  if (typeof pdfClear === "function") pdfClear();   // 「存成 PDF」同一條(report-pdf.js)
   $("rpt-head-list").hidden = reading; $("rpt-back").hidden = !reading; $("rpt-read").hidden = !reading;
   if (reading) { $("rpt-rows").textContent = ""; $("rpt-state").hidden = true; $("rpt-state").textContent = ""; rptFetch(env, B.reading); }
   else { $("rpt-read").textContent = ""; rptPaintList(); $("rpt-body").scrollTop = B.scroll || 0; }
@@ -356,6 +356,7 @@ function rptRender(env, doc, host) {
     window.renderAgentReport(host, doc.report, { apiBase: "", i18n: rptI18n(env), imageUrl: (ref) => doc.images[ref] || "", markdown: rptMarkdown });   // 空 src → onerror → 渲染器自己的失敗框
     const rid = rptBag(env).reading;
     if (rid && typeof shrDecorate === "function") try { shrDecorate(env, rid, doc.report, host); } catch (_) { }   // 分享壞掉不能讓已畫好的報告被當成讀取失敗
+    if (rid && typeof pdfDecorate === "function") try { pdfDecorate(env, rid, doc.report); } catch (_) { }
     libTrack("reports_read");
     if (env === "local") rptTrackKind(doc.report);
   } catch (_) {
@@ -385,44 +386,7 @@ function rptExtLink(e) {
   e.preventDefault();
   if (/^https:\/\//i.test(a.href)) window.blave.openExternal(a.href);
 }
-/* text block 的 markdown → DOM(渲染器的 makeCtx.markdown):接 app.js 的 mdBlocks / mdPaint(一個節點一個節點組,不經 HTML)。
-   契約不支援連結:mdPaint 從 [text](url) / 裸網址生出來的 <a> 拆回純文字(同 web)。尾註引用 [^id] → 上標:web 是餵給 marked 之前
-   換成 <a> 字串;這裡的 markdown 不解讀 HTML,改在畫好的樹上換(程式碼與連結裡不換)。**粗體不必前置展開**:mdInline 的 ** 沒有
-   CommonMark 的 flanking 限制。monoNarrative 由渲染器接手 */
-function rptMarkdown(md, ctx) {
-  if (typeof mdBlocks !== "function" || typeof mdPaint !== "function") return null;
-  const frag = document.createDocumentFragment();
-  mdPaint(frag, mdBlocks(md, 0));
-  frag.querySelectorAll("a").forEach((a) => a.replaceWith(document.createTextNode(a.textContent)));
-  const walker = document.createTreeWalker(frag, window.NodeFilter.SHOW_TEXT, null), texts = [];
-  let n = null;
-  while ((n = walker.nextNode())) { const p = n.parentNode; if (p && (p.nodeName === "CODE" || p.nodeName === "A")) continue; RPT_FN_RE.lastIndex = 0; if (RPT_FN_RE.test(n.nodeValue)) texts.push(n); }
-  texts.forEach((node) => {
-    const s = node.nodeValue, f = document.createDocumentFragment(), re = new RegExp(RPT_FN_RE.source, "g");
-    let last = 0, m = null;
-    while ((m = re.exec(s))) {
-      const k = ctx.footnotes[m[1]];
-      if (!k) continue;   // 對不上的引用 api 會 400;真的漏進來就原樣留字面,不做出一個點不到的上標
-      if (m.index > last) f.append(s.slice(last, m.index));
-      const a = document.createElement("a"); a.className = "rb-fnref"; a.href = "#fn-" + m[1]; a.textContent = String(k);
-      a.setAttribute("aria-label", ctx.i18n.footnoteRef + " " + k);
-      a.addEventListener("click", rptJumpFn);
-      f.append(a); last = re.lastIndex;
-    }
-    if (last < s.length) f.append(s.slice(last));
-    node.replaceWith(f);
-  });
-  return frag;
-}
-// 上標跳到尾註列(同 report-blocks.js 的 jumpToFootnote:只做「同頁跳到那條註解」,不導覽)
-function rptJumpFn(e) {
-  e.preventDefault();
-  const id = this.getAttribute("href").slice(1), root = this.closest("article.rb-report");
-  const target = root ? [...root.querySelectorAll(".rb-fn")].find((x) => x.id === id) : null;
-  if (!target) return;
-  target.scrollIntoView({ behavior: "auto", block: "center" });
-  target.setAttribute("tabindex", "-1"); target.focus({ preventScroll: true });
-}
+/* text block 的 markdown → DOM(rptMarkdown)在 md.js:列印頁(report-print.html)畫同一份報告時也用它 */
 
 /* ── 「新增報告」modal(§1.5;殼同 confirmBox 家族)──────────── */
 function rptNewOpen(opener) {

@@ -1,0 +1,35 @@
+/* =========================================================================
+   設定 › 公開連結(renderer/report-sharelist.js;spec-share-list-0.1.8 A1、mockup-share-list-0.1.8.html 的 .dl-* 逐值)。
+   殼(.set-content 內距 16、自己捲)、鈕(.btn-out / .btn-quiet)、骨架(.sk)、錯誤記號(.fault-mark)沿用既有 recipe,這裡只寫新的。
+   值全引 tokens.css,不寫 hex、不寫裸 ms。
+   ========================================================================= */
+.shl-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); margin-bottom: var(--space-4); }
+.shl-count { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.shl-count .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.shl-count .n, .shl-count b { font-weight: 500; color: var(--ink-2); }
+.shl-rows { margin: 0; padding: 0; list-style: none; }
+.shl-row { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-12) 0; border-top: 1px solid var(--border-hairline); }
+.shl-row:first-child { border-top: 0; }
+.shl-left { flex: 1; min-width: 0; }
+.shl-name { display: block; max-width: 100%; padding: 0; font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--ink); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 可點的標題:canon「表格代號連結」——hover 補底線、字換 ink-2 */
+button.shl-name { transition: color var(--motion-fast) var(--ease-standard); }
+button.shl-name:hover { text-decoration: underline; text-underline-offset: 3px; color: var(--ink-2); }
+.shl-sub { margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shl-sub .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+/* 必須被讀到的次要字升一階(canon › Neutrals 註) */
+.shl-gone { margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.shl-acts { flex: none; display: flex; align-items: center; gap: var(--space-12); }
+.shl-msg { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+.shl-msg.q { color: var(--ink-3); }
+.shl-msgrow { display: flex; align-items: flex-start; gap: var(--space-12); }
+.shl-msgrow .shl-msg { flex: 1; min-width: 0; }
+.shl-msgrow .fault-mark { margin-top: 10px; margin-right: calc(-1 * var(--space-4)); }
+.shl-sk { padding: var(--space-12) 0; border-top: 1px solid var(--border-hairline); display: flex; flex-direction: column; gap: var(--space-8); }
+.shl-head + .shl-sk { border-top: 0; }
+.shl-sk .sk { display: block; height: 14px; }
+.shl-sk .sk.s { height: 12px; margin-top: 0; }
+/* 取消確認框內文第一行:被取消那份的標題 */
+.del-body.lines p.shl-cf-title { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+/* 分享框達上限那一句裡的出口:坐在一句話裡,字用 ink(同 mockup .foot-msg .btn-quiet) */
+.foot-msg .btn-quiet { color: var(--ink); }

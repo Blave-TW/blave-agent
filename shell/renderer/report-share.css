@@ -6,7 +6,9 @@
    ========================================================================= */
 /* 頁首列:寬同內容欄 680,返回貼左、分享貼右;兩顆都收著(清單模式)時沒有高度 */
 .rpt-rhead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-12); max-width: 680px; }
-#rpt-share[hidden] { display: none; }
+#rpt-share[hidden], #rpt-pdf[hidden] { display: none; }
+/* 右側動作群〔分享〕〔存成 PDF〕:兩顆同尺寸的外框鈕、間距 8;返回鈕收著(清單模式)時整群也沒有東西 */
+.rpt-acts { flex: none; display: flex; align-items: center; gap: var(--space-8); margin-left: auto; }
 
 /* ---- 公開列(DT4):web D3 sharewell 同構,會跟內容一起捲 ---- */
 .shr-well { border: 1px solid var(--border-frame); border-radius: var(--radius-md); padding: var(--space-12) var(--space-16); margin-bottom: var(--space-16); }

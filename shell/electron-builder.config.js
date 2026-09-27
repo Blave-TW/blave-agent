@@ -65,7 +65,7 @@ module.exports = {
   extraMetadata: RELEASE || UPDATE_URL || WIN_ONLY ? { ...(RELEASE ? { blaveRelease: true } : {}), ...(UPDATE_URL ? { blaveUpdateUrl: UPDATE_URL } : {}), ...(WIN_ONLY ? { name: "Blave" } : {}) } : undefined,
   publish: UPDATE_URL ? [{ provider: "generic", url: UPDATE_URL }] : null,   // 只為了產生 latest-mac.yml / latest.yml;上傳是手動的(--publish never)
   npmRebuild: false,
-  files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "cloudcmd.js", "cloud_capital.js", "reportshare.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "mcpcode.js", "browser/**/*", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
+  files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "cloudcmd.js", "cloud_capital.js", "reportshare.js", "reportpdf.js", "print-preload.js", "minversion.js", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "mcpcode.js", "browser/**/*", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   // 隨包 Python 依目標平台切(tools/fetch-python.sh 三顆都抓):平台區塊的 extraResources 會接在這份後面
   extraResources: [
     { from: "..", to: "agent", filter: tracked },

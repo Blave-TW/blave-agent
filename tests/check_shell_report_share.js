@@ -213,12 +213,12 @@ app.whenReady().then(async () => {
   const st = () => js(`(() => { const g = (x) => document.getElementById(x), well = document.querySelector("#rpt-read > .shr-well");
     return { btn: !g("rpt-share").hidden, btnText: g("rpt-share").textContent, well: !!well, first: g("rpt-read").firstElementChild && g("rpt-read").firstElementChild.className, url: well && well.querySelector(".shr-url").textContent,
       stale: well ? well.querySelectorAll(".shr-stale").length : 0, staleBtn: well ? well.querySelectorAll(".shr-stale .btn-out").length : 0, dlg: !g("shr-scrim").hidden,
-      edge: Math.round(g("rpt-share").getBoundingClientRect().right - g("rpt-read").getBoundingClientRect().right), backEdge: Math.round(g("rpt-back").getBoundingClientRect().left - g("rpt-read").getBoundingClientRect().left) }; })()`);
+      edge: Math.round(g("rpt-share").parentElement.getBoundingClientRect().right - g("rpt-read").getBoundingClientRect().right), backEdge: Math.round(g("rpt-back").getBoundingClientRect().left - g("rpt-read").getBoundingClientRect().left) }; })()`);
 
   await openRead("perf"); let s = await st();
   ok("④ performance 報告:頁首沒有「分享」、沒有公開列", !s.btn && !s.well, JSON.stringify(s));
   await openRead("res"); s = await st();
-  ok("④ research(未公開):頁首右側「分享」、右緣對齊內容欄右緣(返回鈕照舊外擠 4);問了一次 state(view=local)", s.btn && s.btnText === (await T("shr.btn")) && !s.well && Math.abs(s.edge) <= 1 && s.backEdge === -4 && (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "state"))`)).includes('["state","local","res"]'), JSON.stringify(s));
+  ok("④ research(未公開):頁首右側「分享」、動作群(分享 + 存成 PDF)右緣對齊內容欄右緣(返回鈕照舊外擠 4);問了一次 state(view=local)", s.btn && s.btnText === (await T("shr.btn")) && !s.well && Math.abs(s.edge) <= 1 && s.backEdge === -4 && (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "state"))`)).includes('["state","local","res"]'), JSON.stringify(s));
   // 引用圖(同一份報告)
   const im = await js(`(() => { const A = document.querySelector("#rpt-read article.rb-report"), W = [...A.querySelectorAll(".rb-image")];
     return W.map((x) => { const l = x.querySelector(".rb-image-src"), a = l && l.querySelector("a.rb-xlink"), img = x.querySelector("img"), cap = x.nextElementSibling;

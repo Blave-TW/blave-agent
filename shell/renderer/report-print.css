@@ -1,0 +1,331 @@
+/* =========================================================================
+   報告存成 PDF 的列印頁(report-print.html;spec-report-pdf-0.1.8 §P)。主行程在看不見的視窗載這一頁、printToPDF。
+   <html> 不帶 data-theme:tokens.css 的 :root(light)生效,report-blocks.css 走語意角色,整份變淺色。
+   三段:① 紙面與頁尾(@page margin box)② 報告 block 的 Editorial light remap(從 web 公開頁搬,逐字)
+   ③ 分頁規則(P4;web 的列印頁用同一組)。值全引 tokens.css,不寫 hex。
+   ========================================================================= */
+
+/* ---------- ① 紙面 ---------- */
+/* 頁尾兩格的字由 report-print.js 設在 :root 的 --pdf-foot / --pdf-site(字串表的字;@page 裡沒有選擇器可以分語言) */
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm;
+  @bottom-left {
+    content: var(--pdf-foot, "");
+    font: 400 7.5pt/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--color-greyMedium);
+    vertical-align: top;
+    padding-top: 5mm;
+  }
+  @bottom-right {
+    content: "blave.org  \00b7  " counter(page) " / " counter(pages);
+    font: 400 7.5pt/1.4 "Roboto Mono", ui-monospace, monospace;
+    color: var(--color-greyMedium);
+    vertical-align: top;
+    padding-top: 5mm;
+  }
+}
+html {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+  background: var(--color-pureWhite);
+}
+/* 紙底 pureWhite(不是 body 的 off-white:印出來是一層灰);字同 app 的系統字(外殼不為 PDF 打包字型) */
+body.pdf-doc {
+  margin: 0;
+  background: var(--color-pureWhite);
+  color: var(--color-black);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+/* 欄寬 = A4 扣左右 16mm:螢幕排版時就用這個寬(圖表量容器畫 SVG),印出來不重排 */
+.pdf-sheet { width: 178mm; margin: 0; }
+.pdf-doc .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.pdf-doc h1, .pdf-doc h2, .pdf-doc h3, .pdf-doc p { margin: 0; }
+/* 頁 1 頂:lockup(之後各頁沒有頁首) */
+.pdf-brand { margin-bottom: 20px; color: var(--color-black); }
+.pdf-brand svg { height: 14px; width: auto; display: block; }
+
+/* meta 頭:公開頁的 remap 不含 meta(公開頁自己 SSR 頁首),這裡補 light 版 */
+#rs_content .rb-report .rb-title { color: var(--color-black); font-size: 24px; line-height: 1.35; letter-spacing: -0.01em; }
+#rs_content .rb-report .rb-meta-line { color: var(--color-greyMedium); }
+#rs_content .rb-report .rb-type-tag { background: var(--color-greyLight); color: var(--color-greyDark); }
+#rs_content .rb-report .rb-strip { border-top-color: var(--color-greyLight); border-bottom-color: var(--color-greyLight); }
+#rs_content .rb-report .rb-strip-value { color: var(--color-black); }
+
+/* ---------- 文末聲明(P2):整塊不切 ---------- */
+.pdf-statement { break-inside: avoid; margin-top: var(--space-32); padding-top: var(--space-16); border-top: 1px solid var(--color-greyLight); }
+.pdf-statement[hidden] { display: none; }
+.pdf-statement h2 { font-size: 12px; font-weight: 600; color: var(--color-black); margin: 0 0 var(--space-8); }
+.pdf-statement p { font-size: 10.5px; line-height: 1.65; color: var(--color-greyDark); margin: 0 0 var(--space-6); }
+.pdf-statement .pdf-stamp { margin-top: var(--space-8); font-size: 10px; color: var(--color-greyMedium); }
+
+/* ---------- ② 報告 block:Editorial light remap ----------
+   以下到「③」之前逐字搬自 web/app/static/css/landing/agent/research_share.css 的「報告 block:dark → light」段
+   (拿掉公開頁自己的 .rs-* 規則)。PDF 與公開連結讀起來是同一份文件;那邊改了這裡跟著搬。 */
+#rs_content .rb-report {
+  max-width: none;
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-lead {
+  padding: 0 0 0 var(--space-16);
+  background: none;
+  border-radius: 0;
+  border-left: 2px solid var(--color-greyLightMedium);
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-lead p {
+  font-size: 18px;
+  line-height: 1.7;
+  font-weight: 500;
+}
+/* 總結:跟 lead 一樣改左線;開頭仍是頁面焦點,總結小一級。light 不畫推翻段的分隔線
+   (左線已經把兩段框在一起) */
+#rs_content .rb-report .rb-text.rb-summary {
+  margin-top: var(--space-48);
+  padding: 0 0 0 var(--space-16);
+  background: none;
+  border-radius: 0;
+  border-left: 2px solid var(--color-greyLightMedium);
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-text.rb-summary h2 {
+  margin: 0 0 var(--space-6);
+  padding-bottom: 0;
+  border-bottom: 0;
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-text.rb-summary p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+}
+#rs_content .rb-report .rb-text.rb-summary p:last-child:not(:first-of-type) {
+  margin-top: var(--space-12);
+  padding-top: 0;
+  border-top: 0;
+  font-size: 14px;
+  color: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-text.rb-summary strong {
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-text p,
+#rs_content .rb-report .rb-text ul li,
+#rs_content .rb-report .rb-text ol li {
+  font-size: 14px;
+  line-height: 1.8;
+}
+#rs_content .rb-report .rb-text p {
+  margin-bottom: var(--space-16);
+}
+#rs_content .rb-report .rb-text strong {
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-text code {
+  color: var(--color-black);
+  background: var(--color-surface);
+}
+/* markdown ## = 區段論點標題;block title = 圖表標題(兩個角色在閱讀頁分開) */
+#rs_content .rb-report .rb-text h2 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--color-black);
+  margin: var(--space-48) 0 var(--space-12);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid var(--color-greyLight);
+}
+#rs_content .rb-report .rb-text h3 {
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-h {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--color-greyDark);
+  margin: var(--space-32) 0 0;
+  padding: 0;
+  border: 0;
+}
+#rs_content .rb-report .rb-cap {
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: var(--space-8);
+}
+
+/* news:顏色走角色變數已是 light,這裡只換 Editorial 字階(spec §4.3:15/14/12) */
+#rs_content .rb-report .rb-news {
+  margin-top: var(--space-12);
+}
+#rs_content .rb-report .rb-news-title {
+  font-size: 15px;
+}
+#rs_content .rb-report .rb-news-sum {
+  font-size: 14px;
+}
+
+/* 圖 */
+#rs_content .rb-report .rb-chart .rb-grid {
+  stroke: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-chart .rb-band {
+  fill: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-chart .rb-pt-label.is-focus {
+  fill: var(--color-black);
+}
+#rs_content .rb-report .rb-legend {
+  font-size: 12px;
+}
+#rs_content .rb-report .rb-legend-val {
+  color: var(--color-black);
+}
+
+/* kpi / 指標網格 / 表格 */
+#rs_content .rb-report .rb-kpi-label,
+#rs_content .rb-report .rb-metric-label {
+  font-size: 12px;
+}
+#rs_content .rb-report .rb-kpi-value,
+#rs_content .rb-report .rb-metric-value,
+#rs_content .rb-report .rb-table td {
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-metric-row,
+#rs_content .rb-report .rb-table td {
+  border-bottom-color: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-table {
+  font-size: 13px;
+}
+#rs_content .rb-report .rb-table th {
+  font-size: 12px;
+}
+
+/* 熱圖:底換成 surface;色階端點仍是 green/red token */
+#rs_content .rb-heat td {
+  color: var(--color-black);
+  background: var(--color-surface);
+}
+/* 缺值「—」:light 對應 dark 的 greyDark 那個角色 = greyMedium(canon › 報告熱圖 8 階混色) */
+#rs_content .rb-heat td.is-na {
+  color: var(--color-greyMedium);
+  background: transparent;
+}
+#rs_content .rb-heat td.rb-g1 { background: color-mix(in srgb, var(--color-green) 12%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-g2 { background: color-mix(in srgb, var(--color-green) 23%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-g3 { background: color-mix(in srgb, var(--color-green) 34%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-g4 { background: color-mix(in srgb, var(--color-green) 45%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-r1 { background: color-mix(in srgb, var(--color-red) 12%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-r2 { background: color-mix(in srgb, var(--color-red) 23%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-r3 { background: color-mix(in srgb, var(--color-red) 34%, var(--color-surface)); }
+#rs_content .rb-heat td.rb-r4 { background: color-mix(in srgb, var(--color-red) 45%, var(--color-surface)); }
+
+/* 漲跌文字走亮底加深值(canon Trading colors:文字用 *Text) */
+#rs_content .rb-report .rb-up,
+#rs_content .rb-report td.rb-up,
+#rs_content .rb-report .rb-kpi-value.rb-up,
+#rs_content .rb-report .rb-kpi-delta.rb-up,
+#rs_content .rb-report .rb-metric-value.rb-up {
+  color: var(--color-greenText);
+}
+#rs_content .rb-report .rb-dn,
+#rs_content .rb-report td.rb-dn,
+#rs_content .rb-report .rb-kpi-value.rb-dn,
+#rs_content .rb-report .rb-kpi-delta.rb-dn,
+#rs_content .rb-report .rb-metric-value.rb-dn {
+  color: var(--color-redText);
+}
+
+/* callout / quote / code / divider / image */
+#rs_content .rb-report .rb-callout {
+  padding: var(--space-16) var(--space-24);
+  background: var(--color-surface);
+}
+#rs_content .rb-report .rb-callout-title {
+  font-size: 15px;
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-callout-body {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-quote {
+  border-left-color: var(--color-greyLightMedium);
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-code {
+  background: var(--color-surface);
+  border-color: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-code pre {
+  color: var(--color-black);
+}
+#rs_content .rb-report .rb-divider {
+  border-top-color: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-image img,
+#rs_content .rb-report .rb-image-fail {
+  border-color: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-image-fail-alt {
+  color: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-image.is-cited + .rb-cap {
+  margin-top: var(--space-4);
+}
+
+/* 尾註 = 方法與資料來源(研究骨架 A8) */
+#rs_content .rb-report .rb-footnotes {
+  margin-top: var(--space-48);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--color-greyLight);
+}
+#rs_content .rb-report .rb-fn {
+  font-size: 13px;
+  color: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-fn-no {
+  font-size: 12px;
+  color: var(--color-greyMedium);
+}
+#rs_content .rb-report a.rb-fnref:hover {
+  color: var(--color-black);
+}
+
+/* ---------- ③ 分頁規則(spec P4;web 列印頁同一組)---------- */
+/* 1) 一個視覺單位 = 小標 + 圖 + caption(都在同一個 .rb-block 裡),整塊不切;放不下就整塊推到下一頁 */
+.rb-block:has(.rb-chart),
+.rb-block:has(> .rb-kpi),
+.rb-block:has(> .rb-metrics),
+.rb-block:has(> .rb-image),
+.rb-block:has(> .rb-callout),
+.rb-block:has(> .rb-quote),
+.rb-block:has(> .rb-lead),
+.rb-block:has(> .rb-summary),
+.rb-block:has(> .rb-heat-wrap) { break-inside: avoid; }
+/* 2) 標題不落單在頁尾 */
+.rb-h, .rb-text h2, .rb-text h3 { break-after: avoid; }
+/* 3) 表格可以跨頁,只在列與列之間切;表頭每頁重印。紙上沒有橫捲:寬表由 report-print.js 量了用 zoom 縮到剛好 */
+.rb-table thead { display: table-header-group; }
+.rb-table tr, .rb-heat tr { break-inside: avoid; }
+.rb-report .rb-table-wrap, .rb-report .rb-heat-wrap { overflow: visible; }
+/* 4) 清單類可跨頁,單則不切 */
+.rb-news-item, .rb-fn { break-inside: avoid; }
+/* 5) 段落孤行寡行 */
+.rb-text p, .rb-text li { orphans: 3; widows: 3; }
+/* 6) 程式碼在紙上換行 */
+.rb-code, .rb-code pre { white-space: pre-wrap; overflow: visible; }
+/* 7) 一張圖不超過一頁 */
+.rb-image img { max-height: 200mm; object-fit: contain; }
+
+/* ---------- 不印的東西(P6)---------- */
+/* 閱讀層尾行「本報告由…的 agent 產出」:「你」對轉傳讀者不成立,文末聲明已講了誰產出 */
+#rs_content .rb-report .rb-foot { display: none; }
+.pdf-doc button, .pdf-doc .shr-well { display: none !important; }

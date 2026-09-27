@@ -10,7 +10,9 @@ let red = 0; const t_ = (name, ok) => { console.log((ok ? "PASS  " : "FAIL  ") +
 const J = (x) => JSON.stringify(x);
 
 // ── aiParts(原文 → { cards, blocks }) ──
-eval(cut("const CARD_TAG", "function paintAi").replace(/^const /gm, "var "));
+// mdBlocks 以下在 renderer/md.js(列印頁也載它);mdPaint 之後是 DOM,這裡不跑
+const mdSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "md.js"), "utf8");
+eval((mdSrc.slice(0, mdSrc.indexOf("const mdEl")) + cut("const CARD_TAG", "function paintAi")).replace(/^const /gm, "var "));
 // 整份結構裡的字(依序接起來)與所有節點種類
 const walk = (x, f) => { if (Array.isArray(x)) return x.forEach((y) => walk(y, f)); if (x && typeof x === "object") { f(x); Object.values(x).forEach((y) => walk(y, f)); } };
 const textOf = (r) => { let o = ""; walk(r.blocks, (n) => { if (typeof n.text === "string") o += n.text; if (typeof n.code === "string") o += n.code; if (n.br) o += "\n"; }); return o; };
