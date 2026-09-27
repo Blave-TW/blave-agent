@@ -1,7 +1,7 @@
 // 瀏覽卡摘要列:整輪都在操作、一頁都沒讀(Wei 實測 TradingView:貼 Pine、切週期,沒 browser_read)
 // 不再寫「讀了 0 頁」——改「用了 N 頁」。canon 第 1 條口徑不動:「已讀」仍只認真的讀到正文的頁
 // (讀過任何一頁就照舊「讀了 N 頁」),N(用了)不含搜尋頁/被擋/打不開/只停中繼頁,格子照樣不打勾。
-// 另:設計師定案 br.openPanel zh「看網頁」/ en "View pages";「收回」文字鈕 0.1.8 拿掉(改中欄標題列的 ✕),br.closePanel 一併刪除。
+// 另:設計師定案 br.openPanel zh「看網頁」/ en "View Pages"(0.1.8 第四批:同一行的鈕都是 Title Case);「收回」文字鈕 0.1.8 拿掉(改中欄標題列的 ✕),br.closePanel 一併刪除。
 // 跑法:node tests/check_shell_browser_summary_used.js
 const fs = require("fs");
 const path = require("path");
@@ -44,7 +44,7 @@ ok("混合:1 頁被擋 + 1 頁操作過 → 用了 1(只數真的開起來的)",
 
 // ---- 文案(設計師定案)與 i18n
 ok("br.summaryUsedPre 兩語都有(用了 / Used)", /"br\.summaryUsedPre": "用了 "/.test(strings) && /"br\.summaryUsedPre": "Used "/.test(strings));
-ok("br.openPanel = 看網頁 / View pages(key 不改名)", /"br\.openPanel": "看網頁"/.test(strings) && /"br\.openPanel": "View pages"/.test(strings));
+ok("br.openPanel = 看網頁 / View Pages(key 不改名)", /"br\.openPanel": "看網頁"/.test(strings) && /"br\.openPanel": "View Pages"/.test(strings));
 ok("br.closePanel 已刪(「收回」文字鈕拿掉了)", !/br\.closePanel/.test(strings + src));
 
 console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
