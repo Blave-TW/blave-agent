@@ -22,10 +22,11 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 const fill = (cdp.match(/async function fill\(b, text, d, opt\) \{[\s\S]*?\n  \}/) || [""])[0];
 ok("fill:DOM.focus 之後跑 focusTarget,對不到焦點報錯不亂打",
   /await send\("DOM\.focus", \{ backendNodeId: b \}\)/.test(fill) && /callOn\(b, IP\.focusTarget\)/.test(fill) && /could not focus the field/.test(fill));
-ok("fill:編輯器目標走真貼上(剪貼簿存 → wc.paste → 還原),一般欄位照走 Input.insertText",
-  /clipboard\.readText\(\)/.test(fill) && /clipboard\.writeText\(String\(text\)\)/.test(fill) && /wc\.paste\(\)/.test(fill) &&
-  fill.indexOf("wc.paste()") < fill.indexOf('send("Input.insertText"') &&
-  /finally \{ try \{ saved \? clipboard\.writeText\(saved\) : clipboard\.clear\(\); \}/.test(fill));
+ok("fill:編輯器目標走真貼上(pasteChain 序列化:存 → 寫 → paste → 還原),一般欄位照走 Input.insertText",
+  /const saved = await clipboardSnapshot\(clipboard\);/.test(fill) && /await clipboard\.writeText\(String\(text\)\)/.test(fill)
+  && /wc\.paste\(\)/.test(fill) && fill.indexOf("wc.paste()") < fill.indexOf('send("Input.insertText"')
+  && /finally \{ await clipboardRestore\(clipboard, saved\); \}/.test(fill)
+  && /pasteChain = job\.catch/.test(fill));
 ok("fill:編輯器清空走真鍵盤 Cmd/Ctrl+A(clearField 回 false 那條),modifiers 對平台",
   /process\.platform === "darwin" \? 4 : 2/.test(fill) && /dispatchKeyEvent", \{ type: "keyDown", key: "a", code: "KeyA", modifiers: mod/.test(fill));
 
@@ -72,7 +73,8 @@ async function runFill({ editor, clear }) {
     IP, sleep: async () => {}, process, wc: { paste: () => { calls.paste++; } },
     require: (m) => (m === "electron" ? { clipboard } : require(m)),
   };
-  const fn = new Function(...Object.keys(env), "return (" + fill.replace(/^async function fill/, "async function") + ")")(...Object.values(env));
+  const helpers = cdp.slice(cdp.indexOf("let pasteChain"), cdp.indexOf("const KEEP_ROLES"));   // pasteChain + snapshot/restore(fill 引用)
+  const fn = new Function(...Object.keys(env), helpers + "\nreturn (" + fill.replace(/^async function fill/, "async function") + ")")(...Object.values(env));
   const r = await fn(1, "line1\n    line2", { isSelect: false }, { clear, perChar: false });
   return { r, calls, clipEnd: clipboard._t };
 }
@@ -88,7 +90,7 @@ async function runFill({ editor, clear }) {
 ok("doAct:量不到中心點只擋點擊(type / fill 繼續,pos 歸 null)",
   /if \(pos\.error && action === "click"\) return ERR/.test(idx) && /if \(pos\.error\) pos = null;/.test(idx));
 ok("doAct:沒 pos 就不畫目標框 / 游標滑行,page_act 的 box 帶 null", /if \(pos\) \{\n      await v\.page\.run\(IP\.mark, \["ref"/.test(idx) && /box: pos \? pos\.box : null/.test(idx));
-ok("doAct:browser_type 逐字只到 40 字,長 code 一次進", /const perChar = text\.length <= 40 && \(action === "type" \|\| spend\(t, text\.length \* 35\)\);/.test(idx));
+ok("doAct:browser_type 逐字只到 40 字,長 code 一次進(密集判定另可整段收斂,見 pace 測試)", /const perChar = !inst && text\.length <= 40 && \(action === "type" \|\| spend\(t, text\.length \* 35\)\);/.test(idx));
 
   console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
   process.exit(red ? 1 : 0);

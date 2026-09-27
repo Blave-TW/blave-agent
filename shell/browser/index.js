@@ -9,6 +9,7 @@ const gate = require("./gate");
 const C = require("./content");
 const { createTabs } = require("./tabs");
 const { createPage } = require("./cdp");
+const { createPace } = require("./pace");
 const { createMcpServer } = require("./mcp");
 const { createSnapshots } = require("./snapshots");
 const { TOOLS, INSTRUCTIONS } = require("./tools");
@@ -28,6 +29,12 @@ function createBrowser(o) {
   const E = o.electron;
   // 背景分頁一律用桌機視窗排版(agent 讀到桌機版內容、縮圖也是桌機版);只有顯示到中欄時才換成中欄大小
   let ses = null, win = null, cur = null, seq = 0;
+  // OAuth 登入子視窗(白名單身分提供者的 window.open;細節與邊界見 oauth.js)
+  const oauth = require("./oauth").createOauth({ electron: E, session: () => session(), getWin: () => o.getWin(), registrable: policy.registrable });
+  let pendingOauth = null;   // setWindowOpenHandler 放行的那一個(did-create-window 接管時比對)
+  // canon 第 4 條裁定:@eN ref 標籤對用戶不顯示(只留 1.5px 墨色目標 outline);
+  // 標籤退到開發模式旗標——環境變數,預設關(除錯 agent 的元素定位時才開)
+  const DEV_MARKS = process.env.BLAVE_BROWSER_DEV_MARKS === "1";
   const parkSize = { width: 1280, height: 800 };
   let expanded = null, blockVisible = false, thumbTimer = null;
   const views = new Map();          // tab id → { view, wc, page, loadTimer, lastReq, http }
@@ -104,6 +111,7 @@ function createBrowser(o) {
       try { if (typeof ses.resolveProxy === "function" && (await ses.resolveProxy(d.url)) !== "DIRECT") return; } catch (_) { return; }
       const id = d.webContentsId !== undefined ? wcTab.get(d.webContentsId) : null, v = id ? views.get(id) : null;
       if (v) { try { v.wc.stop(); v.wc.loadURL("about:blank"); } catch (_) { /* 已關 */ } if (d.resourceType === "mainFrame") emit("page_blocked", { id, kind: "scheme", reason: "private_address", like: null, detail: C.scrub(host, 200) }); }
+      else if (d.webContentsId !== undefined && oauth.owns(d.webContentsId)) oauth.abortPrivate();   // 稽核 B-P2-2:OAuth 子視窗不在 wcTab,rebinding 後盾也要蓋到
     });
     return ses;
   }
@@ -148,13 +156,16 @@ function createBrowser(o) {
   // ── 分頁的 view ──
   /* captureBeyondViewport 會暫時改掉頁面的 viewport;還原時偶爾停在錯的尺寸,之後這一頁就一直用那個窄寬度排版
      (實測:中欄 544 寬,頁面 innerWidth 卻是 240,排成手機版)。每次擷取後、每次放到中欄時都清一次 */
-  function unEmulate(v) { v.parkEmu = false; try { v.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {}); } catch (_) { /* 沒掛 debugger */ } }
+  function unEmulate(v) { v.parkEmu = false; v.emuGen = (v.emuGen || 0) + 1; try { v.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {}); } catch (_) { /* 沒掛 debugger */ } }
   /* parked 分頁常駐 1280×800 override:視窗外的 view 會被裁到 0 寬(實測 innerWidth = 0),
      頁面用 0 視口排版就出行動版(TradingView 連 Pine Editor 入口都沒有、SPA 路由也會壞)。
      設一次不再動,不會閃;進中欄時 bounds() 的 unEmulate 清掉、用真實大小。 */
   function parkEmulate(v) {
     if (v.parkEmu) return;   // 成功才設 flag(先設再清會跟 attach 之後的補設 race,補設看到 flag 提前 return)
-    try { v.wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", { width: parkSize.width, height: parkSize.height, deviceScaleFactor: 0, mobile: false }).then(() => { v.parkEmu = true; }, () => { /* 還沒掛 debugger:下一次 park / attach 之後補設 */ }); }
+    // 世代計數(稽核 A-P2-1):送出 override 後、promise 回來前用戶展開(unEmulate)→ resolve 不能
+    // 把 flag 設回 true,不然 CDP 端是 clear、flag 卻是 true,之後每次 park 都提前 return
+    const g = v.emuGen = (v.emuGen || 0) + 1;
+    try { v.wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", { width: parkSize.width, height: parkSize.height, deviceScaleFactor: 0, mobile: false }).then(() => { if (v.emuGen === g) v.parkEmu = true; }, () => { /* 還沒掛 debugger:下一次 park / attach 之後補設 */ }); }
     catch (_) { /* 同上 */ }
   }
   function park(v, i) { try { v.view.setBounds({ x: PARK_X + (i || 0) * (parkSize.width + 50), y: 0, width: parkSize.width, height: parkSize.height }); } catch (_) { /* 已銷毀 */ } parkEmulate(v); }
@@ -166,21 +177,34 @@ function createBrowser(o) {
       safeDialogs: true, devTools: false, navigateOnDragDrop: false, autoplayPolicy: "document-user-activation-required",
     } });
     const wc = view.webContents;
-    const v = { view, wc, page: createPage(wc), loadTimer: null, lastReq: Date.now(), http: 0, agentInputAt: 0 };
+    const v = { view, wc, page: createPage(wc), pace: createPace(), loadTimer: null, lastReq: Date.now(), http: 0, agentInputAt: 0 };
     views.set(t.id, v); wcTab.set(wc.id, t.id);
     win.contentView.addChildView(view); park(v, views.size);
     wc.setAudioMuted(true);
     wc.setWindowOpenHandler(({ url }) => {
-      // popup 一律不開新視窗;過了網路層就在瀏覽器裡開一個新分頁(計入名額)
+      // 稽核 S7:頁面自己開的 popup(不在 agent 動作窗口內、也不是用戶在操作)一律不開,不能拿來佔滿 8 格
+      const by = agentActive(wc.id) ? "agent" : t.userControl ? "user" : null;
+      // OAuth 例外(Wei 實測 Google 登入沒反應):白名單身分提供者放行成受控視窗(oauth.js,
+      // allow 路線保住 window.opener/postMessage——GSI 型流程要;did-create-window 下面接管)。
+      // 只認用戶手勢(稽核 B-P3):agent 的 3 秒窗不開——走到這裡的多半是頁面腳本趁窗口 window.open
+      if (by === "user" && oauth.isIdp(url)) {
+        const opts = oauth.allowOptions();
+        if (opts) { pendingOauth = { url: String(url), opener: wc.getURL() || t.url }; return opts; }
+        return { action: "deny" };   // 已有一個登入視窗:聚焦它,不疊第二個
+      }
+      // 其餘 popup 一律不開新視窗;過了網路層就在瀏覽器裡開一個新分頁(計入名額)
       if (!policy.network(url, "main")) {
-        // 稽核 S7:頁面自己開的 popup(不在 agent 動作窗口內、也不是用戶在操作)一律不開,不能拿來佔滿 8 格
-        const by = agentActive(wc.id) ? "agent" : t.userControl ? "user" : null;
         if (!by) return { action: "deny" };
         if (by === "agent" && policy.agent(url)) return { action: "deny" };
         let host = ""; try { host = policy.registrable(new URL(url).hostname); } catch (_) { return { action: "deny" }; }
         setImmediate(() => tabs.open(url, host, by));
       }
       return { action: "deny" };
+    });
+    wc.on("did-create-window", (childWin, details) => {
+      // 只有上面 IdP 分支會 allow;保險:不是剛放行的那個就關掉
+      if (pendingOauth && details && details.url === pendingOauth.url) { const po = pendingOauth; pendingOauth = null; oauth.adopt(childWin, po.url, po.opener); }
+      else try { childWin.destroy(); } catch (_) { /* 已關 */ }
     });
     wc.on("will-attach-webview", (e) => e.preventDefault());
     wc.on("login", (e, _d, _a, cb) => { e.preventDefault(); cb(); });
@@ -521,8 +545,16 @@ function createBrowser(o) {
       const pos = last && ex.view ? Math.min(1, Math.max(0, (last.top - ex.view.sy) / Math.max(1, ex.view.vh))) : null;
       emit("page_progress", { id: t.id, n, total: blocks.length, pos });
       if (t.visible && read.length) {
-        const follow = !reduced && Date.now() - (v.userInputAt || 0) > 3000;
-        v.page.run(IP.mark, ["read", { rects: read.map((b) => ({ top: b.top, h: b.h, left: b.left, w: b.w })), per: Math.min(240, Math.floor(1600 / read.length)), follow }, reduced]).catch(() => {});
+        // 密集判定(pace.js;canon 第 9 條):讀也算動作。密集=讀取帶不掃動直接落定(per 0)、不跟著捲
+        const pace = v.pace.arrive();
+        if (pace.cut) v.page.run(IP.mark, ["settle"]).catch(() => {});
+        const inst = pace.mode === "instant";
+        const per = inst ? 0 : Math.min(240, Math.floor(1600 / read.length));
+        const follow = !reduced && !inst && Date.now() - (v.userInputAt || 0) > 3000;
+        v.page.run(IP.mark, ["read", { rects: read.map((b) => ({ top: b.top, h: b.h, left: b.left, w: b.w })), per, follow }, reduced]).catch(() => {});
+        // 「結束」=帶落定;瞬間/減少動態=事件當下就算落定
+        if (inst || reduced || !per) v.pace.end();
+        else setTimeout(() => v.pace.end(), Math.min(1600, read.length * per) + 60);
       }
       const line = ex.meta.description || (ex.headings[0] && ex.headings[0].text) || ex.meta.title;
       if (line) emit("page_extract", { id: t.id, line: C.scrub(line, 140) });
@@ -552,23 +584,23 @@ function createBrowser(o) {
      列不出欄位、或蓋掉的數量對不上 → 回 null,呼叫端不拍。 */
   const PAY_IFRAME_RE = "(^|\\.)(stripe\\.com|stripe\\.network|paypal\\.com|paypalobjects\\.com|braintreegateway\\.com|braintree-api\\.com|adyen\\.com|checkout\\.com|ecpay\\.com\\.tw|newebpay\\.com|tappaysdk\\.com|squareup\\.com|klarna\\.com)$";
   let lastMasked = -1;   // 測試看得到這一次蓋了幾格
-  async function withoutMarks(v, fn) {
+  async function withoutMarks(v, fn, force) {
     // 展開在中欄的那頁不做藏/放:每次擷取(縮圖 2 秒一輪+每動作補拍)都把即時頁上的游標/外框層
     // 藏了又放,就是「開著瀏覽器畫面閃來閃去」的來源(量測:操作 8 秒 marks 層翻動 18 次;
     // view bounds 與頁面 resize 都是 0)。代價:這頁操作中的縮圖/快照帶著標記層——縮圖上本來
     // 就有 app 自畫的游標層,回合結束的整頁升級多半已 park、照樣拍乾淨版
-    const live = wcTab.get(v.wc.id) === expanded;
+    const live = !force && wcTab.get(v.wc.id) === expanded;   // force(回合結束整頁升級,一次性)照藏:快照別把標記烤進去(稽核 A-P2-2)
     if (!live) await v.page.run(IP.marksVisible, [false]).catch(() => {});
     try { return await fn(); } finally { if (!live) await v.page.run(IP.marksVisible, [true]).catch(() => {}); }
   }
-  async function withMask(v, fn) {
+  async function withMask(v, fn, force) {
     let list; try { list = await v.page.run(IP.fieldCandidates); } catch (_) { return null; }
     const idx = (list || []).filter((d) => gate.sensitiveField(d)).map((d) => d.i);
     let n; try { n = await v.page.run(IP.maskFields, [idx, PAY_IFRAME_RE]); } catch (_) { return null; }
     lastMasked = n;
     try {
       if (n !== idx.length) return null;
-      return await withoutMarks(v, fn);
+      return await withoutMarks(v, fn, force);
     } finally { await v.page.run(IP.unmaskFields).catch(() => {}); }
   }
   async function saveSnapshot(t, v, ex) {
@@ -607,7 +639,10 @@ function createBrowser(o) {
     if (name === "browser_scroll") {
       const dir = args.direction === "up" ? "up" : "down";
       emit("page_act", { id: t.id, kind: "scroll" });
-      const pos = await v.page.scroll(dir, args.amount === "half" ? "half" : "page", spend(t, 300) ? 300 : 0);   // 展開在看的那一頁有過程地捲
+      const paceS = v.pace.arrive();   // 密集判定(pace.js):密集=捲動瞬間完成
+      if (paceS.cut) v.page.run(IP.mark, ["settle"]).catch(() => {});
+      const pos = await v.page.scroll(dir, args.amount === "half" ? "half" : "page", paceS.mode === "instant" ? 0 : spend(t, 300) ? 300 : 0);   // 展開在看的那一頁有過程地捲
+      v.pace.end();   // 捲完=結束
       bumpThumb(t);
       return R({ ok: true, tab: t.alias, url: C.scrub(before, 2000), scroll_y: pos.y, scroll_max: pos.max });
     }
@@ -625,7 +660,7 @@ function createBrowser(o) {
       if (!(await markAgent(t))) return ERR("internal", "could not arm the navigation guard; try again");
       emit("page_act", { id: t.id, kind: "press", text: key });
       if (t.visible && f && f.backendNodeId !== undefined) {   // 焦點欄位框一下
-        try { const q = await v.page.center(f.backendNodeId, false); if (!q.error) await v.page.run(IP.mark, ["ref", { box: q.box, label: key }, false]); } catch (_) { /* 看不到就不框 */ }
+        try { const q = await v.page.center(f.backendNodeId, false); if (!q.error) await v.page.run(IP.mark, ["ref", { box: q.box, label: key, tag: true }, false]); } catch (_) { /* 看不到就不框 */ }   // 按鍵小標(「Enter」)照常顯示:那是給用戶看的動作,不是 @eN 內部代號(canon 第 4 條裁定)
       }
       const onScreenK = await pageVisible(t, v);
       const r = await agentInput(v, () => v.page.press(key, onScreenK));
@@ -655,28 +690,35 @@ function createBrowser(o) {
     const text = String(args.text == null ? "" : args.text).slice(0, 5000);
     // 展開在看的那一頁:游標真的滑過去(mouseMoved 路徑,在 agentInput 窗內,不算用戶接手)、到點才出點擊環;
     // 背景分頁沒有滑鼠可演,只把目標框位置交給畫面,由縮圖那層畫游標與點擊環
-    const glide = onScreen && spend(t, 300) ? 260 : 0;
+    // 密集判定(pace.js;canon 第 9 條):密集=瞬間模式(游標直接出現、不滑行、字一次填入、環只留靜止單幀)
+    const pace = v.pace.arrive();
+    if (pace.cut) await v.page.run(IP.mark, ["settle"]).catch(() => {});
+    const inst = pace.mode === "instant";
+    const glide = !inst && onScreen && spend(t, 300) ? 260 : 0;
     if (pos) {
-      await v.page.run(IP.mark, ["ref", { box: pos.box, label }, reduced]).catch(() => {});
+      await v.page.run(IP.mark, ["ref", { box: pos.box, label, tag: DEV_MARKS }, reduced]).catch(() => {});
       if (t.visible) await v.page.run(IP.mark, ["move", { x: pos.x, y: pos.y, ms: glide }, reduced]).catch(() => {});
     }
     emit("page_act", Object.assign({ id: t.id, kind: action === "click" ? "click" : "type", ref: label, text: action === "click" ? C.scrub(d.name || d.text, 80) : C.scrub(text, 80), box: pos ? pos.box : null }, viewSize(v)));
     if (!(await markAgent(t))) return ERR("internal", "could not arm the navigation guard; try again");
     if (action === "click") {
       const c = await agentInput(v, () => v.page.click(b, pos, glide));
+      v.pace.end();   // 點擊落地=結束(不含環的 0.45s;沒按下去也算收掉)
       if (c.error) {
         // 沒按下去:這個動作不存在,守門與 agent 窗口立刻收掉——不然接下來 3 秒內用戶自己按的送出會被當成 agent 觸發而取消
         agentUntil.delete(v.wc.id); await v.page.disarm().catch(() => {});
         await v.page.run(IP.mark, ["clear"]).catch(() => {});
         return ERR("obscured", MSG.obscured, { tab: t.alias });
       }
-      if (t.visible) await v.page.run(IP.mark, ["click", { x: pos.x, y: pos.y }, reduced]).catch(() => {});
+      if (t.visible) await v.page.run(IP.mark, ["click", { x: pos.x, y: pos.y, instant: inst }, reduced]).catch(() => {});
     } else {
-      // browser_type 40 字內逐字(有些欄位只認逐鍵輸入,這是功能不是動效,減少動態也照送);
+      // browser_type 40 字內逐字(給只認逐字輸入事件的欄位;reduced-motion 不影響它)。
+      // 密集(瞬間模式)收成一次填入是拍板過的收斂:連續操作時逐字本身就是「畫面一直在動」;
       // 長文字(貼 code)一律一次 insertText 進——逐鍵幾千字打不完,Monaco 一類編輯器也收 insertText。
       // browser_fill 只在展開在看、40 字內、還有多等額度時逐字(35ms/字),其餘一次填入
-      const perChar = text.length <= 40 && (action === "type" || spend(t, text.length * 35));
+      const perChar = !inst && text.length <= 40 && (action === "type" || spend(t, text.length * 35));   // 瞬間模式:字一次填入
       const f = await agentInput(v, () => v.page.fill(b, text, d, { clear: action === "fill", perChar, delay: 35 }));
+      v.pace.end();   // 填完=結束
       if (f.error) return ERR(f.error, f.message, { tab: t.alias });
     }
     bumpThumb(t);
@@ -911,7 +953,7 @@ function createBrowser(o) {
         for (const r of rows) {
           if (!r.snapshot_id) continue;
           const v = views.get(r.id); if (!v) continue;
-          const image = await withMask(v, () => captureSnapshotImage(v, true));
+          const image = await withMask(v, () => captureSnapshotImage(v, true), true);
           if (image) snaps.updateImage(c.sessionId, r.snapshot_id, image);
           if (expanded !== r.id) parkEmulate(v);   // 整頁擷取的 unEmulate 也清掉 park override,補回去(不然頁面回到 0 寬行動版)
         }
@@ -989,11 +1031,12 @@ function createBrowser(o) {
     setPrefs(p) { if (p && typeof p.enabled === "boolean") prefs.enabled = p.enabled; if (o.savePrefs) o.savePrefs(prefs); return { enabled: prefs.enabled }; },
     async clearData() {
       for (const t of tabs.all()) tabs.close(t.id);
+      oauth.close();   // 清瀏覽資料連登入視窗一起收(它的 cookie 就在這個 partition)
       await session().clearStorageData(); await session().clearCache(); snaps.clearAll();
       favCache.clear(); favTried.clear();   // 看過哪些網站也是瀏覽資料
       return true;
     },
-    _tabs: tabs, _call: call,   // 測試用
+    _tabs: tabs, _call: call, _oauth: oauth,   // 測試用
     _agentActive: (id) => { const v = views.get(id); return !!v && agentActive(v.wc.id); },
     _imageSize: (b) => imageSize(b), _needsPlate: (d) => needsPlate(d),
     _viewBounds: (id) => { const v = views.get(id); return v ? v.view.getBounds() : null; },

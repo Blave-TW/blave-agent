@@ -352,6 +352,12 @@ function exchangePublic(u) {
 
 // 【工具層】身分提供者的登入 / 授權頁:agent 被網頁誘導去按「Allow」就等於替攻擊者的 app 拿到用戶的帳號授權
 const IDP_HOSTS = ["accounts.google.com", "login.microsoftonline.com", "login.live.com", "appleid.apple.com", "idmsa.apple.com", "login.yahoo.com", "auth.line.me", "access.line.me"];
+// 【工具層】IdP 的帳戶面(稽核 B-P1-1,Wei 拍板):OAuth 子視窗登入後,IdP session cookie 留在
+// agent 的 partition——信箱/雲端硬碟/帳戶設定從此都是登入態,agent 導覽一律擋。
+// 只擋 agent(工具層):用戶自己接手要去哪都行;OAuth 子視窗不走 agent(),也不受此擋。
+const IDP_ACCOUNT_HOSTS = ["mail.google.com", "myaccount.google.com", "drive.google.com", "contacts.google.com", "calendar.google.com",
+  "icloud.com", "outlook.office.com", "outlook.live.com", "accountscenter.facebook.com"];
+const IDP_ACCOUNT_PATHS = [["facebook.com", /^\/settings(\/|$)/]];
 const IDP_PATHS = [["github.com", /^\/login(\/|$)/], ["x.com", /^\/i\/oauth2/], ["twitter.com", /^\/i\/oauth2/], ["api.twitter.com", /^\/oauth/], ["api.x.com", /^\/oauth/],
   ["www.facebook.com", /^\/(v[\d.]+\/)?dialog\/oauth/], ["discord.com", /^\/oauth2/], ["www.linkedin.com", /^\/oauth/], ["www.reddit.com", /^\/api\/v1\/authorize/]];
 /** OAuth / OIDC 授權請求:IdP 的登入授權頁,或任何網站上帶 client_id + (redirect_uri | response_type) 的網址。 */
@@ -375,6 +381,8 @@ function agent(raw) {
   if (hostOn(h, "blave.org")) return { reason: "blave", host: h };
   if (AGENT_BLOCKLIST.some((d) => hostOn(h, d))) return { reason: "blocklist", host: h };
   if (oauthPage(u)) return { reason: "oauth", host: h };
+  if (IDP_ACCOUNT_HOSTS.some((d) => hostOn(h, d))) return { reason: "sensitive_domain", host: h };
+  if (IDP_ACCOUNT_PATHS.some(([d, re]) => hostOn(h, d) && re.test(u.pathname))) return { reason: "sensitive_domain", host: h };
   if (BANKS.some((d) => hostOn(h, d)) || BROKERS.some((d) => hostOn(h, d)) || PAYMENTS.some((d) => hostOn(h, d))) return { reason: "sensitive_domain", host: h };
   if (EXCHANGES.some((d) => hostOn(h, d)) && !exchangePublic(u)) return { reason: "sensitive_domain", host: h };
   return null;

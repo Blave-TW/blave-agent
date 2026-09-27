@@ -4,6 +4,34 @@
 "use strict";
 const IP = require("./inpage");
 
+/* 編輯器真貼上的剪貼簿紀律(稽核 A-P1-1 / A-P2-3):
+   - 剪貼簿是全域的,工具呼叫沒有互斥——兩個 fill 並行會互踩(實證:用戶剪貼簿最後留的是策略碼)。
+     module 層一條 promise chain 把「存 → 寫 → paste → 還原」整段序列化(只鎖編輯器分支)。
+   - 只還純文字會把用戶剪貼簿裡的圖片清掉:存/還走完整格式(text / html / rtf / image)。 */
+let pasteChain = Promise.resolve();
+/* 這條 runtime 的 electron.clipboard 是**非同步 Web Clipboard 形狀**(實測:readText/writeText
+   回 Promise、read() 給 ClipboardItem[]、write 只收 ClipboardItem[];readImage/readHTML/readRTF
+   都不存在,而 write(read() 的 items) 會吊死——整包回寫不可行)。所以:
+   - 一律 await(同步版 API 在別的版本照樣被 await 包住,兩種形狀都對)
+   - 只有文字救得回;readText 得空(可能真的空,也可能是圖片)→ **不 clear、不還原**(A 案,
+     Wei 溝通版):clear 會把 API 讀不到但還在的內容清掉,不動最保險;代價=剪貼簿留著剛貼的文字
+   - classic 形狀(有 readImage 的版本)仍完整格式存/還,圖片救得回 */
+async function clipboardSnapshot(clipboard) {
+  const snap = {};
+  try { snap.text = await clipboard.readText(); } catch (_) { /* 平台差異 */ }
+  try { if (clipboard.readHTML) snap.html = await clipboard.readHTML(); } catch (_) { /* 同上 */ }
+  try { if (clipboard.readRTF) snap.rtf = await clipboard.readRTF(); } catch (_) { /* 同上 */ }
+  try { if (clipboard.readImage) { const im = await clipboard.readImage(); if (im && !im.isEmpty()) snap.image = im; } } catch (_) { /* 同上 */ }
+  return snap;
+}
+async function clipboardRestore(clipboard, snap) {
+  try {
+    if (snap.image || snap.html || snap.rtf) { await clipboard.write({ text: snap.text || "", html: snap.html, rtf: snap.rtf, image: snap.image }); return; }
+    if (typeof snap.text === "string" && snap.text) await clipboard.writeText(snap.text);
+    // 讀到空:不 clear、不還原(見上)
+  } catch (_) { /* 還原失敗只影響剪貼簿 */ }
+}
+
 const KEEP_ROLES = new Set([
   "link", "button", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "menuitem", "menuitemcheckbox",
   "menuitemradio", "option", "slider", "spinbutton", "listbox", "heading", "listitem", "img", "image", "navigation", "main",
@@ -230,13 +258,17 @@ function createPage(wc) {
     }
     if (editor) {
       // 編輯器走真貼上:insertText 會被 Monaco 當「打字」逐行 auto-indent,Pine 一類
-      // 縮排敏感的 code 會整段跑版(實測 TradingView);貼上不重排。用戶剪貼簿先存後還
-      // (只能還純文字——貼上那 0.2 秒的取捨;editor 目標才走這條,一般欄位不動剪貼簿)
+      // 縮排敏感的 code 會整段跑版(實測 TradingView);貼上不重排。剪貼簿先存後還,
+      // 完整格式+全域序列化(見檔頭 pasteChain;editor 目標才走這條,一般欄位不動剪貼簿)
       const { clipboard } = require("electron");
-      let saved = ""; try { saved = clipboard.readText() || ""; } catch (_) { /* 讀不到就還空的 */ }
-      clipboard.writeText(String(text));
-      try { wc.paste(); await sleep(200); }
-      finally { try { saved ? clipboard.writeText(saved) : clipboard.clear(); } catch (_) { /* 還原失敗只影響剪貼簿 */ } }
+      const job = pasteChain.then(async () => {
+        const saved = await clipboardSnapshot(clipboard);
+        await clipboard.writeText(String(text));
+        try { wc.paste(); await sleep(200); }
+        finally { await clipboardRestore(clipboard, saved); }
+      });
+      pasteChain = job.catch(() => {});   // 一個失敗不卡死後面的
+      await job;
       return {};
     }
     if (!opt.perChar) { await send("Input.insertText", { text: String(text) }); return {}; }

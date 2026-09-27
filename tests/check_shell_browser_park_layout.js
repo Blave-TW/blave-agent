@@ -46,6 +46,15 @@ const run = new Function("parkSize", fnCut("parkEmulate") + fnCut("unEmulate") +
   run.parkEmulate(failCase.v); await tick();
   ok("失敗後可重試成功", failCase.v.parkEmu === true && failCase.calls.length === 2, failCase.calls.length);
 
+  // 世代計數(稽核 A-P2-1):override 送出後、resolve 前 unEmulate → resolve 不得把 flag 設回 true
+  let resolveLate; const raceCase = mk(() => new Promise((res) => { resolveLate = res; }));
+  run.parkEmulate(raceCase.v);         // override 在路上
+  run.unEmulate(raceCase.v);           // 用戶展開:清 override、bump 世代
+  resolveLate({}); await tick();
+  ok("race:晚到的 resolve 不把 flag 設回 true(CDP 端是 clear,flag 不能是 true)", raceCase.v.parkEmu !== true, raceCase.v.parkEmu);
+  run.parkEmulate(raceCase.v); await tick();   // pending promise 已耗掉,重新 park 要再送
+  ok("race 之後再 park:照常重設 override", raceCase.calls.filter(([m]) => m === "Emulation.setDeviceMetricsOverride").length === 2);
+
   console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })();

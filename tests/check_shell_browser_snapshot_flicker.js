@@ -16,7 +16,9 @@ const cap = (src.match(/async function captureSnapshotImage\(v, full\) \{[\s\S]*
 const head = cap.split("captureBeyondViewport: true")[0];   // 以真參數切,不吃註解裡的字
 ok("captureSnapshotImage:!full 那條提早 return、碰不到 captureBeyondViewport(不動 viewport)", /if \(!full\) \{/.test(head) && /return \{ data: Buffer\.from\(shot\.data, "base64"\), ext: "webp" \};/.test(head) && cap.includes("captureBeyondViewport: true"));
 ok("endTurn 把還開著的頁升級成整頁版並寫回(一輪一次)", /captureSnapshotImage\(v, true\)/.test(src) && /snaps\.updateImage\(c\.sessionId, r\.snapshot_id, image\)/.test(src));
-ok("升級照樣走 withMask(敏感欄位與金流 iframe 蓋掉)", /await withMask\(v, \(\) => captureSnapshotImage\(v, true\)\)/.test(src));
+ok("升級照樣走 withMask,而且帶 force(仍展開的頁也藏標記,快照不烤進游標;稽核 A-P2-2)",
+  /await withMask\(v, \(\) => captureSnapshotImage\(v, true\), true\)/.test(src) && /async function withMask\(v, fn, force\)/.test(src)
+  && /return await withoutMarks\(v, fn, force\);/.test(src));
 // 縮圖(2 秒一輪)從來就不做 emulation override:clip 縮放,不碰 viewport。
 // setDeviceMetricsOverride 全檔只允許出現在 parkEmulate(常駐一次的 park 排版,見 park_layout 測試),
 // 任何「每次擷取都切 override」的寫法回來就抓
@@ -37,7 +39,7 @@ ok("壞參數拒收:沒圖 / 壞副檔名 / 壞 id", snaps.updateImage(sid, id, 
 
 // ---- 展開在中欄的那頁:擷取不藏標記(藏了又放=即時頁肉眼可見的閃;量測 8 秒 18 次 → 0)
 {
-  const cut = (src.match(/async function withoutMarks\(v, fn\) \{[\s\S]*?\n  \}/) || [""])[0];
+  const cut = (src.match(/async function withoutMarks\(v, fn, force\) \{[\s\S]*?\n  \}/) || [""])[0];
   const runWM = (isLive) => {
     const calls = [];
     const env = { wcTab: { get: () => (isLive ? "T1" : "T2") }, expanded: "T1", IP: { marksVisible: "MV" } };
@@ -45,9 +47,17 @@ ok("壞參數拒收:沒圖 / 壞副檔名 / 壞 id", snaps.updateImage(sid, id, 
     const v = { wc: { id: 9 }, page: { run: (w, a) => { calls.push(a ? a[0] : w); return Promise.resolve(); } } };
     return fn(v, async () => calls.push("CAP")).then(() => calls);
   };
-  Promise.all([runWM(true), runWM(false)]).then(([live, parked]) => {
+  const runWMF = (isLive) => {
+    const calls = [];
+    const env = { wcTab: { get: () => (isLive ? "T1" : "T2") }, expanded: "T1", IP: { marksVisible: "MV" } };
+    const fn = new Function(...Object.keys(env), "return (" + cut.replace(/^async function withoutMarks/, "async function") + ")")(...Object.values(env));
+    const v = { wc: { id: 9 }, page: { run: (w, a) => { calls.push(a ? a[0] : w); return Promise.resolve(); } } };
+    return fn(v, async () => calls.push("CAP"), true).then(() => calls);
+  };
+  Promise.all([runWM(true), runWM(false), runWMF(true)]).then(([live, parked, forced]) => {
     ok("展開在看的那頁:直接拍,不藏/放標記層(不閃)", live.join(",") === "CAP", live);
     ok("parked 的頁照舊:藏 → 拍 → 放(縮圖乾淨)", parked.join(",") === "false,CAP,true", parked);
+    ok("force(回合結束升級):展開的頁也照藏(快照乾淨;一次性,無閃爍顧慮)", forced.join(",") === "false,CAP,true", forced);
     console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
     process.exit(red ? 1 : 0);
   });

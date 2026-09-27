@@ -267,6 +267,8 @@ function quiet() { for (const m of document.querySelectorAll("video,audio")) { t
      "read" { rects, per, follow }    讀取帶依文件順序掃過這次讀進來的區塊(每塊 per ms),讀完留已讀線與捲軸軌標記;follow = 跟著捲
      "frames" { rects, stagger, hold } 看大綱 / 讀連結:被抽到的元素依序框一下
      "clear"
+     "settle"                          密集判定(pace.js)切到瞬間模式:正在播的標記全部跳終態
+   click 帶 instant = 靜止單幀環(22px 2px 墨環,不放大不淡出;canon 第 9 條瞬間模式)。
    新的 read / frames 進來時,正在播的那一段直接跳終態。 */
 function mark(kind, data, reduced) {
   const ID = "__blave_agent_marks";
@@ -282,6 +284,7 @@ function mark(kind, data, reduced) {
       + ".t{position:absolute;font:600 10px/14px ui-monospace,Menlo,monospace;background:#111;color:#fff;padding:0 4px;border-radius:2px;white-space:nowrap;transform:translateY(-100%);box-shadow:0 0 0 1px #fff}"
       + ".r{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #111;border-radius:50%;box-shadow:0 0 0 1px #fff,inset 0 0 0 1px #fff;animation:k .45s cubic-bezier(.23,1,.32,1) forwards}"
       + "@keyframes k{from{transform:scale(.6);opacity:1}to{transform:scale(1.6);opacity:0}}"
+      + ".r.s{animation:none;transform:scale(1);opacity:1}"
       + ".c{position:absolute;left:0;top:0;display:flex;align-items:flex-start;opacity:0;transition:opacity .18s cubic-bezier(.23,1,.32,1);will-change:transform}.c.on{opacity:1}"
       + ".c svg{display:block}.c span{margin:10px 0 0 2px;padding:0 4px;border-radius:2px;background:#111;color:#fff;box-shadow:0 0 0 1px #fff;font:600 10px/14px ui-monospace,Menlo,monospace}"
       + ".b{position:absolute;background:rgba(128,128,128,.16);border-left:2px solid #111;box-shadow:-1px 0 0 #fff;opacity:0;transition:opacity .18s cubic-bezier(.23,1,.32,1),top .26s cubic-bezier(.23,1,.32,1),height .26s cubic-bezier(.23,1,.32,1)}.b.on{opacity:1}"
@@ -300,15 +303,28 @@ function mark(kind, data, reduced) {
     return c;
   };
   const idle = (c) => { clearTimeout(c.__idle); c.__idle = setTimeout(() => c.classList.remove("on"), 1200); };
+  if (kind === "settle") {
+    // 密集觸發:前一動作還在播的標記跳終態(讀取帶 → 已讀線+捲軌;環/框收掉;游標跳到目標)
+    host.__g++;
+    if (host.__fin) { const f = host.__fin; host.__fin = null; f(); }
+    for (const n of Array.from(root.querySelectorAll(".b,.f,.r"))) n.remove();
+    const c0 = root.querySelector(".c");
+    if (c0) { c0.style.transition = "opacity .18s cubic-bezier(.23,1,.32,1)"; c0.style.transform = "translate(" + c0.__x + "px," + c0.__y + "px)"; }
+    return true;
+  }
   if (kind === "ref" || kind === "need") {
     for (const n of Array.from(root.querySelectorAll(".o,.t"))) n.remove();
     const b = data.box;
     el(kind === "need" ? "o need" : "o", "left:" + (b.x + sx) + "px;top:" + (b.y + sy) + "px;width:" + b.w + "px;height:" + b.h + "px");
-    // 元素貼在可視區頂端、上方放不下 16px 的小標 → 改貼在元素下方
-    const above = b.y >= 18;
-    // 翻到下方時貼元素左下(游標的「agent」小標在元素中心偏右下,不疊在一起)
-    const tag = el("t", "left:" + (above ? b.x + b.w + sx - 2 : b.x + sx) + "px;top:" + (above ? b.y + sy - 2 : b.y + b.h + sy + 2) + "px", String(data.label || "").slice(0, 40));
-    if (!above) tag.style.transform = "none";
+    // canon 第 4 條裁定:@eN 小標對用戶不顯示,只留目標 outline;開發旗標(data.tag)開才畫。
+    // 「由你按」(need)照舊——那是給用戶的指示,不是內部定位代號
+    if (kind === "need" || data.tag) {
+      // 元素貼在可視區頂端、上方放不下 16px 的小標 → 改貼在元素下方
+      const above = b.y >= 18;
+      // 翻到下方時貼元素左下(游標的「agent」小標在元素中心偏右下,不疊在一起)
+      const tag = el("t", "left:" + (above ? b.x + b.w + sx - 2 : b.x + sx) + "px;top:" + (above ? b.y + sy - 2 : b.y + b.h + sy + 2) + "px", String(data.label || "").slice(0, 40));
+      if (!above) tag.style.transform = "none";
+    }
     return true;
   }
   if (kind === "move") {
@@ -321,25 +337,28 @@ function mark(kind, data, reduced) {
   if (kind === "click") {
     for (const n of Array.from(root.querySelectorAll(".o,.t"))) n.remove();   // 點擊落地:收框
     const c = root.querySelector(".c"); if (c) idle(c);
-    if (reduced) return true;
-    const r = el("r", "left:" + (data.x + sx) + "px;top:" + (data.y + sy) + "px");
+    if (reduced) return true;   // 減少動態優先:連靜止單幀環都不出
+    const r = el(data.instant ? "r s" : "r", "left:" + (data.x + sx) + "px;top:" + (data.y + sy) + "px");
     setTimeout(() => r.remove(), 600);
     return true;
   }
   const g = ++host.__g;
+  host.__fin = null;   // 舊讀取帶的落定收尾跟著作廢(新的 read / frames 接手畫面)
   for (const n of Array.from(root.querySelectorAll(".b,.f"))) n.remove();
   if (kind === "read") {
     const rects = (data.rects || []).slice(0, 400);
     if (!rects.length) return true;
     const top = Math.min(...rects.map((r) => r.top)), bot = Math.max(...rects.map((r) => r.top + r.h)), left = Math.min(...rects.map((r) => r.left));
-    const finish = () => {
-      if (host.__g !== g) return;
+    const finish = (force) => {
+      if (!force && host.__g !== g) return;
+      host.__fin = null;
       const b = root.querySelector(".b"); if (b) b.remove();
       el("l", "left:" + (left - 12) + "px;top:" + top + "px;height:" + (bot - top) + "px");   // 已讀線:跟讀取帶的左線同一個 x
       const dh = Math.max(document.documentElement.scrollHeight, 1), vh = window.innerHeight;   // 捲軸軌上標已讀範圍
       el("k", "top:" + Math.round(top / dh * vh) + "px;height:" + Math.max(3, Math.round((bot - top) / dh * vh)) + "px");
     };
     if (reduced || !data.per) { finish(); return true; }
+    host.__fin = () => finish(true);   // settle(密集切換)把這一段帶落定
     const band = el("b", ""); let i = 0;
     const scrollTo = (y) => {   // 跟著捲:--motion-travel 近似的 rAF 平滑捲
       const y0 = window.scrollY, dy = y - y0, t0 = performance.now();

@@ -334,7 +334,7 @@ app.whenReady().then(async () => {
   t("重開 app 的歷史:來源與分頁帶著存下來的 favicon(data URL)", hist && hist.sources.some((x) => x.url.includes("fa1.test") && /^data:image\/png;base64,/.test(x.fav || "")));
   const favDir = path.join(tmp, "snaps", "desktop-e2etest3", "favicons");
   t("favicon 存在快照目錄、檔案 0600", fs.existsSync(favDir) && fs.readdirSync(favDir).every((n) => process.platform === "win32" || (fs.statSync(path.join(favDir, n)).mode & 0o777) === 0o600));
-  t("縮圖、來源快照、工具截圖拍之前都把頁面裡的 agent 標記藏起來(縮圖上的標記只由 app 那一層畫)", /const data = await withoutMarks\(v, async \(\) => \{/.test(idxSrc) && /return await withoutMarks\(v, fn\);/.test(idxSrc));
+  t("縮圖、來源快照、工具截圖拍之前都把頁面裡的 agent 標記藏起來(縮圖上的標記只由 app 那一層畫)", /const data = await withoutMarks\(v, async \(\) => \{/.test(idxSrc) && /return await withoutMarks\(v, fn, force\);/.test(idxSrc));
   t("匯整成報告:沒寫報告的回合不發(非 .json 也不算)", sent.filter((e) => e.type === "report_write").length === before + 1);
   const urls = Array.from({ length: 8 }, (_, i) => "http://fx" + i + ".test/p");   // 各自不同的網域:同網域每分鐘 6 頁的上限不在這裡測
   r = J(await call("browser_open_many", { urls }));
