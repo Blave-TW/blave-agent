@@ -1281,6 +1281,25 @@ function loadSessionExports(sid) { return sessionExports(sid).map(({ ts, id, tar
 function exportById(sid, id) { return typeof id === "string" && XP_ID_RE.test(id) ? sessionExports(sid).find((r) => r.id === id) || null : null; }
 // 主行程其他地方讀這一份:這支策略這個平台最近一次轉出(這次開 app 以來);沒有就回 null
 function exportRef(strategy, target) { return recentExports.get(strategy + ":" + target) || null; }
+/* 「送進 TradingView」要貼的那一份(renderer 只給 ref,檔案與商品週期由這裡讀):
+   ref = { session, id } → 對話那張卡當時的快照;ref = { strategy } → workspace 裡現在那一份(程式碼分頁看到的)。
+   SYMBOL / INTERVAL 讀 strategy.py 的頂層常數,只拿去組圖表網址 */
+function pineJob(ref) {
+  let name, f, filename;
+  if (ref && typeof ref.id === "string") {
+    const r = exportById(ref.session, ref.id); if (!r || r.target !== "pine") return null;
+    name = r.strategy; f = readSnap(r.snap); filename = r.filename;
+  } else {
+    name = String((ref && ref.strategy) || ""); if (!stratNames().includes(name)) return null;
+    const rec = exportRef(name, "pine");
+    f = readExportFile(path.join(STRAT_DIR(), name), "pine"); filename = rec ? rec.filename : `${name}_pine.pine`;
+  }
+  if (!f) return null;
+  const dir = path.join(STRAT_DIR(), name);
+  let code = ""; try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) { /* 策略刪了:不帶商品 */ }
+  const meta = stratMeta(code);
+  return { content: f.content, strategy: name, filename, symbol: meta.symbol, interval: meta.interval, cryptoKline: stratUsesKline(dir) };
+}
 function readSnap(p) {
   try { const st = fs.lstatSync(p); if (!st.isFile() || st.size > EXPORT_MAX) return null; return { p, content: fs.readFileSync(p, "utf8"), mtime: st.mtimeMs }; } catch (_) { return null; }
 }
@@ -2356,6 +2375,10 @@ app.whenReady().then(() => {
   handle("browser-prefs", () => browser().prefs(), { enabled: false });
   handle("browser-prefs-set", (_e, p) => browser().setPrefs({ enabled: !!(p && p.enabled === true) }), null);
   handle("browser-clear", () => (activeTurn ? false : browser().clearData()), false);
+  // 送進 TradingView(browser/pine.js):外殼自己貼,不開 agent 回合。renderer 只給 ref 與分頁 id
+  handle("pine-install", (_e, ref) => { const job = pineJob(ref && typeof ref === "object" ? ref : null); return job ? browser().pineInstall(job) : { state: "fail", why: "no_file" }; }, { state: "fail" });
+  handle("pine-check", (_e, id) => browser().pineCheck(String(id || "")), { state: "gone" });
+  handle("pine-read", (_e, id) => browser().pineRead(String(id || "")), { state: "gone" });
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
      之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
      不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */

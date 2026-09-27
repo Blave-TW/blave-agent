@@ -320,6 +320,7 @@ function brStatLine(host) {
   host.textContent = "";
   const exp = BR.exp;
   const x = exp && exp.mode === "one" ? BR.tabs.get(exp.id) : null;
+  if (x && typeof tvStat === "function" && tvStat(host, x)) return;   // 「送進 TradingView」那一頁:狀態句由 pine-install.js 畫
   if (x && x.user) {
     host.append(brIcon("hand"), brEl("span", "", t("br.userOp")));
     const hb = brEl("button", "btn-quiet", t("br.handback")); hb.type = "button";
@@ -356,6 +357,7 @@ async function brExpand(id, reopened) {
   BR.blocks.forEach(brPaintHead);
   document.querySelectorAll(".pt").forEach((el) => { const x = BR.tabs.get(el.dataset.id); if (x) brPaintTile(el, x); });
   brObserve();
+  if (typeof tvRepaintSlots === "function") tvRepaintSlots();
 }
 function brWall(b) {
   brLastBounds = ""; BR.sig = null; BR.wallBlock = null;
@@ -384,6 +386,7 @@ function brCollapse(byUser) {
   BR.blocks.forEach(brPaintHead);
   document.querySelectorAll(".pt").forEach((el) => { const x = BR.tabs.get(el.dataset.id); if (x) brPaintTile(el, x); });
   brObserve();
+  if (typeof tvRepaintSlots === "function") tvRepaintSlots();
 }
 /* Esc = 收回展開層(brCollapse,不關分頁、不打斷 agent)。排在 app.js escTop 那些框後面(它們關了一層就 preventDefault);網址列編輯中的 Esc 是取消編輯。
    焦點在網頁裡(原生 view)時按鍵不會到這裡——那是頁面自己的 Esc */
@@ -545,7 +548,9 @@ function brPaintOverlay() {
   if (exp.live && !held) brAddrEditable(url, x.id);
   addr.append(rl, url);
   const slot = brEl("div", "bv-slot");
-  if (x.need && !x.user) slot.append(brAsk(x));
+  const tvn = typeof tvSlot === "function" ? tvSlot(x) : null;
+  if (tvn) slot.append(tvn);
+  else if (x.need && !x.user) slot.append(brAsk(x));
   else if (x.dl) { const l = brEl("div", "slot-line"); l.append(brIcon("ban"), brEl("span", "", t("br.dl", { name: x.dl }))); slot.append(l); }
   const page = brEl("div", "bv-page");
   if (x.blocked) {
@@ -574,7 +579,7 @@ function brWallTile(id) {
 function brOverlaySig(exp) {
   if (exp.mode !== "one") return null;
   const x = BR.tabs.get(exp.id) || {};
-  return JSON.stringify([exp.id, !!exp.live, !!x.need && x.need.kind, x.need ? x.need.summary : "", x.need ? x.need.url || "" : "", !!x.user, x.dl || "", !!x.blocked, x.fail || "", x.url || ""]);
+  return JSON.stringify([exp.id, !!exp.live, !!x.need && x.need.kind, x.need ? x.need.summary : "", x.need ? x.need.url || "" : "", !!x.user, x.dl || "", !!x.blocked, x.fail || "", x.url || "", typeof tvSig === "function" ? tvSig(exp.id) : ""]);
 }
 function brPaintTabStrip(bw) {
   bw.querySelectorAll(".bv-tab").forEach((tb) => {
@@ -596,8 +601,10 @@ function brOnEvent(ev) {
     case "block_open":
       if (!BR.cur || !BR.cur.live) { BR.cur = brBlockNew(true); brAppend(BR.cur.el); brPaintHead(BR.cur); brObserve(); }
       return;
+    case "pine_open": BR.pineNext = true; return;   // 下一個 user 分頁是「送進 TradingView」開的:回合進行中也不進 agent 的瀏覽卡
+    case "pine_step": case "pine_result": if (typeof tvOnEvent === "function") tvOnEvent(ev); return;
     case "page_open":
-      if (ev.by === "user" && (!BR.cur || !BR.cur.live)) { x.url = String(ev.url || ""); x.ph = ev.queued ? "queued" : "load"; break; }   // 用戶自己開的(開即時頁、重試):不長區塊,展開層直接顯示
+      if (ev.by === "user" && (BR.pineNext === true || !BR.cur || !BR.cur.live)) { BR.pineNext = false; x.url = String(ev.url || ""); x.ph = ev.queued ? "queued" : "load"; break; }   // 用戶自己開的(開即時頁、重試):不長區塊,展開層直接顯示
       if (!BR.cur || !BR.cur.live) { BR.cur = brBlockNew(true); brAppend(BR.cur.el); brObserve(); }
       if (BR_SERP.test(String(ev.url || ""))) { x.url = String(ev.url); x.search = true; x.ph = "load"; return; }   // 搜尋結果頁:不進清單(search 事件晚到,開頁當下就先認)
       if (!ev.queued && x.ph === "queued" && BR.cur.queued) BR.cur.queued--;   // 排隊的那頁輪到了
@@ -629,7 +636,7 @@ function brOnEvent(ev) {
     case "page_closed": return;
     case "need_user": x.need = { kind: String(ev.kind || "action"), summary: String(ev.summary || ""), url: typeof ev.url === "string" ? ev.url : "" }; srSay(t("br.waiting")); if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
     case "need_clear": x.need = null; if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
-    case "user_takeover": x.user = true; if (!x.tracked) { x.tracked = true; trackFeature("browser_takeover"); } break;
+    case "user_takeover": x.user = true; if (!x.tracked) { x.tracked = true; trackFeature("browser_takeover"); } if (typeof tvOnEvent === "function") tvOnEvent(ev); break;
     case "handback": x.user = false; x.need = null; if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
     case "thumb": if (typeof ev.dataURI === "string" && /^[A-Za-z0-9+/=]+$/.test(ev.dataURI)) x.thumb = "data:image/jpeg;base64," + ev.dataURI; break;
     case "search": if (x) {   // 搜尋結果頁不進清單、不算頁數、不進圖示疊(狀態列已經說了「正在搜尋:…」)
@@ -677,7 +684,7 @@ function brRestore(item) {
   brFinish(b);
 }
 /* 換對話 / 新對話:區塊跟著聊天欄一起清掉;展開在中欄的收回 */
-function brReset() { brCollapse(false); BR.blocks = []; BR.cur = null; BR.tabs.clear(); if (BR.io) BR.io.disconnect(); }
+function brReset() { if (typeof tvReset === "function") tvReset(); brCollapse(false); BR.blocks = []; BR.cur = null; BR.tabs.clear(); if (BR.io) BR.io.disconnect(); }
 function brRepaint() { BR.sig = null; BR.blocks.forEach((b) => { brPaintHead(b); b.ids.forEach((id) => { const x = BR.tabs.get(id); if (x) b.wall.querySelectorAll(".pt").forEach((el) => { if (el.dataset.id === id) brPaintTile(el, x); }); }); }); brPaintOverlay(); }
 
 // ── 設定 › 隱私:內建瀏覽器開關 + 清除瀏覽資料(app.js privPaint 呼叫) ──
@@ -687,7 +694,7 @@ async function brPrivPaint(box) {
   const row = brEl("div", "sw-row"); row.append(brEl("span", "sw-l", t("br.set.switch")));
   const sw = brEl("button", "sw" + (p && p.enabled ? "" : " off")); sw.type = "button"; sw.id = "br-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false"); sw.setAttribute("aria-label", t("br.set.switch"));
-  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); });
+  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); if (typeof tvPrefs === "function") tvPrefs(); });
   row.append(sw);
   const lead = brEl("p", "priv-lead", t("br.set.lead"));
   const clr = brEl("button", "btn-quiet", t("br.set.clear")); clr.type = "button";

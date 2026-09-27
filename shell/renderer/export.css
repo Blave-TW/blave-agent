@@ -83,4 +83,21 @@
 .xv-steps li { margin-bottom: var(--space-4); padding-left: var(--space-4); }
 .xv-steps li::marker { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .xv-code { border-top: 1px solid var(--border-hairline); padding-top: var(--space-12); }
-.xp-ext:empty { display: none; }   /* Pine 的動作槽(export.js xpExt):之後「裝進 TradingView」放這裡,今天不佔版面 */
+/* ── Pine 的動作槽(export.js xpExt;「送進 TradingView」= pine-install.js,spec-desktop-pine-install-0.1.8 §2)── */
+.xp-ext { display: inline-flex; gap: var(--space-8); }
+.xp-ext:empty { display: none; }
+.xp .btn-fill, .xp .btn-out { flex: none; white-space: nowrap; }
+.xv-acts .grp .xp-ext { order: -1; }   /* 程式碼分頁:主動作在前 */
+/* 聊天欄窄(1024 寬視窗時 336):檔名獨佔一行,兩顆鈕換到下一行靠左——不然檔名被壓到剩幾個字 */
+@container chat (max-width: 520px) {
+  .xp:has(.xp-ext:not(:empty)) { flex-wrap: wrap; row-gap: var(--space-12); column-gap: var(--space-8); }
+  .xp:has(.xp-ext:not(:empty)) .f { flex: 1 1 100%; }
+}
+.msg.ai .xp-cap[hidden] { display: none; }
+/* 紅色只給真的壞掉的事;時機不對(agent 正在回覆)走灰字 */
+.msg.ai .xp-msg { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
+.msg.ai .xp-msg.soft { color: var(--ink-2); }
+.xp-st .br-spin { margin-right: var(--space-6); vertical-align: -1px; }
+/* 瀏覽器層訊息槽的兩行版(還沒看到策略 + 方案上限提示) */
+.slot-line.tv-2 { align-items: flex-start; line-height: 1.6; }
+.slot-line.tv-2 .ic { flex: none; margin-top: 3px; color: var(--ink); }

@@ -292,8 +292,15 @@ function createPage(wc) {
   /** onScreen = false:視窗外的 view 收不到 CDP 的鍵盤事件(同滑鼠,實測),改在頁內做同一件事——
       Enter 在 form 裡 = requestSubmit()(會跑 submit 事件與表單驗證,跟按 Enter 一樣;送出分級在呼叫端已判過),
       翻頁鍵 = 捲動,其餘送一個 KeyboardEvent 給有焦點的元素。 */
-  async function press(key, onScreen) {
+  async function press(key, onScreen, mods) {
     const k = KEYS[key]; if (!k) return { error: "invalid_args" };
+    // mods(CDP modifiers:Ctrl=2 / Meta=4):只有外殼自己的流程會帶(pine.js 把游標移到文件開頭),不經 agent 工具
+    if (mods) {
+      if (!onScreen) return { error: "invalid_args" };
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: mods });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, modifiers: mods });
+      return {};
+    }
     if (!onScreen) {
       await run(function (key) {
         const el = document.activeElement || document.body;

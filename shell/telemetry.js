@@ -42,7 +42,9 @@ const EVENTS = {
     // 聊天結果卡(renderer/results.js;0.1.8):按卡上的鈕(報告 / 策略),回合結束自己出卡不算;report_pdf = 報告「存成 PDF」
     "result_report", "result_strategy", "report_pdf",
     // 設定 › 公開連結(renderer/report-sharelist.js;0.1.8):切到那個分類、清單畫出來時
-    "share_list_open"] },
+    "share_list_open",
+    // 送進 TradingView(renderer/pine-install.js;0.1.8):按了送進、貼好交接、回傳結果送出、請 agent 修 / 貼送出、找不到編輯器、編譯沒過
+    "tv_send", "tv_pasted", "tv_read", "tv_fix", "tv_agent_paste", "tv_fail_editor", "tv_fail_compile"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
