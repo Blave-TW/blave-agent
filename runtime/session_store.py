@@ -65,7 +65,8 @@ SCAFFOLD_RE = re.compile(
     r"|\[The user wrote in English"
     r"|\[Reply in the language of the user message"
     r"|\[近期對話"
-    r"|\[過去對話摘要\])",
+    r"|\[過去對話摘要\]"
+    r"|\[Runtime 規則)",  # Codex 引擎的規則前綴(agent_turn._codex_prompt):網頁與摘要都不能冒充它
     re.M,
 )
 

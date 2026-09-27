@@ -966,6 +966,7 @@ function deleteSession(id) {
     db.prepare("DELETE FROM turns WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
     try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
+    try { fs.rmSync(path.join(BASE, "state", "browser-snapshots", id), { recursive: true, force: true }); } catch (_) { /* 瀏覽器快照同上 */ }
     return true;
   } catch (_) { return false; } finally { db.close(); }
 }
@@ -1582,6 +1583,23 @@ function mcpCode() {
     getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; } });
   return _mcp;
 }
+/* 內建瀏覽器(shell/browser/;spec .claude/output/specs/desktop-browser-agent-tools-2026-09-26.md)。
+   agent 經本機 MCP(`blave_browser`,127.0.0.1、每回合一顆 token)操作;分頁是獨立 partition 的 WebContentsView,renderer 只收事件。
+   掛不掛:電腦版本機 + 設定開著(預設開),**不看登入**;token 跟 `blave` 那顆一樣只經單次設定檔 / Codex 子行程環境交給 CLI。 */
+let _browser = null;
+const BROWSER_PREFS = () => path.join(app.getPath("userData"), "browser.json");
+function browser() {
+  if (!_browser) _browser = require("./browser").createBrowser({
+    electron: require("electron"), stateDir: path.join(BASE, "state", "browser-snapshots"), reportsDir: RPT_DIR(), version: app.getVersion(),
+    getWin: () => imgWin || BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) || null,
+    uiLang: () => (/^zh/i.test(app.getLocale()) ? "zh" : "en"),
+    track: (name) => tm().track("feature_used", { name }),
+    reducedMotion: () => { try { return !!require("electron").systemPreferences.getAnimationSettings().prefersReducedMotion; } catch (_) { return false; } },
+    loadPrefs: () => { try { return JSON.parse(fs.readFileSync(BROWSER_PREFS(), "utf8")); } catch (_) { return null; } },
+    savePrefs: (p) => { try { fs.writeFileSync(BROWSER_PREFS(), JSON.stringify({ enabled: !!p.enabled }), { mode: 0o600 }); } catch (_) { /* 存不了就只在這次生效 */ } },
+  });
+  return _browser;
+}
 /* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。三顆各看各的:
      proxyToken(帳號 token,會燒 Blave AI 額度)= **連的是 Blave AI** 而且有登入;
      dataKey(縮權的資料 key,不能呼叫 LLM)= **有登入而且帳號含資料**,不看連的是誰——自帶 Claude Code / Codex 的人登入後也拿得到資料。
@@ -1630,6 +1648,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 等於能替自己加掛 MCP server。本案不改變這點,另案處理。
   let mcpFile = null, mcpMount = null;
   if (plan.mcp) { mcpMount = await mcpCode().get(); if (mcpMount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount); }
+  // 內建瀏覽器:同一份單次設定檔多一個 `blave_browser`(兩個 server 可以只有其一)。runtime 靠 --mcp-servers 分別知道掛了哪幾個
+  let brMount = null;
+  try { brMount = await browser().beginTurn(win, sessionId); } catch (_) { brMount = null; }
+  if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
+  const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
+  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); };
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -1643,7 +1667,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     ...(acct ? { BLAVE_PROXY_TOKEN: acct } : {}),
     // 接入碼只在 Codex 引擎進環境(Claude 走 --mcp-config 的檔)。Codex 預設會把整份環境(含 *TOKEN*)傳給 agent 跑的
     // shell,codex_engine 掛上時用 filters 只拔這一個、並關掉會繞過 filters 的 shell_snapshot
-    ...(useCodex && mcpFile ? { BLAVE_MCP_TOKEN: mcpMount.accessCode, BLAVE_MCP_URL: mcpMount.url } : {}),
+    ...(useCodex && mcpFile && mcpMount ? { BLAVE_MCP_TOKEN: mcpMount.accessCode, BLAVE_MCP_URL: mcpMount.url } : {}),
+    ...(useCodex && mcpFile && brMount ? { BLAVE_BROWSER_TOKEN: brMount.token, BLAVE_BROWSER_URL: brMount.url } : {}),
     // Keychain/暫存都認人:少了 USER,claude CLI 會回「Not logged in」(實測 repro-2/3)
     USER: process.env.USER || os.userInfo().username,
     LOGNAME: process.env.LOGNAME || os.userInfo().username,
@@ -1686,13 +1711,14 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     ...viewingArgs(viewing),
     // argv 上只有設定檔的**路徑**(碼在檔案裡,0600、workspace 以外、這一輪結束就刪);runtime 只在電腦版(LocalSink)認這個旗標
     ...(mcpFile ? ["--mcp-config=" + mcpFile] : []),
+    ...(mcpServers.length ? ["--mcp-servers=" + mcpServers.join(",")] : []),
     // 用戶打的字**不進 argv**(稽核 S5):同一台電腦上任何人 `ps` 都看得到命令列,而聊天貼 key 是支援的流程。走 stdin。
     // runtime 往下那一段本來就不走 argv(Claude 走 SDK 的 stream-json stdin、Codex 走 `exec -`)。
     "--message-stdin", "--", sessionId,
-  ], { env: childEnv(env), cwd: WS, windowsHide: true }); } catch (err) { require("./mcpcode").removeConfig(mcpFile); throw err; }
-  child.on("error", () => require("./mcpcode").removeConfig(mcpFile));
+  ], { env: childEnv(env), cwd: WS, windowsHide: true }); } catch (err) { turnDone(); throw err; }
+  child.on("error", () => turnDone());
   child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
-  try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } require("./mcpcode").removeConfig(mcpFile); throw err; }   // 不留一支卡在讀 stdin 的子行程
+  try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } turnDone(); throw err; }   // 不留一支卡在讀 stdin 的子行程
   activeTurn = child;
   let buf = "";
   child.stdout.on("data", (d) => {
@@ -1709,7 +1735,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   let errTail = "";
   child.stderr.on("data", (d) => { errTail = (errTail + d.toString()).slice(-2000); });
   child.on("close", (code) => {
-    require("./mcpcode").removeConfig(mcpFile);   // 這一輪結束:設定檔(裡面是接入碼)立刻刪
+    turnDone();   // 這一輪結束:設定檔(裡面是接入碼 / 瀏覽器 token)立刻刪,瀏覽器 token 作廢
     activeTurn = null;
     // 視窗可能已經關掉了(結束時回合才收尾):送到已銷毀的 webContents 會丟例外
     if (!win.isDestroyed()) win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
@@ -1927,6 +1953,25 @@ app.whenReady().then(() => {
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
   // 功能被使用(renderer 的 trackFeature):name 由 telemetry.js 對 feature_used 白名單驗,renderer 給的字不可信、不在表上就整則不送
   ipcMain.on("track-feature", (e, name) => { if (fromOurPage(e)) tm().track("feature_used", { name }); });
+  /* 內建瀏覽器(renderer/browser.js):畫面只送分頁 id、中欄的 bounds 與用戶的動作;網址只有用戶自己在網址列打的那一條(照樣過網路層政策)。
+     頁面物件、token、網頁內容都不進 renderer(縮圖與快照是圖片與文字)。 */
+  handle("browser-expand", (_e, id, b) => browser().expand(id, b), null);
+  ipcMain.on("browser-bounds", (e, b) => { if (fromOurPage(e) && _browser) _browser.bounds(b); });
+  handle("browser-collapse", () => { if (_browser) _browser.collapse(); return true; }, false);
+  handle("browser-takeover", (_e, id) => { browser().takeover(String(id)); return true; }, false);
+  handle("browser-handback", (_e, id) => { browser().handback(String(id)); return true; }, false);
+  handle("browser-user-done", (_e, id, choice) => { browser().userDone(id, choice); return true; }, false);
+  handle("browser-navigate", (_e, id, url) => browser().navigate(id, url), { error: "NOT_ALLOWED" });
+  handle("browser-reload", (_e, id) => browser().reload(id), false);
+  handle("browser-open-live", (_e, sid, snap) => (okSessionId(sid) ? browser().openLive(sid, snap) : null), null);
+  handle("browser-show-live", (_e, url) => browser().showLive(url), null);
+  handle("browser-snapshot", (_e, sid, snap) => (okSessionId(sid) ? browser().snapshot(sid, snap) : null), null);
+  handle("browser-history", (_e, sid) => (okSessionId(sid) ? browser().history(sid) : []), []);
+  ipcMain.on("browser-block-visible", (e, on) => { if (fromOurPage(e) && _browser) _browser.setBlockVisible(on === true); });
+  handle("browser-open-external", (_e, id) => { const u = _browser && _browser.externalUrl(id); return u ? openWebSafe(u) : false; }, false);
+  handle("browser-prefs", () => browser().prefs(), { enabled: false });
+  handle("browser-prefs-set", (_e, p) => browser().setPrefs({ enabled: !!(p && p.enabled === true) }), null);
+  handle("browser-clear", () => (activeTurn ? false : browser().clearData()), false);
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
      之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
      不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */

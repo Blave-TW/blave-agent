@@ -58,6 +58,13 @@ _MCP_MIN_VERSION = (0, 146, 0)
 # code path a user can switch on; whether it honours the policy is unverified, so it goes too.
 _MCP_ENV_FLAGS = ("-c", f'shell_environment_policy.filters.{MCP_TOKEN_ENV}="exclude"',
                   "-c", "features.shell_snapshot=false", "-c", "features.shell_snapshot_v2=false")
+# `blave_browser`: the desktop shell's built-in browser (shell/browser/mcp.js, 127.0.0.1, one token
+# per turn). Same posture as `blave` — token only in this env var, stripped from the agent's shell
+# by its own filter, same version floor and snapshot gate — but a separate name, so a clash or a
+# missing floor drops only the server it concerns.
+BROWSER_TOKEN_ENV = "BLAVE_BROWSER_TOKEN"
+_BROWSER_URL_RE = re.compile(r"^http://127\.0\.0\.1:\d{1,5}/mcp$")
+_BROWSER_ENV_FLAGS = ("-c", f'shell_environment_policy.filters.{BROWSER_TOKEN_ENV}="exclude"')
 # Legacy managed config, loaded ABOVE our `-c` (precedence 40; the MDM copy is 50 — config/src/
 # config_layer_source.rs). Windows 0.155 ignores its $CODEX_HOME copy; older builds may not.
 _MANAGED_CONFIG_PATH = None if os.name == "nt" else "/etc/codex/managed_config.toml"
@@ -134,7 +141,7 @@ def _mdm_config_toml():
         raise ValueError(str(e)) from None
 
 
-def _mcp_name_taken(cwd, env):
+def _mcp_name_taken(cwd, env, name="blave"):
     """Why our `-c` flags would clash with a config Codex will load, or None:
       - `mcp_servers.blave` exists: `-c` deep-merges into it, and a stdio entry plus our `url`
         makes Codex refuse to start the whole turn.
@@ -180,8 +187,8 @@ def _mcp_name_taken(cwd, env):
         return "the MDM managed config is unreadable"
     for managed, doc in docs:
         servers = doc.get("mcp_servers")
-        if isinstance(servers, dict) and "blave" in servers:
-            return "mcp_servers.blave already exists in a config.toml"
+        if isinstance(servers, dict) and name in servers:
+            return "mcp_servers." + name + " already exists in a config.toml"
         policy = doc.get("shell_environment_policy")
         if managed and policy is not None:
             return "a managed config sets shell_environment_policy"
@@ -200,7 +207,8 @@ def _snapshot_disabled(codex_bin, cwd, env):
     try:
         out = subprocess.run([codex_bin, *_MCP_ENV_FLAGS[2:], "features", "list"],
                              capture_output=True, text=True, timeout=15, cwd=cwd,
-                             env={k: v for k, v in env.items() if k != MCP_TOKEN_ENV}).stdout
+                             env={k: v for k, v in env.items()
+                                  if k not in (MCP_TOKEN_ENV, BROWSER_TOKEN_ENV)}).stdout
     except (OSError, subprocess.SubprocessError):
         return False
     state = {line.split()[0]: line.split()[-1] for line in (out or "").splitlines()
@@ -232,7 +240,28 @@ def mcp_server(codex_bin, cwd, env):
     return url
 
 
-def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None):
+def browser_server(codex_bin, cwd, env):
+    """The `blave_browser` MCP URL to attach this turn, or None. Same gates as mcp_server();
+    the URL must be the shell's own loopback server."""
+    url = env.get("BLAVE_BROWSER_URL")
+    if not url or not env.get(BROWSER_TOKEN_ENV) or not _BROWSER_URL_RE.match(url):
+        return None
+    version = codex_version(codex_bin)
+    if not version or version < _MCP_MIN_VERSION:
+        print("[codex] browser MCP not attached: codex version below floor", file=sys.stderr)
+        return None
+    clash = _mcp_name_taken(cwd, env, "blave_browser")
+    if clash:
+        print("[codex] browser MCP not attached: " + clash, file=sys.stderr)
+        return None
+    if not _snapshot_disabled(codex_bin, cwd, env):
+        print("[codex] browser MCP not attached: shell_snapshot could not be turned off",
+              file=sys.stderr)
+        return None
+    return url
+
+
+def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_url=None):
     """model / effort are forwarded only when the user picked them in the shell (which
     guarantees a slug from Codex's own catalog and an effort that model supports); absent,
     Codex uses the user's own defaults and the argv is unchanged. mcp_url comes from
@@ -252,6 +281,16 @@ def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None):
                    "-c", f'mcp_servers.blave.bearer_token_env_var="{MCP_TOKEN_ENV}"',
                    "-c", 'mcp_servers.blave.default_tools_approval_mode="approve"',
                    *_MCP_ENV_FLAGS]
+    if browser_url:
+        # browser_search can wait on a robot check and a fallback engine (~45 s worst case):
+        # raise this server's per-call timeout above that. Other servers keep Codex's default.
+        picked += ["-c", f'mcp_servers.blave_browser.url="{browser_url}"',
+                   "-c", f'mcp_servers.blave_browser.bearer_token_env_var="{BROWSER_TOKEN_ENV}"',
+                   "-c", 'mcp_servers.blave_browser.default_tools_approval_mode="approve"',
+                   "-c", "mcp_servers.blave_browser.tool_timeout_sec=120",
+                   *_BROWSER_ENV_FLAGS]
+        if not mcp_url:
+            picked += list(_MCP_ENV_FLAGS[2:])
     return [
         codex_bin, "exec", "--json", "--ephemeral", "--skip-git-repo-check", *picked,
         # exec's default sandbox is read-only, and workspace-write has the network OFF by
@@ -402,7 +441,7 @@ class CodexTranslator:
 
 
 async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
-              model=None, effort=None, mcp_url=None):
+              model=None, effort=None, mcp_url=None, browser_url=None):
     """One Codex turn. Returns the translator (usage, thread_id); raises CodexTurnFailed
     when the turn did not complete, so the caller's existing fault path classifies it.
     mcp_url is the caller's mcp_server() result — the caller decides once so the prompt's
@@ -413,8 +452,10 @@ async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_don
     if not mcp_url:
         # Not attached this turn: the child gets neither the code nor the URL.
         env = {k: v for k, v in env.items() if k not in (MCP_TOKEN_ENV, "BLAVE_MCP_URL")}
+    if not browser_url:
+        env = {k: v for k, v in env.items() if k not in (BROWSER_TOKEN_ENV, "BLAVE_BROWSER_URL")}
     proc = await asyncio.create_subprocess_exec(
-        *build_args(codex_bin, cwd, model, effort, mcp_url),
+        *build_args(codex_bin, cwd, model, effort, mcp_url, browser_url),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         stderr=None,  # Codex's own log goes straight to this process's stderr
         cwd=cwd, env=env, limit=_LINE_LIMIT,

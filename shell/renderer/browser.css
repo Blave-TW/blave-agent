@@ -1,0 +1,201 @@
+/* 內建瀏覽器(renderer/browser.js)。canon design-system.md › Components ›「電腦版內建瀏覽器(agent 瀏覽)」九條;
+   數值照設計師 mockup(.claude/output/designer/mockup-desktop-browser-2026-09-26.html)。全部不上色:誰在動手靠墨色小標與位置。 */
+
+.pane-main { position: relative; container: main / inline-size; }
+.pane-chat { container: chat / inline-size; }
+
+/* 共用小件 */
+.br-spin { flex: none; display: inline-block; width: 12px; height: 12px; box-sizing: border-box; border: 1.5px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: brSpin 1s linear infinite; }
+@keyframes brSpin { to { transform: rotate(360deg); } }
+.br-pulse { flex: none; display: inline-block; width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--ink); animation: brPulse 2s ease-in-out infinite; }
+@keyframes brPulse { 0%, 100% { opacity: .25; } 50% { opacity: .7; } }
+.tag-you { display: inline-block; padding: 0 var(--space-6); border-radius: var(--radius-micro); background: var(--control-fill); color: var(--control-fill-text); font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.fav { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-micro); background: var(--surface-muted); color: var(--ink-2); font-size: 10px; font-weight: 700; line-height: 1; text-transform: uppercase; }
+.fav.has-img { background: none; overflow: hidden; }
+.fav img { display: block; width: 16px; height: 16px; border-radius: var(--radius-micro); object-fit: contain; }
+/* 深色 favicon 在暗底看不見(主行程算過對比 <3:1 才標 plate):墊一塊淺底,圖內縮 1px */
+.fav.has-img.plate { background: var(--ink); padding: 1px; }
+.fav.has-img.plate img { width: 14px; height: 14px; border-radius: 3px; }
+.dom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ink-3); }
+.dom b { font-weight: 600; color: var(--ink); }
+
+/* ── 分頁格 .pt(聊天區塊與中欄牆共用) ── */
+.wall { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(184px, 1fr); gap: var(--space-16); }
+@container main (min-width: 720px) { .bw .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container main (min-width: 1120px) { .bw .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.pt { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-sm); overflow: hidden; text-align: left; color: inherit; font: inherit; cursor: pointer;
+  animation: brIn var(--motion-enter) var(--ease-standard) backwards; }
+@keyframes brIn { from { opacity: 0; transform: translateY(8px) scale(.96); } }
+/* 匯流(canon 第 9 條):一輪讀完,格子依序淡出上收,接著換成摘要列;stagger 由 JS 設 animation-delay(60ms) */
+.bblk.conv .pt { animation: brOut var(--motion-enter) var(--ease-standard) forwards; }
+@keyframes brOut { to { opacity: 0; transform: translateY(-12px) scale(.96); } }
+.pt-bar { flex: none; height: 32px; display: flex; align-items: center; gap: var(--space-8); padding: 0 var(--space-12); border-bottom: 1px solid var(--border-hairline); transition: background var(--motion-fast) var(--ease-standard); }
+.pt:hover .pt-bar { background: var(--surface-muted); }
+.pt-st { flex: none; display: flex; align-items: center; color: var(--ink-3); }
+.pt-st .ic { width: 14px; height: 14px; stroke-width: 2.25; color: var(--ink); }
+.pg { position: relative; flex: 1 1 0; min-height: 112px; overflow: hidden; background: var(--surface-field); }
+.pg img { display: block; width: 100%; height: auto; }
+.pt[data-ph="done"] .pg, .pt[data-ph="blocked"] .pg { opacity: .45; transition: opacity var(--motion-base) var(--ease-standard); }
+.pg-layer { position: absolute; left: 0; top: 0; width: 100%; aspect-ratio: 16 / 10; pointer-events: none; }
+.pg-band { position: absolute; left: 0; right: 0; top: 38%; height: 20px; background: var(--surface-muted); opacity: 0; border-left: 2px solid var(--ink); pointer-events: none; transition: opacity var(--motion-base) var(--ease-standard); }
+.pt[data-ph="read"] .pg-band { opacity: .55; }
+.pg-band { transition: opacity var(--motion-base) var(--ease-standard), top var(--motion-travel) var(--ease-standard); }
+/* 縮圖上的 agent 游標與點擊環(牆與 ≥560 的格子;聊天一頁一列太小,不畫,只靠訊息槽) */
+.tc { position: absolute; left: 50%; top: 50%; opacity: 0; transition: opacity var(--motion-base) var(--ease-standard); }
+.tc.on { opacity: 1; }
+.tc svg { display: block; fill: var(--ink); stroke: var(--bg-body); stroke-width: 1.5; }
+.tr { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border: 2px solid var(--ink); border-radius: 50%; animation: brRing .45s var(--ease-standard) forwards; }
+@keyframes brRing { from { transform: scale(.6); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.pt-foot { flex: none; min-height: 34px; display: flex; align-items: center; gap: var(--space-6); padding: var(--space-8) var(--space-12); font-size: 12px; line-height: 1.4; color: var(--ink-3); }
+.pt-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt[data-ph="done"] .pt-foot { color: var(--ink); }
+.pt[data-ph="wait"] .pt-foot, .pt[data-ph="fail"] .pt-foot, .pt[data-ph="blocked"] .pt-foot { color: var(--ink-2); }
+.pt-prog { display: none; }
+
+/* ── 聊天瀏覽區塊 .bblk ── */
+.bblk { margin: 0 0 var(--space-24); padding: var(--space-8); border-radius: var(--radius-lg); background: var(--bg-body); box-shadow: var(--shadow-sm); }
+.bblk-head { display: flex; align-items: center; gap: var(--space-8); min-height: 28px; padding: 0 var(--space-4) var(--space-8); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.bblk-head b { font-weight: 600; color: var(--ink); }
+.bblk-act { margin-left: auto; display: flex; gap: var(--space-12); }
+.bblk .wall { grid-auto-rows: auto; }
+.bblk.is-out .wall { display: none; }
+.bblk.is-out .bblk-head { padding-bottom: 0; }
+.bblk .pt-prog { display: block; position: absolute; left: var(--space-8); right: var(--space-8); bottom: 0; height: 2px; background: var(--ink); opacity: .45; transform-origin: left; transform: scaleX(0); transition: transform .3s linear; }
+.bblk .pt:hover .pt-bar { background: none; }
+.bblk .pt[aria-current="true"] { background: var(--surface-muted); }
+@container chat (max-width: 559px) {
+  .bblk .wall { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .bblk .pt { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-rows: 20px 20px; column-gap: var(--space-8); padding: var(--space-4) var(--space-8) var(--space-6); border-radius: var(--radius-md); background: transparent; box-shadow: none; }
+  .bblk .pt:hover { background: var(--surface-card); }
+  .bblk .pt[aria-current="true"] { background: var(--surface-muted); }
+  .bblk .pt-bar { grid-column: 2 / 4; grid-row: 1; height: auto; padding: 0; border: 0; }
+  .bblk .pg { grid-column: 1; grid-row: 1 / 3; flex: none; width: 64px; height: 44px; min-height: 0; border-radius: var(--radius-micro); box-shadow: var(--shadow-sm); }
+  .bblk .pg-band { height: 6px; }
+  .bblk .tc, .bblk .tr { display: none; }
+  .bblk .pt-foot { grid-column: 2 / 4; grid-row: 2; min-height: 0; padding: 0; }
+  .bblk .pt-prog { left: 80px; }
+}
+@container chat (min-width: 560px) {
+  .bblk .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-8); }
+  .bblk .pg { flex: none; height: 120px; min-height: 0; }
+}
+@container chat (min-width: 680px) { .bblk .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+/* 進行中也是一行(canon 第 1 條):圖示疊＋已讀 d/n＋展開。收著時只露出要你操作的那一頁;「沒讀到」的頁排最下面 */
+.bblk:not(.sum) .bblk-head .favs { display: inline-flex; }
+.bblk .favs .fav { margin-left: -4px; box-shadow: 0 0 0 2px var(--surface-card); position: relative; }
+.bblk .favs .fav:first-child { margin-left: 0; }
+.bblk-head .more { font-size: 11px; color: var(--ink-3); }
+.bblk-head .cnt { color: var(--ink-3); }
+/* 清單開合只用 chevron:圖示鈕,熱區 32×32(視覺 14px),整條卡頭也可點 */
+.bblk:not(.sum):not(.is-empty) .bblk-head { cursor: pointer; }
+.br-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -6px -6px -6px 0; padding: 0; border: 0; border-radius: var(--radius-micro); background: none; color: var(--ink-3); cursor: pointer; }
+.br-toggle:hover { background: var(--surface-muted); color: var(--ink); }
+.br-toggle .chev { width: 14px; height: 14px; transition: transform var(--motion-fast) var(--ease-standard); }
+.bblk.is-open .br-toggle .chev { transform: rotate(180deg); }
+.bblk:not(.sum):not(.is-open) .wall > .pt:not([data-ph="wait"]), .bblk:not(.sum):not(.is-open) .wall > .bsep { display: none; }
+.bblk:not(.sum):not(.is-open):not(:has(.pt[data-ph="wait"])) .wall { display: none; }
+.bblk:not(.sum):not(.is-open):not(:has(.pt[data-ph="wait"])) .bblk-head { padding-bottom: 0; }
+@container chat (max-width: 559px) { .bblk.is-open:not(.sum) .wall { max-height: calc(5.5 * 52px); overflow-y: auto; } }   /* 一頁一列時高度上限 5 列半、內捲 */
+.bblk.is-empty { display: none; }
+.bsep { grid-column: 1 / -1; margin-top: var(--space-4); padding: var(--space-6) var(--space-4) 0; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--ink-3); }
+
+/* 一輪結束:摘要列(details),點開仍是同一組格子 */
+.bblk.sum { padding: 0; }
+.bblk.sum.rise { animation: brIn var(--motion-enter) var(--ease-standard) backwards; }
+.bblk.sum summary { list-style: none; display: flex; align-items: center; gap: var(--space-8); min-height: 40px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-2); cursor: pointer; border-radius: var(--radius-lg); }
+.bblk.sum summary::-webkit-details-marker { display: none; }
+.bblk.sum summary:hover { background: var(--surface-card); }
+.bblk.sum summary b { font-weight: 600; color: var(--ink); }
+.bblk.sum .favs { display: inline-flex; }
+.bblk.sum .sum-back { margin-left: auto; }
+.bblk.sum .chev { margin-left: auto; width: 14px; height: 14px; color: var(--ink-3); transition: transform var(--motion-fast) var(--ease-standard); }
+.bblk.sum .sum-back + .chev { margin-left: var(--space-8); }
+.bblk.sum[open] .chev { transform: rotate(180deg); }
+.bblk.sum .wall { padding: 0 var(--space-8) var(--space-8); }
+
+/* ── 來源卡 .src ── */
+.srcs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-8); margin: 0 0 var(--space-24); }
+.src { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-8) var(--space-12); border: 0; border-radius: var(--radius-md); background: var(--bg-body); box-shadow: var(--shadow-sm); text-align: left; color: inherit; font: inherit; cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
+.src:hover { background: var(--surface-muted); }
+.src .r1 { display: flex; align-items: center; gap: var(--space-6); min-width: 0; font-size: 11px; color: var(--ink-3); }
+.src .n { flex: none; font-size: 11px; color: var(--ink-3); }
+/* 網域是這張卡最重要的辨識資訊:永遠不截;要截只截標題(兩行＋…)。聊天欄窄時一欄 */
+.src .r1 .dom { flex: none; overflow: visible; text-overflow: clip; }
+@container chat (max-width: 559px) { .srcs { grid-template-columns: minmax(0, 1fr); } }
+.src .t { font-size: 12px; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── 中欄展開層 ── */
+.bw { position: absolute; left: 0; right: 0; bottom: 0; top: 52px; z-index: 20; display: flex; flex-direction: column; min-height: 0; background: var(--bg-body); }
+.bw-head { flex: none; display: flex; align-items: flex-start; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
+.bw-head .txt { flex: 1; min-width: 0; }
+.bw-head h5 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.bw-stat { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-4); min-height: 18px; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.bw-stat b { font-weight: 600; color: var(--ink); }
+.bw-stat .ic { width: 14px; height: 14px; }
+.bw-stat .btn-quiet { margin-left: var(--space-4); }
+.bw-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-24) var(--space-24); display: flex; flex-direction: column; }
+.segs { display: inline-flex; gap: 3px; }
+.segs i { display: block; width: 10px; height: 4px; border-radius: 1px; background: var(--border-hairline); transition: background var(--motion-base) var(--ease-standard); }
+.segs i.on { background: var(--border-frame); } .segs i.ok { background: var(--ink); }
+/* 單頁 */
+.bv { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 var(--space-24) var(--space-24); }
+.bv-tabs { flex: none; display: flex; gap: var(--space-4); overflow: hidden; margin-bottom: var(--space-8); }
+.bv-tab { flex: 0 1 160px; min-width: 56px; height: 30px; display: flex; align-items: center; gap: var(--space-6); padding: 0 var(--space-8); border: 0; border-radius: var(--radius-sm); background: none; font: inherit; font-size: 11px; color: var(--ink-3); cursor: pointer; }
+.bv-tab:hover { background: var(--surface-card); }
+.bv-tab[aria-selected="true"] { flex: 0 0 auto; max-width: 200px; background: var(--surface-muted); color: var(--ink); }
+.bv-tab .dom { color: inherit; }
+/* 沒選中的分頁只放字母格+狀態(網域在 title / aria-label),選中那頁才顯示網域全名;不做橫捲 */
+.bv-tab[aria-selected="false"] { flex: 0 0 auto; min-width: 0; }
+.bv-tab[aria-selected="false"] .dom { display: none; }
+.need-dot { display: block; width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--ink); }
+/* 選中底跟字母格同色時方框會消失:換一階 */
+.pt[aria-current="true"] .fav, .bv-tab[aria-selected="true"] .fav { background: var(--surface-card); }
+.bv-tab .pt-st .ic { width: 12px; height: 12px; }
+.bv-addr { flex: none; display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-8); }
+.ibtn { flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3); position: relative; cursor: pointer; }
+.ibtn::before { content: ""; position: absolute; inset: -8px -2px; }
+.ibtn:hover { background: var(--surface-muted); color: var(--ink); }
+.ibtn:disabled { opacity: .4; cursor: default; }
+.ibtn .ic { width: 16px; height: 16px; }
+.url { flex: 1; min-width: 0; height: 34px; display: flex; align-items: center; gap: var(--space-8); padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--surface-field); font-size: 12px; color: var(--ink-3); cursor: text; }
+.url .ic { width: 14px; height: 14px; color: var(--ink-3); }
+.url .u { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.url .u b { font-weight: 600; color: var(--ink); }
+.url.warn .ic { color: var(--ink); }
+.url input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; font-family: "Roboto Mono", ui-monospace, monospace; }
+.url:focus-within { border-color: var(--focus-ring); }
+.bv-live { flex: none; margin-left: var(--space-8); }
+.bv-slot:empty { display: none; }
+.slot-line { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-8); padding: var(--space-8) var(--space-12); border-radius: var(--radius-md); background: var(--surface-card); font-size: 12px; color: var(--ink-2); }
+.slot-line .ic { width: 14px; height: 14px; }
+.ask { display: flex; align-items: flex-start; gap: var(--space-16); margin-bottom: var(--space-8); padding: var(--space-12) var(--space-16); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-sm); }
+.ask .txt { flex: 1; min-width: 0; }
+.ask h6 { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.ask p { margin: var(--space-2) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.ask .act { flex: none; display: flex; gap: var(--space-8); align-self: center; }
+/* 頁面區:即時頁時是空框,原生 view 疊在它上面(主行程依它的位置擺);擋下 / 失敗 / 快照時是我們自己畫的 */
+.bv-page { flex: 1; min-height: 0; position: relative; overflow: auto; border-radius: var(--radius-md); background: var(--surface-muted); box-shadow: var(--shadow-sm); }
+.pg-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-12); padding: var(--space-24); text-align: center; }
+.pg-empty h6 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.pg-empty p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); max-width: 360px; }
+.pg-empty > .ic { width: 20px; height: 20px; color: var(--ink-3); }
+.snap-meta { position: sticky; top: 0; padding: var(--space-8) var(--space-16); font-size: 11px; color: var(--ink-3); background: var(--surface-field); border-bottom: 1px solid var(--border-hairline); }
+.snap-img { display: block; width: 100%; height: auto; }
+.snap-txt { margin: 0; padding: var(--space-16) var(--space-24); max-width: 72ch; white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+
+/* 設定 › 隱私 裡的那一段:跟上面的安裝識別碼分開 */
+.br-set { margin: var(--space-24) 0; padding-top: var(--space-16); border-top: 1px solid var(--border-hairline); }
+.br-set .btn-quiet { margin-top: var(--space-8); }
+
+@container main (max-width: 600px) {
+  .bw-stat .segs { display: none; }
+  .bv .ask { flex-direction: column; gap: var(--space-12); }
+  .bv .ask .act { align-self: flex-end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pt, .src, .bblk.conv .pt, .bblk.sum.rise { animation: none; }
+  .br-pulse { animation: none; opacity: .5; }
+  .bblk .pt-prog, .bblk.sum .chev, .pg-band, .segs i, .tc { transition: none; }
+  .tr { display: none; }
+}

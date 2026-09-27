@@ -152,9 +152,9 @@ FIXTURE = [
 
 def fake_codex(events, captured):
     async def _run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
-                   model=None, effort=None, mcp_url=None):
+                   model=None, effort=None, mcp_url=None, browser_url=None):
         captured.update(bin=codex_bin, prompt=prompt, cwd=cwd, env=env, model=model,
-                        effort=effort, mcp_url=mcp_url)
+                        effort=effort, mcp_url=mcp_url, browser_url=browser_url)
         tr = codex_engine.CodexTranslator(sink, on_tool_start, on_tool_done)
         for event in events:
             tr.feed(event)
@@ -455,8 +455,50 @@ assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in en
 chunks = run_local_turn(engine="codex", codex_bin=pinned_codex, mcp_config=MCP_CFG)
 argv, env = spawned()
 assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in env, "snapshot 釘住不掛"
+
+# ── 7. `blave_browser`(內建瀏覽器,本機 127.0.0.1):跟 `blave` 各自判、各自掛;token 只在環境、被自己的 filter 拔掉 ──
+BR_URL, BR_TOK = "http://127.0.0.1:51234/mcp", "b" * 48
+BR_FLAGS = ["-c", 'mcp_servers.blave_browser.url="%s"' % BR_URL,
+            "-c", 'mcp_servers.blave_browser.bearer_token_env_var="BLAVE_BROWSER_TOKEN"',
+            "-c", 'mcp_servers.blave_browser.default_tools_approval_mode="approve"',
+            "-c", "mcp_servers.blave_browser.tool_timeout_sec=120",
+            "-c", 'shell_environment_policy.filters.BLAVE_BROWSER_TOKEN="exclude"']
+argv = codex_engine.build_args("/x/codex", "/ws", browser_url=BR_URL)
+assert all(f in argv for f in BR_FLAGS) and "features.shell_snapshot=false" in argv and BR_TOK not in " ".join(argv), argv
+assert not any("mcp_servers.blave." in a for a in argv), "只掛瀏覽器時不帶 blave 的 -c"
+both = codex_engine.build_args("/x/codex", "/ws", mcp_url=MCP_URL, browser_url=BR_URL)
+assert all(f in both for f in MCP_FLAGS + BR_FLAGS) and both.count("features.shell_snapshot=false") == 1, both
+br_env = {"CODEX_HOME": codex_home, "BLAVE_BROWSER_URL": BR_URL, "BLAVE_BROWSER_TOKEN": BR_TOK}
+bs = codex_engine.browser_server
+assert bs(new_codex, at.WORKSPACE, br_env) == BR_URL
+assert bs(new_codex, at.WORKSPACE, {**br_env, "BLAVE_BROWSER_URL": "https://evil.example/mcp"}) is None, "只認外殼自己的 loopback server"
+assert bs(new_codex, at.WORKSPACE, {**br_env, "BLAVE_BROWSER_TOKEN": ""}) is None
+assert bs(old_codex, at.WORKSPACE, br_env) is None and bs(pinned_codex, at.WORKSPACE, br_env) is None, "版本下限、snapshot 閘門同 blave"
+with open(ws_codex_cfg, "w") as f:
+    f.write('[mcp_servers.blave_browser]\ncommand = "npx"\n')
+assert bs(new_codex, at.WORKSPACE, br_env) is None and ms(new_codex, at.WORKSPACE, base_env) == MCP_URL, "撞名只拿掉撞到的那一個"
+os.remove(ws_codex_cfg)
+os.environ.update(br_env)
+chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, mcp_servers="blave_browser")
+argv, env = spawned()
+stdin = open(os.path.join(fake_out, "stdin")).read()
+assert all(f in argv for f in BR_FLAGS) and not any("mcp_servers.blave." in a for a in argv), argv
+assert env.get("BLAVE_BROWSER_TOKEN") == BR_TOK and "BLAVE_MCP_TOKEN" not in env, "--mcp-servers 沒列 blave 就不掛 blave"
+assert "Built-in browser (this turn)" in stdin and "Blave MCP (this turn)" not in stdin
+chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, mcp_servers="blave,blave_browser")
+argv, env = spawned()
+assert all(f in argv for f in MCP_FLAGS + BR_FLAGS) and env.get("BLAVE_MCP_TOKEN") == CODE and env.get("BLAVE_BROWSER_TOKEN") == BR_TOK
+chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG)
+argv, env = spawned()
+assert not any("blave_browser" in a for a in argv) and "BLAVE_BROWSER_TOKEN" not in env, "舊外殼(沒 --mcp-servers)= 只有 blave,瀏覽器 token 不給子行程"
+assert "Built-in browser (this turn)" not in open(os.path.join(fake_out, "stdin")).read()
+chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_servers="blave_browser")
+argv, env = spawned()
+assert not any("blave_browser" in a for a in argv) and "BLAVE_BROWSER_TOKEN" not in env, "沒 --mcp-config 不掛"
+for k in br_env:
+    os.environ.pop(k, None)
 for k in base_env:
-    os.environ.pop(k)
+    os.environ.pop(k, None)
 os.environ.pop("FAKE_OUT")
 
 # Codex 的 mcp_tool_call 組成 Claude 同形的名字,_tool_where 才分得出雲端那一步(A′ 收據分色)

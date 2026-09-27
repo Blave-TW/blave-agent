@@ -109,10 +109,98 @@ msgid "turn.showReason"
 msgstr "顯示思考內容"
 
 msgid "turn.thinking"
-msgstr "思考中"
+msgstr "正在思考"
 
-msgid "turn.running"
-msgstr "執行中 · 第 {n} 步"
+# 回合狀態列(runtime tool chunk 的 kind;受詞另外接在後面,不在字串裡)
+msgid "act.thinking"
+msgstr "正在思考"
+
+msgid "act.reply"
+msgstr "正在寫回覆"
+
+msgid "act.unknown"
+msgstr "正在處理"
+
+msgid "act.search"
+msgstr "正在搜尋："
+
+msgid "act.web_read"
+msgstr "正在讀"
+
+msgid "act.web_read_many"
+msgstr "正在讀 {n} 個網頁"
+
+msgid "act.web_act"
+msgstr "正在操作"
+
+msgid "act.docs"
+msgstr "正在查說明文件"
+
+msgid "act.files"
+msgstr "正在找檔案"
+
+msgid "act.file_read"
+msgstr "正在讀"
+
+msgid "act.strategy_read"
+msgstr "正在讀策略"
+
+msgid "act.strategy_write"
+msgstr "正在寫策略"
+
+msgid "act.file_write"
+msgstr "正在改"
+
+msgid "act.data"
+msgstr "正在抓資料"
+
+msgid "act.backtest"
+msgstr "正在跑回測"
+
+msgid "act.live_tick"
+msgstr "正在跑策略"
+
+msgid "act.scan"
+msgstr "正在掃參數"
+
+msgid "act.validate"
+msgstr "正在驗證策略"
+
+msgid "act.check"
+msgstr "正在檢查策略碼"
+
+msgid "act.report"
+msgstr "正在組報告"
+
+msgid "act.watch"
+msgstr "正在更新看盤板"
+
+msgid "act.schedule"
+msgstr "正在設定排程"
+
+msgid "act.order"
+msgstr "正在下單"
+
+msgid "act.account"
+msgstr "正在查帳戶"
+
+msgid "act.status"
+msgstr "正在查執行狀態"
+
+msgid "act.install"
+msgstr "正在安裝套件"
+
+msgid "act.cloud"
+msgstr "正在連雲端主機"
+
+msgid "act.delegate"
+msgstr "正在委派研究"
+
+msgid "act.code_prep"
+msgstr "正在寫程式"
+
+msgid "act.need_user"
+msgstr "等你操作"
 
 msgid "turn.busy"
 msgstr "上一輪還在跑。"
@@ -3588,3 +3676,285 @@ msgstr "這一小時付不出資料費，agent 拿不到策略庫。儲值後馬
 
 msgid "lib.gate.unknown"
 msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「資料與雲端方案」重新查看。"
+
+msgid "br.h"
+msgstr "瀏覽器"
+
+msgid "br.browsing"
+msgstr "agent 瀏覽中"
+
+msgid "br.readWord"
+msgstr "已讀"
+
+msgid "br.waiting"
+msgstr "等你操作"
+
+msgid "br.queued"
+msgstr "排隊 {n}"
+
+msgid "br.queuedOne"
+msgstr "排隊中"
+
+msgid "br.inMain"
+msgstr "{n} 頁在中欄"
+
+msgid "br.summaryPre"
+msgstr "讀了 "
+
+msgid "br.summaryPost"
+msgstr " 頁"
+
+msgid "br.loading"
+msgstr "載入中"
+
+msgid "br.typing"
+msgstr "輸入「{text}」"
+
+msgid "br.clicking"
+msgstr "點「{text}」"
+
+msgid "br.scrolling"
+msgstr "捲動中"
+
+msgid "br.reading"
+msgstr "讀取中"
+
+msgid "br.search"
+msgstr "搜尋結果"
+
+msgid "br.failed"
+msgstr "打不開，{why}"
+
+msgid "br.fail.timeout"
+msgstr "連線逾時。"
+
+msgid "br.fail.dns"
+msgstr "找不到這個網站。"
+
+msgid "br.fail.network"
+msgstr "連線失敗。"
+
+msgid "br.fail.http_4xx"
+msgstr "網站回應錯誤。"
+
+msgid "br.fail.http_5xx"
+msgstr "網站暫時出錯。"
+
+msgid "br.fail.h"
+msgstr "打不開 {host}"
+
+msgid "br.retry"
+msgstr "重試"
+
+msgid "br.row.blocked"
+msgstr "agent 不開這個網站"
+
+msgid "br.need.login"
+msgstr "要登入"
+
+msgid "br.need.submit"
+msgstr "要送出"
+
+msgid "br.need.captcha"
+msgstr "要過機器人檢查"
+
+msgid "br.need.file"
+msgstr "要選檔案"
+
+msgid "br.relay"
+msgstr "只停在轉址頁，沒有內容"
+
+msgid "br.notRead"
+msgstr "沒讀到"
+
+msgid "br.youPress"
+msgstr "由你按"
+
+msgid "br.userOp"
+msgstr "你在操作"
+
+msgid "br.handback"
+msgstr "交還 agent"
+
+msgid "br.ask.login.h"
+msgstr "這一頁要登入"
+
+msgid "br.ask.submit.h"
+msgstr "送出由你按"
+
+msgid "br.ask.action.h"
+msgstr "這一步由你按"
+
+msgid "br.ask.file.h"
+msgstr "上傳由你選檔"
+
+msgid "br.ask.consent.h"
+msgstr "這一頁要你選 cookie 設定"
+
+msgid "br.ask.captcha.h"
+msgstr "要過機器人驗證"
+
+msgid "br.ask.p"
+msgstr "帳密由你輸入；你操作時 agent 暫停、不讀這一頁。"
+
+msgid "br.ask.captcha.p"
+msgstr "驗證由你自己過，agent 不會代解。"
+
+msgid "br.ask.skip"
+msgstr "跳過"
+
+msgid "br.ask.ddg"
+msgstr "改用 DuckDuckGo"
+
+msgid "br.ask.meLogin"
+msgstr "我來登入"
+
+msgid "br.ask.meSubmit"
+msgstr "我來按"
+
+msgid "br.ask.meFile"
+msgstr "我來選檔"
+
+msgid "br.ask.meVerify"
+msgstr "我來驗證"
+
+msgid "br.dl"
+msgstr "已擋下載：{name} 沒有存到這台電腦。"
+
+msgid "br.blk.domain.h"
+msgstr "agent 不開這個網站"
+
+msgid "br.blk.domain.p"
+msgstr "交易所與券商後台、銀行的網站，agent 一律不操作。"
+
+msgid "br.blk.list.p"
+msgstr "這個網站的條款不允許 AI 代理讀取。"
+
+msgid "br.blk.blave.p"
+msgstr "Blave 的資料 agent 直接取用，不經網站。"
+
+msgid "br.blk.addr.h"
+msgstr "已擋下這個網址"
+
+msgid "br.blk.addr.p"
+msgstr "本機位址、內網與非 http(s) 的網址一律不開。"
+
+msgid "br.openSystem"
+msgstr "用系統瀏覽器開"
+
+msgid "br.back"
+msgstr "返回"
+
+msgid "br.reload"
+msgstr "重新載入"
+
+msgid "br.url.aria"
+msgstr "網址"
+
+msgid "br.openLive"
+msgstr "開即時頁"
+
+msgid "br.openSnap"
+msgstr "看快照"
+
+msgid "br.snapMeta"
+msgstr "快照 · {time} 抓取"
+
+msgid "br.snapGone.h"
+msgstr "這份快照已經清掉了"
+
+msgid "br.snapGone.p"
+msgstr "可以用系統瀏覽器開原網址。"
+
+msgid "br.gone.h"
+msgstr "這一頁已經關了"
+
+msgid "br.gone.p"
+msgstr "沒有留快照；可以用系統瀏覽器開原網址。"
+
+msgid "br.gone.snap.h"
+msgstr "這一頁收成了快照"
+
+msgid "br.gone.snap.p"
+msgstr "看快照，或按重新載入開即時頁。"
+
+msgid "br.set.switch"
+msgstr "內建瀏覽器"
+
+msgid "br.set.lead"
+msgstr "agent 可以在這台電腦上開網頁查資料，開的每一頁都會出現在聊天裡。交易所與券商後台、銀行一律不開；登入、送出、付款由你自己按。"
+
+msgid "br.set.clear"
+msgstr "清除瀏覽資料"
+
+msgid "br.set.cleared"
+msgstr "已清除"
+
+msgid "br.set.busy"
+msgstr "對話進行中，結束後再清"
+
+msgid "br.ask.p.check"
+msgstr "按之前再看一次。"
+
+msgid "br.ask.p.pause"
+msgstr "你操作時 agent 暫停、不讀這一頁。"
+
+msgid "br.ask.p.file"
+msgstr "檔案由你選；agent 看不到你電腦裡的檔案。"
+
+msgid "br.ask.p.consent"
+msgstr "cookie 設定由你選；你操作時 agent 暫停、不讀這一頁。"
+
+msgid "br.blk.like.p"
+msgstr "{host} 跟 {like} 相似，可能是釣魚網站。"
+
+msgid "br.blk.mixed.p"
+msgstr "{host} 混用了不同文字的字母，可能是釣魚網站。"
+
+msgid "br.blk.oauth.p"
+msgstr "登入與授權頁由你自己操作，agent 不開。"
+
+msgid "br.compiling"
+msgstr "匯整成報告"
+
+msgid "br.act.outline"
+msgstr "看大綱"
+
+msgid "br.act.links"
+msgstr "讀連結"
+
+msgid "br.act.meta"
+msgstr "讀標題與日期"
+
+msgid "br.act.snapshot"
+msgstr "看頁面結構"
+
+msgid "br.pressing"
+msgstr "按 {key}"
+
+msgid "br.openPanel"
+msgstr "開到中欄"
+
+msgid "br.closePanel"
+msgstr "收回"
+
+msgid "br.listShow"
+msgstr "展開清單"
+
+msgid "br.listHide"
+msgstr "收起清單"
+
+msgid "br.readDone"
+msgstr "已讀完"
+
+msgid "br.need.confirm"
+msgstr "要確認網址"
+
+msgid "br.ask.confirm.h"
+msgstr "要開這個網址嗎？"
+
+msgid "br.ask.p.confirm"
+msgstr "agent 這一輪還沒去過這個網站，網址卻帶著一大段資料，可能是被網頁誘導把讀到的內容送出去。先看網址列，確定沒問題再開。"
+
+msgid "br.ask.openAnyway"
+msgstr "仍要開啟"

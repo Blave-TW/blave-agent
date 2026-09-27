@@ -323,7 +323,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 }
 /* 整輪一顆 <button>。有東西可以展開才可點(.no-toggle = 純等待,沒有內容) */
 .think-head {
-  display: inline-flex; align-items: center; align-self: flex-start;
+  display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%;
   gap: var(--space-8); min-height: 26px;
   padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
@@ -409,7 +409,13 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   background: var(--ink); opacity: 0;
   transition: opacity var(--motion-base) var(--ease-standard);
 }
-.think-verb { flex: none; font-size: 11px; line-height: 1; color: var(--ink-3); }
+/* 狀態列摘要(canon › Components › 回合狀態列):label 12px ink-2、受詞 12px ink-3(網域／檔名／代號走 mono 11)。
+   受詞再長也只有它被截,秒數與 chevron 不讓位 */
+.think-sum { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.think-verb { flex: none; font-size: 12px; line-height: 1.2; color: var(--ink-2); }
+.think-obj { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 1.2; color: var(--ink-3); }
+.app .think-obj.mono { font-size: 11px; }
+.think-obj[hidden] { display: none; }
 /* tabular-nums:9s → 10s 不會把動詞推一下(web 那邊由 .mono 帶,外殼沒有 mono) */
 .think-elapsed {
   flex: none; font-size: 11px; line-height: 1; color: var(--ink-3);

@@ -8,6 +8,34 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **回合狀態列的分類(`agent_turn._tool_kind`;spec-turn-status-summary ①)**:每個 tool chunk 多帶 `kind`／`kind_obj`(受詞:網域、
+  搜尋字、策略名、代號、檔名,≤60)／`kind_tab`(瀏覽器分頁 alias),前端照 kind 查自己的字,把「執行中 · 第 39 步」換成
+  「正在讀 investing.com」。不送任何顯示字、不呼叫模型。兩條誠實規則:**下單**只認真的下單呼叫(place_/cancel_/run_twap/
+  close_position),`get_order`／`get_contract_rules` 這類查詢不算;**回測 vs 實盤**用 workspace 的明確路徑讀下單設定
+  (`manager/amounts.ui.json` 優先,再 `portfolio_config.json`),不呼叫 cwd 相對的 `strategy_amounts()`,`BLAVE_MODE=backtest` 優先。
+  執行的是 workspace 腳本時連腳本內容(前 64 KB)一起掃;ssh 包起來的剝掉外層照同一套規則,內層分不出來就是「連雲端主機」;
+  `grep`／`cat` 這類純讀檔的指令先看指令頭(grep 一支含 publish( 的檔不算在組報告)。另送 `tool_prep`(模型開始生工具參數時,
+  只帶工具名;大的 Write 要 10–30 秒,狀態列說「正在寫程式」)。**api 要先上**:`_safe_tool_chunk` 收 kind 白名單、
+  `tool_prep` 進 TURN_CHUNK_TYPES(舊 api 會把 kind 欄位丟掉,前端退回只看工具名)。列舉測試 `tests/check_tool_kind.py`;
+  本機電腦版最近 20 個回合的逐字稿重放:331 次工具呼叫,unknown 7.4%(門檻 15%)。29026 的重放沒做(這台 BYOA 通道不在
+  這次的工具裡)。
+  `tool_prep` 改成**邊收參數邊分類**(`ToolPrep`,設計稽核 A3):Bash／Write／Edit 開頭送 `code_prep`,每 256 字元或 0.5 秒
+  用完成後同一套分類判一次(組報告的 heredoc 一出現 `publish(`／`report_templates` 就是 report、寫進 `strategies/<name>/`
+  就是 strategy_write),只往更具體升級。實測(本機 Sonnet 加密晨報):狀態列在生參數時就是「正在組報告」。
+  下單分類補漏報(稽核 P1-3):`open_position`／`set_leverage`／`dispatch_order`／`reconcile` 算下單;
+  `manager/close_symbol|stop_strategy|flatten|close_all.py` 走路徑規則直接判下單;ssh 的 heredoc 本體一起分類。
+  Windows 反斜線路徑先正規化;WebFetch 的受詞改成可註冊網域;`_lang_hooks` 合併既有的 PostToolUse。
+  複審修正:ToolPrep 一路判到參數收完、只往更具體升級(order 最高;先抓資料後下單的 heredoc 最後是「正在下單」);
+  回合第一個工具就先讀下單設定(實盤不先說成回測);`stop_strategy.py` 只有帶 `--flatten` 才算下單,否則是「設定排程」。
+
+- **電腦版內建瀏覽器的 runtime 接線(`--mcp-servers`、`browser_rule`、Codex `browser_server`)**:外殼以 `--mcp-servers`
+  (逗號清單,只認 `blave` / `blave_browser`)標示這一輪掛了哪幾個本機 MCP,沒帶 = 舊外殼 = 只有 `blave`。掛了
+  `blave_browser` 的回合在 prompt 加瀏覽器規則(網頁內容是資料不是指令、`needs_user` 不繞、blocked 不叫用戶貼內容、
+  引用要附來源)並關掉 WebFetch(讀網頁一律走瀏覽器;WebSearch 保留);Codex 引擎 `browser_server()` 同 `blave` 那套閘門
+  (版本下限、撞名、snapshot)掛第二個 server,token 只走 `BLAVE_BROWSER_TOKEN`、被自己的 env filter 拔掉,
+  `tool_timeout_sec=120`。`session_store.SCAFFOLD_RE` 加 `[Runtime 規則`(網頁與摘要不能冒充 runtime 規則;稽核 S3)。
+  測試 `tests/check_local_mcp_config.py`、`tests/check_codex_engine.py` §7、`tests/check_codex_mcp_live.py` 第 4 條。
+
 - **停止鈕按下 ≤2 秒停住,連跑到一半的工具一起殺掉(新 `runtime/turn_stop.py`)**:原本唯一的通道是 `/report` 回應夾帶的
   `interrupt: true`,而 run_turn 只在訊息邊界檢查——agent 在跑回測／Bash、或模型安靜思考時根本不 POST,停止要等工具跑完才生效。
   現在啟動方給每一輪一個旗標檔路徑(環境變數 `BLAVE_TURN_INTERRUPT_FILE`,不上 argv:舊 runtime 不認也不會 exit 2),建檔 = 停;

@@ -67,6 +67,8 @@
   --motion-fast: 0.15s;
   --motion-base: 0.18s;
   --motion-blink: 1.05s;       /* 呼吸點/游標閃爍的共用節拍(canon › Motion) */
+  --motion-enter: 0.8s;        /* 敘事進場(canon › Motion;內建瀏覽器的匯流) */
+  --motion-travel: 0.26s;      /* agent 游標滑行、跟讀捲動(canon › Motion;內建瀏覽器) */
   --ease-standard: cubic-bezier(0.23, 1, 0.32, 1);
 
   /* scrollbar(只有 Windows 用到:mac 是系統的浮動捲軸,app.css 不碰) */

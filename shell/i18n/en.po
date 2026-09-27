@@ -111,8 +111,96 @@ msgstr "Show reasoning"
 msgid "turn.thinking"
 msgstr "Thinking"
 
-msgid "turn.running"
-msgstr "Running · step {n}"
+# 回合狀態列(runtime tool chunk 的 kind;受詞另外接在後面,不在字串裡)
+msgid "act.thinking"
+msgstr "Thinking"
+
+msgid "act.reply"
+msgstr "Writing the reply"
+
+msgid "act.unknown"
+msgstr "Working"
+
+msgid "act.search"
+msgstr "Searching:"
+
+msgid "act.web_read"
+msgstr "Reading"
+
+msgid "act.web_read_many"
+msgstr "Reading {n} pages"
+
+msgid "act.web_act"
+msgstr "Using"
+
+msgid "act.docs"
+msgstr "Checking the docs"
+
+msgid "act.files"
+msgstr "Looking through files"
+
+msgid "act.file_read"
+msgstr "Reading"
+
+msgid "act.strategy_read"
+msgstr "Reading strategy"
+
+msgid "act.strategy_write"
+msgstr "Writing strategy"
+
+msgid "act.file_write"
+msgstr "Editing"
+
+msgid "act.data"
+msgstr "Fetching data"
+
+msgid "act.backtest"
+msgstr "Backtesting"
+
+msgid "act.live_tick"
+msgstr "Running strategy"
+
+msgid "act.scan"
+msgstr "Scanning parameters"
+
+msgid "act.validate"
+msgstr "Validating"
+
+msgid "act.check"
+msgstr "Checking strategy code"
+
+msgid "act.report"
+msgstr "Building the report"
+
+msgid "act.watch"
+msgstr "Updating the watchboard"
+
+msgid "act.schedule"
+msgstr "Setting up a schedule"
+
+msgid "act.order"
+msgstr "Placing an order"
+
+msgid "act.account"
+msgstr "Checking the account"
+
+msgid "act.status"
+msgstr "Checking what's running"
+
+msgid "act.install"
+msgstr "Installing packages"
+
+msgid "act.cloud"
+msgstr "Connecting to the cloud machine"
+
+msgid "act.delegate"
+msgstr "Delegating research"
+
+msgid "act.code_prep"
+msgstr "Writing code"
+
+msgid "act.need_user"
+msgstr "Waiting for you"
 
 msgid "turn.busy"
 msgstr "The previous turn is still running."
@@ -3587,3 +3675,285 @@ msgstr "The data fee for this hour couldn't be charged, so the agent can't reach
 
 msgid "lib.gate.unknown"
 msgstr "The account's data status couldn't be checked, so the agent may not reach the library. Open Data & Cloud Plan to check again."
+
+msgid "br.h"
+msgstr "Browser"
+
+msgid "br.browsing"
+msgstr "Agent browsing"
+
+msgid "br.readWord"
+msgstr "read"
+
+msgid "br.waiting"
+msgstr "Waiting for you"
+
+msgid "br.queued"
+msgstr "{n} queued"
+
+msgid "br.queuedOne"
+msgstr "Queued"
+
+msgid "br.inMain"
+msgstr "{n} pages in the main pane"
+
+msgid "br.summaryPre"
+msgstr "Read "
+
+msgid "br.summaryPost"
+msgstr " pages"
+
+msgid "br.loading"
+msgstr "Loading"
+
+msgid "br.typing"
+msgstr "Typing “{text}”"
+
+msgid "br.clicking"
+msgstr "Clicking “{text}”"
+
+msgid "br.scrolling"
+msgstr "Scrolling"
+
+msgid "br.reading"
+msgstr "Reading"
+
+msgid "br.search"
+msgstr "Search results"
+
+msgid "br.failed"
+msgstr "Couldn't open: {why}"
+
+msgid "br.fail.timeout"
+msgstr "The connection timed out."
+
+msgid "br.fail.dns"
+msgstr "This site could not be found."
+
+msgid "br.fail.network"
+msgstr "The connection failed."
+
+msgid "br.fail.http_4xx"
+msgstr "The site returned an error."
+
+msgid "br.fail.http_5xx"
+msgstr "The site is having trouble."
+
+msgid "br.fail.h"
+msgstr "Couldn't open {host}"
+
+msgid "br.retry"
+msgstr "Retry"
+
+msgid "br.row.blocked"
+msgstr "The agent doesn't open this site"
+
+msgid "br.need.login"
+msgstr "Sign-in needed"
+
+msgid "br.need.submit"
+msgstr "Ready to submit"
+
+msgid "br.need.captcha"
+msgstr "Robot check needed"
+
+msgid "br.need.file"
+msgstr "File needed"
+
+msgid "br.relay"
+msgstr "Stopped at a redirect page, no content"
+
+msgid "br.notRead"
+msgstr "Not read"
+
+msgid "br.youPress"
+msgstr "Your turn"
+
+msgid "br.userOp"
+msgstr "You're in control"
+
+msgid "br.handback"
+msgstr "Hand back to agent"
+
+msgid "br.ask.login.h"
+msgstr "This page needs a sign-in"
+
+msgid "br.ask.submit.h"
+msgstr "You press submit"
+
+msgid "br.ask.action.h"
+msgstr "You press this one"
+
+msgid "br.ask.file.h"
+msgstr "You pick the file to upload"
+
+msgid "br.ask.consent.h"
+msgstr "This page wants your cookie choice"
+
+msgid "br.ask.captcha.h"
+msgstr "A robot check is in the way"
+
+msgid "br.ask.p"
+msgstr "You type any passwords. While you're in control, the agent pauses and doesn't read this page."
+
+msgid "br.ask.captcha.p"
+msgstr "You solve the check yourself; the agent never does."
+
+msgid "br.ask.skip"
+msgstr "Skip"
+
+msgid "br.ask.ddg"
+msgstr "Use DuckDuckGo"
+
+msgid "br.ask.meLogin"
+msgstr "I'll sign in"
+
+msgid "br.ask.meSubmit"
+msgstr "I'll press it"
+
+msgid "br.ask.meFile"
+msgstr "I'll pick the file"
+
+msgid "br.ask.meVerify"
+msgstr "I'll do the check"
+
+msgid "br.dl"
+msgstr "Download blocked: {name} was not saved to this computer."
+
+msgid "br.blk.domain.h"
+msgstr "The agent doesn't open this site"
+
+msgid "br.blk.domain.p"
+msgstr "Exchange and broker account areas and bank sites are never operated by the agent."
+
+msgid "br.blk.list.p"
+msgstr "This site's terms don't allow AI agents to read it."
+
+msgid "br.blk.blave.p"
+msgstr "The agent reads Blave data directly, not through the website."
+
+msgid "br.blk.addr.h"
+msgstr "This address was blocked"
+
+msgid "br.blk.addr.p"
+msgstr "Local, private-network and non-http(s) addresses are never opened."
+
+msgid "br.openSystem"
+msgstr "Open in system browser"
+
+msgid "br.back"
+msgstr "Back"
+
+msgid "br.reload"
+msgstr "Reload"
+
+msgid "br.url.aria"
+msgstr "Address"
+
+msgid "br.openLive"
+msgstr "Open live page"
+
+msgid "br.openSnap"
+msgstr "View snapshot"
+
+msgid "br.snapMeta"
+msgstr "Snapshot · captured {time}"
+
+msgid "br.snapGone.h"
+msgstr "This snapshot has been cleared"
+
+msgid "br.snapGone.p"
+msgstr "You can open the original address in your system browser."
+
+msgid "br.gone.h"
+msgstr "This page was closed"
+
+msgid "br.gone.p"
+msgstr "No snapshot was kept. You can open the original address in your system browser."
+
+msgid "br.gone.snap.h"
+msgstr "This page was saved as a snapshot"
+
+msgid "br.gone.snap.p"
+msgstr "View the snapshot, or reload to open the live page."
+
+msgid "br.set.switch"
+msgstr "Built-in browser"
+
+msgid "br.set.lead"
+msgstr "The agent can open web pages on this computer to look things up, and every page it opens shows up in the chat. It never opens exchange or broker account areas or bank sites; you press sign-in, submit and pay yourself."
+
+msgid "br.set.clear"
+msgstr "Clear browsing data"
+
+msgid "br.set.cleared"
+msgstr "Cleared"
+
+msgid "br.set.busy"
+msgstr "A turn is running; clear it after it ends"
+
+msgid "br.ask.p.check"
+msgstr "Check it once more before you press."
+
+msgid "br.ask.p.pause"
+msgstr "While you're in control, the agent pauses and doesn't read this page."
+
+msgid "br.ask.p.file"
+msgstr "You pick the file; the agent can't see the files on your computer."
+
+msgid "br.ask.p.consent"
+msgstr "You choose the cookie settings. While you're in control, the agent pauses and doesn't read this page."
+
+msgid "br.blk.like.p"
+msgstr "{host} looks like {like} and may be a phishing site."
+
+msgid "br.blk.mixed.p"
+msgstr "{host} mixes letters from different alphabets and may be a phishing site."
+
+msgid "br.blk.oauth.p"
+msgstr "Sign-in and app-authorization pages are yours to handle; the agent doesn't open them."
+
+msgid "br.compiling"
+msgstr "Compiling the report"
+
+msgid "br.act.outline"
+msgstr "Reading the outline"
+
+msgid "br.act.links"
+msgstr "Reading the links"
+
+msgid "br.act.meta"
+msgstr "Reading the title and date"
+
+msgid "br.act.snapshot"
+msgstr "Looking at the page structure"
+
+msgid "br.pressing"
+msgstr "Pressing {key}"
+
+msgid "br.openPanel"
+msgstr "Open in panel"
+
+msgid "br.closePanel"
+msgstr "Close panel"
+
+msgid "br.listShow"
+msgstr "Show list"
+
+msgid "br.listHide"
+msgstr "Hide list"
+
+msgid "br.readDone"
+msgstr "Read"
+
+msgid "br.need.confirm"
+msgstr "Address check needed"
+
+msgid "br.ask.confirm.h"
+msgstr "Open this address?"
+
+msgid "br.ask.p.confirm"
+msgstr "This site hasn't come up this turn, and the address carries a block of data — a page may be steering the agent into sending out what it read. Check the address bar before opening."
+
+msgid "br.ask.openAnyway"
+msgstr "Open anyway"

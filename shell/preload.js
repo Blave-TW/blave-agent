@@ -87,4 +87,23 @@ contextBridge.exposeInMainWorld("blave", {
   onEngineProgress: (fn) => ipcRenderer.on("engine-progress", (_e, t) => fn(t)),
   onTurnEvent: (fn) => ipcRenderer.on("turn-event", (_e, c) => fn(c)),
   onTurnEnd: (fn) => ipcRenderer.on("turn-end", (_e, r) => fn(r)),
+  // 內建瀏覽器(renderer/browser.js):只送分頁 id、中欄 bounds、用戶動作;網址只有用戶在網址列自己打的
+  onBrowserEvent: (fn) => ipcRenderer.on("browser-event", (_e, ev) => fn(ev)),
+  browserExpand: (id, bounds) => ipcRenderer.invoke("browser-expand", id, bounds),
+  browserBounds: (bounds) => ipcRenderer.send("browser-bounds", bounds),
+  browserCollapse: () => ipcRenderer.invoke("browser-collapse"),
+  browserTakeover: (id) => ipcRenderer.invoke("browser-takeover", id),
+  browserHandback: (id) => ipcRenderer.invoke("browser-handback", id),
+  browserUserDone: (id, choice) => ipcRenderer.invoke("browser-user-done", id, choice),
+  browserNavigate: (id, url) => ipcRenderer.invoke("browser-navigate", id, url),
+  browserReload: (id) => ipcRenderer.invoke("browser-reload", id),
+  browserOpenLive: (sessionId, snapshotId) => ipcRenderer.invoke("browser-open-live", sessionId, snapshotId),
+  browserShowLive: (url) => ipcRenderer.invoke("browser-show-live", url),   // 點瀏覽卡 / 來源卡:開即時頁(分頁還在就切過去)
+  browserSnapshot: (sessionId, snapshotId) => ipcRenderer.invoke("browser-snapshot", sessionId, snapshotId),
+  browserHistory: (sessionId) => ipcRenderer.invoke("browser-history", sessionId),
+  browserBlockVisible: (on) => ipcRenderer.send("browser-block-visible", on),
+  browserOpenExternal: (id) => ipcRenderer.invoke("browser-open-external", id),
+  browserPrefs: () => ipcRenderer.invoke("browser-prefs"),
+  browserPrefsSet: (p) => ipcRenderer.invoke("browser-prefs-set", p),
+  browserClear: () => ipcRenderer.invoke("browser-clear"),
 });

@@ -48,7 +48,7 @@ class Model(BaseHTTPRequestHandler):
         # Codex exposes MCP tools as a `namespace` tool (mcp__<server>) holding plain functions.
         item = ({"type": "message", "id": "m", "role": "assistant",
                  "content": [{"type": "output_text", "text": "done"}]} if answered else
-                {"type": "function_call", "id": "f", "call_id": "c1", "name": "get_ssh_access",
+                {"type": "function_call", "id": "f", "call_id": "c1", "name": target.get("tool", "get_ssh_access"),
                  "namespace": target["ns"], "arguments": "{}"})
         self.send_response(200)
         self.send_header("content-type", "text/event-stream")
@@ -160,6 +160,31 @@ t("without the approval flag: denied before sending (the bug this fixes)",
 s, c = turn("mcp__other", extra=["-c", 'mcp_servers.other.url="%s"' % mcp_url])
 t("another MCP server in the same turn is still denied (approval scoped to blave)",
   denied(s) and "tools/call" not in c, (s, c))
+
+# 4. `blave_browser`(外殼的本機 MCP,shell/browser/mcp.js 真的起一支):build_args(browser_url=…) 的 argv、Bearer 走
+#    BLAVE_BROWSER_TOKEN、Host 檢查、session id —— 真 codex 的 MCP client 連得上而且呼叫得到
+NODE_SRV = ("const {createMcpServer}=require(%r);const {TOOLS}=require(%r);(async()=>{const s=createMcpServer({tools:TOOLS,"
+            "call:async(n)=>{console.error('CALL '+n);return{content:[{type:'text',text:'{}'}],isError:false};}});await s.start();"
+            "console.log(JSON.stringify({url:s.url(),token:s.beginTurn(1)}));})();"
+            % (os.path.join(ROOT, "shell", "browser", "mcp.js"), os.path.join(ROOT, "shell", "browser", "tools.js")))
+node = shutil.which("node")
+if not node:
+    print("SKIP  browser MCP: no node")
+else:
+    ns = subprocess.Popen([node, "-e", NODE_SRV], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    m = json.loads(ns.stdout.readline())
+    target.update(ns="mcp__blave_browser", tool="browser_tabs")
+    argv = codex_engine.build_args(codex, os.path.join(tmp, "ws"), model="fake-model", browser_url=m["url"])
+    argv = argv[:5] + PROVIDER + argv[5:]
+    env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
+           "CODEX_HOME": os.path.join(tmp, "home"), codex_engine.BROWSER_TOKEN_ENV: m["token"]}
+    out = subprocess.run(argv, input="go", capture_output=True, text=True, env=env, timeout=180).stdout
+    st = [((json.loads(l).get("item") or {}).get("status")) for l in out.splitlines()
+          if l.startswith("{") and json.loads(l).get("type") == "item.completed"
+          and (json.loads(l).get("item") or {}).get("type") == "mcp_tool_call"]
+    ns.kill()
+    t("browser MCP (real shell/browser/mcp.js): codex connects with the per-turn token and the call completes",
+      st == ["completed"] and "CALL browser_tabs" in ns.stderr.read(), st)
 shutil.rmtree(tmp)
 print("ALL PASS" if not red else "%d 紅" % red)
 sys.exit(1 if red else 0)

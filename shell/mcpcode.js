@@ -88,12 +88,17 @@ function createMcpCode(opts) {
 }
 
 /* 交給 Claude Code 的單次 MCP 設定檔。dir = workspace **以外**的 app 私有目錄(0700);檔名隨機、0600、不跟著符號連結走("wx")。
-   回檔案路徑;寫不進去回 null(= 這一輪不掛)。 */
-function writeConfig(dir, mount) {
+   mount = `blave`(雲端交接)、browser = `blave_browser`(本機內建瀏覽器,shell/browser/mcp.js;{ url, token },token 每回合一顆)。
+   兩個都可以是 null;都沒有就不寫。回檔案路徑;寫不進去回 null(= 這一輪不掛)。 */
+function writeConfig(dir, mount, browser) {
   try {
+    const servers = {};
+    if (mount) servers.blave = { type: "http", url: mount.url, headers: { Authorization: "Bearer " + mount.accessCode } };
+    if (browser) servers.blave_browser = { type: "http", url: browser.url, headers: { Authorization: "Bearer " + browser.token } };
+    if (!Object.keys(servers).length) return null;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); fs.chmodSync(dir, 0o700);
     const file = path.join(dir, crypto.randomBytes(16).toString("hex") + ".json");
-    const body = JSON.stringify({ mcpServers: { blave: { type: "http", url: mount.url, headers: { Authorization: "Bearer " + mount.accessCode } } } });
+    const body = JSON.stringify({ mcpServers: servers });
     const fd = fs.openSync(file, "wx", 0o600); try { fs.writeSync(fd, body); } finally { fs.closeSync(fd); }
     return file;
   } catch (_) { return null; }
