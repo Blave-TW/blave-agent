@@ -216,8 +216,12 @@ app.whenReady().then(async () => {
   r = J(await call("browser_press", { tab: eb, key: "Enter" }));
   t("R4 視窗外:焦點在 type=button 上按 Enter = 點它(不 requestSubmit 整張表單)", r.ok && wcOf("fx9.test/enterbtn") && wcOf("fx9.test/enterbtn").getTitle() === "tb-clicked" && !hits.some((h) => h.includes("fx9.test/find")));
   REDUCED = true;
+  // 這條驗的是 reduced-motion 不關逐字,不是密集判定:等 ≥8s(密集門檻)讓 type 回完整效果——
+  // 沿用舊分頁緊接著 type 會落在前一動作 8s 內、被判密集收成一次填入。不走 endTurn/beginTurn 重置:
+  // 換回合會改掉 thisTurn() 的分頁歸屬與 8 格名額算術,打壞後面 S7 / favicon 那批斷言
+  await new Promise((res) => setTimeout(res, 8100));
   r = J(await call("browser_type", { tab: ty, ref: qRef, text: "abcd" }));
-  const vTy2 = await (async () => { const wc = require("electron").webContents.getAllWebContents().find((w) => w.getURL().includes("fx7.test/typing")); return wc; })();
+  const vTy2 = wcOf("fx7.test/typing");
   t("減少動態開著時 browser_type 照樣逐字送(4 個字 = 4 次 input 事件):逐字是功能,減少動態只關視覺", r.ok && (await vTy2.executeJavaScript("window.__in")) === 4);
   REDUCED = false;
   r = J(await call("browser_open", { url: "http://fx.test/cc" })); const cc = r.tab; await call("browser_wait", { tab: cc });

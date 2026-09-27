@@ -929,6 +929,7 @@ function createBrowser(o) {
       // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
       cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, sources: [], seen: new Set(), readText: "" };
       tabs.newTurn();
+      for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
       watchReports(cur);
       return { url: mcp.url(), token: mcp.beginTurn(turnKey) };
     },
