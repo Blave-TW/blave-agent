@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **停止那一句不露內部工具名(0.1.8 e2e #28)**:「停止時還在跑的步驟：mcp__blave_browser__browser_search。」→「…：搜尋。」。
+  `_tool_t0` 多記一格 kind,`_stop_note` 的 `in_flight` 改收 kind、經 `_STOP_STEP_TEXT`(zh / cn / en)換成人話;
+  對不到的(unknown、silent、新 kind)不列,只剩「已停止。」/ "Stopped."。測試 `tests/check_stop_note_steps.py`。
 - **上網查資料不再以對方條款 / robots 禁 AI 為由排除網站(Wei 09-28 拍板,取代 1.1.101 兩條「固定新聞站」)**:
   DeepSeek 排程 prompt(`report_runner.scheduled_prompt`)拿掉「other news sites' terms forbid automated AI
   access, do not fetch them」;鉅亨列表頁+TWSE/TAIFEX/Binance/OKX 公告頁改成優先清單(實測抓得到的起點),
