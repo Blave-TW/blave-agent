@@ -139,9 +139,9 @@ if (!process.versions.electron) {
       && /const report = libReportSanitize\(r\.body\);\s*if \(!report\) return null;/.test(lr) && /ck = `\$\{id\}:\$\{lang\}`/.test(lr) && /Date\.now\(\) - hit\.at < ACCT_FRESH_MS/.test(lr)); }
 
   // ── ③ 接線 ──
-  ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁多一顆 #chat-lib 在 #chat-eg 前;#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後、app.js 前",
+  ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁多一顆 #chat-lib 在 #chat-eg 前;#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
     html.indexOf('id="lib-nav"') > html.indexOf('id="tr-nav"') && html.indexOf('id="lib-nav"') < html.indexOf("</nav>") && html.indexOf('id="chat-lib"') < html.indexOf('id="chat-eg"') && html.indexOf('id="chat-lib"') > html.indexOf('class="wc-chips"')
-    && html.indexOf('id="lib"') > html.indexOf('id="rp"') && html.indexOf('id="lib"') < html.indexOf('id="main-empty"') && /<link rel="stylesheet" href="library\.css">/.test(html) && /<script src="handoff\.js"><\/script>\s*<script src="library\.js"><\/script>\s*<script src="app\.js">/.test(html));
+    && html.indexOf('id="lib"') > html.indexOf('id="rp"') && html.indexOf('id="lib"') < html.indexOf('id="main-empty"') && /<link rel="stylesheet" href="library\.css">/.test(html) && /<script src="handoff\.js"><\/script>\s*(?:<script src="export\.js"><\/script>\s*)?<script src="library\.js"><\/script>\s*<script src="app\.js">/.test(html));
   ok("③ #lib 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、分段 group 三顆、返回鈕、#lib-body tabindex=0、#lib-state role=status", /<div class="lib" id="lib" role="region" aria-labelledby="lib-h" hidden>/.test(html) && /<h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib\.nav">/.test(html)
     && (html.match(/data-mkt="(all|crypto|tw)"/g) || []).length === 3 && /<button class="lib-back" id="lib-back" type="button" hidden>/.test(html) && /<div class="lib-body" id="lib-body" tabindex="0">/.test(html) && /<p class="lib-state" id="lib-state" role="status" hidden>/.test(html));
   ok("③ 社群段拆了(0.1.6 §2):index.html / library.js / library.css 沒有 lib-comm、字串表沒有 lib.comm.*;閘門卡的殼 #lib-gate 在 #lib-rows 之前(預設 hidden)", !/lib-comm/.test(html) && !/lib-comm|\.comm\b|library_comm/.test(src) && !/lib-comm/.test(read(path.join(R, "library.css")))

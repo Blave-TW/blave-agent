@@ -152,12 +152,14 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   }
   t("renderer 每個 trackFeature 送出點的名字都在白名單上、都是字面(沒有拿變數當名字)", bad.length === 0 && used.size > 0);
   if (bad.length) console.log("      " + bad.join("\n      "));
-  const LEGACY = ["library_comm"];   // 0.1.6 起沒送出點(社群段平鋪),但 0.1.5 舊外殼還在送、api 要繼續收、兩端順序要一致:留到 0.1.5 退場
+  // 0.1.6 起沒送出點(社群段平鋪),但 0.1.5 舊外殼還在送、api 要繼續收、兩端順序要一致:留到 0.1.5 退場。
+  // browser_source 同理:0.1.8 拿掉來源卡、沒有送出點了,0.1.7 還在送
+  const LEGACY = ["library_comm", "browser_source"];
   // 主行程送的:browser_agent(agent 第一次呼叫瀏覽器工具,shell/browser/index.js firstUse 的 o.track;main.js 接到 telemetry)
   const brSrc = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");
   const MAIN_SENT = /if \(o\.track\) o\.track\("browser_agent"\)/.test(brSrc) && /track: \(name\) => tm\(\)\.track\("feature_used", \{ name \}\)/.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")) ? ["browser_agent"] : [];
   const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
-  t("白名單上每個名字都有送出點(library_comm 例外:留給 0.1.5 舊外殼)", noSender.length === 0 && LEGACY.every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
+  t("白名單上每個名字都有送出點(library_comm / browser_source 例外:留給 0.1.5 / 0.1.7 舊外殼)", noSender.length === 0 && LEGACY.every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
   t("送出點只在功能那一層:report 四個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、聊天在 started、停止在 stopTurn 按下、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(b && !b\.disabled\) \{ rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\); \}/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))

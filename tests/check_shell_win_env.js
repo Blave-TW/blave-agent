@@ -74,7 +74,7 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
       if (!/windowsHide: true/.test(call)) bare.push(sites[sites.length - 1]);
     }
   }
-  t("windowsHide:六個呼叫點都帶(main.js run / agentLogin / pyExec / 回合 spawn、daemon.js、datasrc.js)→ 找到 " + sites.length + " 處,沒帶的:" + (bare.join(",") || "無"), sites.length === 6 && bare.length === 0);
+  t("windowsHide:七個呼叫點都帶(main.js run / agentLogin / pyExec / compareVersions / 回合 spawn、daemon.js、datasrc.js)→ 找到 " + sites.length + " 處,沒帶的:" + (bare.join(",") || "無"), sites.length === 7 && bare.length === 0);
   // 突變:掃描器真的看得到「沒帶」——拿回合 spawn 那段把 windowsHide 拔掉再掃一次
   const turnSrc = src.replace("cwd: WS, windowsHide: true }", "cwd: WS }");
   const turnCall = callText(turnSrc, turnSrc.indexOf("spawn(VENV_PY") + "spawn".length);
