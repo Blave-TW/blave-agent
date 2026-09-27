@@ -444,6 +444,10 @@ def main(argv):
         print(f"cannot read {argv[3]}: {e}")
         return 2
     rep = LINTERS[argv[2]](src)
+    if rep.ok() and _strategy_dir(argv[2], argv[3]) and not _template_of(src):
+        # The file header, the sidecar and the app all say "from a template": the header has to name which one.
+        rep.err(1, "the header comment has no `Template:` / `Skeleton:` line — keep the line naming the "
+                   "examples/exports file this was adapted from (add the strategy on its own line, do not replace it)")
     out = rep.render()
     if out:
         print(out)
@@ -457,29 +461,45 @@ EXPORT_FILES = {"xq": "xq.xs", "mc": "mc.txt", "pine": "pine.pine"}
 _TEMPLATE_RE = re.compile(r"^\W*(?:Template|Skeleton)\s*:\s*(.+?)\s*$", re.M)
 
 
-def write_meta(target, file_path, src):
-    """A lint pass on strategies/<name>/exports/<xq.xs|mc.txt|pine.pine> writes <file>.meta.json next to it:
-    {target, source_sha256, exported_at, template}. Written here, not by the agent, so it is
-    deterministic. The desktop app compares source_sha256 with the current strategy.py to tell
-    whether the export fell behind (mtime is unreliable: git checkout and folder copies touch it).
-    Any other path (a scratch file, a template) gets no sidecar. Returns the sidecar path or None."""
-    import datetime
-    import hashlib
+def _strategy_dir(target, file_path):
+    """strategies/<name> when file_path is that strategy's export file for `target`, else None."""
     full = os.path.realpath(file_path)
     exp_dir = os.path.dirname(full)
     strat_dir = os.path.dirname(exp_dir)
     if (os.path.basename(full) != EXPORT_FILES[target] or os.path.basename(exp_dir) != "exports"
             or os.path.basename(os.path.dirname(strat_dir)) != "strategies"):
         return None
+    return strat_dir
+
+
+def _template_of(src):
+    """The template an export was adapted from: the header's `Template:` / `Skeleton:` line (first 20 lines)."""
+    m = _TEMPLATE_RE.search("\n".join(src.splitlines()[:20]))
+    return m.group(1)[:80] if m else None
+
+
+def write_meta(target, file_path, src):
+    """A lint pass on strategies/<name>/exports/<xq.xs|mc.txt|pine.pine> writes <file>.meta.json next to it:
+    {target, source_sha256, exported_at, template}. Written here, not by the agent, so it is
+    deterministic. The desktop app compares source_sha256 with the current strategy.py to tell
+    whether the export fell behind (mtime is unreliable: git checkout and folder copies touch it).
+    `template` is never null for a file that passed: main() refuses an export whose header does not
+    name its template. Any other path (a scratch file, a template) gets no sidecar. Returns the
+    sidecar path or None."""
+    import datetime
+    import hashlib
+    full = os.path.realpath(file_path)
+    strat_dir = _strategy_dir(target, file_path)
+    if not strat_dir:
+        return None
     try:
         with open(os.path.join(strat_dir, "strategy.py"), "rb") as fh:
             sha = hashlib.sha256(fh.read()).hexdigest()
     except OSError:
         return None
-    m = _TEMPLATE_RE.search("\n".join(src.splitlines()[:20]))
     meta = {"target": target, "source_sha256": sha,
             "exported_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "template": m.group(1)[:80] if m else None}
+            "template": _template_of(src)}
     out = full + ".meta.json"
     try:
         with open(out + ".tmp", "w", encoding="utf-8") as fh:

@@ -4,7 +4,9 @@
   ① 標準路徑 strategies/<name>/exports/<xq.xs|mc.txt|pine.pine> 過 lint → 寫 sidecar,hash = strategy.py 的 sha256;
   ② lint 沒過 → 不寫(舊的 sidecar 也不動);
   ③ 不是標準路徑(草稿檔、檔名跟 target 對不上)→ 不寫;
-  ④ template 從檔頭 Template / Skeleton 那行取。
+  ④ template 從檔頭 Template / Skeleton 那行取;
+  ⑤ 轉出檔的檔頭沒有那一行 → lint 不過、不寫 sidecar(e2e 0.1.8 #62:檔頭寫 Generated from a template、畫面寫「依範本翻譯」,
+     sidecar 的 template 卻是 null);草稿路徑不受這條限制;三個平台的每一支範本都帶得出 template。
 
 跑法:cd blave-agent && python3 tests/check_lint_export_meta.py
 """
@@ -57,6 +59,34 @@ with open(wrong, "w") as f:
     f.write(good)
 le.main(["x", "--target", "pine", wrong])
 t("檔名跟 target 對不上 → 不寫", not os.path.exists(wrong + ".meta.json"))
+
+bare = le.GOOD["pine"][0]
+with open(pine, "w") as f:
+    f.write(bare)
+if os.path.exists(meta_path):
+    os.remove(meta_path)
+import contextlib, io  # noqa: E402
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    rc = le.main(["x", "--target", "pine", pine])
+t("轉出檔的檔頭沒有 Template / Skeleton 行 → exit 1、不寫 sidecar、錯誤講得出要留哪一行",
+  rc == 1 and not os.path.exists(meta_path) and "`Template:` / `Skeleton:` line" in buf.getvalue())
+with open(scratch, "w") as f:
+    f.write(bare)
+with contextlib.redirect_stdout(io.StringIO()):
+    rc = le.main(["x", "--target", "pine", scratch])
+t("草稿路徑:沒有那一行照樣過(只管轉出檔)", rc == 0)
+missing = []
+for target, sub in (("xq", "xq"), ("mc", "mc"), ("pine", "pine")):
+    d = os.path.join(ROOT, "examples", "exports", sub)
+    for f in sorted(os.listdir(d)):
+        if f.lower().startswith("readme") or f.endswith(".md"):
+            continue
+        if not le._template_of(open(os.path.join(d, f), encoding="utf-8").read()):
+            missing.append(f"{sub}/{f}")
+t("examples/exports 每一支範本的檔頭都帶得出 template(列舉,不是抽樣)", not missing)
+if missing:
+    print("      " + ", ".join(missing))
 
 if fails:
     sys.exit(f"{len(fails)} failed")
