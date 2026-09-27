@@ -90,6 +90,12 @@
 .xp-ext:empty { display: none; }
 .xp .btn-fill, .xp .btn-out { flex: none; white-space: nowrap; }
 .xv-acts .grp .xp-ext { order: -1; }   /* 程式碼分頁:主動作在前 */
+/* 程式碼分頁:Pine 的狀態句自己一行、出口鈕(請 agent 貼、看網頁)在它下面一行;任何語言、任何寬度同一個排法 */
+.xv-msg { margin-top: var(--space-8); }
+.xv-msg .xp-st { display: block; margin: 0; }
+.xv-msg .xp-st + .xp-st { margin-top: var(--space-4); }
+.xv-msg .xp-acts { margin-top: var(--space-4); }
+.xv-msg .xp-acts:first-child { margin-top: 0; }
 /* 聊天欄窄(1024 寬視窗時 336):檔名獨佔一行,兩顆鈕換到下一行靠左——不然檔名被壓到剩幾個字 */
 @container chat (max-width: 520px) {
   .xp:has(.xp-ext:not(:empty)) { flex-wrap: wrap; row-gap: var(--space-12); column-gap: var(--space-8); }
