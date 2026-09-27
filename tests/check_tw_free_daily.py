@@ -9,6 +9,7 @@ answers from tests/fixtures/tw_free_daily/ (one real fetch each, 2026-09-24).
     an empty month is a marker re-asked after a day (empty_marker_ttl_hours=24)
   - 2330 2023 factors from TWT49U = 1.00541 / 1.00468 / 1.00558 / 1.00523, applied forward;
     6488 2023 from exDailyQ; the event table is served from cache on the second call
+  - a backfill cut short keeps the months already fetched; the re-run asks only for the rest
   - a second price call for the same month makes no request; the throttle spaces twse.com.tw requests 3 s, others 1 s
   - source order: exchange → FinMind free → Blave, and BLAVE_TWSTOCK_DAILY_SOURCE=blave
   - FEED_TIMING['twstock_price'] = 17:35 Taipei; align_feed hides today's bar before that
@@ -187,6 +188,40 @@ def t_empty_month_ttl():
     check(asked() == 2, "a marker older than a day is asked again (empty_marker_ttl_hours=24)")
 
 
+def t_resume_after_cut():
+    """A cold backfill cut short (tool timeout, Stop, exchange down) keeps the months it
+    already fetched: the next run asks only for the ones still missing (e2e 0.1.8 #127 —
+    five minutes into 2317 the cache held nothing, so a re-run started from 2015 again)."""
+    s = fresh()
+    asked, cut = [], [True]
+
+    def get(url, params=None, headers=None, timeout=None):
+        if url != D._TWSE_STOCK_DAY:
+            return FakeSession.get(s, url, params, headers, timeout)
+        asked.append(params["date"])
+        if params["date"] == "20240301" and cut:
+            cut.pop()
+            raise KeyboardInterrupt
+        body = json.loads(_fixture("twse_stock_day_2330_2024-01.json"))
+        m = params["date"][4:6]
+        body["data"] = [[x[0][:4] + m + x[0][6:]] + x[1:] for x in body["data"] if x[0][7:] <= "28"]
+        return FakeResponse(body)
+    s.get = get
+    try:
+        quiet(D._fetch_twstock_daily_public, "2330", "2024-01-01", "2024-04-30")
+        check(False, "the cut reaches the caller")
+    except KeyboardInterrupt:
+        check(True, "the cut reaches the caller")
+    cache = D._monthly_cache_dir("twstock_daily", {"id": "2330", "src": "twse"})
+    check(sorted(p.name for p in cache.glob("*.parquet")) == ["2024-01.parquet", "2024-02.parquet"],
+          "the two months fetched before the cut are already in the cache")
+    del asked[:]
+    df = quiet(D._fetch_twstock_daily_public, "2330", "2024-01-01", "2024-04-30")
+    check(asked == ["20240301", "20240401"], f"the re-run asks only for the missing months (got {asked})")
+    check(sorted(set(df.index.strftime("%Y-%m"))) == ["2024-01", "2024-02", "2024-03", "2024-04"],
+          "and returns all four months")
+
+
 def t_factors():
     s = fresh()
     ev = D._tw_exright_for("2330", "twse", "2023-01-01", "2023-12-31")
@@ -342,6 +377,7 @@ def main():
     t_parse_tpex()
     t_twse_stat_guard()
     t_empty_month_ttl()
+    t_resume_after_cut()
     t_factors()
     t_adj_entry()
     t_throttle()

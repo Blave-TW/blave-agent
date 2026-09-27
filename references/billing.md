@@ -10,6 +10,30 @@ Sources (api repo): `account/credit.py` (`PRICING`, `LLM_PRICING`, `WEB_SEARCH_P
 `deduct_llm_credit` call sites), `snapshot/cron_deduct_server_credit.py`, `account/agent_trial.py`,
 `decorators.py` (`api_plan_required`).
 
+## Desktop app — read this first when the question comes from the desktop
+
+`BLAVE_AGENT_LOCAL=1`. The rest of this file was written from the cloud machine's side; on the
+desktop the same three meters exist, but which ones apply depends on two things the user chose.
+
+- **The app itself is free.** No licence, no subscription, no fee for backtests, scans, paper or
+  live trading on this computer.
+- **LLM — depends on the engine.** On the user's own Claude Code / Codex, Blave charges nothing
+  for AI: that usage is on the user's own plan with that provider. With the engine set to
+  **Blave AI**, every turn is billed from the Blave balance exactly as Meter 3 describes. Never
+  say LLM is billed "only on a cloud machine".
+- **Data — depends on the account, not on the app.** Exchange klines and Taiwan daily bars from
+  TWSE / TPEx need no Blave key and cost nothing. Blave data (indicators, Taiwan-market
+  datasets) through the key the app received at sign-in is free while the card trial runs, or
+  when the account has a cloud machine or an API plan; otherwise it is Meter 2 — charged per
+  clock hour in which any call was made, never per call. Never say the data fee is only for
+  people calling the API with their own key.
+- **Server — only if the user opens a cloud machine.** Meter 1, table below: quote the monthly
+  figure of the tier asked about (Linux Starter when they name none) and say data is included.
+- **Where the user sees their own numbers:** Settings › 資料與雲端方案 (en: Data & cloud plan)
+  shows the monthly price of their machine and whether data is included for them; the web usage
+  page lists every deduction. Point there for anything this file does not state — the current
+  hourly data rate included (see Meter 2) — instead of answering that there is no number.
+
 ## The wallet
 
 - One prepaid credit balance in TWD. Top-up sizes: 300 / 800 / 1500 / 3000 TWD. With a card bound,
@@ -64,7 +88,11 @@ Japanese, Vietnamese, Spanish and Portuguese site faces display USD at 30 TWD/US
 
 ## Meter 2 — data fee (`usage_blave`) — machine owners never pay it
 
-Kept for external API-key callers only. Rule in `deduct_blave_api_credit`:
+For an account with no cloud machine and no API plan, whichever key makes the call — the user's
+own API key or the data key the desktop app received at sign-in. The desktop key has one more
+free case: while the card trial runs, or while a machine is still being set up. The hourly
+figure below can lag the platform's: to a user who actually pays this fee, give the mechanism
+and point to the usage page for the rate charged. Rule in `deduct_blave_api_credit`:
 
 - Exempt outright: API-plan subscribers; any account with a Blave Agent machine (running or stopped).
 - Everyone else: **3 TWD per UTC clock hour in which at least one Blave data call was made** — a
@@ -123,7 +151,11 @@ every wake-up — that is why `references/deployment.md` forbids per-tick agent 
 ## Answering the common questions
 
 - 「在這邊聊天會消耗 token 嗎？」— Yes. Every message, on Telegram or the web workspace, is
-  billed as LLM tokens at the current model's rate. Nothing else on the machine is.
+  billed as LLM tokens at the current model's rate. Nothing else on the machine is. (Desktop
+  app: only when the engine is Blave AI — see *Desktop app*.)
+- 「電腦版要錢嗎？雲端主機一個月多少？」— The app is free; a cloud machine is the monthly figure
+  in Meter 1 (Linux Starter 1,440 TWD per 30 days, data included), billed hourly while it
+  exists. Give the number — it is in this file.
 - 「每小時都被收 API 使用費，把 cron 排在同一小時省錢？」— A machine owner is not charged the data
   fee at all; data is inside the server hour. Spacing or bunching crons changes nothing on the
   bill. (Even under the old per-hour data fee, bunching only mattered because the fee was

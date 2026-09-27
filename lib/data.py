@@ -325,7 +325,7 @@ def _atomic_to_parquet(df, path, footer_meta=None):
 
 
 def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
-                          empty_marker_ttl_hours=None):
+                          empty_marker_ttl_hours=None, month_by_month=False):
     """Monthly-partitioned cache.
 
     Past months (before current month) are stored immutably — fetched once, never re-fetched,
@@ -343,6 +343,11 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     treated as a cache miss and re-fetched, merged with the existing rows. If
     the re-fetch adds nothing the file is rewritten (mtime refreshed), so the
     source is hit at most once per TTL window per incomplete span.
+
+    month_by_month (opt-in): fetch and write one missing past month at a time
+    instead of a whole span per call — for a source that is itself one throttled
+    request per month (TWSE STOCK_DAY: 3 s each, ~7 min for ten years), so a run
+    cut short keeps the months it already has and the next run resumes there.
 
     Directory: cache/{prefix}_{params}/
     Files:     YYYY-MM.parquet  (one per month)
@@ -394,7 +399,7 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
         return (empty_marker_ttl_hours is not None
                 and _stale_incomplete_month(path, empty_marker_ttl_hours, ym))
     missing = [ym for ym in past_months if _needs_fetch(ym)]
-    for span in _contiguous_spans(missing):
+    for span in ([[ym] for ym in missing] if month_by_month else _contiguous_spans(missing)):
         span_start = f'{span[0]}-01'
         span_end   = f'{_next_month(span[-1])}-01'   # exclusive upper bound
         df = fetch_raw_fn(span_start, span_end)
@@ -2068,7 +2073,7 @@ def _fetch_twstock_daily_public(stock_id, start, end, adjust=False):
         lambda s, e: _fetch_twstock_daily_public_raw(stock_id, market, s, e), start, end,
         # TWSE says 「沒有符合條件」 for a month the id had no rows — and, unverified, maybe
         # when it throttles too; an empty month is re-asked once a day, never cached for good
-        empty_marker_ttl_hours=24)
+        empty_marker_ttl_hours=24, month_by_month=True)
     if adjust and not df.empty:
         df = _tw_forward_adjust(df, _tw_exright_for(stock_id, market, start, end))
     df.attrs['source'] = 'TWSE' if market == 'twse' else 'TPEx'

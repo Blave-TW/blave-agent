@@ -74,6 +74,10 @@ ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 # on purpose (user-built exchange helpers live there). A single leading slash anchors at
 # cwd=WORKSPACE. 2026-09-11 an agent added an `anchored` option to lib/walk_forward.py
 # because the user asked; the web then showed that run as rolling.
+# Engine tools that deliver after the turn: the CLI is closed when the turn ends, so a Monitor
+# event or a session cron reaches no one. e2e 0.1.8 #127 — the agent armed a Monitor on
+# stats.json, wrote 「等它完成後我會回報」 and ended the turn; nothing ever reported.
+NO_LATER_TOOLS = ["Monitor", "CronCreate"]
 PROTECTED_EDIT_RULES = [
     "Edit(/lib/runner.py)",
     "Edit(/lib/param_scan.py)",
@@ -3256,7 +3260,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         allowed_tools=ALLOWED_TOOLS,
         # 內建瀏覽器掛上的回合:讀網頁一律走瀏覽器(用戶看得到、同一套分級與網域規則、JS 頁讀得到),
         # 所以關掉 WebFetch;WebSearch 保留(spec desktop-browser-agent-tools §1 D1)
-        disallowed_tools=["Task", "Agent"] + (["WebFetch"] if browser_mounted else []) + PROTECTED_EDIT_RULES,
+        disallowed_tools=["Task", "Agent"] + NO_LATER_TOOLS + (["WebFetch"] if browser_mounted else []) + PROTECTED_EDIT_RULES,
         # Keep Claude Code's own default system prompt (tool-use guidance
         # etc.) and append AGENTS.md + this surface's formatting rule on top —
         # via file, not argv (see _write_system_prompt_file). A preset without
