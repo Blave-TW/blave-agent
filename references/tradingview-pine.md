@@ -90,6 +90,22 @@ Symbol, exchange and timeframe (chart header); history depth (plan-dependent —
 
 Blave backtests a fixed dataset (Binance USDT-M / TAIFEX / TWSE via `lib/data.py`), fills at next-bar open with a per-side fraction fee and no slippage, and marks PnL from `lib/analysis.py`. TradingView uses the chart feed of whichever exchange/symbol the user opened (spot vs perp, continuous-contract stitching, volume definitions all differ), fills with its broker emulator's intrabar OHLC path assumption, applies commission/slippage from the properties tab, and computes its own stats. Stop/limit fills on historical bars assume no intrabar gaps. Expect different trade counts and PnL; matching them is not a goal. If the user wants closer agreement: same exchange symbol, same timeframe, `slippage = 0`, `commission_value` = Blave `FEE × 100`, and compare the trade list dates, not the equity curve.
 
+## Cross-checking the backtest on TradingView (built-in browser, desktop only)
+
+Applies when the user wants to see the exported script running in TradingView's own Strategy Tester — "跑跑看 TradingView 的回測", "對照一下 TV 的數字". Requires the export flow above to be done first (`strategies/<name>/exports/pine.pine` exists and lints clean) and the built-in browser (`browser_*` tools — see `browser.md`; cloud machines have none, offer the manual steps instead).
+
+Flow, verified live:
+
+1. `browser_open(url="https://www.tradingview.com/chart/")`, `browser_wait`. The anonymous chart works.
+2. `browser_snapshot(interactive_only=true)` → click the **"Pine"** button (right-edge panel toolbar). The editor opens with TradingView's default script.
+3. Snapshot again → the editor is the `textbox "Editor content…"` ref. `browser_fill(ref=…, text=<the whole pine.pine>)` — one call: it clears the editor (real select-all) and delivers the script as a paste, so Pine's indentation survives exactly. Never type it line by line and never retype fragments to "fix" indentation; if content looks wrong, clear and fill again.
+4. Verify before adding: the snapshot's textbox `value` and `browser_get(what="text")` show the editor content — check line 1 is `//@version=6` and the last line matches the file.
+5. Click **"Add to chart"**. **Anonymous boundary:** TradingView asks to sign in at this point. Signing in is the user's action (`needs_user` rules): tell them the script is in the editor and ready, and wait. Never fill credentials.
+6. Signed in: after the script compiles, open the **Strategy Tester** panel, set the chart symbol and interval to the strategy's `SYMBOL` / `INTERVAL` (the "Change symbol" / "Change interval" buttons), and read the overview numbers back with `browser_read` / `browser_get`.
+7. Report the comparison. **The numbers will not match Blave's and that is expected** (see *Data and cost differences vs Blave*): compare direction and shape — sign of return, order-of-magnitude trade count, equity trend and drawdown character — never decimals. If the trade lists diverge wildly, check symbol (spot vs perp), interval and visible history first.
+
+Saving the script, publishing, alerts and anything under the user's TradingView account are the user's actions — hand over and wait. All built-in-browser rules (`browser.md`) apply unchanged.
+
 ## Cannot export — the only legitimate refusal
 
 No marker and no `pine.pine` when the strategy needs something the platform cannot express: Blave-only data (`fetch_taker_intensity`, liquidation, holder / on-chain, broker or institutional flows, `fetch_db_kline` settlement tables, any `lib.data` call other than plain kline); cross-market or multi-symbol logic (Type C, spread / pair signals, `request.security` on a second symbol is possible but out of scope for this flow); external APIs or files; execution-time state that Pine cannot hold (orders sized from account balance on another venue). Reply must (1) name which parts translate cleanly and which do not, (2) offer two paths — drop the unsupported part and export the rest as a simplified script, or keep the strategy running on Blave — and (3) stop there; never ship a script that silently approximates the missing data.

@@ -11,4 +11,4 @@ Complete reference strategies — read one before writing the same kind. These a
 - `tw100_foreign_zscore/` — Type C, Taiwan 100-stock portfolio, foreign institutional z-score
 - `twstock_momentum/` — Type C, Taiwan stock momentum, top-N equal weight
 
-- `exports/{xq,mc,pine}/` — NOT Blave strategies: XS / PowerLanguage / Pine v6 templates the agent adapts when exporting a strategy to XQ, MultiCharts or TradingView (see `references/xq-xs.md`, `multicharts-powerlanguage.md`, `tradingview-pine.md`; lint with `lib/lint_export.py`)
+- `exports/{xq,mc,pine}/` — NOT Blave strategies: XS / PowerLanguage / Pine v6 templates the agent adapts when exporting a strategy to XQ, MultiCharts or TradingView (see `references/xq-xs.md`, `multicharts-powerlanguage.md`, `tradingview-pine.md`; lint with `lib/lint_export.py`). A common follow-up — running the exported Pine in TradingView's own Strategy Tester via the built-in browser to cross-check the Blave backtest — is `tradingview-pine.md` § *Cross-checking the backtest on TradingView*
