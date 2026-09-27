@@ -93,6 +93,10 @@ msgstr "No strategies yet."
 msgid "ws.placeholder"
 msgstr "Message the agent"
 
+# 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
+msgid "ws.waitTurn"
+msgstr "The previous turn is still running. Press Enter again when it finishes."
+
 msgid "ws.send"
 msgstr "Send"
 
@@ -483,6 +487,13 @@ msgstr "Delete?"
 
 msgid "strat.del"
 msgstr "Move to Trash"
+
+# 策略列的兩段式刪除:武裝後的字講去向(刪策略是進系統垃圾桶,可復原;e2e 0.1.8 #73)。.win = Windows 的說法
+msgid "strat.delConfirm"
+msgstr "Move to Trash?"
+
+msgid "strat.delConfirm.win"
+msgstr "Move to Recycle Bin?"
 
 # 回測指標的 tooltip(定義照 lib/analysis.py、lib/runner.py 的算法)
 msgid "bt.tip.totalReturn"

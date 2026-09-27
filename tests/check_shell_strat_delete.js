@@ -99,6 +99,25 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("兩邊側欄都走 stratNameFill;CSS:前段截尾、後綴不縮", /stratNameFill\(nm, x\.displayName \|\| x\.name\)/.test(fnOf(appSrc, "stratRefresh")) && /stratNameFill\(nm, x\.displayName\)/.test(fnOf(trSrc, "envPaintSide"))
     && /\.strat-name\.has-tail \{ display: flex; align-items: center; \}/.test(css) && /\.strat-name \.run-dot \{ flex: none; \}/.test(css) && /\.strat-name \.sn-head \{[^}]*text-overflow: ellipsis/.test(css) && /\.strat-name \.sn-tail \{ flex: none;/.test(css)); }
 
+// ── 刪策略的武裝字講去向(e2e 0.1.8 #73、設計稽核第四批 W5):刪策略是進垃圾桶、可復原 → 列內兩段式,但要講去哪裡 ──
+{ const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), strings = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+  const STR = new Function(strings + "\nreturn STRINGS;")();
+  const mk = () => { const n = { cls: new Set(), style: { p: {}, setProperty(k, v) { this.p[k] = v; }, removeProperty(k) { delete this.p[k]; } }, on: {}, attrs: {}, textContent: "", innerHTML: "",
+    classList: { add: (c) => n.cls.add(c), remove: (c) => n.cls.delete(c), contains: (c) => n.cls.has(c) }, setAttribute: (k, v) => { n.attrs[k] = v; }, addEventListener: (e, f) => { n.on[e] = f; }, getBoundingClientRect: () => ({ width: 83.2 }) }; return n; };
+  const document = { createElement: () => mk() }, t = (k) => STR.zh[k];
+  eval(fnOf(appSrc, "armedDelete"));
+  let ran = 0; const row = mk(), del = armedDelete(row, "x", async () => { ran++; }, false, "strat.delConfirm");
+  del.on.click();
+  const armed = del.cls.has("is-armed") && del.textContent === "移到垃圾桶？" && row.style.p["--armed-w"] === "84px" && ran === 0;
+  del.on.blur();
+  const back = !del.cls.has("is-armed") && !("--armed-w" in row.style.p) && ran === 0;
+  const plain = armedDelete(mk(), "x", async () => {}, false); plain.on.click();
+  ok("武裝後的字 = 傳進來的 key(移到垃圾桶？),鈕的實寬寫在列上;失焦還原、沒有執行;沒給 key 照舊「刪除？」", armed && back && plain.textContent === "刪除？");
+  ok("策略列傳 strat.delConfirm(Windows 傳 .win);對話列仍走確認框(刪對話救不回來)", /\}, false, window\.blave\.platform === "win32" \? "strat\.delConfirm\.win" : "strat\.delConfirm"\);/.test(fnOf(appSrc, "stratRefresh"))
+    && /armedDelete\(row, t\("cs\.del"\), \(btn\) => delConfirm\(m, btn\), true\);/.test(appSrc));
+  ok("兩語的字都講去向;列的右內距照鈕的實寬讓位", STR.zh["strat.delConfirm"] === "移到垃圾桶？" && STR.en["strat.delConfirm"] === "Move to Trash?" && STR.zh["strat.delConfirm.win"] === "移到資源回收筒？" && STR.en["strat.delConfirm.win"] === "Move to Recycle Bin?"
+    && /\.strat-wrap:has\(\.cs-del\.is-armed\) \.strat-row \{ padding-right: calc\(var\(--armed-w, 84px\) \+ 16px\); \}/.test(css)); }
+
 // ── 側欄順序:最近被人或 agent 動過的在上面,live tick 重寫 stats.json 不算(e2e 0.1.8 #30 #39 #54)──
 { const cut = mainSrc.slice(mainSrc.indexOf("const stratTouchedAt"), mainSrc.indexOf("function listStrategies()"));
   const { stratOrder } = new Function(cut + "\nreturn { stratOrder };")();

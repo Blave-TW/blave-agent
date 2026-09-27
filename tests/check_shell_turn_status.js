@@ -164,4 +164,15 @@ ok("中繼頁判定:正文 <200 字,或整個標題就是 Loading／Redirect／J
   && !C.isRelay({ markdown: body }, "Ethereum ETF flows hit record") && !C.isRelay({ markdown: body }, "Bitcoin loading up for breakout"));
 ok("擋廣告攔截的擋牆頁不算已讀(稽核 B1);正文長的文章提到 ad blocker 照算", C.isRelay({ markdown: "We noticed your ad blocker is on. Please support our site by disabling it. " + "x ".repeat(120) }, "Benzinga")
   && !C.isRelay({ markdown: "An essay on why ad blockers matter. " + "word ".repeat(600) }, "Ad blockers"));
+// 回合中按 Enter(e2e 0.1.8 #71、設計稽核第四批 W6):草稿非空 → 不送、輸入框上方出一行;回合結束即收
+{ const el = { dataset: {}, textContent: "" }, $ = () => el, t = (k) => "<" + k + ">";
+  const taWaitShow = new Function("$", "t", cut(src, "function taWaitShow(", "\n}\n") + "\n}\nreturn taWaitShow;")($, t);
+  taWaitShow(true); const on = el.textContent === "<ws.waitTurn>" && el.dataset.i18n === "ws.waitTurn";
+  taWaitShow(false);
+  ok("Enter 提示行:出現時帶字與 data-i18n(換語言跟著換),收掉時兩個都清", on && el.textContent === "" && !("i18n" in el.dataset));
+  ok("接線:回合中且草稿非空才出、不送;沒在跑照舊送;回合結束(sendBtnSync)收掉", /e\.preventDefault\(\);\n\s*if \(running && \$\("ta"\)\.value\.trim\(\)\) \{ taWaitShow\(true\); return; \}[^\n]*\n\s*sendDraft\(\);/.test(src)
+    && /if \(!running\) taWaitShow\(false\);/.test(cut(src, "function sendBtnSync(", "async function stopTurn(")));
+  const html = fs.readFileSync(path.join(R, "index.html"), "utf8");
+  ok("那一行在輸入框正上方、role=status;12px --ink-2、空的時候不佔位", /<p class="ta-wait" id="ta-wait" role="status"><\/p>\s*<div class="chat-input">/.test(html)
+    && /\.ta-wait \{ margin: 0 0 var\(--space-6\); font-size: 12px; line-height: 1\.5; color: var\(--ink-2\); \}\n\.ta-wait:empty \{ display: none; \}/.test(css)); }
 // (結果在上面的非同步檢查裡印)

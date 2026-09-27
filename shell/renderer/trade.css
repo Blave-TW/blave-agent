@@ -495,6 +495,7 @@ html.ws-sc .side-gate { display: none; }
 .f-input[readonly] { color: var(--ink-3); }
 /* 沒有策略設金額時鈕旁的原因行(§8):狀態行下面自己一行,--ink-3 12px;「部位」是切分頁的文字連結 */
 .main-head .tr-noamt { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.main-head .tr-noamt { min-height: 18px; }   /* 常駐佔位:沒有原因時是空的一行,頁首高度不跳(#108) */
 .main-head .tr-noamt-link { font-size: inherit; vertical-align: baseline; }
 /* 等回報那一句:spinner 在句首(§2-3c)。.cx-wait 本身是 flex + gap,這裡只補「句子會換行」那一點——
    原因行是整段話,不像連接框那兩行只有一行高 */

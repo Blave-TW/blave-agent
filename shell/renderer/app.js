@@ -730,9 +730,16 @@ $("ta").addEventListener("compositionend", () => { composing = false; });
 $("ta").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();
+    if (running && $("ta").value.trim()) { taWaitShow(true); return; }   // 沒送出去要講:不然 Enter 按了像壞掉(#71)
     sendDraft();
   }
 });
+/* 輸入框上方那一行:上一輪還在跑,Enter 沒有送出。回合結束(sendBtnSync 看到 running 是 false)就收 */
+function taWaitShow(on) {
+  const p = $("ta-wait");
+  if (on) { p.dataset.i18n = "ws.waitTurn"; p.textContent = t("ws.waitTurn"); }
+  else if (p.textContent) { delete p.dataset.i18n; p.textContent = ""; }
+}
 
 /* ── 輸入框自動長高 ───────────────────────────────
    照 web 工作頁的 autosize()(workspace.html:21908):先歸零再量 scrollHeight、
@@ -1005,7 +1012,7 @@ async function stratRefresh(turnEnd) {
         confirmBox({ title, lines: [], extra: stratBlockedNote(r.code), ok: t("cdel.gotIt"), opener: b, single: true, onOk: () => {},
           alt: r.code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => trOpen("pos") } : null });
       }
-    });
+    }, false, window.blave.platform === "win32" ? "strat.delConfirm.win" : "strat.delConfirm");
     del.disabled = running;
     wrap.append(b, del);
     box.appendChild(wrap);
@@ -1301,17 +1308,23 @@ async function csOpen(id) {
 }
 // 用 trade.js 那顆 trStamp(MM/DD HH:mm,24 小時制):toLocaleString 會跟著語系給 12 小時制與不補零的月日
 function csTime(sec) { return trStamp(sec); }
-/* 列尾的兩段式刪除鈕(對話清單與策略清單共用):✕ → 同一格變成「刪除?」,再按一次才
-   執行;滑開或失焦就復原。不用原生 confirm——它會把整個視窗卡住,樣式也不是我們的。 */
-function armedDelete(row, label, onConfirm, direct) {
+/* 列尾的兩段式刪除鈕(對話清單與策略清單共用):✕ → 同一格變成武裝字,再按一次才
+   執行;滑開或失焦就復原。不用原生 confirm——它會把整個視窗卡住,樣式也不是我們的。
+   armedKey = 武裝後那個字的 key:可復原的動作要講去向(刪策略 =「移到垃圾桶？」,e2e 0.1.8 #73);沒給就是「刪除？」。
+   武裝鈕的實寬寫在列上(--armed-w),列的右內距照它讓位(app.css)——字的寬度隨語言與平台不同,寫死會蓋到名字 */
+function armedDelete(row, label, onConfirm, direct, armedKey) {
   const del = document.createElement("button");
   del.type = "button"; del.className = "cs-del"; del.setAttribute("aria-label", label);
   const X = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   del.innerHTML = X;
-  const disarm = () => { del.classList.remove("is-armed"); del.innerHTML = X; };
+  const disarm = () => { del.classList.remove("is-armed"); del.innerHTML = X; row.style.removeProperty("--armed-w"); };
   del.addEventListener("click", async () => {
     if (direct) { onConfirm(del); return; }     // 確認交給 modal,列內不武裝
-    if (!del.classList.contains("is-armed")) { del.classList.add("is-armed"); del.textContent = t("cs.delConfirm"); return; }
+    if (!del.classList.contains("is-armed")) {
+      del.classList.add("is-armed"); del.textContent = t(armedKey || "cs.delConfirm");
+      row.style.setProperty("--armed-w", Math.ceil(del.getBoundingClientRect().width) + "px");
+      return;
+    }
     disarm(); await onConfirm();
   });
   row.addEventListener("mouseleave", disarm);
@@ -1844,6 +1857,7 @@ function sendBtnSync() {
   b.dataset.i18nAria = running ? "ws.stop" : "ws.send";
   b.setAttribute("aria-label", t(b.dataset.i18nAria));
   b.disabled = false;
+  if (!running) taWaitShow(false);
 }
 async function stopTurn() {
   if (!running || turnStopping) return;

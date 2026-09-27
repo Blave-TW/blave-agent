@@ -1423,13 +1423,15 @@ function trPaintGoRel(on, solid) {
   u.disabled = off; u.classList.toggle("is-busy", rel);
   if (!off && TR.relParked) { TR.relParked = false; const ae = document.activeElement; if (!ae || ae === document.body || ae === $("tr-h")) u.focus(); }
 }
-/* 鈕旁的原因行(Z 時常駐,--ink-3 12px,在狀態行下面自己一行)。句子裡的「部位」做成連結,點了切到部位分頁 */
+/* 鈕旁的原因行(Z 時常駐,--ink-3 12px,在狀態行下面自己一行)。句子裡的「部位」做成連結,點了切到部位分頁。
+   **節點常駐、只換內容**(e2e 0.1.8 #108):原本沒有原因就把節點拿掉,連續操作時頁首高度一下多 22px 一下少 22px,
+   分頁列跟著跳、容易點錯。沒有原因時清空內容,高度由 CSS 的 min-height 佔著 */
 function trPaintNoAmt(key) {
   let p = $("tr-noamt");
-  // 這一行裡有可 Tab 的「部位」連結:收掉 / 重建之前焦點在它身上的話先交給標題,不然會掉到 BODY
-  const hadFocus = !!p && p.contains(document.activeElement);
-  if (!key) { if (p) { if (hadFocus) $("tr-h").focus(); p.remove(); } return; }
   if (!p) { p = trEl("p", "tr-noamt", ""); p.id = "tr-noamt"; $("tr-desc").after(p); }
+  // 這一行裡有可 Tab 的「部位」連結:清空 / 重建之前焦點在它身上的話先交給標題,不然會掉到 BODY
+  const hadFocus = p.contains(document.activeElement);
+  if (!key) { if (hadFocus) $("tr-h").focus(); p.textContent = ""; p.classList.remove("cx-wait"); delete p.dataset.key; return; }
   if (p.dataset.key === key + "|" + LANG) return;
   if (hadFocus) $("tr-h").focus();
   p.dataset.key = key + "|" + LANG; p.textContent = "";

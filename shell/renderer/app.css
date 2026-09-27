@@ -241,6 +241,9 @@
   padding: 0 var(--space-4); font-size: 12px; line-height: 1.5; color: var(--ink-2); text-underline-offset: 3px;
   transition: color var(--motion-fast) var(--ease-standard); }
 .ws-update[hidden] { display: none; }
+/* 回合中按 Enter 的那一行(#71):12px --ink-2,在輸入框正上方;空的時候不佔位 */
+.ta-wait { margin: 0 0 var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.ta-wait:empty { display: none; }
 .ws-update:hover { color: var(--ink); }
 .ws-update:hover span { text-decoration: underline; }   /* flex item 不吃容器的 text-decoration 傳播:畫在 span 上 */
 .ws-update:disabled, .ws-update:disabled:hover { color: var(--color-greyDark); cursor: not-allowed; }
@@ -1036,6 +1039,8 @@ body.resizing * { cursor: col-resize !important; }
 
 /* 策略列尾的刪除鈕:外包一層給絕對定位的鈕當基準;hover 時名字讓出位置 */
 .strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { padding-right: 72px; background: var(--surface-muted); color: var(--ink); }
+/* 武裝後鈕變寬(「移到垃圾桶？」):右內距 = 鈕的實寬(JS 量了寫在 --armed-w)+ 16,名字才不會被蓋住 */
+.strat-wrap:has(.cs-del.is-armed) .strat-row { padding-right: calc(var(--armed-w, 84px) + 16px); }
 .cs-del:disabled { display: none; }
 /* 雲端策略列送出刪除後、等清單更新:名字退一階、狀態字換成「刪除中…」、不畫 ✕(列本身還能點開報告) */
 .strat-wrap.is-deleting .strat-name { color: var(--ink-3); }
