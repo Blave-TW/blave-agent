@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.100 — 2026-09-27
+
 - **聊天回合步數上限 50 → 100(電腦版與雲端一致;排程 25 不動;Wei 09-27)**:「建 BNB MA 策略+回測+上
   TradingView 對照」在 50 步被砍在貼完 Pine 之後(同日 ETH 那輪也用滿 49 步)——瀏覽器 UI 任務每個
   click/wait/snapshot 都是一步,乾淨做完就要 ~60 步。煞車仍是預算(10 USD)與 bridge 回合逾時,不是步數。
