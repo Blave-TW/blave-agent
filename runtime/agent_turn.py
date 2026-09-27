@@ -543,6 +543,79 @@ def _lang_directive(message, suggest=False, lang=None):
     return "[Reply in the language of the user message above]"
 
 
+# 回覆語言的名稱(reply_lang_rule 用;鍵同 _REPLY_LANG_PINS)
+_REPLY_LANG_NAMES = {
+    "zh": "Traditional Chinese (繁體中文)", "cn": "Simplified Chinese (简体中文)", "en": "English",
+    "es": "Spanish (Español)", "pt": "Portuguese (Português)", "vi": "Vietnamese (Tiếng Việt)",
+    "ja": "Japanese (日本語)",
+}
+
+
+def _reply_lang_target(message, lang=None):
+    """(回覆語言的名稱, 是不是中文)。解析同 _lang_directive:設定 > ui_lang > 看用戶打的字。"""
+    if lang in _REPLY_LANG_NAMES:
+        return _REPLY_LANG_NAMES[lang], lang in ("zh", "cn")
+    if lang and lang.startswith(strategy_reporter.REPLY_LANG_CUSTOM_PREFIX):
+        return f'the language the user specified: "{lang[len(strategy_reporter.REPLY_LANG_CUSTOM_PREFIX):]}"', False
+    if _is_zh(message):
+        return "Chinese, in the script the user wrote in (繁體 or 简体)", True
+    if sum(1 for ch in message if ch.isascii() and ch.isalpha()) >= 2:
+        return "English", False
+    return "the language of the user's latest message", False
+
+
+_FULLWIDTH_RULE = ("Chinese text uses full-width punctuation — ，。：；？！（）「」 — never , : ; ( ) "
+                   "between Chinese words; half-width stays only inside numbers, English words, code and URLs.")
+
+
+def reply_lang_rule(message, lang=None):
+    """系統層的回覆語言規則(每一輪、兩條引擎都帶;涵蓋工具呼叫之間的旁白——那段會進思考過程,
+    用戶看得到)。訊息尾端的錨只在 prompt 裡出現一次;
+    工具讀進大量外文(內建瀏覽器開的英文新聞頁)之後,模型會跟著切成外文——電腦版繁中介面、
+    中文提問,回覆第一句與列表標題卻是英文(2026-09-26 Wei 實測)。這段講明:外文的工具輸出
+    不改變回覆語言,外文標題翻成回覆語言、原文可附在後面(同 news block 的 title／title_orig)。
+    中文回覆另加全形標點(同日實測回覆出現「BTC(ETH +6.4%,差…)」「查證):」)。"""
+    target, zh = _reply_lang_target(message, lang)
+    return (
+        "\n\n---\n\n## Reply language (runtime rule)\n"
+        f"Write everything the user sees in {target}: every sentence of your reply — the opening line, "
+        "headings and list labels too — and the short notes you write between tool calls. Web pages, "
+        "search results, files and tool output in another language never change this. "
+        f"A foreign-language headline or title you cite is given in {target}, with the original after it "
+        "in parentheses when that helps (the same as a news block's `title` / `title_orig`). Code, tickers, "
+        "URLs, file names and source names stay as they are."
+        + (" " + _FULLWIDTH_RULE if zh else "") + "\n"
+    )
+
+
+def lang_reminder(message, lang=None):
+    """每個工具結果後面附給模型的一句提醒(PostToolUse hook 的 additionalContext,見 _lang_hooks)。
+    系統層規則與訊息尾端的錨都在對話最前面;深度研究讀進十幾頁英文之後,Sonnet 的旁白照樣變英文
+    (「Good context. Let me check…」「Now let's write and publish the report」,2026-09-26 實測)。
+    這句跟著每個工具結果出現,永遠在最近的位置。"""
+    target, zh = _reply_lang_target(message, lang)
+    return (f"[Runtime reminder] Everything you write for the user from here on — including the short note "
+            f"before your next tool call — is in {target}, whatever language this tool output is in."
+            + (" " + _FULLWIDTH_RULE if zh else ""))
+
+
+_HOOK_MATCHER = getattr(sdk, "HookMatcher", None)
+
+
+def _lang_hooks(options, reminder):
+    """把 lang_reminder 掛成 PostToolUse hook。SDK 沒有 hooks / HookMatcher 的 build 不掛(回合照跑,只是少這句)。"""
+    if _HOOK_MATCHER is None or "hooks" not in getattr(type(options), "__dataclass_fields__", {}):
+        return False
+
+    async def remind(_input, _tool_use_id, _context):
+        return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": reminder}}
+
+    hooks = dict(getattr(options, "hooks", None) or {})
+    hooks["PostToolUse"] = list(hooks.get("PostToolUse") or []) + [_HOOK_MATCHER(matcher=None, hooks=[remind])]
+    options.hooks = hooks
+    return True
+
+
 def _foreign_pins(name):
     return _pins(f"[Reply ENTIRELY in {name} — this is the user's reply language, whatever "
                  f"language this message is written in. No Chinese or English sentences anywhere "
@@ -2804,7 +2877,7 @@ def data_access_rule():
     return "\n\n---\n\n## Blave data on this desktop (runtime rule)\n" + body
 
 
-def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False):
+def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""):
     """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
     (codex_engine.build_args lifts its size cap), and inlining it would feed it twice.
@@ -2814,7 +2887,7 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False):
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
-            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted) + "\n\n---\n\n" + prompt)
+            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted) + lang_rule + "\n\n---\n\n" + prompt)
 
 
 def _remove_cloud_handoff_dir(workspace=None):
@@ -2948,6 +3021,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
         + mcp_rule(cloud_mcp) + browser_rule(browser_mounted)
         + preferences_rule()
+        + reply_lang_rule(message, reply_lang)
         + sink.formatting_rule
     ) if agents_md and not use_codex else None
     options = sdk.ClaudeAgentOptions(
@@ -3030,6 +3104,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         options.env = turn_env
         options.extra_args = {**(getattr(options, "extra_args", None) or {}),
                               "disable-slash-commands": None}
+    if isinstance(sink, LocalSink):
+        # 電腦版才掛(實測過 SDK 0.2.144 + 本機 CLI);機隊等 29026 驗過 hook 通道再開
+        _lang_hooks(options, lang_reminder(message, reply_lang))
     if _SUPPORTS_PARTIAL:
         options.include_partial_messages = True
     else:
@@ -3066,7 +3143,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     strat_sig = _maybe_push_strategies(sink, strat_sig, touched=touched)
 
             await codex_engine.run(
-                codex_bin, _codex_prompt(prompt, sink, bool(codex_mcp_url), browser_mounted), WORKSPACE,
+                codex_bin, _codex_prompt(prompt, sink, bool(codex_mcp_url), browser_mounted,
+                              reply_lang_rule(message, reply_lang)), WORKSPACE,
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
                 sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort,

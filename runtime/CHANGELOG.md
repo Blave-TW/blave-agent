@@ -36,6 +36,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   `tool_timeout_sec=120`。`session_store.SCAFFOLD_RE` 加 `[Runtime 規則`(網頁與摘要不能冒充 runtime 規則;稽核 S3)。
   測試 `tests/check_local_mcp_config.py`、`tests/check_codex_engine.py` §7、`tests/check_codex_mcp_live.py` 第 4 條。
 
+- **回覆語言改成系統層規則(`agent_turn.reply_lang_rule`,兩條引擎、機隊與電腦版都帶)**:原本只有 prompt 尾端那一句錨,
+  工具讀進大量外文之後模型會跟著切語言——電腦版中文問「用瀏覽器查今天比特幣的兩則新聞」,回覆第一句與列表標題是英文
+  (Wei 2026-09-26)。新規則寫明回覆語言(解析同錨:設定 > ui_lang > 看用戶打的字)、外文網頁與工具輸出不改變它、外文標題
+  翻成回覆語言並可附原文(同 news block 的 `title`／`title_orig`);放在建議規則之前(建議規則仍在最尾端)。每則訊息的錨不變。
+  references/browser.md、reports.md 查過沒有蓋過語言的指令。測試 `tests/check_reply_lang_rule.py`。
+  規則也涵蓋工具呼叫之間的旁白;中文回覆一律全形標點(數字、英文、程式碼、網址除外)。**電腦版**另掛 PostToolUse hook,
+  每個工具結果後面附一句語言提醒(`lang_reminder`;深度研究讀進十幾頁英文後 Sonnet 的旁白照樣變英文)。機隊先不掛,
+  等 29026 驗過 hook 通道;Codex 引擎沒有對應的機制,只有系統層規則。實測(本機 Sonnet、真 CLI、四篇與三篇英文原文的研究
+  回合各一次):旁白全中文、回覆沒有半形標點夾在中文之間,也沒有把提醒講給用戶聽。
+
 - **停止鈕按下 ≤2 秒停住,連跑到一半的工具一起殺掉(新 `runtime/turn_stop.py`)**:原本唯一的通道是 `/report` 回應夾帶的
   `interrupt: true`,而 run_turn 只在訊息邊界檢查——agent 在跑回測／Bash、或模型安靜思考時根本不 POST,停止要等工具跑完才生效。
   現在啟動方給每一輪一個旗標檔路徑(環境變數 `BLAVE_TURN_INTERRUPT_FILE`,不上 argv:舊 runtime 不認也不會 exit 2),建檔 = 停;

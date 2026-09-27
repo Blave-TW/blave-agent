@@ -238,7 +238,7 @@ assert at.python_rule() == ""
 run_local_turn()
 run_local_turn(engine="codex", codex_bin="/x/codex")
 assert sysprompts[-1] == "# rules\n" + at.model_catalog_rule("s1") + at.preferences_rule() \
-    + at.WEB_FORMATTING_RULE, "沒設 BLAVE_PYTHON 時 system prompt 必須與原本逐字相同"
+    + at.reply_lang_rule("hello") + at.WEB_FORMATTING_RULE, "沒設 BLAVE_PYTHON 時 system prompt 必須與原本逐字相同"
 assert "Python 直譯器" not in seen["prompt"]
 
 os.environ["BLAVE_PYTHON"] = "/v/bin/python"
