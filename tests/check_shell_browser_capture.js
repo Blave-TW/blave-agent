@@ -29,10 +29,10 @@ const cit = [
 for (const [u, want] of cit) { last = policy.citable(u); t("citable " + u.slice(0, 40) + " → " + want, last === want); }
 const V = { w: 1280, h: 800 };
 const fitRows = [
-  [{ x: 100, y: 100, w: 600, h: 300 }, null, "一般圖表"], [{ x: 0, y: 50, w: 1280, h: 600 }, null, "滿版寬但不到整個畫面高"],
+  [{ x: 100, y: 100, w: 600, h: 300 }, null, "一般圖表"], [{ x: 0, y: 50, w: 1280, h: 560 }, null, "滿版寬但不到整個畫面高"],
   [{ x: 10, y: 10, w: 60, h: 300 }, "too_small", "太窄"], [{ x: 10, y: 10, w: 300, h: 40 }, "too_small", "太矮"],
   [{ x: 0, y: 0, w: 1280, h: 2000 }, "too_large", "比可視區高"], [{ x: 0, y: 0, w: 1400, h: 300 }, "too_large", "比可視區寬"],
-  [{ x: 20, y: 20, w: 1160, h: 690 }, "too_large", "接近整個畫面(90%×85%)"], [{ x: 20, y: 20, w: 1160, h: 670 }, null, "高度差一點就不算整個畫面"],
+  [{ x: 20, y: 20, w: 1160, h: 690 }, "too_large", "接近整個畫面(90%×85%)"], [{ x: 20, y: 20, w: 1160, h: 670 }, "too_large", "高度差一點,面積仍 ≥75%"], [{ x: 20, y: 20, w: 1160, h: 640 }, null, "面積不到 75%"],
   [{ x: -200, y: 10, w: 400, h: 300 }, "not_visible", "一半在可視區外"],
 ];
 for (const [box, want, n] of fitRows) { last = gate.captureFit(box, V); t("captureFit " + n + " → " + want, last === want); }
@@ -167,8 +167,8 @@ app.whenReady().then(async () => {
   r = J(await call("browser_capture", { tab: bt, ref: br, report: "wk-cite" }));
   t("當下網址被 agent 政策擋(交易所後台)→ blocked_policy", !r.ok && r.error === "blocked_policy");
 
-  const idxSrc = fs.readFileSync(path.join(SHELL, "browser", "index.js"), "utf8");
-  t("擷取在 awake() 裡、經過 withMask 且強制藏標記(展開中的分頁也藏)", /got = await awake\(t, v, async \(\) => \{\s*const g = await withMask\(v, async \(\) => \(\{ d: await v\.page\.captureClip\(c\.box, c\.view, [^\n]*?\) \}\), true\);/.test(idxSrc));
+  const capSrc = fs.readFileSync(path.join(SHELL, "browser", "capture.js"), "utf8");
+  t("擷取在 awake() 裡、經過 withMask 且強制藏標記(展開中的分頁也藏)", /got = await awake\(t, v, async \(\) => \{\s*const g = await d\.withMask\(v, async \(\) => \{[\s\S]*?captureClip\(s\.c\.box, s\.c\.view, [^\n]*\n\s*\}, true\);/.test(capSrc));
   const names = require(path.join(SHELL, "browser", "tools")).TOOLS.map((x) => x.name);
   t("工具清單有 browser_capture,必填 tab/ref/report", names.includes("browser_capture") && require(path.join(SHELL, "browser", "tools")).TOOLS.find((x) => x.name === "browser_capture").inputSchema.required.join() === "tab,ref,report");
 

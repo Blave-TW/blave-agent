@@ -114,15 +114,39 @@ function classify(action, d, key) {
    - 小於 80×50:不是圖表(icon、一行字)
    - 比可視區大:捲不進一個畫面的元素是版面區塊(文章欄、整頁),不是一張圖;也不做 beyond-viewport 擷取
      (那會改頁面 viewport、整頁 reflow,見 index.js unEmulate)
-   - 寬 ≥90% 且高 ≥85% 可視區:等於截整個畫面。只看單一方向不擋——滿版寬的圖表很常見
+   - 寬 ≥90% 且高 ≥85% 可視區,或面積 ≥75% 可視區:等於截整個畫面(只有前一條時 100%×84.9% 也過,稽核 B2)。
+     滿版寬、高度不到 75% 的圖表照收
    - 捲過之後仍有一部分在可視區外(橫向捲動容器裡):裁出來會是半張圖 */
-const CAPTURE_MIN_W = 80, CAPTURE_MIN_H = 50, CAPTURE_VIEW_W = 0.9, CAPTURE_VIEW_H = 0.85;
+const CAPTURE_MIN_W = 80, CAPTURE_MIN_H = 50, CAPTURE_VIEW_W = 0.9, CAPTURE_VIEW_H = 0.85, CAPTURE_VIEW_AREA = 0.75;
 function captureFit(box, view) {
   if (box.w < CAPTURE_MIN_W || box.h < CAPTURE_MIN_H) return "too_small";
   if (box.w > view.w + 1 || box.h > view.h + 1) return "too_large";
   if (box.w >= CAPTURE_VIEW_W * view.w && box.h >= CAPTURE_VIEW_H * view.h) return "too_large";
+  if (box.w * box.h >= CAPTURE_VIEW_AREA * view.w * view.h) return "too_large";
   if (box.x < -1 || box.y < -1 || box.x + box.w > view.w + 1 || box.y + box.h > view.h + 1) return "not_visible";
   return null;
 }
+/* 兩次量到的外框差多少(文件座標:可視區座標 + 捲動量;位置與大小取最大的那個差)。超過 CAPTURE_DRIFT_MAX = 版面還在動 */
+const CAPTURE_DRIFT_MAX = 4;
+function captureDrift(a, b) {
+  return Math.max(
+    Math.abs((a.box.x + a.view.px) - (b.box.x + b.view.px)), Math.abs((a.box.y + a.view.py) - (b.box.y + b.view.py)),
+    Math.abs(a.box.w - b.box.w), Math.abs(a.box.h - b.box.h));
+}
+/* 遮擋檢查的取樣點:中心 + 四角(往內縮,避開圓角與邊框)。covered[i]:true = 那一點上面是別的元素、false = 是目標或它的子孫、
+   null = 查不出來(不當成被遮)。中心被遮,或四角有兩個以上被遮 → 拍到的會是橫幅 / 彈窗;
+   只有一角被遮多半是圖表自己旁邊的小鈕,不擋 */
+function capturePoints(box) {
+  const dx = Math.min(12, box.w / 4), dy = Math.min(12, box.h / 4), r = Math.round;
+  return [
+    { x: r(box.x + box.w / 2), y: r(box.y + box.h / 2) },
+    { x: r(box.x + dx), y: r(box.y + dy) }, { x: r(box.x + box.w - dx), y: r(box.y + dy) },
+    { x: r(box.x + dx), y: r(box.y + box.h - dy) }, { x: r(box.x + box.w - dx), y: r(box.y + box.h - dy) },
+  ];
+}
+function captureCovered(covered) {
+  if (!Array.isArray(covered) || !covered.length) return false;
+  return covered[0] === true || covered.slice(1).filter((x) => x === true).length >= 2;
+}
 
-module.exports = { classify, captureFit, sensitiveField, actionWord, searchContext, editableField, buttonLike, realLink, ACTION_WORDS_EN, ACTION_WORDS_CJK };
+module.exports = { classify, captureFit, captureDrift, capturePoints, captureCovered, CAPTURE_DRIFT_MAX, sensitiveField, actionWord, searchContext, editableField, buttonLike, realLink, ACTION_WORDS_EN, ACTION_WORDS_CJK };

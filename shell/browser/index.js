@@ -12,6 +12,7 @@ const { createPage } = require("./cdp");
 const { createPace } = require("./pace");
 const { createMcpServer } = require("./mcp");
 const { createSnapshots } = require("./snapshots");
+const { createCapture } = require("./capture");
 const { TOOLS, INSTRUCTIONS } = require("./tools");
 const IP = require("./inpage");
 
@@ -582,95 +583,11 @@ function createBrowser(o) {
     emit("page_done", Object.assign({ id: t.id, snapshot_id: t.snapshotId || null, read: true }, relay ? { relay: true } : {}));
   }
 
-  /* 報告引用圖(spec-report-image-cite-0.1.8 §4;references/reports.md › Citing an image from the web):
-     只拍 agent 指定的那一個元素,出處跟圖檔一起回——source 由工具產生,agent 拆不開也不必自己填。
-     跟截圖同一套:先遮有值的敏感欄位與金流 iframe(遮不到不拍)、藏頁面標記;網域政策由 tabFor 擋在前面。 */
-  const CITE_MAX_W = 1360;              // 680px 閱讀欄 ×2
-  const CITE_BYTES_MAX = 2 * 1024 * 1024;   // 報告圖檔上限(lib/report.py、main.js RPT_BYTES_MAX)
-  const CITES_PER_TURN = 10;
-  const REPORT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-  const CITE_URL_MSG = {
-    scheme: "only https pages can be cited; open the https address of this page and capture again",
-    credentials: "the page address carries a user name or password and cannot be cited",
-    long: "the page address is longer than 500 characters and cannot be cited; open a shorter address for the same page (without tracking parameters) and capture again",
-    format: "the page address contains spaces or control characters and cannot be cited",
-  };
-  const CITE_FIT_MSG = {
-    too_small: "the element is too small to be a chart; pick the chart or figure element itself",
-    too_large: "the element is about as large as the whole view or larger — that is a page screenshot, not a single chart; pick the chart or figure element itself",
-    not_visible: "the element cannot be shown whole on screen (it sits in a scrolled container or has no box); pick another element",
-  };
-  /* 停在視窗外的分頁閒置幾秒後合成器就不再出畫面:Page.captureScreenshot 等到逾時,或回捲動前的舊畫面(實測 Electron 44,
-     視窗顯示中、置頂、關掉遮擋判定都一樣)——舊畫面會變成一張錯的引用圖。view 只要有 1×1 px 疊進視窗內容區就會出畫面
-     (視窗隱藏也行),所以擷取那一下把它的左上角貼到視窗右下角那一個像素,拍完放回原位。展開在中欄的分頁本來就在視窗裡。 */
-  async function awake(t, v, fn) {
-    if (t.id === expanded) return fn();
-    let b0 = null, nb = null;
-    try { b0 = v.view.getBounds(); const cb = o.getWin().getContentBounds(); nb = { x: cb.width - 1, y: cb.height - 1, width: b0.width, height: b0.height }; v.view.setBounds(nb); await sleep(150); }
-    catch (_) { /* 視窗正在關:照拍,拍不到就回 screenshot_failed */ }
-    try { return await fn(); } finally {
-      // 這段期間用戶把它展開到中欄(bounds 已經被 expand 換掉)就不放回去
-      if (nb) try { const cb2 = v.view.getBounds(); if (cb2.x === nb.x && cb2.y === nb.y) v.view.setBounds(b0); } catch (_) { /* 已關 */ }
-    }
-  }
-  async function doCapture(t, v, args) {
-    const report = String(args.report || "");
-    if (!REPORT_ID_RE.test(report)) return ERR("invalid_args", "report must be the id of the report the picture is for ([A-Za-z0-9_-]{1,64}), the same id you pass to write_report");
-    if (!o.reportsDir) return ERR("invalid_args", "reports are not available here");
-    const url = v.wc.getURL();
-    const bad = policy.citable(url);
-    if (bad) return ERR("capture_refused", CITE_URL_MSG[bad], { tab: t.alias, reason: "page_url" });
-    // 縮到 Dock 時 awake() 也叫不醒合成器,CDP 擷取只會等到逾時(實測)——直接說,不讓 agent 空等 8 秒
-    const w = o.getWin && o.getWin();
-    if (!w || w.isDestroyed() || w.isMinimized()) return ERR("screenshot_failed", "the app window is minimized, so the page cannot be captured; ask the user to bring the Blave window back, then capture again", { tab: t.alias });
-    if ((cur.captures || 0) >= CITES_PER_TURN) return ERR("rate_limited", "capture limit for this turn reached", { retry_in_s: 0 });
-    const b = v.page.node(args.ref);
-    if (b === null) return ERR("stale_ref", MSG.stale_ref, { tab: t.alias });
-    let c; try { c = await v.page.clipOf(b); } catch (_) { return ERR("stale_ref", MSG.stale_ref, { tab: t.alias }); }
-    const fit = c.error ? "not_visible" : gate.captureFit(c.box, c.view);
-    if (fit) return ERR("capture_refused", CITE_FIT_MSG[fit], { tab: t.alias, ref: args.ref, reason: fit });
-    cur.captures = (cur.captures || 0) + 1;
-    const reduced = o.reducedMotion ? o.reducedMotion() : false;
-    emit("page_act", Object.assign({ id: t.id, kind: "capture", ref: String(args.ref), box: c.box }, viewSize(v)));
-    const pace = v.pace.arrive();
-    if (pace.cut) await v.page.run(IP.mark, ["settle"]).catch(() => {});
-    if (t.visible) await v.page.run(IP.mark, ["ref", { box: c.box, label: o.uiLang() === "zh" ? "擷取" : "Capture", tag: true }, reduced]).catch(() => {});
-    let got;
-    try {
-      got = await awake(t, v, async () => {
-        const g = await withMask(v, async () => ({ d: await v.page.captureClip(c.box, c.view, Math.min(2, CITE_MAX_W / c.box.w)) }), true);
-        // 出處頁照「讀了」記(來源紀錄與快照就是用戶查證這張圖的地方);快照也要醒著的合成器,所以放在同一段裡
-        if (g && g.d && (!t.snapshotId || !t.readEver)) { try { await noteRead(t, v, await v.page.extract()); } catch (_) { /* 快照 best-effort */ } }
-        return g;
-      });
-    } finally {
-      await v.page.run(IP.mark, ["unframe"]).catch(() => {});
-      v.pace.end();
-    }
-    if (!got) return ERR("sensitive_field", "a password / card / code field on this page has a value that could not be hidden, so nothing was captured", { tab: t.alias });
-    if (!got.d) return ERR("screenshot_failed", "could not capture this element right now; try again", { tab: t.alias });
-    let img = E.nativeImage.createFromBuffer(Buffer.from(got.d, "base64"));
-    const want = Math.min(CITE_MAX_W, Math.round(c.box.w * 2));   // 約 2×(螢幕 DPR 也乘進 CDP 的輸出,這裡收回來)
-    if (img.getSize().width > want) img = img.resize({ width: want, quality: "best" });
-    let buf = img.toPNG(), ext = "png";
-    for (const q of [90, 75]) { if (buf.length <= CITE_BYTES_MAX) break; buf = img.toJPEG(q); ext = "jpg"; }
-    if (!buf.length) return ERR("screenshot_failed", "could not capture this element right now; try again", { tab: t.alias });
-    if (buf.length > CITE_BYTES_MAX) return ERR("capture_refused", "the picture is over 2 MB even as JPEG; pick a smaller chart element", { tab: t.alias, ref: args.ref, reason: "too_large" });
-    const fs = require("fs"), path = require("path");
-    const file = "cite-" + Date.now().toString(36) + "-" + require("crypto").randomBytes(3).toString("hex") + "." + ext;
-    try {
-      const dir = path.join(o.reportsDir, report + ".files");
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, file), buf, { flag: "wx" });
-    } catch (_) { return ERR("internal", "could not save the picture into the report folder"); }
-    const u = new URL(url), host = u.hostname;
-    let site = ""; try { site = await v.page.run(function () { const m = document.querySelector('meta[property="og:site_name"], meta[name="application-name"]'); return m ? String(m.getAttribute("content") || "").slice(0, 200) : ""; }); } catch (_) { /* 用網域 */ }
-    site = C.scrub(site).replace(/\s+/g, " ").trim();
-    // 名稱 ≤40(契約 image.source.name);站名太長就用網域,不截半個名字
-    const name = site && [...site].length <= 40 ? site : [...host.replace(/^www\./, "")].slice(0, 40).join("");
-    const s = img.getSize();
-    return R({ ok: true, tab: t.alias, report, file, source: { name, url }, host, width: s.width, height: s.height, bytes: buf.length, source_url: C.scrub(url, 2000), title: C.scrub(v.wc.getTitle(), 300) });
-  }
+  // 報告引用圖(browser_capture):流程在 capture.js
+  const doCapture = createCapture({
+    nativeImage: E.nativeImage, reportsDir: o.reportsDir, getWin: () => o.getWin && o.getWin(), uiLang: () => o.uiLang(), reducedMotion: () => (o.reducedMotion ? o.reducedMotion() : false),
+    ERR, R, MSG, blockedMsg, emit, viewSize, withMask, noteRead, cur: () => cur, expanded: () => expanded,
+  }).doCapture;
   // 截圖一律 best-effort:拍不到就只留文字,絕不擋工具結果(分級與網域規則才是不能壞的)
   const within = (p, ms) => Promise.race([p, sleep(ms).then(() => { throw new Error("timeout"); })]);
   /* 稽核 S2:截圖前把有值的敏感欄位(同 fill 拒填那份判定)與金流商 iframe 蓋掉,拍完拿掉。

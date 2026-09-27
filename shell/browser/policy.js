@@ -403,4 +403,30 @@ function citable(raw) {
   return null;
 }
 
-module.exports = { network, agent, citable, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };
+/**
+ * 引用圖出處網址的清理(稽核 S1):報告會被公開分享,網址裡的祕密(簽章網址、OAuth 回跳留下的 token、私人儀表板的 key)
+ * 不能跟著出去。寧可多剝:剝掉之後頁面開不出同一個畫面,比 token 公開好。
+ * query:名稱命中的參數拿掉;fragment:看起來像參數串而且有一個命中,整段拿掉。解析不了就原樣回(由 citable 擋)。
+ */
+const SECRET_KEYS = new Set([
+  "token", "key", "apikey", "sig", "signature", "sign", "secret", "session", "sessionid", "sid", "auth", "authorization",
+  "password", "passwd", "pwd", "pass", "jwt", "otp", "ticket", "credential", "credentials",
+]);   // code / state 不列:一次性、短效,而且 ?code=2330 這種股票代號頁很常見
+const SECRET_TAILS = ["token", "secret", "signature", "apikey", "password", "sessionid"];
+const SECRET_HEADS = ["xamz", "xgoog"];
+function secretKey(k) {
+  const n = lc(k).replace(/[^a-z0-9]/g, "");
+  return SECRET_KEYS.has(n) || SECRET_TAILS.some((x) => n.endsWith(x)) || SECRET_HEADS.some((x) => n.startsWith(x));
+}
+function citeUrl(raw) {
+  const s = String(raw == null ? "" : raw);
+  let u; try { u = new URL(s); } catch (_) { return s; }
+  let cut = false;
+  for (const k of [...new Set(u.searchParams.keys())]) if (secretKey(k)) { u.searchParams.delete(k); cut = true; }
+  const f = u.hash.slice(1);
+  if (f.includes("=") && f.split(/[?&;]/).some((p) => secretKey(decodeSafe(p.split("=")[0])))) { u.hash = ""; cut = true; }
+  return cut ? u.href : s;
+}
+function decodeSafe(x) { try { return decodeURIComponent(x); } catch (_) { return x; } }
+
+module.exports = { network, agent, citable, citeUrl, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };

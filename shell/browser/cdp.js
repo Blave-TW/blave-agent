@@ -348,6 +348,23 @@ function createPage(wc) {
     const vp = m.cssLayoutViewport || m.layoutViewport;
     return { box: { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }, view: { w: vp.clientWidth, h: vp.clientHeight, px: vp.pageX || 0, py: vp.pageY || 0 } };
   }
+  /** 每一點上面是不是別的元素蓋著(擷取用,稽核 B4):true = 被蓋、false = 是目標或它的子孫(同源 iframe 裡的也算)、null = 查不出來。 */
+  async function covered(b, pts) {
+    const out = [];
+    for (const p of pts) {
+      let hitObj, tgtObj;
+      try {
+        const hit = await send("DOM.getNodeForLocation", { x: p.x, y: p.y, includeUserAgentShadowDOM: false, ignorePointerEventsNone: false });
+        if (hit.backendNodeId === b) { out.push(false); continue; }
+        hitObj = await objectFor(hit.backendNodeId); tgtObj = await objectFor(b);
+        const r = await send("Runtime.callFunctionOn", { functionDeclaration: "function(h){for(var n=h;n;){if(this===n||this.contains(n))return true;var w=n.ownerDocument&&n.ownerDocument.defaultView;try{n=w&&w!==window?w.frameElement:null}catch(e){n=null}}return false}", objectId: tgtObj, arguments: [{ objectId: hitObj }], returnByValue: true });
+        out.push(r.exceptionDetails ? null : !r.result.value);
+      } catch (_) { out.push(null); } finally {
+        if (hitObj) send("Runtime.releaseObject", { objectId: hitObj }).catch(() => {}); if (tgtObj) send("Runtime.releaseObject", { objectId: tgtObj }).catch(() => {});
+      }
+    }
+    return out;
+  }
   /** 只拍 box 那一塊(clip 是文件座標:可視區座標 + 捲動量)。回 base64 PNG 或 null。 */
   async function captureClip(box, view, scale) {
     try {
@@ -356,7 +373,7 @@ function createPage(wc) {
     } catch (_) { return null; }
   }
   return {
-    attach, detach, invalidate, guard, guarded: () => guardOn, disarm, run, callOn, describe, snapshot, center, click, fill, focused, press, screenshot, node, clipOf, captureClip,
+    attach, detach, invalidate, guard, guarded: () => guardOn, disarm, run, callOn, describe, snapshot, center, click, fill, focused, press, screenshot, node, clipOf, captureClip, covered,
     refCount: () => refs.size,
     extract: () => run(IP.extract), serp: (engine) => run(IP.serp, [engine]), hasText: (s) => run(IP.hasText, [s]),
     scroll: (dir, amount, smoothMs) => run(IP.scrollPage, [dir, amount, smoothMs || 0]), lastPos: () => lastPos, progress: () => run(IP.progress), quiet: () => run(IP.quiet),
