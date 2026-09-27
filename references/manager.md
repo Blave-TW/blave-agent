@@ -563,6 +563,16 @@ built into `flatten()` itself instead.
 
 **Deleting a strategy:** delete only its own directory (e.g. `strategies/btc_kd_long/`). Never touch `manager/`.
 
+### Today's PnL — the same number the 自動下單 page shows
+
+When the user asks 「今天賺賠多少」 / "today's PnL", answer with the page's 當日損益, so the reply and the screen agree. It is an account figure, not a per-strategy one:
+
+`當日損益 = whole-account equity now − today's baseline`
+
+- **Desktop app** — the baseline comes from `state/equity_history.jsonl` (one row per clock hour while the app is open: `ts`, `venue`, `equity`, `basis`, `bound`; a `reset` row starts a new account). Use only rows after the last `reset`, of the venue bound now, with the same `bound` and the same `basis` as the newest row. Baseline = the last row before today's local midnight when it is at most 12 hours older than midnight, otherwise the first row of today; neither → there is no 當日損益 to report, say so. "Now" = the account's total equity read through `lib/account_<venue>.get_equity` (the sum of `accounts` when it has one, else `equity`).
+- **Cloud machine** — the page's figure comes from the platform's hourly snapshots, which are not on the machine. Give the figure you can compute and name its basis.
+- **Any other basis is named in the same sentence**: 「自上線以來 −66.56（以 100,000 起算）；今天的當日損益是 −49.37」. PnL since going live, per-strategy PnL from the ledger and unrealized PnL of open positions are different numbers — never call one of them "today". The screen's figure uses the app's latest account reading and yours the moment you ran the call, so the two can differ by what prices moved in between; say that when the user points at a gap.
+
 ### Stopping one strategy / closing one coin
 
 When the user asks to stop ONE running strategy (and optionally close its position) — not everything, which is the HALT kill switch — do not hand-write a script or `grep -v` the crontab. Both tools print everything they read and did; relay that output.
