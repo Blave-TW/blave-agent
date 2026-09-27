@@ -573,8 +573,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .strat-row[aria-current="true"], .strat-row[aria-current="page"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }   /* 側欄入口(自動下單 / 策略庫 / 報告)用 page:nav 的正確語意 */
 /* 名字是識別字(snake_case),過長截尾;數字靠右、等寬,上下列才對得齊 */
 .strat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 名字尾端的「（2）」不跟著截掉:前段截尾、後綴固定(撞名另存的兩支才分得出來) */
-.strat-name.has-tail { display: flex; }
+/* 名字尾端的辨識記號(「（2）」、v2、_4h)不跟著截掉:前段截尾、尾段固定(只差記號的兩支才分得出來)。
+   綠點是 flex 子項:不准縮、垂直置中(不然被擠成 4.4 寬、浮到左上) */
+.strat-name.has-tail { display: flex; align-items: center; }
+.strat-name .run-dot { flex: none; }
 .strat-name .sn-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .strat-name .sn-tail { flex: none; white-space: pre; }
 

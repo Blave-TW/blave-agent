@@ -950,17 +950,18 @@ function stratTip(display, name) {
   const d = typeof display === "string" ? display.trim() : "";
   return d && d !== name ? t("side.rowTip", { name: d, id: name }) : String(name || "");
 }
-/* 側欄名字過長截尾時,尾端的「（2）」/ " (2)" 留著:撞名另存的那一支跟原本那支只差這個後綴,一起截掉兩列就長得一樣(e2e 0.1.8 #37)。
-   沒有那種後綴的長名字(超過 16 個字)把最後 6 個字當尾段:agent 取名常用 _4h / _4h_v2 收尾,只截尾的話兩支是同一串(設計稽核 0.1.8 第三批 D3)。
-   以 code point 計(不切在代理對中間);前段尾端的空白歸尾段(尾段是 white-space: pre,前段行尾的空白會被吃掉)。
-   前段截尾、尾段固定;放得下時頭尾相連、看不出差別。短名字跟以前一樣是一個文字節點 */
-const STRAT_NAME_MAX = 16, STRAT_NAME_TAIL = 6;
+/* 側欄名字過長截尾時,只有結尾是**完整的辨識記號**才固定成尾段,其餘整串尾端截斷(設計稽核 0.1.8 第四批 §1,取代第三批「固定最後 6 個字」:
+   照字數切會切在詞中間——「勢（SOL）」「0 均線交叉」)。依序,命中就停:
+   ① 「（N）」/ " (N)"(撞名另存的那一支,e2e 0.1.8 #37);② 結尾 1–2 個記號、各帶一個分隔字元(空白 / _ / -),記號 = v＋1–3 位數,
+   或 1–3 位數後可接 m／h／d／w(_4h、_4h_v2、" v3");③ 結尾是 v＋1–3 位數、前一個字元不是英數也不是分隔字元(「（SOL）v2」);④ 沒有尾段。
+   尾段超過 8 個字元只留最後一個記號。沒有長度門檻:放得下時頭尾相連、看不出差別。前段尾端的空白歸尾段(尾段是 white-space: pre) */
 function stratNameParts(text) {
-  const s = String(text == null ? "" : text), m = /^(.*\S)(\s?[（(]\d{1,3}[）)])$/.exec(s);
+  const s = String(text == null ? "" : text);
+  let m = /^(.*\S)(\s?[（(]\d{1,3}[）)])$/.exec(s);
   if (m) return { head: m[1], tail: m[2] };
-  const cp = [...s]; if (cp.length <= STRAT_NAME_MAX) return { head: s, tail: "" };
-  let cut = cp.length - STRAT_NAME_TAIL; while (cut > 1 && /\s/.test(cp[cut - 1])) cut--;
-  return { head: cp.slice(0, cut).join(""), tail: cp.slice(cut).join("") };
+  m = /^(.*?[^\s_-])((?:[ _-](?:v\d{1,3}|\d{1,3}[mhdw]?)){1,2})$/i.exec(s) || /^(.*[^A-Za-z0-9\s_-])(v\d{1,3})$/i.exec(s);
+  if (m && [...m[2]].length > 8) { const k = /^(.*[^\s_-])([ _-][^ _-]+)$/.exec(s); m = k ? [s, k[1], k[2]] : null; }
+  return m ? { head: m[1], tail: m[2] } : { head: s, tail: "" };
 }
 function stratNameFill(nm, text) {
   const p = stratNameParts(text);
