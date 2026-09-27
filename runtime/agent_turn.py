@@ -222,15 +222,19 @@ def _read_export(target, path, workspace):
 
 
 _EXPORT_FAIL_NOTE = "轉出檔讀取失敗，請再說一次「重新轉出」。"
+_EXPORT_FAIL_NOTE_CN = "转出档读取失败，请再说一次「重新转出」。"
+_EXPORT_FAIL_NOTE_EN = "Couldn't read the exported file. Say \"export again\" to retry."
 
 
-def extract_exports(text, workspace=None):
+def extract_exports(text, workspace=None, note=None):
     """回傳 (清理後文字, export chunk 清單)。剝掉所有 <export …/> 標記(含格式不合的
     殘留),合法且讀得到的各產一個 chunk;讀不到的不炸正文,但正文尾端補一行提示
-    (多個失敗只補一行)——否則用戶只看到「轉好了」卻沒有檔案下載。"""
+    (多個失敗只補一行)——否則用戶只看到「轉好了」卻沒有檔案下載。
+    note = 這一輪回覆語言的那一句(_export_fail_note);不給就是繁中。"""
     if not text or "<export" not in text:
         return text, []
     workspace = workspace or WORKSPACE
+    fail_note = note or _EXPORT_FAIL_NOTE
     chunks = []
     failed = False
     for target, path in _EXPORT_TAG_RE.findall(text):
@@ -241,8 +245,18 @@ def extract_exports(text, workspace=None):
             failed = True
     cleaned = _EXPORT_STRIP_RE.sub("", text).rstrip()
     if failed:
-        cleaned = f"{cleaned}\n\n{_EXPORT_FAIL_NOTE}" if cleaned else _EXPORT_FAIL_NOTE
+        cleaned = f"{cleaned}\n\n{fail_note}" if cleaned else fail_note
     return cleaned, chunks
+
+
+def _export_fail_note(message, lang=None):
+    """讀檔失敗那一句跟著這一輪的回覆語言(解析同 _fault_message:設定 > ui_lang > 看用戶打的字)。
+    zh / cn 以外的語言一律英文——這句是 runtime 補的,不經模型翻譯。"""
+    if lang == "cn":
+        return _EXPORT_FAIL_NOTE_CN
+    if lang:
+        return _EXPORT_FAIL_NOTE if lang == "zh" else _EXPORT_FAIL_NOTE_EN
+    return _EXPORT_FAIL_NOTE if _is_zh(message or "") else _EXPORT_FAIL_NOTE_EN
 
 
 # ── 導航指引(ui_nav)──────────────────────────────────────────────────────
@@ -2306,7 +2320,7 @@ class WebSink:
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         cleaned, suggestions = extract_suggestions(cleaned)
-        cleaned, exports = extract_exports(cleaned)
+        cleaned, exports = extract_exports(cleaned, note=getattr(self, "export_fail_note", None))
         cleaned = _NAV_STRIP_RE.sub("", cleaned)  # 放錯位置的標記只剝不觸發
         if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
@@ -3460,6 +3474,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                           gave_up=getattr(sink, "stop_gave_up", ()))
         if note:
             sink.on_text(("\n\n" if sink.has_reply() else "") + note)
+    sink.export_fail_note = _export_fail_note(message, reply_lang)
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
     # 被停止的回合也要:下一輪得知道剛才做到哪、哪支還在背景跑。

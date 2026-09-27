@@ -4380,3 +4380,145 @@ msgstr "agent 這一輪還沒去過這個網站，網址卻帶著一大段資料
 
 msgid "br.ask.openAnyway"
 msgstr "仍要開啟"
+
+# 策略轉出(renderer/export.js;spec-desktop-strategy-export-0.1.8)。觸發器、選單、確認框、轉出卡的字照 web 工作頁 workspace_xp_*
+msgid "xp.btn"
+msgstr "轉出程式碼"
+
+msgid "xp.lang.xq"
+msgstr "XS 語言"
+
+msgid "xp.lang.mc"
+msgstr "PowerLanguage"
+
+msgid "xp.lang.pine"
+msgstr "Pine Script"
+
+msgid "xp.off.crypto"
+msgstr "XQ 沒有加密貨幣市場"
+
+msgid "xp.why.tm"
+msgstr "正在看 {v}。轉出只做目前這一版。"
+
+msgid "xp.cf.title.xq"
+msgstr "轉出 XQ（XS）版"
+
+msgid "xp.cf.title.mc"
+msgstr "轉出 MultiCharts（PowerLanguage）版"
+
+msgid "xp.cf.title.pine"
+msgstr "轉出 TradingView（Pine）版"
+
+msgid "xp.cf.body"
+msgstr "轉出的程式碼請先在 {platform} 編譯並回測，確認無誤再使用。"
+
+msgid "xp.cf.ok"
+msgstr "轉出"
+
+msgid "xp.msg.xq"
+msgstr "把策略 {id} 轉成 XQ XS 版，存成 workspace 檔案。"
+
+msgid "xp.msg.mc"
+msgstr "把策略 {id} 轉成 MultiCharts PowerLanguage 版，存成 workspace 檔案。"
+
+msgid "xp.msg.pine"
+msgstr "把策略 {id} 轉成 TradingView Pine Script 版，存成 workspace 檔案。"
+
+msgid "xp.dl"
+msgstr "下載…"
+
+msgid "xp.capHonest"
+msgstr "程式碼由 AI 依模板產生、未在 {platform} 編譯——貼回後請先編譯並回測驗證。"
+
+msgid "xp.view"
+msgstr "在「程式碼」分頁看"
+
+msgid "xp.saved"
+msgstr "已存到「{dir}」"
+
+msgid "xp.dlDir"
+msgstr "下載"
+
+msgid "xp.reveal"
+msgstr "在 Finder 中顯示"
+
+msgid "xp.revealWin"
+msgstr "在檔案總管中顯示"
+
+msgid "xp.saveFail"
+msgstr "存檔失敗，再試一次。"
+
+msgid "xp.copy"
+msgstr "複製程式碼"
+
+msgid "xp.copied"
+msgstr "已複製"
+
+msgid "xp.meta"
+msgstr "{date} 轉出 · 依範本翻譯，未編譯"
+
+msgid "xp.stale"
+msgstr "策略在這份轉出之後改過，程式碼沒有跟上。"
+
+msgid "xp.again"
+msgstr "重新轉出"
+
+msgid "xp.honest"
+msgstr "資料、撮合和手續費算法都不同，{platform} 的回測數字不會跟 Blave 一樣；對照進出場日期，別對照報酬。"
+
+msgid "xp.files"
+msgstr "程式碼檔案"
+
+msgid "xp.steps"
+msgstr "貼進 {platform} 的步驟"
+
+msgid "xp.steps.pine.1"
+msgstr "開一張 {sym}、{ivl}的圖——商品和週期不在程式碼裡。"
+
+msgid "xp.steps.pine.1n"
+msgstr "開一張跟策略相同商品、週期的圖——商品和週期不在程式碼裡。"
+
+msgid "xp.steps.pine.2"
+msgstr "打開 Pine 編輯器，整段換成這份程式碼，加到圖表（需要 TradingView 帳號）。"
+
+msgid "xp.steps.pine.3"
+msgstr "在策略測試器看交易清單。手續費、滑價寫在程式碼開頭的註解。"
+
+msgid "xp.steps.xq.1"
+msgstr "XS 編輯器新增一支「交易」腳本，貼上後編譯。"
+
+msgid "xp.steps.xq.2"
+msgstr "自動交易中心新增策略，商品選 {sym}，執行頻率選{ivl}、還原值。"
+
+msgid "xp.steps.xq.2n"
+msgstr "自動交易中心新增策略，商品與執行頻率照策略的設定，選還原值。"
+
+msgid "xp.steps.xq.3"
+msgstr "日線要勾「自動洗價」才存得了；單邊交易成本照程式碼開頭的註解設。"
+
+msgid "xp.steps.mc.1"
+msgstr "PowerLanguage Editor 新增一支 Signal，貼上後編譯。"
+
+msgid "xp.steps.mc.2"
+msgstr "套到 {sym}、{ivl}的圖上{extra}。"
+
+msgid "xp.steps.mc.2n"
+msgstr "套到跟策略相同商品、週期的圖上{extra}。"
+
+msgid "xp.steps.mc.3"
+msgstr "在策略屬性設手續費、滑價和 Maximum Bars Back——數值寫在程式碼開頭的註解。"
+
+msgid "xp.steps.mc.crypto"
+msgstr "（先在 QuoteManager 加 Binance 資料源）"
+
+msgid "xp.ivl.m"
+msgstr "{n} 分鐘"
+
+msgid "xp.ivl.h"
+msgstr "{n} 小時"
+
+msgid "xp.ivl.d"
+msgstr "日線"
+
+msgid "xp.ivl.w"
+msgstr "週線"

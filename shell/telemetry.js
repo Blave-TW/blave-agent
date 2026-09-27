@@ -34,7 +34,9 @@ const EVENTS = {
     // 報告區讀本機報告時從報告推(renderer/reports.js rptTrackKind):內建範本晨報、news block 的管道
     "morning_tw", "morning_crypto", "news_web", "news_licensed",
     // 報告公開分享(renderer/report-share.js;0.1.8):公開 / 更新成功、取消成功、按「複製連結」
-    "share_publish", "share_revoke", "share_copy"] },
+    "share_publish", "share_revoke", "share_copy",
+    // 策略轉出(renderer/export.js;0.1.8):確認框送出且回合跑起來(依平台)、程式碼分頁複製、下載…存好、在程式碼分頁看轉出檔
+    "export_pine", "export_xq", "export_mc", "export_copy", "export_save", "export_view"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

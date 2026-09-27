@@ -448,7 +448,47 @@ def main(argv):
     if out:
         print(out)
     print("PASS" if rep.ok() else f"FAIL ({len(rep.errors)} errors)")
+    if rep.ok():
+        write_meta(argv[2], argv[3], src)
     return 0 if rep.ok() else 1
+
+
+EXPORT_FILES = {"xq": "xq.xs", "mc": "mc.txt", "pine": "pine.pine"}
+_TEMPLATE_RE = re.compile(r"^\W*(?:Template|Skeleton)\s*:\s*(.+?)\s*$", re.M)
+
+
+def write_meta(target, file_path, src):
+    """A lint pass on strategies/<name>/exports/<xq.xs|mc.txt|pine.pine> writes <file>.meta.json next to it:
+    {target, source_sha256, exported_at, template}. Written here, not by the agent, so it is
+    deterministic. The desktop app compares source_sha256 with the current strategy.py to tell
+    whether the export fell behind (mtime is unreliable: git checkout and folder copies touch it).
+    Any other path (a scratch file, a template) gets no sidecar. Returns the sidecar path or None."""
+    import datetime
+    import hashlib
+    full = os.path.realpath(file_path)
+    exp_dir = os.path.dirname(full)
+    strat_dir = os.path.dirname(exp_dir)
+    if (os.path.basename(full) != EXPORT_FILES[target] or os.path.basename(exp_dir) != "exports"
+            or os.path.basename(os.path.dirname(strat_dir)) != "strategies"):
+        return None
+    try:
+        with open(os.path.join(strat_dir, "strategy.py"), "rb") as fh:
+            sha = hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        return None
+    m = _TEMPLATE_RE.search("\n".join(src.splitlines()[:20]))
+    meta = {"target": target, "source_sha256": sha,
+            "exported_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "template": m.group(1)[:80] if m else None}
+    out = full + ".meta.json"
+    try:
+        with open(out + ".tmp", "w", encoding="utf-8") as fh:
+            json.dump(meta, fh)
+        os.replace(out + ".tmp", out)
+    except OSError as e:
+        print(f"meta not written: {e}", file=sys.stderr)
+        return None
+    return out
 
 
 if __name__ == "__main__":

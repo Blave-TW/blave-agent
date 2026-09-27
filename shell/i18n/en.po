@@ -4379,3 +4379,145 @@ msgstr "This site hasn't come up this turn, and the address carries a block of d
 
 msgid "br.ask.openAnyway"
 msgstr "Open anyway"
+
+# 策略轉出(renderer/export.js;spec-desktop-strategy-export-0.1.8)。觸發器、選單、確認框、轉出卡的字照 web 工作頁 workspace_xp_*
+msgid "xp.btn"
+msgstr "Export Code"
+
+msgid "xp.lang.xq"
+msgstr "XS language"
+
+msgid "xp.lang.mc"
+msgstr "PowerLanguage"
+
+msgid "xp.lang.pine"
+msgstr "Pine Script"
+
+msgid "xp.off.crypto"
+msgstr "XQ has no crypto market"
+
+msgid "xp.why.tm"
+msgstr "Viewing {v}. Only the current version can be exported."
+
+msgid "xp.cf.title.xq"
+msgstr "Export to XQ (XS)"
+
+msgid "xp.cf.title.mc"
+msgstr "Export to MultiCharts (PowerLanguage)"
+
+msgid "xp.cf.title.pine"
+msgstr "Export to TradingView (Pine)"
+
+msgid "xp.cf.body"
+msgstr "Compile and backtest the exported code in {platform} before using it."
+
+msgid "xp.cf.ok"
+msgstr "Export"
+
+msgid "xp.msg.xq"
+msgstr "Convert strategy {id} to XQ XS and save it as a workspace file."
+
+msgid "xp.msg.mc"
+msgstr "Convert strategy {id} to MultiCharts PowerLanguage and save it as a workspace file."
+
+msgid "xp.msg.pine"
+msgstr "Convert strategy {id} to TradingView Pine Script and save it as a workspace file."
+
+msgid "xp.dl"
+msgstr "Download…"
+
+msgid "xp.capHonest"
+msgstr "AI-generated from a template, not compiled in {platform} — compile and backtest it there before use."
+
+msgid "xp.view"
+msgstr "Open in Code tab"
+
+msgid "xp.saved"
+msgstr "Saved to {dir}"
+
+msgid "xp.dlDir"
+msgstr "Downloads"
+
+msgid "xp.reveal"
+msgstr "Show in Finder"
+
+msgid "xp.revealWin"
+msgstr "Show in File Explorer"
+
+msgid "xp.saveFail"
+msgstr "Couldn't save the file. Try again."
+
+msgid "xp.copy"
+msgstr "Copy Code"
+
+msgid "xp.copied"
+msgstr "Copied"
+
+msgid "xp.meta"
+msgstr "Exported {date} · Translated from a template, not compiled"
+
+msgid "xp.stale"
+msgstr "The strategy changed after this export; this code doesn't reflect it."
+
+msgid "xp.again"
+msgstr "Export Again"
+
+msgid "xp.honest"
+msgstr "Data, fills and fees differ, so {platform}'s backtest won't match Blave's. Compare trade dates, not returns."
+
+msgid "xp.files"
+msgstr "Code files"
+
+msgid "xp.steps"
+msgstr "Steps for {platform}"
+
+msgid "xp.steps.pine.1"
+msgstr "Open a {sym} {ivl} chart — symbol and timeframe aren't part of the script."
+
+msgid "xp.steps.pine.1n"
+msgstr "Open a chart with the strategy's symbol and timeframe — they aren't part of the script."
+
+msgid "xp.steps.pine.2"
+msgstr "Open the Pine Editor, replace everything with this code, add it to the chart (needs a TradingView account)."
+
+msgid "xp.steps.pine.3"
+msgstr "Check the trade list in the Strategy Tester. Fees and slippage are in the header comment."
+
+msgid "xp.steps.xq.1"
+msgstr "In the XS editor, create a trading script, paste, compile."
+
+msgid "xp.steps.xq.2"
+msgstr "In the auto-trading center, add a strategy on {sym}, frequency {ivl}, adjusted prices."
+
+msgid "xp.steps.xq.2n"
+msgstr "In the auto-trading center, add a strategy with the strategy's symbol and frequency, adjusted prices."
+
+msgid "xp.steps.xq.3"
+msgstr "Daily strategies need auto tick-replay checked to save; set per-side cost from the header comment."
+
+msgid "xp.steps.mc.1"
+msgstr "In PowerLanguage Editor, create a new Signal, paste, compile."
+
+msgid "xp.steps.mc.2"
+msgstr "Apply it to a {sym} {ivl} chart{extra}."
+
+msgid "xp.steps.mc.2n"
+msgstr "Apply it to a chart with the strategy's symbol and timeframe{extra}."
+
+msgid "xp.steps.mc.3"
+msgstr "Set commission, slippage and Maximum Bars Back in Strategy Properties — values are in the header comment."
+
+msgid "xp.steps.mc.crypto"
+msgstr " (add the Binance data source in QuoteManager first)"
+
+msgid "xp.ivl.m"
+msgstr "{n}-min"
+
+msgid "xp.ivl.h"
+msgstr "{n}h"
+
+msgid "xp.ivl.d"
+msgstr "daily"
+
+msgid "xp.ivl.w"
+msgstr "weekly"

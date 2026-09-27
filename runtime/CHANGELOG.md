@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **轉出檔讀不到那一句跟著回覆語言(spec-desktop-strategy-export-0.1.8 §6-3)**:`_EXPORT_FAIL_NOTE` 原本只有繁中,
+  英文介面叫 agent 轉 Pine 讀檔失敗也拿到中文。`_export_fail_note(message, reply_lang)` 同 `_fault_message` 的解析
+  (設定 > 看用戶打的字;zh / cn / 其餘一律英文),run_turn 在 finalize 前掛到 sink 上;`extract_exports` 多一個
+  `note=` 參數,不給仍是繁中(api `tests/check_export_marker.py` 不受影響)。測試 `tests/check_export_fail_note_lang.py`。
+
 ## 1.1.101 — 2026-09-27
 
 - **DeepSeek 排程的固定來源加回鉅亨列表頁+官方公告頁(Wei 09-27 拍板)**:鉅亨授權涵蓋抓其網站

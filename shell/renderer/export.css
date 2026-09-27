@@ -1,0 +1,86 @@
+/* 策略轉出(renderer/export.js;spec-desktop-strategy-export-0.1.8)。不新增 token、不新增元件類型:
+   觸發器 = Outlined control + canon chevron(同 web .xp-chip)、選單 = Dropdown menu(Terminal metrics)、
+   轉出卡 = web .xp 同一組色階(bg-body 落在聊天欄的 surface-card 上,無框無陰影)、檔案切換 = 策略庫 .lib-seg。 */
+
+/* ── 分頁列右端的觸發器 ── */
+.xp-dd { position: relative; margin-left: auto; display: inline-flex; align-self: center; }
+.xp-dd[hidden] { display: none; }
+.xp-chip {
+  position: relative; display: inline-flex; align-items: center; height: 30px; padding: 0 var(--space-12);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-xs); color: var(--ink-2); font-size: 12px; white-space: nowrap;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.xp-chip::before { content: ""; position: absolute; inset: -8px -1px; }   /* 30 → 44 熱區:pseudo 錨在 padding box(扣掉 1px 邊框剩 28),所以是 -8 */
+.xp-chip:hover { background: var(--surface-muted); color: var(--ink); }
+.xp-chip[aria-disabled="true"] { color: var(--ink-3); cursor: default; }
+.xp-chip[aria-disabled="true"]:hover { background: transparent; }
+/* canon 的 CSS chevron:開啟翻上,開 / 關各自 translateY 補墨跡重心 */
+.xp-cv {
+  flex: none; width: 7px; height: 7px; margin-left: var(--space-8);
+  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: translateY(-2px) rotate(45deg); transition: transform var(--motion-fast) var(--ease-standard);
+}
+.xp-dd.is-open .xp-cv { transform: translateY(1px) rotate(-135deg); }
+.xp-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; min-width: 264px; padding: var(--space-6);
+  background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+}
+.xp-menu[hidden] { display: none; }
+.xp-it {
+  display: block; width: 100%; padding: var(--space-6) 10px; border-radius: var(--radius-xs);
+  color: var(--ink-2); font-size: 13px; line-height: 1.5; text-align: left; white-space: nowrap;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.xp-it:hover, .xp-it:focus-visible { background: var(--surface-muted); color: var(--ink); }
+.xp-it .lang, .xp-off .lang { color: var(--ink-3); }
+.xp-it:hover .lang, .xp-it:focus-visible .lang { color: var(--ink-2); }
+/* Unavailable info 列:不可點、字 400 灰,下一行講原因 */
+.xp-off { padding: var(--space-6) 10px; font-size: 13px; line-height: 1.5; color: var(--ink-3); white-space: nowrap; }
+.xp-off .d { display: block; font-size: 12px; }
+/* 不能按時點了講原因(canon › Disabled 具名例外):分頁列下一行,換分頁或狀態解除即收 */
+.xp-note { margin: 0; padding: var(--space-8) var(--space-24) 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.xp-note[hidden] { display: none; }
+
+/* ── 對話裡的轉出卡(同 web .msg.ai .xp:左檔名 + 平台·語言·大小,右一顆下載) ── */
+.msg.ai .xp-wrap { margin: var(--space-12) 0 0; }
+.msg.ai .xp {
+  display: flex; align-items: center; gap: var(--space-12); margin: 0 0 var(--space-6); padding: var(--space-12);
+  background: var(--bg-body); border-radius: var(--radius-md);
+}
+.xp .f { flex: 1; min-width: 0; }
+.xp .fn { display: block; font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xp .ft { display: block; margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.xp .ft .mono { white-space: nowrap; }   /* 窄聊天欄換行時「1.8 KB」整段一起走,不拆成兩行 */
+.msg.ai .xp-cap { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.xp-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-16); margin-top: var(--space-8); }
+.xp-st { font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.xp-st:empty { display: none; }
+.xp-st.err { color: var(--color-redText); }
+.xp-st .btn-quiet { margin-left: var(--space-6); font-size: inherit; }
+.xp-ok { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.btn-fill:has(.xp-ok), .btn-out:has(.xp-ok) { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-6); }
+
+/* ── 「程式碼」分頁:檔案切換 + 轉出檔 ── */
+.xp-bar { margin-bottom: var(--space-12); }
+.xp-bar[hidden], .xp-view[hidden], #rp-code-pre[hidden] { display: none; }
+.xv-meta { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.xv-meta.stale { color: var(--ink-2); }   /* 過期不是錯誤:不用紅,升一階讓它被讀到 */
+.xv-honest { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); max-width: 64em; }
+.xv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-16); margin-top: var(--space-12); }
+.xv-acts .grp { display: flex; gap: var(--space-8); }
+#xp-again[aria-disabled="true"] { opacity: 1; background: var(--surface-muted); color: var(--ink-3); cursor: default; }
+.xv-steps { margin: var(--space-12) 0 var(--space-16); }
+.xv-steps > button { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); min-height: 32px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.xv-steps > button::before { content: ""; position: absolute; inset: -6px -4px; }
+.xv-steps > button:hover { color: var(--ink); }
+.xv-steps .cv {
+  width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--motion-fast) var(--ease-standard);
+}
+.xv-steps > button[aria-expanded="true"] .cv { transform: translateY(-2px) rotate(45deg); }
+.xv-steps ol { margin: var(--space-4) 0 0; padding: 0 0 0 var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); max-width: 64em; }
+.xv-steps ol[hidden] { display: none; }
+.xv-steps li { margin-bottom: var(--space-4); padding-left: var(--space-4); }
+.xv-steps li::marker { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.xv-code { border-top: 1px solid var(--border-hairline); padding-top: var(--space-12); }
+.xp-ext:empty { display: none; }   /* Pine 的動作槽(export.js xpExt):之後「裝進 TradingView」放這裡,今天不佔版面 */

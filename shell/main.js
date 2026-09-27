@@ -812,7 +812,8 @@ function stratMeta(code) {
     return m && m[2].trim() ? m[2].trim().slice(0, 200) : null;
   };
   // STRATEGY_NAME:組合的 key 是它(不一定等於資料夾名,runtime `_cmd_delete_strategy` 也照它比)
-  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION"), strategyName: pick("STRATEGY_NAME") };
+  // SYMBOL / INTERVAL:轉出的貼上步驟與「加密 → XQ」判斷用(renderer/export.js)
+  return { displayName: pick("DISPLAY_NAME"), description: pick("DESCRIPTION"), strategyName: pick("STRATEGY_NAME"), symbol: pick("SYMBOL"), interval: pick("INTERVAL") };
 }
 
 /* 這支策略程式會不會自己下單(Type B 那一種:AGENTS.md 規定交易所下單一律走 lib/order_*、執行走 lib/execute,
@@ -883,7 +884,69 @@ function loadStrategy(name) {
   try { scan = JSON.parse(fs.readFileSync(path.join(dir, "scan.json"), "utf8")); } catch (_) {}
   if (!scan || typeof scan !== "object" || Array.isArray(scan)) scan = null;
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, scan, code, dataSources: stratDataSources(dir), ...stratMeta(code) };
+  return { name, stats, scan, code, dataSources: stratDataSources(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+}
+/* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。
+   讀檔規則同 runtime `_read_export`:regular file、≤256KB;讀不到那一份就當沒有(不猜、不報錯)。
+   stale = 策略在轉出之後改過:有 lint 寫的 sidecar 就比 sha256(mtime 會被 git checkout / 複製資料夾誤觸),沒有才比 mtime。 */
+const EXPORT_FILES = { xq: "xq.xs", mc: "mc.txt", pine: "pine.pine" };
+const EXPORT_MAX = 256 * 1024;
+function readExportFile(dir, target) {
+  const p = path.join(dir, "exports", EXPORT_FILES[target]);
+  try {
+    const st = fs.lstatSync(p);
+    if (!st.isFile() || st.size > EXPORT_MAX) return null;
+    const content = fs.readFileSync(p, "utf8");
+    return Buffer.byteLength(content, "utf8") > EXPORT_MAX ? null : { p, content, mtime: st.mtimeMs };
+  } catch (_) { return null; }
+}
+function stratExports(dir, code) {
+  let codeMtime = 0; try { codeMtime = fs.statSync(path.join(dir, "strategy.py")).mtimeMs; } catch (_) {}
+  const sha = require("crypto").createHash("sha256").update(Buffer.from(code || "", "utf8")).digest("hex");
+  const out = [];
+  for (const target of Object.keys(EXPORT_FILES)) {
+    const f = readExportFile(dir, target); if (!f) continue;
+    let meta = null;
+    try { const st = fs.lstatSync(f.p + ".meta.json"); if (st.isFile() && st.size < 4096) meta = JSON.parse(fs.readFileSync(f.p + ".meta.json", "utf8")); } catch (_) {}
+    const hash = meta && typeof meta.source_sha256 === "string" && /^[0-9a-f]{64}$/.test(meta.source_sha256) ? meta.source_sha256 : null;
+    const at = meta && typeof meta.exported_at === "string" ? Date.parse(meta.exported_at) : NaN;
+    out.push({ target, content: f.content, exportedAt: isFinite(at) ? at : f.mtime, stale: hash ? hash !== sha : codeMtime > f.mtime });
+  }
+  return out;
+}
+// 資料夾裡任一支 .py 用到 fetch_kline(Binance USDT-M)= 加密;XQ 沒有加密市場(掃法同 stratDataSources)
+function stratUsesKline(dir) {
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".py")).slice(0, 50); } catch (_) { return false; }
+  return files.some((f) => { try { const p = path.join(dir, f); return fs.lstatSync(p).isFile() && /\bfetch_kline\b/.test(fs.readFileSync(p, "utf8")); } catch (_) { return false; } });
+}
+/* 「下載…」:主行程自己讀檔、自己開存檔框、自己寫。renderer 只給策略名與 target,不給內容、不給路徑
+   (它會渲染 LLM 的文字,不能讓它決定寫哪個檔、寫什麼)。走存檔框而不是直接寫進「下載」:macOS 對直接寫
+   ~/Downloads 會跳一次檔案存取權限,存檔框是用戶自己選的位置、不經那一關。
+   回 { ok, dir, token }:token 給「在 Finder 中顯示」用,只認這裡存過的路徑。 */
+const savedExports = new Map();   // token → 存好的完整路徑(只在記憶體)
+/* ref = { session, id }:對話裡那張卡 → 存的是那一輪轉出時的快照(同 web:卡下載的是那則訊息帶的內容);
+   ref = { strategy, target }:程式碼分頁 → 存的是 workspace 裡現在那一份 */
+async function saveExport(win, ref) {
+  let name, target, f;
+  if (ref && typeof ref.id === "string") {
+    const r = exportById(ref.session, ref.id); if (!r) return { ok: false };
+    name = r.strategy; target = r.target; f = readSnap(r.snap);
+  } else {
+    name = String((ref && ref.strategy) || ""); target = String((ref && ref.target) || "");
+    if (!stratNames().includes(name) || !EXPORT_FILES[target]) return { ok: false };
+    f = readExportFile(path.join(STRAT_DIR(), name), target);
+  }
+  if (!f) return { ok: false };
+  const ext = EXPORT_FILES[target].split(".").pop();
+  const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath("downloads"), `${name}_${target}.${ext}`) });
+  if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+  try { fs.writeFileSync(r.filePath, f.content, "utf8"); } catch (_) { return { ok: false }; }
+  const token = require("crypto").randomBytes(8).toString("hex");
+  savedExports.set(token, r.filePath);
+  if (savedExports.size > 50) savedExports.delete(savedExports.keys().next().value);
+  const dir = path.dirname(r.filePath);   // 「下載」回 null:資料夾在磁碟上叫 Downloads,Finder 顯示的是系統語言的名字,由畫面翻
+  return { ok: true, dir: dir === app.getPath("downloads") ? null : path.basename(dir), token };
 }
 /* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的
    `grep -oE "DATA_[A-Z0-9]+_" strategies/<name>/*.py` —— 只掃 strategy.py 的話,helper 檔用到的來源會被漏講(稽核 C1)。
@@ -969,6 +1032,7 @@ function deleteSession(id) {
     db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
     try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
     try { fs.rmSync(path.join(BASE, "state", "browser-snapshots", id), { recursive: true, force: true }); } catch (_) { /* 瀏覽器快照同上 */ }
+    try { fs.rmSync(path.join(XP_DIR, id), { recursive: true, force: true }); } catch (_) { /* 轉出卡的快照同上 */ }
     return true;
   } catch (_) { return false; } finally { db.close(); }
 }
@@ -1033,6 +1097,56 @@ function loadSessionImages(id) {
     } catch (_) { /* 壞掉的一列跳過 */ }
   }
   return out;
+}
+
+/* ── 聊天裡的轉出卡(runtime 的 export chunk)──────────────────────
+   web 把 export 跟那則訊息一起存(history 的 exports[]),重開照畫;session.db 是 runtime 的、只存文字,所以同聊天圖:
+   state/chat-exports/<session>/ 放那一輪轉出時的快照 + index.jsonl。index 在回合結束才寫、ts = 結束時間:
+   排在那一輪回覆(runtime 在結束前寫進逐字稿)之後,renderer 照時間把卡掛回那則回覆下面。
+   recentExports = 這次開 app 以來每支策略每個平台最新那一份:給主行程其他地方讀(之後內建瀏覽器「裝進 TradingView」要檔案路徑)。
+   路徑一律由策略名 + 固定檔名重建,不信 chunk 給的字。 */
+const XP_DIR = path.join(BASE, "state", "chat-exports");
+const XP_ID_RE = /^[0-9]{13}-[0-9]{1,6}$/;
+const recentExports = new Map();   // `${strategy}:${target}` → { id, sessionId, strategy, target, filename, size, src(workspace 檔), snap(快照) }
+let xpSeq = 0;
+function noteExport(c, sid) {
+  if (!c || !EXPORT_FILES[c.target] || typeof c.strategy !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(c.strategy) || typeof c.content !== "string" || !okSessionId(sid)) return null;
+  const size = Buffer.byteLength(c.content, "utf8"); if (!size || size > EXPORT_MAX) return null;
+  const ext = EXPORT_FILES[c.target].split(".").pop(), id = `${Date.now()}-${++xpSeq}`, dir = path.join(XP_DIR, sid);
+  try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, `${id}.${ext}`), c.content, { encoding: "utf8", mode: 0o600 }); } catch (_) { return null; }
+  const rec = { id, sessionId: sid, strategy: c.strategy, target: c.target, filename: `${c.strategy}_${c.target}.${ext}`, size,
+    src: path.join(STRAT_DIR(), c.strategy, "exports", EXPORT_FILES[c.target]), snap: path.join(dir, `${id}.${ext}`) };
+  recentExports.set(c.strategy + ":" + c.target, rec);
+  return rec;
+}
+function flushExports(sid, recs) {
+  if (!recs.length || !okSessionId(sid)) return;
+  const ts = Date.now() / 1000;
+  try { fs.appendFileSync(path.join(XP_DIR, sid, "index.jsonl"), recs.map((r) => JSON.stringify({ ts, id: r.id, target: r.target, strategy: r.strategy, size: r.size }) + "\n").join("")); } catch (_) { /* 寫不進去:這一輪的卡重開不會回來,檔案仍在策略資料夾 */ }
+}
+function sessionExports(sid) {
+  if (!okSessionId(sid)) return [];
+  let lines = [];
+  try { lines = fs.readFileSync(path.join(XP_DIR, sid, "index.jsonl"), "utf8").split("\n").filter(Boolean); } catch (_) { return []; }
+  const out = [];
+  for (const l of lines) {
+    try {
+      const r = JSON.parse(l);
+      if (!XP_ID_RE.test(r.id) || !EXPORT_FILES[r.target] || !/^[A-Za-z0-9_-]{1,64}$/.test(r.strategy) || !(Number(r.ts) > 0)) continue;
+      const ext = EXPORT_FILES[r.target].split(".").pop();
+      out.push({ ts: Number(r.ts), id: r.id, target: r.target, strategy: r.strategy, filename: `${r.strategy}_${r.target}.${ext}`,
+        size: Number(r.size) || 0, snap: path.join(XP_DIR, sid, `${r.id}.${ext}`), src: path.join(STRAT_DIR(), r.strategy, "exports", EXPORT_FILES[r.target]) });
+    } catch (_) { /* 壞掉的一列跳過 */ }
+  }
+  return out;
+}
+// 舊對話的轉出卡:[{ts, id, target, strategy, filename, size}](路徑不交給畫面)
+function loadSessionExports(sid) { return sessionExports(sid).map(({ ts, id, target, strategy, filename, size }) => ({ ts, id, target, strategy, filename, size })); }
+function exportById(sid, id) { return typeof id === "string" && XP_ID_RE.test(id) ? sessionExports(sid).find((r) => r.id === id) || null : null; }
+// 主行程其他地方讀這一份:這支策略這個平台最近一次轉出(這次開 app 以來);沒有就回 null
+function exportRef(strategy, target) { return recentExports.get(strategy + ":" + target) || null; }
+function readSnap(p) {
+  try { const st = fs.lstatSync(p); if (!st.isFile() || st.size > EXPORT_MAX) return null; return { p, content: fs.readFileSync(p, "utf8"), mtime: st.mtimeMs }; } catch (_) { return null; }
 }
 
 /* ── 報告(renderer/reports.js;spec-desktop-0.1.6 §1.1)────────────────────────────
@@ -1751,6 +1865,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } turnDone(); throw err; }   // 不留一支卡在讀 stdin 的子行程
   activeTurn = child;
   let buf = "";
+  const turnXp = [];   // 這一輪的轉出卡:回合結束才寫進 index(ts 要排在回覆之後)
   child.stdout.on("data", (d) => {
     turnLastOut = Date.now();
     buf += d.toString();
@@ -1758,7 +1873,11 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (line.startsWith("@@BLAVE@@")) {
-        try { const c = JSON.parse(line.slice(9)); if (c && c.type === "done") turnFinalized = true; win.webContents.send("turn-event", c); } catch (_) {}
+        try {
+          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") turnFinalized = true;
+          if (c && c.type === "export") { const rec = noteExport(c, sessionId); if (rec) { c.id = rec.id; turnXp.push(rec); } }   // 卡重開要畫回來:快照先落地,id 給卡的「下載…」
+          win.webContents.send("turn-event", c);
+        } catch (_) {}
       }
     }
   });
@@ -1767,6 +1886,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   child.on("close", (code) => {
     turnDone();   // 這一輪結束:設定檔(裡面是接入碼 / 瀏覽器 token)立刻刪,瀏覽器 token 作廢
     activeTurn = null;
+    flushExports(sessionId, turnXp);
     // 視窗可能已經關掉了(結束時回合才收尾):送到已銷毀的 webContents 會丟例外
     if (!win.isDestroyed()) win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
   });
@@ -1873,6 +1993,9 @@ app.whenReady().then(() => {
   handle("delete-session", (_e, id) => deleteSession(id));
   handle("list-strategies", () => listStrategies());
   handle("load-strategy", (_e, name) => loadStrategy(String(name || "")));
+  handle("save-export", (e, ref) => saveExport(BrowserWindow.fromWebContents(e.sender), ref && typeof ref === "object" ? ref : null), { ok: false });
+  handle("load-session-exports", (_e, id) => loadSessionExports(id));
+  handle("reveal-export", (_e, token) => { const p = savedExports.get(String(token || "")); if (!p || !fs.existsSync(p)) return false; shell.showItemInFolder(p); return true; }, false);
   handle("model-options", (_e, kind) => modelOptions(kind));
   handle("account-status", () => accountStatus());
   handle("public-pricing", () => publicPricing());

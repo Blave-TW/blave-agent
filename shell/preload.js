@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld("blave", {
   deleteSession: (id) => ipcRenderer.invoke("delete-session", id),
   listStrategies: () => ipcRenderer.invoke("list-strategies"),
   loadStrategy: (name) => ipcRenderer.invoke("load-strategy", name),
+  // 轉出檔「下載…」:主行程讀檔 + 開存檔框。ref = { session, id }(對話裡那張卡的快照)或 { strategy, target }(程式碼分頁);不過內容、不過路徑
+  saveExport: (ref) => ipcRenderer.invoke("save-export", ref ? { session: ref.session, id: ref.id, strategy: ref.strategy, target: ref.target } : null),
+  revealExport: (token) => ipcRenderer.invoke("reveal-export", token),   // 只收 saveExport 回的 token
+  loadSessionExports: (id) => ipcRenderer.invoke("load-session-exports", id),
   accountStatus: () => ipcRenderer.invoke("account-status"),
   planStart: () => ipcRenderer.invoke("plan-start"),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
