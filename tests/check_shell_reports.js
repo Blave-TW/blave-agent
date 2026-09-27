@@ -74,7 +74,7 @@ if (!process.versions.electron) {
   const M = {}; vm.createContext(M);
   const lines = (re) => mainSrc.split("\n").filter((l) => re.test(l)).map((l) => l.replace(/^(const|let) /, "var ")).join("\n");
   vm.runInContext("var fs = require('fs'), path = require('path'), WS = " + JSON.stringify(ws) + ", ACCT_FRESH_MS = 300000;\n" + lines(/^const RPT_|^const rptDirs = |^let rptCloudList|^const rptCloudDocs/) + "\n"
-    + ["rptEnvelope", "rptReadDoc", "rptImageUri", "reportsList", "reportLoad", "rptCloudInvalidate"].map((n) => cutFn(mainSrc, n)).join("\n") + "\n" + ["cloudReports", "cloudReport"].map((n) => "async " + cutFn(mainSrc, n)).join("\n"), Object.assign(M, { require }));
+    + ["rptEnvelope", "rptReadDoc", "rptImageB64", "rptImageUri", "reportsList", "reportLoad", "rptCloudInvalidate"].map((n) => cutFn(mainSrc, n)).join("\n") + "\n" + ["cloudReports", "cloudReport"].map((n) => "async " + cutFn(mainSrc, n)).join("\n"), Object.assign(M, { require }));
   const L = M.reportsList();
   ok("② reportsList:只認 <id>.json(.tmp / 子目錄 / 壞檔名 / 壞 JSON / 陣列 / 超過 2 MB 略過)、id 缺用檔名、id 對不上與沒標題略過、sent/ 也掃、同 id 以 drop dir 為準、failed/ 不掃;新到舊;標題去控制字元 / 截 200",
     L.reports.map((r) => r.id).join().replace("big,b", "b,big").replace("b,big", "b,big") && L.reports.slice(0, 2).map((r) => r.id).join() === "a,g" && L.reports.slice(2, 4).map((r) => r.id).sort().join() === "b,big" && L.reports[4].id === "img" && L.reports[0].title === "A 題目 x" && L.reports[0].type === "performance" && L.reports[1].type === "morning" && L.reports[2].type === null
@@ -133,9 +133,9 @@ if (!process.versions.electron) {
     ok("② 過了 5 分鐘重打;沒登入 → UNREACH 不打;rptCloudInvalidate 清掉之後再問就重打", c5 !== c4 && (await M.cloudReports(false)).code === "UNREACH" && (() => { tok = "U"; M.rptCloudInvalidate(); const n = hostCalls.length; return M.cloudReports(false).then((c6) => c6 !== c5 && hostCalls.length === n + 1); })());
   })().then(() => {
     // ── ③ 接線 ──
-    ok("③ index.html:側欄「報告」#rpt-nav 在「策略庫」後、同一個 #side-nav 裡;#rpt 在 #lib 後、#main-empty 前;兩個 css;script 順序 report-robust → report-blocks → reports → newstrategy → trade",
+    ok("③ index.html:側欄「報告」#rpt-nav 在「策略庫」後、同一個 #side-nav 裡;#rpt 在 #lib 後、#main-empty 前;兩個 css;script 順序 report-robust → report-blocks → reports →(0.1.8 report-share)→ newstrategy → trade",
       html.indexOf('id="rpt-nav"') > html.indexOf('id="lib-nav"') && html.indexOf('id="rpt-nav"') < html.indexOf("</nav>") && html.indexOf('id="rpt"') > html.indexOf('id="lib"') && html.indexOf('id="rpt"') < html.indexOf('id="main-empty"')
-      && /<link rel="stylesheet" href="report-blocks\.css">\s*<link rel="stylesheet" href="reports\.css">/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-blocks\.js"><\/script>\s*<script src="reports\.js"><\/script>\s*<script src="newstrategy\.js"><\/script>\s*<script src="trade\.js">/.test(html));
+      && /<link rel="stylesheet" href="report-blocks\.css">\s*<link rel="stylesheet" href="reports\.css">/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-blocks\.js"><\/script>\s*<script src="reports\.js"><\/script>\s*<script src="report-share\.js"><\/script>\s*<script src="newstrategy\.js"><\/script>\s*<script src="trade\.js">/.test(html));
     ok("③ #rpt 的骨架:region + aria-labelledby 到 h5、h5 tabindex=-1、工具列份數 + #rpt-ask(aria-haspopup、aria-label rpt.askAria、字由 JS 寫)、#rpt-msg、返回鈕(hidden)、#rpt-body tabindex=0、#rpt-state role=status、#rpt-read(hidden)",
       /<div class="rpt" id="rpt" role="region" aria-labelledby="rpt-h" hidden>/.test(html) && /<h5 class="main-head-name" id="rpt-h" tabindex="-1" data-i18n="rpt\.nav">/.test(html) && /<span class="rpt-count" id="rpt-count"><\/span>/.test(html)
       && /<button class="btn-out has-ic" id="rpt-ask" type="button" aria-haspopup="dialog" data-i18n-aria="rpt\.askAria"><svg[^>]*>[\s\S]*?<\/svg><span id="rpt-ask-t"><\/span><\/button>/.test(html) && !/id="rpt-ask-t" data-i18n/.test(html)

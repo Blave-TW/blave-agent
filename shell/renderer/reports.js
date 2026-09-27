@@ -72,7 +72,7 @@ function rptCtx(env) {
 function rptI18n(env) {
   const where = t(env === "cloud" ? "lib.where.cloud" : "lib.where.local");
   return { originScheduled: t("rb.originScheduled"), originChat: t("rb.originChat"), machine: t("rb.machine"), footScheduled: t("rb.footScheduled", { where }), footChat: t("rb.footChat", { where }),
-    metaPeriod: t("rb.metaPeriod"), metaAum: t("rb.metaAum"), metaBenchmark: t("rb.metaBenchmark"), calloutRisk: t("rb.calloutRisk"), footnoteRef: t("rb.footnoteRef"), imageError: t("rb.imageError"), segOther: t("rb.segOther"),
+    metaPeriod: t("rb.metaPeriod"), metaAum: t("rb.metaAum"), metaBenchmark: t("rb.metaBenchmark"), calloutRisk: t("rb.calloutRisk"), footnoteRef: t("rb.footnoteRef"), imageError: t("rb.imageError"), imageSource: t("rb.imageSource"), segOther: t("rb.segOther"),
     newsPos: t("rb.newsPos"), newsNeg: t("rb.newsNeg"), newsNeutral: t("rb.newsNeutral"), estModel: t("rb.estModel") };
 }
 
@@ -223,6 +223,7 @@ async function rptCloudPollTick() {
 function rptPaint() {
   const env = libEnv(), B = rptBag(env); RPT.paintedEnv = env;
   const reading = !!B.reading;
+  if (typeof shrClear === "function") shrClear();   // 分享入口與公開列跟著這一份走(report-share.js);畫好本體後 rptRender 再掛回來
   $("rpt-head-list").hidden = reading; $("rpt-back").hidden = !reading; $("rpt-read").hidden = !reading;
   if (reading) { $("rpt-rows").textContent = ""; $("rpt-state").hidden = true; $("rpt-state").textContent = ""; rptFetch(env, B.reading); }
   else { $("rpt-read").textContent = ""; rptPaintList(); $("rpt-body").scrollTop = B.scroll || 0; }
@@ -348,6 +349,8 @@ async function rptFetch(env, id) {
 function rptRender(env, doc, host) {
   try {
     window.renderAgentReport(host, doc.report, { apiBase: "", i18n: rptI18n(env), imageUrl: (ref) => doc.images[ref] || "", markdown: rptMarkdown });   // 空 src → onerror → 渲染器自己的失敗框
+    const rid = rptBag(env).reading;
+    if (rid && typeof shrDecorate === "function") try { shrDecorate(env, rid, doc.report, host); } catch (_) { }   // 分享壞掉不能讓已畫好的報告被當成讀取失敗
     libTrack("reports_read");
     if (env === "local") rptTrackKind(doc.report);
   } catch (_) {

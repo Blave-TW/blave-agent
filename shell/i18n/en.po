@@ -3585,6 +3585,154 @@ msgstr "Neutral"
 msgid "rb.estModel"
 msgstr "Est. liquidation (model)"
 
+# image block 引用圖的來源行前綴(spec-report-image-cite-0.1.8 §2)
+msgid "rb.imageSource"
+msgstr "Source"
+
+# 報告公開分享(spec-share-0.1.8 DT1–DT5;renderer/report-share.js)。未另註的字逐字同 web 的 workspace_share_*
+msgid "shr.btn"
+msgstr "Share"
+
+msgid "shr.live"
+msgstr "Public"
+
+msgid "shr.copy"
+msgstr "Copy link"
+
+msgid "shr.copied"
+msgstr "Copied"
+
+msgid "shr.revoke"
+msgstr "Stop sharing"
+
+msgid "shr.version"
+msgstr "Public version: {time}. Anyone with the link can view it; stopping breaks the link right away."
+
+msgid "shr.stale"
+msgstr "The agent updated this report at {time}; the public page still shows the {day} version."
+
+msgid "shr.updateCheck"
+msgstr "Review and update public version"
+
+msgid "shr.revokeTitle"
+msgstr "Stop sharing this report?"
+
+msgid "shr.revokeBody"
+msgstr "The link stops working right away; publishing again creates a new link. Copies already reposted or cached in link previews can't be recalled."
+
+msgid "shr.revokeOk"
+msgstr "Stop sharing"
+
+# 取消分享確認框的取消鈕(mockup DT4;「取消 / 取消分享」並排讀不出哪顆是留著)
+msgid "shr.keep"
+msgstr "Keep sharing"
+
+msgid "shr.revokeFailed"
+msgstr "Couldn't stop sharing. Please try again shortly."
+
+msgid "shr.dlgTitle"
+msgstr "Publish this report"
+
+msgid "shr.dlgTitleUpdate"
+msgstr "Update the public version"
+
+msgid "shr.introSame"
+msgstr "The link stays the same."
+
+msgid "shr.lpvLabel"
+msgstr "Link preview"
+
+# 連結預覽的 og:title 前綴與縮圖標籤行(= web rs_og_prefix / rs_og_prefix_morning 與 og 固定圖)
+msgid "shr.ogPrefix.research"
+msgstr "Research report | "
+
+msgid "shr.ogPrefix.morning"
+msgstr "Market report | "
+
+msgid "shr.ogTag.research"
+msgstr "Research report · Produced by a user's Blave Agent"
+
+msgid "shr.ogTag.morning"
+msgstr "Market report · Produced by a user's Blave Agent"
+
+# 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
+msgid "shr.noteLocal"
+msgstr "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; editing or deleting this report on this computer won't change or revoke the public page — use “Stop sharing” to revoke."
+
+msgid "shr.noteCloud"
+msgstr "Copies already reposted or cached in link previews can't be recalled; if your machine is deleted or replaced (including when your balance reaches zero), all your public links are removed."
+
+msgid "shr.author"
+msgstr "Author"
+
+msgid "shr.anon"
+msgstr "Anonymous"
+
+msgid "shr.named"
+msgstr "Display name"
+
+msgid "shr.nameHint"
+msgstr "Display name only — no titles or contact details"
+
+# 讀不到顯示名稱 / api 回 NO_DISPLAY_NAME:「顯示名稱」停用時換上這句(spec DT2)
+msgid "shr.noName"
+msgstr "To show a name, set a display name in your account settings on blave.org."
+
+# legal: 勾選三行,字面一改就換 report-share 的 DISCLAIMER_VERSION(契約 §1);逐字同 web
+msgid "shr.ack"
+msgstr "I confirm all three points"
+
+msgid "shr.ack1"
+msgstr "I've read it; it contains nothing I don't want public, and no one else's personal data or content I have no right to publish."
+
+msgid "shr.ack2"
+msgstr "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
+
+msgid "shr.ack3"
+msgstr "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to my referral code, paid strategies, or paid groups."
+
+msgid "shr.tosBefore"
+msgstr "If these are broken, Blave may take it down under the "
+
+msgid "shr.tosLink"
+msgstr "Terms of Service"
+
+msgid "shr.tosAfter"
+msgstr "."
+
+msgid "shr.send"
+msgstr "Publish and copy link"
+
+msgid "shr.sendUpdate"
+msgstr "Update public version"
+
+msgid "shr.sending"
+msgstr "Publishing…"
+
+# 送出失敗:框留著、可原樣重送(spec DT2)。failedCloud = web workspace_share_failed(雲端要機器在跑)
+msgid "shr.failed"
+msgstr "Publishing failed. Check your connection and try again."
+
+msgid "shr.failedCloud"
+msgstr "Couldn't publish. Publishing and updating need your machine running; please try again shortly."
+
+msgid "shr.notShareable"
+msgstr "This report can't be published."
+
+# api 507 IMAGE_QUOTA / 429:spec 沒給字,待設計師確認
+msgid "shr.quota"
+msgstr "Your image storage is full, so this report's images can't be uploaded."
+
+msgid "shr.rate"
+msgstr "Too many tries. Please wait a moment and try again."
+
+# 未登入(只會發生在本機視角;spec DT3)
+msgid "shr.gate"
+msgstr "Public links are tied to your Blave account. Sign in to publish."
+
+msgid "shr.gateGo"
+msgstr "Sign in"
+
 # ── 新增策略 modal(spec-desktop-0.1.6 §4;renderer/newstrategy.js;字逐字抄 web 的 workspace_ns_*)──
 msgid "ns.title"
 msgstr "Add Strategy"

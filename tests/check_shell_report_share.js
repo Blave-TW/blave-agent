@@ -1,0 +1,223 @@
+// 報告公開分享(spec-share-0.1.8 DT1–DT5)+ 引用圖來源行(spec-report-image-cite-0.1.8 §2)。
+//   ① 純邏輯(從 renderer/report-share.js 切出來跑):閘門、分享網址、「內容已更新」判定(本機 mtime 容差 / 雲端兩個收件時間)、lead 首句(= web leadSentence)、錯誤代號 → 字。
+//   ② shell/reportshare.js:每支端點的 body 欄位逐一列舉(api 對多出的欄位回 400)、聲明 / 條款版本由主行程加、本機才帶全文與圖、
+//      沒登入 / 舊登入不出門、請求途中換帳號丟掉、status → 代號。有 api 原始碼(monorepo 或 BLAVE_API_DIR)時對照 api 的欄位白名單;有 web 時對照條款版本。
+//   ③ main.js reportForShare:本體原樣 + image block 引用的 sidecar 圖(base64)、壞檔名 / 缺檔跳過。
+//   ④ 用隨包的 Electron 開真的 index.html(window.blave 換成假的):頁首「分享」只給能公開的類型 → 確認框(勾了才能送、名字讀不到就停用)→
+//      送出的只有 view / id / 掛名 / 勾 → 公開列 + 埋點 → stale 行 → 取消分享(「留著」/「取消分享」、埋點、回到未公開)→ 引用圖的來源行。
+// 跑法:node tests/check_shell_report_share.js
+const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
+const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer"), MONO = path.join(__dirname, "..", "..");
+let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 1500))); if (!c) red++; };
+const read = (f) => fs.readFileSync(f, "utf8");
+const cutFn = (s, name) => { const i = s.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("unbalanced " + name); };
+
+if (!process.versions.electron) {
+  (async () => {
+    // ── ① 純邏輯 ──
+    const src = read(path.join(R, "report-share.js")), A = "/* ── 純邏輯", B = "/* ── 純邏輯到此 ── */";
+    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shrGate, shrUrl, shrStale, shrLead, shrKind, shrErrKey, SHR_CLOCK_SLACK_MS });", P);
+    ok("① 閘門:research / morning / 缺 type 出入口,performance 與沒有 blocks 的不出", P.shrGate({ type: "research", blocks: [] }) && P.shrGate({ type: "morning", blocks: [] }) && P.shrGate({ blocks: [] }) && !P.shrGate({ type: "performance", blocks: [] }) && !P.shrGate({ type: "research" }) && !P.shrGate(null));
+    ok("① 分享網址 = blave.org/<app 語言>/r/<代碼>?src=research_link(代碼 encode)", P.shrUrl("zh", "k7Q") === "https://blave.org/zh/r/k7Q?src=research_link" && P.shrUrl("en", "a b") === "https://blave.org/en/r/a%20b?src=research_link" && P.shrUrl("xx", "c") === "https://blave.org/en/r/c?src=research_link");
+    const pub = 1790000000, S = { published_at: pub, source_stored_at: null, report_stored_at: null };
+    const within = P.shrStale("local", S, pub * 1000 + P.SHR_CLOCK_SLACK_MS), past = P.shrStale("local", S, pub * 1000 + P.SHR_CLOCK_SLACK_MS + 1000);
+    ok("① 本機:mtime 比公開時間晚不到一分鐘不算更新(兩邊的鐘不同);晚過一分鐘 → { time: mtime 秒, day: 公開時間 };沒有 mtime → 不判斷", within === null && past && past.time === pub + 61 && past.day === pub && P.shrStale("local", S, null) === null && P.SHR_CLOCK_SLACK_MS === 60000, JSON.stringify(past));
+    ok("① 雲端:report_stored_at > source_stored_at 才算更新(同 web shareState);缺一個 / 相等 → null", JSON.stringify(P.shrStale("cloud", { published_at: pub, source_stored_at: 10, report_stored_at: 20 }, 9e15)) === '{"time":20,"day":10}' && P.shrStale("cloud", { published_at: pub, source_stored_at: 10, report_stored_at: 10 }) === null && P.shrStale("cloud", { published_at: pub, source_stored_at: 10, report_stored_at: null }) === null);
+    const leads = ["融資連續 5 天增加。之後二十天中位數不變", "**BTC** 資金費率 `0.01%` 轉正[^a]!後面", "- 第一點\n- 第二點", "Plain English lead. Second sentence.", "x".repeat(200)];
+    const rep = (md) => ({ blocks: [{ type: "meta" }, { type: "text", variant: "lead", markdown: md }] });
+    const WEB_SH = path.join(MONO, "web", "app", "static", "js", "agent", "report_share.js");
+    if (!fs.existsSync(WEB_SH)) console.log("SKIP  ① lead 首句與 web 逐樣本比對(需要 monorepo 版面)");
+    else { const W = {}; vm.runInNewContext(cutFn(read(WEB_SH), "leadSentence") + "\nthis.f = leadSentence;", W);
+      ok("① lead 首句 = web leadSentence(五個樣本:中文句號、markdown 記號與尾註、清單、英文句點、超長截 120)", leads.every((m) => P.shrLead(rep(m)) === W.f(rep(m))), JSON.stringify(leads.map((m) => [P.shrLead(rep(m)), W.f(rep(m))]))); }
+    const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
+    const codes = ["UNREACH", "RELOGIN", "RATE_LIMITED", "IMAGE_QUOTA", "NO_MACHINE", "NOT_SHAREABLE", "NO_REPORT", "BAD_ARGS", "WHATEVER"];
+    ok("① 錯誤代號 → 字:連不上 = 檢查網路那句、雲端沒在跑 = web 那句、配額 / 速率 / 重新登入各自一句、驗不過 = 不能公開;每個 key 兩語都在", P.shrErrKey("UNREACH") === "shr.failed" && P.shrErrKey("WHATEVER") === "shr.failed" && P.shrErrKey("NO_MACHINE") === "shr.failedCloud" && P.shrErrKey("IMAGE_QUOTA") === "shr.quota" && P.shrErrKey("RELOGIN") === "conn.expired" && P.shrErrKey("NOT_SHAREABLE") === "shr.notShareable"
+      && codes.every((c) => STR.zh[P.shrErrKey(c)] && STR.en[P.shrErrKey(c)]));
+    ok("① 確認框三行 + 標題照 W1 定稿(zh / en)", STR.zh["shr.ack2"] === "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責；Blave 未審核" && STR.en["shr.ack2"] === "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
+      && STR.zh["shr.dlgTitle"] === "公開這份報告" && STR.en["shr.dlgTitle"] === "Publish this report" && STR.zh["shr.revokeTitle"] === "取消分享這份報告？" && STR.en["shr.revokeTitle"] === "Stop sharing this report?");
+
+    // ── ② reportshare.js ──
+    const RS = require(path.join(SHELL, "reportshare.js"));
+    const mk = (o = {}) => { const calls = []; let creds = o.creds === undefined ? { token: "tok", appSecret: "sec" } : o.creds;
+      const c = RS.createShareClient({ apiBase: "https://api.x", getCreds: () => creds, readLocal: o.readLocal || ((id) => ({ report: { id, blocks: [] }, images: { "a.png": "QUJD" } })),
+        post: async (u, b) => { calls.push({ u, b }); if (o.swap) creds = { token: "other", appSecret: "sec" }; return typeof o.res === "function" ? o.res(u, b) : o.res || { status: 200, body: { share: { code: "Abcd1234", published_at: 1790000000, byline: null, source_stored_at: null, report_stored_at: null }, display_name: "Wei" } }; } });
+      return { c, calls }; };
+    const keys = (b) => Object.keys(b).sort().join();
+    let m = mk(); let r = await m.c.state("local", "tw-market-20260926");
+    ok("② state:打 /share/state,body 只有 token / app_secret / view / id;回 share(整理過)+ displayName", m.calls[0].u === "https://api.x/oauth/desktop/share/state" && keys(m.calls[0].b) === "app_secret,id,token,view" && r.code === "OK" && r.share.code === "Abcd1234" && r.displayName === "Wei", JSON.stringify([m.calls, r]));
+    m = mk({ res: { status: 200, body: { share: null, display_name: "  " } } }); r = await m.c.state("cloud", "x");
+    ok("② state:沒公開 → share null;空白名字 → displayName null(署名選項停用)", r.code === "OK" && r.share === null && r.displayName === null);
+    m = mk(); r = await m.c.publish("local", "tw-1", { byline: "name", confirmed: true });
+    const pb = m.calls[0] && m.calls[0].b;
+    ok("② publish(本機):/share/publish;body = 憑證兩欄 + view / id + 勾選紀錄四欄 + report / images(本機檔原樣),聲明版本 rs-ack-2026.09.27", m.calls[0].u.endsWith("/oauth/desktop/share/publish") && keys(pb) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view"
+      && pb.confirmed === true && pb.byline === "name" && pb.disclaimer_version === "rs-ack-2026.09.27" && pb.tos_version === RS.TOS_VERSION && pb.report.id === "tw-1" && pb.images["a.png"] === "QUJD" && r.code === "OK" && r.share.code === "Abcd1234", JSON.stringify(pb));
+    m = mk(); await m.c.publish("cloud", "tw-1", { byline: "anonymous", confirmed: true, update: true });
+    ok("② update(雲端):/share/update;雲端不帶 report / images(api 對雲端帶這兩欄回 400)", m.calls[0].u.endsWith("/oauth/desktop/share/update") && keys(m.calls[0].b) === "app_secret,byline,confirmed,disclaimer_version,id,token,tos_version,view");
+    m = mk(); r = await m.c.revoke("local", "tw-1");
+    ok("② revoke:/share/revoke,body 只有四欄", m.calls[0].u.endsWith("/oauth/desktop/share/revoke") && keys(m.calls[0].b) === "app_secret,id,token,view" && r.code === "OK");
+    const refused = [];
+    for (const [why, fn] of [["沒勾", (c) => c.publish("local", "x", { byline: "anonymous", confirmed: false })], ["掛名不是二選一", (c) => c.publish("local", "x", { byline: "Wei 顧問", confirmed: true })],
+      ["view 不認得", (c) => c.state("web", "x")], ["id 帶路徑", (c) => c.state("local", "../x")]]) { m = mk(); r = await fn(m.c); if (m.calls.length || r.code !== "BAD_ARGS") refused.push(why + ":" + r.code); }
+    m = mk({ readLocal: () => null }); r = await m.c.publish("local", "x", { byline: "anonymous", confirmed: true }); if (m.calls.length || r.code !== "NO_REPORT") refused.push("本機檔讀不到:" + r.code);
+    m = mk({ creds: null }); r = await m.c.state("local", "x"); if (m.calls.length || r.code !== "NO_LOGIN") refused.push("沒登入:" + r.code);
+    m = mk({ creds: { token: "t", appSecret: null } }); r = await m.c.state("local", "x"); if (m.calls.length || r.code !== "RELOGIN") refused.push("沒有 app_secret:" + r.code);
+    ok("② 不出門的七種:沒勾、掛名不是二選一、view 不認得、id 帶路徑、本機檔讀不到、沒登入、舊登入沒有 app_secret", refused.length === 0, refused.join(" / "));
+    m = mk({ swap: true }); r = await m.c.state("local", "x");
+    ok("② 請求途中換了帳號:回應是上一個人的,丟掉(UNREACH)", r.code === "UNREACH");
+    const fc = (status, body, op) => RS.failCode({ status, body }, op);
+    ok("② status → 代號:409 已公開 / 422 不能公開 / 507 配額 / 401 重新登入 / 429 / 403 雲端沒在跑 / 5xx 與連不上 = UNREACH / 400 NO_DISPLAY_NAME / 其餘 400·413 = 不能公開 / 404 分 publish 與 update·revoke",
+      fc(409) === "ALREADY" && fc(422) === "NOT_SHAREABLE" && fc(507) === "IMAGE_QUOTA" && fc(401) === "RELOGIN" && fc(429) === "RATE_LIMITED" && fc(403) === "NO_MACHINE" && fc(502) === "UNREACH" && RS.failCode(null) === "UNREACH"
+      && fc(400, { error_code: "NO_DISPLAY_NAME" }) === "NO_DISPLAY_NAME" && fc(400, { error: "blocks[3]: bad" }) === "NOT_SHAREABLE" && fc(413) === "NOT_SHAREABLE" && fc(404, {}, "publish") === "NOT_SHAREABLE" && fc(404, {}, "update") === "NOT_PUBLIC" && fc(404, {}, "revoke") === "NOT_PUBLIC");
+    m = mk({ res: { status: 200, body: { share: { code: "<x>", published_at: 1 } } } }); r = await m.c.publish("cloud", "x", { byline: "anonymous", confirmed: true });
+    ok("② 200 但 share 形狀不對(代碼字元集 / 時間範圍)→ 不當成功", r.code === "UNREACH");
+    const apiDir = process.env.BLAVE_API_DIR || path.join(MONO, "api"), apiPy = path.join(apiDir, "openclaw", "desktop_auth.py");
+    const apiSrc = fs.existsSync(apiPy) ? read(apiPy) : "";
+    if (!/"\/share\/state"/.test(apiSrc)) console.log("SKIP  ② 對照 api 的欄位白名單(找不到帶 /share/* 的 desktop_auth.py;可設 BLAVE_API_DIR)");
+    else { const tup = (name) => { const mm = new RegExp(name + " = (?:frozenset\\()?\\(([^)]*)\\)").exec(apiSrc); return mm ? [...mm[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : []; };
+      const allowed = new Set([...tup("_SHARE_BASE"), ...tup("_SHARE_CONSENT"), "report", "images"]);
+      ok("② 外殼送出的每一欄都在 api 的白名單裡(_SHARE_BASE + _SHARE_CONSENT + report / images)", allowed.size === 10 && Object.keys(pb).every((k) => allowed.has(k)), [...allowed].join()); }
+    const legal = path.join(MONO, "web", "app", "legal.py");
+    if (!fs.existsSync(legal)) console.log("SKIP  ② 條款版本對照 web(需要 monorepo 版面)");
+    else ok("② TOS_VERSION = web/app/legal.py 的 TOS_VERSION(兩邊送同一版)", new RegExp('^TOS_VERSION = "' + RS.TOS_VERSION.replace(/\./g, "\\.") + '"$', "m").test(read(legal)));
+    const webSh = fs.existsSync(WEB_SH) ? read(WEB_SH) : "";
+    if (webSh && webSh.indexOf('"' + RS.DISCLAIMER_VERSION + '"') < 0) console.log("NOTE  web report_share.js 的 DISCLAIMER_VERSION 還不是 " + RS.DISCLAIMER_VERSION + "(W1 那批 web 上了之後兩邊才一致)");
+
+    // ── ③ main.js reportForShare ──
+    const mainSrc = read(path.join(SHELL, "main.js"));
+    const consts = ["RPT_ID_RE", "RPT_BYTES_MAX", "RPT_TS_MIN", "RPT_EXT_MIME"].map((k) => { const mm = new RegExp("const [^\\n]*\\b" + k + " = [^\\n]*").exec(mainSrc); return mm[0]; });
+    const WS = fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-")), dir = path.join(WS, "reports"); fs.mkdirSync(path.join(dir, "r1.files"), { recursive: true });
+    const doc = { id: "r1", title: "T", type: "research", blocks: [{ type: "meta" }, { type: "image", file: "a.png", alt: "x" }, { type: "image", file: "a.png", alt: "dup" }, { type: "image", file: "gone.png", alt: "y" }, { type: "image", file: "../evil.png", alt: "z" }] };
+    fs.writeFileSync(path.join(dir, "r1.json"), JSON.stringify(doc)); fs.writeFileSync(path.join(dir, "r1.files", "a.png"), "PNGDATA");
+    const M = { fs, path, WS };
+    vm.runInNewContext(consts.join("\n") + "\nconst RPT_DIR = () => path.join(WS, 'reports');\nconst rptDirs = () => [RPT_DIR(), path.join(RPT_DIR(), 'sent')];\n"
+      + ["rptEnvelope", "rptReadDoc", "rptImageB64", "reportForShare"].map((n) => cutFn(mainSrc, n)).join("\n") + "\nthis.f = reportForShare;", M);
+    const got = M.f("r1");
+    ok("③ reportForShare:本體原樣(未改 image block)、圖 = { 檔名: base64 }、同檔去重、缺檔與帶路徑的檔名跳過;壞 id / 沒這份 → null",
+      got && JSON.stringify(got.report) === JSON.stringify(doc) && JSON.stringify(got.images) === JSON.stringify({ "a.png": Buffer.from("PNGDATA").toString("base64") }) && M.f("../r1") === null && M.f("nope") === null, JSON.stringify(got));
+    ok("③ IPC 接線:三支 handle 只把 view / id / 掛名 / 勾 / 更新交給 reportshare;preload 同一組", /handle\("share-publish", \(_e, view, id, a\) => shareClient\(\)\.publish\(view, id, \{ byline: a && a\.byline, confirmed: !!a && a\.confirmed === true, update: !!a && a\.update === true \}\)/.test(mainSrc)
+      && /handle\("share-state", \(_e, view, id\) => shareClient\(\)\.state\(view, id\)/.test(mainSrc) && /handle\("share-revoke", \(_e, view, id\) => shareClient\(\)\.revoke\(view, id\)/.test(mainSrc)
+      && /sharePublish: \(view, id, a\) => ipcRenderer\.invoke\("share-publish", view, id, \{ byline: a && a\.byline, confirmed: !!a && a\.confirmed === true, update: !!a && a\.update === true \}\)/.test(read(path.join(SHELL, "preload.js"))));
+    ok("③ 打包清單有 reportshare.js(main.js require 它,漏了打包版一按分享就炸)", /files:\s*\[[^\]]*"reportshare\.js"/.test(read(path.join(SHELL, "electron-builder.config.js"))));
+
+    const bin = path.join(SHELL, "node_modules", ".bin", "electron");
+    if (!fs.existsSync(bin)) { console.log("SKIP  ④ 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+    const sub = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" }).status;
+    const n = red + (sub == null ? 1 : sub);
+    console.log(n ? `\n${n} 紅` : "\nALL PASS"); process.exit(n ? 1 : 0);
+  })();
+  return;
+}
+
+// ── ④ Electron ──
+const { app, BrowserWindow } = require("electron");
+app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-e-")));
+const GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+const NOW = Math.floor(Date.now() / 1000);
+const doc = (id, type, extra) => ({ report: { schema_version: "1.6", id, type, title: "T-" + id, created_at: NOW - 3600, blocks: [{ type: "meta", title: "標題 " + id, origin: "chat" }, { type: "text", variant: "lead", markdown: "第一句。第二句。" }].concat(extra || []) }, images: { "c.gif": GIF } });
+const CITE = [{ type: "image", file: "c.gif", alt: "引用圖", caption: "作者的說明", source: { name: "Glassnode", url: "https://studio.glassnode.com/charts/x" } },
+  { type: "image", file: "c.gif", alt: "壞連結", source: { name: "Evil", url: "javascript:alert(1)" } }, { type: "image", file: "nope.gif", alt: "缺的圖", source: { name: "Site", url: "https://www.example.com/p" } }, { type: "image", file: "c.gif", alt: "自產圖" }];
+const LIST = [{ id: "res", title: "R", type: "research", created_at: NOW - 100, mtime: (NOW - 100) * 1000 }, { id: "perf", title: "P", type: "performance", created_at: NOW - 200, mtime: (NOW - 200) * 1000 },
+  { id: "pub", title: "Pub", type: "morning", created_at: NOW - 300, mtime: (NOW - 10) * 1000 }];
+const SHARE = { code: "Abcd1234", published_at: NOW - 3600, byline: null, source_stored_at: null, report_stored_at: null };
+const STUB = `window.__s = { calls: [], tracked: [], copied: [], state: { res: { code: "OK", share: null, displayName: null }, pub: { code: "OK", share: ${JSON.stringify(SHARE)}, displayName: "Wei" } }, pub: { code: "OK", share: { code: "New98765", published_at: ${NOW}, byline: null, source_stored_at: null, report_stored_at: null } }, revoke: { code: "OK" } };
+const __fixed = {
+  getLocale: async () => "zh-TW", loadConnection: async () => ({ kind: "claude" }), detectAgents: async () => ({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }),
+  listStrategies: async () => [], listSessions: async () => [], loadSession: async () => [], loadSessionImages: async () => [], updateState: async () => ({ phase: "idle", current: "0.0.0" }),
+  hasBlaveToken: async () => true, ensureEngine: async () => ({}), libraryList: async () => ({ strategies: [], signedIn: true, dataAccess: "included" }),
+  reportsList: async () => ({ reports: ${JSON.stringify(LIST)} }), reportLoad: async (id) => (${JSON.stringify({ res: doc("res", "research", CITE), perf: doc("perf", "performance"), pub: doc("pub", "morning") })})[id] || null,
+  shareState: async (view, id) => { window.__s.calls.push(["state", view, id]); return window.__s.state[id] || { code: "UNREACH" }; },
+  sharePublish: async (view, id, a) => { window.__s.calls.push(["publish", view, id, a]); return window.__s.pub; },
+  shareRevoke: async (view, id) => { window.__s.calls.push(["revoke", view, id]); return window.__s.revoke; },
+  openExternal: async (u) => { window.__s.calls.push(["ext", u]); return true; }, trackFeature: (n) => { window.__s.tracked.push(n); },
+};
+window.blave = new Proxy(__fixed, { get: (o, k) => (k in o ? o[k] : typeof k !== "string" ? undefined : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {} : async () => undefined) });`;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+setTimeout(() => { console.log("FAIL  ④ 逾時(90 秒)"); process.exit(1); }, 90000).unref();
+
+app.whenReady().then(async () => {
+  if (app.dock) app.dock.hide();
+  const preload = path.join(app.getPath("userData"), "stub.js"); fs.writeFileSync(preload, STUB);
+  const w = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { offscreen: true, preload, contextIsolation: false, sandbox: false } });
+  await w.loadFile(path.join(SHELL, "renderer", "index.html"));
+  await wait(1200);
+  const js = (s) => w.webContents.executeJavaScript(s, true);
+  // 離屏視窗沒有焦點,真的剪貼簿會拒絕;換成記下寫了什麼(app 裡由主行程的權限 handler 放行 clipboard-sanitized-write)
+  await js(`Object.defineProperty(navigator, "clipboard", { value: { writeText: async (x) => { window.__s.copied.push(x); } }, configurable: true })`);
+  const T = (k, v) => js(`t(${JSON.stringify(k)}, ${JSON.stringify(v || {})})`);
+  const openRead = async (id) => { await js(`(async () => { if (!rptBag().open) await rptOpen(); await new Promise((r) => setTimeout(r, 150)); rptShowRead(${JSON.stringify(id)}); })()`); await wait(500); };
+  const st = () => js(`(() => { const g = (x) => document.getElementById(x), well = document.querySelector("#rpt-read > .shr-well");
+    return { btn: !g("rpt-share").hidden, btnText: g("rpt-share").textContent, well: !!well, first: g("rpt-read").firstElementChild && g("rpt-read").firstElementChild.className, url: well && well.querySelector(".shr-url").textContent,
+      stale: well ? well.querySelectorAll(".shr-stale").length : 0, staleBtn: well ? well.querySelectorAll(".shr-stale .btn-out").length : 0, dlg: !g("shr-scrim").hidden,
+      edge: Math.round(g("rpt-share").getBoundingClientRect().right - g("rpt-read").getBoundingClientRect().right), backEdge: Math.round(g("rpt-back").getBoundingClientRect().left - g("rpt-read").getBoundingClientRect().left) }; })()`);
+
+  await openRead("perf"); let s = await st();
+  ok("④ performance 報告:頁首沒有「分享」、沒有公開列", !s.btn && !s.well, JSON.stringify(s));
+  await openRead("res"); s = await st();
+  ok("④ research(未公開):頁首右側「分享」、右緣對齊內容欄右緣(返回鈕照舊外擠 4);問了一次 state(view=local)", s.btn && s.btnText === (await T("shr.btn")) && !s.well && Math.abs(s.edge) <= 1 && s.backEdge === -4 && (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "state"))`)).includes('["state","local","res"]'), JSON.stringify(s));
+  // 引用圖(同一份報告)
+  const im = await js(`(() => { const A = document.querySelector("#rpt-read article.rb-report"), W = [...A.querySelectorAll(".rb-image")];
+    return W.map((x) => { const l = x.querySelector(".rb-image-src"), a = l && l.querySelector("a.rb-xlink"), img = x.querySelector("img"), cap = x.nextElementSibling;
+      return { cited: x.classList.contains("is-cited"), line: l ? l.textContent : null, pre: l && l.firstElementChild.textContent, href: a && a.getAttribute("href"), rel: a && a.rel, dom: a && a.querySelector(".rb-xlink-dom") && a.querySelector(".rb-xlink-dom").textContent,
+        nm: a && a.querySelector(".rb-xlink-nm") && a.querySelector(".rb-xlink-nm").textContent, plain: l && l.querySelector(".rb-image-src-nm") && l.querySelector(".rb-image-src-nm").textContent, fail: !!x.querySelector(".rb-image-fail"), lastIsSrc: x.lastElementChild === l,
+        cap: cap && cap.classList.contains("rb-cap") ? cap.textContent : null, capGap: cap && cap.classList.contains("rb-cap") ? getComputedStyle(cap).marginTop : null, fs: l && getComputedStyle(l).fontSize, mh: img && getComputedStyle(img).maxHeight }; }); })()`);
+  const pre = await T("rb.imageSource");
+  ok("④ 引用圖:圖下一行「來源」+ 名稱連結(底線)+ mono 網域(去 www)、rel noopener noreferrer nofollow、12px;caption 在來源行之後、間距 4", im[0].cited && im[0].pre === pre && im[0].nm === "Glassnode" && im[0].dom === "studio.glassnode.com" && im[0].href === "https://studio.glassnode.com/charts/x" && im[0].rel === "noopener noreferrer nofollow" && im[0].fs === "12px" && im[0].cap === "作者的說明" && im[0].capGap === "4px", JSON.stringify(im[0]));
+  ok("④ 連結 scheme 驗不過 → 名稱純文字、沒有 <a>、不顯示網域", im[1].cited && im[1].href === null && im[1].plain === "Evil" && im[1].line === pre + "Evil", JSON.stringify(im[1]));
+  ok("④ 圖載入失敗:換成失敗框,來源行照留在框外(那時連結是唯一出口)", im[2].fail && im[2].lastIsSrc && im[2].dom === "example.com", JSON.stringify(im[2]));
+  ok("④ 沒有 source 的圖不畫來源行;全部 image max-height 480", !im[3].cited && im[3].line === null && im.filter((x) => x.mh).every((x) => x.mh === "480px"), JSON.stringify(im[3]));
+  await js(`document.querySelector("#rpt-read .rb-image-src a.rb-xlink").click()`); await wait(80);
+  ok("④ 點來源連結 → 交給 openExternal(系統瀏覽器),不在 app 裡導覽", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "ext"))`)).includes("studio.glassnode.com"));
+
+  // 確認框
+  await js(`document.getElementById("rpt-share").click()`); await wait(300);
+  let d = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, title: g("shr-title").textContent, send: g("shr-send").disabled, sendText: g("shr-send").textContent, named: g("shr-named").disabled, anon: g("shr-anon").checked,
+    hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
+    order: [...g("shr-modal").querySelectorAll(".shr-three, #shr-ack")].map((x) => x.id || x.className).join() }; })()`);
+  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → 顯示名稱停用 + 去改名那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在匿名",
+    d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
+      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-anon", JSON.stringify(d));
+  await js(`document.getElementById("shr-tos").click()`); await wait(50);
+  ok("④ 條款連結 → openExternal 到 blave.org/zh/…terms_of_service#ugc", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "ext").pop())`)).includes("https://blave.org/disclaimer/zh/terms_of_service#ugc"));
+  await js(`document.getElementById("shr-ack").click()`);
+  ok("④ 勾了才能送", !(await js(`document.getElementById("shr-send").disabled`)));
+  await js(`document.getElementById("shr-send").click()`); await wait(300);
+  s = await st();
+  const pubCall = await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "publish"))`);
+  ok("④ 送出:只給 view / id / 掛名 / 勾 / 更新(沒有憑證、沒有報告本體)→ 關框、頁首鈕收起、公開列在內容最上方(新代碼)、share_publish", pubCall === '[["publish","local","res",{"byline":"anonymous","confirmed":true,"update":false}]]' && !s.dlg && !s.btn && s.well && s.first === "shr-well" && s.url === "blave.org/zh/r/New98765?src=research_link"
+    && (await js(`window.__s.tracked.includes("share_publish") && window.__s.copied[0] === "https://blave.org/zh/r/New98765?src=research_link"`)) && (await js(`document.activeElement && document.activeElement.classList.contains("shr-copy")`)), JSON.stringify([pubCall, s]));
+  // 失敗:框留著、欄位不動、一句
+  await openRead("res"); await js(`window.__s.pub = { code: "UNREACH" }; document.getElementById("rpt-share").click();`); await wait(200);
+  await js(`document.getElementById("shr-ack").click(); document.getElementById("shr-send").click();`); await wait(250);
+  d = await js(`({ open: !$("shr-scrim").hidden, msg: $("shr-msg").textContent, ack: $("shr-ack").checked, send: $("shr-send").disabled, cancel: $("shr-cancel").disabled })`);
+  ok("④ 送出失敗:框留著、勾選保留、主鈕可再按、腳一句「公開失敗，請檢查網路後再試。」", d.open && d.msg === (await T("shr.failed")) && d.ack && !d.send && !d.cancel, JSON.stringify(d));
+  await js(`window.__s.pub = { code: "NO_DISPLAY_NAME" }; __s.state.res.displayName = "Wei"; shrClose();`); await wait(100);
+  await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(250);
+  d = await js(`({ named: $("shr-named").disabled, nm: $("shr-nm").textContent, hint: $("shr-hint").textContent })`);
+  ok("④ 名字讀得到:顯示名稱可選、帶名字、hint 是只能用顯示名稱那句", !d.named && d.nm === "Wei" && d.hint === (await T("shr.nameHint")), JSON.stringify(d));
+  await js(`$("shr-named").click(); $("shr-ack").click(); $("shr-send").click();`); await wait(250);
+  d = await js(`({ open: !$("shr-scrim").hidden, named: $("shr-named").disabled, anon: $("shr-anon").checked, hint: $("shr-hint").textContent, ack: $("shr-ack").checked, msg: $("shr-msg").textContent, last: JSON.stringify(__s.calls.filter((c) => c[0] === "publish").pop()) })`);
+  ok("④ api 回 NO_DISPLAY_NAME:退回匿名、顯示名稱停用、hint 換去改名那句、勾選保留;送出的那一次是 byline=name", d.open && d.named && d.anon && d.hint === (await T("shr.noName")) && d.ack && d.msg === "" && d.last.includes('"byline":"name"'), JSON.stringify(d));
+  await js(`shrClose()`); await wait(100);
+
+  // 公開中 + stale + 取消分享
+  await openRead("pub"); s = await st();
+  ok("④ 已公開的晨報:頁首沒有「分享」、公開列(舊代碼)、本機檔比公開版本新 → stale 行 + 「檢查後更新公開版本」", !s.btn && s.well && s.url === "blave.org/zh/r/Abcd1234?src=research_link" && s.stale === 1 && s.staleBtn === 1, JSON.stringify(s));
+  await js(`document.querySelector("#rpt-read .shr-stale .btn-out").click()`); await wait(250);
+  d = await js(`({ title: $("shr-title").textContent, same: $("shr-same").hidden, send: $("shr-send").textContent, tt: $("shr-tt").textContent })`);
+  ok("④ 更新模式:標題與主鈕「更新公開版本」、「連結不變。」、預覽前綴 = 市場報告", d.title === (await T("shr.dlgTitleUpdate")) && !d.same && d.send === (await T("shr.sendUpdate")) && d.tt.startsWith(await T("shr.ogPrefix.morning")), JSON.stringify(d));
+  await js(`shrClose()`); await wait(100);
+  await js(`document.querySelector("#rpt-read .shr-copy").click()`); await wait(100);
+  ok("④ 複製連結 → 寫進剪貼簿的是完整網址、鈕字暫換「已複製」、share_copy", await js(`window.__s.tracked.includes("share_copy") && __s.copied.pop() === "https://blave.org/zh/r/Abcd1234?src=research_link" && document.querySelector("#rpt-read .shr-copy").textContent === t("shr.copied")`));
+  await js(`document.querySelector("#rpt-read .shr-well .btn-quiet").click()`); await wait(200);
+  d = await js(`({ open: !$("del-scrim").hidden, title: $("del-title").textContent, cancel: $("del-cancel").textContent, ok: $("del-ok").textContent })`);
+  ok("④ 取消分享 → 確認框:標題「取消分享這份報告？」、鈕「留著」/「取消分享」", d.open && d.title === (await T("shr.revokeTitle")) && d.cancel === (await T("shr.keep")) && d.ok === (await T("shr.revokeOk")), JSON.stringify(d));
+  await js(`$("del-ok").click()`); await wait(250); s = await st();
+  ok("④ 確認 → shareRevoke(local, pub)、share_revoke、公開列拿掉、「分享」回來;確認框的取消鈕字回到「取消」", !s.well && s.btn && (await js(`JSON.stringify(__s.calls.filter((c) => c[0] === "revoke"))`)) === '[["revoke","local","pub"]]' && (await js(`__s.tracked.includes("share_revoke")`)) && (await js(`$("del-cancel").textContent`)) === (await T("del.cancel")), JSON.stringify(s));
+  // 未登入:按分享 → 守門框
+  await js(`hasToken = false; shrClear();`); await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(200);
+  d = await js(`({ shr: !$("shr-scrim").hidden, del: !$("del-scrim").hidden, body: $("del-body").textContent, ok: $("del-ok").textContent })`);
+  ok("④ 未登入(本機):鈕照出,按下開守門框「先登入才能公開」+「去登入」,不開確認框", !d.shr && d.del && d.body === (await T("shr.gate")) && d.ok === (await T("shr.gateGo")), JSON.stringify(d));
+  await js(`delClose(false)`);
+  console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
+  app.exit(red ? 1 : 0);
+});

@@ -46,6 +46,7 @@
     metaBenchmark: "Benchmark",
     calloutRisk: "Risk",
     imageError: "Image failed to load",
+    imageSource: "Source",
     footnoteRef: "Note",
     segOther: "Other",
     newsPos: "Positive News",
@@ -2283,6 +2284,23 @@
       ? ctx.imageUrl(ref)
       : /^[0-9a-f]{64}$/.test(sha) ? ctx.apiBase + "openclaw/agent/strategy_image/" + sha : "";
     wrap.appendChild(img);
+    // 引用圖(契約 1.6 的 source):來源行掛在 wrap 上、不在圖上——載入失敗換成失敗框時它照留,那時連結是讀者唯一的出口。
+    // 前綴「來源」:單獨一行掛在圖下沒有 news 清單的語境,少了它會被讀成第二個 caption
+    var src = b.source && typeof b.source === "object" ? b.source : null;
+    var srcName = src ? str(src.name) : "";
+    var sx = src ? safeUrl(src.url) : null;
+    if (srcName || sx) {
+      wrap.className += " is-cited";
+      var line = el("div", "rb-image-src");
+      line.appendChild(el("span", "rb-image-src-l", ctx.i18n.imageSource));
+      if (sx && srcName) line.appendChild(extLink(sx, srcName, ctx));
+      else if (sx) {
+        var dom = linkTo(sx, "rb-xlink is-dom mono", ctx);
+        dom.textContent = hostOf(sx);
+        line.appendChild(dom);
+      } else line.appendChild(el("span", "rb-image-src-nm", srcName)); // scheme 驗不過:名稱純文字、不給網域(同 news)
+      wrap.appendChild(line);
+    }
     return wrap;
   };
 

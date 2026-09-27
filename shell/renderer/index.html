@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="library.css">
 <link rel="stylesheet" href="report-blocks.css">
 <link rel="stylesheet" href="reports.css">
+<link rel="stylesheet" href="report-share.css">
 <link rel="stylesheet" href="browser.css">
 </head><body>
 
@@ -202,8 +203,12 @@
             </div>
             <p class="rpt-msg" id="rpt-msg" hidden></p>
           </div>
-          <!-- 閱讀模式:頁首只剩返回鈕 -->
-          <button class="rpt-back" id="rpt-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span data-i18n="rpt.nav"></span></button>
+          <!-- 閱讀模式:左返回、右「分享」(spec-share-0.1.8 DT1;殼的地盤,不往 rb-report 渲染輸出裡塞鈕)。
+               分享鈕的顯示由 report-share.js 管:performance / 公開中 / 還在問狀態時收起 -->
+          <div class="rpt-rhead">
+            <button class="rpt-back" id="rpt-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span data-i18n="rpt.nav"></span></button>
+            <button class="btn-out" id="rpt-share" type="button" aria-haspopup="dialog" data-i18n="shr.btn" hidden></button>
+          </div>
         </div>
         <div class="rpt-body" id="rpt-body" tabindex="0">
           <div class="rpt-rows" id="rpt-rows"></div>
@@ -463,6 +468,44 @@
   </form>
 </div>
 
+<!-- 報告公開分享確認框(spec-share-0.1.8 DT2;殼 = .set-modal 640,接線同 #rpn:trapTab、點框外關、Esc 由 app.js escTop 收;由 report-share.js 接線)。
+     結構同 web D2:連結預覽 → 作者 → hint → 揭露小字 → 三行 → 勾選 → 腳(條款句 + 取消 + 主鈕)。揭露小字按視角換、標題與主鈕按模式換,由 JS 寫。
+     預覽縮圖 = og 固定圖(1200×630 淺底 lockup + 標籤行)縮 0.1 畫:晨報那張圖還沒出,不放點陣圖資產 -->
+<div class="scrim" id="shr-scrim" role="dialog" aria-modal="true" aria-labelledby="shr-title" hidden>
+  <form class="set-modal shr-modal" id="shr-modal" novalidate>
+    <div class="modal-head">
+      <h6 id="shr-title"></h6>
+      <button type="button" class="modal-close" id="shr-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="shr-same" id="shr-same" data-i18n="shr.introSame" hidden></p>
+      <div class="shr-lpv" role="group" aria-labelledby="shr-lpv-l">
+        <span class="sr-only" id="shr-lpv-l" data-i18n="shr.lpvLabel"></span>
+        <div class="shr-th" aria-hidden="true"><div class="shr-og"><svg class="shr-og-lk" viewBox="0 0 826.333 180" fill="currentColor"><g transform="translate(0,6.667) scale(0.962963)"><path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z"/></g><g transform="translate(238.333,0)"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H20V68.7962C31.8393 57.2517 47.8079 50 65 50C99.9506 50 130 80 130 115C130 150 100 180 65 180C30 180 -5.27718e-05 150 0 115V0ZM64.9999 70C39.9999 70 19.9999 90 19.9999 115C19.9999 140 40.0001 160 65 160C89.9999 160 110 140.5 110 115C110 89.5 89.9999 70 64.9999 70Z"/><path d="M174 0H154V170C154 170 154 174 157 177C160 180 164 180 164 180H188V160H174V0Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M328 180H308V161.194C296.161 172.738 280.192 179.991 263 179.991C228.049 179.991 198 149.989 198 114.99C198 79.9912 228 50 263 50C298 50 328 79.9912 328 114.99V180ZM263 159.99C288 159.99 308 139.99 308 114.99C308 89.9909 288 69.9903 263 69.9903C238 69.9903 218 89.491 218 114.99C218 140.49 238 159.99 263 159.99Z"/><path d="M393 150L354.494 50H333L378 165.5L382 175.5C383.5 178 385 180 393 180C401 180 402.5 178 404 175.5L408 165.5L453 50H431.5L393 150Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M523 180C488.049 180 458 150 458 115C458 79.9998 488 49.9998 523 49.9998C558 49.9998 588 79.9998 588 115C587.2 122.761 581 125.069 578 125.253H566.845H479.12C483.659 145.546 501.476 160 523 160C539.672 160 554.12 151.106 561.896 137.766L578.848 147.5C567.329 166.713 546.264 180 523 180ZM523 69.9998C501.282 69.9998 483.337 84.7164 479 105.299H566.968C562.576 85.0203 544.665 69.9998 523 69.9998Z"/></g></svg><div class="shr-og-tag" id="shr-og-tag"></div></div></div>
+        <div class="shr-tx"><div class="shr-tt" id="shr-tt"></div><div class="shr-ds" id="shr-ds"></div></div>
+      </div>
+      <div class="shr-arow">
+        <span class="shr-al" id="shr-author-l" data-i18n="shr.author"></span>
+        <div class="shr-radios" role="radiogroup" aria-labelledby="shr-author-l">
+          <label class="shr-rad"><input type="radio" name="shr-byline" value="anonymous" id="shr-anon" checked><span data-i18n="shr.anon"></span></label>
+          <label class="shr-rad"><input type="radio" name="shr-byline" value="name" id="shr-named"><span><span data-i18n="shr.named"></span> <span class="shr-nm" id="shr-nm"></span></span></label>
+        </div>
+      </div>
+      <p class="ns-hint" id="shr-hint" role="status"></p>
+      <div class="shr-agree">
+        <p class="shr-must" id="shr-must"></p>
+        <ul class="shr-three"><li data-i18n="shr.ack1"></li><li data-i18n="shr.ack2"></li><li data-i18n="shr.ack3"></li></ul>
+        <label class="shr-chk"><input type="checkbox" class="ps-cb" id="shr-ack"><span data-i18n="shr.ack"></span></label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="foot-msg" id="shr-msg" role="status"></span>
+      <span class="shr-tos"><span data-i18n="shr.tosBefore"></span><button type="button" class="shr-tlnk" id="shr-tos" data-i18n="shr.tosLink"></button><span data-i18n="shr.tosAfter"></span></span>
+      <span class="modal-btns"><button type="button" class="btn-out" id="shr-cancel" data-i18n="del.cancel"></button><button type="submit" class="btn-fill" id="shr-send" disabled></button></span>
+    </div>
+  </form>
+</div>
+
 <!-- 新增報告 modal(spec-desktop-0.1.6 §1.5;照雲端 #rp_modal 搬,拿掉「定期」段):描述欄 + 5 顆範例句 chip(.pf-act)+ 誠實句;
      由 reports.js 接線。chip 的 data-tpl 是字串表的 key(範本句由 t() 取,換語言不用重畫) -->
 <div class="scrim" id="rpn-scrim" role="dialog" aria-modal="true" aria-labelledby="rpn-title" hidden>
@@ -499,6 +542,7 @@
 <script src="report-robust.js"></script>
 <script src="report-blocks.js"></script>
 <script src="reports.js"></script>
+<script src="report-share.js"></script>
 <script src="newstrategy.js"></script>
 <script src="trade.js"></script>
 <script src="capital.js"></script>

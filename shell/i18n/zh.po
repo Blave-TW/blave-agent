@@ -3586,6 +3586,154 @@ msgstr "中性"
 msgid "rb.estModel"
 msgstr "預估清算量（模型）"
 
+# image block 引用圖的來源行前綴(spec-report-image-cite-0.1.8 §2)
+msgid "rb.imageSource"
+msgstr "來源"
+
+# 報告公開分享(spec-share-0.1.8 DT1–DT5;renderer/report-share.js)。未另註的字逐字同 web 的 workspace_share_*
+msgid "shr.btn"
+msgstr "分享"
+
+msgid "shr.live"
+msgstr "公開中"
+
+msgid "shr.copy"
+msgstr "複製連結"
+
+msgid "shr.copied"
+msgstr "已複製"
+
+msgid "shr.revoke"
+msgstr "取消分享"
+
+msgid "shr.version"
+msgstr "公開版本：{time}。任何拿到連結的人都能看；取消後連結隨即失效。"
+
+msgid "shr.stale"
+msgstr "agent 在 {time} 更新了這份報告，公開的仍是 {day} 那一版。"
+
+msgid "shr.updateCheck"
+msgstr "檢查後更新公開版本"
+
+msgid "shr.revokeTitle"
+msgstr "取消分享這份報告？"
+
+msgid "shr.revokeBody"
+msgstr "連結會隨即失效，之後再公開會是新的連結。已轉貼或被預覽快取的內容收不回。"
+
+msgid "shr.revokeOk"
+msgstr "取消分享"
+
+# 取消分享確認框的取消鈕(mockup DT4;「取消 / 取消分享」並排讀不出哪顆是留著)
+msgid "shr.keep"
+msgstr "留著"
+
+msgid "shr.revokeFailed"
+msgstr "取消分享失敗，請稍後再試。"
+
+msgid "shr.dlgTitle"
+msgstr "公開這份報告"
+
+msgid "shr.dlgTitleUpdate"
+msgstr "更新公開版本"
+
+msgid "shr.introSame"
+msgstr "連結不變。"
+
+msgid "shr.lpvLabel"
+msgstr "連結預覽"
+
+# 連結預覽的 og:title 前綴與縮圖標籤行(= web rs_og_prefix / rs_og_prefix_morning 與 og 固定圖)
+msgid "shr.ogPrefix.research"
+msgstr "研究報告｜"
+
+msgid "shr.ogPrefix.morning"
+msgstr "市場報告｜"
+
+msgid "shr.ogTag.research"
+msgstr "研究報告 · 由用戶的 Blave Agent 產出"
+
+msgid "shr.ogTag.morning"
+msgstr "市場報告 · 由用戶的 Blave Agent 產出"
+
+# 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
+msgid "shr.noteLocal"
+msgstr "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照；之後在這台電腦修改或刪除這份報告，不會變更或取消公開——要收回請按「取消分享」。"
+
+msgid "shr.noteCloud"
+msgstr "已轉貼或被預覽快取的內容收不回；機器被刪除或替換（含餘額歸零）時，所有公開連結會一併取消。"
+
+msgid "shr.author"
+msgstr "作者"
+
+msgid "shr.anon"
+msgstr "匿名"
+
+msgid "shr.named"
+msgstr "顯示名稱"
+
+msgid "shr.nameHint"
+msgstr "只能用顯示名稱，不加頭銜或聯絡方式"
+
+# 讀不到顯示名稱 / api 回 NO_DISPLAY_NAME:「顯示名稱」停用時換上這句(spec DT2)
+msgid "shr.noName"
+msgstr "要顯示名稱，先到 blave.org 的帳號設定改名。"
+
+# legal: 勾選三行,字面一改就換 report-share 的 DISCLAIMER_VERSION(契約 §1);逐字同 web
+msgid "shr.ack"
+msgstr "我確認以上三點"
+
+msgid "shr.ack1"
+msgstr "已看過內容，沒有他人個資或不該公開的資訊"
+
+msgid "shr.ack2"
+msgstr "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責；Blave 未審核"
+
+msgid "shr.ack3"
+msgstr "我不是投顧／期顧從業人員，沒有因此收取報酬，也不用它招攬推薦碼或付費策略"
+
+msgid "shr.tosBefore"
+msgstr "違反時 Blave 可依"
+
+msgid "shr.tosLink"
+msgstr "服務條款"
+
+msgid "shr.tosAfter"
+msgstr "下架。"
+
+msgid "shr.send"
+msgstr "公開並複製連結"
+
+msgid "shr.sendUpdate"
+msgstr "更新公開版本"
+
+msgid "shr.sending"
+msgstr "公開中…"
+
+# 送出失敗:框留著、可原樣重送(spec DT2)。failedCloud = web workspace_share_failed(雲端要機器在跑)
+msgid "shr.failed"
+msgstr "公開失敗，請檢查網路後再試。"
+
+msgid "shr.failedCloud"
+msgstr "公開失敗。公開與更新需要機器在執行中，請稍後再試。"
+
+msgid "shr.notShareable"
+msgstr "這份報告目前不能公開。"
+
+# api 507 IMAGE_QUOTA / 429:spec 沒給字,待設計師確認
+msgid "shr.quota"
+msgstr "圖片空間已滿，這份報告的圖放不上去。"
+
+msgid "shr.rate"
+msgstr "按得太頻繁了，請過一陣子再試。"
+
+# 未登入(只會發生在本機視角;spec DT3)
+msgid "shr.gate"
+msgstr "公開連結掛在你的 Blave 帳號下，先登入才能公開。"
+
+msgid "shr.gateGo"
+msgstr "去登入"
+
 # ── 新增策略 modal(spec-desktop-0.1.6 §4;renderer/newstrategy.js;字逐字抄 web 的 workspace_ns_*)──
 msgid "ns.title"
 msgstr "新增策略"

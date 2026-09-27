@@ -838,12 +838,32 @@
 .rb-report .rb-image {
   margin-top: var(--space-8);
 }
+/* 高上限 480(≈ 680 欄 × 0.7):直式長圖不吃掉整個閱讀視圖。width:auto 讓 w/h 屬性不再釘住寬——不然 max-height 一夾就變形;
+   等比縮小、靠左、不放大(spec-report-image-cite-0.1.8 §2,全部 image 適用) */
 .rb-report .rb-image img {
   display: block;
   max-width: 100%;
+  max-height: 480px;
+  width: auto;
   height: auto;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-hairline);
+}
+/* 引用圖的來源行:news 來源連結的語彙(.rb-xlink:名稱常駐底線 + mono 網域),前綴與網域 ink-3;caption 排在它之後、間距收到 4 */
+.rb-report .rb-image-src {
+  margin-top: var(--space-6);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.rb-report .rb-image-src-l {
+  margin-right: var(--space-8);
+}
+.rb-report .rb-image-src-nm {
+  color: var(--ink-2);
+}
+.rb-report .rb-image.is-cited + .rb-cap {
+  margin-top: var(--space-4);
 }
 /* 破圖 icon 留在報告裡比沒有更糟:就地換成扁平框,內容是 alt(這張圖本來要
    說什麼)。不放 Retry——整頁重載即重試,圖以 sha256 定址,取不到多半是真的不在了 */

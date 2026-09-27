@@ -18,8 +18,11 @@ a snapshot of the report at that moment: writing the same id again later does no
 While a report is public its title bar shows a public status row instead; once you have
 rewritten it, the workspace adds a notice with a 「檢查後更新公開版本」 button, which updates
 the public version under the same link. They can cancel at any time;
-sharing again after cancelling gives a new link. Deleting the machine or the account revokes
-every public link. The platform does not review content: whether a report is fit to publish
+sharing again after cancelling gives a new link. The desktop app has the same 「分享」 button
+in a report's header, for reports on this computer and on the cloud machine alike; sharing a
+report on this computer uploads a snapshot of it, so editing or deleting the file afterwards
+changes nothing public — only 「取消分享」 does. Deleting the cloud machine or the account
+revokes every public link, including the ones shared from this computer. The platform does not review content: whether a report is fit to publish
 is the user's call, made in the consent checkbox. Nothing you write into a report (including
 `meta.shareable`, §7b B7) decides whether it can be shared, so never tell the user a research or
 morning report cannot be shared, and never hold one back for that reason.
@@ -598,7 +601,7 @@ reads `blave_api_key` / `blave_secret_key` from the workspace `.env` (see `refer
 
 | Field | Type | Notes |
 |---|---|---|
-| `schema_version` | string | `"1.4"` when the report has a `news` block, any block with `private`, or a footnote item with `url`; otherwise `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — anything under a version older than the one that introduced it is refused. |
+| `schema_version` | string | `"1.6"` when an `image` block carries `source` (§5 › Citing an image from the web); otherwise `"1.5"` when a `bar_chart` has `variant: "profile"`; otherwise `"1.4"` when the report has a `news` block, any block with `private`, or a footnote item with `url`; otherwise `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — anything under a version older than the one that introduced it is refused. |
 | `id` | string | `[A-Za-z0-9_-]{1,64}`, equal to the file name stem. |
 | `type` | string | `performance` / `morning` / `research` — report list grouping. **Hard rule: any report that carries the user's account assets, positions, orders or live strategy P&L is `performance`, even when it is shaped as a morning brief or a close recap.** `research` and `morning` reports can be shared publicly by the user and `performance` cannot, so a wrong `type` publishes account numbers. |
 | `title` | string | 1–200 chars. |
@@ -652,7 +655,7 @@ caption.
 | `code` | `lang`, `source` | `lang` = `[A-Za-z0-9+#_.-]{1,20}` (`text` when there is no language); `source` ≤20000. |
 | `divider` | — | No props. **Neither de-duplicate them nor judge whether one belongs**: the web omits a divider whenever the next thing already opens itself (a block `title`, a markdown H2/H3, the head or foot of the report, a `footnote`, a second adjacent divider). Drop one wherever a break reads right; **a divider you inserted that does not appear is the expected outcome, not a bug** — do not go hunting for it. |
 | `callout` | `tone`, `text` | `tone` = `warning`/`info`; `text` ≤2000; optional `title` ≤120. |
-| `image` | `file` **or** `sha256`, plus `alt` | **Exactly one of the two references, never both** (both = refused here on the machine). `file` = a plain file name in `reports/<id>.files/` — `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`, never a path; the extension picks the MIME type (`png`/`jpg`/`jpeg`/`webp`/`gif`) and each picture is 1 byte–2 MB. `sha256` = `[0-9a-f]{64}` of an image already on the platform (§5). One name referenced by several blocks uploads once. `alt` ≤200 is **required** (accessibility, no default). Optional `caption` ≤300. The platform adds `url` and the pixel `w`/`h` when the report is read back — **never send `w`/`h` yourself**, they are unknown props and the report is refused. |
+| `image` | `file` **or** `sha256`, plus `alt` | **Exactly one of the two references, never both** (both = refused here on the machine). `file` = a plain file name in `reports/<id>.files/` — `[A-Za-z0-9][A-Za-z0-9._-]{0,79}`, never a path; the extension picks the MIME type (`png`/`jpg`/`jpeg`/`webp`/`gif`) and each picture is 1 byte–2 MB. `sha256` = `[0-9a-f]{64}` of an image already on the platform (§5). One name referenced by several blocks uploads once. `alt` ≤200 is **required** (accessibility, no default). Optional `caption` ≤300. Optional `source` `{name ≤40, url}` (1.6) marks a **cited** image — a chart captured from a web page — and nothing else; rules in §5 › Citing an image from the web. The platform adds `url` and the pixel `w`/`h` when the report is read back — **never send `w`/`h` yourself**, they are unknown props and the report is refused. |
 
 **Price is drawn as a `candlestick`.** Any price chart in a report — an index, a stock, a
 coin — is a `candlestick`: never a `line_chart` of closes, never an `image` of a matplotlib
@@ -810,6 +813,39 @@ nothing. On the report channel it means the old report that should have been evi
 could not be deleted, which does clear by itself, so it is retried like any other
 transient failure. Same status code, different channel, opposite handling.
 
+### Citing an image from the web (image block with `source`)
+
+- A cited image is an `image` block carrying `source` — a chart you saw in the
+  built-in browser and captured. The capture tool returns the file and its
+  `source` (name + the page's `source_url`) as one unit; never strip or edit
+  it. Your own generated figures (matplotlib etc.) never carry `source`.
+- **At most 2 cited images per report**, and only when the image directly
+  supports a claim written in the text. Never decorative. `write_report` (and
+  `publish()`, which calls it) refuses a report with more than 2, before
+  anything is written.
+- **If Blave has the data, draw it yourself** (`candlestick`, `line_chart`,
+  `bar_chart`, …) — never cite a screenshot of numbers `lib/data.py` has.
+  Cited images are for what Blave cannot produce: on-chain dashboards,
+  third-party research figures, exchange-announcement charts.
+- `source.url` is the **page URL you read** (`source_url`), never the image
+  file URL. `source.name` is the site or publication name (≤40 characters).
+  The app's page snapshot is what lets the user check the citation — the URL
+  must match the page you actually read. The URL follows the same rules as a
+  news link (§3 `news`): `https://`, a host, no user name or password, ≤500
+  characters, no spaces — anything else refuses the report.
+- **Capture the single chart/figure element only**, cropped to it — never a
+  full-page screenshot, never surrounding article text, never browser UI.
+  Do not crop out the site's watermark or embedded attribution.
+- **Never cite paywalled or sign-in-only content**, and never a site whose
+  terms ban AI access (`blocked_policy` — same compliance stance and same
+  list as news sourcing).
+- Reports can be shared publicly with the image and its source line kept:
+  capture nothing you would not republish (no personal data, no account UI).
+- `alt` says what the chart shows, in the report's language (required; no
+  fallback). File rules unchanged: sidecar `<id>.files/`, ≤2MB; capture at
+  ~2× for sharpness in the 680px column.
+- A report with a cited image is `schema_version` `"1.6"`; `write_report` sets it.
+
 ## 6. Structural rules worth re-reading before you write
 
 1. `meta` exactly once, first block.
@@ -827,6 +863,7 @@ transient failure. Same status code, different channel, opposite handling.
    is left as `text` so it stays neutral.
 9. Every `image` block carries `file` **or** `sha256`, never both; a `file` exists in
    `reports/<id>.files/` and was written before the report JSON.
+   `source` (a cited web image) is `{name, url}` only, in a `"1.6"` report, at most 2 per report.
 10. A `candlestick` holds 2–120 bars, its `t` strictly increasing, and every bar has
     `low ≤ min(open, close)` and `max(open, close) ≤ high`; it only appears in a report whose
     `schema_version` is `"1.2"` or `"1.3"`.

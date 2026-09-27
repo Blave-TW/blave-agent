@@ -2,7 +2,8 @@
 (references/reports.md §7b): they fire on a long title / missing kpi_row / missing
 meta.shareable, stay quiet on a compliant research report and on non-research types, and
 never stop the write. Also the schema_version choice: 1.3 iff meta carries `shareable`,
-else 1.2 iff a candlestick, else 1.1.
+else 1.2 iff a candlestick, else 1.1; 1.6 iff an image block carries `source`, and more than
+two such blocks is refused before anything is written.
 Run: cd blave-agent && .venv/bin/python tests/check_report_warnings.py
 """
 import contextlib, io, json, os, shutil, sys, tempfile
@@ -74,6 +75,27 @@ try:
           and "WARNING" not in out, "involves_futures true lands on meta, 1.3, no warning")
     run("futonly", "t", [CANDLE], type="morning", meta={"involves_futures": False})
     check(doc("futonly")["schema_version"] == "1.3", "involves_futures alone (even false) makes 1.3")
+
+    src = {"name": "CoinGlass", "url": "https://www.coinglass.com/pro/futures/LiquidationMap"}
+    def cite(n):
+        return {"type": "image", "file": f"c{n}.png", "alt": "chart", "source": dict(src)}
+    pics = {f"c{n}.png": b"png" for n in range(3)}
+    run("cite2", "t", [LEAD, KPI, cite(0), cite(1)], type="research", meta=S, images=pics)
+    check(doc("cite2")["schema_version"] == "1.6", "image with source: 1.6 (over shareable's 1.3)")
+    run("prof", "t", [{"type": "bar_chart", "variant": "profile"}, cite(0)], type="morning", images=pics)
+    check(doc("prof")["schema_version"] == "1.6", "source wins over a 1.5 profile bar chart")
+    run("own", "t", [{"type": "image", "file": "c0.png", "alt": "own"}], type="morning", images=pics)
+    check(doc("own")["schema_version"] == "1.1", "own figure without source: no bump")
+    try:
+        write_report("cite3", "t", [LEAD, KPI, cite(0), cite(1), cite(2)], type="research", meta=S, images=pics)
+        err = ""
+    except ValueError as e:
+        err = str(e)
+    check("3 cited images" in err and "[4]" in err and err.isascii(),
+          "third cited image: refused, names the extra block, ASCII message")
+    check(not os.path.exists(os.path.join(REPORTS_DIR, "cite3.json"))
+          and not os.path.exists(os.path.join(REPORTS_DIR, "cite3.files")),
+          "refused before anything is written (no report, no sidecar)")
 finally:
     shutil.rmtree(WS, ignore_errors=True)
 

@@ -70,6 +70,10 @@ _FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 FILES_SUFFIX = ".files"
 # ≈ 40 CJK / 80 Latin: the public share page cuts a title at ~50 CJK, so this leaves a margin.
 RESEARCH_TITLE_WIDTH = 80
+# Cited web images (an `image` block with `source`, references/reports.md › Citing an image
+# from the web). The api sets no cap on purpose: a 400 files the whole report as failed, and a
+# third citation is not a broken document — so the cap lives here, where the agent can fix it.
+CITED_IMAGES_MAX = 2
 
 
 def _research_warnings(title, blocks):
@@ -173,8 +177,9 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
                 figure out of a scheduled run, where the machine token is stripped
                 from the environment. png / jpg / jpeg / webp / gif, ≤2MB each.
 
-    Nothing here is validated beyond the report id and the image file names (a name
-    becomes a path on this disk, so it may not be one): the api is the only validator,
+    Nothing here is validated beyond the report id, the image file names (a name
+    becomes a path on this disk, so it may not be one) and the cap of CITED_IMAGES_MAX
+    image blocks carrying `source` (the api has no such cap): the api is the only validator,
     and a second copy of the rules on this side would drift and start refusing reports
     the platform accepts. A rejected report lands in `reports/failed/` with the
     api's message (it names the offending field path) in `upload_errors.log`.
@@ -192,6 +197,13 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
             raise ValueError(f"image name {name!r} must be a plain file name "
                              "matching [A-Za-z0-9][A-Za-z0-9._-]{0,79}, not a path")
     blocks = list(blocks)
+    cited = [i for i, b in enumerate(blocks)
+             if isinstance(b, dict) and b.get("type") == "image" and "source" in b]
+    if len(cited) > CITED_IMAGES_MAX:
+        raise ValueError(f"{len(cited)} cited images (image blocks with source) at blocks "
+                         f"{cited}; at most {CITED_IMAGES_MAX} per report. Keep the ones a claim "
+                         f"in the text rests on and drop blocks {cited[CITED_IMAGES_MAX:]} "
+                         "(references/reports.md > Citing an image from the web)")
     created_at = int(created_at if created_at is not None else time.time())
     if not blocks or not (isinstance(blocks[0], dict) and blocks[0].get("type") == "meta"):
         head = {"type": "meta", "title": title,
@@ -201,7 +213,9 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     # Each bump only when its content is present, so a report without it is still accepted
     # by an api one version behind. 1.4 = a news block, a `private` block or a footnote link. The 1.3 meta flags count by presence: an explicit false
     # is still a prop a 1.1/1.2 validator refuses.
-    if any(isinstance(b, dict) and b.get("type") == "bar_chart" and b.get("variant") == "profile" for b in blocks):
+    if cited:
+        version = "1.6"   # image 的引用來源;1.6 是 1.5 的超集
+    elif any(isinstance(b, dict) and b.get("type") == "bar_chart" and b.get("variant") == "profile" for b in blocks):
         version = "1.5"   # 連續數值軸剖面(爆倉地圖);1.5 是 1.4 的超集
     elif any(isinstance(b, dict) and (b.get("type") == "news" or "private" in b
                                       or (b.get("type") == "footnote"

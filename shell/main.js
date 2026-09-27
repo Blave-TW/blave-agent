@@ -1083,17 +1083,18 @@ function reportsList() {
   out.sort((a, b) => b.created_at - a.created_at);
   return { reports: out.slice(0, RPT_MAX) };
 }
-// 本機一張圖 → data URI:file 只能是檔名(不含路徑)、副檔名決定 mime、≤ 2 MB;任一條不合就當沒有這張(渲染器畫失敗框)
-function rptImageUri(dir, id, file) {
+// 本機一張圖 → { mime, b64 }:file 只能是檔名(不含路徑)、副檔名決定 mime、≤ 2 MB;任一條不合就當沒有這張(渲染器畫失敗框)
+function rptImageB64(dir, id, file) {
   if (typeof file !== "string" || !RPT_FILE_RE.test(file)) return null;
   const mime = RPT_EXT_MIME[file.slice(file.lastIndexOf(".") + 1).toLowerCase()];
   if (!mime || file.indexOf(".") < 0) return null;
   try {
     const f = path.join(dir, id + ".files", file), st = fs.statSync(f);
     if (!st.isFile() || st.size === 0 || st.size > RPT_BYTES_MAX) return null;
-    return `data:${mime};base64,${fs.readFileSync(f).toString("base64")}`;
+    return { mime, b64: fs.readFileSync(f).toString("base64") };
   } catch (_) { return null; }
 }
+function rptImageUri(dir, id, file) { const im = rptImageB64(dir, id, file); return im ? `data:${im.mime};base64,${im.b64}` : null; }
 function reportLoad(id) {
   if (typeof id !== "string" || !RPT_ID_RE.test(id)) return null;
   for (const dir of rptDirs()) {
@@ -1110,6 +1111,33 @@ function reportLoad(id) {
     return { report: r.doc, images, mtime: Math.floor(r.mtimeMs) };
   }
   return null;
+}
+/* 分享本機報告(reportshare.js 的 readLocal):本體原樣 + image block 引用的 sidecar 圖 { 檔名: base64 }。
+   跟 reportLoad 同一套檔名 / 大小規則;缺的圖不補——api 會回 400 指名哪張,比默默少一張圖上公開頁誠實 */
+function reportForShare(id) {
+  if (typeof id !== "string" || !RPT_ID_RE.test(id)) return null;
+  for (const dir of rptDirs()) {
+    const r = rptReadDoc(dir, id);
+    if (!r || !rptEnvelope(id, r.doc, r.mtimeMs)) continue;
+    const images = {};
+    let n = 0;
+    for (const b of Array.isArray(r.doc.blocks) ? r.doc.blocks : []) {
+      if (!b || typeof b !== "object" || b.type !== "image" || typeof b.file !== "string" || images[b.file] !== undefined) continue;
+      if (++n > RPT_IMAGES_MAX) break;
+      const im = rptImageB64(dir, id, b.file);
+      if (im) images[b.file] = im.b64;
+    }
+    return { report: r.doc, images };
+  }
+  return null;
+}
+let _share = null;
+function shareClient() {
+  if (!_share) _share = require("./reportshare").createShareClient({
+    apiBase: API_BASE, post: (u, b) => postJSON(u, b), readLocal: reportForShare,
+    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
+  });
+  return _share;
 }
 /* 雲端視角:平台的索引與 S3 本體(停機也讀得到)。兩支各快取 5 分鐘(清單 per 帳號、本體 per id),綁著拿到它的那顆 token——
    換帳號就對不上、登出時 clearToken 整組清掉;「新增報告」送出後的等待期間 renderer 帶 force 重問。
@@ -1885,6 +1913,10 @@ app.whenReady().then(() => {
   // 雲端的報告清單與本體(renderer/reports.js;同單支策略:不啟動輪詢、憑證只在主行程)。OK + report: null = 平台現在沒有這一份
   handle("cloud-reports", (_e, force) => cloudReports(force === true), { code: "UNREACH", reports: [] });
   handle("cloud-report", (_e, id, ver) => cloudReport(id, ver), { code: "UNREACH", report: null, images: {} });
+  // 報告公開分享(renderer/report-share.js):憑證、聲明 / 條款版本、本機報告的全文與圖都在主行程加;畫面只給 view / id / 掛名 / 有沒有勾
+  handle("share-state", (_e, view, id) => shareClient().state(view, id), { code: "UNREACH" });
+  handle("share-publish", (_e, view, id, a) => shareClient().publish(view, id, { byline: a && a.byline, confirmed: !!a && a.confirmed === true, update: !!a && a.update === true }), { code: "UNREACH" });
+  handle("share-revoke", (_e, view, id) => shareClient().revoke(view, id), { code: "UNREACH" });
   /* 雲端(寫入):renderer 只說「送哪個指令」,憑證與 request_id 都在主行程(cloudcmd.js)。
      **這一支拒收 secrets**(cloudcmd.js 檔頭契約 ①:那個檔不是信任邊界,閘門在這裡):白名單直接砍掉 credentials,
      金鑰只由日後專用的連接 IPC 供應——renderer 被攻破也塞不進任意 ENV 名。
