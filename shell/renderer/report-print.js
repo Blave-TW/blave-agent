@@ -83,6 +83,8 @@ function pdfAssets() {
     pdfFitTables(host);
     await pdfAssets();
     pdfFitTables(host);
+    // candlestick / bar_chart 量容器寬、下一幀才畫;這個視窗載完就印,等不到那一幀的圖會是空的
+    window.drawReportCharts();
     ok = true;
   } catch (e) {
     console.warn("[report-print]", e);

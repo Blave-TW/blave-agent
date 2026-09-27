@@ -4,6 +4,8 @@
 //   ③ 接線:主行程讀報告(renderer 不給內容與路徑)、列印視窗 show:false、IPC 只回應自己開的那個視窗、打包清單、白名單。
 //   ④ 用隨包的 Electron、看不見的視窗真的產一份 PDF:淺色、聲明、不印的東西、寬表縮放、頁數、A4。
 //      BLAVE_PDF_SAMPLE=<報告.json> BLAVE_PDF_OUT=<輸出.pdf> 時改印那一份、留下檔案(人眼逐頁看用)。
+//   ⑤ 圖表真的畫進 PDF:量寬的圖(candlestick / bar_chart)原本等下一幀才畫,列印頁載完就印 → 圖是空的(時有時無)。
+//      把 requestAnimationFrame 釘死(= 印之前一幀都沒來),印的那一刻每張圖都要有 svg、有尺寸、有該有的柱數。
 // 跑法:node tests/check_shell_report_pdf.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const GATE = require("./_electron_gate");
@@ -113,6 +115,14 @@ if (!process.versions.electron) {
       && /pdfZoom\(w\.clientWidth, tb\.scrollWidth, block \? PDF_WIDE_W : 0\)/.test(printJs) && /tb\.style\.setProperty\("--pdf-z", String\(r\.z\)\)/.test(printJs) && /block\.classList\.toggle\("is-wide", r\.wide\)/.test(printJs)
       && /note\.className = "rb-cap pdf-table-note"; note\.textContent = t\("pdf\.tableNote"\);/.test(printJs) && /pdfFitTables\(host\);\s*await pdfAssets\(\);\s*pdfFitTables\(host\);/.test(printJs) && !/style\.zoom/.test(printJs)
       && STR.zh["pdf.tableNote"] === "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。" && STR.en["pdf.tableNote"] === "This table is scaled down to fit the page. Open the report in Blave to see it at full size.");
+    ok("③ 圖表:回報 ready 之前當場畫完量寬的圖(不等下一幀);渲染器把 drawReportCharts 交出來", /pdfFitTables\(host\);\s*(?:\/\/[^\n]*\n\s*)*window\.drawReportCharts\(\);\s*ok = true;/.test(printJs) && /global\.drawReportCharts = drawChartsNow;/.test(read(path.join(R, "report-blocks.js"))));
+    const WEB_RB = path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "report_blocks.js");
+    if (!fs.existsSync(WEB_RB)) console.log("SKIP  ③ drawChartsNow 與 web 逐字比對(需要 monorepo 版面)");
+    else {
+      const cutIn = (src2, name) => { try { return cutFn(src2, name); } catch (_) { return null; } };
+      const mine = cutIn(read(path.join(R, "report-blocks.js")), "drawChartsNow"), theirs = cutIn(read(WEB_RB), "drawChartsNow");
+      ok("③ drawChartsNow 與 web 的 report_blocks.js 逐字相同(web 的列印頁有同一個洞,兩邊一起補)", !!mine && mine === theirs && /global\.drawReportCharts = drawChartsNow;/.test(read(WEB_RB)), theirs === null ? "web 沒有 drawChartsNow" : "");
+    }
     ok("③ 孤行(e2e #17):清單一條不切、最後一條不單獨落到下一頁;block 的尾註(含寬表那行小字)跟著前一列走", /\.rb-news-item,\s*\.rb-fn,\s*\.rb-text li \{\s*break-inside: avoid;\s*\}/.test(css) && /\.rb-text li:last-child,\s*\.rb-cap \{\s*break-before: avoid;\s*\}/.test(css));
     const pdfJs = read(path.join(R, "report-pdf.js"));
     ok("③ PDF 鈕換字前鎖原寬(稽核 P4:左邊的「分享」不位移);回到原字才解", /if \(state === "idle"\) b\.style\.minWidth = ""; else if \(!b\.hidden && b\.offsetWidth\) b\.style\.minWidth = b\.offsetWidth \+ "px";\s*clearTimeout\(PDF\.timer\); PDF\.state = state;/.test(cutFn(pdfJs, "pdfSet")));
@@ -144,7 +154,7 @@ if (!process.versions.electron) {
 }
 
 // ── ④ Electron(看不見的視窗)──
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, session } = require("electron");
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-pdf-e-")));
 // 這支測試唯一的視窗就是列印頁:它一關,Electron 預設(沒人聽 window-all-closed)就結束程式、exit 0——後面的斷言一條都沒跑到還算綠
 app.on("window-all-closed", () => {});
@@ -162,13 +172,16 @@ const FIX = { schema_version: "1.6", id: "pdf-1", type: "performance", title: "�
   { type: "image", file: "a.png", alt: "圖", caption: "說明" },
   { type: "text", markdown: "## 方法\n\n內文一段。", private: true },
   { type: "footnote", items: [{ id: "a", text: "資料來源:臺灣證券交易所" }] }] };
+// ⑤ 的樣本:實機存出空圖的那一份台股大盤晨報(市場資料,沒有帳戶資訊)
+const TW = JSON.parse(read(path.join(__dirname, "fixtures", "report_tw_market_pdf.json")));
+const CHART_TYPES = ["bar_chart", "candlestick", "line_chart"];
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 setTimeout(() => { console.log("FAIL  ④ 逾時(90 秒)"); process.exit(1); }, 90000).unref();
 
 app.whenReady().then(async () => {
   if (app.dock) app.dock.hide();
   const SAMPLE = process.env.BLAVE_PDF_SAMPLE, OUT = process.env.BLAVE_PDF_OUT || path.join(app.getPath("userData"), "out.pdf"), LANG = process.env.BLAVE_PDF_LANG || "zh";
-  const report = SAMPLE ? JSON.parse(read(SAMPLE)) : FIX;
+  let report = SAMPLE ? JSON.parse(read(SAMPLE)) : FIX;
   const images = {}; report.blocks.forEach((b) => { if (b && b.type === "image") images[b.file || b.sha256] = PNG; });
   // 跟 main.js 同一個 pdfOpenPage(原文切出來跑),只多記下視窗、在印之前量一次畫面
   let win = null, facts = null, shown = false;
@@ -185,6 +198,9 @@ app.whenReady().then(async () => {
         return { theme: document.documentElement.getAttribute("data-theme"), lang: document.documentElement.lang, bodyBg: cs(document.body).backgroundColor, ink: cs(q(".rb-title")).color, title: q(".rb-title").textContent, docTitle: document.title,
           width: Math.round(q(".pdf-sheet").getBoundingClientRect().width), foot: q(".rb-foot") ? cs(q(".rb-foot")).display : "none", stmt: !q("#pdf-statement").hidden, disc: all("#pdf-statement p").map((p) => p.textContent), discTitle: q("#pdf-disc-t").textContent,
           footVar: cs(document.documentElement).getPropertyValue("--pdf-foot"), brand: !!q(".pdf-brand svg"), tables, imgs: all(".rb-image img").length, fnref: all("a.rb-fnref").length, buttons: all("button").filter((b) => cs(b).display !== "none").length,
+          blocks: all(".rb-block").map((b) => { const s = b.querySelector("svg.rb-chart"); if (!s) return null; const r = s.getBoundingClientRect();
+            return { w: Math.round(r.width), h: Math.round(r.height), bars: s.querySelectorAll(".rb-bar-up, .rb-bar-dn").length, lines: s.querySelectorAll("polyline").length, texts: s.querySelectorAll("text").length }; }),
+          raf: String(window.requestAnimationFrame).length,
           leadBorder: q(".rb-lead") ? cs(q(".rb-lead")).borderLeftWidth : "", priv: document.body.textContent.includes("內文一段"), thead: q(".rb-table thead") ? cs(q(".rb-table thead")).display : "", typeTag: q(".rb-type-tag") ? q(".rb-type-tag").textContent : null }; })()`);
       return print(o);
     };
@@ -215,6 +231,33 @@ app.whenReady().then(async () => {
   ok("④ 寬表 ③(20 欄):橫式也放不下 → 繼續縮到剛好,表下一行小字", t2.wide && t2.page === "wide" && near(t2.z, 1001 / t2.need) && Number(t2.z) < 0.62 && fits(t2) && t2.note === "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。", JSON.stringify(t2));
   ok("④ printToPDF 認具名橫式頁:同一份 PDF 直式(595×842)與橫式(842×595)混排", boxes.includes("595x842") && boxes.includes("842x595"), boxes.join(" "));
   ok("④ 同一支渲染器:圖走主行程給的 data URI、markdown 的尾註引用是上標、lead 是左線版", facts.imgs === 1 && facts.fnref === 1 && facts.leadBorder === "2px", JSON.stringify([facts.imgs, facts.fnref, facts.leadBorder]));
+
+  // ── ⑤ 圖表 ──
+  // 最壞情況:印之前一幀都沒來。釘死 requestAnimationFrame,量寬的圖只能靠列印頁自己當場畫
+  const stub = path.join(app.getPath("userData"), "noframe.js");
+  fs.writeFileSync(stub, 'require("electron").webFrame.executeJavaScript("window.requestAnimationFrame = function () { return 0; };");');
+  session.defaultSession.registerPreloadScript({ type: "frame", filePath: stub });
+  report = TW; facts = null;
+  const OUT2 = path.join(app.getPath("userData"), "tw.pdf");
+  const pdf2 = PDFLIB.createReportPdf({ loadDoc: async () => ({ report, images: {} }), showSave: async () => ({ canceled: false, filePath: OUT2 }), openPage, writeFile: (p, b) => fs.promises.writeFile(p, b),
+    getDir: () => null, setDir: () => {}, downloads: () => app.getPath("userData"), onSaved: () => {} });
+  ipcMain.removeHandler("print-payload"); ipcMain.removeAllListeners("print-ready");
+  ipcMain.handle("print-payload", (e) => pdf2.payload(e.sender));
+  ipcMain.on("print-ready", (e, okv) => pdf2.ready(e.sender, okv));
+  const r2 = await pdf2.save(null, "local", "tw-market-20260928", undefined, "zh");
+  await wait(50);
+  const want = TW.blocks.map((b) => (CHART_TYPES.indexOf(b.type) >= 0 ? b : null)), got = (facts && facts.blocks) || [];
+  ok("⑤ 樣本:台股大盤晨報的四張圖(bar_chart 10 根、candlestick 90 根、bar_chart 3 根、line_chart);這一輪沒有下一幀", r2.code === "OK" && fs.existsSync(OUT2) && facts && facts.raf < 40
+    && want.filter(Boolean).map((b) => b.type + (b.items || b.candles || []).length).join() === "bar_chart10,candlestick90,bar_chart3,line_chart0" && got.length === TW.blocks.length, JSON.stringify([r2, facts && facts.raf, got.length, TW.blocks.length]));
+  const bad = want.map((b, i) => {
+    if (!b) return null;
+    const c = got[i], marks = b.type === "bar_chart" ? b.items.length : b.type === "candlestick" ? b.candles.length * 2 : 0;   // K 棒 = 影線 + 實體
+    if (!c) return i + " " + b.type + ":沒有 svg";
+    if (Math.abs(c.w - 673) > 1 || c.h < 100) return i + " " + b.type + ":尺寸 " + c.w + "×" + c.h;
+    if (marks ? c.bars !== marks : c.lines < 1) return i + " " + b.type + ":柱 " + c.bars + " / 線 " + c.lines + "(要 " + (marks || "≥1 條線") + ")";
+    return c.texts > 0 ? null : i + " " + b.type + ":沒有軸標";
+  }).filter(Boolean);
+  ok("⑤ 印的那一刻每張圖都畫好了:有 svg、寬 = 欄寬 673、高 ≥ 100、柱數 / K 棒數 / 折線對得上資料", bad.length === 0, bad.join(" | "));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

@@ -997,6 +997,22 @@
     });
   }
 
+  // 列印頁用:不等觀測與下一幀,當場量、當場畫——印的那一刻不保證已經過了一幀,沒畫到的圖
+  // 在 PDF 裡只剩標題與圖說。量 clientWidth:紙面在螢幕上被 transform 縮小時排版寬不變。
+  // 之後觀測回報同一個寬度,draw 自己略過
+  function drawChartsNow() {
+    widthHosts.forEach(function (rec, host) {
+      if (!host.isConnected) return;
+      rec.seen = true;
+      widthPending.delete(host);
+      try {
+        rec.draw(host.clientWidth);
+      } catch (e) {
+        if (global.console) console.warn("[report] chart failed:", e);
+      }
+    });
+  }
+
   // 不超過 slot × 0.75 的最大奇數,夾在 [1, 13]:奇數才讓 1px 影線落在實體正中
   // 那一格;slot < 4 時自然退成 1px,整根降階成有色高低線
   function candleBody(slot) {
@@ -2462,4 +2478,5 @@
 
   global.renderAgentReport = renderAgentReport;
   global.renderReportBlock = renderReportBlock;
+  global.drawReportCharts = drawChartsNow;
 })(window);
