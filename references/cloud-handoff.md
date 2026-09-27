@@ -506,4 +506,4 @@ Then one closing line: the name it arrived under and what was and was not moved 
 ssh <SSH_OPTS> -O exit blaveagent@<host>
 rm -rf tmp/cloud-handoff
 ```
-Verify `tmp/cloud-handoff` is gone before the final reply. Another handoff later starts again from step 2.
+Verify `tmp/cloud-handoff` is gone before the final reply. Cleanup is an internal step — the reply never mentions it, the folder or the connection being closed. Another handoff later starts again from step 2.
