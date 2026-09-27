@@ -7,6 +7,7 @@
 //      分享框達上限、PDF 鈕的位置與狀態。
 // 跑法:node tests/check_shell_share_list.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
+const GATE = require("./_electron_gate");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer"), MONO = path.join(__dirname, "..", "..");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 1500))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
@@ -82,11 +83,13 @@ if (!process.versions.electron) {
     else { const g = (lang) => { const m = /msgid "workspace_share_source_gone"\nmsgstr "([^"]*)"/.exec(read(path.join(WEB_PO, lang, "LC_MESSAGES", "messages.po"))); return m && m[1]; };
       ok("③ shl.goneCloud 逐字同 web workspace_share_source_gone", STR.zh["shl.goneCloud"] === g("zh") && STR.en["shl.goneCloud"] === g("en"), JSON.stringify([STR.zh["shl.goneCloud"], g("zh")])); }
 
-    const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-    if (!fs.existsSync(bin)) { console.log("SKIP  ④ 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+    ok("③ 取消確認框的取消鈕(shr.keep;報告頁與公開連結清單共用):繼續分享 / Keep sharing", STR.zh["shr.keep"] === "繼續分享" && STR.en["shr.keep"] === "Keep sharing" && /cancel: t\("shr\.keep"\)/.test(src) && /cancel: t\("shr\.keep"\)/.test(read(path.join(R, "report-share.js"))));
+
+    const bin = GATE.bin(SHELL, "④");
+    if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
     const sub = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" }).status;
-    console.log(red || sub ? `\n${red + (sub ? 1 : 0)} 紅` : "\nALL PASS");
-    process.exit(red || sub ? 1 : 0);
+    const n = red + (sub == null ? 1 : sub);
+    console.log(n ? `\n${n} 紅` : "\nALL PASS"); process.exit(n ? 1 : 0);
   })();
   return;
 }
@@ -168,9 +171,9 @@ app.whenReady().then(async () => {
   // 取消分享(第二列:原檔不在這台電腦)
   await js(`document.querySelectorAll("#set-shares .shl-row")[1].querySelector(".btn-quiet").click()`); await wait(200);
   let c = await js(`(() => { const g = (x) => document.getElementById(x), ps = [...g("del-body").children]; return { open: !g("del-scrim").hidden, title: g("del-title").textContent, first: ps[0].textContent, firstCls: ps[0].className, fw: getComputedStyle(ps[0]).fontWeight, second: ps[1] && ps[1].textContent, n: ps.length, ok: g("del-ok").textContent, okCls: g("del-ok").className, cancel: g("del-cancel").textContent, focus: document.activeElement && document.activeElement.id }; })()`);
-  ok("④ 取消確認:沿用既有取消框的字,內文第一行是那一份的標題(600);焦點在「留著」、確認鈕中性填色", c.open && c.title === (await T("shr.revokeTitle")) && c.first === "加密收盤報" && c.fw === "600" && c.second === (await T("shr.revokeBody")) && c.n === 2 && c.ok === (await T("shr.revokeOk")) && c.okCls === "btn-fill" && c.cancel === (await T("shr.keep")) && c.focus === "del-cancel", JSON.stringify(c));
+  ok("④ 取消確認:沿用既有取消框的字,內文第一行是那一份的標題(600);焦點在「繼續分享」、確認鈕中性填色", c.open && c.title === (await T("shr.revokeTitle")) && c.first === "加密收盤報" && c.fw === "600" && c.second === (await T("shr.revokeBody")) && c.n === 2 && c.ok === (await T("shr.revokeOk")) && c.okCls === "btn-fill" && c.cancel === (await T("shr.keep")) && c.focus === "del-cancel", JSON.stringify(c));
   await js(`document.getElementById("del-cancel").click()`); await wait(150);
-  ok("④ 「留著」:不送、列還在", (await calls("revokeCode")).length === 0 && (await pane()).rows.length === 4);
+  ok("④ 「繼續分享」:不送、列還在", (await calls("revokeCode")).length === 0 && (await pane()).rows.length === 4);
   await js(`window.__s.revoke = { code: "UNREACH" }; document.querySelectorAll("#set-shares .shl-row")[1].querySelector(".btn-quiet").click()`); await wait(150);
   await js(`document.getElementById("del-ok").click()`); await wait(300);
   c = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("del-scrim").hidden, body: g("del-body").textContent, single: g("del-cancel").hidden }; })()`);

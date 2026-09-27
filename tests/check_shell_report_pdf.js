@@ -6,6 +6,7 @@
 //      BLAVE_PDF_SAMPLE=<報告.json> BLAVE_PDF_OUT=<輸出.pdf> 時改印那一份、留下檔案(人眼逐頁看用)。
 // 跑法:node tests/check_shell_report_pdf.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
+const GATE = require("./_electron_gate");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 1500))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
@@ -100,7 +101,16 @@ if (!process.versions.electron) {
     const ph = read(path.join(R, "report-print.html")), css = read(path.join(R, "report-print.css"));
     ok("③ 列印頁:<html> 不帶 data-theme(light);CSP 不准 inline script / style 屬性 / 外連;用同一支 report-blocks.js 與 md.js", !/data-theme/.test(ph.replace(/<!--[\s\S]*?-->/g, "")) && /script-src 'self'; style-src 'self'; img-src data:/.test(ph) && /connect-src 'none'/.test(ph) && /<script src="md\.js"><\/script>\s*<script src="report-blocks\.js"><\/script>\s*<script src="report-print\.js">/.test(ph));
     ok("③ 列印規則(P1 / P4):A4 與邊界、margin box 頁尾與頁碼、print-color-adjust、表頭重印、列不切、圖不過頁、不寫 hex", /@page \{\s*size: A4;\s*margin: 18mm 16mm 20mm;/.test(css) && /@bottom-left \{\s*content: var\(--pdf-foot, ""\);/.test(css) && /counter\(page\) " \/ " counter\(pages\)/.test(css) && /print-color-adjust: exact/.test(css) && /-webkit-print-color-adjust: exact/.test(css)
-      && /\.rb-table thead \{ display: table-header-group; \}/.test(css) && /\.rb-table tr, \.rb-heat tr \{ break-inside: avoid; \}/.test(css) && /\.rb-image img \{ max-height: 200mm; object-fit: contain; \}/.test(css) && /orphans: 3; widows: 3/.test(css) && !/#[0-9a-fA-F]{3,8}\b(?![^{]*\{)/.test(css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/#rs_content/g, "")));
+      && /\.rb-table thead \{\s*display: table-header-group;\s*\}/.test(css) && /\.rb-table tr,\s*\.rb-heat tr \{\s*break-inside: avoid;\s*\}/.test(css) && /\.rb-image img \{\s*max-height: 200mm;\s*object-fit: contain;\s*\}/.test(css) && /orphans: 3;\s*widows: 3/.test(css) && !/#[0-9a-fA-F]{3,8}\b(?![^{]*\{)/.test(css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/#rs_content/g, "")));
+    const WEB_PRINT = path.join(__dirname, "..", "..", "web", "app", "static", "css", "agent", "report_print.css");
+    if (!fs.existsSync(WEB_PRINT)) console.log("SKIP  ③ 共用列印規則與 web 逐字比對(需要 monorepo 版面)");
+    else {
+      const mark = "/* ========== 共用:以下到檔尾逐字同 web 的 report_print.css ========== */\n", at = css.indexOf(mark), host = at < 0 ? "" : css.slice(0, at), shared = at < 0 ? "" : css.slice(at + mark.length), w = read(WEB_PRINT);
+      let d = 0; while (d < shared.length && shared[d] === w[d]) d++;
+      ok("③ 共用列印規則 = web 的 report_print.css(逐字;那邊改了整段搬過來)", at > 0 && shared === w, at < 0 ? "找不到共用段的標記" : "第 " + d + " 字起不同:" + JSON.stringify(shared.slice(d, d + 80)) + " vs " + JSON.stringify(w.slice(d, d + 80)));
+      ok("③ 共用段要宿主頁給的三樣:--pdf-sans / --pdf-mono 在宿主段、--pdf-foot 由 report-print.js 設;@page 與不印按鈕的規則只在共用段", /--pdf-sans: [^;]+;/.test(host) && /--pdf-mono: [^;]+;/.test(host) && /setProperty\("--pdf-foot"/.test(read(path.join(R, "report-print.js")))
+        && !/@page|display: none !important/.test(host) && /font: 400 7\.5pt\/1\.4 var\(--pdf-sans,/.test(shared) && /font: 400 7\.5pt\/1\.4 var\(--pdf-mono,/.test(shared) && /#rs_content button,/.test(shared) && !/\.pdf-doc button/.test(css) && /\.pdf-brand img,\s*\.pdf-brand svg \{/.test(shared));
+    }
     const WEB_CSS = path.join(__dirname, "..", "..", "web", "app", "static", "css", "landing", "agent", "research_share.css");
     if (!fs.existsSync(WEB_CSS)) console.log("SKIP  ③ light remap 與 web 公開頁逐字比對(需要 monorepo 版面)");
     else {
@@ -110,11 +120,11 @@ if (!process.versions.electron) {
       ok("③ 報告 block 的 light remap = web 公開頁那一段(逐條都在;那邊改了這裡要跟著搬)", rules.length > 30 && miss.length === 0, rules.length + " 條,缺:" + miss.slice(0, 3).join(" | "));
     }
 
-    const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-    if (!fs.existsSync(bin)) { console.log("SKIP  ④ 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+    const bin = GATE.bin(SHELL, "④");
+    if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
     const sub = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" }).status;
-    console.log(red || sub ? `\n${red + (sub ? 1 : 0)} 紅` : "\nALL PASS");
-    process.exit(red || sub ? 1 : 0);
+    const n = red + (sub == null ? 1 : sub);
+    console.log(n ? `\n${n} 紅` : "\nALL PASS"); process.exit(n ? 1 : 0);
   })();
   return;
 }

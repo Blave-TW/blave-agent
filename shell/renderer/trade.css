@@ -439,17 +439,19 @@ html.ws-sc .side-gate { display: none; }
 /* inline-block:長名填滿一行時整段註記一起換行,不會第一個字掛在名字尾(設計稽核 should-fix) */
 .ps-gone { display: inline-block; margin-left: var(--space-8); font-size: 11px; color: var(--ink-2); }
 .ps-note { display: inline-block; margin-left: var(--space-8); font-size: 11px; color: var(--ink-3); }
-/* checkbox(canon › Components › Checkbox):18 方、--radius-micro;off = 透明底 + frame 框;checked = 橘底白勾(表單選取指示,不是 CTA);
+/* checkbox(canon › Components › Checkbox):18 方、--radius-micro;off = 透明底 + frame 框;checked = 墨色底、勾號取 --control-fill-text(同分享框的 radio;勾的形狀拿 --check-indicator 當遮罩,data-URI 裡的色換不了主題);
    disabled 未勾 = card 底 + hairline 框、已勾 = muted 底 + greyDark 勾(勾號兩個變數在 tokens.css) */
 .ps-cb {
   width: 18px; height: 18px; flex: none; margin: 0; appearance: none; -webkit-appearance: none;
   border-radius: var(--radius-micro); cursor: pointer; background: transparent; border: 1px solid var(--border-frame);
-  background-position: center; background-size: contain; background-repeat: no-repeat;
+  background-position: center; background-size: contain; background-repeat: no-repeat; position: relative;
 }
-.ps-cb:checked { background-color: var(--color-primary); border-color: var(--color-primary); background-image: var(--check-indicator); }
+.ps-cb:checked { background-color: var(--control-fill); border-color: var(--control-fill); }
+.ps-cb:checked::after { content: ""; position: absolute; inset: 0; background: var(--control-fill-text); -webkit-mask: var(--check-indicator) center / contain no-repeat; mask: var(--check-indicator) center / contain no-repeat; }
 .ps-cb:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .ps-cb:disabled { cursor: not-allowed; background-color: var(--surface-card); border-color: var(--border-hairline); }
 .ps-cb:disabled:checked { background-color: var(--surface-muted); border-color: var(--surface-muted); background-image: var(--check-indicator-disabled); }
+.ps-cb:disabled:checked::after { content: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .run-dot.live { animation: none; }

@@ -157,6 +157,7 @@ if (!process.versions.electron) {
   ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
     && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
+  ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略照舊 lib.note.paid", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); break;/.test(src) && STR.zh["lib.note.paid"] === "從 Blave Agent 餘額扣款。");
   ok("③ 快取作廢的四個事件都接了:登出 / 兩條登入路徑 → libInvalidate;設定關掉 → libRefresh;主行程登出(clearToken)與換 token 都清 libCache;購買成功後 libRefresh", (appSrc.match(/if \(typeof libInvalidate === "function"\) libInvalidate\(\);/g) || []).length === 3
     && /if \(typeof libRefresh === "function"\) libRefresh\(\);/.test(cutFn(appSrc, "setClose")) && /libCache = null;/.test(cutFn(mainSrc, "clearToken")) && (mainSrc.match(/^\s*libCache = null;/gm) || []).length === 3
     && /libSend\(s\); libRefresh\(\); return;/.test(src) && /function libRepaint\(\) \{ if \(\$\("lib"\)\.hidden\) return; LIB\.reports\.clear\(\); libPaint\(\); if \(LIB\.data && LIB\.data\.lang !== LANG\) libLoad\(false\); \}/.test(src) && /window\.addEventListener\("focus", \(\) => libRefresh\(\)\);/.test(src));
@@ -334,14 +335,14 @@ app.whenReady().then(async () => {
   ok("④ 「用這支」→ 確認框(標題帶策略名、兩段、「下載並回測」、焦點在取消、本機不掛雲端記號)→ 確認 → 送出的就是 web 那一句(逐字)、viewing.env=local → 進行中態",
     r.open && r.title === (await T("lib.cf.title", { title: "BTC 通道動能共振" })) && r.full === r.title && !/…/.test(r.title) && r.lines.length === 2 && r.lines[0] === (await T("lib.cf.l1")) && r.okTxt === (await T("lib.cf.ok")) && r.env && r.focus === "del-cancel"
     && r.sent.length === 1 && r.sent[0][0] === "幫我下載官方策略「BTC 通道動能共振」（#101），跑一次回測看看結果" && r.sent[0][1] === "local" && r.sent[0][2] && r.pending === 101 && r.btn === (await T("lib.pending")) && r.dis && r.note === (await T("lib.note.pending")) && r.running, JSON.stringify(r));
-  // turn-end:本機多了一支 → 記對照表;stratRefresh(true) 選中新策略(策略庫收起)
+  // turn-end:本機多了一支 → 記對照表;回合結束不換頁(結果卡 spec §1:新策略不自動選中,由 results.js 出卡,見 check_shell_results.js)
   r = await js(`(async () => { window.__lib.strats = [{ name: "btc_channel", displayName: "BTC 通道", mtime: 5, hasBacktest: true }]; running = false;
     await stratRefresh(true); libTurnEnd(); await new Promise((r) => setTimeout(r, 40));
     const libHidden = document.getElementById("lib").hidden, rp = document.getElementById("rp").hidden, sel = RP.name;
     await libOpen(); await new Promise((r) => setTimeout(r, 40)); const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0];
     return { patches: window.__lib.patches, installed: LIB.installed, libHidden, rp, sel, pending: LIB.pending, btn: b.textContent, quiet: q("#lib-cta .btn-quiet").map((x) => x.textContent).join(), note: q("#lib-cta .note")[0].textContent, detail: libBag().detail }; })()`);
-  ok("④ turn-end:本機清單多了 btc_channel → 對照表記 101 → btc_channel(寫進主行程)、報告頁蓋掉策略庫;再開回到同一支詳情 → 已安裝態(打開這支策略 + 再下載一份)",
-    JSON.stringify(r.patches) === '[{"id":101,"name":"btc_channel"}]' && r.installed["101"] === "btc_channel" && r.libHidden && !r.rp && r.sel === "btc_channel" && r.pending === null && r.detail === 101
+  ok("④ turn-end:本機清單多了 btc_channel → 對照表記 101 → btc_channel(寫進主行程)、不自動選中新策略(策略庫留著、報告頁不出現);同一支詳情 → 已安裝態(打開這支策略 + 再下載一份)",
+    JSON.stringify(r.patches) === '[{"id":101,"name":"btc_channel"}]' && r.installed["101"] === "btc_channel" && !r.libHidden && r.rp && r.sel === null && r.pending === null && r.detail === 101
     && r.btn === (await T("lib.open")) && r.quiet === (await T("lib.again")) && r.note === (await T("lib.note.installed", { where: await T("lib.where.local") })), JSON.stringify(r));
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; document.getElementById("lib-back").click(); const tag = q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), focus = document.activeElement && document.activeElement.dataset.id;
     window.__lib.strats = []; await stratRefresh(false); await new Promise((r) => setTimeout(r, 40));
@@ -397,9 +398,9 @@ app.whenReady().then(async () => {
   ok("④ 成功 → 關框、不再開下載框、直接送 lib.msgPaid(逐字)、進行中態、purchased=true", r.del && r.sent.length === 2 && r.sent[1] === "幫我下載已購買的策略「Cash-and-Carry <img onerror=x> Arbitrage」（#5），跑一次回測看看結果" && r.pending === 5 && r.purchased === true && r.btn === (await T("lib.pending")) && r.buys === 5, JSON.stringify(r));
   // 已購:用這支 → msgPaid,不開購買框
   r = await js(`(async () => { running = false; LIB.pending = null; libSync(); document.getElementById("lib-back").click(); const q = (x) => [...document.querySelectorAll(x)]; q('#lib-rows .lib-row[data-id="9"]')[0].click();
-    const btn = q("#lib-cta .btn-fill")[0].textContent, note = q("#lib-cta .note")[0].textContent; q("#lib-cta .btn-fill")[0].click(); const title = document.getElementById("del-title").textContent; document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
-    return { btn, note, title, last: window.__lib.sent[window.__lib.sent.length - 1].message, buys: window.__lib.buys.length }; })()`);
-  ok("④ 已購的付費策略:主鈕「用這支」、說明 lib.note.owned、走下載框(不是購買框)、送 lib.msgPaid", r.btn === (await T("lib.use")) && r.note === (await T("lib.note.owned")) && r.title === (await T("lib.cf.title", { title: "已買的社群策略" })) && r.last === "幫我下載已購買的策略「已買的社群策略」（#9），跑一次回測看看結果" && r.buys === 5, JSON.stringify(r));
+    const btn = q("#lib-cta .btn-fill")[0].textContent, note = q("#lib-cta .note")[0].textContent, noteHidden = q("#lib-cta .note")[0].hidden; q("#lib-cta .btn-fill")[0].click(); const title = document.getElementById("del-title").textContent; document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
+    return { btn, note, noteHidden, title, last: window.__lib.sent[window.__lib.sent.length - 1].message, buys: window.__lib.buys.length }; })()`);
+  ok("④ 已購的付費策略:主鈕「用這支」、鈕下沒有說明句(那一段收著)、走下載框(不是購買框)、送 lib.msgPaid", r.btn === (await T("lib.use")) && r.note === "" && r.noteHidden && r.title === (await T("lib.cf.title", { title: "已買的社群策略" })) && r.last === "幫我下載已購買的策略「已買的社群策略」（#9），跑一次回測看看結果" && r.buys === 5, JSON.stringify(r));
   // en
   r = await js(`(async () => { running = false; LIB.pending = null; libFind(5).purchased = false; setLang("en"); applyStatic(); await new Promise((r) => setTimeout(r, 30)); const q = (x) => [...document.querySelectorAll(x)];
     const h = document.getElementById("lib-h").textContent; document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="5"]')[0].click(); const tag5 = q('#lib-cta').length;

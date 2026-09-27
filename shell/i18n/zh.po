@@ -3361,9 +3361,6 @@ msgstr "TWD"
 msgid "lib.fxNote"
 msgstr "金額以 TWD 計價。"
 
-msgid "lib.note.owned"
-msgstr "已購買。"
-
 msgid "lib.gate.signedOutBuy"
 msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
 
@@ -3664,9 +3661,9 @@ msgstr "連結會隨即失效，之後再公開會是新的連結。已轉貼或
 msgid "shr.revokeOk"
 msgstr "取消分享"
 
-# 取消分享確認框的取消鈕(mockup DT4;「取消 / 取消分享」並排讀不出哪顆是留著)
+# 取消分享確認框的取消鈕(mockup DT4;「取消 / 取消分享」並排讀不出哪顆是留著;公開連結清單的取消框共用)
 msgid "shr.keep"
-msgstr "留著"
+msgstr "繼續分享"
 
 msgid "shr.revokeFailed"
 msgstr "取消分享失敗，請稍後再試。"

@@ -99,8 +99,18 @@
     return "current";
   }
 
+  // 送給 agent 的固定訊息裡的顯示名稱(稽核 S4):DISPLAY_NAME 是策略檔裡的自由文字
+  // (下載來的策略也有),原樣插進去等於讓策略作者替用戶說話。規則同電腦版
+  // shell/renderer/versions.js › verSafeName;清完是空的由呼叫端改用資料夾名。
+  var UNSAFE_NAME_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029"'`“”‘’「」『』《》〈〉【】()（）\[\]{}<>]/g;
+  function safeName(s) {
+    var clean = String(s || "").replace(UNSAFE_NAME_RE, " ").replace(/\s+/g, " ").trim();
+    return Array.from(clean).slice(0, 40).join("").trim();
+  }
+
   global.blaveVersions = {
     DASH: DASH,
+    safeName: safeName,
     NAME_RE: NAME_RE,
     entries: entries,
     usable: usable,

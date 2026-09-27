@@ -1,68 +1,24 @@
 /* =========================================================================
    報告存成 PDF 的列印頁(report-print.html;spec-report-pdf-0.1.8 §P)。主行程在看不見的視窗載這一頁、printToPDF。
    <html> 不帶 data-theme:tokens.css 的 :root(light)生效,report-blocks.css 走語意角色,整份變淺色。
-   三段:① 紙面與頁尾(@page margin box)② 報告 block 的 Editorial light remap(從 web 公開頁搬,逐字)
-   ③ 分頁規則(P4;web 的列印頁用同一組)。值全引 tokens.css,不寫 hex。
+   兩段:前段是電腦版這個宿主頁自己給的(字族、報告 block 的 light remap);
+   後段「共用」逐字 = web/app/static/css/agent/report_print.css(tests/check_shell_report_pdf.js 比對),
+   那邊改了整段搬過來,不在這裡改。值全引 tokens.css,不寫 hex。
    ========================================================================= */
 
-/* ---------- ① 紙面 ---------- */
-/* 頁尾兩格的字由 report-print.js 設在 :root 的 --pdf-foot / --pdf-site(字串表的字;@page 裡沒有選擇器可以分語言) */
-@page {
-  size: A4;
-  margin: 18mm 16mm 20mm;
-  @bottom-left {
-    content: var(--pdf-foot, "");
-    font: 400 7.5pt/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    color: var(--color-greyMedium);
-    vertical-align: top;
-    padding-top: 5mm;
-  }
-  @bottom-right {
-    content: "blave.org  \00b7  " counter(page) " / " counter(pages);
-    font: 400 7.5pt/1.4 "Roboto Mono", ui-monospace, monospace;
-    color: var(--color-greyMedium);
-    vertical-align: top;
-    padding-top: 5mm;
-  }
+/* ---------- 宿主頁 ---------- */
+/* 字同 app 的系統字(外殼不為 PDF 打包字型);--pdf-foot 由 report-print.js 設在 :root */
+:root {
+  --pdf-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --pdf-mono: "Roboto Mono", ui-monospace, monospace;
 }
-html {
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-  background: var(--color-pureWhite);
-}
-/* 紙底 pureWhite(不是 body 的 off-white:印出來是一層灰);字同 app 的系統字(外殼不為 PDF 打包字型) */
-body.pdf-doc {
-  margin: 0;
-  background: var(--color-pureWhite);
-  color: var(--color-black);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-}
-/* 欄寬 = A4 扣左右 16mm:螢幕排版時就用這個寬(圖表量容器畫 SVG),印出來不重排 */
-.pdf-sheet { width: 178mm; margin: 0; }
-.pdf-doc .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+html { background: var(--color-pureWhite); }
+.pdf-sheet { margin: 0; }
 .pdf-doc h1, .pdf-doc h2, .pdf-doc h3, .pdf-doc p { margin: 0; }
-/* 頁 1 頂:lockup(之後各頁沒有頁首) */
-.pdf-brand { margin-bottom: 20px; color: var(--color-black); }
-.pdf-brand svg { height: 14px; width: auto; display: block; }
+.pdf-brand { color: var(--color-black); }
 
-/* meta 頭:公開頁的 remap 不含 meta(公開頁自己 SSR 頁首),這裡補 light 版 */
-#rs_content .rb-report .rb-title { color: var(--color-black); font-size: 24px; line-height: 1.35; letter-spacing: -0.01em; }
-#rs_content .rb-report .rb-meta-line { color: var(--color-greyMedium); }
-#rs_content .rb-report .rb-type-tag { background: var(--color-greyLight); color: var(--color-greyDark); }
-#rs_content .rb-report .rb-strip { border-top-color: var(--color-greyLight); border-bottom-color: var(--color-greyLight); }
-#rs_content .rb-report .rb-strip-value { color: var(--color-black); }
-
-/* ---------- 文末聲明(P2):整塊不切 ---------- */
-.pdf-statement { break-inside: avoid; margin-top: var(--space-32); padding-top: var(--space-16); border-top: 1px solid var(--color-greyLight); }
-.pdf-statement[hidden] { display: none; }
-.pdf-statement h2 { font-size: 12px; font-weight: 600; color: var(--color-black); margin: 0 0 var(--space-8); }
-.pdf-statement p { font-size: 10.5px; line-height: 1.65; color: var(--color-greyDark); margin: 0 0 var(--space-6); }
-.pdf-statement .pdf-stamp { margin-top: var(--space-8); font-size: 10px; color: var(--color-greyMedium); }
-
-/* ---------- ② 報告 block:Editorial light remap ----------
-   以下到「③」之前逐字搬自 web/app/static/css/landing/agent/research_share.css 的「報告 block:dark → light」段
+/* ---------- 報告 block:Editorial light remap ----------
+   以下到「共用」之前逐字搬自 web/app/static/css/landing/agent/research_share.css 的「報告 block:dark → light」段
    (拿掉公開頁自己的 .rs-* 規則)。PDF 與公開連結讀起來是同一份文件;那邊改了這裡跟著搬。 */
 #rs_content .rb-report {
   max-width: none;
@@ -299,8 +255,128 @@ body.pdf-doc {
   color: var(--color-black);
 }
 
-/* ---------- ③ 分頁規則(spec P4;web 列印頁同一組)---------- */
-/* 1) 一個視覺單位 = 小標 + 圖 + caption(都在同一個 .rb-block 裡),整塊不切;放不下就整塊推到下一頁 */
+/* ========== 共用:以下到檔尾逐字同 web 的 report_print.css ========== */
+/* 報告存成 PDF 的列印規則(spec-report-pdf-0.1.8 §P)。web 列印頁與電腦版列印頁共用同一份:
+   這支只放兩邊都一樣的東西(紙面、頁尾、meta 頭的淺色、文末聲明、分頁、不印的東西),
+   宿主頁要自己給的有四樣——
+     1. token(--color-* / --space-*):web 是 main.css,電腦版是 tokens.css 的 light 值
+     2. 報告 block 的淺色 remap(#rs_content 前綴那組):來源是 landing/agent/research_share.css
+     3. 字族:--pdf-sans / --pdf-mono(不給 = 系統字)
+     4. 頁尾短版聲明:--pdf-foot(CSS 字串;@page 裡沒有選擇器可以分語言,由 JS 設在 :root)
+   DOM 契約:body.pdf-doc > … > .pdf-sheet > (.pdf-brand, main#rs_content > 報告 + .pdf-statement) */
+
+/* ---------- 紙面與頁尾 ---------- */
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm;
+  @bottom-left {
+    content: var(--pdf-foot, "");
+    font: 400 7.5pt/1.4 var(--pdf-sans, system-ui, sans-serif);
+    color: var(--color-greyMedium);
+    vertical-align: top;
+    padding-top: 5mm;
+  }
+  @bottom-right {
+    content: "blave.org  \00b7  " counter(page) " / " counter(pages);
+    font: 400 7.5pt/1.4 var(--pdf-mono, ui-monospace, monospace);
+    color: var(--color-greyMedium);
+    vertical-align: top;
+    padding-top: 5mm;
+  }
+}
+
+/* 使用者關掉「背景圖形」時,熱圖格、漲跌色、tag 底仍要印出來 */
+html {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* 紙底 pureWhite:body 的 off-white 印出來是一層灰 */
+body.pdf-doc {
+  margin: 0;
+  background: var(--color-pureWhite);
+  color: var(--color-black);
+  font-family: var(--pdf-sans, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* 欄寬 = A4 扣左右 16mm。螢幕排版就用這個寬:圖表是量容器寬畫的,印的時候才不重排 */
+.pdf-sheet {
+  width: 178mm;
+}
+
+.pdf-doc .mono {
+  font-family: var(--pdf-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 頁 1 頂:lockup;之後各頁沒有頁首 */
+.pdf-brand {
+  margin-bottom: 20px;
+  color: var(--color-black);
+}
+.pdf-brand img,
+.pdf-brand svg {
+  height: 14px;
+  width: auto;
+  display: block;
+}
+
+/* ---------- meta 頭:公開頁的 remap 不含這一段(公開頁自己 SSR 頁首) ---------- */
+#rs_content .rb-report .rb-title {
+  color: var(--color-black);
+  font-size: 24px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+#rs_content .rb-report .rb-meta-line {
+  color: var(--color-greyMedium);
+}
+#rs_content .rb-report .rb-type-tag {
+  background: var(--color-greyLight);
+  color: var(--color-greyDark);
+}
+#rs_content .rb-report .rb-strip {
+  border-top-color: var(--color-greyLight);
+  border-bottom-color: var(--color-greyLight);
+}
+#rs_content .rb-report .rb-strip-value {
+  color: var(--color-black);
+}
+
+/* ---------- 文末聲明 ---------- */
+.pdf-statement {
+  break-inside: avoid;
+  margin-top: var(--space-32);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--color-greyLight);
+}
+.pdf-statement[hidden] {
+  display: none;
+}
+.pdf-statement h2 {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--color-black);
+  margin: 0 0 var(--space-8);
+}
+.pdf-statement p {
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: var(--color-greyDark);
+  margin: 0 0 var(--space-6);
+}
+.pdf-statement .pdf-stamp {
+  margin-top: var(--space-8);
+  font-size: 10px;
+  color: var(--color-greyMedium);
+}
+
+/* ---------- 分頁(spec P4) ---------- */
+/* 小標、圖、caption 都在同一個 .rb-block 裡:整塊不切,放不下就整塊推到下一頁 */
 .rb-block:has(.rb-chart),
 .rb-block:has(> .rb-kpi),
 .rb-block:has(> .rb-metrics),
@@ -309,23 +385,52 @@ body.pdf-doc {
 .rb-block:has(> .rb-quote),
 .rb-block:has(> .rb-lead),
 .rb-block:has(> .rb-summary),
-.rb-block:has(> .rb-heat-wrap) { break-inside: avoid; }
-/* 2) 標題不落單在頁尾 */
-.rb-h, .rb-text h2, .rb-text h3 { break-after: avoid; }
-/* 3) 表格可以跨頁,只在列與列之間切;表頭每頁重印。紙上沒有橫捲:寬表由 report-print.js 量了用 zoom 縮到剛好 */
-.rb-table thead { display: table-header-group; }
-.rb-table tr, .rb-heat tr { break-inside: avoid; }
-.rb-report .rb-table-wrap, .rb-report .rb-heat-wrap { overflow: visible; }
-/* 4) 清單類可跨頁,單則不切 */
-.rb-news-item, .rb-fn { break-inside: avoid; }
-/* 5) 段落孤行寡行 */
-.rb-text p, .rb-text li { orphans: 3; widows: 3; }
-/* 6) 程式碼在紙上換行 */
-.rb-code, .rb-code pre { white-space: pre-wrap; overflow: visible; }
-/* 7) 一張圖不超過一頁 */
-.rb-image img { max-height: 200mm; object-fit: contain; }
+.rb-block:has(> .rb-heat-wrap) {
+  break-inside: avoid;
+}
+.rb-h,
+.rb-text h2,
+.rb-text h3 {
+  break-after: avoid;
+}
+/* 表格只在列與列之間切,表頭每頁重印。紙上沒有橫捲:寬表由宿主頁的 JS 量了用 zoom 縮到剛好 */
+.rb-table thead {
+  display: table-header-group;
+}
+.rb-table tr,
+.rb-heat tr {
+  break-inside: avoid;
+}
+.rb-report .rb-table-wrap,
+.rb-report .rb-heat-wrap {
+  overflow: visible;
+}
+.rb-news-item,
+.rb-fn {
+  break-inside: avoid;
+}
+.rb-text p,
+.rb-text li {
+  orphans: 3;
+  widows: 3;
+}
+.rb-code,
+.rb-code pre {
+  white-space: pre-wrap;
+  overflow: visible;
+}
+.rb-image img {
+  max-height: 200mm;
+  object-fit: contain;
+}
 
-/* ---------- 不印的東西(P6)---------- */
-/* 閱讀層尾行「本報告由…的 agent 產出」:「你」對轉傳讀者不成立,文末聲明已講了誰產出 */
-#rs_content .rb-report .rb-foot { display: none; }
-.pdf-doc button, .pdf-doc .shr-well { display: none !important; }
+/* ---------- 不印的東西(spec P6) ---------- */
+/* 閱讀層尾行「本報告由你主機上的 agent…」:「你」對轉傳讀者不成立,文末聲明已講了誰產出 */
+#rs_content .rb-report .rb-foot {
+  display: none;
+}
+#rs_content button,
+#rs_content .sh-well,
+#rs_content .shr-well {
+  display: none !important;
+}

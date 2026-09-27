@@ -4,7 +4,7 @@
 //      沒登入 / 舊登入不出門、請求途中換帳號丟掉、status → 代號。有 api 原始碼(monorepo 或 BLAVE_API_DIR)時對照 api 的欄位白名單;有 web 時對照條款版本。
 //   ③ main.js reportForShare:本體原樣 + image block 引用的 sidecar 圖(base64)、壞檔名 / 缺檔跳過。
 //   ④ 用隨包的 Electron 開真的 index.html(window.blave 換成假的):頁首「分享」只給能公開的類型 → 確認框(勾了才能送、名字讀不到就停用)→
-//      送出的只有 view / id / 掛名 / 勾 → 公開列 + 埋點 → stale 行 → 取消分享(「留著」/「取消分享」、埋點、回到未公開)→ 引用圖的來源行。
+//      送出的只有 view / id / 掛名 / 勾 → 公開列 + 埋點 → stale 行 → 取消分享(「繼續分享」/「取消分享」、埋點、回到未公開)→ 引用圖的來源行。
 // 跑法:node tests/check_shell_report_share.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer"), MONO = path.join(__dirname, "..", "..");
@@ -276,7 +276,7 @@ app.whenReady().then(async () => {
   ok("④ 複製連結 → 寫進剪貼簿的是完整網址、鈕字暫換「已複製」、share_copy", await js(`window.__s.tracked.includes("share_copy") && __s.copied.pop() === "https://blave.org/zh/r/Abcd1234?src=research_link" && document.querySelector("#rpt-read .shr-copy").textContent === t("shr.copied")`));
   await js(`document.querySelector("#rpt-read .shr-well .btn-quiet").click()`); await wait(200);
   d = await js(`({ open: !$("del-scrim").hidden, title: $("del-title").textContent, cancel: $("del-cancel").textContent, ok: $("del-ok").textContent })`);
-  ok("④ 取消分享 → 確認框:標題「取消分享這份報告？」、鈕「留著」/「取消分享」", d.open && d.title === (await T("shr.revokeTitle")) && d.cancel === (await T("shr.keep")) && d.ok === (await T("shr.revokeOk")), JSON.stringify(d));
+  ok("④ 取消分享 → 確認框:標題「取消分享這份報告？」、鈕「繼續分享」/「取消分享」", d.open && d.title === (await T("shr.revokeTitle")) && d.cancel === (await T("shr.keep")) && d.ok === (await T("shr.revokeOk")), JSON.stringify(d));
   await js(`$("del-ok").click()`); await wait(250); s = await st();
   ok("④ 確認 → shareRevoke(local, pub)、share_revoke、公開列拿掉、「分享」回來;確認框的取消鈕字回到「取消」", !s.well && s.btn && (await js(`JSON.stringify(__s.calls.filter((c) => c[0] === "revoke"))`)) === '[["revoke","local","pub"]]' && (await js(`__s.tracked.includes("share_revoke")`)) && (await js(`$("del-cancel").textContent`)) === (await T("del.cancel")), JSON.stringify(s));
   // 未登入:按分享 → 守門框

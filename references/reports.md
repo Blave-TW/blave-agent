@@ -843,8 +843,8 @@ transient failure. Same status code, different channel, opposite handling.
 - **Capture the single chart/figure element only**, cropped to it — never a
   full-page screenshot, never surrounding article text, never browser UI.
   Do not crop out the site's watermark or embedded attribution.
-- **Never cite paywalled or sign-in-only content.** A page the browser
-  refuses (`blocked_policy`) cannot be captured — use another source.
+- A page the browser refuses (`blocked_policy`) cannot be captured — use
+  another source.
 - Reports can be shared publicly with the image and its source line kept:
   capture nothing you would not republish (no personal data, no account UI).
 - `alt` says what the chart shows, in the report's language (required; no

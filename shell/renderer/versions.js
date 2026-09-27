@@ -17,10 +17,6 @@ function verEl(tag, cls, text) { const e = document.createElement(tag); if (cls)
 function verEntry(S, n) { return VER ? VER.entries(S.data).find((i) => i.n === n) || null : null; }
 function verDateShort(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trMD(new Date(at * 1000)) : "—"; }
 function verDateLong(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trStamp(at) : "—"; }
-// 送給 agent 的那句話裡的顯示名稱(稽核 S4):DISPLAY_NAME 是策略檔裡的自由文字(下載來的策略也有),原樣插進固定訊息
-// 等於讓策略作者替用戶說話。拿掉控制字元 / 換行、各種引號與括號(固定訊息自己的「」() 與樣板的 {} 都在內)、截 40 字;
-// 清完是空的就用資料夾名(呼叫端)
-function verSafeName(s) { return [...String(s || "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029"'`“”‘’「」『』《》〈〉【】()（）\[\]{}<>]/g, " ").replace(/\s+/g, " ").trim()].slice(0, 40).join("").trim(); }
 /* 這支策略的下單金額(守門依據,canon §6 的真閘門在機器端 restore())。讀不到那一邊的回報 = null:不猜,徽章只畫「目前」、
    還原走一般確認框。金額表的 key 是 STRATEGY_NAME,多半等於資料夾名;兩個都看 */
 function verAmount(side, B) {
@@ -246,7 +242,7 @@ function verRestoreAsk() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
   if (!S.data || S.open === null || running) return;
   const n = S.open, cur = S.data.current, cloud = side === "cloud", opener = $("ver-restore");
-  const display = verSafeName(B.data.displayName) || B.name;
+  const display = VER.safeName(B.data.displayName) || B.name;   // 規則只有一份,在 strategy_versions.js(稽核 S4)
   const env = cloud ? "cloud" : undefined, footWhere = cloud ? t("ver.where", { name: display }) : undefined;
   const vars = { display_name: display, name: B.name, n: String(n) };
   const amt = verAmount(side, B);

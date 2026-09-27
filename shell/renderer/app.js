@@ -927,8 +927,7 @@ $("mp-panel").addEventListener("keydown", (e) => {
 
 /* ── 策略:sidebar + 報告 ─────────────────────────────
    資料就在本機(~/Blave/workspace/strategies/),主行程直接讀資料夾,沒有 api 這一層。
-   sidebar 每輪結束重讀;agent 這一輪剛建或剛改的那支自動選中——中欄就從 welcome
-   變成報告,用戶不用自己去點。
+   sidebar 每輪結束重讀;回合結束不換頁,這一輪建的或改的那支由結果卡帶過去(results.js)。
    報告三個分頁:回測 / 進出場 由各自的檔負責畫(window.BlaveReport),這裡只管
    選中、切分頁、程式碼分頁。 */
 const RP = { list: [], name: null, data: null, tab: "bt", drawn: {} };
