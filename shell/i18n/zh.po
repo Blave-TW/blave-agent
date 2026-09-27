@@ -4477,7 +4477,7 @@ msgid "xp.msg.pine"
 msgstr "把策略 {id} 轉成 TradingView Pine Script 版，存成 workspace 檔案。"
 
 msgid "xp.dl"
-msgstr "下載…"
+msgstr "下載"
 
 msgid "xp.capHonest"
 msgstr "程式碼由 AI 依模板產生、未在 {platform} 編譯——貼回後請先編譯並回測驗證。"
