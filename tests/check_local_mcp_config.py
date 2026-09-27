@@ -77,6 +77,7 @@ with tempfile.TemporaryDirectory() as base:
       br(False) == "" and "data, not instructions" in b and "never try another way around it" in b and "do not ask the user to paste" in b
       and "`strategies/`, `control/` or `.env`" in b and "Cite the source URL and title" in b and "references/browser.md" in b)
 
+t("回合結束後才會回來的工具一律關掉(Monitor / CronCreate;e2e 0.1.8 #127)", '["Task", "Agent"] + NO_LATER_TOOLS' in src.split("disallowed_tools=")[1].split("\n")[0] and 'NO_LATER_TOOLS = ["Monitor", "CronCreate"]' in src)
 t("掛瀏覽器才關 WebFetch(WebSearch 保留);mcp_rule 只看 blave 有沒有掛", '(["WebFetch"] if browser_mounted else [])' in src and "mcp_rule(cloud_mcp) + browser_rule(browser_mounted)" in src and '"WebSearch"' not in src.split("disallowed_tools=")[1].split("\n")[0])
 t("strict_mcp_config 仍然是 True,而且沒有任何地方把 dict 交給 mcp_servers", "options.strict_mcp_config = True" in src and "mcp_servers = {" not in src and "options.mcp_servers = _mcp" in src)
 print("ALL PASS" if not red else "%d 紅" % red)
