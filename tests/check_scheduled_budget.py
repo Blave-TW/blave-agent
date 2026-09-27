@@ -77,6 +77,17 @@ check("scheduled turn (main --scheduled): the SDK gets the cap minus one step's 
       cap == 1.0 and 0 < o.max_budget_usd == round(cap - at.SCHEDULED_STEP_MARGIN_USD, 6) < cap, o.max_budget_usd)
 check("the margin covers the largest measured warm Sonnet step (0.158 USD, 09-26)", at.SCHEDULED_STEP_MARGIN_USD >= 0.158,
       at.SCHEDULED_STEP_MARGIN_USD)
+sys.argv = ["agent_turn.py", "--delivery=report", "--scheduled", "--model=deepseek/deepseek-v4-pro", "--", "sched-budget-x", "報告"]
+seen.clear()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    at.main()
+dso = seen["options"]
+check("scheduled DeepSeek turn: no USD cap for the SDK (the CLI prices it off Claude's tables — "
+      "29026 hit 1.045 in 9 steps); the brakes are 25 steps + the runner's 10 minutes",
+      dso.max_budget_usd is None and dso.max_turns == 25, dso.max_budget_usd)
+check("the trust rule itself: deepseek untrusted, claude family trusted",
+      not at._cli_cost_trusted("deepseek/deepseek-v4-pro") and at._cli_cost_trusted("sonnet")
+      and at._cli_cost_trusted("anthropic/claude-sonnet-5") and not at._cli_cost_trusted(None))
 check("scheduled turn: 25 steps and Edit/Write kept out of strategies/ control/",
       o.max_turns == 25 and "Write(/strategies/**)" in o.disallowed_tools and "Edit(/control/**)" in o.disallowed_tools,
       (o.max_turns, o.disallowed_tools))

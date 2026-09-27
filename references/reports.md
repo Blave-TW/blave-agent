@@ -390,12 +390,14 @@ What channel you search with depends on where you run:
 | Desktop app (`BLAVE_AGENT_LOCAL=1`) with the browser tools mounted (`mcp__blave_browser__*`, `references/browser.md`) | Search and read with the built-in browser (any model). For headlines: `browser_open` a news list page → `browser_read(part="links")` → `browser_read(part="meta")` on the few you keep for the published time → `part="section"` only for the paragraph a figure comes from. Do not read whole articles. |
 | Desktop app without those tools (older app, or the browser switched off) | Use the engine's own web search if it has one; otherwise the `describe()` candidates only (Taiwan market brief), or none. |
 | Cloud machine, Claude model | The web search tool (billed per search from the user's credit, `references/billing.md`). |
-| Cloud machine, DeepSeek | No web search: the `describe()` candidates only (Taiwan), none for crypto. |
+| Cloud machine, DeepSeek | No web search tool — read with WebFetch instead: the links on the `describe()` candidates (Taiwan), plus 2–3 fixed headline pages (crypto: CoinDesk / Cointelegraph / Decrypt; Taiwan: 鉅亨 / 經濟日報 / MoneyDJ), each fetched with a short prompt. Still 3 different sites. |
 | Scheduled run | Cloud, a job with `agent_consent`: you run as in chat in an unattended turn (§8), same rows as above. Desktop, or no consent, or that turn failed: the data-only `run.py` lays out the licensed headlines as they are (no summary, no tag). |
 
 When no channel gives you anything, still write and publish the report: `"news": []` (the footnote
-says there was no source) or, for a research report, no news citation. Never tell the user to
-switch model or buy anything for it, and never hold the report back waiting for news.
+says there was no source) or, for a research report, no news citation. A model with no web tool at
+all degrades the same way — the news block is simply absent, with one footnote line; that is the
+product's behaviour, not a fault. Never tell the user to switch model or buy anything for it, never
+compare model prices over it, and never hold the report back waiting for news.
 
 ```python
 publish(pack, narrative={
@@ -495,7 +497,10 @@ publish(pack, narrative={
   每份上限約 40 點，超過或餘額不夠時只出數據版。這樣可以嗎？」 Only on a yes, register with
   `agent_consent=True`; a no is a data-only job. Such a job fires at most hourly (one fixed minute
   in the cron). Where `lib.report.scheduled_agent_available()` is False — the desktop, or a trial /
-  one-slot cloud machine — ask nothing: say the scheduled version is data only.
+  one-slot cloud machine — ask nothing: say the scheduled version is data only. When the machine's
+  current model has no web tool at all (neither search nor fetch), say once
+  「這台目前的模型不含上網查新聞,這個排程會出數據＋判讀版」 — never a suggestion to switch model,
+  never a price comparison; the run still happens and the report still goes out.
 - **R9 Readable and shareable**:
   - S1 the lead's first sentence (up to the first 「。」) stands alone: ≤40 characters, at most
     one comparison (≤2 numbers), never only figures — it is the list summary, the notification

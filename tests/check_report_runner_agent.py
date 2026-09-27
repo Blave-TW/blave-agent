@@ -252,6 +252,25 @@ check("--ui-lang=zh" in argv and "pack = crypto_market_brief(symbols=('BTC', 'ET
       and "WebSearch" in prompt and "WebFetch" in prompt and 'title=' in prompt and "summary is required" in prompt
       and "do not read lib/ or references/" in prompt,
       "排程回合:--ui-lang=zh(用戶用中文登記)、prompt 給 pack 的確切呼叫、雲端走 WebSearch/WebFetch、publish 要 title、summary 必填、不讀 lib")
+json.dump({"_last": "deepseek/deepseek-v4-pro"}, open(R.MODEL_PREFS_PATH, "w"))
+dds = make_job("t-lang-ds")
+R.run_job("t-lang-ds")
+dprompt = json.load(open(argv_out))[-1]
+check("WebFetch only" in dprompt and "WebSearch" not in dprompt and "--model=deepseek/deepseek-v4-pro" in json.load(open(argv_out)),
+      "當下偏好是 DeepSeek:真正起的回合(argv)拿到的是 WebFetch 版 prompt,不是 Claude 版")
+json.dump({"_last": "anthropic/claude-sonnet-5", "web-1": "deepseek/x"}, open(R.MODEL_PREFS_PATH, "w"))
+import shutil as _sh
+_sh.rmtree(dds, ignore_errors=True)
+ds = R.scheduled_prompt(json.load(open(os.path.join(dl, "job.json"))), "deepseek/deepseek-v4-pro")
+check("WebSearch" not in ds and "WebFetch" in ds and "coindesk.com" in ds and "news.cnyes.com" in ds
+      and "licensed" in ds and "3 different sites" in ds,
+      "DeepSeek 排程 prompt:沒有 WebSearch(伺服器端工具),改 WebFetch 固定來源(授權候選連結+固定頭條頁),照樣 3 個網站")
+check(R.scheduled_prompt({"id": "x", "title": "t", "prompt": "p"}, None).count("WebFetch only") == 1
+      and "WebSearch" in R.scheduled_prompt({"id": "x", "title": "t", "prompt": "p"}, "anthropic/claude-sonnet-5"),
+      "沒有模型偏好(預設 DeepSeek)走 WebFetch 版;Claude 模型照舊 WebSearch 版")
+check(R._degrade_reason(True, False, {"subtype": "error_max_budget_usd"}) == "budget"
+      and R._degrade_reason(True, False, {"subtype": "error_max_budget_usd", "cost_untrusted": True}) == "no_report",
+      "降級原因:budget 只在 CLI 成本可信時算;非 Anthropic 模型(cost_untrusted)那個 budget 是錯的價目表,不當 budget")
 check(R.job_lang({"prompt": "每天给我加密市场晨报"}) == "cn" and R.job_lang({"prompt": "daily crypto brief"}) is None
       and R.job_lang({"prompt": "每天給我台股晨報"}) == "zh", "報告語言:繁中 zh、简中 cn、英文不指定")
 os.makedirs(os.path.join(WS, "report_jobs", "t-rec"), exist_ok=True)

@@ -2373,6 +2373,9 @@ class ReportSink(WebSink):
 # 小(Wei 拍板每份 1.0 USD,超過就停,runner 退回純資料版)。策略、下單、control/ 只是「被要求不碰」:
 # 下面這組 Edit/Write 規則擋得到那兩個工具,Bash 照樣寫得到(Wei 09-26 接受這層軟約束,不做硬閘)。
 SCHEDULED_MAX_BUDGET_USD = 1.0
+# CLI 的 total_cost_usd 對經 proxy 的非 Anthropic 模型是照 Claude 價目表估的:29026 實測(09-27 14:25,
+# deepseek-v4-pro)9 步就被它自己算到 1.045 USD 撞預算、退成 data-only,而 DeepSeek 的真實費用是它的
+# 幾十分之一。所以 USD 預算只給 Anthropic 系模型;其他模型靠 25 步+10 分鐘擋,成本照實記但標明不可信。
 # SDK 的 max_budget_usd 在每一步結束後才比,超過的那一步照樣付錢(09-26 模擬:上限 0.8 停在 0.803、0.807)。
 # 預算設成「上限減一步」,整份才不會超過 Wei 定的 1.0。一步多少:09-26 從 1,260 個 Sonnet 步(排程模擬 67 +
 # 電腦版對話 1,193,依 id 去重、照 Sonnet 牌價算)實測——快取命中的一步最大 0.158 USD(15 萬 token context、
@@ -2391,8 +2394,19 @@ SCHEDULED_EDIT_RULES = [
 SCHED_OUTCOME = {}
 
 
+def _cli_cost_trusted(model):
+    """The CLI prices a turn off Anthropic's own tables; through the proxy any other model id
+    (deepseek/…) gets a wildly wrong figure. Only trust it for Anthropic-family ids."""
+    m = (model or "").lower()
+    return any(k in m for k in ("claude", "sonnet", "opus", "haiku", "fable"))
+
+
+SCHEDULED_TURN = False
+
+
 def _apply_scheduled_limits():
-    global TURN_MAX_BUDGET_USD, TURN_MAX_TURNS, _RESUME_MIN_TURNS
+    global TURN_MAX_BUDGET_USD, TURN_MAX_TURNS, _RESUME_MIN_TURNS, SCHEDULED_TURN
+    SCHEDULED_TURN = True
     TURN_MAX_BUDGET_USD = SCHEDULED_MAX_BUDGET_USD - SCHEDULED_STEP_MARGIN_USD
     TURN_MAX_TURNS = SCHEDULED_MAX_TURNS
     _RESUME_MIN_TURNS = 0   # 續跑不另外加步數:兩次合計仍是 25 步
@@ -3103,7 +3117,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # $1.46 白燒)。步數放寬到 50,真正的煞車改用預算——失控迴圈燒錢才是
         # 原本要防的事,用錢設限比步數合理。
         max_turns=TURN_MAX_TURNS,
-        max_budget_usd=TURN_MAX_BUDGET_USD,
+        # 排程回合的 USD 上限只在 CLI 算得準(Anthropic 系)時才綁;DeepSeek 這類經 proxy 的模型
+        # 由 25 步與 runner 的 10 分鐘擋(不然它會用 Claude 價把自己算爆)
+        max_budget_usd=TURN_MAX_BUDGET_USD if not SCHEDULED_TURN or _cli_cost_trusted(model) else None,
         # SDK 的 stdio transport 預設單條 JSON 訊息上限 1MB——agent 一個 Bash 印出
         # 大量輸出(K 線資料、回測明細)就整輪炸掉(實測:「建立 MACD 策略」第一輪
         # 就中)。放寬到 16MB;這是單條訊息的解析上限,不是常駐記憶體。
@@ -3315,6 +3331,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     SCHED_OUTCOME.update(cost_usd=spent_usd, turns=spent_turns,
                                          subtype=getattr(msg, "subtype", None),
                                          api_error_status=getattr(msg, "api_error_status", None))
+                    if not _cli_cost_trusted(model):
+                        # CLI 對非 Anthropic 模型用錯價目表:值照記,但別拿去當任何判斷的依據
+                        SCHED_OUTCOME["cost_untrusted"] = True
                     if getattr(msg, "is_error", False):
                         result_info = {
                             "subtype": getattr(msg, "subtype", None),
@@ -3333,7 +3352,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             if attempt == 2 or getattr(sink, "interrupted", False) or sink.has_reply():
                 break
             elapsed = time.monotonic() - t_start
-            budget = TURN_MAX_BUDGET_USD - spent_usd
+            budget = TURN_MAX_BUDGET_USD - (spent_usd if _cli_cost_trusted(model) else 0)
             tool_cap_s = min(int(turn_env["BASH_MAX_TIMEOUT_MS"]) // 1000,
                              int(_BRIDGE_KILL_SEC - _RESUME_TAIL_MARGIN_SEC - elapsed))
             if elapsed > _RESUME_MAX_ELAPSED_SEC or budget < _RESUME_MIN_BUDGET_USD \
@@ -3354,7 +3373,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp)
-            options.max_budget_usd = budget
+            options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
             # A new dict, not an in-place update: the CLI child's env is built from
             # options.env at connect time, and a fresh object is right whether or not

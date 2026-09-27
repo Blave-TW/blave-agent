@@ -519,9 +519,27 @@ def _pack_call(job):
 _TEMPLATE_CALL = re.compile(r"\b(tw_market_brief|tw_close_brief|crypto_market_brief|symbol_brief|research_pack)\(")
 
 
-def scheduled_prompt(job):
+# DeepSeek 經 proxy 沒有 WebSearch(Anthropic 伺服器端工具),但 WebFetch 是 CLI 自己抓網頁、
+# 用同一個模型摘要——mock proxy 實測(09-27,claude 2.1.283,model=deepseek/deepseek-v4-pro):
+# tool_use WebFetch 有執行、摘要子呼叫帶同一個 deepseek model id。所以 DeepSeek 版改抓固定來源,
+# 照樣湊滿 3 個網站出完整版;絕不叫用戶換模型(Wei 09-27)。
+_FIXED_NEWS_PAGES = ("crypto: https://www.coindesk.com/ , https://cointelegraph.com/ , https://decrypt.co/ ; "
+                     "Taiwan: https://news.cnyes.com/news/cat/headline , https://money.udn.com/money/index , "
+                     "https://www.moneydj.com/")
+
+
+def scheduled_prompt(job, model=None):
     """The one message a scheduled agent turn gets: the user's own request plus the rules of
-    an unattended run. The agent-facing rules live in references/reports.md §8."""
+    an unattended run. The agent-facing rules live in references/reports.md §8. `model` picks the
+    news channel: a Claude model searches; DeepSeek (the default when None) fetches fixed sources."""
+    deepseek = model is None or "deepseek" in str(model).lower()
+    news = ("1) News first — this model has no web search: read with WebFetch only. Fetch the licensed "
+            "candidates' links describe() prints, and 2–3 of these headline pages (your market's list) — "
+            f"{_FIXED_NEWS_PAGES} — each with a short prompt (headline, time, one line). "
+            "Still 3 different sites; stop there. " if deepseek else
+            "1) News first — no built-in browser here: 2–3 WebSearch queries in one message, then WebFetch "
+            "the best 3 articles from 3 different sites in one message, each with a short prompt (headline, "
+            "time, one line); stop there. ")
     call = _pack_call(job)
     return (
         f"[Scheduled report run — nobody is watching] Job `{job['id']}` 「{job['title']}」 is due. "
@@ -529,9 +547,8 @@ def scheduled_prompt(job):
         f"Produce today's report exactly as you would in chat, in the user's language, in as few steps as "
         f"you can — every step re-reads the whole context and this run has a fixed budget. The working "
         f"directory is the workspace and python3 imports lib/ from it: do not look around. "
-        f"1) News first — no built-in browser here: 2–3 WebSearch queries in one message, then WebFetch "
-        f"the best 3 articles from 3 different sites in one message, each with a short prompt (headline, "
-        f"time, one line); stop there. Pick 1–3 things special today. 2) Build once, after the search, "
+        + news +
+        "Pick 1–3 things special today. 2) Build once, after the search, "
         f"with extra bricks for those things (at most 3; a brick is [name, {{params}}], not a news item — "
         f"a coin: [\"coin_snapshot\", {{\"symbol\": \"XRP\"}}] or [\"relative_to\", {{\"symbol\": \"XRP\"}}], an exchange: "
         f"[\"exchange_snapshot\", {{\"exchange\": \"okx\"}}], a Taiwan stock: [\"tw_institutional\", {{\"symbol\": \"2330\"}}] "
@@ -624,7 +641,7 @@ def _agent_turn_cloud(job, model, on_start=lambda: None):
     lang = job_lang(job)
     if lang:
         cmd.append(f"--ui-lang={lang}")   # 機器上的回覆語言設定仍優先(agent_turn._resolve_reply_lang)
-    cmd += ["--", f"sched-{job['id']}", scheduled_prompt(job)]
+    cmd += ["--", f"sched-{job['id']}", scheduled_prompt(job, model)]
     # BLAVE_SCHEDULED_JOB: write_report 記 .published、agent_turn 寫 .sched_result.json;停止旗標走 turn_stop
     env = {**os.environ, "BLAVE_SCHEDULED_JOB": job["id"], TURN_STOP_ENV: stop_file}
     out, timed_out = "", False
@@ -677,7 +694,8 @@ def _degrade_reason(started, timed_out, result):
         return "timeout"
     if result.get("api_error_status") == 402:
         return "balance"
-    if "budget" in str(result.get("subtype") or ""):
+    if "budget" in str(result.get("subtype") or "") and not result.get("cost_untrusted"):
+        # cost_untrusted = CLI 對非 Anthropic 模型用錯價目表(29026 09-27 實測):它報的 budget 不是真的
         return "budget"
     return "failed" if result.get("fault") else "no_report"
 
