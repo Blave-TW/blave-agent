@@ -14,6 +14,8 @@ const CITE_BYTES_MAX = 2 * 1024 * 1024;   // 報告圖檔上限(lib/report.py、
 const CITES_PER_TURN = 10;
 const REPORT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const SETTLE_MS = 200;
+const LOAD_WAIT_MS = 4000, LOAD_POLL_MS = 200;   // 等元素裡的圖載完,最多這麼久
+const RETAKE_MS = 800;                           // 拍到空的 / 被切斷的圖:等這麼久重拍一次
 const CITE_URL_MSG = {
   scheme: "only https pages can be cited; open the https address of this page and capture again",
   credentials: "the page address carries a user name or password and cannot be cited",
@@ -26,6 +28,7 @@ const CITE_FIT_MSG = {
   not_visible: "the element cannot be shown whole on screen (it is hidden, sits in a scrolled container or has no box); pick another element",
   unstable: "the page kept moving while the element was being captured, so the picture could be of the wrong area; wait for the page to finish loading (browser_wait), take a new snapshot and capture again",
   page_changed: "the page address changed while the element was being captured; take a new snapshot and capture again",
+  incomplete: "the picture came out blank or cut off — the chart had not finished loading or drawing, or something covers part of it; nothing was saved. Wait for the page (browser_wait), take a new snapshot and capture again, or pick another chart",
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,6 +80,21 @@ function createCapture(d) {
     }
     return { refuse: "unstable" };
   }
+  /* 元素裡的圖載完了沒(e2e 0.1.8:loading="lazy" 的圖捲進畫面才開始抓,外框不動所以 settled() 看不出來,拍到上半張)。
+     回 "ready" | "waited"(等過,外框要重量)| "loading"(等不到)。查不出來不擋——事後還有 captureBlank 那一道 */
+  async function pictures(v, b) {
+    const until = Date.now() + LOAD_WAIT_MS;
+    for (let waited = false; ; waited = true) {
+      let n; try { n = await v.page.callOn(b, IP.pendingPictures); } catch (_) { return waited ? "waited" : "ready"; }
+      if (!(typeof n === "number" && n > 0)) return waited ? "waited" : "ready";
+      if (Date.now() >= until) return "loading";
+      await sleep(LOAD_POLL_MS);
+    }
+  }
+  // 拍到的那張是不是空的 / 被切斷(gate.captureBlank)。讀不出像素就當作沒問題,不因為檢查本身壞掉而拒拍
+  function blank(img) {
+    try { const s = img.getSize(); return typeof img.toBitmap === "function" ? gate.captureBlank(img.toBitmap(), s.width, s.height) : null; } catch (_) { return null; }
+  }
   async function doCapture(t, v, args) {
     const report = String(args.report || "");
     if (!REPORT_ID_RE.test(report)) return ERR("invalid_args", "report must be the id of the report the picture is for ([A-Za-z0-9_-]{1,64}), the same id you pass to write_report");
@@ -107,19 +125,31 @@ function createCapture(d) {
     const pace = v.pace.arrive();
     if (pace.cut) await v.page.run(IP.mark, ["settle"]).catch(() => {});
     if (t.visible) await v.page.run(IP.mark, ["ref", { box: c.box, label: d.uiLang() === "zh" ? "擷取" : "Capture", tag: true }, reduced]).catch(() => {});
-    let got;
+    const shoot = () => awake(t, v, async () => {
+      const g = await d.withMask(v, async () => {
+        let s = await settled(v, b, c);
+        if (s.refuse) return { refuse: s.refuse };
+        const p = await pictures(v, b);
+        if (p === "loading") return { refuse: "incomplete" };
+        if (p === "waited") { await sleep(SETTLE_MS); s = await settled(v, b, s.c); if (s.refuse) return { refuse: s.refuse }; }   // 載完到畫出來差一拍;沒寫尺寸的圖載完會把版面推開
+        if (gate.captureCovered(await v.page.covered(b, gate.capturePoints(s.c.box)))) return { covered: true };
+        return { c: s.c, d: await v.page.captureClip(s.c.box, s.c.view, Math.min(2, CITE_MAX_W / s.c.box.w)) };
+      }, true);
+      // 出處頁照「讀了」記(來源紀錄與快照就是用戶查證這張圖的地方);快照也要醒著的合成器,所以放在同一段裡
+      if (g && g.d && (!t.snapshotId || !t.readEver)) { try { await d.noteRead(t, v, await v.page.extract()); } catch (_) { /* 快照 best-effort */ } }
+      return g;
+    });
+    let got, img = null;
     try {
-      got = await awake(t, v, async () => {
-        const g = await d.withMask(v, async () => {
-          const s = await settled(v, b, c);
-          if (s.refuse) return { refuse: s.refuse };
-          if (gate.captureCovered(await v.page.covered(b, gate.capturePoints(s.c.box)))) return { covered: true };
-          return { c: s.c, d: await v.page.captureClip(s.c.box, s.c.view, Math.min(2, CITE_MAX_W / s.c.box.w)) };
-        }, true);
-        // 出處頁照「讀了」記(來源紀錄與快照就是用戶查證這張圖的地方);快照也要醒著的合成器,所以放在同一段裡
-        if (g && g.d && (!t.snapshotId || !t.readEver)) { try { await d.noteRead(t, v, await v.page.extract()); } catch (_) { /* 快照 best-effort */ } }
-        return g;
-      });
+      got = await shoot();
+      if (got && got.d) img = d.nativeImage.createFromBuffer(Buffer.from(got.d, "base64"));
+      /* 壞圖不進報告:拍到空的 / 下半一大片平色的圖,等一下重拍一次(canvas 圖表資料晚到、合成器那一格還沒畫);
+         還是一樣就拒絕,讓 agent 換一張。重拍走同一條路(重量外框、等圖載完、查遮擋) */
+      if (img && blank(img)) {
+        await sleep(RETAKE_MS);
+        got = await shoot(); img = null;
+        if (got && got.d) { img = d.nativeImage.createFromBuffer(Buffer.from(got.d, "base64")); if (blank(img)) got = { refuse: "incomplete" }; }
+      }
     } finally {
       await v.page.run(IP.mark, ["unframe"]).catch(() => {});
       v.pace.end();
@@ -128,13 +158,12 @@ function createCapture(d) {
     if (got.asleep) return ERR("screenshot_failed", "the app window is closing, so the page cannot be captured", { tab: t.alias });
     if (got.refuse) return refuse(got.refuse);
     if (got.covered) return ERR("obscured", d.MSG.obscured, { tab: t.alias, ref: args.ref });
-    if (!got.d) return ERR("screenshot_failed", "could not capture this element right now; try again", { tab: t.alias });
+    if (!got.d || !img) return ERR("screenshot_failed", "could not capture this element right now; try again", { tab: t.alias });
     // 稽核 S3:進門時判過的是當時的網址;拍的這段時間頁面自己換了網址(pushState 進後台路徑),圖與出處就對不上
     const now = v.wc.getURL(), a = policy.agent(now);
     if (a) return ERR("blocked_policy", d.blockedMsg(a.reason), { tab: t.alias, reason: a.reason, host: a.host });
     if (now !== url0) return refuse("page_changed");
     c = got.c;
-    let img = d.nativeImage.createFromBuffer(Buffer.from(got.d, "base64"));
     const want = Math.min(CITE_MAX_W, Math.round(c.box.w * 2));   // 約 2×(螢幕 DPR 也乘進 CDP 的輸出,這裡收回來)
     if (img.getSize().width > want) img = img.resize({ width: want, quality: "best" });
     let buf = img.toPNG(), ext = "png";

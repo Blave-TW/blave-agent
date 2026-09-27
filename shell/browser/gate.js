@@ -149,4 +149,31 @@ function captureCovered(covered) {
   return covered[0] === true || covered.slice(1).filter((x) => x === true).length >= 2;
 }
 
-module.exports = { classify, captureFit, captureDrift, capturePoints, captureCovered, CAPTURE_DRIFT_MAX, sensitiveField, actionWord, searchContext, editableField, buttonLike, realLink, ACTION_WORDS_EN, ACTION_WORDS_CJK };
+/* 拍到的圖是不是空的 / 被攔腰切斷(擷取的事後檢查)。bm = BGRA 位元組,w × h 像素。
+   "blank" = 整張同一個顏色(圖還沒畫、圖檔一個 byte 都還沒到);"cut" = 底部連續一大片(≥ 1/4 高)每一列都是同一個顏色,
+   而且那個顏色不是上面那一段的底色——圖只畫了上半,下半透出頁面底色(e2e 0.1.8:glassnode 的圖 1360×843,下半整片 #16171b)。
+   null = 看起來是一張完整的圖。深色底的圖表不會中:它底部的空白列跟上面的底色是同一個顏色。
+   四邊各讓 CAPTURE_EDGE px 不看:外框落在半個像素上時,最外圈那一兩列是跟隔壁內容混出來的顏色(實測)。
+   每列每 4 px 取一點;顏色差用三個通道的最大差,CAPTURE_FLAT_TOL 以內算同色(縮圖與壓縮的雜訊) */
+const CAPTURE_FLAT_TOL = 10, CAPTURE_CUT_MIN = 0.25, CAPTURE_CUT_DIFF = 40, CAPTURE_EDGE = 3;
+function captureBlank(bm, w, h) {
+  const m = CAPTURE_EDGE;
+  if (!bm || !(w > 4 * m) || !(h > 4 * m) || bm.length < w * h * 4) return null;
+  const near = (a, b, tol) => Math.abs(a[0] - b[0]) <= tol && Math.abs(a[1] - b[1]) <= tol && Math.abs(a[2] - b[2]) <= tol;
+  const at = (x, y) => { const i = (y * w + x) * 4; return [bm[i + 2], bm[i + 1], bm[i]]; };
+  // 這一列是不是同一個顏色;是就回那個顏色
+  const flat = (y) => { const c = at(m, y); for (let x = m + 4; x < w - m; x += 4) if (!near(at(x, y), c, CAPTURE_FLAT_TOL)) return null; return c; };
+  const y0 = m, y1 = h - 1 - m, base = flat(y1);
+  if (!base) return null;
+  let top = y1;
+  while (top > y0) { const c = flat(top - 1); if (!c || !near(c, base, CAPTURE_FLAT_TOL)) break; top--; }
+  if (top === y0) return "blank";
+  if (y1 + 1 - top < (y1 + 1 - y0) * CAPTURE_CUT_MIN) return null;
+  // 上面那一段的底色:每 8 列取左右兩端與中間三點,出現最多的那個顏色(量化到 16 階)
+  const seen = new Map();
+  for (let y = y0; y < top; y += 8) for (const x of [m, w >> 1, w - 1 - m]) { const c = at(x, y), k = (c[0] >> 4) + "," + (c[1] >> 4) + "," + (c[2] >> 4); const e = seen.get(k) || { n: 0, c }; e.n++; seen.set(k, e); }
+  let bg = null; for (const e of seen.values()) if (!bg || e.n > bg.n) bg = e;
+  return bg && !near(bg.c, base, CAPTURE_CUT_DIFF) ? "cut" : null;
+}
+
+module.exports = { classify, captureFit, captureDrift, capturePoints, captureCovered, captureBlank, CAPTURE_DRIFT_MAX, sensitiveField, actionWord, searchContext, editableField, buttonLike, realLink, ACTION_WORDS_EN, ACTION_WORDS_CJK };

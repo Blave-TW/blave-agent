@@ -430,6 +430,23 @@ function maskFields(idx, payHostRe) {
 function unmaskFields() { const h = document.getElementById("__blave_mask"); if (h) h.remove(); return true; }
 
 /* 拍縮圖 / 來源快照 / 截圖前把頁面裡的 agent 標記藏起來(縮圖上的標記只由 app 那一層畫,不然會出現兩個游標) */
+/* 元素(this)自己或裡面還沒載完的圖有幾張(擷取用)。loading="lazy" 的圖捲進畫面才開始抓,PNG 由上往下解:
+   沒載完就拍,拿到的是上半張圖、下半是頁面底色。沒有來源的、看不見的(追蹤像素)不算;載失敗的(complete 但沒有尺寸)不會再來,也不算。
+   還沒載完的 lazy 圖順手改成 eager:lazy 要等頁面出畫面才判「進了可視區」,停在視窗外的分頁不出畫面,等再久也不會開始抓(實測) */
+function pendingPictures() {
+  const el = this, list = [];
+  if (el.tagName === "IMG") list.push(el);
+  if (el.querySelectorAll) for (const im of el.querySelectorAll("img")) { list.push(im); if (list.length >= 200) break; }
+  let n = 0;
+  for (const im of list) {
+    if (im.complete || !(im.currentSrc || im.getAttribute("src") || im.getAttribute("srcset"))) continue;
+    const r = im.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    if (im.loading === "lazy") im.loading = "eager";
+    n++;
+  }
+  return n;
+}
 function marksVisible(on) { const h = document.getElementById("__blave_agent_marks"); if (h) h.style.setProperty("visibility", on ? "visible" : "hidden", "important"); return true; }
 
-module.exports = { mark, marksVisible, describe, fieldCandidates, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, scrollPage, progress, quiet };
+module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, scrollPage, progress, quiet };

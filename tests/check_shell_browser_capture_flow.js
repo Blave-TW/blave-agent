@@ -2,11 +2,13 @@
 // 釘住 0.1.8 稽核那幾條:拍前重量外框(B1)、出處網址剝 token(S1)、reports/<id>.files 是 symlink 不寫(S2)、
 // 拍完用當下網址重判(S3)、「整個畫面」加面積比(B2)、平行呼叫不超過 10 張(B3)、被遮住不拍(B4)、
 // 沒有盒子不回 stale_ref(B5)、叫不醒合成器不拍(B7)。真 Electron 的端到端在 check_shell_browser_capture.js。
+// e2e 0.1.8(引用圖只拍到上半、下半整片深色):元素裡的圖沒載完先等、等不到不拍;拍到空的 / 被切斷的圖重拍一次、還是一樣就不存。
 // 跑法:node tests/check_shell_browser_capture_flow.js
 const path = require("path"), fs = require("fs"), os = require("os");
 const B = path.join(__dirname, "..", "shell", "browser");
 const policy = require(path.join(B, "policy")), gate = require(path.join(B, "gate"));
 const { createCapture, saveCite, CITES_PER_TURN } = require(path.join(B, "capture"));
+const IP = require(path.join(B, "inpage"));
 let red = 0; const t = (n, ok, got) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) { red++; if (got !== undefined) console.log("      got: " + JSON.stringify(got).slice(0, 400)); } };
 
 // ── S1:出處網址 ──
@@ -39,6 +41,29 @@ t("captureCovered:中心被遮 / 兩個角被遮 → 擋;一個角、查不出�
   && !gate.captureCovered([false, true, false, false, false]) && !gate.captureCovered([null, null, null, null, null]) && !gate.captureCovered([]));
 { const p = gate.capturePoints({ x: 100, y: 100, w: 600, h: 300 }); t("capturePoints:中心 + 四角,全部落在框內", p.length === 5 && p[0].x === 400 && p[0].y === 250 && p.every((q) => q.x > 100 && q.x < 700 && q.y > 100 && q.y < 400), p); }
 
+// ── 拍到的圖是不是空的 / 被切斷(gate.captureBlank)。假圖:w × h 的 BGRA,paint(x, y) 回 [r, g, b] ──
+const bitmap = (w, h, paint) => { const bm = Buffer.alloc(w * h * 4); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const c = paint(x, y), i = (y * w + x) * 4; bm[i] = c[2]; bm[i + 1] = c[1]; bm[i + 2] = c[0]; bm[i + 3] = 255; } return bm; };
+const LIGHT = [232, 232, 232], DARK = [21, 23, 25], LINE = [95, 86, 149];
+const line = (bg) => (x, y) => (Math.abs(y - (60 + Math.round(40 * Math.sin(x / 15)))) < 2 ? LINE : bg);   // 一條在上半部起伏的線
+const shots = {
+  good_light: bitmap(340, 210, (x, y) => (y > 190 && x % 40 < 12 ? [90, 90, 90] : line(LIGHT)(x, y))),                 // 淺底、底部有座標軸的字
+  good_dark: bitmap(340, 120, line(DARK)),                                                                             // 深色底的圖表:底部一半是空的,但跟底色同色
+  good_dark_noisy: bitmap(340, 120, (x, y) => line([DARK[0] + ((x * 7 + y * 3) % 5), DARK[1] + ((x + y) % 4), DARK[2]])(x, y)),   // 同上,帶壓縮雜訊
+  good_footer: bitmap(340, 210, (x, y) => (y >= 170 ? [40, 44, 52] : line(LIGHT)(x, y))),                               // 底部 19% 的色帶(圖例底):不到 1/4
+  cut_half: bitmap(340, 210, (x, y) => (y >= 104 ? DARK : y === 103 ? [75, 77, 78] : line(LIGHT)(x, y))),              // e2e 那一張:上半淺底的圖、下半整片深色
+  cut_quarter: bitmap(340, 210, (x, y) => (y >= 150 ? DARK : line(LIGHT)(x, y))),                                       // 下面 29%
+  blank_dark: bitmap(340, 210, () => DARK), blank_white: bitmap(340, 210, () => [255, 255, 255]),
+  blank_edged: bitmap(340, 210, (x, y) => (y >= 208 || x >= 338 ? [120, 20, 130] : [255, 0, 255])),                    // 整張同色,但最外圈兩列是跟隔壁混出來的顏色
+  cut_edged: bitmap(340, 210, (x, y) => (y >= 209 ? [60, 60, 60] : y >= 104 ? DARK : line(LIGHT)(x, y))),
+};
+for (const [k, want, w, h] of [["good_light", null, 340, 210], ["good_dark", null, 340, 120], ["good_dark_noisy", null, 340, 120], ["good_footer", null, 340, 210],
+  ["cut_half", "cut", 340, 210], ["cut_quarter", "cut", 340, 210], ["blank_dark", "blank", 340, 210], ["blank_white", "blank", 340, 210],
+  ["blank_edged", "blank", 340, 210], ["cut_edged", "cut", 340, 210]]) {
+  const got = gate.captureBlank(shots[k], w, h); t("captureBlank " + k + " → " + want, got === want, got);
+}
+t("captureBlank:讀不到像素(空的、長度不對)→ null,不因為檢查壞掉而拒拍", gate.captureBlank(null, 10, 10) === null && gate.captureBlank(Buffer.alloc(8), 10, 10) === null && gate.captureBlank(shots.good_light, 0, 0) === null
+  && gate.captureBlank(Buffer.alloc(10 * 10 * 4), 10, 10) === null);
+
 // ── S2:寫檔 ──
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "blave-capflow-"));
 const reports = path.join(tmp, "ws", "reports"), outside = path.join(tmp, "outside");
@@ -66,7 +91,7 @@ const R = (obj, isError) => ({ content: [{ type: "text", text: JSON.stringify(ob
 const ERR = (error, message, extra) => R(Object.assign({ ok: false, error, message }, extra || {}), true);
 const BOX = at(100, 100);
 function rig(over) {
-  const x = Object.assign({ url: "https://charts.test/funding?id=7&token=SECRET", urlAfter: null, clips: [BOX], covered: [false, false, false, false, false], alive: true, clipThrows: false, boundsThrow: false, clipped: [], masked: 0, cur: { captures: 0 } }, over || {});
+  const x = Object.assign({ url: "https://charts.test/funding?id=7&token=SECRET", urlAfter: null, clips: [BOX], covered: [false, false, false, false, false], alive: true, clipThrows: false, boundsThrow: false, clipped: [], masked: 0, cur: { captures: 0 }, pending: [0], asked: 0, shots: ["good_light"] }, over || {});
   let shot = false, nclip = 0;
   const v = {
     wc: { getURL: () => (shot && x.urlAfter ? x.urlAfter : x.url), getTitle: () => "Funding weekly" },
@@ -74,16 +99,20 @@ function rig(over) {
     pace: { arrive: () => ({}), end: () => {} },
     page: {
       node: (ref) => (ref === "e1" ? 11 : null),
-      callOn: async () => { if (x.alive === "gone") throw new Error("no node"); return x.alive; },
+      callOn: async (_b, fn) => {
+        if (fn === IP.pendingPictures) { x.asked++; if (x.pending === "throws") throw new Error("no node"); return x.pending.length > 1 ? x.pending.shift() : x.pending[0]; }
+        if (x.alive === "gone") throw new Error("no node"); return x.alive; },
       clipOf: async () => { if (x.clipThrows) throw new Error("no box"); const c = x.clips[Math.min(nclip, x.clips.length - 1)]; nclip++; return c; },
       covered: async () => x.covered,
       captureClip: async (box) => { x.clipped.push(box); shot = true; return Buffer.from("img").toString("base64"); },
       run: async () => "Chart Weekly", extract: async () => ({ meta: {} }),
     },
   };
-  const img = { getSize: () => ({ width: 1200, height: 600 }), resize: () => img, toPNG: () => Buffer.from("png-bytes"), toJPEG: () => Buffer.from("jpg") };
+  // 第 n 次拍到的是 x.shots[n](用完停在最後一張);像素是上面那幾張假圖
+  const mkImg = (k) => { const h = /dark$|noisy$/.test(k) && !/^blank|^cut/.test(k) ? 120 : 210; const img = { getSize: () => ({ width: 340, height: h }), toBitmap: () => shots[k], resize: () => img, toPNG: () => Buffer.from("png-bytes"), toJPEG: () => Buffer.from("jpg") }; return img; };
+  let nshot = 0;
   const cap = createCapture({
-    nativeImage: { createFromBuffer: () => img }, reportsDir: reports, getWin: () => ({ isDestroyed: () => false, isMinimized: () => false, getContentBounds: () => ({ width: 1200, height: 800 }) }),
+    nativeImage: { createFromBuffer: () => mkImg(x.shots[Math.min(nshot++, x.shots.length - 1)]) }, reportsDir: reports, getWin: () => ({ isDestroyed: () => false, isMinimized: () => false, getContentBounds: () => ({ width: 1200, height: 800 }) }),
     uiLang: () => "zh", reducedMotion: () => true, ERR, R, MSG: { stale_ref: "stale", obscured: "covered" }, blockedMsg: (r) => "blocked " + r, emit: () => {}, viewSize: () => ({ vw: 1280, vh: 800 }),
     withMask: async (_v, fn) => { x.masked++; return fn(); }, noteRead: async () => {}, cur: () => x.cur, expanded: () => null,
   });
@@ -114,6 +143,23 @@ function rig(over) {
     t("B5:節點還在但沒有盒子 → capture_refused / not_visible(不是 stale_ref)", r.error === "capture_refused" && r.reason === "not_visible", r); }
   { const g = rig({ alive: "gone" }), r = J(await g.go("b5b")), r2 = J(await rig({ alive: false }).go("b5c")), r3 = J(await rig().go("b5d", "e9"));
     t("B5:節點不在了 / 沒有這個 ref → stale_ref", r.error === "stale_ref" && r2.error === "stale_ref" && r3.error === "stale_ref", [r, r2, r3]); }
+  // e2e 0.1.8:loading="lazy" 的圖捲進畫面才開始抓
+  { const g = rig({ pending: [2, 1, 0] }), t0 = Date.now(), r = J(await g.go("m1"));
+    t("圖還在載:等到載完才拍(問了 3 次)、外框重量過、只拍一張", r.ok === true && g.x.asked === 3 && g.x.clipped.length === 1 && g.files("m1").length === 1 && Date.now() - t0 >= 400, [r, g.x.asked]); }
+  { const g = rig({ pending: [1] }), t0 = Date.now(), r = J(await g.go("m2"));
+    t("圖一直沒載完 → capture_refused / incomplete,不拍、不寫檔、不吃名額以外的東西", r.error === "capture_refused" && r.reason === "incomplete" && g.x.clipped.length === 0 && g.files("m2").length === 0 && Date.now() - t0 >= 3900, r); }
+  { const g = rig({ pending: "throws" }), r = J(await g.go("m3"));
+    t("查不出圖載完沒(頁面腳本失敗)→ 不擋,照拍(事後還有像素那一道)", r.ok === true && g.x.clipped.length === 1, r); }
+  // 事後檢查:壞圖不進報告
+  { const g = rig({ shots: ["cut_half", "good_light"] }), r = J(await g.go("m4"));
+    t("拍到被切斷的圖:重拍一次,第二張是好的 → 存第二張(只有一個檔)", r.ok === true && g.x.clipped.length === 2 && g.files("m4").length === 1, [r, g.x.clipped.length]); }
+  { const g = rig({ shots: ["cut_half"] }), r = J(await g.go("m5")), g2 = rig({ shots: ["blank_dark"] }), r2 = J(await g2.go("m6"));
+    t("重拍還是被切斷 / 整張空白 → capture_refused / incomplete,不寫檔", r.reason === "incomplete" && r.error === "capture_refused" && g.x.clipped.length === 2 && g.files("m5").length === 0
+      && r2.reason === "incomplete" && g2.files("m6").length === 0, [r, r2]); }
+  { const g = rig({ shots: ["good_dark"] }), r = J(await g.go("m7"));
+    t("深色底的圖表(底部空白跟底色同色)照拍,不重拍", r.ok === true && g.x.clipped.length === 1 && g.files("m7").length === 1, r); }
+  { const g = rig({ shots: ["blank_dark", "good_light"] }), r = J(await g.go("m8"));
+    t("重拍走同一條路:遮罩兩次都有上", r.ok === true && g.x.masked === 2, [r, g.x.masked]); }
   { const g = rig({ boundsThrow: true }), r = J(await g.go("b7"));
     t("B7:叫不醒合成器(視窗正在關)→ screenshot_failed,不拍", r.error === "screenshot_failed" && g.x.clipped.length === 0 && g.files("b7").length === 0, r); }
   { const r = J(await rig().go("../x")), g = rig(), r2 = J(await g.go("evil"));
