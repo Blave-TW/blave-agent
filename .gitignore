@@ -34,3 +34,6 @@ skills/
 
 # agent 本機狀態與 worktree(872MB),不是產品碼 —— 絕不進版控
 .claude/
+
+# runtime / lib 在 workspace 根寫的機器狀態(測試在 repo 裡跑也會產生)—— 不進版控
+/state/
