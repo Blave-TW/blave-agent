@@ -25,7 +25,7 @@ What it protects:
 claude_agent_sdk is stubbed. POSIX only (the Windows kill path is taskkill /T).
 Run: cd blave-agent && python3 tests/check_turn_stop.py
 """
-import asyncio, contextlib, io, json, os, signal, subprocess, sys, tempfile, textwrap, threading, time, types
+import asyncio, contextlib, io, json, os, re, signal, subprocess, sys, tempfile, textwrap, threading, time, types
 
 if os.name == "nt":
     sys.exit("check_turn_stop: POSIX only")
@@ -493,12 +493,14 @@ check("piggyback stop: the money script still finishes", ledger_wait(led_pb, ["c
 # Codex hold is capped: a money script that outlives HOLD_MAX_S no longer holds the turn
 turn_stop.HOLD_MAX_S = 1.0
 long_codex = os.path.join(_tmp, "codex3")
+long_pid = os.path.join(_tmp, "codex3.pid")
 with open(long_codex, "w") as f:
     f.write(f"#!{sys.executable}\n" + textwrap.dedent(f"""
         import json, subprocess, sys, time
         sys.stdin.read()
         p = subprocess.Popen([sys.executable, "-c", "import time\\nwhile True: print('tick', flush=True); time.sleep(0.2)",
                               "manager/reconciler.py"], stdout=subprocess.PIPE, text=True, start_new_session=True)
+        open({long_pid!r}, "w").write(str(p.pid))
         print(json.dumps({{"type": "item.started", "item": {{"id": "i1", "type": "command_execution",
               "command": "python manager/reconciler.py", "status": "in_progress"}}}}), flush=True)
         for line in p.stdout:
@@ -517,7 +519,13 @@ took = time.monotonic() - t0 - 0.8
 text = "".join(json.loads(l[9:]).get("text", "") for l in out.getvalue().splitlines() if l.startswith("@@BLAVE@@"))
 check(f"Codex hold is capped: the turn ends shortly after HOLD_MAX_S ({took:.1f}s)", took < 3.5, took)
 check("…and the reply says it was no longer waited on", "不再等它" in text and "reconciler.py" in text, text)
-subprocess.run(["pkill", "-f", "manager/reconciler.py"])
+# By pid, never by name: `pkill -f manager/reconciler.py` reaches every reconciler on the
+# machine — a desktop app trading next to this test run lost its order daemon each time.
+with contextlib.suppress(OSError, ValueError):
+    os.kill(int(open(long_pid).read()), signal.SIGKILL)
+_by_name = [n for n in sorted(os.listdir(os.path.join(ROOT, "tests"))) if n.endswith((".py", ".js"))
+            and re.search(r"""["'](?:pkill|killall)["']""", open(os.path.join(ROOT, "tests", n), encoding="utf-8").read())]
+check("no test ends processes by name", _by_name == [], _by_name)
 turn_stop.HOLD_MAX_S = 120
 
 print("\n" + ("ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}"))

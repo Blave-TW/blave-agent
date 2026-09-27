@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **本機對帳程式離開時 log 寫得出原因(0.1.8 e2e #110)**:`state/reconciler.log` 原本只有一行沒有時間的
+  `reconciler leaving`,分不出是 daemon 叫它停、app 沒了、還是別的行程送的 SIGTERM。那一晚四次「無故結束」是
+  `tests/check_turn_stop.py` 結尾的 `pkill -f manager/reconciler.py`——全機依名稱殺,同一台電腦上正在跑的電腦版對帳程式
+  每跑一次測試就被停 10 秒(離開時還會撤自己的掛單)。測試改成只殺自己起的那個 pid,並檢查 tests/ 沒有任何 pkill / killall。
+  log:對帳程式寫 `<時間> reconciler leaving (pid N): SIGTERM | parent closed stdin | parent process is gone`;
+  daemon(`ReconcilerSupervisor._note`)在自己動手前寫 `stopping the reconciler (pid N): <原因>`(指令重啟帶最後一個指令、
+  daemon 收工帶收工原因、收孤兒),沒叫它停卻結束的寫 `exited (code X) without this daemon stopping it`。
+  「leaving: SIGTERM」上面沒有 daemon 那一行 = 外面送的。行為不變(照舊 10 秒後拉起)。測試 `tests/check_local_daemon_chain.py`。
 - **電腦版的 agent 不碰系統排程器(0.1.8 e2e #64 #75)**:用戶回 YES 要上線 Type B,agent 照雲端文件跑 `crontab`;
   macOS 跳系統框「想要管理你的電腦」,指令掛 4 分 33 秒,agent 接著建議用戶開完整磁碟取用權限。電腦版回合(LocalSink)多掛一個
   PreToolUse hook(`_sched_guard_hooks`,只對 Bash):指令位置上的 `crontab` / `launchctl` / `schtasks` 一律 deny,理由回給模型
