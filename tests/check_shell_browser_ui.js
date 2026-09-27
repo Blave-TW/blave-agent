@@ -39,6 +39,7 @@ app.whenReady().then(async () => {
     brWall(BR.blocks[0]);
     await new Promise((res) => setTimeout(res, 50));
     const first = [...document.querySelectorAll(".bw .pt")];
+    const wallClose = document.querySelectorAll(".bw-head .bw-close").length === 1;
     const events = [
       { type: "page_act", id: "p1", kind: "click", ref: "@e1", text: "More", box: { x: 10, y: 10, w: 50, h: 20 }, vw: 1280, vh: 800 },
       { type: "page_progress", id: "p2", n: 3, total: 9, pos: 0.4 }, { type: "thumb", id: "p1", dataURI: "AAAA" }, { type: "page_done", id: "p2", snapshot_id: null },
@@ -62,7 +63,7 @@ app.whenReady().then(async () => {
     ev({ type: "page_favicon", id: "p2", dataURI: PNG });
     const p2bar = document.querySelector('.bw .pt[data-id="p2"] .pt-bar .fav img');
     const sameSite = brFav("https://b.example/other").querySelector("img");
-    return { favImg: !!favImg && favImg.src === PNG, favRemote: !favRemote.querySelector("img") && favRemote.textContent === "q", p2bar: !!p2bar, sameSite: !!sameSite,
+    return { favImg: !!favImg && favImg.src === PNG, favRemote: !favRemote.querySelector("img") && favRemote.textContent === "q", p2bar: !!p2bar, sameSite: !!sameSite, wallClose,
       mode: BR.exp && BR.exp.mode, expand: window.__expand, same: first.length === 3 && first.every((el, i) => el === after[i]) && after.length === 3,
       appended: withNew.length === 4 && withNew.slice(0, 3).every((el, i) => el === first[i]), p4foot, ask, ask2, addrH: t("br.blk.addr.h") };
   })()`);
@@ -102,16 +103,29 @@ app.whenReady().then(async () => {
     window.__ev({ type: "page_favicon", id: "z2", dataURI: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", plate: false });
     window.__ev({ type: "page_progress", id: "z1", n: 1, total: 3 });
     const after = document.querySelector('.bv-tab[data-id="z2"] .fav').classList.contains("has-img");
-    brCollapse(false);
+    const headBtns = document.querySelectorAll(".bblk-head .btn-quiet, .bblk summary .btn-quiet").length;
+    // ✕:熱區用 elementFromPoint 實測(中心上下左右各 21px 都打到它);下緣在標題列內、在頁面框(原生 view)上緣之上
+    const cb = document.querySelector(".bw-head .bw-close"), cr = cb.getBoundingClientRect(), hr = document.querySelector(".bw-head").getBoundingClientRect(), pr = document.querySelector(".bv-page").getBoundingClientRect();
+    const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2, hitAt = (dx, dy) => { const e = document.elementFromPoint(cx + dx, cy + dy); return !!e && (e === cb || cb.contains(e)); };
+    const closeBtn = { label: cb.getAttribute("aria-label"), size: cr.width + "x" + cr.height, hit: [[0, 0], [21, 0], [-21, 0], [0, 21], [0, -21]].every(([dx, dy]) => hitAt(dx, dy)), below: hitAt(0, hr.bottom - cy + 1),
+      inHead: cr.bottom + 6 <= hr.bottom && cr.bottom + 6 <= pr.top, alignH5: Math.abs(cy - (() => { const h = document.querySelector(".bw-head h5").getBoundingClientRect(); return h.top + h.height / 2; })()) };
+    cb.focus(); BR.sig = null; brPaintOverlay();
+    closeBtn.refocus = document.activeElement === document.querySelector(".bw-head .bw-close") && document.activeElement !== cb;
+    document.querySelector(".bw-head .bw-close").click();
+    closeBtn.closed = BR.exp === null && document.querySelector("#bw").hidden && BR.tabs.has("z1");
     for (const id of ["z1", "z2", "z3"]) window.__ev({ type: "page_done", id, read: true });   // 疊圖只放真的讀到內容的頁
     window.__ev({ type: "turn_sources", sources: [], tabs: [] });
     await new Promise((res) => setTimeout(res, 2500));   // 匯流動畫播完才換成摘要列
     const favs = [...b.el.querySelectorAll(".favs .fav")].map((f) => Number(f.style.zIndex));
-    return { before, after, favs };
+    return { before, after, favs, headBtns, closeBtn };
   })()`);
   ok("分頁列的 favicon 即時換上(事件後到,分頁列不重建也會更新)", r4.before === false && r4.after === true);
   ok("摘要列疊圖由左到右 z-index 遞減", r4.favs.length === 3 && r4.favs[0] > r4.favs[1] && r4.favs[1] > r4.favs[2]);
   ok("深色 favicon 才墊淺底(plate),其餘不墊", r3.plate && r3.noPlate);
+  ok("這一輪的頁開在中欄時,聊天卡頭沒有文字鈕(「收回」拿掉了)", r4.headBtns === 0);
+  ok("中欄 ✕:牆與單頁都有、aria-label「關閉」、視覺 32×32、對齊 h5 那一行", r.wallClose && r4.closeBtn.label === "關閉" && r4.closeBtn.size === "32x32" && r4.closeBtn.alignH5 <= 1);
+  ok("中欄 ✕:熱區 44(elementFromPoint 實測)、標題列下緣以下打不到、不伸進頁面框(原生 view)", r4.closeBtn.hit && !r4.closeBtn.below && r4.closeBtn.inHead);
+  ok("中欄 ✕:重畫後焦點放回新的 ✕;按了只收展開層(分頁還在)", r4.closeBtn.refocus && r4.closeBtn.closed);
   const r5 = await js(`(() => {
     window.__ev({ type: "block_open" }); const b = BR.cur;
     window.__ev({ type: "page_open", id: "g1", url: "https://www.google.com/search?q=btc" }); window.__ev({ type: "search", id: "g1", source: "google", results: [] }); window.__ev({ type: "page_done", id: "g1" });

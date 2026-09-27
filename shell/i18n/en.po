@@ -4408,9 +4408,6 @@ msgstr "My Capital setup in the desktop app is stuck at the “Read accounts” 
 msgid "br.openPanel"
 msgstr "View pages"
 
-msgid "br.closePanel"
-msgstr "Close"
-
 msgid "br.listShow"
 msgstr "Show list"
 

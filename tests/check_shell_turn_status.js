@@ -116,8 +116,8 @@ ok("重開對話:瀏覽區塊不排在同一輪的用戶訊息上面(舊紀錄);
   seq.map((x) => x.br ? "B" : x.turn.role[0]).join("") === "uBauBa", seq.map((x) => x.br ? "B" : x.turn.role[0]).join(""));
 ok("新紀錄的區塊時間 = agent 第一次用瀏覽器(不是回合開始)", /ts: \(c\.usedAt \|\| c\.turnKey\) \/ 1000/.test(fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8")));
 const head = cut(brSrc, "function brPaintHead(b) {", "function brToggleList(");
-ok("卡頭最多一顆文字鈕＋chevron:中欄有這一輪的頁 →「收回」,否則「開到中欄」,互斥;沒有「全部展開」",
-  /if \(mine\) \{[^\n]*t\("br\.closePanel"\)[^\n]*\}\n\s*else if \(!b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head)
+ok("卡頭最多一顆文字鈕＋chevron:中欄沒有這一輪的頁 →「看網頁」,已在中欄就不放字(收回靠中欄 ✕);沒有「全部展開」",
+  /if \(!mine && !b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head) && !/closePanel/.test(brSrc)
   && !/expandAll|br\.expand"/.test(brSrc + strings) && /aria-label", t\(b\.open \? "br\.listHide" : "br\.listShow"\)/.test(head));
 // 中欄即時頁(設計稽核 A2):背景分頁固定 1280×800 排版,中欄大小只在顯示時套;擷取 / 顯示後清掉 viewport 覆寫
 const bIdx = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");

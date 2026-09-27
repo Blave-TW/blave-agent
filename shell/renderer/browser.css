@@ -107,9 +107,7 @@
 .bblk.sum summary:hover { background: var(--surface-card); }
 .bblk.sum summary b { font-weight: 600; color: var(--ink); }
 .bblk.sum .favs { display: inline-flex; }
-.bblk.sum .sum-back { margin-left: auto; }
 .bblk.sum .chev { margin-left: auto; width: 14px; height: 14px; color: var(--ink-3); transition: transform var(--motion-fast) var(--ease-standard); }
-.bblk.sum .sum-back + .chev { margin-left: var(--space-8); }
 .bblk.sum[open] .chev { transform: rotate(180deg); }
 .bblk.sum .wall { padding: 0 var(--space-8) var(--space-8); }
 
@@ -122,6 +120,9 @@
 .bw-stat b { font-weight: 600; color: var(--ink); }
 .bw-stat .ic { width: 14px; height: 14px; }
 .bw-stat .btn-quiet { margin-left: var(--space-4); }
+/* 32 的鈕對齊 20.8 高的 h5 那一行;✕ 的筆畫(不是盒子)對齊內容右緣。熱區 44,下緣仍在標題列內、不伸進頁面框 */
+.bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) 0 0; }
+.bw-close::before { content: ""; position: absolute; inset: -6px; }
 .bw-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-24) var(--space-24); display: flex; flex-direction: column; }
 .segs { display: inline-flex; gap: 3px; }
 .segs i { display: block; width: 10px; height: 4px; border-radius: 1px; background: var(--border-hairline); transition: background var(--motion-base) var(--ease-standard); }

@@ -184,12 +184,11 @@ function brPaintHead(b) {
   b.el.classList.toggle("is-open", !!b.open);
   b.el.classList.toggle("is-empty", !b.ids.length && !inWall);   // 這一輪只搜尋過、還沒開任何頁:卡先不出現
   h.append(brLine(b));
-  // 卡頭最多一顆文字鈕＋一個 chevron(canon 第 1 條):中欄有這一輪的頁(單頁或牆)→「收回」,沒有 →「開到中欄」,
-  // 兩者互斥;聊天清單的開合只靠 chevron(整條卡頭也可點)
+  // 卡頭最多一顆文字鈕＋一個 chevron:中欄沒有這一輪的頁 →「看網頁」;已經在中欄就不放字——
+  // 收回靠中欄標題列的 ✕、Esc 或再點一次選中的列;聊天清單的開合只靠 chevron(整條卡頭也可點)
   const act = brEl("span", "bblk-act");
   const mine = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || inWall);
-  if (mine) { const back = brEl("button", "btn-quiet", t("br.closePanel")); back.type = "button"; back.addEventListener("click", (e) => { e.stopPropagation(); brCollapse(true); }); act.append(back); }
-  else if (!b.conv && b.ids.length) { const all = brEl("button", "btn-quiet", t("br.openPanel")); all.type = "button"; all.addEventListener("click", (e) => { e.stopPropagation(); brWall(b); }); act.append(all); }
+  if (!mine && !b.conv && b.ids.length) { const all = brEl("button", "btn-quiet", t("br.openPanel")); all.type = "button"; all.addEventListener("click", (e) => { e.stopPropagation(); brWall(b); }); act.append(all); }
   if (!b.conv && b.ids.length) {
     const tg = brEl("button", "br-toggle"); tg.type = "button"; tg.setAttribute("aria-expanded", b.open ? "true" : "false");
     tg.setAttribute("aria-label", t(b.open ? "br.listHide" : "br.listShow"));
@@ -251,8 +250,6 @@ function brPaintSum(b) {
   if (read === 0 && used > 0) txt.append(t("br.summaryUsedPre"), brEl("b", "", String(used)), t("br.summaryPost"));
   else txt.append(t("br.summaryPre"), brEl("b", "", String(read)), t("br.summaryPost"));
   s.append(favs, txt);
-  const mine = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || (BR.exp.mode === "wall" && BR.exp.block === b) || (BR.exp.mode === "snap" && BR.exp.block === b));
-  if (mine) { const back = brEl("button", "btn-quiet sum-back", t("br.closePanel")); back.type = "button"; back.addEventListener("click", (e) => { e.preventDefault(); brCollapse(true); }); s.append(back); }
   s.append(brIcon("chev"));
 }
 /* 區塊看得到才拍縮圖(主行程每 2 秒一輪):看不到的格子不花 CPU */
@@ -388,6 +385,21 @@ function brCollapse(byUser) {
   document.querySelectorAll(".pt").forEach((el) => { const x = BR.tabs.get(el.dataset.id); if (x) brPaintTile(el, x); });
   brObserve();
 }
+/* Esc = 收回展開層(brCollapse,不關分頁、不打斷 agent)。排在 app.js escTop 那些框後面(它們關了一層就 preventDefault);網址列編輯中的 Esc 是取消編輯。
+   焦點在網頁裡(原生 view)時按鍵不會到這裡——那是頁面自己的 Esc */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || e.defaultPrevented || !BR.exp) return;
+  if (e.target && e.target.closest && e.target.closest(".bv-addr input")) return;
+  e.preventDefault(); brCollapse(true);
+});
+/* 收回之後焦點回哪:聊天裡選中的那一列(看得到才算);牆、快照、或那一列收著 → 那張卡的 chevron / 摘要列 */
+function brFocusBack() {
+  const exp = BR.exp; if (!exp) return null;
+  const b = exp.mode === "one" ? BR.blocks.find((k) => k.ids.includes(exp.id)) : exp.block;
+  if (!b || !b.el) return null;
+  const row = exp.mode === "one" ? [...b.el.querySelectorAll(".pt")].find((el) => el.dataset.id === exp.id && el.offsetParent) : null;
+  return row || b.el.querySelector(".br-toggle") || b.sum || null;
+}
 function brRowClick(id) {
   if (BR.exp && BR.exp.mode === "one" && BR.exp.id === id) { brCollapse(true); return; }
   trackFeature("browser_read");
@@ -470,9 +482,14 @@ function brPaintOverlay() {
   const sig = brOverlaySig(exp);
   if (sig && sig === BR.sig && bw.querySelector(".bw-stat")) { brStatLine(bw.querySelector(".bw-stat")); brPaintTabStrip(bw); return; }
   BR.sig = sig;
+  const onClose = !!document.activeElement && bw.contains(document.activeElement) && document.activeElement.classList.contains("bw-close");
   bw.textContent = "";
   const head = brEl("div", "bw-head"), txt = brEl("div", "txt"), stat = brEl("div", "bw-stat");
-  txt.append(brEl("h5", "", t("br.h")), stat); head.append(txt); bw.append(head);
+  // 牆沒有「選中的列」可以再點、焦點在網頁裡時 Esc 到不了這裡:這顆 ✕ 是永遠在的出口,不藏、不停用。只收展開層
+  const x0 = brEl("button", "modal-close bw-close", "✕"); x0.type = "button"; x0.setAttribute("aria-label", t("set.close"));
+  x0.addEventListener("click", () => { const back = brFocusBack(); brCollapse(true); if (back && back.isConnected) back.focus(); });
+  txt.append(brEl("h5", "", t("br.h")), stat); head.append(txt, x0); bw.append(head);
+  if (onClose) x0.focus();   // 整層重畫把原本那顆換掉了:焦點放回新的,不掉到 body
   if (BR.ro) BR.ro.disconnect();
   if (exp.mode === "wall") {
     brStatLine(stat);
