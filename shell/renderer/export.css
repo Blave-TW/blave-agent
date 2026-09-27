@@ -37,6 +37,8 @@
 /* Unavailable info 列:不可點、字 400 灰,下一行講原因 */
 .xp-off { padding: var(--space-6) 10px; font-size: 13px; line-height: 1.5; color: var(--ink-3); white-space: nowrap; }
 .xp-off .d { display: block; font-size: 12px; }
+/* 三列都不能選而且同一個原因:原因在頂端講一次,下面三列只剩名字 */
+.xp-why { margin: 0; padding: var(--space-6) 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 /* 不能按時點了講原因(canon › Disabled 具名例外):分頁列下一行,換分頁或狀態解除即收 */
 .xp-note { margin: 0; padding: var(--space-8) var(--space-24) 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .xp-note[hidden] { display: none; }

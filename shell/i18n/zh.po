@@ -2600,6 +2600,9 @@ msgstr "{name}（{id}）"
 msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 
+msgid "rp.noBtB"
+msgstr "這一支屬於不做回測的策略類型，所以只有程式碼。"
+
 msgid "cx.ip.cloudNote"
 msgstr "這是雲端主機現在的對外 IP。"
 
@@ -4448,6 +4451,9 @@ msgstr "XQ 沒有加密貨幣市場"
 
 msgid "xp.off.portfolio"
 msgstr "只能轉出單一標的的策略"
+
+msgid "xp.off.nosignal"
+msgstr "這一支沒有進出場訊號可以轉出"
 
 msgid "xp.why.tm"
 msgstr "正在看 {v}。轉出只做目前這一版。"

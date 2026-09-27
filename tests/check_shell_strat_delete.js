@@ -100,7 +100,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
 
 // ── 沒有回測時,分頁列正下方那一句(兩個視角同一段)──
 ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
-  && /\$\("rp-nobt"\)\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
+  && /const nb = \$\("rp-nobt"\); nb\.hidden = has;/.test(fnOf(appSrc, "rpShowTab")));
 
 // ── 側欄:再點一次選中的那支 = 取消選取、中欄回 welcome(Wei 09-23)。真的跑 stratRefresh 畫列、按列上的 click ──
 (async () => {

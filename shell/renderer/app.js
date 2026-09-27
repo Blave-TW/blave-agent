@@ -1150,7 +1150,10 @@ function rpShowTab(tab) {
     b.setAttribute("aria-selected", on ? "true" : "false");
     b.disabled = !has && b.dataset.tab !== "code";
   });
-  $("rp-nobt").hidden = has;   // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)
+  // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)。Type B 本來就沒有回測,不叫人去跑(e2e 0.1.8 #67);
+  // key 放在 data-i18n 上,切語言時 applyStatic 照這個 key 重譯
+  const nb = $("rp-nobt"); nb.hidden = has;
+  nb.dataset.i18n = typeof xpIsTypeB === "function" && xpIsTypeB(B.data) ? "rp.noBtB" : "rp.noBt"; nb.textContent = t(nb.dataset.i18n);
   for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = k !== tab;
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;
