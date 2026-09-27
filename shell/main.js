@@ -2044,28 +2044,33 @@ app.whenReady().then(() => {
     }).finally(() => { turnStarting = false; });
     return { started: true };
   });
+  // 選單字由畫面交過來(trPushLabels):收件的 handler 要在視窗之前掛好,而且 app 選單先重建、再動選單列——
+  // 以前掛在一串啟動步驟的最後,中間任何一步拋例外 handler 就沒掛上,app 選單停在英文(File／Edit／View…)、畫面其他都正常
+  ipcMain.on("trade-labels", (e, labels) => {
+    if (!fromOurPage(e) || !labels || typeof labels !== "object") return;
+    for (const k of Object.keys(tmLabels)) if (typeof labels[k] === "string" && labels[k] && labels[k].length <= 400) tmLabels[k] = labels[k];
+    if (labels.lang === "zh" || labels.lang === "en") uiLang = labels.lang;   // 只拿來組官網網址的語言段:白名單兩個值
+    startStep("app menu", appMenuSync);
+    startStep("tray", traySync);
+  });
   createWindow();
+  startStep("app menu", appMenuSync);
   // 要在常駐程式起來之前:它 import 的就是 workspace 裡的 lib。只有拿到單一實例鎖的那一份才做——
   // 第二份 app 在結束前也會走到 whenReady,不能讓它把新 lib 拷進第一份正在下單的 workspace(稽核 S7)
-  if (app.hasSingleInstanceLock()) syncOfficialOnUpdate();
-  tradeStartIfReady();   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
+  if (app.hasSingleInstanceLock()) startStep("workspace sync", syncOfficialOnUpdate);
+  startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   app.on("browser-window-focus", () => { lastAcct = null; p1Badge = 0; if (app.dock) app.dock.setBadge(""); cloudHost().setForeground(true); });
   app.on("browser-window-blur", () => cloudHost().setForeground(false));   // 背景時輪詢放慢到 60 秒
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
-  trayStart();
-  tm().start();
-  updater().start();
-  minGate().start();
-  appMenuSync();
-  ipcMain.on("trade-labels", (e, labels) => {
-    if (!fromOurPage(e) || !labels || typeof labels !== "object") return;
-    for (const k of Object.keys(tmLabels)) if (typeof labels[k] === "string" && labels[k] && labels[k].length <= 400) tmLabels[k] = labels[k];
-    if (labels.lang === "zh" || labels.lang === "en") uiLang = labels.lang;   // 只拿來組官網網址的語言段:白名單兩個值
-    traySync(); appMenuSync();
-  });
+  startStep("tray", trayStart);
+  startStep("telemetry", () => tm().start());
+  startStep("updater", () => updater().start());
+  startStep("min version gate", () => minGate().start());
 });
+/* 啟動步驟各自隔開:一步拋例外只記一行、不擋後面的步驟(選單、選單列、更新、遙測彼此無關) */
+function startStep(what, fn) { try { return fn(); } catch (e) { console.error(`[startup] ${what} failed: ${(e && e.stack) || e}`); return undefined; } }
 // 一次只跑一份:第二份會跟第一份搶同一個 workspace 與 session.db,也讓「用同一顆 binary 再開一份」這條
 // 旁路少一點(稽核 M1)
 if (!app.requestSingleInstanceLock()) app.quit();

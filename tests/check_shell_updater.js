@@ -73,9 +73,9 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("main.js 有 officialStale", !!m); if (m) eval(m[0].replace(/^const /, "var "));
   t("隨包的比較新 → 要拷;一樣 / workspace 比較新 / 隨包讀不到 → 不拷(只往上不往下)", officialStale("2026-09-21", "2026-09-10") && officialStale("2026-09-21-b", "2026-09-21")
     && officialStale("2026-09-21", "") && !officialStale("2026-09-21", "2026-09-21") && !officialStale("2026-09-10", "2026-09-21") && !officialStale("", "2026-09-21"));
-  t("在常駐程式起來之前同步(它 import 的是 workspace 的 lib)", mainSrc.indexOf("syncOfficialOnUpdate();") > 0 && mainSrc.indexOf("syncOfficialOnUpdate();") < mainSrc.indexOf("tradeStartIfReady();", mainSrc.indexOf("syncOfficialOnUpdate();")) && /syncOfficialOnUpdate\(\);[^\n]*\n\s*tradeStartIfReady\(\);/.test(mainSrc));
+  t("在常駐程式起來之前同步(它 import 的是 workspace 的 lib)", /startStep\("workspace sync", syncOfficialOnUpdate\);[^\n]*\n\s*startStep\("trade host", tradeStartIfReady\);/.test(mainSrc));
   t("Python 相依的記號檔比內容(清單變了要重裝)", /depsHave !== WORKSPACE_DEPS\.join/.test(mainSrc));
-  t("只有拿到單一實例鎖的那一份才同步(第二份 app 不准把新 lib 拷進正在下單的 workspace)", /if \(app\.hasSingleInstanceLock\(\)\) syncOfficialOnUpdate\(\);/.test(mainSrc));
+  t("只有拿到單一實例鎖的那一份才同步(第二份 app 不准把新 lib 拷進正在下單的 workspace)", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("workspace sync", syncOfficialOnUpdate\);/.test(mainSrc));
   t("VERSION 是 OFFICIAL_FILES 的最後一項(中途失敗 → 版號不變 → 下次重來)", /const OFFICIAL_FILES = \[[^\]]*"VERSION",\s*\];/.test(mainSrc));
   t("常駐程式的 env 帶 PY_ENV(不把 __pycache__ 寫進 .app)", /BLAVE_AGENT_STATE: path\.join\(BASE, "state"\),\s*\.\.\.PY_ENV/.test(mainSrc));
   t("防回滾:Squirrel 層比版號", /ElectronSquirrelPreventDowngrades: true/.test(cfg));

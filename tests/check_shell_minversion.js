@@ -61,6 +61,6 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("main.js:會開回合的入口只有 send-message 這一個", (src.match(/[^a-zA-Z]runTurn\(/g) || []).length === 2);
   t("main.js:版本閘與方案頁讀同一支、同一份快取(不另開請求)", (src.match(/\/openclaw\/public_tiers/g) || []).length === 1 && /fetchTiers: \(force\) => publicTiers\(force\)/.test(src));
   t("main.js:被擋的那一刻叫更新器去查;狀態只推給自家頁面", /onBlocked: \(\) => \{ try \{ updater\(\)\.check\(\);/.test(src) && /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("min-version-state"/.test(src));
-  t("main.js:啟動時就開始查", /minGate\(\)\.start\(\);/.test(src));
+  t("main.js:啟動時就開始查", /startStep\("min version gate", \(\) => minGate\(\)\.start\(\)\);/.test(src));
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();
