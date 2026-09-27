@@ -83,11 +83,11 @@ class Build:
 
 # ─── shared loaders ───────────────────────────────────────────────────────────
 
-def _tw_index(b):
+def _tw_index(b, bars=T._PRICE_BARS):
     """TAIEX daily bars (cleaned), cached. DataAccessError off the desktop → Skip."""
     if "taiex" not in b.cache:
         try:
-            idx = T._clean_ohlc(T._tw_market_index(T._tw_index_start(b.date, b.start), b.date, b.headers, b.used))
+            idx = T._clean_ohlc(T._tw_market_index(T._tw_index_start(b.date, b.start, bars), b.date, b.headers, b.used))
         except _data.DataAccessError:
             raise Skip(_skip_text(T._TW_MARKET_SERIES)) from None
         if len(idx) < 2:
@@ -100,8 +100,8 @@ def _skip_text(what):
     return f"沒有 Blave 資料,{what}全部經 Blave,這份產不出來。{T._access_fix('zh')}"
 
 
-def _crypto_window_start(b):
-    return T._window_start(b.lookback_days + 2)
+def _crypto_window_start(b, days=None):
+    return T._window_start((days or b.lookback_days) + 2)
 
 
 def _crypto_closes(b, symbols):
@@ -161,8 +161,9 @@ def _last_alpha(df):
 def price_chart(b, symbol="TAIEX", bars=T._PRICE_BARS, display_days=None):
     """#2 K 線. `symbol`: "TAIEX" (加權指數), a 4–6 digit Taiwan stock id, or a coin (BTC).
     The price brick owns the day's headline (kpi_row title) and the 收盤位置 line.
+    `bars`: daily candles drawn (default 90); the fetch window follows it, not `lookback_days`.
     `display_days` (TAIEX only) draws only the bars of the last N calendar days; the 60-day
-    mean and the prior-20 high are still computed on the full 90-day window."""
+    mean and the prior-20 high are still computed on the full window."""
     s = str(symbol).strip().upper()
     if s == "TAIEX":
         return _price_taiex(b, bars, display_days)
@@ -172,7 +173,7 @@ def price_chart(b, symbol="TAIEX", bars=T._PRICE_BARS, display_days=None):
 
 
 def _price_taiex(b, bars, display_days=None):
-    idx = _tw_index(b)
+    idx = _tw_index(b, bars)
     date = b.date
     if b.mode == "close":
         _close_gate(b, idx)
@@ -262,13 +263,14 @@ def _close_gate(b, idx):
 def _price_twstock(b, stock_id, bars):
     date = b.date
     foot = []
+    start = min(b.start, (pd.Timestamp(date) - pd.Timedelta(days=T._bars_window_days(bars))).strftime("%Y-%m-%d"))
     try:
-        df = _data.fetch_twstock_ohlcv(stock_id, "1d", b.headers, start=b.start, end=date)
+        df = _data.fetch_twstock_ohlcv(stock_id, "1d", b.headers, start=start, end=date)
     except _data.DataAccessError:
         # The daily fetcher goes to the stock's own exchange on the desktop (no key): shares → 張,
         # naive Taipei dates → the same tz the ohlcv path carries.
         try:
-            df = _data.fetch_twstock_price(stock_id, b.start, date, b.headers)
+            df = _data.fetch_twstock_price(stock_id, start, date, b.headers)
         except _data.DataAccessError as e:
             # A cause means the free chain ran and failed (lib.data chains it): that is the
             # real error, not a data-access one — never "add a card" for an exchange outage.
@@ -323,7 +325,8 @@ def _price_crypto(b, sym, bars):
     s = _data.normalize_symbol(sym if sym.endswith("USDT") else sym + "USDT")
     label = s.replace("USDT", "")
     try:
-        df = _data.fetch_kline(s, "1d", _crypto_window_start(b), None, b.headers)
+        df = _data.fetch_kline(s, "1d", T._window_start(max(b.lookback_days + 2, T._bars_window_days(bars, 7))),
+                               None, b.headers)
     except _data.DataAccessError:
         raise Skip(_skip_text("日 K(BLAVE_KLINE_SOURCE 不是 binance)")) from None
     df = T._clean_ohlc(df) if df is not None else df
@@ -678,13 +681,16 @@ _INDICATORS = {
 _RAW_INDICATORS = ("頂尖交易員曝險",)
 
 
-def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員曝險"), symbol=None, kpi=None, raw_chart=True):
+def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員曝險"), symbol=None, kpi=None, raw_chart=True,
+                     days=None):
     """#15 Blave 指標: the z-score series share one line chart (≤4); 頂尖交易員曝險 (raw value)
     gets its own unless `raw_chart=False`. Market-wide names need no symbol; 爆倉 / 巨鯨 /
-    多空力道 are per coin. `kpi`: which names go to the KPI row (default all)."""
+    多空力道 are per coin. `kpi`: which names go to the KPI row (default all). `days`: the
+    chart's window when it is not the recipe's `lookback_days` (which also sets the quote
+    table's N-day return)."""
     kpis, got = [], {}
     s = _data.normalize_symbol(symbol if symbol.endswith("USDT") else symbol + "USDT") if symbol else None
-    start = _crypto_window_start(b)
+    start = _crypto_window_start(b, days)
     def fetch(n):
         fn_name, per_coin = _INDICATORS[n]
         args = (s, "1d", start, None, b.headers) if per_coin else ("1d", start, None, b.headers)
@@ -1131,14 +1137,15 @@ def _coin_pair(symbol):
 
 
 def coin_snapshot(b, symbol, days=30):
-    """One coin today: close over `days` with its 24h change and 24h volume against the 20-day mean of
+    """One coin today: 90 daily candles with its 24h change and 24h volume against the 20-day mean of
     complete days — for a coin the news is about (a hacked exchange's token, a listing, an unlock).
+    `days` does not set the candle count; saved recipes and `extra` carry it, so it stays accepted.
     Never today's forming daily bar against full days: at 08:00 Taipei it is an hour old and reads as
     「0.0 倍」(09-27 live test). Rolling 24 h from Binance's ticker; without it, yesterday's full day."""
     pair = _coin_pair(symbol)
     coin = pair.replace("USDT", "")
     try:
-        df = _data.fetch_kline(pair, "1d", T._window_start(max(days, 21) + 2), None, b.headers)
+        df = _data.fetch_kline(pair, "1d", T._window_start(max(days, T._PRICE_BARS) + 2), None, b.headers)
     except _data.DataAccessError:
         T._no_access(f"{coin} 日 K", b.notes, b.missing)
         return Brick()
@@ -1160,8 +1167,8 @@ def coin_snapshot(b, symbol, days=30):
         b.ctx[f"{coin} 成交量"] = f"{basis}為前 20 日均的 {ratio:.1f} 倍"
     title = f"{coin} {chg_label} {T._pct(chg * 100)}" + (f",{basis}成交量為前 20 日均 {ratio:.1f} 倍" if ratio is not None else "")
     # 價格一律畫 K 線(references/reports.md › Price is drawn as a candlestick;稽核 B8:XRP 畫成了收盤折線)
-    lc = T.candlestick(title, df.tail(days), y_unit="USDT",
-                       caption=T._cap(f"Binance {pair} 永續日 K,近 {min(days, len(c))} 日",
+    lc = T.candlestick(title, df.tail(T._PRICE_BARS), y_unit="USDT",
+                       caption=T._cap(f"Binance {pair} 永續日 K,近 {min(T._PRICE_BARS, len(c))} 根",
                                       (f"成交量比較 = {basis}量 ÷ 前 20 個完整日平均(今日未收盤那根不計)"
                                        if ratio is not None else None)))
     if lc is None:

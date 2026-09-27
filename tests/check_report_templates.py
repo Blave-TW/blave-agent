@@ -28,7 +28,7 @@ T._now_tpe = lambda: pd.Timestamp("2026-09-02 09:00", tz="Asia/Taipei").to_pydat
 
 KNOWN = {"meta", "kpi_row", "line_chart", "candlestick", "drawdown", "heatmap", "bar_chart", "histogram", "box",
          "scatter", "metric_table", "table", "text", "quote", "footnote", "code", "divider", "callout", "image", "news"}
-days = pd.bdate_range("2026-06-01", "2026-09-01"); n = len(days); rng = np.random.default_rng(1)
+days = pd.bdate_range("2026-02-02", "2026-09-01"); n = len(days); rng = np.random.default_rng(1)
 walk = lambda base, vol: pd.Series(base * np.cumprod(1 + rng.normal(0, vol, n)), index=days)
 def ohlc(close):
     """Coherent bars around a close series: open = previous close, wicks outside both."""
@@ -43,7 +43,7 @@ hours = pd.date_range("2026-08-27 00:00", "2026-09-02 05:00", freq="60min", tz="
 hours = hours[((hours.hour >= 8) & (hours.hour < 14)) | (hours.hour >= 15) | (hours.hour <= 5)]
 d.fetch_twfutures_ohlcv = lambda sym, sch, s, e, h: pd.DataFrame({"Open": 46800., "High": 46900., "Low": 46700., "Close": 46800 + rng.normal(0, 50, len(hours)), "Volume": 100}, index=hours.tz_convert("UTC"))
 d.fetch_economic_calendar = lambda h, **k: pd.DataFrame([{"date": "2026-09-02", "time": "20:30", "country": "US", "country_name": "美國", "subject": "非農就業", "subject_title": "<8月>", "predict": 150, "last": 142, "real": None, "unit": "千人", "priority": 1}])
-udays = pd.date_range("2026-06-01", "2026-09-02", freq="D", tz="UTC")   # ≈ the 90-day crypto window
+udays = pd.date_range("2026-04-01", "2026-09-02", freq="D", tz="UTC")   # longer than the 120-bar research chart
 kl = lambda base: ohlc(pd.Series(base * np.cumprod(1 + rng.normal(0, .03, len(udays))), index=udays)).assign(Volume=1.0)
 d.fetch_kline_batch = lambda syms, i, s, e, h: {x: kl(70000) for x in syms}
 d.fetch_kline = lambda sym, i, s, e, h: kl(70000)
@@ -90,7 +90,7 @@ NAR = {"lead": "一句可證偽的主張。",
        "risk": "外資連兩日淨賣超逾 150 億,這份解讀作廢。",
        "few_sources": "測試資料,不上網"}
 # name → (title of the one price chart, or None; title prefixes of charts that must stay line charts;
-# bars drawn: 60, tw v2 = the last 45 calendar days only)
+# bars drawn: 90 on every template)
 PRICE = {"tw": ("加權指數", {"外資期貨淨部位"}), "close": ("加權指數", {"融資", "外資期貨淨部位"}),
          "crypto": (None, {"市場方向"}),
          "2330": ("2330 日 K", set()), "btc": ("BTC 日 K", {"資金費率", "爆倉指標"})}
@@ -142,9 +142,9 @@ for name, pack in (("tw", T.tw_market_brief("2026-09-02", H)), ("close", T.tw_cl
         ks = [x for x in b if x["type"] == "candlestick"]
         if price:
             n_k = len(ks[0]["candles"]) if ks else 0
-            want_k = 60 if name != "tw" else sum(1 for t in days if t >= days[-1] - pd.Timedelta(days=45))
+            want_k = T._PRICE_BARS
             # title 帶當日結論(「{圖名}:收盤高於 60 日均 X%」),所以認前綴不認全等。
-            check(len(ks) == 1 and ks[0]["title"].startswith(price) and n_k == want_k, f"{tag}: 價格圖「{price}」是 K 線,{n_k} 根(60 根;台股晨報 v2 只畫最後 45 天 = {want_k})")
+            check(len(ks) == 1 and ks[0]["title"].startswith(price) and n_k == want_k == 90 and f"近 {n_k} " in ks[0]["caption"], f"{tag}: 價格圖「{price}」是 K 線,{n_k} 根(要 {want_k} 根)且圖說寫同一個根數")
             check(any(w in ks[0]["title"] for w in ("高於", "低於")) and "60 日均" in ks[0]["caption"],
                   f"{tag}: 價格圖 title 帶收盤對 60 日均的位置,caption 留口徑與基準值:{ks[0]['title']}")
             ma = re.search(r"60 日均 ([\d,.]+)", ks[0]["caption"])
@@ -155,7 +155,7 @@ for name, pack in (("tw", T.tw_market_brief("2026-09-02", H)), ("close", T.tw_cl
             want_v = "1.4" if any(x["type"] == "news" for x in b) else "1.2"
             check(doc["schema_version"] == want_v, f"{tag}: 含 K 線 → schema_version 1.2(帶 news block 則 1.4)")
             ref = {r["label"]: r["y"] for r in (ks[0].get("reflines", []) if ks else [])}
-            prior = ks[0]["candles"][-21:-1] if ks else []   # 倒數第 2–21 根,不含當日(v2 畫 45 天仍 ≥ 21 根)
+            prior = ks[0]["candles"][-21:-1] if ks else []   # 倒數第 2–21 根,不含當日
             want = {"前 20 日高": max(k[2] for k in prior), "前 20 日低": min(k[3] for k in prior)} if prior else {}
             if name in ("tw", "close"):
                 want.pop("前 20 日低", None)   # 大盤晨報、收盤報告只畫前 20 日高
@@ -416,7 +416,7 @@ b = no_access_case("2330 晨報", p, ("外資買賣超",), NAR)
 ks = [x for x in b if x["type"] == "candlestick"]
 vol = [i for x in b if x["type"] == "kpi_row" for i in x["items"] if i["label"] == "成交量"][0]["value"]
 src_txt = [i["text"] for i in b[-1]["items"] if i["id"] == "src"][0]
-check(len(ks) == 1 and len(ks[0]["candles"]) == 60 and ks[0]["candles"][-1][0] == T._ts(tw.index[-1]) and vol == T._num(float(tw["Volume"].iloc[-1]))
+check(len(ks) == 1 and len(ks[0]["candles"]) == 90 and ks[0]["candles"][-1][0] == T._ts(tw.index[-1]) and vol == T._num(float(tw["Volume"].iloc[-1]))
       and any(i["text"] == d._TW_PUBLIC_SOURCE_ZH for i in b[-1]["items"]) and "TWSE 未還原價" not in src_txt,
       "2330 晨報(access=0):日 K 改走免費日線(股→張、台北時區同 ohlcv 路徑),尾註帶交易所顯名(lib.data 常數),src 行不再說 TWSE")
 b = no_access_case("2330 晨報", T.symbol_brief("2330", "2026-09-02", H), ("外資買賣超",), None, lang="en")
@@ -453,9 +453,9 @@ asked = {}
 for k in ("fetch_twmarket_index_public", "fetch_twmarket_institutional_public", "fetch_twmarket_margin_public"):
     setattr(d, k, (lambda k, f: lambda s, e: (asked.__setitem__(k, s), f(s, e))[1])(k, pub[k]))
 p = T.tw_market_brief("2026-09-02", H)
-check(asked == {"fetch_twmarket_index_public": "2026-06-04", "fetch_twmarket_institutional_public": "2026-07-19",
+check(asked == {"fetch_twmarket_index_public": "2026-04-15", "fetch_twmarket_institutional_public": "2026-07-19",
                 "fetch_twmarket_margin_public": "2026-07-19"} and "60 日均" in p.context,
-      f"回看:指數固定 90 日(60 日均算得出),逐日打的法人/融資只抓 45 日 — {asked}")
+      f"回看:指數固定 140 日曆日(畫得出 90 根),逐日打的法人/融資只抓 45 日 — {asked}")
 for k, fn in pub.items():
     setattr(d, k, fn)
 for why, fn, miss in (("台股大盤晨報", lambda: T.tw_market_brief("2026-09-02", H), ["台指期夜盤", "鉅亨新聞", "今日總經事件", "除權息"]),
@@ -542,5 +542,40 @@ for k, fn in saved.items():
 p = T.crypto_market_brief("2026-09-02", H)
 check(not p.missing and not any(i["id"] == "blave" for i in json.load(open(tpub(p, NAR)))["blocks"][-1]["items"]),
       "有資料權限:missing 空、尾註沒有那行(雲端機一個位元組都不變)")
+
+# ── 圖表時間窗(spec 2026-09-28):根數由積木決定,抓取窗要夠;stub 照 start 切,抓太短就畫不滿 ──
+_real_ws = T._window_start
+T._window_start = lambda n: (pd.Timestamp("2026-09-02") - pd.Timedelta(days=n)).strftime("%Y-%m-%d")
+cut = lambda df, s: df[df.index >= pd.Timestamp(s, tz=df.index.tz)]
+full_kl, full_tw, ind_start = kl(70000), tw, {}
+d.fetch_kline = lambda sym, i, s, e, h: cut(full_kl, s)
+d.fetch_kline_batch = lambda syms, i, s, e, h: {x: cut(full_kl, s) for x in syms}
+d.fetch_twstock_ohlcv = lambda sid, sch, h, start=None, end=None, adjust=False: cut(full_tw, start)
+d.fetch_twmarket_index = lambda s, e, h: cut(ohlc(walk(45000, .01)), s)
+d.fetch_market_direction = lambda i, s, e, h: (ind_start.__setitem__("md", s), alpha(1.0)())[1]
+def candles(pack, owner):
+    return [x for o, x in zip(pack.owners, pack.blocks) if o == owner and x["type"] == "candlestick"][0]
+for label, pack, want in (("單標的 BTC", T.symbol_brief("BTC", "2026-09-02", H, fresh=True), 90),
+                          ("單標的 2330", T.symbol_brief("2330", "2026-09-02", H, fresh=True), 90),
+                          ("研究 SOL", T.research_pack("SOL", date="2026-09-02", headers=H, fresh=True), 120),
+                          ("研究 2330", T.research_pack("2330", date="2026-09-02", headers=H, fresh=True), 120),
+                          ("台股晨報", T.tw_market_brief("2026-09-02", H, fresh=True), 90),
+                          ("台股收盤", T.tw_close_brief("2026-09-01", H, fresh=True), 90),
+                          ("自組 TAIEX bars=120", T.build({"id": "my-taiex", "title": "t", "bricks": [["price_chart", {"symbol": "TAIEX", "bars": 120}]]},
+                                                        "2026-09-02", H, fresh=True), 120)):
+    k = candles(pack, "price_chart")
+    check(len(k["candles"]) == want and f"近 {want} " in k["caption"], f"{label}: 日 K {len(k['candles'])} 根(要 {want}),圖說同一個數字")
+for dd in (30, 60):
+    k = candles(T.research_pack("SOL", date="2026-09-02", headers=H, fresh=True, days=dd), "coin_snapshot")
+    check(len(k["candles"]) == 90 and "近 90 根" in k["caption"], f"coin_snapshot(days={dd}): 日 K 90 根,days 不決定根數")
+p = T.crypto_market_brief("2026-09-02", H, fresh=True)
+qt = [x for o, x in zip(p.owners, p.blocks) if o == "quote_table" and x["type"] == "table"][0]
+ind = [x for o, x in zip(p.owners, p.blocks) if o == "blave_indicators" and x["type"] == "line_chart"][0]
+check(ind_start["md"] == "2026-06-02" and "30 日" in [c["label"] for c in qt["columns"]] and "BTC 近 30 日均" in p.context,
+      f"加密晨報:指標折線抓 90 日({ind_start['md']}),報價表仍是 30 日報酬、30 日均")
+T.check_recipe({"id": "my-ind", "title": "t", "lookback_days": 30,
+                "bricks": [["price_chart", {"symbol": "BTC", "bars": 120}], ["blave_indicators", {"days": 90}]]})
+check(True, "自組配方:lookback_days=30 配 bars=120、指標 days=90 存得進去")
+T._window_start = _real_ws
 
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

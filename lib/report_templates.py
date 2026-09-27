@@ -347,8 +347,16 @@ def line_chart(title, series, y_unit=None, caption=None, reflines=None):
     return b
 
 
-# 範本的價格 K 線一律畫最後 60 根:手機寬度約放得下 68 根完整 K 棒(日 K 建議 40–65)。
-_PRICE_BARS = 60
+# 範本的日 K 畫最後 90 根(60 日均涵蓋段 + 一個月對照),研究報告 120 根(契約上限)。桌機與 PDF 到 120 根
+# 都是完整 K 棒;手機寬超過約 72 根渲染器降階成高低線——接受,不在產出端截短。
+_PRICE_BARS = 90
+_RESEARCH_BARS = 120
+
+
+def _bars_window_days(bars, trading_week=5):
+    """Calendar days to fetch so `bars` daily bars come back: a crypto day is a bar
+    (`trading_week=7`); a Taiwan session week is 5 days plus room for a long holiday."""
+    return bars + 2 if trading_week == 7 else bars * 7 // 5 + 14
 
 
 def _clean_ohlc(df):
@@ -637,13 +645,14 @@ def _tw_market(blave, public, name, notes, missing, used, empty_cols):
     return df
 
 
-# 指數日 K 固定抓 90 個日曆日(約 60 個交易日):60 日均與 60 根 K 棒要這麼多;lookback_days 只管
+# 指數日 K 固定抓 140 個日曆日(90 根 K 棒 + 春節長假的餘裕;免費路徑一個月一次請求);lookback_days 只管
 # 成交值、法人、融資、期貨法人——免費路徑上法人與融資一天一次請求,冷啟動成本跟著它走。
-_TW_INDEX_DAYS = 90
+_TW_INDEX_DAYS = _bars_window_days(_PRICE_BARS)
 
 
-def _tw_index_start(date, start):
-    return min(start, (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=_TW_INDEX_DAYS)).strftime("%Y-%m-%d"))
+def _tw_index_start(date, start, bars=_PRICE_BARS):
+    days = max(_TW_INDEX_DAYS, _bars_window_days(bars))
+    return min(start, (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d"))
 
 
 def _tw_market_index(start, date, headers, used):
@@ -737,12 +746,12 @@ _TW_FLOW = [["tw_turnover", {}], ["tw_institutional", {}], ["tw_margin", {}], ["
 _TW_KPI = ["price_chart", "tw_turnover", "tw_institutional", "tw_margin", "tw_futures_inst"]
 
 RECIPES = {
-    # 晨報 v2(spec 2026-09-26 §2.2):沿用 id tw-market-YYYYMMDD。指數計算窗口仍 90 天(60 日均、前 20 日高
-    # 要 60 個交易日),K 線只畫最後 45 天;融資只留 KPI,圖留在收盤報告。
+    # 晨報 v2(spec 2026-09-26 §2.2):沿用 id tw-market-YYYYMMDD。K 線與收盤報告同為 90 根;融資只留 KPI,
+    # 圖留在收盤報告。
     "tw_market_brief": {
         "id": "tw-market", "title": "台股大盤晨報", "lookback_days": 45,
         "kpi": _TW_KPI + ["txf_night"],
-        "bricks": [["price_chart", {"symbol": "TAIEX", "display_days": 45}], ["tw_turnover", {}],
+        "bricks": [["price_chart", {"symbol": "TAIEX"}], ["tw_turnover", {}],
                    ["tw_institutional", {}], ["tw_margin", {"chart": False}], ["movers", {"market": "tw", "n": 10}],
                    ["tw_futures_inst", {}], ["txf_night", {}], ["tw_announcements", {"n": 3}],
                    ["news", {"market": "tw", "n": 5}],
@@ -754,14 +763,15 @@ RECIPES = {
         "bricks": [["price_chart", {"symbol": "TAIEX"}]] + _TW_FLOW + [
             ["event_calendar", {"countries": ["US", "CN", "TW", "JP", "EU"], "today_only": True}]],
     },
-    # 恐懼貪婪的條款確認前,KPI 第六格放交易員曝險(spec §2.2)。
+    # 恐懼貪婪的條款確認前,KPI 第六格放交易員曝險(spec §2.2)。lookback_days 是報價表「30 日報酬」欄的 N,
+    # 指標折線的 90 日由積木自己的 days 決定。
     "crypto_market_brief": {
         "id": "crypto-market", "title": "加密市場晨報", "lookback_days": 30,
         "kpi": ["quote_table", "liquidation", "funding", "blave_indicators"],
         "bricks": [["quote_table", {"top_mcap": 5}], ["funding", {"symbol": "BTC", "chart": False}],
                    ["derivs_table", {}], ["liquidation", {"hours": 24}], ["movers", {"market": "crypto", "n": 5}],
                    ["blave_indicators", {"names": ["市場方向", "資金稀缺", "頂尖交易員曝險"],
-                                         "kpi": ["市場方向", "頂尖交易員曝險"], "raw_chart": False}],
+                                         "kpi": ["市場方向", "頂尖交易員曝險"], "raw_chart": False, "days": 90}],
                    ["news", {"market": "crypto", "n": 5}],
                    ["event_calendar", {"countries": ["US", "CN", "EU", "JP"]}]],
     },
@@ -960,7 +970,7 @@ def tw_market_brief(date=None, headers=None, lookback_days=45, extra=None, fresh
     session, the 10 largest 成交值 and the day's 重大訊息 (desktop: TWSE open data), a news
     slot (鉅亨 headlines as candidates; yours to fill in chat) and today's macro events and
     除權息. `lookback_days` covers the flow series (20-day means, futures chart); the index
-    always spans 90 days for its 60-day mean, and the chart draws its last 45 days."""
+    chart always draws its last 90 sessions, whatever `lookback_days` is."""
     return build(_recipe("tw_market_brief", lookback_days=lookback_days), date, headers, extra, fresh)
 
 
@@ -1054,14 +1064,16 @@ def crypto_market_brief(date=None, headers=None, symbols=("BTC", "ETH", "SOL"), 
     largest coins by market cap, the derivatives table (OI 24h, funding, long/short), 24h
     liquidations, the day's movers, the market-wide Blave indicators, a news slot (yours to
     fill in chat; a scheduled run has no licensed crypto source and lays out none) and
-    today's macro events."""
+    today's macro events. `lookback_days` is the N of the N-day return column; the indicator
+    chart spans 90 days regardless."""
     return build(_with_symbols(_recipe("crypto_market_brief", lookback_days=lookback_days), symbols), date, headers,
                  extra, fresh)
 
 
 def symbol_brief(symbol, date=None, headers=None, lookback_days=90, extra=None, fresh=False):
     """單標的晨報 data pack. A 4–6 digit id is a Taiwan stock (日 K + 外資買賣超);
-    anything else is a crypto USDT perp (日 K + 資金費率 + 爆倉 / 巨鯨 / 多空力道)."""
+    anything else is a crypto USDT perp (日 K + 資金費率 + 爆倉 / 巨鯨 / 多空力道). The daily
+    chart draws 90 bars; `lookback_days` is the window of the funding and indicator lines."""
     sym = str(symbol).strip().upper()
     if sym.isdigit():
         recipe = {"id": f"symbol-{sym}", "subject": sym, "title": f"{sym} 晨報", "report_type": "單標的晨報",
@@ -1089,12 +1101,13 @@ def research_pack(symbol, topics=None, date=None, headers=None, lookback_days=90
     `publish(pack, narrative, title="<your claim>")` (references/reports.md §7b).
 
     topics (default all) picks the sections:
-      price        daily candles (90 days) with the prior-20 high/low and moving averages
-      volume       today's volume against its 20-day mean (coin)
+      price        daily candles (120 bars) with the prior-20 high/low and moving averages
+      volume       today's volume against its 20-day mean, over a 90-bar daily chart (coin)
       relative     the symbol against `benchmark` over 30 days, rebased to 100 (coin)
       derivatives  funding (Binance), open interest change over `window` ("7d" default — a research
                    question spans weeks; "24h" only for a question about today) and long/short ratio (coin)
-    `days` is the relative / volume window (default 30): set it to the span the user asked about.
+    `days` is the relative-performance window (default 30): set it to the span the user asked
+    about. It does not change how many candles a chart draws.
       indicators   Blave 爆倉 / 巨鯨 / 多空力道 z-scores (coin)
       levels       recent highs / lows and moving averages as a table
       flows        外資買賣超, last 10 sessions (Taiwan stock)
@@ -1107,7 +1120,7 @@ def research_pack(symbol, topics=None, date=None, headers=None, lookback_days=90
     if bad:
         raise ValueError(f"unknown topic(s) {bad}; topics: {', '.join(RESEARCH_TOPICS)}")
     if sym.isdigit():
-        bricks = [["price_chart", {"symbol": sym}]] if "price" in want or "levels" in want else []
+        bricks = [["price_chart", {"symbol": sym, "bars": _RESEARCH_BARS}]] if "price" in want or "levels" in want else []
         if "flows" in want:
             bricks.append(["tw_institutional", {"symbol": sym}])
         if "levels" in want:
@@ -1117,7 +1130,7 @@ def research_pack(symbol, topics=None, date=None, headers=None, lookback_days=90
                   "lookback_days": lookback_days, "kpi": ["price_chart", "tw_institutional"], "bricks": bricks}
     else:
         label = _data.normalize_symbol(sym if sym.endswith("USDT") else sym + "USDT").replace("USDT", "")
-        bricks = [["price_chart", {"symbol": label}]] if "price" in want or "levels" in want else []
+        bricks = [["price_chart", {"symbol": label, "bars": _RESEARCH_BARS}]] if "price" in want or "levels" in want else []
         if "volume" in want:
             bricks.append(["coin_snapshot", {"symbol": label, "days": days}])
         if "relative" in want and label != benchmark.upper():
