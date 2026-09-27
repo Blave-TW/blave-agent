@@ -40,13 +40,42 @@ function describe() {
   };
 }
 
-/* 清空欄位(fill 之前)。this = 目標元素。回 true = 是可填的欄位。 */
+/* 這些函式以 toString() 送進頁面跑,選擇器只能寫死在函式體內(拿不到模組層變數)。
+   code 編輯器容器(Monaco / CodeMirror):打字入口是容器裡的隱藏 textarea,
+   value / selection 只是小緩衝區,動它動不到文件本體——清空與焦點都要另外走。 */
+/* 清空欄位(fill 之前)。this = 目標元素。回 true = 是可填的欄位;
+   false = 編輯器一類,呼叫端改送真鍵盤全選(Cmd/Ctrl+A),接下來的 insertText 蓋掉選取。 */
 function clearField() {
   const el = this;
+  if (el.closest && el.closest(".monaco-editor, .cm-editor, .CodeMirror")) return false;
   if (el.isContentEditable) { el.focus(); document.getSelection().selectAllChildren(el); return true; }
   if (!("value" in el)) return false;
   el.focus(); try { el.select(); } catch (_) { /* 不支援選取的型別 */ }
   return true;
+}
+
+/* fill 之前把焦點對到目標(Input.insertText 打進「有焦點的元素」,不走座標)。this = 目標。
+   DOM.focus 對編輯面(view-lines 一類不可聚焦的 div)是 no-op;Monaco / CodeMirror 會把焦點
+   轉給編輯器裡的隱藏 textarea——焦點落在同一個編輯器容器裡就算對到。都對不到回 false,
+   不然 insertText 會打進頁面上別的欄位。 */
+function focusTarget() {
+  const el = this, sel = ".monaco-editor, .cm-editor, .CodeMirror";
+  const box = (n) => (n && n.closest ? n.closest(sel) : null);
+  const ok = () => {
+    const f = document.activeElement;
+    if (!f || f === document.body || f === document.documentElement) return false;
+    if (f === el || el.contains(f) || f.contains(el)) return true;
+    const eb = box(el); return !!(eb && box(f) === eb);
+  };
+  if (ok()) return true;
+  if (el.focus) try { el.focus(); } catch (_) { /* 不可聚焦 */ }
+  if (ok()) return true;
+  const host = box(el);
+  if (host) {
+    const inp = host.querySelector('textarea, [contenteditable="true"]');
+    if (inp) try { inp.focus(); } catch (_) { /* 收不了焦點 */ }
+  }
+  return ok();
 }
 
 /* <select> 以選項文字選。this = select。回選中的文字或 null。 */
@@ -382,4 +411,4 @@ function unmaskFields() { const h = document.getElementById("__blave_mask"); if 
 /* 拍縮圖 / 來源快照 / 截圖前把頁面裡的 agent 標記藏起來(縮圖上的標記只由 app 那一層畫,不然會出現兩個游標) */
 function marksVisible(on) { const h = document.getElementById("__blave_agent_marks"); if (h) h.style.setProperty("visibility", on ? "visible" : "hidden", "important"); return true; }
 
-module.exports = { mark, marksVisible, describe, fieldCandidates, maskFields, unmaskFields, clearField, selectOption, extract, serp, hasText, scrollPage, progress, quiet };
+module.exports = { mark, marksVisible, describe, fieldCandidates, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, scrollPage, progress, quiet };

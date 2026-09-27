@@ -44,6 +44,18 @@ function createSnapshots(root, limits) {
         return id;
       } catch (_) { return null; }
     },
+    /** 回合結束把快照圖換成整頁版(操作中只存視口版,避免 beyond-viewport 反覆 reflow)。 */
+    updateImage(sid, id, image) {
+      if (!SID_RE.test(String(sid)) || !SNAP_RE.test(String(id))) return false;
+      if (!image || (image.ext !== "webp" && image.ext !== "png")) return false;
+      const d = path.join(dirOf(sid), id);
+      try {
+        const mp = path.join(d, "meta.json"), m = JSON.parse(fs.readFileSync(mp, "utf8"));
+        write(path.join(d, "shot." + image.ext), image.data);
+        if (m.image !== "shot." + image.ext) { m.image = "shot." + image.ext; write(mp, JSON.stringify(m)); }
+        return true;
+      } catch (_) { return false; }
+    },
     /** 讀一份給快照檢視:{ url, title, at, markdown, image: dataURI|null } 或 null。 */
     load(sid, id) {
       if (!SID_RE.test(String(sid)) || !SNAP_RE.test(String(id))) return null;

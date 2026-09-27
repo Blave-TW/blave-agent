@@ -214,8 +214,31 @@ function createPage(wc) {
   /** opt: { clear(fill 先清空;type 接在後面), perChar(逐字送), delay(每字毫秒) } */
   async function fill(b, text, d, opt) {
     if (d.isSelect) { const got = await callOn(b, IP.selectOption, [text]); return got === null ? { error: "invalid_args", message: "no option matches; options: " + d.options.slice(0, 20).join(" | ") } : {}; }
-    await send("DOM.focus", { backendNodeId: b });
-    if (opt.clear) await callOn(b, IP.clearField);
+    await send("DOM.focus", { backendNodeId: b }).catch(() => {});
+    // Input.insertText 打進「有焦點的元素」:DOM.focus 對編輯面(Monaco 的 view-lines 一類)是
+    // no-op,焦點沒對到就會打進頁面上別的欄位。focusTarget 補 element.focus() 並認可編輯器把
+    // 焦點轉給自己的隱藏 textarea(同一個編輯器容器就算對到);對不到 → 報錯,不亂打。
+    const focused = await callOn(b, IP.focusTarget);
+    if (!focused) return { error: "obscured", message: "could not focus the field; click it first, or pick the editor's textbox from the snapshot" };
+    const editor = await callOn(b, function () { return !!(this.closest && this.closest(".monaco-editor, .cm-editor, .CodeMirror")); });
+    if (opt.clear && !(await callOn(b, IP.clearField))) {
+      // Monaco / CodeMirror:value/selection 只是緩衝區,清不到文件本體——送真鍵盤全選
+      // (頁面眼中等於真人按 Cmd/Ctrl+A,Monaco 的 keybinding 收得到),接下來的輸入蓋掉選取
+      const mod = process.platform === "darwin" ? 4 : 2;   // CDP modifiers: Meta=4 / Ctrl=2
+      await send("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", modifiers: mod, windowsVirtualKeyCode: 65 });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: mod, windowsVirtualKeyCode: 65 });
+    }
+    if (editor) {
+      // 編輯器走真貼上:insertText 會被 Monaco 當「打字」逐行 auto-indent,Pine 一類
+      // 縮排敏感的 code 會整段跑版(實測 TradingView);貼上不重排。用戶剪貼簿先存後還
+      // (只能還純文字——貼上那 0.2 秒的取捨;editor 目標才走這條,一般欄位不動剪貼簿)
+      const { clipboard } = require("electron");
+      let saved = ""; try { saved = clipboard.readText() || ""; } catch (_) { /* 讀不到就還空的 */ }
+      clipboard.writeText(String(text));
+      try { wc.paste(); await sleep(200); }
+      finally { try { saved ? clipboard.writeText(saved) : clipboard.clear(); } catch (_) { /* 還原失敗只影響剪貼簿 */ } }
+      return {};
+    }
     if (!opt.perChar) { await send("Input.insertText", { text: String(text) }); return {}; }
     for (const ch of String(text)) { await send("Input.insertText", { text: ch }); await sleep(opt.delay || 35); }
     return {};

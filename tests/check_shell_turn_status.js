@@ -131,8 +131,11 @@ ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;�
   const mk = (behave) => { const sent = []; return { sent, v: { wc: { debugger: { sendCommand: (m) => { sent.push(m); if (m === "Page.captureScreenshot") return behave(sent.filter((x) => x === m).length); if (m === "Page.getLayoutMetrics") return Promise.resolve({ cssContentSize: { width: 1280, height: 3000 } }); return Promise.resolve({}); } } } } }; };
   const run = new Function("within", fnCut("unEmulate") + fnCut("fullClip") + fnCut("captureSnapshotImage") + "; return captureSnapshotImage;")((p) => p);
   const cases = { ok: () => Promise.resolve({ data: "AA==" }), throws: (n) => n === 1 ? Promise.reject(new Error("timeout")) : Promise.resolve({ data: "AA==" }), bothFail: () => Promise.reject(new Error("x")) };
-  Promise.all(Object.entries(cases).map(async ([k, f]) => { const m = mk(f); await run(m.v); return [k, m.sent.includes("Emulation.clearDeviceMetricsOverride")]; })).then((rs) => {
-    ok("擷取成功 / 全頁擷取逾時 / 兩種都失敗:都清掉 viewport 覆寫", rs.every(([, c]) => c), rs);
+  Promise.all(Object.entries(cases).map(async ([k, f]) => { const m = mk(f); await run(m.v, true); return [k, m.sent.includes("Emulation.clearDeviceMetricsOverride")]; })).then(async (rs) => {
+    ok("整頁擷取成功 / 逾時 / 兩種都失敗:都清掉 viewport 覆寫", rs.every(([, c]) => c), rs);
+    // 操作中的視口版(!full,防閃爍那批):從頭到尾不碰 viewport——沒有 beyond-viewport、也沒東西要清
+    const m2 = mk(() => Promise.resolve({ data: "AA==" })); await run(m2.v);
+    ok("視口版擷取不動 viewport(無 getLayoutMetrics、無 clearDeviceMetricsOverride)", m2.sent.join() === "Page.captureScreenshot", m2.sent);
     console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
   });
 }

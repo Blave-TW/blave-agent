@@ -148,8 +148,16 @@ function createBrowser(o) {
   // ── 分頁的 view ──
   /* captureBeyondViewport 會暫時改掉頁面的 viewport;還原時偶爾停在錯的尺寸,之後這一頁就一直用那個窄寬度排版
      (實測:中欄 544 寬,頁面 innerWidth 卻是 240,排成手機版)。每次擷取後、每次放到中欄時都清一次 */
-  function unEmulate(v) { try { v.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {}); } catch (_) { /* 沒掛 debugger */ } }
-  function park(v, i) { try { v.view.setBounds({ x: PARK_X + (i || 0) * (parkSize.width + 50), y: 0, width: parkSize.width, height: parkSize.height }); } catch (_) { /* 已銷毀 */ } }
+  function unEmulate(v) { v.parkEmu = false; try { v.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {}); } catch (_) { /* 沒掛 debugger */ } }
+  /* parked 分頁常駐 1280×800 override:視窗外的 view 會被裁到 0 寬(實測 innerWidth = 0),
+     頁面用 0 視口排版就出行動版(TradingView 連 Pine Editor 入口都沒有、SPA 路由也會壞)。
+     設一次不再動,不會閃;進中欄時 bounds() 的 unEmulate 清掉、用真實大小。 */
+  function parkEmulate(v) {
+    if (v.parkEmu) return;   // 成功才設 flag(先設再清會跟 attach 之後的補設 race,補設看到 flag 提前 return)
+    try { v.wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", { width: parkSize.width, height: parkSize.height, deviceScaleFactor: 0, mobile: false }).then(() => { v.parkEmu = true; }, () => { /* 還沒掛 debugger:下一次 park / attach 之後補設 */ }); }
+    catch (_) { /* 同上 */ }
+  }
+  function park(v, i) { try { v.view.setBounds({ x: PARK_X + (i || 0) * (parkSize.width + 50), y: 0, width: parkSize.width, height: parkSize.height }); } catch (_) { /* 已銷毀 */ } parkEmulate(v); }
   function createView(t) {
     win = o.getWin(); if (!win || win.isDestroyed()) { tabs.failed(t.id, "network"); return; }
     const view = new E.WebContentsView({ webPreferences: {
@@ -179,6 +187,9 @@ function createBrowser(o) {
     wc.on("select-bluetooth-device", (e, _l, cb) => { e.preventDefault(); cb(""); });
     wc.on("did-start-navigation", (d) => {
       if (!d.isMainFrame || d.isSameDocument) return;
+      // 首次 park override 只能下在這裡:renderer 已經在了、文件還沒解析(createView 當下就下會
+      // SIGSEGV——沒載過東西的 webContents 碰 emulation 會炸,實測;之後的 park() 再下都安全)
+      if (!t.visible) parkEmulate(v);
       v.http = 0; t.snapshotId = null; t.read = false; t.thumbDone = false; t.thumbsAfterRead = 0;
       if (t.status === "ready") {   // 點連結 / 回上一頁 / 用戶在網址列換頁:回到載入中,逾時照 20 秒算
         t.status = "loading"; t.partial = false;
@@ -560,7 +571,13 @@ function createBrowser(o) {
     const image = await withMask(v, () => captureSnapshotImage(v));
     t.snapshotId = snaps.save(cur.sessionId, { url: v.wc.getURL(), title: ex.meta.title || v.wc.getTitle(), markdown: ex.markdown, image, turn: cur.turnKey });
   }
-  async function captureSnapshotImage(v) {
+  async function captureSnapshotImage(v, full) {
+    // 操作中(browser_read 存快照)只拍當下視口:captureBeyondViewport 會動 viewport、整頁 reflow,
+    // agent 打字點擊時高頻觸發就是畫面一直閃的原因(Wei 實測 TradingView)。整頁版只在回合結束升級一次。
+    if (!full) {
+      try { const shot = await within(v.wc.debugger.sendCommand("Page.captureScreenshot", { format: "webp", quality: 70 }), 5000); return { data: Buffer.from(shot.data, "base64"), ext: "webp" }; }
+      catch (_) { return null; }
+    }
     let image = null;
     try {
       const shot = await within(v.wc.debugger.sendCommand("Page.captureScreenshot", { format: "webp", quality: 70, captureBeyondViewport: true, clip: await fullClip(v) }), 8000);
@@ -624,16 +641,21 @@ function createBrowser(o) {
       needUser(t, g.kind, args.ref, d.name || d.label || "", pos && !pos.error ? pos.box : null);
       return ERR("needs_user", g.kind === "file" ? "uploads are done by the user" : "the user must press this themselves; tell them what you filled in and what to check, then browser_wait until=user_done", { kind: g.kind, tab: t.alias, ref: args.ref });
     }
-    if (pos.error) return ERR(pos.error === "not_visible" ? "invalid_args" : "obscured", pos.error === "not_visible" ? "the element is not visible" : MSG.obscured, { tab: t.alias });
+    // 打字不走座標(Input.insertText 打進焦點),量不到中心點不擋:Monaco / CodeMirror 的
+    // 打字入口是 1px 隱藏 textarea,center() 對它一定 not_visible / obscured——只有點擊真的要座標
+    if (pos.error && action === "click") return ERR(pos.error === "not_visible" ? "invalid_args" : "obscured", pos.error === "not_visible" ? "the element is not visible" : MSG.obscured, { tab: t.alias });
+    if (pos.error) pos = null;
     const label = String(args.ref);
     const reduced = o.reducedMotion ? o.reducedMotion() : false;
     const text = String(args.text == null ? "" : args.text).slice(0, 5000);
     // 展開在看的那一頁:游標真的滑過去(mouseMoved 路徑,在 agentInput 窗內,不算用戶接手)、到點才出點擊環;
     // 背景分頁沒有滑鼠可演,只把目標框位置交給畫面,由縮圖那層畫游標與點擊環
     const glide = onScreen && spend(t, 300) ? 260 : 0;
-    await v.page.run(IP.mark, ["ref", { box: pos.box, label }, reduced]).catch(() => {});
-    if (t.visible) await v.page.run(IP.mark, ["move", { x: pos.x, y: pos.y, ms: glide }, reduced]).catch(() => {});
-    emit("page_act", Object.assign({ id: t.id, kind: action === "click" ? "click" : "type", ref: label, text: action === "click" ? C.scrub(d.name || d.text, 80) : C.scrub(text, 80), box: pos.box }, viewSize(v)));
+    if (pos) {
+      await v.page.run(IP.mark, ["ref", { box: pos.box, label }, reduced]).catch(() => {});
+      if (t.visible) await v.page.run(IP.mark, ["move", { x: pos.x, y: pos.y, ms: glide }, reduced]).catch(() => {});
+    }
+    emit("page_act", Object.assign({ id: t.id, kind: action === "click" ? "click" : "type", ref: label, text: action === "click" ? C.scrub(d.name || d.text, 80) : C.scrub(text, 80), box: pos ? pos.box : null }, viewSize(v)));
     if (!(await markAgent(t))) return ERR("internal", "could not arm the navigation guard; try again");
     if (action === "click") {
       const c = await agentInput(v, () => v.page.click(b, pos, glide));
@@ -645,9 +667,10 @@ function createBrowser(o) {
       }
       if (t.visible) await v.page.run(IP.mark, ["click", { x: pos.x, y: pos.y }, reduced]).catch(() => {});
     } else {
-      // browser_type 一律逐字(有些欄位只認逐鍵輸入,這是功能不是動效,減少動態也照送);
+      // browser_type 40 字內逐字(有些欄位只認逐鍵輸入,這是功能不是動效,減少動態也照送);
+      // 長文字(貼 code)一律一次 insertText 進——逐鍵幾千字打不完,Monaco 一類編輯器也收 insertText。
       // browser_fill 只在展開在看、40 字內、還有多等額度時逐字(35ms/字),其餘一次填入
-      const perChar = action === "type" || (text.length <= 40 && spend(t, text.length * 35));
+      const perChar = text.length <= 40 && (action === "type" || spend(t, text.length * 35));
       const f = await agentInput(v, () => v.page.fill(b, text, d, { clear: action === "fill", perChar, delay: 35 }));
       if (f.error) return ERR(f.error, f.message, { tab: t.alias });
     }
@@ -878,6 +901,16 @@ function createBrowser(o) {
       const withFav = (a) => a.map((r) => { const f = favOf(r.url); return Object.assign({}, r, { fav: f ? f.data : null, plate: !!(f && f.plate) }); });
       emit("turn_sources", { session_id: c.sessionId, sources: withFav(sources), tabs: withFav(rows) });
       for (const t of tabs.thisTurn()) { if (t.need && !t.userDone) { t.need = null; emit("need_clear", { id: t.id }); } }
+      // 快照圖升級成整頁版(beyond-viewport 只在這裡做:一輪一次;操作中存的是視口版,見 captureSnapshotImage)
+      (async () => {
+        for (const r of rows) {
+          if (!r.snapshot_id) continue;
+          const v = views.get(r.id); if (!v) continue;
+          const image = await withMask(v, () => captureSnapshotImage(v, true));
+          if (image) snaps.updateImage(c.sessionId, r.snapshot_id, image);
+          if (expanded !== r.id) parkEmulate(v);   // 整頁擷取的 unEmulate 也清掉 park override,補回去(不然頁面回到 0 寬行動版)
+        }
+      })().catch(() => {});
     },
     active: () => !!cur,
     // ── renderer 的 IPC(main.js 用 fromOurPage 的 handle() 註冊)──

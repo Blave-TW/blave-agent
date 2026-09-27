@@ -3713,20 +3713,14 @@ msgstr "{n} pages in the main pane"
 msgid "br.summaryPre"
 msgstr "Read "
 
+msgid "br.summaryUsedPre"
+msgstr "Used "
+
 msgid "br.summaryPost"
 msgstr " pages"
 
 msgid "br.loading"
 msgstr "Loading"
-
-msgid "br.typing"
-msgstr "Typing “{text}”"
-
-msgid "br.clicking"
-msgstr "Clicking “{text}”"
-
-msgid "br.scrolling"
-msgstr "Scrolling"
 
 msgid "br.reading"
 msgstr "Reading"
@@ -4236,10 +4230,10 @@ msgid "cap.ho.promptRead"
 msgstr "My Capital setup in the desktop app is stuck at the “Read accounts” step. Please check the Capital setup status on the cloud machine and help me fix it. When done, confirm read-only that the account can be read, and don't place any orders yet."
 
 msgid "br.openPanel"
-msgstr "Open in panel"
+msgstr "View pages"
 
 msgid "br.closePanel"
-msgstr "Close panel"
+msgstr "Close"
 
 msgid "br.listShow"
 msgstr "Show list"

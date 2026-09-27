@@ -634,8 +634,10 @@ body.resizing .pane-strategies, body.resizing .pane-chat { transition: none; }
 
 /* 欄縫分隔線:8px 熱區騎在 hairline 上、不佔版面;resting 零 chrome,
    hover / focus / 拖曳中才浮一條 2px 線。雙擊回預設寬。 */
+/* z-index 25 > .bw 的 20:瀏覽器 overlay 蓋在中欄上,把手有 10px 騎進中欄(20px 膠囊置中於縫),
+   不墊高會被 overlay 蓋住半顆、點不到。原生 view 靠 .bv 的 24px padding 讓開,不會碰到把手 */
 .pane-div {
-  flex: 0 0 8px; margin: 0 -4px; z-index: 5; position: relative;
+  flex: 0 0 8px; margin: 0 -4px; z-index: 25; position: relative;
   cursor: col-resize; -webkit-app-region: no-drag;
 }
 .pane-div::after {

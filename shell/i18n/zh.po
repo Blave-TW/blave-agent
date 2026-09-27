@@ -3714,20 +3714,14 @@ msgstr "{n} 頁在中欄"
 msgid "br.summaryPre"
 msgstr "讀了 "
 
+msgid "br.summaryUsedPre"
+msgstr "用了 "
+
 msgid "br.summaryPost"
 msgstr " 頁"
 
 msgid "br.loading"
 msgstr "載入中"
-
-msgid "br.typing"
-msgstr "輸入「{text}」"
-
-msgid "br.clicking"
-msgstr "點「{text}」"
-
-msgid "br.scrolling"
-msgstr "捲動中"
 
 msgid "br.reading"
 msgstr "讀取中"
@@ -4237,7 +4231,7 @@ msgid "cap.ho.promptRead"
 msgstr "我的群益開通在電腦版卡在「讀取帳戶」這一步。請看雲端主機上群益開通的狀態，帶我排除，完成後先用唯讀方式確認讀得到帳戶，先不要下單。"
 
 msgid "br.openPanel"
-msgstr "開到中欄"
+msgstr "看網頁"
 
 msgid "br.closePanel"
 msgstr "收回"

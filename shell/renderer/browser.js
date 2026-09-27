@@ -60,7 +60,8 @@ function brFoot(x) {
   if (x.ended && x.ph !== "done") return x.title || brReg(brHost(x.url));   // 回合結束時沒讀完的頁:不再說「讀取中」,留標題(沒有就網域)
   if (x.ph === "queued") return t("br.queuedOne");
   if (x.ph === "load") return t("br.loading");
-  if (x.ph === "act") return x.act && x.act.kind === "click" ? t("br.clicking", { text: x.act.text || x.act.ref || "" }) : x.act && x.act.kind === "scroll" ? t("br.scrolling") : t("br.typing", { text: x.act ? x.act.text || "" : "" });
+  // ph "act"(點擊 / 打字)不做動作旁白(Wei:狀態列已經講了 agent 在做什麼)——落到最後的標題;
+  // ph 本身照舊,縮圖上的游標(.tc)與 pulse 都靠它
   if (x.ph === "read") return x.prog ? t("br.reading") + " " + x.prog.n + "/" + x.prog.total : t("br.reading");
   if (x.ph === "done") return x.line || x.title || brReg(brHost(x.url));
   return x.title || "";
@@ -242,7 +243,13 @@ function brPaintSum(b) {
   b.ids.map((id) => BR.tabs.get(id)).filter(brIsRead).slice(0, 4).forEach((x, i) => { const f = brFav(x.url); f.style.zIndex = String(4 - i); favs.append(f); });
   // 讀了幾頁 = 這一輪真的 browser_read 過的頁(讀過就算,之後導覽也不收回),跟來源卡同一個口徑;有來源清單就以它為準
   const read = b.sourceCount != null ? b.sourceCount : b.ids.filter((id) => brIsRead(BR.tabs.get(id))).length;
-  const txt = brEl("span"); txt.append(t("br.summaryPre"), brEl("b", "", String(read)), t("br.summaryPost"));
+  // 整輪都在操作、一頁都沒讀(Wei 實測 TradingView:貼 Pine、切週期,沒有 browser_read):
+  // 「讀了 0 頁」字面不對——改講「用了 N 頁」。N = 真的開起來的頁(搜尋頁/被擋/打不開/只停中繼頁照舊不算);
+  // canon 第 1 條的「已讀」口徑不動:格子照樣不打勾、圖示疊照樣只疊已讀
+  const used = b.ids.map((id) => BR.tabs.get(id)).filter((x) => x && !x.search && !x.blocked && !x.fail && !x.relay).length;
+  const txt = brEl("span");
+  if (read === 0 && used > 0) txt.append(t("br.summaryUsedPre"), brEl("b", "", String(used)), t("br.summaryPost"));
+  else txt.append(t("br.summaryPre"), brEl("b", "", String(read)), t("br.summaryPost"));
   s.append(favs, txt);
   const mine = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || (BR.exp.mode === "wall" && BR.exp.block === b) || (BR.exp.mode === "snap" && BR.exp.block === b));
   if (mine) { const back = brEl("button", "btn-quiet sum-back", t("br.closePanel")); back.type = "button"; back.addEventListener("click", (e) => { e.preventDefault(); brCollapse(true); }); s.append(back); }
