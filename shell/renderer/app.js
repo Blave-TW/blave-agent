@@ -969,8 +969,8 @@ async function stratRefresh(selectTouched) {
     const nm = document.createElement("span"); nm.className = "strat-name";
     nm.textContent = x.displayName || x.name; nm.title = stratTip(x.displayName, x.name);
     b.append(nm);
-    // 再點一次選中的那支 = 取消選取、回 welcome(Enter / Space 在按鈕上就是 click)。列不重建,焦點留在這一列
-    b.addEventListener("click", () => stratSelect(x.name === RP.name ? null : x.name));
+    // 再點一次選中的那支 = 取消選取、回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)。Enter / Space 在按鈕上就是 click;列不重建,焦點留在這一列
+    b.addEventListener("click", () => { if (x.name === RP.name) sideReclick(() => stratSelect(null)); else stratSelect(x.name); });
     // 列尾是刪除鈕,不是 Sharpe(Wei):數字在報告裡就有,清單上要的是能整理。
     // 按鈕不能包按鈕,所以外面多一層 wrap,刪除鈕絕對定位在列尾(同對話清單)。
     const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";

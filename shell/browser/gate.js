@@ -110,4 +110,19 @@ function classify(action, d, key) {
   return { ok: false, error: "invalid_args" };
 }
 
-module.exports = { classify, sensitiveField, actionWord, searchContext, editableField, buttonLike, realLink, ACTION_WORDS_EN, ACTION_WORDS_CJK };
+/* browser_capture 的元素大小分級(報告引用圖只收「單一圖表元素」,不收整版截圖)。box / view 是可視區 CSS px。
+   - 小於 80×50:不是圖表(icon、一行字)
+   - 比可視區大:捲不進一個畫面的元素是版面區塊(文章欄、整頁),不是一張圖;也不做 beyond-viewport 擷取
+     (那會改頁面 viewport、整頁 reflow,見 index.js unEmulate)
+   - 寬 ≥90% 且高 ≥85% 可視區:等於截整個畫面。只看單一方向不擋——滿版寬的圖表很常見
+   - 捲過之後仍有一部分在可視區外(橫向捲動容器裡):裁出來會是半張圖 */
+const CAPTURE_MIN_W = 80, CAPTURE_MIN_H = 50, CAPTURE_VIEW_W = 0.9, CAPTURE_VIEW_H = 0.85;
+function captureFit(box, view) {
+  if (box.w < CAPTURE_MIN_W || box.h < CAPTURE_MIN_H) return "too_small";
+  if (box.w > view.w + 1 || box.h > view.h + 1) return "too_large";
+  if (box.w >= CAPTURE_VIEW_W * view.w && box.h >= CAPTURE_VIEW_H * view.h) return "too_large";
+  if (box.x < -1 || box.y < -1 || box.x + box.w > view.w + 1 || box.y + box.h > view.h + 1) return "not_visible";
+  return null;
+}
+
+module.exports = { classify, captureFit, sensitiveField, actionWord, searchContext, editableField, buttonLike, realLink, ACTION_WORDS_EN, ACTION_WORDS_CJK };

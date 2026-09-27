@@ -52,7 +52,7 @@ case(B + "browser_search", {"query": "BTSE news"}, "search", "BTSE news")
 case("WebFetch", {"url": "https://www.investing.com/news/x"}, "web_read", "investing.com")
 case(B + "browser_open", {"url": "https://theblock.co/a"}, "web_read", "theblock.co")
 case(B + "browser_open_many", {"urls": ["https://a.com", "https://b.com", "https://c.com"]}, "web_read_many", "3")
-for t in ("browser_read", "browser_get", "browser_snapshot", "browser_screenshot", "browser_scroll"):
+for t in ("browser_read", "browser_get", "browser_snapshot", "browser_screenshot", "browser_capture", "browser_scroll"):
     case(B + t, {"tab": "t2"}, "web_read", "", "t2")
 for t in ("browser_click", "browser_fill", "browser_type", "browser_press"):
     case(B + t, {"tab": "t3", "ref": "@e4"}, "web_act", "", "t3")

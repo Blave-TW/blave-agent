@@ -3376,9 +3376,6 @@ msgstr "Purchased."
 msgid "lib.gate.signedOutBuy"
 msgstr "Sign in to Blave to buy it and download to this computer."
 
-msgid "lib.note.free"
-msgstr "Free."
-
 msgid "lib.note.billed"
 msgstr "If the backtest uses Blave data, the data fee is charged per clock hour of use."
 

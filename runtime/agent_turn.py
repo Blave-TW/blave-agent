@@ -1729,7 +1729,8 @@ def partial_tool_kind(name, buf, trading=None):
 KIND_OBJ_MAX = 60
 _SILENT_TOOLS = {"TodoWrite", "ToolSearch", "BashOutput", "KillShell", "KillBash", "ExitPlanMode"}
 _BROWSER_SILENT = {"browser_wait", "browser_tabs", "browser_back", "browser_close"}
-_BROWSER_READ = {"browser_read", "browser_get", "browser_snapshot", "browser_screenshot", "browser_scroll"}
+_BROWSER_READ = {"browser_read", "browser_get", "browser_snapshot", "browser_screenshot", "browser_capture",
+                 "browser_scroll"}
 _BROWSER_ACT = {"browser_click", "browser_fill", "browser_type", "browser_press"}
 _STRATEGY_DIR_RE = re.compile(r"(?:^|[\s/'\"=])strategies/([^/\s'\"]+)/")
 _TICKER_RE = re.compile(r"^[A-Z0-9._-]{2,20}$")

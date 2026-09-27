@@ -44,7 +44,7 @@ function post(port, body, headers) {
   t("notifications/initialized → 202", (await post(port, { jsonrpc: "2.0", method: "notifications/initialized" }, H(tok, { "Mcp-Session-Id": sid }))).status === 202);
   const list = await post(port, { jsonrpc: "2.0", id: 2, method: "tools/list" }, H(tok, { "Mcp-Session-Id": sid }));
   const names = list.body.result.tools.map((x) => x.name);
-  t("tools/list = 介面凍結的 16 支,沒有 eval", names.length === 16 && names.includes("browser_read") && names.includes("browser_search") && !names.some((n) => /eval|script|js/i.test(n)));
+  t("tools/list = 介面凍結的 17 支(0.1.8 加 browser_capture),沒有 eval", names.length === 17 && names.includes("browser_capture") && names.includes("browser_read") && names.includes("browser_search") && !names.some((n) => /eval|script|js/i.test(n)));
   const c = await post(port, { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "browser_tabs", arguments: {} } }, H(tok, { "Mcp-Session-Id": sid }));
   t("tools/call 轉給實作", c.body.result.isError === false && JSON.parse(c.body.result.content[0].text).name === "browser_tabs");
   t("不存在的工具 → JSON-RPC 錯誤、不呼叫實作", (await post(port, { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "browser_eval", arguments: {} } }, H(tok, { "Mcp-Session-Id": sid }))).body.error.code === -32602 && calls.length === 1);

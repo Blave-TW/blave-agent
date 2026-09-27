@@ -266,6 +266,7 @@ function quiet() { for (const m of document.querySelectorAll("video,audio")) { t
      "click"{ x, y }                  到點的點擊環(reduced 時不畫)
      "read" { rects, per, follow }    讀取帶依文件順序掃過這次讀進來的區塊(每塊 per ms),讀完留已讀線與捲軸軌標記;follow = 跟著捲
      "frames" { rects, stagger, hold } 看大綱 / 讀連結:被抽到的元素依序框一下
+     "unframe"                         收掉目標框與小標(擷取落地)
      "clear"
      "settle"                          密集判定(pace.js)切到瞬間模式:正在播的標記全部跳終態
    click 帶 instant = 靜止單幀環(22px 2px 墨環,不放大不淡出;canon 第 9 條瞬間模式)。
@@ -334,6 +335,7 @@ function mark(kind, data, reduced) {
     c.style.transform = "translate(" + x + "px," + y + "px)"; c.__x = x; c.__y = y;
     idle(c); return true;
   }
+  if (kind === "unframe") { for (const n of Array.from(root.querySelectorAll(".o,.t"))) n.remove(); return true; }   // 擷取落地:收框
   if (kind === "click") {
     for (const n of Array.from(root.querySelectorAll(".o,.t"))) n.remove();   // 點擊落地:收框
     const c = root.querySelector(".c"); if (c) idle(c);

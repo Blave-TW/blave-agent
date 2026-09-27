@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
       && s.kv === "總報酬|年化|Sharpe|最大回撤|樣本|上架天數|安裝 / +312.50%|+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000))))
       && s.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
       && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 0 && s.focus === "lib-back", JSON.stringify(s));
-    ok("④ 免費態:主鈕「用這支」、說明句只講價格", s.cta === (await T("lib.use")) && s.note === (await T("lib.note.free")), JSON.stringify(s.note)); }
+    ok("④ 免費態:主鈕「用這支」、沒有說明句(免費不寫)", s.cta === (await T("lib.use")) && s.note === "", JSON.stringify(s.note)); }
   ok("④ /report 回來(問一次、帶語言):只換曲線(#lib-chart 還在、LIB.chart 換新、canvas 在)與回測期間(backtest_start — backtest_end、.mono);頭部 / CTA / 焦點都沒重畫", JSON.stringify(r.after.calls) === "[[101,\"zh\"]]" && r.after.swapped && r.after.chart === 1 && r.after.canvas >= 1
     && r.after.period === "2019-12-02 — 2026-06-30" && r.after.periodMono === 1 && r.after.focus === "lib-back" && r.after.h5 === 1 && r.after.cta === (await T("lib.use")), JSON.stringify(r.after));
   // 降級:主行程回 null / 打不到 → 停在 spark、回測期間留曲線區間、不出任何錯誤字;下次進詳情再問(失敗不記)
@@ -320,7 +320,7 @@ app.whenReady().then(async () => {
     && !r.b.hidden && r.b.text === (await T("lib.gate.noBalance")) && r.b.btn === (await T("lib.gate.topup")) + ":btn-fill" && r.b.rows === 8 && r.b.focus === "lib-h" && r.b.above && r.c.hidden && r.d.lib && r.d.hidden && r.e.hidden, JSON.stringify(r));
   await js(`LIB.data.dataAccess = "billed"; libSync();`); r = await cta();
   let a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); const o = { lines: q("#del-body p").map((p) => p.textContent), where: document.getElementById("del-where").hidden }; document.getElementById("del-cancel").click(); await new Promise((r) => setTimeout(r, 40)); return o; })()`);
-  ok("④ 按小時付資料費的帳號:鈕下只有「免費。」;lib.note.billed 在確認框第三行、本機不出腳的目的地句", r.btn === (await T("lib.use")) && r.note === (await T("lib.note.free")) && a.lines.length === 3 && a.lines[2] === (await T("lib.note.billed")) && a.where, JSON.stringify([r, a]));
+  ok("④ 按小時付資料費的帳號:鈕下沒有說明句;lib.note.billed 在確認框第三行、本機不出腳的目的地句", r.btn === (await T("lib.use")) && r.note === "" && a.lines.length === 3 && a.lines[2] === (await T("lib.note.billed")) && a.where, JSON.stringify([r, a]));
   a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; ENV.cur = "cloud"; libAsk({ id: 101, title: "BTC 通道動能共振" }); const o = { lines: q("#del-body p").map((p) => p.textContent), notes: q("#del-body .cf-note").length, where: document.getElementById("del-where").hidden ? null : document.getElementById("del-where").textContent, env: !document.getElementById("del-env").hidden }; document.getElementById("del-cancel").click(); ENV.cur = "local"; await new Promise((r) => setTimeout(r, 40)); return o; })()`);
   ok("④ 雲端視角的下載確認框:內文兩段(l1 不帶目的地、雲端不出 billed)、lib.cf.cloudNote 在腳的 .del-where(不在內文 .cf-note)、「雲端」記號", a.lines.length === 2 && a.lines[0] === (await T("lib.cf.l1")) && a.notes === 0 && a.where === (await T("lib.cf.cloudNote")) && a.env, JSON.stringify(a));
   await js(`LIB.data.dataAccess = "included"; running = true; libSync();`); r = await cta();
@@ -424,7 +424,7 @@ app.whenReady().then(async () => {
     ENV.cur = "local"; envShowMain(); await new Promise((r) => setTimeout(r, 60)); const l = { h5: q("#lib-det h5")[0] && q("#lib-det h5")[0].textContent, where: q("#lib-cta .note")[0].textContent, painted: LIB.paintedEnv };
     LIB.bags.cloud.open = false; LIB.bags.cloud.detail = null; return { c, l }; })()`);
   ok("④ 兩邊都開著策略庫:切到雲端畫雲端那袋的詳情(#72、說明句講雲端主機、停機 / 讀不到那句);切回本機回到 #101、說明句講這台電腦", r.c.lib && r.c.h5 === "DOGE 籌碼集中度" && r.c.painted === "cloud" && (r.c.where === (await T("ho.gate.stale")) || r.c.where === (await T("ho.gate.stopped")))
-    && r.l.h5 === "BTC 通道動能共振" && r.l.painted === "local" && r.l.where === (await T("lib.note.free")), JSON.stringify(r));
+    && r.l.h5 === "BTC 通道動能共振" && r.l.painted === "local" && r.l.where === "", JSON.stringify(r));
   // 雲端視角的「已安裝」(Windows 真機補測):送出時記雲端清單(名字 → mtime)、回合結束比不到就掛著等、輪詢帶新清單來才記;不寫檔、不打端點;那支從雲端消失就拿掉;等太久就放掉。
   // 清單「缺席」(strategies_ok 不為 true)那一輪:不刪、不記、不動;等待中再送第二支 → 第一支的等待放掉;回合結束當場比到 → 清單當場重畫;同名 mtime 變了(再下載一份)→ 也算、也重畫;登出清掉
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; running = false; LIB.pending = null; LIB.bags.cloud.open = true; LIB.bags.cloud.detail = null; document.getElementById("cv-empty").hidden = true; ENV.cur = "cloud";

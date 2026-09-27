@@ -93,6 +93,8 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));
   eval("var stratSelect = async " + fnOf(appSrc, "stratSelect").replace(/^async /, ""));
+  const envCanSwitch = () => true;   // 再點選中那支走 sideReclick(展開層 / 守門那幾態在 check_shell_side_reclick)
+  eval(fnOf(trSrc, "sideReclick").replace(/^function sideReclick/, "var sideReclick = function"));
   ["rp", "main-empty", "tr"].forEach((id) => { $(id).hidden = id !== "main-empty"; });
   await stratRefresh(false);
   const rows = () => $("strat-list").querySelectorAll("strat-row"), rowA = () => rows().find((r) => r.dataset.name === "a");

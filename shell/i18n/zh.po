@@ -3376,9 +3376,6 @@ msgstr "已購買。"
 msgid "lib.gate.signedOutBuy"
 msgstr "登入 Blave 之後才能購買，並下載到這台電腦。"
 
-msgid "lib.note.free"
-msgstr "免費。"
-
 msgid "lib.note.billed"
 msgstr "回測若用到 Blave 資料，按有用到的整點小時計資料費。"
 

@@ -37,6 +37,8 @@ const KEEP_ROLES = new Set([
   "menuitemradio", "option", "slider", "spinbutton", "listbox", "heading", "listitem", "img", "image", "navigation", "main",
   "search", "form", "dialog", "alertdialog", "tablist", "menu", "table", "row", "cell", "columnheader", "rowheader", "article",
   "PopUpButton", "DisclosureTriangle",
+  // browser_capture 的目標:圖表常包在 <figure>(多半沒有名字)或是一張 <canvas>(AX role 就叫 Canvas)
+  "figure", "Canvas",
 ]);
 const INTERACTIVE = new Set(["link", "button", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch", "tab", "menuitem",
   "menuitemcheckbox", "menuitemradio", "option", "slider", "spinbutton", "listbox", "PopUpButton", "DisclosureTriangle"]);
@@ -334,8 +336,27 @@ function createPage(wc) {
       return r.data;
     } catch (_) { return null; } finally { if (cleanup) await cleanup(); }
   }
+  /** 元素捲進畫面後的外框(可視區 CSS px;多個 quad 取聯集)+ 可視區大小與捲動量。 */
+  async function clipOf(b) {
+    await send("DOM.scrollIntoViewIfNeeded", { backendNodeId: b }).catch(() => {});
+    const { quads } = await send("DOM.getContentQuads", { backendNodeId: b });
+    if (!quads || !quads.length) return { error: "not_visible" };
+    const xs = [], ys = [];
+    for (const qd of quads) { xs.push(qd[0], qd[2], qd[4], qd[6]); ys.push(qd[1], qd[3], qd[5], qd[7]); }
+    const x = Math.min(...xs), y = Math.min(...ys);
+    const m = await send("Page.getLayoutMetrics");
+    const vp = m.cssLayoutViewport || m.layoutViewport;
+    return { box: { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }, view: { w: vp.clientWidth, h: vp.clientHeight, px: vp.pageX || 0, py: vp.pageY || 0 } };
+  }
+  /** 只拍 box 那一塊(clip 是文件座標:可視區座標 + 捲動量)。回 base64 PNG 或 null。 */
+  async function captureClip(box, view, scale) {
+    try {
+      const r = await send("Page.captureScreenshot", { format: "png", clip: { x: box.x + view.px, y: box.y + view.py, width: box.w, height: box.h, scale } }, 8000);
+      return r.data || null;
+    } catch (_) { return null; }
+  }
   return {
-    attach, detach, invalidate, guard, guarded: () => guardOn, disarm, run, callOn, describe, snapshot, center, click, fill, focused, press, screenshot, node,
+    attach, detach, invalidate, guard, guarded: () => guardOn, disarm, run, callOn, describe, snapshot, center, click, fill, focused, press, screenshot, node, clipOf, captureClip,
     refCount: () => refs.size,
     extract: () => run(IP.extract), serp: (engine) => run(IP.serp, [engine]), hasText: (s) => run(IP.hasText, [s]),
     scroll: (dir, amount, smoothMs) => run(IP.scrollPage, [dir, amount, smoothMs || 0]), lastPos: () => lastPos, progress: () => run(IP.progress), quiet: () => run(IP.quiet),

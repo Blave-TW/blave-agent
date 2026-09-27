@@ -35,6 +35,8 @@ const TOOLS = [
     inputSchema: obj({ tab, direction: { type: "string", enum: ["up", "down"] }, amount: { type: "string", enum: ["page", "half"] } }, ["tab", "direction"]) },
   { name: "browser_screenshot", description: "Screenshot of the visible part of the tab (long side <= 1280 px). annotate=true labels elements with their refs.",
     inputSchema: obj({ tab, annotate: { type: "boolean" } }, ["tab"]) },
+  { name: "browser_capture", description: "Capture ONE chart or figure element (ref from browser_snapshot) as a picture for a report: it is cropped to that element, saved into reports/<report>.files/, and returned as {file, source}. Put both into an image block unchanged — {\"type\":\"image\",\"file\":<file>,\"source\":<source>,\"alt\":\"…\"} — rules in references/reports.md › Citing an image from the web (at most 2 per report). Refused (capture_refused): elements near the size of the whole view or larger, tiny elements, and pages whose address is not https. Never capture paywalled or sign-in-only content.",
+    inputSchema: obj({ tab, ref, report: { type: "string", description: "Id of the report the picture is for ([A-Za-z0-9_-]{1,64}), the same id you pass to write_report." } }, ["tab", "ref", "report"]) },
   { name: "browser_back", description: "Go back in the tab's history.", inputSchema: obj({ tab }, ["tab"]) },
   { name: "browser_tabs", description: "List this turn's tabs with status.", inputSchema: obj({}) },
   { name: "browser_close", description: "Close a tab.", inputSchema: obj({ tab }, ["tab"]) },

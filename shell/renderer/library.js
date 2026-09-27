@@ -531,9 +531,9 @@ function libPaintCta(s) {
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); note.textContent = t("lib.note.owned"); break;
     default:
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));
-      note.textContent = t("lib.note.free");
   }
   if (row.childNodes.length) box.appendChild(row);
+  note.hidden = !note.textContent;
   box.appendChild(note);
   if (c.err) { const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, libEl("span", "", t("lib.err.noNew"))); box.appendChild(e); }
 }
@@ -637,7 +637,7 @@ function libChartDraw(host, r) {
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
 (function libWire() {
   const g = (id) => document.getElementById(id);
-  g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); });
+  g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(() => libLeave()); });   // 再點一次 = 回 welcome(trade.js sideReclick)
   g("chat-lib").addEventListener("click", () => libOpen());
   g("lib-back").addEventListener("click", libBack);
   g("lib-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mkt]"); if (!b) return; libBag().mkt = b.dataset.mkt; libPaint(); });

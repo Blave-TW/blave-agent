@@ -518,9 +518,9 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("雲端報告:envShowMain 雲端分支依 RPC 掀 #rp、收 #tr(沒主機可看時兩個都收);這台電腦那一半一個字沒變",
       /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp;/.test(fn("envShowMain"))
       && /const L = TR_BAGS\.local, rp = !L\.open && !!\(RP\.name && RP\.data\);/.test(fn("envShowMain")) && !/envShowLocalMain/.test(code + app));
-    ok("雲端報告:側欄雲端列是 button.strat-row(點了 rpCloudSelect)、選中的帶 aria-current;is-static 退場;#tr-nav 在雲端收掉雲端那支",
+    ok("雲端報告:側欄雲端列是 button.strat-row(點了 rpCloudSelect;再點選中那支經 sideReclick 收掉,見 check_shell_side_reclick)、選中的帶 aria-current;is-static 退場;#tr-nav 在雲端收掉雲端那支",
       /const wrap = trEl\("div", "strat-wrap cs-row"\), row = trEl\("button", "strat-row"\); row\.type = "button"; row\.dataset\.name = x\.name;/.test(fn("envPaintSide")) && /if \(x\.name === sel\) row\.setAttribute\("aria-current", "true"\);/.test(fn("envPaintSide"))
-      && /row\.addEventListener\("click", \(\) => \{ if \(typeof rpCloudSelect === "function"\) rpCloudSelect\(x\.name\); \}\);/.test(fn("envPaintSide")) && !/is-static/.test(code + html + css + fs.readFileSync(path.join(R, "app.css"), "utf8"))
+      && /if \(x\.name === RPC\.name\) sideReclick\(\(\) => rpCloudSelect\(null\)\); else rpCloudSelect\(x\.name\);/.test(fn("envPaintSide")) && !/is-static/.test(code + html + css + fs.readFileSync(path.join(R, "app.css"), "utf8"))
       && /else if \(typeof rpCloudSelect === "function"\) await rpCloudSelect\(null\);/.test(fn("trOpen")) && /rpCloudPrune\(C\.list\)/.test(fn("trPoll")));
     ok("雲端報告:rpCloudSelect 讀的是雲端那袋的 api、讀不到就在原地講(有快取就留著那份)、不退回去讀這台電腦的;rpShowTab / rpRepaint 畫現在這一邊那一袋;本機每輪的 stratRefresh 不拿 RP 蓋雲端報告的頁首",
       /const C = TR_BAGS\.cloud;/.test(appFn("rpCloudSelect")) && /const d = await C\.api\.loadStrategy\(name\);/.test(appFn("rpCloudSelect")) && /if \(!d\) \{\s*if \(cached\) return;/.test(appFn("rpCloudSelect")) && !/window\.blave\.loadStrategy/.test(appFn("rpCloudSelect"))

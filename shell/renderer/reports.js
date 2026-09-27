@@ -493,7 +493,7 @@ async function rptSend() {
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
 (function rptWire() {
   const g = (id) => document.getElementById(id);
-  g("rpt-nav").addEventListener("click", () => { if (!rptBag().open) rptOpen(); });
+  g("rpt-nav").addEventListener("click", () => { if (!rptBag().open) rptOpen(); else sideReclick(() => rptLeave()); });   // 再點一次 = 回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)
   g("rpt-back").addEventListener("click", rptBack);
   g("rpt-ask").addEventListener("click", () => rptNewOpen(g("rpt-ask")));
   g("rpt-rows").addEventListener("click", (e) => {   // 列會重畫:委派

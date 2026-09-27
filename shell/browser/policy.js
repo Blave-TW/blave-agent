@@ -388,4 +388,19 @@ function agent(raw) {
   return null;
 }
 
-module.exports = { network, agent, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };
+/**
+ * 引用圖的出處網址(browser_capture):報告契約 1.6 的 image.source.url 規則照外部連結——https、有主機、不帶帳密、
+ * ≤500 字、不含空白與控制字元。在擷取當下擋:圖存下去之後才被 api 以 400 拒收,整份報告會進 failed/。
+ * 回 null = 可以引用;否則 "scheme" | "credentials" | "long" | "format"。
+ */
+function citable(raw) {
+  const s = String(raw == null ? "" : raw);
+  if (s.length > 500) return "long";
+  if (/[\s\p{Cc}]/u.test(s)) return "format";
+  let u; try { u = new URL(s); } catch (_) { return "scheme"; }
+  if (u.protocol !== "https:" || !u.hostname) return "scheme";
+  if (u.username || u.password) return "credentials";
+  return null;
+}
+
+module.exports = { network, agent, citable, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };

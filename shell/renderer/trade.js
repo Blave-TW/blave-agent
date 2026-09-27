@@ -912,7 +912,11 @@ function trWire() {
     if (j < 0 || j >= TR_TABS.length || j === i) return;
     e.preventDefault(); trSetTab(TR_TABS[j], true);
   });
-  $("tr-nav").addEventListener("click", () => trOpen());
+  // 選中態看 aria-current(envShowMain 管它):雲端沒有 welcome、自動下單頁就是預設,再點一次只收展開層,其餘照舊 trOpen
+  $("tr-nav").addEventListener("click", () => {
+    if (!$("tr-nav").hasAttribute("aria-current")) trOpen();
+    else sideReclick(ENV.cur === "local" ? trLeave : () => trOpen());
+  });
 
   window.addEventListener("resize", () => { if (TR.open && TR.tab === "over") { TR.sig.over = null; trPaintOver(); } });
 }
@@ -3161,6 +3165,14 @@ function envShowMain() {
   if (typeof libShowMain === "function") libShowMain(false);
   if (typeof rptShowMain === "function") rptShowMain(false);
 }
+/* 側欄已選中的那一項再點一次(Wei 09-28)。瀏覽器展開層蓋著中欄時,人眼前看到的是展開層、不是那一頁:這一下先收展開層、露出那一頁
+   (那一頁本來就開著,MutationObserver 看不到「新畫面冒出來」,不收就永遠沒反應)。沒蓋著才 leave() 收掉那一頁,
+   由 envShowMain 落到這一邊的預設畫面(這台電腦 = welcome,雲端 = 自動下單頁)。守門同切視角:框開著 / 組字中不動 */
+function sideReclick(leave) {
+  if (!envCanSwitch()) return;
+  if (typeof BR !== "undefined" && BR.exp && BR.bw && !BR.bw.hidden) { brCollapse(true); return; }
+  leave(); envShowMain();
+}
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
    每一塊都有自己的指紋,沒變就不碰 DOM(焦點與 hover 不被輪詢洗掉)。 */
 /* 側欄雲端列尾:「可能仍在下單」是整台雲端的事、字又長(1024 寬時把名字吃到只剩一個字),改成切換器那個紅短劃,
@@ -3355,7 +3367,12 @@ function envPaintSide(kind, st) {
     const deleting = CDEL.busy.has(x.name);
     if (deleting) { wrap.classList.add("is-deleting"); row.setAttribute("aria-busy", "true"); row.appendChild(trEl("span", "stx", t("cdel.pending"))); }
     else { const w = envStratWord(x.name, st); if (w) row.appendChild(envRowMark(w)); }
-    row.addEventListener("click", () => { if (typeof rpCloudSelect === "function") rpCloudSelect(x.name); });
+    // 再點一次選中的那支 = 收掉、回雲端自動下單頁。選取一換整張清單就重建,焦點接回同名那一列(不掉到 BODY)
+    row.addEventListener("click", () => {
+      if (x.name === RPC.name) sideReclick(() => rpCloudSelect(null)); else rpCloudSelect(x.name);
+      const ae = document.activeElement, r = cdelRowBtn(x.name, null);
+      if (r && (!ae || ae === document.body)) r.focus();
+    });
     wrap.appendChild(row);
     if (canDel && !deleting && /^[A-Za-z0-9_-]{1,64}$/.test(x.name) && typeof armedDelete === "function")
       wrap.appendChild(armedDelete(wrap, t("cdel.aria", { name: x.displayName || x.name }), (btn) => cdelAsk(x, btn), true));
