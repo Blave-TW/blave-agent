@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.98 — 2026-09-27
+
 - **回合狀態列的分類(`agent_turn._tool_kind`;spec-turn-status-summary ①)**:每個 tool chunk 多帶 `kind`／`kind_obj`(受詞:網域、
   搜尋字、策略名、代號、檔名,≤60)／`kind_tab`(瀏覽器分頁 alias),前端照 kind 查自己的字,把「執行中 · 第 39 步」換成
   「正在讀 investing.com」。不送任何顯示字、不呼叫模型。兩條誠實規則:**下單**只認真的下單呼叫(place_/cancel_/run_twap/
