@@ -2293,7 +2293,12 @@
       wrap.className += " is-cited";
       var line = el("div", "rb-image-src");
       line.appendChild(el("span", "rb-image-src-l", ctx.i18n.imageSource));
-      if (sx && srcName) line.appendChild(extLink(sx, srcName, ctx));
+      if (sx && srcName && srcName.trim().toLowerCase().replace(/^www\./, "") === hostOf(sx)) {
+        // 名稱就是網域(站沒有給站名時擷取工具退回網域):再接一次 mono 網域會讀成兩個來源(同 web report_blocks.js)
+        var only = linkTo(sx, "rb-xlink", ctx);
+        only.appendChild(el("span", "rb-xlink-nm", srcName));
+        line.appendChild(only);
+      } else if (sx && srcName) line.appendChild(extLink(sx, srcName, ctx));
       else if (sx) {
         var dom = linkTo(sx, "rb-xlink is-dom mono", ctx);
         dom.textContent = hostOf(sx);
