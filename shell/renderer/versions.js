@@ -17,8 +17,10 @@ function verEl(tag, cls, text) { const e = document.createElement(tag); if (cls)
 function verEntry(S, n) { return VER ? VER.entries(S.data).find((i) => i.n === n) || null : null; }
 function verDateShort(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trMD(new Date(at * 1000)) : "—"; }
 function verDateLong(at) { return typeof at === "number" && isFinite(at) && at > 0 ? trStamp(at) : "—"; }
-// 送給 agent 的那句話裡的顯示名稱:機器寫的自由文字,拿掉控制字元與會跟固定訊息的「」撞在一起的括號、截長
-function verSafeName(s) { return String(s || "").replace(/[\u0000-\u001f\u007f「」]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80); }
+// 送給 agent 的那句話裡的顯示名稱(稽核 S4):DISPLAY_NAME 是策略檔裡的自由文字(下載來的策略也有),原樣插進固定訊息
+// 等於讓策略作者替用戶說話。拿掉控制字元 / 換行、各種引號與括號(固定訊息自己的「」() 與樣板的 {} 都在內)、截 40 字;
+// 清完是空的就用資料夾名(呼叫端)
+function verSafeName(s) { return [...String(s || "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029"'`“”‘’「」『』《》〈〉【】()（）\[\]{}<>]/g, " ").replace(/\s+/g, " ").trim()].slice(0, 40).join("").trim(); }
 /* 這支策略的下單金額(守門依據,canon §6 的真閘門在機器端 restore())。讀不到那一邊的回報 = null:不猜,徽章只畫「目前」、
    還原走一般確認框。金額表的 key 是 STRATEGY_NAME,多半等於資料夾名;兩個都看 */
 function verAmount(side, B) {
@@ -51,12 +53,16 @@ new MutationObserver(() => {
 }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-env"] });
 function verPaintTrigger(S) {
   const wrap = $("ver-wrap");
+  // 看舊版時頁首只留名稱、說明收起來:那一句寫的是目前版的邏輯(看 v1 的 SMA20/50 時寫著 SMA50/200);
+  // 不從版本碼裡解析舊的 DESCRIPTION。第二行固定 24 高(.rp-sub),收起來版面不跳
+  const old = !!S.data && S.open !== null;
+  $("rp-desc").hidden = old;
   if (!S.data) { wrap.hidden = true; $("ver-sep").hidden = true; return; }
   const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDateShort((verEntry(S, n) || {}).at);
   $("ver-trig-n").textContent = "v" + n;
   const l = $("ver-trig-l"); l.textContent = label; l.classList.toggle("mono", S.open !== null);
   $("ver-trig").setAttribute("aria-label", t("ver.aria", { v: "v" + n, label }));
-  wrap.hidden = false; $("ver-sep").hidden = !$("rp-desc").textContent;
+  wrap.hidden = false; $("ver-sep").hidden = old || !$("rp-desc").textContent;
 }
 function verPaintBanner(S) {
   const bn = $("ver-banner"), on = !!S.data && S.open !== null;
