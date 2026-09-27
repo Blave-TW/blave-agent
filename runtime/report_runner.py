@@ -521,11 +521,16 @@ _TEMPLATE_CALL = re.compile(r"\b(tw_market_brief|tw_close_brief|crypto_market_br
 
 # DeepSeek 經 proxy 沒有 WebSearch(Anthropic 伺服器端工具),但 WebFetch 是 CLI 自己抓網頁、
 # 用同一個模型摘要——mock proxy 實測(09-27,claude 2.1.283,model=deepseek/deepseek-v4-pro):
-# tool_use WebFetch 有執行、摘要子呼叫帶同一個 deepseek model id。所以 DeepSeek 版改抓固定來源,
-# 照樣湊滿 3 個網站出完整版;絕不叫用戶換模型(Wei 09-27)。
-_FIXED_NEWS_PAGES = ("crypto: https://www.coindesk.com/ , https://cointelegraph.com/ , https://decrypt.co/ ; "
-                     "Taiwan: https://news.cnyes.com/news/cat/headline , https://money.udn.com/money/index , "
-                     "https://www.moneydj.com/")
+# tool_use WebFetch 有執行、摘要子呼叫帶同一個 deepseek model id。
+# 固定新聞站逐站查證(09-27):CoinDesk/Decrypt 的 ToS 禁自動化抓取、Cointelegraph/CryptoSlate 明文禁
+# AI 使用、經濟日報/MoneyDJ 的 robots.txt 明文禁 LLM 且擋 ClaudeBot——六站只剩鉅亨(Blave 授權方,
+# 條款與 robots 都查無禁令)。鉅亨的授權涵蓋抓其網站新聞列表頁(Wei 09-27 確認),官方公告頁逐站查證
+# (09-27):TWSE robots 對 * 與 GPTBot 明文 Allow(使用條款 §6 的「同意之方式」以 robots 為機讀通道)、
+# 新聞列表 HTML 靠 JS 載入所以固定來源用 rwd JSON 端點;TAIFEX 無 robots.txt、userTerms 無自動化禁令;
+# Binance robots 對 * Allow 且公告 sitemap 在列,ToU 的反爬條款由資料夥伴關係涵蓋(Wei 09-27);
+# OKX robots 公告路徑無禁令、API Agreement 反爬只限「超出個人使用規模」——排程一天一抓在個人範圍,
+# 且為下單夥伴(Wei 09-27);CoinMarketCap robots 對 * Disallow /headlines/*,排除。湊不滿 3 個網站照產品行為降級
+# (少幾則、few_sources 一句),絕不叫用戶換模型(Wei 09-27)。
 
 
 def scheduled_prompt(job, model=None):
@@ -533,10 +538,19 @@ def scheduled_prompt(job, model=None):
     an unattended run. The agent-facing rules live in references/reports.md §8. `model` picks the
     news channel: a Claude model searches; DeepSeek (the default when None) fetches fixed sources."""
     deepseek = model is None or "deepseek" in str(model).lower()
-    news = ("1) News first — this model has no web search: read with WebFetch only. Fetch the licensed "
-            "candidates' links describe() prints, and 2–3 of these headline pages (your market's list) — "
-            f"{_FIXED_NEWS_PAGES} — each with a short prompt (headline, time, one line). "
-            "Still 3 different sites; stop there. " if deepseek else
+    news = ("1) News first — this model has no web search: read with WebFetch only, from your market's "
+            "fixed sources — other news sites' terms forbid automated AI access, do not fetch them. "
+            "Taiwan: 鉅亨's licensed list page https://news.cnyes.com/news/cat/headline , the candidates' "
+            "links describe() prints, TWSE announcements "
+            "https://www.twse.com.tw/rwd/zh/news/newsList?response=json and TAIFEX announcements "
+            "https://www.taifex.com.tw/cht/11/announcement . Crypto: 鉅亨's licensed list page "
+            "https://news.cnyes.com/news/cat/bc_crypto , Binance announcements "
+            "https://www.binance.com/en/support/announcement and OKX announcements "
+            "https://www.okx.com/help/section/announcements-latest-announcements . "
+            "Fetch a list page for headlines, then each "
+            "article you keep with a short prompt (headline, time, one line). Fewer than 3 sites: put one "
+            "sentence in narrative['few_sources'] and publish anyway — never a word about switching model. "
+            "Stop there. " if deepseek else
             "1) News first — no built-in browser here: 2–3 WebSearch queries in one message, then WebFetch "
             "the best 3 articles from 3 different sites in one message, each with a short prompt (headline, "
             "time, one line); stop there. ")

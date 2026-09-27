@@ -390,7 +390,7 @@ What channel you search with depends on where you run:
 | Desktop app (`BLAVE_AGENT_LOCAL=1`) with the browser tools mounted (`mcp__blave_browser__*`, `references/browser.md`) | Search and read with the built-in browser (any model). For headlines: `browser_open` a news list page → `browser_read(part="links")` → `browser_read(part="meta")` on the few you keep for the published time → `part="section"` only for the paragraph a figure comes from. Do not read whole articles. |
 | Desktop app without those tools (older app, or the browser switched off) | Use the engine's own web search if it has one; otherwise the `describe()` candidates only (Taiwan market brief), or none. |
 | Cloud machine, Claude model | The web search tool (billed per search from the user's credit, `references/billing.md`). |
-| Cloud machine, DeepSeek | No web search tool — read with WebFetch instead: the links on the `describe()` candidates (Taiwan), plus 2–3 fixed headline pages (crypto: CoinDesk / Cointelegraph / Decrypt; Taiwan: 鉅亨 / 經濟日報 / MoneyDJ), each fetched with a short prompt. Still 3 different sites. |
+| Cloud machine, DeepSeek | No web search tool — read with WebFetch, and only your market's fixed sources. Taiwan: 鉅亨's licensed list page `https://news.cnyes.com/news/cat/headline`, the links on the `describe()` candidates (鉅亨's licensed feed), TWSE announcements `https://www.twse.com.tw/rwd/zh/news/newsList?response=json` and TAIFEX announcements `https://www.taifex.com.tw/cht/11/announcement`. Crypto: 鉅亨's licensed list page `https://news.cnyes.com/news/cat/bc_crypto`, Binance announcements `https://www.binance.com/en/support/announcement` and OKX announcements `https://www.okx.com/help/section/announcements-latest-announcements`. Each fetched with a short prompt. Other news sites' terms or robots.txt forbid automated AI access (checked 09-27: CoinDesk, Cointelegraph, Decrypt, 經濟日報, MoneyDJ, CoinMarketCap all do) — do not fetch them. Fewer than 3 sites: one sentence in `few_sources`, publish anyway. |
 | Scheduled run | Cloud, a job with `agent_consent`: you run as in chat in an unattended turn (§8), same rows as above. Desktop, or no consent, or that turn failed: the data-only `run.py` lays out the licensed headlines as they are (no summary, no tag). |
 
 When no channel gives you anything, still write and publish the report: `"news": []` (the footnote
@@ -404,7 +404,7 @@ publish(pack, narrative={
     "lead": "...",
     "news": [
         {"title": "台積電 9 月營收年增 38%", "summary": "月營收創單月新高，年增近四成。", "tag": "pos",
-         "sources": [("經濟日報", "https://money.udn.com/..."), ("鉅亨", "https://news.cnyes.com/...")],
+         "sources": [("鉅亨", "https://news.cnyes.com/..."), ("TWSE", "https://www.twse.com.tw/...")],
          "published_at": "2026-09-25 18:30", "symbols": ["2330"]},
         {"title": "聯準會理事：降息仍需更多數據", "title_orig": "Fed governor says more data needed", "title_orig_lang": "en",
          "summary": "理事認為通膨尚未穩定回落。", "tag": "neutral",
@@ -432,7 +432,7 @@ publish(pack, narrative={
   20,000 per report. With web search, read the result snippets first and open a page only to check a
   figure.
 - **Source quality, in this order**: mainstream financial and crypto media (Reuters, Bloomberg, CNBC,
-  CoinDesk, The Block excepted — its terms forbid AI summaries; for Taiwan 鉅亨, 經濟日報, 工商時報, MoneyDJ), official announcements
+  The Block excepted — its terms forbid AI summaries; for Taiwan 鉅亨), official announcements
   (the project, the exchange, the regulator; for Taiwan TWSE / TAIFEX announcements), exchange research reports > aggregators > press-release
   sites (openPR, GlobeNewswire, PR Newswire) and SEO / price-prediction sites (247wallst-style "X price
   prediction", exchange blogs selling a coin). **A price-prediction article is never a source**; a press

@@ -8,6 +8,35 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **DeepSeek 排程的固定來源加回鉅亨列表頁+官方公告頁(Wei 09-27 拍板)**:鉅亨授權涵蓋抓其網站
+  新聞列表頁——`https://news.cnyes.com/news/cat/headline`(台股/通用)與
+  `https://news.cnyes.com/news/cat/bc_crypto`(加密)進 prompt 點名為 licensed 固定來源;官方公告頁
+  逐站查證後加入:TWSE(robots 對 * 與 GPTBot 明文 Allow;列表 HTML 靠 JS,改用 rwd JSON 端點)、
+  TAIFEX(無 robots.txt、userTerms 無自動化禁令,用 `/cht/11/announcement`)、Binance(robots 對 *
+  Allow 且公告 sitemap 在列,ToU 反爬條款由資料夥伴關係涵蓋,Wei 09-27)、OKX(robots 公告路徑無禁令,
+  API Agreement 反爬只限超出個人使用規模;下單夥伴,Wei 09-27)。CoinMarketCap 查證不過
+  (robots 對 * Disallow `/headlines/*`),不進名單。台股與加密固定來源各湊滿 3 站,加密排程不再預設
+  `few_sources` 降級(下面那條「加密沒有授權候選」的說法由此取代);五個禁站照舊不點名。
+  `_news_describe`、references/reports.md(含 source-quality 清單撤 CoinDesk/MoneyDJ/經濟日報/工商時報)
+  與 AGENTS.md 的 DeepSeek 句同步。
+- **DeepSeek 聊天回合也不綁 CLI 的假 USD 預算(稽核 A-P1-2)**:上一批只豁免了排程回合;聊天照掛
+  `max_budget_usd=10`,而 CLI 對經 proxy 的 DeepSeek 用 Claude 價目表(~0.116 假 USD/步),約 86 步就撞牆,
+  1.1.100 的 100 步宣稱對主力配置不成立。改成聊天與排程同一條 `_cli_cost_trusted` 判定:非 Anthropic 模型
+  一律不綁 USD 上限。真實曝險上界:29026 帳本實測 DeepSeek 約 0.9 點/步(9 步 8.06 點),100 步 ≈ 90 點
+  (成本基礎 ≈2.8 USD)——由步數與時間擋,不是錢。
+- **電腦版聊天回合補牆鐘 35 分鐘(`_TURN_WALL_CLOCK_SEC=2100`,同 web bridge 等級)**:稽核指出電腦版
+  (LocalSink)沒有 bridge 回合逾時,外殼只有停止鈕後的 5 秒沉默殺——拿掉假預算後等於沒有時間煞車。牆鐘掛在
+  訊息迴圈裡(只在有訊息時檢查:完全沉默的 CLI 不燒 token,歸停止鈕管),到點收掉回合、不續跑,用戶拿到
+  「只做完一部分」那句。只掛 LocalSink;雲端 TG/web bridge(2000/2100 秒)與排程 runner(600 秒)照舊自己管。
+  已知限制:牆鐘在 Claude 引擎的迴圈裡,`engine=codex`(用戶自己的訂閱)沒有——照舊沒有時間上限。
+- **DeepSeek 排程的固定新聞站撤下(ToS 逐站查證,09-27)**:1.1.99 寫死的六站,五站的條款或 robots.txt
+  禁止自動化/AI 使用——Cointelegraph(ToS 明文禁 AI/LLM)、經濟日報與 MoneyDJ(robots.txt 明文禁 LLM 且
+  Disallow ClaudeBot)、CoinDesk(ToS 禁 robots/scrapers + robots 擋 anthropic-ai/ClaudeBot/CCBot)、
+  Decrypt(ToS 禁自動化 data-mine/scrape)。只剩鉅亨(Blave 授權方,service.htm 與 robots 查無禁令)。
+  DeepSeek 版 prompt 改成只 WebFetch 授權候選的連結;湊不滿 3 站(加密沒有授權候選)走 `few_sources`
+  一句照發——這是產品行為,不提換模型。`_news_describe` 的聊天版名單與 references/AGENTS 同步撤下
+  被禁的站名,改寫「先看目標站的條款與 robots 有沒有禁 AI」。
+
 ## 1.1.100 — 2026-09-27
 
 - **聊天回合步數上限 50 → 100(電腦版與雲端一致;排程 25 不動;Wei 09-27)**:「建 BNB MA 策略+回測+上

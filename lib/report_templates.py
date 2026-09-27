@@ -243,7 +243,7 @@ def _publish_checklist(pack):
         "   \"summary\": \"<這些數字合起來代表什麼,直接寫結論,不加「所以呢」這類標籤>。接下來看<觀察重點最重要的一項>。\","
         " \"risk\": \"若出現否定結論那個判斷的訊號(寫出門檻),這個判斷就不成立。\",",
         "   \"news\": [{\"title\": \"標題\", \"summary\": \"一句\", \"tag\": \"neg\", \"symbols\": [\"ETH\"],"
-        " \"sources\": [(\"CoinDesk\", \"https://…\")], \"published_at\": \"YYYY-MM-DD HH:MM\"}]}",
+        " \"sources\": [(\"來源名\", \"https://…\")], \"published_at\": \"YYYY-MM-DD HH:MM\"}]}",
         f"  publish({rid!r}, narrative, title=\"<結論 ≤{TITLE_MAX} 字>\"" + (", shareable=True)" if research else ")"),
         f"  被拒:只改 narrative,publish({rid!r}, narrative, title=…) 重送同一個 pack;不要再呼叫範本重建"
         f"(資料會變、又多花 {int(sum(t for _, t in pack.timings)) or '數十'} 秒)",
@@ -1992,11 +1992,16 @@ _AGENT_AVAILABLE_FOOT = "升級後排程可以請 AI 整理新聞，跟 agent �
 
 def _news_describe(news):
     c = news["candidates"]
-    search = ("  先上網查:至少 3 個不同網站(台股優先 鉅亨、經濟日報、工商時報、MoneyDJ、證交所/期交所公告;"
-              "加密優先 Reuters、Bloomberg、CoinDesk、官方公告);下面的候選只是起點,不能代替上網")
+    # 名單 09-27 逐站查證後只點名查無禁令的:經濟日報/MoneyDJ 的 robots 明文禁 LLM、CoinDesk/Reuters 的
+    # 條款禁自動化抓取——「條款禁止 AI 摘要/自動化的來源不用」是既有規則,先看目標站的 terms 與 robots。
+    search = ("  先上網查:至少 3 個不同網站(優先 鉅亨(授權,列表頁 https://news.cnyes.com/news/cat/headline"
+              " 與 /news/cat/bc_crypto 可直接抓)與交易所/專案方官方公告;其他站先確認它的"
+              "條款與 robots.txt 沒有禁止 AI 使用——經濟日報、MoneyDJ、CoinDesk、Cointelegraph 都有明文禁令,不用);"
+              "下面的候選只是起點,不能代替上網")
     why = {"denied": "無 Blave 資料權限,鉅亨候選省略", "failed": "鉅亨新聞抓取失敗", None: "上一個收盤之後"}[news.get("state")]
     head = (f"  新聞候選 {len(c)} 則(鉅亨授權,{why}):"
-            if news["market"] == "tw" else "  新聞候選:加密沒有授權新聞源,新聞格只能靠你上網蒐集(見 references/reports.md §1b News)")
+            if news["market"] == "tw" else "  新聞候選:加密的授權源是鉅亨列表頁 https://news.cnyes.com/news/cat/bc_crypto,"
+            "其餘靠你上網蒐集(見 references/reports.md §1b News)")
     lines = [search, head]
     for it in c[:15]:
         t = datetime.fromtimestamp(it["published_at"], TPE).strftime("%m-%d %H:%M")
