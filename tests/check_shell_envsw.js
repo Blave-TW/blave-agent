@@ -491,7 +491,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && stepWhere({ tool: "Bash", summary: "ssh blaveagent@1.2.3.4" }) === "local" && stepWhere({ tool: "Bash", summary: "lib/runner.py" }) === "local"
       && stepWhere({ tool: "Read", summary: "雲端主機 cloud" }) === "local" && stepWhere({ tool: "mcp__other__x" }) === "local" && stepWhere({ where: "x" }) === "local" && stepWhere(null) === "local" && !/summary/.test(appFn("stepWhere").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")));
     ok("④ 動作列每一列在記號與動詞之間插 .wtag;你的那則下面不再掛 .wtag(.to 整個拿掉);.wtag 走 data-i18n",
-      /li\.append\(mark, whereTag\(stepWhere\(c\)\), verb, obj, time\);/.test(app) && (app.match(/whereTag\(/g) || []).length === 2
+      /li\.append\(mark, whereTag\(stepWhere\(c\)\), verb, obj, time\);/.test(app) && (app.match(/whereTag\(/g) || []).length === 3
+      && /li\.append\(mark, whereTag\(stepWhere\(\{ tool: st\.tool \}\)\), v, obj\);/.test(app)   // 第三處:重開 app 畫回的收據(receiptFold)
       && !/className = "to"|\.msg\.you \.to\b/.test(app + fs.readFileSync(path.join(R, "app.css"), "utf8"))
       && /s\.dataset\.i18n = env === "cloud" \? "chat\.tgt\.cloud" : "env\.local"; s\.textContent = t\(s\.dataset\.i18n\);/.test(appFn("whereTag")));
     // 雲端來的字串會進這幾支(報告頁首、雲端清單點一支、分頁、.wtag):函式體內一律 textContent。app.js 別處有合法的 innerHTML,所以逐支切出來查

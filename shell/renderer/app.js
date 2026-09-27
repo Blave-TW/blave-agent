@@ -1190,6 +1190,49 @@ function csStartNew() {
   $("chat-eg").hidden = false;
   $("ta").focus();
 }
+/* 被停止 / 中途出錯的回合,runtime 在逐字稿那一輪回覆的尾端附一行給**下一輪 agent** 看的收據
+   (runtime/agent_turn.py `_fault_receipt_suffix`:「\n[中斷前已執行:Bash strategies/、Read lib/x.py、…另有 N 步]」)。
+   那行不是給人讀的:畫回去時拆掉,改畫成跟即時回合結束時一樣的「思考過程」收據(收起,點開看步驟)。
+   splitReceipt 是純函式,tests/check_shell_history_receipt.js 從原文切出來跑,並釘住 runtime 那邊的格式。 */
+const RECEIPT_RE = /\n?\[\u4e2d\u65b7\u524d\u5df2\u57f7\u884c:([^\n]*)\]\s*$/;   // 「[中斷前已執行:…]」,跳脫寫法:這行是資料格式不是畫面字
+function splitReceipt(content) {
+  const m = RECEIPT_RE.exec(content || "");
+  if (!m) return { text: content, steps: null };
+  const steps = m[1].split("\u3001").filter(Boolean).map((x) => {
+    if (x.charAt(0) === "…") return { more: x };
+    const i = x.indexOf(" ");
+    return i < 0 ? { tool: x, summary: "" } : { tool: x.slice(0, i), summary: x.slice(i + 1) };
+  });
+  return { text: content.slice(0, m.index), steps };
+}
+function receiptFold(steps) {
+  const el = document.createElement("div"); el.className = "think-indicator is-done";
+  const head = document.createElement("button"); head.type = "button"; head.className = "think-head has-reason";
+  head.setAttribute("aria-expanded", "false");
+  const verb = document.createElement("span"); verb.className = "think-verb"; verb.dataset.i18n = "turn.process"; verb.textContent = t("turn.process");
+  const chev = document.createElement("span"); chev.className = "think-chev"; chev.setAttribute("aria-hidden", "true");
+  head.append(verb, chev);
+  const wrap = document.createElement("div"); wrap.className = "think-reason-wrap";
+  const fold = document.createElement("div"); fold.className = "think-fold";
+  const list = document.createElement("ul"); list.className = "think-steps";
+  steps.forEach((st) => {
+    const li = document.createElement("li"); li.className = "think-step";
+    if (st.more) { li.textContent = st.more; list.appendChild(li); return; }
+    const mark = document.createElement("span"); mark.className = "think-step-mark";
+    const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = st.tool;
+    const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = st.summary;
+    li.append(mark, whereTag(stepWhere({ tool: st.tool })), v, obj);
+    list.appendChild(li);
+  });
+  fold.appendChild(list); wrap.appendChild(fold); el.append(head, wrap);
+  head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
+  return el;
+}
+function addHistoryAi(content) {
+  const r = splitReceipt(content);
+  if (r.steps && r.steps.length) $("chat-scroll").appendChild(receiptFold(r.steps));
+  if (!r.steps || r.text.trim()) addMsg("ai", r.text);
+}
 /* 舊的瀏覽器紀錄用的是回合開始的時間,比 runtime 寫進逐字稿的那句用戶訊息早幾秒:區塊不能排在那句上面。
    區塊後面緊接著用戶訊息、而且只早 30 秒以內 = 同一輪 → 區塊挪到那句後面。純函式(tests/check_shell_turn_status.js) */
 function histFixOrder(out, x) {
@@ -1211,7 +1254,7 @@ async function csOpen(id) {
   turns.map((x) => ({ ts: x.ts, turn: x })).concat(imgs.map((x) => ({ ts: x.ts, img: x })), brs)
     .sort((a, b) => a.ts - b.ts)
     .reduce(histFixOrder, [])
-    .forEach((x) => (x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : addMsg(x.turn.role === "user" ? "you" : "ai", x.turn.content)));
+    .forEach((x) => (x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addMsg("you", x.turn.content) : addHistoryAi(x.turn.content)));
   $("chat-eg").hidden = true;
   csRenderHead(); csShowList(false); scrollChat();
 }
