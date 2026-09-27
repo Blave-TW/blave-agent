@@ -136,6 +136,40 @@ Do these four, in this order:
    run must be `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py`, or it is a
    quiet live tick that mints nothing (`references/deployment.md` › *Live vs Backtest*).
 
+### Forking from a version (the strategy is live)
+
+When the strategy is funded, the workspace does not offer 還原; its guard dialog offers
+「用 vN 建立新策略」 instead, which sends one fixed prompt in the user's interface language.
+Recognise all three forms; every other locale falls back to the English one:
+
+- zh (traditional)「請用策略「{display_name}」({name}) 第 {n} 版的程式碼建立一支新策略,原策略不要動;新策略跑一次回測和一次訊號、確認有 state.json,然後停下來,讓我在自動下單切換金額 —— 不用再確認」
+- zh (simplified)「请用策略「{display_name}」({name}) 第 {n} 版的代码建立一支新策略,原策略不要动;新策略跑一次回测和一次信号、确认有 state.json,然后停下来,让我在自动下单切换金额 —— 不用再确认」
+- en "Please create a new strategy from version {n} of strategy {display_name} ({name}),
+  leaving the original untouched; backtest the new one and run one signal so it has a
+  state.json, then stop so I can switch the funding in Auto-trading — no further
+  confirmation needed."
+
+This is steps 1–4 of *Editing a live strategy* above, starting from an old version's code.
+The user already chose in the dialog: no confirmation question. Do these, in this order:
+
+1. Never call `restore()` and never write any file of `{name}` — it keeps trading.
+2. Take the code from `strategies/{name}/versions/v{n}.json` (its `code` field), not from the
+   current `strategy.py`. File missing → say only the last 20 versions are kept, name the ones
+   `list_versions(name)` has, and stop.
+3. Save it as a NEW strategy: its own `STRATEGY_NAME` (default `{name}_v{n}`; the folder name
+   equals it), its own `DISPLAY_NAME` / `DESCRIPTION`, and `VERSION_NOTE = "分岔自 {name} v{n}"`
+   (the user's language). Keep `SYMBOL` / `MARKET` as the version has them.
+4. Backtest the fork (`python3 strategies/<fork>/strategy.py` — it is not in the order settings,
+   so this is a backtest) and report it next to the original's current stats.
+5. Run one signal: `BLAVE_MODE=live python3 strategies/<fork>/strategy.py`, then confirm
+   `strategies/<fork>/state.json` exists. This places no order: Type A/C orders come only from
+   the reconciler, and the fork has no amount. On a crontab machine, also schedule it per
+   `references/deployment.md` (step 4 above).
+6. Stop. The funding switch is the user's own hands (deployment redline): tell them step 5
+   above — one save in 自動下單, the fork's amount in and the original's amount to 0 while
+   keeping it selected — and what the switch will do (same symbol and direction: little or no
+   trading; otherwise a full close and re-entry).
+
 ## Signal Contract
 
 `compute_signals(df)` receives the DataFrame returned by `fetch_data` and returns either a **pd.Series** or a **(pd.Series, exec_at_close)** tuple:

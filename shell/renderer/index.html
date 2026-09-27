@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="report-share.css">
 <link rel="stylesheet" href="browser.css">
 <link rel="stylesheet" href="export.css">
+<link rel="stylesheet" href="versions.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -142,12 +143,26 @@
           <div class="txt">
           <!-- tabindex="-1":文字鈕把人送回這台電腦、而那支策略已經不在時,焦點落在中欄標題(同 #tr-h / #cv-h 的作法) -->
           <h5 class="rp-name" id="rp-name" tabindex="-1"></h5>
-          <p class="rp-desc" id="rp-desc"></p>
+          <!-- 第二行 = 版本觸發器 · 說明(renderer/versions.js;策略版本 spec §1:≥ 2 版且名字過 canon §9b 才出)。
+               固定 24 高:有 / 沒有版本的策略互切時分頁列不跳 -->
+          <div class="rp-sub">
+            <span class="vwrap" id="ver-wrap" hidden>
+              <button class="vtrig" id="ver-trig" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="ver-menu"><span class="vn mono" id="ver-trig-n"></span><span class="vl" id="ver-trig-l"></span><span class="mp-chev" aria-hidden="true"></span></button>
+              <div class="vmenu" id="ver-menu" role="menu" hidden></div>
+            </span>
+            <span class="rp-sub-sep" id="ver-sep" aria-hidden="true" hidden>·</span>
+            <p class="rp-desc" id="rp-desc"></p>
+          </div>
           <!-- 雲端停機 / 讀不到時按「送上雲端」:不切視角,在原地講一句 + 一顆「去雲端看」(handoff.js 的 hoNote)。
                role="status":按了鈕畫面只多這一行,讀屏不唸的話等於沒有回應 -->
           <p class="rp-ho-note" id="rp-ho-note" role="status" hidden></p>
           </div>
           <div class="act" id="rp-act" hidden></div>
+        </div>
+        <!-- 時光機橫幅(versions.js):看舊版時才出,「唯讀」在任何寬度都看得到 -->
+        <div class="vbanner" id="ver-banner" hidden>
+          <p class="vb-t" id="ver-banner-t"></p>
+          <div class="vb-acts"><button class="btn-out" id="ver-back" type="button"><span class="vb-long" data-i18n="ver.back"></span><span class="vb-short" data-i18n="ver.backShort"></span></button><button class="btn-fill" id="ver-restore" type="button" data-i18n="ver.restore"></button></div>
         </div>
         <div class="rp-tabs" role="tablist" id="rp-tabs">
           <button class="rp-tab" type="button" role="tab" data-tab="bt" data-i18n="rp.tab.backtest"></button>
@@ -440,6 +455,24 @@
   </div>
 </div>
 
+<!-- 比較兩個版本(versions.js;策略版本 spec §5):640 框、唯讀、沒有腳。差異在這台電腦由主行程跑 difflib、雲端由 api 算好 -->
+<div class="scrim" id="vc-scrim" role="dialog" aria-modal="true" aria-labelledby="vc-title" hidden>
+  <div class="set-modal vc-modal" id="vc-modal">
+    <div class="modal-head">
+      <h6 id="vc-title" data-i18n="ver.cmpTitle"></h6>
+      <button type="button" class="modal-close" id="vc-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="modal-body vc-body">
+      <div class="vc-pick">
+        <span class="set-selw"><select class="set-sel" id="vc-a" data-i18n-aria="ver.cmpA"></select></span>
+        <span class="vc-vs" data-i18n="ver.cmpVs"></span>
+        <span class="set-selw"><select class="set-sel" id="vc-b" data-i18n-aria="ver.cmpB"></select></span>
+      </div>
+      <div class="vc-out" id="vc-out" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
 <!-- 新增策略 modal(spec-desktop-0.1.6 §4;照雲端 #ns_modal 逐格搬,殼同 confirmBox 家族:#del-scrim 的 440 框)。
      五格 + 即時預覽句(.cf-quote)+「至少填一項」+ 策略庫連結;由 newstrategy.js 接線。雲端視角:標題列灰底 + 「雲端」記號 + 腳的目的地句 -->
 <div class="scrim" id="ns-scrim" role="dialog" aria-modal="true" aria-labelledby="ns-title" hidden>
@@ -552,5 +585,7 @@
 <script src="export.js"></script>
 <script src="library.js"></script>
 <script src="app.js"></script>
+<script src="strategy_versions.js"></script>
+<script src="versions.js"></script>
 <script src="browser.js"></script>
 </body></html>

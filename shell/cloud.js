@@ -20,6 +20,8 @@ const PERFORMANCE_ENDPOINT = "/oauth/desktop/cloud/performance";
 const REPORTS_ENDPOINT = "/oauth/desktop/cloud/reports";
 const REPORT_ENDPOINT = "/oauth/desktop/cloud/report";
 const IMAGE_ENDPOINT = "/oauth/desktop/cloud/strategy_image";
+const VERSION_ENDPOINT = "/oauth/desktop/cloud/version";
+const VERSION_NAME_RE = /^[A-Za-z0-9_-]{1,128}$/;   // canon strategy-versions §9b(api agent_strategy_versions._NAME_RE 同一條)
 const EVENTS_MAX = 500;
 const REPORTS_MAX = 200, REPORT_TITLE_MAX = 200, REPORT_TYPE_MAX = 32;
 const REPORT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/, IMAGE_HASH_RE = /^[0-9a-f]{64}$/;
@@ -99,7 +101,25 @@ function interpretStrategy(res, name) {
   if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
   const str = (v) => (typeof v === "string" ? v : "");
   const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
-  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), code: str(s.code) } };
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), code: str(s.code), versions: obj(s.versions) } };
+}
+
+/* 策略版本(/cloud/version = 網頁 /openclaw/agent/version/… 原樣,canon strategy-versions §9)。
+   404 不是錯誤:摘要清單先到、blob 晚幾秒落地(上傳落差),畫面講「還在同步」→ SYNCING;比較那支帶 missing。
+   其餘(401 / 429 / 5xx / 形狀不對 / 連不上)一律 UNREACH。blob 是雲端那台機器上的 agent 寫的:只驗到「是物件」,renderer 逐欄驗型別、一律 textContent */
+function interpretVersion(res) {
+  if (res && res.status === 404) return { code: "SYNCING" };
+  const b = res && res.status === 200 ? res.body : null;
+  return b && typeof b === "object" && !Array.isArray(b) ? { code: "OK", blob: b } : { code: "UNREACH" };
+}
+function interpretVersionCompare(res) {
+  if (res && res.status === 404) {
+    const m = res.body && Array.isArray(res.body.missing) ? res.body.missing.filter((n) => Number.isInteger(n) && n > 0).slice(0, 2) : [];
+    return { code: "SYNCING", missing: m };
+  }
+  const b = res && res.status === 200 ? res.body : null;
+  if (!b || typeof b !== "object" || !b.a || typeof b.a !== "object" || !b.b || typeof b.b !== "object" || !Array.isArray(b.hunks)) return { code: "UNREACH" };
+  return { code: "OK", data: { a: b.a, b: b.b, hunks: b.hunks, truncated: b.truncated === true } };
 }
 
 /* 權益曲線的回應 → { code, curve }(純函式)。同事件清單:讀不到與「還沒有紀錄」是兩件事——只有 200 + `overview.curve`
@@ -366,6 +386,15 @@ function createCloudHost(opts) {
       })().finally(() => { stInflight = null; stName = null; });
       return stInflight;
     },
+    /* 策略版本:q = { name, op: "get", n } | { name, op: "compare", a, b }。名字過 canon §9b 的閘門、版號只收正整數,
+       其餘直接回讀不到(不打 api)。list 不開:摘要清單已經跟著 /cloud/strategy 的 versions 來了 */
+    version(q) {
+      const name = q && q.name, op = q && q.op, int = (v) => (Number.isInteger(v) && v > 0 && v <= 1000000 ? v : null);
+      if (typeof name !== "string" || !VERSION_NAME_RE.test(name)) return Promise.resolve({ code: "UNREACH" });
+      if (op === "get" && int(q.n)) return readOnce(VERSION_ENDPOINT, "get|" + name + "|" + q.n, { name, op, n: q.n }, interpretVersion, () => ({ code: "UNREACH" }));
+      if (op === "compare" && int(q.a) && int(q.b)) return readOnce(VERSION_ENDPOINT, "cmp|" + name + "|" + q.a + "|" + q.b, { name, op, a: q.a, b: q.b }, interpretVersionCompare, () => ({ code: "UNREACH" }));
+      return Promise.resolve({ code: "UNREACH" });
+    },
     // 報告(renderer/reports.js;spec-desktop-0.1.6 §1.1):清單 / 本體 / 圖各一支,回 { code: "OK" | "UNREACH", … }
     reports() { return readOnce(REPORTS_ENDPOINT, "", {}, interpretReports, REPORTS_UNREACHABLE); },
     report(id) {
@@ -383,4 +412,5 @@ function createCloudHost(opts) {
 }
 
 module.exports = { createCloudHost, interpret, interpretEvents, interpretStrategy, interpretOverview, interpretPerformance, interpretReports, interpretReport, interpretImage,
+  interpretVersion, interpretVersionCompare, VERSION_ENDPOINT,
   ENDPOINT, EVENTS_ENDPOINT, STRATEGY_ENDPOINT, OVERVIEW_ENDPOINT, PERFORMANCE_ENDPOINT, REPORTS_ENDPOINT, REPORT_ENDPOINT, IMAGE_ENDPOINT, REPORTS_MAX, EVENTS_MAX, EVENTS_MIN_GAP_MS, POLL_FOREGROUND_MS, POLL_BACKGROUND_MS, BACKOFF_MS, MIN_GAP_MS };

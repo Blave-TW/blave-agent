@@ -69,7 +69,7 @@ CRITICAL: Read `references/deployment.md` before deploying any strategy live or 
 
 Classify BEFORE writing any code. Full code rules and patterns: `references/strategy-code.md`.
 
-**Never edit a live strategy in place.** If the strategy is in the 下單組合 with an amount > 0, follow the fork-and-switch flow in `references/strategy-code.md` › *Editing a live strategy* — build the change as a NEW strategy (the original keeps trading untouched), backtest it, and switch the 下單設定 funding only after the user confirms.
+**Never edit a live strategy in place.** If the strategy is in the 下單組合 with an amount > 0, follow the fork-and-switch flow in `references/strategy-code.md` › *Editing a live strategy* — build the change as a NEW strategy (the original keeps trading untouched), backtest it, and switch the 下單設定 funding only after the user confirms. The workspace's fixed 還原 and 「用 vN 建立新策略」 prompts: `references/strategy-code.md` › *Restoring a version* / *Forking from a version*.
 
 When creating a strategy, always set `DISPLAY_NAME` (plain-language name — what it trades + does, in the user's language) and `DESCRIPTION` (one plain sentence) alongside `STRATEGY_NAME` — details in `references/strategy-code.md` › *Naming & description*.
 

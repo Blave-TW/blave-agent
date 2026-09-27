@@ -37,6 +37,9 @@ const MODALS = [
   { name: "報告分享", open: `(hasToken = true, shrOpen({ env: "local", id: "x", rep: { type: "research", title: "t", blocks: [] }, host: $("rpt-read"), share: null, name: null }, "new", $("rpt-share")))`, isOpen: `!$("shr-scrim").hidden`, text: "#shr-must" },
   // 模型選單沒有型錄時整塊沒有版面(量到 0×0),點不到字;它的點擊路徑跟「焦點在 body」同一條(document 層),由那一格代表
   { name: "模型選單", open: `mpOpen(false)`, isOpen: `!$("mp-panel").hidden`, text: null },
+  // 0.1.8 策略版本(versions.js 自己的 capture 層 Esc):比較框、版本選單(同模型選單:觸發器藏著時沒有版面,點不到字)
+  { name: "比較版本", open: `(VS.local.data = { counter: 2, current: 2, items: [{ n: 1, at: 1757000000 }, { n: 2, at: 1757100000 }] }, VS.local.name = "x", vcOpen())`, isOpen: `!$("vc-scrim").hidden`, text: "#vc-title" },
+  { name: "版本選單", open: `(VS.local.data = { counter: 2, current: 2, items: [{ n: 1, at: 1757000000 }, { n: 2, at: 1757100000 }] }, verMenuOpen(false))`, isOpen: `!$("ver-menu").hidden`, text: null },
 ];
 
 app.whenReady().then(async () => {

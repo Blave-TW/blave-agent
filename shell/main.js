@@ -884,7 +884,7 @@ function loadStrategy(name) {
   try { scan = JSON.parse(fs.readFileSync(path.join(dir, "scan.json"), "utf8")); } catch (_) {}
   if (!scan || typeof scan !== "object" || Array.isArray(scan)) scan = null;
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, scan, code, dataSources: stratDataSources(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+  return { name, stats, scan, code, dataSources: stratDataSources(dir), versions: stratVersions(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
 }
 /* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。
    讀檔規則同 runtime `_read_export`:regular file、≤256KB;讀不到那一份就當沒有(不猜、不報錯)。
@@ -947,6 +947,73 @@ async function saveExport(win, ref) {
   if (savedExports.size > 50) savedExports.delete(savedExports.keys().next().value);
   const dir = path.dirname(r.filePath);   // 「下載」回 null:資料夾在磁碟上叫 Downloads,Finder 顯示的是系統語言的名字,由畫面翻
   return { ok: true, dir: dir === app.getPath("downloads") ? null : path.basename(dir), token };
+}
+/* 策略版本(.claude/docs/strategy-versions.md §9):lib/runner.py 的 _mint_version 寫進 strategies/<資料夾>/versions/。
+   摘要清單的形狀 = runtime strategy_reporter._read_versions(雲端視角從 /cloud/strategy 拿到的同一顆),renderer 用同一套畫。
+   讀不到 / 沒定過版 = null(畫面就是沒有版本介面)。items 逐筆只驗是物件,欄位型別由 renderer 的 strategy_versions.js 驗 */
+function stratVersions(dir) {
+  const vdir = path.join(dir, "versions");
+  let idx = null;
+  try { idx = JSON.parse(fs.readFileSync(path.join(vdir, "index.json"), "utf8")); } catch (_) { return null; }
+  if (!idx || typeof idx !== "object" || !Array.isArray(idx.items)) return null;
+  return { counter: idx.counter, current: idx.current, items: idx.items.filter((i) => i && typeof i === "object" && !Array.isArray(i)),
+    drift: fs.existsSync(path.join(vdir, "drift.json")) };
+}
+// 版號只收正整數(api agent_strategy_versions.MAX_VERSION_N 同一個上限):renderer 給的東西進 path.join 之前先過這關
+const versionN = (n) => (Number.isInteger(n) && n > 0 && n <= 1000000 ? n : null);
+/* 單版 blob(v<N>.json)。回 { code: "OK", blob } | { code: "ERROR" }:這台電腦沒有「還在同步」這一態——
+   檔案就在磁碟上,讀不到只會是寫到一半、壞掉,或已經被 20 版的保留砍掉 */
+function loadVersion(name, n) {
+  const v = versionN(n);
+  if (v === null || !stratNames().includes(name)) return { code: "ERROR" };
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(STRAT_DIR(), name, "versions", `v${v}.json`), "utf8"));
+    return b && typeof b === "object" && !Array.isArray(b) ? { code: "OK", blob: b } : { code: "ERROR" };
+  } catch (_) { return { code: "ERROR" }; }
+}
+/* 兩版的程式碼差異:跑 Python 的 difflib,跟 api 的 compare 端點(agent_strategy_versions._code_lines / _hunks)同演算法、
+   同上限——兩個視角比同一對碼,差異行才一樣。-I:不讀環境變數與 user site;碼走 stdin,輸出 ensure_ascii(Windows 的 stdout 編碼不影響) */
+const VERSION_DIFF_PY = [
+  "import difflib, json, re, sys",
+  "HUNK = re.compile(r'^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@')",
+  "def lines(code):",
+  "    if not isinstance(code, str): return [], False",
+  "    ls = code.splitlines()",
+  "    return ls[:20000], len(ls) > 20000",
+  "src = json.loads(sys.stdin.buffer.read().decode('utf-8'))",
+  "a, a_cut = lines(src.get('a'))",
+  "b, b_cut = lines(src.get('b'))",
+  "out, total, cut = [], 0, False",
+  "for line in difflib.unified_diff(a, b, lineterm='', n=3):",
+  "    m = HUNK.match(line)",
+  "    if m:",
+  "        out.append({'a_start': int(m.group(1)), 'a_count': int(m.group(2) if m.group(2) is not None else 1),",
+  "                    'b_start': int(m.group(3)), 'b_count': int(m.group(4) if m.group(4) is not None else 1), 'lines': []})",
+  "        continue",
+  "    if not out: continue",
+  "    if total >= 5000:",
+  "        cut = True",
+  "        break",
+  "    out[-1]['lines'].append([{'+': 'add', '-': 'del'}.get(line[:1], 'ctx'), line[1:]])",
+  "    total += 1",
+  "print(json.dumps({'hunks': out, 'truncated': bool(a_cut or b_cut or cut)}))",
+].join("\n");
+const VERSION_META_KEYS = ["n", "at", "note", "code_hash", "ret", "sharpe", "sortino", "mdd", "trades", "mcpt_p", "start", "end"];
+// 回 { code: "OK", data: api compare 端點同形狀 { strategy, a, b, hunks, truncated } } | { code: "ERROR" }
+function compareVersions(name, a, b) {
+  const A = loadVersion(name, a), B = loadVersion(name, b);
+  if (A.code !== "OK" || B.code !== "OK") return Promise.resolve({ code: "ERROR" });
+  const meta = (blob, n) => { const o = {}; VERSION_META_KEYS.forEach((k) => { o[k] = blob[k] === undefined ? null : blob[k]; }); o.n = n; return o; };
+  const py = fs.existsSync(VENV_PY) ? VENV_PY : basePython();
+  return new Promise((resolve) => {
+    const cp = execFile(py, ["-I", "-c", VERSION_DIFF_PY], { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...PY_ENV } }, (err, stdout) => {
+      let d = null;
+      try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
+      resolve(d && Array.isArray(d.hunks) ? { code: "OK", data: { strategy: name, a: meta(A.blob, a), b: meta(B.blob, b), hunks: d.hunks, truncated: d.truncated === true } } : { code: "ERROR" });
+    });
+    cp.stdin.on("error", () => {});
+    cp.stdin.end(JSON.stringify({ a: A.blob.code, b: B.blob.code }));
+  });
 }
 /* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的
    `grep -oE "DATA_[A-Z0-9]+_" strategies/<name>/*.py` —— 只掃 strategy.py 的話,helper 檔用到的來源會被漏講(稽核 C1)。
@@ -1996,6 +2063,8 @@ app.whenReady().then(() => {
   handle("save-export", (e, ref) => saveExport(BrowserWindow.fromWebContents(e.sender), ref && typeof ref === "object" ? ref : null), { ok: false });
   handle("load-session-exports", (_e, id) => loadSessionExports(id));
   handle("reveal-export", (_e, token) => { const p = savedExports.get(String(token || "")); if (!p || !fs.existsSync(p)) return false; shell.showItemInFolder(p); return true; }, false);
+  handle("load-version", (_e, name, n) => loadVersion(String(name || ""), n), { code: "ERROR" });
+  handle("compare-versions", (_e, name, a, b) => compareVersions(String(name || ""), a, b), { code: "ERROR" });
   handle("model-options", (_e, kind) => modelOptions(kind));
   handle("account-status", () => accountStatus());
   handle("public-pricing", () => publicPricing());
@@ -2033,6 +2102,8 @@ app.whenReady().then(() => {
   handle("cloud-performance", (_e, q) => cloudHost().performance(q && q.days, q && q.currency), { code: "UNREACH", perf: null });
   // 雲端單支策略的報告(側欄點一支打一次;同事件清單:不留在主行程、不落地)。回 { code: "OK" | "UNREACH", strategy }——OK + null = 雲端現在沒有這一份
   handle("cloud-strategy", (_e, q) => cloudHost().strategy(q && q.name), { code: "UNREACH", strategy: null });
+  // 雲端策略版本的單版 / 比較(/cloud/version):同單支策略,不留在主行程、不落地。回 { code: "OK" | "SYNCING" | "UNREACH", … }
+  handle("cloud-version", (_e, q) => cloudHost().version(q), { code: "UNREACH" });
   // 雲端的報告清單與本體(renderer/reports.js;同單支策略:不啟動輪詢、憑證只在主行程)。OK + report: null = 平台現在沒有這一份
   handle("cloud-reports", (_e, force) => cloudReports(force === true), { code: "UNREACH", reports: [] });
   handle("cloud-report", (_e, id, ver) => cloudReport(id, ver), { code: "UNREACH", report: null, images: {} });

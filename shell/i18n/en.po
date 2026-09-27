@@ -4521,3 +4521,138 @@ msgstr "daily"
 
 msgid "xp.ivl.w"
 msgstr "weekly"
+
+msgid "ver.menuLbl"
+msgstr "Versions (one per backtest)"
+
+msgid "ver.current"
+msgstr "Current"
+
+msgid "ver.live"
+msgstr "Live"
+
+msgid "ver.drift"
+msgstr "Live · file changed"
+
+msgid "ver.driftLocal"
+msgstr "strategy.py no longer matches this version: the file was edited without a new backtest."
+
+msgid "ver.driftCloud"
+msgstr "strategy.py no longer matches this version: the file was edited without a new backtest. This flag can take up to 2 minutes to reach here."
+
+msgid "ver.compareOpen"
+msgstr "Compare two versions…"
+
+msgid "ver.statP"
+msgstr "p"
+
+msgid "ver.aria"
+msgstr "Version {v}, {label}"
+
+msgid "ver.viewing"
+msgstr "Viewing {v}"
+
+msgid "ver.readonly"
+msgstr "— read-only"
+
+msgid "ver.back"
+msgstr "Back to current version"
+
+msgid "ver.backShort"
+msgstr "Back to current"
+
+msgid "ver.restore"
+msgstr "Restore this version"
+
+msgid "ver.frozenTab"
+msgstr "This version kept no trade-by-trade record. To see one, ask the agent to re-run this version."
+
+msgid "ver.syncing"
+msgstr "This version is still syncing — check back shortly."
+
+msgid "ver.readErr"
+msgstr "Couldn’t load this version."
+
+msgid "ver.mcptTipSigNoN"
+msgstr "After random shuffling, only {pct} of the results beat it; below 0.05 is the usual bar."
+
+msgid "ver.mcptTipNsNoN"
+msgstr "After random shuffling, {pct} of the results beat it — above the usual 0.05 bar, so this result can’t be told apart from luck."
+
+msgid "ver.cmpTitle"
+msgstr "Compare versions"
+
+msgid "ver.cmpA"
+msgstr "First version to compare"
+
+msgid "ver.cmpB"
+msgstr "Second version to compare"
+
+msgid "ver.cmpVs"
+msgstr "vs"
+
+msgid "ver.cmpMetric"
+msgstr "Metric"
+
+msgid "ver.cmpDelta"
+msgstr "Change"
+
+msgid "ver.cmpWindow"
+msgstr "The two runs cover different backtest windows ({a} vs {b}): the data window grows over time, so the total returns are not directly comparable."
+
+msgid "ver.cmpCode"
+msgstr "Code changes ({n})"
+
+msgid "ver.cmpNoDiff"
+msgstr "The code is identical in both versions."
+
+msgid "ver.cmpTruncated"
+msgstr "The diff is too long — only the first part is shown."
+
+msgid "ver.cmpSameVersion"
+msgstr "Pick two different versions."
+
+msgid "ver.cmpSyncing"
+msgstr "{v} is still syncing — check back shortly."
+
+msgid "ver.rsTitle"
+msgstr "Restore {v}"
+
+msgid "ver.rsB1"
+msgstr "This copies {v}'s code back into the strategy file, re-runs the backtest right away and mints a new version number."
+
+msgid "ver.rsB2"
+msgstr "{cur} does not disappear — you can go back to it at any time."
+
+msgid "ver.rsOk"
+msgstr "Restore"
+
+msgid "ver.where"
+msgstr "Cloud machine · {name}"
+
+msgid "ver.guardTitle"
+msgstr "This strategy is trading"
+
+msgid "ver.guardLead"
+msgstr "{name} currently has {amt} running on {cur}. Swapping the code for {v} takes effect on the next bar and could flip a live position with no warning."
+
+msgid "ver.guardS1"
+msgstr "Create a new strategy from {v}'s code; the original keeps trading untouched"
+
+msgid "ver.guardS2"
+msgstr "Backtest the new strategy and let one signal run, so it has a state.json"
+
+msgid "ver.guardS3"
+msgstr "After you confirm, save once in Auto-trading: fund the new strategy and set the original's amount to 0 (keep it selected so you can roll back)"
+
+msgid "ver.guardNote"
+msgstr "Same symbol and direction: the reconciler swaps old for new in one round, with little or no trading. Opposite direction: a full close and re-entry."
+
+msgid "ver.guardOk"
+msgstr "Create a new strategy from {v}"
+
+msgid "ver.msgRestore"
+msgstr "Please restore strategy {display_name} ({name}) to version {n} and re-run the backtest — no further confirmation needed."
+
+msgid "ver.msgFork"
+msgstr "Please create a new strategy from version {n} of strategy {display_name} ({name}), leaving the original untouched; backtest the new one and run one signal so it has a state.json, then stop so I can switch the funding in Auto-trading — no further confirmation needed."

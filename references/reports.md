@@ -816,9 +816,15 @@ transient failure. Same status code, different channel, opposite handling.
 ### Citing an image from the web (image block with `source`)
 
 - A cited image is an `image` block carrying `source` — a chart you saw in the
-  built-in browser and captured. The capture tool returns the file and its
-  `source` (name + the page's `source_url`) as one unit; never strip or edit
-  it. Your own generated figures (matplotlib etc.) never carry `source`.
+  built-in browser and captured with `browser_capture(tab, ref, report)`
+  (`ref` from `browser_snapshot`; `report` = the id you will pass to
+  `write_report`). It writes the picture straight into `reports/<id>.files/`
+  and returns `{file, source}` — put both into the block unchanged; do not
+  pass it through `write_report(images=…)`. `source` is only `{name, url}`
+  (the domain is the top-level `host`, not part of `source`). Pages that are
+  not `https`, and elements near the size of the whole view or larger, are
+  refused (`capture_refused`). Your own generated figures (matplotlib etc.)
+  never carry `source`.
 - **At most 2 cited images per report**, and only when the image directly
   supports a claim written in the text. Never decorative. `write_report` (and
   `publish()`, which calls it) refuses a report with more than 2, before
@@ -842,8 +848,8 @@ transient failure. Same status code, different channel, opposite handling.
 - Reports can be shared publicly with the image and its source line kept:
   capture nothing you would not republish (no personal data, no account UI).
 - `alt` says what the chart shows, in the report's language (required; no
-  fallback). File rules unchanged: sidecar `<id>.files/`, ≤2MB; capture at
-  ~2× for sharpness in the 680px column.
+  fallback). File rules unchanged (≤2MB); `browser_capture` already crops and
+  scales for the 680px column.
 - A report with a cited image is `schema_version` `"1.6"`; `write_report` sets it.
 
 ## 6. Structural rules worth re-reading before you write

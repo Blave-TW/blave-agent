@@ -569,7 +569,7 @@ function createBrowser(o) {
     await noteRead(t, v, ex);
     return R(C.envelope(v.wc.getURL(), ex.meta.title || v.wc.getTitle(), r.content, { tab: t.alias, part, next_offset: r.next_offset === undefined ? undefined : r.next_offset, total_chars: r.total_chars }));
   }
-  // 任何一種 browser_read(與 browser_capture:引用圖的出處頁)都算「讀了」:存快照、進這一輪的來源清單——「讀了 N 頁」跟來源卡同一個口徑
+  // 任何一種 browser_read(與 browser_capture:引用圖的出處頁)都算「讀了」:存快照、進這一輪的來源清單——摘要列的「讀了 N 頁」就是數這份清單(renderer brTakeSources)
   async function noteRead(t, v, ex) {
     if (!t.snapshotId) await saveSnapshot(t, v, ex);
     const relay = C.isRelay(ex, v.wc.getTitle());   // 只停在中繼頁:不進來源、不算讀過(回合紀錄也不記 done)
@@ -639,7 +639,7 @@ function createBrowser(o) {
     try {
       got = await awake(t, v, async () => {
         const g = await withMask(v, async () => ({ d: await v.page.captureClip(c.box, c.view, Math.min(2, CITE_MAX_W / c.box.w)) }), true);
-        // 出處頁照「讀了」記(來源卡與快照就是用戶查證這張圖的地方);快照也要醒著的合成器,所以放在同一段裡
+        // 出處頁照「讀了」記(來源紀錄與快照就是用戶查證這張圖的地方);快照也要醒著的合成器,所以放在同一段裡
         if (g && g.d && (!t.snapshotId || !t.readEver)) { try { await noteRead(t, v, await v.page.extract()); } catch (_) { /* 快照 best-effort */ } }
         return g;
       });

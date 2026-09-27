@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld("blave", {
   saveExport: (ref) => ipcRenderer.invoke("save-export", ref ? { session: ref.session, id: ref.id, strategy: ref.strategy, target: ref.target } : null),
   revealExport: (token) => ipcRenderer.invoke("reveal-export", token),   // 只收 saveExport 回的 token
   loadSessionExports: (id) => ipcRenderer.invoke("load-session-exports", id),
+  // 策略版本(renderer/versions.js):這台電腦讀 strategies/<name>/versions/;雲端走 /cloud/version
+  loadVersion: (name, n) => ipcRenderer.invoke("load-version", name, n),
+  compareVersions: (name, a, b) => ipcRenderer.invoke("compare-versions", name, a, b),
+  cloudVersion: (q) => ipcRenderer.invoke("cloud-version", { name: q && q.name, op: q && q.op, n: q && q.n, a: q && q.a, b: q && q.b }),
   accountStatus: () => ipcRenderer.invoke("account-status"),
   planStart: () => ipcRenderer.invoke("plan-start"),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),

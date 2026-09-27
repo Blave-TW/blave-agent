@@ -50,5 +50,7 @@ Exchange public content pages (announcements, news, academy, blog, Binance Squar
 
 Every fact you take from a page carries its source: the page title and URL from `source_url`. In reports, list them in a sources section. The app keeps a snapshot of each page you read so the user can check what you saw.
 
-A chart you capture from a page becomes an `image` block whose `source` is
-that page's `source_url`; rules in `reports.md` › Citing an image from the web.
+To cite a chart in a report, capture it with `browser_capture(tab, ref, report)`
+(`ref` from `browser_snapshot`; https pages only; oversized elements are refused).
+It saves the picture into `reports/<report>.files/` itself and returns
+`{file, source}` for an `image` block; rules in `reports.md` › Citing an image from the web.

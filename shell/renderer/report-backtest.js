@@ -138,7 +138,8 @@
     const p = stats && stats["MCPT p-value"];
     if (!isNum(p) || p < 0 || p > 1) return null;
     const n = stats["MCPT Permutations"];
-    if (!Number.isInteger(n) || n < 1) return null;
+    // 策略版本只存 p(canon strategy-versions §4):時光機餵進來的 stats 帶 __noPerm,p 照出、次數換不帶 n 的句子
+    if (!Number.isInteger(n) || n < 1) return stats.__noPerm === true ? { p: p, n: null } : null;
     return { p: p, n: n };
   }
 
@@ -291,7 +292,8 @@
         text: mcpt.p.toFixed(3),
         tone: sig ? "pos" : "",
         sig: sig,
-        tip: t(sig ? "bt.mcptTipSig" : "bt.mcptTipNs", { n: String(mcpt.n), pct: (mcpt.p * 100).toFixed(1) + "%" }),
+        tip: mcpt.n === null ? t(sig ? "ver.mcptTipSigNoN" : "ver.mcptTipNsNoN", { pct: (mcpt.p * 100).toFixed(1) + "%" })
+          : t(sig ? "bt.mcptTipSig" : "bt.mcptTipNs", { n: String(mcpt.n), pct: (mcpt.p * 100).toFixed(1) + "%" }),
       }]);
     }
 
@@ -645,7 +647,7 @@
   function buildMcptDist(stats) {
     const dist = readMcptDist(stats);
     const m = readMcpt(stats);
-    if (!dist || !m) return null;
+    if (!dist || !m || m.n === null) return null;
     const wrap = el("div", "bt-block");
     const head = el("div", "bt-label bt-label-prose");
     fillMono(head, t("bt.mcptDistTitle"), { n: m.n.toLocaleString("en-US"), p: m.p.toFixed(3) });
