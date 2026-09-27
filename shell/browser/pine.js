@@ -1,7 +1,8 @@
 // 「送進 TradingView」(spec .claude/output/designer/spec-desktop-pine-install-0.1.8.md):外殼自己在內建瀏覽器
 // 開圖表 → 開 Pine 編輯器 → 開新腳本 → 貼上 → 讀回比對,停在「加到圖表」由用戶按。不經 agent、不花額度。
 // 這裡永遠不按「加到圖表」、不按存檔、不碰登入;用戶操作時不讀頁面——只在他按「檢查結果」/「回傳回測結果」時讀一次。
-// 元素定位走無障礙樹的 role + name(真站 2026-09-28 匿名實測:www / tw / cn 三種語言的名字)。
+// 元素定位走無障礙樹的 role + name(真站 2026-09-28 匿名實測:www / tw / cn 三種語言的名字;
+// 「Update on chart」匿名看不到,英文名來自登入態實測的診斷 log,繁簡中文名取自 TradingView 自己的翻譯檔)。
 // 每次結果(成功或失敗)由 index.js 寫一行到本機 log(d.log):卡在哪一步、當時看到的候選元素 role / name——不含頁面內容、編輯器文字與網址路徑。
 "use strict";
 const IP = require("./inpage");
@@ -35,6 +36,8 @@ const onTv = (url) => { try { const u = new URL(String(url)); return u.protocol 
 const NAMES = {
   pine: /^Pine$/,
   add: /^(Add to chart|新增到圖表|添加到图表)$/,
+  update: /^(Update on chart|圖表更新|图表更新)$/,   // 腳本已經在圖上時,「加到圖表」那一格是這顆(圖上已是這一版就 disabled)
+  save: /^(Save script|儲存腳本|保存脚本)$/,          // 只當位置的錨,不按
   createNew: /^(Create new|建立新的|创建新的)$/,
   strategy: /^(Strategy|策略)$/,
   untitled: /^(Untitled|未命名|无标题)/,   // 只認開頭:窄面板會把名字截短
@@ -51,14 +54,16 @@ function parseSnap(text) {
   return out;
 }
 const STATE_RE = /\b(collapsed|expanded)\b/;
-/* 腳本名稱鈕沒有固定名字(就是用戶那支腳本的名字,窄面板還會截短):認 role + 展開狀態 + 位置——「加到圖表」往前三顆以內、帶展開狀態的 button */
+/* 腳本名稱鈕沒有固定名字(就是用戶那支腳本的名字,窄面板還會截短):認 role + 展開狀態 + 位置——錨往前三顆以內、帶展開狀態的 button。
+   錨 = 「加到圖表」那一格(腳本已在圖上時叫「Update on chart」,disabled 也算在);兩個名字都對不上就用「存檔」那顆 */
 function locate(nodes) {
   const by = (role, re) => nodes.find((n) => n.role === role && re.test(n.name)) || null;
-  const add = by("button", NAMES.add), i = add ? nodes.indexOf(add) : -1;
+  const add = by("button", NAMES.add) || by("button", NAMES.update), save = by("button", NAMES.save);
+  const i = add || save ? nodes.indexOf(add || save) : -1;
   let title = null;
   for (let k = i - 1; k >= 0 && k >= i - 3 && !title; k--) if (nodes[k].role === "button" && STATE_RE.test(nodes[k].rest)) title = nodes[k];
   return {
-    pine: by("button", NAMES.pine), add, editor: by("textbox", NAMES.editor), title,
+    pine: by("button", NAMES.pine), add, save, editor: by("textbox", NAMES.editor), title,
     createNew: by("menuitem", NAMES.createNew), strategy: by("menuitem", NAMES.strategy),
   };
 }
@@ -81,7 +86,7 @@ function clean(s, max) {
 }
 /* 失敗時記下來的候選元素:只有 role、名字前 80 字、狀態。欄位的值(編輯器文字)與連結網址不記 */
 function candidates(nodes) {
-  const list = Array.isArray(nodes) ? nodes : [], i = list.findIndex((n) => n.role === "button" && NAMES.add.test(n.name));
+  const list = Array.isArray(nodes) ? nodes : [], i = list.findIndex((n) => n.role === "button" && (NAMES.add.test(n.name) || NAMES.update.test(n.name) || NAMES.save.test(n.name)));
   return list.filter((n, k) => n.role === "menuitem" || n.role === "textbox" || (n.role === "button" && (STATE_RE.test(n.rest) || NAMES.pine.test(n.name)))
     || (i >= 0 && Math.abs(k - i) <= 4) || (n.role === "button" && k >= list.length - 6))
     .slice(0, 30).map((n) => { const st = /\b(collapsed|expanded|disabled)\b/.exec(n.rest); return { role: n.role, name: clean(n.name, 80), state: st ? st[1] : "" }; });
@@ -197,7 +202,8 @@ function createPine(d) {
 
     step(2); x.end = Date.now() + STEP2_MS;
     const look = async () => locate(await snap(v));
-    const ready = (l) => (l.add && l.editor && l.title ? l : null), some = (l) => (l.add || l.editor ? l : null);
+    // 編輯器開好了 = 編輯器本體 + 腳本名稱鈕。不認「加到圖表」:那一格的名字跟著腳本在不在圖上變
+    const ready = (l) => (l.editor && l.title ? l : null), some = (l) => (l.add || l.save || l.editor ? l : null);
     let loc = await until(async () => { const l = await look(); return l.pine || some(l) ? l : null; }, FIND_MS);
     if (!loc) return { state: "nf", why: "pine_button" };
     if (!ready(loc)) {
@@ -206,7 +212,7 @@ function createPine(d) {
       if (!panel && (!loc.pine || !(await click(t, v, loc.pine)))) return { state: "nf", why: "pine_button" };
       let last = panel || loc;
       loc = ready(last) || await until(async () => ready(last = await look()), OPEN_MS);
-      if (!loc) return { state: "nf", why: last.add && last.editor ? "title" : "editor" };
+      if (!loc) return { state: "nf", why: last.editor ? "title" : "editor" };
     }
     // 開新腳本再貼:不蓋用戶原本那一支。開不出來就停
     const before = { name: loc.title.name, node: v.page.node(loc.editor.ref), value: await value(v, loc.editor) };
@@ -255,7 +261,7 @@ function createPine(d) {
     // 交接:「加到圖表」掛「由你按」,外殼到此為止
     await mark(v, ["clear"]);
     if (t.visible) {
-      const l = locate(await snap(v)), ab = l.add ? v.page.node(l.add.ref) : null;
+      const l = locate(await snap(v)), ab = l.add && !/\bdisabled\b/.test(l.add.rest) ? v.page.node(l.add.ref) : null;
       if (ab !== null) { try { const p = await v.page.center(ab, false); if (p && !p.error) await mark(v, ["need", { box: p.box, label: d.lang() === "zh" ? "由你按" : "Your turn" }]); } catch (_) { /* 框不到就不框 */ } }
     }
     return { state: "handover", set };

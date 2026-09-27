@@ -34,7 +34,8 @@ async function main() {
 
   const SNAP = (o) => [
     '- button "BTCUSDT.P" [@e2]', '- button "Pine" [@e58]',
-    ...(o.editor ? ['- button "Close" [@e66]', `- button ${JSON.stringify(o.title)} [@e67] ${o.menu ? "expanded" : "collapsed"}`, ...(o.extra ? ['- button "Version 3" [@e69]'] : []), `- button "${o.add || "Add to chart"}" [@e68]`, '- button "Save script" [@e82]',
+    ...(o.tester ? ['- button "Open context menu" [@e60] collapsed', '- button "Jan 1, 2026 — Sep 28, 2026" [@e61] collapsed', '- button "Column setup" [@e62] collapsed'] : []),
+    ...(o.editor ? ['- button "Close" [@e66]', `- button ${JSON.stringify(o.title)} [@e67] ${o.menu ? "expanded" : "collapsed"}`, ...(o.extra ? ['- button "Version 3" [@e69]'] : []), `- button "${o.add || "Add to chart"}" [@e68]${o.addOff ? " disabled" : ""}`, `- button "${o.save || "Save script"}" [@e82]`,
       '- button "More" [@e70] collapsed', ...(o.noEd ? [] : [`- textbox "Editor content;Press Alt+F1 for Accessibility Options." [@e${o.ed}] value="secret line of the user's script"`])] : []),
     ...(o.menu ? ['- menuitem "Save script" [@e84]', `- menuitem "${o.create || "Create new"}" [@e89] ${o.sub ? "expanded" : "collapsed"}`] : []),
     ...(o.sub ? ['- menuitem "Indicator" [@e90]', `- menuitem "${o.strat || "Strategy"}" [@e91]`] : []),
@@ -45,6 +46,13 @@ async function main() {
     L.pine.ref === "@e58" && L.add.ref === "@e68" && L.title.ref === "@e67" && L.title.name === 'My "old" script' && L.editor.ref === "@e79" && L.createNew.ref === "@e89" && L.strategy.ref === "@e91", L);
   ok("定位:繁中 / 簡中的名字也認", ["新增到圖表", "添加到图表"].every((n) => P.NAMES.add.test(n)) && ["建立新的", "创建新的"].every((n) => P.NAMES.createNew.test(n)) && P.NAMES.strategy.test("策略") && ["未命名腳本", "无标题脚本"].every((n) => P.NAMES.untitled.test(n)));
   ok("定位:編輯器沒開時找不到「加到圖表」與腳本名稱鈕", (() => { const l = P.locate(P.parseSnap(SNAP({}))); return l.pine && !l.add && !l.title && !l.editor; })());
+  // 登入態實測(2026-09-28,診斷 log 的 seen 原樣):腳本已經在圖上,那一格是 disabled 的「Update on chart」,下方開著策略測試器
+  const ON_CHART = ['- button "Pine" [@e58]', '- button "Open context menu" [@e60] collapsed', '- button "Jan 1, 2026 — Sep 28, 2026" [@e61] collapsed', '- button "Column setup" [@e62] collapsed',
+    '- button "Untitled script" [@e67] collapsed', '- button "Update on chart" [@e68] disabled', '- button "Save script" [@e82]', '- button "More" [@e70] collapsed',
+    '- textbox "Editor content;Press Alt+F1 for Accessibility Options." [@e79] value="x"', '- button [@e102]', '- button "Line 1, Col 1" [@e103]'].join("\n");
+  ok("定位:腳本已在圖上(Update on chart、disabled)→ 編輯器、名稱鈕、那一格都認得;策略測試器的展開鈕不會被當成名稱鈕", (() => { const l = P.locate(P.parseSnap(ON_CHART)); return l.editor && l.editor.ref === "@e79" && l.title && l.title.ref === "@e67" && l.add && l.add.ref === "@e68"; })(), P.locate(P.parseSnap(ON_CHART)));
+  ok("定位:「Update on chart」繁中 / 簡中的名字也認;那一格的名字對不上時用「存檔」當錨(名稱鈕仍找得到)", ["圖表更新", "图表更新"].every((n) => P.NAMES.update.test(n)) && ["儲存腳本", "保存脚本"].every((n) => P.NAMES.save.test(n))
+    && (() => { const l = P.locate(P.parseSnap(ON_CHART.replace("Update on chart", "Refresh"))); return l.add === null && l.title && l.title.ref === "@e67" && l.save.ref === "@e82"; })());
   ok("定位:名稱鈕與「加到圖表」之間多一顆鈕也認得(往前三顆以內、帶展開狀態);名字被截短的未命名也算未命名",
     (P.locate(P.parseSnap(SNAP({ editor: true, title: "Untitled …", ed: 79, extra: true }))).title || {}).ref === "@e67" && ["Untitled …", "Untitled script", "未命名…"].every((n) => P.NAMES.untitled.test(n)) && !P.NAMES.untitled.test("My Untitled"));
   ok("診斷的候選元素:只有 role / 名字(≤80 字)/ 狀態,≤30 個,不帶欄位的值", (() => {
@@ -73,7 +81,7 @@ async function main() {
   function rig(o) {
     // selfOpen:n = 第 n 次看頁面時面板自己開回來(登入態的版面還原);edLate:n = 面板在了,但編輯器本體第 n 次看才出現;
     // dirty = 目前的腳本有未存的變更(按「策略」跳確認框、腳本不換);leaveAfter = 按了那一顆之後頁面被導到別的站
-    o = Object.assign({ visible: true, hoverOnly: false, newScript: true, paste: "ok", enabled: true, editorOpen: false, names: {}, selfOpen: 0, edLate: 0, dirty: false, menuOpen: false }, o || {});
+    o = Object.assign({ visible: true, hoverOnly: false, newScript: true, paste: "ok", enabled: true, editorOpen: false, names: {}, selfOpen: 0, edLate: 0, dirty: false, menuOpen: false, onChart: false }, o || {});
     const st = { editor: o.editorOpen, menu: o.menuOpen, sub: false, ed: 79, title: o.title || "Old strategy", doc: "// old script\nplot(close)\n", cursor: "end", dialog: false, looks: 0, url: o.url || "https://www.tradingview.com/chart/w1EWngqG/?symbol=BINANCE%3ABTCUSDT.P&interval=60" };
     const log = { clicks: [], marks: [], emits: [], arms: 0, disarms: 0, fills: 0, keys: [], lines: [] };
     const t = { id: "p1", status: "loading", visible: o.visible, userControl: false };
@@ -81,14 +89,16 @@ async function main() {
     const page = {
       snapshot: async () => {
         st.looks++; if (o.selfOpen && st.looks >= o.selfOpen) st.editor = true;
-        return { text: SNAP(Object.assign({ editor: st.editor, title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra }, o.names)) };
+        // onChart:目前那支已經在圖上 →「Update on chart」(disabled);開了新腳本才變回「Add to chart」
+        const held = o.onChart && (st.ed === 79 || o.stuck) ? { add: "Update on chart", addOff: true, tester: true } : { tester: o.onChart };
+        return { text: SNAP(Object.assign({ editor: st.editor, title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra }, held, o.names)) };
       },
       node: (ref) => nodeOf(ref),
       center: async (b, on) => ({ x: 10, y: 10, direct: !on, box: { x: 1, y: 1, w: 20, h: 10 } }),
       describe: async () => ({ tag: "textarea" }),
       click: async (b) => {
         const ref = "@e" + b; log.clicks.push(ref);
-        if (ref === REF.pine) st.editor = !st.editor;
+        if (ref === REF.pine) { if (!o.pineDead) st.editor = !st.editor; }
         else if (ref === REF.title) st.menu = !st.menu;
         else if (ref === REF.create) { if (!o.hoverOnly) st.sub = true; }
         else if (ref === REF.strat) { st.menu = false; st.sub = false; if (o.dirty) st.dialog = true; else if (o.newScript) { st.ed = 94; st.title = "Untitled script"; st.doc = "// template\nstrategy(\"My strategy\")\n"; } }
@@ -136,6 +146,14 @@ async function main() {
   { const r = rig({ editorOpen: true, edLate: 4 }), res = await r.pine.install(JOB); ok("面板開著、編輯器本體還在載:只等、不按 Pine(按了會把面板關掉)", res.state === "handover" && !r.log.clicks.includes(REF.pine) && r.st.editor === true, [res, r.log.clicks]); }
   { const r = rig({ selfOpen: 3 }), res = await r.pine.install(JOB); ok("登入態的版面晚一步自己把編輯器開回來:先等一下,開了就不按 Pine", res.state === "handover" && !r.log.clicks.includes(REF.pine) && r.st.editor === true, [res, r.log.clicks]); }
   { const r = rig({ editorOpen: true, title: "Untitled …", extra: true }), res = await r.pine.install(JOB); ok("名稱被截短(Untitled …)、旁邊多一顆鈕:照樣開新腳本貼上", res.state === "handover" && r.log.clicks.join() === [REF.title, REF.create, REF.strat].join(), [res, r.log.clicks]); }
+  {
+    const r = rig({ editorOpen: true, onChart: true, title: "Untitled script" }), res = await r.pine.install(JOB);
+    ok("登入態、腳本已在圖上(Update on chart):不按 Pine,走到「建立新的 → 策略」、貼進新腳本、交接", res.state === "handover" && r.log.clicks.join() === [REF.title, REF.create, REF.strat].join() && r.log.fills === 1 && r.st.doc === PINE, [res, r.log.clicks]);
+    ok("交接時「由你按」掛在新腳本的「加到圖表」上;那顆從頭到尾沒被按", r.log.marks.includes("need") && !r.log.clicks.includes(REF.add), r.log.marks);
+  }
+  { const r = rig({ editorOpen: true, onChart: true, stuck: true }), res = await r.pine.install(JOB); ok("貼完那一格還是 disabled(按不了)→ 不掛「由你按」", res.state === "handover" && !r.log.marks.includes("need"), [res, r.log.marks]); }
+  { const r = rig({ editorOpen: true, onChart: true, dirty: true }), res = await r.pine.install(JOB); ok("腳本已在圖上 + 有未存的變更 → 一樣交給用戶", res.state === "needs_user" && r.log.fills === 0, res); }
+  { const r = rig({ editorOpen: true, names: { add: "Refresh" } }), res = await r.pine.install(JOB); ok("那一格的名字兩個都對不上:靠編輯器本體 + 名稱鈕照樣貼;沒有可掛的鈕就不掛「由你按」", res.state === "handover" && r.log.fills === 1 && !r.log.marks.includes("need"), [res, r.log.marks]); }
   { const r = rig({ editorOpen: true, menuOpen: true }), res = await r.pine.install(JOB); ok("腳本選單本來就開著:不按名稱鈕(那顆是開合)", res.state === "handover" && !r.log.clicks.includes(REF.title), [res, r.log.clicks]); }
   {
     const r = rig({ editorOpen: true, dirty: true }), doc = r.st.doc, res = await r.pine.install(JOB);
@@ -150,7 +168,7 @@ async function main() {
   {
     // 每一步的上限:什麼都找不到時,「正在開 Pine 編輯器」那一段不超過 15 秒(測試裡的時鐘每問一次走 500ms)
     const span = async (o) => { const r = rig(o), t0 = clock, res = await r.pine.install(JOB); return [res, clock - t0]; };
-    const a = await span({ names: { add: "Nope" } }), b = await span({ editorOpen: true, names: { create: "Nope" } }), c = await span({ editorOpen: true, newScript: false });
+    const a = await span({ pineDead: true }), b = await span({ editorOpen: true, names: { create: "Nope" } }), c = await span({ editorOpen: true, newScript: false });
     ok("上限:編輯器開不出來 / 找不到新建入口 / 新腳本沒出現,各自 ≤15 秒就回報", [a, b, c].every((x) => x[0].state === "nf" && x[1] <= 15000 + 3000) && a[0].why === "editor" && b[0].why === "create_new" && c[0].why === "new_script", [a, b, c].map((x) => [x[0].why, x[1]]));
   }
   { const r = rig({ hoverOnly: true, visible: false }), res = await r.pine.install(JOB); ok("頁面不在畫面上:子選單靠 hover 事件打開,但不硬貼(全選與貼上送不進去)→ 沒有送出去", res.state === "fail" && res.why === "hidden" && r.log.fills === 0 && r.log.clicks.includes(REF.strat), res); }
@@ -198,8 +216,8 @@ async function main() {
     ok("press:白名單外的組合、不在畫面上 → invalid_args,一個按鍵事件都不送", bad.error === "invalid_args" && off.error === "invalid_args" && n0 === 0 && !good.error && sent.length === 2, [bad, off, sent]);
   }
   ok("agent 工具那條路不帶修飾鍵", (idxSrc.match(/page\.press\(/g) || []).length === 1 && /v\.page\.press\(key, onScreenK\)\)/.test(idxSrc) && /!modsOk\(key, mods, process\.platform\)/.test(cdpSrc));
-  ok("pine.js 沒有任何一處去點 / 找「存檔」「登入」「警報」:定位表只有那六個名字", Object.keys(P.NAMES).join() === "pine,add,createNew,strategy,untitled,editor" && !/alert|webhook|publish/i.test(pineSrc.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
-  ok("「加到圖表」只拿來定位與掛「由你按」:click() 的呼叫點沒有 add", (pineSrc.match(/await click\(t, v, [^)]*\)/g) || []).every((c) => !/\.add\b/.test(c)) && (pineSrc.match(/await click\(/g) || []).length === 4);
+  ok("pine.js 沒有任何一處去點「存檔」、碰「登入」「警報」:定位表只有那八個名字(存檔只當位置的錨)", Object.keys(P.NAMES).join() === "pine,add,update,save,createNew,strategy,untitled,editor" && !/alert|webhook|publish/i.test(pineSrc.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")));
+  ok("「加到圖表」/「Update on chart」/「存檔」只拿來定位與掛「由你按」:click() 的呼叫點沒有 add、save", (pineSrc.match(/await click\(t, v, [^)]*\)/g) || []).every((c) => !/\.(add|save|update)\b/.test(c)) && (pineSrc.match(/await click\(/g) || []).length === 4);
 
   // ── ③ renderer 純邏輯 ──
   const src = read("renderer", "pine-install.js");
