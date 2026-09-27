@@ -2261,10 +2261,12 @@ def _news_one(i, it, urls, titles):
 
 
 def _news_title(items):
+    """The block's own name comes first: 「綜合 3 家」 alone does not say what the block is
+    (e2e 0.1.8 #59). The count or the outlet names are the supplement."""
     names = list(dict.fromkeys(s["name"] for it in items for s in it["sources"]))
     if len(names) >= 3:
-        return f"綜合 {len(names)} 家"
-    return "、".join(names)
+        return f"新聞 · 綜合 {len(names)} 家"
+    return "新聞 · " + "、".join(names) if names else "新聞"
 
 
 def _news_block(pack, news_in, given, narrated):
