@@ -53,15 +53,19 @@ def check(name, ok, detail=""):
     if not ok:
         fails.append(name)
 
-def turn():
+def turn(model="sonnet"):
     seen.clear()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        asyncio.run(at.run_turn("sched-x", "報告", "sonnet", at.ReportSink("sched-x")))
+        asyncio.run(at.run_turn("sched-x", "報告", model, at.ReportSink("sched-x")))
     return seen["options"]
 
 chat = turn()
 check("chat turn: the normal budget (10 USD, 100 steps — browser-UI tasks measured ~60 clean; Wei 09-27)",
       chat.max_budget_usd == 10 and chat.max_turns == 100, (chat.max_budget_usd, chat.max_turns))
+dchat = turn("deepseek/deepseek-v4-pro")
+check("chat DeepSeek turn: no USD cap either (audit A-P1-2 — the CLI's Claude-priced fake budget cut it at ~86 "
+      "of the 100 steps); the brakes are 100 steps + the wall clock / bridge timeout",
+      dchat.max_budget_usd is None and dchat.max_turns == 100, (dchat.max_budget_usd, dchat.max_turns))
 # 走真正的入口:agent_turn.main() 帶 --scheduled(report_runner 起回合的那條命令列)。
 # 直接呼叫 _apply_scheduled_limits() 測不到 main 有沒有真的套用——複審:拿掉 main 裡那一行照樣綠。
 job = "budget-x"
@@ -91,6 +95,28 @@ check("the trust rule itself: deepseek untrusted, claude family trusted",
 check("scheduled turn: 25 steps and Edit/Write kept out of strategies/ control/",
       o.max_turns == 25 and "Write(/strategies/**)" in o.disallowed_tools and "Edit(/control/**)" in o.disallowed_tools,
       (o.max_turns, o.disallowed_tools))
+
+# 電腦版牆鐘(稽核 A-P1-2:LocalSink 沒有 bridge 逾時):超過 _TURN_WALL_CLOCK_SEC 就收掉回合、不續跑
+async def endless_query(prompt, options):
+    seen["options"] = options
+    for i in range(400):
+        yield sdk.AssistantMessage(content=[sdk.ToolUseBlock(id=f"t{i}", name="Bash", input={"command": "x"})])
+    yield sdk.AssistantMessage(content=[sdk.TextBlock(text="never reached")])
+
+sdk.query = endless_query
+at._TURN_WALL_CLOCK_SEC = -1          # 立即到期:第一個訊息之後就該停
+buf = io.StringIO()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(buf):
+    out = asyncio.run(at.run_turn("local-x", "做策略", "deepseek/deepseek-v4-pro", at.LocalSink("local-x")))
+check("desktop wall clock: an over-time LocalSink turn is stopped (no resume) and the user gets the partial-fault line",
+      buf.getvalue().count("wall clock") == 1 and "只做完一部分" in out, out[:120])
+seen.clear()
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    rout = asyncio.run(at.run_turn("sched-y", "報告", "deepseek/deepseek-v4-pro", at.ReportSink("sched-y")))
+check("the wall clock is desktop-only: a cloud/report sink turn runs to its own end (the bridge/runner owns its timeout)",
+      "never reached" in rout, rout[:120])
+at._TURN_WALL_CLOCK_SEC = 2100
+check("wall clock value: 35 minutes, the web bridge's level", at._TURN_WALL_CLOCK_SEC == 2100)
 
 print("OK check_scheduled_budget" if not fails else f"FAILED: {len(fails)}")
 sys.exit(1 if fails else 0)

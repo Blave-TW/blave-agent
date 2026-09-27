@@ -2714,6 +2714,9 @@ _RESUME_MAX_ELAPSED_SEC = 1200
 _RESUME_MIN_BUDGET_USD = 0.5
 _RESUME_MIN_TURNS = 10
 _BRIDGE_KILL_SEC = 2000  # the lower of telegram_bridge / web_bridge
+# 電腦版(LocalSink)沒有 bridge 逾時(外殼只有停止鈕後的 5 秒沉默殺):runtime 自己掛牆鐘,
+# 跟 web_bridge 同級(35 分鐘)。只在收到訊息時檢查——完全沉默的 CLI 不燒 token,外殼的停止鈕管它。
+_TURN_WALL_CLOCK_SEC = 2100
 _RESUME_TAIL_MARGIN_SEC = 150
 _RESUME_MIN_TOOL_SEC = 300
 
@@ -3120,9 +3123,11 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # $1.46 白燒)。步數放寬,真正的煞車改用預算——失控迴圈燒錢才是
         # 原本要防的事,用錢設限比步數合理。
         max_turns=TURN_MAX_TURNS,
-        # 排程回合的 USD 上限只在 CLI 算得準(Anthropic 系)時才綁;DeepSeek 這類經 proxy 的模型
-        # 由 25 步與 runner 的 10 分鐘擋(不然它會用 Claude 價把自己算爆)
-        max_budget_usd=TURN_MAX_BUDGET_USD if not SCHEDULED_TURN or _cli_cost_trusted(model) else None,
+        # USD 上限只在 CLI 算得準(Anthropic 系)時才綁——聊天與排程同一條判定(稽核 A-P1-2:
+        # 只豁免排程的話,DeepSeek 聊天照假價目表 ~86 步就撞 10 USD,100 步到不了)。非 Anthropic
+        # 模型的煞車:聊天 = 100 步 + 牆鐘(雲端 bridge 逾時、電腦版下面的 _TURN_WALL_CLOCK_SEC);
+        # 排程 = 25 步 + runner 10 分鐘。
+        max_budget_usd=TURN_MAX_BUDGET_USD if _cli_cost_trusted(model) else None,
         # SDK 的 stdio transport 預設單條 JSON 訊息上限 1MB——agent 一個 Bash 印出
         # 大量輸出(K 線資料、回測明細)就整輪炸掉(實測:「建立 MACD 策略」第一輪
         # 就中)。放寬到 16MB;這是單條訊息的解析上限,不是常駐記憶體。
@@ -3199,6 +3204,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 拋出,所以這裡抄一份,分類就不必仰賴例外型別有沒有那些欄位。
     result_info = {}
     fault_code = None
+    wall_expired = False
     t_start = time.monotonic()
     spent_usd, spent_turns = 0.0, 0
     is_web = isinstance(sink, WebSink)
@@ -3352,7 +3358,15 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     if aclose:
                         await aclose()  # let the SDK tear down the subprocess/session cleanly
                     break
-            if attempt == 2 or getattr(sink, "interrupted", False) or sink.has_reply():
+                if isinstance(sink, LocalSink) and time.monotonic() - t_start > _TURN_WALL_CLOCK_SEC:
+                    wall_expired = True
+                    print(f"[agent_turn] wall clock: {_TURN_WALL_CLOCK_SEC}s on the desktop — stopping turn",
+                          file=sys.stderr)
+                    aclose = getattr(query_iter, "aclose", None)
+                    if aclose:
+                        await aclose()
+                    break
+            if attempt == 2 or getattr(sink, "interrupted", False) or wall_expired or sink.has_reply():
                 break
             elapsed = time.monotonic() - t_start
             budget = TURN_MAX_BUDGET_USD - (spent_usd if _cli_cost_trusted(model) else 0)
