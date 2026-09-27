@@ -8,6 +8,24 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.99 — 2026-09-27
+
+- **DeepSeek 的排程報告照樣有新聞欄(WebFetch 固定來源)**:WebSearch 是 Anthropic 伺服器端工具,DeepSeek 經 proxy 沒有;
+  但 WebFetch 是 CLI 自己抓網頁、用同一個模型摘要——mock proxy 實測(claude 2.1.283,model=deepseek/deepseek-v4-pro,
+  09-27):tool_use 有執行、摘要子呼叫帶同一個 model id,經 proxy 一樣路由到 DeepSeek 計費。`report_runner.scheduled_prompt`
+  分兩版:Claude 版照舊 WebSearch→WebFetch;DeepSeek 版(含沒有模型偏好的預設)直接 WebFetch 授權候選的連結加 2–3 個
+  固定頭條頁(crypto:CoinDesk/Cointelegraph/Decrypt;台股:鉅亨/經濟日報/MoneyDJ),照樣湊滿 3 個網站出完整版。
+  完全沒有上網工具的模型才降級(新聞欄不出＋尾註一句),這是產品行為:R8 的說明句講一次「這台目前的模型不含上網查新聞,
+  這個排程會出數據＋判讀版」,不建議切模型、不比價(Wei 09-27;references/reports.md §News 表、R8 與 AGENTS.md 同步改)。
+  測試 `tests/check_report_runner_agent.py`(兩版 prompt 各一例、預設模型走 WebFetch 版)。
+- **非 Anthropic 模型的排程回合不再用 CLI 的 USD 成本當預算**:CLI 的 `total_cost_usd` 照 Claude 價目表估,
+  經 proxy 跑 DeepSeek 時整個錯——29026 實測(09-27 14:25,deepseek-v4-pro)9 步被它算到 1.045 USD 撞預算、
+  退成 data-only,而 api 帳本同一輪 12 筆 `usage_llm` 合計只扣 8.06 點(成本基礎 ≈0.25 USD,CLI 高估約 4 倍)。
+  改法:`max_budget_usd` 只在模型是 Anthropic 系(claude/sonnet/opus/haiku/fable)時才綁(0.84),其他模型
+  (含沒偏好的預設 DeepSeek)靠 25 步+runner 10 分鐘擋;`.sched_result.json` 照實記 CLI 值但多帶
+  `cost_untrusted: true`;runner 的降級判定看到 `cost_untrusted` 就不把 budget 當成因(那個數不是真的)。
+  續跑的剩餘預算對不可信成本不再扣減。測試 `tests/check_scheduled_budget.py`、`check_report_runner_agent.py`。
+
 ## 1.1.98 — 2026-09-27
 
 - **回合狀態列的分類(`agent_turn._tool_kind`;spec-turn-status-summary ①)**:每個 tool chunk 多帶 `kind`／`kind_obj`(受詞:網域、
