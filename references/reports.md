@@ -139,7 +139,7 @@ narrative instead).
 3. **Build once**: the default recipe **plus** bricks for those things, in one call —
    `crypto_market_brief(extra=[["coin_snapshot", {"symbol": "BGB"}], ["exchange_snapshot", {"exchange": "okx"}]])`.
    Any template or `build(recipe, extra=…)` takes `extra`. Event bricks: `coin_snapshot(symbol)`
-   (price and volume against its 20-day mean), `exchange_snapshot(exchange)` (that exchange's 24h
+   (90 daily candles and volume against its 20-day mean), `exchange_snapshot(exchange)` (that exchange's 24h
    liquidations, open interest, BTC funding — only exchanges Blave collects; others become a note),
    `relative_to(symbol, benchmark="BTC")` (never the benchmark against itself),
    `liq_map(symbol)` — a coin's liquidation profile over a continuous price axis (`bar_chart`
@@ -214,9 +214,10 @@ publish(pack, narrative={
   five largest coins by market cap; the derivatives table (OI 24h change, funding, Binance
   account long/short ratio — directions, never coloured as gains); 24h liquidations by exchange;
   the day's movers (Binance's 100 most-traded perps, top / bottom 5, + Blave 異常漲跌); the
-  market-wide Blave indicators; the **news slot** (below); today's macro events.
+  market-wide Blave indicators (90-day chart; `lookback_days` only sets the N of the N-day
+  return column); the **news slot** (below); today's macro events.
 - `tw_market_brief()` — KPI row (加權指數, 成交值, 外資, 融資, 外資期貨, 夜盤), then: the TAIEX
-  chart (last 45 days drawn; the 60-day mean and prior-20 high still come from 90 days), 三大法人,
+  chart (last 90 sessions, the same as 收盤報告), 三大法人,
   the 10 largest 成交值 of the last session, 外資期貨淨部位, the day's 重大訊息, the **news slot**,
   and today's macro events with 除權息. 融資 is a KPI only (its chart stays in 收盤報告). The
   成交值 table and 重大訊息 come straight from TWSE open data and exist on the desktop only
@@ -224,7 +225,8 @@ publish(pack, narrative={
 - `symbol_brief("2330")` — Taiwan stock: close / volume / 外資買賣超 (張), recent highs / lows and
   moving averages (table 「近期高低與均線」: 前 20 日高/低 = the high / low of the 20 sessions before
   today, today excluded, so only today's bar can sit beyond it; 5/20/60 日均);
-  `symbol_brief("BTC")` — crypto perp: price, funding, 爆倉 / 巨鯨 / 多空力道.
+  `symbol_brief("BTC")` — crypto perp: price, funding, 爆倉 / 巨鯨 / 多空力道. Daily chart: 90 bars
+  (`research_pack`: 120).
 - `tw_close_brief()` — 台股收盤報告, for any 台股 收盤 / 盤後 request: the day's TAIEX close,
   turnover, 三大法人, 融資 and 外資期貨淨多單, with the same four slots and every rule on this page
   that applies to `tw_market_brief`. Its id is `tw-close-YYYYMMDD` (Taipei date), so it never
@@ -660,8 +662,8 @@ caption.
 
 **Price is drawn as a `candlestick`.** Any price chart in a report — an index, a stock, a
 coin — is a `candlestick`: never a `line_chart` of closes, never an `image` of a matplotlib
-plot. Daily candles: give 40–65 bars (a phone-width reading view fits ~68 full candles; past ~120 the bodies
-smear into a line, and 120 is the hard limit). Half a year or more is a trend, not candles —
+plot. Daily candles: 90 bars by default, up to 120 in a research report (120 is the hard limit). Past
+~72 bars a phone-width view draws high-low lines instead of full candles — expected; do not shorten for it. Half a year or more is a trend, not candles —
 use a `line_chart` of closes for that. **The chart kind follows the series kind, never taste**
 (the bricks have it fixed — `lib/report_bricks.CHART_KIND` — and a hand-built series follows the
 same table): a per-period flow (liquidation USD, net buying, volume — one bar = how much happened
@@ -1047,7 +1049,7 @@ section headings in the report's language.
 **How to build one — about four minutes, never a hand-written fetch script:**
 1. **Search first**, before any code (§1b › Report flow, § News): 3+ sites, read lean (below).
 2. **`pack = research_pack("SOL", extra=[…], days=30, window="7d")`** (`lib.report_templates`; `days` = the
-   span the question is about, `window` = the OI window — `"7d"` unless the question is about today) — price candles and levels,
+   span the comparison against BTC covers (not the candle count: 120 bars), `window` = the OI window — `"7d"` unless the question is about today) — price candles and levels,
    volume against its 20-day mean, the coin against BTC, funding / open interest / long-short, Blave
    indicators; a Taiwan stock gets candles, levels and 外資買賣超. `topics=[…]` picks sections
    (`RESEARCH_TOPICS`); `extra` adds up to 3 bricks for what the news is about. Do not read lib
