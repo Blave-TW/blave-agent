@@ -67,6 +67,8 @@ import time
 
 from lib import capital_vault, guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 # Touched after every accepted order/confirmed fill: lib/capital_worker.py's
 # sleep loop early-ticks on it so the account snapshot (and through the file
 # watcher, the user's dashboard) reflects the trade in seconds instead of at

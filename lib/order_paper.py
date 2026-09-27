@@ -53,6 +53,8 @@ import threading
 import time
 
 from lib import guard
+
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 from lib.paper_data import current_price, PaperNoPrice
 
 try:

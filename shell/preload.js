@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld("blave", {
   signOutBlave: () => ipcRenderer.invoke("sign-out-blave"),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
+  stopTurn: () => ipcRenderer.invoke("stop-turn"),   // true = 停止旗標寫下了;結果照樣等 turn-end
   onEngineProgress: (fn) => ipcRenderer.on("engine-progress", (_e, t) => fn(t)),
   onTurnEvent: (fn) => ipcRenderer.on("turn-event", (_e, c) => fn(c)),
   onTurnEnd: (fn) => ipcRenderer.on("turn-end", (_e, r) => fn(r)),

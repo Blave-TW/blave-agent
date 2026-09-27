@@ -5,6 +5,7 @@ from lib import guard
 
 
 def _append_reconciler_log(order):
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     # Best-effort in account-read mode: a full disk (measured on the fleet)
     # must not abort the reconcile loop mid-round — the order already
     # happened, and there losing the log line is the lesser failure (the next
@@ -483,6 +484,7 @@ def book_ready(config=None):
 
 
 def _save_ledger_seed(seed):
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     # tmp+replace (same convention as lib/guard.py, manager/reconciler.py's
     # last-order marker): flatten() writes this file while the reconciler's
     # 5s poll may be mid-read — a half-written file parses as "no seed at
@@ -615,6 +617,7 @@ def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None, venue=_CURRENT)
     Returns the seeded {symbol: signed_size} ({} for fresh start) for the
     caller to show the user.
     """
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     now = datetime.utcnow().isoformat()
     venue = _resolve_venue(venue)
     symbols = {}
@@ -653,6 +656,7 @@ def zero_ledger_symbols(symbols, venue=_CURRENT):
     when self_ledger is currently off — the seed file just sits unused until
     it's turned on, and by then this IS the correct baseline.
     """
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     if not symbols:
         return
     venue = _resolve_venue(venue)
@@ -1340,6 +1344,7 @@ def apply_ledger_writeoff(symbol, reason, venue=_CURRENT, **detail):
     what the account shows is not a trade and needs nobody's decision.
     Call AFTER the closing fill is in orders.jsonl — the zero row's timestamp
     is the cutoff, and a fill logged after it would be counted on top."""
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     try:
         row = ledger_book(venue).get(symbol) or {}
     except Exception:

@@ -34,6 +34,8 @@ import requests
 
 from lib import guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 LIVE_HOST = "https://api.bybit.com"
 # Demo Trading, not testnet: keys come from the mainnet login and prices track
 # the live book. It serves only a listed subset of v5 (no /v5/user/query-api,

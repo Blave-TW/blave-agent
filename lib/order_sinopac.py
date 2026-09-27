@@ -54,6 +54,8 @@ import shioaji as sj
 
 from lib import guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 # Odd-lot orders carry at most 999 shares (1000 = one board lot).
 MAX_ODD_LOT_SHARES = 999
 

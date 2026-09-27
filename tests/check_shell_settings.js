@@ -159,9 +159,9 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   sent.length = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }, "stopped"); await upCheck();
   ok("雲端停機:不送(讀不到也是)", sent.length === 0 && ((cloudSt = cloud({}, "unreach")), await upCheck(), sent.length === 0));
   ok("接線:submitMessage 每一句都把 turnCloud 歸零;tool chunk 第一次帶 where: cloud 就記下並重畫;turn-end 把出錯交給 upTurnEnded;busyStep 不碰 UPD",
-    /UPD\.turnCloud = false;[^\n]*\n\s*running = true; \$\("btn-send"\)\.disabled = true;/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
+    /UPD\.turnCloud = false;[^\n]*\n\s*running = true; sendBtnSync\(\);/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
     && /if \(!UPD\.turnCloud && stepWhere\(c\) === "cloud"\) \{ UPD\.turnCloud = true; upPaint\(\); \}\s*busyStep\(c\);/.test(src)
-    && /const faulted = r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut;/.test(src) && /upTurnEnded\(faulted\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
+    && /const faulted = !stopped && \(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);/.test(src) && /upTurnEnded\(faulted\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
   ok("接線:關於的連結 = 重新啟動 / 檢查更新;那一格只有 restart 會做事;沒有 upGo / 兩顆鈕 / 每秒重畫 / open-about", /if \(\$\("set-up-btn"\)\.dataset\.kind === "restart"\) upInstall\(\); else upCheck\(\);/.test(src) && /if \(\$\("ws-update"\)\.dataset\.kind === "restart"\) upInstall\(\);/.test(src)
     && !/upGo|upInstallLocal|UP_TICK|upClock|onOpenAbout|doneChatHidden|UP_REPORT_WAIT_MS/.test(src));
   // ── 主機刪掉又重開:落後 / 追上 / 更新期間都是那台的事,清掉 ──

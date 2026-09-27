@@ -33,6 +33,7 @@ import claude_agent_sdk as sdk
 import model_prefs
 import session_store as ss
 import strategy_reporter
+import turn_stop
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -1603,8 +1604,8 @@ class WebSink:
         self.error_text = None
         self.error_code = None
         # Set when the user hits Stop: /report piggybacks `interrupt: true` on its
-        # response (that's the only channel that reaches this VM mid-turn), and
-        # run_turn breaks at the next step boundary.
+        # response, or turn_stop sees the flag file web_bridge writes when the inbox
+        # `interrupt` arrives (that one also reaches a turn that is silent in a tool).
         self.interrupted = False
         # Text resuming after a tool call gets a paragraph break — without it the
         # inter-tool narration fragments glue into one wall when history replays.
@@ -1846,8 +1847,8 @@ _DEBUG_MSGS = os.environ.get("BLAVE_AGENT_DEBUG_MSGS") == "1"
 class LocalSink(WebSink):
     """電腦版(本機外殼)的投遞:chunk 邏輯全部沿用 WebSink,傳輸換成 stdout
     一行一個 JSON(前綴 @@BLAVE@@,讓外殼跟雜訊輸出分得開)。外殼 spawn 這支、
-    逐行讀 stdout 畫進聊天欄。沒有網路、沒有 token;v1 沒有中斷(interrupted
-    永遠 False)。機器端不會走到這裡——只有 --delivery local 會建它。"""
+    逐行讀 stdout 畫進聊天欄。沒有網路、沒有 token;停止走外殼寫的旗標檔
+    (turn_stop)。機器端不會走到這裡——只有 --delivery local 會建它。"""
 
     def __init__(self, session_id):
         super().__init__(report_url=None, report_token=None, session_id=session_id)
@@ -2108,6 +2109,40 @@ def _fault_receipt_suffix(steps):
     if more > 0:
         shown.append(f"…另有 {more} 步")
     return "\n[中斷前已執行:" + "、".join(shown) + "]"
+
+
+def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
+    """停止鈕收尾那一句(進回覆也進歷史):哪幾支會動到部位/帳本的腳本沒被中斷、還在背景
+    跑完(turn_stop 刻意放過),Codex 等了 HOLD_MAX_S 還沒結束、不再等的那幾支(輸出管線
+    已斷,可能沒跑完),以及停下時還在跑的步驟。都沒有就不說話。"""
+    left_running = [x for x in left_running if x not in gave_up]
+    if not left_running and not in_flight and not gave_up:
+        return ""
+    left, cut, gone = "、".join(left_running), "、".join(dict.fromkeys(in_flight)), "、".join(gave_up)
+    if lang in ("zh", "cn") or (not lang and _is_zh(message)):
+        simp = lang == "cn"
+        name = "下单脚本" if simp else "下單腳本"
+        left, gone = left.replace("order script", name), gone.replace("order script", name)
+        parts = ["已停止。"]
+        if left_running:
+            parts.append((f"{left} 会动到仓位或账本，没有中断，仍在后台跑完——请稍后确认仓位与账本。" if simp else
+                          f"{left} 會動到部位或帳本，沒有中斷，仍在背景跑完——請稍後確認部位與帳本。"))
+        if gave_up:
+            parts.append((f"{gone} 停止后两分钟仍未结束，已不再等它；它的输出已中断，可能没有跑完——请确认仓位与账本。" if simp else
+                          f"{gone} 停止後兩分鐘仍未結束，已不再等它；它的輸出已中斷，可能沒有跑完——請確認部位與帳本。"))
+        if in_flight:
+            parts.append((f"停止时还在跑的步骤：{cut}。" if simp else f"停止時還在跑的步驟：{cut}。"))
+        return "".join(parts)
+    parts = ["Stopped."]
+    if left_running:
+        parts.append(f" {left} can move positions or the ledger, so it was not interrupted and is finishing "
+                     "in the background — check positions and the ledger shortly.")
+    if gave_up:
+        parts.append(f" {gone} was still running two minutes after the stop, so it is no longer waited on; "
+                     "its output was cut and it may not have finished — check positions and the ledger.")
+    if in_flight:
+        parts.append(f" Still running when stopped: {cut}.")
+    return "".join(parts)
 
 
 TURN_MAX_TURNS = 50
@@ -2560,6 +2595,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     spent_usd, spent_turns = 0.0, 0
     is_web = isinstance(sink, WebSink)
     strat_sig = None
+    stop_watch = turn_stop.start(sink, hold_engine=use_codex)
     try:
         if use_codex:
             def _codex_tool_start(name, params):
@@ -2735,17 +2771,28 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             surface = "web" if is_web else "tg"
             sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
                            code=fault_code)
+    except asyncio.CancelledError:
+        # turn_stop cancels the turn only after a Stop, when the stream did not end by itself
+        if not getattr(sink, "interrupted", False):
+            raise
     except Exception as e:
-        # A crash here must never silently drop the turn — always leave a
-        # record (so future turns have context) and always give the user
-        # something back.
-        print(f"[agent_turn] turn failed: {e}", file=sys.stderr)
-        fault_code = _fault_code(e, len(tool_steps), result_info)
-        print(f"[agent_turn] fault={fault_code} tools={len(tool_steps)}", file=sys.stderr)
-        surface = "web" if isinstance(sink, WebSink) else "tg"
-        sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
-                       code=fault_code)
+        if getattr(sink, "interrupted", False):
+            # Stop killed the CLI / Codex under the stream: that is the stop, not a fault
+            print(f"[agent_turn] stopped by user ({type(e).__name__})", file=sys.stderr)
+        else:
+            # A crash here must never silently drop the turn — always leave a
+            # record (so future turns have context) and always give the user
+            # something back.
+            print(f"[agent_turn] turn failed: {e}", file=sys.stderr)
+            fault_code = _fault_code(e, len(tool_steps), result_info)
+            print(f"[agent_turn] fault={fault_code} tools={len(tool_steps)}", file=sys.stderr)
+            surface = "web" if isinstance(sink, WebSink) else "tg"
+            sink.set_error(_fault_message(fault_code, message, surface, lang=reply_lang),
+                           code=fault_code)
     finally:
+        if stop_watch:
+            stop_watch.cancel()
+            turn_stop.final_sweep(sink)
         _remove_cloud_handoff_dir()   # 出錯的回合也清:交接金鑰不能留到下一個回合
         await sink.stop()
         if sysprompt_path:
@@ -2767,10 +2814,18 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                                touched=touched)
         except Exception as e:
             print(f"[agent_turn] pre-done strategy push failed: {e}", file=sys.stderr)
+    stopped = getattr(sink, "interrupted", False)
+    if stopped:
+        note = _stop_note(sorted(getattr(sink, "stop_left_running", None) or ()),
+                          [v[1] for v in getattr(sink, "_tool_t0", {}).values()], message, reply_lang,
+                          gave_up=getattr(sink, "stop_gave_up", ()))
+        if note:
+            sink.on_text(("\n\n" if sink.has_reply() else "") + note)
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
+    # 被停止的回合也要:下一輪得知道剛才做到哪、哪支還在背景跑。
     history_text = reply_text
-    if fault_code in (FAULT_PARTIAL, FAULT_MAX_TURNS):
+    if fault_code in (FAULT_PARTIAL, FAULT_MAX_TURNS) or stopped:
         history_text += _fault_receipt_suffix(tool_steps)
     ss.append_turn(session_id, "assistant", history_text)
     ss.maybe_compact(session_id)

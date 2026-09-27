@@ -25,7 +25,7 @@ const EVENTS = {
   // library_comm:0.1.6 起沒有送出點(社群段平鋪了),但 0.1.5 舊外殼還在送、api 端要繼續收,兩端順序又要一致——等 0.1.5 退場再拿掉
   feature_used: { name: ["report_backtest", "report_trades", "report_scan", "report_code", "scan_requested",
     "trade_overview", "trade_positions", "trade_assets", "trade_history", "trade_settings", "strategy_picker",
-    "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "settings_datasrc", "settings_plan", "library_open", "library_use", "library_comm",
+    "handoff_cloud", "handoff_pull", "view_cloud", "chat_sent", "chat_stop", "settings_datasrc", "settings_plan", "library_open", "library_use", "library_comm",
     "reports_list", "reports_read", "reports_ask", "strategy_new"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重

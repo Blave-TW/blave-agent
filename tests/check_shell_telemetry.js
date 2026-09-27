@@ -102,7 +102,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   const scenario = async ({ flag = true, ours = true, turnOk = true, enabled = true, payload }) => {
     const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), x = mk(dir2); if (!enabled) x.tm.setEnabled(false);
     const ends = [];
-    const ctx = { fromOurPage: () => ours, activeTurn: null, turnStarting: false, cloudHandoffOn: () => flag, tm: () => x.tm,
+    const ctx = { fromOurPage: () => ours, activeTurn: null, turnStarting: false, cloudHandoffOn: () => flag, tm: () => x.tm, newTurnStop: () => {},
       BrowserWindow: { fromWebContents: () => ({ isDestroyed: () => false, webContents: { send: (ch, a) => ends.push([ch, a]) } }) },
       loadConnection: () => ({ kind: "claude" }), minGate: () => ({ ensureFresh: async () => {}, turnAllowed: () => true }),
       runTurn: () => (turnOk ? Promise.resolve() : Promise.reject(new Error("AGENT_BIN_MISSING"))) };
@@ -126,7 +126,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   // ── feature_used:名字是白名單,兩端同一份;renderer 每個送出點的名字都在表上;主行程拒絕表外的名字 ──
   const FEATURES = EVENTS.feature_used.name, trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8");
-  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 24 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;library_comm 沒送出點但 0.1.5 還在送,留到它退場)", ONCE_OF(fs) && FEATURES.length === 24 && FEATURES[0] === "report_backtest" && FEATURES[FEATURES.length - 1] === "strategy_new" && FEATURES[19] === "library_comm");
+  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 25 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 停止鈕 chat_stop;library_comm 沒送出點但 0.1.5 還在送,留到它退場)", ONCE_OF(fs) && FEATURES.length === 25 && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[FEATURES.length - 1] === "strategy_new" && FEATURES[20] === "library_comm");
   // 兩端漂移:api/openclaw/desktop_telemetry.py 的 EVENTS["feature_used"] 逐字同一份(同 check_runtime_mirror:要 monorepo 版面)
   const apiPy = path.join(__dirname, "..", "..", "api", "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
@@ -155,12 +155,13 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   const LEGACY = ["library_comm"];   // 0.1.6 起沒送出點(社群段平鋪),但 0.1.5 舊外殼還在送、api 要繼續收、兩端順序要一致:留到 0.1.5 退場
   const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0);
   t("白名單上每個名字都有送出點(library_comm 例外:留給 0.1.5 舊外殼)", noSender.length === 0 && LEGACY.every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
-  t("送出點只在功能那一層:report 四個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、聊天在 started、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
+  t("送出點只在功能那一層:report 四個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、聊天在 started、停止在 stopTurn 按下、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(b && !b\.disabled\) \{ rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\); \}/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))
     && /function trSetTab\(tab, focus\) \{\n\s*TR\.tab = tab; TR\.landed = true;\n\s*trackFeature\(TR_TAB_FEATURE\[tab\]\);/.test(trSrc)
     && /trPickOff\(\)\) return;\n\s*trackFeature\("strategy_picker"\);/.test(trSrc) && /if \(env === ENV\.cur\) \{ if \(via === "link"\) head\(\); return; \}\n\s*if \(env === "cloud"\) trackFeature\("view_cloud"\);/.test(trSrc)
     && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc) && /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); return true; \}/.test(appSrc)
+    && /turnStopping = true; turnStopped = true; sendBtnSync\(\);\n\s*trackFeature\("chat_stop"\);/.test(appSrc)
     && /if \(cat === "src"\) \{ srcLoad\(\); trackFeature\("settings_datasrc"\); \}/.test(appSrc) && /if \(cat === "plan"\) \{ planPaint\(\); trackFeature\("settings_plan"\);/.test(appSrc)
     && /submitMessage\(msg, \{ handoff: dir \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
   // 主行程:preload 只暴露 send、主行程只收自家頁面、名字交給 track()——表外的整則不送、表內的 props 只有 name 一格

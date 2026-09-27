@@ -47,6 +47,8 @@ import requests
 
 from lib import guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 LIVE_URL = "https://open-api.bingx.com"
 LIVE_FALLBACK = "https://open-api.bingx.pro"
 DEMO_URL = "https://open-api-vst.bingx.com"  # VST paper trading, swap only

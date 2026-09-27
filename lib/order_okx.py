@@ -51,6 +51,8 @@ import requests
 
 from lib import guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 BASE_URL = "https://www.okx.com"
 BROKER_TAG = "96ee7de3fd4bBCDE"  # Blave broker attribution — every order POST
 

@@ -30,6 +30,10 @@
 #                    the HALT check: after a machine restart it refuses every
 #                    order, closes included (tests/check_restart_stop_order_gate.py
 #                    fails for any lib/order_*.py that skips it).
+#   STOP-SAFE        right after `from lib import guard`, call
+#                    guard.mark_money_process(): the chat's Stop then never kills
+#                    a process that loaded this lib (tests/check_turn_stop.py fails
+#                    for any lib/order_*.py that skips it).
 #   ATTRIBUTION      the exchange's broker header/field on every order request —
 #                    its omission is silent, so include it from the first order.
 

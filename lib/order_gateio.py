@@ -61,6 +61,8 @@ import requests
 
 from lib import guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 LIVE_HOST = "https://api.gateio.ws"
 # TestNet (spot + futures on one host; keys are APIv4 keys created with account
 # type "TestNet"). The older fx-api-testnet.gateio.ws answers 502.

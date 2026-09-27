@@ -8,6 +8,39 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **停止鈕按下 ≤2 秒停住,連跑到一半的工具一起殺掉(新 `runtime/turn_stop.py`)**:原本唯一的通道是 `/report` 回應夾帶的
+  `interrupt: true`,而 run_turn 只在訊息邊界檢查——agent 在跑回測／Bash、或模型安靜思考時根本不 POST,停止要等工具跑完才生效。
+  現在啟動方給每一輪一個旗標檔路徑(環境變數 `BLAVE_TURN_INTERRUPT_FILE`,不上 argv:舊 runtime 不認也不會 exit 2),建檔 = 停;
+  agent_turn 每 0.25 秒看一次(`/report` 夾帶的那條照舊有效、也走同一段),看到就殺這一輪的子行程樹(引擎 + 工具),1 秒內串流沒自己
+  結束就取消回合,照既有 interrupted 收尾(`done`、不給建議與轉出、寫回歷史;不送 `error`)。Claude 與 Codex 兩條引擎共用。
+  **網頁**:api 的 `/interrupt` 本來就會往 inbox 丟一則 `interrupt` 控制訊息(BLPOP 即時送到),web_bridge 以前對跑著的回合只 ack;
+  現在寫那一輪的旗標檔(`state/turn_stop/<uuid>`,回合結束刪)。**api 不用改。**
+  **電腦版**:外殼每輪給一個旗標檔、停止鈕寫它(見 shell)。
+  殺的範圍:POSIX 沿父子關係找這一輪的引擎與工具;**動錢的行程一律不殺、讓它跑完**(規則集中在 `turn_stop.MONEY_ARGV`):
+  指令列含 close_symbol／stop_strategy／manager/flatten／close_all／update_workspace／seed_ledger／reconciler.py／capital_worker／
+  lib/order_*／lib/execute／lib/venue／lib/portfolio(含 `from lib import … venue／portfolio／execute／order_*`)的行程,以及
+  import 過任何 `lib/order_*`、呼叫過 `venue.bind` 或 portfolio 寫帳函式的行程(`lib/guard.mark_money_process` 寫
+  `state/execution/money_pids/<pid>`,活到行程結束——不是每筆下單才標:撤停損與平倉之間那個空檔才是危險點)。
+  保留的單位是**整個工具 session**(Claude 每次 Bash 呼叫一個 setsid session):`python3 x.py | tail` 的 tail 也留著,
+  否則腳本下一次 print 就 BrokenPipe。
+  Claude 的工具輸出寫檔,引擎照殺、平倉腳本脫離後跑完;Codex 的工具輸出走 Codex 的管線,所以 Codex **留到腳本結束、最多
+  120 秒**,期間整棵樹都不殺(`x.py | tail` 的 tail 可能就在引擎自己的 session 裡)(`HOLD_MAX_S`;codex_engine 在有 watcher 的回合停止後只排乾不轉送、絕不自己 break／殺,殺不殺由 turn_stop 決定;
+  runtime 每秒送 ping)。超過 120 秒(前景 reconciler、TWAP、監控迴圈)就殺 Codex,回覆寫明「X 停止後兩分鐘仍未結束,
+  已不再等它,輸出已中斷,可能沒跑完」。
+  回覆與歷史寫「已停止;X 會動到部位或帳本,沒有中斷,仍在背景跑完」與停止時還在跑的步驟;被停止的回合也把工具收據寫進歷史。
+  `/report` 夾帶的停止會在區塊邊界結束迴圈、可能早於 watcher 第一次掃:收尾時再掃一次(實測 SDK 0.2.144 的 `aclose()`
+  不會結束 CLI,也不會殺仍在跑的 Bash 工具)。
+  **Windows(未經真機驗證)只殺引擎本身、不加 `/T`**,工具自己跑完。**Windows 電腦版 + Codex 上架前必修**:殺 Codex 會讓
+  管線上的平倉腳本 BrokenPipe,應改為 nt 且留引擎時完全不殺、只取消回合。後續:以 GetProcessTimes 確認子行程晚於父行程才信
+  ppid、逐 pid 殺;Windows 的 money_pids 只寫不清,探活不能用 `os.kill(pid, 0)`(會 TerminateProcess);標記寫入行程建立時間
+  以防 PID 重用;`lib[./]execute` 比對可收窄到 `-c`／`-m` 參數。
+  另:同一個工具呼叫裡平倉之後接無限迴圈(例如 `close_symbol …; while true; …`),Claude 下整個 session 會被保留、停不掉(稽核 T2,後續)。
+  web_bridge 啟動時清掉 `state/turn_stop/` 的殘留旗標。**`lib/` 有改(guard、每支 order_*、portfolio 寫帳函式、venue.bind),
+  要走 workspace 通道(VERSION)**;舊 workspace 只有指令列那條規則在保護,臨手寫的下單腳本要等 lib 更新後才受保護。
+  實測(本機 dev 外殼,真 CLI):Claude 0.73 秒、Codex 1.34 秒從按下到按鈕回到送出,`time.sleep` 工具行程都不在了;
+  網頁路徑本機模擬(真 web_bridge + agent_turn + Claude CLI、假 api):inbox `interrupt` → `/report` 收到 `done` 0.07 秒。
+  測試 `tests/check_turn_stop.py`。
+
 - **群益雲端免 RDP 開通(新 `runtime/capital_connect.py`,五個機器指令 `capital_setup`／`capital_pfx_key`／`capital_pfx`／`capital_probe`／`capital_finish`)**:
   用戶在自己的 Windows 匯出的 pfx 以主機一次性 RSA-OAEP 公鑰封裝上傳(api 只轉送密文),主機解密、驗是群益且未過期、經 schtasks 密碼載具
   以 Administrator `certutil -user -importpfx … NoRoot` 匯入,刪掉同 ID 舊證與過期證、probe、再由 `capital_finish` 裝 NSSM worker(Administrator)。

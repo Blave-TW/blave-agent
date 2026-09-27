@@ -92,7 +92,7 @@ app.whenReady().then(async () => {
   const e = await turn(true, false);
   ok("③ 出錯但沒有思考文字:攤開收據、不多一顆鈕", e.open && e.show === null);
   const src = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
-  ok("③ 接線:turn-end 算出 faulted(同 upTurnEnded 的判準)交給 busyEnd", /const faulted = r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut;[^\n]*\n\s*busyEnd\(faulted\);/.test(src));
+  ok("③ 接線:turn-end 算出 faulted(同 upTurnEnded 的判準)交給 busyEnd", /const faulted = !stopped && \(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);[^\n]*\n\s*busyEnd\(faulted\);/.test(src));
 
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

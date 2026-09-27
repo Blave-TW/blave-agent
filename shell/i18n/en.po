@@ -96,6 +96,9 @@ msgstr "Message the agent"
 msgid "ws.send"
 msgstr "Send"
 
+msgid "ws.stop"
+msgstr "Stop"
+
 msgid "ws.settings"
 msgstr "Settings"
 

@@ -29,6 +29,8 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import turn_stop
+
 # Same ceiling as the Claude path's max_buffer_size: one JSONL line carries a command's
 # whole aggregated_output, and asyncio's default 64 KB line limit would kill the turn.
 _LINE_LIMIT = 16 * 1024 * 1024
@@ -430,9 +432,11 @@ async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_don
             except ValueError:
                 print(f"[codex] unparseable line: {line[:200]}", file=sys.stderr)
                 continue
-            translator.feed(event)
             if getattr(sink, "interrupted", False):
+                if turn_stop.armed():
+                    continue  # turn_stop decides when Codex dies (a money script may write into its pipes): keep draining
                 break
+            translator.feed(event)
         if getattr(sink, "interrupted", False):
             return translator
         code = await proc.wait()

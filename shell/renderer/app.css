@@ -263,6 +263,11 @@
   transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .btn-send:hover { opacity: .85; }
+/* 送出 ↔ 停止:同一顆中性鈕只換圖示(箭頭 → 方塊),不轉紅(照雲端 workspace.css);停止中變淡、仍可按,不放 spinner */
+.btn-send .icon-stop { display: none; }
+.btn-send.is-stop .icon-send { display: none; }
+.btn-send.is-stop .icon-stop { display: block; }
+.btn-send.is-stopping { opacity: .55; }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

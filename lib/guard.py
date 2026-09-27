@@ -31,6 +31,7 @@ disk write did (errors are logged and swallowed — the one sanctioned
 exception to the no-silent-failure rule, and only for the LOG write).
 """
 
+import atexit
 import json
 import logging
 import os
@@ -349,6 +350,37 @@ def clear_halt_for(strategy, source):
     if os.path.exists(halt_path_for(strategy)):
         os.remove(halt_path_for(strategy))
     audit("halt_cleared", source=source, scope=strategy)
+
+
+# The chat's Stop (runtime/turn_stop.py) kills the agent's tools but spares any process
+# marked here. Every lib/order_* marks its process at import, for the process's whole
+# life — not per request: the dangerous moment is BETWEEN requests (stop-loss cancelled,
+# position not yet closed; filled, ledger not yet written). Anchored to this file, not
+# the cwd: an agent script can run from anywhere, turn_stop reads <workspace>/state.
+MONEY_PID_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "state", "execution", "money_pids")
+_money_marked = False
+
+
+def mark_money_process():
+    global _money_marked
+    if _money_marked:
+        return
+    _money_marked = True
+    path = os.path.join(MONEY_PID_DIR, str(os.getpid()))
+    try:
+        os.makedirs(MONEY_PID_DIR, exist_ok=True)
+        open(path, "w").close()
+        atexit.register(_unmark_money_process, path)
+    except OSError as e:
+        logging.warning(f"guard: money-process marker write failed: {e}")
+
+
+def _unmark_money_process(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def audit(event, **fields):

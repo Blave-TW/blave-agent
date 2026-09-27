@@ -96,6 +96,9 @@ msgstr "跟 agent 說一句話"
 msgid "ws.send"
 msgstr "送出"
 
+msgid "ws.stop"
+msgstr "停止"
+
 msgid "ws.settings"
 msgstr "設定"
 

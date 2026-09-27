@@ -1482,6 +1482,32 @@ const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
 const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
 
 let activeTurn = null, turnStarting = false;
+/* 停止鈕:每一輪一個旗標檔(runtime/turn_stop.py 的 BLAVE_TURN_INTERRUPT_FILE)。建檔 = 要停;runtime 輪詢到就殺掉這一輪
+   的工具與引擎、照「已停止」收尾。只動這一輪的子行程樹——常駐程式、策略、對帳器不是它的子行程。路徑在送出當下就定好,
+   spawn 之前按停止也寫得進去(runtime 一起來就看到)。runtime 卡死時的保險:agent_turn 沉默滿 STOP_KILL_MS 才殺它。
+   不看按下後過了多久——runtime 在等平倉腳本跑完(Codex 的工具寫進引擎的管線,引擎不能先死)時每秒送 ping;
+   收到 done 就不殺(之後是寫歷史與壓縮摘要,砍了只會丟那一段)。 */
+let turnStopFile = null, turnFinalized = false, turnLastOut = 0;
+const STOP_KILL_MS = 5000;
+function newTurnStop() {
+  if (turnStopFile) { try { fs.rmSync(turnStopFile, { force: true }); } catch (_) { /* 換新檔名,留著也無害 */ } }
+  turnStopFile = path.join(BASE, "state", "turn_stop", crypto.randomBytes(8).toString("hex"));
+  turnFinalized = false;
+}
+function stopTurn() {
+  if (!(activeTurn || turnStarting) || !turnStopFile) return false;
+  try { fs.mkdirSync(path.dirname(turnStopFile), { recursive: true }); fs.writeFileSync(turnStopFile, ""); } catch (_) { return false; }
+  const file = turnStopFile;
+  let seen = activeTurn;
+  const arm = () => setTimeout(() => {
+    if (turnStopFile !== file || turnFinalized) return;   // 已經換下一輪 / runtime 已經收尾
+    if (activeTurn && activeTurn === seen && Date.now() - turnLastOut >= STOP_KILL_MS) { try { activeTurn.kill(); } catch (_) { /* 已經不在了 */ } return; }
+    seen = activeTurn;
+    if (seen || turnStarting) arm();   // 剛起來或還沒起來:再給它一段
+  }, STOP_KILL_MS);
+  arm();
+  return true;
+}
 /* 本機常駐程式的宿主(daemon.js)。環境只給 daemon 需要的:路徑、PATH、K 線來源——**不含**帳號 token
    與任何 Blave 憑證(策略碼跑在它底下)。引擎還沒裝好(沒有 venv)就不起。 */
 let _tradeHost = null;
@@ -1625,6 +1651,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     BLAVE_AGENT_BASE: BASE, BLAVE_AGENT_WORKSPACE: WS, BLAVE_AGENT_HOME: BASE,
     BLAVE_AGENT_STATE: path.join(BASE, "state"),
     BLAVE_AGENT_DB: path.join(BASE, "state", "session.db"),
+    ...(turnStopFile ? { BLAVE_TURN_INTERRUPT_FILE: turnStopFile } : {}),
     // K 線走 Binance 公開 API(桌面版沒有 Blave 資料訂閱)。獨立、明確 opt-in 的
     // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
     // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
@@ -1669,12 +1696,13 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   activeTurn = child;
   let buf = "";
   child.stdout.on("data", (d) => {
+    turnLastOut = Date.now();
     buf += d.toString();
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (line.startsWith("@@BLAVE@@")) {
-        try { win.webContents.send("turn-event", JSON.parse(line.slice(9))); } catch (_) {}
+        try { const c = JSON.parse(line.slice(9)); if (c && c.type === "done") turnFinalized = true; win.webContents.send("turn-event", c); } catch (_) {}
       }
     }
   });
@@ -1930,6 +1958,7 @@ app.whenReady().then(() => {
   handle("sign-out-blave", () => signOutBlave());
   handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
   handle("cancel-agent-login", () => cancelAgentLogin());
+  handle("stop-turn", () => stopTurn(), false);
   ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
     if (activeTurn || turnStarting) return { busy: true };
@@ -1939,6 +1968,7 @@ app.whenReady().then(() => {
     // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
     // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
     turnStarting = true;
+    newTurnStop();
     // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
     try {
       const kind = (loadConnection() || {}).kind;

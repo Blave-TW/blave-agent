@@ -717,7 +717,7 @@ $("ws-update").addEventListener("click", () => { if ($("ws-update").dataset.kind
 $("set-up-btn").addEventListener("click", () => { if ($("set-up-btn").dataset.kind === "restart") upInstall(); else upCheck(); });
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
 $("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
-$("btn-send").addEventListener("click", sendDraft);
+$("btn-send").addEventListener("click", () => (running ? stopTurn() : sendDraft()));
 // 注音/日文選字時的 Enter 是「確定候選字」,不是送出。逐字照 web 工作頁
 // (workspace.html:21913-21933)的三道守衛:Safari 會在這個 keydown 之前就發
 // compositionend,所以 composing 已經是 false —— 那顆 Enter 帶 keyCode 229
@@ -1822,30 +1822,60 @@ function busyOpenReceipts(b) {
   show.addEventListener("click", () => { b.el.classList.remove("reason-held"); show.remove(); b.reason.setAttribute("tabindex", "-1"); b.reason.focus(); });   // 鈕消失,焦點接到剛出來的字
   b.reason.before(show);
 }
+/* 停止(照雲端工作頁 csSyncComposer / interruptTurn):回合進行中送出鈕換成停止鈕(同一顆中性鈕、箭頭換方塊);
+   按下 = 請主行程寫停止旗標,鈕轉「停止中」(變淡、仍可按)等 turn-end,**不先樂觀地切回送出**。
+   停下來之後用戶那句放回輸入框(雲端「取消排隊」的做法:接在用戶已打的字前面,不覆寫)——只放回用戶自己打的
+   (sendDraft 帶 typed);送上雲端 / 拉回、策略庫、報告、掃描這些畫面代組的句子不放回。 */
+let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;
+function sendBtnSync() {
+  const b = $("btn-send");
+  b.classList.toggle("is-stop", running);
+  b.classList.toggle("is-stopping", running && turnStopping);
+  b.dataset.i18nAria = running ? "ws.stop" : "ws.send";
+  b.setAttribute("aria-label", t(b.dataset.i18nAria));
+  b.disabled = false;
+}
+async function stopTurn() {
+  if (!running || turnStopping) return;
+  turnStopping = true; turnStopped = true; sendBtnSync();
+  trackFeature("chat_stop");
+  let ok = false;
+  try { ok = await window.blave.stopTurn(); } catch (_) { ok = false; }
+  if (!ok && !engineWait && running) { turnStopping = false; turnStopped = false; sendBtnSync(); }   // 沒送到:讓用戶再按一次
+}
+function stopRestore(text) {
+  if (!text) return;
+  const ta = $("ta");
+  ta.value = ta.value.trim() ? text + "\n" + ta.value : text;
+  autosize(); ta.focus();
+}
 async function sendDraft() {
   const msg = $("ta").value.trim();
   if (!msg || running) return;
   $("ta").value = ""; autosize();
-  submitMessage(msg);
+  submitMessage(msg, { typed: true });
 }
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; $("btn-send").disabled = true; hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; sendBtnSync(); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
   const viewing = opts && opts.viewing && typeof opts.viewing === "object" ? opts.viewing : chatViewing();
-  addMsg("you", msg); lastUserText = msg;
+  addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
-  const unlock = () => { running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); };
+  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); };
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
-    await window.blave.ensureEngine();
+    engineWait = true;
+    try { await window.blave.ensureEngine(); } finally { engineWait = false; }
+    // 暖機期間按了停止:主行程還沒有回合可停,在這裡收掉,不送出
+    if (turnStopped) { turnStopped = false; unlock(); if (lastUserTyped) stopRestore(msg); return false; }
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = [];
     const r = await window.blave.sendMessage({
@@ -2530,24 +2560,26 @@ let turnCards = [];
 let pendingErr = [];
 const holdErrors = () => (cur === "claude" || cur === "codex") && !turnGotReply && !turnFaulted;
 window.blave.onTurnEnd(async (r) => {
+  // 用戶按了停止:不是失敗——不問登入、不畫錯誤、不攤開收據;保險殺掉時的非 0 結束碼也不顯示
+  const stopped = turnStopped; turnStopped = false;
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
   if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
   stratRefresh(true).catch(() => {}).then(() => { if (typeof libTurnEnd === "function") libTurnEnd(); if (typeof rptTurnEnd === "function") rptTurnEnd(); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending。報告的「新增報告」接在後面(多出新報告會自動打開,要排在選中新策略之後)
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
-  const exitLine = r.code !== 0
+  const exitLine = r.code !== 0 && !stopped
     ? (/AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
     : null;
   // 不靠錯誤字串認登入失效(兩家 CLI 的措辭會變):本機 agent 這一輪出錯或沒有任何回覆時,直接問
   // CLI 現在是不是登入狀態。沒登入 → 只出登入卡,那串給工程師看的錯誤丟掉;有登入 → 才畫通用訊息。
   // 等待指示器留到判斷完才收,中間不留空窗。
   let loggedOut = false;
-  if ((cur === "claude" || cur === "codex") && (turnErrored || !turnGotReply) && !turnFaulted) {
+  if (!stopped && (cur === "claude" || cur === "codex") && (turnErrored || !turnGotReply) && !turnFaulted) {
     try { const d = await window.blave.detectAgents(); loggedOut = !!(d[cur] && d[cur].installed && !d[cur].loggedIn); }
     // 問不到就當成一般失敗
     catch (_) { /* noop */ }
   }
   if (liveBubble && liveBubble._raw != null) paintAi(liveBubble, liveBubble._raw, false);   // 定稿:不再藏半截標記
-  const faulted = r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut;   // 同 upTurnEnded 的判準
+  const faulted = !stopped && (r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);   // 同 upTurnEnded 的判準
   busyEnd(faulted);
   if (!loggedOut && r.code === 0) dataTurnEnd();
   if (planDonePending) planSayDone();
@@ -2556,7 +2588,8 @@ window.blave.onTurnEnd(async (r) => {
   pendingErr = [];
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   upTurnEnded(faulted);
-  running = false; $("btn-send").disabled = false; $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync();
+  running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync();
+  if (stopped && lastUserTyped) stopRestore(lastUserText);
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
 });

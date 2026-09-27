@@ -57,6 +57,8 @@ import requests
 
 from lib import guard
 
+guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
+
 LIVE_URL = "https://fapi.binance.com"
 DEMO_URL = "https://demo-fapi.binance.com"  # futures testnet (testnet keys)
 SPOT_LIVE_URL = "https://api.binance.com"

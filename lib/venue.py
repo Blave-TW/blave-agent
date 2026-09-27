@@ -68,6 +68,11 @@ def bind(venue_id, env):
     else. Returns a summary without key values: {"venue", "written" (env
     names), "bound" (venue ids with a complete pair in `.env`), "evicted"
     (venue ids the bind replaced — trading was halted for them)}."""
+    try:  # writes .env: Stop in the chat never kills this process (lib/guard)
+        from lib import guard
+        guard.mark_money_process()
+    except ImportError:
+        pass
     vid = str(venue_id or "").strip().lower()
     # Desktop app: binding a real exchange is the user's own act on the app's
     # connect screen (自動下單 › 連接交易所), which checks the key's permissions

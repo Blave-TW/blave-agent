@@ -33,12 +33,14 @@ import sys
 import threading
 import time
 import urllib.request
+import uuid
 
 import model_prefs
 import command_listener
 import portfolio_reporter
 import strategy_reporter
 import turn_slots
+import turn_stop
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
@@ -68,6 +70,9 @@ INBOUND_DIR = f"{WORKSPACE}/tmp/inbound"
 # 本地佇列落盤:{"v": 1, "queues": {session_id: [entry, ...]}}。附件在收件時就落到
 # tmp/inbound、entry 只存檔名,所以這個檔永遠很小。
 QUEUE_PATH = os.environ.get("BLAVE_AGENT_WEB_QUEUE", f"{BASE}/state/web_queue.json")
+# Per-turn Stop flag files (turn_stop.ENV): created when the inbox `interrupt` for a
+# running session arrives, removed when the turn ends.
+STOP_DIR = f"{BASE}/state/turn_stop"
 
 # 派工狀態。_lock 罩住 _queues / _running / _queued_at 三張表;_wake 由「收到新訊息」
 # 「一輪結束」叫醒 dispatcher,DISPATCH_TICK 兜底(記憶體門檻幾秒後重試、排隊續命)。
@@ -302,7 +307,7 @@ def save_attachment(attachment):
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
                    attachment_name=None, viewing_view=None, viewing_widgets=None,
-                   ui_lang=None):
+                   ui_lang=None, stop_file=None):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
     # 圖片附件輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
@@ -336,7 +341,7 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
     cmd += ["--", session_id, message]
-    proc = subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd, env={**os.environ, turn_stop.ENV: stop_file} if stop_file else None)
     deadline = time.time() + TURN_TIMEOUT
     next_ping = time.time() + PING_INTERVAL
     while proc.poll() is None:
@@ -443,8 +448,8 @@ def _turn_state(session_id, state):
 
 def _cancel_queued(session_id):
     """Withdraw a session's not-yet-started messages (Stop pressed while queued).
-    A running turn is left alone — the api's per-session interrupt flag reaches it
-    through /report. Returns whether anything was withdrawn."""
+    A running turn is left alone here — _stop_running handles it. Returns whether
+    anything was withdrawn."""
     with _lock:
         if session_id in _running:
             return False
@@ -453,6 +458,36 @@ def _cancel_queued(session_id):
         if dropped:
             _persist_queue()
     return bool(dropped)
+
+
+def _stop_running(session_id):
+    """Stop pressed on a running turn: create its flag file. turn_stop inside agent_turn
+    sees it within a tick and kills the tool in flight — the /report piggyback alone
+    waits for the next chunk, which a long backtest never sends."""
+    with _lock:
+        path = (_running.get(session_id) or {}).get("stop_file")
+    if not path:
+        return
+    try:
+        os.makedirs(STOP_DIR, exist_ok=True)
+        open(path, "w").close()
+    except OSError as e:
+        print(f"[web_bridge] could not write stop flag for {session_id}: {e}", file=sys.stderr)
+
+
+def _clear_stop_flags():
+    """Startup: nothing is running yet, so every flag in STOP_DIR is left over (a turn
+    that ended between _stop_running reading the path and creating the file, or a
+    bridge killed mid-turn)."""
+    try:
+        names = os.listdir(STOP_DIR)
+    except OSError:
+        return
+    for name in names:
+        try:
+            os.remove(os.path.join(STOP_DIR, name))
+        except OSError:
+            pass
 
 
 def _ingest(m):
@@ -465,6 +500,8 @@ def _ingest(m):
     if mtype == "interrupt":
         if session_id and _cancel_queued(session_id):
             _turn_state(session_id, "cancelled")
+        elif session_id:
+            _stop_running(session_id)
         ack_message(mid)
         return
     if mtype != "user_message":
@@ -544,6 +581,8 @@ def _worker(session_id, entry, slot):
     used to run inline (portfolio first — the browser refetches it 3s after done,
     the strategies refetch waits for the chunk below)."""
     turn_end = None
+    with _lock:
+        stop_file = (_running.get(session_id) or {}).get("stop_file")
     try:
         _turn_state(session_id, "running")
         run_agent_turn(session_id, entry.get("content") or "",
@@ -552,12 +591,17 @@ def _worker(session_id, entry, slot):
                        attachment_name=entry.get("attachment_name"),
                        viewing_view=entry.get("viewing_view"),
                        viewing_widgets=entry.get("viewing_widgets"),
-                       ui_lang=entry.get("ui_lang"))
+                       ui_lang=entry.get("ui_lang"), stop_file=stop_file)
     except Exception as e:
         print(f"[web_bridge] turn {session_id} crashed before/at spawn: {e}", file=sys.stderr)
         report_turn_aborted(session_id)
     finally:
         turn_slots.release(slot)
+        if stop_file:
+            try:
+                os.remove(stop_file)
+            except OSError:
+                pass
         with _lock:
             more = bool(_queues.get(session_id))
             if more:
@@ -593,7 +637,10 @@ def _dispatch():
             entry = _queues[sid].pop(0)
             if not _queues[sid]:
                 del _queues[sid]
-            _running[sid] = {"slot": slot, "since": now, "message_id": entry.get("message_id")}
+            # stop_file minted here, before the thread starts: a Stop landing before the
+            # spawn is already on disk when agent_turn looks for the first time
+            _running[sid] = {"slot": slot, "since": now, "message_id": entry.get("message_id"),
+                             "stop_file": os.path.join(STOP_DIR, uuid.uuid4().hex)}
             _queued_at.pop(sid, None)
             _persist_queue()
             try:
@@ -758,6 +805,7 @@ def main():
         name="strategy-change-watcher",
     ).start()
 
+    _clear_stop_flags()
     _resume_queue()
     threading.Thread(target=turn_slots.keep_fresh, args=(_running_slots,), daemon=True,
                      name="turn-slot-keeper").start()
