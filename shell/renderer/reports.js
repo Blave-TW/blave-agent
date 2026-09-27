@@ -40,11 +40,17 @@ function rptAskState(c) {
   if (c.env === "cloud" && c.cloud !== "live") return c.cloud === "stopped" ? "stopped" : "stale";
   return "free";
 }
-// 送給 agent 的那句(逐字同 web rpCompose 的一次性分支):zh 全形「」：。,en 半形;desc 原樣引用、只 trim;空 → ""。s = { lead, once }
+/* 需求裡有沒有定期的字眼(每天／每週五／每 4 小時／every day／daily…)。這一版電腦只產一次、不建排程:用戶寫了「每天早上 5 點 30 分」
+   而回覆只說「報告做好了」,他會以為明天還會收到(0.1.8 e2e #95)。有的話 rptCompose 多帶一句給 agent 的指示 */
+const RPT_RECUR_RE = /\u6bcf\s*(?:[\u500b\u4e2a]|\d+\s*)?(?:\u5929|\u65e5|[\u9031\u5468]|\u661f\u671f|\u79ae\u62dc|\u793c\u62dc|\u6708|\u5c0f\u6642|\u5c0f\u65f6|\u5206\u9418|\u5206\u949f|\u4ea4\u6613\u65e5|\u665a|\u65e9)|\u6bcf[\u9022\u9694]|\u5929\u5929|\u5b9a\u671f|\u5b9a\u6642|\u5b9a\u65f6|\b(?:every\s+(?:other\s+|\d+\s+)?(?:day|week|month|hour|minute|morning|evening|night|weekday|(?:mon|tues|wednes|thurs|fri|satur|sun)day)s?|each\s+(?:day|week|month|morning)|daily|weekly|monthly|hourly|nightly)\b/i;   // 跳脫寫法:比對用戶打的字,不是畫面字(每天／每週／每月／每 N 小時／天天／定期…)
+function rptRecurring(desc) { return RPT_RECUR_RE.test(String(desc == null ? "" : desc)); }
+// 送給 agent 的那句(前兩句逐字同 web rpCompose 的一次性分支):zh 全形「」：。,en 半形;desc 原樣引用、只 trim;空 → ""。
+// s = { lead, once, recur };recur 只在需求有定期字眼時接在最後
 function rptCompose(desc, lang, s) {
   const d = String(desc == null ? "" : desc).trim();
   if (!d) return "";
-  return lang === "zh" ? s.lead + "：「" + d + "」。" + s.once : s.lead + ': "' + d + '". ' + s.once;
+  const tail = s.recur && rptRecurring(d) ? s.recur : "";
+  return lang === "zh" ? s.lead + "：「" + d + "」。" + s.once + tail : s.lead + ': "' + d + '". ' + s.once + (tail ? " " + tail : "");
 }
 /* 一份報告的「版本鍵」:id + 本機 mtime / 雲端 stored_at。lib/report.py 明寫重用 id = 覆蓋——同 id 換過內容也算「新報告」,本體快取也照它分 */
 function rptKey(r) { return r.id + "@" + (typeof r.mtime === "number" ? r.mtime : typeof r.stored_at === "number" ? r.stored_at : ""); }
@@ -438,7 +444,7 @@ async function rptSend() {
   if (!desc) { d.focus(); return; }
   const env = libEnv();
   if (rptAskState(rptCtx(env)) !== "free") { rptNewPaint(); return; }
-  const msg = rptCompose(desc, LANG, { lead: t("rpt.new.msgLead"), once: t("rpt.new.msgOnce") });
+  const msg = rptCompose(desc, LANG, { lead: t("rpt.new.msgLead"), once: t("rpt.new.msgOnce"), recur: t("rpt.new.msgRecur") });
   RPT.sending = true; RPT.fail = false;
   rptNewLock(true);
   const fm = $("rpn-msg"), busy = libEl("span", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");

@@ -43,9 +43,17 @@ if (!process.versions.electron) {
   ok("① 鈕的態:pending > busy > stopped / stale(只在雲端)> free", A({ pending: true, running: true }) === "pending" && A({ running: true }) === "busy" && A({ env: "cloud", cloud: "stopped" }) === "stopped" && A({ env: "cloud", cloud: "stale" }) === "stale" && A({ env: "cloud", cloud: null }) === "stale"
     && A({ env: "cloud", cloud: "live" }) === "free" && A({ env: "local", cloud: "stopped" }) === "free" && A({ env: "cloud", cloud: "stopped", running: true }) === "busy" && A({}) === "free");
   ["zh", "en"].forEach((L) => ok(`① ${L} rpt.new.msgLead / msgOnce 逐字同 web 的 workspace_rp_msg_lead / _once`, STR[L]["rpt.new.msgLead"] === WEB[L].lead && STR[L]["rpt.new.msgOnce"] === WEB[L].once));
-  const S = (L) => ({ lead: STR[L]["rpt.new.msgLead"], once: STR[L]["rpt.new.msgOnce"] });
-  ok("① 組句 zh:全形「」：。、desc 只 trim;en 半形引號句號、尾句前一個空格;空 → \"\"", P.rptCompose("  每天收盤後做台股晨報 ", "zh", S("zh")) === "幫我建立報告：「每天收盤後做台股晨報」。這份只要產出一次，不用建立排程。"
-    && P.rptCompose("daily TW brief", "en", S("en")) === 'Write me a report: "daily TW brief". Produce it once — no schedule needed.' && P.rptCompose("  ", "zh", S("zh")) === "" && P.rptCompose(null, "en", S("en")) === "");
+  const S = (L) => ({ lead: STR[L]["rpt.new.msgLead"], once: STR[L]["rpt.new.msgOnce"], recur: STR[L]["rpt.new.msgRecur"] });
+  ok("① 組句 zh:全形「」：。、desc 只 trim;en 半形引號句號、尾句前一個空格;空 → \"\"", P.rptCompose("  收盤後做台股晨報 ", "zh", S("zh")) === "幫我建立報告：「收盤後做台股晨報」。這份只要產出一次，不用建立排程。"
+    && P.rptCompose("TW brief", "en", S("en")) === 'Write me a report: "TW brief". Produce it once — no schedule needed.' && P.rptCompose("  ", "zh", S("zh")) === "" && P.rptCompose(null, "en", S("en")) === "");
+  // #95:需求寫了定期(每天 5:30…)而這一版只產一次 → 多帶一句給 agent 的指示,回覆才會講明
+  const RECUR = ["每天早上 5 點 30 分給我一份加密市場晨報", "每日收盤報告", "每週五盤後", "每周一", "每個月月初", "每 4 小時運行狀況", "每交易日收盤", "天天給我", "定期報告", "每个月", "send it every day at 8", "Every Monday morning", "daily TW brief", "a weekly recap", "every 4 hours", "each morning"];
+  const ONCE = ["台股晨報", "給我一份加密市場晨報", "今天的收盤報告", "每股盈餘比較", "比較每家交易所的費率", "TW brief for today", "a report on everyday traders", "the day's moves", "weekday vs weekend volume"];
+  ok("① 定期字眼認得出來(zh / cn / en),一次性的需求不誤判", RECUR.every((d) => P.rptRecurring(d)) && !ONCE.some((d) => P.rptRecurring(d)) && !P.rptRecurring(null), JSON.stringify([RECUR.filter((d) => !P.rptRecurring(d)), ONCE.filter((d) => P.rptRecurring(d))]));
+  ok("① 有定期字眼:msgOnce 後面多一句(講明這台電腦只產這一次、定期要在雲端主機排);沒有就不多", P.rptCompose("每天早上 5 點 30 分給我一份加密市場晨報", "zh", S("zh")) === "幫我建立報告：「每天早上 5 點 30 分給我一份加密市場晨報」。這份只要產出一次，不用建立排程。" + STR.zh["rpt.new.msgRecur"]
+    && P.rptCompose("daily TW brief", "en", S("en")) === 'Write me a report: "daily TW brief". Produce it once — no schedule needed. ' + STR.en["rpt.new.msgRecur"]
+    && /只產這一次/.test(STR.zh["rpt.new.msgRecur"]) && /雲端主機/.test(STR.zh["rpt.new.msgRecur"]) && /this once/.test(STR.en["rpt.new.msgRecur"]) && /cloud machine/.test(STR.en["rpt.new.msgRecur"]));
+  ok("① 接線:rptSend 把 rpt.new.msgRecur 交給 rptCompose", /rptCompose\(desc, LANG, \{ lead: t\("rpt\.new\.msgLead"\), once: t\("rpt\.new\.msgOnce"\), recur: t\("rpt\.new\.msgRecur"\) \}\)/.test(src));
   ok("① 版本鍵 = id@mtime(本機)/ id@stored_at(雲端)/ id@(都沒有);新報告 = 版本鍵不在送出前那一袋的——同 id 覆寫(mtime 變)也算新,順序照清單、壞項目丟", P.rptKey({ id: "a", mtime: 5 }) === "a@5" && P.rptKey({ id: "a", stored_at: 7 }) === "a@7" && P.rptKey({ id: "a" }) === "a@"
     && P.rptNewEntries(new Set(["a@1", "b@2"]), [{ id: "c", mtime: 3 }, { id: "a", mtime: 1 }, { id: "a", mtime: 9 }, { id: "d" }, null, { mtime: 1 }]).map((r) => r.id + ":" + r.mtime).join() === "c:3,a:9,d:undefined" && P.rptNewEntries(new Set(), []).length === 0 && P.rptNewEntries(new Set(["a@"]), null).length === 0);
 
@@ -404,9 +412,9 @@ app.whenReady().then(async () => {
   await js(`ENV.cur = "local"; TR_BAGS.cloud.st = null; envShowMain();`); await wait(60); v = await view();
   ok("④ 切回本機:回到本機那袋——仍在讀 new1、article 畫出", v.on && v.headList && !v.back && v.article === 1 && (await js(`rptBag("local").reading`)) === "new1", JSON.stringify(v));
   // en:組句
-  await js(`(async () => { setLang("en"); applyStatic(); document.getElementById("rpt-back").click(); RPT.pending.local = null; running = false; rptSync(); document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 100)); document.getElementById("rpn-desc").value = "daily brief"; document.getElementById("rpn-send").click(); })()`); await wait(250);
+  await js(`(async () => { setLang("en"); applyStatic(); document.getElementById("rpt-back").click(); RPT.pending.local = null; running = false; rptSync(); document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 100)); document.getElementById("rpn-desc").value = "market brief"; document.getElementById("rpn-send").click(); })()`); await wait(250);
   s = await js(`(() => { const m = window.__r.sent[window.__r.sent.length - 1]; const out = { msg: m.message, h: document.getElementById("rpt-h").textContent, ask: document.getElementById("rpt-ask-t").textContent }; setLang("zh"); applyStatic(); return out; })()`);
-  ok("④ en:送出的是 web 的英文句、頁首與鈕換字", s.msg === 'Write me a report: "daily brief". Produce it once — no schedule needed.' && s.h === "Reports" && s.ask === "Agent is writing…", JSON.stringify(s));
+  ok("④ en:送出的是 web 的英文句、頁首與鈕換字", s.msg === 'Write me a report: "market brief". Produce it once — no schedule needed.' && s.h === "Reports" && s.ask === "Agent is writing…", JSON.stringify(s));
   ok("④ 整個流程沒有開過外部瀏覽器、reports.js 的字只進 textContent(#rpt-rows 沒有 img / script)", (await js(`document.querySelectorAll("#rpt-rows img, #rpt-rows script").length`)) === 0);
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
