@@ -8,6 +8,7 @@
 // 跑法:node tests/check_shell_robust.js(找不到 shell/node_modules 的 Electron 時 ② SKIP,①③ 照跑)
 const path = require("path"), fs = require("fs"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 
 // 3×3:尖峰 (0,0) 孤立高;(1..2, 1..2) 平原;(2,0) 沒交易
@@ -68,8 +69,8 @@ if (!process.versions.electron) {
     && /\.rob-tbl td \.rob-glyph \{[^}]*position: absolute;\s*left: 4px;\s*top: 2px;/.test(css) && /\.rob-empty-txt \{[^}]*font-size: 13px;[^}]*color: var\(--ink-3\);/.test(css) && !/\.rob-tipwrap/.test(css));
 
   // ── ② 交給 Electron ──
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  ② 找不到 shell/node_modules 的 Electron(先 cd shell && npm install)"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL, "②");
+  if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   const sub = r.status == null ? 1 : r.status;
   console.log(red || sub ? `\n${red + sub} 紅` : "\nALL PASS");

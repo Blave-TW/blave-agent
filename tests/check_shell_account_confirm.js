@@ -10,6 +10,7 @@
 // 金鑰全是 not-a-real-*。跑法:node tests/check_shell_account_confirm.js(找不到 shell/node_modules 的 Electron,② 起就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 const J = JSON.stringify;
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 
@@ -22,8 +23,8 @@ if (!process.versions.electron) {
     { venue: "../x", same: true }, { venue: "OKX", same: true }, { venue: "okx", same: true, OKX_API_KEY: "not-a-real-key" }, ["okx"], null].every((a) => !argsOk("book_account_confirm", a)));
   const tr = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"), main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   ok("① 雲端:ENV_CLOUD_CMDS 與主行程 CLOUD_SHIPPED 都有它", /const ENV_CLOUD_CMDS = \[[^\]]*"book_account_confirm"/.test(tr) && /const CLOUD_SHIPPED = \[[^\]]*"book_account_confirm"/.test(main));
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  ② 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL, "②");
+  if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   process.exit(red || r.status !== 0 ? 1 : 0);
 } else {

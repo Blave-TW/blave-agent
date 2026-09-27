@@ -196,8 +196,12 @@ async function main() {
   }
 
   step("閘門測試");
-  for (const t of fs.readdirSync(path.join(REPO, "tests")).filter((f) => /^(check_shell_.*|check_version_matrix_shell)\.js$/.test(f) && f !== "check_shell_paths.js"))
-    try { run(process.execPath, [path.join(REPO, "tests", t)], { stdio: "pipe" }); } catch (e) { die(`${t} 沒過:\n${e.stdout || ""}`); }
+  // 測試預設不起 Electron(tests/_electron_gate.js);發版要完整跑,只在這裡起的子行程帶開關。印出守門那行 SKIP = 有一段沒跑到,不放行
+  for (const t of fs.readdirSync(path.join(REPO, "tests")).filter((f) => /^(check_shell_.*|check_version_matrix_shell|check_tests_window_guard)\.js$/.test(f) && f !== "check_shell_paths.js")) {
+    let out = "";
+    try { out = run(process.execPath, [path.join(REPO, "tests", t)], { stdio: "pipe", env: { ...process.env, BLAVE_TEST_WINDOW: "1" } }); } catch (e) { die(`${t} 沒過:\n${e.stdout || ""}`); }
+    if (/SKIP \(set BLAVE_TEST_WINDOW=1/.test(out)) die(`${t} 的 Electron 那段沒跑到:\n${out}`);
+  }
 
   step(gate.bump ? "寫入版號、打包(簽章 + 公證,要幾分鐘)" : "打包(簽章 + 公證,要幾分鐘)");
   const before = { pkg: fs.readFileSync(pkgPath, "utf8"), lock: fs.readFileSync(lockPath, "utf8") };

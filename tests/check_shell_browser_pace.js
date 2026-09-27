@@ -7,6 +7,7 @@
 // 跑法:node tests/check_shell_browser_pace.js(找不到 Electron 只跑純函式+接線段)
 const path = require("path"), fs = require("fs"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 
 // ---- 純函式:單一 8s 門檻+回合重置
@@ -64,8 +65,8 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 }
 
 if (!process.versions.electron) {
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  真 Electron 那段(行為:連續打字第二次起一次填入、8s 後回逐字)"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL);
+  if (!bin) { process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   process.exit(red || r.status ? 1 : 0);
 }
@@ -77,7 +78,8 @@ app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-pace-")));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 process.on("unhandledRejection", (e) => { console.log("UNHANDLED:", String(e)); app.exit(3); });
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ width: 1200, height: 800, show: true });
+  const win = new BrowserWindow({ width: 1200, height: 800, show: false });
+  win.showInactive();   // 要看得到才收得到真的鍵盤事件;不搶前景
   await win.loadURL("data:text/html,<p>host</p>");
   const srv = require("http").createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/html" });

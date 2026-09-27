@@ -4,6 +4,7 @@
 // 跑法:node tests/check_shell_browser_ref_label_dev.js(找不到 Electron 只跑靜態段)
 const path = require("path"), fs = require("fs"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 
 if (!process.versions.electron) {
@@ -14,8 +15,8 @@ if (!process.versions.electron) {
   ok("按鍵小標(press 的「Enter」)照常顯示、不掛旗標(canon 裁定:那不是 @eN 內部代號)", /\["ref", \{ box: q\.box, label: key, tag: true \}, false\]/.test(idx));
   ok("inpage:outline 一律畫、小標只在 need 或 data.tag", /if \(kind === "need" \|\| data\.tag\) \{/.test(ip));
   ok("點擊落地收框連小標一起(原本的 .o,.t 同清)", /if \(kind === "click"\) \{\n    for \(const n of Array\.from\(root\.querySelectorAll\("\.o,\.t"\)\)\) n\.remove\(\);/.test(ip));
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  真 Electron 那段"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL);
+  if (!bin) { process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   process.exit(red || r.status ? 1 : 0);
 }

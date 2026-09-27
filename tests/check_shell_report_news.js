@@ -6,6 +6,7 @@
 // 跑法:node tests/check_shell_report_news.js(沒有 monorepo 版面 / git / Electron 時對應段 SKIP)
 const fs = require("fs"), path = require("path"), os = require("os"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer"), FIX = path.join(__dirname, "fixtures");
+const GATE = require("./_electron_gate");
 const MONO = path.join(__dirname, "..", "..");
 const NEWS_FIX = path.join(MONO, "api", "tests", "fixtures", "report_news.json");
 const WEB_RB = path.join(MONO, "web", "app", "static", "js", "agent", "report_blocks.js");
@@ -37,8 +38,8 @@ if (!process.versions.electron) {
 
   let base = null;
   try { base = require("child_process").execFileSync("git", ["show", BASE_REV + ":shell/renderer/report-blocks.js"], { cwd: path.join(__dirname, ".."), stdio: ["ignore", "pipe", "ignore"] }).toString(); } catch (_) { base = null; }
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  ② 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL, "②");
+  if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   if (!fs.existsSync(NEWS_FIX)) console.log("SKIP  ② news fixture(需要 monorepo 版面:../api/tests/fixtures/report_news.json)");
   const baseFile = base ? path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-rbnews-")), "base.js") : "";
   if (base) fs.writeFileSync(baseFile, base); else console.log("SKIP  ② 舊報告零變化(git 裡找不到 " + BASE_REV + ")");

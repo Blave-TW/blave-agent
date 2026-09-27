@@ -6,6 +6,7 @@
 // 金鑰全是 not-a-real-*。跑法:node tests/check_shell_connect_venues.js(找不到 shell/node_modules 的 Electron,③ 就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 const J = JSON.stringify;
 
@@ -72,8 +73,8 @@ if (!process.versions.electron) (async () => {
   ok("② 兩個視角都列五家(runtime 已在電腦版開放這四家,寫入前讀一次帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
 
   // ── ③ 交給 Electron ──
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  ③ 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL, "③");
+  if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   process.exit(red || r.status !== 0 ? 1 : 0);
 })();

@@ -8,6 +8,7 @@
 // 跑法:node tests/check_shell_browser_exfil.js(找不到 Electron 只跑 1、3)
 const path = require("path"), fs = require("fs"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 const policy = require(path.join(SHELL, "browser", "policy.js"));
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 
@@ -43,8 +44,8 @@ if (!process.versions.electron) {
     ok("接線:確認態用 need.url、不接可編輯網址列;need_user 帶 url", /const held = x\.need && x\.need\.kind === "confirm" && x\.need\.url;/.test(brSrc) && /if \(exp\.live && !held\) brAddrEditable\(url, x\.id\);/.test(brSrc) && /const url = held \? brAddr\(x\.need\.url, true, true\) : brAddr\(x\.url, x\.blocked\);/.test(brSrc)
       && /url: typeof ev\.url === "string" \? ev\.url : ""/.test(brSrc));
   }
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  真 Electron 那段(找不到 shell/node_modules 的 Electron)"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL);
+  if (!bin) { process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
   process.exit(red || r.status ? 1 : 0);
 }

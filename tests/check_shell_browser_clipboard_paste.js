@@ -4,6 +4,7 @@
 // 跑法:node tests/check_shell_browser_clipboard_paste.js(找不到 Electron 只跑靜態段)
 const path = require("path"), fs = require("fs"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 
 if (!process.versions.electron) {
@@ -18,8 +19,8 @@ if (!process.versions.electron) {
     && /finally \{ await clipboardRestore\(clipboard, saved\); \}/.test(src)
     && /if \(clipboard\.readImage\)/.test(src)
     && !/clipboard\.clear\(\)/.test((src.match(/async function clipboardRestore[\s\S]*?\n\}/) || ["X clipboard.clear()"])[0]));
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  真 Electron 那段"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL);
+  if (!bin) { process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   process.exit(red || r.status ? 1 : 0);
 }

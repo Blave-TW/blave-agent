@@ -8,6 +8,7 @@
 // 跑法:node tests/check_shell_report_share.js
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer"), MONO = path.join(__dirname, "..", "..");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 1500))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
 const cutFn = (s, name) => { const i = s.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("unbalanced " + name); };
@@ -164,8 +165,8 @@ if (!process.versions.electron) {
       ok("P1-3 畫面:detail 接在訊息槽那一句後面(textContent 建的 span)", /fm\.appendChild\(libEl\("span", "shr-detail mono", r\.detail\)\)/.test(js) && /\.shr-detail \{/.test(css));
     }
 
-    const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-    if (!fs.existsSync(bin)) { console.log("SKIP  ④ 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+    const bin = GATE.bin(SHELL, "④");
+    if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
     const sub = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" }).status;
     const n = red + (sub == null ? 1 : sub);
     console.log(n ? `\n${n} 紅` : "\nALL PASS"); process.exit(n ? 1 : 0);
