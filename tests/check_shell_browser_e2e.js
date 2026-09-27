@@ -6,9 +6,10 @@
 // 跑法:node tests/check_shell_browser_e2e.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  找不到 shell/node_modules 的 Electron"); process.exit(0); }
+  const bin = GATE.bin(SHELL);
+  if (!bin) { process.exit(0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
   process.exit(r.status == null ? 1 : r.status);
 }

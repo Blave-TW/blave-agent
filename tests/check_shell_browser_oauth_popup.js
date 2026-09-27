@@ -6,6 +6,7 @@
 // 跑法:node tests/check_shell_browser_oauth_popup.js(找不到 Electron 只跑靜態+stub 段)
 const path = require("path"), fs = require("fs"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -77,8 +78,8 @@ if (!process.versions.electron) {
     await sleep(2400);
     ok("倒數中再導回 IdP:取消代關", !wc.closed);
     O.close();
-    const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-    if (!fs.existsSync(bin)) { console.log("SKIP  真 Electron 那段"); process.exit(red ? 1 : 0); }
+    const bin = GATE.bin(SHELL);
+    if (!bin) { process.exit(red ? 1 : 0); }
     const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
     process.exit(red || r.status ? 1 : 0);
   })();

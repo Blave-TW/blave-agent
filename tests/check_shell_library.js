@@ -11,6 +11,7 @@
 // 跑法:node tests/check_shell_library.js(找不到 shell/node_modules 的 Electron 時 ④ SKIP,①②③ 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
+const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 2000))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
 const src = read(path.join(R, "library.js")), appSrc = read(path.join(R, "app.js")), trSrc = read(path.join(R, "trade.js"));
@@ -177,8 +178,8 @@ if (!process.versions.electron) {
   ok("③ tokens.css 多綠 tag 那一對(亮暗各一組);library.css 只引變數、沒有 hex", (read(path.join(R, "tokens.css")).match(/--color-greenLight:/g) || []).length === 2 && (read(path.join(R, "tokens.css")).match(/--color-greenBlack:/g) || []).length === 2 && !/#[0-9a-fA-F]{3,6}\b/.test(read(path.join(R, "library.css"))));
 
   // ── ④ 交給 Electron ──
-  const bin = path.join(SHELL, "node_modules", ".bin", "electron");
-  if (!fs.existsSync(bin)) { console.log("SKIP  ④ 找不到 shell/node_modules 的 Electron(先 cd shell && npm install)"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+  const bin = GATE.bin(SHELL, "④");
+  if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
   const sub = r.status == null ? 1 : r.status;
   console.log(red || sub ? `\n${red + sub} 紅` : "\nALL PASS");

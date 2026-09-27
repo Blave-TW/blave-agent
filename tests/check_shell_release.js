@@ -73,5 +73,10 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
   t("線上讀不到 yml 就停,只有 --first-release 放行", /--first-release/.test(src) && /讀不到線上的 latest-mac\.yml/.test(src));
   t("驗 zip 解出來的那一份 app、dmg 的 staple、包裡的更新網址", /ditto/.test(src) && /stapler", "validate"/.test(src) && /asarPkg\.blaveUpdateUrl !== URL_BASE/.test(src));
   t("不寫死任何金鑰;憑證檔權限太寬會拒絕", !/AKIA[0-9A-Z]{16}/.test(src) && /mode & 0o077/.test(src));
+  // 測試預設不起 Electron(tests/_electron_gate.js):發版的閘門測試要完整跑,開關只給它自己起的子行程
+  { const g = (src.match(/step\("閘門測試"\);[\s\S]*?\n\n/) || [""])[0];
+    t("閘門測試帶 BLAVE_TEST_WINDOW=1(不寫進 process.env)、守門檢查也在清單裡、有一段被 SKIP 就不放行",
+      /env: \{ \.\.\.process\.env, BLAVE_TEST_WINDOW: "1" \}/.test(g) && !/process\.env\.BLAVE_TEST_WINDOW\s*=/.test(src)
+      && /\|check_tests_window_guard\)/.test(g) && /if \(\/SKIP \\\(set BLAVE_TEST_WINDOW=1\/\.test\(out\)\) die\(/.test(g)); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();
