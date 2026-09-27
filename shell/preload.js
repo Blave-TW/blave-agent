@@ -134,4 +134,7 @@ contextBridge.exposeInMainWorld("blave", {
   browserPrefs: () => ipcRenderer.invoke("browser-prefs"),
   browserPrefsSet: (p) => ipcRenderer.invoke("browser-prefs-set", p),
   browserClear: () => ipcRenderer.invoke("browser-clear"),
+  pineInstall: (ref) => ipcRenderer.invoke("pine-install", ref ? { session: ref.session, id: ref.id, strategy: ref.strategy } : null),
+  pineCheck: (id) => ipcRenderer.invoke("pine-check", id),
+  pineRead: (id) => ipcRenderer.invoke("pine-read", id),
 });

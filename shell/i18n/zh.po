@@ -4801,3 +4801,142 @@ msgstr "看公開連結"
 
 msgid "shr.limitDaily"
 msgstr "今天已經公開 {n} 次，達到每日上限。請明天再試。"
+
+# 送進 TradingView(renderer/pine-install.js;spec-desktop-pine-install-0.1.8)
+msgid "tv.send"
+msgstr "送進 TradingView"
+
+msgid "tv.sending"
+msgstr "正在貼進 TradingView"
+
+msgid "tv.sentHint"
+msgstr "已貼進 Pine 編輯器。在頁面上按「加到圖表」跑完回測，再按「回傳回測結果」。"
+
+msgid "tv.read"
+msgstr "回傳回測結果"
+
+msgid "tv.reading"
+msgstr "讀取中…"
+
+msgid "tv.readAgain"
+msgstr "再次回傳結果"
+
+msgid "tv.returnedAt"
+msgstr "已於 {time} 回傳。"
+
+msgid "tv.returnedLoop"
+msgstr "在 TradingView 調完參數重跑，可以再回傳一次。"
+
+msgid "tv.err.editor"
+msgstr "找不到 Pine 編輯器，TradingView 可能改了版面。"
+
+msgid "tv.err.compile"
+msgstr "TradingView 編譯沒過。"
+
+msgid "tv.err.closed"
+msgstr "策略測試器沒開，或圖上還沒加入策略。"
+
+msgid "tv.err.busy"
+msgstr "agent 正在回覆，請稍候再回傳。"
+
+msgid "tv.err.unknown"
+msgstr "沒有送出去，請再試一次。"
+
+msgid "tv.planHint"
+msgstr "TradingView 免費與 Basic 方案一張圖最多 2 個指標或策略；「加到圖表」被擋下的話，先移掉圖上其他的再試。"
+
+msgid "tv.fix"
+msgstr "請 agent 修"
+
+msgid "tv.agentPaste"
+msgstr "請 agent 貼"
+
+msgid "tv.retry"
+msgstr "再試一次"
+
+msgid "tv.st.chart"
+msgstr "正在打開 {sym} 的圖表"
+
+msgid "tv.st.chartN"
+msgstr "正在打開圖表"
+
+msgid "tv.st.editor"
+msgstr "正在開 Pine 編輯器"
+
+msgid "tv.st.paste"
+msgstr "正在貼上 {id}"
+
+msgid "tv.st.wait"
+msgstr "等你按「加到圖表」"
+
+msgid "tv.st.check"
+msgstr "檢查結果"
+
+msgid "tv.st.done"
+msgstr "已加到圖表"
+
+msgid "tv.st.compile"
+msgstr "TradingView 編譯沒過"
+
+msgid "tv.st.nf"
+msgstr "找不到 Pine 編輯器"
+
+msgid "tv.st.reading"
+msgstr "正在讀策略測試器"
+
+msgid "tv.ho.h"
+msgstr "程式碼貼好了，「加到圖表」由你按"
+
+msgid "tv.ho.p"
+msgstr "貼在一支新的腳本裡，沒動到你原本的。按了之後 TradingView 可能要你登入、替腳本取名存檔——都在頁面上由你操作，你操作時這一頁不會被讀取。"
+
+msgid "tv.ho.switch"
+msgstr "圖表的商品或週期沒有自動帶到。按「加到圖表」之前，先自己切成這支策略用的。"
+
+msgid "tv.done.h"
+msgstr "策略加到圖表了"
+
+msgid "tv.done.p"
+msgstr "策略測試器在圖表下方。"
+
+msgid "tv.cmp.h"
+msgstr "TradingView 編譯沒過"
+
+msgid "tv.cmp.p"
+msgstr "錯誤訊息在 Pine 編輯器下方。agent 可以讀錯誤、修好後重新轉出一份。"
+
+msgid "tv.nf.h"
+msgstr "找不到 Pine 編輯器"
+
+msgid "tv.nf.p"
+msgstr "TradingView 可能改了版面。可以請 agent 照畫面找，或下載檔案自己貼。"
+
+msgid "tv.notyet"
+msgstr "還沒看到策略在圖上。按了「加到圖表」、存好檔，再按「檢查結果」。"
+
+msgid "tv.msg.head"
+msgstr "TradingView 策略測試器的結果："
+
+msgid "tv.msg.line"
+msgstr "- {label}：{value}"
+
+msgid "tv.msg.empty"
+msgstr "（TradingView 沒有回傳可讀的數字。）"
+
+msgid "tv.msg.sent"
+msgstr "送出的版本：{filename}"
+
+msgid "tv.msg.fix"
+msgstr "{filename} 在 TradingView 編譯沒過，錯誤訊息：\n{lines}\n請修好後重新轉出。"
+
+msgid "tv.msg.paste"
+msgstr "用內建瀏覽器把策略 {id} 的 Pine 版貼進 TradingView 的 Pine 編輯器：開一支新的腳本貼，停在「加到圖表」讓我按。"
+
+msgid "tv.cf.stale.h"
+msgstr "送進 TradingView"
+
+msgid "tv.cf.stale.p"
+msgstr "這是 {date} 轉出的版本。策略之後如果改過，這份程式碼不會反映那些改動。"
+
+msgid "tv.cf.stale.ok"
+msgstr "送進去"

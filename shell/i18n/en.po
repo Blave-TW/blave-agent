@@ -4800,3 +4800,142 @@ msgstr "View public links"
 
 msgid "shr.limitDaily"
 msgstr "You've published {n} times today, the daily limit. Try again tomorrow."
+
+# 送進 TradingView(renderer/pine-install.js;spec-desktop-pine-install-0.1.8)
+msgid "tv.send"
+msgstr "Send to TradingView"
+
+msgid "tv.sending"
+msgstr "Pasting into TradingView"
+
+msgid "tv.sentHint"
+msgstr "Pasted into the Pine Editor. Press “Add to chart” on the page, let the backtest run, then press “Send Results Back”."
+
+msgid "tv.read"
+msgstr "Send Results Back"
+
+msgid "tv.reading"
+msgstr "Reading…"
+
+msgid "tv.readAgain"
+msgstr "Send Results Again"
+
+msgid "tv.returnedAt"
+msgstr "Sent back at {time}."
+
+msgid "tv.returnedLoop"
+msgstr "Adjust the parameters in TradingView, re-run it, and you can send the results back again."
+
+msgid "tv.err.editor"
+msgstr "Couldn't find the Pine Editor — TradingView may have changed its layout."
+
+msgid "tv.err.compile"
+msgstr "TradingView couldn't compile it."
+
+msgid "tv.err.closed"
+msgstr "The Strategy Tester is not open, or no strategy has been added to the chart."
+
+msgid "tv.err.busy"
+msgstr "The agent is replying. Send the results back in a moment."
+
+msgid "tv.err.unknown"
+msgstr "That did not go through. Try again."
+
+msgid "tv.planHint"
+msgstr "TradingView's Free and Basic plans allow 2 indicators or strategies per chart; if “Add to chart” is blocked, remove the others from the chart first."
+
+msgid "tv.fix"
+msgstr "Ask Agent to Fix"
+
+msgid "tv.agentPaste"
+msgstr "Ask Agent to Paste"
+
+msgid "tv.retry"
+msgstr "Try Again"
+
+msgid "tv.st.chart"
+msgstr "Opening the {sym} chart"
+
+msgid "tv.st.chartN"
+msgstr "Opening the chart"
+
+msgid "tv.st.editor"
+msgstr "Opening the Pine Editor"
+
+msgid "tv.st.paste"
+msgstr "Pasting {id}"
+
+msgid "tv.st.wait"
+msgstr "Waiting for you to press “Add to chart”"
+
+msgid "tv.st.check"
+msgstr "Check Result"
+
+msgid "tv.st.done"
+msgstr "Added to the chart"
+
+msgid "tv.st.compile"
+msgstr "TradingView couldn't compile it"
+
+msgid "tv.st.nf"
+msgstr "Couldn't find the Pine Editor"
+
+msgid "tv.st.reading"
+msgstr "Reading the Strategy Tester"
+
+msgid "tv.ho.h"
+msgstr "The code is in — you press “Add to chart”"
+
+msgid "tv.ho.p"
+msgstr "It's in a new script; your existing scripts are untouched. TradingView may then ask you to sign in and name the script — you do both on the page, and the page isn't read while you're using it."
+
+msgid "tv.ho.switch"
+msgstr "The chart's symbol or interval wasn't set automatically. Switch to the ones this strategy uses before you press “Add to chart”."
+
+msgid "tv.done.h"
+msgstr "The strategy is on the chart"
+
+msgid "tv.done.p"
+msgstr "The Strategy Tester is below the chart."
+
+msgid "tv.cmp.h"
+msgstr "TradingView couldn't compile it"
+
+msgid "tv.cmp.p"
+msgstr "The error is under the Pine Editor. The agent can read it, fix the script and export it again."
+
+msgid "tv.nf.h"
+msgstr "Couldn't find the Pine Editor"
+
+msgid "tv.nf.p"
+msgstr "TradingView may have changed its layout. The agent can look for it on screen, or download the file and paste it yourself."
+
+msgid "tv.notyet"
+msgstr "No strategy on the chart yet. Press “Add to chart”, save the script, then press “Check Result”."
+
+msgid "tv.msg.head"
+msgstr "TradingView Strategy Tester results:"
+
+msgid "tv.msg.line"
+msgstr "- {label}: {value}"
+
+msgid "tv.msg.empty"
+msgstr "(TradingView returned no readable numbers.)"
+
+msgid "tv.msg.sent"
+msgstr "Version sent: {filename}"
+
+msgid "tv.msg.fix"
+msgstr "{filename} didn't compile in TradingView. Error:\n{lines}\nPlease fix it and export it again."
+
+msgid "tv.msg.paste"
+msgstr "Use the built-in browser to paste strategy {id}'s Pine version into TradingView's Pine Editor: open a new script, paste it there, and stop at “Add to chart” so I can press it."
+
+msgid "tv.cf.stale.h"
+msgstr "Send to TradingView"
+
+msgid "tv.cf.stale.p"
+msgstr "This is the version exported on {date}. If the strategy changed after that, this code does not reflect those changes."
+
+msgid "tv.cf.stale.ok"
+msgstr "Send It"

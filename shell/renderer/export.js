@@ -6,7 +6,8 @@
    真正轉檔的是 agent(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md);這個檔只負責問一次、送一句話、把產物交給人。
    送給 agent 的那句只放資料夾名(同 handoff.js 檔頭:DISPLAY_NAME 是 workspace 裡的自由文字,不放進「用戶說的話」)。
    用到 app.js 的 $ / t / confirmBox / submitMessage / running / RP / rpBag / stratSelect / rpShowTab / addMsg / scrollChat / srSay /
-   paneSt / paneToggle / trackFeature / sessionId、handoff.js 的 HO_ID_RE / hoHasCode、trade.js 的 ENV / envSwitchGuarded / trStamp——都在呼叫時才取。 */
+   paneSt / paneToggle / trackFeature / sessionId、handoff.js 的 HO_ID_RE / hoHasCode、trade.js 的 ENV / envSwitchGuarded / trStamp、
+   pine-install.js 的 tvRepaintAll——都在呼叫時才取。 */
 const XP_ORDER = ["xq", "mc", "pine"];   // 同 web 選單,不因策略重排
 const XP_PLATFORM = { xq: "XQ", mc: "MultiCharts", pine: "TradingView" };
 const XP_FEATURE = { xq: "export_xq", mc: "export_mc", pine: "export_pine" };
@@ -51,10 +52,13 @@ function xpFiles(d, local, tm) {
 }
 /* ── 純邏輯到此 ── */
 
-/* 擴充點:Pine 那一份的動作槽(轉出卡的下載鈕旁、程式碼分頁的動作列尾)。之後「裝進 TradingView」(內建瀏覽器;設計中
-   mockup-desktop-pine-install-0.1.8)往 XP_ACTIONS 推一個 provider(ctx) → 節點或 null;ctx = { where: "card" | "code", target,
-   strategy, id, session, stale }。今天是空的:槽是空的 span,不佔版面。檔案路徑不在 ctx 裡——主行程的 exportRef / exportById 有 */
+/* 擴充點:Pine 那一份的動作槽(轉出卡的下載鈕旁、程式碼分頁的動作列)。「送進 TradingView」(pine-install.js)往 XP_ACTIONS
+   推一個 provider(ctx) → 節點或 null;ctx = { where: "card" | "code", target, strategy, id, session, stale, old(重開畫回來的舊卡),
+   at(轉出時間 ms), wrap(整張卡 / 轉出檔那一面), row(動作列), base(原本拿填色的那顆:卡的下載、程式碼分頁的複製) }。
+   沒有 provider 出東西時槽是空的 span,不佔版面。檔案路徑不在 ctx 裡——主行程的 exportRef / exportById 有 */
 const XP_ACTIONS = [];
+// 一張卡一個填色(canon「每個視窗一個焦點」):槽裡的鈕拿填色時 base 退成描邊,who = "base" 還回去。過期那一面填色在「重新轉出」,不動
+function xpFill(ctx, who) { if (ctx.base && !ctx.stale) ctx.base.className = who === "ext" ? "btn-out" : "btn-fill"; }
 function xpExt(ctx) {
   const slot = xpMk("span", "xp-ext"); slot.dataset.where = ctx.where;
   // 一個 provider 壞掉不拖垮卡
@@ -102,6 +106,7 @@ function xpPaint() {
 }
 // 回合開始 / 結束(app.js 上鎖 / 解鎖同一處)與時光機進出:只換鈕態,不重畫
 function xpSync() {
+  if (typeof tvRepaintAll === "function") tvRepaintAll();   // Pine 動作槽(送進 TradingView)跟著同一組條件重畫
   const b = $("xp-btn"); if (!b) return;
   if (xpDisabled()) { b.setAttribute("aria-disabled", "true"); if (!$("xp-menu").hidden) xpClose(false); }
   else { b.removeAttribute("aria-disabled"); xpNote(null); }
@@ -168,7 +173,7 @@ async function xpHistoryItems(sid) {
   let rows = []; try { rows = await window.blave.loadSessionExports(sid); } catch (_) { return []; }
   return (rows || []).filter((r) => r && XP_PLATFORM[r.target]).map((r) => ({ ts: Number(r.ts) || 0, xp: { ...r, session: sid } }));
 }
-function xpRestore(rec) { xpPut(xpHost(null), xpCard(rec)); }
+function xpRestore(rec) { xpPut(xpHost(null), xpCard(rec, true)); }
 // 卡掛在哪:這一輪的回覆泡泡;沒有(回覆後面接了圖、或這一輪沒有字)就往回找到上一句用戶的話為止的最後一則回覆(results.js resHostNow,兩種卡同一則),再沒有才另起一則
 function xpHost(bubble) {
   if (bubble && bubble.isConnected) return bubble;
@@ -191,7 +196,7 @@ async function xpReload(name) {
   RP.data.exports = d.exports; RP.data.cryptoKline = d.cryptoKline;
   if (rpBag() === RP) xpCodePaint();
 }
-function xpCard(c) {
+function xpCard(c, old) {
   const platform = XP_PLATFORM[c.target], wrap = xpMk("div", "xp-wrap");
   const box = xpMk("div", "xp"), f = xpMk("span", "f");
   const fn = xpMk("span", "fn mono", String(c.filename).replace(/[/\\]/g, "_")); fn.title = fn.textContent;
@@ -200,13 +205,14 @@ function xpCard(c) {
   f.append(fn, ft);
   const dl = xpMk("button", "btn-fill", t("xp.dl")); dl.type = "button";
   box.append(f, dl);
-  if (c.target === "pine") box.appendChild(xpExt({ where: "card", target: c.target, strategy: c.strategy, id: c.id, session: c.session }));
   const acts = xpMk("div", "xp-acts"), view = xpMk("button", "btn-quiet", t("xp.view")); view.type = "button";
   const st = xpMk("span", "xp-st"); st.setAttribute("role", "status"); st.setAttribute("aria-live", "polite");
   acts.append(view, st);
   dl.addEventListener("click", () => xpSave(c.id ? { session: c.session, id: c.id } : { strategy: c.strategy, target: c.target }, st));
   view.addEventListener("click", () => xpGoCode(c.strategy, c.target));
   wrap.append(box, xpMk("p", "xp-cap", t("xp.capHonest", { platform })), acts);
+  if (c.target === "pine") box.appendChild(xpExt({ where: "card", target: c.target, strategy: c.strategy, id: c.id, session: c.session,
+    old: !!old, at: Number(c.ts) > 0 ? Number(c.ts) * 1000 : null, wrap, row: acts, base: dl }));
   return wrap;
 }
 async function xpSave(ref, st) {
@@ -270,8 +276,9 @@ function xpView(host, ex, d) {
     const name = RP.name; dl.addEventListener("click", () => xpSave({ strategy: name, target: k }, st));
     grp.append(cp, dl);
   }
-  if (k === "pine") grp.appendChild(xpExt({ where: "code", target: k, strategy: RP.name, id: null, session: null, stale: !!ex.stale }));
   row.append(grp, st); host.appendChild(row);
+  if (k === "pine") grp.appendChild(xpExt({ where: "code", target: k, strategy: RP.name, id: null, session: null, stale: !!ex.stale,
+    at: ex.exportedAt, wrap: host, row, base: cp }));
   // 貼上步驟:預設展開;收起狀態依平台記在 localStorage
   let open = true;
   try { open = localStorage.getItem("xp_steps_" + k) !== "0"; } catch (_) { open = true; }
