@@ -8,6 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **聊天回合步數上限 50 → 100(電腦版與雲端一致;排程 25 不動;Wei 09-27)**:「建 BNB MA 策略+回測+上
+  TradingView 對照」在 50 步被砍在貼完 Pine 之後(同日 ETH 那輪也用滿 49 步)——瀏覽器 UI 任務每個
+  click/wait/snapshot 都是一步,乾淨做完就要 ~60 步。煞車仍是預算(10 USD)與 bridge 回合逾時,不是步數。
+  references/browser.md 補一條:TradingView 換 symbol 走 `?symbol=` URL、不用搜尋框(那次在搜尋框上燒掉
+  約 20 步)。測試 `tests/check_scheduled_budget.py` 期望值同步。
+
 ## 1.1.99 — 2026-09-27
 
 - **DeepSeek 的排程報告照樣有新聞欄(WebFetch 固定來源)**:WebSearch 是 Anthropic 伺服器端工具,DeepSeek 經 proxy 沒有;

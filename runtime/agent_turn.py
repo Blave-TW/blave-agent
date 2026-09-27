@@ -2696,7 +2696,10 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     return "".join(parts)
 
 
-TURN_MAX_TURNS = 50
+# 100(Wei 09-27 由 50 調高):「建策略+回測+上 TradingView 對照」這類帶瀏覽器 UI 的任務,乾淨做完
+# 就要 ~60 步(每個 click/wait/snapshot 都是一步;09-27 兩輪實測各用滿 50 步被砍在貼完 Pine 之後)。
+# 煞車仍是預算(下面的 10 USD)與 bridge 的回合逾時,不是步數。排程回合另有自己的 25 步。
+TURN_MAX_TURNS = 100
 TURN_MAX_BUDGET_USD = 10
 
 # 空回合自動續跑。DeepSeek 串流偶發在 thinking 之後斷掉:最後一則 assistant 沒有文字也沒有
@@ -3114,7 +3117,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # "append" makes the SDK emit no system-prompt flag at all.
         system_prompt={"type": "preset", "preset": "claude_code"} if sysprompt_path else None,
         # 實測「建策略+回測+調參」正常就要 20+ 步(BTC RSI 那輪 21 步被砍在半路,
-        # $1.46 白燒)。步數放寬到 50,真正的煞車改用預算——失控迴圈燒錢才是
+        # $1.46 白燒)。步數放寬,真正的煞車改用預算——失控迴圈燒錢才是
         # 原本要防的事,用錢設限比步數合理。
         max_turns=TURN_MAX_TURNS,
         # 排程回合的 USD 上限只在 CLI 算得準(Anthropic 系)時才綁;DeepSeek 這類經 proxy 的模型

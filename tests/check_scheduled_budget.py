@@ -60,8 +60,8 @@ def turn():
     return seen["options"]
 
 chat = turn()
-check("chat turn: the normal budget (10 USD, 50 steps)", chat.max_budget_usd == 10 and chat.max_turns == 50,
-      (chat.max_budget_usd, chat.max_turns))
+check("chat turn: the normal budget (10 USD, 100 steps — browser-UI tasks measured ~60 clean; Wei 09-27)",
+      chat.max_budget_usd == 10 and chat.max_turns == 100, (chat.max_budget_usd, chat.max_turns))
 # 走真正的入口:agent_turn.main() 帶 --scheduled(report_runner 起回合的那條命令列)。
 # 直接呼叫 _apply_scheduled_limits() 測不到 main 有沒有真的套用——複審:拿掉 main 裡那一行照樣綠。
 job = "budget-x"
