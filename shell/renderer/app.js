@@ -955,8 +955,8 @@ function stratBlockedNote(code) {
   p.textContent = code === "IN_PORTFOLIO" ? t("strat.delInPf") : t("strat.delCfgUnread");
   return p;
 }
-async function stratRefresh(selectTouched) {
-  const before = new Map(RP.list.map((x) => [x.name, x.mtime]));
+async function stratRefresh(turnEnd) {
+  const before = new Map(RP.list.map((x) => [x.name, x]));
   RP.list = await window.blave.listStrategies();
   const box = $("strat-list");
   box.querySelectorAll(".strat-wrap").forEach((n) => n.remove());
@@ -990,10 +990,11 @@ async function stratRefresh(selectTouched) {
   });
   if (typeof envPaintLocalDots === "function") envPaintLocalDots();   // 列是重建的:呼吸點不等下一輪輪詢
   if (typeof libStratChanged === "function") libStratChanged();      // 策略庫列上的「已安裝」跟著本機清單走(renderer/library.js)
-  // 這一輪動過的(新出現、或 mtime 變了)→ 選最近的那支
-  if (selectTouched) {
-    const touched = RP.list.find((x) => before.get(x.name) !== x.mtime);
-    if (touched) { await stratSelect(touched.name, true); return; }
+  // 回合結束不換頁(結果卡 spec §1:中欄只因用戶點擊換內容;這一輪做了什麼由 results.js 出卡)。
+  // 看著的那支這一輪被動過 → 原地重讀重畫,分頁不動:不然人看著舊數字、卡上是新數字
+  if (turnEnd && RP.name && typeof resStratSub === "function") {
+    const was = before.get(RP.name), now = RP.list.find((x) => x.name === RP.name);
+    if (was && now && resStratSub(was, now)) { await stratReload(RP.name); return; }
   }
   // 選中的那支被刪了 → 回 welcome
   if (RP.name && !RP.list.some((x) => x.name === RP.name)) stratSelect(null);
@@ -1016,6 +1017,14 @@ async function stratSelect(name, force) {
   if (!RP.data) { stratSelect(null); return; }
   envShowMain();
   // 在看雲端時本機這邊被 agent 動了(每輪結束的 stratRefresh):只記下,切回來 rpRepaint 再畫——那時 #rp 開著的是雲端那支,不可以拿本機的頁首去蓋它
+  if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(RP.data.stats ? RP.tab : "code"); }
+}
+// 選中那支換了資料、人還在原地(stratRefresh 回合結束):同 stratSelect 的後半,但不離開別的視圖、不換分頁
+async function stratReload(name) {
+  const d = await window.blave.loadStrategy(name);
+  if (RP.name !== name) return;
+  if (!d) { stratSelect(null); return; }
+  RP.data = d; RP.drawn = {};
   if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(RP.data.stats ? RP.tab : "code"); }
 }
 /* 報告頁首(名字、說明、程式碼分頁)換成這一袋的。「送上雲端」只有這台電腦的策略才畫(雲端那份本來就在雲端);「拉回」在側欄列尾,不在這裡 */
@@ -1255,10 +1264,11 @@ async function csOpen(id) {
   const imgs = await window.blave.loadSessionImages(id);
   const brs = typeof brHistoryItems === "function" ? await brHistoryItems(id) : [];   // 內建瀏覽器每一輪的摘要列
   const xps = typeof xpHistoryItems === "function" ? await xpHistoryItems(id) : [];    // 轉出卡(renderer/export.js):排在那一輪回覆之後
-  turns.map((x) => ({ ts: x.ts, turn: x })).concat(imgs.map((x) => ({ ts: x.ts, img: x })), brs, xps)
+  const ress = typeof resHistoryItems === "function" ? await resHistoryItems(id) : [];   // 聊天結果卡(renderer/results.js):ts = 回合結束,排在那一輪回覆之後
+  turns.map((x) => ({ ts: x.ts, turn: x })).concat(imgs.map((x) => ({ ts: x.ts, img: x })), brs, xps, ress)
     .sort((a, b) => a.ts - b.ts)
     .reduce(histFixOrder, [])
-    .forEach((x) => (x.xp ? xpRestore(x.xp) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addMsg("you", x.turn.content) : addHistoryAi(x.turn.content)));
+    .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addMsg("you", x.turn.content) : addHistoryAi(x.turn.content)));
   $("chat-eg").hidden = true;
   csRenderHead(); csShowList(false); scrollChat();
 }
@@ -2021,7 +2031,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   // 不然那句話看起來送了兩次——留著的 ghost 泡泡跟之後真的送出的那則長一模一樣(Wei 實測截圖)
   const bubble = addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
   const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
-  if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束自動打開(reports.js)
+  if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
+  if (typeof resTurnStart === "function") resTurnStart(viewing);   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; pendingErr = [];
   const unlock = () => { running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
@@ -2750,7 +2761,8 @@ window.blave.onTurnEnd(async (r) => {
   const stopped = turnStopped; turnStopped = false;
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
   if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
-  stratRefresh(true).catch(() => {}).then(() => { if (typeof libTurnEnd === "function") libTurnEnd(); if (typeof rptTurnEnd === "function") rptTurnEnd(); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending。報告的「新增報告」接在後面(多出新報告會自動打開,要排在選中新策略之後)
+  const rt = typeof resTurnClose === "function" ? resTurnClose() : null;   // 這一輪的結果卡(results.js):策略清單與報告都重讀完、回覆定稿之後才出
+  stratRefresh(true).catch(() => {}).then(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const exitLine = r.code !== 0 && !stopped
     ? (/AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
@@ -2784,6 +2796,7 @@ window.blave.onTurnEnd(async (r) => {
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
+  if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
 });
 
 /* 側欄 / 聊天欄:拖拉調寬 + 收合(雲端工作頁那套移植,數字相同)。

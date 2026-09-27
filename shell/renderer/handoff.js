@@ -77,8 +77,8 @@ function hoPaint() {
 }
 
 /* 還在等著送上雲端的那一支(雲端中欄的「準備好了」卡與它的 gate 都要它)。回 id 或 null。
-   **不可以再讀 RP.name**(承重牆,規格 §2):人在雲端等的時候本機那一邊會自己動——一輪 agent 回覆結束
-   stratRefresh(true) 會 stratSelect(touched.name),RP.name 就換人了。在這裡判等於偶發地把卡拆掉。
+   **不可以再讀 RP.name**(承重牆,規格 §2):人在雲端等的時候本機那一邊會自己動——選中的那支被刪掉
+   stratRefresh 會 stratSelect(null)、人切回來也可能改選別支,RP.name 就換人了。在這裡判等於偶發地把卡拆掉。
    「那支還在不在」改到按主鈕那一刻才判(hoBack)。 */
 function hoPendingId() { return HO.on && HO.pending ? HO.pending.id : null; }
 /* 「準備好了」卡的主鈕:把人送回這台電腦那顆「送上雲端」。

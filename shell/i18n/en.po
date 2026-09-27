@@ -3519,6 +3519,58 @@ msgstr "Write me a report"
 msgid "rpt.new.msgOnce"
 msgstr "Produce it once — no schedule needed."
 
+# 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
+msgid "res.open.report"
+msgstr "Open report"
+
+msgid "res.open.bt"
+msgstr "View backtest"
+
+msgid "res.open.scan"
+msgstr "View scan"
+
+msgid "res.open.code"
+msgstr "View code"
+
+msgid "res.open.strat"
+msgstr "View strategy"
+
+msgid "res.kind.new"
+msgstr "New strategy"
+
+msgid "res.kind.bt"
+msgstr "Backtest {v}"
+
+msgid "res.kind.btUpd"
+msgstr "Backtest updated"
+
+msgid "res.kind.scan"
+msgstr "Parameter scan"
+
+msgid "res.kind.code"
+msgstr "Code changed"
+
+msgid "res.kind.cloudUpd"
+msgstr "Strategy updated"
+
+msgid "res.noBt"
+msgstr "No backtest"
+
+msgid "res.notRerun"
+msgstr "Not re-run yet"
+
+msgid "res.later"
+msgstr "Updated since"
+
+msgid "res.gone.report"
+msgstr "This report was deleted"
+
+msgid "res.gone.strat"
+msgstr "This strategy was deleted"
+
+msgid "res.more"
+msgstr "{n} more"
+
 # 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
 msgid "modal.sendFailed"
 msgstr "Couldn't send; the reason is in the chat on the right."

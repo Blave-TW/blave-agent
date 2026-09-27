@@ -550,6 +550,14 @@
   window.BlaveReport = window.BlaveReport || {};
   window.BlaveReport.renderRobust = renderRobust;
   window.BlaveReport.robSync = robSync;
+  /* 聊天結果卡(renderer/results.js)的掃描那一張:格數 + 落點 tag 的 key,判法跟結論卡 buildCard 同一支。
+   * 掃描讀不懂 → null;回測重跑過(stale)→ tag null,只剩格數 */
+  window.BlaveReport.scanTag = function (d) {
+    const sc = sanitizeScan(d && d.scan, d && d.stats, d && d.code);
+    if (!sc) return null;
+    const pl = sc.plateau, at = !sc.stale && !!sc.cur && sc.cur.i === pl.i && sc.cur.j === pl.j, where = robWhere(sc);
+    return { rows: sc.rows.length, cols: sc.cols.length, tag: at ? "rob.tag.atPlateau" : where === "stale" ? null : "rob.tag." + where };
+  };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_robust.js);畫面不靠這個
   window.BlaveReport._rob = { sanitizeScan, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, ROB_MAX_DIM };
 })();

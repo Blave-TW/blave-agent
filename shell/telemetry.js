@@ -38,7 +38,9 @@ const EVENTS = {
     // 策略轉出(renderer/export.js;0.1.8):確認框送出且回合跑起來(依平台)、程式碼分頁複製、下載…存好、在程式碼分頁看轉出檔
     "export_pine", "export_xq", "export_mc", "export_copy", "export_save", "export_view",
     // 策略版本(0.1.8;renderer/versions.js):開選單、進時光機、開比較框、還原送出、守門框送出分岔
-    "version_menu", "version_view", "version_compare", "version_restore", "version_fork"] },
+    "version_menu", "version_view", "version_compare", "version_restore", "version_fork",
+    // 聊天結果卡(renderer/results.js;0.1.8):按卡上的鈕(報告 / 策略),回合結束自己出卡不算;report_pdf = 報告「存成 PDF」
+    "result_report", "result_strategy", "report_pdf"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

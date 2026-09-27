@@ -168,19 +168,19 @@ async function xpHistoryItems(sid) {
   let rows = []; try { rows = await window.blave.loadSessionExports(sid); } catch (_) { return []; }
   return (rows || []).filter((r) => r && XP_PLATFORM[r.target]).map((r) => ({ ts: Number(r.ts) || 0, xp: { ...r, session: sid } }));
 }
-function xpRestore(rec) { xpHost(null).appendChild(xpCard(rec)); }
-// 卡掛在哪:這一輪的回覆泡泡;沒有(回覆後面接了圖、或這一輪沒有字)就往回找到上一句用戶的話為止的最後一則回覆,再沒有才另起一則
+function xpRestore(rec) { xpPut(xpHost(null), xpCard(rec)); }
+// 卡掛在哪:這一輪的回覆泡泡;沒有(回覆後面接了圖、或這一輪沒有字)就往回找到上一句用戶的話為止的最後一則回覆(results.js resHostNow,兩種卡同一則),再沒有才另起一則
 function xpHost(bubble) {
   if (bubble && bubble.isConnected) return bubble;
-  for (let n = $("chat-scroll").lastElementChild; n && !n.classList.contains("you"); n = n.previousElementSibling)
-    if (n.classList.contains("msg") && n.classList.contains("ai")) return n;
-  return addMsg("ai", "");
+  return resHostNow() || addMsg("ai", "");
 }
+// 同一則回覆裡結果卡永遠最後:兩份存檔的 ts 各自記,重開時誰先畫不保證
+function xpPut(host, card) { const g = host.querySelector(":scope > .res-group"); if (g) g.before(card); else host.appendChild(card); }
 function xpTurnEnd(bubble) {
   const list = XP.pending; XP.pending = [];
   if (!list.length) return;
   const host = xpHost(bubble);
-  list.forEach((c) => host.appendChild(xpCard(c)));
+  list.forEach((c) => xpPut(host, xpCard(c)));
   scrollChat();
   // 轉出檔是這一輪寫的:那支正開著,程式碼分頁的檔案切換跟著多一份(只換 exports,不動其他分頁)
   if (list.some((c) => c.strategy === RP.name)) xpReload(RP.name);

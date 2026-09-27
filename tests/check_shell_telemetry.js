@@ -76,7 +76,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   const tmSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
   t("os 不再寫死:依 process.platform 對到 macos / windows / linux(這台是 " + process.platform + ")", !/os: "macos"/.test(tmSrc) && sent.length > 0 && sent.every((b) => b.os === ({ darwin: "macos", win32: "windows", linux: "linux" })[process.platform]));
   for (const v of ["10.0.20348", "10.0.19045", "10.0.26100", "15.5", "14.6.1", "26.0"]) { const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { osVersion: v }); x.tm.start(); await tick(); t("osVersion=" + v + " 照送(Windows 五位 build 號)", x.sent.length === 2 && x.sent[0].os_version === v); }
-  { const apiPy = path.join(__dirname, "..", "..", "api", "openclaw", "desktop_telemetry.py");
+  { const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
     if (fs.existsSync(apiPy)) { const api = fs.readFileSync(apiPy, "utf8"), pick = (src, k) => { const m = src.match(new RegExp(k + '[^\\n]*?(/|r")(\\^[^"/]+)')); return m ? m[2].replace(/\\Z$/, "$") : null; };
       t("os_version / lang / app_version 三個形狀跟 api 的 _*_RE 逐字相同(api 早已是 {1,5},外殼落後就是這次的 bug)", ["os_version", "lang", "app_version"].every((k) => pick(tmSrc, k + ":") && pick(tmSrc, k + ":") === pick(api, "_" + k.toUpperCase() + "_RE = re\\.compile\\("))); }
     else console.log("SKIP  api 不在旁邊,略過形狀比對"); }
@@ -126,9 +126,9 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   // ── feature_used:名字是白名單,兩端同一份;renderer 每個送出點的名字都在表上;主行程拒絕表外的名字 ──
   const FEATURES = EVENTS.feature_used.name, trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8");
-  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 58 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5;library_comm 沒送出點但 0.1.5 還在送,留到它退場)", ONCE_OF(fs) && FEATURES.length === 58 && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[FEATURES.length - 1] === "version_fork" && FEATURES[20] === "library_comm");
+  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 61 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1;library_comm 沒送出點但 0.1.5 還在送,留到它退場)", ONCE_OF(fs) && FEATURES.length === 61 && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[FEATURES.length - 1] === "report_pdf" && FEATURES[20] === "library_comm");
   // 兩端漂移:api/openclaw/desktop_telemetry.py 的 EVENTS["feature_used"] 逐字同一份(同 check_runtime_mirror:要 monorepo 版面)
-  const apiPy = path.join(__dirname, "..", "..", "api", "openclaw", "desktop_telemetry.py");
+  const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
   else { const m = /"feature_used": \{"props": \{"name": \(([\s\S]*?)\)\}, "once": False\}/.exec(fs.readFileSync(apiPy, "utf8"));
     const apiNames = m ? [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : null;
@@ -155,11 +155,13 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   // 0.1.6 起沒送出點(社群段平鋪),但 0.1.5 舊外殼還在送、api 要繼續收、兩端順序要一致:留到 0.1.5 退場。
   // browser_source 同理:0.1.8 拿掉來源卡、沒有送出點了,0.1.7 還在送
   const LEGACY = ["library_comm", "browser_source"];
+  // 先佔名字、送出點還沒併進來的(report_pdf = 報告「存成 PDF」):送出點一進來這條就紅,提醒把它從這裡拿掉
+  const RESERVED = ["report_pdf"];
   // 主行程送的:browser_agent(agent 第一次呼叫瀏覽器工具,shell/browser/index.js firstUse 的 o.track;main.js 接到 telemetry)
   const brSrc = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");
   const MAIN_SENT = /if \(o\.track\) o\.track\("browser_agent"\)/.test(brSrc) && /track: \(name\) => tm\(\)\.track\("feature_used", \{ name \}\)/.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")) ? ["browser_agent"] : [];
-  const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
-  t("白名單上每個名字都有送出點(library_comm / browser_source 例外:留給 0.1.5 / 0.1.7 舊外殼)", noSender.length === 0 && LEGACY.every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
+  const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && RESERVED.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
+  t("白名單上每個名字都有送出點(library_comm / browser_source 例外:留給 0.1.5 / 0.1.7 舊外殼)", noSender.length === 0 && LEGACY.concat(RESERVED).every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
   t("送出點只在功能那一層:report 四個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、聊天在 started、停止在 stopTurn 按下、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(b && !b\.disabled\) \{ rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\); \}/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))

@@ -726,6 +726,7 @@
   window.BlaveReport = window.BlaveReport || {};
   window.BlaveReport.renderBacktest = renderBacktest;
   window.BlaveReport.buildMeta = buildMeta;   // 參數掃描分頁的 meta 列沿用同一行(report-robust.js 經 opts.buildMeta 拿,不直接讀這裡)
+  window.BlaveReport.fmtSignedPct = fmtSignedPct;   // 聊天結果卡的總報酬 / 最大回撤(renderer/results.js):跟回測頁同一支格式
   // 純計算函式掛出來給一次性的核對腳本用;畫面不靠這個
   window.BlaveReport._bt = {
     buildSeries: buildSeries, buildMonthly: buildMonthly, buildYearly: buildYearly,

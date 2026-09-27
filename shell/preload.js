@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("blave", {
   deleteStrategy: (name) => ipcRenderer.invoke("delete-strategy", name),
   listSessions: () => ipcRenderer.invoke("list-sessions"),
   loadSessionImages: (id) => ipcRenderer.invoke("load-session-images", id),
+  // 聊天結果卡(renderer/results.js):每輪一列 { ts, items },主行程驗形狀才落地
+  saveTurnResults: (id, entry) => ipcRenderer.invoke("save-turn-results", id, entry),
+  loadTurnResults: (id) => ipcRenderer.invoke("load-turn-results", id),
   loadSession: (id) => ipcRenderer.invoke("load-session", id),
   deleteSession: (id) => ipcRenderer.invoke("delete-session", id),
   listStrategies: () => ipcRenderer.invoke("list-strategies"),

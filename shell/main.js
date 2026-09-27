@@ -858,21 +858,37 @@ function listStrategies() {
     let scMtime = 0;
     try { scMtime = fs.statSync(path.join(dir, "scan.json")).mtimeMs; } catch (_) {}
     const touched = Math.max(mtime, sMtime, scMtime);
+    // 三個 mtime 分開交出去:聊天結果卡要分得出這一輪動的是程式碼、回測還是掃描(renderer/results.js)
+    const parts = { codeMtime: mtime, statsMtime: sMtime, scanMtime: scMtime, version: stratVersionNow(dir) };
     const hit = stratCache.get(name);
-    if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, mtime: touched };
+    if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, ...parts, mtime: touched };
     let displayName = null;
     try { displayName = stratMeta(fs.readFileSync(path.join(dir, "strategy.py"), "utf8")).displayName; } catch (_) {}
-    let summary = { name, displayName, hasBacktest: false, sharpe: null, totalReturn: null };
+    let summary = { name, displayName, hasBacktest: false, sharpe: null, totalReturn: null, maxDrawdown: null, generatedAt: null };
     if (sMtime) {
       try {
         const st = JSON.parse(fs.readFileSync(statsPath, "utf8"));
-        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), totalReturn: num(st["Total Return [%]"]) };
+        // generatedAt:只有明確回測會重蓋(lib/runner.py _carry_over),live tick 每根 K 重寫 stats.json 但不動它——結果卡靠它認「這一輪跑了回測」
+        summary = { name, displayName, hasBacktest: true, sharpe: num(st["Sharpe Ratio"]), totalReturn: num(st["Total Return [%]"]),
+          maxDrawdown: num(st["Max Drawdown [%]"]), generatedAt: num(st["Generated At"]) };
         tm().track("first_backtest_done");   // 每個安裝只會送出一次(telemetry.js 自己記)
       } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
     }
     stratCache.set(name, { mtime: sMtime, cMtime: mtime, summary });
-    return { ...summary, mtime: touched };
+    return { ...summary, ...parts, mtime: touched };
   }).sort((a, b) => b.mtime - a.mtime);      // 最近動過的在上面
+}
+// 最新定版的版號(lib/runner.py _mint_version 的 versions/index.json `current`);沒定過版 / 讀不到 = null。照 index 的 mtime 快取
+const stratVerCache = new Map();
+function stratVersionNow(dir) {
+  const p = path.join(dir, "versions", "index.json");
+  let m = 0; try { m = fs.statSync(p).mtimeMs; } catch (_) { stratVerCache.delete(p); return null; }
+  const hit = stratVerCache.get(p);
+  if (hit && hit.m === m) return hit.v;
+  let v = null;
+  try { const idx = JSON.parse(fs.readFileSync(p, "utf8")); v = Number.isInteger(idx && idx.current) && idx.current > 0 ? idx.current : null; } catch (_) { v = null; }
+  stratVerCache.set(p, { m, v });
+  return v;
 }
 
 function loadStrategy(name) {
@@ -1098,10 +1114,63 @@ function deleteSession(id) {
     db.prepare("DELETE FROM turns WHERE session_id = ?").run(id);
     db.prepare("DELETE FROM session_meta WHERE session_id = ?").run(id);
     try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
+    try { fs.rmSync(path.join(RES_DIR, id), { recursive: true, force: true }); } catch (_) { /* 結果卡同上 */ }
     try { fs.rmSync(path.join(BASE, "state", "browser-snapshots", id), { recursive: true, force: true }); } catch (_) { /* 瀏覽器快照同上 */ }
     try { fs.rmSync(path.join(XP_DIR, id), { recursive: true, force: true }); } catch (_) { /* 轉出卡的快照同上 */ }
     return true;
   } catch (_) { return false; } finally { db.close(); }
+}
+
+/* ── 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §7)──────────────
+   session.db 只存文字,同聊天圖 / 轉出卡:state/chat-results/<session>/index.jsonl,一列 = 一輪 { ts: 回合結束, items }。
+   雲端報告晚到 = 同一個 ts 再 append 一列,讀的時候併回那一輪。存的是原始值(數字、時間戳、key),字由 renderer 現組。
+   畫面會把這些字畫出來(標題是 agent 寫的):這裡只擋形狀與長度,畫面一律 textContent */
+const RES_DIR = path.join(BASE, "state", "chat-results");
+const RES_KINDS = ["report", "strategy"], RES_ENVS = ["local", "cloud"], RES_SUBS = ["report", "new", "backtest", "scan", "code", "cloud"];
+const RES_MAX_ITEMS = 20, RES_MAX_LINES = 2000, RES_FILE_MAX = 2 * 1024 * 1024;
+const resStr = (v, max) => typeof v === "string" && v.length > 0 && v.length <= max;
+function resItemOk(x) {
+  if (!x || typeof x !== "object" || Array.isArray(x)) return null;
+  if (!RES_KINDS.includes(x.kind) || !RES_ENVS.includes(x.env) || !RES_SUBS.includes(x.sub) || !resStr(x.ref, 200) || !resStr(x.title, 200)) return null;
+  const ver = typeof x.ver === "number" && isFinite(x.ver) ? x.ver : resStr(x.ver, 200) ? x.ver : null;
+  const facts = {};
+  if (x.facts && typeof x.facts === "object" && !Array.isArray(x.facts)) {
+    for (const [k, v] of Object.entries(x.facts).slice(0, 16)) {
+      if (!/^[a-z_]{1,24}$/.test(k)) continue;
+      if (v === null || typeof v === "boolean" || (typeof v === "number" && isFinite(v)) || (typeof v === "string" && v.length <= 64)) facts[k] = v;
+    }
+  }
+  return { kind: x.kind, env: x.env, ref: x.ref, ver, sub: x.sub, title: x.title, facts, at: typeof x.at === "number" && isFinite(x.at) ? x.at : 0 };
+}
+function saveTurnResults(id, entry) {
+  if (!okSessionId(id) || !entry || !(Number(entry.ts) > 0) || !Array.isArray(entry.items)) return false;
+  const items = entry.items.slice(0, RES_MAX_ITEMS).map(resItemOk).filter(Boolean);
+  if (!items.length) return false;
+  const dir = path.join(RES_DIR, id), file = path.join(dir, "index.jsonl");
+  try {
+    let size = 0; try { size = fs.statSync(file).size; } catch (_) { /* 還沒有 */ }
+    if (size > RES_FILE_MAX) return false;   // 撐爆的對話不再記:卡這一輪照畫,只是重開不回來
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(file, JSON.stringify({ ts: Number(entry.ts), items }) + "\n", { mode: 0o600 });
+    return true;
+  } catch (_) { return false; }
+}
+// 舊對話的結果卡:[{ ts, items }],同一個 ts 的列併成一輪(照寫入順序)
+function loadTurnResults(id) {
+  if (!okSessionId(id)) return [];
+  let lines = [];
+  try { lines = fs.readFileSync(path.join(RES_DIR, id, "index.jsonl"), "utf8").split("\n").filter(Boolean).slice(-RES_MAX_LINES); } catch (_) { return []; }
+  const by = new Map();
+  for (const l of lines) {
+    try {
+      const r = JSON.parse(l), ts = Number(r.ts);
+      if (!(ts > 0) || !Array.isArray(r.items)) continue;
+      const items = r.items.slice(0, RES_MAX_ITEMS).map(resItemOk).filter(Boolean);
+      if (!by.has(ts)) by.set(ts, []);
+      by.get(ts).push(...items);
+    } catch (_) { /* 壞掉的一列跳過 */ }
+  }
+  return [...by].map(([ts, items]) => ({ ts, items }));
 }
 
 // ── 聊天裡的圖 ─────────────────────────────────────────
@@ -2056,6 +2125,8 @@ app.whenReady().then(() => {
   handle("delete-strategy", (_e, name) => deleteStrategy(String(name || "")));
   handle("list-sessions", () => listSessions());
   handle("load-session-images", (_e, id) => loadSessionImages(id));
+  handle("save-turn-results", (_e, id, entry) => saveTurnResults(id, entry), false);
+  handle("load-turn-results", (_e, id) => loadTurnResults(id), []);
   handle("load-session", (_e, id) => loadSession(id));
   handle("delete-session", (_e, id) => deleteSession(id));
   handle("list-strategies", () => listStrategies());

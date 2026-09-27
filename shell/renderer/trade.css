@@ -144,7 +144,7 @@ html.ws-sc .side-gate { display: none; }
 .main-head { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-16); align-items: start; padding: var(--space-16) var(--space-24) var(--space-12); }
 .main-head:not(:has(.act)) { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
 .main-head > .txt { display: contents; }
-.main-head-name { grid-column: 1; grid-row: 1; }
+.main-head-name { grid-column: 1; grid-row: 1; align-self: center; }   /* 標題與 32 高的主鈕共用一條中線;沒有鈕的標頭列高就是標題,無影響 */
 /* 啟動在途時主鈕右邊多一顆「暫停下單」文字鈕(#tr-go-stop),間距 8 */
 .main-head .act { grid-column: 2; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: var(--space-8); }
 /* `.txt` 底下其餘的孩子(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)一律跨滿寬,自己一列 */
@@ -155,6 +155,8 @@ html.ws-sc .side-gate { display: none; }
 .main-head-name { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink); line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc { margin-top: var(--space-4); font-size: 12px; color: var(--ink-2); line-height: 1.5; min-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main-head-desc.wrap { white-space: normal; overflow: visible; }
+/* 有鈕時狀態句量的是「鈕底」:4 的話字面只剩約 7px、鈕的 44 熱區還蓋到字 3px(點那行字的上緣會按到「啟動下單」);12 → 字面約 15、熱區不碰字 */
+.main-head:has(.act > button:not([hidden])) .main-head-desc { margin-top: var(--space-12); }
 .main-head-desc .up { color: var(--ink); font-weight: 600; }
 .main-head-desc .ink { color: var(--ink); }   /* 已暫停的「重開過」原因行:正文墨色,不用紅、不加粗 */
 .main-head-desc .danger { color: var(--color-redText); }   /* 「可能仍在下單」的原因行:紅字只給錢還在外面暴露的時刻;不加粗、不鋪底 */
@@ -354,7 +356,7 @@ html.ws-sc .side-gate { display: none; }
   /* V2b:中欄窄到這一階、而且動作槽有**兩顆**鈕時,鈕自己一列、各佔一半——不然標題會被截成「Auto …」。
      只有一顆鈕時留在標題那一列、靠右、自然寬:無條件換行會讓最常見的 running(只有「暫停下單」)憑空多一列,
      那顆鈕還會浮在標題與狀態句之間的空白裡(spec §12-4 第 3、4 條) */
-  .main-head:has(.act button + button) .act { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; margin-top: var(--space-12); margin-bottom: var(--space-4); }
+  .main-head:has(.act button + button) .act { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; margin-top: var(--space-12); margin-bottom: 0; }   /* 鈕底到狀態句由狀態句的 12 負責,換列時也是同一個 12 */
   .main-head:has(.act button + button) .act > button { flex: 1; }
   .main-tabs { padding: 0 var(--space-16); gap: var(--space-16); }
   .pf { padding: var(--space-16); }

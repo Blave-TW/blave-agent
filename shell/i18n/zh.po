@@ -3520,6 +3520,58 @@ msgstr "幫我建立報告"
 msgid "rpt.new.msgOnce"
 msgstr "這份只要產出一次，不用建立排程。"
 
+# 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
+msgid "res.open.report"
+msgstr "打開報告"
+
+msgid "res.open.bt"
+msgstr "看回測"
+
+msgid "res.open.scan"
+msgstr "看掃描"
+
+msgid "res.open.code"
+msgstr "看程式碼"
+
+msgid "res.open.strat"
+msgstr "看策略"
+
+msgid "res.kind.new"
+msgstr "新策略"
+
+msgid "res.kind.bt"
+msgstr "回測 {v}"
+
+msgid "res.kind.btUpd"
+msgstr "回測更新"
+
+msgid "res.kind.scan"
+msgstr "參數掃描"
+
+msgid "res.kind.code"
+msgstr "程式碼修改"
+
+msgid "res.kind.cloudUpd"
+msgstr "策略更新"
+
+msgid "res.noBt"
+msgstr "沒有回測"
+
+msgid "res.notRerun"
+msgstr "還沒重跑回測"
+
+msgid "res.later"
+msgstr "之後有更新"
+
+msgid "res.gone.report"
+msgstr "這份報告已刪除"
+
+msgid "res.gone.strat"
+msgstr "這支策略已刪除"
+
+msgid "res.more"
+msgstr "還有 {n} 個"
+
 # 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
 msgid "modal.sendFailed"
 msgstr "送不出去，原因在右邊的對話。"

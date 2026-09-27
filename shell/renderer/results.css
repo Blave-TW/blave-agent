@@ -1,0 +1,31 @@
+/* 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §2,mockup A)。不新增 token、不新增元件類型:
+   殼 = web 轉出卡 .xp / 電腦版轉出卡 .msg.ai .xp 同一組(bg-body 落在聊天欄的 surface-card 上、md、內距 12、無框無陰影、
+   gap 12、置中對齊、標題 13/500、第二行 12 ink-3 上距 2),多一個 icon 16;鈕 = .btn-fill(不縮不換行)。 */
+.msg.ai .res-group { display: flex; flex-direction: column; gap: var(--space-8); margin-top: var(--space-12); }
+.res {
+  display: flex; align-items: center; gap: var(--space-12); padding: var(--space-12);
+  border-radius: var(--radius-md); background: var(--bg-body);
+  animation: res-in var(--motion-base) var(--ease-standard) backwards;
+}
+.res.is-still, .res.is-gone { animation: none; }   /* 進場只給這一輪剛出的卡;重開重畫、晚到時重畫的舊卡不再動一次 */
+@keyframes res-in { from { opacity: 0; transform: translateY(8px); } }
+.res .f { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: var(--space-8); }
+.res .f > .ic { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--ink-3); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.res .tx { flex: 1; min-width: 0; }
+.res .t {
+  font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;   /* 最多兩行,全文在 title */
+}
+/* 事實列:一組「標籤 + 數字」是一個 .kv,換行只在組與組之間;數字不拆 */
+.res .m { margin-top: var(--space-2); display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-12); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.res .m .kv { min-width: 0; }
+.res .m .v, .res .m .mono { white-space: nowrap; }
+.res .m .v { color: var(--ink-2); }   /* 不上紅綠:聊天欄裡其他東西都不上色,一張卡的正負色會變成整欄唯一的顏色 */
+.res .m .wtag { margin-right: var(--space-4); vertical-align: 1px; }
+.res .btn-fill { white-space: nowrap; }
+.res.is-gone .t { color: var(--ink-3); }
+.res-group .res.extra { display: none; }
+.res-group.all .res.extra { display: flex; }
+.res-group.all .res-more { display: none; }
+.res-more { align-self: flex-start; margin: var(--space-4) 0 0 var(--space-12); }
+@media (prefers-reduced-motion: reduce) { .res { animation: none; } }

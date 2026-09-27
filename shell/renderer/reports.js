@@ -5,7 +5,8 @@
    - 兩個視角各一袋(RPT.bags:開著 / 在讀哪一份 / 捲動 / 剛讀過那列);本機袋 = <WS>/reports 的檔案系統(主行程讀,renderer 不碰 fs),
      雲端袋 = 平台索引 + S3 本體(停機也讀得到;主行程打 api、圖換成 data URI 才交過來)。這裡仍一律 textContent。
    - 中欄誰該出現由 trade.js 的 envShowMain 在最後一步問 rptShowMain;與策略庫互斥(rptOpen 先 libLeave,libOpen 反之)。
-   - 送出後:本機 turn-end 重掃、多出新報告就自動打開;雲端 turn-end 後每 30 秒問一次清單、最多 10 分鐘,新 id 出現就停。
+   - 送出後:本機 turn-end 重掃;雲端 turn-end 後每 30 秒問一次清單、最多 10 分鐘,新 id 出現就停。多出來的報告不自動打開:
+     交給聊天結果卡(renderer/results.js resAdd),側欄入口亮記號(結果卡 spec §1:中欄只因用戶點擊換內容)。
    用到 app.js 的 $ / t / LANG / running / csTitle / csStartNew / submitMessage / addMsg / trapTab / stratSelect / rpCloudSelect / paneSt / paneToggle /
    rpWaitHold / mdBlocks / mdPaint、trade.js 的 trLeave / envShowMain / envCanSwitch、library.js 的 libEnv / libBag / libCloud / libLeave / libTrack /
    libEl——都在呼叫時才取(這支比它們先載)。 */
@@ -60,7 +61,7 @@ function rptStoredSince(sinceMs, list) { const s = Math.floor(sinceMs / 1000) - 
 /* ── 純邏輯到此 ── */
 
 const RPT = { bags: { local: rptNewBag(), cloud: rptNewBag() }, data: { local: null, cloud: null }, failed: { local: false, cloud: false }, skel: { local: false, cloud: false },
-  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null };   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
+  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, cloudRes: [], noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null };   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
 const RPT_DOCS_MAX = 8;   // 讀過的本體留幾份(回清單再進同一份不重抓;換語言整組清掉——渲染出來的字是 i18n 過的)
 function rptNewBag() { return { open: false, reading: null, scroll: 0, row: null, shown: RPT_PAGE }; }
 const rptBag = (env) => RPT.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
@@ -143,7 +144,7 @@ function rptInvalidate() {
   RPT.data.cloud = null; RPT.failed.cloud = false;
   for (const k of [...RPT.docs.keys()]) if (k.startsWith("cloud|")) RPT.docs.delete(k);
   rptCloudPollStop();
-  RPT.pending.cloud = null;
+  RPT.pending.cloud = null; RPT.cloudRes = [];
   if (RPT.noNew === "cloud") RPT.noNew = null;
   if (rptVisible("cloud")) { if (rptBag("cloud").reading) rptPaint(); else rptLoad("cloud", true); }
 }
@@ -158,45 +159,44 @@ function rptRepaint() {
   if (!$("rpt").hidden) rptPaint();
   if (!$("rpn-scrim").hidden) rptNewPaint();
 }
-/* 送出「新增報告」那一輪結束(app.js onTurnEnd,libTurnEnd 之後):本機重掃,多出新報告就自動打開(§5-5),沒有就出灰字;
+/* 送出「新增報告」那一輪結束(app.js onTurnEnd,libTurnEnd 之後):本機重掃,多出新報告就交給結果卡、側欄入口亮記號,框送出卻沒有就出灰字;
    雲端:清單跟著主機的回報走(uploader 2 分鐘 + 平台入庫),每 30 秒問一次、最多 10 分鐘 */
-// 本機回合開始(app.js submitMessage):記下開始時間,回合結束時這一輪寫出的報告自動打開(Wei 拍板:報告產出中欄自動開,
-// 不只「新增報告」框送出的那種)。雲端視角的回合另記一份:這一輪真的碰了雲端主機(rptTurnTool),結束後才去等雲端清單
+// 本機回合開始(app.js submitMessage):記下開始時間,回合結束時這一輪寫出的報告出結果卡。雲端視角的回合另記一份:
+// 這一輪真的碰了雲端主機(rptTurnTool),結束後才去等雲端清單
 function rptTurnStart(viewing) {
   RPT.turnAt = viewing && viewing.env === "local" ? Date.now() : null;
-  RPT.cloudTurn = viewing && viewing.env === "cloud" ? { at: Date.now(), touched: false, view: rptViewSig() } : null;
-}
-// 中欄現在是哪一頁。雲端視角沒有歡迎頁(預設就是自動下單頁),「人還停在原地」只能跟送出時比
-function rptViewSig() {
-  return [ENV.cur, ...["main-empty", "tr", "rp", "lib", "rpt"].map((id) => ($(id).hidden ? 0 : 1)), typeof RPC !== "undefined" ? RPC.name || "" : "", TR.tab || ""].join("|");
+  RPT.cloudTurn = viewing && viewing.env === "cloud" ? { at: Date.now(), touched: false } : null;
 }
 // app.js 每個 tool chunk 都交過來。只看「這一步做在雲端主機」:遠端 publish 的 kind 是 cloud 不是 report,分不出來,
 // 所以碰過雲端就等——沒寫報告的那一輪最多多問 10 分鐘清單,而且不出「沒多出報告」的灰字
 function rptTurnTool(c) { if (RPT.cloudTurn && c && c.type === "tool" && stepWhere(c) === "cloud") RPT.cloudTurn.touched = true; }
-function rptTurnEnd() {
+// 報告清單露在眼前(本機或雲端那袋開著、不在閱讀層):新列就在最上面,不另外亮記號
+const rptListShown = (env) => rptVisible(env) && !rptBag(env).reading;
+/* rt = 這一輪的結果卡紀錄(results.js resTurnClose);回 Promise<本機這一輪寫出的報告的結果卡項目>。
+   雲端的晚到,由輪詢找到時 resAdd 插回等它的那一輪(RPT.cloudRes) */
+function rptTurnEnd(rt) {
   const ct = RPT.cloudTurn;
   RPT.cloudTurn = null;
-  if (ct && ct.touched && !RPT.pending.cloud) RPT.pending.cloud = { env: "cloud", since: ct.at, auto: true, view: ct.view };
+  if (ct && ct.touched && !RPT.pending.cloud) RPT.pending.cloud = { env: "cloud", since: ct.at, auto: true };
+  if (rt && ct && RPT.pending.cloud) RPT.cloudRes.push({ rt, at: ct.at });
   if (RPT.pending.cloud && !RPT.poll) rptCloudPollStart(RPT.pending.cloud);   // 已在輪詢就不重開 10 分鐘窗(用戶接著聊天,每一輪都會到這裡)
   const p = RPT.pending.local, since = RPT.turnAt;
   RPT.turnAt = null;
-  if (!p && since == null) return;
+  if (!p && since == null) return Promise.resolve([]);
   if (p) { RPT.pending.local = null; rptPaintTools(); }
-  rptLoad("local", true).then((applied) => {
-    if (!applied) return;   // 被更新的一趟蓋過:那一趟自己會畫,這裡不拿舊資料下結論
+  return rptLoad("local", true).then((applied) => {
+    if (!applied) return [];   // 被更新的一趟蓋過:那一趟自己會畫,這裡不拿舊資料下結論
     const fresh = p ? rptNewEntries(p.before, RPT.data.local) : rptWrittenSince(since, RPT.data.local);
-    if (!fresh.length) { if (p) { RPT.noNew = "local"; rptSync(); } return; }   // 「沒多出報告」的灰字只回應框送出的那一輪;一般對話沒寫報告是常態
+    if (!fresh.length) { if (p) { RPT.noNew = "local"; rptSync(); } return []; }   // 「沒多出報告」的灰字只回應框送出的那一輪;一般對話沒寫報告是常態
     RPT.noNew = null;
-    // 只在人還停在報告區、歡迎頁(聊天)或這一輪的瀏覽器展開層時自動打開(瀏覽器 spec §3-5:一輪結束有報告就開,展開層自己會收);
-    // 等待期間已切到自動下單 / 策略 / 策略庫就不拉回,側欄入口只做記號
-    const brOpen = typeof BR !== "undefined" && !!BR.exp;
-    if (libEnv() !== "local" || !(rptBag("local").open || !$("main-empty").hidden || brOpen)) { $("rpt-nav-new").hidden = false; rptSync(); return; }
-    rptOpen().then((opened) => { if (opened && libEnv() === "local" && rptBag("local").open) rptShowRead(fresh[0].id); });   // 等的期間切到雲端就不開(不把本機 id 塞進雲端袋)
+    if (!rptListShown("local")) $("rpt-nav-new").hidden = false;
+    rptSync();
+    return fresh.map((r) => resReportItem(r, "local", rptKey(r)));
   });
 }
 function rptCloudPollStart(p) {
   rptCloudPollStop();
-  RPT.poll = { before: p.before || null, since: p.since, auto: !!p.auto, view: p.view || null, until: Date.now() + RPT_CLOUD_WAIT_MS, timer: null };
+  RPT.poll = { before: p.before || null, since: p.since, auto: !!p.auto, until: Date.now() + RPT_CLOUD_WAIT_MS, timer: null };
   rptCloudPollTick();
 }
 function rptCloudPollStop() { if (RPT.poll && RPT.poll.timer) clearTimeout(RPT.poll.timer); RPT.poll = null; }
@@ -208,12 +208,17 @@ async function rptCloudPollTick() {
   const fresh = w.before ? rptNewEntries(w.before, RPT.data.cloud) : rptStoredSince(w.since, RPT.data.cloud);
   if (fresh.length || Date.now() > w.until) {
     RPT.poll = null; RPT.pending.cloud = null;
+    const waiting = RPT.cloudRes; RPT.cloudRes = [];
     if (!fresh.length) { if (!w.auto) RPT.noNew = "cloud"; rptSync(); return; }   // 灰字只回應框送出的那一輪
     RPT.noNew = null;
-    // 同本機那條(rptTurnEnd):人還看著雲端的報告區、瀏覽器展開層,或中欄還是送出時那一頁才打開;已切走(或切到這台電腦)只做記號
-    const brOpen = typeof BR !== "undefined" && !!BR.exp, still = !!w.view && rptViewSig() === w.view;
-    if (libEnv() !== "cloud" || !(rptBag("cloud").open || brOpen || still)) { $("rpt-nav-new").hidden = false; rptSync(); return; }
-    rptOpen().then((opened) => { if (opened && libEnv() === "cloud" && rptBag("cloud").open) rptShowRead(fresh[0].id); });
+    // 每份插回「平台收下它之前最後開始的那一輪」(等的期間可能又聊了幾輪);時間戳不能用就給最早那一輪
+    if (typeof resAdd === "function") fresh.forEach((r) => {
+      const at = typeof r.stored_at === "number" ? (r.stored_at + RPT_CLOUD_SLACK_S) * 1000 : null;
+      const to = (at === null ? null : waiting.filter((x) => x.at <= at).pop()) || waiting[0];
+      if (to) resAdd(to.rt, [resReportItem(r, "cloud", rptKey(r))]);
+    });
+    if (!rptListShown("cloud")) $("rpt-nav-new").hidden = false;
+    rptSync();
     return;
   }
   w.timer = setTimeout(rptCloudPollTick, RPT_CLOUD_POLL_MS);

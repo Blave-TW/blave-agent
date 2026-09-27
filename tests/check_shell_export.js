@@ -80,7 +80,14 @@ ok("回合結束:paintAi 定稿之後才掛轉出卡(順序反了卡會被清掉
 ok("rpPaintHead 叫 xpPaint(觸發器與程式碼分頁跟著換策略 / 視角)", /function rpPaintHead\(B\) \{[\s\S]*?xpPaint\(\);[\s\S]*?\n\}/.test(app));
 ok("save-export / reveal-export 走 handle()(過 fromOurPage),reveal 只認 token", /handle\("save-export", /.test(main) && /handle\("reveal-export", \(_e, token\) => \{ const p = savedExports\.get\(/.test(main));
 ok("主行程收到 export chunk 就落地、回合結束寫 index", /c\.type === "export"\) \{ const rec = noteExport\(c, sessionId\)/.test(main) && /flushExports\(sessionId, turnXp\)/.test(main));
-ok("csOpen 把轉出卡插回舊對話", /concat\([^\n]*brs, xps\)/.test(app) && /x\.xp \? xpRestore\(x\.xp\)/.test(app));
+{ // 同一則回覆裡結果卡永遠最後:有 .res-group 就插在它前面
+  const put = new Function((/^function xpPut\(host, card\) \{.*\}$/m.exec(xp) || [""])[0] + "\nreturn xpPut;")();
+  const mk = (g) => { const kids = g ? ["text", g] : ["text"]; return { kids, querySelector: () => g, appendChild: (c) => kids.push(c) }; };
+  const g = { before: (c) => h1.kids.splice(h1.kids.indexOf(g), 0, c) }, h1 = mk(g), h2 = mk(null);
+  put(h1, "xp"); put(h2, "xp");
+  ok("轉出卡在結果卡之前(xpPut);沒有結果卡就接在最後;export.js 不再直接 appendChild(xpCard", JSON.stringify(h1.kids.map((x) => (x === g ? "res" : x))) === '["text","xp","res"]' && h2.kids.join() === "text,xp" && !/appendChild\(xpCard/.test(xp));
+}
+ok("csOpen 把轉出卡插回舊對話", /concat\([^\n]*brs, xps, ress\)/.test(app) && /x\.xp \? xpRestore\(x\.xp\)/.test(app));
 
 console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
 process.exit(red ? 1 : 0);
