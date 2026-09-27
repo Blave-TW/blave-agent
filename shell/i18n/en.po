@@ -3516,18 +3516,6 @@ msgstr "Crypto Market Brief"
 msgid "rpt.new.tpl.crypto"
 msgstr "Crypto market brief: BTC/ETH price action, funding rates, liquidations and Blave market indicators, plus today's read."
 
-msgid "rpt.new.chip.symbol"
-msgstr "Single-Symbol Brief"
-
-msgid "rpt.new.tpl.symbol"
-msgstr "Single-symbol brief (2330): overnight moves, recent highs/lows and moving averages (statistics), flows, plus what to watch and under what conditions."
-
-msgid "rpt.new.chip.research"
-msgstr "Research Report"
-
-msgid "rpt.new.tpl.research"
-msgstr "Research report: look into a market question — <e.g. does 'Sell in May' hold for Taiwan stocks / how many days does a stock take on average to recover its ex-dividend gap / how did the TAIEX move over the next 10 days after foreign investors sold 5 days in a row>. Give me a falsifiable conclusion, the data for and against it, robustness checks, and what would overturn it."
-
 msgid "rpt.new.honest"
 msgstr "The first report is not instant; it shows up in the Reports list when done."
 

@@ -3517,18 +3517,6 @@ msgstr "加密市場晨報"
 msgid "rpt.new.tpl.crypto"
 msgstr "加密市場晨報：BTC/ETH 走勢、資金費率、清算與 Blave 市場指標，加上今天的判讀。"
 
-msgid "rpt.new.chip.symbol"
-msgstr "單標的晨報"
-
-msgid "rpt.new.tpl.symbol"
-msgstr "單標的晨報（2330）：隔夜走勢、近期高低與均線（統計）、籌碼，以及觀察重點與條件。"
-
-msgid "rpt.new.chip.research"
-msgstr "研究報告"
-
-msgid "rpt.new.tpl.research"
-msgstr "研究報告：探討一個市場問題——<例：「Sell in May」在台股成立嗎／除息後平均幾天填息／外資連賣 5 天後，加權指數接下來 10 天過去怎麼走>。給我可被反駁的結論、支持與反對的數據、穩健性檢驗，以及什麼情況會推翻它。"
-
 msgid "rpt.new.honest"
 msgstr "首份報告非即時，寫好會出現在「報告」清單。"
 
