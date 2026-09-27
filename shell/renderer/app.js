@@ -1254,9 +1254,11 @@ function receiptFold(steps) {
   steps.forEach((st) => {
     const li = document.createElement("li"); li.className = "think-step";
     if (st.more) { li.textContent = st.more; list.appendChild(li); return; }
+    const lab = stepLabel(st);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來
+    if (!lab) return;
     const mark = document.createElement("span"); mark.className = "think-step-mark";
-    const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = st.tool;
-    const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = st.summary;
+    const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = lab.verb;
+    const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = lab.obj;
     li.append(mark, whereTag(stepWhere({ tool: st.tool })), v, obj);
     list.appendChild(li);
   });
@@ -1639,6 +1641,15 @@ function actLabel(w) {
 }
 /* runtime 比外殼新、送來外殼不認得的 kind:當成 unknown(「正在處理」),而且不帶受詞(稽核 P2-7) */
 const actKnown = (w) => (w.kind === "web_read_many" || STRINGS.en["act." + w.kind] ? w : { kind: "unknown", obj: "" });
+/* 展開的步驟清單(即時與重開畫回)跟狀態列用同一套 kind → act.* 的字,不另做對照表;工具名(ToolSearch、mcp__…)是內部名稱,
+   不上畫面(0.1.8 e2e #88)。受詞照舊是 runtime 給的 summary(檔名／搜尋字／網域),沒有才退到 kind 的受詞;
+   silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js */
+function stepLabel(c) {
+  const k = actKindOf(c || {});
+  if (k.kind === "silent") return null;
+  const w = actKnown(k);
+  return { verb: actLabel(w), obj: w.kind === "web_read_many" ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
+}
 function actReset() { ACT.running.clear(); ACT.shown = null; ACT.shownAt = 0; ACT.textStart = 0; ACT.lastDelta = 0; ACT.prep = null; ACT.lastWant = null; clearTimeout(ACT.timer); }
 function actToolPrep(c) { ACT.prep = { tool: String(c.tool || ""), kind: c.kind ? String(c.kind) : "", obj: c.kind_obj ? String(c.kind_obj) : "" }; ACT.textStart = 0; actApply(); }
 function actTabHost(tab) {
@@ -1749,15 +1760,17 @@ function busyHasFold() {
 /* 工具開跑:收據多一列。受詞(指令 / 檔名)放 summary,太長由 CSS 截。 */
 function busyStep(c) {
   if (!busy) return;
-  busy.steps += 1;
   actToolStart(c);
+  const lab = stepLabel(c);
+  if (!lab) return;
+  busy.steps += 1;
   const li = document.createElement("li");
   li.className = "think-step is-run";
   const mark = document.createElement("span"); mark.className = "think-step-mark";
   const verb = document.createElement("span"); verb.className = "think-step-verb";
-  verb.textContent = c.tool || "tool";
+  verb.textContent = lab.verb;
   const obj = document.createElement("span"); obj.className = "think-step-obj";
-  obj.textContent = c.summary || "";
+  obj.textContent = lab.obj;
   const time = document.createElement("span"); time.className = "think-step-time";
   li.append(mark, whereTag(stepWhere(c)), verb, obj, time);   // ④ 這一步實際做在哪(事實)
   busy.stepsEl.appendChild(li);

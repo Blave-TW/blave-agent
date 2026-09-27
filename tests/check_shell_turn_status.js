@@ -33,7 +33,7 @@ const M = new Function("t", "STRINGS", "env", `
   function busySet(label, obj, kind) { env.shown.push([label, obj || "", kind]); }
   ${block.replace(/^const ACT = /m, "var ACT = ")}
   ${dur}
-  return { ACT, actKindOf, actWant, actToolStart, actToolDone, actApply, actReset, actToolPrep, fmtDur };`)(t, STRINGS, env);
+  return { ACT, actKindOf, actWant, actToolStart, actToolDone, actApply, actReset, actToolPrep, fmtDur, stepLabel };`)(t, STRINGS, env);
 const tick = (ms) => { env.now += ms; const due = env.timers.filter((x) => x.at <= env.now); env.timers = env.timers.filter((x) => x.at > env.now); due.forEach((x) => x.f()); };
 const last = () => env.shown[env.shown.length - 1];
 M.actReset(); M.actApply(true);
@@ -77,6 +77,21 @@ ok("舊 runtime 退路:只看工具名,Bash 一律「正在處理」",
   && K({ tool: "Edit" }) === "file_write|" && K({ tool: "Grep" }) === "files|" && K({ tool: "WebSearch", summary: "x" }) === "search|"
   && K({ tool: "mcp__blave_browser__browser_read" }) === "web_read|" && K({ tool: "Task" }) === "delegate|" && K({ tool: "TodoWrite" }) === "silent|"
   && K({ tool: "Bash", summary: "lib/runner.py strategies/a/strategy.py" }) === "unknown|");
+// 展開的步驟清單(#88):跟狀態列同一套字,工具名不上畫面
+const SL = (c) => M.stepLabel(c);
+const TOOLS = ["ToolSearch", "mcp__blave_browser__browser_search", "mcp__blave_browser__browser_open_many", "mcp__blave_browser__browser_wait",
+  "mcp__blave__get_ssh_access", "mcp__someone_else__thing", "Bash", "Read", "ToolFromTheFuture"];
+const rows = [].concat(...TOOLS.map((tool) => [SL({ tool, kind: "brand_new_kind", kind_obj: "leak" }), SL({ tool, kind: "unknown" }), SL({ tool, summary: "x" })])).filter(Boolean);
+ok("步驟清單:任何工具、任何 kind 都不露工具名(沒有 mcp__、沒有底線代號)", rows.length > 20 && rows.every((r) => !/mcp__|_|ToolSearch|ToolFromTheFuture/.test(r.verb)) && rows.every((r) => STRINGS.en["act.unknown"] === r.verb || Object.values(STRINGS.en).includes(r.verb)), rows);
+ok("步驟清單:kind 對得到 → 狀態列那個字＋runtime 的 summary", SL({ tool: "mcp__blave_browser__browser_search", kind: "search", kind_obj: "q", summary: "ETH staking" }).verb === "Searching:"
+  && SL({ tool: "mcp__blave_browser__browser_search", kind: "search", summary: "ETH staking" }).obj === "ETH staking"
+  && SL({ tool: "Bash", kind: "backtest", kind_obj: "btc_sma", summary: "" }).obj === "btc_sma");
+ok("步驟清單:對不到 → 中性的「正在處理」、不帶 kind 的受詞;silent(ToolSearch)不列", SL({ tool: "mcp__x__y", kind: "brand_new_kind", kind_obj: "leak" }).verb === "Working"
+  && SL({ tool: "mcp__x__y", kind: "brand_new_kind", kind_obj: "leak" }).obj === "" && SL({ tool: "ToolSearch", kind: "silent" }) === null && SL({ tool: "ToolSearch" }) === null);
+ok("步驟清單:重開畫回的收據只有工具名,照名稱分類", SL({ tool: "mcp__blave_browser__browser_read", summary: "" }).verb === "Reading" && SL({ tool: "Bash", summary: "lib/runner.py" }).verb === "Working"
+  && SL({ tool: "Bash", summary: "lib/runner.py" }).obj === "lib/runner.py");
+ok("接線:即時那列與重開畫回那列都走 stepLabel,不再畫 c.tool / st.tool", /verb\.textContent = lab\.verb;/.test(src) && /v\.textContent = lab\.verb;/.test(src)
+  && !/textContent = c\.tool/.test(src) && !/textContent = st\.tool/.test(src));
 ok("時長格式", M.fmtDur(47) === "47s" && M.fmtDur(297) === "4m 57s" && M.fmtDur(60) === "1m 00s" && M.fmtDur(3720) === "1h 02m" && M.fmtDur(-3) === "0s");
 
 // ── 字串 ──
