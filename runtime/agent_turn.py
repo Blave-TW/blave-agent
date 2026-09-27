@@ -2802,11 +2802,10 @@ _STOP_STEP_TEXT = {
 def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     """停止鈕收尾那一句(進回覆也進歷史):哪幾支會動到部位/帳本的腳本沒被中斷、還在背景
     跑完(turn_stop 刻意放過),Codex 等了 HOLD_MAX_S 還沒結束、不再等的那幾支(輸出管線
-    已斷,可能沒跑完),以及停下時還在跑的步驟。都沒有就不說話。
+    已斷,可能沒跑完),以及停下時還在跑的步驟。都沒有也要有「已停止。」:停在兩個工具之間時
+    沒有這一句,finalize 會拿最後一句過場旁白補位,看起來像正式回答(0.1.8 e2e #87)。
     in_flight = 停下時還沒回來的工具的 kind;講得出人話的才列,其餘只算「有步驟被停」。"""
     left_running = [x for x in left_running if x not in gave_up]
-    if not left_running and not in_flight and not gave_up:
-        return ""
     zh = lang in ("zh", "cn") or (not lang and _is_zh(message))
     col = (1 if lang == "cn" else 0) if zh else 2
     steps = list(dict.fromkeys(_STOP_STEP_TEXT[k][col] for k in in_flight if k in _STOP_STEP_TEXT))
@@ -3601,8 +3600,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         note = _stop_note(sorted(getattr(sink, "stop_left_running", None) or ()),
                           [v[3] for v in getattr(sink, "_tool_t0", {}).values()], lang_msg, reply_lang,
                           gave_up=getattr(sink, "stop_gave_up", ()))
-        if note:
-            sink.on_text(("\n\n" if sink.has_reply() else "") + note)
+        sink.on_text(("\n\n" if sink.has_reply() else "") + note)
     sink.export_fail_note = _export_fail_note(lang_msg, reply_lang)
     sink.export_touched = touched
     reply_text = sink.finalize()

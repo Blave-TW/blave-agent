@@ -1,7 +1,7 @@
 """停止那一句不露內部工具名(e2e 0.1.8 #28:「停止時還在跑的步驟：mcp__blave_browser__browser_search。」)。
 
 鎖:① 還在跑的步驟用 kind 對到的人話(zh / cn / en);② 對不到的(unknown、silent、外殼不認得的新 kind)
-不列,只剩「已停止。」;③ 狀態列認得的每一種工具 kind(shell/i18n/en.po 的 act.*)這裡都有一句——列舉,
+不列,只剩「已停止。」,沒有步驟在跑也一樣有這一句(#87);③ 狀態列認得的每一種工具 kind(shell/i18n/en.po 的 act.*)這裡都有一句——列舉,
 不是抽樣;④ sink 記下來的就是 kind,不是工具名。
 
 跑法:cd blave-agent && python3 tests/check_stop_note_steps.py
@@ -38,7 +38,7 @@ n = at._stop_note([], ["unknown", "silent", "brand_new_kind", "mcp__blave_browse
 t("對不到 → 只寫已停止", n == "已停止。", n)
 n = at._stop_note([], ["unknown"], EN)
 t("en 對不到 → Stopped.", n == "Stopped.", n)
-t("沒有在跑的步驟 → 不說話", at._stop_note([], [], ZH) == "")
+t("沒有在跑的步驟 → 仍有「已停止。」(#87)", at._stop_note([], [], ZH) == "已停止。" and at._stop_note([], [], EN) == "Stopped.")
 n = at._stop_note(["order script"], ["unknown"], ZH)
 t("背景下單腳本那句照舊、步驟不列", n.startswith("已停止。下單腳本 會動到部位") and "步驟" not in n, n)
 
@@ -74,6 +74,17 @@ t("run_turn 交給 _stop_note 的是 kind(v[3])", '[v[3] for v in getattr(sink, 
 s.on_tool_result(types.SimpleNamespace(tool_use_id="t1", is_error=False))
 done = [c for c in s.sent if c.get("status") == "done"]
 t("工具結果照舊帶工具名與耗時", len(done) == 1 and done[0]["tool"] == "mcp__blave_browser__browser_search" and "ms" in done[0], done)
+
+# ⑤ #87:停在兩個工具之間(沒有步驟在跑、只有過場旁白)→ 回覆是「已停止。」,不是那句旁白
+s = _Sink()
+s.on_text("Coinbase 被封鎖，改開 calquify 補足六個網站。")
+s.on_tool(types.SimpleNamespace(id="t9", name="mcp__blave_browser__browser_wait", input={}))
+s.on_tool_result(types.SimpleNamespace(tool_use_id="t9", is_error=False))
+s.interrupted = True
+s.on_text(at._stop_note([], [v[3] for v in s._tool_t0.values()], ZH))
+reply = s.finalize()
+t("停在兩個工具之間:回覆是已停止、旁白不補位", reply == "已停止。", reply)
+t("run_turn 不再看 note 有沒有字才送", "if note:" not in src[src.index("stopped = getattr(sink"):src.index("reply_text = sink.finalize()")])
 
 if fails:
     sys.exit(f"{len(fails)} failed")
