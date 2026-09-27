@@ -2816,6 +2816,13 @@ def _fire_due_reports():
             if armed is not None and armed[:2] == (cron, tz) and armed[2] > now:
                 continue
             due = armed is not None and armed[:2] == (cron, tz)
+            if armed is None and _local_mode():
+                # 電腦版:app 關著時到期的那一格不補跑,記一筆 skipped / app_closed(Wei 09-26)
+                try:
+                    if report_runner.record_missed(job_id, 0, now):
+                        _log(f"report trigger: {job_id} missed a slot while the app was closed")
+                except Exception as e:
+                    _log(f"report trigger: {job_id} missed-slot check failed: {type(e).__name__}: {e}")
             nxt = report_runner.cron_next(cron, now, tz)
             if nxt is None:  # never matches / unknown zone — the reporter says why
                 _report_next.pop(job_id, None)

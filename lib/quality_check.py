@@ -367,7 +367,7 @@ def _check_plot_series(tree: ast.AST) -> list[dict]:
     return [_w(
         trigger[0],
         f"indicator-driven Type A strategy ({trigger[1]}) without PLOT_SERIES — "
-        "the web workspace chart gets no indicator pane, so the user cannot see "
+        "the backtest tab's trade chart gets no indicator line, so the user cannot see "
         "why it traded. " + _PLOT_SERIES_FIX,
     )]
 

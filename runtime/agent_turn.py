@@ -2349,6 +2349,51 @@ class LocalSink(WebSink):
             pass  # 外殼關掉管線也不能讓回合炸掉
 
 
+class ReportSink(WebSink):
+    """排程報告的無人值守回合(雲端;`--delivery report`):沒有人在看,chunk 一律不送——聊天
+    transport 不會出現這個 session,報告本身就是產出。回合結束的回覆照舊印到 stdout(進 run.log)。"""
+
+    def __init__(self, session_id):
+        super().__init__(report_url=None, report_token=None, session_id=session_id)
+
+    def _send(self, chunk):
+        pass
+
+    def set_error(self, text, code=None):
+        SCHED_OUTCOME["fault"] = code
+        super().set_error(text, code=code)
+
+
+# 排程報告回合(`--scheduled`):report_runner / 電腦版外殼代用戶起的一輪,沒人在場。預算與步數比對話
+# 小(Wei 拍板每份 1.0 USD,超過就停,runner 退回純資料版)。策略、下單、control/ 只是「被要求不碰」:
+# 下面這組 Edit/Write 規則擋得到那兩個工具,Bash 照樣寫得到(Wei 09-26 接受這層軟約束,不做硬閘)。
+SCHEDULED_MAX_BUDGET_USD = 1.0
+# SDK 的 max_budget_usd 在每一步結束後才比,超過的那一步照樣付錢(09-26 模擬:上限 0.8 停在 0.803、0.807)。
+# 預算設成「上限減一步」,整份才不會超過 Wei 定的 1.0。一步多少:09-26 從 1,260 個 Sonnet 步(排程模擬 67 +
+# 電腦版對話 1,193,依 id 去重、照 Sonnet 牌價算)實測——快取命中的一步最大 0.158 USD(15 萬 token context、
+# 輸出 7 千 token),p99 0.109;快取沒中的一步最大 0.259,但那只出現在回合第一步(離上限最遠)。取 0.16。
+SCHEDULED_STEP_MARGIN_USD = 0.16
+SCHEDULED_MAX_TURNS = 25
+SCHEDULED_EDIT_RULES = [
+    "Edit(/strategies/**)", "Write(/strategies/**)", "Edit(/control/**)", "Write(/control/**)",
+    "Edit(/report_jobs/**)", "Write(/report_jobs/**)", "Edit(/lib/**)", "Write(/lib/**)",
+    "Edit(/.env)", "Write(/.env)",
+]
+
+
+# 排程回合的結構化結果(report_runner 只讀這份,不在模型回覆裡找字):fault / 最後一則錯誤的
+# subtype 與 api_error_status / 花了多少。寫在 report_jobs/<BLAVE_SCHEDULED_JOB>/.sched_result.json。
+SCHED_OUTCOME = {}
+
+
+def _apply_scheduled_limits():
+    global TURN_MAX_BUDGET_USD, TURN_MAX_TURNS, _RESUME_MIN_TURNS
+    TURN_MAX_BUDGET_USD = SCHEDULED_MAX_BUDGET_USD - SCHEDULED_STEP_MARGIN_USD
+    TURN_MAX_TURNS = SCHEDULED_MAX_TURNS
+    _RESUME_MIN_TURNS = 0   # 續跑不另外加步數:兩次合計仍是 25 步
+    PROTECTED_EDIT_RULES.extend(r for r in SCHEDULED_EDIT_RULES if r not in PROTECTED_EDIT_RULES)
+
+
 def _unstreamed(text, streamed):
     """The tail of a finished TextBlock that the deltas did not already deliver,
     consuming the delta buffer that block was streamed from. Normally "" — the
@@ -3003,6 +3048,11 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # inside claude 2.1.239.
         "DISABLE_AUTOUPDATER": "1",
     })
+    if model:
+        # lib.report.scheduled_cost 依這一輪的模型估價(登記排程時講給用戶聽)
+        turn_env["BLAVE_TURN_MODEL"] = model
+    # 每一輪一個 id:lib.report_bricks 只在同一輪內重用建好的 pack(下一輪的行情可能已經變了)
+    turn_env["BLAVE_TURN_ID"] = os.urandom(8).hex()
     if isinstance(sink, LocalSink):
         # 電腦版:agent 的 Bash 經 lib/venue.bind 載入 command_listener 時要落在本機
         # 分支(不碰用戶的 crontab、只准綁 paper)——見 command_listener._local_mode
@@ -3257,6 +3307,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                     print(f"[agent_turn] cost=${msg.total_cost_usd} turns={msg.num_turns}", file=sys.stderr)
                     spent_usd += msg.total_cost_usd or 0
                     spent_turns += msg.num_turns or 0
+                    SCHED_OUTCOME.update(cost_usd=spent_usd, turns=spent_turns,
+                                         subtype=getattr(msg, "subtype", None),
+                                         api_error_status=getattr(msg, "api_error_status", None))
                     if getattr(msg, "is_error", False):
                         result_info = {
                             "subtype": getattr(msg, "subtype", None),
@@ -3279,7 +3332,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
             tool_cap_s = min(int(turn_env["BASH_MAX_TIMEOUT_MS"]) // 1000,
                              int(_BRIDGE_KILL_SEC - _RESUME_TAIL_MARGIN_SEC - elapsed))
             if elapsed > _RESUME_MAX_ELAPSED_SEC or budget < _RESUME_MIN_BUDGET_USD \
-                    or tool_cap_s < _RESUME_MIN_TOOL_SEC:
+                    or tool_cap_s < _RESUME_MIN_TOOL_SEC \
+                    or (_RESUME_MIN_TURNS == 0 and TURN_MAX_TURNS - spent_turns < 1):
+                # 最後一條只在排程回合成立:步數用完就不續跑——max_turns=0 對 SDK 是「不帶上限」
                 print(f"[agent_turn] empty reply, not resuming ({elapsed:.0f}s, "
                       f"${spent_usd:.2f} spent)", file=sys.stderr)
                 break
@@ -3392,7 +3447,9 @@ def main():
     # 預設值在下面解析,不寫在這裡:codex 引擎要分得出「用戶真的選了 model」與「沒帶」——
     # 把我們的預設(proxy 的模型名)當成用戶選的傳給 `codex -m` 會整輪失敗。
     parser.add_argument("--model", default=None)
-    parser.add_argument("--delivery", default="telegram", choices=["telegram", "web", "local"])
+    parser.add_argument("--delivery", default="telegram", choices=["telegram", "web", "local", "report"])
+    # 排程報告回合:預算 1.0 USD、25 步、Edit/Write 擋 strategies/ control/ report_jobs/ lib/ .env(Bash 不擋,見 _apply_scheduled_limits)
+    parser.add_argument("--scheduled", action="store_true")
     parser.add_argument("--telegram-chat-id", default=None)
     parser.add_argument("--report-url", default=None)
     parser.add_argument("--viewing-strategy", default=None)
@@ -3428,8 +3485,14 @@ def main():
     report_token = os.environ.get("BLAVE_PROXY_TOKEN", "")
     telegram_token = os.environ.get("BLAVE_TELEGRAM_TOKEN")
 
+    if args.scheduled:
+        _apply_scheduled_limits()
+        # 每次都是新的一輪:上一次的排程逐字稿不當上下文(越積越長、越來越貴)
+        ss.clear_session(args.session_id)
     if args.delivery == "web":
         sink = WebSink(args.report_url, report_token, args.session_id)
+    elif args.delivery == "report":
+        sink = ReportSink(args.session_id)
     elif args.delivery == "local":
         sink = LocalSink(args.session_id)
     else:
@@ -3446,7 +3509,22 @@ def main():
         effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
         mcp_servers=args.mcp_servers,
     ))
+    if args.scheduled:
+        _write_sched_outcome()
     print(reply)
+
+
+def _write_sched_outcome():
+    job = os.environ.get("BLAVE_SCHEDULED_JOB", "")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,39}", job):
+        return
+    path = os.path.join(WORKSPACE, "report_jobs", job, ".sched_result.json")
+    try:
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({k: v for k, v in SCHED_OUTCOME.items() if isinstance(v, (str, int, float, type(None)))}, f)
+        os.replace(path + ".tmp", path)
+    except OSError as e:
+        print(f"[agent_turn] sched outcome not written: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

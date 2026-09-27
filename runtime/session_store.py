@@ -211,6 +211,15 @@ def append_turn(session_id, role, content):
     conn.close()
 
 
+def clear_session(session_id):
+    """Drop one session's transcript and summary (a scheduled report turn starts clean each run)."""
+    conn = _conn()
+    conn.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM session_meta WHERE session_id = ?", (session_id,))
+    conn.commit()
+    conn.close()
+
+
 def get_context(session_id):
     """Returns (summary_text, recent_turns) — recent_turns is everything after
     the compaction watermark, oldest first."""

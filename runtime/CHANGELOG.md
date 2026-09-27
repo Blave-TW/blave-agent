@@ -46,6 +46,32 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   等 29026 驗過 hook 通道;Codex 引擎沒有對應的機制,只有系統層規則。實測(本機 Sonnet、真 CLI、四篇與三篇英文原文的研究
   回合各一次):旁白全中文、回覆沒有半形標點夾在中文之間,也沒有把提醒講給用戶聽。
 
+- **雲端排程報告改成到點跑一輪 agent 寫判讀、整理新聞(`report_runner`、`agent_turn --delivery report --scheduled`)**:
+  只對 `job.json.agent_consent == true` 的 job(登記時用戶聽過每份估價、同意;這版之前登記的全部照舊出數據版、不加尾註)。
+  用戶「當時」的模型偏好(`state/model_prefs.json` 的 `_last`),不在登記時固定。每份上限 1.0 USD(Wei 09-26 由 0.8 調高;Sonnet 實測每份 0.46–0.55)、25 步(續跑不加步數)、10 分鐘;
+  Edit/Write 擋 strategies/ control/ report_jobs/ lib/ .env(**Bash 不擋:軟約束,Wei 09-26 接受**)。每個 job 每天最多起一次回合
+  (失敗、立即執行都算)。回合名額照 turn_slots(對話優先;試用機單一名額不佔、記憶體低不加);逾時先建停止旗標讓 turn_stop 收掉整棵樹
+  (動錢的行程放過),寬限 20 秒再硬殺。沒完成就退回 `run.py` 的純資料版,尾註一句原因(`BLAVE_REPORT_DEGRADED`);原因只看結構化結果
+  (`report_jobs/<id>/.sched_result.json` 與 runner 自己的逾時),不在回覆文字裡找字。連續 3 次降級發 `report_degraded`(P2,冷卻檔獨立,
+  不壓掉 strategy_failed);餘額不足只寫尾註。報告歸屬靠 `lib.report.write_report` 在 `BLAVE_SCHEDULED_JOB` 下寫的 `.published`。
+  **電腦版排程這版照舊只出數據版**(下一版);電腦版 app 關著時錯過的那一格記一筆 `skipped / app_closed`,不補跑。
+  每日次數另存 `report_jobs/<id>/.agent_day`,拿到名額、起回合**之前**寫入(runs.jsonl 只留 50 行會洗掉計數;runner 中途被殺也算數)。
+  稽核 0.1.7 修正:SDK 預算設「上限 − 0.16」(SDK 每步結束才比,超過的那一步照付;0.16 = 實測快取命中時單步最大成本);收盤報告 job 碰到休市(週末,或
+  workspace 的 `is_tw_trading_day` 說休市)在起回合前就跳過(`agent_skipped: market_closed`,不花預算、不算次數、不算降級);
+  雲端 `run.py` 也帶 `BLAVE_SCHEDULED_RUN=1`,純資料版休市照舊 skipped,不再落到上個交易日重發;沒有 `turn_limits.json`
+  (api 還沒回過名額)當成單一名額不叫 agent;回合名額改成直接用 `turn_slots`(不再在 runner 裡抄一份);回合帶
+  `--ui-lang`(用戶登記時的語言),訊息給 pack 的確切呼叫、雲端走 WebSearch/WebFetch。
+  同意過的 job 最密每小時一次(登記時拒絕更密的 cron)。試用機／單一名額:`agent_skipped: single_slot`,中性(不加尾註、不計次、
+  不通知),`lib.report.scheduled_agent_available()` 讓 R8 不去徵求同意。重新登記沒帶 `agent_consent` = 沿用舊值。
+  排程回合步數用完就不續跑(max_turns=0 對 SDK 是沒有上限)。硬殺後讀輸出最多等 10 秒。`report_degraded` 送成功才寫冷卻戳記。
+  試用轉付費(`agent_available()` 由 False 變 True):每個還沒同意的報告 job 記一筆 P3 `report_agent_available`(只記不推),下一份排程報告尾註一句
+  「升級後排程可以請 AI 整理新聞，跟 agent 說一聲就能開」,只講一次;不自動開、不扣費。寫 `.agent_day` 失敗就不起回合、名額馬上還回去。
+  新增 `session_store.clear_session`;api 新事件型別 `report_degraded`、`report_agent_available`(**先部署 api**,再發這個 VERSION)。
+
+- **報告 pack 只在同一輪重用**:`agent_turn` 每一輪把 `BLAVE_TURN_ID` 放進回合環境,`lib/report_bricks` 以它判斷
+  「同一輪」——publish 被拒後重送同一包,下一輪一律重建(行情已經變了)。測試 `tests/check_codex_engine.py`、
+  `tests/check_report_flow.py`。
+
 - **停止鈕按下 ≤2 秒停住,連跑到一半的工具一起殺掉(新 `runtime/turn_stop.py`)**:原本唯一的通道是 `/report` 回應夾帶的
   `interrupt: true`,而 run_turn 只在訊息邊界檢查——agent 在跑回測／Bash、或模型安靜思考時根本不 POST,停止要等工具跑完才生效。
   現在啟動方給每一輪一個旗標檔路徑(環境變數 `BLAVE_TURN_INTERRUPT_FILE`,不上 argv:舊 runtime 不認也不會 exit 2),建檔 = 停;

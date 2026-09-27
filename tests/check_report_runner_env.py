@@ -40,9 +40,11 @@ for system in ("Linux", "Darwin", "Windows"):
     R.platform.system = lambda s=system: s
     os.environ.pop("BLAVE_AGENT_LOCAL", None)
     env = R._subprocess_env()
-    check(env.get("BLAVE_MODE") == "live" and not any(k.startswith("BLAVE_") and k != "BLAVE_MODE" for k in env)
+    check(env.get("BLAVE_MODE") == "live" and env.get("BLAVE_SCHEDULED_RUN") == "1"
+          and not any(k.startswith("BLAVE_") and k not in ("BLAVE_MODE", "BLAVE_SCHEDULED_RUN") for k in env)
           and "TZ" not in env,
-          f"{system} cloud: only BLAVE_MODE — a stray BLAVE_SCHEDULED_RUN or BLAVE_KLINE_SOURCE never passes")
+          f"{system} cloud: BLAVE_MODE and the runner's own BLAVE_SCHEDULED_RUN=1 (a closed day stays skipped, "
+          "audit 0.1.7 P1-2) — the token, BLAVE_KLINE_SOURCE and BLAVE_AGENT_LOCAL never pass")
     os.environ["BLAVE_AGENT_LOCAL"] = "1"
     env = R._subprocess_env()
     blave = {k for k in env if k.startswith("BLAVE_")}

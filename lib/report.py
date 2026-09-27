@@ -130,6 +130,22 @@ def _write_bytes(path, data):
         raise
 
 
+def _mark_scheduled(report_id):
+    """A scheduled agent run (the runner sets BLAVE_SCHEDULED_JOB for that turn) records which
+    report it produced, so report_runner can tell its own report from anything else written in
+    the same minutes. Best-effort: the report itself is already on disk."""
+    job = os.environ.get("BLAVE_SCHEDULED_JOB")
+    if not job or not _JOB_ID_RE.fullmatch(job):
+        return
+    try:
+        d = os.path.join(JOBS_DIR, job)
+        if os.path.isdir(d):
+            with open(os.path.join(d, ".published"), "a", encoding="utf-8") as f:
+                f.write(report_id + "\n")
+    except OSError:
+        pass
+
+
 def write_report(report_id, title, blocks, type="research", report_type=None,
                  created_at=None, meta=None, images=None):
     """Write one report into the drop directory. Returns the file path.
@@ -185,10 +201,12 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     # Each bump only when its content is present, so a report without it is still accepted
     # by an api one version behind. 1.4 = a news block, a `private` block or a footnote link. The 1.3 meta flags count by presence: an explicit false
     # is still a prop a 1.1/1.2 validator refuses.
-    if any(isinstance(b, dict) and (b.get("type") == "news" or "private" in b
-                                    or (b.get("type") == "footnote"
-                                        and any("url" in i for i in b.get("items") or [])))
-           for b in blocks):
+    if any(isinstance(b, dict) and b.get("type") == "bar_chart" and b.get("variant") == "profile" for b in blocks):
+        version = "1.5"   # 連續數值軸剖面(爆倉地圖);1.5 是 1.4 的超集
+    elif any(isinstance(b, dict) and (b.get("type") == "news" or "private" in b
+                                      or (b.get("type") == "footnote"
+                                          and any("url" in i for i in b.get("items") or [])))
+             for b in blocks):
         version = "1.4"
     elif "shareable" in blocks[0] or "involves_futures" in blocks[0]:
         version = "1.3"
@@ -226,6 +244,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
         raise
     # ASCII only: a report job's stdout goes to run.log in the Windows locale codec (cp950),
     # and an unencodable advisory line would fail a run whose report is already written.
+    _mark_scheduled(report_id)
     warnings = _research_warnings(title, blocks) if type == "research" else []
     warnings += _shareable_warnings(type, blocks[0])
     for w in warnings:
@@ -330,7 +349,37 @@ def _tz_ok(tz):
     return True
 
 
-def register_schedule(id, title, prompt, cron, human, script, enabled=True, tz=None):
+# 雲端排程報告每份一輪 agent 的估價(點 = TWD,每份)。Claude:09-26 Sonnet 實測 0.46–0.55 USD/份
+# × 1.25 markup × 32(pricing.md 的扣費公式)≈ 18–22 點,加 web search 每次 0.4 點。
+# 上限是 1.0 USD(runtime agent_turn SCHEDULED_MAX_BUDGET_USD)= 1.0 × 1.25 × 32 = 40 點,超過就停、改出純資料版。
+# 每次跑用的是用戶「當時」的模型偏好,不是登記那一刻的,所以估價只能講「依你當時的模型」。
+SCHEDULED_COST_TWD = {"claude": (18, 25), "deepseek": (0.5, 1)}
+
+
+def scheduled_cost(model=None):
+    """(low, high) TWD a scheduled agent run costs on `model` (default: the model this turn runs
+    on, BLAVE_TURN_MODEL). Quote it when registering (references/reports.md §1b R8)."""
+    m = (model or os.environ.get("BLAVE_TURN_MODEL") or "").lower()
+    return SCHEDULED_COST_TWD["deepseek" if "deepseek" in m else "claude"]
+
+
+def scheduled_agent_available():
+    """False on the desktop (data-only scheduled reports this version) and on a trial / one-slot
+    cloud machine (its only turn slot stays the user's). Then R8 asks nothing: the scheduled
+    version is data only."""
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        return False
+    state = os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(WORKSPACE), "state")
+    try:
+        with open(os.path.join(state, "turn_limits.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        return int(d.get("max_turns")) > 1 and not d.get("trial")
+    except (OSError, ValueError, TypeError, AttributeError):
+        # 讀不到名額設定就不知道是不是試用機:不當成可用(試用機不能登記成同意;同 report_runner.check_upgrade)
+        return False
+
+
+def register_schedule(id, title, prompt, cron, human, script, enabled=True, tz=None, agent_consent=None):
     """Register (or update) a scheduled report: writes `report_jobs/<id>/run.py` and
     `job.json`. Returns the job directory. The runtime reads that file, fires the script
     when the cron comes due, records each run and reports the list to the web — never
@@ -352,6 +401,12 @@ def register_schedule(id, title, prompt, cron, human, script, enabled=True, tz=N
             workspace, every `BLAVE_*` variable stripped, no machine token; it
             publishes by writing into `reports/` (write_report / templates
             `publish(pack)`), and writes nothing when there is nothing to report.
+    agent_consent  True only after you told the user a scheduled run wakes you and costs about
+            `scheduled_cost()` points each time (on whatever model they are on then) and they
+            said yes; False when they withdraw it; None (default) keeps what the job had — an
+            edit does not drop it. Without it the job runs data-only, as every job registered
+            before this existed does. True needs `scheduled_agent_available()` and a cron that
+            fires at most hourly (one fixed minute) (references/reports.md §8).
     tz      IANA zone the cron is read in. Leave it out: it is taken from the machine's
             own setting (`state/timezone`, written by the platform from the user's
             browser). If that is missing this raises — ask the user which time zone they
@@ -381,19 +436,36 @@ def register_schedule(id, title, prompt, cron, human, script, enabled=True, tz=N
     job_dir = os.path.join(JOBS_DIR, id)
     os.makedirs(job_dir, exist_ok=True)
     now = int(time.time())
-    created_at = now
+    created_at, prev_consent = now, False
     try:
         with open(os.path.join(job_dir, "job.json"), encoding="utf-8") as f:
             prev = json.load(f)
         if (isinstance(prev, dict) and isinstance(prev.get("created_at"), int)
                 and not isinstance(prev["created_at"], bool)):
             created_at = prev["created_at"]
+        prev_consent = isinstance(prev, dict) and prev.get("agent_consent") is True
     except (OSError, ValueError):
         pass
+    explicit = agent_consent is not None
+    if not explicit:
+        agent_consent = bool(prev_consent)
+    if not isinstance(agent_consent, bool):
+        raise ValueError("agent_consent must be True, False or None (keep)")
+    if agent_consent:
+        if explicit and not scheduled_agent_available():
+            raise ValueError("this machine runs scheduled reports data-only (desktop, or a trial / one-slot "
+                             "machine): register without agent_consent and tell the user the scheduled "
+                             "version is data only (references/reports.md R8)")
+        if not fields[0].isdigit():
+            raise ValueError(f"cron {cron!r} fires more than once an hour: a job that wakes the agent fires at "
+                             "most hourly — give the minute field one number (e.g. '30 8 * * *'), or pass "
+                             "agent_consent=False for a data-only job")
     _write_text_atomic(os.path.join(job_dir, "run.py"), script)
     doc = {"id": id, "title": title, "prompt": prompt,
            "schedule": {"human": human, "cron": " ".join(fields), "tz": tz},
            "enabled": enabled, "created_at": created_at, "updated_at": now, "pending": None}
+    if agent_consent:
+        doc["agent_consent"] = True
     _write_text_atomic(os.path.join(job_dir, "job.json"),
                        json.dumps(doc, ensure_ascii=False, indent=2) + "\n")
     return job_dir

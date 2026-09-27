@@ -296,6 +296,13 @@ def _stale_incomplete_month(path, ttl_hours, ym, edge_days=15):
         return True
 
 
+def _tmp_path(path):
+    """Same-directory tmp name unique per process AND thread: two threads writing the same month
+    (a batch with a repeated symbol, report bricks fetching in parallel) must not share one tmp —
+    the first one's cleanup deleted the second one's file before its os.replace."""
+    return path.with_name(f'{path.name}.{os.getpid()}.{threading.get_ident()}.tmp')
+
+
 def _atomic_to_parquet(df, path, footer_meta=None):
     """Write `df` to `path` via same-directory tmp file + os.replace.
     `footer_meta` (bytes→bytes) is merged into the parquet schema metadata.
@@ -304,7 +311,7 @@ def _atomic_to_parquet(df, path, footer_meta=None):
     half-written parquet: a crash/kill mid-write leaves only a *.tmp file,
     and os.replace on the same filesystem is atomic.
     """
-    tmp = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+    tmp = _tmp_path(path)
     try:
         if footer_meta:
             table = pa.Table.from_pandas(df)
@@ -548,7 +555,7 @@ def _write_single(prefix, params, df, meta):
     table = pa.Table.from_pandas(df, preserve_index=True)
     table = table.replace_schema_metadata({**(table.schema.metadata or {}),
                                            _META_KEY: json.dumps(meta).encode()})
-    tmp = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+    tmp = _tmp_path(path)
     try:
         pq.write_table(table, tmp)
         os.replace(tmp, path)
@@ -1031,7 +1038,7 @@ def fetch_kline_batch(symbols, interval, start, end, headers):
     would quietly keep pulling its prices from api.blave.org."""
     symbols = [normalize_symbol(s) for s in symbols]
     if _kline_source() == 'binance':
-        return {sid: fetch_kline(sid, interval, start, end, headers) for sid in symbols}
+        return _binance_batch(list(dict.fromkeys(symbols)), interval, start, end, headers)
     def _parse(records):
         df = pd.DataFrame(records)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
@@ -1052,6 +1059,28 @@ def fetch_kline_batch(symbols, interval, start, end, headers):
     )
     return {sid: _drop_forming_bar(_sanity_check_ohlc(df, f'{sid} {interval} kline'), interval)
             for sid, df in results.items()}
+
+
+def _binance_batch(uniq, interval, start, end, headers):
+    """fetch_kline per symbol, up to 4 side by side (the limiter and _BINANCE_INFLIGHT still pace
+    the requests). Sub-5-minute intervals stay one at a time: a cold year of 1m bars is ~360 MB of
+    raw rows per symbol, so four at once would quadruple a large backtest's peak memory. The first
+    failure stops the rest (cancel what has not started) and is raised, as the sequential loop did."""
+    from concurrent.futures import ThreadPoolExecutor, FIRST_EXCEPTION, wait
+    workers = 1 if _is_sub_5min(interval) else min(4, max(1, len(uniq)))
+    if workers == 1:
+        return {sid: fetch_kline(sid, interval, start, end, headers) for sid in uniq}
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        futs = {sid: pool.submit(fetch_kline, sid, interval, start, end, headers) for sid in uniq}
+        done, _ = wait(futs.values(), return_when=FIRST_EXCEPTION)
+        for f in done:
+            if f.exception() is not None:
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise f.exception()
+        return {sid: f.result() for sid, f in futs.items()}
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
 # ── Exchange-native kline ─────────────────────────────────────────────────────
@@ -1157,6 +1186,9 @@ _BINANCE_PAGE   = 1000          # server cap per response, not a preference
 # docs). 400 pages/min = 2000 weight, leaving headroom for whatever else the box
 # is doing; the 429 handling below is the backstop, not the throttle.
 _BINANCE_LIMITER = _RateLimiter(400, 60)
+# At most 10 Binance requests in flight per process — one symbol's page pool was already 10;
+# fetch_kline_batch running symbols side by side must not multiply it (IP-level 429s).
+_BINANCE_INFLIGHT = threading.BoundedSemaphore(10)
 
 # Binance and BingX spell intervals identically, so the lib's own '1min' family
 # maps onto both. Binance spellings map to themselves: lib/paper_data calls
@@ -1175,7 +1207,8 @@ def _binance_get(url, params, max_retries=6, timeout=30, max_wait=None):
     for attempt in range(max_retries):
         _BINANCE_LIMITER.acquire()
         try:
-            r = requests.get(url, params=params, timeout=timeout)
+            with _BINANCE_INFLIGHT:
+                r = requests.get(url, params=params, timeout=timeout)
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             if attempt == max_retries - 1:
                 raise
@@ -1499,6 +1532,22 @@ def fetch_open_interest_coin(symbol, headers):
     `symbol` accepts BTC / BTCUSDT / btc. 404 → None; 503 propagates."""
     return _raw_snapshot('oi_imbalance/get_coin', headers,
                          {'symbol': symbol}, allow_404=True)
+
+
+def fetch_liquidation_map(symbol, headers):
+    """爆倉地圖 Liquidation map (GET /liquidation/get_map) — one coin, two layers over the same
+    200 price buckets (labels, USDT), around the current `price`:
+      actual     liquidation['24h']: buy_liq[] / sell_liq[] — Binance force-order liquidations
+                 that HAPPENED in the last 24 h, bucketed by fill price, USD; each value is
+                 divided by a fixed 0.3 Binance-share assumption to estimate the whole market.
+                 buy_liq = short liquidations (above price), sell_liq = long liquidations.
+      estimated  oi_value[] / cumsum[] — a MODEL ESTIMATE of where Binance open interest would
+                 be liquidated (leaderboard positions + OI + volume), USD. Not real orders and
+                 not actual events; any block built from it must say so.
+    `symbol` accepts BTC / BTCUSDT / btc. Needs data access (API plan or data fee); no cache —
+    the server snapshot is the state. 400 with "symbol is required" never happens from here."""
+    sym = normalize_symbol(symbol if str(symbol).upper().endswith('USDT') else str(symbol).upper() + 'USDT')
+    return _raw_snapshot('liquidation/get_map', headers, {'symbol': sym})
 
 
 def fetch_cvd_table(headers):
@@ -1894,7 +1943,7 @@ def _tw_public_market(stock_id):
 def _write_market_file(data):
     path = _tw_market_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+    tmp = _tmp_path(path)
     tmp.write_text(json.dumps(data, ensure_ascii=False))
     os.replace(tmp, path)
 
@@ -2781,7 +2830,7 @@ def _twstock_list_cache_path():
     return _CACHE_DIR / 'twstock_list.parquet'
 
 
-def fetch_twstock_list(headers):
+def fetch_twstock_list(headers, max_retries=6, timeout=60):
     """全市場股票清單（上市+上櫃，含 ETF）。DataFrame indexed by stock_id, columns:
     name, close, industry_code, listing_date (YYYY-MM-DD). Basic company data, not a
     time series — refreshed once a day: single-file cache like fundamentals (see
@@ -2794,7 +2843,7 @@ def fetch_twstock_list(headers):
     df = _load_fundamental_cache(path, max_age_days=1)
     if df is not None:
         return df
-    r = _retry_get(f'{BASE}/studio/market/twstock/list', headers=headers, timeout=60)
+    r = _retry_get(f'{BASE}/studio/market/twstock/list', max_retries=max_retries, headers=headers, timeout=timeout)
     data = r.json().get('data', [])
     if not data:
         return pd.DataFrame()
@@ -4317,15 +4366,16 @@ _BINANCE_TICKER_24H = 'https://fapi.binance.com/fapi/v1/ticker/24hr'
 
 def fetch_binance_ticker_24h():
     """Binance USDT-M perpetuals, rolling 24 h (public, no key, any machine). DataFrame indexed
-    by symbol (BTCUSDT): last, change_pct (percent, +3.2 = +3.2 %), quote_volume (USDT).
+    by symbol (BTCUSDT): last, change_pct (percent, +3.2 = +3.2 %), quote_volume (USDT), volume
+    (base asset, rolling 24 h — the same unit as a daily kline's Volume).
     Only symbols ending in USDT; one request."""
     # A report brick, not a backtest: two tries, then the caller drops the table (a blocked region must
     # not stall every brief for minutes of backoff).
     rows = _binance_get(_BINANCE_TICKER_24H, {}, max_retries=2, timeout=15, max_wait=5).json()
     out = [{'symbol': r['symbol'], 'last': float(r['lastPrice']), 'change_pct': float(r['priceChangePercent']),
-            'quote_volume': float(r['quoteVolume'])}
+            'quote_volume': float(r['quoteVolume']), 'volume': float(r.get('volume') or 'nan')}
            for r in rows if isinstance(r, dict) and str(r.get('symbol', '')).endswith('USDT')]
-    return pd.DataFrame(out, columns=['symbol', 'last', 'change_pct', 'quote_volume']).set_index('symbol')
+    return pd.DataFrame(out, columns=['symbol', 'last', 'change_pct', 'quote_volume', 'volume']).set_index('symbol')
 
 
 def fetch_news(headers, q=None, since=None, limit=None):

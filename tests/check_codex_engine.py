@@ -112,6 +112,11 @@ base_options = dict(vars(sdk_calls[0][1]))
 assert "effort" not in base_options
 run_local_turn(effort="low")
 with_effort = dict(vars(sdk_calls[1][1]))
+# BLAVE_TURN_ID 每一輪一個(pack 只在同一輪重用):兩輪都要有、而且不同;比對其餘 options 時把它拿掉
+ids = [base_options["env"].get("BLAVE_TURN_ID"), with_effort["env"].get("BLAVE_TURN_ID")]
+assert all(ids) and ids[0] != ids[1], ids
+base_options["env"] = {k: v for k, v in base_options["env"].items() if k != "BLAVE_TURN_ID"}
+with_effort["env"] = {k: v for k, v in with_effort["env"].items() if k != "BLAVE_TURN_ID"}
 assert with_effort.pop("effort") == "low" and with_effort == base_options
 sdk_calls[:] = sdk_calls[:1]
 

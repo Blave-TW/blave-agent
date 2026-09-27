@@ -92,7 +92,10 @@ writes the pictures before the JSON, in the order the drop dir requires. For
 
 **The write is the finish line.** Once the JSON is in the drop dir the report is
 produced and you are done — tell the user it has been produced and will show up in the
-Reports list (「報告」 in the workspace sidebar) shortly, then move on. Shipping it is the runtime's job: a 2-minute
+Reports list (「報告」 in the workspace sidebar) shortly, then move on. **The chat reply is one
+or two sentences: the conclusion and the one thing to watch.** The report is the record; do not
+restate it in chat — no bullet list, no figure the report already shows (its lead and KPI row
+are right there). Shipping it is the runtime's job: a 2-minute
 timer picks the file up, so in the normal case the report appears within about two
 minutes. **Do not poll `status()`, and do not wait for `pending` to turn into `sent`
 before replying** — every extra tool call there is the user paying to watch a timer that
@@ -117,6 +120,50 @@ report lands in `failed/` for that reason, this machine's runtime is too old —
 the picture yourself and reference it by `sha256` (§5), or leave it out.
 
 ## 1b. Templates — the data half is already written
+
+### Report flow — search first, then build (every report but a backtest report)
+
+A report is not a fixed form: it is built around what actually happened today. For **every**
+report — the market briefs, 台股收盤報告, 單標的晨報, a custom recipe, a research report, and the
+unattended turn of a scheduled report — work in this order. The one exception is a backtest report
+(its content is the backtest; no news search, no market extras — say an obvious anomaly in the
+narrative instead).
+
+1. **Search first** (fast, ~15 s): the news and events in the report's window (§1b › News).
+2. **Pick 1–3 things that are special today** from what you found — a hacked exchange, a listing
+   or unlock, a policy decision, a stock's earnings. Nothing special → skip to 3 with no extras.
+3. **Build once**: the default recipe **plus** bricks for those things, in one call —
+   `crypto_market_brief(extra=[["coin_snapshot", {"symbol": "BGB"}], ["exchange_snapshot", {"exchange": "okx"}]])`.
+   Any template or `build(recipe, extra=…)` takes `extra`. Event bricks: `coin_snapshot(symbol)`
+   (price and volume against its 20-day mean), `exchange_snapshot(exchange)` (that exchange's 24h
+   liquidations, open interest, BTC funding — only exchanges Blave collects; others become a note),
+   `relative_to(symbol, benchmark="BTC")` (never the benchmark against itself),
+   `liq_map(symbol)` — a coin's liquidation profile over a continuous price axis (`bar_chart`
+   variant `profile`, contract 1.5): solid bars = force orders that happened in the last 24 h
+   (each bucket keeps both sides — `neg` = long liquidations/red, `pos` = shorts/green, never
+   netted; ×3.3 Binance-share scaling), dashed line = the model-estimated exposure from leaderboard positions —
+   an estimate, never real orders, and the caption says so. Use it when the story is leverage,
+   liquidations or a cascade; any other brick works too (`price_chart` of a Taiwan
+   stock, `tw_institutional(symbol=…)`). **At most 3 extras, each one fetch**; at least one of them
+   is about the thing your lead is about. `publish` checks this: news that names an instrument with
+   good or bad news, and no extra built, gets a refusal naming the exact `extra=[…]` to rebuild with
+   (a Taiwan stock: `["tw_institutional", {"symbol": "2409"}]` or its `price_chart`; the report's own
+   coin: `relative_to`; another coin: `coin_snapshot`). `narrative["no_extra"]` (one sentence) is only
+   for a brick that cannot be built — no data for it — and never covers an instrument your lead /
+   read / summary talks about: if you argue from it, show it (外資大砍友達 → 友達's 外資買賣超; a DOGE
+   ETF closing → DOGE against BTC). What the data sources do not have degrades like any brick
+   (`pack.missing` / notes) — never fetch it by hand.
+4. **Write the narrative**: the lead states the most important thing today (usually the one you
+   built extras for); run down the checklist `describe()` prints.
+5. **Publish once**, with the conclusion as the title (`title=…`). If `publish` refuses, it lists every
+   problem at once: fix them all and re-send the **same pack** — `publish("<report id>", narrative, title=…)` — never call the template again (the
+   pack is kept for this turn only, at most 10 minutes; the next turn builds afresh because the market has moved; rebuilding is slow and its live figures move under your narrative, which
+   the number check then refuses). A second identical template call within 10 minutes returns the
+   kept pack anyway (`fresh=True` rebuilds).
+
+A research report (`write_report`, no pack) follows the same order: its extras are the blocks you
+build from `lib.data` for today's event, each source cited in the `footnote` with its `url`.
+Target: the whole report in about two minutes.
 
 For the four template types (three morning briefs and the 台股收盤報告) the deterministic half lives in `lib/report_templates.py`.
 A template fetches every series through `lib.data`, builds the KPI row, charts, tables and
@@ -145,7 +192,7 @@ print(pack.describe())                   # every figure the pack carries, one li
 #     新聞候選 9 則(鉅亨授權,上一個收盤之後):             ← news slot candidates, see News below
 #       - [Anue鉅亨 09-01 20:10] …
 #     缺少:  - 台指期 2026-09-01 無夜盤 bar(…)      ← a missing series is a missing block, never a guess
-#     narrative slots: lead≤600(…), read≤300(…), watch=表格 2–3 列(條件/門檻/現在值), risk≤100(…), news=≤5 則{…}
+#     narrative slots: lead≤600(…), read≤300(…), watch=表格 2–3 列(條件/門檻/現在值), summary≤200(…), risk≤100(…), news=≤5 則{…}
 #     lead_chart(選填,論點圖排第一): price_chart / tw_institutional / movers / …
 
 publish(pack, narrative={
@@ -153,8 +200,9 @@ publish(pack, narrative={
     "read":   "- **外資轉買**：買超 267 億，20 日均是賣超 40 億。\n- **投信連三買**：今日 131 億。\n- **量能放大**：成交值較 5 日均高六成。",
     "watch":  [("外資期貨淨多單", "回落到 1 萬口以下", "+12,300 口"),      # 2–3 列,不是散文
                ("外資現貨買超", "轉為連兩日淨賣超", "+267.0 億")],
-    "risk":   "外資連兩日淨賣超逾 150 億,這份解讀作廢。",
-})
+    "summary": "買盤回來的是現貨和期貨兩邊,不是單日回補。接下來看投信能不能接棒。",
+    "risk":   "若外資轉為連兩日淨賣超逾 150 億,這個判斷就不成立。",
+}, title="外資現貨期貨同日轉多,資金回補不是空窗反彈")
 ```
 
 - `crypto_market_brief(symbols=("BTC", "ETH", "SOL"))` — KPI row (BTC, ETH, 24h liquidations,
@@ -179,11 +227,13 @@ publish(pack, narrative={
   overwrites that day's morning brief. The night session is not part of it; a question about
   tonight's 夜盤 is answered on its own, labelled as live. 三大法人 / 融資 / 期貨法人 are published
   after the close, at different times; one that is not out yet is absent and named in
-  `pack.notes`. Say it is not out yet; never quote the previous day's figure as today's. On a
-  non-trading day (weekend, or a row in the TWSE holiday table), or before today's close has
-  landed, `pack.skip` is set, `describe()` gives the reason and the last trading day, and
-  `publish()` writes nothing and returns None. Tell the user that; do not hand-write a
-  substitute. There is no sector breakdown. A report that cites the holiday table (「9/25
+  `pack.notes`. Say it is not out yet; never quote the previous day's figure as today's. Asked in chat
+  on a non-trading day (weekend, or a row in the TWSE holiday table), it builds the last trading
+  day by itself — do not ask first — and `describe()` says so: the lead or the first sentence of
+  your reply says 「今天休市,用 9/24 的資料」 (a 台股大盤晨報 on a closed day works the same way).
+  A scheduled run on such a day, and any request before today's close has landed, gets
+  `pack.skip`: `describe()` gives the reason and the last trading day, and `publish()` writes
+  nothing and returns None. Tell the user that; do not hand-write a substitute. There is no sector breakdown. A report that cites the holiday table (「9/25
   中秋節休市」) copies its attribution into the footnote verbatim (`references/lib.md` ›
   *Taiwan market calendar*). A skip on a holiday-table day ends with that attribution
   (also `pack.context['休市表出處']`); a reply telling the user the market is closed carries
@@ -213,8 +263,9 @@ publish(pack, narrative={
   without that flag (cloud) does a TAIEX brief with no Blave data come back with `pack.skip` set
   and `publish()` write nothing — tell the user that in one sentence.
 - Slots: `lead` becomes the opening card (one falsifiable claim, ≤600), `read` (判讀) the one
-  section after the data (≤300), `watch` the 觀察重點 table, `risk` a warning callout before
-  the footnote (≤100). **A cap is the target, not room to fill** — `publish` raises past it,
+  section after the data (≤300), `watch` the 觀察重點 table, `summary` the 「總結」 section just
+  before the footnote (≤200, required), and `risk` (≤100) its last sentence — there is no separate
+  risk box. **A cap is the target, not room to fill** — `publish` raises past it,
   naming how many characters over you are; cut, do not summarise the summary. *Why:* four
   generous slots produced a wall — 80% of readers are gone by 350 words (Axios), and the blocks
   already carry every number with its baseline.
@@ -238,7 +289,22 @@ publish(pack, narrative={
   where that number stands today; the reasoning belongs in `read`. A condition whose 現在值 you
   cannot state is a condition you cannot watch — drop the row. Thresholds stay indicator /
   籌碼 conditions, never a price (the rule below).
-- **`risk` is one falsifiable sentence** (≤100): the indicator threshold that voids the `lead`.
+- **`summary` closes the report** (1–3 sentences, ≤200, required on every narrated report —
+  briefs, 收盤, single-coin, research, custom): what the reading adds up to (the "so what") and
+  what to watch next — the **one** most important row of the 觀察重點 table, not the table again —
+  in words other than the lead's. `publish` refuses a missing one, one that repeats the lead (its
+  first sentence copied, or most of its wording shared) and one that walks through several watch rows.
+- **`risk` is one falsifiable sentence** (≤100), printed as the summary's last paragraph behind
+  the prefix 「推翻條件：」 that `publish` writes (do not write it yourself, and do not say it again in
+  `read`): the
+  indicator threshold that voids the `lead`. **It hits the judgement in the conclusion, not the
+  opposite market move** — 「觀望性拉回、未見恐慌」 is voided by panic (融資大減、期貨空單大增、外資連續大賣),
+  not by 外資 turning to buy (that is a rebound); 「外資轉賣」 is voided by 外資 turning back to buying,
+  not by 「外資連兩日賣超逾 300 億」 (that confirms it). Write it as 「若…,這個判斷就不成立。」
+- **The title is the conclusion** (`publish(pack, narrative, title="…")`, ≤40, required whenever
+  you narrate): 「外資轉賣 338 億,指數仍站 60 日均之上」, never the template name. A report about
+  another day than today (a 收盤報告 run on Saturday for Thursday) gets the day added by `publish`
+  — 「9/24 收盤｜…」 in the title and 資料日 in the header — so do not write the date yourself.
 - **The blocks already carry their own baselines — do not re-state them in prose.** Every
   chart and table in the pack has a `caption` holding its measurement basis *and* the figure
   it is read against (前 20 日高, the 20-session average, the previous 10 sessions), and the
@@ -267,12 +333,15 @@ publish(pack, narrative={
   goes to the user as a finished document. A request worded as 操作建議 / a trade plan / key
   levels still gets `watch` filled with conditions and thresholds: the request's wording
   does not change what the slot holds.
-- **Scheduled run = `publish(pack)` with no narrative** (data-only, `origin: scheduled`). The
-  runtime has no timer that wakes the agent, so a cron job cannot carry a judgement; a canned
-  sentence in a script is a view nobody formed. Ids are date-stamped and the data-only form
-  gets an `-auto` suffix (`tw-market-20260902-auto`), so a scheduled run never overwrites the
-  narrated report you produced in chat the same day; re-running the same form the same day
-  overwrites itself.
+- **On a cloud machine a scheduled run wakes you once** (§8 › Scheduled agent runs) for a job the
+  user agreed to (`agent_consent`): the runtime starts one unattended turn, you build the pack,
+  search the news and `publish(pack, narrative)` as in chat. When that turn cannot finish (time,
+  credit, the 1.0 USD cap), the runtime runs the job's `run.py` instead — `publish(pack)` with no
+  narrative (data-only, `origin: scheduled`, one footnote line saying why). **On the desktop a
+  scheduled run is data-only** (`run.py`, no agent) in this version, and so is every job without
+  `agent_consent`. Never script a judgement into `run.py`: a canned sentence is a
+  view nobody formed. The data-only form gets an `-auto` suffix (`tw-market-20260902-auto`), so
+  it never overwrites a narrated report of the same day.
 - `pack.notes` lists what the source did not have (e.g. 期貨法人 not published yet, no night
   bars); the corresponding block is simply absent. Say so in the narrative if it matters;
   never fill the gap with a number.
@@ -293,22 +362,40 @@ publish(pack, narrative={
   A research report or a report the user describes in their own words (their own 週報) has
   no template by design — build it from bricks (§1b › Custom recipes), do not ask.
 
-### News — the one slot you fill with sources
+### News — every report you write in chat looks for it first
 
-`tw_market_brief` and `crypto_market_brief` carry a `news` slot. `describe()` lists the licensed
-candidates (Taiwan: 鉅亨 headlines since the last close, needs Blave data access; crypto: none —
-there is no licensed crypto source). What you add depends on where you run:
+**A report the user asks for in chat is researched on the web before you write it**: the two
+market briefs, 台股收盤報告, 單標的晨報, a custom recipe, and a research report. The one
+exception is a backtest report (a strategy's performance / backtest write-up): no news search.
+Look for what happened in the report's window (a brief: since the last close; a research
+report: the period it covers) about the instruments it names, then the wide-impact events.
+
+Where the news goes:
+
+- **A template or a custom recipe** (anything you `publish()`): the `news` slot. Every pack takes
+  it. On `tw_market_brief` / `crypto_market_brief` the block sits where the recipe puts it and
+  `describe()` lists the licensed candidates (Taiwan: 鉅亨 headlines since the last close, needs
+  Blave data access; crypto: none — there is no licensed crypto source); on the other templates
+  it goes after the data blocks. You searched and found nothing → `"news": []`, and the footnote
+  says so in one line.
+- **A research report** (hand-written blocks, `write_report`): cite every source you used in the
+  `footnote`, one item per source, with its `url` (§3 `footnote`; same link rules as `news`), and
+  mark the claim it supports with `[^id]`. A news item the analysis rests on is cited the same way.
+  Do not hand-build a `news` block.
+
+What channel you search with depends on where you run:
 
 | Where | What you do |
 |---|---|
 | Desktop app (`BLAVE_AGENT_LOCAL=1`) with the browser tools mounted (`mcp__blave_browser__*`, `references/browser.md`) | Search and read with the built-in browser (any model). For headlines: `browser_open` a news list page → `browser_read(part="links")` → `browser_read(part="meta")` on the few you keep for the published time → `part="section"` only for the paragraph a figure comes from. Do not read whole articles. |
-| Desktop app without those tools (older app, or the browser switched off) | Use the engine's own web search if it has one; otherwise fill the slot from the `describe()` candidates only, or leave it out. |
+| Desktop app without those tools (older app, or the browser switched off) | Use the engine's own web search if it has one; otherwise the `describe()` candidates only (Taiwan market brief), or none. |
 | Cloud machine, Claude model | The web search tool (billed per search from the user's credit, `references/billing.md`). |
 | Cloud machine, DeepSeek | No web search: the `describe()` candidates only (Taiwan), none for crypto. |
-| Scheduled run (no agent) | Nothing to do: `publish(pack)` lays out the licensed headlines as they are (title, source, time — no summary, no tag); a crypto brief has none. |
+| Scheduled run | Cloud, a job with `agent_consent`: you run as in chat in an unattended turn (§8), same rows as above. Desktop, or no consent, or that turn failed: the data-only `run.py` lays out the licensed headlines as they are (no summary, no tag). |
 
-When no channel gives you anything, publish without `news`: the footnote says there was no
-source. Never tell the user to switch model or buy anything for it.
+When no channel gives you anything, still write and publish the report: `"news": []` (the footnote
+says there was no source) or, for a research report, no news citation. Never tell the user to
+switch model or buy anything for it, and never hold the report back waiting for news.
 
 ```python
 publish(pack, narrative={
@@ -327,12 +414,31 @@ publish(pack, narrative={
 - **Collect** only news inside the report's window (a morning brief: since the last close).
   Never use a source whose terms forbid AI agents or AI summaries (e.g. The Block), and never
   exchange / broker back offices or banks.
+- **`symbols` on every item**: the instruments it names (`["XRP"]`, `["2330"]`) — the extra-brick
+  check reads them (it also spots common coin tickers and names in the title and summary).
+- **At least three sites**: read at least 3 different sites and give the news at least 3 different
+  sources; `publish` asks for more when they come from fewer than 3 sites (or one sentence in
+  `narrative["few_sources"]` saying why no more could be found).
+- **Time**: `published_at` is the article's time (`'YYYY-MM-DD HH:MM'` Taipei, or unix seconds). A page that
+  gives only a date → pass the date alone (`'2026-09-25'`): it is stored as a day and shown without a time,
+  never as a made-up 00:00.
 - **De-duplicate**: one event is one item; several outlets reporting it go into that item's
   `sources` (1–3), `published_at` = the earliest. `publish()` refuses a repeated link and a
   near-identical title.
+- **Read lean**: never `browser_read(part="full")` for news or research. `part="meta"` (title, time) →
+  `part="outline"` → `part="section"` for the one paragraph you need — about 3,000 characters per page,
+  20,000 per report. With web search, read the result snippets first and open a page only to check a
+  figure.
+- **Source quality, in this order**: mainstream financial and crypto media (Reuters, Bloomberg, CNBC,
+  CoinDesk, The Block excepted — its terms forbid AI summaries; for Taiwan 鉅亨, 經濟日報, 工商時報, MoneyDJ), official announcements
+  (the project, the exchange, the regulator; for Taiwan TWSE / TAIFEX announcements), exchange research reports > aggregators > press-release
+  sites (openPR, GlobeNewswire, PR Newswire) and SEO / price-prediction sites (247wallst-style "X price
+  prediction", exchange blogs selling a coin). **A price-prediction article is never a source**; a press
+  release is only a source for what the issuer itself announced.
 - **Pick** ≤5: items naming this report's instruments first, then wide-impact ones (macro,
   regulation, exchange events), single small names last.
-- **Title**: a Chinese headline as written; a foreign one → your Chinese translation in
+- **Title**: a Chinese headline as written, unless it is over 40 characters — then rewrite it
+  shorter, keeping its facts (the desktop app shows titles in full, it does not cut them); a foreign one → your Chinese translation in
   `title`, the original in `title_orig` and its language in `title_orig_lang` (`en`, `ja`…).
   One translation only.
 - **Summary**: one sentence, ≤40 characters, your own words — never the article's sentence.
@@ -359,15 +465,19 @@ publish(pack, narrative={
   can be found in `describe()`. A figure no brick has → add or swap a brick; never fetch,
   compute or take it from a search result yourself. The one exception is a news summary, whose
   number is quoted from the linked article (R5).
-- **R2 Conclusion first.** In chat, `lead` states one falsifiable claim (R9 S1). A scheduled
-  run's only conclusion is the `kpi_row` title the brick computes; never script a judgement.
+- **R2 Conclusion first.** `lead` states one falsifiable claim (R9 S1), in chat and in a
+  scheduled agent run alike. The data-only fallback's only conclusion is the `kpi_row` title the
+  brick computes; never script a judgement into `run.py`.
 - **R3 No price levels to trade at, no advice** (the rules above). News tags are not added up
   and are not thresholds; summaries carry no advice wording; no heading or label says 關鍵價位,
   支撐 or 壓力.
 - **R4 At most 8 data bricks** (the KPI row not counted), **at most 16 blocks**. Extra
   information goes into a scannable table, not a paragraph. To cut, drop the bricks the lead
   does not use first; never the ones the user asked for. `check_recipe` refuses a 9th brick.
-- **R5 News**: collect, de-duplicate, summarise, tag — the section above.
+- **R5 News**: every report written in chat searches first — the two briefs, 收盤報告, 單標的晨報,
+  custom recipes, research; never a backtest report. Collect, de-duplicate, summarise, tag, cite
+  — the section above. Tags stay display only (not summed, not a threshold, never a data series),
+  and a news summary never gives advice (R3).
 - **R6 Missing data is said once.** The footnote names what is missing; in the reply, once, under
   the data-access rule. Never withhold a report because Blave data is missing. No news channel
   → no news block, one footnote line, no advice to change model.
@@ -378,8 +488,14 @@ publish(pack, narrative={
 - **R8 Ask one question first** (on top of the cases below) when: the user wants something no
   brick or source has (US single-stock news, ETF flows, token unlocks) — 「目前沒有這塊資料，先不放它，其他照做，可以嗎？」;
   a brief and the user's positions in one report — 「放持倉的話這份就不能分享，要拆成兩份嗎？」;
-  more than 8 bricks — list the ones you would drop; a **scheduled** report with news —
-  「排程時沒有 AI 幫忙整理，只會放鉅亨的標題（要綁卡；加密沒有），這樣可以嗎？」.
+  more than 8 bricks — list the ones you would drop. The news search itself needs no question:
+  do it (R5); ask only when the user plainly wants no web in this report. A **scheduled** report on
+  a cloud machine — say what each run costs before they confirm, with `lib.report.scheduled_cost()`:
+  「排程時我會自己上網整理新聞、寫判讀，依你當時用的模型每份大約扣 {low}–{high} 點（現在的模型是這個數）；
+  每份上限約 40 點，超過或餘額不夠時只出數據版。這樣可以嗎？」 Only on a yes, register with
+  `agent_consent=True`; a no is a data-only job. Such a job fires at most hourly (one fixed minute
+  in the cron). Where `lib.report.scheduled_agent_available()` is False — the desktop, or a trial /
+  one-slot cloud machine — ask nothing: say the scheduled version is data only.
 - **R9 Readable and shareable**:
   - S1 the lead's first sentence (up to the first 「。」) stands alone: ≤40 characters, at most
     one comparison (≤2 numbers), never only figures — it is the list summary, the notification
@@ -392,7 +508,8 @@ publish(pack, narrative={
     KPI delta (「0 = 歷史平均」, 「正 = 淨多」); do not add an explanation paragraph.
   - W4 Chinese uses full-width punctuation. `publish()` converts `,` `:` `;` `()` next to Chinese
     in your narrative (numbers, times, links and `code` stay as they are); write it right anyway.
-  - W5 「推翻這份解讀的訊號」 (`risk`) is the signature section: always one falsifiable line.
+  - W5 the 「總結」 closes every report, and `risk` — the signal that voids the reading, pointing
+    the other way from it — is always its last, falsifiable line.
   - N1 chart titles are conclusions the bricks write (「融資 928.0 萬張，比 20 日均多 17.4 萬張」);
     captions hold the basis and the baseline.
   - N2 the chart your lead argues from goes first: `narrative["lead_chart"] = "<brick>"`
@@ -422,6 +539,15 @@ print(pack.describe())
 publish(pack, narrative={...})
 ```
 
+**Answer the question the user asked, in its window and its shape.**
+- The window is theirs: 「這週」 is 7 days — `derivs_table(window="7d")` (each coin's own 7-day OI
+  change, funding as its 7-day mean), `liquidation(hours=168)`; never a 24-hour figure standing in
+  for a week. A window no brick has is computed from the series and said in the narrative with its
+  basis, not swapped for the nearest one.
+- A comparison of several instruments is one chart with every series on it plus one comparison
+  table — `funding(symbols=["BTC", "ETH", "SOL"])`, `relative_perf(symbols=[…])` (rebased to 100),
+  `derivs_table(symbols=[…])` — never one chart per instrument.
+
 The id must not start with a built-in prefix (`tw-market`, `tw-close`, `crypto-market`,
 `symbol-`). To schedule it, save the recipe next to a fixed `run.py` (§8):
 
@@ -433,7 +559,9 @@ register_schedule("btc-derivs", "BTC 衍生品晨報", "<the user's words>", "30
                   RECIPE_RUN_PY)
 ```
 
-A scheduled recipe with `news` lays out licensed headlines only (R8: say so when you register).
+A scheduled recipe runs like any scheduled job (§8 › Scheduled agent runs): on a cloud machine with
+`agent_consent` you narrate it in an unattended turn; otherwise, and whenever that turn fails, its
+`run.py` publishes the data-only form.
 
 **Running a script that imports `lib`.** Python puts the directory of the script it runs on
 `sys.path`, not the current directory, so `python3 tmp/make_brief.py` fails with
@@ -525,8 +653,12 @@ caption.
 coin — is a `candlestick`: never a `line_chart` of closes, never an `image` of a matplotlib
 plot. Daily candles: give 40–65 bars (a phone-width reading view fits ~68 full candles; past ~120 the bodies
 smear into a line, and 120 is the hard limit). Half a year or more is a trend, not candles —
-use a `line_chart` of closes for that. Series that are not a price (margin balance, net
-positions, funding, indicators, equity) stay `line_chart`.
+use a `line_chart` of closes for that. **The chart kind follows the series kind, never taste**
+(the bricks have it fixed — `lib/report_bricks.CHART_KIND` — and a hand-built series follows the
+same table): a per-period flow (liquidation USD, net buying, volume — one bar = how much happened
+that period) is a `bar_chart`; a level or an indicator (open interest, margin balance, net
+positions, funding, long/short ratio, any z-score, equity) stays `line_chart`. The web dashboard
+draws the same data the same way (`chart_type` history vs line) — a report must not disagree with it.
 
 **Numbers vs display strings — the mistake to check for first.** Chart data
 (`line_chart` / `candlestick` / `drawdown` / `heatmap` / `bar_chart` / `histogram` / `box` / `scatter`
@@ -864,6 +996,23 @@ section headings in the report's language.
 
 ### B. Research rules — `type: "research"` only
 
+**How to build one — about four minutes, never a hand-written fetch script:**
+1. **Search first**, before any code (§1b › Report flow, § News): 3+ sites, read lean (below).
+2. **`pack = research_pack("SOL", extra=[…], days=30, window="7d")`** (`lib.report_templates`; `days` = the
+   span the question is about, `window` = the OI window — `"7d"` unless the question is about today) — price candles and levels,
+   volume against its 20-day mean, the coin against BTC, funding / open interest / long-short, Blave
+   indicators; a Taiwan stock gets candles, levels and 外資買賣超. `topics=[…]` picks sections
+   (`RESEARCH_TOPICS`); `extra` adds up to 3 bricks for what the news is about. Do not read lib
+   source or grep for fetchers: `print(pack.describe())` lists every figure you may cite.
+3. Write the narrative from `describe()` and the news — `describe()` prints the exact shape: `lead`,
+   `read` (the findings), `against` (B3) and `robustness` (B4), both required, `summary` (總結, required)
+   and `risk` (B5, what would break it — the summary's last sentence), `news`; no `watch` (B2). The
+   claim goes in the title.
+4. `publish(pack, narrative, title="<the claim, ≤40 CJK>", shareable=True|False)` — once; refused →
+   fix every listed problem and re-send the same pack by id.
+A question the pack cannot answer (a protocol's revenue, a token unlock schedule) is said as such in
+the narrative, or cited from a source in the footnote — not fetched by a script you write mid-turn.
+
 Write every research report so it can be shared publicly: the user can make it public from
 the workspace (see the top of this page). A public page is read by someone who never saw the
 chat, and it leads with the **title**, the **lead**, the **first item of the first
@@ -930,8 +1079,8 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   and the title to match. Never swap in a check that passes. *Why:* a claim that holds on
   one window only is the most common way a research report is wrong, and this is the
   section that catches it.
-- **B5. What would break this: a `callout`** with `tone: "warning"` and a `title` such as
-  「什麼會推翻這個結論」. Name the evidence that would falsify the historical finding, with a
+- **B5. What would break this: the last sentence of the 「總結」** (`risk`; `publish` appends it to
+  `summary`). Name the evidence that would falsify the historical finding, with a
   threshold (§7 rule 4): for example "the next 3 launches show a median 10-day return above
   0%", or "the effect disappears once 2020–2021 is excluded". Never name a current market
   level to watch, and never a price to enter, exit or target. *Why:* it tells the reader
@@ -1060,12 +1209,43 @@ convenience):
   on record, ask the user which time zone they are in, record it with
   `set_timezone("Asia/Taipei")`, then register — never guess it and never substitute this
   machine's clock. (The platform's own write keeps whatever you set, so you only do this once.)
-- **Say in the restatement that the scheduled report is data only.** A scheduled run has no
-  agent behind it (§1b), so it carries the numbers and no 判讀; a reading only comes from
-  asking in chat. Tell the user before they confirm, e.g. 「排程版只有數據、沒有判讀;要判讀請在
-  對話裡叫我出。」
+- **Say in the restatement what a run costs** (R8, cloud): each run wakes you once, on whatever
+  model the user is on at the time, and costs about `scheduled_cost()` points; over the 1.0 USD cap,
+  or without credit, that run is data only. Register with `agent_consent=True` only on their yes.
+  On the desktop or a trial / one-slot machine (`scheduled_agent_available()` False), say the
+  scheduled version is data only.
 - **Linux and Windows run the same expression.** There is no scheduled-task subset to work
   around: 每週一至週五 08:30 is one job, `30 8 * * 1-5`, on either platform.
+
+### Scheduled agent runs
+
+**Cloud machines only, and only for a job registered with `agent_consent=True`** (R8). On the
+desktop, and for any other job, a scheduled run is the data-only `run.py`, as before. When such a
+job comes due, the runtime starts **one unattended turn** with the user's own request and this
+job's id. Nobody is watching it:
+
+- Build the pack the job's `run.py` (or its `recipe.json`) builds, read `describe()`, search the
+  news (§1b › News), write the narrative, and call `publish(pack, narrative)` **once**. Same rules
+  as chat: R1–R10, no advice, tags display only.
+- Ask nothing — no one will answer. A page, a login or a step that needs the user is skipped.
+- Touch nothing else: no edits to `report_jobs/`, `strategies/`, `control/`, `lib/` or `.env`, no
+  schedule changes, never an order. This is a rule you keep, not a wall: the Edit / Write tools
+  refuse those paths, Bash does not.
+- The turn has a 1.0 USD budget, 25 steps and 10 minutes. If it runs out, or the credit does,
+  the runtime publishes the job's data-only `run.py` output with one footnote line saying why;
+  three such runs in a row notify the user. The agent runs at most once per job per day; a
+  「立即執行」 after that is data only — a failed attempt counts too. Running out of credit is
+  said in the footnote only, never notified.
+- It runs on the user's model preference **at the time of the run**, not the one at registration.
+- Re-registering a job (an edit) keeps its `agent_consent` unless you pass `agent_consent=False`.
+  The consent is only as good as your word: nothing checks the user really said yes, so never set
+  it without that yes (R8).
+- A trial or one-slot machine never runs the agent for a schedule: its only turn slot stays the
+  user's. Those runs are data only, with no footnote. After an upgrade the next scheduled report of
+  each job without consent says once, in the footnote, that the user can ask you to turn it on —
+  nothing turns on by itself: ask R8's question and re-register with `agent_consent=True` on a yes.
+- On the desktop the app must be open for any scheduled run: a run that came due while it was
+  closed is recorded as skipped, not made up later.
 
 `run.py` constraints — it runs exactly like a scheduled strategy:
 
@@ -1077,13 +1257,15 @@ convenience):
   the platform. On the desktop exactly three pass — `BLAVE_AGENT_LOCAL=1` and
   `BLAVE_SCHEDULED_RUN=1` (the key-free TAIEX series and reading "no Blave access" from `.env`)
   and `BLAVE_KLINE_SOURCE` (crypto klines from Binance, as in a chat turn) — plus the desktop
-  path variables (`BLAVE_AGENT_BASE` / `_WORKSPACE` / `_HOME` / `_STATE`) when set. A report reaches the platform only by landing in `reports/` —
+  path variables (`BLAVE_AGENT_BASE` / `_WORKSPACE` / `_HOME` / `_STATE`) when set. When it runs as the
+  fallback of a failed agent turn, `BLAVE_REPORT_DEGRADED` carries the reason, and only a template
+  `publish(pack)` turns it into the footnote line. A report reaches the platform only by landing in `reports/` —
   `write_report(...)` or a template `publish(pack)` (§1b), with pictures in the sidecar (§5).
 - Write nothing when there is nothing to report. Exit 0 with no new `reports/*.json` is
   recorded as `skipped`, which is the correct outcome for a signal-only job; a non-zero
   exit or a run over 600 s is `failed` (the tail of `run.log` shows in the web, and the
-  usual failure alert fires). Do not script a fixed judgement into it — a scheduled run
-  is data-only (§1b).
+  usual failure alert fires). Do not script a fixed judgement into it — `run.py` is the
+  data-only form (§1b); the narration, where there is one, comes from the scheduled agent turn above.
 - Use date-stamped report ids (`perf-20260902-0800`) unless the re-run really should
   overwrite the previous report.
 

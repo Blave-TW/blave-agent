@@ -16,7 +16,13 @@ Every brick takes the two roads the templates took for missing data, and only th
 each with its parameters.
 """
 
+import hashlib
+import json
 import math
+import os
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -29,9 +35,11 @@ class Skip(Exception):
     """The recipe's main series is not there (no data access off the desktop, a non-trading
     day): nothing to publish. Carries what the skipped Pack shows."""
 
-    def __init__(self, reason, context=None, notes=None):
+    def __init__(self, reason, context=None, notes=None, roll_to=None, closed=None):
         super().__init__(reason)
         self.reason = reason
+        self.roll_to = roll_to          # a non-trading day: the last trading day a chat request uses instead
+        self.closed = closed            # why the day is closed (週末 / the holiday's name)
         self.context = context if context is not None else {}
         self.notes = notes if notes is not None else [reason]
 
@@ -70,6 +78,7 @@ class Build:
         self.cache = {}
         self.asof = None
         self.news = None                # set by the news brick: {"market", "n", "candidates"}
+        self.closed = None              # (label, day used) when the asked-for day is a non-trading day
 
 
 # ─── shared loaders ───────────────────────────────────────────────────────────
@@ -125,6 +134,28 @@ def _series_frame(b, label, blave, public, cols):
     return b.cache[label]
 
 
+def _fetch_many(fn, keys, workers=8):
+    """{key: ("ok", value) | ("denied", None) | ("failed", exc)} — one fetch per key, in parallel.
+    A brick's per-coin loop was the slowest part of a pack (one API round trip after another)."""
+    def one(k):
+        try:
+            return k, ("ok", fn(k))
+        except _data.DataAccessError:
+            return k, ("denied", None)
+        except Exception as e:
+            return k, ("failed", e)
+    keys = list(keys)
+    if not keys:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(workers, len(keys))) as pool:
+        return dict(pool.map(one, keys))
+
+
+def _last_alpha(df):
+    ser = df["alpha"].dropna() if df is not None and "alpha" in df else None
+    return float(ser.iloc[-1]) if ser is not None and len(ser) else None
+
+
 # ─── A. 行情 ──────────────────────────────────────────────────────────────────
 
 def price_chart(b, symbol="TAIEX", bars=T._PRICE_BARS, display_days=None):
@@ -160,6 +191,9 @@ def _price_taiex(b, bars, display_days=None):
     T._where(ctx, close, [(high20, "前 20 日高"), (ma60, "60 日均")])
     if b.mode != "close" and asof != date:
         b.meta["period"] = {"from": asof[5:].replace("-", "/"), "to": date[5:].replace("-", "/")}
+        label = _closed_label(b, date)
+        if label:
+            b.closed = (label, asof)
     shown = idx.tail(bars)
     if display_days:
         shown = shown[shown.index >= shown.index[-1] - pd.Timedelta(days=display_days)]
@@ -171,6 +205,23 @@ def _price_taiex(b, bars, display_days=None):
     return Brick([ck], [T.kpi("加權指數", T._num(close, 2), T._tone(chg), delta=T._pct(chg * 100))],
                  headline=T._headline("加權指數", chg, close, high20, "前 20 日高"),
                  finalize=lambda b: _tw_market_foot(b))
+
+
+def _closed_label(b, date):
+    """週末 / the holiday's name when `date` is not a trading day, else None (a trading morning
+    whose last close is yesterday is the normal case, not a closure)."""
+    if pd.Timestamp(date).weekday() >= 5:
+        return "週末"
+    try:
+        if _data.is_tw_trading_day(date, b.headers) is False:
+            return T._closure(date, b.headers)[0]
+    except Exception:
+        pass
+    return None
+
+
+def _scheduled():
+    return bool(os.environ.get("BLAVE_SCHEDULED_JOB") or os.environ.get("BLAVE_SCHEDULED_RUN"))
 
 
 def _tw_market_foot(b):
@@ -192,7 +243,7 @@ def _close_gate(b, idx):
     if trading is None:
         b.notes.append("TWSE 休市表無法取得(" + ("沒有 Blave 資料權限" if b.used else "端點未上線或該年度尚未公布")
                        + "),是否交易日改以今日有無加權指數收盤判斷")
-    skip = None
+    skip, label = None, None
     if trading is False:
         label, src = T._closure(date, b.headers)
         skip = f"{date} 非交易日({label}),不產收盤報告;上一交易日 {last_day}"
@@ -205,7 +256,7 @@ def _close_gate(b, idx):
     if skip:
         b.notes.append(skip)
         b.ctx["上一交易日"] = last_day
-        raise Skip(skip, b.ctx, b.notes)
+        raise Skip(skip, b.ctx, b.notes, roll_to=last_day if trading is False else None, closed=label)
 
 
 def _price_twstock(b, stock_id, bars):
@@ -243,10 +294,18 @@ def _price_twstock(b, stock_id, bars):
     c = df["Close"].dropna()
     last, prev = float(c.iloc[-1]), float(c.iloc[-2])
     chg = last / prev - 1
-    vol, vol5 = float(df["Volume"].iloc[-1]), float(df["Volume"].tail(5).mean())
+    # 盤中(台北 13:30 收盤前)今天那根還在長:量拿最近一個完整交易日比,不拿半天的量比整天的均量
+    now = pd.Timestamp(T._now_tpe())
+    v = df["Volume"].astype(float)
+    forming = c.index[-1].date() == now.date() and (now.hour, now.minute) < (13, 30) and len(v) >= 7
+    if forming:
+        v = v.iloc[:-1]
+    vol, vol5 = float(v.iloc[-1]), float(v.iloc[-6:-1].mean() if len(v) >= 6 else v.mean())
+    vol_label = f"{v.index[-1]:%m/%d} 量" if forming else "量"
     ctx = b.ctx
     ctx["資料日"] = str(c.index[-1].date())
-    ctx["收盤"] = f"{T._num(last, 2)}({T._pct(chg * 100)}),量 {T._num(vol)} 張(5 日均 {T._num(vol5)})"
+    ctx["收盤"] = (f"{T._num(last, 2)}({T._pct(chg * 100)}),{vol_label} {T._num(vol)} 張(前 5 日均 {T._num(vol5)})"
+                 + (",今日盤中那根未計" if forming else ""))
     lv = _levels_into(b, df, last)
     b.cache["levels"] = (lv, last, "tw")
     ck = T.candlestick(T._price_title(f"{stock_id} 日 K", last, lv.get("60 日均")), df.tail(bars), y_unit="元",
@@ -255,7 +314,8 @@ def _price_twstock(b, stock_id, bars):
                        reflines=T._level_lines(lv))
     foot.append(("src", "日 K 為未還原價" if foot else "日 K 為 TWSE 未還原價"))
     kpis = [T.kpi("收盤", T._num(last, 2), T._tone(chg), delta=T._pct(chg * 100)),
-            T.kpi("成交量", T._num(vol), "neutral", unit="張", delta=T._pct((vol / vol5 - 1) * 100) + " vs 5日均")]
+            T.kpi("成交量" if not forming else f"成交量({v.index[-1]:%m/%d})", T._num(vol), "neutral", unit="張",
+                  delta=T._pct((vol / vol5 - 1) * 100) + " vs 前5日均")]
     return Brick([ck], kpis, foot, headline=T._headline(stock_id, chg, last, lv.get("前 20 日高"), "前 20 日高"))
 
 
@@ -319,7 +379,7 @@ def quote_table(b, symbols=("BTC", "ETH", "SOL"), kpi_n=2, top_mcap=0):
         rows.append({"symbol": label, "price": T._num(last, 2), "r1": T._pct(r1 * 100),
                      "r7": T._pct(r7 * 100) if r7 is not None else None,
                      "r30": T._pct(r30 * 100) if r30 is not None else None})
-        ctx[label] = f"{T._num(last, 2)},1d {T._pct(r1 * 100)}" + (f",30d {T._pct(r30 * 100)}" if r30 is not None else "")
+        ctx[label] = f"{T._num(last, 2)},1 日 {T._pct(r1 * 100)}" + (f",30 日 {T._pct(r30 * 100)}" if r30 is not None else "")
         if len(kpis) < kpi_n:
             kpis.append(T.kpi(label, T._num(last, 2), T._tone(r1), unit="USDT", delta=T._pct(r1 * 100)))
     ctx["資料日"] = str(next(iter(closes.values())).index[-1].date())
@@ -554,9 +614,12 @@ def txf_night(b):
                  foot=foot)
 
 
-def funding(b, symbol="BTC", variant="market", chart=True):
+def funding(b, symbol="BTC", variant="market", chart=True, symbols=None):
     """#13 資金費率 (Binance, daily, %): KPI plus the line with its 0 reference. `variant`
-    "market" labels it with the coin (a market brief), "symbol" plain 資金費率 (a coin's brief)."""
+    "market" labels it with the coin (a market brief), "symbol" plain 資金費率 (a coin's brief).
+    `symbols` (2–4 coins) = a comparison: every coin on one chart, no KPI — never one chart per coin."""
+    if symbols:
+        return _funding_compare(b, symbols)
     s = _data.normalize_symbol(symbol if symbol.endswith("USDT") else symbol + "USDT")
     coin = s.replace("USDT", "")
     market = variant == "market"
@@ -577,6 +640,34 @@ def funding(b, symbol="BTC", variant="market", chart=True):
     return Brick([lc], kpis, foot)
 
 
+def _funding_compare(b, symbols):
+    coins = list(dict.fromkeys(str(x).upper().replace("USDT", "") for x in symbols))[:4]
+    start = _crypto_window_start(b)
+    got = _fetch_many(lambda c: _data.fetch_funding_rate(f"{c}USDT", "1d", start, None, b.headers), coins)
+    if any(st == "denied" for st, _ in got.values()) and not any("資金費率" in m["name"] for m in b.missing):
+        T._no_access("資金費率", b.notes, b.missing)
+    sers = {}
+    for c in coins:
+        st, df = got[c]
+        ser = df["alpha"].dropna() if st == "ok" and df is not None and "alpha" in df else None
+        if ser is not None and len(ser):
+            sers[c] = ser.tail(b.lookback_days + 1)
+        elif st == "failed":
+            b.notes.append(f"{c} 資金費率抓取失敗({type(got[c][1]).__name__})")
+    if not sers:
+        return Brick()
+    means = {c: float(x.tail(7).mean()) for c, x in sers.items()}
+    for c, x in sers.items():
+        b.ctx[f"{c} 資金費率"] = f"{float(x.iloc[-1]):+.4f}%(7 日均 {means[c]:+.4f}%)"
+    top = max(means, key=means.get)
+    series = [(c, "primary" if i == 0 else "benchmark", x) for i, (c, x) in enumerate(sers.items())]
+    lc = T.line_chart(f"資金費率 7 日均最高:{top} {means[top]:+.4f}%", series, y_unit="%",
+                      reflines=[(0.0, "0", False)],
+                      caption=T._cap("Binance 日頻資金費率,單位 %",
+                                     "7 日均 " + "、".join(f"{c} {m:+.4f}%" for c, m in means.items())))
+    return Brick([lc], foot=[("src", "資金費率為 Binance 日頻,單位 %。")])
+
+
 _INDICATORS = {
     "市場方向": ("fetch_market_direction", False), "資金稀缺": ("fetch_capital_shortage", False),
     "頂尖交易員曝險": ("fetch_top_trader_exposure", False),
@@ -594,11 +685,22 @@ def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員�
     kpis, got = [], {}
     s = _data.normalize_symbol(symbol if symbol.endswith("USDT") else symbol + "USDT") if symbol else None
     start = _crypto_window_start(b)
-    for n in names:
+    def fetch(n):
         fn_name, per_coin = _INDICATORS[n]
         args = (s, "1d", start, None, b.headers) if per_coin else ("1d", start, None, b.headers)
+        return getattr(_data, fn_name)(*args)
+    pre = _fetch_many(fetch, names)
+
+    def replay(n):
+        state, val = pre[n]
+        if state == "denied":
+            raise _data.DataAccessError(n)
+        if state == "failed":
+            raise val
+        return val
+    for n in names:
         mine = []
-        got[n] = T._indicator(getattr(_data, fn_name), args, n, b.ctx, mine, b.notes, b.missing,
+        got[n] = T._indicator(replay, (n,), n, b.ctx, mine, b.notes, b.missing,
                               gloss="正 = 淨多" if n in _RAW_INDICATORS else "0 = 歷史平均")
         if kpi is None or n in kpi:
             kpis += mine
@@ -751,45 +853,44 @@ def liquidation(b, hours=24):
     """#11 爆倉: every exchange's forced liquidations over the last `hours` (USD notional,
     bars per exchange); the KPI is the total with the share that was longs."""
     data = _snapshot(b, ("liq", hours), lambda: _data.fetch_liquidation_exchanges(b.headers, hours=hours, top_n=10),
-                     f"{hours}h 爆倉")
+                     f"{T._window(hours)}爆倉")
     if not data:
         return Brick()
     tot = data.get("total") or {}
     total, longs = tot.get("total_liq_usd"), tot.get("long_liq_usd")
     if not (T._finite(total) and float(total) > 0 and T._finite(longs)):
-        b.notes.append(f"{hours}h 爆倉 無資料")
+        b.notes.append(f"{T._window(hours)}爆倉無資料")
         return Brick()
     lp = float(longs) / float(total) * 100
-    b.ctx[f"{hours}h 爆倉"] = f"{_usd(total)} USD,多單佔 {lp:.0f}%"
+    b.ctx[f"{T._window(hours)}爆倉"] = f"{_usd(total)} USD,多單佔 {lp:.0f}%"
     rows = sorted(((x.get("exchange") or "?", x.get("total_liq_usd")) for x in data.get("exchanges") or []
                    if T._finite(x.get("total_liq_usd")) and float(x["total_liq_usd"]) > 0), key=lambda r: -float(r[1]))
-    bc = T.bar_chart(f"{hours}h 爆倉 {_usd(total)} USD,多單佔 {lp:.0f}%",
+    bc = T.bar_chart(f"{T._window(hours)}爆倉 {_usd(total)} USD,多單佔 {lp:.0f}%",
                      [(name.capitalize(), float(v) / 1e6) for name, v in rows],
                      caption=f"各交易所強平名目金額,百萬 USD;滾動 {hours} 小時,5 分鐘對齊。多單爆倉 = 價格下跌被強平的多方部位")
-    return Brick([bc], [T.kpi(f"{hours}h 爆倉", _usd(total), "neutral", unit="USD", delta=f"多單佔 {lp:.0f}%")],
+    return Brick([bc], [T.kpi(f"{T._window(hours)}爆倉", _usd(total), "neutral", unit="USD", delta=f"多單佔 {lp:.0f}%")],
                  [("liq", "爆倉為 Blave 彙整的各交易所強平名目金額(USD,採集時換算),各所價格口徑與涵蓋度不同。")])
 
 
-def derivs_table(b, symbols=None):
-    """#14 衍生品總表: one row per coin — OI 24h change, latest funding, Binance account
+def derivs_table(b, symbols=None, window="24h"):
+    """#14 衍生品總表: one row per coin — OI change over `window` ("24h", or "7d" for a question about
+    the week: each coin's own 7-day OI change, and funding as its 7-day mean), funding, Binance account
     long/short ratio. Directions, not P&L: every column is text (no gain / loss colour).
     A source without data access drops its column; all three gone → no block."""
     syms = [s.upper().replace("USDT", "") for s in (symbols or b.cache.get("crypto_symbols") or ("BTC", "ETH", "SOL"))][:8]
-    oi = _oi_table(b)
+    week = window == "7d"
+    span = "7 日" if week else "24 小時"
+    oi = _oi_week(b, syms) if week else _oi_table(b)
     lsr = _snapshot(b, "lsr_table", lambda: _data.fetch_long_short_ratio_table(b.headers), "多空比")
     start = _crypto_window_start(b)
     fund, denied = {}, False
+    got = _fetch_many(lambda c: _data.fetch_funding_rate(f"{c}USDT", "1d", start, None, b.headers), syms)
+    denied = any(st == "denied" for st, _ in got.values())
     for c in syms:
-        try:
-            df = _data.fetch_funding_rate(f"{c}USDT", "1d", start, None, b.headers)
-        except _data.DataAccessError:
-            denied = True
-            break
-        except Exception:
-            continue
-        ser = df["alpha"].dropna() if df is not None and "alpha" in df else None
+        st, df = got[c]
+        ser = df["alpha"].dropna() if st == "ok" and df is not None and "alpha" in df else None
         if ser is not None and len(ser):
-            fund[c] = float(ser.iloc[-1])
+            fund[c] = float(ser.tail(7).mean()) if week else float(ser.iloc[-1])
     if denied and not any("資金費率" in m["name"] for m in b.missing):
         T._no_access("資金費率", b.notes, b.missing)
     oi_by = {str(c.get("token", "")).upper(): c for c in (oi or {}).get("coins") or []}
@@ -798,9 +899,9 @@ def derivs_table(b, symbols=None):
     lsr_by = {str(c.get("token", "")).upper(): c.get(key) for c in (lsr or {}).get("coins") or []} if key else {}
     cols = [("coin", "幣種", "left")]
     if oi_by:
-        cols.append(("oi", "OI 24h", "right"))
+        cols.append(("oi", f"OI {span}", "right"))
     if fund:
-        cols.append(("fund", "資金費率", "right"))
+        cols.append(("fund", "資金費率 7 日均" if week else "資金費率", "right"))
     if lsr_by:
         cols.append(("lsr", "多空比", "right"))
     if len(cols) == 1:
@@ -808,7 +909,7 @@ def derivs_table(b, symbols=None):
     rows, best = [], None
     for c in syms:
         r = {"coin": c}
-        chg = (oi_by.get(c) or {}).get("chg_24h")
+        chg = (oi_by.get(c) or {}).get("chg_7d" if week else "chg_24h")
         if T._finite(chg):
             r["oi"] = T._pct(float(chg) * 100, 1)
             if best is None or float(chg) > best[1]:
@@ -819,16 +920,31 @@ def derivs_table(b, symbols=None):
             r["lsr"] = f"{float(lsr_by[c]):.2f}"
         rows.append(r)
     if best:
-        b.ctx["OI 24h 最大增幅"] = f"{best[0]} {T._pct(best[1] * 100, 1)}"
+        b.ctx[f"OI {span}最大增幅"] = f"{best[0]} {T._pct(best[1] * 100, 1)}"
     parts = []
     if oi_by:
-        parts.append("OI = USDT 本位永續未平倉名目(USD,單邊)的 24h 變化")
+        parts.append(f"OI = USDT 本位永續未平倉名目(USD,單邊)的 {span}變化")
     if fund:
-        parts.append("資金費率為 Binance 日頻最新值")
+        parts.append("資金費率為 Binance 日頻" + ("近 7 日平均" if week else "最新值"))
     if lsr_by:
         parts.append("多空比 = Binance 帳戶數多單 ÷ 空單")
-    title = f"OI 24h 增幅最大:{best[0]} {T._pct(best[1] * 100, 1)}" if best else "衍生品總表"
-    return Brick([T.table(title, cols, rows, caption=";".join(parts))])
+    title = f"OI {span}增幅最大:{best[0]} {T._pct(best[1] * 100, 1)}" if best else "衍生品總表"
+    return Brick([T.table(title, cols, rows, caption="；".join(parts))])
+
+
+def _oi_week(b, syms):
+    """The OI table's shape for a week: {"coins": [{token, chg_7d}]} from each coin's own OI page
+    (windows 7d), fetched in parallel. None when no coin answered."""
+    got = _fetch_many(lambda c: _data.fetch_open_interest_coin(c, b.headers), syms)
+    if any(st == "denied" for st, _ in got.values()) and not any(m["name"] == "未平倉量" for m in b.missing):
+        T._no_access("未平倉量", b.notes, b.missing)
+    coins = []
+    for c in syms:
+        st, d = got[c]
+        chg = ((((d or {}).get("windows") or {}).get("7d") or {}).get("chg")) if st == "ok" else None
+        if T._finite(chg):
+            coins.append({"token": c, "chg_7d": float(chg)})
+    return {"coins": coins} if coins else None
 
 
 def movers(b, market="crypto", n=None):
@@ -839,35 +955,30 @@ def movers(b, market="crypto", n=None):
 
 
 def _movers_crypto(b, n):
-    try:
-        t = _data.fetch_binance_ticker_24h()
-    except Exception as e:
-        b.notes.append(f"Binance 24h 漲跌幅抓取失敗({type(e).__name__}),異動表省略")
+    state, t = _cached(b, "binance_ticker", _data.fetch_binance_ticker_24h)
+    if state != "ok":
+        b.notes.append(f"Binance 24 小時漲跌幅抓取失敗({type(t).__name__}),異動表省略")
         return Brick()
     t = t[[s.isascii() and s.isalnum() for s in t.index]]
     t = t.sort_values("quote_volume", ascending=False).head(100)
     if len(t) < 2 * n:
-        b.notes.append("Binance 24h 漲跌幅資料不足,異動表省略")
+        b.notes.append("Binance 24 小時漲跌幅資料不足,異動表省略")
         return Brick()
     up = t.sort_values("change_pct", ascending=False).head(n)
     down = t.sort_values("change_pct").head(n)
     picked = list(up.index) + [s for s in down.index if s not in up.index]
     signal, denied = {}, False
     start = _crypto_window_start(b)
-    for s in picked:
-        try:
-            df = _data.fetch_unusual_movement(s, "1d", start, None, b.headers)
-        except _data.DataAccessError:
-            denied = True
-            break
-        except Exception:
-            continue
-        ser = df["alpha"].dropna() if df is not None and "alpha" in df else None
-        if ser is not None and len(ser):
-            signal[s] = float(ser.iloc[-1])
+    got = _fetch_many(lambda sym: _data.fetch_unusual_movement(sym, "1d", start, None, b.headers), picked)
+    denied = any(st == "denied" for st, _ in got.values())
+    for sym in picked:
+        st, df = got[sym]
+        v = _last_alpha(df) if st == "ok" else None
+        if v is not None:
+            signal[sym] = v
     if denied:
         T._no_access("異常漲跌訊號", b.notes, b.missing)
-    cols = [("coin", "幣種", "left"), ("chg", "24h", "right", "percent"), ("vol", "24h 成交額", "right")]
+    cols = [("coin", "幣種", "left"), ("chg", "24 小時", "right", "percent"), ("vol", "24 小時成交額", "right")]
     if signal:
         cols.append(("sig", "異常漲跌", "right"))
     rows = []
@@ -878,12 +989,12 @@ def _movers_crypto(b, n):
             row["sig"] = f"{signal[s]:+.2f}"
         rows.append(row)
     top, bot = up.iloc[0], down.iloc[0]
-    b.ctx["24h 漲幅最大"] = f"{up.index[0].replace('USDT', '')} {T._pct(float(top['change_pct']))}"
-    b.ctx["24h 跌幅最大"] = f"{down.index[0].replace('USDT', '')} {T._pct(float(bot['change_pct']))}"
-    title = f"24h 漲幅最大 {b.ctx['24h 漲幅最大']},跌幅最大 {b.ctx['24h 跌幅最大']}"
-    cap = (f"Binance USDT 永續,24h 成交額前 100 名中漲幅前 {n} 與跌幅前 {n};滾動 24 小時"
+    b.ctx["24 小時漲幅最大"] = f"{up.index[0].replace('USDT', '')} {T._pct(float(top['change_pct']))}"
+    b.ctx["24 小時跌幅最大"] = f"{down.index[0].replace('USDT', '')} {T._pct(float(bot['change_pct']))}"
+    title = f"24 小時漲幅最大 {b.ctx['24 小時漲幅最大']},跌幅最大 {b.ctx['24 小時跌幅最大']}"
+    cap = (f"Binance USDT 永續,24 小時成交額前 100 名中漲幅前 {n} 與跌幅前 {n};滾動 24 小時"
            + (";異常漲跌為 Blave 指標 z-score(日頻,只到前一個完整日)" if signal else ""))
-    return Brick([T.table(title, cols, rows, caption=cap)], foot=[("src", "漲跌幅:Binance 公開 24h 行情。")])
+    return Brick([T.table(title, cols, rows, caption=cap)], foot=[("src", "漲跌幅:Binance 公開 24 小時行情。")])
 
 
 def _twse_day_all(b):
@@ -923,9 +1034,36 @@ def _movers_tw(b, n):
 _ANNOUNCE_TAGS = {}
 
 
-def tw_announcements(b, symbols=None, n=5):
-    """#18 重大訊息 (TWSE open data, desktop only): the latest day's announcements of `symbols`,
-    or of the most-traded listed companies — a `news` block, tags by clause only."""
+# 例行公告:對大盤晨報沒有資訊(09-26 實測五則全是這類)。主旨含其中任一字樣就不列
+_ROUTINE_ANNOUNCE = ("更名", "名稱變更", "變更名稱", "面額", "營業地址", "發言人", "代理發言人", "會計師", "獨立董事",
+                     "薪資報酬委員", "審計委員", "董事會召開", "董事會日期", "召開董事會", "董事會決議日期", "股東常會",
+                     "股東臨時會", "股東會", "取得有價證券", "處分有價證券", "取得或處分有價證券", "取得或處分資產",
+                     "背書保證", "資金貸與", "贖回", "轉換公司債", "可轉債", "海外可轉換", "受益憑證", "承銷",
+                     "董事長異動", "董事異動", "監察人", "法人董事", "改派", "補選", "解任", "辭任", "委任",
+                     "內部稽核", "印鑑", "公司章程", "子公司", "代子公司", "除權息基準日", "現金股利分派", "股利發放")
+ANNOUNCE_MAX = 3
+MARKET_CAP_TOP = 50
+TURNOVER_TOP = 10
+
+
+def _big_names(b):
+    """Stock ids a market brief cares about: market cap top MARKET_CAP_TOP (Blave; skipped without
+    access) ∪ the last session's turnover top TURNOVER_TOP (TWSE open data). One fetch each."""
+    ids = set()
+    state, mv = _cached(b, "tw_mcap_top", lambda: _data.fetch_twstock_market_value_all(b.headers, top=MARKET_CAP_TOP))
+    if state == "ok" and mv is not None and len(mv):
+        ids |= {str(x) for x in mv["stock_id"]}
+    day_all = _twse_day_all(b)
+    if day_all is not None and len(day_all):
+        ids |= {str(x) for x in day_all.sort_values("value", ascending=False).head(TURNOVER_TOP).index}
+    return ids
+
+
+def tw_announcements(b, symbols=None, n=ANNOUNCE_MAX):
+    """#18 重大訊息 (TWSE open data, desktop only): the latest day's material announcements that
+    matter to a market brief — of `symbols`, or of the heavyweights (market cap top 50 / turnover
+    top 10) — routine filings (renames, par value, board scheduling, securities trades, CB
+    redemptions…) left out, at most 3. None left → no block."""
     if not _data.tw_market_public_allowed():
         b.notes.append("重大訊息只在電腦版提供(TWSE 開放資料),省略")
         return Brick()
@@ -934,26 +1072,28 @@ def tw_announcements(b, symbols=None, n=5):
     except Exception as e:
         b.notes.append(f"重大訊息抓取失敗({type(e).__name__}),省略")
         return Brick()
-    if symbols:
-        want = [str(x) for x in symbols]
-        df = df[df["stock_id"].isin(want)]
-    else:
-        day_all = _twse_day_all(b)
-        if day_all is not None and len(day_all):
-            rank = day_all["value"].rank(ascending=False)
-            df = df.assign(_r=df["stock_id"].map(rank).fillna(1e9)).sort_values(["_r", "time"], ascending=[True, False])
-    if not len(df):
-        b.notes.append("重大訊息 今日沒有" + ("點名標的的公告" if symbols else "公告"))
-        return Brick()
     total = len(df)
-    df = df.head(min(n, 10))
+    df = df[~df["subject"].apply(lambda t: any(w in str(t) for w in _ROUTINE_ANNOUNCE))]
+    if symbols:
+        df = df[df["stock_id"].isin([str(x) for x in symbols])]
+    else:
+        df = df[df["stock_id"].isin(_big_names(b))]
+    if not len(df):
+        b.notes.append(f"重大訊息 {total} 則都是例行公告或非權值股,省略")
+        return Brick()
+    day_all = _twse_day_all(b)
+    if day_all is not None and len(day_all):
+        rank = day_all["value"].rank(ascending=False)
+        df = df.assign(_r=df["stock_id"].map(rank).fillna(1e9)).sort_values(["_r", "time"], ascending=[True, False])
+    df = df.head(min(n, ANNOUNCE_MAX))
     items = [{"title": f"{r['name']}：{r['subject']}"[:120], "tag": _ANNOUNCE_TAGS.get(r["clause"], "neutral"),
               "sources": [{"name": "TWSE 重大訊息"}], "channel": "licensed",
               "published_at": int(r["time"].timestamp()), "symbols": [r["stock_id"]]} for _, r in df.iterrows()]
-    b.ctx["重大訊息"] = f"{total} 則(列 {len(items)} 則):" + "、".join(f"{r['stock_id']} {r['name']}" for _, r in df.iterrows())
-    order = "依點名標的" if symbols else "依前一交易日成交值排序"
+    b.ctx["重大訊息"] = f"{total} 則中列 {len(items)} 則:" + "、".join(f"{r['stock_id']} {r['name']}" for _, r in df.iterrows())
+    who = "點名標的" if symbols else f"市值前 {MARKET_CAP_TOP} 或成交值前 {TURNOVER_TOP} 的公司"
     block = {"type": "news", "title": f"重大訊息 {len(items)} 則", "items": items,
-             "caption": f"TWSE 上市公司重大訊息,最新一個公告日;{order},取前 {n} 則;標籤依條款類別,對不上的一律中性"}
+             "caption": f"TWSE 上市公司重大訊息,最新一個公告日;只列{who},排除更名、面額、例行董事會、"
+                        f"有價證券取得處分等例行公告,最多 {ANNOUNCE_MAX} 則;標籤依條款類別,對不上的一律中性"}
     return Brick([block], foot=[("src_twse_open", _data._TWSE_OPENDATA_SOURCE_ZH)])
 
 
@@ -982,6 +1122,243 @@ def news(b, market="tw", n=5, q=None):
     return Brick(slot="news")
 
 
+# ─── 事件型積木(今天的特別事件加做;build(extra=…),references/reports.md §1b › Report flow) ─────
+# 每塊一次抓取(或讀同一輪已抓過的快照);拿不到就降級:DataAccessError → missing,其他 → notes,
+# 這塊不出、報告照發。
+
+def _coin_pair(symbol):
+    return _data.normalize_symbol(symbol if symbol.upper().endswith("USDT") else symbol.upper() + "USDT")
+
+
+def coin_snapshot(b, symbol, days=30):
+    """One coin today: close over `days` with its 24h change and 24h volume against the 20-day mean of
+    complete days — for a coin the news is about (a hacked exchange's token, a listing, an unlock).
+    Never today's forming daily bar against full days: at 08:00 Taipei it is an hour old and reads as
+    「0.0 倍」(09-27 live test). Rolling 24 h from Binance's ticker; without it, yesterday's full day."""
+    pair = _coin_pair(symbol)
+    coin = pair.replace("USDT", "")
+    try:
+        df = _data.fetch_kline(pair, "1d", T._window_start(max(days, 21) + 2), None, b.headers)
+    except _data.DataAccessError:
+        T._no_access(f"{coin} 日 K", b.notes, b.missing)
+        return Brick()
+    except Exception as e:
+        b.notes.append(f"{coin} 日 K 抓取失敗({type(e).__name__}),{coin} 快照省略")
+        return Brick()
+    df = T._clean_ohlc(df) if df is not None and len(df) else None
+    if df is None or len(df) < 2:
+        b.notes.append(f"{coin} 沒有 USDT 永續日 K,{coin} 快照省略")
+        return Brick()
+    c = df["Close"]
+    last, chg = float(c.iloc[-1]), float(c.iloc[-1] / c.iloc[-2] - 1)
+    ratio, basis, chg_label = _volume_vs_20d(b, pair, df)
+    tk = _ticker_row(b, pair)
+    if tk is not None and T._finite(tk.get("change_pct")):
+        chg, chg_label = float(tk["change_pct"]) / 100, "24 小時"
+    b.ctx[f"{coin} 價格"] = f"{T._num(last, 4 if last < 1 else 2)} USDT({chg_label} {T._pct(chg * 100)})"
+    if ratio is not None:
+        b.ctx[f"{coin} 成交量"] = f"{basis}為前 20 日均的 {ratio:.1f} 倍"
+    title = f"{coin} {chg_label} {T._pct(chg * 100)}" + (f",{basis}成交量為前 20 日均 {ratio:.1f} 倍" if ratio is not None else "")
+    # 價格一律畫 K 線(references/reports.md › Price is drawn as a candlestick;稽核 B8:XRP 畫成了收盤折線)
+    lc = T.candlestick(title, df.tail(days), y_unit="USDT",
+                       caption=T._cap(f"Binance {pair} 永續日 K,近 {min(days, len(c))} 日",
+                                      (f"成交量比較 = {basis}量 ÷ 前 20 個完整日平均(今日未收盤那根不計)"
+                                       if ratio is not None else None)))
+    if lc is None:
+        b.notes.append(f"{coin} 日 K 不足兩根,{coin} 快照省略")
+        return Brick()
+    return Brick([lc], foot=[("src", "價格:Binance USDT 永續日 K。")])
+
+
+def _ticker_row(b, pair):
+    state, t = _cached(b, "binance_ticker", _data.fetch_binance_ticker_24h)
+    if state != "ok" or t is None or pair not in t.index:
+        return None
+    return t.loc[pair].to_dict()
+
+
+def _volume_vs_20d(b, pair, df):
+    """(ratio, basis, change label). Rolling 24 h base volume (Binance ticker) ÷ the mean of the 20
+    complete days before today; no ticker → yesterday's complete day ÷ the 20 days before it.
+    The forming daily bar is never the numerator."""
+    v = df["Volume"].astype(float)
+    full = v.iloc[:-1]                       # today's bar is still forming
+    tk = _ticker_row(b, pair)
+    if tk is not None and T._finite(tk.get("volume")) and len(full) >= 20:
+        base = float(full.tail(20).mean())
+        return (float(tk["volume"]) / base if base else None), "近 24 小時", "1 日"
+    if len(full) >= 21:
+        base = float(full.iloc[-21:-1].mean())
+        return (float(full.iloc[-1]) / base if base else None), "昨日", "1 日"
+    return None, "", "1 日"
+
+
+LIQ_MAP_BUCKETS = 50    # 200 桶 4 併 1;連續軸讀的是叢集,契約可讀性建議 ≤60(caption 交代口徑)
+_LIQ_MAP_CAPTION = ("Binance 已發生強平單按成交價位分桶(近 24 小時);單位:百萬 USD;按「Binance 約佔全市場 3 成」"
+                    "的假設放大(×3.3)。綠＝空單爆倉(上漲觸發)、紅＝多單爆倉(下跌觸發);豎虛線＝發稿時現價。"
+                    "曲線虛線＝自排行榜持倉估算的累積清算量,為模型估計、非實際掛單。")
+
+
+def liq_map(b, symbol):
+    """#21 爆倉地圖: one coin's liquidation profile over a continuous price axis (bar_chart
+    variant "profile", contract 1.5) — two layers on the same buckets. Solid bars = force-order
+    liquidations that HAPPENED in the last 24 h, each bucket carrying both sides un-netted
+    (neg = long liqs/red, pos = short liqs/green); dashed line = the MODEL-ESTIMATED liquidation exposure
+    (leaderboard positions + OI), drawn by the web as a cumsum from the current-price refline.
+    Blave-only (needs data access); the exchange share scaling (×3.3) is in the caption."""
+    pair = _coin_pair(symbol)
+    coin = pair.replace("USDT", "")
+    state, m = _cached(b, ("liq_map", pair), lambda: _data.fetch_liquidation_map(pair, b.headers))
+    if state == "denied":
+        T._no_access(f"{coin} 爆倉地圖", b.notes, b.missing)
+        return Brick()
+    if state == "failed" or not m or not m.get("labels"):
+        b.notes.append(f"{coin} 爆倉地圖抓取失敗({type(m).__name__ if state == 'failed' else '無資料'}),省略")
+        return Brick()
+    labels = [float(x) for x in m["labels"]]
+    day = (m.get("liquidation") or {}).get("24h") or {}
+    buy, sell = day.get("buy_liq") or [], day.get("sell_liq") or []
+    oi = m.get("oi_value") or []
+    n = min(len(labels), len(buy), len(sell))
+    if n < LIQ_MAP_BUCKETS or len(labels) < 2:
+        b.notes.append(f"{coin} 爆倉地圖桶數不足({n}),省略")
+        return Brick()
+    step = labels[1] - labels[0]
+    size = n // LIQ_MAP_BUCKETS
+    buckets, est = [], []
+    for i in range(0, size * LIQ_MAP_BUCKETS, size):
+        x0 = labels[i]
+        x1 = labels[i + size] if i + size < len(labels) else labels[-1] + step
+        # 兩邊各自進自己的欄位,不淨額(契約 1.5:pos = 空單爆倉/綠、neg = 多單爆倉/紅;跨界桶兩段都留)
+        buckets.append((x0, x1, sum(buy[i:i + size]) / 1e6, sum(sell[i:i + size]) / 1e6))
+        if len(oi) >= n:
+            est.append((x0, x1, max(0.0, sum(oi[i:i + size])) / 1e6))
+    total_long = sum(sell[:size * LIQ_MAP_BUCKETS]) / 1e6
+    total_short = sum(buy[:size * LIQ_MAP_BUCKETS]) / 1e6
+    if total_long + total_short <= 0:
+        b.notes.append(f"{coin} 近 24 小時沒有爆倉,爆倉地圖省略")
+        return Brick()
+    price = float(m.get("price") or 0)
+    dp = 4 if price < 1 else 2 if price < 100 else 0
+    hot_short, hot_long = max(buckets, key=lambda r: r[2]), max(buckets, key=lambda r: r[3])
+    top = max(hot_short[2], hot_long[3])
+    # 兩邊都重(次重的那帶 ≥ 最重的 8 成)就兩帶都寫,重的在前
+    bands = sorted([x for x in ((hot_long[3], hot_long, "多單"), (hot_short[2], hot_short, "空單"))
+                    if x[0] >= 0.8 * top], key=lambda x: -x[0])
+    where = " 與 ".join(f"{T._num(r[0], dp)}–{T._num(r[1], dp)}({side})" for _, r, side in bands)
+    title = f"{coin} 近 24 小時爆倉集中在 {where}"
+    b.ctx[f"{coin} 爆倉地圖"] = (f"24 小時多單爆倉 {total_long:,.1f}M、空單 {total_short:,.1f}M USD,"
+                              f"最集中 {where}")
+    pf = T.bar_profile(title, buckets, est=est or None,
+                       refline=(price, T._num(price, dp)) if price > 0 else None,
+                       x_unit="USDT", y_unit="百萬 USD", caption=_LIQ_MAP_CAPTION)
+    if pf is None:
+        b.notes.append(f"{coin} 爆倉地圖桶形不合法,省略")
+        return Brick()
+    return Brick([pf], foot=[("liqmap", "爆倉地圖:實心為已發生強平(Binance,×3.3 放大);虛線為排行榜持倉的模型估計,非實際掛單。")])
+
+
+# Blave 有收的交易所(爆倉矩陣 / 未平倉表 / 資金費率);其他交易所的事件只能講價格與新聞
+_EXCHANGE_FEEDS = {"liq": ("binance", "bybit", "gate", "okx", "htx", "bitfinex"),
+                   "oi": ("binance", "okx", "bingx", "bybit", "gate"),
+                   "funding": ("binance", "okx", "bingx", "bybit")}
+
+
+def exchange_snapshot(b, exchange):
+    """One exchange's derivatives today — 24h liquidations (long share), open interest summed
+    over the coins Blave tracks there with its 24h change, BTC funding on that exchange. Reads the
+    same snapshots the market bricks fetched; an exchange Blave does not collect is a note."""
+    ex = str(exchange).strip().lower()
+    name = ex.capitalize() if ex not in ("okx", "htx") else ex.upper()
+    if not any(ex in feeds for feeds in _EXCHANGE_FEEDS.values()):
+        b.notes.append(f"Blave 沒有收 {name} 的爆倉、未平倉與資金費率,{name} 衍生品快照省略(只能用價格與新聞講)")
+        return Brick()
+    rows, ctx = [], []
+    if ex in _EXCHANGE_FEEDS["liq"]:
+        liq = _snapshot(b, ("liq", 24), lambda: _data.fetch_liquidation_exchanges(b.headers, hours=24, top_n=10), "24 小時爆倉")
+        row = next((x for x in (liq or {}).get("exchanges") or [] if x.get("exchange") == ex), None)
+        if row and T._finite(row.get("total_liq_usd")):
+            tot, lg = float(row["total_liq_usd"]), row.get("long_liq_usd")
+            share = f",多單佔 {float(lg) / tot * 100:.0f}%" if tot > 0 and T._finite(lg) else ""
+            rows.append({"item": "24 小時爆倉", "value": f"{_usd(tot)} USD{share}"})
+            ctx.append(("24 小時爆倉", f"{_usd(tot)} USD{share}"))
+    if ex in _EXCHANGE_FEEDS["oi"]:
+        oi = _oi_table(b)
+        now_sum = prev_sum = 0.0
+        for c in (oi or {}).get("coins") or []:
+            e = ((c.get("by_exchange") or {}).get(ex) or {})
+            if T._finite(e.get("oi")) and T._finite(e.get("chg_24h")) and float(e["chg_24h"]) > -1:
+                now_sum += float(e["oi"])
+                prev_sum += float(e["oi"]) / (1 + float(e["chg_24h"]))
+        if now_sum > 0 and prev_sum > 0:
+            chg = now_sum / prev_sum - 1
+            rows.append({"item": "未平倉(Blave 追蹤的幣合計)", "value": f"{_usd(now_sum)} USD,24 小時 {T._pct(chg * 100, 1)}"})
+            ctx.append(("未平倉 24 小時", T._pct(chg * 100, 1)))
+    if ex in _EXCHANGE_FEEDS["funding"]:
+        try:
+            df = _data.fetch_funding_rate("BTCUSDT", "1d", _crypto_window_start(b), None, b.headers, exchange=ex)
+            v = _last_alpha(df)
+            if v is not None:
+                rows.append({"item": "BTC 資金費率", "value": f"{v:+.4f}%"})
+                ctx.append(("BTC 資金費率", f"{v:+.4f}%"))
+        except _data.DataAccessError:
+            if not any(m["name"] == f"{name} 資金費率" for m in b.missing):
+                T._no_access(f"{name} 資金費率", b.notes, b.missing)
+        except Exception as e:
+            b.notes.append(f"{name} 資金費率抓取失敗({type(e).__name__})")
+    if not rows:
+        return Brick()
+    for label, val in ctx:
+        b.ctx[f"{name} {label}"] = val
+    title = f"{name}:" + ",".join(f"{l} {v}" for l, v in ctx[:2])
+    tb = T.table(title, [("item", "項目", "left"), ("value", "數值", "right")], rows,
+                 caption=f"{name} 單一交易所;爆倉為 24 小時滾動、未平倉只計 Blave 追蹤的 USDT 永續幣種;資金費率為日頻最新值")
+    return Brick([tb], foot=[("ex_" + ex, f"{name} 數據為 Blave 彙整的交易所資料,口徑與涵蓋度依交易所而異。")])
+
+
+def relative_to(b, symbol, benchmark="BTC", days=30):
+    """A coin against a benchmark over `days`, both rebased to 100 — did it move with the market or
+    on its own news?"""
+    pair, bench = _coin_pair(symbol), _coin_pair(benchmark)
+    coin, bc = pair.replace("USDT", ""), bench.replace("USDT", "")
+    if pair == bench:
+        b.notes.append(f"{coin} 跟自己比沒有意義,相對表現省略")
+        return Brick()
+    try:
+        got = _data.fetch_kline_batch([pair, bench], "1d", T._window_start(days + 2), None, b.headers)
+    except _data.DataAccessError:
+        T._no_access(f"{coin} 日 K", b.notes, b.missing)
+        return Brick()
+    except Exception as e:
+        b.notes.append(f"{coin}／{bc} 日 K 抓取失敗({type(e).__name__}),相對表現省略")
+        return Brick()
+    a, z = got.get(pair), got.get(bench)
+    if a is None or z is None or len(a) < 2 or len(z) < 2:
+        b.notes.append(f"{coin} 或 {bc} 日 K 不足,相對表現省略")
+        return Brick()
+    a, z = a["Close"].tail(days + 1), z["Close"].tail(days + 1)
+    ra, rz = float(a.iloc[-1] / a.iloc[0] - 1) * 100, float(z.iloc[-1] / z.iloc[0] - 1) * 100
+    b.ctx[f"{coin} 相對 {bc}({days} 日)"] = f"{coin} {ra:+.1f}%,{bc} {rz:+.1f}%"
+    title = f"{coin} {days} 日 {ra:+.1f}%,{bc} {rz:+.1f}%:{'強於' if ra >= rz else '弱於'}大盤 {abs(ra - rz):.1f} 個百分點"
+    lc = T.line_chart(title, [(coin, "primary", a / a.iloc[0] * 100), (bc, "benchmark", z / z.iloc[0] * 100)],
+                      caption=T._cap("兩者以窗口第一天收盤為 100", "Binance USDT 永續日 K"))
+    return Brick([lc], foot=[("src", "價格:Binance USDT 永續日 K。")])
+
+
+# 圖型寫死在積木層(Wei 09-27),agent 不能指定,對齊 web dashboard 的慣例(chart_type:
+# CVD/爆倉金額 = history → 每期長條;OI/多空比/永續溢價/OI 佔流通量 = line):
+#   每期發生量(flow:爆倉金額、買賣超、成交量) → bar_chart(一根 = 那一期發生多少)
+#   水位與指標(stock/z-score:OI、融資、資金費率、多空比、各 z-score) → line_chart
+#   價格 → candlestick
+# 會出圖的積木都要登記在這張表;tests/check_report_bricks.py 逐積木斷言,改錯任何一個會紅。
+CHART_KIND = {
+    "price_chart": "candlestick", "coin_snapshot": "candlestick",
+    "tw_institutional": "bar_chart", "liquidation": "bar_chart",
+    "tw_margin": "line_chart", "tw_futures_inst": "line_chart", "funding": "line_chart",
+    "blave_indicators": "line_chart", "relative_perf": "line_chart", "relative_to": "line_chart",
+    "liq_map": "bar_chart",   # variant profile:連續價位軸的量分布,仍是 bar 家族
+}
+
 BRICKS = {
     "price_chart": price_chart, "quote_table": quote_table, "relative_perf": relative_perf,
     "tw_turnover": tw_turnover, "tw_institutional": tw_institutional, "tw_margin": tw_margin,
@@ -989,6 +1366,8 @@ BRICKS = {
     "blave_indicators": blave_indicators, "event_calendar": event_calendar, "levels_table": levels_table,
     "liquidation": liquidation, "derivs_table": derivs_table, "movers": movers,
     "tw_announcements": tw_announcements, "news": news,
+    "coin_snapshot": coin_snapshot, "exchange_snapshot": exchange_snapshot, "relative_to": relative_to,
+    "liq_map": liq_map,
 }
 
 
@@ -1009,6 +1388,8 @@ def _merge_foot(bricks, finals):
                 items[fid] = txt
     out = [(i, items[i]) for i in order]
     joined = list(dict.fromkeys(src)) + [t for t in dict.fromkeys(tail) if t not in src]
+    # 同一句的短版與長版(「價格:Binance…日 K。」與「價格:Binance…日 K,最後一根…」)只留長的
+    joined = [t for t in joined if not any(o != t and o.startswith(t.rstrip("。")) for o in joined)]
     if joined:
         out.append(("src", "".join(joined)))
     for fn in finals:
@@ -1016,10 +1397,105 @@ def _merge_foot(bricks, finals):
     return out
 
 
-def build(recipe, date=None, headers=None):
+EXTRA_MAX = 3
+PACK_TTL_S = 600
+
+
+def _packs_dir():
+    ws = os.environ.get("BLAVE_AGENT_WORKSPACE") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(ws), "state"), "report_packs")
+
+
+_KEY_ENV = ("BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY", "BLAVE_AGENT_LOCAL", "BLAVE_KLINE_SOURCE",
+            "BLAVE_SCHEDULED_RUN")
+
+
+def _pack_key(recipe, date, extra, headers):
+    """Same recipe, day, extras, data-access state and key → same pack. A card added a minute ago
+    changes the key, so the next build fetches what it can now reach."""
+    env = {k: os.environ.get(k) for k in _KEY_ENV}
+    who = hashlib.sha1(str((headers or {}).get("api-key", "")).encode()).hexdigest()[:12]
+    return hashlib.sha1(json.dumps([recipe, date, extra or [], env, who, current_turn()], sort_keys=True, ensure_ascii=False,
+                                   default=str).encode()).hexdigest()
+
+
+def _cache_on():
+    return os.environ.get("BLAVE_REPORT_PACKS", "on") != "off"
+
+
+def current_turn():
+    """This agent turn's id (runtime/agent_turn sets BLAVE_TURN_ID every turn), or None outside a
+    turn. A kept pack is re-used only inside the turn that built it: the next turn builds again,
+    because the market has moved since."""
+    return os.environ.get("BLAVE_TURN_ID") or None
+
+
+def _cached_pack(rid, key):
+    path = os.path.join(_packs_dir(), rid + ".json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if doc.get("key") != key or time.time() - float(doc.get("built_at", 0)) > PACK_TTL_S:
+        return None
+    return T.Pack.from_json(doc)
+
+
+def _save_pack(pack, key):
+    try:
+        d = _packs_dir()
+        os.makedirs(d, exist_ok=True)
+        doc = dict(pack.to_json(), key=key, built_at=time.time(), turn=current_turn())
+        tmp = os.path.join(d, pack.report_id + ".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False)
+        os.replace(tmp, os.path.join(d, pack.report_id + ".json"))
+    except (OSError, TypeError, ValueError) as e:
+        print(f"[report] pack not kept for re-use: {e}", file=sys.stderr)
+
+
+def check_extra(extra):
+    """[[brick, {params}], …] added to a recipe for today's specific event: ≤EXTRA_MAX, known bricks,
+    known parameter names and values. Raises ValueError naming what is wrong."""
+    import inspect
+    if not extra:
+        return []
+    if not isinstance(extra, (list, tuple)) or len(extra) > EXTRA_MAX:
+        raise ValueError(f"extra takes at most {EXTRA_MAX} bricks (references/reports.md §1b › Report flow): "
+                         "pick the 1–3 that show today's specific event")
+    out = []
+    for i, entry in enumerate(extra):
+        if not (isinstance(entry, (list, tuple)) and len(entry) == 2 and isinstance(entry[1], dict)):
+            raise ValueError(f"extra[{i}] must be a brick [name, {{params}}] — e.g. [\"coin_snapshot\", {{\"symbol\": \"XRP\"}}], "
+                             "[\"relative_to\", {\"symbol\": \"XRP\"}], [\"exchange_snapshot\", {\"exchange\": \"okx\"}], "
+                             "[\"tw_institutional\", {\"symbol\": \"2330\"}]; news items go in narrative['news'], not here")
+        name, params = entry
+        fn = BRICKS.get(name)
+        if fn is None:
+            raise ValueError(f"extra[{i}]: unknown brick {name!r}; bricks: {', '.join(BRICKS)}")
+        allowed = [p for p in inspect.signature(fn).parameters if p != "b"]
+        bad = sorted(set(params) - set(allowed))
+        if bad:
+            raise ValueError(f"extra[{i}] {name}: unknown parameter(s) {bad}; takes {allowed}")
+        for k, v in params.items():
+            T._check_param(f"extra[{i}] {name}.{k}", k, v)
+        if name == "relative_to" and str(params.get("symbol", "")).upper().replace("USDT", "") == \
+                str(params.get("benchmark", "BTC")).upper().replace("USDT", ""):
+            raise ValueError(f"extra[{i}] relative_to compares {params.get('symbol')} with itself: pick another benchmark "
+                             "(benchmark=\"ETH\") or leave it out — the coin's own move is already in the pack")
+        out.append([name, dict(params)])
+    return out
+
+
+def build(recipe, date=None, headers=None, extra=None, fresh=False):
     """Run a recipe → `Pack`. `recipe`: {"id", "title", "type"?, "report_type"?, "kpi": [brick
     names, focus first], "bricks": [[name, {params}], …], "lookback_days"?, "mode"?}.
-    Blocks come out as: kpi_row, then each brick's blocks in recipe order, then the footnote."""
+    `extra`: ≤3 more bricks for today's event (references/reports.md §1b › Report flow); they lay out
+    right after the KPI row. The pack is kept PACK_TTL_S under its report id: the same call again
+    returns it (no refetch) unless `fresh=True`; `publish("<report id>", …)` uses it.
+    Blocks come out as: kpi_row, the extra bricks, the recipe's bricks in order, the footnote."""
+    extra = check_extra(extra)
     headers = headers or T.headers_from_env()
     mode = recipe.get("mode", "morning")
     if mode == "close":
@@ -1027,20 +1503,36 @@ def build(recipe, date=None, headers=None):
     else:
         date = date or T._today_tpe()
     rid = f"{recipe['id']}-{date.replace('-', '')}"
+    key = _pack_key(recipe, date, extra, headers)
+    if not fresh and _cache_on() and current_turn():
+        cached = _cached_pack(rid, key)
+        if cached is not None:
+            print(f"[report] {rid}: re-using the pack built {int(time.time() - cached.built_at)}s ago "
+                  "(same recipe; fresh=True rebuilds)")
+            return cached
     title = recipe["title"]
     type_ = recipe.get("type", "morning")
     report_type = recipe.get("report_type", title)
     b = Build(recipe, date, headers, recipe.get("lookback_days", 45), mode)
-    done = []
+    done, timings, t_all = [], [], time.monotonic()
     try:
-        for name, params in recipe["bricks"]:
+        for name, params in list(recipe["bricks"]) + extra:
             if name not in BRICKS:
                 raise ValueError(f"unknown brick {name!r}; bricks: {', '.join(BRICKS)}")
+            t0 = time.monotonic()
             done.append((name, BRICKS[name](b, **(params or {}))))
+            timings.append((name, round(time.monotonic() - t0, 1)))
     except Skip as e:
+        if e.roll_to and e.roll_to != date and not _scheduled():
+            # Wei:週末／休市日要收盤報告就直接做最近交易日,不先問;排程照舊跳過(不重發舊資料)
+            pack = build(recipe, e.roll_to, headers, extra=extra, fresh=fresh)
+            pack.closed = {"asked": date, "label": e.closed, "used": e.roll_to}
+            return pack
         return T.Pack(rid, title, type_, report_type, [], e.context, e.notes, skip=e.reason)
+    n_extra = len(extra)
+    base, extras = done[:len(done) - n_extra], done[len(done) - n_extra:]
     first = {}
-    for name, br in done:
+    for name, br in base:
         first.setdefault(name, br)
     kpis, headline = [], None
     for n in recipe.get("kpi", []):
@@ -1050,12 +1542,13 @@ def build(recipe, date=None, headers=None):
         if headline is None and br.kpis:
             headline = br.headline
         kpis += br.kpis
-    bricks = [br for _, br in done]
+    ordered = extras + base
+    bricks = [br for _, br in ordered]
     blocks, owners, news_at = [], [], None
     if kpis:
         blocks.append(T.kpi_row(kpis, title=headline))
         owners.append("kpi_row")
-    for name, br in done:
+    for name, br in ordered:
         if br.slot == "news":
             news_at = len(blocks)
         blocks += br.blocks
@@ -1067,5 +1560,18 @@ def build(recipe, date=None, headers=None):
     blocks.append(T.footnote(foot))
     owners.append("footnote")
     news = dict(b.news, at=news_at) if b.news is not None else None
-    return T.Pack(rid, title, type_, report_type, blocks, b.ctx, b.notes, meta=b.meta, missing=b.missing,
+    pack = T.Pack(rid, title, type_, report_type, blocks, b.ctx, b.notes, meta=b.meta, missing=b.missing,
                   owners=owners, news=news)
+    pack.timings = timings
+    pack.extra_owners = [n for n, _ in extras]
+    pack.report_day, pack.mode, pack.subject = date, mode, recipe.get("subject")
+    if b.closed:
+        pack.closed = {"asked": date, "label": b.closed[0], "used": b.closed[1]}
+    pack.bricks = [[n, dict(p or {})] for n, p in list(recipe["bricks"]) + extra]
+    pack.built_at = time.time()
+    total = round(time.monotonic() - t_all, 1)
+    slow = ", ".join(f"{n} {t}s" for n, t in sorted(timings, key=lambda x: -x[1])[:4])
+    print(f"[report] {rid} built in {total}s ({slow})")
+    if _cache_on():
+        _save_pack(pack, key)
+    return pack
