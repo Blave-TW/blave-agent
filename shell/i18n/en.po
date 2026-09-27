@@ -3697,7 +3697,7 @@ msgstr "Market report · Produced by a user's Blave Agent"
 
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
-msgstr "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; editing or deleting this report on this computer won't change or revoke the public page — use “Stop sharing” to revoke."
+msgstr "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too."
 
 msgid "shr.noteCloud"
 msgstr "Copies already reposted or cached in link previews can't be recalled; if your machine is deleted or replaced (including when your balance reaches zero), all your public links are removed."
@@ -3761,10 +3761,10 @@ msgstr "This report can't be published."
 
 # api 507 IMAGE_QUOTA / 429:spec 沒給字,待設計師確認
 msgid "shr.quota"
-msgstr "Your image storage is full, so this report's images can't be uploaded."
+msgstr "Your account's image storage is full, so this report wasn't published."
 
 msgid "shr.rate"
-msgstr "Too many tries. Please wait a moment and try again."
+msgstr "Too many attempts. Try again in a while."
 
 # 未登入(只會發生在本機視角;spec DT3)
 msgid "shr.gate"

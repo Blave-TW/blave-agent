@@ -432,10 +432,10 @@ function postJSON(url, body, extra) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
     const req = require("https").request(url, {
-      ...(extra || {}),   // 目前只有 my_ip 用:{ family: 4 } 強制走 IPv4
+      timeout: 20000,
+      ...(extra || {}),   // my_ip:{ family: 4 } 強制走 IPv4;報告分享的上傳:{ timeout } 放長
       method: "POST",
       headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(data) },
-      timeout: 20000,
     }, (res) => {
       let buf = "";
       res.on("data", (d) => { buf += d; });
@@ -1306,11 +1306,11 @@ function rptEnvelope(fileId, doc, mtimeMs) {
   const created = Number.isInteger(doc.created_at) && doc.created_at >= RPT_TS_MIN && doc.created_at <= RPT_TS_MAX ? doc.created_at : Math.floor(mtimeMs / 1000);
   return { id: fileId, title, type: typeof doc.type === "string" ? doc.type.slice(0, RPT_TYPE_MAX) : null, created_at: created, mtime: Math.floor(mtimeMs) };
 }
-// 讀一份 <dir>/<id>.json:不是普通檔 / 超過 2 MB / JSON 壞 → null
+// 讀一份 <dir>/<id>.json:不是普通檔(symlink 也不收:分享會把讀到的東西公開出去)/ 超過 2 MB / JSON 壞 → null
 function rptReadDoc(dir, id) {
   const f = path.join(dir, id + ".json");
   let st = null;
-  try { st = fs.statSync(f); } catch (_) { return null; }
+  try { st = fs.lstatSync(f); } catch (_) { return null; }
   if (!st.isFile() || st.size > RPT_BYTES_MAX) return null;
   try { const doc = JSON.parse(fs.readFileSync(f, "utf8")); return doc && typeof doc === "object" && !Array.isArray(doc) ? { doc, mtimeMs: st.mtimeMs } : null; } catch (_) { return null; }
 }
@@ -1339,8 +1339,9 @@ function rptImageB64(dir, id, file) {
   const mime = RPT_EXT_MIME[file.slice(file.lastIndexOf(".") + 1).toLowerCase()];
   if (!mime || file.indexOf(".") < 0) return null;
   try {
-    const f = path.join(dir, id + ".files", file), st = fs.statSync(f);
-    if (!st.isFile() || st.size === 0 || st.size > RPT_BYTES_MAX) return null;
+    // lstat:圖檔或 <id>.files 是 symlink 就當沒有這張——跟過去讀,分享時會把 workspace 外的檔公開出去(稽核 P2-5)
+    const d = path.join(dir, id + ".files"), f = path.join(d, file), st = fs.lstatSync(f);
+    if (!fs.lstatSync(d).isDirectory() || !st.isFile() || st.size === 0 || st.size > RPT_BYTES_MAX) return null;
     return { mime, b64: fs.readFileSync(f).toString("base64") };
   } catch (_) { return null; }
 }
@@ -1377,14 +1378,25 @@ function reportForShare(id) {
       const im = rptImageB64(dir, id, b.file);
       if (im) images[b.file] = im.b64;
     }
-    return { report: r.doc, images };
+    return { report: r.doc, images, mtime: Math.floor(r.mtimeMs) };
   }
   return null;
 }
+// 同 runtime/report_uploader.py log_error 的格式與上限:agent 用 lib.report.status(id) 讀得到同一行
+const RPT_ERRLOG_MAX = 64 * 1024, RPT_ERRLOG_KEEP = 200;
+function rptLogError(id, message) {
+  const f = path.join(RPT_DIR(), "upload_errors.log");
+  fs.mkdirSync(RPT_DIR(), { recursive: true });
+  fs.appendFileSync(f, new Date().toISOString().replace(/\.\d+Z$/, "Z") + " " + id + ": " + String(message).replace(/\s+/g, " ") + "\n");
+  if (fs.statSync(f).size > RPT_ERRLOG_MAX) fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").filter(Boolean).slice(-RPT_ERRLOG_KEEP).join("\n") + "\n");
+}
+const SHARE_UPLOAD_TIMEOUT_MS = 90 * 1000;   // 本機報告最多 20 張圖:api 逐張存完才回
 let _share = null;
 function shareClient() {
-  if (!_share) _share = require("./reportshare").createShareClient({
-    apiBase: API_BASE, post: (u, b) => postJSON(u, b), readLocal: reportForShare,
+  const RS = require("./reportshare");
+  if (!_share) _share = RS.createShareClient({
+    apiBase: API_BASE, post: (u, b) => postJSON(u, b, /\/share\/(publish|update)$/.test(u) ? { timeout: SHARE_UPLOAD_TIMEOUT_MS } : undefined), readLocal: reportForShare,
+    logError: rptLogError, store: RS.createShareStore(path.join(BASE, "state", "report-shares.json")),
     getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
   });
   return _share;

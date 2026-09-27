@@ -13,7 +13,7 @@
 .shr-row { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }
 .shr-tag { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 var(--space-6); border: 1px solid var(--border-frame); border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; color: var(--ink-2); }
 /* block + line-height 30(= 32 − 上下框):ellipsis 要 block 盒,flex 盒裁不出「…」 */
-.shr-url { flex: 1; min-width: 180px; height: 32px; line-height: 30px; padding: 0 var(--space-12); border: 1px solid var(--border-hairline); border-radius: var(--radius-xs); font-size: 12px; color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; user-select: text; }
+.shr-url { flex: 1; min-width: 120px; height: 32px; line-height: 30px; padding: 0 var(--space-12); border: 1px solid var(--border-hairline); border-radius: var(--radius-xs); font-size: 12px; color: var(--ink); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; user-select: text; }
 .shr-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .shr-stale { margin-top: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--border-hairline); display: flex; align-items: center; gap: var(--space-12); flex-wrap: wrap; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .shr-stale .t { flex: 1; min-width: 200px; }
@@ -31,17 +31,18 @@
 .shr-tt { font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .shr-ds { margin-top: var(--space-2); font-size: 13px; line-height: 1.5; color: var(--ink-3); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .shr-ds:empty { display: none; }
-/* 作者:標籤 + 兩顆 radio(canon › Radio:18 圓、off = frame 框、on = 橘底白心——表單選取指示,不是 CTA) */
+/* 作者:標籤 + 兩顆 radio(canon › Checkbox / Radio:18 圓、off = frame 框、on = 墨色底——選取指示不用橘);
+   沒有名字可掛時 radio 整組收起來,只剩純文字「匿名」(.shr-anon-only) */
 .shr-arow { display: flex; align-items: center; gap: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); }
 .shr-al { flex: none; font-size: 13px; color: var(--ink-3); }
 .shr-radios { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-24); }
 .shr-rad { display: flex; align-items: center; gap: var(--space-8); min-height: 32px; font-size: 13px; font-weight: 400; color: var(--ink); cursor: pointer; }
 .shr-rad input { flex: none; width: 18px; height: 18px; margin: 0; appearance: none; -webkit-appearance: none; border-radius: var(--radius-pill); border: 1px solid var(--border-frame); background: transparent; cursor: pointer; position: relative; }
-.shr-rad input:checked { background: var(--color-primary); border-color: var(--color-primary); }
-.shr-rad input:checked::after { content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill); background: var(--color-pureWhite); }
+.shr-rad input:checked { background: var(--control-fill); border-color: var(--control-fill); }
+.shr-rad input:checked::after { content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill); background: var(--control-fill-text); }
 .shr-rad input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.shr-rad input:disabled { cursor: not-allowed; background: var(--surface-card); border-color: var(--border-hairline); }
-.shr-rad:has(input:disabled) { color: var(--color-greyDark); cursor: not-allowed; }
+.shr-radios[hidden], .shr-anon-only[hidden] { display: none; }
+.shr-anon-only { font-size: 13px; line-height: 32px; color: var(--ink); }
 .shr-nm { color: var(--ink-3); }
 .shr-nm:empty { display: none; }
 /* 揭露 + 三行 + 勾選:勾選在三行之後(契約 §1,勾之前一定捲過三行);三行常駐、不收合 */
@@ -54,4 +55,6 @@
 .shr-modal .modal-foot { flex-wrap: wrap; align-items: center; }
 .shr-tos { flex-basis: 100%; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
 /* 條款連結:坐在一句話裡的安靜連結——ink + 常駐底線(同 mockup .dt-tlnk);開系統瀏覽器 */
-.shr-tlnk { padding: 0; margin: 0 var(--space-2); font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.shr-tlnk { padding: 0; margin: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+/* api 拒收時指名的那一欄(英文原句):訊息槽裡第二行,可以選起來複製給 agent */
+.shr-detail { display: block; margin-top: var(--space-2); color: var(--ink-3); overflow-wrap: anywhere; user-select: text; }

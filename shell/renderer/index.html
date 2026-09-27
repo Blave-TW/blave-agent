@@ -509,6 +509,7 @@
 <div class="scrim" id="shr-scrim" role="dialog" aria-modal="true" aria-labelledby="shr-title" hidden>
   <form class="set-modal shr-modal" id="shr-modal" novalidate>
     <div class="modal-head">
+      <span class="envm" id="shr-env" hidden></span>
       <h6 id="shr-title"></h6>
       <button type="button" class="modal-close" id="shr-close" data-i18n-aria="set.close">✕</button>
     </div>
@@ -521,7 +522,8 @@
       </div>
       <div class="shr-arow">
         <span class="shr-al" id="shr-author-l" data-i18n="shr.author"></span>
-        <div class="shr-radios" role="radiogroup" aria-labelledby="shr-author-l">
+        <span class="shr-anon-only" id="shr-anon-only" data-i18n="shr.anon" hidden></span>
+        <div class="shr-radios" id="shr-radios" role="radiogroup" aria-labelledby="shr-author-l">
           <label class="shr-rad"><input type="radio" name="shr-byline" value="anonymous" id="shr-anon" checked><span data-i18n="shr.anon"></span></label>
           <label class="shr-rad"><input type="radio" name="shr-byline" value="name" id="shr-named"><span><span data-i18n="shr.named"></span> <span class="shr-nm" id="shr-nm"></span></span></label>
         </div>
@@ -534,8 +536,8 @@
       </div>
     </div>
     <div class="modal-foot">
-      <span class="foot-msg" id="shr-msg" role="status"></span>
       <span class="shr-tos"><span data-i18n="shr.tosBefore"></span><button type="button" class="shr-tlnk" id="shr-tos" data-i18n="shr.tosLink"></button><span data-i18n="shr.tosAfter"></span></span>
+      <span class="foot-msg" id="shr-msg" role="status"></span>
       <span class="modal-btns"><button type="button" class="btn-out" id="shr-cancel" data-i18n="del.cancel"></button><button type="submit" class="btn-fill" id="shr-send" disabled></button></span>
     </div>
   </form>

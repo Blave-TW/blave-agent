@@ -9,7 +9,8 @@
 
 /* ── 純邏輯(tests/check_shell_report_share.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const SHR_SITE = "https://blave.org/";
-// 本機的「內容已更新」拿檔案 mtime(這台電腦的鐘)比 published_at(api 的鐘):差一分鐘以內不算,寧可漏報公開後一分鐘內的覆寫,
+// 本機的「內容已更新」:這台電腦公開的 → 比公開當下那份檔的 mtime(s.local_mtime,主行程記的;同一個鐘)。
+// 沒有那筆紀錄(別台電腦公開的)才拿檔案 mtime 比 published_at(api 的鐘):差一分鐘以內不算,寧可漏報公開後一分鐘內的覆寫,
 // 也不要因為兩邊的鐘差一點就對剛公開的報告講「agent 更新了這份報告」
 const SHR_CLOCK_SLACK_MS = 60 * 1000;
 // performance 不出現入口(不做 disabled);缺 type 照出,api 最後守門(spec DT 閘門)
@@ -18,7 +19,11 @@ function shrUrl(lang, code) { return SHR_SITE + (lang === "zh" ? "zh" : "en") + 
 // 公開後原報告換過 → { time: 換的時間(秒), day: 公開那一版的時間(秒) };沒換 / 判斷不了 → null
 function shrStale(env, s, mtimeMs) {
   if (!s || typeof s.published_at !== "number") return null;
-  if (env === "local") return typeof mtimeMs === "number" && mtimeMs > s.published_at * 1000 + SHR_CLOCK_SLACK_MS ? { time: Math.floor(mtimeMs / 1000), day: s.published_at } : null;
+  if (env === "local") {
+    if (typeof mtimeMs !== "number") return null;
+    const after = typeof s.local_mtime === "number" ? s.local_mtime : s.published_at * 1000 + SHR_CLOCK_SLACK_MS;
+    return mtimeMs > after ? { time: Math.floor(mtimeMs / 1000), day: s.published_at } : null;
+  }
   // 雲端同 web shareState:兩個都是平台收件時間,同一個鐘
   return typeof s.report_stored_at === "number" && typeof s.source_stored_at === "number" && s.report_stored_at > s.source_stored_at ? { time: s.report_stored_at, day: s.source_stored_at } : null;
 }
@@ -110,7 +115,7 @@ function shrFlash(btn) {
 }
 function shrFocusWell(c) { const b = c.host.querySelector(":scope > .shr-well .shr-copy"); if (b) b.focus(); }
 function shrRevokeAsk(c, opener) {
-  confirmBox({ title: t("shr.revokeTitle"), lines: [t("shr.revokeBody")], ok: t("shr.revokeOk"), cancel: t("shr.keep"), opener, onOk: async () => {
+  confirmBox({ title: t("shr.revokeTitle"), lines: [t("shr.revokeBody")], ok: t("shr.revokeOk"), cancel: t("shr.keep"), opener, env: c.env, onOk: async () => {
     let r = null;
     try { r = await window.blave.shareRevoke(c.env, c.id); } catch (_) { r = null; }
     const code = r && r.code;
@@ -120,7 +125,7 @@ function shrRevokeAsk(c, opener) {
       if (SHR.cur === c && !$("rpt-share").hidden) $("rpt-share").focus();
       return;
     }
-    confirmBox({ title: t("shr.revokeTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailed")], ok: t("cdel.gotIt"), single: true, opener: opener.isConnected ? opener : $("rpt-back"), onOk: () => {} });
+    confirmBox({ title: t("shr.revokeTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailed")], ok: t("cdel.gotIt"), single: true, env: c.env, opener: opener.isConnected ? opener : $("rpt-back"), onOk: () => {} });
   } });
 }
 // 未登入(只會發生在本機視角):鈕照出、按下才守門;主鈕開設定 › 帳號,不做登入後自動續走(spec DT3)
@@ -136,6 +141,10 @@ function shrOpen(c, mode, opener) {
   const D = { c, mode, opener, busy: false, noName: false };
   SHR.dlg = D;
   $("shr-title").textContent = t(mode === "update" ? "shr.dlgTitleUpdate" : "shr.dlgTitle");
+  // 雲端視角:灰標題列 + 「雲端」記號(同 #rpn-modal);公開與更新是同一個框
+  const cloud = c.env === "cloud";
+  $("shr-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
+  $("shr-env").hidden = !cloud; $("shr-env").textContent = cloud ? t("env.cloud") : "";
   $("shr-same").hidden = mode !== "update";
   $("shr-og-tag").textContent = kind === "research" ? t("shr.ogTag.research") : t("shr.ogTag.morning");
   $("shr-tt").textContent = (kind === "research" ? t("shr.ogPrefix.research") : t("shr.ogPrefix.morning")) + String(meta.title || rep.title || "");
@@ -145,21 +154,25 @@ function shrOpen(c, mode, opener) {
   $("shr-send").textContent = t(mode === "update" ? "shr.sendUpdate" : "shr.send");
   $("shr-msg").textContent = "";
   shrLock(false); shrName(D);
-  // 名字開框時再向 api 抓一次(改名之後回來不必重開閱讀頁);抓回來之前「顯示名稱」停用、不出名字
+  // 名字開框時再向 api 抓一次(改名之後回來不必重開閱讀頁)
   shrAsk(c).then(() => { if (SHR.dlg === D) shrName(D); });
   $("view-ws").inert = true; $("set-scrim").inert = true;
   const sc = $("shr-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
-  $("shr-anon").focus();
+  ($("shr-radios").hidden ? $("shr-ack") : $("shr-anon")).focus();
 }
-// 「顯示名稱」那顆:有名字才可選;沒有(讀不到 / api 回 NO_DISPLAY_NAME)→ 停用、退回匿名、提示換成去改名那句
+// 沒有可用的名字(讀不到 / api 回 NO_DISPLAY_NAME)= 沒有選項可選,不是選項暫時停用:兩顆 radio 整組收掉,
+// 換成純文字「作者 匿名」(同 web setPlain);提示換成去改名那句。有名字才出兩顆 radio
 function shrName(D) {
   const name = D.noName ? null : D.c.name;
   const on = typeof name === "string" && !!name;
+  const moved = !on && $("shr-radios").contains(document.activeElement);
   $("shr-nm").textContent = on ? name : "";
-  $("shr-named").disabled = !on;
+  $("shr-named").disabled = !on;   // 收起來的那顆不可能被送出(shrSubmit 看 disabled)
   if (!on) $("shr-anon").checked = true;
-  $("shr-hint").textContent = t(on || D.c.name === undefined ? "shr.nameHint" : "shr.noName");
+  $("shr-radios").hidden = !on; $("shr-anon-only").hidden = on;
+  $("shr-hint").textContent = t(on ? "shr.nameHint" : "shr.noName");
+  if (moved) $("shr-ack").focus();
 }
 // 送出中:取消 / ✕ / 主鈕都停用(上傳含圖可能要幾秒,不能讓人以為沒按到;同 rptNewLock)
 function shrLock(on) {
@@ -203,6 +216,8 @@ async function shrSubmit() {
   if (code === "NO_DISPLAY_NAME") { D.noName = true; shrName(D); return; }   // 名字 api 不收:只剩匿名,勾選保留、可直接再送
   if (code === "NO_LOGIN") { D.opener = null; shrClose(); shrGateAsk($("rpt-share")); return; }
   fm.textContent = t(shrErrKey(code));   // 框留著、欄位不動,原樣重送
+  // api 指名的那一欄(英文、帶欄位路徑):用戶轉給 agent 就修得了;同一句主行程也寫進 reports/upload_errors.log
+  if (r && typeof r.detail === "string" && r.detail) fm.appendChild(libEl("span", "shr-detail mono", r.detail));
 }
 
 /* ── 接線(這支比 app.js 先載:只用 getElementById;handler 裡的才在點擊時取)── */

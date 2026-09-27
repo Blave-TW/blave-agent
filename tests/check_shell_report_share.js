@@ -73,9 +73,11 @@ if (!process.versions.electron) {
     const apiDir = process.env.BLAVE_API_DIR || path.join(MONO, "api"), apiPy = path.join(apiDir, "openclaw", "desktop_auth.py");
     const apiSrc = fs.existsSync(apiPy) ? read(apiPy) : "";
     if (!/"\/share\/state"/.test(apiSrc)) console.log("SKIP  ② 對照 api 的欄位白名單(找不到帶 /share/* 的 desktop_auth.py;可設 BLAVE_API_DIR)");
-    else { const tup = (name) => { const mm = new RegExp(name + " = (?:frozenset\\()?\\(([^)]*)\\)").exec(apiSrc); return mm ? [...mm[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : []; };
-      const allowed = new Set([...tup("_SHARE_BASE"), ...tup("_SHARE_CONSENT"), "report", "images"]);
-      ok("② 外殼送出的每一欄都在 api 的白名單裡(_SHARE_BASE + _SHARE_CONSENT + report / images)", allowed.size === 10 && Object.keys(pb).every((k) => allowed.has(k)), [...allowed].join()); }
+    else { const shPy = path.join(apiDir, "openclaw", "agent_report_share.py"), shSrc = fs.existsSync(shPy) ? read(shPy) : "";
+      const tup = (src, name) => { const mm = new RegExp("^" + name + " = (?:frozenset\\()?\\(([^)]*)\\)", "m").exec(src); return mm ? [...mm[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : []; };
+      const base = /^_SHARE_BASE = _SHARE_CREDS \| \{"view", "id"\}$/m.test(apiSrc) ? [...tup(apiSrc, "_SHARE_CREDS"), "view", "id"] : [];
+      const allowed = new Set([...base, ...tup(shSrc, "CONSENT_FIELDS"), "report", "images"]);
+      ok("② 外殼送出的每一欄都在 api 的白名單裡(_SHARE_CREDS + view / id + agent_report_share.CONSENT_FIELDS + report / images)", allowed.size === 10 && /SH\.CONSENT_FIELDS \+ \("report", "images"\)/.test(apiSrc) && Object.keys(pb).every((k) => allowed.has(k)), [...allowed].join()); }
     const legal = path.join(MONO, "web", "app", "legal.py");
     if (!fs.existsSync(legal)) console.log("SKIP  ② 條款版本對照 web(需要 monorepo 版面)");
     else ok("② TOS_VERSION = web/app/legal.py 的 TOS_VERSION(兩邊送同一版)", new RegExp('^TOS_VERSION = "' + RS.TOS_VERSION.replace(/\./g, "\\.") + '"$', "m").test(read(legal)));
@@ -98,6 +100,69 @@ if (!process.versions.electron) {
       && /handle\("share-state", \(_e, view, id\) => shareClient\(\)\.state\(view, id\)/.test(mainSrc) && /handle\("share-revoke", \(_e, view, id\) => shareClient\(\)\.revoke\(view, id\)/.test(mainSrc)
       && /sharePublish: \(view, id, a\) => ipcRenderer\.invoke\("share-publish", view, id, \{ byline: a && a\.byline, confirmed: !!a && a\.confirmed === true, update: !!a && a\.update === true \}\)/.test(read(path.join(SHELL, "preload.js"))));
     ok("③ 打包清單有 reportshare.js(main.js require 它,漏了打包版一按分享就炸)", /files:\s*\[[^\]]*"reportshare\.js"/.test(read(path.join(SHELL, "electron-builder.config.js"))));
+
+    // ── 0.1.8 稽核修正(audit-share-cite P1-3 / P2-5 / P2-6 / P2-8;設計稽核 S1–S8;spec-share-list E 定稿一)──
+    {
+      const logged = [];
+      const mk2 = (o) => { const calls = []; const c = RS.createShareClient({ apiBase: "https://api.x", getCreds: () => ({ token: "tok", appSecret: "sec" }), readLocal: (id) => ({ report: { id, blocks: [] }, images: {}, mtime: 5000 }),
+        logError: (id, msg) => logged.push([id, msg]), store: o.store, post: async (u, b) => { calls.push({ u, b }); return o.res(u, b); } }); return { c, calls }; };
+      let x = mk2({ res: () => ({ status: 400, body: { error: "blocks[3].source.url:\n must be an https URL" + "x".repeat(400) } }) });
+      let q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("P1-3 api 拒收(400):代號 NOT_SHAREABLE + detail = api 那一句(控制字元收掉、≤300 字);本機報告另寫一行 upload_errors.log", q.code === "NOT_SHAREABLE" && q.detail.startsWith("blocks[3].source.url: must be an https URL") && q.detail.length === 300 && !/[\n\r]/.test(q.detail)
+        && logged.length === 1 && logged[0][0] === "tw-9" && logged[0][1].startsWith("share refused (400): blocks[3].source.url"), JSON.stringify([q, logged]));
+      ok("P1-3 送給 api 的 body 沒有多帶 mtime / detail(api 對多的欄位回 400)", keys(x.calls[0].b) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view");
+      logged.length = 0; x = mk2({ res: () => ({ status: 422, body: { error: "performance reports cannot be shared" } }) });
+      q = await x.c.publish("cloud", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("P1-3 雲端視角被拒:detail 照回,但不寫這台電腦的 upload_errors.log(那份報告不在這裡)", q.code === "NOT_SHAREABLE" && q.detail === "performance reports cannot be shared" && logged.length === 0, JSON.stringify([q, logged]));
+      x = mk2({ res: () => ({ status: 401, body: { error: "unauthorized" } }) }); q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("P1-3 不是內容問題的失敗(401)不帶 detail、不寫 log", q.code === "RELOGIN" && q.detail === undefined && logged.length === 0, JSON.stringify(q));
+      const live = { code: "Abcd1234", published_at: 1790000000, byline: null, source_stored_at: null, report_stored_at: null };
+      x = mk2({ res: (u) => { if (u.endsWith("/share/publish")) throw new Error("timeout"); return { status: 200, body: { share: live, display_name: null } }; } });
+      q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("P2-8 publish 等不到回應:先問一次狀態,已經公開 → 照成功回(不是「公開失敗」)", q.code === "OK" && q.share.code === "Abcd1234" && x.calls.map((k) => k.u.split("/").pop()).join() === "publish,state", JSON.stringify(q));
+      x = mk2({ res: (u) => { if (u.endsWith("/share/publish")) throw new Error("timeout"); return { status: 200, body: { share: null, display_name: null } }; } });
+      q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("P2-8 …問了還是沒公開 → UNREACH", q.code === "UNREACH", JSON.stringify(q));
+      const sf = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-shrstore-")), "state", "report-shares.json"), store = RS.createShareStore(sf);
+      x = mk2({ store, res: () => ({ status: 200, body: { share: live, display_name: null } }) });
+      q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      const st2 = await x.c.state("local", "tw-9"), st3 = await x.c.state("cloud", "tw-9");
+      ok("P2-6 本機公開成功 → 記下那份檔的 mtime;之後 state 帶 local_mtime;代碼對不上 / 雲端視角不帶", q.share.local_mtime === 5000 && st2.share.local_mtime === 5000 && st3.share.local_mtime === undefined && store.get("tw-9", "Other999") === null && store.get("nope", "Abcd1234") === null, JSON.stringify([q, st2, st3]));
+      fs.writeFileSync(sf, "{broken"); ok("P2-6 紀錄檔壞了 = 沒有紀錄(不丟錯)", store.get("tw-9", "Abcd1234") === null);
+      const S2 = { published_at: pub, local_mtime: pub * 1000 - 3600e3 };
+      ok("P2-6 shrStale(本機,有 local_mtime):只跟公開當下那份檔的 mtime 比——這台的鐘慢一小時也判得出改過;同一份不算", JSON.stringify(P.shrStale("local", S2, S2.local_mtime + 1)) === JSON.stringify({ time: Math.floor((S2.local_mtime + 1) / 1000), day: pub }) && P.shrStale("local", S2, S2.local_mtime) === null
+        && P.shrStale("local", { published_at: pub, local_mtime: pub * 1000 + 90e3 }, pub * 1000 + 90e3) === null);
+      // P2-5:symlink 不讀
+      const out = path.join(WS, "outside.png"); fs.writeFileSync(out, "SECRET");
+      fs.symlinkSync(out, path.join(dir, "r1.files", "link.png"));
+      fs.mkdirSync(path.join(WS, "elsewhere")); fs.writeFileSync(path.join(WS, "elsewhere", "b.png"), "SECRET2"); fs.symlinkSync(path.join(WS, "elsewhere"), path.join(dir, "r2.files"));
+      fs.writeFileSync(path.join(WS, "real.json"), JSON.stringify({ id: "r3", title: "T", blocks: [] })); fs.symlinkSync(path.join(WS, "real.json"), path.join(dir, "r3.json"));
+      fs.writeFileSync(path.join(dir, "r1.json"), JSON.stringify({ id: "r1", title: "T", type: "research", blocks: [{ type: "meta" }, { type: "image", file: "a.png", alt: "x" }, { type: "image", file: "link.png", alt: "y" }] }));
+      fs.writeFileSync(path.join(dir, "r2.json"), JSON.stringify({ id: "r2", title: "T", type: "research", blocks: [{ type: "meta" }, { type: "image", file: "b.png", alt: "x" }] }));
+      const g1 = M.f("r1"), g2 = M.f("r2");
+      ok("P2-5 圖檔是 symlink / <id>.files 是 symlink / 報告本體是 symlink → 都不讀(不會把 workspace 外的檔公開出去)", g1 && Object.keys(g1.images).join() === "a.png" && g2 && Object.keys(g2.images).length === 0 && M.f("r3") === null && typeof g1.mtime === "number", JSON.stringify([g1 && g1.images, g2 && g2.images]));
+      // upload_errors.log 的格式 = lib/report.py _last_error 找的那一行(" <id>: ")
+      const L = { fs, path, WS };
+      vm.runInNewContext("const RPT_DIR = () => path.join(WS, 'reports');\n" + /const RPT_ERRLOG_MAX = [^\n]*/.exec(mainSrc)[0] + "\n" + cutFn(mainSrc, "rptLogError") + "\nthis.f = rptLogError;", L);
+      L.f("tw-9", "share refused (400): blocks[3].source.url:\n bad"); for (let i = 0; i < 900; i++) L.f("big-" + i, "y".repeat(100));
+      const lg = fs.readFileSync(path.join(dir, "upload_errors.log"), "utf8").split("\n").filter(Boolean);
+      L.f("tw-9", "share refused (400): again");
+      const lg2 = fs.readFileSync(path.join(dir, "upload_errors.log"), "utf8").split("\n").filter(Boolean);
+      ok("P1-3 upload_errors.log:一行 = 「<UTC 時間>Z <id>: <訊息>」(同 report_uploader);超過 64KB 只留最後 200 行", lg.length <= 900 && lg.length >= 200 && lg2.every((l) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ [A-Za-z0-9_-]+: \S/.test(l)) && lg2[lg2.length - 1].endsWith(" tw-9: share refused (400): again") && fs.statSync(path.join(dir, "upload_errors.log")).size <= 64 * 1024 + 200, lg.length + " / " + lg2[lg2.length - 1]);
+      ok("P2-8 分享的上傳用放長的逾時(postJSON 的 extra 蓋得過預設 20 秒)", /timeout: 20000,\s*\.\.\.\(extra \|\| \{\}\)/.test(mainSrc) && /\/share\\\/\(publish\|update\)\$\/\.test\(u\) \? \{ timeout: SHARE_UPLOAD_TIMEOUT_MS \}/.test(mainSrc) && /SHARE_UPLOAD_TIMEOUT_MS = 90 \* 1000/.test(mainSrc));
+      // 設計稽核 S1–S8
+      const css = read(path.join(R, "report-share.css")), html = read(path.join(R, "index.html")), js = read(path.join(R, "report-share.js"));
+      ok("S1 作者 radio 選中是墨色(--control-fill),不是橘", /\.shr-rad input:checked \{ background: var\(--control-fill\); border-color: var\(--control-fill\); \}/.test(css) && /\.shr-rad input:checked::after \{[^}]*background: var\(--control-fill-text\)/.test(css) && !/shr-rad[^{]*\{[^}]*color-primary/.test(css));
+      ok("S2 沒有名字:radio 組整組收起來、換純文字「匿名」;停用 radio 的兩條樣式拿掉", /<span class="shr-anon-only" id="shr-anon-only" data-i18n="shr\.anon" hidden><\/span>/.test(html) && /id="shr-radios"/.test(html) && /\$\("shr-radios"\)\.hidden = !on; \$\("shr-anon-only"\)\.hidden = on;/.test(js) && !/input:disabled/.test(css) && /\.shr-radios\[hidden\], \.shr-anon-only\[hidden\] \{ display: none; \}/.test(css));
+      ok("S3 .shr-url min-width 120;S4 .shr-tlnk margin 0", /\.shr-url \{ flex: 1; min-width: 120px;/.test(css) && /\.shr-tlnk \{ padding: 0; margin: 0;/.test(css));
+      const foot = html.slice(html.indexOf('<div class="modal-foot">', html.indexOf('id="shr-modal"')));
+      ok("S5 腳的順序:條款句 → 訊息槽 → 鈕", foot.indexOf('class="shr-tos"') > 0 && foot.indexOf('class="shr-tos"') < foot.indexOf('id="shr-msg"') && foot.indexOf('id="shr-msg"') < foot.indexOf('id="shr-cancel"'));
+      ok("S6 雲端視角:分享 / 更新框掛 envm + 灰標題列,取消分享與它的失敗框帶 env", /<span class="envm" id="shr-env" hidden><\/span>\s*<h6 id="shr-title">/.test(html) && /classList\.toggle\("cloud", cloud\);\s*\$\("shr-env"\)\.hidden = !cloud;/.test(js) && (js.match(/env: c\.env/g) || []).length === 2);
+      ok("S7 / S8 shr.quota(zh / en)與 shr.rate(en)", STR.zh["shr.quota"] === "這個帳號的圖片空間已滿，這份報告沒有公開。" && STR.en["shr.quota"] === "Your account's image storage is full, so this report wasn't published." && STR.en["shr.rate"] === "Too many attempts. Try again in a while." && STR.zh["shr.rate"] === "按得太頻繁了，請過一陣子再試。");
+      ok("本機揭露小字 = spec-share-list E 定稿一(含 Wei 拍板那句)", STR.zh["shr.noteLocal"] === "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"
+        && STR.en["shr.noteLocal"] === "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too.");
+      ok("P1-3 畫面:detail 接在訊息槽那一句後面(textContent 建的 span)", /fm\.appendChild\(libEl\("span", "shr-detail mono", r\.detail\)\)/.test(js) && /\.shr-detail \{/.test(css));
+    }
 
     const bin = path.join(SHELL, "node_modules", ".bin", "electron");
     if (!fs.existsSync(bin)) { console.log("SKIP  ④ 找不到 shell/node_modules 的 Electron"); console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
@@ -170,12 +235,12 @@ app.whenReady().then(async () => {
 
   // 確認框
   await js(`document.getElementById("rpt-share").click()`); await wait(300);
-  let d = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, title: g("shr-title").textContent, send: g("shr-send").disabled, sendText: g("shr-send").textContent, named: g("shr-named").disabled, anon: g("shr-anon").checked,
+  let d = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, title: g("shr-title").textContent, send: g("shr-send").disabled, sendText: g("shr-send").textContent, named: g("shr-named").disabled, anon: g("shr-anon").checked, radios: g("shr-radios").hidden, plain: g("shr-anon-only").hidden ? null : g("shr-anon-only").textContent,
     hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
     order: [...g("shr-modal").querySelectorAll(".shr-three, #shr-ack")].map((x) => x.id || x.className).join() }; })()`);
-  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → 顯示名稱停用 + 去改名那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在匿名",
+  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去改名那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在勾選框",
     d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
-      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-anon", JSON.stringify(d));
+      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-ack" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
   await js(`document.getElementById("shr-tos").click()`); await wait(50);
   ok("④ 條款連結 → openExternal 到 blave.org/zh/…terms_of_service#ugc", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "ext").pop())`)).includes("https://blave.org/disclaimer/zh/terms_of_service#ugc"));
   await js(`document.getElementById("shr-ack").click()`);
@@ -192,11 +257,11 @@ app.whenReady().then(async () => {
   ok("④ 送出失敗:框留著、勾選保留、主鈕可再按、腳一句「公開失敗，請檢查網路後再試。」", d.open && d.msg === (await T("shr.failed")) && d.ack && !d.send && !d.cancel, JSON.stringify(d));
   await js(`window.__s.pub = { code: "NO_DISPLAY_NAME" }; __s.state.res.displayName = "Wei"; shrClose();`); await wait(100);
   await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(250);
-  d = await js(`({ named: $("shr-named").disabled, nm: $("shr-nm").textContent, hint: $("shr-hint").textContent })`);
-  ok("④ 名字讀得到:顯示名稱可選、帶名字、hint 是只能用顯示名稱那句", !d.named && d.nm === "Wei" && d.hint === (await T("shr.nameHint")), JSON.stringify(d));
+  d = await js(`({ named: $("shr-named").disabled, nm: $("shr-nm").textContent, hint: $("shr-hint").textContent, radios: $("shr-radios").hidden, plain: $("shr-anon-only").hidden })`);
+  ok("④ 名字讀得到:兩顆 radio 都在、顯示名稱可選、帶名字、hint 是只能用顯示名稱那句", !d.named && !d.radios && d.plain && d.nm === "Wei" && d.hint === (await T("shr.nameHint")), JSON.stringify(d));
   await js(`$("shr-named").click(); $("shr-ack").click(); $("shr-send").click();`); await wait(250);
-  d = await js(`({ open: !$("shr-scrim").hidden, named: $("shr-named").disabled, anon: $("shr-anon").checked, hint: $("shr-hint").textContent, ack: $("shr-ack").checked, msg: $("shr-msg").textContent, last: JSON.stringify(__s.calls.filter((c) => c[0] === "publish").pop()) })`);
-  ok("④ api 回 NO_DISPLAY_NAME:退回匿名、顯示名稱停用、hint 換去改名那句、勾選保留;送出的那一次是 byline=name", d.open && d.named && d.anon && d.hint === (await T("shr.noName")) && d.ack && d.msg === "" && d.last.includes('"byline":"name"'), JSON.stringify(d));
+  d = await js(`({ open: !$("shr-scrim").hidden, named: $("shr-named").disabled, anon: $("shr-anon").checked, radios: $("shr-radios").hidden, hint: $("shr-hint").textContent, ack: $("shr-ack").checked, msg: $("shr-msg").textContent, last: JSON.stringify(__s.calls.filter((c) => c[0] === "publish").pop()) })`);
+  ok("④ api 回 NO_DISPLAY_NAME:退回匿名、radio 組收起來、hint 換去改名那句、勾選保留;送出的那一次是 byline=name", d.open && d.named && d.radios && d.anon && d.hint === (await T("shr.noName")) && d.ack && d.msg === "" && d.last.includes('"byline":"name"'), JSON.stringify(d));
   await js(`shrClose()`); await wait(100);
 
   // 公開中 + stale + 取消分享

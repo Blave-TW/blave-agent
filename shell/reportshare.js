@@ -38,9 +38,39 @@ function failCode(res, op) {
   return "NOT_SHAREABLE";   // 其餘 400 / 413:報告過不了 api 的驗證器,重送也一樣
 }
 
+/* api 拒收時回的那一句(帶欄位路徑,例 blocks[3].source.url: must be an https URL)→ 給畫面與 upload_errors.log 的一行。
+   本機報告到分享這一刻才第一次過 api 的驗證器(電腦版不跑 report_uploader),這一句丟掉的話用戶與 agent 都不知道錯在哪 */
+const DETAIL_MAX = 300;
+function failDetail(res) {
+  const b = res && res.body && typeof res.body === "object" ? res.body : {};
+  const raw = typeof b.error === "string" && b.error ? b.error : typeof b.error_code === "string" ? b.error_code : "";
+  return raw.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, DETAIL_MAX);
+}
+const DETAIL_CODES = ["NOT_SHAREABLE", "IMAGE_QUOTA"];
+
+/* 本機報告公開當下那份檔的 mtime(稽核 P2-6):「公開後改過沒有」拿同一台電腦的兩個 mtime 比,不拿這台的鐘比 api 的鐘。
+   file = 一份小 JSON { id: { code, mtime } };讀不到 / 壞了 = 沒有紀錄(renderer 退回比 published_at) */
+const STORE_MAX = 500;
+function createShareStore(file) {
+  const fs = require("fs"), path = require("path");
+  const load = () => { try { const o = JSON.parse(fs.readFileSync(file, "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch (_) { return {}; } };
+  return {
+    get(id, code) { const x = load()[id]; return x && x.code === code && Number.isFinite(x.mtime) ? x.mtime : null; },
+    set(id, code, mtime) {
+      if (!Number.isFinite(mtime)) return;
+      const o = load(); delete o[id]; o[id] = { code, mtime };
+      const keys = Object.keys(o); for (const k of keys.slice(0, Math.max(0, keys.length - STORE_MAX))) delete o[k];
+      try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file + ".tmp", JSON.stringify(o)); fs.renameSync(file + ".tmp", file); } catch (_) { /* 記不下來:退回比 published_at */ }
+    },
+  };
+}
+
 /* opts:{ apiBase, post(url, body) → Promise<{status, body}>, getCreds() → { token, appSecret } | null,
-          readLocal(id) → { report, images: { 檔名: base64 } } | null } */
+          readLocal(id) → { report, images: { 檔名: base64 }, mtime } | null,
+          logError(id, message)(選用:本機報告被 api 拒收時寫 reports/upload_errors.log),
+          store(選用:createShareStore) } */
 function createShareClient(opts) {
+  const withMtime = (view, id, share) => (view === "local" && share && opts.store ? Object.assign(share, { local_mtime: opts.store.get(id, share.code) }) : share);
   function creds() {
     let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
     if (!c || !c.token) return { code: "NO_LOGIN" };
@@ -66,21 +96,32 @@ function createShareClient(opts) {
       const b = res.body && typeof res.body === "object" ? res.body : {};
       if (!("share" in b)) return { code: "UNREACH" };
       const name = typeof b.display_name === "string" && b.display_name.trim() ? b.display_name.trim().slice(0, NAME_MAX) : null;
-      return { code: "OK", share: b.share === null ? null : cleanShare(b.share), displayName: name };
+      return { code: "OK", share: b.share === null ? null : withMtime(view, id, cleanShare(b.share)), displayName: name };
     },
     /* 公開 / 更新公開版本。a = { byline: "anonymous"|"name", confirmed: true, update: bool }。本機報告的全文與圖在這裡讀、原樣送 */
     async publish(view, id, a) {
       if (!a || a.confirmed !== true || (a.byline !== "anonymous" && a.byline !== "name")) return { code: "BAD_ARGS" };
       const extra = { confirmed: true, byline: a.byline, disclaimer_version: DISCLAIMER_VERSION, tos_version: TOS_VERSION };
+      let loc = null;
       if (view === "local") {
-        let loc = null; try { loc = typeof id === "string" && ID_RE.test(id) ? opts.readLocal(id) : null; } catch (_) { loc = null; }
+        try { loc = typeof id === "string" && ID_RE.test(id) ? opts.readLocal(id) : null; } catch (_) { loc = null; }
         if (!loc || !loc.report) return { code: "NO_REPORT" };
         extra.report = loc.report; extra.images = loc.images || {};
       }
+      const done = (share) => { if (loc && opts.store) opts.store.set(id, share.code, loc.mtime); return { code: "OK", share: withMtime(view, id, share) }; };
       const { res, code } = await call(a.update === true ? "update" : "publish", view, id, extra);
-      if (code !== "OK") return { code };
+      if (code === "UNREACH" && a.update !== true) {
+        // 等不到回應不等於沒公開(20 張圖的報告 api 要存一陣子):先問一次狀態,已經公開就照成功畫(稽核 P2-8)
+        const st = await this.state(view, id);
+        if (st.code === "OK" && st.share) return done(st.share);
+      }
+      if (code !== "OK") {
+        const detail = DETAIL_CODES.indexOf(code) >= 0 ? failDetail(res) : "";
+        if (detail && view === "local" && opts.logError) { try { opts.logError(id, "share refused (" + res.status + "): " + detail); } catch (_) { /* 寫不了不擋 */ } }
+        return detail ? { code, detail } : { code };
+      }
       const share = cleanShare(res.body && res.body.share);
-      return share ? { code: "OK", share } : { code: "UNREACH" };
+      return share ? done(share) : { code: "UNREACH" };
     },
     async revoke(view, id) {
       const { code } = await call("revoke", view, id, {});
@@ -89,4 +130,4 @@ function createShareClient(opts) {
   };
 }
 
-module.exports = { createShareClient, cleanShare, failCode, DISCLAIMER_VERSION, TOS_VERSION, EP };
+module.exports = { createShareClient, createShareStore, cleanShare, failCode, failDetail, DISCLAIMER_VERSION, TOS_VERSION, EP };
