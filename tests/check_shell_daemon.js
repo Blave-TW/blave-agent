@@ -42,7 +42,17 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
     // root 讀得到任何檔:那種環境下這一條測不到,別假裝驗過
     if (process.getuid && process.getuid() === 0) console.log("SKIP  事件:讀不到就往上拋(以 root 跑,chmod 擋不住)");
     else t("事件:讀不到(EACCES)就往上拋,不可以回空清單冒充「沒有事件」", threw);
-    fs.chmodSync(uiFile, 0o600); fs.unlinkSync(uiFile); }
+    fs.chmodSync(uiFile, 0o600); fs.unlinkSync(uiFile);
+    // e2e 0.1.8 #76:自動下單執行中結束 app → 時間軸上要有一筆(沿用 halt 那一列,說明是「什麼單都不下」)
+    const before = Math.floor(Date.now() / 1000); host.noteQuit();
+    const ev = host.events({ days: 1 });
+    t("事件:結束 app 記一筆 halt,帶 holds_all(說明換成什麼單都不下)", ev.length === 1 && ev[0].type === "halt" && ev[0].holds_all === true && ev[0].ts >= before);
+    fs.writeFileSync(uiFile, JSON.stringify({ ts: before, type: "resume_wait", venue: "paper", holds_all: "yes", extra: { x: 1 } }) + "\n");
+    t("事件:holds_all 只收布林,其餘欄位不往畫面送", JSON.stringify(host.events({ days: 1 })) === JSON.stringify([{ ts: before, type: "resume_wait", venue: "paper" }]));
+    fs.unlinkSync(uiFile);
+    const mainSrc = fs.readFileSync(path.join(ROOT, "shell", "main.js"), "utf8"), q = mainSrc.slice(mainSrc.indexOf('app.on("before-quit"'));
+    t("事件:只有「自動下單還在執行」那個確認框按了結束才記(agent 回合那個框不記)", (q.match(/_tradeHost\.noteQuit\(\)/g) || []).length === 1
+      && q.indexOf("_tradeHost.noteQuit()") > q.indexOf("tmLabels.quitTitle") && q.indexOf("_tradeHost.noteQuit()") < q.indexOf("tmLabels.quitTurnTitle")); }
   // spawn 失敗(python 不在):不能是未捕捉例外,isRunning 要回 false,stop() 要馬上回來(稽核 B1)
   const bad = createDaemonHost({ python: path.join(BASE, "no-such-python"), script: "x.py", base: BASE, workspace: WS, env: {} });
   bad.start(); await sleep(300);
