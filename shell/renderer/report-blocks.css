@@ -111,7 +111,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-16) var(--space-32);
-  align-items: flex-end;
+  align-items: flex-start;   /* 標籤同一條水平線;數字大小不同各自接在標籤下面 */
 }
 .rb-report .rb-kpi-cell {
   min-width: 96px;
@@ -136,7 +136,7 @@
   margin-left: var(--space-4);
 }
 /* delta 走值下方第三行(值=現況、delta=變化,兩件事不同排),因此退出寬度計算;
-   同樣不上漲跌色——一格一個色訊號,正負由已格式化字串的符號承載 */
+   一格一個色訊號:有 delta 時色在 delta、值是墨色(見下方 .rb-kpi-delta.rb-up/.rb-dn) */
 .rb-report .rb-kpi-delta {
   font-size: 11px;
   color: var(--ink-3);
@@ -146,6 +146,9 @@
 .rb-report .rb-kpi.has-delta .rb-kpi-delta {
   min-height: 1.5em;
 }
+/* 有 delta 的格子:漲跌色上在 delta(文字級的 greenText/redText),值維持墨色 */
+.rb-report .rb-kpi-delta.rb-up { color: var(--color-greenText); }
+.rb-report .rb-kpi-delta.rb-dn { color: var(--color-redText); }
 /* 6 格(契約上限)固定折成 3+3 兩排等寬網格,不放任自由 wrap 折出 5+1 孤兒 */
 .rb-report .rb-kpi.is-n6 .rb-kpi-cell {
   flex: 0 0 calc((100% - var(--space-32) * 2) / 3);
@@ -224,6 +227,14 @@
 }
 .rb-report .rb-chart .rb-val-dn {
   fill: var(--color-red);
+}
+/* profile 估計層:量測實心、估計灰虛線;1.5px 對 refline 的 1px 差一階,
+   一直一曲不打架。不上漲跌語意色——語意色是量測事實的專用色 */
+.rb-report .rb-chart .rb-est {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
 }
 .rb-report .rb-chart .rb-hist-bar {
   fill: var(--color-data-1);
@@ -542,6 +553,33 @@
   font-size: 14px;
   line-height: 1.7;
 }
+/* 總結:跟 lead 同一種框。## 標題在框內是小標(去掉區段標的上距與底線);最後一段是
+   推翻條件——細線隔開、小一級、前綴加粗,不用紅(紅是跌的語意,卡片底上也過不了 AA) */
+.rb-report .rb-text.rb-summary {
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface-card);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+}
+.rb-report .rb-text.rb-summary h2 {
+  margin: 0 0 var(--space-6);
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.rb-report .rb-text.rb-summary p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.rb-report .rb-text.rb-summary p:last-child:not(:first-of-type) {
+  margin-top: var(--space-12);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-hairline);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.rb-report .rb-text.rb-summary p:last-child:not(:first-of-type) strong { color: var(--ink); font-weight: 600; }
 
 /* ---------- callout ---------- */
 .rb-report .rb-callout {
@@ -600,6 +638,130 @@
   font-weight: 400;
   line-height: 1.5;
   color: var(--ink-3);
+}
+
+/* ---------- news(契約 1.4;spec-report-blocks-recipes §4.3 C 版) ---------- */
+.rb-report .rb-news {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rb-report .rb-news-item {
+  padding: var(--space-12) 0;
+  border-top: 1px solid var(--border-hairline);
+}
+.rb-report .rb-news-item:first-child {
+  border-top: 0;
+  padding-top: var(--space-4);
+}
+.rb-report .rb-news-item:last-child {
+  padding-bottom: 0;
+}
+.rb-report .rb-news-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: var(--ink);
+}
+.rb-report .rb-news-sym {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  margin-right: var(--space-6);
+  white-space: nowrap;
+}
+.rb-report .rb-news-orig {
+  margin-top: var(--space-2);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.rb-report .rb-news-sum {
+  margin-top: var(--space-4);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.rb-report .rb-news-meta {
+  margin-top: var(--space-4);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.rb-report .rb-news-src {
+  color: var(--ink-2);
+}
+.rb-report .rb-news-when {
+  white-space: nowrap;
+}
+.rb-report .rb-news-sep {
+  margin: 0 var(--space-4);
+}
+/* canon Mini tag recipe 整份寫在這:外殼沒有 web main.css 的全域 .mini_tag(JS 的 class 字串照 web 不改) */
+.rb-report .rb-news-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-micro);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+  margin-right: var(--space-8);
+  vertical-align: 1px;
+}
+.rb-report .rb-news-tag.is-pos {
+  background-color: var(--color-greenLight);
+  color: var(--color-greenBlack);
+}
+.rb-report .rb-news-tag.is-neg {
+  background-color: var(--color-redLight);
+  color: var(--color-redBlack);
+}
+.rb-report .rb-news-tag.is-neutral {
+  background-color: var(--tag-neutral-bg);
+  color: var(--tag-neutral-text);
+}
+.rb-report .rb-news + .rb-cap {
+  margin-top: var(--space-12);
+}
+
+/* 報告的外部連結(news 來源、footnote 出處):canon 連結規則的具名例外——
+   dark 靜止 --ink-2 不用 darkText(不搶過標題),辨識靠常駐底線不靠顏色 */
+.rb-report a.rb-xlink {
+  color: var(--ink-2);
+  text-decoration: none;
+  transition: color var(--motion-fast) var(--ease-standard);
+}
+.rb-report a.rb-xlink:hover {
+  color: var(--ink);
+}
+.rb-report .rb-xlink-nm {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
+}
+.rb-report .rb-xlink-dom {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+/* 尾註出處:只有網域是連結 */
+.rb-report a.rb-xlink.is-dom {
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-report a.rb-xlink {
+    transition: none;
+  }
 }
 
 /* ---------- footnote ---------- */

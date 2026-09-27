@@ -48,6 +48,10 @@ if (!process.versions.electron) {
   ok("① 版本鍵 = id@mtime(本機)/ id@stored_at(雲端)/ id@(都沒有);新報告 = 版本鍵不在送出前那一袋的——同 id 覆寫(mtime 變)也算新,順序照清單、壞項目丟", P.rptKey({ id: "a", mtime: 5 }) === "a@5" && P.rptKey({ id: "a", stored_at: 7 }) === "a@7" && P.rptKey({ id: "a" }) === "a@"
     && P.rptNewEntries(new Set(["a@1", "b@2"]), [{ id: "c", mtime: 3 }, { id: "a", mtime: 1 }, { id: "a", mtime: 9 }, { id: "d" }, null, { mtime: 1 }]).map((r) => r.id + ":" + r.mtime).join() === "c:3,a:9,d:undefined" && P.rptNewEntries(new Set(), []).length === 0 && P.rptNewEntries(new Set(["a@"]), null).length === 0);
 
+  ok("① 這一輪寫出的:mtime ≥ 回合開始 − 2 秒(含同 id 覆寫);沒 mtime / 壞項目不算;順序照清單", P.rptWrittenSince(10000, [{ id: "a", mtime: 12000 }, { id: "b", mtime: 7999 }, { id: "c", mtime: 8000 }, { id: "d" }, null, { mtime: 20000 }]).map((r) => r.id).join() === "a,c" && P.rptWrittenSince(1, null).length === 0);
+
+  ok("① 雲端這一輪寫出的:stored_at ≥ 回合開始(毫秒 → 秒)− 120 秒容差;沒 stored_at / 壞項目不算;順序照清單", P.rptStoredSince(1000000, [{ id: "a", stored_at: 1000 }, { id: "b", stored_at: 879 }, { id: "c", stored_at: 880 }, { id: "d" }, null, { stored_at: 5000 }]).map((r) => r.id).join() === "a,c" && P.rptStoredSince(1, null).length === 0);
+
   // ── ② 主行程:本機檔案 ──
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), "blave-rpt-")), rd = path.join(ws, "reports");
   fs.mkdirSync(path.join(rd, "sent"), { recursive: true }); fs.mkdirSync(path.join(rd, "failed")); fs.mkdirSync(path.join(rd, "f.files")); fs.mkdirSync(path.join(rd, "img.files"));
@@ -308,6 +312,30 @@ app.whenReady().then(async () => {
   ok("④ 等待期間切到自動下單:報告好了不拉回(仍在自動下單、報告區收著、仍記著上次在讀 new1)、側欄「報告」出記號;點進報告 → 回到原本在讀的那份、記號收掉、返回清單有 new2", a.tr && !a.rpt && !a.mark && a.reading === "new1" && b6.rpt && b6.mark && b6.reading === "new1" && b6.ids === "new1,new2,wk-2026-08-31,mcpt-2317,am-0901", JSON.stringify([a, b6]));
   await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 60)); document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60); v = await view();
   ok("④ 開策略庫(互斥:#rpt 收、入口 aria-current 拿掉)再回來:灰字清掉、清單重問(5 份)", v.on && v.msg === null && v.ids.split(",").length === 5 && v.count === (await T("rpt.count.other", { n: 5 })), JSON.stringify(v));
+  // 一般對話(不經「新增報告」框)產出的報告:回合結束也自動打開——含同 id 覆寫(Wei 實測:加密晨報覆寫同名檔,中欄沒切過去)
+  { const CM = { id: "crypto-market-20260926", title: "加密市場晨報", type: "morning", created_at: 1790380800 }, CMDOC = Object.assign({}, WEEKLY, { id: CM.id, title: CM.title });
+    const plainTurn = async (mtime, extra) => { const err = await js(`(async () => { try { ${extra || ""} window.__r.sendResult = { started: true }; await submitMessage("幫我做加密晨報"); running = false;
+      window.__r.list = { reports: ${JSON.stringify([Object.assign({}, CM, { mtime: "__M__" })].concat(LIST))}.map((r) => r.mtime === "__M__" ? Object.assign(r, { mtime: ${mtime} }) : r) }; rptTurnEnd(); return null; } catch (e) { return String(e && e.stack || e); } })()`); if (err) console.log("      plainTurn: " + err); await wait(700); };
+    const where = () => js(`(() => ({ rpt: !document.getElementById("rpt").hidden, empty: !document.getElementById("main-empty").hidden, tr: !document.getElementById("tr").hidden, reading: rptBag("local").reading, mark: !document.getElementById("rpt-nav-new").hidden, msg: document.getElementById("rpt-msg").hidden ? null : document.getElementById("rpt-msg").textContent, turnAt: RPT.turnAt }))()`);
+    await js(`window.__r.keepList = window.__r.list; window.__r.keepReading = rptBag("local").reading; window.__r.docs[${JSON.stringify(CM.id)}] = { report: ${JSON.stringify(CMDOC)}, images: {} }; rptBag("local").reading = null; rptLeave("local"); envShowMain();`); await wait(80);
+    const before = await where();
+    // 舊檔在回合開始前就在(mtime 很舊)→ 不是這一輪寫的,不開
+    await plainTurn(1000); a = await where();
+    ok("④ 一般對話、歡迎頁、沒寫報告(清單上只有回合前的舊檔):不開、不出「沒多出報告」灰字、turnAt 收掉", before.empty && !before.rpt && a.empty && !a.rpt && a.reading === null && !a.mark && a.turnAt === null, JSON.stringify([before, a]));
+    // 同 id 覆寫(mtime = 現在)→ 開那一份
+    await plainTurn("Date.now()"); a = await where();
+    ok("④ 一般對話、歡迎頁、同 id 覆寫 crypto-market-20260926(mtime 在回合內):回合結束自動跳到那份的閱讀頁", a.rpt && !a.empty && a.reading === CM.id && (await js(`!!document.querySelector("#rpt-read article.rb-report")`)), JSON.stringify(a));
+    // 人在自動下單:不拉回、側欄記號
+    await js(`document.getElementById("rpt-back").click();`); await wait(60);
+    await plainTurn("Date.now()", `await trOpen("over");`); a = await where();
+    ok("④ 一般對話、人在自動下單:這一輪寫了報告也不拉回,側欄「報告」出記號", a.tr && !a.rpt && a.mark, JSON.stringify(a));
+    await js(`(async () => { document.getElementById("rpt-nav").click(); await new Promise((r) => setTimeout(r, 150)); document.getElementById("rpt-back").click(); })()`); await wait(80);
+    // 瀏覽器展開層蓋在中欄(BR.exp)→ 照瀏覽器 spec §3-5 開報告
+    await plainTurn("Date.now()", `rptLeave("local"); await trOpen("over"); BR.exp = { mode: "one", id: "x" };`); a = await where();
+    const brLeft = await js(`(() => { const x = BR.exp; BR.exp = null; return x; })()`);
+    ok("④ 一般對話、人在看這一輪的瀏覽器展開頁:回合結束照樣打開報告(展開層由瀏覽器那邊的 observer 收)", a.rpt && !a.tr && a.reading === CM.id, JSON.stringify([a, brLeft]));
+    // 還原成這段之前的樣子(後面的步驟接著用 new1 / new2 那份清單)
+    await js(`(async () => { document.getElementById("rpt-back").click(); window.__r.list = window.__r.keepList; await rptLoad("local", true); rptBag("local").reading = window.__r.keepReading; })()`); await wait(150); }
   // 回合中:鈕 disabled + turn.busy
   await js(`running = true; rptSync();`); v = await view(); const busyOk = v.askDis && v.msg === (await T("turn.busy")); await js(`running = false; rptSync();`);
   ok("④ 回合中:「新增報告」disabled + turn.busy;結束回復", busyOk && !(await view()).askDis, JSON.stringify(v));
@@ -344,8 +372,33 @@ app.whenReady().then(async () => {
   const b5 = await js(`(() => ({ until: RPT.poll && RPT.poll.until, pendingCloud: !!RPT.pending.cloud }))()`);
   ok("④ B5 / B2:雲端 pending 進輪詢;本機那份 turn-end 各走各的(本機沒新報告 → noNew,雲端 pending 還在);再一次 turn-end 不重開窗(until 不變)", a.until > 0 && a.pendingCloud && a.pendingLocal === null && a.noNew === "local" && b5.until === a.until && b5.pendingCloud, JSON.stringify([a, b5]));
   await js(`rptCloudPollStop(); RPT.noNew = null; RPT.pending.cloud = { env: "cloud", before: new Set(["c-old@"]) }; window.__r.cloudList = { code: "OK", reports: [{ id: "c-old", title: "雲端舊", created_at: 1 }, { id: "c-x", title: "X", created_at: 1e13 }] }; rptTurnEnd();`); await wait(300);
-  a = await js(`(() => ({ pending: RPT.pending.cloud, poll: RPT.poll, ids: [...document.querySelectorAll("#rpt-rows .rpt-row")].map((b) => b.dataset.id).join(), reading: rptBag("cloud").reading, stamp: document.querySelector('#rpt-rows .rpt-row[data-id="c-x"] .m .mono').textContent }))()`);
-  ok("④ 雲端 turn-end:第一次輪詢就看到新 id → 停、pending 收掉、清單多一列、不自動打開(雲端);印不出的時間戳畫 —(B4)", a.pending === null && a.poll === null && a.ids === "c-old,c-x" && a.reading === null && a.stamp === "—", JSON.stringify(a));
+  a = await js(`(() => { const r = { pending: RPT.pending.cloud, poll: RPT.poll, reading: rptBag("cloud").reading }; document.getElementById("rpt-back").click();
+    return Object.assign(r, { ids: [...document.querySelectorAll("#rpt-rows .rpt-row")].map((b) => b.dataset.id).join(), stamp: document.querySelector('#rpt-rows .rpt-row[data-id="c-x"] .m .mono').textContent }); })()`);
+  ok("④ 雲端 turn-end:第一次輪詢就看到新 id → 停、pending 收掉、人還在雲端報告區 → 自動打開那一份;返回後清單多一列、印不出的時間戳畫 —(B4)", a.pending === null && a.poll === null && a.reading === "c-x" && a.ids === "c-old,c-x" && a.stamp === "—", JSON.stringify(a));
+  // 聊天發起(不是新增報告框):雲端視角這一輪碰過雲端主機 → 結束後等清單,stored_at 不早於回合開始的那份自動打開;沒碰雲端的那一輪不等
+  const nowS = Math.floor(Date.now() / 1000);
+  await js(`rptCloudPollStop(); RPT.pending.cloud = null; RPT.noNew = null; rptTurnStart({ env: "cloud" }); rptTurnTool({ type: "tool", tool: "Bash", status: "running", where: "local" }); rptTurnEnd();`); await wait(100);
+  a = await js(`(() => ({ poll: !!RPT.poll, pending: RPT.pending.cloud }))()`);
+  ok("④ 聊天發起:雲端視角但這一輪沒碰雲端主機 → 不輪詢", !a.poll && a.pending === null, JSON.stringify(a));
+  await js(`rptTurnStart({ env: "cloud" }); rptTurnTool({ type: "tool", tool: "Bash", status: "running", where: "cloud" });
+    window.__r.cloudList = { code: "OK", reports: [{ id: "c-chat", title: "聊天晨報", created_at: ${nowS}, stored_at: ${nowS} }, { id: "c-old", title: "雲端舊", created_at: 1, stored_at: ${nowS - 3600} }, { id: "c-x", title: "X", created_at: 1e13 }] }; rptTurnEnd();`); await wait(300);
+  a = await js(`(() => ({ poll: RPT.poll, pending: RPT.pending.cloud, reading: rptBag("cloud").reading, noNew: RPT.noNew }))()`);
+  ok("④ 聊天發起:碰過雲端 → 輪詢,stored_at 在回合內的那份自動打開(舊的、沒 stored_at 的不算);不出灰字", a.poll === null && a.pending === null && a.reading === "c-chat" && a.noNew === null, JSON.stringify(a));
+  await js(`document.getElementById("rpt-back").click(); rptTurnStart({ env: "cloud" }); rptTurnTool({ type: "tool", tool: "mcp__blave__get_ssh_access", status: "running" }); window.__r.cloudList = { code: "OK", reports: [{ id: "c-old", title: "雲端舊", created_at: 1, stored_at: ${nowS - 3600} }] }; rptTurnEnd();`); await wait(300);
+  await js(`RPT.poll.until = 0; rptCloudPollTick();`); await wait(300);
+  a = await js(`(() => ({ poll: RPT.poll, pending: RPT.pending.cloud, reading: rptBag("cloud").reading, noNew: RPT.noNew }))()`);
+  ok("④ 聊天發起:等到窗口結束都沒有新報告 → 收掉、不自動打開、不出「沒多出報告」灰字(那句只回應框送出的)", a.poll === null && a.pending === null && a.reading === null && a.noNew === null, JSON.stringify(a));
+  // 雲端視角沒有歡迎頁:送出時在雲端自動下單頁、等待期間沒動 → 照樣打開;等待期間切到策略庫 → 只做記號
+  const chatTurn = (id, during) => js(`(async () => { rptCloudPollStop(); RPT.pending.cloud = null; rptLeave("cloud"); envShowMain(); rptTurnStart({ env: "cloud" }); rptTurnTool({ type: "tool", tool: "Bash", status: "running", where: "cloud" });
+    ${during} window.__r.cloudList = { code: "OK", reports: [{ id: "${id}", title: "晨報", created_at: ${nowS}, stored_at: ${nowS + 5} }] }; $("rpt-nav-new").hidden = true; rptTurnEnd(); })()`);
+  await chatTurn("c-stay", ""); await wait(300);
+  a = await js(`(() => ({ reading: rptBag("cloud").open ? rptBag("cloud").reading : null, mark: !$("rpt-nav-new").hidden }))()`);
+  ok("④ 聊天發起:送出時在雲端自動下單頁、等待期間沒切走 → 自動打開", a.reading === "c-stay" && !a.mark, JSON.stringify(a));
+  await js(`document.getElementById("rpt-back").click();`);
+  await chatTurn("c-away", "await libOpen();"); await wait(300);
+  a = await js(`(() => ({ rptOpen: rptBag("cloud").open, lib: !$("lib").hidden, mark: !$("rpt-nav-new").hidden }))()`);
+  ok("④ 聊天發起:等待期間切到策略庫 → 不拉回、只亮側欄記號", !a.rptOpen && a.lib && a.mark, JSON.stringify(a));
+  await js(`libLeave(); $("rpt-nav-new").hidden = true; envShowMain();`);
   // 切回本機:仍在讀 new1
   await js(`ENV.cur = "local"; TR_BAGS.cloud.st = null; envShowMain();`); await wait(60); v = await view();
   ok("④ 切回本機:回到本機那袋——仍在讀 new1、article 畫出", v.on && v.headList && !v.back && v.article === 1 && (await js(`rptBag("local").reading`)) === "new1", JSON.stringify(v));

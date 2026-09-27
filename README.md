@@ -34,6 +34,14 @@ A backtest pins a version of the strategy. If the code running live no longer ma
 
 The agent does the research and writes the code. Scheduled runs are deterministic code on a scheduler; `manager/reconciler.py` moves the account toward the target positions. A kill switch (`state/HALT`) blocks new exposure at the order-library level, while closes and stops still go through.
 
+### Reports That Read the News First
+
+Ask for a morning brief, a market-close report, a single-symbol brief or a research write-up. The agent reads the news before it writes — at least three different sites — and every chart comes from the actual data series, never from the model's memory. Each report ends with a summary and one condition that would prove its reading wrong. The liquidation map draws what actually got liquidated and the model's estimate as two layers, labelled as such.
+
+### A Browser You Can Watch
+
+When the agent reads the web, it uses the app's built-in browser: the page it is reading is on your screen, not in a hidden process. Exchange account pages and private-network addresses are blocked. A URL on a site it has not visited this round, carrying long parameters, stops and asks you before it opens.
+
 <a id="quick-start"></a>
 
 ## Quick Start (From Source)
@@ -75,6 +83,8 @@ The interface follows the system language (English or Traditional Chinese). To o
 
 ## News
 
+- **TBD** — Desktop 0.1.7: the agent reads the news before writing a report (morning, close, single-symbol, research); a built-in browser you can watch, with exchange account pages and private addresses blocked; the liquidation map shows actual liquidations and the model estimate as two labelled layers; scheduled cloud reports are written by the agent at run time.
+- **2026-09-26** — Desktop 0.1.6: a Reports view in the app; an exchange key with withdrawal permission is refused when you connect it.
 - **2026-09-24** — Desktop 0.1.1: first public release, universal build (Apple Silicon and Intel), on GitHub Releases. Taiwan stock daily bars and the Crypto Fear & Greed index now come from free public sources on the desktop.
 - **2026-09-23** — Desktop 0.0.4, signed and notarized, on the test track.
 - **2026-09-21** — The desktop app can connect a real Binance account and trade from your Mac.
@@ -85,7 +95,7 @@ The interface follows the system language (English or Traditional Chinese). To o
 **Venues with a tested order library** (`lib/account_*.py` + `lib/order_*.py`, verified on real accounts):
 
 - Binance, BingX, OKX, Gate.io, Bybit — futures and spot
-- Capital Futures (群益期貨) — Taiwan index futures and Taiwan stocks; Windows workspace only (its API is a Windows COM component, see `references/capital-broker.md`)
+- Capital Futures (群益期貨) — Taiwan index futures and Taiwan stocks; Windows workspace only (its API is a Windows COM component, see `references/capital-broker.md`). On a cloud machine you upload your certificate in the app and the agent completes the setup — no remote desktop needed.
 
 How a venue gets connected depends on where the agent runs:
 
@@ -112,7 +122,7 @@ For any other exchange or broker with an API, the agent can write a helper from 
 
 ## Run It in the Cloud (Paid)
 
-If a strategy should keep running with your computer off, Blave Agent runs the same workspace on a dedicated cloud machine. You talk to the agent from the web workspace or Telegram; SSH is there if you want it. You can also connect your own Claude Code, Codex or another MCP-capable agent to that machine — setup is in the web workspace under Settings › Connect, guide at [blave.org/docs/en/connect](https://blave.org/docs/en/connect). Plans and prices: [blave.org/agent/en](https://blave.org/agent/en).
+If a strategy should keep running with your computer off, Blave Agent runs the same workspace on a dedicated cloud machine. You talk to the agent from the web workspace or Telegram; SSH is there if you want it. Reports can run on a schedule there: at the set time the agent reads the news and writes the report itself. You can also connect your own Claude Code, Codex or another MCP-capable agent to that machine — setup is in the web workspace under Settings › Connect, guide at [blave.org/docs/en/connect](https://blave.org/docs/en/connect). Plans and prices: [blave.org/agent/en](https://blave.org/agent/en).
 
 ## Running From Source: What Goes Where
 

@@ -35,6 +35,14 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
 AI 負責研究與寫程式。排程跑的是確定性的程式，`manager/reconciler.py` 把帳戶對到目標部位。緊急停止開關（`state/HALT`）在下單函式庫那一層擋掉新曝險，平倉與停損照常放行。
 
+### 報告先看新聞再動筆
+
+跟它要一份晨報、收盤報告、單一標的簡報或研究報告，agent 會先上網讀新聞——至少三個不同網站——才開始寫。每張圖都畫自真實的資料序列，不是模型記憶裡的數字。每份報告結尾有總結，加一條「什麼會推翻這個結論」。爆倉地圖把「已發生的強平」與「模型估計」畫成兩層，各自標明。
+
+### 看得到它在讀什麼的瀏覽器
+
+agent 上網查資料用的是 app 內建的瀏覽器：它正在讀哪一頁，就在你的畫面上，不是藏在背景的程序。交易所帳戶後台與內網位址一律擋下；這一輪沒去過的網站、網址又帶著長參數，會先停下來問你才開。
+
 <a id="quick-start"></a>
 
 ## 快速開始（從原始碼）
@@ -76,6 +84,8 @@ npm start
 
 ## 最新消息
 
+- **TBD**——電腦版 0.1.7：agent 寫報告前先上網讀新聞（晨報、收盤、單一標的、研究）；內建看得到的瀏覽器，交易所後台與內網位址擋下；爆倉地圖分「已發生」與「模型估計」兩層標明；雲端排程報告到點由 agent 上網查完自己寫。
+- **2026-09-26**——電腦版 0.1.6：app 內新增報告區；連接交易所時，帶提領權限的金鑰會被拒絕。
 - **2026-09-24**——電腦版 0.1.1：第一個公開版，通用版（Apple Silicon 與 Intel），發在 GitHub Releases。台股日線與加密貨幣恐懼貪婪指數改走免費公開來源。
 - **2026-09-23**——電腦版 0.0.4，簽章與公證完成，發在測試軌。
 - **2026-09-21**——電腦版可以連接 Binance 真實帳戶，在你的 Mac 上下單。
@@ -86,7 +96,7 @@ npm start
 **有實測過下單函式庫的場所**（`lib/account_*.py` + `lib/order_*.py`，以真實帳戶驗證過）：
 
 - Binance、BingX、OKX、Gate.io、Bybit——合約與現貨
-- 群益期貨——台指期與台股現股；僅限 Windows 工作區（它的 API 是 Windows COM 元件，見 `references/capital-broker.md`）
+- 群益期貨——台指期與台股現股；僅限 Windows 工作區（它的 API 是 Windows COM 元件，見 `references/capital-broker.md`）。雲端主機在 app 內上傳憑證就能開通，不需要遠端桌面。
 
 怎麼連接交易場所，看 agent 跑在哪：
 
@@ -113,7 +123,7 @@ npm start
 
 ## 雲端（付費）
 
-策略要關電腦也照跑，就用 Blave Agent 的雲端主機：同一個工作區，跑在一台專屬主機上。你從網頁工作頁或 Telegram 跟 agent 對話，想用 SSH 也可以。也可以把自己的 Claude Code、Codex 或其他支援 MCP 的 agent 接到那台主機：設定入口在網頁工作頁的「設定 › 連結」，說明見 [blave.org/docs/zh/connect](https://blave.org/docs/zh/connect)。方案與價格：[blave.org/agent/zh](https://blave.org/agent/zh)。
+策略要關電腦也照跑，就用 Blave Agent 的雲端主機：同一個工作區，跑在一台專屬主機上。你從網頁工作頁或 Telegram 跟 agent 對話，想用 SSH 也可以。報告可以排程：到點 agent 自己上網查資料、寫好報告。也可以把自己的 Claude Code、Codex 或其他支援 MCP 的 agent 接到那台主機：設定入口在網頁工作頁的「設定 › 連結」，說明見 [blave.org/docs/zh/connect](https://blave.org/docs/zh/connect)。方案與價格：[blave.org/agent/zh](https://blave.org/agent/zh)。
 
 ## 從原始碼跑：檔案放在哪
 

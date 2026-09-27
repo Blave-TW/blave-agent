@@ -4,6 +4,7 @@ This file covers everything you do over the `blave` MCP + SSH connection to the 
 
 - **Handoff** — moving a strategy between this computer and the cloud machine. The numbered procedure, steps 1–8.
 - **Anything else the user asked for in this conversation** — running something there, reading a file or a result, fixing a strategy that lives there. The unnumbered section after the Preconditions.
+- **A report asked for from the cloud view** — built and published on the cloud machine. Section *Reports asked from the cloud view*, R1–R6.
 - **Updating the cloud machine** — only when the user asks for it. Section *Updating the cloud machine*, U1–U9.
 
 Shared by all three: section 0, the **NEVER** list, the **Preconditions** table, **step 2** (Connect) and **step 8** (Clean up). Steps 1 and 3–7 are the handoff procedure only.
@@ -70,6 +71,79 @@ Everything the user can do on that machine through their own agent, you may do f
    ```
    The "before" numbers come from the script that did the item 3 checks; the "after" ones from the fresh `stats.json` (step 6).
 5. Report what you actually did on that machine — which files you read or changed, what you ran, the numbers as read — and name the machine, so the user is never left guessing which side a result came from. Then **step 8**: close the connection and delete `tmp/cloud-handoff`, every time, including after a failure.
+
+## Reports asked from the cloud view
+
+Applies when the turn was sent from the cloud-machine view and the user asks for a report of any kind (a template brief, a single-symbol brief, research, a custom recipe). The report belongs in **the cloud machine's** Reports list, so its data pack is built and `publish()` runs **there**; the web search stays **here** (built-in browser / your web search), exactly as `AGENTS.md` › Reports orders it. Never build the report on this computer instead and never leave a copy here. Scheduling a report on the cloud machine is not part of this: say it is set up from the cloud workspace on blave.org. Everything else in this file still binds (NEVER, Preconditions, step 2, step 8).
+
+R1. Preconditions, **step 2** (connect), then read the machine's `AGENTS.md` (NEVER). Search the web now, before building.
+
+R2. Write the request with your file-write tool as `tmp/cloud-handoff/report.json` — values live in this file, never on a command line:
+```json
+{"template": "crypto_market_brief", "args": [], "kwargs": {}}
+```
+`template` is one of `tw_market_brief`, `tw_close_brief`, `crypto_market_brief`, `symbol_brief`, `research_pack`, `build`. `args`: `[]`; `["<symbol>"]` for `symbol_brief` / `research_pack`; `[<recipe>]` for `build`. `kwargs` may carry only `extra`, `topics`, `symbols`, `lookback_days`, `date`. Copy it (if `scp` says the folder does not exist, run `ssh <SSH_OPTS> blaveagent@<host> mkdir -p "/opt/blave-agent/workspace/tmp"` once and copy again):
+```
+scp <SSH_OPTS> tmp/cloud-handoff/report.json blaveagent@<host>:"/opt/blave-agent/workspace/tmp/cloud-report.json"
+```
+
+R3. Build: run the script below in the **step 2.5** one-call form with `build` in place of `<name>`. It prints `describe()` — the only figures you may quote — and one JSON line `{"report_id", "slots", "missing", "dropped", "skip"}` — `missing` names what this report type would carry on a current machine but that machine's `lib/` lacks (`news`, `shareable`).
+- `{"error": "template_unavailable"}` → that machine's `lib/` is older than this kind of report. Tell the user so, and that asking you to update the cloud machine (*Updating the cloud machine*) adds it. Stop; never fall back to building it here.
+- `skip` set → relay the reason and stop.
+
+R4. Publish: write the narrative from R3's figures under the usual rules (`references/reports.md` §1b), using only the slots R3 listed (a `news` slot exists only when it is listed). Add `report_id` (from R3 — must match `^[A-Za-z0-9_-]{1,64}$`, else stop and report it), `narrative`, `title` and, for research, `shareable` to `tmp/cloud-handoff/report.json`, copy it again (R2 command), run the same script with `publish` in place of `<name>`. The script re-uses R3's pack when that machine keeps packs, otherwise rebuilds it in the same process (an older machine; a figure may have moved by a tick). A narrative slot or `publish()` option that machine's `lib/` does not know is left out and listed under `dropped` — it never reaches the user as a TypeError. It deletes the copied request whatever happens.
+
+R5. A refusal (ValueError, every problem numbered): fix all of them, copy, publish once more; a second refusal → report it and stop. `{"published": "<id>.json"}` is success.
+
+R6. Reply: the report was built on the cloud machine and appears in the cloud machine's Reports within a few minutes (its uploader runs every 2 minutes); **never say it is open**. If R3's `missing` or R4's `dropped` is not empty, add one sentence naming what the report lacks and why, then offer the update — e.g. 「雲端主機還是舊版,這份沒附新聞;更新雲端主機後就會有。要我更新嗎?」 / "Your cloud machine is on an older version, so this report has no news section; updating it adds that. Want me to update it?" A yes is the user's ask for *Updating the cloud machine*; never start it without one. Then **step 8**.
+
+The script (R3 and R4 — the same text, only the mode differs; the heredoc body of the step 2.5 form, closing `PY` at the left margin):
+```py
+import sys, os, re, json, inspect
+import lib.report_templates as T
+mode, req = sys.argv[1], "tmp/cloud-report.json"
+try:
+    spec = json.load(open(req, encoding="utf-8"))
+finally:
+    if mode == "publish" and os.path.exists(req):
+        os.remove(req)
+def done():
+    if os.path.exists(req):
+        os.remove(req)
+names = {"tw_market_brief", "tw_close_brief", "crypto_market_brief", "symbol_brief", "research_pack", "build"}
+fn = getattr(T, spec.get("template") or "", None) if spec.get("template") in names else None
+if fn is None:
+    done()
+    print(json.dumps({"error": "template_unavailable"}))
+    sys.exit(0)
+fp = inspect.signature(fn).parameters
+kw = {k: v for k, v in (spec.get("kwargs") or {}).items() if k in ("extra", "topics", "symbols", "lookback_days", "date") and k in fp}
+dropped = sorted(set(spec.get("kwargs") or {}) - set(kw))
+rid = spec.get("report_id")
+pack = None
+if mode == "publish" and hasattr(T, "load_pack") and isinstance(rid, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rid):
+    try:
+        pack = T.load_pack(rid)
+    except Exception:
+        pack = None
+if pack is None:
+    pack = fn(*(spec.get("args") or []), **kw)
+if mode == "build":
+    print(pack.describe())
+    missing = (["news"] if "news" not in pack.slots and spec.get("template") != "research_pack" else []) + ([] if "shareable" in inspect.signature(T.publish).parameters else ["shareable"])
+    print(json.dumps({"report_id": pack.report_id, "slots": sorted(pack.slots), "missing": missing, "dropped": dropped, "skip": pack.skip}, ensure_ascii=False))
+    if pack.skip:
+        done()
+    sys.exit(0)
+nar = spec.get("narrative") or {}
+dropped += ["narrative." + k for k in sorted(set(nar) - set(pack.slots))]
+pp = inspect.signature(T.publish).parameters
+opt = {k: spec[k] for k in ("title", "shareable", "lang") if spec.get(k) is not None and k in pp}
+dropped += [k for k in ("title", "shareable", "lang") if spec.get(k) is not None and k not in pp]
+print(json.dumps({"dropped": dropped}))
+out = T.publish(pack, {k: v for k, v in nar.items() if k in pack.slots}, origin="chat", **opt)
+print(json.dumps({"published": os.path.basename(out) if out else None}))
+```
 
 ## Updating the cloud machine
 

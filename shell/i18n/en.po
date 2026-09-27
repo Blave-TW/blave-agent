@@ -3584,6 +3584,19 @@ msgstr "Image failed to load"
 msgid "rb.segOther"
 msgstr "Other"
 
+# news block 的 Mini tag(契約 1.4;spec-report-blocks-recipes §4.3):意思由文字承載,顏色只是輔助
+msgid "rb.newsPos"
+msgstr "Positive News"
+
+msgid "rb.newsNeg"
+msgstr "Negative News"
+
+msgid "rb.newsNeutral"
+msgstr "Neutral"
+
+msgid "rb.estModel"
+msgstr "Est. liquidation (model)"
+
 # ── 新增策略 modal(spec-desktop-0.1.6 §4;renderer/newstrategy.js;字逐字抄 web 的 workspace_ns_*)──
 msgid "ns.title"
 msgstr "Add Strategy"

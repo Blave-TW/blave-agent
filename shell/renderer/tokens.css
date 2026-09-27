@@ -91,6 +91,8 @@
   --ink: var(--color-black);
   --ink-2: var(--color-greyDark);
   --ink-3: var(--color-greyMedium);
+  --tag-neutral-bg: var(--surface-muted);      /* Mini tag 中性款(canon 語意角色變數);同在 :root,dark 隨這兩個角色重映射 */
+  --tag-neutral-text: var(--ink-2);
   /* in-app 功能動作鈕(canon › Interaction states › 橘的邊界):中性反白,不用橘 */
   --control-fill: var(--color-black);
   --control-fill-text: var(--color-pureWhite);

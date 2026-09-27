@@ -251,10 +251,21 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
         print(f"WARNING: {w}")
     # Agents re-read reports/<id>.json to "verify" and hit FileNotFoundError once the uploader
     # has moved it (uid=1: five times in three turns) — say where the file goes before they try.
-    print(f"[report] {report_id}.json written. The uploader moves it to reports/sent/, so do not "
-          f"read reports/{report_id}.json back; if you need it again, open "
-          f"reports/sent/{report_id}.json. It appears in the workspace Reports list (Reports in the sidebar) shortly. "
-          "Nothing to check; reply now.")
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        # 電腦版:只有用戶正看著「這台電腦」時 app 才會自己打開;雲端視角送出的那一輪寫在這裡,講「已打開」就是謊報
+        print(f"[report] {report_id}.json written to This computer > Reports (not the cloud machine). The app "
+              "opens it by itself only while the user is viewing This computer. If this turn was sent from the "
+              "cloud-machine view, say the report was saved on this computer and do not say it is open. "
+              "Do not read it back and do not poll its status; reply now.")
+    else:
+        print(f"[report] {report_id}.json written. The uploader moves it to reports/sent/, so do not "
+              f"read reports/{report_id}.json back; if you need it again, open "
+              f"reports/sent/{report_id}.json. It appears in the workspace Reports list (Reports in the sidebar) shortly. "
+              "Nothing to check; reply now.")
+    # 報告已經打開(或在清單裡)了:聊天只講結論,不把報告再念一遍(設計稽核 B6;canon Copy › 文案密度)
+    print("[report] Chat reply: one or two sentences after the one saying where the report is - ONE conclusion and "
+          "ONE thing to watch. Do not restate the report: no heading, no bold label, no list, no figure it "
+          "already shows.")
     return path
 
 

@@ -109,6 +109,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   `certutil -p`;換掉的做法會改變金鑰落地方式,要 desktop-win-test 真機驗過才動)。新增守門測試
   `tests/check_capital_argv_secrets.py`:第三個把 secret 放上 argv 的點會紅。
 
+- **雲端視角要的報告在雲端主機上組與發**(`agent_turn._viewing_env_segment`):用戶看著雲端主機要報告(任何類型)時,
+  資料包與 `publish()` 照 `references/cloud-handoff.md` › Reports asked from the cloud view 在那台主機跑,網路搜尋留在
+  這台電腦;連不上雲端就先問、不擅自改在本機產出;回覆講報告幾分鐘後出現在雲端的報告清單、不說已打開。
+  測試 `tests/check_cloud_report_script.py`。
+
 - **群益雲端免 RDP 開通(新 `runtime/capital_connect.py`,五個機器指令 `capital_setup`／`capital_pfx_key`／`capital_pfx`／`capital_probe`／`capital_finish`)**:
   用戶在自己的 Windows 匯出的 pfx 以主機一次性 RSA-OAEP 公鑰封裝上傳(api 只轉送密文),主機解密、驗是群益且未過期、經 schtasks 密碼載具
   以 Administrator `certutil -user -importpfx … NoRoot` 匯入,刪掉同 ID 舊證與過期證、probe、再由 `capital_finish` 裝 NSSM worker(Administrator)。

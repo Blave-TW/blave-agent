@@ -14,7 +14,8 @@
  *          支渲染器只讀契約列出的欄位,不留別名分支。
  * opts   = { apiBase, i18n, imageUrl? }  ——apiBase/i18n 在 workspace.html 都是 IIFE
  *          內的區域變數,必須由呼叫端注入;缺了就退回檔內的 EN 預設(harness 用)。
- *          imageUrl(sha) 只有公開研究頁給(匿名圖片路徑)。
+ *          imageUrl(sha) 只有公開研究頁給(匿名圖片路徑);ugc:true 也是公開頁
+ *          專用——外部連結的 rel 加 ugc(spec §4.4)。
  *
  * 視覺 spec = designer `mockup-report-blocks.html` v1.2;樣式在
  * `css/agent/report.css`。圖表一律 SVG:mockup 的縮放語意(line/drawdown/bar
@@ -47,6 +48,10 @@
     imageError: "Image failed to load",
     footnoteRef: "Note",
     segOther: "Other",
+    newsPos: "Positive News",
+    newsNeg: "Negative News",
+    newsNeutral: "Neutral",
+    estModel: "Est. liquidation (model)",
   };
 
   // 帶 title/caption 的視覺 block(契約 §2)。meta/callout 的 title 是它們自己的
@@ -55,6 +60,7 @@
     kpi_row: 1, line_chart: 1, candlestick: 1, drawdown: 1, heatmap: 1, bar_chart: 1,
     histogram: 1, box: 1, scatter: 1, metric_table: 1, table: 1, code: 1,
     image: 1,
+    news: 1,
   };
 
   // ---------------------------------------------------------------- helpers
@@ -127,6 +133,24 @@
     return (v > 0 ? "+" : v < 0 ? MINUS : "") + s;
   }
 
+  // 圖例末值的小數位看資料本身:整數序列 0 位,資金費率那種小數留到有效位數。
+  // toPrecision(12) 先吃掉浮點雜訊;上限是刻度位數 +2,算出來的比值不會印一長串
+  function dataDp(values, axisDp) {
+    var dp = 0;
+    values.forEach(function (v) {
+      if (num(v) === null || v === 0) return;
+      var m = /^[^e]*?(?:\.(\d+))?(?:e-(\d+))?$/.exec(String(Number(v.toPrecision(12))));
+      if (m) dp = Math.max(dp, (m[1] ? m[1].length : 0) + (m[2] ? +m[2] : 0));
+    });
+    return Math.min(dp, axisDp + 2);
+  }
+
+  // 圖例末值:正負號規則同 fmtAxis(座標含零或跨零才標 +),去尾零
+  function fmtLegend(v, signed, dp) {
+    if (num(v) === null) return DASH;
+    return (signed && v > 0 ? "+" : "") + trimNum(v, dp);
+  }
+
   // meta.account.aum 是契約裡唯一要渲染器自己格式化的展示數字(其餘展示欄位
   // 都由產出端送已格式化字串)
   function fmtAmount(v) {
@@ -179,6 +203,11 @@
   }
 
   // 展示字串的正負語意:產出端送的是已格式化字串,符號就是唯一線索
+  // 顯示用的負號一律 U+2212(報告資料裡常混著連字號,並排時長短不同);只換顯示,不改資料
+  function dispMinus(text) {
+    return String(text).replace(/^(\s*)-(?=[\d.])/, "$1" + MINUS);
+  }
+
   function signTone(text) {
     var c = text.charAt(0);
     if (c === "+") return " rb-up";
@@ -698,16 +727,17 @@
       var cell = el("div", "rb-kpi-cell" + (i === 0 ? " is-focus" : ""));
       cell.appendChild(monoLabel(el("div", "rb-kpi-label"), str(it.label)));
       var tone = it.tone === "pos" ? " rb-up" : it.tone === "neg" ? " rb-dn" : "";
-      var val = el("div", "rb-kpi-value" + tone);
-      monoShapes(val, str(it.value));
+      // 有 delta 的格子:tone 上在 delta,值維持墨色(價格水位本身沒有漲跌);沒有 delta 才讓值上色
+      var val = el("div", "rb-kpi-value" + (it.delta ? "" : tone));
+      monoShapes(val, dispMinus(str(it.value)));
       // unit 是值的度量,貼在值後同一行;不吃 tone 色(語意色只屬於數字)
       if (it.unit) val.appendChild(monoShapes(el("span", "rb-kpi-unit"), str(it.unit)));
       cell.appendChild(val);
-      // delta 是另一件事(值=現況、delta=變化)→ 另起第三行、不上漲跌色。列內
+      // delta 是另一件事(值=現況、delta=變化)→ 另起第三行;有 delta 時漲跌色只上在它。列內
       // 任一格有 delta 就全列補這一行,否則底對齊會把缺席那格的值往下拉
       if (hasDelta) {
-        var d = el("div", "rb-kpi-delta");
-        if (it.delta) monoShapes(d, str(it.delta));
+        var d = el("div", "rb-kpi-delta" + (it.delta ? tone : ""));
+        if (it.delta) monoShapes(d, dispMinus(str(it.delta)));
         cell.appendChild(d);
       }
       row.appendChild(cell);
@@ -826,6 +856,12 @@
     var wrap = el("div");
     wrap.appendChild(s);
     var legend = el("div", "rb-legend");
+    var legendDp = dataDp(
+      [].concat.apply([], series.map(function (sr) {
+        return arr(sr.points).map(function (p) { return p[1]; });
+      })),
+      scale.dp
+    );
     series.forEach(function (sr) {
       var item = el("span");
       item.appendChild(
@@ -839,7 +875,7 @@
           el(
             "span",
             "rb-legend-val mono",
-            fmtSigned(last[1], 2) + (isWordUnit(yUnit) ? " " : "") + yUnit
+            fmtLegend(last[1], scale.lo <= 0, legendDp) + (isWordUnit(yUnit) ? " " : "") + yUnit
           )
         );
       }
@@ -1265,7 +1301,9 @@
   };
 
   BLOCKS.bar_chart = function (b, ctx) {
-    return b.variant === "stacked" ? stackedBar(b, ctx) : signedBars(b, ctx);
+    if (b.variant === "stacked") return stackedBar(b, ctx);
+    if (b.variant === "profile") return profileBars(b, ctx);
+    return signedBars(b, ctx);
   };
 
   // bars 兩個方向都以 1:1 真像素繪製:固定 680 viewBox 等比縮放時格寬與字寬同比縮,
@@ -1525,6 +1563,222 @@
     return wrap;
   }
 
+  // 型錄 v1.5 —— bar_chart 第三變體 profile:連續數值軸上的帶正負剖面(爆倉地圖)。
+  // x 是連續軸不是類別:恆為直條、1:1 真像素、不走 bars 的方向切換,x 刻度照
+  // 軸標共通規則抽稀。量測(buckets)實心 green/red;估計(est)灰虛線 cumsum,
+  // 不上漲跌語意色;現價 refline 走註記線家族預設樣式(「現在位置」不是虧損,
+  // 永不升紅)。幾何是兩份渲染器逐字一致的部分(慣例同 kpi_row 那批)。
+  function profileSpan(bk) {
+    return bk && num(bk.x0) !== null && num(bk.x1) !== null && bk.x0 < bk.x1;
+  }
+  // buckets = {x0, x1, pos?, neg?}(皆 ≥0,缺省 0):同一個價位桶的多空兩段,
+  // pos 綠向上、neg 紅向下,共桶寬、不半寬並排、也絕不淨額——兩邊都有量就兩段都畫
+  function profileBucket(bk) {
+    return (
+      profileSpan(bk) &&
+      (bk.pos == null || (num(bk.pos) !== null && bk.pos >= 0)) &&
+      (bk.neg == null || (num(bk.neg) !== null && bk.neg >= 0))
+    );
+  }
+  // est 自 refline.x 向兩側累加(「價格走到 X 會觸發多少」——離現價越遠、沿路
+  // 觸發越多;從左端起算會把讀法弄反)。累計值放在離 refline 較遠的那個桶緣:
+  // 價格走到那裡,沿路的量才全數觸發。純函式,tests/check_report_profile.js 直接跑
+  function profileCum(est, refX) {
+    var left = [], right = [], cl = 0, cr = 0;
+    est.forEach(function (e) {
+      if ((e.x0 + e.x1) / 2 < refX) left.push(e);
+      else right.push(e);
+    });
+    left.sort(function (a, z) { return z.x0 - a.x0; });
+    right.sort(function (a, z) { return a.x0 - z.x0; });
+    return {
+      left: left.map(function (e) { cl += e.value; return { x: e.x0, cum: cl }; }),
+      right: right.map(function (e) { cr += e.value; return { x: e.x1, cum: cr }; }),
+    };
+  }
+
+  function profileBars(b, ctx) {
+    var buckets = arr(b.buckets).filter(profileBucket);
+    if (buckets.length < 2) return null; // 契約下限;api 已驗,防禦深度
+    // est 沒有 refline 就不畫:累加方向沒有定義(api 對這種 payload 回 400)
+    var ref = b.refline && num(b.refline.x) !== null ? b.refline : null;
+    var est = ref
+      ? arr(b.est).filter(function (e) {
+          return profileSpan(e) && num(e.value) !== null && e.value >= 0;
+        })
+      : [];
+    var yUnit = str(b.y_unit), xUnit = str(b.x_unit);
+
+    var lo = buckets[0].x0, hi = buckets[buckets.length - 1].x1;
+    est.forEach(function (e) {
+      lo = Math.min(lo, e.x0);
+      hi = Math.max(hi, e.x1);
+    });
+    if (ref) {
+      lo = Math.min(lo, ref.x);
+      hi = Math.max(hi, ref.x);
+    }
+    var vLo = 0, vHi = 0;
+    buckets.forEach(function (bk) {
+      vHi = Math.max(vHi, num(bk.pos) || 0);
+      vLo = Math.min(vLo, -(num(bk.neg) || 0));
+    });
+    var scale = niceScale(vLo, vHi);
+
+    var wrap = el("div");
+    var svg = null;
+    var drawnW = 0;
+    function draw(W, H) {
+      W = Math.round(W);
+      if (W < 80 || W === drawnW) return;
+      drawnW = W;
+      // 高 200px 帶(與 histogram 同屬分布家族);上緣留 refline 標籤那一行
+      var top = plotTop(14, yUnit);
+      var bottom = plotBottom(top, H - 24);
+      top = plotTopOf(top, bottom);
+      var padL = yGutter(scale, yUnit, true);
+      var x0 = padL + 4, x1 = W - 20 - xUnitPad(xUnit), right = W - 8;
+      var labelY = bottom + 16;
+      var xAt = function (v) {
+        return x0 + ((v - lo) / (hi - lo || 1)) * (x1 - x0);
+      };
+      var yAt = function (v) {
+        return bottom - ((v - scale.lo) / (scale.hi - scale.lo)) * (bottom - top);
+      };
+      var zeroY = yAt(0);
+
+      var s = chartSvg(b, W, H, true);
+      watermark(s, right, bottom - 7);
+
+      // 零軸 1px darkBorder;縱軸 2–3 刻度(lo / 0 / hi 去重)、不畫格線,
+      // 帶號照軸標共通規則(座標恆含零 → signed)
+      s.appendChild(
+        svgEl("line", { class: "rb-grid", x1: padL, y1: zeroY, x2: right, y2: zeroY })
+      );
+      [scale.lo, 0, scale.hi]
+        .filter(function (t, i, a) { return a.indexOf(t) === i; })
+        .forEach(function (t) {
+          s.appendChild(
+            svgText(padL - 6, yAt(t) + 3, fmtAxis(t, yUnit, true, scale.dp), {
+              "text-anchor": "end",
+            })
+          );
+        });
+      if (isWordUnit(yUnit)) {
+        s.appendChild(svgText(padL - 6, top - 11, yUnit, { "text-anchor": "end" }));
+      }
+
+      // 量測桶:實心 green/red,依 x0/x1 真實位置落點;桶縫照 histogram
+      // (2px,桶寬 <6px 收 1px);桶不逐條標值(靠縱軸刻度)。pos 與 neg 是同桶
+      // 的兩段(共桶寬),各自從零軸長出去
+      buckets.forEach(function (bk) {
+        var bx = xAt(bk.x0);
+        var w0 = xAt(bk.x1) - bx;
+        var bw = Math.max(1, w0 - (w0 < 6 ? 1 : 2));
+        var pos = num(bk.pos) || 0, neg = num(bk.neg) || 0;
+        if (pos > 0)
+          s.appendChild(
+            svgEl("rect", {
+              class: "rb-bar-up",
+              x: bx,
+              y: yAt(pos),
+              width: bw,
+              height: Math.max(0, zeroY - yAt(pos)),
+            })
+          );
+        if (neg > 0)
+          s.appendChild(
+            svgEl("rect", {
+              class: "rb-bar-dn",
+              x: bx,
+              y: zeroY,
+              width: bw,
+              height: Math.max(0, yAt(-neg) - zeroY),
+            })
+          );
+      });
+
+      // 估計層:量測用實心、估計用灰虛線;自零軸向上、正規化到零軸以上繪圖區高
+      // 的 85%,不給自己的軸(讀形狀與相對高低,絕對值口徑進 caption);必帶圖內
+      // 標注,字樣由渲染端固定(樣式不能獨自承載「這是估計」,文字才行)
+      if (est.length) {
+        var cum = profileCum(est, ref.x);
+        var maxCum = 0;
+        cum.left.concat(cum.right).forEach(function (p) {
+          maxCum = Math.max(maxCum, p.cum);
+        });
+        if (maxCum > 0) {
+          var amp = 0.85 * (zeroY - top);
+          var yCum = function (c) {
+            return zeroY - (c / maxCum) * amp;
+          };
+          [cum.left, cum.right].forEach(function (side) {
+            if (!side.length) return;
+            polyline(
+              s,
+              "rb-est",
+              [[xAt(ref.x), zeroY]].concat(
+                side.map(function (p) { return [xAt(p.x), yCum(p.cum)]; })
+              )
+            );
+          });
+          s.appendChild(svgText(x0 + 4, top + 8, ctx.i18n.estModel));
+        }
+      }
+
+      // 現價參考線:註記線家族預設樣式(1px greyMedium 虛線+頂端標籤),永不升紅
+      if (ref) {
+        var rx = xAt(ref.x);
+        s.appendChild(
+          svgEl("line", { class: "rb-ref", x1: rx, y1: top, x2: rx, y2: bottom })
+        );
+        s.appendChild(
+          svgText(rx, top - 5, str(ref.label), {
+            class: "rb-ref-label",
+            "text-anchor": "middle",
+          })
+        );
+      }
+
+      // x 刻度:連續數值軸照軸標共通規則抽稀(讀者可從相鄰刻度內插;同 histogram)
+      var xScale = niceScale(lo, hi);
+      xScale.ticks.forEach(function (v) {
+        if (v < lo || v > hi) return;
+        var label = fmtAxis(v, xUnit, xScale.lo <= 0, xScale.dp);
+        var x = xAt(v), half = textWidth(label) / 2;
+        s.appendChild(
+          svgText(x, labelY, label, {
+            "text-anchor": x + half > W ? "end" : x - half < 0 ? "start" : "middle",
+          })
+        );
+      });
+      xUnitLabel(s, xUnit, right, labelY);
+
+      if (svg) wrap.replaceChild(s, svg);
+      else wrap.appendChild(s);
+      svg = s;
+    }
+
+    if (ctx.chartSize) {
+      draw(ctx.chartSize.w, ctx.chartSize.h);
+      return wrap;
+    }
+    if (typeof global.ResizeObserver !== "function") {
+      draw(680, 200);
+      return wrap;
+    }
+    if (!ctx.swept) {
+      sweepDetached();
+      ctx.swept = true;
+    }
+    var ruler = el("div");
+    wrap.appendChild(ruler);
+    watchWidth(ruler, function (w) {
+      draw(w, 200);
+    });
+    return wrap;
+  }
+
   BLOCKS.histogram = function (b) {
     var bins = arr(b.bins);
     if (!bins.length) return null;
@@ -1771,7 +2025,7 @@
       // 不是損益,塗綠就是說謊
       var toned = it.format === "number" || it.format === "percent";
       var val = el("span", "rb-metric-value" + (toned ? signTone(value) : ""));
-      monoShapes(val, value);
+      monoShapes(val, toned ? dispMinus(value) : value);
       row.appendChild(val);
       grid.appendChild(row);
     });
@@ -1802,7 +2056,7 @@
         var toned = c.format === "number" || c.format === "percent";
         var td = el("td", (alignClass(c.align) + (toned ? signTone(text) : "")).trim());
         if (text === "") td.textContent = DASH;
-        else monoShapes(td, text);
+        else monoShapes(td, toned ? dispMinus(text) : text);
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -1819,7 +2073,9 @@
   BLOCKS.text = function (b, ctx) {
     var md = str(b.markdown);
     if (!md) return null;
-    var wrap = el("div", "rb-text" + (b.variant === "lead" ? " rb-lead" : ""));
+    // summary = 報告尾端的總結,跟 lead 同一種框(頭尾成對);推翻條件是框內最後一段,由 CSS 處理
+    var variant = b.variant === "lead" ? " rb-lead" : b.variant === "summary" ? " rb-summary" : "";
+    var wrap = el("div", "rb-text" + variant);
     var frag = mdFragment(md, ctx);
     if (frag) {
       wrap.appendChild(frag);
@@ -1852,11 +2108,111 @@
       row.id = "fn-" + str(it.id);
       // 序號用位次而非 id:內文上標與這裡必須是同一組號,而 id 可以是任意字串
       row.appendChild(el("span", "rb-fn-no mono", String(i + 1)));
-      row.appendChild(monoShapes(el("span"), str(it.text)));
+      var cell = monoShapes(el("span"), str(it.text));
+      // 尾註是說明文字、沒有長度上限,整段當連結會是一片底線;只有網域可點
+      var x = safeUrl(it.url);
+      if (x) {
+        cell.appendChild(document.createTextNode(" "));
+        var a = linkTo(x, "rb-xlink is-dom mono", ctx);
+        a.textContent = hostOf(x);
+        cell.appendChild(a);
+      }
+      row.appendChild(cell);
       row.setAttribute("aria-label", ctx.i18n.footnoteRef + " " + (i + 1));
       wrap.appendChild(row);
     });
     return wrap;
+  };
+
+  // 外部連結(契約 §2,1.4 起)只來自 news 來源與 footnote 出處。api 已驗過,這裡
+  // 設 href 前再驗一次:報告是不可信輸入,渲染端不能假設走過驗證器(spec §4.4)
+  function safeUrl(u) {
+    if (typeof u !== "string" || !u) return null;
+    // 照 api _url:瀏覽器會把 \ 當 /、把 https:evil.com 補成 https://evil.com,urlsplit 不會;
+    // 兩邊讀出的主機要一致,日後公開端的網域白名單才靠得住
+    if (!/^https:\/\//i.test(u) || /[^\x21-\x7e]/.test(u) || u.indexOf("\\") !== -1) return null;
+    var x;
+    try {
+      x = new URL(u);
+    } catch (e) {
+      return null;
+    }
+    if (x.protocol !== "https:" || x.username || x.password || !x.hostname) return null;
+    return x;
+  }
+
+  function linkTo(x, cls, ctx) {
+    var a = el("a", cls);
+    a.href = x.href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer nofollow" + (ctx.ugc ? " ugc" : "");
+    return a;
+  }
+
+  function hostOf(x) {
+    return x.hostname.replace(/^www\./, "");
+  }
+
+  // 名稱常駐底線 + 網域(mono)同在一個 <a> 裡:網域是讀者判斷去哪的唯一線索,
+  // 也算進點擊範圍。U+00A0 讓網域不會單獨掉到下一行、被讀成另一個來源
+  function extLink(x, name, ctx) {
+    var a = linkTo(x, "rb-xlink", ctx);
+    a.appendChild(el("span", "rb-xlink-nm", name));
+    a.appendChild(document.createTextNode("\u00a0"));
+    a.appendChild(el("span", "rb-xlink-dom mono", hostOf(x)));
+    return a;
+  }
+
+  var NEWS_TAG = { pos: "newsPos", neg: "newsNeg", neutral: "newsNeutral" };
+
+  // 標籤放來源行開頭、不佔左欄:一整欄紅綠標籤會讓新聞讀起來像交易訊號(spec §4.3)
+  BLOCKS.news = function (b, ctx) {
+    var items = arr(b.items).filter(function (it) {
+      return it && str(it.title);
+    });
+    if (!items.length) return null;
+    var list = el("ul", "rb-news");
+    items.forEach(function (it) {
+      var li = el("li", "rb-news-item");
+
+      var head = el("p", "rb-news-title");
+      var syms = arr(it.symbols).map(str).filter(Boolean);
+      if (syms.length) head.appendChild(el("span", "rb-news-sym mono", syms.join(" ")));
+      head.appendChild(document.createTextNode(str(it.title)));
+      li.appendChild(head);
+
+      if (str(it.title_orig)) {
+        var orig = el("div", "rb-news-orig", str(it.title_orig));
+        if (str(it.title_orig_lang)) orig.lang = str(it.title_orig_lang);
+        li.appendChild(orig);
+      }
+      if (str(it.summary)) li.appendChild(el("div", "rb-news-sum", str(it.summary)));
+
+      var meta = el("div", "rb-news-meta");
+      if (Object.prototype.hasOwnProperty.call(NEWS_TAG, it.tag)) {
+        meta.appendChild(
+          el("span", "mini_tag rb-news-tag is-" + it.tag, ctx.i18n[NEWS_TAG[it.tag]])
+        );
+      }
+      arr(it.sources).forEach(function (s) {
+        if (!s || !str(s.name)) return;
+        if (meta.querySelector(".rb-xlink, .rb-news-src")) meta.appendChild(document.createTextNode(ctx.listSep));
+        var x = safeUrl(s.url);
+        meta.appendChild(x ? extLink(x, str(s.name), ctx) : el("span", "rb-news-src", str(s.name)));
+      });
+      if (num(it.published_at) != null) {
+        // 「·」跟時間綁成一個不斷行單位,換行時不留孤兒分隔點
+        var when = el("span", "rb-news-when");
+        when.appendChild(el("span", "rb-news-sep", "·"));
+        // day 精度的 published_at 是當天 12:00 UTC 的佔位,畫時分會是假資訊
+        var stamp = it.published_at_precision === "day" ? fmtDay(it.published_at) : fmtStamp(it.published_at);
+        when.appendChild(el("span", "mono", stamp));
+        meta.appendChild(when);
+      }
+      li.appendChild(meta);
+      list.appendChild(li);
+    });
+    return list;
   };
 
   BLOCKS.code = function (b) {
@@ -1981,6 +2337,9 @@
       chartSize: chartSize,
       imageUrl: imageUrl,
       markdown: markdown,
+      ugc: opts.ugc === true,
+      // 分隔符是介面的一部分,跟介面語言走;workspace 的 <html lang> 是 g.lang_code("cn")
+      listSep: /^(zh|ja|cn)\b/i.test(document.documentElement.lang) ? "、" : ", ",
     };
   }
 

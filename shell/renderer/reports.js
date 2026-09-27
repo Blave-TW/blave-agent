@@ -50,10 +50,17 @@ function rptCompose(desc, lang, s) {
 function rptKey(r) { return r.id + "@" + (typeof r.mtime === "number" ? r.mtime : typeof r.stored_at === "number" ? r.stored_at : ""); }
 // 回合結束後新出現的那幾份(送出前記的那一袋沒有這個版本鍵的);順序照清單
 function rptNewEntries(before, list) { return (Array.isArray(list) ? list : []).filter((r) => r && typeof r.id === "string" && !before.has(rptKey(r))); }
+// 這一輪寫出(含同 id 覆寫)的本機報告:mtime 不早於回合開始。不靠送出前的清單快照——一般對話產出的報告,送出時報告區可能從沒載入過
+const RPT_TURN_SLACK_MS = 2000;
+function rptWrittenSince(since, list) { return (Array.isArray(list) ? list : []).filter((r) => r && typeof r.id === "string" && typeof r.mtime === "number" && r.mtime >= since - RPT_TURN_SLACK_MS); }
+// 雲端這一輪寫出的:平台收下的時間 stored_at(api 的鐘,秒)不早於回合開始。回合開始是這台電腦的鐘,兩邊不一定對齊,容差放寬到 2 分鐘;
+// 聊天發起的雲端報告送出時清單可能從沒載入過,所以不靠送出前的快照
+const RPT_CLOUD_SLACK_S = 120;
+function rptStoredSince(sinceMs, list) { const s = Math.floor(sinceMs / 1000) - RPT_CLOUD_SLACK_S; return (Array.isArray(list) ? list : []).filter((r) => r && typeof r.id === "string" && typeof r.stored_at === "number" && r.stored_at >= s); }
 /* ── 純邏輯到此 ── */
 
 const RPT = { bags: { local: rptNewBag(), cloud: rptNewBag() }, data: { local: null, cloud: null }, failed: { local: false, cloud: false }, skel: { local: false, cloud: false },
-  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null };   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
+  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null };   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
 const RPT_DOCS_MAX = 8;   // 讀過的本體留幾份(回清單再進同一份不重抓;換語言整組清掉——渲染出來的字是 i18n 過的)
 function rptNewBag() { return { open: false, reading: null, scroll: 0, row: null, shown: RPT_PAGE }; }
 const rptBag = (env) => RPT.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
@@ -61,11 +68,12 @@ const rptVisible = (env) => !$("rpt").hidden && libEnv() === env;
 function rptCtx(env) {
   return { running: typeof running !== "undefined" && running === true, env, cloud: env === "cloud" ? libCloud() : null, pending: !!RPT.pending[env] };
 }
-// 渲染器要的字串包(web REPORT_I18N 的 12 個 key):{where} 先代好再交進去,渲染器不改
+// 渲染器要的字串包(web REPORT_I18N 的 15 個 key):{where} 先代好再交進去,渲染器不改
 function rptI18n(env) {
   const where = t(env === "cloud" ? "lib.where.cloud" : "lib.where.local");
   return { originScheduled: t("rb.originScheduled"), originChat: t("rb.originChat"), machine: t("rb.machine"), footScheduled: t("rb.footScheduled", { where }), footChat: t("rb.footChat", { where }),
-    metaPeriod: t("rb.metaPeriod"), metaAum: t("rb.metaAum"), metaBenchmark: t("rb.metaBenchmark"), calloutRisk: t("rb.calloutRisk"), footnoteRef: t("rb.footnoteRef"), imageError: t("rb.imageError"), segOther: t("rb.segOther") };
+    metaPeriod: t("rb.metaPeriod"), metaAum: t("rb.metaAum"), metaBenchmark: t("rb.metaBenchmark"), calloutRisk: t("rb.calloutRisk"), footnoteRef: t("rb.footnoteRef"), imageError: t("rb.imageError"), segOther: t("rb.segOther"),
+    newsPos: t("rb.newsPos"), newsNeg: t("rb.newsNeg"), newsNeutral: t("rb.newsNeutral"), estModel: t("rb.estModel") };
 }
 
 /* ── 開 / 關 ──────────────────────────────────────────── */
@@ -152,25 +160,43 @@ function rptRepaint() {
 }
 /* 送出「新增報告」那一輪結束(app.js onTurnEnd,libTurnEnd 之後):本機重掃,多出新報告就自動打開(§5-5),沒有就出灰字;
    雲端:清單跟著主機的回報走(uploader 2 分鐘 + 平台入庫),每 30 秒問一次、最多 10 分鐘 */
+// 本機回合開始(app.js submitMessage):記下開始時間,回合結束時這一輪寫出的報告自動打開(Wei 拍板:報告產出中欄自動開,
+// 不只「新增報告」框送出的那種)。雲端視角的回合另記一份:這一輪真的碰了雲端主機(rptTurnTool),結束後才去等雲端清單
+function rptTurnStart(viewing) {
+  RPT.turnAt = viewing && viewing.env === "local" ? Date.now() : null;
+  RPT.cloudTurn = viewing && viewing.env === "cloud" ? { at: Date.now(), touched: false, view: rptViewSig() } : null;
+}
+// 中欄現在是哪一頁。雲端視角沒有歡迎頁(預設就是自動下單頁),「人還停在原地」只能跟送出時比
+function rptViewSig() {
+  return [ENV.cur, ...["main-empty", "tr", "rp", "lib", "rpt"].map((id) => ($(id).hidden ? 0 : 1)), typeof RPC !== "undefined" ? RPC.name || "" : "", TR.tab || ""].join("|");
+}
+// app.js 每個 tool chunk 都交過來。只看「這一步做在雲端主機」:遠端 publish 的 kind 是 cloud 不是 report,分不出來,
+// 所以碰過雲端就等——沒寫報告的那一輪最多多問 10 分鐘清單,而且不出「沒多出報告」的灰字
+function rptTurnTool(c) { if (RPT.cloudTurn && c && c.type === "tool" && stepWhere(c) === "cloud") RPT.cloudTurn.touched = true; }
 function rptTurnEnd() {
+  const ct = RPT.cloudTurn;
+  RPT.cloudTurn = null;
+  if (ct && ct.touched && !RPT.pending.cloud) RPT.pending.cloud = { env: "cloud", since: ct.at, auto: true, view: ct.view };
   if (RPT.pending.cloud && !RPT.poll) rptCloudPollStart(RPT.pending.cloud);   // 已在輪詢就不重開 10 分鐘窗(用戶接著聊天,每一輪都會到這裡)
-  const p = RPT.pending.local;
-  if (!p) return;
-  RPT.pending.local = null;
-  rptPaintTools();
+  const p = RPT.pending.local, since = RPT.turnAt;
+  RPT.turnAt = null;
+  if (!p && since == null) return;
+  if (p) { RPT.pending.local = null; rptPaintTools(); }
   rptLoad("local", true).then((applied) => {
     if (!applied) return;   // 被更新的一趟蓋過:那一趟自己會畫,這裡不拿舊資料下結論
-    const fresh = rptNewEntries(p.before, RPT.data.local);
-    if (!fresh.length) { RPT.noNew = "local"; rptSync(); return; }
+    const fresh = p ? rptNewEntries(p.before, RPT.data.local) : rptWrittenSince(since, RPT.data.local);
+    if (!fresh.length) { if (p) { RPT.noNew = "local"; rptSync(); } return; }   // 「沒多出報告」的灰字只回應框送出的那一輪;一般對話沒寫報告是常態
     RPT.noNew = null;
-    // 只在人還停在報告區或歡迎頁(聊天)時自動打開;等待期間已切到自動下單 / 策略 / 策略庫就不拉回,側欄入口只做記號
-    if (libEnv() !== "local" || !(rptBag("local").open || !$("main-empty").hidden)) { $("rpt-nav-new").hidden = false; rptSync(); return; }
+    // 只在人還停在報告區、歡迎頁(聊天)或這一輪的瀏覽器展開層時自動打開(瀏覽器 spec §3-5:一輪結束有報告就開,展開層自己會收);
+    // 等待期間已切到自動下單 / 策略 / 策略庫就不拉回,側欄入口只做記號
+    const brOpen = typeof BR !== "undefined" && !!BR.exp;
+    if (libEnv() !== "local" || !(rptBag("local").open || !$("main-empty").hidden || brOpen)) { $("rpt-nav-new").hidden = false; rptSync(); return; }
     rptOpen().then((opened) => { if (opened && libEnv() === "local" && rptBag("local").open) rptShowRead(fresh[0].id); });   // 等的期間切到雲端就不開(不把本機 id 塞進雲端袋)
   });
 }
 function rptCloudPollStart(p) {
   rptCloudPollStop();
-  RPT.poll = { before: p.before, until: Date.now() + RPT_CLOUD_WAIT_MS, timer: null };
+  RPT.poll = { before: p.before || null, since: p.since, auto: !!p.auto, view: p.view || null, until: Date.now() + RPT_CLOUD_WAIT_MS, timer: null };
   rptCloudPollTick();
 }
 function rptCloudPollStop() { if (RPT.poll && RPT.poll.timer) clearTimeout(RPT.poll.timer); RPT.poll = null; }
@@ -179,11 +205,15 @@ async function rptCloudPollTick() {
   if (!w) return;
   await rptLoad("cloud", true);
   if (RPT.poll !== w) return;
-  const fresh = rptNewEntries(w.before, RPT.data.cloud);
+  const fresh = w.before ? rptNewEntries(w.before, RPT.data.cloud) : rptStoredSince(w.since, RPT.data.cloud);
   if (fresh.length || Date.now() > w.until) {
     RPT.poll = null; RPT.pending.cloud = null;
-    if (!fresh.length) RPT.noNew = "cloud";
-    rptSync();
+    if (!fresh.length) { if (!w.auto) RPT.noNew = "cloud"; rptSync(); return; }   // 灰字只回應框送出的那一輪
+    RPT.noNew = null;
+    // 同本機那條(rptTurnEnd):人還看著雲端的報告區、瀏覽器展開層,或中欄還是送出時那一頁才打開;已切走(或切到這台電腦)只做記號
+    const brOpen = typeof BR !== "undefined" && !!BR.exp, still = !!w.view && rptViewSig() === w.view;
+    if (libEnv() !== "cloud" || !(rptBag("cloud").open || brOpen || still)) { $("rpt-nav-new").hidden = false; rptSync(); return; }
+    rptOpen().then((opened) => { if (opened && libEnv() === "cloud" && rptBag("cloud").open) rptShowRead(fresh[0].id); });
     return;
   }
   w.timer = setTimeout(rptCloudPollTick, RPT_CLOUD_POLL_MS);
@@ -319,11 +349,33 @@ function rptRender(env, doc, host) {
   try {
     window.renderAgentReport(host, doc.report, { apiBase: "", i18n: rptI18n(env), imageUrl: (ref) => doc.images[ref] || "", markdown: rptMarkdown });   // 空 src → onerror → 渲染器自己的失敗框
     libTrack("reports_read");
+    if (env === "local") rptTrackKind(doc.report);
   } catch (_) {
     host.textContent = "";
     const box = libEl("div", "rpt-state center"), e = libEl("p", "plan-err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
     e.append(m, libEl("span", "", t("rpt.readErr"))); box.appendChild(e); host.appendChild(box);
   }
+}
+/* 晨報 v2 與新聞管道的用量(product-telemetry 登記表):只在讀本機報告時從報告本身推——雲端的產出量在雲端 runs.jsonl。
+   id 是 recipe id + 日期(lib/report_bricks.build),v1 與 v2 同 id,所以 morning_* 只說「讀了一份內建範本晨報」、分不出版本;
+   自組配方的 id 是任意 slug、跟 agent 自己 write_report 的分不開,不送。讀取時送 = 產出量的下界 */
+function rptTrackKind(rep) {
+  try {   // 追蹤永遠不擋功能:丟例外也不能讓已畫好的報告被 rptRender 當成讀取失敗
+    const id = typeof rep.id === "string" ? rep.id : "", ch = new Set();
+    if (/^tw-market-[0-9]{8}$/.test(id)) libTrack("morning_tw");
+    else if (/^crypto-market-[0-9]{8}$/.test(id)) libTrack("morning_crypto");
+    rep.blocks.forEach((b) => { if (b && b.type === "news" && Array.isArray(b.items)) b.items.forEach((it) => { if (it && typeof it.channel === "string") ch.add(it.channel); }); });
+    if (ch.has("web")) libTrack("news_web");
+    if (ch.has("licensed")) libTrack("news_licensed");
+  } catch (_) { }
+}
+/* 報告裡的外部連結(news 來源、footnote 出處)交給系統瀏覽器,同 app.js 的 chatLink:渲染器照 web 設 target=_blank,
+   不攔的話會走主行程的導覽守門(只放行 blave.org),新聞網站點了沒反應。主行程 open-external 再驗一次 https、無帳密 */
+function rptExtLink(e) {
+  if (e.type === "auxclick" && e.button !== 1) return;   // 中鍵才算;右鍵留給系統選單
+  const a = e.target.closest("a.rb-xlink"); if (!a) return;
+  e.preventDefault();
+  if (/^https:\/\//i.test(a.href)) window.blave.openExternal(a.href);
 }
 /* text block 的 markdown → DOM(渲染器的 makeCtx.markdown):接 app.js 的 mdBlocks / mdPaint(一個節點一個節點組,不經 HTML)。
    契約不支援連結:mdPaint 從 [text](url) / 裸網址生出來的 <a> 拆回純文字(同 web)。尾註引用 [^id] → 上標:web 是餵給 marked 之前
@@ -445,6 +497,7 @@ async function rptSend() {
     const b = e.target.closest(".rpt-row[data-id]"); if (b) { rptShowRead(b.dataset.id); return; }
     if (e.target.closest(".rpt-more")) rptMore();
   });
+  ["click", "auxclick"].forEach((ev) => g("rpt-read").addEventListener(ev, rptExtLink));
   g("rpt-body").addEventListener("scroll", () => { const B = rptBag(); if (!B.reading) B.scroll = g("rpt-body").scrollTop; });
   g("rpn-modal").addEventListener("submit", (e) => { e.preventDefault(); rptSend(); });   // CSP form-action 'none':原生送出一律擋
   g("rpn-cancel").addEventListener("click", () => rptNewClose());
