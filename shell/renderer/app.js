@@ -950,6 +950,21 @@ function stratTip(display, name) {
   const d = typeof display === "string" ? display.trim() : "";
   return d && d !== name ? t("side.rowTip", { name: d, id: name }) : String(name || "");
 }
+/* 側欄名字過長截尾時,尾端的「（2）」/ " (2)" 留著:撞名另存的那一支跟原本那支只差這個後綴,一起截掉兩列就長得一樣(e2e 0.1.8 #37)。
+   前段照舊截尾、後綴固定;沒有後綴的名字跟以前一模一樣(一個文字節點) */
+function stratNameParts(text) {
+  const s = String(text == null ? "" : text), m = /^(.*\S)(\s?[（(]\d{1,3}[）)])$/.exec(s);
+  return m ? { head: m[1], tail: m[2] } : { head: s, tail: "" };
+}
+function stratNameFill(nm, text) {
+  const p = stratNameParts(text);
+  nm.textContent = p.tail ? "" : p.head;
+  nm.classList.toggle("has-tail", !!p.tail);
+  if (!p.tail) return;
+  const h = document.createElement("span"), tl = document.createElement("span");
+  h.className = "sn-head"; h.textContent = p.head; tl.className = "sn-tail"; tl.textContent = p.tail;
+  nm.append(h, tl);
+}
 function stratBlockedNote(code) {
   const p = document.createElement("p"); p.className = "cf-block";
   p.textContent = code === "IN_PORTFOLIO" ? t("strat.delInPf") : t("strat.delCfgUnread");
@@ -967,7 +982,7 @@ async function stratRefresh(turnEnd) {
     if (x.name === RP.name) b.setAttribute("aria-current", "true");
     b.dataset.name = x.name;
     const nm = document.createElement("span"); nm.className = "strat-name";
-    nm.textContent = x.displayName || x.name; nm.title = stratTip(x.displayName, x.name);
+    stratNameFill(nm, x.displayName || x.name); nm.title = stratTip(x.displayName, x.name);
     b.append(nm);
     // 再點一次選中的那支 = 取消選取、回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)。Enter / Space 在按鈕上就是 click;列不重建,焦點留在這一列
     b.addEventListener("click", () => { if (x.name === RP.name) sideReclick(() => stratSelect(null)); else stratSelect(x.name); });

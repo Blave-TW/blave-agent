@@ -479,9 +479,11 @@ publish(pack, narrative={
 - **R3 No price levels to trade at, no advice** (the rules above). News tags are not added up
   and are not thresholds; summaries carry no advice wording; no heading or label says 關鍵價位,
   支撐 or 壓力.
-- **R4 At most 8 data bricks** (the KPI row not counted), **at most 16 blocks**. Extra
-  information goes into a scannable table, not a paragraph. To cut, drop the bricks the lead
-  does not use first; never the ones the user asked for. `check_recipe` refuses a 9th brick.
+- **R4 At most 8 data bricks** (the KPI row not counted), **at most 16 blocks** (cited images
+  not counted). Extra information goes into a scannable table, not a paragraph. To cut, drop
+  the bricks the lead does not use first; never the ones the user asked for — a cited image
+  the user asked for is never what gives way. `check_recipe` refuses a 9th brick; going over
+  16 blocks only prints a note for you and the report is written as it is.
 - **R5 News**: every report written in chat searches first — the two briefs, 收盤報告, 單標的晨報,
   custom recipes, research; never a backtest report. Collect, de-duplicate, summarise, tag, cite
   — the section above. Tags stay display only (not summed, not a threshold, never a data series),
@@ -820,10 +822,24 @@ transient failure. Same status code, different channel, opposite handling.
 
 - A cited image is an `image` block carrying `source` — a chart you saw in the
   built-in browser and captured with `browser_capture(tab, ref, report)`
-  (`ref` from `browser_snapshot`; `report` = the id you will pass to
-  `write_report`). It writes the picture straight into `reports/<id>.files/`
-  and returns `{file, source}` — put both into the block unchanged; do not
-  pass it through `write_report(images=…)`. `source` is only `{name, url}`
+  (`ref` from `browser_snapshot`; `report` = the report's id: `pack.report_id`
+  for a pack, else the id you will pass to `write_report`). It writes the
+  picture straight into `reports/<id>.files/` and returns `{file, source}`.
+- **Where it goes.** A report built on a pack (a template, `research_pack`, a
+  custom recipe): `narrative["images"] = [{"file", "source", "alt"}]` —
+  `file` and `source` exactly as returned, `caption` optional. `publish()`
+  places the blocks after the data blocks, before the reading, and does not
+  count them against R4's 16 blocks. **Never add to `pack.blocks` yourself** —
+  `publish()` refuses a pack edited that way. A report you write by hand with
+  `write_report`: put `file` and `source` into an `image` block unchanged; do
+  not pass the picture through `write_report(images=…)`.
+- **A cited image the user asked for always goes in.** A capture that is not
+  in the report makes `publish()` refuse until you either cite it or give
+  `narrative["images_unused"]` (one sentence saying why); captures left out
+  are deleted when the report is written. Whenever the user asked for a cited
+  image and the report has none — nothing suitable, every capture refused,
+  left out on purpose — the reply says so in one plain sentence.
+- `source` is only `{name, url}`
   (the domain is the top-level `host`, not part of `source`). Pages that are
   not `https`, and elements near the size of the whole view or larger, are
   refused (`capture_refused`). Your own generated figures (matplotlib etc.)

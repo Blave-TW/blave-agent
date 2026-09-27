@@ -81,7 +81,7 @@ function box(extra) {
   const run = async (view, list1) => {
     S.RP.list = list0; S.RP.name = view; const sel = [], rel = [];
     S.window.blave.listStrategies = async () => list1;
-    S.stratSelect = async (n) => sel.push(n); S.stratReload = async (n) => rel.push(n); S.armedDelete = () => El("button"); S.stratTip = () => ""; S.running = false;
+    S.stratSelect = async (n) => sel.push(n); S.stratReload = async (n) => rel.push(n); S.armedDelete = () => El("button"); S.stratTip = () => ""; S.stratNameFill = (nm, x) => { nm.textContent = x; }; S.running = false;
     vm.runInContext(cutFn(appSrc, "stratRefresh"), S);
     await S.stratRefresh(true); return { sel, rel };
   };

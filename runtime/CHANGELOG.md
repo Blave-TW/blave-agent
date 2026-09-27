@@ -8,6 +8,15 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **模型漏寫 `<export …/>` 標記時轉出卡照出(0.1.8 e2e #49)**:同一則對話第二次轉出(Pine)回覆結尾是 `<suggest>` 區塊、
+  標記不見了——「回覆必須以 <suggest> 結尾」跟 references 的「標記放最後、後面不准有字」搶同一個位置。檔案與 lint sidecar
+  都在,runtime 沒東西可送,聊天沒有卡。兩道:① `_SUGGEST_RULE` 與三份轉出 reference 寫明兩者並存時標記在前、不准省;
+  ② `WebSink.finalize` 在回覆完全沒有標記時呼叫 `unmarked_exports(started_at, touched)`——這一輪工具碰過的策略裡,
+  lint sidecar 的 `exported_at` 落在這一輪之內的轉出檔各送一個 chunk(形狀同標記路徑)。回覆有標記(含讀不到)照舊只走標記;
+  被停止的回合不送。測試 `tests/check_export_unmarked.py`。
+- **停止那一句不露內部工具名(0.1.8 e2e #28)**:「停止時還在跑的步驟：mcp__blave_browser__browser_search。」→「…：搜尋。」。
+  `_tool_t0` 多記一格 kind,`_stop_note` 的 `in_flight` 改收 kind、經 `_STOP_STEP_TEXT`(zh / cn / en)換成人話;
+  對不到的(unknown、silent、新 kind)不列,只剩「已停止。」/ "Stopped."。測試 `tests/check_stop_note_steps.py`。
 - **上網查資料不再以對方條款 / robots 禁 AI 為由排除網站(Wei 09-28 拍板,取代 1.1.101 兩條「固定新聞站」)**:
   DeepSeek 排程 prompt(`report_runner.scheduled_prompt`)拿掉「other news sites' terms forbid automated AI
   access, do not fetch them」;鉅亨列表頁+TWSE/TAIFEX/Binance/OKX 公告頁改成優先清單(實測抓得到的起點),

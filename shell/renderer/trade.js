@@ -3362,7 +3362,7 @@ function envPaintSide(kind, st) {
   list.forEach((x) => {
     const wrap = trEl("div", "strat-wrap cs-row"), row = trEl("button", "strat-row"); row.type = "button"; row.dataset.name = x.name; wrap.dataset.name = x.name;
     if (x.name === sel) row.setAttribute("aria-current", "true");
-    const nm = trEl("span", "strat-name", x.displayName); nm.title = typeof stratTip === "function" ? stratTip(x.displayName, x.name) : x.name; row.appendChild(nm);
+    const nm = trEl("span", "strat-name"); stratNameFill(nm, x.displayName); nm.title = typeof stratTip === "function" ? stratTip(x.displayName, x.name) : x.name; row.appendChild(nm);
     if (dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)) envDotInto(nm, true);
     const deleting = CDEL.busy.has(x.name);
     if (deleting) { wrap.classList.add("is-deleting"); row.setAttribute("aria-busy", "true"); row.appendChild(trEl("span", "stx", t("cdel.pending"))); }

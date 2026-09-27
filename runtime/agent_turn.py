@@ -15,6 +15,7 @@ Prints the assistant's reply text to stdout; everything else goes to stderr.
 """
 import argparse
 import asyncio
+import calendar
 import http.client
 import json
 import os
@@ -257,6 +258,32 @@ def _export_fail_note(message, lang=None):
     if lang:
         return _EXPORT_FAIL_NOTE if lang == "zh" else _EXPORT_FAIL_NOTE_EN
     return _EXPORT_FAIL_NOTE if _is_zh(message or "") else _EXPORT_FAIL_NOTE_EN
+
+
+def unmarked_exports(since, touched, workspace=None):
+    """這一輪轉好、回覆卻沒帶 <export …/> 標記的轉出檔,各產一個 chunk。
+    模型會漏寫標記(「回覆必須以 <suggest> 結尾」跟「標記放最後」搶同一個位置時丟掉標記),
+    檔案在、卡沒出。判準不靠模型:lint 過了才寫的 sidecar,`exported_at` 落在這一輪之內,
+    且這一輪的工具碰過那支策略(同時間別條對話轉的檔不算)。"""
+    workspace = workspace or WORKSPACE
+    chunks = []
+    for name in sorted(touched or ()):
+        if not _EXPORT_NAME_RE.fullmatch(name):
+            continue
+        for target, ext in _EXPORT_EXT.items():
+            rel = f"strategies/{name}/exports/{target}.{ext}"
+            try:
+                with open(os.path.join(workspace, rel + ".meta.json"), encoding="utf-8") as f:
+                    meta = json.load(f)
+                at = calendar.timegm(time.strptime(meta["exported_at"], "%Y-%m-%dT%H:%M:%SZ"))
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            if meta.get("target") != target or at < int(since):
+                continue
+            chunk = _read_export(target, rel, workspace)
+            if chunk:
+                chunks.append(chunk)
+    return chunks
 
 
 # ── 導航指引(ui_nav)──────────────────────────────────────────────────────
@@ -1114,6 +1141,8 @@ _SUGGEST_RULE = (
     "- 模擬盤已穩定跑一段時間且執行無異常 → 建議小額實盤\n"
     "- 用戶想實際跑但還沒綁任何交易所 → 建議先綁模擬盤\n"
     "命中時，回覆**必須以 <suggest> 區塊結尾**（其後不得再有任何文字），格式：\n"
+    "這一輪有轉出檔要交付時，`<export … />` 標記照寫、放在 <suggest> 區塊的前一行——"
+    "不能因為要放 <suggest> 就省掉標記。\n"
     "<suggest>\n帶我看怎麼把〈策略名〉上模擬盤\n</suggest>\n"
     "一行一個建議、最多 3 個（通常 1 個就好）；句子＝用戶口吻的短指令"
     "（動詞＋對象＋必要參數），點了會替用戶原句送出。"
@@ -2089,6 +2118,7 @@ class WebSink:
         self.full_text = ""
         self.error_text = None
         self.error_code = None
+        self.started_at = time.time()  # wall clock:跟 lint sidecar 的 exported_at 比(unmarked_exports)
         # Set when the user hits Stop: /report piggybacks `interrupt: true` on its
         # response, or turn_stop sees the flag file web_bridge writes when the inbox
         # `interrupt` arrives (that one also reaches a turn that is silent in a tool).
@@ -2240,7 +2270,7 @@ class WebSink:
         block_id = getattr(block, "id", None)
         if block_id:
             chunk["id"] = block_id
-            self._tool_t0[block_id] = (time.monotonic(), name, where)
+            self._tool_t0[block_id] = (time.monotonic(), name, where, kind)
         self._send(chunk)
 
     def on_tool_prep(self, name, kind=None, kind_obj=None):
@@ -2267,7 +2297,7 @@ class WebSink:
         started = self._tool_t0.pop(getattr(block, "tool_use_id", None), None)
         if not started:
             return
-        t0, name, where = started
+        t0, name, where = started[:3]
         self._send({
             "type": "tool", "id": block.tool_use_id, "tool": name, "status": "done", "where": where,
             "ms": max(0, int((time.monotonic() - t0) * 1000)),
@@ -2320,7 +2350,10 @@ class WebSink:
         if cut:
             print("[agent_turn] 截掉模型續寫的假對話回合", file=sys.stderr)
         cleaned, suggestions = extract_suggestions(cleaned)
+        marked = "<export" in cleaned
         cleaned, exports = extract_exports(cleaned, note=getattr(self, "export_fail_note", None))
+        if not marked:
+            exports = unmarked_exports(self.started_at, getattr(self, "export_touched", None))
         cleaned = _NAV_STRIP_RE.sub("", cleaned)  # 放錯位置的標記只剝不觸發
         if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
@@ -2677,15 +2710,50 @@ def _fault_receipt_suffix(steps):
     return "\n[中斷前已執行:" + "、".join(shown) + "]"
 
 
+# 停止那一句裡「還在跑的步驟」怎麼講:工具分類(_tool_kind 的 kind)→ (繁中, 簡中, 英文)。
+# 工具名(mcp__blave_browser__browser_search、Bash)是內部名稱,不給用戶看;對不到的 kind 不列。
+_STOP_STEP_TEXT = {
+    "search": ("搜尋", "搜索", "a web search"),
+    "web_read": ("讀網頁", "读网页", "reading a web page"),
+    "web_read_many": ("讀網頁", "读网页", "reading a web page"),
+    "web_act": ("操作網頁", "操作网页", "working on a web page"),
+    "docs": ("查說明文件", "查说明文件", "reading the docs"),
+    "files": ("找檔案", "找文件", "looking through files"),
+    "file_read": ("讀檔案", "读文件", "reading a file"),
+    "file_write": ("改檔案", "改文件", "editing a file"),
+    "strategy_read": ("讀策略", "读策略", "reading a strategy"),
+    "strategy_write": ("寫策略", "写策略", "writing a strategy"),
+    "data": ("抓資料", "抓数据", "fetching data"),
+    "backtest": ("跑回測", "跑回测", "a backtest"),
+    "live_tick": ("跑策略", "跑策略", "a strategy run"),
+    "scan": ("掃參數", "扫参数", "a parameter scan"),
+    "validate": ("驗證策略", "验证策略", "validating the strategy"),
+    "check": ("檢查策略碼", "检查策略代码", "checking the strategy code"),
+    "report": ("組報告", "组报告", "building the report"),
+    "watch": ("更新看盤板", "更新看盘板", "updating the watchboard"),
+    "schedule": ("設定排程", "设定排程", "setting up a schedule"),
+    "order": ("下單", "下单", "placing an order"),
+    "account": ("查帳戶", "查账户", "checking the account"),
+    "status": ("查執行狀態", "查运行状态", "checking what is running"),
+    "install": ("安裝套件", "安装套件", "installing packages"),
+    "cloud": ("連雲端主機", "连云端主机", "working on the cloud machine"),
+    "delegate": ("委派研究", "委派研究", "delegated research"),
+}
+
+
 def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     """停止鈕收尾那一句(進回覆也進歷史):哪幾支會動到部位/帳本的腳本沒被中斷、還在背景
     跑完(turn_stop 刻意放過),Codex 等了 HOLD_MAX_S 還沒結束、不再等的那幾支(輸出管線
-    已斷,可能沒跑完),以及停下時還在跑的步驟。都沒有就不說話。"""
+    已斷,可能沒跑完),以及停下時還在跑的步驟。都沒有就不說話。
+    in_flight = 停下時還沒回來的工具的 kind;講得出人話的才列,其餘只算「有步驟被停」。"""
     left_running = [x for x in left_running if x not in gave_up]
     if not left_running and not in_flight and not gave_up:
         return ""
-    left, cut, gone = "、".join(left_running), "、".join(dict.fromkeys(in_flight)), "、".join(gave_up)
-    if lang in ("zh", "cn") or (not lang and _is_zh(message)):
+    zh = lang in ("zh", "cn") or (not lang and _is_zh(message))
+    col = (1 if lang == "cn" else 0) if zh else 2
+    steps = list(dict.fromkeys(_STOP_STEP_TEXT[k][col] for k in in_flight if k in _STOP_STEP_TEXT))
+    left, cut, gone = "、".join(left_running), ("、" if zh else ", ").join(steps), "、".join(gave_up)
+    if zh:
         simp = lang == "cn"
         name = "下单脚本" if simp else "下單腳本"
         left, gone = left.replace("order script", name), gone.replace("order script", name)
@@ -2696,7 +2764,7 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
         if gave_up:
             parts.append((f"{gone} 停止后两分钟仍未结束，已不再等它；它的输出已中断，可能没有跑完——请确认仓位与账本。" if simp else
                           f"{gone} 停止後兩分鐘仍未結束，已不再等它；它的輸出已中斷，可能沒有跑完——請確認部位與帳本。"))
-        if in_flight:
+        if steps:
             parts.append((f"停止时还在跑的步骤：{cut}。" if simp else f"停止時還在跑的步驟：{cut}。"))
         return "".join(parts)
     parts = ["Stopped."]
@@ -2706,7 +2774,7 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     if gave_up:
         parts.append(f" {gone} was still running two minutes after the stop, so it is no longer waited on; "
                      "its output was cut and it may not have finished — check positions and the ledger.")
-    if in_flight:
+    if steps:
         parts.append(f" Still running when stopped: {cut}.")
     return "".join(parts)
 
@@ -3470,11 +3538,12 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     stopped = getattr(sink, "interrupted", False)
     if stopped:
         note = _stop_note(sorted(getattr(sink, "stop_left_running", None) or ()),
-                          [v[1] for v in getattr(sink, "_tool_t0", {}).values()], message, reply_lang,
+                          [v[3] for v in getattr(sink, "_tool_t0", {}).values()], message, reply_lang,
                           gave_up=getattr(sink, "stop_gave_up", ()))
         if note:
             sink.on_text(("\n\n" if sink.has_reply() else "") + note)
     sink.export_fail_note = _export_fail_note(message, reply_lang)
+    sink.export_touched = touched
     reply_text = sink.finalize()
     # 收據摘要只進 session sqlite(下一輪模型的 context),不進用戶看得到的任何表面。
     # 被停止的回合也要:下一輪得知道剛才做到哪、哪支還在背景跑。

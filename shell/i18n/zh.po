@@ -4446,6 +4446,9 @@ msgstr "Pine Script"
 msgid "xp.off.crypto"
 msgstr "XQ 沒有加密貨幣市場"
 
+msgid "xp.off.portfolio"
+msgstr "只能轉出單一標的的策略"
+
 msgid "xp.why.tm"
 msgstr "正在看 {v}。轉出只做目前這一版。"
 

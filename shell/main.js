@@ -846,6 +846,11 @@ function stratSelfOrderingAny() {
   return false;
 }
 
+/* 側欄順序 = 最近被人或 agent 動過的在上面:程式碼、明確回測(stats 的 Generated At,秒)、參數掃描。
+   不看 stats.json 的 mtime——上線中的策略每根 K 的 live tick 都重寫它(Generated At 不動),那一支每小時跳回第一,
+   重開 app、切語言重畫時順序就跟著變。舊 stats 沒有 Generated At 才退回檔案時間;同時間照資料夾名,順序才固定 */
+const stratTouchedAt = (x) => Math.max(x.codeMtime || 0, x.scanMtime || 0, x.generatedAt ? x.generatedAt * 1000 : x.statsMtime || 0);
+const stratOrder = (a, b) => stratTouchedAt(b) - stratTouchedAt(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 function listStrategies() {
   return stratNames().map((name) => {
     const dir = path.join(STRAT_DIR(), name);
@@ -876,7 +881,7 @@ function listStrategies() {
     }
     stratCache.set(name, { mtime: sMtime, cMtime: mtime, summary });
     return { ...summary, ...parts, mtime: touched };
-  }).sort((a, b) => b.mtime - a.mtime);      // 最近動過的在上面
+  }).sort(stratOrder);
 }
 // 最新定版的版號(lib/runner.py _mint_version 的 versions/index.json `current`);沒定過版 / 讀不到 = null。照 index 的 mtime 快取
 const stratVerCache = new Map();
