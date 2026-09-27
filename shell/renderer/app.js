@@ -734,12 +734,6 @@ $("ta").addEventListener("keydown", (e) => {
     sendDraft();
   }
 });
-/* 輸入框上方那一行:上一輪還在跑,Enter 沒有送出。回合結束(sendBtnSync 看到 running 是 false)就收 */
-function taWaitShow(on) {
-  const p = $("ta-wait");
-  if (on) { p.dataset.i18n = "ws.waitTurn"; p.textContent = t("ws.waitTurn"); }
-  else if (p.textContent) { delete p.dataset.i18n; p.textContent = ""; }
-}
 
 /* ── 輸入框自動長高 ───────────────────────────────
    照 web 工作頁的 autosize()(workspace.html:21908):先歸零再量 scrollHeight、
@@ -1850,6 +1844,12 @@ function busyOpenReceipts(b) {
    停下來之後用戶那句放回輸入框(雲端「取消排隊」的做法:接在用戶已打的字前面,不覆寫)——只放回用戶自己打的
    (sendDraft 帶 typed);送上雲端 / 拉回、策略庫、報告、掃描這些畫面代組的句子不放回。 */
 let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;
+/* 輸入框上方那一行:上一輪還在跑,Enter 沒有送出。回合結束(sendBtnSync 看到 running 是 false)就收 */
+function taWaitShow(on) {
+  const p = $("ta-wait");
+  if (on) { p.dataset.i18n = "ws.waitTurn"; p.textContent = t("ws.waitTurn"); }
+  else if (p.textContent) { delete p.dataset.i18n; p.textContent = ""; }
+}
 function sendBtnSync() {
   const b = $("btn-send");
   b.classList.toggle("is-stop", running);
