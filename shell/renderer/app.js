@@ -730,6 +730,7 @@ $("ta").addEventListener("compositionend", () => { composing = false; });
 $("ta").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !composing && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();
+    if (running && $("ta").value.trim()) { taWaitShow(true); return; }   // 沒送出去要講:不然 Enter 按了像壞掉(#71)
     sendDraft();
   }
 });
@@ -950,17 +951,18 @@ function stratTip(display, name) {
   const d = typeof display === "string" ? display.trim() : "";
   return d && d !== name ? t("side.rowTip", { name: d, id: name }) : String(name || "");
 }
-/* 側欄名字過長截尾時,尾端的「（2）」/ " (2)" 留著:撞名另存的那一支跟原本那支只差這個後綴,一起截掉兩列就長得一樣(e2e 0.1.8 #37)。
-   沒有那種後綴的長名字(超過 16 個字)把最後 6 個字當尾段:agent 取名常用 _4h / _4h_v2 收尾,只截尾的話兩支是同一串(設計稽核 0.1.8 第三批 D3)。
-   以 code point 計(不切在代理對中間);前段尾端的空白歸尾段(尾段是 white-space: pre,前段行尾的空白會被吃掉)。
-   前段截尾、尾段固定;放得下時頭尾相連、看不出差別。短名字跟以前一樣是一個文字節點 */
-const STRAT_NAME_MAX = 16, STRAT_NAME_TAIL = 6;
+/* 側欄名字過長截尾時,只有結尾是**完整的辨識記號**才固定成尾段,其餘整串尾端截斷(設計稽核 0.1.8 第四批 §1,取代第三批「固定最後 6 個字」:
+   照字數切會切在詞中間——「勢（SOL）」「0 均線交叉」)。依序,命中就停:
+   ① 「（N）」/ " (N)"(撞名另存的那一支,e2e 0.1.8 #37);② 結尾 1–2 個記號、各帶一個分隔字元(空白 / _ / -),記號 = v＋1–3 位數,
+   或 1–3 位數後可接 m／h／d／w(_4h、_4h_v2、" v3");③ 結尾是 v＋1–3 位數、前一個字元不是英數也不是分隔字元(「（SOL）v2」);④ 沒有尾段。
+   尾段超過 8 個字元只留最後一個記號。沒有長度門檻:放得下時頭尾相連、看不出差別。前段尾端的空白歸尾段(尾段是 white-space: pre) */
 function stratNameParts(text) {
-  const s = String(text == null ? "" : text), m = /^(.*\S)(\s?[（(]\d{1,3}[）)])$/.exec(s);
+  const s = String(text == null ? "" : text);
+  let m = /^(.*\S)(\s?[（(]\d{1,3}[）)])$/.exec(s);
   if (m) return { head: m[1], tail: m[2] };
-  const cp = [...s]; if (cp.length <= STRAT_NAME_MAX) return { head: s, tail: "" };
-  let cut = cp.length - STRAT_NAME_TAIL; while (cut > 1 && /\s/.test(cp[cut - 1])) cut--;
-  return { head: cp.slice(0, cut).join(""), tail: cp.slice(cut).join("") };
+  m = /^(.*?[^\s_-])((?:[ _-](?:v\d{1,3}|\d{1,3}[mhdw]?)){1,2})$/i.exec(s) || /^(.*[^A-Za-z0-9\s_-])(v\d{1,3})$/i.exec(s);
+  if (m && [...m[2]].length > 8) { const k = /^(.*[^\s_-])([ _-][^ _-]+)$/.exec(s); m = k ? [s, k[1], k[2]] : null; }
+  return m ? { head: m[1], tail: m[2] } : { head: s, tail: "" };
 }
 function stratNameFill(nm, text) {
   const p = stratNameParts(text);
@@ -1004,7 +1006,7 @@ async function stratRefresh(turnEnd) {
         confirmBox({ title, lines: [], extra: stratBlockedNote(r.code), ok: t("cdel.gotIt"), opener: b, single: true, onOk: () => {},
           alt: r.code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => trOpen("pos") } : null });
       }
-    });
+    }, false, window.blave.platform === "win32" ? "strat.delConfirm.win" : "strat.delConfirm");
     del.disabled = running;
     wrap.append(b, del);
     box.appendChild(wrap);
@@ -1254,9 +1256,11 @@ function receiptFold(steps) {
   steps.forEach((st) => {
     const li = document.createElement("li"); li.className = "think-step";
     if (st.more) { li.textContent = st.more; list.appendChild(li); return; }
+    const lab = stepLabel(st);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來
+    if (!lab) return;
     const mark = document.createElement("span"); mark.className = "think-step-mark";
-    const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = st.tool;
-    const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = st.summary;
+    const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = lab.verb;
+    const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = lab.obj;
     li.append(mark, whereTag(stepWhere({ tool: st.tool })), v, obj);
     list.appendChild(li);
   });
@@ -1298,17 +1302,23 @@ async function csOpen(id) {
 }
 // 用 trade.js 那顆 trStamp(MM/DD HH:mm,24 小時制):toLocaleString 會跟著語系給 12 小時制與不補零的月日
 function csTime(sec) { return trStamp(sec); }
-/* 列尾的兩段式刪除鈕(對話清單與策略清單共用):✕ → 同一格變成「刪除?」,再按一次才
-   執行;滑開或失焦就復原。不用原生 confirm——它會把整個視窗卡住,樣式也不是我們的。 */
-function armedDelete(row, label, onConfirm, direct) {
+/* 列尾的兩段式刪除鈕(對話清單與策略清單共用):✕ → 同一格變成武裝字,再按一次才
+   執行;滑開或失焦就復原。不用原生 confirm——它會把整個視窗卡住,樣式也不是我們的。
+   armedKey = 武裝後那個字的 key:可復原的動作要講去向(刪策略 =「移到垃圾桶？」,e2e 0.1.8 #73);沒給就是「刪除？」。
+   武裝鈕的實寬寫在列上(--armed-w),列的右內距照它讓位(app.css)——字的寬度隨語言與平台不同,寫死會蓋到名字 */
+function armedDelete(row, label, onConfirm, direct, armedKey) {
   const del = document.createElement("button");
   del.type = "button"; del.className = "cs-del"; del.setAttribute("aria-label", label);
   const X = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   del.innerHTML = X;
-  const disarm = () => { del.classList.remove("is-armed"); del.innerHTML = X; };
+  const disarm = () => { del.classList.remove("is-armed"); del.innerHTML = X; row.style.removeProperty("--armed-w"); };
   del.addEventListener("click", async () => {
     if (direct) { onConfirm(del); return; }     // 確認交給 modal,列內不武裝
-    if (!del.classList.contains("is-armed")) { del.classList.add("is-armed"); del.textContent = t("cs.delConfirm"); return; }
+    if (!del.classList.contains("is-armed")) {
+      del.classList.add("is-armed"); del.textContent = t(armedKey || "cs.delConfirm");
+      row.style.setProperty("--armed-w", Math.ceil(del.getBoundingClientRect().width) + "px");
+      return;
+    }
     disarm(); await onConfirm();
   });
   row.addEventListener("mouseleave", disarm);
@@ -1639,6 +1649,15 @@ function actLabel(w) {
 }
 /* runtime 比外殼新、送來外殼不認得的 kind:當成 unknown(「正在處理」),而且不帶受詞(稽核 P2-7) */
 const actKnown = (w) => (w.kind === "web_read_many" || STRINGS.en["act." + w.kind] ? w : { kind: "unknown", obj: "" });
+/* 展開的步驟清單(即時與重開畫回)跟狀態列用同一套 kind → act.* 的字,不另做對照表;工具名(ToolSearch、mcp__…)是內部名稱,
+   不上畫面(0.1.8 e2e #88)。受詞照舊是 runtime 給的 summary(檔名／搜尋字／網域),沒有才退到 kind 的受詞;
+   silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js */
+function stepLabel(c) {
+  const k = actKindOf(c || {});
+  if (k.kind === "silent") return null;
+  const w = actKnown(k);
+  return { verb: actLabel(w), obj: w.kind === "web_read_many" ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
+}
 function actReset() { ACT.running.clear(); ACT.shown = null; ACT.shownAt = 0; ACT.textStart = 0; ACT.lastDelta = 0; ACT.prep = null; ACT.lastWant = null; clearTimeout(ACT.timer); }
 function actToolPrep(c) { ACT.prep = { tool: String(c.tool || ""), kind: c.kind ? String(c.kind) : "", obj: c.kind_obj ? String(c.kind_obj) : "" }; ACT.textStart = 0; actApply(); }
 function actTabHost(tab) {
@@ -1749,15 +1768,17 @@ function busyHasFold() {
 /* 工具開跑:收據多一列。受詞(指令 / 檔名)放 summary,太長由 CSS 截。 */
 function busyStep(c) {
   if (!busy) return;
-  busy.steps += 1;
   actToolStart(c);
+  const lab = stepLabel(c);
+  if (!lab) return;
+  busy.steps += 1;
   const li = document.createElement("li");
   li.className = "think-step is-run";
   const mark = document.createElement("span"); mark.className = "think-step-mark";
   const verb = document.createElement("span"); verb.className = "think-step-verb";
-  verb.textContent = c.tool || "tool";
+  verb.textContent = lab.verb;
   const obj = document.createElement("span"); obj.className = "think-step-obj";
-  obj.textContent = c.summary || "";
+  obj.textContent = lab.obj;
   const time = document.createElement("span"); time.className = "think-step-time";
   li.append(mark, whereTag(stepWhere(c)), verb, obj, time);   // ④ 這一步實際做在哪(事實)
   busy.stepsEl.appendChild(li);
@@ -1823,6 +1844,12 @@ function busyOpenReceipts(b) {
    停下來之後用戶那句放回輸入框(雲端「取消排隊」的做法:接在用戶已打的字前面,不覆寫)——只放回用戶自己打的
    (sendDraft 帶 typed);送上雲端 / 拉回、策略庫、報告、掃描這些畫面代組的句子不放回。 */
 let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;
+/* 輸入框上方那一行:上一輪還在跑,Enter 沒有送出。回合結束(sendBtnSync 看到 running 是 false)就收 */
+function taWaitShow(on) {
+  const p = $("ta-wait");
+  if (on) { p.dataset.i18n = "ws.waitTurn"; p.textContent = t("ws.waitTurn"); }
+  else if (p.textContent) { delete p.dataset.i18n; p.textContent = ""; }
+}
 function sendBtnSync() {
   const b = $("btn-send");
   b.classList.toggle("is-stop", running);
@@ -1830,6 +1857,7 @@ function sendBtnSync() {
   b.dataset.i18nAria = running ? "ws.stop" : "ws.send";
   b.setAttribute("aria-label", t(b.dataset.i18nAria));
   b.disabled = false;
+  if (!running) taWaitShow(false);
 }
 async function stopTurn() {
   if (!running || turnStopping) return;

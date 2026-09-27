@@ -67,18 +67,27 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("兩邊側欄都用它", /nm\.title = stratTip\(x\.displayName, x\.name\);/.test(appSrc) && /stratTip\(x\.displayName, x\.name\)/.test(fnOf(trSrc, "envPaintSide"))); }
 
 // ── 側欄名字截尾時留住「（2）」(e2e 0.1.8 #37:撞名另存的兩支截尾後長得一樣)──
-{ const STRAT_NAME_MAX = Number(/const STRAT_NAME_MAX = (\d+), STRAT_NAME_TAIL = (\d+);/.exec(appSrc)[1]), STRAT_NAME_TAIL = Number(RegExp.$2);
-  eval(fnOf(appSrc, "stratNameParts"));
+{ eval(fnOf(appSrc, "stratNameParts"));
   const P = (s) => { const p = stratNameParts(s); return p.head + "|" + p.tail; };
   ok("尾端的（N）/ (N) 拆成後綴;前面的空白歸後綴", P("BTC SMA50/200 均線交叉（2）") === "BTC SMA50/200 均線交叉|（2）" && P("BTC SMA cross (12)") === "BTC SMA cross| (12)" && P("x(3)") === "x|(3)");
-  ok("短名字(≤16 字):沒有後綴、後綴不在尾端、只有後綴、不是數字 → 不拆(跟以前一樣一段字)", P("BTC SMA 均線交叉") === "BTC SMA 均線交叉|" && P("均線（2）交叉") === "均線（2）交叉|" && P("（2）") === "（2）|" && P("台積電（日線）") === "台積電（日線）|" && P(null) === "|" && P("") === "|"
-    && P("x".repeat(16)) === "x".repeat(16) + "|");
-  // 設計稽核 0.1.8 第三批 D3:後綴不是（N）的撞名(_4h 與 _4h_v2 截尾後是同一串)
-  const A = stratNameParts("btc_funding_rate_mean_reversion_4h"), B = stratNameParts("btc_funding_rate_mean_reversion_4h_v2");
-  ok("長名字:最後 6 個字是固定尾段、其餘是前段;只差尾端 3 個字的兩支,尾段不同", A.tail === "ion_4h" && B.tail === "_4h_v2" && A.tail !== B.tail
-    && A.head + A.tail === "btc_funding_rate_mean_reversion_4h" && B.head + B.tail === "btc_funding_rate_mean_reversion_4h_v2" && P("x".repeat(17)) === "x".repeat(11) + "|" + "x".repeat(6));
-  ok("（N）後綴優先(長名字也一樣);以 code point 計、不切在代理對中間;前段尾端的空白歸尾段", P("BTC SMA50/200 均線交叉（2）") === "BTC SMA50/200 均線交叉|（2）"
-    && P("策略一二三四五六七八九十一二三𠀋𠀌𠀍") === "策略一二三四五六七八九十|一二三𠀋𠀌𠀍" && P("BTC funding mean revert") === "BTC funding mean| revert" && P("BTC SMA50/200 均線交叉") === "BTC SMA50/20|0 均線交叉");
+  ok("沒有後綴、後綴不在尾端、只有後綴、不是數字 → 不拆(一段字);沒有長度門檻", P("BTC SMA 均線交叉") === "BTC SMA 均線交叉|" && P("均線（2）交叉") === "均線（2）交叉|" && P("（2）") === "（2）|" && P("台積電（日線）") === "台積電（日線）|" && P(null) === "|" && P("") === "|"
+    && P("x".repeat(40)) === "x".repeat(40) + "|" && P("策略一二三四五六七八九十一二三𠀋𠀌𠀍") === "策略一二三四五六七八九十一二三𠀋𠀌𠀍|");
+  // 設計稽核 0.1.8 第四批 §1:只有結尾是完整的辨識記號才固定尾段(28 個例子 = 設計師的 audit-b4/rule.js,逐一列舉)
+  const T = [
+    ["BTC SMA50/200 均線交叉（2）", "（2）"], ["BTC SMA cross (12)", " (12)"],
+    ["Supertrend 趨勢（SOL）v2", "v2"], ["Supertrend 趨勢（SOL）", ""],
+    ["BTC SMA100/200 均線交叉 v3", " v3"], ["BTC SMA50/200 均線交叉", ""],
+    ["BTC ETH SOL BNB 動能輪動", ""], ["台指期 PCR 未平倉籌碼偏多", ""], ["ETH 4小時 RSI 超賣反彈", ""],
+    ["btc_funding_rate_mean_reversion_4h", "_4h"], ["btc_funding_rate_mean_reversion_4h_v2", "_4h_v2"],
+    ["funding_rate_watch", ""], ["eth_ti_1h", "_1h"], ["btc_sma_test_2", "_2"], ["supertrend_sol_v2", "_v2"],
+    ["Momentum rotation across BTC ETH SOL", ""], ["BTC 均線策略 SMA 50/200", ""], ["BTC SMA200", ""], ["ETH RSI14", ""],
+    ["台股融資反轉 日線 v12", " v12"], ["BTC 資金費率均值回歸 4h v2", " 4h v2"], ["BTC 資金費率 15m", " 15m"],
+    ["v2", ""], ["4h", ""], ["台積電均線", ""], ["BTC-PERP-1h", "-1h"], ["btc_100d_200d_v100", "_v100"], ["ETH 突破 2024", ""],
+  ];
+  const wrong = T.filter(([s, want]) => { const p = stratNameParts(s); return p.tail !== want || p.head + p.tail !== s; }).map(([s]) => s + " → " + stratNameParts(s).tail);
+  ok("尾段只在結尾是完整記號時才有(28 例):（N）、v2、_4h、_4h_v2;數字黏在英文字後、4 位數、/ 不算;超過 8 字元只留最後一個記號", T.length === 28 && wrong.length === 0, wrong);
+  ok("只差尾端記號的兩支,尾段不同;固定字數的常數拿掉了", stratNameParts("Supertrend 趨勢（SOL）v2").tail !== stratNameParts("Supertrend 趨勢（SOL）").tail
+    && stratNameParts("btc_funding_rate_mean_reversion_4h").tail !== stratNameParts("btc_funding_rate_mean_reversion_4h_v2").tail && !/STRAT_NAME_MAX|STRAT_NAME_TAIL/.test(appSrc));
   const mk = (cls) => { const n = { className: cls || "", textContent: "", kids: [], classList: { toggle: (c, on) => { n.has = on; } }, append: (...k) => n.kids.push(...k) }; return n; };
   const document = { createElement: () => mk() };
   eval(fnOf(appSrc, "stratNameFill"));
@@ -88,7 +97,26 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
     && b.has === false && b.kids.length === 0 && b.textContent === "BTC SMA 均線交叉");
   const css = fs.readFileSync(path.join(R, "app.css"), "utf8");
   ok("兩邊側欄都走 stratNameFill;CSS:前段截尾、後綴不縮", /stratNameFill\(nm, x\.displayName \|\| x\.name\)/.test(fnOf(appSrc, "stratRefresh")) && /stratNameFill\(nm, x\.displayName\)/.test(fnOf(trSrc, "envPaintSide"))
-    && /\.strat-name\.has-tail \{ display: flex; \}/.test(css) && /\.strat-name \.sn-head \{[^}]*text-overflow: ellipsis/.test(css) && /\.strat-name \.sn-tail \{ flex: none;/.test(css)); }
+    && /\.strat-name\.has-tail \{ display: flex; align-items: center; \}/.test(css) && /\.strat-name \.run-dot \{ flex: none; \}/.test(css) && /\.strat-name \.sn-head \{[^}]*text-overflow: ellipsis/.test(css) && /\.strat-name \.sn-tail \{ flex: none;/.test(css)); }
+
+// ── 刪策略的武裝字講去向(e2e 0.1.8 #73、設計稽核第四批 W5):刪策略是進垃圾桶、可復原 → 列內兩段式,但要講去哪裡 ──
+{ const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), strings = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+  const STR = new Function(strings + "\nreturn STRINGS;")();
+  const mk = () => { const n = { cls: new Set(), style: { p: {}, setProperty(k, v) { this.p[k] = v; }, removeProperty(k) { delete this.p[k]; } }, on: {}, attrs: {}, textContent: "", innerHTML: "",
+    classList: { add: (c) => n.cls.add(c), remove: (c) => n.cls.delete(c), contains: (c) => n.cls.has(c) }, setAttribute: (k, v) => { n.attrs[k] = v; }, addEventListener: (e, f) => { n.on[e] = f; }, getBoundingClientRect: () => ({ width: 83.2 }) }; return n; };
+  const document = { createElement: () => mk() }, t = (k) => STR.zh[k];
+  eval(fnOf(appSrc, "armedDelete"));
+  let ran = 0; const row = mk(), del = armedDelete(row, "x", async () => { ran++; }, false, "strat.delConfirm");
+  del.on.click();
+  const armed = del.cls.has("is-armed") && del.textContent === "移到垃圾桶？" && row.style.p["--armed-w"] === "84px" && ran === 0;
+  del.on.blur();
+  const back = !del.cls.has("is-armed") && !("--armed-w" in row.style.p) && ran === 0;
+  const plain = armedDelete(mk(), "x", async () => {}, false); plain.on.click();
+  ok("武裝後的字 = 傳進來的 key(移到垃圾桶？),鈕的實寬寫在列上;失焦還原、沒有執行;沒給 key 照舊「刪除？」", armed && back && plain.textContent === "刪除？");
+  ok("策略列傳 strat.delConfirm(Windows 傳 .win);對話列仍走確認框(刪對話救不回來)", /\}, false, window\.blave\.platform === "win32" \? "strat\.delConfirm\.win" : "strat\.delConfirm"\);/.test(fnOf(appSrc, "stratRefresh"))
+    && /armedDelete\(row, t\("cs\.del"\), \(btn\) => delConfirm\(m, btn\), true\);/.test(appSrc));
+  ok("兩語的字都講去向;列的右內距照鈕的實寬讓位", STR.zh["strat.delConfirm"] === "移到垃圾桶？" && STR.en["strat.delConfirm"] === "Move to Trash?" && STR.zh["strat.delConfirm.win"] === "移到資源回收筒？" && STR.en["strat.delConfirm.win"] === "Move to Recycle Bin?"
+    && /\.strat-wrap:has\(\.cs-del\.is-armed\) \.strat-row \{ padding-right: calc\(var\(--armed-w, 84px\) \+ 16px\); \}/.test(css)); }
 
 // ── 側欄順序:最近被人或 agent 動過的在上面,live tick 重寫 stats.json 不算(e2e 0.1.8 #30 #39 #54)──
 { const cut = mainSrc.slice(mainSrc.indexOf("const stratTouchedAt"), mainSrc.indexOf("function listStrategies()"));

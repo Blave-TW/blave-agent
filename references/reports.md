@@ -463,7 +463,7 @@ publish(pack, narrative={
   article. A `describe()` candidate you keep is `channel="licensed"` and may have no link.
 - **The narrative does not repeat headlines.** `read` may cite one item as the cause of a
   figure, and then writes the figure too.
-- The block title is set for you (「綜合 N 家」 with ≥3 outlets, else the outlet names), and
+- The block title is set for you (「新聞 · 綜合 N 家」 with ≥3 outlets, else 「新聞 · 」 and the outlet names), and
   so is the footnote line (「新聞為 agent 於 HH:MM 蒐集整理；標籤依事件性質分類，不是股價預測」).
 - The 重大訊息 block (desktop) is built by the brick, tagged by the announcement's clause only.
 

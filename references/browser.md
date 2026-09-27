@@ -18,13 +18,14 @@ The desktop app has a browser the user can see. When a turn has it, a `blave_bro
 ```
 browser_search(query="...", count=5)
 browser_open_many(urls=[best 3-8 results, one per site])
-browser_wait(tabs=[...])                # still_waiting -> call again
+browser_wait(tabs=[...])                # still_waiting -> read the tabs that are ready; wait once more at most
 browser_read(tab=..., part="meta")      # title + published time only
 browser_read(tab=..., part="section", section="...")  # one section
 browser_read(tab=...)                   # full text, ~12k chars per call; next_offset pages on
 ```
 
 - Open in parallel with `browser_open_many`; up to 8 pages load at once and the rest queue. Do not open pages one by one when a batch works.
+- A `browser_wait` takes up to 20 seconds. After one `still_waiting`, read the tabs that did load (`part="links"` / `"meta"` work on a page that is still loading) and wait once more at most; a tab that is still not ready then is skipped — redirect stubs (`c.newsnow.co.uk/A/…`) and pages that keep polling never finish, and every extra wait is 20 seconds the user watches.
 - Each turn has a 120,000-character read budget across all `browser_read` / `browser_get` calls. For headline lists use `part="links"`; for dates use `part="meta"`; read `full` only for pages you will actually summarise.
 - `browser_search` uses Google in the visible browser and falls back to DuckDuckGo on a robot check. Never retry the same query to get around a check.
 - TradingView: switch symbols with the URL — `browser_open(url="https://www.tradingview.com/chart/?symbol=BINANCE%3ABNBUSDT.P", tab=...)` — never through the chart's symbol-search dialog (one step instead of a dozen; the dialog's list re-renders under you and burned ~20 steps on 09-27).

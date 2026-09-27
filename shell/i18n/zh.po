@@ -93,6 +93,10 @@ msgstr "還沒有策略。"
 msgid "ws.placeholder"
 msgstr "跟 agent 說一句話"
 
+# 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
+msgid "ws.waitTurn"
+msgstr "上一輪還在跑，結束後再按 Enter 送出。"
+
 msgid "ws.send"
 msgstr "送出"
 
@@ -483,6 +487,13 @@ msgstr "刪除？"
 
 msgid "strat.del"
 msgstr "移到垃圾桶"
+
+# 策略列的兩段式刪除:武裝後的字講去向(刪策略是進系統垃圾桶,可復原;e2e 0.1.8 #73)。.win = Windows 的說法
+msgid "strat.delConfirm"
+msgstr "移到垃圾桶？"
+
+msgid "strat.delConfirm.win"
+msgstr "移到資源回收筒？"
 
 # 回測指標的 tooltip(定義照 lib/analysis.py、lib/runner.py 的算法)
 msgid "bt.tip.totalReturn"
@@ -2601,7 +2612,7 @@ msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 
 msgid "rp.noBtB"
-msgstr "這一支屬於不做回測的策略類型，所以只有程式碼。"
+msgstr "警示、選股、網格這類策略不做回測，所以只看得到程式碼。"
 
 msgid "cx.ip.cloudNote"
 msgstr "這是雲端主機現在的對外 IP。"
@@ -3482,7 +3493,7 @@ msgid "rpt.new.descLabel"
 msgstr "報告需求"
 
 msgid "rpt.new.descPh"
-msgstr "描述你要的報告，例如：每天收盤後幫我做台股持倉晨報，含法人買賣超。"
+msgstr "描述你要的報告，例如：幫我做一份今天的台股持倉報告，含法人買賣超。"
 
 msgid "rpt.new.examples"
 msgstr "範例："
@@ -3497,7 +3508,7 @@ msgid "rpt.new.chip.close"
 msgstr "台股收盤報告"
 
 msgid "rpt.new.tpl.close"
-msgstr "台股收盤報告：今日加權指數收盤與量能、三大法人與融資（尚未公布則註明）、外資期貨淨多單，加上今天的判讀與觀察重點。休市日不出報告。"
+msgstr "台股收盤報告：今日加權指數收盤與量能、三大法人與融資（尚未公布則註明）、外資期貨淨多單，加上今天的判讀與觀察重點。"
 
 msgid "rpt.new.chip.crypto"
 msgstr "加密市場晨報"
@@ -3506,7 +3517,7 @@ msgid "rpt.new.tpl.crypto"
 msgstr "加密市場晨報：BTC/ETH 走勢、資金費率、清算與 Blave 市場指標，加上今天的判讀。"
 
 msgid "rpt.new.honest"
-msgstr "首份報告非即時，寫好會出現在「報告」清單。"
+msgstr "這裡一次產一份，不會定期產出。報告不是即時的，寫好會出現在「報告」清單。"
 
 msgid "rpt.new.send"
 msgstr "請 agent 建立"
@@ -3519,6 +3530,10 @@ msgstr "幫我建立報告"
 
 msgid "rpt.new.msgOnce"
 msgstr "這份只要產出一次，不用建立排程。"
+
+# 只在需求有定期字眼(每天／每週／every day…)時接在 msgOnce 後面:給 agent 的指示(0.1.8 e2e #95)
+msgid "rpt.new.msgRecur"
+msgstr "需求提到定期，但這台電腦目前只產這一次：請在回覆裡講明這一點，並說定期報告要在雲端主機上排。"
 
 # 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
 msgid "res.open.report"
@@ -4453,7 +4468,7 @@ msgid "xp.off.portfolio"
 msgstr "只能轉出單一標的的策略"
 
 msgid "xp.off.nosignal"
-msgstr "這一支沒有進出場訊號可以轉出"
+msgstr "只能轉出有回測的策略"
 
 msgid "xp.why.tm"
 msgstr "正在看 {v}。轉出只做目前這一版。"

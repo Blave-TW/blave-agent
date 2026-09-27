@@ -813,7 +813,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
     ok("視覺稽核 2-4:停用的實心鈕有一條比填色亮一階的框(只靠填色對 darkBody 只有 1.5:1)", /\.btn-fill:disabled \{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\); cursor: default; opacity: 1; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")));
     ok("稽核 R5:原因行收掉 / 重建之前,焦點在那條「部位」連結上就先交給標題(不掉到 BODY);標頭早退拿掉主鈕時同理",
-      /const hadFocus = !!p && p\.contains\(document\.activeElement\);/.test(noamt) && /if \(!key\) \{ if \(p\) \{ if \(hadFocus\) \$\("tr-h"\)\.focus\(\); p\.remove\(\); \} return; \}/.test(noamt)
+      /const hadFocus = p\.contains\(document\.activeElement\);/.test(noamt) && /if \(!key\) \{ if \(hadFocus\) \$\("tr-h"\)\.focus\(\); p\.textContent = ""; p\.classList\.remove\("cx-wait"\); delete p\.dataset\.key; return; \}/.test(noamt)
+      && !/p\.remove\(\)/.test(noamt) && /\.main-head \.tr-noamt \{ min-height: 18px; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"))   // #108:節點常駐、只清內容
       && /if \(hadFocus\) \$\("tr-h"\)\.focus\(\);\n\s*p\.dataset\.key = key/.test(noamt)
       && /\{ if \(b\) \{ if \(document\.activeElement === b\) \$\("tr-h"\)\.focus\(\); b\.remove\(\); \} trPaintGoStop\(false\);/.test(head));
   { /* V2b 標頭三列(spec §12-4):列 1 標題 | 動作槽,狀態句與原因行跨滿寬;中欄 ≤520 且**兩顆**鈕時鈕自己一列。

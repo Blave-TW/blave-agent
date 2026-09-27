@@ -61,7 +61,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const rCut = cutFrom(appSrc, "let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;", "async function sendDraft() {");
   const mkEl = () => { const cls = new Set(), attr = {}; return { cls, attr, dataset: {}, disabled: true, value: "", focused: false,
     classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) }, setAttribute: (k, v) => { attr[k] = v; }, focus() { this.focused = true; } }; };
-  const els = { "btn-send": mkEl(), ta: mkEl() };
+  const els = { "btn-send": mkEl(), ta: mkEl(), "ta-wait": Object.assign(mkEl(), { textContent: "上一輪還在跑" }) };
   const tracked = []; let stopReply = true; const calls = [];
   const R = new Function("$", "t", "trackFeature", "autosize", "window", "state", `
     let running = false;
@@ -79,7 +79,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await R.stopTurn();
   ok("停止中再按:不重送", calls.length === 1);
   R.running = false; R.sendBtnSync();
-  ok("回合結束:回到送出鈕、aria=送出", !b.cls.has("is-stop") && !b.cls.has("is-stopping") && b.attr["aria-label"] === "送出");
+  ok("回合結束:回到送出鈕、aria=送出;輸入框上方那一行(#71)跟著收掉", !b.cls.has("is-stop") && !b.cls.has("is-stopping") && b.attr["aria-label"] === "送出" && els["ta-wait"].textContent === "");
   // 沒送到(主行程沒有回合)→ 還原,讓用戶再按
   const R2 = new Function("$", "t", "trackFeature", "autosize", "window", `let running = true; ${rCut} return { stopTurn, get stopping() { return turnStopping; }, get stopped() { return turnStopped; } };`)(
     (id) => els[id], (k) => k, () => {}, () => {}, { blave: { stopTurn: async () => false } });

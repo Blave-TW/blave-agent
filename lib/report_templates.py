@@ -219,7 +219,8 @@ def _publish_checklist(pack):
         "時間窗照用戶問的(問「這週」就是 7 日,describe 只有 24h 就從序列自己算 7 日,不拿 24h 頂替)",
         f"  5. news ≤{n} 則,來自至少 {NEWS_MIN_SITES} 個不同網站;每則填 symbols(它點名的代號,如 [\"XRP\"]、[\"2330\"]);"
         f"tag 只能 pos / neg / neutral;summary 一句 ≤{NEWS_SUMMARY_MAX} 字、自己的話、不給建議;"
-        f"published_at 在 {NEWS_MAX_AGE_DAYS} 天內;web 來的每則至少一個 https 連結",
+        f"published_at 在 {NEWS_MAX_AGE_DAYS} 天內;web 來的每則至少一個 https 連結,"
+        "同一個連結只能出現在一則(兩則不同的事都只有同一個列表頁當來源 → 只留一則,或各用文章自己的連結)",
         "  6. 今天的特殊事件要有自己的積木:新聞點名的標的(正面/負面)、lead／read／summary 講到的個股或幣,"
         "build 時加做 extra=[…](台股個股 [\"tw_institutional\", {\"symbol\": \"2409\"}] 或 price_chart;"
         "這份報告自己的幣 relative_to;其他幣 coin_snapshot);narrative['no_extra'] 只在積木建不出來(沒資料)時用。"
@@ -2260,10 +2261,12 @@ def _news_one(i, it, urls, titles):
 
 
 def _news_title(items):
+    """The block's own name comes first: 「綜合 3 家」 alone does not say what the block is
+    (e2e 0.1.8 #59). The count or the outlet names are the supplement."""
     names = list(dict.fromkeys(s["name"] for it in items for s in it["sources"]))
     if len(names) >= 3:
-        return f"綜合 {len(names)} 家"
-    return "、".join(names)
+        return f"新聞 · 綜合 {len(names)} 家"
+    return "新聞 · " + "、".join(names) if names else "新聞"
 
 
 def _news_block(pack, news_in, given, narrated):

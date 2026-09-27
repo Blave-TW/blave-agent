@@ -50,6 +50,13 @@ The flow is FORK → EDIT → DEPLOY → SWITCH:
 2. Fork it to a new strategy under its own `STRATEGY_NAME` (same conventions
    as `references/marketplace.md` › *Forking a strategy*: own
    `DISPLAY_NAME`/`DESCRIPTION`). Edit the fork.
+   **Name the fork for what it changes, never with a version word**: no `_v2` /
+   `_v3`, no 「v2」 / 「第二版」 in `DISPLAY_NAME`. On this platform 「v2」 means
+   version 2 of the *same* strategy (its 版本 list), so 「Supertrend 趨勢（SOL）v2」
+   reads as the original's second version, not as another strategy. ATR period
+   changed to 5 → `supertrend_sol_atr5` / 「Supertrend 趨勢（SOL）ATR 5」. (The one
+   name that carries a version is *Forking from a version* below, where
+   `{name}_v{n}` says which version the code came from.)
 3. Backtest the fork; show the result next to the original's current stats.
    Not satisfied → iterate (Iteration Brakes apply as usual) or discard the
    fork; the live strategy was never touched.

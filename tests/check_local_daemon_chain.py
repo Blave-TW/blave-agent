@@ -190,6 +190,11 @@ def alive(pid):
         return False
 
 
+def rlog():
+    with open(os.path.join(WS, "state", "reconciler.log"), encoding="utf-8", errors="replace") as f:
+        return f.read()
+
+
 try:
     daemon = start_daemon()
 
@@ -289,10 +294,23 @@ try:
     check(bool(info) and info["restarts"] == 1 and info["last_exit_code"] == -9,
           f"supervisor restarted it once: {info}")
 
+    # e2e 0.1.8 #110: a SIGTERM from another process (a test suite's `pkill -f
+    # manager/reconciler.py`) read exactly like a stop the daemon had asked for
+    pid_t = info["pid"] if info else 0
+    os.kill(pid_t, signal.SIGTERM)
+    info = wait(lambda: (lambda r: r if r["running"] and r["pid"] != pid_t else None)(
+        status()["daemon"]["reconciler"]), 40, "SIGTERMed reconciler restarted")
+    check(f"reconciler leaving (pid {pid_t}): SIGTERM" in rlog()
+          and f"reconciler (pid {pid_t}) exited (code 0) without this daemon stopping it" in rlog()
+          and f"stopping the reconciler (pid {pid_t})" not in rlog(),
+          "reconciler.log: a SIGTERM from outside is told apart from a stop the daemon asked for")
+
     pid2 = info["pid"] if info else 0
     daemon.kill()  # SIGKILL: no cleanup at all
     daemon.wait(10)
     check(gone(pid2, 10), "daemon SIGKILLed → the reconciler leaves on its own (parent pipe EOF)")
+    check(f"reconciler leaving (pid {pid2}): parent " in rlog(),
+          "reconciler.log: left because the parent is gone")
 
     # one that outlived its daemon anyway (holds stdin open, so it never sees EOF)
     orphan = hold_lock_and_spawn([sys.executable, os.path.join(RUNTIME, "local_daemon.py"),
@@ -329,6 +347,8 @@ try:
     daemon.terminate()
     check(daemon.wait(40) == 0, "SIGTERM → exit 0")
     check(not alive(pid3), "reconciler went down with the daemon")
+    check(f"stopping the reconciler (pid {pid3}): the daemon is shutting down" in rlog(),
+          "reconciler.log: stopped by the daemon, with the reason")
     # lib/events reaches the runtime through <base>/current — absent on a desktop
     # install until the daemon links it, which left every event silently dropped
     probe = subprocess.run(

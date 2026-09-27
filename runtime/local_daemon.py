@@ -215,6 +215,10 @@ def _log(msg):
         pass
 
 
+def _stamp():
+    return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _wait_parent_gone(ppid):
     """Blocks until whoever started us is gone; returns why. stdin EOF alone is
     not enough — any other process holding the pipe's write end keeps it open
@@ -357,12 +361,17 @@ def run_reconciler(script):
         except Exception as e:
             _log(f"exit sweep skipped: {type(e).__name__}: {e}")
 
+    gone = []  # the parent watch's reason; empty = a SIGTERM somebody sent us
+
     def _leave(*_):
         if threading.current_thread() is threading.main_thread():
             # a second SIGTERM must not re-enter; off the main thread (the
             # Windows watch) signal.signal() raises and nothing can re-enter anyway
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        _log("reconciler leaving")
+        # The daemon writes its own line before it stops us (ReconcilerSupervisor._note);
+        # a SIGTERM with no such line above it came from another process.
+        _log(f"{_stamp()} reconciler leaving (pid {os.getpid()}): "
+             f"{gone[0] if gone else 'SIGTERM'}")
         t = threading.Thread(target=_sweep, daemon=True)
         t.start()
         t.join(SWEEP_BUDGET_S)
@@ -371,7 +380,7 @@ def run_reconciler(script):
     ppid = os.getppid()
 
     def _watch_parent():
-        _wait_parent_gone(ppid)
+        gone.append(_wait_parent_gone(ppid))
         if _nt():
             _leave()  # no signal delivery on Windows: the sweep runs right here
         else:
@@ -460,21 +469,34 @@ class ReconcilerSupervisor:
         self.last_exit_at = None
         self._lock_path = os.path.join(workspace, RECONCILER_LOCK)
         self._pid_path = os.path.join(workspace, "state", "local_reconciler.pid")
+        self.asked_by = None  # the last command dispatched, for the stop reason
+
+    def _note(self, msg):
+        """Into state/reconciler.log, next to the reconciler's own lines: our
+        stderr is a pipe the app keeps 2000 characters of, so a reason logged
+        only there is gone by the time anyone asks why trading paused."""
+        _log(msg)
+        try:
+            with open(os.path.join(self.ws, "state", "reconciler.log"), "a",
+                      encoding="utf-8") as f:
+                f.write(f"[local_daemon] {_stamp()} {msg}\n")
+        except OSError:
+            pass
 
     # — the two hooks command_listener calls —
-    def restart_reconciler(self):
+    def restart_reconciler(self, why=None):
         with self._lock:
             self._wanted = False
-            if not self._stop_locked():
+            if not self._stop_locked(why or f"restart (last command: {self.asked_by})"):
                 raise RuntimeError("a reconciler is still running and could not be stopped")
             self._spawn_locked()
             self._wanted = True
 
-    def stop_reconciler(self):
+    def stop_reconciler(self, why=None):
         with self._lock:
             self._wanted = False
             self._respawn_at = None
-            return self._stop_locked()
+            return self._stop_locked(why or f"stop (last command: {self.asked_by})")
 
     def reap_orphan(self):
         """Daemon start: a reconciler nobody supervises must not keep trading.
@@ -514,8 +536,9 @@ class ReconcilerSupervisor:
                 self.last_exit_code = self._proc.returncode
                 self.last_exit_at = int(time.time())
                 self._respawn_at = time.time() + RESTART_DELAY_S
-                _log(f"reconciler exited (code {self.last_exit_code}) — "
-                     f"restarting in {RESTART_DELAY_S}s")
+                self._note(f"reconciler (pid {self._proc.pid}) exited (code "
+                           f"{self.last_exit_code}) without this daemon stopping it — "
+                           f"restarting in {RESTART_DELAY_S}s")
                 return
             if time.time() < self._respawn_at:
                 return
@@ -570,7 +593,7 @@ class ReconcilerSupervisor:
         pid = self._orphan_pid()
         if pid is None:
             return None
-        _log(f"stopping a reconciler left by a previous daemon (pid {pid})")
+        self._note(f"stopping a reconciler left by a previous daemon (pid {pid})")
         # Windows: SIGTERM here is TerminateProcess already and SIGKILL does not exist
         steps = [(signal.SIGTERM, STOP_GRACE_S)]
         if hasattr(signal, "SIGKILL"):
@@ -585,9 +608,10 @@ class ReconcilerSupervisor:
                 return fd
         return None
 
-    def _stop_locked(self):
+    def _stop_locked(self, why):
         p = self._proc
         if p is not None and p.poll() is None:
+            self._note(f"stopping the reconciler (pid {p.pid}): {why}")
             if _nt():
                 # terminate() would be TerminateProcess, skipping the exit
                 # sweep: EOF on its stdin is the only graceful way in
@@ -673,6 +697,7 @@ class Daemon:
         self.status_path = os.path.join(self.state, "local_status.json")
         self.started_at = int(time.time())
         self.stop = threading.Event()
+        self.stop_why = None
         self.dirty = threading.Event()
         self.account_kick = threading.Event()
         self._status_lock = threading.Lock()
@@ -799,6 +824,7 @@ class Daemon:
         self._seen[command["id"]] = now  # before dispatch: covers deferred commands too
         cid, cmd = command["id"], command["cmd"]
         cl = self.cl
+        self.sup.asked_by = f"{cmd} {cid}"
         try:
             result = cl.dispatch(command)
             if isinstance(result, cl.Deferred):
@@ -899,6 +925,7 @@ class Daemon:
             except OSError:
                 pass
         _log(f"{why} — shutting down")
+        self.stop_why = why
         self.stop.set()
 
     def run(self, watch_parent):
@@ -949,7 +976,8 @@ class Daemon:
                 self.handle_file(path)
             self.stop.wait(POLL_S)
         _log("stopping")
-        if not self.sup.stop_reconciler():
+        if not self.sup.stop_reconciler(
+                f"the daemon is shutting down ({self.stop_why or 'SIGTERM / SIGINT'})"):
             _log("reconciler not confirmed stopped")
         self.write_status()
 

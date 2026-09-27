@@ -93,6 +93,10 @@ msgstr "No strategies yet."
 msgid "ws.placeholder"
 msgstr "Message the agent"
 
+# 回合進行中、草稿非空時按 Enter:輸入框上方一行(e2e 0.1.8 #71)
+msgid "ws.waitTurn"
+msgstr "The previous turn is still running. Press Enter again when it finishes."
+
 msgid "ws.send"
 msgstr "Send"
 
@@ -483,6 +487,13 @@ msgstr "Delete?"
 
 msgid "strat.del"
 msgstr "Move to Trash"
+
+# 策略列的兩段式刪除:武裝後的字講去向(刪策略是進系統垃圾桶,可復原;e2e 0.1.8 #73)。.win = Windows 的說法
+msgid "strat.delConfirm"
+msgstr "Move to Trash?"
+
+msgid "strat.delConfirm.win"
+msgstr "Move to Recycle Bin?"
 
 # 回測指標的 tooltip(定義照 lib/analysis.py、lib/runner.py 的算法)
 msgid "bt.tip.totalReturn"
@@ -2601,7 +2612,7 @@ msgid "rp.noBt"
 msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
 
 msgid "rp.noBtB"
-msgstr "This type of strategy isn’t backtested, so only the code is shown."
+msgstr "Alerts, screeners, grids and similar strategies aren’t backtested, so only the code is shown."
 
 msgid "cx.ip.cloudNote"
 msgstr "This is the cloud machine’s current public IP."
@@ -3481,7 +3492,7 @@ msgid "rpt.new.descLabel"
 msgstr "What the report should cover"
 
 msgid "rpt.new.descPh"
-msgstr "Describe the report you want — e.g. a daily TW-stock holdings brief after the close, including institutional net buying."
+msgstr "Describe the report you want — e.g. a brief on my TW-stock holdings today, including institutional net buying."
 
 msgid "rpt.new.examples"
 msgstr "Examples:"
@@ -3496,7 +3507,7 @@ msgid "rpt.new.chip.close"
 msgstr "TW Market Close"
 
 msgid "rpt.new.tpl.close"
-msgstr "TW market close: today's TAIEX close and volume, the three institutional investors and margin balance (noted if not yet published), foreign net long positions in TAIEX futures, plus today's read and what to watch. No report on market holidays."
+msgstr "TW market close: today's TAIEX close and volume, the three institutional investors and margin balance (noted if not yet published), foreign net long positions in TAIEX futures, plus today's read and what to watch."
 
 msgid "rpt.new.chip.crypto"
 msgstr "Crypto Market Brief"
@@ -3505,7 +3516,7 @@ msgid "rpt.new.tpl.crypto"
 msgstr "Crypto market brief: BTC/ETH price action, funding rates, liquidations and Blave market indicators, plus today's read."
 
 msgid "rpt.new.honest"
-msgstr "The first report is not instant; it shows up in the Reports list when done."
+msgstr "This makes one report, not a recurring one. It isn’t instant; it shows up in the Reports list when done."
 
 msgid "rpt.new.send"
 msgstr "Ask the Agent"
@@ -3518,6 +3529,10 @@ msgstr "Write me a report"
 
 msgid "rpt.new.msgOnce"
 msgstr "Produce it once — no schedule needed."
+
+# 只在需求有定期字眼(每天／每週／every day…)時接在 msgOnce 後面:給 agent 的指示(0.1.8 e2e #95)
+msgid "rpt.new.msgRecur"
+msgstr "The request asks for it on a schedule, but this computer produces it this once only: say so in your reply, and that recurring reports are set up on the cloud machine."
 
 # 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
 msgid "res.open.report"
@@ -4409,7 +4424,7 @@ msgid "cap.ho.promptRead"
 msgstr "My Capital setup in the desktop app is stuck at the “Read accounts” step. Please check the Capital setup status on the cloud machine and help me fix it. When done, confirm read-only that the account can be read, and don't place any orders yet."
 
 msgid "br.openPanel"
-msgstr "View pages"
+msgstr "View Pages"
 
 msgid "br.listShow"
 msgstr "Show list"
@@ -4452,7 +4467,7 @@ msgid "xp.off.portfolio"
 msgstr "Single-symbol strategies only"
 
 msgid "xp.off.nosignal"
-msgstr "No entry or exit signals to export"
+msgstr "Backtested strategies only"
 
 msgid "xp.why.tm"
 msgstr "Viewing {v}. Only the current version can be exported."
