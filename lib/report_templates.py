@@ -52,6 +52,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from lib import data as _data
+from lib import report as _report
 from lib.report import write_report
 
 TPE = timezone(timedelta(hours=8))
@@ -235,6 +236,9 @@ def _publish_checklist(pack):
         "  10. 圖型由積木決定,不自選:每期發生量(爆倉金額、買賣超、成交量)→ bar_chart、"
         "水位與指標(OI、融資、資金費率、z-score)→ line_chart、價格 → K 線;自組序列(自訂報告)也照這張表",
         "  11. 中文標點用全形(夾在中文之間的 , : ; ( ) 會自動轉)",
+        f"  12. 引用網頁上的圖(用戶要求時必放,最多 {_report.CITED_IMAGES_MAX} 張):browser_capture(tab, ref, report={rid!r}) 回傳的 file 與 source "
+        "原樣放進 narrative[\"images\"] = [{\"file\": …, \"source\": {…}, \"alt\": \"這張圖畫的是什麼\"}];不算進 16 塊,不要改 pack.blocks;"
+        "擷取了卻不放 → narrative[\"images_unused\"] 一句說明(檔案會刪),並在回覆講那張圖沒有放進報告",
         "  讀網頁:有內建瀏覽器(電腦版)時 browser_read 只用 part=\"meta\" / \"outline\" / \"section\",不用 \"full\"(每頁約 3,000 字);"
         "沒有瀏覽器(雲端、排程)用 WebSearch 找、WebFetch 讀,prompt 只要標題、發布時間與一句重點",
         "narrative 範例(照這個形狀填,不用去讀 references 或 lib 原始碼):",
@@ -1326,8 +1330,8 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
             problems.append(str(e))
             return None
 
-    # 表態欄位:不渲染,只證明 agent 看過這兩條提示(加做、來源不到 3 家)才決定不照做
-    waived = {k: narrative.pop(k) for k in ("no_extra", "few_sources") if k in narrative}
+    # 表態欄位:不渲染,只證明 agent 看過這幾條提示(加做、來源不到 3 家、擷取了圖卻不放)才決定不照做
+    waived = {k: narrative.pop(k) for k in ("no_extra", "few_sources", "images_unused") if k in narrative}
     for k, v in waived.items():
         if not (isinstance(v, str) and 1 <= len(v.strip()) <= 200):
             problems.append(f"narrative[{k!r}] must be one sentence (1–200 characters) saying why")
@@ -1335,12 +1339,13 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
         problems.append("'action' was renamed to 'watch' (觀察重點): conditions and indicator thresholds "
                         "only, no trade instruction, see references/reports.md §1b")
         narrative.pop("action")
-    unknown = set(narrative) - set(pack.slots) - {"lead_chart"}
+    unknown = set(narrative) - set(pack.slots) - {"lead_chart", "images"}
     if unknown:
-        problems.append(f"unknown narrative slot(s): {sorted(unknown)}; allowed: {sorted(set(pack.slots) | {'lead_chart'})}")
+        problems.append(f"unknown narrative slot(s): {sorted(unknown)}; allowed: {sorted(set(pack.slots) | {'lead_chart', 'images'})}")
         for k in unknown:
             narrative.pop(k)
     lead_chart = narrative.pop("lead_chart", None)
+    images_in = narrative.pop("images", None)
     news_given = "news" in narrative
     news_in = narrative.pop("news", None)
     watch = narrative.pop("watch", None)
@@ -1371,7 +1376,21 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     if narrative.get("lead", "").strip():
         problems.extend(_lead_problems(narrative["lead"].strip()))
     problems.extend(_number_problems(pack, narrative, watch_block))
-    narrated = bool(watch_block) or any(v.strip() for v in narrative.values()) or bool(news_in)
+    image_blocks = attempt(_image_blocks, report_id or pack.report_id, images_in) or []
+    narrated = bool(watch_block) or any(v.strip() for v in narrative.values()) or bool(news_in) or bool(image_blocks)
+    unused = sorted(set(_report.captured_files(report_id or pack.report_id)) - {b["file"] for b in image_blocks})
+    if unused and images_in is not None and not image_blocks:
+        unused = []   # narrative['images'] 本身有錯:上面已經列了,改好再來算誰沒用到
+    if unused and "images_unused" not in waived:
+        problems.append(f"{len(unused)} captured image(s) are not in the report: {', '.join(unused)}. Cite each with "
+                        "narrative['images'] = [{\"file\", \"source\", \"alt\"}] (file and source exactly as browser_capture "
+                        "returned them), or say in one sentence why not in narrative['images_unused'] — those files are then "
+                        "deleted, and when the user asked for a cited image the reply must say it is not in the report")
+    if len(pack.owners) != len(pack.blocks):
+        problems.append(f"pack.blocks was changed by hand ({len(pack.blocks)} blocks, {len(pack.owners)} owners): blocks added "
+                        "that way are dropped without a word. Publish the kept pack by its id instead — "
+                        f"publish({pack.report_id!r}, narrative) — with a cited image in narrative['images'] and extra data "
+                        "from build(extra=[…])")
     news = attempt(_news_block, pack, news_in, news_given, narrated)
     news_block, news_foot = news if news else (None, None)
     news_block = _fw_block(news_block) if news_block else None
@@ -1454,6 +1473,7 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     if narrative.get("lead", "").strip():
         out.append(text(narrative["lead"].strip(), lead=True))
     out += blocks
+    out += image_blocks   # 引用圖排在數據區塊之後、判讀之前:判讀引用它時圖已經在上面
     for slot in ("read", "against", "robustness"):
         body = narrative.get(slot, "").strip()
         if body and slot in pack.slots:
@@ -1489,9 +1509,10 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
         problems.append("origin must be 'chat' or 'scheduled'")
     if problems:
         raise ValueError(_refusal(pack, problems))
-    if len(out) + 1 > MAX_BLOCKS:
-        print(f"WARNING: {len(out) + 1} blocks, over {MAX_BLOCKS} (references/reports.md §1b R4): "
-              "drop the bricks the lead does not use")
+    counted = len(out) + 1 - len(image_blocks)   # 引用圖是用戶點名要的,不算進 R4 的 16 塊
+    if counted > MAX_BLOCKS:
+        print(f"NOTE for you, not for the reply: {counted} blocks, over {MAX_BLOCKS} (references/reports.md §1b R4). "
+              "The report is written as it is; next time drop the bricks the lead does not use.")
     meta = dict(pack.meta)
     meta["origin"] = origin or ("chat" if narrated else "scheduled")
     title, day_cell = _dated_title(pack, title or pack.title)
@@ -1505,6 +1526,9 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
         report_id = pack.report_id if narrated else pack.report_id + "-auto"
     # write_report prints the "moved to reports/sent/, reply now" line for both paths.
     path = write_report(report_id, title, out, type=pack.type, report_type=pack.report_type, meta=meta)
+    if unused:
+        print(f"[report] {len(unused)} captured image(s) were left out and deleted. If the user asked for a cited "
+              "image, say in the reply - one plain sentence - that it is not in the report and why.")
     reply = _reply_draft(narrative, watch_block)
     if reply:
         # 09-27 實測:光是「一兩句」的規則,agent 仍回四句、重述數字、加粗體標籤——給一個照抄得了的範本
@@ -1513,6 +1537,54 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
         except UnicodeEncodeError:
             pass
     return path
+
+
+IMAGE_ALT_MAX, IMAGE_CAPTION_MAX, IMAGE_SOURCE_NAME_MAX = 200, 300, 40
+
+
+def _image_blocks(report_id, images):
+    """narrative['images'] → cited `image` blocks (references/reports.md §5 › Citing an image from the
+    web). Each item is what browser_capture returned — `file`, `source` {name, url} — plus `alt`
+    and an optional `caption`. Every problem is raised at once; nothing is dropped quietly."""
+    if images is None:
+        return []
+    if not isinstance(images, (list, tuple)) or not all(isinstance(x, dict) for x in images):
+        raise ValueError("narrative['images'] must be a list of {\"file\", \"source\", \"alt\"} items")
+    bad = []
+    if len(images) > _report.CITED_IMAGES_MAX:
+        bad.append(f"narrative['images'] has {len(images)} items, at most {_report.CITED_IMAGES_MAX}: keep the ones a "
+                   "claim in the text rests on")
+    have = set(_report.captured_files(report_id))
+    out = []
+    for i, it in enumerate(images):
+        where = f"narrative['images'][{i}]"
+        extra = sorted(set(it) - {"file", "source", "alt", "caption"})
+        if extra:
+            bad.append(f"{where}: unknown key(s) {extra}; an item is file, source, alt and an optional caption")
+        file, src, alt, cap = it.get("file"), it.get("source"), it.get("alt"), it.get("caption")
+        if not isinstance(file, str) or file not in have:
+            bad.append(f"{where}.file {file!r} is not a capture of this report — browser_capture(tab, ref, "
+                       f"report={report_id!r}) writes it and returns the name; captured now: {sorted(have) or 'none'}")
+        if not (isinstance(alt, str) and 1 <= len(alt.strip()) <= IMAGE_ALT_MAX):
+            bad.append(f"{where}.alt is required: what the chart shows, in the report's language, ≤{IMAGE_ALT_MAX} characters")
+        if cap is not None and not (isinstance(cap, str) and 1 <= len(cap.strip()) <= IMAGE_CAPTION_MAX):
+            bad.append(f"{where}.caption must be 1–{IMAGE_CAPTION_MAX} characters when given")
+        name = src.get("name") if isinstance(src, dict) else None
+        if not isinstance(src, dict) or set(src) != {"name", "url"} \
+                or not (isinstance(name, str) and 1 <= len(name.strip()) <= IMAGE_SOURCE_NAME_MAX):
+            bad.append(f"{where}.source must be {{\"name\" (≤{IMAGE_SOURCE_NAME_MAX}), \"url\"}}, as browser_capture returned it")
+        else:
+            try:
+                _check_url(src["url"], f"{where}.source")
+            except ValueError as e:
+                bad.append(str(e))
+        out.append((file, alt, src, cap))
+    if bad:
+        raise ValueError("\n           ".join(bad))
+    return [dict({"type": "image", "file": file, "alt": alt.strip(),
+                  "source": {"name": src["name"].strip(), "url": src["url"]}},
+                 **({"caption": cap.strip()} if cap else {}))
+            for file, alt, src, cap in out]
 
 
 def _reply_draft(narrative, watch_block):

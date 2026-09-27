@@ -74,6 +74,34 @@ RESEARCH_TITLE_WIDTH = 80
 # from the web). The api sets no cap on purpose: a 400 files the whole report as failed, and a
 # third citation is not a broken document — so the cap lives here, where the agent can fix it.
 CITED_IMAGES_MAX = 2
+# What the desktop's browser_capture names the files it drops into <id>.files/ (shell/browser/capture.js).
+CAPTURE_PREFIX = "cite-"
+
+
+def captured_files(report_id):
+    """File names browser_capture left in `reports/<id>.files/`, sorted."""
+    try:
+        names = os.listdir(os.path.join(REPORTS_DIR, report_id + FILES_SUFFIX))
+    except OSError:
+        return []
+    return sorted(n for n in names if n.startswith(CAPTURE_PREFIX) and _FILE_RE.fullmatch(n))
+
+
+def _sweep_captures(report_id, blocks):
+    """Delete the captured pictures no image block of the report just written refers to — a
+    capture that was tried and not used would otherwise sit in the sidecar for good. Only
+    browser_capture's own files; pictures handed to `write_report(images=…)` are never touched."""
+    used = {b.get("file") for b in blocks if isinstance(b, dict) and b.get("type") == "image"}
+    gone = []
+    for name in captured_files(report_id):
+        if name in used:
+            continue
+        try:
+            os.remove(os.path.join(REPORTS_DIR, report_id + FILES_SUFFIX, name))
+            gone.append(name)
+        except OSError as e:
+            print(f"WARNING: unused capture {name} not removed: {e}")
+    return gone
 
 
 def _research_warnings(title, blocks):
@@ -256,6 +284,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
         except OSError:
             pass
         raise
+    _sweep_captures(report_id, blocks)
     # ASCII only: a report job's stdout goes to run.log in the Windows locale codec (cp950),
     # and an unencodable advisory line would fail a run whose report is already written.
     _mark_scheduled(report_id)
