@@ -19,6 +19,10 @@ const VF = require("./verify");
 
 const PARTITION = "persist:agent-browser";
 const LOAD_TIMEOUT_MS = 20000, WAIT_MAX_MS = 25000, AGENT_WINDOW_MS = 3000, SEARCH_LOAD_MS = 12000;
+/* 讀得到就算好,不等所有資源載完(實測 09-28:廣告多的新聞站永遠到不了 load,browser_wait 四次各等滿 20–25 秒)。
+   READY_TEXT_MIN:主文件解析完之後,40 字以上的段落合計至少這麼多字,而且連續兩次量到的字數一樣(內容不再長)才算;每 EARLY_EVERY_MS 量一次。
+   WAIT_STRAGGLER_MS:等好幾頁時,第一頁好了之後最多再等其他頁這麼久就先回。READ_WAIT_MS:browser_read 遇到還在載的頁自己短等的上限 */
+const READY_TEXT_MIN = 400, EARLY_EVERY_MS = 700, WAIT_STRAGGLER_MS = 3000, READ_WAIT_MS = 5000;
 const THUMB_EVERY_MS = 2000, THUMB_W = 240;
 const PARK_X = 20000;   // 不在畫面上的分頁停在視窗外(實測:沒掛上視窗的 view 拍不到縮圖,掛在視窗外可以)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -236,12 +240,13 @@ function createBrowser(o) {
         v.loadTimer = setTimeout(() => { v.loadTimer = null; if (t.status === "loading") { t.partial = true; tabs.loaded(t.id, C.scrub(wc.getTitle(), 300)); emit("page_loaded", { id: t.id, title: t.title, partial: true }); } }, LOAD_TIMEOUT_MS);
       }
     });
-    wc.on("did-navigate", (_e, url, code) => { t.url = url; v.http = code || 0; v.navs++; emit("page_nav", { id: t.id, url: C.scrub(url, 2000), http: v.http }); });
+    wc.on("did-navigate", (_e, url, code) => { t.url = url; v.http = code || 0; v.navs++; emit("page_nav", { id: t.id, url: C.scrub(url, 2000), http: v.http }); early(t, v); });
     wc.on("page-favicon-updated", (_e, favs) => { fetchFavicon(t, v, favs).catch(() => {}); });
     wc.on("page-title-updated", (_e, title) => { t.title = C.scrub(title, 300); emit("page_title", { id: t.id, title: t.title }); });
     wc.on("did-stop-loading", () => {
       if (v.loadTimer) { clearTimeout(v.loadTimer); v.loadTimer = null; }
       if (wc.getURL()) t.hadDoc = true;
+      if (t.status === "ready" && t.early) { t.early = false; t.partial = false; }   // 提早算好的那一頁真的載完了
       if (t.status === "loading") { tabs.loaded(t.id, C.scrub(wc.getTitle(), 300)); emit("page_loaded", { id: t.id, title: t.title, url: C.scrub(wc.getURL(), 2000) }); }
       v.page.quiet().catch(() => {});
       fetchFavicon(t, v, []).catch(() => {});
@@ -271,6 +276,28 @@ function createBrowser(o) {
     }, LOAD_TIMEOUT_MS);
     v.page.attach().catch(() => {});
     wc.loadURL(t.url).catch(() => { /* did-fail-load 會處理 */ });
+  }
+  /* 還在載、但已經讀得到的頁提早算好(partial)。只管 agent 自己開的一般頁:搜尋分頁(可能是驗證頁)、用戶的頁、
+     用戶接手中的頁、agent 不能去的網址都不量——那些頁不在這裡跑任何東西 */
+  function early(t, v) {
+    if (t.by !== "agent" || t.searchTab) return;
+    const nav = v.navs; let last = -1;
+    const same = () => views.get(t.id) === v && v.navs === nav && t.status === "loading";
+    const tick = async () => {
+      if (!same()) return;
+      if (!t.userControl && !t.verify && !policy.agent(v.wc.getURL() || t.url)) {
+        let n = 0; try { n = Number(await within(v.page.run(IP.readable), 1500)) || 0; } catch (_) { n = 0; }
+        if (!same()) return;
+        if (n >= READY_TEXT_MIN && n === last) {
+          t.partial = true; t.early = true; tabs.loaded(t.id, C.scrub(v.wc.getTitle(), 300));
+          emit("page_loaded", { id: t.id, title: t.title, partial: true, url: C.scrub(v.wc.getURL(), 2000) });
+          return;
+        }
+        last = n;
+      }
+      setTimeout(tick, EARLY_EVERY_MS);
+    };
+    setTimeout(tick, EARLY_EVERY_MS);
   }
   function destroyView(t) {
     const v = views.get(t.id); if (!v) return;
@@ -594,19 +621,30 @@ function createBrowser(o) {
       }
       return true;
     };
+    let firstAt = 0;
     while (Date.now() < end) {
-      let all = true; for (const t of list) if (!(await done(t))) { all = false; break; }
-      if (all) {
+      let n = 0; for (const t of list) if (await done(t)) n++;
+      if (n === list.length) {
         const out = list.map(tabInfo);
         for (const t of list) if (until === "user_done" && t.userDone) { if (t.userDone === "skip") out.find((x) => x.tab === t.alias).status = "skipped"; t.userDone = null; t.need = null; }
         return R({ ok: true, tabs: out });
       }
+      // 等好幾頁載入:有頁好了就不讓最慢的那一頁拖到逾時——再等其他頁一下就先回,哪幾頁還在載講清楚
+      if (until === "load" && list.some((t) => t.status === "ready" && !t.userControl)) {
+        if (!firstAt) firstAt = Date.now();
+        if (Date.now() - firstAt >= WAIT_STRAGGLER_MS) {
+          const out = list.map(tabInfo), slow = out.filter((x) => x.status === "loading" || x.status === "queued").map((x) => x.tab);
+          return R({ ok: true, tabs: out, still_loading: slow, note: "read the tabs that are ready now. " + slow.join(", ") + " still loading: read them after the others (browser_read waits a few seconds by itself), and do not call browser_wait again for them" });
+        }
+      }
       await sleep(250);
     }
-    return ERR("still_waiting", "not done yet; call browser_wait again", { tabs: list.map(tabInfo) });
+    return ERR("still_waiting", "not done yet; read the tabs that are ready, and wait once more at most", { tabs: list.map(tabInfo) });
   }
 
   async function doRead(t, v, args) {
+    // 還在載的頁:自己短等(讀得到就走),不用 agent 另外呼叫 browser_wait;等不到就照舊讀現在有的
+    if (t.status === "loading") await waitLoaded(t, READ_WAIT_MS);
     let ex; try { ex = await v.page.extract(); } catch (_) { return ERR("load_failed", "could not read the page", { tab: t.alias, reason: "network" }); }
     const r = C.readPart(ex, args, (n) => tabs.readBudget(n));
     if (cur && r && typeof r.content === "string") cur.readText = (cur.readText + "\n" + r.content).slice(-READ_TEXT_MAX);

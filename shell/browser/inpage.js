@@ -232,6 +232,15 @@ function serp(engine, vf) {
   return out;
 }
 
+/* 讀得到了沒(主文件解析完、而且有一段像樣的正文):回正文字數。只數 40 字以上的段落——導覽列、按鈕、頁尾的短字不算。
+   廣告多的新聞站永遠等不到 load,但正文早就在了(index.js early) */
+function readable() {
+  if (document.readyState === "loading" || !document.body) return 0;
+  let n = 0;
+  for (const p of document.querySelectorAll("p, li, blockquote, pre, td, dd")) { const s = String(p.innerText || "").trim().length; if (s >= 40) n += s; if (n > 100000) break; }
+  return n;
+}
+
 /* 頁面上找字(browser_wait until=text)。 */
 function hasText(s) { return String(document.body ? document.body.innerText : "").slice(0, 2000000).includes(String(s)); }
 
@@ -453,4 +462,4 @@ function pendingPictures() {
 }
 function marksVisible(on) { const h = document.getElementById("__blave_agent_marks"); if (h) h.style.setProperty("visibility", on ? "visible" : "hidden", "important"); return true; }
 
-module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, scrollPage, progress, quiet };
+module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, readable, scrollPage, progress, quiet };
