@@ -39,6 +39,14 @@ t("對不到 → 只寫已停止", n == "已停止。", n)
 n = at._stop_note([], ["unknown"], EN)
 t("en 對不到 → Stopped.", n == "Stopped.", n)
 t("沒有在跑的步驟 → 仍有「已停止。」(#87)", at._stop_note([], [], ZH) == "已停止。" and at._stop_note([], [], EN) == "Stopped.")
+n = [at._stop_note([], ["order"], ZH), at._stop_note([], ["order"], ZH, "cn"), at._stop_note([], ["order"], EN)]
+t("order 這一種涵蓋撤單 / 平倉 / 改槓桿:寫「執行下單指令」,不寫「下單 / placing an order」",
+  n == ["已停止。中斷的步驟：執行下單指令。", "已停止。中断的步骤：执行下单指令。", "Stopped. Interrupted: running an order command."], n)
+_zh_po = open(os.path.join(ROOT, "shell", "i18n", "zh.po"), encoding="utf-8").read()
+_en_po = open(os.path.join(ROOT, "shell", "i18n", "en.po"), encoding="utf-8").read()
+_act = [re.search(r'msgid "act\.order"\nmsgstr "([^"]+)"', x).group(1) for x in (_zh_po, _en_po)]
+t("order 的字跟狀態列 act.order 同一套(zh 拿掉「正在」、en 小寫開頭)",
+  _act[0] == "正在" + at._STOP_STEP_TEXT["order"][0] and _act[1][0].lower() + _act[1][1:] == at._STOP_STEP_TEXT["order"][2], _act)
 n = at._stop_note(["order script"], ["unknown"], ZH)
 t("背景下單腳本那句照舊、步驟不列", n.startswith("已停止。下單腳本 會動到部位") and "步驟" not in n, n)
 

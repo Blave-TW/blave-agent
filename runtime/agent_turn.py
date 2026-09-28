@@ -3031,7 +3031,8 @@ _STOP_STEP_TEXT = {
     "report": ("組報告", "组报告", "building the report"),
     "watch": ("更新看盤板", "更新看盘板", "updating the watchboard"),
     "schedule": ("設定排程", "设定排程", "setting up a schedule"),
-    "order": ("下單", "下单", "placing an order"),
+    # 這一種涵蓋下單、撤單、TWAP、平倉、改槓桿、對帳:寫「下單」會把撤單講成下了單(跟狀態列 act.order 同一套字)
+    "order": ("執行下單指令", "执行下单指令", "running an order command"),
     "account": ("查帳戶", "查账户", "checking the account"),
     "status": ("查執行狀態", "查运行状态", "checking what is running"),
     "install": ("安裝套件", "安装套件", "installing packages"),
