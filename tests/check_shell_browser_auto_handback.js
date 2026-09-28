@@ -329,6 +329,10 @@ if (!process.versions.electron) (async () => {
   t("handable 是 fail-closed:問不到、null、看不進去(iframe / opaque)、敏感欄位都回 false", (() => { const h = idx.slice(idx.indexOf("async function handable("), idx.indexOf("async function autoHandback(")); return /catch \(_\) \{ return false; \}/.test(h) && /if \(!f \|\| !f\.desc \|\| !f\.desc\.tag\) return false;/.test(h) && /f\.desc\.tag === "iframe" \|\| f\.desc\.opaque \|\| gate\.sensitiveField\(f\.desc\)\) return false;/.test(h); })());
   t("main.js:只有 send-message(用戶送出)會起回合,而且標了 userSent", (main.match(/\brunTurn\(/g) || []).length === 2 && /ipcMain\.handle\("send-message"[\s\S]{0,2500}runTurn\(win, payload\)/.test(main)
     && /beginTurn\(win, sessionId, \{ userSent: true, noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main));
+  // 稽核 P2-13:userSent 現在對每一個回合都是 true(打字的、畫面代組的固定句都是這台電腦的人按的)。它分辨的是「有沒有人在這台電腦按送出」,
+  // 不是「打字 vs 固定句」;帶 false 的呼叫端(排程 / 雲端發起 / 自動回合)還不存在——這一條釘住:呼叫端只有一個,而且旁邊寫明了誰該帶 false
+  t("main.js:beginTurn 只有一個呼叫端,旁邊寫明 userSent 代表什麼、哪種回合要帶 false", (main.match(/browser\(\)\.beginTurn\(/g) || []).length === 1
+    && /\/\/ userSent = 這一輪是人在這台電腦上按出來的[\s\S]{0,600}要帶 false 的是「沒有人在這台電腦按送出」的回合:\n\s*\/\/ 排程回合、雲端主機那邊發起的回合、任何自動回合[\s\S]{0,300}\n\s*try \{ brMount = await browser\(\)\.beginTurn\(/.test(main));
   t("verify.js 檔頭(紅線)沒動", /^\/\/ /.test(fs.readFileSync(path.join(B, "verify.js"), "utf8")) && require("child_process").spawnSync("git", ["diff", "--quiet", "8bb6aaa", "--", "shell/browser/verify.js"], { cwd: path.join(__dirname, "..") }).status === 0);
 
   // ---- 規則文字(references/browser.md)
