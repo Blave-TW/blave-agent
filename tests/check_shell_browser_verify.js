@@ -62,7 +62,20 @@ async function pure() {
   const r2 = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "skip" : null) }) });
   t("按了出口(改用 DuckDuckGo / 這次不搜尋)→ exit", r.got === "exit" && r2.got === "exit" && r.ms < 6000, [r, r2]);
   r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null) }) });
-  t("按了「交還 agent」但還在驗證頁 → gave_up(不再問第二次)", r.got === "gave_up", r);
+  t("按了「交還 agent」但還在驗證頁 → gave_up(不再問第二次);沒在換頁的只多等 1 秒", r.got === "gave_up" && r.ms >= 5000 && r.ms <= 6500, r);
+  // 稽核 P2-6:按下去的當下頁面正在導回搜尋結果
+  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => el() >= 4800 && el() < 7000, left: async () => el() >= 7000 }) });
+  t("按「交還 agent」時頁面還在換頁(2 秒後載完,已經在搜尋結果上)→ 等它落定 → passed", r.got === "passed" && r.ms >= 7000 && r.ms < 7600, r);
+  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => el() >= 5500 && el() < 6500, left: async () => el() >= 6500 }) });
+  t("按下去之後半秒才開始換頁 → 照樣等到落定 → passed", r.got === "passed" && r.ms >= 6500 && r.ms < 7100, r);
+  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => el() >= 4800 && el() < 7000 }) });
+  t("換頁落定之後還在驗證頁 → gave_up", r.got === "gave_up" && r.ms >= 7000 && r.ms < 7600, r);
+  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => true }) });
+  t("一直載不完:等有上限(" + VF.HANDBACK_SETTLE_MS / 1000 + " 秒)→ gave_up", r.got === "gave_up" && VF.HANDBACK_SETTLE_MS === 8000 && r.ms >= 13000 && r.ms <= 13500, r);
+  r = await run({ d: (el, abs) => ({ deadline: abs() + 7000, choice: () => (el() >= 5000 ? "done" : null), loading: () => true }) });
+  t("等換頁也不超過這次呼叫的期限", r.got === "gave_up" && r.ms >= 7000 && r.ms <= 7500, r);
+  r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), loading: () => true, alive: () => el() < 6000 }) });
+  t("等換頁的時候分頁被關 → closed", r.got === "closed", r);
   r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), left: async () => el() >= 5000 }) });
   t("按了「交還 agent」而且已經離開驗證頁 → passed", r.got === "passed", r);
   r = await run({ d: (el) => ({ present: () => el() < 10000 }) });
@@ -93,6 +106,7 @@ async function pure() {
   const hand = cut(idx, "async function handVerify(");
   const touches = (hand.match(/\.page\.\w+|\.wc\.\w+|IP\.\w+|executeJavaScript|sendInputEvent|insertText|loadURL|debugger/g) || []).sort();
   t("交接那一段對頁面只做兩件事:看網址(wc.getURL)、離開之後跑一次只讀的判別(page.serp);沒有點、填、按鍵、腳本、導覽", JSON.stringify(touches) === JSON.stringify([".page.serp", ".wc.getURL"]), touches);
+  t("等換頁看的是主行程自己的載入狀態,不問頁面", /loading: \(\) => t\.status === "loading",/.test(hand));
   t("只讀的判別排在「導覽走了、載完了、網址是搜尋頁」之後", /if \(v\.navs === seen \|\| t\.status === "loading"\) return false;\s*seen = v\.navs;\s*if \(!VF\.searchPage\(v\.wc\.getURL\(\), engine, engines\)\) return false;\s*try \{ const r = await v\.page\.serp\(engine, vf\);/.test(hand));
   t("verify.js 是純邏輯:不 require electron、不碰頁面", !/require\(["']electron["']\)/.test(vsrc) && !/executeJavaScript|sendInputEvent|webContents/.test(vsrc));
   const all = fs.readdirSync(path.join(SHELL, "browser")).map((f) => fs.readFileSync(path.join(SHELL, "browser", f), "utf8")).join("\n");

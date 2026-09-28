@@ -516,6 +516,7 @@ function createBrowser(o) {
       now: () => Date.now(), sleep, deadline,
       alive: () => cur === c && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
       present, choice: () => t.userDone || null, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
+      loading: () => t.status === "loading",
       // 只在「導覽走了、載完了、網址是這個引擎的搜尋頁」之後才看一次頁面(跟每一張搜尋結果頁同一支只讀的判別);網址還是驗證頁時什麼都不跑
       left: async () => {
         if (v.navs === seen || t.status === "loading") return false;
