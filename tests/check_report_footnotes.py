@@ -21,6 +21,7 @@ tdays = pd.bdate_range("2026-05-01", "2026-09-02", tz="Asia/Taipei")
 d.fetch_twstock_ohlcv = lambda sid, iv, h, start=None, end=None: pd.DataFrame(
     {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.5, "Volume": 10_000.0}, index=tdays)
 d.fetch_twstock_institutional = lambda sid, start, end, h: pd.DataFrame({"foreign_net": 1_000_000.0}, index=tdays)
+d.fetch_twstock_list = lambda h, **k: pd.DataFrame({"name": ["台積電"]}, index=pd.Index(["2330"], name="stock_id"))
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import report_uploader as U
 

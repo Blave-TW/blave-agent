@@ -192,6 +192,13 @@ narrative instead).
    read / summary talks about: if you argue from it, show it (外資大砍友達 → 友達's 外資買賣超; a DOGE
    ETF closing → DOGE against BTC). What the data sources do not have degrades like any brick
    (`pack.missing` / notes) — never fetch it by hand.
+   **A brick about one instrument names it.** Every block title of a single-instrument brick
+   starts with the instrument (`2330 台積電 外資近 10 日賣超 …`, `SOL 資金費率 …`; the id alone when
+   no list knows the name), and outside that instrument's own report its KPI label and
+   `describe()` key carry it too (`2330 台積電 外資買賣超`, in 張) — 「外資買賣超」 with no
+   instrument in front is always the whole market's (億元). Cite each under its own name; never
+   write a stock's 張 as the market's flow. In `symbol_brief` / `research_pack` the KPI row and
+   the keys stay bare (every cell is that instrument).
 4. **Write the narrative**: the lead states the most important thing today (usually the one you
    built extras for); run down the checklist `describe()` prints.
 5. **Publish once**, with the conclusion as the title (`title=…`). If `publish` refuses, it lists every
