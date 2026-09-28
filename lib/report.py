@@ -100,16 +100,22 @@ _ID_MAX = 64
 
 def _ledger():
     """[(id, asked, turn)] oldest first; unreadable lines are skipped. An edit's line carries
-    no turn: the id is taken, and nobody owns the report through it."""
+    no turn: the id is taken, and nobody owns the report through it. A line whose id is not a
+    report id (a number, a list, a path) is skipped like an unreadable one: callers put these
+    ids in sets and file names, and one such line used to fail every write_report after it."""
     out = []
     try:
         with open(LEDGER, encoding="utf-8") as f:
             for ln in f:
                 try:
                     d = json.loads(ln)
-                    out.append((d["id"], d.get("asked") or d["id"], None if d.get("edited") else d.get("turn")))
-                except (ValueError, KeyError, TypeError):
+                    rid, asked, turn = d["id"], d.get("asked"), d.get("turn")
+                except (ValueError, KeyError, TypeError, AttributeError):
                     continue
+                if not isinstance(rid, str) or not _ID_RE.fullmatch(rid):
+                    continue
+                out.append((rid, asked if isinstance(asked, str) and asked else rid,
+                            turn if isinstance(turn, str) and not d.get("edited") else None))
     except OSError:
         pass
     return out

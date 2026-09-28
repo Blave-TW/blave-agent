@@ -10,6 +10,7 @@
      同一輪 replace 時,後來補拍的圖搬進自己那一份;沒用到的擷取檔照清;
   ⑥ 手放進 <要的 id>.files/ 的圖(不是擷取檔)跟著複製到新 id 的資料夾;
   ⑦ publish()(範本)同一套:同 pack 再發一次是新的一份,replace=True 才換掉這一輪的;
+  ⑨ 帳本裡有壞行(id 不是字串、不是合法的報告 id、整行不是物件)→ 那一行跳過,報告照樣寫得出去(0.1.8 稽核 P2-9)。
   ⑧ 外殼 capture.js 的 citeSlot 跟 lib 的 _free_id 逐例相同(有 node 才跑)。
 
 Run: cd blave-agent && .venv/bin/python tests/check_report_no_overwrite.py
@@ -217,6 +218,33 @@ check(os.path.isfile(R.LEDGER) and ledger == ".written.jsonl" and not ledger.end
       and all(_re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rid) for rid, _ in U.pending())
       and 'if (!name.endsWith(".json")) continue;' in main_js and "if (!RPT_ID_RE.test(id) || seen.has(id)) continue;" in main_js,
       "帳本 reports/.written.jsonl:上傳程式的掃描(只收 <id>.json)與電腦版的報告清單都不會把它當成報告", [rid for rid, _ in U.pending()][:3])
+
+# ── ⑨ 帳本被寫壞(稽核 P2-9):壞行跳過,不拋例外 ──
+turn("turn-bad-ledger")
+good_before = R._ledger()
+BAD = ['{"id": ["x"], "asked": "x", "turn": "t", "at": 1}', '{"id": {"a": 1}}', '{"id": 7}', '{"id": null}', '{"id": true}', '{"id": ""}',
+       '{"id": "../etc/passwd"}', '{"id": "' + "y" * 65 + '"}', '{"asked": "no-id"}', '["research-btc"]', '"research-btc"', "42", "null", "{not json", "",
+       '{"id": "kept-1", "asked": ["a"], "turn": {"t": 1}, "at": 1}', '{"id": "kept-2", "asked": 5, "turn": "turn-bad-ledger", "at": 2}']
+with open(R.LEDGER, "a", encoding="utf-8") as f:
+    f.write("\n".join(BAD) + "\n")
+try:
+    led, err = R._ledger(), None
+except Exception as e:   # noqa: BLE001 — 這裡要驗的就是「不拋」
+    led, err = [], repr(e)
+check(err is None and led == good_before + [("kept-1", "kept-1", None), ("kept-2", "kept-2", "turn-bad-ledger")],
+      "⑨ 壞行跳過;id 合法但 asked / turn 型別不對的那一行留著(asked 當成 id、turn 當成沒有)", err or led[len(good_before):])
+try:
+    w1, _ = write("after-bad-ledger", "帳本壞了也寫得出去")
+    w2, _ = write("kept-1", "帳本記過的 id 照樣算已有")
+    w3, _ = write("after-bad-ledger", "同一輪換掉自己那一份", replace=True)
+    tid, err = R.target_id("research-btc"), None
+except Exception as e:   # noqa: BLE001
+    w1 = w2 = w3 = tid = None
+    err = repr(e)
+check(err is None and (w1, w2, w3) == ("after-bad-ledger", "kept-1-2", "after-bad-ledger") and lead(w1) == "同一輪換掉自己那一份"
+      and isinstance(tid, str) and tid.startswith("research-btc-"),
+      "⑨ 帳本裡有壞行:write_report / target_id / replace=True 都照常", err or (w1, w2, w3, tid))
+turn(None)
 
 # ── 文件 ──
 doc = open(os.path.join(ROOT, "references", "reports.md"), encoding="utf-8").read()
