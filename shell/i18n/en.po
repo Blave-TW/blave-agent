@@ -718,7 +718,7 @@ msgid "fault.checking"
 msgstr "This turn didn’t run — checking your account."
 
 msgid "set.cat.plan"
-msgstr "Data & cloud plan"
+msgstr "Account & plan"
 
 msgid "plan.st.running"
 msgstr "Active · machine running"
@@ -1051,16 +1051,13 @@ msgid "pv.e.sub.old"
 msgstr "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a month."
 
 msgid "pv.e.unknown"
-msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Open Data & Cloud Plan to check again."
+msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Check again under Settings › Account & plan."
 
 msgid "pv.e.btn"
-msgstr "Data & Cloud Plan"
+msgstr "Account & Plan"
 
 msgid "cn.blave.signinSwitch"
 msgstr "Sign In and Switch"
-
-msgid "set.cat.acct"
-msgstr "Account"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"
@@ -1077,17 +1074,15 @@ msgstr "Chats and strategies stay on this computer and aren’t affected."
 msgid "acct.out.3"
 msgstr "You’re using Blave AI, so signing out returns you to the AI picker. You’ll need to pick one again before you can carry on."
 
-msgid "acct.in.1"
-msgstr "Signing in is what gives you Blave data and the cloud plan."
+# 登出的確認框(登出鈕在「帳號與方案」最上面那一列;「登出會怎樣」按了才出)。acct.out.4 只在帳號有主機時出
+msgid "acct.cf.title"
+msgstr "Sign Out of Blave?"
 
-msgid "acct.in.2"
-msgstr "Signing in costs nothing and doesn’t change the AI you use."
+msgid "acct.cf.ok"
+msgstr "Sign Out"
 
-msgid "acct.toPlan"
-msgstr "Balance, card and the cloud plan are under Data & cloud plan."
-
-msgid "acct.toPlanBtn"
-msgstr "Open"
+msgid "acct.out.4"
+msgstr "Signing out doesn’t turn off your cloud machine. It keeps billing."
 
 msgid "acct.lbl"
 msgstr "Blave account"
@@ -3492,7 +3487,7 @@ msgid "lib.buy.charge"
 msgstr "Charge & Purchase"
 
 msgid "lib.buy.noCard"
-msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Data & cloud plan, then come back."
+msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Account & plan, then come back."
 
 msgid "lib.buy.inProgress"
 msgstr "This purchase is already being processed. Check back in a moment."
@@ -4008,7 +4003,7 @@ msgid "lib.gate.noBalance"
 msgstr "The data fee for this hour couldn't be charged, so the agent can't reach the library. Top up and it's back right away."
 
 msgid "lib.gate.unknown"
-msgstr "The account's data status couldn't be checked, so the agent may not reach the library. Open Data & Cloud Plan to check again."
+msgstr "The account’s data status couldn’t be checked, so the agent may not reach the library. Check again under Settings › Account & plan."
 
 msgid "br.h"
 msgstr "Browser"

@@ -331,7 +331,7 @@
 </div>
 
 <!-- ============ 設定 modal(樣式照雲端 .scrim / .ns-modal.set-modal) ============
-     分類:一般(語言、關於)、模型接入、資料與雲端方案、帳號、隱私。每一類的內容各自由 app.js 畫;
+     分類:一般(語言、關於)、模型接入、資料來源、帳號與方案、公開連結、隱私。每一類的內容各自由 app.js 畫;
      「模型接入」不借用連結畫面那張卡(那裡是第一次做決定的地方,這裡是回來換的地方)。 -->
 <div class="scrim" id="set-scrim" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
   <div class="set-modal" id="set-modal">
@@ -345,10 +345,9 @@
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
         <!-- 資料來源:自帶資料商的金鑰(排在「AI 接入」後面)。內容由 datasrc.js 的 srcPaint 畫 -->
         <button type="button" class="set-cat" data-set-cat="src" data-i18n="src.title"></button>
-        <!-- 會花錢的一類排最後:前兩類是偏好。聊天裡的情境卡會直接開到這裡 -->
+        <!-- 帳號與方案(原本「資料與雲端方案」與「帳號」兩類併成一類;id 留 plan,舊的 acct 由 setCat 轉過來)。
+             聊天裡的情境卡、策略庫、分享的「去登入」都直接開到這裡 -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
-        <!-- 帳號:身分與登入 / 登出(錢的事在「資料與雲端方案」)。內容由 app.js 的 acctPaintAcct 畫 -->
-        <button type="button" class="set-cat" data-set-cat="acct" data-i18n="set.cat.acct"></button>
         <!-- 公開連結:這個帳號所有公開中的報告(兩袋都列;spec-share-list-0.1.8 A1)。內容由 report-sharelist.js 的 shlPaint 畫 -->
         <button type="button" class="set-cat" data-set-cat="shares" data-i18n="set.cat.shares"></button>
         <!-- 隱私:使用資料的開關與「會收 / 不收」(排最後;與視角無關)。內容由 app.js 的 privPaint 畫 -->
@@ -378,20 +377,9 @@
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
         <div class="set-pane" data-set-cat="src" id="set-src" hidden></div>
-        <!-- 雲端方案:內容由 app.js 的 planPaint 畫(依 account_status.plan)。上半自己捲,
-             底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
+        <!-- 帳號與方案:整頁由 app.js 的 planPaint 畫——最上面一組帳號列(登入狀態＋登出)、訊息格 #acct-hint、Blave 餘額列,
+             細線以下是方案(依 account_status.plan)。上半自己捲,底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
         <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden></div>
-        <div class="set-pane" data-set-cat="acct" id="set-acct-pane" hidden>
-          <div class="acct-id">
-            <div class="t"><p class="a1" id="acct-a1"></p><p class="a2" id="acct-a2"></p></div>
-            <!-- 同一個位置的同一顆鈕:已登入 = 登出(不跳確認框,可逆、沒有東西會被刪);未登入 = 登入 Blave -->
-            <button type="button" class="btn-out" id="set-acct-btn"></button>
-          </div>
-          <!-- 這一頁唯一放訊息的地方(登出沒撤成、登入等待中):只由 acctPaintAcct 寫,不讓第二個人碰 -->
-          <p class="cn-hint" id="acct-hint" hidden></p>
-          <ul class="acct-list" id="acct-list"></ul>
-          <div class="acct-link"><p id="acct-to-plan"></p><button type="button" class="pf-act" id="acct-to-plan-btn"></button></div>
-        </div>
         <div class="set-pane" data-set-cat="shares" id="set-shares" hidden></div>
         <div class="set-pane" data-set-cat="priv" id="set-priv" hidden></div>
       </div>

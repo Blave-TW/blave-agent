@@ -54,7 +54,7 @@ Check in order. On the first failure reply with the matching line (in the user's
 
 | Check | If it fails, tell the user |
 |---|---|
-| The `blave` MCP tools (`get_ssh_access`, `machine_status`) exist in this turn | "This needs you to be signed in to Blave in the app, with a cloud machine on your account — the app connects me automatically once both are true. Sign in from Settings › Account (or start the cloud plan from the Cloud tab), then try again." Do not ask for an access code; do not configure MCP yourself. |
+| The `blave` MCP tools (`get_ssh_access`, `machine_status`) exist in this turn | "This needs you to be signed in to Blave in the app, with a cloud machine on your account — the app connects me automatically once both are true. Sign in from Settings › Account & plan (or start the cloud plan from the Cloud tab), then try again." Do not ask for an access code; do not configure MCP yourself. |
 | `machine_status` answers with a machine | "You don't have a cloud machine yet. Start one from the Cloud tab in the app, then try again." |
 | `status` is `running` | "Your cloud machine is `<status>`, not running. Resume it on blave.org (Agent › your machine), wait until it shows running, then try again." You cannot start it. |
 | `os_type` is `linux` and `get_ssh_access` returned user `blaveagent` | "This kind of cloud machine isn't supported yet." Stop — do not improvise paths or log in as root. |

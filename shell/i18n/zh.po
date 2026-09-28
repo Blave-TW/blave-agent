@@ -718,7 +718,7 @@ msgid "fault.checking"
 msgstr "這一輪沒有跑，正在確認帳號狀態。"
 
 msgid "set.cat.plan"
-msgstr "資料與雲端方案"
+msgstr "帳號與方案"
 
 msgid "plan.st.running"
 msgstr "已啟動 · 主機運行中"
@@ -1051,16 +1051,13 @@ msgid "pv.e.sub.old"
 msgstr "之後資料在每月 {p} TWD 的 Blave Agent 雲端方案裡。"
 
 msgid "pv.e.unknown"
-msgstr "這台還拿不到 Blave 的資料。現在查不到帳號狀態，到「資料與雲端方案」重新查看。"
+msgstr "這台還拿不到 Blave 的資料。現在查不到帳號狀態，到「帳號與方案」重新查看。"
 
 msgid "pv.e.btn"
-msgstr "資料與雲端方案"
+msgstr "帳號與方案"
 
 msgid "cn.blave.signinSwitch"
 msgstr "登入並切換"
-
-msgid "set.cat.acct"
-msgstr "帳號"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"
@@ -1077,17 +1074,15 @@ msgstr "對話與策略都留在這台電腦，不受影響。"
 msgid "acct.out.3"
 msgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"
 
-msgid "acct.in.1"
-msgstr "登入之後才拿得到 Blave 的資料與雲端方案。"
+# 登出的確認框(登出鈕在「帳號與方案」最上面那一列;「登出會怎樣」按了才出)。acct.out.4 只在帳號有主機時出
+msgid "acct.cf.title"
+msgstr "登出 Blave？"
 
-msgid "acct.in.2"
-msgstr "登入不花錢，也不改你用的 AI。"
+msgid "acct.cf.ok"
+msgstr "登出"
 
-msgid "acct.toPlan"
-msgstr "餘額、綁卡與雲端方案在「資料與雲端方案」。"
-
-msgid "acct.toPlanBtn"
-msgstr "前往"
+msgid "acct.out.4"
+msgstr "登出不會停用雲端主機，主機費照扣。"
 
 msgid "acct.lbl"
 msgstr "Blave 帳號"
@@ -3492,7 +3487,7 @@ msgid "lib.buy.charge"
 msgstr "扣款並購買"
 
 msgid "lib.buy.noCard"
-msgstr "餘額不足，而且這個帳號還沒綁卡。到「設定 › 資料與雲端方案」綁卡後再回來買。"
+msgstr "餘額不足，而且這個帳號還沒綁卡。到「設定 › 帳號與方案」綁卡後再回來買。"
 
 msgid "lib.buy.inProgress"
 msgstr "這筆購買正在處理中，稍後再看一次結果。"
@@ -4009,7 +4004,7 @@ msgid "lib.gate.noBalance"
 msgstr "這一小時付不出資料費，agent 拿不到策略庫。儲值後馬上恢復。"
 
 msgid "lib.gate.unknown"
-msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「資料與雲端方案」重新查看。"
+msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「帳號與方案」重新查看。"
 
 msgid "br.h"
 msgstr "瀏覽器"

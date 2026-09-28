@@ -29,7 +29,7 @@ desktop the same three meters exist, but which ones apply depends on two things 
   people calling the API with their own key.
 - **Server — only if the user opens a cloud machine.** Meter 1, table below: quote the monthly
   figure of the tier asked about (Linux Starter when they name none) and say data is included.
-- **Where the user sees their own numbers:** Settings › 資料與雲端方案 (en: Data & cloud plan)
+- **Where the user sees their own numbers:** Settings › 帳號與方案 (en: Account & plan)
   shows the monthly price of their machine and whether data is included for them; the web usage
   page lists every deduction. Point there for anything this file does not state, instead of
   answering that there is no number.

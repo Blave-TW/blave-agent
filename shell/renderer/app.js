@@ -95,7 +95,7 @@ function setHint(h) {
   HINT = h || null;
   const n = $("cn-hint"); n.textContent = ""; n.hidden = !HINT;
   if (HINT) { n.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) n.append(cmdLine(HINT.cmd)); }
-  // 另外兩個表面各自重畫(兩支都會自己判斷那一塊在不在);帳號頁那一格只由 acctPaintAcct 寫,不讓兩個人碰同一個節點
+  // 另外兩個表面各自重畫(兩支都會自己判斷那一塊在不在);帳號與方案那一格(#acct-hint)只由 planPaint 寫,不讓兩個人碰同一個節點
   mdlPaint();
   acctPaintAcct();
   if (HINT) srSay(HINT.text);
@@ -144,7 +144,7 @@ function paintBlaveBtn() {
   const b = $("btn-blave");
   const sec = document.querySelector(".cn-blave");
   b.hidden = cur === "blave";
-  acctPaintAcct();                           // 設定 › 帳號 的那一頁(登入 / 登出是帳號的事,不是某一種 AI 的事)
+  acctPaintAcct();                           // 設定 › 帳號與方案 最上面那一列(登入 / 登出是帳號的事,不是某一種 AI 的事)
   $("cn-blave-cur").hidden = cur !== "blave";
   $("cn-blave-cur").textContent = t("cn.current");
   sec.classList.toggle("is-cur", cur === "blave");
@@ -251,23 +251,23 @@ function enterWorkspace(kind, info) {
 }
 
 $("btn-redetect").addEventListener("click", detect);
-/* 登出 Blave:刪掉這台電腦上的 token。不問確認——再登入一次就回來了,不是不可逆的事。
-   主行程會先請伺服器撤銷這顆 token 再刪本機那份(main.js signOutBlave);撤銷沒成功時提醒
-   用戶到 blave.org 設定 › 裝置 補撤。
+/* 登出 Blave:刪掉這台電腦上的 token。主行程會先請伺服器撤銷這顆 token 再刪本機那份(main.js signOutBlave);
+   撤銷沒成功時提醒用戶到 blave.org 設定 › 裝置 補撤。登出不碰雲端主機:主機照跑、主機費照扣(api 的 /oauth/desktop/revoke
+   只撤 token、這顆 token 帶出去的資料 key 與接入碼)。
    正在用 Blave 的話,登出之後這個工作頁就沒有 agent 可用(沒有 token 時引擎會退回本機模式、
-   改吃用戶自己的訂閱——那不是他選的),所以連線設定一起清、回連結畫面重選。 */
-$("set-acct-btn").addEventListener("click", async () => {
-  // 未登入時這顆是「登入 Blave」:走方案頁同一條登入流程(等待中再按 = 取消),不另寫一條。
-  // 等待是從別的表面(模型接入那一列)開始的話,planLogin 會靜默 return——那顆鈕寫著「取消」卻按不動,
-  // 所以直接取消:等的是同一件事、同一個瀏覽器分頁,誰按取消都一樣
-  if (!hasToken) {
-    if (oauthPending && !planLoginBusy) { window.blave.cancelOAuth(); return; }
-    await planLogin(); acctPaintAcct(); return;
-  }
-  if (running || oauthPending || planLoginBusy) return;
-  $("set-acct-btn").disabled = true;
+   改吃用戶自己的訂閱——那不是他選的),所以連線設定一起清、回連結畫面重選。
+   登出鈕住在「帳號與方案」最上面那一列(planPaint 每次重畫時建)。「登出會怎樣」那幾句不常駐,按了才在確認框裡出
+   (Wei 2026-09-28:登出要過確認框)。 */
+function acctOutAsk(opener) {
+  if (!hasToken || running || oauthPending || planLoginBusy) return;
+  // 第 1 句只在用 Blave AI 時出(登出後會被送回選 AI 的畫面);主機那一句只在帳號有主機時出
+  const hasMachine = !!acct && ["starting", "running", "stopped"].includes(planState());
+  const lines = (cur === "blave" ? [t("acct.out.3")] : []).concat([t("acct.out.1")], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
+  confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: acctSignOut });
+}
+async function acctSignOut() {
+  if (!hasToken || running || oauthPending || planLoginBusy) return;
   const r = await window.blave.signOutBlave();
-  $("set-acct-btn").disabled = false;
   hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
   if (typeof libInvalidate === "function") libInvalidate();   // 策略庫的 purchased / 閘門是這個帳號的
@@ -275,10 +275,10 @@ $("set-acct-btn").addEventListener("click", async () => {
   // 伺服器那顆沒撤到(離線、逾時):本機已經登出,但要講清楚還差一步、去哪裡補
   const warn = () => { if (!r.revoked) setHint({ text: t("cn.blave.signOutLocalOnly") }); };
   acctPaintAcct();
-  // 用自己的 CLI 的人:AI 不受影響,留在原地;帳號區還在(換成未登入那一態),焦點留在同一顆鈕上
+  // 用自己的 CLI 的人:AI 不受影響,留在原地;這一頁重畫成未登入那一格(登出鈕不在了),焦點回左欄的分類鈕
   if (cur !== "blave") {
     paintBlaveBtn(); planWatchIdle(); srSay(t("acct.outDone"));
-    $("set-acct-btn").focus();
+    const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus();
     await detect(); warn(); return;
   }
   await window.blave.clearConnection();
@@ -286,7 +286,7 @@ $("set-acct-btn").addEventListener("click", async () => {
   setClose();
   $("view-ws").hidden = true; $("view-connect").hidden = false;
   paintBlaveBtn(); await detect(); warn();
-});
+}
 // 等待期間這顆鈕變成「取消」而不是變灰:用戶把瀏覽器分頁關掉之後不會有人按
 // 「允許」,沒有取消的話這裡就卡到五分鐘逾時為止。
 let oauthPending = false;
@@ -332,7 +332,7 @@ async function blaveGo(b) {
 /* 設定裡任何一塊重畫之後的保險:焦點掉到 BODY(或掉出 modal)就放回 modal 內一個合理的落點。
    Esc 與 Tab 都綁在 #set-scrim 上,焦點在 BODY 時事件冒泡不到它——那時設定關不掉、Tab 也不再圈在框裡。
    不靠個別欄位名猜得對不對:重畫完一律過這一關。 */
-/* 等待瀏覽器那邊按「允許」是**一件事**,可是「模型接入」與「帳號」是兩份 DOM:
+/* 等待瀏覽器那邊按「允許」是**一件事**,可是「模型接入」與「帳號與方案」是兩份 DOM:
    只要 oauthPending / planLoginBusy 變了,兩邊都得重畫,否則一邊還留著「取消」、另一邊的鈕按了沒反應。
    規矩:凡是改這兩個旗標的地方,收尾一律叫這一支(tests/check_shell_settings.js 會列舉檢查)。 */
 function waitChanged() { mdlPaint(); acctPaintAcct(); }
@@ -355,6 +355,7 @@ function trapTab(e, box) {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 function setCat(cat) {
+  if (cat === "acct") cat = "plan";   // 「帳號」併進「帳號與方案」:舊的分類 id 照樣開得到,漏改的呼叫點不會開到空白頁
   $("set-cats").querySelectorAll(".set-cat").forEach((b) => {
     if (b.dataset.setCat === cat) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   });
@@ -362,7 +363,6 @@ function setCat(cat) {
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat === "model") mdlPaint();
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
-  if (cat === "acct") acctPaintAcct();
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
@@ -2276,7 +2276,7 @@ async function acctCheck() {
    agent 因為這台沒有資料權限而拿不到 Blave 資料的那一輪,回覆尾端會帶 `<blave-card:data-access/>`
    (runtime 的規則;paintAi 把它從畫面上拿掉、記在 turnCards)。**agent 只講事實,錢與動作由這張卡講**。
    - 這一小時付不出資料費(data_access = none):出口是儲值(沒綁卡是綁卡),不提主機。
-   - 沒登入 / 查不到 / 舊 api:描邊鈕開「資料與雲端方案」那一頁。
+   - 沒登入 / 查不到 / 舊 api:描邊鈕開「帳號與方案」那一頁。
    同一段對話只出一次;不擋輸入、不搶焦點。同一輪有錢的阻擋卡(402 / 還沒解的預檢卡)就讓位,
    而且不算用掉那一次。視窗回前景重查到拿得到資料 → 換成 dataReadyText + 再送一次(不自動重送)。 */
 const dataCardSessions = new Set();
@@ -2383,7 +2383,6 @@ function planView() {
 }
 let planMoreOpen = false, planLoginBusy = false, planLastView = null;
 function planPaint() {
-  acctPaintAcct();                           // 登入等待中那顆鈕是「取消」:帳號頁跟著同一份狀態
   if (typeof envPlanChanged === "function") envPlanChanged();   // 開通頁跟著同一份狀態重畫(trade.js);放最前面:下面有提早 return
   const box = $("set-plan"); if (!box) return;
   // 登入回來、狀態還在查:留著上一格,查完(或失敗)那次重畫才換——不閃「查不到」
@@ -2394,12 +2393,22 @@ function planPaint() {
   box.textContent = "";
   const v = planVars(), view = planView(), hasNum = !!(v.t && v.p);
   const sc = el("div", "plan-scroll"), foot = el("div", "plan-foot");
-  // 最上面一列 Blave 餘額:帳號頁那句「餘額…在資料與雲端方案」指的就是這裡。沒登入整列不出(沒有帳號就沒有餘額);讀不到畫「—」
-  if (hasToken) {
-    const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
-    if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
-    row.append(el("span", "l", t("plan.bal")), val); sc.append(row);
-  }
+  /* 最上面一組(.plan-id,底下一條細線):帳號列(登入狀態;已登入才有「登出」文字鈕)→ 訊息格 → Blave 餘額列。
+     主行程拿不到 Blave 帳號的 email(那裡的 email 是 Claude Code 的),值先寫「已登入」;之後 account_status 帶得回 email 再換。
+     訊息格 #acct-hint 只有這裡寫,只放共用那一則(登出時伺服器那顆沒撤成);「瀏覽器已開啟…」在頁尾鈕的左邊,不放兩次。
+     餘額列:沒登入整列不出(沒有帳號就沒有餘額);讀不到畫「—」 */
+  { const id = el("div", "plan-id"), who = el("div", "plan-bal");
+    who.append(el("span", "l", t("acct.lbl")), el("span", "v" + (hasToken ? "" : " na"), t(hasToken ? "acct.signedIn" : "acct.signedOut")));
+    if (hasToken) { const out = btn("btn-quiet", t("acct.out"), (e) => acctOutAsk(e.currentTarget), running); out.id = "set-acct-btn"; out.dataset.k = "acct-out"; who.append(out); }
+    const hint = el("p", "cn-hint"); hint.id = "acct-hint"; hint.hidden = !HINT;
+    if (HINT) { hint.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) hint.append(cmdLine(HINT.cmd)); }
+    id.append(who, hint);
+    if (hasToken) {
+      const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
+      if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
+      row.append(el("span", "l", t("plan.bal")), val); id.append(row);
+    }
+    sc.append(id); }
   const ext = (u) => () => window.blave.openExternal(u);
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
   if (slow && !planSlowSaid) { planSlowSaid = true; srSay(t("plan.err.slow")); }   // 錯誤列每次重畫都是新節點,讀屏靠這裡念一次
@@ -2538,36 +2547,12 @@ function planWatch(s) {
 function planSayDone() { planDonePending = false; const c = faultCard(); c.set({ calm: true, text: t("plan.done") }); }
 /* 「設定」右邊那行安靜的字:只在試用最後 3 天 / 啟動中 / 已停機出現。不是通知(不推播、不打斷)。 */
 function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint(); sidePaint(); }
-/* 設定左欄底部的帳號區:有登入才出。(連結畫面最底下那句「首次綁卡送 N 天資料」已拿掉——Wei:選 AI 的地方不放宣傳文) */
-/* 設定 › 帳號。兩態同一副骨架:身分兩行 + 一顆鈕 + 「會怎樣」的短清單 + 一行指往「資料與雲端方案」。
-   主行程拿不到 Blave 帳號的 email(那裡的 email 是 Claude Code 的),所以第一行先寫「Blave 帳號」;
-   之後 account_status 帶得回 email 再換成 email,版面不用動。 */
+/* 帳號那一列(登入狀態、登出、訊息格)現在是「帳號與方案」頁的一部分,由 planPaint 畫。登入狀態、等待中的旗標、共用訊息(HINT)、
+   語言變了的地方照舊叫這一支:那一頁開著就整頁重畫,沒開就什麼都不做(下次切到那一類 setCat 會畫) */
 function acctPaintAcct() {
-  if (!$("set-acct-pane")) return;
-  const el = (id) => $(id);
-  el("acct-a1").textContent = t("acct.lbl"); el("acct-a1").title = t("acct.lbl");
-  const a2 = el("acct-a2"); a2.textContent = ""; a2.className = "a2" + (hasToken ? " on" : "");
-  if (hasToken) { const d = document.createElement("i"); d.className = "dot"; d.setAttribute("aria-hidden", "true"); a2.appendChild(d); }
-  a2.append(t(hasToken ? "acct.signedIn" : "acct.signedOut"));
-  const b = el("set-acct-btn"), waiting = !hasToken && (planLoginBusy || oauthPending);
-  b.textContent = hasToken ? t("acct.out") : waiting ? t("oauth.cancel") : t("cn.blave.btn");
-  b.className = hasToken || waiting ? "btn-out" : "btn-fill";
-  // 登出會怎樣 / 登入拿得到什麼。用 Blave AI 的人登出之後會被送回選 AI 的畫面(見登出那支的 cur === "blave" 分支),
-  // 對話要換成這台電腦上的 agent 或重新登入才接得下去;用自己 CLI 的人不受影響,所以那一條只對前者出
-  const keys = hasToken ? (cur === "blave" ? ["acct.out.3", "acct.out.1", "acct.out.2"] : ["acct.out.1", "acct.out.2"]) : ["acct.in.1", "acct.in.2"];
-  const ul = el("acct-list"); ul.textContent = "";
-  keys.forEach((k) => { const li = document.createElement("li"); li.textContent = t(k); ul.appendChild(li); });
-  // 這一頁唯一的訊息格:等待登入時講「瀏覽器已開啟」(同方案頁那條路),其餘時候放共用的那一則
-  // (登出時伺服器那顆沒撤成的提醒就是靠它——登出鈕住在這一頁,那句話只有這裡看得到)
-  const hint = el("acct-hint"); hint.textContent = "";
-  const msg = waiting ? { text: t("pv.w.waiting") } : HINT;
-  hint.hidden = !msg;
-  if (msg) { hint.append(msg.text + (msg.cmd ? " " : "")); if (msg.cmd) hint.append(cmdLine(msg.cmd)); }
-  el("acct-to-plan").textContent = t("acct.toPlan");
-  el("acct-to-plan-btn").textContent = t("acct.toPlanBtn");
+  if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
   setFocusGuard();
 }
-$("acct-to-plan-btn").addEventListener("click", () => { setCat("plan"); const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus(); });
 function sidePaint() {
   if (typeof envPlanChanged === "function") envPlanChanged();   // 雲端視角的開通頁吃同一份帳號 / 方案狀態(trade.js)
   const n = $("ws-conn-note"); if (!n) return;
@@ -2703,7 +2688,7 @@ let pendingErr = [];
 const holdErrors = () => (cur === "claude" || cur === "codex") && !turnGotReply && !turnFaulted;
 window.blave.onTurnEnd(async (r) => {
   draftPromote();   // runtime 沒送到 done 就結束(被殺、崩潰):手上那段仍是這一輪最後的字
-  if (cur === "blave" && hasToken) acctCheck();   // Blave AI 這一輪是從餘額扣的:回合結束重讀(模型選單底部與「資料與雲端方案」那一列)
+  if (cur === "blave" && hasToken) acctCheck();   // Blave AI 這一輪是從餘額扣的:回合結束重讀(模型選單底部與「帳號與方案」那一列)
   // 用戶按了停止:不是失敗——不問登入、不畫錯誤、不攤開收據;保險殺掉時的非 0 結束碼也不顯示
   const stopped = turnStopped; turnStopped = false;
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
@@ -2869,7 +2854,7 @@ panesInit();
 function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
-  acctPaintAcct();   // 設定 › 帳號(兩態的字跟著語言換)
+  acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
   if (typeof libRepaint === "function") libRepaint();   // 策略庫的清單 / 詳情(renderer/library.js 用 t() 現組的字)

@@ -128,9 +128,9 @@ function shrRevokeAsk(c, opener) {
     confirmBox({ title: t("shr.revokeFailTitle"), lines: [t(code === "RELOGIN" ? "conn.expired" : "shr.revokeFailBody")], ok: t("cdel.gotIt"), single: true, env: c.env, opener: opener.isConnected ? opener : $("rpt-back"), onOk: () => {} });   // 標題寫結果,不再是問句
   } });
 }
-// 未登入(只會發生在本機視角):鈕照出、按下才守門;主鈕開設定 › 帳號,不做登入後自動續走(spec DT3)
+// 未登入(只會發生在本機視角):鈕照出、按下才守門;主鈕開設定 › 帳號與方案,不做登入後自動續走(spec DT3)
 function shrGateAsk(opener) {
-  confirmBox({ title: t("shr.dlgTitle"), lines: [t("shr.gate")], ok: t("shr.gateGo"), opener, onOk: () => setOpen().then(() => setCat("acct")) });
+  confirmBox({ title: t("shr.dlgTitle"), lines: [t("shr.gate")], ok: t("shr.gateGo"), opener, onOk: () => setOpen().then(() => setCat("plan")) });
 }
 
 /* ── 確認框(DT2)────────────────────────────────────── */

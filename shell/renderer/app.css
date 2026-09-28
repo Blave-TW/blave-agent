@@ -872,6 +872,12 @@ body.resizing * { cursor: col-resize !important; }
 .plan-bal .l { font-size: 12px; color: var(--ink-3); }
 .plan-bal .v { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .plan-bal .v.na { color: var(--ink-3); }
+/* 帳號與方案最上面那一組:帳號列＋訊息格＋餘額列。兩列同一個形(.plan-bal);細線由這一組帶、不由列帶——未登入只有一列時線還在。
+   組內列距 8、組底到細線 12、細線到方案內容 16(組內小於組間) */
+.plan-id { display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-12); margin-bottom: var(--space-16); border-bottom: 1px solid var(--border-hairline); }
+.plan-id .plan-bal { padding: 0; margin: 0; border: 0; }
+.plan-id .plan-bal .l { margin-right: auto; }
+.plan-id .cn-hint { margin: 0; }
 .plan-list{margin:0;padding:0;list-style:none}
 .plan-list li{position:relative;padding-left:var(--space-16);line-height:1.7;color:var(--ink)}
 .plan-list li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:1px;background:var(--ink-3)}
@@ -888,7 +894,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
 /* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
-.plan-pane .plan-scroll{padding:var(--space-24) var(--space-16) var(--space-16)}
+.plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
 .plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
@@ -899,21 +905,6 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}
-/* 設定 › 帳號:身分 + 登入 / 登出 + 登出會怎樣。錢的事(餘額、綁卡、方案)留在「資料與雲端方案」,這裡只給一行字與一顆「前往」。整頁沒有分隔線 */
-.acct-id{display:flex;align-items:center;gap:var(--space-12)}
-.acct-id .t{flex:1;min-width:0}
-.acct-id .a1{margin:0;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.acct-id .a2{margin:var(--space-2) 0 0;display:flex;align-items:center;gap:var(--space-6);font-size:12px;line-height:1.5;color:var(--ink-3)}
-.acct-id .a2.on{color:var(--ink-2)}
-.acct-id .a2 .dot{flex:none;width:7px;height:7px;border-radius:var(--radius-pill);background:var(--color-green)}
-.acct-id button{flex:none}
-#acct-hint{margin:var(--space-12) 0 0}
-.acct-list{margin:var(--space-16) 0 0;padding:0;list-style:none;max-width:52ch}
-.acct-list li{position:relative;padding-left:var(--space-12);font-size:12px;line-height:1.7;color:var(--ink-2)}
-.acct-list li+li{margin-top:var(--space-2)}
-.acct-list li::before{content:"";position:absolute;left:0;top:11px;width:6px;height:1px;background:var(--ink-3)}
-.acct-link{margin-top:var(--space-24);display:flex;align-items:center;gap:var(--space-12)}
-.acct-link p{margin:0;flex:1;min-width:0;font-size:12px;line-height:1.6;color:var(--ink-3)}
 
 /* 設定 › 模型接入:整頁 = 三選一。群組小標(12/400/--ink-3)→ 選項列(名稱 13/--ink,說明 12/--ink-3)→ 列尾(狀態 12 或一顆小框鈕)。
    「使用中」= 整列灰填 + 名稱加粗 + 列尾三個字(canon 的 Active:同左欄分類、側欄策略)。不畫線 */
