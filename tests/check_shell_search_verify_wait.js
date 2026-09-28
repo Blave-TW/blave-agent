@@ -1,7 +1,8 @@
-// 搜尋等用戶過機器人驗證:引擎那一端不能先把呼叫切掉(e2e 0.1.8 #197,稽核 P2-13)。
+// 搜尋等用戶過機器人驗證:引擎那一端不能先把呼叫切掉,呼叫結束之後畫面不能還停在「等你操作」(e2e 0.1.8 #197 #198,稽核 P2-7 P2-13)。
 //   ① 設定檔(不開視窗):`blave_browser` 那一格帶 `timeout`,跟 Codex 那條同一個數,而且高於外殼自己的上限;`blave` 那一格不帶
-//   ② mcp.js(真 HTTP):超過上限的工具由外殼回一個講得出原因的結果
-//   ③ 真 Electron(隱藏視窗)+ 假驗證頁的開關:等超過 60 秒之後才過假頁,同一次搜尋照樣接得上
+//   ② mcp.js(真 HTTP):超過上限的工具由外殼回一個講得出原因的結果;呼叫的那一端斷線,實作看得到(connected() = false)
+//   ③ 真 Electron(隱藏視窗)+ 假驗證頁的開關:等超過 60 秒之後才過假頁,同一次搜尋照樣接得上;呼叫的那一端不等了 / 回合結束,
+//      「等你操作」「你在操作」都收掉;並行的 browser_wait until=user_done 不吃掉驗證頁的按鈕結果
 // 絕不連真的搜尋引擎:假頁與搜尋結果都由測試行程自己的本機代理供應,https 一律被它記下並拒絕。③ 裡扮演用戶的是測試(把分頁導回搜尋頁),
 // 外殼與 agent 的工具都沒有碰那一頁。
 // 跑法:node tests/check_shell_search_verify_wait.js(③ 要 BLAVE_TEST_WINDOW=1,約 70 秒)
@@ -33,17 +34,18 @@ async function pure() {
     VF.VERIFY_WAIT_MS === 120000 && VF.VERIFY_TOUCHED_MS === 120000 && VF.VERIFY_WAIT_MS > ENGINE_CUT_MS && VF.VERIFY_WAIT_MS + VF.VERIFY_TOUCHED_MS <= VF.SEARCH_CALL_MAX_MS);
   t("單次搜尋的上限一層包一層:等驗證的期限 < 不再開新一輪 < 外殼硬上限 < 引擎端的逾時(留 4 分鐘以上)",
     tail > 0 && VF.SEARCH_CALL_MAX_MS + tail < hard && hard + 240000 <= M.BROWSER_TOOL_TIMEOUT_MS, [tail, hard]);
-  t("接線:搜尋的硬上限交給 mcp.js;過了期限不再開新的一輪",
-    src.includes('maxMs: (name) => (name === "browser_search" ? SEARCH_HARD_MAX_MS : 0)') && src.includes("if (Date.now() > deadline + SEARCH_TAIL_MS)"));
+  t("接線:搜尋的硬上限交給 mcp.js;過了期限不再開新的一輪;呼叫的那一端不等了就停",
+    src.includes('maxMs: (name) => (name === "browser_search" ? SEARCH_HARD_MAX_MS : 0)') && src.includes("if (Date.now() > deadline + SEARCH_TAIL_MS)")
+    && src.includes('if (name === "browser_search") return doSearch(args, ctx);') && /alive: \(\) => cur === c && here\(\) &&/.test(src));
 
   // ---- ② mcp.js
   const { createMcpServer, CALL_MAX_MS } = require(path.join(SHELL, "browser", "mcp.js"));
   t("其他工具的上限不跟著引擎端放寬:一支最久 90 秒", CALL_MAX_MS === 90000 && CALL_MAX_MS < VF.SEARCH_CALL_MAX_MS);
   const seen = {};
-  const srv = createMcpServer({ version: "test", tools: [{ name: "stuck" }, { name: "quick" }], maxMs: (n) => (n === "stuck" ? 300 : 0),
-    call: async (name) => {
-      seen[name] = true;
-      if (name !== "quick") await sleep(700);
+  const srv = createMcpServer({ version: "test", tools: [{ name: "slow" }, { name: "stuck" }, { name: "quick" }], maxMs: (n) => (n === "stuck" ? 300 : 0),
+    call: async (name, _a, ctx) => {
+      seen[name] = { at0: ctx.connected() };
+      if (name !== "quick") { await sleep(name === "stuck" ? 700 : 600); seen[name].after = ctx.connected(); seen[name].done = true; }
       return { content: [{ type: "text", text: JSON.stringify({ ok: true, name }) }], isError: false };
     } });
   const port = await srv.start(), tok = srv.beginTurn(1);
@@ -57,10 +59,15 @@ async function pure() {
     if (abortAfter) setTimeout(() => req.destroy(), abortAfter);
   });
   let r = await post("quick");
-  t("正常的呼叫:結果照回", !!r && r.result.isError === false && seen.quick === true, r);
+  t("正常的呼叫:結果照回,實作看到的是「那一端還在等」", !!r && r.result.isError === false && seen.quick.at0 === true, r);
   const t0 = Date.now(); r = await post("stuck");
   const body = r && JSON.parse(r.result.content[0].text);
   t("超過上限的工具:外殼到時間就回,結果講得出原因(不是引擎切出來的無名失敗)", !!body && r.result.isError === true && body.ok === false && body.error === "timeout" && /stuck/.test(body.message) && Date.now() - t0 < 650, [body, Date.now() - t0]);
+  await sleep(500);
+  t("被外殼收掉的那一支:實作看得到沒有人在等了", seen.stuck.done === true && seen.stuck.at0 === true && seen.stuck.after === false, seen.stuck);
+  r = await post("slow", 150);
+  await sleep(600);
+  t("呼叫的那一端先斷線(引擎自己逾時、回合被中斷):實作看得到 connected() = false", r === null && seen.slow.done === true && seen.slow.at0 === true && seen.slow.after === false, seen.slow);
   srv.close();
 }
 
@@ -113,7 +120,7 @@ if (!process.versions.electron) {
     };
     const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "zh", track: () => {}, version: "test",
       reducedMotion: () => true, engines, userPresent: () => true, notify: () => {} });
-    const call = (n, a) => B._call(n, a || {}, { live: () => true });
+    const call = (n, a, ctx) => B._call(n, a || {}, ctx || { live: () => true, connected: () => true });
     const pageOf = (id) => electron.webContents.getAllWebContents().find((w) => w.session === ses && w.getURL().includes(DV.FAKE_HOST + "/sorry/fake") && w.getURL().includes(id));
     const needOf = () => sent.find((e) => e.type === "need_user" && e.kind === "captcha");
 
@@ -137,6 +144,53 @@ if (!process.versions.electron) {
     t("A 過了之後畫面收乾淨:need_clear、自動交還,那一格不再是驗證中 / 用戶接手", sent.some((e) => e.type === "need_clear" && e.id === tab.id) && sent.some((e) => e.type === "handback" && e.id === tab.id && e.auto === true) && !tab.verify && !tab.userControl && !tab.need);
     console.log("      (A 等了 " + (Date.now() - t0) + " ms)");
     B.endTurn();
+
+    // ── 場景 B:呼叫的那一端不等了(引擎逾時、回合被中斷)→ 搜尋收掉,「等你操作」跟著收
+    sent.length = 0; fake.arm();
+    await B.beginTurn(win, "desktop-svw2");
+    let connected = true, settledB = null;
+    const pB = call("browser_search", { query: "cpi-b" }, { live: () => true, connected: () => connected }).then(J).then((r) => (settledB = r));
+    const needB = await until(needOf, 15000);
+    const tabB = needB && B._tabs.get(needB.id);
+    B.takeover(tabB.id);
+    t("B 等驗證中,用戶已經接手", !!tabB && !!tabB.need && tabB.userControl === true && settledB === null);
+    connected = false;
+    await Promise.race([pB, sleep(3000)]);
+    t("B 那一端不等了 → 這次搜尋馬上結束,不再往退路搜", !!settledB && settledB.ok === false && settledB.error === "cancelled" && !hits.some((h) => h.startsWith("GET d.test")), [settledB, hits]);
+    t("B 「等你操作」收掉:發了 need_clear,那一格沒有 need;它仍然是驗證頁(agent 的工具碰不到)", sent.some((e) => e.type === "need_clear" && e.id === tabB.id) && !tabB.need
+      && J(await call("browser_read", { tab: tabB.alias })).error === "needs_user_verification");
+    B.endTurn();
+
+    // ── 場景 C:用戶接手之後回合結束 → 「你在操作／交還 agent」收掉
+    sent.length = 0; fake.arm();
+    await B.beginTurn(win, "desktop-svw3");
+    const pC = call("browser_search", { query: "cpi-c" }).then(J);
+    const needC = await until(needOf, 15000);
+    const tabC = needC && B._tabs.get(needC.id);
+    B.takeover(tabC.id);
+    t("C 用戶接手中", !!tabC && tabC.userControl === true && sent.some((e) => e.type === "user_takeover" && e.id === tabC.id));
+    B.endTurn();
+    const rC = await Promise.race([pC, sleep(3000).then(() => null)]);
+    t("C 回合結束 → 這次搜尋收掉", !!rC && rC.ok === false, rC);
+    t("C 回合結束 → 那一格不再是「你在操作」、沒有 need:發了 handback(auto) 與 need_clear;頁面留著", tabC.userControl === false && !tabC.need && tabC.status !== "closed"
+      && sent.some((e) => e.type === "handback" && e.id === tabC.id && e.auto === true) && sent.some((e) => e.type === "need_clear" && e.id === tabC.id), sent.map((e) => e.type));
+
+    // ── 場景 D:並行的 browser_wait until=user_done 不吃掉驗證頁的按鈕結果(稽核 P2-7)
+    sent.length = 0; fake.arm();
+    await B.beginTurn(win, "desktop-svw4");
+    const pD = call("browser_search", { query: "cpi-d" }).then(J);
+    const needD = await until(needOf, 15000);
+    const tabD = needD && B._tabs.get(needD.id);
+    let r = J(await call("browser_wait", { until: "user_done", timeout_s: 1 }));
+    t("D 只有驗證頁在等的時候 browser_wait until=user_done → 照其他工具的說法拒絕,不讀也不清那一格", r.ok === false && r.error === "needs_user_verification" && !!tabD.need && !tabD.userDone, r);
+    const other = J(await call("browser_open", { url: "http://news-a.test/one" }));
+    B.userDone(tabD.id, "ddg");   // 用戶按了「改用 DuckDuckGo」;同一刻 agent 並行等所有分頁
+    r = J(await call("browser_wait", { until: "user_done", timeout_s: 1 }));
+    t("D 並行的 browser_wait 只回別的分頁,驗證頁那一格不在清單裡", r.ok === true && r.tabs.length === 1 && r.tabs[0].tab === other.tab, r);
+    const rD = await Promise.race([pD, sleep(15000).then(() => null)]);
+    t("D 按鈕結果沒有被吃掉:搜尋馬上退到 DuckDuckGo 拿到結果(不是空等到逾時)", !!rD && rD.ok === true && rD.source === "ddg" && rD.fallback_reason === "captcha", rD);
+    B.endTurn();
+
     t("全程沒有連到任何真的搜尋引擎(https 一律經 CONNECT,被本機代理記下並拒絕)", !hits.some((h) => h.startsWith("CONNECT")) && !hits.some((h) => /google|duckduckgo/.test(h)), hits.filter((h) => h.startsWith("CONNECT")));
     srv.close();
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }

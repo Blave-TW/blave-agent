@@ -492,7 +492,7 @@ function createBrowser(o) {
   }
   /* 搜尋分頁落在驗證頁:標成「要你操作」交給用戶,等它離開。這裡不對那一頁做任何事(verify.js 檔頭的紅線)。
      回 verify.waitVerify 的結果;這一輪已經拒絕或逾時過一次就不再問("declined") */
-  async function handVerify(t, engine, c, asked, deadline) {
+  async function handVerify(t, engine, c, asked, deadline, here) {
     t.verify = engine;
     const v = views.get(t.id); if (!v) return "closed";
     if (asked || c.verifyDeclined) return "declined";
@@ -504,7 +504,7 @@ function createBrowser(o) {
     let seen = v.navs;
     const got = await VF.waitVerify({
       now: () => Date.now(), sleep, deadline,
-      alive: () => cur === c && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
+      alive: () => cur === c && here() && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
       present, choice: () => t.userDone || null, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
       // 只在「導覽走了、載完了、網址是這個引擎的搜尋頁」之後才看一次頁面(跟每一張搜尋結果頁同一支只讀的判別);網址還是驗證頁時什麼都不跑
       left: async () => {
@@ -528,15 +528,17 @@ function createBrowser(o) {
      排在驗證後面的搜尋開始時可能只剩幾十秒(稽核 P2-13)。過了期限 SEARCH_TAIL_MS 就不再開新的一輪,直接回 search_unavailable;
      連這樣都沒回的(某一輪卡住)由 mcp.js 在 SEARCH_HARD_MAX_MS 收掉 */
   const SEARCH_TAIL_MS = 30000, SEARCH_HARD_MAX_MS = VF.SEARCH_CALL_MAX_MS + 60000;
-  async function doSearch(args) {
+  async function doSearch(args, ctx) {
+    const here = () => !ctx || !ctx.connected || ctx.connected();   // 呼叫的那一端還在等(引擎沒有先斷線)
     const query = String(args.query || "").trim().slice(0, 500);
     if (!query) return ERR("invalid_args", "query is required");
     const count = Math.max(1, Math.min(10, Math.floor(Number(args.count) || 5)));
     const c = cur, deadline = Date.now() + VF.SEARCH_CALL_MAX_MS;
     // 同一輪的搜尋一個一個來、兩次之間留間隔(verify.js SEARCH_GAP_MS):平行連發就是被要求驗證的原因
-    return searchGate.run(() => (cur === c && c ? searchOnce(c, query, count, deadline) : ERR("browser_off", "this turn has ended")));
+    return searchGate.run(() => (cur === c && c ? searchOnce(c, query, count, deadline, here) : ERR("browser_off", "this turn has ended")));
   }
-  async function searchOnce(c, query, count, deadline) {
+  async function searchOnce(c, query, count, deadline, here) {
+    if (!here()) return ERR("cancelled", "the engine stopped waiting for this search");
     let engine = c.skipGoogle ? "ddg" : "google", fallback = c.skipGoogle ? "captcha_twice" : null;
     const lim = tabs.search(engine);
     if (lim && lim.scope === "turn") return ERR("rate_limited", "search limit for this turn reached", { retry_in_s: 0 });
@@ -549,6 +551,7 @@ function createBrowser(o) {
     await waitLoaded(t, SEARCH_LOAD_MS);
     let raw = null, why = "failed", asked = false;
     for (let round = 0; round < 4; round++) {
+      if (!here()) return ERR("cancelled", "the engine stopped waiting for this search");
       if (Date.now() > deadline + SEARCH_TAIL_MS) { if (why === "failed") why = "timeout"; raw = null; break; }
       const v = views.get(t.id);
       if (!v || t.status === "failed" || t.status === "blocked") { raw = null; break; }
@@ -559,13 +562,14 @@ function createBrowser(o) {
         if (ok) { t.status = "loading"; await sleep(500); await waitLoaded(t, SEARCH_LOAD_MS); t.status = "ready"; continue; }
       }
       if (raw && raw.captcha) {
-        const got = await handVerify(t, engine, c, asked, deadline); asked = true;
+        const got = await handVerify(t, engine, c, asked, deadline, here); asked = true;
         if (cur !== c) return ERR("browser_off", "this turn has ended");
         if (got === "passed") { await waitLoaded(t, SEARCH_LOAD_MS); continue; }   // 分頁已經在搜尋結果上:照常讀
         if (why === "failed") why = got === "declined" ? "captcha" : VF.reasonOf(got);   // 留第一個原因:Google 那一次逾時、退路又是驗證頁 → 原因是逾時
         if (engine === "google") { c.captchas = (c.captchas || 0) + 1; if (c.captchas >= 2) c.skipGoogle = true; }
         // 沒交到用戶手上的驗證頁(沒問、或問了但他沒在看也沒接手)收掉,不佔 8 格名額;他在看 / 在操作的留給他
         if (!t.visible && !t.userControl) { tabs.close(t.id); emit("page_closed", { id: t.id }); }
+        if (!here()) return ERR("cancelled", "the engine stopped waiting for this search");   // 沒有人在等結果了:不往退路搜
         const next = VF.nextEngine(engine);
         if (!next) { raw = null; break; }
         engine = next; fallback = c.skipGoogle ? "captcha_twice" : "captcha"; asked = false;
@@ -607,9 +611,13 @@ function createBrowser(o) {
 
   async function doWait(args) {
     const ids = Array.isArray(args.tabs) ? args.tabs : args.tab ? [args.tab] : tabs.thisTurn().map((t) => t.alias);
-    const list = ids.map((a) => tabs.byAlias(a)).filter(Boolean);
-    if (!list.length) return ERR("not_found", MSG.not_found);
     const until = args.until || "load";
+    // 驗證頁那一格的按鈕結果是 browser_search 在等的:until=user_done 不讀也不清它(稽核 P2-7——並行的這一支先看到就把
+    // userDone 清掉,搜尋那邊空等到逾時),當作不在清單裡;指名只等它的,照其他工具的說法拒絕
+    const all = ids.map((a) => tabs.byAlias(a)).filter(Boolean);
+    const list = until === "user_done" ? all.filter((t) => !verifying(t)) : all;
+    if (all.length && !list.length) return ERR("needs_user_verification", MSG.needs_user_verification, { tab: all[0].alias });
+    if (!list.length) return ERR("not_found", MSG.not_found);
     const ms = Math.min(WAIT_MAX_MS, Math.max(1000, (Number(args.timeout_s) || 20) * 1000));
     if (until === "ms") { await sleep(Math.min(WAIT_MAX_MS, Math.max(0, Number(args.value) || 1000))); return R({ ok: true, tabs: list.map(tabInfo) }); }
     const end = Date.now() + ms;
@@ -867,7 +875,7 @@ function createBrowser(o) {
     if (!cur || !ctx.live()) return ERR("browser_off", "this turn has ended");
     if (!prefs.enabled) return ERR("browser_off", MSG.browser_off);
     firstUse();
-    if (name === "browser_search") return doSearch(args);
+    if (name === "browser_search") return doSearch(args, ctx);
     if (name === "browser_open") {
       if (searchUrl(args.url)) return ERR("invalid_args", "use browser_search for web searches");
       if (args.tab) {
@@ -1108,6 +1116,9 @@ function createBrowser(o) {
       const withFav = (a) => a.map((r) => { const f = favOf(r.url); return Object.assign({}, r, { fav: f ? f.data : null, plate: !!(f && f.plate) }); });
       emit("turn_sources", { session_id: c.sessionId, sources: withFav(sources), tabs: withFav(rows) });
       for (const t of tabs.thisTurn()) { if (t.need && !t.userDone) { t.need = null; emit("need_clear", { id: t.id }); } }
+      // 驗證頁那一格:回合結束就沒有 agent 在等它了,「你在操作／交還 agent」收掉(e2e 0.1.8 #198)。頁面留著,用戶照樣可以繼續按;
+      // 那一格仍然是驗證頁(t.verify 不清),agent 的工具照樣碰不到
+      for (const t of tabs.thisTurn()) { if (t.verify && t.userControl) { t.userControl = false; emit("handback", { id: t.id, auto: true }); } }
       // 快照圖升級成整頁版(beyond-viewport 只在這裡做:一輪一次;操作中存的是視口版,見 captureSnapshotImage)
       (async () => {
         for (const r of rows) {

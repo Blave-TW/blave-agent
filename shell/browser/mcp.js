@@ -53,13 +53,16 @@ function createMcpServer(opts) {
       if (!tool) return send(res, 200, rpcErr(id, -32602, "unknown tool"));
       const args = p.arguments && typeof p.arguments === "object" && !Array.isArray(p.arguments) ? p.arguments : {};
       const myTurn = turnId;
-      let timer = null;
+      // connected():呼叫的那一端還在等這個回應。引擎自己逾時、回合被中斷時連線先斷,實作要看得到(不然它繼續等用戶、畫面停在「等你操作」)
+      let gone = false, timer = null;
+      res.on("close", () => { if (!res.writableEnded) gone = true; });
       const cap = (opts.maxMs && opts.maxMs(tool.name)) || CALL_MAX_MS;
-      const late = new Promise((resolve) => { timer = setTimeout(() => { resolve({ content: [{ type: "text", text: JSON.stringify({ ok: false, error: "timeout", message: "the built-in browser did not finish " + tool.name + " within " + Math.round(cap / 1000) + " s, so the call was ended. The page or the browser may be stuck: go on without this result or use another tab; do not repeat the same call right away" }) }], isError: true }); }, cap); });
+      const late = new Promise((resolve) => { timer = setTimeout(() => { gone = true; resolve({ content: [{ type: "text", text: JSON.stringify({ ok: false, error: "timeout", message: "the built-in browser did not finish " + tool.name + " within " + Math.round(cap / 1000) + " s, so the call was ended. The page or the browser may be stuck: go on without this result or use another tab; do not repeat the same call right away" }) }], isError: true }); }, cap); });
       let result;
-      try { result = await Promise.race([opts.call(tool.name, args, { turnId: myTurn, live: () => turnId === myTurn && !!token }), late]); }
+      try { result = await Promise.race([opts.call(tool.name, args, { turnId: myTurn, live: () => turnId === myTurn && !!token, connected: () => !gone }), late]); }
       catch (e) { result = { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "internal", message: String((e && e.message) || e).slice(0, 200) }) }], isError: true }; }
       finally { clearTimeout(timer); }
+      if (res.destroyed) return undefined;
       return send(res, 200, { jsonrpc: "2.0", id, result });
     }
     return send(res, 200, rpcErr(id, -32601, "method not found"));
