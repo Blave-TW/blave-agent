@@ -17,7 +17,10 @@ if (!process.versions.electron) {
   ok("① 報告的單例泡泡:視窗退到背景收、錨點不在畫面上了收", /window\.blave\.onWindowActive\(\(on\) => \{ if \(!on\) hideTip\(\); \}\);/.test(rob) && /if \(tipAnchor && !tipAnchor\.getClientRects\(\)\.length\) hideTip\(\);/.test(rob));
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); }
-  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
+  // 暫存的 userData 由這一層開、這一層收:Electron 關閉時還會往 userData 寫檔,子行程自己刪過也會再長回來(稽核 P2-12)
+  const tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-title-"));
+  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, BLAVE_TEST_USERDATA: tmp } });
+  fs.rmSync(tmp, { recursive: true, force: true }); ok("跑完暫存目錄不存在", !fs.existsSync(tmp), tmp);
   const sub = r.status == null ? 1 : r.status;
   console.log(red || sub ? `\n${red + sub} FAILED` : "\nALL PASS");
   process.exit(red || sub ? 1 : 0);
@@ -25,7 +28,7 @@ if (!process.versions.electron) {
 
 const { app, BrowserWindow } = require("electron");
 const os = require("os");
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-title-")));
+app.setPath("userData", process.env.BLAVE_TEST_USERDATA || fs.mkdtempSync(path.join(os.tmpdir(), "blave-title-")));
 const STUB = `window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
   : k === "onWindowActive" ? (fn) => { window.__active = fn; }
   : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}

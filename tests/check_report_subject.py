@@ -4,8 +4,8 @@ Every brick in SINGLE_SUBJECT is run here; a new brick with a symbol / exchange 
 not registered fails. No network, no api.
 Run: cd blave-agent && .venv/bin/python tests/check_report_subject.py
 """
-import inspect, os, sys, tempfile
-os.environ["BLAVE_AGENT_WORKSPACE"] = tempfile.mkdtemp(prefix="subject-")
+import inspect, os, shutil, sys, tempfile
+WS = os.environ["BLAVE_AGENT_WORKSPACE"] = tempfile.mkdtemp(prefix="subject-")
 os.environ["BLAVE_REPORT_PACKS"] = "off"
 for k in ("BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY", "BLAVE_AGENT_LOCAL", "BLAVE_SCHEDULED_RUN"):
     os.environ.pop(k, None)
@@ -117,5 +117,7 @@ sol = T.symbol_brief("SOL", "2026-09-02", H)
 check("資金費率" in sol.context and all(x["title"].startswith("SOL") for x in titled(sol)),
       "SOL 晨報:鍵維持「資金費率」,圖的標題帶 SOL")
 
+shutil.rmtree(WS, ignore_errors=True)
+check(not os.path.isdir(WS), "temp workspace removed at the end")
 print("\n" + ("ALL PASS" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)
