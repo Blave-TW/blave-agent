@@ -328,7 +328,8 @@ def unique_footnotes(blocks):
                 if len(joined) <= _FN_TEXT_MAX:
                     head["text"] = joined
                     continue
-            n, taken = 2, {r.get("id") for r in b["items"] if isinstance(r, dict)} | set(first)
+            # 只有字串 id 會跟新名字撞;id 是陣列 / 物件的那一列不可雜湊,交給驗證器拒收,不在這裡拋例外
+            n, taken = 2, {r["id"] for r in b["items"] if isinstance(r, dict) and isinstance(r.get("id"), str)} | set(first)
             while f"{it['id'][:_FN_ID_MAX - 4]}-{n}" in taken:
                 n += 1
             it = dict(it, id=f"{it['id'][:_FN_ID_MAX - 4]}-{n}")
@@ -713,7 +714,11 @@ def upload_one(report_id, path, state, token, started=None):
     if err:
         _fail_permanently(report_id, path, err, state)
         return "failed"
-    doc["blocks"], _ = unique_footnotes(doc["blocks"])
+    try:
+        doc["blocks"], _ = unique_footnotes(doc["blocks"])
+    except Exception as e:  # noqa: BLE001 — 修不了就原樣送,由 api 的驗證器講哪裡錯
+        print(f"[report_uploader] {report_id}: footnotes left as written ({type(e).__name__}: {e})",
+              file=sys.stderr)
     outcome, message = _resolve_images(doc, report_id, started, token)
     if outcome == "permanent":
         _fail_permanently(report_id, path, message, state)
@@ -785,7 +790,12 @@ def run_once(token=None, started=None):
         if time.time() - started > TICK_BUDGET_S:
             counts["skipped"] += 1
             continue
-        counts[upload_one(report_id, path, state, token, started)] += 1
+        try:
+            outcome = upload_one(report_id, path, state, token, started)
+        except Exception as e:  # noqa: BLE001 — 一份報告出事不中斷整輪:後面的照送、退避紀錄照存
+            _defer(report_id, f"unexpected {type(e).__name__}: {e}", state)
+            outcome = "deferred"
+        counts[outcome] += 1
     live = {rid for rid, _ in files}
     for gone in [rid for rid in state if rid not in live]:
         state.pop(gone)  # 檔案沒了（送出或人工刪掉），退避紀錄跟著走

@@ -8,6 +8,26 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **一份報告出事不再卡住整輪上傳(0.1.8 稽核 P2-12,第十批 #7)**:尾註某一列的 `id` 是陣列或物件、而且同一個 block 裡另有重複 id 要改名時,
+  `unique_footnotes` 丟 `TypeError: unhashable type`;`upload_one` 沒接,整輪中斷、`_save_state` 沒跑,下一輪同一份再炸一次,排在後面的報告都送不出去。
+  ① 改名時只拿字串 id 比對(跟 api 的 `unique_footnotes`、外殼的 `uniqueFootnotes` 同一個答案),那一列原樣留著由驗證器拒收;
+  ② `upload_one` 裡正規化失敗就原樣送(api 會講哪裡錯);③ `run_once` 接住單份報告的任何例外:記 log、照退避(`_defer`)、繼續下一份。
+  測試 `tests/check_report_footnotes.py`。
+- **排程守門認得自然的寫法(0.1.8 稽核 P1-3,第十批 #3)**:`if crontab -l …; then`、`for …; do crontab $f; done`、`while …; do launchctl list; done`、
+  `{ crontab -l; }`、`! crontab -l`、`sudo -u root crontab`、`env -i crontab`、`command -p` / `time -p` / `nice crontab`、`… | xargs crontab`、
+  `find … -exec crontab {} \;` 原本都放行,macOS 的系統框照樣會掛住回合。`_SCHED_CMD_RE` 的指令位置多認 shell 關鍵字之後、find 的 `-exec` / `-ok` 之後;
+  前綴指令連同它自己的選項一起認(`_prefix_re`)。送給 ssh 的 heredoc **沒加引號**而且內文的 `$( )` / 反引號裡叫排程器(這台電腦的 shell 先展開)→ 擋,
+  理由是「寫法」那一條;加引號的、沒加引號但展開的部分跟排程器無關的照放行,雲端主機上裝排程那條路不變。
+  順帶少誤擋:`echo` / `printf` / `grep` / `rg` / `cat` / `sed` / `awk` / `man` / `git` 的引號參數只是字(`echo "crontab -l 可以列出排程"`),不算指令位置。
+  這道守門防的是自然寫出來的指令,不是安全邊界:拆字拼回去、`eval`、直譯器裡拼字、symlink、寫進檔案的腳本照舊只有規則層,測試裡列成 `KNOWN_GAPS`。
+  Codex 引擎沒有對應的攔截點(hook 只掛在 Claude SDK),那條路照舊只有規則層。測試 `tests/check_desktop_sched_guard.py`(列舉)。
+- **電腦版用 Codex 引擎時,Codex 自己的 web search 也關掉(0.1.8 稽核 P1-2,第十批 #2)**:Codex 的 `web_search` 沒設時是 `cached`(開著),
+  用戶在設定 › 隱私關掉內建瀏覽器後,Codex 引擎照樣能用它自己的搜尋上網,查到的東西不出現在聊天裡、也不過網域政策;Claude 那條早就把
+  WebSearch / WebFetch 關了。`codex_engine.build_args(..., web_search_off=True)` 多帶 `-c web_search="disabled"`;要不要關跟 Claude 那條
+  同一個判斷(`web_tools_off()` 不是空的:電腦版三種狀態都關,舊外殼只在掛了瀏覽器時關),雲端機的 argv 逐字不變。鍵名與值對過實際的執行檔
+  (0.155.0-alpha.9.2 對不認得的值回「expected one of `disabled`, `cached`, `indexed`, `live` in `web_search`」)與 0.146.0 / 0.155 的原始碼。
+  管不到的:管理者的 requirements 不准 `disabled` 時以管理者為準;用戶自己 `~/.codex/config.toml` 裡掛的 MCP 照舊只有規則層。
+  測試 `tests/check_codex_engine.py`。
 - **沒有建議時回覆就此結束,不交代「沒有建議」(0.1.8 e2e,第九批 #3)**:改報告標題的回覆正文之後多了兩行——
   「これ以上の提案は不要 — 純修改，不附建議。」與為那句日文道歉的一行。來源是 `_SUGGEST_RULE`(每輪接在 system prompt 最後):它只寫了
   「命中時怎麼寫」與「純寒暄直接收尾」,沒寫「沒有要提議時什麼都不寫」,模型把檢查結果寫進了正文。規則最後補一段:沒有要提議 → 正文寫完就結束;

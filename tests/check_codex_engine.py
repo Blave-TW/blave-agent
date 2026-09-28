@@ -157,9 +157,10 @@ FIXTURE = [
 
 def fake_codex(events, captured):
     async def _run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
-                   model=None, effort=None, mcp_url=None, browser_url=None):
+                   model=None, effort=None, mcp_url=None, browser_url=None, web_search_off=False):
         captured.update(bin=codex_bin, prompt=prompt, cwd=cwd, env=env, model=model,
-                        effort=effort, mcp_url=mcp_url, browser_url=browser_url)
+                        effort=effort, mcp_url=mcp_url, browser_url=browser_url,
+                        web_search_off=web_search_off)
         tr = codex_engine.CodexTranslator(sink, on_tool_start, on_tool_done)
         for event in events:
             tr.feed(event)
@@ -228,6 +229,28 @@ assert codex_engine.build_args("/x/codex", "/ws") == BASE_ARGV
 picked = codex_engine.build_args("/x/codex", "/ws", model="gpt-5.5", effort="low")
 assert picked == BASE_ARGV[:5] + ["-m", "gpt-5.5", "-c", "model_reasoning_effort=low"] \
     + BASE_ARGV[5:], picked
+
+# ── 4b. Codex 自己的 web search(稽核 P1-2):電腦版一律關;雲端機的 argv 逐字不變 ──
+#      鍵名與值對過實際的執行檔與原始碼(codex_engine._WEB_SEARCH_OFF 上面那段註解),這裡釘住字面
+WEB_OFF = ["-c", 'web_search="disabled"']
+assert codex_engine.build_args("/x/codex", "/ws", web_search_off=True) == BASE_ARGV[:5] + WEB_OFF + BASE_ARGV[5:]
+assert codex_engine.build_args("/x/codex", "/ws", web_search_off=False) == BASE_ARGV, "雲端機:argv 逐字不變"
+assert codex_engine.build_args("/x/codex", "/ws", model="gpt-5.5", effort="low", web_search_off=True) \
+    == picked[:9] + WEB_OFF + picked[9:], "跟選了 model / effort 並存"
+assert not any("web_search" in a for a in codex_engine.build_args("/x/codex", "/ws", model="gpt-5.5")), "沒要求關就不帶"
+# 關不關跟 Claude 那條同一個判斷:電腦版三種狀態(開著掛上 / 用戶關掉 / 掛不上)都關,不帶 BLAVE_BROWSER 的舊外殼沒掛瀏覽器時不關
+codex_engine.run = fake_codex(FIXTURE, seen)
+for state, want in (("off", True), ("unavailable", True), ("on", True), (None, False), ("bogus", False)):
+    os.environ.pop("BLAVE_BROWSER", None)
+    if state:
+        os.environ["BLAVE_BROWSER"] = state
+    seen.clear()
+    run_local_turn(engine="codex", codex_bin="/x/codex")
+    assert seen["web_search_off"] is want, (state, seen.get("web_search_off"))
+    assert bool(at.web_tools_off(at.desktop_web(at.LocalSink("s1"), False), False)) is want, state
+os.environ.pop("BLAVE_BROWSER", None)
+assert at.desktop_web(object(), False) is None and at.web_tools_off(None, False) == [], "雲端(不是 LocalSink):不歸這條管"
+codex_engine.run = real_run
 
 # ── 5. BLAVE_PYTHON:沒設 → 兩條路徑一個字都不加;有設 → 兩條路徑都帶同一條規則 ──
 with open(os.path.join(at.WORKSPACE, "AGENTS.md"), "w") as f:
@@ -488,6 +511,7 @@ chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG,
 argv, env = spawned()
 stdin = open(os.path.join(fake_out, "stdin")).read()
 assert all(f in argv for f in BR_FLAGS) and not any("mcp_servers.blave." in a for a in argv), argv
+assert 'web_search="disabled"' in argv and argv[argv.index('web_search="disabled"') - 1] == "-c", "掛了內建瀏覽器的回合:Codex 自己的 web search 關掉"
 assert env.get("BLAVE_BROWSER_TOKEN") == BR_TOK and "BLAVE_MCP_TOKEN" not in env, "--mcp-servers 沒列 blave 就不掛 blave"
 assert "Built-in browser (this turn)" in stdin and "Blave MCP (this turn)" not in stdin
 chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, mcp_servers="blave,blave_browser")

@@ -9,7 +9,7 @@ The api refuses a footnote block whose item ids repeat (openclaw/report_blocks_v
   3. the api's own validator on what was written (BLAVE_API_DIR or ../api; skipped without).
 No network. Run: cd blave-agent && .venv/bin/python tests/check_report_footnotes.py
 """
-import importlib.util, json, os, re, shutil, subprocess, sys
+import importlib.util, io, json, os, re, shutil, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The fake data of check_report_bricks.py (everything above its first check), not a second copy.
@@ -198,6 +198,86 @@ os.utime(old, (1, 1))
 got = U.upload_one("fn-up", old, {}, "tok")
 check(got == "sent" and len(put) == 1 and [i["id"] for i in put[0]["blocks"][-1]["items"]] == ["src"]
       and api_says(put[0]["blocks"][-1]) is None, f"runtime 上傳:舊 lib 寫的重複 id 在送出前併好({got})")
+
+# ── 5. 稽核 P2-12:id 不是字串的列(陣列 / 物件 / 數字 / null)——三份都不拋例外、同一個答案;那一列原樣留給驗證器拒收 ──
+ODD = [
+    ("id 是陣列,另有重複 id 要改名(原本在這裡丟 unhashable)",
+     [{"id": ["x"], "text": "怪。"}, {"id": "s", "text": "甲。", "url": "https://a.example/1"}, {"id": "s", "text": "乙。", "url": "https://b.example/2"}],
+     [{"id": ["x"], "text": "怪。"}, {"id": "s", "text": "甲。", "url": "https://a.example/1"}, {"id": "s-2", "text": "乙。", "url": "https://b.example/2"}]),
+    ("id 是物件 / 數字 / null / 布林,另有重複 id 要改名",
+     [{"id": {"a": 1}, "text": "怪。"}, {"id": 7, "text": "七。"}, {"id": None, "text": "空。"}, {"id": True, "text": "真。"},
+      {"id": "s", "text": "甲。", "url": "https://a.example/1"}, {"id": "s", "text": "乙。"}],
+     [{"id": {"a": 1}, "text": "怪。"}, {"id": 7, "text": "七。"}, {"id": None, "text": "空。"}, {"id": True, "text": "真。"},
+      {"id": "s", "text": "甲。", "url": "https://a.example/1"}, {"id": "s-2", "text": "乙。"}]),
+    ("id 是陣列而且出現兩次:不當成重複去併(不是字串就不碰)",
+     [{"id": ["x"], "text": "一。"}, {"id": ["x"], "text": "二。"}, {"id": "a", "text": "甲"}, {"id": "a", "text": "乙"}],
+     [{"id": ["x"], "text": "一。"}, {"id": ["x"], "text": "二。"}, {"id": "a", "text": "甲。乙。"}]),
+    ("不是物件的列、沒有 id 的列原樣留著",
+     ["字串", 5, None, ["x"], {"text": "沒有 id"}, {"id": "s", "text": "甲。", "url": "u1"}, {"id": "s", "text": "乙。", "url": "u2"}],
+     ["字串", 5, None, ["x"], {"text": "沒有 id"}, {"id": "s", "text": "甲。", "url": "u1"}, {"id": "s-2", "text": "乙。", "url": "u2"}]),
+]
+js_odd = None
+if node:
+    r = subprocess.run([node, "-e", script], input=json.dumps([c[1] for c in ODD]), capture_output=True, text=True, timeout=60)
+    check(r.returncode == 0, "shell/reportshare.js:怪 id 不拋例外" + ("" if r.returncode == 0 else " — " + r.stderr[-300:]))
+    js_odd = json.loads(r.stdout) if r.returncode == 0 else None
+for i, (name, given, want) in enumerate(ODD):
+    blocks = [{"type": "meta"}, {"type": "footnote", "items": given}]
+    got = {}
+    for who, fn in (("lib", R.unique_footnotes), ("runtime", U.unique_footnotes)):
+        try:
+            got[who] = fn(blocks)[0][1]["items"]
+        except Exception as e:   # noqa: BLE001 — 要驗的就是「不拋」
+            got[who] = repr(e)
+    ok = got["lib"] == want and got["runtime"] == want and (js_odd is None or js_odd[i] == want)
+    check(ok, f"{name}:lib / runtime / shell 不拋例外、同一個答案" + ("" if ok else f" — {got} shell {js_odd[i] if js_odd else None}"))
+    if V is not None:
+        bad = [x for x in want if not (isinstance(x, dict) and isinstance(x.get("id"), str))]
+        check(bool(bad) and api_says({"type": "footnote", "items": got["lib"]}) is not None, f"{name}:那一列原樣交給 api 的驗證器,驗證器拒收")
+
+# 上傳:一份報告出事(不管是什麼例外),這一輪後面的照送、退避紀錄照存、下一輪不再每輪重炸
+for n in os.listdir(R.REPORTS_DIR):
+    if n.endswith(".json"):
+        os.remove(os.path.join(R.REPORTS_DIR, n))
+U._STATE_PATH = os.path.join(R.REPORTS_DIR, "..", "report_uploads_test.json")
+saved = []
+U._save_state = lambda state, path=None: saved.append(json.loads(json.dumps(state)))
+U._load_state = lambda path=None: dict(saved[-1]) if saved else {}
+odd_doc = dict(BROKEN, id="fn-odd", blocks=[BROKEN["blocks"][0], {"type": "text", "markdown": "結論[^s]。"}, {"type": "footnote", "items": ODD[0][1]}])
+for rid, doc, mt in (("fn-odd", odd_doc, 1), ("fn-boom", dict(BROKEN, id="fn-boom"), 2), ("fn-after", dict(BROKEN, id="fn-after"), 3)):
+    with open(os.path.join(R.REPORTS_DIR, rid + ".json"), "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False)
+    os.utime(os.path.join(R.REPORTS_DIR, rid + ".json"), (mt, mt))
+del put[:]
+real_resolve = U._resolve_images
+def _resolve(doc, rid, started, token):
+    if rid == "fn-boom":
+        raise RuntimeError("anything at all")
+    return real_resolve(doc, rid, started, token)
+U._resolve_images = _resolve
+real_put = U._put
+sent_odd = []
+def _put_checked(body, rid, token):
+    if rid == "fn-odd":   # api 的驗證器拒收那一列:400,永久失敗
+        sent_odd.append(json.loads(body)["blocks"][-1]["items"])
+        raise U.urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(json.dumps(
+            {"error": "blocks[2].items[0].id: must be a string", "error_code": "BAD_CONTENT"}).encode()))
+    return real_put(body, rid, token)
+U._put = _put_checked
+try:
+    counts, err = U.run_once(token="tok"), None
+except Exception as e:   # noqa: BLE001
+    counts, err = None, repr(e)
+left = sorted(n for n in os.listdir(R.REPORTS_DIR) if n.endswith(".json"))
+check(err is None and counts == {"sent": 1, "failed": 1, "deferred": 1, "skipped": 0}, f"上傳:怪 id 的那份被 api 拒收(failed)、出例外的那份退避(deferred)、排在後面的照送(sent) — {err or counts}")
+check(sent_odd == [ODD[0][2]], f"上傳:怪 id 的那份送出去的是正規化過的(重複的改了名、怪的那一列原樣) — {sent_odd}")
+check([p["id"] for p in put] == ["fn-after"] and left == ["fn-boom.json"] and os.path.isfile(os.path.join(U.FAILED_DIR, "fn-odd.json")),
+      f"上傳:送出去的是後面那一份;出例外的留在原地等下一輪,被拒收的進 failed/ — {left}")
+check(len(saved) == 1 and saved[0].get("fn-boom", {}).get("attempts") == 1 and saved[0]["fn-boom"]["next_at"] > time.time()
+      and "RuntimeError" in saved[0]["fn-boom"]["error"], f"上傳:退避紀錄有存(下一輪不會馬上再炸一次) — {saved}")
+counts2 = U.run_once(token="tok")
+check(counts2 == {"sent": 0, "failed": 0, "deferred": 0, "skipped": 1}, f"上傳:下一輪那一份在退避中,不重跑 — {counts2}")
+U._resolve_images, U._put = real_resolve, real_put
 
 print("\nFAILED" if fails else "\nALL PASS", f"({fails} failed)" if fails else "")
 sys.exit(1 if fails else 0)

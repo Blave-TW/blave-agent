@@ -11,15 +11,20 @@ const VERIFY_WAIT_MS = 120000, VERIFY_TOUCHED_MS = 120000;
 // 一次 browser_search 呼叫(含排在前一次搜尋後面等的時間)最晚這麼久要回:引擎那一端的工具呼叫有自己的逾時
 // (Codex 由 runtime/codex_engine.py 設成 600 秒;HTTP 用戶端常見的上限是 300 秒),等驗證不能等到呼叫本身先斷
 const SEARCH_CALL_MAX_MS = 270000, VERIFY_MIN_MS = 20000;   // 剩不到 VERIFY_MIN_MS 就不問了(來不及過一次驗證)
+// 按「交還 agent」的當下頁面常常正在導回搜尋結果:等換頁落定再判,最多 HANDBACK_SETTLE_MS;還沒開始換頁的,給它 HANDBACK_GRACE_MS 開始
+const HANDBACK_SETTLE_MS = 8000, HANDBACK_GRACE_MS = 1000;
 // 同一輪的搜尋一個一個來,前一次結束到下一次開始至少隔這麼久(實測 2 秒內連發 5 次就被要求驗證)
 const SEARCH_GAP_MS = 4000;
 
 /* 搜尋引擎表:搜尋網址怎麼組、哪些網址是它的搜尋頁、它的驗證頁怎麼認。
    verify.path = 網址就看得出來的驗證頁;marks / text = 頁面上的標記(只讀,inpage.js serp 用);unless = 有這個就是結果頁,不是驗證頁
    (搜尋「異常流量」時結果摘要裡也會有這幾個字)。要加引擎或驗證頁換了樣子,改這張表 */
+/* Google 的主機名:google.com、各國網域(google.de、google.co.jp、google.com.tw)與它們的子網域。字尾要整個對上——
+   `google.evil.com`、`google.com.evil.io` 是別人的網域(稽核 P2-4)。policy.js 的 searchEngine 有同一條(那支不 require 別的檔) */
+const GOOGLE_HOST = /(^|\.)google\.(?:com|[a-z]{2}|com?\.[a-z]{2})$/;
 const ENGINES = {
   google: {
-    name: "Google", host: /(^|\.)google\.[a-z.]+$/, search: /^\/(search|webhp)/,
+    name: "Google", host: GOOGLE_HOST, search: /^\/(search|webhp)/,
     url: (q, hl, n) => "https://www.google.com/search?hl=" + hl + "&num=" + n + "&q=" + encodeURIComponent(q),
     verify: { path: /^\/sorry(\/|$)/, marks: "#captcha-form,form[action*='sorry'],iframe[src*='recaptcha']", text: "unusual traffic|異常流量|异常流量", unless: "#rso a h3" },
   },
@@ -60,8 +65,9 @@ function nextEngine(engine) { const i = ORDER.indexOf(engine); return i >= 0 && 
  * 等用戶過驗證。不碰頁面:d 的每一支都只讀主行程自己的狀態。
  * d: { now(), sleep(ms), alive() → 分頁與回合都還在, present() → 視窗在畫面上, choice() → 用戶按的鈕(null | "done" | "ddg" | "skip"),
  *      touchedAt() → 用戶第一次動手的時間戳(沒動過 = 0), left() → Promise<bool> 分頁已經導覽回搜尋結果,
+ *      loading()? → 分頁正在換頁(主行程自己的載入狀態),
  *      deadline?(這次呼叫最晚要回的時間戳), waitMs?, touchedMs? }
- * 回 "passed"(過了)| "exit"(按了出口)| "gave_up"(按了交還但還在驗證頁)| "timeout" | "absent"(人不在)| "closed"
+ * 回 "passed"(過了)| "exit"(按了出口)| "gave_up"(按了交還、換頁落定之後還在驗證頁)| "timeout" | "absent"(人不在)| "closed"
  */
 async function waitVerify(d) {
   const waitMs = d.waitMs || VERIFY_WAIT_MS, touchedMs = d.touchedMs || VERIFY_TOUCHED_MS, start = d.now();
@@ -69,7 +75,17 @@ async function waitVerify(d) {
     if (!d.alive()) return "closed";
     if (await d.left()) return "passed";
     const c = d.choice();
-    if (c === "done") return "gave_up";   // 「交還 agent」=「我弄好了」:上面剛查過一次,還沒離開就當沒過,不再問第二次
+    if (c === "done") {
+      // 「交還 agent」=「我弄好了」。過完驗證、頁面正在導回搜尋結果時按下去的,上面那一次查到的是「還在載」(稽核 P2-6):
+      // 等換頁落定再判;落定之後還沒離開才當沒過,不再問第二次
+      const t0 = d.now(), until = Math.min(t0 + HANDBACK_SETTLE_MS, d.deadline || Infinity);
+      while (d.alive() && d.now() < until && ((d.loading && d.loading()) || d.now() - t0 < HANDBACK_GRACE_MS)) {
+        await d.sleep(250);
+        if (await d.left()) return "passed";
+      }
+      if (!d.alive()) return "closed";
+      return (await d.left()) ? "passed" : "gave_up";
+    }
     if (c) return "exit";
     if (!d.present()) return "absent";
     const touched = d.touchedAt(), end = touched ? Math.min(touched + touchedMs, start + waitMs + touchedMs) : start + waitMs;
@@ -114,4 +130,4 @@ const reasonOf = (got) => ({ exit: "user_skipped", gave_up: "user_skipped", time
 
 const REFUSED = "this tab is a search engine's robot check. It is the user's to do: you do not click, fill, press keys, read, snapshot or capture on it, and you do not try another tool or another address to get past it. browser_search is already waiting for the user; when it returns, go on from its result";
 
-module.exports = { ENGINES, ORDER, VERIFY_WAIT_MS, VERIFY_TOUCHED_MS, SEARCH_CALL_MAX_MS, VERIFY_MIN_MS, SEARCH_GAP_MS, REASONS, REFUSED, engineOf, verifyPage, searchPage, marks, nextEngine, waitVerify, createGate, unavailable, reasonOf };
+module.exports = { ENGINES, GOOGLE_HOST, ORDER, VERIFY_WAIT_MS, VERIFY_TOUCHED_MS, SEARCH_CALL_MAX_MS, VERIFY_MIN_MS, SEARCH_GAP_MS, HANDBACK_SETTLE_MS, HANDBACK_GRACE_MS, REASONS, REFUSED, engineOf, verifyPage, searchPage, marks, nextEngine, waitVerify, createGate, unavailable, reasonOf };

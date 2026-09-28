@@ -147,7 +147,7 @@ captured = {}
 
 
 async def fake_run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_done=None,
-                   model=None, effort=None, mcp_url=None, browser_url=None):
+                   model=None, effort=None, mcp_url=None, browser_url=None, web_search_off=False):
     captured["prompt"] = prompt
     tr = codex_engine.CodexTranslator(sink, on_tool_start, on_tool_done)
     tr.feed({"type": "item.completed", "item": {"id": "a", "type": "agent_message", "text": "好"}})
