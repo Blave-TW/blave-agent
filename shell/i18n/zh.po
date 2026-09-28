@@ -4083,10 +4083,10 @@ msgid "br.set.switch"
 msgstr "內建瀏覽器"
 
 msgid "br.set.lead"
-msgstr "開著時，agent 可以上網搜尋、開網頁查資料，開的每一頁都會出現在聊天裡。交易所與券商後台、銀行一律不開；登入、送出、付款由你自己按。"
+msgstr "agent 可以上網搜尋、開網頁查資料，開的每一頁都會出現在聊天裡。交易所與券商後台、銀行一律不開；登入、送出、付款由你自己按。關掉之後，agent 就不上網查任何東西。"
 
-msgid "br.set.off"
-msgstr "關掉之後，agent 不會上網搜尋、也不會開任何網頁，只用 Blave 的資料和這台電腦上的檔案回答。策略抓資料與下單不受影響。"
+msgid "br.set.leadOff"
+msgstr "已關閉，agent 不會上網搜尋、也不會開任何網頁，只用 Blave 的資料和這台電腦上的檔案回答。策略抓資料與下單不受影響。"
 
 msgid "br.set.clear"
 msgstr "清除瀏覽資料"

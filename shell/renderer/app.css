@@ -811,7 +811,6 @@ body.resizing * { cursor: col-resize !important; }
 .sw.off::after { left: 2px; background: var(--ink-3); }
 .sw:disabled { opacity: .5; cursor: default; }
 .priv-lead { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }
-.br-set .priv-lead + .priv-lead { margin-top: var(--space-4); }
 .priv-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-24); margin-top: var(--space-16); }
 .priv-two h6 { margin: 0 0 var(--space-6); font-size: 12px; font-weight: 600; color: var(--ink); }
 .priv-two ul { margin: 0; padding: 0; list-style: none; }
