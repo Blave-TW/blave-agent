@@ -99,6 +99,8 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
     const r = J(await call(tool, { tab: a.alias }));
     t(tool + " 沿用的分頁、用戶接手中 → user_in_control,沒進頁面", r.ok === false && r.error === "user_in_control" && a.page.entered.length === 0 && !JSON.stringify(r).includes(SECRET), r);
   }
+  t("user_in_control 的訊息:講了要按「交還 agent」才能讀、要模型照實告訴用戶、不准講別的原因(#201)", /operating this tab/.test(last.message) && /Hand back to agent/.test(last.message) && /交還 agent/.test(last.message)
+    && /Tell the user exactly that/.test(last.message) && /no other reason/.test(last.message) && /still open/.test(last.message), last);
   const ua = (await list()).find((x) => x.tab === a.alias);
   t("browser_tabs:用戶接手中的分頁標 user_control、只回主機名不回標題(稽核 S9 照舊)", ua.status === "user_control" && ua.url === "site-1.com" && ua.title === "" && ua.from_previous_turn === true && /operating/.test(ua.note), ua);
   Br.handback(a.tab.id);
@@ -179,6 +181,15 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   t("browser_tabs 列的是 reachable(這一輪開的+前面回合還活著的)", /name === "browser_tabs"\) \{ const list = tabs\.reachable\(\)\.map\(tabInfo\)/.test(idx));
   const desc = tools.TOOLS.find((x) => x.name === "browser_tabs").description;
   t("工具說明:browser_tabs 講了前面回合的分頁還在、照同一個代號用", /earlier turns that are still open/.test(desc) && /same id/.test(desc) && /Hand back to agent/.test(desc), desc);
+
+  // ---- 規則文字(references/browser.md)
+  const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8");
+  const sec = (head) => { const i = md.indexOf(head); return i < 0 ? "" : md.slice(i, md.indexOf("\n## ", i + 1) < 0 ? undefined : md.indexOf("\n## ", i + 1)); };
+  const carry = sec("## Tabs from earlier turns");
+  t("規則:前面回合的分頁還在、代號不變,先 browser_tabs、不重開同一個網址(#201)", /stay open after the turn ends and keep the same id/.test(carry) && /call `browser_tabs`/.test(carry) && /`from_previous_turn`/.test(carry) && /the same address is not opened a second time/.test(carry), carry);
+  t("規則:用戶說已經點開 / 登入 / 處理好了 → 先讀那個分頁(#201)", /already opened, clicked, signed in to or finished something/.test(carry) && /我已經點開了／登入好了／處理好了/.test(carry) && /read that tab first/.test(carry), carry);
+  const uic = (md.split("\n").find((l) => l.startsWith("On `user_in_control`")) || "");
+  t("規則:user_in_control 要照實講「按交還 agent 之後才能讀」,不編別的原因(#201)", /Hand back to agent/.test(uic) && /交還 agent/.test(uic) && /Say exactly that in the reply/.test(uic) && /give no other reason/.test(uic) && /tabs are not reopened every turn/.test(uic), uic);
 
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
