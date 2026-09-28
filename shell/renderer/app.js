@@ -1636,7 +1636,7 @@ function actKindOf(c) {
   if (tool === "Grep" || tool === "Glob") return { kind: "files", obj: "" };
   if (tool === "WebSearch") return { kind: "search", obj: "" };
   if (tool.indexOf("mcp__blave_browser__") === 0) return { kind: "web_read", obj: "" };
-  if (tool === "Agent" || tool.indexOf("Task") === 0) return { kind: "delegate", obj: "" };
+  if (tool === "Agent" || tool === "Task") return { kind: "delegate", obj: "" };   // TaskOutput 是等背景指令的輸出,不是委派:落到 unknown(「正在處理」)
   if (ACT_SILENT.includes(tool)) return { kind: "silent", obj: "" };
   return { kind: "unknown", obj: "" };
 }

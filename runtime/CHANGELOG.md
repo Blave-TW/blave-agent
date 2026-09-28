@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **等背景工作的輸出時,狀態列講的是那支指令在做的事(0.1.8 e2e #134)**:回測被逾時移到背景後,agent 用 `TaskOutput` 在回合內等,
+  狀態列寫「正在委派研究」(`TaskOutput` 被歸在 delegate)。子代理在這個 runtime 是關掉的,`TaskOutput` 等的一定是指令:tool chunk 的
+  `kind` / `kind_obj` 改成這一輪上一個 Bash 指令的分類(「正在跑回測 …」),沒有就 `unknown`(「正在處理」)。三個表面共用。測試 `tests/check_tool_kind.py`。
 - **外殼給這一輪的指示不進用戶的訊息(0.1.8 e2e #131)**:電腦版「新增報告」原本把「這份只要產出一次，不用建立排程。…」接在用戶寫的需求後面
   一起當訊息送,泡泡與對話存檔裡就是用戶「說了」他沒說過的話。外殼改成只送「幫我建立報告：「…」。」,指示用環境變數
   `BLAVE_TURN_NOTE`(代號:`report_once` / `report_recur`)分開帶;`turn_note_rule` 把代號換成規則接進這一輪的提示(Claude 的 system prompt、

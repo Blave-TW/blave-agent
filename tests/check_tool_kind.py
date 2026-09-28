@@ -69,8 +69,9 @@ case("Glob", {"pattern": "references/*.md"}, "docs")
 case("Grep", {"pattern": "rsi\\(", "path": os.path.join(WS, "strategies")}, "files")
 case("Write", {"file_path": os.path.join(WS, "strategies", "btc_rsi", "strategy.py")}, "strategy_write", "btc_rsi")
 case("Edit", {"file_path": os.path.join(WS, "tmp", "brief.py")}, "file_write", "brief.py")
-for t in ("Agent", "Task", "TaskOutput"):
+for t in ("Agent", "Task"):
     case(t, {}, "delegate")
+case("TaskOutput", {"task_id": "b1"}, "unknown", note="TaskOutput: waiting on a background command, not a delegation (the sink names the command)")
 case("mcp__blave__get_ssh_access", {}, "cloud")
 for t in ("TodoWrite", "ToolSearch", "BashOutput", "KillShell", "KillBash", "ExitPlanMode"):
     case(t, {}, "silent")
@@ -189,6 +190,22 @@ ok = ok and c2["kind"] == "live_tick" and c2["kind_obj"] == "eth_live"
 print(("PASS " if ok else "FAIL ") + "WebSink tool chunk carries kind / kind_obj / kind_tab (下單設定 read by explicit path)")
 if not ok:
     fails.append("sink wiring")
+
+# e2e 0.1.8 #134:等背景回測的輸出時,狀態列講「正在跑回測」(上一個 Bash 指令的分類),不是「正在委派研究」
+s3 = Sink()
+s3.on_tool(types.SimpleNamespace(id="w0", name="TaskOutput", input={"task_id": "b0"}))
+first = s3.sent[-1]
+s3.on_tool(types.SimpleNamespace(id="w1", name="Bash", input={"command": "python3 strategies/tw5/strategy.py"}))
+ran = s3.sent[-1]
+s3.on_tool(types.SimpleNamespace(id="w2", name="Read", input={"file_path": os.path.join(WS, "tmp", "x.log")}))
+s3.on_tool(types.SimpleNamespace(id="w3", name="TaskOutput", input={"task_id": "b1"}))
+wait = s3.sent[-1]
+ok = (first["kind"] == "unknown" and "kind_obj" not in first and ran["kind"] == "backtest" and ran["kind_obj"] == "tw5"
+      and wait["tool"] == "TaskOutput" and wait["kind"] == "backtest" and wait["kind_obj"] == "tw5"
+      and not any(c.get("kind") == "delegate" for c in s3.sent))
+print(("PASS " if ok else "FAIL ") + f"TaskOutput takes the kind of the turn's last Bash command; none yet -> unknown; never delegate ({first.get('kind')}, {wait.get('kind')} {wait.get('kind_obj')})")
+if not ok:
+    fails.append("bg wait")
 
 s.on_tool_prep("Write")
 ok = s.sent[-1] == {"type": "tool_prep", "tool": "Write"}

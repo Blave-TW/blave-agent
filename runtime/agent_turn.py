@@ -2110,7 +2110,9 @@ def _tool_kind(name, params, workspace=None, trading=None):
         return "unknown", "", ""
     if name.startswith("mcp__blave__"):
         return "cloud", "", ""
-    if name in ("Agent", "Task", "TaskOutput"):
+    # TaskOutput 不在這裡:它等的是背景指令的輸出(子代理在這個 runtime 是關掉的),分類由 on_tool 換成上一個 Bash 的
+    # (0.1.8 e2e #134:等回測時狀態列寫「正在委派研究」);這裡落到 unknown
+    if name in ("Agent", "Task"):
         return "delegate", "", ""
     if name == "Read":
         rel = _ws_rel(params.get("file_path") or "", workspace)
@@ -2204,6 +2206,7 @@ class WebSink:
         # (done chunk 也要帶 tool)。sink 活一個回合就丟,不需要清理。
         self._tool_t0 = {}
         self._trading = None  # 下單設定裡的策略名(_trading_names),第一個工具呼叫時讀
+        self._last_bash = None  # 這一輪上一個 Bash 指令的 (kind, kind_obj):等它的輸出(TaskOutput)時狀態列照它講
         self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
         self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
         # 逐 token 的文字要先攢起來再送。實測 deepseek 一段回覆吐 ~68 delta/秒,
@@ -2328,6 +2331,10 @@ class WebSink:
         if self._trading is None:
             self._trading = _trading_names(WORKSPACE)
         kind, kind_obj, kind_tab = _tool_kind(name, params, trading=self._trading)
+        if name == "Bash":
+            self._last_bash = (kind, kind_obj)
+        elif name == "TaskOutput":
+            kind, kind_obj = self._last_bash or ("unknown", "")
         chunk["kind"] = kind
         if kind_obj:
             chunk["kind_obj"] = kind_obj
