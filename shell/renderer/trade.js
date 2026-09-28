@@ -351,12 +351,25 @@ function trDirty(names, stored, edits) { return names.some((n) => edits[n] != nu
    留在清單裡唯一用途是讓人取消勾選——雲端的 names 已把讀不到的濾掉,所以只有這台電腦會出);
    locked = Type C、不在表裡、機器端不支援(判的是「能不能加進來」,跟表列的 `stored[n] > 0` 是「能不能從 0 撥錢」不同;
    已在表裡的存量不鎖,不然存不回去)。顯示名 localeCompare 排序(§13-3:列上畫的是顯示名,照內部名排會像亂的)。 */
-function trPickRows(list, names, canTrade) {
+function trPickRows(list, names, canTrade, paper) {
   const by = {}; list.forEach((x) => { by[x.name] = x; });
   const seen = new Set(names); list.forEach((x) => { if (x.hasBacktest) seen.add(x.name); });
   return [...seen].map((n) => { const x = by[n], inCur = names.indexOf(n) >= 0;
-    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: !!x && !!x.portfolio && !inCur && !canTrade }; })
+    // 模擬交易是 USDT 帳戶:台幣計價的標的(台指期、台股)進不來(e2e 0.1.8 #91:台指期那一列的金額其實是口數、畫面寫 USDT)。
+    // 已在表裡的存量不鎖(鎖住就取消不了),只帶原因;跟 Type C 同時成立時只講這一條——它是更根本的原因
+    const twd = paper === true && !!x && x.twd === true, typeC = !!x && !!x.portfolio && !inCur && !canTrade;
+    return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: typeC || (twd && !inCur),
+      note: twd ? (inCur ? "twdKeep" : "twd") : typeC ? "typeC" : null }; })
     .sort((a, b) => a.display.localeCompare(b.display));
+}
+/* 這支策略的標的是不是台幣計價:台指期(TXF / MXF / TMF,runtime command_listener._TXF_ASSET_SPECS 那三個)或台股代號
+   (4–6 位數字,可帶一個英文字尾:2330、00878、00631L;帶 .TW / .TWO 也算)。syms = 單一標的與組合的標的清單;看不出來 = 不是(不擋) */
+const TR_TWD_RE = /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/;
+function trIsTwd(syms) { return (Array.isArray(syms) ? syms : [syms]).some((s) => typeof s === "string" && TR_TWD_RE.test(s.trim().toUpperCase())); }
+// 程式碼頂層的 UNIVERSE = [...](Type C 的標的清單;stats.json 不帶)。只收字面字串,動態組出來的讀不到 = 空陣列
+function trUniverse(code) {
+  const m = /^UNIVERSE\s*=\s*\[([^\]]*)\]/m.exec(typeof code === "string" ? code : "");
+  return m ? (m[1].match(/["'][^"']{1,32}["']/g) || []).map((s) => s.slice(1, -1)) : [];
 }
 /* 「確定」之後立刻送的那一份:$0 的兩個方向——勾了、不在 stored 的以 0 加進去(策略進 cron、呼吸點亮);
    取消勾選、金額 ≤ 0 的拿掉 key(移出、點熄)。**有錢而被取消勾選的還在裡面**:那會平倉,留到儲存的確認框。
@@ -1023,10 +1036,11 @@ async function trLoadStrategies(S) {
       const sym = x.remote ? x.symbol : typeof s.symbol === "string" && s.symbol ? s.symbol : null;
       const mk = /^MARKET\s*=\s*["'](spot|swap)["']/m.exec((d && d.code) || "");
       m = { mtime: x.mtime, symbol: sym, market: mk ? mk[1] : "swap",
-            portfolio: x.remote ? !!x.portfolio : !sym && Object.keys(s).some((k) => k.indexOf("benchmark_") === 0) };
+            portfolio: x.remote ? !!x.portfolio : !sym && Object.keys(s).some((k) => k.indexOf("benchmark_") === 0),
+            twd: trIsTwd([sym].concat(x.remote ? [] : trUniverse(d && d.code))) };   // 雲端清單不帶組合的標的:雲端的 Type C 看不出來
       S.meta.set(x.name, m);
     }
-    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio });
+    out.push({ name: x.name, displayName: x.displayName || x.name, hasBacktest: !!x.hasBacktest, symbol: m.symbol, market: m.market, portfolio: m.portfolio, twd: m.twd === true });
   }
   S.list = out;
 }
@@ -1812,6 +1826,9 @@ function trAmountTable(names, stored, states) {
     const locked = !!x.portfolio && !(stored[n] > 0) && !((trReport() || {}).can_trade_portfolio === true);
     // 雲端其實支援投資組合策略(已撥款的照跑),只是 app 不能從 0 開始撥(機器會拒):講真話,不沿用本機那句
     if (locked) first.appendChild(trEl("span", "pf-note", cloud ? t("tr.cloud.typeC") : t("tr.typeC")));
+    // 模擬交易裡的台幣計價存量(擋之前加進來的):照常列、講原因、可以減可以移出,不能再加(這一格其實是口數)
+    const twdRow = x.twd === true && trVenueId() === PAPER;
+    if (twdRow) first.appendChild(trEl("span", "pf-note", t("tr.pick.twd")));
     row.appendChild(first);
     const symTd = trEl("td", "sym c-sym", symText); if (symTip) symTd.title = symTip;
     row.appendChild(symTd);
@@ -1858,8 +1875,8 @@ function trAmountTable(names, stored, states) {
     const badRow = document.createElement("tr"), btd = trEl("td", "note"); btd.colSpan = 4;
     const bmsg = trEl("span", "pf-note err", ""); bmsg.id = "tr-bad-" + n;
     btd.appendChild(bmsg); badRow.appendChild(btd);
-    const markBad = (why) => {                    // why:null / false = 沒事;"bad" = 不是數字;"big" = 超過上限
-      const bad = !!why, msg = why === "big" ? t("tr.amountTooBig") : t("tr.badAmount"), was = bmsg.textContent;
+    const markBad = (why) => {                    // why:null / false = 沒事;"bad" = 不是數字;"big" = 超過上限;"twd" = 模擬交易的台幣標的不能加
+      const bad = !!why, msg = why === "big" ? t("tr.amountTooBig") : why === "twd" ? t("tr.pick.twd") : t("tr.badAmount"), was = bmsg.textContent;
       if (bad) { TR.bad[n] = true; bmsg.textContent = msg; } else delete TR.bad[n];
       inp.setAttribute("aria-invalid", bad ? "true" : "false");
       if (bad) inp.setAttribute("aria-describedby", bmsg.id); else inp.removeAttribute("aria-describedby");
@@ -1880,7 +1897,7 @@ function trAmountTable(names, stored, states) {
       paintTotal(); repaint(); paintBar(); bar.hidden = false;   // 打到一半看不懂時 edits 沒變,儲存列也不能消失
     });
     // 離開(或按 Enter)才驗:看不懂 → 紅框 + 一句原因;看得懂 → 回寫正規化後的值(「1500.5」→「1,500.50」)。Enter 只驗、不送出
-    const settle = () => { const why = trAmountError(inp.value); markBad(why); if (!why) inp.value = trFmt(trParseAmount(inp.value)); if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad() || stale || cfgBad; else paintBar(); };
+    const settle = () => { const why = trAmountError(inp.value) || (twdRow && trParseAmount(inp.value) > (stored[n] || 0) ? "twd" : null); markBad(why); if (!why) inp.value = trFmt(trParseAmount(inp.value)); if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad() || stale || cfgBad; else paintBar(); };
     inp.addEventListener("blur", settle);
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); settle(); } });
     row.appendChild(tgt); tb.appendChild(row); repaint();
@@ -3009,7 +3026,8 @@ function psRow(r, cloud) {
   cb.type = "checkbox"; cb.value = r.name; cb.checked = r.checked; cb.disabled = r.locked;
   const nm = trEl("span", "ps-name", r.display);
   if (r.gone) nm.appendChild(trEl("span", "ps-gone", t("tr.pick.gone")));
-  if (r.locked) nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.cloud.typeC") : t("tr.typeC")));
+  if (r.note === "twd" || r.note === "twdKeep") nm.appendChild(trEl("span", "ps-note", r.note === "twd" ? t("tr.pick.twd") : t("tr.pick.twdKeep")));
+  else if (r.locked) nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.cloud.typeC") : t("tr.typeC")));
   row.append(cb, nm); return row;
 }
 function psOpen(opener) {
@@ -3017,7 +3035,7 @@ function psOpen(opener) {
   if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || trPickOff()) return;
   trackFeature("strategy_picker");
   const cloud = S.env === "cloud", names = trNames();
-  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true);
+  const rows = trPickRows(S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER);
   psOpener = opener || null;
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";

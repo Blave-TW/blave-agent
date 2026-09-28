@@ -1323,6 +1323,12 @@ msgstr "還沒有可以下單的策略。先請代理做一檔，回測跑完就
 msgid "tr.typeC"
 msgstr "投資組合策略暫不支援自動下單"
 
+msgid "tr.pick.twd"
+msgstr "模擬交易暫不支援台幣計價的標的"
+
+msgid "tr.pick.twdKeep"
+msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
+
 msgid "tr.gateHint"
 msgstr "低於最小進場 {m} {c}，不會進場"
 

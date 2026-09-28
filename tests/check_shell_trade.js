@@ -117,7 +117,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
 { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8"), appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
   ok("輸入途中不報錯:input 事件裡沒有標紅(只有「已經紅、現在看得懂」才消紅);blur 與 Enter 才驗,Enter 不送出", (() => { const i = src.indexOf('inp.addEventListener("input"'), j = src.indexOf('const settle = ', i), body = src.slice(i, j).replace(/\/\/.*$/gm, "");
     return i > 0 && j > i && !/markBad\((?!null\))/.test(body) && /if \(v != null && TR\.bad\[n\]\) markBad\(null\);/.test(body) && /bar\.hidden = false;/.test(body)
-      && /const settle = \(\) => \{ const why = trAmountError\(inp\.value\); markBad\(why\);/.test(src) && /if \(e\.key === "Enter" && !e\.isComposing\) \{ e\.preventDefault\(\); settle\(\); \}/.test(src); })());
+      && /const settle = \(\) => \{ const why = trAmountError\(inp\.value\) \|\| \(twdRow && [^;]+\); markBad\(why\);/.test(src) && /if \(e\.key === "Enter" && !e\.isComposing\) \{ e\.preventDefault\(\); settle\(\); \}/.test(src); })());
 // 過期的拒單紅字不可以留在表底(Wei 在 Electron 44 實機看到:22:26 的「部位要到 110,000」掛在寫著 20,000 的表下面)。
 // 機器端 lib/portfolio._record_order_error 只 append、留最後 5 筆,從來不清 → 規則在 renderer:只顯示**標的還欠著一張單**的那一筆
 { const E = (sym, err) => ({ ts: "2026-09-21T14:26:00", symbol: sym, error: err });
@@ -1286,6 +1286,17 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("checked = 在表裡(不看金額);Type C 不在表裡且機器不支援 = locked、已在表裡的 Type C 不鎖;機器支援(can_trade_portfolio)就都不鎖",
       by.a_old.checked && by.gone.checked && by.pf2.checked && !by.b_new.checked && by.pf.locked && !by.pf2.locked && !by.a_old.locked
       && trPickRows(L, ["a_old"], true).every((r) => !r.locked) && trPickRows([], [], false).length === 0);
+    // e2e 0.1.8 #91:模擬交易(USDT 帳戶)擋台幣計價的標的;真實交易所(群益…)不受影響
+    { const T = [N({ name: "txf", displayName: "台指期", symbol: "TXF", twd: true }), N({ name: "tsmc", displayName: "台積電", twd: true }), N({ name: "tw5", displayName: "台股組合", portfolio: true, twd: true }), N({ name: "btc", displayName: "BTC" })];
+      const p = Object.fromEntries(trPickRows(T, ["tsmc"], true, true).map((r) => [r.name, r])), real = trPickRows(T, ["tsmc"], true, false);
+      ok("模擬交易:台幣計價而不在表裡 → 鎖住、原因 twd;已在表裡的存量不鎖(才取消得掉)、原因 twdKeep;加密的不受影響", p.txf.locked && p.txf.note === "twd" && !p.txf.checked && !p.tsmc.locked && p.tsmc.note === "twdKeep" && p.tsmc.checked && !p.btc.locked && p.btc.note === null, J(p));
+      ok("同時是 Type C(機器不支援)與台幣計價:只出台幣那一條;不是模擬交易(群益等真實 venue)一律不擋", trPickRows(T, [], false, true).find((r) => r.name === "tw5").note === "twd" && trPickRows(T, [], false, false).find((r) => r.name === "tw5").note === "typeC"
+        && real.every((r) => !r.locked && r.note === null) && trPickRows(T, [], true).every((r) => !r.locked), J(real));
+      ok("台幣計價的判別:TXF / MXF / TMF、台股代號(2330、00878、00631L、2330.TW);加密與美股代號不算;組合看 UNIVERSE", ["TXF", "mxf", "TMF", "2330", "00878", "00631L", "2330.TW", "6488.TWO"].every((s) => trIsTwd(s)) && ["BTCUSDT", "1000PEPEUSDT", "AAPL", "ETH", "", null, 2330, "TXFF", "123", "1234567"].every((s) => !trIsTwd(s))
+        && trIsTwd([null, "BTCUSDT", "2317"]) && !trIsTwd(["BTCUSDT", "ETHUSDT"]) && J(trUniverse("X = 1\nUNIVERSE = ['2330', \"2317\",\n  '2454']\n")) === J(["2330", "2317", "2454"]) && trUniverse("UNIVERSE = load()\n").length === 0 && trUniverse(null).length === 0);
+      ok("接線:框看的是連接的對象(模擬交易)、不是視角;金額表的存量列講原因、加金額被擋(可以減、可以移出);機器端 order_paper 的口數支援沒有動",
+        /trPickRows\(S\.list, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER\)/.test(src) && /const twdRow = x\.twd === true && trVenueId\(\) === PAPER;/.test(src)
+        && /\(twdRow && trParseAmount\(inp\.value\) > \(stored\[n\] \|\| 0\) \? "twd" : null\)/.test(src) && /whole lots|WHOLE LOTS/.test(fs.readFileSync(path.join(__dirname, "..", "lib", "order_paper.py"), "utf8"))); }
     const stored = { a: 100, z: 0, gone: 50 };
     const ch = trPickApply(new Set(["a", "new1"]), stored);
     ok("確定:勾新的 → 以 0 加進去(立即送);取消 $0 的 → 拿掉 key(立即送);取消有錢的還在 payload 裡(留到儲存的確認框才平倉)",

@@ -1323,6 +1323,12 @@ msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has
 msgid "tr.typeC"
 msgstr "Portfolio strategies do not support auto-trading yet"
 
+msgid "tr.pick.twd"
+msgstr "Paper trading does not support TWD-priced instruments yet"
+
+msgid "tr.pick.twdKeep"
+msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
+
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"
 
