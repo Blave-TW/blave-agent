@@ -45,6 +45,15 @@
 .rpt-back:hover { color: var(--ink); }
 .rpt-back[hidden] { display: none; }
 .rpt-back .ic { stroke-width: 1.75; }
+/* 存成 PDF 之後的狀態句(設計 D1):跟動作群同一列、靠右貼著它;長資料夾名只截那一段,文字鈕不縮;中欄 ≤ 560 換短句(en 截成「Saved to D…」比不講還糟) */
+.rpt-rhead .rpt-back { flex: none; }
+.rpt-saved { flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-6); margin: 0 0 0 auto; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.rpt-saved[hidden] { display: none; }
+.rpt-saved .d { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rpt-saved .s { display: none; white-space: nowrap; }
+.rpt-saved .btn-quiet { flex: none; font-size: inherit; white-space: nowrap; }
+.rpt-saved + .rpt-acts { margin-left: var(--space-4); }
+@container main (max-width: 560px) { .rpt-saved .d { display: none; } .rpt-saved .s { display: inline; } }
 .rpt-read { padding-top: var(--space-4); }
 .rpt-read[hidden] { display: none; }
 .rpt-body .rb-report { margin: 0 auto; }

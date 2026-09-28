@@ -73,6 +73,13 @@ if (!process.versions.electron) {
     x = mk({ dir: "/Users/me/Reports" }); await x.c.save({}, "cloud", "tw-1", 1790000000, "en");
     ok("② 上次存的資料夾當預設位置;雲端視角帶清單上的版本去讀", x.log[1][1].startsWith(path.join("/Users/me/Reports", "台股晨報")) && JSON.stringify(x.log[0]) === '["load","cloud","tw-1",1790000000]', JSON.stringify(x.log.slice(0, 2)));
     x = mk({ pick: { canceled: true } }); started = 0; r = await x.c.save({}, "local", "tw-1", undefined, "zh", () => started++);
+    { const r0 = await mk({}).c.save({}, "local", "tw-1", undefined, "zh", () => {});
+      ok("② 成功只回 code(沒給 savedRef 時 dir / token 是 null);路徑不在回傳裡", JSON.stringify(r0) === '{"code":"OK","dir":null,"token":null}', JSON.stringify(r0)); }
+    { const y = mk({}), refs = []; const c2 = PDFLIB.createReportPdf({ loadDoc: async () => DOC, showSave: async () => ({ canceled: false, filePath: path.join("/tmp/out dir", "x.pdf") }),
+        openPage: () => { const wc = new EventEmitter(); wc.printToPDF = async () => Buffer.from("%PDF"); setTimeout(() => { wc.emit("did-finish-load"); c2.ready(wc, true); }, 5); return { webContents: wc, destroy() {}, isDestroyed: () => false }; },
+        writeFile: async () => {}, getDir: () => null, setDir: () => {}, downloads: () => "/home/dl", onSaved: () => {}, savedRef: (p) => { refs.push(p); return { dir: "out dir", token: "abc123", path: p }; } });
+      const r2 = await c2.save({}, "local", "tw-1", undefined, "zh", () => {});
+      ok("② 設計 D1:成功多回 { dir, token }(主行程的 savedRef 給);只有這兩欄,完整路徑不交給畫面", JSON.stringify(r2) === '{"code":"OK","dir":"out dir","token":"abc123"}' && refs.join() === path.join("/tmp/out dir", "x.pdf"), JSON.stringify(r2)); void y; }
     ok("② 取消 = 什麼都沒發生:不開視窗、不寫檔、不送埋點、不通知畫面", r.code === "CANCELED" && x.log.map((l) => l[0]).join() === "load,dialog" && started === 0 && x.saved.length === 0, JSON.stringify(x.log));
     x = mk({ writeFail: true }); r = await x.c.save({}, "local", "tw-1", undefined, "zh");
     ok("② 寫不進去 → FAIL,不送埋點、不記資料夾", r.code === "FAIL" && !x.log.some((l) => l[0] === "track") && x.saved.length === 0, JSON.stringify(x.log));
@@ -125,7 +132,39 @@ if (!process.versions.electron) {
     }
     ok("③ 孤行(e2e #17):清單一條不切、最後一條不單獨落到下一頁;block 的尾註(含寬表那行小字)跟著前一列走", /\.rb-news-item,\s*\.rb-fn,\s*\.rb-text li \{\s*break-inside: avoid;\s*\}/.test(css) && /\.rb-text li:last-child,\s*\.rb-cap \{\s*break-before: avoid;\s*\}/.test(css));
     const pdfJs = read(path.join(R, "report-pdf.js"));
-    ok("③ PDF 鈕換字前鎖原寬(稽核 P4:左邊的「分享」不位移);回到原字才解", /if \(state === "idle"\) b\.style\.minWidth = ""; else if \(!b\.hidden && b\.offsetWidth\) b\.style\.minWidth = b\.offsetWidth \+ "px";\s*clearTimeout\(PDF\.timer\); PDF\.state = state;/.test(cutFn(pdfJs, "pdfSet")));
+    ok("③ PDF 鈕換字前鎖原寬(稽核 P4:左邊的「分享」不位移);回到原字才解", /if \(state === "idle"\) b\.style\.minWidth = ""; else if \(!b\.hidden && b\.offsetWidth\) b\.style\.minWidth = b\.offsetWidth \+ "px";\s*PDF\.state = state;/.test(cutFn(pdfJs, "pdfSet")));
+    // 設計 D1:存完的回饋是頁首同一列的狀態句 +「在 Finder 中顯示」,不是鈕上閃字
+    { const mkEl = () => ({ hidden: true, disabled: false, textContent: "", title: "", style: {}, offsetWidth: 81, on: {}, addEventListener(e, f) { this.on[e] = f; } });
+      const els = { "rpt-pdf": mkEl(), "rpt-share": mkEl(), "rpt-back": mkEl(), "rpt-reveal": mkEl(), "rpt-saved": Object.assign(mkEl(), { d: mkEl(), s: mkEl(), querySelector(q) { return q === ".d" ? this.d : this.s; } }) };
+      const said = [], boxes = [], revealed = []; let next = null, onSaving = null;
+      const sb = { console, Promise, document: { getElementById: (i) => els[i] }, $: (i) => els[i], t: (k, v) => STR.zh[k].split("{dir}").join(v ? v.dir : ""), LANG: "zh", srSay: (x) => said.push(x), confirmBox: (o) => boxes.push(o), RPT: { data: { local: [], cloud: [] } },
+        window: { blave: { platform: "darwin", reportPdf: async () => { const r = next; if (r && r.start) onSaving(); return r; }, revealExport: (tk) => revealed.push(tk), onReportPdfSaving: (f) => { onSaving = f; } } } };
+      vm.createContext(sb); vm.runInContext(pdfJs + "\nthis.PDF = PDF; this.pdfSave = pdfSave; this.pdfClear = pdfClear; this.pdfDecorate = pdfDecorate;", sb);
+      const REP = { blocks: [] }, box = els["rpt-saved"], btn = els["rpt-pdf"], snap = () => [box.hidden, box.d.textContent, box.s.textContent, els["rpt-reveal"].textContent, btn.textContent].join("|");
+      sb.pdfDecorate("local", "a", REP);
+      ok("③ D1 還沒存:沒有狀態句,鈕是「存成 PDF」", snap() === "true||||存成 PDF", snap());
+      next = { code: "OK", dir: "報告", token: "tk1", start: true }; await sb.pdfSave();
+      ok("③ D1 成功:狀態句「已存到「報告」」+「在 Finder 中顯示」,窄欄短句「已存成」(全文在 title);鈕直接回「存成 PDF」、不閃「已存成」;讀屏念完整句",
+        snap() === "false|已存到「報告」|已存成|在 Finder 中顯示|存成 PDF" && box.d.title === "已存到「報告」" && box.s.title === "已存到「報告」" && btn.disabled === false && said.join() === "已存到「報告」" && btn.style.minWidth === "", snap() + " " + said.join());
+      els["rpt-reveal"].on.click();
+      ok("③ D1 文字鈕只交 token(renderer 不傳路徑);走轉出卡那一支 revealExport", revealed.join() === "tk1" && /revealExport\(PDF\.saved\.token\)/.test(pdfJs) && !/filePath|showItemInFolder/.test(pdfJs));
+      next = { code: "CANCELED" }; await sb.pdfSave();
+      ok("③ D1 存檔框按取消:什麼都沒發生——上一次存的那句留著、不跳框", snap() === "false|已存到「報告」|已存成|在 Finder 中顯示|存成 PDF" && boxes.length === 0, snap());
+      next = { code: "OK", dir: null, token: "tk2", start: true }; let mid = null; const real = sb.window.blave.reportPdf; sb.window.blave.reportPdf = async () => { onSaving(); mid = snap(); return next; }; await sb.pdfSave(); sb.window.blave.reportPdf = real;
+      ok("③ D1 開始產的那一刻清掉上一次的(鈕「存成中…」);存到「下載項目」時資料夾名由畫面翻", mid === "true|已存到「報告」|已存成|在 Finder 中顯示|存成中…" && snap() === "false|已存到「下載」|已存成|在 Finder 中顯示|存成 PDF", mid + " → " + snap());
+      next = { code: "FAIL", start: true }; await sb.pdfSave();
+      ok("③ D1 失敗:沒有狀態句、鈕回「存成 PDF」、出既有的單鈕失敗框", box.hidden === true && btn.textContent === "存成 PDF" && boxes.length === 1 && boxes[0].single === true, snap());
+      next = { code: "OK", dir: "報告", token: "tk3", start: true }; await sb.pdfSave(); sb.pdfDecorate("local", "b", REP);
+      const other = snap(); sb.pdfDecorate("local", "a", REP);
+      ok("③ D1 換另一份報告就清掉;之後再打開同一份不恢復;回清單(pdfClear)也清", other === "true|已存到「報告」|已存成|在 Finder 中顯示|存成 PDF" && box.hidden === true && (sb.pdfClear(), sb.PDF.saved === null), other);
+      sb.window.blave.platform = "win32"; sb.pdfDecorate("cloud", "c", REP); next = { code: "OK", dir: "x", token: "tk4", start: true }; await sb.pdfSave();
+      ok("③ D1 Windows 的文字鈕是「在檔案總管中顯示」;雲端視角的報告同一套", els["rpt-reveal"].textContent === "在檔案總管中顯示" && box.hidden === false);
+      ok("③ D1 不計時:PDF_FLASH_MS 與 saved 狀態退場;節點不掛 role=status(播報走 srSay)", !/PDF_FLASH_MS|setTimeout|"saved"/.test(pdfJs) && /<p class="rpt-saved" id="rpt-saved" hidden><span class="d"><\/span><span class="s"><\/span><button class="btn-quiet" id="rpt-reveal" type="button"><\/button><\/p>\s*<div class="rpt-acts">/.test(html));
+      const rcss = read(path.join(R, "reports.css"));
+      ok("③ D1 排法:同一列靠右貼著動作群、返回鈕不被擠(flex: none)、資料夾名單行截尾、文字鈕不縮、中欄 ≤ 560 換短句", /\.rpt-rhead \.rpt-back \{ flex: none; \}/.test(rcss) && /\.rpt-saved \{ flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: var\(--space-6\); margin: 0 0 0 auto; font-size: 12px; line-height: 1\.5; color: var\(--ink-2\); \}/.test(rcss)
+        && /\.rpt-saved \.d \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/.test(rcss) && /\.rpt-saved \.btn-quiet \{ flex: none;/.test(rcss) && /@container main \(max-width: 560px\) \{ \.rpt-saved \.d \{ display: none; \} \.rpt-saved \.s \{ display: inline; \} \}/.test(rcss));
+      ok("③ D1 主行程:reportPdf 把 savedRef 交給 reportpdf.js;轉出卡與 PDF 共用同一張 token 表,reveal-export 只認那張表", /savedRef,\s*\}\);/.test(cutFn(mainSrc, "reportPdf")) && /return \{ ok: true, \.\.\.savedRef\(r\.filePath\) \};/.test(mainSrc) && /savedExports\.set\(token, filePath\);/.test(cutFn(mainSrc, "savedRef"))
+        && /handle\("reveal-export", \(_e, token\) => \{ const p = savedExports\.get\(String\(token \|\| ""\)\);/.test(mainSrc)); }
     const WEB_PRINT = path.join(__dirname, "..", "..", "web", "app", "static", "css", "agent", "report_print.css");
     if (!fs.existsSync(WEB_PRINT)) console.log("SKIP  ③ 共用列印規則與 web 逐字比對(需要 monorepo 版面)");
     else {

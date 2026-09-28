@@ -963,11 +963,15 @@ async function saveExport(win, ref) {
   const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath("downloads"), `${name}_${target}.${ext}`) });
   if (r.canceled || !r.filePath) return { ok: false, canceled: true };
   try { fs.writeFileSync(r.filePath, f.content, "utf8"); } catch (_) { return { ok: false }; }
+  return { ok: true, ...savedRef(r.filePath) };
+}
+// 剛存好的那個檔 → { dir, token }:畫面只拿資料夾名與 token,「在 Finder 中顯示」憑 token 回來找路徑(轉出卡與報告 PDF 共用)
+function savedRef(filePath) {
   const token = require("crypto").randomBytes(8).toString("hex");
-  savedExports.set(token, r.filePath);
+  savedExports.set(token, filePath);
   if (savedExports.size > 50) savedExports.delete(savedExports.keys().next().value);
-  const dir = path.dirname(r.filePath);   // 「下載」回 null:資料夾在磁碟上叫 Downloads,Finder 顯示的是系統語言的名字,由畫面翻
-  return { ok: true, dir: dir === app.getPath("downloads") ? null : path.basename(dir), token };
+  const dir = path.dirname(filePath);   // 「下載」回 null:資料夾在磁碟上叫 Downloads,Finder 顯示的是系統語言的名字,由畫面翻
+  return { dir: dir === app.getPath("downloads") ? null : path.basename(dir), token };
 }
 /* 策略版本(.claude/docs/strategy-versions.md §9):lib/runner.py 的 _mint_version 寫進 strategies/<資料夾>/versions/。
    摘要清單的形狀 = runtime strategy_reporter._read_versions(雲端視角從 /cloud/strategy 拿到的同一顆),renderer 用同一套畫。
@@ -1475,6 +1479,7 @@ function reportPdf() {
     writeFile: (p, buf) => fs.promises.writeFile(p, buf),
     downloads: () => app.getPath("downloads"),
     onSaved: () => tm().track("feature_used", { name: "report_pdf" }),   // 檔案寫成功才送(取消、失敗不送)
+    savedRef,
   });
   return _pdf;
 }

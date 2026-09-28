@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld("blave", {
   // 設定 › 公開連結(renderer/report-sharelist.js):這個帳號所有公開中的報告;取消只給代碼
   shareList: () => ipcRenderer.invoke("share-list"),
   shareRevokeCode: (code) => ipcRenderer.invoke("share-revoke-code", code),
-  // 報告存成 PDF(renderer/report-pdf.js):主行程開存檔框、自己讀報告、自己寫檔;回 { code: OK | CANCELED | BUSY | FAIL }
+  // 報告存成 PDF(renderer/report-pdf.js):主行程開存檔框、自己讀報告、自己寫檔;回 { code: OK | CANCELED | BUSY | FAIL };OK 另帶 { dir, token }(token 給 revealExport)
   reportPdf: (view, id, ver, lang) => ipcRenderer.invoke("report-pdf", view, id, ver, lang),
   onReportPdfSaving: (fn) => ipcRenderer.on("report-pdf-saving", () => fn()),   // 存檔框按了儲存、開始產
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆

@@ -226,6 +226,8 @@
                字隨狀態換,不掛 data-i18n)——唯一每種狀態都在的那顆放在錨定邊,分享出現或收起時它不位移 -->
           <div class="rpt-rhead">
             <button class="rpt-back" id="rpt-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span data-i18n="rpt.nav"></span></button>
+            <!-- 存成 PDF 之後的狀態句(report-pdf.js;設計 D1):在返回鈕與動作群之間、同一列,不另起一行。讀屏走 srSay,這裡不掛 role="status" -->
+            <p class="rpt-saved" id="rpt-saved" hidden><span class="d"></span><span class="s"></span><button class="btn-quiet" id="rpt-reveal" type="button"></button></p>
             <div class="rpt-acts">
               <button class="btn-out" id="rpt-share" type="button" aria-haspopup="dialog" data-i18n="shr.btn" hidden></button>
               <button class="btn-out" id="rpt-pdf" type="button" hidden></button>

@@ -41,7 +41,7 @@ const pdfCanRender = (report) => !!report && typeof report === "object" && Array
           showSave(win, { defaultPath, filters }) → Promise<{ canceled, filePath }>,
           openPage() → { webContents, destroy(), isDestroyed() }(看不見的視窗,已開始載入列印頁),
           writeFile(path, buffer) → Promise, getDir() → string|null, setDir(dir), downloads() → string,
-          onSaved()(檔案寫成功才叫:埋點), now?() }
+          onSaved()(檔案寫成功才叫:埋點), savedRef?(path) → { dir, token }(給畫面的「已存到…/在 Finder 中顯示」:資料夾名與一顆 token,路徑不出主行程), now?() }
    回 { save(win, view, id, ver, lang, onStart), payload(sender), ready(sender, ok) } */
 function createReportPdf(opts) {
   let job = null;   // 一次只產一份:{ wc, payload, done }
@@ -70,7 +70,7 @@ function createReportPdf(opts) {
   }
   return {
     payload, ready,
-    /* 回 { code }:OK / CANCELED(存檔框按取消)/ BUSY(上一份還在產)/ FAIL(讀不到報告、產生出錯或逾時、寫不進去) */
+    /* 回 { code }:OK(另帶 dir、token)/ CANCELED(存檔框按取消)/ BUSY(上一份還在產)/ FAIL(讀不到報告、產生出錯或逾時、寫不進去) */
     async save(win, view, id, ver, lang, onStart) {
       if (VIEWS.indexOf(view) < 0 || typeof id !== "string" || !ID_RE.test(id)) return { code: "FAIL" };
       if (job) return { code: "BUSY" };
@@ -90,7 +90,8 @@ function createReportPdf(opts) {
       } catch (_) { return { code: "FAIL" }; }
       try { opts.setDir(path.dirname(r.filePath)); } catch (_) { /* 記不住:下次從「下載項目」開始 */ }
       try { opts.onSaved(); } catch (_) { /* 追蹤永遠不擋功能 */ }
-      return { code: "OK" };
+      let ref = null; try { ref = typeof opts.savedRef === "function" ? opts.savedRef(r.filePath) : null; } catch (_) { ref = null; }   // 檔已經寫好:給不出 token 只是少一顆「顯示」鈕
+      return { code: "OK", dir: ref && typeof ref.dir === "string" ? ref.dir : null, token: ref && typeof ref.token === "string" ? ref.token : null };
     },
   };
 }
