@@ -633,8 +633,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !segs[3].pos && !segs[4].pos && segs[4].t1 === 40 && segs[4].v1 === 0 && segs[4].cut1 && segs[5].pos && segs[5].t0 === 40 && segs[5].t1 === 40
       && trPnlSegments([{ t: 0, v: 5 }]).length === 0 && trPnlSegments([]).length === 0);
     ok("PnL 線段:時間差再大也照連(沒有缺口規則)", trPnlSegments([{ t: 0, v: 1 }, { t: 1e6, v: 2 }]).length === 1);
-    const draw = fnS("trDrawCurve"), curve = fnS("trOvCurve");
-    ok("曲線不斷線:畫圖不看 TR_GAP_S、沒有孤立點;圖下那句照講沒紀錄", !/TR_GAP_S|arc\(/.test(draw) && /t\("tr\.ov\.gapNote"\)/.test(curve)
+    const draw = fnS("trDrawCurve");
+    ok("曲線不斷線:畫圖不看缺口、沒有孤立點;圖下不再出「沒開著的時段」那一句(Wei 0.1.8)", !/TR_GAP_S|arc\(/.test(draw) && !/TR_GAP_S|gapNote/.test(src)
       && /if \(!isPnl\) \{[\s\S]*?trToken\("--color-data-1"\)[\s\S]*?return;\n\s*\}/.test(draw));
     ok("PnL 照 drawOvPnl:0 的虛線 [3,4] greyMedium、綠 greenText / 紅 redText、線寬 1.5 圓角;不寫死 hex",
       /ctx\.setLineDash\(\[3, 4\]\); ctx\.strokeStyle = trToken\("--color-greyMedium"\);/.test(draw) && /const zy = Math\.round\(yAt\(0\)\) \+ 0\.5;/.test(draw)
@@ -643,7 +643,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { // 文字:po 兩語
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
-    ok("曲線說明講真話(不再說斷開的地方)", get("zh", "tr.ov.gapNote") === "Blave 沒開著的時段沒有紀錄，曲線直接連起來。" && /connects straight across/.test(get("en", "tr.ov.gapNote")) && !/斷開/.test(get("zh", "tr.ov.gapNote")));
+    const strs = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+    ok("「沒開著的時段」那一句整句拿掉:兩份 .po 與產生的 strings.js 都沒有 tr.ov.gapNote", !/tr\.ov\.gapNote/.test(po("zh") + po("en") + strs) && !/沒開著的時段沒有紀錄|connects straight across/.test(strs));
     ok("A′ / B0 / S1 文字照稽核;事件兩句 note 同網頁語序", /^什麼單都不下——平倉與停損也不會執行。/.test(get("zh", "tr.haltReasonAll")) && /^No orders are going out — exits and stops won’t run either\./.test(get("en", "tr.haltReasonAll"))
       && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccountZ")) && get("zh", "tr.cloud.restartNoAccountStart") === null && get("zh", "tr.cloud.restartNoAccount") === null
       && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行；停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "平倉與停損不會執行；什麼單都不下"
@@ -1177,7 +1178,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // 整支切出來(數大括號);async 的那支把前綴一起帶上
     const cutF = (n) => { const i = src.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return (src.slice(i - 6, i) === "async " ? "async " : "") + src.slice(i, k + 1); } throw new Error("no " + n); };
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")), envb = src.slice(src.indexOf("/* ── 視角純邏輯("), src.indexOf("/* ── 視角純邏輯到此"));
-    const consts = ["TR_RANGES", "TR_GAP_S", "tr2", "trMD", "TR_PERF_REASON", "TR_PERF_VOL_EST", "trPerfReason"].map((c) => { const m = src.match(new RegExp("^const " + c + " = [^\\n]*", "m")); if (!m) throw new Error("no " + c); return m[0].replace(/^const /, "var "); }).join("\n");
+    const consts = ["TR_RANGES", "tr2", "trMD", "TR_PERF_REASON", "TR_PERF_VOL_EST", "trPerfReason"].map((c) => { const m = src.match(new RegExp("^const " + c + " = [^\\n]*", "m")); if (!m) throw new Error("no " + c); return m[0].replace(/^const /, "var "); }).join("\n");
     const fns = ["trEl", "trSec", "trReport", "trVenueId", "trVenueLabel", "trCcy", "trUnit", "trEquity", "trIsPaper", "trFmt", "trFmt2", "trStamp", "trHM", "trTipLabel", "trStatCell", "trPct", "trOvStats", "trOvCurve", "trCurvePoints", "trLoadCurve", "trPaintOver", "trWith", "trOvPerf", "trPerfFmt", "trPnlServerPoints"].map(cutF).join("\n");
     const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
       setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });

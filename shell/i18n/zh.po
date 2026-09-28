@@ -1663,9 +1663,6 @@ msgstr "還沒有權益紀錄。每個整點記一筆：這台電腦要 Blave �
 msgid "tr.ov.emptyBaseline"
 msgstr "紀錄還不夠畫出曲線，要兩筆。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
 
-msgid "tr.ov.gapNote"
-msgstr "Blave 沒開著的時段沒有紀錄，曲線直接連起來。"
-
 msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
 

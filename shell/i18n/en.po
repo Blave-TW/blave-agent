@@ -1663,9 +1663,6 @@ msgstr "No equity records yet. One is recorded on the hour — on this computer 
 msgid "tr.ov.emptyBaseline"
 msgstr "Not enough records to draw the curve yet — it takes two. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
 
-msgid "tr.ov.gapNote"
-msgstr "No records while Blave wasn’t open; the line connects straight across those gaps."
-
 msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
 
