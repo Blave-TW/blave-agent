@@ -1967,7 +1967,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
-  liveBubble = null; faultShown = false; pendingErr = [];
+  liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
   const unlock = () => { running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
@@ -2050,7 +2050,58 @@ window.blave.onEngineProgress((key) => addMsg("sys", t(key)));
    預設(下一句就能用),並在面板上把那個 model 標起來,免得再踩一次。 */
 const NO_MODEL_RE = /^There's an issue with the selected model \(([^)]+)\)/;
 
+/* 引擎的用量上限:用戶自己那份訂閱的額度用完了,不是我們的錯、也不是「做到一半斷掉」。
+   一列 = 一種引擎訊息:re 錨在開頭(agent 的回覆裡提到 limit 不算),第 1 組是重置時間、第 2 組是引擎標的時區。
+   實測字串(2026-09-28 13:38,Claude Code,five_hour):
+     You've hit your session limit · resets 1:50pm (Asia/Taipei)
+   Codex 的那一句還沒有實測樣本,拿到再加一列。認不出來的照舊走通用句。limitMatch / limitWhen / limitSwallow 是純函式,
+   tests/check_shell_limit_fault.js 從原文切出來跑。 */
+const LIMIT_RULES = [
+  { engine: "claude", re: /^You[’']ve hit your (?:[a-z0-9-]+ ){0,3}limit\b[^\n]*?\bresets\s+([^()\n]+?)\s*(?:\(([^()\n]+)\))?\s*$/i },
+];
+function limitMatch(text, engine) {
+  for (const r of LIMIT_RULES) {
+    const m = r.engine === engine ? r.re.exec(String(text || "").trim()) : null;
+    if (m) return { when: m[1], zone: m[2] || "" };
+  }
+  return null;
+}
+/* 引擎給的重置時間(「1:50pm」「Oct 3, 9am」,引擎標的時區)→ 用戶時區的寫法(zh 24 小時制「13:50」,en「1:50 PM」;
+   不是今天就帶日期)。讀不懂、時區不認得 → ""(那一句就不寫時間,不猜)。userZone 不給 = 這台電腦的時區 */
+const LIMIT_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function limitWhen(when, zone, now, lang, userZone) {
+  const m = /^(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:,|\s+at)?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(String(when || "").trim());
+  if (!m) return "";
+  const mon = m[1] ? LIMIT_MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) : -1;
+  const hh = (Number(m[3]) % 12) + (/pm/i.test(m[5]) ? 12 : 0), mm = Number(m[4] || 0);
+  if ((m[1] && mon < 0) || Number(m[3]) < 1 || Number(m[3]) > 12 || mm > 59) return "";
+  try {
+    const wall = (ms, tz) => { const p = {}; new Intl.DateTimeFormat("en-US", { timeZone: tz || undefined, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" })
+      .formatToParts(new Date(ms)).forEach((x) => { p[x.type] = Number(x.value); }); return p; };
+    const n = wall(now, zone);
+    let y = n.year, mo = mon >= 0 ? mon : n.month - 1, d = mon >= 0 ? Number(m[2]) : n.day;
+    const at = (yy, mo2, dd) => { let ms = Date.UTC(yy, mo2, dd, hh, mm); for (let i = 0; i < 2; i++) { const w = wall(ms, zone); ms -= Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute) - Date.UTC(yy, mo2, dd, hh, mm); } return ms; };
+    let ms = at(y, mo, d);
+    if (ms <= now) ms = mon >= 0 ? at(y + 1, mo, d) : at(y, mo, d + 1);   // 只給時刻:過了就是明天;給了月日:過了就是明年
+    const a = wall(now, userZone), b = wall(ms, userZone), sameDay = a.year === b.year && a.month === b.month && a.day === b.day;
+    const time = new Intl.DateTimeFormat(lang === "zh" ? "zh-TW" : "en-US", Object.assign({ timeZone: userZone || undefined, hour: lang === "zh" ? "2-digit" : "numeric", minute: "2-digit" },
+      lang === "zh" ? { hourCycle: "h23" } : { hour12: true })).format(new Date(ms));
+    if (sameDay) return time;
+    return lang === "zh" ? b.month + "/" + b.day + " " + time : new Intl.DateTimeFormat("en-US", { timeZone: userZone || undefined, month: "short", day: "numeric" }).format(new Date(ms)) + ", " + time;
+  } catch (_) { return ""; }
+}
+/* 上限卡畫過之後,引擎緊接著的那句通用錯誤要不要吞:沒跑起來的兩種一律吞;「中途斷了」只在這一輪沒有做過會改東西的步驟時吞
+   (有的話那一句是事實,照出)。只讀的步驟 = 下面這張表,表外的(含認不出來的)都當成會改東西 */
+const LIMIT_READONLY = ["silent", "search", "web_read", "web_read_many", "docs", "files", "file_read", "strategy_read", "data", "account", "status", "check", "validate"];
+const limitSwallow = (code, changed) => code === "not_started" || code === "not_started_upstream" || (code === "partial" && !changed);
+
 function classifyFault(text) {
+  const lim = limitMatch(text, cur);
+  if (lim) {
+    const when = limitWhen(lim.when, lim.zone, Date.now(), LANG), name = cur === "codex" ? "Codex" : "Claude Code";
+    return { limit: true, text: when ? t("fault.limit", { name, when }) : t("fault.limitNoTime", { name }), label: t("fault.limitBtn"),
+      act: () => setOpen().then(() => setCat("model")) };
+  }
   const nm = NO_MODEL_RE.exec(text || "");
   if (nm) {
     // 括號裡的名字**不能拿來認人**:我們送的是別名(`fable`),CLI 會先解析成完整 id 才
@@ -2647,7 +2698,7 @@ function draftPromote() {
   ACT.textStart = 0;
   if (!text.trim()) return;
   const f = classifyFault(text);
-  if (f) { faultShown = true; turnFaulted = true; addFault(f); liveBubble = null; return; }
+  if (f) { faultShown = true; turnFaulted = true; turnLimit = !!f.limit; addFault(f); liveBubble = null; return; }
   busyHide();   // 回覆定稿了:指示器收起(同以前「回覆在串流了,字本身就是還在跑」)
   if (!liveBubble) liveBubble = addMsg("ai", "");
   paintAi(liveBubble, (liveBubble._raw || "") + text); turnGotReply = true;
@@ -2668,6 +2719,7 @@ window.blave.onTurnEvent((c) => {
     draftShow();
   } else if (c.type === "tool") {
     turnHadTool = true;   // 有收據摺疊了:停止時「你的那則」要留著當收據的上下文
+    if (c.status !== "done" && LIMIT_READONLY.indexOf(actKindOf(c).kind) < 0) turnChanged = true;
     // `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟
     if (c.status === "done") { busyStepDone(c); scrollChat(); return; }
     // 這段文字後面接了工具呼叫 → 是過場旁白、不是回覆:從泡泡移除(同 web)。
@@ -2690,6 +2742,7 @@ window.blave.onTurnEvent((c) => {
   } else if (c.type === "error") {
     turnErrored = true;
     if (faultShown && c.code === "not_started") { faultShown = false; return; }
+    if (turnLimit && limitSwallow(c.code, turnChanged)) return;   // 用量到上限那張卡已經講完了
     const line = t("turn.error", { msg: c.message || "" });
     // 本機 agent、這一輪還沒有任何回覆:先不畫,回合結束問過 CLI 的登入狀態再決定出哪一則
     // (設計師 M4)。先畫再換掉會閃,讀屏也已經念出去收不回來。
@@ -2700,6 +2753,7 @@ window.blave.onTurnEvent((c) => {
 // turnFaulted:這一輪已經畫過分類過的錯誤卡。不能用 faultShown 判——它在吞掉 not_started 那句時
 // 就被歸零了,回合結束時再看會以為沒畫過,多畫一張登入卡。
 let turnModel = null, turnGotReply = false, turnErrored = false, turnFaulted = false;
+let turnLimit = false, turnChanged = false;   // 這一輪畫過用量上限卡 / 做過會改東西的步驟(limitSwallow)
 let turnBubble = null, turnHadTool = false;   // 這一輪「你的那則」與「有沒有工具收據」:停止收泡泡用(見 onTurnEnd)
 // 這一輪的回覆帶了哪些卡片標記(paintAi 從文字裡拿出來的);回合結束才出卡,不插在串流中間
 let turnCards = [];

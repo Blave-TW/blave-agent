@@ -388,6 +388,16 @@ msgstr "Your account can't use {model}. This turn did not run — switched back 
 msgid "fault.noModelBtn"
 msgstr "Choose a Model"
 
+# 第八批 #4(e2e #187):引擎的用量上限。暫定字,待設計師確認
+msgid "fault.limit"
+msgstr "You’ve reached the usage limit of your own {name} subscription. It resets at {when}. Until then, switch to another engine in Settings › Model access."
+
+msgid "fault.limitNoTime"
+msgstr "You’ve reached the usage limit of your own {name} subscription. Until it resets, switch to another engine in Settings › Model access."
+
+msgid "fault.limitBtn"
+msgstr "Switch Engine"
+
 msgid "mp.na"
 msgstr "Not on your plan"
 

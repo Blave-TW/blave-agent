@@ -388,6 +388,16 @@ msgstr "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{t
 msgid "fault.noModelBtn"
 msgstr "選別的模型"
 
+# 第八批 #4(e2e #187):引擎的用量上限。暫定字,待設計師確認
+msgid "fault.limit"
+msgstr "你的 {name} 訂閱用量到上限了，{when} 重置。在那之前可以到「設定 › 模型接入」換別的引擎繼續。"
+
+msgid "fault.limitNoTime"
+msgstr "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 › 模型接入」換別的引擎繼續。"
+
+msgid "fault.limitBtn"
+msgstr "切換引擎"
+
 msgid "mp.na"
 msgstr "你的方案沒有"
 
