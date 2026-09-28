@@ -3181,7 +3181,8 @@ def desktop_web(sink, browser_mounted):
 
 def web_tools_off(web, browser_mounted):
     """引擎自己的上網工具這一輪關哪幾個。電腦版(web 有值)兩個都關:開著時也只走內建瀏覽器,
-    否則網域政策與「開的每一頁都出現在聊天裡」都繞得過。Codex 引擎沒有這個通道,只有規則。"""
+    否則網域政策與「開的每一頁都出現在聊天裡」都繞得過。Codex 引擎只有一個自己的 web search:
+    這裡回的不是空的就關掉它(codex_engine.build_args 的 web_search_off)。"""
     return list(WEB_TOOLS) if web else (["WebFetch"] if browser_mounted else [])
 
 
@@ -3610,7 +3611,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
                 sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort,
-                mcp_url=codex_mcp_url, browser_url=codex_browser_url)
+                mcp_url=codex_mcp_url, browser_url=codex_browser_url,
+                web_search_off=bool(web_tools_off(web, browser_mounted)))
         # 空回合續跑是為 DeepSeek 串流斷掉設的,Codex 沒有那個症狀,不重跑。
         for attempt in () if use_codex else (1, 2):
             query_iter = sdk.query(prompt=prompt, options=options)

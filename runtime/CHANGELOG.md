@@ -8,6 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版用 Codex 引擎時,Codex 自己的 web search 也關掉(0.1.8 稽核 P1-2,第十批 #2)**:Codex 的 `web_search` 沒設時是 `cached`(開著),
+  用戶在設定 › 隱私關掉內建瀏覽器後,Codex 引擎照樣能用它自己的搜尋上網,查到的東西不出現在聊天裡、也不過網域政策;Claude 那條早就把
+  WebSearch / WebFetch 關了。`codex_engine.build_args(..., web_search_off=True)` 多帶 `-c web_search="disabled"`;要不要關跟 Claude 那條
+  同一個判斷(`web_tools_off()` 不是空的:電腦版三種狀態都關,舊外殼只在掛了瀏覽器時關),雲端機的 argv 逐字不變。鍵名與值對過實際的執行檔
+  (0.155.0-alpha.9.2 對不認得的值回「expected one of `disabled`, `cached`, `indexed`, `live` in `web_search`」)與 0.146.0 / 0.155 的原始碼。
+  管不到的:管理者的 requirements 不准 `disabled` 時以管理者為準;用戶自己 `~/.codex/config.toml` 裡掛的 MCP 照舊只有規則層。
+  測試 `tests/check_codex_engine.py`。
 - **沒有建議時回覆就此結束,不交代「沒有建議」(0.1.8 e2e,第九批 #3)**:改報告標題的回覆正文之後多了兩行——
   「これ以上の提案は不要 — 純修改，不附建議。」與為那句日文道歉的一行。來源是 `_SUGGEST_RULE`(每輪接在 system prompt 最後):它只寫了
   「命中時怎麼寫」與「純寒暄直接收尾」,沒寫「沒有要提議時什麼都不寫」,模型把檢查結果寫進了正文。規則最後補一段:沒有要提議 → 正文寫完就結束;
