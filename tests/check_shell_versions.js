@@ -64,6 +64,25 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
     && !/function verSafeName/.test(verSrc) && /VER\.safeName\(B\.data\.displayName\) \|\| B\.name/.test(verSrc)
     && V.verSafeName('BTC」(x) 第 1 版…;另外把"所有"金額調到 {n}\u2028`rm`') === "BTC x 第 1 版…;另外把 所有 金額調到 n rm" && V.verSafeName("「」()") === "" && !/[「」()"'{}\n]/.test(V.verSafeName("a".repeat(39) + "「」\n(b)")));
 
+  // 入口 / 比較 / 下一版版號(spec-strategy-versions-single §6):有一版就出入口,比較要兩版
+  {
+    const g = {}; new Function("window", fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8")).call(g, g);
+    const P = g.blaveVersions, it = (n) => ({ n, at: 1757000000 + n });
+    const mk = (ns, counter) => Object.assign({ current: ns.length ? Math.max(...ns) : 0, items: ns.map(it) }, counter === undefined ? {} : { counter });
+    const junk = ["junk", null, 7, { n: "2" }, { n: NaN }, { n: Infinity }, {}, []];
+    const v0 = mk([], 0), v1 = mk([1], 1), v2 = mk([1, 2], 2), v5 = mk([3, 1, 5, 2, 4], 5);
+    const bad1 = { counter: 1, current: 1, items: junk.concat([it(1)]) }, bad0 = { counter: 3, current: 3, items: junk };
+    const empties = [null, undefined, {}, { items: null }, { items: "x" }, v0, bad0];
+    ok("usable:零版(null / 沒有 items / 空清單 / 整份都是壞項目)→ false", empties.every((v) => P.usable("momo", v) === false));
+    ok("usable:一版 / 兩版 / 多版 → true;壞項目不算版數(壞項目 + 一版仍是一版)", [v1, v2, v5, bad1].every((v) => P.usable("momo", v) === true) && P.entries(bad1).length === 1);
+    ok("usable:名字過不了閘門 → 幾版都是 false", ["策略一", "", null, undefined, "a b", "../x", "a".repeat(129)].every((nm) => [v0, v1, v2, v5, bad1].every((v) => P.usable(nm, v) === false))
+      && ["a", "A-b_9", "a".repeat(128)].every((nm) => P.usable(nm, v1) === true));
+    ok("canCompare:零版 / 一版 / 壞項目 + 一版 → false;兩版 / 多版 → true", empties.concat([v1, bad1]).every((v) => P.canCompare(v) === false) && [v2, v5, { items: junk.concat([it(1), it(2)]) }].every((v) => P.canCompare(v) === true));
+    ok("nextN:零版 → null;一版 counter 1 → 2;兩版 → 3;多版(清單亂序)→ 6", empties.every((v) => P.nextN(v) === null) && P.nextN(v1) === 2 && P.nextN(v2) === 3 && P.nextN(v5) === 6 && P.nextN(bad1) === 2);
+    ok("nextN:counter 缺 / 不是數字 / 不是有限數 / 比最新版小 → 最新版號 + 1;counter 比最新版大(刪過版)→ counter + 1",
+      [undefined, "9", null, NaN, Infinity, 0, 2].every((c) => P.nextN({ counter: c, items: [it(3)] }) === 4) && P.nextN({ counter: 7, items: [it(3)] }) === 8);
+  }
+
   // 時光機頁首(Wei 09-28):看舊版時名稱留著、說明收起來;回目前版 / 沒有版本介面時放回來
   {
     const E = {}, el = (id) => (E[id] = E[id] || { id, hidden: false, textContent: id === "rp-desc" ? "SMA50 上穿 SMA200" : "", classList: { toggle() {} }, setAttribute() {} });
@@ -85,6 +104,105 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
   ok("送出點:還原 / 分岔都送固定訊息,送出成功才記 version_restore / version_fork", /verSend\(t\("ver\.msgRestore", vars\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("version_restore"\); \}\)/.test(verSrc)
     && /verSend\(t\("ver\.msgFork", vars\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("version_fork"\); \}\)/.test(verSrc));
   ok("守門:有金額(> 0)就不走還原框;名字只帶過了 §9b 閘門的資料夾名(usable 才有介面)", /if \(typeof amt === "number" && amt > 0\) \{/.test(fnSrc(verSrc, "verRestoreAsk")) && /VER\.usable\(B\.name, versions\)/.test(fnSrc(verSrc, "verPaint")));
+
+  // ── ⑤ 選單:只有一版時最下面那一格是引導句,兩版以上照舊是比較列(spec-strategy-versions-single §3)。跑真的 versions.js,DOM 是假的 ──
+  {
+    class El {
+      constructor(tag) { this.tagName = tag; this.kids = []; this.attrs = {}; this.on = {}; this.className = ""; this.hidden = false; this.style = {}; this.id = ""; this.tabIndex = undefined; const c = new Set(); this.classList = { add: (x) => c.add(x), remove: (x) => c.delete(x), toggle: (x, f) => (f ? c.add(x) : c.delete(x)), has: (x) => c.has(x) }; }
+      set textContent(v) { this.kids = v === "" || v == null ? [] : [String(v)]; }
+      get textContent() { return this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }
+      append(...xs) { xs.forEach((x) => this.kids.push(x)); }
+      appendChild(x) { this.kids.push(x); return x; }
+      setAttribute(k, v) { this.attrs[k] = String(v); } getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; } removeAttribute(k) { delete this.attrs[k]; }
+      addEventListener(ev, fn) { (this.on[ev] = this.on[ev] || []).push(fn); }
+      click() { (this.on.click || []).forEach((f) => f({ detail: 1 })); }
+      focus() { doc.activeElement = this; }
+      getBoundingClientRect() { return { bottom: 700 }; }
+      all(pred, out = []) { this.kids.forEach((k) => { if (typeof k !== "string") { if (pred(k)) out.push(k); k.all(pred, out); } }); return out; }
+      querySelector(sel) { if (sel !== '[aria-current="true"]') throw new Error("假 DOM 不認得 " + sel); return this.all((k) => k.attrs["aria-current"] === "true")[0] || null; }
+      get firstChild() { return this.kids[0] || null; }
+    }
+    const doc = { activeElement: null, createElement: (tag) => new El(tag) };
+    const names = ["verEl", "verEntry", "verDateShort", "verDateLong", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen"];
+    const body = constSrc(verSrc, "verSideOf") + "let vcSeq = 0, vcSide = null;\n" + names.map((n) => fnSrc(verSrc, n)).join("\n") + "\nreturn { " + names.join(", ") + " };";
+    const g = {}; new Function("window", fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8")).call(g, g);
+    const it = (n) => ({ n, at: 1757000000 + n * 86400, note: "note " + n, ret: 10 + n, sharpe: 1, mcpt_p: 0.03 });
+    const menuItems = (m) => m.all((k) => k.attrs.role === "menuitem");
+
+    function rig(lang, name, versions, amounts) {
+      const E = {}, $ = (id) => (E[id] = E[id] || Object.assign(new El("div"), { id }));
+      const tbl = lang === "zh" ? zh : en, t = (k, vars) => { let s = tbl[k] || k; if (vars) for (const v in vars) s = s.split("{" + v + "}").join(vars[v]); return s; };
+      const RP = { name, data: { versions, code: "x = 1\n" }, drawn: {}, tab: "bt" }, RPC = { name: null, data: null };
+      const tracked = [], loads = [], vs = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map() });
+      const env = { document: doc, $, t, LANG: lang, VER: g.blaveVersions, VS: { local: vs(), cloud: vs() }, RP, RPC, rpBag: () => RP, trackFeature: (n) => tracked.push(n),
+        TR_BAGS: { local: { st: amounts ? { report: { config: { amounts } } } : null } }, trMD: () => "09/28", trStamp: () => "2026-09-28 10:00", requestAnimationFrame: (f) => f(),
+        verLoad: (...a) => loads.push(["ver"].concat(a)), vcLoad: () => loads.push(["vc"]), hoPaint() {}, rpShowTab() {}, verBusy() {} };
+      $("ver-menu").hidden = true; $("vc-scrim").hidden = true; $("ver-wrap").hidden = true;
+      const F = new Function(...Object.keys(env), body)(...Object.values(env));
+      F.verPaint(RP);
+      return { F, E, $, RP, S: env.VS.local, tracked, loads };
+    }
+
+    // 入口:零版 / 名字過不了閘門 → 不出;一版 → 跟多版同一顆
+    const hiddenFor = (name, versions) => { const r = rig("zh", name, versions); r.F.verMenuOpen(true); return r.E["ver-wrap"].hidden === true && r.E["ver-menu"].hidden === true && r.E["ver-menu"].kids.length === 0 && r.tracked.length === 0 && r.S.data === null; };
+    ok("入口:零版(null / 空清單 / 整份壞項目)、名字過不了閘門 + 一版 → 不出入口,選單打不開、不記埋點",
+      [null, { counter: 0, current: 0, items: [] }, { counter: 1, current: 1, items: ["junk", { n: "1" }] }].every((v) => hiddenFor("momo", v)) && hiddenFor("策略一", { counter: 1, current: 1, items: [it(1)] }));
+    const one = rig("zh", "momo", { counter: 1, current: 1, items: [it(1)] });
+    ok("入口:一版 → 出「v1 目前」,可及名稱「版本 v1，目前」", one.E["ver-wrap"].hidden === false && one.E["ver-trig-n"].textContent === "v1" && one.E["ver-trig-l"].textContent === "目前" && one.E["ver-trig"].attrs["aria-label"] === "版本 v1，目前");
+
+    // 一版的選單
+    one.F.verMenuOpen(true);
+    {
+      const m = one.E["ver-menu"], last = m.kids[m.kids.length - 1], mi = menuItems(m), row = mi[0];
+      ok("一版選單:小標 → 清單(一列)→ 分隔線 → 引導句,就這四格", m.hidden === false && m.kids.map((k) => k.className).join() === "vmenu-cap,vlist,vmenu-div,vmenu-hint" && m.kids[1].kids.length === 1);
+      ok("一版選單:引導句是非互動的 <p id=ver-hint>——不是 menuitem、沒有 tabindex、沒有掛事件", last.tagName === "p" && last.id === "ver-hint" && !("role" in last.attrs) && last.tabIndex === undefined && Object.keys(last.on).length === 0);
+      ok("一版選單:沒有比較列(不是停用,是不畫);menuitem 只有那一列", mi.length === 1 && m.all((k) => /vmenu-foot/.test(k.className)).length === 0 && m.all((k) => "disabled" in k || "aria-disabled" in k.attrs).length === 0 && !m.textContent.includes(zh["ver.compareOpen"]));
+      ok("一版選單:選單以 aria-describedby 指向引導句", m.attrs["aria-describedby"] === "ver-hint");
+      ok("一版選單:引導句逐字 = ver.oneHint,版號包在 .mono 裡", last.textContent === "下次回測會存成 v2，到時就能比較和還原。" && last.kids.length === 3 && last.kids[1].tagName === "span" && last.kids[1].className === "mono" && last.kids[1].textContent === "v2");
+      ok("一版選單:那一列是目前版(aria-current、徽章「目前」、三個數字),鍵盤開的焦點落在它上面", row.attrs["aria-current"] === "true" && row.all((k) => /vtag cur/.test(k.className))[0].textContent === "目前" && row.all((k) => k.className === "v mono").length === 3 && doc.activeElement === row);
+      ok("埋點:一版點開也送 version_menu(不新增事件名)", one.tracked.join() === "version_menu");
+      row.click();
+      ok("一版:點那一列 = 關選單、進不了時光機(不載單版、不記 version_view、橫幅不出)", m.hidden === true && one.S.open === null && one.loads.length === 0 && one.tracked.join() === "version_menu" && one.E["ver-banner"].hidden === true);
+      let threw = null; try { one.F.vcOpen(); } catch (e) { threw = e; }
+      ok("一版:vcOpen 被 canCompare 擋下——不丟例外、不開比較框、不記 version_compare", threw === null && one.E["vc-scrim"].hidden === true && !one.E["view-ws"] && one.loads.length === 0 && !one.tracked.includes("version_compare"));
+    }
+    const en1 = rig("en", "momo", { counter: 4, current: 4, items: ["junk", it(4)] }); en1.F.verMenuOpen(false);
+    ok("引導句的版號由 nextN 帶(counter 4 → v5,不寫死 v2);en 逐字", en1.E["ver-menu"].kids[3].textContent === "Your next backtest is saved as v5. Then you can compare and restore." && en1.E["ver-menu"].kids[3].kids[1].textContent === "v5");
+    const live1 = rig("zh", "momo", { counter: 1, current: 1, items: [it(1)], drift: false }, { momo: 100 }); live1.F.verMenuOpen(false);
+    const drift1 = rig("zh", "momo", { counter: 1, current: 1, items: [it(1)], drift: true }, { momo: 100 }); drift1.F.verMenuOpen(false);
+    ok("一版且有金額 → 徽章「上線中」;再加 drift →「上線中 · 檔案已改」與原因那一行;最下面仍是引導句",
+      live1.E["ver-menu"].all((k) => /^vtag /.test(k.className)).map((k) => k.textContent).join() === "上線中" && drift1.E["ver-menu"].all((k) => /^vtag /.test(k.className)).map((k) => k.textContent).join() === "上線中 · 檔案已改"
+      && drift1.E["ver-menu"].all((k) => k.className === "vmi-warn").length === 1 && [live1, drift1].every((r) => r.E["ver-menu"].kids[3].className === "vmenu-hint"));
+
+    // 回歸:兩版以上逐項不變
+    for (const ns of [[1, 2], [1, 2, 3, 4, 5]]) {
+      const top = ns[ns.length - 1], r = rig("zh", "momo", { counter: top, current: top, items: ns.map(it) }), m = r.E["ver-menu"], tag = ns.length + " 版";
+      m.setAttribute("aria-describedby", "ver-hint");   // 同一個選單元素上一次畫的是一版
+      r.F.verMenuOpen(true);
+      const mi = menuItems(m), foot = m.kids[3];
+      ok(tag + "選單:小標 → 清單(由新到舊)→ 分隔線 → 「比較兩個版本…」;沒有引導句、aria-describedby 拿掉", m.kids.map((k) => k.className).join() === "vmenu-cap,vlist,vmenu-div,vmi vmenu-foot"
+        && m.kids[1].kids.map((k) => k.all((x) => /vmi-num/.test(x.className))[0].textContent).join() === ns.slice().reverse().map((n) => "v" + n).join()
+        && foot.tagName === "button" && foot.attrs.role === "menuitem" && foot.tabIndex === -1 && foot.textContent === "比較兩個版本…" && mi.length === ns.length + 1 && mi[mi.length - 1] === foot
+        && m.all((k) => k.className === "vmenu-hint").length === 0 && !("aria-describedby" in m.attrs) && r.tracked.join() === "version_menu" && doc.activeElement === mi[0]);
+      foot.click();
+      ok(tag + "比較:關選單、開比較框,A = 上一版、B = 目前版,記 version_compare", m.hidden === true && r.E["vc-scrim"].hidden === false && r.E["view-ws"].inert === true && r.E["vc-a"].value === String(top - 1) && r.E["vc-b"].value === String(top)
+        && r.E["vc-a"].kids.length === ns.length && r.loads.join("|") === "vc" && r.tracked.join() === "version_menu,version_compare");
+      r.F.verMenuOpen(false); menuItems(m)[1].click();
+      ok(tag + "時光機:點舊版 → 進時光機、載那一版、記 version_view;觸發器換成那一版的日期", r.S.open === top - 1 && r.loads[1].join() === "ver,local," + (top - 1) && r.tracked.slice(-1)[0] === "version_view" && r.E["ver-banner"].hidden === false && r.E["ver-trig-n"].textContent === "v" + (top - 1) && r.E["ver-trig-l"].textContent === "09/28");
+      r.F.vcOpen();
+      ok(tag + "比較:在時光機裡開 → A = 正在看的那一版", r.E["vc-a"].value === String(top - 1) && r.E["vc-b"].value === String(top));
+    }
+    // 一版 → 兩版:key 變了,回目前版、下次打開是比較列
+    {
+      const r = rig("zh", "momo", { counter: 1, current: 1, items: [it(1)] }); r.F.verMenuOpen(false);
+      r.RP.data.versions = { counter: 2, current: 2, items: [it(1), it(2)] }; r.F.verPaint(r.RP);
+      const closed = r.E["ver-menu"].hidden === true; r.F.verMenuOpen(false);
+      ok("一版 → 跑一次回測變兩版:選單關掉重畫,觸發器「v2」,最下面從引導句變成比較列", closed && r.E["ver-trig-n"].textContent === "v2" && r.E["ver-menu"].kids[3].className === "vmi vmenu-foot" && !("aria-describedby" in r.E["ver-menu"].attrs));
+    }
+    ok("樣式:.vmenu-hint 照規格(12px / 1.5 / --ink-2 / padding space-6 10px / margin 0)", /\.vmenu-hint \{ flex: none; margin: 0; padding: var\(--space-6\) 10px; font-size: 12px; line-height: 1\.5; color: var\(--ink-2\); \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")));
+    ok("接線:選單與 vcOpen 都問 VER.canCompare,引導句的版號問 VER.nextN,用 DOM 組字(沒有 innerHTML)", /if \(VER\.canCompare\(S\.data\)\) \{/.test(fnSrc(verSrc, "verMenuOpen")) && /VER\.nextN\(S\.data\)/.test(fnSrc(verSrc, "verMenuOpen"))
+      && /if \(!S\.data \|\| !VER \|\| !VER\.canCompare\(S\.data\)\) return;/.test(fnSrc(verSrc, "vcOpen")) && !/innerHTML/.test(verSrc));
+  }
 
   // ── ④ 純函式層跟網頁同一份 ──
   const web = path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "strategy_versions.js");

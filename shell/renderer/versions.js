@@ -115,11 +115,21 @@ function verMenuOpen(viaKey) {
   });
   menu.appendChild(list);
   menu.appendChild(verEl("div", "vmenu-div"));
-  const cmp = verEl("button", "vmi vmenu-foot", t("ver.compareOpen")); cmp.type = "button"; cmp.setAttribute("role", "menuitem"); cmp.tabIndex = -1;
-  cmp.addEventListener("click", () => { verMenuClose(false); vcOpen(); });
-  menu.appendChild(cmp);
+  if (VER.canCompare(S.data)) {
+    menu.removeAttribute("aria-describedby");
+    const cmp = verEl("button", "vmi vmenu-foot", t("ver.compareOpen")); cmp.type = "button"; cmp.setAttribute("role", "menuitem"); cmp.tabIndex = -1;
+    cmp.addEventListener("click", () => { verMenuClose(false); vcOpen(); });
+    menu.appendChild(cmp);
+  } else {
+    // 只有一版:比較不畫(不是停用),這一格換成一句引導。不是 menuitem——方向鍵與 Tab 不停在上面,讀屏靠選單的 aria-describedby 唸
+    const hint = verEl("p", "vmenu-hint"), parts = t("ver.oneHint").split("{next}");
+    hint.id = "ver-hint";
+    hint.append(parts[0] || "", verEl("span", "mono", "v" + VER.nextN(S.data)), parts[1] || "");
+    menu.appendChild(hint);
+    menu.setAttribute("aria-describedby", "ver-hint");
+  }
   menu.hidden = false; $("ver-wrap").classList.add("is-open"); $("ver-trig").setAttribute("aria-expanded", "true");
-  // 面板不超出中欄底:清單自己捲,標題與「比較兩個版本…」不捲
+  // 面板不超出中欄底:清單自己捲,標題與最下面那一格(比較列 / 引導句)不捲
   const rp = $("rp").getBoundingClientRect(), tr = $("ver-trig").getBoundingClientRect();
   menu.style.maxHeight = Math.max(160, Math.floor(rp.bottom - tr.bottom - 8 - 16)) + "px";
   const cur = list.querySelector('[aria-current="true"]') || list.firstChild;
@@ -277,7 +287,7 @@ function vcFill(sel, S, pick) {
 }
 function vcOpen() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
-  if (!S.data || !VER) return;
+  if (!S.data || !VER || !VER.canCompare(S.data)) return;   // 一版時 items[1] 不存在
   const items = VER.entries(S.data);
   vcSide = side;
   vcFill($("vc-a"), S, S.open !== null ? S.open : items[1].n);

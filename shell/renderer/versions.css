@@ -49,6 +49,7 @@
 .vmi[aria-current="true"] .vmi-top { font-weight: 600; }   /* 選中 = 第一行加粗,不鋪底、不提亮(canon › Dropdown › Selected;同 web) */
 .vmenu-div { flex: none; height: 1px; margin: var(--space-6) 0; background: var(--border-hairline); }
 .vmi.vmenu-foot { flex: none; font-size: 13px; }
+.vmenu-hint { flex: none; margin: 0; padding: var(--space-6) 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }   /* 只有一版:佔比較列那一格,非互動 */
 /* 徽章:Mini tag。「目前」「檔案已改」描邊——列 hover 的底跟中性 tag 底同值,填色款滑過會消失 */
 .vtag { flex: none; align-self: center; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; line-height: 1; white-space: nowrap; }
 .vtag.cur { border: 1px solid var(--border-frame); color: var(--ink-2); }

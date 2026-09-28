@@ -30,10 +30,24 @@
     });
   }
 
-  // 膠囊要不要存在。≥2 版才 render —— 只有一版時整顆不存在(mockup §3 的
-  // 「B 比 A 輕」那條),所以 90% 的策略等於沒有這個功能。
+  // 入口要不要存在:名字過閘門,而且至少有一版。零版不出、也不出佔位字 ——
+  // Type B 與名字過不了閘門的策略永遠不會有版本,寫「尚無」就是假話。
   function usable(name, versions) {
-    return NAME_RE.test(String(name == null ? "" : name)) && entries(versions).length >= 2;
+    return NAME_RE.test(String(name == null ? "" : name)) && entries(versions).length >= 1;
+  }
+
+  // 比較要兩版才有意義。選單的「比較兩個版本…」與比較框的入口都問這一支。
+  function canCompare(versions) {
+    return entries(versions).length >= 2;
+  }
+
+  // 下一版的版號(只有一版時的引導句用)。runner 用 counter + 1;
+  // counter 缺或比最新一版小時退回最新版號。零版 → null。
+  function nextN(versions) {
+    var e = entries(versions);
+    if (!e.length) return null;
+    var c = versions && typeof versions.counter === "number" && isFinite(versions.counter) ? versions.counter : 0;
+    return Math.max(c, e[0].n) + 1;
   }
 
   function num(v) {
@@ -114,6 +128,8 @@
     NAME_RE: NAME_RE,
     entries: entries,
     usable: usable,
+    canCompare: canCompare,
+    nextN: nextN,
     fmt: fmt,
     delta: delta,
     windowsDiffer: windowsDiffer,
