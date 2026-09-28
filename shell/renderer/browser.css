@@ -47,6 +47,12 @@
 .pt-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt[data-ph="done"] .pt-foot { color: var(--ink); }
 .pt[data-ph="wait"] .pt-foot, .pt[data-ph="fail"] .pt-foot, .pt[data-ph="blocked"] .pt-foot { color: var(--ink-2); }
+/* 未讀:開了、載入正常、agent 沒讀。標記是條頭裡的兩個字(無底無框,跟其他狀態的 icon 同一個份量);回合結束後縮圖跟已讀一樣降到 45% */
+.pt-st .st-t { font-size: 11px; line-height: 1; color: var(--ink-2); white-space: nowrap; }
+.pt[data-ph="unread"] .pt-foot { color: var(--ink-2); }
+.pt[data-ph="unread"][data-ended] .pg { opacity: .45; }
+.bw-stat .st-sum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 中欄很窄時只截這一段的尾巴 */
+.bw-stat .st-sum > span + span { margin-left: var(--space-12); }
 .pt-prog { display: none; }
 
 /* ── 聊天瀏覽區塊 .bblk ── */

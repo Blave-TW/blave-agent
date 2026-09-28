@@ -4033,6 +4033,12 @@ msgstr "agent 瀏覽中"
 msgid "br.readWord"
 msgstr "已讀"
 
+msgid "br.unread"
+msgstr "未讀"
+
+msgid "br.unread.stat"
+msgstr "載入正常，agent 沒讀這一頁"
+
 msgid "br.waiting"
 msgstr "等你操作"
 
@@ -4105,8 +4111,8 @@ msgstr "要選檔案"
 msgid "br.relay"
 msgstr "只停在轉址頁，沒有內容"
 
-msgid "br.notRead"
-msgstr "沒讀到"
+msgid "br.cantRead"
+msgstr "讀不了"
 
 msgid "br.youPress"
 msgstr "由你按"

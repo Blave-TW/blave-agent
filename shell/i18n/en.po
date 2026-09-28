@@ -4032,6 +4032,12 @@ msgstr "Agent browsing"
 msgid "br.readWord"
 msgstr "read"
 
+msgid "br.unread"
+msgstr "Unread"
+
+msgid "br.unread.stat"
+msgstr "Loaded fine. The agent didn’t read this page"
+
 msgid "br.waiting"
 msgstr "Waiting for you"
 
@@ -4104,8 +4110,8 @@ msgstr "File needed"
 msgid "br.relay"
 msgstr "Stopped at a redirect page, no content"
 
-msgid "br.notRead"
-msgstr "Not read"
+msgid "br.cantRead"
+msgstr "Couldn’t read"
 
 msgid "br.youPress"
 msgstr "Your turn"

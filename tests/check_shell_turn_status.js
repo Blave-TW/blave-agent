@@ -154,8 +154,8 @@ ok("疊圖只放真的讀到內容的頁(讀過、不是搜尋頁、不是中繼
 ok("搜尋結果頁開頁當下就認(Google / DDG 的網址),不先閃一格 0/1", /if \(BR_SERP\.test\(String\(ev\.url \|\| ""\)\)\) \{[^\n]*x\.search = true;[^\n]*return; \}/.test(brSrc));
 ok("搜尋結果頁從清單拿掉", /case "search": if \(x\) \{[\s\S]{0,300}b\.ids\.splice\(i, 1\)/.test(brSrc));
 ok("中繼頁:page_done 帶 relay 就不算讀過,訊息槽寫原因", /if \(ev\.relay\) x\.relay = true; if \(ev\.read && !ev\.relay\) x\.readEver = true;/.test(brSrc) && /if \(x\.relay\) return t\("br\.relay"\);/.test(brSrc));
-ok("進行中只露出要你操作的頁;沒讀到的排最下面、有細線與小標", /\.bblk:not\(\.sum\) \.wall > \.pt:not\(\[data-ph="wait"\]\)/.test(brCss) && /\.bsep \{ grid-column: 1 \/ -1;/.test(brCss)
-  && /const want = ok\.concat\(\[sep\], ng\);/.test(brSrc));
+ok("進行中只露出要你操作的頁;讀不了的排最下面、有細線與小標(第七批:小標改「讀不了」,未讀另有標記——check_shell_browser_unread.js)", /\.bblk:not\(\.sum\) \.wall > \.pt:not\(\[data-ph="wait"\]\)/.test(brCss) && /\.bsep \{ grid-column: 1 \/ -1;/.test(brCss)
+  && /const want = ok\.concat\(sep \? \[sep\] : \[\], ng\);/.test(brSrc) && /sep = brEl\("div", "bsep", t\("br\.cantRead"\)\);/.test(brSrc));
 ok("聊天列不掛「由你按」(只留中欄)", !/brEl\("span", "tag-you"/.test(cut(brSrc, "function brStatusNode(", "function brPh(")));
 // 重開對話的順序:舊紀錄的區塊時間是回合開始(早於逐字稿那句用戶訊息幾秒)→ 挪到那句後面
 const fix = new Function(cut(src, "function histFixOrder(", "async function csOpen(") + "; return histFixOrder;")();

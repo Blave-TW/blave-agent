@@ -54,6 +54,11 @@ const BR_NOTE_KINDS = ["outline", "links", "meta", "snapshot", "press"];
 /* 「你在操作」回答的是「agent 現在會不會動這一頁」:只有 agent 開的分頁被用戶接手時才有這個問題。用戶自己開的分頁
    (送進 TradingView、開即時頁、重試;by === "user")agent 本來就碰不到,照一般分頁畫。純函式 */
 const brUserOp = (x) => !!x && !!x.user && x.by !== "user";
+/* 讀不了(頁面那一邊的原因):打不開、agent 不開這個網站、只停在轉址頁 */
+const brBad = (x) => !!x && !!(x.fail || x.blocked || x.relay) && !x.need;
+/* 未讀:開了、載入正常、agent 沒讀。回合結束時還在載入的頁也算(頁面沒有壞,是 agent 沒等它)。
+   agent 拿來操作(點、打字、按鍵)的頁不算——那種頁本來就不是拿來讀的,摘要寫的是「用了 N 頁」。純函式 */
+const brUnread = (x) => !!x && !x.search && !x.readEver && !x.used && !brBad(x) && !x.need && !brUserOp(x) && (x.ph === "open" || !!x.ended);
 function brFoot(x) {
   if (x.need) return t(x.need.kind === "login" ? "br.need.login" : x.need.kind === "captcha" ? "br.need.captcha" : x.need.kind === "file" ? "br.need.file" : x.need.kind === "confirm" ? "br.need.confirm" : "br.need.submit");
   if (brUserOp(x)) return t("br.userOp");
@@ -74,6 +79,7 @@ function brStatusNode(x) {
   if (x.need) return brEl("span", "need-dot");   // 「由你按」只留在中欄那顆要按的鈕旁;「等你操作」由狀態列講
   if (brUserOp(x)) return brIcon("hand");
   if (x.blocked) return brIcon("ban");
+  if (brUnread(x)) return brEl("span", "st-t", t("br.unread"));   // 跟「已讀」成對的兩個字,放在狀態位(條頭),不疊在縮圖上
   if (x.ended && x.ph !== "done" && !x.fail) return null;   // 回合結束:沒讀完的頁狀態位留空,pulse 停
   if (x.fail) return brIcon("warn");
   if (x.ph === "load" || x.ph === "queued") return brEl("span", "br-spin");
@@ -82,7 +88,7 @@ function brStatusNode(x) {
   if (x.ph === "done") return x.search ? null : brIcon("check");   // 搜尋結果頁列出來但不打「已讀」
   return null;
 }
-function brPh(x) { return x.need ? "wait" : brUserOp(x) ? "user" : x.blocked ? "blocked" : x.fail ? "fail" : x.ph; }
+function brPh(x) { return x.need ? "wait" : brUserOp(x) ? "user" : x.blocked ? "blocked" : x.fail ? "fail" : brUnread(x) ? "unread" : x.ph; }
 function brTile(id) {
   const x = brTab(id);
   const b = brEl("button", "pt"); b.type = "button"; b.dataset.id = id;
@@ -100,6 +106,7 @@ function brTile(id) {
 }
 function brPaintTile(el, x) {
   el.dataset.ph = brPh(x);
+  if (x.ended) el.dataset.ended = ""; else delete el.dataset.ended;   // 回合結束後未讀格的縮圖也降到 45%(整面牆亮度一致,狀態只從條頭讀)
   el.setAttribute("aria-current", BR.exp && BR.exp.mode === "one" && BR.exp.id === x.id ? "true" : "false");
   const dom = el.querySelector(".dom"); dom.textContent = ""; dom.append(brEl("b", "", brReg(brHost(x.url)) || x.url));
   const fk = BR_FAVS.get(brHost(x.url)), fv = el.querySelector(".pt-bar .fav"), want = fk ? fk.src + (fk.plate ? "|p" : "") : "";
@@ -120,7 +127,7 @@ function brPaintTile(el, x) {
       el.__ring = a.at; const r = brEl("span", "tr"); r.style.left = c.style.left; r.style.top = c.style.top; layer.append(r); setTimeout(() => r.remove(), 600);
     }
   }
-  el.setAttribute("aria-label", brReg(brHost(x.url)) + " — " + brFoot(x));
+  el.setAttribute("aria-label", brReg(brHost(x.url)) + " — " + (brUnread(x) ? t("br.unread") + " — " : "") + brFoot(x));
 }
 function brPaint(id) {
   const x = BR.tabs.get(id); if (!x) return;
@@ -148,6 +155,16 @@ function brStat(b, withSegs) {
   const all = b.ids.map((id) => BR.tabs.get(id)).filter(Boolean), xs = all.filter((x) => !x.search);
   const d = xs.filter((x) => x.readEver).length, n = xs.length;
   const frag = document.createDocumentFragment();
+  if (!b.live) {
+    // 回合結束後不再寫分數(「3/7 已讀」讓人去算剩下 4 頁怎麼了):三個數直接講完,是 0 的不出。口徑同摘要列(brPaintSum)
+    const read = b.sourceCount != null ? b.sourceCount : xs.filter(brIsRead).length, used = xs.filter((x) => !brBad(x)).length;
+    const sum = brEl("span", "st-sum"), item = (pre, k, post) => { const c = brEl("span"); c.append(pre, brEl("b", "", String(k)), post || ""); sum.append(c); };
+    if (read === 0 && used > 0) item(t("br.summaryUsedPre"), used, t("br.summaryPost"));
+    else { if (read) item(t("br.summaryPre"), read, t("br.summaryPost")); const un = xs.filter(brUnread).length; if (un) item(t("br.unread") + " ", un); }
+    const bad = xs.filter(brBad).length; if (bad) item(t("br.cantRead") + " ", bad);
+    if (sum.childNodes.length) frag.append(sum);
+    return frag;
+  }
   const need = all.some((x) => x.need), active = b.live && all.some((x) => ["load", "read", "act", "queued"].includes(x.ph));
   // 等你操作只換掉狀態段;已讀 / 總數、進度格、排隊數照樣在(canon 第 1 條:狀態+已讀/總數)
   if (need) frag.append(brEl("span", "", t("br.waiting")));
@@ -175,20 +192,28 @@ function brLine(b) {
   if (xs.length) { const c = brEl("span", "cnt"); const n = brEl("span", "mono"); n.append(brEl("b", "", String(read.length)), "/" + xs.length); c.append(n, " " + t("br.readWord")); frag.append(c); }
   return frag;
 }
-/* 沒讀到的頁(打不開、被擋、只停在中繼頁)排在最下面,上面一條細線＋「沒讀到」 */
+/* 讀不了的頁(打不開、被擋、只停在中繼頁)排在最下面,上面一條細線＋「讀不了」(原因由每一格自己的訊息槽講)。
+   回合結束時再排一次:已讀 → 未讀 → 細線 → 讀不了,同一組內照開啟順序;進行中不重排(格子不能在用戶眼前跳) */
+function brRank(x, ended) { return brBad(x) ? 2 : ended && brUnread(x) ? 1 : 0; }
 function brOrder(b) {
-  const bad = (x) => !!x && (x.fail || x.blocked || x.relay) && !x.need;
-  const tiles = [...b.wall.querySelectorAll(":scope > .pt")];
-  const ok = tiles.filter((el) => !bad(BR.tabs.get(el.dataset.id))), ng = tiles.filter((el) => bad(BR.tabs.get(el.dataset.id)));
+  const tiles = [...b.wall.querySelectorAll(":scope > .pt")], rank = (el) => brRank(BR.tabs.get(el.dataset.id), !b.live);
+  const ok = tiles.filter((el) => rank(el) < 2).sort((p, q) => rank(p) - rank(q)), ng = tiles.filter((el) => rank(el) === 2);
   let sep = b.wall.querySelector(":scope > .bsep");
-  if (!ng.length) { if (sep) sep.remove(); return; }
-  if (!sep) sep = brEl("div", "bsep", t("br.notRead"));
-  const want = ok.concat([sep], ng);
+  if (!ng.length) { if (sep) sep.remove(); sep = null; }
+  else if (!sep) sep = brEl("div", "bsep", t("br.cantRead"));
+  const want = ok.concat(sep ? [sep] : [], ng);
   if (want.some((el, i) => b.wall.children[i] !== el)) want.forEach((el) => b.wall.append(el));
+}
+/* 中欄分頁牆的順序:回合結束後同一套(已讀 → 未讀 → 讀不了);牆上每一格自己有 icon 與原因,不補細線與小標 */
+function brWallOrder(b, wall) {
+  if (b.live) return;
+  const tiles = [...wall.querySelectorAll(":scope > .pt")], rank = (el) => brRank(BR.tabs.get(el.dataset.id), true);
+  const want = tiles.slice().sort((p, q) => rank(p) - rank(q));
+  if (want.some((el, i) => tiles[i] !== el)) want.forEach((el) => wall.append(el));
 }
 function brPaintHead(b) {
   brThumbClass(b, b.el);
-  if (b.sum) return brPaintSum(b);
+  if (b.sum) { brPaintSum(b); brOrder(b); return; }   // 回合結束後的清單:已讀 → 未讀 → 讀不了
   const h = b.head; h.textContent = "";
   const inWall = BR.exp && BR.exp.mode === "wall" && BR.exp.block === b;
   b.el.classList.toggle("is-out", !!inWall);
@@ -333,6 +358,8 @@ function brStatLine(host) {
   }
   // 單頁:講「這一頁」的狀態,跟分頁格訊息槽同一組字(讀取中 2/5、已讀完、打不開、要登入);已讀 d/n 只在聊天卡頭講一次。
   // 太長只截文字那一段(.t);icon、進度格、文字鈕不縮
+  // 回合結束後點進一格未讀的頁:多半就是想知道「它怎麼了」——講完整的一句,前面不放狀態節點(不然「未讀」講兩次)
+  if (x && x.ended && brUnread(x)) { host.append(brEl("span", "t", t("br.unread.stat"))); return; }
   if (x) { const n = brStatusNode(x); if (n) host.append(n); host.append(brEl("span", "t", x.ph === "done" && brIsRead(x) ? t("br.readDone") : brFoot(x))); return; }
   const b = exp && exp.mode === "wall" ? exp.block : null;
   if (b) host.append(brStat(b, true));
@@ -498,6 +525,7 @@ function brPaintOverlay() {
     exp.block.ids.forEach((id) => { if (!have.has(id)) wall.append(brWallTile(id)); });
     brThumbClass(exp.block, wall);
     wall.querySelectorAll(".pt").forEach((el) => { const x = BR.tabs.get(el.dataset.id); if (x) brPaintTile(el, x); });
+    brWallOrder(exp.block, wall);
     brStatLine(bw.querySelector(".bw-stat"));
     return;
   }
@@ -518,7 +546,7 @@ function brPaintOverlay() {
     BR.wallBlock = exp.block;
     const body = brEl("div", "bw-body"), wall = brEl("div", "wall");
     exp.block.ids.forEach((id) => wall.append(brWallTile(id)));
-    brThumbClass(exp.block, wall);
+    brThumbClass(exp.block, wall); brWallOrder(exp.block, wall);
     body.append(wall); bw.append(body); brSendBounds(null); return;
   }
   const bv = brEl("div", "bv");
@@ -646,6 +674,7 @@ function brOnEvent(ev) {
       const box = ev.box && [ev.box.x, ev.box.y, ev.box.w, ev.box.h].every(Number.isFinite) ? ev.box : null;
       x.act = { kind: String(ev.kind || ""), ref: ev.ref, text: ev.text, box, at: Date.now() };
       if (Number(ev.vw) > 0 && Number(ev.vh) > 0) { x.vw = Number(ev.vw); x.vh = Number(ev.vh); }
+      if (["click", "type", "press"].includes(x.act.kind)) x.used = true;   // 拿來操作的頁:不標「未讀」
       if (BR_NOTE_KINDS.includes(x.act.kind)) { x.note = x.act; setTimeout(() => brPaint(id), 2600); }   // 看大綱 / 讀連結 / 讀標題與日期 / 看頁面結構 / 按鍵:訊息槽寫一下就回去
       else x.ph = x.act.kind === "scroll" ? "read" : "act";
       break;
@@ -697,9 +726,12 @@ function brRestore(item) {
   const r = item.row;
   if (item.kind !== "block") return;
   const b = brBlockNew(false);
+  // 整輪只操作沒讀的那一種(摘要寫「用了 N 頁」):紀錄裡分不出哪一頁被操作過,這一輪的頁都不標「未讀」
+  const anyRead = r.tabs.some((tb) => tb && tb.status === "done" && !tb.search) || (Array.isArray(r.sources) && r.sources.length > 0);
   r.tabs.forEach((tb) => {
     if (!tb || typeof tb.id !== "string" || tb.search) return;   // 搜尋結果頁不進清單
     const x = brTab(tb.id); x.url = String(tb.url || ""); x.title = String(tb.title || ""); x.snap = tb.snapshot_id || null;
+    x.ended = true; x.used = !anyRead;   // 舊對話:回合早就結束了——沒讀、也沒壞的頁就是「未讀」
     x.ph = tb.status === "done" ? "done" : "open"; x.search = !!tb.search; x.readEver = tb.status === "done"; brNoteFav(tb.url, tb.fav, tb.plate);
     if (tb.status === "blocked") x.blocked = { kind: "domain" }; else if (tb.status === "failed") x.fail = "network";
     brAddRow(b, tb.id);
