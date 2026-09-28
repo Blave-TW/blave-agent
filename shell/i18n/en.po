@@ -4096,7 +4096,7 @@ msgid "br.need.submit"
 msgstr "Ready to submit"
 
 msgid "br.need.captcha"
-msgstr "Robot check needed"
+msgstr "Search needs a robot check"
 
 msgid "br.need.file"
 msgstr "File needed"
@@ -4132,19 +4132,22 @@ msgid "br.ask.consent.h"
 msgstr "This page wants your cookie choice"
 
 msgid "br.ask.captcha.h"
-msgstr "A robot check is in the way"
+msgstr "Search needs a robot check first"
 
 msgid "br.ask.p"
 msgstr "You type any passwords. While you're in control, the agent pauses and doesn't read this page."
 
 msgid "br.ask.captcha.p"
-msgstr "You solve the check yourself; the agent never does."
+msgstr "After several searches in a row, {engine} asks to confirm a person is there. You do the check yourself; the agent never does it for you. Once it passes, the search picks up on its own."
 
 msgid "br.ask.skip"
 msgstr "Skip"
 
 msgid "br.ask.ddg"
 msgstr "Use DuckDuckGo"
+
+msgid "br.ask.noSearch"
+msgstr "Skip this search"
 
 msgid "br.ask.meLogin"
 msgstr "I'll sign in"
@@ -4157,6 +4160,9 @@ msgstr "I'll pick the file"
 
 msgid "br.ask.meVerify"
 msgstr "I'll do the check"
+
+msgid "br.notif.captcha"
+msgstr "Search needs a robot check. Come back to Blave to continue."
 
 msgid "br.dl"
 msgstr "Download blocked: {name} was not saved to this computer."

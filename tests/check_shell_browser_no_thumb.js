@@ -13,12 +13,16 @@ ok("進行中照舊留著那一格(圖馬上會來,先佔位才不跳)", brNoThu
 ok("有的有圖有的沒有:不加(整塊左緣要對齊);一格都沒有的空區塊也不加", brNoThumb(false, ["data:image/jpeg;base64,AA", undefined]) === false && brNoThumb(false, []) === false);
 
 // 接線:class 掛在區塊(聊天)與中欄牆;每次重畫都重新判斷(歷史的頁重新開成活頁、拍到圖之後要拿掉)
-const toggler = new Function("BR", cut("brNoThumb") + "\n" + cut("brThumbClass") + "\nreturn brThumbClass;");
+const toggler = new Function("BR", cut("brNoThumb") + "\n" + cut("brOnlyVerify") + "\n" + cut("brThumbClass") + "\nreturn brThumbClass;");
 const el = () => { const set = new Set(); return { classList: { toggle: (c, on) => (on ? set.add(c) : set.delete(c)), contains: (c) => set.has(c) } }; };
 { const BR = { tabs: new Map([["a", {}], ["b", {}]]) }, f = toggler(BR), n = el(), b = { live: false, ids: ["a", "b", "gone"] };
   f(b, n); const first = n.classList.contains("no-thumb");
   BR.tabs.get("a").thumb = "data:image/jpeg;base64,AA"; f(b, n);
   ok("brThumbClass:讀 BR.tabs 的 thumb(清單裡查不到的 id 當沒有圖);之後拍到圖 → class 拿掉", first === true && n.classList.contains("no-thumb") === false); }
+{ const BR = { tabs: new Map([["s", { search: true, verify: true }], ["p", {}]]) }, f = toggler(BR), n = el();
+  f({ live: true, ids: ["s"] }, n); const only = n.classList.contains("no-thumb");
+  f({ live: true, ids: ["s", "p"] }, n);
+  ok("進行中的卡只有「搜尋在等你過驗證」那一列(那一頁不拍縮圖)→ 收掉縮圖欄;還有別的頁 → 照舊留著", only === true && n.classList.contains("no-thumb") === false); }
 const body = (name) => { const a = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", a); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(a, k + 1); } throw new Error("unbalanced " + name); };
 ok("brPaintHead 第一步就判(摘要列那條早退之前);回合結束換成摘要列也走 brPaintHead;中欄牆新建與原地更新兩條路都掛", /^function brPaintHead\(b\) \{\s*brThumbClass\(b, b\.el\);\s*if \(b\.sum\) return brPaintSum\(b\);/.test(body("brPaintHead"))
   && /b\.el = d; b\.sum = s; brPaintHead\(b\);/.test(body("brFinish")) && (body("brPaintOverlay").match(/brThumbClass\(exp\.block, wall\);/g) || []).length === 2);

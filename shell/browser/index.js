@@ -15,16 +15,18 @@ const { createSnapshots } = require("./snapshots");
 const { createCapture, sweepCites } = require("./capture");
 const { TOOLS, INSTRUCTIONS } = require("./tools");
 const IP = require("./inpage");
+const VF = require("./verify");
 
 const PARTITION = "persist:agent-browser";
-const LOAD_TIMEOUT_MS = 20000, WAIT_MAX_MS = 25000, AGENT_WINDOW_MS = 3000, SEARCH_LOAD_MS = 12000, CAPTCHA_WAIT_MS = 20000;
+const LOAD_TIMEOUT_MS = 20000, WAIT_MAX_MS = 25000, AGENT_WINDOW_MS = 3000, SEARCH_LOAD_MS = 12000;
 const THUMB_EVERY_MS = 2000, THUMB_W = 240;
 const PARK_X = 20000;   // 不在畫面上的分頁停在視窗外(實測:沒掛上視窗的 view 拍不到縮圖,掛在視窗外可以)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * o: { electron: { WebContentsView, session, nativeImage }, stateDir, getWin(), uiLang(), openWeb(url), track(name),
- *      loadPrefs() → {enabled}, savePrefs(p), version, reducedMotion() }
+ *      loadPrefs() → {enabled}, savePrefs(p), version, reducedMotion(), notify(kind)?(app 不在前景時的系統通知),
+ *      userPresent()?(視窗在不在畫面上;沒給就自己問視窗), engines?(搜尋引擎表,預設 verify.js 的 ENGINES) }
  */
 function createBrowser(o) {
   const E = o.electron;
@@ -45,6 +47,8 @@ function createBrowser(o) {
   const snaps = createSnapshots(o.stateDir);
   let prefs = Object.assign({ enabled: true }, (o.loadPrefs && o.loadPrefs()) || {});
   let mcp = null;
+  const engines = o.engines || VF.ENGINES;
+  const searchGate = VF.createGate({ now: () => Date.now(), sleep });
 
   const tabs = createTabs({ create: createView, destroy: destroyView, emit: (type, p) => emit(type, p) });
 
@@ -178,7 +182,7 @@ function createBrowser(o) {
       safeDialogs: true, devTools: false, navigateOnDragDrop: false, autoplayPolicy: "document-user-activation-required",
     } });
     const wc = view.webContents;
-    const v = { view, wc, page: createPage(wc), pace: createPace(), loadTimer: null, lastReq: Date.now(), http: 0, agentInputAt: 0 };
+    const v = { view, wc, page: createPage(wc), pace: createPace(), loadTimer: null, lastReq: Date.now(), http: 0, agentInputAt: 0, navs: 0 };
     views.set(t.id, v); wcTab.set(wc.id, t.id);
     win.contentView.addChildView(view); park(v, views.size);
     wc.setAudioMuted(true);
@@ -222,7 +226,7 @@ function createBrowser(o) {
         v.loadTimer = setTimeout(() => { v.loadTimer = null; if (t.status === "loading") { t.partial = true; tabs.loaded(t.id, C.scrub(wc.getTitle(), 300)); emit("page_loaded", { id: t.id, title: t.title, partial: true }); } }, LOAD_TIMEOUT_MS);
       }
     });
-    wc.on("did-navigate", (_e, url, code) => { t.url = url; v.http = code || 0; emit("page_nav", { id: t.id, url: C.scrub(url, 2000), http: v.http }); });
+    wc.on("did-navigate", (_e, url, code) => { t.url = url; v.http = code || 0; v.navs++; emit("page_nav", { id: t.id, url: C.scrub(url, 2000), http: v.http }); });
     wc.on("page-favicon-updated", (_e, favs) => { fetchFavicon(t, v, favs).catch(() => {}); });
     wc.on("page-title-updated", (_e, title) => { t.title = C.scrub(title, 300); emit("page_title", { id: t.id, title: t.title }); });
     wc.on("did-stop-loading", () => {
@@ -272,7 +276,7 @@ function createBrowser(o) {
   // ── 接手 / 交還 / 請求卡 ──
   function takeover(id) {
     const t = tabs.get(id); if (!t || t.userControl) return;
-    t.userControl = true; emit("user_takeover", { id });
+    t.userControl = true; t.touchedAt = Date.now(); emit("user_takeover", { id });
     const v = views.get(id); if (v) v.page.run(IP.mark, ["clear"]).catch(() => {});
   }
   function handback(id) {
@@ -303,8 +307,9 @@ function createBrowser(o) {
     }, THUMB_EVERY_MS);
   }
   /* 用戶的頁不拍:他自己開的分頁(開即時頁、送進 TradingView 貼完的那一頁),與他接手操作中的 agent 分頁。
-     交接卡寫的是「貼完之後這一頁不會再被讀取」——縮圖也是讀;接手之後頁面上可能是他的帳戶 */
-  const shootable = (t) => !!t && t.by === "agent" && !t.userControl;
+     交接卡寫的是「貼完之後這一頁不會再被讀取」——縮圖也是讀;接手之後頁面上可能是他的帳戶。
+     搜尋分頁也不拍:它不進清單(沒有地方放縮圖),而且它可能是一張驗證頁——那一頁是用戶的,在認出來之前也不能先拍到 */
+  const shootable = (t) => !!t && t.by === "agent" && !t.userControl && !t.searchTab && !t.verify;
   async function captureThumb(id) {
     const t = tabs.get(id), v = views.get(id); if (!t || !v || !shootable(t)) return;
     t.thumbAt = Date.now();
@@ -354,6 +359,7 @@ function createBrowser(o) {
     stale_ref: "the ref is out of date; call browser_snapshot again",
     obscured: "the element is covered by another element (often a cookie banner or popup); close that first",
     browser_off: "the user turned the built-in browser off",
+    needs_user_verification: VF.REFUSED,
     confirm_url: "this address goes to a site not seen in this turn and carries a long query or text read from a page; the user must confirm it before it opens. Tell them what the link is for, then browser_wait until=user_done",
   };
   const blockedMsg = (r) => ({ sensitive_domain: "exchange/broker account areas, banks and payment pages are off limits to the agent", blocklist: "this site is on the harmful-site list", blave: "use lib/data.py for Blave data instead of the Blave website", private_address: "local and private network addresses are blocked", scheme: "only http(s) pages can be opened", port: "only ports 80/443 are allowed", credentials_in_url: "URLs with credentials are blocked", ads: "ad/tracking domains are blocked", lookalike: "this address imitates a protected site (possible phishing)", oauth: "sign-in and app-authorization pages are for the user to handle" }[r] || "blocked by policy");
@@ -361,12 +367,23 @@ function createBrowser(o) {
   /** 搜尋引擎的結果頁只能經 browser_search 開(它才有 Google 每分鐘 4 次的速率、驗證頁處理與退路) */
   function searchUrl(raw) {
     let u; try { u = new URL(String(raw || "")); } catch (_) { return false; }
-    const h = u.hostname.toLowerCase();
-    return (/(^|\.)google\.[a-z.]+$/.test(h) && /^\/(search|webhp)/.test(u.pathname)) || /(^|\.)duckduckgo\.com$/.test(h) || (/(^|\.)bing\.com$/.test(h) && u.pathname.startsWith("/search"));
+    const h = u.hostname.toLowerCase(), e = VF.engineOf(u.href, engines);
+    // 驗證頁的網址也算:那一頁只會由 browser_search 交給用戶,agent 不能自己開過去
+    return (!!e && (engines[e].search.test(u.pathname) || !!VF.verifyPage(u.href, engines))) || (/(^|\.)bing\.com$/.test(h) && u.pathname.startsWith("/search"));
+  }
+  /* 驗證頁:agent 的每一支工具都不碰(tabFor 是它們唯一的入口)。認定 = 搜尋時認出來的(t.verify,過了才清)、
+     正在等用戶過驗證、或分頁當下的網址就是驗證頁(agent 自己開到、被轉過去的) */
+  function verifying(t) {
+    if (!t) return false;
+    if (t.verify || (t.need && t.need.kind === "captcha")) return true;
+    const v = views.get(t.id); let url = t.url;
+    try { if (v && !v.wc.isDestroyed()) url = v.wc.getURL() || t.url; } catch (_) { /* 已關 */ }
+    return !!VF.verifyPage(url, engines);
   }
   function tabFor(alias) {
     const t = tabs.byAlias(alias);
     if (!t) return { e: ERR("not_found", MSG.not_found) };
+    if (verifying(t)) return { e: ERR("needs_user_verification", MSG.needs_user_verification, { tab: t.alias }) };
     if (t.userControl) return { e: ERR("user_in_control", MSG.user_in_control, { tab: t.alias }) };
     if (t.status === "blocked") return { e: ERR("blocked_policy", blockedMsg(t.reason), { tab: t.alias, reason: t.reason }) };
     if (t.status === "failed") return { e: ERR("load_failed", "the page could not be opened", { tab: t.alias, reason: t.reason }) };
@@ -424,53 +441,96 @@ function createBrowser(o) {
   // 稽核 S9:用戶接手中、或當下網址被政策擋的分頁,只回主機名、不回標題
   const tabInfo = (t) => {
     const v = views.get(t.id), url = v ? v.wc.getURL() || t.url : t.url;
-    const hide = t.userControl || !!policy.agent(url);
+    const hide = t.userControl || !!policy.agent(url) || verifying(t);
     let host = ""; try { host = new URL(url).hostname; } catch (_) { /* 不是網址 */ }
     return { tab: t.alias, status: status(t), url: hide ? host : C.scrub(url, 2000), title: hide ? "" : C.scrub(t.title, 300), partial: !!t.partial, http_status: v && v.http >= 400 ? v.http : undefined, reason: t.reason || undefined };
   };
 
+  /* 人在不在:視窗在畫面上(沒縮到 Dock、沒藏起來),而且這一輪不是從雲端視角送出的。不在就不問,直接走退路 */
+  function present() {
+    if (!cur || cur.noUser) return false;
+    if (o.userPresent) return !!o.userPresent();
+    const w = o.getWin && o.getWin();
+    try { return !!w && !w.isDestroyed() && w.isVisible() && !w.isMinimized(); } catch (_) { return false; }
+  }
+  /* 搜尋分頁落在驗證頁:標成「要你操作」交給用戶,等它離開。這裡不對那一頁做任何事(verify.js 檔頭的紅線)。
+     回 verify.waitVerify 的結果;這一輪已經拒絕或逾時過一次就不再問("declined") */
+  async function handVerify(t, engine, c, asked, deadline) {
+    t.verify = engine;
+    const v = views.get(t.id); if (!v) return "closed";
+    if (asked || c.verifyDeclined) return "declined";
+    if (!present()) { c.verifyDeclined = true; return "absent"; }
+    if (deadline - Date.now() < VF.VERIFY_MIN_MS) return "timeout";   // 這次呼叫快到期了:不問(下一次搜尋還可以問)
+    needUser(t, "captcha", null, engines[engine].name);
+    if (o.notify) { try { o.notify("captcha"); } catch (_) { /* 通知發不出去不影響流程 */ } }
+    const vf = VF.marks(engine, engines);
+    let seen = v.navs;
+    const got = await VF.waitVerify({
+      now: () => Date.now(), sleep, deadline,
+      alive: () => cur === c && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
+      present, choice: () => t.userDone || null, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
+      // 只在「導覽走了、載完了、網址是這個引擎的搜尋頁」之後才看一次頁面(跟每一張搜尋結果頁同一支只讀的判別);網址還是驗證頁時什麼都不跑
+      left: async () => {
+        if (v.navs === seen || t.status === "loading") return false;
+        seen = v.navs;
+        if (!VF.searchPage(v.wc.getURL(), engine, engines)) return false;
+        try { const r = await v.page.serp(engine, vf); return !!r && !r.captcha; } catch (_) { return false; }
+      },
+    });
+    t.need = null; t.userDone = null; emit("need_clear", { id: t.id });
+    if (got === "passed") {
+      t.verify = null;
+      if (t.userControl) { t.userControl = false; emit("handback", { id: t.id, auto: true }); }   // 過了就自動接續,用戶不用按「交還 agent」
+    } else {
+      c.verifyDeclined = true;
+      if (got === "exit" || got === "gave_up") t.userControl = false;   // 按了出口 / 交還:那一格還給 agent(逾時的話用戶可能還在操作,留給他——稽核 B3)
+    }
+    return got;
+  }
   async function doSearch(args) {
     const query = String(args.query || "").trim().slice(0, 500);
     if (!query) return ERR("invalid_args", "query is required");
     const count = Math.max(1, Math.min(10, Math.floor(Number(args.count) || 5)));
-    let engine = cur.skipGoogle ? "ddg" : "google", fallback = cur.skipGoogle ? "captcha_twice" : null;
+    const c = cur, deadline = Date.now() + VF.SEARCH_CALL_MAX_MS;
+    // 同一輪的搜尋一個一個來、兩次之間留間隔(verify.js SEARCH_GAP_MS):平行連發就是被要求驗證的原因
+    return searchGate.run(() => (cur === c && c ? searchOnce(c, query, count, deadline) : ERR("browser_off", "this turn has ended")));
+  }
+  async function searchOnce(c, query, count, deadline) {
+    let engine = c.skipGoogle ? "ddg" : "google", fallback = c.skipGoogle ? "captcha_twice" : null;
     const lim = tabs.search(engine);
     if (lim && lim.scope === "turn") return ERR("rate_limited", "search limit for this turn reached", { retry_in_s: 0 });
     if (lim) { engine = "ddg"; fallback = "google_rate"; tabs.search("ddg"); }
     const hl = o.uiLang() === "zh" ? "zh-TW" : "en";
-    const urlFor = (e) => e === "google" ? "https://www.google.com/search?hl=" + hl + "&num=" + Math.min(10, count + 3) + "&q=" + encodeURIComponent(query) : "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query);
+    const urlFor = (e) => engines[e].url(query, hl, Math.min(10, count + 3));
     const r = openUrl(urlFor(engine), "agent");
     if (r.error) return ERR(r.error, "search could not open a tab", { retry_in_s: r.retry_in_s });
-    let t = r.tab;
+    let t = r.tab; t.searchTab = true;
     await waitLoaded(t, SEARCH_LOAD_MS);
-    let raw = null;
-    for (let round = 0; round < 3; round++) {
+    let raw = null, why = "failed", asked = false;
+    for (let round = 0; round < 4; round++) {
       const v = views.get(t.id);
       if (!v || t.status === "failed" || t.status === "blocked") { raw = null; break; }
-      try { raw = await v.page.serp(engine); } catch (_) { raw = null; }
+      try { raw = await v.page.serp(engine, VF.marks(engine, engines)); } catch (_) { raw = null; }
       if (raw && engine === "google" && raw.consent) {
         // 同意頁:只按「全部拒絕」(spec §3.2 允許的 cookie 橫幅動作);找不到 → 交給用戶
         const ok = await v.page.run(function () { const b = Array.from(document.querySelectorAll("button,input[type=submit]")).find((x) => /reject all|全部拒絕|全部拒绝|alle ablehnen|tout refuser/i.test(x.innerText || x.value || "")); if (!b) return false; b.click(); return true; }).catch(() => false);
         if (ok) { t.status = "loading"; await sleep(500); await waitLoaded(t, SEARCH_LOAD_MS); t.status = "ready"; continue; }
       }
       if (raw && raw.captcha) {
-        if (engine === "google") { cur.captchas = (cur.captchas || 0) + 1; if (cur.captchas >= 2) cur.skipGoogle = true; }
-        needUser(t, "captcha", null, engine === "google" ? "Google" : "DuckDuckGo");
-        const end = Date.now() + CAPTCHA_WAIT_MS;
-        while (Date.now() < end && !t.userDone) await sleep(250);
-        // 稽核 B3:逾時只收掉請求卡;用戶若已經在那一格操作,接手狀態留給他自己交還
-        const choice = t.userDone; t.need = null; t.userDone = null;
-        emit("need_clear", { id: t.id });
-        if (choice === "done") { await waitLoaded(t, SEARCH_LOAD_MS); continue; }
-        if (engine === "google") {
-          engine = "ddg"; fallback = cur.skipGoogle ? "captcha_twice" : "captcha";
-          if (t.userControl) {   // 那一格是用戶的了:退路另開一格,不動他正在操作的頁
-            const r2 = openUrl(urlFor("ddg"), "agent"); if (r2.error || r2.blocked) { raw = null; break; }
-            t = r2.tab;
-          } else { t.status = "loading"; v.wc.loadURL(urlFor("ddg")).catch(() => {}); }
-          await waitLoaded(t, SEARCH_LOAD_MS); continue;
-        }
-        raw = null; break;
+        const got = await handVerify(t, engine, c, asked, deadline); asked = true;
+        if (cur !== c) return ERR("browser_off", "this turn has ended");
+        if (got === "passed") { await waitLoaded(t, SEARCH_LOAD_MS); continue; }   // 分頁已經在搜尋結果上:照常讀
+        if (why === "failed") why = got === "declined" ? "captcha" : VF.reasonOf(got);   // 留第一個原因:Google 那一次逾時、退路又是驗證頁 → 原因是逾時
+        if (engine === "google") { c.captchas = (c.captchas || 0) + 1; if (c.captchas >= 2) c.skipGoogle = true; }
+        // 沒交到用戶手上的驗證頁(沒問、或問了但他沒在看也沒接手)收掉,不佔 8 格名額;他在看 / 在操作的留給他
+        if (!t.visible && !t.userControl) { tabs.close(t.id); emit("page_closed", { id: t.id }); }
+        const next = VF.nextEngine(engine);
+        if (!next) { raw = null; break; }
+        engine = next; fallback = c.skipGoogle ? "captcha_twice" : "captcha"; asked = false;
+        // 驗證頁那一格留著不動(它是用戶的):退路一律另開一格
+        const r2 = openUrl(urlFor(engine), "agent"); if (r2.error || r2.blocked) { raw = null; break; }
+        t = r2.tab; t.searchTab = true;
+        await waitLoaded(t, SEARCH_LOAD_MS); continue;
       }
       if (raw && engine === "google") await resolveGoto(raw.items, count);   // 只解要回的那幾筆:每一筆都是一次 google.com 請求
       const res = C.normalizeSerp(raw, count);
@@ -481,7 +541,8 @@ function createBrowser(o) {
       emit("page_done", { id: t.id, snapshot_id: null });
       return R(C.envelope(v.wc.getURL(), v.wc.getTitle(), { results: res }, { source: engine, tab: t.alias, fallback_reason: fallback }));
     }
-    return ERR("search_unavailable", "web search is not available right now (Google and DuckDuckGo both failed or asked for a robot check)");
+    const u = VF.unavailable(why);
+    return ERR("search_unavailable", u.message, { reason: u.reason });
   }
 
   /* Google 結果連結現在是不透明的 /goto?url=…(真網址不在 DOM 裡,只有 cite 的主機名)。用同一個 session 問一次它的轉址目標,
@@ -518,7 +579,7 @@ function createBrowser(o) {
       if (until === "networkidle") { const v = views.get(t.id); return !v || Date.now() - v.lastReq > 500; }
       if (until === "text") {
         const v = views.get(t.id);
-        if (!v || policy.agent(v.wc.getURL())) return true;   // 被擋的頁不拿來逐字試探(稽核 S5b)
+        if (!v || policy.agent(v.wc.getURL()) || verifying(t)) return true;   // 被擋的頁、驗證頁不拿來逐字試探(稽核 S5b)
         try { return await v.page.hasText(String(args.value || "")); } catch (_) { return false; }
       }
       return true;
@@ -785,7 +846,7 @@ function createBrowser(o) {
     }
     if (name === "browser_wait") return doWait(args);
     if (name === "browser_tabs") return R({ ok: true, tabs: tabs.thisTurn().map(tabInfo), queued: tabs.queued() });
-    if (name === "browser_close") { const t = tabs.byAlias(args.tab); if (!t) return ERR("not_found", MSG.not_found); if (t.userControl) return ERR("user_in_control", MSG.user_in_control, { tab: t.alias }); tabs.close(t.id); emit("page_closed", { id: t.id }); return R({ ok: true }); }
+    if (name === "browser_close") { const t = tabs.byAlias(args.tab); if (!t) return ERR("not_found", MSG.not_found); if (verifying(t)) return ERR("needs_user_verification", MSG.needs_user_verification, { tab: t.alias }); if (t.userControl) return ERR("user_in_control", MSG.user_in_control, { tab: t.alias }); tabs.close(t.id); emit("page_closed", { id: t.id }); return R({ ok: true }); }
     const x = tabFor(args.tab); if (x.e) return x.e;
     const { t, v } = x;
     if (name === "browser_snapshot") {
@@ -958,13 +1019,14 @@ function createBrowser(o) {
     pineInstall: (job) => { win = o.getWin() || win; return pine.install(job); },
     enabled: () => !!prefs.enabled,
     /** 回合開始:設定開著才回 { url, token };主行程把它寫進單次設定檔 / Codex 環境。 */
-    async beginTurn(w, sessionId) {
+    async beginTurn(w, sessionId, opts) {
       if (!prefs.enabled) return null;
       win = w;
       if (!mcp) { mcp = createMcpServer({ tools: TOOLS, call, instructions: INSTRUCTIONS, version: o.version }); await mcp.start(); }
       const turnKey = Date.now();
       // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
-      cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, sources: [], seen: new Set(), readText: "" };
+      // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
+      cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, verifyDeclined: false, noUser: !!(opts && opts.noUser), sources: [], seen: new Set(), readText: "" };
       tabs.newTurn();
       for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
       watchReports(cur);
@@ -1081,7 +1143,7 @@ function createBrowser(o) {
       favCache.clear(); favTried.clear();   // 看過哪些網站也是瀏覽資料
       return true;
     },
-    _tabs: tabs, _call: call, _oauth: oauth,   // 測試用
+    _tabs: tabs, _call: call, _oauth: oauth, _verifying: (alias) => verifying(tabs.byAlias(alias)),   // 測試用
     _agentActive: (id) => { const v = views.get(id); return !!v && agentActive(v.wc.id); },
     _imageSize: (b) => imageSize(b), _needsPlate: (d) => needsPlate(d),
     _viewBounds: (id) => { const v = views.get(id); return v ? v.view.getBounds() : null; },

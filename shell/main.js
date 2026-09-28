@@ -1980,8 +1980,19 @@ function browser() {
     reducedMotion: () => { try { return !!require("electron").systemPreferences.getAnimationSettings().prefersReducedMotion; } catch (_) { return false; } },
     loadPrefs: () => { try { return JSON.parse(fs.readFileSync(BROWSER_PREFS(), "utf8")); } catch (_) { return null; } },
     savePrefs: (p) => { try { fs.writeFileSync(BROWSER_PREFS(), JSON.stringify({ enabled: !!p.enabled }), { mode: 0o600 }); } catch (_) { /* 存不了就只在這次生效 */ } },
+    notify: browserNotify,
   });
   return _browser;
+}
+/* 內建瀏覽器要用戶回來操作(目前只有一種:搜尋被要求機器人驗證)。app 在前景時畫面自己會講,不發;字還沒交過來也不發
+   (不拿英文退路塞給中文用戶)。點了把視窗叫到前面 */
+function browserNotify(kind) {
+  if (kind !== "captcha" || BrowserWindow.getFocusedWindow() || !tmLabels.br_captcha || !Notification.isSupported()) return false;
+  const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels.br_captchaTitle || "Blave"), body: tmLabels.br_captcha });
+  p1Alive.add(n); const drop = () => p1Alive.delete(n);
+  n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "browser " + kind);
+  n.show();
+  return true;
 }
 /* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。三顆各看各的:
      proxyToken(帳號 token,會燒 Blave AI 額度)= **連的是 Blave AI** 而且有登入;
@@ -2036,7 +2047,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   if (plan.mcp) { mcpMount = await mcpCode().get(); if (mcpMount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount); }
   // 內建瀏覽器:同一份單次設定檔多一個 `blave_browser`(兩個 server 可以只有其一)。runtime 靠 --mcp-servers 分別知道掛了哪幾個
   let brMount = null;
-  try { brMount = await browser().beginTurn(win, sessionId); } catch (_) { brMount = null; }
+  try { brMount = await browser().beginTurn(win, sessionId, { noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
   // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,
@@ -2533,6 +2544,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
   key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
   stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", stNotStarted: "", moneyPaper: "", moneyReal: "",
+  br_captchaTitle: "", br_captcha: "",   // 內建瀏覽器:搜尋要用戶過驗證(browserNotify);空的 = 還沒交字 = 不發
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)

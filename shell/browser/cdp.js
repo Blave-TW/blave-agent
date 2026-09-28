@@ -384,7 +384,7 @@ function createPage(wc) {
   return {
     attach, detach, invalidate, guard, guarded: () => guardOn, disarm, run, callOn, describe, snapshot, center, click, fill, focused, press, screenshot, node, clipOf, captureClip, covered,
     refCount: () => refs.size,
-    extract: () => run(IP.extract), serp: (engine) => run(IP.serp, [engine]), hasText: (s) => run(IP.hasText, [s]),
+    extract: () => run(IP.extract), serp: (engine, vf) => run(IP.serp, [engine, vf]), hasText: (s) => run(IP.hasText, [s]),
     scroll: (dir, amount, smoothMs) => run(IP.scrollPage, [dir, amount, smoothMs || 0]), lastPos: () => lastPos, progress: () => run(IP.progress), quiet: () => run(IP.quiet),
   };
 }

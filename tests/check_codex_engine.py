@@ -466,7 +466,7 @@ BR_URL, BR_TOK = "http://127.0.0.1:51234/mcp", "b" * 48
 BR_FLAGS = ["-c", 'mcp_servers.blave_browser.url="%s"' % BR_URL,
             "-c", 'mcp_servers.blave_browser.bearer_token_env_var="BLAVE_BROWSER_TOKEN"',
             "-c", 'mcp_servers.blave_browser.default_tools_approval_mode="approve"',
-            "-c", "mcp_servers.blave_browser.tool_timeout_sec=120",
+            "-c", "mcp_servers.blave_browser.tool_timeout_sec=600",
             "-c", 'shell_environment_policy.filters.BLAVE_BROWSER_TOKEN="exclude"']
 argv = codex_engine.build_args("/x/codex", "/ws", browser_url=BR_URL)
 assert all(f in argv for f in BR_FLAGS) and "features.shell_snapshot=false" in argv and BR_TOK not in " ".join(argv), argv

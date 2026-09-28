@@ -102,6 +102,8 @@
 .bblk:not(.sum):not(:has(.pt[data-ph="wait"])) .wall { display: none; }
 .bblk:not(.sum):not(:has(.pt[data-ph="wait"])) .bblk-head { padding-bottom: 0; }
 .bblk.is-empty { display: none; }
+/* 清單裡只有「搜尋在等你過驗證」那一列:卡頭那一行是空的(沒有圖示疊、沒有計數),不畫 */
+.bblk.only-need .bblk-head { display: none; }
 .bsep { grid-column: 1 / -1; margin-top: var(--space-4); padding: var(--space-6) var(--space-4) 0; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--ink-3); }
 
 /* 一輪結束:摘要列(details),點開仍是同一組格子 */

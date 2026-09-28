@@ -27,7 +27,7 @@ t("權限請求與權限檢查都掛了 handler,只放自家頁面的 clipboard-
 
 // ── Electron 44:通知失敗不可以無聲 ──
 { const sends = (main.match(/new Notification\(/g) || []).length, watched = (main.match(/notifWatch\(/g) || []).length - 1;   // 扣掉定義那一個
-  t("每一個 new Notification 都掛了 failed 的 log(沒簽章的包、用戶關掉通知時,通知只會 failed)", sends === 4 && watched === sends && /function notifWatch\(n, what\) \{ n\.on\("failed"/.test(main)); }
+  t("每一個 new Notification 都掛了 failed 的 log(沒簽章的包、用戶關掉通知時,通知只會 failed)", sends === 5 && watched === sends && /function notifWatch\(n, what\) \{ n\.on\("failed"/.test(main)); }
 
 // ── R9:~/Blave 建立時 0700 ──
 t("~/Blave 由 app 建立時是 0700(既有目錄不動)", /if \(!fs\.existsSync\(BASE\)\) fs\.mkdirSync\(BASE, \{ recursive: true, mode: 0o700 \}\);\s*fs\.mkdirSync\(WS, \{ recursive: true \}\);/.test(main));

@@ -4097,7 +4097,7 @@ msgid "br.need.submit"
 msgstr "要送出"
 
 msgid "br.need.captcha"
-msgstr "要過機器人檢查"
+msgstr "搜尋要過機器人驗證"
 
 msgid "br.need.file"
 msgstr "要選檔案"
@@ -4133,19 +4133,22 @@ msgid "br.ask.consent.h"
 msgstr "這一頁要你選 cookie 設定"
 
 msgid "br.ask.captcha.h"
-msgstr "要過機器人驗證"
+msgstr "搜尋要先過機器人驗證"
 
 msgid "br.ask.p"
 msgstr "帳密由你輸入；你操作時 agent 暫停、不讀這一頁。"
 
 msgid "br.ask.captcha.p"
-msgstr "驗證由你自己過，agent 不會代解。"
+msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了之後會自動接著搜尋。"
 
 msgid "br.ask.skip"
 msgstr "跳過"
 
 msgid "br.ask.ddg"
 msgstr "改用 DuckDuckGo"
+
+msgid "br.ask.noSearch"
+msgstr "這次不搜尋"
 
 msgid "br.ask.meLogin"
 msgstr "我來登入"
@@ -4158,6 +4161,9 @@ msgstr "我來選檔"
 
 msgid "br.ask.meVerify"
 msgstr "我來驗證"
+
+msgid "br.notif.captcha"
+msgstr "搜尋要先過機器人驗證，回到 Blave 按一下就能繼續。"
 
 msgid "br.dl"
 msgstr "已擋下載：{name} 沒有存到這台電腦。"

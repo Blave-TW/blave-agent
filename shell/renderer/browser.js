@@ -67,7 +67,7 @@ function brFoot(x) {
   // ph "act"(點擊 / 打字)不做動作旁白(Wei:狀態列已經講了 agent 在做什麼)——落到最後的標題;
   // ph 本身照舊,縮圖上的游標(.tc)與 pulse 都靠它
   if (x.ph === "read") return x.prog ? t("br.reading") + " " + x.prog.n + "/" + x.prog.total : t("br.reading");
-  if (x.ph === "done") return x.line || x.title || brReg(brHost(x.url));
+  if (x.ph === "done") return x.search ? t("br.search") : x.line || x.title || brReg(brHost(x.url));   // 搜尋分頁(過完驗證還開在中欄的那一頁):講「搜尋結果」,不念搜尋字串
   return x.title || "";
 }
 function brStatusNode(x) {
@@ -132,8 +132,10 @@ function brPaint(id) {
 // ── 聊天瀏覽區塊 ─────────────────────────────────────────────
 /* 縮圖只在頁面活著時拍、只存在記憶體:歷史的區塊每一格都沒有圖 → 整塊不畫縮圖欄(.no-thumb)。
    進行中的照舊留著那一格(圖馬上會來,先佔位才不跳);有的有圖有的沒有也不加(整塊左緣要對齊)。純函式,測試切出來跑 */
-function brNoThumb(live, thumbs) { return !live && thumbs.length > 0 && thumbs.every((x) => !x); }
-function brThumbClass(b, el) { el.classList.toggle("no-thumb", brNoThumb(b.live, b.ids.map((id) => (BR.tabs.get(id) || {}).thumb))); }
+function brNoThumb(live, thumbs, onlyVerify) { return (!live || !!onlyVerify) && thumbs.length > 0 && thumbs.every((x) => !x); }
+/* 這張卡的清單裡只有「搜尋在等你過驗證」的那一列(那一頁不拍縮圖,永遠不會有圖):卡頭不畫、縮圖欄收掉 */
+function brOnlyVerify(b) { return b.ids.length > 0 && b.ids.every((id) => !!(BR.tabs.get(id) || {}).verify); }
+function brThumbClass(b, el) { el.classList.toggle("no-thumb", brNoThumb(b.live, b.ids.map((id) => (BR.tabs.get(id) || {}).thumb), brOnlyVerify(b))); }
 function brBlockNew(live) {
   const el = brEl("div", "bblk"), head = brEl("div", "bblk-head"), wall = brEl("div", "wall");
   el.append(head, wall);
@@ -191,6 +193,7 @@ function brPaintHead(b) {
   const inWall = BR.exp && BR.exp.mode === "wall" && BR.exp.block === b;
   b.el.classList.toggle("is-out", !!inWall);
   b.el.classList.toggle("is-empty", !b.ids.length && !inWall);   // 這一輪只搜尋過、還沒開任何頁:卡先不出現
+  b.el.classList.toggle("only-need", brOnlyVerify(b));
   h.append(brLine(b));
   // 一列一個控件:進行中只有「看網頁」(中欄沒有這一輪的頁才放;已經在中欄就不放——收回靠中欄標題列的 ✕、Esc
   // 或再點一次選中的列),回合結束後只有摘要列的 chevron;兩者不同時出現
@@ -202,7 +205,21 @@ function brPaintHead(b) {
 }
 /* 回合狀態列(app.js actApply)問:這一輪有沒有頁在等用戶操作 */
 function brNeedsUser() {
-  const b = BR.cur; return !!(b && b.live && b.ids.some((id) => { const x = BR.tabs.get(id); return x && x.need && !x.user; }));
+  // 搜尋驗證這一種,用戶動手之後仍然算在等:他還在過驗證,agent(那一次搜尋)確實還在等
+  const b = BR.cur; return !!(b && b.live && b.ids.some((id) => { const x = BR.tabs.get(id); return x && x.need && (!x.user || x.need.kind === "captcha"); }));
+}
+/* 搜尋分頁平常不進清單;在等用戶過驗證的期間當成一列 need 攤開(不算頁數、不進圖示疊——x.search 照舊是 true),
+   驗證結束(過了、逾時、按了出口)就離開清單 */
+function brVerifyRow(id, on) {
+  const x = brTab(id);
+  if (on) {
+    x.search = true; x.verify = true;   // 驗證只會出現在搜尋分頁(主行程 doSearch 才發 captcha)
+    if (!BR.cur || !BR.cur.live) { BR.cur = brBlockNew(true); brAppend(BR.cur.el); brObserve(); }
+    brAddRow(BR.cur, id); scrollChat(); return;
+  }
+  if (!x.verify) return;
+  x.verify = false;
+  BR.blocks.forEach((b) => { const i = b.ids.indexOf(id); if (i < 0 || b.sum) return; b.ids.splice(i, 1); b.wall.querySelectorAll(".pt").forEach((el) => { if (el.dataset.id === id) el.remove(); }); brPaintHead(b); });
 }
 function brAppend(el) { $("chat-scroll").appendChild(el); if (typeof busyPin === "function") busyPin(); scrollChat(); }
 function brAddRow(b, id) {
@@ -413,7 +430,8 @@ function brAddr(url, warn, withHash) {
    敏感網域(交易所與券商後台、銀行、登入授權頁)→ 可以(那是用戶自己的瀏覽器)。純函式 */
 function brCanOpenExt(x) {
   if (!x || !/^https?:\/\//i.test(String(x.url || ""))) return false;
-  if (x.need && x.need.kind === "confirm") return false;
+  if (x.need && (x.need.kind === "confirm" || x.need.kind === "captcha")) return false;   // 驗證頁:在外面的瀏覽器過驗證對內建瀏覽器沒有用
+  if (x.verify) return false;
   if (x.blocked && (x.blocked.kind !== "domain" || x.blocked.reason === "blocklist")) return false;
   return true;
 }
@@ -439,12 +457,14 @@ function brAsk(x) {
   const H = { login: "br.ask.login.h", submit: "br.ask.submit.h", action: "br.ask.action.h", file: "br.ask.file.h", captcha: "br.ask.captcha.h", consent: "br.ask.consent.h", confirm: "br.ask.confirm.h" };
   // 說明句依型別:只有登入講「帳密由你輸入」;送出 / 動作畫 agent 給的 summary(主行程已 scrub)再接「按之前再看一次」
   const sum = String(x.need.summary || "").trim();
-  const P = { login: t("br.ask.p"), captcha: t("br.ask.captcha.p"), file: t("br.ask.p.file"), consent: t("br.ask.p.consent"), confirm: t("br.ask.p.confirm") };
+  // 搜尋驗證:summary 是搜尋引擎的名字(主行程給的)。出口鈕的字跟著「按了會發生什麼」走——還有引擎可以退就寫它的名字,沒有了就寫「這次不搜尋」
+  const lastEngine = k === "captcha" && /duckduckgo/i.test(sum);
+  const P = { login: t("br.ask.p"), captcha: t("br.ask.captcha.p", { engine: sum || "Google" }), file: t("br.ask.p.file"), consent: t("br.ask.p.consent"), confirm: t("br.ask.p.confirm") };
   const sumEnd = sum && !/[。．.!！?？]$/.test(sum) ? sum + "。" : sum;   // summary 沒有句尾標點就補一個,不跟下一句黏在一起
   const line = P[k] || (sum ? sumEnd + t("br.ask.p.check") : t("br.ask.p.pause"));
   txt.append(brEl("h6", "", t(H[k] || H.action)), brEl("p", "", line));
-  const skip = brEl("button", "btn-out", t(k === "captcha" ? "br.ask.ddg" : "br.ask.skip")); skip.type = "button";
-  skip.addEventListener("click", () => window.blave.browserUserDone(x.id, k === "captcha" ? "ddg" : "skip"));
+  const skip = brEl("button", "btn-out", t(k !== "captcha" ? "br.ask.skip" : lastEngine ? "br.ask.noSearch" : "br.ask.ddg")); skip.type = "button";
+  skip.addEventListener("click", () => window.blave.browserUserDone(x.id, k === "captcha" && !lastEngine ? "ddg" : "skip"));
   const me = brEl("button", "btn-fill", t(k === "login" ? "br.ask.meLogin" : k === "captcha" ? "br.ask.meVerify" : k === "file" ? "br.ask.meFile" : k === "confirm" ? "br.ask.openAnyway" : "br.ask.meSubmit")); me.type = "button";
   // 外送檢查(確認網址):不是接手操作,是這個網址放行一次;網址本身在上面的網址列看得到
   if (k === "confirm") me.addEventListener("click", () => window.blave.browserUserDone(x.id, "open"));
@@ -641,10 +661,10 @@ function brOnEvent(ev) {
       break;
     case "page_discarded": if (ev.snapshot_id) x.snap = ev.snapshot_id; if (BR.exp && BR.exp.mode === "one" && BR.exp.id === id) brExpand(id); return;
     case "page_closed": return;
-    case "need_user": x.need = { kind: String(ev.kind || "action"), summary: String(ev.summary || ""), url: typeof ev.url === "string" ? ev.url : "" }; srSay(t("br.waiting")); if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
-    case "need_clear": x.need = null; if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
+    case "need_user": x.need = { kind: String(ev.kind || "action"), summary: String(ev.summary || ""), url: typeof ev.url === "string" ? ev.url : "" }; if (x.need.kind === "captcha") brVerifyRow(id, true); srSay(t("br.waiting")); if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
+    case "need_clear": x.need = null; brVerifyRow(id, false); if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
     case "user_takeover": x.user = true; if (!x.tracked) { x.tracked = true; trackFeature("browser_takeover"); } if (typeof tvOnEvent === "function") tvOnEvent(ev); break;
-    case "handback": x.user = false; x.need = null; if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
+    case "handback": x.user = false; x.need = null; brVerifyRow(id, false); if (typeof actApply === "function") setTimeout(() => actApply(true), 0); break;
     case "thumb": if (typeof ev.dataURI === "string" && /^[A-Za-z0-9+/=]+$/.test(ev.dataURI)) x.thumb = "data:image/jpeg;base64," + ev.dataURI; break;
     case "search": if (x) {   // 搜尋結果頁不進清單、不算頁數、不進圖示疊(狀態列已經說了「正在搜尋:…」)
       x.search = true; if (!x.title) x.title = t("br.search");
@@ -654,7 +674,7 @@ function brOnEvent(ev) {
     case "turn_sources": {
       const b = BR.cur; BR.cur = null;
       for (const r of (ev.tabs || []).concat(ev.sources || [])) if (r) brNoteFav(r.url, r.fav, r.plate);
-      if (b) { b.ids.forEach((id) => { const y = BR.tabs.get(id); if (y) { y.ended = true; brPaint(id); } }); brTakeSources(b, ev.tabs, ev.sources); brFinish(b); }
+      if (b) { b.ids.slice().forEach((id) => brVerifyRow(id, false)); b.ids.forEach((id) => { const y = BR.tabs.get(id); if (y) { y.ended = true; brPaint(id); } }); brTakeSources(b, ev.tabs, ev.sources); brFinish(b); }
       brObserve(); return;
     }
     default: return;

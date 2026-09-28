@@ -199,13 +199,18 @@ function extract() {
     view: { sy: Math.round(sy0), vh: window.innerHeight, vw: window.innerWidth, docH: document.documentElement.scrollHeight } };
 }
 
-/* 搜尋結果頁:Google / DuckDuckGo html 版。不靠 Google 的 class 名(混淆、常換):主結果區裡「含 h3 的連結」就是一筆。 */
-function serp(engine) {
+/* 搜尋結果頁:Google / DuckDuckGo html 版。不靠 Google 的 class 名(混淆、常換):主結果區裡「含 h3 的連結」就是一筆。
+   vf = 這個引擎的驗證頁標記(verify.js 的表):只讀——看網址、找標記、比字,不點不填。認出是驗證頁就到此為止,不往下讀結果 */
+function serp(engine, vf) {
   const T = (s) => String(s == null ? "" : s).replace(/\s+/g, " ").trim();
   const text = T(document.body ? document.body.innerText : "").slice(0, 5000).toLowerCase();
   const out = { items: [], captcha: false, consent: false, url: location.href };
+  if (vf) {
+    const result = !!(vf.unless && document.querySelector(vf.unless));
+    out.captcha = new RegExp(vf.path).test(location.pathname) || (!result && (!!document.querySelector(vf.marks) || new RegExp(vf.text).test(text)));
+    if (out.captcha) return out;
+  }
   if (engine === "google") {
-    out.captcha = location.pathname.startsWith("/sorry") || !!document.querySelector("#captcha-form,form[action*='sorry'],iframe[src*='recaptcha']") || /unusual traffic|異常流量|异常流量/.test(text);
     out.consent = /(^|\.)consent\.google\./.test(location.hostname) || !!document.querySelector("form[action*='consent.google']");
     const area = document.querySelector("#rso") || document.querySelector("#search") || document.querySelector("[role=main]") || document.body;
     for (const a of area.querySelectorAll("a[href]")) {
@@ -217,7 +222,6 @@ function serp(engine) {
       if (out.items.length >= 30) break;
     }
   } else {
-    out.captcha = !!document.querySelector("form[action*='anomaly'],#challenge-form,.anomaly-modal") || (/bots use duckduckgo|not a robot|challenge/.test(text) && !document.querySelector(".result__a"));
     for (const a of document.querySelectorAll("a.result__a")) {
       const box = a.closest(".result");
       const s = box && box.querySelector(".result__snippet");

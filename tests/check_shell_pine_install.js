@@ -189,7 +189,7 @@ async function main() {
     ok("主行程沒有「檢查」「回傳」兩支 IPC,preload 也沒有;renderer 沒有呼叫點", !/pine-check|pine-read|pineCheck|pineRead/.test(main0 + pre0 + idx0 + rend0) && (main0.match(/handle\("pine-[a-z-]+"/g) || []).join() === 'handle("pine-install"');
     ok("renderer 沒有會讀那一頁的函式與入口(檢查結果、回傳回測結果、請 agent 修)", !/function tv(Check|Read|Fix|Compose|StatLines|FixMsg)\b|tv\.st\.check|tv\.read\b|tv\.fix\b/.test(rend0));
     // 縮圖與快照也是讀:用戶自己開的分頁(送進 TradingView 那一頁是 by:"user")與用戶接手中的分頁都不拍
-    ok("縮圖:只拍 agent 開、而且沒被用戶接手的分頁;每 2 秒那一輪與補拍都過同一關", /const shootable = \(t\) => !!t && t\.by === "agent" && !t\.userControl;/.test(idx0)
+    ok("縮圖:只拍 agent 開、而且沒被用戶接手的分頁;每 2 秒那一輪與補拍都過同一關", /const shootable = \(t\) => !!t && t\.by === "agent" && !t\.userControl && !t\.searchTab && !t\.verify;/.test(idx0)
       && /if \(!shootable\(t\)\) continue;\n        await captureThumb\(id\);/.test(idx0) && /const t = tabs\.get\(id\), v = views\.get\(id\); if \(!t \|\| !v \|\| !shootable\(t\)\) return;/.test(idx0));
     ok("回合結束的整頁快照:被用戶接手的頁不再拍(留著 agent 讀的那一版)", /const v = views\.get\(r\.id\); if \(!v \|\| !shootable\(tabs\.get\(r\.id\)\)\) continue;/.test(idx0));
     ok("agent 的工具照舊碰不到這一頁(by 不是 agent 的分頁、用戶接手中的分頁)", /if \(!cur \|\| !t \|\| t\.by !== "agent" \|\| t\.userControl\) return false;/.test(idx0) && /open: \(url\) => openUrl\(url, "user"\)/.test(idx0));
