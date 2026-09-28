@@ -16,8 +16,10 @@ run can point --src at a mutated copy. The real code does everything:
   - the report fields = runtime/portfolio_reporter's own helpers.
 What is stubbed: the OS process layer only (systemd / tmux / NSSM start/stop is a
 fake supervisor, crontab sync is a no-op), the exchange's lot size where a
-scenario says so, and TWAP/chase clocks. Prices are deterministic: each symbol's
-price strategy reads state/marks.json in its fetch_data — the channel paper
+scenario says so, TWAP/chase clocks, and — where a scenario binds a real venue —
+that venue's HTTP answers (World.okx_answers: canned at requests' adapter, so the
+bind's withdrawal-permission gate and the venue lib run for real). Prices are
+deterministic: each symbol's price strategy reads state/marks.json in its fetch_data — the channel paper
 fills really use (lib/paper_data). Manual positions are written straight into
 state/paper_ledger.json. No network: every child refuses socket connects and
 DNS, and never opens the repo .env or ~/.config/blave.
@@ -452,6 +454,40 @@ class World:
                 "last": last or {}, "order_errors": self.order_errors(),
                 "states": pr.strategy_states(), "can_wait_start": pr._workspace_has_signal_gate(),
                 "can_trade_portfolio": pr.can_trade_portfolio()}
+
+    # ── a real venue's answers, canned ──
+    def okx_answers(self, perm="read_only,trade", down=False):
+        """OKX's HTTP answers from here on, canned at requests' adapter: the
+        real lib/account_okx signs and parses and the real bind gate decides,
+        and no socket is opened (the child's audit hook still refuses any).
+        `perm` = the key's own permissions as /api/v5/account/config reports
+        them (comma-separated out of read_only / trade / withdraw — OKX v5 "Get
+        account configuration"; ccxt's fetchAccounts sample); None = an answer
+        without the field. `down` = OKX cannot be reached. Returns the list
+        every request lands in, as (method, url without query)."""
+        import requests
+        from requests.models import Response
+        hits = []
+
+        def send(adapter, req, **kw):
+            url = req.url.split("?")[0]
+            hits.append((req.method, url))
+            if down or not url.startswith("https://www.okx.com/"):
+                raise requests.exceptions.ConnectionError(f"[canned] {url} cannot be reached")
+            row = {"uid": "44705892343619584", "acctLv": "2", "posMode": "net_mode"}
+            if perm is not None:
+                row["perm"] = perm
+            body = {"code": "0", "msg": "", "data": [row] if url.endswith("/api/v5/account/config")
+                    else [{"totalEq": "321.5", "details": []}] if url.endswith("/api/v5/account/balance")
+                    else []}
+            r = Response()
+            r.status_code = 200
+            r._content = json.dumps(body).encode()
+            r.headers["Content-Type"] = "application/json"
+            r.url, r.request = req.url, req
+            return r
+        requests.adapters.HTTPAdapter.send = send
+        return hits
 
     # ── the user's own trades (never through Blave) ──
     def manual(self, sym, qty, entry=None):
@@ -1046,11 +1082,22 @@ def tc14(w):
     w.eq(w.paper_pos(B), 0.02, "nothing closed")
 
 
+OKX_KEYS = {"OKX_API_KEY": "okxkey-1234", "OKX_SECRET_KEY": "okxsecret-5678",  # gitleaks:allow
+            "OKX_PASSPHRASE": "pass-90"}
+OKX_CONFIG = ("GET", "https://www.okx.com/api/v5/account/config")
+
+
 @scenario("TC-15")
 def tc15(w):
     _long(w)
-    r = w.cmd("credentials", env={"OKX_API_KEY": "k", "OKX_SECRET_KEY": "s", "OKX_PASSPHRASE": "p"})
+    hits = w.okx_answers()  # a key that may read and trade, not withdraw
+    r = w.cmd("credentials", env=OKX_KEYS)
     w.check(isinstance(r, dict), f"bind okx over paper ({r})")
+    w.check(bool(hits) and set(hits) == {OKX_CONFIG},
+            f"the bind asked OKX for the key's permissions, and nothing else ({sorted(set(hits))})")
+    w.eq(sorted(w.vw.read_env().get(k, "") for k in OKX_KEYS), sorted(OKX_KEYS.values()),
+         "the okx key is in .env")
+    w.check("PAPER_API_KEY" not in w.vw.read_env(), "paper is evicted from .env")
     h = w.halt_info() or {}
     w.check("paper" in h.get("reason", "") and "evicted" in h.get("reason", ""),
             f"eviction halts: {h.get('reason')}")
@@ -1277,10 +1324,14 @@ def tc37(w):
     """Unbind → bind another venue → the first venue again with another account (Delta 5 #1)."""
     _long(w)
     w.cmd("credentials_remove", env=PAPER_KEYS)
-    okx = {"OKX_API_KEY": "k", "OKX_SECRET_KEY": "s", "OKX_PASSPHRASE": "p"}
-    r = w.cmd("credentials", env=okx)
+    hits = w.okx_answers()
+    r = w.cmd("credentials", env=OKX_KEYS)
     w.check(isinstance(r, dict), f"bind okx ({r})")
-    w.cmd("credentials_remove", env=list(okx))
+    w.check(bool(hits) and set(hits) == {OKX_CONFIG},
+            f"the bind asked OKX for the key's permissions, and nothing else ({sorted(set(hits))})")
+    w.check("OKX_API_KEY" in w.vw.read_env(), "the okx key is in .env")
+    w.cmd("credentials_remove", env=list(OKX_KEYS))
+    w.check("OKX_API_KEY" not in w.vw.read_env(), "okx unbound")
     w.bind_paper(ts=int(time.time()) + 5)
     w.manual(B, 0.05)
     w.amounts(a1=1000)

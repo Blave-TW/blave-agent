@@ -10,7 +10,8 @@ api/mcp_byoa/server.py (no tool annotations). No OpenAI login, no network beyond
   2. same argv minus the approval flag → denied before sending (the 2026-09-23 bug).
   3. another MCP server in the same turn → still denied: the approval is scoped to `blave`.
 
-Skips (exit 0, prints SKIP) when no codex binary is found; set CODEX_BIN to point at one.
+Skips (exit 0, prints SKIP) when no codex binary is found: every `codex` on PATH, then the one inside
+ChatGPT.app, the first whose `--version` says codex-cli. CODEX_BIN names one outright.
 Run: cd blave-agent && python3 tests/check_codex_mcp_live.py
 """
 import json
@@ -27,11 +28,30 @@ sys.path.insert(0, os.path.join(ROOT, "runtime"))
 import codex_engine  # noqa: E402
 
 APPROVE = 'mcp_servers.blave.default_tools_approval_mode="approve"'
-codex = os.environ.get("CODEX_BIN") or shutil.which("codex") \
-    or "/Applications/ChatGPT.app/Contents/Resources/codex"
-if not os.access(codex, os.X_OK):
-    print("SKIP  no codex binary (set CODEX_BIN)")
-    sys.exit(0)
+
+
+def is_codex(path):
+    """A `codex` on PATH can be a wrapper that is not Codex (cmux puts a shim there that
+    exits 'codex not found' when no real one is behind it): only `codex-cli …` counts."""
+    try:
+        out = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=15).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return out.startswith("codex-cli ")
+
+
+if os.environ.get("CODEX_BIN"):
+    codex = os.environ["CODEX_BIN"]
+    if not is_codex(codex):
+        print("FAIL  CODEX_BIN=%s is not a codex binary (`--version` must print codex-cli …)" % codex)
+        sys.exit(1)
+else:
+    on_path = [shutil.which("codex", path=d) for d in os.environ.get("PATH", "").split(os.pathsep) if d]
+    tried = [p for p in on_path if p] + ["/Applications/ChatGPT.app/Contents/Resources/codex"]
+    codex = next((p for p in tried if is_codex(p)), None)
+    if not codex:
+        print("SKIP  no codex binary (set CODEX_BIN); tried: " + ", ".join(tried))
+        sys.exit(0)
 
 calls = []            # MCP methods the fake server received
 target = {"ns": ""}   # namespace the fake model calls the tool in

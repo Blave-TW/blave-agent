@@ -41,6 +41,14 @@ os.environ["BLAVE_AGENT_WORKSPACE"] = WS
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 sys.path.insert(0, ROOT)
 
+try:
+    import cryptography  # noqa: F401,E402
+except ModuleNotFoundError:
+    # the test's own need (it builds the pfx and the envelope); the product gets the module
+    # from capital_setup on the machine and from the desktop's pinned install
+    print(f"SKIP  no `cryptography` in {sys.executable} (try /usr/bin/python3)")
+    shutil.rmtree(TMP, ignore_errors=True)
+    sys.exit(0)
 from cryptography import x509  # noqa: E402
 from cryptography.hazmat.primitives import hashes, serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import padding, rsa  # noqa: E402
