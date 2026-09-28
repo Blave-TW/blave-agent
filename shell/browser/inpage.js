@@ -138,6 +138,19 @@ function extract() {
     }
     return s;
   }
+  // 程式碼區塊每行一個區塊元素(行號對得上的那種檢視器)時逐行讀:innerText 會把空的行元素整個吃掉、
+  // 只放一個 <br> 的行又多算一行,讀的人數行號就跟畫面差一行。不是這種結構的照舊用 innerText。
+  function preText(pre) {
+    const texts = (b, any) => Array.from(b.childNodes).some((n) => n.nodeType === 3 && (any ? n.nodeValue : T(n.nodeValue)));
+    let box = pre;
+    while (box.children.length === 1 && !texts(box)) box = box.children[0];   // <pre><code>…
+    const rows = Array.from(box.children), rowish = /^(block|list-item|flex|grid|table-row)$/;
+    // 行與行之間夾著文字節點(在 pre 裡連換行都會畫出來)就不是這種結構
+    if (rows.length < 2 || rows.length > 5000 || texts(box, true) || !rows.every((r) => hidden(r) || rowish.test(getComputedStyle(r).display))) return String(pre.innerText).slice(0, 20000);
+    let s = "";
+    for (const r of rows) { if (s.length > 20000) break; if (!hidden(r)) s += (s ? "\n" : "") + String(r.innerText).replace(/\n+$/, ""); }
+    return s.slice(0, 20000);
+  }
   function block(el, depth) {
     if (total >= MAX || depth > 40) return;
     for (const n of el.childNodes) {
@@ -152,7 +165,7 @@ function extract() {
       if (tg === "p" || tg === "figcaption" || tg === "dd" || tg === "dt") { const tx = T(inline(n)); if (tx) blk(n, tx + "\n\n"); continue; }
       if (tg === "li") { const tx = T(inline(n)); if (tx) blk(n, "- " + tx + "\n"); continue; }
       if (tg === "ul" || tg === "ol") { block(n, depth + 1); push("\n"); continue; }
-      if (tg === "pre") { blk(n, "```\n" + String(n.innerText).slice(0, 20000) + "\n```\n\n"); continue; }
+      if (tg === "pre") { blk(n, "```\n" + preText(n) + "\n```\n\n"); continue; }
       if (tg === "blockquote") { const tx = T(inline(n)); if (tx) blk(n, "> " + tx + "\n\n"); continue; }
       if (tg === "table") {
         const rows = Array.from(n.querySelectorAll("tr")).slice(0, 200).map((r) => Array.from(r.children).slice(0, 20).map((c) => T(c.innerText).replace(/\|/g, "/").slice(0, 200)));
