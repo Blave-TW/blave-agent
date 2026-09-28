@@ -524,6 +524,10 @@ function createBrowser(o) {
     }
     return got;
   }
+  /* 一次搜尋最晚什麼時候一定要回:SEARCH_CALL_MAX_MS 是「等驗證」的期限(在排隊之前就起算),過了之後還要載入、讀結果;
+     排在驗證後面的搜尋開始時可能只剩幾十秒(稽核 P2-13)。過了期限 SEARCH_TAIL_MS 就不再開新的一輪,直接回 search_unavailable;
+     連這樣都沒回的(某一輪卡住)由 mcp.js 在 SEARCH_HARD_MAX_MS 收掉 */
+  const SEARCH_TAIL_MS = 30000, SEARCH_HARD_MAX_MS = VF.SEARCH_CALL_MAX_MS + 60000;
   async function doSearch(args) {
     const query = String(args.query || "").trim().slice(0, 500);
     if (!query) return ERR("invalid_args", "query is required");
@@ -545,6 +549,7 @@ function createBrowser(o) {
     await waitLoaded(t, SEARCH_LOAD_MS);
     let raw = null, why = "failed", asked = false;
     for (let round = 0; round < 4; round++) {
+      if (Date.now() > deadline + SEARCH_TAIL_MS) { if (why === "failed") why = "timeout"; raw = null; break; }
       const v = views.get(t.id);
       if (!v || t.status === "failed" || t.status === "blocked") { raw = null; break; }
       try { raw = await v.page.serp(engine, VF.marks(engine, engines)); } catch (_) { raw = null; }
@@ -1076,7 +1081,7 @@ function createBrowser(o) {
     async beginTurn(w, sessionId, opts) {
       if (!prefs.enabled) return null;
       win = w;
-      if (!mcp) { mcp = createMcpServer({ tools: TOOLS, call, instructions: INSTRUCTIONS, version: o.version }); await mcp.start(); }
+      if (!mcp) { mcp = createMcpServer({ tools: TOOLS, call, instructions: INSTRUCTIONS, version: o.version, maxMs: (name) => (name === "browser_search" ? SEARCH_HARD_MAX_MS : 0) }); await mcp.start(); }
       const turnKey = Date.now();
       // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
       // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路

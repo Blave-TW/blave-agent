@@ -87,6 +87,14 @@ function createMcpCode(opts) {
   };
 }
 
+/* `blave_browser` 的單次工具呼叫最久等多久(毫秒),寫進設定檔那一格的 `timeout`。不寫的話 Claude Code 對 HTTP 的 MCP 請求
+   60 秒沒收到回應標頭就中止(CLI 2.1.239:`vMf=60000`,`AJn` 包在 fetch 外面;我們的 server 是工具做完才一次回覆),
+   browser_search 等用戶過驗證等不到 60 秒就被切成「The operation timed out.」(e2e 0.1.8 #197)。`timeout` 同時是那一格的
+   單次呼叫硬上限與無回應上限(`Zrl` / `DMf`)。跟 Codex 那條同一個數(runtime/codex_engine.py 的 tool_timeout_sec=600)。
+   卡死的工具不靠這個數收:shell/browser/mcp.js 自己有每支工具的上限(CALL_MAX_MS / browser_search 另計),遠在這之前就回。
+   只設在 `blave_browser`:`blave`(雲端交接)照 CLI 的預設。 */
+const BROWSER_TOOL_TIMEOUT_MS = 600000;
+
 /* 交給 Claude Code 的單次 MCP 設定檔。dir = workspace **以外**的 app 私有目錄(0700);檔名隨機、0600、不跟著符號連結走("wx")。
    mount = `blave`(雲端交接)、browser = `blave_browser`(本機內建瀏覽器,shell/browser/mcp.js;{ url, token },token 每回合一顆)。
    兩個都可以是 null;都沒有就不寫。回檔案路徑;寫不進去回 null(= 這一輪不掛)。 */
@@ -94,7 +102,7 @@ function writeConfig(dir, mount, browser) {
   try {
     const servers = {};
     if (mount) servers.blave = { type: "http", url: mount.url, headers: { Authorization: "Bearer " + mount.accessCode } };
-    if (browser) servers.blave_browser = { type: "http", url: browser.url, headers: { Authorization: "Bearer " + browser.token } };
+    if (browser) servers.blave_browser = { type: "http", url: browser.url, headers: { Authorization: "Bearer " + browser.token }, timeout: BROWSER_TOOL_TIMEOUT_MS };
     if (!Object.keys(servers).length) return null;
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); fs.chmodSync(dir, 0o700);
     const file = path.join(dir, crypto.randomBytes(16).toString("hex") + ".json");
@@ -107,4 +115,4 @@ function removeConfig(file) { try { if (file) fs.unlinkSync(file); } catch (_) {
 /* app 啟動時清空那個目錄:上一次回合中途 crash 留下來的檔(裡面是一顆可能還沒過期的碼) */
 function sweep(dir) { try { for (const n of fs.readdirSync(dir)) { try { fs.unlinkSync(path.join(dir, n)); } catch (_) { /* 下次再清 */ } } } catch (_) { /* 目錄還不存在 */ } }
 
-module.exports = { createMcpCode, interpret, writeConfig, removeConfig, sweep, ENDPOINT, SAFETY_MS, BACKOFF_MS };
+module.exports = { createMcpCode, interpret, writeConfig, removeConfig, sweep, ENDPOINT, SAFETY_MS, BACKOFF_MS, BROWSER_TOOL_TIMEOUT_MS };
