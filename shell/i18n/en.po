@@ -4786,6 +4786,9 @@ msgstr "strategy.py no longer matches this version: the file was edited without 
 msgid "ver.compareOpen"
 msgstr "Compare two versions…"
 
+msgid "ver.oneHint"
+msgstr "Your next backtest is saved as {next}. Then you can compare and restore."
+
 msgid "ver.statP"
 msgstr "p"
 

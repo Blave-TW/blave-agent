@@ -4787,6 +4787,9 @@ msgstr "strategy.py 已經和這一版不同：檔案被直接改過、卻沒有
 msgid "ver.compareOpen"
 msgstr "比較兩個版本…"
 
+msgid "ver.oneHint"
+msgstr "下次回測會存成 {next}，到時就能比較和還原。"
+
 msgid "ver.statP"
 msgstr "p"
 
