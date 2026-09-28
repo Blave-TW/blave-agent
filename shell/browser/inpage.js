@@ -208,8 +208,11 @@ function extract() {
   meta.author = meta.author || mc("meta[name=author]");
   meta.site = mc("meta[property='og:site_name']");
   meta.description = mc("meta[name=description]") || mc("meta[property='og:description']");
+  // doc:這份文件是不是還會走(content.js isRelay 用):主文件載完了沒、有沒有 meta refresh 等著轉走
+  const refresh = !!document.querySelector("meta[http-equiv='refresh' i]");
   return { markdown: out, truncated: total >= MAX, headings: heads.slice(0, 200), links, meta, blocks, linkRects,
-    view: { sy: Math.round(sy0), vh: window.innerHeight, vw: window.innerWidth, docH: document.documentElement.scrollHeight } };
+    view: { sy: Math.round(sy0), vh: window.innerHeight, vw: window.innerWidth, docH: document.documentElement.scrollHeight },
+    doc: { complete: document.readyState === "complete", refresh } };
 }
 
 /* 搜尋結果頁:Google / DuckDuckGo html 版。不靠 Google 的 class 名(混淆、常換):主結果區裡「含 h3 的連結」就是一筆。
