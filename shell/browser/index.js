@@ -391,7 +391,7 @@ function createBrowser(o) {
   const R = (obj, isError) => ({ content: [{ type: "text", text: JSON.stringify(obj) }], isError: !!isError });
   const ERR = (error, message, extra) => R(Object.assign({ ok: false, error, message }, extra || {}), error !== "needs_user" && error !== "still_waiting");
   const MSG = {
-    not_found: "no such tab in this turn; call browser_tabs",
+    not_found: "no such tab; call browser_tabs to see the tabs you can use",
     user_in_control: "the user is operating this tab; wait for them to hand it back or work on another tab",
     stale_ref: "the ref is out of date; call browser_snapshot again",
     obscured: "the element is covered by another element (often a cookie banner or popup); close that first",
@@ -428,6 +428,7 @@ function createBrowser(o) {
     const v = views.get(t.id); if (!v) return { e: ERR("not_found", MSG.not_found) };
     const a = policy.agent(v.wc.getURL() || t.url);
     if (a) return { e: ERR("blocked_policy", blockedMsg(a.reason), { tab: t.alias, reason: a.reason, host: a.host }) };
+    tabs.use(t.id);   // 前面回合留下來的分頁:過了上面每一關(照當下的網址與狀態判)才算這一輪接上
     return { t, v };
   }
   /* 進門判過之後又過了一段時間(browser_read 的短等、擷取等圖載完、動作後的落定、讀頁面本身)才把內容交出去:
@@ -490,8 +491,10 @@ function createBrowser(o) {
     const v = views.get(t.id), url = v ? v.wc.getURL() || t.url : t.url;
     const hide = t.userControl || !!policy.agent(url) || verifying(t);
     let host = ""; try { host = new URL(url).hostname; } catch (_) { /* 不是網址 */ }
-    return { tab: t.alias, status: status(t), url: hide ? host : C.scrub(url, 2000), title: hide ? "" : C.scrub(t.title, 300), partial: !!t.partial, http_status: v && v.http >= 400 ? v.http : undefined, reason: t.reason || undefined };
+    return { tab: t.alias, status: status(t), url: hide ? host : C.scrub(url, 2000), title: hide ? "" : C.scrub(t.title, 300), partial: !!t.partial, http_status: v && v.http >= 400 ? v.http : undefined, reason: t.reason || undefined,
+      from_previous_turn: t.turn !== tabs.turn() || undefined, note: t.userControl && !verifying(t) ? MSG.user_in_control : undefined };
   };
+  const TABS_NOTE = "tabs marked from_previous_turn were opened in an earlier turn and are still open: keep using them by the same id (browser_read, browser_snapshot, browser_click) instead of opening the same address again";
 
   /* 人在不在:視窗在畫面上(沒縮到 Dock、沒藏起來),而且這一輪不是從雲端視角送出的。不在就不問,直接走退路 */
   function present() {
@@ -699,7 +702,7 @@ function createBrowser(o) {
   }
   // 任何一種 browser_read(與 browser_capture:引用圖的出處頁)都算「讀了」:存快照、進這一輪的來源清單——摘要列的「讀了 N 頁」就是數這份清單(renderer brTakeSources)
   async function noteRead(t, v, ex) {
-    if (!t.snapshotId) await saveSnapshot(t, v, ex);
+    if (!t.snapshotId || (cur && t.snapTurn !== cur.turnKey)) await saveSnapshot(t, v, ex);   // 前面回合存的快照是那一輪看到的樣子:這一輪讀就另存一份
     const relay = C.isRelay(ex, v.wc.getTitle());   // 只停在中繼頁:不進來源、不算讀過(回合紀錄也不記 done)
     if (!relay) t.readEver = true;   // 讀過就算,之後這一格再導覽也不收回
     if (cur && !relay && t.snapshotId && !cur.sources.some((x) => x.snapshot_id === t.snapshotId)) {
@@ -743,7 +746,7 @@ function createBrowser(o) {
   async function saveSnapshot(t, v, ex) {
     if (!cur) return;
     const image = await withMask(v, () => captureSnapshotImage(v));
-    t.snapshotId = snaps.save(cur.sessionId, { url: v.wc.getURL(), title: ex.meta.title || v.wc.getTitle(), markdown: ex.markdown, image, turn: cur.turnKey });
+    t.snapshotId = snaps.save(cur.sessionId, { url: v.wc.getURL(), title: ex.meta.title || v.wc.getTitle(), markdown: ex.markdown, image, turn: cur.turnKey }); t.snapTurn = cur.turnKey;
   }
   async function captureSnapshotImage(v, full) {
     // 操作中(browser_read 存快照)只拍當下視口:captureBeyondViewport 會動 viewport、整頁 reflow,
@@ -907,7 +910,7 @@ function createBrowser(o) {
       return R({ ok: true, tabs: out });
     }
     if (name === "browser_wait") return doWait(args);
-    if (name === "browser_tabs") return R({ ok: true, tabs: tabs.thisTurn().map(tabInfo), queued: tabs.queued() });
+    if (name === "browser_tabs") { const list = tabs.reachable().map(tabInfo); return R({ ok: true, tabs: list, queued: tabs.queued(), note: list.some((x) => x.from_previous_turn) ? TABS_NOTE : undefined }); }
     if (name === "browser_close") { const t = tabs.byAlias(args.tab); if (!t) return ERR("not_found", MSG.not_found); if (verifying(t)) return ERR("needs_user_verification", MSG.needs_user_verification, { tab: t.alias }); if (t.userControl) return ERR("user_in_control", MSG.user_in_control, { tab: t.alias }); tabs.close(t.id); emit("page_closed", { id: t.id }); return R({ ok: true }); }
     const x = tabFor(args.tab); if (x.e) return x.e;
     const { t, v } = x;
@@ -1119,7 +1122,7 @@ function createBrowser(o) {
       snaps.logTurn(c.sessionId, { ts: (c.usedAt || c.turnKey) / 1000, end: Date.now() / 1000, tabs: rows, sources });
       const withFav = (a) => a.map((r) => { const f = favOf(r.url); return Object.assign({}, r, { fav: f ? f.data : null, plate: !!(f && f.plate) }); });
       emit("turn_sources", { session_id: c.sessionId, sources: withFav(sources), tabs: withFav(rows) });
-      for (const t of tabs.thisTurn()) { if (t.need && !t.userDone) { t.need = null; emit("need_clear", { id: t.id }); } }
+      for (const t of tabs.reachable()) { if (t.need && !t.userDone) { t.need = null; emit("need_clear", { id: t.id }); } }
       // 快照圖升級成整頁版(beyond-viewport 只在這裡做:一輪一次;操作中存的是視口版,見 captureSnapshotImage)
       (async () => {
         for (const r of rows) {

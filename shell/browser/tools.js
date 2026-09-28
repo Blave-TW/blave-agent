@@ -2,7 +2,7 @@
 // .claude/output/specs/desktop-browser-mcp-interface-2026-09-26.md——改這裡先改那份、先通知。說明是給 agent 讀的,一律英文。
 "use strict";
 
-const tab = { type: "string", description: "Tab id from this turn, e.g. \"t2\"." };
+const tab = { type: "string", description: "Tab id, e.g. \"t2\". Ids stay the same across turns; browser_tabs lists the ones you can use." };
 const ref = { type: "string", description: "Element ref from the latest browser_snapshot, e.g. \"@e12\"." };
 const obj = (props, req) => ({ type: "object", properties: props, required: req || [], additionalProperties: false });
 
@@ -38,7 +38,7 @@ const TOOLS = [
   { name: "browser_capture", description: "Capture ONE chart or figure element (ref from browser_snapshot) as a picture for a report: it is cropped to that element, saved for the report you name in `report` (when that id already has a report, the picture waits for the new one you are about to write — an existing report's pictures are never touched), and returned as {file, source}. Put both into an image block unchanged — {\"type\":\"image\",\"file\":<file>,\"source\":<source>,\"alt\":\"…\"} — rules in references/reports.md › Citing an image from the web (at most 2 per report). Refused (capture_refused): elements near the size of the whole view or larger, tiny or hidden elements, a page that is still moving or a chart that came out blank or cut off because it had not finished loading (wait, then capture again), and pages whose address is not https; an element under a banner or popup is refused as obscured (close it first). Token-like parameters are removed from the returned source URL.",
     inputSchema: obj({ tab, ref, report: { type: "string", description: "Id of the report the picture is for ([A-Za-z0-9_-]{1,64}), the same id you pass to write_report." } }, ["tab", "ref", "report"]) },
   { name: "browser_back", description: "Go back in the tab's history.", inputSchema: obj({ tab }, ["tab"]) },
-  { name: "browser_tabs", description: "List this turn's tabs with status.", inputSchema: obj({}) },
+  { name: "browser_tabs", description: "List the tabs you can use, with status, address and title: the ones opened in this turn and the ones from earlier turns that are still open (from_previous_turn: true) — keep using those by the same id instead of opening the same address again. status user_control means the user is operating that tab: it cannot be read until they press \"Hand back to agent\".", inputSchema: obj({}) },
   { name: "browser_close", description: "Close a tab.", inputSchema: obj({ tab }, ["tab"]) },
 ];
 

@@ -2,7 +2,8 @@
 // 契約:.claude/output/specs/desktop-browser-agent-tools-2026-09-26.md §5.1–5.2、§3.4 速率。
 //   - 同時最多 8 個活的分頁(有 webContents 的);第 9 個起排隊(FIFO)。不給 agent 調。
 //   - 名額釋放:分頁被關、或讀完(done)的分頁被收成快照(discard)。用戶正在看的那頁不收。
-//   - 分頁有兩種 id:內部 `p<N>`(整個 app 生命期唯一,畫面用)與本回合給 agent 的 `t<N>`(回合結束作廢)。
+//   - 分頁有兩種 id:內部 `p<N>`(畫面用)與給 agent 的 `t<N>`。兩種在這次啟動裡都不重編:上一輪對話裡的「t3」
+//     下一輪還是同一個分頁(重編的話,模型照記得的代號會讀到別的頁)。agent 開的分頁只要還活著,後面的回合照樣指得到。
 "use strict";
 
 const MAX_LIVE = 8;
@@ -23,7 +24,7 @@ function windowCounter(limit, spanMs, now) {
 
 /**
  * opts: { now, create(tab) → void(建 webContents), destroy(tab, keepSnapshot) → void, emit(type, payload), max? }
- * tab 物件:{ id, alias, url, host, by, status, turn, title, visible, read }
+ * tab 物件:{ id, alias, url, host, by, status, turn, usedTurn, title, visible, read }
  *   status: queued | loading | ready | failed | blocked | discarded | closed
  */
 function createTabs(opts) {
@@ -34,7 +35,7 @@ function createTabs(opts) {
   // 分頁 id 帶這次啟動的隨機前綴:聊天裡重建的舊回合列拿著上一次啟動的 id,不能撞到這次的分頁
   const run = require("crypto").randomBytes(3).toString("hex");
   let seq = 0, turn = 0, aliasSeq = 0;
-  const aliases = new Map();       // 本回合 alias → id
+  const aliases = new Map();       // alias → id(這次啟動裡開過的 agent 分頁;不清、不重用)
   let counters = null;
   const hostCounters = new Map();
   let turnPages = 0, turnSearches = 0, turnReadChars = 0;
@@ -46,10 +47,15 @@ function createTabs(opts) {
   }
   newCounters();
 
-  /** 找一個可以收掉的活分頁:讀完、不是用戶正在看的、最舊的那個。 */
+  /** 找一個可以收掉的活分頁:讀完、不是用戶正在看的、最舊的那個。
+   *  沒有讀完的可收時,退到前面回合留下來、這一輪 agent 沒碰過的分頁(不含用戶在看、在操作、在等他按的):
+   *  分頁跨回合留著,沒讀過的那幾頁不能把 8 格永遠佔住。 */
   function evictable() {
-    return live().filter((t) => t.read && !t.visible && t.by === "agent").sort((a, b) => a.readAt - b.readAt)[0] || null;
+    const free = live().filter((t) => t.by === "agent" && !t.visible);
+    return free.filter((t) => t.read).sort((a, b) => a.readAt - b.readAt)[0]
+      || free.filter((t) => t.turn < turn && t.usedTurn !== turn && !t.userControl && !t.need).sort((a, b) => a.startedAt - b.startedAt)[0] || null;
   }
+  const aliased = () => [...aliases.values()].map((id) => tabs.get(id)).filter(Boolean);
   function start(t) { t.status = "loading"; t.startedAt = now(); opts.create(t); }
   function pump() {
     while (queue.length) {
@@ -67,8 +73,8 @@ function createTabs(opts) {
 
   return {
     LIMITS, max,
-    /** 新的一回合:alias 重編、每回合上限歸零。舊分頁留給用戶看,agent 拿不到它們的 alias。 */
-    newTurn() { turn++; aliasSeq = 0; aliases.clear(); newCounters(); return turn; },
+    /** 新的一回合:每回合上限歸零。alias 不動——還活著的 agent 分頁下一輪照樣指得到(reachable)。 */
+    newTurn() { turn++; newCounters(); return turn; },
     turn: () => turn,
     /** 開一頁(url 已過政策)。回 { tab } 或 { error: "rate_limited", retry_in_s }。 */
     /** agent 開一頁(新分頁或在既有分頁導覽)都扣同一組開頁速率:每回合 40、每分鐘 20、同網域每分鐘 6。回 null 或錯誤。 */
@@ -97,12 +103,16 @@ function createTabs(opts) {
       tabs.set(t.id, t); opts.emit("page_open", { id: t.id, url, queued: false, by, alias: t.alias });
       return t;
     },
-    /** 本回合的 alias → tab(不是本回合的、關掉的都回 null)。 */
+    /** alias → tab(關掉的回 null)。前面回合的分頁也查得到;能不能用由呼叫端照當下的狀態判(index.js tabFor)。 */
     byAlias(alias) { const id = aliases.get(String(alias || "")); const t = id ? tabs.get(id) : null; return t && t.status !== "closed" ? t : null; },
     get: (id) => tabs.get(id) || null,
     all: () => [...tabs.values()].filter((t) => t.status !== "closed"),
-    thisTurn: () => [...aliases.values()].map((id) => tabs.get(id)).filter((t) => t && t.status !== "closed"),
-    thisTurnAll: () => [...aliases.values()].map((id) => tabs.get(id)).filter(Boolean),   // 含已關的(回合紀錄:讀過又關掉的頁照樣算讀了)
+    thisTurn: () => aliased().filter((t) => t.turn === turn && t.status !== "closed"),
+    thisTurnAll: () => aliased().filter((t) => t.turn === turn),   // 含已關的(回合紀錄:讀過又關掉的頁照樣算讀了)
+    /** agent 這一輪指得到、列得出來的分頁:這一輪開的,加上前面回合開的、還活著的(被收掉、關掉、打不開的不列;搜尋分頁不列)。 */
+    reachable: () => aliased().filter((t) => (t.turn === turn ? t.status !== "closed" : !t.searchTab && ["queued", "loading", "ready"].includes(t.status))),
+    /** agent 這一輪第一次碰前面回合留下來的分頁:記下來(這一輪不被當成沒人用的舊頁收掉),讀完之前也不讓位。回 true = 這次才接上。 */
+    use(id) { const t = tabs.get(id); if (!t || t.turn === turn || t.usedTurn === turn) return false; t.usedTurn = turn; t.read = false; return true; },
     queued: () => queue.length,
     liveCount: () => live().length,
     loaded(id, title) { const t = tabs.get(id); if (t && t.status === "loading") { t.status = "ready"; if (title) t.title = title; } },
