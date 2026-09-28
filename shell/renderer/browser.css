@@ -128,12 +128,14 @@
 .bw-head { flex: none; display: flex; align-items: center; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
 .bw-head .txt { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-12); height: 21px; }
 .bw-head h5 { flex: none; margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--ink); }
-.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow-x: clip; }   /* 只裁左右:上下要留給文字鈕外擴的熱區(hidden 會連上下一起裁成 18) */
 .bw-stat > * { flex: none; }
 .bw-stat .t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 狀態句太長只截文字那一段;icon、進度格、文字鈕不縮 */
 .bw-stat b { font-weight: 600; color: var(--ink); }
 .bw-stat .ic { width: 14px; height: 14px; }
-.bw-stat .btn-quiet { margin-left: var(--space-4); }
+.bw-stat .btn-quiet { position: relative; margin-left: var(--space-4); }
+/* 「交還 agent」視覺 17 高、熱區 32:標題列高 49、狀態句在中間,整塊留在標題列內,不伸進網址列 */
+.bw-stat .btn-quiet::before { content: ""; position: absolute; left: -4px; right: -4px; top: 50%; height: 32px; transform: translateY(-50%); }
 /* 32 的鈕對齊 20.8 高的 h5 那一行;✕ 的筆畫(不是盒子)對齊內容右緣。熱區 44,下緣仍在標題列內、不伸進頁面框 */
 .bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) calc(var(--space-6) * -1) 0; }
 .bw-close::before { content: ""; position: absolute; inset: -6px; }

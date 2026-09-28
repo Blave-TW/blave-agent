@@ -721,21 +721,25 @@
     var hasDelta = items.some(function (it) {
       return it && it.delta;
     });
-    // 格數進 class:一行最多 5 格,6 格(契約上限)固定折成 3+3 等寬網格,
-    // 不放任自由 wrap 折出 5+1 孤兒
+    // 格數進 class:6 格(契約上限)焦點格獨佔一列、其餘 3+2(排法在 CSS)
     var row = el(
       "div",
       "rb-kpi is-n" + items.length + (hasDelta ? " has-delta" : "")
     );
     items.forEach(function (it, i) {
-      var cell = el("div", "rb-kpi-cell" + (i === 0 ? " is-focus" : ""));
+      // 20px mono 的值到 11 個字元,加單位就超過兩欄網格的半欄:那一格獨佔一列(只在兩欄網格生效)
+      var wide = i > 0 && str(it.value).length >= 11;
+      var cell = el("div", "rb-kpi-cell" + (i === 0 ? " is-focus" : "") + (wide ? " is-wide" : ""));
       cell.appendChild(monoLabel(el("div", "rb-kpi-label"), str(it.label)));
       var tone = it.tone === "pos" ? " rb-up" : it.tone === "neg" ? " rb-dn" : "";
       // 有 delta 的格子:tone 上在 delta,值維持墨色(價格水位本身沒有漲跌);沒有 delta 才讓值上色
       var val = el("div", "rb-kpi-value" + (it.delta ? "" : tone));
       monoShapes(val, dispMinus(str(it.value)));
       // unit 是值的度量,貼在值後同一行;不吃 tone 色(語意色只屬於數字)
-      if (it.unit) val.appendChild(monoShapes(el("span", "rb-kpi-unit"), str(it.unit)));
+      if (it.unit) {
+        var unit = str(it.unit);
+        val.appendChild(monoShapes(el("span", "rb-kpi-unit" + (unit.length > 8 ? " is-long" : "")), unit));
+      }
       cell.appendChild(val);
       // delta 是另一件事(值=現況、delta=變化)→ 另起第三行;有 delta 時漲跌色只上在它。列內
       // 任一格有 delta 就全列補這一行,否則底對齊會把缺席那格的值往下拉

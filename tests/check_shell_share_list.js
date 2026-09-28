@@ -77,7 +77,7 @@ if (!process.versions.electron) {
       "shl.gate": ["公開連結掛在你的 Blave 帳號下，登入後才看得到。", "Public links are tied to your Blave account. Sign in to see them."], "shl.countAria": ["公開中 {n} 份，上限 {max} 份", "{n} of {max} public reports"],
       "shr.limitLive": ["公開中的報告已達 {n} 份上限。先取消幾份，再公開這一份。", "You've reached the limit of {n} public reports. Stop sharing a few, then publish this one."], "shr.limitLiveGo": ["看公開連結", "View public links"],
       "shr.limitDaily": ["今天已經公開 {n} 次，達到每日上限。請明天再試。", "You've published {n} times today, the daily limit. Try again tomorrow."],
-      "pdf.btn": ["存成 PDF", "Save as PDF"], "pdf.saving": ["存成中…", "Saving…"], "pdf.saved": ["已存成", "Saved"], "pdf.failTitle": ["沒有存成 PDF", "Couldn't save the PDF"], "pdf.failBody": ["檔案沒有寫進去。換個位置，或稍後再試一次。", "The file wasn't saved. Try another location, or try again later."] };
+      "pdf.btn": ["存成 PDF", "Save as PDF"], "pdf.saving": ["存成中…", "Saving…"], "pdf.saved": ["已存檔", "Saved"], "pdf.failTitle": ["沒有存成 PDF", "Couldn't save the PDF"], "pdf.failBody": ["檔案沒有寫進去。換個位置，或稍後再試一次。", "The file wasn't saved. Try another location, or try again later."] };
     const off = Object.keys(E).filter((k) => STR.zh[k] !== E[k][0] || STR.en[k] !== E[k][1]);
     ok("③ 字串逐字同 spec(清單 E 表、上限 D 表的數字改成 {n}、PDF 的 DT2 表)", off.length === 0, off.join());
     const WEB_PO = path.join(MONO, "web", "app", "translations");
@@ -235,13 +235,13 @@ app.whenReady().then(async () => {
   ok("④ 存檔框開著時再按不重送", (await calls("pdf")).length === 1);
   await js(`window.__s.saving()`); await wait(50); h = await hd();
   ok("④ 按了儲存、開始產:「存成中…」,頁首兩顆都停用", h.text === "存成中…" && h.dis && h.shareDis, JSON.stringify(h));
-  // 回饋不放在鈕上(canon › 列印／PDF › 入口;batch 5 F):存檔中間隔著系統存檔框,鈕上閃「已存成」人看不到,也答不了「存到哪」
+  // 回饋不放在鈕上(canon › 列印／PDF › 入口;batch 5 F):存檔中間隔著系統存檔框,鈕上閃「已存檔」人看不到,也答不了「存到哪」
   const sv = () => js(`(() => { const b = document.getElementById("rpt-saved"), rv = document.getElementById("rpt-reveal");
     return { on: !b.hidden, d: b.querySelector(".d").textContent, rv: rv.hidden ? null : rv.textContent, sr: document.getElementById("sr-live").textContent, box: !document.getElementById("del-scrim").hidden,
       left: b.getBoundingClientRect().right <= document.querySelector(".rpt-acts").getBoundingClientRect().left + 1 }; })()`);
   await js(`window.__s.pdf = { code: "OK", dir: "報告", token: "tk1" }; window.__s.pdfHold()`); await wait(100); h = await hd();
   let s1 = await sv();
-  ok("④ 成功:鈕直接回「存成 PDF」(不閃「已存成」)、可按;頁首同一列、動作群左邊出「已存到「報告」」＋「在 Finder 中顯示」;讀屏念那一句;不跳框",
+  ok("④ 成功:鈕直接回「存成 PDF」(不閃「已存檔」)、可按;頁首同一列、動作群左邊出「已存到「報告」」＋「在 Finder 中顯示」;讀屏念那一句;不跳框",
     h.text === "存成 PDF" && !h.dis && !h.shareDis && s1.on && s1.d === "已存到「報告」" && s1.rv === "在 Finder 中顯示" && s1.sr === "已存到「報告」" && !s1.box && s1.left, JSON.stringify([h, s1]));
   await wait(1600); s1 = await sv();
   ok("④ 不計時:1.6 秒後那一句還在,鈕字沒變", s1.on && s1.d === "已存到「報告」" && (await hd()).text === "存成 PDF", JSON.stringify(s1));

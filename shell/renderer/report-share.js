@@ -146,7 +146,8 @@ function shrOpen(c, mode, opener) {
   if (!$("shr-scrim").hidden || (typeof envCanSwitch === "function" && !envCanSwitch())) return;   // 別的框開著 / 選字中
   if (c.env === "local" && !hasToken) { shrGateAsk(opener); return; }
   const rep = c.rep, meta = rep.blocks[0] && rep.blocks[0].type === "meta" ? rep.blocks[0] : {}, kind = shrKind(rep.type);
-  const D = { c, mode, opener, busy: false, noName: false, limit: shlLimit(c.limits, mode), limitShown: false };   // limit = 已達上限(report-sharelist.js):主鈕停用
+  // limit = 已達上限(report-sharelist.js):主鈕停用;said = 訊息槽裡是失敗句;ackSeen = 勾選列整列在捲動區看得見
+  const D = { c, mode, opener, busy: false, noName: false, limit: shlLimit(c.limits, mode), limitShown: false, said: false, hint: false, ackSeen: true, io: null };
   SHR.dlg = D;
   $("shr-title").textContent = t(mode === "update" ? "shr.dlgTitleUpdate" : "shr.dlgTitle");
   // 雲端視角:灰標題列 + 「雲端」記號(同 #rpn-modal);公開與更新是同一個框
@@ -161,14 +162,26 @@ function shrOpen(c, mode, opener) {
   $("shr-must").textContent = t(c.env === "local" ? "shr.noteLocal" : "shr.noteCloud");
   $("shr-anon").checked = true; $("shr-ack").checked = false;
   $("shr-send").textContent = t(mode === "update" ? "shr.sendUpdate" : "shr.send");
-  $("shr-msg").textContent = "";
+  $("shr-msg").textContent = ""; $("shr-msg").classList.remove("is-hint");
   shrLock(false); shrName(D); shrLimitPaint(D);
   // 名字與上限開框時再向 api 抓一次(改名、別處公開 / 取消之後回來不必重開閱讀頁)
-  shrAsk(c).then(() => { if (SHR.dlg !== D) return; shrName(D); if (!D.busy) { D.limit = shlLimit(c.limits, mode); shrLock(false); shrLimitPaint(D); } });
+  shrAsk(c).then(() => { if (SHR.dlg !== D) return; shrName(D); if (!D.busy) { D.limit = shlLimit(c.limits, mode); shrLock(false); shrLimitPaint(D); shrHint(); } });
   $("view-ws").inert = true; $("set-scrim").inert = true;
   const sc = $("shr-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
   ($("shr-radios").hidden ? $("shr-ack") : $("shr-anon")).focus();
+  // 勾選列有沒有完整落在捲動區內(同 web syncHint;0.99 是給次像素的餘裕)
+  D.io = new IntersectionObserver((es) => { if (SHR.dlg !== D) return; D.ackSeen = es[es.length - 1].intersectionRatio >= 0.99; shrHint(); }, { root: $("shr-modal").querySelector(".modal-body"), threshold: [0, 0.99, 1] });
+  D.io.observe($("shr-ack").closest(".shr-chk"));
+}
+// 勾選在捲動區外又還沒勾:主鈕停用的原因只剩這一句講得出來。訊息槽只有一個,送出中、失敗句、上限句優先
+function shrHint() {
+  const D = SHR.dlg;
+  if (!D || D.busy || D.said || D.limit) return;
+  const fm = $("shr-msg"), on = !$("shr-ack").checked && !D.ackSeen;
+  if (on) { fm.textContent = t("shr.scrollHint"); $("shr-send").setAttribute("aria-describedby", "shr-msg"); }
+  else if (D.hint) { fm.textContent = ""; $("shr-send").removeAttribute("aria-describedby"); }
+  fm.classList.toggle("is-hint", on); D.hint = on;
 }
 // 帳號的名稱原樣掛(系統預設名、含推薦碼的名稱都照用;契約 §3),名稱是空的(或讀不到 / api 回 NO_DISPLAY_NAME)才沒有選項可選:
 // 兩顆 radio 整組收掉,換成純文字「作者 匿名」(同 web setPlain);提示換成去填名稱那句。有名字才出兩顆 radio
@@ -192,6 +205,7 @@ function shrClose() {
   const sc = $("shr-scrim"), D = SHR.dlg;
   if (sc.hidden || (D && D.busy)) return;
   sc.classList.remove("open"); sc.hidden = true;
+  if (D && D.io) { D.io.disconnect(); D.io = null; }
   $("view-ws").inert = false; $("set-scrim").inert = false;
   SHR.dlg = null;
   const o = D && D.opener;
@@ -201,9 +215,10 @@ async function shrSubmit() {
   const D = SHR.dlg;
   if (!D || D.busy || D.limit || !$("shr-ack").checked) return;
   const c = D.c, byline = !$("shr-named").disabled && $("shr-named").checked ? "name" : "anonymous";
-  D.busy = true; shrLock(true);
+  D.busy = true; D.said = false; D.hint = false; shrLock(true);
+  $("shr-send").removeAttribute("aria-describedby");
   const fm = $("shr-msg"), busy = libEl("span", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
-  busy.append(sp, t("shr.sending")); fm.textContent = ""; fm.appendChild(busy);
+  busy.append(sp, t("shr.sending")); fm.textContent = ""; fm.classList.remove("is-hint"); fm.appendChild(busy);
   let r = null;
   try { r = await window.blave.sharePublish(c.env, c.id, { byline, confirmed: true, update: D.mode === "update" }); } catch (_) { r = null; }
   D.busy = false;
@@ -222,11 +237,12 @@ async function shrSubmit() {
     shrAsk(c).then(() => { if (SHR.cur === c) shrPaint(); });
     return;
   }
-  if (code === "NO_DISPLAY_NAME") { D.noName = true; shrName(D); return; }   // 名字 api 不收:只剩匿名,勾選保留、可直接再送
+  if (code === "NO_DISPLAY_NAME") { D.noName = true; shrName(D); shrHint(); return; }   // 名字 api 不收:只剩匿名,勾選保留、可直接再送
   if (code === "NO_LOGIN") { D.opener = null; shrClose(); shrGateAsk($("rpt-share")); return; }
   // 送出時才撞到上限(開框之後別處又公開了):同一句放同一個位置,框留著
   const lim = shlLimitFromCode(code, r && r.limit, c.limits);
   if (lim) { D.limit = lim; shrLimitPaint(D); return; }
+  D.said = true;
   shrFill(fm, t(shrErrKey(code)), { n: String(SHR_IMG_MAX_COUNT), mb: String(SHR_IMG_MAX_MB) });   // 框留著、欄位不動,原樣重送。api 的原文不上畫面:主行程寫進 log(reportshare.js failDetail)
 }
 
@@ -235,7 +251,7 @@ async function shrSubmit() {
   const g = (id) => document.getElementById(id);
   g("rpt-share").addEventListener("click", () => { if (SHR.cur) shrOpen(SHR.cur, "new", g("rpt-share")); });
   g("shr-modal").addEventListener("submit", (e) => { e.preventDefault(); shrSubmit(); });   // CSP form-action 'none':原生送出一律擋
-  g("shr-ack").addEventListener("change", () => { g("shr-send").disabled = !g("shr-ack").checked || !!(SHR.dlg && (SHR.dlg.busy || SHR.dlg.limit)); });
+  g("shr-ack").addEventListener("change", () => { g("shr-send").disabled = !g("shr-ack").checked || !!(SHR.dlg && (SHR.dlg.busy || SHR.dlg.limit)); shrHint(); });
   g("shr-cancel").addEventListener("click", shrClose);
   g("shr-close").addEventListener("click", shrClose);
   g("shr-tos").addEventListener("click", () => window.blave.openExternal(SHR_SITE + "disclaimer/" + (LANG === "zh" ? "zh" : "en") + "/terms_of_service#ugc"));
