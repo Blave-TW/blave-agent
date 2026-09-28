@@ -65,6 +65,7 @@ import re
 import shutil
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 
@@ -278,6 +279,63 @@ def check_report(doc, report_id):
                 return (f"blocks[{i}].markdown: footnote reference [^{ref}] has no "
                         f"matching footnote item")
     return _check_image_files(blocks)
+
+
+_FN_TEXT_MAX = 1000  # mirrored from openclaw/report_blocks_validate._v_footnote
+_FN_ID_MAX = 32
+_CLOSERS = ")）」』】》”’\"'"
+
+
+def _join_notes(texts):
+    out = ""
+    for t in texts:
+        t = t.strip()
+        core = t.rstrip(_CLOSERS)
+        if core and not unicodedata.category(core[-1]).startswith("P"):
+            t += "。" if re.search("[\u3400-\u9fff]", t) else "."
+        out += t
+    return out
+
+
+def unique_footnotes(blocks):
+    """尾註 id 重複 → 併進第一列(`[^id]` 本來就只對得到第一列);連結不同或併完超過字數上限
+    才把後者改名(`src-2`)。回傳 (blocks, 重複過的 id)。
+
+    lib.report.unique_footnotes 的鏡像,規則要一致(tests/check_report_footnotes.py 拿同一組
+    案例比)。這裡不 import lib:lib 走手動更新通道,機器上那份可能還是會產出重複 id 的舊版,
+    而這支正是要把舊 lib 寫出來的報告送得出去。"""
+    fixed, out = [], []
+    for b in blocks:
+        if not (isinstance(b, dict) and b.get("type") == "footnote" and isinstance(b.get("items"), list)):
+            out.append(b)
+            continue
+        rows, first = [], {}
+        for it in b["items"]:
+            if not (isinstance(it, dict) and isinstance(it.get("id"), str) and isinstance(it.get("text"), str)):
+                rows.append(it)
+                continue
+            head = first.get(it["id"])
+            if head is None:
+                it = dict(it)
+                first[it["id"]] = it
+                rows.append(it)
+                continue
+            fixed.append(it["id"])
+            if head.get("url") == it.get("url"):
+                if it["text"].strip() in head["text"]:
+                    continue
+                joined = _join_notes([head["text"], it["text"]])
+                if len(joined) <= _FN_TEXT_MAX:
+                    head["text"] = joined
+                    continue
+            n, taken = 2, {r.get("id") for r in b["items"] if isinstance(r, dict)} | set(first)
+            while f"{it['id'][:_FN_ID_MAX - 4]}-{n}" in taken:
+                n += 1
+            it = dict(it, id=f"{it['id'][:_FN_ID_MAX - 4]}-{n}")
+            first[it["id"]] = it
+            rows.append(it)
+        out.append(dict(b, items=rows))
+    return out, sorted(set(fixed))
 
 
 def _check_image_files(blocks, path="blocks"):
@@ -655,6 +713,7 @@ def upload_one(report_id, path, state, token, started=None):
     if err:
         _fail_permanently(report_id, path, err, state)
         return "failed"
+    doc["blocks"], _ = unique_footnotes(doc["blocks"])
     outcome, message = _resolve_images(doc, report_id, started, token)
     if outcome == "permanent":
         _fail_permanently(report_id, path, message, state)

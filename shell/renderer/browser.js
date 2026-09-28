@@ -57,8 +57,10 @@ const brUserOp = (x) => !!x && !!x.user && x.by !== "user";
 /* 讀不了(頁面那一邊的原因):打不開、agent 不開這個網站、只停在轉址頁 */
 const brBad = (x) => !!x && !!(x.fail || x.blocked || x.relay) && !x.need;
 /* 未讀:開了、載入正常、agent 沒讀。回合結束時還在載入的頁也算(頁面沒有壞,是 agent 沒等它)。
-   agent 拿來操作(點、打字、按鍵)的頁不算——那種頁本來就不是拿來讀的,摘要寫的是「用了 N 頁」。純函式 */
-const brUnread = (x) => !!x && !x.search && !x.readEver && !x.used && !brBad(x) && !x.need && !brUserOp(x) && (x.ph === "open" || !!x.ended);
+   agent 拿來操作(點、打字、按鍵)的頁不算——那種頁本來就不是拿來讀的,摘要寫的是「用了 N 頁」。
+   用戶自己開的分頁(by === "user")也不算:「未讀」講的是 agent 讀了沒有,那一頁 agent 本來就碰不到(e2e #186:送進
+   TradingView 的那一頁被標成未讀)——照一般分頁畫,狀態句是頁面標題。純函式 */
+const brUnread = (x) => !!x && x.by !== "user" && !x.search && !x.readEver && !x.used && !brBad(x) && !x.need && !brUserOp(x) && (x.ph === "open" || !!x.ended);
 function brFoot(x) {
   if (x.need) return t(x.need.kind === "login" ? "br.need.login" : x.need.kind === "captcha" ? "br.need.captcha" : x.need.kind === "file" ? "br.need.file" : x.need.kind === "confirm" ? "br.need.confirm" : "br.need.submit");
   if (brUserOp(x)) return t("br.userOp");

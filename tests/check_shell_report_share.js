@@ -31,8 +31,8 @@ if (!process.versions.electron) {
     else { const W = {}; vm.runInNewContext(cutFn(read(WEB_SH), "leadSentence") + "\nthis.f = leadSentence;", W);
       ok("① lead 首句 = web leadSentence(五個樣本:中文句號、markdown 記號與尾註、清單、英文句點、超長截 120)", leads.every((m) => P.shrLead(rep(m)) === W.f(rep(m))), JSON.stringify(leads.map((m) => [P.shrLead(rep(m)), W.f(rep(m))]))); }
     const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
-    const codes = ["UNREACH", "RELOGIN", "RATE_LIMITED", "IMAGE_QUOTA", "NO_MACHINE", "NOT_SHAREABLE", "NO_REPORT", "BAD_ARGS", "WHATEVER"];
-    ok("① 錯誤代號 → 字:連不上 = 檢查網路那句、雲端沒在跑 = web 那句、配額 / 速率 / 重新登入各自一句、驗不過 = 不能公開;每個 key 兩語都在", P.shrErrKey("UNREACH") === "shr.failed" && P.shrErrKey("WHATEVER") === "shr.failed" && P.shrErrKey("NO_MACHINE") === "shr.failedCloud" && P.shrErrKey("IMAGE_QUOTA") === "shr.quota" && P.shrErrKey("RELOGIN") === "conn.expired" && P.shrErrKey("NOT_SHAREABLE") === "shr.notShareable"
+    const codes = ["UNREACH", "RELOGIN", "RATE_LIMITED", "IMAGE_QUOTA", "NO_MACHINE", "NOT_SHAREABLE", "BAD_CONTENT", "NO_REPORT", "BAD_ARGS", "WHATEVER"];
+    ok("① 錯誤代號 → 字:連不上 = 檢查網路那句、雲端沒在跑 = web 那句、配額 / 速率 / 重新登入各自一句、驗不過 = 不能公開;每個 key 兩語都在", P.shrErrKey("UNREACH") === "shr.failed" && P.shrErrKey("WHATEVER") === "shr.failed" && P.shrErrKey("NO_MACHINE") === "shr.failedCloud" && P.shrErrKey("IMAGE_QUOTA") === "shr.quota" && P.shrErrKey("RELOGIN") === "conn.expired" && P.shrErrKey("NOT_SHAREABLE") === "shr.notShareable" && P.shrErrKey("BAD_CONTENT") === "shr.badContent"
       && codes.every((c) => STR.zh[P.shrErrKey(c)] && STR.en[P.shrErrKey(c)]));
     ok("① 確認框三行 + 標題照 W1 定稿(zh / en)", STR.zh["shr.ack2"] === "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責；Blave 未審核" && STR.en["shr.ack2"] === "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
       && STR.zh["shr.dlgTitle"] === "公開這份報告" && STR.en["shr.dlgTitle"] === "Publish this report" && STR.zh["shr.revokeTitle"] === "取消分享這份報告？" && STR.en["shr.revokeTitle"] === "Stop sharing this report?");
@@ -52,6 +52,12 @@ if (!process.versions.electron) {
     const pb = m.calls[0] && m.calls[0].b;
     ok("② publish(本機):/share/publish;body = 憑證兩欄 + view / id + 勾選紀錄四欄 + report / images(本機檔原樣),聲明版本 rs-ack-2026.09.27", m.calls[0].u.endsWith("/oauth/desktop/share/publish") && keys(pb) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view"
       && pb.confirmed === true && pb.byline === "name" && pb.disclaimer_version === "rs-ack-2026.09.27" && pb.tos_version === RS.TOS_VERSION && pb.report.id === "tw-1" && pb.images["a.png"] === "QUJD" && r.code === "OK" && r.share.code === "Abcd1234", JSON.stringify(pb));
+    { const onDisk = { id: "tw-2", blocks: [{ type: "meta" }, { type: "footnote", items: [{ id: "src", text: "日 K 為 TWSE 未還原價" }, { id: "src", text: "指數:TWSE 日資料。" }] }] };
+      const was = JSON.stringify(onDisk);
+      m = mk({ readLocal: () => ({ report: onDisk, images: {} }) }); await m.c.publish("local", "tw-2", { byline: "anonymous", confirmed: true });
+      const sent = m.calls[0].b.report.blocks[1].items;
+      ok("② publish(本機):尾註 id 重複的舊報告,送出的那份併成一列;讀進來的那份不動(規則見 tests/check_report_footnotes.py)",
+        sent.length === 1 && sent[0].id === "src" && sent[0].text === "日 K 為 TWSE 未還原價。指數:TWSE 日資料。" && JSON.stringify(onDisk) === was, JSON.stringify(sent)); }
     m = mk(); await m.c.publish("cloud", "tw-1", { byline: "anonymous", confirmed: true, update: true });
     ok("② update(雲端):/share/update;雲端不帶 report / images(api 對雲端帶這兩欄回 400)", m.calls[0].u.endsWith("/oauth/desktop/share/update") && keys(m.calls[0].b) === "app_secret,byline,confirmed,disclaimer_version,id,token,tos_version,view");
     m = mk(); r = await m.c.revoke("local", "tw-1");
@@ -68,7 +74,7 @@ if (!process.versions.electron) {
     const fc = (status, body, op) => RS.failCode({ status, body }, op);
     ok("② status → 代號:409 已公開 / 422 不能公開 / 507 配額 / 401 重新登入 / 429 / 403 雲端沒在跑 / 5xx 與連不上 = UNREACH / 400 NO_DISPLAY_NAME / 其餘 400·413 = 不能公開 / 404 分 publish 與 update·revoke",
       fc(409) === "ALREADY" && fc(422) === "NOT_SHAREABLE" && fc(507) === "IMAGE_QUOTA" && fc(401) === "RELOGIN" && fc(429) === "RATE_LIMITED" && fc(403) === "NO_MACHINE" && fc(502) === "UNREACH" && RS.failCode(null) === "UNREACH"
-      && fc(400, { error_code: "NO_DISPLAY_NAME" }) === "NO_DISPLAY_NAME" && fc(400, { error: "blocks[3]: bad" }) === "NOT_SHAREABLE" && fc(413) === "NOT_SHAREABLE" && fc(404, {}, "publish") === "NOT_SHAREABLE" && fc(404, {}, "update") === "NOT_PUBLIC" && fc(404, {}, "revoke") === "NOT_PUBLIC");
+      && fc(400, { error_code: "NO_DISPLAY_NAME" }) === "NO_DISPLAY_NAME" && fc(400, { error: "blocks[3]: bad" }) === "BAD_CONTENT" && fc(413) === "BAD_CONTENT" && fc(404, {}, "publish") === "NOT_SHAREABLE" && fc(404, {}, "update") === "NOT_PUBLIC" && fc(404, {}, "revoke") === "NOT_PUBLIC");
     m = mk({ res: { status: 200, body: { share: { code: "<x>", published_at: 1 } } } }); r = await m.c.publish("cloud", "x", { byline: "anonymous", confirmed: true });
     ok("② 200 但 share 形狀不對(代碼字元集 / 時間範圍)→ 不當成功", r.code === "UNREACH");
     const apiDir = process.env.BLAVE_API_DIR || path.join(MONO, "api"), apiPy = path.join(apiDir, "openclaw", "desktop_auth.py");
@@ -104,19 +110,22 @@ if (!process.versions.electron) {
 
     // ── 0.1.8 稽核修正(audit-share-cite P1-3 / P2-5 / P2-6 / P2-8;設計稽核 S1–S8;spec-share-list E 定稿一)──
     {
-      const logged = [];
+      const logged = [], applog = [];
       const mk2 = (o) => { const calls = []; const c = RS.createShareClient({ apiBase: "https://api.x", getCreds: () => ({ token: "tok", appSecret: "sec" }), readLocal: (id) => ({ report: { id, blocks: [] }, images: {}, mtime: 5000 }),
-        logError: (id, msg) => logged.push([id, msg]), store: o.store, post: async (u, b) => { calls.push({ u, b }); return o.res(u, b); } }); return { c, calls }; };
+        logError: (id, msg) => logged.push([id, msg]), log: (msg) => applog.push(msg), store: o.store, post: async (u, b) => { calls.push({ u, b }); return o.res(u, b); } }); return { c, calls }; };
       let x = mk2({ res: () => ({ status: 400, body: { error: "blocks[3].source.url:\n must be an https URL" + "x".repeat(400) } }) });
       let q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
-      ok("P1-3 api 拒收(400):代號 NOT_SHAREABLE + detail = api 那一句(控制字元收掉、≤300 字);本機報告另寫一行 upload_errors.log", q.code === "NOT_SHAREABLE" && q.detail.startsWith("blocks[3].source.url: must be an https URL") && q.detail.length === 300 && !/[\n\r]/.test(q.detail)
-        && logged.length === 1 && logged[0][0] === "tw-9" && logged[0][1].startsWith("share refused (400): blocks[3].source.url"), JSON.stringify([q, logged]));
+      ok("#2 api 拒收(400):回給畫面的只有代號 BAD_CONTENT,api 的原文不出主行程;原文(控制字元收掉、≤300 字)寫 upload_errors.log 與主行程 log", q.code === "BAD_CONTENT" && Object.keys(q).join() === "code"
+        && logged.length === 1 && logged[0][0] === "tw-9" && logged[0][1].startsWith("share refused (400): blocks[3].source.url: must be an https URL") && !/[\n\r]/.test(logged[0][1]) && logged[0][1].length === "share refused (400): ".length + 300
+        && applog.length === 1 && applog[0].startsWith("local tw-9: share refused (400): blocks[3].source.url"), JSON.stringify([q, logged, applog]));
       ok("P1-3 送給 api 的 body 沒有多帶 mtime / detail(api 對多的欄位回 400)", keys(x.calls[0].b) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view");
-      logged.length = 0; x = mk2({ res: () => ({ status: 422, body: { error: "performance reports cannot be shared" } }) });
+      logged.length = 0; applog.length = 0; x = mk2({ res: () => ({ status: 422, body: { error: "performance reports cannot be shared" } }) });
       q = await x.c.publish("cloud", "tw-9", { byline: "anonymous", confirmed: true });
-      ok("P1-3 雲端視角被拒:detail 照回,但不寫這台電腦的 upload_errors.log(那份報告不在這裡)", q.code === "NOT_SHAREABLE" && q.detail === "performance reports cannot be shared" && logged.length === 0, JSON.stringify([q, logged]));
+      ok("#2 雲端視角被拒(422):只回代號;原文進主行程 log,不寫這台電腦的 upload_errors.log(那份報告不在這裡)", q.code === "NOT_SHAREABLE" && Object.keys(q).join() === "code" && logged.length === 0
+        && applog.length === 1 && applog[0] === "cloud tw-9: share refused (422): performance reports cannot be shared", JSON.stringify([q, logged, applog]));
+      applog.length = 0;
       x = mk2({ res: () => ({ status: 401, body: { error: "unauthorized" } }) }); q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
-      ok("P1-3 不是內容問題的失敗(401)不帶 detail、不寫 log", q.code === "RELOGIN" && q.detail === undefined && logged.length === 0, JSON.stringify(q));
+      ok("P1-3 不是內容問題的失敗(401)不帶 detail、不寫 log", q.code === "RELOGIN" && q.detail === undefined && logged.length === 0 && applog.length === 0, JSON.stringify(q));
       const live = { code: "Abcd1234", published_at: 1790000000, byline: null, source_stored_at: null, report_stored_at: null };
       x = mk2({ res: (u) => { if (u.endsWith("/share/publish")) throw new Error("timeout"); return { status: 200, body: { share: live, display_name: null } }; } });
       q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
@@ -162,11 +171,13 @@ if (!process.versions.electron) {
       ok("S7 / S8 shr.quota(zh / en)與 shr.rate(en)", STR.zh["shr.quota"] === "這個帳號的圖片空間已滿，這份報告沒有公開。" && STR.en["shr.quota"] === "Your account's image storage is full, so this report wasn't published." && STR.en["shr.rate"] === "Too many attempts. Try again in a while." && STR.zh["shr.rate"] === "按得太頻繁了，請過一陣子再試。");
       ok("本機揭露小字 = spec-share-list E 定稿一(含 Wei 拍板那句)", STR.zh["shr.noteLocal"] === "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"
         && STR.en["shr.noteLocal"] === "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too.");
-      ok("P1-3 畫面:detail 接在訊息槽那一句後面(textContent 建的 span)", /fm\.appendChild\(libEl\("span", "shr-detail mono", r\.detail\)\)/.test(js) && /\.shr-detail \{/.test(css));
-      // 稽核 T3:那一行是要被讀、被複製給 agent 的字 → ink-2;只在 api 指名欄位的代號才帶,上面那一句是對應的拒收句,不是「請檢查網路」
+      ok("#2 畫面:api 的原文不上畫面(renderer 不讀 detail、樣式拿掉);內容被拒那一句講原因與出口,zh / en 都在(暫定字)", !/\.detail\b/.test(js) && !/shr-detail/.test(js + css)
+        && STR.zh["shr.badContent"] === "這份報告的內容有一處格式問題，現在不能公開。請在聊天裡請 agent「重新整理這份報告」，整理好再公開。" && /formatting problem/.test(STR.en["shr.badContent"]) && /ask the agent/.test(STR.en["shr.badContent"])
+        && STR.zh["shr.notShareable"] === "這份報告目前不能公開。");
+      // 稽核 T3(第八批 #2 後):原文只進 log;會被記下原文的代號對到的都是拒收句,沒有一個是「請檢查網路」
       const DC = /const DETAIL_CODES = (\[[^\]]*\]);/.exec(read(path.join(SHELL, "reportshare.js")));
-      ok("T3 .shr-detail 墨色 ink-2;帶 detail 的代號(NOT_SHAREABLE / IMAGE_QUOTA)對到的都是拒收句,沒有一個是「請檢查網路」", /\.shr-detail \{[^}]*color: var\(--ink-2\);/.test(css)
-        && !!DC && JSON.parse(DC[1]).length > 0 && JSON.parse(DC[1]).every((c) => P.shrErrKey(c) !== "shr.failed" && P.shrErrKey(c) !== "shr.failedCloud") && JSON.parse(DC[1]).join() === "NOT_SHAREABLE,IMAGE_QUOTA", DC && DC[1]);
+      ok("T3 記原文的代號(BAD_CONTENT / NOT_SHAREABLE / IMAGE_QUOTA)對到的都是拒收句", !!DC && JSON.parse(DC[1]).every((c) => P.shrErrKey(c) !== "shr.failed" && P.shrErrKey(c) !== "shr.failedCloud")
+        && JSON.parse(DC[1]).join() === "BAD_CONTENT,NOT_SHAREABLE,IMAGE_QUOTA", DC && DC[1]);
       // 稽核 L5:取消失敗另開的單鈕框,標題寫結果(不再是問句)、內文講連結還在;RELOGIN 內文照舊。閱讀頁與清單兩處同一組 key
       const sl = read(path.join(R, "report-sharelist.js")), failBox = /confirmBox\(\{ title: t\("shr\.revokeFailTitle"\), lines: \[t\(code === "RELOGIN" \? "conn\.expired" : "shr\.revokeFailBody"\)\], ok: t\("cdel\.gotIt"\), single: true,/;
       ok("L5 取消失敗框:標題「沒有取消分享」、內文「連結仍然有效。請稍後再試一次。」(zh / en 定稿字面);閱讀頁與清單都換;舊 key 拿掉", failBox.test(js) && failBox.test(sl)

@@ -43,7 +43,7 @@ function shrKind(type) { return type === "research" ? "research" : "morning"; }
 // 主行程的穩定代號 → 腳那一句的 key(NO_DISPLAY_NAME / ALREADY / NOT_PUBLIC / NO_LOGIN 由呼叫端各自處理,不到這裡)
 function shrErrKey(code) {
   return code === "RELOGIN" ? "conn.expired" : code === "RATE_LIMITED" ? "shr.rate" : code === "IMAGE_QUOTA" ? "shr.quota"
-    : code === "NO_MACHINE" ? "shr.failedCloud" : code === "NOT_SHAREABLE" || code === "NO_REPORT" || code === "BAD_ARGS" ? "shr.notShareable" : "shr.failed";
+    : code === "NO_MACHINE" ? "shr.failedCloud" : code === "BAD_CONTENT" ? "shr.badContent" : code === "NOT_SHAREABLE" || code === "NO_REPORT" || code === "BAD_ARGS" ? "shr.notShareable" : "shr.failed";
 }
 /* ── 純邏輯到此 ── */
 
@@ -218,9 +218,7 @@ async function shrSubmit() {
   // 送出時才撞到上限(開框之後別處又公開了):同一句放同一個位置,框留著
   const lim = shlLimitFromCode(code, r && r.limit, c.limits);
   if (lim) { D.limit = lim; shrLimitPaint(D); return; }
-  fm.textContent = t(shrErrKey(code));   // 框留著、欄位不動,原樣重送
-  // api 指名的那一欄(英文、帶欄位路徑):用戶轉給 agent 就修得了;同一句主行程也寫進 reports/upload_errors.log
-  if (r && typeof r.detail === "string" && r.detail) fm.appendChild(libEl("span", "shr-detail mono", r.detail));
+  fm.textContent = t(shrErrKey(code));   // 框留著、欄位不動,原樣重送。api 的原文不上畫面:主行程寫進 log(reportshare.js failDetail)
 }
 
 /* ── 接線(這支比 app.js 先載:只用 getElementById;handler 裡的才在點擊時取)── */

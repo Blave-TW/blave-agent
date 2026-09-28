@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from lib import data as _data
+from lib import report as _report
 from lib import report_templates as T
 
 
@@ -800,7 +801,7 @@ def levels_table(b):
     lv, last, kind = b.cache["levels"]
     tail = ("前 20 日高/低 = 不含當日(今日未收盤 bar)的前 20 根日 K 最高價/最低價,均線取收盤價(含當日)。"
             if kind == "crypto" else
-            ",成交量為張。前 20 日高/低 = 不含當日的前 20 個交易日最高價/最低價,均線取收盤價(含當日)。")
+            "成交量為張。前 20 日高/低 = 不含當日的前 20 個交易日最高價/最低價,均線取收盤價(含當日)。")
     return Brick([T._levels_table(lv, last)], foot=[("src", tail, "tail")])
 
 
@@ -1381,27 +1382,25 @@ BRICKS = {
 # ─── assembler ────────────────────────────────────────────────────────────────
 
 def _merge_foot(bricks, finals):
-    """Brick footnote items in brick order; every "src" fragment joined into one line placed
-    after them (tail fragments last, identical fragments once); then the finalizers' lines."""
-    items, order, src, tail = {}, [], [], []
-    for br in bricks:
-        for f in br.foot:
+    """Footnote items in brick order, then the finalizers'; an id appears once (the first text
+    wins). Every "src" fragment, a brick's or a finalizer's, is joined into the one "src" line
+    placed after the bricks' items (tail fragments last, identical fragments once)."""
+    items, order, late, src, tail = {}, [], [], [], []
+    for group, ids in [(br.foot, order) for br in bricks] + [(fn, late) for fn in finals]:
+        for f in group:
             fid, txt, pos = f[0], f[1], (f[2] if len(f) > 2 else None)
             if fid == "src":
                 (tail if pos == "tail" else src).append(txt)
-                continue
-            if fid not in items:
-                order.append(fid)
+            elif fid not in items:
+                ids.append(fid)
                 items[fid] = txt
-    out = [(i, items[i]) for i in order]
     joined = list(dict.fromkeys(src)) + [t for t in dict.fromkeys(tail) if t not in src]
     # 同一句的短版與長版(「價格:Binance…日 K。」與「價格:Binance…日 K,最後一根…」)只留長的
     joined = [t for t in joined if not any(o != t and o.startswith(t.rstrip("。")) for o in joined)]
+    out = [(i, items[i]) for i in order]
     if joined:
-        out.append(("src", "".join(joined)))
-    for fn in finals:
-        out += fn
-    return out
+        out.append(("src", _report.join_notes(joined)))
+    return out + [(i, items[i]) for i in late]
 
 
 EXTRA_MAX = 3

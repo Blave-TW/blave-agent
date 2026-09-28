@@ -278,6 +278,65 @@ def _shareable_only(type, meta):
     return []
 
 
+_FN_TEXT_MAX = 1000    # = api report_blocks_validate._v_footnote
+_FN_ID_MAX = 32
+_CLOSERS = ")）」』】》”’\"'"
+
+
+def join_notes(texts):
+    """Footnote fragments as one line: a fragment that does not end in punctuation gets a full
+    stop first (a fragment ending in ";" is carrying on into the next one and stays as it is)."""
+    out = ""
+    for t in texts:
+        t = t.strip()
+        core = t.rstrip(_CLOSERS)
+        if core and not unicodedata.category(core[-1]).startswith("P"):
+            t += "。" if re.search("[\u3400-\u9fff]", t) else "."
+        out += t
+    return out
+
+
+def unique_footnotes(blocks):
+    """(blocks, the ids that were repeated). The api refuses a footnote block whose item ids
+    repeat, and `[^id]` in the text resolves to the first row with that id — so a repeated id
+    is joined into that first row (the reference then reaches all of it). Only when the two
+    cannot be one row (different links, or over the text cap) does the later one get a new id
+    (`src-2`). Mirrored in runtime/report_uploader.py and shell/reportshare.js;
+    tests/check_report_footnotes.py runs the three on the same cases."""
+    fixed, out = [], []
+    for b in blocks:
+        if not (isinstance(b, dict) and b.get("type") == "footnote" and isinstance(b.get("items"), list)):
+            out.append(b)
+            continue
+        rows, first = [], {}
+        for it in b["items"]:
+            if not (isinstance(it, dict) and isinstance(it.get("id"), str) and isinstance(it.get("text"), str)):
+                rows.append(it)
+                continue
+            head = first.get(it["id"])
+            if head is None:
+                it = dict(it)
+                first[it["id"]] = it
+                rows.append(it)
+                continue
+            fixed.append(it["id"])
+            if head.get("url") == it.get("url"):
+                if it["text"].strip() in head["text"]:
+                    continue
+                joined = join_notes([head["text"], it["text"]])
+                if len(joined) <= _FN_TEXT_MAX:
+                    head["text"] = joined
+                    continue
+            n, taken = 2, {r.get("id") for r in b["items"] if isinstance(r, dict)} | set(first)
+            while f"{it['id'][:_FN_ID_MAX - 4]}-{n}" in taken:
+                n += 1
+            it = dict(it, id=f"{it['id'][:_FN_ID_MAX - 4]}-{n}")
+            first[it["id"]] = it
+            rows.append(it)
+        out.append(dict(b, items=rows))
+    return out, sorted(set(fixed))
+
+
 def _write_bytes(path, data):
     """One sidecar picture, written the way the report itself is: into a `.tmp` the
     uploader's scan ignores, then `os.replace()` so it appears whole or not at all."""
@@ -344,7 +403,8 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
                 figure out of a scheduled run, where the machine token is stripped
                 from the environment. png / jpg / jpeg / webp / gif, ≤2MB each.
 
-    Nothing here is validated beyond the report id, the image file names (a name
+    A footnote id used more than once is joined into one footnote line (`unique_footnotes`).
+    Nothing else here is validated beyond the report id, the image file names (a name
     becomes a path on this disk, so it may not be one) and the cap of CITED_IMAGES_MAX
     image blocks carrying `source` (the api has no such cap): the api is the only validator,
     and a second copy of the rules on this side would drift and start refusing reports
@@ -370,7 +430,9 @@ def _write(asked, report_id, title, blocks, type, report_type, created_at, meta,
         if not isinstance(name, str) or not _FILE_RE.fullmatch(name):
             raise ValueError(f"image name {name!r} must be a plain file name "
                              "matching [A-Za-z0-9][A-Za-z0-9._-]{0,79}, not a path")
-    blocks = list(blocks)
+    # The api refuses repeated footnote ids, on a cloud upload and on a public link alike:
+    # put right here, where every report is written, not found out when the user shares it.
+    blocks, repeated = unique_footnotes(list(blocks))
     cited = [i for i, b in enumerate(blocks)
              if isinstance(b, dict) and b.get("type") == "image" and "source" in b]
     if len(cited) > CITED_IMAGES_MAX:
@@ -437,6 +499,9 @@ def _write(asked, report_id, title, blocks, type, report_type, created_at, meta,
     # ASCII only: a report job's stdout goes to run.log in the Windows locale codec (cp950),
     # and an unencodable advisory line would fail a run whose report is already written.
     _mark_scheduled(report_id)
+    if repeated:
+        print(f"[report] footnote id(s) {', '.join(repeated)} were used more than once: each is now one footnote "
+              "line. Next time give every footnote item its own id.")
     warnings = _research_warnings(title, blocks) if type == "research" else []
     warnings += _shareable_warnings(type, blocks[0])
     for w in warnings:
