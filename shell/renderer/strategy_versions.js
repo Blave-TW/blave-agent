@@ -103,6 +103,33 @@
       String(a.end || "") !== String(b.end || "");
   }
 
+  // 「目前」那一列要不要說明資料期間不同(回傳要顯示的兩個日期),不用就回 null。
+  // 版本存的是回測當下的結果;策略上線後 live tick 每根 K 棒重寫 stats.json(canon §2),
+  // 頁面那一份的終點會往後延,兩邊的數字就不一樣 —— 兩個都對,只是算到的日期不同。
+  //   n        這一列的版號
+  //   versions 摘要清單
+  //   pageEnd  頁面那一份回測的終點(stats.json 的 end,"YYYY-MM-DD")
+  //   viewing  頁面正在顯示的版號(時光機裡是舊版號;看目前版時傳 versions.current)
+  var DAY_RE = /^(\d{4})-(\d{2})-(\d{2})/;
+  function day(v) {
+    var m = typeof v === "string" ? DAY_RE.exec(v) : null;
+    return m ? { y: m[1], md: m[2] + "/" + m[3], key: m[1] + m[2] + m[3] } : null;
+  }
+  function windowNote(n, versions, pageEnd, viewing) {
+    var cur = versions && typeof versions.current === "number" ? versions.current : null;
+    if (cur === null || n !== cur || viewing !== cur) return null;
+    var e = entries(versions), it = null;
+    for (var i = 0; i < e.length; i++) if (e[i].n === n) it = e[i];
+    var a = it ? day(it.end) : null;
+    var b = day(pageEnd);
+    if (!a || !b || !(b.key > a.key)) return null;
+    var withYear = a.y !== b.y;
+    return {
+      saved: (withYear ? a.y + "/" : "") + a.md,
+      page: (withYear ? b.y + "/" : "") + b.md
+    };
+  }
+
   // 徽章語意(canon §7)。「目前」= 最新那版(恆為 index.json 的 current);
   // 「上線中」= 目前版 且 amounts > 0;drift 為 true 時不得畫乾淨的「上線中」。
   // amount 為 null(pfData 還沒載到)時只回 "current" —— 不猜。
@@ -133,6 +160,7 @@
     fmt: fmt,
     delta: delta,
     windowsDiffer: windowsDiffer,
+    windowNote: windowNote,
     badge: badge
   };
 })(typeof window !== "undefined" ? window : globalThis);

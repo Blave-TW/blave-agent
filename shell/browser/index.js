@@ -746,7 +746,8 @@ function createBrowser(o) {
   // 任何一種 browser_read(與 browser_capture:引用圖的出處頁)都算「讀了」:存快照、進這一輪的來源清單——摘要列的「讀了 N 頁」就是數這份清單(renderer brTakeSources)
   async function noteRead(t, v, ex) {
     if (!t.snapshotId || (cur && t.snapTurn !== cur.turnKey)) await saveSnapshot(t, v, ex);   // 前面回合存的快照是那一輪看到的樣子:這一輪讀就另存一份
-    const relay = C.isRelay(ex, v.wc.getTitle());   // 只停在中繼頁:不進來源、不算讀過(回合紀錄也不記 done)
+    // 只停在中繼頁:不進來源、不算讀過(回合紀錄也不記 done)。settled = 這一頁載完了、之後沒再走(還在載 / 逾時算好的 partial 都不算)
+    const relay = C.isRelay(ex, v.wc.getTitle(), t.status === "ready" && !t.partial);
     if (!relay) t.readEver = true;   // 讀過就算,之後這一格再導覽也不收回
     if (cur && !relay && t.snapshotId && !cur.sources.some((x) => x.snapshot_id === t.snapshotId)) {
       const src = { id: t.id, url: C.scrub(v.wc.getURL(), 2000), title: C.scrub(ex.meta.title || v.wc.getTitle(), 300), snapshot_id: t.snapshotId };

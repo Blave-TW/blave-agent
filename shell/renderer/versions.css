@@ -43,9 +43,11 @@
 .vmi-date { flex: none; font-size: 11px; color: var(--ink-3); }
 .vmi-stats { display: flex; flex-wrap: wrap; gap: 0 var(--space-16); margin: 2px 0 0 36px; font-size: 11px; line-height: 1.6; color: var(--ink-3); }
 .vmi-stats .v { margin-left: var(--space-4); }
-.vmi:hover .vmi-date, .vmi:focus-visible .vmi-date, .vmi:hover .vmi-stats, .vmi:focus-visible .vmi-stats { color: var(--ink-2); }
+.vmi:hover .vmi-date, .vmi:focus-visible .vmi-date, .vmi:hover .vmi-stats, .vmi:focus-visible .vmi-stats, .vmi:hover .vmi-win, .vmi:focus-visible .vmi-win { color: var(--ink-2); }
 .vmi-warn { display: block; margin: 2px 0 0 36px; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
-@container (max-width: 329px) { .vmi-stats { margin-left: 0; gap: 0 var(--space-12); } .vmi-warn { margin-left: 0; } }
+.vmi-win { display: block; margin: 2px 0 0 36px; font-size: 12px; line-height: 1.5; font-weight: 400; color: var(--ink-3); }   /* 目前那一列的註腳:頁面資料比這一版新時才出,非互動 */
+.vmi-win .mono { white-space: nowrap; }
+@container (max-width: 329px) { .vmi-stats { margin-left: 0; gap: 0 var(--space-12); } .vmi-warn, .vmi-win { margin-left: 0; } }
 .vmi[aria-current="true"] .vmi-top { font-weight: 600; }   /* 選中 = 第一行加粗,不鋪底、不提亮(canon › Dropdown › Selected;同 web) */
 .vmenu-div { flex: none; height: 1px; margin: var(--space-6) 0; background: var(--border-hairline); }
 .vmi.vmenu-foot { flex: none; font-size: 13px; }

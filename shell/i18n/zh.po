@@ -4808,6 +4808,9 @@ msgstr "比較兩個版本…"
 msgid "ver.oneHint"
 msgstr "下次回測會存成 {next}，到時就能比較和還原。"
 
+msgid "ver.winNote"
+msgstr "這一版存的是回測到 {saved} 的結果；頁面會跟著新資料更新，現在到 {page}。"
+
 msgid "ver.statP"
 msgstr "p"
 

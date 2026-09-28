@@ -177,6 +177,18 @@ function brStat(b, withSegs) {
   if (b.queued) frag.append(brEl("span", "", t("br.queued", { n: b.queued })));
   return frag;
 }
+/* 「用系統瀏覽器開」的說明:自家畫在 DOM 裡(app.css 的 .tip),不用 title——按下去系統瀏覽器跳到前面之後,系統畫的泡泡收不掉(#207)。
+   滑過才出(這裡);離開、按下去、Esc、視窗退到背景都收(同 report-robust.js 那顆單例的事件組)。鍵盤聚焦走 CSS 的
+   :focus-visible + .tip(同 .mp-tip),視窗退到背景 :focus 就不成立、自然收。停用的鈕收不到滑鼠事件,不出 */
+let brTipOn = null;
+function brTipHide() { if (brTipOn) { brTipOn.classList.remove("is-on"); brTipOn = null; } }
+function brTipAttach(btn, tip) {
+  btn.addEventListener("mouseenter", () => { brTipHide(); tip.classList.add("is-on"); brTipOn = tip; });
+  ["mouseleave", "pointerdown"].forEach((ev) => btn.addEventListener(ev, brTipHide));
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") brTipHide(); });
+if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (!on) brTipHide(); });
+
 /* 真的讀到內容的頁(進圖示疊、算「已讀」):讀過、不是搜尋結果頁、不是只停在中繼頁 */
 const brIsRead = (x) => !!x && x.readEver && !x.search && !x.relay;
 /* 進行中的卡:一行——圖示疊＋已讀 d/n＋「看網頁」。卡頭不放任何狀態字(瀏覽中／等你操作／匯整成報告都由回合狀態列講);
@@ -598,10 +610,12 @@ function brPaintOverlay() {
   if (exp.live && !held) brAddrEditable(url, x.id);
   /* 「用系統瀏覽器開」:對這一頁做的事,跟重新載入同一列(標題列只有一顆 ✕)。只送分頁 id——網址由主行程從那個分頁自己拿、自己檢查。
      內建那一頁留著不關、不收回展開層;不加回饋(系統瀏覽器跳到前面就是回饋),焦點留在這顆鈕上。停用不隱藏:藏起來網址欄寬度會跳 */
-  const ext = brEl("button", "ibtn ext"); ext.type = "button"; ext.setAttribute("aria-label", t("br.openSystem")); ext.title = t("br.openSystem.tip"); ext.append(brIcon("ext"));
+  const ext = brEl("button", "ibtn ext"); ext.type = "button"; ext.setAttribute("aria-label", t("br.openSystem")); ext.append(brIcon("ext"));
   ext.disabled = !brCanOpenExt(x);
   ext.addEventListener("click", (e) => { if (!e.isTrusted || ext.disabled) return; trackFeature("browser_open_ext"); window.blave.browserOpenExternal(x.id); });
-  addr.append(rl, url, ext);
+  const extTip = brEl("span", "tip", t("br.openSystem.tip")); extTip.id = "bv-ext-tip"; extTip.setAttribute("role", "tooltip"); ext.setAttribute("aria-describedby", extTip.id);
+  brTipAttach(ext, extTip);
+  addr.append(rl, url, ext, extTip);
   const slot = brEl("div", "bv-slot");
   const tvn = typeof tvSlot === "function" ? tvSlot(x) : null;
   if (tvn) slot.append(tvn);

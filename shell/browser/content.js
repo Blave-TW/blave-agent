@@ -88,17 +88,23 @@ function readPart(ex, args, budget) {
   return { content: chunk, next_offset: next, total_chars: text.length, section_start: part === "section" ? base : undefined, span: [base + off, base + off + give] };
 }
 
-/** 中繼頁:讀回來正文不到 200 字,或標題是轉址 / 載入中 / Cloudflare 那類固定字樣。開了但沒讀到內容,不算已讀
- *  (spec-turn-status-summary 瀏覽卡節;例:NewsNow 的「Loading story…」)。 */
+/** 中繼頁:標題是轉址 / 載入中 / Cloudflare 那類固定字樣,或讀回來正文不到 200 字而且看不出是最終頁。開了但沒讀到內容,不算已讀
+ *  (spec-turn-status-summary 瀏覽卡節;例:NewsNow 的「Loading story…」)。
+ *  正文短但確實是最終頁(#209,example.com 那種一個標題兩行字):文件載完(settled = 分頁 ready 且不是 partial、readyState complete)、
+ *  沒有 meta refresh 等著轉走、有標題、正文至少一句 → 是內容,算已讀。空殼 SPA(正文空)與轉址中繼頁(有 refresh / 沒載完)照舊抓得到。 */
 // 標題「整個」就是轉址 / 載入中那句才算(「Bitcoin loading up for breakout」這種正常標題不算;稽核 P2-5)
 const RELAY_TITLE_RE = /^\s*(?:loading|redirect(?:ing)?|just a moment|please wait)\s*(?:\.\.\.|…|\.)?\s*$/i;
 // 擋牆頁(擋廣告攔截、請關閉 ad blocker):正文幾乎只有這段勸說,跟中繼頁一樣算沒讀到(稽核 B1:benzinga)
 const WALL_BODY_RE = /ad ?blocker (?:is )?(?:on|enabled|detected)|(?:disable|turn off|pause) (?:your )?ad ?block(?:er)?|please support our site|whitelist (?:us|this site)/i;
 const WALL_BODY_MAX = 2000;
-function isRelay(ex, title) {
+const SHORT_BODY_MIN = 40;
+function isRelay(ex, title, settled) {
   const body = String((ex && ex.markdown) || "").replace(/\s+/g, " ").trim();
-  return body.length < 200 || RELAY_TITLE_RE.test(String(title || (ex && ex.meta && ex.meta.title) || ""))
-    || (body.length < WALL_BODY_MAX && WALL_BODY_RE.test(body));
+  const ttl = String(title || (ex && ex.meta && ex.meta.title) || "").trim();
+  if (RELAY_TITLE_RE.test(ttl) || (body.length < WALL_BODY_MAX && WALL_BODY_RE.test(body))) return true;
+  if (body.length >= 200) return false;
+  const doc = ex && ex.doc;
+  return !(settled === true && !!doc && doc.complete === true && doc.refresh !== true && ttl.length > 0 && body.length >= SHORT_BODY_MIN);
 }
 
 module.exports = { scrub, scrubDeep, envelope, unwrap, normalizeSerp, readPart, isRelay, SCAFFOLD_RE, READ_CHUNK };
