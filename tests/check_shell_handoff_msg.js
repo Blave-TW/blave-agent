@@ -212,7 +212,8 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
     b.onOk();
     return { single: !!b.single, ok: b.ok, dis: !!b.okDisabled, alt: b.alt, txt: texts(b.extra).join("|"), msg: sent[0], opts: opts[0] };
   };
-  // e2e 0.1.8 H:Type B 沒有回測——確認框與送出去的那句講「試跑一次」,不提回測;判別用檔頭 `# Type: B`(同轉出選單)
+  // e2e 0.1.8 H:Type B 沒有回測——確認框與送出去的那句不提回測;判別用檔頭 `# Type: B`(同轉出選單)。
+  // 字講「確認它跑得起來」,不講「試跑一次」:會下單的 Type B 不試跑、只檢查(references/cloud-handoff.md 1.3、6B),現在式的承諾要對每一種都成立
   { const B = "# Strategy: 資金費率監控\n# Type:     B (monitor only, no orders)\nSTRATEGY_NAME = 'w'\n", A = "# Strategy: x\n# Type:     A\n";
     let b = run("up", {}, {}, [], [], B);
     t("Type B 送上雲端:框裡是 ho.noteB.up(沒有 ho.note.up)、送出的是 Type B 那一句、帶 noBacktest", /ho\.noteB\.up/.test(b.txt) && !/ho\.note\.up/.test(b.txt) && b.msg === "B 把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi。" && b.opts.handoff === "up" && b.opts.noBacktest === true, JSON.stringify(b));
@@ -220,6 +221,17 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
     t("Type B 拉回:ho.noteB.down、Type B 那一句", /ho\.noteB\.down/.test(b.txt) && b.msg === "B 把雲端主機上的策略 btc_rsi 拉回這台電腦，存成 btc_rsi。" && b.opts.noBacktest === true, JSON.stringify(b));
     b = run("up", {}, {}, [], [], A);
     t("Type A / 判不出來:照舊講回測那一句,不帶 noBacktest", /ho\.note\.up/.test(b.txt) && !/noteB/.test(b.txt) && b.msg === "把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi。" && b.opts.noBacktest === false && run("up", {}, {}).opts.noBacktest === false, JSON.stringify(b));
+    { const S2 = new Function(strings + "; return STRINGS;")();
+      t("字串(設計師定稿):Type B 四句逐字,兩語都不講「試跑 / run it once」", [
+        ["zh", "ho.msgB.up", "把策略 {id} 送上我的雲端主機，存成 {to}。搬完確認它在雲端跑得起來，告訴我結果。"],
+        ["zh", "ho.msgB.down", "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後確認它在這裡跑得起來，告訴我結果。"],
+        ["zh", "ho.noteB.up", "接下來由 agent 搬過去，確認它在雲端跑得起來。"],
+        ["zh", "ho.noteB.down", "接下來由 agent 搬回來，確認它在這台電腦跑得起來。"],
+        ["en", "ho.msgB.up", "Send the strategy {id} to my cloud machine as {to}. Once it’s moved, check that it starts there, and tell me the result."],
+        ["en", "ho.msgB.down", "Bring the strategy {id} from my cloud machine back to this computer as {to}. Once it’s back, check that it starts here, and tell me the result."],
+        ["en", "ho.noteB.up", "The agent moves it and checks that it starts on your cloud machine."],
+        ["en", "ho.noteB.down", "The agent brings it back and checks that it starts on this computer."],
+      ].every((x) => S2[x[0]][x[1]] === x[2] && !/試跑|run it once|runs it once/i.test(S2[x[0]][x[1]]))); }
     t("字串:Type B 四句 zh / en 都在、都不提回測,訊息各一個 {id} 一個 {to}", ["msgB.up", "msgB.down", "noteB.up", "noteB.down"].every((k) => { const m = strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '": "([^"]*)"', "g")) || [];
       return m.length === 2 && m.every((l) => !/回測|backtest/i.test(l) && (k.indexOf("msg") ? true : l.split("{id}").length === 2 && l.split("{to}").length === 2)); }));
   }

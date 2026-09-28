@@ -13,7 +13,7 @@
   #90 tmp/ 自己寫的一次性腳本回覆前刪掉,不拿 tmp/ 裡的舊腳本當範例。
   第五批:#133 台股免費路徑先估時間先講;改參數時 DESCRIPTION 與檔頭一起改;內建瀏覽器關著不上網;資料費 2 TWD。
   第七批:#143 #167 回覆裡的時間換成用戶的時區並標明;#148 被要求上線時先講最近一次回測對比基準的結果。
-  第九批:#2 前後比較用同一個基準;自己換算的數字寫公式與輸入日期、查無不硬算;百分位不當排名。
+  第九批:#2 前後比較用同一個基準;自己換算的數字寫公式與輸入日期、拿不到就寫「—」不硬算;百分位不當排名。
   第九批:#3 沒有要提議時回覆就此結束,不交代「沒有建議」、不更正自己的上一句。
   第七批:開了就讀(實測開 6 頁只讀 3 頁,中時與鉅亨三頁開了沒讀);新聞與數字先讀媒體或官方原文,論壇貼文 / 轉述 / 聚合頁要標明。
 
@@ -172,15 +172,17 @@ item13 = next((l for l in RT._publish_checklist(RT.Pack("x-20260928", "x", "morn
 std = section(rep, "### 7. A change is measured on one basis") or rep[rep.index("### 7. A change is measured on one basis"):rep.index("## 7b.")]
 for where, text, marks in (
         ("describe() 的 publish 檢查表第 13 條", item13,
-         ("基準與算法要一樣", "都取同一天", "不寫成「從 A 到 B」", "寫明公式與每個輸入的日期", "寫「查無」,不硬算", "衍生數字不進標題與 lead", "「第 2 百分位」不是「第 2 低」")),
+         ("基準與算法要一樣", "都取同一天", "不寫成「從 A 到 B」", "寫明公式與每個輸入的日期", "那一格寫「—」,不硬算", "衍生數字不進標題與 lead", "「第 2 百分位」不是「第 2 低」")),
         ("quickstart()", qs,
          ("both values on one basis and one formula", "SAME date on both sides", "never 'from A to B'", "formula and the date of every input",
-          "查無, do not compute it anyway", "no derived figure in the title or the lead", "A percentile is not a rank")),
+          "cell says —, do not compute it anyway", "no derived figure in the title or the lead", "A percentile is not a rank")),
         ("references/reports.md §7", std,
          ("same basis and the same formula", "same date on both sides", "never write them as 「從 A 到 B」", "formula and the date of every input",
-          "「查無」", "stays out of the title", "A percentile is not a rank"))):
+          "the cell says 「—」", "stays out of the title", "A percentile is not a rank"))):
     miss = [m for m in marks if m not in " ".join(text.split())]
-    t(f"第九批 #2 {where}:同基準、衍生數字寫公式與日期(查無不硬算、不要估時不進標題與 lead)、百分位不當排名" + (f" — 缺 {miss}" if miss else ""), not miss)
+    t(f"第九批 #2 {where}:同基準、衍生數字寫公式與日期(拿不到寫「—」不硬算、不要估時不進標題與 lead)、百分位不當排名" + (f" — 缺 {miss}" if miss else ""), not miss)
+# 第十四批 C:缺值統一寫 canon 的「—」(Wei);規則裡不再有「查無 / N/A」這種第二套寫法
+t("報告的缺值只有一種寫法「—」:三處規則都沒有「查無」「N/A」", all("查無" not in x and "N/A" not in x for x in (item13, qs, std)))
 t("第九批 #2 沒有做「每個指標高低各代表什麼」的對照表(Wei 還在評估)", "高低各代表" not in src and "高低各代表" not in rep)
 
 # 第九批 #3:沒有要提議時回覆就此結束(實測正文後多了「…不附建議。」與一行為上一句道歉)

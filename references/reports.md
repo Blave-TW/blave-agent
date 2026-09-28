@@ -1074,7 +1074,8 @@ earlier value is 14.45% and the change is 1.27 points, not 2.41.
    never write them as 「從 A 到 B」, 「擴大／收斂 N 個百分點」 or a change column.
 2. **A figure you derived yourself** (no brick gave it, `describe()` does not list it): the
    table or the caption states the formula and the date of every input. When an input on the
-   same basis cannot be had, the cell says 「查無」 — do not compute it from what is at hand.
+   same basis cannot be had, the cell says 「—」 (the one way a report writes a missing value)
+   — do not compute it from what is at hand.
    When the user asked for no estimates (「不要估」), a derived figure stays out of the title
    and the lead.
 3. **A percentile is not a rank.** 「第 2 百分位」 is never written as 「第 2 低」, and a rank is

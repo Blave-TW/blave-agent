@@ -132,9 +132,22 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
     && /querySelectorAll\("\.think-step\.is-run"\)\.forEach\(\(li\) => \{ li\.querySelector\("\.think-step-time"\)\.textContent = fmtDur\(\(now - li\.__t0\) \/ 1000\); \}\);/.test(stepSrc)
     && /if \(!ul\.matches\(":hover"\)\) ul\.scrollTop = ul\.scrollHeight;/.test(stepSrc) && /li\.__t0 = Date\.now\(\); li\.__c = c;/.test(stepSrc));
   ok("做完換完成式;出錯的那一步換成失敗的說法(#165:不留「正在抓資料」;也不用完成式——英文過去式配失敗的步驟會被讀成做成了)", /if \(c\.error\) li\.classList\.add\("is-err"\);\s*li\.querySelector\("\.think-step-verb"\)\.textContent = stepLabel\(li\.__c, true, !!c\.error\)\.verb;/.test(doneSrc));
+  const ZH_ALL = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh;
   { const f = M.stepLabel({ kind: "data", summary: "fetch_kline BTCUSDT" }, true, true), o = M.stepLabel({ kind: "order" }, true, true), ZH = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh, zh = (k, v) => ZH[k].replace(/\{(\w+)\}/g, (m, n) => v[n]);
-    ok("失敗的步驟:英文「Failed: fetching data」(接進行式,不是 Fetched / Placed),受詞照留;中文「沒成功：抓資料」(沒有「正在」)", f.verb === "Failed: fetching data" && f.obj === "fetch_kline BTCUSDT" && o.verb === "Failed: placing an order"
+    ok("失敗的步驟:英文「Failed: fetching data」(接進行式,不是 Fetched / Placed),受詞照留;中文「沒成功：抓資料」(沒有「正在」)", f.verb === "Failed: fetching data" && f.obj === "fetch_kline BTCUSDT" && o.verb === "Failed: running an order command"
       && zh("step.fail", { did: ZH["step.data"], doing: ZH["act.data"] }) === "沒成功：抓資料" && !/正在/.test(zh("step.fail", { did: ZH["step.data"], doing: "x" })), [f, o]); }
+  { const all = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
+    const kindsOf = Object.keys(all.en).filter((k) => k.indexOf("act.") === 0).map((k) => k.slice(4)), fill = (tpl, v) => tpl.replace(/\{(\w+)\}/g, (m, n) => v[n]);
+    const bare = (s) => s.replace(/\s*[:：]\s*$/, ""), twice = /[:：]\s*\S*\s*[:：]/;
+    const s = M.stepLabel({ kind: "search", summary: "BTC funding rate" }, true, true);
+    ok("失敗的步驟不會兩個冒號連在一起:帶冒號的動詞(搜尋：/ Searching:)填進模板前拿掉結尾的冒號,受詞照留;沒失敗的照舊帶冒號",
+      s.verb === "Failed: searching" && s.obj === "BTC funding rate" && M.stepLabel({ kind: "search", summary: "x" }, true).verb === "Searched:" && M.stepLabel({ kind: "search", summary: "x" }).verb === "Searching:"
+      && fill(all.zh["step.fail"], { did: bare(all.zh["step.search"]), doing: "" }) === "沒成功：搜尋", s);
+    const bad = kindsOf.filter((k) => k !== "web_read_many" && (twice.test(M.stepLabel({ kind: k }, true, true).verb) || twice.test(fill(all.zh["step.fail"], { did: bare(all.zh["step." + k] || all.zh["act." + k]), doing: "" }))));
+    ok("列舉每一種 kind:失敗的那一句兩語都只有模板自己那一個冒號(通用做法,不特判 search)", kindsOf.length > 20 && !bad.length && /bare = \(s\) => s\.replace\(\/\\s\*\[:：\]\\s\*\$\/, ""\)/.test(src), bad); }
+  // 這一種涵蓋下單、撤單、TWAP、平倉、改槓桿、對帳:「下單 / Placed an order」會把撤單講成下了單,而且指令跑完不等於成交(設計師定稿)
+  ok("下單那一種的字:「執行下單指令」/ Ran an order command(進行式成對),不寫「下單 / Placed an order」", M.stepLabel({ kind: "order" }, true).verb === "Ran an order command" && M.stepLabel({ kind: "order" }).verb === "Running an order command"
+    && ZH_ALL["step.order"] === "執行下單指令" && ZH_ALL["act.order"] === "正在執行下單指令");
   ok("#166 查說明文件 / 找檔案(agent 讀自己的文件與原始碼):受詞是指令內容,不上畫面——步驟清單與狀態列都只留動詞", M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).obj === "" && M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).verb === "Checked the docs"
     && M.stepLabel({ kind: "files", summary: "grep references/lib.md" }).obj === "" && M.stepLabel({ tool: "Grep", summary: "fetch_funding" }).obj === "" && M.stepLabel({ tool: "Read", summary: "references/lib.md" }).obj === ""
     && M.stepLabel({ kind: "file_read", summary: "strategy.py" }).obj === "strategy.py" && /busySet\(actLabel\(w\), STEP_NO_OBJ\.includes\(w\.kind\) \? "" : w\.obj, w\.kind\);/.test(src));

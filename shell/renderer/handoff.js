@@ -36,7 +36,7 @@ function hoFreeName(id, taken) {
 }
 /* ── 純邏輯到此 ── */
 
-/* Type B(警示、選股、網格…)沒有回測:搬過去之後是「試跑一次」,確認框與送出去的那句都不提回測(e2e 0.1.8:框寫「重跑一次回測」、
+/* Type B(警示、選股、網格…)沒有回測:搬過去之後是「確認它跑得起來」(會下單的不試跑、只檢查),確認框與送出去的那句都不提回測(e2e 0.1.8:框寫「重跑一次回測」、
    agent 回「Type B 不做搬移」)。判別跟轉出選單、程式碼分頁同一支(export.js xpIsTypeB:檔頭 `# Type: B`);回 "B" 或 ""(字串 key 的一段) */
 function hoKind(d) {
   return typeof xpIsTypeB === "function" && xpIsTypeB(d) ? "B" : "";
@@ -157,7 +157,7 @@ function hoAsk(dir, id, opener) {
   if (destHas) extra.appendChild(mk("p", "cf-removed", t(dir === "up" ? "ho.rename.up" : "ho.rename.down", { id, to })));
   else if (destHas === null) extra.appendChild(mk("p", "cf-removed", t("ho.rename.maybeUp")));
   if (srcLive) extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.srcLive.up") : t("ho.srcLive.down")));
-  // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排;Type B 沒有回測,講試跑一次
+  // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排;Type B 沒有回測,講確認它跑得起來
   const tb = hoKind(dir === "up" ? RP.data : RPC.data);
   extra.appendChild(mk("p", "cf-note", t(HO_NOTE[tb][dir === "up" ? 0 : 1])));
   const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });

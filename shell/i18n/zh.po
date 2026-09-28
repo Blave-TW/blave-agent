@@ -190,7 +190,7 @@ msgid "act.schedule"
 msgstr "正在設定排程"
 
 msgid "act.order"
-msgstr "正在下單"
+msgstr "正在執行下單指令"
 
 msgid "act.account"
 msgstr "正在查帳戶"
@@ -278,7 +278,7 @@ msgid "step.schedule"
 msgstr "設定排程"
 
 msgid "step.order"
-msgstr "下單"
+msgstr "執行下單指令"
 
 msgid "step.account"
 msgstr "查帳戶"
@@ -388,15 +388,15 @@ msgstr "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{t
 msgid "fault.noModelBtn"
 msgstr "選別的模型"
 
-# 第八批 #4(e2e #187):引擎的用量上限。暫定字,待設計師確認
+# 第八批 #4(e2e #187):用戶自己那個訂閱的用量上限。字是設計師定稿(用「AI」不用「引擎」:engine 在這個 app 裡指下單引擎)
 msgid "fault.limit"
-msgstr "你的 {name} 訂閱用量到上限了，{when} 重置。在那之前可以到「設定 › 模型接入」換別的引擎繼續。"
+msgstr "你的 {name} 訂閱用量到上限了，{when} 重置。在那之前可以到「設定 › 模型接入」換別的 AI 繼續。"
 
 msgid "fault.limitNoTime"
-msgstr "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 › 模型接入」換別的引擎繼續。"
+msgstr "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 › 模型接入」換別的 AI 繼續。"
 
 msgid "fault.limitBtn"
-msgstr "切換引擎"
+msgstr "切換 AI"
 
 msgid "mp.na"
 msgstr "你的方案沒有"
@@ -1362,7 +1362,7 @@ msgid "tr.keep.sleep"
 msgstr "電腦睡眠、關機或結束 Blave 時不會下單，平倉與停損也不會執行。"
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
-# tr.keep.ownBuilt 是暫定字(意思由後端依對帳邏輯定,字待設計師定稿)
+# 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定
 msgid "tr.keep.own"
 msgstr "只調整 Blave 自己那一份。"
 
@@ -1370,7 +1370,7 @@ msgid "tr.keep.ownFirst"
 msgstr "只調整 Blave 自己那一份。同一個幣你已經有同方向的部位時，第一次對帳會把它算進來。"
 
 msgid "tr.keep.ownBuilt"
-msgstr "只調整 Blave 自己那一份：你自己開的部位不算 Blave 的，不會拿來抵策略的目標。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+msgstr "只調整 Blave 自己那一份。你自己開的部位不算 Blave 的，也不會抵掉策略的目標部位。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
 
 msgid "tr.det.own"
 msgstr "哪些部位算 Blave 的"
@@ -2646,10 +2646,10 @@ msgid "ho.msg.down"
 msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
 
 msgid "ho.msgB.up"
-msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完在雲端試跑一次，告訴我結果。"
+msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完確認它在雲端跑得起來，告訴我結果。"
 
 msgid "ho.msgB.down"
-msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡試跑一次，告訴我結果。"
+msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後確認它在這裡跑得起來，告訴我結果。"
 
 msgid "up.about"
 msgstr "關於"
@@ -2757,10 +2757,10 @@ msgid "ho.note.down"
 msgstr "接下來由 agent 搬回來，在這台電腦重跑一次回測，兩邊的數字會並排在聊天裡。"
 
 msgid "ho.noteB.up"
-msgstr "接下來由 agent 搬過去，在雲端試跑一次確認跑得起來。"
+msgstr "接下來由 agent 搬過去，確認它在雲端跑得起來。"
 
 msgid "ho.noteB.down"
-msgstr "接下來由 agent 搬回來，在這台電腦試跑一次確認跑得起來。"
+msgstr "接下來由 agent 搬回來，確認它在這台電腦跑得起來。"
 
 msgid "strat.delInPf"
 msgstr "這支策略還在自動下單的組合裡，不能刪除。先到自動下單頁的「部位」把它移出，再回來刪除。"
@@ -5036,7 +5036,7 @@ msgid "tv.err.editor"
 msgstr "找不到 Pine 編輯器，TradingView 可能改了版面。"
 
 msgid "tv.err.narrow"
-msgstr "中欄太窄，TradingView 在這個寬度不顯示 Pine 編輯器的入口。把中欄拉寬再試一次。"
+msgstr "中欄太窄，TradingView 在這個寬度不顯示 Pine 編輯器的按鈕。把中欄拉寬再試一次。"
 
 msgid "tv.err.busy"
 msgstr "agent 正在回覆，請稍候再試。"
@@ -5084,7 +5084,7 @@ msgid "tv.nf.p"
 msgstr "TradingView 可能改了版面。可以請 agent 照畫面找，或下載檔案自己貼。"
 
 msgid "tv.nf.narrow.p"
-msgstr "中欄太窄時，TradingView 不顯示 Pine 編輯器的入口。把中欄拉寬（或把聊天欄收窄）之後再試一次。"
+msgstr "中欄太窄時，TradingView 不顯示 Pine 編輯器的按鈕。把中欄拉寬（或把聊天欄收窄）之後再試一次。"
 
 msgid "tv.err.unsaved"
 msgstr "目前的腳本有未存的變更，請你在 TradingView 存檔或放棄後再試。"

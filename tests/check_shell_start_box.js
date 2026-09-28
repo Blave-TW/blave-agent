@@ -132,6 +132,11 @@ function world(o) {
     ok("兩顆主鈕的字沒變(實測腳本認這兩句)", get("tr.startCatchUp") === "啟動並補齊部位" && get("tr.startWait") === "啟動，等新訊號才進場" && get("tr.start") === "啟動下單");
     ok("1.5 倍那一段逐字沿用原句的後半(只在帳本還沒建時出);已建那一句不講「會算進來」「不會被平」", get("tr.det.ownRule") === "第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
       && !/算進來|不會被平|不會被動到/.test(get("tr.keep.ownBuilt")) && /單向持倉/.test(get("tr.keep.ownBuilt")) && get("tr.keep.own") === "只調整 Blave 自己那一份。");
+    { const en = strings.slice(strings.indexOf("\n  en: {"), strings.indexOf("\n  zh: {")), getEn = (k) => (en.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
+      ok("帳本已建那一句(設計師定稿):三句同一個開頭與句號,不用冒號;「也不會抵掉策略的目標部位」/ don’t offset a strategy’s target",
+        get("tr.keep.ownBuilt") === "只調整 Blave 自己那一份。你自己開的部位不算 Blave 的，也不會抵掉策略的目標部位。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+        && getEn("tr.keep.ownBuilt") === "Only Blave’s own share is traded. Positions you opened yourself aren’t counted as Blave’s and don’t offset a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+        && ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt"].every((k) => get(k).indexOf("只調整 Blave 自己那一份。") === 0 && getEn(k).indexOf("Only Blave’s own share is traded.") === 0)); }
     ok("真錢的選項說明講「真實委託」;「連平倉與停損都不會做」只留在常駐句(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchDescReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchDesc") + get("tr.opt.waitDesc"))
       && /平倉與停損也不會執行/.test(get("tr.keep.sleep")) && !/平倉與停損/.test(get("tr.means.3"))); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

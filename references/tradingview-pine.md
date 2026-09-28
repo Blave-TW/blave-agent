@@ -2,6 +2,8 @@
 
 Applies when the user asks to export / convert a Blave strategy to TradingView, Pine, Pine Script, 轉成 TradingView, 匯出 Pine, "give me the TradingView version". Scope: **Type A** strategies (`strategies/<name>/strategy.py` with `_add_indicators` / `fetch_data` / `compute_signals`, see `strategy-code.md`). Type C (portfolio) and Type B never export — one Pine `strategy()` script is one symbol on one chart.
 
+The other direction — the user points you to a Pine script and wants it as a Blave strategy — is not an export: `strategy-code.md` › *Building from code the user points to*.
+
 This machine cannot compile Pine. Every export is a template adaptation plus a static lint, never a compiled artifact — say so at delivery (see step 5).
 
 ## Export flow — five steps, in order

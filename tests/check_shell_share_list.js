@@ -235,10 +235,16 @@ app.whenReady().then(async () => {
   ok("④ 存檔框開著時再按不重送", (await calls("pdf")).length === 1);
   await js(`window.__s.saving()`); await wait(50); h = await hd();
   ok("④ 按了儲存、開始產:「存成中…」,頁首兩顆都停用", h.text === "存成中…" && h.dis && h.shareDis, JSON.stringify(h));
-  await js(`window.__s.pdfHold()`); await wait(100); h = await hd();
-  ok("④ 成功:「已存成」、讀屏念一次、鈕恢復可按;不跳框", h.text === "已存成" && !h.dis && !h.shareDis && (await js(`document.getElementById("sr-live").textContent`)) === "已存成" && (await js(`document.getElementById("del-scrim").hidden`)), JSON.stringify(h));
-  await wait(1600);
-  ok("④ 1.5 秒後回「存成 PDF」", (await hd()).text === "存成 PDF");
+  // 回饋不放在鈕上(canon › 列印／PDF › 入口;batch 5 F):存檔中間隔著系統存檔框,鈕上閃「已存成」人看不到,也答不了「存到哪」
+  const sv = () => js(`(() => { const b = document.getElementById("rpt-saved"), rv = document.getElementById("rpt-reveal");
+    return { on: !b.hidden, d: b.querySelector(".d").textContent, rv: rv.hidden ? null : rv.textContent, sr: document.getElementById("sr-live").textContent, box: !document.getElementById("del-scrim").hidden,
+      left: b.getBoundingClientRect().right <= document.querySelector(".rpt-acts").getBoundingClientRect().left + 1 }; })()`);
+  await js(`window.__s.pdf = { code: "OK", dir: "報告", token: "tk1" }; window.__s.pdfHold()`); await wait(100); h = await hd();
+  let s1 = await sv();
+  ok("④ 成功:鈕直接回「存成 PDF」(不閃「已存成」)、可按;頁首同一列、動作群左邊出「已存到「報告」」＋「在 Finder 中顯示」;讀屏念那一句;不跳框",
+    h.text === "存成 PDF" && !h.dis && !h.shareDis && s1.on && s1.d === "已存到「報告」" && s1.rv === "在 Finder 中顯示" && s1.sr === "已存到「報告」" && !s1.box && s1.left, JSON.stringify([h, s1]));
+  await wait(1600); s1 = await sv();
+  ok("④ 不計時:1.6 秒後那一句還在,鈕字沒變", s1.on && s1.d === "已存到「報告」" && (await hd()).text === "存成 PDF", JSON.stringify(s1));
   await js(`window.__s.pdfHold = null; window.__s.pdf = { code: "CANCELED" }; document.getElementById("rpt-pdf").click()`); await wait(150);
   ok("④ 取消 = 什麼都沒發生", (await hd()).text === "存成 PDF" && (await js(`document.getElementById("del-scrim").hidden`)));
   await js(`window.__s.pdf = { code: "FAIL" }; document.getElementById("rpt-pdf").click()`); await wait(200);
