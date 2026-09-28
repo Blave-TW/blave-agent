@@ -1707,8 +1707,9 @@ const STEP_NO_OBJ = ["docs", "files", "web_read_many"];
 function stepLabel(c, done, failed) {
   const k = actKindOf(c || {});
   if (k.kind === "silent") return null;
-  const w = actKnown(k), low = (s) => s.charAt(0).toLowerCase() + s.slice(1);
-  return { verb: failed ? t("step.fail", { did: actLabel(w, true), doing: low(actLabel(w)) }) : actLabel(w, done),
+  // 有些動詞自己帶冒號接受詞(「搜尋：」/ "Searching:"):套進 step.fail 會變成兩個冒號連在一起,填之前拿掉結尾那一個
+  const w = actKnown(k), low = (s) => s.charAt(0).toLowerCase() + s.slice(1), bare = (s) => s.replace(/\s*[:：]\s*$/, "");
+  return { verb: failed ? t("step.fail", { did: bare(actLabel(w, true)), doing: bare(low(actLabel(w))) }) : actLabel(w, done),
     obj: STEP_NO_OBJ.includes(w.kind) ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
 }
 function actReset() { ACT.running.clear(); ACT.shown = null; ACT.shownAt = 0; ACT.textStart = 0; ACT.lastDelta = 0; ACT.prep = null; ACT.lastWant = null; clearTimeout(ACT.timer); }
