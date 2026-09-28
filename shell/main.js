@@ -2051,6 +2051,10 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   if (plan.mcp) { mcpMount = await mcpCode().get(); if (mcpMount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount); }
   // 內建瀏覽器:同一份單次設定檔多一個 `blave_browser`(兩個 server 可以只有其一)。runtime 靠 --mcp-servers 分別知道掛了哪幾個
   let brMount = null;
+  // userSent = 這一輪是人在這台電腦上按出來的(自動交還的前提:人在、剛動手)。打字的、畫面代組的固定句(轉出、範例、新增報告、交接確認框)
+  // 都算——它們都是這台電腦上的人按的;renderer 的 typed 旗標不傳過來,這裡不分。要帶 false 的是「沒有人在這台電腦按送出」的回合:
+  // 排程回合、雲端主機那邊發起的回合、任何自動回合——現在沒有這種呼叫端(runTurn 只有 send-message 一個入口),
+  // 加的時候就帶 false。雲端視角(viewing.env === "cloud")另外用 noUser 標:人在,但畫面上不是這台電腦的對話
   if (fakeVerify) fakeVerify.arm();   // 這一輪的第一次搜尋先去假頁
   try { brMount = await browser().beginTurn(win, sessionId, { userSent: true, noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }

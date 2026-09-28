@@ -19,7 +19,7 @@ if (!process.versions.electron) {
   t("門檻是常數:正文至少 400 字、每 0.7 秒量一次、等其他頁最多 3 秒、browser_read 自己最多等 5 秒", K.slice(1).map(Number).join() === "400,700,3000,5000", K.slice(1));
   const early = cut(idx, "function early(");
   t("保守:字數夠、而且連續兩次量到的一樣(內容不再長)才算好;量一次最多 1.5 秒", /if \(n >= READY_TEXT_MIN && n === last\) \{/.test(early) && /within\(v\.page\.run\(IP\.readable\), 1500\)/.test(early));
-  t("只量 agent 自己開的一般頁:搜尋分頁(可能是驗證頁)、用戶的頁、接手中的頁、agent 不能去的網址都不量", /if \(t\.by !== "agent" \|\| t\.searchTab\) return;/.test(early) && /if \(!t\.userControl && !t\.verify && !policy\.agent\(v\.wc\.getURL\(\) \|\| t\.url\)\) \{/.test(early));
+  t("只量 agent 自己開的一般頁:搜尋分頁(可能是驗證頁)、用戶的頁、接手中的頁、agent 不能去的網址都不量", /if \(t\.by !== "agent" \|\| t\.searchTab\) return;/.test(early) && /if \(!t\.userControl && !t\.verify && !policy\.agent\(pageUrl\(t, v\)\)\) \{/.test(early));
   t("換頁之後舊的那一輪量測自己停(比對導覽計數)", /const same = \(\) => views\.get\(t\.id\) === v && v\.navs === nav && t\.status === "loading";/.test(early));
   // readable() 的判準:假 document
   const run = (doc) => new Function("document", IP.readable.toString() + "; return readable();")(doc);

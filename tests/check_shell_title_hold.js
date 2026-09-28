@@ -37,7 +37,10 @@ if (!process.versions.electron) {
   ok("① 沒有別的「按了會失焦」的鈕還掛著 title", titled.length === 0, titled.join());
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); }
-  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
+  // 暫存的 userData 由這一層開、這一層收:Electron 關閉時還會往 userData 寫檔,子行程自己刪過也會再長回來(稽核 P2-12)
+  const tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-title-"));
+  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, BLAVE_TEST_USERDATA: tmp } });
+  fs.rmSync(tmp, { recursive: true, force: true }); ok("跑完暫存目錄不存在", !fs.existsSync(tmp), tmp);
   const sub = r.status == null ? 1 : r.status;
   console.log(red || sub ? `\n${red + sub} FAILED` : "\nALL PASS");
   process.exit(red || sub ? 1 : 0);
@@ -45,7 +48,7 @@ if (!process.versions.electron) {
 
 const { app, BrowserWindow } = require("electron");
 const os = require("os");
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-title-")));
+app.setPath("userData", process.env.BLAVE_TEST_USERDATA || fs.mkdtempSync(path.join(os.tmpdir(), "blave-title-")));
 const STUB = `window.__active = null; window.__ev = null; window.__opened = [];
 window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
   : k === "onWindowActive" ? (fn) => { const prev = window.__active; window.__active = (on) => { if (prev) prev(on); fn(on); }; }

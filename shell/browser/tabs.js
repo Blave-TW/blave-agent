@@ -47,13 +47,13 @@ function createTabs(opts) {
   }
   newCounters();
 
-  /** 找一個可以收掉的活分頁:讀完、不是用戶正在看的、最舊的那個。
-   *  沒有讀完的可收時,退到前面回合留下來、這一輪 agent 沒碰過的分頁(不含用戶在看、在操作、在等他按的):
-   *  分頁跨回合留著,沒讀過的那幾頁不能把 8 格永遠佔住。 */
+  /** 找一個可以收掉的活分頁:讀完、最舊的那個。
+   *  沒有讀完的可收時,退到前面回合留下來、這一輪 agent 沒碰過的分頁:分頁跨回合留著,沒讀過的那幾頁不能把 8 格永遠佔住。
+   *  兩階都不收用戶在看、在操作、在等他按的(稽核 P2-2:讀過的頁被他接手填到一半,收成快照就沒了)。 */
   function evictable() {
-    const free = live().filter((t) => t.by === "agent" && !t.visible);
+    const free = live().filter((t) => t.by === "agent" && !t.visible && !t.userControl && !t.need);
     return free.filter((t) => t.read).sort((a, b) => a.readAt - b.readAt)[0]
-      || free.filter((t) => t.turn < turn && t.usedTurn !== turn && !t.userControl && !t.need).sort((a, b) => a.startedAt - b.startedAt)[0] || null;
+      || free.filter((t) => t.turn < turn && t.usedTurn !== turn).sort((a, b) => a.startedAt - b.startedAt)[0] || null;
   }
   // agent 只指得到這個對話自己開的分頁:別的對話留下來的分頁不列、代號也查不到
   const aliased = () => [...aliases.values()].map((id) => tabs.get(id)).filter((t) => t && t.scope === scope);
