@@ -244,6 +244,10 @@ def _publish_checklist(pack):
         f"  12. 引用網頁上的圖(用戶要求時必放,最多 {_report.CITED_IMAGES_MAX} 張):browser_capture(tab, ref, report={rid!r}) 回傳的 file 與 source "
         "原樣放進 narrative[\"images\"] = [{\"file\": …, \"source\": {…}, \"alt\": \"這張圖畫的是什麼\"}];不算進 16 塊,不要改 pack.blocks;"
         "擷取了卻不放 → narrative[\"images_unused\"] 一句說明(檔案會刪),並在回覆講那張圖沒有放進報告",
+        "  13. 前後比較用同一個基準:寫「從 A 到 B」「擴大／收斂 N 個百分點」的兩個值,基準與算法要一樣——分母、匯率、對照價"
+        "都取同一天;有一個換了日期就不是同一個指標的變化,不寫成「從 A 到 B」。"
+        "自己換算的衍生數字(上面 describe() 沒有的):在表或圖說寫明公式與每個輸入的日期;拿不到同基準的輸入就寫「查無」,不硬算;"
+        "用戶說「不要估」時,衍生數字不進標題與 lead。百分位與排名不互換(「第 2 百分位」不是「第 2 低」)",
         "  讀網頁:有內建瀏覽器(電腦版)時 browser_read 只用 part=\"meta\" / \"outline\" / \"section\",不用 \"full\"(每頁約 3,000 字);"
         "沒有瀏覽器(雲端、排程)用 WebSearch 找、WebFetch 讀,prompt 只要標題、發布時間與一句重點",
         "  開頁:browser_open_many 只開打算讀的頁,開了的每一頁都要讀,不讀的不要開;新聞與數字先讀媒體或官方原文,"
@@ -847,6 +851,12 @@ def quickstart():
         "A FIGURE NO BRICK SHOWS",
         "  Look once in references/lib.md (the fetchers and their signatures), not in lib source. What is not there comes",
         "  from the pages you read - the outlet's own article or the official page - cited, and the report says it is from the web.",
+        "A FIGURE YOU WORK OUT YOURSELF, AND BEFORE / AFTER",
+        "  'From A to B' needs both values on one basis and one formula: the denominator, the FX rate and the reference",
+        "  price each of the SAME date on both sides. One input changed date -> not the same measure; never 'from A to B'.",
+        "  State the formula and the date of every input in the table or the caption. No input on the same basis -> write",
+        "  查無, do not compute it anyway. The user said not to estimate -> no derived figure in the title or the lead.",
+        "  A percentile is not a rank: '2nd percentile' is never 'second lowest'.",
         "RUN IT",
         "  python3 -c '...' from the workspace root, or a tmp/ script run as python3 -m tmp.x (python3 tmp/x.py cannot import lib).",
     ]

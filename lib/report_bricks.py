@@ -152,6 +152,38 @@ def _fetch_many(fn, keys, workers=8):
         return dict(pool.map(one, keys))
 
 
+def _own(b, sym):
+    """The whole report is about `sym` (symbol_brief / research_pack; a custom recipe never is)."""
+    return str(b.recipe.get("subject") or "").upper() == str(sym).upper()
+
+
+def _who(b, sym):
+    """How a single-instrument brick names its instrument: "2330 台積電" (the id alone when no
+    list knows the name), a coin by its ticker. Every block title of such a brick starts with it:
+    a chart is read, shared and paged on its own, next to the whole market's."""
+    sym = str(sym)
+    if not sym.isdigit():
+        return sym
+    key = ("tw_name", sym)
+    if key not in b.cache:
+        b.cache[key] = T._tw_names([sym]).get(sym)
+    return f"{sym} {b.cache[key]}" if b.cache[key] else sym
+
+
+def _mark(b, sym, label):
+    """KPI label / context key / missing name of a single-instrument brick: led by the instrument,
+    except in that instrument's own report, where every cell is about it and the row is narrow."""
+    return label if _own(b, sym) else f"{_who(b, sym)} {label}"
+
+
+def _data_day(b, sym, day):
+    # 別人的報告裡,個股那根的日期不蓋掉整份的資料日
+    if _own(b, sym):
+        b.ctx["資料日"] = day
+    else:
+        b.ctx.setdefault("資料日", day)
+
+
 def _last_alpha(df):
     ser = df["alpha"].dropna() if df is not None and "alpha" in df else None
     return float(ser.iloc[-1]) if ser is not None and len(ser) else None
@@ -305,19 +337,19 @@ def _price_twstock(b, stock_id, bars):
         v = v.iloc[:-1]
     vol, vol5 = float(v.iloc[-1]), float(v.iloc[-6:-1].mean() if len(v) >= 6 else v.mean())
     vol_label = f"{v.index[-1]:%m/%d} 量" if forming else "量"
-    ctx = b.ctx
-    ctx["資料日"] = str(c.index[-1].date())
-    ctx["收盤"] = (f"{T._num(last, 2)}({T._pct(chg * 100)}),{vol_label} {T._num(vol)} 張(前 5 日均 {T._num(vol5)})"
-                 + (",今日盤中那根未計" if forming else ""))
-    lv = _levels_into(b, df, last)
-    b.cache["levels"] = (lv, last, "tw")
+    _data_day(b, stock_id, str(c.index[-1].date()))
+    b.ctx[_mark(b, stock_id, "收盤")] = (
+        f"{T._num(last, 2)}({T._pct(chg * 100)}),{vol_label} {T._num(vol)} 張(前 5 日均 {T._num(vol5)})"
+        + (",今日盤中那根未計" if forming else ""))
+    lv = _levels_into(b, df, last, stock_id)
+    b.cache["levels"] = (lv, last, "tw", stock_id)
     ck = T.candlestick(T._price_title(f"{stock_id} 日 K", last, lv.get("60 日均")), df.tail(bars), y_unit="元",
                        caption=T._cap(f"近 {min(len(df), bars)} 個交易日日 K,未還原價", _level_ref(lv),
                                       f"60 日均 {T._num(lv['60 日均'], 2)}" if "60 日均" in lv else None),
                        reflines=T._level_lines(lv))
     foot.append(("src", "日 K 為未還原價" if foot else "日 K 為 TWSE 未還原價"))
-    kpis = [T.kpi("收盤", T._num(last, 2), T._tone(chg), delta=T._pct(chg * 100)),
-            T.kpi("成交量" if not forming else f"成交量({v.index[-1]:%m/%d})", T._num(vol), "neutral", unit="張",
+    kpis = [T.kpi(_mark(b, stock_id, "收盤"), T._num(last, 2), T._tone(chg), delta=T._pct(chg * 100)),
+            T.kpi(_mark(b, stock_id, "成交量" if not forming else f"成交量({v.index[-1]:%m/%d})"), T._num(vol), "neutral", unit="張",
                   delta=T._pct((vol / vol5 - 1) * 100) + " vs 前5日均")]
     return Brick([ck], kpis, foot, headline=T._headline(stock_id, chg, last, lv.get("前 20 日高"), "前 20 日高"))
 
@@ -335,11 +367,10 @@ def _price_crypto(b, sym, bars):
         raise ValueError(f"{s} 日 K 不足")
     c = df["Close"].dropna()
     last, chg = float(c.iloc[-1]), float(c.iloc[-1] / c.iloc[-2] - 1)
-    ctx = b.ctx
-    ctx["資料日"] = str(c.index[-1].date())
-    ctx["價格"] = f"{T._num(last, 2)} USDT({T._pct(chg * 100)})"
-    lv = _levels_into(b, df, last)
-    b.cache["levels"] = (lv, last, "crypto")
+    _data_day(b, label, str(c.index[-1].date()))
+    b.ctx[_mark(b, label, "價格")] = f"{T._num(last, 2)} USDT({T._pct(chg * 100)})"
+    lv = _levels_into(b, df, last, label)
+    b.cache["levels"] = (lv, last, "crypto", label)
     # 60 日均仍用整段收盤算,K 線只畫最後 bars 根。
     ck = T.candlestick(T._price_title(f"{label} 日 K", last, lv.get("60 日均")), df.tail(bars), y_unit="USDT",
                        caption=T._cap(f"近 {min(len(df), bars)} 根日 K", _level_ref(lv),
@@ -350,10 +381,11 @@ def _price_crypto(b, sym, bars):
                  headline=T._headline(label, chg, last, lv.get("前 20 日高"), "前 20 日高"))
 
 
-def _levels_into(b, df, last):
+def _levels_into(b, df, last, sym):
     lv = T._levels(df, b.notes)
-    b.ctx[T._LEVELS_TITLE] = ", ".join(f"{k} {T._num(v, 2)}" for k, v in lv.items())
-    T._where(b.ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
+    ctx = {T._LEVELS_TITLE: ", ".join(f"{k} {T._num(v, 2)}" for k, v in lv.items())}
+    T._where(ctx, last, [(lv.get("前 20 日高"), "前 20 日高"), (lv.get("60 日均"), "60 日均")])
+    b.ctx.update({_mark(b, sym, k): v for k, v in ctx.items()})
     return lv
 
 
@@ -494,13 +526,15 @@ def tw_institutional(b, symbol=None):
 
 
 def _inst_stock(b, stock_id):
+    # 大盤那塊的 KPI 也叫「外資買賣超」(億元):個股這塊放進別人的報告一律帶代號與名稱
+    who, name = _who(b, stock_id), _mark(b, stock_id, "外資買賣超")
     inst = None
     try:
         inst = _data.fetch_twstock_institutional(stock_id, b.start, b.date, b.headers)
     except _data.DataAccessError:
-        T._no_access("外資買賣超", b.notes, b.missing)
+        T._no_access(name, b.notes, b.missing)
     except Exception as e:
-        b.notes.append(f"外資買賣超抓取失敗({type(e).__name__})")
+        b.notes.append(f"{name}抓取失敗({type(e).__name__})")
     if inst is None or not len(inst) or "foreign_net" not in inst:
         return Brick()
     kpis, foot = [], []
@@ -508,18 +542,18 @@ def _inst_stock(b, stock_id):
     if len(fn):
         f_last = float(fn.iloc[-1])
         f5 = float(fn.tail(5).sum())
-        b.ctx["外資買賣超"] = f"{T._signed(f_last)} 張(近 5 日累計 {T._signed(f5)} 張,{fn.index[-1].date()})"
-        kpis.append(T.kpi("外資買賣超", T._signed(f_last), T._tone(f_last), unit="張", delta=f"5日累計 {T._signed(f5)}"))
+        b.ctx[name] = f"{T._signed(f_last)} 張(近 5 日累計 {T._signed(f5)} 張,{fn.index[-1].date()})"
+        kpis.append(T.kpi(name, T._signed(f_last), T._tone(f_last), unit="張", delta=f"5日累計 {T._signed(f5)}"))
         foot.append(("inst", "外資買賣超 = 外資買進 − 賣出,資料源以股為單位,此處換算為張(÷1000)。"))
     net = inst["foreign_net"].dropna() / 1000.0
     tail = net.tail(10)
     f10 = float(tail.sum())
     prev10 = float(net.tail(20).head(10).sum()) if len(net) >= 20 else None
-    b.ctx["外資 10 日累計"] = f"{T._signed(f10)} 張" + (f"(前 10 日 {T._signed(prev10)} 張)" if prev10 is not None else "")
-    title = f"外資近 10 日{'買' if f10 >= 0 else '賣'}超 {abs(f10):,.0f} 張" + (
+    b.ctx[_mark(b, stock_id, "外資 10 日累計")] = f"{T._signed(f10)} 張" + (f"(前 10 日 {T._signed(prev10)} 張)" if prev10 is not None else "")
+    title = f"{who} 外資近 10 日{'買' if f10 >= 0 else '賣'}超 {abs(f10):,.0f} 張" + (
         f",前 10 日{'買' if prev10 >= 0 else '賣'}超 {abs(prev10):,.0f} 張" if prev10 is not None else "")
     bc = T.bar_chart(title, [(t.strftime("%m/%d"), v) for t, v in tail.items()],
-                     caption=T._cap("每日淨買賣超,張",
+                     caption=T._cap(f"{who} 每日淨買賣超,張",
                                     f"10 日累計 {T._signed(f10)} 張,前 10 個交易日累計 {T._signed(prev10)} 張"
                                     if prev10 is not None else f"10 日累計 {T._signed(f10)} 張"))
     return Brick([bc], kpis, foot)
@@ -566,8 +600,9 @@ def tw_futures_inst(b, contract="TX"):
     """#9 外資期貨淨多單 (口): KPI plus the line with its 0 reference."""
     date = b.date
     fut = None
+    name = "外資期貨淨多單" if contract == "TX" else f"{contract} 外資期貨淨多單"
     try:
-        fut = _series_frame(b, "外資期貨淨多單",
+        fut = _series_frame(b, name,
                             lambda: _data.fetch_twfutures_institutional(contract, b.start, date, b.headers),
                             lambda: _data.fetch_twfutures_institutional_public(contract, b.start, date),
                             _data._TWFUT_INST_COLUMNS)
@@ -579,23 +614,23 @@ def tw_futures_inst(b, contract="TX"):
         ok = fut is not None and T._on_day(fut, date) and T._finite(fut["foreign_net_oi"].iloc[-1])
         if not ok:
             if fut is not None:
-                T._pending("外資期貨淨多單", fut, date, b.notes)
+                T._pending(name, fut, date, b.notes)
             return Brick()
     elif fut is None or not len(fut):
         return Brick()
     f_last, f_prev = T._last_two(fut["foreign_net_oi"])
     d_f = (f_last - f_prev) if f_prev is not None else 0.0
-    b.ctx["外資期貨淨多單"] = (f"{T._signed(f_last)} 口({T._signed(d_f)} 口)" if close else
-                          f"{T._signed(f_last)} 口({T._signed(d_f)} 口,{fut.index[-1].strftime('%m-%d')})")
+    b.ctx[name] = (f"{T._signed(f_last)} 口({T._signed(d_f)} 口)" if close else
+                   f"{T._signed(f_last)} 口({T._signed(d_f)} 口,{fut.index[-1].strftime('%m-%d')})")
     if n20 is not None:
-        b.ctx["外資期貨 20 日均"] = f"{T._signed(n20)} 口"
+        b.ctx[name.replace("淨多單", " 20 日均")] = f"{T._signed(n20)} 口"
     # 淨部位是方向不是損益:長期淨空會永遠紅,上色沒有資訊,一律 neutral。
     delta = T._signed(d_f) + " 口"
-    k = T.kpi("外資期貨淨多單", T._signed(f_last), "neutral", unit="口",
+    k = T.kpi(name, T._signed(f_last), "neutral", unit="口",
               delta=delta if close else T._dated(delta, fut.index[-1], b.asof))
     foot = [("futinst", "期貨三大法人為 TAIFEX 日盤收盤後統計的未平倉淨口數(多 − 空)。" if close else
              "期貨三大法人為 TAIFEX 盤後統計,晨報引用的是前一交易日收盤後的未平倉淨口數(多 − 空)。")]
-    title = f"外資期貨淨部位 {T._signed(f_last)} 口" + (f",20 日均 {T._signed(n20)} 口" if n20 is not None else "")
+    title = f"{name.replace('淨多單', '淨部位')} {T._signed(f_last)} 口" + (f",20 日均 {T._signed(n20)} 口" if n20 is not None else "")
     lc = T.line_chart(title, [("外資淨多單", "primary", fut["foreign_net_oi"])], y_unit="口",
                       caption=T._cap("TAIFEX 盤後未平倉淨口數(多 − 空)",
                                      f"最新 {T._signed(f_last)} 口,近 20 個交易日平均 {T._signed(n20)} 口"
@@ -627,7 +662,7 @@ def funding(b, symbol="BTC", variant="market", chart=True, symbols=None):
     s = _data.normalize_symbol(symbol if symbol.endswith("USDT") else symbol + "USDT")
     coin = s.replace("USDT", "")
     market = variant == "market"
-    name = f"{coin} 資金費率" if market else "資金費率"
+    name = f"{coin} 資金費率" if market else _mark(b, coin, "資金費率")
     kpis = []
     ser = T._indicator(_data.fetch_funding_rate, (s, "1d", _crypto_window_start(b), None, b.headers), name,
                        b.ctx, kpis, b.notes, b.missing, fmt=lambda v: f"{v:+.4f}%")
@@ -635,9 +670,9 @@ def funding(b, symbol="BTC", variant="market", chart=True, symbols=None):
         return Brick()
     if not chart:
         return Brick(kpis=kpis, foot=[("src", "資金費率為 Binance 日頻,單位 %。")])
-    lc = T.line_chart(f"{name} {float(ser.iloc[-1]):+.4f}%,7 日均 {float(ser.tail(7).mean()):+.4f}%",
+    lc = T.line_chart(f"{coin} 資金費率 {float(ser.iloc[-1]):+.4f}%,7 日均 {float(ser.tail(7).mean()):+.4f}%",
                       [(coin, "primary", ser)], y_unit="%", reflines=[(0.0, "0", False)],
-                      caption=T._cap(f"Binance {s} 日頻資金費率,單位 %" if market else "Binance 日頻資金費率,單位 %",
+                      caption=T._cap(f"Binance {s} 日頻資金費率,單位 %",
                                      T._vs7(ser, lambda v: f"{v:+.4f}%")))
     foot = ([("src", "資金費率為 Binance 日頻,單位 %。"), ("src", "日頻指標只到前一個完整日。", "tail")] if market
             else [("src", "資金費率單位 %。")])
@@ -705,9 +740,11 @@ def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員�
         if state == "failed":
             raise val
         return val
+    coin = s.replace("USDT", "") if s else None
+    per_coin = lambda n: bool(coin) and _INDICATORS[n][1]
     for n in names:
         mine = []
-        got[n] = T._indicator(replay, (n,), n, b.ctx, mine, b.notes, b.missing,
+        got[n] = T._indicator(replay, (n,), _mark(b, coin, n) if per_coin(n) else n, b.ctx, mine, b.notes, b.missing,
                               gloss="正 = 淨多" if n in _RAW_INDICATORS else "0 = 歷史平均")
         if kpi is None or n in kpi:
             kpis += mine
@@ -716,7 +753,8 @@ def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員�
     if z:
         z[0] = (z[0][0], "primary", z[0][2])
         z0 = z[0][2]
-        blocks.append(T.line_chart(f"{z[0][0]} {float(z0.iloc[-1]):+.2f}(0 = 歷史平均),7 日均 {float(z0.tail(7).mean()):+.2f}", z[:4],
+        lead = f"{coin} {z[0][0]}" if per_coin(z[0][0]) else z[0][0]
+        blocks.append(T.line_chart(f"{lead} {float(z0.iloc[-1]):+.2f}(0 = 歷史平均),7 日均 {float(z0.tail(7).mean()):+.2f}", z[:4],
                                    caption=T._cap("標準化分數,0 = 樣本均值", "日頻資料只到前一個完整日",
                                                   f"{z[0][0]} {T._vs7(z[0][2])}")))
     raw = [(n, x) for n, x in got.items() if x is not None and n in _RAW_INDICATORS]
@@ -798,11 +836,11 @@ def levels_table(b):
     if "levels" not in b.cache:
         b.notes.append("近期高低與均線 需要配方裡先有單一標的的 price_chart,省略")
         return Brick()
-    lv, last, kind = b.cache["levels"]
+    lv, last, kind, sym = b.cache["levels"]
     tail = ("前 20 日高/低 = 不含當日(今日未收盤 bar)的前 20 根日 K 最高價/最低價,均線取收盤價(含當日)。"
             if kind == "crypto" else
             "成交量為張。前 20 日高/低 = 不含當日的前 20 個交易日最高價/最低價,均線取收盤價(含當日)。")
-    return Brick([T._levels_table(lv, last)], foot=[("src", tail, "tail")])
+    return Brick([dict(T._levels_table(lv, last), title=f"{_who(b, sym)} {T._LEVELS_TITLE}")], foot=[("src", tail, "tail")])
 
 
 # ─── 0.1.7 新積木 ─────────────────────────────────────────────────────────────
@@ -1359,6 +1397,14 @@ def relative_to(b, symbol, benchmark="BTC", days=30):
 #   水位與指標(stock/z-score:OI、融資、資金費率、多空比、各 z-score) → line_chart
 #   價格 → candlestick
 # 會出圖的積木都要登記在這張表;tests/check_report_bricks.py 逐積木斷言,改錯任何一個會紅。
+# 只講一個標的的積木 → 帶標的的參數名。它們每個 block 的標題都以標的開頭(_who),KPI 標籤與
+# describe() 的鍵在別人的報告裡也帶(_mark);levels_table 跟著它前面那張 price_chart 的標的。
+# tests/check_report_subject.py 逐支斷言:有 symbol / exchange 參數卻沒登記的新積木會紅。
+SINGLE_SUBJECT = {
+    "price_chart": "symbol", "tw_institutional": "symbol", "funding": "symbol", "blave_indicators": "symbol",
+    "coin_snapshot": "symbol", "liq_map": "symbol", "relative_to": "symbol", "exchange_snapshot": "exchange",
+}
+
 CHART_KIND = {
     "price_chart": "candlestick", "coin_snapshot": "candlestick",
     "tw_institutional": "bar_chart", "liquidation": "bar_chart",

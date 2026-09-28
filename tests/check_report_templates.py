@@ -74,6 +74,7 @@ DAY_ALL = pd.DataFrame({"name": ["台積電", "聯發科", "小公司"] + [f"股
                         "volume": 1.0, "close": 100.0, "change": 1.0, "trades": 1.0}, index=pd.Index(["2330", "2454", "9999"] + [f"{1100 + i}" for i in range(12)], name="stock_id"))
 DAY_ALL.attrs = {"date": "2026-09-01", "source": d._TWSE_OPENDATA_SOURCE_ZH}
 d.fetch_twse_day_all_public = lambda: DAY_ALL.copy()
+d.fetch_twstock_list = lambda h, **k: pd.DataFrame({"name": ["台積電"]}, index=pd.Index(["2330"], name="stock_id"))
 d.fetch_twstock_market_value_all = lambda h, top=None: pd.DataFrame({"stock_id": ["2330", "2454"], "market_value": [1e13, 5e12]})
 d.fetch_twmarket_dividend_points = lambda s, e, h: pd.DataFrame({"points": [12.3], "estimated": [True]}, index=pd.to_datetime([s]))
 d.fetch_twstock_dividend_batch = lambda ids, s, e, h: {"2330": pd.DataFrame([{"cash_ex_date": s, "stock_ex_date": "", "cash": 5.0, "stock": 0.0}])}
@@ -93,7 +94,7 @@ NAR = {"lead": "一句可證偽的主張。",
 # bars drawn: 90 on every template)
 PRICE = {"tw": ("加權指數", {"外資期貨淨部位"}), "close": ("加權指數", {"融資", "外資期貨淨部位"}),
          "crypto": (None, {"市場方向"}),
-         "2330": ("2330 日 K", set()), "btc": ("BTC 日 K", {"資金費率", "爆倉指標"})}
+         "2330": ("2330 日 K", set()), "btc": ("BTC 日 K", {"BTC 資金費率", "BTC 爆倉指標"})}
 fails = 0
 def check(cond, msg):
     global fails
@@ -161,7 +162,7 @@ for name, pack in (("tw", T.tw_market_brief("2026-09-02", H)), ("close", T.tw_cl
                 want.pop("前 20 日低", None)   # 大盤晨報、收盤報告只畫前 20 日高
             check(bool(want) and ref == want,
                   f"{tag}: 參考線恰為 {sorted(want)},值 = 倒數第 2–21 根的最高價/最低價")
-            levels = {r["level"]: r["price"] for x in b if x["type"] == "table" and x.get("title") == "近期高低與均線" for r in x["rows"]}
+            levels = {r["level"]: r["price"] for x in b if x["type"] == "table" and x.get("title", "").endswith("近期高低與均線") for r in x["rows"]}
             check(bool(want) and all(f"{k} {v:,.2f}" in pack.describe() for k, v in want.items())
                   and (name in ("tw", "close") or all(levels.get(k) == f"{v:,.2f}" for k, v in want.items())),
                   f"{tag}: 參考線、近期高低與均線表、describe() 的前 20 日高/低同名同值")

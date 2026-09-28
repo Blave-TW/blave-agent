@@ -1970,6 +1970,8 @@ function mcpCode() {
    agent 經本機 MCP(`blave_browser`,127.0.0.1、每回合一顆 token)操作;分頁是獨立 partition 的 WebContentsView,renderer 只收事件。
    掛不掛:電腦版本機 + 設定開著(預設開),**不看登入**;token 跟 `blave` 那顆一樣只經單次設定檔 / Codex 子行程環境交給 CLI。 */
 let _browser = null;
+// 開發版專用的假驗證頁(BLAVE_DEV_FAKE_VERIFY=1,實機走「搜尋驗證交給用戶」用;browser/devverify.js)。打包版沒有這支
+const fakeVerify = app.isPackaged ? null : require("./browser/devverify").create({ env: process.env, isPackaged: app.isPackaged });
 const BROWSER_PREFS = () => path.join(app.getPath("userData"), "browser.json");
 function browser() {
   if (!_browser) _browser = require("./browser").createBrowser({
@@ -1981,7 +1983,9 @@ function browser() {
     loadPrefs: () => { try { return JSON.parse(fs.readFileSync(BROWSER_PREFS(), "utf8")); } catch (_) { return null; } },
     savePrefs: (p) => { try { fs.writeFileSync(BROWSER_PREFS(), JSON.stringify({ enabled: !!p.enabled }), { mode: 0o600 }); } catch (_) { /* 存不了就只在這次生效 */ } },
     notify: browserNotify,
+    engines: fakeVerify ? fakeVerify.engines : undefined,
   });
+  if (fakeVerify) fakeVerify.serve(require("electron").session.fromPartition(require("./browser").PARTITION)).catch(() => {});
   return _browser;
 }
 /* 內建瀏覽器要用戶回來操作(目前只有一種:搜尋被要求機器人驗證)。app 在前景時畫面自己會講,不發;字還沒交過來也不發
@@ -2047,6 +2051,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   if (plan.mcp) { mcpMount = await mcpCode().get(); if (mcpMount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount); }
   // 內建瀏覽器:同一份單次設定檔多一個 `blave_browser`(兩個 server 可以只有其一)。runtime 靠 --mcp-servers 分別知道掛了哪幾個
   let brMount = null;
+  if (fakeVerify) fakeVerify.arm();   // 這一輪的第一次搜尋先去假頁
   try { brMount = await browser().beginTurn(win, sessionId, { noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];

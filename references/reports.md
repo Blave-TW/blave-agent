@@ -71,7 +71,10 @@ and ships whatever lands there.
   It keeps the id, `created_at` (the report stays where it is in the list) and the pictures,
   and touches nothing the change did not name. **Never edit `reports/<id>.json` by hand** —
   not with Python, not with an editor: that skips the checks, the schema version, the sweep
-  of unused captures and the ledger (`.written.jsonl`). A report nobody named is never
+  of unused captures and the ledger (`.written.jsonl`, where the change is recorded as an
+  edit with the time it was made). Changing a report does not make it this turn's: to change
+  it again call `edit_report` again — `replace=True` still only rewrites a report this turn
+  wrote, and on an earlier turn's report it writes a new one. A report nobody named is never
   changed; 「再做一份」 / 「重做」 / 「更新一下」 with new data is a new report. A report
   shared by public link keeps showing the version that was shared — the link is not
   updated by the change; the user updates it themselves with 「檢查後更新公開版本」 in the
@@ -192,6 +195,13 @@ narrative instead).
    read / summary talks about: if you argue from it, show it (外資大砍友達 → 友達's 外資買賣超; a DOGE
    ETF closing → DOGE against BTC). What the data sources do not have degrades like any brick
    (`pack.missing` / notes) — never fetch it by hand.
+   **A brick about one instrument names it.** Every block title of a single-instrument brick
+   starts with the instrument (`2330 台積電 外資近 10 日賣超 …`, `SOL 資金費率 …`; the id alone when
+   no list knows the name), and outside that instrument's own report its KPI label and
+   `describe()` key carry it too (`2330 台積電 外資買賣超`, in 張) — 「外資買賣超」 with no
+   instrument in front is always the whole market's (億元). Cite each under its own name; never
+   write a stock's 張 as the market's flow. In `symbol_brief` / `research_pack` the KPI row and
+   the keys stay bare (every cell is that instrument).
 4. **Write the narrative**: the lead states the most important thing today (usually the one you
    built extras for); run down the checklist `describe()` prints.
 5. **Publish once**, with the conclusion as the title (`title=…`). If `publish` refuses, it lists every
@@ -1043,6 +1053,27 @@ the reader's time, the fabricated one loses them money. Every figure stays real 
   the right unit.** A return of 0.0755 is 7.55%, not 0.08%. Cross-check it against a figure you
   already have: a +0.08% annual return cannot sit next to half-year returns that add up to
   about +9.8% a year.
+
+### 7. A change is measured on one basis
+
+Measured on a live report: a 「台積電 ADR 換算溢價」 worked out by hand as ADR 9/23 ÷ 2330's 9/23
+close (13.31%) and then ADR 9/25 ÷ 2330's 9/24 close (15.72%), titled 「溢價從 13.31% 擴到
+15.72%」. The two sides used a different Taiwan close; on one basis (the 9/24 close) the
+earlier value is 14.45% and the change is 1.27 points, not 2.41.
+
+1. **Both values of a before / after comparison use the same basis and the same formula.** The
+   denominator, the FX rate and the reference price are each of the same date on both sides.
+   When any one of them changed date, the two numbers are not one measure at two moments:
+   never write them as 「從 A 到 B」, 「擴大／收斂 N 個百分點」 or a change column.
+2. **A figure you derived yourself** (no brick gave it, `describe()` does not list it): the
+   table or the caption states the formula and the date of every input. When an input on the
+   same basis cannot be had, the cell says 「查無」 — do not compute it from what is at hand.
+   When the user asked for no estimates (「不要估」), a derived figure stays out of the title
+   and the lead.
+3. **A percentile is not a rank.** 「第 2 百分位」 is never written as 「第 2 低」, and a rank is
+   never written as a percentile.
+
+`quickstart()` and the publish checklist in `describe()` (item 13) carry the same three rules.
 
 ## 7b. Hand-written reports — presentation, and the research rules
 
