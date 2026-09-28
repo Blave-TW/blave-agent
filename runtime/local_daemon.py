@@ -91,9 +91,10 @@ try:
 except ImportError:  # POSIX
     msvcrt = None
 
-# Mirror of api/openclaw/agent_command.py ALLOWED (tests/check_local_daemon.py
-# fails when the two drift). `telegram_reset` stays out here for the same
-# reason it stays out there.
+# api/openclaw/agent_command.py ALLOWED, minus CLOUD_ONLY below
+# (tests/check_local_daemon.py fails when ALLOWED + CLOUD_ONLY drifts from the
+# api's list). `telegram_reset` stays out here for the same reason it stays out
+# there.
 ALLOWED = frozenset({
     "halt", "resume", "resume_wait", "downtime_hold", "amounts", "execution", "credentials",
     "credentials_remove", "restart_reconciler", "retest_accounts", "close_all",
@@ -101,6 +102,12 @@ ALLOWED = frozenset({
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
     "book_account_confirm",
+})
+# In the api's list, refused here: the Capital (群益) connect steps install
+# SKCOM and an NSSM worker on a cloud Windows host — nothing of that on a
+# user's own computer.
+CLOUD_ONLY = frozenset({
+    "capital_setup", "capital_pfx_key", "capital_pfx", "capital_probe", "capital_finish",
 })
 UNSIGNED_OK = frozenset({"halt"})
 
