@@ -124,7 +124,7 @@ check(bool(raises(ValueError, R.edit_report, "research-2330")) and bool(raises(V
 md = open(os.path.join(ROOT, "references", "reports.md"), encoding="utf-8").read().split("## 2.")[0]
 rule = md[md.index("- **Changing a report the user named**"):md.index("- **Writing the file yourself**")]
 check("`lib.report.edit_report`" in rule and "**Never edit `reports/<id>.json` by hand**" in rule and "A report nobody named is never\n  changed" in rule
-      and "is a new report" in rule and "the link is not\n  updated" in rule and "`created_at`" in rule,
+      and "is a new report" in rule and "the link is not\n  updated by the change" in rule and "「檢查後更新公開版本」" in rule and "`created_at`" in rule,
       "⑥ reports.md §1:走 edit_report、不准手改 JSON、沒被指名的不動、「再做一份」是新的、公開連結不跟著變")
 agents = [l for l in open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read().splitlines() if l.startswith("A report is a document")]
 check(len(agents) == 1 and "goes through `edit_report` on that same report" in agents[0] and "never a hand edit of the JSON" in agents[0], "⑥ AGENTS.md › Reports 指到 edit_report")

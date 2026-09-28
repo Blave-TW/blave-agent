@@ -446,7 +446,8 @@ def _write(asked, report_id, title, blocks, type, report_type, created_at, meta,
               "the earlier one is untouched. Nothing to fix, and nothing to tell the user about ids or numbers.")
     if edited:
         print(f"[report] {report_id} changed in place: the same report, in the same place in the list. A public "
-              "link to it keeps showing the version that was shared; say so only if the user asks about the link.")
+              "link to it keeps showing the version that was shared until the user updates it from the report's "
+              "title bar; say so only if the user asks about the link.")
     elif os.environ.get("BLAVE_TURN_ID"):
         print("[report] To correct THIS report before you reply, write it again with the same id and replace=True; "
               "without it the correction becomes one more report.")
@@ -485,7 +486,8 @@ def edit_report(report_id, title=None, change=None, images=None):
                 or returns a new list: `lambda blocks: blocks[3].update(markdown="…")`.
     images      `{file name: bytes}` to add to (or replace in) the picture sidecar.
 
-    A report that is shared by public link keeps showing the version that was shared.
+    A report that is shared by public link keeps showing the version that was shared; only the
+    user can update the public version (a button in the report's title bar).
     """
     if not isinstance(report_id, str) or not _ID_RE.fullmatch(report_id):
         raise ValueError(f"report id {report_id!r} must match [A-Za-z0-9_-]{{1,64}}")

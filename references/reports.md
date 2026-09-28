@@ -74,7 +74,8 @@ and ships whatever lands there.
   of unused captures and the ledger (`.written.jsonl`). A report nobody named is never
   changed; 「再做一份」 / 「重做」 / 「更新一下」 with new data is a new report. A report
   shared by public link keeps showing the version that was shared — the link is not
-  updated; say so only when the user asks about the link. `FileNotFoundError` = the report
+  updated by the change; the user updates it themselves with 「檢查後更新公開版本」 in the
+  report's title bar. Say so only when the user asks about the link. `FileNotFoundError` = the report
   is no longer on this machine: say it cannot be changed from here and offer a new one.
 - **Writing the file yourself** (no `lib/report.py`): pick an id that has no file in
   `reports/` or `reports/sent/`. A file written over an existing one replaces that report
