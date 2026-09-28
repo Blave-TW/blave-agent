@@ -49,6 +49,9 @@ if (!process.versions.electron) {
     const codes = ["UNREACH", "RELOGIN", "RATE_LIMITED", "IMAGE_QUOTA", "NO_MACHINE", "NOT_SHAREABLE", "BAD_CONTENT", "NO_REPORT", "BAD_ARGS", "WHATEVER"];
     ok("① 錯誤代號 → 字:連不上 = 檢查網路那句、雲端沒在跑 = web 那句、配額 / 速率 / 重新登入各自一句、驗不過 = 不能公開;每個 key 兩語都在", P.shrErrKey("UNREACH") === "shr.failed" && P.shrErrKey("WHATEVER") === "shr.failed" && P.shrErrKey("NO_MACHINE") === "shr.failedCloud" && P.shrErrKey("IMAGE_QUOTA") === "shr.quota" && P.shrErrKey("RELOGIN") === "conn.expired" && P.shrErrKey("NOT_SHAREABLE") === "shr.notShareable" && P.shrErrKey("BAD_CONTENT") === "shr.badContent"
       && codes.every((c) => STR.zh[P.shrErrKey(c)] && STR.en[P.shrErrKey(c)]));
+    ok("① 第三行不提推薦碼(zh / en 定稿)", STR.zh["shr.ack3"] === "我不是投顧／期顧從業人員，沒有因此收取報酬，也不用它招攬付費策略或收費服務"
+      && STR.en["shr.ack3"] === "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to paid strategies, paid groups, or other paid services.");
+    for (const n of [1, 2, 3]) sameAsWeb("① shr.ack" + n + " 逐字同 web workspace_share_ack_" + n, STR, "shr.ack" + n, "workspace_share_ack_" + n);
     ok("① 確認框三行 + 標題照 W1 定稿(zh / en)", STR.zh["shr.ack2"] === "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責；Blave 未審核" && STR.en["shr.ack2"] === "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
       && STR.zh["shr.dlgTitle"] === "公開這份報告" && STR.en["shr.dlgTitle"] === "Publish this report" && STR.zh["shr.revokeTitle"] === "取消分享這份報告？" && STR.en["shr.revokeTitle"] === "Stop sharing this report?");
 
@@ -68,8 +71,8 @@ if (!process.versions.electron) {
     ok("② state:沒公開 → share null;空白名字 → displayName null(署名選項停用)", r.code === "OK" && r.share === null && r.displayName === null);
     m = mk(); r = await m.c.publish("local", "tw-1", { byline: "name", confirmed: true });
     const pb = m.calls[0] && m.calls[0].b;
-    ok("② publish(本機):/share/publish;body = 憑證兩欄 + view / id + 勾選紀錄四欄 + report / images(本機檔原樣),聲明版本 rs-ack-2026.09.27", m.calls[0].u.endsWith("/oauth/desktop/share/publish") && keys(pb) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view"
-      && pb.confirmed === true && pb.byline === "name" && pb.disclaimer_version === "rs-ack-2026.09.27" && pb.tos_version === RS.TOS_VERSION && pb.report.id === "tw-1" && pb.images["a.png"] === "QUJD" && r.code === "OK" && r.share.code === "Abcd1234", JSON.stringify(pb));
+    ok("② publish(本機):/share/publish;body = 憑證兩欄 + view / id + 勾選紀錄四欄 + report / images(本機檔原樣),聲明版本 rs-ack-2026.09.28", m.calls[0].u.endsWith("/oauth/desktop/share/publish") && keys(pb) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view"
+      && pb.confirmed === true && pb.byline === "name" && pb.disclaimer_version === "rs-ack-2026.09.28" && RS.DISCLAIMER_VERSION === "rs-ack-2026.09.28" && pb.tos_version === RS.TOS_VERSION && pb.report.id === "tw-1" && pb.images["a.png"] === "QUJD" && r.code === "OK" && r.share.code === "Abcd1234", JSON.stringify(pb));
     { const onDisk = { id: "tw-2", blocks: [{ type: "meta" }, { type: "footnote", items: [{ id: "src", text: "日 K 為 TWSE 未還原價" }, { id: "src", text: "指數:TWSE 日資料。" }] }] };
       const was = JSON.stringify(onDisk);
       m = mk({ readLocal: () => ({ report: onDisk, images: {} }) }); await m.c.publish("local", "tw-2", { byline: "anonymous", confirmed: true });
@@ -103,11 +106,12 @@ if (!process.versions.electron) {
       const base = /^_SHARE_BASE = _SHARE_CREDS \| \{"view", "id"\}$/m.test(apiSrc) ? [...tup(apiSrc, "_SHARE_CREDS"), "view", "id"] : [];
       const allowed = new Set([...base, ...tup(shSrc, "CONSENT_FIELDS"), "report", "images"]);
       ok("② 外殼送出的每一欄都在 api 的白名單裡(_SHARE_CREDS + view / id + agent_report_share.CONSENT_FIELDS + report / images)", allowed.size === 10 && /SH\.CONSENT_FIELDS \+ \("report", "images"\)/.test(apiSrc) && Object.keys(pb).every((k) => allowed.has(k)), [...allowed].join()); }
-    const legal = path.join(MONO, "web", "app", "legal.py");
-    if (!fs.existsSync(legal)) console.log("SKIP  ② 條款版本對照 web(需要 monorepo 版面)");
+    const legal = WEB_DIRS.map((d) => path.join(d, "app", "legal.py")).find((f) => fs.existsSync(f));
+    if (!legal) console.log("SKIP  ② 條款版本對照 web(找不到 web 的 app/legal.py;可設 BLAVE_WEB_DIR)");
     else ok("② TOS_VERSION = web/app/legal.py 的 TOS_VERSION(兩邊送同一版)", new RegExp('^TOS_VERSION = "' + RS.TOS_VERSION.replace(/\./g, "\\.") + '"$', "m").test(read(legal)));
-    const webSh = fs.existsSync(WEB_SH) ? read(WEB_SH) : "";
-    if (webSh && webSh.indexOf('"' + RS.DISCLAIMER_VERSION + '"') < 0) console.log("NOTE  web report_share.js 的 DISCLAIMER_VERSION 還不是 " + RS.DISCLAIMER_VERSION + "(W1 那批 web 上了之後兩邊才一致)");
+    { const dv = WEB_DIRS.map((d) => path.join(d, "app", "static", "js", "agent", "report_share.js")).filter((f) => fs.existsSync(f)).map((f) => /var DISCLAIMER_VERSION = "([^"]*)";/.exec(read(f))).find(Boolean);
+      if (!dv) console.log("SKIP  ② 聲明版本對照 web(找不到 web 的 report_share.js;可設 BLAVE_WEB_DIR)");
+      else ok("② DISCLAIMER_VERSION = web report_share.js 的 DISCLAIMER_VERSION(三行字面同、版本同值同批)", dv[1] === RS.DISCLAIMER_VERSION, dv[1] + " / " + RS.DISCLAIMER_VERSION); }
 
     // ── ③ main.js reportForShare ──
     const mainSrc = read(path.join(SHELL, "main.js"));

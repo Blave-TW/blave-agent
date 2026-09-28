@@ -3911,7 +3911,7 @@ msgid "shr.ack2"
 msgstr "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責；Blave 未審核"
 
 msgid "shr.ack3"
-msgstr "我不是投顧／期顧從業人員，沒有因此收取報酬，也不用它招攬推薦碼或付費策略"
+msgstr "我不是投顧／期顧從業人員，沒有因此收取報酬，也不用它招攬付費策略或收費服務"
 
 msgid "shr.tosBefore"
 msgstr "違反時 Blave 可依"

@@ -3910,7 +3910,7 @@ msgid "shr.ack2"
 msgstr "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
 
 msgid "shr.ack3"
-msgstr "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to my referral code, paid strategies, or paid groups."
+msgstr "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to paid strategies, paid groups, or other paid services."
 
 msgid "shr.tosBefore"
 msgstr "If these are broken, Blave may take it down under the "

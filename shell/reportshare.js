@@ -7,7 +7,7 @@
 //
 // 這個檔不 require electron;HTTP、憑證、讀本機報告都由呼叫端注入(測試用假的)。
 // 三行勾選的字面一改就換(契約 §1「字面一有變動,聲明版本就進位」);web report_share.js 送同一個值
-const DISCLAIMER_VERSION = "rs-ack-2026.09.27";
+const DISCLAIMER_VERSION = "rs-ack-2026.09.28";
 // = web/app/legal.py TOS_VERSION(api 沒有端點給這個值;tests/check_shell_report_share.js 在 monorepo 版面比對兩邊)
 const TOS_VERSION = "2026-09-28";
 const EP = { state: "/oauth/desktop/share/state", publish: "/oauth/desktop/share/publish", update: "/oauth/desktop/share/update", revoke: "/oauth/desktop/share/revoke", list: "/oauth/desktop/share/list" };
