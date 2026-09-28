@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.102 — 2026-09-28(desktop 0.1.8)
+
 - **停止那一句的「下單」改成「執行下單指令」(0.1.8 e2e,第十六批 #2)**:`_STOP_STEP_TEXT["order"]` 原本是「下單 / 下单 / placing an order」,
   但這一種涵蓋下單、撤單、TWAP、平倉、改槓桿、對帳,停在撤單時會寫成「中斷的步驟：下單」。改成跟狀態列(`act.order`,第十四批定稿)同一套字:
   「執行下單指令 / 执行下单指令 / running an order command」。背景腳本那句的「下單腳本」不變。測試 `tests/check_stop_note_steps.py`。

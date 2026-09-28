@@ -2793,7 +2793,7 @@ msgid "cx.chk.incompletePass"
 msgstr "API Key、Secret Key 和 Passphrase 要一起給，這一次沒有收齊，沒有儲存。三格都填好再連一次。"
 
 msgid "cx.chk.clockCloud"
-msgstr "雲端主機的時間跟 Binance 對不上，沒辦法檢查，沒有儲存。過一會兒再連一次；一直這樣請聯絡我們。"
+msgstr "雲端主機的時間跟 Binance 對不上，沒辦法檢查，沒有儲存。過一會兒再連一次；一直這樣請寄信到 info@blave.org。"
 
 msgid "cx.chk.networkCloud"
 msgstr "雲端主機連不上 Binance，沒辦法檢查，沒有儲存。過一會兒再連一次。"

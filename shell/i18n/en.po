@@ -2793,7 +2793,7 @@ msgid "cx.chk.incompletePass"
 msgstr "The API key, secret key and passphrase have to come together. Not all three arrived, so nothing was saved. Fill in all three and connect again."
 
 msgid "cx.chk.clockCloud"
-msgstr "The cloud machine’s clock is out of step with Binance’s, so the key couldn’t be checked and was not saved. Try again in a while; if it keeps happening, contact us."
+msgstr "The cloud machine’s clock is out of step with Binance’s, so the key couldn’t be checked and was not saved. Try again in a while; if it keeps happening, email info@blave.org."
 
 msgid "cx.chk.networkCloud"
 msgstr "The cloud machine couldn’t reach Binance, so the key couldn’t be checked and was not saved. Try again in a while."
