@@ -1051,6 +1051,27 @@ the reader's time, the fabricated one loses them money. Every figure stays real 
   already have: a +0.08% annual return cannot sit next to half-year returns that add up to
   about +9.8% a year.
 
+### 7. A change is measured on one basis
+
+Measured on a live report: a 「台積電 ADR 換算溢價」 worked out by hand as ADR 9/23 ÷ 2330's 9/23
+close (13.31%) and then ADR 9/25 ÷ 2330's 9/24 close (15.72%), titled 「溢價從 13.31% 擴到
+15.72%」. The two sides used a different Taiwan close; on one basis (the 9/24 close) the
+earlier value is 14.45% and the change is 1.27 points, not 2.41.
+
+1. **Both values of a before / after comparison use the same basis and the same formula.** The
+   denominator, the FX rate and the reference price are each of the same date on both sides.
+   When any one of them changed date, the two numbers are not one measure at two moments:
+   never write them as 「從 A 到 B」, 「擴大／收斂 N 個百分點」 or a change column.
+2. **A figure you derived yourself** (no brick gave it, `describe()` does not list it): the
+   table or the caption states the formula and the date of every input. When an input on the
+   same basis cannot be had, the cell says 「查無」 — do not compute it from what is at hand.
+   When the user asked for no estimates (「不要估」), a derived figure stays out of the title
+   and the lead.
+3. **A percentile is not a rank.** 「第 2 百分位」 is never written as 「第 2 低」, and a rank is
+   never written as a percentile.
+
+`quickstart()` and the publish checklist in `describe()` (item 13) carry the same three rules.
+
 ## 7b. Hand-written reports — presentation, and the research rules
 
 A report you build yourself with `write_report` — a research write-up, or a `morning` report
