@@ -161,7 +161,7 @@ function createBrowser(o) {
   // ── 分頁的 view ──
   /* captureBeyondViewport 會暫時改掉頁面的 viewport;還原時偶爾停在錯的尺寸,之後這一頁就一直用那個窄寬度排版
      (實測:中欄 544 寬,頁面 innerWidth 卻是 240,排成手機版)。每次擷取後、每次放到中欄時都清一次 */
-  function unEmulate(v) { v.parkEmu = false; v.emuGen = (v.emuGen || 0) + 1; try { v.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {}); } catch (_) { /* 沒掛 debugger */ } }
+  function unEmulate(v) { if (v.wide) { wideEmulate(v); return; } v.parkEmu = false; v.emuGen = (v.emuGen || 0) + 1; try { v.wc.debugger.sendCommand("Emulation.clearDeviceMetricsOverride").catch(() => {}); } catch (_) { /* 沒掛 debugger */ } }
   /* parked 分頁常駐 1280×800 override:視窗外的 view 會被裁到 0 寬(實測 innerWidth = 0),
      頁面用 0 視口排版就出行動版(TradingView 連 Pine Editor 入口都沒有、SPA 路由也會壞)。
      設一次不再動,不會閃;進中欄時 bounds() 的 unEmulate 清掉、用真實大小。 */
@@ -172,6 +172,16 @@ function createBrowser(o) {
     const g = v.emuGen = (v.emuGen || 0) + 1;
     try { v.wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", { width: parkSize.width, height: parkSize.height, deviceScaleFactor: 0, mobile: false }).then(() => { if (v.emuGen === g) v.parkEmu = true; }, () => { /* 還沒掛 debugger:下一次 park / attach 之後補設 */ }); }
     catch (_) { /* 同上 */ }
+  }
+  /* 顯示在中欄、但頁面要用比中欄寬的寬度排版(「送進 TradingView」:窄版面沒有 Pine 那顆鈕,pine.js TV_MIN_W):
+     排版寬 v.wide、縮小到剛好放進中欄。v.wide 還在的期間,每次換位置(bounds)都重算一次,不會被 unEmulate 清掉 */
+  function wideEmulate(v) {
+    let b; try { b = v.view.getBounds(); } catch (_) { return Promise.resolve(false); }
+    if (!v.wide || !(b.width > 0)) return Promise.resolve(false);
+    v.parkEmu = false; v.emuGen = (v.emuGen || 0) + 1;
+    const s = Math.min(1, b.width / v.wide);
+    try { return v.wc.debugger.sendCommand("Emulation.setDeviceMetricsOverride", { width: v.wide, height: Math.max(1, Math.round(b.height / s)), deviceScaleFactor: 0, mobile: false, scale: s }).then(() => true, () => false); }
+    catch (_) { return Promise.resolve(false); }
   }
   function park(v, i) { try { v.view.setBounds({ x: PARK_X + (i || 0) * (parkSize.width + 50), y: 0, width: parkSize.width, height: parkSize.height }); } catch (_) { /* 已銷毀 */ } parkEmulate(v); }
   function createView(t) {
@@ -1005,12 +1015,18 @@ function createBrowser(o) {
   /* 「送進 TradingView」(pine.js):外殼自己的確定性流程,不經 agent 工具、不佔 agent 的 alias 與速率。
      分頁是 user 分頁;動手前照樣開導覽守門(動作後 3 秒內的文件層送出一律取消),交接時收掉——
      之後用戶自己按的送出與登入子視窗才不會被當成程式觸發 */
+  const pineLayout = {
+    width: (t, v) => { try { return t.visible && expanded === t.id ? v.view.getBounds().width : 0; } catch (_) { return 0; } },
+    widen: async (t, v, w) => { v.wide = w; const ok = await wideEmulate(v); if (!ok) v.wide = 0; return ok; },
+    narrow: async (t, v) => { v.wide = 0; if (t.visible) unEmulate(v); else parkEmulate(v); await sleep(150); },
+  };
   const pine = require("./pine").createPine({
     open: (url) => openUrl(url, "user"), tab: (id) => tabs.get(id), view: (id) => views.get(id) || null,
     waitLoaded, visible: pageVisible, input: agentInput, arm: markAgent,
     disarm: (t) => { const v = views.get(t.id); if (!v) return null; agentUntil.delete(v.wc.id); backstop.delete(v.wc.id); return v.page.disarm(); },
     emit, sensitive: gate.sensitiveField, enabled: () => !!prefs.enabled, lang: () => o.uiLang(), reduced: () => (o.reducedMotion ? o.reducedMotion() : false), sleep,
     log: pineLog,
+    width: (t, v) => pineLayout.width(t, v), widen: (t, v, w) => pineLayout.widen(t, v, w), narrow: (t, v) => pineLayout.narrow(t, v),
   });
 
   // ── 對外 ──
@@ -1147,6 +1163,7 @@ function createBrowser(o) {
     _agentActive: (id) => { const v = views.get(id); return !!v && agentActive(v.wc.id); },
     _imageSize: (b) => imageSize(b), _needsPlate: (d) => needsPlate(d),
     _viewBounds: (id) => { const v = views.get(id); return v ? v.view.getBounds() : null; },
+    _pineLayout: (id) => { const t = tabs.get(id), v = views.get(id); return t && v ? { width: () => pineLayout.width(t, v), widen: (w) => pineLayout.widen(t, v, w), narrow: () => pineLayout.narrow(t, v) } : null; },
     _maskProbe: async (alias) => {
       const t = tabs.byAlias(alias), v = t && views.get(t.id); if (!v) return null;
       let inside = null;

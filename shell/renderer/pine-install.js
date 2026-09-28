@@ -34,10 +34,10 @@ function tvNext(s, ev) {
   if (ev.type === "takeover") { if (n.tv === "handover") n.tv = "user"; return n; }
   if (ev.type !== "result") return n;
   if (ev.id) n.tab = ev.id;
-  n.step = 0;
+  n.step = 0; n.narrow = false;
   switch (ev.state) {
     case "handover": if (n.tv === "sending") { n.tv = "handover"; n.set = ev.set === true; } break;   // 同一個結果會到兩次(事件 + 回傳):用戶已經動手就不退回去
-    case "nf": n.tv = "nf"; break;
+    case "nf": n.tv = "nf"; n.narrow = ev.why === "narrow"; break;   // narrow:中欄太窄,TradingView 沒畫 Pine 那顆鈕(不是它改了版面)
     case "needs_user": n.tv = "unsaved"; break;
     default: n.tv = "fail";                        // fail / gone / off / busy,與任何這一版不認得的結果
   }
@@ -51,9 +51,9 @@ function tvModel(s, o) {
   const m = { tv, primary: "tv.send", pDis: tv === "sending", fill: "ext", cap: null, msg: null, soft: null, quiet: [], st: null, spin: false, nav: false };
   if (stale || sent || (old && tv === "idle")) m.fill = "base";
   m.cap = tv === "idle" || tv === "sending" || tv === "fail" ? "xp.capHonest" : sent ? "tv.sentHint" : null;
-  m.msg = tv === "nf" ? "tv.err.editor" : tv === "unsaved" ? "tv.err.unsaved" : tv === "fail" ? "tv.err.unknown" : null;
+  m.msg = tv === "nf" ? (s.narrow ? "tv.err.narrow" : "tv.err.editor") : tv === "unsaved" ? "tv.err.unsaved" : tv === "fail" ? "tv.err.unknown" : null;
   if (s && s.soft === "busy") m.soft = "tv.err.busy";
-  if (tv === "nf") m.quiet.push("tv.agentPaste");
+  if (tv === "nf" && !s.narrow) m.quiet.push("tv.agentPaste");   // 太窄:agent 來貼也一樣找不到,只留「再試一次」
   if (tv === "sending") { m.st = "tv.sending"; m.spin = true; }
   m.nav = tv !== "idle" && tv !== "fail" && !!(s && s.tab);
   return m;
@@ -168,7 +168,7 @@ async function tvSend(c) {
   if (!TV.by.has(key)) return;   // 這段期間換了對話:狀態已經清掉
   const s = tvSet(key, Object.assign({ type: "result" }, r || { state: "fail" }));
   if (s.tv === "handover") { trackFeature("tv_pasted"); srSay(t("tv.ho.h")); }
-  else if (s.tv === "nf") { trackFeature("tv_fail_editor"); srSay(t("tv.err.editor")); }
+  else if (s.tv === "nf") { trackFeature("tv_fail_editor"); srSay(t(s.narrow ? "tv.err.narrow" : "tv.err.editor")); }
 }
 async function tvAgentPaste(e) {
   const key = tvKeyOf(e.ctx), id = e.ctx.strategy;
@@ -216,6 +216,7 @@ function tvSlot(x) {
   // 方案限制是按之前就該知道的事(可以先移掉圖上的指標)。用戶第一次點頁面時這張卡就收掉(狀態換成 user)
   if (s.tv === "handover") return ask(t("tv.ho.h"), [t("tv.ho.p")].concat(s.set ? [] : [t("tv.ho.switch")], [t("tv.planHint")]).join(LANG === "zh" ? "" : " "));
   if (s.tv === "unsaved") return ask(t("tv.unsaved.h"), t("tv.unsaved.p"), e ? [["tv.retry", "btn-out", () => tvSend(e.ctx)]] : null);
+  if (s.tv === "nf" && s.narrow) return ask(t("tv.nf.h"), t("tv.nf.narrow.p"), e ? [["tv.retry", "btn-fill", () => tvSend(e.ctx)]] : null);
   if (s.tv === "nf") return ask(t("tv.nf.h"), t("tv.nf.p"), e ? [["tv.retry", "btn-out", () => tvSend(e.ctx)], ["tv.agentPaste", "btn-fill", () => tvAgentPaste(e)]] : null);
   return null;
 }

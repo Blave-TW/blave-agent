@@ -4992,6 +4992,9 @@ msgstr "已貼進 Pine 編輯器，「加到圖表」由你按。編譯沒過的
 msgid "tv.err.editor"
 msgstr "找不到 Pine 編輯器，TradingView 可能改了版面。"
 
+msgid "tv.err.narrow"
+msgstr "中欄太窄，TradingView 在這個寬度不顯示 Pine 編輯器的入口。把中欄拉寬再試一次。"
+
 msgid "tv.err.busy"
 msgstr "agent 正在回覆，請稍候再試。"
 
@@ -5036,6 +5039,9 @@ msgstr "找不到 Pine 編輯器"
 
 msgid "tv.nf.p"
 msgstr "TradingView 可能改了版面。可以請 agent 照畫面找，或下載檔案自己貼。"
+
+msgid "tv.nf.narrow.p"
+msgstr "中欄太窄時，TradingView 不顯示 Pine 編輯器的入口。把中欄拉寬（或把聊天欄收窄）之後再試一次。"
 
 msgid "tv.err.unsaved"
 msgstr "目前的腳本有未存的變更，請你在 TradingView 存檔或放棄後再試。"

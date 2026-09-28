@@ -75,7 +75,8 @@ async function main() {
     // dirty = 目前的腳本有未存的變更(按「策略」跳確認框、腳本不換);leaveAfter = 按了那一顆之後頁面被導到別的站
     o = Object.assign({ visible: true, hoverOnly: false, newScript: true, paste: "ok", enabled: true, editorOpen: false, names: {}, selfOpen: 0, edLate: 0, dirty: false, menuOpen: false, onChart: false }, o || {});
     const st = { editor: o.editorOpen, menu: o.menuOpen, sub: false, ed: 79, title: o.title || "Old strategy", doc: "// old script\nplot(close)\n", cursor: "end", dialog: false, looks: 0, url: o.url || "https://www.tradingview.com/chart/w1EWngqG/?symbol=BINANCE%3ABTCUSDT.P&interval=60" };
-    const log = { clicks: [], marks: [], emits: [], arms: 0, disarms: 0, fills: 0, keys: [], lines: [] };
+    const log = { clicks: [], marks: [], emits: [], arms: 0, disarms: 0, fills: 0, keys: [], lines: [], layout: [], direct: [] };
+    st.layout = o.visible ? o.width || 1280 : 1280;   // 頁面排版的寬度:600 以下 TradingView 不畫 Pine 那顆鈕(真站實測);停在視窗外的分頁固定 1280
     const t = { id: "p1", status: "loading", visible: o.visible, userControl: false };
     const nodeOf = (ref) => Number(String(ref).slice(2));
     const page = {
@@ -83,10 +84,11 @@ async function main() {
         st.looks++; if (o.selfOpen && st.looks >= o.selfOpen) st.editor = true;
         // onChart:目前那支已經在圖上 →「Update on chart」(disabled);開了新腳本才變回「Add to chart」
         const held = o.onChart && (st.ed === 79 || o.stuck) ? { add: "Update on chart", addOff: true, tester: true } : { tester: o.onChart };
-        return { text: SNAP(Object.assign({ editor: st.editor, title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra }, held, o.names)) };
+        const text = SNAP(Object.assign({ editor: st.editor && !(o.narrowLosesEditor && st.layout <= 600), title: st.title, ed: st.ed, menu: st.menu, sub: st.sub, dialog: st.dialog, noEd: st.looks < o.edLate, extra: o.extra }, held, o.names));
+        return { text: st.layout <= 600 ? text.split("\n").filter((l) => !/^- button "Pine" /.test(l)).join("\n") : text };
       },
       node: (ref) => nodeOf(ref),
-      center: async (b, on) => ({ x: 10, y: 10, direct: !on, box: { x: 1, y: 1, w: 20, h: 10 } }),
+      center: async (b, on) => { log.direct.push(!on); return { x: 10, y: 10, direct: !on, box: { x: 1, y: 1, w: 20, h: 10 } }; },
       describe: async () => ({ tag: "textarea" }),
       click: async (b) => {
         const ref = "@e" + b; log.clicks.push(ref);
@@ -117,6 +119,8 @@ async function main() {
       emit: (type, p) => log.emits.push([type, p]), sensitive: () => false, enabled: () => o.enabled, lang: () => "zh", reduced: () => false, sleep: async () => {},
       log: (e) => log.lines.push(e),
     };
+    if (o.width !== undefined) Object.assign(d, { width: async () => (o.visible ? o.width : 0), narrow: async () => { log.layout.push("narrow@" + log.clicks.length + "/" + log.fills); st.layout = o.width; },
+      widen: async (_t, _v, w) => { log.layout.push("wide " + w); if (o.widenFails) return false; st.layout = w; return true; } });
     return { pine: P.createPine(d), log, t, st };
   }
   const JOB = { content: PINE, strategy: "btc_sma_cross", filename: "btc_sma_cross_pine.pine", symbol: "BTCUSDT", interval: "1h", cryptoKline: true };
@@ -124,6 +128,26 @@ async function main() {
   const realNow = Date.now; let clock = realNow();   // 找不到東西的分支要等到逾時:測試裡時間自己走
   Date.now = () => (clock += 500);
 
+  // 中欄變窄(Wei 把聊天欄拉寬,中欄約 560):TradingView 窄版面不畫 Pine 那顆鈕
+  {
+    const r = rig({ width: 512 }), res = await r.pine.install(JOB);
+    ok("中欄 512:先讓頁面以 1280 排版再找鈕 → 照樣走到交接;貼上之前還原成真實寬度(還原排在四次點擊之後、貼上之前)", res.state === "handover" && r.log.layout.join() === "wide 1280,narrow@4/0" && r.st.layout === 512 && r.st.doc === PINE
+      && r.log.clicks.join() === [REF.pine, REF.title, REF.create, REF.strat].join(), [res, r.log.layout, r.log.clicks]);
+    ok("  寬版面排版中(縮小顯示)不送真滑鼠:四次點擊都走直接 click 那一條;交接時框「加到圖表」用的是還原之後的版面", r.log.direct.slice(0, 4).every((x) => x === true) && r.log.marks.includes("need"), [r.log.direct, r.log.marks]);
+    ok("門檻與排版寬度是常數:640 以下才換、換成 1280(真站實測:600 以下沒有那顆鈕、610 以上有)", P.TV_MIN_W === 640 && P.TV_LAYOUT_W === 1280);
+    const w = rig({ width: 700 }), rw = await w.pine.install(JOB);
+    ok("中欄 700(夠寬):不動版面", rw.state === "handover" && w.log.layout.length === 0, w.log.layout);
+    const h = rig({ width: 512, visible: false }), rh = await h.pine.install(JOB);
+    ok("分頁不在畫面上(停在視窗外,本來就是 1280):不動版面", h.log.layout.length === 0 && rh.why === "hidden", [rh, h.log.layout]);
+    const f = rig({ width: 512, widenFails: true }), rf = await f.pine.install(JOB);
+    ok("換不成寬版面 → 找不到鈕的原因是寬度:nf / narrow(不是 pine_button),沒有點任何東西", rf.state === "nf" && rf.why === "narrow" && f.log.clicks.length === 0, rf);
+    const g = rig({ width: 512, narrowLosesEditor: true }), rg = await g.pine.install(JOB);
+    ok("還原之後編輯器不見了 → nf / narrow,不貼", rg.state === "nf" && rg.why === "narrow" && g.log.fills === 0 && g.st.doc !== PINE, rg);
+    const d2 = rig({ width: 512, dirty: true }), rd = await d2.pine.install(JOB);
+    ok("中途停下來(未存變更 → 交給用戶)也還原成真實寬度", rd.state === "needs_user" && d2.log.layout[0] === "wide 1280" && /^narrow@/.test(d2.log.layout[d2.log.layout.length - 1]) && d2.st.layout === 512, [rd, d2.log.layout]);
+    const pd = rig({ pineDead: true, width: 1000 }), rp = await pd.pine.install(JOB);
+    ok("夠寬卻找不到:原因照舊(不是 narrow)", rp.state === "nf" && rp.why !== "narrow", rp);
+  }
   {
     const r = rig(), res = await r.pine.install(JOB);
     ok("流程:開圖表 → 開編輯器 → 開新腳本 → 貼上 → 交接", res.state === "handover" && res.id === "p1" && res.set === true && steps(r.log) === "1,2,3" && r.st.doc === PINE && r.st.title === "Untitled script", res);
@@ -225,6 +249,11 @@ async function main() {
   const R = new Function(src.slice(a, b) + "\nreturn { tvPasteMsg, tvNext, tvModel, tvStatModel };")();
   const S = (evs, s0) => evs.reduce((s, e) => R.tvNext(s, e), s0 || null);
   const M = (s, o) => R.tvModel(s, o || {});
+  { const SEND = { type: "send", ref: { strategy: "a" }, strategy: "a" }, nar = S([SEND, { type: "result", state: "nf", why: "narrow", id: "p1" }]), nf = S([SEND, { type: "result", state: "nf", why: "pine_button", id: "p1" }]);
+    ok("中欄太窄(why: narrow):講「把中欄拉寬再試一次」,不講「TradingView 可能改了版面」;不提供「請 agent 貼」(它來貼也一樣找不到)", nar.tv === "nf" && nar.narrow === true && M(nar).msg === "tv.err.narrow" && M(nar).quiet.length === 0
+      && nf.narrow === false && M(nf).msg === "tv.err.editor" && M(nf).quiet.join() === "tv.agentPaste", [nar, M(nar), M(nf)]);
+    ok("  之後的事件(回合進行中、用戶動手)不會把原因洗掉;再送一次才清", S([{ type: "busy" }], nar).narrow === true && S([{ type: "takeover" }], nar).narrow === true && !S([SEND], nar).narrow);
+    ok("  瀏覽器層那張卡:太窄時只有「再試一次」一顆,說明句是太窄那一句", /if \(s\.tv === "nf" && s\.narrow\) return ask\(t\("tv\.nf\.h"\), t\("tv\.nf\.narrow\.p"\), e \? \[\["tv\.retry", "btn-fill", \(\) => tvSend\(e\.ctx\)\]\] : null\);/.test(src)); }
   ok("狀態機:idle → 主鈕「送進」拿填色、說明句是誠實句", (() => { const m = M(null); return m.primary === "tv.send" && m.fill === "ext" && m.cap === "xp.capHonest" && !m.pDis && !m.nav; })());
   ok("狀態機:重開畫回來的舊卡、過期檔 → 填色還給原本那顆", M(null, { old: true }).fill === "base" && M(null, { stale: true }).fill === "base" && M({ tv: "sending" }, { old: true }).fill === "ext");
   const sending = S([{ type: "send", ref: { strategy: "a" }, strategy: "a" }, { type: "step", step: 2, id: "p1", sym: "BTCUSDT.P" }]);
@@ -320,6 +349,7 @@ async function main() {
   ok("字串:會花額度的那一顆字面寫「請 agent」;固定句恰好一個插槽", /^請 agent/.test(STR.zh["tv.agentPaste"]) && ["zh", "en"].every((l) => STR[l]["tv.msg.paste"].split("{id}").length === 2));
   { const GONE = ["tv.read", "tv.reading", "tv.readAgain", "tv.returnedAt", "tv.returnedLoop", "tv.msg.head", "tv.msg.line", "tv.msg.empty", "tv.msg.sent", "tv.st.check", "tv.notyet", "tv.st.wait", "tv.st.reading", "tv.st.done", "tv.done.h", "tv.done.p",
       "tv.st.compile", "tv.cmp.h", "tv.cmp.p", "tv.err.compile", "tv.fix", "tv.msg.fix", "tv.err.closed"];
+    ok("字串(暫定,待設計師複查):太窄的兩句兩語都在,都講「拉寬再試一次」", /拉寬/.test(STR.zh["tv.err.narrow"]) && /再試一次/.test(STR.zh["tv.nf.narrow.p"]) && /Widen it/.test(STR.en["tv.err.narrow"]) && /try again/.test(STR.en["tv.nf.narrow.p"]) && !/改了版面/.test(STR.zh["tv.err.narrow"] + STR.zh["tv.nf.narrow.p"]));
     ok("字串:退役的 23 個 key 兩語都拿掉,程式也不再引用", GONE.length === 23 && GONE.every((k) => !(k in STR.zh) && !(k in STR.en) && src.indexOf('"' + k + '"') < 0), GONE.filter((k) => k in STR.zh || k in STR.en || src.indexOf('"' + k + '"') >= 0));
     ok("字串:交接卡講「貼完之後這一頁不會再被讀取」;方案限制搬進交接卡;貼好之後那一句指路到聊天;回合進行中那一句不再講回傳", /貼完之後這一頁不會再被讀取/.test(STR.zh["tv.ho.p"]) && /isn’t read again/.test(STR.en["tv.ho.p"])
       && /t\("tv\.planHint"\)/.test(src.slice(src.indexOf("function tvSlot("))) && /把錯誤訊息貼到聊天/.test(STR.zh["tv.sentHint"]) && !/回傳/.test(STR.zh["tv.sentHint"] + STR.zh["tv.err.busy"]) && !/Send (the )?[Rr]esults/.test(STR.en["tv.sentHint"] + STR.en["tv.err.busy"])); }

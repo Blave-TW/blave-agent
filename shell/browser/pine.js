@@ -107,10 +107,16 @@ function fieldValue() { return String(this.value == null ? "" : this.value).slic
 const STOP = new Error("interrupted"), OFF = new Error("off_site");
 // 每一步的上限。GRACE:登入態的版面會自己把編輯器開回來(比 Pine 鈕晚出現),先等這麼久,真的沒開才按;STEP2:「正在開 Pine 編輯器」整段的上限
 const LOAD_MS = 20000, SYMBOL_MS = 6000, FIND_MS = 6000, GRACE_MS = 1500, OPEN_MS = 8000, MENU_MS = 3000, NEW_MS = 6000, STEP2_MS = 15000;
+/* 中欄太窄時 TradingView 換成窄版面,右側工具列(Pine 那顆鈕)整個不畫。真站 2026-09-28 匿名實測(headless Chromium):
+   頁面寬 600 以下沒有那顆鈕、610 以上有;編輯器一旦開著,縮到 480 仍然在、「加到圖表」與存檔也在。
+   所以:分頁顯示在中欄而且比 TV_MIN_W 窄 → 找鈕、開編輯器、開新腳本這一段先讓頁面以 TV_LAYOUT_W 的寬度排版(縮小顯示,不動用戶的版面),
+   開好之後還原成真實寬度再貼。TV_LAYOUT_W 跟停在視窗外的分頁同一個寬度(真站實測過的版面) */
+const TV_MIN_W = 640, TV_LAYOUT_W = 1280, RELAY_MS = 4000;
 
 /**
  * d: { open(url) → { tab } | { error } | { blocked }, tab(id), view(id), waitLoaded(t, ms), visible(t, v) → Promise<bool>,
- *      input(v, fn), arm(t) → Promise<bool>, disarm(t), emit(type, payload), sensitive(desc), enabled(), lang(), reduced(), sleep(ms), log(entry)? }
+ *      input(v, fn), arm(t) → Promise<bool>, disarm(t), emit(type, payload), sensitive(desc), enabled(), lang(), reduced(), sleep(ms), log(entry)?,
+ *      width(t, v)? → 分頁顯示在中欄時的寬度(不在畫面上回 0), widen(t, v, w)? → Promise<bool> 頁面改用 w 寬排版, narrow(t, v)? → 還原 }
  * 事件:pine_open(下一個 user 分頁是這條流程開的)、pine_step { id, step: 1|2|3, sym }、pine_result { id, state, … }
  */
 function createPine(d) {
@@ -128,7 +134,8 @@ function createPine(d) {
   async function click(t, v, node, hover) {
     guardSite(t, v);
     const b = v.page.node(node.ref); if (b === null) return false;
-    const on = await d.visible(t, v);
+    // 寬版面排版中(頁面是縮小顯示的):不送真滑鼠,走跟「頁面不在畫面上」同一條(直接對目標 click + 補 hover)
+    const on = !x.wide && await d.visible(t, v);
     let pos; try { pos = await v.page.center(b, on); } catch (_) { return false; }
     if (!pos || pos.error) return false;
     // 動手的是外殼不是 agent:只畫目標外框與點擊環,不畫 agent 游標(spec §3)
@@ -156,11 +163,15 @@ function createPine(d) {
     const set = symbolOk && !!target.interval;
 
     step(2); x.end = Date.now() + STEP2_MS;
+    const shown = d.width ? Number(await d.width(t, v)) || 0 : 0;
+    x.narrow = shown > 0 && shown < TV_MIN_W;
+    if (x.narrow && d.widen) x.wide = !!(await d.widen(t, v, TV_LAYOUT_W));
     const look = async () => locate(await snap(v));
     // 編輯器開好了 = 編輯器本體 + 腳本名稱鈕。不認「加到圖表」:那一格的名字跟著腳本在不在圖上變
     const ready = (l) => (l.editor && l.title ? l : null), some = (l) => (l.add || l.save || l.editor ? l : null);
     let loc = await until(async () => { const l = await look(); return l.pine || some(l) ? l : null; }, FIND_MS);
-    if (!loc) return { state: "nf", why: "pine_button" };
+    // 窄而且沒能換成寬版面:找不到的原因是寬度,不是 TradingView 改了版面
+    if (!loc) return { state: "nf", why: x.narrow && !x.wide ? "narrow" : "pine_button" };
     if (!ready(loc)) {
       // 面板已經在(或正在自己開回來)就只等、不按:Pine 那顆鈕這時被面板蓋住,按了也不是「打開」
       const panel = some(loc) || await until(async () => some(await look()), GRACE_MS);
@@ -194,6 +205,12 @@ function createPine(d) {
     }, NEW_MS);
     if (loc && loc.unsaved) return { state: "needs_user", why: "unsaved" };
     if (!loc) return { state: "nf", why: "new_script" };
+    if (x.wide) {
+      // 編輯器開好了:還原成中欄的真實寬度再貼(用戶接下來要在這個寬度按「加到圖表」)。版面會重排,元素重新找一次
+      await d.narrow(t, v); x.wide = false; x.end = 0;
+      loc = await until(async () => ready(await look()), RELAY_MS);
+      if (!loc) return { state: "nf", why: "narrow" };
+    }
 
     step(3); x.end = 0;
     guardSite(t, v);
@@ -236,7 +253,7 @@ function createPine(d) {
     if (!job || typeof job.content !== "string" || !job.content.trim()) return { state: "fail", why: "no_file" };
     busy = true;
     let t = null, v = null, out;
-    x = { t0: Date.now(), step: 0, nodes: [], dialog: null, end: 0 };
+    x = { t0: Date.now(), step: 0, nodes: [], dialog: null, end: 0, narrow: false, wide: false };
     try {
       const target = chartUrl(job);
       d.emit("pine_open", {});
@@ -246,7 +263,10 @@ function createPine(d) {
       if (!t || !v) out = { state: "fail", why: "open" };
       else out = await flow(job, t, v, target);
     } catch (e) { out = { state: "fail", why: e === STOP ? "interrupted" : e === OFF ? "off_site" : "error" }; }
-    finally { busy = false; if (t) await Promise.resolve(d.disarm(t)).catch(() => {}); }
+    finally {
+      busy = false; if (t) await Promise.resolve(d.disarm(t)).catch(() => {});
+      if (x.wide && t && v && d.narrow) { x.wide = false; await Promise.resolve(d.narrow(t, v)).catch(() => {}); }   // 中途停下來也要還原
+    }
     if (v && out.state !== "handover") await mark(v, ["clear"]);
     const res = Object.assign({ id: t ? t.id : null }, out);
     const ok = out.state === "handover";
@@ -260,4 +280,4 @@ function createPine(d) {
   return { install, busy: () => busy };
 }
 
-module.exports = { createPine, chartUrl, tvSymbol, tvInterval, parseSnap, locate, candidates, pasteOk, clean, onTv, dialogUp, NAMES };
+module.exports = { createPine, chartUrl, tvSymbol, tvInterval, parseSnap, locate, candidates, pasteOk, clean, onTv, dialogUp, NAMES, TV_MIN_W, TV_LAYOUT_W };

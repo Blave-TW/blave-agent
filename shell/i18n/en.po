@@ -4991,6 +4991,9 @@ msgstr "Pasted into the Pine Editor. You press “Add to chart”. If it doesn�
 msgid "tv.err.editor"
 msgstr "Couldn't find the Pine Editor — TradingView may have changed its layout."
 
+msgid "tv.err.narrow"
+msgstr "The middle column is too narrow: at this width TradingView doesn’t show the Pine Editor button. Widen it and try again."
+
 msgid "tv.err.busy"
 msgstr "The agent is replying. Try again in a moment."
 
@@ -5035,6 +5038,9 @@ msgstr "Couldn't find the Pine Editor"
 
 msgid "tv.nf.p"
 msgstr "TradingView may have changed its layout. The agent can look for it on screen, or download the file and paste it yourself."
+
+msgid "tv.nf.narrow.p"
+msgstr "When the middle column is this narrow, TradingView doesn’t show the Pine Editor button. Widen it (or narrow the chat) and try again."
 
 msgid "tv.err.unsaved"
 msgstr "The current script has unsaved changes. Save or discard them in TradingView, then try again."
