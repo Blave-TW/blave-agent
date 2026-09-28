@@ -884,7 +884,7 @@ function mpPickModel(id, viaMouse) {
   mpSave(); mpPaint();
   // 滑鼠開的不把焦點丟到選中列:前一個焦點是輸入框(永遠算 focus-visible),程式轉移
   // 過去的焦點會繼承它,選中列就平白多一圈白框。鍵盤開的才需要焦點落在列上。
-  const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur && !viaMouse) cur.focus();
+  const sel = $("mp-models").querySelector('[aria-checked="true"]'); if (sel && !viaMouse) sel.focus();   // 不叫 cur:那是外層「現在用哪個引擎」,同名的 const 會遮住它(宣告前讀到就丟 ReferenceError)
 }
 function mpPickEffort(lv) {
   const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
@@ -902,7 +902,7 @@ function mpOpen(viaMouse) {
   $("mp-trigger").setAttribute("aria-expanded", "true");
   // 滑鼠開的不把焦點丟到選中列:前一個焦點是輸入框(永遠算 focus-visible),程式轉移
   // 過去的焦點會繼承它,選中列就平白多一圈白框。鍵盤開的才需要焦點落在列上。
-  const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur && !viaMouse) cur.focus();
+  const sel = $("mp-models").querySelector('[aria-checked="true"]'); if (sel && !viaMouse) sel.focus();   // 不叫 cur:那是外層「現在用哪個引擎」,同名的 const 會遮住它(宣告前讀到就丟 ReferenceError)
 }
 function mpClose(refocus) {
   if ($("mp-panel").hidden) return;
