@@ -26,6 +26,25 @@ t("上限是 8(Wei 拍板,不給 agent 調)", MAX_LIVE === 8);
     && w.tabs.reachable().every((x) => x.status === "loading" || x.status === "ready") && !w.tabs.reachable().includes(opened[0]) && w.tabs.reachable().includes(opened[4]));
   t("新回合開的分頁接著編號,不重用舊代號", w.tabs.open("https://n.example/", "n.example", "agent").tab.alias === "t11");
 }
+// 稽核 P2-2:第一階(讀完的頁)也不收用戶接手中、等他按的
+{ const w = world(); const opened = [];
+  for (let i = 0; i < 8; i++) { w.now += 1000; opened.push(w.tabs.open("https://r" + i + ".example/", "r" + i + ".example", "agent").tab); }
+  for (const x of opened) { w.tabs.loaded(x.id); w.tabs.markRead(x.id); }
+  opened[0].userControl = true; opened[1].need = { kind: "submit" }; w.tabs.setVisible(opened[2].id, true);
+  const nine = w.tabs.open("https://r9.example/", "r9.example", "agent").tab;
+  t("讀完、最舊的三頁分別是接手中 / 等他按 / 在看:都不收,收的是第四舊的那頁", w.destroyed.length === 1 && w.destroyed[0][0] === opened[3].id && nine.status === "loading");
+  for (const x of opened.slice(4)) { x.userControl = true; }
+  const ten = w.tabs.open("https://r10.example/", "r10.example", "agent").tab;
+  t("剩下讀完的頁全被接手 → 沒有可收的,第 10 頁排隊(不收接手中的頁)", w.destroyed.length === 1 && ten.status === "queued" && w.tabs.queued() === 1);
+  opened[4].userControl = false; w.tabs.pump();
+  t("交還之後那一頁又收得到,排隊的補上", w.destroyed.some((d) => d[0] === opened[4].id) && ten.status === "loading");
+  nine.userControl = true; ten.need = { kind: "submit" };
+  w.tabs.newTurn();
+  const n2 = w.tabs.open("https://r11.example/", "r11.example", "agent").tab;
+  t("第二階(前面回合沒讀完的舊頁)照舊不收接手中 / 等他按的:全部被接手時第 11 頁排隊", n2.status === "queued" && w.destroyed.length === 2);
+  nine.userControl = false; w.tabs.pump();
+  t("那一頁交還之後第二階收得到它,第 11 頁補上", w.destroyed.some((d) => d[0] === nine.id) && n2.status === "loading");
+}
 { const w = world();
   for (let i = 0; i < LIMITS.pagesPerMin; i++) w.tabs.open("https://h" + i + ".example/", "h" + i + ".example", "agent");
   const r = w.tabs.open("https://x.example/", "x.example", "agent");
