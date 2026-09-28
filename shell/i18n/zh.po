@@ -217,6 +217,9 @@ msgstr "等你操作"
 msgid "step.unknown"
 msgstr "處理"
 
+msgid "step.fail"
+msgstr "沒成功：{did}"
+
 msgid "step.search"
 msgstr "搜尋："
 

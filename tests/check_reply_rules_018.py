@@ -12,6 +12,7 @@
   #102 範本報告照 describe() 寫,不先讀 91KB 的 reports.md / lib 原始碼;browser_wait 不連等;同一個連結不放兩則新聞。
   #90 tmp/ 自己寫的一次性腳本回覆前刪掉,不拿 tmp/ 裡的舊腳本當範例。
   第五批:#133 台股免費路徑先估時間先講;改參數時 DESCRIPTION 與檔頭一起改;內建瀏覽器關著不上網;資料費 2 TWD。
+  第七批:#143 #167 回覆裡的時間換成用戶的時區並標明;#148 被要求上線時先講最近一次回測對比基準的結果。
   第七批:開了就讀(實測開 6 頁只讀 3 頁,中時與鉅亨三頁開了沒讀);新聞與數字先讀媒體或官方原文,論壇貼文 / 轉述 / 聚合頁要標明。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
@@ -131,6 +132,14 @@ t("來源優先序:先讀媒體或官方原文;論壇貼文、轉述、聚合頁
   and "**The original first; second-hand is marked**" in news and "`（轉述）`" in news and "`轉述自 <who>`" in news and "「據…轉述」" in news
   and "論壇貼文、轉述、聚合頁只在找不到原文時用,來源名後面加「（轉述）」" in desc
   and "Prefer the original article or the official page to a forum post, a repost or an aggregator" in open_many[0])
+
+t("#143 #167 時間:回覆、表格、報告裡的時間一律換成用戶的時區並標明;不寫其實是 UTC 的「今天 21:34」,不出「時間(UTC)」欄(AGENTS › Response Style,一句)",
+  len([l for l in style.splitlines() if l.startswith("- **Clock times are the user's, and say whose:**")]) == 1 and "converted to the user's timezone" in style and "named once" in style
+  and "never a bare 「今天 21:34」 that is really UTC" in style and "no 「時間(UTC)」 column unless the user asked for UTC" in style)
+live_rule = [l for l in agents.splitlines() if l.startswith("**Asked to put a strategy live, say first how its latest backtest did against its benchmark**")]
+t("#148 被要求上線:先講這支最近一次回測對比基準的結果,尤其輸給持有或沒過顯著性;決定權在用戶(AGENTS › Strategy Deployment,一句)",
+  len(live_rule) == 1 and "trailed buy-and-hold or did not pass significance" in live_rule[0] and "The decision stays the user's" in live_rule[0]
+  and agents.index(live_rule[0]) > agents.index("## Strategy Deployment") and agents.index(live_rule[0]) < agents.index("## Examples"))
 
 if fails:
     sys.exit(f"{len(fails)} failed")

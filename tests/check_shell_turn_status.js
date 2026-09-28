@@ -22,7 +22,7 @@ const dur = cut(src, "function fmtDur(", "function busyElapsed(");
 const env = { now: 0, shown: [], timers: [], need: false };
 const STRINGS = { en: {} };
 for (const m of cut(strings, "\n  en: {", "\n  zh: {").matchAll(/"((?:act|step)\.[a-z_]+)": "([^"]*)"/g)) STRINGS.en[m[1]] = m[2];
-const t = (k, v) => (STRINGS.en[k] || k).replace("{n}", v && v.n != null ? v.n : "{n}");
+const t = (k, v) => (STRINGS.en[k] || k).replace(/\{(\w+)\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
 const M = new Function("t", "STRINGS", "env", `
   const Date = { now: () => env.now };
   const setTimeout = (f, ms) => { env.timers.push({ at: env.now + ms, f }); return env.timers.length; };
@@ -131,7 +131,13 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
   ok("正在跑的那一步每秒更新自己的秒數、清單跟到最新一列(游標在清單上不搶);每秒的 interval 有叫它", /busyStepTick\(\); actApply\(\); \}, 1000\);/.test(src)
     && /querySelectorAll\("\.think-step\.is-run"\)\.forEach\(\(li\) => \{ li\.querySelector\("\.think-step-time"\)\.textContent = fmtDur\(\(now - li\.__t0\) \/ 1000\); \}\);/.test(stepSrc)
     && /if \(!ul\.matches\(":hover"\)\) ul\.scrollTop = ul\.scrollHeight;/.test(stepSrc) && /li\.__t0 = Date\.now\(\); li\.__c = c;/.test(stepSrc));
-  ok("做完才換完成式;出錯的那一步不換(英文過去式配失敗的步驟會被讀成做成了)", /if \(c\.error\) li\.classList\.add\("is-err"\); else li\.querySelector\("\.think-step-verb"\)\.textContent = stepLabel\(li\.__c, true\)\.verb;/.test(doneSrc));
+  ok("做完換完成式;出錯的那一步換成失敗的說法(#165:不留「正在抓資料」;也不用完成式——英文過去式配失敗的步驟會被讀成做成了)", /if \(c\.error\) li\.classList\.add\("is-err"\);\s*li\.querySelector\("\.think-step-verb"\)\.textContent = stepLabel\(li\.__c, true, !!c\.error\)\.verb;/.test(doneSrc));
+  { const f = M.stepLabel({ kind: "data", summary: "fetch_kline BTCUSDT" }, true, true), o = M.stepLabel({ kind: "order" }, true, true), ZH = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh, zh = (k, v) => ZH[k].replace(/\{(\w+)\}/g, (m, n) => v[n]);
+    ok("失敗的步驟:英文「Failed: fetching data」(接進行式,不是 Fetched / Placed),受詞照留;中文「沒成功：抓資料」(沒有「正在」)", f.verb === "Failed: fetching data" && f.obj === "fetch_kline BTCUSDT" && o.verb === "Failed: placing an order"
+      && zh("step.fail", { did: ZH["step.data"], doing: ZH["act.data"] }) === "沒成功：抓資料" && !/正在/.test(zh("step.fail", { did: ZH["step.data"], doing: "x" })), [f, o]); }
+  ok("#166 查說明文件 / 找檔案(agent 讀自己的文件與原始碼):受詞是指令內容,不上畫面——步驟清單與狀態列都只留動詞", M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).obj === "" && M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).verb === "Checked the docs"
+    && M.stepLabel({ kind: "files", summary: "grep references/lib.md" }).obj === "" && M.stepLabel({ tool: "Grep", summary: "fetch_funding" }).obj === "" && M.stepLabel({ tool: "Read", summary: "references/lib.md" }).obj === ""
+    && M.stepLabel({ kind: "file_read", summary: "strategy.py" }).obj === "strategy.py" && /busySet\(actLabel\(w\), STEP_NO_OBJ\.includes\(w\.kind\) \? "" : w\.obj, w\.kind\);/.test(src));
   ok("重開畫回的收據:步驟都是做完的 → 完成式", /const lab = stepLabel\(st, true\);/.test(cut(src, "function receiptFold(", "function addHistoryAi(")));
   ok("位置記號只在這一輪兩邊都做過事時才畫:即時與重開畫回都算,靠 .has-both 開關", /busy\.sides\.add\(stepWhere\(c\)\); busy\.el\.classList\.toggle\("has-both", busy\.sides\.size > 1\);/.test(stepSrc)
     && /sides\.add\(stepWhere\(\{ tool: st\.tool \}\)\);/.test(src) && /el\.classList\.toggle\("has-both", sides\.size > 1\);/.test(src)

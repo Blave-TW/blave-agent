@@ -1699,12 +1699,17 @@ function actLabel(w, done) {
 const actKnown = (w) => (w.kind === "web_read_many" || STRINGS.en["act." + w.kind] ? w : { kind: "unknown", obj: "" });
 /* 展開的步驟清單(即時與重開畫回)跟狀態列用同一套 kind → act.* 的字,不另做對照表;工具名(ToolSearch、mcp__…)是內部名稱,
    不上畫面(0.1.8 e2e #88)。受詞照舊是 runtime 給的 summary(檔名／搜尋字／網域),沒有才退到 kind 的受詞;
-   silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js */
-function stepLabel(c, done) {
+   silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js
+   failed = 出錯的那一步:不留進行式(「正在抓資料」配紅色記號讀起來像還在跑),也不用完成式(英文過去式會被讀成做成了)——
+   講「沒成功:抓資料」/ "Failed: fetching data"(step.fail 一個模板,中文接完成式、英文接進行式)。
+   查說明文件、找檔案(agent 讀自己的文件與原始碼):受詞是指令內容(def fetch_…、grep references/…),不上畫面,只留動詞 */
+const STEP_NO_OBJ = ["docs", "files", "web_read_many"];
+function stepLabel(c, done, failed) {
   const k = actKindOf(c || {});
   if (k.kind === "silent") return null;
-  const w = actKnown(k);
-  return { verb: actLabel(w, done), obj: w.kind === "web_read_many" ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
+  const w = actKnown(k), low = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+  return { verb: failed ? t("step.fail", { did: actLabel(w, true), doing: low(actLabel(w)) }) : actLabel(w, done),
+    obj: STEP_NO_OBJ.includes(w.kind) ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
 }
 function actReset() { ACT.running.clear(); ACT.shown = null; ACT.shownAt = 0; ACT.textStart = 0; ACT.lastDelta = 0; ACT.prep = null; ACT.lastWant = null; clearTimeout(ACT.timer); }
 function actToolPrep(c) { ACT.prep = { tool: String(c.tool || ""), kind: c.kind ? String(c.kind) : "", obj: c.kind_obj ? String(c.kind_obj) : "" }; ACT.textStart = 0; actApply(); }
@@ -1733,7 +1738,7 @@ function actApply(force) {
     clearTimeout(ACT.timer); ACT.timer = setTimeout(() => actApply(), wait); return;
   }
   ACT.shown = key; ACT.shownAt = now; ACT.lastWant = w;
-  busySet(actLabel(w), w.kind === "web_read_many" ? "" : w.obj, w.kind);   // 幾個網頁已經在 label 裡
+  busySet(actLabel(w), STEP_NO_OBJ.includes(w.kind) ? "" : w.obj, w.kind);   // 幾個網頁已經在 label 裡;查文件 / 找檔案不帶受詞
 }
 
 /* 時長(canon › Copy › Numbers):<60 秒 47s;<60 分 4m 57s(秒補兩位);≥60 分 1h 02m。各語言同一寫法 */
@@ -1848,8 +1853,9 @@ function busyStepDone(c) {
   const li = busy && c.id && busy.stepRows[c.id];
   if (!li) return;
   li.classList.remove("is-run");
-  // 做完才換完成式;出錯的那一步不換——英文的完成式是過去式,「Placed an order」配一個失敗的步驟會被讀成下了單
-  if (c.error) li.classList.add("is-err"); else li.querySelector(".think-step-verb").textContent = stepLabel(li.__c, true).verb;
+  // 做完換完成式;出錯的那一步換成失敗的說法(不留「正在…」,也不用完成式:英文過去式「Placed an order」配失敗的步驟會被讀成下了單)
+  if (c.error) li.classList.add("is-err");
+  li.querySelector(".think-step-verb").textContent = stepLabel(li.__c, true, !!c.error).verb;
   const ms = Number(c.ms) || 0;
   if (ms > 0) li.querySelector(".think-step-time").textContent =
     ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";

@@ -217,6 +217,9 @@ msgstr "Waiting for you"
 msgid "step.unknown"
 msgstr "Worked"
 
+msgid "step.fail"
+msgstr "Failed: {doing}"
+
 msgid "step.search"
 msgstr "Searched:"
 
