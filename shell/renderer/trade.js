@@ -1563,15 +1563,31 @@ function trAskStop(opener) {
 }
 // 中文句子裡夾英文名(Binance)前後要空一格;英文句子本來就有空格
 function trPadLatin(name) { return LANG === "zh" && /^[\x20-\x7e]+$/.test(name) ? " " + name + " " : name; }
+/* Blave 的帳本基準寫了沒(回報裡的對帳快照 last_reconcile,lib/portfolio._write_reconcile_snapshot):
+   "built" = 快照帶 ledger(對帳器已經拿自己的帳本在比)→ 之後啟動不會再把帳戶上的部位算成 Blave 的;
+   "none"  = 快照帶 needs_baseline(基準還沒寫)→ 第一次對帳會照 1.5 倍規則收編同方向的現有部位(_auto_baseline,一次定案);
+   "unknown" = 沒有快照、兩個欄位都沒有,或原因是 unconfigured(還沒存過金額:新機存第一份金額時 runtime 會寫一份從零開始的基準,
+   那時什麼都不收編;舊機則會收編——從這一格看不出是哪一種)。純函式 */
+function trBookBaseline(r) {
+  const last = r && r.last_reconcile;
+  if (!last || typeof last !== "object") return "unknown";
+  if (last.ledger && typeof last.ledger === "object") return "built";
+  const nb = last.needs_baseline;
+  return nb && typeof nb === "object" && nb.reason !== "unconfigured" ? "none" : "unknown";
+}
 /* 啟動框的句子分兩層(Wei 0928 第 3 點 A 案的逐句分類):keep = 每次都要看的常駐句,details = 看懂一次就好的、收在「細節」裡。
-   回 { keep: [句], details: [{ label, items }] },純函式(tests/check_shell_start_box.js 切出來跑)。
+   回 { keep: [句], details: [{ label, items | text }] },純函式(tests/check_shell_start_box.js 切出來跑)。
    這台電腦:常駐「睡眠、關機、結束 Blave 時不下單也不停損」;真錢再加交易所停損單那一句(模擬帳戶沒有交易所端的停損單,那句在那裡是假的)。
    雲端:常駐換成主機費與停機門檻(金額來自方案頁同一個來源;拿不到數字就整句不出——不寫死、也不生一句沒有數字的半套說法)。
-   own = 回報證明機器只碰帳本裡的部位(self_ledger);那一句只給真錢,而且用原句——濃縮版「同方向的部位會被算進來」
-   對不上對帳邏輯(只有還沒有基準的機器第一輪才收編,見 lib/portfolio._auto_baseline) */
+   own = 回報證明機器只碰帳本裡的部位(self_ledger);那一句只給真錢(模擬帳戶沒有用戶手動開的部位),而且跟著帳本基準分三種說法(book):
+   還沒建 → 「同方向的部位第一次對帳會算進來」＋細節裡 1.5 倍那一段;已建 → 只講「你自己開的不算 Blave 的」(那時沒有東西會被算進來,
+   講了會讓人以為手動部位抵掉了目標、實際曝險比預期大);讀不到 → 只講兩種情況都成立的那半句 */
 function trStartNotes(o) {
-  const keep = [], items = [];
-  if (o.own && o.real) keep.push(t("tr.startOwnOnly"));
+  const keep = [], items = [], details = [];
+  if (o.own && o.real) {
+    keep.push(t(o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
+    if (o.book === "none") details.push({ label: t("tr.det.own"), text: t("tr.det.ownRule") });
+  }
   if (o.cloud) {
     if (o.v && o.v.h && o.v.m) keep.push(t("tr.cloud.means.3", o.v));
     items.push(t("tr.cloud.means.1"), t("tr.cloud.means.4"));
@@ -1580,7 +1596,7 @@ function trStartNotes(o) {
     if (o.real) keep.push(t("tr.means.4"));
     items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
   }
-  return { keep, details: [{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }] };
+  return { keep, details: details.concat([{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }]) };
 }
 /* 「細節」真錢第一次預設展開、第二次起收起;模擬一律收起。依視角分開記,啟動指令被機器收下才寫入(這台電腦的偏好,localStorage) */
 const trStartSeenKey = (env) => "tr_start_seen_" + (env === "cloud" ? "cloud" : "local") + "_real";
@@ -1609,7 +1625,7 @@ function trAskStart(opener) {
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
   const recomputing = trRecomputing(r), rkS = trRestartKind(r);
-  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)) });
+  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)) });
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
   const money = real ? "Real" : "";
   confirmBox(trCloudBox(Object.assign({

@@ -4,6 +4,8 @@
 //      補齊 = resume(這台電腦對帳器沒在跑再補 restart_reconciler)、等新訊號 = resume_wait(同上);雲端只送所選那一個
 //   3. 重算中:「補齊部位」不能選、原因句掛在那個選項上(aria-describedby);只有一種啟動方式的舊機:沒有選項、照舊一顆主鈕
 //   4. 句子分層(trStartNotes):常駐句與「細節」在 本機 / 雲端 × 模擬 / 真錢 各是哪幾句;真錢第一次細節展開、機器收下指令後才記成看過
+//   5. 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(還沒建 / 已建 / 讀不到):把既有的同方向部位算成 Blave 的只發生在
+//      帳本還沒有基準的那一次(lib/portfolio._auto_baseline);基準寫了之後每次啟動都不會再算——那時還講「會算進來」是錯的
 // 跑法:node tests/check_shell_start_box.js
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -34,7 +36,7 @@ function world(o) {
     $, document: { createElement: (tag) => new El(tag) }, requestAnimationFrame: (f) => f(), t: (k) => k, sent, store,
     TR: { env: o.env || "local", st: { report }, startAt: 0 }, Date,
     trReport: () => report, trZView: () => ({ off: false }), envHeadState: () => "halted", trIsPaper: () => o.money === "paper", envMoney: () => o.money || null,
-    envMoneyText: (m) => (m ? "tr.mode." + m : ""), trWhereTidy: (x) => x, trVenueId: () => (o.money === "paper" ? "paper" : o.money ? "binance" : null), trVenueLabel: (id) => id || "", trPadLatin: (x) => x,
+    trBookBaseline: () => o.book || "unknown", envMoneyText: (m) => (m ? "tr.mode." + m : ""), trWhereTidy: (x) => x, trVenueId: () => (o.money === "paper" ? "paper" : o.money ? "binance" : null), trVenueLabel: (id) => id || "", trPadLatin: (x) => x,
     trRestartKind: () => o.restart || null, trRecomputing: () => !!o.recomputing, trBothReal: () => null, planVars: () => ({ h: "0.9", m: "50" }),
     trHeldVenue: (res) => (res && res.held) || null, trRecRunning: () => !!o.recRunning, lsGet: (k) => (k in store ? store[k] : null), lsSet: (k, v) => { store[k] = v; },
     trSend: (S, cmd) => { sent.push(cmd); return Promise.resolve(o.reply ? o.reply(cmd) : { ok: true }); },
@@ -90,11 +92,25 @@ function world(o) {
       && w.body.kids.some((k) => k.textContent === "tr.startWarn1"));
     await w.press(); ok("…按下去送 resume(＋restart_reconciler)", w.sent.join() === "resume,restart_reconciler", w.sent); }
   // ---- 4
-  { const N = world({ money: "paper" }).M.trStartNotes, flat = (o) => { const n = N(o); return n.keep.join("|") + " / " + n.details.map((g) => g.label + ":" + g.items.join("|")).join(";"); };
+  { const N = world({ money: "paper" }).M.trStartNotes, flat = (o) => { const n = N(o); return n.keep.join("|") + " / " + n.details.map((g) => g.label + ":" + (g.items ? g.items.join("|") : g.text)).join(";"); };
     ok("這台電腦 · 模擬:常駐只有睡眠那一句;不出「只調整 Blave 那一份」與交易所停損單", flat({ paper: true, own: true, venue: "" }) === "tr.keep.sleep / tr.det.local:tr.means.1|tr.means.2p|tr.means.3");
-    ok("這台電腦 · 真錢:常駐三句(只調整 Blave 那一份用原句、睡眠、交易所停損單)", flat({ real: true, own: true, venue: "Binance" }) === "tr.startOwnOnly|tr.keep.sleep|tr.means.4 / tr.det.local:tr.means.1|tr.means.2|tr.means.3");
-    ok("機器沒證明自己只碰帳本(self_ledger 不是 true):那一句不出", flat({ real: true, own: false, venue: "Binance" }).indexOf("tr.startOwnOnly") < 0);
-    ok("雲端:常駐換成主機費與停機門檻;細節是雲端那兩句(「回到這一頁按暫停」那句退役)", flat({ cloud: true, real: true, own: true, v: { h: "1", m: "50" } }) === "tr.startOwnOnly|tr.cloud.means.3 / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4"
+    ok("這台電腦 · 真錢:常駐三句(只調整 Blave 那一份、睡眠、交易所停損單)", flat({ real: true, own: true, venue: "Binance" }) === "tr.keep.own|tr.keep.sleep|tr.means.4 / tr.det.local:tr.means.1|tr.means.2|tr.means.3");
+    ok("機器沒證明自己只碰帳本(self_ledger 不是 true):那一句不出", !/tr\.keep\.own/.test(flat({ real: true, own: false, book: "none", venue: "Binance" })));
+    // 5. 三種帳本狀態
+    const det = (o) => N(o).details.map((g) => g.label + (g.text ? "=" + g.text : "")).join();
+    ok("帳本還沒建(第一次):常駐講「同方向的部位第一次對帳會算進來」,細節多一段 1.5 倍規則(排在環境那一段前面)", N({ real: true, own: true, book: "none", venue: "B" }).keep[0] === "tr.keep.ownFirst"
+      && det({ real: true, own: true, book: "none", venue: "B" }) === "tr.det.own=tr.det.ownRule,tr.det.local");
+    ok("帳本已建:常駐只講「你自己開的不算 Blave 的」,不講會算進來;細節沒有 1.5 倍那一段", N({ real: true, own: true, book: "built", venue: "B" }).keep[0] === "tr.keep.ownBuilt"
+      && det({ real: true, own: true, book: "built", venue: "B" }) === "tr.det.local" && N({ cloud: true, real: true, own: true, book: "built", v: { h: "1", m: "50" } }).keep[0] === "tr.keep.ownBuilt");
+    ok("讀不到帳本狀態:只講兩種情況都成立的那半句;細節沒有 1.5 倍那一段", [undefined, "unknown", "weird"].every((b) => N({ real: true, own: true, book: b, venue: "B" }).keep[0] === "tr.keep.own" && det({ real: true, own: true, book: b, venue: "B" }) === "tr.det.local"));
+    ok("模擬不出這一句,三種帳本狀態都一樣", ["none", "built", "unknown"].every((b) => !/tr\.(keep\.own|det\.own)/.test(flat({ paper: true, own: true, book: b, venue: "" }))));
+    const B = new Function(fn(trade, "trBookBaseline") + "; return trBookBaseline;")();
+    ok("帳本狀態從對帳快照讀:帶 ledger(空的也算)= 已建;帶 needs_baseline = 還沒建;沒有快照、兩個都沒有、型別不對 = 讀不到", B({ last_reconcile: { ledger: {} } }) === "built" && B({ last_reconcile: { ledger: { BTCUSDT: { size: 50 } }, own_only: true } }) === "built"
+      && B({ last_reconcile: { needs_baseline: { reason: "confirming", symbols: [] } } }) === "none" && B({ last_reconcile: { needs_baseline: { reason: "state_unreadable", symbols: ["a"] } } }) === "none"
+      && [null, {}, { last_reconcile: null }, { last_reconcile: {} }, { last_reconcile: { ledger: null } }, { last_reconcile: { ledger: "x", needs_baseline: "y" } }, { last_reconcile: "x" }].every((r) => B(r) === "unknown"));
+    ok("還沒存過金額(needs_baseline 的原因是 unconfigured):讀不到——新機存第一份金額時會寫一份從零開始的基準,舊機會收編,這一格分不出來", B({ last_reconcile: { needs_baseline: { reason: "unconfigured", symbols: [] } } }) === "unknown");
+    ok("兩個都帶(不該發生):以已建為準——寧可少講「會算進來」", B({ last_reconcile: { ledger: {}, needs_baseline: { reason: "confirming" } } }) === "built");
+    ok("雲端:常駐換成主機費與停機門檻;細節是雲端那兩句(「回到這一頁按暫停」那句退役)", flat({ cloud: true, real: true, own: true, v: { h: "1", m: "50" } }) === "tr.keep.own|tr.cloud.means.3 / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4"
       && flat({ cloud: true, paper: true, own: true, v: { h: "1", m: "50" } }) === "tr.cloud.means.3 / tr.det.cloud:tr.cloud.means.1|tr.cloud.means.4");
     ok("雲端拿不到金額:主機費那一句整句不出(不生沒有數字的半套說法)", flat({ cloud: true, paper: true, v: {} }).indexOf("tr.cloud.means.3") < 0); }
   { const det = (w) => w.body.all().find((n) => n.tag === "details");
@@ -109,11 +125,13 @@ function world(o) {
     ok("沒送成、被帳戶確認擋住(held)、模擬:都不記", !("tr_start_seen_local_real" in e.store) && !("tr_start_seen_local_real" in h.store) && !Object.keys(c.store).length, [e.store, h.store, c.store]); }
   // ---- 字串
   { const has = (k) => (strings.match(new RegExp('"' + k.replace(/\./g, "\\.") + '":', "g")) || []).length === 2;
-    const NEW = ["tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.keep.sleep", "tr.det.local", "tr.det.cloud", "cf.more"];
-    const GONE = ["tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2"];
+    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.keep.sleep", "tr.det.local", "tr.det.cloud", "cf.more"];
+    const GONE = ["tr.startOwnOnly", "tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2"];
     ok("新字串兩語都在;退役的兩語都拿掉、程式也不再引用", NEW.every(has) && GONE.every((k) => strings.indexOf('"' + k + '"') < 0 && trade.indexOf('"' + k + '"') < 0), NEW.filter((k) => !has(k)).concat(GONE.filter((k) => strings.indexOf('"' + k + '"') >= 0)));
     const zh = strings.slice(strings.indexOf("\n  zh: {")), get = (k) => (zh.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
     ok("兩顆主鈕的字沒變(實測腳本認這兩句)", get("tr.startCatchUp") === "啟動並補齊部位" && get("tr.startWait") === "啟動，等新訊號才進場" && get("tr.start") === "啟動下單");
+    ok("1.5 倍那一段逐字沿用原句的後半(只在帳本還沒建時出);已建那一句不講「會算進來」「不會被平」", get("tr.det.ownRule") === "第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+      && !/算進來|不會被平|不會被動到/.test(get("tr.keep.ownBuilt")) && /單向持倉/.test(get("tr.keep.ownBuilt")) && get("tr.keep.own") === "只調整 Blave 自己那一份。");
     ok("真錢的選項說明講「真實委託」;「連平倉與停損都不會做」只留在常駐句(tr.means.3 不重述)", /真實委託/.test(get("tr.opt.catchDescReal")) && /真實委託/.test(get("tr.opt.waitDescReal")) && !/真實委託/.test(get("tr.opt.catchDesc") + get("tr.opt.waitDesc"))
       && /平倉與停損也不會執行/.test(get("tr.keep.sleep")) && !/平倉與停損/.test(get("tr.means.3"))); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

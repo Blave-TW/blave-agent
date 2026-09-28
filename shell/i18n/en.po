@@ -1304,9 +1304,6 @@ msgstr "Pause and close positions"
 msgid "tr.startWarn1"
 msgstr "Real orders resume immediately, moving your strategies’ positions to the current targets."
 
-msgid "tr.startOwnOnly"
-msgstr "Only Blave’s own share is traded. On the first reconcile, an existing same-side position counts as Blave’s in full if it’s at most 1.5× the target, otherwise up to the target; the rest is yours and won’t be closed. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
-
 msgid "tr.unmanaged"
 msgstr "Outside Blave"
 
@@ -1346,6 +1343,23 @@ msgstr "No orders now. Each strategy sends real orders only at its next entry, e
 
 msgid "tr.keep.sleep"
 msgstr "While this computer sleeps, is shut down, or Blave is closed, no orders go out — exits and stops included."
+
+# 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
+# tr.keep.ownBuilt 是暫定字(意思由後端依對帳邏輯定,字待設計師定稿)
+msgid "tr.keep.own"
+msgstr "Only Blave’s own share is traded."
+
+msgid "tr.keep.ownFirst"
+msgstr "Only Blave’s own share is traded. If you already hold a same-side position in the same coin, the first reconcile counts it in."
+
+msgid "tr.keep.ownBuilt"
+msgstr "Only Blave’s own share is traded: positions you opened yourself are not counted as Blave’s and don’t count toward a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+
+msgid "tr.det.own"
+msgstr "Which positions count as Blave’s"
+
+msgid "tr.det.ownRule"
+msgstr "On the first reconcile, an existing same-side position counts as Blave’s in full if it’s at most 1.5× the target, otherwise up to the target; the rest is yours and won’t be closed. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
 
 msgid "tr.det.local"
 msgstr "Running on this computer"
