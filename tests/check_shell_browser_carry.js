@@ -155,6 +155,19 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   t("五個回合之後:列出來的都是活的、代號沒有重複", ls.length === Br._tabs.liveCount() && new Set(ls.map((x) => x.tab)).size === ls.length && ls.every((x) => ["ready", "loading"].includes(x.status)), ls);
   Br.endTurn();
 
+  // ---- 別的對話留下來的分頁:不列、指不到;回到原來的對話又接得上
+  await Br.beginTurn(win, SID);
+  const mine = await open(); Br.endTurn();
+  await Br.beginTurn(win, "desktop-other1");
+  ls = await list();
+  t("換一個對話:上一個對話的分頁不列、代號指不到", ls.length === 0 && J(await call("browser_read", { tab: mine.alias })).error === "not_found" && mine.page.entered.length === 0, ls);
+  const theirs = await open();
+  t("換一個對話:新開的分頁代號不重用", theirs.alias !== mine.alias);
+  Br.endTurn(); await Br.beginTurn(win, SID);
+  ls = await list();
+  t("回到原來的對話:自己的分頁接得上,另一個對話的不列", ls.some((x) => x.tab === mine.alias) && !ls.some((x) => x.tab === theirs.alias) && J(await call("browser_read", { tab: mine.alias })).ok === true, ls);
+  Br.endTurn();
+
   // ---- 名額與代號的純邏輯(tabs.js)
   const w = { now: 1e12, destroyed: [] };
   w.tabs = createTabs({ now: () => w.now, create: () => {}, destroy: (x) => w.destroyed.push(x.id), emit: () => {} });

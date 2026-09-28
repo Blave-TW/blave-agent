@@ -24,7 +24,7 @@ function windowCounter(limit, spanMs, now) {
 
 /**
  * opts: { now, create(tab) → void(建 webContents), destroy(tab, keepSnapshot) → void, emit(type, payload), max? }
- * tab 物件:{ id, alias, url, host, by, status, turn, usedTurn, title, visible, read }
+ * tab 物件:{ id, alias, url, host, by, status, turn, scope, usedTurn, title, visible, read }
  *   status: queued | loading | ready | failed | blocked | discarded | closed
  */
 function createTabs(opts) {
@@ -34,7 +34,7 @@ function createTabs(opts) {
   const queue = [];                // 排隊中的 tab id(FIFO)
   // 分頁 id 帶這次啟動的隨機前綴:聊天裡重建的舊回合列拿著上一次啟動的 id,不能撞到這次的分頁
   const run = require("crypto").randomBytes(3).toString("hex");
-  let seq = 0, turn = 0, aliasSeq = 0;
+  let seq = 0, turn = 0, aliasSeq = 0, scope = null;   // scope:這一輪是哪一個對話的(newTurn 帶進來)
   const aliases = new Map();       // alias → id(這次啟動裡開過的 agent 分頁;不清、不重用)
   let counters = null;
   const hostCounters = new Map();
@@ -55,7 +55,8 @@ function createTabs(opts) {
     return free.filter((t) => t.read).sort((a, b) => a.readAt - b.readAt)[0]
       || free.filter((t) => t.turn < turn && t.usedTurn !== turn && !t.userControl && !t.need).sort((a, b) => a.startedAt - b.startedAt)[0] || null;
   }
-  const aliased = () => [...aliases.values()].map((id) => tabs.get(id)).filter(Boolean);
+  // agent 只指得到這個對話自己開的分頁:別的對話留下來的分頁不列、代號也查不到
+  const aliased = () => [...aliases.values()].map((id) => tabs.get(id)).filter((t) => t && t.scope === scope);
   function start(t) { t.status = "loading"; t.startedAt = now(); opts.create(t); }
   function pump() {
     while (queue.length) {
@@ -73,8 +74,8 @@ function createTabs(opts) {
 
   return {
     LIMITS, max,
-    /** 新的一回合:每回合上限歸零。alias 不動——還活著的 agent 分頁下一輪照樣指得到(reachable)。 */
-    newTurn() { turn++; newCounters(); return turn; },
+    /** 新的一回合:每回合上限歸零。alias 不動——同一個對話(key)裡還活著的 agent 分頁下一輪照樣指得到(reachable)。 */
+    newTurn(key) { turn++; scope = key === undefined ? null : key; newCounters(); return turn; },
     turn: () => turn,
     /** 開一頁(url 已過政策)。回 { tab } 或 { error: "rate_limited", retry_in_s }。 */
     /** agent 開一頁(新分頁或在既有分頁導覽)都扣同一組開頁速率:每回合 40、每分鐘 20、同網域每分鐘 6。回 null 或錯誤。 */
@@ -87,7 +88,7 @@ function createTabs(opts) {
     },
     open(url, host, by) {
       if (by === "agent") { const e = this.chargePage(host); if (e) return e; }
-      const t = { id: "p" + run + "_" + (++seq), alias: null, url, host, by, status: "queued", turn, title: "", visible: false, read: false, readAt: 0 };
+      const t = { id: "p" + run + "_" + (++seq), alias: null, url, host, by, status: "queued", turn, scope, title: "", visible: false, read: false, readAt: 0 };
       if (by === "agent") { t.alias = "t" + (++aliasSeq); aliases.set(t.alias, t.id); }
       tabs.set(t.id, t);
       let ok = live().length < max;
@@ -98,13 +99,13 @@ function createTabs(opts) {
     },
     /** 被政策擋下的網址也要有一格(畫面上那一列「打不開」、展開是擋下頁):不佔名額、沒有 webContents。 */
     addBlocked(url, host, by, reason) {
-      const t = { id: "p" + run + "_" + (++seq), alias: null, url, host, by, status: "blocked", reason, turn, title: "", visible: false, read: false, readAt: 0 };
+      const t = { id: "p" + run + "_" + (++seq), alias: null, url, host, by, status: "blocked", reason, turn, scope, title: "", visible: false, read: false, readAt: 0 };
       if (by === "agent") { t.alias = "t" + (++aliasSeq); aliases.set(t.alias, t.id); }
       tabs.set(t.id, t); opts.emit("page_open", { id: t.id, url, queued: false, by, alias: t.alias });
       return t;
     },
     /** alias → tab(關掉的回 null)。前面回合的分頁也查得到;能不能用由呼叫端照當下的狀態判(index.js tabFor)。 */
-    byAlias(alias) { const id = aliases.get(String(alias || "")); const t = id ? tabs.get(id) : null; return t && t.status !== "closed" ? t : null; },
+    byAlias(alias) { const id = aliases.get(String(alias || "")); const t = id ? tabs.get(id) : null; return t && t.status !== "closed" && t.scope === scope ? t : null; },
     get: (id) => tabs.get(id) || null,
     all: () => [...tabs.values()].filter((t) => t.status !== "closed"),
     thisTurn: () => aliased().filter((t) => t.turn === turn && t.status !== "closed"),

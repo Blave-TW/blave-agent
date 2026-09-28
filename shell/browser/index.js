@@ -1101,7 +1101,7 @@ function createBrowser(o) {
       // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
       // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
       cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, verifyDeclined: false, noUser: !!(opts && opts.noUser), sources: [], seen: new Set(), readText: "" };
-      tabs.newTurn();
+      tabs.newTurn(sessionId);
       for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
       watchReports(cur);
       return { url: mcp.url(), token: mcp.beginTurn(turnKey) };
