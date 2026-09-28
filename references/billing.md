@@ -31,8 +31,8 @@ desktop the same three meters exist, but which ones apply depends on two things 
   figure of the tier asked about (Linux Starter when they name none) and say data is included.
 - **Where the user sees their own numbers:** Settings › 資料與雲端方案 (en: Data & cloud plan)
   shows the monthly price of their machine and whether data is included for them; the web usage
-  page lists every deduction. Point there for anything this file does not state — the current
-  hourly data rate included (see Meter 2) — instead of answering that there is no number.
+  page lists every deduction. Point there for anything this file does not state, instead of
+  answering that there is no number.
 
 ## The wallet
 
@@ -53,7 +53,7 @@ machine cost?" with the monthly figure and give the hourly rate beside it as the
 Billing itself is unchanged: still one deduction per clock hour.
 **Use the hourly figure instead** when explaining a specific deduction row, the usage page, or a
 stop/start question — the month is only for "what does this cost" questions.
-**This rule is the server fee only.** Never multiply the 3 TWD data fee (Meter 2) by 720: it is
+**This rule is the server fee only.** Never multiply the 2 TWD data fee (Meter 2) by 720: it is
 charged per *active* hour, so a monthly figure for it would be fiction.
 Amounts here are TWD, which is what the wallet holds and what every deduction is in; the English,
 Japanese, Vietnamese, Spanish and Portuguese site faces display USD at 30 TWD/USD
@@ -90,20 +90,19 @@ Japanese, Vietnamese, Spanish and Portuguese site faces display USD at 30 TWD/US
 
 For an account with no cloud machine and no API plan, whichever key makes the call — the user's
 own API key or the data key the desktop app received at sign-in. The desktop key has one more
-free case: while the card trial runs, or while a machine is still being set up. The hourly
-figure below can lag the platform's: to a user who actually pays this fee, give the mechanism
-and point to the usage page for the rate charged. Rule in `deduct_blave_api_credit`:
+free case: while the card trial runs, or while a machine is still being set up. Rule in
+`deduct_blave_api_credit` (rate: `PRICING["blave_api_per_hour"]`):
 
 - Exempt outright: API-plan subscribers; any account with a Blave Agent machine (running or stopped).
-- Everyone else: **3 TWD per UTC clock hour in which at least one Blave data call was made** — a
+- Everyone else: **2 TWD per UTC clock hour in which at least one Blave data call was made** — a
   Redis key `blave:api_hourly:<uid>:<YYYY-MM-DD-HH>` is set on the first call and short-circuits
   the rest of that hour. It is **never per call**: 1 call and 1,000 calls in the same hour cost the
-  same 3 TWD, and an hour with no calls costs nothing.
+  same 2 TWD, and an hour with no calls costs nothing.
 - Applies to every endpoint behind `@api_plan_required` / `token_or_api_plan_required` — i.e. the
   data endpoints `lib/data.py` talks to. Nothing else is metered as data.
-- History: before the data fee was bundled into the server hour, machine owners did see this
-  3 TWD line item once per active hour. Users who remember "being charged every hour for the API"
-  are describing that old regime; it no longer applies to them.
+- History: before the data fee was bundled into the server hour, machine owners did see a
+  separate data line item once per active hour (3 TWD at the time). Users who remember "being
+  charged every hour for the API" are describing that old regime; it no longer applies to them.
 
 ## Meter 3 — LLM (`usage_llm`) — every chat turn
 
