@@ -94,7 +94,7 @@ function classify(action, d, key) {
   }
   if (action === "press") {
     if (key !== "Enter") return { ok: true };
-    if (d.tag === "iframe") return { ok: false, error: "needs_user", kind: "action" };   // 焦點在別的 frame 裡:看不到按的是什麼
+    if (d.tag === "iframe" || d.opaque) return { ok: false, error: "needs_user", kind: "action" };   // 焦點在別的 frame / closed shadow root 裡:看不到按的是什麼
     if (buttonLike(d)) return classify("click", d);   // Enter 在按鈕 / 連結上 = 點它,照點擊的分級
     if (sensitiveField(d)) return { ok: false, error: "needs_user", kind: "submit" };
     if (!d.inForm) return { ok: true };   // 不在 form 裡的 Enter:由 POST 後盾接

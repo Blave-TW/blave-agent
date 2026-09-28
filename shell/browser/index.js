@@ -266,7 +266,7 @@ function createBrowser(o) {
     // 接手:用戶在展開的那一頁點或打字(agent 自己的輸入 300ms 內不算)
     wc.on("input-event", (_e, inp) => {
       if (v.agentInputting || Date.now() - v.agentInputAt < 600) return;
-      if (inp.type !== "mouseMove") v.userInputAt = Date.now();   // 用戶 3 秒內碰過這一頁 → 讀取帶不跟著捲
+      if (inp.type !== "mouseMove") { v.userInputAt = Date.now(); v.userInputs = (v.userInputs || 0) + 1; }   // 用戶 3 秒內碰過這一頁 → 讀取帶不跟著捲;計數給 autoHandback 比前後
       if (inp.type === "keyDown" || inp.type === "rawKeyDown" || inp.type === "char") v.userKeyNav = v.navs;   // 用戶在這份文件裡打過字(unsaved)
       if (!t.visible || t.userControl) return;
       if (inp.type === "mouseDown" || inp.type === "rawKeyDown" || inp.type === "keyDown") takeover(t.id);
@@ -325,20 +325,26 @@ function createBrowser(o) {
   }
   /* 用戶在聊天送出訊息 = 他接手過的那幾頁交回來了(Wei 2026-09-28):這個對話裡 agent 開的、他接手中的分頁自動交還。
      只打開「你在操作」這一道鎖——網址政策、驗證頁、敏感欄位、送出類動作的守門都照舊由 tabFor 與各工具判。
-     留給用戶的:驗證頁、當下網址 agent 不能去的頁(登入後的帳戶頁:交還了縮圖就會開始拍)、焦點在敏感欄位或 iframe 裡
-     (金流商的卡號欄在 iframe,看不進去)、問不到焦點的頁。別的對話的分頁、用戶自己開的分頁不在 reachable 裡 */
+     留給用戶的:驗證頁、當下網址 agent 不能去的頁(登入後的帳戶頁:交還了縮圖就會開始拍)、焦點在敏感欄位或 iframe /
+     closed shadow root 裡(金流商的卡號欄在 iframe,看不進去)、問不到或判不出焦點的頁。別的對話的分頁、用戶自己開的分頁不在 reachable 裡。
+     判不出來一律不交還(稽核 P1-2 fail-closed):這一道是自動交還唯一的人工確認替代品,錯就錯在留給用戶那一邊 */
   async function handable(t) {
     const v = views.get(t.id); if (!v) return false;
     const open = () => !verifying(t) && !policy.agent(v.wc.getURL() || t.url);
     if (!open()) return false;
     let f; try { f = await within(v.page.focused(), 1500); } catch (_) { return false; }
-    if (f && f.desc && (f.desc.tag === "iframe" || gate.sensitiveField(f.desc))) return false;
+    if (!f || !f.desc || !f.desc.tag) return false;   // 頁面沒有 activeElement / evaluate 沒回物件 / 描述是空的:判不出
+    if (f.desc.tag === "iframe" || f.desc.opaque || gate.sensitiveField(f.desc)) return false;
     return open();
   }
   async function autoHandback(c) {
     for (const t of tabs.reachable()) {
-      if (t.by !== "agent" || !t.userControl || !(await handable(t))) continue;
-      if (cur === c && t.userControl) handback(t.id, true);
+      if (t.by !== "agent" || !t.userControl) continue;
+      const v = views.get(t.id); if (!v) continue;
+      const touched = v.userInputs || 0;
+      if (!(await handable(t))) continue;
+      // 等焦點的這段時間他又在這一頁動手了(輸入計數變了)→ 這一輪還是他的
+      if (cur === c && t.userControl && (v.userInputs || 0) === touched) handback(t.id, true);
     }
   }
   /* 用戶在這份文件裡打過字、欄位裡還留著他改過的內容:agent 在這一格導覽會把它沖掉。回 true = 不導覽(問不到也當成有) */

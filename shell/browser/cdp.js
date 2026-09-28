@@ -278,17 +278,22 @@ function createPage(wc) {
     for (const ch of String(text)) { await send("Input.insertText", { text: ch }); await sleep(opt.delay || 35); }
     return {};
   }
-  /** 目前有焦點的元素 → { backendNodeId, desc } 或 null。 */
+  /** 目前有焦點的元素 → { backendNodeId, desc } 或 null(頁面沒有 activeElement、或問不到)。
+      desc.opaque = true:焦點停在一個 closed shadow root 的宿主上——頁內腳本走不進去,真正有焦點的可能是裡面的密碼欄;
+      呼叫端把它跟 iframe 一樣當「看不進去」。 */
   async function focused() {
     const ctx = await world();
     // 焦點在開放的 shadow root 裡時,document.activeElement 只給到宿主:往裡面走到真正有焦點的那個元素
     const r = await send("Runtime.evaluate", { expression: "(function () { let e = document.activeElement; for (let i = 0; i < 20 && e && e.shadowRoot && e.shadowRoot.activeElement; i++) e = e.shadowRoot.activeElement; return e; })()", contextId: ctx });
     if (!r.result || !r.result.objectId) return null;
     try {
-      const dn = await send("DOM.describeNode", { objectId: r.result.objectId });
+      // closed shadow root 頁內看不到(e.shadowRoot 是 null),CDP 看得到:pierce 之後宿主節點帶 shadowRoots
+      const dn = await send("DOM.describeNode", { objectId: r.result.objectId, pierce: true });
       const b = dn.node.backendNodeId;
       if (dn.node.nodeName === "BODY" || dn.node.nodeName === "HTML") return { backendNodeId: b, desc: { tag: "body", inForm: false } };
-      return { backendNodeId: b, desc: await describe(b) };
+      const desc = await describe(b);
+      if ((dn.node.shadowRoots || []).some((s) => s.shadowRootType === "closed")) desc.opaque = true;
+      return { backendNodeId: b, desc };
     } finally { send("Runtime.releaseObject", { objectId: r.result.objectId }).catch(() => {}); }
   }
   /** onScreen = false:視窗外的 view 收不到 CDP 的鍵盤事件(同滑鼠,實測),改在頁內做同一件事——
