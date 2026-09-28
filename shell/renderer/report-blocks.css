@@ -2,7 +2,7 @@
    web 那份是恆暗、寫死 dark 值;這裡 token 一律換成語意角色(--ink / --ink-2 / --ink-3 / --border-hairline /
    --surface-card / --surface-muted),app 兩態都對。刻意不換的:.is-na 無資訊格的 --color-greyDark(tokens.css 兩態都有)。
    搬運 delta 另有兩處:熱圖 td 加 white-space: nowrap(480 欄會把 +2.1 折成四行;橫捲交給 .rb-heat-wrap)、
-   web 的 768 手機斷點拿掉(桌面中欄最窄 480,由 kpi 的 3+3 網格與表 / 熱圖自己的橫捲承接)。
+   web 的 768 手機斷點拿掉(桌面中欄最窄 480,kpi 由內容欄寬的 container query 承接,表 / 熱圖有自己的橫捲)。
    圖表走 SVG,顏色全部由下方的 class 供給(presentation attribute 吃不到 CSS 變數的引擎差異,一律不用 fill="var(...)")。 */
 
 /* ---------- 閱讀欄 ---------- */
@@ -10,6 +10,7 @@
   max-width: 680px;
   margin: 0 auto;
   color: var(--ink-2);
+  container: rb / inline-size;
 }
 
 /* block 間距一律由 wrapper 給；wrapper 無 padding/border，故與子元素的
@@ -125,6 +126,9 @@
   font-size: 20px;
   font-weight: 500;
   color: var(--ink);
+  /* 數字不從中間斷(斷成兩行會被讀成兩個數字);放不下靠下面的排法,不縮字 */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .rb-report .rb-kpi-cell.is-focus .rb-kpi-value {
   font-size: 28px;
@@ -134,8 +138,16 @@
   font-weight: 400;
   color: var(--ink-3);
   margin-left: var(--space-4);
-  /* .rb-report 整份是 overflow-wrap: anywhere:格子放不下時單位整顆換行,不從字中間斷成「U／SDT」 */
+  /* 單位是一個整體:格子放不下時整顆換到下一行,不從字中間斷成「U／SDT」。
+     inline-block 是為了在數字與單位之間留一個可以換行的點(數字那一格已經不准任意斷) */
+  display: inline-block;
   white-space: nowrap;
+}
+/* 超過 8 個字元的單位(契約上限 16)自己一行:中文 16 個字比最窄的格子寬,nowrap 會伸出格子 */
+.rb-report .rb-kpi-unit.is-long {
+  display: block;
+  margin: var(--space-2) 0 0;
+  white-space: normal;
 }
 /* delta 走值下方第三行(值=現況、delta=變化,兩件事不同排),因此退出寬度計算;
    一格一個色訊號:有 delta 時色在 delta、值是墨色(見下方 .rb-kpi-delta.rb-up/.rb-dn) */
@@ -151,10 +163,28 @@
 /* 有 delta 的格子:漲跌色上在 delta(文字級的 greenText/redText),值維持墨色 */
 .rb-report .rb-kpi-delta.rb-up { color: var(--color-greenText); }
 .rb-report .rb-kpi-delta.rb-dn { color: var(--color-redText); }
-/* 6 格(契約上限)固定折成 3+3 兩排等寬網格,不放任自由 wrap 折出 5+1 孤兒 */
+/* 6 格(契約上限):焦點格在任何寬度都獨佔一列(三等分的格子放不下七位數加單位),其餘五格三等分排成 3+2 */
 .rb-report .rb-kpi.is-n6 .rb-kpi-cell {
   flex: 0 0 calc((100% - var(--space-32) * 2) / 3);
   min-width: 0;
+}
+.rb-report .rb-kpi.is-n6 .rb-kpi-cell.is-focus {
+  flex: 0 0 100%;
+}
+/* 欄數跟著內容欄寬走,不跟視窗寬:中欄最窄 480 時內容欄只有 432 */
+@container rb (max-width: 599px) {
+  .rb-report .rb-kpi {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-16) var(--space-24);
+  }
+  .rb-report .rb-kpi .rb-kpi-cell {
+    min-width: 0;
+  }
+  .rb-report .rb-kpi-cell.is-focus,
+  .rb-report .rb-kpi-cell.is-wide {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ---------- 圖表（SVG） ---------- */
