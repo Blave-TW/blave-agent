@@ -3963,6 +3963,10 @@ msgstr "公開連結掛在你的 Blave 帳號下，先登入才能公開。"
 msgid "shr.gateGo"
 msgstr "去登入"
 
+# 勾選列在捲動區外又還沒勾時,訊息槽的那一句(第十八批 DF2;同 web workspace_share_scroll_hint)
+msgid "shr.scrollHint"
+msgstr "往下捲，勾選後才能公開。"
+
 # ── 新增策略 modal(spec-desktop-0.1.6 §4;renderer/newstrategy.js;字逐字抄 web 的 workspace_ns_*)──
 msgid "ns.title"
 msgstr "新增策略"

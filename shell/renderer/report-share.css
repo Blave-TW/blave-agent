@@ -58,6 +58,8 @@
 .shr-three li::before { content: "\2014"; position: absolute; left: 0; color: var(--ink-3); }
 .shr-chk { display: flex; align-items: center; gap: var(--space-12); min-height: 44px; margin-top: var(--space-4); cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink); }
 .shr-modal .modal-foot { flex-wrap: wrap; align-items: center; }
+/* 捲動提示不是錯誤:同一個訊息槽的字級與顏色,不用警示色 */
+.shr-modal .foot-msg.is-hint { line-height: 1.5; }
 .shr-tos { flex-basis: 100%; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
 /* 條款連結:坐在一句話裡的安靜連結——ink + 常駐底線(同 mockup .dt-tlnk);開系統瀏覽器 */
 .shr-tlnk { padding: 0; margin: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }

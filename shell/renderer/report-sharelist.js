@@ -187,10 +187,10 @@ function shrLimitPaint(D) {
   const fm = $("shr-msg"), send = $("shr-send");
   if (!D.limit) {
     if (D.limitShown) { fm.textContent = ""; D.limitShown = false; }
-    send.removeAttribute("aria-describedby");   // 上一趟開框留下的也收掉
+    if (!D.hint) send.removeAttribute("aria-describedby");   // 上一趟開框留下的也收掉;捲動提示(report-share.js shrHint)掛著的不動
     return;
   }
-  fm.textContent = ""; D.limitShown = true;
+  fm.textContent = ""; fm.classList.remove("is-hint"); D.limitShown = true; D.hint = false;
   const n = typeof D.limit.n === "number" ? String(D.limit.n) : "";
   shrFill(fm, t(D.limit.kind === "live" ? "shr.limitLive" : "shr.limitDaily"), { n });
   if (D.limit.kind === "live") {   // 50 份那句帶出口;每日那句沒有補救動作,只講什麼時候能再試
