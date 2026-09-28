@@ -201,7 +201,8 @@
 .wtag.cloud { background: var(--surface-muted); color: var(--ink); }
 .sysline { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-24); font-size: 11px; line-height: 1.4; color: var(--ink-3); text-align: center; }
 .sysline::before, .sysline::after { content: ""; flex: 1; height: 1px; background: var(--border-hairline); }
-.think-step .wtag { flex: none; }
+.think-step .wtag { flex: none; display: none; }
+.think-indicator.has-both .think-step .wtag { display: inline-flex; }   /* 這一輪兩邊都做過事才畫 */
 .msg.you .bubble {
   background: var(--surface-muted); border-radius: var(--radius-lg);
   padding: var(--space-8) var(--space-16); max-width: 84%; min-width: 0;
@@ -314,6 +315,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    (不是巢在某一回合裡),所以下緣間距對齊 .msg 的 24 而不是 web 的 4。
    ========================================================================= */
 .think-indicator {
+  position: relative;
   display: flex; flex-direction: column; align-items: flex-start;
   gap: var(--space-4);
   margin-bottom: var(--space-24);
@@ -331,6 +333,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
 .think-head.no-toggle { cursor: default; }
+/* 熱區:整列寬 × 32(視覺列高仍 26)——錨在 .think-indicator,不是字的寬度;沒東西可展開就沒有熱區 */
+.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -3px; height: 32px; }
+.think-head .think-verb, .think-head .think-chev { transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.think-head.has-reason:hover .think-verb, .think-head.has-reason:hover .think-chev { color: var(--ink); }
 /* 回合結束:tick 條收掉——凍結的秒數已經說了花多久,停住的條子是同一件事講兩次。
    字不變暗:這一列是用戶會回頭展開來讀的內容,不是過期的狀態。 */
 .think-indicator.is-done { margin-bottom: var(--space-8); }
@@ -345,16 +351,10 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   transition: transform var(--motion-fast) var(--ease-standard);
 }
 [open] > summary .cv7 { transform: translateY(2px) rotate(-135deg); }
-@media (prefers-reduced-motion: reduce) { .cv7 { transition: none; } }
-.think-chev {
-  flex: none; width: 5px; height: 5px; margin-left: 2px; position: relative; top: -1px;
-  border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3);
-  transform: rotate(45deg);
-  transition: transform var(--motion-fast) var(--ease-standard);
-  visibility: hidden;
-}
+/* 狀態列的 chevron 就是 .cv7;字到 chevron 的 8 是 .think-head 的 gap */
+.think-chev { color: var(--ink-3); visibility: hidden; }
 .think-head.has-reason .think-chev { visibility: visible; }
-.think-indicator.is-open .think-chev { transform: rotate(-135deg); }
+.think-indicator.is-open .think-chev { transform: translateY(2px) rotate(-135deg); }
 
 /* 展開面板:grid-rows 0fr↔1fr 收合(動到面板的真實高度,不用猜 max-height)。
    wrap 只能有一個 grid row(.think-fold)——多一個子元素會掉進 implicit auto row,
@@ -382,12 +382,16 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   padding: 3px 0; font-size: 12px; line-height: 1.5;
 }
 .think-step-mark { flex: none; width: 8px; height: 2px; background: var(--ink-3); }
-.think-step.is-run .think-step-mark { width: 4px; background: var(--ink); }
+/* 記號欄固定 8 寬:正在跑那一列的記號是 4,右邊補 4,字才跟上面的列對齊。正在跑的那一列用主墨 */
+.think-step.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }
+.think-step.is-run .think-step-verb, .think-step.is-run .think-step-time { color: var(--ink); }
+.think-step.is-run .think-step-obj { color: var(--ink-2); }
 /* 錯誤是狀態不是內容:紅只上在記號與耗時,動詞受詞不變色 */
 .think-step.is-err .think-step-mark { background: var(--color-red); }
-.think-step-verb { flex: none; color: var(--ink-2); }
+/* 秒數不讓位:先截受詞,受詞截完還放不下(英文長動詞＋位置記號)才截動詞。受詞的 shrink 9999:比例小一點動詞就會先被削掉不到 1px、多出一個「…」 */
+.think-step-verb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .think-step-obj {
-  flex: 0 1 auto; min-width: 0;
+  flex: 0 9999 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--ink-3);
 }
@@ -405,7 +409,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .think-reason:empty { display: none; }
-/* 出錯回合自動攤開時思考文字先收著(busyOpenReceipts),下面那顆文字鈕按了才出;左緣對齊收據 */
+/* 思考文字每一輪都先收著(busyHoldReason),下面那顆文字鈕按了才出;左緣對齊收據 */
 .think-indicator.reason-held .think-reason { display: none; }
 .think-reason-show { display: block; margin: var(--space-4) 0 var(--space-4) 15px; }
 /* tick 條:一秒一格。最新那格在最右、滿墨,舊的按年齡退色並整條往左滑出

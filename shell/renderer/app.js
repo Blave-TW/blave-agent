@@ -1260,22 +1260,25 @@ function receiptFold(steps) {
   const head = document.createElement("button"); head.type = "button"; head.className = "think-head has-reason";
   head.setAttribute("aria-expanded", "false");
   const verb = document.createElement("span"); verb.className = "think-verb"; verb.dataset.i18n = "turn.process"; verb.textContent = t("turn.process");
-  const chev = document.createElement("span"); chev.className = "think-chev"; chev.setAttribute("aria-hidden", "true");
+  const chev = document.createElement("span"); chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(verb, chev);
   const wrap = document.createElement("div"); wrap.className = "think-reason-wrap";
   const fold = document.createElement("div"); fold.className = "think-fold";
   const list = document.createElement("ul"); list.className = "think-steps";
+  const sides = new Set();
   steps.forEach((st) => {
     const li = document.createElement("li"); li.className = "think-step";
     if (st.more) { li.textContent = st.more; list.appendChild(li); return; }
-    const lab = stepLabel(st);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來
+    const lab = stepLabel(st, true);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來;收據上的都是做完的步驟
     if (!lab) return;
+    sides.add(stepWhere({ tool: st.tool }));
     const mark = document.createElement("span"); mark.className = "think-step-mark";
     const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = lab.verb;
     const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = lab.obj;
     li.append(mark, whereTag(stepWhere({ tool: st.tool })), v, obj);
     list.appendChild(li);
   });
+  el.classList.toggle("has-both", sides.size > 1);
   fold.appendChild(list); wrap.appendChild(fold); el.append(head, wrap);
   head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
   return el;
@@ -1654,21 +1657,21 @@ function actWant(st, now, needUser) {
   if (st.textStart && now - st.textStart >= ACT_REPLY_MS && now - st.lastDelta <= ACT_REPLY_MS) return { kind: "reply", obj: "" };
   return { kind: "thinking", obj: "" };
 }
-function actLabel(w) {
-  if (w.kind === "web_read_many") return t("act.web_read_many", { n: w.obj || "" });
-  const key = "act." + w.kind;
-  return t(key);
+/* done = 做完的步驟(展開的清單):動詞換完成式 step.<kind>(「讀」/ Read);沒有那個 key 就退回 act.*(「正在讀」) */
+function actLabel(w, done) {
+  const key = (done && STRINGS.en["step." + w.kind] ? "step." : "act.") + w.kind;
+  return w.kind === "web_read_many" ? t(key, { n: w.obj || "" }) : t(key);
 }
 /* runtime 比外殼新、送來外殼不認得的 kind:當成 unknown(「正在處理」),而且不帶受詞(稽核 P2-7) */
 const actKnown = (w) => (w.kind === "web_read_many" || STRINGS.en["act." + w.kind] ? w : { kind: "unknown", obj: "" });
 /* 展開的步驟清單(即時與重開畫回)跟狀態列用同一套 kind → act.* 的字,不另做對照表;工具名(ToolSearch、mcp__…)是內部名稱,
    不上畫面(0.1.8 e2e #88)。受詞照舊是 runtime 給的 summary(檔名／搜尋字／網域),沒有才退到 kind 的受詞;
    silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js */
-function stepLabel(c) {
+function stepLabel(c, done) {
   const k = actKindOf(c || {});
   if (k.kind === "silent") return null;
   const w = actKnown(k);
-  return { verb: actLabel(w), obj: w.kind === "web_read_many" ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
+  return { verb: actLabel(w, done), obj: w.kind === "web_read_many" ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
 }
 function actReset() { ACT.running.clear(); ACT.shown = null; ACT.shownAt = 0; ACT.textStart = 0; ACT.lastDelta = 0; ACT.prep = null; ACT.lastWant = null; clearTimeout(ACT.timer); }
 function actToolPrep(c) { ACT.prep = { tool: String(c.tool || ""), kind: c.kind ? String(c.kind) : "", obj: c.kind_obj ? String(c.kind_obj) : "" }; ACT.textStart = 0; actApply(); }
@@ -1748,7 +1751,7 @@ function busyStart() {
   // 每秒變的數字在 live region 裡會被逐秒念出來;狀態由動詞承載,秒數只給眼睛
   elapsed.className = "think-elapsed"; elapsed.setAttribute("aria-hidden", "true");
   const chev = document.createElement("span");
-  chev.className = "think-chev"; chev.setAttribute("aria-hidden", "true");
+  chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(ticks, sum, elapsed, chev);
   // 折疊面板:grid-rows 0fr↔1fr(動到真實高度,不用猜 max-height)
   const wrap = document.createElement("div");
@@ -1768,11 +1771,17 @@ function busyStart() {
     head.setAttribute("aria-expanded", open ? "true" : "false");
   });
   $("chat-scroll").appendChild(el);
-  busy = { el, head, ticksIn, verb, obj, elapsed, stepsEl, reason, stepRows: {},
+  busy = { el, head, ticksIn, verb, obj, elapsed, stepsEl, reason, stepRows: {}, sides: new Set(),
            start: Date.now(), steps: 0, timer: null };
   actReset(); actApply(true);
   busyElapsed(); busyTick();          // 第 0 秒:條子不會是空的
-  busy.timer = setInterval(() => { busyElapsed(); busyTick(); actApply(); }, 1000);
+  busy.timer = setInterval(() => { busyElapsed(); busyTick(); busyStepTick(); actApply(); }, 1000);
+}
+/* 正在跑的那一步顯示自己的秒數(看得出是卡在這一步,還是一直在換步驟);清單跟到最新一列——游標在清單上(人在讀前面的)就不搶 */
+function busyStepTick() {
+  const ul = busy.stepsEl, now = Date.now();
+  ul.querySelectorAll(".think-step.is-run").forEach((li) => { li.querySelector(".think-step-time").textContent = fmtDur((now - li.__t0) / 1000); });
+  if (!ul.matches(":hover")) ul.scrollTop = ul.scrollHeight;
 }
 function busyHasFold() {
   if (busy) busy.head.classList.remove("no-toggle"), busy.head.classList.add("has-reason");
@@ -1793,9 +1802,12 @@ function busyStep(c) {
   obj.textContent = lab.obj;
   const time = document.createElement("span"); time.className = "think-step-time";
   li.append(mark, whereTag(stepWhere(c)), verb, obj, time);   // ④ 這一步實際做在哪(事實)
+  // 位置記號只在這一輪兩邊都做過事時才畫(.has-both,app.css):整輪都在同一邊,每列都掛同一個字只是佔寬度
+  busy.sides.add(stepWhere(c)); busy.el.classList.toggle("has-both", busy.sides.size > 1);
+  li.__t0 = Date.now(); li.__c = c; time.textContent = fmtDur(0);
   busy.stepsEl.appendChild(li);
   if (c.id) busy.stepRows[c.id] = li;
-  busyHasFold();
+  busyHasFold(); busyStepTick();
 }
 /* `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟。 */
 function busyStepDone(c) {
@@ -1803,7 +1815,8 @@ function busyStepDone(c) {
   const li = busy && c.id && busy.stepRows[c.id];
   if (!li) return;
   li.classList.remove("is-run");
-  if (c.error) li.classList.add("is-err");
+  // 做完才換完成式;出錯的那一步不換——英文的完成式是過去式,「Placed an order」配一個失敗的步驟會被讀成下了單
+  if (c.error) li.classList.add("is-err"); else li.querySelector(".think-step-verb").textContent = stepLabel(li.__c, true).verb;
   const ms = Number(c.ms) || 0;
   if (ms > 0) li.querySelector(".think-step-time").textContent =
     ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";
@@ -1813,7 +1826,7 @@ function busyReason(text) {
   if (!busy || !text) return;
   busy.reason.textContent += (busy.reason.textContent ? "\n\n" : "") + text;
   busy.reason.scrollTop = busy.reason.scrollHeight;
-  busyHasFold();
+  busyHasFold(); busyHoldReason(busy);
 }
 function busyHide() {
   if (busy) busy.el.hidden = true;    // 回覆在串流了,字本身就是「還在跑」
@@ -1840,16 +1853,20 @@ function busyEnd(faulted) {
   setTimeout(() => b.el.remove(), motionBaseMs() + 30);
 }
 
-/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):工具收據自己攤開——「做到哪」不該還要多按一下;思考文字維持收起
-   (那是模型自己的獨白,多半是英文,出錯時要的是收據)。有思考文字才在收據下面留一顆「顯示思考內容」,按了才出 */
-function busyOpenReceipts(b) {
-  b.el.classList.add("is-open"); b.head.setAttribute("aria-expanded", "true");
-  if (!b.reason.textContent.trim()) return;
-  b.el.classList.add("reason-held");
+/* 思考文字每一輪都先收著(Wei 0928 第 2b 點):那是模型自己的獨白,多半是英文,等的人要看的是步驟。
+   有思考文字才在步驟下面留一顆「顯示思考內容」,按了才出;一輪只掛一次,按過之後後面來的字直接看得到 */
+function busyHoldReason(b) {
+  if (b.held || !b.reason.textContent.trim()) return;
+  b.held = true; b.el.classList.add("reason-held");
   const show = document.createElement("button");
   show.type = "button"; show.className = "btn-quiet think-reason-show"; show.textContent = t("turn.showReason");
   show.addEventListener("click", () => { b.el.classList.remove("reason-held"); show.remove(); b.reason.setAttribute("tabindex", "-1"); b.reason.focus(); });   // 鈕消失,焦點接到剛出來的字
   b.reason.before(show);
+}
+/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):工具收據自己攤開——「做到哪」不該還要多按一下;思考文字照樣收著 */
+function busyOpenReceipts(b) {
+  b.el.classList.add("is-open"); b.head.setAttribute("aria-expanded", "true");
+  busyHoldReason(b);
 }
 /* 停止(照雲端工作頁 csSyncComposer / interruptTurn):回合進行中送出鈕換成停止鈕(同一顆中性鈕、箭頭換方塊);
    按下 = 請主行程寫停止旗標,鈕轉「停止中」(變淡、仍可按)等 turn-end,**不先樂觀地切回送出**。

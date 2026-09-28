@@ -209,6 +209,85 @@ msgstr "Writing code"
 msgid "act.need_user"
 msgstr "Waiting for you"
 
+# 展開的步驟清單:做完的步驟用完成式(對應 act.*;出錯的那一步不換)。缺 key 時畫面退回 act.*
+msgid "step.unknown"
+msgstr "Worked"
+
+msgid "step.search"
+msgstr "Searched:"
+
+msgid "step.web_read"
+msgstr "Read"
+
+msgid "step.web_read_many"
+msgstr "Read {n} pages"
+
+msgid "step.web_act"
+msgstr "Used"
+
+msgid "step.docs"
+msgstr "Checked the docs"
+
+msgid "step.files"
+msgstr "Looked through files"
+
+msgid "step.file_read"
+msgstr "Read"
+
+msgid "step.strategy_read"
+msgstr "Read strategy"
+
+msgid "step.strategy_write"
+msgstr "Wrote strategy"
+
+msgid "step.file_write"
+msgstr "Edited"
+
+msgid "step.data"
+msgstr "Fetched data"
+
+msgid "step.backtest"
+msgstr "Backtested"
+
+msgid "step.live_tick"
+msgstr "Ran strategy"
+
+msgid "step.scan"
+msgstr "Scanned parameters"
+
+msgid "step.validate"
+msgstr "Validated"
+
+msgid "step.check"
+msgstr "Checked strategy code"
+
+msgid "step.report"
+msgstr "Built the report"
+
+msgid "step.watch"
+msgstr "Updated the watchboard"
+
+msgid "step.schedule"
+msgstr "Set up a schedule"
+
+msgid "step.order"
+msgstr "Placed an order"
+
+msgid "step.account"
+msgstr "Checked the account"
+
+msgid "step.status"
+msgstr "Checked what's running"
+
+msgid "step.install"
+msgstr "Installed packages"
+
+msgid "step.cloud"
+msgstr "Connected to the cloud machine"
+
+msgid "step.delegate"
+msgstr "Delegated research"
+
 msgid "turn.busy"
 msgstr "The previous turn is still running."
 

@@ -209,6 +209,85 @@ msgstr "正在寫程式"
 msgid "act.need_user"
 msgstr "等你操作"
 
+# 展開的步驟清單:做完的步驟用完成式(對應 act.*;出錯的那一步不換)。缺 key 時畫面退回 act.*
+msgid "step.unknown"
+msgstr "處理"
+
+msgid "step.search"
+msgstr "搜尋："
+
+msgid "step.web_read"
+msgstr "讀"
+
+msgid "step.web_read_many"
+msgstr "讀 {n} 個網頁"
+
+msgid "step.web_act"
+msgstr "操作"
+
+msgid "step.docs"
+msgstr "查說明文件"
+
+msgid "step.files"
+msgstr "找檔案"
+
+msgid "step.file_read"
+msgstr "讀"
+
+msgid "step.strategy_read"
+msgstr "讀策略"
+
+msgid "step.strategy_write"
+msgstr "寫策略"
+
+msgid "step.file_write"
+msgstr "改"
+
+msgid "step.data"
+msgstr "抓資料"
+
+msgid "step.backtest"
+msgstr "跑回測"
+
+msgid "step.live_tick"
+msgstr "跑策略"
+
+msgid "step.scan"
+msgstr "掃參數"
+
+msgid "step.validate"
+msgstr "驗證策略"
+
+msgid "step.check"
+msgstr "檢查策略碼"
+
+msgid "step.report"
+msgstr "組報告"
+
+msgid "step.watch"
+msgstr "更新看盤板"
+
+msgid "step.schedule"
+msgstr "設定排程"
+
+msgid "step.order"
+msgstr "下單"
+
+msgid "step.account"
+msgstr "查帳戶"
+
+msgid "step.status"
+msgstr "查執行狀態"
+
+msgid "step.install"
+msgstr "安裝套件"
+
+msgid "step.cloud"
+msgstr "連雲端主機"
+
+msgid "step.delegate"
+msgstr "委派研究"
+
 msgid "turn.busy"
 msgstr "上一輪還在跑。"
 
