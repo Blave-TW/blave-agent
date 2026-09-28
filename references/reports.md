@@ -54,6 +54,19 @@ and ships whatever lands there.
   a report from an earlier turn, a scheduled run or another process is never replaced
   (the call then writes a new report). Without `replace=True` a correction is one more
   report in the user's list.
+- **Changing a report the user named**: when the user points at one report and asks for a
+  change to it (「把剛剛這份報告的標題改成…，其他不動」, rewrite one paragraph, fix a typo),
+  change that report itself with `lib.report.edit_report`:
+  `edit_report("<id>", title="…")`, or
+  `edit_report("<id>", change=lambda blocks: blocks[3].update(markdown="…"))`.
+  It keeps the id, `created_at` (the report stays where it is in the list) and the pictures,
+  and touches nothing the change did not name. **Never edit `reports/<id>.json` by hand** —
+  not with Python, not with an editor: that skips the checks, the schema version, the sweep
+  of unused captures and the ledger (`.written.jsonl`). A report nobody named is never
+  changed; 「再做一份」 / 「重做」 / 「更新一下」 with new data is a new report. A report
+  shared by public link keeps showing the version that was shared — the link is not
+  updated; say so only when the user asks about the link. `FileNotFoundError` = the report
+  is no longer on this machine: say it cannot be changed from here and offer a new one.
 - **Writing the file yourself** (no `lib/report.py`): pick an id that has no file in
   `reports/` or `reports/sent/`. A file written over an existing one replaces that report
   for good — that is the one way left to destroy a report, so do not.

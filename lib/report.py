@@ -19,8 +19,9 @@ Block types and their fields: `references/reports.md`.
 
 A report is never overwritten: when the id is taken, the report is written under the next
 free one (`<id>-2`, `-3`, …) and the earlier report and its pictures stay as they were.
-`write_report` returns the path it wrote. The one exception is `replace=True`, which
-rewrites what THIS turn wrote under that id — for correcting your own report, nothing else.
+`write_report` returns the path it wrote. Two exceptions, both narrow: `replace=True`
+rewrites what THIS turn wrote under that id (correcting your own report), and `edit_report`
+changes the one report the user named, where it is (its title, a paragraph, a typo).
 
 Usage:
     from lib.report import write_report
@@ -356,6 +357,13 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     """
     if not isinstance(report_id, str) or not _ID_RE.fullmatch(report_id):
         raise ValueError(f"report id {report_id!r} must match [A-Za-z0-9_-]{{1,64}}")
+    return _write(report_id, target_id(report_id, replace), title, blocks, type, report_type,
+                  created_at, meta, images)
+
+
+def _write(asked, report_id, title, blocks, type, report_type, created_at, meta, images, edited=False):
+    """The one place a report file is written. `asked` is the id the caller named, `report_id`
+    the id it is written under; `edited` = the user's own report changed in place."""
     # Check every name before writing any of them: a bad one halfway through would
     # otherwise leave a sidecar holding some of the pictures and raise anyway.
     for name in images or {}:
@@ -370,7 +378,6 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
                          f"{cited}; at most {CITED_IMAGES_MAX} per report. Keep the ones a claim "
                          f"in the text rests on and drop blocks {cited[CITED_IMAGES_MAX:]} "
                          "(references/reports.md > Citing an image from the web)")
-    asked, report_id = report_id, target_id(report_id, replace)
     created_at = int(created_at if created_at is not None else time.time())
     if not blocks or not (isinstance(blocks[0], dict) and blocks[0].get("type") == "meta"):
         head = {"type": "meta", "title": title,
@@ -437,7 +444,10 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     if report_id != asked:
         print(f"[report] {asked} was already a report, so this one is a NEW report, written as {report_id}; "
               "the earlier one is untouched. Nothing to fix, and nothing to tell the user about ids or numbers.")
-    if os.environ.get("BLAVE_TURN_ID"):
+    if edited:
+        print(f"[report] {report_id} changed in place: the same report, in the same place in the list. A public "
+              "link to it keeps showing the version that was shared; say so only if the user asks about the link.")
+    elif os.environ.get("BLAVE_TURN_ID"):
         print("[report] To correct THIS report before you reply, write it again with the same id and replace=True; "
               "without it the correction becomes one more report.")
     # Agents re-read reports/<id>.json to "verify" and hit FileNotFoundError once the uploader
@@ -457,6 +467,57 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
           "ONE thing to watch. Do not restate the report: no heading, no bold label, no list, no figure it "
           "already shows, and no status line about this run (such as 'Published successfully.').")
     return path
+
+
+def edit_report(report_id, title=None, change=None, images=None):
+    """Change the ONE report the user named, where it is. Returns the path written.
+
+    For 「把這份報告的標題改成…」, a paragraph to rewrite, a typo: the report keeps its id,
+    its `created_at` (so its place in the list) and its pictures. Never for a report the
+    user did not name, and never for 「再做一份」 / 「重做」 — that is a new report
+    (`write_report` / `publish`). Do not edit the JSON file yourself: that skips the checks,
+    the schema version, the sweep of unused captures and the ledger.
+
+    report_id   the id of the report to change; it must be on this machine (`reports/`, or
+                `reports/sent/` on a cloud machine, which keeps the last ~20).
+    title       the new title, when the title changes.
+    change      a function that takes the report's block list (a copy) and edits it in place
+                or returns a new list: `lambda blocks: blocks[3].update(markdown="…")`.
+    images      `{file name: bytes}` to add to (or replace in) the picture sidecar.
+
+    A report that is shared by public link keeps showing the version that was shared.
+    """
+    if not isinstance(report_id, str) or not _ID_RE.fullmatch(report_id):
+        raise ValueError(f"report id {report_id!r} must match [A-Za-z0-9_-]{{1,64}}")
+    if title is None and change is None and not images:
+        raise ValueError("edit_report needs something to change: title=, change= or images=")
+    home = next((d for d in (REPORTS_DIR, SENT_DIR) if os.path.isfile(os.path.join(d, report_id + ".json"))), None)
+    if home is None:
+        raise FileNotFoundError(f"no report {report_id!r} on this machine (reports/ and reports/sent/), so it cannot "
+                                "be changed here. Do not write a new report under that id: tell the user this one "
+                                "cannot be changed from here and offer to make a new one.")
+    with open(os.path.join(home, report_id + ".json"), encoding="utf-8") as f:
+        doc = json.load(f)
+    if not isinstance(doc, dict) or not isinstance(doc.get("blocks"), list):
+        raise ValueError(f"report {report_id!r} is not a report document (no block list)")
+    blocks = json.loads(json.dumps(doc["blocks"]))
+    if change is not None:
+        out = change(blocks)
+        blocks = blocks if out is None else list(out)
+    if title is not None:
+        if blocks and isinstance(blocks[0], dict) and blocks[0].get("type") == "meta":
+            blocks[0]["title"] = title
+    # A report already uploaded sits in sent/ with its pictures: the rewritten one goes back
+    # into the drop directory, so the pictures its blocks still name come back with it.
+    if home == SENT_DIR:
+        side = os.path.join(SENT_DIR, report_id + FILES_SUFFIX)
+        for name in {b.get("file") for b in blocks if isinstance(b, dict) and b.get("type") == "image"}:
+            src = os.path.join(side, name) if isinstance(name, str) and _FILE_RE.fullmatch(name) else None
+            if src and os.path.isfile(src) and not os.path.islink(src) and name not in (images or {}):
+                with open(src, "rb") as f:
+                    _write_bytes(os.path.join(REPORTS_DIR, report_id + FILES_SUFFIX, name), f.read())
+    return _write(report_id, report_id, doc.get("title") if title is None else title, blocks,
+                  doc.get("type", "research"), None, doc.get("created_at"), None, images, edited=True)
 
 
 JOBS_DIR = os.path.join(WORKSPACE, "report_jobs")
