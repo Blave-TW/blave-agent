@@ -83,6 +83,23 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       [undefined, "9", null, NaN, Infinity, 0, 2].every((c) => P.nextN({ counter: c, items: [it(3)] }) === 4) && P.nextN({ counter: 7, items: [it(3)] }) === 8);
   }
 
+  // 目前那一列的資料期間說明(spec-strategy-versions-window-note §6):規則只在 windowNote()
+  {
+    const g = {}; new Function("window", fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8")).call(g, g);
+    const W = g.blaveVersions.windowNote, eq = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    const vs = (end, extra) => ({ counter: 4, current: 4, items: [{ n: 3, end: "2026-09-01" }, Object.assign({ n: 4 }, end === undefined ? {} : { end })].concat(extra || []) });
+    ok("windowNote:目前版、頁面終點晚一天 → 兩個 MM/DD", eq(W(4, vs("2026-09-27"), "2026-09-28", 4), { saved: "09/27", page: "09/28" }));
+    ok("windowNote:兩邊同一天 → null", W(4, vs("2026-09-28"), "2026-09-28", 4) === null);
+    ok("windowNote:頁面終點比較早 → null(不猜)", W(4, vs("2026-09-28"), "2026-09-27", 4) === null);
+    ok("windowNote:不是目前版的列 → null", W(3, vs("2026-09-27"), "2026-09-28", 4) === null);
+    ok("windowNote:時光機(viewing 不是目前版)→ 連目前那一列也是 null", W(4, vs("2026-09-27"), "2026-09-28", 3) === null && W(4, vs("2026-09-27"), "2026-09-28", null) === null);
+    ok("windowNote:頁面終點格式不對(null / 空字串 / 斜線 / 不是字串)→ null", [null, undefined, "", "2026/09/28", "09-28", 20260928, {}].every((p) => W(4, vs("2026-09-27"), p, 4) === null));
+    ok("windowNote:那一版的 end 缺或格式不對、沒有 current、清單壞掉 → null", [undefined, null, "", "2026/09/27", 7].every((e) => W(4, vs(e), "2026-09-28", 4) === null)
+      && W(4, { items: [{ n: 4, end: "2026-09-27" }] }, "2026-09-28", 4) === null && W(4, null, "2026-09-28", 4) === null && W(4, { current: 4, items: "x" }, "2026-09-28", 4) === null);
+    ok("windowNote:跨年 → 兩個都帶年份", eq(W(4, vs("2026-12-30"), "2027-01-02", 4), { saved: "2026/12/30", page: "2027/01/02" }));
+    ok("windowNote:只有一版且頁面終點較新 → 有值;end 後面帶時間也只看日期", eq(W(1, { counter: 1, current: 1, items: [{ n: 1, end: "2026-09-26" }] }, "2026-09-27 08:00", 1), { saved: "09/26", page: "09/27" }));
+  }
+
   // 時光機頁首(Wei 09-28):看舊版時名稱留著、說明收起來;回目前版 / 沒有版本介面時放回來
   {
     const E = {}, el = (id) => (E[id] = E[id] || { id, hidden: false, textContent: id === "rp-desc" ? "SMA50 上穿 SMA200" : "", classList: { toggle() {} }, setAttribute() {} });
@@ -198,6 +215,36 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       r.RP.data.versions = { counter: 2, current: 2, items: [it(1), it(2)] }; r.F.verPaint(r.RP);
       const closed = r.E["ver-menu"].hidden === true; r.F.verMenuOpen(false);
       ok("一版 → 跑一次回測變兩版:選單關掉重畫,觸發器「v2」,最下面從引導句變成比較列", closed && r.E["ver-trig-n"].textContent === "v2" && r.E["ver-menu"].kids[3].className === "vmi vmenu-foot" && !("aria-describedby" in r.E["ver-menu"].attrs));
+    }
+    // 目前那一列的資料期間說明(spec-strategy-versions-window-note §3、§7)
+    {
+      const itE = (n, end) => Object.assign(it(n), { end });
+      const open = (lang, versions, stats, opt) => { const r = rig(lang, "momo", versions, opt && opt.amounts); r.RP.data.stats = stats; if (opt && opt.pending) r.RP.data.pending = true; r.F.verMenuOpen(false); return r; };
+      const wins = (r) => r.E["ver-menu"].all((k) => k.className === "vmi-win");
+      const rows = (r) => menuItems(r.E["ver-menu"]).filter((k) => k.className === "vmi");
+      const v2 = { counter: 2, current: 2, items: [itE(1, "2026-09-20"), itE(2, "2026-09-27")] };
+      const a = open("zh", v2, { end: "2026-09-28" }), w = wins(a)[0], row = rows(a)[0];
+      ok("說明句:頁面終點較新 → 只有目前那一列多一句,是列內最後一個子元素(第一行 → 數字 → 說明句)", wins(a).length === 1 && row.kids.map((k) => k.className).join() === "vmi-top,vmi-stats,vmi-win" && rows(a)[1].kids.map((k) => k.className).join() === "vmi-top,vmi-stats");
+      ok("說明句:zh 逐字,兩個日期各包 .mono,非互動(span、沒有 role / title / aria-* / tabindex / 事件)", w.textContent === "這一版存的是回測到 09/27 的結果；頁面會跟著新資料更新，現在到 09/28。"
+        && w.kids.filter((k) => typeof k !== "string").map((k) => k.tagName + "." + k.className + "=" + k.textContent).join() === "span.mono=09/27,span.mono=09/28"
+        && w.tagName === "span" && Object.keys(w.attrs).length === 0 && w.tabIndex === undefined && Object.keys(w.on).length === 0);
+      ok("說明句:在 menuitem 裡面,併進那一列的可及名稱;數字照舊是存下來的那組", row.attrs.role === "menuitem" && row.textContent.endsWith("現在到 09/28。") && row.all((k) => k.className === "v mono")[0].textContent === "+12.00%");
+      const e = open("en", v2, { end: "2026-09-28" });
+      ok("說明句:en 逐字", wins(e)[0].textContent === "Saved with data through 09/27. The page keeps updating with new data, now through 09/28.");
+      ok("說明句:跨年帶年份", wins(open("zh", { counter: 1, current: 1, items: [itE(1, "2026-12-30")] }, { end: "2027-01-02" }))[0].textContent === "這一版存的是回測到 2026/12/30 的結果；頁面會跟著新資料更新，現在到 2027/01/02。");
+      ok("說明句:同一天 / 頁面沒有回測 / 資料還在載入 / end 不是字串 → 不出", [open("zh", v2, { end: "2026-09-27" }), open("zh", v2, null), open("zh", v2, undefined), open("zh", v2, { end: "2026-09-28" }, { pending: true }), open("zh", v2, { end: 20260928 })].every((r) => wins(r).length === 0));
+      const d = open("zh", Object.assign({}, v2, { drift: true }), { end: "2026-09-28" }, { amounts: { momo: 100 } });
+      ok("說明句:同列有「檔案已改」→ 原因句 → 數字 → 說明句", rows(d)[0].kids.map((k) => k.className).join() === "vmi-top,vmi-warn,vmi-stats,vmi-win");
+      const o = open("zh", { counter: 1, current: 1, items: [itE(1, "2026-09-26")] }, { end: "2026-09-27" }), om = o.E["ver-menu"];
+      ok("說明句:只有一版同樣適用,跟引導句並存(說明句在列裡、引導句在分隔線下面)", om.kids.map((k) => k.className).join() === "vmenu-cap,vlist,vmenu-div,vmenu-hint" && wins(o)[0].textContent.includes("09/26") && om.kids[3].textContent === "下次回測會存成 v2，到時就能比較和還原。" && om.attrs["aria-describedby"] === "ver-hint");
+      rows(a)[1].click(); a.F.verMenuOpen(false);
+      const inTm = wins(a).length; a.F.verBack(); a.F.verMenuOpen(false);
+      ok("說明句:時光機裡不出(連目前那一列也不出),回到目前版再開就有", a.S.open === null && inTm === 0 && wins(a).length === 1);
+      ok("說明句:不新增埋點", a.tracked.every((n) => ["version_menu", "version_view"].includes(n)));
+      const css = fs.readFileSync(path.join(R, "versions.css"), "utf8");
+      ok("樣式:.vmi-win 照規格(block / 2px 0 0 36px / 12px / 1.5 / 400 / --ink-3),日期不拆開", /\.vmi-win \{ display: block; margin: 2px 0 0 36px; font-size: 12px; line-height: 1\.5; font-weight: 400; color: var\(--ink-3\); \}/.test(css) && /\.vmi-win \.mono \{ white-space: nowrap; \}/.test(css));
+      ok("樣式:hover 提亮併進既有那一條、窄選單的左縮併進既有那條 container query(不另寫)", /\.vmi:hover \.vmi-date,[^{}]*\.vmi:hover \.vmi-win, \.vmi:focus-visible \.vmi-win \{ color: var\(--ink-2\); \}/.test(css) && /@container \(max-width: 329px\) \{[^\n]*\.vmi-warn, \.vmi-win \{ margin-left: 0; \}/.test(css) && (css.match(/@container \(max-width: 329px\)/g) || []).length === 1);
+      ok("接線:每一列都問 VER.windowNote,呼叫端不自己判斷是不是目前版", /const w = VER\.windowNote\(it\.n, S\.data, pageEnd, shown\);/.test(fnSrc(verSrc, "verMenuOpen")) && !/it\.n === S\.data\.current/.test(fnSrc(verSrc, "verMenuOpen")));
     }
     ok("樣式:.vmenu-hint 照規格(12px / 1.5 / --ink-2 / padding space-6 10px / margin 0)", /\.vmenu-hint \{ flex: none; margin: 0; padding: var\(--space-6\) 10px; font-size: 12px; line-height: 1\.5; color: var\(--ink-2\); \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")));
     ok("接線:選單與 vcOpen 都問 VER.canCompare,引導句的版號問 VER.nextN,用 DOM 組字(沒有 innerHTML)", /if \(VER\.canCompare\(S\.data\)\) \{/.test(fnSrc(verSrc, "verMenuOpen")) && /VER\.nextN\(S\.data\)/.test(fnSrc(verSrc, "verMenuOpen"))

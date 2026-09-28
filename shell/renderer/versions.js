@@ -94,6 +94,7 @@ function verMenuOpen(viaKey) {
   menu.appendChild(verEl("p", "vmenu-cap", t("ver.menuLbl")));
   const list = verEl("div", "vlist"), shown = S.open === null ? S.data.current : S.open;
   const amt = verAmount(verSideOf(B), B), cloud = B === RPC;
+  const pst = B.data && !B.data.pending ? B.data.stats : null, pageEnd = pst && typeof pst.end === "string" ? pst.end : null;
   VER.entries(S.data).forEach((it) => {
     const b = verEl("button", "vmi"); b.type = "button"; b.setAttribute("role", "menuitem"); b.tabIndex = -1;
     if (it.n === shown) b.setAttribute("aria-current", "true");
@@ -110,6 +111,15 @@ function verMenuOpen(viaKey) {
       const s = verEl("span", "", t(k)); s.appendChild(verEl("span", "v mono", VER.fmt(f, it[f]))); st.appendChild(s);
     });
     b.appendChild(st);
+    const w = VER.windowNote(it.n, S.data, pageEnd, shown);
+    if (w) {
+      const note = verEl("span", "vmi-win");
+      t("ver.winNote").split(/(\{saved\}|\{page\})/).forEach((p) => {
+        if (p === "{saved}" || p === "{page}") note.appendChild(verEl("span", "mono", p === "{saved}" ? w.saved : w.page));
+        else if (p) note.append(p);
+      });
+      b.appendChild(note);
+    }
     b.addEventListener("click", () => verPick(it.n));
     list.appendChild(b);
   });

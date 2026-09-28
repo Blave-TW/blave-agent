@@ -4807,6 +4807,9 @@ msgstr "Compare two versions…"
 msgid "ver.oneHint"
 msgstr "Your next backtest is saved as {next}. Then you can compare and restore."
 
+msgid "ver.winNote"
+msgstr "Saved with data through {saved}. The page keeps updating with new data, now through {page}."
+
 msgid "ver.statP"
 msgstr "p"
 
