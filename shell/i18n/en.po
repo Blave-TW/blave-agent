@@ -3860,11 +3860,21 @@ msgstr "Research report | "
 msgid "shr.ogPrefix.morning"
 msgstr "Market report | "
 
+msgid "shr.ogPrefix.performance"
+msgstr "Performance report | "
+
 msgid "shr.ogTag.research"
 msgstr "Research report · Produced by a user's Blave Agent"
 
 msgid "shr.ogTag.morning"
 msgstr "Market report · Produced by a user's Blave Agent"
+
+msgid "shr.ogTag.performance"
+msgstr "Performance report · Produced by a user's Blave Agent"
+
+# 績效報告的確認框提醒句(只在 type = performance 出;同意區第一段);逐字同 web workspace_share_perf_note
+msgid "shr.perfNote"
+msgstr "This report shows your account balance and positions. Once it's public, anyone with the link can see them."
 
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
@@ -3883,11 +3893,11 @@ msgid "shr.named"
 msgstr "Display name"
 
 msgid "shr.nameHint"
-msgstr "Display name only — no titles or contact details"
+msgstr "Your name is shown exactly as it is."
 
-# 讀不到顯示名稱 / api 回 NO_DISPLAY_NAME:「顯示名稱」停用時換上這句(spec DT2)
+# 帳號沒有名稱(api 回的名字是空的 / NO_DISPLAY_NAME):radio 收起來、換上這句。系統預設名、含推薦碼的名稱都算有名稱,原樣掛
 msgid "shr.noName"
-msgstr "To show a name, set a display name in your account settings on blave.org."
+msgstr "This account has no name yet. To be credited, add one in your account settings on blave.org."
 
 # legal: 勾選三行,字面一改就換 report-share 的 DISCLAIMER_VERSION(契約 §1);逐字同 web
 msgid "shr.ack"
@@ -3900,7 +3910,7 @@ msgid "shr.ack2"
 msgstr "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
 
 msgid "shr.ack3"
-msgstr "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to my referral code, paid strategies, or paid groups."
+msgstr "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to paid strategies, paid groups, or other paid services."
 
 msgid "shr.tosBefore"
 msgstr "If these are broken, Blave may take it down under the "
@@ -3930,9 +3940,13 @@ msgstr "Couldn't publish. Publishing and updating need your machine running; ple
 msgid "shr.notShareable"
 msgstr "This report can't be published."
 
-# 第八批 #2(Wei 0928):api 以 400 / 413 拒收內容。暫定字,待設計師確認
+# api 拒收內容(BAD_CONTENT / BAD_IMAGE):自動修不了才會走到;逐字同 web workspace_share_bad_content
 msgid "shr.badContent"
-msgstr "Part of this report has a formatting problem, so it can't be published yet. In chat, ask the agent to \"tidy up this report\", then publish again."
+msgstr "One part of this report couldn't be fixed automatically, so it wasn't published. In chat, ask the agent to \"tidy up this report\", then publish again."
+
+# api 回 TOO_LARGE(413):{n} 張、{mb} MB 由程式帶入;逐字同 web workspace_share_too_large
+msgid "shr.tooLarge"
+msgstr "This report is too large, so it wasn't published. It can hold up to {n} images, {mb} MB in total. Ask the agent to use fewer images or shorten it, then publish again."
 
 # api 507 IMAGE_QUOTA / 429:spec 沒給字,待設計師確認
 msgid "shr.quota"
@@ -4962,6 +4976,9 @@ msgstr "Research report"
 
 msgid "shl.kind.morning"
 msgstr "Market report"
+
+msgid "shl.kind.performance"
+msgstr "Performance report"
 
 msgid "shl.src.here"
 msgstr "This computer"

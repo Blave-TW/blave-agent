@@ -9,6 +9,7 @@
 
 /* ── 純邏輯(tests/check_shell_share_list.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const SHL_FLASH_MS = 1200;
+const SHL_KIND_KEYS = { research: "shl.kind.research", morning: "shl.kind.morning", performance: "shl.kind.performance" };
 const SHL_SRC_KEYS = { here: "shl.src.here", desktop: "shl.src.desktop", cloud: "shl.src.cloud" };   // 字面寫全:字串閘門(check_shell_strings)只認得完整的 key
 // 來源三個值:desktop 袋且這台找得到 = here;desktop 袋找不到 = desktop(被刪或在另一台,分不出來,所以不說「已刪除」);cloud 袋 = cloud
 function shlSource(row) { return row.origin === "cloud" ? "cloud" : row.local === true ? "here" : "desktop"; }
@@ -122,7 +123,7 @@ function shlRow(row, cloudOk, now) {
   else name = libEl("span", "shl-name", title);
   name.title = title;
   const sub = libEl("div", "shl-sub"), sep = () => sub.append(" · ");
-  if (row.type) { sub.append(t(row.type === "research" ? "shl.kind.research" : "shl.kind.morning")); sep(); }
+  if (Object.prototype.hasOwnProperty.call(SHL_KIND_KEYS, row.type)) { sub.append(t(SHL_KIND_KEYS[row.type])); sep(); }
   sub.append(t(SHL_SRC_KEYS[shlSource(row)])); sep();
   sub.appendChild(libEl("span", "mono", shlFmtTime(row.published_at, now) || "—")); sep();
   sub.append(row.byline || t("shr.anon"));

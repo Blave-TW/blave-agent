@@ -13,8 +13,10 @@ const SHR_SITE = "https://blave.org/";
 // 沒有那筆紀錄(別台電腦公開的)才拿檔案 mtime 比 published_at(api 的鐘):差一分鐘以內不算,寧可漏報公開後一分鐘內的覆寫,
 // 也不要因為兩邊的鐘差一點就對剛公開的報告講「agent 更新了這份報告」
 const SHR_CLOCK_SLACK_MS = 60 * 1000;
-// performance 不出現入口(不做 disabled);缺 type 照出,api 最後守門(spec DT 閘門)
-function shrGate(rep) { return !!rep && typeof rep === "object" && rep.type !== "performance" && Array.isArray(rep.blocks); }
+// 類型白名單(= web report_share.js SHAREABLE;契約 §1):不在名單上的(缺 type、未來的新類型)不出現入口,也不做 disabled
+const SHR_TYPES = ["research", "morning", "performance"];
+function shrKind(type) { return SHR_TYPES.indexOf(type) >= 0 ? type : null; }
+function shrGate(rep) { return !!rep && typeof rep === "object" && !!shrKind(rep.type) && Array.isArray(rep.blocks); }
 function shrUrl(lang, code) { return SHR_SITE + (lang === "zh" ? "zh" : "en") + "/r/" + encodeURIComponent(code) + "?src=research_link"; }
 // 公開後原報告換過 → { time: 換的時間(秒), day: 公開那一版的時間(秒) };沒換 / 判斷不了 → null
 function shrStale(env, s, mtimeMs) {
@@ -38,12 +40,17 @@ function shrLead(rep, limit) {
   if (text.length > limit) text = text.slice(0, limit - 1).replace(/\s+$/, "") + "…";
   return text;
 }
-// 預覽卡的類型詞(W2):research 一組,其餘能公開的(morning 家族)一組
-function shrKind(type) { return type === "research" ? "research" : "morning"; }
+// 預覽卡的類型詞,一類一組(字面寫全:字串閘門只認得完整的 key)。tag = 固定圖上那一行字;
+// performance 的公開頁用不帶類型標籤的預設圖(契約 §4),縮圖照實不畫那一行——專屬圖做出來再把它加進 SHR_OG_LABELLED
+const SHR_OG_PREFIX = { research: "shr.ogPrefix.research", morning: "shr.ogPrefix.morning", performance: "shr.ogPrefix.performance" };
+const SHR_OG_TAG = { research: "shr.ogTag.research", morning: "shr.ogTag.morning", performance: "shr.ogTag.performance" };
+const SHR_OG_LABELLED = ["research", "morning"];
+// shr.tooLarge 的 {n} / {mb}:= api 的 LOCAL_IMG_MAX_COUNT 與 LOCAL_IMG_TOTAL_MAX_BYTES(web report_share.js 同兩個數)
+const SHR_IMG_MAX_COUNT = 20, SHR_IMG_MAX_MB = 20;
 // 主行程的穩定代號 → 腳那一句的 key(NO_DISPLAY_NAME / ALREADY / NOT_PUBLIC / NO_LOGIN 由呼叫端各自處理,不到這裡)
 function shrErrKey(code) {
   return code === "RELOGIN" ? "conn.expired" : code === "RATE_LIMITED" ? "shr.rate" : code === "IMAGE_QUOTA" ? "shr.quota"
-    : code === "NO_MACHINE" ? "shr.failedCloud" : code === "BAD_CONTENT" ? "shr.badContent" : code === "NOT_SHAREABLE" || code === "NO_REPORT" || code === "BAD_ARGS" ? "shr.notShareable" : "shr.failed";
+    : code === "NO_MACHINE" ? "shr.failedCloud" : code === "BAD_CONTENT" ? "shr.badContent" : code === "TOO_LARGE" ? "shr.tooLarge" : code === "NOT_SHAREABLE" || code === "NO_REPORT" || code === "BAD_ARGS" ? "shr.notShareable" : "shr.failed";
 }
 /* ── 純邏輯到此 ── */
 
@@ -98,7 +105,7 @@ function shrWell(c) {
   if (st) {
     const box = libEl("div", "shr-stale");
     box.appendChild(shrFill(libEl("span", "t"), t("shr.stale"), { time: rptFmtStamp(st.time), day: rptFmtStamp(st.day).slice(0, 5) }));
-    // 同 id 被覆寫成不能公開的報告(performance):更新一定被 422,只留提示與取消分享(同 web)
+    // 同 id 被覆寫成不在白名單上的類型:更新一定被 422,只留提示與取消分享(同 web)
     if (shrGate(c.rep)) {
       const upd = libEl("button", "btn-out", t("shr.updateCheck")); upd.type = "button"; upd.setAttribute("aria-haspopup", "dialog");
       upd.addEventListener("click", () => shrOpen(c, "update", upd));
@@ -135,6 +142,7 @@ function shrGateAsk(opener) {
 
 /* ── 確認框(DT2)────────────────────────────────────── */
 function shrOpen(c, mode, opener) {
+  if (!shrGate(c.rep)) return;
   if (!$("shr-scrim").hidden || (typeof envCanSwitch === "function" && !envCanSwitch())) return;   // 別的框開著 / 選字中
   if (c.env === "local" && !hasToken) { shrGateAsk(opener); return; }
   const rep = c.rep, meta = rep.blocks[0] && rep.blocks[0].type === "meta" ? rep.blocks[0] : {}, kind = shrKind(rep.type);
@@ -146,9 +154,10 @@ function shrOpen(c, mode, opener) {
   $("shr-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("shr-env").hidden = !cloud; $("shr-env").textContent = cloud ? t("env.cloud") : "";
   $("shr-same").hidden = mode !== "update";
-  $("shr-og-tag").textContent = kind === "research" ? t("shr.ogTag.research") : t("shr.ogTag.morning");
-  $("shr-tt").textContent = (kind === "research" ? t("shr.ogPrefix.research") : t("shr.ogPrefix.morning")) + String(meta.title || rep.title || "");
+  $("shr-og-tag").textContent = t(SHR_OG_TAG[kind]); $("shr-og-tag").hidden = SHR_OG_LABELLED.indexOf(kind) < 0;
+  $("shr-tt").textContent = t(SHR_OG_PREFIX[kind]) + String(meta.title || rep.title || "");
   $("shr-ds").textContent = shrLead(rep);
+  $("shr-perf").hidden = kind !== "performance";   // 公開與更新兩種模式都出
   $("shr-must").textContent = t(c.env === "local" ? "shr.noteLocal" : "shr.noteCloud");
   $("shr-anon").checked = true; $("shr-ack").checked = false;
   $("shr-send").textContent = t(mode === "update" ? "shr.sendUpdate" : "shr.send");
@@ -161,8 +170,8 @@ function shrOpen(c, mode, opener) {
   requestAnimationFrame(() => sc.classList.add("open"));
   ($("shr-radios").hidden ? $("shr-ack") : $("shr-anon")).focus();
 }
-// 沒有可用的名字(讀不到 / api 回 NO_DISPLAY_NAME)= 沒有選項可選,不是選項暫時停用:兩顆 radio 整組收掉,
-// 換成純文字「作者 匿名」(同 web setPlain);提示換成去改名那句。有名字才出兩顆 radio
+// 帳號的名稱原樣掛(系統預設名、含推薦碼的名稱都照用;契約 §3),名稱是空的(或讀不到 / api 回 NO_DISPLAY_NAME)才沒有選項可選:
+// 兩顆 radio 整組收掉,換成純文字「作者 匿名」(同 web setPlain);提示換成去填名稱那句。有名字才出兩顆 radio
 function shrName(D) {
   const name = D.noName ? null : D.c.name;
   const on = typeof name === "string" && !!name;
@@ -218,7 +227,7 @@ async function shrSubmit() {
   // 送出時才撞到上限(開框之後別處又公開了):同一句放同一個位置,框留著
   const lim = shlLimitFromCode(code, r && r.limit, c.limits);
   if (lim) { D.limit = lim; shrLimitPaint(D); return; }
-  fm.textContent = t(shrErrKey(code));   // 框留著、欄位不動,原樣重送。api 的原文不上畫面:主行程寫進 log(reportshare.js failDetail)
+  shrFill(fm, t(shrErrKey(code)), { n: String(SHR_IMG_MAX_COUNT), mb: String(SHR_IMG_MAX_MB) });   // 框留著、欄位不動,原樣重送。api 的原文不上畫面:主行程寫進 log(reportshare.js failDetail)
 }
 
 /* ── 接線(這支比 app.js 先載:只用 getElementById;handler 裡的才在點擊時取)── */

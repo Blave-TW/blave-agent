@@ -7,7 +7,7 @@
 //
 // 這個檔不 require electron;HTTP、憑證、讀本機報告都由呼叫端注入(測試用假的)。
 // 三行勾選的字面一改就換(契約 §1「字面一有變動,聲明版本就進位」);web report_share.js 送同一個值
-const DISCLAIMER_VERSION = "rs-ack-2026.09.27";
+const DISCLAIMER_VERSION = "rs-ack-2026.09.28";
 // = web/app/legal.py TOS_VERSION(api 沒有端點給這個值;tests/check_shell_report_share.js 在 monorepo 版面比對兩邊)
 const TOS_VERSION = "2026-09-28";
 const EP = { state: "/oauth/desktop/share/state", publish: "/oauth/desktop/share/publish", update: "/oauth/desktop/share/update", revoke: "/oauth/desktop/share/revoke", list: "/oauth/desktop/share/list" };
@@ -22,21 +22,31 @@ function cleanShare(s) {
   return { code: s.code, published_at: s.published_at, byline: typeof s.byline === "string" ? s.byline.slice(0, NAME_MAX) : null,
     source_stored_at: ts(s.source_stored_at), report_stored_at: ts(s.report_stored_at) };
 }
-/* 非 200 的回應 → 穩定代號(renderer 拿去查字;IPC 不搬句子)。op = state | publish | update | revoke */
+/* api 被拒回應的 error_code(agent_report_share.py)→ 外殼的代號。BAD_IMAGE 對人講的跟 BAD_CONTENT 同一句(出口都是請 agent 整理);
+   BAD_REQUEST = 外殼自己送錯(id、勾選紀錄的形狀),不是這份報告的問題 */
+const API_CODES = { BAD_CONTENT: "BAD_CONTENT", BAD_IMAGE: "BAD_CONTENT", BAD_REQUEST: "BAD_REQUEST", NO_DISPLAY_NAME: "NO_DISPLAY_NAME", TOO_LARGE: "TOO_LARGE",
+  NOT_SHAREABLE: "NOT_SHAREABLE", LIVE_LIMIT: "LIVE_LIMIT", DAILY_LIMIT: "DAILY_LIMIT", IMAGE_QUOTA: "IMAGE_QUOTA" };
+/* 非 200 的回應 → 穩定代號(renderer 拿去查字;IPC 不搬句子)。op = state | publish | update | revoke。
+   先認 api 的 error_code;讀不到(舊 api、中間的代理回的)才照狀態碼判斷 */
 function failCode(res, op) {
-  if (res && res.status === 507) return "IMAGE_QUOTA";   // 5xx 裡唯一不是「連不上」的:用戶的圖片配額滿了,重送也一樣
-  if (!res || !res.status || res.status >= 500) return "UNREACH";
+  const st = res && res.status;
+  if (!st) return "UNREACH";
   const b = res.body && typeof res.body === "object" ? res.body : {};
-  if (res.status === 401) return "RELOGIN";
-  // 429 有三種,先看 error_code:同時公開的份數滿了 / 今天的次數用完 / 每分鐘限流(ERR429 與其餘)——前兩種等一分鐘也沒用,不能講成「按得太頻繁」
-  if (res.status === 429) return b.error_code === "LIVE_LIMIT" || b.error_code === "DAILY_LIMIT" ? b.error_code : "RATE_LIMITED";
-  if (res.status === 409) return "ALREADY";
-  if (res.status === 422) return "NOT_SHAREABLE";
-  if (res.status === 403) return "NO_MACHINE";   // 雲端視角:api 的 ERR008(Blave Agent 沒在跑),同 web 的 @blave_agent_required
+  const given = typeof b.error_code === "string" ? b.error_code : "";
+  // 5xx 只認 507(用戶的圖片配額滿了,重送也一樣);其餘 5xx 帶什麼代號都是「連不上」
+  if ((st === 507 || (st >= 400 && st < 500)) && Object.prototype.hasOwnProperty.call(API_CODES, given)) return API_CODES[given];
+  if (st === 507) return "IMAGE_QUOTA";
+  if (st >= 500) return "UNREACH";
+  if (st === 401) return "RELOGIN";
+  if (st === 429) return "RATE_LIMITED";   // 份數滿了 / 今天的次數用完有自己的代號(上面);剩下的是每分鐘限流
+  if (st === 409) return "ALREADY";
+  if (st === 422) return "NOT_SHAREABLE";
+  if (st === 403) return "NO_MACHINE";   // 雲端視角:api 的 ERR008(Blave Agent 沒在跑),同 web 的 @blave_agent_required
   // update / revoke 的 404 = 這份沒公開;publish 的 404 = 雲端平台上沒有這份報告
-  if (res.status === 404) return op === "publish" ? "NOT_SHAREABLE" : "NOT_PUBLIC";
-  if (res.status === 400 && b.error_code === "NO_DISPLAY_NAME") return "NO_DISPLAY_NAME";
-  return "BAD_CONTENT";   // 其餘 400 / 413:報告的內容過不了 api 的驗證器,重送也一樣(422 / 404 是「這一份不能公開」,另一句)
+  if (st === 404) return op === "publish" ? "NOT_SHAREABLE" : "NOT_PUBLIC";
+  if (st === 413) return "TOO_LARGE";
+  if (st === 400 && given) return "BAD_REQUEST";   // UNKNOWN_FIELD / VIEW_REQUIRED / ID_REQUIRED…:欄位送錯
+  return "BAD_CONTENT";   // 沒有代號的 400 = 舊 api 的驗證器拒收
 }
 /* 上限(share/state、share/list 的頂層四欄;LIVE_LIMIT / DAILY_LIMIT 的 limit):不是非負整數就當沒給,畫面不出數字 */
 const count = (v) => (Number.isInteger(v) && v >= 0 && v <= 100000 ? v : null);
@@ -44,7 +54,7 @@ function cleanLimits(b) {
   const o = b && typeof b === "object" ? b : {};
   return { liveCount: count(o.live_count), liveLimit: count(o.live_limit), todayCount: count(o.today_count), dailyLimit: count(o.daily_limit) };
 }
-const LIST_MAX = 200, TITLE_MAX = 200, ORIGINS = ["cloud", "desktop"], TYPES = ["research", "morning"];
+const LIST_MAX = 200, TITLE_MAX = 200, ORIGINS = ["cloud", "desktop"], TYPES = ["research", "morning", "performance"];
 /* share/list 的一列 → 畫面用的形狀;代碼 / 來源 / 時間不對 → null(那一列不畫)。
    url_path 不轉交:公開網址由畫面拿 code 自己組(同閱讀頁的公開列),api 回什麼路徑都進不了剪貼簿 */
 function cleanListRow(r) {
@@ -57,7 +67,7 @@ function cleanListRow(r) {
 
 /* api 拒收時回的那一句(英文、帶欄位路徑,例 blocks[3].source.url: must be an https URL)→ 只進 log:本機報告寫
    reports/upload_errors.log(agent 用 lib.report.status(id) 讀得到),兩種視角都寫主行程的 log。畫面不顯示它(Wei 0928):
-   那是給產報告的 agent 讀的字,用戶看到的是 shr.badContent 那一句與出口。
+   那是給產報告的 agent 讀的字,用戶看到的是 shr.badContent / shr.tooLarge 那一句與出口。
    本機報告到分享這一刻才第一次過 api 的驗證器(電腦版不跑 report_uploader),這一句丟掉的話 agent 不知道錯在哪 */
 const DETAIL_MAX = 300;
 function failDetail(res) {
@@ -65,7 +75,8 @@ function failDetail(res) {
   const raw = typeof b.error === "string" && b.error ? b.error : typeof b.error_code === "string" ? b.error_code : "";
   return raw.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, DETAIL_MAX);
 }
-const DETAIL_CODES = ["BAD_CONTENT", "NOT_SHAREABLE", "IMAGE_QUOTA"];
+const DETAIL_CODES = ["BAD_CONTENT", "TOO_LARGE", "NOT_SHAREABLE", "IMAGE_QUOTA"];   // 這份報告被拒:原文兩個 log 都寫
+const APP_LOG_CODES = ["BAD_REQUEST"];   // 外殼送錯:只寫主行程的 log(不是 agent 改報告改得掉的)
 
 /* 尾註 id 重複(0.1.7 的 lib 在「台股大盤積木 + 任何帶來源句的積木」時會寫出兩條 src)api 一律拒收。已經在磁碟上的報告
    不重做也要能公開:送出的那一份先併好。只動送出的那份、不改檔——檔的 mtime 是「公開後改過沒有」的依據,主行程改檔會讓
@@ -180,8 +191,9 @@ function createShareClient(opts) {
       // 送出時才撞到上限(開框之後別處又公開了):帶上限的數字,畫面那一句要用
       if (code === "LIVE_LIMIT" || code === "DAILY_LIMIT") return { code, limit: count(res.body.limit) };
       if (code !== "OK") {
-        const detail = DETAIL_CODES.indexOf(code) >= 0 ? failDetail(res) : "";
-        if (detail && view === "local" && opts.logError) { try { opts.logError(id, "share refused (" + res.status + "): " + detail); } catch (_) { /* 寫不了不擋 */ } }
+        const mine = DETAIL_CODES.indexOf(code) >= 0;
+        const detail = mine || APP_LOG_CODES.indexOf(code) >= 0 ? failDetail(res) : "";
+        if (detail && mine && view === "local" && opts.logError) { try { opts.logError(id, "share refused (" + res.status + "): " + detail); } catch (_) { /* 寫不了不擋 */ } }
         if (detail && opts.log) { try { opts.log(view + " " + id + ": share refused (" + res.status + "): " + detail); } catch (_) { /* 同上 */ } }
         return { code };
       }
