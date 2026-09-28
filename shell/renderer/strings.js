@@ -3310,7 +3310,7 @@ const STRINGS = {
     "ver.msgFork": "請用策略「{display_name}」({name}) 第 {n} 版的程式碼建立一支新策略,原策略不要動;新策略跑一次回測和一次訊號、確認有 state.json,然後停下來,讓我在自動下單切換金額 —— 不用再確認",
     "pdf.btn": "存成 PDF",
     "pdf.saving": "存成中…",
-    "pdf.saved": "已存成",
+    "pdf.saved": "已存檔",
     "pdf.failTitle": "沒有存成 PDF",
     "pdf.failBody": "檔案沒有寫進去。換個位置，或稍後再試一次。",
     "pdf.footShort": "由 Blave Agent 產出，Blave 未審核內容，不構成投資建議。",

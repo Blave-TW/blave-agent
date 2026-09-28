@@ -26,7 +26,7 @@ function pdfPaint() {
   if (!s) return;
   const full = t("xp.saved", { dir: s.dir || t("xp.dlDir") }), d = box.querySelector(".d"), short = box.querySelector(".s"), rv = $("rpt-reveal");
   d.textContent = full; d.title = full;
-  short.textContent = t("pdf.saved"); short.title = full;   // 窄欄只講「已存成」,全文在 title,存到哪由文字鈕回答
+  short.textContent = t("pdf.saved"); short.title = full;   // 窄欄只講「已存檔」,全文在 title,存到哪由文字鈕回答
   rv.textContent = window.blave.platform === "win32" ? t("xp.revealWin") : t("xp.reveal");
   rv.hidden = !s.token;
 }

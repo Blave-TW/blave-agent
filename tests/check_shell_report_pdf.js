@@ -144,19 +144,19 @@ if (!process.versions.electron) {
       sb.pdfDecorate("local", "a", REP);
       ok("③ D1 還沒存:沒有狀態句,鈕是「存成 PDF」", snap() === "true||||存成 PDF", snap());
       next = { code: "OK", dir: "報告", token: "tk1", start: true }; await sb.pdfSave();
-      ok("③ D1 成功:狀態句「已存到「報告」」+「在 Finder 中顯示」,窄欄短句「已存成」(全文在 title);鈕直接回「存成 PDF」、不閃「已存成」;讀屏念完整句",
-        snap() === "false|已存到「報告」|已存成|在 Finder 中顯示|存成 PDF" && box.d.title === "已存到「報告」" && box.s.title === "已存到「報告」" && btn.disabled === false && said.join() === "已存到「報告」" && btn.style.minWidth === "", snap() + " " + said.join());
+      ok("③ D1 成功:狀態句「已存到「報告」」+「在 Finder 中顯示」,窄欄短句「已存檔」(全文在 title);鈕直接回「存成 PDF」、不閃「已存檔」;讀屏念完整句",
+        snap() === "false|已存到「報告」|已存檔|在 Finder 中顯示|存成 PDF" && box.d.title === "已存到「報告」" && box.s.title === "已存到「報告」" && btn.disabled === false && said.join() === "已存到「報告」" && btn.style.minWidth === "", snap() + " " + said.join());
       els["rpt-reveal"].on.click();
       ok("③ D1 文字鈕只交 token(renderer 不傳路徑);走轉出卡那一支 revealExport", revealed.join() === "tk1" && /revealExport\(PDF\.saved\.token\)/.test(pdfJs) && !/filePath|showItemInFolder/.test(pdfJs));
       next = { code: "CANCELED" }; await sb.pdfSave();
-      ok("③ D1 存檔框按取消:什麼都沒發生——上一次存的那句留著、不跳框", snap() === "false|已存到「報告」|已存成|在 Finder 中顯示|存成 PDF" && boxes.length === 0, snap());
+      ok("③ D1 存檔框按取消:什麼都沒發生——上一次存的那句留著、不跳框", snap() === "false|已存到「報告」|已存檔|在 Finder 中顯示|存成 PDF" && boxes.length === 0, snap());
       next = { code: "OK", dir: null, token: "tk2", start: true }; let mid = null; const real = sb.window.blave.reportPdf; sb.window.blave.reportPdf = async () => { onSaving(); mid = snap(); return next; }; await sb.pdfSave(); sb.window.blave.reportPdf = real;
-      ok("③ D1 開始產的那一刻清掉上一次的(鈕「存成中…」);存到「下載項目」時資料夾名由畫面翻", mid === "true|已存到「報告」|已存成|在 Finder 中顯示|存成中…" && snap() === "false|已存到「下載」|已存成|在 Finder 中顯示|存成 PDF", mid + " → " + snap());
+      ok("③ D1 開始產的那一刻清掉上一次的(鈕「存成中…」);存到「下載項目」時資料夾名由畫面翻", mid === "true|已存到「報告」|已存檔|在 Finder 中顯示|存成中…" && snap() === "false|已存到「下載」|已存檔|在 Finder 中顯示|存成 PDF", mid + " → " + snap());
       next = { code: "FAIL", start: true }; await sb.pdfSave();
       ok("③ D1 失敗:沒有狀態句、鈕回「存成 PDF」、出既有的單鈕失敗框", box.hidden === true && btn.textContent === "存成 PDF" && boxes.length === 1 && boxes[0].single === true, snap());
       next = { code: "OK", dir: "報告", token: "tk3", start: true }; await sb.pdfSave(); sb.pdfDecorate("local", "b", REP);
       const other = snap(); sb.pdfDecorate("local", "a", REP);
-      ok("③ D1 換另一份報告就清掉;之後再打開同一份不恢復;回清單(pdfClear)也清", other === "true|已存到「報告」|已存成|在 Finder 中顯示|存成 PDF" && box.hidden === true && (sb.pdfClear(), sb.PDF.saved === null), other);
+      ok("③ D1 換另一份報告就清掉;之後再打開同一份不恢復;回清單(pdfClear)也清", other === "true|已存到「報告」|已存檔|在 Finder 中顯示|存成 PDF" && box.hidden === true && (sb.pdfClear(), sb.PDF.saved === null), other);
       sb.window.blave.platform = "win32"; sb.pdfDecorate("cloud", "c", REP); next = { code: "OK", dir: "x", token: "tk4", start: true }; await sb.pdfSave();
       ok("③ D1 Windows 的文字鈕是「在檔案總管中顯示」;雲端視角的報告同一套", els["rpt-reveal"].textContent === "在檔案總管中顯示" && box.hidden === false);
       ok("③ D1 不計時:PDF_FLASH_MS 與 saved 狀態退場;節點不掛 role=status(播報走 srSay)", !/PDF_FLASH_MS|setTimeout|"saved"/.test(pdfJs) && /<p class="rpt-saved" id="rpt-saved" hidden><span class="d"><\/span><span class="s"><\/span><button class="btn-quiet" id="rpt-reveal" type="button"><\/button><\/p>\s*<div class="rpt-acts">/.test(html));

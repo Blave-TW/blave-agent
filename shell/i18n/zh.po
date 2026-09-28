@@ -4930,7 +4930,7 @@ msgid "pdf.saving"
 msgstr "存成中…"
 
 msgid "pdf.saved"
-msgstr "已存成"
+msgstr "已存檔"
 
 msgid "pdf.failTitle"
 msgstr "沒有存成 PDF"
