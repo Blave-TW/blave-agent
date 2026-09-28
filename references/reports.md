@@ -19,8 +19,9 @@ The platform pushes a short summary notification once the report is stored, so t
 report reaches the user even when this machine is asleep — never send your own
 Telegram message about a report as well, that duplicates every alert.
 
-**A `research` or `morning` report (a morning brief, a close recap, a weekly, …) can be
-shared publicly, and only by the user; a `performance` report never can.** In the workspace,
+**Every report — `research`, `morning` (a morning brief, a close recap, a weekly, …) and
+`performance` — can be shared publicly, and only by the user. A `performance` report goes
+public with its account figures and positions in it.** In the workspace,
 the report's title bar has a 「分享」 button; the user confirms each report on its own (a
 consent checkbox, then confirm) and gets a link `blave.org/<lang>/r/<code>`. What is public is
 a snapshot of the report at that moment: nothing written later changes it.
@@ -33,8 +34,12 @@ report on this computer uploads a snapshot of it, so editing or deleting the fil
 changes nothing public — only 「取消分享」 does. Deleting the cloud machine or the account
 revokes every public link, including the ones shared from this computer. The platform does not review content: whether a report is fit to publish
 is the user's call, made in the consent checkbox. Nothing you write into a report (including
-`meta.shareable`, §7b B7) decides whether it can be shared, so never tell the user a research or
-morning report cannot be shared, and never hold one back for that reason.
+`meta.shareable`, §7b B7) decides whether it can be shared, so never tell the user a report
+cannot be shared, and never hold one back for that reason.
+When the user wants to make a `performance` report public, do not talk them out of it and do
+not refuse: it is their decision. You may say once, in one sentence, that the account figures
+and positions in it become public with it (the confirm box says the same), then help with
+what they asked.
 **You cannot share, update or cancel a report for the user** — there is no API or tool for it
 on this machine; point them to the button. Never promise view counts, a report-abuse flow,
 takedown notices or anything else not described here.
@@ -669,7 +674,7 @@ reads `blave_api_key` / `blave_secret_key` from the workspace `.env` (see `refer
 |---|---|---|
 | `schema_version` | string | `"1.6"` when an `image` block carries `source` (§5 › Citing an image from the web); otherwise `"1.5"` when a `bar_chart` has `variant: "profile"`; otherwise `"1.4"` when the report has a `news` block, any block with `private`, or a footnote item with `url`; otherwise `"1.3"` when the `meta` block carries `shareable` or `involves_futures` (`true` **or** `false`, §7b B7; 1.3 also covers `candlestick`); otherwise `"1.2"` when the report contains a `candlestick` block; `"1.1"` otherwise. `write_report` sets it for you; hand-written JSON must follow the same rule — anything under a version older than the one that introduced it is refused. |
 | `id` | string | `[A-Za-z0-9_-]{1,64}`, equal to the file name stem. |
-| `type` | string | `performance` / `morning` / `research` — report list grouping. **Hard rule: any report that carries the user's account assets, positions, orders or live strategy P&L is `performance`, even when it is shaped as a morning brief or a close recap.** `research` and `morning` reports can be shared publicly by the user and `performance` cannot, so a wrong `type` publishes account numbers. |
+| `type` | string | `performance` / `morning` / `research` — report list grouping. **Hard rule: any report that carries the user's account assets, positions, orders or live strategy P&L is `performance`, even when it is shaped as a morning brief or a close recap.** All three types can be shared publicly by the user. Only a `performance` report keeps its `private` blocks on the public page, and only its confirm box tells the user that account figures go public — so a wrong `type` either shares account numbers without that notice or drops them from the public page. |
 | `title` | string | 1–200 chars. |
 | `created_at` | int | **unix seconds, UTC** — never milliseconds, never a string. |
 | `blocks` | array | 1–120 blocks. |
@@ -682,8 +687,10 @@ A block is `{"type": "<key>", ...props}`. The array is flat — blocks never nes
 **An unknown type or an unknown prop is refused (400), not ignored**: a typo in a
 field name loses the report, so copy names from this page rather than inventing them.
 Any block but `meta` and `footnote` may carry `private: true` (1.4): the public share page
-drops that block whole. A block that shows the user's holdings, cost prices or account
-figures is `private` — and such a report is `performance` anyway (§2).
+of a `research` or `morning` report drops that block whole; the public page of a
+`performance` report keeps it, because the account figures are the report. A block that
+shows the user's holdings, cost prices or account figures is `private` — and such a report
+is `performance` anyway (§2).
 Strings are ≤200 chars unless stated. `?` marks optional.
 
 Most visual blocks (`kpi_row`, all charts, `metric_table`, `table`, `code`, `image`)
