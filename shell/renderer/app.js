@@ -2968,28 +2968,6 @@ function applyStatic() {
   detect();
 })();
 
-/* 系統的提示泡泡(title)由系統畫,畫面收不掉它:按下去把別的 app 叫到前面、或視窗退到背景時,泡泡會留在螢幕上。
-   所以按下去之後(到游標離開為止)、視窗在背景時,title 先收起來,之後原樣放回去。 */
-function titleHold(el) {
-  if (!el.hasAttribute("title")) return false;
-  el.dataset.titleHeld = el.getAttribute("title"); el.removeAttribute("title");
-  return true;
-}
-function titleBack(el) {
-  if (el.dataset.titleHeld === undefined) return;
-  if (!el.hasAttribute("title")) el.setAttribute("title", el.dataset.titleHeld);   // 收著的期間被重設過:留新的
-  delete el.dataset.titleHeld;
-}
-let windowActive = true;
-document.addEventListener("pointerdown", (e) => {
-  for (let el = e.target instanceof Element ? e.target : null; el; el = el.parentElement)
-    if (titleHold(el)) el.addEventListener("pointerleave", () => { if (windowActive) titleBack(el); }, { once: true });
-}, true);
-if (window.blave.onWindowActive) window.blave.onWindowActive((on) => {
-  windowActive = on;
-  if (on) document.querySelectorAll("[data-title-held]").forEach(titleBack);
-  else document.querySelectorAll("[title]").forEach(titleHold);
-});
 
 /* 全選:焦點在輸入框 → 照系統(選框裡的字);游標或選取落在聊天、報告閱讀區、策略報告裡 → 只選那一區;其餘照系統 */
 const SELECT_REGIONS = "#chat-scroll, #rpt-read, .rp-panel";

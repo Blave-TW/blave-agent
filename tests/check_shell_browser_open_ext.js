@@ -69,8 +69,9 @@ const T = (o) => Object.assign({ id: "p1", url: "https://www.tradingview.com/cha
     && !can({ url: "" }) && !can({}) && !can(null) && !can({ url: "about:blank" }) && !can({ url: "https://a.test/", need: { kind: "confirm" } })
     && !can({ url: "https://binance-login.xyz/", blocked: { kind: "addr", reason: "lookalike" } }) && !can({ url: "https://x.test/", blocked: { kind: "domain", reason: "blocklist" } }));
   const one = br.slice(br.indexOf("  const addr = brEl(\"div\", \"bv-addr\");\n  const rl = "), br.indexOf("  const slot = brEl(\"div\", \"bv-slot\");"));
-  ok("鈕在網址列右端(重新載入｜網址欄｜這一顆);名稱 br.openSystem、tooltip br.openSystem.tip;停用不隱藏;只認用戶真的按;按了只送分頁 id 與埋點,不收回展開層", /addr\.append\(rl, url, ext\);/.test(one)
-    && /const ext = brEl\("button", "ibtn ext"\); ext\.type = "button"; ext\.setAttribute\("aria-label", t\("br\.openSystem"\)\); ext\.title = t\("br\.openSystem\.tip"\); ext\.append\(brIcon\("ext"\)\);/.test(one)
+  ok("鈕在網址列右端(重新載入｜網址欄｜這一顆｜它的說明泡泡);名稱 br.openSystem、說明 br.openSystem.tip 自家畫在 DOM 裡(不用 title,#207);停用不隱藏;只認用戶真的按;按了只送分頁 id 與埋點,不收回展開層", /addr\.append\(rl, url, ext, extTip\);/.test(one)
+    && /const ext = brEl\("button", "ibtn ext"\); ext\.type = "button"; ext\.setAttribute\("aria-label", t\("br\.openSystem"\)\); ext\.append\(brIcon\("ext"\)\);/.test(one) && !/ext\.title/.test(one)
+    && /const extTip = brEl\("span", "tip", t\("br\.openSystem\.tip"\)\); extTip\.id = "bv-ext-tip"; extTip\.setAttribute\("role", "tooltip"\); ext\.setAttribute\("aria-describedby", extTip\.id\);/.test(one) && /brTipAttach\(ext, extTip\);/.test(one)
     && /ext\.disabled = !brCanOpenExt\(x\);/.test(one) && !/ext\.hidden/.test(one)
     && /ext\.addEventListener\("click", \(e\) => \{ if \(!e\.isTrusted \|\| ext\.disabled\) return; trackFeature\("browser_open_ext"\); window\.blave\.browserOpenExternal\(x\.id\); \}\);/.test(one));
   const wall = br.slice(br.indexOf('  if (exp.mode === "wall") {'), br.indexOf('  const bv = brEl("div", "bv");')), snap = br.slice(br.indexOf('  if (exp.mode === "snap") {'), br.indexOf("  const x = BR.tabs.get(exp.id) || brTab(exp.id);"));
