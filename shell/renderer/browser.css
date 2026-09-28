@@ -56,7 +56,13 @@
 .bblk { margin: 0 0 var(--space-24); padding: var(--space-8); border-radius: var(--radius-lg); background: var(--bg-body); box-shadow: var(--shadow-sm); }
 .bblk-head { display: flex; align-items: center; gap: var(--space-8); min-height: 28px; padding: 0 var(--space-4) var(--space-8); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .bblk-head b { font-weight: 600; color: var(--ink); }
-.bblk-act { margin-left: auto; display: flex; gap: var(--space-12); }
+.bblk-act { margin-left: auto; display: flex; align-items: center; gap: var(--space-12); }
+/* 「看網頁」:安靜鈕——圖示 16＋字 12、無框無底線,hover 才填色。視覺高 28(卡高維持 44),熱區 32(::before 上下各外擴 2) */
+.br-open { position: relative; flex: none; display: inline-flex; align-items: center; gap: var(--space-6); height: 28px; padding: 0 var(--space-8); margin-right: calc(-1 * var(--space-4));
+  border-radius: var(--radius-xs); font-size: 12px; line-height: 1; color: var(--ink-2); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.br-open::before { content: ""; position: absolute; inset: -2px 0; }
+.br-open:hover { background: var(--surface-muted); color: var(--ink); }
+.br-open .ic { stroke-width: 1.5; }
 .bblk .wall { grid-auto-rows: auto; }
 .bblk.is-out .wall { display: none; }
 .bblk.is-out .bblk-head { padding-bottom: 0; }
@@ -195,6 +201,6 @@
 @media (prefers-reduced-motion: reduce) {
   .pt, .bblk.conv .pt, .bblk.sum.rise { animation: none; }
   .br-pulse { animation: none; opacity: .5; }
-  .bblk .pt-prog, .bblk.sum .chev, .pg-band, .segs i, .tc { transition: none; }
+  .bblk .pt-prog, .bblk.sum .chev, .pg-band, .segs i, .tc, .br-open { transition: none; }
   .tr { display: none; }
 }

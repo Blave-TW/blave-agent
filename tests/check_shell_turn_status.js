@@ -134,6 +134,12 @@ const head = cut(brSrc, "function brPaintHead(b) {", "function brToggleList(");
 ok("卡頭最多一顆文字鈕＋chevron:中欄沒有這一輪的頁 →「看網頁」,已在中欄就不放字(收回靠中欄 ✕);沒有「全部展開」",
   /if \(!mine && !b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head) && !/closePanel/.test(brSrc)
   && !/expandAll|br\.expand"/.test(brSrc + strings) && /aria-label", t\(b\.open \? "br\.listHide" : "br\.listShow"\)/.test(head));
+// 「看網頁」(Wei 0928 第 1 點 A 案):安靜鈕——圖示＋字、無底線;視覺高 28、熱區 32(上下各外擴 2),卡高不變
+{ const rule = (brCss.match(/\.br-open \{[^}]*\}/) || [""])[0];
+  ok("「看網頁」是安靜鈕:瀏覽器視窗圖示＋字(字串不變)、無底線、視覺 28／熱區 32、hover 填色", /brEl\("button", "br-open"\);[^\n]*all\.append\(brIcon\("win"\), t\("br\.openPanel"\)\)/.test(head)
+    && /win: '<svg class="ic"/.test(brSrc) && /height: 28px/.test(rule) && /font-size: 12px/.test(rule) && /gap: var\(--space-6\)/.test(rule) && !/text-decoration|border:/.test(rule)
+    && brCss.includes('.br-open::before { content: ""; position: absolute; inset: -2px 0; }') && brCss.includes(".br-open:hover { background: var(--surface-muted); color: var(--ink); }")
+    && !/btn-quiet/.test(head)); }
 // 中欄即時頁(設計稽核 A2):背景分頁固定 1280×800 排版,中欄大小只在顯示時套;擷取 / 顯示後清掉 viewport 覆寫
 const bIdx = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");
 ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;擷取與 setBounds 之後清 viewport 覆寫;容器底色 surface-muted",

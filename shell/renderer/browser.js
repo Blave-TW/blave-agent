@@ -19,6 +19,7 @@ const BR_ICON = {
   reload: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>',
   hand: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
   chev: '<svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+  win: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/><path d="M6 4v4"/><path d="M10 4v4"/></svg>',
 };
 const BR_SERP = /^https:\/\/(?:www\.google\.com\/search\?|html\.duckduckgo\.com\/html\/)/;   // 主行程 doSearch 開的那兩種網址
 const BR_MULTI = /\.(co|com|net|org|gov|edu|ac|or|ne|idv)\.[a-z]{2}$/;
@@ -193,7 +194,7 @@ function brPaintHead(b) {
   // 收回靠中欄標題列的 ✕、Esc 或再點一次選中的列;聊天清單的開合只靠 chevron(整條卡頭也可點)
   const act = brEl("span", "bblk-act");
   const mine = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || inWall);
-  if (!mine && !b.conv && b.ids.length) { const all = brEl("button", "btn-quiet", t("br.openPanel")); all.type = "button"; all.addEventListener("click", (e) => { e.stopPropagation(); brWall(b); }); act.append(all); }
+  if (!mine && !b.conv && b.ids.length) { const all = brEl("button", "br-open"); all.type = "button"; all.append(brIcon("win"), t("br.openPanel")); all.addEventListener("click", (e) => { e.stopPropagation(); brWall(b); }); act.append(all); }
   if (!b.conv && b.ids.length) {
     const tg = brEl("button", "br-toggle"); tg.type = "button"; tg.setAttribute("aria-expanded", b.open ? "true" : "false");
     tg.setAttribute("aria-label", t(b.open ? "br.listHide" : "br.listShow"));

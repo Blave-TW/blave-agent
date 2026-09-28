@@ -104,7 +104,7 @@ app.whenReady().then(async () => {
     window.__ev({ type: "page_favicon", id: "z2", dataURI: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", plate: false });
     window.__ev({ type: "page_progress", id: "z1", n: 1, total: 3 });
     const after = document.querySelector('.bv-tab[data-id="z2"] .fav').classList.contains("has-img");
-    const headBtns = document.querySelectorAll(".bblk-head .btn-quiet, .bblk summary .btn-quiet").length;
+    const headBtns = document.querySelectorAll(".bblk-head .br-open, .bblk-head .btn-quiet, .bblk summary .btn-quiet").length;
     // ✕:熱區用 elementFromPoint 實測(中心上下左右各 21px 都打到它);下緣在標題列內、在頁面框(原生 view)上緣之上
     const cb = document.querySelector(".bw-head .bw-close"), cr = cb.getBoundingClientRect(), hr = document.querySelector(".bw-head").getBoundingClientRect(), pr = document.querySelector(".bv-page").getBoundingClientRect();
     const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2, hitAt = (dx, dy) => { const e = document.elementFromPoint(cx + dx, cy + dy); return !!e && (e === cb || cb.contains(e)); };
