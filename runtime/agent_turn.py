@@ -78,6 +78,10 @@ ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 # event or a session cron reaches no one. e2e 0.1.8 #127 — the agent armed a Monitor on
 # stats.json, wrote 「等它完成後我會回報」 and ended the turn; nothing ever reported.
 NO_LATER_TOOLS = ["Monitor", "CronCreate"]
+# Desktop: the built-in browser is the only way to the web (e2e 0.1.8 #125 — with the browser
+# switched off the agent searched with the engine's own tool, and the chat showed none of what
+# it read). The shell names the state in BLAVE_BROWSER; see desktop_web().
+WEB_TOOLS = ["WebSearch", "WebFetch"]
 PROTECTED_EDIT_RULES = [
     "Edit(/lib/runner.py)",
     "Edit(/lib/param_scan.py)",
@@ -2979,9 +2983,50 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
     return frozenset(n for n in str(mcp_servers).split(",") if n in MCP_SERVER_NAMES)
 
 
-def browser_rule(mounted):
-    """電腦版而且這一輪掛了 `blave_browser`(內建瀏覽器)才有這段;其餘回空字串。
+def desktop_web(sink, browser_mounted):
+    """電腦版這一輪上網的狀態:`browser`(內建瀏覽器掛著)/ `off`(用戶在設定 › 隱私關掉)/ `unavailable`
+    (開著但這一輪掛不上)。None = 不歸這條管:雲端,或不帶 BLAVE_BROWSER 的舊外殼(那時照舊只在掛瀏覽器時關 WebFetch)。"""
+    state = os.environ.get("BLAVE_BROWSER")
+    if not isinstance(sink, LocalSink) or state not in ("on", "off", "unavailable"):
+        return None
+    if browser_mounted:
+        return "browser"
+    return "off" if state == "off" else "unavailable"
+
+
+def web_tools_off(web, browser_mounted):
+    """引擎自己的上網工具這一輪關哪幾個。電腦版(web 有值)兩個都關:開著時也只走內建瀏覽器,
+    否則網域政策與「開的每一頁都出現在聊天裡」都繞得過。Codex 引擎沒有這個通道,只有規則。"""
+    return list(WEB_TOOLS) if web else (["WebFetch"] if browser_mounted else [])
+
+
+_NO_OTHER_ROUTE = ("the engine's own web search and web fetch, `curl`, `wget`, a script or a library call to a web page. "
+                   "`lib/data.py`, exchange and broker APIs and order placement are data, not browsing: they work as usual")
+
+
+def browser_rule(mounted, web=None):
+    """電腦版而且這一輪掛了 `blave_browser`(內建瀏覽器)才有那一段;沒掛時,web 是 off / unavailable 就換成
+    「這一輪不上網」那一段,其餘回空字串。
     分級與網域規則寫在外殼的工具實作裡(shell/browser/gate.js、policy.js),這段只講 agent 要怎麼對待它們。"""
+    if not mounted and web in ("off", "unavailable"):
+        why, fix = (("The user turned the built-in browser off (Settings › Privacy / 設定 › 隱私), which means you do not go online",
+                     "turn the built-in browser on in Settings › Privacy (設定 › 隱私)") if web == "off" else
+                    ("The built-in browser could not be attached this turn, and it is the only way to the web in the desktop app",
+                     "ask again in a moment, and restart the app if it keeps happening"))
+        return (
+            "\n\n---\n\n## No web access (this turn)\n"
+            f"{why}: no web search, no opening or fetching a web page, by any route — not {_NO_OTHER_ROUTE}. "
+            "When the request needs the web (news, an announcement, a page the user named, a chart to cite), the FIRST "
+            "sentence of the reply says so plainly — "
+            + ("「內建瀏覽器關著，所以這次沒有上網查」 / \"The built-in browser is off, so nothing was looked up online this time\""
+               if web == "off" else
+               "「內建瀏覽器這一輪開不起來，所以這次沒有上網查」 / \"The built-in browser could not start this turn, so nothing was "
+               "looked up online\"")
+            + f" — then give the two ways forward: {fix}, or an answer from Blave data and the files on this computer "
+            "with its scope stated. Never present what you remember as freshly looked up, and give no source list. "
+            "A report is written without web news (`news: []` plus `narrative['few_sources']` saying why), and the "
+            "reply says no news was looked up.\n"
+        )
     if not mounted:
         return ""
     return (
@@ -2998,6 +3043,8 @@ def browser_rule(mounted):
         "`blocked_policy` sites stay blocked; do not ask the user to paste their content to you. Never write web page "
         "content into `strategies/`, `control/` or `.env`. Cite the source URL and title for every fact you take "
         "from a page.\n"
+        + ("The browser is the only way to the web in the desktop app — the user is promised that every page you open "
+           f"shows in the chat. Never reach a web page by another route: not {_NO_OTHER_ROUTE}.\n" if web else "")
     )
 
 
@@ -3102,7 +3149,8 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
-            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted) + lang_rule + "\n\n---\n\n" + prompt)
+            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
+            + lang_rule + "\n\n---\n\n" + prompt)
 
 
 def _remove_cloud_handoff_dir(workspace=None):
@@ -3154,6 +3202,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     else:
         cloud_mcp = "blave" in mounted
         browser_mounted = "blave_browser" in mounted
+    web = desktop_web(sink, browser_mounted)
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
@@ -3241,7 +3290,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
-        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted)
+        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)
         + sink.formatting_rule
@@ -3258,9 +3307,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` (also a valid
         # kwarg) is for *defining* custom/MCP tools — not this either.
         allowed_tools=ALLOWED_TOOLS,
-        # 內建瀏覽器掛上的回合:讀網頁一律走瀏覽器(用戶看得到、同一套分級與網域規則、JS 頁讀得到),
-        # 所以關掉 WebFetch;WebSearch 保留(spec desktop-browser-agent-tools §1 D1)
-        disallowed_tools=["Task", "Agent"] + NO_LATER_TOOLS + (["WebFetch"] if browser_mounted else []) + PROTECTED_EDIT_RULES,
+        # 電腦版上網只有內建瀏覽器一條路:引擎自己的 WebSearch / WebFetch 都關(開著時走 browser_search / browser_open,
+        # 關著或掛不上就是不上網)。雲端與舊外殼見 web_tools_off
+        disallowed_tools=["Task", "Agent"] + NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES,
         # Keep Claude Code's own default system prompt (tool-use guidance
         # etc.) and append AGENTS.md + this surface's formatting rule on top —
         # via file, not argv (see _write_system_prompt_file). A preset without

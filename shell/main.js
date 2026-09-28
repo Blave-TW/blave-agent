@@ -2022,6 +2022,10 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   try { brMount = await browser().beginTurn(win, sessionId); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
+  // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,
+  // 沒掛上時照 off(用戶在設定 › 隱私關的)/ unavailable(開著但這一輪起不來)給 agent 不同的說法
+  let brWanted = true; try { brWanted = browser().enabled(); } catch (_) { /* 連物件都建不起來:當成起不來 */ }
+  const brState = brMount && mcpFile ? "on" : brWanted ? "unavailable" : "off";
   const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); };
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
@@ -2058,6 +2062,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 聊天裡的圖:見上面「聊天裡的圖」。接收端還沒起來(port 0)就不帶,notify 那邊會 no-op
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
+    BLAVE_BROWSER: brState,
     LANG: process.env.LANG || "zh_TW.UTF-8",
     ...PY_ENV,
   };

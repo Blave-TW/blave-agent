@@ -4082,7 +4082,10 @@ msgid "br.set.switch"
 msgstr "Built-in browser"
 
 msgid "br.set.lead"
-msgstr "The agent can open web pages on this computer to look things up, and every page it opens shows up in the chat. It never opens exchange or broker account areas or bank sites; you press sign-in, submit and pay yourself."
+msgstr "When on, the agent can search the web and open pages to look things up, and every page it opens shows up in the chat. It never opens exchange or broker account areas or bank sites; you press sign-in, submit and pay yourself."
+
+msgid "br.set.off"
+msgstr "When off, the agent doesn’t search the web or open any page. It answers from Blave data and the files on this computer. Strategies still fetch data and place orders as usual."
 
 msgid "br.set.clear"
 msgstr "Clear browsing data"
