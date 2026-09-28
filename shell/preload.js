@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("blave", {
   compareVersions: (name, a, b) => ipcRenderer.invoke("compare-versions", name, a, b),
   cloudVersion: (q) => ipcRenderer.invoke("cloud-version", { name: q && q.name, op: q && q.op, n: q && q.n, a: q && q.a, b: q && q.b }),
   accountStatus: () => ipcRenderer.invoke("account-status"),
+  balance: () => ipcRenderer.invoke("balance"),   // Blave 餘額:{ balance, trial } 或 null(讀不到);憑證在主行程
   planStart: () => ipcRenderer.invoke("plan-start"),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
   tradeLabels: (labels) => ipcRenderer.send("trade-labels", labels),

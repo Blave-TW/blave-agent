@@ -212,7 +212,8 @@ function mdlPaint() {
     const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "")); r.dataset.kind = o.kind;
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
-    if (o.desc) tc.appendChild(el("p", "m", t(o.desc)));
+    // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就只講怎麼收錢那半句
+    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc))); }
     r.appendChild(tc);
     if (o.st) r.appendChild(el("span", "st", t(o.st.key)));
     if (o.isCur) r.appendChild(el("span", "cn-cur", t("cn.current")));
@@ -365,7 +366,7 @@ function setCat(cat) {
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
-  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
+  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
   if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
@@ -897,7 +898,7 @@ function mpPickEffort(lv) {
    觸發鈕,焦點一律回觸發鈕。 */
 function mpOpen(viaMouse) {
   if (running) return;
-  if (cur === "blave" && hasToken && Date.now() - acctAt > BAL_STALE_MS) acctCheck();   // 打開選單時重讀餘額;剛查過就不重查(跟 LLM 共用每分鐘的桶)
+  if (cur === "blave" && hasToken) balLoad();   // 打開選單時重讀餘額(主行程 10 秒內用上一次的答案)
   $("mp-panel").hidden = false; $("mp").classList.add("is-open");
   $("mp-trigger").setAttribute("aria-expanded", "true");
   // 滑鼠開的不把焦點丟到選中列:前一個焦點是輸入框(永遠算 focus-visible),程式轉移
@@ -2198,13 +2199,25 @@ function blaveLoginFlow(card) {
    視窗回到前景時自動重查(節流 10 秒;還是不能跑就 5 秒後再查,最多 3 次):綁完卡回來,卡片
    自己換成「可以開始了 / 額度到了」。不自動重送——那句話可能是下單。 */
 let acct = null, acctCard = null, acctAt = 0, acctRetry = 0;
-/* Blave 餘額(設計師第五批 c;e2e 0.1.8 #100):無條件捨去到整數、千分位——不把付不出的零頭講成有。回 "1,234" 或 null(不是有限數字)。
-   來源是帳號狀態的 balance 欄位;api 還沒給這一欄時一律 null,畫面畫「—」/ 只出規則那半句 */
-const BAL_STALE_MS = 60 * 1000;
-let balLast = null;
-function balNum(v) { return typeof v === "number" && isFinite(v) ? Math.floor(v).toLocaleString("en-US") : null; }
-// 還在讀(acct 是 null)沿用上一個數字,讀到才換;登入 / 登出 / 換帳號由呼叫端把 balLast 清掉
-function balNow() { if (!hasToken) return null; if (acct) balLast = balNum(acct.balance); return balLast; }
+/* Blave 餘額(設計師第五批 c;e2e 0.1.8 #100)。看得到它的地方(帳號與方案那一列、模型選單底部)都只經過這裡:
+   balLoad() 讀、balNow() 給字。來源是電腦版自己的端點(主行程 window.blave.balance,帶 token + app_secret);帳號狀態不回餘額。
+   整數、千分位、四捨五入——跟網頁同一個算法(Intl.NumberFormat 的預設),同一個人在兩邊要看到同一個數字。一律 TWD。
+   回 "1,234" 或 null(讀不到:非 200、舊登入、api 還沒部署……一律畫「—」/ 只出規則那半句,不把讀不到畫成 0)。
+   什麼時候讀:打開「帳號與方案」、打開模型選單(引擎是 Blave AI)、Blave AI 的回合結束、登入回來。不輪詢 */
+let balLast = null, balSeq = 0;
+function balNum(v) { return typeof v === "number" && isFinite(v) ? (Math.round(v) || 0).toLocaleString("en-US") : null; }
+// 還在讀沿用上一個數字,讀到才換;登入 / 登出 / 換帳號由呼叫端把 balLast 清掉
+function balNow() { return hasToken ? balLast : null; }
+async function balLoad() {
+  if (!hasToken) { balLast = null; return; }
+  const seq = ++balSeq;
+  let r = null;
+  try { r = await window.blave.balance(); } catch (_) { r = null; }
+  if (!hasToken || seq !== balSeq) return;   // 在途時登出了,或後面又讀了一次:這一筆不算
+  balLast = r ? balNum(r.balance) : null;
+  if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
+  if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
+}
 const creditCards = [];                     // 402 那張(可能不只一張:他連送了兩句)
 const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
 const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
@@ -2485,7 +2498,7 @@ async function planLogin() {
   if (oauthPending || running) return;
   setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
   planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
-  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); }
+  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = false; planPaint(); waitChanged();
@@ -2519,7 +2532,7 @@ async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
   oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
-  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); }
+  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
   oauthPending = false; waitChanged();
@@ -2688,7 +2701,7 @@ let pendingErr = [];
 const holdErrors = () => (cur === "claude" || cur === "codex") && !turnGotReply && !turnFaulted;
 window.blave.onTurnEnd(async (r) => {
   draftPromote();   // runtime 沒送到 done 就結束(被殺、崩潰):手上那段仍是這一輪最後的字
-  if (cur === "blave" && hasToken) acctCheck();   // Blave AI 這一輪是從餘額扣的:回合結束重讀(模型選單底部與「帳號與方案」那一列)
+  if (cur === "blave" && hasToken) balLoad();   // Blave AI 這一輪是從餘額扣的:回合結束重讀(模型選單底部與「帳號與方案」那一列)
   // 用戶按了停止:不是失敗——不問登入、不畫錯誤、不攤開收據;保險殺掉時的非 0 結束碼也不顯示
   const stopped = turnStopped; turnStopped = false;
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的

@@ -13,7 +13,11 @@ msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
 msgid "cn.blave.descSet"
-msgstr "按用量從 Blave 餘額扣款。首次綁卡送 100 TWD 的 AI 額度。"
+msgstr "按用量從 Blave 餘額扣款。首次綁卡送 {q} TWD 的 AI 額度。"
+
+# 拿不到贈額數字時(離線、api 沒回)只講怎麼收錢那半句
+msgid "cn.blave.descSetNoNum"
+msgstr "按用量從 Blave 餘額扣款。"
 
 msgid "cn.blave.btn"
 msgstr "登入 Blave"

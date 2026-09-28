@@ -247,8 +247,8 @@ ok("分類順序:一般 → 模型接入 → 資料來源 → 帳號與方案 �
   && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
 // 舊的兩個分類 id 都還開得到合併後的頁:真的跑 setCat
 { const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "src", "plan", "shares", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [];
-  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "privLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
-    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => Promise.resolve(), true);
+  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "privLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
+    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
   const open = (k) => { painted = 0; tracked.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join() }; };
   const a = open("acct"), b = open("plan");
   ok("setCat(\"acct\") 與 setCat(\"plan\") 開到同一頁:左欄亮「帳號與方案」、只露出那一頁、整頁重畫、埋點記 settings_plan", JSON.stringify(a) === JSON.stringify(b) && a.cur === "plan" && a.shown === "plan" && a.painted === 1 && a.tracked === "settings_plan");
@@ -266,21 +266,15 @@ eval(mdl.replace(/^const /gm, "var "));
 const D = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
 const shape = (o) => [o.kind, o.isCur, o.st && o.st.key, String(o.act)].join("|");
 let M = mdlOptions(D, "claude", true);
-// e2e 0.1.8 #100 #101:電腦版看得到 Blave 餘額、切到 Blave AI 之後講明會從餘額扣款(設計師第五批 c)
+// e2e 0.1.8 #100 #101:電腦版看得到 Blave 餘額、切到 Blave AI 之後講明會從餘額扣款(設計師第五批 c)。餘額怎麼讀、怎麼取整、讀不到畫什麼在 tests/check_shell_balance.js
 { const cut = (n) => { const i = src.indexOf("function " + n + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
-  const vm = require("vm"), sb = {}; vm.createContext(sb); vm.runInContext("var hasToken, acct, balLast = null;" + cut("balNum") + cut("balNow") + "this.balNum = balNum; this.balNow = balNow; this.set = (h, a) => { hasToken = h; acct = a; }; this.reset = () => { balLast = null; };", sb);
-  sb.set(true, null);
-  ok("餘額:無條件捨去到整數、千分位;不是有限數字(api 沒給這一欄、字串、NaN)= null", sb.balNum(1234.99) === "1,234" && sb.balNum(0) === "0" && sb.balNum(0.9) === "0" && sb.balNum(1234567) === "1,234,567" && [undefined, null, "12", NaN, Infinity, {}].every((v) => sb.balNum(v) === null));
-  ok("餘額:還在讀(acct 是 null)畫不出數字;讀到才有;再重讀的空窗沿用上一個;帳號狀態沒帶 balance = 讀不到;沒登入 = 沒有", sb.balNow() === null && (sb.set(true, { balance: 300.5 }), sb.balNow()) === "300" && (sb.set(true, null), sb.balNow()) === "300"
-    && (sb.set(true, { can_run: true }), sb.balNow()) === null && (sb.set(true, { balance: 50 }), sb.balNow()) === "50" && (sb.set(false, { balance: 50 }), sb.balNow()) === null);
-  ok("餘額:登出、登入、換帳號都把上一個數字清掉(不把別的帳號的餘額畫出來)", (src.match(/acct = null; balLast = null;/g) || []).length === 3);
   ok("① 帳號與方案:Blave 餘額在最上面那一組裡(狀態點之前);沒登入整列不出;讀不到畫「—」、title 與 aria-label 用 plan.balNa", /if \(hasToken\) \{\s*const n = balNow\(\), row = el\("div", "plan-bal"\), val = el\("span", "v" \+ \(n \? "" : " na"\), n \? n \+ " TWD" : "—"\);\s*if \(!n\) \{ val\.title = t\("plan\.balNa"\); val\.setAttribute\("aria-label", t\("plan\.balNa"\)\); \}\s*row\.append\(el\("span", "l", t\("plan\.bal"\)\), val\); id\.append\(row\);\s*\}/.test(src)
     && src.indexOf('row = el("div", "plan-bal")') < src.indexOf('if (V.st) { const stEl = el("span", "plan-st "') && /\.plan-bal \.v \{ font-size: 13px; color: var\(--ink\); font-variant-numeric: tabular-nums; \}/.test(css) && !/plan-bal[^}]*mono/.test(css));
   ok("② 模型選單底部:引擎是 Blave AI 才出(連同分隔線);讀不到餘額只出規則那半句;打開選單與回合結束重讀", /const on = cur === "blave", n = on \? balNow\(\) : null;\s*\$\("mp-bill-div"\)\.hidden = !on; \$\("mp-bill"\)\.hidden = !on;/.test(src) && /\$\("mp-bill-sep"\)\.hidden = !n; \$\("mp-bill-bal"\)\.hidden = !n;/.test(src)
     && /<p class="mp-note" id="mp-note" aria-live="polite"><\/p>\s*<!--[^>]*-->\s*<div class="mp-div" id="mp-bill-div" hidden><\/div>\s*<p class="mp-note mp-bill" id="mp-bill" hidden>/.test(html)
-    && /if \(cur === "blave" && hasToken && Date\.now\(\) - acctAt > BAL_STALE_MS\) acctCheck\(\);/.test(cut("mpOpen")) && /if \(cur === "blave" && hasToken\) acctCheck\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
+    && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(cut("mpOpen")) && /\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
   ok("③ 模型接入:Blave AI 那一列先講怎麼收錢(cn.blave.descSet);連結畫面那張卡的 cn.blave.desc 不動", M[0].desc === "cn.blave.descSet" && /data-i18n="cn\.blave\.desc"/.test(html) && /msgid "cn\.blave\.desc"\nmsgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"/.test(PO2[0])
-    && /msgid "cn\.blave\.descSet"\nmsgstr "按用量從 Blave 餘額扣款。首次綁卡送 100 TWD 的 AI 額度。"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1])); }
+    && /msgid "cn\.blave\.descSet"\nmsgstr "按用量從 Blave 餘額扣款。首次綁卡送 \{q\} TWD 的 AI 額度。"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1])); }
 ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);不能用的列才講(尚未登入 + 登入)", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false|st.notSignedIn|cn.signIn");
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));
@@ -295,7 +289,7 @@ ok("偵測中:兩列只換狀態字、不給動作(列數不變);Blave 那一列
 ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出、還沒偵測過不出", !mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } })
   && mdlNeedsRedetect(D) && mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }) && !mdlNeedsRedetect(null));
 { // mdlPaint 真的畫一次(假 DOM):全部就緒 → 只有「使用」「使用」「使用中」;一個沒登入 → 那一列講、本機那組底下出「重新偵測」(安靜文字鈕,不在組標題)
-  var MDL = MDL || { busy: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}; hasToken = true;
+  var MDL = MDL || { busy: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, planVars = () => ({ q: "100" }); hasToken = true;
   eval(fnSrc("mdlPaint"));
   const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
   const texts = () => walk($("set-model")).map((n) => [n._cls, n.textContent]);
@@ -428,14 +422,14 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   eval(fnSrc("dataAccessOf")); const usageUrl = () => "usage"; eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
   const envPlanChanged = undefined;
   hasToken = true; cur = "claude";
-  let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));
+  let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
   eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint"));
   // 最上面一組(.plan-id):帳號列 → 訊息格 → 餘額列;餘額列是這一組的第三個子節點
   const balRow = () => dom["set-plan"].children[0].children[0].children[2];
   { planPaint(); const row = balRow(), val = row.children[1];
-    ok("① 真的畫一次:帳號狀態沒有 balance(現在的 api)→「Blave 餘額　—」;有了就是「1,234 TWD」", dom["set-plan"].children[0].children[0].className === "plan-id" && row.className === "plan-bal" && row.children[0].textContent === "plan.bal" && val.textContent === "—" && val.className === "v na" && val.title === "plan.balNa"
-      && (acct.balance = 1234.9, planPaint(), balRow().children[1].textContent) === "1,234 TWD", row.className + "|" + val.textContent);
-    delete acct.balance; balLast = null; }
+    ok("① 真的畫一次:還沒讀到餘額 →「Blave 餘額　—」;讀到就是「1,235 TWD」(四捨五入)", dom["set-plan"].children[0].children[0].className === "plan-id" && row.className === "plan-bal" && row.children[0].textContent === "plan.bal" && val.textContent === "—" && val.className === "v na" && val.title === "plan.balNa"
+      && (balLast = balNum(1234.9), planPaint(), balRow().children[1].textContent) === "1,235 TWD", row.className + "|" + val.textContent);
+    balLast = null; }
   { // ── 帳號與方案:最上面那一組、登出的確認框、訊息格(真的跑 planPaint / acctOutAsk / acctPaintAcct)──
     const boxes = []; const confirmBox = (o) => { boxes.push(o); }; let oauthPending = false; const acctSignOut = () => {};
     eval(fnSrc("acctOutAsk")); eval(fnSrc("acctPaintAcct"));
@@ -452,7 +446,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     planLoginBusy = true; planPaint();
     ok("登入等待中:頁尾那顆變「取消」;「瀏覽器已開啟…」只在鈕左邊,不在帳號列下面再放一次", page().foot.join() === "btn-out:oauth.cancel" && page().hint.hidden === true && walkP(dom["set-plan"]).some((n) => n.className === "wait" && n.textContent === "pv.w.waiting"));
     planLoginBusy = false;
-    hasToken = true; acct = { balance: 1234.6, plan: { state: "none" }, data_access: "included", can_run: true }; planPaint(); A = page();
+    hasToken = true; acct = { plan: { state: "none" }, data_access: "included", can_run: true }; balLast = balNum(1234.4); planPaint(); A = page();
     ok("已登入:帳號列「已登入」＋文字鈕「登出」(不是描邊鈕、沒有綠點),下面一列 Blave 餘額;順序 帳號列 → 訊息格 → 餘額列", A.first && A.rows === 2 && A.who.v === "acct.signedIn" && A.who.vCls === "v"
       && !!A.who.btn && A.who.btn.className === "btn-quiet" && A.who.btn.textContent === "acct.out" && A.who.btn.id === "set-acct-btn" && A.who.btn.dataset.k === "acct-out"
       && A.bal.l === "plan.bal" && /TWD$/.test(A.bal.v) && A.order === "plan-bal,acct-hint,plan-bal" && A.dots === 1, JSON.stringify(A));

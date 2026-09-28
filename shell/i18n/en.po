@@ -13,7 +13,11 @@ msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
 msgid "cn.blave.descSet"
-msgstr "Pay per use, charged to your Blave balance. A first card adds 100 TWD of AI credit."
+msgstr "Pay per use, charged to your Blave balance. A first card adds {q} TWD of AI credit."
+
+# 拿不到贈額數字時(離線、api 沒回)只講怎麼收錢那半句
+msgid "cn.blave.descSetNoNum"
+msgstr "Pay per use, charged to your Blave balance."
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"

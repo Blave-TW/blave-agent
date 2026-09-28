@@ -315,6 +315,13 @@ function loadAppSecret() {
 function clearAppSecret() {
   try { fs.unlinkSync(appSecretPath()); } catch (_) {}
 }
+/* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
+let _balance = null;
+function balanceHost() {
+  if (!_balance) _balance = require("./balance").createBalance({ apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; } });
+  return _balance;
+}
 /* 啟動雲端方案。回 { state } 或 { error }(穩定代號,畫面自己換成句子):
    APP_SECRET_REQUIRED(舊登入,沒有這顆)/ NO_CARD / NO_CREDIT / RATE_LIMITED / SERVER。
    後端是冪等的:已有主機就回現況,連點或重試不會開第二台。 */
@@ -424,6 +431,7 @@ async function signOutBlave() {
   if (_cloudCmd) _cloudCmd.reset();   // 在途的雲端指令:回應回來時丟掉(它是上一個人的)
   if (_capital) _capital.forget();   // 選好還沒上傳的群益憑證檔:是上一個人的
   if (_mcp) _mcp.reset();       // 接入碼也是:伺服器那邊 /revoke 會撤掉它,這裡把記憶體裡的丟掉、作廢在途的請求
+  if (_balance) _balance.reset();   // 上一個帳號的餘額
   lastAcct = null;
   return { revoked };
 }
@@ -561,6 +569,7 @@ async function startOAuth(lang) {
   // 換了帳號:cloud.js 自己會認出 token 換了、把上一個人的東西丟掉(不靠這一行);這一行只是讓畫面不必等下一輪輪詢
   if (_cloud && _cloud.isRunning()) _cloud.refresh(true).catch(() => {});
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
+  if (_balance) _balance.reset();     // 餘額也是
   libCache = null;                    // 同理:策略庫的 purchased / is_owner 是帳號的
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
@@ -2241,6 +2250,7 @@ app.whenReady().then(() => {
   handle("compare-versions", (_e, name, a, b) => compareVersions(String(name || ""), a, b), { code: "ERROR" });
   handle("model-options", (_e, kind) => modelOptions(kind));
   handle("account-status", () => accountStatus());
+  handle("balance", () => balanceHost().read());
   handle("public-pricing", () => publicPricing());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
   ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart() : { error: "SERVER" }));

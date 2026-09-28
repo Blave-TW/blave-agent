@@ -1,7 +1,7 @@
 // 模型選單打得開(0.1.8 開發版 P0:點了鈕有反白、面板不出現,所有引擎都一樣)。
 // 根因是 mpOpen 裡的區域 `const cur` 遮住外層的 `cur`,第一行就丟 ReferenceError;只比對原文的測試看不出來,所以這支**真的呼叫** mpOpen。
 //   1. 引擎是 Blave AI / 不是 Blave AI:呼叫 mpOpen() 不丟例外、面板 hidden === false、鈕的 aria-expanded = true
-//   2. Blave AI + 已登入 + 餘額超過一分鐘沒讀:開選單時重讀一次;剛讀過、沒登入、別的引擎都不讀
+//   2. Blave AI + 已登入:開選單時重讀餘額(主行程 10 秒內用上一次的答案);沒登入、別的引擎不讀
 //   3. 鍵盤開的焦點落在選中那一列,滑鼠開的不動焦點;回合進行中不開;mpPickModel 同一個寫法也跑一次
 // 跑法:node tests/check_shell_model_menu.js
 const fs = require("fs"), path = require("path");
@@ -15,7 +15,7 @@ function world(o) {
   const $ = (id) => els[id] || (els[id] = { id, hidden: id === "mp-panel", attrs: {}, cls: new Set(), classList: { add: (c) => els[id].cls.add(c), remove: (c) => els[id].cls.delete(c) },
     setAttribute(k, v) { this.attrs[k] = v; }, focus() { focused.push(id); }, querySelector: () => (o.noRow ? null : row) });
   // 外層的 cur / running 等照 app.js 是 let:包在同一層宣告,函式照原文放進來——遮蔽與 TDZ 才會跟真的一樣
-  const M = new Function("$", "acctCheck", "o", `let cur = o.cur, running = !!o.running, hasToken = !!o.hasToken, acctAt = o.acctAt; const BAL_STALE_MS = 60 * 1000;
+  const M = new Function("$", "balLoad", "o", `let cur = o.cur, running = !!o.running, hasToken = !!o.hasToken;
     const MP = { model: "a", kind: "claude", prefs: {} }; const mpEffort = () => "high", mpCur = () => ({ efforts: ["high"] }), mpSave = () => {}, mpPaint = () => {};
     ${fn("mpOpen")}\n${fn("mpClose")}\n${fn("mpPickModel")}\n return { mpOpen, mpClose, mpPickModel };`)($, () => checks.push(1), o);
   return { M, $, focused, checks };
@@ -26,8 +26,8 @@ for (const cur of ["blave", "claude", "codex", null]) {
   const w = open({ cur, hasToken: true, acctAt: Date.now() }, true);
   ok(`引擎 ${cur}:mpOpen() 不丟例外、面板打開、aria-expanded = true`, w.err === null && w.$("mp-panel").hidden === false && w.$("mp").cls.has("is-open") && w.$("mp-trigger").attrs["aria-expanded"] === "true", w.err);
 }
-ok("Blave AI + 已登入 + 餘額一分鐘以上沒讀:開選單時重讀一次", open({ cur: "blave", hasToken: true, acctAt: Date.now() - 61000 }, true).checks.length === 1);
-ok("剛讀過 / 沒登入 / 別的引擎:不讀", [{ cur: "blave", hasToken: true, acctAt: Date.now() - 5000 }, { cur: "blave", hasToken: false, acctAt: 0 }, { cur: "claude", hasToken: true, acctAt: 0 }].every((o) => open(o, true).checks.length === 0));
+ok("Blave AI + 已登入:開選單時重讀餘額一次", open({ cur: "blave", hasToken: true }, true).checks.length === 1);
+ok("沒登入 / 別的引擎:不讀", [{ cur: "blave", hasToken: false }, { cur: "claude", hasToken: true }, { cur: "codex", hasToken: true }].every((o) => open(o, true).checks.length === 0));
 ok("鍵盤開的:焦點落在選中那一列;滑鼠開的不動焦點;沒有選中列也不炸", open({ cur: "claude" }, false).focused.join() === "row" && open({ cur: "claude" }, true).focused.length === 0 && open({ cur: "claude", noRow: true }, false).err === null);
 { const w = open({ cur: "blave", running: true, hasToken: true, acctAt: 0 }, true);
   ok("回合進行中:不開、也不讀餘額", w.err === null && w.$("mp-panel").hidden === true && w.checks.length === 0); }

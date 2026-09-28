@@ -115,7 +115,8 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   // 第 4 個 = mcpCode() 的 getCreds(換 `blave` MCP 的接入碼;只交給 mcpcode.js 去打 api,不進 agent、不進 renderer——tests/check_shell_mcp_code.js)
   // 第 5 個 = cloudCmd() 的 getCreds(對雲端主機下指令;同樣只交給 cloudcmd.js 去打 api——tests/check_shell_cloud_cmd.js)
   // 第 7 個 = shareClient() 的 getCreds(報告公開分享;只交給 reportshare.js 去打 /oauth/desktop/share/*——tests/check_shell_report_share.js)
-  t("main.js:loadAppSecret( 的出現次數沒有變多(第六處 = 策略庫購買 libraryPurchase,同 planStart 那一級;第七處 = 報告分享 shareClient)", (mainSrc.match(/loadAppSecret\(/g) || []).length === 7
+  // 第 8 個 = balanceHost() 的 getCreds(讀自己的 Blave 餘額;只交給 balance.js 去打 /oauth/desktop/balance——tests/check_shell_balance.js)
+  t("main.js:loadAppSecret( 的出現次數沒有變多(第六處 = 策略庫購買 libraryPurchase,同 planStart 那一級;第七處 = 報告分享 shareClient;第八處 = 餘額 balanceHost)", (mainSrc.match(/loadAppSecret\(/g) || []).length === 8
     && /createShareClient\(\{\n    apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b, [^\n]*\{ timeout: SHARE_UPLOAD_TIMEOUT_MS \} : undefined\), readLocal: reportForShare,\n    logError: rptLogError, store: RS\.createShareStore\(path\.join\(BASE, "state", "report-shares\.json"\)\),\n    getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \},\n  \}\);/.test(mainSrc)
     && /createMcpCode\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\s*getCreds: \(\) => \{ const token = loadToken\(\); return token \? \{ token, appSecret: loadAppSecret\(\) \} : null; \} \}\);/.test(mainSrc));
   t("main.js:登出時清掉雲端宿主手上的東西(讀、寫兩支都要:在途的指令回來時是上一個人的)",
