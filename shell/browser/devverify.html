@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>測試用的假驗證頁</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font: 16px/1.6 system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif; margin: 0; padding: 48px 24px; background: #fff; color: #111; }
+  main { max-width: 520px; margin: 0 auto; border: 2px dashed #b00020; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 8px; color: #b00020; }
+  p { margin: 8px 0; }
+  button { font: inherit; margin-top: 16px; padding: 10px 20px; border: 1px solid #111; background: #111; color: #fff; cursor: pointer; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>測試用的假驗證頁</h1>
+  <p>這一頁是 Blave 電腦版開發版自己帶的檔案，不是搜尋引擎的頁面（<code>BLAVE_DEV_FAKE_VERIFY=1</code>）。</p>
+  <p>它只用來走一遍「搜尋遇到機器人驗證、交給你本人按」的畫面流程。按下面的按鈕之後，這個分頁會前往真的搜尋結果。</p>
+  <form id="captcha-form" action="/sorry/fake" method="get" onsubmit="return false">
+    <button id="pass" type="button">我不是機器人（測試）</button>
+  </form>
+</main>
+<script>
+  // 只會去 Google 的搜尋頁:q / hl / num 取自這一頁自己的網址,不接受任何網址當參數
+  document.getElementById("pass").addEventListener("click", function () {
+    var p = new URLSearchParams(location.search);
+    var hl = /^[A-Za-z-]{2,10}$/.test(p.get("hl") || "") ? p.get("hl") : "en";
+    var n = Math.max(1, Math.min(10, parseInt(p.get("num"), 10) || 8));
+    location.assign("https://www.google.com/search?hl=" + hl + "&num=" + n + "&q=" + encodeURIComponent((p.get("q") || "").slice(0, 500)));
+  });
+</script>
+</body>
+</html>
