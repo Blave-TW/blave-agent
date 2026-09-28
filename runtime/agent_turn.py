@@ -692,14 +692,35 @@ def _lang_hooks(options, reminder):
 
 # 電腦版的 agent 不碰作業系統的排程器(e2e 0.1.8 #64 #75):macOS 對 `crontab <檔>` 跳系統框
 # 「想要管理你的電腦」,指令掛在框上等人按(實測 4 分 33 秒),agent 接著叫用戶去開完整磁碟取用權限。
-# 只認「指令位置」上的那三個名字(開頭,或接在 ; & | ( ` $( 引號 換行之後;前面可以有 sudo / env 指派 /
-# timeout N / 路徑)——`grep crontab references/deployment.md` 是在讀文件,不擋。
-# 擋不到的:agent 自己寫進檔案的腳本裡呼叫它們(規則層在 AGENTS.md 與 references/deployment.md);
-# 直接餵給直譯器的 heredoc 腳本擋得到(sched_verdict)。
+# 只認「指令位置」上的那三個名字——`grep crontab references/deployment.md` 是在讀文件,不擋。指令位置 =
+#   開頭,或接在 ; & | ( ` $( 引號 換行、find 的 -exec / -ok 之後;
+#   前面可以有 shell 關鍵字(if then else elif do while until ! {)、帶著自己選項的前綴指令(sudo -u root、env -i、
+#   command -p、time -p、nice -n 10、timeout 10、xargs -I{} …)、環境變數指派、路徑。
+# 這道守門防的是 agent **自然寫出來**的指令在 macOS 觸發系統框、掛住回合,不是安全邊界(agent 本來就有完整的 Bash)。
+# 已知擋不到、也不打算追的:把字拆開再拼回去(cron""tab、$X -l、eval)、直譯器的 -c 字串裡用字串拼接、複製或 symlink 成別的名字、
+# agent 自己寫進檔案的腳本(規則層在 AGENTS.md 與 references/deployment.md)。直接餵給直譯器的 heredoc 腳本擋得到(sched_verdict)。
+_TOK = r"""[^\s;&|()<>`"']+"""
+
+
+def _prefix_re(names, value_opts=""):
+    """前綴指令+它自己的選項:value_opts 是後面另外帶一個值的選項字母(`sudo -u root` 的 u)。"""
+    opt = (rf"-[{value_opts}]\s+(?!-){_TOK}|" if value_opts else "") + "-" + _TOK
+    return rf"(?:{names})(?:\s+(?:{opt}))*"
+
+
+_CMD_PREFIX = "(?:(?:" + "|".join([
+    r"if|then|else|elif|do|while|until|!|\{",
+    _prefix_re("sudo|doas", "ugCDhpRrTtU"), _prefix_re("env", "uCPS"), _prefix_re("nice|ionice", "ncp"),
+    _prefix_re("xargs", "InPLsEJRSd"), _prefix_re("command|builtin|exec|nohup|time|caffeinate|stdbuf"),
+    _prefix_re("timeout", "sk") + r"\s+" + _TOK,
+    r"[A-Za-z_][A-Za-z0-9_]*=\S*",
+]) + r")\s+)*"
 _SCHED_CMD_RE = re.compile(
-    r"""(?:^|[;&|(`\n"']|\$\()\s*"""
-    r"(?:(?:sudo|command|exec|nohup|time|env)\s+|timeout\s+\S+\s+|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
-    r"(?:[^\s;&|()`\"']*[/\\])?(?:crontab|launchctl|schtasks)(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
+    r"""(?:^|[;&|(`\n"']|\$\(|\s-(?:exec|execdir|ok|okdir)\s)\s*""" + _CMD_PREFIX
+    + r"(?:[^\s;&|()`\"']*[/\\])?(?:crontab|launchctl|schtasks)(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
+_CMD_PREFIX_RE = re.compile(r"\s*" + _CMD_PREFIX, re.I)
+# 引號裡的字只是這些指令的參數(要印的字、要找的字),不會被執行:`echo "crontab -l 可以列出排程"`、`grep 'crontab -l' x.md`
+_TEXT_CMDS = frozenset(("echo", "printf", "grep", "egrep", "fgrep", "rg", "cat", "sed", "awk", "man", "git"))
 # 在這台電腦上不碰排程器;用戶自己的雲端主機可以(Wei 2026-09-28:先確認、只裝被要求的那一條,規則在
 # references/cloud-handoff.md)。所以守門要分得出「在這台電腦上執行」與「經 SSH 在雲端主機上執行」。判別從嚴:
 # 一行指令**整行**就是一個 `ssh <選項> <user>@<host> <遠端指令>`(可以帶一段 heredoc 當它的輸入)才算遠端——
@@ -725,11 +746,55 @@ def _local_host(host):
     return bool(me) and h in (me, short, short + ".local", short + ".lan")
 
 
+def _sched_in_command(text):
+    """text 裡有沒有站在指令位置上的排程器指令。_TEXT_CMDS 的引號參數先挖空(裡面有 $( ) 或反引號的雙引號不挖:那會被執行)。"""
+    out, i, n, seg, owner = [], 0, len(text), 0, None
+    while i < n:
+        c = text[i]
+        if c == "\\" and i + 1 < n:
+            out.append(text[i:i + 2]); i += 2
+            continue
+        if c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if c == '"' and text[j] == "\\" else 1
+            if j >= n:
+                out.append(text[i:])
+                break
+            quoted = text[i:j + 1]
+            if owner is None:   # 這個指令的第一個引號才算一次
+                owner = (_CMD_PREFIX_RE.sub("", "".join(out[seg:]), count=1).split() or [""])[0]
+            if os.path.basename(owner) in _TEXT_CMDS and not (c == '"' and re.search(r"`|\$\(", quoted)):
+                quoted = c + " " * (len(quoted) - 2) + c
+            out.append(quoted); i = j + 1
+            continue
+        out.append(c); i += 1
+        if c in ";&|(\n`":   # 下一個字起是另一個指令
+            seg, owner = len(out), None
+    return bool(_SCHED_CMD_RE.search("".join(out)))
+
+
+def _expands_scheduler(body):
+    """沒加引號的 heredoc:內文裡的 $( ) 與反引號由**這台電腦**的 shell 先展開。展開的那一段提到排程器 → True。"""
+    for m in re.finditer(r"(?<!\\)(?:\$\(|`)", body or ""):
+        if m.group(0) == "`":
+            end = body.find("`", m.end())
+        else:
+            depth, end = 1, m.end()
+            while end < len(body) and depth:
+                depth += {"(": 1, ")": -1}.get(body[end], 0)
+                end += 1
+        if _SCHED_ANY_RE.search(body[m.end():end if end > 0 else len(body)]):
+            return True
+    return False
+
+
 def _shell_statements(cmd):
-    """一段 shell 指令 → [{text, body, plain}]:在引號與 heredoc 之外的換行切開;heredoc 的內文跟著開它的那一行。
+    """一段 shell 指令 → [{text, body, plain, expands}]:expands = 這一行的 heredoc 沒加引號(內文會先被這台電腦的 shell 展開)。
+    在引號與 heredoc 之外的換行切開;heredoc 的內文跟著開它的那一行。
     plain = 這一行在引號外沒有任何 shell 運算子(| & ; ( ) < > 反引號 $( ),只准一個 heredoc)。引號沒收尾 → None(認不出來)。"""
     out, i, n = [], 0, len(cmd)
-    text, plain, pending = [], True, []
+    text, plain, pending, expands = [], True, [], False
     while i <= n:
         c = cmd[i] if i < n else "\n"
         if c == "\n":
@@ -741,8 +806,8 @@ def _shell_statements(cmd):
                 body = (body or "") + cmd[i + 1:end.start()]
                 i = end.end()
             if "".join(text).strip():
-                out.append({"text": "".join(text), "body": body, "plain": plain and len(pending) <= 1})
-            text, plain, pending = [], True, []
+                out.append({"text": "".join(text), "body": body, "plain": plain and len(pending) <= 1, "expands": expands})
+            text, plain, pending, expands = [], True, [], False
             i += 1
             continue
         if c == "\\" and i + 1 < n:
@@ -769,6 +834,7 @@ def _shell_statements(cmd):
         m = _HEREDOC_RE.match(cmd, i) if c == "<" else None
         if m:
             pending.append(m.group(2)); text.append(m.group(0)); i = m.end()
+            expands = expands or not m.group(1)
             continue
         if c in "|&;()<>`" or cmd.startswith("$(", i):
             plain = False
@@ -813,16 +879,19 @@ def sched_verdict(cmd):
     別台主機、但寫法讓 runtime 分不出來(行上還有別的東西 / 目的地可疑)——理由另外講。純函式,tests/check_desktop_sched_guard.py。"""
     sts = _shell_statements(cmd)
     if sts is None:
-        return "local" if _SCHED_CMD_RE.search(cmd) or (cmd.split()[:1] == ["ssh"] and _SCHED_ANY_RE.search(cmd)) else None
+        return "local" if _sched_in_command(cmd) or (cmd.split()[:1] == ["ssh"] and _SCHED_ANY_RE.search(cmd)) else None
     verdict = None
     for st in sts:
-        if _ssh_remote_only(st):
-            continue
         body = st["body"] or ""
-        first = re.sub(r"^(?:\s*(?:sudo|command|exec|nohup|time|env)\s+|\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*", "", st["text"]).split()
+        if _ssh_remote_only(st):
+            # 送去雲端主機的 heredoc 沒加引號:`$(crontab -l)` 是這台電腦先跑的。目的地是遠端,所以講「寫法」那一條
+            if st["expands"] and _expands_scheduler(body):
+                verdict = verdict or "form"
+            continue
+        first = _CMD_PREFIX_RE.sub("", st["text"], count=1).split()
         ssh = bool(first) and first[0] == "ssh"
         fed = bool(first) and (ssh or _INTERPRETER_RE.match(os.path.basename(first[0])))
-        hit = (_SCHED_CMD_RE.search(st["text"]) or _SCHED_CMD_RE.search(body)
+        hit = (_sched_in_command(st["text"]) or _SCHED_CMD_RE.search(body)
                or (fed and _SCHED_ANY_RE.search(body))                  # 餵給直譯器 / ssh 的腳本裡提到排程器
                or (ssh and _SCHED_ANY_RE.search(st["text"])))           # 沒被認成遠端的 ssh:提到就擋
         if not hit:

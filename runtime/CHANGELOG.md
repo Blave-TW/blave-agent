@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **排程守門認得自然的寫法(0.1.8 稽核 P1-3,第十批 #3)**:`if crontab -l …; then`、`for …; do crontab $f; done`、`while …; do launchctl list; done`、
+  `{ crontab -l; }`、`! crontab -l`、`sudo -u root crontab`、`env -i crontab`、`command -p` / `time -p` / `nice crontab`、`… | xargs crontab`、
+  `find … -exec crontab {} \;` 原本都放行,macOS 的系統框照樣會掛住回合。`_SCHED_CMD_RE` 的指令位置多認 shell 關鍵字之後、find 的 `-exec` / `-ok` 之後;
+  前綴指令連同它自己的選項一起認(`_prefix_re`)。送給 ssh 的 heredoc **沒加引號**而且內文的 `$( )` / 反引號裡叫排程器(這台電腦的 shell 先展開)→ 擋,
+  理由是「寫法」那一條;加引號的、沒加引號但展開的部分跟排程器無關的照放行,雲端主機上裝排程那條路不變。
+  順帶少誤擋:`echo` / `printf` / `grep` / `rg` / `cat` / `sed` / `awk` / `man` / `git` 的引號參數只是字(`echo "crontab -l 可以列出排程"`),不算指令位置。
+  這道守門防的是自然寫出來的指令,不是安全邊界:拆字拼回去、`eval`、直譯器裡拼字、symlink、寫進檔案的腳本照舊只有規則層,測試裡列成 `KNOWN_GAPS`。
+  Codex 引擎沒有對應的攔截點(hook 只掛在 Claude SDK),那條路照舊只有規則層。測試 `tests/check_desktop_sched_guard.py`(列舉)。
 - **電腦版用 Codex 引擎時,Codex 自己的 web search 也關掉(0.1.8 稽核 P1-2,第十批 #2)**:Codex 的 `web_search` 沒設時是 `cached`(開著),
   用戶在設定 › 隱私關掉內建瀏覽器後,Codex 引擎照樣能用它自己的搜尋上網,查到的東西不出現在聊天裡、也不過網域政策;Claude 那條早就把
   WebSearch / WebFetch 關了。`codex_engine.build_args(..., web_search_off=True)` 多帶 `-c web_search="disabled"`;要不要關跟 Claude 那條
