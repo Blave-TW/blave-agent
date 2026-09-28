@@ -463,6 +463,16 @@ publish(pack, narrative={
   `part="outline"` → `part="section"` for the one paragraph you need — about 3,000 characters per page,
   20,000 per report. With web search, read the result snippets first and open a page only to check a
   figure.
+- **Open what you will read, read what you opened**: `browser_open_many` takes only the pages you
+  are going to read, and every page it opened is read (`part="meta"` at least) before you write the
+  narrative. A page you will not use is not opened; one you opened by mistake is closed
+  (`browser_close`). The user sees every page that opened and takes it for a source.
+- **The original first; second-hand is marked**: for news and for every number, read the outlet's
+  own article or the official page. A forum post (CMoney 同學會, PTT, Dcard, Reddit, X), a repost,
+  a summary of someone else's article or an aggregator page is used only when the original cannot
+  be found or opened — and then it is marked: in a `news` item the source name ends with
+  `（轉述）` (`("CMoney 同學會（轉述）", "https://…")`), in a research footnote the item says
+  `轉述自 <who>`. A number that exists only second-hand is written with 「據…轉述」 in the sentence.
 - **Source quality, in this order**: mainstream financial and crypto media (Reuters, Bloomberg, CNBC,
   CoinDesk, The Block; for Taiwan 鉅亨, 經濟日報, 工商時報, MoneyDJ), official announcements
   (the project, the exchange, the regulator; for Taiwan TWSE / TAIFEX announcements), exchange research reports > aggregators > press-release

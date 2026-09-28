@@ -12,6 +12,7 @@
   #102 範本報告照 describe() 寫,不先讀 91KB 的 reports.md / lib 原始碼;browser_wait 不連等;同一個連結不放兩則新聞。
   #90 tmp/ 自己寫的一次性腳本回覆前刪掉,不拿 tmp/ 裡的舊腳本當範例。
   第五批:#133 台股免費路徑先估時間先講;改參數時 DESCRIPTION 與檔頭一起改;內建瀏覽器關著不上網;資料費 2 TWD。
+  第七批:開了就讀(實測開 6 頁只讀 3 頁,中時與鉅亨三頁開了沒讀);新聞與數字先讀媒體或官方原文,論壇貼文 / 轉述 / 聚合頁要標明。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
 """
@@ -113,6 +114,23 @@ t("被 runtime 拒絕的動作不換寫法重試;雲端主機的排程另有規�
   and "never reword the command, wrap it in a script or switch tools" in read("AGENTS.md") and "*A schedule on the cloud machine*" in read("AGENTS.md"))
 t("從電腦版操作雲端主機:只裝被要求的那一條,不順帶裝健康檢查", "never the health check beside it" in dep and "「做好就排程上線」" in dep)
 t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "**Say it in the user's words, not the machine's:**" in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
+
+# 第七批
+flow = section(br, "## Standard flow")
+news = section(read("references", "reports.md"), "### News")
+tools_js = read("shell", "browser", "tools.js")
+open_many = [l for l in tools_js.splitlines() if 'name: "browser_open_many"' in l]
+desc = "\n".join(read("lib", "report_templates.py").split("def describe", 1)[-1].split("def load_pack")[0].splitlines())
+t("開了就讀:browser.md 標準流程、reports.md 新聞段、describe() 的清單、browser_open_many 的工具說明四處都寫了(做報告一定會讀到後兩處)",
+  "**Open only the pages you are going to read, and read every page you opened.**" in flow and "`browser_close` it" in flow
+  and "**Open what you will read, read what you opened**" in news
+  and "browser_open_many 只開打算讀的頁,開了的每一頁都要讀,不讀的不要開" in desc
+  and len(open_many) == 1 and "Open only pages you are going to read, and read every page you opened" in open_many[0])
+t("來源優先序:先讀媒體或官方原文;論壇貼文、轉述、聚合頁只在找不到原文時用,報告裡標明是轉述(新聞來源名加「（轉述）」、註腳寫「轉述自」)",
+  "**News and numbers: the original first.**" in flow and "only when the original cannot be found or opened" in flow
+  and "**The original first; second-hand is marked**" in news and "`（轉述）`" in news and "`轉述自 <who>`" in news and "「據…轉述」" in news
+  and "論壇貼文、轉述、聚合頁只在找不到原文時用,來源名後面加「（轉述）」" in desc
+  and "Prefer the original article or the official page to a forum post, a repost or an aggregator" in open_many[0])
 
 if fails:
     sys.exit(f"{len(fails)} failed")

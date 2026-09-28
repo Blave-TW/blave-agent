@@ -13,7 +13,7 @@ const TOOLS = [
     inputSchema: obj({ query: { type: "string" }, count: { type: "integer", minimum: 1, maximum: 10, description: "Results to return (default 5)." } }, ["query"]) },
   { name: "browser_open", description: "Open a URL (http/https) in a new tab, or navigate an existing tab. Returns immediately with status loading|queued. Blocked sites return blocked_policy.",
     inputSchema: obj({ url: { type: "string" }, tab }, ["url"]) },
-  { name: "browser_open_many", description: "Open up to 8 URLs in parallel tabs. Returns immediately; then call browser_wait with the tab ids. More than 8 live tabs queue automatically.",
+  { name: "browser_open_many", description: "Open up to 8 URLs in parallel tabs. Returns immediately; then call browser_wait with the tab ids. More than 8 live tabs queue automatically. Open only pages you are going to read, and read every page you opened: the user sees each one open and takes it for a source. Prefer the original article or the official page to a forum post, a repost or an aggregator.",
     inputSchema: obj({ urls: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 8 } }, ["urls"]) },
   { name: "browser_wait", description: "Wait (max 25 s per call) until tabs are loaded, or for text / user_done / ms. If it returns still_waiting, call it again. until=user_done waits for the user to finish an action you asked them to do.",
     inputSchema: obj({ tab, tabs: { type: "array", items: { type: "string" } }, until: { type: "string", enum: ["load", "networkidle", "text", "user_done", "ms"] }, value: { type: "string" }, timeout_s: { type: "integer", minimum: 1, maximum: 25 } }) },

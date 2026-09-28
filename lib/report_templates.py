@@ -246,6 +246,8 @@ def _publish_checklist(pack):
         "擷取了卻不放 → narrative[\"images_unused\"] 一句說明(檔案會刪),並在回覆講那張圖沒有放進報告",
         "  讀網頁:有內建瀏覽器(電腦版)時 browser_read 只用 part=\"meta\" / \"outline\" / \"section\",不用 \"full\"(每頁約 3,000 字);"
         "沒有瀏覽器(雲端、排程)用 WebSearch 找、WebFetch 讀,prompt 只要標題、發布時間與一句重點",
+        "  開頁:browser_open_many 只開打算讀的頁,開了的每一頁都要讀,不讀的不要開;新聞與數字先讀媒體或官方原文,"
+        "論壇貼文、轉述、聚合頁只在找不到原文時用,來源名後面加「（轉述）」",
         "narrative 範例(照這個形狀填,不用去讀 references 或 lib 原始碼):",
         "  {\"lead\": \"一句結論。第二句放數字。\", \"read\": [\"**結論**:數字與基準\", …],"
         + (" \"against\": \"- …\", \"robustness\": \"- …\"," if research else " \"watch\": [(\"條件\", \"門檻\", \"現在值\"), …],"),
