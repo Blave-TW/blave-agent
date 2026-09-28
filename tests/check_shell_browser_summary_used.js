@@ -18,7 +18,7 @@ Node.prototype.append = function (...k) { k.forEach((x) => this.kids.push(x)); }
 const flat = (n) => (typeof n === "string" ? n : n && n.kids ? [n.text, ...n.kids.map(flat)].join("") : "");
 function paint(tabs, { sourceCount = null, exp = null } = {}) {
   const env = {
-    brEl: (tag, cls, txt) => { const n = new Node(); n.cls = cls || ""; n.text = txt || ""; n.style = {}; return n; },
+    brEl: (tag, cls, txt) => { const n = new Node(); n.cls = cls || ""; n.text = txt || ""; n.style = {}; n.setAttribute = () => {}; return n; },
     brFav: () => { const n = new Node(); n.style = {}; return n; },
     brIcon: () => new Node(),
     t: (k) => "[" + k + "]",
