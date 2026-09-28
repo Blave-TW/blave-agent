@@ -22,7 +22,7 @@ const open = { url: "https://a.test/", ph: "open", by: "agent" };
 ok("未讀 = 開了、載入正常、agent 沒讀:載入好的頁、或回合結束時還在載入的頁", R.brUnread(open) && R.brUnread({ ph: "load", ended: true }) && R.brUnread({ ph: "queued", ended: true }) && !R.brUnread({ ph: "load" }) && !R.brUnread({ ph: "read" }));
 ok("不算未讀:讀過的、搜尋結果頁、讀不了的(打不開 / 被擋 / 只停在轉址頁)、在等人的、用戶接手的、agent 拿來操作的", [{ readEver: true }, { search: true }, { fail: "timeout" }, { blocked: { kind: "domain" } }, { relay: true }, { need: { kind: "login" } }, { user: true, by: "agent" }, { used: true }]
   .every((o) => !R.brUnread(Object.assign({}, open, o))) && !R.brUnread(null));
-ok("用戶自己開的分頁被他操作中:不是「你在操作」(open-ext 規格),沒讀就照樣是未讀", R.brUnread(Object.assign({}, open, { user: true, by: "user" })));
+ok("agent 開的分頁照舊:沒讀就是未讀,被用戶接手時是「你在操作」不是未讀", R.brUnread(open) && R.brUnread({ url: "https://a.test/", ph: "open" }) && !R.brUnread(Object.assign({}, open, { user: true })) && R.brPh(Object.assign({}, open, { user: true })) === "user");
 ok("讀不了 = 打不開、被擋、只停在轉址頁;在等人的那一頁不算", R.brBad({ fail: "dns" }) && R.brBad({ blocked: {} }) && R.brBad({ relay: true }) && !R.brBad({ fail: "dns", need: { kind: "login" } }) && !R.brBad(open));
 
 // ---- 一格上的樣子
@@ -42,6 +42,17 @@ ok("三個數加起來 = 格子數(搜尋結果頁不算)", (() => { const s = b
 ok("整輪只操作沒讀:寫「用了 N 頁」,後面照樣接「讀不了 n」,不出「未讀」", block(false, [{ ph: "act", used: true, ended: true }, { ph: "open", used: true, ended: true }, bad]) === "用了 2 頁讀不了 1", block(false, [{ ph: "act", used: true, ended: true }, { ph: "open", used: true, ended: true }, bad]));
 ok("讀了幾頁以主行程的來源紀錄為準(同摘要列)", block(false, [read, un], 4) === "讀了 4 頁未讀 1");
 ok("回合進行中照舊:已讀數/總數,不寫未讀數(那時候的未讀多半只是還沒輪到)", /3\/7 已讀$/.test(block(true, [read, read, read, { ph: "open" }, { ph: "open" }, { ph: "load" }, { ph: "load", fail: "dns" }])) && !/未讀/.test(block(true, [read, { ph: "open" }])));
+
+// e2e #186:送進 TradingView 貼好之後,標題列寫「未讀　ETHUSDT.P 2,641.44 …」——那一頁是用戶自己開的,agent 本來就碰不到
+{ const mine = [{ by: "user" }, { by: "user", user: true }, { by: "user", ended: true }, { by: "user", ph: "load", ended: true }].map((o) => Object.assign({}, open, o, { title: "ETHUSDT.P 2,641.44" }));
+  ok("用戶自己開的分頁(by: user):進行中、回合結束後、他正在操作,都不是未讀", mine.every((x) => !R.brUnread(x)), mine.map(R.brUnread));
+  ok("…三處同一個判定:格子的 data-ph 不是 unread(縮圖不降、訊息槽照一般)、狀態位沒有「未讀」兩個字、排序不往後", mine.every((x) => R.brPh(x) !== "unread" && R.brPh(x) !== "user" && R.brStatusNode(x) === null && R.brRank(x, true) === 0),
+    mine.map((x) => [R.brPh(x), R.brStatusNode(x), R.brRank(x, true)]));
+  ok("…牆的標題不把它算進「未讀 n」", block(false, [read, un, mine[2]]) === "讀了 1 頁未讀 1", block(false, [read, un, mine[2]]));
+  // 單頁狀態句與讀屏:原文裡這兩處都問 brUnread,所以跟著對
+  const foot = new Function("t", "brReg", "brHost", "Date", line("const brUserOp = ") + "\n" + fn("brFoot") + "\nreturn brFoot;")(t, (h) => h, () => "tradingview.com", Date);
+  ok("…單頁狀態句 = 頁面標題(open-ext 規格 B 節),讀屏不念「未讀」", mine.every((x) => foot(x) === "ETHUSDT.P 2,641.44")
+    && /if \(x && x\.ended && brUnread\(x\)\) \{/.test(fn("brStatLine")) && /if \(x\) \{ const n = brStatusNode\(x\); if \(n\) host\.append\(n\);/.test(fn("brStatLine")) && /\(brUnread\(x\) \? t\("br\.unread"\) \+ " — " : ""\)/.test(src), mine.map(foot)); }
 
 // ---- 順序
 ok("順序:回合結束後 已讀(0) → 未讀(1) → 讀不了(2);進行中未讀不往後排(格子不能在用戶眼前跳)", R.brRank(read, true) === 0 && R.brRank(un, true) === 1 && R.brRank(bad, true) === 2 && R.brRank({ ph: "open" }, false) === 0 && R.brRank({ fail: "dns" }, false) === 2);
