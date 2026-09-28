@@ -12,6 +12,9 @@ msgstr "Use Blave AI"
 msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
+msgid "cn.blave.descSet"
+msgstr "Pay per use, charged to your Blave balance. A first card adds 100 TWD of AI credit."
+
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
 
@@ -265,6 +268,12 @@ msgstr "Default for {model}: {level}. Higher thinks longer and uses more."
 
 msgid "mp.none"
 msgstr "This model has no effort setting."
+
+msgid "mp.bill"
+msgstr "Pay per use, charged to your Blave balance"
+
+msgid "mp.billBal"
+msgstr "Balance {n} TWD"
 
 msgid "lv.low"
 msgstr "Low"
@@ -640,6 +649,12 @@ msgstr "Stopped · balance too low"
 
 msgid "plan.bill"
 msgstr "Billing"
+
+msgid "plan.bal"
+msgstr "Blave balance"
+
+msgid "plan.balNa"
+msgstr "Balance unavailable right now"
 
 msgid "plan.month"
 msgstr "{p} TWD / month"

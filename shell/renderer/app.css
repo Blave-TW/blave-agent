@@ -558,6 +558,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-tip:hover + .tip, .mp-tip:focus-visible + .tip { display: block; }
 /* 說明行沒有內容時不佔高度(只有 model 沒有 effort 時才有字) */
 .mp-note[hidden] { display: none; }
+.mp-div[hidden], .mp-bill [hidden] { display: none; }
+.mp-bill .b { white-space: nowrap; color: var(--ink-2); font-variant-numeric: tabular-nums; }   /* en 放不下時從「·」後面折,不把 Balance 與數字拆開 */
 .mp-rail { margin-bottom: var(--space-8); }
 
 /* 這個帳號用不了的 model:名字退一階灰、旁邊標一句,但**不鎖**——訂閱升級之後就能用,
@@ -851,6 +853,11 @@ body.resizing * { cursor: col-resize !important; }
 .plan-lead{margin:var(--space-8) 0 0;line-height:1.7;color:var(--ink-2)}
 .plan-sec{margin-top:var(--space-16)}
 .plan-lbl{margin:0 0 var(--space-6);font-size:12px;color:var(--ink-3)}
+/* Blave 餘額:參考資訊,小字靠右;這一頁的焦點仍是下面那句標題。數字跟同頁其他金額同一個字(不用 mono),加 tabular-nums */
+.plan-bal { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); padding-bottom: var(--space-12); margin-bottom: var(--space-16); border-bottom: 1px solid var(--border-hairline); }
+.plan-bal .l { font-size: 12px; color: var(--ink-3); }
+.plan-bal .v { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.plan-bal .v.na { color: var(--ink-3); }
 .plan-list{margin:0;padding:0;list-style:none}
 .plan-list li{position:relative;padding-left:var(--space-16);line-height:1.7;color:var(--ink)}
 .plan-list li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:1px;background:var(--ink-3)}

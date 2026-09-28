@@ -316,6 +316,9 @@
                 </p>
                 <div class="mp-rail" id="mp-rail" role="radiogroup"></div>
                 <p class="mp-note" id="mp-note" aria-live="polite"></p>
+                <!-- 引擎是 Blave AI 時常駐(app.js mpBillPaint);別的引擎整句與分隔線都收起 -->
+                <div class="mp-div" id="mp-bill-div" hidden></div>
+                <p class="mp-note mp-bill" id="mp-bill" hidden><span id="mp-bill-rule"></span><span class="sep" id="mp-bill-sep" aria-hidden="true"> · </span><span class="b" id="mp-bill-bal"></span></p>
               </div>
             </div>
             <button class="btn-send" id="btn-send" type="button" data-i18n-aria="ws.send"><span class="icon-send" aria-hidden="true">↑</span><svg class="icon-stop" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>

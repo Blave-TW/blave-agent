@@ -12,6 +12,9 @@ msgstr "用 Blave AI"
 msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
+msgid "cn.blave.descSet"
+msgstr "按用量從 Blave 餘額扣款。首次綁卡送 100 TWD 的 AI 額度。"
+
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
 
@@ -265,6 +268,12 @@ msgstr "{model} 的預設是「{level}」。越高想得越久、用得越多。
 
 msgid "mp.none"
 msgstr "這個模型沒有思考深度可調。"
+
+msgid "mp.bill"
+msgstr "按用量從 Blave 餘額扣款"
+
+msgid "mp.billBal"
+msgstr "餘額 {n} TWD"
 
 msgid "lv.low"
 msgstr "低"
@@ -640,6 +649,12 @@ msgstr "已停機 · 餘額不足"
 
 msgid "plan.bill"
 msgstr "計費"
+
+msgid "plan.bal"
+msgstr "Blave 餘額"
+
+msgid "plan.balNa"
+msgstr "現在讀不到餘額"
 
 msgid "plan.month"
 msgstr "{p} TWD／月"
