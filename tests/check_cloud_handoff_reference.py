@@ -150,7 +150,7 @@ if node:
     check(out["src"] == [["FRED", ["TOKEN"], True], ["POLYGON", ["TOKEN"], True], ["NEWSRC", ["API_KEY"], True]],
           f"datasrc.js lists the sources and fields the script wrote ({out['src']})")
 else:
-    print("skip node not found — datasrc.js round-trip not run")
+    print("SKIP  datasrc.js round-trip (node not found)")
 shutil.rmtree(WS)
 
 # ── 4. every command the reference shows
