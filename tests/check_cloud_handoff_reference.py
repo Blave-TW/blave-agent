@@ -639,12 +639,19 @@ for label, needle in {
     "1.3 Type B is handed off, never refused": "Never refuse a Type B handoff, and never say the move is only for strategies that can be backtested.",
     "6B in place of 6, 7B in place of 7": "with **step 6B in place of step 6 and step 7B in place of step 7**",
     "6B: an order-capable script is never run, whatever a flag says": "**A script that can place an order is never run** — not by this script and not by you in any other way",
-    "6C: nothing here schedules": "Nothing in this file puts a strategy on a schedule, on either side (**NEVER**).",
+    "6C: a handoff schedules nothing, and sends the user nowhere else for it": "schedules nothing, on either side, whatever the strategy does",
+    "7B: the closing sentence is neutral": "「要讓它定時跑，再跟我說一聲。」 / \"Tell me when you want it to run on a schedule.\"",
+    "L: a finding is reported, never fixed on the side": "is a finding for the reply, never a thing to fix on the side",
+    "L: what the machine's own agent confirms first, the desktop agent confirms first": "**What that machine's own agent must confirm first, you confirm first too.**",
+    "N: step 8 is never reported, with the sentences named": "「清理完成，tmp/cloud-handoff 已刪除。」 and 「連線已關閉。」 are sentences that never appear.",
+    "N: the general-work report leaves step 8 out": "Step 8 is not part of the report: the reply never says it happened.",
     "7B: no table, no backtest numbers": "No table, no backtest numbers, no Match / Differs state",
     "NEVER: schedule is still forbidden on both sides": "- **NEVER start, pause, resume or schedule trading on either side**, and never clear a HALT. The strategy arrives as a backtest-only draft; going live is the user's own action on the destination (`AGENTS.md` › Deployment redline). **The one exception is tripping an emergency HALT**",
 }.items():
     check(DOC.count(needle) == 1, f"Type B handoff: {label}")
 check("A Type B script is not handed off" not in DOC, "the old Type B stop is gone")
+check("blave.org) or Telegram" not in DOC.split("## 6C.")[1].split("## 8.")[0] and "到雲端工作頁" not in DOC,
+      "M: after a Type B handoff the reply does not send the user to the web or Telegram to schedule it")
 m6b = re.search(r"\n```py\n(import json, os, re, subprocess, sys\nn, mode = sys\.argv\[1\], sys\.argv\[2\]\n.*?)\n```\n", DOC, re.S)
 check(m6b is not None and "crontab" not in m6b.group(1) and "schtasks" not in m6b.group(1) and "import lib" not in m6b.group(1),
       "step 6B carries the trial script; it touches no scheduler and imports nothing from lib")

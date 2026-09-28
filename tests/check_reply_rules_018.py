@@ -99,6 +99,14 @@ t("C 內建瀏覽器關著 = 不上網:AGENTS.md 不再叫 agent 退回引擎自
 t("B 資料費時價 2 TWD(不是 3);月價不拿它乘 720", "**2 TWD per UTC clock hour" in read("references", "billing.md") and "Never multiply the 2 TWD data fee" in read("references", "billing.md")
   and not re.search(r"(?<!\()3 TWD(?! at the time)", read("references", "billing.md")))
 
+dep = read("references", "deployment.md")
+t("L 只做被要求的那一件:確認的問題要列出會裝的每一樣(含健康檢查);發現缺什麼只講不做;從電腦版操作雲端主機也要先確認",
+  "**The question names everything the deployment puts on the machine**" in dep and "**Do the one thing that was asked.**" in dep
+  and "**Every route onto the machine asks the same question.**" in dep and "as part of what the user confirmed" in dep)
+t("N 收尾不進回覆:不當開頭也不當結尾,連線關閉、刪暫存都算;runtime 每輪的規則也講了", "not as its first line, not as its last" in style and "closing a connection" in style
+  and "never mention that folder, the connection or the cleanup in the reply" in read("runtime", "agent_turn.py"))
+t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "**Say it in the user's words, not the machine's:**" in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
+
 if fails:
     sys.exit(f"{len(fails)} failed")
 print("all passed")

@@ -3,6 +3,10 @@
 ## Confirmation Required
 CRITICAL: You MUST NEVER deploy a live strategy or set up a cron job without explicit user confirmation.
 
+- **The question names everything the deployment puts on the machine**, in the user's words: the strategy's own schedule (「每小時整點跑一次」) and, when the machine has none yet, the health check that alerts them if a schedule goes quiet (「另外會加一個每 30 分鐘的健康檢查，排程停了會通知你」). Their YES covers exactly what the question named, nothing more.
+- **Do the one thing that was asked.** Anything else you notice is missing or wrong on the machine — no health check, an unset variable, an old file, a package — goes into the reply as a finding with what it would take, and is done only when the user then says so. Never "while I was at it" (「順手補上」).
+- **Every route onto the machine asks the same question.** The desktop agent working on the user's cloud machine (`references/cloud-handoff.md`) confirms exactly as the agent on that machine would: a message that already names the schedule (「排程上線，每小時跑一次」) is the request, not the YES.
+
 ## Desktop app (`BLAVE_AGENT_LOCAL=1`) — no system scheduler
 
 Everything in this file about cron and Scheduled Tasks is for cloud machines. Check once per session: `python3 -c "print(__import__('os').environ.get('BLAVE_AGENT_LOCAL'))"` prints `1` on the desktop app. There:
@@ -61,7 +65,7 @@ run — never `strategies/<name>.py` at the top level (healthcheck flags it).
 
 At deployment time:
 
-1. **Add the healthcheck schedule once.** Check first with `crontab -l | grep healthcheck` (Linux) or `schtasks /query /tn blaveclaw-healthcheck` (Windows):
+1. **Add the healthcheck schedule once — as part of what the user confirmed** (*Confirmation Required*: the question named it). Check first with `crontab -l | grep healthcheck` (Linux) or `schtasks /query /tn blaveclaw-healthcheck` (Windows):
 ```
 */30 * * * * cd $BLAVE_AGENT_HOME/workspace && python3 manager/healthcheck.py
 ```
@@ -160,7 +164,7 @@ Type B strategies (screener, grid, arbitrage, one-off execution, alert bot) have
 1. Skip backtest entirely
 2. Ask the user to confirm before deploying: "Do you want to deploy this live? Reply YES to confirm."
 3. After YES, ask **Spot or futures/perpetual?** and **Align positions?** (same as Type A step 3) before writing any code.
-4. Only after all confirmations: agree a run cadence with the user (there's no bar to wait for, so this is just "how often"), set up the schedule, and add the healthcheck schedule if not already present:
+4. Only after all confirmations: agree a run cadence with the user (there's no bar to wait for, so this is just "how often"), set up the schedule, and add the healthcheck schedule if not already present and the confirmation question named it (*Confirmation Required*):
 ```
 <M> * * * * cd $BLAVE_AGENT_HOME/workspace && BLAVE_MODE=live bash manager/run_strategy.sh <name>
 ```

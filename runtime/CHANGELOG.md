@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **雲端連線的收尾不進回覆(0.1.8 e2e #44,第三次)**:雲端相關的回合仍以「清理完成，tmp/cloud-handoff 已刪除。」開頭或收尾。`mcp_rule` 那句
+  「delete that folder before the turn ends」後面補「回覆裡不提那個資料夾、連線與清理」——這一句每輪都在 system prompt 裡,是 agent 覺得要交代的來源之一。
+  不做回覆後處理(濾句子):以規則為準。測試 `tests/check_local_mcp_config.py`。
 - **等背景工作的輸出時,狀態列講的是那支指令在做的事(0.1.8 e2e #134)**:回測被逾時移到背景後,agent 用 `TaskOutput` 在回合內等,
   狀態列寫「正在委派研究」(`TaskOutput` 被歸在 delegate)。子代理在這個 runtime 是關掉的,`TaskOutput` 等的一定是指令:tool chunk 的
   `kind` / `kind_obj` 改成這一輪上一個 Bash 指令的分類(「正在跑回測 …」),沒有就 `unknown`(「正在處理」)。三個表面共用。測試 `tests/check_tool_kind.py`。
