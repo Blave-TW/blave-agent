@@ -811,6 +811,53 @@ def build(recipe, date=None, headers=None, extra=None, fresh=False):
     return report_bricks.build(recipe, date, headers, extra=extra, fresh=fresh)
 
 
+def quickstart():
+    """What a report in the user's own words (a custom recipe) or a research report needs before the
+    first line of code, printed — so nothing is read or grepped first. Measured 09-28: one research
+    turn spent its first three minutes and 15 calls in references/reports.md and lib source.
+    The brick list and the signatures are taken from the code, so they cannot drift. Returns the text."""
+    import inspect
+    from lib import report_bricks
+    sig = lambda f, drop=(): "(" + ", ".join(str(p) for n, p in inspect.signature(f).parameters.items() if n not in drop) + ")"
+    first = lambda f: " ".join((f.__doc__ or "").strip().split("\n")[0].split())[:110]
+    lines = [
+        "[report] QUICK START for a report in the user's own words, or a research report.",
+        "  Read this and start. Not first: references/reports.md, lib source, a grep for a signature (they are below).",
+        "  Open a section of references/reports.md only when publish() refuses something its message does not explain.",
+        "ORDER (fixed)",
+        "  1. Search the web (browser_search, then browser_open_many and browser_read part=meta / section; read every page",
+        "     you opened). Blave data may be fetched in the same step while pages load.",
+        "  2. Build the data pack once:",
+        f"       one coin or Taiwan stock : pack = research_pack{sig(research_pack)}",
+        f"       anything else            : pack = build(check_recipe(recipe), extra=[...])   build{sig(build)}",
+        "  3. print(pack.describe())  -> every figure you may cite, the narrative slots with their limits, the publish checklist",
+        f"  4. publish{sig(publish)}",
+        "     research needs shareable=True or False. Refused -> fix what it lists, publish('<report id>', narrative, ...); never rebuild.",
+        "RECIPE",
+        '  {"id": "btc-derivs", "title": "BTC 衍生品", "lookback_days": 90, "kpi": ["price_chart", "liquidation"],',
+        '   "bricks": [["price_chart", {"symbol": "BTC"}], ["derivs_table", {"symbols": ["BTC", "ETH"], "window": "7d"}]]}',
+        f"  keys: {', '.join(_RECIPE_KEYS)}; id [a-z0-9-] up to 40, not starting with {' / '.join(_BUILTIN_PREFIXES)};",
+        f"  at most {RECIPE_MAX_BRICKS} bricks that lay out a block; kpi names bricks of the recipe, the first is the focus;",
+        "  extra = up to 3 more bricks for what today's news is about, same [name, {params}] form.",
+        f"  research_pack topics: {', '.join(RESEARCH_TOPICS)}",
+        "BRICKS  name(arguments) : what it lays out",
+    ]
+    lines += [f"  {name}{sig(fn, ('b',))} : {first(fn)}" for name, fn in report_bricks.BRICKS.items()]
+    lines += [
+        "A FIGURE NO BRICK SHOWS",
+        "  Look once in references/lib.md (the fetchers and their signatures), not in lib source. What is not there comes",
+        "  from the pages you read - the outlet's own article or the official page - cited, and the report says it is from the web.",
+        "RUN IT",
+        "  python3 -c '...' from the workspace root, or a tmp/ script run as python3 -m tmp.x (python3 tmp/x.py cannot import lib).",
+    ]
+    text = "\n".join(lines)
+    try:   # Windows run.log is cp950: a line that cannot be encoded must not turn into an exception
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode("ascii", "replace").decode("ascii"))
+    return text
+
+
 # ─── 自組配方:report_jobs/<id>/recipe.json ─────────────────────────────────────
 
 _BUILTIN_PREFIXES = ("tw-market", "tw-close", "crypto-market", "symbol-", "research-")

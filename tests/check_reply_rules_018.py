@@ -133,6 +133,29 @@ t("來源優先序:先讀媒體或官方原文;論壇貼文、轉述、聚合頁
   and "論壇貼文、轉述、聚合頁只在找不到原文時用,來源名後面加「（轉述）」" in desc
   and "Prefer the original article or the official page to a forum post, a repost or an aggregator" in open_many[0])
 
+# 第七批 #5B:研究 / 自訂報告開工前不翻文件(實測 09-28:前 3 分多鐘、15 次在讀 reports.md 各段與 lib 原始碼)
+import contextlib, inspect, io
+sys.path.insert(0, ROOT)
+from lib import report_templates as RT, report_bricks as RB
+with contextlib.redirect_stdout(io.StringIO()) as _out:
+    qs = RT.quickstart()
+sig = lambda f, drop=(): "(" + ", ".join(str(p) for n, p in inspect.signature(f).parameters.items() if n not in drop) + ")"
+t("#5B quickstart():順序寫死(先搜尋、同時可以抓 Blave 資料 → 組資料包 → 寫判讀),配方形狀、每一塊積木與參數、research_pack / build / publish 的簽名都印出來,而且取自程式(不會落後)",
+  qs == _out.getvalue().rstrip("\n") and "ORDER (fixed)" in qs and qs.index("1. Search the web") < qs.index("2. Build the data pack once") < qs.index("3. print(pack.describe())") < qs.index("4. publish")
+  and "Blave data may be fetched in the same step" in qs
+  and all(f"  {name}{sig(fn, ('b',))} : " in qs for name, fn in RB.BRICKS.items()) and len(RB.BRICKS) >= 20
+  and all(f"{f.__name__}{sig(f)}" in qs for f in (RT.research_pack, RT.build, RT.publish)) and ", ".join(RT.RESEARCH_TOPICS) in qs and '"bricks": [["price_chart"' in qs)
+t("#5B quickstart() 夠短(一個畫面讀得完:60 行、6,000 字以內),講明不先讀 reports.md / lib 原始碼、不 grep 簽名;沒有積木的數字去哪裡找",
+  len(qs.splitlines()) <= 60 and len(qs) <= 6000 and "Not first: references/reports.md, lib source, a grep for a signature" in qs and "Look once in references/lib.md" in qs and "not in lib source" in qs)
+rep = read("references", "reports.md")
+top = rep.split("\n## ")[0]
+custom = [l for l in agents.splitlines() if l.startswith("- **A request that names a template")]
+t("#5B 規則:AGENTS › Reports 的自訂報告那一句改成從 quickstart() 開始(不再只指到 §1b › Custom recipes);reports.md 第一段與 Custom recipes 一節都寫「不要先讀這份」",
+  len(custom) == 1 and "start from `python3 -c \"from lib.report_templates import quickstart; quickstart()\"`" in custom[0] and "a research report on a topic rather than one instrument included" in custom[0]
+  and "never grep source for a signature" in custom[0] and "(§1b › Custom recipes), never hand-fetched numbers" not in custom[0]
+  and "**Building a report in chat? Do not read this file first.**" in top and top.index("Do not read this file first") < 400 and "search the web" in top and "Never grep lib source for a signature" in top
+  and "**Start from `quickstart()`, not from this file.**" in section(rep, "### Custom recipes"))
+
 t("#143 #167 時間:回覆、表格、報告裡的時間一律換成用戶的時區並標明;不寫其實是 UTC 的「今天 21:34」,不出「時間(UTC)」欄(AGENTS › Response Style,一句)",
   len([l for l in style.splitlines() if l.startswith("- **Clock times are the user's, and say whose:**")]) == 1 and "converted to the user's timezone" in style and "named once" in style
   and "never a bare 「今天 21:34」 that is really UTC" in style and "no 「時間(UTC)」 column unless the user asked for UTC" in style)

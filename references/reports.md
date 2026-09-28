@@ -1,5 +1,14 @@
 # Reports — publishing a rendered report to the workspace
 
+> **Building a report in chat? Do not read this file first.** The order is fixed: search the web
+> (Blave data may be fetched meanwhile) → build the data pack → write the narrative.
+> A request that names a template: call the template and read `pack.describe()`.
+> A report in the user's own words, or a research report: `python3 -c "from lib.report_templates
+> import quickstart; quickstart()"` prints the order, the recipe shape, every brick with its
+> arguments and every signature you need. Never grep lib source for a signature.
+> This file is reference: open one section when `publish()` refuses something its message does
+> not explain.
+
 A **report** is a JSON document this machine writes and the platform renders in the
 web workspace's Reports list (「報告」 in the sidebar): KPI rows, charts, tables and prose, laid out by the web from
 structured data — not a screenshot, not a wall of Telegram text. Use it for anything
@@ -575,6 +584,11 @@ publish(pack, narrative={
 
 A report the user describes in their own words is built from bricks, starting from the nearest
 recipe — never as hand-written blocks with numbers you fetched yourself (R1).
+
+**Start from `quickstart()`, not from this file.** `python3 -c "from lib.report_templates import
+quickstart; quickstart()"` prints the fixed order of work, the recipe shape, every brick with its
+arguments and the signatures of `research_pack` / `build` / `publish` — taken from the code, so it
+is never behind. The rest of this section is reference for when something is refused.
 
 ```python
 from lib.report_templates import RECIPES, build, publish, check_recipe
