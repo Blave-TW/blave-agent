@@ -27,7 +27,7 @@ const fnCut = (name) => { const a = src.indexOf("function " + name + "("); retur
   Object.defineProperty(El.prototype, "classList", { get() { const n = this; return { contains: (c) => has(n, c), toggle() {}, add() {}, remove() {} }; } });
   Object.defineProperty(El.prototype, "children", { get() { return this.kids.filter((k) => k instanceof El); } });
   const calls = [], any = new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : (...a) => { calls.push(String(k)); return null; }), apply: () => new El() });
-  const collapsed = [], chev = new El("br-toggle");
+  const collapsed = [], chev = new El("br-open");
   const real = { document: doc, BR: null, brEl: (tag, cls, txt) => new El(cls, txt), t: (k) => "[" + k + "]", window: { blave: any, addEventListener() {} },
     brCollapse: (u) => { collapsed.push(u); real.BR.exp = null; }, brOverlaySig: () => null, sessionId: "s" };
   const scope = new Proxy(real, { has: (_, k) => typeof k === "string" && !(k in globalThis), get: (o, k) => (typeof k !== "string" ? undefined : k in o ? o[k] : any) });
@@ -76,12 +76,12 @@ if (escSrc) {
   function Node() { this.kids = []; this.text = ""; this.style = {}; }
   Node.prototype.append = function (...k) { k.forEach((x) => this.kids.push(x)); };
   const flat = (n) => (typeof n === "string" ? n : n && n.kids ? [n.text, ...n.kids.map(flat)].join("") : "");
-  const env = { brEl: (tag, cls, txt) => { const n = new Node(); n.text = txt || ""; n.addEventListener = () => {}; return n; }, brFav: () => new Node(), brIcon: () => new Node(), t: (k) => "[" + k + "]",
+  const env = { brEl: (tag, cls, txt) => { const n = new Node(); n.text = txt || ""; n.addEventListener = () => {}; n.setAttribute = () => {}; return n; }, brFav: () => new Node(), brIcon: () => new Node(), t: (k) => "[" + k + "]",
     BR: { tabs: new Map([["a", { url: "https://x.test/", ph: "done", readEver: true }]]), exp: { mode: "one", id: "a" } }, brCollapse: () => {}, trackFeature: () => {} };
   const fn = new Function(...Object.keys(env), src.match(/const brIsRead = .*;/)[0] + "\n" + fnCut("brPaintSum") + "; return brPaintSum;")(...Object.values(env));
   const s = new Node(); fn({ sum: s, ids: ["a"], sourceCount: 1 });
   ok("摘要列:這一輪的頁開在中欄時只有「讀了 N 頁」＋chevron,沒有文字鈕", flat(s) === "[br.summaryPre]1[br.summaryPost]", flat(s));
-  ok("進行中的卡頭:在中欄時不放文字鈕,不在才放「看網頁」", /if \(!mine && !b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(fnCut("brPaintHead")));
+  ok("進行中的卡頭:在中欄時不放文字鈕,不在才放「看網頁」", /if \(!mine && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(fnCut("brPaintHead")));
   ok("br.closePanel 與 .sum-back 都清掉", !/closePanel/.test(src + strings) && !/sum-back/.test(src + css)
     && ["en", "zh"].every((l) => !/br\.closePanel/.test(fs.readFileSync(path.join(RD, "..", "i18n", l + ".po"), "utf8"))));
 }

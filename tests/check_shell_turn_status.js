@@ -4,7 +4,7 @@
 //   3. 最短停留 1.2 秒:期間只留最新的一個,到時直接換上;同 kind 同受詞不算換
 //   4. 舊 runtime(沒有 kind)退路只看工具名、不猜 Bash
 //   5. 時長 47s / 4m 57s / 1h 02m;步數字串拿掉;act.* 兩語齊、每個 runtime kind 都有字
-//   6. 瀏覽卡:進行中一行(圖示疊只放讀到內容的頁＋已讀 d/n＋展開);搜尋結果頁不進清單;中繼頁不算已讀;沒讀到的排最下面
+//   6. 瀏覽卡:進行中一行(圖示疊只放讀到內容的頁＋已讀 d/n＋「看網頁」,不給展開);搜尋結果頁不進清單;中繼頁不算已讀;沒讀到的排最下面
 // 跑法:node tests/check_shell_turn_status.js
 const fs = require("fs"), path = require("path"), cp = require("child_process");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -120,7 +120,7 @@ ok("疊圖只放真的讀到內容的頁(讀過、不是搜尋頁、不是中繼
 ok("搜尋結果頁開頁當下就認(Google / DDG 的網址),不先閃一格 0/1", /if \(BR_SERP\.test\(String\(ev\.url \|\| ""\)\)\) \{[^\n]*x\.search = true;[^\n]*return; \}/.test(brSrc));
 ok("搜尋結果頁從清單拿掉", /case "search": if \(x\) \{[\s\S]{0,300}b\.ids\.splice\(i, 1\)/.test(brSrc));
 ok("中繼頁:page_done 帶 relay 就不算讀過,訊息槽寫原因", /if \(ev\.relay\) x\.relay = true; if \(ev\.read && !ev\.relay\) x\.readEver = true;/.test(brSrc) && /if \(x\.relay\) return t\("br\.relay"\);/.test(brSrc));
-ok("收著時只露出要你操作的頁;沒讀到的排最下面、有細線與小標", /\.bblk:not\(\.sum\):not\(\.is-open\) \.wall > \.pt:not\(\[data-ph="wait"\]\)/.test(brCss) && /\.bsep \{ grid-column: 1 \/ -1;/.test(brCss)
+ok("進行中只露出要你操作的頁;沒讀到的排最下面、有細線與小標", /\.bblk:not\(\.sum\) \.wall > \.pt:not\(\[data-ph="wait"\]\)/.test(brCss) && /\.bsep \{ grid-column: 1 \/ -1;/.test(brCss)
   && /const want = ok\.concat\(\[sep\], ng\);/.test(brSrc));
 ok("聊天列不掛「由你按」(只留中欄)", !/brEl\("span", "tag-you"/.test(cut(brSrc, "function brStatusNode(", "function brPh(")));
 // 重開對話的順序:舊紀錄的區塊時間是回合開始(早於逐字稿那句用戶訊息幾秒)→ 挪到那句後面
@@ -130,10 +130,18 @@ const seq = [{ ts: 100, br: { kind: "block" } }, { ts: 102, turn: { role: "user"
 ok("重開對話:瀏覽區塊不排在同一輪的用戶訊息上面(舊紀錄);新紀錄本來就對的不動",
   seq.map((x) => x.br ? "B" : x.turn.role[0]).join("") === "uBauBa", seq.map((x) => x.br ? "B" : x.turn.role[0]).join(""));
 ok("新紀錄的區塊時間 = agent 第一次用瀏覽器(不是回合開始)", /ts: \(c\.usedAt \|\| c\.turnKey\) \/ 1000/.test(fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8")));
-const head = cut(brSrc, "function brPaintHead(b) {", "function brToggleList(");
-ok("卡頭最多一顆文字鈕＋chevron:中欄沒有這一輪的頁 →「看網頁」,已在中欄就不放字(收回靠中欄 ✕);沒有「全部展開」",
-  /if \(!mine && !b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head) && !/closePanel/.test(brSrc)
-  && !/expandAll|br\.expand"/.test(brSrc + strings) && /aria-label", t\(b\.open \? "br\.listHide" : "br\.listShow"\)/.test(head));
+const head = cut(brSrc, "function brPaintHead(b) {", "/* 回合狀態列(app.js actApply)問");
+ok("卡頭一列一個控件:中欄沒有這一輪的頁 →「看網頁」,已在中欄就不放(收回靠中欄 ✕);沒有「全部展開」",
+  /if \(!mine && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head) && !/closePanel/.test(brSrc) && !/expandAll|br\.expand"/.test(brSrc + strings));
+// 進行中不給展開(Wei 0928 第 2a 點 A 案):卡頭沒有 chevron、點卡頭沒有反應、沒有開合狀態;回合結束的摘要列才有,而且跟狀態列同一顆
+ok("進行中的卡沒有開合:不放 chevron、卡頭不掛 click、沒有 b.open / is-open;br.listShow / br.listHide 兩語都刪了",
+  !/br-toggle|brToggleList|b\.open\b|is-open|addEventListener\("click", \(\) =>/.test(head) && !/br-toggle|brToggleList|b\.open\b/.test(brSrc) && !/br-toggle|\.bblk\.is-open|cursor: pointer/.test(cut(brCss, "/* 進行中是一行", "/* 一輪結束"))
+  && !/br\.list(Show|Hide)/.test(strings + brSrc));
+ok("摘要列的 chevron 是 CSS 那一顆(.cv7:7px 盒、1.6px),不是 14px 圖示;整列(40 高)都是熱區", /const chev = brEl\("span", "cv7"\); chev\.setAttribute\("aria-hidden", "true"\);/.test(cut(brSrc, "function brPaintSum(", "function brObserve("))
+  && !/brIcon\("chev"\)|chev: '<svg/.test(brSrc) && /\.cv7 \{\s*flex: none; display: inline-block; width: 7px; height: 7px;\s*border-right: 1\.6px solid currentColor; border-bottom: 1\.6px solid currentColor;/.test(css)
+  && /\.bblk\.sum summary \.cv7 \{ margin-left: auto;/.test(brCss) && /\.bblk\.sum summary \{[^}]*min-height: 40px/.test(brCss));
+ok("重開 app 畫回的歷史走同一條:brRestore → brFinish → 摘要列(沒有另一套畫法)", /brTakeSources\(b, r\.tabs, srcs\);\n\s*\$\("chat-scroll"\)\.appendChild\(b\.el\);\n\s*brFinish\(b\);/.test(brSrc)
+  && /b\.el\.replaceWith\(d\); b\.el = d; b\.sum = s; brPaintHead\(b\);/.test(cut(brSrc, "function brFinish(", "function brPaintSum(")));
 // 「看網頁」(Wei 0928 第 1 點 A 案):安靜鈕——圖示＋字、無底線;視覺高 28、熱區 32(上下各外擴 2),卡高不變
 { const rule = (brCss.match(/\.br-open \{[^}]*\}/) || [""])[0];
   ok("「看網頁」是安靜鈕:瀏覽器視窗圖示＋字(字串不變)、無底線、視覺 28／熱區 32、hover 填色", /brEl\("button", "br-open"\);[^\n]*all\.append\(brIcon\("win"\), t\("br\.openPanel"\)\)/.test(head)

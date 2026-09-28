@@ -336,6 +336,16 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .think-indicator.is-done { margin-bottom: var(--space-8); }
 .think-indicator.is-done .think-ticks { display: none; }
 
+/* canon › Dropdown menu › caret:7px 盒、1.6px、45°,開啟翻上(開 / 關各自 translateY 補墨跡重心)。
+   回合狀態列、瀏覽摘要列、確認框的「細節」畫的是同一顆——色跟著所在那一列的字(currentColor) */
+.cv7 {
+  flex: none; display: inline-block; width: 7px; height: 7px;
+  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+[open] > summary .cv7 { transform: translateY(2px) rotate(-135deg); }
+@media (prefers-reduced-motion: reduce) { .cv7 { transition: none; } }
 .think-chev {
   flex: none; width: 5px; height: 5px; margin-left: 2px; position: relative; top: -1px;
   border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3);

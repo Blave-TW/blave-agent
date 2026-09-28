@@ -18,7 +18,6 @@ const BR_ICON = {
   ban: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
   reload: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>',
   hand: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v2"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
-  chev: '<svg class="ic chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
   win: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/><path d="M6 4v4"/><path d="M10 4v4"/></svg>',
 };
 const BR_SERP = /^https:\/\/(?:www\.google\.com\/search\?|html\.duckduckgo\.com\/html\/)/;   // 主行程 doSearch 開的那兩種網址
@@ -143,7 +142,7 @@ function brStat(b, withSegs) {
   const all = b.ids.map((id) => BR.tabs.get(id)).filter(Boolean), xs = all.filter((x) => !x.search);
   const d = xs.filter((x) => x.readEver).length, n = xs.length;
   const frag = document.createDocumentFragment();
-  const need = !b.conv && all.some((x) => x.need), active = b.live && all.some((x) => ["load", "read", "act", "queued"].includes(x.ph));
+  const need = all.some((x) => x.need), active = b.live && all.some((x) => ["load", "read", "act", "queued"].includes(x.ph));
   // 等你操作只換掉狀態段;已讀 / 總數、進度格、排隊數照樣在(canon 第 1 條:狀態+已讀/總數)
   if (need) frag.append(brEl("span", "", t("br.waiting")));
   else if (b.writing && b.live) frag.append(brEl("span", "br-spin"), brEl("span", "", t("br.compiling")));   // 只在這一輪真的有報告寫入事件時
@@ -155,9 +154,9 @@ function brStat(b, withSegs) {
 }
 /* 真的讀到內容的頁(進圖示疊、算「已讀」):讀過、不是搜尋結果頁、不是只停在中繼頁 */
 const brIsRead = (x) => !!x && x.readEver && !x.search && !x.relay;
-/* 進行中的卡(canon › 電腦版內建瀏覽器第 1 條):跟結束後同一個形狀——圖示疊＋已讀 d/n＋展開。卡頭不放任何狀態字
-   (瀏覽中／等你操作／匯整成報告都由回合狀態列講);要你操作的那一頁永遠攤在這一行下面(CSS)。
-   開合是這一輪的狀態,用戶選了就不再自動改 */
+/* 進行中的卡:一行——圖示疊＋已讀 d/n＋「看網頁」。卡頭不放任何狀態字(瀏覽中／等你操作／匯整成報告都由回合狀態列講);
+   進行中不給展開(Wei 0928 第 2a 點 A 案:開了哪幾頁、讀到哪,狀態列與中欄分頁牆都講了),清單留到回合結束當來源紀錄(摘要列);
+   要你操作的那一頁永遠攤在這一行下面(CSS) */
 function brLine(b) {
   const frag = document.createDocumentFragment();
   const xs = b.ids.map((id) => BR.tabs.get(id)).filter((x) => x && !x.search), read = xs.filter(brIsRead);
@@ -187,26 +186,16 @@ function brPaintHead(b) {
   const h = b.head; h.textContent = "";
   const inWall = BR.exp && BR.exp.mode === "wall" && BR.exp.block === b;
   b.el.classList.toggle("is-out", !!inWall);
-  b.el.classList.toggle("is-open", !!b.open);
   b.el.classList.toggle("is-empty", !b.ids.length && !inWall);   // 這一輪只搜尋過、還沒開任何頁:卡先不出現
   h.append(brLine(b));
-  // 卡頭最多一顆文字鈕＋一個 chevron:中欄沒有這一輪的頁 →「看網頁」;已經在中欄就不放字——
-  // 收回靠中欄標題列的 ✕、Esc 或再點一次選中的列;聊天清單的開合只靠 chevron(整條卡頭也可點)
+  // 一列一個控件:進行中只有「看網頁」(中欄沒有這一輪的頁才放;已經在中欄就不放——收回靠中欄標題列的 ✕、Esc
+  // 或再點一次選中的列),回合結束後只有摘要列的 chevron;兩者不同時出現
   const act = brEl("span", "bblk-act");
   const mine = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || inWall);
-  if (!mine && !b.conv && b.ids.length) { const all = brEl("button", "br-open"); all.type = "button"; all.append(brIcon("win"), t("br.openPanel")); all.addEventListener("click", (e) => { e.stopPropagation(); brWall(b); }); act.append(all); }
-  if (!b.conv && b.ids.length) {
-    const tg = brEl("button", "br-toggle"); tg.type = "button"; tg.setAttribute("aria-expanded", b.open ? "true" : "false");
-    tg.setAttribute("aria-label", t(b.open ? "br.listHide" : "br.listShow"));
-    tg.append(brIcon("chev"));
-    tg.addEventListener("click", (e) => { e.stopPropagation(); brToggleList(b); });
-    act.append(tg);
-  }
+  if (!mine && b.ids.length) { const all = brEl("button", "br-open"); all.type = "button"; all.append(brIcon("win"), t("br.openPanel")); all.addEventListener("click", (e) => { e.stopPropagation(); brWall(b); }); act.append(all); }
   h.append(act);
-  if (!h.__toggle) { h.__toggle = true; h.addEventListener("click", () => { if (!b.sum && !b.conv && b.ids.length) brToggleList(b); }); }
   brOrder(b);
 }
-function brToggleList(b) { b.open = !b.open; brPaintHead(b); brObserve(); }
 /* 回合狀態列(app.js actApply)問:這一輪有沒有頁在等用戶操作 */
 function brNeedsUser() {
   const b = BR.cur; return !!(b && b.live && b.ids.some((id) => { const x = BR.tabs.get(id); return x && x.need && !x.user; }));
@@ -218,28 +207,16 @@ function brAddRow(b, id) {
   const tile = brTile(id); tile.style.animationDelay = (Math.min(b.ids.length - 1, 7) * 70) + "ms";
   b.wall.append(tile); brPaintHead(b);
 }
-/* 一輪結束:格子依序淡出上收 → 換成摘要列(`<details>`,點開是同一組格子) */
+/* 一輪結束:進行中的卡本來就是一行,直接換成摘要列(`<details>`,點開是這一輪的那組格子) */
 function brFinish(b) {
   if (!b || b.sum) return;
   b.live = false;
   if (!b.ids.length) { b.el.remove(); BR.blocks.splice(BR.blocks.indexOf(b), 1); return; }
-  const swap = () => {
-    const d = brEl("details", "bblk sum" + (b.conv ? " rise" : "")), s = brEl("summary");
-    d.append(s); b.wall.querySelectorAll(".pt").forEach((p) => { p.style.animationDelay = "0ms"; }); b.el.classList.remove("conv");
-    d.append(b.wall);
-    d.addEventListener("toggle", () => { if (d.open) trackFeature("browser_sum"); brObserve(); });
-    b.el.replaceWith(d); b.el = d; b.sum = s; brPaintHead(b);
-  };
-  const expandedHere = BR.exp && ((BR.exp.mode === "one" && b.ids.includes(BR.exp.id)) || (BR.exp.mode === "wall" && BR.exp.block === b));
-  if (brReduced() || expandedHere || !b.el.isConnected || !b.open) return swap();   // 收著的卡本來就是一行:直接換成「讀了 N 頁」
-  const tiles = [...b.wall.querySelectorAll(".pt")];
-  tiles.forEach((p, i) => { p.style.animationDelay = (i * 60) + "ms"; });
-  b.conv = true; b.el.classList.add("conv"); brPaintHead(b);   // 匯流期間頭只留計數
-  // 最後一格離場完才換摘要列(不寫死時間);保險:動畫事件沒來也在 2 秒後換
-  let swapped = false; const once = () => { if (!swapped) { swapped = true; swap(); } };
-  const last = tiles[tiles.length - 1];
-  if (last) last.addEventListener("animationend", (e) => { if (e.animationName === "brOut") once(); });
-  setTimeout(once, 800 + tiles.length * 60 + 1000);
+  const d = brEl("details", "bblk sum"), s = brEl("summary");
+  b.wall.querySelectorAll(".pt").forEach((p) => { p.style.animationDelay = "0ms"; });
+  d.append(s, b.wall);
+  d.addEventListener("toggle", () => { if (d.open) trackFeature("browser_sum"); brObserve(); });
+  b.el.replaceWith(d); b.el = d; b.sum = s; brPaintHead(b);
 }
 function brPaintSum(b) {
   const s = b.sum; s.textContent = "";
@@ -255,8 +232,8 @@ function brPaintSum(b) {
   const txt = brEl("span");
   if (read === 0 && used > 0) txt.append(t("br.summaryUsedPre"), brEl("b", "", String(used)), t("br.summaryPost"));
   else txt.append(t("br.summaryPre"), brEl("b", "", String(read)), t("br.summaryPost"));
-  s.append(favs, txt);
-  s.append(brIcon("chev"));
+  const chev = brEl("span", "cv7"); chev.setAttribute("aria-hidden", "true");   // 跟回合狀態列同一顆(app.css .cv7)
+  s.append(favs, txt, chev);
 }
 /* 區塊看得到才拍縮圖(主行程每 2 秒一輪):看不到的格子不花 CPU */
 function brObserve() {
@@ -401,13 +378,13 @@ document.addEventListener("keydown", (e) => {
   if (e.target && e.target.closest && e.target.closest(".bv-addr input")) return;
   e.preventDefault(); brCollapse(true);
 });
-/* 收回之後焦點回哪:聊天裡選中的那一列(看得到才算);牆、快照、或那一列收著 → 那張卡的 chevron / 摘要列 */
+/* 收回之後焦點回哪:聊天裡選中的那一列(看得到才算);牆、快照、或那一列收著 → 那張卡的「看網頁」/ 摘要列 */
 function brFocusBack() {
   const exp = BR.exp; if (!exp) return null;
   const b = exp.mode === "one" ? BR.blocks.find((k) => k.ids.includes(exp.id)) : exp.block;
   if (!b || !b.el) return null;
   const row = exp.mode === "one" ? [...b.el.querySelectorAll(".pt")].find((el) => el.dataset.id === exp.id && el.offsetParent) : null;
-  return row || b.el.querySelector(".br-toggle") || b.sum || null;
+  return row || b.el.querySelector(".br-open") || b.sum || null;
 }
 function brRowClick(id) {
   if (BR.exp && BR.exp.mode === "one" && BR.exp.id === id) { brCollapse(true); return; }

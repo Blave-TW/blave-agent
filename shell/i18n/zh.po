@@ -4459,12 +4459,6 @@ msgstr "我的群益開通在電腦版卡在「讀取帳戶」這一步。請看
 msgid "br.openPanel"
 msgstr "看網頁"
 
-msgid "br.listShow"
-msgstr "展開清單"
-
-msgid "br.listHide"
-msgstr "收起清單"
-
 msgid "br.readDone"
 msgstr "已讀完"
 

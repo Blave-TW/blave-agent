@@ -4458,12 +4458,6 @@ msgstr "My Capital setup in the desktop app is stuck at the “Read accounts” 
 msgid "br.openPanel"
 msgstr "View Pages"
 
-msgid "br.listShow"
-msgstr "Show list"
-
-msgid "br.listHide"
-msgstr "Hide list"
-
 msgid "br.readDone"
 msgstr "Read"
 
