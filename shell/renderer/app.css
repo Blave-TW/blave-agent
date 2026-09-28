@@ -292,6 +292,10 @@ html, body { margin: 0; height: 100%; background: var(--bg-body); font-family: -
 .pane-strategies, .pane-main { padding-top: 52px; }
 /* 互動元素要能點:整條 drag 之外的東西一律退出拖曳區 */
 button, textarea, input, a { -webkit-app-region: no-drag; }
+/* 全選(Cmd+A)只該選到內容:介面元件(側欄、分隔條、標題列、分頁、按鈕)的字不可選。
+   內容區裡的照舊整段可選,連同裡面按鈕上的字(帶說明的欄名是按鈕) */
+.pane-strategies, .pane-div, .tb, .chat-head, [role="tablist"], nav, button { user-select: none; -webkit-user-select: none; }
+.chat-scroll button, .rpt-read button, .rp-panel button { user-select: text; -webkit-user-select: text; }
 /* 自動長高:高度由 JS 量 scrollHeight 寫進 style,這裡只定上限與節奏
    (照 web/app/static/css/agent/workspace.css `.chat-input textarea` 的
    max-height 120px / padding 4px 0 / 13px·1.5 —— 約 6 行滿版後自己捲) */

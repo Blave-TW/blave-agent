@@ -2990,3 +2990,16 @@ if (window.blave.onWindowActive) window.blave.onWindowActive((on) => {
   if (on) document.querySelectorAll("[data-title-held]").forEach(titleBack);
   else document.querySelectorAll("[title]").forEach(titleHold);
 });
+
+/* 全選:焦點在輸入框 → 照系統(選框裡的字);游標或選取落在聊天、報告閱讀區、策略報告裡 → 只選那一區;其餘照系統 */
+const SELECT_REGIONS = "#chat-scroll, #rpt-read, .rp-panel";
+document.addEventListener("keydown", (e) => {
+  if (String(e.key).toLowerCase() !== "a" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+  const f = document.activeElement;
+  if (f && (f.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName))) return;
+  const sel = window.getSelection(), at = sel.anchorNode || f;
+  const region = at && (at.nodeType === 1 ? at : at.parentElement).closest(SELECT_REGIONS);
+  if (!region || !region.getClientRects().length) return;
+  e.preventDefault();
+  sel.selectAllChildren(region);
+});
