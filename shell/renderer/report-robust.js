@@ -198,7 +198,7 @@
   }
   /* tooltip:一顆 body 層級的 fixed 單例(材質是 app.css 的 .tip,只改定位)。熱圖格與比較表欄頭共用——
    * 格子 overflow:hidden、比較表 overflow-x:auto(288 寬要能橫捲)都會裁掉行內氣泡。hover 與鍵盤 focus 都開;leave / blur / Esc 收 */
-  let tipEl = null;
+  let tipEl = null, tipAnchor = null;
   function tipBox() {
     if (tipEl) return tipEl;
     tipEl = el("div", "tip rob-tip");
@@ -207,11 +207,17 @@
     tipEl.setAttribute("aria-hidden", "true");
     document.body.appendChild(tipEl);
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
+    // 錨點不在畫面上了(換頁、重畫)就收不到 leave / blur;視窗退到背景也一樣
+    const gone = () => { if (tipAnchor && !tipAnchor.getClientRects().length) hideTip(); };
+    document.addEventListener("pointermove", gone);
+    document.addEventListener("keyup", gone);
+    if (window.blave && window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (!on) hideTip(); });
     return tipEl;
   }
   // 錨點下方 6px、不探出視窗右緣;fill(tip) 負責放內容
   function showTip(anchor, fill) {
     const tip = tipBox();
+    tipAnchor = anchor;
     tip.textContent = "";
     fill(tip);
     const r = anchor.getBoundingClientRect();
@@ -222,6 +228,7 @@
   }
   function hideTip() {
     if (!tipEl) return;
+    tipAnchor = null;
     tipEl.classList.remove("is-on");
     tipEl.setAttribute("aria-hidden", "true");
     document.querySelectorAll(".rob-tbl td.is-hover").forEach((td) => td.classList.remove("is-hover"));

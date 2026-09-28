@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld("blave", {
   onEngineProgress: (fn) => ipcRenderer.on("engine-progress", (_e, t) => fn(t)),
   onTurnEvent: (fn) => ipcRenderer.on("turn-event", (_e, c) => fn(c)),
   onTurnEnd: (fn) => ipcRenderer.on("turn-end", (_e, r) => fn(r)),
+  onWindowActive: (fn) => ipcRenderer.on("window-active", (_e, on) => fn(on === true)),
   // 內建瀏覽器(renderer/browser.js):只送分頁 id、中欄 bounds、用戶動作;網址只有用戶在網址列自己打的
   onBrowserEvent: (fn) => ipcRenderer.on("browser-event", (_e, ev) => fn(ev)),
   browserExpand: (id, bounds) => ipcRenderer.invoke("browser-expand", id, bounds),
