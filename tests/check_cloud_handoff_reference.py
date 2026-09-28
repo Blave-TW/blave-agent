@@ -633,6 +633,18 @@ for label, needle in {
     check(needle in DOC, f"source-report rule: {label}")
 check("stop and offer to run the backtest first" not in DOC and "offer to backtest it" not in DOC,
       "no leftover 'stop and offer to backtest' on a missing source report")
+# 電腦版送來的 Type B 那一句:這份文件引用的尾巴要跟 app 真的送出的字一樣(shell/i18n/*.po),兩邊一起改
+import re as _re
+for _lang, _keys in (("zh", ("ho.msgB.up", "ho.msgB.down")), ("en", ("ho.msgB.up", "ho.msgB.down"))):
+    _po = open(os.path.join(ROOT, "shell", "i18n", _lang + ".po"), encoding="utf-8").read()
+    for _k in _keys:
+        _s = _re.search(r'^msgid "' + _re.escape(_k) + r'"\nmsgstr "(.*)"$', _po, _re.M).group(1)
+        _tail = _s[_s.index("確認它"):] if _lang == "zh" else _s[_s.index("check that it starts"):]
+        if _lang == "en" and _k.endswith("down"):
+            _tail = "starts here"
+        check(_tail in DOC.split("## 0.")[0], f"Type B button sentence quoted as the app sends it: {_lang} {_k}")
+check("試跑一次，告訴我結果" not in DOC and "Run it once … and tell me the result" not in DOC,
+      "the old Type B button sentence (run it once) is no longer quoted")
 # e2e 0.1.8 H:Type B 也搬得過去(電腦版叫人「送上雲端」才能定時跑,agent 卻拒絕搬)。沒有回測可比 → 在目的地試跑一次;
 # 會下單的不跑、只檢查程式碼;排程不從這裡做(NEVER 那一條一個字都沒放寬)
 for label, needle in {

@@ -2646,10 +2646,10 @@ msgid "ho.msg.down"
 msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
 
 msgid "ho.msgB.up"
-msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完在雲端試跑一次，告訴我結果。"
+msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完確認它在雲端跑得起來，告訴我結果。"
 
 msgid "ho.msgB.down"
-msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡試跑一次，告訴我結果。"
+msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後確認它在這裡跑得起來，告訴我結果。"
 
 msgid "up.about"
 msgstr "關於"
@@ -2757,10 +2757,10 @@ msgid "ho.note.down"
 msgstr "接下來由 agent 搬回來，在這台電腦重跑一次回測，兩邊的數字會並排在聊天裡。"
 
 msgid "ho.noteB.up"
-msgstr "接下來由 agent 搬過去，在雲端試跑一次確認跑得起來。"
+msgstr "接下來由 agent 搬過去，確認它在雲端跑得起來。"
 
 msgid "ho.noteB.down"
-msgstr "接下來由 agent 搬回來，在這台電腦試跑一次確認跑得起來。"
+msgstr "接下來由 agent 搬回來，確認它在這台電腦跑得起來。"
 
 msgid "strat.delInPf"
 msgstr "這支策略還在自動下單的組合裡，不能刪除。先到自動下單頁的「部位」把它移出，再回來刪除。"

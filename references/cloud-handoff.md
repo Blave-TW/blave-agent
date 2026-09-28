@@ -15,7 +15,7 @@ Handoff trigger: the user asks to send a strategy to their cloud machine or pull
 - 「把策略 `<name>` 送上我的雲端主機，存成 `<to>`。…」 / "Send the strategy `<name>` to my cloud machine as `<to>`. …" → local → cloud
 - 「把雲端主機上的策略 `<name>` 拉回這台電腦，存成 `<to>`。…」 / "Bring the strategy `<name>` from my cloud machine back to this computer as `<to>`. …" → cloud → local
 
-The sentence after it says what to do once it has moved: 「…重跑回測，把兩邊的數字並排給我看。」 (Type A / C) or 「…試跑一次，告訴我結果。」 / "Run it once … and tell me the result." (Type B). Which procedure applies is decided by the file, in step 1.3 — never by that sentence.
+The sentence after it says what to do once it has moved: 「…重跑回測，把兩邊的數字並排給我看。」 (Type A / C) or 「…確認它在雲端跑得起來，告訴我結果。」 (pulled back: 「…確認它在這裡跑得起來，告訴我結果。」) / "… check that it starts there, and tell me the result." (pulled back: "… starts here …") (Type B). Which procedure applies is decided by the file, in step 1.3 — never by that sentence.
 
 `<to>` is the app's proposal for the destination name; step 4a decides it. No platform feature does this; you move the files yourself over SSH, step by step as written here. It is a COPY: each side keeps its own independent strategy, and **nothing on the destination is ever overwritten** — a name already taken there sends the copy in as a new strategy `<name>_N` (step 4a).
 

@@ -2646,10 +2646,10 @@ msgid "ho.msg.down"
 msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Re-run the backtest here afterwards, and show me both sets of numbers side by side."
 
 msgid "ho.msgB.up"
-msgstr "Send the strategy {id} to my cloud machine as {to}. Run it once there after it’s moved, and tell me the result."
+msgstr "Send the strategy {id} to my cloud machine as {to}. Once it’s moved, check that it starts there, and tell me the result."
 
 msgid "ho.msgB.down"
-msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Run it once here afterwards, and tell me the result."
+msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Once it’s back, check that it starts here, and tell me the result."
 
 msgid "up.about"
 msgstr "About"
@@ -2757,10 +2757,10 @@ msgid "ho.note.down"
 msgstr "The agent brings it back, re-runs the backtest on this computer, and shows both sets of numbers side by side in the chat."
 
 msgid "ho.noteB.up"
-msgstr "The agent moves it and runs it once on your cloud machine to check that it starts."
+msgstr "The agent moves it and checks that it starts on your cloud machine."
 
 msgid "ho.noteB.down"
-msgstr "The agent brings it back and runs it once on this computer to check that it starts."
+msgstr "The agent brings it back and checks that it starts on this computer."
 
 msgid "strat.delInPf"
 msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."
