@@ -267,6 +267,7 @@ function createBrowser(o) {
     wc.on("input-event", (_e, inp) => {
       if (v.agentInputting || Date.now() - v.agentInputAt < 600) return;
       if (inp.type !== "mouseMove") v.userInputAt = Date.now();   // 用戶 3 秒內碰過這一頁 → 讀取帶不跟著捲
+      if (inp.type === "keyDown" || inp.type === "rawKeyDown" || inp.type === "char") v.userKeyNav = v.navs;   // 用戶在這份文件裡打過字(unsaved)
       if (!t.visible || t.userControl) return;
       if (inp.type === "mouseDown" || inp.type === "rawKeyDown" || inp.type === "keyDown") takeover(t.id);
     });
@@ -316,12 +317,36 @@ function createBrowser(o) {
     t.userControl = true; t.touchedAt = Date.now(); emit("user_takeover", { id });
     const v = views.get(id); if (v) v.page.run(IP.mark, ["clear"]).catch(() => {});
   }
-  function handback(id) {
+  function handback(id, auto) {
     const t = tabs.get(id); if (!t) return;
     t.userControl = false;
     if (t.need) { t.userDone = "done"; t.need = null; }
-    emit("handback", { id });
+    emit("handback", auto === true ? { id, auto: true } : { id });
   }
+  /* 用戶在聊天送出訊息 = 他接手過的那幾頁交回來了(Wei 2026-09-28):這個對話裡 agent 開的、他接手中的分頁自動交還。
+     只打開「你在操作」這一道鎖——網址政策、驗證頁、敏感欄位、送出類動作的守門都照舊由 tabFor 與各工具判。
+     留給用戶的:驗證頁、當下網址 agent 不能去的頁(登入後的帳戶頁:交還了縮圖就會開始拍)、焦點在敏感欄位或 iframe 裡
+     (金流商的卡號欄在 iframe,看不進去)、問不到焦點的頁。別的對話的分頁、用戶自己開的分頁不在 reachable 裡 */
+  async function handable(t) {
+    const v = views.get(t.id); if (!v) return false;
+    const open = () => !verifying(t) && !policy.agent(v.wc.getURL() || t.url);
+    if (!open()) return false;
+    let f; try { f = await within(v.page.focused(), 1500); } catch (_) { return false; }
+    if (f && f.desc && (f.desc.tag === "iframe" || gate.sensitiveField(f.desc))) return false;
+    return open();
+  }
+  async function autoHandback(c) {
+    for (const t of tabs.reachable()) {
+      if (t.by !== "agent" || !t.userControl || !(await handable(t))) continue;
+      if (cur === c && t.userControl) handback(t.id, true);
+    }
+  }
+  /* 用戶在這份文件裡打過字、欄位裡還留著他改過的內容:agent 在這一格導覽會把它沖掉。回 true = 不導覽(問不到也當成有) */
+  async function unsaved(v) {
+    if (v.userKeyNav !== v.navs) return false;
+    try { return (Number(await within(v.page.run(IP.dirtyFields), 1500)) || 0) > 0; } catch (_) { return true; }
+  }
+  const UNSAVED_MSG = "the user typed into a form on this page and has not sent it; going to another address in this tab would throw that away. Read the page as it is, or open the address in a new tab (browser_open without `tab`)";
   function needUser(t, kind, ref, summary, box, url) {
     t.need = { kind, ref: ref || null, summary: summary || "" }; t.userDone = null;
     // url:確認網址那一態要顯示的是「被擋下的那個網址」,不是分頁現在的頁(用戶要看的就是它帶了什麼)
@@ -421,7 +446,12 @@ function createBrowser(o) {
     const t = tabs.byAlias(alias);
     if (!t) return { e: ERR("not_found", MSG.not_found) };
     if (verifying(t)) return { e: ERR("needs_user_verification", MSG.needs_user_verification, { tab: t.alias }) };
-    if (t.userControl) return { e: ERR("user_in_control", MSG.user_in_control, { tab: t.alias }) };
+    if (t.userControl) {
+      // 他停在 agent 不能去的網址(登入後的帳戶頁):叫他按「交還 agent」也沒用,照實回被擋(只帶主機名,跟 browser_tabs 一樣)
+      const uv = views.get(t.id), ua = uv ? policy.agent(uv.wc.getURL() || t.url) : null;
+      if (ua) return { e: ERR("blocked_policy", blockedMsg(ua.reason), { tab: t.alias, reason: ua.reason, host: ua.host }) };
+      return { e: ERR("user_in_control", MSG.user_in_control, { tab: t.alias }) };
+    }
     if (t.status === "blocked") return { e: ERR("blocked_policy", blockedMsg(t.reason), { tab: t.alias, reason: t.reason }) };
     if (t.status === "failed") return { e: ERR("load_failed", "the page could not be opened", { tab: t.alias, reason: t.reason }) };
     if (t.status === "discarded" || t.status === "queued") return { e: ERR("not_found", t.status === "queued" ? "the tab is still queued; call browser_wait" : "the tab was closed to free memory; open the URL again", { tab: t.alias }) };
@@ -786,6 +816,15 @@ function createBrowser(o) {
     return { x: 0, y: 0, width: Math.min(cs.width, 1600), height: Math.min(cs.height, 12000), scale: 1 };
   }
 
+  /* 動手前最後一刻再判一次:進門之後(量位置、滑游標、開守門)用戶點了這一頁 = 他接手了,這個動作不做。
+     已經開的守門與 agent 窗口一起收掉——不然接下來 3 秒內他自己按的送出會被當成 agent 觸發而取消 */
+  async function stillMine(t, v) {
+    const gone = recheck(t, v); if (!gone) return null;
+    agentUntil.delete(v.wc.id); backstop.delete(v.wc.id); v.pace.end();
+    await v.page.disarm().catch(() => {});
+    await v.page.run(IP.mark, ["clear"]).catch(() => {});
+    return gone;
+  }
   async function doAct(name, t, v, args) {
     const w = tabs.action(); if (w) return ERR("rate_limited", "too many actions; slow down", { retry_in_s: w });
     const before = v.wc.getURL();
@@ -801,7 +840,9 @@ function createBrowser(o) {
     }
     if (name === "browser_back") {
       if (!v.wc.navigationHistory.canGoBack()) return ERR("invalid_args", "no page to go back to");
+      if (await unsaved(v)) return ERR("needs_user", UNSAVED_MSG, { kind: "unsaved_input", tab: t.alias });
       if (!(await markAgent(t))) return ERR("internal", "could not arm the navigation guard; try again");
+      { const gone = await stillMine(t, v); if (gone) return gone; }
       v.wc.navigationHistory.goBack(); await waitNav(v);
       return afterAction(t, v, before);
     }
@@ -816,6 +857,7 @@ function createBrowser(o) {
         try { const q = await v.page.center(f.backendNodeId, false); if (!q.error) await v.page.run(IP.mark, ["ref", { box: q.box, label: key, tag: true }, false]); } catch (_) { /* 看不到就不框 */ }   // 按鍵小標(「Enter」)照常顯示:那是給用戶看的動作,不是 @eN 內部代號(canon 第 4 條裁定)
       }
       const onScreenK = await pageVisible(t, v);
+      { const gone = await stillMine(t, v); if (gone) return gone; }
       const r = await agentInput(v, () => v.page.press(key, onScreenK));
       bumpThumb(t);
       if (r.error) return ERR("invalid_args", "unsupported key");
@@ -854,6 +896,7 @@ function createBrowser(o) {
     }
     emit("page_act", Object.assign({ id: t.id, kind: action === "click" ? "click" : "type", ref: label, text: action === "click" ? C.scrub(d.name || d.text, 80) : C.scrub(text, 80), box: pos ? pos.box : null }, viewSize(v)));
     if (!(await markAgent(t))) return ERR("internal", "could not arm the navigation guard; try again");
+    { const gone = await stillMine(t, v); if (gone) return gone; }
     if (action === "click") {
       const c = await agentInput(v, () => v.page.click(b, pos, glide));
       v.pace.end();   // 點擊落地=結束(不含環的 0.45s;沒按下去也算收掉)
@@ -899,6 +942,8 @@ function createBrowser(o) {
         const x = tabFor(args.tab); if (x.e) return x.e;
         const a = policy.agent(String(args.url || "")); if (a) return ERR("blocked_policy", blockedMsg(a.reason), { reason: a.reason, host: a.host, like: a.like });
         let host = ""; try { host = policy.registrable(new URL(String(args.url)).hostname); } catch (_) { return ERR("invalid_args", "url must be an absolute http(s) URL"); }
+        if (await unsaved(x.v)) return ERR("needs_user", UNSAVED_MSG, { kind: "unsaved_input", tab: x.t.alias });
+        const gone = recheck(x.t, x.v); if (gone) return gone;
         const w = tabs.chargePage(host); if (w) return ERR(w.error, "too many pages opened; slow down", { retry_in_s: w.retry_in_s });   // 稽核 S6:在既有分頁導覽也扣開頁速率
         x.t.status = "loading"; x.v.wc.loadURL(String(args.url)).catch(() => {});
         return R({ ok: true, tab: x.t.alias, url: C.scrub(args.url, 2000), status: "loading" });
@@ -1115,6 +1160,8 @@ function createBrowser(o) {
       // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
       cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, verifyDeclined: false, noUser: !!(opts && opts.noUser), sources: [], seen: new Set(), readText: "" };
       tabs.newTurn(sessionId);
+      // userSent:這一輪是用戶在這台電腦的聊天送出的(main.js send-message)。沒帶的、從雲端視角送的都不交還
+      if (opts && opts.userSent === true && !cur.noUser) await autoHandback(cur);
       for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
       watchReports(cur);
       return { url: mcp.url(), token: mcp.beginTurn(turnKey) };

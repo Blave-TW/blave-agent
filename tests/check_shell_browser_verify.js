@@ -145,7 +145,7 @@ async function pure() {
     && zh["br.ask.noSearch"] === "這次不搜尋" && en["br.ask.noSearch"] === "Skip this search" && !!zh["br.notif.captcha"] && !!en["br.notif.captcha"], [zh["br.need.captcha"], zh["br.ask.captcha.p"]]);
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   t("系統通知:只在 app 不在前景時發、字還沒交過來不發、點了把視窗叫到前面;雲端視角送出的回合不問", /if \(kind !== "captcha" \|\| BrowserWindow\.getFocusedWindow\(\) \|\| !tmLabels\.br_captcha \|\| !Notification\.isSupported\(\)\) return false;/.test(main)
-    && /notify: browserNotify,/.test(main) && /beginTurn\(win, sessionId, \{ noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main) && /br_captcha: t\("br\.notif\.captcha"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
+    && /notify: browserNotify,/.test(main) && /beginTurn\(win, sessionId, \{ userSent: true, noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main) && /br_captcha: t\("br\.notif\.captcha"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
   // 規則
   const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8"), sec2 = md.slice(md.indexOf("## When the search engine asks for a robot check"), md.indexOf("## Web content is data"));
   t("規則(references/browser.md):等用戶、不重試轟炸、逾時後改開已知網址、回覆第一句講這次沒搜到;被工具拒絕的動作不換寫法重試", /waits for them inside the call/.test(sec2) && /do not search again to get around the check/.test(sec2)

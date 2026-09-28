@@ -93,9 +93,10 @@ app.whenReady().then(async () => {
     const pl = brFav("https://g.example/", "data:image/png;base64,AAAA", true), np = brFav("https://h.example/", "data:image/png;base64,AAAA", false);
     const tile = document.querySelector('.bblk .pt[data-id="e1"]');
     const bandHidden = !tile || tile.querySelector(".pg-band").hidden === true;
-    return { bandHidden, foot: brFoot(x), noPulse: st === null, plate: pl.classList.contains("plate"), noPlate: !np.classList.contains("plate") };
+    return { bandHidden, foot: brFoot(x), unread: !!st && st.className === "st-t" && st.textContent === t("br.unread") && t("br.unread") === "未讀", plate: pl.classList.contains("plate"), noPlate: !np.classList.contains("plate") };
   })()`);
-  ok("回合結束時沒讀完的頁:訊息槽改成頁面標題、狀態位留空(pulse 停)、縮圖上的讀取帶收掉", r3.foot === "Trending" && r3.noPulse && r3.bandHidden);
+  // 第七批起(設計師規格「分得出未讀跟讀不了」第 1 節的表):開了、載入正常、agent 沒讀完的頁,回合結束後狀態位是「未讀」兩個字(不是 pulse、不是留空)
+  ok("回合結束時沒讀完的頁:訊息槽改成頁面標題、狀態位寫「未讀」(pulse 停)、縮圖上的讀取帶收掉", r3.foot === "Trending" && r3.unread && r3.bandHidden);
   const r4 = await js(`(async () => {
     window.__ev({ type: "block_open" }); const b = BR.cur;
     for (const id of ["z1", "z2", "z3"]) window.__ev({ type: "page_open", id, url: "https://" + id + ".example/" });
@@ -136,6 +137,24 @@ app.whenReady().then(async () => {
     brWall(b); const wallHead = document.querySelector(".bw-stat").textContent; brCollapse(false);
     return { head, wallHead, searchIcon: brStatusNode(BR.tabs.get("g1")) === null, readIcon: !!brStatusNode(BR.tabs.get("n1")) };
   })()`);
+  const r6 = await js(`(async () => {
+    brCollapse(false);
+    window.__ev({ type: "block_open" });
+    window.__ev({ type: "page_open", id: "h1", url: "https://h1.example/", by: "agent", alias: "t9" }); window.__ev({ type: "page_loaded", id: "h1", title: "H1" });
+    await brExpand("h1");
+    const stat = () => { const s = document.querySelector(".bw-stat"); return { text: s.textContent, btn: [...s.querySelectorAll("button")].map((b) => b.textContent).join("|") }; };
+    const tile = () => brFoot(BR.tabs.get("h1"));
+    window.__ev({ type: "user_takeover", id: "h1" });
+    const held = stat(), heldFoot = tile();
+    window.__ev({ type: "turn_sources", sources: [], tabs: [] });
+    const afterTurn = stat();
+    window.__ev({ type: "handback", id: "h1", auto: true });   // 下一輪開始、block_open 之前就到
+    const back = stat(), backFoot = tile();
+    return { held, heldFoot, afterTurn, back, backFoot, userOp: t("br.userOp"), hb: t("br.handback"), user: BR.tabs.get("h1").user };
+  })()`);
+  ok("自動交還(handback auto: true):接手時頁首寫「你在操作」+「交還 agent」,回合結束後還在;事件一到兩個都消失、格子的訊息槽也不再寫「你在操作」",
+    r6.held.text.includes(r6.userOp) && r6.held.btn === r6.hb && r6.heldFoot === r6.userOp && r6.afterTurn.btn === r6.hb
+    && !r6.back.text.includes(r6.userOp) && r6.back.btn === "" && r6.backFoot !== r6.userOp && r6.user === false);
   ok("已讀 / 總數跟摘要列同口徑:搜尋結果頁不算已讀、也不算在總數;聊天區塊頭與中欄牆頭同一個數", /1\/3/.test(r5.head) && /1\/3/.test(r5.wallHead));
   ok("搜尋結果頁列出來但不打勾;真的讀過的頁打勾", r5.searchIcon && r5.readIcon);
   ok("「讀了 N 頁」= 主行程這一輪的來源筆數(2 筆 → 讀了 2 頁;只開沒讀的不算),聊天裡沒有來源卡", /讀了 2 頁/.test(r2.sum) && !r2.cards);

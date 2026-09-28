@@ -281,7 +281,8 @@ function createPage(wc) {
   /** 目前有焦點的元素 → { backendNodeId, desc } 或 null。 */
   async function focused() {
     const ctx = await world();
-    const r = await send("Runtime.evaluate", { expression: "document.activeElement", contextId: ctx });
+    // 焦點在開放的 shadow root 裡時,document.activeElement 只給到宿主:往裡面走到真正有焦點的那個元素
+    const r = await send("Runtime.evaluate", { expression: "(function () { let e = document.activeElement; for (let i = 0; i < 20 && e && e.shadowRoot && e.shadowRoot.activeElement; i++) e = e.shadowRoot.activeElement; return e; })()", contextId: ctx });
     if (!r.result || !r.result.objectId) return null;
     try {
       const dn = await send("DOM.describeNode", { objectId: r.result.objectId });
