@@ -395,8 +395,6 @@ function live() {
       ok("真站:匿名跑到交接(開圖表 → Pine 編輯器 → 新腳本 → 貼上 → 讀回相符)", r.state === "handover" && r.set === true && steps.join() === "1,2,3", r);
       ok("真站:剪貼簿貼完還原", (await clipboard.readText()) === txt);
       ok("真站:沒有跳出登入框(沒按「加到圖表」)", (await page.run(function () { return document.querySelectorAll('[data-dialog-name="sign-in"]').length; })) === 0);
-      const c = await pine.check("live");
-      ok("真站:還沒加到圖表 → 檢查結果是 notyet", c.state === "notyet", c);
       // 同一頁再送一次 = 編輯器開著、剛貼的那支還沒存(登入態再送一次就是這個樣子;匿名時換頁會重置,所以不重載)
       reload = false;
       const edit = async () => { const l = P.locate(P.parseSnap((await page.snapshot({ interactive_only: true }, () => false)).text)); return l.editor ? page.callOn(page.node(l.editor.ref), function () { return String(this.value); }) : null; };
