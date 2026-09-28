@@ -17,7 +17,7 @@ if (!process.versions.electron) {
   (async () => {
     // ── ① 純邏輯 ──
     const src = read(path.join(R, "report-sharelist.js")), A = "/* ── 純邏輯", B = "/* ── 純邏輯到此 ── */";
-    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shlSource, shlOpenable, shlWhyKey, shlFmtTime, shlLimit, shlLimitFromCode, SHL_FLASH_MS });", P);
+    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shlSource, shlOpenable, shlWhyKey, shlFmtTime, shlLimit, shlLimitFromCode, SHL_FLASH_MS, SHL_KIND_KEYS });", P);
     const here = { origin: "desktop", local: true, reportId: "a", sourceExists: null }, away = { origin: "desktop", local: false, reportId: "a", sourceExists: null };
     const cl = { origin: "cloud", local: false, reportId: "b", sourceExists: true }, clGone = { origin: "cloud", local: false, reportId: "b", sourceExists: false }, clUnk = { origin: "cloud", local: false, reportId: "b", sourceExists: null };
     ok("① 來源三個值:desktop 袋且這台找得到 = 這台電腦;找不到 = 電腦版;cloud 袋 = 雲端", [here, away, cl, clGone].map(P.shlSource).join() === "here,desktop,cloud,cloud");
@@ -41,6 +41,8 @@ if (!process.versions.electron) {
     ok("② share/list:body 只有 token 與 app_secret;端點 /oauth/desktop/share/list", x.calls.length === 1 && x.calls[0].u === "https://api.x/oauth/desktop/share/list" && keys(x.calls[0].b) === "app_secret,token", JSON.stringify(x.calls));
     ok("② 列的形狀:代碼 / 來源 / 時間不對的那一列丟掉;byline null = 匿名、字串 trim;source_exists 只有 cloud 袋有意義;url_path 不轉交(網址由畫面拿代碼自己組)", r.code === "OK" && r.shares.length === 2 && keys(r.shares[0]) === "byline,code,origin,published_at,reportId,sourceExists,title,type"
       && r.shares[0].sourceExists === null && RS.cleanListRow(row({ origin: "cloud", source_exists: null })).sourceExists === null && RS.cleanListRow(row({ origin: "cloud", source_exists: false })).sourceExists === false && r.shares[0].byline === null && r.shares[1].sourceExists === true && r.shares[1].byline === "Wei" && r.shares[1].type === null, JSON.stringify(r.shares));
+    ok("② 類型:research / morning / performance 原樣;不認得的類型 → null(那一列照畫,只是不出類型字)", ["research", "morning", "performance"].every((k) => RS.cleanListRow(row({ type: k })).type === k) && RS.cleanListRow(row({ type: "journal" })).type === null && RS.cleanListRow(row({ type: 5 })).type === null);
+    ok("① 清單的類型字:三類各一個 key", JSON.stringify(P.SHL_KIND_KEYS) === '{"research":"shl.kind.research","morning":"shl.kind.morning","performance":"shl.kind.performance"}');
     ok("② 整包帶四個數(份數 / 上限 / 今天次數 / 每日上限);不是非負整數的當沒給", JSON.stringify(r.limits) === '{"liveCount":2,"liveLimit":50,"todayCount":1,"dailyLimit":20}' && JSON.stringify(RS.cleanLimits({ live_count: -1, live_limit: "50", today_count: 1.5 })) === '{"liveCount":null,"liveLimit":null,"todayCount":null,"dailyLimit":null}');
     ok("② 標題裡的控制字元收成空白、最長 200", RS.cleanListRow(row({ title: " a\n\tb " + "x".repeat(300) })).title.length === 200 && RS.cleanListRow(row({ title: "a\nb" })).title === "a b" && RS.cleanListRow(row({ title: 5 })).title === "");
     ok("② shares 不是陣列 → UNREACH(畫「讀不到」);沒登入 / 舊登入不出門", (await mk({ status: 200, body: {} }).c.list()).code === "UNREACH" && (await mk({ status: 200, body: {} }, null).c.list()).code === "NO_LOGIN" && (await mk({ status: 200, body: {} }, { token: "t" }).c.list()).code === "RELOGIN");
@@ -69,7 +71,7 @@ if (!process.versions.electron) {
       && /shareList: \(\) => ipcRenderer\.invoke\("share-list"\)/.test(pre) && /shareRevokeCode: \(code\) => ipcRenderer\.invoke\("share-revoke-code", code\)/.test(pre) && /local: x\.origin === "desktop" && rptLocalHas\(x\.reportId\)/.test(mainSrc));
     ok("③ 埋點 share_list_open 在外殼白名單(≤ 16 字);送出點在切到分類那一層,不在畫", require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.indexOf("share_list_open") >= 0 && "share_list_open".length <= 16 && /function shlOpen\(\) \{\s*libTrack\("share_list_open"\);/.test(src) && !/libTrack\("share_list_open"\)/.test(src.slice(src.indexOf("function shlPaint"))));
     const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
-    const E = { "set.cat.shares": ["公開連結", "Public links"], "shl.title": ["公開中的報告", "Public reports"], "shl.count": ["{n}／{max}", "{n} / {max}"], "shl.kind.research": ["研究報告", "Research report"], "shl.kind.morning": ["市場報告", "Market report"],
+    const E = { "set.cat.shares": ["公開連結", "Public links"], "shl.title": ["公開中的報告", "Public reports"], "shl.count": ["{n}／{max}", "{n} / {max}"], "shl.kind.research": ["研究報告", "Research report"], "shl.kind.morning": ["市場報告", "Market report"], "shl.kind.performance": ["績效報告", "Performance report"],
       "shl.src.here": ["這台電腦", "This computer"], "shl.src.desktop": ["電腦版", "Desktop"], "shl.src.cloud": ["雲端", "Cloud"], "shl.gone": ["這台電腦上找不到原檔，公開版本仍有效。", "The original file isn't on this computer; the public version is still live."],
       "shl.empty": ["目前沒有公開中的報告。要公開，打開一份報告按「分享」。", "No public reports right now. To publish one, open a report and choose Share."], "shl.loadFail": ["讀不到公開連結，請檢查網路後再試。", "Couldn't load your public links. Check your connection and try again."],
       "shl.gate": ["公開連結掛在你的 Blave 帳號下，登入後才看得到。", "Public links are tied to your Blave account. Sign in to see them."], "shl.countAria": ["公開中 {n} 份，上限 {max} 份", "{n} of {max} public reports"],
@@ -99,7 +101,7 @@ const { app, BrowserWindow } = require("electron");
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-shl-e-")));
 const NOW = Math.floor(Date.now() / 1000);
 const doc = (id, type) => ({ report: { schema_version: "1.6", id, type, title: "T-" + id, created_at: NOW - 3600, blocks: [{ type: "meta", title: "標題 " + id, origin: "chat" }, { type: "text", variant: "lead", markdown: "第一句。" }] }, images: {} });
-const LIST = [{ id: "res", title: "R", type: "research", created_at: NOW - 100, mtime: (NOW - 100) * 1000 }, { id: "perf", title: "P", type: "performance", created_at: NOW - 200, mtime: (NOW - 200) * 1000 }, { id: "pub", title: "Pub", type: "morning", created_at: NOW - 300, mtime: (NOW - 300) * 1000 }];
+const LIST = [{ id: "res", title: "R", type: "research", created_at: NOW - 100, mtime: (NOW - 100) * 1000 }, { id: "perf", title: "P", type: "performance", created_at: NOW - 200, mtime: (NOW - 200) * 1000 }, { id: "odd", title: "O", type: "journal", created_at: NOW - 250, mtime: (NOW - 250) * 1000 }, { id: "pub", title: "Pub", type: "morning", created_at: NOW - 300, mtime: (NOW - 300) * 1000 }];
 const SHARE = { code: "Pubb1234", published_at: NOW - 3600, byline: null, source_stored_at: null, report_stored_at: null };
 const ROWS = [
   { code: "Old11111", origin: "cloud", local: false, reportId: "c-gone", title: "BTC 週報", type: "morning", published_at: NOW - 86400 * 400, byline: null, sourceExists: false },
@@ -112,7 +114,7 @@ const __fixed = {
   getLocale: async () => "zh-TW", loadConnection: async () => ({ kind: "claude" }), detectAgents: async () => ({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }),
   listStrategies: async () => [], listSessions: async () => [], loadSession: async () => [], loadSessionImages: async () => [], updateState: async () => ({ phase: "idle", current: "0.0.0" }),
   hasBlaveToken: async () => true, ensureEngine: async () => ({}), libraryList: async () => ({ strategies: [], signedIn: true, dataAccess: "included" }),
-  reportsList: async () => ({ reports: ${JSON.stringify(LIST)} }), reportLoad: async (id) => (${JSON.stringify({ res: doc("res", "research"), perf: doc("perf", "performance"), pub: doc("pub", "morning") })})[id] || null,
+  reportsList: async () => ({ reports: ${JSON.stringify(LIST)} }), reportLoad: async (id) => (${JSON.stringify({ res: doc("res", "research"), perf: doc("perf", "performance"), odd: doc("odd", "journal"), pub: doc("pub", "morning") })})[id] || null,
   shareState: async (view, id) => window.__s.state[id] || { code: "UNREACH" },
   sharePublish: async (view, id, a) => { window.__s.calls.push(["publish", view, id, a]); return { code: "LIVE_LIMIT", limit: 50 }; },
   shareList: async () => { window.__s.calls.push(["list"]); if (window.__s.listDelay) await new Promise((r) => setTimeout(r, window.__s.listDelay)); return window.__s.list; },
@@ -209,6 +211,8 @@ app.whenReady().then(async () => {
   await js(`document.querySelector("#set-shares .shl-row .btn-quiet").click()`); await wait(150);
   await js(`document.getElementById("del-ok").click()`); await wait(300);
   ok("④ 閱讀頁開著同一份:清單取消後公開列同步收起", (await js(`!document.querySelector("#rpt-read > .shr-well") && !document.getElementById("rpt-share").hidden`)));
+  await js(`window.__s.list = { code: "OK", shares: [${JSON.stringify({ code: "Perf5555", origin: "desktop", local: false, reportId: "p-1", title: "九月績效", type: "performance", published_at: NOW - 60, byline: "User_AB12CD34", sourceExists: null })}, ${JSON.stringify({ code: "Jour6666", origin: "cloud", local: false, reportId: "j-1", title: "J", type: "constructor", published_at: NOW - 90, byline: null, sourceExists: null })}], limits: { liveCount: 2, liveLimit: 50 } }; setCat("acct"); setCat("shares")`); await wait(250); p = await pane();
+  ok("④ 績效報告那一列:類型字「績效報告」、署名原樣;不認得的類型不出類型字(不是空白、null 或 undefined)", p.rows.length === 2 && p.rows[0].sub === "績效報告 · 電腦版 · " + p.rows[0].mono + " · User_AB12CD34" && p.rows[1].sub === "雲端 · " + p.rows[1].mono + " · 匿名", JSON.stringify(p.rows.map((r) => r.sub)));
   await js(`setClose()`); await wait(100);
 
   // PDF 鈕
@@ -219,8 +223,8 @@ app.whenReady().then(async () => {
   ok("④ 清單模式:「存成 PDF」不出", !(await hd()).pdf);
   await openRead("res"); let h = await hd(); const leftRes = h.left;
   ok("④ 未公開的研究報告:〔分享〕〔存成 PDF〕,PDF 在最右、右緣對齊內容欄、間距 8、32 高外框鈕", h.share && h.pdf && h.text === "存成 PDF" && h.cls === "btn-out" && h.h === 32 && Math.abs(h.edge) <= 1 && h.gap === 8, JSON.stringify(h));
-  await openRead("perf"); h = await hd();
-  ok("④ 績效報告(沒有分享):只有「存成 PDF」,位置不變", !h.share && h.pdf && h.left === leftRes, JSON.stringify(h));
+  await openRead("odd"); h = await hd();
+  ok("④ 沒有分享入口的報告(類型不在白名單上):只有「存成 PDF」,位置不變", !h.share && h.pdf && h.left === leftRes, JSON.stringify(h));
   await js(`window.__s.state.pub = { code: "OK", share: ${JSON.stringify(SHARE)}, displayName: null, limits: { liveCount: 4, liveLimit: 50, todayCount: 20, dailyLimit: 20 } }`);
   await openRead("pub"); h = await hd();
   ok("④ 公開中(分享收起、公開列出現):「存成 PDF」照出,位置不變", !h.share && h.pdf && h.left === leftRes && (await js(`!!document.querySelector("#rpt-read > .shr-well")`)), JSON.stringify(h));

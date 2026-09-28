@@ -17,8 +17,16 @@ if (!process.versions.electron) {
   (async () => {
     // ── ① 純邏輯 ──
     const src = read(path.join(R, "report-share.js")), A = "/* ── 純邏輯", B = "/* ── 純邏輯到此 ── */";
-    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shrGate, shrUrl, shrStale, shrLead, shrKind, shrErrKey, SHR_CLOCK_SLACK_MS });", P);
-    ok("① 閘門:research / morning / 缺 type 出入口,performance 與沒有 blocks 的不出", P.shrGate({ type: "research", blocks: [] }) && P.shrGate({ type: "morning", blocks: [] }) && P.shrGate({ blocks: [] }) && !P.shrGate({ type: "performance", blocks: [] }) && !P.shrGate({ type: "research" }) && !P.shrGate(null));
+    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shrGate, shrUrl, shrStale, shrLead, shrKind, shrErrKey, SHR_CLOCK_SLACK_MS, SHR_TYPES, SHR_OG_PREFIX, SHR_OG_TAG, SHR_OG_LABELLED });", P);
+    const STR0 = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
+    ok("① 閘門 = 類型白名單:research / morning / performance 出入口;缺 type、不認得的類型、沒有 blocks 的不出", ["research", "morning", "performance"].every((k) => P.shrGate({ type: k, blocks: [] }) && P.shrKind(k) === k)
+      && !P.shrGate({ blocks: [] }) && !P.shrGate({ type: "journal", blocks: [] }) && !P.shrGate({ type: "constructor", blocks: [] }) && !P.shrGate({ type: "research" }) && !P.shrGate(null) && P.shrKind("journal") === null && P.shrKind(undefined) === null);
+    { const WEB_SH2 = [process.env.BLAVE_WEB_DIR, path.join(MONO, "web-integ-018"), path.join(MONO, "web")].filter(Boolean).map((d) => path.join(d, "app", "static", "js", "agent", "report_share.js")).find((f) => fs.existsSync(f) && /var SHAREABLE = /.test(read(f)));
+      if (!WEB_SH2) console.log("SKIP  ① 類型白名單與 web 比對(需要含 SHAREABLE 的 web 原始碼;可設 BLAVE_WEB_DIR)");
+      else ok("① 類型白名單 = web report_share.js 的 SHAREABLE", JSON.stringify(JSON.parse(/var SHAREABLE = (\[[^\]]*\]);/.exec(read(WEB_SH2))[1])) === JSON.stringify(Array.from(P.SHR_TYPES)), JSON.stringify(P.SHR_TYPES)); }
+    ok("① 預覽卡的類型詞:三類各一組 key、兩語都在;performance 的固定圖不帶標籤行", Array.from(P.SHR_TYPES).every((k) => STR0.zh[P.SHR_OG_PREFIX[k]] && STR0.en[P.SHR_OG_PREFIX[k]] && STR0.zh[P.SHR_OG_TAG[k]] && STR0.en[P.SHR_OG_TAG[k]])
+      && Array.from(P.SHR_OG_LABELLED).join() === "research,morning" && STR0.zh["shr.ogPrefix.performance"] === "績效報告｜" && STR0.en["shr.ogPrefix.performance"] === "Performance report | "
+      && STR0.zh["shr.ogTag.performance"] === "績效報告 · 由用戶的 Blave Agent 產出" && STR0.en["shr.ogTag.performance"] === "Performance report · Produced by a user's Blave Agent");
     ok("① 分享網址 = blave.org/<app 語言>/r/<代碼>?src=research_link(代碼 encode)", P.shrUrl("zh", "k7Q") === "https://blave.org/zh/r/k7Q?src=research_link" && P.shrUrl("en", "a b") === "https://blave.org/en/r/a%20b?src=research_link" && P.shrUrl("xx", "c") === "https://blave.org/en/r/c?src=research_link");
     const pub = 1790000000, S = { published_at: pub, source_stored_at: null, report_stored_at: null };
     const within = P.shrStale("local", S, pub * 1000 + P.SHR_CLOCK_SLACK_MS), past = P.shrStale("local", S, pub * 1000 + P.SHR_CLOCK_SLACK_MS + 1000);
@@ -202,15 +210,15 @@ const NOW = Math.floor(Date.now() / 1000);
 const doc = (id, type, extra) => ({ report: { schema_version: "1.6", id, type, title: "T-" + id, created_at: NOW - 3600, blocks: [{ type: "meta", title: "標題 " + id, origin: "chat" }, { type: "text", variant: "lead", markdown: "第一句。第二句。" }].concat(extra || []) }, images: { "c.gif": GIF } });
 const CITE = [{ type: "image", file: "c.gif", alt: "引用圖", caption: "作者的說明", source: { name: "Glassnode", url: "https://studio.glassnode.com/charts/x" } },
   { type: "image", file: "c.gif", alt: "壞連結", source: { name: "Evil", url: "javascript:alert(1)" } }, { type: "image", file: "nope.gif", alt: "缺的圖", source: { name: "Site", url: "https://www.example.com/p" } }, { type: "image", file: "c.gif", alt: "自產圖" }];
-const LIST = [{ id: "res", title: "R", type: "research", created_at: NOW - 100, mtime: (NOW - 100) * 1000 }, { id: "perf", title: "P", type: "performance", created_at: NOW - 200, mtime: (NOW - 200) * 1000 },
+const LIST = [{ id: "res", title: "R", type: "research", created_at: NOW - 100, mtime: (NOW - 100) * 1000 }, { id: "perf", title: "P", type: "performance", created_at: NOW - 200, mtime: (NOW - 200) * 1000 }, { id: "odd", title: "O", type: "journal", created_at: NOW - 250, mtime: (NOW - 250) * 1000 },
   { id: "pub", title: "Pub", type: "morning", created_at: NOW - 300, mtime: (NOW - 10) * 1000 }];
 const SHARE = { code: "Abcd1234", published_at: NOW - 3600, byline: null, source_stored_at: null, report_stored_at: null };
-const STUB = `window.__s = { calls: [], tracked: [], copied: [], state: { res: { code: "OK", share: null, displayName: null }, pub: { code: "OK", share: ${JSON.stringify(SHARE)}, displayName: "Wei" } }, pub: { code: "OK", share: { code: "New98765", published_at: ${NOW}, byline: null, source_stored_at: null, report_stored_at: null } }, revoke: { code: "OK" } };
+const STUB = `window.__s = { calls: [], tracked: [], copied: [], state: { res: { code: "OK", share: null, displayName: null }, perf: { code: "OK", share: null, displayName: null }, odd: { code: "OK", share: null, displayName: null }, pub: { code: "OK", share: ${JSON.stringify(SHARE)}, displayName: "Wei" } }, pub: { code: "OK", share: { code: "New98765", published_at: ${NOW}, byline: null, source_stored_at: null, report_stored_at: null } }, revoke: { code: "OK" } };
 const __fixed = {
   getLocale: async () => "zh-TW", loadConnection: async () => ({ kind: "claude" }), detectAgents: async () => ({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }),
   listStrategies: async () => [], listSessions: async () => [], loadSession: async () => [], loadSessionImages: async () => [], updateState: async () => ({ phase: "idle", current: "0.0.0" }),
   hasBlaveToken: async () => true, ensureEngine: async () => ({}), libraryList: async () => ({ strategies: [], signedIn: true, dataAccess: "included" }),
-  reportsList: async () => ({ reports: ${JSON.stringify(LIST)} }), reportLoad: async (id) => (${JSON.stringify({ res: doc("res", "research", CITE), perf: doc("perf", "performance"), pub: doc("pub", "morning") })})[id] || null,
+  reportsList: async () => ({ reports: ${JSON.stringify(LIST)} }), reportLoad: async (id) => (${JSON.stringify({ res: doc("res", "research", CITE), perf: doc("perf", "performance"), odd: doc("odd", "journal"), pub: doc("pub", "morning") })})[id] || null,
   shareState: async (view, id) => { window.__s.calls.push(["state", view, id]); return window.__s.state[id] || { code: "UNREACH" }; },
   sharePublish: async (view, id, a) => { window.__s.calls.push(["publish", view, id, a]); return window.__s.pub; },
   shareRevoke: async (view, id) => { window.__s.calls.push(["revoke", view, id]); return window.__s.revoke; },
@@ -236,8 +244,15 @@ app.whenReady().then(async () => {
       stale: well ? well.querySelectorAll(".shr-stale").length : 0, staleBtn: well ? well.querySelectorAll(".shr-stale .btn-out").length : 0, dlg: !g("shr-scrim").hidden,
       edge: Math.round(g("rpt-share").parentElement.getBoundingClientRect().right - g("rpt-read").getBoundingClientRect().right), backEdge: Math.round(g("rpt-back").getBoundingClientRect().left - g("rpt-read").getBoundingClientRect().left) }; })()`);
 
-  await openRead("perf"); let s = await st();
-  ok("④ performance 報告:頁首沒有「分享」、沒有公開列", !s.btn && !s.well, JSON.stringify(s));
+  await openRead("odd"); let s = await st();
+  ok("④ 不在白名單上的類型:頁首沒有「分享」、沒有公開列", !s.btn && !s.well, JSON.stringify(s));
+  await openRead("perf"); s = await st();
+  await js(`document.getElementById("rpt-share").click()`); await wait(300);
+  let pf = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, tt: g("shr-tt").textContent, tag: getComputedStyle(g("shr-og-tag")).display, lk: !!document.querySelector("#shr-modal .shr-og-lk") }; })()`);
+  ok("④ performance 報告:頁首有「分享」;確認框的預覽 = 績效報告前綴 + 標題,縮圖只有 lockup、沒有類型標籤行(公開頁用預設圖)", s.btn && !s.well && pf.open && pf.tt === (await T("shr.ogPrefix.performance")) + "標題 perf" && pf.tag === "none" && pf.lk, JSON.stringify([s, pf]));
+  await js(`document.getElementById("shr-ack").click(); document.getElementById("shr-send").click();`); await wait(300);
+  ok("④ performance 報告公開:送出的一樣只有 view / id / 掛名 / 勾 / 更新;埋點 share_publish(不帶類型)", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "publish"))`)) === '[["publish","local","perf",{"byline":"anonymous","confirmed":true,"update":false}]]' && (await js(`window.__s.tracked.includes("share_publish")`)), await js(`JSON.stringify([window.__s.calls, window.__s.tracked])`));
+  await js(`window.__s.calls = []; window.__s.tracked = []; window.__s.copied = [];`);
   await openRead("res"); s = await st();
   ok("④ research(未公開):頁首右側「分享」、動作群(分享 + 存成 PDF)右緣對齊內容欄右緣(返回鈕照舊外擠 4);問了一次 state(view=local)", s.btn && s.btnText === (await T("shr.btn")) && !s.well && Math.abs(s.edge) <= 1 && s.backEdge === -4 && (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "state"))`)).includes('["state","local","res"]'), JSON.stringify(s));
   // 引用圖(同一份報告)
@@ -257,11 +272,11 @@ app.whenReady().then(async () => {
   // 確認框
   await js(`document.getElementById("rpt-share").click()`); await wait(300);
   let d = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, title: g("shr-title").textContent, send: g("shr-send").disabled, sendText: g("shr-send").textContent, named: g("shr-named").disabled, anon: g("shr-anon").checked, radios: g("shr-radios").hidden, plain: g("shr-anon-only").hidden ? null : g("shr-anon-only").textContent,
-    hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
+    hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, tagShown: !g("shr-og-tag").hidden, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
     order: [...g("shr-modal").querySelectorAll(".shr-three, #shr-ack")].map((x) => x.id || x.className).join() }; })()`);
   ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去改名那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在勾選框",
     d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
-      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-ack" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
+      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.tagShown && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-ack" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
   await js(`document.getElementById("shr-tos").click()`); await wait(50);
   ok("④ 條款連結 → openExternal 到 blave.org/zh/…terms_of_service#ugc", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "ext").pop())`)).includes("https://blave.org/disclaimer/zh/terms_of_service#ugc"));
   await js(`document.getElementById("shr-ack").click()`);

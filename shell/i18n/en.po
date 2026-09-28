@@ -3860,11 +3860,17 @@ msgstr "Research report | "
 msgid "shr.ogPrefix.morning"
 msgstr "Market report | "
 
+msgid "shr.ogPrefix.performance"
+msgstr "Performance report | "
+
 msgid "shr.ogTag.research"
 msgstr "Research report · Produced by a user's Blave Agent"
 
 msgid "shr.ogTag.morning"
 msgstr "Market report · Produced by a user's Blave Agent"
+
+msgid "shr.ogTag.performance"
+msgstr "Performance report · Produced by a user's Blave Agent"
 
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
@@ -4962,6 +4968,9 @@ msgstr "Research report"
 
 msgid "shl.kind.morning"
 msgstr "Market report"
+
+msgid "shl.kind.performance"
+msgstr "Performance report"
 
 msgid "shl.src.here"
 msgstr "This computer"

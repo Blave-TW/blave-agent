@@ -3861,11 +3861,17 @@ msgstr "研究報告｜"
 msgid "shr.ogPrefix.morning"
 msgstr "市場報告｜"
 
+msgid "shr.ogPrefix.performance"
+msgstr "績效報告｜"
+
 msgid "shr.ogTag.research"
 msgstr "研究報告 · 由用戶的 Blave Agent 產出"
 
 msgid "shr.ogTag.morning"
 msgstr "市場報告 · 由用戶的 Blave Agent 產出"
+
+msgid "shr.ogTag.performance"
+msgstr "績效報告 · 由用戶的 Blave Agent 產出"
 
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
@@ -4963,6 +4969,9 @@ msgstr "研究報告"
 
 msgid "shl.kind.morning"
 msgstr "市場報告"
+
+msgid "shl.kind.performance"
+msgstr "績效報告"
 
 msgid "shl.src.here"
 msgstr "這台電腦"

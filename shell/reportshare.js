@@ -44,7 +44,7 @@ function cleanLimits(b) {
   const o = b && typeof b === "object" ? b : {};
   return { liveCount: count(o.live_count), liveLimit: count(o.live_limit), todayCount: count(o.today_count), dailyLimit: count(o.daily_limit) };
 }
-const LIST_MAX = 200, TITLE_MAX = 200, ORIGINS = ["cloud", "desktop"], TYPES = ["research", "morning"];
+const LIST_MAX = 200, TITLE_MAX = 200, ORIGINS = ["cloud", "desktop"], TYPES = ["research", "morning", "performance"];
 /* share/list 的一列 → 畫面用的形狀;代碼 / 來源 / 時間不對 → null(那一列不畫)。
    url_path 不轉交:公開網址由畫面拿 code 自己組(同閱讀頁的公開列),api 回什麼路徑都進不了剪貼簿 */
 function cleanListRow(r) {
