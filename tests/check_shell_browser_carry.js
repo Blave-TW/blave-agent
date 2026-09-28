@@ -191,6 +191,11 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   const uic = (md.split("\n").find((l) => l.startsWith("On `user_in_control`")) || "");
   t("規則:user_in_control 要照實講「按交還 agent 之後才能讀」,不編別的原因(#201)", /Hand back to agent/.test(uic) && /交還 agent/.test(uic) && /Say exactly that in the reply/.test(uic) && /give no other reason/.test(uic) && /tabs are not reopened every turn/.test(uic), uic);
 
+  const flow = sec("## Standard flow"), hid = (flow.split("\n").find((l) => l.startsWith("- **Content behind a tab")) || "");
+  t("規則:讀不到預期內容、頁面上有分頁 / 展開鈕 / 顯示更多 → 先 snapshot 找到、click 點開、再讀;試過才可以說讀不到(#202)",
+    /open it before you say it cannot be read/.test(hid) && /`browser_snapshot`/.test(hid) && /`browser_click`/.test(hid) && /then read again/.test(hid) && /Only after that try/.test(hid) && /Show more/.test(hid), hid);
+  t("規則:點擊守門照舊(送出、購買、登入回 needs_user);只有規則、沒有站點特例(#202)", /submits, buys or signs in answers `needs_user`/.test(hid) && !/tradingview|\.com\b/i.test(hid), hid);
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack) + "\n      last: " + JSON.stringify(last).slice(0, 500)); process.exit(1); });
