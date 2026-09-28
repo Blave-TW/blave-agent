@@ -18,11 +18,11 @@ const html = read(path.join(R, "index.html")), strings = read(path.join(R, "stri
 const cutFn = (s, name) => { const i = s.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("unbalanced " + name); };
 const STR = (() => { const sb = {}; vm.runInNewContext(strings + "\nthis.S = STRINGS;", sb); return sb.S; })();
 const WEEKLY = JSON.parse(read(path.join(FIX, "report_weekly.json"))), MCPT = JSON.parse(read(path.join(FIX, "report_mcpt.json")));
-// web 的字(逐字;web/app/translations/*/LC_MESSAGES/messages.po 的 workspace_rp_msg_lead / _once、workspace_report_*、workspace_rp_tpl_*,2026-09-25 抄下)
+// web 的字(逐字;web/app/translations/*/LC_MESSAGES/messages.po 的 workspace_rp_msg_lead、workspace_report_*、workspace_rp_tpl_*,2026-09-25 抄下)
 const WEB = {
-  zh: { lead: "幫我建立報告", once: "這份只要產出一次，不用建立排程。", rb: { originScheduled: "排程任務產出", originChat: "對話產出", machine: "主機", metaPeriod: "期間", metaAum: "AUM", metaBenchmark: "基準", calloutRisk: "風險", footnoteRef: "註", imageError: "圖片載入失敗", segOther: "其他" },
+  zh: { lead: "幫我建立報告", rb: { originScheduled: "排程任務產出", originChat: "對話產出", machine: "主機", metaPeriod: "期間", metaAum: "AUM", metaBenchmark: "基準", calloutRisk: "風險", footnoteRef: "註", imageError: "圖片載入失敗", segOther: "其他" },
     tpl: { tw: "台股大盤晨報：加權指數與量能、三大法人、融資餘額、台指期與外資期貨淨多單，加上今天的判讀與觀察重點（該留意哪些指標、在什麼條件下）。", crypto: "加密市場晨報：BTC/ETH 走勢、資金費率、清算與 Blave 市場指標，加上今天的判讀。" } },
-  en: { lead: "Write me a report", once: "Produce it once — no schedule needed.", rb: { metaPeriod: "Period", metaAum: "AUM", metaBenchmark: "Benchmark", calloutRisk: "Risk", footnoteRef: "Note", imageError: "Image failed to load", segOther: "Other" },
+  en: { lead: "Write me a report", rb: { metaPeriod: "Period", metaAum: "AUM", metaBenchmark: "Benchmark", calloutRisk: "Risk", footnoteRef: "Note", imageError: "Image failed to load", segOther: "Other" },
     tpl: { tw: "TW market brief: TAIEX and volume, the three institutional investors, margin balance, TAIEX futures and foreign net long positions, plus today's read and what to watch (which indicators, under what conditions).", crypto: "Crypto market brief: BTC/ETH price action, funding rates, liquidations and Blave market indicators, plus today's read." } },
 };
 const LIST = [{ id: "wk-2026-08-31", title: "績效週報 08/25–08/31", type: "performance", created_at: 1788220800 }, { id: "mcpt-2317", title: "MCPT 研究", type: "research", created_at: 1788134400 }, { id: "am-0901", title: "晨報 <img onerror=x>", type: "weird", created_at: 1788048000 }];
@@ -300,9 +300,10 @@ app.whenReady().then(async () => {
   const lock = await js(`(() => ({ send: document.getElementById("rpn-send").disabled, cancel: document.getElementById("rpn-cancel").disabled, x: document.getElementById("rpn-close").disabled, busy: document.querySelectorAll("#rpn-msg .cf-busy .spin16").length, open: !document.getElementById("rpn-scrim").hidden }))()`);
   ok("④ 送出中:送出 / 取消 / ✕ 三顆都 disabled、圓環 + 送出中…、框留著(設計稽核 必-4)", lock.send && lock.cancel && lock.x && lock.busy === 1 && lock.open, JSON.stringify(lock));
   await js(`window.__r.release();`); await wait(200); bx = await box(); v = await view();
-  let s = await js(`(() => { ${Q} const m = window.__r.sent[window.__r.sent.length - 1]; const msgs = q("#chat-scroll .msg"); return { msg: m.message, env: m.viewing.env, last: msgs[msgs.length - 1].className + ":" + msgs[msgs.length - 1].textContent, pending: RPT.pending.local && RPT.pending.local.env + ":" + [...RPT.pending.local.before].join(), tracked: window.__r.tracked.includes("reports_ask") }; })()`);
-  ok("④ 送出成功:對話收到「幫我建立報告：「台股晨報」。這份只要產出一次，不用建立排程。」(viewing.env=local)、關框、欄清空、焦點退到 h5(開它的鈕已停用);pending 記著送出前的三個 id;對話最後一行是用戶那句(不貼 sys 回音);工具列鈕「agent 寫作中…」disabled + rpt.note.pending;reports_ask",
-    s.msg === "幫我建立報告：「台股晨報」。這份只要產出一次，不用建立排程。" && s.env === "local" && !bx.open && bx.desc === "" && bx.focus === "rpt-h" && s.pending === "local:wk-2026-08-31@,mcpt-2317@,am-0901@" && s.last === "msg you:" + s.msg && s.tracked
+  let s = await js(`(() => { ${Q} const m = window.__r.sent[window.__r.sent.length - 1]; const msgs = q("#chat-scroll .msg"); return { msg: m.message, note: m.note, env: m.viewing.env, last: msgs[msgs.length - 1].className + ":" + msgs[msgs.length - 1].textContent, pending: RPT.pending.local && RPT.pending.local.env + ":" + [...RPT.pending.local.before].join(), tracked: window.__r.tracked.includes("reports_ask") }; })()`);
+  // #131(09b0080):「只產一次、不建排程」是外殼加的指示,走 payload 的 note 代號(main.js → BLAVE_TURN_NOTE → runtime),泡泡與訊息本文只有用戶那句
+  ok("④ 送出成功:訊息本文與泡泡都只有「幫我建立報告：「台股晨報」。」、指示走 note=report_once(viewing.env=local)、關框、欄清空、焦點退到 h5(開它的鈕已停用);pending 記著送出前的三個 id;對話最後一行是用戶那句(不貼 sys 回音);工具列鈕「agent 寫作中…」disabled + rpt.note.pending;reports_ask",
+    s.msg === "幫我建立報告：「台股晨報」。" && s.note === "report_once" && s.env === "local" && !bx.open && bx.desc === "" && bx.focus === "rpt-h" && s.pending === "local:wk-2026-08-31@,mcpt-2317@,am-0901@" && s.last === "msg you:" + s.msg && !/排程/.test(s.last) && s.tracked
     && v.ask === (await T("rpt.asking")) && v.askDis && v.msg === (await T("rpt.note.pending")) && !v.msgErr, JSON.stringify([s, bx, v]));
   a = await js(`(() => { const keep = RPT.data.local; RPT.data.local = []; rptPaintList(); const o = { l1: document.querySelectorAll("#rpt-state.rpt-empty .l1").length, l2: document.querySelectorAll(".rpt-empty .l2").length, msg: document.getElementById("rpt-msg").textContent }; RPT.data.local = keep; rptPaintList(); return o; })()`);
   ok("④ 空＋寫作中:訊息槽 rpt.note.pending、空狀態只剩名詞句(.rpt-empty .l2 不存在)", a.l1 === 1 && a.l2 === 0 && a.msg === (await T("rpt.note.pending")), JSON.stringify(a));
@@ -419,8 +420,8 @@ app.whenReady().then(async () => {
   ok("④ 切回本機:回到本機那袋——仍在讀 new1、article 畫出", v.on && v.headList && !v.back && v.article === 1 && (await js(`rptBag("local").reading`)) === "new1", JSON.stringify(v));
   // en:組句
   await js(`(async () => { setLang("en"); applyStatic(); document.getElementById("rpt-back").click(); RPT.pending.local = null; running = false; rptSync(); document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 100)); document.getElementById("rpn-desc").value = "market brief"; document.getElementById("rpn-send").click(); })()`); await wait(250);
-  s = await js(`(() => { const m = window.__r.sent[window.__r.sent.length - 1]; const out = { msg: m.message, h: document.getElementById("rpt-h").textContent, ask: document.getElementById("rpt-ask-t").textContent }; setLang("zh"); applyStatic(); return out; })()`);
-  ok("④ en:送出的是 web 的英文句、頁首與鈕換字", s.msg === 'Write me a report: "market brief". Produce it once — no schedule needed.' && s.h === "Reports" && s.ask === "Agent is writing…", JSON.stringify(s));
+  s = await js(`(() => { const m = window.__r.sent[window.__r.sent.length - 1]; const out = { msg: m.message, note: m.note, h: document.getElementById("rpt-h").textContent, ask: document.getElementById("rpt-ask-t").textContent }; setLang("zh"); applyStatic(); return out; })()`);
+  ok("④ en:送出的是 web 的英文句(只有用戶那句;指示走 note=report_once)、頁首與鈕換字", s.msg === 'Write me a report: "market brief".' && s.note === "report_once" && s.h === "Reports" && s.ask === "Agent is writing…", JSON.stringify(s));
   ok("④ 整個流程沒有開過外部瀏覽器、reports.js 的字只進 textContent(#rpt-rows 沒有 img / script)", (await js(`document.querySelectorAll("#rpt-rows img, #rpt-rows script").length`)) === 0);
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
