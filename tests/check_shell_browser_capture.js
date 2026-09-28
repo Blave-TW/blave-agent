@@ -10,7 +10,9 @@ const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
   const bin = GATE.bin(SHELL);
   if (!bin) { process.exit(0); }
-  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
+  // 展開在視窗裡的分頁,CDP 拍回來的像素是顯示器色彩空間的值(Display P3 的 Mac 上 sRGB 的 #f00 變成 234/51/35;
+  // 停在視窗外那條路回的是 sRGB)。像素斷言要跟顯示器無關,這支的 Electron 一律以 sRGB 當顯示器色彩空間跑
+  const r = require("child_process").spawnSync(bin, ["--force-color-profile=srgb", __filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
   process.exit(r.status == null ? 1 : r.status);
 }
 const electron = require("electron");
