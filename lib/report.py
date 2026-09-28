@@ -87,6 +87,9 @@ CAPTURE_PREFIX = "cite-"
 # Every id write_report has used on this machine, one JSON line each {id, asked, turn, at}. Two
 # jobs: on a cloud machine the uploader keeps only the last ~20 files in sent/, so the files alone
 # forget which ids are taken; and `replace=True` finds what this turn wrote through it.
+# edit_report adds a line too, {…, "edited": true, "at": when it was changed}: a record of the
+# change, never a claim on the report — changing a title does not make an earlier turn's report
+# this turn's to rewrite with replace=True.
 LEDGER = os.path.join(REPORTS_DIR, ".written.jsonl")
 LEDGER_KEEP = 5000
 # publish()'s data-only suffix. The runtime tells a data-only report by an id ENDING in it
@@ -96,14 +99,15 @@ _ID_MAX = 64
 
 
 def _ledger():
-    """[(id, asked, turn)] oldest first; unreadable lines are skipped."""
+    """[(id, asked, turn)] oldest first; unreadable lines are skipped. An edit's line carries
+    no turn: the id is taken, and nobody owns the report through it."""
     out = []
     try:
         with open(LEDGER, encoding="utf-8") as f:
             for ln in f:
                 try:
                     d = json.loads(ln)
-                    out.append((d["id"], d.get("asked") or d["id"], d.get("turn")))
+                    out.append((d["id"], d.get("asked") or d["id"], None if d.get("edited") else d.get("turn")))
                 except (ValueError, KeyError, TypeError):
                     continue
     except OSError:
@@ -111,10 +115,11 @@ def _ledger():
     return out
 
 
-def _note_written(report_id, asked, at):
+def _note_written(report_id, asked, at, edited=False):
     """Best-effort: the report itself is already on disk."""
     try:
-        line = json.dumps({"id": report_id, "asked": asked, "turn": os.environ.get("BLAVE_TURN_ID") or None, "at": at})
+        line = json.dumps(dict({"id": report_id, "asked": asked, "turn": os.environ.get("BLAVE_TURN_ID") or None, "at": at},
+                               **({"edited": True} if edited else {})))
         with open(LEDGER, "a", encoding="utf-8") as f:
             f.write(line + "\n")
         with open(LEDGER, encoding="utf-8") as f:
@@ -494,7 +499,9 @@ def _write(asked, report_id, title, blocks, type, report_type, created_at, meta,
             pass
         raise
     _sweep_captures(asked, report_id, blocks)
-    if _own(report_id) != report_id:
+    if edited:
+        _note_written(report_id, asked, int(time.time()), edited=True)   # created_at is the report's, kept as it was
+    elif _own(report_id) != report_id:
         _note_written(report_id, asked, created_at)
     # ASCII only: a report job's stdout goes to run.log in the Windows locale codec (cp950),
     # and an unencodable advisory line would fail a run whose report is already written.

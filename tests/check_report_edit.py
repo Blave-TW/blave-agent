@@ -76,7 +76,19 @@ check(after["blocks"][1:] == before["blocks"][1:] and after["type"] == before["t
 check(os.stat(p).st_mtime_ns > m0, "① 檔案 mtime 動了:結果卡的「之後有更新」照常出現")
 check(open(os.path.join(R.REPORTS_DIR, "research-btc.json"), "rb").read() == other, "① 沒被指名的那一份逐 byte 不變")
 check(open(os.path.join(R.REPORTS_DIR, "research-2330.files", "fig.png"), "rb").read() == b"one", "① 圖留著")
-check(("research-2330", "research-2330", "t2") in R._ledger(), "① 帳本記了這一筆", R._ledger()[-1])
+# 第九批 #4:帳本那一行是「改過」的紀錄(at = 修改的時間,不是報告的 created_at),不是這一輪的所有權
+line = json.loads(open(R.LEDGER, encoding="utf-8").read().splitlines()[-1])
+check(line["id"] == "research-2330" and line["turn"] == "t2" and line.get("edited") is True
+      and abs(line["at"] - time.time()) < 60 and line["at"] != after["created_at"],
+      "① 帳本記了這一筆:edited、這一輪的 turn、at 是修改的時間(不是 created_at)", line)
+check(R._own("research-2330") is None and R.target_id("research-2330", replace=True) == "research-2330-2",
+      "① 改過別輪的報告不等於這一輪寫的:同一輪 replace=True 蓋不到它,寫出去是新的一份", R.target_id("research-2330", replace=True))
+os.environ["BLAVE_TURN_ID"] = "t1"
+quiet(R.edit_report, "research-btc", title="另一份(改)")
+check(R._own("research-btc") == "research-btc" and R.target_id("research-btc", replace=True) == "research-btc",
+      "① 這一輪自己寫的那份,改過之後仍是自己的:replace=True 照舊換掉同一份")
+os.environ["BLAVE_TURN_ID"] = "t2"
+other = open(os.path.join(R.REPORTS_DIR, "research-btc.json"), "rb").read()
 check("changed in place" in out and "NEW report" not in out and "replace=True" not in out and out.isascii(), "① 輸出講明改在原處(ASCII),不提 replace", out)
 reports_js = open(os.path.join(ROOT, "shell", "renderer", "reports.js"), encoding="utf-8").read()
 check('typeof r.created_at === "number"' in reports_js and 'return r.id + "@" + (typeof r.mtime === "number" ? r.mtime' in reports_js,

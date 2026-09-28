@@ -71,7 +71,10 @@ and ships whatever lands there.
   It keeps the id, `created_at` (the report stays where it is in the list) and the pictures,
   and touches nothing the change did not name. **Never edit `reports/<id>.json` by hand** —
   not with Python, not with an editor: that skips the checks, the schema version, the sweep
-  of unused captures and the ledger (`.written.jsonl`). A report nobody named is never
+  of unused captures and the ledger (`.written.jsonl`, where the change is recorded as an
+  edit with the time it was made). Changing a report does not make it this turn's: to change
+  it again call `edit_report` again — `replace=True` still only rewrites a report this turn
+  wrote, and on an earlier turn's report it writes a new one. A report nobody named is never
   changed; 「再做一份」 / 「重做」 / 「更新一下」 with new data is a new report. A report
   shared by public link keeps showing the version that was shared — the link is not
   updated by the change; the user updates it themselves with 「檢查後更新公開版本」 in the
