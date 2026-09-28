@@ -168,8 +168,8 @@ function shrOpen(c, mode, opener) {
   requestAnimationFrame(() => sc.classList.add("open"));
   ($("shr-radios").hidden ? $("shr-ack") : $("shr-anon")).focus();
 }
-// 沒有可用的名字(讀不到 / api 回 NO_DISPLAY_NAME)= 沒有選項可選,不是選項暫時停用:兩顆 radio 整組收掉,
-// 換成純文字「作者 匿名」(同 web setPlain);提示換成去改名那句。有名字才出兩顆 radio
+// 帳號的名稱原樣掛(系統預設名、含推薦碼的名稱都照用;契約 §3),名稱是空的(或讀不到 / api 回 NO_DISPLAY_NAME)才沒有選項可選:
+// 兩顆 radio 整組收掉,換成純文字「作者 匿名」(同 web setPlain);提示換成去填名稱那句。有名字才出兩顆 radio
 function shrName(D) {
   const name = D.noName ? null : D.c.name;
   const on = typeof name === "string" && !!name;

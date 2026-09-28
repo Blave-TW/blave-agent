@@ -58,6 +58,10 @@ if (!process.versions.electron) {
     ok("① 績效報告提醒句照定稿(zh / en)", STR.zh["shr.perfNote"] === "這份報告含你的帳戶資產與部位，公開後拿到連結的人都看得到。" && STR.en["shr.perfNote"] === "This report shows your account balance and positions. Once it's public, anyone with the link can see them.");
     sameAsWeb("① shr.perfNote 逐字同 web workspace_share_perf_note", STR, "shr.perfNote", "workspace_share_perf_note");
 
+    ok("① 掛名說明:名稱會原樣公開;帳號沒有名稱那句(zh / en 定稿)", STR.zh["shr.nameHint"] === "名稱會原樣公開" && STR.en["shr.nameHint"] === "Your name is shown exactly as it is."
+      && STR.zh["shr.noName"] === "這個帳號還沒有名稱。要掛名，先到 blave.org 的帳號設定填上名稱。" && STR.en["shr.noName"] === "This account has no name yet. To be credited, add one in your account settings on blave.org.");
+    sameAsWeb("① shr.nameHint 逐字同 web workspace_share_name_hint", STR, "shr.nameHint", "workspace_share_name_hint");
+
     // ── ② reportshare.js ──
     const RS = require(path.join(SHELL, "reportshare.js"));
     const mk = (o = {}) => { const calls = []; let creds = o.creds === undefined ? { token: "tok", appSecret: "sec" } : o.creds;
@@ -69,6 +73,9 @@ if (!process.versions.electron) {
     ok("② state:打 /share/state,body 只有 token / app_secret / view / id;回 share(整理過)+ displayName", m.calls[0].u === "https://api.x/oauth/desktop/share/state" && keys(m.calls[0].b) === "app_secret,id,token,view" && r.code === "OK" && r.share.code === "Abcd1234" && r.displayName === "Wei", JSON.stringify([m.calls, r]));
     m = mk({ res: { status: 200, body: { share: null, display_name: "  " } } }); r = await m.c.state("cloud", "x");
     ok("② state:沒公開 → share null;空白名字 → displayName null(署名選項停用)", r.code === "OK" && r.share === null && r.displayName === null);
+    { const names = ["User_AB12CD34", "Wei AB12CD34", "分析師 Wei"], got = [];
+      for (const n of names) got.push((await mk({ res: { status: 200, body: { share: null, display_name: n } } }).c.state("local", "x")).displayName);
+      ok("② state:名稱原樣轉交——系統預設名、含推薦碼的名稱都不排除(只有空的才是沒有名稱);外殼裡沒有挑名字的規則", got.join("|") === names.join("|") && !/User_|referral/i.test(read(path.join(SHELL, "reportshare.js")) + read(path.join(R, "report-share.js"))), got.join("|")); }
     m = mk(); r = await m.c.publish("local", "tw-1", { byline: "name", confirmed: true });
     const pb = m.calls[0] && m.calls[0].b;
     ok("② publish(本機):/share/publish;body = 憑證兩欄 + view / id + 勾選紀錄四欄 + report / images(本機檔原樣),聲明版本 rs-ack-2026.09.28", m.calls[0].u.endsWith("/oauth/desktop/share/publish") && keys(pb) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view"
@@ -298,7 +305,7 @@ app.whenReady().then(async () => {
   let d = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, title: g("shr-title").textContent, send: g("shr-send").disabled, sendText: g("shr-send").textContent, named: g("shr-named").disabled, anon: g("shr-anon").checked, radios: g("shr-radios").hidden, plain: g("shr-anon-only").hidden ? null : g("shr-anon-only").textContent,
     hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, tagShown: !g("shr-og-tag").hidden, perf: g("shr-perf").hidden, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
     order: [...g("shr-modal").querySelectorAll(".shr-three, #shr-ack")].map((x) => x.id || x.className).join() }; })()`);
-  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去改名那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在勾選框",
+  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去填名稱那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在勾選框",
     d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
       && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.tagShown && d.perf && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-ack" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
   await js(`document.getElementById("shr-tos").click()`); await wait(50);
@@ -315,13 +322,13 @@ app.whenReady().then(async () => {
   await js(`document.getElementById("shr-ack").click(); document.getElementById("shr-send").click();`); await wait(250);
   d = await js(`({ open: !$("shr-scrim").hidden, msg: $("shr-msg").textContent, ack: $("shr-ack").checked, send: $("shr-send").disabled, cancel: $("shr-cancel").disabled })`);
   ok("④ 送出失敗:框留著、勾選保留、主鈕可再按、腳一句「公開失敗，請檢查網路後再試。」", d.open && d.msg === (await T("shr.failed")) && d.ack && !d.send && !d.cancel, JSON.stringify(d));
-  await js(`window.__s.pub = { code: "NO_DISPLAY_NAME" }; __s.state.res.displayName = "Wei"; shrClose();`); await wait(100);
+  await js(`window.__s.pub = { code: "NO_DISPLAY_NAME" }; __s.state.res.displayName = "User_AB12CD34"; shrClose();`); await wait(100);
   await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(250);
   d = await js(`({ named: $("shr-named").disabled, nm: $("shr-nm").textContent, hint: $("shr-hint").textContent, radios: $("shr-radios").hidden, plain: $("shr-anon-only").hidden })`);
-  ok("④ 名字讀得到:兩顆 radio 都在、顯示名稱可選、帶名字、hint 是只能用顯示名稱那句", !d.named && !d.radios && d.plain && d.nm === "Wei" && d.hint === (await T("shr.nameHint")), JSON.stringify(d));
+  ok("④ 名字讀得到(系統預設名也算):兩顆 radio 都在、顯示名稱可選、名字原樣、hint 是「名稱會原樣公開」", !d.named && !d.radios && d.plain && d.nm === "User_AB12CD34" && d.hint === (await T("shr.nameHint")), JSON.stringify(d));
   await js(`$("shr-named").click(); $("shr-ack").click(); $("shr-send").click();`); await wait(250);
   d = await js(`({ open: !$("shr-scrim").hidden, named: $("shr-named").disabled, anon: $("shr-anon").checked, radios: $("shr-radios").hidden, hint: $("shr-hint").textContent, ack: $("shr-ack").checked, msg: $("shr-msg").textContent, last: JSON.stringify(__s.calls.filter((c) => c[0] === "publish").pop()) })`);
-  ok("④ api 回 NO_DISPLAY_NAME:退回匿名、radio 組收起來、hint 換去改名那句、勾選保留;送出的那一次是 byline=name", d.open && d.named && d.radios && d.anon && d.hint === (await T("shr.noName")) && d.ack && d.msg === "" && d.last.includes('"byline":"name"'), JSON.stringify(d));
+  ok("④ api 回 NO_DISPLAY_NAME:退回匿名、radio 組收起來、hint 換去填名稱那句、勾選保留;送出的那一次是 byline=name", d.open && d.named && d.radios && d.anon && d.hint === (await T("shr.noName")) && d.ack && d.msg === "" && d.last.includes('"byline":"name"'), JSON.stringify(d));
   await js(`shrClose()`); await wait(100);
 
   // 公開中 + stale + 取消分享

@@ -3893,11 +3893,11 @@ msgid "shr.named"
 msgstr "Display name"
 
 msgid "shr.nameHint"
-msgstr "Display name only — no titles or contact details"
+msgstr "Your name is shown exactly as it is."
 
-# 讀不到顯示名稱 / api 回 NO_DISPLAY_NAME:「顯示名稱」停用時換上這句(spec DT2)
+# 帳號沒有名稱(api 回的名字是空的 / NO_DISPLAY_NAME):radio 收起來、換上這句。系統預設名、含推薦碼的名稱都算有名稱,原樣掛
 msgid "shr.noName"
-msgstr "To show a name, set a display name in your account settings on blave.org."
+msgstr "This account has no name yet. To be credited, add one in your account settings on blave.org."
 
 # legal: 勾選三行,字面一改就換 report-share 的 DISCLAIMER_VERSION(契約 §1);逐字同 web
 msgid "shr.ack"

@@ -3894,11 +3894,11 @@ msgid "shr.named"
 msgstr "顯示名稱"
 
 msgid "shr.nameHint"
-msgstr "只能用顯示名稱，不加頭銜或聯絡方式"
+msgstr "名稱會原樣公開"
 
-# 讀不到顯示名稱 / api 回 NO_DISPLAY_NAME:「顯示名稱」停用時換上這句(spec DT2)
+# 帳號沒有名稱(api 回的名字是空的 / NO_DISPLAY_NAME):radio 收起來、換上這句。系統預設名、含推薦碼的名稱都算有名稱,原樣掛
 msgid "shr.noName"
-msgstr "要顯示名稱，先到 blave.org 的帳號設定改名。"
+msgstr "這個帳號還沒有名稱。要掛名，先到 blave.org 的帳號設定填上名稱。"
 
 # legal: 勾選三行,字面一改就換 report-share 的 DISCLAIMER_VERSION(契約 §1);逐字同 web
 msgid "shr.ack"
