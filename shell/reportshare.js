@@ -65,6 +65,45 @@ function failDetail(res) {
 }
 const DETAIL_CODES = ["NOT_SHAREABLE", "IMAGE_QUOTA"];
 
+/* 尾註 id 重複(0.1.7 的 lib 在「台股大盤積木 + 任何帶來源句的積木」時會寫出兩條 src)api 一律拒收。已經在磁碟上的報告
+   不重做也要能公開:送出的那一份先併好。只動送出的那份、不改檔——檔的 mtime 是「公開後改過沒有」的依據,主行程改檔會讓
+   每一份都變成「改過」,也會跟正在寫檔的 lib 搶。規則 = lib/report.py unique_footnotes(tests/check_report_footnotes.py 比兩邊)。 */
+const FN_TEXT_MAX = 1000, FN_ID_MAX = 32;
+function joinNotes(texts) {
+  let out = "";
+  for (let t of texts) {
+    t = t.trim();
+    const core = t.replace(/[)）」』】》”’"']+$/, "");
+    if (core && !/\p{P}$/u.test(core)) t += /[\u3400-\u9fff]/.test(t) ? "。" : ".";
+    out += t;
+  }
+  return out;
+}
+function uniqueFootnotes(report) {
+  if (!report || typeof report !== "object" || !Array.isArray(report.blocks)) return report;
+  const blocks = report.blocks.map((b) => {
+    if (!b || typeof b !== "object" || b.type !== "footnote" || !Array.isArray(b.items)) return b;
+    const rows = [], first = new Map();
+    const taken = new Set(b.items.filter((r) => r && typeof r === "object").map((r) => r.id));
+    for (let it of b.items) {
+      if (!it || typeof it !== "object" || typeof it.id !== "string" || typeof it.text !== "string") { rows.push(it); continue; }
+      const head = first.get(it.id);
+      if (!head) { it = { ...it }; first.set(it.id, it); rows.push(it); continue; }
+      if ((head.url ?? null) === (it.url ?? null)) {
+        if (head.text.includes(it.text.trim())) continue;
+        const joined = joinNotes([head.text, it.text]);
+        if ([...joined].length <= FN_TEXT_MAX) { head.text = joined; continue; }
+      }
+      let n = 2; const base = [...it.id].slice(0, FN_ID_MAX - 4).join("");
+      while (taken.has(base + "-" + n) || first.has(base + "-" + n)) n++;
+      it = { ...it, id: base + "-" + n };
+      first.set(it.id, it); rows.push(it);
+    }
+    return { ...b, items: rows };
+  });
+  return { ...report, blocks };
+}
+
 /* 本機報告公開當下那份檔的 mtime(稽核 P2-6):「公開後改過沒有」拿同一台電腦的兩個 mtime 比,不拿這台的鐘比 api 的鐘。
    file = 一份小 JSON { id: { code, mtime } };讀不到 / 壞了 = 沒有紀錄(renderer 退回比 published_at) */
 const STORE_MAX = 500;
@@ -119,7 +158,7 @@ function createShareClient(opts) {
       const name = typeof b.display_name === "string" && b.display_name.trim() ? b.display_name.trim().slice(0, NAME_MAX) : null;
       return { code: "OK", share: b.share === null ? null : withMtime(view, id, cleanShare(b.share)), displayName: name, limits: cleanLimits(b) };
     },
-    /* 公開 / 更新公開版本。a = { byline: "anonymous"|"name", confirmed: true, update: bool }。本機報告的全文與圖在這裡讀、原樣送 */
+    /* 公開 / 更新公開版本。a = { byline: "anonymous"|"name", confirmed: true, update: bool }。本機報告的全文與圖在這裡讀,除了尾註 id(見 uniqueFootnotes)原樣送 */
     async publish(view, id, a) {
       if (!a || a.confirmed !== true || (a.byline !== "anonymous" && a.byline !== "name")) return { code: "BAD_ARGS" };
       const extra = { confirmed: true, byline: a.byline, disclaimer_version: DISCLAIMER_VERSION, tos_version: TOS_VERSION };
@@ -127,7 +166,7 @@ function createShareClient(opts) {
       if (view === "local") {
         try { loc = typeof id === "string" && ID_RE.test(id) ? opts.readLocal(id) : null; } catch (_) { loc = null; }
         if (!loc || !loc.report) return { code: "NO_REPORT" };
-        extra.report = loc.report; extra.images = loc.images || {};
+        extra.report = uniqueFootnotes(loc.report); extra.images = loc.images || {};
       }
       const done = (share) => { if (loc && opts.store) opts.store.set(id, share.code, loc.mtime); return { code: "OK", share: withMtime(view, id, share) }; };
       const { res, code } = await call(a.update === true ? "update" : "publish", view, id, extra);
@@ -166,4 +205,4 @@ function createShareClient(opts) {
   };
 }
 
-module.exports = { createShareClient, createShareStore, cleanShare, cleanListRow, cleanLimits, failCode, failDetail, DISCLAIMER_VERSION, TOS_VERSION, EP };
+module.exports = { createShareClient, uniqueFootnotes, createShareStore, cleanShare, cleanListRow, cleanLimits, failCode, failDetail, DISCLAIMER_VERSION, TOS_VERSION, EP };

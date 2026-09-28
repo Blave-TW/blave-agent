@@ -52,6 +52,12 @@ if (!process.versions.electron) {
     const pb = m.calls[0] && m.calls[0].b;
     ok("② publish(本機):/share/publish;body = 憑證兩欄 + view / id + 勾選紀錄四欄 + report / images(本機檔原樣),聲明版本 rs-ack-2026.09.27", m.calls[0].u.endsWith("/oauth/desktop/share/publish") && keys(pb) === "app_secret,byline,confirmed,disclaimer_version,id,images,report,token,tos_version,view"
       && pb.confirmed === true && pb.byline === "name" && pb.disclaimer_version === "rs-ack-2026.09.27" && pb.tos_version === RS.TOS_VERSION && pb.report.id === "tw-1" && pb.images["a.png"] === "QUJD" && r.code === "OK" && r.share.code === "Abcd1234", JSON.stringify(pb));
+    { const onDisk = { id: "tw-2", blocks: [{ type: "meta" }, { type: "footnote", items: [{ id: "src", text: "日 K 為 TWSE 未還原價" }, { id: "src", text: "指數:TWSE 日資料。" }] }] };
+      const was = JSON.stringify(onDisk);
+      m = mk({ readLocal: () => ({ report: onDisk, images: {} }) }); await m.c.publish("local", "tw-2", { byline: "anonymous", confirmed: true });
+      const sent = m.calls[0].b.report.blocks[1].items;
+      ok("② publish(本機):尾註 id 重複的舊報告,送出的那份併成一列;讀進來的那份不動(規則見 tests/check_report_footnotes.py)",
+        sent.length === 1 && sent[0].id === "src" && sent[0].text === "日 K 為 TWSE 未還原價。指數:TWSE 日資料。" && JSON.stringify(onDisk) === was, JSON.stringify(sent)); }
     m = mk(); await m.c.publish("cloud", "tw-1", { byline: "anonymous", confirmed: true, update: true });
     ok("② update(雲端):/share/update;雲端不帶 report / images(api 對雲端帶這兩欄回 400)", m.calls[0].u.endsWith("/oauth/desktop/share/update") && keys(m.calls[0].b) === "app_secret,byline,confirmed,disclaimer_version,id,token,tos_version,view");
     m = mk(); r = await m.c.revoke("local", "tw-1");
