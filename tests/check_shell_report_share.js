@@ -24,7 +24,7 @@ if (!process.versions.electron) {
   (async () => {
     // ── ① 純邏輯 ──
     const src = read(path.join(R, "report-share.js")), A = "/* ── 純邏輯", B = "/* ── 純邏輯到此 ── */";
-    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shrGate, shrUrl, shrStale, shrLead, shrKind, shrErrKey, SHR_CLOCK_SLACK_MS, SHR_TYPES, SHR_OG_PREFIX, SHR_OG_TAG, SHR_OG_LABELLED });", P);
+    const P = {}; vm.runInNewContext(src.slice(src.indexOf(A), src.indexOf(B)) + "\nObject.assign(this, { shrGate, shrUrl, shrStale, shrLead, shrKind, shrErrKey, SHR_CLOCK_SLACK_MS, SHR_TYPES, SHR_OG_PREFIX, SHR_OG_TAG, SHR_OG_LABELLED, SHR_IMG_MAX_COUNT, SHR_IMG_MAX_MB });", P);
     const STR0 = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
     ok("① 閘門 = 類型白名單:research / morning / performance 出入口;缺 type、不認得的類型、沒有 blocks 的不出", ["research", "morning", "performance"].every((k) => P.shrGate({ type: k, blocks: [] }) && P.shrKind(k) === k)
       && !P.shrGate({ blocks: [] }) && !P.shrGate({ type: "journal", blocks: [] }) && !P.shrGate({ type: "constructor", blocks: [] }) && !P.shrGate({ type: "research" }) && !P.shrGate(null) && P.shrKind("journal") === null && P.shrKind(undefined) === null);
@@ -46,8 +46,8 @@ if (!process.versions.electron) {
     else { const W = {}; vm.runInNewContext(cutFn(read(WEB_SH), "leadSentence") + "\nthis.f = leadSentence;", W);
       ok("① lead 首句 = web leadSentence(五個樣本:中文句號、markdown 記號與尾註、清單、英文句點、超長截 120)", leads.every((m) => P.shrLead(rep(m)) === W.f(rep(m))), JSON.stringify(leads.map((m) => [P.shrLead(rep(m)), W.f(rep(m))]))); }
     const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
-    const codes = ["UNREACH", "RELOGIN", "RATE_LIMITED", "IMAGE_QUOTA", "NO_MACHINE", "NOT_SHAREABLE", "BAD_CONTENT", "NO_REPORT", "BAD_ARGS", "WHATEVER"];
-    ok("① 錯誤代號 → 字:連不上 = 檢查網路那句、雲端沒在跑 = web 那句、配額 / 速率 / 重新登入各自一句、驗不過 = 不能公開;每個 key 兩語都在", P.shrErrKey("UNREACH") === "shr.failed" && P.shrErrKey("WHATEVER") === "shr.failed" && P.shrErrKey("NO_MACHINE") === "shr.failedCloud" && P.shrErrKey("IMAGE_QUOTA") === "shr.quota" && P.shrErrKey("RELOGIN") === "conn.expired" && P.shrErrKey("NOT_SHAREABLE") === "shr.notShareable" && P.shrErrKey("BAD_CONTENT") === "shr.badContent"
+    const codes = ["UNREACH", "RELOGIN", "RATE_LIMITED", "IMAGE_QUOTA", "NO_MACHINE", "NOT_SHAREABLE", "BAD_CONTENT", "TOO_LARGE", "BAD_REQUEST", "NO_REPORT", "BAD_ARGS", "WHATEVER"];
+    ok("① 錯誤代號 → 字:連不上 = 檢查網路那句、雲端沒在跑 = web 那句、配額 / 速率 / 重新登入各自一句、驗不過 = 不能公開;每個 key 兩語都在", P.shrErrKey("UNREACH") === "shr.failed" && P.shrErrKey("WHATEVER") === "shr.failed" && P.shrErrKey("NO_MACHINE") === "shr.failedCloud" && P.shrErrKey("IMAGE_QUOTA") === "shr.quota" && P.shrErrKey("RELOGIN") === "conn.expired" && P.shrErrKey("NOT_SHAREABLE") === "shr.notShareable" && P.shrErrKey("BAD_CONTENT") === "shr.badContent" && P.shrErrKey("TOO_LARGE") === "shr.tooLarge" && P.shrErrKey("BAD_REQUEST") === "shr.failed"
       && codes.every((c) => STR.zh[P.shrErrKey(c)] && STR.en[P.shrErrKey(c)]));
     ok("① 第三行不提推薦碼(zh / en 定稿)", STR.zh["shr.ack3"] === "我不是投顧／期顧從業人員，沒有因此收取報酬，也不用它招攬付費策略或收費服務"
       && STR.en["shr.ack3"] === "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to paid strategies, paid groups, or other paid services.");
@@ -61,6 +61,17 @@ if (!process.versions.electron) {
     ok("① 掛名說明:名稱會原樣公開;帳號沒有名稱那句(zh / en 定稿)", STR.zh["shr.nameHint"] === "名稱會原樣公開" && STR.en["shr.nameHint"] === "Your name is shown exactly as it is."
       && STR.zh["shr.noName"] === "這個帳號還沒有名稱。要掛名，先到 blave.org 的帳號設定填上名稱。" && STR.en["shr.noName"] === "This account has no name yet. To be credited, add one in your account settings on blave.org.");
     sameAsWeb("① shr.nameHint 逐字同 web workspace_share_name_hint", STR, "shr.nameHint", "workspace_share_name_hint");
+
+    ok("① 拒絕訊息照 A4 定稿(zh / en):先講「沒有公開」、再講怎麼辦;太大那句的數字是佔位,不寫死", STR.zh["shr.badContent"] === "這份報告有一處格式自動修不好，沒有公開。請在聊天裡請 agent「重新整理這份報告」，整理好再公開。"
+      && STR.en["shr.badContent"] === "One part of this report couldn't be fixed automatically, so it wasn't published. In chat, ask the agent to \"tidy up this report\", then publish again."
+      && STR.zh["shr.tooLarge"] === "這份報告太大，沒有公開。圖片最多 {n} 張、合計 {mb} MB 以內；請 agent 減少圖片或縮短內容，再公開。"
+      && STR.en["shr.tooLarge"] === "This report is too large, so it wasn't published. It can hold up to {n} images, {mb} MB in total. Ask the agent to use fewer images or shorten it, then publish again.");
+    sameAsWeb("① shr.badContent 逐字同 web workspace_share_bad_content", STR, "shr.badContent", "workspace_share_bad_content");
+    sameAsWeb("① shr.tooLarge 逐字同 web workspace_share_too_large", STR, "shr.tooLarge", "workspace_share_too_large");
+    { const shPy = [process.env.BLAVE_API_DIR, path.join(MONO, "api")].filter(Boolean).map((d) => path.join(d, "openclaw", "agent_report_share.py")).find((f) => fs.existsSync(f) && /^LOCAL_IMG_MAX_COUNT = /m.test(read(f)));
+      if (!shPy) console.log("SKIP  ① 太大那句的兩個數對照 api(找不到帶 LOCAL_IMG_MAX_COUNT 的 agent_report_share.py;可設 BLAVE_API_DIR)");
+      else { const a = read(shPy), n = /^LOCAL_IMG_MAX_COUNT = (\d+)$/m.exec(a), mb = /^LOCAL_IMG_TOTAL_MAX_BYTES = (\d+) \* 1024 \* 1024$/m.exec(a);
+        ok("① {n} / {mb} = api 的 LOCAL_IMG_MAX_COUNT / LOCAL_IMG_TOTAL_MAX_BYTES", !!n && !!mb && Number(n[1]) === P.SHR_IMG_MAX_COUNT && Number(mb[1]) === P.SHR_IMG_MAX_MB, JSON.stringify([n && n[1], mb && mb[1]])); } }
 
     // ── ② reportshare.js ──
     const RS = require(path.join(SHELL, "reportshare.js"));
@@ -100,9 +111,22 @@ if (!process.versions.electron) {
     m = mk({ swap: true }); r = await m.c.state("local", "x");
     ok("② 請求途中換了帳號:回應是上一個人的,丟掉(UNREACH)", r.code === "UNREACH");
     const fc = (status, body, op) => RS.failCode({ status, body }, op);
-    ok("② status → 代號:409 已公開 / 422 不能公開 / 507 配額 / 401 重新登入 / 429 / 403 雲端沒在跑 / 5xx 與連不上 = UNREACH / 400 NO_DISPLAY_NAME / 其餘 400·413 = 不能公開 / 404 分 publish 與 update·revoke",
-      fc(409) === "ALREADY" && fc(422) === "NOT_SHAREABLE" && fc(507) === "IMAGE_QUOTA" && fc(401) === "RELOGIN" && fc(429) === "RATE_LIMITED" && fc(403) === "NO_MACHINE" && fc(502) === "UNREACH" && RS.failCode(null) === "UNREACH"
-      && fc(400, { error_code: "NO_DISPLAY_NAME" }) === "NO_DISPLAY_NAME" && fc(400, { error: "blocks[3]: bad" }) === "BAD_CONTENT" && fc(413) === "BAD_CONTENT" && fc(404, {}, "publish") === "NOT_SHAREABLE" && fc(404, {}, "update") === "NOT_PUBLIC" && fc(404, {}, "revoke") === "NOT_PUBLIC");
+    ok("② 讀不到 error_code(舊 api)照狀態碼:409 已公開 / 422 不能公開 / 507 配額 / 401 重新登入 / 429 / 403 雲端沒在跑 / 5xx 與連不上 = UNREACH / 沒有代號的 400 = 內容被拒 / 413 = 太大 / 404 分 publish 與 update·revoke",
+      fc(409) === "ALREADY" && fc(422) === "NOT_SHAREABLE" && fc(507) === "IMAGE_QUOTA" && fc(401) === "RELOGIN" && fc(429) === "RATE_LIMITED" && fc(429, { error_code: "ERR429" }) === "RATE_LIMITED" && fc(403) === "NO_MACHINE" && fc(502) === "UNREACH" && RS.failCode(null) === "UNREACH" && RS.failCode({}) === "UNREACH"
+      && fc(400, { error: "blocks[3]: bad" }) === "BAD_CONTENT" && fc(400, "<html>") === "BAD_CONTENT" && fc(413) === "TOO_LARGE" && fc(413, { error_code: "BODY_TOO_LARGE" }) === "TOO_LARGE" && fc(401, { error_code: "INVALID_CREDENTIALS" }) === "RELOGIN"
+      && fc(404, {}, "publish") === "NOT_SHAREABLE" && fc(404, {}, "update") === "NOT_PUBLIC" && fc(404, {}, "revoke") === "NOT_PUBLIC");
+    const API_CODES = { BAD_CONTENT: [400, "BAD_CONTENT"], BAD_IMAGE: [400, "BAD_CONTENT"], BAD_REQUEST: [400, "BAD_REQUEST"], NO_DISPLAY_NAME: [400, "NO_DISPLAY_NAME"], TOO_LARGE: [413, "TOO_LARGE"], NOT_SHAREABLE: [422, "NOT_SHAREABLE"],
+      LIVE_LIMIT: [429, "LIVE_LIMIT"], DAILY_LIMIT: [429, "DAILY_LIMIT"], IMAGE_QUOTA: [507, "IMAGE_QUOTA"] };
+    const offc = Object.keys(API_CODES).filter((k) => fc(API_CODES[k][0], { error: "x", error_code: k }) !== API_CODES[k][1]);
+    ok("② api 的 error_code 優先於狀態碼:九個代號各對到自己的那一句(BAD_IMAGE 講 BAD_CONTENT 那句);狀態碼跟代號對不上時聽代號", offc.length === 0 && fc(400, { error_code: "TOO_LARGE" }) === "TOO_LARGE" && fc(413, { error_code: "BAD_CONTENT" }) === "BAD_CONTENT" && fc(422, { error_code: "BAD_CONTENT" }) === "BAD_CONTENT", offc.join());
+    ok("② 不認得的代號不上畫面:400 帶別的代號(UNKNOWN_FIELD…)= 外殼送錯 BAD_REQUEST;5xx 帶什麼代號都是連不上;代號不是字串 / 是物件原型上的名字當沒給",
+      fc(400, { error_code: "UNKNOWN_FIELD" }) === "BAD_REQUEST" && fc(400, { error_code: "ID_REQUIRED" }) === "BAD_REQUEST" && fc(503, { error_code: "BAD_CONTENT" }) === "UNREACH" && fc(500, { error_code: "TOO_LARGE" }) === "UNREACH"
+      && fc(400, { error_code: 5 }) === "BAD_CONTENT" && fc(422, { error_code: "constructor" }) === "NOT_SHAREABLE" && fc(409, { error_code: "toString" }) === "ALREADY");
+    { const shPy = [process.env.BLAVE_API_DIR, path.join(MONO, "api")].filter(Boolean).map((d) => path.join(d, "openclaw", "agent_report_share.py")).find((f) => fs.existsSync(f) && /"TOO_LARGE"/.test(read(f)));
+      if (!shPy) console.log("SKIP  ② api 的代號逐一對照(需要會回 TOO_LARGE 的 api 原始碼;可設 BLAVE_API_DIR)");
+      else { const a = read(shPy), seen = [...new Set([...a.matchAll(/"([A-Z][A-Z_]{3,})"\)?(?:, \d+)?\)?$|"error_code": "([A-Z_]+)"|, (?:\d+, )?(?:code=)?"([A-Z][A-Z_]+)"\)/gm)].map((x) => x[1] || x[2] || x[3]))].filter((k) => k !== "CODE_REQUIRED");
+        const known = Object.keys(API_CODES), miss = seen.filter((k) => known.indexOf(k) < 0);
+        ok("② api 公開 / 更新會回的代號外殼都認得", seen.length >= 8 && miss.length === 0, JSON.stringify([seen, miss])); } }
     m = mk({ res: { status: 200, body: { share: { code: "<x>", published_at: 1 } } } }); r = await m.c.publish("cloud", "x", { byline: "anonymous", confirmed: true });
     ok("② 200 但 share 形狀不對(代碼字元集 / 時間範圍)→ 不當成功", r.code === "UNREACH");
     const apiDir = process.env.BLAVE_API_DIR || path.join(MONO, "api"), apiPy = path.join(apiDir, "openclaw", "desktop_auth.py");
@@ -200,13 +224,21 @@ if (!process.versions.electron) {
       ok("S7 / S8 shr.quota(zh / en)與 shr.rate(en)", STR.zh["shr.quota"] === "這個帳號的圖片空間已滿，這份報告沒有公開。" && STR.en["shr.quota"] === "Your account's image storage is full, so this report wasn't published." && STR.en["shr.rate"] === "Too many attempts. Try again in a while." && STR.zh["shr.rate"] === "按得太頻繁了，請過一陣子再試。");
       ok("本機揭露小字 = spec-share-list E 定稿一(含 Wei 拍板那句)", STR.zh["shr.noteLocal"] === "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"
         && STR.en["shr.noteLocal"] === "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too.");
-      ok("#2 畫面:api 的原文不上畫面(renderer 不讀 detail、樣式拿掉);內容被拒那一句講原因與出口,zh / en 都在(暫定字)", !/\.detail\b/.test(js) && !/shr-detail/.test(js + css)
-        && STR.zh["shr.badContent"] === "這份報告的內容有一處格式問題，現在不能公開。請在聊天裡請 agent「重新整理這份報告」，整理好再公開。" && /formatting problem/.test(STR.en["shr.badContent"]) && /ask the agent/.test(STR.en["shr.badContent"])
-        && STR.zh["shr.notShareable"] === "這份報告目前不能公開。");
+      ok("#2 畫面:api 的原文不上畫面(renderer 不讀 detail / error、樣式拿掉);shr.notShareable 字不改", !/\.detail\b/.test(js) && !/\.error\b/.test(js) && !/shr-detail/.test(js + css)
+        && STR.zh["shr.notShareable"] === "這份報告目前不能公開。" && STR.en["shr.notShareable"] === "This report can't be published.");
+      logged.length = 0; applog.length = 0; x = mk2({ res: () => ({ status: 413, body: { error: "at most 20 images per shared report", error_code: "TOO_LARGE" } }) });
+      q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("#6 太大(413 TOO_LARGE):只回代號;原文兩個 log 都寫(agent 讀得到是哪個上限)", q.code === "TOO_LARGE" && Object.keys(q).join() === "code" && logged.length === 1 && logged[0][1] === "share refused (413): at most 20 images per shared report" && applog.length === 1, JSON.stringify([q, logged, applog]));
+      logged.length = 0; applog.length = 0; x = mk2({ res: () => ({ status: 400, body: { error: "body.tos_version: must match", error_code: "BAD_REQUEST" } }) });
+      q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("#6 外殼送錯(400 BAD_REQUEST):只回代號;原文只進主行程 log,不寫報告的 upload_errors.log(不是 agent 改報告改得掉的)", q.code === "BAD_REQUEST" && Object.keys(q).join() === "code" && logged.length === 0 && applog.length === 1 && applog[0] === "local tw-9: share refused (400): body.tos_version: must match", JSON.stringify([q, logged, applog]));
+      logged.length = 0; applog.length = 0; x = mk2({ res: () => ({ status: 429, body: { error: "too many public reports", error_code: "LIVE_LIMIT", limit: 50 } }) });
+      q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
+      ok("#6 上限(429 LIVE_LIMIT):代號 + 上限的數字,照舊", JSON.stringify(q) === '{"code":"LIVE_LIMIT","limit":50}' && logged.length === 0, JSON.stringify(q));
       // 稽核 T3(第八批 #2 後):原文只進 log;會被記下原文的代號對到的都是拒收句,沒有一個是「請檢查網路」
       const DC = /const DETAIL_CODES = (\[[^\]]*\]);/.exec(read(path.join(SHELL, "reportshare.js")));
-      ok("T3 記原文的代號(BAD_CONTENT / NOT_SHAREABLE / IMAGE_QUOTA)對到的都是拒收句", !!DC && JSON.parse(DC[1]).every((c) => P.shrErrKey(c) !== "shr.failed" && P.shrErrKey(c) !== "shr.failedCloud")
-        && JSON.parse(DC[1]).join() === "BAD_CONTENT,NOT_SHAREABLE,IMAGE_QUOTA", DC && DC[1]);
+      ok("T3 記原文的代號(BAD_CONTENT / TOO_LARGE / NOT_SHAREABLE / IMAGE_QUOTA)對到的都是拒收句", !!DC && JSON.parse(DC[1]).every((c) => P.shrErrKey(c) !== "shr.failed" && P.shrErrKey(c) !== "shr.failedCloud")
+        && JSON.parse(DC[1]).join() === "BAD_CONTENT,TOO_LARGE,NOT_SHAREABLE,IMAGE_QUOTA", DC && DC[1]);
       // 稽核 L5:取消失敗另開的單鈕框,標題寫結果(不再是問句)、內文講連結還在;RELOGIN 內文照舊。閱讀頁與清單兩處同一組 key
       const sl = read(path.join(R, "report-sharelist.js")), failBox = /confirmBox\(\{ title: t\("shr\.revokeFailTitle"\), lines: \[t\(code === "RELOGIN" \? "conn\.expired" : "shr\.revokeFailBody"\)\], ok: t\("cdel\.gotIt"\), single: true,/;
       ok("L5 取消失敗框:標題「沒有取消分享」、內文「連結仍然有效。請稍後再試一次。」(zh / en 定稿字面);閱讀頁與清單都換;舊 key 拿掉", failBox.test(js) && failBox.test(sl)
@@ -322,6 +354,12 @@ app.whenReady().then(async () => {
   await js(`document.getElementById("shr-ack").click(); document.getElementById("shr-send").click();`); await wait(250);
   d = await js(`({ open: !$("shr-scrim").hidden, msg: $("shr-msg").textContent, ack: $("shr-ack").checked, send: $("shr-send").disabled, cancel: $("shr-cancel").disabled })`);
   ok("④ 送出失敗:框留著、勾選保留、主鈕可再按、腳一句「公開失敗，請檢查網路後再試。」", d.open && d.msg === (await T("shr.failed")) && d.ack && !d.send && !d.cancel, JSON.stringify(d));
+  await js(`window.__s.pub = { code: "TOO_LARGE", detail: "at most 20 images per shared report", error: "at most 20 images per shared report" }; document.getElementById("shr-send").click();`); await wait(250);
+  d = await js(`({ open: !$("shr-scrim").hidden, msg: $("shr-msg").textContent, mono: [...$("shr-msg").querySelectorAll(".mono")].map((x) => x.textContent).join(), ack: $("shr-ack").checked, send: $("shr-send").disabled })`);
+  ok("④ 太大:腳一句 shr.tooLarge,20 張 / 20 MB 由程式帶入;api 的原文不上畫面;框留著、勾選保留", d.open && d.msg === (await T("shr.tooLarge", { n: "20", mb: "20" })) && d.msg.includes("20") && !/\{|images per/.test(d.msg) && d.mono === "20,20" && d.ack && !d.send, JSON.stringify(d));
+  await js(`window.__s.pub = { code: "BAD_CONTENT", error: "blocks[3].source.url: must be an https URL" }; document.getElementById("shr-send").click();`); await wait(250);
+  d = await js(`({ msg: $("shr-msg").textContent })`);
+  ok("④ 內容被拒:腳一句 shr.badContent(上一句被換掉,不疊);api 的原文不上畫面", d.msg === (await T("shr.badContent")) && !/blocks\[/.test(d.msg), JSON.stringify(d));
   await js(`window.__s.pub = { code: "NO_DISPLAY_NAME" }; __s.state.res.displayName = "User_AB12CD34"; shrClose();`); await wait(100);
   await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(250);
   d = await js(`({ named: $("shr-named").disabled, nm: $("shr-nm").textContent, hint: $("shr-hint").textContent, radios: $("shr-radios").hidden, plain: $("shr-anon-only").hidden })`);

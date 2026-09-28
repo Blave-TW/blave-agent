@@ -3940,9 +3940,13 @@ msgstr "Couldn't publish. Publishing and updating need your machine running; ple
 msgid "shr.notShareable"
 msgstr "This report can't be published."
 
-# 第八批 #2(Wei 0928):api 以 400 / 413 拒收內容。暫定字,待設計師確認
+# api 拒收內容(BAD_CONTENT / BAD_IMAGE):自動修不了才會走到;逐字同 web workspace_share_bad_content
 msgid "shr.badContent"
-msgstr "Part of this report has a formatting problem, so it can't be published yet. In chat, ask the agent to \"tidy up this report\", then publish again."
+msgstr "One part of this report couldn't be fixed automatically, so it wasn't published. In chat, ask the agent to \"tidy up this report\", then publish again."
+
+# api 回 TOO_LARGE(413):{n} 張、{mb} MB 由程式帶入;逐字同 web workspace_share_too_large
+msgid "shr.tooLarge"
+msgstr "This report is too large, so it wasn't published. It can hold up to {n} images, {mb} MB in total. Ask the agent to use fewer images or shorten it, then publish again."
 
 # api 507 IMAGE_QUOTA / 429:spec 沒給字,待設計師確認
 msgid "shr.quota"
