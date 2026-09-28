@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **停止那一句的「下單」改成「執行下單指令」(0.1.8 e2e,第十六批 #2)**:`_STOP_STEP_TEXT["order"]` 原本是「下單 / 下单 / placing an order」,
+  但這一種涵蓋下單、撤單、TWAP、平倉、改槓桿、對帳,停在撤單時會寫成「中斷的步驟：下單」。改成跟狀態列(`act.order`,第十四批定稿)同一套字:
+  「執行下單指令 / 执行下单指令 / running an order command」。背景腳本那句的「下單腳本」不變。測試 `tests/check_stop_note_steps.py`。
 - **一份報告出事不再卡住整輪上傳(0.1.8 稽核 P2-12,第十批 #7)**:尾註某一列的 `id` 是陣列或物件、而且同一個 block 裡另有重複 id 要改名時,
   `unique_footnotes` 丟 `TypeError: unhashable type`;`upload_one` 沒接,整輪中斷、`_save_state` 沒跑,下一輪同一份再炸一次,排在後面的報告都送不出去。
   ① 改名時只拿字串 id 比對(跟 api 的 `unique_footnotes`、外殼的 `uniqueFootnotes` 同一個答案),那一列原樣留著由驗證器拒收;
