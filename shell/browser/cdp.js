@@ -44,6 +44,7 @@ const INTERACTIVE = new Set(["link", "button", "textbox", "searchbox", "combobox
   "menuitemcheckbox", "menuitemradio", "option", "slider", "spinbutton", "listbox", "PopUpButton", "DisclosureTriangle"]);
 const VALUE_ROLES = new Set(["textbox", "searchbox", "combobox", "spinbutton", "slider"]);
 const MAX_NODES = 400, MAX_CHARS = 15000;
+const WORLD = "blave";   // isolated world 的名字:run() 與新文件腳本(watchEdits)共用
 const KEYS = {
   Enter: { key: "Enter", code: "Enter", vk: 13, text: "\r" }, Tab: { key: "Tab", code: "Tab", vk: 9 }, Escape: { key: "Escape", code: "Escape", vk: 27 },
   ArrowUp: { key: "ArrowUp", code: "ArrowUp", vk: 38 }, ArrowDown: { key: "ArrowDown", code: "ArrowDown", vk: 40 },
@@ -70,6 +71,9 @@ function createPage(wc) {
   async function attach() {
     if (!dbg.isAttached()) dbg.attach("1.3");
     await send("DOM.enable"); await send("Page.enable"); await send("Runtime.enable"); await send("Accessibility.enable");
+    // 用戶改過欄位的紀錄(inpage.watchEdits)要從文件一開始就聽:裝在同名的 isolated world(worldName 同 world() 的,
+    // 同一個 frame 同名就是同一個 world),之後 run() / describe 讀得到它留的記號
+    try { await send("Page.addScriptToEvaluateOnNewDocument", { source: "(" + IP.watchEdits.toString() + ")()", worldName: WORLD }); } catch (_) { /* 舊版沒有:退回只認鍵盤 */ }
     try { mainFrameId = (await send("Page.getFrameTree")).frameTree.frame.id; } catch (_) { /* 等 frameNavigated */ }
   }
   function detach() { if (guardTimer) clearTimeout(guardTimer); guardTimer = null; decide = null; guardOn = false; try { if (dbg.isAttached()) dbg.detach(); } catch (_) { /* 已經分離 */ } }
@@ -113,7 +117,7 @@ function createPage(wc) {
   async function world() {
     if (ctxCache) return ctxCache;
     const tree = await send("Page.getFrameTree");
-    const w = await send("Page.createIsolatedWorld", { frameId: tree.frameTree.frame.id, worldName: "blave", grantUniveralAccess: false });
+    const w = await send("Page.createIsolatedWorld", { frameId: tree.frameTree.frame.id, worldName: WORLD, grantUniveralAccess: false });
     ctxCache = w.executionContextId;
     return ctxCache;
   }
@@ -244,7 +248,10 @@ function createPage(wc) {
   }
   /** opt: { clear(fill 先清空;type 接在後面), perChar(逐字送), delay(每字毫秒) } */
   async function fill(b, text, d, opt) {
-    if (d.isSelect) { const got = await callOn(b, IP.selectOption, [text]); return got === null ? { error: "invalid_args", message: "no option matches; options: " + d.options.slice(0, 20).join(" | ") } : {}; }
+    // 填完記在元素上(isolated world 的 expando):agent 自己填的值不算「用戶改過」(inpage.describe dirty),
+    // 用戶之後在裡面打字 watchEdits 會蓋過這個記號
+    const mine = () => callOn(b, function () { this.__blaveAgentFilled = true; return true; }).catch(() => {});
+    if (d.isSelect) { const got = await callOn(b, IP.selectOption, [text]); if (got !== null) await mine(); return got === null ? { error: "invalid_args", message: "no option matches; options: " + d.options.slice(0, 20).join(" | ") } : {}; }
     await send("DOM.focus", { backendNodeId: b }).catch(() => {});
     // Input.insertText 打進「有焦點的元素」:DOM.focus 對編輯面(Monaco 的 view-lines 一類)是
     // no-op,焦點沒對到就會打進頁面上別的欄位。focusTarget 補 element.focus() 並認可編輯器把
@@ -272,11 +279,11 @@ function createPage(wc) {
       });
       pasteChain = job.catch(() => {});   // 一個失敗不卡死後面的
       await job;
-      return {};
+      await mine(); return {};
     }
-    if (!opt.perChar) { await send("Input.insertText", { text: String(text) }); return {}; }
+    if (!opt.perChar) { await send("Input.insertText", { text: String(text) }); await mine(); return {}; }
     for (const ch of String(text)) { await send("Input.insertText", { text: ch }); await sleep(opt.delay || 35); }
-    return {};
+    await mine(); return {};
   }
   /** 目前有焦點的元素 → { backendNodeId, desc } 或 null(頁面沒有 activeElement、或問不到)。
       desc.opaque = true:焦點停在一個 closed shadow root 的宿主上——頁內腳本走不進去,真正有焦點的可能是裡面的密碼欄;

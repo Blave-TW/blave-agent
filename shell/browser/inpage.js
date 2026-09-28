@@ -4,10 +4,25 @@
 // 惡意頁可以塞 100 MB 的字串,等到主行程再截就來不及了。
 "use strict";
 
-/* 節點描述(給 gate.js 分級)。this = 目標元素。 */
+/* 用戶在這份文件裡改過欄位的紀錄(稽核 P2-3)。cdp.js 在每份新文件一開始就裝進 isolated world(Page.addScriptToEvaluateOnNewDocument):
+   主行程只看得到鍵盤(input-event),用滑鼠貼上、拖放、IME、自動填入都沒有 keyDown。
+   - window.__blaveEdited:這份文件有人(不是 agent)改過欄位
+   - 元素.__blaveTyped:那個欄位(與它的 contenteditable 宿主)被改過——expando 掛在 isolated world 的 wrapper 上,頁面看不到
+   - window.__blaveAgentInput:agent 自己在打字的窗口(index.js agentInput 前後設),窗口內的事件不算 */
+function watchEdits() {
+  const mark = (n) => { for (let e = n, i = 0; e && i < 50; e = e.parentElement, i++) { if (e.nodeType !== 1) continue; if (!e.isContentEditable && e !== n) break; try { e.__blaveTyped = true; } catch (_) { /* 唯讀 wrapper */ } } };
+  const on = (ev) => { if (window.__blaveAgentInput) return; window.__blaveEdited = true; const t = ev.target; if (t && t.nodeType === 1) mark(t); else if (t && t.parentElement) mark(t.parentElement); };
+  for (const type of ["input", "change", "paste", "drop"]) window.addEventListener(type, on, true);
+  return true;
+}
+function agentInput(on) { window.__blaveAgentInput = !!on; return true; }
+/* 節點描述(給 gate.js 分級)。this = 目標元素。
+   dirty:欄位留著跟載入時不一樣的內容或被用戶改過——input / textarea 比 defaultValue、select 比 defaultSelected、
+   contenteditable 只認 watchEdits 的紀錄(沒有載入時的基準可比);agent 自己填的(cdp.fill 記 __blaveAgentFilled、用戶沒再動過)與空欄位不算。dirtyFields 用同一條規則(兩份都要自給自足) */
 function describe() {
   const el = this, T = (s, n) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, n || 200);
   const tag = (el.tagName || "").toLowerCase();
+  const fieldDirty = (e) => { const g = (e.tagName || "").toLowerCase(); if (e.__blaveTyped) return true; if (e.__blaveAgentFilled) return false; if (g === "select") return Array.from(e.options || []).some((o) => o.selected !== o.defaultSelected); if (g === "input" || g === "textarea") return !!e.value && e.value !== e.defaultValue; if (e.isContentEditable && e.querySelectorAll) { for (const x of e.querySelectorAll("*")) if (x.__blaveTyped) return true; } return false; };
   const form = el.form || (el.closest && el.closest("form")) || null;
   let label = "";
   try { if (el.labels && el.labels.length) label = el.labels[0].innerText; } catch (_) { /* 不是可標籤元素 */ }
@@ -37,6 +52,7 @@ function describe() {
     labelForFile: !!(labelFor && labelFor.type === "file") || !!(lab && lab.querySelector("input[type=file]")),
     isSelect: tag === "select", editable: !!el.isContentEditable,
     options: tag === "select" ? Array.from(el.options).slice(0, 100).map((o) => T(o.text, 80)) : [],
+    dirty: fieldDirty(el), pageEdited: !!window.__blaveEdited,
   };
 }
 
@@ -453,19 +469,21 @@ function maskFields(idx, payHostRe) {
   (document.body || document.documentElement).appendChild(host);
   return n;
 }
-/* 有幾個文字欄位留著跟載入時不一樣的內容(用戶填到一半的表單)。只回數量,不回值。
-   搜尋框、勾選框、按鈕、隱藏欄位不算;唯讀與停用的不算 */
+/* { n, edited }:n = 有幾個欄位留著跟載入時不一樣的內容(用戶填到一半的表單;規則同 describe 的 dirty),只回數量不回值;
+   edited = 這份文件有人改過欄位(watchEdits)。搜尋框、勾選框、按鈕、隱藏欄位不算;唯讀與停用的不算 */
 function dirtyFields() {
   const SKIP = ["hidden", "checkbox", "radio", "button", "submit", "image", "reset", "file", "range", "color", "search"];
-  const els = document.querySelectorAll("input, textarea");
+  const fieldDirty = (e) => { const g = (e.tagName || "").toLowerCase(); if (e.__blaveTyped) return true; if (e.__blaveAgentFilled) return false; if (g === "select") return Array.from(e.options || []).some((o) => o.selected !== o.defaultSelected); if (g === "input" || g === "textarea") return !!e.value && e.value !== e.defaultValue; if (e.isContentEditable && e.querySelectorAll) { for (const x of e.querySelectorAll("*")) if (x.__blaveTyped) return true; } return false; };
+  const els = document.querySelectorAll("input, textarea, select, [contenteditable]");
   let n = 0;
   for (let i = 0; i < els.length && i < 2000; i++) {
     const el = els[i];
     if (el.disabled || el.readOnly) continue;
     if (el.tagName === "INPUT" && SKIP.indexOf(String(el.type || "text").toLowerCase()) >= 0) continue;
-    if (el.value && el.value !== el.defaultValue) n++;
+    if (el.hasAttribute && el.hasAttribute("contenteditable") && !el.isContentEditable) continue;
+    if (fieldDirty(el)) n++;
   }
-  return n;
+  return { n, edited: !!window.__blaveEdited };
 }
 function unmaskFields() { const h = document.getElementById("__blave_mask"); if (h) h.remove(); return true; }
 
@@ -489,4 +507,4 @@ function pendingPictures() {
 }
 function marksVisible(on) { const h = document.getElementById("__blave_agent_marks"); if (h) h.style.setProperty("visibility", on ? "visible" : "hidden", "important"); return true; }
 
-module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, dirtyFields, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, readable, scrollPage, progress, quiet };
+module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, dirtyFields, watchEdits, agentInput, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, readable, scrollPage, progress, quiet };
