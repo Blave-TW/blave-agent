@@ -120,9 +120,10 @@ function v6Private(h) {
 // 比正常瀏覽高一截,又低於夾帶一段文章或金鑰所需的長度。搜尋引擎的查詢網址照常放行(它本來就長、而且是 agent 自己的查詢字)。
 const EXFIL_TAIL_MAX = 200;
 const EXFIL_VALUE_MIN = 40;   // 參數值至少這麼長才去比對讀過的頁面(短的會撞到普通單字)
+const GOOGLE_HOST = /(^|\.)google\.(?:com|[a-z]{2}|com?\.[a-z]{2})$/;   // 同 verify.js 的 GOOGLE_HOST(tests/check_shell_browser_verify.js 釘住兩邊一致)
 function searchEngine(u) {
   const h = u.hostname.toLowerCase();
-  return (/(^|\.)google\.[a-z.]+$/.test(h) && /^\/(search|webhp)/.test(u.pathname)) || /(^|\.)duckduckgo\.com$/.test(h)
+  return (GOOGLE_HOST.test(h) && /^\/(search|webhp)/.test(u.pathname)) || /(^|\.)duckduckgo\.com$/.test(h)
     || (/(^|\.)bing\.com$/.test(h) && u.pathname.startsWith("/search"));
 }
 const squash = (x) => String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -453,4 +454,4 @@ function citeUrl(raw) {
 }
 function decodeSafe(x) { try { return decodeURIComponent(x); } catch (_) { return x; } }
 
-module.exports = { network, agent, external, externalUrl, EXTERNAL_DENY, citable, citeUrl, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };
+module.exports = { GOOGLE_HOST, network, agent, external, externalUrl, EXTERNAL_DENY, citable, citeUrl, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };

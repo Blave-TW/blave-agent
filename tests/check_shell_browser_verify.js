@@ -20,6 +20,19 @@ async function pure() {
     && !VF.verifyPage("https://www.google.com/search?q=sorry") && !VF.verifyPage("https://example.com/sorry/index") && !VF.verifyPage("javascript:alert(1)") && !VF.verifyPage(""));
   t("搜尋頁的認定:驗證頁不算搜尋頁;引擎要對", VF.searchPage("https://www.google.com/search?q=x", "google") && !VF.searchPage("https://www.google.com/sorry/index", "google")
     && !VF.searchPage("https://www.google.com/search?q=x", "ddg") && VF.searchPage("https://html.duckduckgo.com/html/?q=x", "ddg") && !VF.searchPage("https://example.com/search", "google"));
+  // 稽核 P2-4:主機名字尾要整個對上
+  const G_YES = ["google.com", "www.google.com", "www.google.com.tw", "www.google.co.jp", "www.google.co.uk", "www.google.de", "google.fr", "ipv4.google.com", "www.google.com.hk"];
+  const G_NO = ["google.evil.com", "google.com.evil.io", "www.google.com.evil.io", "google.co.evil.net", "evilgoogle.com", "google.com.attacker", "google.evil", "google.comx", "notgoogle.de",
+    "google.example.co.uk", "googleusercontent.com", "google.com.tw.evil.tw"];
+  t("Google 的主機名:google.com、各國網域與子網域才算;把 google 放在前面的別人的網域不算",
+    G_YES.every((h) => VF.engineOf("https://" + h + "/search?q=x") === "google" && VF.verifyPage("https://" + h + "/sorry/index") === "google" && VF.searchPage("https://" + h + "/search?q=x", "google"))
+    && G_NO.every((h) => VF.engineOf("https://" + h + "/search?q=x") === null && VF.verifyPage("https://" + h + "/sorry/index") === null && !VF.searchPage("https://" + h + "/search?q=x", "google")),
+    G_YES.filter((h) => VF.engineOf("https://" + h + "/") !== "google").concat(G_NO.filter((h) => VF.engineOf("https://" + h + "/") !== null)));
+  t("DuckDuckGo 的主機名同樣要字尾整個對上", VF.engineOf("https://html.duckduckgo.com/html/?q=x") === "ddg" && VF.engineOf("https://duckduckgo.com.evil.io/") === null && VF.engineOf("https://evilduckduckgo.com/") === null);
+  { const P = require(path.join(SHELL, "browser", "policy.js")), long = "x".repeat(400);
+    t("外送檢查的搜尋引擎例外用同一條:冒牌的 google 網域帶長參數照樣要確認", String(P.GOOGLE_HOST) === String(VF.GOOGLE_HOST) && P.exfilRisk("https://www.google.com/search?q=" + long, new Set(), "") === null
+      && !!P.exfilRisk("https://google.evil.com/search?q=" + long, new Set(), "") && !!P.exfilRisk("https://google.com.evil.io/search?q=" + long, new Set(), ""),
+      [P.exfilRisk("https://www.google.com/search?q=" + long, new Set(), ""), P.exfilRisk("https://google.evil.com/search?q=" + long, new Set(), "")]); }
   const m = VF.marks("google");
   t("頁面標記是一張表(字串,送得進頁面):網址、標記、字、排除條件", typeof m.path === "string" && new RegExp(m.path).test("/sorry/index") && m.marks.includes("recaptcha") && /異常流量/.test(m.text) && m.unless === "#rso a h3"
     && VF.marks("ddg").unless === ".result__a");
