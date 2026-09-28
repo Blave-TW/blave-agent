@@ -28,6 +28,10 @@ numbers are all in `describe()`: cite them, don't restate them in a narrative sl
     publish(pack)                          # no narrative = data pack only, id gets "-auto"
                                            # (a scheduled run: no LLM, no invented view)
 
+publish() never overwrites a report: an id that is taken gets the next free one (`-2`, `-3`, …)
+and the path it returns names the file written. To correct the report you published earlier in
+the same turn, publish again with `replace=True`.
+
 Templates: `tw_market_brief()`, `tw_close_brief()`, `crypto_market_brief()`, `symbol_brief(symbol)`.
 A pack with `pack.skip` set (tw_close_brief on a non-trading day, or before today's close
 has landed) is never published: `publish()` prints why and returns None.
@@ -252,6 +256,8 @@ def _publish_checklist(pack):
         f"  publish({rid!r}, narrative, title=\"<結論 ≤{TITLE_MAX} 字>\"" + (", shareable=True)" if research else ")"),
         f"  被拒:只改 narrative,publish({rid!r}, narrative, title=…) 重送同一個 pack;不要再呼叫範本重建"
         f"(資料會變、又多花 {int(sum(t for _, t in pack.timings)) or '數十'} 秒)",
+        "  已經發出去才發現要改:同一輪內再 publish 一次並加 replace=True(只會換掉這一輪自己發的那份);"
+        "不加就是多一份新報告——舊報告一律不會被蓋掉,id 已有報告時新的一份自動排下一個號,回覆不用提編號",
     ]
     return lines
 
@@ -829,7 +835,7 @@ def check_recipe(recipe):
         raise ValueError("a recipe is a dict {id, title, kpi, bricks}")
     extra = sorted(set(recipe) - set(_RECIPE_KEYS))
     if extra:
-        # report_id / type / report_type stay the built-ins' own: a custom id overwriting tw-market-*, or a
+        # report_id / type / report_type stay the built-ins' own: a custom id filed among tw-market-*, or a
         # `performance` type carrying news, is exactly what this check is for
         raise ValueError(f"recipe has unknown key(s) {extra}; a custom recipe takes {', '.join(_RECIPE_KEYS)}")
     lb = recipe.get("lookback_days", 45)
@@ -840,7 +846,7 @@ def check_recipe(recipe):
         raise ValueError(f"recipe id {rid!r} must match [a-z0-9][a-z0-9-]{{0,39}}")
     if any(rid == p.rstrip("-") or rid.startswith(p if p.endswith("-") else p + "-") for p in _BUILTIN_PREFIXES):
         raise ValueError(f"recipe id {rid!r} collides with a built-in template ({', '.join(_BUILTIN_PREFIXES)}): "
-                         "the same id on the same day overwrites that template's report")
+                         "its reports would be filed as that template's")
     title = recipe.get("title")
     if not isinstance(title, str) or not 1 <= len(title) <= 80:
         raise ValueError("recipe title must be 1–80 characters")
@@ -1290,7 +1296,7 @@ def _missing_item(pack, lang):
     return ("blave", head.format(names=names) + _access_fix(lang))
 
 
-def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang="zh", shareable=None):
+def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang="zh", shareable=None, replace=False):
     """Assemble the pack and the narrative into a report and drop it. Returns the path.
 
     `pack` is a Pack or its report id (a string): a template call keeps the pack it built for
@@ -1314,6 +1320,8 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     origin: "chat" (default) or "scheduled" — shown in the report header.
     lang: "zh" (default) or "en" — only the footnote line about missing Blave data
     (`pack.missing`) and the exchanges' attribution lines are localised; the blocks are Chinese.
+    replace: True only to correct the report this turn already published under this id; by
+    default a taken id means a new report under the next free id (lib.report.write_report).
     Returns None without writing when `pack.skip` is set."""
     if isinstance(pack, str):
         pack = load_pack(pack)
@@ -1377,9 +1385,9 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
     if narrative.get("lead", "").strip():
         problems.extend(_lead_problems(narrative["lead"].strip()))
     problems.extend(_number_problems(pack, narrative, watch_block))
-    image_blocks = attempt(_image_blocks, report_id or pack.report_id, images_in) or []
+    image_blocks = attempt(_image_blocks, report_id or pack.report_id, images_in, replace) or []
     narrated = bool(watch_block) or any(v.strip() for v in narrative.values()) or bool(news_in) or bool(image_blocks)
-    unused = sorted(set(_report.captured_files(report_id or pack.report_id)) - {b["file"] for b in image_blocks})
+    unused = sorted(set(_report.captured_files(report_id or pack.report_id, replace)) - {b["file"] for b in image_blocks})
     if unused and images_in is not None and not image_blocks:
         unused = []   # narrative['images'] 本身有錯:上面已經列了,改好再來算誰沒用到
     if unused and "images_unused" not in waived:
@@ -1521,12 +1529,12 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
         meta["extra"] = list(meta.get("extra") or []) + [day_cell]
     if shareable is not None and pack.type == "research":
         meta["shareable"] = bool(shareable)   # §7b B7 的自評紀錄(research_pack 的報告)
-    # 純數據包用自己的 id(-auto):排程版同一天跑,不能把早上那份有判讀的蓋掉
-    # (29026 實測:cron 首跑覆蓋了對話產的 tw-market-20260902)。明給 report_id 就照給。
+    # 純數據包用自己的 id(-auto):runtime 靠這個字尾分資料版與有判讀的(report_runner._published)。
+    # 明給 report_id 就照給。id 已經有報告 → write_report 自己換下一個空的(-2、-3…),不蓋舊的
     if report_id is None:
         report_id = pack.report_id if narrated else pack.report_id + "-auto"
     # write_report prints the "moved to reports/sent/, reply now" line for both paths.
-    path = write_report(report_id, title, out, type=pack.type, report_type=pack.report_type, meta=meta)
+    path = write_report(report_id, title, out, type=pack.type, report_type=pack.report_type, meta=meta, replace=replace)
     if unused:
         print(f"[report] {len(unused)} captured image(s) were left out and deleted. If the user asked for a cited "
               "image, say in the reply - one plain sentence - that it is not in the report and why.")
@@ -1543,7 +1551,7 @@ def publish(pack, narrative=None, report_id=None, title=None, origin=None, lang=
 IMAGE_ALT_MAX, IMAGE_CAPTION_MAX, IMAGE_SOURCE_NAME_MAX = 200, 300, 40
 
 
-def _image_blocks(report_id, images):
+def _image_blocks(report_id, images, replace=False):
     """narrative['images'] → cited `image` blocks (references/reports.md §5 › Citing an image from the
     web). Each item is what browser_capture returned — `file`, `source` {name, url} — plus `alt`
     and an optional `caption`. Every problem is raised at once; nothing is dropped quietly."""
@@ -1555,7 +1563,8 @@ def _image_blocks(report_id, images):
     if len(images) > _report.CITED_IMAGES_MAX:
         bad.append(f"narrative['images'] has {len(images)} items, at most {_report.CITED_IMAGES_MAX}: keep the ones a "
                    "claim in the text rests on")
-    have = set(_report.captured_files(report_id))
+    have = set(_report.captured_files(report_id, replace))
+    own = None if replace else _report._own(report_id)
     out = []
     for i, it in enumerate(images):
         where = f"narrative['images'][{i}]"
@@ -1565,7 +1574,9 @@ def _image_blocks(report_id, images):
         file, src, alt, cap = it.get("file"), it.get("source"), it.get("alt"), it.get("caption")
         if not isinstance(file, str) or file not in have:
             bad.append(f"{where}.file {file!r} is not a capture of this report — browser_capture(tab, ref, "
-                       f"report={report_id!r}) writes it and returns the name; captured now: {sorted(have) or 'none'}")
+                       f"report={report_id!r}) writes it and returns the name; captured now: {sorted(have) or 'none'}"
+                       + (" (you already published this report in this turn: to correct that one, publish with "
+                          "replace=True and its pictures are found again)" if own else ""))
         if not (isinstance(alt, str) and 1 <= len(alt.strip()) <= IMAGE_ALT_MAX):
             bad.append(f"{where}.alt is required: what the chart shows, in the report's language, ≤{IMAGE_ALT_MAX} characters")
         if cap is not None and not (isinstance(cap, str) and 1 <= len(cap.strip()) <= IMAGE_CAPTION_MAX):

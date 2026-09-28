@@ -6,7 +6,8 @@ The desktop app has a browser the user can see. When a turn has it, a `blave_bro
 
 - **Desktop only.** It is attached when `BLAVE_AGENT_LOCAL=1` and the user has the browser switched on in Settings (on by default). Signing in to Blave is not required.
 - **Cloud machines never have it.** No `browser_*` tools on a cloud machine means none this turn — use `lib/data.py` or say the web is not available here. `lib/` code cannot call these tools; they exist only inside your turn.
-- If the tools are missing on the desktop, the user switched the browser off. Do not ask them to turn it on unless the request cannot be done without the web.
+- If the tools are missing on the desktop, the user switched the browser off (Settings › Privacy) — and that means **no web this turn, by any route**: not the engine's own web search or fetch, not `curl` / `wget`, not a script. `lib/data.py`, exchange and broker APIs and order placement are data, not browsing, and work as usual. Do not ask them to turn it on unless the request cannot be done without the web; then the first sentence says the browser is off so nothing was looked up online, and offers the two ways forward (turn it on, or an answer from Blave data and local files with its scope stated). Never present what you remember as freshly looked up.
+- **With the tools mounted they are the only way to the web.** The user is promised that every page you open shows in the chat, so a page is never fetched another way.
 
 ## When to use it
 
@@ -53,6 +54,6 @@ Every fact you take from a page carries its source: the page title and URL from 
 
 To cite a chart in a report, capture it with `browser_capture(tab, ref, report)`
 (`ref` from `browser_snapshot`; https pages only; oversized elements are refused).
-It saves the picture into `reports/<report>.files/` itself and returns
+It saves the picture for that report itself and returns
 `{file, source}` — on a pack report they go into `narrative["images"]`, in a hand-written
 report into an `image` block; rules in `reports.md` › Citing an image from the web.

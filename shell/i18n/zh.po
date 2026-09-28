@@ -12,6 +12,9 @@ msgstr "用 Blave AI"
 msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
+msgid "cn.blave.descSet"
+msgstr "按用量從 Blave 餘額扣款。首次綁卡送 100 TWD 的 AI 額度。"
+
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
 
@@ -266,6 +269,12 @@ msgstr "{model} 的預設是「{level}」。越高想得越久、用得越多。
 msgid "mp.none"
 msgstr "這個模型沒有思考深度可調。"
 
+msgid "mp.bill"
+msgstr "按用量從 Blave 餘額扣款"
+
+msgid "mp.billBal"
+msgstr "餘額 {n} TWD"
+
 msgid "lv.low"
 msgstr "低"
 
@@ -358,6 +367,9 @@ msgstr "這支策略沒有回測資料。"
 
 msgid "tr.empty"
 msgstr "這支策略沒有進出場紀錄。"
+
+msgid "tr.emptyPf"
+msgstr "組合策略每次再平衡調的是一籃子標的的權重，沒有逐筆進出場紀錄；成交次數在「回測數據」。"
 
 msgid "tr.chartError"
 msgstr "圖表畫不出來，下方的進出場紀錄仍可查看。"
@@ -640,6 +652,12 @@ msgstr "已停機 · 餘額不足"
 
 msgid "plan.bill"
 msgstr "計費"
+
+msgid "plan.bal"
+msgstr "Blave 餘額"
+
+msgid "plan.balNa"
+msgstr "現在讀不到餘額"
 
 msgid "plan.month"
 msgstr "{p} TWD／月"
@@ -1322,6 +1340,12 @@ msgstr "還沒有可以下單的策略。先請代理做一檔，回測跑完就
 
 msgid "tr.typeC"
 msgstr "投資組合策略暫不支援自動下單"
+
+msgid "tr.pick.twd"
+msgstr "模擬交易暫不支援台幣計價的標的"
+
+msgid "tr.pick.twdKeep"
+msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
 
 msgid "tr.gateHint"
 msgstr "低於最小進場 {m} {c}，不會進場"
@@ -2494,6 +2518,12 @@ msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完在雲端�
 msgid "ho.msg.down"
 msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
 
+msgid "ho.msgB.up"
+msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完在雲端試跑一次，告訴我結果。"
+
+msgid "ho.msgB.down"
+msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡試跑一次，告訴我結果。"
+
 msgid "up.about"
 msgstr "關於"
 
@@ -2598,6 +2628,12 @@ msgstr "接下來由 agent 搬過去，在雲端重跑一次回測，兩邊的�
 
 msgid "ho.note.down"
 msgstr "接下來由 agent 搬回來，在這台電腦重跑一次回測，兩邊的數字會並排在聊天裡。"
+
+msgid "ho.noteB.up"
+msgstr "接下來由 agent 搬過去，在雲端試跑一次確認跑得起來。"
+
+msgid "ho.noteB.down"
+msgstr "接下來由 agent 搬回來，在這台電腦試跑一次確認跑得起來。"
 
 msgid "strat.delInPf"
 msgstr "這支策略還在自動下單的組合裡，不能刪除。先到自動下單頁的「部位」把它移出，再回來刪除。"
@@ -3528,13 +3564,6 @@ msgstr "送出中…"
 msgid "rpt.new.msgLead"
 msgstr "幫我建立報告"
 
-msgid "rpt.new.msgOnce"
-msgstr "這份只要產出一次，不用建立排程。"
-
-# 只在需求有定期字眼(每天／每週／every day…)時接在 msgOnce 後面:給 agent 的指示(0.1.8 e2e #95)
-msgid "rpt.new.msgRecur"
-msgstr "需求提到定期，但這台電腦目前只產這一次：請在回覆裡講明這一點，並說定期報告要在雲端主機上排。"
-
 # 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
 msgid "res.open.report"
 msgstr "打開報告"
@@ -4083,7 +4112,10 @@ msgid "br.set.switch"
 msgstr "內建瀏覽器"
 
 msgid "br.set.lead"
-msgstr "agent 可以在這台電腦上開網頁查資料，開的每一頁都會出現在聊天裡。交易所與券商後台、銀行一律不開；登入、送出、付款由你自己按。"
+msgstr "agent 可以上網搜尋、開網頁查資料，開的每一頁都會出現在聊天裡。交易所與券商後台、銀行一律不開；登入、送出、付款由你自己按。關掉之後，agent 就不上網查任何東西。"
+
+msgid "br.set.leadOff"
+msgstr "已關閉，agent 不會上網搜尋、也不會開任何網頁，只用 Blave 的資料和這台電腦上的檔案回答。策略抓資料與下單不受影響。"
 
 msgid "br.set.clear"
 msgstr "清除瀏覽資料"

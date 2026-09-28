@@ -57,7 +57,7 @@ function resReportItem(r, env, key) {
 /* 雲端策略:清單只有 updated_at、沒有數字,卡上就沒有數字(spec §11-3)。
    updated_at 是平台收到內容換過的時間:跑著的策略每根 K 都重送績效,它一直在變——組合裡的那幾支只認「新出現」,不認「更新」。
    snap = 回合開始時的 name → updated_at(null = 那時還沒讀到雲端清單,只能講「更新」、不能講「新策略」) */
-function resCloudItems(snap, list, sinceMs, live, seen) {
+function resCloudItems(snap, list, sinceMs, live, seen, noBt) {
   const out = [], since = Math.floor(sinceMs / 1000) - RES_CLOUD_SLACK_S;
   for (const x of Array.isArray(list) ? list : []) {
     if (!x || typeof x.name !== "string" || seen.has(x.name)) continue;
@@ -65,7 +65,8 @@ function resCloudItems(snap, list, sinceMs, live, seen) {
     if (isNew ? !(x.mtime == null || fresh) : !(fresh && (!snap || x.mtime !== snap.get(x.name)) && !live.has(x.name))) continue;
     seen.add(x.name);
     out.push({ kind: "strategy", env: "cloud", ref: x.name, ver: typeof x.mtime === "number" ? x.mtime : null, sub: "cloud", title: x.displayName || x.name,
-      facts: { is_new: isNew }, at: (typeof x.mtime === "number" ? x.mtime : since) * 1000 });
+      // noBt = 這一輪搬的是沒有回測的那一類(Type B):新出現而且清單說沒有回測才寫。其餘雲端卡照舊不講回測——清單比回測早到時會講錯
+      facts: noBt && isNew && x.hasBacktest === false ? { is_new: isNew, no_bt: true } : { is_new: isNew }, at: (typeof x.mtime === "number" ? x.mtime : since) * 1000 });
   }
   return out;
 }
@@ -109,6 +110,7 @@ function resFacts(item, state, f) {
     g.push(one);
   } else if (item.env === "cloud") {
     g.push([W(f.t("env.cloud"), "tag"), W(f.t(x.is_new ? "res.kind.new" : "res.kind.cloudUpd"))]);
+    if (x.no_bt === true) g.push([W(f.t("res.noBt"))]);
   } else if (item.sub === "scan") {
     g.push([W(f.t("res.kind.scan"))]);
     if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) g.push([W(x.grid_rows + "×" + x.grid_cols, "mono")]);
@@ -147,8 +149,8 @@ function resFmt() {
 
 /* ── 一輪的生命週期 ── */
 // submitMessage:記下回合開始與本機策略快照(當下重讀一次,不拿上一輪結束時的清單——那之後 live tick / 刪除都可能動過)
-function resTurnStart(viewing) {
-  const rt = { sid: sessionId, at: Date.now(), ts: 0, env: viewing && viewing.env === "cloud" ? "cloud" : "local", snap: null, cloudSnap: resCloudSnap(),
+function resTurnStart(viewing, noBt) {
+  const rt = { sid: sessionId, at: Date.now(), ts: 0, env: viewing && viewing.env === "cloud" ? "cloud" : "local", snap: null, cloudSnap: resCloudSnap(), noBt: noBt === true,
     items: [], host: null, anchor: null, cloud: false, ready: null, go: null };
   rt.ready = new Promise((r) => { rt.go = r; });
   rt.snapP = window.blave.listStrategies().then((l) => { rt.snap = resSnapOf(l); }, () => { rt.snap = resSnapOf(RP.list); });
@@ -323,7 +325,7 @@ function resCloudWatch(rt) {
     if (RES.cw !== w) return;
     const st = typeof TR_BAGS !== "undefined" && TR_BAGS.cloud ? TR_BAGS.cloud.st : null;
     if (st && st.cloud && st.cloud.code === "OK") {
-      const items = resCloudItems(rt.cloudSnap, envCloudList(st), rt.at, resCloudLive(st), w.seen);
+      const items = resCloudItems(rt.cloudSnap, envCloudList(st), rt.at, resCloudLive(st), w.seen, rt.noBt);
       if (items.length) resAdd(rt, items);
     }
     if (Date.now() > w.until) { RES.cw = null; return; }

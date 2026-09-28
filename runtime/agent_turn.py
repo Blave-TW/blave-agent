@@ -78,6 +78,10 @@ ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 # event or a session cron reaches no one. e2e 0.1.8 #127 — the agent armed a Monitor on
 # stats.json, wrote 「等它完成後我會回報」 and ended the turn; nothing ever reported.
 NO_LATER_TOOLS = ["Monitor", "CronCreate"]
+# Desktop: the built-in browser is the only way to the web (e2e 0.1.8 #125 — with the browser
+# switched off the agent searched with the engine's own tool, and the chat showed none of what
+# it read). The shell names the state in BLAVE_BROWSER; see desktop_web().
+WEB_TOOLS = ["WebSearch", "WebFetch"]
 PROTECTED_EDIT_RULES = [
     "Edit(/lib/runner.py)",
     "Edit(/lib/param_scan.py)",
@@ -2106,7 +2110,9 @@ def _tool_kind(name, params, workspace=None, trading=None):
         return "unknown", "", ""
     if name.startswith("mcp__blave__"):
         return "cloud", "", ""
-    if name in ("Agent", "Task", "TaskOutput"):
+    # TaskOutput 不在這裡:它等的是背景指令的輸出(子代理在這個 runtime 是關掉的),分類由 on_tool 換成上一個 Bash 的
+    # (0.1.8 e2e #134:等回測時狀態列寫「正在委派研究」);這裡落到 unknown
+    if name in ("Agent", "Task"):
         return "delegate", "", ""
     if name == "Read":
         rel = _ws_rel(params.get("file_path") or "", workspace)
@@ -2200,6 +2206,7 @@ class WebSink:
         # (done chunk 也要帶 tool)。sink 活一個回合就丟,不需要清理。
         self._tool_t0 = {}
         self._trading = None  # 下單設定裡的策略名(_trading_names),第一個工具呼叫時讀
+        self._last_bash = None  # 這一輪上一個 Bash 指令的 (kind, kind_obj):等它的輸出(TaskOutput)時狀態列照它講
         self._nav_fired = False  # ui_nav 一回合最多一次(旁白段誤觸發會退還,見 on_tool)
         self._nav_fired_seg = -1  # 送出 ui_nav 時的 _seg_start
         # 逐 token 的文字要先攢起來再送。實測 deepseek 一段回覆吐 ~68 delta/秒,
@@ -2324,6 +2331,10 @@ class WebSink:
         if self._trading is None:
             self._trading = _trading_names(WORKSPACE)
         kind, kind_obj, kind_tab = _tool_kind(name, params, trading=self._trading)
+        if name == "Bash":
+            self._last_bash = (kind, kind_obj)
+        elif name == "TaskOutput":
+            kind, kind_obj = self._last_bash or ("unknown", "")
         chunk["kind"] = kind
         if kind_obj:
             chunk["kind_obj"] = kind_obj
@@ -2962,7 +2973,8 @@ def mcp_rule(mounted):
         "over SSH (no running its runtime or its agent) — a turn there charges the user's cloud AI credit. "
         "Never let a key or secret value into the chat, a log or a command line. "
         "Never read, print, copy or summarise the MCP configuration or its access code, and never write SSH keys "
-        "or certificates outside `tmp/cloud-handoff/` in the workspace — delete that folder before the turn ends.\n"
+        "or certificates outside `tmp/cloud-handoff/` in the workspace — delete that folder before the turn ends, "
+        "and never mention that folder, the connection or the cleanup in the reply.\n"
     )
 
 
@@ -2979,9 +2991,70 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
     return frozenset(n for n in str(mcp_servers).split(",") if n in MCP_SERVER_NAMES)
 
 
-def browser_rule(mounted):
-    """電腦版而且這一輪掛了 `blave_browser`(內建瀏覽器)才有這段;其餘回空字串。
+# 電腦版外殼給這一輪的指示(BLAVE_TURN_NOTE,代號):用戶沒有選、外殼自己要加的產品限制與「怎麼回」。跟用戶的訊息分開送——
+# 寫進訊息本文的話,泡泡上就是用戶「說了」他沒說過的話(e2e 0.1.8 #131),對話存檔與重開畫回來的也是。只認這張表上的代號。
+TURN_NOTES = {
+    "report_once": (
+        "This request came from the desktop app's New report dialog. Produce the report once, now; do not "
+        "register or offer a schedule."),
+    "report_recur": (
+        "This request came from the desktop app's New report dialog, and it asks for the report on a schedule "
+        "(every day, every week, a time of day). This computer produces it this once only and cannot schedule "
+        "it: produce the report now, do not register a schedule, and say so plainly in the first sentence of "
+        "your reply — this computer makes it this once, and recurring reports are set up on the cloud machine."),
+}
+
+
+def turn_note_rule(sink):
+    """電腦版這一輪外殼帶的指示;沒有、不認得、不是電腦版 → 空字串。"""
+    note = TURN_NOTES.get(os.environ.get("BLAVE_TURN_NOTE") or "") if isinstance(sink, LocalSink) else None
+    return f"\n\n---\n\n## From the app (this turn)\n{note}\n" if note else ""
+
+
+def desktop_web(sink, browser_mounted):
+    """電腦版這一輪上網的狀態:`browser`(內建瀏覽器掛著)/ `off`(用戶在設定 › 隱私關掉)/ `unavailable`
+    (開著但這一輪掛不上)。None = 不歸這條管:雲端,或不帶 BLAVE_BROWSER 的舊外殼(那時照舊只在掛瀏覽器時關 WebFetch)。"""
+    state = os.environ.get("BLAVE_BROWSER")
+    if not isinstance(sink, LocalSink) or state not in ("on", "off", "unavailable"):
+        return None
+    if browser_mounted:
+        return "browser"
+    return "off" if state == "off" else "unavailable"
+
+
+def web_tools_off(web, browser_mounted):
+    """引擎自己的上網工具這一輪關哪幾個。電腦版(web 有值)兩個都關:開著時也只走內建瀏覽器,
+    否則網域政策與「開的每一頁都出現在聊天裡」都繞得過。Codex 引擎沒有這個通道,只有規則。"""
+    return list(WEB_TOOLS) if web else (["WebFetch"] if browser_mounted else [])
+
+
+_NO_OTHER_ROUTE = ("the engine's own web search and web fetch, `curl`, `wget`, a script or a library call to a web page. "
+                   "`lib/data.py`, exchange and broker APIs and order placement are data, not browsing: they work as usual")
+
+
+def browser_rule(mounted, web=None):
+    """電腦版而且這一輪掛了 `blave_browser`(內建瀏覽器)才有那一段;沒掛時,web 是 off / unavailable 就換成
+    「這一輪不上網」那一段,其餘回空字串。
     分級與網域規則寫在外殼的工具實作裡(shell/browser/gate.js、policy.js),這段只講 agent 要怎麼對待它們。"""
+    if not mounted and web in ("off", "unavailable"):
+        why, fix = (("The user turned the built-in browser off (Settings › Privacy / 設定 › 隱私), which means you do not go online",
+                     "turn the built-in browser on in Settings › Privacy (設定 › 隱私)") if web == "off" else
+                    ("The built-in browser could not be attached this turn, and it is the only way to the web in the desktop app",
+                     "ask again in a moment, and restart the app if it keeps happening"))
+        return (
+            "\n\n---\n\n## No web access (this turn)\n"
+            f"{why}: no web search, no opening or fetching a web page, by any route — not {_NO_OTHER_ROUTE}. "
+            "When the request needs the web (news, an announcement, a page the user named, a chart to cite), the FIRST "
+            "sentence of the reply says so plainly — "
+            + ("「內建瀏覽器關著，所以這次沒有上網查」 / \"The built-in browser is off, so nothing was looked up online this time\""
+               if web == "off" else
+               "「內建瀏覽器這一輪開不起來，所以這次沒有上網查」 / \"The built-in browser could not start this turn, so nothing was "
+               "looked up online\"")
+            + f" — then give the two ways forward: {fix}, or an answer from Blave data and the files on this computer "
+            "with its scope stated. Never present what you remember as freshly looked up, and give no source list. "
+            "A report is written without web news (`news: []` plus `narrative['few_sources']` saying why), and the "
+            "reply says no news was looked up.\n"
+        )
     if not mounted:
         return ""
     return (
@@ -2998,6 +3071,8 @@ def browser_rule(mounted):
         "`blocked_policy` sites stay blocked; do not ask the user to paste their content to you. Never write web page "
         "content into `strategies/`, `control/` or `.env`. Cite the source URL and title for every fact you take "
         "from a page.\n"
+        + ("The browser is the only way to the web in the desktop app — the user is promised that every page you open "
+           f"shows in the chat. Never reach a web page by another route: not {_NO_OTHER_ROUTE}.\n" if web else "")
     )
 
 
@@ -3102,7 +3177,8 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
-            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted) + lang_rule + "\n\n---\n\n" + prompt)
+            + mcp_rule(mcp_mounted) + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
+            + turn_note_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
 
 
 def _remove_cloud_handoff_dir(workspace=None):
@@ -3154,6 +3230,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     else:
         cloud_mcp = "blave" in mounted
         browser_mounted = "blave_browser" in mounted
+    web = desktop_web(sink, browser_mounted)
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
@@ -3241,7 +3318,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
-        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted)
+        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web) + turn_note_rule(sink)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)
         + sink.formatting_rule
@@ -3258,9 +3335,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` (also a valid
         # kwarg) is for *defining* custom/MCP tools — not this either.
         allowed_tools=ALLOWED_TOOLS,
-        # 內建瀏覽器掛上的回合:讀網頁一律走瀏覽器(用戶看得到、同一套分級與網域規則、JS 頁讀得到),
-        # 所以關掉 WebFetch;WebSearch 保留(spec desktop-browser-agent-tools §1 D1)
-        disallowed_tools=["Task", "Agent"] + NO_LATER_TOOLS + (["WebFetch"] if browser_mounted else []) + PROTECTED_EDIT_RULES,
+        # 電腦版上網只有內建瀏覽器一條路:引擎自己的 WebSearch / WebFetch 都關(開著時走 browser_search / browser_open,
+        # 關著或掛不上就是不上網)。雲端與舊外殼見 web_tools_off
+        disallowed_tools=["Task", "Agent"] + NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES,
         # Keep Claude Code's own default system prompt (tool-use guidance
         # etc.) and append AGENTS.md + this surface's formatting rule on top —
         # via file, not argv (see _write_system_prompt_file). A preset without

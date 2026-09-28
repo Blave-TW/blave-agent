@@ -135,6 +135,16 @@ function box(extra) {
   ok("② 標題行高 1.45(spec §2、web .res-t 同值)", /\.res \.t \{\s*font-size: 13px; font-weight: 500; line-height: 1\.45;/.test(read("results.css")));
   const cs = S.resCloudItems(new Map([["live1", 1]]), [{ name: "tx_night", displayName: "台指期夜盤突破", mtime: Math.floor(Date.now() / 1000) }, { name: "live1", displayName: "跑著的", mtime: Math.floor(Date.now() / 1000) }], Date.now() - 1000, new Set(["live1"]), new Set());
   ok("② 雲端策略:新出現的出「雲端 新策略」(沒數字);組合裡跑著的那支 updated_at 一直變 → 不出「策略更新」", cs.length === 1 && cs[0].ref === "tx_night" && line(cs[0]) === "雲端新策略", JSON.stringify(cs));
+  // e2e 0.1.8 H:Type B 送上雲端(這一輪帶 noBt)→ 卡是「雲端 新策略」+「沒有回測」;只有新出現而且清單說沒有回測才寫,其餘雲端卡照舊不講回測
+  { const now = Math.floor(Date.now() / 1000), L = (hb) => [{ name: "watch", displayName: "資金費率監控", mtime: now, hasBacktest: hb }];
+    const nb = S.resCloudItems(new Map(), L(false), Date.now() - 1000, new Set(), new Set(), true);
+    ok("② Type B 搬上雲端:卡寫「雲端 新策略」與「沒有回測」", nb.length === 1 && nb[0].facts.no_bt === true && line(nb[0]) === "雲端新策略 | " + S.t("res.noBt"), JSON.stringify(nb) + line(nb[0] || {}));
+    ok("② 沒帶 noBt(Type A/C 的搬運、一般回合)或清單說有回測 → 不寫「沒有回測」", [S.resCloudItems(new Map(), L(false), Date.now() - 1000, new Set(), new Set()), S.resCloudItems(new Map(), L(true), Date.now() - 1000, new Set(), new Set(), true)]
+      .every((x) => x.length === 1 && x[0].facts.no_bt === undefined && line(x[0]) === "雲端新策略")); }
+  // J:組合策略(Type C)的回測沒有逐筆紀錄(只有成交次數):「進出場紀錄」分頁講這件事,不講成「沒有進出場」
+  { const trJs = read("report-trades.js");
+    ok("J 進出場紀錄分頁:Type C(stats 有 benchmark_n)用自己的那一句,其餘照舊", /t\(stats && typeof stats\.benchmark_n === "number" \? "tr\.emptyPf" : "tr\.empty"\)/.test(trJs)
+      && /沒有逐筆進出場紀錄/.test(S.t("tr.emptyPf")) && /回測數據/.test(S.t("tr.emptyPf")) && S.t("tr.empty") === "這支策略沒有進出場紀錄。"); }
   // 一輪 5 張:先 3 張 + 還有 2 個;鈕的可及名稱
   const host = El("div"); host.className = "msg ai"; CHAT.appendChild(host);
   const five = S.resOrder(items.concat(rep).map((x, i) => ({ ...x, at: 10 - i })));

@@ -633,10 +633,62 @@ for label, needle in {
     check(needle in DOC, f"source-report rule: {label}")
 check("stop and offer to run the backtest first" not in DOC and "offer to backtest it" not in DOC,
       "no leftover 'stop and offer to backtest' on a missing source report")
+# e2e 0.1.8 H:Type B 也搬得過去(電腦版叫人「送上雲端」才能定時跑,agent 卻拒絕搬)。沒有回測可比 → 在目的地試跑一次;
+# 會下單的不跑、只檢查程式碼;排程不從這裡做(NEVER 那一條一個字都沒放寬)
 for label, needle in {
-    "1.3 Type B still stops": "A Type B script is not handed off: say why and stop.",
+    "1.3 Type B is handed off, never refused": "Never refuse a Type B handoff, and never say the move is only for strategies that can be backtested.",
+    "6B in place of 6, 7B in place of 7": "with **step 6B in place of step 6 and step 7B in place of step 7**",
+    "6B: an order-capable script is never run, whatever a flag says": "**A script that can place an order is never run** — not by this script and not by you in any other way",
+    "6C: a handoff schedules nothing, and sends the user nowhere else for it": "schedules nothing, on either side, whatever the strategy does",
+    "7B: the closing sentence is neutral": "「要讓它定時跑，再跟我說一聲。」 / \"Tell me when you want it to run on a schedule.\"",
+    "L: a finding is reported, never fixed on the side": "is a finding for the reply, never a thing to fix on the side",
+    "L: what the machine's own agent confirms first, the desktop agent confirms first": "**What that machine's own agent must confirm first, you confirm first too.**",
+    "N: step 8 is never reported, with the sentences named": "「清理完成，tmp/cloud-handoff 已刪除。」 and 「連線已關閉。」 are sentences that never appear.",
+    "N: the general-work report leaves step 8 out": "Step 8 is not part of the report: the reply never says it happened.",
+    "7B: no table, no backtest numbers": "No table, no backtest numbers, no Match / Differs state",
+    "NEVER: schedule is still forbidden on both sides": "- **NEVER start, pause, resume or schedule trading on either side**, and never clear a HALT. The strategy arrives as a backtest-only draft; going live is the user's own action on the destination (`AGENTS.md` › Deployment redline). **The one exception is tripping an emergency HALT**",
 }.items():
-    check(DOC.count(needle) == 1, f"existing safety stop kept: {label}")
+    check(DOC.count(needle) == 1, f"Type B handoff: {label}")
+check("A Type B script is not handed off" not in DOC, "the old Type B stop is gone")
+check("blave.org) or Telegram" not in DOC.split("## 6C.")[1].split("## 8.")[0] and "到雲端工作頁" not in DOC,
+      "M: after a Type B handoff the reply does not send the user to the web or Telegram to schedule it")
+m6b = re.search(r"\n```py\n(import json, os, re, subprocess, sys\nn, mode = sys\.argv\[1\], sys\.argv\[2\]\n.*?)\n```\n", DOC, re.S)
+check(m6b is not None and "crontab" not in m6b.group(1) and "schtasks" not in m6b.group(1) and "import lib" not in m6b.group(1),
+      "step 6B carries the trial script; it touches no scheduler and imports nothing from lib")
+BW = tempfile.mkdtemp(); BD = os.path.join(BW, "strategies", "w1"); os.makedirs(BD)
+def trial(files, mode="trial"):
+    for f in os.listdir(BD):
+        os.unlink(os.path.join(BD, f))
+    for f, body in files.items():
+        with open(os.path.join(BD, f), "w") as fh:
+            fh.write(body)
+    r = subprocess.run([sys.executable, "-", "w1", mode], input=m6b.group(1).replace("timeout=120", "timeout=2"), cwd=BW, capture_output=True, text=True)
+    return r.returncode, (json.loads(r.stdout) if r.returncode == 0 else r.stderr), os.path.exists(os.path.join(BD, "ran.txt"))
+RAN = "open(__file__.replace('strategy.py', 'ran.txt'), 'w').write('x')\n"
+rc, out, ran = trial({"strategy.py": "# Type: B (monitor only, no orders)\nfrom pathlib import Path\n" + RAN + "print('funding=0.01%')\n"})
+check(rc == 0 and out["ran"] is True and out["exit"] == 0 and "funding=0.01%" in out["tail"] and ran and out["can_order"] is False, "6B: a monitor-only script is run once; exit code and the last lines come back")
+rc, out, ran = trial({"strategy.py": RAN + "raise SystemExit(3)\n"})
+check(rc == 0 and out["ran"] is True and out["exit"] == 3 and ran, "6B: a failing run reports its exit code")
+for label, body in {"lib.order_ import": "from lib.order_binance import place\n", "lib.execute": "import lib.execute as ex\n", "from lib import order_x": "from lib import data, order_okx\n",
+                    "requests.post": "import requests\nrequests.post('https://x')\n", "session .post(": "s.post('https://x')\n", "create_order call": "ex.create_order('BTC')\n",
+                    "subprocess": "import subprocess\n", "a helper file": None}.items():
+    files = {"strategy.py": "# Type: B (monitor only, no orders)\nDRY_RUN = True\n" + RAN + (body or "")}
+    if body is None:
+        files["leg_a.py"] = "from lib.order_bybit import place\n"
+    rc, out, ran = trial(files)
+    check(rc == 0 and out["ran"] is False and out["can_order"] is True and out["order_lines"] and not ran and "exit" not in out,
+          f"6B: a script that can place orders is NOT run, whatever its header or DRY_RUN says ({label})")
+rc, out, ran = trial({"strategy.py": RAN + "def broken(:\n"})
+check(rc == 0 and out["ran"] is False and out["syntax_errors"] and not ran, "6B: a syntax error is reported and nothing runs")
+rc, out, ran = trial({"strategy.py": "import time\nprint('started', flush=True)\ntime.sleep(30)\n"})
+check(rc == 0 and out["ran"] is True and out["exit"] is None and out["stopped_after_s"] == 120, "6B: a script that never ends is stopped at the limit, reported as stopped — not as failed")
+rc, out, ran = trial({"strategy.py": RAN}, mode="check")
+check(rc == 0 and out["ran"] is False and not ran, "6B: check mode reads and compiles, never runs")
+rc, out, ran = trial({"strategy.py": RAN}, mode="schedule")
+check(rc != 0 and not ran, "6B: the script has no schedule mode")
+rc, out, ran = trial({"scan.py": RAN})
+check(rc != 0 and not ran, "6B: no strategy.py → error exit")
+shutil.rmtree(BW)
 check(DOC.count("**4a. Pick the destination name `<dest>` — never overwrite.**") == 1 and "stop and ask; never overwrite" not in DOC
       and "its code is replaced entirely" not in DOC and "a later handoff replaces" not in DOC,
       "4a: a taken destination name is auto-renamed, nothing is overwritten (no leftover overwrite path)")

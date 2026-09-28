@@ -11,6 +11,7 @@
   #99 上線中策略另建的新策略不用 v2 / v3 命名(跟「同一支的第 2 版」撞詞),用描述差異的名字。
   #102 範本報告照 describe() 寫,不先讀 91KB 的 reports.md / lib 原始碼;browser_wait 不連等;同一個連結不放兩則新聞。
   #90 tmp/ 自己寫的一次性腳本回覆前刪掉,不拿 tmp/ 裡的舊腳本當範例。
+  第五批:#133 台股免費路徑先估時間先講;改參數時 DESCRIPTION 與檔頭一起改;內建瀏覽器關著不上網;資料費 2 TWD。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
 """
@@ -85,6 +86,26 @@ t("#102 browser_wait:still_waiting 之後先讀已經好的分頁,最多再等�
 t("#102 發佈檢查表:同一個連結只能出現在一則", "同一個連結只能出現在一則" in read("lib", "report_templates.py"))
 t("#90 tmp/ 的一次性腳本:回覆前刪掉、不抄 tmp/ 裡的舊腳本",
   "delete yours before you reply" in section(agents, "## Shell Commands") and "never copy from a script already in `tmp/`" in section(agents, "## Shell Commands"))
+
+# 第五批
+t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(先估、先講、超過 25 分鐘先提短期間),範例策略的檔頭也寫了(agent 抄的就是範例)",
+  "**Before a Taiwan backtest on the desktop, work out the wait and say it first:**" in agents and "stocks × years × 36 s" in agents
+  and all("# Data wait:" in read("examples", n, "strategy.py").split("import sys")[0] and "tell the user before running" in read("examples", n, "strategy.py")
+          for n in ("twstock_momentum", "tw100_foreign_zscore")))
+t("I 改參數時,DESCRIPTION 與檔頭裡寫到的同一個數字一起改(策略頁的副標是 DESCRIPTION)",
+  "Changing a parameter also changes every place the file states that number: `DESCRIPTION` and the header comment" in agents
+  and "**Keep the words true to the code.**" in read("references", "strategy-code.md"))
+t("C 內建瀏覽器關著 = 不上網:AGENTS.md 不再叫 agent 退回引擎自己的搜尋", "else the engine's own web search" not in agents and "browser switched off = no web" in agents)
+t("B 資料費時價 2 TWD(不是 3);月價不拿它乘 720", "**2 TWD per UTC clock hour" in read("references", "billing.md") and "Never multiply the 2 TWD data fee" in read("references", "billing.md")
+  and not re.search(r"(?<!\()3 TWD(?! at the time)", read("references", "billing.md")))
+
+dep = read("references", "deployment.md")
+t("L 只做被要求的那一件:確認的問題要列出會裝的每一樣(含健康檢查);發現缺什麼只講不做;從電腦版操作雲端主機也要先確認",
+  "**The question names everything the deployment puts on the machine**" in dep and "**Do the one thing that was asked.**" in dep
+  and "**Every route onto the machine asks the same question.**" in dep and "as part of what the user confirmed" in dep)
+t("N 收尾不進回覆:不當開頭也不當結尾,連線關閉、刪暫存都算;runtime 每輪的規則也講了", "not as its first line, not as its last" in style and "closing a connection" in style
+  and "never mention that folder, the connection or the cleanup in the reply" in read("runtime", "agent_turn.py"))
+t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "**Say it in the user's words, not the machine's:**" in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
 
 if fails:
     sys.exit(f"{len(fails)} failed")

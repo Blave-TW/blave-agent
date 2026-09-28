@@ -12,6 +12,9 @@ msgstr "Use Blave AI"
 msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
+msgid "cn.blave.descSet"
+msgstr "Pay per use, charged to your Blave balance. A first card adds 100 TWD of AI credit."
+
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
 
@@ -266,6 +269,12 @@ msgstr "Default for {model}: {level}. Higher thinks longer and uses more."
 msgid "mp.none"
 msgstr "This model has no effort setting."
 
+msgid "mp.bill"
+msgstr "Pay per use, charged to your Blave balance"
+
+msgid "mp.billBal"
+msgstr "Balance {n} TWD"
+
 msgid "lv.low"
 msgstr "Low"
 
@@ -358,6 +367,9 @@ msgstr "No backtest data for this strategy."
 
 msgid "tr.empty"
 msgstr "This strategy has no entries or exits."
+
+msgid "tr.emptyPf"
+msgstr "A portfolio strategy shifts the weights of a basket at each rebalance, so there is no trade-by-trade record. The number of trades is under Backtest."
 
 msgid "tr.chartError"
 msgstr "Couldn't draw the chart. The entries and exits below are still available."
@@ -640,6 +652,12 @@ msgstr "Stopped · balance too low"
 
 msgid "plan.bill"
 msgstr "Billing"
+
+msgid "plan.bal"
+msgstr "Blave balance"
+
+msgid "plan.balNa"
+msgstr "Balance unavailable right now"
 
 msgid "plan.month"
 msgstr "{p} TWD / month"
@@ -1322,6 +1340,12 @@ msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has
 
 msgid "tr.typeC"
 msgstr "Portfolio strategies do not support auto-trading yet"
+
+msgid "tr.pick.twd"
+msgstr "Paper trading does not support TWD-priced instruments yet"
+
+msgid "tr.pick.twdKeep"
+msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
 
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"
@@ -2494,6 +2518,12 @@ msgstr "Send the strategy {id} to my cloud machine as {to}. Re-run the backtest 
 msgid "ho.msg.down"
 msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Re-run the backtest here afterwards, and show me both sets of numbers side by side."
 
+msgid "ho.msgB.up"
+msgstr "Send the strategy {id} to my cloud machine as {to}. Run it once there after it’s moved, and tell me the result."
+
+msgid "ho.msgB.down"
+msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Run it once here afterwards, and tell me the result."
+
 msgid "up.about"
 msgstr "About"
 
@@ -2598,6 +2628,12 @@ msgstr "The agent moves it, re-runs the backtest on your cloud machine, and show
 
 msgid "ho.note.down"
 msgstr "The agent brings it back, re-runs the backtest on this computer, and shows both sets of numbers side by side in the chat."
+
+msgid "ho.noteB.up"
+msgstr "The agent moves it and runs it once on your cloud machine to check that it starts."
+
+msgid "ho.noteB.down"
+msgstr "The agent brings it back and runs it once on this computer to check that it starts."
 
 msgid "strat.delInPf"
 msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."
@@ -3527,13 +3563,6 @@ msgstr "Sending…"
 msgid "rpt.new.msgLead"
 msgstr "Write me a report"
 
-msgid "rpt.new.msgOnce"
-msgstr "Produce it once — no schedule needed."
-
-# 只在需求有定期字眼(每天／每週／every day…)時接在 msgOnce 後面:給 agent 的指示(0.1.8 e2e #95)
-msgid "rpt.new.msgRecur"
-msgstr "The request asks for it on a schedule, but this computer produces it this once only: say so in your reply, and that recurring reports are set up on the cloud machine."
-
 # 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
 msgid "res.open.report"
 msgstr "Open report"
@@ -4082,7 +4111,10 @@ msgid "br.set.switch"
 msgstr "Built-in browser"
 
 msgid "br.set.lead"
-msgstr "The agent can open web pages on this computer to look things up, and every page it opens shows up in the chat. It never opens exchange or broker account areas or bank sites; you press sign-in, submit and pay yourself."
+msgstr "The agent can search the web and open pages to look things up, and every page it opens shows up in the chat. It never opens exchange or broker account areas or bank sites; you press sign-in, submit and pay yourself. Turn it off and the agent stops going online to look anything up."
+
+msgid "br.set.leadOff"
+msgstr "Off. The agent doesn’t search the web or open any page; it answers from Blave data and the files on this computer. Strategies still fetch data and place orders as usual."
 
 msgid "br.set.clear"
 msgstr "Clear browsing data"

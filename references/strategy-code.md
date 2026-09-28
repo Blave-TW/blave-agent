@@ -32,6 +32,8 @@ DESCRIPTION   = "追蹤 DOGE 大戶持倉集中度,集中度升高時進場做�
 
 Always set `DISPLAY_NAME` and `DESCRIPTION` when creating a strategy — the workspace shows the technical id only as a fallback when they are missing.
 
+**Keep the words true to the code.** `DESCRIPTION` is the subtitle of the strategy page, and the header comment (`# Logic:` / `# Signal:`) is what the next reader trusts. When you change a parameter that either of them states as a number (a threshold, a window, a symbol list), change it there in the same edit — measured on the desktop: `THRESHOLD_PCT` went from 0.03 to 0.05 while `DESCRIPTION` and the header still said 0.03%, so the page described a strategy that no longer existed. Same for a fork: its `DESCRIPTION` describes the fork.
+
 ## Editing a live strategy (fork, never in place)
 
 A strategy that is in the trading portfolio with an amount > 0 is LIVE: its

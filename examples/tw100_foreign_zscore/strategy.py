@@ -3,6 +3,9 @@
 # Universe: Taiwan 100 stocks across sectors
 # Signal:   外資買超 time-series z-score → positive z → proportional weight
 # Rebalance: weekly (first trading day of each ISO week)
+# Data wait: on the desktop each listed stock not yet cached takes ~36 s per year of daily bars (TWSE, one month
+#           per request). UNIVERSE × years since START is the wait — tell the user before running; over ~25 min,
+#           start with a later START (what is fetched stays cached).
 
 import sys
 from pathlib import Path

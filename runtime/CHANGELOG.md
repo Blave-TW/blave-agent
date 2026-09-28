@@ -8,6 +8,24 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **雲端連線的收尾不進回覆(0.1.8 e2e #44,第三次)**:雲端相關的回合仍以「清理完成，tmp/cloud-handoff 已刪除。」開頭或收尾。`mcp_rule` 那句
+  「delete that folder before the turn ends」後面補「回覆裡不提那個資料夾、連線與清理」——這一句每輪都在 system prompt 裡,是 agent 覺得要交代的來源之一。
+  不做回覆後處理(濾句子):以規則為準。測試 `tests/check_local_mcp_config.py`。
+- **等背景工作的輸出時,狀態列講的是那支指令在做的事(0.1.8 e2e #134)**:回測被逾時移到背景後,agent 用 `TaskOutput` 在回合內等,
+  狀態列寫「正在委派研究」(`TaskOutput` 被歸在 delegate)。子代理在這個 runtime 是關掉的,`TaskOutput` 等的一定是指令:tool chunk 的
+  `kind` / `kind_obj` 改成這一輪上一個 Bash 指令的分類(「正在跑回測 …」),沒有就 `unknown`(「正在處理」)。三個表面共用。測試 `tests/check_tool_kind.py`。
+- **外殼給這一輪的指示不進用戶的訊息(0.1.8 e2e #131)**:電腦版「新增報告」原本把「這份只要產出一次，不用建立排程。…」接在用戶寫的需求後面
+  一起當訊息送,泡泡與對話存檔裡就是用戶「說了」他沒說過的話。外殼改成只送「幫我建立報告：「…」。」,指示用環境變數
+  `BLAVE_TURN_NOTE`(代號:`report_once` / `report_recur`)分開帶;`turn_note_rule` 把代號換成規則接進這一輪的提示(Claude 的 system prompt、
+  Codex 的前置規則),不寫進歷史。只有電腦版(LocalSink)認、只認 `TURN_NOTES` 表上的代號。測試 `tests/check_local_mcp_config.py`。
+- **電腦版上網只有內建瀏覽器一條路(0.1.8 e2e #125;Wei 09-28)**:設定 › 隱私把內建瀏覽器關掉後,agent 改用引擎自己的
+  WebSearch 照樣上網,畫面上沒有瀏覽摘要列、來源裡還有內建瀏覽器會擋的網域。外殼每一輪帶 `BLAVE_BROWSER`(`on` / `off` /
+  `unavailable`);電腦版回合(LocalSink)看到這個變數就把 `WebSearch`、`WebFetch` 都放進 `disallowed_tools`——**開著時也關**
+  (原本只關 WebFetch、留 WebSearch:spec desktop-browser-agent-tools D1 的預設值,改掉),搜尋走 `browser_search`。沒掛瀏覽器時
+  `browser_rule` 換成「這一輪不上網」那一段:被要求上網時第一句講明、給兩條路、不把記憶講成剛查到的、不附來源清單;報告不帶網路新聞。
+  `curl` / `wget` / 腳本抓網頁只在規則層禁(指令層分不出網頁與行情 API,硬擋會擋到 `lib/data.py` 以外的交易所呼叫)。
+  Codex 引擎沒有關內建搜尋的通道(本機沒有 codex 可驗旗標,沒驗過的旗標不送),只有規則。不帶 `BLAVE_BROWSER` 的舊外殼、雲端:行為不變。
+  測試 `tests/check_local_mcp_config.py`。
 - **停止的回合一定有「已停止。」(0.1.8 e2e #87)**:停在兩個工具之間(沒有工具在跑)時 `_stop_note` 回空字串,
   `finalize` 拿最後一句過場旁白補位,聊天裡最後一則是「Coinbase 被封鎖，改開 calquify…」,看起來像正式回答。
   `_stop_note` 不再有「都沒有就不說話」:沒有步驟、沒有背景腳本時回「已停止。」/ "Stopped.",run_turn 一律接上。

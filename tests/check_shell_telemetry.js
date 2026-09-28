@@ -91,8 +91,8 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   // ── cloud_started:「送上雲端」確認框 → submitMessage(msg, { handoff: "up" }) → send-message → runTurn 成功才送。把真的那支 handler 切出來跑 ──
   const R = path.join(__dirname, "..", "shell", "renderer");
   const hoSrc = fs.readFileSync(path.join(R, "handoff.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
-  t("接線:確認框 onOk 帶 handoff 方向;submitMessage 原樣轉進 payload;重送(lastUserText)不帶", /submitMessage\(msg, \{ handoff: dir \}\)/.test(hoSrc)
-    && /async function submitMessage\(msg, opts\)/.test(appSrc) && /message: msg, handoff: opts && opts\.handoff, model:/.test(appSrc) && !/submitMessage\(lastUserText, /.test(appSrc));
+  t("接線:確認框 onOk 帶 handoff 方向;submitMessage 原樣轉進 payload;重送(lastUserText)不帶", /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(hoSrc)
+    && /async function submitMessage\(msg, opts\)/.test(appSrc) && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote, model:/.test(appSrc) && !/submitMessage\(lastUserText, /.test(appSrc));
   t("主行程:標記只認 \"up\" 且旗標要開;事件掛在 runTurn 的 then(spawn + stdin 成功),不在 catch", /const cloudUp = cloudHandoffOn\(\) && payload && payload\.handoff === "up";/.test(mainSrc)
     && /runTurn\(win, payload\)\.then\(\(\) => \{ if \(cloudUp\) tm\(\)\.track\("cloud_started"\); \}\)\.catch\(/.test(mainSrc));
   const hi = mainSrc.indexOf('ipcMain.handle("send-message", async (e, payload) => {');
@@ -170,7 +170,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
     && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc) && /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); return true; \}/.test(appSrc)
     && /turnStopping = true; turnStopped = true; sendBtnSync\(\);\n\s*trackFeature\("chat_stop"\);/.test(appSrc)
     && /if \(cat === "src"\) \{ srcLoad\(\); trackFeature\("settings_datasrc"\); \}/.test(appSrc) && /if \(cat === "plan"\) \{ planPaint\(\); trackFeature\("settings_plan"\);/.test(appSrc)
-    && /submitMessage\(msg, \{ handoff: dir \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
+    && /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
   // 主行程:preload 只暴露 send、主行程只收自家頁面、名字交給 track()——表外的整則不送、表內的 props 只有 name 一格
   t("接線:preload trackFeature → send(\"track-feature\");主行程 fromOurPage 才 tm().track(\"feature_used\", { name })",
     /trackFeature: \(name\) => ipcRenderer\.send\("track-feature", name\),/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))

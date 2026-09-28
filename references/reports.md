@@ -14,10 +14,10 @@ Telegram message about a report as well, that duplicates every alert.
 shared publicly, and only by the user; a `performance` report never can.** In the workspace,
 the report's title bar has a 「分享」 button; the user confirms each report on its own (a
 consent checkbox, then confirm) and gets a link `blave.org/<lang>/r/<code>`. What is public is
-a snapshot of the report at that moment: writing the same id again later does not change it.
-While a report is public its title bar shows a public status row instead; once you have
-rewritten it, the workspace adds a notice with a 「檢查後更新公開版本」 button, which updates
-the public version under the same link. They can cancel at any time;
+a snapshot of the report at that moment: nothing written later changes it.
+While a report is public its title bar shows a public status row instead; if the report
+itself is rewritten afterwards (a same-turn correction, §1), the workspace adds a notice
+with a 「檢查後更新公開版本」 button, which updates the public version under the same link. They can cancel at any time;
 sharing again after cancelling gives a new link. The desktop app has the same 「分享」 button
 in a report's header, for reports on this computer and on the cloud machine alike; sharing a
 report on this computer uploads a snapshot of it, so editing or deleting the file afterwards
@@ -42,9 +42,21 @@ Write the report to `workspace/reports/<id>.json`. That is the whole contract: n
 token, no API call, no library needed. The runtime's uploader watches the directory
 and ships whatever lands there.
 
-- **`<id>` is the file name stem and the report id**: `[A-Za-z0-9_-]{1,64}`. Sending
-  the same id again **overwrites** that report on the platform — deterministic ids
-  make a re-run idempotent; date-stamped ids keep every run.
+- **`<id>` is the file name stem and the report id**: `[A-Za-z0-9_-]{1,64}`.
+- **A report is never overwritten.** Every report you produce is a new one. When the id
+  you ask for already has a report, `write_report` / `publish()` write this one under the
+  next free id (`research-btc-2`, `-3`, …; `…-2-auto` for a data-only id) and leave the
+  earlier report and its `<id>.files/` exactly as they were. They return the path they
+  wrote. The user sees titles and dates, never ids: **do not mention the id or the number
+  in the reply**, and do not treat the new id as something to fix.
+- **Correcting your own report, same turn only**: write it again with the same id and
+  `replace=True`. That rewrites what *this turn* wrote under that id and nothing else —
+  a report from an earlier turn, a scheduled run or another process is never replaced
+  (the call then writes a new report). Without `replace=True` a correction is one more
+  report in the user's list.
+- **Writing the file yourself** (no `lib/report.py`): pick an id that has no file in
+  `reports/` or `reports/sent/`. A file written over an existing one replaces that report
+  for good — that is the one way left to destroy a report, so do not.
 - **Write atomically**: write `<id>.json.tmp` (any name not ending in `.json` is
   ignored by the scan) and `os.replace()` it into place. Belt and braces on top of
   that: the uploader leaves any report whose own mtime — **or that of any picture in
@@ -229,8 +241,8 @@ publish(pack, narrative={
   (`research_pack`: 120).
 - `tw_close_brief()` — 台股收盤報告, for any 台股 收盤 / 盤後 request: the day's TAIEX close,
   turnover, 三大法人, 融資 and 外資期貨淨多單, with the same four slots and every rule on this page
-  that applies to `tw_market_brief`. Its id is `tw-close-YYYYMMDD` (Taipei date), so it never
-  overwrites that day's morning brief. The night session is not part of it; a question about
+  that applies to `tw_market_brief`. Its id is `tw-close-YYYYMMDD` (Taipei date), its own
+  series next to that day's morning brief. The night session is not part of it; a question about
   tonight's 夜盤 is answered on its own, labelled as live. 三大法人 / 融資 / 期貨法人 are published
   after the close, at different times; one that is not out yet is absent and named in
   `pack.notes`. Say it is not out yet; never quote the previous day's figure as today's. Asked in chat
@@ -346,8 +358,9 @@ publish(pack, narrative={
   narrative (data-only, `origin: scheduled`, one footnote line saying why). **On the desktop a
   scheduled run is data-only** (`run.py`, no agent) in this version, and so is every job without
   `agent_consent`. Never script a judgement into `run.py`: a canned sentence is a
-  view nobody formed. The data-only form gets an `-auto` suffix (`tw-market-20260902-auto`), so
-  it never overwrites a narrated report of the same day.
+  view nobody formed. The data-only form gets an `-auto` suffix (`tw-market-20260902-auto`;
+  a second run the same day is `tw-market-20260902-2-auto`) — the runtime tells a data-only
+  report from a narrated one by that ending, and every run is kept.
 - `pack.notes` lists what the source did not have (e.g. 期貨法人 not published yet, no night
   bars); the corresponding block is simply absent. Say so in the narrative if it matters;
   never fill the gap with a number.
@@ -362,7 +375,7 @@ publish(pack, narrative={
   - the user names a report kind that sounds like a template but has none, such as a 美股晨報
     or a 加密收盤報告 (「目前沒有這個範本,我手寫一份,可以嗎?」). Once they agree, it is a
     hand-written `morning` report (§7b) with its own id and title. Never publish it under a
-    template's id: the same id on the same day overwrites that template's report. A 台股 收盤 /
+    template's id: it would be filed as one more of that template's reports. A 台股 收盤 /
     盤後 report is not this case: use `tw_close_brief`.
 
   A research report or a report the user describes in their own words (their own 週報) has
@@ -394,7 +407,7 @@ What channel you search with depends on where you run:
 | Where | What you do |
 |---|---|
 | Desktop app (`BLAVE_AGENT_LOCAL=1`) with the browser tools mounted (`mcp__blave_browser__*`, `references/browser.md`) | Search and read with the built-in browser (any model). For headlines: `browser_open` a news list page → `browser_read(part="links")` → `browser_read(part="meta")` on the few you keep for the published time → `part="section"` only for the paragraph a figure comes from. Do not read whole articles. |
-| Desktop app without those tools (older app, or the browser switched off) | Use the engine's own web search if it has one; otherwise the `describe()` candidates only (Taiwan market brief), or none. |
+| Desktop app without those tools (the user switched the built-in browser off, or it could not be attached this turn) | No web at all, by any route — the runtime's *No web access* rule. The `describe()` candidates only (Taiwan market brief), or `"news": []` with `few_sources` saying the built-in browser is off; the reply says no news was looked up. |
 | Cloud machine, Claude model | The web search tool (billed per search from the user's credit, `references/billing.md`). |
 | Cloud machine, DeepSeek | No web search tool — read with WebFetch, starting from your market's list. Taiwan: 鉅亨's licensed list page `https://news.cnyes.com/news/cat/headline`, the links on the `describe()` candidates (鉅亨's licensed feed), TWSE announcements `https://www.twse.com.tw/rwd/zh/news/newsList?response=json` and TAIFEX announcements `https://www.taifex.com.tw/cht/11/announcement`. Crypto: 鉅亨's licensed list page `https://news.cnyes.com/news/cat/bc_crypto`, Binance announcements `https://www.binance.com/en/support/announcement` and OKX announcements `https://www.okx.com/help/section/announcements-latest-announcements`. Each fetched with a short prompt. Any other news site is fine too (CoinDesk, Cointelegraph, Decrypt, 經濟日報, MoneyDJ). Fewer than 3 sites: one sentence in `few_sources`, publish anyway. |
 | Scheduled run | Cloud, a job with `agent_consent`: you run as in chat in an unattended turn (§8), same rows as above. Desktop, or no consent, or that turn failed: the data-only `run.py` lays out the licensed headlines as they are (no summary, no tag). |
@@ -823,8 +836,11 @@ transient failure. Same status code, different channel, opposite handling.
 - A cited image is an `image` block carrying `source` — a chart you saw in the
   built-in browser and captured with `browser_capture(tab, ref, report)`
   (`ref` from `browser_snapshot`; `report` = the report's id: `pack.report_id`
-  for a pack, else the id you will pass to `write_report`). It writes the
-  picture straight into `reports/<id>.files/` and returns `{file, source}`.
+  for a pack, else the id you will pass to `write_report`). It saves the
+  picture for that report and returns `{file, source}`. When the id already
+  has a report, the picture waits for the new one (§1: a report is never
+  overwritten) and `write_report` / `publish()` collect it — pass the same id
+  to both and never move a picture yourself.
 - **Where it goes.** A report built on a pack (a template, `research_pack`, a
   custom recipe): `narrative["images"] = [{"file", "source", "alt"}]` —
   `file` and `source` exactly as returned, `caption` optional. `publish()`
@@ -1258,8 +1274,8 @@ convenience):
   never applied on the side. A user instruction that names the change (「把 tw-weekly 刪掉」,
   「tw-weekly 改成 22:00」) or the web's edit flow (end of this section) is its own
   confirmation: do it and state the before → after in the reply.
-- **A hand-written report never reuses a job's report id** (`tw-weekly-20260911`): the same id
-  overwrites what the job published. Give it its own (`tw-weekly-narr-20260911`).
+- **A hand-written report never reuses a job's report id** (`tw-weekly-20260911`): it would
+  be filed as one more run of that job. Give it its own (`tw-weekly-narr-20260911`).
 - `prompt` is the user's own request, not your rewrite; the web shows it back as the
   report's description and hands it to you again when they edit it.
 - `schedule.cron` is standard 5-field cron — no `@daily`, no seconds field, no month/weekday
@@ -1334,8 +1350,8 @@ job's id. Nobody is watching it:
   exit or a run over 600 s is `failed` (the tail of `run.log` shows in the web, and the
   usual failure alert fires). Do not script a fixed judgement into it — `run.py` is the
   data-only form (§1b); the narration, where there is one, comes from the scheduled agent turn above.
-- Use date-stamped report ids (`perf-20260902-0800`) unless the re-run really should
-  overwrite the previous report.
+- Use date-stamped report ids (`perf-20260902-0800`). Every run is kept: a run that lands
+  on an id already used is written as `-2`, `-3`, … (§1), never over the earlier one.
 
 When the user edits a job from the web you receive 「請修改定期報告「{title}」（id：{id}）。
 新的描述：「…」。新的週期：「…」…」: change `run.py` and/or the schedule accordingly, call

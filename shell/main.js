@@ -963,11 +963,15 @@ async function saveExport(win, ref) {
   const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath("downloads"), `${name}_${target}.${ext}`) });
   if (r.canceled || !r.filePath) return { ok: false, canceled: true };
   try { fs.writeFileSync(r.filePath, f.content, "utf8"); } catch (_) { return { ok: false }; }
+  return { ok: true, ...savedRef(r.filePath) };
+}
+// 剛存好的那個檔 → { dir, token }:畫面只拿資料夾名與 token,「在 Finder 中顯示」憑 token 回來找路徑(轉出卡與報告 PDF 共用)
+function savedRef(filePath) {
   const token = require("crypto").randomBytes(8).toString("hex");
-  savedExports.set(token, r.filePath);
+  savedExports.set(token, filePath);
   if (savedExports.size > 50) savedExports.delete(savedExports.keys().next().value);
-  const dir = path.dirname(r.filePath);   // 「下載」回 null:資料夾在磁碟上叫 Downloads,Finder 顯示的是系統語言的名字,由畫面翻
-  return { ok: true, dir: dir === app.getPath("downloads") ? null : path.basename(dir), token };
+  const dir = path.dirname(filePath);   // 「下載」回 null:資料夾在磁碟上叫 Downloads,Finder 顯示的是系統語言的名字,由畫面翻
+  return { dir: dir === app.getPath("downloads") ? null : path.basename(dir), token };
 }
 /* 策略版本(.claude/docs/strategy-versions.md §9):lib/runner.py 的 _mint_version 寫進 strategies/<資料夾>/versions/。
    摘要清單的形狀 = runtime strategy_reporter._read_versions(雲端視角從 /cloud/strategy 拿到的同一顆),renderer 用同一套畫。
@@ -1321,7 +1325,7 @@ const RPT_TS_MIN = 946684800, RPT_TS_MAX = 4102444800;   // created_at 只認 20
 const RPT_IMAGES_BUDGET_MS = 60 * 1000, RPT_CLOUD_DOCS_MAX = 8;   // 雲端一份報告的圖加總最多等 60 秒(postJSON 單張 20 秒逾時 × 20 張太久);本體快取留 8 份(每份含 base64 圖)
 const RPT_EXT_MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
 // 一份報告的信封(清單只讀這幾欄):id 缺就用檔名、有且不同 → 略過(同 uploader 的立場);標題 1–200 字,缺 → 略過;created_at 不是合理範圍的整數 → 檔案 mtime。
-// mtime(ms)一併交出:同 id 覆寫(lib/report.py 明寫重用 id = 覆蓋)renderer 靠它認出「這份換過了」——本體快取與「有沒有新報告」都比它
+// mtime(ms)一併交出:報告不覆寫(lib/report.py:id 已有報告就寫成 <id>-2),同一個檔只會被同一輪的 replace=True 或手寫檔案換掉——renderer 靠 mtime 認出「這份換過了」,本體快取與「有沒有新報告」都比它
 // label = 閱讀頁類型標籤畫的那個字(meta.report_type,agent 寫的顯示字,如「單標的晨報」):結果卡要跟它同一個字;沒有 → null
 function rptEnvelope(fileId, doc, mtimeMs) {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
@@ -1475,6 +1479,7 @@ function reportPdf() {
     writeFile: (p, buf) => fs.promises.writeFile(p, buf),
     downloads: () => app.getPath("downloads"),
     onSaved: () => tm().track("feature_used", { name: "report_pdf" }),   // 檔案寫成功才送(取消、失敗不送)
+    savedRef,
   });
   return _pdf;
 }
@@ -1979,7 +1984,10 @@ function turnCreds(kind, signedIn, included, handoffOn) {
   return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true, mcp: handoffOn === true && signedIn === true };
 }
 const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing }) {
+/* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
+   只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
+const TURN_NOTES = ["report_once", "report_recur"];
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
@@ -2022,6 +2030,10 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   try { brMount = await browser().beginTurn(win, sessionId); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
+  // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,
+  // 沒掛上時照 off(用戶在設定 › 隱私關的)/ unavailable(開著但這一輪起不來)給 agent 不同的說法
+  let brWanted = true; try { brWanted = browser().enabled(); } catch (_) { /* 連物件都建不起來:當成起不來 */ }
+  const brState = brMount && mcpFile ? "on" : brWanted ? "unavailable" : "off";
   const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); };
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
@@ -2058,6 +2070,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 聊天裡的圖:見上面「聊天裡的圖」。接收端還沒起來(port 0)就不帶,notify 那邊會 no-op
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
+    BLAVE_BROWSER: brState,
+    ...(TURN_NOTES.indexOf(note) >= 0 ? { BLAVE_TURN_NOTE: note } : {}),
     LANG: process.env.LANG || "zh_TW.UTF-8",
     ...PY_ENV,
   };
