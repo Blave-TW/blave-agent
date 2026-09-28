@@ -3,6 +3,7 @@
 // 拍完用當下網址重判(S3)、「整個畫面」加面積比(B2)、平行呼叫不超過 10 張(B3)、被遮住不拍(B4)、
 // 沒有盒子不回 stale_ref(B5)、叫不醒合成器不拍(B7)。真 Electron 的端到端在 check_shell_browser_capture.js。
 // e2e 0.1.8(引用圖只拍到上半、下半整片深色):元素裡的圖沒載完先等、等不到不拍;拍到空的 / 被切斷的圖重拍一次、還是一樣就不存。
+// 0.1.8 稽核 P1-1(第十批 #1):等外框停住、等圖載完的那幾秒裡頁面換了、變成驗證頁、被用戶接手 → 不拍、不存快照、不寫檔。
 // 跑法:node tests/check_shell_browser_capture_flow.js
 const path = require("path"), fs = require("fs"), os = require("os");
 const B = path.join(__dirname, "..", "shell", "browser");
@@ -125,7 +126,7 @@ const R = (obj, isError) => ({ content: [{ type: "text", text: JSON.stringify(ob
 const ERR = (error, message, extra) => R(Object.assign({ ok: false, error, message }, extra || {}), true);
 const BOX = at(100, 100);
 function rig(over) {
-  const x = Object.assign({ url: "https://charts.test/funding?id=7&token=SECRET", urlAfter: null, clips: [BOX], covered: [false, false, false, false, false], alive: true, clipThrows: false, boundsThrow: false, clipped: [], masked: 0, cur: { captures: 0 }, pending: [0], asked: 0, shots: ["good_light"] }, over || {});
+  const x = Object.assign({ url: "https://charts.test/funding?id=7&token=SECRET", urlAfter: null, clips: [BOX], covered: [false, false, false, false, false], alive: true, clipThrows: false, boundsThrow: false, clipped: [], masked: 0, cur: { captures: 0 }, pending: [0], asked: 0, shots: ["good_light"], deny: null, noted: 0, tab: {} }, over || {});
   let shot = false, nclip = 0;
   const v = {
     wc: { getURL: () => (shot && x.urlAfter ? x.urlAfter : x.url), getTitle: () => "Funding weekly" },
@@ -148,10 +149,12 @@ function rig(over) {
   const cap = createCapture({
     nativeImage: { createFromBuffer: () => mkImg(x.shots[Math.min(nshot++, x.shots.length - 1)]) }, reportsDir: reports, getWin: () => ({ isDestroyed: () => false, isMinimized: () => false, getContentBounds: () => ({ width: 1200, height: 800 }) }),
     uiLang: () => "zh", reducedMotion: () => true, ERR, R, MSG: { stale_ref: "stale", obscured: "covered" }, blockedMsg: (r) => "blocked " + r, emit: () => {}, viewSize: () => ({ vw: 1280, vh: 800 }),
-    withMask: async (_v, fn) => { x.masked++; return fn(); }, noteRead: async () => {}, cur: () => x.cur, expanded: () => null,
+    withMask: async (_v, fn) => { x.masked++; return fn(); }, noteRead: async () => { x.noted++; }, cur: () => x.cur, expanded: () => null,
+    // index.js 的 recheck = 進門那組判斷重跑一次:當下網址的政策、驗證頁、用戶接手(x.deny(已經問過圖幾次) 回被擋的原因)
+    recheck: () => { const a = policy.agent(v.wc.getURL()), why = a ? "blocked_policy" : x.deny ? x.deny(x.asked) : null; return why ? ERR(why, a ? "blocked " + a.reason : why, { tab: "t1" }) : null; },
   });
   const files = (id) => { try { return fs.readdirSync(path.join(reports, id + ".files")); } catch (_) { return []; } };
-  return { x, files, go: (id, ref) => cap.doCapture({ id: 1, alias: "t1", visible: false, snapshotId: "s", readEver: true }, v, { ref: ref || "e1", report: id }) };
+  return { x, files, go: (id, ref) => cap.doCapture(Object.assign({ id: 1, alias: "t1", visible: false, snapshotId: "s", readEver: true }, x.tab), v, { ref: ref || "e1", report: id }) };
 }
 (async () => {
   { const g = rig(), r = J(await g.go("ok1"));
@@ -184,6 +187,15 @@ function rig(over) {
     t("圖一直沒載完 → capture_refused / incomplete,不拍、不寫檔、不吃名額以外的東西", r.error === "capture_refused" && r.reason === "incomplete" && g.x.clipped.length === 0 && g.files("m2").length === 0 && Date.now() - t0 >= 3900, r); }
   { const g = rig({ pending: "throws" }), r = J(await g.go("m3"));
     t("查不出圖載完沒(頁面腳本失敗)→ 不擋,照拍(事後還有像素那一道)", r.ok === true && g.x.clipped.length === 1, r); }
+  // 稽核 P1-1:等圖載完的那幾秒(這裡等了兩輪)裡變了 → 不拍
+  for (const why of ["needs_user_verification", "user_in_control"]) {
+    const g = rig({ pending: [2, 1, 0], deny: (asked) => (asked >= 3 ? why : null), tab: { snapshotId: null, readEver: false } }), r = J(await g.go("p11-" + why.slice(0, 5)));
+    t("P1-1:進門時合格、等圖載完之後變成 " + why + " → 照那個回應回;沒拍、沒存快照、沒寫檔", r.ok === false && r.error === why && g.x.asked === 3 && g.x.clipped.length === 0 && g.x.noted === 0 && g.files("p11-" + why.slice(0, 5)).length === 0, [r, g.x]);
+  }
+  { const g = rig({ url: "https://www.binance.com/en/support/announcement", urlAfter: "https://www.binance.com/en/my/wallet/account/main", tab: { snapshotId: null, readEver: false } }), r = J(await g.go("p11-snap"));
+    t("P1-1:拍的那一下頁面進了交易所後台 → blocked_policy;圖丟掉,那一頁也不進快照與來源", r.error === "blocked_policy" && g.x.noted === 0 && g.files("p11-snap").length === 0, [r, g.x.noted]); }
+  { const g = rig({ tab: { snapshotId: null, readEver: false } }), r = J(await g.go("p11-ok"));
+    t("對照:頁面沒變、還沒讀過的出處頁 → 照常拍、照常記成讀過", r.ok === true && g.x.noted === 1 && g.files("p11-ok").length === 1, [r, g.x.noted]); }
   // 事後檢查:壞圖不進報告
   { const g = rig({ shots: ["cut_half", "good_light"] }), r = J(await g.go("m4"));
     t("拍到被切斷的圖:重拍一次,第二張是好的 → 存第二張(只有一個檔)", r.ok === true && g.x.clipped.length === 2 && g.files("m4").length === 1, [r, g.x.clipped.length]); }

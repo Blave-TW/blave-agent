@@ -83,7 +83,8 @@ function sweepCites(reportsDir, cites) {
 
 /**
  * d: { nativeImage, reportsDir, getWin(), uiLang(), reducedMotion(), ERR, R, MSG, emit, viewSize(v), withMask(v, fn, force),
- *      noteRead(t, v, ex), cur() → 這一輪的狀態物件, expanded() → 展開中的 tab id }
+ *      noteRead(t, v, ex), recheck(t, v) → 這一頁現在還能不能交給 agent(不能 = 被擋的那個回應;可以 = null),
+ *      cur() → 這一輪的狀態物件, expanded() → 展開中的 tab id }
  */
 function createCapture(d) {
   const { ERR, R } = d;
@@ -161,6 +162,7 @@ function createCapture(d) {
     const pace = v.pace.arrive();
     if (pace.cut) await v.page.run(IP.mark, ["settle"]).catch(() => {});
     if (t.visible) await v.page.run(IP.mark, ["ref", { box: c.box, label: d.uiLang() === "zh" ? "擷取" : "Capture", tag: true }, reduced]).catch(() => {});
+    const moved = () => { const e = d.recheck(t, v); return e ? { denied: e } : v.wc.getURL() !== url0 ? { refuse: "page_changed" } : null; };
     const shoot = () => awake(t, v, async () => {
       const g = await d.withMask(v, async () => {
         let s = await settled(v, b, c);
@@ -169,8 +171,12 @@ function createCapture(d) {
         if (p === "loading") return { refuse: "incomplete" };
         if (p === "waited") { await sleep(SETTLE_MS); s = await settled(v, b, s.c); if (s.refuse) return { refuse: s.refuse }; }   // 載完到畫出來差一拍;沒寫尺寸的圖載完會把版面推開
         if (gate.captureCovered(await v.page.covered(b, gate.capturePoints(s.c.box)))) return { covered: true };
+        // 稽核 P1-1:等外框停住、等圖載完可以花上幾秒;拍之前用當下的狀態重判(換到 agent 不能去的網址、驗證頁、用戶接手)
+        const denied = moved(); if (denied) return denied;
         return { c: s.c, d: await v.page.captureClip(s.c.box, s.c.view, Math.min(2, CITE_MAX_W / s.c.box.w)) };
       }, true);
+      // 拍完、存快照之前再判一次:不通過的那一頁不進快照、不進來源清單
+      const denied = g && g.d ? moved() : null; if (denied) return denied;
       // 出處頁照「讀了」記(來源紀錄與快照就是用戶查證這張圖的地方);快照也要醒著的合成器,所以放在同一段裡
       if (g && g.d && (!t.snapshotId || !t.readEver)) { try { await d.noteRead(t, v, await v.page.extract()); } catch (_) { /* 快照 best-effort */ } }
       return g;
@@ -191,6 +197,7 @@ function createCapture(d) {
       v.pace.end();
     }
     if (!got) return ERR("sensitive_field", "a password / card / code field on this page has a value that could not be hidden, so nothing was captured", { tab: t.alias });
+    if (got.denied) return got.denied;
     if (got.asleep) return ERR("screenshot_failed", "the app window is closing, so the page cannot be captured", { tab: t.alias });
     if (got.refuse) return refuse(got.refuse);
     if (got.covered) return ERR("obscured", d.MSG.obscured, { tab: t.alias, ref: args.ref });
@@ -199,6 +206,7 @@ function createCapture(d) {
     const now = v.wc.getURL(), a = policy.agent(now);
     if (a) return ERR("blocked_policy", d.blockedMsg(a.reason), { tab: t.alias, reason: a.reason, host: a.host });
     if (now !== url0) return refuse("page_changed");
+    const late = d.recheck(t, v); if (late) return late;
     c = got.c;
     const want = Math.min(CITE_MAX_W, Math.round(c.box.w * 2));   // 約 2×(螢幕 DPR 也乘進 CDP 的輸出,這裡收回來)
     if (img.getSize().width > want) img = img.resize({ width: want, quality: "best" });

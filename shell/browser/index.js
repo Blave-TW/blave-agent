@@ -430,6 +430,13 @@ function createBrowser(o) {
     if (a) return { e: ERR("blocked_policy", blockedMsg(a.reason), { tab: t.alias, reason: a.reason, host: a.host }) };
     return { t, v };
   }
+  /* 進門判過之後又過了一段時間(browser_read 的短等、擷取等圖載完、動作後的落定、讀頁面本身)才把內容交出去:
+     交出去之前用當下的狀態把 tabFor 的判斷整組重跑一次(稽核 P1-1)。這段時間裡轉址落到 agent 不能去的網址或驗證頁、
+     用戶接手、分頁被擋或關掉,都照進門就被擋的那個回應回。回 null = 還是可以交 */
+  function recheck(t, v) {
+    const x = tabFor(t.alias);
+    return x.e || (x.t === t && x.v === v ? null : ERR("not_found", MSG.not_found));
+  }
   function firstUse() {
     if (cur && !cur.used) { cur.used = true; cur.usedAt = Date.now(); emit("block_open", { anchor: "turn" }); if (o.track) o.track("browser_agent"); }
   }
@@ -463,6 +470,9 @@ function createBrowser(o) {
     // 稽核 S5b:動作後以「當下」網址重判——SPA pushState 進後台、bfcache 回到後台都沒有網路請求,只有這裡接得到
     const now = policy.agent(url);
     if (now) return ERR("blocked_policy", blockedMsg(now.reason), { tab: t.alias, reason: now.reason, host: now.host });
+    // 動作把頁面帶到驗證頁、或落定的這段時間用戶接手了:那一頁的內容不回
+    if (verifying(t)) return ERR("needs_user_verification", MSG.needs_user_verification, { tab: t.alias });
+    if (t.userControl) return ERR("user_in_control", MSG.user_in_control, { tab: t.alias });
     let snap = null; try { const s = await v.page.snapshot({ interactive_only: true }, gate.sensitiveField); snap = s.text ? s.text.slice(0, 4000) : ""; } catch (_) { /* 還在載 */ }
     return R(C.envelope(url, v.wc.getTitle(), snap || "", { tab: t.alias, url: C.scrub(url, 2000), navigated: url !== before }));
   }
@@ -645,7 +655,10 @@ function createBrowser(o) {
   async function doRead(t, v, args) {
     // 還在載的頁:自己短等(讀得到就走),不用 agent 另外呼叫 browser_wait;等不到就照舊讀現在有的
     if (t.status === "loading") await waitLoaded(t, READ_WAIT_MS);
+    // 等完重判一次才進頁面(驗證頁裡不跑任何東西);讀完再判一次才交出去、才存快照
+    const gone = recheck(t, v); if (gone) return gone;
     let ex; try { ex = await v.page.extract(); } catch (_) { return ERR("load_failed", "could not read the page", { tab: t.alias, reason: "network" }); }
+    const late = recheck(t, v); if (late) return late;
     const r = C.readPart(ex, args, (n) => tabs.readBudget(n));
     if (cur && r && typeof r.content === "string") cur.readText = (cur.readText + "\n" + r.content).slice(-READ_TEXT_MAX);
     if (r.error) return ERR(r.error, r.message, { tab: t.alias });
@@ -699,7 +712,7 @@ function createBrowser(o) {
   // 報告引用圖(browser_capture):流程在 capture.js
   const doCapture = createCapture({
     nativeImage: E.nativeImage, reportsDir: o.reportsDir, getWin: () => o.getWin && o.getWin(), uiLang: () => o.uiLang(), reducedMotion: () => (o.reducedMotion ? o.reducedMotion() : false),
-    ERR, R, MSG, blockedMsg, emit, viewSize, withMask, noteRead, cur: () => cur, expanded: () => expanded,
+    ERR, R, MSG, blockedMsg, emit, viewSize, withMask, noteRead, recheck, cur: () => cur, expanded: () => expanded,
   }).doCapture;
   // 截圖一律 best-effort:拍不到就只留文字,絕不擋工具結果(分級與網域規則才是不能壞的)
   const within = (p, ms) => Promise.race([p, sleep(ms).then(() => { throw new Error("timeout"); })]);
@@ -901,6 +914,7 @@ function createBrowser(o) {
       emit("page_act", { id: t.id, kind: "snapshot" });
       const s = await v.page.snapshot({ scope: args.scope, interactive_only: !!args.interactive_only }, gate.sensitiveField);
       if (s.error) return ERR(s.error, MSG[s.error], { tab: t.alias });
+      const late = recheck(t, v); if (late) return late;
       return R(C.envelope(v.wc.getURL(), v.wc.getTitle(), s.text, { tab: t.alias, refs: s.refs, truncated: s.truncated }));
     }
     if (name === "browser_read") return doRead(t, v, args);
@@ -917,6 +931,7 @@ function createBrowser(o) {
         else if (what === "attr" && /^(value)$/i.test(String(args.name || "")) && gate.sensitiveField(d)) val = "";
         else val = await v.page.callOn(b, function (w, n) { if (w === "text") return String(this.innerText || this.textContent || "").slice(0, 12000); if (w === "value") return String(this.value == null ? "" : this.value).slice(0, 12000); return String(this.getAttribute(String(n)) || "").slice(0, 12000); }, [what, String(args.name || "")]);
       }
+      const late = recheck(t, v); if (late) return late;
       const n = tabs.readBudget(String(val).length); if (String(val).length && !n) return ERR("budget_exhausted", "read budget used up");
       return R(C.envelope(v.wc.getURL(), v.wc.getTitle(), String(val).slice(0, n), { tab: t.alias }));
     }
@@ -926,6 +941,7 @@ function createBrowser(o) {
         if (!d) { try { const img = await within(v.wc.capturePage(undefined, { stayHidden: true }), 5000); if (!img.isEmpty()) d = img.toPNG().toString("base64"); } catch (_) { /* 拍不到 */ } }
         return { d };
       });
+      const late = recheck(t, v); if (late) return late;
       if (!got) return ERR("sensitive_field", "a password / card / code field on this page has a value that could not be hidden, so no screenshot was taken; use browser_snapshot or browser_read", { tab: t.alias });
       let data = got.d;
       if (!data) return ERR("screenshot_failed", "could not capture this tab right now; use browser_snapshot or browser_read instead", { tab: t.alias });
