@@ -569,8 +569,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   border-radius: var(--radius-sm);
   background: var(--surface-muted); color: var(--ink-2);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);   /* canon sanctioned:transient overlay 的浮層陰影 */
-  font-size: 12px; line-height: 1.45; text-align: left;
-  white-space: normal;   /* 觸發點常掛在截斷用的 nowrap 標籤裡(.ov-stats .sl),不宣告就繼承成一行、字跑出底色 */
+  font-size: 12px; font-weight: 400; line-height: 1.45; text-align: left;
+  white-space: normal;   /* 觸發點常掛在截斷用的 nowrap、600 的標籤裡(.ov-stats .sl),不宣告就繼承成一行粗字、字跑出底色 */
   animation: mp-in var(--motion-fast) var(--ease-standard);
 }
 .tip:empty { display: none !important; }

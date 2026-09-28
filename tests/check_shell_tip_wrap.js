@@ -1,8 +1,8 @@
 // 說明泡泡(app.css .tip)的字不跑出底色(0.1.8 Wei 截圖:組合績效「累積報酬(扣入金)」的泡泡只有格子寬、後半句疊到隔壁格)。
 // 根因:觸發點掛在 .ov-stats .sl 裡,.sl 為了截斷是 white-space: nowrap,泡泡繼承成一行;.trv .tip 的 max-width 100% 又把底色壓成格寬。
-//   ① 原文:.tip 基底自己宣告 white-space: normal;績效格的泡泡照字寬(max-content、260 封頂);3 欄的第 3 欄、2 欄的第 2 欄往左長
+//   ① 原文:.tip 基底自己宣告 white-space: normal、font-weight: 400;績效格的泡泡照字寬(max-content、260 封頂);3 欄的第 3 欄、2 欄的第 2 欄往左長
 //   ② 真的排版(隨包的 Electron、看不見的視窗):視窗 1024／1280 × zh／en × 組合績效 ok／累積中,加上總權益、區段標籤、
-//      策略頁回測指標、思考深度的泡泡——每一顆 scrollWidth ≤ clientWidth、字在底色裡、不出視窗、不被捲動容器右緣裁掉
+//      策略頁回測指標、思考深度的泡泡——每一顆 scrollWidth ≤ clientWidth、字在底色裡、不出視窗、不被捲動容器右緣裁掉、字重 400
 // 跑法:node tests/check_shell_tip_wrap.js(沒設 BLAVE_TEST_WINDOW=1 時 ② SKIP)
 const fs = require("fs"), path = require("path"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
@@ -14,6 +14,7 @@ if (!process.versions.electron) {
   const app = read(path.join(R, "app.css")), trade = read(path.join(R, "trade.css"));
   const rule = (css, sel) => (css.match(new RegExp("(^|\\n)\\s*" + sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + " \\{[^}]*\\}")) || [""])[0];
   ok("① .tip 基底宣告 white-space: normal(不從觸發點繼承 nowrap)", /white-space: normal;/.test(rule(app, ".tip")), rule(app, ".tip"));
+  ok("① .tip 基底宣告 font-weight: 400(canon Bubble;不從 .sl 繼承 600)", /font-weight: 400;/.test(rule(app, ".tip")), rule(app, ".tip"));
   ok("① 績效格的泡泡照字寬:max-content、260 封頂", /width: max-content;/.test(rule(trade, ".ov-stats .sl-tip .tip")) && /max-width: 260px;/.test(rule(trade, ".ov-stats .sl-tip .tip")), rule(trade, ".ov-stats .sl-tip .tip"));
   const narrow = (trade.match(/@container \(max-width: 520px\) \{[\s\S]*?\n\}/) || [""])[0];
   ok("① 3 欄:第 3 欄往左長;2 欄:第 3 欄改回往右、第 2 欄往左長(2n 排在 3n 之後)", /\.perf-stats \.stat:nth-child\(3n\) \.tip \{ left: auto; right: 0; \}/.test(trade)
@@ -47,7 +48,7 @@ const MEASURE = `((sel) => { const out = [], vw = window.innerWidth;
   const clip = (e) => { for (let p = e.parentElement; p; p = p.parentElement) if (getComputedStyle(p).overflowX !== "visible") return p; return document.documentElement; };
   document.querySelectorAll(sel).forEach((tip) => { if (!tip.textContent) return; tip.style.display = "block";
     const r = tip.getBoundingClientRect(), g = document.createRange(); g.selectNodeContents(tip); const tr = g.getBoundingClientRect(), c = clip(tip).getBoundingClientRect();
-    out.push({ text: tip.textContent.slice(0, 16), w: Math.round(r.width), sw: tip.scrollWidth, cw: tip.clientWidth, txtOut: tr.right > r.right + 0.5 || tr.left < r.left - 0.5,
+    out.push({ text: tip.textContent.slice(0, 16), w: Math.round(r.width), sw: tip.scrollWidth, cw: tip.clientWidth, txtOut: tr.right > r.right + 0.5 || tr.left < r.left - 0.5, fw: getComputedStyle(tip).fontWeight,
       inView: r.left >= 0 && r.right <= vw, inClip: r.left >= c.left - 0.5 && r.right <= c.right + 0.5 });
     tip.style.display = ""; }); return out; })`;
 
@@ -57,8 +58,9 @@ app.whenReady().then(async () => {
   await w.loadFile(path.join(SHELL, "renderer", "index.html"));
   await wait(1000);
   const js = (s) => w.webContents.executeJavaScript(s, true);
-  const judge = (name, m) => { const bad = m.filter((x) => x.sw > x.cw || x.txtOut || !x.inView || !x.inClip);
-    ok(`② ${name}:${m.length} 顆泡泡字都在底色裡、不出視窗、不被裁(寬 ${[...new Set(m.map((x) => x.w))].join("/")})`, m.length > 0 && !bad.length, JSON.stringify(bad)); };
+  const judge = (name, m) => { const bad = m.filter((x) => x.sw > x.cw || x.txtOut || !x.inView || !x.inClip), heavy = m.filter((x) => x.fw !== "400");
+    ok(`② ${name}:${m.length} 顆泡泡字都在底色裡、不出視窗、不被裁(寬 ${[...new Set(m.map((x) => x.w))].join("/")})`, m.length > 0 && !bad.length, JSON.stringify(bad));
+    ok(`② ${name}:泡泡字重都是 400`, m.length > 0 && !heavy.length, JSON.stringify(heavy)); };
   for (const W of [1024, 1280]) {
     w.setContentSize(W, 820); await wait(400);
     for (const lang of ["zh", "en"]) {
