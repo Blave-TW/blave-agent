@@ -158,7 +158,7 @@ ok("累積損益:只取最後一次換口徑之後的點(平台算好的那條�
   && /\.map\(\(p\) => \(\{ t: p\.ts, v: p\.equity, b: p\.basis \|\| "equity" \}\)\)/.test(src));
 
 // 啟動確認框:機器端證明只碰帳本裡的部位(回報 self_ledger === true)才講「你自己開的倉不會動」;舊 lib 不講(它會平)
-ok("啟動確認框:只碰 Blave 的部位那一句只在 self_ledger === true 時出現", /\.concat\(r\.self_ledger === true \? \[t\("tr\.startOwnOnly"\)\] : \[\]\)/.test(src));
+ok("啟動確認框:只碰 Blave 的部位那一句只在 self_ledger === true 時出現(而且只給真錢;check_shell_start_box.js)", /own: r\.self_ledger === true,/.test(src) && /if \(o\.own && o\.real\) keep\.push\(t\("tr\.startOwnOnly"\)\);/.test(src));
 
 console.log(red ? `\n${red} 項沒過` : "\n全部通過");
 process.exit(red ? 1 : 0);

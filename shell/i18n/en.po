@@ -1306,9 +1306,6 @@ msgstr "Pause, leave positions untouched"
 msgid "tr.stopFlat"
 msgstr "Pause and close positions"
 
-msgid "tr.startChoice"
-msgstr "Catch up places market orders now to match each strategy’s current signal — if a strategy is already in a position, you board it mid-trade. Wait for new signals places no orders now; each strategy starts trading only at its next entry, exit, or flip."
-
 msgid "tr.startWarn1"
 msgstr "Real orders resume immediately, moving your strategies’ positions to the current targets."
 
@@ -1321,17 +1318,48 @@ msgstr "Outside Blave"
 msgid "tr.unmanagedTip"
 msgstr "Blave didn’t open this position; reconciling never touches it."
 
-msgid "tr.startWarn2"
-msgstr "Strategies and weights kept updating while paused, so the first reconcile may move several positions at once."
-
 msgid "tr.startCatchUp"
 msgstr "Start and catch up positions"
 
 msgid "tr.startWait"
 msgstr "Start, wait for new signals"
 
-msgid "tr.means.l"
-msgstr "Running on this computer means:"
+# 啟動下單框(先選再按):兩個選項各帶後果(真錢版講「真實委託」)、常駐安全句、「細節」裡的小標
+msgid "tr.opt.legend"
+msgstr "How to start"
+
+msgid "tr.opt.catch"
+msgstr "Catch up positions"
+
+msgid "tr.opt.catchDesc"
+msgstr "Places market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+
+msgid "tr.opt.catchDescReal"
+msgstr "Sends real market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+
+msgid "tr.opt.catchStale"
+msgstr "Signals didn’t update while Blave was closed: catching up now may still trade on the signal from before you closed it; each strategy switches to a fresh one after its next scheduled run."
+
+msgid "tr.opt.wait"
+msgstr "Wait for new signals"
+
+msgid "tr.opt.waitDesc"
+msgstr "No orders now. Each strategy starts trading only at its next entry, exit, or flip."
+
+msgid "tr.opt.waitDescReal"
+msgstr "No orders now. Each strategy sends real orders only at its next entry, exit, or flip."
+
+msgid "tr.keep.sleep"
+msgstr "While this computer sleeps, is shut down, or Blave is closed, no orders go out — exits and stops included."
+
+msgid "tr.det.local"
+msgstr "Running on this computer"
+
+msgid "tr.det.cloud"
+msgstr "Running in the cloud"
+
+msgid "cf.more"
+msgstr "Details"
 
 msgid "tr.means.1"
 msgstr "Auto-trading runs only while the computer is awake, Blave is open and the network is up."
@@ -1343,7 +1371,7 @@ msgid "tr.means.2p"
 msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
 
 msgid "tr.means.3"
-msgstr "After you quit and reopen Blave, trading stays paused — no exits or stops either — until you press Start trading. After sleep or a dropped connection, it picks up on its own."
+msgstr "After you quit and reopen Blave, trading stays paused until you press Start trading. After sleep or a dropped connection, it picks up on its own."
 
 msgid "tr.means.4"
 msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
@@ -1981,14 +2009,8 @@ msgstr "Removes the exchange keys from the cloud machine — the order engine ca
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
 
-msgid "tr.cloud.means.l"
-msgstr "Running in the cloud means:"
-
 msgid "tr.cloud.means.1"
 msgstr "It runs on schedule as long as the machine is on. Shutting down this computer, closing the lid, losing the network, or quitting this app changes nothing."
-
-msgid "tr.cloud.means.2"
-msgstr "To pause, come back to this page and press Pause Trading."
 
 msgid "tr.cloud.means.3"
 msgstr "The machine takes {h} TWD from your balance every hour for as long as it exists. Under {m} TWD it stops: trading halts and positions stay at the exchange."
@@ -2870,9 +2892,6 @@ msgstr "Strategies are recomputing on post-restart data. Catch up becomes availa
 
 msgid "tr.orderFailedLastWhy"
 msgstr "Last order failed: {why}"
-
-msgid "tr.startWarn2Local"
-msgstr "Nothing ran while Blave was closed, so strategy signals didn’t update. Catch up trades on the signals as they stand now, which may still be from before you closed Blave; each strategy switches to a fresh signal after its next scheduled run. To trade only on fresh signals, choose Start, wait for new signals."
 
 msgid "tr.cloud.haltReasonUnconfirmed"
 msgstr "An old version of the trading program may still be running. Press Check for updates first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."

@@ -1306,9 +1306,6 @@ msgstr "暫停，不動部位"
 msgid "tr.stopFlat"
 msgstr "暫停並關閉部位"
 
-msgid "tr.startChoice"
-msgstr "「補齊部位」會立刻用市價把部位補到策略目前的訊號狀態——策略若已在場內，等於中途上車；「等新訊號」現在不下單，每條策略等它下次進場、出場或翻向才開始交易。"
-
 msgid "tr.startWarn1"
 msgstr "會重新開始送出真實委託，把策略的部位調到目前的目標。"
 
@@ -1321,17 +1318,48 @@ msgstr "不歸 Blave 管"
 msgid "tr.unmanagedTip"
 msgstr "這個部位不是 Blave 下單建立的，對帳不會動它。"
 
-msgid "tr.startWarn2"
-msgstr "策略跟權重在暫停期間照常更新，所以第一次對帳可能一次調整多個部位。"
-
 msgid "tr.startCatchUp"
 msgstr "啟動並補齊部位"
 
 msgid "tr.startWait"
 msgstr "啟動，等新訊號才進場"
 
-msgid "tr.means.l"
-msgstr "在這台電腦上跑，代表："
+# 啟動下單框(先選再按):兩個選項各帶後果(真錢版講「真實委託」)、常駐安全句、「細節」裡的小標
+msgid "tr.opt.legend"
+msgstr "啟動方式"
+
+msgid "tr.opt.catch"
+msgstr "補齊部位"
+
+msgid "tr.opt.catchDesc"
+msgstr "現在就用市價下單，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+
+msgid "tr.opt.catchDescReal"
+msgstr "現在就用市價送出真實委託，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+
+msgid "tr.opt.catchStale"
+msgstr "Blave 關著時訊號沒有更新：現在補齊，用的可能還是關掉之前那一次的訊號，每支策略下一次排程跑完才會換新。"
+
+msgid "tr.opt.wait"
+msgstr "等新訊號"
+
+msgid "tr.opt.waitDesc"
+msgstr "現在不下單。每條策略等下一次進場、出場或翻向才開始交易。"
+
+msgid "tr.opt.waitDescReal"
+msgstr "現在不下單。每條策略等下一次進場、出場或翻向才送出真實委託。"
+
+msgid "tr.keep.sleep"
+msgstr "電腦睡眠、關機或結束 Blave 時不會下單，平倉與停損也不會執行。"
+
+msgid "tr.det.local"
+msgstr "在這台電腦上跑"
+
+msgid "tr.det.cloud"
+msgstr "在雲端跑"
+
+msgid "cf.more"
+msgstr "細節"
 
 msgid "tr.means.1"
 msgstr "自動下單只在電腦醒著、Blave 開著、連得上網的時候跑。"
@@ -1343,7 +1371,7 @@ msgid "tr.means.2p"
 msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，模擬部位留著，不會自動平倉。"
 
 msgid "tr.means.3"
-msgstr "結束 Blave 再打開後，自動下單是暫停的，連平倉與停損都不會做，要按「啟動下單」才會繼續。睡眠醒來或網路恢復則照常繼續。"
+msgstr "結束 Blave 再打開後，自動下單是暫停的，要按「啟動下單」才會繼續。睡眠醒來或網路恢復則照常繼續。"
 
 msgid "tr.means.4"
 msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
@@ -1981,14 +2009,8 @@ msgstr "移除雲端主機上的交易所金鑰，下單機不再能用這個帳
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
 
-msgid "tr.cloud.means.l"
-msgstr "在雲端跑，代表："
-
 msgid "tr.cloud.means.1"
 msgstr "主機開著就照排程跑。這台電腦關機、闔蓋、沒網路，或把這個 app 關掉，都不影響。"
-
-msgid "tr.cloud.means.2"
-msgstr "要暫停，回到這一頁按「暫停下單」。"
 
 msgid "tr.cloud.means.3"
 msgstr "主機每個整點從餘額扣 {h} TWD，存在就扣。餘額低於 {m} TWD 會停機：下單跟著停，部位留在交易所。"
@@ -2870,9 +2892,6 @@ msgstr "策略正在用開機後的資料重算，算完才能補齊部位；算
 
 msgid "tr.orderFailedLastWhy"
 msgstr "上次下單失敗：{why}"
-
-msgid "tr.startWarn2Local"
-msgstr "Blave 關著的那段時間，策略沒有執行、訊號沒有更新。「補齊部位」會照現在算到的訊號下單，可能還是關掉之前那一次；每支策略下一次排程跑完才會換成最新訊號。想等最新訊號，選「等新訊號」。"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
 msgstr "舊版下單程式可能還在跑。先按「檢查更新」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"

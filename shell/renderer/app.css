@@ -953,6 +953,51 @@ body.resizing * { cursor: col-resize !important; }
 .del-body.lines p.cf-removed { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .del-body.lines p.cf-block { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--color-redText); }
 .del-body.lines p.cf-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+/* 下單確認框(confirmBox 的 choices / keep / details;Wei 0928 第 3 點 A 案,數值照設計師 mockup):
+   最上面的狀態句(主墨)→ 選項(radio,各帶後果)→ 常駐安全句 → 「細節」。兩顆鈕,框 480 */
+.del-modal.has-choices { width: min(480px, 92vw); }
+.del-modal.has-choices .del-body { min-height: 0; overflow-y: auto; }   /* 真錢第一次細節攤開、視窗又矮時:內文自己捲,兩顆鈕留在框裡 */
+.del-body.has-choices > p { margin: 0 0 var(--space-16); font-size: 13px; line-height: 1.6; color: var(--ink); }
+.cf-opts { margin: 0; padding: 0; border: 0; display: grid; gap: var(--space-8); min-width: 0; }
+.cf-opts legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* 選項列:視覺圓鈕 18;熱區整列(最矮 44) */
+.cf-opt {
+  position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-12);
+  padding: var(--space-12); min-height: 44px; border-radius: var(--radius-sm); background: var(--surface-field); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.cf-opt:hover, .cf-opt:has(input:checked) { background: var(--surface-muted); }
+.cf-opt input {
+  grid-row: 1 / 4; margin: 1px 0 0; width: 18px; height: 18px; appearance: none; -webkit-appearance: none;
+  border-radius: var(--radius-pill); border: 1px solid var(--border-frame); background: transparent; position: relative; cursor: pointer;
+}
+.cf-opt input:checked { background: var(--control-fill); border-color: var(--control-fill); }
+.cf-opt input:checked::after { content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill); background: var(--control-fill-text); }
+.cf-opt input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.cf-opt-t { font-size: 13px; font-weight: 500; line-height: 20px; color: var(--ink); }
+.cf-opt:has(input:checked) .cf-opt-t { font-weight: 600; }
+.cf-opt-d { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.cf-opt-w { margin-top: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 情境句:主墨,不用紅 */
+.cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
+.cf-opt.off:hover { background: var(--surface-field); }
+.cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }
+.cf-opt.off input { border-color: var(--border-hairline); background: var(--surface-card); }
+.cf-keep { margin: var(--space-16) 0 0; padding: 0; list-style: none; }
+.cf-keep li, .cf-more-in li { position: relative; padding-left: var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+.cf-keep li::before, .cf-more-in li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
+/* 「細節」:視覺 12px 字＋7px chevron(.cv7);熱區高 32 */
+.cf-more { margin: var(--space-12) 0 0; }
+.cf-more summary {
+  position: relative; list-style: none; display: inline-flex; align-items: center; gap: var(--space-8); min-height: 24px;
+  font-size: 12px; line-height: 1; color: var(--ink-3); cursor: pointer; transition: color var(--motion-fast) var(--ease-standard);
+}
+.cf-more summary::-webkit-details-marker { display: none; }
+.cf-more summary::before { content: ""; position: absolute; left: calc(-1 * var(--space-4)); right: calc(-1 * var(--space-8)); top: -4px; bottom: -4px; }
+.cf-more summary:hover { color: var(--ink); }
+.cf-more-in { margin-top: var(--space-8); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--surface-field); display: grid; gap: var(--space-12); }
+.cf-more-in .lbl { display: block; margin-bottom: var(--space-2); font-size: 12px; font-weight: 600; line-height: 1.6; color: var(--ink-2); }
+.cf-more-in p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+.cf-more-in ul { margin: 0; padding: 0; list-style: none; }
 /* 設定鈕右邊那行安靜的字 */
 .ws-more-note{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--ink-3);white-space:nowrap}
 .ws-more-note.up{color:var(--ink-2)}

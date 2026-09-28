@@ -155,7 +155,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
     && /ENV\.sig\.tb = tsig; txt\.textContent = ""; txt\.title = tbState;/.test(src) && /if \(tbUp\) txt\.append\(trEl\("span", "up", tbState\)\);/.test(src)
     && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(src) && !/"tr\.tb"/.test(src) && /out\.money = envMoney\(st\); out\.venue = trVenueIds\(st && st\.report\)\[0\] \|\| null;/.test(src));
   ok("確認框:不再組字串(lines: []),走通用的 .cf-* 節點;擋下時 okDisabled 而且不出「儲存後…」那句", /const blocked = lev\.blocked \|\| badStored\.length > 0;/.test(src) && /lines: \[\], extra, lead, okDisabled: blocked/.test(src) && /if \(!blocked\) extra\.appendChild\(trEl\("p", "cf-note", !cloud \? t\("tr\.saveWarn"\) : /.test(src)
-    && /\$\("del-ok"\)\.disabled = !!okDisabled;/.test(appSrc) && /classList\.remove\("has-alt"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));
+    && /\$\("del-ok"\)\.disabled = !!okDisabled \|\| !!choices;/.test(appSrc) && /classList\.remove\("has-alt", "has-choices"\); \$\("del-ok"\)\.disabled = false;/.test(appSrc));
   ok(".cf-* 是通用樣式(在 app.css、不綁金額確認框):下一批「送上雲端」要重用", /\.cf-row\.total dd \{ font-size: 15px/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")) && !/\.cf-row/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8")));
   ok("畫面上不再出現「對帳沒有在跑」「心跳」;刪掉的四個 key 兩語都刪了", !/"tr\.(paperCcy|saveLine|recDead|lastBeat)"/.test(S) && !/最後心跳|對帳沒有在跑|last heartbeat|Reconciler not running/.test(S)); }
 ok("舊快照只有 usd:減倉腿回 null", trGateSide({ usd: 84 }, 0, 100) === null && trGateSide({ usd: 84 }, 100, 0).usd === 84 && trGateSide(null, 1, 0) === null);
@@ -469,7 +469,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("HALT + Blave 結束再打開:kind = app、狀態 halted、狀態行是 Blave 重開那條(不是 HALT 的「平倉照常」)",
         trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal"); }
     ok("主機重開 + 已按過暫停:講重開那條(kind = machine 優先)", trRestartKind({ halt: { halted: true }, reconciler: { stopped: { reason: "machine_restart" } } }) === "machine");
-    ok("啟動框:重開過才多那一行(主機 / Blave 各一句),HALT 後再啟動不加", /lines: \(trRestartKind\(r\) === "machine" \? \[t\("tr\.cloud\.restartStartLine"\)\] : trRestartKind\(r\) === "app" \? \[t\("tr\.restartStartLineLocal"\)\] : \[\]\)/.test(src));
+    ok("啟動框:重開過才多那一行(主機 / Blave 各一句,最上面的狀態句),HALT 後再啟動不加", /lines: rkS === "machine" \? \[t\("tr\.cloud\.restartStartLine"\)\] : rkS === "app" \? \[t\("tr\.restartStartLineLocal"\)\] : \[\],/.test(src));
     { /* Wei 0.0.6:這台電腦沒有「自己下單」的策略程式時,「解除暫停」與「包含你自己的策略程式下的單」都在講一顆不存在的東西。
          主行程掃 strategies/<name>/*.py 是否 import lib.order_* / lib.execute,寫進 report.selfOrdering;renderer 只認嚴格 === false(雲端 / 舊格式沒欄位照現行) */
       const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
@@ -614,8 +614,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B0 啟動框與 b0Done 退場(沒有啟動鈕了);解除暫停一律 X0", !/restartNoAccountStart|b0Done/.test(src) && trReleaseKind({ ...B0({}).report, config: { amounts: {} }, self_ledger: true }).kind === "x0"
       && J(trZView("noaccount", B0({}).report)) === J({ off: true, release: true, reason: null, noStart: true }) && trZView("noaccount", { ...B0({}).report, config: { amounts: { a: 5 } } }).release); }
   { // 1-4 撤回(後端:Type A/C 重開停止期間照跑):啟動框的第二句不分 B
-    ok("啟動框第二句:一般暫停 tr.startWarn2;Blave 重開 tr.startWarn2Local;主機重開(B)不出(新狀態稽核 1-2)", /const rkS = trRestartKind\(r\), warn2 = rkS === "app" \? t\("tr\.startWarn2Local"\) : rkS === "machine" \? null : t\("tr\.startWarn2"\);/.test(src)
-      && /\.concat\(canWait \? \[t\("tr\.startChoice"\)\] : \[t\("tr\.startWarn1"\)\]\)\.concat\(warn2 \? \[warn2\] : \[\]\),/.test(src) && !/restartStartWarn2/.test(src)); }
+    // Wei 0928 第 3 點:那一句不再獨立成段——一般暫停的併進「補齊部位」的說明,Blave 重開的縮成一句掛在那個選項裡;主機重開(B)照舊不出(新狀態稽核 1-2)
+    ok("啟動框的舊訊號句:只有 Blave 重開才掛在「補齊部位」選項裡;tr.startWarn2 / tr.startWarn2Local / tr.startChoice 退役", /warn: rkS === "app" \? t\("tr\.opt\.catchStale"\) : null,/.test(src)
+      && !/startWarn2|startChoice|restartStartWarn2/.test(src)); }
   { // S1:C 裡沒有啟動鈕,框裡不能叫人「之後按啟動下單」
     ok("S1 C 的暫停框與存金額框:用不叫人按啟動的那兩句", /trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.closeAllWarn2Unconfirmed"\) : t\("tr\.closeAllWarn2"\)/.test(src)
       && /const idle = cloud && trRestartUnconfirmed\(S\.st && S\.st\.report\) \? t\("tr\.cloud\.saveIdleUnconfirmed"\) : t\("tr\.cloud\.saveIdle"\);/.test(src)); }
@@ -652,11 +653,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("側欄「已停」→「已暫停」;設定的雲端舊版那句照稽核", get("zh", "side.cloud.st.halted") === "已暫停" && get("en", "side.cloud.st.halted") === "Paused"
       && get("zh", "up.c.needsUpdate") === null);   // v4:那一句退場(雲端更新走「檢查更新」,沒有第四個狀態)
     const en = po("en").split("\n").filter((l) => l.startsWith("msgstr ")).join("\n");
-    // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。唯一留著的是 HEAD 本來就有的 tr.cloud.means.2
+    // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。原本唯一留著的 tr.cloud.means.2 隨啟動框改版退役(Wei 0928 第 3 點)
     ok("EN 鈕名維持 sentence case(同網頁):鈕字是小寫那一版,新句子引用鈕名也是", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
       && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating" && get("en", "cx.connect") === "Connect an exchange"
       && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals", "Connect an Exchange"].every((x) => en.indexOf(x) < 0)
-      && (en.match(/Pause Trading/g) || []).length === 1
+      && (en.match(/Pause Trading/g) || []).length === 0
       && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
     // v4 §7 驗收:「立即更新到最新版本」那顆鈕已經不在,全 app 可見字串(兩語 .po、產出的 strings.js、renderer 與主行程的 js)都不能再叫人去按它
     const SH = path.join(__dirname, "..", "shell"), shellSrc = [po("zh"), po("en")].concat(["renderer", "."].flatMap((d) => fs.readdirSync(path.join(SH, d)).filter((f) => /\.(js|html)$/.test(f)).map((f) => fs.readFileSync(path.join(SH, d, f), "utf8")))).join("\n");
@@ -668,12 +669,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("recomputed:只有嚴格的 false 才鎖;true / 缺欄位(舊 runtime)/ 沒有 stopped 都不鎖", trRecomputing(SR({ recomputed: false })) && !trRecomputing(SR({ recomputed: true }))
       && !trRecomputing(SR({})) && [0, null, "false", undefined].every((x) => !trRecomputing(SR({ recomputed: x }))) && !trRecomputing({ reconciler: {} }) && !trRecomputing(null));
     const start = fnS("trAskStart");
-    ok("recomputed 啟動框:補齊那顆 okDisabled、多一行說明(接在重開那行後面);等新訊號的 alt 不動;按下去再查一次",
-      /const recomputing = trRecomputing\(r\);/.test(start) && /\.concat\(recomputing \? \[t\("tr\.cloud\.recomputing"\)\] : \[\]\)/.test(start)
-      && start.indexOf('t("tr.cloud.restartStartLine")') < start.indexOf('t("tr.cloud.recomputing")')
-      && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: \(\) => \{ if \(!trRecomputing\(trReport\(\)\)\) go\("resume"\); \},/.test(start)
-      && /alt: canWait \? \{ label: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \} : null,/.test(start)
-      && start.indexOf("trNoAccountStopped(r)") < start.indexOf("const recomputing"));
+    // Wei 0928 第 3 點:兩顆鈕變成兩個選項——重算中「補齊部位」那個選項停用、原因句掛在它裡面;行為測試在 check_shell_start_box.js
+    ok("recomputed 啟動框:「補齊部位」選項停用＋原因句;「等新訊號」照常;按下去再查一次;只有一種啟動方式的舊機照舊 okDisabled",
+      /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
+      && /disabled: recomputing, why: t\("tr\.cloud\.recomputing"\), ok: t\("tr\.startCatchUp"\), onOk: catchUp \},/.test(start)
+      && /const catchUp = \(\) => \{ if \(!trRecomputing\(trReport\(\)\)\) go\("resume"\); \};/.test(start)
+      && /desc: t\("tr\.opt\.waitDesc" \+ money\), ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
+      && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: catchUp,/.test(start));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"/.test(po("zh"))
       && /msgid "tr\.cloud\.recomputing"\nmsgstr "Strategies are recomputing on post-restart data\. Catch up becomes available when they finish; close this box and open it again then\."/.test(po("en"))); }
@@ -722,7 +724,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { // 0.0.3 實機:按下啟動之後,啟動前的失敗不再講成現在式
     ok("按下啟動記時間(表底紅字只給這之後的失敗)", /const go = \(cmd\) => \{ TR\.startAt = Date\.now\(\); return trRunStart\(cmd\); \};/.test(fnS("trAskStart")));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
-    ok("本機重開的啟動框那一句(zh / en):講 Blave 關著時沒跑,不講「暫停期間照常更新」", /msgid "tr\.startWarn2Local"\nmsgstr "Blave 關著的那段時間，策略沒有執行/.test(po("zh")) && /msgid "tr\.startWarn2Local"\nmsgstr "Nothing ran while Blave was closed/.test(po("en"))
+    ok("本機重開的啟動框那一句(zh / en):講 Blave 關著時訊號沒有更新,不講「暫停期間照常更新」", /msgid "tr\.opt\.catchStale"\nmsgstr "Blave 關著時訊號沒有更新：/.test(po("zh")) && /msgid "tr\.opt\.catchStale"\nmsgstr "Signals didn’t update while Blave was closed/.test(po("en"))
       && /msgid "tr\.orderFailedLastWhy"\nmsgstr "上次下單失敗：\{why\}"/.test(po("zh"))); }
   { // 設計師新狀態稽核(09-22)
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");

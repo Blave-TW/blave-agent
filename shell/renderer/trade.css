@@ -383,17 +383,12 @@ html.ws-sc .side-gate { display: none; }
   .ov-stats .stat.hero .sv { font-size: 22px; }
 }
 
-/* ---- 確認框:第二動作(雲端 .cf-alt 的紅字;shell 的框是 .btn-out 底)、「在這台電腦上跑,代表:」那一塊 ---- */
+/* ---- 確認框:第二動作(雲端 .cf-alt 的紅字;shell 的框是 .btn-out 底)。啟動框的選項 / 常駐句 / 細節在 app.css 的 .cf-* ---- */
 #del-alt[hidden] { display: none; }
 .btn-out.cf-alt-danger { color: var(--color-redText); }
 .del-modal .modal-foot { flex-wrap: wrap; }
 /* 三顆鈕的框(啟動 / 暫停)放寬到 520:英文版 440 會折成兩列、主要鈕自己一列 */
 .del-modal.has-alt { width: min(520px, 92vw); }
-.means { margin: var(--space-12) 0 0; padding: var(--space-12); border-radius: var(--radius-sm); background: var(--surface-field); }
-.means .lbl { display: block; margin-bottom: var(--space-4); color: var(--ink-2); font-weight: 600; }
-.means ul { margin: 0; padding: 0; list-style: none; }
-.means li { position: relative; padding-left: var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
-.means li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
 
 /* ---- 連接交易所的框(#cx-modal,寬 480)+ 設定分頁的帳戶列 ---- */
 .cx-modal { width: min(480px, 92vw); }

@@ -1383,14 +1383,45 @@ function delConfirm(m, opener) {
    鈕正上方再一行 {哪一台} · {真錢/模擬} · {交易所}。markKind = 錢記號的顏色(real / paper),lead = 放在所有句子最上面的那一塊
    (今天只有「兩邊都真錢」那個灰記號)。**都不給就跟以前一模一樣**。 */
 /* cancel = 取消鈕的字(不給 = 「取消」):主鈕本身就叫「取消分享」時,「取消」並排讀不出哪顆是留著(report-share.js) */
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel }) {
+/* 下單確認框(Wei 0928 第 3 點 A 案;啟動下單用):先選再按。都不給就跟以前一模一樣。
+   choices = [{ id, title, desc, warn, disabled, why, ok, onOk }]:一組 radio,**沒有預設選項**,沒選之前主鈕停用(字是 ok);選了之後主鈕的字換成
+     那個選項的 ok、按下去做它的 onOk。warn = 掛在那個選項裡的情境句;disabled + why = 這個選項現在不能選,說明換成原因句(aria-describedby 指它)。
+     choicesLabel = 這一組的名字(只給讀屏)。這時 lines 是最上面的狀態句(主墨)。
+   keep = 常駐的安全句(每次都要看的);details = [{ label, text | items }] 收在「細節」裡(看懂一次就好的),detailsOpen = 預設展開 */
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen }) {
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
   $("del-cancel").textContent = cancel || t("del.cancel");
-  const body = $("del-body"); body.className = "del-body lines"; body.textContent = "";
+  const body = $("del-body"); body.className = "del-body lines" + (choices ? " has-choices" : ""); body.textContent = "";
   if (lead) body.appendChild(lead);
   lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; if (okDisabled && okWhy && x === okWhy) p.id = "del-ok-why"; body.appendChild(p); });
+  if (choices) {
+    const fs = mk("fieldset", "cf-opts"); fs.appendChild(mk("legend", "", choicesLabel || ""));
+    choices.forEach((c) => {
+      const row = mk("label", "cf-opt" + (c.disabled ? " off" : "")), r = mk("input");
+      r.type = "radio"; r.name = "cf-choice"; r.value = c.id; r.disabled = !!c.disabled;
+      const d = mk("span", "cf-opt-d", c.disabled && c.why ? c.why : c.desc);
+      if (c.disabled && c.why) { d.id = "cf-why-" + c.id; r.setAttribute("aria-describedby", d.id); }
+      row.append(r, mk("span", "cf-opt-t", c.title), d);
+      if (c.warn && !c.disabled) row.appendChild(mk("span", "cf-opt-w", c.warn));
+      r.addEventListener("change", () => { if (!r.checked || !delCtx) return; delCtx.onOk = c.onOk; $("del-ok").textContent = c.ok; $("del-ok").disabled = false; });
+      fs.appendChild(row);
+    });
+    body.appendChild(fs);
+  }
   if (extra) body.appendChild(extra);
-  $("del-ok").textContent = ok; $("del-ok").disabled = !!okDisabled;
+  if (keep && keep.length) { const ul = mk("ul", "cf-keep"); keep.forEach((x) => ul.appendChild(mk("li", "", x))); body.appendChild(ul); }
+  if (details && details.length) {
+    const d = mk("details", "cf-more"), sm = mk("summary", "", t("cf.more")), cv = mk("span", "cv7"), inner = mk("div", "cf-more-in");
+    cv.setAttribute("aria-hidden", "true"); sm.appendChild(cv); d.open = !!detailsOpen;
+    details.forEach((g) => {
+      const box = mk("div"); box.appendChild(mk("span", "lbl", g.label));
+      if (g.items) { const ul = mk("ul"); g.items.forEach((x) => ul.appendChild(mk("li", "", x))); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
+      inner.appendChild(box);
+    });
+    d.append(sm, inner); body.appendChild(d);
+  }
+  $("del-ok").textContent = ok; $("del-ok").disabled = !!okDisabled || !!choices;
   // okWhy = 停用的主鈕為什麼按不了(lines 裡的那一句):讀屏停在鈕上時唸得到
   if (okDisabled && okWhy && $("del-ok-why")) $("del-ok").setAttribute("aria-describedby", "del-ok-why"); else $("del-ok").removeAttribute("aria-describedby");
   $("del-modal").querySelector(".modal-head").classList.toggle("cloud", env === "cloud");
@@ -1401,7 +1432,8 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-alt").hidden = !alt; $("del-alt").textContent = alt ? alt.label : "";
   $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
   $("del-modal").classList.toggle("has-alt", !!alt);
-  delCtx = { custom: true, onOk, onAlt: alt && alt.onOk, opener };
+  $("del-modal").classList.toggle("has-choices", !!choices);
+  delCtx = { custom: true, onOk: choices ? null : onOk, onAlt: alt && alt.onOk, opener };
   $("view-ws").inert = true; $("set-scrim").inert = true;
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
@@ -1415,7 +1447,7 @@ function delClose(deleted) {
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
-  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
+  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt", "has-choices"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
   $("del-env").hidden = true; $("del-where").hidden = true; $("del-modal").querySelector(".modal-head").classList.remove("cloud"); $("del-cancel").hidden = false; $("del-cancel").textContent = t("del.cancel");
   if (deleted) $("cs-newrow").focus();
   else if (c && c.opener && c.opener.isConnected) c.opener.focus();
@@ -1426,7 +1458,7 @@ $("del-scrim").addEventListener("mousedown", (e) => { if (e.target === $("del-sc
 $("del-scrim").addEventListener("keydown", (e) => trapTab(e, $("del-modal")));
 $("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
-  if (delCtx && delCtx.custom) { const go = delCtx.onOk; delClose(false); go(); return; }
+  if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
   if (!(await window.blave.deleteSession(m.id))) { delClose(false); return; }
   if (m.id === sessionId) { csStartNew(); csShowList(true); } else await csRenderList();

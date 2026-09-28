@@ -273,7 +273,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   /* 雲端啟動**不順帶送 restart_reconciler**(規格 §4.2-2):那份報告可能是一分鐘前的,照它判等於瞎猜——
      多吃一格速率桶、多一筆稽核。本機那條不動。 */
   ok("trAskStart:雲端只送 resume / resume_wait;這台電腦照舊視 trRecRunning 補 restart_reconciler",
-    /cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\] : \[/.test(fn("trAskStart")) && /trRecRunning\(S\.st\) \? \{ ok: true \} : trSend\(S, "restart_reconciler", \{\}\)/.test(fn("trAskStart")));
+    /cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\.then\(sent\)\] : \[/.test(fn("trAskStart")) && /trRecRunning\(S\.st\) \? \{ ok: true \} : trSend\(S, "restart_reconciler", \{\}\)/.test(fn("trAskStart")));
   /* 緊急停止不可以被自己的過場態鎖住(規格 §1.3,Wei 拍板):前一個指令還在路上不是「不能停」的理由。
      重複送 halt 是安全的(api 有自己的速率桶、本機 daemon 沒跑時照樣排隊 daemon.js:149,而且重試沿用同一顆 request_id)。
      啟動方向照舊鎖住——那個重複送就是真的多開一次倉。 */
@@ -304,13 +304,13 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 寫進雲端的確認框要標明目的地(規格 §5:刻意講三次);本機不給那兩個參數,框逐位元組不變
   { const app2 = fs.readFileSync(path.join(R, "app.js"), "utf8"), html2 = fs.readFileSync(path.join(R, "index.html"), "utf8");
     ok("confirmBox 有 env / footWhere / lead 三個選用參數,DOM 兩個槽在,關框時一起收掉",
-      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel \}\)/.test(app2)
+      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen \}\)/.test(app2)
       && /<span class="envm" id="del-env" hidden><\/span>/.test(html2) && /<span class="del-where" id="del-where" hidden><\/span>/.test(html2)
       && /\$\("del-env"\)\.hidden = true; \$\("del-where"\)\.hidden = true; \$\("del-modal"\)\.querySelector\("\.modal-head"\)\.classList\.remove\("cloud"\); \$\("del-cancel"\)\.hidden = false;/.test(app2.slice(app2.indexOf("function delClose"))));
     ok("雲端的框:灰標題列 + 「雲端」記號 + 錢記號 + 鈕上方的目的地那一行;暫停與啟動都經過同一支",
       /o\.env = "cloud"; o\.mark = envMoneyText\(money\) \|\| null; o\.markKind = money \|\| null;/.test(fn("trCloudBox"))
       && /t\("tr\.cloud\.footWhere", \{ where: t\("env\.cloud"\), money: envMoneyText\(money\), venue: trVenueLabel\(id, true\) \}\)/.test(fn("trCloudBox"))
-      && /confirmBox\(trCloudBox\(\{/.test(fn("trAskStop")) && /confirmBox\(trCloudBox\(\{/.test(fn("trAskStart"))
+      && /confirmBox\(trCloudBox\(\{/.test(fn("trAskStop")) && /confirmBox\(trCloudBox\(Object\.assign\(\{/.test(fn("trAskStart"))
       && /if \(TR\.env !== "cloud"\) return o;/.test(fn("trCloudBox"))); }
 
   // ── 3. 雲端那一邊是哪一種 ──
