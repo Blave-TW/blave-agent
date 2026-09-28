@@ -2067,8 +2067,9 @@ function limitMatch(text, engine) {
   }
   return null;
 }
-/* 引擎給的重置時間(「1:50pm」「Oct 3, 9am」,引擎標的時區)→ 用戶時區的寫法(zh 24 小時制「13:50」,en「1:50 PM」;
-   不是今天就帶日期)。讀不懂、時區不認得 → ""(那一句就不寫時間,不猜)。userZone 不給 = 這台電腦的時區 */
+/* 引擎給的重置時間(「1:50pm」「Oct 3, 9am」,引擎標的時區)→ 用戶時區的寫法:24 小時制「13:50」,不是今天就帶日期「09/29 13:50」
+   (canon 的時間寫法 MM/DD HH:mm,各語言同一套,所以 lang 不影響結果)。讀不懂、時區不認得 → ""(那一句就不寫時間,不猜)。
+   userZone 不給 = 這台電腦的時區 */
 const LIMIT_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 function limitWhen(when, zone, now, lang, userZone) {
   const m = /^(?:([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:,|\s+at)?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(String(when || "").trim());
@@ -2085,10 +2086,8 @@ function limitWhen(when, zone, now, lang, userZone) {
     let ms = at(y, mo, d);
     if (ms <= now) ms = mon >= 0 ? at(y + 1, mo, d) : at(y, mo, d + 1);   // 只給時刻:過了就是明天;給了月日:過了就是明年
     const a = wall(now, userZone), b = wall(ms, userZone), sameDay = a.year === b.year && a.month === b.month && a.day === b.day;
-    const time = new Intl.DateTimeFormat(lang === "zh" ? "zh-TW" : "en-US", Object.assign({ timeZone: userZone || undefined, hour: lang === "zh" ? "2-digit" : "numeric", minute: "2-digit" },
-      lang === "zh" ? { hourCycle: "h23" } : { hour12: true })).format(new Date(ms));
-    if (sameDay) return time;
-    return lang === "zh" ? b.month + "/" + b.day + " " + time : new Intl.DateTimeFormat("en-US", { timeZone: userZone || undefined, month: "short", day: "numeric" }).format(new Date(ms)) + ", " + time;
+    const p2 = (n) => String(n).padStart(2, "0"), time = p2(b.hour) + ":" + p2(b.minute);
+    return sameDay ? time : p2(b.month) + "/" + p2(b.day) + " " + time;
   } catch (_) { return ""; }
 }
 /* 上限卡畫過之後,引擎緊接著的那句通用錯誤要不要吞:沒跑起來的兩種一律吞;「中途斷了」只在這一輪沒有做過會改東西的步驟時吞

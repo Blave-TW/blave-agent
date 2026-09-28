@@ -26,16 +26,17 @@ ok("判別是一張表(一列一種引擎訊息),每一列都錨在開頭", Arra
 
 // ---- 2. 時間
 const NOW = Date.parse("2026-09-28T05:38:18Z");   // 台北 13:38
-ok("用戶在台北:13:50(zh 24 小時制)/ 1:50 PM(en)", L.limitWhen("1:50pm", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "13:50" && L.limitWhen("1:50pm", "Asia/Taipei", NOW, "en", "Asia/Taipei") === "1:50 PM",
+ok("用戶在台北:13:50,兩語同一套(canon:24 小時制,en 不寫 1:50 PM)", L.limitWhen("1:50pm", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "13:50" && L.limitWhen("1:50pm", "Asia/Taipei", NOW, "en", "Asia/Taipei") === "13:50",
   [L.limitWhen("1:50pm", "Asia/Taipei", NOW, "zh", "Asia/Taipei"), L.limitWhen("1:50pm", "Asia/Taipei", NOW, "en", "Asia/Taipei")]);
-ok("用戶在紐約:同一個時刻換成他的時區(01:50),不是照抄引擎的 1:50pm", L.limitWhen("1:50pm", "Asia/Taipei", NOW, "zh", "America/New_York") === "01:50" && L.limitWhen("1:50pm", "Asia/Taipei", NOW, "en", "America/New_York") === "1:50 AM",
+ok("用戶在紐約:同一個時刻換成他的時區(01:50),不是照抄引擎的 1:50pm", L.limitWhen("1:50pm", "Asia/Taipei", NOW, "zh", "America/New_York") === "01:50" && L.limitWhen("1:50pm", "Asia/Taipei", NOW, "en", "America/New_York") === "01:50",
   L.limitWhen("1:50pm", "Asia/Taipei", NOW, "zh", "America/New_York"));
-ok("今天這個時刻已經過了 → 明天,帶日期", L.limitWhen("9am", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "9/29 09:00" && L.limitWhen("9am", "Asia/Taipei", NOW, "en", "Asia/Taipei") === "Sep 29, 9:00 AM",
+ok("今天這個時刻已經過了 → 明天,帶日期", L.limitWhen("9am", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "09/29 09:00" && L.limitWhen("9am", "Asia/Taipei", NOW, "en", "Asia/Taipei") === "09/29 09:00",
   [L.limitWhen("9am", "Asia/Taipei", NOW, "zh", "Asia/Taipei"), L.limitWhen("9am", "Asia/Taipei", NOW, "en", "Asia/Taipei")]);
-ok("引擎給了月日(週額度):照那一天", L.limitWhen("Oct 3, 9am", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "10/3 09:00" && L.limitWhen("Oct 3 at 9:30am", "Asia/Taipei", NOW, "en", "Asia/Taipei") === "Oct 3, 9:30 AM",
+ok("引擎給了月日(週額度):照那一天", L.limitWhen("Oct 3, 9am", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "10/03 09:00" && L.limitWhen("Oct 3 at 9:30am", "Asia/Taipei", NOW, "en", "Asia/Taipei") === "10/03 09:30",
   [L.limitWhen("Oct 3, 9am", "Asia/Taipei", NOW, "zh", "Asia/Taipei"), L.limitWhen("Oct 3 at 9:30am", "Asia/Taipei", NOW, "en", "Asia/Taipei")]);
-ok("12am / 12pm", L.limitWhen("12am", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "9/29 00:00" && L.limitWhen("12pm", "Asia/Taipei", Date.parse("2026-09-28T01:00:00Z"), "zh", "Asia/Taipei") === "12:00",
+ok("12am / 12pm", L.limitWhen("12am", "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "09/29 00:00" && L.limitWhen("12pm", "Asia/Taipei", Date.parse("2026-09-28T01:00:00Z"), "zh", "Asia/Taipei") === "12:00",
   [L.limitWhen("12am", "Asia/Taipei", NOW, "zh", "Asia/Taipei"), L.limitWhen("12pm", "Asia/Taipei", Date.parse("2026-09-28T01:00:00Z"), "zh", "Asia/Taipei")]);
+ok("寫法只有兩種:HH:mm 與 MM/DD HH:mm(補零);沒有 AM / PM、沒有月份名", ["1:50pm", "9am", "Oct 3, 9am", "12am", "Dec 31 at 11:59pm"].every((w) => ["zh", "en"].every((l) => /^(\d{2}\/\d{2} )?\d{2}:\d{2}$/.test(L.limitWhen(w, "Asia/Taipei", NOW, l, "Asia/Taipei")))));
 ok("引擎沒標時區:當成這台電腦的時區(不丟例外)", typeof L.limitWhen("11:05pm", "", NOW, "zh") === "string" && L.limitWhen("11:05pm", "", NOW, "zh") !== "");
 ok("讀不懂的時間、不認得的時區 → 空字串(那一句不寫時間,不猜)", ["in 2 hours", "soon", "25:00pm", "13pm", "Foo 3, 9am", ""].every((w) => L.limitWhen(w, "Asia/Taipei", NOW, "zh", "Asia/Taipei") === "") && L.limitWhen("1:50pm", "Mars/Olympus", NOW, "zh", "Asia/Taipei") === "");
 
