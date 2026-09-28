@@ -158,6 +158,10 @@ app.whenReady().then(async () => {
     const tip = document.querySelector(".rob-tip"); const on = tip.classList.contains("is-on") && tip.textContent; b.dispatchEvent(new FocusEvent("blur"));
     return { on, off: !tip.classList.contains("is-on"), inline: window.__box.querySelectorAll(".rob-cmp-tbl .tip").length, aria: b.getAttribute("aria-describedby") === tip.id }; })()`);
   ok("② 比較表欄頭「鄰域平均」的說明也走同一顆 body 層單例(表可橫捲不會裁到它);blur 收;沒有行內 .tip", r.on === (await tf("rob.cmp.nbrTip", { k: "3" })) && r.off && r.inline === 0 && r.aria);
+  r = await js(`(() => { const b = window.__box.querySelector(".rob-cmp-tbl th button.mp-tip"), tip = document.querySelector(".rob-tip"); b.dispatchEvent(new FocusEvent("focus"));
+    document.dispatchEvent(new PointerEvent("pointermove")); const stays = tip.classList.contains("is-on");
+    window.__box.style.display = "none"; document.dispatchEvent(new PointerEvent("pointermove")); const off = !tip.classList.contains("is-on"); window.__box.style.display = ""; return { stays, off }; })()`);
+  ok("② 錨點還在畫面上時滑鼠動不收;錨點不在畫面上了(換頁 / 重畫,收不到 blur)下一次滑鼠動就收", r.stays && r.off, JSON.stringify(r));
   r = await js(`(() => { window.__box.style.width = "400px"; const cols = Array.from({ length: 12 }, (_, i) => Math.round(10 * (i + 1)) / 100); const row = cols.map((_, j) => (j === 11 ? 2.5 : 0.3));
     window.__render({ stats: ${JSON.stringify(STATS)}, scan: { row_param: "A", col_param: "B", row_vals: [1, 2], col_vals: cols, grid: [row, row.map((v) => v * 0.9)], window: 1 }, code: "A = 1\\nB = 1.2", name: "s1" }, false);
     const f = window.__box.querySelector(".rob-frame"); const td = window.__box.querySelector(".rob-tbl td.is-current"); const r = td.getBoundingClientRect(), fr = f.getBoundingClientRect();

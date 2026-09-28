@@ -62,10 +62,18 @@ KNOWN_BUGS = {
 }
 
 
-def scenario(sid):
+# Scenarios that run twice, a cloud machine and the desktop (BLAVE_AGENT_LOCAL=1),
+# each in its own workspace: fn(w, local).
+MODES = {"cloud": False, "desktop": True}
+BOTH_MODES = set()
+
+
+def scenario(sid, both_modes=False):
     def deco(fn):
         assert sid not in SCEN, sid
         SCEN[sid] = fn
+        if both_modes:
+            BOTH_MODES.add(sid)
         return fn
     return deco
 
@@ -570,13 +578,14 @@ class World:
             self.start()
 
 
-def run_child(sid, ws, src):
+def run_child(cid, ws, src):
+    sid, _, mode = cid.partition("@")
     w = World(ws, src)
     try:
-        SCEN[sid](w)
+        SCEN[sid](w, MODES[mode]) if sid in BOTH_MODES else SCEN[sid](w)
     except Exception:
         traceback.print_exc()
-        print(f"FAIL {sid} raised")
+        print(f"FAIL {cid} raised")
         return 1
     return 1 if w.fails else 0
 
@@ -1342,6 +1351,80 @@ def tc37(w):
     w.settle()
     w.eq(w.paper_pos(B), 0.05, "the user's 0.05 on the new paper account is never sold")
     w.eq(w.book(), {}, "the old account's 0.02 is not this account's book")
+
+
+# A real venue's key REFUSED at the bind while paper is trading: the other half
+# of TC-15 (a key that passes evicts paper and HALTs).
+BIND_WATCHED = (".env", "manager/portfolio_config.json", "manager/amounts.ui.json",
+                "manager/credentials.ui.json", "manager/ledger_seed.json",
+                "state/paper_ledger.json", "state/account_guard.json")
+
+
+def _bind_files():
+    out = {}
+    for p in BIND_WATCHED:
+        try:
+            with open(p, "rb") as f:
+                out[p] = f.read()
+        except OSError:
+            out[p] = None
+    return out
+
+
+def _paper_long_on(w, local):
+    _long(w)
+    if local:
+        os.environ["BLAVE_AGENT_LOCAL"] = "1"
+        w.cl.LOCAL_OPEN_VENUES = frozenset(w.cl.LOCAL_OPEN_VENUES | {"OKX"})
+    w.eq(w.cl._local_mode(), local, "desktop" if local else "cloud machine")
+
+
+def _bind_refused(w, answers, code, what):
+    """One refused bind over a paper long."""
+    hits = w.okx_answers(**answers)
+    before, n_events = _bind_files(), len(w.events())
+    r = w.cmd("credentials", env=OKX_KEYS)
+    w.check(isinstance(r, ValueError) and str(r).startswith(code + ": ") and "not saved" in str(r),
+            f"{what}: refused with {code} ({r})")
+    w.check(not any(v in str(r) for v in OKX_KEYS.values()), "no key value in the refusal")
+    w.check(OKX_CONFIG in hits, f"OKX was asked for the key's permissions ({sorted(set(hits))})")
+    after = _bind_files()
+    w.eq([p for p in BIND_WATCHED if after[p] != before[p]], [],
+         ".env, routing, manifest, book seed, paper ledger: byte-identical")
+    w.eq([p for p in BIND_WATCHED[:6] if before[p] is None], [],
+         "…and each of them is there to compare")
+    w.check(b"OKX_" not in after[".env"], "no okx line in .env")
+    w.check(not w.halted(), "no HALT")
+    w.eq(len(w.events()), n_events, "no event")
+    w.eq((w.sup["running"], w.sup["stops"]), (True, 0), "the reconciler was not stopped")
+    cfg = json.load(open("manager/portfolio_config.json"))
+    w.eq((cfg["amounts"], cfg["exchanges"]), ({"a1": 1000.0}, {"a1": "paper"}), "amounts and routing")
+    w.eq((w.book(venue="paper"), w.book(venue="okx")), ({B: (0.02, 1000.0)}, {}), "books")
+
+
+def _paper_goes_on(w):
+    w.eq(w.settle(), [], "signal unchanged: paper places nothing")
+    w.sig("a1", 0)
+    w.eq(w.settle(), [(B, "sell", 0.02, True)], "the next signal trades on paper as before")
+    w.check(not w.halted(), "still no HALT")
+
+
+@scenario("TC-38", both_modes=True)
+def tc38(w, local):
+    _paper_long_on(w, local)
+    _bind_refused(w, {"perm": "read_only,withdraw,trade"}, "WITHDRAW_ENABLED",
+                  "a key that may withdraw")
+    _paper_goes_on(w)
+
+
+@scenario("TC-39", both_modes=True)
+def tc39(w, local):
+    _paper_long_on(w, local)
+    # the desktop reads the account first (_local_real_key_gate): OKX out of
+    # reach is refused there, before the permission is asked
+    _bind_refused(w, {"down": True}, "REJECTED" if local else "UNKNOWN", "OKX cannot be reached")
+    _bind_refused(w, {"perm": None}, "UNKNOWN", "an answer without `perm`")
+    _paper_goes_on(w)
 
 
 # ── manual positions ──────────────────────────────────────────────────────────
@@ -2506,14 +2589,14 @@ def make_ws(src, base):
     return ws
 
 
-def run_one(sid, src, base, keep):
+def run_one(cid, src, base, keep):
     ws = make_ws(src, base)
     env = _child_env(base, src)
     env["BLAVE_AGENT_WORKSPACE"] = ws
     env["BLAVE_AGENT_HOME"] = env["BLAVECLAW_HOME"] = env["BLAVE_AGENT_BASE"] = ws
     t0 = time.time()
     try:
-        p = subprocess.run([sys.executable, os.path.abspath(__file__), "--child", sid,
+        p = subprocess.run([sys.executable, os.path.abspath(__file__), "--child", cid,
                             "--ws", ws, "--src", src],
                            cwd=ws, env=env, capture_output=True, text=True,
                            timeout=CHILD_TIMEOUT_S)
@@ -2522,7 +2605,7 @@ def run_one(sid, src, base, keep):
         rc, out = 1, f"TIMEOUT after {CHILD_TIMEOUT_S}s\n{e.stdout or ''}"
     if rc == 0 and not keep:
         shutil.rmtree(ws, ignore_errors=True)
-    return sid, rc, out, time.time() - t0, ws
+    return cid, rc, out, time.time() - t0, ws
 
 
 def parent(a):
@@ -2547,13 +2630,15 @@ def parent(a):
         f.write(SITECUSTOMIZE)
     failed, xfail = [], []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, a.jobs)) as pool:
-        futs = [pool.submit(run_one, sid, src, base, a.keep) for sid in ids]
+        futs = [pool.submit(run_one, cid, src, base, a.keep) for sid in ids
+                for cid in ([f"{sid}@{m}" for m in MODES] if sid in BOTH_MODES else [sid])]
         for fut in concurrent.futures.as_completed(futs):
-            sid, rc, out, dt, ws = fut.result()
+            cid, rc, out, dt, ws = fut.result()
+            sid = cid.partition("@")[0]
             known = sid in KNOWN_BUGS
             verdict = ("xfail (known bug)" if rc and known else "XPASS: known bug no longer "
                        "reproduces" if known else "pass" if rc == 0 else "FAIL")
-            print(f"== {sid}  {verdict}  ({dt:.1f}s)"
+            print(f"== {cid}  {verdict}  ({dt:.1f}s)"
                   + ("" if rc == 0 and not a.keep else f"  ws={ws}"))
             if rc or known or os.environ.get("PAPER_HARNESS_VERBOSE"):
                 if known:
@@ -2561,7 +2646,7 @@ def parent(a):
                 print("   " + out.strip().replace("\n", "\n   "))
             if rc and known:
                 xfail.append(sid)
-            elif rc or known:
+            elif (rc or known) and sid not in failed:
                 failed.append(sid)
     if not failed and not a.keep:
         shutil.rmtree(base, ignore_errors=True)

@@ -1,7 +1,9 @@
 """runtime/local_daemon.py — the gates, no network, no daemon chain (that one is
 check_local_daemon_chain.py).
 
-  1. ALLOWED is the api's ALLOWED, item for item (needs ../api side by side).
+  1. ALLOWED + CLOUD_ONLY is the api's ALLOWED, item for item, and the two do
+     not overlap (BLAVE_API_DIR or ../api; prints SKIP without). Cloud-only
+     commands are refused like any unknown one.
   2. parse_command: unknown command / bad id / oversize / unsigned / forged /
      stale / replayed are refused, and no refusal echoes a value from the file;
      `halt` is the only unsigned command.
@@ -52,16 +54,19 @@ def check(cond, msg):
 
 
 # ── 1. whitelist sync ────────────────────────────────────────────────────────
-API = os.path.join(ROOT, "..", "api", "openclaw", "agent_command.py")
+API_DIR = os.environ.get("BLAVE_API_DIR") or os.path.join(os.path.dirname(ROOT), "api")
+API = os.path.join(API_DIR, "openclaw", "agent_command.py")
+check(not (ld.ALLOWED & ld.CLOUD_ONLY), "ALLOWED and CLOUD_ONLY do not overlap")
 if os.path.isfile(API):
     api_allowed = None
     for node in ast.parse(open(API, encoding="utf-8").read()).body:
         if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "ALLOWED":
             api_allowed = set(ast.literal_eval(node.value))
-    check(api_allowed == set(ld.ALLOWED),
-          f"ALLOWED == api's ALLOWED (diff: {sorted(set(ld.ALLOWED) ^ (api_allowed or set()))})")
+    check(api_allowed == set(ld.ALLOWED | ld.CLOUD_ONLY),
+          "ALLOWED + CLOUD_ONLY == api's ALLOWED "
+          f"(diff: {sorted(set(ld.ALLOWED | ld.CLOUD_ONLY) ^ (api_allowed or set()))})")
 else:
-    print("skip whitelist sync — needs the monorepo layout (../api)")
+    print("SKIP  whitelist sync with the api (no openclaw/agent_command.py; set BLAVE_API_DIR)")
 check(set(ld.ALLOWED) <= set(cl.HANDLERS), "every allowed command has a handler")
 check("telegram_reset" not in ld.ALLOWED, "telegram_reset stays out, as in the api")
 check(ld.UNSIGNED_OK == {"halt"}, "halt is the only unsigned command")
@@ -91,6 +96,8 @@ ok = ld.parse_command(cmd_file("a1", "resume"), "a1", SECRET, NOW, lambda c: Fal
 check(ok == {"id": "a1", "cmd": "resume", "args": {}}, "signed command parses to {id, cmd, args}")
 refused(cmd_file("a1", "TOPSECRET"), "a1", "unknown command")
 refused(cmd_file("a1", "telegram_reset"), "a1", "telegram_reset")
+for c_ in sorted(ld.CLOUD_ONLY):
+    refused(cmd_file("a1", c_), "a1", f"cloud-only {c_}")
 refused(cmd_file("../x", "resume"), "../x", "path-shaped id")
 refused(cmd_file("a1", "resume"), "a2", "id != file name")
 refused(cmd_file("a1", "resume", {"pad": "x" * ld.MAX_BYTES}), "a1", "oversize")

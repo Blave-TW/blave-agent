@@ -140,7 +140,7 @@ def main():
                                capture_output=True, text=True, timeout=60)
             if r.returncode != 0 and "ModuleNotFoundError" in r.stderr \
                     and not any(m in r.stderr for m in NEW_MODULES):
-                print(f"skip runtime/{mod}.py under 3.10 (third-party dep missing): "
+                print(f"SKIP  runtime/{mod}.py import under 3.10 (third-party dep missing): "
                       + r.stderr.strip().splitlines()[-1])
             elif r.returncode != 0:
                 failed = True
@@ -148,7 +148,7 @@ def main():
                       + r.stderr.strip().splitlines()[-1])
         print(f"live: imported under {py310}")
     else:
-        print("live: no python3.10 on PATH, import run skipped")
+        print("SKIP  live import run (no python3.10 on PATH)")
 
     if failed:
         sys.exit(1)

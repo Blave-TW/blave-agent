@@ -55,6 +55,7 @@ app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-rbnews-")))
 const NEWS = process.env.RB_NEWS ? JSON.parse(read(process.env.RB_NEWS)) : null;
 const WEEKLY = JSON.parse(read(path.join(FIX, "report_weekly.json"))), MCPT = JSON.parse(read(path.join(FIX, "report_mcpt.json")));
 const MORNING = fs.existsSync(path.join(MONO, "api", "tests", "fixtures", "report_morning.json")) ? JSON.parse(read(path.join(MONO, "api", "tests", "fixtures", "report_morning.json"))) : null;
+if (!MORNING) console.log("SKIP  ② 舊報告零變化的晨報樣本(需要 monorepo 版面:../api/tests/fixtures/report_morning.json)");
 const BAD = ["http://news.example.com/a", "https://u:p@news.example.com/", "https://user@news.example.com/", "https://news.example.com\\evil.com/", "https:\\\\evil.com", "https://例子.com/", "https://news.example.com/\u200b",
   "javascript:alert(1)", "https:evil.com", "https:/evil.com", " https://news.example.com/", "https://", "", "data:text/html,x", "file:///etc/passwd", 123, null, { href: "https://evil.com" }];
 const EVIL = { schema_version: "1.4", id: "x-evil", type: "research", title: "evil", created_at: 1790380800, blocks: [

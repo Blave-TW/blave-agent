@@ -2499,8 +2499,10 @@ app.whenReady().then(() => {
   startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
-  app.on("browser-window-focus", () => { lastAcct = null; p1Badge = 0; if (app.dock) app.dock.setBadge(""); cloudHost().setForeground(true); });
-  app.on("browser-window-blur", () => cloudHost().setForeground(false));   // 背景時輪詢放慢到 60 秒
+  // 畫面自己的 blur 分不出「焦點進了內建瀏覽器那一頁」跟「整個視窗退到背景」,所以由這裡講
+  const tellActive = (w, on) => { if (w && !w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("window-active", on); };
+  app.on("browser-window-focus", (_e, w) => { lastAcct = null; p1Badge = 0; if (app.dock) app.dock.setBadge(""); cloudHost().setForeground(true); tellActive(w, true); });
+  app.on("browser-window-blur", (_e, w) => { cloudHost().setForeground(false); tellActive(w, false); });   // 背景時輪詢放慢到 60 秒
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   startStep("tray", trayStart);
   startStep("telemetry", () => tm().start());
