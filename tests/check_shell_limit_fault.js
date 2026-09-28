@@ -54,6 +54,10 @@ ok("error chunk:上限卡之後的通用句照 limitSwallow 吞", /if \(turnLimi
 const keys = ["fault.limit", "fault.limitNoTime", "fault.limitBtn"];
 ok("字串 zh / en 都在;帶引擎名與重置時間的位置;講出口(設定 › 模型接入)", keys.every((k) => STR.zh[k] && STR.en[k]) && /\{name\}/.test(STR.zh["fault.limit"]) && /\{when\}/.test(STR.zh["fault.limit"]) && /\{when\}/.test(STR.en["fault.limit"])
   && !/\{when\}/.test(STR.zh["fault.limitNoTime"]) && keys.slice(0, 2).every((k) => STR.zh[k].includes("› " + STR.zh["set.cat.model"] + "」") && STR.en[k].includes("› " + STR.en["set.cat.model"])));
+// 「模型接入」那一頁自己的用詞是 AI;engine 在這個 app 裡已經指下單引擎(設計師定稿)
+ok("上限卡三句講「AI」,不講「引擎 / engine」;鈕是「切換 AI」/ Switch AI", keys.every((k) => !/引擎/.test(STR.zh[k]) && !/engine/i.test(STR.en[k])) && STR.zh["fault.limitBtn"] === "切換 AI" && STR.en["fault.limitBtn"] === "Switch AI"
+  && STR.zh["fault.limit"] === "你的 {name} 訂閱用量到上限了，{when} 重置。在那之前可以到「設定 › 模型接入」換別的 AI 繼續。" && STR.en["fault.limit"] === "Your {name} subscription has reached its usage limit. It resets at {when}. Until then, switch to another AI in Settings › Model access."
+  && STR.zh["fault.limitNoTime"] === "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 › 模型接入」換別的 AI 繼續。" && STR.en["fault.limitNoTime"] === "Your {name} subscription has reached its usage limit. Until it resets, switch to another AI in Settings › Model access.");
 ok("對外文案不寫死別家的方案名稱或價格", keys.every((k) => !/\b(Pro|Max|Plus|Team|Free)\b|[$＄]|\d+\s*(美元|元|USD)/.test(STR.zh[k] + " " + STR.en[k])));
 ok("不說「只做完一部分」:上限那兩句裡沒有這種話", !/一部分|partly|midway/.test(STR.zh["fault.limit"] + STR.zh["fault.limitNoTime"] + STR.en["fault.limit"] + STR.en["fault.limitNoTime"]));
 console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -190,7 +190,7 @@ msgid "act.schedule"
 msgstr "Setting up a schedule"
 
 msgid "act.order"
-msgstr "Placing an order"
+msgstr "Running an order command"
 
 msgid "act.account"
 msgstr "Checking the account"
@@ -278,7 +278,7 @@ msgid "step.schedule"
 msgstr "Set up a schedule"
 
 msgid "step.order"
-msgstr "Placed an order"
+msgstr "Ran an order command"
 
 msgid "step.account"
 msgstr "Checked the account"
@@ -388,15 +388,15 @@ msgstr "Your account can't use {model}. This turn did not run — switched back 
 msgid "fault.noModelBtn"
 msgstr "Choose a Model"
 
-# 第八批 #4(e2e #187):引擎的用量上限。暫定字,待設計師確認
+# 第八批 #4(e2e #187):用戶自己那個訂閱的用量上限。字是設計師定稿(用「AI」不用「引擎」:engine 在這個 app 裡指下單引擎)
 msgid "fault.limit"
-msgstr "You’ve reached the usage limit of your own {name} subscription. It resets at {when}. Until then, switch to another engine in Settings › Model access."
+msgstr "Your {name} subscription has reached its usage limit. It resets at {when}. Until then, switch to another AI in Settings › Model access."
 
 msgid "fault.limitNoTime"
-msgstr "You’ve reached the usage limit of your own {name} subscription. Until it resets, switch to another engine in Settings › Model access."
+msgstr "Your {name} subscription has reached its usage limit. Until it resets, switch to another AI in Settings › Model access."
 
 msgid "fault.limitBtn"
-msgstr "Switch Engine"
+msgstr "Switch AI"
 
 msgid "mp.na"
 msgstr "Not on your plan"
@@ -1362,7 +1362,7 @@ msgid "tr.keep.sleep"
 msgstr "While this computer sleeps, is shut down, or Blave is closed, no orders go out — exits and stops included."
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
-# tr.keep.ownBuilt 是暫定字(意思由後端依對帳邏輯定,字待設計師定稿)
+# 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定
 msgid "tr.keep.own"
 msgstr "Only Blave’s own share is traded."
 
@@ -1370,7 +1370,7 @@ msgid "tr.keep.ownFirst"
 msgstr "Only Blave’s own share is traded. If you already hold a same-side position in the same coin, the first reconcile counts it in."
 
 msgid "tr.keep.ownBuilt"
-msgstr "Only Blave’s own share is traded: positions you opened yourself are not counted as Blave’s and don’t count toward a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+msgstr "Only Blave’s own share is traded. Positions you opened yourself aren’t counted as Blave’s and don’t offset a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
 
 msgid "tr.det.own"
 msgstr "Which positions count as Blave’s"
