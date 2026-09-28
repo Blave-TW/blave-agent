@@ -199,6 +199,19 @@ if node:
 else:
     print("  SKIP  ⑧ 沒有 node")
 
+# ── 帳本不是報告 ──
+import re as _re
+ledger = os.path.basename(R.LEDGER)
+sys.path.insert(0, os.path.join(ROOT, "runtime"))
+os.environ.setdefault("BLAVE_PROXY_TOKEN", "x")
+import report_uploader as U
+U.REPORTS_DIR = R.REPORTS_DIR
+main_js = open(os.path.join(ROOT, "shell", "main.js"), encoding="utf-8").read()
+check(os.path.isfile(R.LEDGER) and ledger == ".written.jsonl" and not ledger.endswith(".json") and ledger[:-5] not in [rid for rid, _ in U.pending()]
+      and all(_re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rid) for rid, _ in U.pending())
+      and 'if (!name.endsWith(".json")) continue;' in main_js and "if (!RPT_ID_RE.test(id) || seen.has(id)) continue;" in main_js,
+      "帳本 reports/.written.jsonl:上傳程式的掃描(只收 <id>.json)與電腦版的報告清單都不會把它當成報告", [rid for rid, _ in U.pending()][:3])
+
 # ── 文件 ──
 doc = open(os.path.join(ROOT, "references", "reports.md"), encoding="utf-8").read()
 check("overwrites" not in doc.split("## 2.")[0] and "replace=True" in doc and "A report is never overwritten" in doc,

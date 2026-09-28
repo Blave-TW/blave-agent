@@ -7,7 +7,7 @@
 const path = require("path"), fs = require("fs"), os = require("os");
 const B = path.join(__dirname, "..", "shell", "browser");
 const policy = require(path.join(B, "policy")), gate = require(path.join(B, "gate"));
-const { createCapture, saveCite, citeSlot, CITES_PER_TURN } = require(path.join(B, "capture"));
+const { createCapture, saveCite, citeSlot, sweepCites, CITES_PER_TURN } = require(path.join(B, "capture"));
 const IP = require(path.join(B, "inpage"));
 let red = 0; const t = (n, ok, got) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) { red++; if (got !== undefined) console.log("      got: " + JSON.stringify(got).slice(0, 400)); } };
 
@@ -92,6 +92,31 @@ fs.mkdirSync(outside);
   t("citeSlot:sent/ 裡的也算有報告;-auto 的序號排在字尾前;超過 64 字從主幹截", citeSlot(reports, "r1") === "r1-3" && citeSlot(reports, "fresh") === "fresh"
     && (fs.writeFileSync(path.join(reports, "d-auto.json"), "{}"), citeSlot(reports, "d-auto")) === "d-2-auto"
     && (fs.writeFileSync(path.join(reports, "x".repeat(64) + ".json"), "{}"), citeSlot(reports, "x".repeat(64))) === "x".repeat(62) + "-2", [citeSlot(reports, "r1"), citeSlot(reports, "d-auto")]);
+}
+
+// ── 回合結束:沒被任何報告收下的擷取檔清掉(實機:先用 research-btc 擷取、後來改用別的 id 發佈,留下孤兒 research-btc-2.files/)──
+{
+  const rp = path.join(tmp, "sweep", "reports"); fs.mkdirSync(rp, { recursive: true });
+  const ls = (d) => { try { return fs.readdirSync(path.join(rp, d)).sort().join(); } catch (_) { return null; } };
+  fs.writeFileSync(path.join(rp, "old.json"), "{}"); fs.mkdirSync(path.join(rp, "old.files")); fs.writeFileSync(path.join(rp, "old.files", "cite-kept.png"), "k");
+  const a = { dir: saveCite(rp, "old", "cite-orphan.png", Buffer.from("o")), file: "cite-orphan.png" };              // old 已有報告 → old-2.files/
+  const b = { dir: saveCite(rp, "taken", "cite-used.png", Buffer.from("u")), file: "cite-used.png" };               // 之後 taken 發佈了
+  fs.writeFileSync(path.join(rp, "taken.json"), "{}"); fs.writeFileSync(path.join(rp, "taken.files", "cite-unref.png"), "x");
+  const c = { dir: saveCite(rp, "mixed", "cite-mine.png", Buffer.from("m")), file: "cite-mine.png" };                // 同資料夾有別人(上一輪)的檔
+  fs.writeFileSync(path.join(rp, "mixed.files", "cite-earlier.png"), "e");
+  const d = { dir: saveCite(rp, "moved", "cite-gone.png", Buffer.from("g")), file: "cite-gone.png" };                // lib 已經把它搬到實際 id 的資料夾
+  fs.unlinkSync(path.join(rp, "moved.files", "cite-gone.png"));
+  t("saveCite 回它寫進去的資料夾", a.dir === path.join(rp, "old-2.files") && b.dir === path.join(rp, "taken.files"));
+  const n = sweepCites(rp, [a, b, c, d, null, { dir: path.join(tmp, "x.files"), file: "cite-a.png" }, { dir: path.join(rp, "old.files"), file: "cite-kept.png" }, { dir: a.dir, file: "../old.json" }]);
+  t("孤兒(那個 id 到回合結束都沒有報告):檔清掉、空資料夾收掉", n === 2 && ls("old-2.files") === null && ls("moved.files") === null, n + " " + ls("old-2.files"));
+  t("有報告的資料夾一個字都不碰:這一輪擷取、報告收下的圖留著,連沒被引用的也不由這裡清;既有報告的圖原封不動", ls("taken.files") === "cite-unref.png,cite-used.png" && ls("old.files") === "cite-kept.png" && fs.existsSync(path.join(rp, "old.json")));
+  t("只刪這一輪自己寫的那個檔:同資料夾別的檔留著、資料夾不收", ls("mixed.files") === "cite-earlier.png");
+  const out2 = path.join(tmp, "outside2"); fs.mkdirSync(out2);
+  fs.symlinkSync(out2, path.join(rp, "link.files")); fs.writeFileSync(path.join(out2, "cite-out.png"), "z");
+  t("資料夾是 symlink / 在 reports 以外 / 檔名帶路徑:不動", sweepCites(rp, [{ dir: path.join(rp, "link.files"), file: "cite-out.png" }]) === 0 && fs.existsSync(path.join(out2, "cite-out.png")) && sweepCites(rp, "x") === 0 && sweepCites(null, [a]) === 0);
+  const idx = fs.readFileSync(path.join(B, "index.js"), "utf8");
+  t("接線:doCapture 把存好的檔記在這一輪的狀態;endTurn 清(在 used 判斷之前,清不掉不擋收尾)", /\(cur\.cites \|\| \(cur\.cites = \[\]\)\)\.push\(\{ dir: saveCite\(d\.reportsDir, report, file, buf\), file \}\);/.test(fs.readFileSync(path.join(B, "capture.js"), "utf8"))
+    && /const c = cur; cur = null;\s*try \{ sweepCites\(o\.reportsDir, c\.cites\); \} catch \(_\) \{[^}]*\}\s*if \(!c\.used\) return;/.test(idx));
 }
 
 // ── 流程 ──

@@ -59,6 +59,26 @@ function saveCite(reportsDir, report, file, buf) {
   const K = fs.constants;
   const fd = fs.openSync(path.join(dir, file), K.O_CREAT | K.O_EXCL | K.O_WRONLY | (K.O_NOFOLLOW || 0), 0o644);
   try { fs.writeSync(fd, buf); } finally { fs.closeSync(fd); }
+  return dir;
+}
+/* 回合結束:這一輪擷取了、卻沒有任何報告收下的圖清掉(實機:agent 先用一個 id 擷取,後來改用另一個 id 發佈,第一個資料夾成了孤兒)。
+   只動這一輪自己寫的那幾個檔(cites = doCapture 記下的 { dir, file }),而且那個資料夾的 id 現在仍然沒有報告——有報告的資料夾
+   一個字都不碰(寫報告時 lib/report.py 已經清過沒引用的)。資料夾空了才收。回清掉的檔數 */
+function sweepCites(reportsDir, cites) {
+  let n = 0;
+  if (!reportsDir || !Array.isArray(cites)) return n;
+  let root; try { root = fs.realpathSync(reportsDir); } catch (_) { return n; }
+  const has = (id) => fs.existsSync(path.join(reportsDir, id + ".json")) || fs.existsSync(path.join(reportsDir, "sent", id + ".json"));
+  for (const c of cites) {
+    const dir = c && typeof c.dir === "string" ? c.dir : "", file = c && typeof c.file === "string" ? c.file : "", id = path.basename(dir).slice(0, -".files".length);
+    if (!/^cite-[A-Za-z0-9.-]{1,70}$/.test(file) || !dir.endsWith(".files") || !REPORT_ID_RE.test(id) || has(id)) continue;
+    try {
+      if (!fs.lstatSync(dir).isDirectory() || fs.realpathSync(dir) !== path.join(root, id + ".files")) continue;
+      if (fs.lstatSync(path.join(dir, file)).isFile()) { fs.unlinkSync(path.join(dir, file)); n++; }
+    } catch (_) { /* 已經被報告收走(lib 搬到實際 id 的資料夾)或不在了 */ }
+    try { fs.rmdirSync(dir); } catch (_) { /* 還有別的檔:留著 */ }
+  }
+  return n;
 }
 
 /**
@@ -187,7 +207,7 @@ function createCapture(d) {
     if (!buf.length) return ERR("screenshot_failed", "could not capture this element right now; try again", { tab: t.alias });
     if (buf.length > CITE_BYTES_MAX) return ERR("capture_refused", "the picture is over 2 MB even as JPEG; pick a smaller chart element", { tab: t.alias, ref: args.ref, reason: "too_large" });
     const file = "cite-" + Date.now().toString(36) + "-" + crypto.randomBytes(3).toString("hex") + "." + ext;
-    try { saveCite(d.reportsDir, report, file, buf); }
+    try { (cur.cites || (cur.cites = [])).push({ dir: saveCite(d.reportsDir, report, file, buf), file }); }   // 記下來:回合結束時沒被報告收下的要清(sweepCites)
     catch (_) { return ERR("internal", "could not save the picture into the report folder"); }
     const host = new URL(url).hostname;
     let site = ""; try { site = await v.page.run(function () { const m = document.querySelector('meta[property="og:site_name"], meta[name="application-name"]'); return m ? String(m.getAttribute("content") || "").slice(0, 200) : ""; }); } catch (_) { /* 用網域 */ }
@@ -200,4 +220,4 @@ function createCapture(d) {
   return { doCapture };
 }
 
-module.exports = { createCapture, saveCite, citeSlot, CITES_PER_TURN, CITE_FIT_MSG };
+module.exports = { createCapture, saveCite, citeSlot, sweepCites, CITES_PER_TURN, CITE_FIT_MSG };

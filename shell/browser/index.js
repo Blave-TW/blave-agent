@@ -12,7 +12,7 @@ const { createPage } = require("./cdp");
 const { createPace } = require("./pace");
 const { createMcpServer } = require("./mcp");
 const { createSnapshots } = require("./snapshots");
-const { createCapture } = require("./capture");
+const { createCapture, sweepCites } = require("./capture");
 const { TOOLS, INSTRUCTIONS } = require("./tools");
 const IP = require("./inpage");
 
@@ -973,6 +973,7 @@ function createBrowser(o) {
       if (reportWatch) { try { reportWatch.close(); } catch (_) { /* 已關 */ } reportWatch = null; }
       if (!cur) return;
       const c = cur; cur = null;
+      try { sweepCites(o.reportsDir, c.cites); } catch (_) { /* 清不掉:留著,不擋回合收尾 */ }
       if (!c.used) return;
       const favOf = (u) => { try { return favCache.get(new URL(u).host) || null; } catch (_) { return null; } };
       const rows = tabs.thisTurnAll().filter((t) => t.status !== "closed" || t.readEver).map((t) => ({ id: t.id, url: C.scrub(t.url, 2000), title: C.scrub(t.title, 300), status: t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : t.readEver ? "done" : "open", snapshot_id: t.snapshotId || null, search: !!t.isSearch }));
