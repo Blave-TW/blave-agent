@@ -246,7 +246,7 @@ def _publish_checklist(pack):
         "擷取了卻不放 → narrative[\"images_unused\"] 一句說明(檔案會刪),並在回覆講那張圖沒有放進報告",
         "  13. 前後比較用同一個基準:寫「從 A 到 B」「擴大／收斂 N 個百分點」的兩個值,基準與算法要一樣——分母、匯率、對照價"
         "都取同一天;有一個換了日期就不是同一個指標的變化,不寫成「從 A 到 B」。"
-        "自己換算的衍生數字(上面 describe() 沒有的):在表或圖說寫明公式與每個輸入的日期;拿不到同基準的輸入就寫「查無」,不硬算;"
+        "自己換算的衍生數字(上面 describe() 沒有的):在表或圖說寫明公式與每個輸入的日期;拿不到同基準的輸入,那一格寫「—」,不硬算;"
         "用戶說「不要估」時,衍生數字不進標題與 lead。百分位與排名不互換(「第 2 百分位」不是「第 2 低」)",
         "  讀網頁:有內建瀏覽器(電腦版)時 browser_read 只用 part=\"meta\" / \"outline\" / \"section\",不用 \"full\"(每頁約 3,000 字);"
         "沒有瀏覽器(雲端、排程)用 WebSearch 找、WebFetch 讀,prompt 只要標題、發布時間與一句重點",
@@ -854,8 +854,8 @@ def quickstart():
         "A FIGURE YOU WORK OUT YOURSELF, AND BEFORE / AFTER",
         "  'From A to B' needs both values on one basis and one formula: the denominator, the FX rate and the reference",
         "  price each of the SAME date on both sides. One input changed date -> not the same measure; never 'from A to B'.",
-        "  State the formula and the date of every input in the table or the caption. No input on the same basis -> write",
-        "  查無, do not compute it anyway. The user said not to estimate -> no derived figure in the title or the lead.",
+        "  State the formula and the date of every input in the table or the caption. No input on the same basis -> the",
+        "  cell says —, do not compute it anyway. The user said not to estimate -> no derived figure in the title or the lead.",
         "  A percentile is not a rank: '2nd percentile' is never 'second lowest'.",
         "RUN IT",
         "  python3 -c '...' from the workspace root, or a tmp/ script run as python3 -m tmp.x (python3 tmp/x.py cannot import lib).",
