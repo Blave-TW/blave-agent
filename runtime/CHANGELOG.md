@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **一份報告出事不再卡住整輪上傳(0.1.8 稽核 P2-12,第十批 #7)**:尾註某一列的 `id` 是陣列或物件、而且同一個 block 裡另有重複 id 要改名時,
+  `unique_footnotes` 丟 `TypeError: unhashable type`;`upload_one` 沒接,整輪中斷、`_save_state` 沒跑,下一輪同一份再炸一次,排在後面的報告都送不出去。
+  ① 改名時只拿字串 id 比對(跟 api 的 `unique_footnotes`、外殼的 `uniqueFootnotes` 同一個答案),那一列原樣留著由驗證器拒收;
+  ② `upload_one` 裡正規化失敗就原樣送(api 會講哪裡錯);③ `run_once` 接住單份報告的任何例外:記 log、照退避(`_defer`)、繼續下一份。
+  測試 `tests/check_report_footnotes.py`。
 - **排程守門認得自然的寫法(0.1.8 稽核 P1-3,第十批 #3)**:`if crontab -l …; then`、`for …; do crontab $f; done`、`while …; do launchctl list; done`、
   `{ crontab -l; }`、`! crontab -l`、`sudo -u root crontab`、`env -i crontab`、`command -p` / `time -p` / `nice crontab`、`… | xargs crontab`、
   `find … -exec crontab {} \;` 原本都放行,macOS 的系統框照樣會掛住回合。`_SCHED_CMD_RE` 的指令位置多認 shell 關鍵字之後、find 的 `-exec` / `-ok` 之後;

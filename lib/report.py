@@ -338,7 +338,9 @@ def unique_footnotes(blocks):
                 if len(joined) <= _FN_TEXT_MAX:
                     head["text"] = joined
                     continue
-            n, taken = 2, {r.get("id") for r in b["items"] if isinstance(r, dict)} | set(first)
+            # only string ids can clash with the new name; an id that is a list or an object is
+            # not hashable, and is the validator's to refuse, not a reason to raise here
+            n, taken = 2, {r["id"] for r in b["items"] if isinstance(r, dict) and isinstance(r.get("id"), str)} | set(first)
             while f"{it['id'][:_FN_ID_MAX - 4]}-{n}" in taken:
                 n += 1
             it = dict(it, id=f"{it['id'][:_FN_ID_MAX - 4]}-{n}")
