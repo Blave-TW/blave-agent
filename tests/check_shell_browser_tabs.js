@@ -22,7 +22,9 @@ t("上限是 8(Wei 拍板,不給 agent 調)", MAX_LIVE === 8);
   w.tabs.failed(opened[3].id, "dns");
   t("失敗的頁釋放名額", w.tabs.liveCount() === 7);
   w.tabs.newTurn();
-  t("新回合:舊 alias 作廢(agent 拿不到上一輪的分頁)", w.tabs.byAlias("t5") === null && w.tabs.all().length > 0);
+  t("新回合:代號不重編——還活著的舊分頁照同一個代號指得到,關掉的指不到(第十三批 #200)", w.tabs.byAlias("t5") === opened[4] && w.tabs.byAlias("t3") === null && w.tabs.thisTurn().length === 0
+    && w.tabs.reachable().every((x) => x.status === "loading" || x.status === "ready") && !w.tabs.reachable().includes(opened[0]) && w.tabs.reachable().includes(opened[4]));
+  t("新回合開的分頁接著編號,不重用舊代號", w.tabs.open("https://n.example/", "n.example", "agent").tab.alias === "t11");
 }
 { const w = world();
   for (let i = 0; i < LIMITS.pagesPerMin; i++) w.tabs.open("https://h" + i + ".example/", "h" + i + ".example", "agent");
