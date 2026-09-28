@@ -44,7 +44,11 @@ const EVENTS = {
     // 設定 › 公開連結(renderer/report-sharelist.js;0.1.8):切到那個分類、清單畫出來時
     "share_list_open",
     // 送進 TradingView(renderer/pine-install.js;0.1.8):按了送進、貼好交接、回傳結果送出、請 agent 修 / 貼送出、找不到編輯器、編譯沒過
-    "tv_send", "tv_pasted", "tv_read", "tv_fix", "tv_agent_paste", "tv_fail_editor", "tv_fail_compile"] },
+    // tv_read / tv_fix / tv_fail_compile:0.1.8 流程改成停在交接之後沒有送出點(回傳結果、請 agent 修、檢查結果三個入口拿掉);
+    // 名字留著——舊版外殼還在送、api 端照收,兩端逐字比對連順序都比
+    "tv_send", "tv_pasted", "tv_read", "tv_fix", "tv_agent_paste", "tv_fail_editor", "tv_fail_compile",
+    // 內建瀏覽器「用系統瀏覽器開」(renderer/browser.js;0.1.8):按了就記,不記網址
+    "browser_open_ext"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

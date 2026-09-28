@@ -2403,14 +2403,13 @@ app.whenReady().then(() => {
   handle("browser-snapshot", (_e, sid, snap) => (okSessionId(sid) ? browser().snapshot(sid, snap) : null), null);
   handle("browser-history", (_e, sid) => (okSessionId(sid) ? browser().history(sid) : []), []);
   ipcMain.on("browser-block-visible", (e, on) => { if (fromOurPage(e) && _browser) _browser.setBlockVisible(on === true); });
-  handle("browser-open-external", (_e, id) => { const u = _browser && _browser.externalUrl(id); return u ? openWebSafe(u) : false; }, false);
+  // 用系統瀏覽器開這一頁:renderer 只給分頁 id(給別的型別一律不開),網址由主行程從那個分頁自己拿;內建那一頁不關、不動
+  handle("browser-open-external", (_e, id) => { const u = _browser && typeof id === "string" ? _browser.externalUrl(id) : null; return u ? openWebSafe(u) : false; }, false);
   handle("browser-prefs", () => browser().prefs(), { enabled: false });
   handle("browser-prefs-set", (_e, p) => browser().setPrefs({ enabled: !!(p && p.enabled === true) }), null);
   handle("browser-clear", () => (activeTurn ? false : browser().clearData()), false);
-  // 送進 TradingView(browser/pine.js):外殼自己貼,不開 agent 回合。renderer 只給 ref 與分頁 id
+  // 送進 TradingView(browser/pine.js):外殼自己貼,不開 agent 回合。renderer 只給 ref。流程停在交接:貼完之後沒有任何一支 IPC 會再讀那一頁
   handle("pine-install", (_e, ref) => { const job = pineJob(ref && typeof ref === "object" ? ref : null); return job ? browser().pineInstall(job) : { state: "fail", why: "no_file" }; }, { state: "fail" });
-  handle("pine-check", (_e, id) => browser().pineCheck(String(id || "")), { state: "gone" });
-  handle("pine-read", (_e, id) => browser().pineRead(String(id || "")), { state: "gone" });
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
      之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
      不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */

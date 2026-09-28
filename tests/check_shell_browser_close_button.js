@@ -57,8 +57,8 @@ const fnCut = (name) => { const a = src.indexOf("function " + name + "("); retur
     ok("焦點不在 ✕ 上時重畫不搶焦點", doc.activeElement === null); }
 }
 ok("brCollapse 只收展開層:不叫關分頁、不停回合", !/browserClose|stopTurn|browserUserDone/.test(fnCut("brCollapse")) && /window\.blave\.browserCollapse\(\)/.test(fnCut("brCollapse")));
-ok("CSS 照 spec:.bw-close 只有定位(上 -6、右 -8)＋熱區外擴 6;.modal-close 本體不在 browser.css 改寫",
-  css.includes(".bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) 0 0; }") && css.includes('.bw-close::before { content: ""; position: absolute; inset: -6px; }') && !/\.modal-close/.test(css));
+ok("CSS 照 spec:.bw-close 只有定位(上下 -6、右 -8;標題列併成一列之後上下對稱,標題區高度才不被這顆鈕撐開)＋熱區外擴 6;.modal-close 本體不在 browser.css 改寫",
+  css.includes(".bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) calc(var(--space-6) * -1) 0; }") && css.includes('.bw-close::before { content: ""; position: absolute; inset: -6px; }') && !/\.modal-close/.test(css));
 
 // ---- 2
 const escSrc = (src.match(/document\.addEventListener\("keydown", (\(e\) => \{\n  if \(e\.key !== "Escape"[\s\S]*?\n\})\);/) || [])[1];

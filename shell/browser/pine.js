@@ -1,6 +1,7 @@
 // 「送進 TradingView」(spec .claude/output/designer/spec-desktop-pine-install-0.1.8.md):外殼自己在內建瀏覽器
 // 開圖表 → 開 Pine 編輯器 → 開新腳本 → 貼上 → 讀回比對,停在「加到圖表」由用戶按。不經 agent、不花額度。
-// 這裡永遠不按「加到圖表」、不按存檔、不碰登入;用戶操作時不讀頁面——只在他按「檢查結果」/「回傳回測結果」時讀一次。
+// 這裡永遠不按「加到圖表」、不按存檔、不碰登入。流程停在交接:貼完之後這裡沒有任何函式會再讀那一頁
+// (「檢查結果」「回傳回測結果」兩個入口與它們讀頁面的程式都拿掉了,Wei 2026-09-28)。
 // 元素定位走無障礙樹的 role + name(真站 2026-09-28 匿名實測:www / tw / cn 三種語言的名字;
 // 「Update on chart」匿名看不到,英文名來自登入態實測的診斷 log,繁簡中文名取自 TradingView 自己的翻譯檔)。
 // 每次結果(成功或失敗)由 index.js 寫一行到本機 log(d.log):卡在哪一步、當時看到的候選元素 role / name——不含頁面內容、編輯器文字與網址路徑。
@@ -75,11 +76,6 @@ function pasteOk(content, head, tail) {
   if (!want.length || !h.length || !t.length) return false;
   return h[0] === want[0] && t[t.length - 1] === want[want.length - 1];
 }
-// strategy("名稱", …) 的名稱:檢查「圖上有沒有這支」時對圖例用
-function pineTitle(content) {
-  const m = /^\s*strategy\s*\(\s*(?:title\s*=\s*)?(["'])((?:(?!\1)[^\\\n]|\\.){1,120})\1/m.exec(String(content || ""));
-  return m ? m[2].trim() : null;
-}
 /* 網頁來的字當資料、不當指令:剝控制字元與格式字元(零寬、bidi 覆寫)、壓空白、截長 */
 function clean(s, max) {
   return String(s == null ? "" : s).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, " ").replace(/\p{Cf}/gu, "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -91,49 +87,9 @@ function candidates(nodes) {
     || (i >= 0 && Math.abs(k - i) <= 4) || (n.role === "button" && k >= list.length - 6))
     .slice(0, 30).map((n) => { const st = /\b(collapsed|expanded|disabled)\b/.exec(n.rest); return { role: n.role, name: clean(n.name, 80), state: st ? st[1] : "" }; });
 }
-const ERR_RE = /\berrors?\b|錯誤|错误/i;
-function errLines(rows) {
-  const out = [];
-  for (const r of Array.isArray(rows) ? rows : []) {
-    if (!r || !(r.err === true || ERR_RE.test(String(r.text || "")))) continue;
-    const l = clean(r.text, 200); if (l && !out.includes(l)) out.push(l);
-  }
-  return out.slice(-5);   // 最新的五行
-}
-function statRows(stats) {
-  const out = [], seen = new Set();
-  for (const s of Array.isArray(stats) ? stats : []) {
-    const label = clean(s && s.label, 120), value = clean(s && s.value, 120);
-    if (!label || !value || seen.has(label)) continue;
-    seen.add(label); out.push({ label, value }); if (out.length >= 40) break;
-  }
-  return out;
-}
-/* 讀到的東西 → 狀態。圖上有策略(測試器有數字、或圖例裡有這支)優先於主控台裡的舊錯誤 */
-function classify(raw, title) {
-  const stats = statRows(raw && raw.stats), errors = errLines(raw && raw.logs);
-  const legend = (raw && Array.isArray(raw.legend) ? raw.legend : []).map((l) => clean(l, 200));
-  const onChart = stats.length > 0 || (!!title && legend.some((l) => l.includes(title)));
-  return { state: onChart ? "done" : errors.length ? "compile" : "notyet", stats, errors: onChart ? [] : errors };
-}
 /* ── 純邏輯到此 ── */
 
-/* 送進頁面跑的函式(以 toString 送,自含)。
-   測試器的數字格照 web 擴充套件的讀法(class 前綴 containerCell-:每格 label 在前、value 在後;值是空的 = 不在畫面上,不送);
-   Pine 主控台是編輯器下方那張表(class 前綴 consoleWrapper-,一列 = 時間 + 訊息)。只讀摘要,不讀逐筆成交 */
-function readTv() {
-  const T = (x) => String(x == null ? "" : x).replace(/\s+/g, " ").trim();
-  const stats = [];
-  for (const c of Array.from(document.querySelectorAll('[class*="containerCell-"]')).slice(0, 200)) {
-    const k = c.children, label = T(k[0] && k[0].innerText).slice(0, 200), value = T(k[1] && k[1].innerText).slice(0, 200);
-    if (label && value) stats.push({ label, value });
-  }
-  const logs = Array.from(document.querySelectorAll('[class*="consoleWrapper-"] tr, [role="log"] > *')).slice(-60)
-    .map((r) => ({ text: T(r.innerText || r.textContent).slice(0, 400), err: /error/i.test(String(r.className && r.className.baseVal !== undefined ? r.className.baseVal : r.className)) }))
-    .filter((r) => r.text);
-  const legend = Array.from(document.querySelectorAll('[data-qa-id="legend-source-item"]')).slice(0, 20).map((e) => T(e.innerText).slice(0, 200));
-  return { stats: stats.slice(0, 80), logs, legend };
-}
+/* 送進頁面跑的函式(以 toString 送,自含)。 */
 // 視窗不在前景時真滑鼠送不進去,直接 click() 打不開靠 hover 展開的子選單:補一組 hover 事件
 function hoverEl() {
   const r = this.getBoundingClientRect(), o = { bubbles: true, cancelable: true, clientX: r.left + 8, clientY: r.top + 4, view: window };
@@ -158,7 +114,6 @@ const LOAD_MS = 20000, SYMBOL_MS = 6000, FIND_MS = 6000, GRACE_MS = 1500, OPEN_M
  * 事件:pine_open(下一個 user 分頁是這條流程開的)、pine_step { id, step: 1|2|3, sym }、pine_result { id, state, … }
  */
 function createPine(d) {
-  const runs = new Map();   // 分頁 id → { strategy, filename, title }(只在記憶體:重開 app 不記,spec Q6)
   let busy = false;
   const sleep = d.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   let x = null;   // 這一次流程的診斷:{ t0, step, nodes(最後一次看到的), dialog, end(這一步的期限) }
@@ -289,11 +244,7 @@ function createPine(d) {
       t = r && r.tab && !r.blocked && !r.error ? r.tab : null;
       v = t ? d.view(t.id) : null;
       if (!t || !v) out = { state: "fail", why: "open" };
-      else {
-        runs.set(t.id, { strategy: job.strategy, filename: job.filename, title: pineTitle(job.content) });
-        if (runs.size > 8) runs.delete(runs.keys().next().value);
-        out = await flow(job, t, v, target);
-      }
+      else out = await flow(job, t, v, target);
     } catch (e) { out = { state: "fail", why: e === STOP ? "interrupted" : e === OFF ? "off_site" : "error" }; }
     finally { busy = false; if (t) await Promise.resolve(d.disarm(t)).catch(() => {}); }
     if (v && out.state !== "handover") await mark(v, ["clear"]);
@@ -306,33 +257,7 @@ function createPine(d) {
     return res;
   }
 
-  async function look(id) {
-    const run = runs.get(String(id || "")), t = d.tab(String(id || "")), v = t ? d.view(t.id) : null;
-    if (!run || !t || !v || (t.status !== "ready" && t.status !== "loading") || !onTv(v.wc.getURL())) return null;
-    let raw; try { raw = await v.page.run(readTv); } catch (_) { return null; }
-    return Object.assign({ filename: run.filename, strategy: run.strategy }, classify(raw, run.title));
-  }
-  /** 「檢查結果」:讀一次,回 done | compile | notyet | gone */
-  async function check(id) {
-    if (!d.enabled()) return { state: "off" };
-    const r = await look(id);
-    const res = r ? { id: String(id), state: r.state, errors: r.errors, filename: r.filename } : { id: String(id || ""), state: "gone" };
-    d.emit("pine_result", res);
-    return res;
-  }
-  /** 「回傳回測結果」:讀一次摘要數字。回 ok(帶 stats)| compile | closed | gone */
-  async function read(id) {
-    if (!d.enabled()) return { state: "off" };
-    d.emit("pine_result", { id: String(id || ""), state: "reading" });
-    const r = await look(id);
-    const res = !r ? { id: String(id || ""), state: "gone" }
-      : r.stats.length ? { id: String(id), state: "ok", stats: r.stats, filename: r.filename }
-        : r.state === "compile" ? { id: String(id), state: "compile", errors: r.errors, filename: r.filename }
-          : { id: String(id), state: "closed", filename: r.filename };
-    d.emit("pine_result", res);
-    return res;
-  }
-  return { install, check, read, busy: () => busy };
+  return { install, busy: () => busy };
 }
 
-module.exports = { createPine, chartUrl, tvSymbol, tvInterval, parseSnap, locate, candidates, pasteOk, pineTitle, clean, errLines, statRows, classify, onTv, readTv, dialogUp, NAMES };
+module.exports = { createPine, chartUrl, tvSymbol, tvInterval, parseSnap, locate, candidates, pasteOk, clean, onTv, dialogUp, NAMES };

@@ -297,12 +297,16 @@ function createBrowser(o) {
       for (const [id] of views) {
         const t = tabs.get(id); if (!t || t.status !== "loading" && t.status !== "ready") continue;
         if (t.read && t.thumbDone) continue;   // 讀完、而且之後沒再動過的頁不再拍
+        if (!shootable(t)) continue;
         await captureThumb(id);
       }
     }, THUMB_EVERY_MS);
   }
+  /* 用戶的頁不拍:他自己開的分頁(開即時頁、送進 TradingView 貼完的那一頁),與他接手操作中的 agent 分頁。
+     交接卡寫的是「貼完之後這一頁不會再被讀取」——縮圖也是讀;接手之後頁面上可能是他的帳戶 */
+  const shootable = (t) => !!t && t.by === "agent" && !t.userControl;
   async function captureThumb(id) {
-    const t = tabs.get(id), v = views.get(id); if (!t || !v) return;
+    const t = tabs.get(id), v = views.get(id); if (!t || !v || !shootable(t)) return;
     t.thumbAt = Date.now();
     // 縮圖走 CDP Page.captureScreenshot:分頁停在視窗外、或視窗被別的 app 蓋住時,capturePage 回空圖 / UnknownVizError(實測),
     // CDP 仍拍得到。直接在 CDP 端縮到縮圖寬,不經過全尺寸 PNG。拍不到再退 capturePage。
@@ -952,7 +956,6 @@ function createBrowser(o) {
   return {
     PARTITION,
     pineInstall: (job) => { win = o.getWin() || win; return pine.install(job); },
-    pineCheck: (id) => pine.check(id), pineRead: (id) => pine.read(id),
     enabled: () => !!prefs.enabled,
     /** 回合開始:設定開著才回 { url, token };主行程把它寫進單次設定檔 / Codex 環境。 */
     async beginTurn(w, sessionId) {
@@ -988,7 +991,7 @@ function createBrowser(o) {
       (async () => {
         for (const r of rows) {
           if (!r.snapshot_id) continue;
-          const v = views.get(r.id); if (!v) continue;
+          const v = views.get(r.id); if (!v || !shootable(tabs.get(r.id))) continue;   // 讀過之後被用戶接手的頁:快照留著 agent 讀的那一版,不再拍
           const image = await withMask(v, () => captureSnapshotImage(v, true), true);
           if (image) snaps.updateImage(c.sessionId, r.snapshot_id, image);
           if (expanded !== r.id) parkEmulate(v);   // 整頁擷取的 unEmulate 也清掉 park override,補回去(不然頁面回到 0 寬行動版)
@@ -1002,9 +1005,9 @@ function createBrowser(o) {
       if (expanded && expanded !== t.id) { const pv = views.get(expanded); if (pv) park(pv, 0); }
       tabs.setVisible(t.id, true); expanded = t.id;
       const v = views.get(t.id);
-      if (!v) return { id: t.id, live: false, status: t.status, url: C.scrub(t.url, 2000), title: t.title, snapshot_id: t.snapshotId || null, reason: t.reason || null };
+      if (!v) return { id: t.id, live: false, by: t.by, status: t.status, url: C.scrub(t.url, 2000), title: t.title, snapshot_id: t.snapshotId || null, reason: t.reason || null };
       this.bounds(bounds);
-      return { id: t.id, live: true, status: status(t), url: C.scrub(v.wc.getURL() || t.url, 2000), title: t.title, user: !!t.userControl, need: t.need ? { kind: t.need.kind, summary: C.scrub(t.need.summary, 300) } : null };
+      return { id: t.id, live: true, by: t.by, status: status(t), url: C.scrub(v.wc.getURL() || t.url, 2000), title: t.title, user: !!t.userControl, need: t.need ? { kind: t.need.kind, summary: C.scrub(t.need.summary, 300) } : null };
     },
     bounds(b) {
       if (!expanded) return;
@@ -1060,7 +1063,13 @@ function createBrowser(o) {
       return snaps.turns(sessionId).map((r) => Object.assign({}, r, { tabs: (r.tabs || []).map(add), sources: (r.sources || []).map(add) }));
     },
     removeSession: (sessionId) => snaps.removeSession(sessionId),
-    externalUrl(id) { const t = tabs.get(String(id || "")); return t ? t.url : null; },
+    /** 「用系統瀏覽器開」:只收分頁 id;網址由這裡從分頁自己拿、自己檢查(policy.externalUrl)。回網址或 null */
+    externalUrl(id) {
+      const t = typeof id === "string" ? tabs.get(id) : null; if (!t) return null;
+      const v = views.get(t.id); let live = "";
+      try { live = v && !v.wc.isDestroyed() ? String(v.wc.getURL() || "") : ""; } catch (_) { live = ""; }
+      return policy.externalUrl(t, live);
+    },
     setBlockVisible(on) { blockVisible = !!on; if (on) thumbs(); },
     _captureThumb: (id) => captureThumb(id),
     prefs: () => ({ enabled: !!prefs.enabled }),

@@ -1,8 +1,10 @@
 // 送進 TradingView(spec .claude/output/designer/spec-desktop-pine-install-0.1.8.md;外殼自己貼,不經 agent)。
-//   ① shell/browser/pine.js 純邏輯:網址組合、商品對應(只收確定的)、無障礙樹定位、讀回比對、錯誤行 / 數字清洗、狀態判定
+//   ① shell/browser/pine.js 純邏輯:網址組合、商品對應(只收確定的)、無障礙樹定位、讀回比對
+//   ⓪ 流程停在交接(Wei 2026-09-28):貼完之後外殼不再讀那一頁——「檢查結果」「回傳回測結果」「請 agent 修」三個入口與它們背後讀頁面的程式、
+//      IPC 都拿掉了;留一條列舉:交接之後沒有任何路徑會再讀那個分頁(含縮圖與快照)
 //   ② 流程(假頁面):三步 → 交接;**永遠不按「加到圖表」**;找不到入口 / 讀回不符 → nf;頁面不在畫面上、用戶動手 → 不硬貼
 //      登入態(編輯器本來開著、版面晚一步自己開回來、名字被截短、有未存變更跳確認框)、每步上限、診斷、中途被導走
-//   ③ renderer/pine-install.js 純邏輯(從原文切出來跑):狀態機、填色歸屬、送給 agent 的三種固定句
+//   ③ renderer/pine-install.js 純邏輯(從原文切出來跑):狀態機、填色歸屬、送給 agent 的那一種固定句(請 agent 貼)
 //   ④ 接線:槽、填色切換、IPC 只傳 ref、事件、字串、樣式
 //   ⑤ 真站(選跑,發版閘門不跑:連的是別人的網站):BLAVE_LIVE_TV=1 BLAVE_TEST_WINDOW=1 → 離屏視窗(不顯示)匿名跑到交接。
 //      會短暫用到剪貼簿(貼完還原);剪貼簿是空的或是圖片就不跑
@@ -65,17 +67,7 @@ async function main() {
   ok("讀回:第一行與最後一行逐字相符才算貼對", P.pasteOk(PINE, PINE, lastPage) === true);
   ok("讀回:尾巴後面還有別的字(沒蓋掉原本的內容)→ 不算", P.pasteOk(PINE, PINE, lastPage + '// This Pine Script…\nindicator("My script")\n') === false);
   ok("讀回:第一行不是我們的、讀不到、縮排被重排 → 不算", !P.pasteOk(PINE, "// other\n" + PINE, lastPage) && !P.pasteOk(PINE, "", lastPage) && !P.pasteOk(PINE, PINE, "") && !P.pasteOk(PINE, PINE, "    plot(fast)\n"));
-  ok("strategy() 的名稱(圖例比對用)", P.pineTitle(PINE) === "Blave: BTC SMA Cross" && P.pineTitle("strategy(title = 'A b', overlay=true)") === "A b" && P.pineTitle("indicator(\"x\")") === null);
-
   ok("網頁來的字:剝控制字元、零寬、bidi 覆寫、換行,壓空白、截長", P.clean("a\u200b\u202eb\u0007c\u2028d\n e" + "x".repeat(300), 20) === "ab c d e" + "x".repeat(12));
-  const errs = P.errLines([{ text: "10:01 \"x\" opened" }, { text: "10:02 Error at 3:5 Could not find function 'ta.smaa'" }, { text: "10:02 編譯錯誤：第 3 行" }, { text: "plain row", err: true }, { text: "10:02 Error at 3:5 Could not find function 'ta.smaa'" }]);
-  ok("錯誤行:只收錯誤、去重、≤5 行、每行 ≤200 字", errs.length === 3 && errs[0].includes("ta.smaa") && P.errLines(Array.from({ length: 9 }, (_, i) => ({ text: "error " + i + " " + "y".repeat(400) }))).every((l, i, a) => a.length === 5 && l.length <= 200));
-  ok("數字:標籤或值是空的不送、重複標籤只留第一個、≤40 列", (() => { const r = P.statRows([{ label: "Net", value: "+1" }, { label: "Net", value: "+2" }, { label: "X", value: "" }, { label: "", value: "3" }].concat(Array.from({ length: 60 }, (_, i) => ({ label: "k" + i, value: "v" })))); return r.length === 40 && r[0].value === "+1" && r[1].label === "k0"; })());
-  const C = (raw) => P.classify(raw, "Blave: BTC SMA Cross");
-  ok("判定:測試器有數字 → 已加到圖表(主控台裡的舊錯誤不算)", C({ stats: [{ label: "Net", value: "1" }], logs: [{ text: "Error at 1:1" }], legend: [] }).state === "done" && C({ stats: [{ label: "Net", value: "1" }], logs: [{ text: "Error at 1:1" }] }).errors.length === 0);
-  ok("判定:圖例裡有這支(測試器收著)→ 已加到圖表", C({ stats: [], logs: [], legend: ["Vol · BTC", "Blave: BTC SMA Cross 45 100"] }).state === "done");
-  ok("判定:沒在圖上 + 主控台有錯誤 → 編譯沒過;什麼都沒有 → 還沒", C({ stats: [], logs: [{ text: "Error at 3:5 x" }], legend: ["Vol"] }).state === "compile" && C({ stats: [], logs: [{ text: "\"Untitled script\" opened" }], legend: [] }).state === "notyet" && C(null).state === "notyet");
-
   // ── ② 流程(假頁面)──
   const REF = { pine: "@e58", title: "@e67", add: "@e68", create: "@e89", strat: "@e91" };
   function rig(o) {
@@ -112,7 +104,7 @@ async function main() {
         if (/dispatchEvent/.test(fn.toString())) { st.sub = true; return true; }
         const ls = st.doc.split("\n"); return st.cursor === "top" ? ls.slice(0, 10).join("\n") : ls.slice(-4).join("\n");
       },
-      run: async (fn, args) => { if (fn === P.dialogUp) return st.dialog ? "warn" : o.promo ? "other" : null; if (fn === P.readTv) return o.raw || { stats: [], logs: [], legend: [] }; log.marks.push(args && args[0]); return true; },
+      run: async (fn, args) => { if (fn === P.dialogUp) return st.dialog ? "warn" : o.promo ? "other" : null; log.marks.push(args && args[0]); return true; },
       disarm: async () => {},
     };
     const v = { page, wc: { getURL: () => st.url, getTitle: () => o.pageTitle || "BTCUSDT.P 84,514.7 ▲ +0.13%" } };
@@ -189,17 +181,24 @@ async function main() {
     const first = r.pine.install(JOB); second = await r.pine.install(JOB); await first;
     ok("一次一個:貼到一半再按 → busy,不開第二個分頁", second.state === "busy");
   }
-  {
-    const r = rig({ raw: { stats: [{ label: "Net profit", value: "+68.12%" }, { label: "Total trades", value: "112" }], logs: [], legend: [] } });
-    await r.pine.install(JOB);
-    const c = await r.pine.check("p1"), rd = await r.pine.read("p1");
-    ok("檢查結果 / 回傳:測試器有數字 → done / ok(帶數字與送出的檔名)", c.state === "done" && rd.state === "ok" && rd.stats.length === 2 && rd.filename === "btc_sma_cross_pine.pine", [c, rd]);
-    ok("讀的時候不按任何東西、不貼", r.log.clicks.length === 4 && r.log.fills === 1);
-    ok("沒送過的分頁、別的分頁 id → gone(不讀)", (await r.pine.check("p9")).state === "gone" && (await r.pine.read("")).state === "gone");
+  { // ⓪ 交接之後沒有任何路徑會再讀那個分頁
+    const r = rig(), res = await r.pine.install(JOB), looks = r.log.lines.length;
+    const pineSrc0 = read("browser", "pine.js"), idx0 = read("browser", "index.js"), main0 = read("main.js"), pre0 = read("preload.js"), rend0 = read("renderer", "pine-install.js");
+    ok("pine.js 交接之後只剩「送進」一個入口:沒有 check / read,也沒有讀頁面數字、主控台、圖例的程式", res.state === "handover" && Object.keys(r.pine).join() === "install,busy"
+      && !/readTv|containerCell|consoleWrapper|legend-source-item|classify|statRows|errLines|pineTitle/.test(pineSrc0) && !("readTv" in P) && !("classify" in P), Object.keys(r.pine));
+    ok("主行程沒有「檢查」「回傳」兩支 IPC,preload 也沒有;renderer 沒有呼叫點", !/pine-check|pine-read|pineCheck|pineRead/.test(main0 + pre0 + idx0 + rend0) && (main0.match(/handle\("pine-[a-z-]+"/g) || []).join() === 'handle("pine-install"');
+    ok("renderer 沒有會讀那一頁的函式與入口(檢查結果、回傳回測結果、請 agent 修)", !/function tv(Check|Read|Fix|Compose|StatLines|FixMsg)\b|tv\.st\.check|tv\.read\b|tv\.fix\b/.test(rend0));
+    // 縮圖與快照也是讀:用戶自己開的分頁(送進 TradingView 那一頁是 by:"user")與用戶接手中的分頁都不拍
+    ok("縮圖:只拍 agent 開、而且沒被用戶接手的分頁;每 2 秒那一輪與補拍都過同一關", /const shootable = \(t\) => !!t && t\.by === "agent" && !t\.userControl;/.test(idx0)
+      && /if \(!shootable\(t\)\) continue;\n        await captureThumb\(id\);/.test(idx0) && /const t = tabs\.get\(id\), v = views\.get\(id\); if \(!t \|\| !v \|\| !shootable\(t\)\) return;/.test(idx0));
+    ok("回合結束的整頁快照:被用戶接手的頁不再拍(留著 agent 讀的那一版)", /const v = views\.get\(r\.id\); if \(!v \|\| !shootable\(tabs\.get\(r\.id\)\)\) continue;/.test(idx0));
+    ok("agent 的工具照舊碰不到這一頁(by 不是 agent 的分頁、用戶接手中的分頁)", /if \(!cur \|\| !t \|\| t\.by !== "agent" \|\| t\.userControl\) return false;/.test(idx0) && /open: \(url\) => openUrl\(url, "user"\)/.test(idx0));
+    // 列舉:主行程對分頁下的每一個「讀」——CDP 截圖、capturePage、頁面內執行(page.run / callOn)、無障礙快照——所在的函式都在名單上
+    // 拍頁面的地方:縮圖(2 處,過 shootable)、agent 讀頁時的快照(captureSnapshotImage 本體 3 處＋定義與 2 個呼叫點:讀頁那條只到得了 agent 的分頁、
+    // 回合結束那條過 shootable)、agent 的截圖工具(1 處,同樣只到得了 agent 的分頁)
+    const readers = [...idx0.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(captureScreenshot|capturePage\(|captureSnapshotImage\(v)/g)].length;
+    ok("列舉:index.js 裡會拍頁面的呼叫點數目沒有變多(多一個就要有人看過它拍不拍得到用戶的頁)", readers === 9, readers);
   }
-  { const r = rig({ raw: { stats: [], logs: [{ text: "Error at 3:5 Could not find function 'ta.smaa'\u202e" }], legend: [] } }); await r.pine.install(JOB); const c = await r.pine.check("p1"); ok("檢查結果:編譯沒過 → 帶清過的錯誤行", c.state === "compile" && c.errors.length === 1 && !/\u202e/.test(c.errors[0]), c); }
-  { const r = rig(); await r.pine.install(JOB); const c = await r.pine.check("p1"), rd = await r.pine.read("p1"); ok("還沒加到圖表:檢查 → notyet;回傳 → closed", c.state === "notyet" && rd.state === "closed", [c, rd]); }
-  { const r = rig(); await r.pine.install(JOB); r.t.status = "closed"; ok("分頁關掉了 → gone", (await r.pine.read("p1")).state === "gone"); }
   Date.now = realNow;
 
   const pineSrc = read("browser", "pine.js");
@@ -223,58 +222,31 @@ async function main() {
   const src = read("renderer", "pine-install.js");
   const a = src.indexOf("/* ── 純邏輯("), b = src.indexOf("/* ── 純邏輯到此 ── */");
   ok("pine-install.js 有純邏輯區段", a > 0 && b > a);
-  const R = new Function(src.slice(a, b) + "\nreturn { tvSafe, tvStatLines, tvCompose, tvFixMsg, tvPasteMsg, tvNext, tvModel, tvStatModel };")();
+  const R = new Function(src.slice(a, b) + "\nreturn { tvPasteMsg, tvNext, tvModel, tvStatModel };")();
   const S = (evs, s0) => evs.reduce((s, e) => R.tvNext(s, e), s0 || null);
   const M = (s, o) => R.tvModel(s, o || {});
   ok("狀態機:idle → 主鈕「送進」拿填色、說明句是誠實句", (() => { const m = M(null); return m.primary === "tv.send" && m.fill === "ext" && m.cap === "xp.capHonest" && !m.pDis && !m.nav; })());
-  ok("狀態機:重開畫回來的舊卡、過期檔 → 填色還給原本那顆", M(null, { old: true }).fill === "base" && M(null, { stale: true }).fill === "base" && M({ tv: "handover" }, { old: true }).fill === "ext");
+  ok("狀態機:重開畫回來的舊卡、過期檔 → 填色還給原本那顆", M(null, { old: true }).fill === "base" && M(null, { stale: true }).fill === "base" && M({ tv: "sending" }, { old: true }).fill === "ext");
   const sending = S([{ type: "send", ref: { strategy: "a" }, strategy: "a" }, { type: "step", step: 2, id: "p1", sym: "BTCUSDT.P" }]);
   ok("狀態機:貼上中 → 鈕鎖住、轉圈 +「正在貼進」、有分頁可看", (() => { const m = M(sending); return sending.tv === "sending" && sending.step === 2 && sending.tab === "p1" && m.pDis && m.spin && m.st === "tv.sending" && m.nav; })(), sending);
   const ho = S([{ type: "result", state: "handover", id: "p1", set: true }], sending);
-  ok("狀態機:交接 → 主鈕換「回傳回測結果」、說明句換下一步", (() => { const m = M(ho); return ho.tv === "handover" && m.primary === "tv.read" && m.fill === "ext" && m.cap === "tv.sentHint" && !m.pDis; })(), ho);
-  ok("狀態機:用戶在頁面上動手 → user;檢查還沒看到 → user + notyet", S([{ type: "takeover" }], ho).tv === "user" && S([{ type: "takeover" }, { type: "result", state: "notyet" }], ho).notyet === true);
+  ok("狀態機:交接(貼好了)→ 主鈕還是「送進 TradingView」、可按(再按 = 再貼進另一支新腳本),退成描邊、填色還給原本那顆;說明句換成貼好之後那一句", (() => { const m = M(ho); return ho.tv === "handover" && m.primary === "tv.send" && m.fill === "base" && m.cap === "tv.sentHint" && !m.pDis && m.msg === null && m.nav; })(), ho);
+  ok("狀態機:用戶在頁面上動手 → user;畫法跟交接一樣(主鈕、描邊、說明句)", S([{ type: "takeover" }], ho).tv === "user" && JSON.stringify(Object.assign(M(S([{ type: "takeover" }], ho)), { tv: 0 })) === JSON.stringify(Object.assign(M(ho), { tv: 0 })));
   ok("狀態機:交接的結果晚到第二次(事件 + 回傳)不把「你在操作」退回交接", S([{ type: "takeover" }, { type: "result", state: "handover", set: true }], ho).tv === "user");
   ok("狀態機:idle / 貼上中的 takeover 不改狀態", S([{ type: "takeover" }], sending).tv === "sending" && S([{ type: "takeover" }]).tv === "idle");
-  const done = S([{ type: "result", state: "done", filename: "a_pine.pine" }], ho);
-  ok("狀態機:done → reading → ok(還是 done)→ 訊息送出才是 returned;returned 填色還給下載、主鈕降「再次回傳」", (() => {
-    const r1 = S([{ type: "result", state: "reading" }], done), r2 = S([{ type: "result", state: "ok" }], r1), r3 = S([{ type: "returned", at: "14:32" }], r2), m = M(r3);
-    return M(r1).pDis && M(r1).primary === "tv.reading" && r2.tv === "done" && r3.tv === "returned" && r3.at === "14:32" && m.fill === "base" && m.primary === "tv.readAgain" && m.st === "returned" && m.cap === null;
-  })());
-  ok("狀態機:訊息沒送出去 → 不翻成已回傳,紅字請再試", (() => { const s = S([{ type: "result", state: "reading" }, { type: "unsent" }], done); return s.tv === "done" && M(s).msg === "tv.err.unknown"; })());
-  ok("狀態機:編譯沒過 → 填色換「請 agent 修」、紅字;找不到編輯器 → 填色仍是「送進」+ 文字鈕「請 agent 貼」", (() => {
-    const c = S([{ type: "result", state: "compile", errors: ["e1"] }], ho), n = S([{ type: "result", state: "nf" }], sending), mc = M(c), mn = M(n);
-    return mc.primary === "tv.fix" && mc.fill === "ext" && mc.msg === "tv.err.compile" && c.errors.join() === "e1" && mn.primary === "tv.send" && mn.msg === "tv.err.editor" && mn.quiet.join() === "tv.agentPaste";
-  })());
-  ok("狀態機:回傳時圖上沒有策略 → 紅字 + 方案上限提示;分頁不在了 / 關了瀏覽器 / 打不開 → 沒有送出去、可再送", (() => {
-    const c = M(S([{ type: "result", state: "closed" }], ho));
-    return c.msg === "tv.err.closed" && c.cap === "tv.planHint" && c.primary === "tv.read" && ["fail", "gone", "off", "busy", undefined].every((st) => { const m = M(S([{ type: "result", state: st }], ho)); return m.primary === "tv.send" && m.msg === "tv.err.unknown" && !m.pDis; });
-  })());
-  ok("狀態機:回合進行中按回傳 → 灰字(不是紅字),下一個事件就收", (() => { const s = S([{ type: "busy" }], ho); return M(s).soft === "tv.err.busy" && M(s).msg === null && M(S([{ type: "takeover" }], s)).soft === null; })());
+  ok("狀態機:主鈕的字永遠是「送進 TradingView」", [null, sending, ho, S([{ type: "takeover" }], ho), S([{ type: "result", state: "nf" }], sending), S([{ type: "result", state: "needs_user" }], sending), S([{ type: "result", state: "fail" }], sending)].every((st) => M(st).primary === "tv.send"));
+  ok("狀態機:找不到編輯器 → 填色仍是「送進」、紅字 + 文字鈕「請 agent 貼」", (() => { const n = S([{ type: "result", state: "nf" }], sending), mn = M(n); return mn.fill === "ext" && mn.msg === "tv.err.editor" && mn.quiet.join() === "tv.agentPaste"; })());
+  ok("狀態機:分頁不在了 / 關了瀏覽器 / 打不開 / 這一版不認得的結果(舊主行程的 done、compile、closed…)→ 沒有送出去、可再送", ["fail", "gone", "off", "busy", undefined, "done", "compile", "notyet", "reading", "ok", "closed"].every((st) => { const m = M(S([{ type: "result", state: st }], sending)); return m.tv === "fail" && m.primary === "tv.send" && m.msg === "tv.err.unknown" && !m.pDis; }));
+  ok("狀態機:退役的狀態與事件都不在了(done / reading / returned / compile / closed / notyet;returned / unsent)", !/"done"|"reading"|"returned"|"compile"|"closed"|notyet|"unsent"|"ok"/.test(src.slice(a, b)));
+  ok("狀態機:回合進行中按「請 agent 貼」→ 灰字(不是紅字),下一個事件就收", (() => { const s = S([{ type: "busy" }], ho); return M(s).soft === "tv.err.busy" && M(s).msg === null && M(S([{ type: "takeover" }], s)).soft === null; })());
   ok("狀態機:有未存的變更 → 紅字請用戶自己處理、主鈕仍是「送進」(再試)、不給「請 agent 貼」(agent 去貼會撞上同一個框)", (() => {
     const u = S([{ type: "result", state: "needs_user", why: "unsaved", id: "p1" }], sending), m = M(u);
-    return u.tv === "unsaved" && m.primary === "tv.send" && !m.pDis && m.msg === "tv.err.unsaved" && m.quiet.length === 0 && m.nav && R.tvStatModel(u).join("|") === "warn|tv.st.unsaved||";
+    return u.tv === "unsaved" && m.primary === "tv.send" && !m.pDis && m.msg === "tv.err.unsaved" && m.quiet.length === 0 && m.nav && R.tvStatModel(u).join("|") === "warn|tv.st.unsaved|";
   })());
-  ok("瀏覽器層狀態句:三步、交接、你在操作 + 檢查結果、完成、編譯沒過、找不到", (() => {
-    const K = (s, u) => { const m = R.tvStatModel(s, u); return m ? m.join("|") : null; };
-    return K({ tv: "sending", step: 1, sym: "BTCUSDT.P" }) === "spin|tv.st.chart|1|" && K({ tv: "sending", step: 1 }) === "spin|tv.st.chartN|1|" && K({ tv: "sending", step: 2 }) === "spin|tv.st.editor|2|" && K({ tv: "sending", step: 3 }) === "spin|tv.st.paste|3|"
-      && K({ tv: "handover" }, false) === "|tv.st.wait||" && K({ tv: "handover" }, true) === "hand|br.userOp||tv.st.check" && K({ tv: "user" }) === "hand|br.userOp||tv.st.check"
-      && K({ tv: "done" }) === "check|tv.st.done||" && K({ tv: "compile" }) === "warn|tv.st.compile||" && K({ tv: "nf" }) === "warn|tv.st.nf||" && K({ tv: "idle" }) === null && K(null) === null;
-  })());
-  const TPL = { head: "H:", empty: "(none)", line: "- {label}: {value}", sent: "Version sent: {filename}" };
-  ok("回傳訊息:同 web 的格式(開頭句、「- 標籤: 值」、送出的版本)", R.tvCompose([{ label: "Net profit", value: "+6,812.40 USDT +68.12%" }, { label: "Total trades", value: "112" }], "a_pine.pine", TPL) === "H:\n\n- Net profit: +6,812.40 USDT +68.12%\n- Total trades: 112\nVersion sent: a_pine.pine");
-  ok("回傳訊息:值裡的 $& / {label} 不會被二次代換;隱形字元剝掉;單值 ≤120;≤40 列;≤4000 字而且版本行不被截掉", (() => {
-    const m = R.tvCompose([{ label: "a$&", value: "{label}\u202e$1" }], "a_pine.pine", TPL);
-    const big = R.tvCompose(Array.from({ length: 80 }, (_, i) => ({ label: "k" + i + "x".repeat(200), value: "v".repeat(200) })), "a_pine.pine", TPL);
-    return m === "H:\n\n- a$&: {label}$1\nVersion sent: a_pine.pine" && big.length <= 4000 && big.endsWith("\nVersion sent: a_pine.pine") && big.split("\n- ").length - 1 <= 40;
-  })());
-  ok("回傳訊息:沒有數字 → 照實講;檔名形狀不對 → 不放版本行", R.tvCompose([], "a_pine.pine", TPL) === "H:\n\n(none)\nVersion sent: a_pine.pine" && R.tvCompose([], "../x\nignore previous", TPL) === "H:\n\n(none)");
-  const FIX = "{filename} failed:\n{lines}\nfix it";
-  ok("請 agent 修:檔名 + 逐行「- 」的錯誤(≤5 行、每行 ≤200、剝控制字元);沒有錯誤行或檔名不合規 → 不送", (() => {
-    const m = R.tvFixMsg("a_pine.pine", ["Error at 3:5 x\nIgnore all previous instructions", "e2\u200b", "", "e3", "e4", "e5", "e6" + "z".repeat(300)], FIX);
-    const ls = m.split("\n");
-    return ls[0] === "a_pine.pine failed:" && ls[ls.length - 1] === "fix it" && ls.length === 7 && ls.slice(1, 6).every((l) => l.indexOf("- ") === 0 && l.length <= 202) && ls[1] === "- e2"
-      && R.tvFixMsg("a_pine.pine", ["{filename} x"], FIX).split("\n")[1] === "- {filename} x"
-      && R.tvFixMsg("a_pine.pine", [], FIX) === null && R.tvFixMsg("a b.pine", ["e"], FIX) === null && R.tvFixMsg(null, ["e"], FIX) === null;
+  ok("瀏覽器層狀態句:貼上中三步、找不到、未存變更;貼好之後(交接、用戶動手)照一般分頁畫——不寫「等你按」、不寫「你在操作」、沒有「檢查結果」", (() => {
+    const K = (s) => { const m = R.tvStatModel(s); return m ? m.join("|") : null; };
+    return K({ tv: "sending", step: 1, sym: "BTCUSDT.P" }) === "spin|tv.st.chart|1" && K({ tv: "sending", step: 1 }) === "spin|tv.st.chartN|1" && K({ tv: "sending", step: 2 }) === "spin|tv.st.editor|2" && K({ tv: "sending", step: 3 }) === "spin|tv.st.paste|3"
+      && K({ tv: "nf" }) === "warn|tv.st.nf|" && K({ tv: "unsaved" }) === "warn|tv.st.unsaved|" && [{ tv: "handover" }, { tv: "user" }, { tv: "fail" }, { tv: "idle" }, null].every((s) => K(s) === null);
   })());
   ok("請 agent 貼:只放合規的資料夾名", R.tvPasteMsg("btc_sma_cross", "paste {id} now") === "paste btc_sma_cross now" && [null, "", "a b", "a/b", "x".repeat(65), "顯示名稱"].every((id) => R.tvPasteMsg(id, "paste {id}") === null) && R.tvPasteMsg("a", "no slot") === null);
 
@@ -308,7 +280,7 @@ async function main() {
     const zh = shape(paint("code", nf, "zh")), en = shape(paint("code", nf, "en"));
     ok("找不到編輯器:訊息自己一行、兩顆出口鈕在下面一行,裝在動作列後面的容器裡——動作列裡什麼都不插", zh.after && zh.inRow === 0 && zh.kids === "p.xp-st err | div.xp-acts[2]", zh);
     ok("zh 與 en 同一個排法(同一個狀態不再兩種樣子);重畫不會疊出第二個容器", JSON.stringify(zh) === JSON.stringify(en) && zh.boxes === 1, [zh, en]);
-    ok("編譯沒過 / 有未存變更 / 正在回覆(灰字):句子一樣自己一行", ["compile", "unsaved"].every((tv) => /^p\.xp-st err( \||$)/.test(shape(paint("code", { tv, tab: "t1", errors: [] }, "zh")).kids))
+    ok("有未存變更 / 沒送成 / 正在回覆(灰字):句子一樣自己一行", ["unsaved", "fail"].every((tv) => /^p\.xp-st err( \||$)/.test(shape(paint("code", { tv, tab: "t1", errors: [] }, "zh")).kids))
       && /^p\.xp-st( \||$)/.test(shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).kids) && shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).inRow === 0);
     ok("送出中的狀態句也自己一行;沒有東西要講(idle)就不起容器", shape(paint("code", { tv: "sending", step: 1 }, "en")).kids.startsWith("p.xp-st") && shape(paint("code", { tv: "idle" }, "zh")).boxes === 0);
     const card = paint("card", nf, "zh"), cs = shape(card);
@@ -323,16 +295,15 @@ async function main() {
   ok("填色:槽拿填色時原本那顆退描邊(xpFill);過期那一面不動;重開畫回來的卡帶 old", /function xpFill\(ctx, who\) \{ if \(ctx\.base && !ctx\.stale\) ctx\.base\.className = who === "ext" \? "btn-out" : "btn-fill"; \}/.test(xp)
     && /function xpRestore\(rec\) \{ xpPut\(xpHost\(null\), xpCard\(rec, true\)\); \}/.test(xp) && /old: !!old/.test(xp) && /base: dl/.test(xp) && /base: cp/.test(xp) && /xpFill\(c, m\.fill\)/.test(src));
   ok("不畫的時候(關了內建瀏覽器、雲端視角、時光機):不放鈕、填色還給原本那顆——不是灰掉", /const tvCan = \(\) => TV\.on === true && xpLocal\(\) && !XP\.tm;/.test(src) && /if \(!tvCan\(\)\) \{\s*if \(e\.btn\.parentNode === slot\) e\.btn\.remove\(\);\s*xpFill\(c, "base"\)/.test(src));
-  ok("每一顆鈕都只認用戶真的按(isTrusted)——含會開 agent 回合的「回傳」「請 agent 修」「請 agent 貼」", (() => {
+  ok("每一顆鈕都只認用戶真的按(isTrusted)——含會開 agent 回合的「請 agent 貼」", (() => {
     const ls = src.match(/addEventListener\("click", [^\n]*/g) || [];
-    return ls.length === 5 && ls.every((l) => /^addEventListener\("click", \(ev\) => \{? ?if \(!?ev\.isTrusted\)/.test(l));
+    return ls.length === 4 && ls.every((l) => /^addEventListener\("click", \(ev\) => \{? ?if \(!?ev\.isTrusted\)/.test(l));
   })(), src.match(/addEventListener\("click", [^\n]*/g));
   ok("未存變更的卡:只有「再試一次」", /if \(s\.tv === "unsaved"\) return ask\(t\("tv\.unsaved\.h"\), t\("tv\.unsaved\.p"\), e \? \[\["tv\.retry", "btn-out", \(\) => tvSend\(e\.ctx\)\]\] : null\);/.test(src));
   ok("只有用戶真的按才動(isTrusted);中欄只在按了送進那一次自己打開", /if \(ev\.isTrusted\) tvPrimary\(e, btn\)/.test(src) && /Number\(ev\.step\) === 1 && TV\.armed && ev\.id\) \{ TV\.armed = false; brExpand/.test(src));
   ok("過期檔 / 舊卡按送進:先開確認框", /if \(\(c\.stale \|\| c\.old\) && c\.at\) \{[^}]*confirmBox\(\{ title: t\("tv\.cf\.stale\.h"\)/.test(src));
-  ok("回合進行中:回傳 / 請 agent 修 / 請 agent 貼都不搶(送進不開回合,不受限)", (src.match(/if \(running === true\) \{/g) || []).length === 3 && !/async function tvSend\(c\) \{[^}]*running/.test(src));
-  ok("IPC:renderer 只給 ref 與分頁 id——不給內容、不給路徑、不給網址", /pineInstall: \(ref\) => ipcRenderer\.invoke\("pine-install", ref \? \{ session: ref\.session, id: ref\.id, strategy: ref\.strategy \} : null\)/.test(pre)
-    && /pineCheck: \(id\) => ipcRenderer\.invoke\("pine-check", id\)/.test(pre) && /pineRead: \(id\) => ipcRenderer\.invoke\("pine-read", id\)/.test(pre)
+  ok("回合進行中:請 agent 貼不搶(送進不開回合,不受限)", (src.match(/if \(running === true\) \{/g) || []).length === 1 && !/async function tvSend\(c\) \{[^}]*running/.test(src));
+  ok("IPC:renderer 只給 ref——不給內容、不給路徑、不給網址", /pineInstall: \(ref\) => ipcRenderer\.invoke\("pine-install", ref \? \{ session: ref\.session, id: ref\.id, strategy: ref\.strategy \} : null\)/.test(pre)
     && /handle\("pine-install", \(_e, ref\) => \{ const job = pineJob\(/.test(mainSrc) && !/pineInstall\([^)]*(content|url|path)/.test(src));
   ok("主行程自己取檔:卡 → exportById 的快照、程式碼分頁 → workspace 那一份(檔名取 exportRef);只收 pine", /const r = exportById\(ref\.session, ref\.id\); if \(!r \|\| r\.target !== "pine"\) return null;/.test(mainSrc) && /const rec = exportRef\(name, "pine"\);/.test(mainSrc) && /if \(!stratNames\(\)\.includes\(name\)\) return null;/.test(mainSrc));
   ok("分頁是 user 分頁、沿用同一個隔離 session 與守門", /open: \(url\) => openUrl\(url, "user"\)/.test(idx) && /arm: markAgent/.test(idx) && /agentUntil\.delete\(v\.wc\.id\); backstop\.delete\(v\.wc\.id\); return v\.page\.disarm\(\);/.test(idx));
@@ -345,13 +316,19 @@ async function main() {
   ok("樣式:槽在程式碼分頁排最前;聊天容器 <520 檔名獨佔一行", /\.xv-acts \.grp \.xp-ext \{ order: -1; \}/.test(css) && /@container chat \(max-width: 520px\) \{\s*\.xp:has\(\.xp-ext:not\(:empty\)\) \{ flex-wrap: wrap;[^}]*\}\s*\.xp:has\(\.xp-ext:not\(:empty\)\) \.f \{ flex: 1 1 100%; \}/.test(css) && !/#[0-9a-fA-F]{3,8}\b/.test(css.slice(css.indexOf("Pine 的動作槽"))));
   const STR = new Function(read("renderer", "strings.js") + "\nreturn STRINGS;")();
   const keys = [...new Set((src.match(/"tv\.[A-Za-z.]+"/g) || []).map((k) => k.slice(1, -1)))];
-  ok("字串:用到的 tv.* 兩種語言都有(" + keys.length + " 個),英文按鈕 Title Case", keys.length >= 40 && keys.every((k) => STR.zh[k] && STR.en[k]) && ["tv.send", "tv.read", "tv.readAgain", "tv.fix", "tv.agentPaste", "tv.retry", "tv.st.check", "tv.cf.stale.ok"].every((k) => STR.en[k].split(" ").every((w) => /^(to|[A-Z])/.test(w))), keys.filter((k) => !STR.zh[k] || !STR.en[k]));
-  ok("字串:會花額度的兩顆字面寫「請 agent」;固定句各恰好一個插槽", /^請 agent/.test(STR.zh["tv.fix"]) && /^請 agent/.test(STR.zh["tv.agentPaste"]) && ["zh", "en"].every((l) => STR[l]["tv.msg.paste"].split("{id}").length === 2 && STR[l]["tv.msg.fix"].split("{filename}").length === 2 && STR[l]["tv.msg.fix"].split("{lines}").length === 2));
+  ok("字串:用到的 tv.* 兩種語言都有(" + keys.length + " 個),英文按鈕 Title Case", keys.length >= 25 && keys.every((k) => STR.zh[k] && STR.en[k]) && ["tv.send", "tv.agentPaste", "tv.retry", "tv.cf.stale.ok"].every((k) => STR.en[k].split(" ").every((w) => /^(to|[A-Z])/.test(w))), keys.filter((k) => !STR.zh[k] || !STR.en[k]));
+  ok("字串:會花額度的那一顆字面寫「請 agent」;固定句恰好一個插槽", /^請 agent/.test(STR.zh["tv.agentPaste"]) && ["zh", "en"].every((l) => STR[l]["tv.msg.paste"].split("{id}").length === 2));
+  { const GONE = ["tv.read", "tv.reading", "tv.readAgain", "tv.returnedAt", "tv.returnedLoop", "tv.msg.head", "tv.msg.line", "tv.msg.empty", "tv.msg.sent", "tv.st.check", "tv.notyet", "tv.st.wait", "tv.st.reading", "tv.st.done", "tv.done.h", "tv.done.p",
+      "tv.st.compile", "tv.cmp.h", "tv.cmp.p", "tv.err.compile", "tv.fix", "tv.msg.fix", "tv.err.closed"];
+    ok("字串:退役的 23 個 key 兩語都拿掉,程式也不再引用", GONE.length === 23 && GONE.every((k) => !(k in STR.zh) && !(k in STR.en) && src.indexOf('"' + k + '"') < 0), GONE.filter((k) => k in STR.zh || k in STR.en || src.indexOf('"' + k + '"') >= 0));
+    ok("字串:交接卡講「貼完之後這一頁不會再被讀取」;方案限制搬進交接卡;貼好之後那一句指路到聊天;回合進行中那一句不再講回傳", /貼完之後這一頁不會再被讀取/.test(STR.zh["tv.ho.p"]) && /isn’t read again/.test(STR.en["tv.ho.p"])
+      && /t\("tv\.planHint"\)/.test(src.slice(src.indexOf("function tvSlot("))) && /把錯誤訊息貼到聊天/.test(STR.zh["tv.sentHint"]) && !/回傳/.test(STR.zh["tv.sentHint"] + STR.zh["tv.err.busy"]) && !/Send (the )?[Rr]esults/.test(STR.en["tv.sentHint"] + STR.en["tv.err.busy"])); }
   const tvCopy = Object.keys(STR.zh).filter((k) => /^tv\./.test(k)).map((k) => STR.zh[k] + " " + STR.en[k]).join(" ");
   ok("文案:不把 TradingView 跟自動交易放在一起,不出現警報 / webhook,不講「一鍵」", !/自動交易|自動下單|下單|auto[- ]?trad|place orders|警報|alert|webhook|一鍵|one[- ]click/i.test(tvCopy));
   const TM = require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name;
   const sent = [...new Set((src.match(/trackFeature\("tv_[a-z_]+"\)/g) || []).map((s) => s.slice(14, -2)))].sort();
-  ok("埋點:七個名字都在白名單尾端、≤16 字、都有送出點", sent.join() === ["tv_agent_paste", "tv_fail_compile", "tv_fail_editor", "tv_fix", "tv_pasted", "tv_read", "tv_send"].join() && sent.every((n) => TM.includes(n) && n.length <= 16) && TM.slice(-7).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile", sent);
+  ok("埋點:還有送出點的是四個(tv_send / tv_pasted / tv_agent_paste / tv_fail_editor);tv_read / tv_fix / tv_fail_compile 沒有送出點了,名字留在白名單(舊外殼還在送)", sent.join() === ["tv_agent_paste", "tv_fail_editor", "tv_pasted", "tv_send"].join() && sent.every((n) => TM.includes(n) && n.length <= 16)
+    && TM.slice(-8).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext", sent);
 
   // ── ⑤ 真站(選跑)──
   if (process.env.BLAVE_LIVE_TV === "1") {
