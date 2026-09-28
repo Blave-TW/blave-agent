@@ -24,8 +24,10 @@ ok("升級照樣走 withMask,而且帶 force(仍展開的頁也藏標記,快照�
 // 任何「每次擷取都切 override」的寫法回來就抓
 const thumbFn = (src.match(/async function captureThumb\(id\) \{[\s\S]*?\n  \}/) || [""])[0];
 ok("縮圖路徑沒有 beyond-viewport / metrics override", thumbFn.length > 0 && !/captureBeyondViewport|DeviceMetricsOverride/.test(thumbFn));
-ok("setDeviceMetricsOverride 只在 parkEmulate(不在任何擷取路徑)", src.split("setDeviceMetricsOverride").length === 2
-  && /function parkEmulate\(v\) \{[\s\S]{0,600}setDeviceMetricsOverride/.test(src));
+// 第七批 #6 多一處:wideEmulate(「送進 TradingView」在窄的中欄時,頁面暫時用寬版面排版)——一樣是切一次、不是每次擷取都切
+ok("setDeviceMetricsOverride 只在 parkEmulate 與 wideEmulate(不在任何擷取路徑)", src.split("setDeviceMetricsOverride").length === 3
+  && /function parkEmulate\(v\) \{[\s\S]{0,600}setDeviceMetricsOverride/.test(src) && /function wideEmulate\(v\) \{[\s\S]{0,600}setDeviceMetricsOverride/.test(src)
+  && !/DeviceMetricsOverride/.test((src.match(/async function captureSnapshotImage\(v, full\) \{[\s\S]*?\n  \}/) || ["DeviceMetricsOverride"])[0]));
 
 // ---- snaps.updateImage 行為:換圖、meta 跟上、壞參數拒收
 const snaps = require(path.join(SHELL, "browser", "snapshots.js")).createSnapshots(fs.mkdtempSync(path.join(os.tmpdir(), "blave-upimg-")), {});

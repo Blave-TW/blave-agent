@@ -16,7 +16,7 @@ ok("park() 每次停靠都補常駐 override", /function park\(v, i\) \{[^\n]*pa
 // SIGSEGV(沒載過東西的 webContents 碰 emulation 會炸,實測)
 ok("首次 override 在 did-start-navigation(非展開的分頁)", /did-start-navigation[\s\S]{0,600}if \(!t\.visible\) parkEmulate\(v\);/.test(src));
 ok("進中欄(bounds → setBounds)清 override 用真實大小", /v\.view\.setBounds\(nb\); unEmulate\(v\);/.test(src));
-ok("unEmulate 同時清 flag(下次 park 才會重設)", /function unEmulate\(v\) \{ v\.parkEmu = false;/.test(src));
+ok("unEmulate 同時清 flag(下次 park 才會重設);寬版面排版中(第七批 #6)不清,改成重算寬版面", /function unEmulate\(v\) \{ if \(v\.wide\) \{ wideEmulate\(v\); return; \} v\.parkEmu = false;/.test(src));
 ok("endTurn 整頁擷取後把非展開的分頁補回 park override", /if \(expanded !== r\.id\) parkEmulate\(v\);/.test(src));
 
 // ---- parkEmulate 行為(抽真函式):成功才設 flag;失敗可重試(race 修正);設過就不再送(不閃)
