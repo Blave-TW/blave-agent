@@ -32,14 +32,30 @@ const CITE_FIT_MSG = {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* 報告不覆寫:這個 id 已經有報告時,圖是給「下一份」的——放進下一個空 id(<id>-2、-3…)的資料夾,已有報告的資料夾不進新圖。
+   跟 lib/report.py 的 _serial / _free_id 是同一條規則(tests/check_report_no_overwrite.py 逐例對照),改一邊就要改另一邊。 */
+const AUTO_SUFFIX = "-auto", ID_MAX = 64;
+function citeSerial(report, n) {
+  if (n < 2) return report;
+  const tail = report.endsWith(AUTO_SUFFIX) && report.length > AUTO_SUFFIX.length ? AUTO_SUFFIX : "";
+  const suffix = "-" + n + tail;
+  return report.slice(0, report.length - tail.length).slice(0, ID_MAX - suffix.length) + suffix;
+}
+function citeSlot(reportsDir, report) {
+  const taken = (id) => fs.existsSync(path.join(reportsDir, id + ".json")) || fs.existsSync(path.join(reportsDir, "sent", id + ".json"));
+  let n = 1;
+  while (taken(citeSerial(report, n))) n++;
+  return citeSerial(report, n);
+}
+
 /* 稽核 S2:reports/<id>.files 若是 symlink,沒有沙箱的主行程會替沙箱裡的 agent 把檔寫到 workspace 外。
    目錄必須是 reportsDir 底下的真目錄;檔案不跟隨 symlink、不覆蓋既有檔。寫不了就丟錯。 */
 function saveCite(reportsDir, report, file, buf) {
   fs.mkdirSync(reportsDir, { recursive: true });
-  const dir = path.join(reportsDir, report + ".files");
+  const slot = citeSlot(reportsDir, report), dir = path.join(reportsDir, slot + ".files");
   try { fs.mkdirSync(dir); } catch (e) { if (e.code !== "EEXIST") throw e; }
   if (!fs.lstatSync(dir).isDirectory()) throw new Error("report folder is not a plain directory");
-  if (fs.realpathSync(dir) !== path.join(fs.realpathSync(reportsDir), report + ".files")) throw new Error("report folder is outside reports/");
+  if (fs.realpathSync(dir) !== path.join(fs.realpathSync(reportsDir), slot + ".files")) throw new Error("report folder is outside reports/");
   const K = fs.constants;
   const fd = fs.openSync(path.join(dir, file), K.O_CREAT | K.O_EXCL | K.O_WRONLY | (K.O_NOFOLLOW || 0), 0o644);
   try { fs.writeSync(fd, buf); } finally { fs.closeSync(fd); }
@@ -184,4 +200,4 @@ function createCapture(d) {
   return { doCapture };
 }
 
-module.exports = { createCapture, saveCite, CITES_PER_TURN, CITE_FIT_MSG };
+module.exports = { createCapture, saveCite, citeSlot, CITES_PER_TURN, CITE_FIT_MSG };

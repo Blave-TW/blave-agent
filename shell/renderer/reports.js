@@ -377,8 +377,8 @@ function rptRender(env, doc, host) {
 function rptTrackKind(rep) {
   try {   // 追蹤永遠不擋功能:丟例外也不能讓已畫好的報告被 rptRender 當成讀取失敗
     const id = typeof rep.id === "string" ? rep.id : "", ch = new Set();
-    if (/^tw-market-[0-9]{8}$/.test(id)) libTrack("morning_tw");
-    else if (/^crypto-market-[0-9]{8}$/.test(id)) libTrack("morning_crypto");
+    if (/^tw-market-[0-9]{8}(-[0-9]+)?$/.test(id)) libTrack("morning_tw");   // -2、-3:同一天再產的(報告不覆寫)
+    else if (/^crypto-market-[0-9]{8}(-[0-9]+)?$/.test(id)) libTrack("morning_crypto");
     rep.blocks.forEach((b) => { if (b && b.type === "news" && Array.isArray(b.items)) b.items.forEach((it) => { if (it && typeof it.channel === "string") ch.add(it.channel); }); });
     if (ch.has("web")) libTrack("news_web");
     if (ch.has("licensed")) libTrack("news_licensed");

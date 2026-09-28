@@ -17,6 +17,11 @@ the order the contract requires), and the three-directory status check.
 
 Block types and their fields: `references/reports.md`.
 
+A report is never overwritten: when the id is taken, the report is written under the next
+free one (`<id>-2`, `-3`, …) and the earlier report and its pictures stay as they were.
+`write_report` returns the path it wrote. The one exception is `replace=True`, which
+rewrites what THIS turn wrote under that id — for correcting your own report, nothing else.
+
 Usage:
     from lib.report import write_report
 
@@ -78,29 +83,153 @@ CITED_IMAGES_MAX = 2
 CAPTURE_PREFIX = "cite-"
 
 
-def captured_files(report_id):
-    """File names browser_capture left in `reports/<id>.files/`, sorted."""
+# Every id write_report has used on this machine, one JSON line each {id, asked, turn, at}. Two
+# jobs: on a cloud machine the uploader keeps only the last ~20 files in sent/, so the files alone
+# forget which ids are taken; and `replace=True` finds what this turn wrote through it.
+LEDGER = os.path.join(REPORTS_DIR, ".written.jsonl")
+LEDGER_KEEP = 5000
+# publish()'s data-only suffix. The runtime tells a data-only report by an id ENDING in it
+# (report_runner._published), so a serial number goes in front of it, never after.
+AUTO_SUFFIX = "-auto"
+_ID_MAX = 64
+
+
+def _ledger():
+    """[(id, asked, turn)] oldest first; unreadable lines are skipped."""
+    out = []
     try:
-        names = os.listdir(os.path.join(REPORTS_DIR, report_id + FILES_SUFFIX))
+        with open(LEDGER, encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    d = json.loads(ln)
+                    out.append((d["id"], d.get("asked") or d["id"], d.get("turn")))
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except OSError:
+        pass
+    return out
+
+
+def _note_written(report_id, asked, at):
+    """Best-effort: the report itself is already on disk."""
+    try:
+        line = json.dumps({"id": report_id, "asked": asked, "turn": os.environ.get("BLAVE_TURN_ID") or None, "at": at})
+        with open(LEDGER, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        with open(LEDGER, encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > LEDGER_KEEP:
+            _write_text_atomic(LEDGER, "".join(lines[-LEDGER_KEEP:]))
+    except OSError:
+        pass
+
+
+def _on_disk(report_id):
+    return any(os.path.exists(os.path.join(d, report_id + ".json")) for d in (REPORTS_DIR, SENT_DIR))
+
+
+def _serial(report_id, n):
+    """The n-th id of `report_id`: itself, then `-2`, `-3`, … — in front of a trailing `-auto`,
+    and cut to fit the 64 characters an id may have."""
+    if n < 2:
+        return report_id
+    tail = AUTO_SUFFIX if report_id.endswith(AUTO_SUFFIX) and len(report_id) > len(AUTO_SUFFIX) else ""
+    suffix = f"-{n}{tail}"
+    return report_id[:len(report_id) - len(tail)][:_ID_MAX - len(suffix)] + suffix
+
+
+def _free_id(report_id, taken=()):
+    """First id of the series with no report file in reports/ or reports/sent/ (and not in
+    `taken`). With `taken` empty this is, rule for rule, where the desktop's browser_capture
+    puts a picture (shell/browser/capture.js citeSlot) — change both or neither."""
+    n = 1
+    while _serial(report_id, n) in taken or _on_disk(_serial(report_id, n)):
+        n += 1
+    return _serial(report_id, n)
+
+
+def _own(report_id):
+    """The id this turn wrote when it asked for (or was given) `report_id`, or None. No turn id
+    (a scheduled run.py, a script outside a turn) = nothing is ever its own."""
+    turn = os.environ.get("BLAVE_TURN_ID")
+    hit = None
+    for rid, asked, t in _ledger() if turn else ():
+        if t == turn and report_id in (rid, asked):
+            hit = rid
+    return hit
+
+
+def target_id(report_id, replace=False):
+    """The id `write_report(report_id, replace=replace)` writes to right now."""
+    own = _own(report_id) if replace else None
+    return own or _free_id(report_id, {rid for rid, _, _ in _ledger()})
+
+
+def _capture_dirs(asked, final):
+    """Sidecar directories that can hold this report's captures, the report's own first. None of
+    them belongs to a report written in an earlier turn: each id is either free or this turn's."""
+    ids = dict.fromkeys((final, _free_id(asked), _free_id(final)))
+    return [os.path.join(REPORTS_DIR, i + FILES_SUFFIX) for i in ids]
+
+
+def _captures_in(d):
+    try:
+        return sorted(n for n in os.listdir(d) if n.startswith(CAPTURE_PREFIX) and _FILE_RE.fullmatch(n))
     except OSError:
         return []
-    return sorted(n for n in names if n.startswith(CAPTURE_PREFIX) and _FILE_RE.fullmatch(n))
 
 
-def _sweep_captures(report_id, blocks):
+def captured_files(report_id, replace=False):
+    """File names browser_capture left for the report `write_report(report_id, replace=replace)`
+    is about to write, sorted."""
+    final = target_id(report_id, replace)
+    return sorted({n for d in _capture_dirs(report_id, final) for n in _captures_in(d)})
+
+
+def _gather_files(asked, final, blocks):
+    """Bring every picture the blocks name into `<final>.files/`. A capture waiting in another
+    of this report's directories is moved; a picture the producer put into `<asked>.files/` by
+    hand is copied, because that directory may belong to an earlier report."""
+    home = os.path.join(REPORTS_DIR, final + FILES_SUFFIX)
+    moves = [d for d in _capture_dirs(asked, final) if d != home]
+    copies = [os.path.join(REPORTS_DIR, asked + FILES_SUFFIX)] if asked != final else []
+    for name in {b.get("file") for b in blocks if isinstance(b, dict) and b.get("type") == "image"}:
+        if not isinstance(name, str) or not _FILE_RE.fullmatch(name) or os.path.exists(os.path.join(home, name)):
+            continue
+        capture = name.startswith(CAPTURE_PREFIX)
+        for d in (moves if capture else []) + copies:
+            src = os.path.join(d, name)
+            if not os.path.isfile(src) or os.path.islink(src):
+                continue
+            os.makedirs(home, exist_ok=True)
+            if capture and d in moves:
+                os.replace(src, os.path.join(home, name))
+            else:
+                shutil.copyfile(src, os.path.join(home, name))
+            break
+
+
+def _sweep_captures(asked, final, blocks):
     """Delete the captured pictures no image block of the report just written refers to — a
     capture that was tried and not used would otherwise sit in the sidecar for good. Only
     browser_capture's own files; pictures handed to `write_report(images=…)` are never touched."""
     used = {b.get("file") for b in blocks if isinstance(b, dict) and b.get("type") == "image"}
+    home = os.path.join(REPORTS_DIR, final + FILES_SUFFIX)
     gone = []
-    for name in captured_files(report_id):
-        if name in used:
-            continue
-        try:
-            os.remove(os.path.join(REPORTS_DIR, report_id + FILES_SUFFIX, name))
-            gone.append(name)
-        except OSError as e:
-            print(f"WARNING: unused capture {name} not removed: {e}")
+    for d in _capture_dirs(asked, final):
+        for name in _captures_in(d):
+            if d == home and name in used:
+                continue
+            try:
+                os.remove(os.path.join(d, name))
+                gone.append(name)
+            except OSError as e:
+                print(f"WARNING: unused capture {name} not removed: {e}")
+        if d != home:
+            try:
+                os.rmdir(d)   # only when empty
+            except OSError:
+                pass
     return gone
 
 
@@ -179,14 +308,20 @@ def _mark_scheduled(report_id):
 
 
 def write_report(report_id, title, blocks, type="research", report_type=None,
-                 created_at=None, meta=None, images=None):
-    """Write one report into the drop directory. Returns the file path.
+                 created_at=None, meta=None, images=None, replace=False):
+    """Write one report into the drop directory. Returns the path of the file written.
 
-    report_id   `[A-Za-z0-9_-]{1,64}`; it is the file name AND the report id, and
-                re-using it overwrites that report on the platform — so a
-                deterministic id makes a re-run idempotent, and a per-run id
-                (a date, a timestamp) keeps every run. Do NOT use the runtime's
-                own ids (`daily-YYYY-MM-DD`, `wk-YYYY-MM-DD`).
+    report_id   `[A-Za-z0-9_-]{1,64}`; the id you ask for. When no report has it, it is
+                the file name and the report id. When one has, this report gets the
+                next free id (`<id>-2`, `-3`, …; `<id>-2-auto` for an id ending in
+                `-auto`) and the earlier report and its pictures are left as they are:
+                every run is kept, nothing is ever overwritten by default. Do NOT use
+                the runtime's own ids (`daily-YYYY-MM-DD`, `wk-YYYY-MM-DD`).
+    replace     True = rewrite the report THIS turn wrote under `report_id` (the id you
+                asked for then, or the one it got) — for correcting your own report
+                before you reply. Anything written in an earlier turn, by a scheduled
+                run or by another process is never replaced: the report is then
+                written as a new one, as if `replace` were not given.
     title       1–200 chars; shown in the report list and the push notification.
     blocks      the block list (see `references/reports.md`). A `meta` block is
                 prepended unless blocks[0] already is one.
@@ -232,6 +367,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
                          f"{cited}; at most {CITED_IMAGES_MAX} per report. Keep the ones a claim "
                          f"in the text rests on and drop blocks {cited[CITED_IMAGES_MAX:]} "
                          "(references/reports.md > Citing an image from the web)")
+    asked, report_id = report_id, target_id(report_id, replace)
     created_at = int(created_at if created_at is not None else time.time())
     if not blocks or not (isinstance(blocks[0], dict) and blocks[0].get("type") == "meta"):
         head = {"type": "meta", "title": title,
@@ -263,6 +399,7 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     # Pictures first, JSON last — the report landing is what makes the set visible to
     # the uploader, so everything it references must already be on disk. Raising here
     # leaves a sidecar with no report, which the uploader sweeps after a day.
+    _gather_files(asked, report_id, blocks)
     for name, data in (images or {}).items():
         _write_bytes(os.path.join(REPORTS_DIR, report_id + FILES_SUFFIX, name), data)
     path = os.path.join(REPORTS_DIR, report_id + ".json")
@@ -284,7 +421,9 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
         except OSError:
             pass
         raise
-    _sweep_captures(report_id, blocks)
+    _sweep_captures(asked, report_id, blocks)
+    if _own(report_id) != report_id:
+        _note_written(report_id, asked, created_at)
     # ASCII only: a report job's stdout goes to run.log in the Windows locale codec (cp950),
     # and an unencodable advisory line would fail a run whose report is already written.
     _mark_scheduled(report_id)
@@ -292,6 +431,12 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     warnings += _shareable_warnings(type, blocks[0])
     for w in warnings:
         print(f"WARNING: {w}")
+    if report_id != asked:
+        print(f"[report] {asked} was already a report, so this one is a NEW report, written as {report_id}; "
+              "the earlier one is untouched. Nothing to fix, and nothing to tell the user about ids or numbers.")
+    if os.environ.get("BLAVE_TURN_ID"):
+        print("[report] To correct THIS report before you reply, write it again with the same id and replace=True; "
+              "without it the correction becomes one more report.")
     # Agents re-read reports/<id>.json to "verify" and hit FileNotFoundError once the uploader
     # has moved it (uid=1: five times in three turns) — say where the file goes before they try.
     if os.environ.get("BLAVE_AGENT_LOCAL") == "1":

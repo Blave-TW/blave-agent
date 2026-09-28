@@ -7,7 +7,7 @@
 const path = require("path"), fs = require("fs"), os = require("os");
 const B = path.join(__dirname, "..", "shell", "browser");
 const policy = require(path.join(B, "policy")), gate = require(path.join(B, "gate"));
-const { createCapture, saveCite, CITES_PER_TURN } = require(path.join(B, "capture"));
+const { createCapture, saveCite, citeSlot, CITES_PER_TURN } = require(path.join(B, "capture"));
 const IP = require(path.join(B, "inpage"));
 let red = 0; const t = (n, ok, got) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) { red++; if (got !== undefined) console.log("      got: " + JSON.stringify(got).slice(0, 400)); } };
 
@@ -83,6 +83,15 @@ fs.mkdirSync(outside);
   fs.symlinkSync(path.join(outside, "leak.png"), path.join(reports, "r2.files", "cite-d.png"));
   threw = false; try { saveCite(reports, "r2", "cite-d.png", Buffer.from("x")); } catch (_) { threw = true; }
   t("saveCite:檔名已經是(懸空的)symlink → 不跟過去寫", threw && !fs.existsSync(path.join(outside, "leak.png")));
+  // 報告不覆寫:id 已經有報告 → 圖進下一個空 id 的資料夾,舊報告的資料夾不進新圖(lib/report.py 寫報告時用同一條規則找圖)
+  fs.writeFileSync(path.join(reports, "r1.json"), "{}");
+  saveCite(reports, "r1", "cite-new.png", Buffer.from("n"));
+  t("saveCite:r1 已有報告 → 新圖進 r1-2.files/,r1.files/ 原封不動", fs.readFileSync(path.join(reports, "r1-2.files", "cite-new.png"), "utf8") === "n" && fs.readdirSync(path.join(reports, "r1.files")).join() === "cite-a.png", fs.readdirSync(reports));
+  fs.mkdirSync(path.join(reports, "sent"), { recursive: true });
+  fs.writeFileSync(path.join(reports, "sent", "r1-2.json"), "{}");
+  t("citeSlot:sent/ 裡的也算有報告;-auto 的序號排在字尾前;超過 64 字從主幹截", citeSlot(reports, "r1") === "r1-3" && citeSlot(reports, "fresh") === "fresh"
+    && (fs.writeFileSync(path.join(reports, "d-auto.json"), "{}"), citeSlot(reports, "d-auto")) === "d-2-auto"
+    && (fs.writeFileSync(path.join(reports, "x".repeat(64) + ".json"), "{}"), citeSlot(reports, "x".repeat(64))) === "x".repeat(62) + "-2", [citeSlot(reports, "r1"), citeSlot(reports, "d-auto")]);
 }
 
 // ── 流程 ──

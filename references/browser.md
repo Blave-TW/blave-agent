@@ -53,6 +53,6 @@ Every fact you take from a page carries its source: the page title and URL from 
 
 To cite a chart in a report, capture it with `browser_capture(tab, ref, report)`
 (`ref` from `browser_snapshot`; https pages only; oversized elements are refused).
-It saves the picture into `reports/<report>.files/` itself and returns
+It saves the picture for that report itself and returns
 `{file, source}` — on a pack report they go into `narrative["images"]`, in a hand-written
 report into an `image` block; rules in `reports.md` › Citing an image from the web.
