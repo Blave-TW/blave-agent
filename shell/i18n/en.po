@@ -3872,6 +3872,10 @@ msgstr "Market report · Produced by a user's Blave Agent"
 msgid "shr.ogTag.performance"
 msgstr "Performance report · Produced by a user's Blave Agent"
 
+# 績效報告的確認框提醒句(只在 type = performance 出;同意區第一段);逐字同 web workspace_share_perf_note
+msgid "shr.perfNote"
+msgstr "This report shows your account balance and positions. Once it's public, anyone with the link can see them."
+
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
 msgstr "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too."

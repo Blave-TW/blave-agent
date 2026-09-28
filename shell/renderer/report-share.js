@@ -155,6 +155,7 @@ function shrOpen(c, mode, opener) {
   $("shr-og-tag").textContent = t(SHR_OG_TAG[kind]); $("shr-og-tag").hidden = SHR_OG_LABELLED.indexOf(kind) < 0;
   $("shr-tt").textContent = t(SHR_OG_PREFIX[kind]) + String(meta.title || rep.title || "");
   $("shr-ds").textContent = shrLead(rep);
+  $("shr-perf").hidden = kind !== "performance";   // 公開與更新兩種模式都出
   $("shr-must").textContent = t(c.env === "local" ? "shr.noteLocal" : "shr.noteCloud");
   $("shr-anon").checked = true; $("shr-ack").checked = false;
   $("shr-send").textContent = t(mode === "update" ? "shr.sendUpdate" : "shr.send");

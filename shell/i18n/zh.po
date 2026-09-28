@@ -3873,6 +3873,10 @@ msgstr "市場報告 · 由用戶的 Blave Agent 產出"
 msgid "shr.ogTag.performance"
 msgstr "績效報告 · 由用戶的 Blave Agent 產出"
 
+# 績效報告的確認框提醒句(只在 type = performance 出;同意區第一段);逐字同 web workspace_share_perf_note
+msgid "shr.perfNote"
+msgstr "這份報告含你的帳戶資產與部位，公開後拿到連結的人都看得到。"
+
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
 msgstr "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"

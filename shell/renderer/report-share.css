@@ -50,6 +50,9 @@
 /* 揭露 + 三行 + 勾選:勾選在三行之後(契約 §1,勾之前一定捲過三行);三行常駐、不收合 */
 .shr-agree { padding-top: var(--space-12); border-top: 1px solid var(--border-hairline); }
 .shr-must { margin: 0 0 var(--space-8); font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+/* 績效報告的提醒句:同一格的段落樣式,字色高一階(主要文字色);是提醒不是錯誤——不加圖示、底色、警示色 */
+.shr-perf { color: var(--ink); }
+.shr-perf[hidden] { display: none; }
 .shr-three { margin: 0; padding: 0; list-style: none; }
 .shr-three li { position: relative; padding-left: 1.2em; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
 .shr-three li::before { content: "\2014"; position: absolute; left: 0; color: var(--ink-3); }
