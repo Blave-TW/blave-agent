@@ -563,18 +563,21 @@ function createBrowser(o) {
     try { return !!w && !w.isDestroyed() && w.isVisible() && !w.isMinimized(); } catch (_) { return false; }
   }
   /* 搜尋分頁落在驗證頁:標成「要你操作」交給用戶,等它離開。這裡不對那一頁做任何事(verify.js 檔頭的紅線)。
-     回 verify.waitVerify 的結果;這一輪已經拒絕或逾時過一次就不再問("declined") */
+     回 verify.waitVerify 的結果。這一輪怎麼收場記在 c.verifyEnd(稽核 P2-4,分開記):"declined" 用戶跳過(按出口 / 交還後還在驗證頁 /
+     關掉那一格)、"timeout" 逾時、"absent" 人不在——記了就不再問,回的值讓 searchOnce 對模型講對的原因;
+     "closed"(引擎斷線、回合結束、分頁壞掉)不是用戶的決定,不記,下一次搜尋照樣問 */
   async function handVerify(t, engine, c, asked, deadline, here) {
     t.verify = engine;
     const v = views.get(t.id); if (!v) return "closed";
-    if (asked || c.verifyDeclined) return "declined";
-    if (!present()) { c.verifyDeclined = true; return "absent"; }
+    if (asked) return "declined";
+    if (c.verifyEnd) return c.verifyEnd === "declined" ? "declined" : c.verifyEnd;
+    if (!present()) { c.verifyEnd = "absent"; return "absent"; }
     if (deadline - Date.now() < VF.VERIFY_MIN_MS) return "timeout";   // 這次呼叫快到期了:不問(下一次搜尋還可以問)
     needUser(t, "captcha", null, engines[engine].name);
     if (o.notify) { try { o.notify("captcha"); } catch (_) { /* 通知發不出去不影響流程 */ } }
     const vf = VF.marks(engine, engines);
     let seen = v.navs;
-    const got = await VF.waitVerify({
+    let got = await VF.waitVerify({
       now: () => Date.now(), sleep, deadline,
       alive: () => cur === c && here() && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
       present, choice: () => t.userDone || null, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
@@ -591,8 +594,10 @@ function createBrowser(o) {
     if (got === "passed") {
       t.verify = null;
       if (t.userControl) { t.userControl = false; emit("handback", { id: t.id, auto: true }); }   // 過了就自動接續,用戶不用按「交還 agent」
+    } else if (got === "closed") {
+      if (t.status === "closed") { got = "exit"; c.verifyEnd = "declined"; }   // 他把驗證頁那一格關掉了 = 這次不做
     } else {
-      c.verifyDeclined = true;
+      c.verifyEnd = got === "timeout" ? "timeout" : got === "absent" ? "absent" : "declined";
       if (got === "exit" || got === "gave_up") t.userControl = false;   // 按了出口 / 交還:那一格還給 agent(逾時的話用戶可能還在操作,留給他——稽核 B3)
     }
     return got;
@@ -638,7 +643,7 @@ function createBrowser(o) {
         const got = await handVerify(t, engine, c, asked, deadline, here); asked = true;
         if (cur !== c) return ERR("browser_off", "this turn has ended");
         if (got === "passed") { await waitLoaded(t, SEARCH_LOAD_MS); continue; }   // 分頁已經在搜尋結果上:照常讀
-        if (why === "failed") why = got === "declined" ? "captcha" : VF.reasonOf(got);   // 留第一個原因:Google 那一次逾時、退路又是驗證頁 → 原因是逾時
+        if (why === "failed") why = got === "declined" ? "captcha" : got === "closed" ? "failed" : VF.reasonOf(got);   // 留第一個原因:Google 那一次逾時、退路又是驗證頁 → 原因是逾時;closed = 分頁壞掉,不是沒人
         if (engine === "google") { c.captchas = (c.captchas || 0) + 1; if (c.captchas >= 2) c.skipGoogle = true; }
         // 沒交到用戶手上的驗證頁(沒問、或問了但他沒在看也沒接手)收掉,不佔 8 格名額;他在看 / 在操作的留給他
         if (!t.visible && !t.userControl) { tabs.close(t.id); emit("page_closed", { id: t.id }); }
@@ -1193,7 +1198,7 @@ function createBrowser(o) {
       const turnKey = Date.now();
       // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
       // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
-      cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, verifyDeclined: false, noUser: !!(opts && opts.noUser), sources: [], seen: new Set(), readText: "" };
+      cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, verifyEnd: null, noUser: !!(opts && opts.noUser), sources: [], seen: new Set(), readText: "" };
       tabs.newTurn(sessionId);
       // userSent:這一輪是用戶在這台電腦的聊天送出的(main.js send-message)。沒帶的、從雲端視角送的都不交還
       if (opts && opts.userSent === true && !cur.noUser) await autoHandback(cur);
@@ -1315,7 +1320,7 @@ function createBrowser(o) {
       favCache.clear(); favTried.clear();   // 看過哪些網站也是瀏覽資料
       return true;
     },
-    _tabs: tabs, _call: call, _oauth: oauth, _verifying: (alias) => verifying(tabs.byAlias(alias)),   // 測試用
+    _tabs: tabs, _call: call, _cur: () => cur, _oauth: oauth, _verifying: (alias) => verifying(tabs.byAlias(alias)),   // 測試用
     _agentActive: (id) => { const v = views.get(id); return !!v && agentActive(v.wc.id); },
     _imageSize: (b) => imageSize(b), _needsPlate: (d) => needsPlate(d),
     _viewBounds: (id) => { const v = views.get(id); return v ? v.view.getBounds() : null; },
