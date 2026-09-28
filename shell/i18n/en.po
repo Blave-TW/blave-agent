@@ -2494,6 +2494,12 @@ msgstr "Send the strategy {id} to my cloud machine as {to}. Re-run the backtest 
 msgid "ho.msg.down"
 msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Re-run the backtest here afterwards, and show me both sets of numbers side by side."
 
+msgid "ho.msgB.up"
+msgstr "Send the strategy {id} to my cloud machine as {to}. Run it once there after it’s moved, and tell me the result."
+
+msgid "ho.msgB.down"
+msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Run it once here afterwards, and tell me the result."
+
 msgid "up.about"
 msgstr "About"
 
@@ -2598,6 +2604,12 @@ msgstr "The agent moves it, re-runs the backtest on your cloud machine, and show
 
 msgid "ho.note.down"
 msgstr "The agent brings it back, re-runs the backtest on this computer, and shows both sets of numbers side by side in the chat."
+
+msgid "ho.noteB.up"
+msgstr "The agent moves it and runs it once on your cloud machine to check that it starts."
+
+msgid "ho.noteB.down"
+msgstr "The agent brings it back and runs it once on this computer to check that it starts."
 
 msgid "strat.delInPf"
 msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Auto trading › Positions first, then come back."

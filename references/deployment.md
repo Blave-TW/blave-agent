@@ -10,7 +10,7 @@ Everything in this file about cron and Scheduled Tasks is for cloud machines. Ch
 - **Never run `crontab`, `launchctl` / launchd, `schtasks` or any other OS scheduler, and never write a plist or a cron file.** macOS answers with a system prompt (「想要管理你的電腦」) the user never asked for and the command hangs on it; the runtime refuses these commands. Do not look for another way in.
 - **Never tell the user to change a system permission** (Full Disk Access, 「管理你的電腦」) or to schedule it themselves in a terminal.
 - **Type A/C:** the user funds the strategy and presses 「啟動下單」 on the app's 自動下單 page (`references/portfolio-steps.md`); the app runs it on every bar while it is open. None of the schedule steps below apply (Type A step 5, the healthcheck schedule), and there is no "Reply YES and I will schedule it" question — point to the page.
-- **Type B:** it cannot run on a schedule on this computer yet. Say so in one plain sentence when you deliver the strategy, and offer the two ways out: send it to the user's cloud machine, where it can be scheduled (`references/cloud-handoff.md`), or run it once by hand now (`python3 strategies/<name>/strategy.py`). Never ask for a YES to deploy it here.
+- **Type B:** it cannot run on a schedule on this computer yet. Say so in one plain sentence when you deliver the strategy, and offer the two ways out: send it to the user's cloud machine (the app's 送上雲端 button; `references/cloud-handoff.md` moves it and runs it once there — putting it on a schedule is then asked of the agent on that machine), or run it once by hand now (`python3 strategies/<name>/strategy.py`). Never ask for a YES to deploy it here.
 
 ## No LLM in the Execution Loop
 

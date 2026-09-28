@@ -77,8 +77,8 @@ t("hoAsk 的順序(規格 §2):回合進行中 → 不動作;別的框開著 / �
   const o = (re) => body.search(re);
   return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/); })());
 t("雲端沒在運行的六種都走同一條(envCloudKind 不是 running,或逾 1 小時沒同步)", /function hoCloudLive\(\) \{ const st = TR_BAGS\.cloud\.st; return envCloudKind\(st\) === "running" && envHeadState\(st, Date\.now\(\)\) !== "unknown"; \}/.test(src));
-t("按確認 = 直接送一句話(帶 handoff 方向標記給主行程記事件):不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /submitMessage\(msg, \{ handoff: dir \}\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
-t("確認框不放 prompt 全文:訊息是在 onOk 裡才組的,extra 裡只有那幾句 ho.*", !/ho\.msg\./.test(src.slice(src.indexOf("const extra = document.createDocumentFragment()"), src.indexOf("onOk:"))) && /const msg = hoMsg\(dir, id, hoTpl\(\), to\); if \(!msg\) return;/.test(src));
+t("按確認 = 直接送一句話(帶 handoff 方向標記給主行程記事件):不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
+t("確認框不放 prompt 全文:訊息是在 onOk 裡才組的,extra 裡只有那幾句 ho.*", !/ho\.msg\./.test(src.slice(src.indexOf("const extra = document.createDocumentFragment()"), src.indexOf("onOk:"))) && /const msg = hoMsg\(dir, id, hoTpl\(tb\), to\); if \(!msg\) return;/.test(src));
 t("agent 正在回覆:兩顆鈕是 aria-disabled(鍵盤停得上去、讀屏唸得到原因),不是原生 disabled", /b\.setAttribute\("aria-disabled", "true"\)/.test(src) && /b\.title = t\("turn\.busy"\)/.test(src) && !/\.disabled = true/.test(src));
 t("上鎖 / 解鎖的同一處叫 hoBusy(三個出口都有)", (appSrc.match(/hoBusy\(\)/g) || []).length === 3);
 t("畫面只走 textContent / DOM,沒有 innerHTML", !/innerHTML/.test(src));
@@ -185,7 +185,7 @@ t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個
     && (strings.match(/"ho\.(msg\.(up|down)|rename\.(up|down))": "[^"]*"/g) || []).length === 8
     && (strings.match(/"ho\.(msg\.(up|down)|rename\.(up|down))": "[^"]*"/g) || []).every((l) => l.split("{to}").length === 2); })());
 t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down 講「在這台電腦重跑」;舊的 ho.note 退場",
-  /extra\.appendChild\(mk\("p", "cf-note", dir === "up" \? t\("ho\.note\.up"\) : t\("ho\.note\.down"\)\)\);/.test(src) && !/"ho\.note":/.test(strings)
+  /extra\.appendChild\(mk\("p", "cf-note", t\(HO_NOTE\[tb\]\[dir === "up" \? 0 : 1\]\)\)\);/.test(src) && !/"ho\.note":/.test(strings)
   && /"ho\.note\.up": "[^"]*在雲端重跑一次回測/.test(strings) && /"ho\.note\.down": "[^"]*在這台電腦重跑一次回測/.test(strings));
 // 真的跑 hoAsk(假 DOM + 假 confirmBox),看框裡放了什麼、按確認送出哪一句。
 // 來源在下單設定裡(判準同雲端刪除 cdelInUse,金額 0 也算):Wei 09-27 起照樣能搬,多一句「那邊照常下單、這份要給金額」。
@@ -193,21 +193,36 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
 { const cut = (s, name) => { const i = s.indexOf("function " + name + "("); return s.slice(i, s.indexOf("\n}\n", i) + 3); };
   const el = () => { const n = { kids: [], textContent: "", className: "", append(...x) { n.kids.push(...x); }, appendChild(x) { n.kids.push(x); return x; } }; return n; };
   const texts = (n) => (n && typeof n === "object" ? [n.textContent || "", ...(n.kids || []).flatMap(texts)] : []);
-  const run = (dir, cloudCfg, localCfg, cloudList = [], localList = []) => {
-    const boxes = [], sent = [];
+  const xpSrc = fs.readFileSync(path.join(R, "export.js"), "utf8");
+  const TPLB = { up: "B 把策略 {id} 送上我的雲端主機，存成 {to}。", down: "B 把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。" };
+  const run = (dir, cloudCfg, localCfg, cloudList = [], localList = [], code = null) => {
+    const boxes = [], sent = [], opts = [];
     const c = { HO: { on: true, pending: null }, HO_ID_RE: /^[A-Za-z0-9_-]{1,64}$/, running: false, ENV: { cur: dir === "up" ? "local" : "cloud" },
       envCanSwitch: () => true, hoCloudLive: () => true, envCloudKind: () => "running", hoNote: () => {}, envSwitchGuarded: () => true,
       TR_BAGS: { cloud: { st: { report: { config: cloudCfg } } }, local: { st: { report: { config: localCfg } } } },
       t: (k, v) => k + (v ? JSON.stringify(v) : ""), confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
-      envCloudList: () => cloudList, RP: { list: localList, data: null }, LANG: "zh", hoTpl: () => TPL, paneSt: { chat: {} },
-      submitMessage: (m) => { sent.push(m); return Promise.resolve(false); }, trackFeature: () => {} };
+      envCloudList: () => cloudList, RP: { list: localList, data: dir === "up" && code ? { code } : null }, RPC: { data: dir === "down" && code ? { code } : null }, LANG: "zh",
+      hoTpl: (k) => (k === "B" ? TPLB : TPL), HO_NOTE: { "": ["ho.note.up", "ho.note.down"], B: ["ho.noteB.up", "ho.noteB.down"] }, paneSt: { chat: {} },
+      submitMessage: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, trackFeature: () => {} };
     vm.createContext(c);
-    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse"), c);
+    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse")
+      + xpSrc.slice(xpSrc.indexOf("function xpIsTypeB("), xpSrc.indexOf("\n", xpSrc.indexOf("function xpIsTypeB("))), c);
     c.hoAsk(dir, "btc_rsi", {});
     const b = boxes[0]; if (!b) return null;
     b.onOk();
-    return { single: !!b.single, ok: b.ok, dis: !!b.okDisabled, alt: b.alt, txt: texts(b.extra).join("|"), msg: sent[0] };
+    return { single: !!b.single, ok: b.ok, dis: !!b.okDisabled, alt: b.alt, txt: texts(b.extra).join("|"), msg: sent[0], opts: opts[0] };
   };
+  // e2e 0.1.8 H:Type B 沒有回測——確認框與送出去的那句講「試跑一次」,不提回測;判別用檔頭 `# Type: B`(同轉出選單)
+  { const B = "# Strategy: 資金費率監控\n# Type:     B (monitor only, no orders)\nSTRATEGY_NAME = 'w'\n", A = "# Strategy: x\n# Type:     A\n";
+    let b = run("up", {}, {}, [], [], B);
+    t("Type B 送上雲端:框裡是 ho.noteB.up(沒有 ho.note.up)、送出的是 Type B 那一句、帶 noBacktest", /ho\.noteB\.up/.test(b.txt) && !/ho\.note\.up/.test(b.txt) && b.msg === "B 把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi。" && b.opts.handoff === "up" && b.opts.noBacktest === true, JSON.stringify(b));
+    b = run("down", {}, {}, [], [], B);
+    t("Type B 拉回:ho.noteB.down、Type B 那一句", /ho\.noteB\.down/.test(b.txt) && b.msg === "B 把雲端主機上的策略 btc_rsi 拉回這台電腦，存成 btc_rsi。" && b.opts.noBacktest === true, JSON.stringify(b));
+    b = run("up", {}, {}, [], [], A);
+    t("Type A / 判不出來:照舊講回測那一句,不帶 noBacktest", /ho\.note\.up/.test(b.txt) && !/noteB/.test(b.txt) && b.msg === "把策略 btc_rsi 送上我的雲端主機，存成 btc_rsi。" && b.opts.noBacktest === false && run("up", {}, {}).opts.noBacktest === false, JSON.stringify(b));
+    t("字串:Type B 四句 zh / en 都在、都不提回測,訊息各一個 {id} 一個 {to}", ["msgB.up", "msgB.down", "noteB.up", "noteB.down"].every((k) => { const m = strings.match(new RegExp('"ho\\.' + k.replace(".", "\\.") + '": "([^"]*)"', "g")) || [];
+      return m.length === 2 && m.every((l) => !/回測|backtest/i.test(l) && (k.indexOf("msg") ? true : l.split("{id}").length === 2 && l.split("{to}").length === 2)); }));
+  }
   const sendable = (r) => r && !r.single && r.ok === "ho.ok" && !r.dis && !r.alt && /ho\.row\.moves/.test(r.txt) && /ho\.note\./.test(r.txt);
   let r = run("up", {}, { amounts: { btc_rsi: 5000 } });
   t("送上雲端:這台電腦的下單設定有這支 → 框照常可送出,多一句 ho.srcLive.up", sendable(r) && /ho\.srcLive\.up/.test(r.txt) && !/srcLive\.down/.test(r.txt));

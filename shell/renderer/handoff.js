@@ -36,7 +36,13 @@ function hoFreeName(id, taken) {
 }
 /* ── 純邏輯到此 ── */
 
-const hoTpl = () => ({ up: t("ho.msg.up"), down: t("ho.msg.down") });
+/* Type B(警示、選股、網格…)沒有回測:搬過去之後是「試跑一次」,確認框與送出去的那句都不提回測(e2e 0.1.8:框寫「重跑一次回測」、
+   agent 回「Type B 不做搬移」)。判別跟轉出選單、程式碼分頁同一支(export.js xpIsTypeB:檔頭 `# Type: B`);回 "B" 或 ""(字串 key 的一段) */
+function hoKind(d) {
+  return typeof xpIsTypeB === "function" && xpIsTypeB(d) ? "B" : "";
+}
+const HO_MSG = { "": ["ho.msg.up", "ho.msg.down"], B: ["ho.msgB.up", "ho.msgB.down"] }, HO_NOTE = { "": ["ho.note.up", "ho.note.down"], B: ["ho.noteB.up", "ho.noteB.down"] };
+const hoTpl = (k) => ({ up: t(HO_MSG[k || ""][0]), down: t(HO_MSG[k || ""][1]) });
 function hoIcon(dir) {
   const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
   svg.setAttribute("class", "ic"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
@@ -151,15 +157,16 @@ function hoAsk(dir, id, opener) {
   if (destHas) extra.appendChild(mk("p", "cf-removed", t(dir === "up" ? "ho.rename.up" : "ho.rename.down", { id, to })));
   else if (destHas === null) extra.appendChild(mk("p", "cf-removed", t("ho.rename.maybeUp")));
   if (srcLive) extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.srcLive.up") : t("ho.srcLive.down")));
-  // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排
-  extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.note.up") : t("ho.note.down")));
+  // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排;Type B 沒有回測,講試跑一次
+  const tb = hoKind(dir === "up" ? RP.data : RPC.data);
+  extra.appendChild(mk("p", "cf-note", t(HO_NOTE[tb][dir === "up" ? 0 : 1])));
   const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });
   confirmBox({
     title, lines: [], extra, ok: t("ho.ok"), opener,
     onOk: () => {
-      const msg = hoMsg(dir, id, hoTpl(), to); if (!msg) return;
+      const msg = hoMsg(dir, id, hoTpl(tb), to); if (!msg) return;
       if (paneSt.chat.off) paneToggle("chat", false);                   // 聊天欄收著就先展開:過程在那裡回報
-      submitMessage(msg, { handoff: dir })                              // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算)
+      submitMessage(msg, { handoff: dir, noBacktest: tb === "B" })      // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算);noBacktest:雲端結果卡寫「沒有回測」
         .then((ok) => { if (ok) trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull"); });   // 跑起來才算用過(busy / 被最低版本擋下不算),同 rpRobAsk
     },
   });
