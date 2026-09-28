@@ -11,6 +11,9 @@ const crypto = require("crypto");
 
 const MAX_BODY = 256 * 1024;
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+// 一支工具最久這麼久要回(opts.maxMs(name) 可以給個別工具另外的數)。引擎那一端的逾時放得很寬(Claude 的設定檔 600 秒、
+// Codex 600 秒,為了讓 browser_search 等得到用戶過驗證),卡死的工具由這裡收:到時間回一個講得出原因的結果,不讓引擎空等
+const CALL_MAX_MS = 90000;
 
 function createMcpServer(opts) {
   let port = 0, token = null, turnId = null, server = null;
@@ -50,9 +53,16 @@ function createMcpServer(opts) {
       if (!tool) return send(res, 200, rpcErr(id, -32602, "unknown tool"));
       const args = p.arguments && typeof p.arguments === "object" && !Array.isArray(p.arguments) ? p.arguments : {};
       const myTurn = turnId;
+      // connected():呼叫的那一端還在等這個回應。引擎自己逾時、回合被中斷時連線先斷,實作要看得到(不然它繼續等用戶、畫面停在「等你操作」)
+      let gone = false, timer = null;
+      res.on("close", () => { if (!res.writableEnded) gone = true; });
+      const cap = (opts.maxMs && opts.maxMs(tool.name)) || CALL_MAX_MS;
+      const late = new Promise((resolve) => { timer = setTimeout(() => { gone = true; resolve({ content: [{ type: "text", text: JSON.stringify({ ok: false, error: "timeout", message: "the built-in browser did not finish " + tool.name + " within " + Math.round(cap / 1000) + " s, so the call was ended. The page or the browser may be stuck: go on without this result or use another tab; do not repeat the same call right away" }) }], isError: true }); }, cap); });
       let result;
-      try { result = await opts.call(tool.name, args, { turnId: myTurn, live: () => turnId === myTurn && !!token }); }
+      try { result = await Promise.race([opts.call(tool.name, args, { turnId: myTurn, live: () => turnId === myTurn && !!token, connected: () => !gone }), late]); }
       catch (e) { result = { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "internal", message: String((e && e.message) || e).slice(0, 200) }) }], isError: true }; }
+      finally { clearTimeout(timer); }
+      if (res.destroyed) return undefined;
       return send(res, 200, { jsonrpc: "2.0", id, result });
     }
     return send(res, 200, rpcErr(id, -32601, "method not found"));
@@ -96,4 +106,4 @@ function createMcpServer(opts) {
   };
 }
 
-module.exports = { createMcpServer, MAX_BODY, PROTOCOLS };
+module.exports = { createMcpServer, MAX_BODY, PROTOCOLS, CALL_MAX_MS };
