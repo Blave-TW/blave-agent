@@ -105,6 +105,12 @@ with open(os.path.join(R.FAILED_DIR, "refused.json"), "w") as fh:
     fh.write("{}")
 g, _ = write("refused", "修好重寫")
 check(g == "refused", "② failed/ 的不算已有:同 id 重寫就是修它", g)
+turn("t-refused")
+g1, _ = write("bad-blocks", "被平台拒收的那一版")
+os.replace(os.path.join(R.REPORTS_DIR, "bad-blocks.json"), os.path.join(R.FAILED_DIR, "bad-blocks.json"))   # uploader:400 → failed/
+turn("t-refused-next")
+g2, _ = write("bad-blocks", "下一輪修好重寫")
+check((g1, g2) == ("bad-blocks", "bad-blocks"), "② 自己寫過、被拒收進 failed/ 的 id,下一輪重寫仍是同一個 id(帳本記過也不算已有)", (g1, g2))
 
 # ── ③ replace 只換這一輪自己寫的 ──
 turn("t3")

@@ -160,9 +160,12 @@ def _own(report_id):
 
 
 def target_id(report_id, replace=False):
-    """The id `write_report(report_id, replace=replace)` writes to right now."""
+    """The id `write_report(report_id, replace=replace)` writes to right now. An id whose only
+    copy sits in reports/failed/ is free: the platform never took that report, and writing the
+    id again is how it is fixed (the uploader then clears the refused copy)."""
     own = _own(report_id) if replace else None
-    return own or _free_id(report_id, {rid for rid, _, _ in _ledger()})
+    return own or _free_id(report_id, {rid for rid, _, _ in _ledger()
+                                        if not os.path.exists(os.path.join(FAILED_DIR, rid + ".json"))})
 
 
 def _capture_dirs(asked, final):
