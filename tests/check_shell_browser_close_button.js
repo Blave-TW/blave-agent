@@ -27,7 +27,7 @@ const fnCut = (name) => { const a = src.indexOf("function " + name + "("); retur
   Object.defineProperty(El.prototype, "classList", { get() { const n = this; return { contains: (c) => has(n, c), toggle() {}, add() {}, remove() {} }; } });
   Object.defineProperty(El.prototype, "children", { get() { return this.kids.filter((k) => k instanceof El); } });
   const calls = [], any = new Proxy(function () {}, { get: (_, k) => (k === "then" ? undefined : (...a) => { calls.push(String(k)); return null; }), apply: () => new El() });
-  const collapsed = [], chev = new El("br-toggle");
+  const collapsed = [], chev = new El("br-open");
   const real = { document: doc, BR: null, brEl: (tag, cls, txt) => new El(cls, txt), t: (k) => "[" + k + "]", window: { blave: any, addEventListener() {} },
     brCollapse: (u) => { collapsed.push(u); real.BR.exp = null; }, brOverlaySig: () => null, sessionId: "s" };
   const scope = new Proxy(real, { has: (_, k) => typeof k === "string" && !(k in globalThis), get: (o, k) => (typeof k !== "string" ? undefined : k in o ? o[k] : any) });
@@ -57,8 +57,8 @@ const fnCut = (name) => { const a = src.indexOf("function " + name + "("); retur
     ok("焦點不在 ✕ 上時重畫不搶焦點", doc.activeElement === null); }
 }
 ok("brCollapse 只收展開層:不叫關分頁、不停回合", !/browserClose|stopTurn|browserUserDone/.test(fnCut("brCollapse")) && /window\.blave\.browserCollapse\(\)/.test(fnCut("brCollapse")));
-ok("CSS 照 spec:.bw-close 只有定位(上 -6、右 -8)＋熱區外擴 6;.modal-close 本體不在 browser.css 改寫",
-  css.includes(".bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) 0 0; }") && css.includes('.bw-close::before { content: ""; position: absolute; inset: -6px; }') && !/\.modal-close/.test(css));
+ok("CSS 照 spec:.bw-close 只有定位(上下 -6、右 -8;標題列併成一列之後上下對稱,標題區高度才不被這顆鈕撐開)＋熱區外擴 6;.modal-close 本體不在 browser.css 改寫",
+  css.includes(".bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) calc(var(--space-6) * -1) 0; }") && css.includes('.bw-close::before { content: ""; position: absolute; inset: -6px; }') && !/\.modal-close/.test(css));
 
 // ---- 2
 const escSrc = (src.match(/document\.addEventListener\("keydown", (\(e\) => \{\n  if \(e\.key !== "Escape"[\s\S]*?\n\})\);/) || [])[1];
@@ -76,12 +76,12 @@ if (escSrc) {
   function Node() { this.kids = []; this.text = ""; this.style = {}; }
   Node.prototype.append = function (...k) { k.forEach((x) => this.kids.push(x)); };
   const flat = (n) => (typeof n === "string" ? n : n && n.kids ? [n.text, ...n.kids.map(flat)].join("") : "");
-  const env = { brEl: (tag, cls, txt) => { const n = new Node(); n.text = txt || ""; n.addEventListener = () => {}; return n; }, brFav: () => new Node(), brIcon: () => new Node(), t: (k) => "[" + k + "]",
+  const env = { brEl: (tag, cls, txt) => { const n = new Node(); n.text = txt || ""; n.addEventListener = () => {}; n.setAttribute = () => {}; return n; }, brFav: () => new Node(), brIcon: () => new Node(), t: (k) => "[" + k + "]",
     BR: { tabs: new Map([["a", { url: "https://x.test/", ph: "done", readEver: true }]]), exp: { mode: "one", id: "a" } }, brCollapse: () => {}, trackFeature: () => {} };
   const fn = new Function(...Object.keys(env), src.match(/const brIsRead = .*;/)[0] + "\n" + fnCut("brPaintSum") + "; return brPaintSum;")(...Object.values(env));
   const s = new Node(); fn({ sum: s, ids: ["a"], sourceCount: 1 });
   ok("摘要列:這一輪的頁開在中欄時只有「讀了 N 頁」＋chevron,沒有文字鈕", flat(s) === "[br.summaryPre]1[br.summaryPost]", flat(s));
-  ok("進行中的卡頭:在中欄時不放文字鈕,不在才放「看網頁」", /if \(!mine && !b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(fnCut("brPaintHead")));
+  ok("進行中的卡頭:在中欄時不放文字鈕,不在才放「看網頁」", /if \(!mine && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(fnCut("brPaintHead")));
   ok("br.closePanel 與 .sum-back 都清掉", !/closePanel/.test(src + strings) && !/sum-back/.test(src + css)
     && ["en", "zh"].every((l) => !/br\.closePanel/.test(fs.readFileSync(path.join(RD, "..", "i18n", l + ".po"), "utf8"))));
 }

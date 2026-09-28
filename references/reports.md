@@ -1,5 +1,14 @@
 # Reports — publishing a rendered report to the workspace
 
+> **Building a report in chat? Do not read this file first.** The order is fixed: search the web
+> (Blave data may be fetched meanwhile) → build the data pack → write the narrative.
+> A request that names a template: call the template and read `pack.describe()`.
+> A report in the user's own words, or a research report: `python3 -c "from lib.report_templates
+> import quickstart; quickstart()"` prints the order, the recipe shape, every brick with its
+> arguments and every signature you need. Never grep lib source for a signature.
+> This file is reference: open one section when `publish()` refuses something its message does
+> not explain.
+
 A **report** is a JSON document this machine writes and the platform renders in the
 web workspace's Reports list (「報告」 in the sidebar): KPI rows, charts, tables and prose, laid out by the web from
 structured data — not a screenshot, not a wall of Telegram text. Use it for anything
@@ -54,6 +63,20 @@ and ships whatever lands there.
   a report from an earlier turn, a scheduled run or another process is never replaced
   (the call then writes a new report). Without `replace=True` a correction is one more
   report in the user's list.
+- **Changing a report the user named**: when the user points at one report and asks for a
+  change to it (「把剛剛這份報告的標題改成…，其他不動」, rewrite one paragraph, fix a typo),
+  change that report itself with `lib.report.edit_report`:
+  `edit_report("<id>", title="…")`, or
+  `edit_report("<id>", change=lambda blocks: blocks[3].update(markdown="…"))`.
+  It keeps the id, `created_at` (the report stays where it is in the list) and the pictures,
+  and touches nothing the change did not name. **Never edit `reports/<id>.json` by hand** —
+  not with Python, not with an editor: that skips the checks, the schema version, the sweep
+  of unused captures and the ledger (`.written.jsonl`). A report nobody named is never
+  changed; 「再做一份」 / 「重做」 / 「更新一下」 with new data is a new report. A report
+  shared by public link keeps showing the version that was shared — the link is not
+  updated by the change; the user updates it themselves with 「檢查後更新公開版本」 in the
+  report's title bar. Say so only when the user asks about the link. `FileNotFoundError` = the report
+  is no longer on this machine: say it cannot be changed from here and offer a new one.
 - **Writing the file yourself** (no `lib/report.py`): pick an id that has no file in
   `reports/` or `reports/sent/`. A file written over an existing one replaces that report
   for good — that is the one way left to destroy a report, so do not.
@@ -450,6 +473,16 @@ publish(pack, narrative={
   `part="outline"` → `part="section"` for the one paragraph you need — about 3,000 characters per page,
   20,000 per report. With web search, read the result snippets first and open a page only to check a
   figure.
+- **Open what you will read, read what you opened**: `browser_open_many` takes only the pages you
+  are going to read, and every page it opened is read (`part="meta"` at least) before you write the
+  narrative. A page you will not use is not opened; one you opened by mistake is closed
+  (`browser_close`). The user sees every page that opened and takes it for a source.
+- **The original first; second-hand is marked**: for news and for every number, read the outlet's
+  own article or the official page. A forum post (CMoney 同學會, PTT, Dcard, Reddit, X), a repost,
+  a summary of someone else's article or an aggregator page is used only when the original cannot
+  be found or opened — and then it is marked: in a `news` item the source name ends with
+  `（轉述）` (`("CMoney 同學會（轉述）", "https://…")`), in a research footnote the item says
+  `轉述自 <who>`. A number that exists only second-hand is written with 「據…轉述」 in the sentence.
 - **Source quality, in this order**: mainstream financial and crypto media (Reuters, Bloomberg, CNBC,
   CoinDesk, The Block; for Taiwan 鉅亨, 經濟日報, 工商時報, MoneyDJ), official announcements
   (the project, the exchange, the regulator; for Taiwan TWSE / TAIFEX announcements), exchange research reports > aggregators > press-release
@@ -552,6 +585,11 @@ publish(pack, narrative={
 
 A report the user describes in their own words is built from bricks, starting from the nearest
 recipe — never as hand-written blocks with numbers you fetched yourself (R1).
+
+**Start from `quickstart()`, not from this file.** `python3 -c "from lib.report_templates import
+quickstart; quickstart()"` prints the fixed order of work, the recipe shape, every brick with its
+arguments and the signatures of `research_pack` / `build` / `publish` — taken from the code, so it
+is never behind. The rest of this section is reference for when something is refused.
 
 ```python
 from lib.report_templates import RECIPES, build, publish, check_recipe

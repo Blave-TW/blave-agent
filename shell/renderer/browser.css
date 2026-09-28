@@ -26,9 +26,6 @@
 .pt { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 0; border: 0; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-sm); overflow: hidden; text-align: left; color: inherit; font: inherit; cursor: pointer;
   animation: brIn var(--motion-enter) var(--ease-standard) backwards; }
 @keyframes brIn { from { opacity: 0; transform: translateY(8px) scale(.96); } }
-/* 匯流(canon 第 9 條):一輪讀完,格子依序淡出上收,接著換成摘要列;stagger 由 JS 設 animation-delay(60ms) */
-.bblk.conv .pt { animation: brOut var(--motion-enter) var(--ease-standard) forwards; }
-@keyframes brOut { to { opacity: 0; transform: translateY(-12px) scale(.96); } }
 .pt-bar { flex: none; height: 32px; display: flex; align-items: center; gap: var(--space-8); padding: 0 var(--space-12); border-bottom: 1px solid var(--border-hairline); transition: background var(--motion-fast) var(--ease-standard); }
 .pt:hover .pt-bar { background: var(--surface-muted); }
 .pt-st { flex: none; display: flex; align-items: center; color: var(--ink-3); }
@@ -50,13 +47,25 @@
 .pt-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt[data-ph="done"] .pt-foot { color: var(--ink); }
 .pt[data-ph="wait"] .pt-foot, .pt[data-ph="fail"] .pt-foot, .pt[data-ph="blocked"] .pt-foot { color: var(--ink-2); }
+/* 未讀:開了、載入正常、agent 沒讀。標記是條頭裡的兩個字(無底無框,跟其他狀態的 icon 同一個份量);回合結束後縮圖跟已讀一樣降到 45% */
+.pt-st .st-t { font-size: 11px; line-height: 1; color: var(--ink-2); white-space: nowrap; }
+.pt[data-ph="unread"] .pt-foot { color: var(--ink-2); }
+.pt[data-ph="unread"][data-ended] .pg { opacity: .45; }
+.bw-stat .st-sum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 中欄很窄時只截這一段的尾巴 */
+.bw-stat .st-sum > span + span { margin-left: var(--space-12); }
 .pt-prog { display: none; }
 
 /* ── 聊天瀏覽區塊 .bblk ── */
 .bblk { margin: 0 0 var(--space-24); padding: var(--space-8); border-radius: var(--radius-lg); background: var(--bg-body); box-shadow: var(--shadow-sm); }
 .bblk-head { display: flex; align-items: center; gap: var(--space-8); min-height: 28px; padding: 0 var(--space-4) var(--space-8); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .bblk-head b { font-weight: 600; color: var(--ink); }
-.bblk-act { margin-left: auto; display: flex; gap: var(--space-12); }
+.bblk-act { margin-left: auto; display: flex; align-items: center; gap: var(--space-12); }
+/* 「看網頁」:安靜鈕——圖示 16＋字 12、無框無底線,hover 才填色。視覺高 28(卡高維持 44),熱區 32(::before 上下各外擴 2) */
+.br-open { position: relative; flex: none; display: inline-flex; align-items: center; gap: var(--space-6); height: 28px; padding: 0 var(--space-8); margin-right: calc(-1 * var(--space-4));
+  border-radius: var(--radius-xs); font-size: 12px; line-height: 1; color: var(--ink-2); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.br-open::before { content: ""; position: absolute; inset: -2px 0; }
+.br-open:hover { background: var(--surface-muted); color: var(--ink); }
+.br-open .ic { stroke-width: 1.5; }
 .bblk .wall { grid-auto-rows: auto; }
 .bblk.is-out .wall { display: none; }
 .bblk.is-out .bblk-head { padding-bottom: 0; }
@@ -89,48 +98,44 @@
   .bblk.no-thumb .pt-bar, .bblk.no-thumb .pt-foot { grid-column: 1 / 3; }
   .bblk.no-thumb .pt-prog { left: var(--space-8); }
 }
-/* 進行中也是一行(canon 第 1 條):圖示疊＋已讀 d/n＋展開。收著時只露出要你操作的那一頁;「沒讀到」的頁排最下面 */
+/* 進行中是一行:圖示疊＋已讀 d/n＋「看網頁」,不給展開;只露出要你操作的那一頁。清單(「沒讀到」的頁排最下面)回合結束後在摘要列裡 */
 .bblk:not(.sum) .bblk-head .favs { display: inline-flex; }
 .bblk .favs .fav { margin-left: -4px; box-shadow: 0 0 0 2px var(--surface-card); position: relative; }
 .bblk .favs .fav:first-child { margin-left: 0; }
 .bblk-head .more { font-size: 11px; color: var(--ink-3); }
 .bblk-head .cnt { color: var(--ink-3); }
-/* 清單開合只用 chevron:圖示鈕,熱區 32×32(視覺 14px),整條卡頭也可點 */
-.bblk:not(.sum):not(.is-empty) .bblk-head { cursor: pointer; }
-.br-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -6px -6px -6px 0; padding: 0; border: 0; border-radius: var(--radius-micro); background: none; color: var(--ink-3); cursor: pointer; }
-.br-toggle:hover { background: var(--surface-muted); color: var(--ink); }
-.br-toggle .chev { width: 14px; height: 14px; transition: transform var(--motion-fast) var(--ease-standard); }
-.bblk.is-open .br-toggle .chev { transform: rotate(180deg); }
-.bblk:not(.sum):not(.is-open) .wall > .pt:not([data-ph="wait"]), .bblk:not(.sum):not(.is-open) .wall > .bsep { display: none; }
-.bblk:not(.sum):not(.is-open):not(:has(.pt[data-ph="wait"])) .wall { display: none; }
-.bblk:not(.sum):not(.is-open):not(:has(.pt[data-ph="wait"])) .bblk-head { padding-bottom: 0; }
-@container chat (max-width: 559px) { .bblk.is-open:not(.sum) .wall { max-height: calc(5.5 * 52px); overflow-y: auto; } }   /* 一頁一列時高度上限 5 列半、內捲 */
+.bblk:not(.sum) .wall > .pt:not([data-ph="wait"]), .bblk:not(.sum) .wall > .bsep { display: none; }
+.bblk:not(.sum):not(:has(.pt[data-ph="wait"])) .wall { display: none; }
+.bblk:not(.sum):not(:has(.pt[data-ph="wait"])) .bblk-head { padding-bottom: 0; }
 .bblk.is-empty { display: none; }
+/* 清單裡只有「搜尋在等你過驗證」那一列:卡頭那一行是空的(沒有圖示疊、沒有計數),不畫 */
+.bblk.only-need .bblk-head { display: none; }
 .bsep { grid-column: 1 / -1; margin-top: var(--space-4); padding: var(--space-6) var(--space-4) 0; border-top: 1px solid var(--border-hairline); font-size: 11px; color: var(--ink-3); }
 
 /* 一輪結束:摘要列(details),點開仍是同一組格子 */
 .bblk.sum { padding: 0; }
-.bblk.sum.rise { animation: brIn var(--motion-enter) var(--ease-standard) backwards; }
 .bblk.sum summary { list-style: none; display: flex; align-items: center; gap: var(--space-8); min-height: 40px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-2); cursor: pointer; border-radius: var(--radius-lg); }
 .bblk.sum summary::-webkit-details-marker { display: none; }
 .bblk.sum summary:hover { background: var(--surface-card); }
 .bblk.sum summary b { font-weight: 600; color: var(--ink); }
 .bblk.sum .favs { display: inline-flex; }
-.bblk.sum .chev { margin-left: auto; width: 14px; height: 14px; color: var(--ink-3); transition: transform var(--motion-fast) var(--ease-standard); }
-.bblk.sum[open] .chev { transform: rotate(180deg); }
+.bblk.sum summary .cv7 { margin-left: auto; margin-right: var(--space-4); color: var(--ink-3); }   /* 視覺 7px;熱區是整列(40 高) */
 .bblk.sum .wall { padding: 0 var(--space-8) var(--space-8); }
 
 /* ── 中欄展開層 ── */
 .bw { position: absolute; left: 0; right: 0; bottom: 0; top: 52px; z-index: 20; display: flex; flex-direction: column; min-height: 0; background: var(--bg-body); }
-.bw-head { flex: none; display: flex; align-items: flex-start; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
-.bw-head .txt { flex: 1; min-width: 0; }
-.bw-head h5 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--ink); }
-.bw-stat { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-4); min-height: 18px; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+/* 標題列一列:「瀏覽器」後面接狀態句,右端 ✕。.txt 寫死高度、用 center 對齊——用 baseline 時標題區高度會隨狀態句裡有沒有 icon 跳 1px,頁面跟著跳 */
+.bw-head { flex: none; display: flex; align-items: center; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
+.bw-head .txt { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-12); height: 21px; }
+.bw-head h5 { flex: none; margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--ink); }
+.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; }
+.bw-stat > * { flex: none; }
+.bw-stat .t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 狀態句太長只截文字那一段;icon、進度格、文字鈕不縮 */
 .bw-stat b { font-weight: 600; color: var(--ink); }
 .bw-stat .ic { width: 14px; height: 14px; }
 .bw-stat .btn-quiet { margin-left: var(--space-4); }
 /* 32 的鈕對齊 20.8 高的 h5 那一行;✕ 的筆畫(不是盒子)對齊內容右緣。熱區 44,下緣仍在標題列內、不伸進頁面框 */
-.bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) 0 0; }
+.bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) calc(var(--space-6) * -1) 0; }
 .bw-close::before { content: ""; position: absolute; inset: -6px; }
 .bw-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-24) var(--space-24); display: flex; flex-direction: column; }
 .segs { display: inline-flex; gap: 3px; }
@@ -155,6 +160,8 @@
 .ibtn::before { content: ""; position: absolute; inset: -8px -2px; }
 .ibtn:hover { background: var(--surface-muted); color: var(--ink); }
 .ibtn:disabled { opacity: .4; cursor: default; }
+/* 「用系統瀏覽器開」在網址列右端、✕ 的正下方:熱區上緣只外擴 1(✕ 的熱區下緣在它上面 2px,不重疊) */
+.ibtn.ext::before { inset: -1px -2px -8px; }
 .ibtn .ic { width: 16px; height: 16px; }
 .url { flex: 1; min-width: 0; height: 34px; display: flex; align-items: center; gap: var(--space-8); padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--surface-field); font-size: 12px; color: var(--ink-3); cursor: text; }
 .url .ic { width: 14px; height: 14px; color: var(--ink-3); }
@@ -193,8 +200,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pt, .bblk.conv .pt, .bblk.sum.rise { animation: none; }
+  .pt { animation: none; }
   .br-pulse { animation: none; opacity: .5; }
-  .bblk .pt-prog, .bblk.sum .chev, .pg-band, .segs i, .tc { transition: none; }
+  .bblk .pt-prog, .pg-band, .segs i, .tc, .br-open { transition: none; }
   .tr { display: none; }
 }

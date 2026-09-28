@@ -282,12 +282,13 @@ def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_ur
                    "-c", 'mcp_servers.blave.default_tools_approval_mode="approve"',
                    *_MCP_ENV_FLAGS]
     if browser_url:
-        # browser_search can wait on a robot check and a fallback engine (~45 s worst case):
-        # raise this server's per-call timeout above that. Other servers keep Codex's default.
+        # browser_search hands a robot check to the user and waits for them (shell/browser/verify.js:
+        # up to 240 s, plus a search queued behind it and the fallback engine): this server's
+        # per-call timeout sits above that. Other servers keep Codex's default.
         picked += ["-c", f'mcp_servers.blave_browser.url="{browser_url}"',
                    "-c", f'mcp_servers.blave_browser.bearer_token_env_var="{BROWSER_TOKEN_ENV}"',
                    "-c", 'mcp_servers.blave_browser.default_tools_approval_mode="approve"',
-                   "-c", "mcp_servers.blave_browser.tool_timeout_sec=120",
+                   "-c", "mcp_servers.blave_browser.tool_timeout_sec=600",
                    *_BROWSER_ENV_FLAGS]
         if not mcp_url:
             picked += list(_MCP_ENV_FLAGS[2:])

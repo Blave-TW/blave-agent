@@ -17,7 +17,7 @@ function load(history) {
   const scroll = [], finished = [];
   const env = {
     BR: { tabs: new Map(), blocks: [], exp: null },
-    brEl: (tag, cls, txt) => { const n = new Node(); n.text = txt || ""; return n; },
+    brEl: (tag, cls, txt) => { const n = new Node(); n.text = txt || ""; n.setAttribute = () => {}; return n; },
     brFav: () => new Node(), brIcon: () => new Node(), brNoteFav: () => {}, brPaintTile: () => {}, brCollapse: () => {}, trackFeature: () => {},
     t: (k) => "[" + k + "]",
     brBlockNew: () => ({ el: { tag: "block" }, ids: [], wall: { querySelectorAll: () => [] } }),

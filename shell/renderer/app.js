@@ -95,7 +95,7 @@ function setHint(h) {
   HINT = h || null;
   const n = $("cn-hint"); n.textContent = ""; n.hidden = !HINT;
   if (HINT) { n.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) n.append(cmdLine(HINT.cmd)); }
-  // 另外兩個表面各自重畫(兩支都會自己判斷那一塊在不在);帳號頁那一格只由 acctPaintAcct 寫,不讓兩個人碰同一個節點
+  // 另外兩個表面各自重畫(兩支都會自己判斷那一塊在不在);帳號與方案那一格(#acct-hint)只由 planPaint 寫,不讓兩個人碰同一個節點
   mdlPaint();
   acctPaintAcct();
   if (HINT) srSay(HINT.text);
@@ -144,7 +144,7 @@ function paintBlaveBtn() {
   const b = $("btn-blave");
   const sec = document.querySelector(".cn-blave");
   b.hidden = cur === "blave";
-  acctPaintAcct();                           // 設定 › 帳號 的那一頁(登入 / 登出是帳號的事,不是某一種 AI 的事)
+  acctPaintAcct();                           // 設定 › 帳號與方案 最上面那一列(登入 / 登出是帳號的事,不是某一種 AI 的事)
   $("cn-blave-cur").hidden = cur !== "blave";
   $("cn-blave-cur").textContent = t("cn.current");
   sec.classList.toggle("is-cur", cur === "blave");
@@ -212,7 +212,8 @@ function mdlPaint() {
     const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "")); r.dataset.kind = o.kind;
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
-    if (o.desc) tc.appendChild(el("p", "m", t(o.desc)));
+    // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就只講怎麼收錢那半句
+    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc))); }
     r.appendChild(tc);
     if (o.st) r.appendChild(el("span", "st", t(o.st.key)));
     if (o.isCur) r.appendChild(el("span", "cn-cur", t("cn.current")));
@@ -251,23 +252,23 @@ function enterWorkspace(kind, info) {
 }
 
 $("btn-redetect").addEventListener("click", detect);
-/* 登出 Blave:刪掉這台電腦上的 token。不問確認——再登入一次就回來了,不是不可逆的事。
-   主行程會先請伺服器撤銷這顆 token 再刪本機那份(main.js signOutBlave);撤銷沒成功時提醒
-   用戶到 blave.org 設定 › 裝置 補撤。
+/* 登出 Blave:刪掉這台電腦上的 token。主行程會先請伺服器撤銷這顆 token 再刪本機那份(main.js signOutBlave);
+   撤銷沒成功時提醒用戶到 blave.org 設定 › 裝置 補撤。登出不碰雲端主機:主機照跑、主機費照扣(api 的 /oauth/desktop/revoke
+   只撤 token、這顆 token 帶出去的資料 key 與接入碼)。
    正在用 Blave 的話,登出之後這個工作頁就沒有 agent 可用(沒有 token 時引擎會退回本機模式、
-   改吃用戶自己的訂閱——那不是他選的),所以連線設定一起清、回連結畫面重選。 */
-$("set-acct-btn").addEventListener("click", async () => {
-  // 未登入時這顆是「登入 Blave」:走方案頁同一條登入流程(等待中再按 = 取消),不另寫一條。
-  // 等待是從別的表面(模型接入那一列)開始的話,planLogin 會靜默 return——那顆鈕寫著「取消」卻按不動,
-  // 所以直接取消:等的是同一件事、同一個瀏覽器分頁,誰按取消都一樣
-  if (!hasToken) {
-    if (oauthPending && !planLoginBusy) { window.blave.cancelOAuth(); return; }
-    await planLogin(); acctPaintAcct(); return;
-  }
-  if (running || oauthPending || planLoginBusy) return;
-  $("set-acct-btn").disabled = true;
+   改吃用戶自己的訂閱——那不是他選的),所以連線設定一起清、回連結畫面重選。
+   登出鈕住在「帳號與方案」最上面那一列(planPaint 每次重畫時建)。「登出會怎樣」那幾句不常駐,按了才在確認框裡出
+   (Wei 2026-09-28:登出要過確認框)。 */
+function acctOutAsk(opener) {
+  if (!hasToken || running || oauthPending || planLoginBusy) return;
+  // 第 1 句只在用 Blave AI 時出(登出後會被送回選 AI 的畫面);主機那一句只在帳號有主機時出
+  const hasMachine = !!acct && ["starting", "running", "stopped"].includes(planState());
+  const lines = (cur === "blave" ? [t("acct.out.3")] : []).concat([t("acct.out.1")], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
+  confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: acctSignOut });
+}
+async function acctSignOut() {
+  if (!hasToken || running || oauthPending || planLoginBusy) return;
   const r = await window.blave.signOutBlave();
-  $("set-acct-btn").disabled = false;
   hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
   if (typeof libInvalidate === "function") libInvalidate();   // 策略庫的 purchased / 閘門是這個帳號的
@@ -275,10 +276,10 @@ $("set-acct-btn").addEventListener("click", async () => {
   // 伺服器那顆沒撤到(離線、逾時):本機已經登出,但要講清楚還差一步、去哪裡補
   const warn = () => { if (!r.revoked) setHint({ text: t("cn.blave.signOutLocalOnly") }); };
   acctPaintAcct();
-  // 用自己的 CLI 的人:AI 不受影響,留在原地;帳號區還在(換成未登入那一態),焦點留在同一顆鈕上
+  // 用自己的 CLI 的人:AI 不受影響,留在原地;這一頁重畫成未登入那一格(登出鈕不在了),焦點回左欄的分類鈕
   if (cur !== "blave") {
     paintBlaveBtn(); planWatchIdle(); srSay(t("acct.outDone"));
-    $("set-acct-btn").focus();
+    const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus();
     await detect(); warn(); return;
   }
   await window.blave.clearConnection();
@@ -286,7 +287,7 @@ $("set-acct-btn").addEventListener("click", async () => {
   setClose();
   $("view-ws").hidden = true; $("view-connect").hidden = false;
   paintBlaveBtn(); await detect(); warn();
-});
+}
 // 等待期間這顆鈕變成「取消」而不是變灰:用戶把瀏覽器分頁關掉之後不會有人按
 // 「允許」,沒有取消的話這裡就卡到五分鐘逾時為止。
 let oauthPending = false;
@@ -332,7 +333,7 @@ async function blaveGo(b) {
 /* 設定裡任何一塊重畫之後的保險:焦點掉到 BODY(或掉出 modal)就放回 modal 內一個合理的落點。
    Esc 與 Tab 都綁在 #set-scrim 上,焦點在 BODY 時事件冒泡不到它——那時設定關不掉、Tab 也不再圈在框裡。
    不靠個別欄位名猜得對不對:重畫完一律過這一關。 */
-/* 等待瀏覽器那邊按「允許」是**一件事**,可是「模型接入」與「帳號」是兩份 DOM:
+/* 等待瀏覽器那邊按「允許」是**一件事**,可是「模型接入」與「帳號與方案」是兩份 DOM:
    只要 oauthPending / planLoginBusy 變了,兩邊都得重畫,否則一邊還留著「取消」、另一邊的鈕按了沒反應。
    規矩:凡是改這兩個旗標的地方,收尾一律叫這一支(tests/check_shell_settings.js 會列舉檢查)。 */
 function waitChanged() { mdlPaint(); acctPaintAcct(); }
@@ -355,6 +356,7 @@ function trapTab(e, box) {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 function setCat(cat) {
+  if (cat === "acct") cat = "plan";   // 「帳號」併進「帳號與方案」:舊的分類 id 照樣開得到,漏改的呼叫點不會開到空白頁
   $("set-cats").querySelectorAll(".set-cat").forEach((b) => {
     if (b.dataset.setCat === cat) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   });
@@ -362,10 +364,9 @@ function setCat(cat) {
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat === "model") mdlPaint();
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
-  if (cat === "acct") acctPaintAcct();
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
-  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) acctCheck(); else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
+  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
 }
 async function setOpen() {
   if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
@@ -884,7 +885,7 @@ function mpPickModel(id, viaMouse) {
   mpSave(); mpPaint();
   // 滑鼠開的不把焦點丟到選中列:前一個焦點是輸入框(永遠算 focus-visible),程式轉移
   // 過去的焦點會繼承它,選中列就平白多一圈白框。鍵盤開的才需要焦點落在列上。
-  const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur && !viaMouse) cur.focus();
+  const sel = $("mp-models").querySelector('[aria-checked="true"]'); if (sel && !viaMouse) sel.focus();   // 不叫 cur:那是外層「現在用哪個引擎」,同名的 const 會遮住它(宣告前讀到就丟 ReferenceError)
 }
 function mpPickEffort(lv) {
   const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
@@ -897,12 +898,12 @@ function mpPickEffort(lv) {
    觸發鈕,焦點一律回觸發鈕。 */
 function mpOpen(viaMouse) {
   if (running) return;
-  if (cur === "blave" && hasToken && Date.now() - acctAt > BAL_STALE_MS) acctCheck();   // 打開選單時重讀餘額;剛查過就不重查(跟 LLM 共用每分鐘的桶)
+  if (cur === "blave" && hasToken) balLoad();   // 打開選單時重讀餘額(主行程 10 秒內用上一次的答案)
   $("mp-panel").hidden = false; $("mp").classList.add("is-open");
   $("mp-trigger").setAttribute("aria-expanded", "true");
   // 滑鼠開的不把焦點丟到選中列:前一個焦點是輸入框(永遠算 focus-visible),程式轉移
   // 過去的焦點會繼承它,選中列就平白多一圈白框。鍵盤開的才需要焦點落在列上。
-  const cur = $("mp-models").querySelector('[aria-checked="true"]'); if (cur && !viaMouse) cur.focus();
+  const sel = $("mp-models").querySelector('[aria-checked="true"]'); if (sel && !viaMouse) sel.focus();   // 不叫 cur:那是外層「現在用哪個引擎」,同名的 const 會遮住它(宣告前讀到就丟 ReferenceError)
 }
 function mpClose(refocus) {
   if ($("mp-panel").hidden) return;
@@ -1260,22 +1261,25 @@ function receiptFold(steps) {
   const head = document.createElement("button"); head.type = "button"; head.className = "think-head has-reason";
   head.setAttribute("aria-expanded", "false");
   const verb = document.createElement("span"); verb.className = "think-verb"; verb.dataset.i18n = "turn.process"; verb.textContent = t("turn.process");
-  const chev = document.createElement("span"); chev.className = "think-chev"; chev.setAttribute("aria-hidden", "true");
+  const chev = document.createElement("span"); chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(verb, chev);
   const wrap = document.createElement("div"); wrap.className = "think-reason-wrap";
   const fold = document.createElement("div"); fold.className = "think-fold";
   const list = document.createElement("ul"); list.className = "think-steps";
+  const sides = new Set();
   steps.forEach((st) => {
     const li = document.createElement("li"); li.className = "think-step";
     if (st.more) { li.textContent = st.more; list.appendChild(li); return; }
-    const lab = stepLabel(st);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來
+    const lab = stepLabel(st, true);   // 逐字稿那行只有工具名:照名稱分類,不把名稱畫出來;收據上的都是做完的步驟
     if (!lab) return;
+    sides.add(stepWhere({ tool: st.tool }));
     const mark = document.createElement("span"); mark.className = "think-step-mark";
     const v = document.createElement("span"); v.className = "think-step-verb"; v.textContent = lab.verb;
     const obj = document.createElement("span"); obj.className = "think-step-obj"; obj.textContent = lab.obj;
     li.append(mark, whereTag(stepWhere({ tool: st.tool })), v, obj);
     list.appendChild(li);
   });
+  el.classList.toggle("has-both", sides.size > 1);
   fold.appendChild(list); wrap.appendChild(fold); el.append(head, wrap);
   head.addEventListener("click", () => { const open = el.classList.toggle("is-open"); head.setAttribute("aria-expanded", open ? "true" : "false"); });
   return el;
@@ -1380,14 +1384,45 @@ function delConfirm(m, opener) {
    鈕正上方再一行 {哪一台} · {真錢/模擬} · {交易所}。markKind = 錢記號的顏色(real / paper),lead = 放在所有句子最上面的那一塊
    (今天只有「兩邊都真錢」那個灰記號)。**都不給就跟以前一模一樣**。 */
 /* cancel = 取消鈕的字(不給 = 「取消」):主鈕本身就叫「取消分享」時,「取消」並排讀不出哪顆是留著(report-share.js) */
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel }) {
+/* 下單確認框(Wei 0928 第 3 點 A 案;啟動下單用):先選再按。都不給就跟以前一模一樣。
+   choices = [{ id, title, desc, warn, disabled, why, ok, onOk }]:一組 radio,**沒有預設選項**,沒選之前主鈕停用(字是 ok);選了之後主鈕的字換成
+     那個選項的 ok、按下去做它的 onOk。warn = 掛在那個選項裡的情境句;disabled + why = 這個選項現在不能選,說明換成原因句(aria-describedby 指它)。
+     choicesLabel = 這一組的名字(只給讀屏)。這時 lines 是最上面的狀態句(主墨)。
+   keep = 常駐的安全句(每次都要看的);details = [{ label, text | items }] 收在「細節」裡(看懂一次就好的),detailsOpen = 預設展開 */
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen }) {
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
   $("del-cancel").textContent = cancel || t("del.cancel");
-  const body = $("del-body"); body.className = "del-body lines"; body.textContent = "";
+  const body = $("del-body"); body.className = "del-body lines" + (choices ? " has-choices" : ""); body.textContent = "";
   if (lead) body.appendChild(lead);
   lines.forEach((x) => { const p = document.createElement("p"); p.textContent = x; if (okDisabled && okWhy && x === okWhy) p.id = "del-ok-why"; body.appendChild(p); });
+  if (choices) {
+    const fs = mk("fieldset", "cf-opts"); fs.appendChild(mk("legend", "", choicesLabel || ""));
+    choices.forEach((c) => {
+      const row = mk("label", "cf-opt" + (c.disabled ? " off" : "")), r = mk("input");
+      r.type = "radio"; r.name = "cf-choice"; r.value = c.id; r.disabled = !!c.disabled;
+      const d = mk("span", "cf-opt-d", c.disabled && c.why ? c.why : c.desc);
+      if (c.disabled && c.why) { d.id = "cf-why-" + c.id; r.setAttribute("aria-describedby", d.id); }
+      row.append(r, mk("span", "cf-opt-t", c.title), d);
+      if (c.warn && !c.disabled) row.appendChild(mk("span", "cf-opt-w", c.warn));
+      r.addEventListener("change", () => { if (!r.checked || !delCtx) return; delCtx.onOk = c.onOk; $("del-ok").textContent = c.ok; $("del-ok").disabled = false; });
+      fs.appendChild(row);
+    });
+    body.appendChild(fs);
+  }
   if (extra) body.appendChild(extra);
-  $("del-ok").textContent = ok; $("del-ok").disabled = !!okDisabled;
+  if (keep && keep.length) { const ul = mk("ul", "cf-keep"); keep.forEach((x) => ul.appendChild(mk("li", "", x))); body.appendChild(ul); }
+  if (details && details.length) {
+    const d = mk("details", "cf-more"), sm = mk("summary", "", t("cf.more")), cv = mk("span", "cv7"), inner = mk("div", "cf-more-in");
+    cv.setAttribute("aria-hidden", "true"); sm.appendChild(cv); d.open = !!detailsOpen;
+    details.forEach((g) => {
+      const box = mk("div"); box.appendChild(mk("span", "lbl", g.label));
+      if (g.items) { const ul = mk("ul"); g.items.forEach((x) => ul.appendChild(mk("li", "", x))); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
+      inner.appendChild(box);
+    });
+    d.append(sm, inner); body.appendChild(d);
+  }
+  $("del-ok").textContent = ok; $("del-ok").disabled = !!okDisabled || !!choices;
   // okWhy = 停用的主鈕為什麼按不了(lines 裡的那一句):讀屏停在鈕上時唸得到
   if (okDisabled && okWhy && $("del-ok-why")) $("del-ok").setAttribute("aria-describedby", "del-ok-why"); else $("del-ok").removeAttribute("aria-describedby");
   $("del-modal").querySelector(".modal-head").classList.toggle("cloud", env === "cloud");
@@ -1398,7 +1433,8 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-alt").hidden = !alt; $("del-alt").textContent = alt ? alt.label : "";
   $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
   $("del-modal").classList.toggle("has-alt", !!alt);
-  delCtx = { custom: true, onOk, onAlt: alt && alt.onOk, opener };
+  $("del-modal").classList.toggle("has-choices", !!choices);
+  delCtx = { custom: true, onOk: choices ? null : onOk, onAlt: alt && alt.onOk, opener };
   $("view-ws").inert = true; $("set-scrim").inert = true;
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
@@ -1412,7 +1448,7 @@ function delClose(deleted) {
   $("view-ws").inert = false; $("set-scrim").inert = false;
   const c = delCtx; delCtx = null;
   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
-  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
+  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt", "has-choices"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
   $("del-env").hidden = true; $("del-where").hidden = true; $("del-modal").querySelector(".modal-head").classList.remove("cloud"); $("del-cancel").hidden = false; $("del-cancel").textContent = t("del.cancel");
   if (deleted) $("cs-newrow").focus();
   else if (c && c.opener && c.opener.isConnected) c.opener.focus();
@@ -1423,7 +1459,7 @@ $("del-scrim").addEventListener("mousedown", (e) => { if (e.target === $("del-sc
 $("del-scrim").addEventListener("keydown", (e) => trapTab(e, $("del-modal")));
 $("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
-  if (delCtx && delCtx.custom) { const go = delCtx.onOk; delClose(false); go(); return; }
+  if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
   if (!(await window.blave.deleteSession(m.id))) { delClose(false); return; }
   if (m.id === sessionId) { csStartNew(); csShowList(true); } else await csRenderList();
@@ -1654,21 +1690,26 @@ function actWant(st, now, needUser) {
   if (st.textStart && now - st.textStart >= ACT_REPLY_MS && now - st.lastDelta <= ACT_REPLY_MS) return { kind: "reply", obj: "" };
   return { kind: "thinking", obj: "" };
 }
-function actLabel(w) {
-  if (w.kind === "web_read_many") return t("act.web_read_many", { n: w.obj || "" });
-  const key = "act." + w.kind;
-  return t(key);
+/* done = 做完的步驟(展開的清單):動詞換完成式 step.<kind>(「讀」/ Read);沒有那個 key 就退回 act.*(「正在讀」) */
+function actLabel(w, done) {
+  const key = (done && STRINGS.en["step." + w.kind] ? "step." : "act.") + w.kind;
+  return w.kind === "web_read_many" ? t(key, { n: w.obj || "" }) : t(key);
 }
 /* runtime 比外殼新、送來外殼不認得的 kind:當成 unknown(「正在處理」),而且不帶受詞(稽核 P2-7) */
 const actKnown = (w) => (w.kind === "web_read_many" || STRINGS.en["act." + w.kind] ? w : { kind: "unknown", obj: "" });
 /* 展開的步驟清單(即時與重開畫回)跟狀態列用同一套 kind → act.* 的字,不另做對照表;工具名(ToolSearch、mcp__…)是內部名稱,
    不上畫面(0.1.8 e2e #88)。受詞照舊是 runtime 給的 summary(檔名／搜尋字／網域),沒有才退到 kind 的受詞;
-   silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js */
-function stepLabel(c) {
+   silent → null = 這一步不列(狀態列也不顯示它);認不出的 → 「正在處理」。純函式,tests/check_shell_turn_status.js
+   failed = 出錯的那一步:不留進行式(「正在抓資料」配紅色記號讀起來像還在跑),也不用完成式(英文過去式會被讀成做成了)——
+   講「沒成功:抓資料」/ "Failed: fetching data"(step.fail 一個模板,中文接完成式、英文接進行式)。
+   查說明文件、找檔案(agent 讀自己的文件與原始碼):受詞是指令內容(def fetch_…、grep references/…),不上畫面,只留動詞 */
+const STEP_NO_OBJ = ["docs", "files", "web_read_many"];
+function stepLabel(c, done, failed) {
   const k = actKindOf(c || {});
   if (k.kind === "silent") return null;
-  const w = actKnown(k);
-  return { verb: actLabel(w), obj: w.kind === "web_read_many" ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
+  const w = actKnown(k), low = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+  return { verb: failed ? t("step.fail", { did: actLabel(w, true), doing: low(actLabel(w)) }) : actLabel(w, done),
+    obj: STEP_NO_OBJ.includes(w.kind) ? "" : String((c && c.summary) || (w.kind === "unknown" ? "" : w.obj || actTabHost(k.tab)) || "") };
 }
 function actReset() { ACT.running.clear(); ACT.shown = null; ACT.shownAt = 0; ACT.textStart = 0; ACT.lastDelta = 0; ACT.prep = null; ACT.lastWant = null; clearTimeout(ACT.timer); }
 function actToolPrep(c) { ACT.prep = { tool: String(c.tool || ""), kind: c.kind ? String(c.kind) : "", obj: c.kind_obj ? String(c.kind_obj) : "" }; ACT.textStart = 0; actApply(); }
@@ -1697,7 +1738,7 @@ function actApply(force) {
     clearTimeout(ACT.timer); ACT.timer = setTimeout(() => actApply(), wait); return;
   }
   ACT.shown = key; ACT.shownAt = now; ACT.lastWant = w;
-  busySet(actLabel(w), w.kind === "web_read_many" ? "" : w.obj, w.kind);   // 幾個網頁已經在 label 裡
+  busySet(actLabel(w), STEP_NO_OBJ.includes(w.kind) ? "" : w.obj, w.kind);   // 幾個網頁已經在 label 裡;查文件 / 找檔案不帶受詞
 }
 
 /* 時長(canon › Copy › Numbers):<60 秒 47s;<60 分 4m 57s(秒補兩位);≥60 分 1h 02m。各語言同一寫法 */
@@ -1748,7 +1789,7 @@ function busyStart() {
   // 每秒變的數字在 live region 裡會被逐秒念出來;狀態由動詞承載,秒數只給眼睛
   elapsed.className = "think-elapsed"; elapsed.setAttribute("aria-hidden", "true");
   const chev = document.createElement("span");
-  chev.className = "think-chev"; chev.setAttribute("aria-hidden", "true");
+  chev.className = "think-chev cv7"; chev.setAttribute("aria-hidden", "true");
   head.append(ticks, sum, elapsed, chev);
   // 折疊面板:grid-rows 0fr↔1fr(動到真實高度,不用猜 max-height)
   const wrap = document.createElement("div");
@@ -1768,11 +1809,17 @@ function busyStart() {
     head.setAttribute("aria-expanded", open ? "true" : "false");
   });
   $("chat-scroll").appendChild(el);
-  busy = { el, head, ticksIn, verb, obj, elapsed, stepsEl, reason, stepRows: {},
+  busy = { el, head, ticksIn, verb, obj, elapsed, stepsEl, reason, stepRows: {}, sides: new Set(),
            start: Date.now(), steps: 0, timer: null };
   actReset(); actApply(true);
   busyElapsed(); busyTick();          // 第 0 秒:條子不會是空的
-  busy.timer = setInterval(() => { busyElapsed(); busyTick(); actApply(); }, 1000);
+  busy.timer = setInterval(() => { busyElapsed(); busyTick(); busyStepTick(); actApply(); }, 1000);
+}
+/* 正在跑的那一步顯示自己的秒數(看得出是卡在這一步,還是一直在換步驟);清單跟到最新一列——游標在清單上(人在讀前面的)就不搶 */
+function busyStepTick() {
+  const ul = busy.stepsEl, now = Date.now();
+  ul.querySelectorAll(".think-step.is-run").forEach((li) => { li.querySelector(".think-step-time").textContent = fmtDur((now - li.__t0) / 1000); });
+  if (!ul.matches(":hover")) ul.scrollTop = ul.scrollHeight;
 }
 function busyHasFold() {
   if (busy) busy.head.classList.remove("no-toggle"), busy.head.classList.add("has-reason");
@@ -1793,9 +1840,12 @@ function busyStep(c) {
   obj.textContent = lab.obj;
   const time = document.createElement("span"); time.className = "think-step-time";
   li.append(mark, whereTag(stepWhere(c)), verb, obj, time);   // ④ 這一步實際做在哪(事實)
+  // 位置記號只在這一輪兩邊都做過事時才畫(.has-both,app.css):整輪都在同一邊,每列都掛同一個字只是佔寬度
+  busy.sides.add(stepWhere(c)); busy.el.classList.toggle("has-both", busy.sides.size > 1);
+  li.__t0 = Date.now(); li.__c = c; time.textContent = fmtDur(0);
   busy.stepsEl.appendChild(li);
   if (c.id) busy.stepRows[c.id] = li;
-  busyHasFold();
+  busyHasFold(); busyStepTick();
 }
 /* `done` 只是回頭補那一列的耗時 / 錯誤態,不是新步驟。 */
 function busyStepDone(c) {
@@ -1803,7 +1853,9 @@ function busyStepDone(c) {
   const li = busy && c.id && busy.stepRows[c.id];
   if (!li) return;
   li.classList.remove("is-run");
+  // 做完換完成式;出錯的那一步換成失敗的說法(不留「正在…」,也不用完成式:英文過去式「Placed an order」配失敗的步驟會被讀成下了單)
   if (c.error) li.classList.add("is-err");
+  li.querySelector(".think-step-verb").textContent = stepLabel(li.__c, true, !!c.error).verb;
   const ms = Number(c.ms) || 0;
   if (ms > 0) li.querySelector(".think-step-time").textContent =
     ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms";
@@ -1813,7 +1865,7 @@ function busyReason(text) {
   if (!busy || !text) return;
   busy.reason.textContent += (busy.reason.textContent ? "\n\n" : "") + text;
   busy.reason.scrollTop = busy.reason.scrollHeight;
-  busyHasFold();
+  busyHasFold(); busyHoldReason(busy);
 }
 function busyHide() {
   if (busy) busy.el.hidden = true;    // 回覆在串流了,字本身就是「還在跑」
@@ -1840,16 +1892,20 @@ function busyEnd(faulted) {
   setTimeout(() => b.el.remove(), motionBaseMs() + 30);
 }
 
-/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):工具收據自己攤開——「做到哪」不該還要多按一下;思考文字維持收起
-   (那是模型自己的獨白,多半是英文,出錯時要的是收據)。有思考文字才在收據下面留一顆「顯示思考內容」,按了才出 */
-function busyOpenReceipts(b) {
-  b.el.classList.add("is-open"); b.head.setAttribute("aria-expanded", "true");
-  if (!b.reason.textContent.trim()) return;
-  b.el.classList.add("reason-held");
+/* 思考文字每一輪都先收著(Wei 0928 第 2b 點):那是模型自己的獨白,多半是英文,等的人要看的是步驟。
+   有思考文字才在步驟下面留一顆「顯示思考內容」,按了才出;一輪只掛一次,按過之後後面來的字直接看得到 */
+function busyHoldReason(b) {
+  if (b.held || !b.reason.textContent.trim()) return;
+  b.held = true; b.el.classList.add("reason-held");
   const show = document.createElement("button");
   show.type = "button"; show.className = "btn-quiet think-reason-show"; show.textContent = t("turn.showReason");
   show.addEventListener("click", () => { b.el.classList.remove("reason-held"); show.remove(); b.reason.setAttribute("tabindex", "-1"); b.reason.focus(); });   // 鈕消失,焦點接到剛出來的字
   b.reason.before(show);
+}
+/* 出錯的回合(設計稽核 005 第 12 條,Wei 同意):工具收據自己攤開——「做到哪」不該還要多按一下;思考文字照樣收著 */
+function busyOpenReceipts(b) {
+  b.el.classList.add("is-open"); b.head.setAttribute("aria-expanded", "true");
+  busyHoldReason(b);
 }
 /* 停止(照雲端工作頁 csSyncComposer / interruptTurn):回合進行中送出鈕換成停止鈕(同一顆中性鈕、箭頭換方塊);
    按下 = 請主行程寫停止旗標,鈕轉「停止中」(變淡、仍可按)等 turn-end,**不先樂觀地切回送出**。
@@ -2149,13 +2205,25 @@ function blaveLoginFlow(card) {
    視窗回到前景時自動重查(節流 10 秒;還是不能跑就 5 秒後再查,最多 3 次):綁完卡回來,卡片
    自己換成「可以開始了 / 額度到了」。不自動重送——那句話可能是下單。 */
 let acct = null, acctCard = null, acctAt = 0, acctRetry = 0;
-/* Blave 餘額(設計師第五批 c;e2e 0.1.8 #100):無條件捨去到整數、千分位——不把付不出的零頭講成有。回 "1,234" 或 null(不是有限數字)。
-   來源是帳號狀態的 balance 欄位;api 還沒給這一欄時一律 null,畫面畫「—」/ 只出規則那半句 */
-const BAL_STALE_MS = 60 * 1000;
-let balLast = null;
-function balNum(v) { return typeof v === "number" && isFinite(v) ? Math.floor(v).toLocaleString("en-US") : null; }
-// 還在讀(acct 是 null)沿用上一個數字,讀到才換;登入 / 登出 / 換帳號由呼叫端把 balLast 清掉
-function balNow() { if (!hasToken) return null; if (acct) balLast = balNum(acct.balance); return balLast; }
+/* Blave 餘額(設計師第五批 c;e2e 0.1.8 #100)。看得到它的地方(帳號與方案那一列、模型選單底部)都只經過這裡:
+   balLoad() 讀、balNow() 給字。來源是電腦版自己的端點(主行程 window.blave.balance,帶 token + app_secret);帳號狀態不回餘額。
+   整數、千分位、四捨五入——跟網頁同一個算法(Intl.NumberFormat 的預設),同一個人在兩邊要看到同一個數字。一律 TWD。
+   回 "1,234" 或 null(讀不到:非 200、舊登入、api 還沒部署……一律畫「—」/ 只出規則那半句,不把讀不到畫成 0)。
+   什麼時候讀:打開「帳號與方案」、打開模型選單(引擎是 Blave AI)、Blave AI 的回合結束、登入回來。不輪詢 */
+let balLast = null, balSeq = 0;
+function balNum(v) { return typeof v === "number" && isFinite(v) ? (Math.round(v) || 0).toLocaleString("en-US") : null; }
+// 還在讀沿用上一個數字,讀到才換;登入 / 登出 / 換帳號由呼叫端把 balLast 清掉
+function balNow() { return hasToken ? balLast : null; }
+async function balLoad() {
+  if (!hasToken) { balLast = null; return; }
+  const seq = ++balSeq;
+  let r = null;
+  try { r = await window.blave.balance(); } catch (_) { r = null; }
+  if (!hasToken || seq !== balSeq) return;   // 在途時登出了,或後面又讀了一次:這一筆不算
+  balLast = r ? balNum(r.balance) : null;
+  if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
+  if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
+}
 const creditCards = [];                     // 402 那張(可能不只一張:他連送了兩句)
 const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
 const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
@@ -2227,7 +2295,7 @@ async function acctCheck() {
    agent 因為這台沒有資料權限而拿不到 Blave 資料的那一輪,回覆尾端會帶 `<blave-card:data-access/>`
    (runtime 的規則;paintAi 把它從畫面上拿掉、記在 turnCards)。**agent 只講事實,錢與動作由這張卡講**。
    - 這一小時付不出資料費(data_access = none):出口是儲值(沒綁卡是綁卡),不提主機。
-   - 沒登入 / 查不到 / 舊 api:描邊鈕開「資料與雲端方案」那一頁。
+   - 沒登入 / 查不到 / 舊 api:描邊鈕開「帳號與方案」那一頁。
    同一段對話只出一次;不擋輸入、不搶焦點。同一輪有錢的阻擋卡(402 / 還沒解的預檢卡)就讓位,
    而且不算用掉那一次。視窗回前景重查到拿得到資料 → 換成 dataReadyText + 再送一次(不自動重送)。 */
 const dataCardSessions = new Set();
@@ -2334,7 +2402,6 @@ function planView() {
 }
 let planMoreOpen = false, planLoginBusy = false, planLastView = null;
 function planPaint() {
-  acctPaintAcct();                           // 登入等待中那顆鈕是「取消」:帳號頁跟著同一份狀態
   if (typeof envPlanChanged === "function") envPlanChanged();   // 開通頁跟著同一份狀態重畫(trade.js);放最前面:下面有提早 return
   const box = $("set-plan"); if (!box) return;
   // 登入回來、狀態還在查:留著上一格,查完(或失敗)那次重畫才換——不閃「查不到」
@@ -2345,12 +2412,22 @@ function planPaint() {
   box.textContent = "";
   const v = planVars(), view = planView(), hasNum = !!(v.t && v.p);
   const sc = el("div", "plan-scroll"), foot = el("div", "plan-foot");
-  // 最上面一列 Blave 餘額:帳號頁那句「餘額…在資料與雲端方案」指的就是這裡。沒登入整列不出(沒有帳號就沒有餘額);讀不到畫「—」
-  if (hasToken) {
-    const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
-    if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
-    row.append(el("span", "l", t("plan.bal")), val); sc.append(row);
-  }
+  /* 最上面一組(.plan-id,底下一條細線):帳號列(登入狀態;已登入才有「登出」文字鈕)→ 訊息格 → Blave 餘額列。
+     主行程拿不到 Blave 帳號的 email(那裡的 email 是 Claude Code 的),值先寫「已登入」;之後 account_status 帶得回 email 再換。
+     訊息格 #acct-hint 只有這裡寫,只放共用那一則(登出時伺服器那顆沒撤成);「瀏覽器已開啟…」在頁尾鈕的左邊,不放兩次。
+     餘額列:沒登入整列不出(沒有帳號就沒有餘額);讀不到畫「—」 */
+  { const id = el("div", "plan-id"), who = el("div", "plan-bal");
+    who.append(el("span", "l", t("acct.lbl")), el("span", "v" + (hasToken ? "" : " na"), t(hasToken ? "acct.signedIn" : "acct.signedOut")));
+    if (hasToken) { const out = btn("btn-quiet", t("acct.out"), (e) => acctOutAsk(e.currentTarget), running); out.id = "set-acct-btn"; out.dataset.k = "acct-out"; who.append(out); }
+    const hint = el("p", "cn-hint"); hint.id = "acct-hint"; hint.hidden = !HINT;
+    if (HINT) { hint.append(HINT.text + (HINT.cmd ? " " : "")); if (HINT.cmd) hint.append(cmdLine(HINT.cmd)); }
+    id.append(who, hint);
+    if (hasToken) {
+      const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
+      if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
+      row.append(el("span", "l", t("plan.bal")), val); id.append(row);
+    }
+    sc.append(id); }
   const ext = (u) => () => window.blave.openExternal(u);
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
   if (slow && !planSlowSaid) { planSlowSaid = true; srSay(t("plan.err.slow")); }   // 錯誤列每次重畫都是新節點,讀屏靠這裡念一次
@@ -2427,7 +2504,7 @@ async function planLogin() {
   if (oauthPending || running) return;
   setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
   planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
-  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); }
+  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = false; planPaint(); waitChanged();
@@ -2461,7 +2538,7 @@ async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
   oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
-  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); }
+  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
   oauthPending = false; waitChanged();
@@ -2489,36 +2566,12 @@ function planWatch(s) {
 function planSayDone() { planDonePending = false; const c = faultCard(); c.set({ calm: true, text: t("plan.done") }); }
 /* 「設定」右邊那行安靜的字:只在試用最後 3 天 / 啟動中 / 已停機出現。不是通知(不推播、不打斷)。 */
 function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint(); sidePaint(); }
-/* 設定左欄底部的帳號區:有登入才出。(連結畫面最底下那句「首次綁卡送 N 天資料」已拿掉——Wei:選 AI 的地方不放宣傳文) */
-/* 設定 › 帳號。兩態同一副骨架:身分兩行 + 一顆鈕 + 「會怎樣」的短清單 + 一行指往「資料與雲端方案」。
-   主行程拿不到 Blave 帳號的 email(那裡的 email 是 Claude Code 的),所以第一行先寫「Blave 帳號」;
-   之後 account_status 帶得回 email 再換成 email,版面不用動。 */
+/* 帳號那一列(登入狀態、登出、訊息格)現在是「帳號與方案」頁的一部分,由 planPaint 畫。登入狀態、等待中的旗標、共用訊息(HINT)、
+   語言變了的地方照舊叫這一支:那一頁開著就整頁重畫,沒開就什麼都不做(下次切到那一類 setCat 會畫) */
 function acctPaintAcct() {
-  if (!$("set-acct-pane")) return;
-  const el = (id) => $(id);
-  el("acct-a1").textContent = t("acct.lbl"); el("acct-a1").title = t("acct.lbl");
-  const a2 = el("acct-a2"); a2.textContent = ""; a2.className = "a2" + (hasToken ? " on" : "");
-  if (hasToken) { const d = document.createElement("i"); d.className = "dot"; d.setAttribute("aria-hidden", "true"); a2.appendChild(d); }
-  a2.append(t(hasToken ? "acct.signedIn" : "acct.signedOut"));
-  const b = el("set-acct-btn"), waiting = !hasToken && (planLoginBusy || oauthPending);
-  b.textContent = hasToken ? t("acct.out") : waiting ? t("oauth.cancel") : t("cn.blave.btn");
-  b.className = hasToken || waiting ? "btn-out" : "btn-fill";
-  // 登出會怎樣 / 登入拿得到什麼。用 Blave AI 的人登出之後會被送回選 AI 的畫面(見登出那支的 cur === "blave" 分支),
-  // 對話要換成這台電腦上的 agent 或重新登入才接得下去;用自己 CLI 的人不受影響,所以那一條只對前者出
-  const keys = hasToken ? (cur === "blave" ? ["acct.out.3", "acct.out.1", "acct.out.2"] : ["acct.out.1", "acct.out.2"]) : ["acct.in.1", "acct.in.2"];
-  const ul = el("acct-list"); ul.textContent = "";
-  keys.forEach((k) => { const li = document.createElement("li"); li.textContent = t(k); ul.appendChild(li); });
-  // 這一頁唯一的訊息格:等待登入時講「瀏覽器已開啟」(同方案頁那條路),其餘時候放共用的那一則
-  // (登出時伺服器那顆沒撤成的提醒就是靠它——登出鈕住在這一頁,那句話只有這裡看得到)
-  const hint = el("acct-hint"); hint.textContent = "";
-  const msg = waiting ? { text: t("pv.w.waiting") } : HINT;
-  hint.hidden = !msg;
-  if (msg) { hint.append(msg.text + (msg.cmd ? " " : "")); if (msg.cmd) hint.append(cmdLine(msg.cmd)); }
-  el("acct-to-plan").textContent = t("acct.toPlan");
-  el("acct-to-plan-btn").textContent = t("acct.toPlanBtn");
+  if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
   setFocusGuard();
 }
-$("acct-to-plan-btn").addEventListener("click", () => { setCat("plan"); const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus(); });
 function sidePaint() {
   if (typeof envPlanChanged === "function") envPlanChanged();   // 雲端視角的開通頁吃同一份帳號 / 方案狀態(trade.js)
   const n = $("ws-conn-note"); if (!n) return;
@@ -2654,7 +2707,7 @@ let pendingErr = [];
 const holdErrors = () => (cur === "claude" || cur === "codex") && !turnGotReply && !turnFaulted;
 window.blave.onTurnEnd(async (r) => {
   draftPromote();   // runtime 沒送到 done 就結束(被殺、崩潰):手上那段仍是這一輪最後的字
-  if (cur === "blave" && hasToken) acctCheck();   // Blave AI 這一輪是從餘額扣的:回合結束重讀(模型選單底部與「資料與雲端方案」那一列)
+  if (cur === "blave" && hasToken) balLoad();   // Blave AI 這一輪是從餘額扣的:回合結束重讀(模型選單底部與「帳號與方案」那一列)
   // 用戶按了停止:不是失敗——不問登入、不畫錯誤、不攤開收據;保險殺掉時的非 0 結束碼也不顯示
   const stopped = turnStopped; turnStopped = false;
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
@@ -2820,7 +2873,7 @@ panesInit();
 function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
-  acctPaintAcct();   // 設定 › 帳號(兩態的字跟著語言換)
+  acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
   if (typeof libRepaint === "function") libRepaint();   // 策略庫的清單 / 詳情(renderer/library.js 用 t() 現組的字)

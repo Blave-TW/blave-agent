@@ -1,4 +1,4 @@
-// 設定 modal 的兩塊畫面邏輯(shell/renderer/app.js):「關於」那一行 + 聊天那一格 + 事後那一行(upPlan / upDoneLine / upPaint,v4)、帳號區兩態(acctPaintAcct)。
+// 設定 modal 的兩塊畫面邏輯(shell/renderer/app.js):「關於」那一行 + 聊天那一格 + 事後那一行(upPlan / upDoneLine / upPaint,v4)、帳號與方案(planPaint 最上面那一組、登出)。
 // 從原文切出函式,配一個最小的假 DOM 跑。跑法:node tests/check_shell_settings.js
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -238,25 +238,23 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ok("S0–S7 那一套的字全清掉(up.c.* 只剩 up.c.msg;up.chat / up.update / up.latestAt / tm.cloudUpdate* 都不在)", !/"up\.c\.(unreach|stopped|note|noteLong|available|checking|seeChat|needsUpdate|running|runningShort|onCloud|runNote|noReport|done|doneFrom|chatRunning|chatDone)"/.test(S2)
       && !/"up\.(app|latest|latestAt|checking|downloading|downloadingPct|ready|blocked|error|staging|update|updating|chat|installLocal)"|"tm\.cloudUpdate(Stale)?"/.test(S2)); }
 
-// 設定 › 帳號(正式分類;左欄底那一塊已退場)
-const acctState = () => ({ a1: $("acct-a1").textContent, a2: $("acct-a2").textContent, dot: $("acct-a2").className.includes("on"),
-  btn: $("set-acct-btn").textContent, btnCls: $("set-acct-btn").className, list: $("acct-list").children.map((x) => x.textContent) });
-hasToken = false; cur = "claude"; acctPaintAcct();
-let A = acctState();
-ok("未登入:Blave 帳號 / 未登入(沒有綠點)/ 填色的「登入 Blave」/ 兩條「登入拿得到什麼」", A.a1 === "acct.lbl" && A.a2 === "acct.signedOut" && !A.dot && A.btn === "cn.blave.btn" && A.btnCls === "btn-fill" && A.list.join() === "acct.in.1,acct.in.2");
-planLoginBusy = true; acctPaintAcct();
-ok("登入等待中:同一顆鈕變「取消」而不是變灰(同方案頁)", acctState().btn === "oauth.cancel" && acctState().btnCls === "btn-out");
-planLoginBusy = false;
-hasToken = true; acctPaintAcct(); A = acctState();
-ok("已登入、用自己的 CLI:綠點 + 已登入、描邊的「登出」、兩條「登出會怎樣」", A.a2 === "acct.signedIn" && A.dot && A.btn === "acct.out" && A.btnCls === "btn-out" && A.list.join() === "acct.out.1,acct.out.2");
-cur = "blave"; acctPaintAcct();
-ok("已登入、用 Blave AI:多一條講「登出會回到選 AI 的畫面」,而且排第一(最突兀的後果先講);用自己 CLI 的人不出這一條", acctState().list.join() === "acct.out.3,acct.out.1,acct.out.2");
-ok("登出不另跳確認框(可逆、沒有東西會被刪);那顆鈕的 id 不變,焦點留在同一個位置", !/confirmBox\(\{[^}]*acct\.out/.test(src) && /\$\("set-acct-btn"\)\.focus\(\)/.test(src));
-ok("「前往」只換分類、不外開瀏覽器(錢的事在「資料與雲端方案」)", /\$\("acct-to-plan-btn"\)\.addEventListener\("click", \(\) => \{ setCat\("plan"\);/.test(src));
-ok("未登入時走現有的登入流程(planLogin),不另寫一條", /await planLogin\(\); acctPaintAcct\(\); return;/.test(src) && (src.match(/startOAuth\(/g) || []).length === 4);   // 4 = HEAD 既有的次數:帳號頁沒有多開一條
+// 設定 › 帳號與方案(「資料與雲端方案」＋「帳號」併成一類;設計師規格 designer-spec-acct-plan)。整頁由 planPaint 畫——真的畫一次的檢查在下面「帳號與方案」那一塊
+ok("登出不碰雲端主機(那一句是事實):外殼只撤 token、清記憶體裡上一個帳號的東西,沒有任何停機 / 停用方案的呼叫", (() => { const m = fs.readFileSync(path.join(R, "..", "main.js"), "utf8"), i = m.indexOf("async function signOutBlave()"), f = m.slice(i, m.indexOf("\n}\n", i));
+  return /oauth\/desktop\/revoke/.test(f) && /clearToken\(\);/.test(f) && !/plan\/(stop|cancel)|machine|planStart|\/stop/.test(f); })());
 ok("左欄底那一塊清乾淨:DOM / CSS / 程式都沒有舊的 id 與 class", !/id="set-acct"[^-]/.test(html) && !/set-acct-who|set-acct-st\b/.test(html + src) && !/\.set-acct \.(who|l1|l2|lbl|mail)|\.set-cats \.set-acct/.test(css));
 const CATS = (re) => [...html.matchAll(re)].map((m) => m[1]).join();
-ok("分類順序:一般 → 模型接入 → 資料來源 → 資料與雲端方案 → 帳號 → 公開連結 → 隱私(七個);每一類都有自己的頁", CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,src,plan,acct,shares,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,src,plan,acct,shares,priv");
+ok("分類順序:一般 → 模型接入 → 資料來源 → 帳號與方案 → 公開連結 → 隱私(六個);每一類都有自己的頁;「帳號」那一頁與它的節點都拿掉了", CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,src,plan,shares,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,src,plan,shares,priv"
+  && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
+// 舊的兩個分類 id 都還開得到合併後的頁:真的跑 setCat
+{ const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "src", "plan", "shares", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [];
+  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "privLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
+    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
+  const open = (k) => { painted = 0; tracked.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join() }; };
+  const a = open("acct"), b = open("plan");
+  ok("setCat(\"acct\") 與 setCat(\"plan\") 開到同一頁:左欄亮「帳號與方案」、只露出那一頁、整頁重畫、埋點記 settings_plan", JSON.stringify(a) === JSON.stringify(b) && a.cur === "plan" && a.shown === "plan" && a.painted === 1 && a.tracked === "settings_plan");
+  ok("別的分類不受影響", open("priv").shown === "priv" && open("display").cur === "display");
+  const callers = ["library.js", "report-share.js", "report-sharelist.js", "app.js"].map((f) => fs.readFileSync(path.join(R, f), "utf8")).join("\n");
+  ok("外殼裡開這一頁的呼叫點都用 plan(保險那一行只是防漏)", !/setCat\("acct"\)|data-set-cat="acct"/.test(callers + html) && /if \(cat === "acct"\) cat = "plan";/.test(fnSrc("setCat"))); }
 const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("那一類定名「一般」;指到它的句子(minv.trade)兩語都跟著改", /msgid "set\.cat\.display"\nmsgstr "一般"/.test(PO2[0]) && /msgid "set\.cat\.display"\nmsgstr "General"/.test(PO2[1])
   && /msgid "minv\.trade"\nmsgstr "[^\n]*設定 › 一般/.test(PO2[0]) && /msgid "minv\.trade"\nmsgstr "[^\n]*Settings › General/.test(PO2[1]));
@@ -268,21 +266,15 @@ eval(mdl.replace(/^const /gm, "var "));
 const D = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
 const shape = (o) => [o.kind, o.isCur, o.st && o.st.key, String(o.act)].join("|");
 let M = mdlOptions(D, "claude", true);
-// e2e 0.1.8 #100 #101:電腦版看得到 Blave 餘額、切到 Blave AI 之後講明會從餘額扣款(設計師第五批 c)
+// e2e 0.1.8 #100 #101:電腦版看得到 Blave 餘額、切到 Blave AI 之後講明會從餘額扣款(設計師第五批 c)。餘額怎麼讀、怎麼取整、讀不到畫什麼在 tests/check_shell_balance.js
 { const cut = (n) => { const i = src.indexOf("function " + n + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
-  const vm = require("vm"), sb = {}; vm.createContext(sb); vm.runInContext("var hasToken, acct, balLast = null;" + cut("balNum") + cut("balNow") + "this.balNum = balNum; this.balNow = balNow; this.set = (h, a) => { hasToken = h; acct = a; }; this.reset = () => { balLast = null; };", sb);
-  sb.set(true, null);
-  ok("餘額:無條件捨去到整數、千分位;不是有限數字(api 沒給這一欄、字串、NaN)= null", sb.balNum(1234.99) === "1,234" && sb.balNum(0) === "0" && sb.balNum(0.9) === "0" && sb.balNum(1234567) === "1,234,567" && [undefined, null, "12", NaN, Infinity, {}].every((v) => sb.balNum(v) === null));
-  ok("餘額:還在讀(acct 是 null)畫不出數字;讀到才有;再重讀的空窗沿用上一個;帳號狀態沒帶 balance = 讀不到;沒登入 = 沒有", sb.balNow() === null && (sb.set(true, { balance: 300.5 }), sb.balNow()) === "300" && (sb.set(true, null), sb.balNow()) === "300"
-    && (sb.set(true, { can_run: true }), sb.balNow()) === null && (sb.set(true, { balance: 50 }), sb.balNow()) === "50" && (sb.set(false, { balance: 50 }), sb.balNow()) === null);
-  ok("餘額:登出、登入、換帳號都把上一個數字清掉(不把別的帳號的餘額畫出來)", (src.match(/acct = null; balLast = null;/g) || []).length === 3);
-  ok("① 資料與雲端方案:第一列是 Blave 餘額(在狀態點之前);沒登入整列不出;讀不到畫「—」、title 與 aria-label 用 plan.balNa", /if \(hasToken\) \{\s*const n = balNow\(\), row = el\("div", "plan-bal"\), val = el\("span", "v" \+ \(n \? "" : " na"\), n \? n \+ " TWD" : "—"\);\s*if \(!n\) \{ val\.title = t\("plan\.balNa"\); val\.setAttribute\("aria-label", t\("plan\.balNa"\)\); \}\s*row\.append\(el\("span", "l", t\("plan\.bal"\)\), val\); sc\.append\(row\);\s*\}/.test(src)
+  ok("① 帳號與方案:Blave 餘額在最上面那一組裡(狀態點之前);沒登入整列不出;讀不到畫「—」、title 與 aria-label 用 plan.balNa", /if \(hasToken\) \{\s*const n = balNow\(\), row = el\("div", "plan-bal"\), val = el\("span", "v" \+ \(n \? "" : " na"\), n \? n \+ " TWD" : "—"\);\s*if \(!n\) \{ val\.title = t\("plan\.balNa"\); val\.setAttribute\("aria-label", t\("plan\.balNa"\)\); \}\s*row\.append\(el\("span", "l", t\("plan\.bal"\)\), val\); id\.append\(row\);\s*\}/.test(src)
     && src.indexOf('row = el("div", "plan-bal")') < src.indexOf('if (V.st) { const stEl = el("span", "plan-st "') && /\.plan-bal \.v \{ font-size: 13px; color: var\(--ink\); font-variant-numeric: tabular-nums; \}/.test(css) && !/plan-bal[^}]*mono/.test(css));
   ok("② 模型選單底部:引擎是 Blave AI 才出(連同分隔線);讀不到餘額只出規則那半句;打開選單與回合結束重讀", /const on = cur === "blave", n = on \? balNow\(\) : null;\s*\$\("mp-bill-div"\)\.hidden = !on; \$\("mp-bill"\)\.hidden = !on;/.test(src) && /\$\("mp-bill-sep"\)\.hidden = !n; \$\("mp-bill-bal"\)\.hidden = !n;/.test(src)
     && /<p class="mp-note" id="mp-note" aria-live="polite"><\/p>\s*<!--[^>]*-->\s*<div class="mp-div" id="mp-bill-div" hidden><\/div>\s*<p class="mp-note mp-bill" id="mp-bill" hidden>/.test(html)
-    && /if \(cur === "blave" && hasToken && Date\.now\(\) - acctAt > BAL_STALE_MS\) acctCheck\(\);/.test(cut("mpOpen")) && /if \(cur === "blave" && hasToken\) acctCheck\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
+    && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(cut("mpOpen")) && /\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
   ok("③ 模型接入:Blave AI 那一列先講怎麼收錢(cn.blave.descSet);連結畫面那張卡的 cn.blave.desc 不動", M[0].desc === "cn.blave.descSet" && /data-i18n="cn\.blave\.desc"/.test(html) && /msgid "cn\.blave\.desc"\nmsgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"/.test(PO2[0])
-    && /msgid "cn\.blave\.descSet"\nmsgstr "按用量從 Blave 餘額扣款。首次綁卡送 100 TWD 的 AI 額度。"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1])); }
+    && /msgid "cn\.blave\.descSet"\nmsgstr "按用量從 Blave 餘額扣款。首次綁卡送 \{q\} TWD 的 AI 額度。"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1])); }
 ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);不能用的列才講(尚未登入 + 登入)", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false|st.notSignedIn|cn.signIn");
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));
@@ -297,7 +289,7 @@ ok("偵測中:兩列只換狀態字、不給動作(列數不變);Blave 那一列
 ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出、還沒偵測過不出", !mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } })
   && mdlNeedsRedetect(D) && mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }) && !mdlNeedsRedetect(null));
 { // mdlPaint 真的畫一次(假 DOM):全部就緒 → 只有「使用」「使用」「使用中」;一個沒登入 → 那一列講、本機那組底下出「重新偵測」(安靜文字鈕,不在組標題)
-  var MDL = MDL || { busy: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}; hasToken = true;
+  var MDL = MDL || { busy: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, planVars = () => ({ q: "100" }); hasToken = true;
   eval(fnSrc("mdlPaint"));
   const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
   const texts = () => walk($("set-model")).map((n) => [n._cls, n.textContent]);
@@ -328,21 +320,20 @@ const bare = src.replace(/^\s*\/\/.*$/gm, "");   // 註解掉的程式不算數
 const sites = [...bare.matchAll(/^[^\n]*\b(?:oauthPending|planLoginBusy) = (?!false, |null)[^\n]*$/gm)].filter((m) => !/^let /.test(m[0].trim()));
 const late = sites.filter((m) => !/waitChanged\(\)/.test(bare.slice(m.index, m.index + 400).split("\n").slice(0, 4).join("\n"))).map((m) => m[0].trim().slice(0, 40));
 ok("改了等待旗標的每一處都重畫兩個表面(共 " + sites.length + " 處" + (late.length ? ";漏的:" + late.join(" / ") : "") + ")", sites.length >= 7 && late.length === 0 && /function waitChanged\(\) \{ mdlPaint\(\); acctPaintAcct\(\); \}/.test(bare));
-ok("V4(a) 帳號那顆「取消」按得動:等待是別的表面開始的也取消得了(planLogin 在那種情況會靜默 return)", /if \(oauthPending && !planLoginBusy\) \{ window\.blave\.cancelOAuth\(\); return; \}/.test(src));
+// (V4(a) 帳號頁自己的「取消」鈕隨那一頁退場:未登入時這一頁唯一的鈕是頁尾那顆,等待中它就是「取消」——planLogin 的第一行)
+ok("V4(a) 頁尾那顆「取消」按得動", /if \(planLoginBusy\) \{ window\.blave\.cancelOAuth\(\); return; \}/.test(fnSrc("planLogin")));
 ok("V1 上一則不會活過下一次登入(離線登出那句只有 detect() 會清)", /^\s*setHint\(null\);/m.test(fnSrc("planLogin").replace(/^\s*\/\/.*$/gm, "")));
 ok("V2 確認框 / 圖片放大開著時,焦點歸它們(不靠 inert 讓 focus\(\) 變 no-op)", /if \(!\$\("del-scrim"\)\.hidden \|\| !\$\("lb-scrim"\)\.hidden\) return;/.test(fnSrc("setFocusGuard")));
 ok("模型接入那一頁畫得出共用的那一則(它是三個表面之一)", /if \(HINT\) \{ const p = el\("p", "cn-hint"\);/.test(fnSrc("mdlPaint")));
 
-// 帳號頁的訊息格:一個 owner
-ok("帳號頁有放訊息的地方,而且只由 acctPaintAcct 寫(planPaint 會頻繁叫它,不能有第二個寫入者)", /id="acct-hint"/.test(html) && (src.match(/\$\("acct-hint"\)|el\("acct-hint"\)/g) || []).length === 1 && /el\("acct-hint"\)/.test(fnSrc("acctPaintAcct")) && /\n  mdlPaint\(\);\n  acctPaintAcct\(\);\n/.test(fnSrc("setHint")));
-ok("登出沒撤成那句、登入等待中那句都到得了帳號頁", /const msg = waiting \? \{ text: t\("pv\.w\.waiting"\) \} : HINT;/.test(src) && /setHint\(\{ text: t\("cn\.blave\.signOutLocalOnly"\) \}\)/.test(src));
-hasToken = true; HINT = { text: "cn.blave.signOutLocalOnly" }; acctPaintAcct();
-ok("登出沒撤成:那句話出現在帳號頁(登出鈕就住在這一頁,別處看不到)", $("acct-hint").textContent === "cn.blave.signOutLocalOnly" && $("acct-hint").hidden === false);
-hasToken = false; planLoginBusy = true; acctPaintAcct();
-ok("登入等待中:講「瀏覽器已開啟」(等待是當下的狀態,壓過上一則)", $("acct-hint").textContent === "pv.w.waiting");
-planLoginBusy = false; HINT = null; acctPaintAcct();
-ok("沒有訊息就收起來", $("acct-hint").hidden === true && $("acct-hint").textContent === "");
-hasToken = true; cur = "blave"; acctPaintAcct();
+// 訊息格 #acct-hint:一個寫入者(planPaint)
+ok("訊息格只由 planPaint 寫:index.html 沒有那個節點、程式裡只有一處建它;共用訊息變了會叫到它(setHint → acctPaintAcct → 那一頁開著就 planPaint)", !/id="acct-hint"/.test(html) && (src.match(/"acct-hint"/g) || []).length === 1 && /hint\.id = "acct-hint"; hint\.hidden = !HINT;/.test(fnSrc("planPaint"))
+  && /\n  mdlPaint\(\);\n  acctPaintAcct\(\);\n/.test(fnSrc("setHint")) && /if \(!\$\("set-scrim"\)\.hidden && !\$\("set-plan"\)\.hidden\) planPaint\(\);/.test(fnSrc("acctPaintAcct")) && !/acctPaintAcct\(\)/.test(fnSrc("planPaint")));
+ok("登出沒撤成那句到得了這一頁", /setHint\(\{ text: t\("cn\.blave\.signOutLocalOnly"\) \}\)/.test(src));
+ok("字串:合併後的頁名、確認框、刪掉的五個 key(zh / en)", /msgid "set\.cat\.plan"\nmsgstr "帳號與方案"/.test(PO2[0]) && /msgid "set\.cat\.plan"\nmsgstr "Account & plan"/.test(PO2[1]) && /msgid "pv\.e\.btn"\nmsgstr "Account & Plan"/.test(PO2[1])
+  && /msgid "acct\.cf\.title"\nmsgstr "登出 Blave？"/.test(PO2[0]) && /msgid "acct\.cf\.ok"\nmsgstr "Sign Out"/.test(PO2[1]) && /msgid "acct\.out\.4"\nmsgstr "登出不會停用雲端主機，主機費照扣。"/.test(PO2[0])
+  && /msgid "lib\.gate\.unknown"\nmsgstr "The account’s data status/.test(PO2[1]) && PO2.every((p) => !/msgid "(set\.cat\.acct|acct\.toPlan|acct\.toPlanBtn|acct\.in\.1|acct\.in\.2)"/.test(p) && !/資料與雲端方案|Data & [Cc]loud [Pp]lan/.test(p)));
+ok("agent 文件裡的頁名跟著改", /Settings › 帳號與方案 \(en: Account & plan\)/.test(fs.readFileSync(path.join(__dirname, "..", "references", "billing.md"), "utf8")) && /Sign in from Settings › Account & plan/.test(fs.readFileSync(path.join(__dirname, "..", "references", "cloud-handoff.md"), "utf8")));
 ok("字串:acct.out.3 照定稿(不跟 acct.out.2「對話留在這台電腦」打架)", /msgid "acct\.out\.3"\nmsgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"/.test(PO2[0]));
 // 聊天欄捲動邊界:靜止沒有線,捲起來才浮一條
 ok("捲動時才出現的那條線:兩層捲動都掛、以看得見的那一層為準;靜止沒有線", /\.chat-head\.is-scrolled \{ box-shadow: 0 1px 0 var\(--border-hairline\); \}/.test(css) && !/\.chat-head \{[^}]*box-shadow/.test(css)
@@ -370,7 +361,7 @@ ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條
   && /\.modal-head \{[^}]*border-bottom/.test(css) && /\.set-cats\s*\{[^}]*border-right/.test(css) && /\.plan-foot\s*\{[^}]*border-top/.test(css));
 // 設定 › 隱私
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
-ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="acct"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
+ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="shares"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
 ok("隱私:會收 5 條(功能那條緊接在里程碑後)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4"\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
@@ -431,12 +422,61 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   eval(fnSrc("dataAccessOf")); const usageUrl = () => "usage"; eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
   const envPlanChanged = undefined;
   hasToken = true; cur = "claude";
-  let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));
+  let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
   eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint"));
-  { planPaint(); const row = dom["set-plan"].children[0].children[0], val = row.children[1];
-    ok("① 真的畫一次:帳號狀態沒有 balance(現在的 api)→ 第一列「Blave 餘額　—」;有了就是「1,234 TWD」", row.className === "plan-bal" && row.children[0].textContent === "plan.bal" && val.textContent === "—" && val.className === "v na" && val.title === "plan.balNa"
-      && (acct.balance = 1234.9, planPaint(), dom["set-plan"].children[0].children[0].children[1].textContent) === "1,234 TWD", row.className + "|" + val.textContent);
-    delete acct.balance; balLast = null; }
+  // 最上面一組(.plan-id):帳號列 → 訊息格 → 餘額列;餘額列是這一組的第三個子節點
+  const balRow = () => dom["set-plan"].children[0].children[0].children[2];
+  { planPaint(); const row = balRow(), val = row.children[1];
+    ok("① 真的畫一次:還沒讀到餘額 →「Blave 餘額　—」;讀到就是「1,235 TWD」(四捨五入)", dom["set-plan"].children[0].children[0].className === "plan-id" && row.className === "plan-bal" && row.children[0].textContent === "plan.bal" && val.textContent === "—" && val.className === "v na" && val.title === "plan.balNa"
+      && (balLast = balNum(1234.9), planPaint(), balRow().children[1].textContent) === "1,235 TWD", row.className + "|" + val.textContent);
+    balLast = null; }
+  { // ── 帳號與方案:最上面那一組、登出的確認框、訊息格(真的跑 planPaint / acctOutAsk / acctPaintAcct)──
+    const boxes = []; const confirmBox = (o) => { boxes.push(o); }; let oauthPending = false; const acctSignOut = () => {};
+    eval(fnSrc("acctOutAsk")); eval(fnSrc("acctPaintAcct"));
+    const walkP = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walkP(c, out); } }); return out; };
+    const page = () => { const all = walkP(dom["set-plan"]), sc = all.find((n) => n.className === "plan-scroll"), id = all.find((n) => n.className === "plan-id"), rows = id ? id.children.filter((c) => c.className === "plan-bal") : [];
+      const row = (r) => r && { l: r.children[0].textContent, v: r.children[1].textContent, vCls: r.children[1].className, btn: r.children[2] || null };
+      return { first: !!sc && sc.children[0] === id, who: row(rows[0]), bal: row(rows[1]), rows: rows.length, hint: id && id.children.find((c) => c.id === "acct-hint"), order: id ? id.children.map((c) => c.id || c.className).join() : "",
+        idx: (f) => (sc ? sc.children.findIndex(f) : -1), dots: all.filter((n) => n.className === "dot").length,
+        foot: all.filter((n) => /^btn-/.test(n.className) && n.dataset.k && !/^(acct-out|more)$/.test(n.dataset.k)).map((n) => n.className + ":" + n.textContent) }; };
+    const keep = { acct, hasToken, cur };
+    hasToken = false; cur = "claude"; acct = null; HINT = null; planPaint();
+    let A = page();
+    ok("未登入:最上面一組只有帳號列「Blave 帳號 / 未登入」(灰字),沒有鈕、沒有餘額列;整頁唯一的登入鈕在頁尾", A.first && A.rows === 1 && A.who.l === "acct.lbl" && A.who.v === "acct.signedOut" && A.who.vCls === "v na" && !A.who.btn && A.foot.join() === "btn-fill:pv.signin", JSON.stringify(A));
+    planLoginBusy = true; planPaint();
+    ok("登入等待中:頁尾那顆變「取消」;「瀏覽器已開啟…」只在鈕左邊,不在帳號列下面再放一次", page().foot.join() === "btn-out:oauth.cancel" && page().hint.hidden === true && walkP(dom["set-plan"]).some((n) => n.className === "wait" && n.textContent === "pv.w.waiting"));
+    planLoginBusy = false;
+    hasToken = true; acct = { plan: { state: "none" }, data_access: "included", can_run: true }; balLast = balNum(1234.4); planPaint(); A = page();
+    ok("已登入:帳號列「已登入」＋文字鈕「登出」(不是描邊鈕、沒有綠點),下面一列 Blave 餘額;順序 帳號列 → 訊息格 → 餘額列", A.first && A.rows === 2 && A.who.v === "acct.signedIn" && A.who.vCls === "v"
+      && !!A.who.btn && A.who.btn.className === "btn-quiet" && A.who.btn.textContent === "acct.out" && A.who.btn.id === "set-acct-btn" && A.who.btn.dataset.k === "acct-out"
+      && A.bal.l === "plan.bal" && /TWD$/.test(A.bal.v) && A.order === "plan-bal,acct-hint,plan-bal" && A.dots === 1, JSON.stringify(A));
+    ok("這一組在方案內容之前(狀態點、標題句都在它後面);細線由這一組帶、不由列帶", page().idx((n) => n.className === "plan-id") === 0 && page().idx((n) => /^plan-st/.test(n.className)) > 0
+      && /\.plan-id \{[^}]*border-bottom: 1px solid var\(--border-hairline\)/.test(css) && /\.plan-id \.plan-bal \{ padding: 0; margin: 0; border: 0; \}/.test(css)
+      && css.includes(".plan-pane .plan-scroll{padding:var(--space-16)}") && !/\.acct-(id|list|link)|#acct-hint/.test(css));
+    acct = null; planPaint();
+    ok("已登入、正在重讀(手上有上一個數字):餘額列留著那個數字,不閃成「—」", page().bal.v === "1,234 TWD");
+    balLast = null; planPaint();
+    ok("已登入、查不到:帳號列照出,餘額列畫「—」", page().rows === 2 && page().who.v === "acct.signedIn" && page().bal.v === "—" && page().foot.join() === "btn-out:plan.recheck");
+    // 登出:按了才出確認框(Wei 2026-09-28 定案);三句說明不常駐
+    const press = (o) => { boxes.length = 0; cur = o.cur; acct = o.acct; hasToken = true; planPaint(); const b = page().who.btn; b._click(); return boxes[0]; };
+    const own = press({ cur: "claude", acct: { plan: { state: "none" } } });
+    ok("按「登出」:出確認框(標題、確認鈕、開它的那顆鈕);用自己的 CLI、沒有主機 → 兩句", !!own && own.title === "acct.cf.title" && own.ok === "acct.cf.ok" && own.opener === page().who.btn && own.lines.join() === "acct.out.1,acct.out.2" && own.onOk === acctSignOut);
+    ok("用 Blave AI:多一句「登出會回到選 AI 的畫面」,排第一", press({ cur: "blave", acct: { plan: { state: "none" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.2");
+    ok("帳號有主機(啟動中 / 運行中 / 已停機):多一句「登出不會停用雲端主機,主機費照扣」;沒有主機不出", ["starting", "running", "stopped"].every((st) => press({ cur: "claude", acct: { plan: { state: st } } }).lines.join() === "acct.out.1,acct.out.4,acct.out.2")
+      && press({ cur: "blave", acct: { plan: { state: "running" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.4,acct.out.2");
+    { boxes.length = 0; running = true; acctOutAsk(null); running = false; oauthPending = true; acctOutAsk(null); oauthPending = false; ok("回合進行中 / 等待登入中:不出框", boxes.length === 0); }
+    ok("確認框按下去才走登出那一支;登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines, ok: t\("acct\.cf\.ok"\), opener, onOk: acctSignOut \}\);/.test(src)
+      && /async function acctSignOut\(\) \{\n  if \(!hasToken \|\| running \|\| oauthPending \|\| planLoginBusy\) return;\n  const r = await window\.blave\.signOutBlave\(\);/.test(src)
+      && /srSay\(t\("acct\.outDone"\)\);\n    const c = document\.querySelector\('\.set-cat\[data-set-cat="plan"\]'\); if \(c\) c\.focus\(\);/.test(src) && /await window\.blave\.clearConnection\(\);\n  cur = null;\n  setClose\(\);/.test(src));
+    // 訊息格
+    dom["set-scrim"] = node(); dom["set-scrim"].hidden = false; dom["set-plan"].hidden = false;
+    hasToken = true; cur = "claude"; acct = { plan: { state: "none" } }; HINT = { text: "cn.blave.signOutLocalOnly" }; acctPaintAcct();
+    ok("登出沒撤成:那句話出現在帳號列正下方、餘額列之前", page().hint.textContent === "cn.blave.signOutLocalOnly" && page().hint.hidden === false && page().order === "plan-bal,acct-hint,plan-bal");
+    HINT = null; acctPaintAcct();
+    ok("沒有訊息就收起來(不佔高度)", page().hint.hidden === true && page().hint.textContent === "");
+    { let n = 0; const real = planPaint; planPaint = () => { n++; }; dom["set-plan"].hidden = true; acctPaintAcct(); const closed = n; dom["set-plan"].hidden = false; dom["set-scrim"].hidden = true; acctPaintAcct(); const off = n; dom["set-scrim"].hidden = false; acctPaintAcct(); planPaint = real;
+      ok("那一頁沒開(別的分類 / 設定關著)不重畫;開著才畫", closed === 0 && off === 0 && n === 1); }
+    acct = keep.acct; hasToken = keep.hasToken; cur = keep.cur; HINT = null; planLastView = null; }
   const paintPlan = () => { planPaint(); const foot = dom["set-plan"].children[1], act = foot.children[foot.children.length - 1]; return act.children; };
   let acts = paintPlan();
   ok("running:兩顆鈕 = 「前往網頁停用」+「切到雲端」(plan.switchCloud);不再有「前往工作頁」", acts.map((b) => b.textContent).join() === "plan.manage,plan.switchCloud" && acts[1].className === "btn-out" && acts[1].disabled === false);

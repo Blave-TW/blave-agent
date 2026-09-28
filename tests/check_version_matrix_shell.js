@@ -66,7 +66,7 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   const T2 = trClientTargets({ basket: 1000 }, { basket: { weights: "BTCUSDT:1", symbol: null, market: "swap" } });
   ok("V5-02", "weights 型別不對(字串):不當權重、也不炸", JSON.stringify(T2) === "{}");
   // 自己的部位:只有 self_ledger === true 才講「只碰自己的」;欄位不在 / 1 / "true" 都當舊 lib(會碰手動部位,紅字是實話)
-  const startOwnLine = /\.concat\(r\.self_ledger === true \? \[t\("tr\.startOwnOnly"\)\] : \[\]\)/.test(trade);
+  const startOwnLine = /own: r\.self_ledger === true, book: trBookBaseline\(r\),/.test(trade) && /if \(o\.own && o\.real\) \{\n    keep\.push\(t\(/.test(trade);
   ok("V5-02", "啟動框「只碰 Blave 自己的部位」那句只在 self_ledger === true 時出現(原文)", startOwnLine);
   const V = { binance: { credentials: true, pair: true, order: true, account: true } };
   const X = (self_ledger) => ({ venues: V, self_ledger, portfolio_configured: true,
@@ -78,7 +78,7 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
 
 /* ── V5-03 雲端舊 runtime(1.1.89)不在「啟動下單」時起對帳器 ── */
 {
-  const m = /const trRunStart = \(cmd\) => trRun\("running", cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\] : \[/.exec(trade);
+  const m = /const trRunStart = \(cmd\) => trRun\("running", cloud \? \[\(S\) => trSend\(S, cmd, \{\}\)\.then\(sent\)\] : \[/.exec(trade);
   ok("V5-03", "電腦版的雲端啟動只送 resume / resume_wait 一個指令(trade.js:" + lineOf(trade, /const trRunStart = /) + ")", !!m);
   const shipped = /const CLOUD_SHIPPED = \[([^\]]+)\]/.exec(main);
   ok("V5-03", "主行程也不放行 restart_reconciler 上雲端(CLOUD_SHIPPED)", !!shipped && !/restart_reconciler/.test(shipped[1]));

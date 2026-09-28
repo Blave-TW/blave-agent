@@ -144,7 +144,7 @@ app.whenReady().then(async () => {
 
   // 分類
   const cats = await js(`[...document.querySelectorAll("#set-cats .set-cat")].map((b) => b.dataset.setCat).join()`);
-  ok("④ 設定分類七個:「公開連結」排在帳號後、隱私前", cats === "display,model,src,plan,acct,shares,priv", cats);
+  ok("④ 設定分類六個:「公開連結」排在帳號與方案後、隱私前", cats === "display,model,src,plan,shares,priv", cats);
 
   // 載入中 → 有資料
   await js(`window.__s.listDelay = 700`); await openCat(); await wait(100);
@@ -196,7 +196,7 @@ app.whenReady().then(async () => {
   await js(`window.__s.list = { code: "NO_LOGIN" }; setCat("shares")`); await wait(200); p = await pane();
   ok("④ 未登入:一句 +「登入 Blave」(沒有錯誤記號)", p.msg === (await T("shl.gate")) && p.mark === 0 && p.btn === (await T("cn.blave.btn")), JSON.stringify(p));
   await js(`document.querySelector("#set-shares .shl-msgrow .btn-out").click()`); await wait(100);
-  ok("④ …點了切到「帳號」", (await js(`document.querySelector('.set-cat[aria-current="true"]').dataset.setCat`)) === "acct");
+  ok("④ …點了切到「帳號與方案」", (await js(`document.querySelector('.set-cat[aria-current="true"]').dataset.setCat`)) === "plan");
 
   // 標題 = 打開報告
   await js(`window.__s.list = { code: "OK", shares: ${JSON.stringify(ROWS)}, limits: { liveCount: 4, liveLimit: 50 } }; setCat("shares")`); await wait(200);

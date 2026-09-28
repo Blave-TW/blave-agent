@@ -315,6 +315,13 @@ function loadAppSecret() {
 function clearAppSecret() {
   try { fs.unlinkSync(appSecretPath()); } catch (_) {}
 }
+/* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
+let _balance = null;
+function balanceHost() {
+  if (!_balance) _balance = require("./balance").createBalance({ apiBase: API_BASE, post: (u, b) => postJSON(u, b),
+    getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; } });
+  return _balance;
+}
 /* 啟動雲端方案。回 { state } 或 { error }(穩定代號,畫面自己換成句子):
    APP_SECRET_REQUIRED(舊登入,沒有這顆)/ NO_CARD / NO_CREDIT / RATE_LIMITED / SERVER。
    後端是冪等的:已有主機就回現況,連點或重試不會開第二台。 */
@@ -424,6 +431,7 @@ async function signOutBlave() {
   if (_cloudCmd) _cloudCmd.reset();   // 在途的雲端指令:回應回來時丟掉(它是上一個人的)
   if (_capital) _capital.forget();   // 選好還沒上傳的群益憑證檔:是上一個人的
   if (_mcp) _mcp.reset();       // 接入碼也是:伺服器那邊 /revoke 會撤掉它,這裡把記憶體裡的丟掉、作廢在途的請求
+  if (_balance) _balance.reset();   // 上一個帳號的餘額
   lastAcct = null;
   return { revoked };
 }
@@ -561,6 +569,7 @@ async function startOAuth(lang) {
   // 換了帳號:cloud.js 自己會認出 token 換了、把上一個人的東西丟掉(不靠這一行);這一行只是讓畫面不必等下一輪輪詢
   if (_cloud && _cloud.isRunning()) _cloud.refresh(true).catch(() => {});
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
+  if (_balance) _balance.reset();     // 餘額也是
   libCache = null;                    // 同理:策略庫的 purchased / is_owner 是帳號的
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
@@ -1971,8 +1980,19 @@ function browser() {
     reducedMotion: () => { try { return !!require("electron").systemPreferences.getAnimationSettings().prefersReducedMotion; } catch (_) { return false; } },
     loadPrefs: () => { try { return JSON.parse(fs.readFileSync(BROWSER_PREFS(), "utf8")); } catch (_) { return null; } },
     savePrefs: (p) => { try { fs.writeFileSync(BROWSER_PREFS(), JSON.stringify({ enabled: !!p.enabled }), { mode: 0o600 }); } catch (_) { /* 存不了就只在這次生效 */ } },
+    notify: browserNotify,
   });
   return _browser;
+}
+/* 內建瀏覽器要用戶回來操作(目前只有一種:搜尋被要求機器人驗證)。app 在前景時畫面自己會講,不發;字還沒交過來也不發
+   (不拿英文退路塞給中文用戶)。點了把視窗叫到前面 */
+function browserNotify(kind) {
+  if (kind !== "captcha" || BrowserWindow.getFocusedWindow() || !tmLabels.br_captcha || !Notification.isSupported()) return false;
+  const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels.br_captchaTitle || "Blave"), body: tmLabels.br_captcha });
+  p1Alive.add(n); const drop = () => p1Alive.delete(n);
+  n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "browser " + kind);
+  n.show();
+  return true;
 }
 /* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。三顆各看各的:
      proxyToken(帳號 token,會燒 Blave AI 額度)= **連的是 Blave AI** 而且有登入;
@@ -2027,7 +2047,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   if (plan.mcp) { mcpMount = await mcpCode().get(); if (mcpMount) mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount); }
   // 內建瀏覽器:同一份單次設定檔多一個 `blave_browser`(兩個 server 可以只有其一)。runtime 靠 --mcp-servers 分別知道掛了哪幾個
   let brMount = null;
-  try { brMount = await browser().beginTurn(win, sessionId); } catch (_) { brMount = null; }
+  try { brMount = await browser().beginTurn(win, sessionId, { noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
   // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,
@@ -2191,6 +2211,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  quitOnSignals(process, () => app.quit());
   startImageServer();
   // 上一次回合中途 crash 留下的 MCP 設定檔(裡面是一顆可能還沒過期的接入碼):開 app 就清。
   // 只有拿到單一實例鎖的那一份做(稽核 S1,同 :syncOfficialOnUpdate):第二份 app 在結束前也會走到這裡,
@@ -2241,6 +2262,7 @@ app.whenReady().then(() => {
   handle("compare-versions", (_e, name, a, b) => compareVersions(String(name || ""), a, b), { code: "ERROR" });
   handle("model-options", (_e, kind) => modelOptions(kind));
   handle("account-status", () => accountStatus());
+  handle("balance", () => balanceHost().read());
   handle("public-pricing", () => publicPricing());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
   ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart() : { error: "SERVER" }));
@@ -2393,14 +2415,13 @@ app.whenReady().then(() => {
   handle("browser-snapshot", (_e, sid, snap) => (okSessionId(sid) ? browser().snapshot(sid, snap) : null), null);
   handle("browser-history", (_e, sid) => (okSessionId(sid) ? browser().history(sid) : []), []);
   ipcMain.on("browser-block-visible", (e, on) => { if (fromOurPage(e) && _browser) _browser.setBlockVisible(on === true); });
-  handle("browser-open-external", (_e, id) => { const u = _browser && _browser.externalUrl(id); return u ? openWebSafe(u) : false; }, false);
+  // 用系統瀏覽器開這一頁:renderer 只給分頁 id(給別的型別一律不開),網址由主行程從那個分頁自己拿;內建那一頁不關、不動
+  handle("browser-open-external", (_e, id) => { const u = _browser && typeof id === "string" ? _browser.externalUrl(id) : null; return u ? openWebSafe(u) : false; }, false);
   handle("browser-prefs", () => browser().prefs(), { enabled: false });
   handle("browser-prefs-set", (_e, p) => browser().setPrefs({ enabled: !!(p && p.enabled === true) }), null);
   handle("browser-clear", () => (activeTurn ? false : browser().clearData()), false);
-  // 送進 TradingView(browser/pine.js):外殼自己貼,不開 agent 回合。renderer 只給 ref 與分頁 id
+  // 送進 TradingView(browser/pine.js):外殼自己貼,不開 agent 回合。renderer 只給 ref。流程停在交接:貼完之後沒有任何一支 IPC 會再讀那一頁
   handle("pine-install", (_e, ref) => { const job = pineJob(ref && typeof ref === "object" ? ref : null); return job ? browser().pineInstall(job) : { state: "fail", why: "no_file" }; }, { state: "fail" });
-  handle("pine-check", (_e, id) => browser().pineCheck(String(id || "")), { state: "gone" });
-  handle("pine-read", (_e, id) => browser().pineRead(String(id || "")), { state: "gone" });
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
      之後任何一支都不把值交回去——list 只有名稱與欄位名。四支都走 handle()(只收自家頁面,拒絕時回各自的形狀);參數在 datasrc.js 裡驗(名稱白名單、值不含換行與引號)。
      不 log、不進 argv / 環境、不寫 userData。這些名字都在 DATA_ 命名空間,機器端不把它們當交易所:永遠不會拿去下單。 */
@@ -2524,6 +2545,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
   key_ipTitle: "", key_ipBody: "", key_rejTitle: "", key_rejSameIpBody: "", key_rejUnknownBody: "", key_permTitle: "", key_permBody: "",
   stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", stNotStarted: "", moneyPaper: "", moneyReal: "",
+  br_captchaTitle: "", br_captcha: "",   // 內建瀏覽器:搜尋要用戶過驗證(browserNotify);空的 = 還沒交字 = 不發
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
@@ -2764,6 +2786,16 @@ app.on("browser-window-created", (_e, win) => {
     if (trading && !hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
   });
 });
+/* 結束訊號(SIGTERM / SIGINT / SIGHUP:kill、登出與關機、終端機 Ctrl+C)每一次都走 app.quit(),也就是每一次都過 before-quit 的攔截。
+   不自己接的話 Chromium 的處理只管第一次:它收到一次訊號就把處理還原成系統預設,第一次被攔下(用戶按了取消)之後,
+   第二次訊號直接殺掉行程——沒有框、daemon 沒收工、事件清單也沒記(實測 09-28)。要在 ready 之後掛:Chromium 的處理是啟動時裝的,
+   後掛的才算數。Windows 沒有這幾個訊號的同等語意,不掛。tests/check_shell_quit_again.js 從原文切出來跑 */
+function quitOnSignals(proc, quit) {
+  if (proc.platform === "win32") return [];
+  const sigs = ["SIGTERM", "SIGINT", "SIGHUP"];
+  for (const s of sigs) proc.on(s, () => quit());
+  return sigs;
+}
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
 // 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
 let quitting = false;

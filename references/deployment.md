@@ -5,7 +5,7 @@ CRITICAL: You MUST NEVER deploy a live strategy or set up a cron job without exp
 
 - **The question names everything the deployment puts on the machine**, in the user's words: the strategy's own schedule (「每小時整點跑一次」) and, when the machine has none yet, the health check that alerts them if a schedule goes quiet (「另外會加一個每 30 分鐘的健康檢查，排程停了會通知你」). Their YES covers exactly what the question named, nothing more.
 - **Do the one thing that was asked.** Anything else you notice is missing or wrong on the machine — no health check, an unset variable, an old file, a package — goes into the reply as a finding with what it would take, and is done only when the user then says so. Never "while I was at it" (「順手補上」).
-- **Every route onto the machine asks the same question.** The desktop agent working on the user's cloud machine (`references/cloud-handoff.md`) confirms exactly as the agent on that machine would: a message that already names the schedule (「排程上線，每小時跑一次」) is the request, not the YES.
+- **Every route onto the machine asks the same question.** The desktop agent working on the user's cloud machine (`references/cloud-handoff.md` › *A schedule on the cloud machine*) confirms exactly as the agent on that machine would: a message that already names the schedule (「排程上線，每小時跑一次」, 「做好就排程上線」) is the request, not the YES. From the desktop it puts on the machine only the one schedule the user asked for — never the health check beside it.
 
 ## Desktop app (`BLAVE_AGENT_LOCAL=1`) — no system scheduler
 
@@ -14,7 +14,7 @@ Everything in this file about cron and Scheduled Tasks is for cloud machines. Ch
 - **Never run `crontab`, `launchctl` / launchd, `schtasks` or any other OS scheduler, and never write a plist or a cron file.** macOS answers with a system prompt (「想要管理你的電腦」) the user never asked for and the command hangs on it; the runtime refuses these commands. Do not look for another way in.
 - **Never tell the user to change a system permission** (Full Disk Access, 「管理你的電腦」) or to schedule it themselves in a terminal.
 - **Type A/C:** the user funds the strategy and presses 「啟動下單」 on the app's 自動下單 page (`references/portfolio-steps.md`); the app runs it on every bar while it is open. None of the schedule steps below apply (Type A step 5, the healthcheck schedule), and there is no "Reply YES and I will schedule it" question — point to the page.
-- **Type B:** it cannot run on a schedule on this computer yet. Say so in one plain sentence when you deliver the strategy, and offer the two ways out: send it to the user's cloud machine (the app's 送上雲端 button; `references/cloud-handoff.md` moves it and runs it once there — putting it on a schedule is then asked of the agent on that machine), or run it once by hand now (`python3 strategies/<name>/strategy.py`). Never ask for a YES to deploy it here.
+- **Type B:** it cannot run on a schedule on this computer yet. Say so in one plain sentence when you deliver the strategy, and offer the two ways out: send it to the user's cloud machine (the app's 送上雲端 button; `references/cloud-handoff.md` moves it and runs it once there — a schedule there is a request of its own, made from the cloud view: that file's *A schedule on the cloud machine*), or run it once by hand now (`python3 strategies/<name>/strategy.py`). Never ask for a YES to deploy it here.
 
 ## No LLM in the Execution Loop
 

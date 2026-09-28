@@ -911,6 +911,7 @@ function trPushLabels() {
     key_rejSameIpBody: t("tm.key.rejSameIpBody"), key_rejUnknownBody: t("tm.key.rejUnknownBody"),
     key_permTitle: t("tm.key.permTitle", { where: t("env.local") }), key_permBody: t("tm.key.permBody"),
     notifPrefixLocal: t("tm.notifPrefixLocal"), notifPrefixCloud: t("tm.notifPrefixCloud"),
+    br_captchaTitle: t("br.need.captcha"), br_captcha: t("br.notif.captcha"),   // 內建瀏覽器:搜尋要過驗證、app 不在前景(主行程 browserNotify)
     ...Object.fromEntries(TR_MENU_KEYS.map((k) => ["menu" + k.charAt(5).toUpperCase() + k.slice(6), t(k)])) });
 }
 // app 選單每一格的字(主行程 main.js appMenuTemplate 的 MENU_EN;字串表 menu.x → tm 的鍵 menuX)
@@ -1563,29 +1564,43 @@ function trAskStop(opener) {
 }
 // 中文句子裡夾英文名(Binance)前後要空一格;英文句子本來就有空格
 function trPadLatin(name) { return LANG === "zh" && /^[\x20-\x7e]+$/.test(name) ? " " + name + " " : name; }
-function trMeans() {
-  const box = trEl("div", "means"), paper = trIsPaper();
-  box.appendChild(trEl("span", "lbl", t("tr.means.l")));
-  const ul = document.createElement("ul");
-  // 模擬帳戶:第 2 點走自己那句(不代入交易所名),第 4 點整點不出——模擬帳戶沒有交易所端的停損單,那句在這裡是假的
-  const pts = [t("tr.means.1"), paper ? t("tr.means.2p") : t("tr.means.2", { venue: trPadLatin(trVenueLabel(trVenueId(), true)) }), t("tr.means.3")];
-  if (!paper) pts.push(t("tr.means.4"));
-  pts.forEach((x) => ul.appendChild(trEl("li", "", x)));
-  box.appendChild(ul); return box;
+/* Blave 的帳本基準寫了沒(回報裡的對帳快照 last_reconcile,lib/portfolio._write_reconcile_snapshot):
+   "built" = 快照帶 ledger(對帳器已經拿自己的帳本在比)→ 之後啟動不會再把帳戶上的部位算成 Blave 的;
+   "none"  = 快照帶 needs_baseline(基準還沒寫)→ 第一次對帳會照 1.5 倍規則收編同方向的現有部位(_auto_baseline,一次定案);
+   "unknown" = 沒有快照、兩個欄位都沒有,或原因是 unconfigured(還沒存過金額:新機存第一份金額時 runtime 會寫一份從零開始的基準,
+   那時什麼都不收編;舊機則會收編——從這一格看不出是哪一種)。純函式 */
+function trBookBaseline(r) {
+  const last = r && r.last_reconcile;
+  if (!last || typeof last !== "object") return "unknown";
+  if (last.ledger && typeof last.ledger === "object") return "built";
+  const nb = last.needs_baseline;
+  return nb && typeof nb === "object" && nb.reason !== "unconfigured" ? "none" : "unknown";
 }
-/* 雲端版的「這代表什麼」(規格 §4.1):四點裡有三點是本機那組講不出來的(關掉 app 也照跑、每小時扣主機費、
-   停機跨 K 棒收盤會自動暫停)。第 3 點的金額來自方案頁同一個來源;拿不到數字就整點不出——
-   不寫死、也不生一句沒有數字的半套說法 */
-function trCloudMeans() {
-  const box = trEl("div", "means"), v = planVars();
-  box.appendChild(trEl("span", "lbl", t("tr.cloud.means.l")));
-  const ul = document.createElement("ul");
-  const pts = [t("tr.cloud.means.1"), t("tr.cloud.means.2")];
-  if (v.h && v.m) pts.push(t("tr.cloud.means.3", v));
-  pts.push(t("tr.cloud.means.4"));
-  pts.forEach((x) => ul.appendChild(trEl("li", "", x)));
-  box.appendChild(ul); return box;
+/* 啟動框的句子分兩層(Wei 0928 第 3 點 A 案的逐句分類):keep = 每次都要看的常駐句,details = 看懂一次就好的、收在「細節」裡。
+   回 { keep: [句], details: [{ label, items | text }] },純函式(tests/check_shell_start_box.js 切出來跑)。
+   這台電腦:常駐「睡眠、關機、結束 Blave 時不下單也不停損」;真錢再加交易所停損單那一句(模擬帳戶沒有交易所端的停損單,那句在那裡是假的)。
+   雲端:常駐換成主機費與停機門檻(金額來自方案頁同一個來源;拿不到數字就整句不出——不寫死、也不生一句沒有數字的半套說法)。
+   own = 回報證明機器只碰帳本裡的部位(self_ledger);那一句只給真錢(模擬帳戶沒有用戶手動開的部位),而且跟著帳本基準分三種說法(book):
+   還沒建 → 「同方向的部位第一次對帳會算進來」＋細節裡 1.5 倍那一段;已建 → 只講「你自己開的不算 Blave 的」(那時沒有東西會被算進來,
+   講了會讓人以為手動部位抵掉了目標、實際曝險比預期大);讀不到 → 只講兩種情況都成立的那半句 */
+function trStartNotes(o) {
+  const keep = [], items = [], details = [];
+  if (o.own && o.real) {
+    keep.push(t(o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
+    if (o.book === "none") details.push({ label: t("tr.det.own"), text: t("tr.det.ownRule") });
+  }
+  if (o.cloud) {
+    if (o.v && o.v.h && o.v.m) keep.push(t("tr.cloud.means.3", o.v));
+    items.push(t("tr.cloud.means.1"), t("tr.cloud.means.4"));
+  } else {
+    keep.push(t("tr.keep.sleep"));
+    if (o.real) keep.push(t("tr.means.4"));
+    items.push(t("tr.means.1"), o.paper ? t("tr.means.2p") : t("tr.means.2", { venue: o.venue }), t("tr.means.3"));
+  }
+  return { keep, details: details.concat([{ label: t(o.cloud ? "tr.det.cloud" : "tr.det.local"), items }]) };
 }
+/* 「細節」真錢第一次預設展開、第二次起收起;模擬一律收起。依視角分開記,啟動指令被機器收下才寫入(這台電腦的偏好,localStorage) */
+const trStartSeenKey = (env) => "tr_start_seen_" + (env === "cloud" ? "cloud" : "local") + "_real";
 // 兩邊都在用真錢:只知道「都是真錢」,不知道是不是同一個帳戶 → 灰記號的提醒(規格 §3),不是封鎖
 function trBothReal() {
   if (TR.env !== "cloud" || envMoney(TR.st) !== "real" || envMoney(TR_BAGS.local.st) !== "real") return null;
@@ -1602,28 +1617,39 @@ function trAskStart(opener) {
      機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)。
      其他原因死掉的雲端對帳器,電腦版沒有重啟鈕:「對帳器停了」那一態照實講,重啟在網頁工作頁做 */
   const go = (cmd) => { TR.startAt = Date.now(); return trRunStart(cmd); };   // 表底失敗:按下之前的那些不再講成現在式(trErrLoud)
-  const trRunStart = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {})] : [
-    (S) => trSend(S, cmd, {}),
+  // real = 連的是真的交易所;沒連交易所(主機重開後停著、只有啟動鈕清得掉)兩個都不是:不掛記號、句子用不講「真實委託」的那一組
+  const paper = trIsPaper(), real = envMoney(TR.st) === "real", seenKey = trStartSeenKey(TR.env);
+  // 機器收下啟動指令(不是被帳戶確認擋住的 held)才算啟動過一次:真錢的「細節」下次就收著
+  const sent = (res) => { if (real && res && res.ok && !trHeldVenue(res)) lsSet(seenKey, "1"); return res; };
+  const trRunStart = (cmd) => trRun("running", cloud ? [(S) => trSend(S, cmd, {}).then(sent)] : [
+    (S) => trSend(S, cmd, {}).then(sent),
     (S) => { return trRecRunning(S.st) ? { ok: true } : trSend(S, "restart_reconciler", {}); },
   ], cmd);
-  const recomputing = trRecomputing(r);
-  /* 第二句:一般暫停照舊;Blave 重開(本機)換成「關著的時候沒跑」那句;主機重開(B)不出——
-     重開停止期間不一定照常更新,要緊的那件事(照舊訊號補齊)由重算那一行與閘門講(新狀態稽核 1-2) */
-  const rkS = trRestartKind(r), warn2 = rkS === "app" ? t("tr.startWarn2Local") : rkS === "machine" ? null : t("tr.startWarn2");
-  confirmBox(trCloudBox({
-    title: t("tr.start"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
+  const recomputing = trRecomputing(r), rkS = trRestartKind(r);
+  const notes = trStartNotes({ cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)) });
+  const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
+  const money = real ? "Real" : "";
+  confirmBox(trCloudBox(Object.assign({
+    title: t("tr.start"), mark: paper ? t("tr.mode.paper") : real ? t("tr.mode.real") : null, markKind: real ? "real" : "paper", opener,
     lead: trBothReal(),
-    // 重開過(主機 / Blave):到現在都沒有下單,部位可能跟訊號對不上——在選「補齊 / 等新訊號」之前講
-    lines: (trRestartKind(r) === "machine" ? [t("tr.cloud.restartStartLine")] : trRestartKind(r) === "app" ? [t("tr.restartStartLineLocal")] : [])
-      .concat(recomputing ? [t("tr.cloud.recomputing")] : [])
-      // 只在機器端證明自己只碰帳本裡的部位時才講(回報的 self_ledger:舊 lib 會把手動部位當成要平的)
-      .concat(r.self_ledger === true ? [t("tr.startOwnOnly")] : [])
-      .concat(canWait ? [t("tr.startChoice")] : [t("tr.startWarn1")]).concat(warn2 ? [warn2] : []),
-    extra: cloud ? trCloudMeans() : trMeans(),
-    // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
-    ok: t("tr.startCatchUp"), okDisabled: recomputing, okWhy: recomputing ? t("tr.cloud.recomputing") : null, onOk: () => { if (!trRecomputing(trReport())) go("resume"); },
-    alt: canWait ? { label: t("tr.startWait"), onOk: () => go("resume_wait") } : null,
-  }));
+    keep: notes.keep, details: notes.details, detailsOpen: real && lsGet(seenKey) !== "1",
+  }, canWait ? {
+    // 重開過(主機 / Blave):到現在都沒有下單,部位可能跟訊號對不上——最上面的狀態句,在選「補齊 / 等新訊號」之前講
+    lines: rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : [],
+    choicesLabel: t("tr.opt.legend"),
+    choices: [
+      // Blave 重開(本機):關著的時候策略沒跑,現在補齊用的可能是舊訊號——掛在它影響的那個選項裡。主機重開(B)由重算那一句與閘門講
+      { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc" + money), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
+        disabled: recomputing, why: t("tr.cloud.recomputing"), ok: t("tr.startCatchUp"), onOk: catchUp },
+      { id: "wait", title: t("tr.opt.wait"), desc: t("tr.opt.waitDesc" + money), ok: t("tr.startWait"), onOk: () => go("resume_wait") },
+    ],
+    ok: t("tr.start"),
+  } : {
+    // 機器端只有一種啟動方式(舊 lib,沒有 can_wait_start):沒有東西可選,照舊一顆主鈕
+    lines: (rkS === "machine" ? [t("tr.cloud.restartStartLine")] : rkS === "app" ? [t("tr.restartStartLineLocal")] : [])
+      .concat(recomputing ? [t("tr.cloud.recomputing")] : []).concat([t("tr.startWarn1")]),
+    ok: t("tr.startCatchUp"), okDisabled: recomputing, okWhy: recomputing ? t("tr.cloud.recomputing") : null, onOk: catchUp,
+  })));
 }
 
 /* ── 分頁 ───────────────────────────────────────────── */

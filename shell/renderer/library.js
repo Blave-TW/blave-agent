@@ -392,12 +392,12 @@ function libPaintList() {
   if (!v.length) { state.hidden = false; state.textContent = t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"); }
   v.forEach((s) => rows.appendChild(libRow(s)));
 }
-/* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「資料與雲端方案」
-   (查不到狀態時不擺一顆要錢的主鈕)。鈕都開 設定 › 資料與雲端方案。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
+/* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「帳號與方案」
+   (查不到狀態時不擺一顆要錢的主鈕;鈕字用 pv.e.btn——「開這一頁的鈕」的字,跟資料卡那顆共用)。鈕都開 設定 › 帳號與方案。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
 function libGateBtn(why) {
   const trial = typeof acct !== "undefined" && acct && acct.trial_eligible === false ? false : true;
   const tDays = typeof planVars === "function" ? planVars().t : "";
-  const b = libEl("button", why === "unknown" ? "btn-out" : "btn-fill", why === "no_balance" ? t("lib.gate.topup") : why === "unknown" ? t("set.cat.plan") : trial && tDays ? t("lib.gate.bindCard", { t: tDays }) : t("plan.addCard"));
+  const b = libEl("button", why === "unknown" ? "btn-out" : "btn-fill", why === "no_balance" ? t("lib.gate.topup") : why === "unknown" ? t("pv.e.btn") : trial && tDays ? t("lib.gate.bindCard", { t: tDays }) : t("plan.addCard"));
   b.type = "button"; b.addEventListener("click", () => planOpen());
   return b;
 }
@@ -518,7 +518,7 @@ function libPaintCta(s) {
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
   const paidNote = () => { note.textContent = libJoin(t("lib.note.paid"), libFx() ? t("lib.fxNote") : ""); };
   switch (c.state) {
-    case "signedOut": row.appendChild(btn("btn-fill", t("cn.blave.btn"), () => setOpen().then(() => setCat("acct")))); note.classList.add("up"); note.textContent = t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"); break;   // 主鈕「登入 Blave」→ 設定 › 帳號(§3.2 末,同 noData 一個重量)
+    case "signedOut": row.appendChild(btn("btn-fill", t("cn.blave.btn"), () => setOpen().then(() => setCat("plan")))); note.classList.add("up"); note.textContent = t(c.paid ? "lib.gate.signedOutBuy" : "lib.gate.signedOut"); break;   // 主鈕「登入 Blave」→ 設定 › 帳號與方案(§3.2 末,同 noData 一個重量)
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libGateText(c.why); break;
     case "busy": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t("turn.busy"); break;
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;

@@ -300,7 +300,7 @@ app.whenReady().then(async () => {
   await js(`hasToken = false; libSync();`); r = await cta();
   ok("④ 未登入(0.1.6 §3.2 末):主鈕「登入 Blave」、閘門句升一階、沒有文字鈕", r.btn === (await T("cn.blave.btn")) && r.dis === false && r.up && r.quiet === "" && r.note === (await T("lib.gate.signedOut")), JSON.stringify(r));
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 60)); const out = { set: !document.getElementById("set-scrim").hidden, cat: (document.querySelector('.set-cat[aria-current="true"]') || { dataset: {} }).dataset.setCat }; setClose(); return out; })()`);
-  ok("④ 「登入 Blave」→ 設定 › 帳號", r.set && r.cat === "acct", JSON.stringify(r));
+  ok("④ 「登入 Blave」→ 設定 › 帳號與方案", r.set && r.cat === "plan", JSON.stringify(r));
   // 付不出資料費(0.1.6 §3.2):主鈕照 why 分流、鈕下說明升一階;試用天數來自 planVars().t(acct.trial_days),不寫死
   await js(`hasToken = true; LIB.data.dataAccess = "none"; LIB.data.why = "no_card"; acct = { trial_eligible: true, trial_days: 14 }; libSync();`); r = await cta();
   ok("④ no_card 有試用:主鈕「綁卡，送 14 天資料」、說明只有「還沒綁卡…」(天數鈕字已講,不接 data.noCardSub);沒有文字鈕", r.btn === (await T("lib.gate.bindCard", { t: 14 })) && r.dis === false && r.up && r.quiet === "" && r.note === (await T("lib.gate.noCard")), JSON.stringify(r));
@@ -311,7 +311,7 @@ app.whenReady().then(async () => {
   await js(`LIB.data.why = "no_balance"; libSync();`); r = await cta();
   ok("④ no_balance:「儲值」+ 說明「這一小時付不出…儲值後馬上恢復」", r.btn === (await T("lib.gate.topup")) && r.note === (await T("lib.gate.noBalance")), JSON.stringify(r));
   await js(`LIB.data.why = "unknown"; libSync();`); r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; return { fill: q("#lib-cta .btn-fill").length, out: q("#lib-cta .btn-out").map((b) => b.textContent).join(), note: q("#lib-cta .note")[0].textContent }; })()`);
-  ok("④ unknown:描邊「資料與雲端方案」(查不到狀態不擺要錢的主鈕)+ 說明「現在查不到…」", r.fill === 0 && r.out === (await T("set.cat.plan")) && r.note === (await T("lib.gate.unknown")), JSON.stringify(r));
+  ok("④ unknown:描邊「帳號與方案」(鈕字是 pv.e.btn;查不到狀態不擺要錢的主鈕)+ 說明「現在查不到…」", r.fill === 0 && r.out === (await T("pv.e.btn")) && r.note === (await T("lib.gate.unknown")), JSON.stringify(r));
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-out")[0].click(); await new Promise((r) => setTimeout(r, 60)); const a = { set: !document.getElementById("set-scrim").hidden, cat: (document.querySelector('.set-cat[aria-current="true"]') || { dataset: {} }).dataset.setCat }; setClose();
     document.getElementById("lib-back").click(); LIB.data.why = "no_balance"; document.getElementById("lib-h").focus(); libPaintList(); const g = document.getElementById("lib-gate");
     const b = { hidden: g.hidden, text: g.querySelector("p") && g.querySelector("p").textContent, btn: g.querySelector("button") && g.querySelector("button").textContent + ":" + g.querySelector("button").className, rows: q("#lib-rows .lib-row").length, focus: document.activeElement && document.activeElement.id, above: g.getBoundingClientRect().bottom <= q("#lib-rows .lib-row")[0].getBoundingClientRect().top };

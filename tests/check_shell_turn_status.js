@@ -4,7 +4,9 @@
 //   3. 最短停留 1.2 秒:期間只留最新的一個,到時直接換上;同 kind 同受詞不算換
 //   4. 舊 runtime(沒有 kind)退路只看工具名、不猜 Bash
 //   5. 時長 47s / 4m 57s / 1h 02m;步數字串拿掉;act.* 兩語齊、每個 runtime kind 都有字
-//   6. 瀏覽卡:進行中一行(圖示疊只放讀到內容的頁＋已讀 d/n＋展開);搜尋結果頁不進清單;中繼頁不算已讀;沒讀到的排最下面
+//   7. 展開的步驟清單(Wei 0928 第 2b 點):做完的步驟用完成式 step.*(缺 key 退回 act.*、出錯的不換)、正在跑的那一步有自己的秒數、
+//      位置記號只在一輪跨兩邊時才畫、思考文字每一輪都先收著、chevron 7px、熱區整列 × 32、記號欄固定 8 寬
+//   6. 瀏覽卡:進行中一行(圖示疊只放讀到內容的頁＋已讀 d/n＋「看網頁」,不給展開);搜尋結果頁不進清單;中繼頁不算已讀;沒讀到的排最下面
 // 跑法:node tests/check_shell_turn_status.js
 const fs = require("fs"), path = require("path"), cp = require("child_process");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -19,8 +21,8 @@ const block = cut(src, "const ACT_HOLD_MS", "/* 時長(canon");
 const dur = cut(src, "function fmtDur(", "function busyElapsed(");
 const env = { now: 0, shown: [], timers: [], need: false };
 const STRINGS = { en: {} };
-for (const m of cut(strings, "\n  en: {", "\n  zh: {").matchAll(/"(act\.[a-z_]+)": "([^"]*)"/g)) STRINGS.en[m[1]] = m[2];
-const t = (k, v) => (STRINGS.en[k] || k).replace("{n}", v && v.n != null ? v.n : "{n}");
+for (const m of cut(strings, "\n  en: {", "\n  zh: {").matchAll(/"((?:act|step)\.[a-z_]+)": "([^"]*)"/g)) STRINGS.en[m[1]] = m[2];
+const t = (k, v) => (STRINGS.en[k] || k).replace(/\{(\w+)\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
 const M = new Function("t", "STRINGS", "env", `
   const Date = { now: () => env.now };
   const setTimeout = (f, ms) => { env.timers.push({ at: env.now + ms, f }); return env.timers.length; };
@@ -92,6 +94,13 @@ ok("步驟清單:重開畫回的收據只有工具名,照名稱分類", SL({ too
   && SL({ tool: "Bash", summary: "lib/runner.py" }).obj === "lib/runner.py");
 ok("接線:即時那列與重開畫回那列都走 stepLabel,不再畫 c.tool / st.tool", /verb\.textContent = lab\.verb;/.test(src) && /v\.textContent = lab\.verb;/.test(src)
   && !/textContent = c\.tool/.test(src) && !/textContent = st\.tool/.test(src));
+// 做完的步驟用完成式;正在跑的照舊
+ok("步驟清單:做完的步驟換完成式(step.*),正在跑的照舊(act.*);讀多頁的數字照樣在字裡、受詞不變", SL({ kind: "web_read", summary: "coindesk.com" }).verb === "Reading"
+  && M.stepLabel({ kind: "web_read", summary: "coindesk.com" }, true).verb === "Read" && M.stepLabel({ kind: "web_read", summary: "coindesk.com" }, true).obj === "coindesk.com"
+  && M.stepLabel({ kind: "web_read_many", kind_obj: "3" }, true).verb === "Read 3 pages" && M.stepLabel({ tool: "Bash", kind: "brand_new_kind" }, true).verb === STRINGS.en["step.unknown"]
+  && M.stepLabel({ tool: "ToolSearch" }, true) === null);
+{ const keep = STRINGS.en["step.backtest"]; delete STRINGS.en["step.backtest"];
+  ok("步驟清單:沒有 step.<kind> 的 kind 退回 act.*(不吐 key)", M.stepLabel({ kind: "backtest" }, true).verb === "Backtesting"); STRINGS.en["step.backtest"] = keep; }
 ok("時長格式", M.fmtDur(47) === "47s" && M.fmtDur(297) === "4m 57s" && M.fmtDur(60) === "1m 00s" && M.fmtDur(3720) === "1h 02m" && M.fmtDur(-3) === "0s");
 
 // ── 字串 ──
@@ -107,11 +116,42 @@ const zh = cut(strings, "\n  zh: {", "\n};");
 const need = kinds.filter((k) => k !== "silent").concat(["thinking", "reply", "code_prep", "need_user"]);
 const missing = need.filter((k) => !STRINGS.en["act." + k] || !zh.includes(`"act.${k}":`));
 ok("每個 runtime 會送的 kind(加 thinking／reply／code_prep／need_user)兩語都有 act.* 字", kinds.length > 20 && !missing.length, missing);
+{ const stepKinds = [...new Set(kinds.concat(Object.keys(STRINGS.en).filter((k) => k.indexOf("act.") === 0).map((k) => k.slice(4))))].filter((k) => !["silent", "thinking", "reply", "code_prep", "need_user"].includes(k));
+  const gone = stepKinds.filter((k) => !STRINGS.en["step." + k] || !zh.includes(`"step.${k}":`));
+  const zhOf = (k) => (zh.match(new RegExp('"' + k.replace(".", "\\.") + '": "([^"]*)"')) || [])[1] || "";
+  ok("每個會列成步驟的 kind 兩語都有 step.* 字;中文的完成式不帶「正在」", stepKinds.length >= 26 && !gone.length && stepKinds.every((k) => zhOf("step." + k) && zhOf("step." + k).indexOf("正在") < 0), gone); }
 ok("步數字串拿掉(「執行中 · 第 N 步」)、不再用 turn.running", !/turn\.running/.test(strings) && !/turn\.running/.test(src));
 ok("讀屏:受詞與秒數 aria-hidden;label 只在字變了才寫", /obj\.className = "think-obj"; obj\.hidden = true; obj\.setAttribute\("aria-hidden", "true"\);/.test(src)
   && /if \(busy\.verb\.textContent !== label\) busy\.verb\.textContent = label;/.test(src));
 ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; \}/.test(css)
   && /\.think-obj \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;/.test(css) && /\.think-verb \{ flex: none; font-size: 12px;/.test(css));
+
+// ── 展開的步驟清單與狀態列的樣子(Wei 0928 第 2b 點)──
+{ const stepSrc = cut(src, "function busyStepTick(", "/* `done` 只是回頭補"), doneSrc = cut(src, "function busyStepDone(", "/* 思考文字累積");
+  ok("正在跑的那一步每秒更新自己的秒數、清單跟到最新一列(游標在清單上不搶);每秒的 interval 有叫它", /busyStepTick\(\); actApply\(\); \}, 1000\);/.test(src)
+    && /querySelectorAll\("\.think-step\.is-run"\)\.forEach\(\(li\) => \{ li\.querySelector\("\.think-step-time"\)\.textContent = fmtDur\(\(now - li\.__t0\) \/ 1000\); \}\);/.test(stepSrc)
+    && /if \(!ul\.matches\(":hover"\)\) ul\.scrollTop = ul\.scrollHeight;/.test(stepSrc) && /li\.__t0 = Date\.now\(\); li\.__c = c;/.test(stepSrc));
+  ok("做完換完成式;出錯的那一步換成失敗的說法(#165:不留「正在抓資料」;也不用完成式——英文過去式配失敗的步驟會被讀成做成了)", /if \(c\.error\) li\.classList\.add\("is-err"\);\s*li\.querySelector\("\.think-step-verb"\)\.textContent = stepLabel\(li\.__c, true, !!c\.error\)\.verb;/.test(doneSrc));
+  { const f = M.stepLabel({ kind: "data", summary: "fetch_kline BTCUSDT" }, true, true), o = M.stepLabel({ kind: "order" }, true, true), ZH = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh, zh = (k, v) => ZH[k].replace(/\{(\w+)\}/g, (m, n) => v[n]);
+    ok("失敗的步驟:英文「Failed: fetching data」(接進行式,不是 Fetched / Placed),受詞照留;中文「沒成功：抓資料」(沒有「正在」)", f.verb === "Failed: fetching data" && f.obj === "fetch_kline BTCUSDT" && o.verb === "Failed: placing an order"
+      && zh("step.fail", { did: ZH["step.data"], doing: ZH["act.data"] }) === "沒成功：抓資料" && !/正在/.test(zh("step.fail", { did: ZH["step.data"], doing: "x" })), [f, o]); }
+  ok("#166 查說明文件 / 找檔案(agent 讀自己的文件與原始碼):受詞是指令內容,不上畫面——步驟清單與狀態列都只留動詞", M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).obj === "" && M.stepLabel({ kind: "docs", summary: "def fetch_funding_rate" }, true).verb === "Checked the docs"
+    && M.stepLabel({ kind: "files", summary: "grep references/lib.md" }).obj === "" && M.stepLabel({ tool: "Grep", summary: "fetch_funding" }).obj === "" && M.stepLabel({ tool: "Read", summary: "references/lib.md" }).obj === ""
+    && M.stepLabel({ kind: "file_read", summary: "strategy.py" }).obj === "strategy.py" && /busySet\(actLabel\(w\), STEP_NO_OBJ\.includes\(w\.kind\) \? "" : w\.obj, w\.kind\);/.test(src));
+  ok("重開畫回的收據:步驟都是做完的 → 完成式", /const lab = stepLabel\(st, true\);/.test(cut(src, "function receiptFold(", "function addHistoryAi(")));
+  ok("位置記號只在這一輪兩邊都做過事時才畫:即時與重開畫回都算,靠 .has-both 開關", /busy\.sides\.add\(stepWhere\(c\)\); busy\.el\.classList\.toggle\("has-both", busy\.sides\.size > 1\);/.test(stepSrc)
+    && /sides\.add\(stepWhere\(\{ tool: st\.tool \}\)\);/.test(src) && /el\.classList\.toggle\("has-both", sides\.size > 1\);/.test(src)
+    && css.includes(".think-step .wtag { flex: none; display: none; }") && css.includes(".think-indicator.has-both .think-step .wtag { display: inline-flex; }"));
+  ok("思考文字每一輪都先收著:第一段字來就掛「顯示思考內容」,一輪只掛一次;出錯回合照舊自己攤開收據", /busyHasFold\(\); busyHoldReason\(busy\);/.test(src)
+    && /function busyHoldReason\(b\) \{\n  if \(b\.held \|\| !b\.reason\.textContent\.trim\(\)\) return;\n  b\.held = true; b\.el\.classList\.add\("reason-held"\);/.test(src)
+    && /function busyOpenReceipts\(b\) \{\n  b\.el\.classList\.add\("is-open"\); b\.head\.setAttribute\("aria-expanded", "true"\);\n  busyHoldReason\(b\);\n\}/.test(src));
+  ok("chevron 是 .cv7(7px 盒、1.6px),即時與重開畫回同一顆;還沒有步驟時隱藏", (src.match(/className = "think-chev cv7"/g) || []).length === 2 && css.includes(".think-chev { color: var(--ink-3); visibility: hidden; }")
+    && css.includes(".think-head.has-reason .think-chev { visibility: visible; }") && !/\.think-chev \{[^}]*width: 5px/.test(css));
+  ok("熱區:整列寬 × 32(錨在 .think-indicator),沒東西可展開就沒有;hover 字與 chevron 提亮到 --ink", /\.think-indicator \{\n  position: relative;/.test(css)
+    && css.includes('.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -3px; height: 32px; }')
+    && css.includes(".think-head.has-reason:hover .think-verb, .think-head.has-reason:hover .think-chev { color: var(--ink); }") && !/\.think-head \{[^}]*position:/.test(css));
+  ok("記號欄固定 8 寬:正在跑那一列記號 4＋右邊補 4;那一列用主墨", css.includes(".think-step.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }")
+    && css.includes(".think-step.is-run .think-step-verb, .think-step.is-run .think-step-time { color: var(--ink); }")); }
 
 // ── 瀏覽卡 ──
 ok("卡頭不放狀態字:進行中的卡走 brLine(圖示疊＋已讀 d/n),不走 brStat", /\n  h\.append\(brLine\(b\)\);/.test(brSrc) && !/br\.browsing|br\.compiling/.test(cut(brSrc, "function brLine(", "function brOrder(")));
@@ -120,8 +160,8 @@ ok("疊圖只放真的讀到內容的頁(讀過、不是搜尋頁、不是中繼
 ok("搜尋結果頁開頁當下就認(Google / DDG 的網址),不先閃一格 0/1", /if \(BR_SERP\.test\(String\(ev\.url \|\| ""\)\)\) \{[^\n]*x\.search = true;[^\n]*return; \}/.test(brSrc));
 ok("搜尋結果頁從清單拿掉", /case "search": if \(x\) \{[\s\S]{0,300}b\.ids\.splice\(i, 1\)/.test(brSrc));
 ok("中繼頁:page_done 帶 relay 就不算讀過,訊息槽寫原因", /if \(ev\.relay\) x\.relay = true; if \(ev\.read && !ev\.relay\) x\.readEver = true;/.test(brSrc) && /if \(x\.relay\) return t\("br\.relay"\);/.test(brSrc));
-ok("收著時只露出要你操作的頁;沒讀到的排最下面、有細線與小標", /\.bblk:not\(\.sum\):not\(\.is-open\) \.wall > \.pt:not\(\[data-ph="wait"\]\)/.test(brCss) && /\.bsep \{ grid-column: 1 \/ -1;/.test(brCss)
-  && /const want = ok\.concat\(\[sep\], ng\);/.test(brSrc));
+ok("進行中只露出要你操作的頁;讀不了的排最下面、有細線與小標(第七批:小標改「讀不了」,未讀另有標記——check_shell_browser_unread.js)", /\.bblk:not\(\.sum\) \.wall > \.pt:not\(\[data-ph="wait"\]\)/.test(brCss) && /\.bsep \{ grid-column: 1 \/ -1;/.test(brCss)
+  && /const want = ok\.concat\(sep \? \[sep\] : \[\], ng\);/.test(brSrc) && /sep = brEl\("div", "bsep", t\("br\.cantRead"\)\);/.test(brSrc));
 ok("聊天列不掛「由你按」(只留中欄)", !/brEl\("span", "tag-you"/.test(cut(brSrc, "function brStatusNode(", "function brPh(")));
 // 重開對話的順序:舊紀錄的區塊時間是回合開始(早於逐字稿那句用戶訊息幾秒)→ 挪到那句後面
 const fix = new Function(cut(src, "function histFixOrder(", "async function csOpen(") + "; return histFixOrder;")();
@@ -130,10 +170,24 @@ const seq = [{ ts: 100, br: { kind: "block" } }, { ts: 102, turn: { role: "user"
 ok("重開對話:瀏覽區塊不排在同一輪的用戶訊息上面(舊紀錄);新紀錄本來就對的不動",
   seq.map((x) => x.br ? "B" : x.turn.role[0]).join("") === "uBauBa", seq.map((x) => x.br ? "B" : x.turn.role[0]).join(""));
 ok("新紀錄的區塊時間 = agent 第一次用瀏覽器(不是回合開始)", /ts: \(c\.usedAt \|\| c\.turnKey\) \/ 1000/.test(fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8")));
-const head = cut(brSrc, "function brPaintHead(b) {", "function brToggleList(");
-ok("卡頭最多一顆文字鈕＋chevron:中欄沒有這一輪的頁 →「看網頁」,已在中欄就不放字(收回靠中欄 ✕);沒有「全部展開」",
-  /if \(!mine && !b\.conv && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head) && !/closePanel/.test(brSrc)
-  && !/expandAll|br\.expand"/.test(brSrc + strings) && /aria-label", t\(b\.open \? "br\.listHide" : "br\.listShow"\)/.test(head));
+const head = cut(brSrc, "function brPaintHead(b) {", "/* 回合狀態列(app.js actApply)問");
+ok("卡頭一列一個控件:中欄沒有這一輪的頁 →「看網頁」,已在中欄就不放(收回靠中欄 ✕);沒有「全部展開」",
+  /if \(!mine && b\.ids\.length\) \{[^\n]*t\("br\.openPanel"\)/.test(head) && !/closePanel/.test(brSrc) && !/expandAll|br\.expand"/.test(brSrc + strings));
+// 進行中不給展開(Wei 0928 第 2a 點 A 案):卡頭沒有 chevron、點卡頭沒有反應、沒有開合狀態;回合結束的摘要列才有,而且跟狀態列同一顆
+ok("進行中的卡沒有開合:不放 chevron、卡頭不掛 click、沒有 b.open / is-open;br.listShow / br.listHide 兩語都刪了",
+  !/br-toggle|brToggleList|b\.open\b|is-open|addEventListener\("click", \(\) =>/.test(head) && !/br-toggle|brToggleList|b\.open\b/.test(brSrc) && !/br-toggle|\.bblk\.is-open|cursor: pointer/.test(cut(brCss, "/* 進行中是一行", "/* 一輪結束"))
+  && !/br\.list(Show|Hide)/.test(strings + brSrc));
+ok("摘要列的 chevron 是 CSS 那一顆(.cv7:7px 盒、1.6px),不是 14px 圖示;整列(40 高)都是熱區", /const chev = brEl\("span", "cv7"\); chev\.setAttribute\("aria-hidden", "true"\);/.test(cut(brSrc, "function brPaintSum(", "function brObserve("))
+  && !/brIcon\("chev"\)|chev: '<svg/.test(brSrc) && /\.cv7 \{\s*flex: none; display: inline-block; width: 7px; height: 7px;\s*border-right: 1\.6px solid currentColor; border-bottom: 1\.6px solid currentColor;/.test(css)
+  && /\.bblk\.sum summary \.cv7 \{ margin-left: auto;/.test(brCss) && /\.bblk\.sum summary \{[^}]*min-height: 40px/.test(brCss));
+ok("重開 app 畫回的歷史走同一條:brRestore → brFinish → 摘要列(沒有另一套畫法)", /brTakeSources\(b, r\.tabs, srcs\);\n\s*\$\("chat-scroll"\)\.appendChild\(b\.el\);\n\s*brFinish\(b\);/.test(brSrc)
+  && /b\.el\.replaceWith\(d\); b\.el = d; b\.sum = s; brPaintHead\(b\);/.test(cut(brSrc, "function brFinish(", "function brPaintSum(")));
+// 「看網頁」(Wei 0928 第 1 點 A 案):安靜鈕——圖示＋字、無底線;視覺高 28、熱區 32(上下各外擴 2),卡高不變
+{ const rule = (brCss.match(/\.br-open \{[^}]*\}/) || [""])[0];
+  ok("「看網頁」是安靜鈕:瀏覽器視窗圖示＋字(字串不變)、無底線、視覺 28／熱區 32、hover 填色", /brEl\("button", "br-open"\);[^\n]*all\.append\(brIcon\("win"\), t\("br\.openPanel"\)\)/.test(head)
+    && /win: '<svg class="ic"/.test(brSrc) && /height: 28px/.test(rule) && /font-size: 12px/.test(rule) && /gap: var\(--space-6\)/.test(rule) && !/text-decoration|border:/.test(rule)
+    && brCss.includes('.br-open::before { content: ""; position: absolute; inset: -2px 0; }') && brCss.includes(".br-open:hover { background: var(--surface-muted); color: var(--ink); }")
+    && !/btn-quiet/.test(head)); }
 // 中欄即時頁(設計稽核 A2):背景分頁固定 1280×800 排版,中欄大小只在顯示時套;擷取 / 顯示後清掉 viewport 覆寫
 const bIdx = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");
 ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;擷取與 setBounds 之後清 viewport 覆寫;容器底色 surface-muted",

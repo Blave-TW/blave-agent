@@ -388,6 +388,31 @@ function agent(raw) {
 }
 
 /**
+ * 【用戶自己按「用系統瀏覽器開」】這個網址能不能交給系統瀏覽器。回 null = 可以;否則 { reason, host }。
+ * 那是用戶自己的瀏覽器、自己的操作:agent 不准碰的敏感網域(交易所與券商後台、銀行、登入授權頁)、blave.org、廣告網域照開。
+ * 有危害的不開:不是 http(s)、網址帶帳密、本機 / 內網位址、非標準埠、相似網域、有危害的網站名單。
+ */
+const EXTERNAL_DENY = ["scheme", "credentials_in_url", "private_address", "port", "lookalike", "blocklist"];
+function external(raw) {
+  let u; try { u = new URL(String(raw)); } catch (_) { return { reason: "scheme" }; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return { reason: "scheme", host: lc(u.hostname) };
+  const a = agent(u.href);
+  return a && EXTERNAL_DENY.includes(a.reason) ? a : null;
+}
+/**
+ * 這個分頁要交給系統瀏覽器的網址,或 null(不開)。tab = 分頁紀錄;live = 分頁當下的網址(webContents.getURL())——
+ * 頁面自己換過網址(pushState)之後以它為準;被擋下、打不開的頁停在 about:blank,用紀錄的那個。
+ * 等用戶確認的網址(need.kind === "confirm")還沒放行:不開。renderer 只給分頁 id,網址從來不由它說。
+ */
+function externalUrl(tab, live) {
+  if (!tab || typeof tab !== "object") return null;
+  if (tab.need && tab.need.kind === "confirm" && !tab.userDone) return null;
+  const now = typeof live === "string" && /^https?:\/\//i.test(live) ? live : "";
+  const url = now || (typeof tab.url === "string" ? tab.url : "");
+  return url && !external(url) ? url : null;
+}
+
+/**
  * 引用圖的出處網址(browser_capture):報告契約 1.6 的 image.source.url 規則照外部連結——https、有主機、不帶帳密、
  * ≤500 字、不含空白與控制字元。在擷取當下擋:圖存下去之後才被 api 以 400 拒收,整份報告會進 failed/。
  * 回 null = 可以引用;否則 "scheme" | "credentials" | "long" | "format"。
@@ -428,4 +453,4 @@ function citeUrl(raw) {
 }
 function decodeSafe(x) { try { return decodeURIComponent(x); } catch (_) { return x; } }
 
-module.exports = { network, agent, citable, citeUrl, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };
+module.exports = { network, agent, external, externalUrl, EXTERNAL_DENY, citable, citeUrl, lookalike, SCAM_WORDS, privateHost, resolvesPrivate, exfilRisk, EXFIL_TAIL_MAX, registrable, hostOn, AGENT_BLOCKLIST, EXCHANGES, EXCHANGE_PUBLIC_SEGMENTS, EXCHANGE_BACKEND_SEGMENTS, BROKERS, BANKS, PAYMENTS, ADS };

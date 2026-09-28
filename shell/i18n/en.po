@@ -13,7 +13,11 @@ msgid "cn.blave.desc"
 msgstr "First card adds 100 TWD of AI credit, then pay per use"
 
 msgid "cn.blave.descSet"
-msgstr "Pay per use, charged to your Blave balance. A first card adds 100 TWD of AI credit."
+msgstr "Pay per use, charged to your Blave balance. A first card adds {q} TWD of AI credit."
+
+# 拿不到贈額數字時(離線、api 沒回)只講怎麼收錢那半句
+msgid "cn.blave.descSetNoNum"
+msgstr "Pay per use, charged to your Blave balance."
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
@@ -208,6 +212,88 @@ msgstr "Writing code"
 
 msgid "act.need_user"
 msgstr "Waiting for you"
+
+# 展開的步驟清單:做完的步驟用完成式(對應 act.*;出錯的那一步不換)。缺 key 時畫面退回 act.*
+msgid "step.unknown"
+msgstr "Worked"
+
+msgid "step.fail"
+msgstr "Failed: {doing}"
+
+msgid "step.search"
+msgstr "Searched:"
+
+msgid "step.web_read"
+msgstr "Read"
+
+msgid "step.web_read_many"
+msgstr "Read {n} pages"
+
+msgid "step.web_act"
+msgstr "Used"
+
+msgid "step.docs"
+msgstr "Checked the docs"
+
+msgid "step.files"
+msgstr "Looked through files"
+
+msgid "step.file_read"
+msgstr "Read"
+
+msgid "step.strategy_read"
+msgstr "Read strategy"
+
+msgid "step.strategy_write"
+msgstr "Wrote strategy"
+
+msgid "step.file_write"
+msgstr "Edited"
+
+msgid "step.data"
+msgstr "Fetched data"
+
+msgid "step.backtest"
+msgstr "Backtested"
+
+msgid "step.live_tick"
+msgstr "Ran strategy"
+
+msgid "step.scan"
+msgstr "Scanned parameters"
+
+msgid "step.validate"
+msgstr "Validated"
+
+msgid "step.check"
+msgstr "Checked strategy code"
+
+msgid "step.report"
+msgstr "Built the report"
+
+msgid "step.watch"
+msgstr "Updated the watchboard"
+
+msgid "step.schedule"
+msgstr "Set up a schedule"
+
+msgid "step.order"
+msgstr "Placed an order"
+
+msgid "step.account"
+msgstr "Checked the account"
+
+msgid "step.status"
+msgstr "Checked what's running"
+
+msgid "step.install"
+msgstr "Installed packages"
+
+msgid "step.cloud"
+msgstr "Connected to the cloud machine"
+
+msgid "step.delegate"
+msgstr "Delegated research"
 
 msgid "turn.busy"
 msgstr "The previous turn is still running."
@@ -639,7 +725,7 @@ msgid "fault.checking"
 msgstr "This turn didn’t run — checking your account."
 
 msgid "set.cat.plan"
-msgstr "Data & cloud plan"
+msgstr "Account & plan"
 
 msgid "plan.st.running"
 msgstr "Active · machine running"
@@ -972,16 +1058,13 @@ msgid "pv.e.sub.old"
 msgstr "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a month."
 
 msgid "pv.e.unknown"
-msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Open Data & Cloud Plan to check again."
+msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Check again under Settings › Account & plan."
 
 msgid "pv.e.btn"
-msgstr "Data & Cloud Plan"
+msgstr "Account & Plan"
 
 msgid "cn.blave.signinSwitch"
 msgstr "Sign In and Switch"
-
-msgid "set.cat.acct"
-msgstr "Account"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"
@@ -998,17 +1081,15 @@ msgstr "Chats and strategies stay on this computer and aren’t affected."
 msgid "acct.out.3"
 msgstr "You’re using Blave AI, so signing out returns you to the AI picker. You’ll need to pick one again before you can carry on."
 
-msgid "acct.in.1"
-msgstr "Signing in is what gives you Blave data and the cloud plan."
+# 登出的確認框(登出鈕在「帳號與方案」最上面那一列;「登出會怎樣」按了才出)。acct.out.4 只在帳號有主機時出
+msgid "acct.cf.title"
+msgstr "Sign Out of Blave?"
 
-msgid "acct.in.2"
-msgstr "Signing in costs nothing and doesn’t change the AI you use."
+msgid "acct.cf.ok"
+msgstr "Sign Out"
 
-msgid "acct.toPlan"
-msgstr "Balance, card and the cloud plan are under Data & cloud plan."
-
-msgid "acct.toPlanBtn"
-msgstr "Open"
+msgid "acct.out.4"
+msgstr "Signing out doesn’t turn off your cloud machine. It keeps billing."
 
 msgid "acct.lbl"
 msgstr "Blave account"
@@ -1227,14 +1308,8 @@ msgstr "Pause, leave positions untouched"
 msgid "tr.stopFlat"
 msgstr "Pause and close positions"
 
-msgid "tr.startChoice"
-msgstr "Catch up places market orders now to match each strategy’s current signal — if a strategy is already in a position, you board it mid-trade. Wait for new signals places no orders now; each strategy starts trading only at its next entry, exit, or flip."
-
 msgid "tr.startWarn1"
 msgstr "Real orders resume immediately, moving your strategies’ positions to the current targets."
-
-msgid "tr.startOwnOnly"
-msgstr "Only Blave’s own share is traded. On the first reconcile, an existing same-side position counts as Blave’s in full if it’s at most 1.5× the target, otherwise up to the target; the rest is yours and won’t be closed. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
 
 msgid "tr.unmanaged"
 msgstr "Outside Blave"
@@ -1242,17 +1317,65 @@ msgstr "Outside Blave"
 msgid "tr.unmanagedTip"
 msgstr "Blave didn’t open this position; reconciling never touches it."
 
-msgid "tr.startWarn2"
-msgstr "Strategies and weights kept updating while paused, so the first reconcile may move several positions at once."
-
 msgid "tr.startCatchUp"
 msgstr "Start and catch up positions"
 
 msgid "tr.startWait"
 msgstr "Start, wait for new signals"
 
-msgid "tr.means.l"
-msgstr "Running on this computer means:"
+# 啟動下單框(先選再按):兩個選項各帶後果(真錢版講「真實委託」)、常駐安全句、「細節」裡的小標
+msgid "tr.opt.legend"
+msgstr "How to start"
+
+msgid "tr.opt.catch"
+msgstr "Catch up positions"
+
+msgid "tr.opt.catchDesc"
+msgstr "Places market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+
+msgid "tr.opt.catchDescReal"
+msgstr "Sends real market orders now to bring each position to the strategy’s current signal; several positions may move at once. If a strategy is already in a trade, you join it mid-trade."
+
+msgid "tr.opt.catchStale"
+msgstr "Signals didn’t update while Blave was closed: catching up now may still trade on the signal from before you closed it; each strategy switches to a fresh one after its next scheduled run."
+
+msgid "tr.opt.wait"
+msgstr "Wait for new signals"
+
+msgid "tr.opt.waitDesc"
+msgstr "No orders now. Each strategy starts trading only at its next entry, exit, or flip."
+
+msgid "tr.opt.waitDescReal"
+msgstr "No orders now. Each strategy sends real orders only at its next entry, exit, or flip."
+
+msgid "tr.keep.sleep"
+msgstr "While this computer sleeps, is shut down, or Blave is closed, no orders go out — exits and stops included."
+
+# 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
+# tr.keep.ownBuilt 是暫定字(意思由後端依對帳邏輯定,字待設計師定稿)
+msgid "tr.keep.own"
+msgstr "Only Blave’s own share is traded."
+
+msgid "tr.keep.ownFirst"
+msgstr "Only Blave’s own share is traded. If you already hold a same-side position in the same coin, the first reconcile counts it in."
+
+msgid "tr.keep.ownBuilt"
+msgstr "Only Blave’s own share is traded: positions you opened yourself are not counted as Blave’s and don’t count toward a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+
+msgid "tr.det.own"
+msgstr "Which positions count as Blave’s"
+
+msgid "tr.det.ownRule"
+msgstr "On the first reconcile, an existing same-side position counts as Blave’s in full if it’s at most 1.5× the target, otherwise up to the target; the rest is yours and won’t be closed. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+
+msgid "tr.det.local"
+msgstr "Running on this computer"
+
+msgid "tr.det.cloud"
+msgstr "Running in the cloud"
+
+msgid "cf.more"
+msgstr "Details"
 
 msgid "tr.means.1"
 msgstr "Auto-trading runs only while the computer is awake, Blave is open and the network is up."
@@ -1264,7 +1387,7 @@ msgid "tr.means.2p"
 msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
 
 msgid "tr.means.3"
-msgstr "After you quit and reopen Blave, trading stays paused — no exits or stops either — until you press Start trading. After sleep or a dropped connection, it picks up on its own."
+msgstr "After you quit and reopen Blave, trading stays paused until you press Start trading. After sleep or a dropped connection, it picks up on its own."
 
 msgid "tr.means.4"
 msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
@@ -1902,14 +2025,8 @@ msgstr "Removes the exchange keys from the cloud machine — the order engine ca
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
 
-msgid "tr.cloud.means.l"
-msgstr "Running in the cloud means:"
-
 msgid "tr.cloud.means.1"
 msgstr "It runs on schedule as long as the machine is on. Shutting down this computer, closing the lid, losing the network, or quitting this app changes nothing."
-
-msgid "tr.cloud.means.2"
-msgstr "To pause, come back to this page and press Pause Trading."
 
 msgid "tr.cloud.means.3"
 msgstr "The machine takes {h} TWD from your balance every hour for as long as it exists. Under {m} TWD it stops: trading halts and positions stay at the exchange."
@@ -2792,9 +2909,6 @@ msgstr "Strategies are recomputing on post-restart data. Catch up becomes availa
 msgid "tr.orderFailedLastWhy"
 msgstr "Last order failed: {why}"
 
-msgid "tr.startWarn2Local"
-msgstr "Nothing ran while Blave was closed, so strategy signals didn’t update. Catch up trades on the signals as they stand now, which may still be from before you closed Blave; each strategy switches to a fresh signal after its next scheduled run. To trade only on fresh signals, choose Start, wait for new signals."
-
 msgid "tr.cloud.haltReasonUnconfirmed"
 msgstr "An old version of the trading program may still be running. Press Check for updates first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."
 
@@ -3394,7 +3508,7 @@ msgid "lib.buy.charge"
 msgstr "Charge & Purchase"
 
 msgid "lib.buy.noCard"
-msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Data & cloud plan, then come back."
+msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Account & plan, then come back."
 
 msgid "lib.buy.inProgress"
 msgstr "This purchase is already being processed. Check back in a moment."
@@ -3910,7 +4024,7 @@ msgid "lib.gate.noBalance"
 msgstr "The data fee for this hour couldn't be charged, so the agent can't reach the library. Top up and it's back right away."
 
 msgid "lib.gate.unknown"
-msgstr "The account's data status couldn't be checked, so the agent may not reach the library. Open Data & Cloud Plan to check again."
+msgstr "The account’s data status couldn’t be checked, so the agent may not reach the library. Check again under Settings › Account & plan."
 
 msgid "br.h"
 msgstr "Browser"
@@ -3920,6 +4034,12 @@ msgstr "Agent browsing"
 
 msgid "br.readWord"
 msgstr "read"
+
+msgid "br.unread"
+msgstr "Unread"
+
+msgid "br.unread.stat"
+msgstr "Loaded fine. The agent didn’t read this page"
 
 msgid "br.waiting"
 msgstr "Waiting for you"
@@ -3985,7 +4105,7 @@ msgid "br.need.submit"
 msgstr "Ready to submit"
 
 msgid "br.need.captcha"
-msgstr "Robot check needed"
+msgstr "Search needs a robot check"
 
 msgid "br.need.file"
 msgstr "File needed"
@@ -3993,8 +4113,8 @@ msgstr "File needed"
 msgid "br.relay"
 msgstr "Stopped at a redirect page, no content"
 
-msgid "br.notRead"
-msgstr "Not read"
+msgid "br.cantRead"
+msgstr "Couldn’t read"
 
 msgid "br.youPress"
 msgstr "Your turn"
@@ -4021,19 +4141,22 @@ msgid "br.ask.consent.h"
 msgstr "This page wants your cookie choice"
 
 msgid "br.ask.captcha.h"
-msgstr "A robot check is in the way"
+msgstr "Search needs a robot check first"
 
 msgid "br.ask.p"
 msgstr "You type any passwords. While you're in control, the agent pauses and doesn't read this page."
 
 msgid "br.ask.captcha.p"
-msgstr "You solve the check yourself; the agent never does."
+msgstr "After several searches in a row, {engine} asks to confirm a person is there. You do the check yourself; the agent never does it for you. Once it passes, the search picks up on its own."
 
 msgid "br.ask.skip"
 msgstr "Skip"
 
 msgid "br.ask.ddg"
 msgstr "Use DuckDuckGo"
+
+msgid "br.ask.noSearch"
+msgstr "Skip this search"
 
 msgid "br.ask.meLogin"
 msgstr "I'll sign in"
@@ -4046,6 +4169,9 @@ msgstr "I'll pick the file"
 
 msgid "br.ask.meVerify"
 msgstr "I'll do the check"
+
+msgid "br.notif.captcha"
+msgstr "Search needs a robot check. Come back to Blave to continue."
 
 msgid "br.dl"
 msgstr "Download blocked: {name} was not saved to this computer."
@@ -4070,6 +4196,10 @@ msgstr "Local, private-network and non-http(s) addresses are never opened."
 
 msgid "br.openSystem"
 msgstr "Open in system browser"
+
+# 網址列右端那顆 icon 鈕的 tooltip(名稱用 br.openSystem)
+msgid "br.openSystem.tip"
+msgstr "Open this page in your system browser. Sign-ins don’t carry over, so you may need to sign in again."
 
 msgid "br.back"
 msgstr "Back"
@@ -4457,12 +4587,6 @@ msgstr "My Capital setup in the desktop app is stuck at the “Read accounts” 
 
 msgid "br.openPanel"
 msgstr "View Pages"
-
-msgid "br.listShow"
-msgstr "Show list"
-
-msgid "br.listHide"
-msgstr "Hide list"
 
 msgid "br.readDone"
 msgstr "Read"
@@ -4871,43 +4995,22 @@ msgid "tv.sending"
 msgstr "Pasting into TradingView"
 
 msgid "tv.sentHint"
-msgstr "Pasted into the Pine Editor. Press “Add to chart” on the page, let the backtest run, then press “Send Results Back”."
-
-msgid "tv.read"
-msgstr "Send Results Back"
-
-msgid "tv.reading"
-msgstr "Reading…"
-
-msgid "tv.readAgain"
-msgstr "Send Results Again"
-
-msgid "tv.returnedAt"
-msgstr "Sent back at {time}."
-
-msgid "tv.returnedLoop"
-msgstr "Adjust the parameters in TradingView, re-run it, and you can send the results back again."
+msgstr "Pasted into the Pine Editor. You press “Add to chart”. If it doesn’t compile, paste the error into the chat and the agent can fix it and export again."
 
 msgid "tv.err.editor"
 msgstr "Couldn't find the Pine Editor — TradingView may have changed its layout."
 
-msgid "tv.err.compile"
-msgstr "TradingView couldn't compile it."
-
-msgid "tv.err.closed"
-msgstr "The Strategy Tester is not open, or no strategy has been added to the chart."
+msgid "tv.err.narrow"
+msgstr "The middle column is too narrow: at this width TradingView doesn’t show the Pine Editor button. Widen it and try again."
 
 msgid "tv.err.busy"
-msgstr "The agent is replying. Send the results back in a moment."
+msgstr "The agent is replying. Try again in a moment."
 
 msgid "tv.err.unknown"
 msgstr "That did not go through. Try again."
 
 msgid "tv.planHint"
-msgstr "TradingView's Free and Basic plans allow 2 indicators or strategies per chart; if “Add to chart” is blocked, remove the others from the chart first."
-
-msgid "tv.fix"
-msgstr "Ask Agent to Fix"
+msgstr "TradingView’s Free and Basic plans allow 2 indicators or strategies per chart. If you’re blocked, remove the others first."
 
 msgid "tv.agentPaste"
 msgstr "Ask Agent to Paste"
@@ -4927,50 +5030,26 @@ msgstr "Opening the Pine Editor"
 msgid "tv.st.paste"
 msgstr "Pasting {id}"
 
-msgid "tv.st.wait"
-msgstr "Waiting for you to press “Add to chart”"
-
-msgid "tv.st.check"
-msgstr "Check Result"
-
-msgid "tv.st.done"
-msgstr "Added to the chart"
-
-msgid "tv.st.compile"
-msgstr "TradingView couldn't compile it"
-
 msgid "tv.st.nf"
 msgstr "Couldn't find the Pine Editor"
-
-msgid "tv.st.reading"
-msgstr "Reading the Strategy Tester"
 
 msgid "tv.ho.h"
 msgstr "The code is in — you press “Add to chart”"
 
 msgid "tv.ho.p"
-msgstr "It's in a new script; your existing scripts are untouched. TradingView may then ask you to sign in and name the script — you do both on the page, and the page isn't read while you're using it."
+msgstr "It’s in a new script; your existing scripts are untouched. Once pasted, this page isn’t read again. Signing in and naming the script are yours to do."
 
 msgid "tv.ho.switch"
 msgstr "The chart's symbol or interval wasn't set automatically. Switch to the ones this strategy uses before you press “Add to chart”."
-
-msgid "tv.done.h"
-msgstr "The strategy is on the chart"
-
-msgid "tv.done.p"
-msgstr "The Strategy Tester is below the chart."
-
-msgid "tv.cmp.h"
-msgstr "TradingView couldn't compile it"
-
-msgid "tv.cmp.p"
-msgstr "The error is under the Pine Editor. The agent can read it, fix the script and export it again."
 
 msgid "tv.nf.h"
 msgstr "Couldn't find the Pine Editor"
 
 msgid "tv.nf.p"
 msgstr "TradingView may have changed its layout. The agent can look for it on screen, or download the file and paste it yourself."
+
+msgid "tv.nf.narrow.p"
+msgstr "When the middle column is this narrow, TradingView doesn’t show the Pine Editor button. Widen it (or narrow the chat) and try again."
 
 msgid "tv.err.unsaved"
 msgstr "The current script has unsaved changes. Save or discard them in TradingView, then try again."
@@ -4983,24 +5062,6 @@ msgstr "The current script has unsaved changes"
 
 msgid "tv.unsaved.p"
 msgstr "Save or discard them in TradingView, then try again. Whether to keep them is your call — nothing is pressed for you."
-
-msgid "tv.notyet"
-msgstr "No strategy on the chart yet. Press “Add to chart”, save the script, then press “Check Result”."
-
-msgid "tv.msg.head"
-msgstr "TradingView Strategy Tester results:"
-
-msgid "tv.msg.line"
-msgstr "- {label}: {value}"
-
-msgid "tv.msg.empty"
-msgstr "(TradingView returned no readable numbers.)"
-
-msgid "tv.msg.sent"
-msgstr "Version sent: {filename}"
-
-msgid "tv.msg.fix"
-msgstr "{filename} didn't compile in TradingView. Error:\n{lines}\nPlease fix it and export it again."
 
 msgid "tv.msg.paste"
 msgstr "Use the built-in browser to paste strategy {id}'s Pine version into TradingView's Pine Editor: open a new script, paste it there, and stop at “Add to chart” so I can press it."

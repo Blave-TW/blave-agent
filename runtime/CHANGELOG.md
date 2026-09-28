@@ -8,6 +8,14 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版的排程守門分得出「這台電腦」與「雲端主機」(0.1.8 開發版;Wei 09-28:雲端主機可以裝,先確認、只裝被要求的那一條)**:
+  雲端視角下 `ssh … blaveagent@<host> "(crontab -l; …) | crontab -"` 被當成本機擋下,理由還寫「這是電腦版…macOS 會跳系統框」。
+  `sched_verdict(cmd)`:一行指令**整行**只有一個送到別台主機的 `ssh <選項> <user>@<host> <遠端指令>`(可帶一段 heredoc 當輸入)才放行;
+  行上有管線、轉向、`;` `&&` `||`、括號、`$( )`、反引號、第二個指令,目的地是 localhost / 127.* / 本機主機名 / 沒有 `user@`,
+  選項帶 ProxyCommand / LocalCommand / KnownHostsCommand,引號沒收尾——一律照擋。餵給本機直譯器的 heredoc 腳本裡提到排程器也擋(原本擋不到)。
+  拒絕理由分兩條:`SCHED_DENY_REASON`(這台電腦不排程)、`SCHED_DENY_REASON_FORM`(寫法讓 runtime 分不出來:講認得的寫法,不是的話照實講並停手)。
+  擋不到的照舊只有規則層:寫進檔案再執行的腳本、把字拆開拼回去。規則在 `references/cloud-handoff.md` › *A schedule on the cloud machine*。
+  `mcp_rule` 補一句「回覆第一句講用戶要的事」。測試 `tests/check_desktop_sched_guard.py`(列舉)。
 - **雲端連線的收尾不進回覆(0.1.8 e2e #44,第三次)**:雲端相關的回合仍以「清理完成，tmp/cloud-handoff 已刪除。」開頭或收尾。`mcp_rule` 那句
   「delete that folder before the turn ends」後面補「回覆裡不提那個資料夾、連線與清理」——這一句每輪都在 system prompt 裡,是 agent 覺得要交代的來源之一。
   不做回覆後處理(濾句子):以規則為準。測試 `tests/check_local_mcp_config.py`。

@@ -201,7 +201,8 @@
 .wtag.cloud { background: var(--surface-muted); color: var(--ink); }
 .sysline { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-24); font-size: 11px; line-height: 1.4; color: var(--ink-3); text-align: center; }
 .sysline::before, .sysline::after { content: ""; flex: 1; height: 1px; background: var(--border-hairline); }
-.think-step .wtag { flex: none; }
+.think-step .wtag { flex: none; display: none; }
+.think-indicator.has-both .think-step .wtag { display: inline-flex; }   /* 這一輪兩邊都做過事才畫 */
 .msg.you .bubble {
   background: var(--surface-muted); border-radius: var(--radius-lg);
   padding: var(--space-8) var(--space-16); max-width: 84%; min-width: 0;
@@ -314,6 +315,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    (不是巢在某一回合裡),所以下緣間距對齊 .msg 的 24 而不是 web 的 4。
    ========================================================================= */
 .think-indicator {
+  position: relative;
   display: flex; flex-direction: column; align-items: flex-start;
   gap: var(--space-4);
   margin-bottom: var(--space-24);
@@ -331,20 +333,28 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
 .think-head.no-toggle { cursor: default; }
+/* 熱區:整列寬 × 32(視覺列高仍 26)——錨在 .think-indicator,不是字的寬度;沒東西可展開就沒有熱區 */
+.think-head.has-reason::before { content: ""; position: absolute; left: calc(-1 * var(--space-8)); right: calc(-1 * var(--space-8)); top: -3px; height: 32px; }
+.think-head .think-verb, .think-head .think-chev { transition: color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.think-head.has-reason:hover .think-verb, .think-head.has-reason:hover .think-chev { color: var(--ink); }
 /* 回合結束:tick 條收掉——凍結的秒數已經說了花多久,停住的條子是同一件事講兩次。
    字不變暗:這一列是用戶會回頭展開來讀的內容,不是過期的狀態。 */
 .think-indicator.is-done { margin-bottom: var(--space-8); }
 .think-indicator.is-done .think-ticks { display: none; }
 
-.think-chev {
-  flex: none; width: 5px; height: 5px; margin-left: 2px; position: relative; top: -1px;
-  border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3);
-  transform: rotate(45deg);
+/* canon › Dropdown menu › caret:7px 盒、1.6px、45°,開啟翻上(開 / 關各自 translateY 補墨跡重心)。
+   回合狀態列、瀏覽摘要列、確認框的「細節」畫的是同一顆——色跟著所在那一列的字(currentColor) */
+.cv7 {
+  flex: none; display: inline-block; width: 7px; height: 7px;
+  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
   transition: transform var(--motion-fast) var(--ease-standard);
-  visibility: hidden;
 }
+[open] > summary .cv7 { transform: translateY(2px) rotate(-135deg); }
+/* 狀態列的 chevron 就是 .cv7;字到 chevron 的 8 是 .think-head 的 gap */
+.think-chev { color: var(--ink-3); visibility: hidden; }
 .think-head.has-reason .think-chev { visibility: visible; }
-.think-indicator.is-open .think-chev { transform: rotate(-135deg); }
+.think-indicator.is-open .think-chev { transform: translateY(2px) rotate(-135deg); }
 
 /* 展開面板:grid-rows 0fr↔1fr 收合(動到面板的真實高度,不用猜 max-height)。
    wrap 只能有一個 grid row(.think-fold)——多一個子元素會掉進 implicit auto row,
@@ -372,12 +382,16 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   padding: 3px 0; font-size: 12px; line-height: 1.5;
 }
 .think-step-mark { flex: none; width: 8px; height: 2px; background: var(--ink-3); }
-.think-step.is-run .think-step-mark { width: 4px; background: var(--ink); }
+/* 記號欄固定 8 寬:正在跑那一列的記號是 4,右邊補 4,字才跟上面的列對齊。正在跑的那一列用主墨 */
+.think-step.is-run .think-step-mark { width: 4px; margin-right: var(--space-4); background: var(--ink); }
+.think-step.is-run .think-step-verb, .think-step.is-run .think-step-time { color: var(--ink); }
+.think-step.is-run .think-step-obj { color: var(--ink-2); }
 /* 錯誤是狀態不是內容:紅只上在記號與耗時,動詞受詞不變色 */
 .think-step.is-err .think-step-mark { background: var(--color-red); }
-.think-step-verb { flex: none; color: var(--ink-2); }
+/* 秒數不讓位:先截受詞,受詞截完還放不下(英文長動詞＋位置記號)才截動詞。受詞的 shrink 9999:比例小一點動詞就會先被削掉不到 1px、多出一個「…」 */
+.think-step-verb { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 .think-step-obj {
-  flex: 0 1 auto; min-width: 0;
+  flex: 0 9999 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--ink-3);
 }
@@ -395,7 +409,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .think-reason:empty { display: none; }
-/* 出錯回合自動攤開時思考文字先收著(busyOpenReceipts),下面那顆文字鈕按了才出;左緣對齊收據 */
+/* 思考文字每一輪都先收著(busyHoldReason),下面那顆文字鈕按了才出;左緣對齊收據 */
 .think-indicator.reason-held .think-reason { display: none; }
 .think-reason-show { display: block; margin: var(--space-4) 0 var(--space-4) 15px; }
 /* tick 條:一秒一格。最新那格在最右、滿墨,舊的按年齡退色並整條往左滑出
@@ -858,6 +872,12 @@ body.resizing * { cursor: col-resize !important; }
 .plan-bal .l { font-size: 12px; color: var(--ink-3); }
 .plan-bal .v { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .plan-bal .v.na { color: var(--ink-3); }
+/* 帳號與方案最上面那一組:帳號列＋訊息格＋餘額列。兩列同一個形(.plan-bal);細線由這一組帶、不由列帶——未登入只有一列時線還在。
+   組內列距 8、組底到細線 12、細線到方案內容 16(組內小於組間) */
+.plan-id { display: flex; flex-direction: column; gap: var(--space-8); padding-bottom: var(--space-12); margin-bottom: var(--space-16); border-bottom: 1px solid var(--border-hairline); }
+.plan-id .plan-bal { padding: 0; margin: 0; border: 0; }
+.plan-id .plan-bal .l { margin-right: auto; }
+.plan-id .cn-hint { margin: 0; }
 .plan-list{margin:0;padding:0;list-style:none}
 .plan-list li{position:relative;padding-left:var(--space-16);line-height:1.7;color:var(--ink)}
 .plan-list li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:1px;background:var(--ink-3)}
@@ -874,7 +894,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
 /* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 收起的細節;底列=一行跟錢有關的話 + 鈕 */
-.plan-pane .plan-scroll{padding:var(--space-24) var(--space-16) var(--space-16)}
+.plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
 .plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
@@ -885,21 +905,6 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}
-/* 設定 › 帳號:身分 + 登入 / 登出 + 登出會怎樣。錢的事(餘額、綁卡、方案)留在「資料與雲端方案」,這裡只給一行字與一顆「前往」。整頁沒有分隔線 */
-.acct-id{display:flex;align-items:center;gap:var(--space-12)}
-.acct-id .t{flex:1;min-width:0}
-.acct-id .a1{margin:0;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.acct-id .a2{margin:var(--space-2) 0 0;display:flex;align-items:center;gap:var(--space-6);font-size:12px;line-height:1.5;color:var(--ink-3)}
-.acct-id .a2.on{color:var(--ink-2)}
-.acct-id .a2 .dot{flex:none;width:7px;height:7px;border-radius:var(--radius-pill);background:var(--color-green)}
-.acct-id button{flex:none}
-#acct-hint{margin:var(--space-12) 0 0}
-.acct-list{margin:var(--space-16) 0 0;padding:0;list-style:none;max-width:52ch}
-.acct-list li{position:relative;padding-left:var(--space-12);font-size:12px;line-height:1.7;color:var(--ink-2)}
-.acct-list li+li{margin-top:var(--space-2)}
-.acct-list li::before{content:"";position:absolute;left:0;top:11px;width:6px;height:1px;background:var(--ink-3)}
-.acct-link{margin-top:var(--space-24);display:flex;align-items:center;gap:var(--space-12)}
-.acct-link p{margin:0;flex:1;min-width:0;font-size:12px;line-height:1.6;color:var(--ink-3)}
 
 /* 設定 › 模型接入:整頁 = 三選一。群組小標(12/400/--ink-3)→ 選項列(名稱 13/--ink,說明 12/--ink-3)→ 列尾(狀態 12 或一顆小框鈕)。
    「使用中」= 整列灰填 + 名稱加粗 + 列尾三個字(canon 的 Active:同左欄分類、側欄策略)。不畫線 */
@@ -939,6 +944,51 @@ body.resizing * { cursor: col-resize !important; }
 .del-body.lines p.cf-removed { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .del-body.lines p.cf-block { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--color-redText); }
 .del-body.lines p.cf-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+/* 下單確認框(confirmBox 的 choices / keep / details;Wei 0928 第 3 點 A 案,數值照設計師 mockup):
+   最上面的狀態句(主墨)→ 選項(radio,各帶後果)→ 常駐安全句 → 「細節」。兩顆鈕,框 480 */
+.del-modal.has-choices { width: min(480px, 92vw); }
+.del-modal.has-choices .del-body { min-height: 0; overflow-y: auto; }   /* 真錢第一次細節攤開、視窗又矮時:內文自己捲,兩顆鈕留在框裡 */
+.del-body.has-choices > p { margin: 0 0 var(--space-16); font-size: 13px; line-height: 1.6; color: var(--ink); }
+.cf-opts { margin: 0; padding: 0; border: 0; display: grid; gap: var(--space-8); min-width: 0; }
+.cf-opts legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* 選項列:視覺圓鈕 18;熱區整列(最矮 44) */
+.cf-opt {
+  position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-12);
+  padding: var(--space-12); min-height: 44px; border-radius: var(--radius-sm); background: var(--surface-field); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.cf-opt:hover, .cf-opt:has(input:checked) { background: var(--surface-muted); }
+.cf-opt input {
+  grid-row: 1 / 4; margin: 1px 0 0; width: 18px; height: 18px; appearance: none; -webkit-appearance: none;
+  border-radius: var(--radius-pill); border: 1px solid var(--border-frame); background: transparent; position: relative; cursor: pointer;
+}
+.cf-opt input:checked { background: var(--control-fill); border-color: var(--control-fill); }
+.cf-opt input:checked::after { content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill); background: var(--control-fill-text); }
+.cf-opt input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.cf-opt-t { font-size: 13px; font-weight: 500; line-height: 20px; color: var(--ink); }
+.cf-opt:has(input:checked) .cf-opt-t { font-weight: 600; }
+.cf-opt-d { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.cf-opt-w { margin-top: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 情境句:主墨,不用紅 */
+.cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
+.cf-opt.off:hover { background: var(--surface-field); }
+.cf-opt.off .cf-opt-t, .cf-opt.off .cf-opt-d { color: var(--ink-3); }
+.cf-opt.off input { border-color: var(--border-hairline); background: var(--surface-card); }
+.cf-keep { margin: var(--space-16) 0 0; padding: 0; list-style: none; }
+.cf-keep li, .cf-more-in li { position: relative; padding-left: var(--space-16); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+.cf-keep li::before, .cf-more-in li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
+/* 「細節」:視覺 12px 字＋7px chevron(.cv7);熱區高 32 */
+.cf-more { margin: var(--space-12) 0 0; }
+.cf-more summary {
+  position: relative; list-style: none; display: inline-flex; align-items: center; gap: var(--space-8); min-height: 24px;
+  font-size: 12px; line-height: 1; color: var(--ink-3); cursor: pointer; transition: color var(--motion-fast) var(--ease-standard);
+}
+.cf-more summary::-webkit-details-marker { display: none; }
+.cf-more summary::before { content: ""; position: absolute; left: calc(-1 * var(--space-4)); right: calc(-1 * var(--space-8)); top: -4px; bottom: -4px; }
+.cf-more summary:hover { color: var(--ink); }
+.cf-more-in { margin-top: var(--space-8); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--surface-field); display: grid; gap: var(--space-12); }
+.cf-more-in .lbl { display: block; margin-bottom: var(--space-2); font-size: 12px; font-weight: 600; line-height: 1.6; color: var(--ink-2); }
+.cf-more-in p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-2); }
+.cf-more-in ul { margin: 0; padding: 0; list-style: none; }
 /* 設定鈕右邊那行安靜的字 */
 .ws-more-note{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--ink-3);white-space:nowrap}
 .ws-more-note.up{color:var(--ink-2)}

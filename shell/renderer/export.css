@@ -106,6 +106,3 @@
 .msg.ai .xp-msg { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
 .msg.ai .xp-msg.soft { color: var(--ink-2); }
 .xp-st .br-spin { margin-right: var(--space-6); vertical-align: -1px; }
-/* 瀏覽器層訊息槽的兩行版(還沒看到策略 + 方案上限提示) */
-.slot-line.tv-2 { align-items: flex-start; line-height: 1.6; }
-.slot-line.tv-2 .ic { flex: none; margin-top: 3px; color: var(--ink); }

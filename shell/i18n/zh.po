@@ -13,7 +13,11 @@ msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
 msgid "cn.blave.descSet"
-msgstr "按用量從 Blave 餘額扣款。首次綁卡送 100 TWD 的 AI 額度。"
+msgstr "按用量從 Blave 餘額扣款。首次綁卡送 {q} TWD 的 AI 額度。"
+
+# 拿不到贈額數字時(離線、api 沒回)只講怎麼收錢那半句
+msgid "cn.blave.descSetNoNum"
+msgstr "按用量從 Blave 餘額扣款。"
 
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
@@ -208,6 +212,88 @@ msgstr "正在寫程式"
 
 msgid "act.need_user"
 msgstr "等你操作"
+
+# 展開的步驟清單:做完的步驟用完成式(對應 act.*;出錯的那一步不換)。缺 key 時畫面退回 act.*
+msgid "step.unknown"
+msgstr "處理"
+
+msgid "step.fail"
+msgstr "沒成功：{did}"
+
+msgid "step.search"
+msgstr "搜尋："
+
+msgid "step.web_read"
+msgstr "讀"
+
+msgid "step.web_read_many"
+msgstr "讀 {n} 個網頁"
+
+msgid "step.web_act"
+msgstr "操作"
+
+msgid "step.docs"
+msgstr "查說明文件"
+
+msgid "step.files"
+msgstr "找檔案"
+
+msgid "step.file_read"
+msgstr "讀"
+
+msgid "step.strategy_read"
+msgstr "讀策略"
+
+msgid "step.strategy_write"
+msgstr "寫策略"
+
+msgid "step.file_write"
+msgstr "改"
+
+msgid "step.data"
+msgstr "抓資料"
+
+msgid "step.backtest"
+msgstr "跑回測"
+
+msgid "step.live_tick"
+msgstr "跑策略"
+
+msgid "step.scan"
+msgstr "掃參數"
+
+msgid "step.validate"
+msgstr "驗證策略"
+
+msgid "step.check"
+msgstr "檢查策略碼"
+
+msgid "step.report"
+msgstr "組報告"
+
+msgid "step.watch"
+msgstr "更新看盤板"
+
+msgid "step.schedule"
+msgstr "設定排程"
+
+msgid "step.order"
+msgstr "下單"
+
+msgid "step.account"
+msgstr "查帳戶"
+
+msgid "step.status"
+msgstr "查執行狀態"
+
+msgid "step.install"
+msgstr "安裝套件"
+
+msgid "step.cloud"
+msgstr "連雲端主機"
+
+msgid "step.delegate"
+msgstr "委派研究"
 
 msgid "turn.busy"
 msgstr "上一輪還在跑。"
@@ -639,7 +725,7 @@ msgid "fault.checking"
 msgstr "這一輪沒有跑，正在確認帳號狀態。"
 
 msgid "set.cat.plan"
-msgstr "資料與雲端方案"
+msgstr "帳號與方案"
 
 msgid "plan.st.running"
 msgstr "已啟動 · 主機運行中"
@@ -972,16 +1058,13 @@ msgid "pv.e.sub.old"
 msgstr "之後資料在每月 {p} TWD 的 Blave Agent 雲端方案裡。"
 
 msgid "pv.e.unknown"
-msgstr "這台還拿不到 Blave 的資料。現在查不到帳號狀態，到「資料與雲端方案」重新查看。"
+msgstr "這台還拿不到 Blave 的資料。現在查不到帳號狀態，到「帳號與方案」重新查看。"
 
 msgid "pv.e.btn"
-msgstr "資料與雲端方案"
+msgstr "帳號與方案"
 
 msgid "cn.blave.signinSwitch"
 msgstr "登入並切換"
-
-msgid "set.cat.acct"
-msgstr "帳號"
 
 msgid "cn.blave.name"
 msgstr "Blave AI"
@@ -998,17 +1081,15 @@ msgstr "對話與策略都留在這台電腦，不受影響。"
 msgid "acct.out.3"
 msgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"
 
-msgid "acct.in.1"
-msgstr "登入之後才拿得到 Blave 的資料與雲端方案。"
+# 登出的確認框(登出鈕在「帳號與方案」最上面那一列;「登出會怎樣」按了才出)。acct.out.4 只在帳號有主機時出
+msgid "acct.cf.title"
+msgstr "登出 Blave？"
 
-msgid "acct.in.2"
-msgstr "登入不花錢，也不改你用的 AI。"
+msgid "acct.cf.ok"
+msgstr "登出"
 
-msgid "acct.toPlan"
-msgstr "餘額、綁卡與雲端方案在「資料與雲端方案」。"
-
-msgid "acct.toPlanBtn"
-msgstr "前往"
+msgid "acct.out.4"
+msgstr "登出不會停用雲端主機，主機費照扣。"
 
 msgid "acct.lbl"
 msgstr "Blave 帳號"
@@ -1227,14 +1308,8 @@ msgstr "暫停，不動部位"
 msgid "tr.stopFlat"
 msgstr "暫停並關閉部位"
 
-msgid "tr.startChoice"
-msgstr "「補齊部位」會立刻用市價把部位補到策略目前的訊號狀態——策略若已在場內，等於中途上車；「等新訊號」現在不下單，每條策略等它下次進場、出場或翻向才開始交易。"
-
 msgid "tr.startWarn1"
 msgstr "會重新開始送出真實委託，把策略的部位調到目前的目標。"
-
-msgid "tr.startOwnOnly"
-msgstr "只調整 Blave 自己那一份：第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
 
 msgid "tr.unmanaged"
 msgstr "不歸 Blave 管"
@@ -1242,17 +1317,65 @@ msgstr "不歸 Blave 管"
 msgid "tr.unmanagedTip"
 msgstr "這個部位不是 Blave 下單建立的，對帳不會動它。"
 
-msgid "tr.startWarn2"
-msgstr "策略跟權重在暫停期間照常更新，所以第一次對帳可能一次調整多個部位。"
-
 msgid "tr.startCatchUp"
 msgstr "啟動並補齊部位"
 
 msgid "tr.startWait"
 msgstr "啟動，等新訊號才進場"
 
-msgid "tr.means.l"
-msgstr "在這台電腦上跑，代表："
+# 啟動下單框(先選再按):兩個選項各帶後果(真錢版講「真實委託」)、常駐安全句、「細節」裡的小標
+msgid "tr.opt.legend"
+msgstr "啟動方式"
+
+msgid "tr.opt.catch"
+msgstr "補齊部位"
+
+msgid "tr.opt.catchDesc"
+msgstr "現在就用市價下單，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+
+msgid "tr.opt.catchDescReal"
+msgstr "現在就用市價送出真實委託，把部位調到策略目前的訊號，可能一次調整多個部位。策略已經在場內的話，等於中途上車。"
+
+msgid "tr.opt.catchStale"
+msgstr "Blave 關著時訊號沒有更新：現在補齊，用的可能還是關掉之前那一次的訊號，每支策略下一次排程跑完才會換新。"
+
+msgid "tr.opt.wait"
+msgstr "等新訊號"
+
+msgid "tr.opt.waitDesc"
+msgstr "現在不下單。每條策略等下一次進場、出場或翻向才開始交易。"
+
+msgid "tr.opt.waitDescReal"
+msgstr "現在不下單。每條策略等下一次進場、出場或翻向才送出真實委託。"
+
+msgid "tr.keep.sleep"
+msgstr "電腦睡眠、關機或結束 Blave 時不會下單，平倉與停損也不會執行。"
+
+# 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
+# tr.keep.ownBuilt 是暫定字(意思由後端依對帳邏輯定,字待設計師定稿)
+msgid "tr.keep.own"
+msgstr "只調整 Blave 自己那一份。"
+
+msgid "tr.keep.ownFirst"
+msgstr "只調整 Blave 自己那一份。同一個幣你已經有同方向的部位時，第一次對帳會把它算進來。"
+
+msgid "tr.keep.ownBuilt"
+msgstr "只調整 Blave 自己那一份：你自己開的部位不算 Blave 的，不會拿來抵策略的目標。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+
+msgid "tr.det.own"
+msgstr "哪些部位算 Blave 的"
+
+msgid "tr.det.ownRule"
+msgstr "第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+
+msgid "tr.det.local"
+msgstr "在這台電腦上跑"
+
+msgid "tr.det.cloud"
+msgstr "在雲端跑"
+
+msgid "cf.more"
+msgstr "細節"
 
 msgid "tr.means.1"
 msgstr "自動下單只在電腦醒著、Blave 開著、連得上網的時候跑。"
@@ -1264,7 +1387,7 @@ msgid "tr.means.2p"
 msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，模擬部位留著，不會自動平倉。"
 
 msgid "tr.means.3"
-msgstr "結束 Blave 再打開後，自動下單是暫停的，連平倉與停損都不會做，要按「啟動下單」才會繼續。睡眠醒來或網路恢復則照常繼續。"
+msgstr "結束 Blave 再打開後，自動下單是暫停的，要按「啟動下單」才會繼續。睡眠醒來或網路恢復則照常繼續。"
 
 msgid "tr.means.4"
 msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
@@ -1902,14 +2025,8 @@ msgstr "移除雲端主機上的交易所金鑰，下單機不再能用這個帳
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
 
-msgid "tr.cloud.means.l"
-msgstr "在雲端跑，代表："
-
 msgid "tr.cloud.means.1"
 msgstr "主機開著就照排程跑。這台電腦關機、闔蓋、沒網路，或把這個 app 關掉，都不影響。"
-
-msgid "tr.cloud.means.2"
-msgstr "要暫停，回到這一頁按「暫停下單」。"
 
 msgid "tr.cloud.means.3"
 msgstr "主機每個整點從餘額扣 {h} TWD，存在就扣。餘額低於 {m} TWD 會停機：下單跟著停，部位留在交易所。"
@@ -2792,9 +2909,6 @@ msgstr "策略正在用開機後的資料重算，算完才能補齊部位；算
 msgid "tr.orderFailedLastWhy"
 msgstr "上次下單失敗：{why}"
 
-msgid "tr.startWarn2Local"
-msgstr "Blave 關著的那段時間，策略沒有執行、訊號沒有更新。「補齊部位」會照現在算到的訊號下單，可能還是關掉之前那一次；每支策略下一次排程跑完才會換成最新訊號。想等最新訊號，選「等新訊號」。"
-
 msgid "tr.cloud.haltReasonUnconfirmed"
 msgstr "舊版下單程式可能還在跑。先按「檢查更新」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"
 
@@ -3394,7 +3508,7 @@ msgid "lib.buy.charge"
 msgstr "扣款並購買"
 
 msgid "lib.buy.noCard"
-msgstr "餘額不足，而且這個帳號還沒綁卡。到「設定 › 資料與雲端方案」綁卡後再回來買。"
+msgstr "餘額不足，而且這個帳號還沒綁卡。到「設定 › 帳號與方案」綁卡後再回來買。"
 
 msgid "lib.buy.inProgress"
 msgstr "這筆購買正在處理中，稍後再看一次結果。"
@@ -3911,7 +4025,7 @@ msgid "lib.gate.noBalance"
 msgstr "這一小時付不出資料費，agent 拿不到策略庫。儲值後馬上恢復。"
 
 msgid "lib.gate.unknown"
-msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「資料與雲端方案」重新查看。"
+msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「帳號與方案」重新查看。"
 
 msgid "br.h"
 msgstr "瀏覽器"
@@ -3921,6 +4035,12 @@ msgstr "agent 瀏覽中"
 
 msgid "br.readWord"
 msgstr "已讀"
+
+msgid "br.unread"
+msgstr "未讀"
+
+msgid "br.unread.stat"
+msgstr "載入正常，agent 沒讀這一頁"
 
 msgid "br.waiting"
 msgstr "等你操作"
@@ -3986,7 +4106,7 @@ msgid "br.need.submit"
 msgstr "要送出"
 
 msgid "br.need.captcha"
-msgstr "要過機器人檢查"
+msgstr "搜尋要過機器人驗證"
 
 msgid "br.need.file"
 msgstr "要選檔案"
@@ -3994,8 +4114,8 @@ msgstr "要選檔案"
 msgid "br.relay"
 msgstr "只停在轉址頁，沒有內容"
 
-msgid "br.notRead"
-msgstr "沒讀到"
+msgid "br.cantRead"
+msgstr "讀不了"
 
 msgid "br.youPress"
 msgstr "由你按"
@@ -4022,19 +4142,22 @@ msgid "br.ask.consent.h"
 msgstr "這一頁要你選 cookie 設定"
 
 msgid "br.ask.captcha.h"
-msgstr "要過機器人驗證"
+msgstr "搜尋要先過機器人驗證"
 
 msgid "br.ask.p"
 msgstr "帳密由你輸入；你操作時 agent 暫停、不讀這一頁。"
 
 msgid "br.ask.captcha.p"
-msgstr "驗證由你自己過，agent 不會代解。"
+msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了之後會自動接著搜尋。"
 
 msgid "br.ask.skip"
 msgstr "跳過"
 
 msgid "br.ask.ddg"
 msgstr "改用 DuckDuckGo"
+
+msgid "br.ask.noSearch"
+msgstr "這次不搜尋"
 
 msgid "br.ask.meLogin"
 msgstr "我來登入"
@@ -4047,6 +4170,9 @@ msgstr "我來選檔"
 
 msgid "br.ask.meVerify"
 msgstr "我來驗證"
+
+msgid "br.notif.captcha"
+msgstr "搜尋要先過機器人驗證，回到 Blave 按一下就能繼續。"
 
 msgid "br.dl"
 msgstr "已擋下載：{name} 沒有存到這台電腦。"
@@ -4071,6 +4197,10 @@ msgstr "本機位址、內網與非 http(s) 的網址一律不開。"
 
 msgid "br.openSystem"
 msgstr "用系統瀏覽器開"
+
+# 網址列右端那顆 icon 鈕的 tooltip(名稱用 br.openSystem)
+msgid "br.openSystem.tip"
+msgstr "用系統瀏覽器開這一頁。登入狀態不會帶過去，可能要再登入一次。"
 
 msgid "br.back"
 msgstr "返回"
@@ -4458,12 +4588,6 @@ msgstr "我的群益開通在電腦版卡在「讀取帳戶」這一步。請看
 
 msgid "br.openPanel"
 msgstr "看網頁"
-
-msgid "br.listShow"
-msgstr "展開清單"
-
-msgid "br.listHide"
-msgstr "收起清單"
 
 msgid "br.readDone"
 msgstr "已讀完"
@@ -4872,43 +4996,22 @@ msgid "tv.sending"
 msgstr "正在貼進 TradingView"
 
 msgid "tv.sentHint"
-msgstr "已貼進 Pine 編輯器。在頁面上按「加到圖表」跑完回測，再按「回傳回測結果」。"
-
-msgid "tv.read"
-msgstr "回傳回測結果"
-
-msgid "tv.reading"
-msgstr "讀取中…"
-
-msgid "tv.readAgain"
-msgstr "再次回傳結果"
-
-msgid "tv.returnedAt"
-msgstr "已於 {time} 回傳。"
-
-msgid "tv.returnedLoop"
-msgstr "在 TradingView 調完參數重跑，可以再回傳一次。"
+msgstr "已貼進 Pine 編輯器，「加到圖表」由你按。編譯沒過的話，把錯誤訊息貼到聊天，agent 可以修好再轉出一份。"
 
 msgid "tv.err.editor"
 msgstr "找不到 Pine 編輯器，TradingView 可能改了版面。"
 
-msgid "tv.err.compile"
-msgstr "TradingView 編譯沒過。"
-
-msgid "tv.err.closed"
-msgstr "策略測試器沒開，或圖上還沒加入策略。"
+msgid "tv.err.narrow"
+msgstr "中欄太窄，TradingView 在這個寬度不顯示 Pine 編輯器的入口。把中欄拉寬再試一次。"
 
 msgid "tv.err.busy"
-msgstr "agent 正在回覆，請稍候再回傳。"
+msgstr "agent 正在回覆，請稍候再試。"
 
 msgid "tv.err.unknown"
 msgstr "沒有送出去，請再試一次。"
 
 msgid "tv.planHint"
-msgstr "TradingView 免費與 Basic 方案一張圖最多 2 個指標或策略；「加到圖表」被擋下的話，先移掉圖上其他的再試。"
-
-msgid "tv.fix"
-msgstr "請 agent 修"
+msgstr "TradingView 免費與 Basic 方案一張圖最多 2 個指標或策略；被擋下的話，先移掉圖上其他的。"
 
 msgid "tv.agentPaste"
 msgstr "請 agent 貼"
@@ -4928,50 +5031,26 @@ msgstr "正在開 Pine 編輯器"
 msgid "tv.st.paste"
 msgstr "正在貼上 {id}"
 
-msgid "tv.st.wait"
-msgstr "等你按「加到圖表」"
-
-msgid "tv.st.check"
-msgstr "檢查結果"
-
-msgid "tv.st.done"
-msgstr "已加到圖表"
-
-msgid "tv.st.compile"
-msgstr "TradingView 編譯沒過"
-
 msgid "tv.st.nf"
 msgstr "找不到 Pine 編輯器"
-
-msgid "tv.st.reading"
-msgstr "正在讀策略測試器"
 
 msgid "tv.ho.h"
 msgstr "程式碼貼好了，「加到圖表」由你按"
 
 msgid "tv.ho.p"
-msgstr "貼在一支新的腳本裡，沒動到你原本的。按了之後 TradingView 可能要你登入、替腳本取名存檔——都在頁面上由你操作，你操作時這一頁不會被讀取。"
+msgstr "貼在一支新的腳本裡，沒動到你原本的。貼完之後這一頁不會再被讀取；登入、取名存檔都由你操作。"
 
 msgid "tv.ho.switch"
 msgstr "圖表的商品或週期沒有自動帶到。按「加到圖表」之前，先自己切成這支策略用的。"
-
-msgid "tv.done.h"
-msgstr "策略加到圖表了"
-
-msgid "tv.done.p"
-msgstr "策略測試器在圖表下方。"
-
-msgid "tv.cmp.h"
-msgstr "TradingView 編譯沒過"
-
-msgid "tv.cmp.p"
-msgstr "錯誤訊息在 Pine 編輯器下方。agent 可以讀錯誤、修好後重新轉出一份。"
 
 msgid "tv.nf.h"
 msgstr "找不到 Pine 編輯器"
 
 msgid "tv.nf.p"
 msgstr "TradingView 可能改了版面。可以請 agent 照畫面找，或下載檔案自己貼。"
+
+msgid "tv.nf.narrow.p"
+msgstr "中欄太窄時，TradingView 不顯示 Pine 編輯器的入口。把中欄拉寬（或把聊天欄收窄）之後再試一次。"
 
 msgid "tv.err.unsaved"
 msgstr "目前的腳本有未存的變更，請你在 TradingView 存檔或放棄後再試。"
@@ -4984,24 +5063,6 @@ msgstr "目前的腳本有未存的變更"
 
 msgid "tv.unsaved.p"
 msgstr "請你在 TradingView 存檔或放棄後再試。要存還是放棄由你決定，這裡不會替你按。"
-
-msgid "tv.notyet"
-msgstr "還沒看到策略在圖上。按了「加到圖表」、存好檔，再按「檢查結果」。"
-
-msgid "tv.msg.head"
-msgstr "TradingView 策略測試器的結果："
-
-msgid "tv.msg.line"
-msgstr "- {label}：{value}"
-
-msgid "tv.msg.empty"
-msgstr "（TradingView 沒有回傳可讀的數字。）"
-
-msgid "tv.msg.sent"
-msgstr "送出的版本：{filename}"
-
-msgid "tv.msg.fix"
-msgstr "{filename} 在 TradingView 編譯沒過，錯誤訊息：\n{lines}\n請修好後重新轉出。"
 
 msgid "tv.msg.paste"
 msgstr "用內建瀏覽器把策略 {id} 的 Pine 版貼進 TradingView 的 Pine 編輯器：開一支新的腳本貼，停在「加到圖表」讓我按。"

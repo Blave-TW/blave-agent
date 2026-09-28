@@ -144,7 +144,7 @@ function shlFlash(btn) {
   btn.textContent = t("shr.copied"); srSay(t("shr.copied"));
   btn._shlT = setTimeout(() => { if (btn.isConnected) btn.textContent = t("shr.copy"); }, SHL_FLASH_MS);
 }
-function shlToAcct() { setCat("acct"); const c = document.querySelector('.set-cat[data-set-cat="acct"]'); if (c) c.focus(); }
+function shlToAcct() { setCat("plan"); const c = document.querySelector('.set-cat[data-set-cat="plan"]'); if (c) c.focus(); }
 // 標題 = 打開那份報告:關設定、切到那一袋的視角、開閱讀頁。按了才發現不在 → 念一句(清單下次打開會更新)
 async function shlGo(row) {
   const env = shlSource(row) === "cloud" ? "cloud" : "local";

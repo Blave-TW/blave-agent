@@ -694,11 +694,147 @@ def _lang_hooks(options, reminder):
 # 「想要管理你的電腦」,指令掛在框上等人按(實測 4 分 33 秒),agent 接著叫用戶去開完整磁碟取用權限。
 # 只認「指令位置」上的那三個名字(開頭,或接在 ; & | ( ` $( 引號 換行之後;前面可以有 sudo / env 指派 /
 # timeout N / 路徑)——`grep crontab references/deployment.md` 是在讀文件,不擋。
-# 擋不到的:agent 自己寫的腳本裡呼叫它們(規則層在 AGENTS.md 與 references/deployment.md)。
+# 擋不到的:agent 自己寫進檔案的腳本裡呼叫它們(規則層在 AGENTS.md 與 references/deployment.md);
+# 直接餵給直譯器的 heredoc 腳本擋得到(sched_verdict)。
 _SCHED_CMD_RE = re.compile(
     r"""(?:^|[;&|(`\n"']|\$\()\s*"""
     r"(?:(?:sudo|command|exec|nohup|time|env)\s+|timeout\s+\S+\s+|[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
     r"(?:[^\s;&|()`\"']*[/\\])?(?:crontab|launchctl|schtasks)(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
+# 在這台電腦上不碰排程器;用戶自己的雲端主機可以(Wei 2026-09-28:先確認、只裝被要求的那一條,規則在
+# references/cloud-handoff.md)。所以守門要分得出「在這台電腦上執行」與「經 SSH 在雲端主機上執行」。判別從嚴:
+# 一行指令**整行**就是一個 `ssh <選項> <user>@<host> <遠端指令>`(可以帶一段 heredoc 當它的輸入)才算遠端——
+# 行上有管線、轉向、; && || & 、括號、$( ) 或反引號(那些是這台電腦的 shell 在跑),目的地是 localhost / 127.* /
+# 這台電腦的主機名,選項裡帶 ProxyCommand / LocalCommand 之類會在本機執行的東西,都不算。認不出來的一律當本機。
+_SCHED_ANY_RE = re.compile(r"crontab|launchctl|schtasks", re.I)   # 出現就算(只用在 ssh 與餵給直譯器的腳本,不用在一般指令)
+_SSH_FLAGS_ARG = frozenset("BbcDEeFIiJLlmOoPpQRSWw")    # 後面帶值的旗標(man ssh)
+_SSH_FLAGS = frozenset("46AaCfGgKkMNnqsTtVvXxYy")
+_INTERPRETER_RE = re.compile(r"^(?:python[\d.]*|sh|bash|zsh|dash|ksh|node|ruby|perl|osascript)$")
+_HEREDOC_RE = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def _local_host(host):
+    h = (host or "").strip("[]").lower().rstrip(".")
+    if not h or h in ("localhost", "::1", "0.0.0.0", "ip6-localhost") or h.startswith("127.") or h.endswith(".localhost"):
+        return True
+    try:
+        import socket
+        me = socket.gethostname().lower().rstrip(".")
+    except Exception:
+        me = ""
+    short = me.split(".")[0]
+    return bool(me) and h in (me, short, short + ".local", short + ".lan")
+
+
+def _shell_statements(cmd):
+    """一段 shell 指令 → [{text, body, plain}]:在引號與 heredoc 之外的換行切開;heredoc 的內文跟著開它的那一行。
+    plain = 這一行在引號外沒有任何 shell 運算子(| & ; ( ) < > 反引號 $( ),只准一個 heredoc)。引號沒收尾 → None(認不出來)。"""
+    out, i, n = [], 0, len(cmd)
+    text, plain, pending = [], True, []
+    while i <= n:
+        c = cmd[i] if i < n else "\n"
+        if c == "\n":
+            body = None
+            for delim in pending:   # 內文:到只有 delimiter 的那一行為止
+                end = re.compile(r"^[ \t]*" + re.escape(delim) + r"[ \t]*$", re.M).search(cmd, i + 1)
+                if not end:
+                    return None
+                body = (body or "") + cmd[i + 1:end.start()]
+                i = end.end()
+            if "".join(text).strip():
+                out.append({"text": "".join(text), "body": body, "plain": plain and len(pending) <= 1})
+            text, plain, pending = [], True, []
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            text.append(cmd[i:i + 2]); i += 2
+            continue
+        if c == "'":
+            j = cmd.find("'", i + 1)
+            if j < 0:
+                return None
+            text.append(cmd[i:j + 1]); i = j + 1
+            continue
+        if c == '"':
+            j = i + 1
+            while j < n and cmd[j] != '"':
+                if cmd[j] == "\\":
+                    j += 1
+                elif cmd[j] == "`" or cmd.startswith("$(", j):
+                    plain = False   # 雙引號裡的指令替換是這台電腦的 shell 在跑
+                j += 1
+            if j >= n:
+                return None
+            text.append(cmd[i:j + 1]); i = j + 1
+            continue
+        m = _HEREDOC_RE.match(cmd, i) if c == "<" else None
+        if m:
+            pending.append(m.group(2)); text.append(m.group(0)); i = m.end()
+            continue
+        if c in "|&;()<>`" or cmd.startswith("$(", i):
+            plain = False
+        text.append(c); i += 1
+    return out
+
+
+def _ssh_remote_only(st):
+    """這一行是不是整行只有一個送到別台主機的 ssh(見上面那段判別)。"""
+    if not st["plain"]:
+        return False
+    try:
+        words = shlex.split(_HEREDOC_RE.sub(" ", st["text"]), posix=True)
+    except ValueError:
+        return False
+    if not words or words[0] != "ssh":
+        return False
+    i = 1
+    while i < len(words) and words[i].startswith("-") and words[i] != "--":
+        w = words[i]
+        if len(w) < 2:
+            return False
+        if w[1] in _SSH_FLAGS_ARG:
+            val = w[2:] if len(w) > 2 else (words[i + 1] if i + 1 < len(words) else None)
+            if val is None or re.search(r"command|exec", val, re.I) or _SCHED_ANY_RE.search(val):
+                return False   # ProxyCommand / LocalCommand / KnownHostsCommand / Match exec:在這台電腦上執行
+            i += 1 if len(w) > 2 else 2
+        elif all(ch in _SSH_FLAGS for ch in w[1:]):
+            i += 1
+        else:
+            return False
+    if i >= len(words) or words[i] == "--":
+        return False
+    user, at, host = words[i].rpartition("@")
+    if not at or not user or not re.match(r"^[A-Za-z0-9_.:\[\]-]+$", host) or _local_host(host):
+        return False
+    return len(words) > i + 1 or st["body"] is not None   # 有遠端指令,或內文就是送過去的輸入
+
+
+def sched_verdict(cmd):
+    """這段指令會不會在這台電腦上叫系統排程器。None = 不會(放行);"local" = 會;"form" = 看起來是要送到
+    別台主機、但寫法讓 runtime 分不出來(行上還有別的東西 / 目的地可疑)——理由另外講。純函式,tests/check_desktop_sched_guard.py。"""
+    sts = _shell_statements(cmd)
+    if sts is None:
+        return "local" if _SCHED_CMD_RE.search(cmd) or (cmd.split()[:1] == ["ssh"] and _SCHED_ANY_RE.search(cmd)) else None
+    verdict = None
+    for st in sts:
+        if _ssh_remote_only(st):
+            continue
+        body = st["body"] or ""
+        first = re.sub(r"^(?:\s*(?:sudo|command|exec|nohup|time|env)\s+|\s*[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*", "", st["text"]).split()
+        ssh = bool(first) and first[0] == "ssh"
+        fed = bool(first) and (ssh or _INTERPRETER_RE.match(os.path.basename(first[0])))
+        hit = (_SCHED_CMD_RE.search(st["text"]) or _SCHED_CMD_RE.search(body)
+               or (fed and _SCHED_ANY_RE.search(body))                  # 餵給直譯器 / ssh 的腳本裡提到排程器
+               or (ssh and _SCHED_ANY_RE.search(st["text"])))           # 沒被認成遠端的 ssh:提到就擋
+        if not hit:
+            continue
+        dest = next((w for w in first[1:] if "@" in w and not w.startswith("-")), "") if ssh else ""
+        if ssh and dest and not _local_host(dest.rpartition("@")[2].strip("\"'")):
+            verdict = verdict or "form"
+        else:
+            return "local"
+    return verdict
+
+
 # 給模型看的拒絕理由:只講事實與該做什麼,不給可以照抄的成品句(見下面「逐輪規則寫法」那條)
 SCHED_DENY_REASON = (
     "Refused by the Blave runtime — this is the desktop app, where the agent never touches the operating "
@@ -707,7 +843,20 @@ SCHED_DENY_REASON = (
     "tool) and do not tell the user to change any system permission. What holds here: Type A/C strategies go "
     "live from the app's 自動下單 page (the user presses 啟動下單; the app schedules them itself); a Type B "
     "strategy cannot run on a schedule on this computer — say so plainly and offer the two ways out (send it "
-    "to their cloud machine, or run it once by hand now). Details: references/deployment.md › Desktop app."
+    "to their cloud machine, or run it once by hand now). Details: references/deployment.md › Desktop app. "
+    "A schedule on the user's own cloud machine is a separate matter with its own steps "
+    "(references/cloud-handoff.md › A schedule on the cloud machine)."
+)
+# 看起來是要送到雲端主機、但寫法讓 runtime 分不出來:講清楚哪一種寫法才認得(那是同一件事的正確寫法,不是換方法繞)
+SCHED_DENY_REASON_FORM = (
+    "Refused by the Blave runtime — this command names the system scheduler, and the way it is written the "
+    "runtime cannot tell that it runs only on the user's cloud machine. The scheduler of this computer is never "
+    "touched. A schedule on the cloud machine, once the user has confirmed it (references/cloud-handoff.md › "
+    "A schedule on the cloud machine), is sent as ONE plain command and nothing else in the call: `ssh`, the "
+    "options of step 2, `blaveagent@<host>`, then the remote command in one pair of quotes — a quoted heredoc as "
+    "its input is fine. Outside that remote command: no pipe, no redirect, no `;` `&&` `||`, no `$(…)` or "
+    "backticks, no second command, never `localhost`. If that is not what this was, tell the user plainly what "
+    "was refused and stop — do not look for another way to get it done."
 )
 
 
@@ -715,10 +864,12 @@ def _sched_guard_hooks(options):
     """PreToolUse:Bash 指令要叫系統排程器就拒絕,理由回給模型(它不會掛在系統框上,也知道接下來怎麼講)。"""
     async def guard(input_data, _tool_use_id, _context):
         cmd = ((input_data or {}).get("tool_input") or {}).get("command")
-        if not isinstance(cmd, str) or not _SCHED_CMD_RE.search(cmd):
+        verdict = sched_verdict(cmd) if isinstance(cmd, str) else None
+        if not verdict:
             return {}
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                       "permissionDecisionReason": SCHED_DENY_REASON}}
+                                       "permissionDecisionReason": SCHED_DENY_REASON_FORM if verdict == "form"
+                                       else SCHED_DENY_REASON}}
 
     return _add_hook(options, "PreToolUse", "Bash", guard)
 
@@ -2974,7 +3125,8 @@ def mcp_rule(mounted):
         "Never let a key or secret value into the chat, a log or a command line. "
         "Never read, print, copy or summarise the MCP configuration or its access code, and never write SSH keys "
         "or certificates outside `tmp/cloud-handoff/` in the workspace — delete that folder before the turn ends, "
-        "and never mention that folder, the connection or the cleanup in the reply.\n"
+        "and never mention that folder, the connection or the cleanup in the reply: its first sentence is about "
+        "what the user asked for.\n"
     )
 
 

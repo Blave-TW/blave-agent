@@ -12,6 +12,8 @@
   #102 範本報告照 describe() 寫,不先讀 91KB 的 reports.md / lib 原始碼;browser_wait 不連等;同一個連結不放兩則新聞。
   #90 tmp/ 自己寫的一次性腳本回覆前刪掉,不拿 tmp/ 裡的舊腳本當範例。
   第五批:#133 台股免費路徑先估時間先講;改參數時 DESCRIPTION 與檔頭一起改;內建瀏覽器關著不上網;資料費 2 TWD。
+  第七批:#143 #167 回覆裡的時間換成用戶的時區並標明;#148 被要求上線時先講最近一次回測對比基準的結果。
+  第七批:開了就讀(實測開 6 頁只讀 3 頁,中時與鉅亨三頁開了沒讀);新聞與數字先讀媒體或官方原文,論壇貼文 / 轉述 / 聚合頁要標明。
 
 跑法:cd blave-agent && python3 tests/check_reply_rules_018.py
 """
@@ -105,7 +107,62 @@ t("L 只做被要求的那一件:確認的問題要列出會裝的每一樣(含�
   and "**Every route onto the machine asks the same question.**" in dep and "as part of what the user confirmed" in dep)
 t("N 收尾不進回覆:不當開頭也不當結尾,連線關閉、刪暫存都算;runtime 每輪的規則也講了", "not as its first line, not as its last" in style and "closing a connection" in style
   and "never mention that folder, the connection or the cleanup in the reply" in read("runtime", "agent_turn.py"))
+# 0.1.8 開發版:規則 N 上線後回覆仍以「cloud-handoff 資料夾已刪除、連線已關閉。」開頭。規則不引用要禁的成品句(模型會照抄),改講回覆第一句該是什麼
+t("N 規則不引用要禁的句子,改講正面的:回覆第一句講用戶要的事(AGENTS.md、runtime 每輪規則)", "清理完成" not in style and "連線已關閉" not in style
+  and "the first sentence is about what the user asked for" in style
+  and "what the user asked for.\\n" in read("runtime", "agent_turn.py"))
+t("被 runtime 拒絕的動作不換寫法重試;雲端主機的排程另有規則(AGENTS.md › Desktop app)", "**What the runtime refused stays refused:**" in read("AGENTS.md")
+  and "never reword the command, wrap it in a script or switch tools" in read("AGENTS.md") and "*A schedule on the cloud machine*" in read("AGENTS.md"))
+t("從電腦版操作雲端主機:只裝被要求的那一條,不順帶裝健康檢查", "never the health check beside it" in dep and "「做好就排程上線」" in dep)
 t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "**Say it in the user's words, not the machine's:**" in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
+
+# 第七批
+flow = section(br, "## Standard flow")
+news = section(read("references", "reports.md"), "### News")
+tools_js = read("shell", "browser", "tools.js")
+open_many = [l for l in tools_js.splitlines() if 'name: "browser_open_many"' in l]
+desc = "\n".join(read("lib", "report_templates.py").split("def describe", 1)[-1].split("def load_pack")[0].splitlines())
+t("開了就讀:browser.md 標準流程、reports.md 新聞段、describe() 的清單、browser_open_many 的工具說明四處都寫了(做報告一定會讀到後兩處)",
+  "**Open only the pages you are going to read, and read every page you opened.**" in flow and "`browser_close` it" in flow
+  and "**Open what you will read, read what you opened**" in news
+  and "browser_open_many 只開打算讀的頁,開了的每一頁都要讀,不讀的不要開" in desc
+  and len(open_many) == 1 and "Open only pages you are going to read, and read every page you opened" in open_many[0])
+t("來源優先序:先讀媒體或官方原文;論壇貼文、轉述、聚合頁只在找不到原文時用,報告裡標明是轉述(新聞來源名加「（轉述）」、註腳寫「轉述自」)",
+  "**News and numbers: the original first.**" in flow and "only when the original cannot be found or opened" in flow
+  and "**The original first; second-hand is marked**" in news and "`（轉述）`" in news and "`轉述自 <who>`" in news and "「據…轉述」" in news
+  and "論壇貼文、轉述、聚合頁只在找不到原文時用,來源名後面加「（轉述）」" in desc
+  and "Prefer the original article or the official page to a forum post, a repost or an aggregator" in open_many[0])
+
+# 第七批 #5B:研究 / 自訂報告開工前不翻文件(實測 09-28:前 3 分多鐘、15 次在讀 reports.md 各段與 lib 原始碼)
+import contextlib, inspect, io
+sys.path.insert(0, ROOT)
+from lib import report_templates as RT, report_bricks as RB
+with contextlib.redirect_stdout(io.StringIO()) as _out:
+    qs = RT.quickstart()
+sig = lambda f, drop=(): "(" + ", ".join(str(p) for n, p in inspect.signature(f).parameters.items() if n not in drop) + ")"
+t("#5B quickstart():順序寫死(先搜尋、同時可以抓 Blave 資料 → 組資料包 → 寫判讀),配方形狀、每一塊積木與參數、research_pack / build / publish 的簽名都印出來,而且取自程式(不會落後)",
+  qs == _out.getvalue().rstrip("\n") and "ORDER (fixed)" in qs and qs.index("1. Search the web") < qs.index("2. Build the data pack once") < qs.index("3. print(pack.describe())") < qs.index("4. publish")
+  and "Blave data may be fetched in the same step" in qs
+  and all(f"  {name}{sig(fn, ('b',))} : " in qs for name, fn in RB.BRICKS.items()) and len(RB.BRICKS) >= 20
+  and all(f"{f.__name__}{sig(f)}" in qs for f in (RT.research_pack, RT.build, RT.publish)) and ", ".join(RT.RESEARCH_TOPICS) in qs and '"bricks": [["price_chart"' in qs)
+t("#5B quickstart() 夠短(一個畫面讀得完:60 行、6,000 字以內),講明不先讀 reports.md / lib 原始碼、不 grep 簽名;沒有積木的數字去哪裡找",
+  len(qs.splitlines()) <= 60 and len(qs) <= 6000 and "Not first: references/reports.md, lib source, a grep for a signature" in qs and "Look once in references/lib.md" in qs and "not in lib source" in qs)
+rep = read("references", "reports.md")
+top = rep.split("\n## ")[0]
+custom = [l for l in agents.splitlines() if l.startswith("- **A request that names a template")]
+t("#5B 規則:AGENTS › Reports 的自訂報告那一句改成從 quickstart() 開始(不再只指到 §1b › Custom recipes);reports.md 第一段與 Custom recipes 一節都寫「不要先讀這份」",
+  len(custom) == 1 and "start from `python3 -c \"from lib.report_templates import quickstart; quickstart()\"`" in custom[0] and "a research report on a topic rather than one instrument included" in custom[0]
+  and "never grep source for a signature" in custom[0] and "(§1b › Custom recipes), never hand-fetched numbers" not in custom[0]
+  and "**Building a report in chat? Do not read this file first.**" in top and top.index("Do not read this file first") < 400 and "search the web" in top and "Never grep lib source for a signature" in top
+  and "**Start from `quickstart()`, not from this file.**" in section(rep, "### Custom recipes"))
+
+t("#143 #167 時間:回覆、表格、報告裡的時間一律換成用戶的時區並標明;不寫其實是 UTC 的「今天 21:34」,不出「時間(UTC)」欄(AGENTS › Response Style,一句)",
+  len([l for l in style.splitlines() if l.startswith("- **Clock times are the user's, and say whose:**")]) == 1 and "converted to the user's timezone" in style and "named once" in style
+  and "never a bare 「今天 21:34」 that is really UTC" in style and "no 「時間(UTC)」 column unless the user asked for UTC" in style)
+live_rule = [l for l in agents.splitlines() if l.startswith("**Asked to put a strategy live, say first how its latest backtest did against its benchmark**")]
+t("#148 被要求上線:先講這支最近一次回測對比基準的結果,尤其輸給持有或沒過顯著性;決定權在用戶(AGENTS › Strategy Deployment,一句)",
+  len(live_rule) == 1 and "trailed buy-and-hold or did not pass significance" in live_rule[0] and "The decision stays the user's" in live_rule[0]
+  and agents.index(live_rule[0]) > agents.index("## Strategy Deployment") and agents.index(live_rule[0]) < agents.index("## Examples"))
 
 if fails:
     sys.exit(f"{len(fails)} failed")
