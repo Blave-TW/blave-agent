@@ -134,6 +134,8 @@
   font-weight: 400;
   color: var(--ink-3);
   margin-left: var(--space-4);
+  /* .rb-report 整份是 overflow-wrap: anywhere:格子放不下時單位整顆換行,不從字中間斷成「U／SDT」 */
+  white-space: nowrap;
 }
 /* delta 走值下方第三行(值=現況、delta=變化,兩件事不同排),因此退出寬度計算;
    一格一個色訊號:有 delta 時色在 delta、值是墨色(見下方 .rb-kpi-delta.rb-up/.rb-dn) */
