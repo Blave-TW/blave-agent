@@ -368,6 +368,9 @@ msgstr "No backtest data for this strategy."
 msgid "tr.empty"
 msgstr "This strategy has no entries or exits."
 
+msgid "tr.emptyPf"
+msgstr "A portfolio strategy shifts the weights of a basket at each rebalance, so there is no trade-by-trade record. The number of trades is under Backtest."
+
 msgid "tr.chartError"
 msgstr "Couldn't draw the chart. The entries and exits below are still available."
 

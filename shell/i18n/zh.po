@@ -368,6 +368,9 @@ msgstr "這支策略沒有回測資料。"
 msgid "tr.empty"
 msgstr "這支策略沒有進出場紀錄。"
 
+msgid "tr.emptyPf"
+msgstr "組合策略每次再平衡調的是一籃子標的的權重，沒有逐筆進出場紀錄；成交次數在「回測數據」。"
+
 msgid "tr.chartError"
 msgstr "圖表畫不出來，下方的進出場紀錄仍可查看。"
 
