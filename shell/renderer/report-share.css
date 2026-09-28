@@ -58,5 +58,3 @@
 .shr-tos { flex-basis: 100%; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
 /* 條款連結:坐在一句話裡的安靜連結——ink + 常駐底線(同 mockup .dt-tlnk);開系統瀏覽器 */
 .shr-tlnk { padding: 0; margin: 0; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-/* api 拒收時指名的那一欄(英文原句):訊息槽裡第二行,可以選起來複製給 agent */
-.shr-detail { display: block; margin-top: var(--space-2); color: var(--ink-2); overflow-wrap: anywhere; user-select: text; }

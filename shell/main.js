@@ -1436,7 +1436,7 @@ function shareClient() {
   const RS = require("./reportshare");
   if (!_share) _share = RS.createShareClient({
     apiBase: API_BASE, post: (u, b) => postJSON(u, b, /\/share\/(publish|update)$/.test(u) ? { timeout: SHARE_UPLOAD_TIMEOUT_MS } : undefined), readLocal: reportForShare,
-    logError: rptLogError, store: RS.createShareStore(path.join(BASE, "state", "report-shares.json")),
+    logError: rptLogError, log: (m) => console.error("[share] " + m), store: RS.createShareStore(path.join(BASE, "state", "report-shares.json")),
     getCreds: () => { const token = loadToken(); return token ? { token, appSecret: loadAppSecret() } : null; },
   });
   return _share;

@@ -3921,6 +3921,10 @@ msgstr "公開失敗。公開與更新需要機器在執行中，請稍後再試
 msgid "shr.notShareable"
 msgstr "這份報告目前不能公開。"
 
+# 第八批 #2(Wei 0928):api 以 400 / 413 拒收內容。暫定字,待設計師確認
+msgid "shr.badContent"
+msgstr "這份報告的內容有一處格式問題，現在不能公開。請在聊天裡請 agent「重新整理這份報告」，整理好再公開。"
+
 # api 507 IMAGE_QUOTA / 429:spec 沒給字,待設計師確認
 msgid "shr.quota"
 msgstr "這個帳號的圖片空間已滿，這份報告沒有公開。"

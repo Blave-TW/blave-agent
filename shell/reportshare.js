@@ -36,7 +36,7 @@ function failCode(res, op) {
   // update / revoke 的 404 = 這份沒公開;publish 的 404 = 雲端平台上沒有這份報告
   if (res.status === 404) return op === "publish" ? "NOT_SHAREABLE" : "NOT_PUBLIC";
   if (res.status === 400 && b.error_code === "NO_DISPLAY_NAME") return "NO_DISPLAY_NAME";
-  return "NOT_SHAREABLE";   // 其餘 400 / 413:報告過不了 api 的驗證器,重送也一樣
+  return "BAD_CONTENT";   // 其餘 400 / 413:報告的內容過不了 api 的驗證器,重送也一樣(422 / 404 是「這一份不能公開」,另一句)
 }
 /* 上限(share/state、share/list 的頂層四欄;LIVE_LIMIT / DAILY_LIMIT 的 limit):不是非負整數就當沒給,畫面不出數字 */
 const count = (v) => (Number.isInteger(v) && v >= 0 && v <= 100000 ? v : null);
@@ -55,15 +55,17 @@ function cleanListRow(r) {
     sourceExists: r.origin === "cloud" && typeof r.source_exists === "boolean" ? r.source_exists : null };   // null = 不知道(desktop 袋,或 api 讀不到雲端索引)
 }
 
-/* api 拒收時回的那一句(帶欄位路徑,例 blocks[3].source.url: must be an https URL)→ 給畫面與 upload_errors.log 的一行。
-   本機報告到分享這一刻才第一次過 api 的驗證器(電腦版不跑 report_uploader),這一句丟掉的話用戶與 agent 都不知道錯在哪 */
+/* api 拒收時回的那一句(英文、帶欄位路徑,例 blocks[3].source.url: must be an https URL)→ 只進 log:本機報告寫
+   reports/upload_errors.log(agent 用 lib.report.status(id) 讀得到),兩種視角都寫主行程的 log。畫面不顯示它(Wei 0928):
+   那是給產報告的 agent 讀的字,用戶看到的是 shr.badContent 那一句與出口。
+   本機報告到分享這一刻才第一次過 api 的驗證器(電腦版不跑 report_uploader),這一句丟掉的話 agent 不知道錯在哪 */
 const DETAIL_MAX = 300;
 function failDetail(res) {
   const b = res && res.body && typeof res.body === "object" ? res.body : {};
   const raw = typeof b.error === "string" && b.error ? b.error : typeof b.error_code === "string" ? b.error_code : "";
   return raw.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, DETAIL_MAX);
 }
-const DETAIL_CODES = ["NOT_SHAREABLE", "IMAGE_QUOTA"];
+const DETAIL_CODES = ["BAD_CONTENT", "NOT_SHAREABLE", "IMAGE_QUOTA"];
 
 /* 尾註 id 重複(0.1.7 的 lib 在「台股大盤積木 + 任何帶來源句的積木」時會寫出兩條 src)api 一律拒收。已經在磁碟上的報告
    不重做也要能公開:送出的那一份先併好。只動送出的那份、不改檔——檔的 mtime 是「公開後改過沒有」的依據,主行程改檔會讓
@@ -123,7 +125,7 @@ function createShareStore(file) {
 
 /* opts:{ apiBase, post(url, body) → Promise<{status, body}>, getCreds() → { token, appSecret } | null,
           readLocal(id) → { report, images: { 檔名: base64 }, mtime } | null,
-          logError(id, message)(選用:本機報告被 api 拒收時寫 reports/upload_errors.log),
+          logError(id, message)(選用:本機報告被 api 拒收時寫 reports/upload_errors.log),log(message)(選用:主行程的 log),
           store(選用:createShareStore) } */
 function createShareClient(opts) {
   const withMtime = (view, id, share) => (view === "local" && share && opts.store ? Object.assign(share, { local_mtime: opts.store.get(id, share.code) }) : share);
@@ -180,7 +182,8 @@ function createShareClient(opts) {
       if (code !== "OK") {
         const detail = DETAIL_CODES.indexOf(code) >= 0 ? failDetail(res) : "";
         if (detail && view === "local" && opts.logError) { try { opts.logError(id, "share refused (" + res.status + "): " + detail); } catch (_) { /* 寫不了不擋 */ } }
-        return detail ? { code, detail } : { code };
+        if (detail && opts.log) { try { opts.log(view + " " + id + ": share refused (" + res.status + "): " + detail); } catch (_) { /* 同上 */ } }
+        return { code };
       }
       const share = cleanShare(res.body && res.body.share);
       return share ? done(share) : { code: "UNREACH" };
