@@ -2211,6 +2211,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  quitOnSignals(process, () => app.quit());
   startImageServer();
   // 上一次回合中途 crash 留下的 MCP 設定檔(裡面是一顆可能還沒過期的接入碼):開 app 就清。
   // 只有拿到單一實例鎖的那一份做(稽核 S1,同 :syncOfficialOnUpdate):第二份 app 在結束前也會走到這裡,
@@ -2785,6 +2786,16 @@ app.on("browser-window-created", (_e, win) => {
     if (trading && !hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
   });
 });
+/* 結束訊號(SIGTERM / SIGINT / SIGHUP:kill、登出與關機、終端機 Ctrl+C)每一次都走 app.quit(),也就是每一次都過 before-quit 的攔截。
+   不自己接的話 Chromium 的處理只管第一次:它收到一次訊號就把處理還原成系統預設,第一次被攔下(用戶按了取消)之後,
+   第二次訊號直接殺掉行程——沒有框、daemon 沒收工、事件清單也沒記(實測 09-28)。要在 ready 之後掛:Chromium 的處理是啟動時裝的,
+   後掛的才算數。Windows 沒有這幾個訊號的同等語意,不掛。tests/check_shell_quit_again.js 從原文切出來跑 */
+function quitOnSignals(proc, quit) {
+  if (proc.platform === "win32") return [];
+  const sigs = ["SIGTERM", "SIGINT", "SIGHUP"];
+  for (const s of sigs) proc.on(s, () => quit());
+  return sigs;
+}
 // 結束前先讓 daemon 收工(對帳器要先撤掉自己掛在交易所的限價單);最多等 9 秒,之後不管怎樣都走。
 // 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
 let quitting = false;
