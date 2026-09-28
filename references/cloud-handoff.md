@@ -4,6 +4,7 @@ This file covers everything you do over the `blave` MCP + SSH connection to the 
 
 - **Handoff** — moving a strategy between this computer and the cloud machine. The numbered procedure, steps 1–8.
 - **Anything else the user asked for in this conversation** — running something there, reading a file or a result, fixing a strategy that lives there. The unnumbered section after the Preconditions.
+- **A schedule on the cloud machine** — putting one strategy the user named on a timetable there, after they confirmed. Section *A schedule on the cloud machine*, S1–S6.
 - **A report asked for from the cloud view** — built and published on the cloud machine. Section *Reports asked from the cloud view*, R1–R6.
 - **Updating the cloud machine** — only when the user asks for it. Section *Updating the cloud machine*, U1–U9.
 
@@ -73,7 +74,18 @@ Everything the user can do on that machine through their own agent, you may do f
    ```
    The "before" numbers come from the script that did the item 3 checks; the "after" ones from the fresh `stats.json` (step 6).
 5. **What that machine's own agent must confirm first, you confirm first too.** Anything its `references/deployment.md` puts behind a question (「要上線嗎？回覆 YES 確認」 — deploying, scheduling) gets that same question from you, naming everything it would put on the machine, and you act on the user's next message only. Being asked from the desktop skips nothing, and a request that already names the schedule is the request, not the YES.
-6. Report what you actually did on that machine — what changed and the numbers as read, in the user's words (`AGENTS.md` › Response Style: no file names, flags or cron syntax) — and name the machine, so the user is never left guessing which side a result came from. Then **step 8**: close the connection and delete `tmp/cloud-handoff`, every time, including after a failure. Step 8 is not part of the report: the reply never says it happened.
+6. **Step 8 first, then the reply.** When the work is done — or has failed — run step 8, every time. Then write the reply: what you actually did on that machine — what changed and the numbers as read, in the user's words (`AGENTS.md` › Response Style: no file names, flags or cron syntax) — naming the machine, so the user is never left guessing which side a result came from. Step 8 is not part of the report: the reply never says it happened. Its first sentence is about what the user asked for.
+
+## A schedule on the cloud machine
+
+From the cloud view the user may ask you to put a strategy on a schedule on their cloud machine (「把 `<name>` 排程上線，每小時跑一次」). You may do it — **on the cloud machine only, for the one strategy they named, after they confirmed.** It is general work: everything in *Anything else* binds (Preconditions, step 2, that machine's own `AGENTS.md`, step 8). This computer's scheduler is never touched, whatever the view (`references/deployment.md` › *Desktop app*).
+
+- **S1. What can be scheduled from here.** A Type B strategy that lives on the cloud machine and whose code places no order: run the step 6B script on it in mode `check`; `can_order: true` → it is not scheduled from here — a timetable for code that can place an order is going live with money (**NEVER** list) — say so in one sentence and stop. Type A / C never get a schedule from you: they go live from that machine's 自動下單 page, by the user's own hands.
+- **S2. Ask first — every time, also when the request already said it.** 「做一支…，做好就排程上線，每小時跑一次」 names the schedule inside the request; it is not the confirmation. Build it, run it once, say what the run showed — and then ask, restating the one thing you would put on the machine in the user's words: which strategy, how often. Act on the user's next message only; anything but a yes → nothing is scheduled.
+- **S3. One schedule, nothing beside it.** That strategy at that cadence, written the way that machine's own `references/deployment.md` › *Type B* gives the schedule for its OS (read it there). No health-check schedule, no environment line, no second strategy, no tidying of what is already there — the lines that were there stay byte for byte. A machine with no health check is a finding for the reply, one sentence; it is added only when the user then asks for it, confirmed the same way. Taking a schedule off at the user's request follows the same steps: ask, that one line, read back.
+- **S4. How it is sent.** The runtime lets a scheduler command through only when the whole call is one plain `ssh <SSH_OPTS> blaveagent@<host> "<remote command>"` — a quoted heredoc as its input is fine, nothing else in the call. Afterwards read the schedule back the same way: the new line is there once, the others unchanged.
+- **S5. A refusal is an answer.** When the runtime refuses a command, read its reason. If it names the form to use, that is the same action written correctly — send it that way, once. Otherwise stop: no rewording, no script around it, no split word, no other tool — tell the user in plain words what could not be done.
+- **S6. Report in the user's words.** What now runs and how often (「已排好：`<name>` 每小時整點跑一次」), what its next run will do, and any finding. No cron syntax, no file names. Never hand the user a schedule line to add themselves and never send them to a terminal: if it was not scheduled, say that it is not scheduled and why.
 
 ## Reports asked from the cloud view
 
@@ -517,7 +529,7 @@ print(json.dumps(out, ensure_ascii=False))
 
 ## 6C. A handoff never puts anything on a schedule
 
-The turn that moves a strategy ends with step 7B's closing sentence and schedules nothing, on either side, whatever the strategy does. If the user later asks for it to run on a schedule, that is a request of its own: it is handled like any other work on that machine (*Anything else the user asked for on the cloud machine* — its confirmation rule included) and under the **NEVER** list. Never tell the user where else to go for it, and never promise it in advance.
+The turn that moves a strategy ends with step 7B's closing sentence and schedules nothing, on either side, whatever the strategy does. A schedule on the cloud machine is a request of its own, made from the cloud view and handled by *A schedule on the cloud machine* (S1–S6) — its question included. Never send the user to the web or to Telegram for it.
 
 ## 7. Report — side by side, one of three states (or destination only, when the source has no report)
 
@@ -556,7 +568,7 @@ No table, no backtest numbers, no Match / Differs state, and not the closing sen
 2. The trial run, as the script reported it: it ran and finished (`exit: 0`) with what the last lines of output say; it ran and failed (`exit` not 0) with the last error line; it was still running after 120 seconds and was stopped; or **it was not run** because the code can place an order or start another program — then say exactly that, in plain words what was found (`order_lines`), and that only the code was checked.
 3. Any version gap from step 3.
 4. What happens next, by direction:
-   - local → cloud: it is on the cloud machine and **not running on a schedule**; end with 「要讓它定時跑，再跟我說一聲。」 / "Tell me when you want it to run on a schedule." — and stop (step 6C).
+   - local → cloud: it is on the cloud machine and **not running on a schedule**; end with 「要讓它定時跑，切到雲端後跟我說一聲。」 / "To run it on a schedule, switch to the cloud view and tell me." — and stop (step 6C). When the trial was not run because the code can place an order, leave that sentence out (S1): say only that it is not on a schedule.
    - cloud → local: this computer cannot run a Type B strategy on a schedule yet (`references/deployment.md` › *Desktop app*); it can be run by hand from the chat.
 
 ## 8. Clean up — every time, including after a failure
@@ -565,4 +577,4 @@ No table, no backtest numbers, no Match / Differs state, and not the closing sen
 ssh <SSH_OPTS> -O exit blaveagent@<host>
 rm -rf tmp/cloud-handoff
 ```
-Verify `tmp/cloud-handoff` is gone before the final reply. Cleanup is an internal step — the reply never mentions it, the folder or the connection being closed: not as an opening line, not as a closing one, not in a list of what was done. 「清理完成，tmp/cloud-handoff 已刪除。」 and 「連線已關閉。」 are sentences that never appear. Another handoff later starts again from step 2.
+Both commands print nothing when they work, and nothing more is run to look at the result: a command that failed says so itself. Cleanup is an internal step — the reply never mentions it, the folder or the connection: not as an opening line, not as a closing one, not in a list of what was done. **The reply's first sentence is about what the user asked for** — what was done, or what could not be. Another handoff later starts again from step 2.

@@ -105,6 +105,13 @@ t("L 只做被要求的那一件:確認的問題要列出會裝的每一樣(含�
   and "**Every route onto the machine asks the same question.**" in dep and "as part of what the user confirmed" in dep)
 t("N 收尾不進回覆:不當開頭也不當結尾,連線關閉、刪暫存都算;runtime 每輪的規則也講了", "not as its first line, not as its last" in style and "closing a connection" in style
   and "never mention that folder, the connection or the cleanup in the reply" in read("runtime", "agent_turn.py"))
+# 0.1.8 開發版:規則 N 上線後回覆仍以「cloud-handoff 資料夾已刪除、連線已關閉。」開頭。規則不引用要禁的成品句(模型會照抄),改講回覆第一句該是什麼
+t("N 規則不引用要禁的句子,改講正面的:回覆第一句講用戶要的事(AGENTS.md、runtime 每輪規則)", "清理完成" not in style and "連線已關閉" not in style
+  and "the first sentence is about what the user asked for" in style
+  and "what the user asked for.\\n" in read("runtime", "agent_turn.py"))
+t("被 runtime 拒絕的動作不換寫法重試;雲端主機的排程另有規則(AGENTS.md › Desktop app)", "**What the runtime refused stays refused:**" in read("AGENTS.md")
+  and "never reword the command, wrap it in a script or switch tools" in read("AGENTS.md") and "*A schedule on the cloud machine*" in read("AGENTS.md"))
+t("從電腦版操作雲端主機:只裝被要求的那一條,不順帶裝健康檢查", "never the health check beside it" in dep and "「做好就排程上線」" in dep)
 t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "**Say it in the user's words, not the machine's:**" in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
 
 if fails:

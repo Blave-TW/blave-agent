@@ -640,10 +640,22 @@ for label, needle in {
     "6B in place of 6, 7B in place of 7": "with **step 6B in place of step 6 and step 7B in place of step 7**",
     "6B: an order-capable script is never run, whatever a flag says": "**A script that can place an order is never run** — not by this script and not by you in any other way",
     "6C: a handoff schedules nothing, and sends the user nowhere else for it": "schedules nothing, on either side, whatever the strategy does",
-    "7B: the closing sentence is neutral": "「要讓它定時跑，再跟我說一聲。」 / \"Tell me when you want it to run on a schedule.\"",
+    # Wei 2026-09-28:電腦版 agent 可以在雲端主機上裝排程——先確認、只裝被要求的那一條
+    "7B: the closing sentence says where to ask": "「要讓它定時跑，切到雲端後跟我說一聲。」 / \"To run it on a schedule, switch to the cloud view and tell me.\"",
+    "7B: no pointer when the code can place an order": "When the trial was not run because the code can place an order, leave that sentence out (S1)",
+    "S: cloud machine only, the one strategy named, after they confirmed": "**on the cloud machine only, for the one strategy they named, after they confirmed.**",
+    "S1: order-placing code is not scheduled from here; Type A / C never": "`can_order: true` → it is not scheduled from here",
+    "S2: a request that names the schedule is not the confirmation": "names the schedule inside the request; it is not the confirmation",
+    "S2: act on the next message only": "Act on the user's next message only; anything but a yes → nothing is scheduled.",
+    "S3: no health check, nothing beside the one schedule": "No health-check schedule, no environment line, no second strategy, no tidying of what is already there",
+    "S4: the one form the runtime lets through": "only when the whole call is one plain `ssh <SSH_OPTS> blaveagent@<host> \"<remote command>\"`",
+    "S5: a refusal is not retried another way": "Otherwise stop: no rewording, no script around it, no split word, no other tool",
+    "S6: never hand the user a schedule line": "Never hand the user a schedule line to add themselves and never send them to a terminal",
+    "N: step 8 runs before the reply is written": "**Step 8 first, then the reply.**",
+    "N: the reply opens with what the user asked for": "**The reply's first sentence is about what the user asked for**",
     "L: a finding is reported, never fixed on the side": "is a finding for the reply, never a thing to fix on the side",
     "L: what the machine's own agent confirms first, the desktop agent confirms first": "**What that machine's own agent must confirm first, you confirm first too.**",
-    "N: step 8 is never reported, with the sentences named": "「清理完成，tmp/cloud-handoff 已刪除。」 and 「連線已關閉。」 are sentences that never appear.",
+    "N: step 8 prints nothing and nothing is run to look at it": "Both commands print nothing when they work, and nothing more is run to look at the result",
     "N: the general-work report leaves step 8 out": "Step 8 is not part of the report: the reply never says it happened.",
     "7B: no table, no backtest numbers": "No table, no backtest numbers, no Match / Differs state",
     "NEVER: schedule is still forbidden on both sides": "- **NEVER start, pause, resume or schedule trading on either side**, and never clear a HALT. The strategy arrives as a backtest-only draft; going live is the user's own action on the destination (`AGENTS.md` › Deployment redline). **The one exception is tripping an emergency HALT**",
@@ -652,6 +664,12 @@ for label, needle in {
 check("A Type B script is not handed off" not in DOC, "the old Type B stop is gone")
 check("blave.org) or Telegram" not in DOC.split("## 6C.")[1].split("## 8.")[0] and "到雲端工作頁" not in DOC,
       "M: after a Type B handoff the reply does not send the user to the web or Telegram to schedule it")
+SCHED = DOC.split("## A schedule on the cloud machine")[1].split("\n## ")[0]
+check("crontab" not in SCHED and "schtasks" not in SCHED and "* * *" not in SCHED and "```" not in SCHED,
+      "S: the section carries no schedule command to copy — the line comes from the machine's own deployment.md")
+check("清理完成" not in DOC and "連線已關閉" not in DOC,
+      "N: the rule no longer quotes the sentences it forbids (a quoted sentence is one the model can copy)")
+check("- **NEVER start, pause, resume or schedule trading on either side**" in DOC, "S: the NEVER line on scheduling trading is unchanged")
 m6b = re.search(r"\n```py\n(import json, os, re, subprocess, sys\nn, mode = sys\.argv\[1\], sys\.argv\[2\]\n.*?)\n```\n", DOC, re.S)
 check(m6b is not None and "crontab" not in m6b.group(1) and "schtasks" not in m6b.group(1) and "import lib" not in m6b.group(1),
       "step 6B carries the trial script; it touches no scheduler and imports nothing from lib")
