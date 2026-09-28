@@ -292,6 +292,10 @@ html.ws-sc .side-gate { display: none; }
 .ov-stats .sl { font-weight: 600; font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ov-stats .sl .tr-tipb { font-size: 11px; font-weight: 600; }
 .ov-stats .sl.sl-tip { overflow: visible; }
+/* 泡泡寬度照字、不照格子(同網頁 .wtip-bubble):格子只有 ~180–230 寬,.trv .tip 的 100% 會把泡泡壓成格寬。
+   3 欄的第 3 欄往左長,免得撞到條的右緣 */
+.ov-stats .sl-tip .tip { width: max-content; max-width: 260px; }
+.perf-stats .stat:nth-child(3n) .tip { left: auto; right: 0; }
 .ov-stats .sv { margin-top: var(--space-6); font: 600 18px "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); line-height: 1.1; white-space: nowrap; }
 .ov-stats .stat.hero .sv { font-size: 28px; }
 .ov-stats .sv.pos { color: var(--color-greenText); }
@@ -352,6 +356,8 @@ html.ws-sc .side-gate { display: none; }
   .perf-stats .stat:nth-child(2) { border-top-right-radius: var(--radius-lg); }
   .perf-stats .stat:nth-child(5) { border-bottom-left-radius: var(--radius-lg); }
   .perf-stats .stat:nth-child(6) { border-bottom-right-radius: var(--radius-lg); }
+  .perf-stats .stat:nth-child(3n) .tip { left: 0; right: auto; }
+  .perf-stats .stat:nth-child(2n) .tip { left: auto; right: 0; }   /* 兩欄:改第 2 欄往左長;要排在 3n 之後,第 6 格才落在右 */
   .main-head { padding-left: var(--space-16); padding-right: var(--space-16); }
   /* V2b:中欄窄到這一階、而且動作槽有**兩顆**鈕時,鈕自己一列、各佔一半——不然標題會被截成「Auto …」。
      只有一顆鈕時留在標題那一列、靠右、自然寬:無條件換行會讓最常見的 running(只有「暫停下單」)憑空多一列,
