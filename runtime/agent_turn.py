@@ -2983,6 +2983,26 @@ def local_mcp_servers(sink, mcp_config, mcp_servers):
     return frozenset(n for n in str(mcp_servers).split(",") if n in MCP_SERVER_NAMES)
 
 
+# 電腦版外殼給這一輪的指示(BLAVE_TURN_NOTE,代號):用戶沒有選、外殼自己要加的產品限制與「怎麼回」。跟用戶的訊息分開送——
+# 寫進訊息本文的話,泡泡上就是用戶「說了」他沒說過的話(e2e 0.1.8 #131),對話存檔與重開畫回來的也是。只認這張表上的代號。
+TURN_NOTES = {
+    "report_once": (
+        "This request came from the desktop app's New report dialog. Produce the report once, now; do not "
+        "register or offer a schedule."),
+    "report_recur": (
+        "This request came from the desktop app's New report dialog, and it asks for the report on a schedule "
+        "(every day, every week, a time of day). This computer produces it this once only and cannot schedule "
+        "it: produce the report now, do not register a schedule, and say so plainly in the first sentence of "
+        "your reply — this computer makes it this once, and recurring reports are set up on the cloud machine."),
+}
+
+
+def turn_note_rule(sink):
+    """電腦版這一輪外殼帶的指示;沒有、不認得、不是電腦版 → 空字串。"""
+    note = TURN_NOTES.get(os.environ.get("BLAVE_TURN_NOTE") or "") if isinstance(sink, LocalSink) else None
+    return f"\n\n---\n\n## From the app (this turn)\n{note}\n" if note else ""
+
+
 def desktop_web(sink, browser_mounted):
     """電腦版這一輪上網的狀態:`browser`(內建瀏覽器掛著)/ `off`(用戶在設定 › 隱私關掉)/ `unavailable`
     (開著但這一輪掛不上)。None = 不歸這條管:雲端,或不帶 BLAVE_BROWSER 的舊外殼(那時照舊只在掛瀏覽器時關 WebFetch)。"""
@@ -3150,7 +3170,7 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
             + mcp_rule(mcp_mounted) + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
-            + lang_rule + "\n\n---\n\n" + prompt)
+            + turn_note_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
 
 
 def _remove_cloud_handoff_dir(workspace=None):
@@ -3290,7 +3310,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + model_catalog_rule(session_id) + python_rule() + data_access_rule()
-        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web)
+        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web) + turn_note_rule(sink)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)
         + sink.formatting_rule

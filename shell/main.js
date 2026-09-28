@@ -1984,7 +1984,10 @@ function turnCreds(kind, signedIn, included, handoffOn) {
   return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true, mcp: handoffOn === true && signedIn === true };
 }
 const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing }) {
+/* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
+   只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
+const TURN_NOTES = ["report_once", "report_recur"];
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
@@ -2068,6 +2071,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     ...(imgPort ? { BLAVE_WEB_REPORT_URL: `http://127.0.0.1:${imgPort}/chat-image`,
                     BLAVE_WEB_REPORT_TOKEN: imgToken, BLAVE_WEB_SESSION: sessionId } : {}),
     BLAVE_BROWSER: brState,
+    ...(TURN_NOTES.indexOf(note) >= 0 ? { BLAVE_TURN_NOTE: note } : {}),
     LANG: process.env.LANG || "zh_TW.UTF-8",
     ...PY_ENV,
   };

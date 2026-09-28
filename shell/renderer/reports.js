@@ -1,7 +1,7 @@
 /* 報告(設計:blave-canon output/designer/spec-desktop-0.1.6-2026-09-25.md §1;雲端工作頁 #rpl_panel / #rp_panel 縮成中欄的尺寸)。
    側欄「報告」→ 中欄清單(信封:標題 / 建立時間 / 類型)→ 閱讀(report-blocks.js 把整份 JSON 畫成 article.rb-report)→ 一層返回;
-   「新增報告」是一個 modal(描述欄 + 5 顆範例句 chip),組成一句固定形狀的話送給 agent(rpt.new.msgLead / msgOnce 逐字同 web
-   的 workspace_rp_msg_lead / _once;本版只留「一次」、不做排程)。
+   「新增報告」是一個 modal(描述欄 + 5 顆範例句 chip),組成一句固定形狀的話送給 agent(rpt.new.msgLead 逐字同 web
+   的 workspace_rp_msg_lead;本版只產一次、不做排程——那是產品限制,不寫進用戶那句,走 rptNote)。
    - 兩個視角各一袋(RPT.bags:開著 / 在讀哪一份 / 捲動 / 剛讀過那列);本機袋 = <WS>/reports 的檔案系統(主行程讀,renderer 不碰 fs),
      雲端袋 = 平台索引 + S3 本體(停機也讀得到;主行程打 api、圖換成 data URI 才交過來)。這裡仍一律 textContent。
    - 中欄誰該出現由 trade.js 的 envShowMain 在最後一步問 rptShowMain;與策略庫互斥(rptOpen 先 libLeave,libOpen 反之)。
@@ -41,17 +41,19 @@ function rptAskState(c) {
   return "free";
 }
 /* 需求裡有沒有定期的字眼(每天／每週五／每 4 小時／every day／daily…)。這一版電腦只產一次、不建排程:用戶寫了「每天早上 5 點 30 分」
-   而回覆只說「報告做好了」,他會以為明天還會收到(0.1.8 e2e #95)。有的話 rptCompose 多帶一句給 agent 的指示 */
+   而回覆只說「報告做好了」,他會以為明天還會收到(0.1.8 e2e #95)。有的話這一輪帶的指示換成 report_recur(rptNote) */
 const RPT_RECUR_RE = /\u6bcf\s*(?:[\u500b\u4e2a]|\d+\s*)?(?:\u5929|\u65e5|[\u9031\u5468]|\u661f\u671f|\u79ae\u62dc|\u793c\u62dc|\u6708|\u5c0f\u6642|\u5c0f\u65f6|\u5206\u9418|\u5206\u949f|\u4ea4\u6613\u65e5|\u665a|\u65e9)|\u6bcf[\u9022\u9694]|\u5929\u5929|\u5b9a\u671f|\u5b9a\u6642|\u5b9a\u65f6|\b(?:every\s+(?:other\s+|\d+\s+)?(?:day|week|month|hour|minute|morning|evening|night|weekday|(?:mon|tues|wednes|thurs|fri|satur|sun)day)s?|each\s+(?:day|week|month|morning)|daily|weekly|monthly|hourly|nightly)\b/i;   // 跳脫寫法:比對用戶打的字,不是畫面字(每天／每週／每月／每 N 小時／天天／定期…)
 function rptRecurring(desc) { return RPT_RECUR_RE.test(String(desc == null ? "" : desc)); }
-// 送給 agent 的那句(前兩句逐字同 web rpCompose 的一次性分支):zh 全形「」：。,en 半形;desc 原樣引用、只 trim;空 → ""。
-// s = { lead, once, recur };recur 只在需求有定期字眼時接在最後
-function rptCompose(desc, lang, s) {
+/* 送給 agent、也是泡泡上畫的那句:只有用戶的意思——「幫我建立報告：「…」。」(zh 全形「」：。,en 半形;desc 原樣引用、只 trim;空 → "")。
+   外殼自己加的指示(只產一次、不建排程;需求寫了定期時要講明)不進這一句(e2e 0.1.8 #131:用戶寫「每週一早上」,泡泡卻替他說「不用建立排程」)。
+   web 的同一句是用戶在面板上選的「一次」,所以那邊整段進泡泡;電腦版沒有那個選項,那是產品限制 → 走 rptNote */
+function rptCompose(desc, lang, lead) {
   const d = String(desc == null ? "" : desc).trim();
   if (!d) return "";
-  const tail = s.recur && rptRecurring(d) ? s.recur : "";
-  return lang === "zh" ? s.lead + "：「" + d + "」。" + s.once + tail : s.lead + ': "' + d + '". ' + s.once + (tail ? " " + tail : "");
+  return lang === "zh" ? lead + "：「" + d + "」。" : lead + ': "' + d + '".';
 }
+// 這一輪要帶給 agent 的指示(代號;字在 runtime/agent_turn.py TURN_NOTES):跟訊息分開送,泡泡、對話存檔、重開畫回來的都沒有它
+function rptNote(desc) { return rptRecurring(desc) ? "report_recur" : "report_once"; }
 /* 一份報告的「版本鍵」:id + 本機 mtime / 雲端 stored_at。lib/report.py 明寫重用 id = 覆蓋——同 id 換過內容也算「新報告」,本體快取也照它分 */
 function rptKey(r) { return r.id + "@" + (typeof r.mtime === "number" ? r.mtime : typeof r.stored_at === "number" ? r.stored_at : ""); }
 // 回合結束後新出現的那幾份(送出前記的那一袋沒有這個版本鍵的);順序照清單
@@ -444,7 +446,7 @@ async function rptSend() {
   if (!desc) { d.focus(); return; }
   const env = libEnv();
   if (rptAskState(rptCtx(env)) !== "free") { rptNewPaint(); return; }
-  const msg = rptCompose(desc, LANG, { lead: t("rpt.new.msgLead"), once: t("rpt.new.msgOnce"), recur: t("rpt.new.msgRecur") });
+  const msg = rptCompose(desc, LANG, t("rpt.new.msgLead"));
   RPT.sending = true; RPT.fail = false;
   rptNewLock(true);
   const fm = $("rpn-msg"), busy = libEl("span", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
@@ -453,7 +455,7 @@ async function rptSend() {
   if (csTitle) csStartNew();
   const before = new Set((RPT.data[env] || []).map(rptKey));
   let ok = false;
-  try { ok = await submitMessage(msg); } catch (_) { ok = false; }
+  try { ok = await submitMessage(msg, { note: rptNote(desc) }); } catch (_) { ok = false; }
   RPT.sending = false;
   rptNewLock(false);
   if (!ok) { RPT.fail = true; rptNewPaint(); return; }   // 框留著、欄位不清、鈕回復,腳放那一句:讓人原樣重送

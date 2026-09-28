@@ -3561,13 +3561,6 @@ msgstr "送出中…"
 msgid "rpt.new.msgLead"
 msgstr "幫我建立報告"
 
-msgid "rpt.new.msgOnce"
-msgstr "這份只要產出一次，不用建立排程。"
-
-# 只在需求有定期字眼(每天／每週／every day…)時接在 msgOnce 後面:給 agent 的指示(0.1.8 e2e #95)
-msgid "rpt.new.msgRecur"
-msgstr "需求提到定期，但這台電腦目前只產這一次：請在回覆裡講明這一點，並說定期報告要在雲端主機上排。"
-
 # 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
 msgid "res.open.report"
 msgstr "打開報告"

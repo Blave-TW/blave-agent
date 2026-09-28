@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **外殼給這一輪的指示不進用戶的訊息(0.1.8 e2e #131)**:電腦版「新增報告」原本把「這份只要產出一次，不用建立排程。…」接在用戶寫的需求後面
+  一起當訊息送,泡泡與對話存檔裡就是用戶「說了」他沒說過的話。外殼改成只送「幫我建立報告：「…」。」,指示用環境變數
+  `BLAVE_TURN_NOTE`(代號:`report_once` / `report_recur`)分開帶;`turn_note_rule` 把代號換成規則接進這一輪的提示(Claude 的 system prompt、
+  Codex 的前置規則),不寫進歷史。只有電腦版(LocalSink)認、只認 `TURN_NOTES` 表上的代號。測試 `tests/check_local_mcp_config.py`。
 - **電腦版上網只有內建瀏覽器一條路(0.1.8 e2e #125;Wei 09-28)**:設定 › 隱私把內建瀏覽器關掉後,agent 改用引擎自己的
   WebSearch 照樣上網,畫面上沒有瀏覽摘要列、來源裡還有內建瀏覽器會擋的網域。外殼每一輪帶 `BLAVE_BROWSER`(`on` / `off` /
   `unavailable`);電腦版回合(LocalSink)看到這個變數就把 `WebSearch`、`WebFetch` 都放進 `disallowed_tools`——**開著時也關**

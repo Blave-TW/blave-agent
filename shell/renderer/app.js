@@ -1856,6 +1856,7 @@ function busyOpenReceipts(b) {
    停下來之後用戶那句放回輸入框(雲端「取消排隊」的做法:接在用戶已打的字前面,不覆寫)——只放回用戶自己打的
    (sendDraft 帶 typed);送上雲端 / 拉回、策略庫、報告、掃描這些畫面代組的句子不放回。 */
 let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;
+let lastUserNote = null;   // 上一句帶的外殼指示(代號);重送同一句時沿用
 /* 輸入框上方那一行:上一輪還在跑,Enter 沒有送出。回合結束(sendBtnSync 看到 running 是 false)就收 */
 function taWaitShow(on) {
   const p = $("ta-wait");
@@ -1903,6 +1904,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   const viewing = opts && opts.viewing && typeof opts.viewing === "object" ? opts.viewing : chatViewing();
   // 泡泡留住節點:沒送出去的路(busy / 版本閘 / 暖機中停止 / 引擎起不來)要收回泡泡+還原到輸入框,
   // 不然那句話看起來送了兩次——留著的 ghost 泡泡跟之後真的送出的那則長一模一樣(Wei 實測截圖)
+  // opts.note:外殼給這一輪的指示(代號,例「新增報告」的 report_once);不進泡泡、不進訊息本文。重送同一句沿用那一輪存的,不從本文推回來
+  lastUserNote = opts && typeof opts.note === "string" ? opts.note : msg === lastUserText ? lastUserNote : null;
   const bubble = addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
   const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
@@ -1920,7 +1923,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
     turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
     const r = await window.blave.sendMessage({
-      sessionId, message: msg, handoff: opts && opts.handoff, model: MP.model, effort: mpEffort(), viewing });
+      sessionId, message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
     if (r.started) { busyStart(); trackFeature("chat_sent"); return true; }
     if (r.blocked === "UPDATE_REQUIRED") {

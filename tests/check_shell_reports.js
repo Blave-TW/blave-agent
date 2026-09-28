@@ -42,18 +42,24 @@ if (!process.versions.electron) {
   const A = (c) => P.rptAskState(Object.assign({ running: false, env: "local", cloud: null, pending: false }, c));
   ok("① 鈕的態:pending > busy > stopped / stale(只在雲端)> free", A({ pending: true, running: true }) === "pending" && A({ running: true }) === "busy" && A({ env: "cloud", cloud: "stopped" }) === "stopped" && A({ env: "cloud", cloud: "stale" }) === "stale" && A({ env: "cloud", cloud: null }) === "stale"
     && A({ env: "cloud", cloud: "live" }) === "free" && A({ env: "local", cloud: "stopped" }) === "free" && A({ env: "cloud", cloud: "stopped", running: true }) === "busy" && A({}) === "free");
-  ["zh", "en"].forEach((L) => ok(`① ${L} rpt.new.msgLead / msgOnce 逐字同 web 的 workspace_rp_msg_lead / _once`, STR[L]["rpt.new.msgLead"] === WEB[L].lead && STR[L]["rpt.new.msgOnce"] === WEB[L].once));
-  const S = (L) => ({ lead: STR[L]["rpt.new.msgLead"], once: STR[L]["rpt.new.msgOnce"], recur: STR[L]["rpt.new.msgRecur"] });
-  ok("① 組句 zh:全形「」：。、desc 只 trim;en 半形引號句號、尾句前一個空格;空 → \"\"", P.rptCompose("  收盤後做台股晨報 ", "zh", S("zh")) === "幫我建立報告：「收盤後做台股晨報」。這份只要產出一次，不用建立排程。"
-    && P.rptCompose("TW brief", "en", S("en")) === 'Write me a report: "TW brief". Produce it once — no schedule needed.' && P.rptCompose("  ", "zh", S("zh")) === "" && P.rptCompose(null, "en", S("en")) === "");
+  ["zh", "en"].forEach((L) => ok(`① ${L} rpt.new.msgLead 逐字同 web 的 workspace_rp_msg_lead`, STR[L]["rpt.new.msgLead"] === WEB[L].lead));
+  const S = (L) => STR[L]["rpt.new.msgLead"];
+  // e2e 0.1.8 #131:泡泡只有用戶的意思;外殼的指示(只產一次、不建排程、定期要講明)跟訊息分開送
+  ok("① 組句 zh:全形「」：。、desc 只 trim;en 半形引號、句點在引號外;空 → \"\";句子裡沒有任何外殼的指示", P.rptCompose("  收盤後做台股晨報 ", "zh", S("zh")) === "幫我建立報告：「收盤後做台股晨報」。"
+    && P.rptCompose("TW brief", "en", S("en")) === 'Write me a report: "TW brief".' && P.rptCompose("  ", "zh", S("zh")) === "" && P.rptCompose(null, "en", S("en")) === "");
   // #95:需求寫了定期(每天 5:30…)而這一版只產一次 → 多帶一句給 agent 的指示,回覆才會講明
   const RECUR = ["每天早上 5 點 30 分給我一份加密市場晨報", "每日收盤報告", "每週五盤後", "每周一", "每個月月初", "每 4 小時運行狀況", "每交易日收盤", "天天給我", "定期報告", "每个月", "send it every day at 8", "Every Monday morning", "daily TW brief", "a weekly recap", "every 4 hours", "each morning"];
   const ONCE = ["台股晨報", "給我一份加密市場晨報", "今天的收盤報告", "每股盈餘比較", "比較每家交易所的費率", "TW brief for today", "a report on everyday traders", "the day's moves", "weekday vs weekend volume"];
   ok("① 定期字眼認得出來(zh / cn / en),一次性的需求不誤判", RECUR.every((d) => P.rptRecurring(d)) && !ONCE.some((d) => P.rptRecurring(d)) && !P.rptRecurring(null), JSON.stringify([RECUR.filter((d) => !P.rptRecurring(d)), ONCE.filter((d) => P.rptRecurring(d))]));
-  ok("① 有定期字眼:msgOnce 後面多一句(講明這台電腦只產這一次、定期要在雲端主機排);沒有就不多", P.rptCompose("每天早上 5 點 30 分給我一份加密市場晨報", "zh", S("zh")) === "幫我建立報告：「每天早上 5 點 30 分給我一份加密市場晨報」。這份只要產出一次，不用建立排程。" + STR.zh["rpt.new.msgRecur"]
-    && P.rptCompose("daily TW brief", "en", S("en")) === 'Write me a report: "daily TW brief". Produce it once — no schedule needed. ' + STR.en["rpt.new.msgRecur"]
-    && /只產這一次/.test(STR.zh["rpt.new.msgRecur"]) && /雲端主機/.test(STR.zh["rpt.new.msgRecur"]) && /this once/.test(STR.en["rpt.new.msgRecur"]) && /cloud machine/.test(STR.en["rpt.new.msgRecur"]));
-  ok("① 接線:rptSend 把 rpt.new.msgRecur 交給 rptCompose", /rptCompose\(desc, LANG, \{ lead: t\("rpt\.new\.msgLead"\), once: t\("rpt\.new\.msgOnce"\), recur: t\("rpt\.new\.msgRecur"\) \}\)/.test(src));
+  ok("① 有定期字眼:泡泡照樣只有那一句;這一輪帶的指示是 report_recur,沒有定期字眼是 report_once", P.rptCompose("每天早上 5 點 30 分給我一份加密市場晨報", "zh", S("zh")) === "幫我建立報告：「每天早上 5 點 30 分給我一份加密市場晨報」。"
+    && P.rptCompose("daily TW brief", "en", S("en")) === 'Write me a report: "daily TW brief".' && P.rptNote("每週一早上給我一份 DOGE 的單標的晨報") === "report_recur" && P.rptNote("daily TW brief") === "report_recur" && P.rptNote("台股晨報") === "report_once");
+  { const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"), mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8");
+    ok("① 接線:rptSend 送的是泡泡那一句 + 指示的代號;字串表不再有 msgOnce / msgRecur(沒有東西會把它接回訊息裡)", /const msg = rptCompose\(desc, LANG, t\("rpt\.new\.msgLead"\)\);/.test(src) && /submitMessage\(msg, \{ note: rptNote\(desc\) \}\)/.test(src)
+      && !("rpt.new.msgOnce" in STR.zh) && !("rpt.new.msgRecur" in STR.zh) && !("rpt.new.msgOnce" in STR.en) && !/msgOnce|msgRecur/.test(src));
+    ok("① 指示跟著那一輪存:重送同一句沿用(不從訊息本文推回來);泡泡畫的就是送出去的訊息本文", /lastUserNote = opts && typeof opts\.note === "string" \? opts\.note : msg === lastUserText \? lastUserNote : null;\s*const bubble = addMsg\("you", msg\);/.test(appSrc)
+      && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote,/.test(appSrc));
+    ok("① 主行程只認表上的代號,用環境變數交給 runtime(不進 argv、不進訊息);runtime 的表有同樣兩個代號", /const TURN_NOTES = \["report_once", "report_recur"\];/.test(mainSrc2) && /\.\.\.\(TURN_NOTES\.indexOf\(note\) >= 0 \? \{ BLAVE_TURN_NOTE: note \} : \{\}\),/.test(mainSrc2)
+      && /"report_once": \(/.test(rt) && /"report_recur": \(/.test(rt)); }
   ok("① 版本鍵 = id@mtime(本機)/ id@stored_at(雲端)/ id@(都沒有);新報告 = 版本鍵不在送出前那一袋的——同 id 覆寫(mtime 變)也算新,順序照清單、壞項目丟", P.rptKey({ id: "a", mtime: 5 }) === "a@5" && P.rptKey({ id: "a", stored_at: 7 }) === "a@7" && P.rptKey({ id: "a" }) === "a@"
     && P.rptNewEntries(new Set(["a@1", "b@2"]), [{ id: "c", mtime: 3 }, { id: "a", mtime: 1 }, { id: "a", mtime: 9 }, { id: "d" }, null, { mtime: 1 }]).map((r) => r.id + ":" + r.mtime).join() === "c:3,a:9,d:undefined" && P.rptNewEntries(new Set(), []).length === 0 && P.rptNewEntries(new Set(["a@"]), null).length === 0);
 

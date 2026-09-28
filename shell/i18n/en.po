@@ -3560,13 +3560,6 @@ msgstr "Sending…"
 msgid "rpt.new.msgLead"
 msgstr "Write me a report"
 
-msgid "rpt.new.msgOnce"
-msgstr "Produce it once — no schedule needed."
-
-# 只在需求有定期字眼(每天／每週／every day…)時接在 msgOnce 後面:給 agent 的指示(0.1.8 e2e #95)
-msgid "rpt.new.msgRecur"
-msgstr "The request asks for it on a schedule, but this computer produces it this once only: say so in your reply, and that recurring reports are set up on the cloud machine."
-
 # 聊天結果卡(renderer/results.js;spec-desktop-result-card-0.1.8 §9):{v} = .mono 的 v8、{n} = 收起的張數
 msgid "res.open.report"
 msgstr "Open report"

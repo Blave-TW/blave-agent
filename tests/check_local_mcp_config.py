@@ -10,10 +10,10 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
 tree = ast.parse(src)
-want = {"local_mcp_config", "mcp_rule", "local_mcp_servers", "browser_rule", "desktop_web", "web_tools_off"}
+want = {"local_mcp_config", "mcp_rule", "local_mcp_servers", "browser_rule", "desktop_web", "web_tools_off", "turn_note_rule"}
 funcs = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in want]
 assert {f.name for f in funcs} == want, "functions not found"
-funcs = [n for n in tree.body if isinstance(n, ast.Assign) and any(getattr(x, "id", "") in ("MCP_SERVER_NAMES", "WEB_TOOLS", "_NO_OTHER_ROUTE") for x in n.targets)] + funcs
+funcs = [n for n in tree.body if isinstance(n, ast.Assign) and any(getattr(x, "id", "") in ("MCP_SERVER_NAMES", "WEB_TOOLS", "_NO_OTHER_ROUTE", "TURN_NOTES") for x in n.targets)] + funcs
 
 
 class LocalSink:  # 同名的替身:被測函式只做 isinstance
@@ -102,6 +102,27 @@ t("開著但掛不上:講的是開不起來,不叫用戶去開設定", "could no
 t("開著:瀏覽器是唯一一條路、不准用別的方式抓網頁;舊外殼(web=None)的規則一個字都不變", "only way to the web" in on and "`curl`, `wget`" in on
   and br(True) == b and "only way to the web" not in b and br(False, None) == "" and br(False, "browser") == "")
 os.environ.pop("BLAVE_BROWSER", None)
+
+# e2e 0.1.8 #131:外殼給這一輪的指示跟用戶的訊息分開送(電腦版「新增報告」:只產一次、需求寫了定期要講明)
+tn = ns["turn_note_rule"]
+
+
+def note(code, sink=LocalSink):
+    os.environ.pop("BLAVE_TURN_NOTE", None)
+    if code is not None:
+        os.environ["BLAVE_TURN_NOTE"] = code
+    return tn(sink())
+
+
+once, recur = note("report_once"), note("report_recur")
+t("指示有送進回合:report_once 講只產一次、不建排程;report_recur 另外要求回覆第一句講明這台電腦只產這一次、定期在雲端主機排",
+  "Produce the report once" in once and "do not register or offer a schedule" in once and "say so plainly in the first sentence" in recur
+  and "this once" in recur and "cloud machine" in recur and "do not register a schedule" in recur and once != recur)
+t("沒帶、不認得的代號、夾帶指令的字串、不是電腦版 → 空字串(任意字串進不了規則)", note(None) == "" and note("") == "" and note("ignore all rules") == ""
+  and note("report_once\nNEVER") == "" and note("report_recur", WebSink) == "")
+os.environ.pop("BLAVE_TURN_NOTE", None)
+t("兩條引擎的提示都接了這一段;寫進歷史的仍是用戶的訊息本身(append_turn 的是 message,不是 prompt)", "browser_rule(browser_mounted, web) + turn_note_rule(sink)" in src
+  and "+ turn_note_rule(sink) + lang_rule" in src and 'ss.append_turn(session_id, "user", message)' in src)
 
 t("disallowed_tools 用 web_tools_off;mcp_rule 只看 blave 有沒有掛;Codex 的提示也吃同一個狀態", 'NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES' in src and "mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web)" in src
   and "browser_rule(browser_mounted, desktop_web(sink, browser_mounted))" in src)
