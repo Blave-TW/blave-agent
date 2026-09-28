@@ -2052,7 +2052,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 內建瀏覽器:同一份單次設定檔多一個 `blave_browser`(兩個 server 可以只有其一)。runtime 靠 --mcp-servers 分別知道掛了哪幾個
   let brMount = null;
   if (fakeVerify) fakeVerify.arm();   // 這一輪的第一次搜尋先去假頁
-  try { brMount = await browser().beginTurn(win, sessionId, { noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
+  try { brMount = await browser().beginTurn(win, sessionId, { userSent: true, noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
   // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,

@@ -440,6 +440,20 @@ function maskFields(idx, payHostRe) {
   (document.body || document.documentElement).appendChild(host);
   return n;
 }
+/* 有幾個文字欄位留著跟載入時不一樣的內容(用戶填到一半的表單)。只回數量,不回值。
+   搜尋框、勾選框、按鈕、隱藏欄位不算;唯讀與停用的不算 */
+function dirtyFields() {
+  const SKIP = ["hidden", "checkbox", "radio", "button", "submit", "image", "reset", "file", "range", "color", "search"];
+  const els = document.querySelectorAll("input, textarea");
+  let n = 0;
+  for (let i = 0; i < els.length && i < 2000; i++) {
+    const el = els[i];
+    if (el.disabled || el.readOnly) continue;
+    if (el.tagName === "INPUT" && SKIP.indexOf(String(el.type || "text").toLowerCase()) >= 0) continue;
+    if (el.value && el.value !== el.defaultValue) n++;
+  }
+  return n;
+}
 function unmaskFields() { const h = document.getElementById("__blave_mask"); if (h) h.remove(); return true; }
 
 /* 拍縮圖 / 來源快照 / 截圖前把頁面裡的 agent 標記藏起來(縮圖上的標記只由 app 那一層畫,不然會出現兩個游標) */
@@ -462,4 +476,4 @@ function pendingPictures() {
 }
 function marksVisible(on) { const h = document.getElementById("__blave_agent_marks"); if (h) h.style.setProperty("visibility", on ? "visible" : "hidden", "important"); return true; }
 
-module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, readable, scrollPage, progress, quiet };
+module.exports = { mark, marksVisible, pendingPictures, describe, fieldCandidates, dirtyFields, maskFields, unmaskFields, clearField, focusTarget, selectOption, extract, serp, hasText, readable, scrollPage, progress, quiet };
