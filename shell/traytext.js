@@ -47,6 +47,35 @@ function cloudLine(st) {
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart") return { money, venue, state: "paused" };
   return { money, venue, state: r.reconciler && r.reconciler.alive ? "on" : "notStarted" };
 }
+/* 選單列 / Dock 第一行:這台電腦現在怎樣(0.1.9 起常駐,沒在下單也講;設計 spec-desktop-tray-resident-0.1.9 §2.2)。
+   st = 下單宿主的 status(),沒有宿主(引擎還沒裝好)傳 null。回 { money?, venue?, state } 或 null(常駐程式剛起、第一份報告還在路上:這一行先不出)。
+   state:none 還沒連接交易所 / notStarted / paused / mayTrade / unknown / on / onZ(下單程式在跑、沒有策略設金額)。沒有 money = 樣板不帶交易所名。
+   判定照 renderer trExecState 的順序;on / onZ 的條件跟 main.js tradeLive() 同一組欄位。
+   lastVenue:狀態檔這一輪 build 失敗(沒有 venues)時,上一次看到的場所。 */
+function localLine(st, lastVenue) {
+  if (!st) return { state: "none" };
+  const r = st.report;
+  if (!r || typeof r !== "object") return st.running ? null : { state: "none" };
+  if (r.error || !r.venues || typeof r.venues !== "object") {
+    const v = typeof lastVenue === "string" && VENUE_ID.test(lastVenue) ? lastVenue : null;
+    return v ? { money: v === "paper" ? "paper" : "real", venue: v, state: "unknown" } : { state: "unknown" };
+  }
+  const ids = Object.keys(r.venues).filter((k) => VENUE_ID.test(k) && venueReady(r.venues[k])).sort();
+  if (!ids.length) return { state: "none" };
+  const money = ids.every((k) => k === "paper") ? "paper" : "real";
+  const venue = money === "paper" ? "paper" : ids.filter((k) => k !== "paper")[0];
+  const line = (state) => ({ money, venue, state });
+  const rec = r.reconciler || {}, sup = r.daemon && r.daemon.reconciler;
+  if (r.halt && r.halt.halted) return line("paused");
+  if (rec.stopped && rec.stopped.reason === "machine_restart") return line(rec.stopped.gated === false ? "mayTrade" : "paused");
+  // app 重開後對帳器等人按「啟動下單」(trRestartKind "app"):已暫停
+  if (st.alive && sup && sup.running === false && sup.wanted !== true && rec.heartbeat_at) return line("paused");
+  // 心跳舊了(睡眠醒來)但監督者說對帳器在跑 = 可能還在下單:講讀不到,不講沒在跑
+  if (!st.alive) return line(st.running && sup && sup.running ? "unknown" : "notStarted");
+  if (!rec.alive || (sup && sup.running === false)) return line("notStarted");
+  const a = r.config && r.config.amounts;   // 同 trNoAmounts:設定檔讀不到(null)不算沒設金額
+  return line(r.config !== null && !(a && typeof a === "object" && Object.keys(a).some((k) => Number(a[k]) > 0)) ? "onZ" : "on");
+}
 /* 雲端現在是不是「確定在下單」(結束確認框要不要多那一句)。保守:不確定就不說——那一句是在替雲端做保證。 */
 const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state === "on"); };
 
@@ -54,14 +83,14 @@ const cloudTrading = (st) => { const l = cloudLine(st); return !!(l && l.state =
    還沒交之前不拿英文退路硬湊一行進中文選單。 */
 function statusLine(tpl, line, labels) {
   if (!tpl || !line || !labels) return null;
-  // {money} 槽:模擬寫「模擬」記號,真的交易所寫它的名字(沒帶 venue 的舊呼叫端退回「真錢」)
-  const money = line.money === "paper" ? labels.moneyPaper : venueLabel(line.venue) || labels.moneyReal;
-  const state = line.state === "on" ? labels.stOn : line.state === "paused" ? labels.stPaused : line.state === "mayTrade" ? labels.stMayTrade
-    : line.state === "notStarted" ? labels.stNotStarted : labels.stUnknown;
-  if (!money || !state) return null;
+  // {money} 槽:模擬寫「模擬」記號,真的交易所寫它的名字(沒帶 venue 的舊呼叫端退回「真錢」)。沒有 money 的那幾態(還沒連接交易所…)樣板本來就不帶這一槽
+  const money = !line.money ? "" : line.money === "paper" ? labels.moneyPaper : venueLabel(line.venue) || labels.moneyReal;
+  const state = line.state === "on" ? labels.stOn : line.state === "onZ" ? labels.runningZ : line.state === "paused" ? labels.stPaused
+    : line.state === "mayTrade" ? labels.stMayTrade : line.state === "notStarted" ? labels.stNotStarted : line.state === "none" ? labels.noAccount : labels.stUnknown;
+  if ((line.money && !money) || !state) return null;
   return clean(fmt(tpl, { money, state }), 80);
 }
 const notifTitle = (prefix, title) => (prefix ? prefix + title : title);
 const quitDetail = (body, note) => (note ? body + "\n\n" + note : body);
 
-module.exports = { clean, fmt, cloudLine, cloudTrading, statusLine, notifTitle, quitDetail, venueLabel, VENUE_ID };
+module.exports = { clean, fmt, cloudLine, localLine, cloudTrading, statusLine, notifTitle, quitDetail, venueLabel, VENUE_ID };

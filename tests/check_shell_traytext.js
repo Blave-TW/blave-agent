@@ -54,7 +54,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
 { // 選單列圖示旁不放任何小點(Wei 09-23):本機新版、雲端新版都不點;「新版已下載」那一行留在選單裡
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
   t("選單列圖示旁沒有小點:main.js 不呼叫 setTitle;雲端那條規則不留死碼;選單的「新版已下載」照留", !/\.setTitle\(/.test(mainSrc)
-    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /updateWaiting\(\) \? \[\{ type: "separator" \}, \{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]/.test(mainSrc)); }
+    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /m\.update \? \[\{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]/.test(mainSrc)); }
 { // 連上的規則(Wei 09-23):pair 沒帶 = 連上,只有 pair: false 不算;main.js 的 venueReady 同一條
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   const S = (v) => ({ alive: true, running: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: { paper: v }, reconciler: { alive: true } } });
@@ -114,11 +114,12 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"), trSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
   const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
   const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); return m && m[1]; }, en = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(0, S.indexOf("zh:"))); return m && m[1]; };
-  const menuBody = mainSrc.slice(mainSrc.indexOf("function trayMenu(live)"), mainSrc.indexOf("function traySync()"));
-  t("v4 選單列:新版已暫存好(updateWaiting = ready | blocked)才多一行,字是 tm.updateReady、enabled: false、前後各一條分隔線;那一行進 trayKey、也是 tooltip",
-    /\.\.\.\(updateWaiting\(\) \? \[\{ type: "separator" \}, \{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]\),\n\s*\{ type: "separator" \},/.test(menuBody)
+  const menuBody = mainSrc.slice(mainSrc.indexOf("function trayMenu(m)"), mainSrc.indexOf("function trayDockMenu("));
+  // 0.1.9 起選單一組一組排(trayGroups:組與組之間一條分隔線,缺席的組連它上面那條一起不出;行為在 tests/check_shell_tray_resident.js 跑)
+  t("v4 選單列:新版已暫存好(updateWaiting = ready | blocked)才多一組,字是 tm.updateReady、enabled: false、自成一組(前後有分隔線);那一行進 trayKey、也是 tooltip",
+    /\n\s*m\.update \? \[\{ label: tmLabels\.updateReady, enabled: false \}\] : \[\],\n/.test(menuBody)
     && /const updateWaiting = \(\) => \{ try \{ const p = updater\(\)\.state\(\)\.phase; return p === "blocked" \|\| p === "ready"; \}/.test(mainSrc)
-    && /updateWaiting\(\) \? tmLabels\.updateReady : ""/.test(mainSrc) && /tray\.setToolTip\(updateWaiting\(\) \? tmLabels\.updateReady : tmLabels\.running\)/.test(mainSrc));
+    && /update: updateWaiting\(\)/.test(mainSrc) && /m\.update \? tmLabels\.updateReady : ""/.test(mainSrc) && /tray\.setToolTip\(m\.update \? tmLabels\.updateReady : m\.local \|\| app\.name\)/.test(mainSrc));
   t("v4 選單列:那一行的字「重新啟動以完成更新 / Restart to finish updating」(renderer 交 tm.updateReady;主行程的英文預設同一句)",
     zh("tm.updateReady") === "重新啟動以完成更新" && en("tm.updateReady") === "Restart to finish updating" && /updateReady: t\("tm\.updateReady"\)/.test(trSrc2) && /updateReady: "Restart to finish updating",/.test(mainSrc));
   t("v4 選單列:雲端的更新不進選單列——traytext 沒有 cloudUpdateLine、main.js 沒有 trayCloudUpdate / openAbout / open-about、preload / app.js 沒有 onOpenAbout、trade.js 不交那兩個字、字串表也沒有",
@@ -156,8 +157,8 @@ t("字還沒交(任何一個要用到的是空的)→ 整行不顯示,不拿英�
 t("字本身帶控制字元(renderer 交來的也過一次 clean)", statusLine("雲端：{money}\n· {state}", cloudLine(st()), L) === "雲端：Binance · 執行中");
 { // Wei 0.0.6 接線:這台電腦那一行帶 venue;選單列不再另列一行交易所名;結束確認框的 {venue} 走同一張表;renderer 的頂列記號 / 視窗標題也寫交易所名、tr.tb 拿掉
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
-  t("main.js:trayLocalLine 帶 venue、沒有那一行 venueName(live.venue)、venueName 走 TT.venueLabel;trade.js:記號與視窗標題走 envVenueText、tr.tb 不在;.po 也拿掉 tr.tb",
-    /trayLocalLine = \(live\) => TT\.statusLine\(tmLabels\.stLocal, \{ money: live\.venue === "paper" \? "paper" : "real", venue: live\.venue, state: "on" \}, tmLabels\)/.test(mainSrc)
+  t("main.js:trayLocalLine 走 TT.localLine(帶 venue;0.1.9 起沒在下單也講)、沒有那一行 venueName(live.venue)、venueName 走 TT.venueLabel;trade.js:記號與視窗標題走 envVenueText、tr.tb 不在;.po 也拿掉 tr.tb",
+    /function trayLocalLine\(live, st\) \{\n\s*const l = TT\.localLine\(st, lastVenue\);\n\s*return \(l && TT\.statusLine\(l\.money \? tmLabels\.stLocal : tmLabels\.stLocalOnly, l, tmLabels\)\)/.test(mainSrc)
     && !/label: venueName\(live\.venue\)/.test(mainSrc) && /id === "paper" \? tmLabels\.paperVenue : TT\.venueLabel\(id\)/.test(mainSrc)
     && /tm\.textContent = envVenueText\(mny, id\);/.test(trSrc) && /const money = envVenueText\(cur\.money, cur\.venue\);/.test(trSrc) && !/"tr\.tb"/.test(trSrc)
     && ["zh", "en"].every((l) => !/msgid "tr\.tb"\n/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"))));
@@ -171,7 +172,7 @@ t("通知標題的前綴:有才加;結束框的那一句:有才加、隔一行",
 // 接線(main.js 原文)
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
 t("main.js:選單列不為了雲端那一行去啟動輪詢(雲端宿主沒啟動過 = 沒有那一行)", /const cloudSt = \(\) => \(_cloud && _cloud\.isRunning\(\) \? _cloud\.status\(\) : null\);/.test(src) && !/cloudSt = [^\n]*cloudHost\(\)/.test(src));
-t("main.js:雲端那一行進 trayKey(狀態變了才會重畫)", /const key = live \? \[[^\]]*trayCloudLine\(\) \|\| ""[^\]]*\]\.join/.test(src));
+t("main.js:雲端那一行進 trayKey(狀態變了才會重畫)", /const m = \{[^\n]*cloud: trayCloudLine\(\)[^\n]*\};\n[^\n]*\n\s*const key = JSON\.stringify\(\[show, m,/.test(src));
 t("main.js:暫停只給這台電腦——選單列、Dock、失敗框三處都用 pauseLabel(),而且都只送本機的 halt", (src.match(/pauseLabel\(\)/g) || []).length >= 4 && !/label: tmLabels\.pause,/.test(src) && (src.match(/click: pauseFromMenu/g) || []).length === 2);
 t("main.js:本機 P1 通知、暫停通知與內建瀏覽器要用戶回來的通知,標題都過前綴", (src.match(/TT\.notifTitle\(tmLabels\.notifPrefixLocal,/g) || []).length === 3 && !/new Notification\(\{ title: tmLabels\["ev_"/.test(src));
 t("main.js:結束確認框多的那一句只在雲端確定在下單時加", /TT\.quitDetail\([^\n]*TT\.cloudTrading\(cloudSt\(\)\) \? tmLabels\.quitCloudNote : ""\)/.test(src));
