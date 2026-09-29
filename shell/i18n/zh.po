@@ -2254,7 +2254,7 @@ msgid "priv.collect.hOff"
 msgstr "開啟時會收"
 
 msgid "priv.collect.1"
-msgstr "做到哪一步：首次開啟、每日開啟、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行"
+msgstr "做到哪一步：首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行"
 
 msgid "priv.collect.5"
 msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"
@@ -2267,6 +2267,9 @@ msgstr "app 版本、macOS 版本、系統語言"
 
 msgid "priv.collect.4"
 msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟你的帳號對上"
+
+msgid "priv.collect.6"
+msgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下，更新卡在哪一步，第一次收到 AI 回覆；只記類別，不含內容"
 
 msgid "priv.never.h"
 msgstr "不收"

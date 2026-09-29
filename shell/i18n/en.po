@@ -2257,7 +2257,7 @@ msgid "priv.collect.5"
 msgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"
 
 msgid "priv.collect.1"
-msgstr "Which step you reached: first open, daily open, connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"
+msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"
 
 msgid "priv.collect.2"
 msgstr "When it happened"
@@ -2267,6 +2267,9 @@ msgstr "The app version, macOS version and system language"
 
 msgid "priv.collect.4"
 msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
+
+msgid "priv.collect.6"
+msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked, which update step failed, and your first AI reply — categories only, never the content"
 
 msgid "priv.never.h"
 msgstr "Never collected"

@@ -11,6 +11,7 @@
 // 這個檔不 require electron / electron-updater:由 main.js 注入,node 測試才跑得動。
 const CHECK_EVERY_MS = 4 * 3600 * 1000;
 const FIRST_CHECK_MS = 30 * 1000;   // 啟動後先讓 app 把該做的做完
+const FAIL_STAGE = { checking: "check", downloading: "download", staging: "staging", ready: "install", blocked: "install" };
 
 /* opts:{ autoUpdater, nativeUpdater, feedUrl, currentVersion, isTrading(), onState(state), setTimer?, log? }
    state:{ phase, version?, percent?, error? }
@@ -27,6 +28,8 @@ function createUpdater(opts) {
   const timer = opts.setTimer || ((fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); return t; });
   let state = { phase: opts.feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false;
   const set = (patch) => { state = { ...state, ...patch }; try { opts.onState(publicState()); } catch (_) { /* 畫面壞掉不該影響更新 */ } };
+  // 失敗在哪一步(埋點 update_failed):階段取自出錯那一刻的 phase,不是錯誤訊息
+  const fail = (stage) => { try { if (opts.onFail) opts.onFail(stage); } catch (_) { /* 追蹤不該影響更新 */ } };
   // 已下載的狀態每次讀都重新看一次「現在有沒有在下單」:下載完成當下在跑、之後暫停了,鈕要跟著解鎖
   const publicState = () => ({ ...state, current: opts.currentVersion, phase: state.phase === "ready" || state.phase === "blocked" ? (opts.isTrading() ? "blocked" : "ready") : state.phase });
 
@@ -47,6 +50,7 @@ function createUpdater(opts) {
     au.on("error", (e) => {
       log("update error: " + (e && e.message));
       const installing = state.phase === "staging" || state.phase === "ready" || state.phase === "blocked";
+      fail(FAIL_STAGE[state.phase] || "other");
       set({ phase: "error", error: installing ? "INSTALL_FAILED" : "UPDATE_FAILED" });
     });
     timer(() => check(), CHECK_EVERY_MS);
@@ -57,7 +61,8 @@ function createUpdater(opts) {
     if (!opts.feedUrl || ["checking", "downloading", "staging", "ready", "blocked"].indexOf(state.phase) >= 0) return false;
     // 按下去那一刻就講「檢查中」:electron-updater 的 checking-for-update 事件要等它連上 feed 才發,那之前畫面還停在舊的「已是最新版」
     set({ phase: "checking", error: null });
-    Promise.resolve().then(() => au.checkForUpdates()).catch((e) => { log("check failed: " + (e && e.message)); set({ phase: "error", error: "CHECK_FAILED" }); });
+    // electron-updater 查 feed 失敗是先 emit error 再 reject:error 那支記過了(phase 已是 error)就不再記一次
+    Promise.resolve().then(() => au.checkForUpdates()).catch((e) => { log("check failed: " + (e && e.message)); if (state.phase !== "error") fail("check"); set({ phase: "error", error: "CHECK_FAILED" }); });
     return true;
   }
   // 「重新啟動並更新」:只有已下載、而且現在沒有在下單才做
