@@ -152,6 +152,10 @@ const libBalanceText = (v) => libAmount(v, t("lib.fxRate"), t("lib.currency"), L
 // 兩句接起來:zh 全形句號後不留空格、en 留一個(brand 全形標點);不在字串表裡塞空格
 function libJoin(a, b) { return b ? a + (LANG === "zh" ? "" : " ") + b : a; }
 function libTrack(name) { try { if (window.blave && typeof window.blave.trackFeature === "function") window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
+// 「想用但被擋」(lib_blocked,canon product-telemetry 登記表):why 只有列舉值,主行程再驗一次
+function libBlocked(why) { try { if (why && window.blave && typeof window.blave.trackEvent === "function") window.blave.trackEvent("lib_blocked", { why }); } catch (_) { } }
+// 點進詳情時主鈕位置是閘門、不是「使用」→ 被擋的原因;忙碌 / 下載中 / 購買中不算被擋(那是暫時的)
+function libBlockedWhy(c) { return c.state === "signedOut" ? "signed_out" : c.state === "noData" ? c.why : c.state === "stopped" || c.state === "stale" ? "cloud_off" : null; }
 function libEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 // 範本裡的 {k} 換成節點(數字要進 .mono、字留在 sans):t() 沒給的變數會原樣留著,這裡再切
 function libRich(key, vars) {
@@ -414,6 +418,7 @@ function libGateNode(why) {
 function libShowDetail(id) {
   const B = libBag(); B.row = id; B.detail = id;
   libPaint(); $("lib-body").scrollTop = 0;
+  const s = libFind(id); if (s) libBlocked(libBlockedWhy(libCtaOf(s)));
   $("lib-back").focus();
 }
 function libBack() {
@@ -558,7 +563,13 @@ function libSend(s) {
   if (csTitle) csStartNew();
   const env = libEnv(), cl = env === "cloud" ? libCloudList() : RP.list, before = cl ? new Map(cl.map((x) => [x.name, x.mtime])) : null;   // 同 stratRefresh 的比法:名字 + mtime;雲端清單缺席就不記(之後不猜)
   if (env === "cloud") LIB.cloudWait = null;   // 上一支還在等清單跟上就放掉:寧可它沒標「已安裝」,也不能把第二支的資料夾記到第一支
-  submitMessage(msg).then((ok) => { if (ok) { LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use"); } libSync(); });
+  submitMessage(msg).then((ok) => {
+    if (ok) { LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use"); }
+    libSync();
+    // 回合送出了,但引擎是 Blave AI 而帳號不能跑:下一步就是 402(按了「使用」但被擋)
+    const a = typeof acct !== "undefined" ? acct : null;
+    if (ok && typeof cur !== "undefined" && cur === "blave" && a && a.can_run === false) libBlocked(a.reason === "NO_CREDIT" ? "ai_no_credit" : "ai_no_card");
+  });
 }
 
 /* ── 購買(規格 §4.4):兩段確認框對齊網頁 libBuy / libPurchase;憑證只在主行程 ── */

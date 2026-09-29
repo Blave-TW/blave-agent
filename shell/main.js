@@ -204,13 +204,14 @@ async function saveConnection(choice) {
 const clearConnection = () => connStore().clear();
 const loadConnection = () => connStore().load();
 
-// ── 使用追蹤(telemetry.js:八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
+// ── 使用追蹤(telemetry.js:十八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
 function tm() {
   if (!_tm) _tm = require("./telemetry").createTelemetry({
     dir: app.getPath("userData"), endpoint: `${API_BASE}/oauth/desktop/telemetry`,
     appVersion: app.getVersion(), osVersion: process.getSystemVersion(), lang: app.getLocale(),   // 契約:系統語系原值;不吃 BLAVE_LANG(任意字串會原樣離開電腦)
     getToken: () => loadToken(),
+    heartbeat: () => ({ live: tradeMaybeLive() ? "on" : "off" }),   // 每日在線心跳;live 同 updater 的 isTrading 判準
     // 開發版(npm start、測試用的 BLAVE_HOME)不送:不然每次開發重啟都在灌正式的漏斗。要實測送出設 BLAVE_TELEMETRY=1
     post: (u, b) => (app.isPackaged || process.env.BLAVE_TELEMETRY === "1" ? postJSON(u, b) : Promise.resolve()),
   });
@@ -259,6 +260,7 @@ function updater() {
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
     onState: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup }); },
     log: (m) => console.error("[updater] " + m),
+    onFail: (stage) => tm().track("update_failed", { stage }),
   });
   return _up;
 }
@@ -2274,7 +2276,10 @@ app.whenReady().then(() => {
   handle("balance", () => balanceHost().read());
   handle("public-pricing", () => publicPricing());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
-  ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart() : { error: "SERVER" }));
+  ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart().then((r) => {
+    tm().track("plan_start_res", { result: r.state ? "ok" : r.error === "NO_CARD" ? "no_card" : r.error === "NO_CREDIT" ? "no_credit" : "error" });
+    return r;
+  }) : { error: "SERVER" }));
   /* 本機交易:狀態是唯讀的檔案內容;指令由 daemon.js 簽章後寫進佇列(secret 不出主行程)。
      daemon 在引擎裝好之後才起(它要 workspace 與 venv),而且**不會自己啟動對帳器**——要用戶按「啟動下單」。 */
   handle("trade-status", () => { const st = tradeHost().status(); if (st.report && typeof st.report === "object") st.report.selfOrdering = stratSelfOrderingAny(); return st; });
@@ -2409,6 +2414,8 @@ app.whenReady().then(() => {
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
   // 功能被使用(renderer 的 trackFeature):name 由 telemetry.js 對 feature_used 白名單驗,renderer 給的字不可信、不在表上就整則不送
   ipcMain.on("track-feature", (e, name) => { if (fromOurPage(e)) tm().track("feature_used", { name }); });
+  // 卡在哪一步(renderer 的 trackEvent):事件要在 FROM_RENDERER 上,屬性值再由 telemetry.js 對列舉驗
+  ipcMain.on("track-event", (e, ev, props) => { if (fromOurPage(e) && require("./telemetry").FROM_RENDERER.includes(ev)) tm().track(ev, props); });
   /* 內建瀏覽器(renderer/browser.js):畫面只送分頁 id、中欄的 bounds 與用戶的動作;網址只有用戶自己在網址列打的那一條(照樣過網路層政策)。
      頁面物件、token、網頁內容都不進 renderer(縮圖與快照是圖片與文字)。 */
   handle("browser-expand", (_e, id, b) => browser().expand(id, b), null);

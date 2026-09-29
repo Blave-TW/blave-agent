@@ -1,6 +1,6 @@
 // Blave 電腦版 — 使用追蹤(主行程用)。契約:blave-canon output/backend/2026-09-21-desktop-telemetry-contract.md
 //
-// 只回答一件事:「哪一步發生了、什麼時候、哪個版本」。八個事件、每個事件的屬性都是列舉——
+// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。十八個事件、每個事件的屬性都是列舉——
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
@@ -19,6 +19,18 @@ const EVENTS = {
   first_backtest_done: null,
   trade_started: { venue_kind: ["paper", "real"] },
   cloud_started: null,
+  // 0.1.9 補「卡在哪一步」(研究 desktop-usage-2026-09-29 §5):屬性一律列舉,語意見 canon 登記表
+  acct_card_shown: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
+  acct_card_click: { card: ["pre_card", "pre_credit", "turn_card", "turn_credit"] },
+  acct_card_back: { state: ["ready", "no_card", "no_credit"] },
+  turn_failed: { reason: ["402", "403", "429", "engine_missing", "other"] },
+  connect_failed: { kind: ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local"] },
+  first_reply_done: { kind: ["blave", "claude", "codex"] },
+  plan_start_res: { result: ["ok", "no_card", "no_credit", "error"] },
+  update_failed: { stage: ["check", "download", "staging", "install", "other"] },
+  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit"] },
+  // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
+  heartbeat: { live: ["on", "off"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -50,10 +62,16 @@ const EVENTS = {
     // 內建瀏覽器「用系統瀏覽器開」(renderer/browser.js;0.1.8):按了就記,不記網址
     "browser_open_ext"] },
 };
-const ONCE = ["app_first_open", "first_backtest_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
+const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
-const DAILY = ["feature_used"];
+const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
+  "plan_start_res", "update_failed", "lib_blocked", "heartbeat"];
+// 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
+const DAILY_ONE = ["heartbeat"];
+const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
+// 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -70,7 +88,8 @@ const META = {
 // api 的 OS_NAMES 只收這三個;別的平台(freebsd…)整則不送——api 反正會 400
 const OS = { darwin: "macos", win32: "windows", linux: "linux" }[process.platform] || null;
 
-/* opts:{ dir, endpoint, appVersion, osVersion, lang, getToken?, post, now? }   now() 只給測試換日用
+/* opts:{ dir, endpoint, appVersion, osVersion, lang, getToken?, post, now?, heartbeat?, heartbeatMs? }   now() 只給測試換日用
+   heartbeat() → 心跳的屬性({ live });給了才排心跳。heartbeatMs 只給測試用
    post(url, body) → Promise;由 main.js 傳它自己的 postJSON(帶逾時)。 */
 function createTelemetry(opts) {
   const file = path.join(opts.dir, "telemetry.json");
@@ -123,7 +142,7 @@ function createTelemetry(opts) {
       const b = body(event, props);
       if (!b) return false;
       // 每日一次的事件:鍵 = 事件 + 那一格屬性值(白名單驗過的那個,不是呼叫端給的原字);今天送過 / 送出中都不再出門
-      const daily = DAILY.indexOf(event) >= 0, key = daily ? event + ":" + Object.values(b.props).join(":") : event;
+      const daily = DAILY.indexOf(event) >= 0, key = daily && DAILY_ONE.indexOf(event) < 0 ? event + ":" + Object.values(b.props).join(":") : event;
       if (daily && (dailyKeys().indexOf(key) >= 0 || inflight.has(key))) return false;
       // fire-and-forget。只送一次 / 每日一次的在 2xx 之後才記帳:離線的第一次啟動不該讓 app_first_open 永遠消失(api 會去重)
       if (once || daily) inflight.add(key);
@@ -136,9 +155,18 @@ function createTelemetry(opts) {
       return true;
     } catch (_) { return false; }   // 追蹤永遠不能炸掉呼叫端
   }
+  let beat = null;
+  function beatStart() {
+    if (beat || typeof opts.heartbeat !== "function") return;
+    // 先看關了沒、今天送過沒:heartbeat() 要同步讀下單狀態檔,一天 144 輪只有一輪會出門
+    beat = setInterval(() => {
+      try { if (load().enabled && dailyKeys().indexOf("heartbeat") < 0 && !inflight.has("heartbeat")) track("heartbeat", opts.heartbeat()); } catch (_) { /* 追蹤永遠不能炸 */ }
+    }, opts.heartbeatMs || HEARTBEAT_MS);
+    if (beat.unref) beat.unref();
+  }
   return {
     track,
-    start() { track("app_first_open"); track("app_open"); },   // 關掉 / 已送過:track 自己會擋
+    start() { track("app_first_open"); track("app_open"); beatStart(); },   // 關掉 / 已送過:track 自己會擋;心跳的計時器只排一次
     isEnabled: () => load().enabled,
     // 重新打開立即恢復:這次啟動的那兩則補送(app_open 由 api 每日去重;app_first_open 送過就不會再送)
     setEnabled(on) { const was = load().enabled; st.enabled = !!on; save(); if (st.enabled && !was) this.start(); },
@@ -146,4 +174,4 @@ function createTelemetry(opts) {
   };
 }
 
-module.exports = { createTelemetry, EVENTS };
+module.exports = { createTelemetry, EVENTS, FROM_RENDERER };

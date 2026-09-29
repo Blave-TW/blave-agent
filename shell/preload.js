@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld("blave", {
   telemetrySet: (on) => ipcRenderer.invoke("telemetry-set", on),
   telemetryInstallId: () => ipcRenderer.invoke("telemetry-install-id"),
   trackFeature: (name) => ipcRenderer.send("track-feature", name),   // 功能被使用:只有白名單裡的名字會落表(主行程驗)
+  trackEvent: (ev, props) => ipcRenderer.send("track-event", ev, props),   // 卡在哪一步:事件與屬性值都由主行程對白名單驗
   featureFlags: () => ipcRenderer.invoke("feature-flags"),
   // 自帶資料來源:金鑰的值只經過 dataSrcSave 一次;其餘三支只有名稱
   dataSrcList: () => ipcRenderer.invoke("datasrc-list"),

@@ -1,7 +1,7 @@
-// shell/telemetry.js:只有七個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。
+// shell/telemetry.js:十八個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
 // 跑法:node tests/check_shell_telemetry.js
 const fs = require("fs"), os = require("os"), path = require("path");
-const { createTelemetry, EVENTS } = require("../shell/telemetry.js");
+const { createTelemetry, EVENTS, FROM_RENDERER } = require("../shell/telemetry.js");
 const ONCE_OF = (fsx) => !/const ONCE = \[[^\]]*feature_used/.test(fsx.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8"));
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const tick = () => new Promise((r) => setTimeout(r, 5));
@@ -26,7 +26,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("八個事件、沒有自由文字型的屬性", Object.keys(EVENTS).length === 8 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("十八個事件(0.1.9 +9 卡在哪一步、+heartbeat)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 18 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -204,6 +204,133 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
       fs.writeFileSync(path.join(dirB, "telemetry.json"), JSON.stringify({ install_id: iid, enabled: true, sent: ["app_first_open"], daily: dailyRaw }));
       const b = mk(dirB, { now: () => clock }); t("daily 壞掉(" + JSON.stringify(dailyRaw) + ")→ 照送、install_id 不變", b.tm.track("feature_used", { name: "chat_sent" }) === true && b.tm.installId() === iid); }
     t("app_open 不走每日去重(每次啟動送、api 去重——留存靠它)", !/app_open/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8").match(/const DAILY = \[[^\]]*\]/)[0]));
+  }
+
+
+  // ── 0.1.9「卡在哪一步」九個事件(canon product-telemetry 登記表;研究 desktop-usage-2026-09-29 §5)──
+  { const NEW = { acct_card_shown: ["card", ["pre_card", "pre_credit", "turn_card", "turn_credit"]], acct_card_click: ["card", ["pre_card", "pre_credit", "turn_card", "turn_credit"]],
+      acct_card_back: ["state", ["ready", "no_card", "no_credit"]], turn_failed: ["reason", ["402", "403", "429", "engine_missing", "other"]],
+      connect_failed: ["kind", ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local"]],
+      first_reply_done: ["kind", ["blave", "claude", "codex"]], plan_start_res: ["result", ["ok", "no_card", "no_credit", "error"]],
+      update_failed: ["stage", ["check", "download", "staging", "install", "other"]],
+      lib_blocked: ["why", ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit"]] };
+    t("九個新事件逐字在白名單上:一個屬性、值全是列舉、事件名與值都 ≤16 字", Object.keys(NEW).every((ev) => EVENTS[ev] && JSON.stringify(Object.keys(EVENTS[ev])) === JSON.stringify([NEW[ev][0]]) && JSON.stringify(EVENTS[ev][NEW[ev][0]]) === JSON.stringify(NEW[ev][1]) && ev.length <= 16 && NEW[ev][1].every((v) => v.length <= 16))
+      && Object.keys(EVENTS).every((ev) => ev.length <= 19));   // 舊的 first_backtest_done 19 字,新名字一律 ≤16
+    const tmSrc9 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
+    t("first_reply_done 每安裝一次(ONCE);其餘八個每日一次(DAILY,api 的每小時熔斷算的是 POST 數)", /const ONCE = \[[^\]]*"first_reply_done"/.test(tmSrc9) && Object.keys(NEW).filter((e) => e !== "first_reply_done").every((e) => new RegExp('const DAILY = \\[[^\\]]*"' + e + '"').test(tmSrc9)));
+    t("畫面只准送七個(FROM_RENDERER);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked"])
+      && ["app_first_open", "app_open", "login_done", "first_backtest_done", "trade_started", "cloud_started", "feature_used", "plan_start_res", "update_failed", "heartbeat"].every((e) => !FROM_RENDERER.includes(e)));
+    const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")));
+    t("每個事件的每個值都送得出去;表外的值 / 缺屬性 / 塞內容都不送", Object.keys(NEW).every((ev) => NEW[ev][1].every((v) => x.tm.track(ev, { [NEW[ev][0]]: v, msg: "SECRET" }) === true || ev === "first_reply_done"))
+      && Object.keys(NEW).every((ev) => x.tm.track(ev, { [NEW[ev][0]]: "SECRET_BTCUSDT" }) === false && x.tm.track(ev) === false)); await tick();
+    t("…出門的 props 各只有那一格、不含多塞的字", x.sent.length > 0 && x.sent.every((b) => Object.keys(b.props).length === 1 && !JSON.stringify(b).includes("SECRET")));
+    t("…同日同值不重送(每日去重);first_reply_done 換了引擎也只送過一次", x.tm.track("turn_failed", { reason: "402" }) === false && x.tm.track("first_reply_done", { kind: "codex" }) === false
+      && x.sent.filter((b) => b.event === "first_reply_done").length === 1);
+    // api 端同一份:事件名、屬性名、值、once 逐字相同(feature_used 上面比過了)
+    const apiPy9 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
+    if (!fs.existsSync(apiPy9)) console.log("SKIP  api 端九個新事件比對(需要 monorepo 版面)");
+    else { const api = fs.readFileSync(apiPy9, "utf8"), got = {};
+      for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
+      t("api desktop_telemetry.EVENTS 的九個新事件 = 外殼這份(屬性名、值、順序、once)", Object.keys(NEW).every((ev) => got[ev] && got[ev].key === NEW[ev][0] && JSON.stringify(got[ev].vals) === JSON.stringify(NEW[ev][1]) && got[ev].once === (ev === "first_reply_done")));
+      t("api 的 heartbeat = 外殼這份(live: on / off、不是 once)", !!got.heartbeat && got.heartbeat.key === "live" && JSON.stringify(got.heartbeat.vals) === '["on","off"]' && got.heartbeat.once === false); }
+    // 畫面的送出點:每個 trackEvent("…") 的事件都在 FROM_RENDERER、屬性名對、字面值都在列舉;名單上每個事件都有送出點
+    // 當成「值」送出去的字面:整格就是字面、三元的兩支、|| 的預設;比較用的(=== "codex")不算
+    const valLits = (expr) => [...expr.matchAll(/(?:^|\? |: |\|\| )"([^"]+)"/g)].map((v) => v[1]);
+    const sites = [], badE = [];
+    for (const f of fs.readdirSync(R).filter((n) => /\.js$/.test(n))) {
+      const src = fs.readFileSync(path.join(R, f), "utf8");
+      for (const m of src.matchAll(/trackEvent\("([a-z_]+)", \{ ([a-z_]+)(?:: ([^}]*))? \}\)/g)) {
+        sites.push(m[1]);
+        const spec = EVENTS[m[1]], key = spec && Object.keys(spec)[0];
+        if (!FROM_RENDERER.includes(m[1]) || m[2] !== key) badE.push(f + ": " + m[0]);
+        for (const v of valLits(m[3] || "")) if (!spec || spec[key].indexOf(v) < 0) badE.push(f + ": " + m[1] + "=" + v);
+      }
+      for (const m of src.matchAll(/(?<![.\w])trackEvent\(([^)]*)/g)) if (!/^"[a-z_]+", \{/.test(m[1]) && !/^ev, props$/.test(m[1])) badE.push(f + ": 形狀不對 " + m[0]);
+      for (const m of src.matchAll(/libBlocked\(([^()]*(?:\([^()]*\))?[^()]*)\);/g)) for (const v of valLits(m[1])) if (EVENTS.lib_blocked.why.indexOf(v) < 0) badE.push(f + ": lib_blocked=" + v);
+    }
+    t("畫面每個 trackEvent 送出點:事件在 FROM_RENDERER、屬性名對、字面值在列舉;七個都有送出點", badE.length === 0 && FROM_RENDERER.every((e) => sites.includes(e)));
+    if (badE.length) console.log("      " + badE.join("\n      "));
+    // 算值的純函式:切出來跑,每種輸入的輸出都在列舉裡(或 null = 不送)
+    const appSrc9 = fs.readFileSync(path.join(R, "app.js"), "utf8"), libSrc9 = fs.readFileSync(path.join(R, "library.js"), "utf8");
+    const fnOf = (src, name) => { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return new Function("return (" + src.slice(i, k + 1) + ")")(); } };
+    const kind = fnOf(appSrc9, "acctCardKind"), back = fnOf(appSrc9, "acctBackState"), fail = fnOf(appSrc9, "turnFailOf"), why = fnOf(libSrc9, "libBlockedWhy");
+    const S = [null, {}, { reason: "NO_CARD" }, { reason: "NO_CREDIT" }, { reason: null, can_run: false }, { can_run: true, reason: "NO_CARD" }];
+    t("acctCardKind:跟著卡上的句子分(預檢卡 NO_CREDIT → pre_credit、其餘 pre_card;402 卡 NO_CARD → turn_card、其餘 turn_credit)",
+      S.every((s) => ["pre", "turn"].every((w) => EVENTS.acct_card_shown.card.includes(kind(w, s))))
+      && kind("pre", { reason: "NO_CREDIT" }) === "pre_credit" && kind("pre", null) === "pre_card" && kind("turn", { reason: "NO_CARD" }) === "turn_card" && kind("turn", null) === "turn_credit");
+    t("acctBackState:可以跑 → ready;還會重查 → null(先不下結論);重查完還不能跑 → no_card / no_credit;查不到 → null",
+      S.every((s) => [true, false].every((a) => { const v = back(s, a); return v === null || EVENTS.acct_card_back.state.includes(v); }))
+      && back({ can_run: true }, true) === "ready" && back({ can_run: false, reason: "NO_CARD" }, true) === null && back({ can_run: false, reason: "NO_CREDIT" }, false) === "no_credit" && back({ can_run: false }, false) === "no_card" && back(null, false) === null);
+    globalThis.acctBackState = back;   // acctBackNote 切出來跑時要叫得到它
+    const note = fnOf(appSrc9, "acctBackNote"), RUN = { can_run: true }, NOCARD = { can_run: false, reason: "NO_CARD" };
+    t("acctBackNote:沒按過 → 不記;回前景那次照 acctBackState;記過「還不能跑」(owe)之後查到能跑就補 ready、還不能跑 / 查不到不記;按了還沒回前景也不記",
+      note(null, RUN, false) === null && note({ back: true }, NOCARD, true) === null && note({ back: true }, NOCARD, false) === "no_card" && note({ back: true }, RUN, true) === "ready"
+      && note({ back: false, owe: true }, RUN, false) === "ready" && note({ back: false, owe: true }, NOCARD, false) === null && note({ back: false, owe: true }, null, false) === null
+      && note({ back: false }, RUN, false) === null);
+    t("acct_card_back 接線:記過還不能跑 → owe;acctPaint(dataTurnEnd 也走這裡)補 ready、回前景那次留給 acctCheck 算完 again",
+      /acctGone = back === "ready" \? null : \{ back: false, owe: true \};/.test(appSrc9)
+      && /if \(!s\) return;[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(acctGone && !acctGone\.back\) acctBackTrack\(false\);/.test(appSrc9)
+      && /else acctRetry = 0;\n\s*acctBackTrack\(again\);\n\}/.test(appSrc9)
+      && /if \(fresh && hasToken\) \{ acct = fresh; acctPaint\(\); \}/.test(appSrc9));
+    const T = [[{ flow: "credit" }, "API Error: 402 {}", "402"], [{ flow: "blave" }, "Failed to authenticate. API Error: 403 x", "403"], [null, "API Error: 429 {\"type\":\"error\"}", "429"],
+      [null, "Failed to authenticate. API Error: 429 x", "429"], [null, "API Error: 500 Internal", "other"], [{ flow: "local", kind: "claude" }, "Not logged in · Please run /login", null],
+      [null, "你問的 API Error: 402 是交易所回的", null], [null, "BTC 今天漲了 3%", null], [{ limit: true }, "You've hit your session limit · resets 1:50pm", null]];
+    t("turnFailOf:402 / 403 跟 classifyFault、429 另認、其他 API Error 開頭 → other、回覆裡提到 API Error(沒錨在開頭)不算", T.every(([f, txt, want]) => fail(f, txt) === want) && T.every(([f, txt]) => { const v = fail(f, txt); return v === null || EVENTS.turn_failed.reason.includes(v); }));
+    t("回合結束:faulted 或認到原因才送 turn_failed(按停止不送);AGENT_BIN_MISSING → engine_missing、沒認到 → other;送完清掉",
+      /busyEnd\(faulted\);\n\s*if \(!stopped && \(faulted \|\| turnFail\)\) trackEvent\("turn_failed", \{ reason: \/AGENT_BIN_MISSING\/\.test\(r\.errTail \|\| ""\) \? "engine_missing" : turnFail \|\| "other" \}\);\n\s*turnFail = null;/.test(appSrc9));
+    t("first_reply_done 只在畫進回覆泡泡、而且那段不是錯誤字串時送(分類過的錯誤卡在前面就 return 了)", /turnGotReply = true;\n\s*if \(!fail\) trackEvent\("first_reply_done", \{ kind: cur \}\);/.test(appSrc9)
+      && appSrc9.indexOf("const fail = turnFailOf(f, text);") < appSrc9.indexOf("if (f) { faultShown = true;"));
+    t("libBlockedWhy:閘門態才算被擋(signedOut / noData 的 why / 雲端停了或過期);忙碌、下載中、可用 → null",
+      why({ state: "signedOut" }) === "signed_out" && ["no_card", "no_balance", "unknown"].every((w) => why({ state: "noData", why: w }) === w) && why({ state: "stopped" }) === "cloud_off" && why({ state: "stale" }) === "cloud_off"
+      && ["busy", "pending", "buying", "free", "owned", "paid", "installed"].every((st) => why({ state: st }) === null)
+      && /why: state === "noData" \? \(c\.why === "no_card" \|\| c\.why === "no_balance" \? c\.why : "unknown"\) : null/.test(libSrc9));
+    t("lib_blocked 送出點:點進詳情(libShowDetail,使用者的點擊)與「使用」送出後引擎不能跑;不在 render(libPaintCta)",
+      /libPaint\(\); \$\("lib-body"\)\.scrollTop = 0;\n\s*const s = libFind\(id\); if \(s\) libBlocked\(libBlockedWhy\(libCtaOf\(s\)\)\);/.test(libSrc9) && !/libBlocked/.test(libSrc9.slice(libSrc9.indexOf("function libPaintCta("), libSrc9.indexOf("function libAsk("))));
+    // 主行程接線:track-event 只收自家頁面 + FROM_RENDERER;plan_start_res 的對照;updater 的 onFail
+    const main9 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), pre9 = fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8");
+    t("接線:preload trackEvent → send(\"track-event\");主行程 fromOurPage 且在 FROM_RENDERER 才 tm().track",
+      /trackEvent: \(ev, props\) => ipcRenderer\.send\("track-event", ev, props\),/.test(pre9)
+      && /ipcMain\.on\("track-event", \(e, ev, props\) => \{ if \(fromOurPage\(e\) && require\("\.\/telemetry"\)\.FROM_RENDERER\.includes\(ev\)\) tm\(\)\.track\(ev, props\); \}\);/.test(main9));
+    const pm = /tm\(\)\.track\("plan_start_res", \{ result: ([^\n]*) \}\);/.exec(main9), map = pm ? new Function("r", "return " + pm[1]) : null;
+    t("plan_start_res:{state} → ok、NO_CARD / NO_CREDIT 照名、其餘(舊登入、限速、伺服器)→ error",
+      !!map && map({ state: "starting" }) === "ok" && map({ error: "NO_CARD" }) === "no_card" && map({ error: "NO_CREDIT" }) === "no_credit" && ["APP_SECRET_REQUIRED", "RATE_LIMITED", "INVALID_CREDENTIALS", "SERVER"].every((c) => map({ error: c }) === "error")
+      && /ipcMain\.handle\("plan-start", \(e\) => \(fromOurPage\(e\) \? planStart\(\)\.then\(\(r\) => \{/.test(main9));
+    t("updater 接到 update_failed", /onFail: \(stage\) => tm\(\)\.track\("update_failed", \{ stage \}\),/.test(main9));
+    const { createUpdater } = require("../shell/updater.js"), stages = [];
+    const mkAu = (rejectCheck) => { const h = {}; return { h, on: (ev, fn) => { h[ev] = fn; }, setFeedURL: () => {}, checkForUpdates: () => (rejectCheck ? Promise.reject(new Error("offline")) : Promise.resolve()), quitAndInstall: () => {} }; };
+    const au = mkAu(false), nat = { on: (ev, fn) => { au.h["native:" + ev] = fn; } };
+    const up = createUpdater({ autoUpdater: au, nativeUpdater: nat, feedUrl: "https://x/", currentVersion: "0.1.9", isTrading: () => false, onState: () => {}, setTimer: () => {}, onFail: (s) => stages.push(s) }); up.start();
+    au.h["checking-for-update"](); au.h.error(new Error("x"));
+    au.h["update-available"]({ version: "0.2.0" }); au.h.error(new Error("x"));
+    au.h["update-available"]({ version: "0.2.0" }); au.h["update-downloaded"]({ version: "0.2.0" }); au.h.error(new Error("x"));
+    au.h["update-available"]({ version: "0.2.0" }); au.h["update-downloaded"]({ version: "0.2.0" }); au.h["native:update-downloaded"](); au.h.error(new Error("x"));
+    const au2 = mkAu(true), up2 = createUpdater({ autoUpdater: au2, feedUrl: "https://x/", currentVersion: "0.1.9", isTrading: () => false, onState: () => {}, setTimer: () => {}, onFail: (s) => stages.push(s) }); up2.start(); up2.check(); await tick();
+    const up3 = createUpdater({ autoUpdater: mkAu(true), feedUrl: "https://x/", currentVersion: "0.1.9", isTrading: () => false, onState: () => {}, setTimer: () => {}, onFail: () => { throw new Error("boom"); } }); up3.start();
+    t("update_failed 的階段取自出錯那一刻:查 feed → check、下載中 → download、驗章暫存 → staging、已暫存 → install;check() 被拒 → check;onFail 丟例外不影響更新",
+      stages.join() === "check,download,staging,install,check" && stages.every((s) => EVENTS.update_failed.stage.includes(s)) && up3.check() === true && (await tick(), up3.state().phase === "error"));
+    { const au4 = mkAu(false), st4 = []; au4.checkForUpdates = () => { au4.h.error(new Error("offline")); return Promise.reject(new Error("offline")); };
+      const up4 = createUpdater({ autoUpdater: au4, feedUrl: "https://x/", currentVersion: "0.1.9", isTrading: () => false, onState: () => {}, setTimer: () => {}, onFail: (s) => st4.push(s) }); up4.start(); up4.check(); await tick();
+      t("查 feed 失敗時 electron-updater 先 emit error 再 reject:update_failed 只記一則 check", st4.join() === "check" && up4.state().phase === "error"); }
+    // ── 每日在線心跳 heartbeat:app 一直開著不重開的人沒有 app_open ──
+    t("heartbeat:一個屬性 live: on / off、名字 ≤16 字、每日一則不分值(DAILY + DAILY_ONE)、畫面送不了",
+      JSON.stringify(EVENTS.heartbeat) === '{"live":["on","off"]}' && /const DAILY = \[[^\]]*"heartbeat"/.test(tmSrc9) && /const DAILY_ONE = \["heartbeat"\];/.test(tmSrc9) && !FROM_RENDERER.includes("heartbeat"));
+    { let clock = Date.UTC(2026, 8, 29, 23, 59, 0), live = "off", boom = false, reads = 0;
+      const dirH = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), h = mk(dirH, { now: () => clock, heartbeatMs: 5, heartbeat: () => { reads++; if (boom) throw new Error("status boom"); return { live, secret: "SECRET" }; } });
+      h.tm.start(); h.tm.start(); await new Promise((r) => setTimeout(r, 40));
+      const beats = () => h.sent.filter((b) => b.event === "heartbeat");
+      t("啟動就排計時器(只排一次;start 叫兩次也一樣):當天第一則送出,props 只有 live", beats().length === 1 && JSON.stringify(beats()[0].props) === '{"live":"off"}');
+      live = "on"; await new Promise((r) => setTimeout(r, 40));
+      t("同一個 UTC 日 live 變了也不再送(一天一則)", beats().length === 1);
+      t("當天送過之後計時器不再讀下單狀態(heartbeat() 只在會出門的那一輪叫)", reads === 1);
+      clock += 2 * 60 * 1000; await new Promise((r) => setTimeout(r, 40));
+      t("換日:再送一則,live 是那一刻的", beats().length === 2 && beats()[1].props.live === "on");
+      boom = true; clock += 24 * 3600 * 1000; await new Promise((r) => setTimeout(r, 40));
+      t("讀下單狀態丟例外:不炸、那一輪不送", beats().length === 2);
+      boom = false; h.tm.setEnabled(false); const readsOff = reads; await new Promise((r) => setTimeout(r, 40));
+      t("關掉追蹤:心跳也不送,也不讀下單狀態", beats().length === 2 && reads === readsOff);
+      const plain = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { heartbeatMs: 5 }); plain.tm.start(); await new Promise((r) => setTimeout(r, 30));
+      t("沒給 heartbeat 選項:不排心跳", !plain.sent.some((b) => b.event === "heartbeat")); }
+    t("main.js:tm() 帶 heartbeat,live 用 tradeMaybeLive(同 updater 的 isTrading)", /heartbeat: \(\) => \(\{ live: tradeMaybeLive\(\) \? "on" : "off" \}\),/.test(main9));
   }
 
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

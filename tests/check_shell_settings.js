@@ -363,7 +363,7 @@ ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="shares"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
-ok("隱私:會收 5 條(功能那條緊接在里程碑後)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4"\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
+ok("隱私:會收 6 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4"\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src));
 { /* 法遵入口(法遵稽核):app 裡本來連一個服務條款 / 隱私權政策的連結都沒有,而隱私權政策 §9.1 還叫人到
@@ -403,8 +403,12 @@ ok("隱私:會收 5 條(功能那條緊接在里程碑後)、不收 6 條(含「
     ok("LICENSE 的 Apache 樣板佔位已經填成 repo 自己的署名(同 NOTICE)",
       !!m && lic.includes("\n   " + m[0] + "\n") && !/\[yyyy\]|\[name of copyright owner\]/.test(lic)); }
   window.blave.openExternal = realOpen; LANG = "zh"; }
-ok("隱私:會收那一條寫到 macOS 版本與系統語言;八個事件逐項對得上契約的白名單(feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容)", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 8 && /首次開啟、每日開啟、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
-  && /msgid "priv\.collect\.5"\nmsgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"/.test(PO[0]) && /msgid "priv\.collect\.5"\nmsgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"/.test(PO[1]));
+// 事件數跟告知綁在一起:加事件而沒補「會收」那幾條,這裡就紅(canon product-telemetry 出貨清單第 5 條)
+ok("隱私:會收那一條寫到 macOS 版本與系統語言;十八個事件逐項對得上契約的白名單(feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容;0.1.9 的九個是「卡在哪一步」那一條:只記類別;heartbeat 是里程碑那一條的「app 開著的每一天」)", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 18 && /首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
+  && /each day the app stays open \(and whether local auto-trading is running\)/.test(PO[1])
+  && /msgid "priv\.collect\.5"\nmsgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"/.test(PO[0]) && /msgid "priv\.collect\.5"\nmsgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"/.test(PO[1])
+  && /msgid "priv\.collect\.6"\nmsgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下，更新卡在哪一步，第一次收到 AI 回覆；只記類別，不含內容"/.test(PO[0])
+  && /msgid "priv\.collect\.6"\nmsgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked, which update step failed, and your first AI reply — categories only, never the content"/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
 ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選項 shr.anon 除外);首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, "").replace(/msgid "shr\.anon"\nmsgstr "[^"]*"/, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));
 // 設定 › 資料與雲端方案 › 主機運行中那格:主鈕是「切到雲端」(關設定 + 走切換器同一個守門入口),不再外開網頁(Wei:不用前往工作頁了)
@@ -563,7 +567,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
 // 聊天裡「拿不到資料」那張卡(spec-data-without-machine-flow §3):none 的出口是錢包(儲值 / 綁卡),不是主機;
 // 從 none 回來時,按小時付的那條要講「會收錢」,免費那條照舊「可以用了」。真的跑 dataCardState / acctPaint / maybeDataCard
 { const mkCard = () => { const c = { states: [] }; c.set = (x) => { c.states.push(x); c.last = x; }; return c; };
-  let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q";
+  let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q", acctGone = null;   // acctGone:acctPaint 補記 acct_card_back 用的,這裡沒按過卡上的鈕
   const creditCards = [], dataCardSessions = new Set(); let turnCards = [];
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
