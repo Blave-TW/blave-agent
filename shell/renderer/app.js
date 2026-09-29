@@ -1230,6 +1230,7 @@ function csLock(on) {
 }
 function csClearChat() {
   if (typeof brReset === "function") brReset();   // 內建瀏覽器的區塊與展開層(renderer/browser.js)
+  if (typeof sugCollapse === "function") sugCollapse();   // 建議列屬於眼前這條對話,換對話即作廢(同 web csSwitch)
   $("chat-scroll").innerHTML = "";
   liveBubble = null; busy = null; swLine = null; swHeld = null;
   acctCard = null; creditCards.length = 0; dataCard = null;   // 卡片跟著聊天欄一起清掉
@@ -1519,15 +1520,21 @@ $("chat-eg").addEventListener("click", () => {
       網頁是 marked 產 HTML 再過 DOMPurify;這裡不解讀 HTML:只產結構,DOM 由 mdPaint 一個節點一個節點組,
       字串一律走 textContent。agent 寫的 `<img onerror=…>`、`<b>` 原樣當文字顯示。 */
 const CARD_TAG = /<blave-card:([a-z-]+)\/>/g;
+/* 建議下一步的 <suggest> 區塊:runtime 在 finalize 剝掉、另送 suggestions chunk(renderer/suggest.js 畫)。
+   runtime 沒走到 finalize 的回合(出錯、被殺)草稿會原樣升格——這裡再剝一次,同 runtime _SUGGEST_BLOCK_RE / _SUGGEST_OPEN_TAIL_RE */
+const SUG_BLOCK = /[ \t]*<suggest>[\s\S]*?<\/suggest>[ \t]*/g;
+const SUG_OPEN_TAIL = /[ \t]*<suggest>(?:(?!<\/suggest>)[\s\S])*$/;
 /* 純函式(tests/check_shell_paint.js 直接測它):原文 → { cards, blocks }。``` 圍欄裡的東西一個字都不動——
    `f(**a, **b)`、`2**3` 被當成粗體吃掉星號的話,用戶照畫面抄策略碼會抄錯。`live` = 還在串流:尾端半截的標記
    先藏起來;回合結束後用 live=false 重畫一次,真的以 `<` 結尾的回覆才不會被永久吃掉。 */
 function aiParts(raw, live) {
   const cards = [];
   let text = String(raw).replace(CARD_TAG, (_m, name) => { cards.push(name); return ""; });
+  if (text.indexOf("<suggest>") >= 0) text = text.replace(SUG_BLOCK, "").replace(SUG_OPEN_TAIL, "").replace(/\s+$/, "");
   if (live) {
-    const lt = text.lastIndexOf("<");
-    if (lt >= 0 && text.length - lt <= 40 && "<blave-card:".startsWith(text.slice(lt, lt + 12)) && !text.slice(lt).includes(">")) text = text.slice(0, lt);
+    const lt = text.lastIndexOf("<"), tail = lt >= 0 ? text.slice(lt) : "";
+    // <suggest> 還沒湊齊(`<sug`)也先藏:湊齊後 SUG_OPEN_TAIL 才剝得到,中間那一兩拍會閃出字面
+    if (lt >= 0 && tail.length <= 40 && !tail.includes(">") && ("<blave-card:".startsWith(tail.slice(0, 12)) || "<suggest>".startsWith(tail))) text = text.slice(0, lt);
   }
   if (cards.length) text = text.replace(/\s+$/, "");
   return { cards, blocks: mdBlocks(text, 0) };
@@ -1952,6 +1959,7 @@ async function sendDraft() {
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   if (!msg || running) return false;
+  if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
   running = true; sendBtnSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
@@ -2735,12 +2743,15 @@ window.blave.onTurnEvent((c) => {
     if (typeof rptTurnTool === "function") rptTurnTool(c);   // 雲端視角這一輪碰了雲端主機:回合結束去等雲端報告清單(reports.js)
   } else if (c.type === "export") {
     if (typeof xpChunk === "function") xpChunk(c);   // 轉出檔:先收著,回合結束掛到回覆下面(renderer/export.js)
+  } else if (c.type === "suggestions") {
+    if (typeof sugChunk === "function") sugChunk(c);   // 建議下一步:先收著,回合結束才長出(renderer/suggest.js)
   } else if (c.type === "tool_prep") {
     actToolPrep(c);
   } else if (c.type === "thinking") {
     busyReason(c.text || "");
   } else if (c.type === "error") {
     turnErrored = true;
+    if (typeof sugCollapse === "function") sugCollapse();
     if (faultShown && c.code === "not_started") { faultShown = false; return; }
     if (turnLimit && limitSwallow(c.code, turnChanged)) return;   // 用量到上限那張卡已經講完了
     const line = t("turn.error", { msg: c.message || "" });
@@ -2801,6 +2812,7 @@ window.blave.onTurnEnd(async (r) => {
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
+  if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議列停一拍才長出,那時回覆與下面兩行的卡都已掛好(renderer/suggest.js)
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
   chatSwitchFlush();   // 回合中切過視角:那一行排在這一輪之後(結果卡的落點已經在上一行定了)
 });

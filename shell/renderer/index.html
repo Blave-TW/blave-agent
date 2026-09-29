@@ -6,6 +6,7 @@
 <title>Blave</title>
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="suggest.css">
 <link rel="stylesheet" href="results.css">
 <link rel="stylesheet" href="report-backtest.css">
 <link rel="stylesheet" href="report-trades.css">
@@ -292,6 +293,14 @@
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
+        <!-- 建議下一步(照雲端 #chat_sug_wrap;renderer/suggest.js):輸入框上緣全寬列表行、最多 3 行、整行可點 = 送出那句。
+             .is-closed 與 inert 同進退,預設收合;小標與 group 的 aria-label 同字,小標 aria-hidden,讀屏只念一份 -->
+        <div class="sug-wrap is-closed" id="sug-wrap" inert>
+          <div class="sug" role="group" data-i18n-aria="ws.sugGroup">
+            <div class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"></div>
+            <div class="sug-rows" id="sug-rows"></div>
+          </div>
+        </div>
         <!-- 回合進行中、草稿非空時按 Enter:不送,這一行講為什麼(e2e 0.1.8 #71);字由 taWaitShow 寫,回合結束即收 -->
         <p class="ta-wait" id="ta-wait" role="status"></p>
         <div class="chat-input">
@@ -596,6 +605,7 @@
 <script src="export.js"></script>
 <script src="library.js"></script>
 <script src="app.js"></script>
+<script src="suggest.js"></script>
 <script src="strategy_versions.js"></script>
 <script src="versions.js"></script>
 <script src="browser.js"></script>

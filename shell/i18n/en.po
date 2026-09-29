@@ -104,6 +104,10 @@ msgstr "Message the agent"
 msgid "ws.waitTurn"
 msgstr "The previous turn is still running. Press Enter again when it finishes."
 
+# 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
+msgid "ws.sugGroup"
+msgstr "Suggested Next Steps"
+
 msgid "ws.send"
 msgstr "Send"
 

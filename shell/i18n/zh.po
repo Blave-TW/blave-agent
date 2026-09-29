@@ -104,6 +104,10 @@ msgstr "跟 agent 說一句話"
 msgid "ws.waitTurn"
 msgstr "上一輪還在跑，結束後再按 Enter 送出。"
 
+# 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
+msgid "ws.sugGroup"
+msgstr "建議下一步"
+
 msgid "ws.send"
 msgstr "送出"
 
