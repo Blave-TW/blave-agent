@@ -1919,6 +1919,10 @@ msgstr "取消"
 msgid "tm.hidden"
 msgstr "Blave 還開著，自動下單照常執行。從選單列的圖示可以暫停或打開視窗。"
 
+# tm.hidden 的 Windows 版(圖示在系統匣,不叫選單列)
+msgid "tm.hiddenWin"
+msgstr "Blave 還開著，自動下單照常執行。從系統匣的圖示可以暫停或打開視窗。"
+
 msgid "tm.updateReady"
 msgstr "重新啟動以完成更新"
 
@@ -2097,6 +2101,10 @@ msgstr "這台電腦：{money} · {state}"
 
 msgid "tm.stCloud"
 msgstr "雲端：{money} · {state}"
+
+# 選單列這台電腦那一行沒有交易所名可填時(還沒連接交易所 / 讀不到狀態)
+msgid "tm.stLocalOnly"
+msgstr "這台電腦：{state}"
 
 msgid "tm.stOn"
 msgstr "執行中"

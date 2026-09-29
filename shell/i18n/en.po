@@ -1919,6 +1919,10 @@ msgstr "Cancel"
 msgid "tm.hidden"
 msgstr "Blave is still open and auto trading keeps running. Use the menu bar icon to pause or to open the window."
 
+# tm.hidden 的 Windows 版(圖示在系統匣,不叫選單列)
+msgid "tm.hiddenWin"
+msgstr "Blave is still open and auto trading keeps running. Use the system tray icon to pause or to open the window."
+
 msgid "tm.updateReady"
 msgstr "Restart to finish updating"
 
@@ -2097,6 +2101,10 @@ msgstr "This computer: {money} · {state}"
 
 msgid "tm.stCloud"
 msgstr "Cloud: {money} · {state}"
+
+# 選單列這台電腦那一行沒有交易所名可填時(還沒連接交易所 / 讀不到狀態)
+msgid "tm.stLocalOnly"
+msgstr "This computer: {state}"
 
 msgid "tm.stOn"
 msgstr "Running"
