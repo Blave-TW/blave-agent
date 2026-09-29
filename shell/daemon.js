@@ -12,7 +12,7 @@ const { spawn } = require("child_process");
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
-  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm"]);
+  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore"]);
 // 只有主行程送得出的(send(…, { trusted: true })):設定 › Agent 規則的兩個寫入(shell/agentrules.js)。不放進 UI_COMMANDS:
 // renderer 的寫入必須經過 rules-save / reply-lang-save 那兩支 IPC——「規則檔讀不到就不寫」那道閘在那裡,通用的 trade-send 繞得過它;
 // api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
@@ -90,6 +90,10 @@ function argsOk(cmd, a, trusted) {
     const n = typeof a.custom === "string" ? Array.from(a.custom.trim()).length : 0;
     return !a.lang && n >= 1 && n <= REPLY_LANG_CUSTOM_MAX && !/[\r\n<>]/.test(a.custom);
   }
+  /* 策略版本就地還原:剛好 name + n。名字規則比 NAME_RE 窄(不收「.」)= runtime _cmd_version_restore 與 api 的版本端點;
+     版號同 main.js versionN。有金額的策略由機器端的 restore() 在動檔前拒絕,這一層只擋形狀 */
+  if (cmd === "version_restore") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
+    && Number.isInteger(a.n) && a.n > 0 && a.n <= 1000000;
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
 function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,

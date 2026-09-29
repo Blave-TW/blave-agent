@@ -67,6 +67,17 @@
 .vb-t b { color: var(--ink); font-weight: 600; }
 .vb-acts { flex: none; display: flex; gap: var(--space-8); }
 .vb-short { display: none; }
+/* 回滾原因行:橫幅文字與鈕的下方另起一行 */
+.vbanner:has(.vb-err:not([hidden])) { flex-wrap: wrap; }
+.vb-err { flex: 1 1 100%; margin: 0; display: flex; align-items: flex-start; gap: var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.vb-err[hidden] { display: none; }
+/* 重跑狀態列:句子可折行、不截斷;鈕窄時折到下一行靠左 */
+.vrerun { flex-wrap: wrap; }
+.vr-t { flex: 1 1 240px; min-width: 0; margin: 0; display: flex; align-items: flex-start; gap: var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.vr-t .spin16 { flex: none; margin-top: 1px; }
+.vr-t .fault-mark, .vb-err .fault-mark { flex: none; margin-top: 8px; }   /* 12px × 1.5 首行的中線(記號高 2px) */
+.vr-t b { color: var(--ink); font-weight: 600; }
+.vrerun .btn-out { flex: none; }
 #ver-restore[aria-disabled="true"] { background: var(--surface-muted); color: var(--ink-3); border-color: var(--color-greyMedium); cursor: default; opacity: 1; }
 @container rp (max-width: 519px) {
   .vbanner { flex-wrap: wrap; padding: var(--space-8) var(--space-16) var(--space-12); }

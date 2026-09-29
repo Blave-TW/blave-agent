@@ -156,7 +156,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   let running = false, loads = 0; const t = (k) => k;
   const window = { blave: { listStrategies: async () => [{ name: "a", displayName: "A", mtime: 1 }, { name: "b", displayName: "B", mtime: 2 }],
     loadStrategy: async (n) => { loads++; return { name: n, stats: null, code: "x" }; }, deleteStrategy: async () => true } };
-  const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, confirmBox = () => {}, stratBlockedNote = () => mkEl("p");
+  const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, rpTab = (B) => (B.data && B.data.stats ? B.tab : "code"), confirmBox = () => {}, stratBlockedNote = () => mkEl("p");
   const document = doc;
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));
@@ -186,7 +186,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
       api: { loadStrategy: (n) => new Promise((res) => pendingLoads.push({ n, res })) } };
     const scope = { $: $2, document: doc, t: (k) => k, ENV: { cur: "cloud", sig: {} }, TR_BAGS: { cloud: C, local: { open: false } }, RP: { name: null }, RPC: { name: null, data: null, tab: "bt", drawn: {} },
       trAlert: () => {}, srSay: (x) => said.push(x), hoPaint: () => {}, window: {} };
-    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpShowTab"),
+    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"),
       appSrc.slice(appSrc.indexOf("const RPC_CACHE = new Map();"), appSrc.indexOf("async function rpCloudSelect(")).replace(/^const |^let /gm, "var "),
       "var rpCloudSelect = async " + fnOf(appSrc, "rpCloudSelect").replace(/^async /, ""),
       "var trPaint = () => envShowMain();"].join("\n");

@@ -282,10 +282,60 @@ def _read_wf(name):
     return data if isinstance(data, dict) else None
 
 
+# The machine's lib can restore a version in place (lib/strategy.py RESTORE_IN_PLACE, canon §9
+# `inplace`). A TEXT match, never an import: this runtime updates itself while lib/ only moves
+# when the user asks, and importing lib here would drag pandas into every report. The one
+# definition — command_listener's version_restore handler asks the same function.
+_RESTORE_IN_PLACE_RE = re.compile(rb"^RESTORE_IN_PLACE\s*=\s*1\b", re.M)
+_lib_restore_cache = {}
+# = command_listener._RERUN_ERRS; anything else in rerun.json is not reported
+RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT")
+
+
+def lib_restore_in_place():
+    path = os.path.join(WORKSPACE, "lib", "strategy.py")
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _lib_restore_cache.get(path)
+    if hit and hit[0] == key:
+        return hit[1]
+    try:
+        with open(path, "rb") as f:
+            ok = bool(_RESTORE_IN_PLACE_RE.search(f.read()))
+    except OSError:
+        ok = False
+    _lib_restore_cache[path] = (key, ok)
+    return ok
+
+
+def _read_rerun(vdir):
+    """versions/rerun.json (a restore's background re-run, written by command_listener) as
+    {n, status, at, err?} — only the keys the web reads, each type-checked; None when absent,
+    unreadable or malformed (no pending state is safer than a wrong one)."""
+    try:
+        with open(os.path.join(vdir, "rerun.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    n, status, at = doc.get("n"), doc.get("status"), doc.get("at")
+    if (isinstance(n, bool) or not isinstance(n, int) or n <= 0 or status not in ("running", "failed")
+            or isinstance(at, bool) or not isinstance(at, int)):
+        return None
+    out = {"n": n, "status": status, "at": at}
+    if status == "failed":
+        out["err"] = doc.get("err") if doc.get("err") in RERUN_ERRS else "EXIT"
+    return out
+
+
 def _read_versions(name):
-    """The strategy's version summary for the report: {counter, current, items, drift}, or
-    None when this strategy has never been versioned (an older config on the machine —
-    the web then simply shows no version history).
+    """The strategy's version summary for the report: {counter, current, items, drift,
+    inplace?, rerun?}, or None when this strategy has never been versioned (an older config on
+    the machine — the web then simply shows no version history).
 
     Carries the summary entries only: no code, no equity curve. 20 entries × ~200 bytes is
     the whole budget (canon §9) — the blobs go to S3 through sync_versions, and 20 copies
@@ -294,7 +344,11 @@ def _read_versions(name):
     `drift` is the live-tick flag lib/runner.py writes when strategies/<name>/strategy.py
     stopped matching what the current version stored (canon §6). The web needs it to draw
     「上線中 · 檔案已改」 instead of a clean 「上線中」 — a clean badge over code nobody
-    backtested is worse than no badge."""
+    backtested is worse than no badge.
+
+    `inplace: true` only when this machine's lib restores in place (absent = it does not —
+    the workspace then asks the user to update instead of restoring). `rerun` only while a
+    restore's background re-run is running or has failed (canon §5)."""
     vdir = os.path.join(STRATEGIES_DIR, name, "versions")
     try:
         with open(os.path.join(vdir, "index.json"), encoding="utf-8") as f:
@@ -304,12 +358,18 @@ def _read_versions(name):
             raise ValueError("items is not a list")
     except (OSError, ValueError, KeyError, TypeError):
         return None
-    return {
+    out = {
         "counter": idx.get("counter"),
         "current": idx.get("current"),
         "items": [i for i in items if isinstance(i, dict)],
         "drift": os.path.exists(os.path.join(vdir, "drift.json")),
     }
+    if lib_restore_in_place():
+        out["inplace"] = True
+    rerun = _read_rerun(vdir)
+    if rerun:
+        out["rerun"] = rerun
+    return out
 
 
 def _scan_marker(name):

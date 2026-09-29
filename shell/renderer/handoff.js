@@ -72,8 +72,10 @@ function hoPaint() {
   const cloud = ENV.cur === "cloud";
   const B = cloud ? RPC : RP, dir = cloud ? "down" : "up";
   const show = HO.on && !!B.name && HO_ID_RE.test(B.name) && hoHasCode(B.data) && (!cloud || hoCloudLive());
-  act.hidden = !show; act.textContent = "";
-  if (!show) return;
+  // 時光機裡、還原後重跑中不畫:作用在現在那份檔,不是正在看的那一版 / 還沒跑完的那一版(renderer/versions.js)
+  const verHide = typeof verHidesAct === "function" && verHidesAct();
+  act.hidden = !show || verHide; act.textContent = "";
+  if (!show || verHide) return;
   const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho"; b.dataset.dir = dir;
   const l = document.createElement("span"); l.textContent = cloud ? t("ho.down.btn") : t("ho.up.btn"); b.append(hoIcon(dir), l);
   if (cloud) { const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); }

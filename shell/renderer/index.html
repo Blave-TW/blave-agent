@@ -167,7 +167,11 @@
         <div class="vbanner" id="ver-banner" hidden>
           <p class="vb-t" id="ver-banner-t"></p>
           <div class="vb-acts"><button class="btn-out" id="ver-back" type="button"><span class="vb-long" data-i18n="ver.back"></span><span class="vb-short" data-i18n="ver.backShort"></span></button><button class="btn-fill" id="ver-restore" type="button" data-i18n="ver.restore"></button></div>
+          <!-- 還原沒成功、畫面回滾時的原因(versions.js verRollback);離開時光機或再按一次還原就收掉 -->
+          <p class="vb-err" id="ver-banner-err" hidden></p>
         </div>
+        <!-- 還原後的背景重跑(versions.js verPaintRerun):跟時光機橫幅同一槽、同一個 recipe,兩者互斥 -->
+        <div class="vbanner vrerun" id="ver-rerun" role="status" hidden></div>
         <div class="rp-tabs" role="tablist" id="rp-tabs">
           <button class="rp-tab" type="button" role="tab" data-tab="bt" data-i18n="rp.tab.backtest"></button>
           <button class="rp-tab" type="button" role="tab" data-tab="tr" data-i18n="rp.tab.trades"></button>

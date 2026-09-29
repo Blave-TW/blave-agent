@@ -1576,7 +1576,7 @@ _scheduler_wake = threading.Event()  # lets a fresh 下單設定 save skip the w
 _ac_migration_done = False  # see _run_scheduler_cycle's transition handling
 
 
-def _strategy_subprocess_env():
+def _strategy_subprocess_env(mode="live", **extra):
     """Minimal env for a strategy/wait_for_bar.py subprocess — the bridge's
     BLAVE_PROXY_TOKEN etc. have no business inside agent/user strategy code.
     Linux: same allowlist the Type B kickoff Popen already uses (see
@@ -1588,16 +1588,20 @@ def _strategy_subprocess_env():
     that function, so a Windows tick doesn't die at interpreter boot. TZ is dropped on
     both (the Linux allowlist never had it): a strategy must read the same clock
     whichever way it was started, and this process may carry the user's own zone
-    (state/timezone, contract §2b) while the scheduler does not."""
+    (state/timezone, contract §2b) while the scheduler does not.
+    `mode` / `extra`: a restore's background re-run is a quiet BACKTEST (BLAVE_MODE=backtest,
+    BLAVE_QUIET=1) under the same allowlist — passed explicitly, since the Windows local
+    denylist strips every inherited BLAVE_*."""
     if _local_mode():
-        return _local_child_env(BLAVE_MODE="live")
+        return _local_child_env(BLAVE_MODE=mode, **extra)
     if platform.system() == "Windows":
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("BLAVE_") and k != "TZ"}
-        env["BLAVE_MODE"] = "live"
+        env["BLAVE_MODE"] = mode
+        env.update(extra)
         return env
     return {k: v for k, v in os.environ.items()
-            if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": "live"}
+            if k in ("PATH", "HOME", "LANG", "USER", "SHELL")} | {"BLAVE_MODE": mode} | extra
 
 
 # ── downtime watch ───────────────────────────────────────────────────────────
@@ -2545,6 +2549,15 @@ def _prune_deployment_registry(ac_names):
         _log(f"deployment registry prune failed: {type(e).__name__}: {e}")
 
 
+def _workspace_python():
+    """The interpreter workspace code runs under: PATH's python3 on a cloud box (the one cron and
+    the schtasks entries use — sys.executable here is this runtime's own venv), this process's
+    own in local mode (the app's venv carries the strategy deps)."""
+    if _local_mode():
+        return sys.executable
+    return "python" if platform.system() == "Windows" else "python3"
+
+
 def _tick_one(name):
     """One strategy's wait_for_bar tick — runs the UNMODIFIED CLI entrypoint
     (`python3 manager/wait_for_bar.py <name>`) as a subprocess, on its own
@@ -2562,12 +2575,9 @@ def _tick_one(name):
     to prevent recurring — a wrong subprocess env the interpreter can't even
     boot under). That failure mode is otherwise silent, so it's logged here,
     not swallowed as a bare last-resort net for "failed to start"."""
-    interp = "python" if platform.system() == "Windows" else "python3"
-    if _local_mode():
-        interp = sys.executable
     try:
         r = subprocess.run(
-            [interp, os.path.join("manager", "wait_for_bar.py"), name],
+            [_workspace_python(), os.path.join("manager", "wait_for_bar.py"), name],
             cwd=WORKSPACE, env=_strategy_subprocess_env(),
             capture_output=True, text=True,
             timeout=SCHEDULER_TICK_TIMEOUT_SECONDS, **_child_kw()
@@ -3808,6 +3818,16 @@ def _cmd_delete_strategy(args):
     if not doomed:
         # idempotent: a retry after a half-seen success is a no-op, not an error
         return "delete_strategy=absent"
+    # a restore's background re-run still writing into this folder would recreate it
+    # (stats.json, versions/) as a strategy with no code. Bounded wait: this runs on the poll
+    # loop, and halt / close_all queue behind it (a restore holds the lock for 1–3 s normally,
+    # up to _RESTORE_TIMEOUT_S when its subprocess hangs)
+    if not _RESTORE_LOCK.acquire(timeout=10):
+        raise RuntimeError("a version restore of this machine is in progress — try again")
+    try:
+        _kill_rerun(name)
+    finally:
+        _RESTORE_LOCK.release()
     entries = set()
     for p in doomed:
         base = os.path.basename(p)
@@ -5120,6 +5140,342 @@ def _reopen_mgmt_job(pid):
             _log(f"mgmt job reopen failed: {type(e).__name__}")
 
 
+# ── 策略版本就地還原(.claude/docs/strategy-versions.md §5)──────────────────────
+# `version_restore {name, n}`: the workspace's 還原 button, no agent turn. Two steps:
+#   1. lib.strategy.restore(name, n) in a workspace subprocess — the one door both this and the
+#      agent go through, so the live gate (amount > 0 refuses before any file is touched) has no
+#      second entrance. The ack means exactly this step: code back, `current` on n.
+#   2. a detached quiet backtest (BLAVE_MODE=backtest BLAVE_QUIET=1) refreshes stats.json on
+#      today's data; its code equals v<n>, so it mints nothing. Its state rides the strategies
+#      report as versions.rerun (versions/rerun.json): running → gone on success (the runner
+#      deletes it), failed + a code otherwise.
+# Old lib (no RESTORE_IN_PLACE) → UPDATE_REQUIRED: its restore() moves nothing and the re-run
+# would mint a new version, the exact behaviour this command exists to replace.
+_VERSION_RESTORE_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")  # = api agent_strategy_versions._NAME_RE
+_VERSION_RESTORE_MAX_N = 1000000                                # = api agent_strategy_versions.MAX_VERSION_N
+# Fleet-measured budgets are not in yet (29026): 15 min covers a 1-min two-year Type A with
+# MCPT on a 2-vCPU box; a Type C universe on a cold 台股 cache may need more.
+RESTORE_RERUN_TIMEOUT_S = 15 * 60
+_RESTORE_TIMEOUT_S = 120          # the synchronous step 1 (interpreter start + pandas import)
+_RESTORE_ADOPT_POLL_S = 5
+# = strategy_reporter.RERUN_ERRS: the reasons the web can put into words
+_RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT")
+_RERUN_DATA_MARKS = ("DataAccessError", "TwPublicUnavailable", "FeedNotPublished", "ERR007",
+                     "ERR005", "HTTPError", "ConnectionError", "ConnectTimeout", "ReadTimeout",
+                     "the feed has no rows")
+_RESTORE_MARK = "@@BLAVE_RESTORE@@ "   # plain ASCII: str.splitlines() also splits on \x1c-\x1e
+_RESTORE_PY = (
+    "import json, sys\n"
+    "from lib.strategy import restore\n"
+    "try:\n"
+    "    out = {'ok': True, 'result': restore(sys.argv[1], int(sys.argv[2]))}\n"
+    "except Exception as e:\n"
+    "    out = {'ok': False, 'code': getattr(e, 'restore_code', None) or 'FAILED',\n"
+    "           'error': f'{type(e).__name__}: {e}'[:300]}\n"
+    f"print({_RESTORE_MARK!r} + json.dumps(out))\n"
+)
+VERSION_EVENTS_PATH = os.path.join(WORKSPACE_STATE, "version_events.jsonl")
+VERSION_EVENTS_KEEP = 50
+_RESTORE_LOCK = threading.RLock()   # one restore at a time; delete_strategy takes it too
+_RERUN_PROCS = {}                   # name → the re-run Popen this process started
+
+
+def _version_restore_args(args):
+    if not isinstance(args, dict) or set(args) != {"name", "n"}:
+        raise ValueError("BAD_ARGS: version_restore takes exactly name and n")
+    name, n = args["name"], args["n"]
+    if not isinstance(name, str) or not _VERSION_RESTORE_NAME_RE.fullmatch(name):
+        raise ValueError("BAD_ARGS: bad strategy name")
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= _VERSION_RESTORE_MAX_N:
+        raise ValueError("BAD_ARGS: bad version number")
+    return name, n
+
+
+def _versions_path(name, *parts):
+    return os.path.join(WORKSPACE, "strategies", name, "versions", *parts)
+
+
+def _read_rerun_doc(name):
+    try:
+        with open(_versions_path(name, "rerun.json"), encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def _rerun_pid_alive(name, pid):
+    """Alive AND still this strategy's re-run (same identity rule as _mgmt_pid_alive: after a
+    reboot the pid may belong to anything)."""
+    proc = _RERUN_PROCS.get(name)
+    if proc is not None and proc.pid == pid:
+        return proc.poll() is None
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    doc = _read_rerun_doc(name) or {}
+    script = doc.get("script")
+    # only the two paths _start_rerun can have written: the file is in the agent's reach, and a
+    # loose match here is what decides a kill
+    if script not in (f"strategies/{name}/strategy.py", f"strategies/{name}.py"):
+        return False
+    return script in _pid_cmdline(pid).replace("\\", "/")
+
+
+def _kill_tree(pid):
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                           capture_output=True, timeout=30, **_child_kw())
+        else:
+            os.killpg(pid, signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError) as e:
+        _log(f"restore rerun kill failed: {type(e).__name__}")
+
+
+def _kill_rerun(name):
+    """Stop this strategy's re-run if one is running — before a second restore replaces the
+    file under it, and before delete_strategy removes the folder it writes into."""
+    doc = _read_rerun_doc(name)
+    pid = doc.get("pid") if doc else None
+    if doc and doc.get("status") == "running" and _rerun_pid_alive(name, pid):
+        _kill_tree(pid)
+    proc = _RERUN_PROCS.pop(name, None)
+    if proc is not None and proc.poll() is None:
+        _kill_tree(proc.pid)
+
+
+def _rerun_log_tail(name):
+    return _log_tail(_versions_path(name, "rerun.log"))
+
+
+def _classify_rerun(tail):
+    if "Backtest refused" in tail:
+        return "REFUSED"
+    if any(m in tail for m in _RERUN_DATA_MARKS):
+        return "DATA"
+    return "EXIT"
+
+
+def _version_code_hash(name, n):
+    """v<n>.json's code_hash (lib.strategy.code_hash: sha256 of the file bytes, 16 hex), or None."""
+    try:
+        with open(_versions_path(name, f"v{n}.json"), encoding="utf-8") as f:
+            h = json.load(f).get("code_hash")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return h if isinstance(h, str) and h else None
+
+
+def _file_is_version(doc, name, n):
+    """Does the strategy file still hold v<n>'s code? (what the re-run was asked to run)"""
+    import hashlib
+    script = doc.get("script") if isinstance(doc.get("script"), str) else ""
+    want = _version_code_hash(name, n)
+    try:
+        with open(os.path.join(WORKSPACE, script), "rb") as f:
+            have = hashlib.sha256(f.read()).hexdigest()[:16]
+    except OSError:
+        return False
+    return bool(script) and want is not None and have == want
+
+
+def _settle_rerun(name, pid, rc=None, err=None):
+    """Terminal state for the re-run `pid` owns; a rerun.json a newer restore has since
+    replaced is left alone. The runner deletes rerun.json itself after a successful write,
+    so finding it still ours means one of:
+      - the file no longer holds v<n> (an edit, or the agent, overtook the re-run and the
+        runner discarded it as superseded) → the restore is moot: rerun.json removed, the
+        page shows the strategy as it now is;
+      - otherwise → failed, with the reason read off the log tail (or TIMEOUT)."""
+    with _RESTORE_LOCK:
+        doc = _read_rerun_doc(name)
+        if not doc or doc.get("pid") != pid or doc.get("status") != "running":
+            return None
+        n = doc.get("n")
+        if not _file_is_version(doc, name, n):
+            _remove_retry(_versions_path(name, "rerun.json"), "re-run record")
+            return "moot"
+        if err is None:
+            err = "EXIT" if rc == 0 else _classify_rerun(_rerun_log_tail(name))
+        doc.update(status="failed", err=err)
+        doc.pop("pid", None)
+        _write_json_atomic(_versions_path(name, "rerun.json"), doc)
+        return err
+
+
+def _watch_rerun(name, proc):
+    err = None
+    rc = None
+    try:
+        try:
+            rc = proc.wait(timeout=RESTORE_RERUN_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            err = "TIMEOUT"
+            _kill_tree(proc.pid)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        _settle_rerun(name, proc.pid, rc, err)
+    except Exception as e:
+        _log(f"restore rerun watcher died: {type(e).__name__}: {e}")
+    if _RERUN_PROCS.get(name) is proc:
+        _RERUN_PROCS.pop(name, None)
+    # the one push that reliably reports the end: an amount-0 strategy still in the order
+    # settings is tracked by stats.json's EXISTENCE only (strategy_reporter._stats_marker)
+    _push(_ON_APPLIED, "restore rerun")
+
+
+def _adopt_rerun(name, pid):
+    try:
+        while _rerun_pid_alive(name, pid):
+            time.sleep(_RESTORE_ADOPT_POLL_S)
+        _settle_rerun(name, pid)
+    except Exception as e:
+        _log(f"adopted restore rerun watcher died: {type(e).__name__}: {e}")
+    _push(_ON_APPLIED, "restore rerun")
+
+
+def _resume_restore_watch():
+    """At listener start: a re-run that outlived the previous process gets a watcher again; a
+    dead one is settled — otherwise the page shows 重跑中 forever."""
+    sdir = os.path.join(WORKSPACE, "strategies")
+    try:
+        names = sorted(os.listdir(sdir))
+    except OSError:
+        return
+    for name in names:
+        if not _VERSION_RESTORE_NAME_RE.fullmatch(name):
+            continue
+        doc = _read_rerun_doc(name)
+        if not doc or doc.get("status") != "running":
+            continue
+        pid = doc.get("pid")
+        if _rerun_pid_alive(name, pid):
+            _log(f"adopting restore rerun of {name} (pid {pid})")
+            threading.Thread(target=_adopt_rerun, args=(name, pid), daemon=True,
+                             name="restore-rerun-adopt").start()
+        else:
+            try:
+                _settle_rerun(name, pid)
+            except Exception as e:
+                _log(f"restore rerun settle failed: {type(e).__name__}: {e}")
+
+
+def _run_restore(name, n):
+    """Step 1 in a workspace subprocess (cwd = workspace root, which restore() insists on)."""
+    try:
+        r = subprocess.run([_workspace_python(), "-c", _RESTORE_PY, name, str(n)],
+                           cwd=WORKSPACE, env=_strategy_subprocess_env("backtest"),
+                           capture_output=True, encoding="utf-8", errors="replace",
+                           timeout=_RESTORE_TIMEOUT_S, **_child_kw())
+    except subprocess.TimeoutExpired:
+        raise ValueError(f"FAILED: restore did not finish within {_RESTORE_TIMEOUT_S}s")
+    line = next((x for x in reversed((r.stdout or "").splitlines()) if x.startswith(_RESTORE_MARK)), None)
+    try:
+        out = json.loads(line[len(_RESTORE_MARK):]) if line else None
+    except ValueError:
+        out = None
+    if not isinstance(out, dict):
+        raise ValueError(f"FAILED: restore exited {r.returncode} — {_tail(r.stderr, 200)}")
+    if not out.get("ok"):
+        code = out.get("code") if isinstance(out.get("code"), str) and out.get("code").isupper() else "FAILED"
+        raise ValueError(f"{code}: {out.get('error') or 'restore refused'}")
+    res = out.get("result") if isinstance(out.get("result"), dict) else {}
+    path = res.get("path")
+    strategies = os.path.realpath(os.path.join(WORKSPACE, "strategies"))
+    if (not isinstance(path, str) or not path.endswith(".py")
+            or not os.path.realpath(path).startswith(strategies + os.sep)):
+        raise ValueError("FAILED: restore returned no strategy file")
+    return res
+
+
+def _start_rerun(name, n, path, expect_hash=None):
+    script = os.path.relpath(os.path.realpath(path), os.path.realpath(WORKSPACE)).replace("\\", "/")
+    os.makedirs(_versions_path(name), exist_ok=True)
+    popen_kw = {"start_new_session": True} if platform.system() != "Windows" else {
+        "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    extra = {"BLAVE_QUIET": "1", "PYTHONUNBUFFERED": "1", "PYTHONPATH": WORKSPACE}
+    if _local_mode():
+        # the same data path as the agent's own backtest on the desktop (agent_turn sets it for
+        # every turn): 台股 daily bars and the key-free market series come from TWSE / TPEx /
+        # TAIFEX, not the Blave endpoints. Not BLAVE_SCHEDULED_RUN — this is not a scheduled
+        # run (lib.data treats those differently on market holidays). Live ticks stay without it.
+        extra["BLAVE_AGENT_LOCAL"] = "1"
+    env = _strategy_subprocess_env("backtest", **extra)
+    if expect_hash:  # an edit landing while the child is still importing is caught too (runner._superseded)
+        env["BLAVE_EXPECT_CODE_HASH"] = expect_hash
+    with open(_versions_path(name, "rerun.log"), "wb") as logf:
+        proc = subprocess.Popen([_workspace_python(), script], cwd=WORKSPACE, env=env,
+                                stdout=logf, stderr=logf, **_child_kw(**popen_kw))
+    try:
+        _write_json_atomic(_versions_path(name, "rerun.json"),
+                           {"n": n, "at": int(time.time()), "status": "running",
+                            "pid": proc.pid, "script": script})
+    except OSError as e:
+        _kill_tree(proc.pid)   # no record = nothing could ever report or stop this run
+        raise ValueError(f"FAILED: could not record the re-run ({type(e).__name__})")
+    _RERUN_PROCS[name] = proc
+    threading.Thread(target=_watch_rerun, args=(name, proc), daemon=True,
+                     name="restore-rerun-watch").start()
+
+
+def _record_version_event(name, n, prev, backed_up):
+    """state/version_events.jsonl — what agent_turn tells the agent next turn (the restore
+    never passed through the conversation, and an agent rewriting strategy.py from memory
+    would silently undo it). Newest VERSION_EVENTS_KEEP lines kept."""
+    line = json.dumps({"at": time.time(), "name": name, "n": n,
+                       "prev": prev if isinstance(prev, int) and not isinstance(prev, bool) else None,
+                       "backed_up": bool(backed_up)})
+    try:
+        try:
+            with open(VERSION_EVENTS_PATH, encoding="utf-8") as f:
+                lines = [x for x in f.read().splitlines() if x.strip()]
+        except FileNotFoundError:
+            lines = []
+        _write_text_atomic(VERSION_EVENTS_PATH, "\n".join((lines + [line])[-VERSION_EVENTS_KEEP:]) + "\n")
+    except OSError as e:
+        _log(f"version event write failed: {type(e).__name__}")
+
+
+def _cmd_version_restore(args):
+    """{"name": STRATEGY_NAME, "n": version} → restore in place, then a quiet re-run. Ack
+    result {n, inplace, backed_up, rerun: "started"}; refusals raise "ValueError: <CODE>: …"
+    with CODE in UPDATE_REQUIRED / LIVE / NO_VERSION / NO_SOURCE / CONFIG_UNREADABLE /
+    BAD_ARGS / FAILED. Idempotent: the same {name, n} again (the page's 再跑一次) backs nothing
+    up, moves nothing, and only re-runs."""
+    name, n = _version_restore_args(args)
+    import strategy_reporter  # same runtime dir; the capability check has one definition
+    if not strategy_reporter.lib_restore_in_place():
+        raise ValueError("UPDATE_REQUIRED: this machine's blave-agent lib cannot restore a "
+                         "version in place — update blave-agent first")
+
+    def _run():
+        with _RESTORE_LOCK:
+            try:
+                with open(_versions_path(name, "index.json"), encoding="utf-8") as f:
+                    prev = json.load(f).get("current")
+            except (OSError, ValueError, AttributeError):
+                prev = None
+            res = _run_restore(name, n)
+            if res.get("stuck"):
+                _log(f"restore {name} v{n}: could not move aside {res['stuck']}")
+            # after the restore, not before: a refused restore must leave a running re-run
+            # alone. One overtaken by this restore would discard itself anyway (the runner's
+            # superseded check) — killing it just stops it burning the machine.
+            _kill_rerun(name)
+            _record_version_event(name, n, prev, res.get("backed_up"))
+            # not in place (the known non-UTF-8 edge) → the file is not v<n>'s bytes and the re-run
+            # mints a new version as before; pinning v<n>'s hash would discard it every time
+            _start_rerun(name, n, res["path"],
+                         _version_code_hash(name, n) if res.get("inplace") is True else None)
+        _push(_ON_APPLIED, "version restore")
+        return {"n": n, "inplace": res.get("inplace") is True, "backed_up": res.get("backed_up") is True,
+                "rerun": "started"}
+
+    return Deferred(_run)
+
+
 # ── 用戶常駐規則(web 的「Agent 常駐規則」面板)────────────────────────────────
 # 同一個檔 agent_turn.preferences_rule() 每輪整份注進 system prompt,agent 自己在
 # 對話裡也會改它。web 送的是結構(規則陣列)而不是整份 markdown:組行、剝鷹架、
@@ -5296,6 +5652,7 @@ HANDLERS = {
     "tz_set": _cmd_tz_set,
     "telegram_reset": _cmd_telegram_reset,
     "book_account_confirm": _cmd_book_account_confirm,
+    "version_restore": _cmd_version_restore,
 }
 # 群益 cloud connect (runtime/capital_connect.py): long steps come back as Deferred
 HANDLERS.update({
@@ -5414,6 +5771,7 @@ def run(on_applied=None, on_progress=None):
     _ON_APPLIED = on_applied
     _ON_PROGRESS = on_progress
     _resume_mgmt_watch()
+    _resume_restore_watch()
 
     # Type A/C strategy scheduling — its own daemon thread, independent of the
     # poll loop below (see the "Type A/C in-process scheduler" section).

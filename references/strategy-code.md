@@ -117,44 +117,57 @@ can ask to go back to one. Nothing to run by hand — `run()` does it.
   change the code, before the backtest. Leave it `""` when nothing changed rather than
   leaving a stale line: a note identical to the last version's is stored as empty on
   purpose, so a forgotten note shows no summary instead of a wrong one.
-- **Numbers are never reused.** Restoring v5 and re-running produces v8, not v5 again.
+- **Numbers are never reused.** Restoring v5 makes v5 current again — no new number. A
+  backtest whose code equals a stored version mints nothing and points current back at it:
+  a re-run without an edit adds no version.
 - **20 versions per strategy** are kept on the machine; older ones are deleted. Never quote
   a version the index no longer lists.
 - `from lib.strategy import list_versions` → `list_versions(name)` returns those summary
   entries (`n`, `at`, `note`, `ret`, `sharpe`, `sortino`, `mdd`, `trades`, `mcpt_p`,
   `start`, `end`, `code_hash`). Answer 「這支策略有哪些版本」/「哪一版 Sharpe 最好」 from
   it — one small file, no need to open the blobs; open `versions/v<N>.json` only when you
-  need the actual code.
+  need the actual code. The current version is the entry marked `current: true` (index.json's
+  `current`), not necessarily the last one.
 - Entry / exit records and parameter-scan grids are NOT stored per version — do not offer
   to show them for an old version.
 
 ### Restoring a version
 
-The web workspace sends one fixed prompt in the user's interface language. It has three
-forms — recognise all of them; every other locale falls back to the English one:
+Restoring puts an old version's code back and makes that version current again, in place —
+no new version number, no `VERSION_NOTE` edit.
+
+1. **The workspace restores directly, without you.** Its 還原 button sends a command to the
+   machine: the code goes back, `current` points at that version, and a quiet backtest re-runs
+   in the background. You then see a system line naming the strategy and the version on your
+   next turn. Before touching that strategy, reread its file — never rewrite it from what you
+   remember of the conversation, or the restore is silently undone. Do not re-run the backtest
+   or change `VERSION_NOTE` for it; the machine already did what is needed.
+2. **When the user asks you in chat to go back to vN**: `from lib.strategy import restore` →
+   `restore(name, n)`, **run from the workspace root** (it refuses elsewhere: the live-strategy
+   gate reads `manager/` relative to the working directory). It refuses — raises — when the
+   strategy is funded (`amounts > 0`), because overwriting a live strategy's file flips a real
+   position on the next bar. If it refuses, STOP: tell the user the strategy is live and offer
+   the fork-and-switch flow above (fork it, restore the old code into the fork, backtest,
+   switch the funding), never edit the file anyway. If it returned, re-run the backtest with
+   `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py` (a restorable strategy can still
+   be in the order settings at amount 0, where a plain run is a quiet live tick). Leave
+   `VERSION_NOTE` as the restored code has it. No new version appears, and that is correct —
+   the list keeps its numbers and vN is marked current.
+3. `restore` returns `{path, version, inplace, backed_up, stuck}` (`stuck`: result files it could not clear — normally empty). `backed_up: true` means the file
+   held code no version had (an edit nobody backtested); it was saved to
+   `strategies/<name>/versions/pre-restore.py` before being overwritten — tell the user where
+   (the two saves before it are `pre-restore.1.py` and `pre-restore.2.py`).
+   `inplace: false` (rare: the original file was not valid UTF-8) means `current` did not move;
+   the backtest then stores the restored code as a new version.
+
+An older workspace (the 0.1.8 desktop app, a web page not yet updated) may still send a fixed
+prompt instead of the command. Treat it exactly like the chat request in step 2 — restore,
+re-run, no confirmation question, no counter-proposal. Its three forms:
 
 - zh (traditional)「請把策略「{display_name}」({name}) 還原到第 {n} 版,重跑回測 —— 不用再確認」
 - zh (simplified)「请把策略「{display_name}」({name}) 还原到第 {n} 版,重跑回测 —— 不用再确认」
 - en "Please restore strategy {display_name} ({name}) to version {n} and re-run the
   backtest — no further confirmation needed."
-
-The user has already chosen on the web: no confirmation question, no counter-proposal.
-Do these four, in this order:
-
-1. `from lib.strategy import restore` → `restore(name, n)`, **run from the workspace root**
-   (it refuses elsewhere: the live-strategy gate reads `manager/` relative to the working
-   directory). It refuses — raises — when the strategy is funded (`amounts > 0`), because
-   overwriting a live strategy's file flips a real position on the next bar. If it refuses, STOP: tell the user the strategy is live
-   and offer the fork-and-switch flow above (fork it, restore the old code into the fork,
-   backtest, switch the funding), never edit the file anyway.
-2. Only if it returned: the old code is now in `strategy.py`.
-3. Set `VERSION_NOTE = "還原自 v{n}"` (the user's language) in that file.
-4. Re-run the backtest. That run is what produces the new version and rewrites
-   `stats.json` — without it the workspace would show the old version's code beside the
-   previous run's numbers, which is worse than not restoring at all. A restorable strategy
-   can still be in the order settings at amount 0 (`restore` only refuses `> 0`) — then the
-   run must be `BLAVE_MODE=backtest python3 strategies/<name>/strategy.py`, or it is a
-   quiet live tick that mints nothing (`references/deployment.md` › *Live vs Backtest*).
 
 ### Forking from a version (the strategy is live)
 

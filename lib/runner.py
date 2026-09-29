@@ -1,4 +1,4 @@
-import hashlib, json, logging, math, os, shutil, time
+import contextlib, hashlib, json, logging, math, os, shutil, time
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -502,68 +502,160 @@ def _version_fields(stats):
     }
 
 
-def _mint_version(config, stats, mode):
+def _same_code_version(idx, items, digest):
+    """Which stored version this code already is, or None (canon §2, same code mints nothing).
+    `current` first: a pre-rule history can hold the same hash several times (a re-run with no
+    edit used to mint again — v3 and v6 identical), and after restoring v3 its own re-run must
+    stay on v3, not jump to v6. Otherwise the highest-numbered match."""
+    cur = idx.get('current')
+    for i in items:
+        if i.get('n') == cur and i.get('code_hash') == digest:
+            return cur
+    hits = [i.get('n') for i in items if i.get('code_hash') == digest and isinstance(i.get('n'), int)]
+    return max(hits) if hits else None
+
+
+def _mint_version(config, stats, mode, src=None):
     """Freeze this backtest as strategies/<name>/versions/v<N>.json and refresh index.json
-    (.claude/docs/strategy-versions.md). Returns the version number, or None.
+    (.claude/docs/strategy-versions.md). Returns the version number this run belongs to, or None.
 
     BACKTEST ONLY. run() is also the live/cron tick, which rewrites stats.json every bar
     with the same code — minting there would give a deployed 1h strategy 24 versions a day
     and push every real one out of the 20-version window within a day.
 
+    `src` is the file's bytes as run() read them when it started — not re-read here: the
+    version must be the code these numbers came from, whatever the file holds by now.
+
+    Same code as a stored version → nothing minted: `current` points at that version and the
+    run's newer numbers stay in stats.json (the stored six are read-only, canon §3/§4). That is
+    what makes a restore's re-run, and any re-run without an edit, a no-op for the history.
+
     The blob is written before the index: the reporter walks the index to find what to
     upload, so a blob can never be listed before it exists. Version numbers come off a
-    counter that only ever increases — pruning the oldest never frees its number (canon §3:
-    restoring v5 produces v8, not v5 again)."""
+    counter that only ever increases — pruning the oldest never frees its number."""
     if mode != 'backtest':
         return None
-    src_path = config.get('__file__')
-    if not src_path:
-        logging.warning("version not minted: no __file__ in config — call run(locals(), …)")
-        return None
-    from lib.strategy import VERSIONS_KEEP, code_hash, load_index, versions_dir
+    if src is None:
+        src_path = config.get('__file__')
+        if not src_path:
+            logging.warning("version not minted: no __file__ in config — call run(locals(), …)")
+            return None
+        src = Path(src_path).read_bytes()
+    from lib.strategy import VERSIONS_KEEP, code_hash, load_index, versions_dir, versions_lock
     name = config['STRATEGY_NAME']
-    src  = Path(src_path).read_bytes()
     vdir = versions_dir(name)
     os.makedirs(vdir, exist_ok=True)
-
-    idx   = load_index(name) or {}
-    items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
-    n     = int(idx.get('counter') or 0) + 1
     note  = config.get('VERSION_NOTE')
     note  = note.strip() if isinstance(note, str) else ''
-    # Unchanged note = the agent edited the code and forgot the note; store nothing rather
-    # than a sentence describing the PREVIOUS change (canon §4, no restore exemption).
-    # Compared against the last mint's RAW note, not the stored one — comparing against the
-    # stored one makes an unchanged note reappear every other version (A → "" → A).
-    entry_note = '' if note and note == idx.get('last_note') else note
-    at     = int(stats.get(GENERATED_AT_KEY) or time.time())
     digest = code_hash(src)
-    entry  = {'n': n, 'at': at, 'note': entry_note, 'code_hash': digest, **_version_fields(stats)}
 
-    # Compact (indent=None): the daily curve is thousands of numbers and this blob is
-    # uploaded as-is.
-    _write_json_atomic(vdir / f'v{n}.json',
-                       {'v': 1, 'strategy': name, **entry,
-                        'code':          src.decode('utf-8', 'replace'),
-                        'daily_dates':   stats.get('daily_dates') or [],
-                        'daily_returns': stats.get('daily_returns') or []},
-                       indent=None)
+    with versions_lock(name):
+        idx   = load_index(name) or {}
+        items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
+        same  = _same_code_version(idx, items, digest)
+        if same is not None:
+            if idx.get('current') != same or idx.get('last_note') != note:
+                _write_json_atomic(vdir / 'index.json',
+                                   {'v': 1, 'counter': idx.get('counter') or same, 'current': same,
+                                    'last_note': note, 'items': items})
+            n = same
+        else:
+            n = int(idx.get('counter') or 0) + 1
+            # Unchanged note = the agent edited the code and forgot the note; store nothing rather
+            # than a sentence describing the PREVIOUS change (canon §4). Compared against the last
+            # mint's RAW note, not the stored one — comparing against the stored one makes an
+            # unchanged note reappear every other version (A → "" → A).
+            entry_note = '' if note and note == idx.get('last_note') else note
+            at     = int(stats.get(GENERATED_AT_KEY) or time.time())
+            entry  = {'n': n, 'at': at, 'note': entry_note, 'code_hash': digest, **_version_fields(stats)}
 
-    items.append(entry)
-    for old in items[:-VERSIONS_KEEP]:  # canon §8: keep 20; the api sweeps its own copy
-        try:
-            os.remove(vdir / f"v{old.get('n')}.json")
-        except OSError:
-            pass
-    _write_json_atomic(vdir / 'index.json',
-                       {'v': 1, 'counter': n, 'current': n, 'last_note': note,
-                        'items': items[-VERSIONS_KEEP:]})
+            # Compact (indent=None): the daily curve is thousands of numbers and this blob is
+            # uploaded as-is.
+            _write_json_atomic(vdir / f'v{n}.json',
+                               {'v': 1, 'strategy': name, **entry,
+                                'code':          src.decode('utf-8', 'replace'),
+                                'daily_dates':   stats.get('daily_dates') or [],
+                                'daily_returns': stats.get('daily_returns') or []},
+                               indent=None)
+
+            items.append(entry)
+            for old in items[:-VERSIONS_KEEP]:  # canon §8: keep 20; the api sweeps its own copy
+                try:
+                    os.remove(vdir / f"v{old.get('n')}.json")
+                except OSError:
+                    pass
+            _write_json_atomic(vdir / 'index.json',
+                               {'v': 1, 'counter': n, 'current': n, 'last_note': note,
+                                'items': items[-VERSIONS_KEEP:]})
     # strategy.py is now exactly what v<n> stored, so any drift flag is stale.
     try:
         os.remove(vdir / 'drift.json')
     except OSError:
         pass
     return n
+
+
+def _superseded(config, src0):
+    """Backtest only, checked right before stats.json is written: has the strategy file changed
+    since this run read it? Then these numbers belong to code that is no longer there — a
+    restore's background re-run overtaken by an edit or by the next restore — and the run writes
+    nothing (canon §2). Unreadable counts as changed: the strategy was deleted mid-run, and
+    writing now would recreate its folder as a ghost.
+
+    BLAVE_EXPECT_CODE_HASH (a restore's re-run: the restored version's code_hash) closes the
+    one gap the comparison has — an edit that landed before run() read the file, i.e. while the
+    interpreter was still importing: then src0 already is the edit, and only the hash the
+    re-run was started for can tell."""
+    if src0 is None:
+        # __file__ given but unreadable when run() started: deleted while the interpreter
+        # was still importing — same ghost as below
+        return bool(config.get('__file__'))
+    expect = os.environ.get('BLAVE_EXPECT_CODE_HASH')
+    if expect:
+        from lib.strategy import code_hash
+        if code_hash(src0) != expect:
+            return True
+    try:
+        return Path(config['__file__']).read_bytes() != src0
+    except OSError:
+        return True
+
+
+@contextlib.contextmanager
+def _results_lock(name):
+    """lib.strategy.versions_lock around a backtest's write tail — "file still what I ran →
+    stats.json → version → rerun.json" — so a restore() landing in between cannot leave
+    v<M>'s code beside v<N>'s numbers (restore takes the same lock for its whole write).
+    A lock that stays busy past its timeout degrades to the unlocked write with a warning:
+    a wedged lock must not cost the user the backtest they just ran."""
+    from lib.strategy import versions_lock
+    cm = versions_lock(name)
+    try:
+        cm.__enter__()
+    except TimeoutError as e:
+        logging.warning("results lock skipped: %s", e)
+        yield
+        return
+    try:
+        yield
+    finally:
+        cm.__exit__(None, None, None)
+
+
+def _discard_superseded(strategy_name):
+    logging.warning("backtest discarded: strategy file changed while it ran (superseded)")
+    print(f"  ⚠️ Backtest discarded — {strategy_name}'s strategy file changed while it ran; "
+          f"nothing was written. Re-run it.")
+
+
+def _clear_rerun(strategy_name):
+    """A backtest just wrote stats.json for the code in the file, so a restore's pending re-run
+    (versions/rerun.json, written by the runtime) is answered — whichever run it was."""
+    from lib.strategy import versions_dir
+    try:
+        os.remove(versions_dir(strategy_name) / 'rerun.json')
+    except OSError:
+        pass
 
 
 def _drift_flag(config, mode):
@@ -580,12 +672,21 @@ def _drift_flag(config, mode):
         return
     from lib.strategy import code_hash, load_index, versions_dir
     name  = config['STRATEGY_NAME']
-    items = (load_index(name) or {}).get('items') or []
+    idx   = load_index(name) or {}
+    items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
     if not items:
         return  # never versioned on this machine (older config) — nothing to compare against
-    current = items[-1]
+    # the version `current` points at, not the last entry: after a restore they differ
+    current = next((i for i in items if i.get('n') == idx.get('current')), items[-1])
     digest  = code_hash(Path(config['__file__']).read_bytes())
     path    = versions_dir(name) / 'drift.json'
+    if digest != current.get('code_hash'):
+        # a restore may have written the file after the index was read above: read it again
+        # before flagging, or the flag lands after restore removed it
+        idx2  = load_index(name) or {}
+        items2 = [i for i in (idx2.get('items') or []) if isinstance(i, dict)]
+        if items2:
+            current = next((i for i in items2 if i.get('n') == idx2.get('current')), items2[-1])
     if digest == current.get('code_hash'):
         try:
             os.remove(path)
@@ -1187,7 +1288,18 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
     _inferred_live = not _env_mode and _picked_for_trading(config['STRATEGY_NAME'])
     mode           = _env_mode or ('live' if _inferred_live else 'backtest')
     quiet          = (_env_mode not in (None, 'backtest')) or _inferred_live
+    # BLAVE_QUIET=1: a restore's background re-run (runtime command_listener). Still a full
+    # backtest — mints under the same-code rule, MCPT, chart export, pnl.png redrawn — but
+    # nothing is pushed: no chart into the chat, no Telegram. The user pressed a button, not
+    # asked the agent for a backtest.
+    muted          = quiet or os.environ.get('BLAVE_QUIET') == '1'
     strategy_name  = config['STRATEGY_NAME']
+    # The code this run executes, read once up front: the version it mints is THIS code, and
+    # a backtest whose file changed underneath it writes nothing (_superseded).
+    try:
+        src0 = Path(config['__file__']).read_bytes() if config.get('__file__') else None
+    except OSError:
+        src0 = None
     fee           = config.get('FEE', 0.0005)
     interval      = config.get('INTERVAL', '1h')
 
@@ -1485,11 +1597,20 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                           f"strategy is not for the library.")
         stats.update(_carry_over(out_dir, mode))  # live tick keeps MCPT + Generated At; backtest drops/restamps
         stats.setdefault(GENERATED_AT_KEY, int(time.time()))
-        _write_stats(out_dir, stats)
-        try:  # a version is a record of the run, not part of it — never fail the backtest
-            _mint_version(config, stats, mode)
-        except Exception as e:
-            logging.warning("version mint failed: %s", e)
+        if mode == 'backtest' and _superseded(config, src0):   # before the lock creates versions/
+            _discard_superseded(strategy_name)
+            return
+        with (_results_lock(strategy_name) if mode == 'backtest' else contextlib.nullcontext()):
+            if mode == 'backtest' and _superseded(config, src0):
+                _discard_superseded(strategy_name)
+                return
+            _write_stats(out_dir, stats)
+            if mode == 'backtest':
+                try:  # a version is a record of the run, not part of it — never fail the backtest
+                    _mint_version(config, stats, mode, src0)
+                except Exception as e:
+                    logging.warning("version mint failed: %s", e)
+                _clear_rerun(strategy_name)
 
         # Full chart export on every user-run backtest; a live/cron tick rewrites stats.json
         # every few minutes and re-serializing years of bars each time would burn the VM for
@@ -1507,13 +1628,14 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         if not quiet:
             plot_pnl(df, result_d, title=strategy_name,
                      output_path=str(out_dir / 'pnl.png'))
-            # Mirror the chart into the web workspace chat (no-op off web); separate
-            # from the Telegram gate below so it shows regardless of send_telegram_fn.
-            from lib.notify import report_photo_web
-            report_photo_web(str(out_dir / 'pnl.png'))
+            if not muted:
+                # Mirror the chart into the web workspace chat (no-op off web); separate
+                # from the Telegram gate below so it shows regardless of send_telegram_fn.
+                from lib.notify import report_photo_web
+                report_photo_web(str(out_dir / 'pnl.png'))
 
         if mode == 'backtest':
-            if send_telegram_fn:
+            if send_telegram_fn and not muted:
                 from lib.notify import send_photo
                 _send_best_effort(send_photo, str(out_dir / 'pnl.png'))
                 _send_best_effort(send_telegram_fn,
@@ -1635,20 +1757,30 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                  'daily_dates': d_dates, 'daily_returns': d_rets,
                  **carried,
                  }
-        _write_stats(out_dir, stats)
-        try:  # same as Type A: the record must not be able to fail the run
-            _mint_version(config, stats, mode)
-        except Exception as e:
-            logging.warning("version mint failed: %s", e)
+        if mode == 'backtest' and _superseded(config, src0):   # before the lock creates versions/
+            _discard_superseded(strategy_name)
+            return
+        with (_results_lock(strategy_name) if mode == 'backtest' else contextlib.nullcontext()):
+            if mode == 'backtest' and _superseded(config, src0):
+                _discard_superseded(strategy_name)
+                return
+            _write_stats(out_dir, stats)
+            if mode == 'backtest':
+                try:  # same as Type A: the record must not be able to fail the run
+                    _mint_version(config, stats, mode, src0)
+                except Exception as e:
+                    logging.warning("version mint failed: %s", e)
+                _clear_rerun(strategy_name)
 
         if not quiet:
             plot_pnl_portfolio(pf_series, close_df, title=strategy_name,
                                output_path=str(out_dir / 'pnl.png'),
                                bench_pct=bench_pct)
-            # Mirror into the web workspace chat (no-op off web), regardless of the
-            # Telegram gate below.
-            from lib.notify import report_photo_web
-            report_photo_web(str(out_dir / 'pnl.png'))
+            if not muted:
+                # Mirror into the web workspace chat (no-op off web), regardless of the
+                # Telegram gate below.
+                from lib.notify import report_photo_web
+                report_photo_web(str(out_dir / 'pnl.png'))
 
         if mode != 'backtest':
             # the live target (lib.portfolio.aggregate_portfolio): per-asset
@@ -1659,7 +1791,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 logging.info(f"Type C rebalance at {live['rebalance_at']}: {live['weights']}")
             save_state(strategy_name, live)
 
-        if send_telegram_fn and not quiet:
+        if send_telegram_fn and not muted:
             from lib.notify import send_photo
             _send_best_effort(send_photo, str(out_dir / 'pnl.png'))
             _send_best_effort(send_telegram_fn,

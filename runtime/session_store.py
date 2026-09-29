@@ -220,6 +220,15 @@ def clear_session(session_id):
     conn.close()
 
 
+def last_turn_at(session_id):
+    """created_at of this session's newest stored turn, or None when it has none yet."""
+    conn = _conn()
+    row = conn.execute("SELECT MAX(created_at) FROM turns WHERE session_id = ?",
+                       (session_id,)).fetchone()
+    conn.close()
+    return row[0] if row and row[0] is not None else None
+
+
 def get_context(session_id):
     """Returns (summary_text, recent_turns) — recent_turns is everything after
     the compaction watermark, oldest first."""

@@ -992,8 +992,34 @@ function stratVersions(dir) {
   let idx = null;
   try { idx = JSON.parse(fs.readFileSync(path.join(vdir, "index.json"), "utf8")); } catch (_) { return null; }
   if (!idx || typeof idx !== "object" || !Array.isArray(idx.items)) return null;
-  return { counter: idx.counter, current: idx.current, items: idx.items.filter((i) => i && typeof i === "object" && !Array.isArray(i)),
+  const out = { counter: idx.counter, current: idx.current, items: idx.items.filter((i) => i && typeof i === "object" && !Array.isArray(i)),
     drift: fs.existsSync(path.join(vdir, "drift.json")) };
+  if (libRestoreInPlace(path.dirname(path.dirname(dir)))) out.inplace = true;
+  const rerun = stratRerun(vdir);
+  if (rerun) out.rerun = rerun;
+  return out;
+}
+/* 就地還原的兩個欄位(canon §9),規則同 runtime strategy_reporter 的 lib_restore_in_place / _read_rerun:
+   inplace = workspace 的 lib/strategy.py 有 `RESTORE_IN_PLACE = 1` 那一行(文字比對、照 mtime 快取);
+   rerun = versions/rerun.json 的 {n, status, at, err?},每個欄位驗型別,壞掉就當沒有 */
+const RERUN_ERRS = ["REFUSED", "DATA", "TIMEOUT", "EXIT"];
+const libRestoreCache = new Map();
+function libRestoreInPlace(ws) {
+  const p = path.join(ws, "lib", "strategy.py");
+  let st = null; try { st = fs.statSync(p); } catch (_) { libRestoreCache.delete(p); return false; }
+  const key = st.mtimeMs + ":" + st.size, hit = libRestoreCache.get(p);
+  if (hit && hit.key === key) return hit.ok;
+  let ok = false; try { ok = /^RESTORE_IN_PLACE\s*=\s*1\b/m.test(fs.readFileSync(p, "utf8")); } catch (_) { ok = false; }
+  libRestoreCache.set(p, { key, ok });
+  return ok;
+}
+function stratRerun(vdir) {
+  let d = null; try { d = JSON.parse(fs.readFileSync(path.join(vdir, "rerun.json"), "utf8")); } catch (_) { return null; }
+  if (!d || typeof d !== "object" || Array.isArray(d)) return null;
+  if (!Number.isInteger(d.n) || d.n <= 0 || (d.status !== "running" && d.status !== "failed") || !Number.isInteger(d.at)) return null;
+  const out = { n: d.n, status: d.status, at: d.at };
+  if (d.status === "failed") out.err = RERUN_ERRS.indexOf(d.err) >= 0 ? d.err : "EXIT";
+  return out;
 }
 // 版號只收正整數(api agent_strategy_versions.MAX_VERSION_N 同一個上限):renderer 給的東西進 path.join 之前先過這關
 const versionN = (n) => (Number.isInteger(n) && n > 0 && n <= 1000000 ? n : null);
@@ -1081,6 +1107,30 @@ function inPortfolio(names) {
   if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return null;
   return ["amounts", "weights", "exchanges"].some((k) => cfg[k] && typeof cfg[k] === "object" && want.some((n) => Object.prototype.hasOwnProperty.call(cfg[k], n)));
 }
+/* 還原的背景重跑(runtime command_listener._start_rerun,versions/rerun.json)還在跑就殺掉——同雲端的 _cmd_delete_strategy。
+   身分要對上才殺:pid 可能已經換人,所以 script 必須是那支策略的兩種路徑之一、而且真的出現在那個 pid 的命令列上
+   (同 runtime 的 _rerun_pid_alive)。它自己一個 session / process group,連子行程一起殺。盡力而為:殺不到也照刪,
+   runner 讀不到策略檔就整輪不寫(lib/runner._superseded)。sys 可替換,給測試用 */
+function stratStopRerun(names, sys) {
+  const X = sys || { exec: require("child_process").execFileSync, kill: process.kill.bind(process), platform: process.platform };
+  const ok = /^[A-Za-z0-9_-]{1,128}$/;
+  for (const n of new Set((names || []).filter((x) => typeof x === "string" && ok.test(x)))) {
+    let d = null; try { d = JSON.parse(fs.readFileSync(path.join(STRAT_DIR(), n, "versions", "rerun.json"), "utf8")); } catch (_) { continue; }
+    if (!d || d.status !== "running" || !Number.isInteger(d.pid) || d.pid <= 1) continue;
+    if (d.script !== "strategies/" + n + "/strategy.py" && d.script !== "strategies/" + n + ".py") continue;
+    let cmd = "";
+    try {
+      cmd = String(X.platform === "win32"
+        ? X.exec("powershell", ["-NoProfile", "-Command", "(Get-CimInstance Win32_Process -Filter 'ProcessId=" + d.pid + "').CommandLine"], { timeout: 5000, windowsHide: true })
+        : X.exec("ps", ["-o", "args=", "-p", String(d.pid)], { timeout: 5000 }));
+    } catch (_) { continue; }
+    if (!cmd.replace(/\\/g, "/").includes(d.script)) continue;
+    try {
+      if (X.platform === "win32") X.exec("taskkill", ["/T", "/F", "/PID", String(d.pid)], { timeout: 10000, windowsHide: true });
+      else { try { X.kill(-d.pid, "SIGKILL"); } catch (_) { X.kill(d.pid, "SIGKILL"); } }
+    } catch (_) { /* 已經結束了 */ }
+  }
+}
 /* 回 true(進垃圾桶了)或 { ok:false, code }:IN_PORTFOLIO(還在組合裡:對帳器照這個名字在下單,刪了訊號就凍住)/
    CONFIG_UNREADABLE(讀不到下單設定,寧可等一下)/ 其餘失敗 false */
 async function deleteStrategy(name) {
@@ -1089,6 +1139,7 @@ async function deleteStrategy(name) {
   const inPf = inPortfolio([name, sn]);
   if (inPf === true) return { ok: false, code: "IN_PORTFOLIO" };
   if (inPf === null) return { ok: false, code: "CONFIG_UNREADABLE" };
+  stratStopRerun([name, sn]);   // canon §8:還原的背景重跑還活著就先停掉,不讓它寫回已丟進垃圾桶的資料夾
   try { await shell.trashItem(path.join(STRAT_DIR(), name)); stratCache.delete(name); return true; }
   catch (_) { return false; }
 }
@@ -2363,7 +2414,7 @@ app.whenReady().then(() => {
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
   // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;

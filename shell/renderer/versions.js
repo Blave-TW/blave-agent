@@ -9,7 +9,7 @@
    trade.js 的 ENV / TR_BAGS / trMD / trStamp / trFmt / trUnit、handoff.js 的 hoPaint——都在呼叫時才取。 */
 const VER = window.blaveVersions || null;
 const VS = { local: null, cloud: null };
-const verNewSide = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map() });
+const verNewSide = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map(), err: null, pend: null });
 VS.local = verNewSide(); VS.cloud = verNewSide();
 
 const verSideOf = (B) => (B === RPC ? "cloud" : "local");
@@ -28,19 +28,60 @@ function verAmount(side, B) {
   return v;
 }
 
+/* ── 就地還原的疊層(canon §5;spec-strategy-versions-restore-in-place-0.1.9 §3):按下確認的當下就把 vN 當「目前」、狀態「重跑中」,
+   不等機器。疊層以 side|名字為 key、存在 VS 之外:verPaint 每次畫頁首都重設 open / data,報告先到也不能把它洗掉。
+   收到 ack 之後、報告也跟上(current === n)才拿掉、從此以報告為準——ack 之前讀到的 current === n 可能落在「index 已指到 n、
+   rerun.json 還沒寫」的空檔(稽核 0.1.9 P1-2),那時拿掉會把畫面丟回「沒有回測」、輪詢跟著停。
+   ack 回錯 / inplace:false / ack 後 2 分鐘報告仍沒跟上 → 回滾(verRollback)。 */
+const VO = new Map(), VREQ = new Map();
+const VP = { local: null, cloud: null };            // 每邊一支輪詢(還原不經回合,stratRefresh 不會跑)
+// 輪詢上限從 ack 起算:機器端最晚 = restore 子行程上限 120 秒 + 重跑逾時 15 分鐘 + 殺掉與推送的餘裕(稽核 P2-8)
+const VER_ROLLBACK_MS = 120000, VER_POLL_MAX_MS = (15 * 60 + 120 + 120) * 1000, VER_POLL_MS = { local: 2000, cloud: 5000 };
+const voKey = (side, name) => side + "|" + name;
+function verEffective(side, name, raw) {
+  const k = voKey(side, name), o = raw ? VO.get(k) : null;
+  if (!o) return raw;
+  const rr = raw.rerun;
+  // 報告跟上了:current 已是 n,而且不是「再跑一次」之前那一筆 failed(那一筆的 at 記在 failedAt)
+  if (o.ackAt && raw.current === o.n && !(rr && rr.status === "failed" && o.failedAt != null && rr.at === o.failedAt)) { VO.delete(k); return raw; }
+  return Object.assign({}, raw, { current: o.n, rerun: { n: o.n, status: "running", at: o.at } });
+}
+function verPendingOf(side, B) {
+  const raw = B && B.data && !B.data.pending ? B.data.versions : null;
+  return VER && raw ? VER.pending(verEffective(side, B.name, raw)) : null;
+}
+// app.js rpTab:重跑中 / 沒完成時 stats.json 被移開了,分頁不能被拉回程式碼
+function verHolds(B) { return !!verPendingOf(verSideOf(B), B); }
+// 「送上雲端 / 拉回」要不要收起來(handoff.js hoPaint 問):時光機裡、重跑中
+function verHidesAct() {
+  const B = rpBag(), S = VS[verSideOf(B)];
+  if (!S.data || S.name !== B.name) return false;
+  const pd = S.open === null && VER ? VER.pending(S.data) : null;
+  return S.open !== null || !!(pd && pd.status === "running");
+}
+
 /* ── 頁首(app.js rpPaintHead 每次畫頁首都叫):觸發器、橫幅、時光機裡收起「送上雲端 / 拉回」 ── */
 function verPaint(B) {
   const side = verSideOf(B), S = VS[side];
-  const versions = B.data && !B.data.pending ? B.data.versions : null;
+  const raw = B.data && !B.data.pending ? B.data.versions : null;
+  const versions = verEffective(side, B.name, raw);
   const ok = !!(VER && B.name && versions && VER.usable(B.name, versions));
   const key = ok ? [B.name, versions.current, versions.counter].join("|") : null;
-  // 換了策略 / 新版到了(還原跑完多出 v+1):回目前版。切視角由下面的 data-env 觀察者處理
+  // 換了策略 / 新版到了 / 還原(疊層把 current 換成 n):回目前版。切視角由下面的 data-env 觀察者處理
   if (key !== S.key) verReset(S);
   S.key = key; S.name = B.name; S.data = ok ? versions : null;
+  const pd = ok ? VER.pending(versions) : null;
+  // 重跑完:狀態列整列收掉,讀屏聽不到,另唸一句(spec §5)。沒完成 → 完成、或被新回測接手都算;換策略不算
+  if (S.pend && !pd && S.pend.name === B.name && ok && versions.current === S.pend.n && B.data.stats && typeof srSay === "function")
+    srSay(t("ver.rerunDoneSr", { v: "v" + S.pend.n }));
+  S.pend = pd ? { name: B.name, n: pd.n, status: pd.status } : null;
   verMenuClose(false);
   verPaintTrigger(S); verPaintBanner(S);
+  // rpPaintHead 先叫 hoPaint 才叫這裡:重跑剛完成的那一次,hoPaint 問到的還是「重跑中」而收起了鈕,這裡補畫回來
+  if (!verHidesAct() && $("rp-act").hidden && typeof hoPaint === "function") hoPaint();
+  verPollEnsure(side, B);
 }
-function verReset(S) { S.open = null; S.blob = null; S.state = ""; S.seq++; }
+function verReset(S) { S.open = null; S.blob = null; S.state = ""; S.seq++; S.err = null; }
 /* 切視角(trade.js envSwitch 改 <html data-env>):離開的那一邊回目前版——切回來時不留時光機,免得忘了自己在看舊版。
    觀察者在切換那一輪畫完之後才跑(microtask),所以只動離開的那一邊的狀態;回來時 rpRepaint 照目前版畫 */
 new MutationObserver(() => {
@@ -51,7 +92,9 @@ function verPaintTrigger(S) {
   const wrap = $("ver-wrap");
   // 看舊版時頁首只留名稱、說明收起來:那一句寫的是目前版的邏輯(看 v1 的 SMA20/50 時寫著 SMA50/200);
   // 不從版本碼裡解析舊的 DESCRIPTION。第二行固定 24 高(.rp-sub),收起來版面不跳
-  const old = !!S.data && S.open !== null;
+  // 重跑中也收起:手上那句可能還是上一版碼的 DESCRIPTION;回報(完成或沒完成)到了才填回
+  const pd = S.data && S.open === null && VER ? VER.pending(S.data) : null;
+  const old = !!S.data && (S.open !== null || !!(pd && pd.status === "running"));
   $("rp-desc").hidden = old;
   if (!S.data) { wrap.hidden = true; $("ver-sep").hidden = true; return; }
   const n = S.open === null ? S.data.current : S.open, label = S.open === null ? t("ver.current") : verDateShort((verEntry(S, n) || {}).at);
@@ -62,8 +105,12 @@ function verPaintTrigger(S) {
 }
 function verPaintBanner(S) {
   const bn = $("ver-banner"), on = !!S.data && S.open !== null;
-  // 進出時光機、換策略、切視角都經過這裡:轉出鈕與程式碼分頁的檔案切換只屬於目前版(renderer/export.js)
+  // 進出時光機、換策略、切視角都經過這裡:轉出鈕與程式碼分頁的檔案切換只屬於目前版(renderer/export.js)。
+  // 重跑中不算時光機:檔案現在就是 vN 的碼,轉出照常
   if (typeof xpSetTimeMachine === "function") xpSetTimeMachine(on ? "v" + S.open : null);
+  verPaintErr(S);
+  // 時光機橫幅與重跑狀態列同一槽、互斥:時光機開著時狀態列暫時不畫,回到目前版再出來
+  verPaintRerun(S, !on && S.data && VER ? VER.pending(S.data) : null);
   if (!on) { bn.hidden = true; return; }
   const e = verEntry(S, S.open) || {}, txt = $("ver-banner-t");
   txt.textContent = "";
@@ -79,11 +126,68 @@ function verPaintBanner(S) {
   $("rp-act").hidden = true;   // 「送上雲端 / 拉回」作用在現在那份檔,不是正在看的舊版(拍板 6);回到目前版由 hoPaint 畫回來
   verBusy();
 }
-// 回合進行中:「還原成這一版」是 aria-disabled(同頁首 #rp-ho:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它
+/* 重跑狀態列(spec §4 / §6):重跑中 = 圓環 + 一句;沒完成 = fault 記號 + 一句 +「再跑一次」(REFUSED 不給鈕、接尾句)。
+   role="status":內容只在狀態真的變了才重建,每次畫頁首都重建會讓讀屏一直重唸 */
+const RERUN_WHY = { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" };
+function verPaintRerun(S, pd) {
+  const rr = $("ver-rerun"); if (!rr) return;
+  if (!pd) { rr.hidden = true; rr.textContent = ""; delete rr.dataset.sig; return; }
+  if (pd.status === "running") $("rp-act").hidden = true;   // 送上雲端 / 拉回:重跑中收起(Wei 決定 6);沒完成是穩定狀態,照常
+  const sig = [pd.status, pd.n, pd.err, LANG].join("|");
+  if (rr.dataset.sig !== sig || rr.hidden) {
+    rr.textContent = ""; rr.dataset.sig = sig;
+    const line = verEl("p", "vr-t"), mark = verEl("span", pd.status === "running" ? "spin16" : "fault-mark");
+    mark.setAttribute("aria-hidden", "true");
+    const txt = verEl("span"), why = t("ver.rerunWhy." + (RERUN_WHY[pd.err] || "exit"));
+    t(pd.status === "running" ? "ver.rerunRunning" : "ver.rerunFailed").split(/(\{v\}|\{why\})/).forEach((p) => {
+      if (p === "{v}") txt.appendChild(verEl("b", "mono", "v" + pd.n)); else if (p === "{why}") txt.append(why); else if (p) txt.append(p);
+    });
+    if (pd.status === "failed" && pd.err === "REFUSED") txt.append((LANG === "zh" ? "" : " ") + t("ver.rerunRefusedTail"));
+    line.append(mark, txt); rr.appendChild(line);
+    if (pd.status === "failed" && pd.err !== "REFUSED") {
+      const again = verEl("button", "btn-out", t("ver.rerunRetry")); again.type = "button"; again.id = "ver-retry";
+      // 按下去這顆鈕就隨狀態列重建消失:焦點交給版本觸發器,不掉到 body
+      again.addEventListener("click", () => {
+        if (again.getAttribute("aria-disabled") === "true") { verBusyNote($("ver-rerun-busy")); return; }   // 觸控看不到 title:原因寫在列裡(設計稽核 S8)
+        verRetry(); const tr = $("ver-trig"); if (tr) tr.focus();
+      });
+      rr.appendChild(again);
+      const busy = verEl("p", "vb-err"); busy.id = "ver-rerun-busy"; busy.hidden = true;
+      rr.appendChild(busy);
+    }
+  }
+  rr.hidden = false;
+  verBusy();
+}
+// 回滾的原因行(spec §7):時光機橫幅文字與鈕的下方;離開時光機(verReset)或再按一次還原就收掉
+function verPaintErr(S) {
+  const el = $("ver-banner-err"); if (!el) return;
+  el.textContent = "";
+  if (!S.err || S.open === null) { el.hidden = true; return; }
+  const m = verEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+  const txt = verEl("span");
+  t(S.err.key).split("{v}").forEach((p, i) => { if (i) txt.appendChild(verEl("span", "mono", "v" + S.err.v)); if (p) txt.append(p); });
+  el.append(m, txt); el.hidden = false;
+}
+// 點到 aria-disabled 的鈕(回合進行中):把 turn.busy 寫進那一列的原因行,同回滾原因行的 recipe;回合結束(verBusy)就收掉
+function verBusyNote(el) {
+  if (!el) return;
+  el.textContent = "";
+  const m = verEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+  el.append(m, verEl("span", "", t("turn.busy"))); el.hidden = false;
+}
+// 回合進行中:「還原成這一版」「再跑一次」是 aria-disabled(同頁首 #rp-ho:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它
 function verBusy() {
-  const b = $("ver-restore"); if (!b) return;
   const busy = typeof running !== "undefined" && running === true;
-  if (busy) { b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
+  if (!busy) {
+    const nb = $("ver-rerun-busy"); if (nb) nb.hidden = true;
+    const S = VS[verSideOf(rpBag())];
+    if (S.err && S.err.key === "turn.busy") { S.err = null; verPaintErr(S); }
+  }
+  ["ver-restore", "ver-retry"].forEach((id) => {
+    const b = $(id); if (!b) return;
+    if (busy) { b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); } else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); }
+  });
 }
 
 /* ── 選單 ── */
@@ -183,24 +287,31 @@ function verBack() {
   $("rp-code-pre").textContent = (B.data && B.data.code) || "";
   hoPaint();
   verPaintTrigger(S); verPaintBanner(S);
-  rpShowTab(B.data && B.data.stats ? B.tab : "code");
+  rpShowTab(rpTab(B));
 }
 /* app.js rpShowTab 的第一行:時光機開著就由這裡畫(回 true),否則回 false 照原本的畫。
    進出場紀錄 / 參數掃描真的 disabled,原因講在分頁列正下方那一行(#rp-nobt,「沒有回測」同一個槽) */
+/* 重跑中 / 沒完成(pending,看的是目前版)也由這裡畫:stats.json 已移開、或還是別的碼的結果,回測分頁畫 vN 存的 blob(spec §3、§10 最後一條) */
 function verShowTab(tab) {
-  const B = rpBag(), S = VS[verSideOf(B)], nobt = $("rp-nobt");
-  if (!S.data || S.open === null || S.name !== B.name) { nobt.textContent = t("rp.noBt"); return false; }
+  const B = rpBag(), side = verSideOf(B), S = VS[side], nobt = $("rp-nobt");
+  const pd = S.data && S.open === null && S.name === B.name && VER ? VER.pending(S.data) : null;
+  if (!S.data || (S.open === null && !pd) || S.name !== B.name) { nobt.textContent = t("rp.noBt"); return false; }
+  const n = S.open !== null ? S.open : S.data.current;
   const cur = tab === "code" ? "code" : "bt";
-  B.tab = cur;
+  B.tab = cur; B.drawn = {};   // 面板被 blob 蓋過:回到一般畫法時要重畫
   $("rp-tabs").hidden = false;
   $("rp-tabs").querySelectorAll(".rp-tab").forEach((b) => {
     b.setAttribute("aria-selected", b.dataset.tab === cur ? "true" : "false");
     b.disabled = b.dataset.tab === "tr" || b.dataset.tab === "rob";
   });
-  nobt.textContent = t("ver.frozenTab"); nobt.hidden = false;
+  const why = !pd ? "ver.frozenTab" : pd.status === "failed" ? "ver.frozenRerunFailed" : "ver.frozenRerun";
+  nobt.dataset.i18n = why; nobt.textContent = t(why); nobt.hidden = false;
   const w = $("rp-wait");
   for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = true;
-  if (!S.blob) { verStatePaint(S); return true; }
+  if (!S.blob) {
+    if (!S.state) { verLoad(side, n); if (S.blob) return true; }   // 重跑中那一版的 blob 多半已在快取(時光機剛看過),零等待
+    verStatePaint(S); return true;
+  }
   w.hidden = true; w.textContent = "";
   $("rp-" + cur).hidden = false;
   if (cur === "code") $("rp-code-pre").textContent = typeof S.blob.code === "string" ? S.blob.code : "";
@@ -223,7 +334,7 @@ function verStatePaint(S) {
   if (S.state === "error") {
     line.className = "plan-err"; const m = verEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); line.append(m, t("ver.readErr"));
     const again = verEl("button", "btn-out", t("plan.recheck")); again.type = "button";
-    const side = S === VS.cloud ? "cloud" : "local", n = S.open;
+    const side = S === VS.cloud ? "cloud" : "local", n = S.open !== null ? S.open : S.data && S.data.current;
     again.addEventListener("click", () => verLoad(side, n));
     w.append(line, again); return;
   }
@@ -253,36 +364,181 @@ async function verLoad(side, n) {
   verRefresh(side);
 }
 
-/* ── 還原 / 上線中守門(canon §5 / §6) ── */
+/* ── 還原 / 上線中守門(canon §5 / §6;spec-strategy-versions-restore-in-place-0.1.9 §1–§3、§7)──
+   按下「還原成這一版」依序:有金額 → 守門框;雲端主機的 lib 太舊 → 更新框;其餘 → 還原確認框 → 直接指令 version_restore。
+   不經 agent、不展開聊天欄。這台電腦的 lib 跟 app 同包,不出更新框(真的舊了由 ack 的 UPDATE_REQUIRED 接住) */
 function verSend(msg) {
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
   return submitMessage(msg);
 }
+function verBoxCtx(side, B) {
+  const cloud = side === "cloud", display = VER.safeName(B.data.displayName) || B.name;   // 規則只有一份,在 strategy_versions.js(稽核 S4)
+  return { display, env: cloud ? "cloud" : undefined, footWhere: cloud ? t("ver.where", { name: display }) : undefined, opener: $("ver-restore") };
+}
+// 有金額:不走還原,改開守門框(機器端 restore() 無論如何都會拒絕;這個框是讓人在按下去之前就知道)。amt 讀不到(ack 回 LIVE)用不帶金額的 lead
+function verGuard(side, B, n, cur, amt) {
+  const c = verBoxCtx(side, B), vars = { display_name: c.display, name: B.name, n: String(n) };
+  const extra = document.createDocumentFragment();
+  const lead = typeof amt === "number" && amt > 0
+    ? t("ver.guardLead", { name: c.display, amt: (trFmt(amt) || String(amt)) + " " + trUnit(), cur: "v" + cur, v: "v" + n })
+    : t("ver.guardLeadNoAmt", { name: c.display, cur: "v" + cur, v: "v" + n });
+  extra.appendChild(verEl("p", "", lead));
+  const ol = verEl("ol", "vg-steps");
+  ["ver.guardS1", "ver.guardS2", "ver.guardS3"].forEach((k) => ol.appendChild(verEl("li", "", t(k, { v: "v" + n }))));
+  extra.appendChild(ol);
+  extra.appendChild(verEl("p", "cf-note", t("ver.guardNote")));
+  confirmBox({ title: t("ver.guardTitle"), lines: [], extra, ok: t("ver.guardOk", { v: "v" + n }), opener: c.opener, env: c.env, footWhere: c.footWhere,
+    onOk: () => verSend(t("ver.msgFork", vars)).then((ok) => { if (ok) trackFeature("version_fork"); }) });
+}
+// 雲端主機的 lib 還不會就地還原:主鈕 = minv.btn 那一套(設定 › 一般、焦點在「檢查更新」);不退回交給 agent 的固定訊息
+function verNeedUpdate(side, B, n) {
+  const c = verBoxCtx(side, B);
+  confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.needUpdate")], ok: t("minv.btn"), opener: c.opener, env: c.env, footWhere: c.footWhere,
+    onOk: () => setOpen().then(() => { setCat("display"); const b = $("set-up-btn"); if (b && !b.hidden) b.focus(); }) });
+}
 function verRestoreAsk() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
   if (!S.data || S.open === null || running) return;
-  const n = S.open, cur = S.data.current, cloud = side === "cloud", opener = $("ver-restore");
-  const display = VER.safeName(B.data.displayName) || B.name;   // 規則只有一份,在 strategy_versions.js(稽核 S4)
-  const env = cloud ? "cloud" : undefined, footWhere = cloud ? t("ver.where", { name: display }) : undefined;
-  const vars = { display_name: display, name: B.name, n: String(n) };
+  const n = S.open, cur = S.data.current;
+  S.err = null; verPaintErr(S);
   const amt = verAmount(side, B);
-  if (typeof amt === "number" && amt > 0) {
-    // 有金額:不走還原,改開守門框(機器端 restore() 無論如何都會拒絕;這個框是讓人在按下去之前就知道)
-    const extra = document.createDocumentFragment(), money = (trFmt(amt) || String(amt)) + " " + trUnit();
-    extra.appendChild(verEl("p", "", t("ver.guardLead", { name: display, amt: money, cur: "v" + cur, v: "v" + n })));
-    const ol = verEl("ol", "vg-steps");
-    ["ver.guardS1", "ver.guardS2", "ver.guardS3"].forEach((k) => ol.appendChild(verEl("li", "", t(k, { v: "v" + n }))));
-    extra.appendChild(ol);
-    extra.appendChild(verEl("p", "cf-note", t("ver.guardNote")));
-    confirmBox({ title: t("ver.guardTitle"), lines: [], extra, ok: t("ver.guardOk", { v: "v" + n }), opener, env, footWhere,
-      onOk: () => verSend(t("ver.msgFork", vars)).then((ok) => { if (ok) trackFeature("version_fork"); }) });
+  if (typeof amt === "number" && amt > 0) { verGuard(side, B, n, cur, amt); return; }
+  if (side === "cloud" && !VER.canRestoreInPlace(S.data)) { verNeedUpdate(side, B, n); return; }
+  const c = verBoxCtx(side, B);
+  // 沒回測過的修改會先另存:事前不知道檔案有沒有被改過,所以每次都講(Wei 拍板 Q1)
+  confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.rsB1", { v: "v" + n }), t("ver.rsB2", { v: "v" + n, cur: "v" + cur })],
+    extra: verEl("p", "cf-note", t("ver.rsNote")), ok: t("ver.rsOk"), opener: c.opener, env: c.env, footWhere: c.footWhere,
+    onOk: () => verDoRestore(side, B.name, n, cur, false) });
+}
+// 「再跑一次」(沒完成時):同一條指令、同一個 {name, n};按下當下切回重跑中。不記埋點(spec §11)
+function verRetry() {
+  const B = rpBag(), side = verSideOf(B), S = VS[side], pd = S.data && S.open === null && VER ? VER.pending(S.data) : null;
+  if (!pd || pd.status !== "failed" || running) return;
+  const raw = B.data && B.data.versions, rr = raw && raw.rerun;
+  verDoRestore(side, B.name, pd.n, null, true, rr && typeof rr.at === "number" ? rr.at : null);
+}
+/* ack → { kind: "ok" | "wait" | "fail", code?, result? }。逾時 / 結果不明不算失敗(指令可能已經執行):維持樂觀狀態、等回報。
+   機器拒絕的字串是 "ValueError: <CODE>: …"(runtime _cmd_version_restore) */
+function verAckKind(r) {
+  if (r && r.ok) return { kind: "ok", result: r.result && typeof r.result === "object" ? r.result : {} };
+  const e = r && typeof r.error === "string" ? r.error : "";
+  if (!r || r.kind === "unknown" || e === "TIMEOUT" || e === "UNKNOWN_RESULT") return { kind: "wait" };
+  const m = /^\s*\w+:\s*([A-Z_]+):/.exec(e);
+  return { kind: "fail", code: m ? m[1] : null };
+}
+async function verDoRestore(side, name, n, prev, retry, failedAt) {
+  const B = side === "cloud" ? RPC : RP, k = voKey(side, name), tok = {};
+  VREQ.set(k, tok);
+  VO.set(k, { n, prev, at: Math.floor(Date.now() / 1000), ackAt: 0, failedAt: failedAt == null ? null : failedAt });
+  verPollStop(side);
+  if (B.name === name && rpBag() === B && !$("rp").hidden) {
+    B.drawn = {}; verPaint(B); rpShowTab(B.tab);
+    const tr = $("ver-trig"); if (tr) tr.focus();   // 確認框把焦點還給的那顆鈕已隨時光機收起(設計稽核 S1)
+  }
+  let r = null;
+  try { r = await TR_BAGS[side].api.tradeSend("version_restore", { name, n }); } catch (_) { r = null; }
+  if (VREQ.get(k) !== tok) return;   // 等 ack 的時候又按了一次(另一版 / 再跑一次):那一次說了算
+  const a = verAckKind(r);
+  // 回報 2 分鐘內要跟上,否則回滾;輪詢上限也從這一刻重新起算
+  const armed = () => { const o = VO.get(k); if (o && o.n === n) o.ackAt = Date.now(); const P = VP[side]; if (P && P.name === name) P.until = Date.now() + VER_POLL_MAX_MS; };
+  if (a.kind === "ok") {
+    if (!retry) trackFeature("version_restore");   // ack 成功才算(含 inplace:false:還原確實做了);再跑一次不計
+    if (a.result.inplace === false) { verRollback(side, name, n, "ver.rsAsNew"); return; }
+    armed(); return;
+  }
+  if (a.kind === "wait") { armed(); return; }
+  if (a.code === "LIVE") {
+    verRollback(side, name, n, null);
+    if (B.name === name && rpBag() === B) verGuard(side, B, n, VS[side].data ? VS[side].data.current : prev, verAmount(side, B));
     return;
   }
-  confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.rsB1", { v: "v" + n }), t("ver.rsB2", { cur: "v" + cur })], ok: t("ver.rsOk"), opener, env, footWhere,
-    onOk: () => verSend(t("ver.msgRestore", vars)).then((ok) => { if (ok) trackFeature("version_restore"); }) });
+  if (a.code === "UPDATE_REQUIRED" && side === "cloud") {
+    verRollback(side, name, n, null);
+    if (B.name === name && rpBag() === B) verNeedUpdate(side, B, n);
+    return;
+  }
+  verRollback(side, name, n, a.code === "NO_VERSION" ? "ver.rsErrGone" : "ver.rsErr");
+}
+/* 回滾 = 拿掉疊層,畫面回到按下之前:時光機看 vN、橫幅兩顆鈕都在,需要時多一行原因。回滾不送埋點 */
+function verRollback(side, name, n, reason) {
+  VO.delete(voKey(side, name));
+  const B = side === "cloud" ? RPC : RP, S = VS[side];
+  if (B.name !== name || rpBag() !== B || $("rp").hidden || !B.data) return;
+  B.drawn = {};
+  verPaint(B);
+  if (!S.data || n === S.data.current || !VER.entries(S.data).some((i) => i.n === n)) { rpShowTab(rpTab(B)); return; }
+  S.open = n; S.blob = null; S.state = ""; S.seq++;
+  S.err = reason ? { key: reason, v: n } : null;
+  $("rp-code-pre").textContent = "";
+  verPaintTrigger(S); verPaintBanner(S);
+  verLoad(side, n);
+  // 焦點交給重新出現的「還原成這一版」;原因行本身不搶焦點。人已經移到別處就不動
+  const a = document.activeElement;
+  if (!a || a === document.body || a === $("ver-trig")) { const b = $("ver-restore"); if (b) b.focus(); }
+}
+/* 重跑期間的輪詢(spec §13):這台電腦每 2 秒讀本機檔、雲端每 5 秒打 /cloud/strategy(detail 桶);內容沒變就不重畫(圖不閃)。
+   疊層還在、或重跑中才跑;沒完成是穩定狀態不輪;最多 16 分鐘(機器端逾時 15 分鐘 + 餘裕)。看不到那一邊時照讀、不畫 */
+function verPollNeed(side, B) {
+  if (!B || !B.name) return false;
+  if (VO.has(voKey(side, B.name))) return true;
+  const pd = verPendingOf(side, B);
+  return !!(pd && pd.status === "running");
+}
+function verPollStop(side) { const P = VP[side]; if (P) clearTimeout(P.timer); VP[side] = null; }
+function verPollEnsure(side, B) {
+  if (!verPollNeed(side, B)) { if (VP[side] && VP[side].name === B.name) verPollStop(side); return; }
+  if (VP[side] && VP[side].name === B.name) return;
+  verPollStop(side);
+  const P = { name: B.name, until: Date.now() + VER_POLL_MAX_MS, timer: null };
+  VP[side] = P;
+  P.timer = setTimeout(() => verPollTick(side, P), VER_POLL_MS[side]);
+}
+/* ack 後 2 分鐘報告仍沒跟上:還原 → 回滾到時光機 + rsErr;再跑一次(current 本來就是 n,報告仍是按下前那一筆 failed)
+   → 拿掉疊層、回到沒完成(設計稽核 S2:不然 ack 不明時會一直轉圈)。沒逾時就只照報告收疊層。回 true = 畫面已處理 */
+function verOverlayExpire(side, name, B) {
+  const k = voKey(side, name), o = VO.get(k), raw = B.data && B.data.versions;
+  if (!o) return false;
+  if (!o.ackAt || Date.now() - o.ackAt <= VER_ROLLBACK_MS) { verEffective(side, name, raw); return false; }
+  const rr = raw && raw.rerun;
+  if (o.failedAt != null && raw && raw.current === o.n && rr && rr.status === "failed" && rr.at === o.failedAt) {
+    VO.delete(k);
+    if (rpBag() === B && !$("rp").hidden && B.data) { rpPaintHead(B); rpShowTab(rpTab(B)); }
+    return true;
+  }
+  if (!(raw && raw.current === o.n)) { verRollback(side, name, o.n, "ver.rsErr"); return true; }
+  verEffective(side, name, raw);
+  return false;
+}
+async function verPollTick(side, P) {
+  if (VP[side] !== P) return;
+  const B = side === "cloud" ? RPC : RP;
+  if (B.name !== P.name) { verPollStop(side); return; }
+  if (Date.now() > P.until) {   // 封頂:停輪詢,照手上最後一份畫一次;留一個「已封頂」的佔位,重畫不會再把輪詢開回來
+    verPollStop(side);
+    if (!verOverlayExpire(side, P.name, B)) VO.delete(voKey(side, P.name));   // 到封頂還掛著的疊層不再可信,以報告為準
+    VP[side] = { name: P.name, until: 0, timer: null, capped: true };
+    if (rpBag() === B && !$("rp").hidden && B.data) { rpPaintHead(B); rpShowTab(rpTab(B)); }
+    return;
+  }
+  let d = null;
+  try { d = side === "cloud" ? await TR_BAGS.cloud.api.loadStrategy(P.name) : await window.blave.loadStrategy(P.name); } catch (_) { d = null; }
+  if (VP[side] !== P || B.name !== P.name) return;
+  const shown = rpBag() === B && !$("rp").hidden;
+  if (d && JSON.stringify(d) !== JSON.stringify(B.data)) {
+    B.data = d; B.drawn = {};
+    if (side === "cloud" && typeof RPC_CACHE !== "undefined") RPC_CACHE.set(P.name, d);
+    if (shown) { rpPaintHead(B); rpShowTab(rpTab(B)); }
+  }
+  verOverlayExpire(side, P.name, B);
+  if (VP[side] !== P) return;
+  if (!verPollNeed(side, B)) { verPollStop(side); if (shown) { rpPaintHead(B); rpShowTab(rpTab(B)); } return; }
+  P.timer = setTimeout(() => verPollTick(side, P), VER_POLL_MS[side]);
 }
 $("ver-back").addEventListener("click", verBack);
-$("ver-restore").addEventListener("click", () => { if ($("ver-restore").getAttribute("aria-disabled") !== "true") verRestoreAsk(); });
+$("ver-restore").addEventListener("click", () => {
+  if ($("ver-restore").getAttribute("aria-disabled") !== "true") { verRestoreAsk(); return; }
+  const S = VS[verSideOf(rpBag())]; S.err = { key: "turn.busy", v: S.open }; verPaintErr(S);   // 設計稽核 S8
+});
 
 /* ── 比較兩個版本(唯讀、沒有腳;預設 A = 正在看的舊版或上一版、B = 目前版) ── */
 let vcSeq = 0, vcSide = null;
@@ -298,10 +554,11 @@ function vcFill(sel, S, pick) {
 function vcOpen() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
   if (!S.data || !VER || !VER.canCompare(S.data)) return;   // 一版時 items[1] 不存在
-  const items = VER.entries(S.data);
+  // B = 目前版(current,還原後不一定是最大號);A = 正在看的舊版,不在時光機時取版號最大、不是目前的那一版(spec §8)
+  const items = VER.entries(S.data), cur = S.data.current;
   vcSide = side;
-  vcFill($("vc-a"), S, S.open !== null ? S.open : items[1].n);
-  vcFill($("vc-b"), S, items[0].n);
+  vcFill($("vc-a"), S, S.open !== null ? S.open : (items.find((i) => i.n !== cur) || items[1]).n);
+  vcFill($("vc-b"), S, cur);
   $("view-ws").inert = true;
   const sc = $("vc-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));

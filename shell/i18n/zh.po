@@ -4797,7 +4797,7 @@ msgid "xp.ivl.w"
 msgstr "週線"
 
 msgid "ver.menuLbl"
-msgstr "版本（每次回測留一版）"
+msgstr "版本（改過程式碼的回測各留一版）"
 
 msgid "ver.current"
 msgstr "目前"
@@ -4818,7 +4818,7 @@ msgid "ver.compareOpen"
 msgstr "比較兩個版本…"
 
 msgid "ver.oneHint"
-msgstr "下次回測會存成 {next}，到時就能比較和還原。"
+msgstr "改了程式碼再回測，會存成 {next}，到時就能比較和還原。"
 
 msgid "ver.winNote"
 msgstr "這一版存的是回測到 {saved} 的結果；頁面會跟著新資料更新，現在到 {page}。"
@@ -4845,7 +4845,7 @@ msgid "ver.restore"
 msgstr "還原成這一版"
 
 msgid "ver.frozenTab"
-msgstr "這一版沒留逐筆紀錄，要看請 agent 用這版重跑。"
+msgstr "這一版沒留逐筆紀錄。還原成這一版會用最新資料重跑，跑完就有。"
 
 msgid "ver.syncing"
 msgstr "這一版還在同步，稍後再看。"
@@ -4899,16 +4899,68 @@ msgid "ver.rsTitle"
 msgstr "還原成 {v}"
 
 msgid "ver.rsB1"
-msgstr "會把 {v} 的程式碼複製回策略檔，立刻重跑一次回測，產生新的版號。"
+msgstr "策略檔會換回 {v} 的程式碼，{v} 回到目前版本，不會多一個版號。"
 
 msgid "ver.rsB2"
-msgstr "{cur} 不會消失，之後還能再退回去。"
+msgstr "頁面先顯示 {v} 存下的結果，同時用最新資料重跑一次回測，跑完數字會更新。{cur} 留在清單裡，之後還能回去。"
 
 msgid "ver.rsOk"
 msgstr "還原"
 
 msgid "ver.where"
 msgstr "雲端主機 · {name}"
+
+# 就地還原(spec-strategy-versions-restore-in-place-0.1.9)
+msgid "ver.needUpdate"
+msgstr "雲端主機還是舊版，要先更新才能還原。更新一次就好，完成後再按一次「還原成這一版」。"
+
+msgid "ver.rsNote"
+msgstr "策略檔裡還沒回測過的修改，會先另存一份。"
+
+msgid "ver.rerunRunning"
+msgstr "已回到 {v}，先顯示它當初存的結果；正在用最新資料重跑回測，跑完會更新。"
+
+msgid "ver.rerunFailed"
+msgstr "{v} 的回測沒有重跑完（{why}），頁面顯示的是它當初存的結果。"
+
+msgid "ver.rerunWhy.data"
+msgstr "沒取到資料"
+
+msgid "ver.rerunWhy.refused"
+msgstr "被回測檢查擋下"
+
+msgid "ver.rerunWhy.timeout"
+msgstr "跑太久，已停下"
+
+msgid "ver.rerunWhy.exit"
+msgstr "中途出錯"
+
+msgid "ver.rerunRefusedTail"
+msgstr "再跑一次結果也一樣，可以在對話裡請 agent 看看。"
+
+msgid "ver.rerunRetry"
+msgstr "再跑一次"
+
+msgid "ver.rerunDoneSr"
+msgstr "{v} 的回測已用最新資料重跑完。"
+
+msgid "ver.frozenRerun"
+msgstr "回測重跑完才有進出場紀錄；參數掃描要對這一版重新跑。"
+
+msgid "ver.frozenRerunFailed"
+msgstr "回測沒有重跑完，進出場紀錄與參數掃描都沒有資料。"
+
+msgid "ver.rsErrGone"
+msgstr "主機上已經沒有 {v}（只保留最近 20 版），這一版只能看、不能還原。"
+
+msgid "ver.rsErr"
+msgstr "沒能還原到 {v}。稍後再試，或在對話裡請 agent 看看。"
+
+msgid "ver.rsAsNew"
+msgstr "{v} 的程式碼已寫回策略檔，但檔案裡有無法原樣保存的字元，這次回測跑完會存成新的一版。"
+
+msgid "ver.guardLeadNoAmt"
+msgstr "「{name}」正在下單，跑的是 {cur}。直接把程式碼換成 {v} 會在下一根 K 棒生效，可能無預警翻倉。"
 
 msgid "ver.guardTitle"
 msgstr "這個策略正在下單"
@@ -4920,7 +4972,7 @@ msgid "ver.guardS1"
 msgstr "改用 {v} 的程式碼建立新策略，原策略照舊繼續跑"
 
 msgid "ver.guardS2"
-msgstr "新策略先跑一次回測與一次訊號，確認有 state.json"
+msgstr "新策略先跑一次回測和一次訊號，讓它算出現在該持有的部位"
 
 msgid "ver.guardS3"
 msgstr "你確認後，在自動下單一次存檔：新策略給金額、原策略金額設 0（保留勾選，才退得回來）"
@@ -4930,9 +4982,6 @@ msgstr "同方向同標的，對帳器會在同一輪把舊倉換成新倉，幾
 
 msgid "ver.guardOk"
 msgstr "用 {v} 建立新策略"
-
-msgid "ver.msgRestore"
-msgstr "請把策略「{display_name}」({name}) 還原到第 {n} 版,重跑回測 —— 不用再確認"
 
 msgid "ver.msgFork"
 msgstr "請用策略「{display_name}」({name}) 第 {n} 版的程式碼建立一支新策略,原策略不要動;新策略跑一次回測和一次訊號、確認有 state.json,然後停下來,讓我在自動下單切換金額 —— 不用再確認"
