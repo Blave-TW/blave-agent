@@ -3049,7 +3049,7 @@ document.addEventListener("keydown", (e) => {
   sel.selectAllChildren(region);
 });
 
-/* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
+/* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、.rules-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
    但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;

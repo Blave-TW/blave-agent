@@ -17,7 +17,7 @@
    寬度照文字、260 封頂:包含區塊是窄窄的 .rules-tipw,auto 會縮成 label 寬(同 0b8dc3d 總覽泡泡) */
 .rules-tipw { position: relative; display: inline-flex; }
 .rules-tipb { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
-.rules-tipb:hover + .tip, .rules-tipb:focus-visible + .tip { display: block; }
+.rules-tipb:hover:not([data-tip-off]) + .tip, .rules-tipb:focus-visible:not([data-tip-off]) + .tip { display: block; }
 .set-pane[data-set-cat="rules"] .tip { left: 0; bottom: auto; top: calc(100% + 6px); width: max-content; max-width: 260px; }
 @media (prefers-reduced-motion: reduce) { .set-pane[data-set-cat="rules"] .tip { animation: none; } }
 
