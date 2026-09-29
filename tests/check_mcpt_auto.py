@@ -226,7 +226,7 @@ check(R.GENERATED_AT_KEY == "Generated At", "Generated At key 名固定")
 rsrc = open(R.__file__).read()
 check(rsrc.count("stats.update(_carry_over(out_dir, mode))") == 1 and rsrc.count("carried = _carry_over(out_dir, mode)") == 1
       and rsrc.count("setdefault(GENERATED_AT_KEY, int(time.time()))") == 2, "Type A 與 Type C 兩處寫出都接了 _carry_over + Generated At 補戳")
-check(rsrc.count("\n        _write_stats(out_dir") == 2 and "open(out_dir / 'stats.json', 'w')" not in rsrc, "Type A / Type C 兩處 stats.json 都走 _write_stats(tmp + os.replace)")
+check(len(__import__("re").findall(r"\n +_write_stats\(out_dir", rsrc)) == 2 and "open(out_dir / 'stats.json', 'w')" not in rsrc, "Type A / Type C 兩處 stats.json 都走 _write_stats(tmp + os.replace)")
 
 # ── 5. scan_grid never calls mcpt ─────────────────────────────────────────────
 calls = {"n": 0}

@@ -29,6 +29,11 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
   t("amounts:名字、有限非負數、上限", argsOk("amounts", { amounts: { a_b: 1000, c: 0 } }) && !argsOk("amounts", { amounts: { a: -1 } })
     && !argsOk("amounts", { amounts: { a: 1e12 } }) && !argsOk("amounts", { amounts: { "../x": 1 } }) && !argsOk("amounts", { amounts: { a: "1" } }));
   t("不收參數的指令帶了參數就拒", argsOk("close_all", {}) && !argsOk("close_all", { venue: "x" }) && (await host.send("close_all", { x: 1 })).error === "BAD_ARGS");
+  // 策略版本就地還原:剛好 name + n;名字規則 = runtime / api 那一條(128、不收「.」),版號 1..1e6 的整數
+  t("version_restore:在白名單裡,剛好 name + n", UI_COMMANDS.has("version_restore") && argsOk("version_restore", { name: "momo_" + "x".repeat(123), n: 1000000 })
+    && [{}, { name: "momo" }, { n: 1 }, { name: "momo", n: 1, x: 1 }, { name: "x".repeat(129), n: 1 }, { name: "a.b", n: 1 }, { name: "../x", n: 1 },
+      { name: "momo", n: 0 }, { name: "momo", n: 1000001 }, { name: "momo", n: 1.5 }, { name: "momo", n: "1" }, { name: "momo", n: true }, { name: 5, n: 1 }]
+      .every((a) => !argsOk("version_restore", a)));
   /* 畫面事件:**「沒有這個檔」與「讀不到這個檔」是兩件事**(同雲端那一支)。
      檔不在 = 這台電腦上真的沒做過那幾件事 → 空清單;讀不到(EACCES / EIO / 檔壞了)要往上拋,
      renderer 的 catch 才會把它畫成「讀不到」,而不是替資料斷言「這段期間沒有發生事情」。 */

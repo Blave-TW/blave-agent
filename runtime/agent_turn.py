@@ -1096,9 +1096,56 @@ def _viewing_env_segment(cloud_mcp):
             "仍是對那台主機做事,照上面走。]")
 
 
+# 策略版本就地還原(.claude/docs/strategy-versions.md §5):還原不經對話,由 command_listener 記在這個檔
+# (同一個 WORKSPACE/state,不是 strategy_reporter.STATE_DIR)。
+VERSION_EVENTS_PATH = os.path.join(WORKSPACE, "state", "version_events.jsonl")
+VERSION_NOTE_MAX_EVENTS = 3
+_VERSION_EVENT_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,128}")
+
+
+def version_restore_note(since):
+    """逐輪注入:這條對話上一輪之後,用戶在版本選單還原過哪幾支。agent 的脈絡裡還是舊碼,
+    下一輪若憑記憶整檔寫回,就把還原無聲蓋掉——所以要它先重讀檔案。`since` = 這條對話最後一筆
+    turn 的時間;沒有(新對話)就不注入:它的脈絡裡本來就沒有任何一版的碼。
+    只給約束、不給成品句(見下面「逐輪規則」那條硬規矩)。"""
+    if since is None:
+        return None
+    try:
+        with open(VERSION_EVENTS_PATH, encoding="utf-8") as f:
+            raw = f.read().splitlines()
+    except OSError:
+        return None
+    events = []
+    for line in raw:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if (isinstance(e, dict) and isinstance(e.get("at"), (int, float)) and e["at"] > since
+                and isinstance(e.get("name"), str) and _VERSION_EVENT_NAME_RE.fullmatch(e["name"])
+                and isinstance(e.get("n"), int) and not isinstance(e.get("n"), bool)):
+            events.append(e)
+    if not events:
+        return None
+    items = []
+    for e in events[-VERSION_NOTE_MAX_EVENTS:]:
+        prev = e.get("prev")
+        item = f"「{e['name']}」還原到 v{e['n']}"
+        if isinstance(prev, int) and not isinstance(prev, bool) and prev != e["n"]:
+            item += f"(原本 v{prev})"
+        if e.get("backed_up") is True:
+            item += (f",還原前沒有回測過的修改另存在 strategies/{e['name']}/versions/pre-restore.py"
+                     "(用戶問起才提)")
+        items.append(item)
+    return ("[系統訊息,不是使用者說的:使用者在版本選單把" + ";".join(items)
+            + "。那幾支的 strategy.py 現在就是那一版的碼,背景正在用最新資料重跑回測,不會多出新版本。"
+            "對這幾支策略動手前先重讀檔案,不要憑記憶整檔覆寫;不必重跑回測,也不必改 VERSION_NOTE。]")
+
+
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None, viewing_widgets=None,
-                 reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None):
+                 reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
+                 version_note=None):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -1146,6 +1193,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             parts.append(seg)
     if viewing_env == "cloud":  # 怪值當沒送(同 --viewing-view)
         parts.append(_viewing_env_segment(cloud_mcp))
+    if version_note:  # 機器上的事實,不是 UI 狀態:兩個 sink 都掛
+        parts.append(version_note)
     parts.append("[使用者這次的訊息]")
     parts.append(message)
     # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
@@ -3459,12 +3508,17 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         cloud_mcp = "blave" in mounted
         browser_mounted = "blave_browser" in mounted
     web = desktop_web(sink, browser_mounted)
+    try:  # 讀在這一輪的 user 列寫進去之前:「上一輪」是這條對話在這之前的最後一筆
+        version_note = version_restore_note(ss.last_turn_at(session_id))
+    except Exception as e:
+        print(f"[agent_turn] version note skipped: {type(e).__name__}", file=sys.stderr)
+        version_note = None
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
                           viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
-                          lang_basis=lang_msg)
+                          lang_basis=lang_msg, version_note=version_note)
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -3843,7 +3897,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   suggest_directive=is_web,
                                   viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
-                                  viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg)
+                                  viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
+                                  version_note=version_note)
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
             # A new dict, not an in-place update: the CLI child's env is built from

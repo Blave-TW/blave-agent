@@ -8,7 +8,15 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **策略版本就地還原的直接指令(desktop 0.1.9)**:新指令 `version_restore {name, n}`(雲端佇列與本機 daemon 同一支 handler,本機要簽章)。
+  ① 能力判斷:workspace 的 `lib/strategy.py` 沒有 `RESTORE_IN_PLACE = 1` 那一行 → `UPDATE_REQUIRED`,什麼都不動(舊 lib 的還原會鑄新版);
+  ② 在 workspace 子行程跑 `lib.strategy.restore`(有金額在動檔前拒絕 → `LIVE`;另有 `NO_VERSION` / `NO_SOURCE` / `CONFIG_UNREADABLE`),
+  ack `{n, inplace, backed_up, rerun: "started"}`;③ 背景靜默重跑(`BLAVE_MODE=backtest BLAVE_QUIET=1`,釘住那一版的 code_hash),
+  狀態寫 `versions/rerun.json`,成功由 runner 刪、失敗記 `DATA` / `REFUSED` / `TIMEOUT` / `EXIT`、被編輯蓋過就刪掉(不卡在 running);
+  連按先殺上一支、`delete_strategy` 先殺、listener 重啟會認養或結算。報告的 `versions` 多 `inplace` / `rerun`;
+  `agent_turn` 在該對話下一輪注入一行系統訊息(`state/version_events.jsonl`)。電腦版的重跑帶 `BLAVE_AGENT_LOCAL=1`
+  (台股走 TWSE / TPEx,同 agent 自己回測;live tick 不帶);`delete_strategy` 等還原鎖最多 10 秒,拿不到回「稍後再試」
+  (稽核 0.1.9 P1-3 / P2-7)。測試 `tests/check_restore_command.py`。
 
 ## 1.1.102 — 2026-09-28(desktop 0.1.8)
 

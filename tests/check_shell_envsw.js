@@ -161,7 +161,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /const CLOUD_ONLY = require\("\.\/cloudcmd"\)\.CLOUD_ONLY_COMMANDS;/.test(mainSrc)
       && JSON.stringify(require("../shell/cloudcmd").CLOUD_ONLY_COMMANDS) === '["delete_strategy"]'
       && !require("../shell/daemon").UI_COMMANDS.has("delete_strategy")
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm"\];/.test(mainSrc));
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore"\];/.test(mainSrc));
     // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
     ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
     ok("用本機 app 不觸發雲端 agent 回合:cloud-send 的白名單沒有 update / restart_reconciler", !/"update"|"restart_reconciler"/.test((mainSrc.match(/const CLOUD_SHIPPED = \[[^\]]*\]/) || [""])[0]));

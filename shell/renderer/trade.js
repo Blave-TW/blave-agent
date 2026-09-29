@@ -567,7 +567,7 @@ const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity",
 /* 雲端送得出去的指令:**只開真的有 UI 在用的**(稽核 S-2)。`amounts` = 雲端填金額(S4);`delete_strategy` = 雲端側欄的刪除;
    `credentials_remove` / `retest_accounts` = 雲端設定分頁(S5)。`credentials` 永遠不在這裡:金鑰只走主行程專用的 cloud-connect。
    沒有 `update` / `restart_reconciler`:用本機 app 不觸發雲端 agent 回合(Wei 09-22)。主行程還會再擋一次(CLOUD_SHIPPED,兩份逐項相等)。 */
-const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm"];
+const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore"];
 function envApi(env, host) {
   if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事

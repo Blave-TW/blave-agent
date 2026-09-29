@@ -12,7 +12,7 @@ const { spawn } = require("child_process");
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
-  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm"]);
+  "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore"]);
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -68,6 +68,10 @@ function argsOk(cmd, a, trusted) {
   // 換金鑰後「還是同一個帳戶嗎」的回答:剛好 venue + same 兩個欄位,不帶任何祕密(同機器端 _cmd_book_account_confirm 的規則)
   if (cmd === "book_account_confirm") return keys.length === 2 && typeof a.venue === "string" && /^[a-z0-9]{2,20}$/.test(a.venue) && typeof a.same === "boolean";
   if (cmd === "halt") return keys.every((k) => k === "reason") && (a.reason === undefined || (typeof a.reason === "string" && a.reason.length <= 200));
+  /* 策略版本就地還原:剛好 name + n。名字規則比 NAME_RE 窄(不收「.」)= runtime _cmd_version_restore 與 api 的版本端點;
+     版號同 main.js versionN。有金額的策略由機器端的 restore() 在動檔前拒絕,這一層只擋形狀 */
+  if (cmd === "version_restore") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
+    && Number.isInteger(a.n) && a.n > 0 && a.n <= 1000000;
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
 function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,

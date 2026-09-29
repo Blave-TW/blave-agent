@@ -101,7 +101,7 @@ ALLOWED = frozenset({
     "delete_strategy", "manage_optimize", "manage_backtest", "manage_cancel",
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
-    "book_account_confirm",
+    "book_account_confirm", "version_restore",
 })
 # In the api's list, refused here: the Capital (群益) connect steps install
 # SKCOM and an NSSM worker on a cloud Windows host — nothing of that on a
@@ -962,6 +962,7 @@ class Daemon:
         cl._send_ack = self.write_ack  # the transport swap, ack side
         cl._ON_APPLIED = cl._ON_PROGRESS = self.dirty.set
         cl._resume_mgmt_watch()
+        cl._resume_restore_watch()
         loops = [cl._scheduler_loop, self._status_loop, self._account_loop,
                  self._supervise_loop]
         if watch_parent:

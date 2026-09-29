@@ -1053,7 +1053,7 @@ async function stratSelect(name, force) {
   if (!RP.data) { stratSelect(null); return; }
   envShowMain();
   // 在看雲端時本機這邊被 agent 動了(每輪結束的 stratRefresh):只記下,切回來 rpRepaint 再畫——那時 #rp 開著的是雲端那支,不可以拿本機的頁首去蓋它
-  if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(RP.data.stats ? RP.tab : "code"); }
+  if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(rpTab(RP)); }
 }
 // 選中那支換了資料、人還在原地(stratRefresh 回合結束):同 stratSelect 的後半,但不離開別的視圖、不換分頁
 async function stratReload(name) {
@@ -1061,7 +1061,7 @@ async function stratReload(name) {
   if (RP.name !== name) return;
   if (!d) { stratSelect(null); return; }
   RP.data = d; RP.drawn = {};
-  if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(RP.data.stats ? RP.tab : "code"); }
+  if (rpBag() === RP && !$("rp").hidden) { rpPaintHead(RP); rpShowTab(rpTab(RP)); }
 }
 /* 報告頁首(名字、說明、程式碼分頁)換成這一袋的。「送上雲端」只有這台電腦的策略才畫(雲端那份本來就在雲端);「拉回」在側欄列尾,不在這裡 */
 function rpPaintHead(B) {
@@ -1090,7 +1090,7 @@ let rpWaitShownAt = 0;
 function rpWaitHold(shownAt, now) { return shownAt ? Math.max(0, RP_WAIT_MIN_MS - (now - shownAt)) : 0; }
 function rpBodyPaint(B) {
   const w = $("rp-wait"), pend = B.data && B.data.pending;
-  if (!pend) { rpShowTab(B.data.stats ? B.tab : "code"); return; }
+  if (!pend) { rpShowTab(rpTab(B)); return; }
   $("rp-tabs").hidden = true; $("rp-nobt").hidden = true;
   for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = true;
   w.hidden = false; w.textContent = "";
@@ -1159,6 +1159,9 @@ function rpCloudPrune(list) {
   if (RPC.name && !list.some((x) => x.name === RPC.name)) rpCloudSelect(null);
 }
 
+/* 重新畫報告時停在哪個分頁:沒有回測 → 程式碼。還原後重跑中 / 沒完成(stats.json 已移開)不算沒有回測:
+   回測分頁由 versions.js 畫那一版存的結果,人不該被每次輪詢拉到程式碼(spec-strategy-versions-restore-in-place §13) */
+function rpTab(B) { return B.data && (B.data.stats || (typeof verHolds === "function" && verHolds(B))) ? B.tab : "code"; }
 /* 分頁第一次被看到才畫(進出場那張 K 線圖不便宜);同一支策略切回來不重畫。畫的是現在這一邊那一袋(RP / RPC)。 */
 function rpShowTab(tab) {
   if (typeof verShowTab === "function" && verShowTab(tab)) return;   // 正在看舊版:四個分頁由 versions.js 畫

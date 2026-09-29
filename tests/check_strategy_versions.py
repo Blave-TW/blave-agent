@@ -11,7 +11,7 @@ workspace and asserts the rules that are expensive to get wrong:
     counting (v21 exists while v1 does not)
   - a live tick over an edited file writes the drift flag, and the next backtest clears it
   - restore() on a funded strategy raises and leaves the file byte-identical; on an
-    unfunded one it puts the old code back
+    unfunded one it puts the old code back (in-place semantics: tests/check_restore_in_place.py)
   - mode inference (no MODE constant anywhere): not in the 下單設定 and no BLAVE_MODE →
     backtest (mints, no state.json); in it (amount 0 counts) → live, and BLAVE_MODE=backtest
     is the escape hatch back (mints, pnl.png re-rendered); from a cwd that is not the
@@ -178,7 +178,7 @@ def reset_outputs():
 with open(WS / "manager" / "portfolio_config.json", "w") as f:
     json.dump({"amounts": {}, "exchanges": {}}, f)
 reset_outputs()
-cur = index()["current"]
+cur = index()["counter"]   # after restoring v5, current is 5 — the next mint is counter + 1
 backtest(note="unpicked", code="# unpicked\n")
 check(index()["current"] == cur + 1 and PNL.exists() and not STATE.exists(),
       "not in the 下單設定, no BLAVE_MODE → backtest: mints, renders pnl.png, no state.json")

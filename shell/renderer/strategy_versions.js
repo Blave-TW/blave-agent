@@ -116,6 +116,8 @@
     return m ? { y: m[1], md: m[2] + "/" + m[3], key: m[1] + m[2] + m[3] } : null;
   }
   function windowNote(n, versions, pageEnd, viewing) {
+    // 重跑中 / 沒完成:頁面畫的就是這一版存的結果(或 stats.json 已移開),沒有第二組數字可比
+    if (pending(versions)) return null;
     var cur = versions && typeof versions.current === "number" ? versions.current : null;
     if (cur === null || n !== cur || viewing !== cur) return null;
     var e = entries(versions), it = null;
@@ -130,7 +132,22 @@
     };
   }
 
-  // 徽章語意(canon §7)。「目前」= 最新那版(恆為 index.json 的 current);
+  // 還原後背景重跑的狀態(canon §5)。摘要清單的 rerun 指的是 current、狀態是 running / failed 才算;
+  // 其他情況(沒在重跑、rerun 指的不是 current)回 null。
+  function pending(versions) {
+    var r = versions && versions.rerun;
+    var cur = versions && typeof versions.current === "number" ? versions.current : null;
+    if (!r || typeof r !== "object" || cur === null || r.n !== cur) return null;
+    if (r.status !== "running" && r.status !== "failed") return null;
+    return { n: r.n, status: r.status, err: typeof r.err === "string" ? r.err : null };
+  }
+
+  // 這台主機的 lib 會不會就地還原(canon §9 的 inplace;沒有這個 key = 不會)
+  function canRestoreInPlace(versions) {
+    return !!versions && versions.inplace === true;
+  }
+
+  // 徽章語意(canon §7)。「目前」= index.json 的 current 指的那一版(還原後可以是較舊的號);
   // 「上線中」= 目前版 且 amounts > 0;drift 為 true 時不得畫乾淨的「上線中」。
   // amount 為 null(pfData 還沒載到)時只回 "current" —— 不猜。
   function badge(n, versions, amount, drift) {
@@ -161,6 +178,8 @@
     delta: delta,
     windowsDiffer: windowsDiffer,
     windowNote: windowNote,
+    pending: pending,
+    canRestoreInPlace: canRestoreInPlace,
     badge: badge
   };
 })(typeof window !== "undefined" ? window : globalThis);
