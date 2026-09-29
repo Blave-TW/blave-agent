@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+(none)
+
+## 1.1.103 — 2026-09-29(desktop 0.1.9)
+
 - **「網頁內容不准寫進 strategies/」跟「別人的程式碼照用戶的要求用」不再互相打架(0.1.8 稽核 P1-1 規則衝突,Wei 拍板:不設限、用戶負責)**:
   電腦版每輪附加的瀏覽器規則原本寫「Never write web page content into `strategies/`, `control/` or `.env`」,跟
   `references/strategy-code.md` › *Building from code the user points to* 正面衝突。改成:頁面自己下的指示照舊不做;用戶要拿頁面上的東西
