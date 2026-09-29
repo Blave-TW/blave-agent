@@ -2,8 +2,11 @@
 check_local_daemon_chain.py).
 
   1. ALLOWED + CLOUD_ONLY is the api's ALLOWED, item for item, and the two do
-     not overlap (BLAVE_API_DIR or ../api; prints SKIP without). Cloud-only
-     commands are refused like any unknown one.
+     not overlap. Always against the copy this repo carries
+     (tests/fixtures/api_agent_command_allowed.json); that copy against the
+     api's own file too when it is next to this repo (BLAVE_API_DIR or ../api) —
+     a standalone checkout says it compared the copy only, it never SKIPs.
+     Cloud-only commands are refused like any unknown one.
   2. parse_command: unknown command / bad id / oversize / unsigned / forged /
      stale / replayed are refused, and no refusal echoes a value from the file;
      `halt` is the only unsigned command.
@@ -56,17 +59,22 @@ def check(cond, msg):
 # ── 1. whitelist sync ────────────────────────────────────────────────────────
 API_DIR = os.environ.get("BLAVE_API_DIR") or os.path.join(os.path.dirname(ROOT), "api")
 API = os.path.join(API_DIR, "openclaw", "agent_command.py")
+COPY = os.path.join(ROOT, "tests", "fixtures", "api_agent_command_allowed.json")
 check(not (ld.ALLOWED & ld.CLOUD_ONLY), "ALLOWED and CLOUD_ONLY do not overlap")
+copy_allowed = set(json.load(open(COPY, encoding="utf-8"))["allowed"])
+local = set(ld.ALLOWED | ld.CLOUD_ONLY)
+check(copy_allowed == local, "ALLOWED + CLOUD_ONLY == the api's ALLOWED as carried in tests/fixtures "
+      f"(diff: {sorted(local ^ copy_allowed)})")
 if os.path.isfile(API):
     api_allowed = None
     for node in ast.parse(open(API, encoding="utf-8").read()).body:
         if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "ALLOWED":
             api_allowed = set(ast.literal_eval(node.value))
-    check(api_allowed == set(ld.ALLOWED | ld.CLOUD_ONLY),
-          "ALLOWED + CLOUD_ONLY == api's ALLOWED "
-          f"(diff: {sorted(set(ld.ALLOWED | ld.CLOUD_ONLY) ^ (api_allowed or set()))})")
+    check(api_allowed == copy_allowed,
+          "the carried copy == the api's own ALLOWED "
+          f"(diff: {sorted(copy_allowed ^ (api_allowed or set()))} — update the fixture and local_daemon.py together)")
 else:
-    print("SKIP  whitelist sync with the api (no openclaw/agent_command.py; set BLAVE_API_DIR)")
+    print("NOTE  no api source next to this repo (set BLAVE_API_DIR): compared against the carried copy only")
 check(set(ld.ALLOWED) <= set(cl.HANDLERS), "every allowed command has a handler")
 check("telegram_reset" not in ld.ALLOWED, "telegram_reset stays out, as in the api")
 check(ld.UNSIGNED_OK == {"halt"}, "halt is the only unsigned command")

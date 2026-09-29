@@ -252,12 +252,7 @@
     let meta = null;
     try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(stats) : null; } catch (e) { console.warn("[robust]", e); }
     if (!meta) meta = el("div", "bt-meta rob-meta");
-    if (meta.childNodes.length) {
-      const sep = el("span", "bt-sep", "·");
-      sep.setAttribute("aria-hidden", "true");
-      meta.appendChild(sep);
-    }
-    const group = el("span", "bt-mpart");
+    const group = el("span", "mgrp");   // 只加組,分隔點由 CSS 畫(report-backtest.css .bt-meta > .mgrp + .mgrp)
     group.append(el("span", "", opts.t("rob.metaScan")), el("span", "mono", sc.rows.length + "×" + sc.cols.length));
     meta.appendChild(group);
     return meta;

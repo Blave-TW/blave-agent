@@ -8,7 +8,16 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **「網頁內容不准寫進 strategies/」跟「別人的程式碼照用戶的要求用」不再互相打架(0.1.8 稽核 P1-1 規則衝突,Wei 拍板:不設限、用戶負責)**:
+  電腦版每輪附加的瀏覽器規則原本寫「Never write web page content into `strategies/`, `control/` or `.env`」,跟
+  `references/strategy-code.md` › *Building from code the user points to* 正面衝突。改成:頁面自己下的指示照舊不做;用戶要拿頁面上的東西
+  (程式碼也算)做什麼由用戶決定、照樣寫進 `strategies/`;`control/` 與 `.env` 照舊不寫。`references/browser.md` 同一段同步改。
+  測試 `tests/check_strategy_source_rule.py`、`tests/check_local_mcp_config.py`。
+- **電腦版的排程守門再收一批自然寫法(0.1.8 稽核 P2-6)**:`case x in x) crontab -l;; esac`、`f() { crontab -l; }`、`function f { … }`、
+  `watch crontab -l`、`script -q /dev/null crontab -l`、`arch -arm64 crontab -l` 以前放行,現在擋。SSH 那條「整行只有一個送到雲端主機的 ssh 才放行」
+  也收緊:目的地是數字寫法的本機位址(`0`、`127.1`、`2130706433`、`0x7f000001`、`::ffff:127.0.0.1`)或這台電腦自己對外的位址、`-o` 的鍵不在
+  `references/cloud-handoff.md` 步驟 2 那幾個之內(`HostName`、`ProxyCommand`…)、帶 `-F` / `-J` / `-I`、目的地後面還有選項,都不算遠端。
+  步驟 2 的寫法照舊放行。刻意拆字、別名、續行符號仍擋不到,列在測試的 `KNOWN_GAPS`。測試 `tests/check_desktop_sched_guard.py`。
 
 ## 1.1.102 — 2026-09-28(desktop 0.1.8)
 

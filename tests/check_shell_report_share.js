@@ -147,7 +147,9 @@ if (!process.versions.electron) {
     // ── ③ main.js reportForShare ──
     const mainSrc = read(path.join(SHELL, "main.js"));
     const consts = ["RPT_ID_RE", "RPT_BYTES_MAX", "RPT_TS_MIN", "RPT_EXT_MIME"].map((k) => { const mm = new RegExp("const [^\\n]*\\b" + k + " = [^\\n]*").exec(mainSrc); return mm[0]; });
-    const WS = fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-")), dir = path.join(WS, "reports"); fs.mkdirSync(path.join(dir, "r1.files"), { recursive: true });
+    const WS = fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-")), dir = path.join(WS, "reports");
+    process.on("exit", () => fs.rmSync(WS, { recursive: true, force: true }));   // 稽核 P2-12:跑完不留暫存目錄
+    fs.mkdirSync(path.join(dir, "r1.files"), { recursive: true });
     const doc = { id: "r1", title: "T", type: "research", blocks: [{ type: "meta" }, { type: "image", file: "a.png", alt: "x" }, { type: "image", file: "a.png", alt: "dup" }, { type: "image", file: "gone.png", alt: "y" }, { type: "image", file: "../evil.png", alt: "z" }] };
     fs.writeFileSync(path.join(dir, "r1.json"), JSON.stringify(doc)); fs.writeFileSync(path.join(dir, "r1.files", "a.png"), "PNGDATA");
     const M = { fs, path, WS };
@@ -186,7 +188,8 @@ if (!process.versions.electron) {
       x = mk2({ res: (u) => { if (u.endsWith("/share/publish")) throw new Error("timeout"); return { status: 200, body: { share: null, display_name: null } }; } });
       q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
       ok("P2-8 …問了還是沒公開 → UNREACH", q.code === "UNREACH", JSON.stringify(q));
-      const sf = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-shrstore-")), "state", "report-shares.json"), store = RS.createShareStore(sf);
+      const sfDir = fs.mkdtempSync(path.join(os.tmpdir(), "blave-shrstore-")); process.on("exit", () => fs.rmSync(sfDir, { recursive: true, force: true }));
+      const sf = path.join(sfDir, "state", "report-shares.json"), store = RS.createShareStore(sf);
       x = mk2({ store, res: () => ({ status: 200, body: { share: live, display_name: null } }) });
       q = await x.c.publish("local", "tw-9", { byline: "anonymous", confirmed: true });
       const st2 = await x.c.state("local", "tw-9"), st3 = await x.c.state("cloud", "tw-9");
@@ -248,7 +251,10 @@ if (!process.versions.electron) {
 
     const bin = GATE.bin(SHELL, "④");
     if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
-    const sub = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" }).status;
+    // Electron 那段的 userData 由這一層開、這一層收(Electron 關閉時還會往 userData 寫檔)
+    const eTmp = fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-e-"));
+    const sub = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, BLAVE_TEST_USERDATA: eTmp } }).status;
+    fs.rmSync(eTmp, { recursive: true, force: true });
     const n = red + (sub == null ? 1 : sub);
     console.log(n ? `\n${n} 紅` : "\nALL PASS"); process.exit(n ? 1 : 0);
   })();
@@ -257,7 +263,7 @@ if (!process.versions.electron) {
 
 // ── ④ Electron ──
 const { app, BrowserWindow } = require("electron");
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-e-")));
+app.setPath("userData", process.env.BLAVE_TEST_USERDATA || fs.mkdtempSync(path.join(os.tmpdir(), "blave-shr-e-")));
 const GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 const NOW = Math.floor(Date.now() / 1000);
 const doc = (id, type, extra) => ({ report: { schema_version: "1.6", id, type, title: "T-" + id, created_at: NOW - 3600, blocks: [{ type: "meta", title: "標題 " + id, origin: "chat" }, { type: "text", variant: "lead", markdown: "第一句。第二句。" }].concat(extra || []) }, images: { "c.gif": GIF } });
@@ -337,9 +343,9 @@ app.whenReady().then(async () => {
   let d = await js(`(() => { const g = (x) => document.getElementById(x); return { open: !g("shr-scrim").hidden, title: g("shr-title").textContent, send: g("shr-send").disabled, sendText: g("shr-send").textContent, named: g("shr-named").disabled, anon: g("shr-anon").checked, radios: g("shr-radios").hidden, plain: g("shr-anon-only").hidden ? null : g("shr-anon-only").textContent,
     hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, tagShown: !g("shr-og-tag").hidden, perf: g("shr-perf").hidden, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
     order: [...g("shr-modal").querySelectorAll(".shr-three, #shr-ack")].map((x) => x.id || x.className).join() }; })()`);
-  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去填名稱那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在勾選框",
+  ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去填名稱那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在 ✕(沒有名字可選時不給捲動區最下面的勾選框,DF12)",
     d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
-      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.tagShown && d.perf && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-ack" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
+      && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.tagShown && d.perf && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-close" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
   await js(`document.getElementById("shr-tos").click()`); await wait(50);
   ok("④ 條款連結 → openExternal 到 blave.org/zh/…terms_of_service#ugc", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "ext").pop())`)).includes("https://blave.org/disclaimer/zh/terms_of_service#ugc"));
   await js(`document.getElementById("shr-ack").click()`);

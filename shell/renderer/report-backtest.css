@@ -12,21 +12,32 @@
 .bt > * + * { margin-top: var(--space-24); }
 .bt > .bt-meta + * { margin-top: var(--space-16); }
 
-/* ---- 1. meta ---- */
+/* ---- 1. meta ----
+   直接子節點全是 .mgrp(一組不斷行,折行只在組與組之間)。組間 24 > 組內 4;分隔點屬於後面那一組、畫在組間的空隙裡:
+   這一組折到行首時,點落在容器左緣外被裁掉,行尾與行首都不留孤點(同 web .bt-meta,IOS1) */
 .bt-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4) var(--space-8);
+  gap: var(--space-4) var(--space-24);
+  overflow-x: clip;
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 .bt-meta .bt-sym { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; }
-.bt-mpart { display: inline-flex; gap: var(--space-4); white-space: nowrap; }
-/* 分隔點是裝飾,可以比要被讀的字淡一階 */
-.bt-meta .bt-sep { color: var(--color-greyDark); }
+.bt-meta > .mgrp { position: relative; display: inline-flex; gap: var(--space-4); white-space: nowrap; }
+/* 分隔點是裝飾,可以比要被讀的字淡一階;第二個 content 讓讀屏不念 */
+.bt-meta > .mgrp + .mgrp::before {
+  content: "·";
+  content: "·" / "";
+  position: absolute;
+  right: 100%;
+  width: var(--space-24);
+  text-align: center;
+  color: var(--color-greyDark);
+}
 
 /* ---- 2. 三組條列(tearsheet 慣例,雲端 .bt-cols / .bt-mrow 同構) ----
    平面、無卡片:組與組之間是 24px 溝 + 一條直 hairline,列與列之間是 8+8 的節奏

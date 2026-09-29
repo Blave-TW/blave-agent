@@ -204,7 +204,7 @@ html.ws-sc .side-gate { display: none; }
 .tr-tipb { padding: 0; font-size: 12px; color: var(--ink-3); cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
 .tr-tipb:hover, .tr-tipb:focus-visible { color: var(--ink-2); }
 .trv .tip { left: 0; bottom: auto; top: calc(100% + 6px); max-width: min(320px, 100%); }
-.tr-tipb:hover + .tip, .tr-tipb:focus-visible + .tip { display: block; }
+.tr-tipb:hover:not([data-tip-off]) + .tip, .tr-tipb:focus-visible:not([data-tip-off]) + .tip { display: block; }
 .trv .pf-state { padding: var(--space-24) 0; }
 
 /* ---- 表格 ---- */

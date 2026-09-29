@@ -245,7 +245,7 @@ function createBrowser(o) {
         v.loadTimer = setTimeout(() => { v.loadTimer = null; if (t.status === "loading") { t.partial = true; tabs.loaded(t.id, C.scrub(wc.getTitle(), 300)); emit("page_loaded", { id: t.id, title: t.title, partial: true }); } }, LOAD_TIMEOUT_MS);
       }
     });
-    wc.on("did-navigate", (_e, url, code) => { if (priming(url)) return; t.url = url; v.http = code || 0; v.navs++; emit("page_nav", { id: t.id, url: C.scrub(url, 2000), http: v.http }); early(t, v); });
+    wc.on("did-navigate", (_e, url, code) => { if (priming(url)) return; t.url = url; v.http = code || 0; v.navs++; t.userTyped = false; emit("page_nav", { id: t.id, url: C.scrub(url, 2000), http: v.http }); early(t, v); });
     wc.on("page-favicon-updated", (_e, favs) => { if (priming(wc.getURL())) return; fetchFavicon(t, v, favs).catch(() => {}); });
     wc.on("page-title-updated", (_e, title) => { if (priming(wc.getURL())) return; t.title = C.scrub(title, 300); emit("page_title", { id: t.id, title: t.title }); });
     wc.on("did-stop-loading", () => {
@@ -273,7 +273,7 @@ function createBrowser(o) {
     wc.on("input-event", (_e, inp) => {
       if (v.agentInputting || Date.now() - v.agentInputAt < 600) return;
       if (inp.type !== "mouseMove") { v.userInputAt = Date.now(); v.userInputs = (v.userInputs || 0) + 1; }   // 用戶 3 秒內碰過這一頁 → 讀取帶不跟著捲;計數給 autoHandback 比前後
-      if (inp.type === "keyDown" || inp.type === "rawKeyDown" || inp.type === "char") v.userKeyNav = v.navs;   // 用戶在這份文件裡打過字(unsaved)
+      if (inp.type === "keyDown" || inp.type === "rawKeyDown" || inp.type === "char") { v.userKeyNav = v.navs; t.userTyped = true; }   // 用戶在這份文件裡打過字(unsaved;userTyped:這一頁不收成快照)
       if (!t.visible || t.userControl) return;
       if (inp.type === "mouseDown" || inp.type === "rawKeyDown" || inp.type === "keyDown") takeover(t.id);
     });
@@ -688,7 +688,8 @@ function createBrowser(o) {
   }
 
   async function doWait(args) {
-    const ids = Array.isArray(args.tabs) ? args.tabs : args.tab ? [args.tab] : tabs.thisTurn().map((t) => t.alias);
+    // 不指名 = 這一輪用到的分頁(含接上的前面回合的分頁:agent 在 t3 上 browser_open(tab=t3) 之後不帶參數等,等的就是它)
+    const ids = Array.isArray(args.tabs) ? args.tabs : args.tab ? [args.tab] : tabs.inTurn().filter((t) => t.status !== "closed").map((t) => t.alias);
     const until = args.until || "load";
     // 驗證頁那一格的按鈕結果是 browser_search 在等的:until=user_done 不讀也不清它(稽核 P2-7——並行的這一支先看到就把
     // userDone 清掉,搜尋那邊空等到逾時),當作不在清單裡;指名只等它的,照其他工具的說法拒絕
@@ -782,7 +783,7 @@ function createBrowser(o) {
     if (!t.snapshotId || (cur && t.snapTurn !== cur.turnKey)) await saveSnapshot(t, v, ex);   // 前面回合存的快照是那一輪看到的樣子:這一輪讀就另存一份
     // 只停在中繼頁:不進來源、不算讀過(回合紀錄也不記 done)。settled = 這一頁載完了、之後沒再走(還在載 / 逾時算好的 partial 都不算)
     const relay = C.isRelay(ex, v.wc.getTitle(), t.status === "ready" && !t.partial);
-    if (!relay) t.readEver = true;   // 讀過就算,之後這一格再導覽也不收回
+    if (!relay) { t.readEver = true; if (cur) t.readTurn = cur.turnKey; }   // 讀過就算,之後這一格再導覽也不收回;readTurn:哪一輪讀的(回合紀錄)
     if (cur && !relay && t.snapshotId && !cur.sources.some((x) => x.snapshot_id === t.snapshotId)) {
       const src = { id: t.id, url: C.scrub(v.wc.getURL(), 2000), title: C.scrub(ex.meta.title || v.wc.getTitle(), 300), snapshot_id: t.snapshotId };
       const same = cur.sources.findIndex((x) => x.url === src.url); if (same >= 0) cur.sources[same] = src; else cur.sources.push(src);
@@ -795,6 +796,7 @@ function createBrowser(o) {
   const doCapture = createCapture({
     nativeImage: E.nativeImage, reportsDir: o.reportsDir, getWin: () => o.getWin && o.getWin(), uiLang: () => o.uiLang(), reducedMotion: () => (o.reducedMotion ? o.reducedMotion() : false),
     ERR, R, MSG, blockedMsg, emit, viewSize, withMask, noteRead, recheck, cur: () => cur, expanded: () => expanded,
+    colorSpace: () => { try { const w = o.getWin && o.getWin(); return w && E.screen ? E.screen.getDisplayMatching(w.getBounds()).colorSpace : null; } catch (_) { return null; } },
   }).doCapture;
   // 截圖一律 best-effort:拍不到就只留文字,絕不擋工具結果(分級與網域規則才是不能壞的)
   const within = (p, ms) => Promise.race([p, sleep(ms).then(() => { throw new Error("timeout"); })]);
@@ -1216,7 +1218,10 @@ function createBrowser(o) {
       try { sweepCites(o.reportsDir, c.cites); } catch (_) { /* 清不掉:留著,不擋回合收尾 */ }
       if (!c.used) return;
       const favOf = (u) => { try { return favCache.get(new URL(u).host) || null; } catch (_) { return null; } };
-      const rows = tabs.thisTurnAll().filter((t) => t.status !== "closed" || t.readEver).map((t) => ({ id: t.id, url: C.scrub(t.url, 2000), title: C.scrub(t.title, 300), status: t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : t.readEver ? "done" : "open", snapshot_id: t.snapshotId || null, search: !!t.isSearch }));
+      // 這一輪開的(關掉的只留讀過的),加上前面回合留下來、這一輪讀過的分頁(稽核 P2-7:只記這一輪開的,重開 app 時那一輪的格子是空的、
+      // 整頁快照也不升級)。前面回合的分頁這一輪只操作沒讀:不進格子,跟即時的瀏覽卡一樣
+      const readNow = (t) => t.readTurn === c.turnKey;
+      const rows = tabs.inTurn().filter((t) => (t.turn === tabs.turn() && t.status !== "closed") || readNow(t)).map((t) => ({ id: t.id, url: C.scrub(t.url, 2000), title: C.scrub(t.title, 300), status: t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : readNow(t) ? "done" : "open", snapshot_id: t.snapshotId || null, search: !!t.isSearch }));
       const sources = c.sources.slice();
       // ts = agent 第一次用瀏覽器的時間,不是回合開始:回合開始比 runtime 寫進逐字稿的那句用戶訊息早,
       // 重開對話時區塊會排到那句的上面

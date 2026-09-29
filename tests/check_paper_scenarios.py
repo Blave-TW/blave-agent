@@ -464,36 +464,99 @@ class World:
                 "can_trade_portfolio": pr.can_trade_portfolio()}
 
     # ── a real venue's answers, canned ──
-    def okx_answers(self, perm="read_only,trade", down=False):
+    def okx_answers(self, perm="read_only,trade", down=False, refuse=None, acct_lv="2", keys=None):
         """OKX's HTTP answers from here on, canned at requests' adapter: the
         real lib/account_okx signs and parses and the real bind gate decides,
         and no socket is opened (the child's audit hook still refuses any).
+        As strict as OKX itself (audit 0.1.8 P2-11: this used to answer any
+        path with HTTP 200 / code 0): the four OK-ACCESS-* headers must be
+        there, the key and passphrase must be `keys`' (default OKX_KEYS), the
+        timestamp within 30 s, and OK-ACCESS-SIGN = base64(HMAC-SHA256(secret,
+        ts + method + path + body)); a failure is OKX's own HTTP 401 + code
+        (5010x / 50111 / 50113, OKX v5 "Error Code" table). Only the paths the
+        bind can reach are answered; any other path raises.
         `perm` = the key's own permissions as /api/v5/account/config reports
         them (comma-separated out of read_only / trade / withdraw — OKX v5 "Get
         account configuration"; ccxt's fetchAccounts sample); None = an answer
-        without the field. `down` = OKX cannot be reached. Returns the list
-        every request lands in, as (method, url without query)."""
+        without the field. `acct_lv` = that answer's account mode ("1" = Spot
+        mode). `refuse` = (http_status, code, msg): every signed request gets
+        that error instead (e.g. (401, "50111", "Invalid OK-ACCESS-KEY"),
+        (200, "50012", "Account status invalid. Check account status")).
+        `down` = OKX cannot be reached. Returns the list every request lands
+        in, as (method, url without query)."""
+        import base64
+        import hashlib
+        import hmac
+        from datetime import datetime, timezone
         import requests
         from requests.models import Response
         hits = []
+        keys = keys or OKX_KEYS
+
+        def answer(req, status, body):
+            r = Response()
+            r.status_code = status
+            r._content = json.dumps(body).encode()
+            r.headers["Content-Type"] = "application/json"
+            r.url, r.request = req.url, req
+            return r
+
+        def err(req, status, code, msg):
+            return answer(req, status, {"code": code, "msg": msg, "data": []})
+
+        def auth(req):
+            """None = signed right; else OKX's 401 for the first thing wrong."""
+            h = req.headers
+            for name, code in (("OK-ACCESS-KEY", "50103"), ("OK-ACCESS-PASSPHRASE", "50104"),
+                               ("OK-ACCESS-SIGN", "50106"), ("OK-ACCESS-TIMESTAMP", "50107")):
+                if not h.get(name):
+                    return err(req, 401, code, f'Request header "{name}" cannot be empty.')
+            if h["OK-ACCESS-KEY"] != keys["OKX_API_KEY"]:
+                return err(req, 401, "50111", "Invalid OK-ACCESS-KEY.")
+            if h["OK-ACCESS-PASSPHRASE"] != keys["OKX_PASSPHRASE"]:
+                return err(req, 401, "50105", 'Request header "OK-ACCESS-PASSPHRASE" incorrect.')
+            ts = h["OK-ACCESS-TIMESTAMP"]
+            try:
+                at = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+            except ValueError:
+                return err(req, 401, "50112", "Invalid OK-ACCESS-TIMESTAMP.")
+            if abs((datetime.now(timezone.utc) - at).total_seconds()) > 30:
+                return err(req, 401, "50102", "Timestamp request expired.")
+            body = req.body or b""
+            body = body.decode() if isinstance(body, bytes) else body
+            want = base64.b64encode(hmac.new(keys["OKX_SECRET_KEY"].encode(),
+                                             (ts + req.method + req.path_url + body).encode(),
+                                             hashlib.sha256).digest()).decode()
+            if not hmac.compare_digest(h["OK-ACCESS-SIGN"], want):
+                return err(req, 401, "50113", "Invalid signature.")
+            return None
 
         def send(adapter, req, **kw):
             url = req.url.split("?")[0]
             hits.append((req.method, url))
             if down or not url.startswith("https://www.okx.com/"):
                 raise requests.exceptions.ConnectionError(f"[canned] {url} cannot be reached")
-            row = {"uid": "44705892343619584", "acctLv": "2", "posMode": "net_mode"}
-            if perm is not None:
-                row["perm"] = perm
-            body = {"code": "0", "msg": "", "data": [row] if url.endswith("/api/v5/account/config")
-                    else [{"totalEq": "321.5", "details": []}] if url.endswith("/api/v5/account/balance")
-                    else []}
-            r = Response()
-            r.status_code = 200
-            r._content = json.dumps(body).encode()
-            r.headers["Content-Type"] = "application/json"
-            r.url, r.request = req.url, req
-            return r
+            path = url[len("https://www.okx.com"):]
+            if (req.method, path) == ("GET", "/api/v5/public/time"):
+                return answer(req, 200, {"code": "0", "msg": "", "data": [{"ts": str(int(time.time() * 1000))}]})
+            if (req.method, path) not in {("GET", "/api/v5/account/config"), ("GET", "/api/v5/account/balance"),
+                                          ("GET", "/api/v5/asset/balances")}:
+                raise AssertionError(f"[canned] no OKX answer modelled for {req.method} {path}")
+            bad = auth(req)
+            if bad is not None:
+                return bad
+            if refuse:
+                return err(req, *refuse)
+            if path == "/api/v5/account/config":
+                row = {"uid": "44705892343619584", "acctLv": acct_lv, "posMode": "net_mode"}
+                if perm is not None:
+                    row["perm"] = perm
+                data = [row]
+            elif path == "/api/v5/account/balance":
+                data = [{"totalEq": "321.5", "details": []}]
+            else:
+                data = []
+            return answer(req, 200, {"code": "0", "msg": "", "data": data})
         requests.adapters.HTTPAdapter.send = send
         return hits
 
@@ -1379,14 +1442,15 @@ def _paper_long_on(w, local):
     w.eq(w.cl._local_mode(), local, "desktop" if local else "cloud machine")
 
 
-def _bind_refused(w, answers, code, what):
-    """One refused bind over a paper long."""
+def _bind_refused(w, answers, code, what, env=None):
+    """One refused bind over a paper long (`env` = the key pair the user sends; default OKX_KEYS)."""
     hits = w.okx_answers(**answers)
+    env = env or OKX_KEYS
     before, n_events = _bind_files(), len(w.events())
-    r = w.cmd("credentials", env=OKX_KEYS)
+    r = w.cmd("credentials", env=env)
     w.check(isinstance(r, ValueError) and str(r).startswith(code + ": ") and "not saved" in str(r),
             f"{what}: refused with {code} ({r})")
-    w.check(not any(v in str(r) for v in OKX_KEYS.values()), "no key value in the refusal")
+    w.check(not any(v in str(r) for v in env.values()), "no key value in the refusal")
     w.check(OKX_CONFIG in hits, f"OKX was asked for the key's permissions ({sorted(set(hits))})")
     after = _bind_files()
     w.eq([p for p in BIND_WATCHED if after[p] != before[p]], [],
@@ -1424,6 +1488,17 @@ def tc39(w, local):
     # reach is refused there, before the permission is asked
     _bind_refused(w, {"down": True}, "REJECTED" if local else "UNKNOWN", "OKX cannot be reached")
     _bind_refused(w, {"perm": None}, "UNKNOWN", "an answer without `perm`")
+    # OKX refusing the key itself (audit 0.1.8 P2-11): HTTP 401 + 50111, a pair whose secret does not
+    # match (the real signature fails: 50113), and HTTP 200 with a non-zero code. The desktop reads
+    # the account first and fails there (REJECTED); a cloud machine fails on the permission read.
+    _bind_refused(w, {"refuse": (401, "50111", "Invalid OK-ACCESS-KEY.")}, "REJECTED" if local else "UNKNOWN",
+                  "OKX says the key does not exist (401, 50111)")
+    _bind_refused(w, {}, "REJECTED" if local else "UNKNOWN", "a secret that does not match the key (401, 50113)",
+                  env={**OKX_KEYS, "OKX_SECRET_KEY": "okxsecret-0000"})  # gitleaks:allow
+    _bind_refused(w, {"refuse": (200, "50012", "Account status invalid. Check account status")},
+                  "REJECTED" if local else "UNKNOWN", "HTTP 200 with a non-zero code (50012)")
+    if local:  # the cloud bind reads only `perm`, never the account mode
+        _bind_refused(w, {"acct_lv": "1"}, "REJECTED", "an account in Spot mode (acctLv 1)")
     _paper_goes_on(w)
 
 

@@ -18,11 +18,37 @@ if (!process.versions.electron) {
   ok("① 泡泡的開關:滑入出;mouseleave / pointerdown / Esc / 視窗退到背景收", /btn\.addEventListener\("mouseenter", \(\) => \{ brTipHide\(\); tip\.classList\.add\("is-on"\); brTipOn = tip; \}\);/.test(br)
     && /\["mouseleave", "pointerdown"\]\.forEach\(\(ev\) => btn\.addEventListener\(ev, brTipHide\)\);/.test(br) && /if \(e\.key === "Escape"\) brTipHide\(\);/.test(br) && /window\.blave\.onWindowActive\(\(on\) => \{ if \(!on\) brTipHide\(\); \}\);/.test(br));
   // 鍵盤聚焦走 CSS(同 .mp-tip:focus-visible + .tip):不顯示的視窗裡 document 沒有焦點、focus 事件不會發,這一段只能靜態驗
-  ok("① 泡泡樣式:app.css .tip 材質,掛在網址列下方靠右;鍵盤 focus-visible 由 CSS 出", /\.bv-addr \{ position: relative; \}/.test(css) && /\.bv-addr \.tip \{ left: auto; right: 0; top: calc\(100% \+ 6px\); bottom: auto; \}/.test(css) && /\.bv-addr \.tip\.is-on, \.bv-addr \.ibtn:focus-visible \+ \.tip \{ display: block; \}/.test(css));
+  ok("① 泡泡樣式:app.css .tip 材質,掛在網址列下方靠右;鍵盤 focus-visible 由 CSS 出", /\.bv-addr \{ position: relative; \}/.test(css) && /\.bv-addr \.tip \{ left: auto; right: 0; top: calc\(100% \+ 6px\); bottom: auto; \}/.test(css) && /\.bv-addr \.tip\.is-on, \.bv-addr \.ibtn:focus-visible:not\(\[data-tip-off\]\) \+ \.tip \{ display: block; \}/.test(css));
   ok("① 第十九批的通用 title 收放拿掉了(不改寫整頁的 title、不留 data-title-held)", !/titleHold|titleBack|data-title-held|titleHeld/.test(appjs) && !/querySelectorAll\("\[title\]"\)/.test(appjs));
   ok("① window-active IPC 留著(報告與瀏覽器的自家泡泡都靠它收):主行程 focus / blur 講、preload 交出布林", /const tellActive = \(w, on\) => \{ if \(w && !w\.isDestroyed\(\) && isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("window-active", on\); \};/.test(main)
     && /app\.on\("browser-window-focus", \(_e, w\) => \{[^\n]*tellActive\(w, true\); \}\);/.test(main) && /app\.on\("browser-window-blur", \(_e, w\) => \{[^\n]*tellActive\(w, false\); \}\);/.test(main)
     && /onWindowActive: \(fn\) => ipcRenderer\.on\("window-active", \(_e, on\) => fn\(on === true\)\),/.test(pre) && /window\.blave\.onWindowActive\(\(on\) => \{ if \(!on\) hideTip\(\); \}\);/.test(rob));
+  // DF13:鍵盤聚焦(:focus-visible)或滑過(:hover)由 CSS 帶出來的泡泡,Esc 收得掉——app.js 給觸發點掛 data-tip-off,滑出 / 失焦拿掉。
+  // 列舉整個外殼:每一條「:hover / :focus-visible + .tip」都要帶 :not([data-tip-off]),新加一條沒帶就紅
+  const cssAll = fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => f.endsWith(".css")).flatMap((f) => [...read("renderer/" + f).replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/[^{}]*\{/g)]
+    .flatMap((m) => m[0].slice(0, -1).split(",")).filter((sel) => /:(hover|focus-visible)[^+]*\+ \.tip\b/.test(sel)).map((sel) => f + ": " + sel.trim()));
+  const bare = cssAll.filter((sel) => !/:(hover|focus-visible):not\(\[data-tip-off\]\) \+ \.tip/.test(sel));
+  ok("① CSS 帶出的泡泡(" + cssAll.length + " 條)都帶 :not([data-tip-off])", cssAll.length >= 5 && bare.length === 0, bare.join(" | "));
+  const escSrc = (appjs.match(/\ndocument\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape"\) return;[\s\S]*?\n\}\);\n/) || [""])[0];
+  const esc = (() => {
+    if (!escSrc) return "找不到 app.js 的 Esc 段";
+    const mk = (tipNext) => { const at = new Set(), ls = {}; return { at, ls, nextElementSibling: tipNext ? { classList: { contains: (c) => c === "tip" } } : null,
+      hasAttribute: (k) => at.has(k), setAttribute: (k) => at.add(k), removeAttribute: (k) => at.delete(k),
+      addEventListener: (ev, fn) => { (ls[ev] = ls[ev] || []).push(fn); }, removeEventListener: (ev, fn) => { ls[ev] = (ls[ev] || []).filter((x) => x !== fn); } }; };
+    const focusBtn = mk(true), hoverBtn = mk(true), plain = mk(false); let handler = null;
+    const doc = { activeElement: focusBtn, querySelectorAll: () => [plain, hoverBtn], addEventListener: (ev, fn) => { if (ev === "keydown") handler = fn; } };
+    new Function("document", escSrc)(doc);
+    handler({ key: "a" });
+    if (focusBtn.at.size || hoverBtn.at.size) return "別的鍵也掛了旗標";
+    handler({ key: "Escape" });
+    if (!focusBtn.at.has("data-tip-off") || !hoverBtn.at.has("data-tip-off") || plain.at.size) return "Esc 沒掛上(或掛到不是觸發點的元素)";
+    focusBtn.ls.blur.forEach((fn) => fn()); hoverBtn.ls.mouseleave.forEach((fn) => fn());
+    if (focusBtn.at.size || hoverBtn.at.size) return "失焦 / 滑出沒拿掉";
+    if ((focusBtn.ls.blur || []).length || (hoverBtn.ls.mouseleave || []).length) return "監聽沒收掉";
+    doc.activeElement = null; doc.querySelectorAll = () => []; handler({ key: "Escape" });
+    return "ok";
+  })();
+  ok("① Esc:焦點上 / 滑過的觸發點掛 data-tip-off(不是觸發點的不掛),失焦 / 滑出拿掉;沒有焦點也不丟", esc === "ok", esc);
   // 其他按了會失焦的動作(開外部連結、在 Finder 中顯示、送上雲端開網頁、帳號頁)都是文字鈕,沒有 title;留著 title 的是 hover 說明、按了不失焦的
   const losers = ["openExternal", "browserOpenExternal", "revealExport"];
   const titled = [];

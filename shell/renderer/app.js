@@ -2976,8 +2976,22 @@ document.addEventListener("keydown", (e) => {
   const f = document.activeElement;
   if (f && (f.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName))) return;
   const sel = window.getSelection(), at = sel.anchorNode || f;
-  const region = at && (at.nodeType === 1 ? at : at.parentElement).closest(SELECT_REGIONS);
+  const el = at && (at.nodeType === 1 ? at : at.parentElement);   // 錨在 document 上(nodeType 9)時沒有 parentElement:照系統
+  const region = el && el.closest(SELECT_REGIONS);
   if (!region || !region.getClientRects().length) return;
   e.preventDefault();
   sel.selectAllChildren(region);
+});
+
+/* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
+   但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  for (const x of [document.activeElement, ...document.querySelectorAll(":hover")]) {
+    const btn = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x : null;
+    if (!btn || btn.hasAttribute("data-tip-off")) continue;
+    btn.setAttribute("data-tip-off", "");
+    const on = () => { btn.removeAttribute("data-tip-off"); btn.removeEventListener("blur", on); btn.removeEventListener("mouseleave", on); };
+    btn.addEventListener("blur", on); btn.addEventListener("mouseleave", on);
+  }
 });

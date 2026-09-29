@@ -71,6 +71,15 @@ ok("CSS 的 .src / .srcs 規則清掉", !/(^|[\s,])\.srcs?\b/m.test(css));
   F.brTakeSources(b, [], [{ id: "q1", url: "https://q1.example/", snapshot_id: "S1" }]);
   ok("來源的那一格標成已讀,不另補列", b.ids.length === 1 && T.get("q1").readEver && b.sourceCount === 1);
 }
+// ---- 2d. 即時:前面回合留下來的分頁這一輪才讀(稽核 P2-7)——主行程的格子紀錄裡有它,這一塊的格子沒有:照樣補一列、不當成已經畫了
+{
+  const F = load(), T = F.BR.tabs;
+  T.set("old", { id: "old", url: "https://old.example/", ph: "done", readEver: true });
+  T.set("n1", { id: "n1", url: "https://n1.example/", ph: "open" });
+  const b = block(["n1"]);
+  F.brTakeSources(b, [{ id: "old", snapshot_id: "SO", status: "done" }, { id: "n1", snapshot_id: null, status: "open" }], [{ id: "old", url: "https://old.example/", snapshot_id: "SO" }]);
+  ok("沿用分頁這一輪讀的:補成一列(有快照)、讀了 1 頁、已讀列數一致", b.ids.includes("src_SO") && F.BR.tabs.get("src_SO").snap === "SO" && b.sourceCount === 1 && readRows(F, b) === 1, b.ids);
+}
 // ---- 4. 重開 app:歷史只重建摘要列
 (async () => {
   const hist = [{ ts: 1, end: 2, tabs: [{ id: "h1", url: "https://h1.example/b", status: "done", snapshot_id: "HB" }, { id: "h2", url: "https://h2.example/", status: "open", snapshot_id: null }],
@@ -83,6 +92,12 @@ ok("CSS 的 .src / .srcs 規則清掉", !/(^|[\s,])\.srcs?\b/m.test(css));
   ok("重建後聊天欄只插摘要列一個元素(摘要列照樣收成一行)", F.scroll.length === 1 && F.scroll[0].tag === "block" && F.finished.length === 1, F.scroll);
   ok("歷史的讀了 N 頁 = 來源筆數(2),導覽前那頁補成一列(有快照)、已讀列數一致",
     b.ids.includes("src_HA") && F.BR.tabs.get("src_HA").snap === "HA" && b.sourceCount === 2 && readRows(F, b) === 2 && /\[br\.summaryPre\]2\[br\.summaryPost\]/.test(sum(F, b)), b.ids);
+  // 只讀了沿用分頁的那一輪:紀錄的格子有它(index.js endTurn),重開 app 畫得回來、不是整塊不見
+  const G = load([{ ts: 3, end: 4, tabs: [{ id: "c1", url: "https://c1.example/", status: "done", snapshot_id: "CS" }], sources: [{ id: "c1", url: "https://c1.example/", snapshot_id: "CS" }] }]);
+  const it2 = await G.brHistoryItems("sid");
+  G.brRestore(it2[0].br);
+  const b2 = G.finished[0];
+  ok("歷史:只讀了沿用分頁的那一輪畫回一塊、一列、讀了 1 頁(不補重複的列)", it2.length === 1 && b2.ids.join() === "c1" && b2.sourceCount === 1 && readRows(G, b2) === 1, b2 && b2.ids);
   console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })();

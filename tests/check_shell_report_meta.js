@@ -11,13 +11,15 @@ const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
   const bin = GATE.bin(SHELL);
   if (!bin) { process.exit(0); }
-  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
+  const tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-btmeta-"));   // userData 由這一層開、這一層收(稽核 P2-12)
+  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, BLAVE_TEST_USERDATA: tmp } });
+  fs.rmSync(tmp, { recursive: true, force: true });
   process.exit(r.status == null ? 1 : r.status);
 }
 
 const { app, BrowserWindow } = require("electron");
 const os = require("os");
-app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-btmeta-")));
+app.setPath("userData", process.env.BLAVE_TEST_USERDATA || fs.mkdtempSync(path.join(os.tmpdir(), "blave-btmeta-")));
 const STUB = `window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
   : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}
   : async () => ({ getLocale: "zh-TW", loadConnection: { kind: "claude" }, detectAgents: { claude: { installed: true, loggedIn: true }, codex: { installed: false } },
@@ -47,7 +49,7 @@ app.whenReady().then(async () => {
 
   let r = await render(TYPEC_OLD);
   ok(`① 舊的 Type C(只有 fee 小數):頁首有「${fee} 0.05%」`, r.meta && r.meta.includes(fee + "0.05%") && !r.meta.includes(fee + "—"));
-  ok("① 沒有 symbol:開頭沒有多一個「·」(第一個是內容那一段,不是分隔點)", r.first === "bt-mpart" && !/^\s*·/.test(r.meta) && r.meta.startsWith("1d"));
+  ok("① 沒有 symbol:開頭沒有多一個「·」(第一個是內容那一段,不是分隔點)", r.first === "mgrp" && !/^\s*·/.test(r.meta) && r.meta.startsWith("1d"));
   ok("③ 舊檔沒有 Sortino / Omega:照舊是「—」(真的缺值)", r.sortino === "—" && r.omega === "—");
 
   r = await render({ ...TYPEC_OLD, "fee [%]": 0.1, "Sortino Ratio": 1.234, "Omega Ratio": 1.5 });
@@ -60,7 +62,7 @@ app.whenReady().then(async () => {
   r = await render({ ...TYPEC_OLD, fee: "0.0005" });
   ok("② fee 不是數字(壞值):不拿來算", r.meta && !r.meta.includes(fee));
   r = await render({ ...TYPEC_OLD, symbol: "BTCUSDT" });
-  ok("有 symbol(Type A):照舊排第一段,之後才是分隔點", r.meta.startsWith("BTCUSDT") && r.first === "bt-mpart");
+  ok("有 symbol(Type A):照舊排第一段,之後才是分隔點", r.meta.startsWith("BTCUSDT") && r.first === "mgrp");
 
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

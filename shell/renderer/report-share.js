@@ -169,7 +169,9 @@ function shrOpen(c, mode, opener) {
   $("view-ws").inert = true; $("set-scrim").inert = true;
   const sc = $("shr-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
-  ($("shr-radios").hidden ? $("shr-ack") : $("shr-anon")).focus();
+  // 沒有名字可選(radios 收起來)時焦點不給勾選列:勾選在捲動區最下面,給它焦點整個捲動區就捲到底、預覽卡與三行被跳過(DF12)
+  $("shr-modal").querySelector(".modal-body").scrollTop = 0;
+  ($("shr-radios").hidden ? $("shr-close") : $("shr-anon")).focus({ preventScroll: true });
   // 勾選列有沒有完整落在捲動區內(同 web syncHint;0.99 是給次像素的餘裕)
   D.io = new IntersectionObserver((es) => { if (SHR.dlg !== D) return; D.ackSeen = es[es.length - 1].intersectionRatio >= 0.99; shrHint(); }, { root: $("shr-modal").querySelector(".modal-body"), threshold: [0, 0.99, 1] });
   D.io.observe($("shr-ack").closest(".shr-chk"));
@@ -194,7 +196,7 @@ function shrName(D) {
   if (!on) $("shr-anon").checked = true;
   $("shr-radios").hidden = !on; $("shr-anon-only").hidden = on;
   $("shr-hint").textContent = t(on ? "shr.nameHint" : "shr.noName");
-  if (moved) $("shr-ack").focus();
+  if (moved) $("shr-close").focus({ preventScroll: true });
 }
 // 送出中:取消 / ✕ / 主鈕都停用(上傳含圖可能要幾秒,不能讓人以為沒按到;同 rptNewLock)
 function shrLock(on) {

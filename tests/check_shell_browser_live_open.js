@@ -18,13 +18,17 @@ if (!process.versions.electron) {
     && /handle\("browser-show-live", \(_e, url\) => browser\(\)\.showLive\(url\), null\);/.test(fs.readFileSync(path.join(SHELL, "main.js"), "utf8")));
   const bin = GATE.bin(SHELL);
   if (!bin) { process.exit(red ? 1 : 0); }
-  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
-  process.exit(red || r.status ? 1 : 0);
+  // 暫存的 userData 由這一層開、這一層收(Electron 關閉時還會往 userData 寫檔;稽核 P2-12)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "blave-liveopen-"));
+  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "", BLAVE_TEST_USERDATA: tmp } });
+  fs.rmSync(tmp, { recursive: true, force: true }); ok("跑完暫存目錄不存在", !fs.existsSync(tmp), tmp);
+  if (r.signal) console.log("FAIL  Electron 以訊號 " + r.signal + " 結束(收尾順序)");
+  process.exit(red || r.status || r.signal ? 1 : 0);
 }
 
 const electron = require("electron");
 const { app, BrowserWindow, session } = electron;
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "blave-liveopen-"));
+const tmp = process.env.BLAVE_TEST_USERDATA || fs.mkdtempSync(path.join(os.tmpdir(), "blave-liveopen-"));
 app.setPath("userData", tmp);
 const hits = [];
 app.whenReady().then(async () => {
@@ -63,9 +67,18 @@ app.whenReady().then(async () => {
   const opened = sent.filter((e) => e.type === "page_open").pop();
   ok("…user 分頁(用戶點的):不長瀏覽卡、外送擋不看它", opened && opened.by === "user", opened);
   const s3 = B.showLive("http://collector.test/c?d=" + encodeURIComponent(secret));
-  await new Promise((res) => setTimeout(res, 400));
+  // 等那一頁真的載完(不是固定睡 400ms),外送確認卡要發也早就發了
+  for (let i = 0; i < 100 && !(s3 && B._tabs.get(s3.id) && B._tabs.get(s3.id).status === "ready"); i++) await new Promise((res) => setTimeout(res, 50));
   ok("帶著這一輪讀過的字照樣開(外送確認只管 agent 分頁),不發確認卡", s3 && s3.id && !sent.some((e) => e.type === "need_user" && e.kind === "confirm"), s3);
   ok("被政策擋的網址(內網)→ null(畫面退回快照)", B.showLive("http://10.0.0.1/") === null);
+  // SIGTRAP 出在全部 PASS 之後的 app.exit:那時剛建好的分頁還掛著 debugger、頁面還在跑。收尾照 capture / e2e / verify 那幾支的順序,
+  // 另外先把分頁全關(debugger 分離、webContents 關掉)並等它們真的沒了,才 exit
+  const host = win.webContents.id, others = () => electron.webContents.getAllWebContents().filter((w) => w.id !== host && !w.isDestroyed());
+  for (const t of B._tabs.all()) B._tabs.close(t.id);
+  for (let i = 0; i < 100 && others().length; i++) await new Promise((res) => setTimeout(res, 50));
+  ok("收尾:分頁的 webContents 都關掉了", others().length === 0, others().map((w) => w.getURL()));
+  B.endTurn();
+  srv.close(); srv.closeAllConnections();   // 代理的 keep-alive 連線不等它自己斷
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });
