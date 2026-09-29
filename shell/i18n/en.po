@@ -2269,7 +2269,7 @@ msgid "priv.collect.4"
 msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
 
 msgid "priv.collect.6"
-msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked, which update step failed, and your first AI reply — categories only, never the content"
+msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, and your first AI reply — categories only, never the content"
 
 msgid "priv.never.h"
 msgstr "Never collected"
