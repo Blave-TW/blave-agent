@@ -49,9 +49,10 @@ function createTabs(opts) {
 
   /** 找一個可以收掉的活分頁:讀完、最舊的那個。
    *  沒有讀完的可收時,退到前面回合留下來、這一輪 agent 沒碰過的分頁:分頁跨回合留著,沒讀過的那幾頁不能把 8 格永遠佔住。
-   *  兩階都不收用戶在看、在操作、在等他按的(稽核 P2-2:讀過的頁被他接手填到一半,收成快照就沒了)。 */
+   *  兩階都不收用戶在看、在操作、在等他按的(稽核 P2-2:讀過的頁被他接手填到一半,收成快照就沒了),
+   *  也不收他在這份文件裡打過字的(userTyped,index.js 記、換文件清):自動交還之後 userControl 已經拿掉,他填的東西還在頁上。 */
   function evictable() {
-    const free = live().filter((t) => t.by === "agent" && !t.visible && !t.userControl && !t.need);
+    const free = live().filter((t) => t.by === "agent" && !t.visible && !t.userControl && !t.need && !t.userTyped);
     return free.filter((t) => t.read).sort((a, b) => a.readAt - b.readAt)[0]
       || free.filter((t) => t.turn < turn && t.usedTurn !== turn).sort((a, b) => a.startedAt - b.startedAt)[0] || null;
   }
@@ -110,6 +111,8 @@ function createTabs(opts) {
     all: () => [...tabs.values()].filter((t) => t.status !== "closed"),
     thisTurn: () => aliased().filter((t) => t.turn === turn && t.status !== "closed"),
     thisTurnAll: () => aliased().filter((t) => t.turn === turn),   // 含已關的(回合紀錄:讀過又關掉的頁照樣算讀了)
+    /** 這一輪用到的分頁:這一輪開的,加上這一輪接上的前面回合的分頁(use)。含已關的;回合紀錄與 browser_wait 的預設都認這一份(稽核 P2-7)。 */
+    inTurn: () => aliased().filter((t) => t.turn === turn || t.usedTurn === turn),
     /** agent 這一輪指得到、列得出來的分頁:這一輪開的,加上前面回合開的、還活著的(被收掉、關掉、打不開的不列;搜尋分頁不列)。 */
     reachable: () => aliased().filter((t) => (t.turn === turn ? t.status !== "closed" : !t.searchTab && ["queued", "loading", "ready"].includes(t.status))),
     /** agent 這一輪第一次碰前面回合留下來的分頁:記下來(這一輪不被當成沒人用的舊頁收掉),讀完之前也不讓位。回 true = 這次才接上。 */

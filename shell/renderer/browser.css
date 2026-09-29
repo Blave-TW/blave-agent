@@ -161,7 +161,7 @@
 /* 「用系統瀏覽器開」的說明泡泡(app.css .tip 材質):掛在網址列下方、靠右對齊那顆鈕,由 browser.js brTipAttach 開關 */
 .bv-addr { position: relative; }
 .bv-addr .tip { left: auto; right: 0; top: calc(100% + 6px); bottom: auto; }
-.bv-addr .tip.is-on, .bv-addr .ibtn:focus-visible + .tip { display: block; }
+.bv-addr .tip.is-on, .bv-addr .ibtn:focus-visible:not([data-tip-off]) + .tip { display: block; }
 .ibtn { flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3); position: relative; cursor: pointer; }
 .ibtn::before { content: ""; position: absolute; inset: -8px -2px; }
 .ibtn:hover { background: var(--surface-muted); color: var(--ink); }

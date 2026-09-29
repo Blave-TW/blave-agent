@@ -15,6 +15,21 @@ if (!process.versions.electron) {
   const all = fs.readdirSync(path.join(SHELL, "renderer")).filter((f) => /\.css$/.test(f)).map((f) => [f, fs.readFileSync(path.join(SHELL, "renderer", f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")]);
   const none = all.flatMap(([f, s]) => [...s.matchAll(/([^{}]+)\{[^}]*user-select: none/g)].map((m) => f + ": " + m[1].trim()));
   ok("① 整個外殼寫 user-select: none 的只有這幾條(新增一條要想過那裡的字要不要能複製)", JSON.stringify(none) === JSON.stringify(["app.css: .pane-strategies, .pane-div, .tb, .chat-head, [role=\"tablist\"], nav, button", "app.css: body.resizing", "trade.css: .cx-chip.is-empty .v"]), JSON.stringify(none));
+  // 稽核 P2-9:選取錨在 document 上(nodeType 9,selectAllChildren(document) 之後再按一次)時沒有 parentElement,不能丟例外、照系統
+  const appjs = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
+  const blk = (appjs.match(/\nconst SELECT_REGIONS = [^\n]*\ndocument\.addEventListener\("keydown", \(e\) => \{[\s\S]*?\n\}\);\n/) || [""])[0];
+  const run = (anchorNode, active) => {
+    let h = null, prevented = false, picked = null;
+    const doc = { activeElement: active || null, addEventListener: (ev, fn) => { if (ev === "keydown") h = fn; } };
+    const win = { getSelection: () => ({ anchorNode, selectAllChildren: (r) => { picked = r; } }) };
+    new Function("document", "window", blk)(doc, win);
+    try { h({ key: "a", metaKey: true, preventDefault: () => { prevented = true; } }); } catch (e) { return "threw: " + e.message; }
+    return (prevented ? "prevented" : "system") + (picked ? ":" + picked.id : "");
+  };
+  const region = { id: "chat-scroll", getClientRects: () => [1] };
+  const inChat = { nodeType: 1, closest: () => region };
+  ok("① Cmd+A:錨在 document(nodeType 9)→ 不丟、照系統;錨在文字節點 / 元素裡照舊選那一區", !!blk && run({ nodeType: 9, parentElement: null }) === "system"
+    && run({ nodeType: 3, parentElement: inChat }) === "prevented:chat-scroll" && run(inChat) === "prevented:chat-scroll" && run(null, null) === "system", [run({ nodeType: 9, parentElement: null }), run({ nodeType: 3, parentElement: inChat })].join());
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   // 暫存的 userData 由這一層開、這一層收:Electron 關閉時還會往 userData 寫檔,子行程自己刪過也會再長回來(稽核 P2-12)

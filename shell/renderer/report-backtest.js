@@ -222,14 +222,11 @@
     const fee = fmtFixed(isNum(stats["fee [%]"]) ? stats["fee [%]"] : isNum(stats.fee) ? stats.fee * 100 : null);
     if (fee !== null) parts.push([el("span", "", t("bt.fee")), mono(fee + "%")]);
     if (!parts.length) return null;
+    // 每個直接子節點都是一組(.mgrp):標籤跟值綁在一起,折行只在組與組之間;組間的「·」由 CSS 畫(report-backtest.css),
+    // 折到行首時被裁掉,行尾不留孤點(同 web IOS1)——不要再插獨立的分隔節點
     const meta = el("div", "bt-meta");
-    parts.forEach(function (nodes, i) {
-      if (i) {
-        const sep = el("span", "bt-sep", "\u00b7");
-        sep.setAttribute("aria-hidden", "true");
-        meta.appendChild(sep);
-      }
-      const group = el("span", "bt-mpart"); // 標籤跟它的值綁在一起,換行時不拆開
+    parts.forEach(function (nodes) {
+      const group = el("span", "mgrp");
       nodes.forEach(function (nd) { group.appendChild(nd); });
       meta.appendChild(group);
     });

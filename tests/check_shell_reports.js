@@ -86,13 +86,17 @@ if (!process.versions.electron) {
   W("failed/h.json", { id: "h", title: "H", blocks: [] });
   W("img.json", { id: "img", title: "IMG", created_at: 1, blocks: [{ type: "image", file: "p.png", alt: "p" }, { type: "image", file: "../a.json", alt: "x" }, { type: "image", file: "missing.png", alt: "m" }, { type: "image", file: "p.png", alt: "dup" }, { type: "image", file: "t.txt", alt: "t" }, { type: "image", file: "both.png", sha256: "a".repeat(64), alt: "b" }, { type: "image", sha256: "b".repeat(64), alt: "s" }] });
   fs.writeFileSync(path.join(rd, "img.files", "p.png"), Buffer.from("PNGDATA")); fs.writeFileSync(path.join(rd, "img.files", "t.txt"), "text"); fs.writeFileSync(path.join(rd, "img.files", "both.png"), Buffer.from("X"));
+  // b / big / img 的 created_at 讀不到(缺、超出範圍),排序退回檔案的 mtime(取到秒)。mtime 寫死:照寫檔的時間排,
+  // 三份常常落在同一秒、順序就剩 readdir 的順序,寫檔跨過整秒時 b 會掉到最後(偶發紅的原因,不是同一毫秒)
+  const T0 = 1790000000;
+  for (const [f, sec] of [["b.json", T0 + 2], ["big.json", T0 + 1], ["img.json", T0]]) fs.utimesSync(path.join(rd, f), sec, sec);
   const M = {}; vm.createContext(M);
   const lines = (re) => mainSrc.split("\n").filter((l) => re.test(l)).map((l) => l.replace(/^(const|let) /, "var ")).join("\n");
   vm.runInContext("var fs = require('fs'), path = require('path'), WS = " + JSON.stringify(ws) + ", ACCT_FRESH_MS = 300000;\n" + lines(/^const RPT_|^const rptDirs = |^let rptCloudList|^const rptCloudDocs/) + "\n"
     + ["rptEnvelope", "rptReadDoc", "rptImageB64", "rptImageUri", "reportsList", "reportLoad", "rptCloudInvalidate"].map((n) => cutFn(mainSrc, n)).join("\n") + "\n" + ["cloudReports", "cloudReport"].map((n) => "async " + cutFn(mainSrc, n)).join("\n"), Object.assign(M, { require }));
   const L = M.reportsList();
   ok("② reportsList:只認 <id>.json(.tmp / 子目錄 / 壞檔名 / 壞 JSON / 陣列 / 超過 2 MB 略過)、id 缺用檔名、id 對不上與沒標題略過、sent/ 也掃、同 id 以 drop dir 為準、failed/ 不掃;新到舊;標題去控制字元 / 截 200",
-    L.reports.map((r) => r.id).join().replace("big,b", "b,big").replace("b,big", "b,big") && L.reports.slice(0, 2).map((r) => r.id).join() === "a,g" && L.reports.slice(2, 4).map((r) => r.id).sort().join() === "b,big" && L.reports[4].id === "img" && L.reports[0].title === "A 題目 x" && L.reports[0].type === "performance" && L.reports[1].type === "morning" && L.reports[2].type === null
+    L.reports.map((r) => r.id).join() === "a,g,b,big,img" && L.reports.slice(2).map((r) => r.created_at).join() === [T0 + 2, T0 + 1, T0].join() && L.reports[0].title === "A 題目 x" && L.reports[0].type === "performance" && L.reports[1].type === "morning" && L.reports[2].type === null
     && L.reports.slice(2, 4).every((r) => Number.isInteger(r.created_at) && r.created_at > 1700000000 && r.created_at < 4102444800) && L.reports.every((r) => Number.isInteger(r.mtime) && r.mtime > 1.7e12), JSON.stringify(L));
   ok("② 沒有目錄 = 空清單,不丟", (() => { M.WS = path.join(ws, "nope"); const r = M.reportsList(); M.WS = ws; return r.reports.length === 0; })());
   const D = M.reportLoad("img");

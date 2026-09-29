@@ -32,6 +32,34 @@ const CITE_FIT_MSG = {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* 展開在中欄(畫在螢幕上)的分頁,CDP 拍回來的像素是顯示器色彩空間的值:Display P3 的 Mac 上 sRGB 的 #f00 拍成 234/51/35
+   (停在視窗外那條路回的是 sRGB,cea5d05 實測)。存出去的圖不帶色彩設定檔,看的人一律當 sRGB,顏色就偏了——存之前轉回 sRGB。
+   只認 Chromium 對標準 Display P3 描述檔印出來的那一種(ui/gfx/color_space.cc ToString:原色在 0.001 內對上 P3 就印 P3);
+   sRGB 顯示器本來就對;校色過的自訂原色、HDR 認不出來,照原樣存(跟以前一樣) */
+const displayIsP3 = (cs) => typeof cs === "string" && /\bprimaries:P3,/.test(cs) && /\btransfer:SRGB,/.test(cs);
+// 線性 Display P3(D65)→ 線性 sRGB:兩組原色的 RGB→XYZ 相乘(白點都是 D65,不用色適應)
+const P3_TO_SRGB = [1.2249402, -0.2249402, 0, -0.042057, 1.042057, 0, -0.0196376, -0.078636, 1.0982736];
+const ENC_STEPS = 16384;
+let srgbLut = null;
+/** BGRA 點陣(nativeImage.toBitmap 的排法)原地從 Display P3 轉成 sRGB;alpha 不動。 */
+function p3ToSrgb(bm) {
+  if (!srgbLut) {
+    const dec = new Float64Array(256), enc = new Uint8Array(ENC_STEPS + 1);
+    for (let v = 0; v < 256; v++) { const c = v / 255; dec[v] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+    for (let k = 0; k <= ENC_STEPS; k++) { const l = k / ENC_STEPS; enc[k] = Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055)); }
+    srgbLut = { dec, enc };
+  }
+  const { dec, enc } = srgbLut, m = P3_TO_SRGB;
+  const out = (l) => enc[Math.round((l <= 0 ? 0 : l >= 1 ? 1 : l) * ENC_STEPS)];
+  for (let i = 0; i + 3 < bm.length; i += 4) {
+    const b = dec[bm[i]], g = dec[bm[i + 1]], r = dec[bm[i + 2]];
+    bm[i + 2] = out(m[0] * r + m[1] * g + m[2] * b);
+    bm[i + 1] = out(m[3] * r + m[4] * g + m[5] * b);
+    bm[i] = out(m[6] * r + m[7] * g + m[8] * b);
+  }
+  return bm;
+}
+
 /* 報告不覆寫:這個 id 已經有報告時,圖是給「下一份」的——放進下一個空 id(<id>-2、-3…)的資料夾,已有報告的資料夾不進新圖。
    跟 lib/report.py 的 _serial / _free_id 是同一條規則(tests/check_report_no_overwrite.py 逐例對照),改一邊就要改另一邊。 */
 const AUTO_SUFFIX = "-auto", ID_MAX = 64;
@@ -82,7 +110,8 @@ function sweepCites(reportsDir, cites) {
 }
 
 /**
- * d: { nativeImage, reportsDir, getWin(), uiLang(), reducedMotion(), ERR, R, MSG, emit, viewSize(v), withMask(v, fn, force),
+ * d: { nativeImage, reportsDir, getWin(), uiLang(), reducedMotion(), colorSpace() → 視窗所在顯示器的色彩空間字串(Electron display.colorSpace),
+ *      ERR, R, MSG, emit, viewSize(v), withMask(v, fn, force),
  *      noteRead(t, v, ex), recheck(t, v) → 這一頁現在還能不能交給 agent(不能 = 被擋的那個回應;可以 = null),
  *      cur() → 這一輪的狀態物件, expanded() → 展開中的 tab id }
  */
@@ -181,14 +210,16 @@ function createCapture(d) {
       if (g && g.d && (!t.snapshotId || !t.readEver)) { try { await d.noteRead(t, v, await v.page.extract()); } catch (_) { /* 快照 best-effort */ } }
       return g;
     });
-    let got, img = null;
+    let got, img = null, onScreen = false;   // onScreen:這一次是展開在中欄拍的(awake 的同一個判斷)
     try {
+      onScreen = t.id === d.expanded();
       got = await shoot();
       if (got && got.d) img = d.nativeImage.createFromBuffer(Buffer.from(got.d, "base64"));
       /* 壞圖不進報告:拍到空的 / 下半一大片平色的圖,等一下重拍一次(canvas 圖表資料晚到、合成器那一格還沒畫);
          還是一樣就拒絕,讓 agent 換一張。重拍走同一條路(重量外框、等圖載完、查遮擋) */
       if (img && blank(img)) {
         await sleep(RETAKE_MS);
+        onScreen = t.id === d.expanded();
         got = await shoot(); img = null;
         if (got && got.d) { img = d.nativeImage.createFromBuffer(Buffer.from(got.d, "base64")); if (blank(img)) got = { refuse: "incomplete" }; }
       }
@@ -208,6 +239,10 @@ function createCapture(d) {
     if (now !== url0) return refuse("page_changed");
     const late = d.recheck(t, v); if (late) return late;
     c = got.c;
+    if (onScreen && displayIsP3(d.colorSpace ? d.colorSpace() : null)) {
+      try { const s0 = img.getSize(); img = d.nativeImage.createFromBitmap(p3ToSrgb(img.toBitmap()), { width: s0.width, height: s0.height }); }
+      catch (_) { /* 轉不了:照原樣存(跟以前一樣),不為了顏色擋掉這張圖 */ }
+    }
     const want = Math.min(CITE_MAX_W, Math.round(c.box.w * 2));   // 約 2×(螢幕 DPR 也乘進 CDP 的輸出,這裡收回來)
     if (img.getSize().width > want) img = img.resize({ width: want, quality: "best" });
     let buf = img.toPNG(), ext = "png";
@@ -228,4 +263,4 @@ function createCapture(d) {
   return { doCapture };
 }
 
-module.exports = { createCapture, saveCite, citeSlot, sweepCites, CITES_PER_TURN, CITE_FIT_MSG };
+module.exports = { createCapture, saveCite, citeSlot, sweepCites, CITES_PER_TURN, CITE_FIT_MSG, p3ToSrgb, displayIsP3 };

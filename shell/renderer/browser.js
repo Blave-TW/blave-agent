@@ -315,7 +315,8 @@ function brTakeSources(b, tabs, sources) {
   const search = new Set(rows.filter((r) => r.search).map((r) => r.id));
   const srcs = (sources || []).filter((s) => s && s.snapshot_id && !search.has(s.id) && !(BR.tabs.get(s.id) || {}).search);
   // 那一格現在停在的就是這一頁:主行程每格紀錄的快照說了算(導覽走會換新快照);沒有紀錄才看這一格在不在清單裡
-  const shown = (s) => (rowSnap.has(s.id) ? rowSnap.get(s.id) === s.snapshot_id : b.ids.includes(s.id));
+  // 不在這一塊的格子裡(即時:前面回合留下來、這一輪才讀的分頁)就補一列,不管紀錄裡有沒有它
+  const shown = (s) => b.ids.includes(s.id) && (!rowSnap.has(s.id) || rowSnap.get(s.id) === s.snapshot_id);
   const moved = new Set(), readSnaps = new Set(srcs.map((s) => s.snapshot_id));
   for (const s of srcs) {
     if (shown(s)) { const y = BR.tabs.get(s.id); if (y) { y.readEver = true; y.relay = false; } continue; }

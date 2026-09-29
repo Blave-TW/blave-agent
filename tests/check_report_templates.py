@@ -5,8 +5,9 @@ footnote last, known block types, finite numbers, narrative caps, price charts a
 candlesticks (schema 1.2) and everything else as line charts.
 Run: cd blave-agent && .venv/bin/python tests/check_report_templates.py
 """
-import json, math, os, re, sys, tempfile
+import atexit, json, math, os, re, shutil, sys, tempfile
 os.environ["BLAVE_AGENT_WORKSPACE"] = tempfile.mkdtemp(prefix="rpt-")
+atexit.register(shutil.rmtree, os.environ["BLAVE_AGENT_WORKSPACE"], True)   # 稽核 P2-12:跑完不留暫存目錄
 os.environ["BLAVE_REPORT_PACKS"] = "off"   # 每格自己的假資料:不重用上一格留下的 pack(重用另有一格驗)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np, pandas as pd
@@ -498,6 +499,7 @@ d.fetch_twstock_price = saved["fetch_twstock_price"]   # 真的那支:走 _twsto
 real_free, real_cache = d._fetch_twstock_daily_free, d._CACHE_DIR
 d._fetch_twstock_daily_free = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("twse.com.tw unreachable"))
 d._CACHE_DIR = __import__("pathlib").Path(tempfile.mkdtemp(prefix="rpt-cache-"))
+atexit.register(shutil.rmtree, str(d._CACHE_DIR), True)
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
 try:
     T.symbol_brief("2330", "2026-09-02", H); check(False, "免費日線壞掉:丟真正錯誤")

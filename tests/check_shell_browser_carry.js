@@ -86,11 +86,22 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   t("這一輪新開的不標 from_previous_turn", ls.length === 3 && ls.find((x) => x.tab === c.alias).from_previous_turn === undefined && ls.filter((x) => x.from_previous_turn).length === 2, ls);
   Br.endTurn();
   const ts = sent.slice(sentAt).find((e) => e.type === "turn_sources");
-  t("回合紀錄:沿用的分頁這一輪有讀 → 進這一輪的來源(讀了 N 頁數它);這一輪的格子只有這一輪開的", !!ts && ts.sources.length === 1 && ts.sources[0].id === a.tab.id && ts.sources[0].snapshot_id === a.tab.snapshotId
-    && ts.tabs.length === 1 && ts.tabs[0].id === c.tab.id, ts);
+  // 稽核 P2-7:以前格子只記這一輪開的——重開 app 時這一輪的格子沒有 a(只讀沿用分頁的回合整塊不見),整頁快照也不升級(升級只跑格子)
+  t("回合紀錄:沿用的分頁這一輪有讀 → 進這一輪的來源(讀了 N 頁數它),也進這一輪的格子(已讀、這一輪的快照);這一輪沒碰的 b 不進",
+    !!ts && ts.sources.length === 1 && ts.sources[0].id === a.tab.id && ts.sources[0].snapshot_id === a.tab.snapshotId
+    && ts.tabs.map((x) => x.id + ":" + x.status).join() === a.tab.id + ":done," + c.tab.id + ":open" && ts.tabs[0].snapshot_id === a.tab.snapshotId, ts);
   await Br.beginTurn(win, SID);
   const sentAt2 = sent.length; J(await call("browser_tabs")); Br.endTurn();
   t("回合紀錄:沿用的分頁這一輪沒讀 → 不進這一輪的來源、也不進格子", (() => { const e = sent.slice(sentAt2).find((x) => x.type === "turn_sources"); return !!e && e.sources.length === 0 && e.tabs.length === 0; })());
+  // browser_wait 不指名 = 這一輪用到的分頁,接上的前面回合分頁也算(稽核 P2-7:以前只認這一輪開的,回 not_found)
+  await Br.beginTurn(win, SID);
+  const sentAt3 = sent.length;
+  J(await call("browser_read", { tab: b.alias }));
+  const w0 = J(await call("browser_wait", {}));
+  t("browser_wait 不帶 tab:等的是這一輪接上的沿用分頁(不是 not_found)", w0.ok === true && w0.tabs.map((x) => x.tab).join() === b.alias, w0);
+  Br.endTurn();
+  const e3 = sent.slice(sentAt3).find((x) => x.type === "turn_sources");
+  t("只讀了沿用分頁的回合:格子裡有它(重開 app 時這一塊畫得回來)", !!e3 && e3.tabs.length === 1 && e3.tabs[0].id === b.tab.id && e3.tabs[0].status === "done" && e3.tabs[0].snapshot_id === b.tab.snapshotId, e3);
 
   // ---- 用戶接手中 → user_in_control;交還之後讀得到
   await Br.beginTurn(win, SID);
@@ -182,6 +193,13 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
     w.destroyed.join() === [old[4], old[5], old[6], old[7]].map((x) => x.id).join() && fresh.every((x) => x.status === "ready"), w.destroyed);
   const stuck = op(200);
   t("都收不掉的時候照舊排隊(不收這一輪開的、沒讀的頁)", stuck.status === "queued" && w.tabs.queued() === 1 && w.destroyed.length === 4);
+  // 稽核 P2-2 的後半:自動交還之後 userControl 已經拿掉,他在這份文件裡打過的字還在——讀完的也不收
+  const typed = createTabs({ now: () => w.now, create: () => {}, destroy: (x) => typedGone.push(x.id), emit: () => {}, max: 2 }), typedGone = [];
+  typed.newTurn();
+  const ta = typed.open("https://ta.example/", "ta.example", "agent").tab, tb = typed.open("https://tb.example/", "tb.example", "agent").tab;
+  typed.loaded(ta.id); typed.loaded(tb.id); ta.userTyped = true; typed.markRead(ta.id); typed.markRead(tb.id);
+  typed.open("https://tc.example/", "tc.example", "agent");
+  t("滿了:讀完的頁裡,用戶打過字的那一頁不收(收的是另一頁)", typedGone.join() === tb.id && ta.status === "ready", typedGone);
   w.tabs.markRead(old[3].id);
   t("接上的分頁這一輪讀完 → 讓位,排隊的補上", old[3].status === "discarded" && stuck.status !== "queued");
   t("接上不算開新頁:這一輪照樣開得滿 40 頁", (() => { const w2 = createTabs({ now: () => w.now, create: () => {}, destroy: () => {}, emit: () => {} }); w2.newTurn(); const k = w2.open("https://k.example/", "k.example", "agent").tab; w2.newTurn(); w2.use(k.id);
@@ -190,6 +208,7 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
 
   // ---- 原文鎖
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8"), tools = require(path.join(B, "tools"));
+  t("用戶在這份文件打字 → userTyped;換文件(did-navigate)清掉", /v\.userKeyNav = v\.navs; t\.userTyped = true; \}/.test(idx) && /wc\.on\("did-navigate", \(_e, url, code\) => \{ if \(priming\(url\)\) return; t\.url = url; v\.http = code \|\| 0; v\.navs\+\+; t\.userTyped = false;/.test(idx));
   t("tabFor:每一關都過了才記「這一輪接上」(在網址政策那一關之後、交出分頁之前)", /if \(a\) return \{ e: ERR\("blocked_policy"[^\n]*\n\s*tabs\.use\(t\.id\);[^\n]*\n\s*return \{ t, v \};/.test(idx));
   t("browser_tabs 列的是 reachable(這一輪開的+前面回合還活著的)", /name === "browser_tabs"\) \{ const list = tabs\.reachable\(\)\.map\(tabInfo\)/.test(idx));
   const desc = tools.TOOLS.find((x) => x.name === "browser_tabs").description;

@@ -15,6 +15,10 @@ if (!process.versions.electron) {
   ok("① shr.scrollHint:en 與 zh 各一句", /"shr\.scrollHint": "Scroll down and tick the box to publish\."/.test(str) && /"shr\.scrollHint": "往下捲，勾選後才能公開。"/.test(str));
   const body = (html.match(/<form class="set-modal shr-modal"[\s\S]*?<div class="modal-foot">/) || [""])[0], foot = (html.match(/id="shr-modal"[\s\S]*?<div class="modal-foot">([\s\S]*?)<\/form>/) || ["", ""])[1];
   ok("① 勾選仍在捲動區(三行之後),沒有搬到框腳", /shr-three[\s\S]*id="shr-ack"/.test(body) && !/shr-ack/.test(foot) && /id="shr-msg" role="status"/.test(foot));
+  const src = read(path.join(R, "report-share.js"));
+  ok("① 開框:捲動區歸零;沒有名字可選時焦點給 ✕(不給捲動區最下面的勾選框)、preventScroll;名字途中消失也一樣(DF12)",
+    /\.querySelector\("\.modal-body"\)\.scrollTop = 0;\n\s*\(\$\("shr-radios"\)\.hidden \? \$\("shr-close"\) : \$\("shr-anon"\)\)\.focus\(\{ preventScroll: true \}\);/.test(src)
+    && /if \(moved\) \$\("shr-close"\)\.focus\(\{ preventScroll: true \}\);/.test(src) && !/\$\("shr-ack"\)\.focus\(/.test(src));
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
@@ -83,7 +87,8 @@ app.whenReady().then(async () => {
   await p.js(`window.__s.state = { code: "OK", share: null, displayName: null }`);
   await p.js(`rptShowRead("perf")`); await wait(500);
   s = await p.share();
-  ok("② 沒有名字可掛(焦點直接落在勾選框、框自己捲到看得見):不出提示", s.open && s.focus === "shr-ack" && s.ackVisible && s.msg === "" && s.desc === null, JSON.stringify(s));
+  // DF12:沒有名字可掛時焦點給 ✕、不捲——以前給勾選框,整個捲動區捲到底、預覽卡被捲掉,提示也不出
+  ok("② 沒有名字可掛:焦點在 ✕、捲動區停在頂端;勾選看不到就照樣出提示", s.open && s.focus === "shr-close" && s.top === 0 && (s.ackVisible ? s.msg === "" : s.msg === HINT && s.desc === "shr-msg"), JSON.stringify(s));
   p.w.destroy();
 
   p = await open(1280, 800, "en-US"); s = await p.share();

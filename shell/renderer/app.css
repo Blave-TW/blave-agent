@@ -574,7 +574,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   animation: mp-in var(--motion-fast) var(--ease-standard);
 }
 .tip:empty { display: none !important; }
-.mp-tip:hover + .tip, .mp-tip:focus-visible + .tip { display: block; }
+.mp-tip:hover:not([data-tip-off]) + .tip, .mp-tip:focus-visible:not([data-tip-off]) + .tip { display: block; }   /* data-tip-off:按了 Esc(app.js) */
 /* 說明行沒有內容時不佔高度(只有 model 沒有 effort 時才有字) */
 .mp-note[hidden] { display: none; }
 .mp-div[hidden], .mp-bill [hidden] { display: none; }

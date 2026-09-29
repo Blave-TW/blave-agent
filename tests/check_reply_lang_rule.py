@@ -12,11 +12,12 @@ the reply's first sentence and list labels came back in English):
 
 claude_agent_sdk is stubbed. Run: cd blave-agent && python3 tests/check_reply_lang_rule.py
 """
-import asyncio, contextlib, io, os, sys, tempfile, types
+import asyncio, atexit, contextlib, io, os, shutil, sys, tempfile, types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 _tmp = tempfile.mkdtemp(prefix="check-reply-lang-")
+atexit.register(shutil.rmtree, _tmp, True)   # 稽核 P2-12:跑完不留暫存目錄
 os.makedirs(os.path.join(_tmp, "ws"))
 os.environ.update({
     "BLAVE_AGENT_WORKSPACE": os.path.join(_tmp, "ws"),

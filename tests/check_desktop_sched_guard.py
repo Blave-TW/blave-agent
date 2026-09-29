@@ -13,14 +13,19 @@ agent 接著建議用戶開完整磁碟取用權限。鎖:
      帶著自己選項的前綴指令(sudo -u root、env -i、command -p、time -p、nice)、xargs、find -exec,
      以及送給 ssh 的**沒加引號的** heredoc 裡的 `$(crontab -l)`(這台電腦的 shell 先展開)。
      這道守門防的是自然寫出來的指令掛住回合,不是安全邊界:刻意繞過的寫法列在 KNOWN_GAPS,釘住「現在擋不到」這件事實。
+  ⑥ 0.1.8 稽核(第十到十九批)P2-6:case 分支與函式本體(`)` 之後也是指令位置)、function 關鍵字、watch / script / arch 前綴;
+     SSH 那組(上一輪 e2e 稽核 P2-1):數字寫法的本機位址(0、127.1、2130706433、0x7f000001、v4-mapped、這台電腦自己的位址)、
+     -o 只認 references/cloud-handoff.md 步驟 2 的鍵、-F / -J / -I、目的地後面的選項——都不算遠端。別名、續行符號拆字、
+     直譯器 heredoc 裡拼字補進 KNOWN_GAPS。
 
 跑法:cd blave-agent && python3 tests/check_desktop_sched_guard.py
 """
-import asyncio, dataclasses, os, sys, tempfile, types
+import asyncio, atexit, dataclasses, os, shutil, sys, tempfile, types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 WS = tempfile.mkdtemp(prefix="check-sched-guard-ws-")
+atexit.register(shutil.rmtree, WS, True)   # 稽核 P2-12:跑完不留暫存目錄
 os.environ["BLAVE_AGENT_WORKSPACE"] = WS
 os.environ.setdefault("BLAVE_AGENT_DB", os.path.join(WS, "session.db"))
 sdk = types.ModuleType("claude_agent_sdk")
@@ -90,6 +95,17 @@ BLOCK_NATURAL = [
     "find ~/Library/LaunchAgents -name 'org.blave.*' -exec launchctl load {} \\;",
     "if schtasks /query /tn blave >nul 2>&1; then echo yes; fi",
     'echo "$(crontab -l)"',
+    # 0.1.8 稽核(第十到十九批)P2-6:case 分支、函式本體、watch / script / arch 前綴
+    "case x in x) crontab -l;; esac",
+    "case $1 in a) echo a;; b) launchctl list;; esac",
+    "f() { crontab -l; }; f",
+    "function f { crontab -l; }; f",
+    "function f() { crontab -l; }",
+    "watch crontab -l",
+    "watch -n 2 crontab -l",
+    "script -q /dev/null crontab -l",
+    "arch -arm64 crontab -l",
+    "arch -arch arm64 crontab -l",
 ]
 # 純文字提到這幾個字:印出來的字、要找的字、檔名、別的指令的參數
 ALLOW_TEXT = [
@@ -115,6 +131,10 @@ ALLOW_TEXT = [
     "nice -n 10 python3 lib/runner.py crontab_strategy",
     "env -i PATH=/usr/bin python3 -V",
     "cat > tmp/notes.md <<'EOF'\n排程用 crontab -l 查看\nEOF",
+    'echo "case a) crontab"',
+    "grep -n 'f() { crontab' notes.md",
+    "watch -n 5 ls strategies",
+    "echo $(date) crontab_notes.txt",
 ]
 # 已知限制:刻意繞過的寫法不追(規則層管)。放在這裡是為了讓「擋不到」是寫下來的事實,不是沒人知道的洞;
 # 哪一天擋得到了,這一條會紅,把它移到 BLOCK
@@ -123,6 +143,11 @@ KNOWN_GAPS = [
     "python3 -c \"import subprocess; subprocess.run(['cron' + 'tab', '-l'])\"",
     "ln -s /usr/bin/crontab tmp/c; tmp/c -l",
     "bash tmp/install_cron.sh",
+    # 稽核 0.1.8 e2e P2-1 列的另外幾種,也是刻意拆字 / 換名字:別名、續行符號拆字、直譯器 heredoc 裡拼字
+    "alias c=crontab; c -l",
+    "cron\\\ntab -l",
+    "sh -c 'cron\"\"tab -l'",
+    "python3 - <<EOF\nimport subprocess\nsubprocess.run(['cron' + 'tab', '-l'])\nEOF",
 ]
 ALLOW = [
     "grep -n crontab references/deployment.md",
@@ -181,7 +206,10 @@ LOCAL = [
     "python3 - <<PY\nimport os\nos.system('crontab -l')\nPY",
     "bash <<'EOF'\ncrontab -l\nEOF",
     "cat > tmp/x.sh <<'EOF'\ncrontab -l\nEOF",
-]
+    # 稽核 0.1.8 e2e P2-1 / 第十到十九批 P2-6:數字寫法的本機位址、這台電腦自己對外的位址
+    'ssh user@0 "crontab -l"', 'ssh user@127.1 "crontab -l"', 'ssh user@2130706433 "crontab -l"', 'ssh user@0x7f000001 "crontab -l"',
+    'ssh user@::ffff:127.0.0.1 "crontab -l"', 'ssh user@0:0:0:0:0:0:0:1 "crontab -l"',
+] + ['ssh user@' + str(a) + ' "crontab -l"' for a in at._my_addresses()]
 missed = [(c, at.sched_verdict(c)) for c in LOCAL if at.sched_verdict(c) != "local"]
 t("④ 目的地是這台電腦(localhost / 127.* / ::1 / 本機主機名 / 沒有 user@)、sh -c、餵給本機直譯器的 heredoc:照擋", not missed, missed)
 MIXED = [
@@ -196,6 +224,11 @@ MIXED = [
     "ssh -o KnownHostsCommand=/usr/bin/crontab blaveagent@203.0.113.7 true",
     # 引號沒收尾、認不出來的
     SSH + '"crontab -l',
+    # 稽核 0.1.8 e2e P2-1 / 第十到十九批 P2-6:-o 的鍵只認步驟 2 那幾個;-F 設定檔、-J 跳板、-I PKCS#11;目的地後面的選項
+    'ssh -o HostName=127.0.0.1 blaveagent@cloud.example.org "crontab -l"', 'ssh -o "HostName 127.0.0.1" blaveagent@cloud.example.org "crontab -l"',
+    'ssh -F tmp/sshconfig blaveagent@cloud.example.org "crontab -l"', 'ssh -J me@localhost blaveagent@cloud.example.org "crontab -l"',
+    'ssh -I tmp/x.so blaveagent@203.0.113.7 "crontab -l"',
+    'ssh blaveagent@203.0.113.7 -oProxyCommand="crontab tmp/x" true', 'ssh blaveagent@203.0.113.7 -o ProxyCommand=x "crontab -l"',
 ]
 missed = [c for c in MIXED if not at.sched_verdict(c)]
 t("④ 行上還有管線 / 轉向 / ; && || / 括號 / 指令替換 / 第二個指令、會在本機執行的 ssh 選項、引號沒收尾:照擋", not missed, missed)
