@@ -1,0 +1,50 @@
+/* 建議下一步(renderer/suggest.js):逐條照雲端 web/app/static/css/agent/workspace.css 的 .sug-*(mockup v9.2 案 4,
+   動畫沿用 v8),dark 值換成這裡的角色變數:行字 greyLightMedium → --ink-2、hover 填 darkBorder → --surface-muted、
+   hover 字 darkText → --ink、↳ 與小標 greyMedium → --ink-3。
+   .is-closed 是唯一開關:加上 = 向下沉入輸入框收合,拿掉 = 從輸入框往上長出。高度軌 0fr↔1fr(同 .think-reason-wrap);
+   align-content:end 把軌釘在容器底緣,過渡中列表底緣全程貼著輸入框。減少動態由 app.css 全域那條收掉。 */
+.sug-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  align-content: end;
+  transition: grid-template-rows var(--motion-base) var(--ease-standard);
+}
+.sug-wrap.is-closed { grid-template-rows: 0fr; }
+.sug {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: var(--space-8);
+  transition: padding-bottom var(--motion-base) var(--ease-standard);
+}
+.sug-wrap.is-closed .sug { padding-bottom: 0; }
+/* 小標 = web .group-label(13/600、greyMedium);下緣 12:標籤到第一列(12 + 行上 padding 8)要大於列距 16,Proximity 才不反轉 */
+.sug-cap { padding: 0 var(--space-12) var(--space-12); font-size: 13px; font-weight: 600; color: var(--ink-3); }
+.sug-item {
+  display: flex; align-items: baseline; gap: var(--space-12);
+  width: 100%; min-height: 36px; padding: var(--space-8) var(--space-12);
+  text-align: left; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 400; line-height: 1.6; color: var(--ink-2);
+  transition:
+    color var(--motion-fast) var(--ease-standard),
+    background var(--motion-fast) var(--ease-standard),
+    transform var(--motion-base) var(--ease-standard),
+    opacity var(--motion-base) var(--ease-standard);
+}
+.sug-item:hover { background: var(--surface-muted); color: var(--ink); }
+.sug-item:focus-visible { outline-offset: -2px; }   /* .sug 是 overflow:hidden,外推的 ring 會被裁掉 */
+.sug-glyph { flex: none; color: var(--ink-3); font-size: 13px; transition: color var(--motion-fast) var(--ease-standard); }
+.sug-item:hover .sug-glyph { color: var(--ink); }
+.sug-item .txt { flex: 1; overflow-wrap: anywhere; }   /* agent 寫的句子,長 token 也要斷 */
+
+/* 收合:每行下移淡出、沉進輸入框;stagger 最上行先走,步距 = 1/3 --motion-fast */
+.sug-wrap.is-closed .sug-item { transform: translateY(var(--space-24)); opacity: 0; pointer-events: none; }
+.sug-wrap.is-closed .sug-item:nth-child(1) { transition-delay: 0s; }
+.sug-wrap.is-closed .sug-item:nth-child(2) { transition-delay: calc(var(--motion-fast) / 3); }
+.sug-wrap.is-closed .sug-item:nth-child(3) { transition-delay: calc(var(--motion-fast) * 2 / 3); }
+/* 出現:反向,最下行(貼輸入框)先進場;延遲只掛 transform + opacity,hover 的 color / background 維持零延遲 */
+.sug-wrap:not(.is-closed) .sug-item:nth-child(1) { transition-delay: 0s, 0s, calc(var(--motion-fast) * 2 / 3), calc(var(--motion-fast) * 2 / 3); }
+.sug-wrap:not(.is-closed) .sug-item:nth-child(2) { transition-delay: 0s, 0s, calc(var(--motion-fast) / 3), calc(var(--motion-fast) / 3); }
+.sug-wrap:not(.is-closed) .sug-item:nth-child(3) { transition-delay: 0s; }
