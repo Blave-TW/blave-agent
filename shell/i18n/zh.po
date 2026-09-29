@@ -652,10 +652,10 @@ msgid "del.titleCur"
 msgstr "刪除目前這個對話？"
 
 msgid "del.body"
-msgstr "這條對話的聊天記錄會刪除，無法復原。策略不受影響。"
+msgstr "這條對話的聊天記錄會刪除，無法復原。策略和常駐規則不受影響。"
 
 msgid "del.bodyCur"
-msgstr "聊天記錄會刪除，無法復原。刪除後會開一條新對話。策略不受影響。"
+msgstr "聊天記錄會刪除，無法復原。刪除後會開一條新對話。策略和常駐規則不受影響。"
 
 msgid "del.cancel"
 msgstr "取消"
@@ -5125,3 +5125,89 @@ msgstr "這是 {date} 轉出的版本。策略之後如果改過，這份程式�
 
 msgid "tv.cf.stale.ok"
 msgstr "送進去"
+
+# 設定 › Agent 規則(0.1.9;spec-desktop-agent-rules-0.1.9 §11,只做本機)
+
+msgid "set.cat.rules"
+msgstr "Agent 規則"
+
+msgid "rules.aria"
+msgstr "Agent 常駐規則"
+
+msgid "rules.head"
+msgstr "常駐規則"
+
+msgid "rules.scope"
+msgstr "有規則套不上時，agent 會先問，不會默默跳過。"
+
+msgid "rules.add"
+msgstr "新增規則"
+
+msgid "rules.ph"
+msgstr "例如：每個策略都要設停損，預設用進場價的 2%。"
+
+msgid "rules.emptyLead"
+msgstr "還沒有任何規則。"
+
+msgid "rules.emptyHow"
+msgstr "在對話裡說「以後每個策略都要停損」，agent 會幫你記成一條規則；也可以在這裡直接新增。"
+
+msgid "rules.full"
+msgstr "已經 10 條，是上限。要新增請先刪掉一條——不會自動丟掉舊的。"
+
+msgid "rules.over"
+msgstr "目前 {n} 條，超過 10 條上限。agent 下一輪會自己整理；你也可以在這裡先刪掉幾條。畫面顯示的是全部內容，沒有被截掉。"
+
+msgid "rules.tooLong"
+msgstr "這條 {n} 字，超過 150 字上限。請縮短，或拆成兩條。"
+
+msgid "rules.save"
+msgstr "儲存"
+
+msgid "rules.saving"
+msgstr "儲存中"
+
+msgid "rules.delConfirm"
+msgstr "確定刪除「{text}」？"
+
+msgid "rules.delWarn"
+msgstr "刪掉之後 agent 就不會再套用這條。"
+
+msgid "rules.delOk"
+msgstr "刪除"
+
+msgid "rules.deleting"
+msgstr "刪除中"
+
+msgid "rules.delRetry"
+msgstr "重試刪除"
+
+msgid "rules.delAria"
+msgstr "刪除規則：{text}"
+
+msgid "rlang.label"
+msgstr "回覆語言"
+
+msgid "rlang.auto"
+msgstr "自動"
+
+msgid "rlang.other"
+msgstr "其他"
+
+msgid "rlang.customPh"
+msgstr "語言名稱，例如 Deutsch"
+
+msgid "rules.readFail"
+msgstr "讀不到這台電腦上的規則檔，先不能在這裡修改；檔案本身沒有被動到。"
+
+msgid "rlang.descAutoLocal"
+msgstr "跟著你提問的語言回。"
+
+msgid "rlang.descLocal"
+msgstr "這台電腦的對話一律用這個語言，不隨提問語言切換。"
+
+msgid "rules.agentChanged"
+msgstr "agent 也改了規則，這裡顯示的是這台電腦上的最新內容。"
+
+msgid "rlang.changed"
+msgstr "回覆語言在這台電腦上改了，這裡顯示的是最新設定。"

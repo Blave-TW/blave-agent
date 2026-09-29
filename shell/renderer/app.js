@@ -364,6 +364,7 @@ function setCat(cat) {
   // 開到這一類就拿最新的狀態;沒登入的人要的是公開數字
   if (cat === "model") mdlPaint();
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
+  if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
@@ -386,6 +387,7 @@ function setClose() {
   if (sc.hidden) return;
   if (oauthPending || planLoginBusy) window.blave.cancelOAuth();   // 關掉 modal 就沒有地方按取消了
   srcClear();   // 資料來源的表單:貼了沒存的金鑰不留在關掉的框裡
+  rulesClear();   // Agent 規則:沒存的編輯 / 確認 / 「其他」的草稿不留
   sc.classList.remove("open");
   sc.hidden = true;
   if (typeof libRefresh === "function") libRefresh();   // 在設定裡綁了卡 / 儲了值 / 登入了:策略庫的閘門要跟上
@@ -922,7 +924,7 @@ document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target))
    掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
 function escTop() {
   return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("shr-scrim").hidden ? shrClose
-    : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? setClose : !$("mp-panel").hidden ? () => mpClose(true)
+    : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? (rulesEscFn() || setClose) : !$("mp-panel").hidden ? () => mpClose(true)
     : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
 }
 document.addEventListener("keydown", (e) => {

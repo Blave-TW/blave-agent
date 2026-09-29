@@ -359,7 +359,7 @@ async function main() {
   const TM = require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name;
   const sent = [...new Set((src.match(/trackFeature\("tv_[a-z_]+"\)/g) || []).map((s) => s.slice(14, -2)))].sort();
   ok("埋點:還有送出點的是四個(tv_send / tv_pasted / tv_agent_paste / tv_fail_editor);tv_read / tv_fix / tv_fail_compile 沒有送出點了,名字留在白名單(舊外殼還在送)", sent.join() === ["tv_agent_paste", "tv_fail_editor", "tv_pasted", "tv_send"].join() && sent.every((n) => TM.includes(n) && n.length <= 16)
-    && TM.slice(TM.indexOf("tv_send"), TM.indexOf("tv_send") + 8).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext", sent);
+    && TM.slice(TM.indexOf("tv_send"), TM.indexOf("tv_send") + 8).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext", sent);   // 0.1.9 之後還有別的名字接在後面
 
   // ── ⑤ 真站(選跑)──
   if (process.env.BLAVE_LIVE_TV === "1") {
