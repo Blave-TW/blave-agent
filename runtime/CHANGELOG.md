@@ -8,7 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **排程報告回合加 Bash 守門(稽核 09-29 P-1)**:`--scheduled` 回合不分 sink 掛 PreToolUse:Bash hook,讀 `.env`、印整個環境、
+  叫會下單／平倉／換 key 的模組(`lib/order_*`、execute、venue_wiring、venue、portfolio、群益憑證、command_listener 等,清單由
+  測試從 import 閉包列舉對齊)、動部位的 `manager/` 指令、`BLAVE_MODE=live`、指令位置上的網路工具一律 deny 並回理由;`Read(/.env)`
+  加進排程回合的 disallowed 規則;刪掉 CLI 從不參考的 `Write(path)` 規則(Edit 規則本來就涵蓋 Write)。取代 09-26「Bash 只做軟約束」。機隊的 hook 通道未實測,SDK 沒有 hooks 時不掛(fail-open)。
+  測試 `tests/check_sched_bash_guard.py`。
 
 ## 1.1.103 — 2026-09-29(desktop 0.1.9)
 
