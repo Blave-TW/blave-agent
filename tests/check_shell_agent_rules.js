@@ -9,8 +9,12 @@ const ROOT = path.join(__dirname, ".."), WS = fs.mkdtempSync(path.join(os.tmpdir
 const PREFS = path.join(ST, "preferences.md"), LANGF = path.join(ST, "reply_lang");
 let red = 0; const t = (n, ok, extra) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok || extra === undefined ? "" : "  → " + JSON.stringify(extra))); if (!ok) red++; };
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const T0 = Date.now() - 1000;
-const read = () => A.readLocal({ python: process.env.BLAVE_TEST_PYTHON || "python3", runtimeDir: path.join(ROOT, "runtime"), workspace: WS,
+// 讀的是 runtime/*.py 的私有複本:「讀不寫 __pycache__」看這份有沒有長出 __pycache__。直接看 repo 的 runtime/__pycache__ 會把
+// 同一棵樹上別的行程(開發版的 daemon、並行的測試)剛好在這幾秒補寫的 pyc 算到這支頭上——合併後 pyc 過期時第一次跑紅、重跑綠
+const RT = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "blave-ar-rt-")), "runtime");
+fs.mkdirSync(RT);
+for (const n of fs.readdirSync(path.join(ROOT, "runtime"))) if (n.endsWith(".py")) fs.copyFileSync(path.join(ROOT, "runtime", n), path.join(RT, n));
+const read = () => A.readLocal({ python: process.env.BLAVE_TEST_PYTHON || "python3", runtimeDir: RT, workspace: WS,
   env: { PATH: process.env.PATH, HOME: os.homedir() } });
 const writes = []; let lastArgs = null;
 const saveRules = async (rules) => R.save("preferences_set", { rules, base: (await R.read()).rules });
@@ -73,11 +77,11 @@ const R = A.createAgentRules({
   fs.writeFileSync(LANGF, "klingon??\n");
   t("回覆語言檔有內容卻讀不出設定:畫面照「自動」,並標 langReadable false", eq((await R.read()).replyLang, { lang: "", custom: "" }) && (await R.read()).langReadable === false);
 
-  const pyc = path.join(ROOT, "runtime", "__pycache__");
-  const fresh = (() => { try { return fs.readdirSync(pyc).filter((n) => fs.statSync(path.join(pyc, n)).mtimeMs >= T0); } catch (_) { return []; } })();   // 自訂語言那條還會 import session_store
-  t("讀不寫 __pycache__(打包版的 runtime 在簽過章的 .app 裡)", fresh.length === 0, fresh);
+  const pyc = path.join(RT, "__pycache__");   // 自訂語言那條還會 import session_store
+  t("讀不寫 __pycache__(打包版的 runtime 在簽過章的 .app 裡)", !fs.existsSync(pyc), fs.existsSync(pyc) ? fs.readdirSync(pyc) : undefined);
 
   fs.rmSync(WS, { recursive: true, force: true });
+  fs.rmSync(path.dirname(RT), { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })();
