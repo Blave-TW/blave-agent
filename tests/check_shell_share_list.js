@@ -146,7 +146,7 @@ app.whenReady().then(async () => {
 
   // 分類
   const cats = await js(`[...document.querySelectorAll("#set-cats .set-cat")].map((b) => b.dataset.setCat).join()`);
-  ok("④ 設定分類六個:「公開連結」排在帳號與方案後、隱私前", cats === "display,model,src,plan,shares,priv", cats);
+  ok("④ 設定分類七個:「公開連結」排在帳號與方案後、隱私前(0.1.9 在模型接入後面加了 Agent 規則)", cats === "display,model,rules,src,plan,shares,priv", cats);
 
   // 載入中 → 有資料
   await js(`window.__s.listDelay = 700`); await openCat(); await wait(100);
