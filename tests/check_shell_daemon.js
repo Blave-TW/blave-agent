@@ -1,7 +1,7 @@
 // shell/daemon.js(本機常駐程式的宿主)對**真的** runtime/local_daemon.py 跑一輪:啟動、簽章指令、
 // 拒收沒簽的、狀態檔、收工。跑法:node tests/check_shell_daemon.js(需要 python3;不碰 ~/Blave)
 const fs = require("fs"), os = require("os"), path = require("path");
-const { createDaemonHost, UI_COMMANDS, argsOk } = require("../shell/daemon.js");
+const { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, argsOk } = require("../shell/daemon.js");
 const ROOT = path.join(__dirname, "..");
 const BASE = fs.mkdtempSync(path.join(os.tmpdir(), "blave-dh-")), WS = path.join(BASE, "workspace");
 fs.mkdirSync(path.join(WS, "manager"), { recursive: true });
@@ -20,6 +20,19 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
     && !fs.existsSync(path.join(WS, "state", "local_cmd", "in")));
   t("畫面沒有的指令不送(delete_strategy)", (await host.send("delete_strategy", { name: "x" })).error === "NOT_ALLOWED");
   t("白名單不含會動報告排程 / 偏好的指令", !["report_delete", "preferences_set", "manage_backtest", "tz_set"].some((c) => UI_COMMANDS.has(c)));
+  t("設定 › Agent 規則的兩個寫入只准主行程送(trusted),renderer 的 trade-send 送不出來", MAIN_ONLY_COMMANDS.has("preferences_set") && MAIN_ONLY_COMMANDS.has("reply_lang_set")
+    && (await host.send("preferences_set", { rules: ["x"] })).error === "NOT_ALLOWED" && (await host.send("reply_lang_set", { lang: "en" })).error === "NOT_ALLOWED");
+  // 設定 › Agent 規則:形狀同 api agent_command 的兩支驗證;上限是傳輸天花板(100 × 1000),不是介面的 10 × 150
+  t("preferences_set:規則陣列,每條單行、1–1000 字、至多 100 條;[] 合法(刪掉最後一條)",
+    argsOk("preferences_set", { rules: ["每個策略都要設停損", "字".repeat(1000)] }) && argsOk("preferences_set", { rules: [] })
+    && argsOk("preferences_set", { rules: Array.from({ length: 100 }, (_, i) => "r" + i) }) && argsOk("preferences_set", { rules: ["含\t的也收(agent 寫得出來,整份覆寫時要送得回去)"] })
+    && [{ rules: Array.from({ length: 101 }, () => "r") }, { rules: ["字".repeat(1001)] }, { rules: ["  "] }, { rules: [3] }, { rules: "a" }, {},
+      { rules: ["a"], x: 1 }, ...["a\nb", "a\rb", "a\x0bb", "a\x1cb", "a\x85b", "a\u2028b", "a\u2029b"].map((r) => ({ rules: [r] }))].every((a) => !argsOk("preferences_set", a)));
+  t("reply_lang_set:七碼或空、custom 與 lang 互斥、custom ≤40 字不含 < > 換行、不收 if_unset",
+    ["zh", "cn", "en", "es", "pt", "vi", "ja", ""].every((l) => argsOk("reply_lang_set", { lang: l })) && argsOk("reply_lang_set", { lang: "", custom: "Deutsch" })
+    && argsOk("reply_lang_set", { lang: "", custom: "" }) && argsOk("reply_lang_set", { lang: "", custom: "한".repeat(40) })
+    && [{ lang: "de" }, { lang: "ZH" }, { lang: "en", custom: "Deutsch" }, { lang: "", custom: "한".repeat(41) }, { lang: "", custom: "<b>" },
+      { lang: "", custom: "a\nb" }, { lang: "", custom: "   " }, { lang: "", custom: 5 }, { lang: "en", if_unset: true }, { custom: "Deutsch" }, {}].every((a) => !argsOk("reply_lang_set", a)));
   // 參數形狀:renderer 被攻破時不能藉 credentials 把任意 key 寫進 .env,也不能拿掉別的 key
   t("credentials 只收這一版認得的 key 與值", argsOk("credentials", { env: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: "1789920000" } })
     && !argsOk("credentials", { env: { BINANCE_API_KEY: "x" } }) && !argsOk("credentials", { env: { PAPER_API_KEY: "paper", PATH: "/tmp" } })
@@ -72,6 +85,12 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
   let ack = null;
   for (let i = 0; i < 50 && !ack; i++) { await sleep(200); try { ack = JSON.parse(fs.readFileSync(path.join(WS, "state", "local_cmd", "ack", forged + ".json"), "utf8")); } catch (_) {} }
   t("沒簽的 resume 被拒、HALT 沒被拿掉", ack && ack.ok === false && fs.existsSync(path.join(WS, "state", "HALT")));
+  { const pf = path.join(WS, "state", "preferences.md"), rl = path.join(WS, "state", "reply_lang");
+    const p = await host.send("preferences_set", { rules: ["每個策略都要設停損", "回測至少三年"] }, { trusted: true });
+    t("preferences_set 經 daemon → ack 回真正落檔的陣列、檔案是 `- ` 條列", p.ok === true && JSON.stringify(p.result && p.result.rules) === '["每個策略都要設停損","回測至少三年"]'
+      && fs.readFileSync(pf, "utf8") === "- 每個策略都要設停損\n- 回測至少三年\n");
+    const r1 = await host.send("reply_lang_set", { lang: "", custom: "Deutsch" }, { trusted: true }), r2 = await host.send("reply_lang_set", { lang: "", custom: "" }, { trusted: true });
+    t("reply_lang_set 經 daemon → 自訂語言落檔;兩個都空 = 刪檔(自動)", r1.ok === true && r1.result && r1.result.custom === "Deutsch" && r2.ok === true && !fs.existsSync(rl)); }
   const big = await host.send("amounts", { amounts: Object.fromEntries(Array.from({ length: 200 }, (_, i) => ["s".repeat(120) + i, 1])) });
   t("超過 16KB 的指令在這一側就擋下", big.error === "TOO_LARGE");
   // 權益歷史:reset 之前的點不進曲線;今天的損益以今天第一個點為基準;沒有帳戶時 today 是 null(不編數字)

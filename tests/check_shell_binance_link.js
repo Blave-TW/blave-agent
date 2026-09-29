@@ -135,7 +135,10 @@ function world(init) {
   t("我方頁面:參數不是物件 → 拒絕", (await handlers["binance-connect"]({}, "x")).code === "NOT_ALLOWED" && (await handlers["binance-connect"]({}, [K, S])).code === "NOT_ALLOWED" && calls.length === 0);
   await handlers["binance-connect"]({}, { apiKey: K, secret: S, trusted: true }); await handlers["binance-recheck"]({});
   t("我方頁面:connect 只把兩個字串交下去;用戶按的重查是 manual", calls[0].length === 3 && calls[0][1] === K && calls[0][2] === S && calls[1][1] === true);
-  t("main.js:Binance 金鑰只經 trusted 那條路送;renderer 的 trade-send 不帶第三個參數", /send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(mainSrc) && (mainSrc.match(/trusted: true/g) || []).length === 1
+  t("main.js:Binance 金鑰只經 trusted 那條路送;renderer 的 trade-send 不帶第三個參數", /send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(mainSrc) && (mainSrc.match(/trusted: true/g) || []).length === 2
+    // 另一處是設定 › Agent 規則(agentrules.js):只送得出 preferences_set / reply_lang_set,帶不了金鑰
+    && /writeLocal: \(cmd, args\) => \(RULES_CMDS\.has\(cmd\) \? tradeHost\(\)\.send\(cmd, args, \{ trusted: true \}\) :/.test(mainSrc)
+    && /const RULES_CMDS = new Set\(\["preferences_set", "reply_lang_set"\]\);/.test(mainSrc)
     && /const out = tradeHost\(\)\.send\(cmd, args && typeof args === "object" \? args : \{\}\);/.test(mainSrc));
   t("main.js:my_ip 強制走 IPv4", /my_ip`, \{ token: tok \}, \{ family: 4 \}\)/.test(mainSrc));
   t("main.js:通知真的交給系統才回 true;字沒到 / 不支援 → false;重查的通知全是 P2,不亮 Dock 紅點", /isSupported\(\)\) return false;/.test(mainSrc) && !/v\.level === "P1"/.test(mainSrc) && /n\.show\(\);\n[^\n]*\n  return true;/.test(mainSrc));

@@ -81,7 +81,7 @@ const T = (o) => Object.assign({ id: "p1", url: "https://www.tradingview.com/cha
   const tools = fs.readFileSync(path.join(SHELL, "browser", "tools.js"), "utf8") + fs.readFileSync(path.join(SHELL, "browser", "mcp.js"), "utf8");
   ok("這是用戶自己按的鈕,不是 agent 的工具:browser_* 工具清單沒有它", !/open_external|openExternal|open_ext|system_browser/i.test(tools));
   const TM = require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name;
-  ok("埋點 browser_open_ext:在白名單最後一個、≤16 字;只記按了,不帶網址", TM[TM.length - 1] === "browser_open_ext" && "browser_open_ext".length <= 16 && !/trackFeature\("browser_open_ext",/.test(br)); }
+  ok("埋點 browser_open_ext:在白名單上、緊接 tv_fail_compile(0.1.8 的最後一個;0.1.9 起後面還有)、≤16 字;只記按了,不帶網址", TM.indexOf("browser_open_ext") === TM.indexOf("tv_fail_compile") + 1 && "browser_open_ext".length <= 16 && !/trackFeature\("browser_open_ext",/.test(br)); }
 // 「你在操作」只在 agent 開的分頁
 { const userOp = new Function((br.match(/const brUserOp = [^\n]*/) || [""])[0] + "; return brUserOp;")();
   ok("「你在操作」只在 agent 開的分頁被用戶接手時出現;用戶自己開的分頁(送進 TradingView、開即時頁)不出現", userOp({ user: true, by: "agent" }) && userOp({ user: true }) && !userOp({ user: true, by: "user" }) && !userOp({ user: false, by: "agent" }) && !userOp(null)

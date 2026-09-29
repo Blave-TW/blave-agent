@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="trade.css">
 <link rel="stylesheet" href="capital.css">
 <link rel="stylesheet" href="datasrc.css">
+<link rel="stylesheet" href="rules.css">
 <link rel="stylesheet" href="library.css">
 <link rel="stylesheet" href="report-blocks.css">
 <link rel="stylesheet" href="reports.css">
@@ -343,6 +344,8 @@
       <nav class="set-cats" id="set-cats" data-i18n-aria="set.cats">
         <button type="button" class="set-cat" data-set-cat="display" aria-current="true" data-i18n="set.cat.display"></button>
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
+        <!-- Agent 規則:常駐規則 + 回覆語言(排在「模型接入」後面)。內容由 rules.js 畫;只管這台電腦那一份 -->
+        <button type="button" class="set-cat" data-set-cat="rules" data-i18n="set.cat.rules"></button>
         <!-- 資料來源:自帶資料商的金鑰(排在「AI 接入」後面)。內容由 datasrc.js 的 srcPaint 畫 -->
         <button type="button" class="set-cat" data-set-cat="src" data-i18n="src.title"></button>
         <!-- 帳號與方案(原本「資料與雲端方案」與「帳號」兩類併成一類;id 留 plan,舊的 acct 由 setCat 轉過來)。
@@ -376,6 +379,7 @@
           </div>
         </div>
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
+        <div class="set-pane" data-set-cat="rules" id="set-rules" hidden></div>
         <div class="set-pane" data-set-cat="src" id="set-src" hidden></div>
         <!-- 帳號與方案:整頁由 app.js 的 planPaint 畫——最上面一組帳號列(登入狀態＋登出)、訊息格 #acct-hint、Blave 餘額列,
              細線以下是方案(依 account_status.plan)。上半自己捲,底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
@@ -596,6 +600,7 @@
 <script src="export.js"></script>
 <script src="library.js"></script>
 <script src="app.js"></script>
+<script src="rules.js"></script>
 <script src="strategy_versions.js"></script>
 <script src="versions.js"></script>
 <script src="browser.js"></script>

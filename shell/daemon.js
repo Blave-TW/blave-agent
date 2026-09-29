@@ -13,6 +13,10 @@ const { spawn } = require("child_process");
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "credentials", "credentials_remove",
   "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm"]);
+// 只有主行程送得出的(send(…, { trusted: true })):設定 › Agent 規則的兩個寫入(shell/agentrules.js)。不放進 UI_COMMANDS:
+// renderer 的寫入必須經過 rules-save / reply-lang-save 那兩支 IPC——「規則檔讀不到就不寫」那道閘在那裡,通用的 trade-send 繞得過它;
+// api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
+const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set"]);
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_BYTES = 16 * 1024;          // = daemon 的 MAX_BYTES;超過它會直接拒收
 const HEARTBEAT_DEAD_MS = 60 * 1000;  // 設計 §4:heartbeat_at 超過 60 秒 = daemon 死了
@@ -45,6 +49,10 @@ const TRUSTED_CRED_KEYS = Object.assign({}, ...TRUSTED_SETS);
 const REMOVABLE = new Set([...Object.keys(CRED_KEYS), ...Object.keys(TRUSTED_CRED_KEYS)]);
 const sameKeys = (o, set) => { const a = Object.keys(o), b = Object.keys(set); return a.length === b.length && a.every((k) => Object.prototype.hasOwnProperty.call(set, k)); };
 const NAME_RE = /^[A-Za-z0-9_\-.]{1,128}$/;
+const PREFS_RULES_CEILING = 100, PREFS_RULE_CHARS_CEILING = 1000;
+const PREFS_FILE_CHARS_MAX = 16000;   // = agentrules.READ_PY 的讀取上限;超過就讀不回來,設定頁變 readFail、連刪都刪不了
+const PREFS_LINE_BREAK = /[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]/;
+const REPLY_LANGS = ["zh", "cn", "en", "es", "pt", "vi", "ja"], REPLY_LANG_CUSTOM_MAX = 40;   // = runtime strategy_reporter
 function argsOk(cmd, a, trusted) {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const keys = Object.keys(a);
@@ -68,6 +76,20 @@ function argsOk(cmd, a, trusted) {
   // 換金鑰後「還是同一個帳戶嗎」的回答:剛好 venue + same 兩個欄位,不帶任何祕密(同機器端 _cmd_book_account_confirm 的規則)
   if (cmd === "book_account_confirm") return keys.length === 2 && typeof a.venue === "string" && /^[a-z0-9]{2,20}$/.test(a.venue) && typeof a.same === "boolean";
   if (cmd === "halt") return keys.every((k) => k === "reason") && (a.reason === undefined || (typeof a.reason === "string" && a.reason.length <= 200));
+  // 整份覆寫 state/preferences.md。上限是傳輸天花板(= api agent_command.PREFS_RULES_CEILING / _CHARS_CEILING),
+  // 不是介面的 10 × 150:agent 自己寫超過之後,送出「刪掉一條」的那份陣列也要過得了這道。
+  // 擋的斷行字元 = Python splitlines 會切開的那組:讀出來的規則裡不可能有,寫進去卻會在機器上多出一行
+  if (cmd === "preferences_set") return keys.length === 1 && Array.isArray(a.rules) && a.rules.length <= PREFS_RULES_CEILING
+    && a.rules.every((r) => typeof r === "string" && !PREFS_LINE_BREAK.test(r) && Array.from(r.trim()).length >= 1 && Array.from(r.trim()).length <= PREFS_RULE_CHARS_CEILING)
+    && a.rules.reduce((n, r) => n + Array.from(r).length + 3, 0) <= PREFS_FILE_CHARS_MAX;   // 落檔一條 = "- " + 規則 + "\n";用沒 strip 的長度,只會估多
+  // 同 api agent_command._reply_lang_args_error:lang 是 "" 或七碼之一;custom 非空時 lang 必須是 "";兩個都空 = 清掉(自動)。
+  // 不收 if_unset(那是網頁舊版自動帶入才送的)
+  if (cmd === "reply_lang_set") {
+    if (!keys.every((k) => k === "lang" || k === "custom") || typeof a.lang !== "string" || (a.lang && REPLY_LANGS.indexOf(a.lang) < 0)) return false;
+    if (a.custom === undefined || a.custom === "") return true;
+    const n = typeof a.custom === "string" ? Array.from(a.custom.trim()).length : 0;
+    return !a.lang && n >= 1 && n <= REPLY_LANG_CUSTOM_MAX && !/[\r\n<>]/.test(a.custom);
+  }
   return keys.length === 0;   // restart_reconciler / retest_accounts / close_all:不收參數
 }
 function createDaemonHost({ python, script, base, workspace, env, log = () => {}, spawnFn = spawn, lockRetryMs = LOCK_RETRY_MS, lockSettleMs = LOCK_SETTLE_MS,
@@ -161,7 +183,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   /* 送一個指令並等 ack。回 {ok, result} / {ok:false, error};daemon 沒在跑、逾時也走 error。
      `halt` 在 daemon 沒跑(或 secret 不在)時照送不簽——它是安全方向,daemon 起來就會吃到。 */
   async function send(cmd, args, { timeoutMs = 20000, trusted = false } = {}) {
-    if (!UI_COMMANDS.has(cmd)) return { ok: false, error: "NOT_ALLOWED" };
+    if (!UI_COMMANDS.has(cmd) && !(trusted === true && MAIN_ONLY_COMMANDS.has(cmd))) return { ok: false, error: "NOT_ALLOWED" };
     if (!argsOk(cmd, args || {}, trusted === true)) return { ok: false, error: "BAD_ARGS" };
     const live = !!(child && secret);
     if (!live && cmd !== "halt") return { ok: false, error: "DAEMON_DOWN" };
@@ -303,4 +325,4 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 
   return { start, stop, send, status, equity, events, noteQuit, _eqTick: eqTick, isRunning: () => !!child };
 }
-module.exports = { createDaemonHost, UI_COMMANDS, argsOk };
+module.exports = { createDaemonHost, UI_COMMANDS, MAIN_ONLY_COMMANDS, argsOk };

@@ -648,10 +648,10 @@ msgid "del.titleCur"
 msgstr "Delete this conversation?"
 
 msgid "del.body"
-msgstr "This conversation’s chat history will be deleted and can’t be restored. Your strategies are not affected."
+msgstr "This conversation’s chat history will be deleted and can’t be restored. Your strategies and standing rules are not affected."
 
 msgid "del.bodyCur"
-msgstr "Its chat history will be deleted and can’t be restored. A new chat will open. Your strategies are not affected."
+msgstr "Its chat history will be deleted and can’t be restored. A new chat will open. Your strategies and standing rules are not affected."
 
 msgid "del.cancel"
 msgstr "Cancel"
@@ -5112,3 +5112,89 @@ msgstr "This is the version exported on {date}. If the strategy changed after th
 
 msgid "tv.cf.stale.ok"
 msgstr "Send It"
+
+# Settings › Agent rules (0.1.9; spec-desktop-agent-rules-0.1.9 §11, this computer only)
+
+msgid "set.cat.rules"
+msgstr "Agent rules"
+
+msgid "rules.aria"
+msgstr "Agent standing rules"
+
+msgid "rules.head"
+msgstr "Standing rules"
+
+msgid "rules.scope"
+msgstr "When a rule doesn’t fit, the agent asks instead of skipping it."
+
+msgid "rules.add"
+msgstr "Add rule"
+
+msgid "rules.ph"
+msgstr "For example: every strategy needs a stop loss, 2% below the entry price by default."
+
+msgid "rules.emptyLead"
+msgstr "No rules yet."
+
+msgid "rules.emptyHow"
+msgstr "Say “from now on every strategy needs a stop loss” in the chat and the agent records it as a rule — or add one here."
+
+msgid "rules.full"
+msgstr "10 rules is the limit. Delete one to add another — nothing gets dropped for you."
+
+msgid "rules.over"
+msgstr "You have {n} rules, over the limit of 10. The agent will tidy them up on its next turn; you can also delete a few here. Everything is shown in full, nothing is truncated."
+
+msgid "rules.tooLong"
+msgstr "This rule is {n} characters, over the 150 limit. Shorten it, or split it into two."
+
+msgid "rules.save"
+msgstr "Save"
+
+msgid "rules.saving"
+msgstr "Saving"
+
+msgid "rules.delConfirm"
+msgstr "Delete “{text}”?"
+
+msgid "rules.delWarn"
+msgstr "The agent will stop applying this rule."
+
+msgid "rules.delOk"
+msgstr "Delete"
+
+msgid "rules.deleting"
+msgstr "Deleting"
+
+msgid "rules.delRetry"
+msgstr "Retry delete"
+
+msgid "rules.delAria"
+msgstr "Delete rule: {text}"
+
+msgid "rlang.label"
+msgstr "Reply language"
+
+msgid "rlang.auto"
+msgstr "Auto"
+
+msgid "rlang.other"
+msgstr "Other"
+
+msgid "rlang.customPh"
+msgstr "Language name, e.g. Deutsch"
+
+msgid "rules.readFail"
+msgstr "Couldn’t read the rules file on this computer, so editing is off for now. The file itself hasn’t been touched."
+
+msgid "rlang.descAutoLocal"
+msgstr "Replies in the language you write in."
+
+msgid "rlang.descLocal"
+msgstr "Always used for chats on this computer, whatever the message language."
+
+msgid "rules.agentChanged"
+msgstr "The agent changed the rules too — this is what’s on this computer now."
+
+msgid "rlang.changed"
+msgstr "The reply language changed on this computer — this is the current setting."

@@ -1909,6 +1909,24 @@ function tradeHost() {
   }
   return _tradeHost;
 }
+/* 設定 › Agent 規則:這台電腦的常駐規則與回覆語言(agentrules.js)。讀是 runtime 的 python、寫是 daemon 的指令。 */
+let _agentRules = null;
+const RULES_CMDS = new Set(["preferences_set", "reply_lang_set"]);
+function agentRules() {
+  if (!_agentRules) {
+    const AR = require("./agentrules");
+    _agentRules = AR.createAgentRules({
+      readLocal: () => (fs.existsSync(WS)
+        ? AR.readLocal({ python: fs.existsSync(VENV_PY) ? VENV_PY : basePython(), runtimeDir: path.join(REPO, "runtime"), workspace: WS,
+          env: childEnv({ PATH: process.env.PATH || "/usr/bin:/bin", HOME: os.homedir(), LANG: process.env.LANG || "en_US.UTF-8" }) })
+        : Promise.resolve({ rules: null, replyLang: { lang: "", custom: "" }, langReadable: false })),
+      // 只送得出這兩個設定指令:這裡不是會啟動下單的入口(tests/check_shell_minversion.js 釘住)
+      writeLocal: (cmd, args) => (RULES_CMDS.has(cmd) ? tradeHost().send(cmd, args, { trusted: true }) : Promise.resolve({ ok: false, error: "NOT_ALLOWED" })),
+      argsOk: require("./daemon").argsOk,
+    });
+  }
+  return _agentRules;
+}
 function tradeStartIfReady() {
   try { if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) { tradeHost().start(); binanceLink().start(); } } catch (e) { console.error("[trade] start failed", e && e.message); }
 }
@@ -2445,6 +2463,10 @@ app.whenReady().then(() => {
   handle("datasrc-save", (_e, input) => (fs.existsSync(WS) ? dataSrc.save(input) : { ok: false, error: "NO_WORKSPACE" }), { ok: false, error: "NOT_ALLOWED" });
   handle("datasrc-blockers", (_e, name) => dataSrc.blockers(name), []);
   handle("datasrc-remove", (_e, name) => dataSrc.remove(name), { ok: false, error: "NOT_ALLOWED" });
+  // 設定 › Agent 規則(agentrules.js):畫面只拿內容、送編輯;讀寫這台電腦的兩個檔都在主行程,形狀由 daemon.argsOk 驗
+  handle("rules-state", () => agentRules().read(), null);
+  handle("rules-save", (_e, a) => agentRules().save("preferences_set", { rules: a && Array.isArray(a.rules) ? a.rules : null, base: a && Array.isArray(a.base) ? a.base : null }), { ok: false, error: "NOT_ALLOWED" });
+  handle("reply-lang-save", (_e, a) => agentRules().save("reply_lang_set", { lang: a && typeof a.lang === "string" ? a.lang : null, custom: a && typeof a.custom === "string" ? a.custom : "" }), { ok: false, error: "NOT_ALLOWED" });
   handle("load-model-prefs", () => loadModelPrefs());
   handle("save-model-prefs", (_e, prefs) => saveModelPrefs(prefs));
   handle("start-oauth", (_e, lang) => startOAuth(lang === "en" ? "en" : "zh"));   // 語言段會拼進同意頁的路徑:只認兩個值(稽核 R6)

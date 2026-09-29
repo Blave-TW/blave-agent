@@ -80,6 +80,10 @@ contextBridge.exposeInMainWorld("blave", {
   dataSrcSave: (input) => ipcRenderer.invoke("datasrc-save", input),
   dataSrcBlockers: (name) => ipcRenderer.invoke("datasrc-blockers", name),
   dataSrcRemove: (name) => ipcRenderer.invoke("datasrc-remove", name),
+  // 設定 › Agent 規則:這台電腦的常駐規則與回覆語言。存檔回的是本機 daemon 的結果
+  rulesState: () => ipcRenderer.invoke("rules-state"),
+  rulesSave: (rules, base) => ipcRenderer.invoke("rules-save", { rules, base }),
+  replyLangSave: (lang, custom) => ipcRenderer.invoke("reply-lang-save", { lang, custom }),
   // Binance 真錢連接:金鑰只經過 binanceConnect 一次(主行程查過權限才存);其餘三支不碰金鑰
   binanceIp: () => ipcRenderer.invoke("binance-ip"),
   binanceState: () => ipcRenderer.invoke("binance-state"),

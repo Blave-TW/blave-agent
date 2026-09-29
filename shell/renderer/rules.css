@@ -1,0 +1,75 @@
+/* 設定 › Agent 規則(renderer/rules.js;spec-desktop-agent-rules-0.1.9 §2 / §3,只做本機)。
+   沿用既有的 .set-row / .set-gl / .set-selw / .set-sel / .f-area / .f-input.txt / .plan-err / .cn-hint / .src-empty / .btn-* / .spin16 / .tip;
+   這裡只有這一頁自己的排列。值全部走 tokens.css。 */
+.rules-sk .sk { width: 60%; }
+.rules-sk .sk.s { width: 40%; }
+
+/* 組內 8、組間 24(canon Proximity) */
+.rules-grp + .rules-grp { margin-top: var(--space-24); }
+.rules-grp .plan-err { margin: var(--space-8) 0 0; }
+.rules-grp .cn-hint { margin: var(--space-8) 0 0; }
+.rules-rl-custom { margin-top: var(--space-8); }
+.set-row + .rules-rl-custom { margin-top: var(--space-8); }
+.rules-rl-custom .f-input { flex: 1 1 auto; height: 34px; min-width: 0; }
+.rules-rl-cnt { flex: none; font-size: 12px; color: var(--ink-3); }
+
+/* label 上的 tooltip:字級、字重、顏色保留 .set-gl,只加點線底線;氣泡往下開(第一組貼著會捲動的容器頂端,往上開會被裁掉)。
+   寬度照文字、260 封頂:包含區塊是窄窄的 .rules-tipw,auto 會縮成 label 寬(同 0b8dc3d 總覽泡泡) */
+.rules-tipw { position: relative; display: inline-flex; }
+.rules-tipb { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
+.rules-tipb:hover + .tip, .rules-tipb:focus-visible + .tip { display: block; }
+.set-pane[data-set-cat="rules"] .tip { left: 0; bottom: auto; top: calc(100% + 6px); width: max-content; max-width: 260px; }
+@media (prefers-reduced-motion: reduce) { .set-pane[data-set-cat="rules"] .tip { animation: none; } }
+
+/* min-height 34 = .set-sel 的高度(component-metric):兩組的 label 列一樣高 */
+.rules-top { display: flex; align-items: center; gap: var(--space-8); min-height: 34px; }
+.rules-count { font-size: 12px; color: var(--ink-3); }
+.rules-count.over { color: var(--color-redText); }
+.rules-add { margin-left: auto; }
+
+/* canon › Inner well:外框 + 列之間的 hairline */
+.rules-list { margin: var(--space-8) 0 0; padding: 0; list-style: none; border: 1px solid var(--border-frame); border-radius: var(--radius-sm); overflow: hidden; }
+.rules-row { position: relative; }
+.rules-row + .rules-row { border-top: 1px solid var(--border-hairline); }
+.rules-item {
+  display: block; width: 100%; padding: var(--space-8) 40px var(--space-8) var(--space-12);
+  border: 0; background: transparent; color: var(--ink-2); text-align: left;
+  font: inherit; font-size: 13px; line-height: 1.6; white-space: normal; overflow-wrap: anywhere;   /* 不截字,長的就折行 */
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+}
+.rules-row:is(:hover, :has(:focus-visible)) .rules-item:not(:disabled) { background: var(--surface-muted); color: var(--ink); }
+.rules-item:focus-visible { outline-offset: -2px; }
+.rules-item:disabled { cursor: default; }
+/* ✕:幾何同 .cs-del,滑過或聚焦才出現 */
+.rules-del {
+  position: absolute; right: var(--space-6); top: var(--space-6);
+  min-width: 24px; height: 24px; padding: 0 var(--space-4);
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--radius-micro); background: transparent; color: var(--ink-2);
+  opacity: 0; pointer-events: none;
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.rules-del .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.rules-row:is(:hover, :has(:focus-visible)) .rules-del:not(:disabled) { opacity: 1; pointer-events: auto; }
+.rules-del::before { content: ""; position: absolute; top: -5px; right: -10px; width: 44px; height: 34px; }
+.rules-del:hover { background: var(--bg-body); color: var(--ink); }
+.rules-del:disabled { display: none; }
+
+.rules-row.is-edit, .rules-row.is-confirm { padding: var(--space-8) var(--space-12); }
+.rules-row.is-edit .f-area.is-err { border-color: var(--color-redText); }
+/* 跟著內容長高,最多 6 行:150 字的長規則第一行不被切掉。field-sizing 之後 rows 不管高度,最小高度靠 .f-area 的 min-height */
+.rules-row.is-edit .f-area { field-sizing: content; max-height: calc(1.5em * 6 + 18px); }
+.rules-foot { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-8); }
+.rules-len { font-size: 11px; color: var(--ink-3); }
+.rules-len.over { color: var(--color-redText); }
+.rules-btns { display: flex; gap: var(--space-8); margin-left: auto; }
+.rules-btns .spin16 { width: 12px; height: 12px; vertical-align: -1px; }
+.rules-cf { display: flex; flex-direction: column; gap: var(--space-4); }
+.rules-cf-t { font-size: 13px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
+.rules-cf-q { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+
+.rules-limit { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.rules-limit.over { color: var(--color-redText); }
+.rules-empty { margin-top: var(--space-8); }
+
+@media (prefers-reduced-motion: reduce) { .rules-item, .rules-del { transition: none; } }

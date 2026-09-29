@@ -243,12 +243,12 @@ ok("登出不碰雲端主機(那一句是事實):外殼只撤 token、清記憶�
   return /oauth\/desktop\/revoke/.test(f) && /clearToken\(\);/.test(f) && !/plan\/(stop|cancel)|machine|planStart|\/stop/.test(f); })());
 ok("左欄底那一塊清乾淨:DOM / CSS / 程式都沒有舊的 id 與 class", !/id="set-acct"[^-]/.test(html) && !/set-acct-who|set-acct-st\b/.test(html + src) && !/\.set-acct \.(who|l1|l2|lbl|mail)|\.set-cats \.set-acct/.test(css));
 const CATS = (re) => [...html.matchAll(re)].map((m) => m[1]).join();
-ok("分類順序:一般 → 模型接入 → 資料來源 → 帳號與方案 → 公開連結 → 隱私(六個);每一類都有自己的頁;「帳號」那一頁與它的節點都拿掉了", CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,src,plan,shares,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,src,plan,shares,priv"
+ok("分類順序:一般 → 模型接入 → Agent 規則 → 資料來源 → 帳號與方案 → 公開連結 → 隱私(七個;Agent 規則 0.1.9 加在模型接入後面);每一類都有自己的頁;「帳號」那一頁與它的節點都拿掉了", CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,rules,src,plan,shares,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,rules,src,plan,shares,priv"
   && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
 // 舊的兩個分類 id 都還開得到合併後的頁:真的跑 setCat
 { const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "src", "plan", "shares", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [];
-  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "privLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
-    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
+  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "rulesOpen", "rulesClear", "privLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
+    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
   const open = (k) => { painted = 0; tracked.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join() }; };
   const a = open("acct"), b = open("plan");
   ok("setCat(\"acct\") 與 setCat(\"plan\") 開到同一頁:左欄亮「帳號與方案」、只露出那一頁、整頁重畫、埋點記 settings_plan", JSON.stringify(a) === JSON.stringify(b) && a.cur === "plan" && a.shown === "plan" && a.painted === 1 && a.tracked === "settings_plan");
