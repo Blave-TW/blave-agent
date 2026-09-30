@@ -190,7 +190,7 @@ assert chunks[7]["text"] == "done"
 # 同一份 prompt:Codex 拿到的是 Claude 那份 + 規則前綴;AGENTS.md 不內嵌(Codex 自己讀)。
 # 第 1 節那輪已寫進歷史,所以比的是結構而不是全文。
 assert seen["prompt"].startswith("[Runtime 規則") and "[使用者這次的訊息]\nhello" in seen["prompt"]
-assert at.WEB_FORMATTING_RULE in seen["prompt"]
+assert at.LOCAL_FORMATTING_RULE in seen["prompt"]
 assert "ANTHROPIC_API_KEY" not in seen["env"] or os.environ.get("ANTHROPIC_API_KEY")
 assert seen["env"]["BLAVE_AGENT_DB"] == os.environ["BLAVE_AGENT_DB"]
 assert seen["bin"] == "/x/codex" and seen["cwd"] == at.WORKSPACE
@@ -266,7 +266,7 @@ assert at.python_rule() == ""
 run_local_turn()
 run_local_turn(engine="codex", codex_bin="/x/codex")
 assert sysprompts[-1] == "# rules\n" + at.model_catalog_rule("s1") + at.preferences_rule() \
-    + at.reply_lang_rule("hello") + at.WEB_FORMATTING_RULE, "沒設 BLAVE_PYTHON 時 system prompt 必須與原本逐字相同"
+    + at.reply_lang_rule("hello") + at.LOCAL_FORMATTING_RULE, "沒設 BLAVE_PYTHON 時 system prompt 必須與原本逐字相同"
 assert "Python 直譯器" not in seen["prompt"]
 
 os.environ["BLAVE_PYTHON"] = "/v/bin/python"
@@ -275,7 +275,7 @@ run_local_turn(engine="codex", codex_bin="/x/codex")
 rule = at.python_rule()
 assert "/v/bin/python strategies/" in rule
 assert rule in sysprompts[-1] and rule in seen["prompt"], "兩條引擎都要帶到"
-assert sysprompts[-1].endswith(at.WEB_FORMATTING_RULE), "建議規則必須維持在最尾端"
+assert sysprompts[-1].endswith(at.LOCAL_FORMATTING_RULE), "建議規則必須維持在最尾端"
 assert len(sysprompts) == 2, "codex 路徑不該寫 system prompt 檔"
 os.environ.pop("BLAVE_PYTHON")
 
@@ -291,7 +291,7 @@ for flag in ("1", "0"):
     run_local_turn(engine="codex", codex_bin="/x/codex")
     rules[flag] = at.data_access_rule()
     assert rules[flag] in sysprompts[-1] and rules[flag] in seen["prompt"], "both engines"
-    assert sysprompts[-1].endswith(at.WEB_FORMATTING_RULE)
+    assert sysprompts[-1].endswith(at.LOCAL_FORMATTING_RULE)
 assert "BLAVE_KLINE_SOURCE=binance" in rules["1"] and "403" in rules["1"]
 # 釘錯誤碼、不釘句子:那一段的文字歸 check_data_access_lang.py 管(它也擋已經作廢的 DATA_NOT_INCLUDED)
 assert "Invalid API key" in rules["1"] and "ERR005" in rules["1"] and "ERR007" in rules["1"]

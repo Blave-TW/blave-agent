@@ -8,7 +8,18 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **建議列不再跟回覆的結論打架(0.1.10 #7a)**:回覆說「不建議直接拿去用——訊號要先站得住，調參數硬拉沒有意義」，建議列卻是「幫〈策略〉加一個趨勢濾網」。
+  根因在 `_SUGGEST_RULE` 本身:總結里程碑不看結論一律「必附:上模擬盤或優化方向」,而 MCPT p > 0.05 那條開的藥方就是「加濾網或換訊號」。
+  改成建議跟正文結論同方向(可以用 → 上模擬盤;還在迭代 → 優化方向;不建議用 → 不提部署,訊號站不住只提換訊號、不在同一個訊號上加濾網／調參數／vol targeting),
+  加一條「正文勸退的事不准出現在 <suggest>」,逐輪錨同步。
+- **電腦版的部署步驟照電腦版的畫面(0.1.10 #7b)**:導航類回合注入 `references/portfolio-steps.md` 時,依表面(`LocalSink`,或 `BLAVE_AGENT_LOCAL=1`——電腦版起的排程報告回合也算)只帶那一套
+  (`### Web workspace` / `### Desktop app` 子段;舊檔沒有子段就整段照舊),並講明是 app 左側的自動下單頁、不是網頁工作頁。
+  電腦版外殼不處理 `ui_nav`:電腦版的網頁系回合改用 `LOCAL_FORMATTING_RULE`(只把 `_NAV_RULE` 換成不要標記、不承諾自動開頁的一段,建議規則仍在最尾端),導航句的 <nav> 逐輪錨電腦版不掛;網頁不變。
+- **暫停下單時不再說策略「正在跑」(0.1.10 #8)**:`_deploy_state_line` 原本把 `state/deployments.json`(名冊:金額 0、暫停都還在)寫成「已部署運行中」。
+  改成兩件事分開講:下單設定裡的策略(有金額／金額 0／其他排程——只算 `strategies/` 下真有的或 `type: cron`,常駐程式不算;
+  `portfolio_config.json` 壞掉講「讀不到」)與下單狀態(重開停止 → 已停止;`state/HALT` → 已暫停——兩者都不對平倉、停損或「任何單都不送」做保證;
+  對帳器心跳 5 分鐘內 → 執行中;否則對帳下單程式沒在跑;只有 Type B 排程時講它照自己的排程跑)+ 單支暫停(`downtime_pause.json`;
+  `HALT_<name>` 只列沒金額的,對帳器不讀它)。電腦版雲端視角不注入這一行(它讀的是這台電腦)。測試 `tests/check_deploy_prompt_010.py`(三件一起)。
 
 ## 1.1.104 — 2026-09-29
 
