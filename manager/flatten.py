@@ -71,7 +71,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib import guard
+from lib import guard, venue_traits
 from lib.portfolio import (_append_reconciler_log, _load_ledger_seed, _record_order_error,
                            ledger_positions, load_portfolio_config,
                            zero_ledger_symbols)
@@ -176,7 +176,7 @@ _CAPITAL_FUT_RE = re.compile(r"^(MTX|TX|TM)(\d{2})(0[1-9]|1[0-2])$")
 
 def _book_key(vid, sym):
     """The self-ledger / orders.jsonl key for a venue position row."""
-    if vid == "capital":
+    if venue_traits.has(vid, "resolved_contracts"):
         m = _CAPITAL_FUT_RE.match(sym)
         if m:
             return _CAPITAL_BOOK_KEY[m.group(1)]
@@ -566,7 +566,7 @@ def flatten():
             errors += 1
             sweep_ok = False
             continue
-        if vid == "capital" and positions and not _capital_order_identity_ok():
+        if venue_traits.has(vid, "windows_identity") and positions and not _capital_order_identity_ok():
             # never "try and see" under the wrong identity (HALT above still holds).
             # ONE merged row naming every skipped key: order_errors keeps only 5, so
             # a row per position would push real crypto failures out
@@ -654,7 +654,7 @@ def flatten():
                 # Known, accepted (Wei): a non-near-month row is still sent — the
                 # close goes out as the near-month alias, so during a roll it can
                 # open the near month instead of closing the far one.
-                if vid == "capital" and not _CAPITAL_FUT_RE.match(sym):
+                if venue_traits.has(vid, "resolved_contracts") and not _CAPITAL_FUT_RE.match(sym):
                     logging.error(f"[{vid}] {sym}: not a TX/MTX/TM futures contract — not sent")
                     _record_order_error(key, vid, f"close-all: 群益非期貨部位({sym}),"
                                                   "請在群益下單軟體手動平倉")
@@ -664,7 +664,7 @@ def flatten():
                 # a lots position (futures_contracts / shares — paper reports it
                 # with unit "contracts") is closed by its lot count: a notional
                 # close would be refused, or sized wrong
-                lots_row = p.get("unit") == "contracts" and vid != "capital"
+                lots_row = p.get("unit") == "contracts" and not venue_traits.has(vid, "lots_close_partial")
                 cid = f"flat{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
                 if lots_row:
                     if not hasattr(order, "place_contract_market_order"):
@@ -728,8 +728,9 @@ def flatten():
                 "contributors": [],
                 "legs": [leg],
             })
-            if vid == "capital" and (not isinstance(result, dict) or result.get("status") != "filled"
-                                     or float(result.get("executed_qty") or 0) + 1e-9 < size):
+            if venue_traits.has(vid, "close_needs_fill") and (
+                    not isinstance(result, dict) or result.get("status") != "filled"
+                    or float(result.get("executed_qty") or 0) + 1e-9 < size):
                 # 'sent' = accepted, no fill seen within the timeout — may or
                 # may not have filled; never book an unconfirmed close as flat
                 got = result.get("executed_qty") if isinstance(result, dict) else None

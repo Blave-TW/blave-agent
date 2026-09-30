@@ -45,6 +45,7 @@ for _p in (ROOT, HERE):
         sys.path.insert(0, _p)
 
 from lib.data import normalize_symbol  # noqa: E402
+from lib import venue_traits  # noqa: E402
 from lib.venue_wiring import read_env  # noqa: E402
 
 # shared with stop_strategy.py: 3 is its "no name matched"
@@ -54,7 +55,7 @@ OK, FAILED, REFUSED, NO_POSITION = 0, 1, 2, 4
 _HEADS = {"gateio": ("GATEIO", "GATE")}
 _VENUE_WORDS = {"gateio": r"gateio|gate_io|gate\.io"}
 _CRED_FIELDS = ("API_KEY", "SECRET_KEY", "API_SECRET", "PASSPHRASE", "DEMO")
-_NOT_PERP = {"capital", "sinopac"}
+_NOT_PERP = venue_traits.venues("perp", False)
 _QUOTES = ("USDT", "USDC", "USD")
 _NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

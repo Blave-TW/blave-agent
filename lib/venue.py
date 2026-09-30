@@ -15,6 +15,8 @@ import importlib.util
 import os
 import re
 
+from lib import venue_traits
+
 VENUES = {
     "binance": ("API_KEY", "SECRET_KEY"),
     "bingx": ("API_KEY", "SECRET_KEY"),
@@ -23,9 +25,7 @@ VENUES = {
     "bybit": ("API_KEY", "SECRET_KEY"),
 }
 _ELSEWHERE = {
-    "capital": "references/capital-broker.md",
-    "sinopac": "references/sinopac-broker.md",
-    "president": "references/president-broker.md",
+    **{v: venue_traits.get(v, "reference") for v in venue_traits.venues("auto_wire", False)},
     "paper": "the web 自動下單 page (paper has no keys)",
 }
 _WS_MARK_RE = re.compile(r"\s")

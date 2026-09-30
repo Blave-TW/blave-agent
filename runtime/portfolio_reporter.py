@@ -49,6 +49,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 import events
+import venue_traits
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
@@ -384,7 +385,9 @@ def can_flatten(vens):
     if not os.path.isfile(os.path.join(WORKSPACE, "manager", "flatten.py")):
         return False
     closable = {vid for vid, v in (vens or {}).items() if v.get("account") and v.get("order")}
-    return not (closable == {"capital"} and not _capital_order_identity_ok())
+    only_identity_gated = bool(closable) and all(venue_traits.has(v, "windows_identity")
+                                                 for v in closable)
+    return not (only_identity_gated and not _capital_order_identity_ok())
 
 
 def _fresh(ts, window=HEARTBEAT_STALE_S):

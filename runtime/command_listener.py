@@ -47,6 +47,7 @@ if _RUNTIME_DIR not in sys.path:
 import capital_connect
 import telegram_pairing
 import turn_slots
+import venue_traits
 
 try:
     import fcntl
@@ -1242,7 +1243,7 @@ def _cmd_credentials(args):
         # the mirror update sources from the mirror itself, never the config
         # (P1-3 — see _clear_evicted_in_ui_mirror).
         _clear_evicted_in_ui_mirror(evicted_ids)
-        if "capital" in evicted_ids:  # its sentinels are gone from .env; the vault goes too
+        if venue_traits.CAPITAL in evicted_ids:  # its sentinels are gone from .env; the vault goes too
             try:
                 capital_connect.drop_vault(["capital_password"])
             except Exception as e:
@@ -3076,8 +3077,8 @@ def _cmd_amounts(args):
     inherited from existing members
     (one portfolio, one account — membership never silently splits across
     venues). Only a key's ABSENCE (unpicked in the picker) drops routing —
-    amount=0 must NOT drop it, or the reconciler (and Capital's
-    _is_capital_routed venue-detection, which reads `exchanges` alone) loses
+    amount=0 must NOT drop it, or the reconciler (and its hand-wired
+    _hand_wired_routed venue-detection, which reads `exchanges` alone) loses
     the venue to even query/flatten the position it's supposed to zero out
     (bug hit 2026-08-14: pausing a strategy at amount=0 wiped `exchanges` and
     stranded the reconciler with no venue to reconcile against).
@@ -4000,7 +4001,8 @@ def _restart_reconciler(args):
         # (service set up for some other venue before Capital was routed
         # through this machine), which is plausibly the more common path and
         # was silently skipped by an earlier version of this function.
-        admin_pw = _capital_admin_password() if "capital" in routed else None
+        admin_pw = (_capital_admin_password()
+                    if any(venue_traits.has(v, "windows_identity") for v in routed) else None)
 
         # Self-bootstrap: a machine where the agent never set up auto-trading
         # has no service yet — install it here (references/manager.md
@@ -4262,7 +4264,7 @@ def _capital_open_book_keys():
         # no baseline = no trustworthy book (flatten.py closes nothing then) → list them all
         ready = _pf.book_ready(cfg) if hasattr(_pf, "book_ready") else bool(_pf._load_ledger_seed()["seeded_at"])
         if (own(cfg) if own else cfg.get("self_ledger")) and ready:
-            ledger = (_pf.ledger_positions("capital") if hasattr(_pf, "book_ready")
+            ledger = (_pf.ledger_positions(venue_traits.CAPITAL) if hasattr(_pf, "book_ready")
                       else _pf.ledger_positions())
     except Exception:
         ledger = None  # unreadable (or pre-ledger workspace) → list them all
@@ -4295,7 +4297,7 @@ def _record_manual_close_row(symbols):
     except (OSError, ValueError):
         rows = []
     rows.append({"kind": "manual_close_required", "symbols": symbols, "reason": "identity",
-                 "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": "capital",
+                 "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": venue_traits.CAPITAL,
                  "error": "close-all: 群益部位未平倉(此身分無法登入群益 API),請在群益下單軟體手動平倉"})
     with open(path, "w") as f:
         json.dump(rows[-5:], f, indent=2)

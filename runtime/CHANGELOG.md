@@ -8,7 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **台灣券商分支改查 venue 特性表(純抽取,群益行為不變)**:新 `runtime/venue_traits.py`(`lib/venue_traits.py` 的逐字副本,runtime 與
+  workspace 分通道出貨所以不 import),`command_listener` 的金庫清除／NSSM Administrator 密碼／手動平倉列、`portfolio_reporter.can_flatten`
+  改問特性表,不再比對字面 `"capital"`。測試 `tests/check_venue_traits.py`(兩份逐字相同、列舉零殘留)。
 
 ## 1.1.106 — 2026-10-01(desktop 0.1.11)
 

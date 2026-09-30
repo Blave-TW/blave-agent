@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib import events, guard, venue_errors
+from lib import events, guard, venue_errors, venue_traits
 from lib.portfolio import (reconcile, load_portfolio_config, strategy_amounts,
                            aggregate_portfolio)
 
@@ -325,12 +325,14 @@ def _capital_check_snapshot_caught_up(snapshot_read_at):
             f",下單於 {_capital_last_order_at:.0f})—— 本輪跳過,等下一輪快取更新")
 
 
-def _is_capital_routed():
-    """One-machine-one-venue (AGENTS.md § Broker Onboarding): true when any
-    strategy in portfolio_config["exchanges"] is bound to capital — the signal
-    get_positions() uses to pick the TW-futures snapshot over the crypto
-    auto-wire (get_positions takes no per-call venue argument)."""
-    return any(v == 'capital' for v in load_portfolio_config().get('exchanges', {}).values())
+def _hand_wired_routed():
+    """One-machine-one-venue (AGENTS.md § Broker Onboarding): the hand-wired
+    venue (lib.venue_traits) a strategy in portfolio_config["exchanges"] is
+    bound to, or None — the signal get_positions() uses to pick that venue's
+    own block over the crypto auto-wire (get_positions takes no per-call
+    venue argument)."""
+    return venue_traits.hand_wired_routed(load_portfolio_config().get('exchanges', {}).values())
+
 
 
 def _capital_get_positions():
@@ -406,7 +408,7 @@ def _capital_get_positions():
             logging.warning(f"[reconciler/capital] {canon} held in several contract months "
                             f"{sorted(syms)} — reading net {net[canon]:+g} lots")
     return {
-        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': 'capital'}
+        canon: {'side': 'long' if n > 0 else 'short', 'size': abs(n), 'exchange': venue_traits.CAPITAL}
         for canon, n in net.items() if n != 0
     }
 
@@ -465,10 +467,24 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     return {
         'avg_price':       result.get('avg_fill_price') or 0.0,
         'executed_qty':    result.get('fill_qty') or 0.0,
-        'exchange':        'capital',
+        'exchange':        venue_traits.CAPITAL,
         'resolved_symbol': result.get('symbol'),
         'status':          result.get('status'),
     }
+
+
+# venue id -> (get_positions, place_order) for every hand_wired venue in
+# lib.venue_traits; tests/check_venue_traits.py pins the two in step.
+_HAND_WIRED = {venue_traits.CAPITAL: (_capital_get_positions, _capital_place_order)}
+
+
+def _hand_wired_impl(venue):
+    impl = _HAND_WIRED.get(venue)
+    if impl is None:
+        # never fall through to the crypto auto-wire with a TW broker's lots
+        raise RuntimeError(f"{venue}: marked hand_wired in lib/venue_traits.py but the "
+                           f"reconciler has no block for it — trading paused")
+    return impl
 
 
 def get_positions():
@@ -496,8 +512,9 @@ def get_positions():
     reconcile() re-buys the entire target the moment the link recovers, and
     the auto-halt wrapper can only count failures it actually sees.
     """
-    if _is_capital_routed():
-        return _capital_get_positions()
+    hand_wired = _hand_wired_routed()
+    if hand_wired:
+        return _hand_wired_impl(hand_wired)[0]()
     from lib.venue_wiring import auto_get_positions
     return auto_get_positions()
 
@@ -540,9 +557,9 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # the record landed mid-round: the legs left in this round are not sent
         logging.info(f"[reconciler] {symbol}: machine restarted — not sent until 啟動下單")
         return False
-    if exchange == 'capital':
-        return _capital_place_order(symbol, signed_diff, asset_spec=asset_spec,
-                                    reduce_only=reduce_only)
+    if venue_traits.has(exchange, 'hand_wired'):
+        return _hand_wired_impl(exchange)[1](symbol, signed_diff, asset_spec=asset_spec,
+                                             reduce_only=reduce_only)
     from lib.execute import dispatch_order
     return dispatch_order(symbol, signed_diff, asset_spec=asset_spec,
                           reduce_only=reduce_only, exchange=exchange,
@@ -585,8 +602,9 @@ def _current_venue():
     """Venue id for classification, events and the account guard. Resolved
     only on failure / guard rounds: detect_venue logs a WARNING per call on a
     multi-venue machine, and this loop polls every 5s."""
-    if _is_capital_routed():
-        return 'capital'
+    hand_wired = _hand_wired_routed()
+    if hand_wired:
+        return hand_wired
     from lib.venue_wiring import detect_venue
     return detect_venue(_read_env())
 
