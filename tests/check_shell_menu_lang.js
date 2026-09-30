@@ -29,6 +29,7 @@ function run(throwing) {
     syncOfficialOnUpdate: () => { if (throwing.has("sync")) throw new Error("sync"); },
     tradeStartIfReady: () => { if (throwing.has("trade")) throw new Error("trade"); },
     trayStart: () => { if (throwing.has("traystart")) throw new Error("traystart"); },
+    accountStatus: () => { if (throwing.has("state")) throw new Error("state"); },
     tm: () => ({ start: () => { if (throwing.has("tm")) throw new Error("tm"); } }),
     updater: () => ({ start: () => { if (throwing.has("updater")) throw new Error("updater"); } }),
     minGate: () => ({ start: () => { if (throwing.has("gate")) throw new Error("gate"); } }),
@@ -42,9 +43,9 @@ function run(throwing) {
 }
 let r = run(new Set());
 ok("正常啟動:畫面交字後選單重建成中文", r.registered && r.log.includes("menu:檔案"), r);
-r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "gate"]));
-ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 版本閘都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
-  r.registered && r.log.includes("menu:檔案") && r.errors.length === 6 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
+r = run(new Set(["tm", "updater", "traystart", "sync", "trade", "gate", "state"]));
+ok("遙測 / 更新 / 選單列 / 工作區同步 / 常駐程式 / 版本閘 / app 現況回報都拋例外:handler 照樣掛上、選單照樣變中文,錯誤各記一行",
+  r.registered && r.log.includes("menu:檔案") && r.errors.length === 7 && r.errors.every((e) => /^\[startup\] .+ failed/.test(e)), r);
 r = run(new Set(["tray"]));
 ok("選單列(traySync)拋例外:選單照樣先重建成中文", r.log.includes("menu:檔案") && r.errors.some((e) => /tray failed/.test(e)), r);
 console.log(red ? `\n${red} FAILED` : "\nALL PASS");
