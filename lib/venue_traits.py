@@ -49,6 +49,7 @@ TRAITS = {
     },
     "president": {
         "auto_wire": False,
+        "perp": False,
         "reference": "references/president-broker.md",
     },
 }

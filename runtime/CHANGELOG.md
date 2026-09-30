@@ -11,6 +11,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - **台灣券商分支改查 venue 特性表(純抽取,群益行為不變)**:新 `runtime/venue_traits.py`(`lib/venue_traits.py` 的逐字副本,runtime 與
   workspace 分通道出貨所以不 import),`command_listener` 的金庫清除／NSSM Administrator 密碼／手動平倉列、`portfolio_reporter.can_flatten`
   改問特性表,不再比對字面 `"capital"`。測試 `tests/check_venue_traits.py`(兩份逐字相同、列舉零殘留)。
+- **統一期貨(president)lib 登記進 runtime 的列舉**:排程回合 Bash 守門擋 `order_president` / `president_vault` / `president_worker`、
+  Stop 不殺 `president_worker` 與 `order_president` 行程、Windows file_watcher 盯 `state/president_account.json`(同群益快照那條)、
+  `president_worker.py --once` 歸類為讀帳戶;`venue_traits` 的 president 補 `perp: False`(close_symbol 拒絕,同群益/永豐)。
+  尚未上架(選單不動),lib 本身在 workspace 通道。
 
 ## 1.1.106 — 2026-10-01(desktop 0.1.11)
 

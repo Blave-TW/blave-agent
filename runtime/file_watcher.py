@@ -5,8 +5,8 @@ accounts; last_reconcile.json → re-read + push; account.json → push). Window
 Task Scheduler has no file trigger, so this always-on service (NSSM,
 blave-agent-watcher) polls mtimes every couple of seconds and runs the same
 two programs the Linux units would. Harmless on Linux too, but only registered
-on Windows — the path units already cover it there (except the Capital watch,
-which is Windows-only by nature; see WATCHES).
+on Windows — the path units already cover it there (except the Capital and
+President snapshot watches, Windows-only for now; see WATCHES).
 
 Runs from current/ like the bridges, so it updates with every release. The
 jobs it spawns are the SAME oneshots the timers run — this only shortens the
@@ -44,7 +44,7 @@ UPLOAD = (VENV_PY, os.path.join(CURRENT, "report_uploader.py"))
 STRATEGIES = (VENV_PY, os.path.join(CURRENT, "strategy_reporter.py"))
 
 # path → jobs to run when its mtime moves (the three Linux path units +
-# one Windows-only Capital watch).
+# the Windows-only broker snapshot watches).
 # .env runs BOTH: on Linux the chain is .env→account→(account.json path)→report,
 # but the baseline refresh below hides our own account.json write — so the
 # report must ride in the same trigger, not wait for a second hop.
@@ -71,6 +71,9 @@ WATCHES = {
     # (本地讀+一個 POST)。第三方寫的檔,不進 SELF_WRITTEN。Linux 不加對應
     # path unit:群益 API 走 Windows COM,Linux 機不會有這個檔。
     os.path.join(WORKSPACE, "state", "capital_account.json"): (ACCOUNT, REPORT),
+    # 統一期貨帳戶快照:同上,president_worker 寫、order_president 下單後 touch
+    # state/president_refresh 提前重寫(v1 只支援 Windows,Linux 不加 path unit)。
+    os.path.join(WORKSPACE, "state", "president_account.json"): (ACCOUNT, REPORT),
     # 報告 drop dir(契約見 report_uploader.py):任何腳本——含用戶自己的 agent——
     # 把 <id>.json 寫進去,runtime 撿走上傳。Linux 端的對應是
     # blave-agent-reports.path,這裡是 Windows 的替身,同 lib/ 那條:目錄 mtime

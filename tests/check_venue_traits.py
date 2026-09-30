@@ -34,7 +34,8 @@ OWN = {
     "capital": {"lib/order_capital.py", "lib/account_capital.py", "lib/capital_worker.py",
                 "lib/capital_vault.py", "runtime/capital_connect.py"},
     "sinopac": {"lib/order_sinopac.py"},
-    "president": set(),
+    "president": {"lib/order_president.py", "lib/account_president.py", "lib/president_worker.py",
+                  "lib/president_vault.py"},
 }
 
 
@@ -86,7 +87,8 @@ check(set(reconciler._HAND_WIRED) == set(venue_traits.venues("hand_wired")),
       (sorted(reconciler._HAND_WIRED), sorted(venue_traits.venues("hand_wired"))))
 check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital"}, "venue_wiring._NON_AUTO",
       venue_wiring._NON_AUTO)
-check(close_symbol._NOT_PERP == {"capital", "sinopac"}, "close_symbol._NOT_PERP", close_symbol._NOT_PERP)
+check(close_symbol._NOT_PERP == {"capital", "sinopac", "president"}, "close_symbol._NOT_PERP",
+      close_symbol._NOT_PERP)
 check(venue_traits.venues("hand_wired") == {"capital"}, "hand_wired venues")
 check(venue_traits.venues("native_units") == {"capital"}, "native_units venues")
 check(venue_traits.venues("windows_identity") == {"capital"}, "windows_identity venues")
