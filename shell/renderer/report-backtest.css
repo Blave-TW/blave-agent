@@ -49,12 +49,12 @@
 }
 .bt-col { min-width: 0; }
 /* 預設是疊成一欄(組間改用上緣 hairline),夠寬才並排。門檻用 container 量:
-   三欄各自要放得下「年化波動率 + 數字」不換行,低於這個寬度中文標籤會被擠成兩行 */
+   門檻 640:en 最長一組標籤加四位數報酬,三欄在 600 起才放得下(macOS 實測,餘量 0–2px);多留 40 給沒有內嵌的系統字(Windows Segoe UI) */
 .bt-col + .bt-col {
   border-top: 1px solid var(--border-hairline);
   padding-top: var(--space-16);
 }
-@container (min-width: 480px) {
+@container (min-width: 640px) {
   .bt-cols { grid-template-columns: repeat(3, 1fr); gap: 0 var(--space-24); }
   .bt-col + .bt-col {
     border-top: 0;
@@ -75,7 +75,7 @@
 .bt-mrow {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: first baseline;
   gap: var(--space-12);
   padding: var(--space-8) 0;
   border-bottom: 1px solid var(--border-hairline);
@@ -83,12 +83,15 @@
 .bt-mrow:last-child { border-bottom: 0; }
 /* relative:給 tooltip 泡泡(app.css 的 .tip,absolute)一個定位基準 */
 .bt-mk { position: relative; font-size: 12px; color: var(--ink-3); }
+/* 標籤是 <button>:瀏覽器預設置中,多行 button 的基線又取最後一行。窄欄被擠成兩行時要靠左、數字對第一行,
+   只改 text-align 或只改 first baseline 都不夠,button 要 block(spec-0.1.10 §1.5 第 4 點,實測) */
+.bt-mk .mp-tip { display: block; text-align: left; }
 /* 泡泡的可用寬度預設被這個窄標籤格限制住,會縮成一條直的;
    max-content 讓它回到 .tip 自己的 max-width 說了算 */
 .bt-mk .tip { width: max-content; }
 /* 三欄並排時,最右一欄的泡泡改成往左長:從標籤左緣往右長 260 會超出面板被裁掉。
    疊成一欄時每一欄都貼左,不能套 */
-@container (min-width: 480px) {
+@container (min-width: 640px) {
   .bt-col:last-child .bt-mk .tip { left: auto; right: 0; }
 }
 /* 標籤在左、數字在右,泡泡往上開:第一列上面還有組標題,放得下 */

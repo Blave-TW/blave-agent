@@ -54,7 +54,7 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
 { // 選單列圖示旁不放任何小點(Wei 09-23):本機新版、雲端新版都不點;「新版已下載」那一行留在選單裡
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), tt = require("../shell/traytext.js");
   t("選單列圖示旁沒有小點:main.js 不呼叫 setTitle;雲端那條規則不留死碼;選單的「新版已下載」照留", !/\.setTitle\(/.test(mainSrc)
-    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /m\.update \? \[\{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]/.test(mainSrc)); }
+    && !/cloudUpdateWaiting|cloudNeedsUpdate/.test(mainSrc) && !("cloudNeedsUpdate" in tt) && /m\.update \? \[\{ label: m\.update\.restarting \? tmLabels\.restarting : tmLabels\.updateReady \+ \(m\.update\.ask && !m\.update\.busy \? "…" : ""\), enabled: !m\.update\.busy, click: /.test(mainSrc)); }
 { // 連上的規則(Wei 09-23):pair 沒帶 = 連上,只有 pair: false 不算;main.js 的 venueReady 同一條
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   const S = (v) => ({ alive: true, running: true, cloud: { code: "OK", machine: { state: "running" } }, report: { venues: { paper: v }, reconciler: { alive: true } } });
@@ -116,10 +116,10 @@ t("主機重開後對帳器停著(reconciler.stopped.reason = machine_restart)�
   const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); return m && m[1]; }, en = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(0, S.indexOf("zh:"))); return m && m[1]; };
   const menuBody = mainSrc.slice(mainSrc.indexOf("function trayMenu(m)"), mainSrc.indexOf("function trayDockMenu("));
   // 0.1.9 起選單一組一組排(trayGroups:組與組之間一條分隔線,缺席的組連它上面那條一起不出;行為在 tests/check_shell_tray_resident.js 跑)
-  t("v4 選單列:新版已暫存好(updateWaiting = ready | blocked)才多一組,字是 tm.updateReady、enabled: false、自成一組(前後有分隔線);那一行進 trayKey、也是 tooltip",
-    /\n\s*m\.update \? \[\{ label: tmLabels\.updateReady, enabled: false \}\] : \[\],\n/.test(menuBody)
+  t("v4 選單列:新版已暫存好(updateWaiting = ready | blocked)才多一組,字是 tm.updateReady、0.1.10 起可按(下單中「…」、回合中停用)、自成一組(前後有分隔線);那一行進 trayKey、也是 tooltip",
+    /m\.update \? \[\{ label: m\.update\.restarting \? tmLabels\.restarting : tmLabels\.updateReady \+ \(m\.update\.ask && !m\.update\.busy \? "…" : ""\), enabled: !m\.update\.busy, click: /.test(menuBody)
     && /const updateWaiting = \(\) => \{ try \{ const p = updater\(\)\.state\(\)\.phase; return p === "blocked" \|\| p === "ready"; \}/.test(mainSrc)
-    && /update: updateWaiting\(\)/.test(mainSrc) && /m\.update \? tmLabels\.updateReady : ""/.test(mainSrc) && /tray\.setToolTip\(m\.update \? tmLabels\.updateReady : m\.local \|\| app\.name\)/.test(mainSrc));
+    && /update: updateWaiting\(\) \|\| restarting \? \{ ask: /.test(mainSrc) && /m\.update \? tmLabels\.updateReady : ""/.test(mainSrc) && /tray\.setToolTip\(m\.update \? \(m\.update\.restarting \? tmLabels\.restarting : tmLabels\.updateReady\) : m\.local \|\| app\.name\)/.test(mainSrc));
   t("v4 選單列:那一行的字「重新啟動以完成更新 / Restart to finish updating」(renderer 交 tm.updateReady;主行程的英文預設同一句)",
     zh("tm.updateReady") === "重新啟動以完成更新" && en("tm.updateReady") === "Restart to finish updating" && /updateReady: t\("tm\.updateReady"\)/.test(trSrc2) && /updateReady: "Restart to finish updating",/.test(mainSrc));
   t("v4 選單列:雲端的更新不進選單列——traytext 沒有 cloudUpdateLine、main.js 沒有 trayCloudUpdate / openAbout / open-about、preload / app.js 沒有 onOpenAbout、trade.js 不交那兩個字、字串表也沒有",

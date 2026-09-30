@@ -258,7 +258,11 @@ function updater() {
     nativeUpdater: feedUrl && process.platform === "darwin" ? require("electron").autoUpdater : null,
     feedUrl, currentVersion: app.getVersion(),
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
-    onState: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup }); },
+    onState: (st) => {
+      for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup, restarting: !!restarting });
+      // 已經為了更新收工、交給 quitAndInstall 之後 Squirrel 才失敗(它是 setImmediate 排的,restartToUpdate 早就回了):改走結束 app(稽核 P1-2)
+      if (restarting === "installing" && st.phase === "error") app.quit();
+    },
     log: (m) => console.error("[updater] " + m),
     onFail: (stage) => tm().track("update_failed", { stage }),
   });
@@ -1984,7 +1988,30 @@ function agentRules() {
   return _agentRules;
 }
 function tradeStartIfReady() {
-  try { if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) { tradeHost().start(); binanceLink().start(); } } catch (e) { console.error("[trade] start failed", e && e.message); }
+  try {
+    if (fs.existsSync(VENV_PY) && fs.existsSync(WS)) { tradeHost().start(); binanceLink().start(); return; }
+    // .app 換了位置(移到「應用程式」、改名、從 DMG 拖出來)之後 venv 的 python 是斷掉的連結:以前要等用戶送第一句話(ensure-engine)才修,
+    // 這段期間 daemon 不在、交易頁講不出狀態。開機就修一次、修好再起(稽核 0.1.10 P2-4);只試一次,修不好留給送訊息那條路
+    if (!venvRepairTried && fs.existsSync(WS) && venvLinkBroken()) {
+      venvRepairTried = true;
+      ensureEngineShared(null).then(() => { if (fs.existsSync(VENV_PY)) tradeStartIfReady(); }, (e) => console.error("[trade] venv repair failed", e && e.message));
+    }
+  } catch (e) { console.error("[trade] start failed", e && e.message); }
+}
+let venvRepairTried = false;
+function venvLinkBroken() {
+  if (WIN) return false;   // Windows 的 venv 沒有連結(Scripts\python.exe 是 launcher)
+  try { return fs.lstatSync(VENV_PY).isSymbolicLink() && !fs.existsSync(VENV_PY); } catch (_) { return false; }
+}
+/* 同一時間只跑一份 ensureEngine:開機修 venv 跟送第一句話的 ensure-engine 可能撞在一起(兩支 `-m venv` / pip 搶同一個資料夾)。
+   後到的共用先到的那一份;進度字轉給所有在等的畫面 */
+let _engineRun = null;
+const _engineReports = new Set();
+function ensureEngineShared(report) {
+  if (report) _engineReports.add(report);
+  if (!_engineRun) _engineRun = ensureEngine((k) => { for (const f of _engineReports) { try { f(k); } catch (_) { /* 視窗關了 */ } } })
+    .finally(() => { _engineRun = null; _engineReports.clear(); });
+  return _engineRun;
 }
 /* Binance 真錢連接(binance_link.js)。金鑰只從 renderer 的表單經過這裡一次:查過權限 → 用 trusted 的路交給 daemon 寫進 workspace 的 .env。
    這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 要帳號 token(沒登入 Blave 的人查不到 IP,表單照樣能用)。 */
@@ -2324,7 +2351,7 @@ app.whenReady().then(() => {
   handle("ensure-engine", (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     // 引擎裝好(或本來就在)之後才起本機常駐程式
-    return ensureEngine((t) => win.webContents.send("engine-progress", t)).then((r) => { tradeStartIfReady(); return r; });
+    return ensureEngineShared((t) => { if (!win.isDestroyed()) win.webContents.send("engine-progress", t); }).then((r) => { tradeStartIfReady(); return r; });
   });
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
@@ -2474,10 +2501,10 @@ app.whenReady().then(() => {
     return binanceLink().connect(a.apiKey, a.secret);
   });
   handle("min-version-state", () => minGate().state());
-  handle("update-state", () => ({ ...updater().state(), backup: _officialBackup }));
+  handle("update-state", () => ({ ...updater().state(), backup: _officialBackup, restarting: !!restarting }));
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
-  // 本機有 agent 回合在跑(可能正在更新雲端):不重開,重開會把它斷掉(畫面那一道之外再擋一次)
-  ipcMain.handle("update-install", (e) => (!fromOurPage(e) ? { ok: false, error: "NOT_ALLOWED" } : activeTurn || turnStarting ? { ok: false, error: "TURN_BUSY" } : updater().install()));
+  // 聊天那一格 / 關於列按的:走 restartToUpdate(回合在跑不重開、下單中先問再收工)
+  ipcMain.handle("update-install", (e) => (!fromOurPage(e) ? { ok: false, error: "NOT_ALLOWED" } : restartToUpdate()));
   // 換版時備份的資料夾:在 Finder 裡選起來。路徑由主行程自己算(畫面不交路徑),沒有備份就什麼都不做
   handle("update-show-backup", () => { if (!_officialBackup) return false; shell.showItemInFolder(path.join(WS, _officialBackup.dir)); return true; }, false);
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
@@ -2548,7 +2575,7 @@ app.whenReady().then(() => {
   handle("stop-turn", () => stopTurn(), false);
   ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
-    if (activeTurn || turnStarting) return { busy: true };
+    if (activeTurn || turnStarting || restarting) return { busy: true };   // 更新重開收工中:開了也會被砍掉
     const win = BrowserWindow.fromWebContents(e.sender);
     // 使用追蹤「上雲端運行」:只認「送上雲端」確認框送的那句(payload.handoff === "up";拉回不算),而且旗標要開——關著時畫面到不了那條路,標記也不認
     const cloudUp = cloudHandoffOn() && payload && payload.handoff === "up";
@@ -2578,6 +2605,8 @@ app.whenReady().then(() => {
     if (labels.lang === "zh" || labels.lang === "en") uiLang = labels.lang;   // 只拿來組官網網址的語言段:白名單兩個值
     startStep("app menu", appMenuSync);
     startStep("tray", traySync);
+    // 搬到「應用程式」那一問:第一次拿到畫面的字才問(中文用戶不先看到英文),一次啟動只在這一刻判一次
+    if (!moveChecked) { moveChecked = true; startStep("move to apps", () => { askMoveToApps().catch((err) => console.error("[move] " + ((err && err.message) || err))); }); }
   });
   createWindow();
   startStep("app menu", appMenuSync);
@@ -2621,6 +2650,15 @@ const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: 
   menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
   menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website" };
 let tray = null, trayTimer = null, quitConfirmed = false, quitAsking = false, hiddenSaid = false, lastVenue = null, trayKey = "";
+/* 為了更新而重開(restartToUpdate)確認之後的那一段:null | "stopping"(收工中,最多 11 秒)| "installing"(已交給 quitAndInstall)。
+   stopping 期間:入口再按不跳第二個框、選單列那一行停用、不開新回合、紅燈只收視窗、Cmd+Q 等它自己結束(稽核 0.1.10 P1-1 / P2-8) */
+let restarting = null;
+/* 設 restarting 一律走這支:狀態一變就推給畫面(聊天那一格、關於列換「重新啟動中…」)並重建選單列,不等 5 秒那一輪 */
+function setRestarting(v) {
+  restarting = v;
+  try { const st = { ...updater().state(), backup: _officialBackup, restarting: !!v }; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", st); } catch (_) { /* 畫面壞掉不擋重開 */ }
+  startStep("tray", traySync);
+}
 let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading", pause: "Pause trading (keep positions)", open: "Open Blave", quit: "Quit Blave…",
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
@@ -2628,7 +2666,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
-  updateReady: "Restart to finish updating",
+  updateReady: "Restart to finish updating", restarting: "Restarting…",
+  updateBody: "After the restart, this computer places no more orders and closes nothing; positions stay at {venue}. Press Start trading to resume.",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No new positions are opened. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
@@ -2642,8 +2681,10 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   stLocal: "", stCloud: "", stOn: "", stPaused: "", stUnknown: "", stMayTrade: "", stNotStarted: "", moneyPaper: "", moneyReal: "",
   stLocalOnly: "", noAccount: "", runningZ: "",   // 選單列這台電腦那一行沒在下單也講(0.1.9):「這台電腦：還沒連接交易所」、沒設金額的那一態
   br_captchaTitle: "", br_captcha: "",   // 內建瀏覽器:搜尋要用戶過驗證(browserNotify);空的 = 還沒交字 = 不發
+  moveTitle: "", moveBody: "", moveGo: "", moveNo: "",   // 搬到「應用程式」那一問(askMoveToApps):空的 = 還沒交字 = 不問
   pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
+const { planRestart, shouldAskMove } = require("./updater");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
 const siteLang = () => uiLang || (/^zh/i.test(app.getLocale() || "") ? "zh" : "en");
 const pauseLabel = () => tmLabels.pauseLocal || tmLabels.pause;   // 有雲端之後「暫停下單」不夠明確:講清楚是這台電腦
@@ -2735,6 +2776,75 @@ async function pauseFromMenu() {
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
+/* 「重新啟動以完成更新」的唯一一條路(聊天那一格、關於列、選單列都叫這支;spec-desktop-update-prompt-0.1.10 §0)。
+   下單中:先問(同結束攔截的框,共用 quitAsking);確認後走結束 app 同一條收工(noteQuit → stop:對帳器先撤自己掛的限價單),
+   收完才 install。先設 quitConfirmed:quitAndInstall 關視窗、before-quit 兩道攔截都直接放行,不會再問一次。
+   重開之後**不自動接回下單**(Wei 拍板):對帳器照規矩停著,等用戶自己按啟動。
+   stop 放棄等待、狀態還說在下單 → install 回 TRADING:改走 app.quit(),autoInstallOnAppQuit 照樣裝,只是不自己重開 */
+// 埋點:feature_used 的 update_restart(隱私頁「分頁與按鈕的名稱」那一類),只在真的走下去時送——直接裝、或下單中按了確認
+async function restartToUpdate() {
+  const used = () => { try { tm().track("feature_used", { name: "update_restart" }); } catch (_) { /* 追蹤不擋更新 */ } };
+  const phase = () => updater().state().phase, turnBusy = () => !!(activeTurn || turnStarting);
+  const live = tradeMaybeLive();
+  // 已經在收工 / 結束(restarting、quitConfirmed、quitting)跟「框開著」同一種:不再問、不再收一次工
+  const step = planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || !!restarting || quitConfirmed || quitting, trading: !!live });
+  if (step === "not_ready") return { ok: false, error: "NOT_READY" };
+  if (step === "busy") return { ok: false, error: "TURN_BUSY" };
+  if (step === "asking") return { ok: false, error: "ASKING" };
+  if (step === "install") { const res = updater().install(); if (res.ok) used(); return res; }
+  let r = null;
+  try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
+  quitAsking = true;
+  try {
+    r = await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
+      detail: TT.quitDetail(tmLabels.updateBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""),
+      buttons: [tmLabels.quitStay, tmLabels.updateReady], defaultId: 0, cancelId: 0 });
+  } catch (_) { r = null; } finally { quitAsking = false; }
+  if (!r || r.response !== 1) return { ok: false, error: "CANCELED" };
+  // 框開著的時候可能變了:回合開始了(程式觸發的)、updater 自己出錯了 → 不收工,什麼都沒動
+  if (turnBusy()) return { ok: false, error: "TURN_BUSY" };
+  const ph = phase();
+  if (ph !== "ready" && ph !== "blocked") return { ok: false, error: "NOT_READY" };
+  used();
+  setRestarting("stopping"); quitConfirmed = true;
+  try {
+    if (_tradeHost) { _tradeHost.noteQuit(); await _tradeHost.stop(); }
+    setRestarting("installing");
+    const res = updater().install();
+    if (res.ok) return res;
+    console.error("[updater] install after stop: " + res.error);
+  } catch (e) { console.error("[updater] restart failed: " + ((e && e.message) || e)); }
+  // 已經收工(用戶同意停單)卻沒裝成:改走結束 app,不留「停了一半、app 沒重開」。Squirrel 暫存好的話結束時照樣裝上(autoInstallOnAppQuit)
+  setRestarting("installing");
+  app.quit();
+  return { ok: true, quit: true };
+}
+/* 啟動時不在「應用程式」資料夾就問一次(§4)。「不要移」寫一個記號、之後永遠不問;授權框取消(false)或搬移出錯不記,下次啟動再問。
+   搬移成功 app 會自己結束再重開。app.isInApplicationsFolder / moveToApplicationsFolder 只有 macOS 有,shouldAskMove 先擋平台 */
+const moveDeclinedPath = () => path.join(app.getPath("userData"), "move-declined.json");
+let moveChecked = false, moveAsked = false;
+async function askMoveToApps() {
+  const L = tmLabels;
+  if (!(L.moveTitle && L.moveBody && L.moveGo && L.moveNo)) return false;
+  const mac = process.platform === "darwin" && app.isPackaged;
+  if (!shouldAskMove({ platform: process.platform, packaged: app.isPackaged, inApps: !mac || app.isInApplicationsFolder(), declined: fs.existsSync(moveDeclinedPath()),
+    trading: !!tradeMaybeLive(), askedThisRun: moveAsked })) return false;
+  moveAsked = true;
+  const parent = BrowserWindow.getAllWindows()[0] || undefined;
+  const r = await dialog.showMessageBox(parent, { type: "question", message: L.moveTitle, detail: L.moveBody,
+    buttons: [L.moveNo, L.moveGo], defaultId: 1, cancelId: 0 });
+  if (r.response !== 1) {
+    // 框是因為 app 在結束、視窗被關掉才回來的:用戶沒選,不記成「不要」(稽核 P2-5)
+    if (quitting || quitConfirmed || (parent && parent.isDestroyed())) return false;
+    try { fs.writeFileSync(moveDeclinedPath(), JSON.stringify({ declined: true }), { mode: 0o600 }); } catch (_) { /* 寫不進去:下次啟動再問一次 */ }
+    return false;
+  }
+  // 框開著的時候開始下單 / 開始回合:搬移成功會走 before-quit,被結束攔截擋下的話 app 會從垃圾桶裡的 bundle 繼續跑。這次不搬,也不記(稽核 P2-2)
+  if (tradeMaybeLive() || activeTurn || turnStarting) return false;
+  // 埋點 feature_used 的 app_move = 按了「移」(不是搬成功:成功 app 會立刻結束重開,事後送不出去;授權框取消也算按過)
+  try { tm().track("feature_used", { name: "app_move" }); } catch (_) { /* 追蹤不擋 */ }
+  try { return app.moveToApplicationsFolder(); } catch (e) { console.error("[move] " + ((e && e.message) || e)); return false; }
+}
 /* 選單列 / Dock 的狀態行(設計 spec-desktop-tray-resident-0.1.9 §2)。這台電腦那一行永遠講,沒在下單也講(TT.localLine);
    沒有交易所名可填的那幾態(還沒連接交易所…)換不帶 {money} 的樣板。字還沒交 → null;那時只有確定在下單才退回英文那一句 */
 function trayLocalLine(live, st) {
@@ -2752,7 +2862,9 @@ const trayGroups = (groups) => groups.filter((g) => g.length).flatMap((g, i) => 
 function trayMenu(m) {
   return Menu.buildFromTemplate(trayGroups([
     [m.local, m.cloud].filter(Boolean).map((label) => ({ label, enabled: false })),
-    m.update ? [{ label: tmLabels.updateReady, enabled: false }] : [],
+    // 可以按(0.1.10):下單中會先問,字尾「…」;回合在跑停用、不帶「…」(選單列沒有 tooltip 講原因,同聊天那一格只停用)
+    // 為了更新正在重開(收工中 / 安裝中):字換「重新啟動中…」、停用
+    m.update ? [{ label: m.update.restarting ? tmLabels.restarting : tmLabels.updateReady + (m.update.ask && !m.update.busy ? "…" : ""), enabled: !m.update.busy, click: () => { restartToUpdate().catch((e) => console.error("[updater] restart: " + ((e && e.message) || e))); } }] : [],
     m.pause ? [{ label: pauseLabel(), click: pauseFromMenu }] : [],
     [{ label: tmLabels.open, click: showMain }, { label: m.quit, click: () => app.quit() }],
   ]));
@@ -2768,9 +2880,9 @@ function traySync() {
   const st = _tradeHost ? _tradeHost.status() : null, live = tradeLive(st);
   if (live) lastVenue = live.venue;
   const maybe = live || tradeMaybeLive(st), show = !!maybe || trayLabelsIn;
-  const m = { local: trayLocalLine(live, st), cloud: trayCloudLine(), update: updateWaiting(), pause: !!maybe, quit: trayQuitLabel(maybe) };
+  const m = { local: trayLocalLine(live, st), cloud: trayCloudLine(), update: updateWaiting() || restarting ? { ask: !!maybe, busy: !!(activeTurn || turnStarting || restarting), restarting: !!restarting } : null, pause: !!maybe, quit: trayQuitLabel(maybe) };
   // 每一行的字、暫停有沒有出都進 key:少一樣,換語言之後要等別的欄位變了才會重建
-  const key = JSON.stringify([show, m, pauseLabel(), tmLabels.open, m.update ? tmLabels.updateReady : ""]);
+  const key = JSON.stringify([show, m, pauseLabel(), tmLabels.open, m.update ? tmLabels.updateReady : "", m.update && m.update.restarting ? tmLabels.restarting : ""]);
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
   // trayKey 等副作用都做完才記:中途拋例外的話下一輪 key 相同也會重做,圖示與暫停項不會卡在舊狀態
   if (app.dock) app.dock.setMenu(trayDockMenu(m));
@@ -2787,7 +2899,7 @@ function traySync() {
     tray = new Tray(img);
     if (WIN) tray.on("click", showMain);   // Windows 系統匣慣例:左鍵打開、右鍵選單。macOS 設了 context menu 點一下就是開選單,不掛
   }
-  tray.setToolTip(m.update ? tmLabels.updateReady : m.local || app.name);
+  tray.setToolTip(m.update ? (m.update.restarting ? tmLabels.restarting : tmLabels.updateReady) : m.local || app.name);
   tray.setContextMenu(trayMenu(m));
   trayKey = key;
 }
@@ -2889,10 +3001,13 @@ function binanceNotify(v) {
   // 這幾種全是 P2(binance_check.VERDICT_LEVEL):只發系統通知,**不亮 Dock 紅點**(紅點留給 P1)
   return true;
 }
-function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("p1", p1Sync); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
+// updater().poll():ready ↔ blocked 只跟著下單狀態變、沒有事件,靠這 5 秒那一輪補推(聊天那一格的「…」跟著暫停 / 開始下單換)
+function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("p1", p1Sync); startStep("update poll", () => updater().poll()); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
 app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
     // 關視窗不等於結束:自動下單在跑、或本機 agent 回合在跑(可能正在更新雲端)時只把視窗藏起來,回合 / 下單照走
+    // 更新重開收工中:紅燈只收視窗(放行會變成走結束 app → 裝了但不重開);交給 quitAndInstall 之後就放行,它要關視窗才能重開
+    if (restarting === "stopping") { e.preventDefault(); win.hide(); return; }
     const trading = tradeMaybeLive(), turn = !!(activeTurn || turnStarting);
     if (quitting || quitConfirmed || (!trading && !turn)) return;
     e.preventDefault(); win.hide();
@@ -2914,13 +3029,15 @@ function quitOnSignals(proc, quit) {
 // 就算這段沒跑到(當機、被強殺),daemon 讀到 stdin EOF 也會自己收。
 let quitting = false;
 app.on("before-quit", (e) => {
+  // 更新重開正在收工:它收完會自己裝 / 結束;這時再跑一次下面的 stop 只會多送一次 SIGTERM、跟 quitAndInstall 搶(稽核 P2-8)
+  if (restarting === "stopping") { e.preventDefault(); return; }
   // 自動下單還在跑:結束 = 停止下單、部位留著不平——先問一次(從選單列「結束 Blave…」、Cmd+Q、Dock 結束都走這裡)
   const live = !quitting && !quitConfirmed && tradeMaybeLive();
   if (live) {
     e.preventDefault();
     if (quitAsking) return;   // 框還開著又按一次 Cmd+Q:不疊第二個(稽核 M2)
+    try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
     quitAsking = true;
-    showMain();
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
       // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
       detail: TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
@@ -2931,8 +3048,8 @@ app.on("before-quit", (e) => {
   if (!quitting && !quitConfirmed && (activeTurn || turnStarting)) {
     e.preventDefault();
     if (quitAsking) return;
+    try { showMain(); } catch (_) { /* 同上 */ }
     quitAsking = true;
-    showMain();
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTurnTitle,
       detail: tmLabels.quitTurnBody, buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
       .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });

@@ -2,6 +2,7 @@
 //   1. <suggest> 區塊不會留在聊天文字裡:aiParts(app.js,歷史與升格都走它)剝掉完整區塊與沒收尾的尾段
 //   2. 最多 3 行:sugItems 過濾非字串 / 空白 / 超長,取前 3
 //   3. 送出後收合:回合結束才長出;送出(任何入口)、出錯、換對話都收合作廢;出錯 / 被停的回合不長
+//   4. 原本貼底時,建議列長完(高度轉場的 transitionend)才捲到底;用戶自己往上捲過不搶
 // 跑法:node tests/check_shell_suggest.js
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -35,7 +36,8 @@ const el = (id) => { const e = { id, inert: false, children: [], _text: "", list
   classList: { add: (c) => e.classes.add(c), remove: (c) => e.classes.delete(c), contains: (c) => e.classes.has(c) },
   set textContent(v) { e._text = v; if (v === "") e.children = []; }, get textContent() { return e._text || e.children.map((c) => c.textContent).join(""); },
   appendChild(c) { e.children.push(c); c.parent = e; return c; }, append(...cs) { cs.forEach((c) => e.appendChild(c)); },
-  setAttribute(k, v) { e.attrs[k] = v; }, addEventListener(k, f) { e.listeners[k] = f; },
+  setAttribute(k, v) { e.attrs[k] = v; }, addEventListener(k, f) { e.listeners[k] = f; }, removeEventListener(k, f) { if (e.listeners[k] === f) delete e.listeners[k]; },
+  fire(k, ev) { if (e.listeners[k]) e.listeners[k](Object.assign({ type: k }, ev)); },
   contains(x) { for (let p = x; p; p = p.parent) if (p === e) return true; return false; },
   focus() { doc.activeElement = e; }, get offsetHeight() { return 0; }, scrollHeight: 0, scrollTop: 0, clientHeight: 0 }; return e; };
 const doc = { activeElement: null, createElement: () => el(null) };
@@ -88,6 +90,34 @@ ok("sugItems:items 不是陣列 → 空", ctx.sugItems({ items: "a" }).length ==
   ctx.tracked = []; ctx.failNext = true; W["sug-rows"].children[1].listeners.click(); await wait();
   ok("點了但沒跑起來:同一組長回來(點的句子不會塞回輸入框,收掉就什麼都不剩),不再記 shown、也不記 clicked",
     open() && JSON.stringify(rows()) === JSON.stringify(["甲", "乙"]) && ctx.tracked.length === 0 && ctx.running === false);
+
+  // ── 4. 長出來之後貼底(Wei 0929 截圖:建議列蓋住回覆尾段與結果卡) ──
+  // 兜底計時器先到(主執行緒忙、轉場晚起跑),之後建議列才真的長完、結果卡也在途中掛上;transitionend 那一刻要捲到底
+  const box = W["chat-scroll"], wrap = W["sug-wrap"];
+  const grow = (sh, ch) => { box.scrollHeight = sh; box.clientHeight = ch; };
+  const endGrow = () => wrap.fire("transitionend", { target: wrap, propertyName: "grid-template-rows" });
+  const showAt = async (top) => { ctx.sugCollapse(); grow(1000, 400); box.scrollTop = top; ctx.sugChunk({ items: ["丙"] }); ctx.sugTurnEnd(true); await wait(); await wait(); };
+  await showAt(600);
+  grow(1080, 260);
+  wrap.fire("transitionend", { target: W["sug-rows"], propertyName: "transform" });
+  ok("子元素的轉場(行的 transform)不算長完:不捲、也不收掉監聽", box.scrollTop === 1000 && !!wrap.listeners.transitionend);
+  endGrow();
+  ok("貼底時長出:高度轉場結束才捲到底(結果卡在途中掛上也看得到),之後監聽收掉", box.scrollTop === 1080 && !wrap.listeners.transitionend && !box.listeners.wheel);
+  await showAt(600);
+  box.fire("wheel", { deltaY: 40 });
+  ok("往下捲不算離開底部", !!wrap.listeners.transitionend);
+  box.fire("wheel", { deltaY: -120 }); box.scrollTop = 300;
+  grow(1080, 260); endGrow();
+  ok("長的途中用戶自己往上捲:不搶位置", box.scrollTop === 300);
+  await showAt(600);
+  box.fire("pointerdown", {}); grow(1080, 260); endGrow();
+  ok("長的途中點了聊天裡的東西(或拖捲軸):不搶位置", box.scrollTop === 1000);
+  await showAt(100);
+  grow(1080, 260); endGrow();
+  ok("本來就沒貼底(在看上面的訊息):長出來不捲", box.scrollTop === 100);
+  await showAt(600); ctx.sugCollapse(); grow(1080, 260); endGrow();
+  ok("長到一半就收合(送出 / 換對話):監聽跟著收,不再捲", box.scrollTop === 1000 && !wrap.listeners.transitionend);
+  ctx.sugCollapse();
 
   // ── 接線(原文) ──
   const sub = cut(app, "async function submitMessage(msg, opts)", "UPD.turnCloud = false;");

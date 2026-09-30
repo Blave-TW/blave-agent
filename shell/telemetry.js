@@ -64,7 +64,9 @@ const EVENTS = {
     // 建議下一步(0.1.9;renderer/suggest.js):建議列長出來、點一行且回合跑起來。不送句子本身
     "suggest_shown", "suggest_clicked",
     // 設定 › Agent 規則(renderer/rules.js;0.1.9):切到那個分類、新增或編輯存成功、刪除成功、回覆語言改成功。背景同步不埋
-    "settings_rules", "rules_save", "rules_delete", "reply_lang_set"] },
+    "settings_rules", "rules_save", "rules_delete", "reply_lang_set",
+    // 更新提示(0.1.10;main.js):「重新啟動以完成更新」真的走下去(直接裝、或下單中確認後)、搬到「應用程式」那一問按了「移」。主行程送
+    "update_restart", "app_move"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

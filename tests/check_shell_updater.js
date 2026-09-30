@@ -1,7 +1,7 @@
 // shell/updater.js:永遠不自己重啟、下單執行中不安裝、沒有更新來源就整個關掉。
 // 跑法:node tests/check_shell_updater.js
 const fs = require("fs"), path = require("path"), { EventEmitter } = require("events");
-const { createUpdater } = require("../shell/updater.js");
+const { createUpdater, planRestart, shouldAskMove } = require("../shell/updater.js");
 let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n); if (!ok) red++; };
 const tick = () => new Promise((r) => setTimeout(r, 5));
 function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL = (o) => au.calls.push(["feed", o]); au.checkForUpdates = () => { au.calls.push(["check"]); return Promise.resolve(); }; au.quitAndInstall = (...a) => au.calls.push(["install", ...a]); return au; }
@@ -54,11 +54,37 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   ({ au, up } = mk({ onState: () => { throw new Error("renderer gone"); } })); up.start();
   t("畫面那邊丟例外不影響更新", (() => { try { au.emit("update-available", { version: "9" }); return up.state().phase === "downloading"; } catch (_) { return false; } })());
 
+  // 0.1.10 §2:ready ↔ blocked 只跟著下單狀態變、沒有事件 → 選單列 5 秒那一輪叫 poll(),phase 跟上次推的不同才推
+  ({ au, up } = mk()); up.start(); trading = true; au.emit("update-downloaded", { version: "0.4.0" }); native.emit("update-downloaded");
+  const n0 = states.length;
+  t("poll:下單中已經推過 blocked,狀態沒變 → 不推", states[n0 - 1].phase === "blocked" && up.poll() === false && states.length === n0);
+  trading = false;
+  t("poll:暫停(trading true → false)→ 剛好推一次,phase ready", up.poll() === true && states.length === n0 + 1 && states[n0].phase === "ready");
+  t("poll:再叫一次 → 不推", up.poll() === false && states.length === n0 + 1);
+  trading = true;
+  t("poll:又開始下單(false → true)→ 推一次,phase blocked", up.poll() === true && states.length === n0 + 2 && states[n0 + 1].phase === "blocked"); trading = false;
+  ({ au, up } = mk()); up.start(); au.emit("update-available", { version: "0.4.0" });
+  const n1 = states.length;
+  t("poll:phase 不是 ready / blocked(下載中、off、idle、error)永遠不推", up.poll() === false && (trading = true, up.poll() === false) && states.length === n1
+    && (() => { const x = mk({ feedUrl: null, autoUpdater: null }); return x.up.poll() === false && states.length === 0; })()); trading = false;
+  // 0.1.10 §0:planRestart 全矩陣(phase × turn × asking × trading)
+  { const phases = ["off", "idle", "checking", "downloading", "staging", "ready", "blocked", "error"], bad = [];
+    for (const phase of phases) for (const turn of [false, true]) for (const asking of [false, true]) for (const trading of [false, true]) {
+      const want = phase !== "ready" && phase !== "blocked" ? "not_ready" : turn ? "busy" : asking ? "asking" : trading ? "confirm" : "install";
+      const got = planRestart({ phase, turn, asking, trading }); if (got !== want) bad.push([phase, turn, asking, trading, got, want].join()); }
+    t("planRestart 全矩陣 8×2×2×2:沒下載好 → not_ready;回合在跑 → busy;已有框 → asking;下單中 → confirm;其餘 → install", bad.length === 0); if (bad.length) console.log(bad.slice(0, 5)); }
+  // 0.1.10 §4:shouldAskMove 全矩陣,六個條件同時成立才問
+  { let hits = 0, bad = 0;
+    for (const platform of ["darwin", "win32"]) for (const packaged of [true, false]) for (const inApps of [true, false]) for (const declined of [true, false]) for (const trading of [true, false]) for (const askedThisRun of [true, false]) {
+      const got = shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun }), want = platform === "darwin" && packaged && !inApps && !declined && !trading && !askedThisRun;
+      if (got) hits++; if (got !== want) bad++; }
+    t("shouldAskMove 全矩陣 64 組:只有 darwin、打包版、不在 Applications、沒拒絕過、沒在下單、這次還沒問過,那一組回 true", bad === 0 && hits === 1); }
+
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "updater.js"), "utf8");
   t("整個檔只有 install() 一處會叫 quitAndInstall(永遠不自己重啟)", (src.match(/quitAndInstall\(/g) || []).length === 1);
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   t("main.js:原生 Squirrel 那顆只在 darwin 注入(win32 是 null)", /nativeUpdater: feedUrl && process\.platform === "darwin" \? require\("electron"\)\.autoUpdater : null/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
-  t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : activeTurn \|\| turnStarting \? \{ ok: false, error: "TURN_BUSY" \} : updater\(\)\.install\(\)\)/.test(mainSrc));
+  t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\)\)\);/.test(mainSrc));
   t("tmLabels 預設物件就有回合中結束那兩句(畫面還沒交字前按結束也不會是空的)", (() => { const i = mainSrc.indexOf("let tmLabels = {"), j = mainSrc.indexOf("};", i); const d = mainSrc.slice(i, j);
     return /quitTurnTitle: "/.test(d) && /quitTurnBody: "/.test(d); })() && !/tmLabels\.quitTurnTitle \|\|/.test(mainSrc));
   t("關視窗:本機 agent 回合在跑時也只藏起來(同下單中);「背景照常下單」那則只在真的在下單時講",
@@ -80,7 +106,7 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("常駐程式的 env 帶 PY_ENV(不把 __pycache__ 寫進 .app)", /BLAVE_AGENT_STATE: path\.join\(BASE, "state"\),\s*\.\.\.PY_ENV/.test(mainSrc));
   t("防回滾:Squirrel 層比版號", /ElectronSquirrelPreventDowngrades: true/.test(cfg));
   t("package.json 版號是嚴格 A.B.C(Squirrel 防降版要求)", /^[0-9]+\.[0-9]+\.[0-9]+$/.test(require("../shell/package.json").version));
-  t("選單列:新版在等的時候選單多一行(圖示旁不加小點),而且會觸發重畫(進 trayKey)", /m\.update \? \[\{ label: tmLabels\.updateReady, enabled: false \}\] : \[\]/.test(mainSrc) && !/\.setTitle\(/.test(mainSrc) && !/cloudUpdateWaiting/.test(mainSrc) && /update: updateWaiting\(\)/.test(mainSrc) && /const key = JSON\.stringify\(\[show, m, [^\n]*m\.update \? tmLabels\.updateReady : ""\]\);/.test(mainSrc));
+  t("選單列:新版在等的時候選單多一行(圖示旁不加小點、0.1.10 起可按),而且會觸發重畫(進 trayKey)", /m\.update \? \[\{ label: m\.update\.restarting \? tmLabels\.restarting : tmLabels\.updateReady \+ \(m\.update\.ask && !m\.update\.busy \? "…" : ""\), enabled: !m\.update\.busy, click: /.test(mainSrc) && !/\.setTitle\(/.test(mainSrc) && !/cloudUpdateWaiting/.test(mainSrc) && /update: updateWaiting\(\) \|\| restarting \? \{ ask: !!maybe, busy: !!\(activeTurn \|\| turnStarting \|\| restarting\), restarting: !!restarting \} : null/.test(mainSrc) && /const key = JSON\.stringify\(\[show, m, [^\n]*m\.update \? tmLabels\.updateReady : "", m\.update && m\.update\.restarting \? tmLabels\.restarting : ""\]\);/.test(mainSrc));
   // 覆寫前備份被改過的官方檔:把 main.js 的兩個函式切出來,對臨時目錄真的跑一次
   {
     const os = require("os"), a0 = mainSrc.indexOf("function listFiles("), b0 = mainSrc.indexOf("const readVersion =");

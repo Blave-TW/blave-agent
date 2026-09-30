@@ -26,8 +26,9 @@ const FAIL_STAGE = { checking: "check", downloading: "download", staging: "stagi
 function createUpdater(opts) {
   const au = opts.autoUpdater, log = opts.log || (() => {});
   const timer = opts.setTimer || ((fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); return t; });
-  let state = { phase: opts.feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false;
-  const set = (patch) => { state = { ...state, ...patch }; try { opts.onState(publicState()); } catch (_) { /* 畫面壞掉不該影響更新 */ } };
+  let state = { phase: opts.feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false, pushed = null;
+  const push = () => { const ps = publicState(); pushed = ps.phase; try { opts.onState(ps); } catch (_) { /* 畫面壞掉不該影響更新 */ } };
+  const set = (patch) => { state = { ...state, ...patch }; push(); };
   // 失敗在哪一步(埋點 update_failed):階段取自出錯那一刻的 phase,不是錯誤訊息
   const fail = (stage) => { try { if (opts.onFail) opts.onFail(stage); } catch (_) { /* 追蹤不該影響更新 */ } };
   // 已下載的狀態每次讀都重新看一次「現在有沒有在下單」:下載完成當下在跑、之後暫停了,鈕要跟著解鎖
@@ -65,14 +66,37 @@ function createUpdater(opts) {
     Promise.resolve().then(() => au.checkForUpdates()).catch((e) => { log("check failed: " + (e && e.message)); if (state.phase !== "error") fail("check"); set({ phase: "error", error: "CHECK_FAILED" }); });
     return true;
   }
-  // 「重新啟動並更新」:只有已下載、而且現在沒有在下單才做
+  /* ready ↔ blocked 只跟著下單狀態變,沒有事件會 set():選單列 5 秒那一輪叫這支,phase 跟上次推給畫面的不同才推(暫停後「…」拿掉、
+     開始下單後補上)。其餘 phase 都由 set() 推,這裡不管 */
+  function poll() {
+    const ps = publicState();
+    if ((ps.phase !== "ready" && ps.phase !== "blocked") || ps.phase === pushed) return false;
+    push();
+    return true;
+  }
+  // 「重新啟動並更新」:只有已下載、而且現在沒有在下單才做。下單中要先收工,由 main.js restartToUpdate 決定(planRestart)
   function install() {
     if (state.phase !== "ready" && state.phase !== "blocked") return { ok: false, error: "NOT_READY" };
     if (opts.isTrading()) return { ok: false, error: "TRADING" };
     setImmediate(() => au.quitAndInstall(false, true));
     return { ok: true };
   }
-  return { start, check, install, state: publicState };
+  return { start, check, install, poll, state: publicState };
 }
 
-module.exports = { createUpdater, CHECK_EVERY_MS };
+/* 按「重新啟動以完成更新」(聊天那一格 / 關於列 / 選單列)之後怎麼走(spec-desktop-update-prompt-0.1.10 §0)。
+   asking = 已經有確認框開著(跟結束攔截共用 quitAsking):不疊第二個。confirm = 下單中,先問、確認後收工再裝 */
+function planRestart({ phase, turn, asking, trading }) {
+  if (phase !== "ready" && phase !== "blocked") return "not_ready";
+  if (turn) return "busy";
+  if (asking) return "asking";
+  return trading ? "confirm" : "install";
+}
+
+/* 啟動時不在「應用程式」資料夾就問一次(§4;只有 macOS 打包版會遇到:Squirrel 在唯讀 / translocation 的位置裝不上)。
+   下單中不問:搬移會重開 = 停單;這次不問也不記成「不要」 */
+function shouldAskMove({ platform, packaged, inApps, declined, trading, askedThisRun }) {
+  return platform === "darwin" && !!packaged && !inApps && !declined && !trading && !askedThisRun;
+}
+
+module.exports = { createUpdater, planRestart, shouldAskMove, CHECK_EVERY_MS };

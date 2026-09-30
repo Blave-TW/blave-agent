@@ -12,7 +12,8 @@ const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 1500))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
 // web 的 zh / en 譯文(分享框的字兩邊逐字相同):找得到帶這個 msgid 的 web 樹才比,找不到 → null(呼叫端 SKIP)
-const WEB_DIRS = [process.env.BLAVE_WEB_DIR, path.join(MONO, "web-integ-018"), path.join(MONO, "web")].filter(Boolean);
+// 有設 BLAVE_WEB_DIR 就只看那一棵(不默默退回別棵舊樹);沒設才看 monorepo 的 ../web
+const WEB_DIRS = [process.env.BLAVE_WEB_DIR || path.join(MONO, "web")];
 const webPo = (msgid) => { for (const d of WEB_DIRS) { const out = {}; for (const lang of ["zh", "en"]) { const f = path.join(d, "app", "translations", lang, "LC_MESSAGES", "messages.po"); if (!fs.existsSync(f)) break;
   const m = new RegExp('^msgid "' + msgid + '"\\nmsgstr ((?:"(?:[^"\\\\]|\\\\.)*"\\n)+)', "m").exec(read(f)); if (!m) break;
   out[lang] = m[1].trim().split("\n").map((x) => JSON.parse(x)).join(""); } if (out.zh !== undefined && out.en !== undefined) return out; } return null; };
@@ -28,7 +29,7 @@ if (!process.versions.electron) {
     const STR0 = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
     ok("① 閘門 = 類型白名單:research / morning / performance 出入口;缺 type、不認得的類型、沒有 blocks 的不出", ["research", "morning", "performance"].every((k) => P.shrGate({ type: k, blocks: [] }) && P.shrKind(k) === k)
       && !P.shrGate({ blocks: [] }) && !P.shrGate({ type: "journal", blocks: [] }) && !P.shrGate({ type: "constructor", blocks: [] }) && !P.shrGate({ type: "research" }) && !P.shrGate(null) && P.shrKind("journal") === null && P.shrKind(undefined) === null);
-    { const WEB_SH2 = [process.env.BLAVE_WEB_DIR, path.join(MONO, "web-integ-018"), path.join(MONO, "web")].filter(Boolean).map((d) => path.join(d, "app", "static", "js", "agent", "report_share.js")).find((f) => fs.existsSync(f) && /var SHAREABLE = /.test(read(f)));
+    { const WEB_SH2 = WEB_DIRS.map((d) => path.join(d, "app", "static", "js", "agent", "report_share.js")).find((f) => fs.existsSync(f) && /var SHAREABLE = /.test(read(f)));
       if (!WEB_SH2) console.log("SKIP  ① 類型白名單與 web 比對(需要含 SHAREABLE 的 web 原始碼;可設 BLAVE_WEB_DIR)");
       else ok("① 類型白名單 = web report_share.js 的 SHAREABLE", JSON.stringify(JSON.parse(/var SHAREABLE = (\[[^\]]*\]);/.exec(read(WEB_SH2))[1])) === JSON.stringify(Array.from(P.SHR_TYPES)), JSON.stringify(P.SHR_TYPES)); }
     ok("① 預覽卡的類型詞:三類各一組 key、兩語都在;performance 的固定圖不帶標籤行", Array.from(P.SHR_TYPES).every((k) => STR0.zh[P.SHR_OG_PREFIX[k]] && STR0.en[P.SHR_OG_PREFIX[k]] && STR0.zh[P.SHR_OG_TAG[k]] && STR0.en[P.SHR_OG_TAG[k]])

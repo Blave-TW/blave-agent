@@ -16,20 +16,20 @@ const MENU_EN = { menuQuit: "Quit Blave" };
 const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
 const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); if (!m) throw new Error("字串表沒有 " + k); return m[1]; };
 const L = { running: "Auto trading is running", pause: zh("tm.pause"), pauseLocal: zh("tm.pauseLocal"), open: zh("tm.open"), quit: zh("tm.quit"), menuQuit: zh("menu.quit"),
-  updateReady: zh("tm.updateReady"), stLocal: zh("tm.stLocal"), stLocalOnly: zh("tm.stLocalOnly"), stCloud: zh("tm.stCloud"), stOn: zh("tm.stOn"), stPaused: zh("tm.stPaused"),
+  updateReady: zh("tm.updateReady"), restarting: zh("tm.restarting"), stLocal: zh("tm.stLocal"), stLocalOnly: zh("tm.stLocalOnly"), stCloud: zh("tm.stCloud"), stOn: zh("tm.stOn"), stPaused: zh("tm.stPaused"),
   stUnknown: zh("tm.stUnknown"), stMayTrade: zh("tm.stMayTrade"), stNotStarted: zh("tr.notStarted"), noAccount: zh("tr.noAccount"), runningZ: zh("tr.runningZ"),
   moneyPaper: zh("tr.mode.paper"), moneyReal: zh("tr.mode.real") };
 const loc = (rest) => zh("tm.stLocal").replace("{money} · {state}", rest), locOnly = (s) => zh("tm.stLocalOnly").replace("{state}", s);
 
 function world(real) {   // real:tradeLive / tradeMaybeLive 也用 main.js 原文(從狀態檔推),不用 w.live / w.maybe 樁
-  const w = { trays: [], dockMenu: null, live: null, maybe: null, st: null, reads: 0, trayThrows: 0 };
+  const w = { trays: [], dockMenu: null, live: null, maybe: null, st: null, reads: 0, trayThrows: 0, restarts: [] };
   class Tray { constructor() { if (w.trayThrows > 0) { w.trayThrows--; throw new Error("tray boom"); } this.destroyed = false; this.menu = null; this.tip = ""; this.clicks = 0; w.trays.push(this); } destroy() { this.destroyed = true; } setToolTip(s) { this.tip = s; } setContextMenu(m) { this.menu = m; } on(ev) { if (ev === "click") this.clicks++; } }
   const ctx = {
     tray: null, trayKey: "", trayLabelsIn: true, lastVenue: null, tmLabels: { ...L }, MENU_EN, TT, WIN: false, __dirname: "/x", path, fs, console,
     Tray, Menu: { buildFromTemplate: (x) => x }, nativeImage: { createFromPath: () => ({ isEmpty: () => false }) },
     app: { name: "Blave", dock: { setMenu: (m) => { w.dockMenu = m; } }, quit: () => {} },
-    tradeLive: () => w.live, tradeMaybeLive: () => w.live || w.maybe || null, activeTurn: null, turnStarting: false,
-    updateWaiting: () => false, cloudSt: () => null, pauseFromMenu: () => {}, showMain: () => {},
+    tradeLive: () => w.live, tradeMaybeLive: () => w.live || w.maybe || null, activeTurn: null, turnStarting: false, restarting: null,
+    updateWaiting: () => false, cloudSt: () => null, pauseFromMenu: () => {}, showMain: () => {}, restartToUpdate: () => { w.restarts.push("restart"); return Promise.resolve({ ok: true }); },
   };
   Object.defineProperty(ctx, "_tradeHost", { get: () => (w.st ? { status: () => { w.reads++; return typeof w.st === "function" ? w.st(w.reads) : w.st; } } : null) });
   const body = real ? [line("venueReady"), cut("function tradeLive("), cut("function tradeMaybeLive("), BODY].join("\n") : BODY;
@@ -74,6 +74,23 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
   w.ctx.cloudSt = () => null; w.ctx.updateWaiting = () => true; w.traySync();
   t("§2.2 新版已暫存好:多一組「重新啟動以完成更新」(前面一條分隔線),提示字換成它;Dock 不放", j(w.menu()) === j([loc("Binance · " + zh("tr.notStarted")), "---", zh("tm.updateReady"), "---", OPEN, QUIT])
     && w.ctx.tray.tip === zh("tm.updateReady") && !w.dock().includes(zh("tm.updateReady")), w.menu());
+  { // 0.1.10 §3:那一行可以按。下單中字尾「…」(按了先問);回合在跑停用、不帶「…」;沒東西在等就沒有這一組
+    const item = () => w.ctx.tray.menu.find((x) => x.label && x.label.startsWith(zh("tm.updateReady")));
+    const it0 = item();
+    t("§3 沒在下單:enabled、字不帶「…」、點下去 = restartToUpdate()", it0.enabled === true && it0.label === zh("tm.updateReady") && (it0.click(), w.restarts.length === 1), it0);
+    w.maybe = { venue: null }; w.traySync(); const it1 = item();
+    t("§3 下單中(m.update.ask):enabled、字尾「…」", it1.enabled === true && it1.label === zh("tm.updateReady") + "…" && w.menu().includes(PAUSE), w.menu());
+    w.ctx.activeTurn = {}; w.traySync(); const it2 = item();
+    t("§3 回合在跑(m.update.busy):停用、不帶「…」(選單列沒有 tooltip 講原因,同聊天那一格只停用)", it2.enabled === false && it2.label === zh("tm.updateReady"), it2);
+    w.ctx.activeTurn = null; w.ctx.restarting = "stopping"; w.traySync(); const it3 = item();
+    const it3r = w.ctx.tray.menu.find((x) => x.label === w.ctx.tmLabels.restarting);
+    t("§3 更新重開收工中(restarting):那一行換「重新啟動中…」、停用(再點不會跳第二個框,稽核 0.1.10 P1-1 / 設計複驗);提示字同", !it3 && !!it3r && it3r.enabled === false && w.ctx.tray.tip === zh("tm.restarting"), w.menu());
+    w.ctx.updateWaiting = () => false; w.traySync();
+    t("…安裝中 phase 變了(updateWaiting 為假)照樣留著那一行", !!w.ctx.tray.menu.find((x) => x.label === zh("tm.restarting")), w.menu());
+    w.ctx.updateWaiting = () => true;
+    w.ctx.restarting = null;
+    w.ctx.activeTurn = null; w.maybe = null; w.ctx.updateWaiting = () => false; w.traySync();
+    t("§3 m.update = null:沒有這一項,也沒有多出來的分隔線", !item() && j(w.menu()) === j([loc("Binance · " + zh("tr.notStarted")), "---", OPEN, QUIT]), w.menu()); }
   w.ctx.updateWaiting = () => false; w.ctx.activeTurn = {}; w.traySync();
   t("§2.1 沒在下單但回合在跑(結束會先問):結束帶「…」", w.menu().slice(-1)[0] === QUIT_ASK, w.menu());
   w.ctx.activeTurn = null; w.ctx.tmLabels.open = "Open Blave"; w.traySync();
@@ -136,16 +153,17 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
 
 // ── 關視窗:留不留在背景照舊(有東西在跑才留),跟圖示常駐無關 ──
 { const CLOSE = cut('app.on("browser-window-created", (_e, win) =>');
-  const run = (trading, turn) => {
+  const run = (trading, turn, restarting) => {
     let handler = null, prevented = false, hidden = false;
     const ctx = { app: { on: (_ev, f) => f(null, { on: (ev, h) => { if (ev === "close") handler = h; }, hide: () => { hidden = true; } }) },
-      tradeMaybeLive: () => trading, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: false, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
+      tradeMaybeLive: () => trading, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
     new Function("ctx", "with (ctx) { " + CLOSE + "); }")(ctx);
     handler({ preventDefault: () => { prevented = true; } });
     return { prevented, hidden };
   };
   t("沒在下單、沒有回合:關視窗不攔(視窗關掉 → window-all-closed → 結束),就算圖示常駐", j(run(null, false)) === '{"prevented":false,"hidden":false}');
   t("下單中 / 回合中:只把視窗收起來", j(run({ venue: "binance" }, false)) === '{"prevented":true,"hidden":true}' && j(run(null, true)) === '{"prevented":true,"hidden":true}');
+  t("更新重開收工中(restarting = stopping,quitConfirmed 已是 true):紅燈只收視窗;交給 quitAndInstall 之後(installing)放行", j(run(null, false, "stopping")) === '{"prevented":true,"hidden":true}' && j(run(null, false, "installing")) === '{"prevented":false,"hidden":false}');
   t("window-all-closed 照舊直接結束(沒有「有圖示就留著」的分支)", /\napp\.on\("window-all-closed", \(\) => app\.quit\(\)\);\n/.test(src));
   t("畫面第一次交字才放行常駐的那顆:trade-labels 收完字設 trayLabelsIn、再 traySync", /tmLabels\[k\] = labels\[k\];\n\s*trayLabelsIn = true;[\s\S]{0,400}startStep\("tray", traySync\);/.test(src));
 }
@@ -175,11 +193,14 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
 }
 { const START = cut("function trayStart("), STEP = cut("function startStep(");
   let tick = null, p1 = 0; const errs = [];
-  const ctx = { trayTimer: null, setInterval: (f) => { tick = f; return {}; }, traySync: () => {}, p1Sync: () => { p1++; }, console: { error: (e) => errs.push(e) } };
+  let polls = 0;
+  const ctx = { trayTimer: null, setInterval: (f) => { tick = f; return {}; }, traySync: () => {}, p1Sync: () => { p1++; }, console: { error: (e) => errs.push(e) },
+    updater: () => ({ poll: () => { polls++; throw new Error("poll boom"); } }) };
   new Function("ctx", "with (ctx) { " + STEP + "\n" + START + "\n trayStart(); }")(ctx);
   ctx.traySync = () => { throw new Error("tray boom"); };
   try { tick(); } catch (_) { /* 沒隔開的話 traySync 的例外會從這裡冒出來 */ }
   t("T-P2-1 5 秒那一輪 traySync 拋例外:P1 通知照跑,錯誤留一行 log", p1 === 1 && errs.some((e) => /tray failed/.test(e)), [p1, errs]);
+  t("0.1.10 §2 5 秒那一輪叫 updater().poll()(ready ↔ blocked 補推),包在 startStep 裡:poll 拋例外只留一行 log、選單列那一輪照跑", polls === 1 && errs.some((e) => /update poll failed/.test(e)), [polls, errs]);
 }
 { const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
   t("設計 T2:關視窗那則通知在 Windows 講系統匣(字與主行程的英文退路都分平台)",

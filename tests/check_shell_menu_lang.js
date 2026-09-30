@@ -32,6 +32,7 @@ function run(throwing) {
     tm: () => ({ start: () => { if (throwing.has("tm")) throw new Error("tm"); } }),
     updater: () => ({ start: () => { if (throwing.has("updater")) throw new Error("updater"); } }),
     minGate: () => ({ start: () => { if (throwing.has("gate")) throw new Error("gate"); } }),
+    moveChecked: false, askMoveToApps: () => Promise.resolve(false),   // 0.1.10 搬到「應用程式」那一問(tests/check_shell_update_restart.js 另外測)
     console: { error: (m) => errors.push(m) },
   };
   const f = new Function("env", `with (env) { ${stepFn}\n${block}\n }`);
