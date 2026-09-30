@@ -3289,6 +3289,204 @@ msgstr "送出"
 msgid "rob.msgScan"
 msgstr "請掃描策略 {name} 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap），範圍由你依指標分佈決定，掃完回報尖峰與穩健點。"
 
+msgid "rob.msgScanLabel"
+msgstr "掃描 {name} 的參數"
+
+msgid "rob.msgScanTitle"
+msgstr "{name} · 參數掃描"
+
+msgid "rp.tab.wf"
+msgstr "樣本外驗證"
+
+msgid "wf.tagNone"
+msgstr "樣本外效率：無法判斷"
+
+msgid "wf.tagFar"
+msgstr "樣本外效率：遠低於門檻"
+
+msgid "wf.tagLow"
+msgstr "樣本外效率：低於門檻"
+
+msgid "wf.tagEdge"
+msgstr "樣本外效率：剛過門檻"
+
+msgid "wf.tagHigh"
+msgstr "樣本外效率：高於門檻"
+
+msgid "wf.verdictStale"
+msgstr "程式碼已變更，重新驗證後才會更新。"
+
+msgid "wf.rowOos"
+msgstr "樣本外"
+
+msgid "wf.rowIs"
+msgstr "樣本內"
+
+msgid "wf.tipOos"
+msgstr "每輪在訓練窗裡重選一次參數，套到緊接著的測試窗；測試窗互不重疊，所以能接成一整段。"
+
+msgid "wf.tipIs"
+msgstr "每一輪用來挑參數的那段資料；各輪算完取平均（各輪互相重疊，所以沒有單一曲線）。"
+
+msgid "wf.colSharpe"
+msgstr "Sharpe"
+
+msgid "wf.colAnn"
+msgstr "年化報酬"
+
+msgid "wf.colDd"
+msgstr "最大回撤"
+
+msgid "wf.factWfe"
+msgstr "樣本外效率"
+
+msgid "wf.tipWfe"
+msgstr "Walk-Forward Efficiency（WFE）：樣本外 Sharpe ÷ 樣本內 Sharpe（即上表兩列）。業界常用 0.5 當及格線、0.7 以上算好；樣本內 Sharpe 低於 0.25 就不做這個除法。這是慣例，不是證明。"
+
+msgid "wf.chartLabel"
+msgstr "樣本外累積報酬（測試窗接起來）"
+
+msgid "wf.chartAria"
+msgstr "樣本外累積報酬（測試窗接起來）：累積報酬 {r}，區間 {a} 至 {b}；每 {d} 天重新選一次參數"
+
+msgid "wf.legOos"
+msgstr "樣本外（每輪重選參數）"
+
+msgid "wf.legReopt"
+msgstr "重新選參數"
+
+msgid "wf.legReoptTick"
+msgstr "刻度 = 重新選參數"
+
+msgid "wf.legReoptText"
+msgstr "每 {d} 天重新選一次參數"
+
+msgid "wf.legNoIs"
+msgstr "樣本內沒有曲線：各輪訓練窗互相重疊，拼不出一條連續的線"
+
+msgid "wf.tailNote"
+msgstr "末尾 {d} 天不足一輪，未納入"
+
+msgid "wf.driftLabel"
+msgstr "每輪選中的參數"
+
+msgid "wf.driftAria"
+msgstr "{rp} × {cp} 每輪選中參數落點圖"
+
+msgid "wf.driftAria1"
+msgstr "{rp} 每輪選中參數落點圖"
+
+msgid "wf.driftFacts"
+msgstr "{n} 輪選出 {u} 組不同參數"
+
+msgid "wf.driftLegCount"
+msgstr "格內數字 = 這格被選中幾輪"
+
+msgid "wf.driftLegWhere"
+msgstr "是哪幾輪、以及該輪的績效，看下面的每輪明細"
+
+msgid "wf.driftLegCur"
+msgstr "虛線框 = 目前參數 {p}"
+
+msgid "wf.driftLegRef"
+msgstr "最後一輪選中的參數只是參考，不是建議值"
+
+msgid "wf.driftTipHits"
+msgstr "第 {k} 輪選中"
+
+msgid "wf.driftTipNone"
+msgstr "沒有輪選中"
+
+msgid "wf.driftTipCur"
+msgstr "（目前參數）"
+
+msgid "wf.runsLabel"
+msgstr "每輪明細"
+
+msgid "wf.colRun"
+msgstr "輪"
+
+msgid "wf.colTrain"
+msgstr "訓練窗"
+
+msgid "wf.colTest"
+msgstr "測試窗"
+
+msgid "wf.colPick"
+msgstr "選中參數"
+
+msgid "wf.colTrs"
+msgstr "訓練 Sharpe"
+
+msgid "wf.colTes"
+msgstr "測試 Sharpe"
+
+msgid "wf.colTer"
+msgstr "測試報酬"
+
+msgid "wf.voidNote"
+msgstr "第 {k} 輪訓練窗 Sharpe ≤ 0，不計入樣本外效率的平均。"
+
+msgid "wf.knobLookback"
+msgstr "訓練窗"
+
+msgid "wf.knobStep"
+msgstr "測試窗"
+
+msgid "wf.unitDay"
+msgstr "天"
+
+msgid "wf.tlAria"
+msgstr "示意：每輪用 {l} 天訓練窗挑參數，接著測 {s} 天，再往後推 {s} 天，共 {n} 輪"
+
+msgid "wf.estRuns"
+msgstr "共 {n} 輪"
+
+msgid "wf.listSep"
+msgstr "、"
+
+msgid "wf.estBad"
+msgstr "資料只夠 {n} 輪，至少要 3 輪才看得出樣本外表現"
+
+msgid "wf.estOver"
+msgstr "會切出 {n} 輪，超過 {max} 輪的上限——把測試窗調大"
+
+msgid "wf.btnRun"
+msgstr "開始驗證"
+
+msgid "wf.btnRerun"
+msgstr "重新驗證"
+
+msgid "wf.btnSent"
+msgstr "已送出，看對話"
+
+msgid "wf.btnWait"
+msgstr "結果傳回中"
+
+msgid "wf.waitTimeout"
+msgstr "這次的結果沒傳回來，下面是上一次的；重新點選策略可再抓一次。"
+
+msgid "wf.emptyBoundary"
+msgstr "不會產生可採用的參數 —— 驗的是「用歷史挑參數」這個做法本身。"
+
+msgid "wf.confirmBody"
+msgstr "通常兩分鐘左右跑完，結果會出現在這個分頁。"
+
+msgid "wf.needUpdate"
+msgstr "你主機上的 agent 還是舊版，可能還不會跑樣本外驗證。"
+
+msgid "wf.behind"
+msgstr "先更新主機程式，才能開始驗證。"
+
+msgid "wf.msgRun"
+msgstr "對策略 {name} 做 walk-forward 樣本外驗證：訓練窗 {lookback} 天、每 {step} 天重新最佳化，rolling 不做 anchored；每輪在訓練窗內用 lib/param_scan 選穩健參數，套到緊接著的測試窗；測試窗接起來算整段績效（樣本外），訓練窗各自算完取平均（樣本內，訓練窗 Sharpe ≤ 0 的輪不計入），寫進 wf.json。"
+
+msgid "wf.msgRunLabel"
+msgstr "對 {name} 做樣本外驗證（訓練窗 {lookback} 天、測試窗 {step} 天）"
+
+msgid "wf.msgRunTitle"
+msgstr "{name} · 樣本外驗證"
+
 msgid "lib.nav"
 msgstr "策略庫"
 
@@ -4945,10 +5143,10 @@ msgid "ver.rerunDoneSr"
 msgstr "{v} 的回測已用最新資料重跑完。"
 
 msgid "ver.frozenRerun"
-msgstr "回測重跑完才有進出場紀錄；參數掃描要對這一版重新跑。"
+msgstr "回測重跑完就有進出場紀錄；參數掃描與樣本外驗證要再跑一次。"
 
 msgid "ver.frozenRerunFailed"
-msgstr "回測沒有重跑完，進出場紀錄與參數掃描都沒有資料。"
+msgstr "灰掉的分頁沒有資料，回測重跑完才有。"
 
 msgid "ver.rsErrGone"
 msgstr "主機上已經沒有 {v}（只保留最近 20 版），這一版只能看、不能還原。"

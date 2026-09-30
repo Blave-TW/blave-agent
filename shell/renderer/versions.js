@@ -290,7 +290,7 @@ function verBack() {
   rpShowTab(rpTab(B));
 }
 /* app.js rpShowTab 的第一行:時光機開著就由這裡畫(回 true),否則回 false 照原本的畫。
-   進出場紀錄 / 參數掃描真的 disabled,原因講在分頁列正下方那一行(#rp-nobt,「沒有回測」同一個槽) */
+   進出場紀錄 / 參數掃描 / 樣本外驗證真的 disabled,原因講在分頁列正下方那一行(#rp-nobt,「沒有回測」同一個槽) */
 /* 重跑中 / 沒完成(pending,看的是目前版)也由這裡畫:stats.json 已移開、或還是別的碼的結果,回測分頁畫 vN 存的 blob(spec §3、§10 最後一條) */
 function verShowTab(tab) {
   const B = rpBag(), side = verSideOf(B), S = VS[side], nobt = $("rp-nobt");
@@ -302,12 +302,13 @@ function verShowTab(tab) {
   $("rp-tabs").hidden = false;
   $("rp-tabs").querySelectorAll(".rp-tab").forEach((b) => {
     b.setAttribute("aria-selected", b.dataset.tab === cur ? "true" : "false");
-    b.disabled = b.dataset.tab === "tr" || b.dataset.tab === "rob";
+    b.disabled = b.dataset.tab === "tr" || b.dataset.tab === "rob" || b.dataset.tab === "wf";
   });
+  if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();
   const why = !pd ? "ver.frozenTab" : pd.status === "failed" ? "ver.frozenRerunFailed" : "ver.frozenRerun";
   nobt.dataset.i18n = why; nobt.textContent = t(why); nobt.hidden = false;
   const w = $("rp-wait");
-  for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = true;
+  for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = true;
   if (!S.blob) {
     if (!S.state) { verLoad(side, n); if (S.blob) return true; }   // 重跑中那一版的 blob 多半已在快取(時光機剛看過),零等待
     verStatePaint(S); return true;

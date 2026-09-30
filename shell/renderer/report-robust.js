@@ -5,10 +5,10 @@
  * 純函式(sanitizeScan / robWhere / constFromCode…)與 DOM 結構照抄 workspace.html 的
  * robust 段,規則一條不改——兩邊看同一份 scan.json 要得出同一個結論。
  *
- * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`onScan(name, opener)` = 掃描鈕的送出
+ * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`onScan(name, opener, begin)` = 掃描鈕的送出(確認框按下時先叫 begin(),暖機那段也算已送出)
  * (回 Promise<turn|false>:跑起來的那一回合的序號,送出成功才鎖成「已送出」);`busy` = 回合進行中;
  * `turn` = 目前回合序號(「已送出」只認送出那一輪);`scope` = 這一袋是哪一邊(本機 / 雲端同名策略不互相污染);
- * `buildMeta(stats)` = 回測那一行 meta 的節點(沒給就只寫「掃描 R×C」)。之後 web 也能載同一支。
+ * `buildMeta(stats)` = 回測那一行 meta 的節點(沒給就只寫「掃描 R×C」);`resync()` / `refocus()` 同 report-wf.js。之後 web 也能載同一支。
  *
  * scan.json 是機器端 lib/param_scan.write_scan 寫的、雲端那份又經 api 轉過一手:兩邊都
  * 當未信任輸入——逐欄型別檢查、每軸 ≤40、索引在網格內、參數名 ≤64 字;文字只進 textContent。 */
@@ -492,7 +492,10 @@
   // 就地把鈕與那一行說明對到現在的回合狀態;不重建節點(焦點留在鈕上)
   function syncEmpty(st, opts) {
     const s = sent.get(sentKey(opts, st.name));
-    const isSent = !!opts.busy && !!s && s.sig === st.sig && s.turn === opts.turn;
+    // pending = 確認框按下、submitMessage 還沒回來(暖機):那段 running 已是 true,認它才不會顯示「agent 正在回覆上一則訊息」(稽核 P2-1)
+    const isSent = !!opts.busy && !!s && s.sig === st.sig && (s.pending || s.turn === opts.turn);
+    // 拿著焦點的鈕要停用(暖機 / 別的回合開了):先把焦點交給分頁鈕,不讓它掉到 <body>(設計複稽核 R2,0.1.9 就有)
+    if (opts.busy && !st.btn.disabled && document.activeElement === st.btn && typeof opts.refocus === "function") opts.refocus();
     st.btn.disabled = !!opts.busy;
     st.btn.textContent = opts.t(isSent ? "rob.btnSent" : "rob.btnScan");
     const wantCap = !!opts.busy && !isSent;   // 回合進行中 submit 會直接回 false,按了沒反應像壞掉:鎖鈕 + 一行說明
@@ -508,9 +511,17 @@
     const st = { name: data.name, sig, box, btn, cap: null };
     btn.addEventListener("click", () => {
       if (typeof opts.onScan !== "function") return;
-      Promise.resolve(opts.onScan(data.name, btn)).then((turn) => {
-        if (!turn && turn !== 0) return;
-        sent.set(sentKey(opts, data.name), { sig, turn });
+      const key = sentKey(opts, data.name);
+      const begin = () => sent.set(key, { sig, turn: null, pending: true });   // 呼叫端在確認框按下、送出之前叫
+      Promise.resolve(opts.onScan(data.name, btn, begin)).catch(() => false).then((turn) => {
+        if (!turn && turn !== 0) {
+          // 沒送出去:收掉 pending,照現在的回合狀態就地換鈕(忙碌就是停用 + 那一行說明)
+          const cur = sent.get(key);
+          if (cur && cur.pending) { sent.delete(key); if (typeof opts.resync === "function") opts.resync(); }
+          if (document.activeElement === document.body && typeof opts.refocus === "function") opts.refocus();   // 同 report-wf.js(R2)
+          return;
+        }
+        sent.set(key, { sig, turn });
         if (shown.get(el0) === st) syncEmpty(st, { ...opts, busy: true, turn });   // 送出成功 = 那一回合已開
       });
     });
@@ -561,5 +572,6 @@
     return { rows: sc.rows.length, cols: sc.cols.length, tag: at ? "rob.tag.atPlateau" : where === "stale" ? null : "rob.tag." + where };
   };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_robust.js);畫面不靠這個
-  window.BlaveReport._rob = { sanitizeScan, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, ROB_MAX_DIM };
+  // report-wf.js(樣本外驗證)的軸、常數讀法、數字格式也從這裡拿(同一套,不另抄)
+  window.BlaveReport._rob = { sanitizeScan, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM };
 })();

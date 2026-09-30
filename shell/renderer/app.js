@@ -525,6 +525,9 @@ function privPaint() {
    決策全在 upPlan / upDoneLine(純函式,tests/check_shell_settings.js 直接跑);upPaint 只照它畫。 */
 var UPD = { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null };
 const UP_SESSION_IDLE_MS = 30 * 60000;   // 更新期間 30 分鐘沒有回合就結束(兜底)
+/* 更新期間裡最後一個回合結束滿 3 分鐘(> 雲端 2 分鐘一次的回報,成功的更新這時一定已經回報),再按「檢查更新」而雲端仍落後 = 上一次沒成功:
+   允許重送。不然讀不到最新版號(lv null)時更新期間只能等 30 分鐘閒置才結束,這段時間按了沒有任何反應(設計複稽核 R4) */
+const UP_RETRY_MS = 3 * 60000;
 /* 每次畫之前看一眼雲端:更新期間什麼時候結束、版號追上時記一筆給事後那一行的退路。純函式(只改 mem)。
    cloud = snapshot 的 cloud 那一塊;stale = 報告說重開後沒能確認停住(版號一樣也算落後) */
 function upObserve(mem, cloud, stale, localTurn, now) {
@@ -570,7 +573,8 @@ function upWu(report) {
 function upPlan(o) {
   const st = o.up || {}, ph = st.phase, mem = o.mem || {}, c = o.cloud || {}, wu = o.wu || null, turn = !!o.localTurn;
   const cv = o.kind === "running" ? c.config_version || null : null, lv = c.latest_config_version || null;
-  const cloudLag = o.kind === "running" && (!!(cv && lv && cv !== lv) || !!o.cloudStale);
+  // config_supports_wf === false 也算落後:api 讀不到最新版號(lv null)時,樣本外驗證的落後態〔去更新〕→「檢查更新」才有出口(稽核 P2-5)
+  const cloudLag = o.kind === "running" && (!!(cv && lv && cv !== lv) || !!o.cloudStale || c.config_supports_wf === false);
   // (c):報告說正在換檔;沒有那個欄位時由本機那一回合推得(檢查更新送出的那一回合在跑、或更新期間內碰過雲端的回合在跑)
   const applying = !!(wu && wu.state === "applying") || (turn && !!mem.session && (!!mem.cloudTurn || !!mem.turnCloud));
   // (b):Squirrel 已暫存好而且沒在下單(updater 的 publicState 每次都重看 isTrading:下單中是 blocked)。回合在跑時不能重開(會把它斷掉)
@@ -715,7 +719,8 @@ async function upCloudRecheck() {
   ENV.cloudDirty = true; await trPoll();
   for (let i = 0; i < 30 && ENV.cloudDirty; i++) await new Promise((r) => setTimeout(r, 100));
   const p = upNow();
-  if (!p.cloudLag || (p.slot && p.slot.kind === "applying") || upLocalTurn() || UPD.session) return;
+  const sessionLive = !!UPD.session && Date.now() - (UPD.session.lastTurnAt || UPD.session.startAt) < UP_RETRY_MS;
+  if (!p.cloudLag || (p.slot && p.slot.kind === "applying") || upLocalTurn() || sessionLive) return;
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
   const c = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}, now = Date.now();
   Object.assign(UPD, { done: null, cloudTurn: true, session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
@@ -1043,7 +1048,8 @@ async function stratRefresh(turnEnd) {
   // 看著的那支這一輪被動過 → 原地重讀重畫,分頁不動:不然人看著舊數字、卡上是新數字
   if (turnEnd && RP.name && typeof resStratSub === "function") {
     const was = before.get(RP.name), now = RP.list.find((x) => x.name === RP.name);
-    if (was && now && resStratSub(was, now)) { await stratReload(RP.name); return; }
+    // 只跑了樣本外驗證的那一輪:不出結果卡(web 也沒有),但開著的分頁要原地換成新結果
+    if (was && now && (resStratSub(was, now) || (now.wfMtime || 0) !== (was.wfMtime || 0))) { await stratReload(RP.name); return; }
   }
   // 選中的那支被刪了 → 回 welcome
   if (RP.name && !RP.list.some((x) => x.name === RP.name)) stratSelect(null);
@@ -1105,7 +1111,7 @@ function rpBodyPaint(B) {
   const w = $("rp-wait"), pend = B.data && B.data.pending;
   if (!pend) { rpShowTab(rpTab(B)); return; }
   $("rp-tabs").hidden = true; $("rp-nobt").hidden = true;
-  for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = true;
+  for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = true;
   w.hidden = false; w.textContent = "";
   const line = document.createElement("p");
   if (pend === "loading") {
@@ -1187,11 +1193,12 @@ function rpShowTab(tab) {
     b.setAttribute("aria-selected", on ? "true" : "false");
     b.disabled = !has && b.dataset.tab !== "code";
   });
+  if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();   // 測試會單獨切出 rpShowTab 來跑,守一下
   // 同一個 has:沒有回測就在分頁列正下方講一句(兩個視角都出)。Type B 本來就沒有回測,不叫人去跑(e2e 0.1.8 #67);
   // key 放在 data-i18n 上,切語言時 applyStatic 照這個 key 重譯
   const nb = $("rp-nobt"); nb.hidden = has;
   nb.dataset.i18n = typeof xpIsTypeB === "function" && xpIsTypeB(B.data) ? "rp.noBtB" : "rp.noBt"; nb.textContent = t(nb.dataset.i18n);
-  for (const k of ["bt", "tr", "rob", "code"]) $("rp-" + k).hidden = k !== tab;
+  for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = k !== tab;
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;
   const R = window.BlaveReport || {};
@@ -1199,27 +1206,106 @@ function rpShowTab(tab) {
   if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats);
   // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
   if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
+  // 樣本外驗證(report-wf.js 同樣不碰桌面版全域;閘門、送出、回合狀態都從這裡交進去)
+  if (tab === "wf" && R.renderWf) R.renderWf($("rp-wf"), { stats: B.data.stats, wf: B.data.wf || null, code: B.data.code, name: B.name }, rpWfOpts());
 }
 // 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
 function rpRobOpts() {
   const R = window.BlaveReport || {};
-  return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, buildMeta: R.buildMeta };
+  return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, buildMeta: R.buildMeta, resync: rpRobSync, refocus: rpRobRefocus };
 }
 /* 「開始掃描」:確認框 → 固定訊息進對話(同雲端工作頁 robAskScan)。不覆寫 viewing:rpBag()===RPC ⇔ ENV.cur==="cloud" ⇔ chatViewing 本來就回 env:cloud,
    而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面) */
-function rpRobAsk(name, opener) {
+function rpRobAsk(name, opener, begin) {
   return new Promise((resolve) => confirmBox({ title: t("rob.btnScan"), lines: [t("rob.emptyCap")], ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
-    onOk: () => submitMessage(t("rob.msgScan", { name })).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }) }));
+    // begin():同樣本外驗證,送出前先記「這一支正在送」(暖機那段不顯示「agent 正在回覆上一則訊息」,稽核 P2-1)
+    onOk: () => { if (typeof begin === "function") begin(); submitMessage(t("rob.msgScan", { name })).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }); } }));
 }
 /* 回合開始 / 結束:參數掃描分頁的空狀態要跟著換鈕態(回合中鎖鈕、結束解鎖)。就地改鈕、不整塊重畫(焦點不掉到 body;有掃描結果的頁沒有鈕,模組自己略過) */
 function rpRobSync() {
   const B = rpBag(), R = window.BlaveReport || {};
   if (B.drawn.rob && R.robSync) R.robSync($("rp-rob"), rpRobOpts());
 }
-const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", code: "report_code" };
+/* 樣本外驗證的環境(report-wf.js)。gate = 主機的 lib 帶不帶 walk_forward:這台電腦的 lib 跟 app 同包,永遠 true;
+   雲端讀 /cloud/state 的 config_supports_wf(api 同 web 的三態,false 才擋;null = 不知道,照送、確認框多一句) */
+function rpWfCloud() { const st = TR_BAGS.cloud.st; return (st && st.cloud) || {}; }
+function rpWfOpts() {
+  const R = window.BlaveReport || {}, cloud = rpBag() === RPC, c = cloud ? rpWfCloud() : null;
+  const gate = !cloud ? true : typeof c.config_supports_wf === "boolean" ? c.config_supports_wf : null;
+  return { t, busy: running, turn: turnSeq, scope: cloud ? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R.buildMeta,
+    resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch };
+}
+/* 雲端結果比回合晚到:留著「已送出」的期間 report-wf.js 每 30 秒叫一次(失敗退回後也補抓一次),name = 送出的那一支(複驗 P2-R2)。
+   只在背景抓、抓到不同才換(P2-R1):不清 drawn、不先畫——rpCloudSelect(force) 會先用快取整片重畫一次,人在別的分頁時
+   K 線縮放、選取、焦點每 30 秒被重設。人在樣本外驗證分頁:照新資料重畫(已送出收掉、換成新結果);在別的分頁:只換資料,
+   眼前那一頁不拆,切過去時再畫。回 false = 人已經不在那一支(換視角 / 點了別支 / 關掉報告),計時由 report-wf.js 收掉 */
+function rpWfRefetch(name) {
+  if (!name || ENV.cur !== "cloud" || RPC.name !== name) return false;
+  Promise.resolve(TR_BAGS.cloud.api.loadStrategy(name)).then((d) => {
+    if (!d || ENV.cur !== "cloud" || RPC.name !== name) return;
+    const cached = RPC_CACHE.get(name);
+    if (cached && JSON.stringify(cached) === JSON.stringify(d)) return;
+    RPC_CACHE.set(name, d); RPC.data = d;
+    if (RPC.tab === "wf") { RPC.drawn = {}; rpCloudPaint(); }
+    else RPC.drawn = RPC.tab && RPC.drawn[RPC.tab] ? { [RPC.tab]: true } : {};
+  }).catch(() => {});
+  return true;
+}
+// 掃描鈕被停用時(暖機 / 送不出去)焦點交給參數掃描那顆分頁鈕(設計複稽核 R2)
+function rpRobRefocus() { const b = $("rp-tabs-scroll").querySelector('.rp-tab[data-tab="rob"]'); if (b && !b.disabled) b.focus(); }
+// 整片重畫拿掉了焦點所在的鈕(送出後變「已送出」、回合結束舊結果回來):焦點交給樣本外驗證那顆分頁鈕,不掉到 <body>(設計稽核 S2)
+function rpWfRefocus() { const b = $("rp-tabs-scroll").querySelector('.rp-tab[data-tab="wf"]'); if (b && !b.disabled) b.focus(); }
+/* 「開始驗證 / 重新驗證」:確認框 → 固定訊息進對話(同雲端工作頁 wfAsk;msgRun 一字不改,references/lib.md 拿它當觸發句)。
+   name 傳資料夾名(同 rpRobAsk)。回 Promise<turn|false>;取消不 resolve */
+function rpWfAsk(name, lookback, step, rerun, opener, begin) {
+  const cloud = rpBag() === RPC, c = cloud ? rpWfCloud() : null;
+  // 「主機可能是舊版」只在閘門未知、且關於那一行也說雲端落後、而且沒在更新時多一段(同 web 的 updAvailable && !updSent;
+  // 判準用 upNow() 那一份,不另起一套):true 代表確定帶著 walk_forward,那時這句是錯的
+  const up = cloud ? upNow() : null;
+  const behindMaybe = cloud && typeof c.config_supports_wf !== "boolean" && up.cloudLag && !(up.slot && up.slot.kind === "applying") && !UPD.session;
+  return new Promise((resolve) => confirmBox({ title: t(rerun ? "wf.btnRerun" : "wf.btnRun"),
+    lines: (behindMaybe ? [t("wf.needUpdate")] : []).concat([t("wf.emptyBoundary"), t("wf.confirmBody")]), ok: t("rob.cfOk"), opener, env: cloud ? "cloud" : undefined,
+    // begin():送出前先記「這一支正在送」,暖機那段(running 已 true、還沒回來)畫成已送出而不是「agent 正在回覆上一則訊息」(稽核 P2-1)
+    onOk: () => { if (typeof begin === "function") begin(); submitMessage(t("wf.msgRun", { name, lookback: String(lookback), step: String(step) })).then((ok) => { if (ok) trackFeature("wf_requested"); resolve(ok ? turnSeq : false); }); } }));
+}
+// 雲端主機太舊:去設定 › 更新(同 versions.js verNeedUpdate)——電腦版更新雲端一律開本機回合走 MCP,不觸發雲端回合
+function rpWfUpdate() { setOpen().then(() => { setCat("display"); const b = $("set-up-btn"); if (b && !b.hidden) b.focus(); }); }
+// 回合開始 / 結束、雲端版本旗標翻面:已送出態翻了整片重畫(舊結果回來或換新的),否則就地換鈕態
+function rpWfSync() {
+  const B = rpBag(), R = window.BlaveReport || {};
+  if (B.drawn.wf && R.wfSync) R.wfSync($("rp-wf"), rpWfOpts());
+}
+const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", code: "report_code" };
 $("rp-tabs").addEventListener("click", (e) => {   // 只有人點的才算用過:程式自動選預設分頁(stratSelect / rpCloudSelect)不記
   const b = e.target.closest(".rp-tab"); if (b && !b.disabled) { rpShowTab(b.dataset.tab); trackFeature(RP_TAB_FEATURE[b.dataset.tab]); }
 });
+/* 分頁段放不下時(1024 寬、聊天欄開著):選中的那顆 / 拿到焦點的那顆捲進可視範圍,列的左右內距是留給 focus 框的,分頁停在內距之內(同 web tabReveal) */
+function rpTabReveal(b) {
+  const box = b && b.parentNode;
+  if (!box || box.scrollWidth <= box.clientWidth) return;
+  const pad = parseFloat(getComputedStyle(box).paddingLeft) || 0, r = b.getBoundingClientRect(), c = box.getBoundingClientRect();
+  if (r.left < c.left + pad) box.scrollLeft -= c.left + pad - r.left;
+  else if (r.right > c.right - pad) box.scrollLeft += r.right - (c.right - pad);
+}
+function rpTabRevealSelected() { rpTabReveal($("rp-tabs-scroll").querySelector('.rp-tab[aria-selected="true"]')); }
+$("rp-tabs-scroll").querySelectorAll(".rp-tab").forEach((b) => b.addEventListener("focus", () => rpTabReveal(b)));
+/* 捲動捷徑:有溢出才出現;還能往右捲就朝右(捲一個可視寬、留 48 當接續),到底就朝左(捲回 0)。溢出會隨視窗、語系、分頁寬度而變,
+   所以觀察捲動段與每顆分頁的尺寸,不靠各處呼叫(同 web tabsMoreSync) */
+{
+  const box = $("rp-tabs-scroll"), more = $("rp-tabs-more");
+  const sync = () => {
+    const over = box.scrollWidth > box.clientWidth + 1;
+    more.hidden = !over;
+    if (over) more.classList.toggle("is-back", box.scrollLeft >= box.scrollWidth - box.clientWidth - 1);
+  };
+  more.addEventListener("click", () => {
+    const back = more.classList.contains("is-back");
+    box.scrollTo({ left: back ? 0 : box.scrollLeft + box.clientWidth - 48, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  });
+  box.addEventListener("scroll", sync);
+  if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(sync); ro.observe(box); box.querySelectorAll(".rp-tab").forEach((b) => ro.observe(b)); }
+  else window.addEventListener("resize", sync);
+}
 
 /* ── 第 4 步:真的接線 ───────────────────────────── */
 /* ── 對話(session)───────────────────────────────
@@ -1233,8 +1319,9 @@ let csTitle = "";          // 目前這條的標題(第一句話);空 = 還沒�
 let csItems = [];
 
 function csRenderHead() {
-  $("cs-title").textContent = csTitle || t("cs.new");
-  $("cs-title").title = csTitle || "";
+  const shown = csTitle ? fixedLabel(csTitle, "title") || csTitle : "";   // 固定觸發句開頭的對話:標題用「名稱 · 功能」(B5);csTitle 本身保持原文
+  $("cs-title").textContent = shown || t("cs.new");
+  $("cs-title").title = shown;
 }
 function csRemember() {
   // 記不住就是下次開新對話,不擋
@@ -1262,6 +1349,42 @@ function csStartNew() {
    (runtime/agent_turn.py `_fault_receipt_suffix`:「\n[中斷前已執行:Bash strategies/、Read lib/x.py、…另有 N 步]」)。
    那行不是給人讀的:畫回去時拆掉,改畫成跟即時回合結束時一樣的「思考過程」收據(收起,點開看步驟)。
    splitReceipt 是純函式,tests/check_shell_history_receipt.js 從原文切出來跑,並釘住 runtime 那邊的格式。 */
+/* 固定觸發句(樣本外驗證 wf.msgRun、參數掃描 rob.msgScan)在對話裡只顯示一行摘要(設計精簡稽核 B5;規劃 b5-fixed-prompt-display-plan.md)。
+   只在顯示端換:送出與存進 session.db 的都是原句,一個 byte 不動(references/lib.md 拿原句當觸發句)。
+   比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
+   zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
+   那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"]];
+function fixedMatch(text, strings) {
+  if (typeof text !== "string" || !text) return null;
+  for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) {
+    const tpl = strings && strings[l] && strings[l][src];
+    if (typeof tpl !== "string" || !tpl) continue;
+    const keys = [];
+    const body = tpl.split(/(\{(?:name|lookback|step)\})/).map((p) => {
+      const m = /^\{(\w+)\}$/.exec(p);
+      if (m) { keys.push(m[1]); return m[1] === "name" ? "(.+?)" : "(\\d+)"; }
+      return p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }).join("");
+    const hit = new RegExp("^" + body + "$").exec(text);
+    if (!hit) continue;
+    const vars = {};
+    keys.forEach((k, i) => { vars[k] = hit[i + 1]; });
+    return { label, title, vars };
+  }
+  return null;
+}
+// {name} 是資料夾代號:先在這台電腦與雲端的策略清單裡查給人看的名字,查不到才退回代號
+function fixedName(code) {
+  const lists = [typeof RP !== "undefined" ? RP.list : null, typeof envCloudList === "function" && typeof TR_BAGS !== "undefined" ? envCloudList(TR_BAGS.cloud.st) : null];
+  for (const l of lists) { const x = Array.isArray(l) ? l.find((y) => y && y.name === code) : null; if (x && x.displayName) return x.displayName; }
+  return code;
+}
+// which:"label" = 泡泡、"title" = 對話標題。不是固定觸發句 → null(呼叫端照原文畫)
+function fixedLabel(text, which) {
+  const f = fixedMatch(text, typeof STRINGS !== "undefined" ? STRINGS : null);
+  return f ? t(which === "title" ? f.title : f.label, { ...f.vars, name: fixedName(f.vars.name) }) : null;
+}
 const RECEIPT_RE = /\n?\[\u4e2d\u65b7\u524d\u5df2\u57f7\u884c:([^\n]*)\]\s*$/;   // 「[中斷前已執行:…]」,跳脫寫法:這行是資料格式不是畫面字
 function splitReceipt(content) {
   const m = RECEIPT_RE.exec(content || "");
@@ -1363,7 +1486,11 @@ function csRow(m) {
   const item = document.createElement("button");
   item.type = "button"; item.className = "cs-item";
   if (m.id === sessionId) item.setAttribute("aria-current", "true");
-  const name = document.createElement("span"); name.className = "cs-name"; name.textContent = m.title || t("cs.new");
+  const name = document.createElement("span"); name.className = "cs-name";
+  // 固定觸發句開頭的對話:標題「名稱 · 功能」整串給,不截——截的話會先吃掉策略名,而能分辨對話的是名稱(B5);名稱本身有上限、
+  // 放不下時 CSS 從尾巴省略,先省掉的是後綴的功能字。其他對話照舊取第一句的前 120 字
+  const fixedTitle = m.title ? fixedLabel(m.title, "title") : null;
+  name.textContent = fixedTitle || (m.title || "").slice(0, 120) || t("cs.new");
   const meta = document.createElement("span"); meta.className = "cs-meta"; meta.textContent = csTime(m.last);
   item.append(name, meta);
   item.addEventListener("click", () => { if (m.id === sessionId) csShowList(false); else csOpen(m.id); });
@@ -1568,7 +1695,7 @@ function addMsg(cls, text) {
   if (cls === "you") {
     // 泡泡樣式掛在子元素上(app.css `.msg.you .bubble`);.msg.you 自己只負責靠右
     const b = document.createElement("div");
-    b.className = "bubble"; b.textContent = text;
+    b.className = "bubble"; b.textContent = fixedLabel(text) || text;   // 固定觸發句只顯示摘要(B5);重送 / 存檔用的仍是原文
     el.appendChild(b);
   } else if (cls === "ai") {
     paintAi(el, text, false);
@@ -1977,7 +2104,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (!msg || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; sendBtnSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; sendBtnSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
@@ -1993,7 +2120,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
-  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
     // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
@@ -2856,8 +2983,10 @@ window.blave.onTurnEnd(async (r) => {
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); }
   pendingErr = [];
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
+  // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
+  if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });
   upTurnEnded(faulted);
-  running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
+  running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複
