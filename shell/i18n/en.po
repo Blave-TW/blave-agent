@@ -508,7 +508,7 @@ msgid "bt.grpTrading"
 msgstr "Trading"
 
 msgid "bt.annReturn"
-msgstr "Annualized Return"
+msgstr "Annual Return"
 
 msgid "bt.annVol"
 msgstr "Annualized Vol"
@@ -724,7 +724,7 @@ msgid "acct.addCard"
 msgstr "Add a Card"
 
 msgid "acct.sub"
-msgstr "A first card comes with {q} TWD of AI credit, plus Blave data in the desktop app for {t} days."
+msgstr "A first-time card gets {q} TWD of AI credit and Blave data in the desktop app, both for {t} days."
 
 msgid "acct.ready"
 msgstr "Ready to go."
@@ -763,7 +763,7 @@ msgid "plan.month"
 msgstr "{p} TWD / month"
 
 msgid "plan.hour"
-msgstr "30 days = {h} TWD from your balance every hour"
+msgstr "{h} TWD an hour from your balance (30-day month)"
 
 msgid "plan.trialFree"
 msgstr "No machine fee until {d}. After that, the price above applies."
@@ -802,13 +802,13 @@ msgid "cf.body1"
 msgstr "This opens a cloud machine for this account, usually in about a minute. Blave data is available as soon as you start."
 
 msgid "cf.body2"
-msgstr "Once it’s up, {h} TWD comes out of your balance every hour ({p} TWD a month, 30 days), for as long as the machine exists, in use or not."
+msgstr "Once it’s up, {h} TWD comes out of your balance every hour ({p} TWD a month, 30 days)."
 
 msgid "cf.body2Trial"
-msgstr "No machine fee until {d}. After that, {h} TWD comes out of your balance every hour, for as long as the machine exists, in use or not."
+msgstr "No machine fee until {d}. After that, {h} TWD comes out of your balance every hour."
 
 msgid "cf.body3"
-msgstr "To stop the charges, delete the machine on the web."
+msgstr "It bills even when idle or stopped. To stop the charges, delete the machine on the web."
 
 msgid "cf.ok"
 msgstr "Start"
@@ -994,7 +994,11 @@ msgid "pv.f.running"
 msgstr "{h} TWD an hour from your balance ({p} TWD a month). Turning it off means deleting the machine on the web, with the strategies and data on it."
 
 msgid "pv.w.out.cli"
-msgstr "Signing in costs nothing and keeps your AI. Next: add a card."
+msgstr "Signing in costs nothing and keeps your AI."
+
+# 設定 › 帳號與方案(未登入)的鈕旁:lead 已講「AI 照用」,這裡只留登入不花錢(設計稽核 0.1.10 fix-c S1);雲端開通頁照用 pv.w.out.cli
+msgid "pv.w.out"
+msgstr "Signing in costs nothing."
 
 msgid "pv.w.noTrial"
 msgstr "Once the card is added, data works. No plan to start."
@@ -1930,6 +1934,27 @@ msgstr "Blave is still open and auto trading keeps running. Use the system tray 
 msgid "tm.updateReady"
 msgstr "Restart to finish updating"
 
+# 選單列那一行的「重新啟動中…」(同 up.restarting;選單列的字一律 tm.*,由 trPushLabels 交給主行程)
+msgid "tm.restarting"
+msgstr "Restarting…"
+
+# 下單中按「重新啟動以完成更新」的確認框內文(標題 tm.quitTitle、鈕 tm.quitStay / tm.updateReady 重用;spec-desktop-update-prompt-0.1.10 §1)
+msgid "tm.updateBody"
+msgstr "After the restart, this computer places no more orders and closes nothing; positions stay at {venue}. Press Start trading to resume."
+
+# 啟動時不在「應用程式」資料夾問一次(§4;main.js askMoveToApps)
+msgid "tm.move.title"
+msgstr "Move Blave to the Applications folder?"
+
+msgid "tm.move.body"
+msgstr "Blave can’t update itself from here. It reopens after the move."
+
+msgid "tm.move.go"
+msgstr "Move to Applications"
+
+msgid "tm.move.no"
+msgstr "Don’t Move"
+
 msgid "tm.evOrderErrNote"
 msgstr "The exchange rejected an order. Open Blave to see why."
 
@@ -1989,16 +2014,10 @@ msgid "env.empty.desc"
 msgstr "No cloud machine yet"
 
 msgid "env.open.h"
-msgstr "Put your strategies in the cloud and they keep running with this computer off"
+msgstr "Keep Your Strategies Running with This Computer Off"
 
-msgid "env.open.1"
-msgstr "A machine that stays on, running your strategies on schedule around the clock and placing orders."
-
-msgid "env.open.2"
-msgstr "Shutting down this computer, closing the lid or losing the network changes nothing."
-
-msgid "env.open.3"
-msgstr "Blave’s market and positioning data is included at no extra charge."
+msgid "env.open.lead"
+msgstr "A machine that stays on runs your strategies on schedule and places the orders, with Blave’s market and positioning data included."
 
 msgid "env.open.more"
 msgstr "See the Full Plan"
@@ -3103,9 +3122,6 @@ msgstr "Up to date"
 msgid "up.row.ready"
 msgstr "New version downloaded"
 
-msgid "up.row.readyQuit"
-msgstr "New version downloaded · installs when you quit Blave"
-
 msgid "up.row.applying"
 msgstr "Updating…"
 
@@ -3114,6 +3130,10 @@ msgstr "Restart to finish updating"
 
 msgid "up.applying"
 msgstr "Updating…"
+
+# 按了「重新啟動以完成更新」並確認、主行程正在收工 / 安裝(main.js restarting):聊天那一格、關於列、選單列那一行都換這句,停用(設計複驗 0.1.10)
+msgid "up.restarting"
+msgstr "Restarting…"
 
 msgid "up.backup.open"
 msgstr "Open folder"
@@ -5139,7 +5159,11 @@ msgid "ver.rerunRefusedTail"
 msgstr "Running it again gives the same result — ask the agent in chat to take a look."
 
 msgid "ver.rerunRetry"
-msgstr "Run again"
+msgstr "Run Again"
+
+# 「再跑一次」被拒(ack 回錯)或 ack 不明 2 分鐘後退回沒完成:狀態列句子下方的原因行。用鈕上的字指是哪一次動作、不帶版號(上一行已交代);講「沒有開始」,跟上一行「沒有重跑完」分得開(設計精簡稽核 0.1.10 A9)
+msgid "ver.rerunRetryErr"
+msgstr "Run Again didn’t start. Try later, or ask the agent."
 
 msgid "ver.rerunDoneSr"
 msgstr "The backtest for {v} has re-run on the latest data."

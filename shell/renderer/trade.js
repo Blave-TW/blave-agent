@@ -895,8 +895,9 @@ function trPushLabels() {
   if (typeof window.blave.tradeLabels !== "function") return;
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
-    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"),
+    quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
+    updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
     ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evHaltNote"), ev_order_error: t("tr.ov.evErr"), ev_order_error_n: t("tm.evOrderErrNote"),
     ev_execution_interrupted: t("tr.ov.evExecInterrupted"), ev_execution_interrupted_n: t("tr.ov.evExecInterruptedNote"),
@@ -3460,11 +3461,11 @@ function envPaintEmpty(kind, pid) {
   if (view === "ready") page.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "cv-p", t("ho.ready.body", { id: pid })));
   else if (view === "starting") page.appendChild(trEl("p", "cv-p", t("env.empty.starting")));
   else {
-    page.appendChild(trEl("h4", "", t("env.open.h")));
-    const ul = trEl("ul", "cv-list"); [t("env.open.1"), t("env.open.2"), t("env.open.3")].forEach((x) => ul.appendChild(trEl("li", "", x))); page.appendChild(ul);
+    page.append(trEl("h4", "", t("env.open.h")), trEl("p", "cv-lead", t("env.open.lead")));
+    // 扣款規則(存在就扣、停機照扣、刪除才停)不在這一頁:啟動確認框一定會經過、三句直接顯示,設定 › 方案內容與計費也講全(spec-0.1.10 §2.3)
     if (v.p) {
       const pr = trEl("div", "plan-price"); pr.appendChild(trEl("span", "m", t("plan.month", v))); if (v.h) pr.appendChild(trEl("span", "h", t("plan.hour", v)));
-      page.append(pr, trEl("p", "cv-rule", t("plan.rule")));
+      page.appendChild(pr);
     }
   }
   // 鈕上方那一行:錯誤(方案頁同一組 plan.err.*)優先;否則這顆鈕會帶來的錢 / 好消息

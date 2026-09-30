@@ -133,7 +133,10 @@ function verPaintRerun(S, pd) {
   const rr = $("ver-rerun"); if (!rr) return;
   if (!pd) { rr.hidden = true; rr.textContent = ""; delete rr.dataset.sig; return; }
   if (pd.status === "running") $("rp-act").hidden = true;   // 送上雲端 / 拉回:重跑中收起(Wei 決定 6);沒完成是穩定狀態,照常
-  const sig = [pd.status, pd.n, pd.err, LANG].join("|");
+  // 「再跑一次」被拒的原因(稽核 L1):只跟著按下時那一筆 failed;狀態一變(重跑中、完成、換了一筆、換策略)就收掉
+  const e = S.rerr, rr0 = S.data && S.data.rerun;
+  if (e && !(pd.status === "failed" && pd.n === e.n && S.name === e.name && (e.at == null || (rr0 && rr0.at === e.at)))) S.rerr = null;
+  const sig = [pd.status, pd.n, pd.err, LANG, S.rerr ? 1 : 0].join("|");
   if (rr.dataset.sig !== sig || rr.hidden) {
     rr.textContent = ""; rr.dataset.sig = sig;
     const line = verEl("p", "vr-t"), mark = verEl("span", pd.status === "running" ? "spin16" : "fault-mark");
@@ -149,11 +152,17 @@ function verPaintRerun(S, pd) {
       // 按下去這顆鈕就隨狀態列重建消失:焦點交給版本觸發器,不掉到 body
       again.addEventListener("click", () => {
         if (again.getAttribute("aria-disabled") === "true") { verBusyNote($("ver-rerun-busy")); return; }   // 觸控看不到 title:原因寫在列裡(設計稽核 S8)
-        verRetry(); const tr = $("ver-trig"); if (tr) tr.focus();
+        if (!verRetry()) return;
+        const tr = $("ver-trig"); if (tr) tr.focus();
       });
       rr.appendChild(again);
       const busy = verEl("p", "vb-err"); busy.id = "ver-rerun-busy"; busy.hidden = true;
       rr.appendChild(busy);
+      if (S.rerr) {
+        const why2 = verEl("p", "vb-err"), m2 = verEl("span", "fault-mark");
+        why2.id = "ver-rerun-err"; m2.setAttribute("aria-hidden", "true");
+        why2.append(m2, verEl("span", "", t("ver.rerunRetryErr"))); rr.appendChild(why2);
+      }
     }
   }
   rr.hidden = false;
@@ -392,9 +401,9 @@ function verGuard(side, B, n, cur, amt) {
     onOk: () => verSend(t("ver.msgFork", vars)).then((ok) => { if (ok) trackFeature("version_fork"); }) });
 }
 // 雲端主機的 lib 還不會就地還原:主鈕 = minv.btn 那一套(設定 › 一般、焦點在「檢查更新」);不退回交給 agent 的固定訊息
-function verNeedUpdate(side, B, n) {
+function verNeedUpdate(side, B, n, opener) {
   const c = verBoxCtx(side, B);
-  confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.needUpdate")], ok: t("minv.btn"), opener: c.opener, env: c.env, footWhere: c.footWhere,
+  confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.needUpdate")], ok: t("minv.btn"), opener: opener || c.opener, env: c.env, footWhere: c.footWhere,
     onOk: () => setOpen().then(() => { setCat("display"); const b = $("set-up-btn"); if (b && !b.hidden) b.focus(); }) });
 }
 function verRestoreAsk() {
@@ -411,12 +420,16 @@ function verRestoreAsk() {
     extra: verEl("p", "cf-note", t("ver.rsNote")), ok: t("ver.rsOk"), opener: c.opener, env: c.env, footWhere: c.footWhere,
     onOk: () => verDoRestore(side, B.name, n, cur, false) });
 }
-// 「再跑一次」(沒完成時):同一條指令、同一個 {name, n};按下當下切回重跑中。不記埋點(spec §11)
+// 「再跑一次」(沒完成時):同一條指令、同一個 {name, n};按下當下切回重跑中。不記埋點(spec §11)。回 true = 指令送出了
+// 雲端主機的 lib 太舊 → 同還原那一條出更新框、不送(主機換回舊 lib 時,留著的 rerun.json 還會畫出這顆鈕)
 function verRetry() {
   const B = rpBag(), side = verSideOf(B), S = VS[side], pd = S.data && S.open === null && VER ? VER.pending(S.data) : null;
-  if (!pd || pd.status !== "failed" || running) return;
+  if (!pd || pd.status !== "failed" || running) return false;
+  S.rerr = null;
+  if (side === "cloud" && !VER.canRestoreInPlace(S.data)) { verPaintRerun(S, pd); verNeedUpdate(side, B, pd.n, $("ver-retry")); return false; }
   const raw = B.data && B.data.versions, rr = raw && raw.rerun;
   verDoRestore(side, B.name, pd.n, null, true, rr && typeof rr.at === "number" ? rr.at : null);
+  return true;
 }
 /* ack → { kind: "ok" | "wait" | "fail", code?, result? }。逾時 / 結果不明不算失敗(指令可能已經執行):維持樂觀狀態、等回報。
    機器拒絕的字串是 "ValueError: <CODE>: …"(runtime _cmd_version_restore) */
@@ -458,6 +471,7 @@ async function verDoRestore(side, name, n, prev, retry, failedAt) {
     if (B.name === name && rpBag() === B) verNeedUpdate(side, B, n);
     return;
   }
+  if (retry) VS[side].rerr = { name, n, at: failedAt };   // 再跑一次沒進時光機:原因寫在狀態列下方(稽核 L1)
   verRollback(side, name, n, a.code === "NO_VERSION" ? "ver.rsErrGone" : "ver.rsErr");
 }
 /* 回滾 = 拿掉疊層,畫面回到按下之前:時光機看 vN、橫幅兩顆鈕都在,需要時多一行原因。回滾不送埋點 */
@@ -503,6 +517,7 @@ function verOverlayExpire(side, name, B) {
   const rr = raw && raw.rerun;
   if (o.failedAt != null && raw && raw.current === o.n && rr && rr.status === "failed" && rr.at === o.failedAt) {
     VO.delete(k);
+    VS[side].rerr = { name, n: o.n, at: o.failedAt };   // 機器多半沒收到:同被拒那一句(稽核 L1)
     if (rpBag() === B && !$("rp").hidden && B.data) { rpPaintHead(B); rpShowTab(rpTab(B)); }
     return true;
   }

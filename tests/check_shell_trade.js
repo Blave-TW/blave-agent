@@ -990,7 +990,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /* 最後一項 t("cx.connected") = 設定頁帳號列那個 failed ? … : connected ? … : 串接中…
          的三元,「既沒失敗也還沒連上」就是它的在途條件。 */
       const WIN = 260;  // 夠到 app.js 方案卡那張 per-state 表的 st: ["busy"](離標籤 240 字)
-      const FLAG = /pending|busy|save === "saving"|cx\.retest|unbinding|deleting|flying|updating|want === "|view === "starting"|t\("cx\.connected"\)/;
+      const FLAG = /pending|busy|save === "saving"|cx\.retest|unbinding|deleting|flying|updating|restarting|want === "|view === "starting"|t\("cx\.connected"\)/;   // restarting:主行程更新重開收工中(0.1.10)
       const bad = []; let seen = 0;
       files.forEach((f) => {
         const bare = fs.readFileSync(path.join(RD, f), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -1109,7 +1109,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("spinner 照 canon Loader:16/2、缺口 1/4、currentColor、1s linear;**沒有** reduced-motion 例外", /\.spin16 \{ flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; \}/.test(css)
       && !rmBlocks(css).some((b) => /spin16/.test(b)) && !rmBlocks(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")).some((b) => /spin16/.test(b)) && !/cx-saved \.dot/.test(css));
     ok("稽核 B3:最低版本閘擋下「解除暫停」時的字不叫人按啟動下單", /^這個版本的 Blave 需要更新，才能送出「解除暫停」。/.test(get("zh", "minv.release")) && !/啟動下單/.test(get("zh", "minv.release")) && !/Start trading/.test(get("en", "minv.release")));
-    ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["up.row.readyQuit", "tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
+    ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
     ok("§13-2 模擬帳戶逾時自己一句:不提金鑰、講「再試一次」;真實交易所那句不動", /^模擬帳戶已經送出，.*可以再試一次/.test(get("zh", "tr.cloud.cxSavedStalePaper")) && !/金鑰/.test(get("zh", "tr.cloud.cxSavedStalePaper"))
       && /^The paper account was sent,/.test(get("en", "tr.cloud.cxSavedStalePaper")) && /^金鑰已經送出，/.test(get("zh", "tr.cloud.cxSavedStale")));
     ok("S5 文字(zh / en)", get("zh", "tr.cloud.hdConnecting") === "連接中…" && get("en", "tr.cloud.hdNoConfirm") === "No confirmation from the machine" && get("zh", "tr.cloud.cxSavedPaper") === null

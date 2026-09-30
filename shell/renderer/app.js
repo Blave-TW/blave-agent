@@ -473,10 +473,13 @@ async function privLoad() {
   try { const id = await window.blave.telemetryInstallId(); PRIV_ID = typeof id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ? id : null; } catch (_) { PRIV_ID = null; }
   privPaint();
 }
+// 連點:前一次還沒回來就不再送(不用 disabled:按鈕一停用焦點就掉到 body)
+let PRIV_BUSY = false;
 async function privToggle() {
-  if (PRIV == null) return;
+  if (PRIV == null || PRIV_BUSY) return;
   const want = !PRIV;
-  try { PRIV = (await window.blave.telemetrySet(want)) === true; } catch (_) { /* noop */ }   // 沒切成:畫面維持原狀
+  PRIV_BUSY = true;
+  try { PRIV = (await window.blave.telemetrySet(want)) === true; } catch (_) { /* noop */ } finally { PRIV_BUSY = false; }   // 沒切成:畫面維持原狀
   privPaint(); $("priv-sw").focus();
   srSay(PRIV ? t("priv.lead") : t("priv.leadOff"));
 }
@@ -569,7 +572,7 @@ function upWu(report) {
 }
 /* o:{ up(updater 狀態), cloud(雲端 snapshot 的 cloud 那一塊), kind(envCloudKind), localTurn, mem(UPD), now, cloudStale, wu(upWu), checking(按了檢查更新、還沒回來) }
    回 { slot, row: { segs, status }, link, spin, cloudLag }。字一律回 [key, vars]。
-   slot = null | { kind: "restart" | "applying", disabled };link = { kind: "check" | "restart", disabled } */
+   slot = null | { kind: "restart" | "applying", disabled, ask? };link = { kind: "check" | "restart", disabled, ask? }(ask = 下單中,按了先問,字尾「…」) */
 function upPlan(o) {
   const st = o.up || {}, ph = st.phase, mem = o.mem || {}, c = o.cloud || {}, wu = o.wu || null, turn = !!o.localTurn;
   const cv = o.kind === "running" ? c.config_version || null : null, lv = c.latest_config_version || null;
@@ -577,9 +580,12 @@ function upPlan(o) {
   const cloudLag = o.kind === "running" && (!!(cv && lv && cv !== lv) || !!o.cloudStale || c.config_supports_wf === false);
   // (c):報告說正在換檔;沒有那個欄位時由本機那一回合推得(檢查更新送出的那一回合在跑、或更新期間內碰過雲端的回合在跑)
   const applying = !!(wu && wu.state === "applying") || (turn && !!mem.session && (!!mem.cloudTurn || !!mem.turnCloud));
-  // (b):Squirrel 已暫存好而且沒在下單(updater 的 publicState 每次都重看 isTrading:下單中是 blocked)。回合在跑時不能重開(會把它斷掉)
-  const ready = ph === "ready";
-  const slot = applying ? { kind: "applying", disabled: false } : ready ? { kind: "restart", disabled: turn } : null;
+  // (b):Squirrel 已暫存好(updater 的 publicState 每次都重看 isTrading:下單中是 blocked)。回合在跑時不能重開(會把它斷掉)。
+  // 下單中也照出(0.1.10):ask = 按了主行程會先問、確認後收工再裝,字尾接「…」
+  const ready = ph === "ready" || ph === "blocked", ask = ph === "blocked";
+  // 已按了確認、主行程正在收工 / 安裝(st.restarting):那一格與關於列的連結都換「重新啟動中…」、停用
+  const restarting = !!st.restarting;
+  const slot = restarting ? { kind: "restarting", disabled: true } : applying ? { kind: "applying", disabled: false } : ready ? { kind: "restart", disabled: turn, ask } : null;
   const segs = [];
   if (st.current) segs.push(["up.row.app", { av: st.current }]);
   if (o.kind === "stopped" || o.kind === "unreach") segs.push(["up.row.cloudOff"]);
@@ -587,13 +593,12 @@ function upPlan(o) {
   let status = null;
   if (applying) status = ["up.row.applying"];
   else if (ready) status = ["up.row.ready"];
-  else if (ph === "blocked") status = ["up.row.readyQuit"];
   else if (ph === "error" && st.error === "INSTALL_FAILED") status = ["up.installFailed", { nv: st.version || "" }];
   /* 「已是最新版」只在查過之後才接上:啟動後 30 秒(updater FIRST_CHECK_MS)才第一次查,checkedAt 只有 update-not-available 會寫;
      檢查中沿用上一次的結論(圓環在連結上)。雲端已知落後而還沒在換檔時也不寫——那不是最新版,但沒有第四個狀態可講 */
   else if ((ph === "idle" || ph === "checking") && st.checkedAt > 0 && !cloudLag) status = ["up.row.latest"];
   const spin = !applying && !!(o.checking || ph === "checking");
-  const link = applying ? { kind: "check", disabled: true } : ready ? { kind: "restart", disabled: turn } : { kind: "check", disabled: spin };
+  const link = restarting ? { kind: "restarting", disabled: true } : applying ? { kind: "check", disabled: true } : ready ? { kind: "restart", disabled: turn, ask } : { kind: "check", disabled: spin };
   return { slot, row: { segs, status }, link, spin, cloudLag };
 }
 /* 事後那一行(§3):做完那一刻在聊天講一次,不進關於列。回 { key(講過就不再講), head, tail, view: null | "local" | "cloud", dir } 或 null。
@@ -687,7 +692,7 @@ function upPaint() {
   // 右邊那個文字連結:檢查更新 / 重新啟動以完成更新;檢查中是 16/2 圓環(被按的控件自己的回饋),不寫「檢查中」
   const btn = $("set-up-btn"); btn.textContent = ""; btn.dataset.kind = p.link.kind;
   if (p.spin) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); btn.append(sp); btn.setAttribute("aria-label", t("up.check")); }
-  else { btn.append(t(p.link.kind === "restart" ? "up.restart" : "up.check")); btn.removeAttribute("aria-label"); }
+  else { btn.append(p.link.kind === "restarting" ? t("up.restarting") : p.link.kind === "restart" ? t("up.restart") + (p.link.ask ? "…" : "") : t("up.check")); btn.removeAttribute("aria-label"); }
   // 「檢查更新」在有雲端主機在跑時也會把它更新掉(v4 零選擇):hover 先講,用戶才不會以為只查了 app
   const tip = p.link.kind === "check" && kind === "running" ? t("up.check.cloudTip") : "";
   btn.disabled = !!p.link.disabled; btn.title = p.link.kind === "restart" && p.link.disabled ? t("up.busy") : tip;
@@ -696,10 +701,10 @@ function upPaint() {
   if (w) {
     const k = p.slot ? p.slot.kind : "", hadFocus = document.activeElement === w;
     w.hidden = !p.slot; w.dataset.kind = k;
-    w.firstElementChild.textContent = k === "applying" ? t("up.applying") : k === "restart" ? t("up.restart") : "";
+    w.firstElementChild.textContent = k === "applying" ? t("up.applying") : k === "restarting" ? t("up.restarting") : k === "restart" ? t("up.restart") + (p.slot.ask ? "…" : "") : "";
     w.disabled = !!(p.slot && p.slot.disabled); w.setAttribute("aria-disabled", k === "applying" ? "true" : "false");
     w.classList.toggle("is-status", k === "applying");
-    w.title = p.slot && p.slot.disabled ? t("up.busy") : "";
+    w.title = p.slot && p.slot.disabled && k === "restart" ? t("up.busy") : "";   // 重新啟動中那一格停用不是因為回合在跑,不掛 up.busy
     if (hadFocus && w.hidden) $("ta").focus();   // 那一格收掉了:焦點不能掉到 BODY
   }
   upSayLines(cst);
@@ -729,13 +734,14 @@ async function upCloudRecheck() {
 }
 async function upInstall() {
   if (upLocalTurn()) return;   // 主行程也擋一次(update-install):回合在跑不重開(重開會把它斷掉)
-  const r = await window.blave.updateInstall(); if (r && !r.ok) upRefresh();
+  const r = await window.blave.updateInstall().catch(() => null);   // 主行程那邊拋例外:當成沒裝成,重讀狀態(稽核 P2-3)
+  if (!r || !r.ok) upRefresh();
 }
 function upRefresh() { return window.blave.updateState().then((st) => { UP = st; upPaint(); }).catch(() => {}); }
 window.blave.onUpdateState((st) => { UP = st; upPaint(); });
 upRefresh();
 $("ws-update").addEventListener("click", () => { if ($("ws-update").dataset.kind === "restart") upInstall(); });
-$("set-up-btn").addEventListener("click", () => { if ($("set-up-btn").dataset.kind === "restart") upInstall(); else upCheck(); });
+$("set-up-btn").addEventListener("click", () => { const k = $("set-up-btn").dataset.kind; if (k === "restart") upInstall(); else if (k === "check") upCheck(); });   // restarting:什麼都不做
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
 $("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
 $("btn-send").addEventListener("click", () => (running ? stopTurn() : sendDraft()));
@@ -2662,7 +2668,7 @@ function planPaint() {
   // 每一格:狀態點(有才出)/ 標題句 / 說明 / 鈕上方那行 / 鈕左小字 / 鈕
   const offerLead = () => (cur === "blave" ? t("pv.d.offer.blave", v) : t("pv.d.offer.cli", v));
   const V = {
-    out:      { h: hasNum ? "pv.h.offer" : "pv.h.offerNoNum", lead: hasNum ? offerLead() : t(pvK("pv.d.noPrice")), rule: hasNum ? t(pvK("pv.f.out"), v) : "", wait: planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli"),
+    out:      { h: hasNum ? "pv.h.offer" : "pv.h.offerNoNum", lead: hasNum ? offerLead() : t(pvK("pv.d.noPrice")), rule: hasNum ? t(pvK("pv.f.out"), v) : "", wait: planLoginBusy ? t("pv.w.waiting") : t("pv.w.out"),
                 acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
     offer:    { h: "pv.h.offer", lead: offerLead(), rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), ext(acctUrl()))] },
