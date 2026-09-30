@@ -2242,10 +2242,10 @@ msgid "priv.switch"
 msgstr "傳送使用資料"
 
 msgid "priv.lead"
-msgstr "用來知道大家卡在哪一步。關掉就立刻停止傳送。"
+msgstr "用來知道大家卡在哪一步；登入後，也用來決定要不要寄提醒信給你。關掉就停止傳送使用資料，也不再寄信。"
 
 msgid "priv.leadOff"
-msgstr "已關閉，這台電腦不再傳送。其他功能不受影響。"
+msgstr "已關閉：不再傳送使用資料，也不寄提醒信；登入中只告訴我們「已關閉」。其他功能照常。"
 
 msgid "priv.collect.h"
 msgstr "會收"
@@ -2270,6 +2270,9 @@ msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟
 
 msgid "priv.collect.6"
 msgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下、回來後能不能用，啟動雲端方案的結果，更新卡在哪一步，第一次收到 AI 回覆；只記類別，不含內容"
+
+msgid "priv.collect.7"
+msgstr "登入後，帳號也會記下：連的是哪種 AI、這台電腦有沒有跑過回測（保留 90 天）"
 
 msgid "priv.never.h"
 msgstr "不收"

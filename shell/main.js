@@ -199,9 +199,10 @@ async function saveConnection(choice) {
   const saved = connStore().save({ kind, path: agentPath, email: choice && choice.email });
   if (!saved) return false;
   tm().track("connect_done", { kind: saved.kind });
+  accountStatus();   // 換了 AI:現況立刻帶給 api(提醒信 K 型以它為準;沒登入就不打)
   return true;
 }
-const clearConnection = () => connStore().clear();
+const clearConnection = () => { const r = connStore().clear(); accountStatus(); return r; };
 const loadConnection = () => connStore().load();
 
 // ── 使用追蹤(telemetry.js:十八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
@@ -573,6 +574,7 @@ async function startOAuth(lang) {
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
   if (_balance) _balance.reset();     // 餘額也是
   libCache = null;                    // 同理:策略庫的 purchased / is_owner 是帳號的
+  accountStatus();                    // 登入完成就把 app 的現況(使用事件開關、連的 AI)帶給 api,不等畫面去問
   // 授權是在瀏覽器完成的,焦點還在那邊 —— 自己回到前景,不要讓用戶去找視窗。
   app.focus({ steal: true });
   return { ok: true };
@@ -1686,11 +1688,16 @@ const BLAVE_NAMES = {
 const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /deepseek.*flash/];
 /* 帳號能不能用 Blave AI(綁卡流程用)。回 api 的 account_status 原樣,或 null(沒 token / 打不到 /
    舊 api)。null 時 renderer 不猜——沿用「沒額度 → 儲值」那組舊文案。 */
+let btSeen = false;
 async function accountStatus() {
   const acct = loadToken();
   if (!acct) return null;
   try {
-    const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/account_status`, { "x-api-key": `proxy-${acct}` });
+    // 順帶帶上 app 的現況(使用事件開關、連的是哪個 AI;見 telemetry.js statusHeaders)——提醒信靠它尊重「關掉」
+    const conn = loadConnection(), on = tm().isEnabled(), T = require("./telemetry");
+    if (on && !btSeen) btSeen = T.anyBacktest(STRAT_DIR());   // 回測過就不會變回沒有:找到一次之後不再掃
+    const state = T.statusHeaders(on, conn && conn.kind, btSeen);
+    const r = await getJSON(`${API_BASE}/openclaw/proxy/v1/account_status`, { "x-api-key": `proxy-${acct}`, ...state });
     if (r.status !== 200) return null;
     const b = r.body && (r.body.data || r.body);
     if (!(b && typeof b.can_run === "boolean")) return null;
@@ -2511,7 +2518,8 @@ app.whenReady().then(() => {
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
   // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
-  ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); return tm().isEnabled(); });
+  // 切換的當下打一次 account_status:它帶著開關狀態,api 的提醒信立刻知道(沒登入就不打)
+  ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); accountStatus(); return tm().isEnabled(); });
   // 功能被使用(renderer 的 trackFeature):name 由 telemetry.js 對 feature_used 白名單驗,renderer 給的字不可信、不在表上就整則不送
   ipcMain.on("track-feature", (e, name) => { if (fromOurPage(e)) tm().track("feature_used", { name }); });
   // 卡在哪一步(renderer 的 trackEvent):事件要在 FROM_RENDERER 上,屬性值再由 telemetry.js 對列舉驗
@@ -2622,6 +2630,7 @@ app.whenReady().then(() => {
   app.on("activate", () => showMain());   // 點 Dock:視窗被紅燈收起來的話把它叫回來
   startStep("tray", trayStart);
   startStep("telemetry", () => tm().start());
+  startStep("app state", () => { accountStatus(); });   // 已登入就補報一次現況:關掉開關之後沒再用的人,下次開 app 就送到(沒登入不打)
   startStep("updater", () => updater().start());
   startStep("min version gate", () => minGate().start());
 });

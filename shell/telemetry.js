@@ -180,4 +180,24 @@ function createTelemetry(opts) {
   };
 }
 
-module.exports = { createTelemetry, EVENTS, FROM_RENDERER };
+/* app 的現況,隨每一次 account_status 帶給 api(0.1.10 起;api 端 openclaw/desktop_telemetry.state_from_headers)。
+   是設定值,不是使用事件:「使用事件」開關、現在連的是哪個 AI、本機有沒有跑過回測(只有 bt / none)。api 的提醒信
+   看到 off 就不寄(隱私權政策 §9.1),連的 AI 與回測過沒有也以這份為準。關掉時只送 off,其他都不送;
+   沒登入時 account_status 本來就不打。 */
+const ENGINES = ["blave", "claude", "codex"];
+function statusHeaders(enabled, kind, backtested) {
+  if (enabled !== true) return { "X-Blave-Telemetry": "off" };
+  return { "X-Blave-Telemetry": "on", "X-Blave-Engine": ENGINES.indexOf(kind) >= 0 ? kind : "none",
+    "X-Blave-Progress": backtested === true ? "bt" : "none" };
+}
+// 本機有沒有任何一支策略跑過回測:strategies/<name>/stats.json 存在就算,找到一支就停。讀不到目錄 = 沒有
+function anyBacktest(stratDir) {
+  try {
+    for (const d of fs.readdirSync(stratDir, { withFileTypes: true })) {
+      if (d.isDirectory() && fs.existsSync(path.join(stratDir, d.name, "stats.json"))) return true;
+    }
+  } catch (_) { /* 還沒有 workspace */ }
+  return false;
+}
+
+module.exports = { createTelemetry, EVENTS, FROM_RENDERER, statusHeaders, anyBacktest };
