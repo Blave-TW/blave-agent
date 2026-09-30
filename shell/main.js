@@ -860,7 +860,7 @@ function stratSelfOrderingAny() {
 /* 側欄順序 = 最近被人或 agent 動過的在上面:程式碼、明確回測(stats 的 Generated At,秒)、參數掃描。
    不看 stats.json 的 mtime——上線中的策略每根 K 的 live tick 都重寫它(Generated At 不動),那一支每小時跳回第一,
    重開 app、切語言重畫時順序就跟著變。舊 stats 沒有 Generated At 才退回檔案時間;同時間照資料夾名,順序才固定 */
-const stratTouchedAt = (x) => Math.max(x.codeMtime || 0, x.scanMtime || 0, x.generatedAt ? x.generatedAt * 1000 : x.statsMtime || 0);
+const stratTouchedAt = (x) => Math.max(x.codeMtime || 0, x.scanMtime || 0, x.wfMtime || 0, x.generatedAt ? x.generatedAt * 1000 : x.statsMtime || 0);
 const stratOrder = (a, b) => stratTouchedAt(b) - stratTouchedAt(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 function listStrategies() {
   return stratNames().map((name) => {
@@ -873,9 +873,12 @@ function listStrategies() {
     // scan.json 只影響「最近動過」的時間(renderer 靠 mtime 變了才重載):只掃參數、沒重跑回測的那一輪也要算動過
     let scMtime = 0;
     try { scMtime = fs.statSync(path.join(dir, "scan.json")).mtimeMs; } catch (_) {}
-    const touched = Math.max(mtime, sMtime, scMtime);
+    // wf.json(樣本外驗證)同理;它不出結果卡(web 也沒有),只讓開著的那支原地重畫(renderer/app.js stratRefresh)
+    let wfMtime = 0;
+    try { wfMtime = fs.statSync(path.join(dir, "wf.json")).mtimeMs; } catch (_) {}
+    const touched = Math.max(mtime, sMtime, scMtime, wfMtime);
     // 三個 mtime 分開交出去:聊天結果卡要分得出這一輪動的是程式碼、回測還是掃描(renderer/results.js)
-    const parts = { codeMtime: mtime, statsMtime: sMtime, scanMtime: scMtime, version: stratVersionNow(dir) };
+    const parts = { codeMtime: mtime, statsMtime: sMtime, scanMtime: scMtime, wfMtime, version: stratVersionNow(dir) };
     const hit = stratCache.get(name);
     if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, ...parts, mtime: touched };
     let displayName = null;
@@ -907,16 +910,40 @@ function stratVersionNow(dir) {
   return v;
 }
 
+/* agent 寫的結果檔(scan.json / wf.json):只讀一般檔(symlink 不跟)、有大小上限(同 RES_FILE_MAX / RPT_BYTES_MAX 的 2MB)——
+   過大的檔會在主行程同步讀、卡住整個 app。沒有 / 寫到一半 / 過大 / 不是物件 → null,renderer 畫空狀態(稽核 P2-6)。
+   實際大小:scan 40×40 格約 30KB;wf 上限 1000 輪 × 約 225B + 曲線 4000 點,約 350KB */
+const RESULT_JSON_MAX = 2 * 1024 * 1024;
+/* 開檔就不跟 symlink(O_NOFOLLOW)、不在 FIFO 上卡住(O_NONBLOCK),檢查對的是「開到的那一個檔」(fstat fd,不是先 lstat 路徑再另外讀——
+   兩步之間可以被換成 symlink / FIFO / 還在長大的檔,複驗 P2-R5),讀的時候最多讀上限 + 1 byte,讀超過就當沒有。
+   Windows 沒有 O_NOFOLLOW:退回先 lstat 擋 symlink(那一步之後的換檔在 Windows 上擋不到,威脅模型同樣只剩同 user 的程式) */
+function readResultJson(p) {
+  const C = fs.constants;
+  let fd = null;
+  try {
+    if (C.O_NOFOLLOW === undefined && !fs.lstatSync(p).isFile()) return null;
+    fd = fs.openSync(p, C.O_RDONLY | (C.O_NOFOLLOW || 0) | (C.O_NONBLOCK || 0));
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size > RESULT_JSON_MAX) return null;
+    const buf = Buffer.alloc(Math.min(st.size, RESULT_JSON_MAX) + 1);
+    let n = 0, r = 0;
+    while (n < buf.length && (r = fs.readSync(fd, buf, n, buf.length - n, null)) > 0) n += r;
+    if (n >= buf.length) return null;   // 比 fstat 說的還長 = 讀的時候還在長大(或被換掉):不收
+    const v = JSON.parse(buf.toString("utf8", 0, n));
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+  } catch (_) { return null; }
+  finally { if (fd !== null) try { fs.closeSync(fd); } catch (_) { /* 關不掉也不影響結果 */ } }
+}
 function loadStrategy(name) {
   if (!stratNames().includes(name)) return null;
   const dir = path.join(STRAT_DIR(), name);
-  let stats = null, scan = null, code = "";
+  let stats = null, code = "";
   try { stats = JSON.parse(fs.readFileSync(path.join(dir, "stats.json"), "utf8")); } catch (_) {}
-  // 參數掃描(lib/param_scan.write_scan 的 scan.json):沒掃過 / 寫到一半 / 不是物件 → null,renderer 畫空狀態
-  try { scan = JSON.parse(fs.readFileSync(path.join(dir, "scan.json"), "utf8")); } catch (_) {}
-  if (!scan || typeof scan !== "object" || Array.isArray(scan)) scan = null;
+  // 參數掃描(lib/param_scan.write_scan 的 scan.json)與樣本外驗證(lib/walk_forward.run_walk_forward 的 wf.json):
+  // 逐欄檢查在 renderer/report-robust.js 的 sanitizeScan / report-wf.js 的 sanitizeWf
+  const scan = readResultJson(path.join(dir, "scan.json")), wf = readResultJson(path.join(dir, "wf.json"));
   try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
-  return { name, stats, scan, code, dataSources: stratDataSources(dir), versions: stratVersions(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), versions: stratVersions(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
 }
 /* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。
    讀檔規則同 runtime `_read_export`:regular file、≤256KB;讀不到那一份就當沒有(不猜、不報錯)。
@@ -1167,7 +1194,8 @@ function listSessions() {
       FROM (SELECT session_id, MAX(created_at) AS last FROM turns
             WHERE session_id LIKE 'desktop-%' GROUP BY session_id) s
       ORDER BY s.last DESC LIMIT 200`).all()
-      .map((r) => ({ id: r.id, last: r.last, title: String(r.title || "").slice(0, 120) }));
+      // 不截 120:固定觸發句(樣本外驗證 en 約 490 字)要整句才比對得到摘要,截斷改到 renderer 摘要之後(csRow);仍留上限
+      .map((r) => ({ id: r.id, last: r.last, title: String(r.title || "").slice(0, 4000) }));
   } catch (_) { return []; } finally { db.close(); }
 }
 function loadSession(id) {

@@ -188,12 +188,16 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
      物件是雲端那台機器上的策略碼寫得進去的東西:逐欄驗型別、只留報告要畫的那幾欄(形狀對齊主行程 loadStrategy)。 */
   const stBody = (o = {}) => ({ machine_state: "running", server_time: 130, strategy: { name: "momo", display_name: "Momentum", description: "MARKER-DESC", status: "draft", code: "MODE = 'backtest'", backtest: { "Sharpe Ratio": 1.2, candles: [[1, 2, 3, 4, 5, 6]] }, images: [{ hash: "x" }] }, ...o });
   { const r = interpretStrategy({ status: 200, body: stBody() }, "momo");
-    t("策略:OK,只留 name / displayName / description / stats(= 整份 backtest)/ scan / code / versions;images 與 status 不往上交", r.code === "OK" && JSON.stringify(Object.keys(r.strategy)) === '["name","displayName","description","stats","scan","code","versions"]'
+    t("策略:OK,只留 name / displayName / description / stats(= 整份 backtest)/ scan / wf / code / versions;images 與 status 不往上交", r.code === "OK" && JSON.stringify(Object.keys(r.strategy)) === '["name","displayName","description","stats","scan","wf","code","versions"]'
       && r.strategy.displayName === "Momentum" && r.strategy.stats["Sharpe Ratio"] === 1.2 && r.strategy.stats.candles.length === 1 && r.strategy.code === "MODE = 'backtest'");
     t("策略:scan(參數掃描)是物件才原樣往上交,缺 / 陣列 / 字串 → null(逐欄檢查在 report-robust.js 的 sanitizeScan)", r.strategy.scan === null
       && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", scan: { row_param: "A", grid: [[1]] } } }) }, "momo").strategy.scan.row_param === "A"
       && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", scan: [1] } }) }, "momo").strategy.scan === null
       && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", scan: "x" } }) }, "momo").strategy.scan === null);
+    t("策略:wf(樣本外驗證)同 scan:是物件才原樣往上交,缺 / 陣列 / 字串 → null(逐欄檢查在 report-wf.js 的 sanitizeWf)", r.strategy.wf === null
+      && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", wf: { lookback_days: 365, step_days: 30 } } }) }, "momo").strategy.wf.lookback_days === 365
+      && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", wf: [1] } }) }, "momo").strategy.wf === null
+      && interpretStrategy({ status: 200, body: stBody({ strategy: { name: "momo", wf: "x" } }) }, "momo").strategy.wf === null);
     t("策略:雲端沒有這一份 = OK + null(api 的契約:沒這個名字 / 被逐出 / 沒主機都是 200 + null)", JSON.stringify(interpretStrategy({ status: 200, body: stBody({ strategy: null }) }, "momo")) === '{"code":"OK","strategy":null}');
     const bad = (s) => interpretStrategy({ status: 200, body: stBody({ strategy: s }) }, "momo");
     t("策略:display_name / description / code 不是字串 → 退回 name / 空字串;backtest 不是物件 → stats null(還沒回測過:只有程式碼可看)",
@@ -345,6 +349,17 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
     rep = { status: 200, body: body({ config_version: "1.1.83" }) };
     await h.refresh(true);
     t("config_version 變了就推(不等 60 秒那一輪)", seen.join(",") === "1.1.80,1.1.83", seen.join(",")); }
+
+  { // config_supports_wf:api 同 web 的三態,只收布林(其餘 → null = 不知道、不擋);翻面也要推(樣本外驗證分頁的落後態跟著換)
+    let rep = { status: 200, body: body({}) }, seen = [], ck = 5e6;
+    const h = createCloudHost({ apiBase: "https://x", getCreds: () => ({ token: "u", appSecret: "s" }), post: async () => rep,
+      onChange: (s) => seen.push(s.config_supports_wf), now: () => ck, setTimer: () => 0, clearTimer: () => {} });
+    await h.refresh(true); ck += MIN_GAP_MS;
+    rep = { status: 200, body: body({ config_supports_wf: false }) };
+    await h.refresh(true); ck += MIN_GAP_MS;
+    rep = { status: 200, body: body({ config_supports_wf: "yes" }) };
+    await h.refresh(true);
+    t("config_supports_wf:缺 → null、false 照交、不是布林 → null;每次翻面都推", JSON.stringify(seen) === "[null,false,null]", JSON.stringify(seen)); }
 
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

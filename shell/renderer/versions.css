@@ -87,7 +87,7 @@
   .vb-short { display: inline; }
   /* 頁首 / 分頁 / 面板左右收到 16(同 .main-head 的 <520 規則;看不看舊版都一樣,進出時光機版面不跳) */
   .rp-head { padding-left: var(--space-16); padding-right: var(--space-16); }
-  .rp-tabs { padding: 0 var(--space-16); }
+  .rp-tabs { padding: 0 var(--space-16) 1px; }   /* 底下 1px 是 hairline 的位置(app.css .rp-tabs:分頁底線蓋在它上面),收窄時不能跟著歸零 */
   .rp-nobt { padding-left: var(--space-16); padding-right: var(--space-16); }
   .rp-panel { padding: var(--space-16); }
 }

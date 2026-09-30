@@ -44,7 +44,7 @@ const trRestartUnconfirmed = (r) => { const x = r && r.reconciler && r.reconcile
 const submitMessage = async (msg, o) => { sent.push([msg, o]); if (startOk) running = true; return startOk; };   // 真的那支一開跑就把 running 設起來
 const paneSt = { chat: { off: false } }, paneToggle = () => {};
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
-eval(["UP_SESSION_IDLE_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
+eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var CS_BOOTED = false, UP_CHECKING = false;
 eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upDoneLine", "upBackupLine", "upRich", "upSayLines", "upSayLine", "upView", "upLocalTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
 eval(["upCheck", "upCloudRecheck", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
@@ -86,6 +86,9 @@ ok("⑧ 沒雲端主機:Blave {av} · 已是最新版;沒登入 / 還沒讀到 /
 ok("雲端版號讀不到(舊機器 / api 快取 null):不印「雲端主機 null」", paint(idle, cloud({ cloud: { config_version: null } })).line === 'up.row.app{"av":"0.0.7"} · up.row.latest');
 ok("雲端已知落後而沒在換檔:不寫「已是最新版」(那不是真話),也沒有第四個狀態", paint(idle, cloud({ cloud: { config_version: "2026-09-22-p" } })).line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-22-p"}'
   && plan(idle, cloud({ cloud: { config_version: "2026-09-22-p" } })).cloudLag === true && plan(idle, cloud({ report: { reconciler: { stopped: { reason: "machine_restart", gated: false } } } })).cloudLag === true);
+ok("雲端主機的 lib 沒有 walk_forward(config_supports_wf false):就算 api 讀不到最新版號(lv null)也算落後——樣本外驗證的〔去更新〕→「檢查更新」才有出口(稽核 P2-5);true / 缺欄位照舊",
+  plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: false } })).cloudLag === true && plan(idle, cloud({ cloud: { latest_config_version: null, config_supports_wf: true } })).cloudLag === false
+  && plan(idle, cloud({ cloud: { latest_config_version: null } })).cloudLag === false && plan(idle, cloud({ cloud: { config_supports_wf: false } }, "stopped")).cloudLag === false);
 ok("安裝失敗:關於列那一句沿用 up.installFailed;查失敗什麼都不說", /up\.installFailed\{"nv":"0\.0\.8"\}$/.test(paint({ ...C, phase: "error", error: "INSTALL_FAILED" }, cloud()).line) && paint({ ...C, phase: "error", error: "CHECK_FAILED" }, cloud()).line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-24-b"}');
 ok("背景下載 / 暫存中 / 沒有更新來源:關於列不寫狀態字(沒有東西可等)", ["downloading", "staging", "off"].every((ph) => paint({ ...C, phase: ph }, cloud()).line === 'up.row.app{"av":"0.0.7"} · up.row.cloud{"cv":"2026-09-24-b"}'));
 ok("狀態字不換色:upPlan 不回任何 cls,CSS 沒有 .st.up / .st.ok / 兩行版的 id", !("cls" in plan(idle, cloud()).row) && !/\.set-about \.st|set-up-(ver|txt|cver|ctxt|cnote|lbtn|head)|up-dot/.test(css + html + src));
@@ -154,6 +157,14 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   ok("聊天沒送出去(上一輪還在跑 / 版本被停用):不進更新期間", sent.length === 1 && UPD.session === null && UPD.cloudTurn === false);
   startOk = true; sent.length = 0; running = true; await upCheck(); running = false;
   ok("這台電腦有回合在跑時按檢查更新:重查、刷新,不送(送不出去)", sent.length === 0);
+  { // R4:更新期間裡最後一個回合結束滿 3 分鐘(雲端早該回報了)仍落後 = 上一次沒成功 → 再按檢查更新要重送;還沒滿 3 分鐘照舊不送
+    const lag = cloud({ cloud: { config_version: "2026-09-22-p", latest_config_version: null, config_supports_wf: false } }); cloudSt = lag; TR_BAGS.cloud.st = lag;
+    UPD.session = { startAt: Date.now() - UP_RETRY_MS + 20000, lastTurnAt: Date.now() - UP_RETRY_MS + 20000, fromCv: "2026-09-22-p", nv: null }; UPD.cloudTurn = false; sent.length = 0; await upCheck();
+    const early = sent.length;
+    UPD.session = { startAt: Date.now() - UP_RETRY_MS - 1000, lastTurnAt: Date.now() - UP_RETRY_MS - 1000, fromCv: "2026-09-22-p", nv: null }; UPD.cloudTurn = false; sent.length = 0; await upCheck(); running = false;
+    ok("R4 讀不到最新版號時的更新期間:最後一回合結束未滿 3 分鐘不重送;滿 3 分鐘還落後就重送、開一段新的更新期間(不必等 30 分鐘閒置)",
+      UP_RETRY_MS === 3 * 60000 && early === 0 && sent.length === 1 && sent[0][0] === "up.c.msg" && UPD.session && Date.now() - UPD.session.startAt < 5000);
+    UPD.session = null; UPD.cloudTurn = false; }
   sent.length = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" }, report: { workspace_update: { state: "applying", ts: 2 } } }); await upCheck();
   ok("主機自己正在換檔(applying)時按檢查更新:不送", sent.length === 0);
   sent.length = 0; cloudSt = cloud({ cloud: { config_version: "2026-09-22-p" } }, "stopped"); await upCheck();

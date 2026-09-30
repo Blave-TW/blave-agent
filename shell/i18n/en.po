@@ -415,7 +415,7 @@ msgid "rp.tab.code"
 msgstr "Code"
 
 msgid "rp.tab.rob"
-msgstr "Param scan"
+msgstr "Param Scan"
 
 msgid "bt.fee"
 msgstr "fee"
@@ -3272,10 +3272,10 @@ msgid "rob.empty"
 msgstr "No parameter scan yet."
 
 msgid "rob.btnScan"
-msgstr "Start scan"
+msgstr "Start Scan"
 
 msgid "rob.btnSent"
-msgstr "Sent — see chat"
+msgstr "Sent — See Chat"
 
 msgid "rob.busy"
 msgstr "The agent is still answering your last message. Wait a few seconds and send again."
@@ -3288,6 +3288,204 @@ msgstr "Send"
 
 msgid "rob.msgScan"
 msgstr "Please scan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Choose the ranges from the indicator distribution, then report the peak and the robust point."
+
+msgid "rob.msgScanLabel"
+msgstr "Scan the parameters of {name}"
+
+msgid "rob.msgScanTitle"
+msgstr "{name} · Parameter Scan"
+
+msgid "rp.tab.wf"
+msgstr "Out-of-Sample"
+
+msgid "wf.tagNone"
+msgstr "OOS efficiency: cannot be judged"
+
+msgid "wf.tagFar"
+msgstr "OOS efficiency: far below the bar"
+
+msgid "wf.tagLow"
+msgstr "OOS efficiency: below the bar"
+
+msgid "wf.tagEdge"
+msgstr "OOS efficiency: just above the bar"
+
+msgid "wf.tagHigh"
+msgstr "OOS efficiency: above the bar"
+
+msgid "wf.verdictStale"
+msgstr "The code changed — rerun the validation to update this."
+
+msgid "wf.rowOos"
+msgstr "Out-of-sample"
+
+msgid "wf.rowIs"
+msgstr "In-sample"
+
+msgid "wf.tipOos"
+msgstr "Parameters are re-picked in each training window and applied to the test window that follows; test windows do not overlap, so they stitch into one series."
+
+msgid "wf.tipIs"
+msgstr "The data each run used to pick parameters, averaged across runs (they overlap, so there is no single curve)."
+
+msgid "wf.colSharpe"
+msgstr "Sharpe"
+
+msgid "wf.colAnn"
+msgstr "Annual Return"
+
+msgid "wf.colDd"
+msgstr "Max DD"
+
+msgid "wf.factWfe"
+msgstr "OOS efficiency"
+
+msgid "wf.tipWfe"
+msgstr "Walk-Forward Efficiency (WFE): out-of-sample Sharpe ÷ in-sample Sharpe (the two rows above). The usual bars are 0.5 to pass and 0.7 to call it good; below an in-sample Sharpe of 0.25 the division is not done. These are conventions, not proof."
+
+msgid "wf.chartLabel"
+msgstr "Out-of-Sample Cumulative Return (test windows stitched)"
+
+msgid "wf.chartAria"
+msgstr "Out-of-sample cumulative return (test windows stitched): cumulative return {r}, {a} to {b}; parameters re-picked every {d} days"
+
+msgid "wf.legOos"
+msgstr "Out-of-sample (re-picked each run)"
+
+msgid "wf.legReopt"
+msgstr "parameters re-picked"
+
+msgid "wf.legReoptTick"
+msgstr "tick = parameters re-picked"
+
+msgid "wf.legReoptText"
+msgstr "parameters re-picked every {d} days"
+
+msgid "wf.legNoIs"
+msgstr "No in-sample curve: training windows overlap, so they cannot be stitched into one line"
+
+msgid "wf.tailNote"
+msgstr "last {d} days are shorter than one run — excluded"
+
+msgid "wf.driftLabel"
+msgstr "Parameters Picked Each Run"
+
+msgid "wf.driftAria"
+msgstr "{rp} × {cp} map of the parameters picked each run"
+
+msgid "wf.driftAria1"
+msgstr "Per-run picks of {rp}"
+
+msgid "wf.driftFacts"
+msgstr "{n} runs picked {u} distinct pairs"
+
+msgid "wf.driftLegCount"
+msgstr "number in cell = how many runs picked it"
+
+msgid "wf.driftLegWhere"
+msgstr "which runs, and how each did, is in the run detail below"
+
+msgid "wf.driftLegCur"
+msgstr "dashed = current parameters {p}"
+
+msgid "wf.driftLegRef"
+msgstr "the last run's pick is for reference only"
+
+msgid "wf.driftTipHits"
+msgstr "picked by run {k}"
+
+msgid "wf.driftTipNone"
+msgstr "no run picked it"
+
+msgid "wf.driftTipCur"
+msgstr " (current parameters)"
+
+msgid "wf.runsLabel"
+msgstr "Run Detail"
+
+msgid "wf.colRun"
+msgstr "Run"
+
+msgid "wf.colTrain"
+msgstr "Train"
+
+msgid "wf.colTest"
+msgstr "Test"
+
+msgid "wf.colPick"
+msgstr "Picked"
+
+msgid "wf.colTrs"
+msgstr "Train Sharpe"
+
+msgid "wf.colTes"
+msgstr "Test Sharpe"
+
+msgid "wf.colTer"
+msgstr "Test Return"
+
+msgid "wf.voidNote"
+msgstr "Run {k} had a training Sharpe ≤ 0 and is excluded from the in-sample average."
+
+msgid "wf.knobLookback"
+msgstr "Train"
+
+msgid "wf.knobStep"
+msgstr "Test"
+
+msgid "wf.unitDay"
+msgstr "days"
+
+msgid "wf.tlAria"
+msgstr "Illustration: each run picks parameters on a {l}-day training window, tests the next {s} days, then moves forward {s} days — {n} runs in total"
+
+msgid "wf.estRuns"
+msgstr "{n} runs"
+
+msgid "wf.listSep"
+msgstr ", "
+
+msgid "wf.estBad"
+msgstr "Only enough data for {n} runs — 3 is the minimum to read anything out of sample"
+
+msgid "wf.estOver"
+msgstr "That cuts {n} runs, over the {max}-run cap — widen the test window"
+
+msgid "wf.btnRun"
+msgstr "Start Validation"
+
+msgid "wf.btnRerun"
+msgstr "Rerun"
+
+msgid "wf.btnSent"
+msgstr "Sent — See Chat"
+
+msgid "wf.btnWait"
+msgstr "Fetching Results"
+
+msgid "wf.waitTimeout"
+msgstr "This run’s results didn’t arrive — below is the previous run. Select the strategy again to recheck."
+
+msgid "wf.emptyBoundary"
+msgstr "It produces no parameters to adopt — it validates the act of picking parameters from history."
+
+msgid "wf.confirmBody"
+msgstr "Usually takes about two minutes; results appear in this tab."
+
+msgid "wf.needUpdate"
+msgstr "The agent on your server is on an older version and may not know how to run an out-of-sample validation yet."
+
+msgid "wf.behind"
+msgstr "Update your server first to start a validation."
+
+msgid "wf.msgRun"
+msgstr "Please run a walk-forward out-of-sample validation on strategy {name}: training window {lookback} days, re-optimize every {step} days, rolling (not anchored). In each run, pick the robust parameters inside the training window with lib/param_scan and apply them to the test window that follows; stitch the test windows into one out-of-sample result, average the training windows run by run for the in-sample figure (runs whose training-window Sharpe is ≤ 0 are excluded), and write wf.json."
+
+msgid "wf.msgRunLabel"
+msgstr "Run out-of-sample validation on {name} (train {lookback} days, test {step} days)"
+
+msgid "wf.msgRunTitle"
+msgstr "{name} · Out-of-Sample"
 
 msgid "lib.nav"
 msgstr "Strategy Library"
@@ -4944,10 +5142,10 @@ msgid "ver.rerunDoneSr"
 msgstr "The backtest for {v} has re-run on the latest data."
 
 msgid "ver.frozenRerun"
-msgstr "Trade records come back once the backtest finishes re-running; run the param scan again for this version."
+msgstr "Trade records come back once the backtest re-runs; run the param scan and out-of-sample validation again."
 
 msgid "ver.frozenRerunFailed"
-msgstr "The backtest didn’t finish re-running, so there are no trade records or param scan."
+msgstr "The greyed-out tabs have no data until the backtest re-runs."
 
 msgid "ver.rsErrGone"
 msgstr "{v} is no longer on the machine (only the latest 20 are kept). You can view it but not restore it."

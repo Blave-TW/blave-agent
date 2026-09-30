@@ -331,7 +331,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         ok("重跑狀態列:圓環 + 一句(v2 包粗體 mono),沒有鈕、不給百分比", bar(r).kids.length === 1 && bar(r).kids[0].kids[0].className === "spin16" && bar(r).kids[0].kids[0].attrs["aria-hidden"] === "true"
           && bar(r).textContent === "已回到 v2，先顯示它當初存的結果；正在用最新資料重跑回測，跑完會更新。" && bar(r).kids[0].kids[1].kids.some((k) => k.tagName === "b" && k.className === "mono" && k.textContent === "v2"));
         ok("重跑中:說明句收起、送上雲端 / 拉回收起、轉出不算時光機、回測數字交給 versions.js 畫 blob", r.E["rp-desc"].hidden === true && r.E["rp-act"].hidden === true && r.F.verHidesAct() === true
-          && r.F.verHolds(r.B) === true && r.F.verShowTab("bt") === true && r.E["rp-nobt"].textContent === "回測重跑完才有進出場紀錄；參數掃描要對這一版重新跑。");
+          && r.F.verHolds(r.B) === true && r.F.verShowTab("bt") === true && r.E["rp-nobt"].textContent === "回測重跑完就有進出場紀錄；參數掃描與樣本外驗證要再跑一次。");
         ok("重跑中:比較框預設 A = 版號最大、不是目前的那一版(v3),B = 目前(v2)", (r.F.vcOpen(), r.E["vc-a"].value === "3" && r.E["vc-b"].value === "2"));
         ok("重跑中:選單裡 windowNote 不出、「目前」徽章掛在 v2", (r.B.data.stats = { end: "2099-01-01" }, r.F.verMenuOpen(false), r.E["ver-menu"].all((k) => k.className === "vmi-win").length === 0)
           && r.E["ver-menu"].all((k) => /vtag cur/.test(k.className)).length === 1 && menuItems(r.E["ver-menu"])[1].all((k) => /vtag cur/.test(k.className)).length === 1);
@@ -368,7 +368,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         ok("沒完成:fault 記號 + 失敗句({why}=沒取到資料)+「再跑一次」描邊鈕;說明句照出、送上雲端不收、不輪詢",
           bar(r).kids[0].kids[0].className === "fault-mark" && bar(r).kids[0].textContent === "v2 的回測沒有重跑完（沒取到資料），頁面顯示的是它當初存的結果。"
           && bar(r).kids[1].className === "btn-out" && bar(r).kids[1].textContent === "再跑一次" && r.E["rp-desc"].hidden === false && r.F.verHidesAct() === false && r.F.VP.local === null);
-        ok("沒完成:凍結分頁的原因換成 frozenRerunFailed", r.F.verShowTab("tr") === true && r.E["rp-nobt"].textContent === "回測沒有重跑完，進出場紀錄與參數掃描都沒有資料。");
+        ok("沒完成:凍結分頁的原因換成 frozenRerunFailed", r.F.verShowTab("tr") === true && r.E["rp-nobt"].textContent === "灰掉的分頁沒有資料，回測重跑完才有。");
         bar(r).kids[1].click();
         ok("再跑一次:同一條指令 {name, n},當下切回重跑中(報告還是 failed 也一樣);焦點交給版本觸發器", JSON.stringify(r.sent) === '[["version_restore",{"name":"momo","n":2}]]'
           && bar(r).kids.length === 1 && bar(r).kids[0].kids[0].className === "spin16" && doc.activeElement === r.E["ver-trig"]);

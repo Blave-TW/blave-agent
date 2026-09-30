@@ -1,0 +1,424 @@
+/* 報告頁「樣本外驗證」分頁。視覺語言移植自雲端工作頁(web workspace.css 的 .wf-* 家族,
+   spec-workspace-walkforward-2026-09-10):重跑列 → 結論卡 → 樣本外曲線 → 落點網格 → 每輪明細。
+   跟參數掃描同一副骨架(卡、tag、比較表、網格、legend、frame 值都照 report-robust.css),這裡只寫 wf 自己的類。
+   顏色 / 半徑 / 間距一律引 tokens.css 的角色變數,不寫 hex;雲端寫死的 darkCard / darkText / greyMedium /
+   greyLightMedium / darkBorder / darkBody 這裡對應 --surface-card / --ink / --ink-3 / --ink-2 /
+   --border-hairline(線)或 --surface-control-on(填色)/ --bg-body。 */
+
+/* 間距同雲端:meta → 重跑列 16(.bt > .bt-meta + *)、重跑列 → 卡 → 其餘各塊 24(.bt > * + *) */
+
+/* ---- 結論卡 ---- */
+.wf-card {
+  background: var(--surface-card);
+  border-radius: var(--radius-lg);
+  padding: var(--space-16);
+}
+.wf-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-8);
+}
+/* Mini tag:18px 定高 / micro 角 / 11px。只有「遠低於門檻」上風險色,其餘中性 */
+.wf-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-micro);
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.wf-tag.is-risk {
+  background: var(--color-redLight);
+  color: var(--color-redBlack);
+}
+.wf-tag.is-neutral {
+  background: var(--surface-muted);
+  color: var(--ink-2);
+}
+/* 過時態唯一的一句 */
+.wf-verdict {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 62ch;
+}
+/* 比較表:樣本外 / 樣本內 × Sharpe / 年化報酬 / 最大回撤。全中性,要讀的是兩列之間的差 */
+.wf-cmp {
+  margin-top: var(--space-16);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--border-hairline);
+  overflow-x: auto;   /* 窄的中欄四欄放不下時橫捲;列名的泡泡走 body 層單例,不怕被裁 */
+}
+.wf-cmp-tbl {
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.wf-cmp-tbl th,
+.wf-cmp-tbl td {
+  padding: var(--space-4) 0 var(--space-4) var(--space-24);
+  text-align: right;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.wf-cmp-tbl th:first-child,
+.wf-cmp-tbl td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.wf-cmp-tbl th {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.wf-cmp-tbl td:first-child { color: var(--ink-2); }
+.wf-cmp-tbl td:first-child .who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.wf-cmp-tbl td:first-child .mp-tip { font-size: 12px; }
+.wf-cmp-tbl td.num { color: var(--ink); }
+.wf-cmp-tbl td.num.na { color: var(--color-greyDark); }
+/* 通過條件(樣本外效率):沿用回測分頁的指標列元件,只補一條上緣髮絲 */
+.wf-facts {
+  margin-top: var(--space-16);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-hairline);
+}
+
+/* 色塊:樣本外那列 = 圖上那條線(data-1);訓練窗 = ink-3;樣本內給同寬透明位,兩個列名才對齊 */
+.wf-glyph {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  flex: none;
+}
+.wf-glyph.s1 { color: var(--color-data-1); }
+.wf-glyph.s0 { color: var(--ink-3); }
+.wf-glyph.is-none { background: none; }
+
+/* ---- 區塊:小標(.bt-label)+ frame + legend ---- */
+.wf-canvas {
+  display: block;
+  width: 100%;
+  height: 220px;
+}
+.wf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6) var(--space-16);
+  margin-top: var(--space-8);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.wf-legend .it {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.wf-legend .mono { color: var(--ink-2); }
+/* legend 的「重新選參數」樣本:≤12 輪與曲線上那條虛線同一個畫法,13–60 輪換成 X 軸短刻度的樣子 */
+.wf-legend .dashline {
+  display: inline-block;
+  width: 12px;
+  height: 0;
+  border-top: 1px dashed var(--color-greyDark);
+  flex: none;
+}
+.wf-legend .tickmark {
+  display: inline-block;
+  width: 0;
+  height: 4px;
+  border-left: 1px solid var(--color-greyDark);
+  flex: none;
+}
+
+/* ---- 落點網格:同參數掃描那張熱圖的骨架(.rob-frame 橫捲、84px 列標、4px spacing),格內是次數不是 Sharpe:
+   沒有色階,空格降到 greyDark ---- */
+.wf-grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: var(--space-4);
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.wf-grid th {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: center;
+  white-space: nowrap;
+}
+.wf-grid th.corner {
+  width: 84px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+.wf-grid th.corner span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;   /* 參數名比 84px 長就截尾 */
+}
+.wf-grid th.corner .r,
+.wf-grid tbody th { color: var(--ink-2); }
+/* 橫捲時列標釘住(同 .rob-tbl) */
+.wf-grid tbody th,
+.wf-grid thead th.corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-body);
+  box-shadow:
+    var(--space-4) 0 0 var(--bg-body),
+    calc((var(--space-16) + var(--space-4)) * -1) 0 0 var(--bg-body);
+}
+.wf-grid td {
+  position: relative;
+  height: 32px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-micro);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-greyDark);
+  background: var(--surface-card);
+}
+.wf-grid td.is-hit {
+  background: var(--surface-control-on);
+  color: var(--ink);
+  font-weight: 500;
+}
+.wf-grid td.is-current {
+  outline: 2px dashed var(--ink-2);
+  outline-offset: 0;
+}
+.wf-grid td[tabindex]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.wf-grid td.is-hover { box-shadow: inset 0 0 0 1px var(--ink-2); }
+.wf-drift-facts { margin-top: var(--space-8); }
+/* 落點格 / 列名 / 指標名的 tooltip:app.css 的 .tip 材質,body 層級的 fixed 單例(同 .rob-tip) */
+.wf-tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: auto;
+  z-index: 60;
+}
+.wf-tip.is-on { display: block; }
+
+/* ---- 每輪明細:.pf-tbl(trade.css)的修飾。全部輪數都在 DOM,收進固定高度捲動框、表頭 sticky。
+   高度上限 = 表頭 58 + 12.5 列 × 50:≤12 輪框比上限矮、不出捲軸;13 輪起第 13 列固定露出半列(捲軸是隱藏的,那半列就是「還能往下捲」的提示)。
+   表頭折不折行看資料(數字欄寬不寬),不看語言——所以表頭固定 58(兩行字的高度,一行的貼底),露出的那半列才穩定(設計複稽核 R1)。
+   列高 50 = 兩行日期 + 內距(實量);改列的內距 / 字級要重量這兩個數 ---- */
+.wf-scroll {
+  max-height: calc(58px + 12.5 * 50px);
+  overflow: auto;
+}
+.wf-run-tbl {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.wf-run-tbl thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-body);
+}
+.wf-run-tbl th,
+.wf-run-tbl td {
+  padding-left: var(--space-8);
+  padding-right: var(--space-8);
+}
+.wf-run-tbl th:first-child,
+.wf-run-tbl td:first-child { padding-left: 0; }
+.wf-run-tbl th:last-child,
+.wf-run-tbl td:last-child { padding-right: 0; }
+/* 日期欄 11px(同雲端:七欄在窄的中欄才塞得進,例外只為不橫捲) */
+.wf-run-tbl td.win {
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.wf-run-tbl th.win,
+.wf-run-tbl td.win {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+.wf-run-tbl td.pick { white-space: nowrap; }
+/* 日期兩行:起日一行、「→ 迄日」一行,每行各自不斷(pre-line 會在連字號斷開)。中欄在預設視窗 1280 只有 544,
+   單行時最右兩欄(測試 Sharpe / 測試窗報酬)被裁在框外、畫面上看不出還有欄(設計稽核 S1;web 維持單行,計畫書 §5 D8) */
+.wf-run-tbl td.win .d { display: block; white-space: nowrap; }
+/* 數字欄的表頭(訓練 Sharpe 這類)允許折行,欄寬由數字決定;表頭對齊底線,折成兩行的跟一行的底部對齊 */
+.wf-run-tbl th.n { white-space: normal; }
+.wf-run-tbl thead th { vertical-align: bottom; height: 58px; }
+/* 訓練窗 Sharpe ≤ 0 的輪:降色,且表下另有文字註記(色不是唯一載體) */
+.wf-run-tbl td.void { color: var(--ink-3); }
+/* 反紅綠燈:負報酬上紅,正報酬中性 */
+.wf-run-tbl td.neg { color: var(--color-redText); }
+.wf-run-note {
+  margin: var(--space-8) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+/* ---- 旋鈕與重跑區:Outlined control,focus 只換邊框色 ---- */
+.wf-knobs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12) var(--space-16);
+}
+.wf-knob {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.wf-knob input {
+  height: 32px;
+  width: 72px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border-frame);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--ink);
+  font: 500 13px "Roboto Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.wf-knob input:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+.wf-knob input:disabled {
+  border-color: var(--border-hairline);
+  color: var(--color-greyDark);
+  cursor: not-allowed;
+}
+.wf-knob .pre {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-6);
+  white-space: nowrap;
+}
+.wf-est {
+  margin: var(--space-8) 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+/* 輪數不足 / 超過上限:升色到 ink-2(與送出鈕 disabled 同時發生),不上紅 */
+.wf-est.is-bad {
+  color: var(--ink-2);
+  white-space: normal;
+}
+/* 回合進行中那一行(同參數掃描空狀態的 .rob-cap) */
+.wf-cap {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+/* 已送出:等待環在鈕裡、文字前 */
+.wf-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+}
+/* 結果頁頂端重跑列:兩個旋鈕 + 共 N 輪 + 重新驗證靠右,無卡底、無 label */
+.wf-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+}
+.wf-bar .wf-est { margin: 0; }
+.wf-bar .wf-go { margin-left: auto; }
+.wf-bar .wf-cap { flex: 1 1 100%; }
+/* 空狀態:一句 + 旋鈕組 + 填色動作,無插圖。旋鈕組不另包排版,子元素直接吃 .wf-empty 的 gap */
+.wf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  min-height: 200px;
+  padding: var(--space-24);
+  text-align: center;
+}
+.wf-kbox { display: contents; }
+.wf-empty p.lead {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.wf-empty .wf-knobs { justify-content: center; }
+.wf-empty .wf-est { margin-top: 0; }
+/* 迷你時間軸(只在空狀態):第 1、2、3 輪、⋮、第 N 輪;灰 = 訓練窗、橘 = 測試窗。
+   第 1 輪兩段合佔軌道 60%、照輸入比例分,測試段最窄 10px;每列往右推一個測試段,第 N 輪貼右緣 */
+.wf-tl {
+  --tl-te: max(10px, var(--tl-p, 0%));
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.wf-tl[hidden] { display: none; }
+.wf-tl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 12px;
+}
+.wf-tl-no {
+  flex: none;
+  width: 3ch;
+  text-align: right;
+  font: 500 11px/12px "Roboto Mono", ui-monospace, monospace;
+  color: var(--ink-3);
+}
+.wf-tl-track {
+  --tl-off: min(calc(var(--k, 0) * var(--tl-te)), 40%);
+  --tl-tr: max(0px, calc(60% - var(--tl-te)));
+  position: relative;
+  flex: 1;
+  height: 6px;
+}
+.wf-tl-track.is-last { --tl-off: 40%; }
+.wf-tl-tr,
+.wf-tl-te {
+  position: absolute;
+  top: 0;
+  height: 6px;
+}
+.wf-tl-tr {
+  left: var(--tl-off);
+  width: var(--tl-tr);
+  background: var(--ink-3);
+}
+.wf-tl-te {
+  left: calc(var(--tl-off) + var(--tl-tr));
+  width: var(--tl-te);
+  background: var(--color-data-1);
+}

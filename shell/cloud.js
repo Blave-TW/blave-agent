@@ -71,6 +71,8 @@ function interpret(res) {
     strategies_partial: b.strategies_partial === true,
     config_version: typeof b.config_version === "string" ? b.config_version : null,
     latest_config_version: typeof b.latest_config_version === "string" ? b.latest_config_version : null,
+    // 主機的 lib 有沒有 walk_forward(api 同 web 的三態):false = 確定太舊,樣本外驗證擋下送出;null = 不知道(舊 api / 沒回報),不擋
+    config_supports_wf: typeof b.config_supports_wf === "boolean" ? b.config_supports_wf : null,
     data_sources: Array.isArray(b.data_sources) ? b.data_sources.filter((n) => typeof n === "string") : [],
   };
 }
@@ -91,8 +93,9 @@ function interpretEvents(res) {
 /* 單支策略的回應 → { code, strategy }(純函式)。同事件清單:讀不到與「沒有這支」是兩件事——
    200 + `strategy: null` 才是「雲端現在沒有這一份」(api 的契約:沒這個名字 / 物件被逐出 / 沒主機都是這個);
    其餘一律 UNREACH。物件是雲端那台機器上的策略碼寫得進去的東西:欄位逐個驗型別,只留報告要畫的那幾欄
-   (形狀對齊主行程 loadStrategy:{ name, displayName, description, stats, scan, code }),renderer 一律 textContent。
-   scan = 參數掃描(機器端 scan.json 經 api 併進來):只驗到「是物件」,逐欄的型別檢查在 report-robust.js 的 sanitizeScan(本機那份同一套)。 */
+   (形狀對齊主行程 loadStrategy:{ name, displayName, description, stats, scan, wf, code }),renderer 一律 textContent。
+   scan = 參數掃描(機器端 scan.json 經 api 併進來):只驗到「是物件」,逐欄的型別檢查在 report-robust.js 的 sanitizeScan(本機那份同一套)。
+   wf = 樣本外驗證(wf.json,api 已經過 _clean_wf):同 scan,逐欄檢查在 report-wf.js 的 sanitizeWf。 */
 function interpretStrategy(res, name) {
   const b = res && res.status === 200 ? res.body : null;
   if (!b || typeof b !== "object" || !("strategy" in b)) return STRATEGY_UNREACHABLE();
@@ -101,7 +104,7 @@ function interpretStrategy(res, name) {
   if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
   const str = (v) => (typeof v === "string" ? v : "");
   const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
-  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), code: str(s.code), versions: obj(s.versions) } };
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions) } };
 }
 
 /* 策略版本(/cloud/version = 網頁 /openclaw/agent/version/… 原樣,canon strategy-versions §9)。
@@ -279,7 +282,7 @@ function createCloudHost(opts) {
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
     // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
-    s.config_version, s.latest_config_version].join("|");
+    s.config_version, s.latest_config_version, s.config_supports_wf].join("|");
   const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
   function drop(next) { gen++; epoch++; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
