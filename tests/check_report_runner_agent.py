@@ -423,7 +423,7 @@ check("_RESUME_MIN_TURNS == 0 and TURN_MAX_TURNS - spent_turns < 1" in at,
       "排程回合步數用完就不續跑(max_turns=0 對 SDK 是沒有上限)")
 rr = open(os.path.join(ROOT, "runtime", "report_runner.py"), encoding="utf-8").read()
 check("proc.communicate(timeout=10)" in rr, "硬殺之後讀輸出最多等 10 秒(被放過的孫行程握著 stdout 也不卡住 runner)")
-check(consts.get("SCHEDULED_MAX_BUDGET_USD") == 1.0 and "Write(/strategies/**)" in consts.get("SCHEDULED_EDIT_RULES", [])
+check(consts.get("SCHEDULED_MAX_BUDGET_USD") == 1.0 and "Edit(/strategies/**)" in consts.get("SCHEDULED_EDIT_RULES", [])
       and "_RESUME_MIN_TURNS = 0" in at and "_write_sched_outcome()" in at and '"report"]' in at
       and "ss.clear_session(args.session_id)" in at,
       "agent_turn --scheduled:1.0 USD、續跑不加步數、Edit/Write 擋 strategies/ control/、寫結構化結果、每次清空 session")

@@ -92,8 +92,9 @@ check("scheduled DeepSeek turn: no USD cap for the SDK (the CLI prices it off Cl
 check("the trust rule itself: deepseek untrusted, claude family trusted",
       not at._cli_cost_trusted("deepseek/deepseek-v4-pro") and at._cli_cost_trusted("sonnet")
       and at._cli_cost_trusted("anthropic/claude-sonnet-5") and not at._cli_cost_trusted(None))
+# Edit(...) 規則同時擋 Write(1.1.104 起 SCHEDULED_EDIT_RULES 只列 Edit,見 agent_turn 的註解)
 check("scheduled turn: 25 steps and Edit/Write kept out of strategies/ control/",
-      o.max_turns == 25 and "Write(/strategies/**)" in o.disallowed_tools and "Edit(/control/**)" in o.disallowed_tools,
+      o.max_turns == 25 and "Edit(/strategies/**)" in o.disallowed_tools and "Edit(/control/**)" in o.disallowed_tools,
       (o.max_turns, o.disallowed_tools))
 
 # 電腦版牆鐘(稽核 A-P1-2:LocalSink 沒有 bridge 逾時):超過 _TURN_WALL_CLOCK_SEC 就收掉回合、不續跑
