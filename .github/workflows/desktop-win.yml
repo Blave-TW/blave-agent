@@ -49,6 +49,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+          fetch-depth: 0  # 閘門測試會拿歷史 commit 比對(check_shell_browser_auto_handback.js 的 8bb6aaa),淺 clone 必紅
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -92,6 +93,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
+          fetch-depth: 0  # 閘門測試會拿歷史 commit 比對(check_shell_browser_auto_handback.js 的 8bb6aaa),淺 clone 必紅
       - uses: actions/setup-node@v4
         with:
           node-version: 24
