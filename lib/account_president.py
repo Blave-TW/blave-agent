@@ -69,7 +69,8 @@ def get_positions(env: dict) -> dict:
     """{canonical: {'side', 'size', 'productid'}} with size in LOTS, canonical
     = TXF/MXF/TMF. One root open in two contract months fails the read: summed,
     a long J6 and a short K6 would read as flat and the reconciler would trade
-    on top of both; the user closes one month in the broker's app first."""
+    on top of both. lib/order_president keeps entries in the held month on a
+    settlement day so this is not reached by the bot's own orders."""
     months = {}
     for r in position_rows():
         if r["net"]:
@@ -79,8 +80,9 @@ def get_positions(env: dict) -> dict:
         if len(rows) > 1:
             held = ", ".join(f"{r['productid']} {r['net']:+d}" for r in rows)
             raise RuntimeError(f"president: {root} is open in several contract months ({held}) — "
-                               f"trading paused rather than add months together; close one month "
-                               f"in the 統一 app")
+                               f"trading paused rather than add months together. On a settlement "
+                               f"day this clears when the expiring month settles at 13:30; "
+                               f"otherwise contact support")
         n = rows[0]["net"]
         out[root] = {"side": "long" if n > 0 else "short", "size": float(abs(n)),
                      "productid": rows[0]["productid"]}
@@ -95,6 +97,17 @@ def get_account_id(env: dict) -> str:
     if not fp:
         raise RuntimeError("president snapshot has no account fingerprint — worker too old?")
     return f"president:{fp}"
+
+
+def get_query_started_at() -> float:
+    """When the worker's last read of the broker STARTED — what a send is
+    compared with (a read begun before a send cannot show it). Maintenance
+    re-stamps keep the original read's value."""
+    q = _read_snapshot().get("query_started_at")
+    if not q:
+        raise RuntimeError("president snapshot has no query time — the 統一 worker is older "
+                           "than this lib; restart it")
+    return float(q)
 
 
 def get_snapshot_read_at() -> float:

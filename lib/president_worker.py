@@ -16,6 +16,7 @@ set — the market is closed then, so the carried positions are still true,
 and a planned outage never reads as a dead worker.
 
 Run: python lib/president_worker.py              (daemon)
+     python lib/president_worker.py --unblock    (the user unlocked the account at the broker)
      python lib/president_worker.py --once       (one read → state/president_probe.json)
      python lib/president_worker.py --install    (Windows: NSSM service blave-agent-president)
      python lib/president_worker.py --uninstall
@@ -119,7 +120,9 @@ def read_account(api, actno):
     """One margin + position read. RateLimited on the SDK's per-minute cap."""
     snap = {"ok": True, "error": None, "equity": None, "available": None,
             "initial_margin": None, "margin_error": None, "currency": "TWD",
-            "positions": [], "maintenance": None}
+            "positions": [], "maintenance": None,
+            # what the order lib and the reconciler compare with their last send
+            "query_started_at": time.time()}
     m = api.daccount.get_margin(actno, "")
     if m is not None and m.ok and m.data:
         d = m.data[0] if isinstance(m.data, list) else m.data
@@ -168,11 +171,18 @@ def _login():
 
 
 def _sleep_until_refresh():
+    """Sleep up to POLL_S; tick early on the refresh flag, but not before
+    ORDER_SETTLE_S after the flag was touched — a read that starts sooner does
+    not count as showing the send (president_vault.ORDER_SETTLE_S)."""
     slept = 0
     while slept < POLL_S:
         time.sleep(REFRESH_CHECK_S)
         slept += REFRESH_CHECK_S
-        if slept >= MIN_TICK_SPACING_S and os.path.exists(REFRESH_FLAG):
+        try:
+            touched = os.path.getmtime(REFRESH_FLAG)
+        except OSError:
+            continue
+        if slept >= MIN_TICK_SPACING_S and time.time() >= touched + president_vault.ORDER_SETTLE_S:
             try:
                 os.remove(REFRESH_FLAG)
             except OSError:
@@ -226,7 +236,7 @@ def main():
                         pass
                 snap = read_account(api, actno)
             except RateLimited as e:
-                _log(f"tick skipped: {e}")
+                _log(f"tick skipped: {president_vault.sanitize(str(e))}")
                 _sleep_until_refresh()
                 continue
             except Exception as e:
@@ -291,6 +301,11 @@ def install():
     if os.name != "nt":
         _log("install: Windows only (v1)")
         return 2
+    if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        # on the user's own PC the agent runs as the user: a LocalSystem service
+        # executing agent-writable files would hand it SYSTEM
+        _log("install: not on the desktop app — cloud machines only")
+        return 2
     if not shutil.which("nssm"):
         _log("install: nssm not found on PATH")
         return 2
@@ -351,6 +366,12 @@ if __name__ == "__main__":
         sys.exit(install())
     if "--uninstall" in sys.argv[1:]:
         sys.exit(uninstall())
+    if "--unblock" in sys.argv[1:]:
+        # only after the user says the account is unlocked at the broker
+        released = president_vault.unblock()
+        _log("unblock: one login allowed; a failure blocks again" if released
+             else "unblock: nothing was blocked")
+        sys.exit(0)
     try:
         main()
     except KeyboardInterrupt:  # `nssm stop` sends Ctrl-C; main's finally already logged out

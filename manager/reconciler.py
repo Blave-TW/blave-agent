@@ -498,10 +498,10 @@ def _president_get_positions():
     interest the snapshot can't pin down) — never {}."""
     from lib import account_president, order_president
     raw = account_president.get_positions({})
-    read_at, last = account_president.get_snapshot_read_at(), order_president.last_order_at()
-    if read_at <= last:
-        raise PresidentCacheLagError(f"統一快照({read_at:.0f})早於最後一筆下單({last:.0f})"
-                                     f"—— 本輪跳過,等下一輪快取更新")
+    ok, started, last = order_president.snapshot_caught_up()
+    if not ok:
+        raise PresidentCacheLagError(f"統一快照(查詢開始 {started:.0f})未晚於最後一筆下單({last:.0f})"
+                                     f"加寬限——本輪跳過,等下一輪快取更新")
     return {sym: {'side': p['side'], 'size': p['size'], 'exchange': venue_traits.PRESIDENT}
             for sym, p in raw.items()}
 
@@ -534,7 +534,17 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
     if opening and guard.halted():
         opening = 0
     if opening:
-        legs.append(order_president.place_futures_market_order({}, sym, action, opening, 'entry'))
+        try:
+            legs.append(order_president.place_futures_market_order({}, sym, action, opening, 'entry'))
+        except Exception as e:
+            if not legs:
+                raise
+            # the close already filled: it must reach the book (returned below);
+            # the entry's failure is reported, not allowed to swallow it
+            logging.error(f"[reconciler/president] {sym}: close filled, entry failed: {e}")
+            from lib.portfolio import _record_order_error
+            _record_order_error(sym, venue_traits.PRESIDENT,
+                                f"平倉已成交 {closing} 口,反向開倉失敗:{type(e).__name__}: {e}")
     if not legs:
         return False
     qty = sum(float(l.get('fill_qty') or 0) for l in legs)

@@ -740,8 +740,9 @@ def flatten():
                 # may not have filled; never book an unconfirmed close as flat
                 got = result.get("executed_qty") if isinstance(result, dict) else None
                 logging.error(f"[{vid}] {sym}: close not confirmed filled ({got}/{size})")
-                _record_order_error(key, vid, f"close-all: 群益平倉未確認成交({got or 0}/{size:g} 口),"
-                                              "請到群益下單軟體確認部位")
+                label = venue_traits.get(vid, "label") or vid
+                _record_order_error(key, vid, f"close-all: {label}平倉未確認成交({got or 0}/{size:g} 口),"
+                                              f"請到{label}下單軟體確認部位")
                 errors += 1
                 unclosed.add(key)
                 continue

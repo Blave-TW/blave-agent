@@ -92,6 +92,8 @@ check(close_symbol._NOT_PERP == {"capital", "sinopac", "president"}, "close_symb
 check(venue_traits.venues("hand_wired") == {"capital", "president"}, "hand_wired venues")
 check(venue_traits.venues("native_units") == {"capital", "president"}, "native_units venues")
 check(venue_traits.venues("windows_identity") == {"capital"}, "windows_identity venues")
+check(all(venue_traits.get(v, "label") for v in venue_traits.venues("auto_wire", False)),
+      "every TW broker has a label for user-facing messages (flatten never says 群益 for another broker)")
 check(venue_traits.hand_wired_routed(["binance", "capital"]) == "capital"
       and venue_traits.hand_wired_routed(["binance", ""]) is None
       and venue_traits.hand_wired_routed(["Capital"]) is None,

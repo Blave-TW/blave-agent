@@ -17,8 +17,11 @@ Design rules:
    refused. A reduce/close goes to the productid of the position row it closes
    (lib/account_president's snapshot) with opencloseflag "1" (close only), and
    only after the snapshot confirms the side and the size: a reduce that would
-   add to or reverse a position, or a snapshot older than this contract's last
-   order, is refused before the login. NOT verified across a real settlement day.
+   add to or reverse a position, or a snapshot whose read started less than
+   ORDER_SETTLE_S after this contract's last send, is refused before the login
+   (_claim: check + send marker under one machine-wide lock). In the
+   settlement-day window an entry stays in a still-held expiring month.
+   NOT verified across a real settlement day.
 2. SENT ≠ ACCEPTED ≠ FILLED. order() returning issend=True only means the
    request left this machine. Accepted = an on_reply for OUR seq with
    statuscode '0000' (or a fill code 0003/0004). A fill = on_match rows for
@@ -71,6 +74,7 @@ _TAGS_PATH = os.path.join(_WS, "state", "president_order_tags.json")
 # {productid: unix time of the last send} — read by the reduce check here and by
 # manager/reconciler.py's Read-Your-Writes guard
 LAST_ORDER_PATH = os.path.join(_WS, "state", "president_last_order_at.json")
+SEND_LOCK_PATH = os.path.join(_WS, "state", "president_send.lock")
 SDK_LOG_DIR = os.path.join(_WS, "state", "president_logs")
 
 # fixed UTC+8 (no DST since 1979): Windows Python ships no tz database, ZoneInfo would raise there
@@ -120,31 +124,84 @@ def prod_id(root, year, month):
     return f"{root}{MONTH_CODES[month - 1]}{year % 10}"
 
 
+def _now(now):
+    now = now or datetime.now(TAIPEI)
+    if now.tzinfo is None:
+        raise ValueError("near_month needs a timezone-aware time")
+    return now
+
+
+def computed_near(root, now=None):
+    """The contract the roll rule picks at `now`, before any broker check."""
+    root = str(root).upper()
+    if root not in ROOTS:
+        raise ValueError(f"{root!r} is not TXF/MXF/TMF")
+    now = _now(now)
+    y, m = now.astimezone(TAIPEI).year, now.astimezone(TAIPEI).month
+    while entry_roll_at(y, m) <= now:
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return prod_id(root, y, m)
+
+
+def _require_listed(want, listed):
+    listed = [str(x).upper() for x in (listed or [])]
+    if want not in listed:
+        raise PresidentError(f"contract {want} is not in the broker's contract list {listed} — "
+                             f"not trading on a guess")
+    return want
+
+
 def near_month(root, listed, now=None):
     """The contract an entry goes to at `now` (tz-aware; default: now in
     Taipei). Raises if the computed contract is not in `listed` — the broker's
     own list is the check, never the fallback."""
+    return _require_listed(computed_near(root, now), listed)
+
+
+def settlement_window(now=None):
+    """(year, month) when `now` is between 08:45 and the 13:30 settlement on a
+    settlement day — entries already roll, the expiring contract still trades."""
+    now = _now(now).astimezone(TAIPEI)
+    if entry_roll_at(now.year, now.month) <= now < settlement_at(now.year, now.month):
+        return now.year, now.month
+    return None
+
+
+def entry_contract(root, rows, now=None):
+    """The contract an entry for `root` goes to. Normally computed_near(); in
+    the settlement-day window, if the account still holds the expiring month
+    of this root, the entry goes there too — adding in the next month would hold
+    two months at once (a read the reconciler refuses) until 13:30, while an
+    addition to the expiring month settles with the rest and the reconciler
+    re-opens the whole position in the next month afterwards."""
     root = str(root).upper()
-    if root not in ROOTS:
-        raise ValueError(f"{root!r} is not TXF/MXF/TMF")
-    now = now or datetime.now(TAIPEI)
-    if now.tzinfo is None:
-        raise ValueError("near_month needs a timezone-aware time")
-    y, m = now.astimezone(TAIPEI).year, now.astimezone(TAIPEI).month
-    while entry_roll_at(y, m) <= now:
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    want = prod_id(root, y, m)
-    listed = [str(x).upper() for x in (listed or [])]
-    if want not in listed:
-        raise PresidentError(f"near month {want} (settles {settlement_at(y, m):%Y-%m-%d %H:%M}) is not "
-                             f"in the broker's contract list {listed} — not trading on a guess")
-    return want
+    window = settlement_window(now)
+    if window:
+        expiring = prod_id(root, *window)
+        if any(r["root"] == root and r["productid"] == expiring and r["net"] for r in rows):
+            return expiring
+    return computed_near(root, now)
+
+
+def _entry_contract_checked(root):
+    """entry_contract() on the worker snapshot. Only the settlement-day window
+    reads it — and there only a snapshot read after the last send settled will
+    do, or a just-opened expiring position could be missed."""
+    if not settlement_window():
+        return computed_near(root)
+    from lib.account_president import position_rows
+    ok, _q, _last = snapshot_caught_up()
+    if not ok:
+        raise PresidentError("settlement day: the 統一 snapshot has not caught up with the last "
+                             "order — not choosing a contract month on it; retry shortly")
+    return entry_contract(root, position_rows())
 
 
 def _listed(api, root):
     resp = api.get_domestic_contracts(root, "F")
     if not resp or not resp.ok:
-        raise PresidentError(f"get_domestic_contracts({root}) failed: {getattr(resp, 'error', resp)}")
+        err = president_vault.sanitize(getattr(resp, "error", "") or "no answer")
+        raise PresidentError(f"get_domestic_contracts({root}) failed: {err}")
     return [c.prod_id for c in resp.data or []]
 
 
@@ -164,6 +221,61 @@ def last_order_at(productid=None):
     return max([float(v) for v in vals if isinstance(v, (int, float))] or [0.0])
 
 
+def snapshot_caught_up(productid=None):
+    """(ok, query_started_at, last_send): the worker's last read STARTED at
+    least ORDER_SETTLE_S after the last send (to `productid`, or to anything).
+    The query start, not the write time: a read that began before the send and
+    finished after it still shows the old position."""
+    from lib.account_president import get_query_started_at
+    q = get_query_started_at()
+    last = last_order_at(productid)
+    return (not last or q >= last + president_vault.ORDER_SETTLE_S), q, last
+
+
+@contextmanager
+def _send_lock():
+    """One machine-wide lock around "check the snapshot → write the send
+    marker": two processes (the reconciler and a flatten, an agent script…)
+    must not both pass the same snapshot check. Held for milliseconds — the
+    marker is written before the login, so the second holder sees it and is
+    refused by snapshot_caught_up until the worker has read past the send."""
+    os.makedirs(os.path.dirname(SEND_LOCK_PATH), exist_ok=True)
+    deadline = time.time() + 30
+    while True:
+        try:
+            os.close(os.open(SEND_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(SEND_LOCK_PATH) > 60:  # holder died inside
+                    os.remove(SEND_LOCK_PATH)
+                    continue
+            except OSError:
+                pass
+            if time.time() > deadline:
+                raise PresidentError("another 統一 order holds the send lock — retry")
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        try:
+            os.remove(SEND_LOCK_PATH)
+        except OSError:
+            pass
+
+
+def _claim(symbol, action, lots, intent):
+    """Pick the contract and write its send marker under the machine-wide lock
+    — every order path (reconciler, flatten, agent scripts) comes through here
+    before logging in. Returns the productid."""
+    with _send_lock():
+        pid = (_checked_close(symbol, action, lots) if intent == "reduce"
+               else _entry_contract_checked(symbol))
+        _mark_order_sent(pid)
+    _request_snapshot_refresh()  # the worker re-reads once the send has settled
+    return pid
+
+
 def _mark_order_sent(productid):
     d = _last_orders()
     d[productid] = time.time()
@@ -179,8 +291,9 @@ def _mark_order_sent(productid):
 def _checked_close(symbol, action, lots):
     """The productid a close of `lots` by `action` goes to — only when the
     snapshot shows a position on the other side, at least that large, read
-    after this contract's last order. Anything else is refused (never sent)."""
-    from lib.account_president import get_snapshot_read_at, position_rows
+    after this contract's last order settled. Anything else is refused (never
+    sent). Call under _send_lock()."""
+    from lib.account_president import position_rows
     sym = str(symbol).upper()
     if not PROD_RE.match(sym) and sym not in ROOTS:
         raise ValueError(f"{symbol!r} is not TXF/MXF/TMF or a month contract code")
@@ -192,9 +305,11 @@ def _checked_close(symbol, action, lots):
         raise PresidentError(f"{sym} is open in several months {sorted(r['productid'] for r in hits)} "
                              f"— close each by its contract code, not the root")
     row = hits[0]
-    if get_snapshot_read_at() <= last_order_at(row["productid"]):
-        raise PresidentError(f"the 統一 snapshot predates the last {row['productid']} order — "
-                             f"not closing on positions that may already have changed; retry shortly")
+    ok, _q, _last = snapshot_caught_up(row["productid"])
+    if not ok:
+        raise PresidentError(f"the 統一 snapshot was read before the last {row['productid']} order "
+                             f"settled — not closing on positions that may already have changed; "
+                             f"retry shortly")
     net = int(row["net"])
     side = "long" if net > 0 else "short"
     if action != ("sell" if net > 0 else "buy"):
@@ -330,9 +445,9 @@ def _send(api, obj, reports, fields):
     guard.check_restart_stop(fields["intent"], fields)
     api.dtrade.on_reply = reports.on_reply
     api.dtrade.on_match = reports.on_match
-    _mark_order_sent(obj.productid)
     resp = api.dtrade.order(obj)
     if not resp.issend:
+        _request_snapshot_refresh()  # nothing went out: let the worker clear the marker's hold
         # a signing failure's text carries the national id — never pass it on raw
         err = president_vault.sanitize(resp.errormsg)
         guard.audit("order_error", code=resp.errorcode, error=err, **fields)
@@ -414,35 +529,35 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
               "qty": lots, "unit": "lots", "intent": intent}
     guard.check_restart_stop(intent, fields)  # before the login
     _check_halt(fields)
-    if intent == "reduce":
-        fields["symbol"] = _checked_close(sym, action, lots)
     if client_tag is not None:
         fields["client_tag"] = client_tag
 
     from unitrade.unitrade import DOrderObject
 
     reports = _Reports()
-    with _tag_guard(client_tag) as record_tag, _session(env) as api:
-        if intent == "entry":
-            fields["symbol"] = near_month(sym, _listed(api, sym))
-        accounts = api.get_accounts() or []
-        if not accounts:
-            raise PresidentError("統一 login returned no futures account")
-        o = DOrderObject()
-        o.actno = accounts[0]
-        o.subactno = ""
-        o.productid = fields["symbol"]
-        o.bs = "B" if action == "buy" else "S"
-        o.ordertype = "M"
-        o.price = 0
-        o.orderqty = lots
-        o.ordercondition = "I"
-        o.opencloseflag = "1" if intent == "reduce" else ""
-        o.dtrade = "N"
-        o.note = client_tag or "blave"
-        seq = _send(api, o, reports, fields)
-        record_tag()
-        result = _await(reports, seq, lots, confirm_timeout, fields)
+    with _tag_guard(client_tag) as record_tag:
+        fields["symbol"] = _claim(sym, action, lots, intent)
+        with _session(env) as api:
+            if intent == "entry":
+                _require_listed(fields["symbol"], _listed(api, sym))
+            accounts = api.get_accounts() or []
+            if not accounts:
+                raise PresidentError("統一 login returned no futures account")
+            o = DOrderObject()
+            o.actno = accounts[0]
+            o.subactno = ""
+            o.productid = fields["symbol"]
+            o.bs = "B" if action == "buy" else "S"
+            o.ordertype = "M"
+            o.price = 0
+            o.orderqty = lots
+            o.ordercondition = "I"
+            o.opencloseflag = "1" if intent == "reduce" else ""
+            o.dtrade = "N"
+            o.note = client_tag or "blave"
+            seq = _send(api, o, reports, fields)
+            record_tag()
+            result = _await(reports, seq, lots, confirm_timeout, fields)
     if result["status"] == "filled":
         guard.audit("order_filled", seq=seq, fill_qty=result["fill_qty"],
                     avg_fill_price=result["avg_fill_price"], **fields)

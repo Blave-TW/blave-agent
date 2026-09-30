@@ -23,8 +23,11 @@ goes through sanitize() first.
 統一 locks an account after three wrong logins. A CERT*/PASSWORD answer blocks
 every further login on this machine with the same credentials
 (state/president_login_block.json, keyed on their fingerprint — no secret is
-written) until `.env` changes; two unclassifiable server rejections block too,
-because an unknown text may be a wrong password. No login is attempted in the
+written) until `.env` changes or the user releases it (`python
+lib/president_worker.py --unblock`, only after they unlocked the account at the
+broker) — a release allows one login, and its failure blocks again; two
+unclassifiable server rejections block too, because an unknown text may be a
+wrong password. No login is attempted in the
 broker's 05:30–05:50 login maintenance.
 
 Imported two ways like capital_vault: `import president_vault` from the
@@ -50,6 +53,13 @@ LOGIN_MAINTENANCE = (dtime(5, 30), dtime(5, 50))
 _SECRETS = ("president_password", "president_ca_password")
 AUTH_CLASSES = ("CERT_MISMATCH", "CERT", "PASSWORD")
 UNKNOWN_BLOCK_AT = 2
+# How long after a send the worker's next read must START before it counts as
+# showing that send (order lib close check, reconciler Read-Your-Writes). An IOC
+# market order is filled or killed at the exchange within the second; what is
+# unknown is how late the broker's position query reflects it (the test host
+# never fills). 10 s is a margin, not a measurement — the worker delays its
+# refresh-flag read to match, so a close waits ~10–12 s after the previous one.
+ORDER_SETTLE_S = 10
 
 
 class LoginError(RuntimeError):
@@ -73,7 +83,11 @@ class LoginError(RuntimeError):
         super().__init__(f"統一期貨 login failed: {kind} — {self.TEXT.get(kind, '')}")
 
 
-_ID_RE = re.compile(r"(?:TW)?[A-Z][12]\d{8}1?")
+# The one place personal-id shapes live: 國民身分證 (letter + 1/2 + 8 digits), 新式居留證
+# (letter + 8/9 + 8 digits) and 舊式居留證 (two letters, second A-D, + 8 digits); the
+# certificate CN wraps one as "TW" + id + "1".
+ID_PATTERN = r"(?:TW)?[A-Z][A-D1289]\d{8}1?"
+_ID_RE = re.compile(ID_PATTERN)
 _BLOB_RE = re.compile(r"\{.*\}", re.S)
 
 
@@ -198,13 +212,39 @@ def _write_block(block):
 
 
 def blocked(creds):
-    """The class that blocks a login with exactly these credentials, or None."""
+    """The class that blocks a login with exactly these credentials, or None.
+    A block the user released (unblock()) lets exactly ONE login through: the
+    first caller to create the claim file takes it and the block goes back to
+    closed before the login is even tried, so a failure re-blocks at once and
+    two racing processes cannot both spend a try."""
     b = _read_block()
     if b.get("fp") != fingerprint(creds):
         return None
-    if b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT:
-        return b.get("kind") or "UNKNOWN"
-    return None
+    if not (b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT):
+        return None
+    if b.get("allow_once"):
+        try:
+            os.close(os.open(BLOCK + ".claim", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except OSError:
+            return b.get("kind") or "UNKNOWN"  # another process took the one try
+        _write_block(dict(b, allow_once=False))
+        return None
+    return b.get("kind") or "UNKNOWN"
+
+
+def unblock():
+    """The user says the account is unlocked at the broker (and the password is
+    right): allow ONE login with the blocked credentials. True if a block was
+    released, False if there was none."""
+    b = _read_block()
+    if not b.get("fp"):
+        return False
+    try:
+        os.remove(BLOCK + ".claim")
+    except OSError:
+        pass
+    _write_block(dict(b, allow_once=True, released_at=int(time.time())))
+    return True
 
 
 def _record(creds, kind):
@@ -222,10 +262,11 @@ def _record(creds, kind):
 
 def _clear():
     # a good login: whatever was blocked was other credentials (or these, now fixed)
-    try:
-        os.remove(BLOCK)
-    except OSError:
-        pass
+    for path in (BLOCK, BLOCK + ".claim"):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def in_login_maintenance(now=None):

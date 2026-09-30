@@ -164,13 +164,18 @@ def use(script, issend=True):
 
 op._TAGS_PATH = os.path.join(TMP, "state", "tags.json")
 op._REFRESH_FLAG = os.path.join(TMP, "state", "president_refresh")
+op.SEND_LOCK_PATH = os.path.join(TMP, "state", "president_send.lock")
 op.LAST_ORDER_PATH = os.path.join(TMP, "state", "president_last_order_at.json")
 account_president._SNAPSHOT = os.path.join(TMP, "state", "president_account.json")
 
 
 def snapshot(rows, **kw):
-    json.dump(dict({"ok": True, "read_at": __import__("time").time(), "equity": 100000.0,
-                    "positions": rows}, **kw), open(account_president._SNAPSHOT, "w"))
+    """A fresh worker snapshot; its read started after every send so far has settled
+    unless query_started_at says otherwise."""
+    now = __import__("time").time()
+    json.dump(dict({"ok": True, "read_at": now, "equity": 100000.0, "positions": rows,
+                    "query_started_at": now + president_vault.ORDER_SETTLE_S}, **kw),
+              open(account_president._SNAPSHOT, "w"))
 
 
 ACK = ("reply", {"statuscode": "0000", "orderstatus": "委託成功", "orderno": "O1", "matchqty": 0, "nomatchqty": 1})
@@ -240,6 +245,15 @@ check(api.sent[-1].productid == "TMFA0" and api.sent[-1].bs == "S" and api.sent[
       "close: the held row's productid, opencloseflag '1'", vars(api.sent[-1]))
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and len(api.sent) == 1, "a snapshot older than that contract's last order → refused, not sent")
+last = op.last_order_at("TMFA0")
+snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}], query_started_at=last - 1,
+         read_at=last + 30)
+check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
+      and len(api.sent) == 1, "a read that STARTED before the send (written after it) → refused")
+snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}],
+         query_started_at=last + president_vault.ORDER_SETTLE_S - 1)
+check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
+      and len(api.sent) == 1, "a read started inside the settle margin → refused")
 snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}])
 e = raises(op.DuplicateOrder, lambda: op.close_position_partial({}, "TMF", "long", 1,
                                                                client_order_id="flat20260930120000123456"))
@@ -313,6 +327,49 @@ check(president_worker.maintenance(T(2026, 10, 1, 5, 40)) == "login"
       and president_worker.maintenance(T(2026, 10, 1, 7, 30)) is None
       and president_worker.maintenance(T(2026, 10, 1, 5, 55)) is None,
       "maintenance windows 05:30–05:50 / 06:00–07:30 Taipei")
+
+# ── 8. settlement-day entries stay in a held expiring month ─────────────────
+ROWS_J = [{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1}]
+check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 9, 0)) == "TXFJ6",
+      "settlement day 09:00 holding J6 → the addition goes to J6 (never two months)")
+check(op.entry_contract("TXF", [], T(2026, 10, 21, 9, 0)) == "TXFK6", "settlement day 09:00 flat → K6")
+check(op.entry_contract("MXF", ROWS_J, T(2026, 10, 21, 9, 0)) == "MXFK6", "another root's J6 does not count")
+check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 13, 30)) == "TXFK6"
+      and op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 8, 44)) == "TXFJ6",
+      "outside 08:45–13:30 the plain rule applies")
+
+# ── 9. two processes closing at once: only one passes ────────────────────────
+import subprocess  # noqa: E402
+snapshot([{"root": "MXF", "productid": "MXFJ6", "net": 1, "net_current": 1}])
+open(op.LAST_ORDER_PATH, "w").write("{}")
+GO = os.path.join(TMP, "go")
+child = f"""
+import os, sys, time
+sys.path.insert(0, {ROOT!r}); os.chdir({TMP!r})
+from lib import account_president, order_president as op
+account_president._SNAPSHOT = {account_president._SNAPSHOT!r}
+op.LAST_ORDER_PATH, op.SEND_LOCK_PATH = {op.LAST_ORDER_PATH!r}, {op.SEND_LOCK_PATH!r}
+op._REFRESH_FLAG = {op._REFRESH_FLAG!r}
+while not os.path.exists({GO!r}):
+    time.sleep(0.001)
+try:
+    real = op._checked_close
+    def slow(*a):
+        pid = real(*a)
+        time.sleep(0.2)  # widen the check→mark window a lock-free version would lose in
+        return pid
+    op._checked_close = slow
+    op._claim("MXF", "sell", 1, "reduce")
+    print("PASS")
+except op.PresidentError:
+    print("REFUSED")
+"""
+procs = [subprocess.Popen([sys.executable, "-c", child], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                          text=True) for _ in range(2)]
+_t.sleep(1.0)
+open(GO, "w").close()
+outs = sorted(p.communicate(timeout=60)[0].strip() for p in procs)
+check(outs == ["PASS", "REFUSED"], "two processes closing the same position at once: exactly one passes", outs)
 
 # ── 6. login: no national id leaves, auth failures block every later login ──
 import contextlib, io  # noqa: E402
@@ -388,6 +445,28 @@ got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, p
 check(got.kind == "MAINTENANCE", "no login is attempted in 05:30–05:50")
 check(president_vault.sanitize("x A123456789 TWA1234567891 {'a': 1} y") == "x <id> <id> {…} y",
       "sanitize strips ids and blobs")
+for pid in ("A123456789", "B287654321", "A800000014", "F912345678", "AB12345678", "TWA8000000141"):
+    got = president_vault.sanitize(f"sign error {pid} tail")
+    check(pid not in got and president_vault.classify(f":!! {pid}") == "CERT_MISMATCH",
+          f"id shape {pid[:2]}… stripped and classified", got)
+
+# unblock: one try, a failure re-blocks, a success clears
+os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
+president_vault.in_login_maintenance = lambda now=None: False
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(president_vault.unblock(), "--unblock releases the block")
+n = FakeUnitrade.logins
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(got.kind == "PASSWORD" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n + 1,
+      "after --unblock exactly one login reaches the broker; its failure blocks again")
+president_vault.unblock()
+LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
+president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
+check(not os.path.exists(president_vault.BLOCK) and not os.path.exists(president_vault.BLOCK + ".claim"),
+      "a good login after --unblock clears the block")
 
 # ── 7. reconciler block: split close / entry, never open behind an unconfirmed close ──
 os.makedirs("manager", exist_ok=True)
@@ -432,7 +511,20 @@ try:
     reconciler.place_order("TMF", -3, exchange="president")
     check(sent_legs == [("TMF", "sell", 2, "reduce")], "HALT: the close goes, the flip's entry does not", sent_legs)
     os.remove("state/HALT")
-    json.dump({"TMFJ6": __import__("time").time() + 5}, open(op.LAST_ORDER_PATH, "w"))
+
+    def entry_fails(env, sym, action, lots, intent, **kw):
+        if intent == "entry":
+            raise op.PresidentError("contract TMFK6 is not in the broker's contract list")
+        return fake_place(env, sym, action, lots, intent)
+    op.place_futures_market_order = entry_fails
+    r = reconciler.place_order("TMF", -3, exchange="president")
+    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
+    check(isinstance(r, dict) and r["executed_qty"] == 2 and "反向開倉失敗" in errs[-1]["error"],
+          "close filled + entry failed: the close is returned for the book, the entry failure recorded", r)
+    op.place_futures_market_order = fake_place
+    json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],
+             query_started_at=__import__("time").time() + 1)
     e = raises(reconciler.CapitalCacheLagError, reconciler.get_positions)
     check(isinstance(e, reconciler.PresidentCacheLagError), "a snapshot older than the last send → skip the round")
     check(reconciler._current_venue() == "president", "the venue for classification is president")

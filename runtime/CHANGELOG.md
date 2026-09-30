@@ -21,6 +21,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   (各 venue 自己的 env 名與角色),`command_listener._cred_match` 先查它再套 pair regex;換綁會把七個名字一起逐出。
   兩通道不同步期間:新 runtime+舊 workspace 沒有 president lib,`account.present` 為 false,不影響其他 venue;
   舊 runtime+新 workspace 看不到 president 綁定(維持現況)。測試 `tests/check_president_discovery.py`。
+  **會改變行為的機器**:依 08-03 舊版 reference 手寫過 `president_*` 到 `.env` 的機器(發版前要先盤點),runtime 一上去:
+  (a) web 報告的 venues 會多一個已綁定的 president;(b) 之後綁任何交易所都會逐出全部七行 `president_*`(含 `PRESIDENT_LIVE`);
+  (c) 沒有綁定 manifest 的這類機器 `bound` 變兩家,`_cmd_amounts` 失去「唯一已綁交易所」預設,新策略的 routing 會是空的。
+- `venue_traits` 加 `label`(群益/永豐金/統一期貨),flatten 的「平倉未確認成交」訊息改用它——群益的字句不變,統一不再看到「群益」。
 
 ## 1.1.106 — 2026-10-01(desktop 0.1.11)
 

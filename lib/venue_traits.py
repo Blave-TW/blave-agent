@@ -26,6 +26,7 @@ account currency). Trait meanings:
                      (not place_contract_market_order)
   close_needs_fill   flatten books a close as done only on a confirmed fill
   reference          the onboarding doc chat binding points to
+  label              the broker's name in user-facing messages
   cred_env           the venue's own .env names that do not follow the
                      {ID}_API_KEY / _PASSWORD pair shape, with their role
                      (API_KEY = the name that says "bound", PASSWORD = its
@@ -49,11 +50,13 @@ TRAITS = {
         "lots_close_partial": True,
         "close_needs_fill": True,
         "reference": "references/capital-broker.md",
+        "label": "群益",
     },
     "sinopac": {
         "auto_wire": False,
         "perp": False,
         "reference": "references/sinopac-broker.md",
+        "label": "永豐金",
     },
     PRESIDENT: {
         "auto_wire": False,
@@ -62,6 +65,7 @@ TRAITS = {
         "perp": False,
         "close_needs_fill": True,
         "reference": "references/president-broker.md",
+        "label": "統一期貨",
         # the five names bound machines already use are locked; the last two
         # switch to production
         "cred_env": {

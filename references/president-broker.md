@@ -111,7 +111,13 @@ caller is ignored, so `PRESIDENT_LIVE` can only come from `.env`.
 broker refuses for the password or the certificate (or two it refuses for a reason the libs can't
 classify) writes `state/president_login_block.json`; every later login on this machine — worker,
 probe, orders — is refused locally until the credentials in `.env` change. Never delete that file
-to retry: ask the user to re-enter the password / certificate password. Login errors come back as a
+to retry. Two ways out, both the user's call:
+- the password / certificate password was wrong → the user gives the right one and `.env` is
+  updated (a changed value lifts the block);
+- the account was locked at the broker and the user says they have unlocked it there (統一's app,
+  online unlock or the broker rep) → run `python lib/president_worker.py --unblock`. That allows
+  exactly **one** login; if it fails, the block is back at once. Do not run it on your own
+  initiative or twice in a row — every try counts toward 統一's three. Login errors come back as a
 class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `MAINTENANCE`, `BLOCKED`,
 `UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
 national id, so it is never passed on. No login is attempted in 05:30–05:50.
@@ -135,7 +141,10 @@ login and writes `state/president_account.json` every 60 s for `lib/account_pres
 Windows machine `python lib/president_worker.py --install` makes it the NSSM service
 `blave-agent-president` (LocalSystem, auto start, log `state/president_worker.log`, registered in
 `state/deployments.json` for the health check) and waits for its first snapshot; `--uninstall`
-removes it. Run it with the same `python` that `pip install unitrade` went into.
+removes it. Run it with the same `python` that `pip install unitrade` went into. It refuses on the
+desktop app (`BLAVE_AGENT_LOCAL=1`): there the agent runs as the user, and a LocalSystem service
+running agent-writable files would hand it SYSTEM. On a cloud machine the agent's shell already
+runs as LocalSystem, so the service adds no privilege.
 
 ---
 
@@ -153,8 +162,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 - Market IOC, quantity in 口. Entries send `opencloseflag=""` (the broker decides); closes send
   `"1"` (close only) and are checked against the worker snapshot first — the held row must be on the
-  other side, at least as large, and read after that contract's last order — or they are refused
-  without reaching the broker.
+  other side and at least as large, and the worker's read must have **started** at least 10 s
+  (`president_vault.ORDER_SETTLE_S`) after that contract's last send — or they are refused without
+  reaching the broker. The check and the send marker are taken under one machine-wide lock
+  (`state/president_send.lock`), so two processes (reconciler, 全部平倉, a script) cannot both pass
+  it. Expect a close right after another order to be refused for ~10–12 s; retry, never force.
 - `status='filled'` only on a real match; `status='sent'` means no fill was seen in time — never
   resubmit on it; check the position first.
 - Entries are blocked while `state/HALT` is set; reduces always pass.
@@ -167,8 +179,10 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   month; before that, to the current one. An entry into the expiring contract on its last day would
   be cash-settled at 13:30 and re-opened by the reconciler in the next month — two extra round trips
   — while rolling at the open differs from the backtest only by the calendar spread's move over
-  those ≤4h45m. The computed contract must appear in `get_domestic_contracts(root, "F")`; if it
-  does not, the order is refused — never a guess.
+  those ≤4h45m. **Exception:** if the account still holds the expiring month of that root in that
+  08:45–13:30 window, an entry (an addition) goes to the expiring month too, so two months are never
+  held at once; it settles with the rest at 13:30. The contract must appear in
+  `get_domestic_contracts(root, "F")`; if it does not, the order is refused — never a guess.
 - **Reduce / close** → the `productid` of the position row being closed (worker snapshot), never a
   re-derived month: after a roll the near month is no longer the contract that is held. A root open
   in two months is refused; close each by its month code.
@@ -211,8 +225,10 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 10. **Two concurrent logins on one account both stay up** (worker + order session measured side by
     side for 50 s). Production limits are unknown — ask the rep.
 11. **The SDK writes its own logs to `<cwd>/logs/<date>/*.txt`** with the login URL, login id,
-    account and every order. The libs pin that to `state/president_logs/`; treat the folder as
-    secret and never paste from it.
+    account, every order — and on a certificate/signing failure the national id and the
+    certificate's subject. The libs pin that to `state/president_logs/`. **Never read, `cat`, grep
+    or upload anything under `state/president_logs/`**; to diagnose, use the worker's probe file and
+    the lib's error classes.
 12. **Windows gotchas** — Python on Windows has no time-zone database (`ZoneInfo("Asia/Taipei")`
     raises without the `tzdata` package; the libs use a fixed UTC+8); a `.env` written by
     PowerShell 5 `Set-Content -Encoding UTF8` starts with a BOM, which hides the first key from a
