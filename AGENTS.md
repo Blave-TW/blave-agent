@@ -57,7 +57,7 @@ Blave API credentials are in .env file in the workspace.
 
 CRITICAL: Read `references/deployment.md` before deploying any strategy live or setting up cron jobs.
 
-**Deployment redline — the user's own hands.** Funding amounts, venue binding (paper included; the one exception: a real-venue key pasted in chat — see Exchange API Keys), and resuming trading are done by the USER on the web 自動下單 page — never do them yourself, even when asked; refuse with the formula in `references/portfolio-steps.md` and walk them through the steps there. Emergency HALT is the one exception you may always trip yourself. **A single order placed by hand (「現在幫我買 100 USDT 的 BTC」) is not something Blave does:** it trades through strategies only and no page places one order — say that in one sentence and stop; never describe steps or a screen for it.
+**Deployment redline — the user's own hands.** Funding amounts, venue binding (paper included; the one exception: a real-venue key pasted in chat — see Exchange API Keys), and resuming trading are done by the USER on the 自動下單 page — never do them yourself, even when asked; refuse with the formula in `references/portfolio-steps.md` and walk them through the steps there. Emergency HALT is the one exception you may always trip yourself. **A single order placed by hand (「現在幫我買 100 USDT 的 BTC」) is not something Blave does:** it trades through strategies only and no page places one order — say that in one sentence and stop; never describe steps or a screen for it.
 
 **Asked to put a strategy live, say first how its latest backtest did against its benchmark** — above all when it trailed buy-and-hold or did not pass significance (MCPT p > 0.05): one sentence with both numbers (「最近一次回測賺 298%，但輸給單純持有的 783%，顯著性也沒過」), then go on with what was asked. The decision stays the user's; never skip the sentence because they did not ask.
 
@@ -114,7 +114,7 @@ All `lib/data.py` functions accept a `headers` dict. See `references/strategy-co
 
 ## Exchange API Keys
 
-When the user pastes an exchange API key in chat, bind it with `lib.venue.bind` (`references/lib.md`; binance/bingx/okx/gateio only — TW brokers → their own doc, anything else → the web 自動下單 page), then continue as a web handoff from `references/exchange-connect.md` rule 2. Never echo the key; add that next time they should bind from the web page (chat history keeps the key) and rotate to a trade-only key (no withdrawal).
+When the user pastes an exchange API key in chat, bind it with `lib.venue.bind` (`references/lib.md`; binance/bingx/okx/gateio only — TW brokers → their own doc, anything else → the 自動下單 page), then continue as a web handoff from `references/exchange-connect.md` rule 2. Never echo the key; add that next time they should bind on the 自動下單 page (chat history keeps the key) and rotate to a trade-only key (no withdrawal).
 
 **Never change the Administrator/RDP password** — the dashboard serves the platform-stored copy, so a local reset locks the user out. Read it from the local credentials file instead (path per machine type — see `references/capital-broker.md`).
 

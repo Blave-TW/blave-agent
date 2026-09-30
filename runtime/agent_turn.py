@@ -316,6 +316,19 @@ def nav_hold_more(held):
     return "<nav>".startswith(probe) or (probe.startswith("<nav>") and "</nav>" not in probe)
 
 
+def _desktop_surface(sink):
+    """這一輪是不是電腦版:聊天是 LocalSink;電腦版起的其他回合(排程報告走 ReportSink)看 BLAVE_AGENT_LOCAL,
+    跟 references/portfolio-steps.md 用同一個判準。"""
+    return isinstance(sink, LocalSink) or os.environ.get("BLAVE_AGENT_LOCAL") == "1"
+
+
+def _formatting_rule_for(sink):
+    """sink 的格式規則;電腦版的網頁系 sink 一律換成電腦版那份(外殼不處理 ui_nav)。"""
+    if isinstance(sink, WebSink) and _desktop_surface(sink):
+        return LOCAL_FORMATTING_RULE
+    return sink.formatting_rule
+
+
 def split_nav_head(text):
     """段首若是完整 <nav> 標記:回傳 (白名單內的目標或 None, 剝掉標記後的文字, True);
     不是標記則 (None, 原文, False)。目標不在白名單也剝、只是不觸發。"""
@@ -326,23 +339,69 @@ def split_nav_head(text):
     return (target if target in _NAV_TARGETS else None), text[m.end():], True
 
 
-def _deploy_state_line():
+_RECONCILER_STALE_S = 300  # 同 portfolio_reporter.HEARTBEAT_STALE_S
+
+
+def _order_state(workspace, funded, scheduled=(), now=None):
+    """下單狀態那一格。deployments.json 只是「在下單設定裡」的名冊(金額 0 也在、暫停也不會拿掉),
+    不能拿來講「正在跑」(0.1.10 #8:模擬下單已暫停,agent 照名冊說三支「正在跑」)。
+    判法同 lib/guard 與 portfolio_reporter:檔案存在就算,內容讀不到也算。"""
+    st = os.path.join(workspace, "state")
+    if os.path.exists(os.path.join(st, "reconciler_stopped.json")):
+        return "已停止(機器或 Blave 重開後停住,等用戶按「啟動下單」)"
+    if os.path.exists(os.path.join(st, "HALT")):
+        return "已暫停(不開新倉;要恢復由用戶按「啟動下單」)"
+    # 名冊裡不在金額表的(雲端 Type B 排程)自己叫 lib/order_*,不看金額也不靠對帳器;上面兩個旗標照樣擋得住它
+    own = ";「其他排程」那幾支照自己的排程跑" if scheduled else ""
+    if funded is None:
+        return "下單設定讀不到,不確定有沒有照金額下單" + own
+    if not funded:
+        return "沒有策略設金額,不會照金額下單" + own
+    try:
+        age = (now if now is not None else time.time()) - os.path.getmtime(
+            os.path.join(st, "heartbeat", "reconciler"))
+    except OSError:
+        age = None
+    if age is not None and age <= _RECONCILER_STALE_S:
+        return "執行中"
+    return "對帳下單程式沒在跑(照金額下單的策略目前不會下單)" + own
+
+
+def _paused_one(workspace, names, funded=()):
+    """單支暫停:停機錯過 K 棒被凍住的(downtime_pause.json)與策略自己的斷路器(state/HALT_<name>)。
+    HALT_<name> 是 MONITOR-ONLY(lib/guard.py):對帳器與 lib/order_* 都不讀,照金額下單的策略不受它擋,不列。"""
+    st = os.path.join(workspace, "state")
+    out = set()
+    doc = _read_state_json(os.path.join(st, "downtime_pause.json"))
+    if isinstance(doc.get("strategies"), dict):
+        out.update(str(n) for n in doc["strategies"])
+    out.update(n for n in names if n not in funded and os.path.exists(os.path.join(st, "HALT_" + n)))
+    return sorted(out)
+
+
+def _deploy_state_line(workspace=None, now=None):
     """部署現況的一行機器事實(建議規則配套,web 專屬)。2026-08-24 實測:
     supertrend_sol 已在模擬盤跑兩天,agent 仍建議「上模擬盤」——prompt 要求
     模型自查 deployments.json 靠不住,deterministic 餵進來才穩(phase 2 狀態機
-    的第一塊)。fail-silent:讀不到就回空字串,絕不影響回合。"""
+    的第一塊)。兩件事分開講:在不在下單設定裡(名冊),和現在有沒有在下單(暫停旗標、
+    對帳器心跳)——合成一句「運行中」就會在暫停時說謊。fail-silent:讀不到就回空字串,絕不影響回合。
+    tests/check_deploy_prompt_010.py。"""
+    ws = workspace or WORKSPACE
     try:
-        deployed = []
+        reg = {}
         try:
-            with open(os.path.join(WORKSPACE, "state", "deployments.json"),
+            with open(os.path.join(ws, "state", "deployments.json"),
                       encoding="utf-8") as f:
                 reg = json.load(f)
-            if isinstance(reg, dict):
-                deployed = [k for k in reg if k != "reconciler"][:15]
         except (OSError, ValueError):
             pass
+        reg = reg if isinstance(reg, dict) else {}
+        amounts = _trading_amounts(ws)
+        known = amounts or {}
+        funded = [n for n in sorted(known) if known[n] > 0][:15]
+        zero = [n for n in sorted(known) if known[n] <= 0][:15]
         names = []
-        sdir = os.path.join(WORKSPACE, "strategies")
+        sdir = os.path.join(ws, "strategies")
         if os.path.isdir(sdir):
             for e in sorted(os.listdir(sdir)):
                 if e.startswith((".", "TEMPLATE")) or e == "__pycache__":
@@ -352,13 +411,27 @@ def _deploy_state_line():
                     names.append(e)
                 elif os.path.isfile(full) and e.endswith(".py"):
                     names.append(e[:-3])
+        # 名冊裡、卻不在金額表裡的策略:雲端機 Type B 的排程。常駐程式(capital_worker、監控 daemon)不是策略,不算
+        other = [n for n, e in reg.items() if n not in known and n != "reconciler"
+                 and (n in names or (isinstance(e, dict) and e.get("type") == "cron"))][:15]
+        deployed = set(known) | set(other)
         undeployed = [n for n in names if n not in deployed][:15]
-        paper = os.path.isfile(os.path.join(WORKSPACE, "state", "paper_ledger.json"))
-        parts = ["已部署運行中:" + ("、".join(deployed) if deployed else "無")]
+        paper = os.path.isfile(os.path.join(ws, "state", "paper_ledger.json"))
+        parts = ["下單設定裡有金額:" + ("、".join(funded) if funded else "無") if amounts is not None
+                 else "下單設定:讀不到(manager/portfolio_config.json 壞掉或讀取失敗,不是沒設)"]
+        if zero:
+            parts.append("下單設定裡但金額 0(不下單):" + "、".join(zero))
+        if other:
+            parts.append("其他排程:" + "、".join(other))
+        parts.append("下單狀態:" + _order_state(ws, funded if amounts is not None else None, other, now))
+        paused = _paused_one(ws, sorted(deployed), funded)
+        if paused:
+            parts.append("單支暫停:" + "、".join(paused[:15]))
         if undeployed:
             parts.append("未部署:" + "、".join(undeployed))
         parts.append("模擬盤帳戶:" + ("已綁定" if paper else "未綁定"))
-        return ("[部署現況(機器事實,提議前先對照——已在跑的策略不要再建議部署/上模擬盤):"
+        return ("[部署現況(機器事實,提議前先對照——已在下單設定裡的策略不要再建議部署/上模擬盤;"
+                "講機器狀況時照「下單狀態」講,不是「執行中」就不要說策略正在跑或正在下單):"
                 + ";".join(parts) + "]")
     except Exception:
         return ""
@@ -473,8 +546,14 @@ def nav_topic(message):
 _STEPS_MAX_CHARS = 2400
 
 
-def _portfolio_steps_block(workspace=None):
-    """回傳 portfolio-steps.md 的「Step scripts」段(含之後全部),讀不到/沒那段就空字串。"""
+_STEPS_SURFACE_HEADS = ("### Web workspace", "### Desktop app")
+
+
+def _portfolio_steps_block(workspace=None, desktop=False):
+    """回傳 portfolio-steps.md 的「Step scripts」段,讀不到/沒那段就空字串。
+    那段分兩個 ### 子段(網頁工作頁/電腦版,UI 不同):只留段首共用的那幾行 + 這個表面的子段——
+    電腦版拿到網頁的步驟(「點下方『工作區』分頁」、沒有確認框)就是 0.1.10 #7b。
+    舊 workspace 的檔沒有子段 → 整段照舊回。"""
     path = os.path.join(workspace or WORKSPACE, "references", "portfolio-steps.md")
     try:
         with open(path, encoding="utf-8") as f:
@@ -487,7 +566,13 @@ def _portfolio_steps_block(workspace=None):
     j = doc.find("\n## ", i + 1)  # 只到下一個標題,日後檔尾加段不會被一併注入
     if j < 0:
         j = len(doc)
-    return doc[i:min(j, i + _STEPS_MAX_CHARS)].strip()
+    sec = doc[i:j]
+    subs = re.split(r"(?m)^(?=### )", sec)
+    want = _STEPS_SURFACE_HEADS[1 if desktop else 0]
+    mine = [s for s in subs[1:] if s.startswith(want)]
+    if mine:
+        sec = subs[0] + mine[0]
+    return sec[:_STEPS_MAX_CHARS].strip()
 
 
 _ASCII_RUN = re.compile(r"[!-~]+")
@@ -1190,7 +1275,7 @@ def version_restore_note(since):
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None, viewing_widgets=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
-                 version_note=None):
+                 version_note=None, desktop=False):
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -1255,24 +1340,27 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
            "manager/close_symbol.py。]" if stop_tool else "。]")
     )
     if suggest_directive:
-        state_line = _deploy_state_line()
+        # 雲端視角:這一行讀的是這台電腦的 workspace,講的卻會被當成雲端主機的事實(稽核 0.1.10 D P1-1)。
+        # 不注入;雲端的狀態照 cloud-handoff 去雲端讀
+        state_line = _deploy_state_line() if viewing_env != "cloud" else ""
         if state_line:
             parts.append(state_line)
         # 導航句(建議列的部署類固定起手)逐輪錨:標記規則在系統尾端,弱模型對
         # 「第一行放標記」這種位置要求最容易漏,貼著訊息再講一次。
         head = message.lstrip().lower()
         # 带我看:簡中錨下建議句會寫成簡體,點下去送回來的就是這個字形
-        if head.startswith(("帶我看", "带我看", "show me how")):
+        if not desktop and head.startswith(("帶我看", "带我看", "show me how")):
             parts.append(
                 "[導航句:回覆第一行單獨放 <nav>目標</nav>(portfolio.pos=設金額/部署、"
                 "portfolio.venue=綁定模擬盤或交易所、portfolio.run=啟動/恢復下單,三選一),"
                 "接著才給步驟。]"
             )
         if nav_topic(message):
-            steps = _portfolio_steps_block()
+            steps = _portfolio_steps_block(desktop=desktop)
             if steps:
+                where = ("這個電腦版 app 左側的自動下單頁,不是網頁工作頁" if desktop else "網頁工作頁的自動下單頁")
                 parts.append(
-                    "[自動下單頁操作步驟(要帶用戶操作時照這份寫,UI 標籤一字不差、"
+                    f"[自動下單頁操作步驟(用戶在{where};要帶用戶操作時照這份寫,UI 標籤一字不差、"
                     "不要自己發明分頁或按鈕名):\n" + steps + "\n]"
                 )
         # 建議規則的逐輪錨(web 專屬)。系統提示尾端的版本擋不住 in-context 慣性:
@@ -1283,7 +1371,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、掃參數、跑 MCPT、上模擬盤等)就放進"
             " <suggest> 區塊(一行一句、用戶口吻、最多 3),不要在正文用問句提議;"
             "提到策略用它的名稱、不用底線代號。"
-            "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但未部署的策略)必附區塊;"
+            "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但未部署的策略)必附區塊,"
+            "而且建議跟本則結論同方向:正文說不建議用,就不提部署、也不提正文勸退的做法;"
             "純寒暄或單一報價則什麼都不附。]"
         )
     # 兩個 sink 都掛(不像 _deploy_state_line 是 web 專屬):這是機器層級的事實,不是
@@ -1505,6 +1594,14 @@ _NAV_RULE = (
     "正文不要提到標記本身。\n"
 )
 
+# 電腦版版本:外殼不處理 ui_nav,「系統會替用戶把頁面開好」在那裡是假話,所以不要標記、也不准說開好了。
+_NAV_RULE_LOCAL = (
+    "\n\n---\n\n"
+    "## 帶操作（部署類）\n"
+    "用戶要你帶他上模擬盤／設金額／綁交易所／啟動下單時，直接給步驟（≤4 步，照 references/portfolio-steps.md 的"
+    "電腦版那套、UI 標籤原文）；這個 app 不會替用戶打開頁面，不要說已經幫他開好。\n"
+)
+
 # 建議下一步(web 專屬;extract_suggestions 在 finalize 剝離)。放在 system prompt
 # append 的最尾端——實測 deepseek-v4-pro 對埋在中段的這條規則不服從(2026-08-24
 # 29026 e2e:回測完成沒附區塊、用問句收尾),弱模型對 prompt 尾端的服從度最高;
@@ -1514,10 +1611,14 @@ _SUGGEST_RULE = (
     "## 建議下一步（每輪回覆前必檢查）\n"
     "寫完回覆後，檢查這一輪是否命中里程碑：\n"
     "- 剛建立/修改策略、還沒回測 → 建議跑回測\n"
-    "- 剛完成回測且結果可用 → 建議上模擬盤（paper）\n"
-    "- 正在總結／分析／回報某支已有可用回測、還沒部署的策略（問它表現、值不值得用、"
-    "要摘要）→ 必附：建議把該策略上模擬盤，或給一個具體的優化方向（見下面「優化選項」）；"
-    "用戶明顯還在迭代改進中就只給優化方向、不提部署\n"
+    "- 剛完成回測，或正在總結／分析／回報某支有回測、還沒部署的策略（問它表現、值不值得用、"
+    "要摘要）→ 必附，而且建議要跟你這則的結論同方向：\n"
+    "  ‧ 結論是可以用 → 建議把該策略上模擬盤（paper）\n"
+    "  ‧ 用戶明顯還在迭代改進中 → 只給一個優化方向（見下面「優化選項」），不提部署\n"
+    "  ‧ 結論是不建議用、還不能用 → 不提部署。訊號本身站不住（MCPT p-value > 0.05，"
+    "或你在正文說訊號不成立）→ 只提換訊號（換一種進場邏輯），不提在同一個訊號上加東西"
+    "（加濾網、調參數、vol targeting 都算）；是參數還沒驗過穩不穩 → 提掃參數（已有 scan.json 就不提）；"
+    "是其他原因（回撤太大、交易太少）→ 挑一個針對那個原因的優化方向\n"
     "- 模擬盤已穩定跑一段時間且執行無異常 → 建議小額實盤\n"
     "- 用戶想實際跑但還沒綁任何交易所 → 建議先綁模擬盤\n"
     "命中時，回覆**必須以 <suggest> 區塊結尾**（其後不得再有任何文字），格式：\n"
@@ -1538,12 +1639,15 @@ _SUGGEST_RULE = (
     "「掃一下〈策略名〉的參數，看有沒有穩定區」；策略資料夾已有 scan.json，"
     "或這輪就是採用掃出的穩健參數重跑回測 → 不要再提掃參數，改提別的方向或不提\n"
     "‧ MCPT p-value > 0.05（Type A 回測自動算、stats.json 已有，不要建議「跑 MCPT」）→ "
-    "訊號本身沒優勢：建議加濾網或換訊號，不要建議調參數硬拉\n"
+    "訊號本身沒優勢：建議換訊號（「幫〈標的〉換一種進場訊號另做一支」）；不要建議加濾網、調參數或 vol targeting——"
+    "那些都是在同一個沒優勢的訊號上加東西，一樣是硬拉\n"
     "‧ 部位固定、波動或回撤起伏大 → 依實現波動調整部位（vol targeting，單一標的"
     "的策略適用；低波動時部位會放大，上限 VOL_CAP，提的時候講明）："
     "「幫〈策略名〉加 vol targeting 調部位」\n"
     "‧ 訊號雜訊多、假訊號一堆 → 加濾網（趨勢／波動／時段）："
     "「幫〈策略名〉加一個趨勢濾網」\n"
+    "**建議不能跟正文的結論打架**：正文勸退的事（不建議上線、調參數沒意義、訊號要先站得住）"
+    "不准出現在 <suggest>。寫完對一次：用戶點下這句去做的，是不是你剛說不值得做的事——是就換一句。\n"
     "**下一步的提議只能放在 <suggest> 區塊——禁止在正文結尾用問句提議"
     "（「要不要我幫你…？」「需要我再…嗎？」這類收尾不要寫，改放 <suggest>）。**\n"
     "沒命中里程碑、但你想在結尾提議下一步（「要不要我再拉 4h？」「需要補籌碼面嗎？」"
@@ -1581,6 +1685,9 @@ WEB_FORMATTING_RULE = (
     + _NAV_RULE
     + _SUGGEST_RULE
 )
+
+# 電腦版(LocalSink):同一份,只換導航那段;建議規則照樣在最尾端。
+LOCAL_FORMATTING_RULE = WEB_FORMATTING_RULE.replace(_NAV_RULE, _NAV_RULE_LOCAL)
 
 
 # Prompting alone doesn't reliably stop the model from emitting Markdown
@@ -2215,28 +2322,47 @@ def _ws_rel(path, workspace):
     return rel[2:] if rel.startswith("./") else rel
 
 
-def _trading_names(workspace):
-    """下單設定裡的策略名(= lib.portfolio.strategy_amounts() 的 key)。**用 workspace 的明確路徑
+def _trading_amounts(workspace):
+    """下單設定 {策略名: 金額}(= lib.portfolio.strategy_amounts() 的 key)。**用 workspace 的明確路徑
     自己讀**:那個函式刻意相對 cwd,而 runtime 的 cwd 是 /opt/blave-agent/current,呼叫它永遠
     讀到空,每一次實盤 tick 都會被標成「正在跑回測」。讀法同 lib/portfolio:UI 鏡像
     (manager/amounts.ui.json)有效就以它的 amounts 為準,否則 portfolio_config 的 amounts,
-    再否則舊版 weights。"""
+    再否則舊版 weights(值是權重,只拿來分 >0 與 0)。值讀不懂的當 0。
+    portfolio_config.json 在但讀不出來 → None(「讀不到」≠「沒設」;lib.portfolio 這時會 raise)。"""
+    bad = object()
+
     def load(name):
         try:
             with open(os.path.join(workspace, "manager", name), encoding="utf-8") as f:
                 return json.load(f)
-        except (OSError, ValueError):
+        except FileNotFoundError:
             return None
+        except (OSError, ValueError):
+            return bad
+
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+    src = None
     ui = load("amounts.ui.json")
     if isinstance(ui, dict) and isinstance(ui.get("amounts"), dict) and isinstance(ui.get("exchanges"), dict):
-        return set(map(str, ui["amounts"]))
-    cfg = load("portfolio_config.json")
-    if isinstance(cfg, dict):
-        if isinstance(cfg.get("amounts"), dict):
-            return set(map(str, cfg["amounts"]))
-        if isinstance(cfg.get("weights"), dict):
-            return set(map(str, cfg["weights"]))
-    return set()
+        src = ui["amounts"]
+    else:
+        cfg = load("portfolio_config.json")
+        if cfg is bad:
+            return None
+        if isinstance(cfg, dict):
+            if isinstance(cfg.get("amounts"), dict):
+                src = cfg["amounts"]
+            elif isinstance(cfg.get("weights"), dict):
+                src = cfg["weights"]
+    return {str(k): num(v) for k, v in (src or {}).items()}
+
+
+def _trading_names(workspace):
+    return set(_trading_amounts(workspace) or ())
 
 
 def _ssh_inner(args):
@@ -3500,7 +3626,7 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     mcp_mounted is the same value handed to codex_engine.run, so the fence rule and the
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
-            + python_rule() + data_access_rule() + preferences_rule() + sink.formatting_rule
+            + python_rule() + data_access_rule() + preferences_rule() + _formatting_rule_for(sink)
             + mcp_rule(mcp_mounted) + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
             + turn_note_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
 
@@ -3565,7 +3691,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                           suggest_directive=isinstance(sink, WebSink),
                           viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
-                          lang_basis=lang_msg, version_note=version_note)
+                          lang_basis=lang_msg, version_note=version_note,
+                          desktop=_desktop_surface(sink))
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -3650,7 +3777,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web) + turn_note_rule(sink)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)
-        + sink.formatting_rule
+        + _formatting_rule_for(sink)
     ) if agents_md and not use_codex else None
     options = sdk.ClaudeAgentOptions(
         model=model,
@@ -3945,7 +4072,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
-                                  version_note=version_note)
+                                  version_note=version_note,
+                                  desktop=_desktop_surface(sink))
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
             # A new dict, not an in-place update: the CLI child's env is built from
