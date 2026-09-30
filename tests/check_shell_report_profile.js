@@ -184,8 +184,10 @@ ok("DEFAULT_I18N 有 estModel", /estModel: "Est\. liquidation \(model\)",/.test(
     && /estModel: t\("rb\.estModel"\)/.test(fs.readFileSync(path.join(RD, "reports.js"), "utf8")));
 }
 // 幾何與 draw 本體照慣例與 web 逐字一致(同 dataDp / fmtLegend 那條)
-{
-  const web = fs.readFileSync(path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "report_blocks.js"), "utf8");
+const WEB_RB = path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "report_blocks.js");
+if (!fs.existsSync(WEB_RB)) console.log("SKIP  與 web 逐字比對(需要 monorepo 版面)");
+else {
+  const web = fs.readFileSync(WEB_RB, "utf8");
   const g = (src2, n) => { const a = src2.indexOf("  function " + n + "("); return a < 0 ? null : src2.slice(a, src2.indexOf("\n  }\n", a)); };
   ok("profileSpan / profileBucket / profileCum / profileBars 與 web 逐字相同",
     ["profileSpan", "profileBucket", "profileCum", "profileBars"].every((n) => g(web, n) && g(web, n) === g(js, n)));

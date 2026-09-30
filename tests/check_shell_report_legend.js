@@ -63,10 +63,12 @@ ok("總結的框同 lead(surface-card、radius-sm),框內小標去掉上距與�
   && /\.rb-summary h2 \{\s*margin: 0 0 var\(--space-6\);\s*padding-bottom: 0;\s*border-bottom: 0;/.test(css)
   && /\.rb-summary p:last-child:not\(:first-of-type\) \{[^}]*border-top: 1px solid var\(--border-hairline\);/.test(css)
   && !/rb-summary[^{]*\{[^}]*--color-red/.test(css));
-ok("網頁版與電腦版同一份 dataDp / fmtLegend(一字不差)", (() => {
-  const web = fs.readFileSync(path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "report_blocks.js"), "utf8");
+const WEB_RB = path.join(__dirname, "..", "..", "web", "app", "static", "js", "agent", "report_blocks.js");
+if (!fs.existsSync(WEB_RB)) console.log("SKIP  與 web 逐字比對(需要 monorepo 版面)");
+else ok("網頁版與電腦版同一份 dataDp / fmtLegend(一字不差)", (() => {
+  const web = fs.readFileSync(WEB_RB, "utf8");
   const g = (src, n) => { const a = src.indexOf("  function " + n + "("); return a < 0 ? null : src.slice(a, src.indexOf("\n  }\n", a)); };
-  return fs.existsSync ? ["dataDp", "fmtLegend"].every((n) => g(web, n) && g(web, n) === g(js, n)) : true;
+  return ["dataDp", "fmtLegend"].every((n) => g(web, n) && g(web, n) === g(js, n));
 })());
 // KPI(設計稽核 B3/B4)與負號(B5)
 const kp = js.slice(js.indexOf("  BLOCKS.kpi_row = function"), js.indexOf("  BLOCKS.line_chart = function"));
