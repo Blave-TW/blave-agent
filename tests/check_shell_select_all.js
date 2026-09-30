@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
     const s = document.createElement("button"); s.className = "strat-row"; s.id = "sa-strat"; s.textContent = "策略庚"; $("strat-list").appendChild(s); $("ta").value = "草稿辛"; })()`);
   await js(`window.addEventListener("keydown", (e) => { window.__stopped = e.defaultPrevented; })`);
   const us = (sel) => js(`getComputedStyle(document.querySelector(${JSON.stringify(sel)})).userSelect`);
-  const chrome = ["#sa-strat", ".pane-strategies", "#div-side", "#tr-tb-txt", "#cs-title", "#cs-new", "#rp-tabs", "#tr-tabs", "#set-cats"], got = [];
+  const chrome = ["#sa-strat", ".pane-strategies", "#div-side", "#tr-tb-txt", "#cs-title", "#cs-new", "#rp-tabs-scroll", "#rp-tabs-more", "#tr-tabs", "#set-cats"], got = [];
   for (const s of chrome) got.push(await us(s));
   ok("② 介面元件(側欄、分隔條、標題列、分頁、按鈕、設定的分類)算出來都是 none", got.every((v) => v === "none"), JSON.stringify(got));
   const content = ["#sa-chat", "#sa-code", "#sa-cbtn", "#sa-rpt", "#sa-rbtn", "#rp-code-pre", "#tr-desc", "#tr-over", "#lib-rows", "#set-title", "#del-body"], got2 = [];
