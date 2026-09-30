@@ -361,9 +361,9 @@ check(capital_refused, "capital: record present → a close is refused before Se
 import lib.order_president as president  # noqa: E402
 
 touched = []
-real_session, real_held = president._session, president._held_productid
+real_session, real_held = president._session, president._checked_close
 president._session = lambda env: touched.append("login")
-president._held_productid = lambda sym: touched.append("snapshot") or "TMFJ6"
+president._checked_close = lambda sym, action, lots: touched.append("snapshot") or "TMFJ6"
 record(True)
 try:
     for label, fn in (("reduce place_futures_market_order",
@@ -377,7 +377,7 @@ try:
             ok = not touched
         check(ok, f"president: record present → {label} refused before the Unitrade login")
 finally:
-    president._session, president._held_productid = real_session, real_held
+    president._session, president._checked_close = real_session, real_held
     record(False)
 
 # Sinopac (shioaji faked: only the module import needs it)

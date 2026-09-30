@@ -26,9 +26,17 @@ account currency). Trait meanings:
                      (not place_contract_market_order)
   close_needs_fill   flatten books a close as done only on a confirmed fill
   reference          the onboarding doc chat binding points to
+  cred_env           the venue's own .env names that do not follow the
+                     {ID}_API_KEY / _PASSWORD pair shape, with their role
+                     (API_KEY = the name that says "bound", PASSWORD = its
+                     secret, EXTRA = belongs to the venue, pairs nothing) —
+                     read before that shape so every discovery site (runtime
+                     _venue_cred_ids / venues() / account_reader, flatten)
+                     sees the venue and a rebind evicts all of its names
 """
 
 CAPITAL = "capital"
+PRESIDENT = "president"
 
 TRAITS = {
     CAPITAL: {
@@ -47,10 +55,24 @@ TRAITS = {
         "perp": False,
         "reference": "references/sinopac-broker.md",
     },
-    "president": {
+    PRESIDENT: {
         "auto_wire": False,
+        "hand_wired": True,
+        "native_units": True,
         "perp": False,
+        "close_needs_fill": True,
         "reference": "references/president-broker.md",
+        # the five names bound machines already use are locked; the last two
+        # switch to production
+        "cred_env": {
+            "president_account": "API_KEY",
+            "president_password": "PASSWORD",
+            "president_test_url": "EXTRA",
+            "president_ca_path": "EXTRA",
+            "president_ca_password": "EXTRA",
+            "president_url": "EXTRA",
+            "president_live": "EXTRA",
+        },
     },
 }
 
@@ -70,6 +92,17 @@ def has(venue, trait):
 def venues(trait, value=True):
     """Venue ids whose `trait` equals `value` (defaults applied)."""
     return frozenset(v for v in TRAITS if get(v, trait) == value)
+
+
+def cred_env(name):
+    """(VENUE_ID, role) when `name` is one of a venue's own cred_env names
+    (case-insensitive), else None."""
+    n = str(name or "").strip().casefold()
+    for v, t in TRAITS.items():
+        role = (t.get("cred_env") or {}).get(n)
+        if role:
+            return v.upper(), role
+    return None
 
 
 def hand_wired_routed(exchanges):

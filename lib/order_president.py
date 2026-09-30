@@ -8,14 +8,17 @@ perp contract): quantities are 口 (lots), symbols are the canonical roots
 TXF / MXF / TMF, the lib maps them to a month contract (TXFJ6 = TXF, J=Oct, 6=2026).
 
 Design rules:
-1. ENTRY → COMPUTED NEAR MONTH, CLOSE → THE ROW'S OWN CONTRACT. An entry goes
-   to near_month(): the first contract whose settlement (third Wednesday of
-   its month, 13:30 Taipei) is still ahead — the same instant the backtest's
-   TXFR1 continuous series rolls. It must also appear in the broker's
-   get_domestic_contracts list, else the order is refused. A reduce/close goes
-   to the productid of the position row it closes (lib/account_president's
-   snapshot), never a re-derived month: after a roll the near month is not the
-   contract that is held. NOT verified across a real settlement day.
+1. ENTRY → COMPUTED NEAR MONTH, CLOSE → THE ROW'S OWN CONTRACT. Contracts
+   settle at 13:30 Taipei on the third Wednesday of their month (the instant
+   the backtest's TXFR1 series changes contract). An entry goes to the month
+   the day session opens on, i.e. from 08:45 on settlement day entries go to
+   the next month (entry_roll_at — why: see there). The computed contract must
+   appear in the broker's get_domestic_contracts list, else the order is
+   refused. A reduce/close goes to the productid of the position row it closes
+   (lib/account_president's snapshot) with opencloseflag "1" (close only), and
+   only after the snapshot confirms the side and the size: a reduce that would
+   add to or reverse a position, or a snapshot older than this contract's last
+   order, is refused before the login. NOT verified across a real settlement day.
 2. SENT ≠ ACCEPTED ≠ FILLED. order() returning issend=True only means the
    request left this machine. Accepted = an on_reply for OUR seq with
    statuscode '0000' (or a fill code 0003/0004). A fill = on_match rows for
@@ -25,9 +28,10 @@ Design rules:
    been observed (the test host never fills). Never resubmit on 'sent'.
 3. NO CLIENT ORDER ID AT THE BROKER. `note` (≤10 chars) is only a label. A
    client_tag is refused locally if it was already sent today
-   (state/president_order_tags.json, written BEFORE the send) — the same
-   intent as order_sinopac's client_tag, kept on this machine because the
-   broker cannot check it.
+   (state/president_order_tags.json, recorded once the broker took the send,
+   under a cross-process lock held from the check to the record). A process
+   killed between the send and the record leaves the tag reusable — the
+   snapshot check on reduces is the backstop there.
 4. HALTABLE + AUDITED. guard.check_restart_stop first, then HALT blocks
    entries (closes always pass); every send audits order_sent / order_error /
    order_filled.
@@ -64,6 +68,9 @@ _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # lib/president_worker.py early-ticks on this (same path derivation there)
 _REFRESH_FLAG = os.path.join(_WS, "state", "president_refresh")
 _TAGS_PATH = os.path.join(_WS, "state", "president_order_tags.json")
+# {productid: unix time of the last send} — read by the reduce check here and by
+# manager/reconciler.py's Read-Your-Writes guard
+LAST_ORDER_PATH = os.path.join(_WS, "state", "president_last_order_at.json")
 SDK_LOG_DIR = os.path.join(_WS, "state", "president_logs")
 
 # fixed UTC+8 (no DST since 1979): Windows Python ships no tz database, ZoneInfo would raise there
@@ -71,10 +78,12 @@ TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")
 ROOTS = ("TXF", "MXF", "TMF")
 MONTH_CODES = "ABCDEFGHIJKL"  # futures month letters, A = January
 SETTLE_HOUR, SETTLE_MINUTE = 13, 30
+DAY_OPEN_HOUR, DAY_OPEN_MINUTE = 8, 45
 PROD_RE = re.compile(r"^(TXF|MXF|TMF)([A-L])(\d)$")
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
-_ACCEPTED = {"0000", "0003", "0004"}
-_CANCELED = {"0001", "0002"}
+# 0001 = 減量成功 (a quantity reduction) is not terminal; 0002 = 刪單成功 is
+_ACCEPTED = {"0000", "0001", "0003", "0004"}
+_CANCELED = {"0002"}
 
 _tags_lock = threading.Lock()
 
@@ -96,6 +105,17 @@ def settlement_at(year, month):
     return datetime(year, month, day, SETTLE_HOUR, SETTLE_MINUTE, tzinfo=TAIPEI)
 
 
+def entry_roll_at(year, month):
+    """08:45 Taipei on settlement day — from then on entries go to the next
+    month. A position opened in the expiring contract on its last day is
+    cash-settled at 13:30 and the reconciler then re-opens it in the next month:
+    two extra round trips of commission and slippage. Rolling at the day
+    session's open instead differs from the backtest's TXFR1 (which stays on the
+    expiring contract until 13:30) only by the calendar spread's move over those
+    ≤4h45m, and closes still go to whatever month is held."""
+    return settlement_at(year, month).replace(hour=DAY_OPEN_HOUR, minute=DAY_OPEN_MINUTE)
+
+
 def prod_id(root, year, month):
     return f"{root}{MONTH_CODES[month - 1]}{year % 10}"
 
@@ -111,7 +131,7 @@ def near_month(root, listed, now=None):
     if now.tzinfo is None:
         raise ValueError("near_month needs a timezone-aware time")
     y, m = now.astimezone(TAIPEI).year, now.astimezone(TAIPEI).month
-    while settlement_at(y, m) <= now:
+    while entry_roll_at(y, m) <= now:
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     want = prod_id(root, y, m)
     listed = [str(x).upper() for x in (listed or [])]
@@ -128,42 +148,117 @@ def _listed(api, root):
     return [c.prod_id for c in resp.data or []]
 
 
-def _held_productid(symbol):
-    """The productid of the open position a close for `symbol` must go to."""
+def _last_orders():
+    try:
+        with open(LAST_ORDER_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def last_order_at(productid=None):
+    """Unix time of the last send (for `productid`, or any), 0.0 if none."""
+    d = _last_orders()
+    vals = [d.get(productid)] if productid else list(d.values())
+    return max([float(v) for v in vals if isinstance(v, (int, float))] or [0.0])
+
+
+def _mark_order_sent(productid):
+    d = _last_orders()
+    d[productid] = time.time()
+    try:
+        os.makedirs(os.path.dirname(LAST_ORDER_PATH), exist_ok=True)
+        with open(LAST_ORDER_PATH + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(d, f)
+        os.replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
+    except OSError as e:
+        logging.warning(f"[president] last-order marker not written: {e}")
+
+
+def _checked_close(symbol, action, lots):
+    """The productid a close of `lots` by `action` goes to — only when the
+    snapshot shows a position on the other side, at least that large, read
+    after this contract's last order. Anything else is refused (never sent)."""
+    from lib.account_president import get_snapshot_read_at, position_rows
     sym = str(symbol).upper()
-    if PROD_RE.match(sym):
-        return sym
-    if sym not in ROOTS:
+    if not PROD_RE.match(sym) and sym not in ROOTS:
         raise ValueError(f"{symbol!r} is not TXF/MXF/TMF or a month contract code")
-    from lib.account_president import position_rows
-    months = sorted({r["productid"] for r in position_rows() if r["root"] == sym})
-    if not months:
+    rows = position_rows()
+    hits = [r for r in rows if (r["productid"] == sym if PROD_RE.match(sym) else r["root"] == sym)]
+    if not hits:
         raise PresidentError(f"no open {sym} position in the 統一 snapshot — nothing to close")
-    if len(months) > 1:
-        raise PresidentError(f"{sym} is open in several months {months} — close each by its "
-                             f"contract code, not the root")
-    return months[0]
+    if len(hits) > 1:
+        raise PresidentError(f"{sym} is open in several months {sorted(r['productid'] for r in hits)} "
+                             f"— close each by its contract code, not the root")
+    row = hits[0]
+    if get_snapshot_read_at() <= last_order_at(row["productid"]):
+        raise PresidentError(f"the 統一 snapshot predates the last {row['productid']} order — "
+                             f"not closing on positions that may already have changed; retry shortly")
+    net = int(row["net"])
+    side = "long" if net > 0 else "short"
+    if action != ("sell" if net > 0 else "buy"):
+        raise PresidentError(f"{row['productid']} is {side} {abs(net)} — a {action} would add to it, "
+                             f"not close it; refused")
+    if lots > abs(net):
+        raise PresidentError(f"closing {lots} lots of {row['productid']} but only {abs(net)} held "
+                             f"({side}) — refused rather than open the other side")
+    return row["productid"]
 
 
 # ── local duplicate guard (rule 3) ───────────────────────────────────────────
 
-def _claim_tag(tag):
+def _tags_today():
     today = datetime.now(TAIPEI).strftime("%Y-%m-%d")
-    with _tags_lock:
+    try:
+        with open(_TAGS_PATH, encoding="utf-8") as f:
+            book = json.load(f)
+    except (OSError, ValueError):
+        book = {}
+    return today, (book.get("tags", []) if book.get("date") == today else [])
+
+
+@contextmanager
+def _tag_guard(tag):
+    """Check `tag` against today's sends, hold a cross-process lock until the
+    caller records it (only once the broker took the order) or gives up."""
+    if tag is None:
+        yield lambda: None
+        return
+    os.makedirs(os.path.dirname(_TAGS_PATH), exist_ok=True)
+    lock = _TAGS_PATH + ".lock"
+    deadline = time.time() + 30
+    while True:
         try:
-            with open(_TAGS_PATH, encoding="utf-8") as f:
-                book = json.load(f)
-        except (OSError, ValueError):
-            book = {}
-        tags = book.get("tags", []) if book.get("date") == today else []
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(lock) > 120:  # holder died mid-send
+                    os.remove(lock)
+                    continue
+            except OSError:
+                pass
+            if time.time() > deadline:
+                raise PresidentError("another order holds the 統一 client_tag book — retry")
+            time.sleep(0.1)
+    try:
+        today, tags = _tags_today()
         if tag in tags:
             raise DuplicateOrder(f"client_tag {tag!r} was already sent today — refused (the broker "
                                  f"has no client order id to deduplicate on)")
-        os.makedirs(os.path.dirname(_TAGS_PATH), exist_ok=True)
-        tmp = _TAGS_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"date": today, "tags": tags + [tag]}, f)
-        os.replace(tmp, _TAGS_PATH)
+
+        def record():
+            tmp = _TAGS_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"date": today, "tags": tags + [tag]}, f)
+            os.replace(tmp, _TAGS_PATH)
+        yield record
+    finally:
+        try:
+            os.remove(lock)
+        except OSError:
+            pass
 
 
 def _tag_for(client_order_id):
@@ -176,7 +271,8 @@ def _tag_for(client_order_id):
 
 @contextmanager
 def _session(env):
-    api = president_vault.login(president_vault.resolve(env), SDK_LOG_DIR)
+    # credentials and PRESIDENT_LIVE come from the workspace .env, never from `env`
+    api = president_vault.login(president_vault.resolve(), SDK_LOG_DIR)
     try:
         yield api
     finally:
@@ -234,10 +330,13 @@ def _send(api, obj, reports, fields):
     guard.check_restart_stop(fields["intent"], fields)
     api.dtrade.on_reply = reports.on_reply
     api.dtrade.on_match = reports.on_match
+    _mark_order_sent(obj.productid)
     resp = api.dtrade.order(obj)
     if not resp.issend:
-        guard.audit("order_error", code=resp.errorcode, error=resp.errormsg, **fields)
-        raise PresidentError(f"order not sent: {resp.errorcode} {resp.errormsg}")
+        # a signing failure's text carries the national id — never pass it on raw
+        err = president_vault.sanitize(resp.errormsg)
+        guard.audit("order_error", code=resp.errorcode, error=err, **fields)
+        raise PresidentError(f"order not sent: {resp.errorcode} {err}")
     seq = str(resp.seq).strip()
     guard.audit("order_sent", seq=seq, **fields)
     _request_snapshot_refresh()
@@ -254,8 +353,9 @@ def _await(reports, seq, lots, timeout, fields):
         time.sleep(0.05)
     code = (ack or {}).get("statuscode")
     if ack and code not in _ACCEPTED and code not in _CANCELED:
-        guard.audit("order_error", seq=seq, code=code, error=ack.get("orderstatus"), **fields)
-        raise PresidentError(f"統一 rejected the order: statuscode={code} {ack.get('orderstatus')}")
+        err = president_vault.sanitize(ack.get("orderstatus"))
+        guard.audit("order_error", seq=seq, code=code, error=err, **fields)
+        raise PresidentError(f"統一 rejected the order: statuscode={code} {err}")
     orderno = (ack or {}).get("orderno")
     settled_at = None
     while orderno and time.time() < deadline:
@@ -284,14 +384,15 @@ def _await(reports, seq, lots, timeout, fields):
 
 def place_futures_market_order(env, symbol, action, lots, intent, client_tag=None,
                                confirm_timeout=15):
-    """One market IOC order, opencloseflag "" (broker decides open/close).
+    """One market IOC order.
 
-    symbol: TXF / MXF / TMF — an entry goes to the computed near month; a
-    reduce goes to the held row's productid (a month code like TXFJ6 is also
-    accepted for a reduce). action: 'buy'|'sell'. lots: int ≥ 1. intent:
-    'entry'|'reduce', REQUIRED (the broker's auto flag cannot say which;
-    'entry' is HALT-blocked). client_tag: ≤10 alphanumeric chars, refused if
-    already sent today.
+    symbol: TXF / MXF / TMF — an entry goes to the computed near month with
+    opencloseflag "" (broker decides); a reduce goes to the held row's
+    productid with opencloseflag "1" (close only), after _checked_close (a
+    month code like TXFJ6 is also accepted for a reduce). action:
+    'buy'|'sell'. lots: int ≥ 1. intent: 'entry'|'reduce', REQUIRED ('entry'
+    is HALT-blocked). client_tag: ≤10 alphanumeric chars, refused if already
+    sent today.
 
     Returns {'status': 'filled'|'sent', 'symbol' (the month contract),
     'fill_qty', 'avg_fill_price', 'seq', 'orderno', 'ack'}; raises
@@ -314,15 +415,14 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
     guard.check_restart_stop(intent, fields)  # before the login
     _check_halt(fields)
     if intent == "reduce":
-        fields["symbol"] = _held_productid(sym)
+        fields["symbol"] = _checked_close(sym, action, lots)
     if client_tag is not None:
-        _claim_tag(client_tag)
         fields["client_tag"] = client_tag
 
     from unitrade.unitrade import DOrderObject
 
     reports = _Reports()
-    with _session(env) as api:
+    with _tag_guard(client_tag) as record_tag, _session(env) as api:
         if intent == "entry":
             fields["symbol"] = near_month(sym, _listed(api, sym))
         accounts = api.get_accounts() or []
@@ -337,10 +437,11 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
         o.price = 0
         o.orderqty = lots
         o.ordercondition = "I"
-        o.opencloseflag = ""
+        o.opencloseflag = "1" if intent == "reduce" else ""
         o.dtrade = "N"
         o.note = client_tag or "blave"
         seq = _send(api, o, reports, fields)
+        record_tag()
         result = _await(reports, seq, lots, confirm_timeout, fields)
     if result["status"] == "filled":
         guard.audit("order_filled", seq=seq, fill_qty=result["fill_qty"],

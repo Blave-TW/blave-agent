@@ -15,8 +15,10 @@ query is made and the last good snapshot is re-stamped with `maintenance`
 set — the market is closed then, so the carried positions are still true,
 and a planned outage never reads as a dead worker.
 
-Run: python lib/president_worker.py          (daemon)
-     python lib/president_worker.py --once   (one read → state/president_probe.json)
+Run: python lib/president_worker.py              (daemon)
+     python lib/president_worker.py --once       (one read → state/president_probe.json)
+     python lib/president_worker.py --install    (Windows: NSSM service blave-agent-president)
+     python lib/president_worker.py --uninstall
 """
 import hashlib
 import json
@@ -69,17 +71,6 @@ class RateLimited(RuntimeError):
     """Unitrade's per-minute query cap — skip the tick, keep the last snapshot."""
 
 
-def _parse_env():
-    env = {}
-    with open(os.path.join(WORKSPACE, ".env"), encoding="utf-8-sig") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip().strip("'\"")
-    return env
-
-
 def _atomic_write(path, payload):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
@@ -88,7 +79,8 @@ def _atomic_write(path, payload):
 
 
 def _write_snapshot(payload):
-    payload["read_at"] = int(time.time())
+    # float: the order lib compares it with its last send to the sub-second
+    payload["read_at"] = time.time()
     _atomic_write(OUT_PATH, payload)
 
 
@@ -97,7 +89,7 @@ def _check(resp, call):
         err = str(getattr(resp, "error", "") or "")
         if _RATE_LIMITED in err:
             raise RateLimited(f"{call}: {err}")
-        raise RuntimeError(f"{call} failed: {err or resp!r}")
+        raise RuntimeError(f"{call} failed: {president_vault.sanitize(err) or 'no answer'}")
     return resp
 
 
@@ -138,7 +130,7 @@ def read_account(api, actno):
         raise RateLimited(f"get_margin: {m.error}")
     else:
         # 查無資料 on an unfunded account is an answer, not a dead link
-        snap["margin_error"] = str(getattr(m, "error", "") or "no data")
+        snap["margin_error"] = president_vault.sanitize(getattr(m, "error", "") or "no data")
     p = _check(api.daccount.get_position(actno, "", ""), "get_position")
     for row in p.data or []:
         r = position_row(row)
@@ -160,13 +152,13 @@ def _backoff_and_exit(error):
         _atomic_write(BACKOFF_PATH, {"failures": n + 1})
     except OSError:
         pass
-    _write_snapshot({"ok": False, "error": error})
+    _write_snapshot({"ok": False, "error": president_vault.sanitize(error)})
     time.sleep(min(30 * 2 ** n, BACKOFF_MAX_S))
     sys.exit(1)
 
 
-def _login(env):
-    creds = president_vault.resolve(env)
+def _login():
+    creds = president_vault.resolve()
     api = president_vault.login(creds, SDK_LOG_DIR)
     accounts = api.get_accounts() or []
     if not accounts:
@@ -192,16 +184,16 @@ def run_once():
     """Log in, read once, write state/president_probe.json, log out. Exit 0/2."""
     api = None
     try:
-        api, actno = _login(_parse_env())
+        api, actno = _login()
         snap = read_account(api, actno)
-        _atomic_write(PROBE_PATH, dict(snap, read_at=int(time.time()), test_mode=api.test_mode))
+        _atomic_write(PROBE_PATH, dict(snap, read_at=time.time(), test_mode=api.test_mode))
         _log(f"probe ok equity={snap['equity']} margin_error={snap['margin_error']} "
              f"positions={[(r['productid'], r['net']) for r in snap['positions']]}")
         return 0
     except Exception as e:
-        _atomic_write(PROBE_PATH, {"ok": False, "error": f"{type(e).__name__}: {e}",
-                                   "read_at": int(time.time())})
-        _log(f"probe failed: {type(e).__name__}: {e}")
+        err = president_vault.sanitize(f"{type(e).__name__}: {e}")
+        _atomic_write(PROBE_PATH, {"ok": False, "error": err, "read_at": time.time()})
+        _log(f"probe failed: {err}")
         return 2
     finally:
         if api is not None:
@@ -209,10 +201,6 @@ def run_once():
 
 
 def main():
-    try:
-        env = _parse_env()
-    except OSError as e:
-        _backoff_and_exit(f".env unreadable: {e}")
     last_good = None
     api = actno = None
     try:
@@ -231,7 +219,7 @@ def main():
                 continue
             try:
                 if api is None:
-                    api, actno = _login(env)
+                    api, actno = _login()
                     try:
                         os.remove(BACKOFF_PATH)
                     except OSError:
@@ -245,20 +233,22 @@ def main():
                 if api is None:
                     # the login itself failed: no second attempt now (a wrong password
                     # retried in a loop is how accounts get locked) — back off
-                    _log(f"login failed: {type(e).__name__}: {e}")
-                    _backoff_and_exit(f"{type(e).__name__}: {e}")
+                    err = president_vault.sanitize(f"{type(e).__name__}: {e}")
+                    _log(f"login failed: {err}")
+                    _backoff_and_exit(err)
                 # a session that went stale across a maintenance window gets one fresh login
                 api.logout()
                 api = None
                 try:
-                    api, actno = _login(env)
+                    api, actno = _login()
                     snap = read_account(api, actno)
                 except Exception as e2:
-                    _log(f"tick failed: {type(e).__name__}: {e} / retry: {type(e2).__name__}: {e2}")
+                    err = president_vault.sanitize(f"{type(e2).__name__}: {e2}")
+                    _log(f"tick failed: {president_vault.sanitize(f'{type(e).__name__}: {e}')} / retry: {err}")
                     if api is not None:
                         api.logout()
                         api = None
-                    _backoff_and_exit(f"{type(e2).__name__}: {e2}")
+                    _backoff_and_exit(err)
             _write_snapshot(snap)
             last_good = snap
             _log(f"snapshot ok equity={snap['equity']} positions={len(snap['positions'])}")
@@ -268,7 +258,100 @@ def main():
             api.logout()
 
 
+# ── Windows service (NSSM), same recipe as runtime/capital_connect.run_finish ──
+SERVICE = "blave-agent-president"
+DEPLOYMENTS_PATH = os.path.join(STATE, "deployments.json")
+INSTALL_WAIT_S = 120
+
+
+def _nssm(*args, timeout=60):
+    import subprocess
+    r = subprocess.run(["nssm", *args], capture_output=True, timeout=timeout)
+    return r.returncode
+
+
+def _deployments(update):
+    try:
+        with open(DEPLOYMENTS_PATH, encoding="utf-8") as f:
+            deps = json.load(f)
+    except (OSError, ValueError):
+        deps = {}
+    if not isinstance(deps, dict):
+        deps = {}
+    update(deps)
+    _atomic_write(DEPLOYMENTS_PATH, deps)
+
+
+def install():
+    """Install (or re-point) and start the service; wait for its first snapshot.
+    LocalSystem, unlike 群益: Unitrade has no Windows-identity constraint. The
+    interpreter is this one — the one `pip install unitrade` went into. Exit 0
+    with the snapshot's verdict printed, 2 on failure."""
+    import shutil
+    if os.name != "nt":
+        _log("install: Windows only (v1)")
+        return 2
+    if not shutil.which("nssm"):
+        _log("install: nssm not found on PATH")
+        return 2
+    started = time.time() - 2
+    if _nssm("status", SERVICE) == 0:
+        _nssm("stop", SERVICE, timeout=90)
+    elif _nssm("install", SERVICE, sys.executable, os.path.abspath(__file__)) != 0:
+        _log("install: nssm install failed")
+        return 2
+    log = os.path.join(STATE, "president_worker.log")
+    os.makedirs(STATE, exist_ok=True)
+    for step in (("set", SERVICE, "Application", sys.executable),
+                 ("set", SERVICE, "AppParameters", os.path.abspath(__file__)),
+                 ("set", SERVICE, "AppDirectory", WORKSPACE),
+                 ("set", SERVICE, "AppStdout", log),
+                 ("set", SERVICE, "AppStderr", log),
+                 ("set", SERVICE, "Start", "SERVICE_AUTO_START"),
+                 ("start", SERVICE)):
+        if _nssm(*step, timeout=90) != 0:
+            _log(f"install: nssm {step[0]} {step[2] if step[0] == 'set' else ''} failed")
+            return 2
+    _deployments(lambda d: d.setdefault("president_worker", {
+        "type": "daemon", "expect_every_minutes": 5,
+        "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}))
+    deadline = time.time() + INSTALL_WAIT_S
+    while time.time() < deadline:
+        time.sleep(3)
+        try:
+            with open(OUT_PATH, encoding="utf-8") as f:
+                snap = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if (snap.get("read_at") or 0) >= started:
+            if not snap.get("ok") and any(k in str(snap.get("error")) for k in president_vault.AUTH_CLASSES
+                                          + ("BLOCKED",)):
+                _nssm("stop", SERVICE, timeout=90)  # a refused login must not be retried by restarts
+            _log(f"install: service running, first snapshot ok={snap.get('ok')} "
+                 f"error={snap.get('error')}")
+            return 0 if snap.get("ok") else 2
+    _log("install: service started but wrote no snapshot in time")
+    return 2
+
+
+def uninstall():
+    if os.name != "nt":
+        return 2
+    _nssm("stop", SERVICE, timeout=90)
+    rc = _nssm("remove", SERVICE, "confirm")
+    _deployments(lambda d: d.pop("president_worker", None))
+    _log(f"uninstall: nssm remove rc={rc}")
+    return 0 if rc == 0 else 2
+
+
 if __name__ == "__main__":
     if "--once" in sys.argv[1:]:
         sys.exit(run_once())
-    main()
+    if "--install" in sys.argv[1:]:
+        sys.exit(install())
+    if "--uninstall" in sys.argv[1:]:
+        sys.exit(uninstall())
+    try:
+        main()
+    except KeyboardInterrupt:  # `nssm stop` sends Ctrl-C; main's finally already logged out
+        sys.exit(0)

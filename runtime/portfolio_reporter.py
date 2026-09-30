@@ -324,6 +324,11 @@ def venues():
     lib_root = os.path.join(WORKSPACE, "lib")
     suffixes = {}
     for line in lines:
+        # a venue's own names first (venue_traits cred_env), same as command_listener
+        own = venue_traits.cred_env(line.split("=", 1)[0]) if "=" in line else None
+        if own:
+            suffixes.setdefault(own[0].lower(), set()).add(own[1])
+            continue
         m = _ENV_CRED_RE.match(line)
         # DATA_<SOURCE>_* = data-source keys (command_listener._DATA_CRED_PREFIX)
         if (m and m.group(1).upper() not in _RESERVED_PREFIXES

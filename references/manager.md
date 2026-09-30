@@ -648,6 +648,8 @@ Linux unit above: the reconciler must NOT auto-start on reboot; the user re-enab
 explicitly. Crash recovery while the service is running is NSSM's AppExit restart, which is
 independent of the start type.
 
+**President (統一期貨) is hand-wired like Capital below** (`_president_get_positions` / `_president_place_order`, keyed by the strategy SYMBOL, lots, worker snapshot + Read-Your-Writes via `lib/order_president`'s send marker); a flip goes out as a close (`opencloseflag "1"`, the held contract) and — only once that close is confirmed filled and HALT is clear — an entry into the near month. Details: `references/president-broker.md`.
+
 **Capital (群益) reconciler wiring is hand-wired in `manager/reconciler.py`, not auto-wired.**
 `lib.venue_wiring` deliberately excludes `"capital"` (`auto_wire: False` in `lib/venue_traits.py`) because its data shape differs
 from every crypto venue — LOTS not account-currency notional, `buy`/`sell` not `long`/`short`, and

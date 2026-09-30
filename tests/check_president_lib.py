@@ -63,31 +63,49 @@ check(op.settlement_at(2026, 10) == T(2026, 10, 21, 13, 30), "Oct 2026 settles W
 check(op.settlement_at(2026, 12) == T(2026, 12, 16, 13, 30), "Dec 2026 settles Wed 12/16 13:30")
 check(op.settlement_at(2027, 1) == T(2027, 1, 20, 13, 30), "Jan 2027 settles Wed 1/20 13:30")
 LISTED = ["TXFJ6", "TXFK6", "TXFL6"]
-check(op.near_month("TXF", LISTED, T(2026, 10, 21, 13, 29, 59)) == "TXFJ6", "settlement day 13:29:59 → J6")
-check(op.near_month("TXF", LISTED, T(2026, 10, 21, 13, 30, 0)) == "TXFK6", "settlement day 13:30:00 → K6")
-check(op.near_month("TXF", LISTED, T(2026, 10, 21, 13, 31)) == "TXFK6", "settlement day 13:31 → K6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 21, 8, 44, 59)) == "TXFJ6", "settlement day 08:44:59 → J6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 21, 8, 45, 0)) == "TXFK6",
+      "settlement day 08:45 (day session open) → entries roll to K6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 21, 13, 29)) == "TXFK6", "settlement day 13:29 → K6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 20, 23, 0)) == "TXFJ6", "the night before settlement → J6")
 check(op.near_month("TXF", LISTED, T(2026, 9, 30, 10, 0)) == "TXFJ6", "a normal day → the month's own contract")
-check(op.near_month("TMF", ["TMFL6", "TMFA7", "TMFB7"], T(2026, 12, 16, 13, 31)) == "TMFA7",
-      "December settlement 13:31 → next year's A contract")
-check(op.near_month("MXF", ["MXFL6", "MXFA7"], T(2026, 12, 16, 13, 29)) == "MXFL6", "December 13:29 → L6")
+check(op.near_month("TMF", ["TMFL6", "TMFA7", "TMFB7"], T(2026, 12, 16, 9, 0)) == "TMFA7",
+      "December settlement day → next year's A contract")
+check(op.near_month("MXF", ["MXFL6", "MXFA7"], T(2026, 12, 15, 13, 29)) == "MXFL6", "the day before → L6")
 e = raises(op.PresidentError, lambda: op.near_month("TXF", ["TXFJ6", "TXFL6"], T(2026, 10, 21, 13, 31)))
 check(e is not None and "TXFK6" in str(e), "computed contract missing from the broker list → refused", e)
 check(raises(ValueError, lambda: op.near_month("TXF", LISTED, datetime(2026, 10, 1))) is not None,
       "naive time refused")
 
-# ── 3. host gate ─────────────────────────────────────────────────────────────
+# ── 3. host gate + the one .env parser ───────────────────────────────────────
+president_vault.ENV_PATH = os.path.join(TMP, ".env")
+president_vault.BLOCK = os.path.join(TMP, "state", "president_login_block.json")
 BASE = {"president_account": "A", "president_password": "P", "president_ca_path": "c.pfx",
         "president_ca_password": "", "president_test_url": "https://test167.testpfctrade.com"}
-check(president_vault.resolve(BASE)["url"] == "https://test167.testpfctrade.com", "test host accepted")
+
+
+def envfile(d, bom=False):
+    with open(president_vault.ENV_PATH, "w", encoding="utf-8-sig" if bom else "utf-8") as f:
+        f.write("".join(f"{k}={v}\n" for k, v in d.items()))
+
+
+envfile(BASE)
+check(president_vault.resolve()["url"] == "https://test167.testpfctrade.com", "test host accepted")
+check(president_vault.resolve({"PRESIDENT_LIVE": "true", "president_url": "https://x.example"})["live"] is False,
+      "a caller-supplied mapping cannot turn PRESIDENT_LIVE on — only .env can")
 for bad in ("https://test167.pfctrade.com", "https://www.pfctrade.com", "http://x.testpfctrade.com",
             "https://evil.com/.testpfctrade.com"):
-    check(raises(ValueError, lambda: president_vault.resolve(dict(BASE, president_test_url=bad))) is not None,
-          f"without PRESIDENT_LIVE {bad} refused")
-live = dict(BASE, PRESIDENT_LIVE="true", president_url="https://api.pfctrade.example")
-check(president_vault.resolve(live)["url"] == "https://api.pfctrade.example" and president_vault.resolve(live)["live"],
-      "PRESIDENT_LIVE=true uses president_url")
-check(raises(ValueError, lambda: president_vault.resolve(dict(BASE, PRESIDENT_LIVE="true"))) is not None,
-      "PRESIDENT_LIVE without president_url refused")
+    envfile(dict(BASE, president_test_url=bad))
+    check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"without PRESIDENT_LIVE {bad} refused")
+envfile(dict(BASE, PRESIDENT_LIVE="true", president_url="https://api.pfctrade.example"))
+check(president_vault.resolve()["url"] == "https://api.pfctrade.example" and president_vault.resolve()["live"],
+      "PRESIDENT_LIVE=true in .env uses president_url")
+envfile(dict(BASE, PRESIDENT_LIVE="true"))
+check(raises(ValueError, lambda: president_vault.resolve()) is not None, "PRESIDENT_LIVE without president_url refused")
+envfile(dict(BASE, president_password='"p=a\\ss${X}"'), bom=True)
+check(president_vault.resolve()["password"] == "p=a\\ss${X}" and president_vault.resolve()["account"] == "A",
+      "BOM tolerated, one quote pair stripped, nothing else interpreted")
+envfile(BASE)
 
 # ── 2. orders ────────────────────────────────────────────────────────────────
 NOW_LIST = [op.near_month("TMF", [f"TMF{c}{d}" for c in op.MONTH_CODES for d in "0123456789"])]
@@ -146,6 +164,7 @@ def use(script, issend=True):
 
 op._TAGS_PATH = os.path.join(TMP, "state", "tags.json")
 op._REFRESH_FLAG = os.path.join(TMP, "state", "president_refresh")
+op.LAST_ORDER_PATH = os.path.join(TMP, "state", "president_last_order_at.json")
 account_president._SNAPSHOT = os.path.join(TMP, "state", "president_account.json")
 
 
@@ -162,7 +181,8 @@ o = api.sent[0]
 check(r["status"] == "sent" and r["fill_qty"] == 0 and r["ack"] == "0000" and r["symbol"] == NOW_LIST[0],
       "0000 with no fill → 'sent', on the computed near month", r)
 check((o.bs, o.ordertype, o.ordercondition, o.opencloseflag, o.orderqty, o.dtrade) == ("B", "M", "I", "", 1, "N"),
-      "market IOC, opencloseflag '', 1 lot", vars(o))
+      "entry: market IOC, opencloseflag '', 1 lot", vars(o))
+check(op.last_order_at(NOW_LIST[0]) > 0, "a send marks its contract's last-order time")
 check(len(api.sent) == 1 and api.logged_out, "sent once, logged out")
 
 api = use([ACK, ("match", {"orderno": "O1", "matchseq": "M1", "matchqty": 1, "matchprice": 23000.0}),
@@ -184,19 +204,53 @@ api = use([("reply", {"statuscode": "9999", "orderstatus": "錯誤:ERR 保證金
 e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=2))
 check(e is not None and "9999" in str(e) and api.logged_out, "9999 reply raises with the broker text", e)
 
+api = use([ACK, ("reply", {"statuscode": "0001", "orderstatus": "減量成功", "orderno": "O1", "matchqty": 0})])
+t0 = _t.time()
+r = op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=1.5)
+check(r["status"] == "sent" and _t.time() - t0 >= 1.4, "0001 (減量) is not terminal — waits out the timeout", r)
+
 api = use([], issend=False)
-e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
+e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry", client_tag="tg1"))
 check(e is not None and "MSG014" in str(e), "issend=False raises with errorcode", e)
+api = use([ACK])
+op.place_futures_market_order({}, "TMF", "buy", 1, "entry", client_tag="tg1", confirm_timeout=0.3)
+check(len(api.sent) == 1, "a tag whose send failed is not burned — the retry goes out")
+check(raises(op.DuplicateOrder, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry",
+                                                                      client_tag="tg1")) is not None,
+      "a tag that was sent is refused the second time")
+
+SIGN_LEAK = ":!! A123456789 {'subject': 'CN=TWA1234567891,OU=PSCNET,O=FINANCE', 'serial': '1f'}"
+api = use([], issend=False)
+api.issend = False
+real_order = api._order
+api.dtrade.order = lambda o: (api.sent.append(o), Resp(issend=False, errorcode="MSG016",
+                                                      errormsg="orderSend -sign error 0 " + SIGN_LEAK, seq=""))[1]
+e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
+audit_txt = open("state/audit.jsonl", encoding="utf-8").read()
+check(e is not None and "A123456789" not in str(e) and "PSCNET" not in str(e)
+      and "A123456789" not in audit_txt and "PSCNET" not in audit_txt,
+      "an order signing error never carries the national id or certificate — exception or audit", str(e))
 
 # reduce → the row's own productid, even after the near month rolled past it
 snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}])
 api = use([ACK])
 r = op.close_position_partial({}, "TMF", "long", 1, client_order_id="flat20260930120000123456")
-check(api.sent[-1].productid == "TMFA0" and api.sent[-1].bs == "S" and r["exchange"] == "president",
-      "close goes to the held row's productid, not the near month", vars(api.sent[-1]))
+check(api.sent[-1].productid == "TMFA0" and api.sent[-1].bs == "S" and api.sent[-1].opencloseflag == "1"
+      and r["exchange"] == "president",
+      "close: the held row's productid, opencloseflag '1'", vars(api.sent[-1]))
+check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
+      and len(api.sent) == 1, "a snapshot older than that contract's last order → refused, not sent")
+snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}])
 e = raises(op.DuplicateOrder, lambda: op.close_position_partial({}, "TMF", "long", 1,
                                                                client_order_id="flat20260930120000123456"))
 check(e is not None and len(api.sent) == 1, "the same client id again today → refused locally")
+e = raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "short", 1))
+check(e is not None and "add to it" in str(e) and len(api.sent) == 1, "closing the wrong side → refused", e)
+e = raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 3))
+check(e is not None and "only 2 held" in str(e) and len(api.sent) == 1, "closing more than held → refused", e)
+snapshot([])
+check(raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "reduce")) is not None
+      and len(api.sent) == 1, "a reduce with nothing held → refused, not sent")
 check(len(api.sent[-1].note) <= 10, "note fits 10 chars", api.sent[-1].note)
 snapshot([{"root": "TMF", "productid": "TMFA0", "net": 1, "net_current": 1},
           {"root": "TMF", "productid": "TMFB0", "net": 1, "net_current": 1}])
@@ -221,9 +275,15 @@ check({"order_sent", "order_error", "order_filled", "order_denied_halt"} <= set(
 snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1},
           {"root": "TMF", "productid": "TMFJ6", "net": -2, "net_current": -2},
           {"root": "TMF", "productid": "TMFK6", "net": 1, "net_current": 1}])
+e = raises(RuntimeError, lambda: account_president.get_positions({}))
+check(e is not None and "TMFJ6 -2" in str(e) and "TMFK6 +1" in str(e),
+      "one root open in two months fails the read, naming both", e)
+snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1},
+          {"root": "TMF", "productid": "TMFK6", "net": -1, "net_current": -1},
+          {"root": "MXF", "productid": "MXFJ6", "net": 0, "net_current": 0}])
 check(account_president.get_positions({}) == {"TXF": {"side": "long", "size": 1.0, "productid": "TXFJ6"},
-                                              "TMF": {"side": "short", "size": 1.0}},
-      "positions: canonical keys, lots, months netted", account_president.get_positions({}))
+                                              "TMF": {"side": "short", "size": 1.0, "productid": "TMFK6"}},
+      "positions: canonical keys, lots, productid", account_president.get_positions({}))
 snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 0}])
 check(raises(RuntimeError, lambda: account_president.get_positions({})) is not None,
       "ot_qty vs current_open disagreement fails the read")
@@ -253,6 +313,131 @@ check(president_worker.maintenance(T(2026, 10, 1, 5, 40)) == "login"
       and president_worker.maintenance(T(2026, 10, 1, 7, 30)) is None
       and president_worker.maintenance(T(2026, 10, 1, 5, 55)) is None,
       "maintenance windows 05:30–05:50 / 06:00–07:30 Taipei")
+
+# ── 6. login: no national id leaves, auth failures block every later login ──
+import contextlib, io  # noqa: E402
+president_vault.in_login_maintenance = lambda now=None: False
+president_worker.maintenance = lambda now=None: None
+LOGIN_SCRIPT = []
+
+
+class FakeUnitrade:
+    logins = 0
+
+    def __init__(self):
+        self.test_mode, self.out = True, False
+
+    def login(self, url, user, pw, ca, ca_pw):
+        FakeUnitrade.logins += 1
+        return LOGIN_SCRIPT.pop(0)
+
+    def logout(self):
+        self.out = True
+
+    def get_accounts(self):
+        return ["7000001"]
+
+
+_utu.Unitrade = FakeUnitrade
+president_worker.PROBE_PATH = os.path.join(TMP, "state", "president_probe.json")
+president_worker.SDK_LOG_DIR = os.path.join(TMP, "state", "president_logs")
+envfile(BASE)
+creds = president_vault.resolve()
+
+LOGIN_SCRIPT[:] = [Resp(ok=False, error=SIGN_LEAK)]
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    rc = president_worker.run_once()
+probe = open(president_worker.PROBE_PATH, encoding="utf-8").read()
+check(rc == 2 and "CERT_MISMATCH" in probe, "certificate/account mismatch is classified", probe)
+leaks = [where for where, txt in (("probe", probe), ("stdout", out.getvalue()))
+         if "A123456789" in txt or "PSCNET" in txt or "subject" in txt]
+check(not leaks, "the national id / certificate never reaches the probe file or stdout", leaks)
+n = FakeUnitrade.logins
+e = raises(president_vault.LoginError, lambda: president_vault.login(creds, president_worker.SDK_LOG_DIR))
+check(e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n,
+      "after an auth failure every later login is refused without reaching the broker", e)
+block = open(president_vault.BLOCK, encoding="utf-8").read()
+check("P" not in json.loads(block).values() and "A123456789" not in block, "the block file holds no secret", block)
+envfile(dict(BASE, president_password="P2"))
+LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
+api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG_DIR)
+check(FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
+      "changed credentials in .env lift the block; a good login clears it")
+api2.logout()
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="[APGW]something unexpected"),
+                   Resp(ok=False, error="[APGW]something unexpected")]
+creds2 = president_vault.resolve()
+for _ in range(2):
+    raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+e = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n + 3,
+      "two unclassifiable rejections block the third try (統一 locks at three)", e)
+os.remove(president_vault.BLOCK)
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤,請重新輸入!")]
+check(raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind
+      == "PASSWORD", "a password answer is PASSWORD")
+os.remove(president_vault.BLOCK)
+for text, kind in (("Timeout", "TIMEOUT"), ("HTTPSConnectionPool(host='x'): Max retries exceeded", "HOST")):
+    LOGIN_SCRIPT[:] = [Resp(ok=False, error=text)]
+    got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    check(got.kind == kind and not os.path.exists(president_vault.BLOCK), f"{kind} does not count toward a block")
+president_vault.in_login_maintenance = lambda now=None: True
+LOGIN_SCRIPT[:] = []
+got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(got.kind == "MAINTENANCE", "no login is attempted in 05:30–05:50")
+check(president_vault.sanitize("x A123456789 TWA1234567891 {'a': 1} y") == "x <id> <id> {…} y",
+      "sanitize strips ids and blobs")
+
+# ── 7. reconciler block: split close / entry, never open behind an unconfirmed close ──
+os.makedirs("manager", exist_ok=True)
+json.dump({"exchanges": {"s1": "president"}}, open("manager/portfolio_config.json", "w"))
+from manager import reconciler  # noqa: E402
+sent_legs = []
+FILL = {}
+
+
+def fake_place(env, sym, action, lots, intent, **kw):
+    sent_legs.append((sym, action, lots, intent))
+    st = FILL.get(intent, "filled")
+    return {"status": st, "fill_qty": float(lots if st == "filled" else 0), "avg_fill_price": 100.0,
+            "symbol": sym + "J6"}
+
+
+real_place = op.place_futures_market_order
+op.place_futures_market_order = fake_place
+try:
+    open(op.LAST_ORDER_PATH, "w").write("{}")
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 2.0, "exchange": "president"}},
+          "routed to president → the worker snapshot, in lots", reconciler.get_positions())
+    sent_legs.clear()
+    r = reconciler.place_order("TMF", -3.4, exchange="president")
+    check(sent_legs == [("TMF", "sell", 2, "reduce"), ("TMF", "sell", 1, "entry")] and r["executed_qty"] == 3,
+          "a flip: close the held 2, then open 1 short", sent_legs)
+    sent_legs.clear()
+    reconciler.place_order("TMF", -3, exchange="president", reduce_only=True)
+    check(sent_legs == [("TMF", "sell", 2, "reduce")], "reduce_only: the close leg only", sent_legs)
+    sent_legs.clear()
+    FILL["reduce"] = "sent"
+    r = reconciler.place_order("TMF", -3, exchange="president")
+    check(sent_legs == [("TMF", "sell", 2, "reduce")] and r["status"] == "sent",
+          "an unconfirmed close → no entry behind it", sent_legs)
+    FILL.clear()
+    sent_legs.clear()
+    reconciler.place_order("TMF", 0.4, exchange="president")
+    check(sent_legs == [], "under half a lot → nothing")
+    open("state/HALT", "w").write("{}")
+    sent_legs.clear()
+    reconciler.place_order("TMF", -3, exchange="president")
+    check(sent_legs == [("TMF", "sell", 2, "reduce")], "HALT: the close goes, the flip's entry does not", sent_legs)
+    os.remove("state/HALT")
+    json.dump({"TMFJ6": __import__("time").time() + 5}, open(op.LAST_ORDER_PATH, "w"))
+    e = raises(reconciler.CapitalCacheLagError, reconciler.get_positions)
+    check(isinstance(e, reconciler.PresidentCacheLagError), "a snapshot older than the last send → skip the round")
+    check(reconciler._current_venue() == "president", "the venue for classification is president")
+finally:
+    op.place_futures_market_order = real_place
 
 # ── 5. interface: every order.<name>( call site in lib/ manager/ is either
 # implemented here or unreachable for a TW broker (named with the reason) ──

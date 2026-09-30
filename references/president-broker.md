@@ -5,11 +5,13 @@ integration uses the broker's official **Unitrade API** (`pip install unitrade`)
 
 Package docs: https://pfcec.github.io/unitrade/ · PyPI: https://pypi.org/project/unitrade/
 
-**Status: test host only.** The shipped libs (`lib/order_president.py`, `lib/account_president.py`,
-`lib/president_worker.py`, `lib/president_vault.py`) have run against the broker's test host; no
-live account has placed an order through them, and **the reconciler is not wired for `president`
-yet** — do not route a strategy to `president` in `portfolio_config.json` and do not hand-wire the
-reconciler for it. Everything marked *unverified* below needs a live account to close.
+**Status: test host only, not on the connect menu.** The shipped libs (`lib/order_president.py`,
+`lib/account_president.py`, `lib/president_worker.py`, `lib/president_vault.py`) have run against
+the broker's test host; no live account has placed an order through them. The reconciler has a
+`president` block (`manager/reconciler.py`, hand-wired like 群益), but it only trades a venue the
+platform's bind wrote into `manager/credentials.ui.json` — and there is no platform bind for 統一
+yet. A `.env` written by hand (Step 4) is enough for the probe and test orders, not for the
+reconciler; do not work around that. Everything marked *unverified* needs a live account.
 
 ---
 
@@ -101,7 +103,18 @@ president_url=<production URL from the broker>
 ```
 
 Without `PRESIDENT_LIVE=true` the libs only accept a `*.testpfctrade.com` host, and a login whose
-server reports it is not a test server is refused.
+server reports it is not a test server is refused. The libs read `.env` themselves (one parser: BOM
+tolerated, one pair of surrounding quotes removed, nothing else interpreted) — a mapping passed by a
+caller is ignored, so `PRESIDENT_LIVE` can only come from `.env`.
+
+**Wrong credentials are not retried.** 統一 locks an account after three wrong logins. A login the
+broker refuses for the password or the certificate (or two it refuses for a reason the libs can't
+classify) writes `state/president_login_block.json`; every later login on this machine — worker,
+probe, orders — is refused locally until the credentials in `.env` change. Never delete that file
+to retry: ask the user to re-enter the password / certificate password. Login errors come back as a
+class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `MAINTENANCE`, `BLOCKED`,
+`UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
+national id, so it is never passed on. No login is attempted in 05:30–05:50.
 
 ---
 
@@ -118,9 +131,11 @@ exits 0 (ok) / 2 (failed, with the error in the file). On the test host `equity`
 `margin_error` says `查無資料!` — normal for an unfunded test account, not a failure.
 
 The long-running form (`python lib/president_worker.py`, no flag) is the machine's one standing
-login and writes `state/president_account.json` every 60 s for `lib/account_president.py`. No
-service installer ships for it yet — it is not something to set up on a user's machine until the
-broker is on the connect menu.
+login and writes `state/president_account.json` every 60 s for `lib/account_president.py`. On a
+Windows machine `python lib/president_worker.py --install` makes it the NSSM service
+`blave-agent-president` (LocalSystem, auto start, log `state/president_worker.log`, registered in
+`state/deployments.json` for the health check) and waits for its first snapshot; `--uninstall`
+removes it. Run it with the same `python` that `pip install unitrade` went into.
 
 ---
 
@@ -129,25 +144,31 @@ broker is on the connect menu.
 Use `lib/order_president.py` (full contract in `references/lib.md`):
 
 ```python
-from dotenv import dotenv_values
 from lib import order_president
 
-env = dotenv_values(".env")
-r = order_president.place_futures_market_order(env, "TMF", "buy", 1, "entry", client_tag="t1")
+# the first argument is kept for the interface; credentials come from .env
+r = order_president.place_futures_market_order({}, "TMF", "buy", 1, "entry", client_tag="t1")
 print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 ```
 
-- Market IOC, `opencloseflag=""` (the broker decides open/close), quantity in 口.
+- Market IOC, quantity in 口. Entries send `opencloseflag=""` (the broker decides); closes send
+  `"1"` (close only) and are checked against the worker snapshot first — the held row must be on the
+  other side, at least as large, and read after that contract's last order — or they are refused
+  without reaching the broker.
 - `status='filled'` only on a real match; `status='sent'` means no fill was seen in time — never
   resubmit on it; check the position first.
 - Entries are blocked while `state/HALT` is set; reduces always pass.
 
 ### Near month
 
-- **Entry** → the first contract whose settlement (third Wednesday of its month, **13:30 Taipei**)
-  is still ahead. That is the same instant the backtest's `TXFR1` continuous series changes contract
-  (its first new-month bar is 13:31). The computed contract must appear in
-  `get_domestic_contracts(root, "F")`; if it does not, the order is refused — never a guess.
+- Contracts settle at **13:30 Taipei on the third Wednesday** of their month — the instant the
+  backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
+- **Entry** → from **08:45 on settlement day** (the day session's open) entries go to the next
+  month; before that, to the current one. An entry into the expiring contract on its last day would
+  be cash-settled at 13:30 and re-opened by the reconciler in the next month — two extra round trips
+  — while rolling at the open differs from the backtest only by the calendar spread's move over
+  those ≤4h45m. The computed contract must appear in `get_domestic_contracts(root, "F")`; if it
+  does not, the order is refused — never a guess.
 - **Reduce / close** → the `productid` of the position row being closed (worker snapshot), never a
   re-derived month: after a roll the near month is no longer the contract that is held. A root open
   in two months is refused; close each by its month code.
@@ -198,13 +219,25 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
     plain parser (the libs strip it).
 13. The SDK's disconnect callback is spelled **`on_disonnected`** — setting `on_disconnected` does
     nothing.
+14. **`opencloseflag "1"` (close only) guards nothing on the test host.** A 1-lot MXF sell against
+    the preloaded long and a 1-lot TMF buy with **no TMF position** were both answered 0000
+    (委託成功, `opencloseflag '1'` echoed back); neither filled, positions unchanged. Whether
+    production refuses a close with nothing to close is unverified — the snapshot check in the lib is
+    the guard that is known to work.
+15. `statuscode 0001` is 減量成功 (a quantity reduction), not a cancel — only 0002 ends an order early.
+16. A certificate that is not the account's comes back from the SDK as `":!! " + national id + the
+    certificate's subject` — the libs classify it `CERT_MISMATCH` and never pass the text on.
 
 ---
 
 ## Limits & Gotchas
 
 - **No broker attribution** — 統一 is the broker itself; `note` (≤10 chars) is only a label.
-- **No client order id** at the broker — duplicates are blocked locally (`client_tag`, once per day).
+- **No client order id** at the broker — duplicates are blocked locally (`client_tag`, once per day,
+  recorded once the broker took the send; a process killed between the send and the record leaves
+  the tag reusable).
+- **One root in two contract months fails the position read** (a long J6 and a short K6 would add up
+  to "flat"); the user closes one month in the 統一 app.
 - **No native stop / take-profit** — order types are L / M / P only; `place_stop_order` raises.
 - **No deposit / withdrawal query** — the platform flags equity jumps as 資金異動 (same as 群益).
 - **Per-minute query/order caps** come from the server at login (`dtrade_limit_counts`,
@@ -223,7 +256,7 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 2. `.env` has the five locked keys; `president_test_url` is `https://testNNN.testpfctrade.com`.
 3. `python lib/president_worker.py --once` exits 0; the probe lists the positions (test host:
    equity empty with `查無資料!` is normal).
-4. One test order through `order_president.place_futures_market_order(env, "TMF", "buy", 1,
+4. One test order through `order_president.place_futures_market_order({}, "TMF", "buy", 1,
    "entry")` returns `ack == '0000'` (the test host will not fill it). The user reports the test to
    the broker rep and waits for the production mail.
 5. Production (`PRESIDENT_LIVE=true` + `president_url`) only with the user's explicit go-ahead;
@@ -232,6 +265,8 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 ## Unverified until a live account
 
 Equity and margin fields against the broker's app; which position quantity is the open interest;
+whether production refuses a close-only (`"1"`) order with nothing to close; the broker's text for a
+wrong password (so `PASSWORD` is classified from it, not counted as `UNKNOWN`);
 fills, partial fills and the IOC-cancel report; order recovery after a restart (`query_reply` /
 `query_match`); behaviour on a real settlement day and on holiday-shifted settlements; production
 connection/rate limits and IP registration; the worker's behaviour across the daily maintenance

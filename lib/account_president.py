@@ -66,21 +66,24 @@ def position_rows():
 
 
 def get_positions(env: dict) -> dict:
-    """{canonical: {'side', 'size'}} with size in LOTS, canonical = TXF/MXF/TMF.
-    Several months of one root are netted; 'productid' is set only when a
-    single month is open (a close must name that month — lib/order_president)."""
-    net, months = {}, {}
+    """{canonical: {'side', 'size', 'productid'}} with size in LOTS, canonical
+    = TXF/MXF/TMF. One root open in two contract months fails the read: summed,
+    a long J6 and a short K6 would read as flat and the reconciler would trade
+    on top of both; the user closes one month in the broker's app first."""
+    months = {}
     for r in position_rows():
-        net[r["root"]] = net.get(r["root"], 0) + r["net"]
-        months.setdefault(r["root"], []).append(r["productid"])
+        if r["net"]:
+            months.setdefault(r["root"], []).append(r)
     out = {}
-    for root, n in net.items():
-        if n == 0:
-            continue
-        row = {"side": "long" if n > 0 else "short", "size": float(abs(n))}
-        if len(months[root]) == 1:
-            row["productid"] = months[root][0]
-        out[root] = row
+    for root, rows in months.items():
+        if len(rows) > 1:
+            held = ", ".join(f"{r['productid']} {r['net']:+d}" for r in rows)
+            raise RuntimeError(f"president: {root} is open in several contract months ({held}) — "
+                               f"trading paused rather than add months together; close one month "
+                               f"in the 統一 app")
+        n = rows[0]["net"]
+        out[root] = {"side": "long" if n > 0 else "short", "size": float(abs(n)),
+                     "productid": rows[0]["productid"]}
     return out
 
 

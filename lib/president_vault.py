@@ -1,51 +1,138 @@
 """Where 統一期貨's login lives, which host it may reach, and the one login path.
 
 Same contract as lib/capital_vault.py: only the order lib and
-lib/president_worker.py call resolve() — lib/account_president.py reads the
-worker's snapshot and never holds a password. `.env` holds the values today;
-a `vault:` sentinel in president_password / president_ca_password points at
-<base>/credentials/president_vault.json instead (no connect flow writes it
-yet — the resolver is here so the one that does changes nothing below it).
+lib/president_worker.py log in — lib/account_president.py reads the worker's
+snapshot and never holds a password. resolve() reads the workspace `.env`
+itself with one parser (a caller-supplied mapping is never trusted: it could
+carry PRESIDENT_LIVE, and two parsers can disagree on a quoted password — the
+wrong one burns a login try). A `vault:` sentinel in president_password /
+president_ca_password points at <base>/credentials/president_vault.json.
 
-Host gate: without PRESIDENT_LIVE=true only a *.testpfctrade.com host is
-accepted (the test hosts' TLS certificate covers exactly that — the broker's
-activation mail writes test167.pfctrade.com, the working URL is
-https://test167.testpfctrade.com). With it, president_url (production) is used.
+Host gate: without PRESIDENT_LIVE=true in `.env` only a *.testpfctrade.com
+host is accepted (the test hosts' TLS certificate covers exactly that — the
+broker's mail writes test167.pfctrade.com, the working URL is
+https://test167.testpfctrade.com), and a server that reports itself not a
+test server is refused after login. With it, president_url is used.
+
+Login failures leave this module as a CLASS only (CERT_MISMATCH, CERT,
+PASSWORD, HOST, TIMEOUT, MAINTENANCE, BLOCKED, UNKNOWN), never the broker's
+text: when the certificate does not match the account, the SDK's message is
+f"{national id} {certificate json}". Every broker string that is passed on
+goes through sanitize() first.
+
+統一 locks an account after three wrong logins. A CERT*/PASSWORD answer blocks
+every further login on this machine with the same credentials
+(state/president_login_block.json, keyed on their fingerprint — no secret is
+written) until `.env` changes; two unclassifiable server rejections block too,
+because an unknown text may be a wrong password. No login is attempted in the
+broker's 05:30–05:50 login maintenance.
 
 Imported two ways like capital_vault: `import president_vault` from the
 worker script (lib/ is sys.path[0]), `lib.president_vault` elsewhere. Keep it
 free of other lib imports.
 """
+import hashlib
 import json
 import os
+import re
+import time
+from datetime import datetime, time as dtime, timedelta, timezone
 from urllib.parse import urlparse
 
-VAULT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                     "credentials", "president_vault.json")
+_WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_PATH = os.path.join(_WS, ".env")
+VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json")
+BLOCK = os.path.join(_WS, "state", "president_login_block.json")
 PW_PREFIX = "vault:"
 TEST_HOST_SUFFIX = ".testpfctrade.com"
+TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")  # no ZoneInfo: Windows has no tz database
+LOGIN_MAINTENANCE = (dtime(5, 30), dtime(5, 50))
 _SECRETS = ("president_password", "president_ca_password")
+AUTH_CLASSES = ("CERT_MISMATCH", "CERT", "PASSWORD")
+UNKNOWN_BLOCK_AT = 2
 
 
-def _fold(env):
-    # PowerShell 5 `Set-Content -Encoding UTF8` writes a BOM onto the first key
-    return {str(k).lstrip("\ufeff").casefold(): v for k, v in env.items()}
+class LoginError(RuntimeError):
+    """A failed 統一期貨 login. str() is the class and a fixed description, nothing else."""
+
+    TEXT = {
+        "CERT_MISMATCH": "the certificate does not belong to this account",
+        "CERT": "the certificate or its password was refused",
+        "PASSWORD": "the account or trading password was refused",
+        "HOST": "the login host could not be reached",
+        "TIMEOUT": "the login did not answer in time",
+        "MAINTENANCE": "broker login maintenance (05:30–05:50 Taipei) — not attempted",
+        "BLOCKED": "a previous login with these credentials was refused — not attempted until "
+                   "the credentials in .env change (統一 locks the account after three wrong logins)",
+        "NON_TEST_SERVER": "the server is not a test server and PRESIDENT_LIVE is not set",
+        "UNKNOWN": "the broker refused the login",
+    }
+
+    def __init__(self, kind):
+        self.kind = kind
+        super().__init__(f"統一期貨 login failed: {kind} — {self.TEXT.get(kind, '')}")
+
+
+_ID_RE = re.compile(r"(?:TW)?[A-Z][12]\d{8}1?")
+_BLOB_RE = re.compile(r"\{.*\}", re.S)
+
+
+def sanitize(text, limit=200):
+    """A broker message safe to log, store or show: no national ids, no dict /
+    certificate blobs, bounded length."""
+    s = _BLOB_RE.sub("{…}", str(text or ""))
+    return _ID_RE.sub("<id>", s)[:limit]
+
+
+def classify(text):
+    """Class of a failed login from the SDK's error text (never returned itself)."""
+    s = str(text or "")
+    if "subject" in s or "PSCNET" in s or _ID_RE.search(s):
+        return "CERT_MISMATCH"
+    if "憑證" in s or re.search(r"\b50(1[0-3]|6[01]|70)\b", s):
+        return "CERT"
+    if s.strip() == "Timeout" or "timed out" in s.lower() or "ReadTimeout" in s:
+        return "TIMEOUT"
+    if any(t in s for t in ("NameResolution", "getaddrinfo", "Max retries", "SSLError",
+                            "ConnectionError", "Connection refused", "Failed to establish")):
+        return "HOST"
+    if any(t in s for t in ("密碼", "查無此使用者", "使用者密碼未設定")):
+        return "PASSWORD"
+    return "UNKNOWN"
+
+
+# ── .env ─────────────────────────────────────────────────────────────────────
+
+def read_env(path=None):
+    """The workspace `.env`: KEY=VALUE per line, BOM tolerated (PowerShell 5
+    writes one), one pair of matching surrounding quotes removed, nothing else
+    interpreted. Keys are folded to lower case."""
+    env = {}
+    with open(path or ENV_PATH, encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            v = v.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+                v = v[1:-1]
+            env[k.strip().casefold()] = v
+    return env
 
 
 def live(env):
-    env = _fold(env)
     return str(env.get("president_live") or "").strip().lower() == "true"
 
 
 def endpoint(env):
     """The login URL this environment may use, or ValueError."""
-    folded = _fold(env)
     if live(env):
-        url = (folded.get("president_url") or "").strip()
+        url = (env.get("president_url") or "").strip()
         if not url:
             raise ValueError("PRESIDENT_LIVE=true but president_url is not set")
     else:
-        url = (folded.get("president_test_url") or "").strip()
+        url = (env.get("president_test_url") or "").strip()
         host = (urlparse(url).hostname or "").lower()
         if not host.endswith(TEST_HOST_SUFFIX):
             raise ValueError(f"president_test_url host {host or url!r} is not *{TEST_HOST_SUFFIX} — "
@@ -55,11 +142,15 @@ def endpoint(env):
     return url.rstrip("/")
 
 
-def resolve(env):
-    """{url, account, password, ca_path, ca_password, live} from a parsed .env
-    mapping; secrets come from the vault when .env holds the sentinel."""
-    folded = _fold(env)
-    creds = {k: folded.get(k) or "" for k in ("president_account", "president_ca_path") + _SECRETS}
+def resolve(_ignored=None):
+    """{url, account, password, ca_path, ca_password, live} from the workspace
+    `.env`; secrets come from the vault when `.env` holds the sentinel. The
+    argument is accepted for call compatibility and ignored."""
+    try:
+        env = read_env()
+    except OSError as e:
+        raise ValueError(f".env unreadable ({type(e).__name__})")
+    creds = {k: env.get(k) or "" for k in ("president_account", "president_ca_path") + _SECRETS}
     if any(creds[k].startswith(PW_PREFIX) for k in _SECRETS):
         try:
             with open(VAULT, encoding="utf-8") as f:
@@ -78,6 +169,68 @@ def resolve(env):
     return {"url": endpoint(env), "account": creds["president_account"],
             "password": creds["president_password"], "ca_path": creds["president_ca_path"],
             "ca_password": creds["president_ca_password"], "live": live(env)}
+
+
+# ── login block (shared by every caller on this machine) ─────────────────────
+
+def fingerprint(creds):
+    raw = "\0".join(creds.get(k) or "" for k in ("account", "password", "ca_path", "ca_password"))
+    return hashlib.sha256(f"president-login-v1\0{raw}".encode()).hexdigest()[:16]
+
+
+def _read_block():
+    try:
+        with open(BLOCK, encoding="utf-8") as f:
+            b = json.load(f)
+        return b if isinstance(b, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_block(block):
+    try:
+        os.makedirs(os.path.dirname(BLOCK), exist_ok=True)
+        with open(BLOCK + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(block, f)
+        os.replace(BLOCK + ".tmp", BLOCK)
+    except OSError:
+        pass
+
+
+def blocked(creds):
+    """The class that blocks a login with exactly these credentials, or None."""
+    b = _read_block()
+    if b.get("fp") != fingerprint(creds):
+        return None
+    if b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT:
+        return b.get("kind") or "UNKNOWN"
+    return None
+
+
+def _record(creds, kind):
+    fp = fingerprint(creds)
+    b = _read_block()
+    if b.get("fp") != fp:
+        b = {"fp": fp, "unknown": 0}
+    if kind in AUTH_CLASSES:
+        b.update(kind=kind, at=int(time.time()))
+        _write_block(b)
+    elif kind == "UNKNOWN":
+        b.update(kind=kind, at=int(time.time()), unknown=int(b.get("unknown") or 0) + 1)
+        _write_block(b)
+
+
+def _clear():
+    # a good login: whatever was blocked was other credentials (or these, now fixed)
+    try:
+        os.remove(BLOCK)
+    except OSError:
+        pass
+
+
+def in_login_maintenance(now=None):
+    t = (now or datetime.now(TAIPEI)).astimezone(TAIPEI).time()
+    return LOGIN_MAINTENANCE[0] <= t < LOGIN_MAINTENANCE[1]
 
 
 # ── the one login path (worker and order lib) ────────────────────────────────
@@ -111,13 +264,19 @@ def _pin_sdk_logs(log_dir):
 
 
 def login(creds, log_dir):
-    """A logged-in Unitrade, or raises. The caller MUST logout() in a finally:
-    the SDK starts non-daemon threads (logger, sockets) at login and a process
-    that exits without logout() hangs on them forever — failed logins included
-    (measured on the test host 2026-09-30: no logout → hung until killed;
-    logout → exits in 0.5 s). The returned object is logged out here on every
-    failure path."""
+    """A logged-in Unitrade, or LoginError. The caller MUST logout() in a
+    finally: the SDK starts non-daemon threads (logger, sockets) at login and a
+    process that exits without logout() hangs on them forever — failed logins
+    included (measured on the test host 2026-09-30). The returned object is
+    logged out here on every failure path."""
     import threading
+
+    if in_login_maintenance():
+        raise LoginError("MAINTENANCE")
+    kind = blocked(creds)
+    if kind:
+        raise LoginError("BLOCKED")
+
     from unitrade.unitrade import Unitrade
 
     _pin_sdk_logs(log_dir)
@@ -128,7 +287,7 @@ def login(creds, log_dir):
         try:
             box["resp"] = api.login(creds["url"], creds["account"], creds["password"],
                                     creds["ca_path"], creds["ca_password"] or "")
-        except BaseException as e:  # noqa: BLE001 — reported below
+        except BaseException as e:  # noqa: BLE001 — classified below, never passed on
             box["exc"] = e
 
     t = threading.Thread(target=_run, daemon=True, name="president-login")
@@ -136,15 +295,20 @@ def login(creds, log_dir):
     t.join(LOGIN_TIMEOUT_S)
     try:
         if t.is_alive():
-            raise TimeoutError(f"統一期貨 login did not answer within {LOGIN_TIMEOUT_S}s")
+            raise LoginError("TIMEOUT")
         if "exc" in box:
-            raise RuntimeError(f"統一期貨 login raised {type(box['exc']).__name__}: {box['exc']}")
+            kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
+            if kind in AUTH_CLASSES:
+                _record(creds, kind)
+            raise LoginError(kind)
         resp = box["resp"]
         if not resp.ok:
-            raise RuntimeError(f"統一期貨 login failed: {resp.error}")
+            kind = classify(resp.error)
+            _record(creds, kind)
+            raise LoginError(kind)
         if not creds["live"] and api.test_mode is not True:
-            raise RuntimeError("統一期貨 login reached a non-test server without PRESIDENT_LIVE=true — "
-                               "refused")
+            raise LoginError("NON_TEST_SERVER")
+        _clear()
         return api
     except BaseException:
         api.logout()

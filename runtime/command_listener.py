@@ -346,7 +346,7 @@ def _env_flags():
     for line in lines:
         k, sep, v = line.partition("=")
         k = k.strip()
-        if sep and k and not k.startswith("#") and not _CRED_ENV_RE.match(k):
+        if sep and k and not k.startswith("#") and not _cred_match(k):
             out[k.upper()] = v.strip()
     return out
 
@@ -661,6 +661,18 @@ _CRED_KEEP_IDS = {"BLAVE", "ADMIN"}
 _DATA_CRED_PREFIX = "DATA_"
 
 
+def _cred_match(name):
+    """(ID, SUFFIX) of a credential env name, or None. A venue's own names
+    (venue_traits cred_env — 統一's president_account is its API_KEY-role key)
+    are read first: through the pair regex alone 統一 never looks bound, and
+    president_ca_password reads as a phantom PRESIDENT_CA venue."""
+    own = venue_traits.cred_env(name)
+    if own:
+        return own
+    m = _CRED_ENV_RE.match(name)
+    return (m.group(1).upper(), m.group(2).upper()) if m else None
+
+
 def _is_data_cred_id(cred_id):
     return cred_id.upper().startswith(_DATA_CRED_PREFIX)
 
@@ -732,10 +744,9 @@ def _venue_cred_ids(lines, skip_ids=frozenset()):
     bound, so every 下單設定 save wiped its `exchanges` routing)."""
     suffixes = {}
     for l in lines:
-        m = _CRED_ENV_RE.match(l.split("=", 1)[0].strip())
-        if (m and m.group(1).upper() not in _CRED_KEEP_IDS | skip_ids
-                and not _is_data_cred_id(m.group(1))):
-            suffixes.setdefault(m.group(1).upper(), set()).add(m.group(2).upper())
+        m = _cred_match(l.split("=", 1)[0].strip())
+        if m and m[0] not in _CRED_KEEP_IDS | skip_ids and not _is_data_cred_id(m[0]):
+            suffixes.setdefault(m[0], set()).add(m[1])
     return {
         i for i, s in suffixes.items()
         if "API_KEY" in s and s & {"SECRET_KEY", "PASSWORD", "PASSPHRASE"}
@@ -1145,7 +1156,7 @@ def _cmd_credentials(args):
         # here (e.g. a fresh BLAVE_API_KEY= line)
         if not isinstance(v, str) or "\n" in v or "\r" in v:
             raise ValueError("bad env value")
-    writing = {m.group(1).upper() for k in env if (m := _CRED_ENV_RE.match(k))}
+    writing = {m[0] for k in env if (m := _cred_match(k))}
     # the remove side refuses to drop BLAVE_*; the write side must refuse to
     # overwrite it too, or a custom exchange named "Blave" clobbers the
     # platform keys
@@ -1208,8 +1219,8 @@ def _cmd_credentials(args):
             if evict:
 
                 def _stale_cred(line):
-                    m = _CRED_ENV_RE.match(line.split("=", 1)[0].strip())
-                    return bool(m) and m.group(1).upper() in evict
+                    m = _cred_match(line.split("=", 1)[0].strip())
+                    return bool(m) and m[0] in evict
 
                 kept = [l for l in kept if not _stale_cred(l)]
                 evicted_ids = {i.lower() for i in evict}
@@ -3543,9 +3554,8 @@ def _cmd_credentials_remove(args):
     # the same thing _venue_cred_ids judges: the env NAME of a venue called
     # "DATA" (DATA_API_KEY) starts with the prefix, its id does not.
     dropped_ids = {
-        n[: -len("_API_KEY")].lower() for n in drop
-        if n.upper().endswith("_API_KEY")
-        and not _is_data_cred_id(n[: -len("_API_KEY")])
+        m[0].lower() for n in drop
+        if (m := _cred_match(n)) and m[1] == "API_KEY" and not _is_data_cred_id(m[0])
     }
     if dropped_ids:
         apath = os.path.join(WORKSPACE, "manager", "account.json")

@@ -201,6 +201,11 @@ def _read_env(path=".env"):
 def _venues(env):
     out = []
     for k in env:
+        own = venue_traits.cred_env(k)  # 統一 is bound by president_account, not *_API_KEY
+        if own:
+            if own[1] == "API_KEY":
+                out.append(own[0].lower())
+            continue
         m = _ENV_KEY_RE.match(k + "=")
         # DATA_<SOURCE>_* = data-source keys, never a venue — same rule as
         # runtime/account_reader._venues (a venue literally named DATA stays)

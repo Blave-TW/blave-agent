@@ -15,6 +15,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   Stop 不殺 `president_worker` 與 `order_president` 行程、Windows file_watcher 盯 `state/president_account.json`(同群益快照那條)、
   `president_worker.py --once` 歸類為讀帳戶;`venue_traits` 的 president 補 `perp: False`(close_symbol 拒絕,同群益/永豐)。
   尚未上架(選單不動),lib 本身在 workspace 通道。
+- **平台認得統一期貨的綁定**:它的 env 名是鎖死的 `president_account` / `president_password` 等五個(外加 `PRESIDENT_LIVE` /
+  `president_url`),沒有 `{ID}_API_KEY`,原本 `_venue_cred_ids`、綁定 manifest、換綁逐出、解綁、`portfolio_reporter.venues()`、
+  `account_reader` 全都看不到它,`president_ca_password` 還會被讀成幽靈 venue `PRESIDENT_CA`。`venue_traits` 新增 `cred_env`
+  (各 venue 自己的 env 名與角色),`command_listener._cred_match` 先查它再套 pair regex;換綁會把七個名字一起逐出。
+  兩通道不同步期間:新 runtime+舊 workspace 沒有 president lib,`account.present` 為 false,不影響其他 venue;
+  舊 runtime+新 workspace 看不到 president 綁定(維持現況)。測試 `tests/check_president_discovery.py`。
 
 ## 1.1.106 — 2026-10-01(desktop 0.1.11)
 

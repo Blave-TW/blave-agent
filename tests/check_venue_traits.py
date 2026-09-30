@@ -89,8 +89,8 @@ check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital"}, "venue_wiri
       venue_wiring._NON_AUTO)
 check(close_symbol._NOT_PERP == {"capital", "sinopac", "president"}, "close_symbol._NOT_PERP",
       close_symbol._NOT_PERP)
-check(venue_traits.venues("hand_wired") == {"capital"}, "hand_wired venues")
-check(venue_traits.venues("native_units") == {"capital"}, "native_units venues")
+check(venue_traits.venues("hand_wired") == {"capital", "president"}, "hand_wired venues")
+check(venue_traits.venues("native_units") == {"capital", "president"}, "native_units venues")
 check(venue_traits.venues("windows_identity") == {"capital"}, "windows_identity venues")
 check(venue_traits.hand_wired_routed(["binance", "capital"]) == "capital"
       and venue_traits.hand_wired_routed(["binance", ""]) is None
