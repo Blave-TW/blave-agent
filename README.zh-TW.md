@@ -9,6 +9,8 @@
 
 [English](README.md) | **繁體中文**
 
+機器翻譯（以英文原文為準）：[日本語](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ja) | [한국어](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ko) | [Español](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=es) | [Português](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=pt) | [Tiếng Việt](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=vi) | [Deutsch](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=de) | [Français](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=fr) | [简体中文](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=zh)
+
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
@@ -85,7 +87,11 @@ npm start
 
 ## 最新消息
 
-- **TBD**——電腦版 0.1.7：agent 寫報告前先上網讀新聞（晨報、收盤、單一標的、研究）；內建看得到的瀏覽器，交易所後台與內網位址擋下；爆倉地圖分「已發生」與「模型估計」兩層標明；雲端排程報告到點由 agent 上網查完自己寫。
+- **2026-10-01**——電腦版 0.1.11：樣本外驗證結果合成一行（效率與判斷）；驗證跑在雲端時，切回分頁會自動抓結果；金額設成 0 的策略算「還沒上線」，agent 會提醒你去設金額。
+- **2026-09-30**——電腦版 0.1.10：策略頁新增「樣本外驗證」分頁，看用過去資料挑參數的做法，放到沒看過的資料上撐不撐得住；自動下單執行中也看得到「重新啟動以完成更新」，按下去先講清楚重開後不平倉、不下單，要再按「啟動下單」才繼續。
+- **2026-09-29**——電腦版 0.1.9：還原舊版本直接回到那一版，背景用最新資料重跑回測；設定新增「Agent 規則」，可以看、新增、刪除 agent 要遵守的規則；選單列圖示，下單中可直接「暫停下單（不動部位）」；agent 回覆後最多出現三句建議下一步。
+- **2026-09-28**——電腦版 0.1.8：每跑完一次回測存成一版，可以比較、還原；單一標的策略可轉出 TradingView Pine、XQ、MultiCharts，Pine 可一鍵送進 TradingView，停在「加到圖表」由你按；每種報告都能存成 PDF，市場報告與績效報告可公開成連結分享。
+- **2026-09-27**——電腦版 0.1.7：agent 寫報告前先上網讀新聞（晨報、收盤、單一標的、研究）；內建看得到的瀏覽器，交易所後台與內網位址擋下；晨報改版，加密晨報加入報價表、衍生品、爆倉、異動與新聞，台股晨報加入重大訊息與除權息，沒有 Blave 資料權限時改用證交所、期交所公開資料產出。
 - **2026-09-26**——電腦版 0.1.6：app 內新增報告區；連接交易所時，帶提領權限的金鑰會被拒絕。
 - **2026-09-24**——電腦版 0.1.1：第一個公開版，通用版（Apple Silicon 與 Intel），發在 GitHub Releases。台股日線與加密貨幣恐懼貪婪指數改走免費公開來源。
 - **2026-09-23**——電腦版 0.0.4，簽章與公證完成，發在測試軌。

@@ -8,6 +8,8 @@ Free and open source. Connect your Claude Code or Codex. You describe the idea; 
 
 **English** | [繁體中文](README.zh-TW.md)
 
+Machine translations (the English original prevails): [日本語](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ja) | [한국어](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ko) | [Español](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=es) | [Português](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=pt) | [Tiếng Việt](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=vi) | [Deutsch](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=de) | [Français](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=fr) | [简体中文](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=zh)
+
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
@@ -84,7 +86,11 @@ The interface follows the system language (English or Traditional Chinese). To o
 
 ## News
 
-- **TBD** — Desktop 0.1.7: the agent reads the news before writing a report (morning, close, single-symbol, research); a built-in browser you can watch, with exchange account pages and private addresses blocked; the liquidation map shows actual liquidations and the model estimate as two labelled layers; scheduled cloud reports are written by the agent at run time.
+- **2026-10-01** — Desktop 0.1.11: out-of-sample results read on one line (efficiency and verdict); a validation run in the cloud is fetched when you switch back to the tab; a strategy with its amount set to 0 counts as not live yet, and the agent points you to set an amount.
+- **2026-09-30** — Desktop 0.1.10: an Out-of-Sample tab shows whether picking parameters from past data holds up on data it has never seen; "Restart to finish updating" now shows while auto-trading runs, and says first that the restart closes nothing and places no orders until you press Start trading.
+- **2026-09-29** — Desktop 0.1.9: restoring a version goes straight back to it and reruns the backtest on the latest data; Settings › Agent rules, where you see, add and delete the rules the agent keeps to; a menu bar icon with "Pause trading (keep positions)"; up to three suggested next steps after each reply.
+- **2026-09-28** — Desktop 0.1.8: every backtest is saved as a version you can compare and restore; export a single-symbol strategy to TradingView Pine, XQ or MultiCharts, and send the Pine script into TradingView, where it stops at "Add to chart" for you to press; save any report as PDF, and publish market and performance reports as a public link.
+- **2026-09-27** — Desktop 0.1.7: the agent reads the news before writing a report (morning, close, single-symbol, research); a built-in browser you can watch, with exchange account pages and private addresses blocked; a redesigned morning brief — crypto adds quotes, derivatives, liquidations, movers and news, Taiwan adds material announcements and ex-dividend dates, and the Taiwan brief is built from TWSE and TAIFEX public data when you have no Blave data access.
 - **2026-09-26** — Desktop 0.1.6: a Reports view in the app; an exchange key with withdrawal permission is refused when you connect it.
 - **2026-09-24** — Desktop 0.1.1: first public release, universal build (Apple Silicon and Intel), on GitHub Releases. Taiwan stock daily bars and the Crypto Fear & Greed index now come from free public sources on the desktop.
 - **2026-09-23** — Desktop 0.0.4, signed and notarized, on the test track.
