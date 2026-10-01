@@ -6,9 +6,7 @@
 
 Free and open source. Connect your Claude Code or Codex. You describe the idea; it writes the strategy, runs the backtest, and trades it live.
 
-**English** | [繁體中文](README.zh-TW.md)
-
-Machine translations (the English original prevails): [日本語](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ja) | [한국어](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ko) | [Español](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=es) | [Português](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=pt) | [Tiếng Việt](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=vi) | [Deutsch](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=de) | [Français](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=fr) | [简体中文](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=zh)
+**English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 

@@ -7,9 +7,7 @@
 免費開源，接上你的 Claude Code 或 Codex<br>
 你講想法，它寫策略、跑回測、上線自動交易
 
-[English](README.md) | **繁體中文**
-
-機器翻譯（以英文原文為準）：[日本語](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ja) | [한국어](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=ko) | [Español](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=es) | [Português](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=pt) | [Tiếng Việt](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=vi) | [Deutsch](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=de) | [Français](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=fr) | [简体中文](https://www.readme-i18n.com/Blave-TW/blave-agent?lang=zh)
+[English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
 ![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
