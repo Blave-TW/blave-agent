@@ -9,11 +9,11 @@
 
 [English](README.md) | **繁體中文**
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
+![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-[下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [快速開始（從原始碼）](#quick-start) · [關電腦也照跑](https://blave.org/agent/zh)
+[下載 macOS 版](https://github.com/Blave-TW/blave-agent/releases/latest) · [下載 Windows 版](https://download.blave.org/desktop/win/Blave-Setup.exe) · [快速開始（從原始碼）](#quick-start) · [關電腦也照跑](https://blave.org/agent/zh)
 
 覺得有用就按個 Star；想在新版發佈時收到通知，請按 Watch › Releases。
 
@@ -50,6 +50,7 @@ agent 上網查資料用的是 app 內建的瀏覽器：它正在讀哪一頁，
 需要：
 
 - macOS 13 以上。打包版是通用版：Apple Silicon 與 Intel 同一個安裝檔。
+- 或 Windows 10、11，x64（Electron 44 支援的版本；ARM 版尚未測試）。Windows 安裝檔還沒有程式碼簽章，第一次安裝時 SmartScreen 會跳出警告：按「其他資訊」再按「仍要執行」。
 - Node.js 22.12 以上與 npm（`shell/package.json` › `engines`）
 - `PATH` 上有 `python3`。打包版自帶 Python 3.12；從原始碼跑時，venv 用的是你系統的 `python3`。
 - 已安裝並登入的 Claude Code 或 Codex，或一個 Blave 帳號
@@ -114,7 +115,7 @@ npm start
 
 ## 安全與邊界
 
-- **交易所金鑰放在哪，看你用哪個表面。** 電腦版：寫在你 Mac 上工作區的 `.env`（`~/Blave/workspace/.env`）。雲端主機：在你自己那台主機工作區的 `.env`。在網頁綁定：由 Blave 加密保存。agent 讀得到工作區的 `.env`，它的規則禁止印出金鑰的值（`references/exchange-connect.md`）。金鑰只給讀取＋交易，不給提領。有提領權限的金鑰在連結時會被拒絕（Binance、OKX、BingX、Bybit；電腦版、雲端主機、網頁綁定都一樣）。Gate.io 查不到這個旗標，請自己確認。
+- **交易所金鑰放在哪，看你用哪個表面。** 電腦版：寫在你電腦上工作區的 `.env`（macOS 是 `~/Blave/workspace/.env`，Windows 是 `%USERPROFILE%\Blave\workspace\.env`）。雲端主機：在你自己那台主機工作區的 `.env`。在網頁綁定：由 Blave 加密保存。agent 讀得到工作區的 `.env`，它的規則禁止印出金鑰的值（`references/exchange-connect.md`）。金鑰只給讀取＋交易，不給提領。有提領權限的金鑰在連結時會被拒絕（Binance、OKX、BingX、Bybit；電腦版、雲端主機、網頁綁定都一樣）。Gate.io 查不到這個旗標，請自己確認。
 - 投入金額與恢復交易由你自己做——電腦版在 app 的「自動下單」，雲端主機在網頁工作頁。就算你開口要求，agent 也會拒絕代勞。它唯一可以隨時自己做的，是觸發緊急停止。
 - 電腦版只有在 Blave 開著時才會下單；結束 app 再打開後，交易維持暫停，直到你按「啟動下單」。
 - agent 先驗證再回報：改完檔案會重讀確認，下完單會向交易所查回結果才說「已下單」。每一次下單嘗試都記在 `state/audit.jsonl`。
@@ -173,7 +174,7 @@ npm start
 
 ## 程式碼簽章政策
 
-Windows 版的程式碼簽章由 [SignPath.io](https://signpath.io) 免費提供，憑證屬於 [SignPath Foundation](https://signpath.org)。每個版本都由本 repo 的公開 GitHub Actions workflow 從打了 tag 的 commit 建置，每次簽章由 repo 擁有者核准。角色：作者與審查者＝有寫入權限的維護者；核准者＝repo 擁有者。除[隱私權政策](https://blave.org/disclaimer/zh/privacy_policy)所述外，本程式不會把任何資訊傳給第三方。macOS 版以 Blave 自己的 Apple 身分簽章與公證。
+Windows 版目前還沒有程式碼簽章：我們已向 [SignPath Foundation](https://signpath.org) 的開源專案計畫申請，核准前 Windows 安裝檔是未簽章的。核准後，Windows 版的程式碼簽章由 [SignPath.io](https://signpath.io) 免費提供，憑證屬於 SignPath Foundation。每個版本都由本 repo 的公開 GitHub Actions workflow 從打了 tag 的 commit 建置，每次簽章由 repo 擁有者核准。角色：作者與審查者＝有寫入權限的維護者；核准者＝repo 擁有者。除[隱私權政策](https://blave.org/disclaimer/zh/privacy_policy)所述外，本程式不會把任何資訊傳給第三方。macOS 版以 Blave 自己的 Apple 身分簽章與公證。
 
 ## 授權
 

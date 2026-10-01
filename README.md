@@ -8,11 +8,11 @@ Free and open source. Connect your Claude Code or Codex. You describe the idea; 
 
 **English** | [繁體中文](README.zh-TW.md)
 
-![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
+![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-lightgrey) ![Platform: macOS | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey)
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Download the macOS app](https://github.com/Blave-TW/blave-agent/releases/latest) · [Quick start (from source)](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
+[Download for macOS](https://github.com/Blave-TW/blave-agent/releases/latest) · [Download for Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) · [Quick start (from source)](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
 
 Star the repo if this is useful — and Watch › Releases to get notified of new versions.
 
@@ -49,6 +49,7 @@ When the agent reads the web, it uses the app's built-in browser: the page it is
 You need:
 
 - macOS 13 or later. The packaged app is a universal build: Apple Silicon and Intel, one download.
+- Or Windows 10 or 11, x64 (the versions Electron 44 supports; ARM not tested). The Windows installer is not code-signed yet, so SmartScreen warns on first install: choose More info › Run anyway.
 - Node.js 22.12 or later, with npm (`shell/package.json` › `engines`)
 - `python3` on your `PATH`. The packaged app bundles its own Python 3.12; running from source uses your system `python3` to create the venv.
 - Claude Code or Codex installed and signed in, or a Blave account
@@ -113,7 +114,7 @@ For any other exchange or broker with an API, the agent can write a helper from 
 
 ## Safety and Limits
 
-- **Where exchange keys live depends on the surface.** Desktop app: in the workspace `.env` on your Mac (`~/Blave/workspace/.env`). Cloud machine: in the workspace `.env` on your own dedicated machine. A venue bound on the web page: stored encrypted by Blave. The agent can read the workspace `.env`; its rules forbid printing key values (`references/exchange-connect.md`). Give a key read and trade permission only, never withdrawal. A key with withdrawal permission is refused when you connect it (Binance, OKX, BingX, Bybit — desktop app, cloud machine and web page alike). Gate.io does not report the flag at all, so check that one yourself.
+- **Where exchange keys live depends on the surface.** Desktop app: in the workspace `.env` on your computer (`~/Blave/workspace/.env` on macOS, `%USERPROFILE%\Blave\workspace\.env` on Windows). Cloud machine: in the workspace `.env` on your own dedicated machine. A venue bound on the web page: stored encrypted by Blave. The agent can read the workspace `.env`; its rules forbid printing key values (`references/exchange-connect.md`). Give a key read and trade permission only, never withdrawal. A key with withdrawal permission is refused when you connect it (Binance, OKX, BingX, Bybit — desktop app, cloud machine and web page alike). Gate.io does not report the flag at all, so check that one yourself.
 - Funding amounts and resuming trading are done by you — in the desktop app's Auto trading page, or on the web workspace for a cloud machine. The agent refuses to do them for you, even when asked. The one thing it may always do by itself is trip the kill switch.
 - On the desktop app, orders only go out while Blave is running; after you quit and reopen it, trading stays paused until you press Start trading.
 - The agent verifies before it reports: it re-reads a file after editing it, and queries an order back from the exchange before saying it was placed. Every order attempt is logged to `state/audit.jsonl`.
@@ -172,7 +173,7 @@ Issues and pull requests are welcome. Before a PR:
 
 ## Code Signing Policy
 
-Free code signing on Windows provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). Releases are built by the public GitHub Actions workflow in this repository from a tagged commit; each signing request is approved by the repository owner. Roles: Authors and Reviewers — the maintainers with write access; Approver — the repository owner. This program will not transfer any information to third parties except as described in the [privacy policy](https://blave.org/disclaimer/en/privacy_policy). The macOS build is signed and notarized with Blave's own Apple identity.
+The Windows build is not code-signed yet: we have applied to the [SignPath Foundation](https://signpath.org) open-source program, and until it is approved the Windows installer is unsigned. Once approved: free code signing on Windows provided by [SignPath.io](https://signpath.io), certificate by SignPath Foundation. Releases are built by the public GitHub Actions workflow in this repository from a tagged commit; each signing request is approved by the repository owner. Roles: Authors and Reviewers — the maintainers with write access; Approver — the repository owner. This program will not transfer any information to third parties except as described in the [privacy policy](https://blave.org/disclaimer/en/privacy_policy). The macOS build is signed and notarized with Blave's own Apple identity.
 
 ## License
 
