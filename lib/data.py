@@ -383,7 +383,7 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     # Sub-5min klines get a one-shot month-head check (see _head_short_unverified);
     # every past month written below carries the verified flag so it never recurs.
     try:
-        head_check = prefix == 'kline2' and _is_sub_5min(params.get('period', '1d'))
+        head_check = prefix == 'kline3' and _is_sub_5min(params.get('period', '1d'))
     except Exception:
         head_check = False
     footer_meta = _HEAD_VERIFIED_META if head_check else None
@@ -1000,12 +1000,14 @@ def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
     (sub-5min included — the API backfills old months from Binance's official
     archive). A window before listing returns empty, not an error. Sub-5min
     requests are chunked 30 days each server-side, so deep 1min backtests pull
-    history month-by-month on first run. Cache namespace is kline2 — the old
-    kline cache has Volume hard-zeroed and must not be mixed with real volume.
+    history month-by-month on first run. Cache namespace is kline3 — the old
+    kline cache has Volume hard-zeroed and must not be mixed with real volume;
+    kline2 holds a stray partial bar past end_date (an api-side chunk-boundary
+    leak) baked into immutable past-month parquets, so it must not be mixed either.
 
     With BLAVE_KLINE_SOURCE=binance (the desktop build's BYO data) the bars come
     straight from Binance's public endpoint instead, `headers` unused. Same
-    market (USDT-M perps), same columns, same kline2 cache. Not literally the
+    market (USDT-M perps), same columns, same kline3 cache. Not literally the
     same bars: measured 2026-09-19, 8 of 41,335 1h BTCUSDT bars come back from
     /kline as placeholders (O=H=L=C, Volume 0) where Binance has the real bar,
     so a cache dir fed by both sources is a mixed one.
@@ -1021,7 +1023,7 @@ def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
     else:
         fetch_raw = lambda s, e: _fetch_kline_raw(symbol, interval, s, e, headers, max_retries)
     df = _extend_cache_monthly(
-        'kline2', {'symbol': symbol, 'period': interval},
+        'kline3', {'symbol': symbol, 'period': interval},
         fetch_raw, start, end,
     )
     return _drop_forming_bar(_sanity_check_ohlc(df, f'{symbol} {interval} kline'), interval)
@@ -1033,7 +1035,7 @@ def fetch_kline_batch(symbols, interval, start, end, headers):
     the NORMALIZED canonical symbols (see normalize_symbol), not the caller's
     original strings: index the result with 'BTCUSDT' even if you passed 'BTC/USDT'.
 
-    Uses the same monthly cache dir naming as fetch_kline ('kline2_{interval}_{symbol}')
+    Uses the same monthly cache dir naming as fetch_kline ('kline3_{interval}_{symbol}')
     so single-symbol and batch calls share cache — a symbol already cached via
     fetch_kline is a warm hit here too, and vice versa. Warm ids are extended through
     the batch endpoint too (not one call per symbol) — see _fetch_batch_cached.
@@ -1056,7 +1058,7 @@ def fetch_kline_batch(symbols, interval, start, end, headers):
         return df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
 
     results = _fetch_batch_cached(
-        f'kline2_{interval}', f'{BASE}/kline/batch?period={interval}', 'symbols',
+        f'kline3_{interval}', f'{BASE}/kline/batch?period={interval}', 'symbols',
         lambda sid, s, e, hdrs: _fetch_kline_raw(sid, interval, s, e, hdrs),
         _parse, symbols, start, end, headers,
         chunk_size=20, start_param='start_date', end_param='end_date',
