@@ -21,7 +21,7 @@ const el = () => {
   return n;
 };
 const dom = {}; const $ = (id) => dom[id] || (dom[id] = el());
-const document = { createElement: () => el(), activeElement: null, body: {} };
+const document = { createElement: () => el(), activeElement: null, body: {}, querySelectorAll: (q) => (q === "#chat-scroll .msg.sys" ? $("chat-scroll").children.filter((c) => c && c._cls === "msg sys") : []) };
 var ENV = { cloudDirty: false }; let polls = 0, refreshes = 0;
 // trade.js 的輪詢替身:清掉記號、把「主行程手上那一份」(cloudSt)放進雲端那一袋——app.js 只從這一袋讀,不自己讀交易狀態
 const trPoll = async () => { polls++; ENV.cloudDirty = false; TR_BAGS.cloud.st = cloudSt; };
@@ -46,7 +46,8 @@ const paneSt = { chat: { off: false } }, paneToggle = () => {};
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var CS_BOOTED = false, UP_CHECKING = false;
-eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upDoneLine", "upBackupLine", "upRich", "upSayLines", "upSayLine", "upView", "upLocalTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
+var UP_LINE_OF = new WeakMap();
+eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
 eval(["upCheck", "upCloudRecheck", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
 eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
 eval([/^\$\("ws-update"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 兩個入口的接線
@@ -231,6 +232,12 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ok("雲端的「查看」:在本機聊天送一句固定的話請這台電腦的 agent 列出那個資料夾(本機回合、帶 viewing env:cloud),不碰雲端 agent", sent.length === 1 && sent[0][0] === 'up.done.viewMsg{"dir":".official-backup/2026-09-22-p-20260924T051200Z/"}' && JSON.stringify(sent[0][1]) === '{"viewing":{"env":"cloud"}}'); }
   LANG = "en"; paint(idle, wu({ ts: 104, replaced_changed: ["a"], backup_dir: ".official-backup/unknown-20260924T051201Z" })); LANG = "zh";
   ok("en 兩句之間補一個空白", last().textContent === 'up.done.cloud{"cv":"2026-09-24-b"} up.done.replaced{"n":"1","dir":".official-backup/unknown-20260924T051201Z"}up.done.view');
+  { // 0.1.11 Windows 真機:切 en 後聊天那則通知還是中文——那一行記著 key 與參數,切語言時照現在的語言重畫(applyStatic → upRelang)
+    const zhLine = msgs()[msgs().length - 2], zhTxt = zhLine.textContent, nMsg = msgs().length; LANG = "en"; upRelang(); const b2 = btnOf(zhLine);
+    ok("切語言:聊天裡已經講過的更新通知照新語言重畫(en 兩句之間的空白出現、「查看」鈕重建且照樣能按);不重複、不多出一則",
+      zhTxt.indexOf(" ") < 0 && zhLine.textContent === zhTxt.replace("}up.done.replaced", "} up.done.replaced") && !!b2 && b2.textContent === "up.done.view" && msgs().length === nMsg);
+    LANG = "zh"; upRelang();
+    ok("切回 zh 也跟著回來;applyStatic 會叫 upRelang", zhLine.textContent === zhTxt && /if \(typeof upRelang === "function"\) upRelang\(\);/.test(fnSrc("applyStatic"))); }
   paint(idle, wu({ ts: 105, replaced_changed: ["a", "b"] }));
   ok("換了檔但沒有備份路徑:不出「查看」那一句(沒有東西可看)", last().textContent === 'up.done.cloud{"cv":"2026-09-24-b"}' && !btnOf(last()));
   const n0 = msgs().length; paint(idle, wu({ ts: 106, outcome: "restart_deferred", reason: "order in flight", replaced_changed: ["a"], backup_dir: ".official-backup/2026-09-22-p-20260924T051202Z" }));
@@ -261,10 +268,18 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ok("字(§4):關於列七種寫法與連結 zh / en", has(zhS, "up.row.app", "Blave {av}") && has(zhS, "up.row.cloud", "雲端主機 {cv}") && has(zhS, "up.row.cloudOff", "雲端主機（停機）") && has(zhS, "up.row.latest", "已是最新版") && has(zhS, "up.row.ready", "新版已下載")
       && !/"up\.row\.readyQuit"/.test(S2) && has(zhS, "up.row.applying", "更新中…") && has(zhS, "up.check", "檢查更新") && has(zhS, "up.restart", "重新啟動以完成更新") && has(zhS, "up.applying", "更新中…") && has(zhS, "tm.updateReady", "重新啟動以完成更新")
       && has(enS, "up.row.cloud", "Cloud machine {cv}") && has(enS, "up.row.cloudOff", "Cloud machine (stopped)") && has(enS, "up.row.latest", "Up to date") && has(enS, "up.restart", "Restart to finish updating") && has(enS, "tm.updateReady", "Restart to finish updating"));
-    ok("字(§3):事後那一行 zh / en", has(zhS, "up.done.cloud", "雲端主機已更新到 {cv}。") && has(zhS, "up.done.cloudRestarted", "雲端主機已更新到 {cv}，下單程式已用新版重新啟動。") && has(zhS, "up.done.replaced", "你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。")
+    ok("字(§3):事後那一行 zh / en", has(zhS, "up.done.cloud", "雲端主機已更新到 {cv}。") && has(zhS, "up.done.cloudRestarted", "雲端主機已更新到 {cv}，自動下單已用新版重新啟動。") && has(zhS, "up.done.replaced", "你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。")
       && has(zhS, "up.done.view", "查看") && has(zhS, "up.backup", "Blave 已更新到 {av}。你改過的 {n} 個官方檔換成了官方版，舊的在 {dir}（{view}）。") && has(zhS, "up.backup.open", "開啟資料夾")
-      && has(zhS, "up.done.restartDeferred", "雲端主機的新檔已就位，但下單程式仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。") && has(enS, "up.done.restartDeferred", "The cloud machine has the new files, but the order program is still on the old code; once this order finishes, say 更新 again and it will restart.") && has(zhS, "up.done.restartFailed", "雲端主機的新檔已就位，但下單程式重新啟動失敗，仍在跑舊版；再說一次「更新」就會再試。") && has(zhS, "up.done.paused", "雲端主機已更新到 {cv}。自動下單仍暫停，按「啟動下單」才會繼續。")
+      && has(zhS, "up.done.restartDeferred", "雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。") && has(enS, "up.done.restartDeferred", "The cloud machine has the new files, but auto-trading is still on the old code; once this order finishes, say 更新 again and it will restart.") && has(zhS, "up.done.restartFailed", "雲端主機的新檔已就位，但自動下單重新啟動失敗，仍在跑舊版；再說一次「更新」就會再試。") && has(zhS, "up.done.paused", "雲端主機已更新到 {cv}。自動下單仍暫停，按「啟動下單」才會繼續。")
       && has(enS, "up.done.cloud", "Cloud machine updated to {cv}.") && has(enS, "up.done.replaced", "{n} official files you had changed were replaced; the old copies are in {dir} ({view}).") && has(enS, "up.done.view", "view") && has(enS, "up.backup.open", "Open folder"));
+    { // 0.1.11 設計稽核 S1:三句事後那一行講「自動下單」(跟 agent 的回覆句同一組字);restartDeferred 跟兩份 reference 的 restart_deferred 句逐字相同
+      const V = require("vm").runInNewContext(S2.replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS"), ref = ["updating.md", "cloud-handoff.md"].map((f) => fs.readFileSync(path.join(R, "..", "..", "references", f), "utf8"));
+      const said = ["up.done.cloudRestarted", "up.done.restartFailed", "up.done.restartDeferred"].flatMap((k) => ["zh", "en"].map((l) => V[l][k]));
+      ok("S1 up.done.cloudRestarted / restartFailed / restartDeferred = 定稿(zh / en),沒有「下單程式」/ order program;restartDeferred 跟 updating.md、cloud-handoff.md 逐字相同",
+        V.en["up.done.cloudRestarted"] === "Cloud machine updated to {cv}; auto-trading restarted on the new version."
+        && V.en["up.done.restartFailed"] === "The cloud machine has the new files, but auto-trading failed to restart and is still on the old code; say 更新 again to retry."
+        && !said.some((x) => /下單程式|order program/.test(x))
+        && ref.every((d) => d.includes("「" + V.zh["up.done.restartDeferred"] + "」 / \"" + V.en["up.done.restartDeferred"] + "\""))); }
     ok("S0–S7 那一套的字全清掉(up.c.* 只剩 up.c.msg;up.chat / up.update / up.latestAt / tm.cloudUpdate* 都不在)", !/"up\.c\.(unreach|stopped|note|noteLong|available|checking|seeChat|needsUpdate|running|runningShort|onCloud|runNote|noReport|done|doneFrom|chatRunning|chatDone)"/.test(S2)
       && !/"up\.(app|latest|latestAt|checking|downloading|downloadingPct|ready|blocked|error|staging|update|updating|chat|installLocal)"|"tm\.cloudUpdate(Stale)?"/.test(S2)); }
 

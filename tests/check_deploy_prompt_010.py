@@ -9,7 +9,7 @@
 
 跑法:cd blave-agent && python3 tests/check_deploy_prompt_010.py
 """
-import json, os, shutil, sys, tempfile, time, types
+import json, os, re, shutil, sys, tempfile, time, types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
@@ -69,8 +69,8 @@ cases = [
     ("HALT + 重開停止:講停止(更嚴的那個)", lambda: (beat(5), write("state/HALT", {}),
                                                write("state/reconciler_stopped.json", {})), "已停止", False),
     ("沒暫停、對帳器心跳新鮮", lambda: beat(5), "執行中", True),
-    ("沒暫停、對帳器心跳過期", lambda: beat(3600), "對帳下單程式沒在跑", False),
-    ("沒暫停、從來沒有心跳(電腦版沒按過啟動下單)", lambda: None, "對帳下單程式沒在跑", False),
+    ("沒暫停、對帳器心跳過期", lambda: beat(3600), "自動下單沒在跑", False),
+    ("沒暫停、從來沒有心跳(電腦版沒按過啟動下單)", lambda: None, "自動下單沒在跑", False),
 ]
 for name, setup, want, may_run in cases:
     fresh(FUNDED)
@@ -78,7 +78,7 @@ for name, setup, want, may_run in cases:
     line = at._deploy_state_line(WS)
     t(f"#8 {name}:下單狀態={want}", f"下單狀態:{want}" in line, line)
     t(f"#8 {name}:名冊照列(有金額兩支、金額 0 一支)",
-      "下單設定裡有金額:btc_sma_test、supertrend_sol" in line and "金額 0(不下單):eth_ti_1h" in line, line)
+      "自動下單頁有金額:btc_sma_test、supertrend_sol" in line and "還沒上線:eth_ti_1h(在自動下單頁、金額 0)" in line, line)
     if not may_run:
         body = line.split("):", 1)[-1]   # 開頭那句規則本身會引用「執行中」三個字,只看事實部分
         t(f"#8 {name}:事實部分沒有「在跑」的字眼", not [w for w in RUNNING_WORDS if w in body], body)
@@ -98,26 +98,26 @@ write("state/HALT_btc_sma_test", {})
 write("state/HALT_eth_ti_1h", {})
 line = at._deploy_state_line(WS)
 t("#8 單支暫停:停機凍住的照列;HALT_<name> 只列不照金額下單的(對帳器不讀它,有金額的照樣下單)",
-  "單支暫停:eth_ti_1h、supertrend_sol" in line and "btc_sma_test、" not in line.split("單支暫停:", 1)[1], line)
+  "已自動暫停:eth_ti_1h、supertrend_sol" in line and "btc_sma_test、" not in line.split("已自動暫停:", 1)[1], line)
 
 fresh(FUNDED)
 beat(5)
 write("manager/amounts.ui.json", {"amounts": {"btc_sma_test": 0}, "exchanges": {}})
 line = at._deploy_state_line(WS)
 t("#8 金額照 UI 鏡像(amounts.ui.json 優先,同 lib/portfolio)",
-  "下單設定裡有金額:無" in line and "下單狀態:沒有策略設金額" in line, line)
+  "自動下單頁有金額:無" in line and "下單狀態:沒有策略設金額" in line, line)
 
 fresh({"a1": 100}, registry={"a1": {"type": "wait_for_bar"}, "typeb_cron": {"type": "cron"}, "reconciler": {}})
 write("strategies/typeb_cron/strategy.py", "# Strategy: b\n")
 beat(5)
 line = at._deploy_state_line(WS)
 t("#8 名冊裡不在金額表的(雲端 Type B 排程)另列,不算未部署",
-  "其他排程:typeb_cron" in line and "未部署:eth_ti_1h、undeployed_one;" in line, line)
+  "自己排程的策略:typeb_cron" in line and "還沒上線:eth_ti_1h、undeployed_one;" in line, line)
 
 fresh({}, registry={"capital_worker": {"type": "daemon"}, "xrp_v2_monitor": {"type": "daemon"}, "reconciler": {}})
 line = at._deploy_state_line(WS)
 t("#8 非策略的常駐程式(capital_worker、監控 daemon)不算「其他排程」,也不說它們照排程跑",
-  "其他排程" not in line and "照自己的排程跑" not in line and "capital_worker" not in line, line)
+  "自己排程的策略" not in line.split("):", 1)[1] and "照自己的排程跑" not in line and "capital_worker" not in line, line)   # 規則句本身會提到「自己排程的策略」,只看事實部分
 
 fresh(FUNDED)
 beat(5)
@@ -143,6 +143,76 @@ finally:
     at._trading_amounts = _real
 fresh({"a1": 100, "z": 0})
 t("#8 _trading_names 行為不變(下單設定的 key,金額 0 也算)", at._trading_names(WS) == {"a1", "z"}, at._trading_names(WS))
+
+# ── 0.1.11 B8 事實那一行 agent 會原樣講給用戶聽:列舉每一種狀態,內部名稱一個都不能出現(照畫面講「自動下單」) ──
+_RULE0 = "[上線現況(機器事實,提議前先對照——有金額的策略和「自己排程的策略」都算已上線,不要再建議上線(真倉或模擬交易都算);"
+_RULE9 = "講機器狀況時照「下單狀態」講,不是「執行中」就不要說策略正在跑或正在下單):"
+HEAD_OK = _RULE0 + "「還沒上線」裡標了金額 0 的,只建議到自動下單頁設金額;" + _RULE9
+HEAD_UNREAD = _RULE0 + "金額讀不到時,不要推斷哪些策略還沒上線,也先不要建議上線;用戶問起,就請他到自動下單頁看;" + _RULE9
+INTERNAL = ("對帳", "下單設定", "portfolio_config", "deployments", "manager/", ".json", "reconciler", "部署", "綁定", "排程:", "模擬盤", "單支暫停")
+b8 = []
+for name, setup, _want, _run in cases:
+    fresh(FUNDED)
+    setup()
+    b8.append((name, at._deploy_state_line(WS)))
+fresh(FUNDED)
+beat(5)
+write("manager/portfolio_config.json", "{broken")
+b8.append(("金額設定壞掉", at._deploy_state_line(WS)))
+fresh({"a": 0})
+beat(5)
+b8.append(("全是金額 0", at._deploy_state_line(WS)))
+fresh({}, registry={"typeb_cron": {"type": "cron"}})
+b8.append(("只有 Type B 排程", at._deploy_state_line(WS)))
+for name, line in b8:
+    hits = [w for w in INTERNAL if w in line]
+    t(f"B8 {name}:事實那一行沒有內部名稱", bool(line) and not hits, hits or line)
+fresh(FUNDED)
+line = at._deploy_state_line(WS)
+t("B8 / P1-1 定稿:「自動下單沒在跑」「還沒上線」(金額 0 的加註)「模擬交易:已連接」;段名「[上線現況」、規則句逐字",
+  "下單狀態:自動下單沒在跑(" in line and "還沒上線:eth_ti_1h(在自動下單頁、金額 0)、undeployed_one;" in line
+  and "模擬交易:已連接" in line and line.startswith(HEAD_OK), line)
+fresh({"a1": 100}, registry={"a1": {"type": "wait_for_bar"}, "typeb_cron": {"type": "cron"}})
+write("strategies/typeb_cron/strategy.py", "# Strategy: b\n")
+os.remove(os.path.join(WS, "state", "paper_ledger.json"))
+line = at._deploy_state_line(WS)
+t("B8 定稿:「自己排程的策略」(名冊與下單狀態的尾句)、「模擬交易:未連接」",
+  "自己排程的策略:typeb_cron" in line and ";「自己排程的策略」照自己的排程跑" in line and "模擬交易:未連接" in line, line)
+
+# ── 0.1.11 code 稽核 P1-1:「還沒上線」照畫面的定義(上線中 = 金額 > 0)——金額 0 的算進去、帶註記、不出現在別列 ──
+def rows(line):
+    body = line.split("):", 1)[1].rstrip("]")
+    return dict(r.split(":", 1) for r in body.split(";") if ":" in r)
+fresh(FUNDED)
+beat(5)
+r = rows(at._deploy_state_line(WS))
+notlive = re.split(r"、(?![^()]*\))", r.get("還沒上線", ""))   # 註記裡也有「、」,括號內的不切
+t("P1-1 金額 0 的策略在「還沒上線」、帶「(在自動下單頁、金額 0)」;資料夾都在但沒放進自動下單頁的不帶註記",
+  "eth_ti_1h(在自動下單頁、金額 0)" in notlive and "undeployed_one" in notlive, r)
+t("P1-1 金額 0 的策略只出現在「還沒上線」那一列(不再另列「金額 0」)",
+  [k for k, v in r.items() if "eth_ti_1h" in v] == ["還沒上線"] and not any("金額 0(不下單)" in k for k in r), r)
+t("P1-1 有金額的(> 0)不在「還沒上線」", not any(n.startswith(("btc_sma_test", "supertrend_sol")) for n in notlive), r)
+fresh({"z0": 0}, registry={"z0": {"type": "wait_for_bar"}, "reconciler": {}})
+shutil.rmtree(os.path.join(WS, "strategies", "z0"))
+t("P1-1 金額 0、資料夾已經不在的也照列(資訊不比舊的「金額 0」列少)", "z0(在自動下單頁、金額 0)" in rows(at._deploy_state_line(WS)).get("還沒上線", ""))
+fresh(FUNDED)
+write("manager/portfolio_config.json", "{broken")
+bl = at._deploy_state_line(WS)
+t("P1-1 金額讀不到:不列「還沒上線」(不知道哪些有金額,不猜)", "讀不到" in bl and "還沒上線" not in rows(bl), bl)
+t("R-P2-3 金額讀不到:規則句後半換成「不要推斷、請用戶到自動下單頁看」(逐字),不再叫 agent 照「還沒上線」建議", bl.startswith(HEAD_UNREAD) and "只建議到自動下單頁設金額" not in bl, bl)
+fresh(FUNDED)
+t("R-P2-4 讀得到:規則句逐字(有金額的與「自己排程的策略」都算已上線);不帶讀不到那半句", at._deploy_state_line(WS).startswith(HEAD_OK) and "金額讀不到時" not in at._deploy_state_line(WS))
+fresh({"zz": 0})
+for i in range(20):
+    write(f"strategies/s{i:02d}/strategy.py", "# Strategy: x\n")
+nl = re.split(r"、(?![^()]*\))", rows(at._deploy_state_line(WS)).get("還沒上線", ""))
+t("複驗 R-P2-2 還沒上線超過 15 支:金額 0 的排最前面、註記不會被截掉(照舊最多 15 支)", nl[0] == "zz(在自動下單頁、金額 0)" and len(nl) == 15, nl[:3])
+src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
+t("P1-1 同段 prompt 的舊詞:導航句「設金額上線 / 連接模擬交易或交易所」、里程碑「有回測但還沒上線」「就不提上線」",
+  "portfolio.pos=設金額上線、" in src and "portfolio.venue=連接模擬交易或交易所、" in src and "有回測但還沒上線的策略" in src and "就不提上線、" in src
+  and "設金額/部署" not in src and "有回測但未部署" not in src and "就不提部署" not in src)
+t("P1-1 建議句的「上模擬盤」與「先綁模擬盤帳戶」不動(nav_topic 靠這些字附步驟)",
+  "「上模擬盤」→「先綁模擬盤帳戶」" in src and at.nav_topic("帶我看怎麼把 BTC 均線交叉上模擬盤"))
 
 # ── #7b 步驟依表面注入 ───────────────────────────────────────────────
 real = os.path.join(ROOT, "references", "portfolio-steps.md")
@@ -214,8 +284,8 @@ fresh(FUNDED)
 beat(5)
 pl = at.build_prompt(None, None, "我的策略還在跑嗎", suggest_directive=True, desktop=True)
 pc = at.build_prompt(None, None, "我的策略還在跑嗎", suggest_directive=True, desktop=True, viewing_env="cloud")
-t("#8 電腦版本機視角:有部署現況那一行", "[部署現況" in pl and "下單狀態:" in pl)
-t("#8 電腦版雲端視角:不注入本機的部署現況(不然本機狀態會被當成雲端的)", "[部署現況" not in pc and "下單狀態:" not in pc)
+t("#8 電腦版本機視角:有上線現況那一行", "[上線現況" in pl and "下單狀態:" in pl)
+t("#8 電腦版雲端視角:不注入本機的上線現況(不然本機狀態會被當成雲端的)", "[上線現況" not in pc and "下單狀態:" not in pc)
 
 # ── #7a 建議規則 ─────────────────────────────────────────────────────
 rule = at._SUGGEST_RULE

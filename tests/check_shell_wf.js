@@ -28,6 +28,9 @@ if (!process.versions.electron) {
     && JSON.stringify(w0.current) === "[0.002,-0.002]" && !w0.stale && !w0.single && w0.tail === 4);
   ok("① 樣本外效率 0.99 → high;五段邊界 0.2 / 0.5 / 0.7(下限含)", W.wfBand(w0) === "high" && [[0.19, "far"], [0.2, "low"], [0.49, "low"], [0.5, "edge"], [0.69, "edge"], [0.7, "high"]].every(([v, b]) => W.wfBand({ ...w0, wfe: v }) === b));
   ok("① 分母護欄:樣本內 Sharpe < 0.25 或缺、wfe null → 無法判斷(不做除法)", W.wfBand({ ...w0, isStats: { ...w0.isStats, "Sharpe Ratio": 0.24 } }) === "none" && W.wfBand({ ...w0, isStats: { ...w0.isStats, "Sharpe Ratio": null } }) === "none" && W.wfBand({ ...w0, wfe: null }) === "none");
+  { const noIs = { ...SAMPLE, wfe: 3 }; delete noIs.is_stats;
+    ok("① P2-7 wf.json 缺 is_stats(agent 手寫漏了)/ is_stats 不是物件 / Sharpe 不是數字 → 無法判斷,不繞過分母護欄",
+      W.wfBand(W.sanitizeWf(noIs, CODE)) === "none" && W.wfBand(W.sanitizeWf({ ...noIs, is_stats: [1] }, CODE)) === "none" && W.wfBand({ ...w0, isStats: {} }) === "none" && W.wfBand({ ...w0, isStats: { "Sharpe Ratio": NaN } }) === "none"); }
   ok("① 過時 = 碼裡的常數 ≠ wf.current;讀不到常數 → 不標過時、目前參數退回 wf.current", W.sanitizeWf(SAMPLE, "ENTRY_TH = 0.004\nEXIT_TH = -0.002\n").stale && !W.sanitizeWf(SAMPLE, "").stale && JSON.stringify(W.sanitizeWf(SAMPLE, "").current) === "[0.002,-0.002]");
   const ONE = { ...SAMPLE, col_param: "_", col_vals: [0], current: [0.002, 0], runs: SAMPLE.runs.map((r) => ({ ...r, params: [r.params[0], 0] })) };
   ok("① 單參數(第二軸一格、名字 _):single、過時只比第一個常數", (() => { const a = W.sanitizeWf(ONE, "ENTRY_TH = 0.002\n"), b = W.sanitizeWf(ONE, "ENTRY_TH = 0.006\n"); return a.single && !a.stale && b.stale; })());
@@ -118,6 +121,93 @@ if (!process.versions.electron) {
     for (const k of ["setTimeout", "clearTimeout", "setInterval", "clearInterval"]) delete sb[k];
   }
 
+  // ── ① 0.1.11 B10 wfAwaiting:切回分頁 / 視窗回前景時要不要補抓(只讀不寫) ──
+  {
+    const data = { name: "c1", wf: { x: 1 }, code: "A = 1", stats: null }, sig = W.sentSig(data), cloud = { scope: "cloud", busy: false, turn: 7 };
+    const at = (rec, o, d) => { W._sent.clear(); if (rec) W._sent.set((rec.key || "cloud") + ":c1", { sig, turn: 7, name: "c1", ...rec }); return W.wfAwaiting(d || data, { ...cloud, ...(o || {}) }); };
+    ok("① B10 wfAwaiting:結果傳回中(回合結束、等雲端;之後別的回合在跑也算)/ 滿上限退回(timedOut)→ 要補抓",
+      at({ endAt: 0 }) && at({ endAt: 0 }, { busy: true, turn: 9 }) && at({ endAt: 0, done: true, timedOut: true }));
+    ok("① P2-1 送出的那一回合還在跑 → 不抓(wf.json 回合結束才寫;回合裡重跑回測會讓簽章對不上、「已送出」提早退掉)", !at({}, { busy: true }) && !at({ endAt: 0 }, { busy: true }));
+    ok("① B10 wfAwaiting:失敗退回(done、沒 timedOut)/ 還在暖機(pending)/ 新結果已到(sig 不同)/ 本機視角 / 沒送過 / 別支 → 不抓",
+      !at({ endAt: 0, done: true }) && !at({ pending: true, turn: null }) && !at({ sig: "OLD" }) && !at({ key: "local" }, { scope: "local" }) && !at(null) && !at({}, {}, { ...data, name: "c2" }));
+    const rec = { sig, turn: 7, name: "c1", endAt: 0 }; W._sent.clear(); W._sent.set("cloud:c1", rec); const snap = JSON.stringify(rec);
+    W.wfAwaiting(data, { ...cloud, now: () => W.WF_CLOUD_HOLD_MS * 3 });
+    ok("① B10 wfAwaiting 不改紀錄(不記 endAt / done / timedOut——那是畫的時候 sentNow 的事)", JSON.stringify(rec) === snap);
+    W._sent.clear();
+  }
+
+  // ── ① 0.1.11 B2 / B3:假 DOM 跑真的 renderWf,量結果頁的結論卡與兩段 legend(不開視窗)──
+  {
+    const flat = (n) => [n].concat(...(n.childNodes || []).map(flat));
+    function node(tag) {
+      const n = { tagName: tag.toUpperCase(), nodeType: 1, childNodes: [], parentNode: null, attrs: {}, style: { setProperty() {} }, dataset: {}, className: "",
+        get classList() { const c = () => n.className.split(/\s+/).filter(Boolean); return { add: (x) => { if (!c().includes(x)) n.className = c().concat(x).join(" "); }, remove: (x) => { n.className = c().filter((y) => y !== x).join(" "); }, contains: (x) => c().includes(x) }; },
+        setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, addEventListener() {},
+        appendChild(ch) { if (ch.nodeType === 11) { ch.childNodes.splice(0).forEach((x) => n.appendChild(x)); return ch; } ch.parentNode = n; n.childNodes.push(ch); return ch; },
+        append(...xs) { xs.forEach((x) => n.appendChild(typeof x === "string" ? DOC.createTextNode(x) : x)); }, remove() {}, contains(x) { return flat(n).includes(x); },
+        get textContent() { return n.childNodes.map((x) => x.textContent).join(""); }, set textContent(v) { n.childNodes = []; if (v !== "" && v != null) n.appendChild(DOC.createTextNode(String(v))); } };
+      return n;
+    }
+    const DOC = { createElement: node, createTextNode: (s) => ({ nodeType: 3, textContent: String(s), childNodes: [] }), createDocumentFragment: () => ({ nodeType: 11, childNodes: [], appendChild(x) { this.childNodes.push(x); return x; } }),
+      activeElement: null, body: node("body"), documentElement: node("html") };
+    const dsb = { window: {}, console, document: DOC, getComputedStyle: () => ({ getPropertyValue: () => "" }) };
+    vm.createContext(dsb);
+    for (const f of ["report-backtest.js", "report-robust.js", "report-wf.js"]) vm.runInContext(fs.readFileSync(path.join(SHELL, "renderer", f), "utf8"), dsb);
+    const S = vm.runInNewContext(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
+    const R = dsb.window.BlaveReport, DW = R._wf;
+    const cls = (root, c) => flat(root).filter((x) => x.nodeType === 1 && x.className.split(/\s+/).includes(c));
+    const one = (root, c) => cls(root, c)[0];
+    const page = (lang, wf, code, rec) => {
+      const t = (k) => S[lang][k], box = node("div"), data = { stats: STATS, wf, code: code == null ? CODE : code, name: "s1" };
+      DW._sent.clear(); if (rec) DW._sent.set("local:s1", { sig: DW.sentSig(data), turn: 1, name: "s1", ...rec });
+      R.renderWf(box, data, { t, busy: false, turn: 1, scope: "local", gate: true });
+      const card = one(box, "wf-card"), legs = cls(box, "wf-legend"), mv = one(one(box, "wf-facts"), "bt-mv");
+      return { card, first: card.childNodes[0].className, verdict: (one(card, "wf-verdict") || {}).textContent, mv: mv.textContent, band: one(mv, "wf-band"),
+        tags: cls(box, "wf-tag").length + cls(box, "wf-status").length, chartLabel: cls(box, "bt-label")[0].textContent, legs: legs.map((l) => l.childNodes.map((x) => x.textContent)), all: box.textContent };
+    };
+    const zh = page("zh", SAMPLE), en = page("en", SAMPLE);
+    ok("① B2 結論卡:頂上那一格沒有 tag,卡的第一塊就是比較表;樣本外效率那一列「0.99 · 高於門檻」(zh)/「0.99 · above the bar」(en),中性色",
+      zh.tags === 0 && zh.first === "wf-cmp" && !zh.verdict && zh.mv === "0.99 · 高於門檻" && en.mv === "0.99 · above the bar" && !zh.band.classList.contains("is-risk"), JSON.stringify([zh.first, zh.mv, en.mv]));
+    const far = page("zh", { ...SAMPLE, wfe: 0.1 }), none = page("zh", { ...SAMPLE, wfe: null }), noneEn = page("en", { ...SAMPLE, wfe: null });
+    const lowIs = page("zh", { ...SAMPLE, is_stats: { ...SAMPLE.is_stats, "Sharpe Ratio": 0.2 } }), staleNone = page("zh", { ...SAMPLE, wfe: null }, "ENTRY_TH = 0.004\nEXIT_TH = -0.002\n");
+    const css = fs.readFileSync(path.join(SHELL, "renderer", "report-wf.css"), "utf8");
+    ok("① B2 遠低於門檻:判斷字上風險色(文字用 --color-redText,分隔點不上色)", far.mv === "0.10 · 遠低於門檻" && far.band.classList.contains("is-risk") && far.band.textContent === "遠低於門檻"
+      && /\.wf-facts \.wf-band\.is-risk \{ color: var\(--color-redText\); \}/.test(css) && !/--color-red\)/.test(css), JSON.stringify(far.mv));
+    ok("① D4 無法判斷(wfe 缺 / 樣本內 Sharpe < 0.25):值槽只放判斷字,沒有「—」也沒有「 · 」;過時又無法判斷 → 只有「—」",
+      none.mv === "無法判斷" && noneEn.mv === "cannot be judged" && lowIs.mv === "無法判斷" && !cls(none.card, "na").length && staleNone.mv === "—" && !staleNone.band, JSON.stringify([none.mv, noneEn.mv, lowIs.mv, staleNone.mv]));
+    const stale = page("zh", SAMPLE, "ENTRY_TH = 0.004\nEXIT_TH = -0.002\n"), tout = page("zh", SAMPLE, null, { done: true, timedOut: true });
+    ok("① B2 頂上那一格只給警示:過時 → 「程式碼已變更…」、那一列只留數值;滿上限退回 → A2 那一句(B10 刪掉後半句)、判斷照留",
+      stale.first === "wf-verdict" && stale.verdict === S.zh["wf.verdictStale"] && stale.mv === "0.99" && !stale.band
+      && tout.first === "wf-verdict" && tout.verdict === "這次的結果沒傳回來，下面是上一次的。" && tout.mv === "0.99 · 高於門檻", JSON.stringify([stale.mv, tout.verdict]));
+    ok("① B3 曲線 legend 三項(樣本外 / 重選線 / 末尾不足一輪,沒有「樣本內沒有曲線」);小標沒有「（測試窗接起來）」",
+      JSON.stringify(zh.legs[0]) === JSON.stringify(["樣本外（每輪重選參數）", "重新選參數", "末尾 4 天不足一輪，未納入"]) && zh.chartLabel === "樣本外累積報酬" && en.chartLabel === "Out-of-Sample Cumulative Return", JSON.stringify([zh.legs[0], zh.chartLabel]));
+    ok("① B3 落點圖 legend:格內數字 / 虛線框 / 不是建議值(driftLegRef 留著,「是哪幾輪…看下面的每輪明細」刪掉)",
+      zh.legs[1].length === 3 && zh.legs[1][0] === S.zh["wf.driftLegCount"] && zh.legs[1][2] === S.zh["wf.driftLegRef"] && !/每輪明細/.test(zh.legs[1].join("")), JSON.stringify(zh.legs[1]));
+    ok("① B3 刪掉的兩個 key 兩語都不在 strings.js、report-wf.js 也不再引用", ["zh", "en"].every((l) => !("wf.legNoIs" in S[l]) && !("wf.driftLegWhere" in S[l]))
+      && !/wf\.legNoIs|wf\.driftLegWhere/.test(fs.readFileSync(path.join(SHELL, "renderer", "report-wf.js"), "utf8")));
+    DW._sent.clear();
+  }
+
+  // ── ① 0.1.11 定稿字(精簡稽核 §4 B4 / B6 / B7 / B1 / B10;逐字)──
+  {
+    const S = vm.runInNewContext(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8").replace(/^const STRINGS/m, "var STRINGS") + "\nSTRINGS");
+    const FIN = { zh: { "wf.emptyBoundary": "驗的是「用歷史挑參數」這個做法，不會給你新參數。", "wf.confirmBody": "約兩分鐘，結果會出現在這個分頁。", "wf.waitTimeout": "這次的結果沒傳回來，下面是上一次的。", "wf.colTer": "測試報酬" },
+      en: { "wf.emptyBoundary": "It tests the method of picking parameters from history — it gives you no new parameters.", "wf.confirmBody": "Takes about two minutes; results appear in this tab.",
+        "wf.waitTimeout": "This run’s results didn’t arrive — below is the previous run.", "wf.btnRerun": "Rerun Validation", "wf.colTer": "Test Return" } };
+    const bad = [];
+    for (const l of ["zh", "en"]) for (const [k, v] of Object.entries(FIN[l])) if (S[l][k] !== v) bad.push(l + ":" + k);
+    ok("① B4 / B10 / B6 / B1 定稿字逐字(emptyBoundary、confirmBody、waitTimeout、btnRerun、colTer)", bad.length === 0, bad.join(", "));
+    const ver = Object.entries(S.en).filter(([k]) => k.startsWith("ver."));
+    ok("① B6 ver.* 的 en 沒有 re-run / Re-run(統一 rerun);B7 分頁維持 Trades,句子直接點名 Trades 分頁、parameter scan 全拼(設計稽核 0.1.11 D1 / D7)", ver.length > 20 && !ver.some(([, v]) => /re-run/i.test(v)) && /^The Trades tab fills in /.test(S.en["ver.frozenRerun"]) && S.en["rp.tab.trades"] === "Trades",
+      ver.filter(([, v]) => /re-run/i.test(v)).map(([k]) => k).join(", "));
+    // 0.1.11 追加(Wei 核准):en 全部的 re-run 都統一成 rerun,連送給 agent 的搬移句(ho.msg.*)也是;固定觸發句 wf.msgRun / rob.msgScan 本來就沒有這個字,也不能動
+    const reRun = Object.entries(S.en).filter(([, v]) => /re-run/i.test(v)).map(([k]) => k);
+    ok("① en 全部字串沒有 re-run / Re-run(rob.verdict.stale、res.notRerun、ho.msg.* / ho.note.* 都是 rerun)", reRun.length === 0
+      && S.en["rob.verdict.stale"] === "The backtest was rerun — the current position updates after a rescan." && S.en["res.notRerun"] === "Not rerun yet", reRun.join(", "));
+    ok("① 讀屏的曲線描述(wf.chartAria)也拿掉「（測試窗接起來）」,跟 chartLabel 一致",
+      S.zh["wf.chartAria"] === "樣本外累積報酬：累積報酬 {r}，區間 {a} 至 {b}；每 {d} 天重新選一次參數" && S.en["wf.chartAria"] === "Out-of-sample cumulative return: cumulative return {r}, {a} to {b}; parameters re-picked every {d} days");
+  }
+
   // ── ① 跟雲端工作頁那一份逐項比 ──
   const WEB = process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web");
   const WS = path.join(WEB, "app", "main", "templates", "agent", "workspace.html");
@@ -192,13 +282,13 @@ if (!process.versions.electron) {
     /data-tab="rob" data-i18n="rp\.tab\.rob"><\/button>\s*<button class="rp-tab" type="button" role="tab" data-tab="wf" data-i18n="rp\.tab\.wf"><\/button>\s*<button[^>]*data-tab="code"/.test(html)
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
-    /R\.renderWf\(\$\("rp-wf"\), \{ stats: B\.data\.stats, wf: B\.data\.wf \|\| null, code: B\.data\.code, name: B\.name \}, rpWfOpts\(\)\)/.test(app)
+    /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
     && /return \{ t, busy: running, turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
     && /window\.BlaveReport\.wfTurnEnded\(turnSeq, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*rpWfSync\(\);/.test(app)
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
     && (app.match(/rpRobSync\(\); rpWfSync\(\);/g) || []).length === 3 && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
   ok("③ 送出:確認框 → 先 begin()(暖機那段也算已送出,稽核 P2-1)→ 固定訊息(msgRun,name 傳資料夾名)→ 成功才記 wf_requested、回合序號;不覆寫 viewing",
-    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); submitMessage\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\); \}/.test(app)
+    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); submitMessage\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\); \}/.test(app)
     && !/viewing/.test(app.slice(app.indexOf("function rpWfAsk"), app.indexOf("function rpWfUpdate"))) && /lines: \(behindMaybe \? \[t\("wf\.needUpdate"\)\] : \[\]\)\.concat\(\[t\("wf\.emptyBoundary"\), t\("wf\.confirmBody"\)\]\)/.test(app));
   ok("③ 還原凍結:時光機 / 重跑中 wf 分頁跟進出場、參數掃描一起 disabled、面板一起收", /b\.disabled = b\.dataset\.tab === "tr" \|\| b\.dataset\.tab === "rob" \|\| b\.dataset\.tab === "wf";/.test(ver) && /for \(const k of \["bt", "tr", "rob", "wf", "code"\]\) \$\("rp-" \+ k\)\.hidden = true;/.test(ver));
 
@@ -215,9 +305,11 @@ if (!process.versions.electron) {
 
   { // rpWfRefetch(複驗 P2-R1 / P2-R2):綁送出那一支、只在背景抓、抓到不同才換;人在別的分頁只換資料不重畫
     // 沙盒裡的 Promise 換成同步 thenable:抓回來的那一段當場跑完,斷言不必等 microtask(不然會落在總結之後)
-    const src = app.slice(app.indexOf("function rpWfRefetch("), app.indexOf("\n}\n", app.indexOf("function rpWfRefetch(")) + 2);
+    const src = app.slice(app.indexOf("function rpWfRefetch("), app.indexOf("\n", app.indexOf("function rpWfData(")) + 1);
     const SyncP = { resolve: (v) => ({ then: (f) => { f(v); return { catch: () => {} }; } }) };
-    const mk = (x) => { const c = { ENV: { cur: "cloud" }, RPC: { name: "A", tab: "wf", drawn: { wf: true, tr: true }, data: { v: 1 } }, RPC_CACHE: new Map([["A", { v: 1 }]]), paints: 0, loads: [], next: { v: 2 }, swap: false, console, Promise: SyncP, JSON, ...(x || {}) };
+    const D1 = { v: 1, wf: { a: 1 }, code: "c", stats: { "Generated At": 5, "Sharpe Ratio": 1 } }, D2 = { ...D1, v: 2, wf: { a: 2 } };
+    const mk = (x) => { const c = { ENV: { cur: "cloud" }, RPC: { name: "A", tab: "wf", drawn: { wf: true, tr: true }, data: D1 }, RPC_CACHE: new Map([["A", D1]]), paints: 0, loads: [], next: D2, swap: false, console, Promise: SyncP, JSON, ...(x || {}) };
+      c.window = { BlaveReport: { wfSig: W.sentSig } };
       c.TR_BAGS = { cloud: { api: { loadStrategy: (n) => { c.loads.push(n); if (c.swap) c.RPC.name = "X"; return c.next; } } } }; c.rpCloudPaint = () => { c.paints++; }; vm.createContext(c); vm.runInContext(src + "\nthis.f = rpWfRefetch;", c); return c; };
     let c = mk(); const r1 = c.f("B");
     ok("③ rpWfRefetch:人已經不在送出那一支(看的是 A,送出的是 B)→ 回 false、不抓(計時由 report-wf 收);不走 rpCloudSelect", r1 === false && c.loads.length === 0 && !/rpCloudSelect/.test(src));
@@ -226,10 +318,51 @@ if (!process.versions.electron) {
     ok("③ rpWfRefetch:在樣本外驗證分頁、抓到不同 → 換資料、清 drawn、重畫一次", c.loads.join() === "A" && c.RPC.data.v === 2 && c.RPC_CACHE.get("A").v === 2 && c.paints === 1 && Object.keys(c.RPC.drawn).length === 0);
     c = mk(); c.RPC.tab = "tr"; c.f("A");
     ok("③ rpWfRefetch:人在別的分頁(進出場)、抓到不同 → 只換資料,不重畫眼前那一頁(K 線縮放、選取、焦點不動),wf 留給切過去時畫", c.RPC.data.v === 2 && c.paints === 0 && JSON.stringify(c.RPC.drawn) === '{"tr":true}');
-    c = mk(); c.next = { v: 1 }; c.f("A");
+    c = mk(); c.next = { ...D1, v: 3, stats: { ...D1.stats, "Sharpe Ratio": 2 } }; c.f("A");
+    ok("③ P2-2 live 策略每根 K 重寫績效(wf / 碼 / 明確回測都沒變):只換資料、不重畫眼前的樣本外驗證(網格 hover、焦點、捲動不被重設);別的分頁下次切過去再畫",
+      c.RPC.data.v === 3 && c.RPC_CACHE.get("A").v === 3 && c.paints === 0 && JSON.stringify(c.RPC.drawn) === '{"wf":true}');
+    c = mk(); c.next = { ...D1, stats: { ...D1.stats, "Generated At": 6 } }; c.f("A");
+    ok("③ P2-2 明確回測(Generated At)變了照重畫(那是另一份結果)", c.paints === 1);
+    c = mk(); c.next = D1; c.f("A");
     ok("③ rpWfRefetch:抓到一樣的 → 什麼都不動", c.paints === 0 && c.RPC.drawn.wf === true && c.loads.length === 1);
     c = mk(); c.swap = true; const p2 = c.f("A");
     ok("③ rpWfRefetch:抓的時候人換了一支 → 抓回來的不套上去", p2 === true && c.RPC.data.v === 1 && c.paints === 0);
+  }
+
+  { // 0.1.11 B10 rpWfAutoRefetch:切回分頁 / 視窗回前景補抓一次;只抓眼前那一支、只在等結果時、退避加上限(P2-3)、不掛計時器
+    const a0 = app.indexOf("const RP_WF_AUTO_GAP_MS"), a1 = app.indexOf("\n", app.indexOf("window.blave.onWindowActive", a0)) + 1, src = app.slice(a0, a1);
+    const mk = (x) => { const c = { ENV: { cur: "cloud" }, RPC: { name: "A", data: { wf: 1, code: "x", stats: {} } }, asked: [], fetched: [], listeners: [], awaiting: true, timers: 0, Date: { now: () => 1e6 },
+      setTimeout: () => { c.timers++; }, setInterval: () => { c.timers++; }, Map, Math, rpWfData: (d, name) => ({ stats: d.stats, wf: d.wf || null, code: d.code, name }), ...(x || {}) };
+      c.window = { BlaveReport: { wfAwaiting: (d, o) => { c.asked.push([d.name, o.scope]); return c.awaiting; } }, blave: { onWindowActive: (fn) => c.listeners.push(fn) } };
+      c.rpWfOpts = () => ({ scope: c.ENV.cur === "cloud" ? "cloud" : "local" }); c.rpWfRefetch = (n) => { c.fetched.push(n); return true; };
+      vm.createContext(c); vm.runInContext(src + "\nthis.f = rpWfAutoRefetch;", c); return c; };
+    let c = mk(); c.f(0);
+    ok("③ B10 等結果中:問 wfAwaiting 的是眼前那一支(名字 = RPC.name、scope 雲端),是就用 rpWfRefetch 背景抓那一支", JSON.stringify(c.asked) === '[["A","cloud"]]' && c.fetched.join() === "A");
+    c = mk({ awaiting: false }); c.f(0); ok("③ B10 不在等結果(失敗退回 / 新結果已到 / 沒送過):不抓", c.fetched.length === 0);
+    c = mk(); c.ENV.cur = "local"; c.f(0); ok("③ B10 本機視角:不問、不抓", c.asked.length === 0 && c.fetched.length === 0);
+    c = mk(); c.RPC.name = null; c.f(0); ok("③ B10 沒在看報告(關掉 / 去策略庫):不抓", c.fetched.length === 0);
+    { c = mk(); const S = 1000, times = [];   // 每秒來回切一次視窗,切一個小時:第 k 次之後隔 10 秒 × 2^(k-1)(上限 10 分鐘),一段等待最多 8 次
+      for (let t = 0; t <= 3600 * S; t += S) { const n = c.fetched.length; c.f(t); if (c.fetched.length > n) times.push(t / S); }
+      ok("③ P2-3 退避加上限:間隔 10、20、40、80、160、320、600 秒(10 分鐘封頂),一段等待最多 8 次(api 跟 LLM 共用每分鐘 30 次的桶)", JSON.stringify(times) === "[0,10,30,70,150,310,630,1230]", JSON.stringify(times));
+      c.RPC.name = "B"; c.f(3601 * S); const b1 = c.fetched.slice(-1)[0];
+      c.RPC.name = "A"; c.awaiting = false; c.f(3602 * S); c.awaiting = true; c.f(3603 * S);
+      ok("③ P2-3 計數各支分開(換一支照抓);不在等了(新結果到了 / 重新送出)就歸零,下一段等待重新起算", b1 === "B" && c.fetched.slice(-1)[0] === "A" && c.fetched.length === 10, c.fetched.join()); }
+    c = mk();
+    ok("③ B10 視窗回前景:模組載入時只註冊一次;拿到焦點(true)才抓,失焦(false)不抓;整段不掛任何計時器",
+      c.listeners.length === 1 && (c.listeners[0](false), c.fetched.length === 0) && (c.listeners[0](true), c.fetched.join() === "A") && c.timers === 0 && !/set(Timeout|Interval)/.test(src));
+    { // 複驗 R-P2-1:第一段抓滿 8 次 → 重新送出 → 回合中一次都沒切視窗、沒點分頁(兩段之間沒有任何 awaiting=false 的呼叫)→ 第二段照樣抓
+      const ask = app.slice(app.indexOf("function rpWfAsk("), app.indexOf("\n}\n", app.indexOf("function rpWfAsk(")) + 2);
+      c = mk(); Object.assign(c, { confirmBox: (o) => o.onOk(), rpBag: () => c.RPC, rpWfCloud: () => ({ config_supports_wf: true }), upNow: () => ({}), UPD: {}, turnSeq: 5, t: (k) => k, trackFeature: () => {},
+        submitMessage: () => ({ then: (f) => f(true) }), Promise: function (fn) { fn(() => {}); } });
+      vm.runInContext(ask + "\nthis.ask = rpWfAsk;", c);
+      for (let k = 0; k < 40; k++) c.f(k * 700 * 1000);
+      const first = c.fetched.length; c.f(60 * 60 * 1000); const capped = c.fetched.length === first;
+      c.ask("A", 365, 30, true, null, () => {}); c.f(61 * 60 * 1000);
+      ok("③ R-P2-1 重新送出(rpWfAsk 的 onOk)就把那一支的補抓次數歸零:上一段抓滿 8 次、中間沒有任何呼叫,新的一段照樣抓", first === 8 && capped && c.fetched.length === 9, c.fetched.length); }
+    ok("③ P2-4 判斷要不要補抓用 rpWfData(跟畫的那一份同一個組法)", /R\.wfAwaiting\(rpWfData\(RPC\.data, RPC\.name\), rpWfOpts\(\)\)/.test(src));
+    ok("③ B10 接線:分頁列 click 在 rpShowTab 之後、選的是 wf 才叫(先畫才會把滿上限那筆記成 timedOut);app.js 只有這一處 onWindowActive",
+      /rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\);\n  if \(b\.dataset\.tab === "wf"\) rpWfAutoRefetch\(\);/.test(app) && (app.match(/onWindowActive\(/g) || []).length === 1
+      && (app.match(/rpWfAutoRefetch\(/g) || []).length === 3);
   }
 
   { // B5 固定觸發句只顯示一行摘要(設計精簡稽核 B5):fixedMatch / fixedName / fixedLabel 從 app.js 原文切出來,配真的 strings.js 與 i18n.js 的 t()
@@ -278,8 +411,8 @@ if (!process.versions.electron) {
   const DT = { en: vals(block("en")), zh: vals(block("zh")) };
   // 設計精簡稽核 A7 / A8 的定稿(逐字照抄 audit-0.1.10-uiux-simplicity.md §2)
   const FR = { zh: ["回測重跑完就有進出場紀錄；參數掃描與樣本外驗證要再跑一次。", "灰掉的分頁沒有資料，回測重跑完才有。"],
-    en: ["Trade records come back once the backtest re-runs; run the param scan and out-of-sample validation again.", "The greyed-out tabs have no data until the backtest re-runs."] };
-  ok("③ A7 / A8 重跑中 / 沒完成那兩句 = 精簡稽核定稿(zh / en)", ["zh", "en"].every((l) => DT[l]["ver.frozenRerun"] === FR[l][0] && DT[l]["ver.frozenRerunFailed"] === FR[l][1]));
+    en: ["The Trades tab fills in once the backtest reruns; run the parameter scan and out-of-sample validation again.", "The greyed-out tabs have no data until the backtest reruns."] };
+  ok("③ A7 / A8 重跑中 / 沒完成那兩句 = 精簡稽核定稿(zh / en;en 帶 0.1.11 B6 rerun、D1 Trades 分頁)", ["zh", "en"].every((l) => DT[l]["ver.frozenRerun"] === FR[l][0] && DT[l]["ver.frozenRerunFailed"] === FR[l][1]));
   ok("③ A10 en 大小寫:Param Scan / Start Scan / Sent — See Chat", DT.en["rp.tab.rob"] === "Param Scan" && DT.en["rob.btnScan"] === "Start Scan" && DT.en["rob.btnSent"] === "Sent — See Chat");
   if (!fs.existsSync(WS)) console.log("SKIP  ③ 字串逐字比對(需要 web 樹)");
   else {
@@ -289,21 +422,15 @@ if (!process.versions.electron) {
       for (const m of t.matchAll(/^msgid "((?:[^"\\]|\\.)*)"\nmsgstr ((?:"(?:[^"\\]|\\.)*"\n?)+)/gm)) out[JSON.parse('"' + m[1] + '"')] = [...m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((x) => JSON.parse('"' + x[1] + '"')).join("");
       return out; };
     const WP = { en: po("en"), zh: po("zh") };
-    /* 明示的例外(其餘一律逐字 = web):
-       - wf.colTer(A13):「測試窗報酬 / Test-Window Return」在電腦版預設寬度 1280 從字中間斷開,電腦版先改;web 同一個 key 在 640 不斷,下一版(B1)再一起改。
-       - wf.btnWait / wf.waitTimeout:電腦版專屬(雲端結果晚到的等待與退回,web 靠輪詢自動換新,沒有這兩態),web 沒有這兩個 key。 */
-    const DIFFER = { "wf.colTer": { zh: "測試報酬", en: "Test Return" } };
+    /* 沒有例外,一律逐字 = web(0.1.11 起 wf.colTer 也是:web B1 跟上 A13)。
+       wf.btnWait / wf.waitTimeout 是電腦版專屬(雲端結果晚到的等待與退回,web 靠輪詢自動換新,沒有這兩態),web 沒有這兩個 key。 */
     const DESKTOP_ONLY = { "wf.btnWait": { zh: "結果傳回中", en: "Fetching Results" },
-      "wf.waitTimeout": { zh: "這次的結果沒傳回來，下面是上一次的；重新點選策略可再抓一次。", en: "This run’s results didn’t arrive — below is the previous run. Select the strategy again to recheck." } };
+      "wf.waitTimeout": { zh: "這次的結果沒傳回來，下面是上一次的。", en: "This run’s results didn’t arrive — below is the previous run." } };
     const off = [];
-    for (const [k, mid] of pairs) for (const l of ["en", "zh"]) {
-      if (DIFFER[k]) { if (DT[l][k] !== DIFFER[k][l] || DT[l][k] === WP[l][mid]) off.push(l + ":" + k + "(例外)"); }
-      else if (DT[l][k] !== WP[l][mid]) off.push(l + ":" + k);
-    }
-    // B5 的 wf.msgRunLabel / wf.msgRunTitle 是跟 web 共用的字:web 加上之後配對數 +2,一樣逐字比;web 還沒加(0 個)時兩個都不在,不能只加一半
-    const b5InWeb = pairs.filter(([k]) => k === "wf.msgRunLabel" || k === "wf.msgRunTitle").length;
-    ok("③ " + pairs.length + " 個 wf 字串 × zh / en 逐字 = web 的 msgstr(含 wf.msgRun);唯一例外 wf.colTer = A13 定稿(且確實跟 web 不同);B5 兩個 key 在 web " + b5InWeb + " 個",
-      pairs.length === 60 + b5InWeb && (b5InWeb === 0 || b5InWeb === 2) && off.length === 0, off.join(", "));
+    for (const [k, mid] of pairs) for (const l of ["en", "zh"]) if (DT[l][k] !== WP[l][mid]) off.push(l + ":" + k);
+    // B3 兩邊都刪 wf.legNoIs / wf.driftLegWhere:0.1.10 的 60 對(含 B5 兩個)減 2 = 58;web 還留著的話 off 會列出它們(電腦版已經沒有這兩個 key)
+    ok("③ " + pairs.length + " 個 wf 字串 × zh / en 逐字 = web 的 msgstr(含 wf.msgRun、wf.colTer),沒有例外;B3 刪掉的兩個 key web 也不在",
+      pairs.length === 60 && off.length === 0 && !pairs.some(([k]) => k === "wf.legNoIs" || k === "wf.driftLegWhere"), off.join(", "));
     ok("③ 電腦版專屬的兩個 key(wf.btnWait / wf.waitTimeout)= 精簡稽核定稿、web 沒有", Object.entries(DESKTOP_ONLY).every(([k, v]) => ["zh", "en"].every((l) => DT[l][k] === v[l]) && !pairs.some(([kk]) => kk === k))
       && DT.zh["wf.msgRun"] === WP.zh.workspace_wf_msg_run && DT.en["wf.msgRun"] === WP.en.workspace_wf_msg_run);
     // 真正送進對話的是代入後的那一句(references/lib.md 拿它當觸發句):用 i18n.js 的 t() 代入,跟 web msgstr 做同樣代入逐字相同
@@ -352,7 +479,7 @@ app.whenReady().then(async () => {
   const PAGE = `(() => { const q = (s) => [...window.__box.querySelectorAll(s)]; const cv = window.__box.querySelector("canvas.wf-canvas");
     return { meta: (window.__box.querySelector(".bt-meta") || {}).textContent, bar: !!window.__box.querySelector(".wf-bar"), knobs: q(".wf-bar input").map((i) => i.value + (i.disabled ? "x" : "")),
       est: (window.__box.querySelector(".wf-bar .wf-est") || {}).textContent, btn: (window.__box.querySelector(".wf-bar .wf-go") || {}).textContent, btnDis: (window.__box.querySelector(".wf-bar .wf-go") || {}).disabled,
-      spin: !!window.__box.querySelector(".wf-go .spin16"), tag: (window.__box.querySelector(".wf-tag") || {}).className, tagTxt: (window.__box.querySelector(".wf-tag") || {}).textContent,
+      spin: !!window.__box.querySelector(".wf-go .spin16"), bandCls: (window.__box.querySelector(".wf-facts .wf-band") || {}).className, band: (window.__box.querySelector(".wf-facts .wf-band") || {}).textContent, status: !!window.__box.querySelector(".wf-status, .wf-tag"),
       verdict: (window.__box.querySelector(".wf-verdict") || {}).textContent, cmp: q(".wf-cmp-tbl tbody tr").map((tr) => [...tr.children].slice(1).map((td) => td.textContent)),
       wfe: (window.__box.querySelector(".wf-facts .bt-mv") || {}).textContent, canvas: cv ? cv.width : -1, grid: q(".wf-grid td").length, hits: q(".wf-grid td.is-hit").reduce((s, td) => s + +td.textContent, 0),
       cur: q(".wf-grid td.is-current").length, focus: q(".wf-grid td[tabindex='0']").length, runs: q(".wf-run-tbl tbody tr").length, card: !!window.__box.querySelector(".wf-card"),
@@ -360,13 +487,13 @@ app.whenReady().then(async () => {
 
   let r = await js(`(() => { window.__render(${D(SAMPLE)}, false); return ${PAGE}; })()`);
   ok("② 結果頁:meta → 重跑列(旋鈕預填這次的 365 / 30、共 11 輪、重新驗證可按)→ 結論卡", r.meta && r.meta.includes("BTCUSDT") && r.bar && r.knobs.join() === "365,30" && r.est === (await tf("wf.estRuns", { n: "11" })) && r.btn === (await tf("wf.btnRerun")) && !r.btnDis && r.card);
-  ok("② 結論卡:高於門檻(中性 tag)、比較表兩列 × 三欄、樣本外效率 0.99", /is-neutral/.test(r.tag) && r.tagTxt === (await tf("wf.tagHigh")) && r.cmp.length === 2 && r.cmp.every((x) => x.length === 3) && r.wfe === "0.99" && !r.verdict);
-  ok("② 曲線畫得出來(畫布有寬)、legend:樣本外 / 重選虛線(11 輪 ≤12)/ 末尾不足一輪 / 樣本內沒有曲線", r.canvas > 0 && r.dash === 1 && r.legend === 4, JSON.stringify(r));
+  ok("② 結論卡:頂上沒有警示也沒有 tag;比較表兩列 × 三欄;樣本外效率那一列「0.99 · 高於門檻」(中性)", !r.status && !r.verdict && r.band === (await tf("wf.tagHigh")) && !/is-risk/.test(r.bandCls) && r.cmp.length === 2 && r.cmp.every((x) => x.length === 3) && r.wfe === "0.99 · " + (await tf("wf.tagHigh")));
+  ok("② 曲線畫得出來(畫布有寬)、legend:樣本外 / 重選虛線(11 輪 ≤12)/ 末尾不足一輪(B3 刪掉「樣本內沒有曲線」)", r.canvas > 0 && r.dash === 1 && r.legend === 3, JSON.stringify(r));
   ok("② 落點網格 4×3 = 12 格、格內次數加總 = 11 輪、目前參數一格虛線;每輪明細 11 列;事實行「11 輪選出…」", r.grid === 12 && r.hits === 11 && r.cur === 1 && r.focus >= 1 && r.runs === 11 && r.facts && r.facts.startsWith("11"));
   r = await js(`(() => { window.__render(${D(SAMPLE, "ENTRY_TH = 0.004\nEXIT_TH = -0.002\n")}, false); return ${PAGE}; })()`);
-  ok("② 程式碼改過(過時):沒有 tag、只有那一句", !r.tag && r.verdict === (await tf("wf.verdictStale")));
+  ok("② 程式碼改過(過時):頂上只有那一句;樣本外效率那一列只留數值、不下門檻判斷", !r.band && r.wfe === "0.99" && r.verdict === (await tf("wf.verdictStale")));
   r = await js(`(() => { window.__render(${D({ ...SAMPLE, wfe: 0.1 })}, false); return ${PAGE}; })()`);
-  ok("② 遠低於門檻(< 0.2)才上風險色", /is-risk/.test(r.tag) && r.tagTxt === (await tf("wf.tagFar")));
+  ok("② 遠低於門檻(< 0.2)才上風險色", /is-risk/.test(r.bandCls) && r.band === (await tf("wf.tagFar")));
 
   // 空狀態
   const EMPTY = `(() => { const q = (s) => [...window.__box.querySelectorAll(s)]; const b = window.__box.querySelector(".wf-empty .wf-go");

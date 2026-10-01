@@ -649,15 +649,23 @@ function upSayLines(cst) {
     upSayLine(L);
   });
 }
-function upSayLine(L) {
-  const el = document.createElement("div"); el.className = "msg sys";
+/* 那一行記著 key 與參數(不是畫好的字):切語言時 applyStatic → upRelang 照現在的語言重畫(0.1.11 Windows 真機:切 en 後還是中文) */
+const UP_LINE_OF = new WeakMap();
+function upPaintLine(el, L) {
+  el.textContent = "";
   let view = null;
   if (L.view) { view = document.createElement("button"); view.type = "button"; view.className = "btn-quiet"; view.textContent = t(L.view === "local" ? "up.backup.open" : "up.done.view"); view.addEventListener("click", () => upView(L)); }
   upRich(el, L.head[0], L.head[1], { mono: ["cv", "av", "n", "dir"], view });
   if (L.tail) { if (LANG !== "zh") el.append(" "); upRich(el, L.tail[0], L.tail[1], { mono: ["n", "dir"], view }); }
+}
+function upSayLine(L) {
+  const el = document.createElement("div"); el.className = "msg sys";
+  UP_LINE_OF.set(el, L);
+  upPaintLine(el, L);
   srSay(el.textContent);
   $("chat-scroll").appendChild(el); busyPin(); scrollChat();
 }
+function upRelang() { document.querySelectorAll("#chat-scroll .msg.sys").forEach((el) => { const L = UP_LINE_OF.get(el); if (L) upPaintLine(el, L); }); }
 /* 「查看」:本機備份 → 主行程開 Finder(路徑由主行程算,畫面不交路徑);雲端備份 → 在本機聊天送一句固定的話請這台電腦的 agent 列出
    (本機回合,不碰雲端 agent);回合在跑時 submitMessage 會回 false,什麼都不做 */
 function upView(L) {
@@ -1213,7 +1221,7 @@ function rpShowTab(tab) {
   // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
   if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
   // 樣本外驗證(report-wf.js 同樣不碰桌面版全域;閘門、送出、回合狀態都從這裡交進去)
-  if (tab === "wf" && R.renderWf) R.renderWf($("rp-wf"), { stats: B.data.stats, wf: B.data.wf || null, code: B.data.code, name: B.name }, rpWfOpts());
+  if (tab === "wf" && R.renderWf) R.renderWf($("rp-wf"), rpWfData(B.data, B.name), rpWfOpts());
 }
 // 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
 function rpRobOpts() {
@@ -1251,12 +1259,32 @@ function rpWfRefetch(name) {
     if (!d || ENV.cur !== "cloud" || RPC.name !== name) return;
     const cached = RPC_CACHE.get(name);
     if (cached && JSON.stringify(cached) === JSON.stringify(d)) return;
+    // live 策略每根 K 重寫績效:樣本外驗證看的三樣(wf / 碼 / 明確回測)沒變就只換資料,眼前這一頁不重畫(0.1.11 code 稽核 P2-2)
+    const sig = (window.BlaveReport || {}).wfSig, same = !!(sig && RPC.data && sig(rpWfData(RPC.data, name)) === sig(rpWfData(d, name)));
     RPC_CACHE.set(name, d); RPC.data = d;
-    if (RPC.tab === "wf") { RPC.drawn = {}; rpCloudPaint(); }
+    if (RPC.tab === "wf" && !same) { RPC.drawn = {}; rpCloudPaint(); }
     else RPC.drawn = RPC.tab && RPC.drawn[RPC.tab] ? { [RPC.tab]: true } : {};
   }).catch(() => {});
   return true;
 }
+// 交給 report-wf.js 的那一份:畫(rpShowTab)、判斷要不要補抓(rpWfAutoRefetch)、比有沒有變(rpWfRefetch)用同一份,簽章才不會因組法不同而錯開
+function rpWfData(data, name) { return { stats: data.stats, wf: data.wf || null, code: data.code, name }; }
+/* 切回樣本外驗證分頁、視窗回前景:看著的那一支雲端策略還在等結果(已送出 / 結果傳回中 / 滿上限退回)就在背景補抓一次,
+   取代「重新點選策略可再抓一次」(設計精簡稽核 B10)。不掛計時器;名字只用眼前這一支,判斷交給 report-wf.js。
+   退避加上限(0.1.11 code 稽核 P2-3):api 跟 LLM 共用每分鐘 30 次的桶,滿上限退回那一態會一直成立,結果永遠不回來時不能一直打。
+   同一支第 k 次之後要隔 10 秒 × 2^(k-1)(最多 10 分鐘),一段等待最多 8 次(約 21 分鐘內);不在等了(新結果到了 / 重新送出)就歸零 */
+const RP_WF_AUTO_GAP_MS = 10000, RP_WF_AUTO_GAP_MAX_MS = 10 * 60 * 1000, RP_WF_AUTO_MAX = 8;
+const rpWfAuto = new Map();   // name → { n: 這段等待抓了幾次, at: 上一次 }
+function rpWfAutoRefetch(now) {
+  const R = window.BlaveReport || {}, at = now == null ? Date.now() : now;
+  if (ENV.cur !== "cloud" || !RPC.name || !RPC.data || typeof R.wfAwaiting !== "function") return false;
+  if (!R.wfAwaiting(rpWfData(RPC.data, RPC.name), rpWfOpts())) { rpWfAuto.delete(RPC.name); return false; }
+  const h = rpWfAuto.get(RPC.name) || { n: 0, at: 0 };
+  if (h.n >= RP_WF_AUTO_MAX || (h.n && at - h.at < Math.min(RP_WF_AUTO_GAP_MS * 2 ** (h.n - 1), RP_WF_AUTO_GAP_MAX_MS))) return false;
+  rpWfAuto.set(RPC.name, { n: h.n + 1, at });
+  return rpWfRefetch(RPC.name);
+}
+if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (on) rpWfAutoRefetch(); });
 // 掃描鈕被停用時(暖機 / 送不出去)焦點交給參數掃描那顆分頁鈕(設計複稽核 R2)
 function rpRobRefocus() { const b = $("rp-tabs-scroll").querySelector('.rp-tab[data-tab="rob"]'); if (b && !b.disabled) b.focus(); }
 // 整片重畫拿掉了焦點所在的鈕(送出後變「已送出」、回合結束舊結果回來):焦點交給樣本外驗證那顆分頁鈕,不掉到 <body>(設計稽核 S2)
@@ -1272,7 +1300,8 @@ function rpWfAsk(name, lookback, step, rerun, opener, begin) {
   return new Promise((resolve) => confirmBox({ title: t(rerun ? "wf.btnRerun" : "wf.btnRun"),
     lines: (behindMaybe ? [t("wf.needUpdate")] : []).concat([t("wf.emptyBoundary"), t("wf.confirmBody")]), ok: t("rob.cfOk"), opener, env: cloud ? "cloud" : undefined,
     // begin():送出前先記「這一支正在送」,暖機那段(running 已 true、還沒回來)畫成已送出而不是「agent 正在回覆上一則訊息」(稽核 P2-1)
-    onOk: () => { if (typeof begin === "function") begin(); submitMessage(t("wf.msgRun", { name, lookback: String(lookback), step: String(step) })).then((ok) => { if (ok) trackFeature("wf_requested"); resolve(ok ? turnSeq : false); }); } }));
+    // 新的一次送出:補抓的次數重新起算(不然上一段抓滿 8 次、中間沒切過視窗的話,這一段一次都不抓;0.1.11 code 複驗 R-P2-1)
+    onOk: () => { if (typeof begin === "function") begin(); rpWfAuto.delete(name); submitMessage(t("wf.msgRun", { name, lookback: String(lookback), step: String(step) })).then((ok) => { if (ok) trackFeature("wf_requested"); resolve(ok ? turnSeq : false); }); } }));
 }
 // 雲端主機太舊:去設定 › 更新(同 versions.js verNeedUpdate)——電腦版更新雲端一律開本機回合走 MCP,不觸發雲端回合
 function rpWfUpdate() { setOpen().then(() => { setCat("display"); const b = $("set-up-btn"); if (b && !b.hidden) b.focus(); }); }
@@ -1283,7 +1312,9 @@ function rpWfSync() {
 }
 const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", code: "report_code" };
 $("rp-tabs").addEventListener("click", (e) => {   // 只有人點的才算用過:程式自動選預設分頁(stratSelect / rpCloudSelect)不記
-  const b = e.target.closest(".rp-tab"); if (b && !b.disabled) { rpShowTab(b.dataset.tab); trackFeature(RP_TAB_FEATURE[b.dataset.tab]); }
+  const b = e.target.closest(".rp-tab"); if (!b || b.disabled) return;
+  rpShowTab(b.dataset.tab); trackFeature(RP_TAB_FEATURE[b.dataset.tab]);
+  if (b.dataset.tab === "wf") rpWfAutoRefetch();   // rpShowTab 之後:畫的時候才會把滿上限的那筆記成 timedOut
 });
 /* 分頁段放不下時(1024 寬、聊天欄開著):選中的那顆 / 拿到焦點的那顆捲進可視範圍,列的左右內距是留給 focus 框的,分頁停在內距之內(同 web tabReveal) */
 function rpTabReveal(b) {
@@ -3128,6 +3159,7 @@ panesInit();
 function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
+  if (typeof upRelang === "function") upRelang();   // 聊天裡那則更新 / 換官方檔的通知
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();

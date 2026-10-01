@@ -10,7 +10,8 @@
  * (回 Promise<turn|false>);`busy` / `turn` = 回合狀態(「已送出」只認送出那一輪);`scope` = 本機 / 雲端;
  * `gate` = 主機的 lib 帶不帶 walk_forward(true / false / null,false 才擋);`onUpdate(btn)` = 落後時那顆鈕;
  * `buildMeta(stats)` = 回測那一行 meta;`resync()` = 沒送出去時照現在的回合狀態重畫;`refocus()` = 重畫拿掉焦點時交給分頁鈕;
- * 雲端才用的:`refetch(name)` = 背景重抓雲端那一支(回 false = 人已經不在那一支)。回合結束另由呼叫端叫 `wfTurnEnded(turn, failed, { refetch })`。
+ * 雲端才用的:`refetch(name)` = 背景重抓雲端那一支(回 false = 人已經不在那一支)。回合結束另由呼叫端叫 `wfTurnEnded(turn, failed, { refetch })`;
+ * 切回分頁 / 視窗回前景時呼叫端先問 `wfAwaiting(data, opts)`,是才補抓。
  *
  * SECURITY: wf.json 是 agent 寫的、雲端那份又經 api 轉過一手——逐欄型別檢查(數值有限、索引在網格內、每軸 ≤40、
  * 參數名 ≤64 字、輪數與序列長度有上限)後才用,文字一律只進 textContent。 */
@@ -129,7 +130,8 @@
   // 落點順序:過時 → 分母護欄 → WFE 四段。分母護欄這邊獨立成立——機器端算不出來寫 null,兩邊同時把關
   function wfBand(w) {
     const isS = w.isStats["Sharpe Ratio"];
-    if (isS === null || isS < WF_MIN_DENOM) return "none";
+    // is_stats 缺(agent 手寫 wf.json 漏了)時 isS 是 undefined:不能讓它繞過分母護欄(0.1.11 code 稽核 P2-7)
+    if (isS == null || !(isS >= WF_MIN_DENOM)) return "none";
     if (w.wfe === null) return "none";
     return w.wfe < 0.2 ? "far" : w.wfe < 0.5 ? "low" : w.wfe < 0.7 ? "edge" : "high";
   }
@@ -248,18 +250,11 @@
 
   // ---------------------------------------------------------------- 1. 結論卡
 
-  // tag(過時態改一句話)+ 兩列比較表 + 樣本外效率。通過判斷只看樣本外效率
+  // 頂上那一格只放警示(過時 / 滿上限退回)+ 兩列比較表 + 樣本外效率那一列(數值與門檻判斷同一列)。通過判斷只看樣本外效率
   function buildCard(w, t, timedOut) {
     const card = el("div", "wf-card");
     const band = wfBand(w);
-    if (!w.stale) {
-      const st = el("div", "wf-status");
-      // 只有「遠低於門檻」(< 0.2)上紅:0.5 是慣例不是證明,紅色越常見越分不出嚴重程度
-      const TAG = { none: t("wf.tagNone"), far: t("wf.tagFar"), low: t("wf.tagLow"), edge: t("wf.tagEdge"), high: t("wf.tagHigh") }[band];
-      st.appendChild(el("span", "wf-tag " + (band === "far" ? "is-risk" : "is-neutral"), TAG));
-      card.appendChild(st);
-    }
-    // 過時態沒有 tag,這句是唯一的過時訊號
+    // 過時態不下門檻判斷,這句是唯一的過時訊號
     if (w.stale) card.appendChild(el("p", "wf-verdict", t("wf.verdictStale")));
     // 滿 5 分鐘退回舊結果:同一個槽、同一套樣式;兩個同時成立時 stale 優先(舊結果不只是舊,還對不上現在的碼)。新結果到了 / 下一次送出就不再成立(設計精簡稽核 A2)
     else if (timedOut) card.appendChild(el("p", "wf-verdict", t("wf.waitTimeout")));
@@ -292,11 +287,20 @@
     cmp.appendChild(tbl);
     card.appendChild(cmp);
 
-    // 通過條件只有樣本外效率一列(沿用回測分頁的指標列元件)
-    const facts = el("div", "wf-facts"), r = el("div", "bt-mrow"), mk = el("div", "bt-mk");
+    // 通過條件只有樣本外效率一列(沿用回測分頁的指標列元件):「0.99 · 高於門檻」,過時態只留數值(設計精簡稽核 B2)
+    const facts = el("div", "wf-facts"), r = el("div", "bt-mrow"), mk = el("div", "bt-mk"), mv = el("div", "bt-mv");
     const showWfe = band !== "none" && w.wfe !== null;
     mk.appendChild(tipLabel(t("wf.factWfe"), t("wf.tipWfe")));
-    r.append(mk, el("div", "bt-mv mono" + (showWfe ? "" : " na"), showWfe ? w.wfe.toFixed(2) : DASH));
+    // none 態(非過時)值槽只放判斷字:「—」跟「無法判斷」講的是同一件事(設計稽核 0.1.11 D4);過時態只留數值,none 時就是「—」
+    const judge = !w.stale, num = showWfe || !judge;
+    if (num) mv.appendChild(el("span", "mono" + (showWfe ? "" : " na"), showWfe ? w.wfe.toFixed(2) : DASH));
+    if (judge) {
+      // 只有「遠低於門檻」(< 0.2)上紅:0.5 是慣例不是證明,紅色越常見越分不出嚴重程度
+      const BAND = { none: t("wf.tagNone"), far: t("wf.tagFar"), low: t("wf.tagLow"), edge: t("wf.tagEdge"), high: t("wf.tagHigh") }[band];
+      if (num) mv.appendChild(document.createTextNode(" · "));
+      mv.appendChild(el("span", "wf-band" + (band === "far" ? " is-risk" : ""), BAND));
+    }
+    r.append(mk, mv);
     facts.appendChild(r);
     card.appendChild(facts);
     return card;
@@ -330,7 +334,6 @@
       lg.appendChild(item(dl, document.createTextNode(mode === "line" ? t("wf.legReopt") : t("wf.legReoptTick"))));
     }
     if (w.tail) lg.appendChild(item(null, fillTpl(t("wf.tailNote"), { d: w.tail })));
-    lg.appendChild(item(null, document.createTextNode(t("wf.legNoIs"))));
     wrap.appendChild(lg);
     return { node: wrap, canvas: cv };
   }
@@ -480,7 +483,6 @@
 
     const lg = el("div", "wf-legend"), item = (node) => { const it = el("span", "it"); it.appendChild(node); return it; };
     lg.appendChild(item(document.createTextNode(t("wf.driftLegCount"))));
-    lg.appendChild(item(document.createTextNode(t("wf.driftLegWhere"))));
     if (curI >= 0 && curJ >= 0) lg.appendChild(item(fillTpl(t("wf.driftLegCur"), { p: pv(w.rows[curI], w.rd) + (w.single ? "" : " / " + pv(w.cols[curJ], w.cd)) })));
     // 第二道防線:使用者在這裡才真的看到一組具體數字,手最癢
     lg.appendChild(item(document.createTextNode(t("wf.driftLegRef"))));
@@ -597,6 +599,16 @@
   }
   function isSent(data, opts) {
     return sentNow(sent.get(sentKey(opts, data.name)), sentSig(data), opts, nowOf(opts));
+  }
+  /* 雲端這一支是不是還在等結果:結果傳回中(回合已結束),或滿上限退回(timedOut)。切回分頁、視窗回前景時據此補抓一次(設計精簡稽核 B10)。
+     只讀不寫(不走 sentNow,它會記 endAt / done);失敗退回的不算(那條 wfTurnEnded 已排過補抓);sig 對不上 = 新結果已經到了 */
+  function wfAwaiting(data, opts) {
+    if (!data || !data.name || opts.scope !== "cloud") return false;
+    const s = sent.get(sentKey(opts, data.name));
+    // 送出的那一回合還在跑:不抓。wf.json 在回合結束才寫,這時抓不到新結果;agent 若在回合裡先重跑回測,抓回來的明確回測會讓簽章對不上、
+    // 「已送出」提早退掉而把舊結果當這次的(0.1.11 code 稽核 P2-1)。回合結束有 wfTurnEnded / rpCloudSelect 那一次抓
+    if (!s || s.pending || (opts.busy && s.turn === opts.turn)) return false;
+    return s.sig === sentSig(data) && (!s.done || !!s.timedOut);
   }
   // 等雲端結果那一段的兩個計時:到上限叫 resync(畫回舊結果)、期間定時 refetch。換了一筆紀錄 / 不在那一段就收掉
   const holds = new WeakMap();
@@ -833,7 +845,9 @@
   window.BlaveReport.renderWf = renderWf;
   window.BlaveReport.wfSync = wfSync;
   window.BlaveReport.wfTurnEnded = wfTurnEnded;
+  window.BlaveReport.wfAwaiting = wfAwaiting;
+  window.BlaveReport.wfSig = sentSig;
   // 純計算函式掛出來給核對腳本用(tests/check_shell_wf.js);畫面不靠這個
-  window.BlaveReport._wf = { sanitizeWf, wfBand, wfPreset, wfRunsOf, wfTotalDays, wfDays, wfMarkMode, wfRunMarks, sentSig, sentNow, holdLeft, holdArm, holdClear, wfTurnEnded,
+  window.BlaveReport._wf = { sanitizeWf, wfBand, wfPreset, wfRunsOf, wfTotalDays, wfDays, wfMarkMode, wfRunMarks, sentSig, sentNow, holdLeft, holdArm, holdClear, wfTurnEnded, wfAwaiting,
     WF_MIN_RUNS, WF_MAX_RUNS, WF_CLOUD_HOLD_MS, WF_CLOUD_REFETCH_MS, _sent: sent, _shown: shown };
 })();

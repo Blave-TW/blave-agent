@@ -659,7 +659,7 @@ function copyOfficial() {
   for (const d of OFFICIAL_DIRS)
     fs.cpSync(path.join(REPO, d), path.join(WS, d), { recursive: true });
   // VERSION 必須最後寫(OFFICIAL_FILES 的最後一項):前面任何一步中途失敗,workspace 的版號還是舊的,下次啟動會整個重來
-  for (const f of OFFICIAL_FILES) fs.cpSync(path.join(REPO, f), path.join(WS, f));
+  for (const f of OFFICIAL_FILES) { if (f === "VERSION") writeOfficialManifest(); fs.cpSync(path.join(REPO, f), path.join(WS, f)); }
 }
 /* 覆寫之前,把「workspace 裡跟隨包不一樣的官方檔」備份起來(Wei 2026-09-21:覆寫,但先備份被改過的檔)。
    電腦版的官方檔跟著 app 走(一包一個版號),所以更新一定覆寫;但 agent 或用戶可能改過 lib/——那份改動不能無聲消失。
@@ -673,14 +673,47 @@ function listFiles(root, rel = "") {
   }
   return out;
 }
-function backupChangedOfficial(tag) {
-  const files = [...OFFICIAL_FILES];
+function officialList() {
+  const files = OFFICIAL_FILES.filter((f) => f !== "VERSION");
   for (const d of OFFICIAL_DIRS) if (fs.existsSync(path.join(REPO, d))) files.push(...listFiles(REPO, d));
-  const dest = path.join(WS, ".official-backup", tag), saved = [];
-  for (const f of files) {
-    if (f === "VERSION") continue;
+  return files;
+}
+/* 「用戶改過」的基準是**舊的官方版**,不是新隨包(0.1.11 Windows 真機:0.1.6 → 0.1.10 把新版改到的 38 個檔全說成「你改過的」)。
+   舊的官方版從兩處認,任一處認得就是原封不動的官方檔:
+   ① state/official-manifest.json:copyOfficial 每次拷完記下的 {路徑: git blob sha}(0.1.11 起)——放在 workspace 外,agent 動不到;
+   ② shell/official-known.json:0.1.10 以前拷進去的沒有 ①,改認這條路徑在 git 歷史裡出現過的每一版(凍結在 0.1.11 之前,
+      跟雲端 manager/update_workspace.py 的 history() 同一個判準)。
+   hash 用 git 的 blob sha;Windows 上被轉成 CRLF 的檔多比一次轉回 LF 的 */
+const OFFICIAL_MANIFEST = path.join(BASE, "state", "official-manifest.json");
+const OFFICIAL_KNOWN = path.join(__dirname, "official-known.json");
+const blobSha = (buf) => crypto.createHash("sha1").update(`blob ${buf.length}\0`).update(buf).digest("hex");
+const relKey = (f) => f.split(path.sep).join("/");
+function readJsonObj(p) { try { const v = JSON.parse(fs.readFileSync(p, "utf8")); return v && typeof v === "object" && !Array.isArray(v) ? v : null; } catch (_) { return null; } }
+function officialKnown() {
+  const m = readJsonObj(OFFICIAL_MANIFEST), k = readJsonObj(OFFICIAL_KNOWN);
+  const had = (m && m.files && typeof m.files === "object") ? m.files : {}, hist = (k && k.paths && typeof k.paths === "object") ? k.paths : {};
+  return (f, buf) => {
+    const key = relKey(f), shas = [blobSha(buf)];
+    if (buf.includes(13)) shas.push(blobSha(Buffer.from(buf.toString("latin1").replace(/\r\n/g, "\n"), "latin1")));
+    return shas.some((h) => had[key] === h || (Array.isArray(hist[key]) && hist[key].includes(h)));
+  };
+}
+// 拷完官方檔、寫 VERSION 之前記下這一版每個檔的 blob sha(下次更新時的「舊官方版」)。記不下來不擋更新:只是退回 ② 的判準
+function writeOfficialManifest() {
+  try {
+    const files = {};
+    for (const f of officialList()) files[relKey(f)] = blobSha(fs.readFileSync(path.join(REPO, f)));
+    fs.mkdirSync(path.dirname(OFFICIAL_MANIFEST), { recursive: true });
+    fs.writeFileSync(OFFICIAL_MANIFEST + ".tmp", JSON.stringify({ files }));
+    fs.renameSync(OFFICIAL_MANIFEST + ".tmp", OFFICIAL_MANIFEST);
+  } catch (e) { console.error("[update] official manifest not written: " + (e && e.message)); }
+}
+function backupChangedOfficial(tag) {
+  const known = officialKnown(), dest = path.join(WS, ".official-backup", tag), saved = [];
+  for (const f of officialList()) {
     let mine; try { mine = fs.readFileSync(path.join(WS, f)); } catch (_) { continue; }   // workspace 沒有這個檔:沒東西可備份
     if (mine.equals(fs.readFileSync(path.join(REPO, f)))) continue;
+    if (known(f, mine)) continue;   // 舊的官方版原封不動:是新版改了它,不是用戶改的——直接覆寫,不備份也不報
     fs.mkdirSync(path.dirname(path.join(dest, f)), { recursive: true });
     fs.writeFileSync(path.join(dest, f), mine); saved.push(f);
   }

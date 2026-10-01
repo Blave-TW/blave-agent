@@ -352,9 +352,9 @@ def _order_state(workspace, funded, scheduled=(), now=None):
     if os.path.exists(os.path.join(st, "HALT")):
         return "已暫停(不開新倉;要恢復由用戶按「啟動下單」)"
     # 名冊裡不在金額表的(雲端 Type B 排程)自己叫 lib/order_*,不看金額也不靠對帳器;上面兩個旗標照樣擋得住它
-    own = ";「其他排程」那幾支照自己的排程跑" if scheduled else ""
+    own = ";「自己排程的策略」照自己的排程跑" if scheduled else ""
     if funded is None:
-        return "下單設定讀不到,不確定有沒有照金額下單" + own
+        return "自動下單頁的金額讀不到,不確定有沒有照金額下單" + own
     if not funded:
         return "沒有策略設金額,不會照金額下單" + own
     try:
@@ -364,7 +364,7 @@ def _order_state(workspace, funded, scheduled=(), now=None):
         age = None
     if age is not None and age <= _RECONCILER_STALE_S:
         return "執行中"
-    return "對帳下單程式沒在跑(照金額下單的策略目前不會下單)" + own
+    return "自動下單沒在跑(照金額下單的策略目前不會下單)" + own
 
 
 def _paused_one(workspace, names, funded=()):
@@ -380,7 +380,7 @@ def _paused_one(workspace, names, funded=()):
 
 
 def _deploy_state_line(workspace=None, now=None):
-    """部署現況的一行機器事實(建議規則配套,web 專屬)。2026-08-24 實測:
+    """上線現況的一行機器事實(建議規則配套,web 專屬)。2026-08-24 實測:
     supertrend_sol 已在模擬盤跑兩天,agent 仍建議「上模擬盤」——prompt 要求
     模型自查 deployments.json 靠不住,deterministic 餵進來才穩(phase 2 狀態機
     的第一塊)。兩件事分開講:在不在下單設定裡(名冊),和現在有沒有在下單(暫停旗標、
@@ -399,7 +399,6 @@ def _deploy_state_line(workspace=None, now=None):
         amounts = _trading_amounts(ws)
         known = amounts or {}
         funded = [n for n in sorted(known) if known[n] > 0][:15]
-        zero = [n for n in sorted(known) if known[n] <= 0][:15]
         names = []
         sdir = os.path.join(ws, "strategies")
         if os.path.isdir(sdir):
@@ -415,23 +414,28 @@ def _deploy_state_line(workspace=None, now=None):
         other = [n for n, e in reg.items() if n not in known and n != "reconciler"
                  and (n in names or (isinstance(e, dict) and e.get("type") == "cron"))][:15]
         deployed = set(known) | set(other)
-        undeployed = [n for n in names if n not in deployed][:15]
+        # 「還沒上線」照畫面的定義(strategy_versions.js:上線中 = 金額 > 0):金額 0 的也算,名字後加註;金額讀不到就不列(不知道)。
+        # 金額 0 的排最前面:超過 15 支截斷時,「已在自動下單頁、只差設金額」這件事不能被截掉
+        zero_in = sorted(n for n in known if known[n] <= 0 and n not in other)
+        notlive = ([n + "(在自動下單頁、金額 0)" for n in zero_in]
+                   + [n for n in names if n not in known and n not in other])[:15] if amounts is not None else []
         paper = os.path.isfile(os.path.join(ws, "state", "paper_ledger.json"))
-        parts = ["下單設定裡有金額:" + ("、".join(funded) if funded else "無") if amounts is not None
-                 else "下單設定:讀不到(manager/portfolio_config.json 壞掉或讀取失敗,不是沒設)"]
-        if zero:
-            parts.append("下單設定裡但金額 0(不下單):" + "、".join(zero))
+        parts = ["自動下單頁有金額:" + ("、".join(funded) if funded else "無") if amounts is not None
+                 else "自動下單頁的金額:讀不到(設定檔壞掉或讀取失敗,不是沒設)"]
         if other:
-            parts.append("其他排程:" + "、".join(other))
+            parts.append("自己排程的策略:" + "、".join(other))
         parts.append("下單狀態:" + _order_state(ws, funded if amounts is not None else None, other, now))
         paused = _paused_one(ws, sorted(deployed), funded)
         if paused:
-            parts.append("單支暫停:" + "、".join(paused[:15]))
-        if undeployed:
-            parts.append("未部署:" + "、".join(undeployed))
-        parts.append("模擬盤帳戶:" + ("已綁定" if paper else "未綁定"))
-        return ("[部署現況(機器事實,提議前先對照——已在下單設定裡的策略不要再建議部署/上模擬盤;"
-                "講機器狀況時照「下單狀態」講,不是「執行中」就不要說策略正在跑或正在下單):"
+            parts.append("已自動暫停:" + "、".join(paused[:15]))
+        if notlive:
+            parts.append("還沒上線:" + "、".join(notlive))
+        parts.append("模擬交易:" + ("已連接" if paper else "未連接"))
+        # 金額讀不到時「還沒上線」那一列不可信(本來就不列),後半句換成不推斷、請用戶去自動下單頁看(設計稽核 0.1.11 R-P2-3)
+        return ("[上線現況(機器事實,提議前先對照——有金額的策略和「自己排程的策略」都算已上線,不要再建議上線(真倉或模擬交易都算);"
+                + ("「還沒上線」裡標了金額 0 的,只建議到自動下單頁設金額;" if amounts is not None
+                   else "金額讀不到時,不要推斷哪些策略還沒上線,也先不要建議上線;用戶問起,就請他到自動下單頁看;")
+                + "講機器狀況時照「下單狀態」講,不是「執行中」就不要說策略正在跑或正在下單):"
                 + ";".join(parts) + "]")
     except Exception:
         return ""
@@ -1424,8 +1428,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         # 带我看:簡中錨下建議句會寫成簡體,點下去送回來的就是這個字形
         if not desktop and head.startswith(("帶我看", "带我看", "show me how")):
             parts.append(
-                "[導航句:回覆第一行單獨放 <nav>目標</nav>(portfolio.pos=設金額/部署、"
-                "portfolio.venue=綁定模擬盤或交易所、portfolio.run=啟動/恢復下單,三選一),"
+                "[導航句:回覆第一行單獨放 <nav>目標</nav>(portfolio.pos=設金額上線、"
+                "portfolio.venue=連接模擬交易或交易所、portfolio.run=啟動/恢復下單,三選一),"
                 "接著才給步驟。]"
             )
         if nav_topic(message):
@@ -1444,8 +1448,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、掃參數、跑 MCPT、上模擬盤等)就放進"
             " <suggest> 區塊(一行一句、用戶口吻、最多 3),不要在正文用問句提議;"
             "提到策略用它的名稱、不用底線代號。"
-            "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但未部署的策略)必附區塊,"
-            "而且建議跟本則結論同方向:正文說不建議用,就不提部署、也不提正文勸退的做法;"
+            "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但還沒上線的策略)必附區塊,"
+            "而且建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法;"
             "純寒暄或單一報價則什麼都不附。]"
         )
     # 兩個 sink 都掛(不像 _deploy_state_line 是 web 專屬):這是機器層級的事實,不是

@@ -383,7 +383,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
           ok("沒完成 " + err + " → {why}「" + why + "」、有鈕", bar(q).textContent.includes("（" + why + "）") && bar(q).kids[1].textContent === "再跑一次");
         }
         const q = rig("en", "momo", it3({ current: 2, rerun: { n: 2, status: "failed", at: 1, err: "REFUSED" } }));
-        ok("沒完成 REFUSED:不給鈕,句尾接 refusedTail(en)", bar(q).kids.length === 1 && !bar(q).all((k) => k.tagName === "button").length && bar(q).textContent === "The backtest for v2 didn’t finish re-running (a backtest check stopped it). The page shows the results v2 saved. Running it again gives the same result — ask the agent in chat to take a look.");
+        ok("沒完成 REFUSED:不給鈕,句尾接 refusedTail(en)", bar(q).kids.length === 1 && !bar(q).all((k) => k.tagName === "button").length && bar(q).textContent === "The backtest for v2 didn’t finish rerunning (a backtest check stopped it). The page shows the results v2 saved. Running it again gives the same result — ask the agent in chat to take a look.");
         r.env.running = true;
       }
       // 回滾

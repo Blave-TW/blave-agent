@@ -1,6 +1,6 @@
 /* 報告頁「樣本外驗證」分頁。視覺語言移植自雲端工作頁(web workspace.css 的 .wf-* 家族,
    spec-workspace-walkforward-2026-09-10):重跑列 → 結論卡 → 樣本外曲線 → 落點網格 → 每輪明細。
-   跟參數掃描同一副骨架(卡、tag、比較表、網格、legend、frame 值都照 report-robust.css),這裡只寫 wf 自己的類。
+   跟參數掃描同一副骨架(卡、比較表、網格、legend、frame 值都照 report-robust.css),這裡只寫 wf 自己的類。
    顏色 / 半徑 / 間距一律引 tokens.css 的角色變數,不寫 hex;雲端寫死的 darkCard / darkText / greyMedium /
    greyLightMedium / darkBorder / darkBody 這裡對應 --surface-card / --ink / --ink-3 / --ink-2 /
    --border-hairline(線)或 --surface-control-on(填色)/ --bg-body。 */
@@ -13,34 +13,7 @@
   border-radius: var(--radius-lg);
   padding: var(--space-16);
 }
-.wf-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-8) var(--space-12);
-  margin-bottom: var(--space-8);
-}
-/* Mini tag:18px 定高 / micro 角 / 11px。只有「遠低於門檻」上風險色,其餘中性 */
-.wf-tag {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 var(--space-6);
-  border-radius: var(--radius-micro);
-  line-height: 1;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.wf-tag.is-risk {
-  background: var(--color-redLight);
-  color: var(--color-redBlack);
-}
-.wf-tag.is-neutral {
-  background: var(--surface-muted);
-  color: var(--ink-2);
-}
-/* 過時態唯一的一句 */
+/* 頂上那一格只放警示:過時 / 滿上限退回 */
 .wf-verdict {
   margin: 0;
   font-size: 14px;
@@ -55,6 +28,12 @@
   padding-top: var(--space-12);
   border-top: 1px solid var(--border-hairline);
   overflow-x: auto;   /* 窄的中欄四欄放不下時橫捲;列名的泡泡走 body 層單例,不怕被裁 */
+}
+/* 沒有警示時比較表就是卡的第一塊:上緣髮絲與間距是拿來跟警示分開的,這時不要 */
+.wf-cmp:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 .wf-cmp-tbl {
   border-collapse: collapse;
@@ -93,6 +72,9 @@
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-hairline);
 }
+/* 「0.99 · 高於門檻」:數字 mono、判斷字用內文字體;只有「遠低於門檻」上風險色(文字用 *Text,分隔點不上色) */
+.wf-facts .bt-mv .na { color: var(--color-greyDark); }
+.wf-facts .wf-band.is-risk { color: var(--color-redText); }
 
 /* 色塊:樣本外那列 = 圖上那條線(data-1);訓練窗 = ink-3;樣本內給同寬透明位,兩個列名才對齊 */
 .wf-glyph {

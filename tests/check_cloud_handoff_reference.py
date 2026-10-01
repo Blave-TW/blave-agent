@@ -407,8 +407,8 @@ UPD_NEEDLES = {
     "status file is the machine's, not the agent's": "you do not read or write that file",
     "clone verified file by file against the commit": "every official file (`VERSION` included) is byte for byte that commit's own",
     "a planted file is not official": "the list of files comes from the commit itself, so a file planted in the clone's folder is not official and is never copied",
-    "stopped during the copy: said word for word (zh)": "「下單程式在換檔途中被停掉，就維持停著，沒有重新啟動。」",
-    "stopped during the copy: said word for word (en)": "The order program was stopped while the files were being copied, so it stays stopped and wasn't restarted.",
+    "stopped during the copy: said word for word (zh)": "「自動下單在換檔途中被停掉，就維持停著，沒有重新啟動。」",
+    "stopped during the copy: said word for word (en)": "Auto-trading was stopped while the files were being copied, so it stays stopped and wasn't restarted.",
     "the script is the only writer": "It is the only thing that writes",
     "only restart a reconciler that was already running": "It **only restarts one that was already running**",
     "state read again right before the restart": "**immediately before the restart it reads the state again**",
@@ -419,7 +419,7 @@ UPD_NEEDLES = {
     "paused machine: tell the user it stays paused (zh)": "tell the user " + PAUSED_ZH,
     "paused machine: …and that exits and stops won't run (en)": "Auto-trading is still paused, and after the update exits and stops won't run either. Press Start Trading to resume, or close positions at the exchange first.",
     "paused machine: stays paused until 啟動下單": "the machine stays paused until the user presses 啟動下單 (Start trading) on the Auto trading page",
-    "failure told as is (zh)": "and say exactly that: 「新檔已在機器上,但下單程式仍在跑舊碼。」",
+    "failure told as is (zh)": "and say exactly that: 「新檔已在機器上，但自動下單仍在跑舊版。」",
     "failure told as is (en)": "never \"updated and active\"",
     "restart failed: no VERSION": "Restart failed (`\"outcome\": \"restart_failed\"`) → `VERSION` is not written",
     "VERSION last, only on full success": "**`VERSION` last** — the script writes it after the files and the restart, and only if every file was written, no `changed_here` file was kept and the restart (when there was one) came back running",
@@ -427,7 +427,7 @@ UPD_NEEDLES = {
     "U9 reply: exactly one line": "Then reply with **exactly one line**, in the user's language, built from the script's `outcome`",
     "U9 opening: updated": "「雲端主機已更新到 {新 VERSION}。」",
     "U9 clause: changed files replaced, backup named": "「你改過的 {N} 個官方檔換成了官方版，舊的在 `{backup}`。」",
-    "U9 deferred / failed: files in place, old code, say 更新 again": "「雲端主機的新檔已就位，但下單程式仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」",
+    "U9 deferred / failed: files in place, old code, say 更新 again": "「雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」",
     "U9 opening: partial": "「雲端主機這次沒有更新完成，還是 {舊 VERSION}。」",
     "U9 opening: nothing changed": "「雲端主機沒有更新，什麼都沒動。」",
     "U9 opening: up_to_date is its own sentence": "「雲端主機已經是最新版（{VERSION}），沒有東西要換。」",
@@ -503,7 +503,7 @@ red_doc("--restart-ok left out on a stale needs_restart: false",
 red_doc("up_to_date reusing the failure sentence",
         "- `up_to_date`: 「雲端主機已經是最新版（{VERSION}），沒有東西要換。」", "- `up_to_date`: as below.")
 red_doc("the stopped-during-the-copy sentence dropped",
-        "「下單程式在換檔途中被停掉，就維持停著，沒有重新啟動。」", "it stays stopped.")
+        "「自動下單在換檔途中被停掉，就維持停著，沒有重新啟動。」", "it stays stopped.")
 red_doc("record present → do not restart (old program never replaced)", "it restarts all the same**", "it does not restart**")
 red_doc("gated-reconciler guard dropped", "as long as the new `manager/reconciler.py` carries the gate", "whatever the reconciler version")
 red_doc("paused sentence back to the old one", PAUSED_ZH, "「自動下單仍暫停,按「啟動下單」才會繼續。」")
@@ -528,7 +528,7 @@ def upd2_fails(upd):
         "deferred: say so and stop, never ask": "still deferred → say so in step 5 and stop. Never ask whether to restart; never wait for the user.",
         "one-line reply": "5. **Reply — exactly one line**",
         "changed files told afterwards (zh)": "「你改過的 {n} 個官方檔換成了官方版，舊的在 `{backup}`。」",
-        "deferred / failed line (zh)": "「雲端主機的新檔已就位，但下單程式仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」",
+        "deferred / failed line (zh)": "「雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」",
         "foreground clone": "never `run_in_background`",
         "expected commit from the remote, not the clone": "read the commit to expect from the remote itself, not from the clone: `git ls-remote https://github.com/Blave-TW/blave-agent HEAD`",
         "plan command": "`python3 /tmp/oc-config/manager/update_workspace.py plan --clone /tmp/oc-config --workspace <this workspace> --expect-head <hash>`",
@@ -751,6 +751,20 @@ shutil.rmtree(RW)
 # Wei 09-27:來源在下單照樣搬(只搬碼與 DATA_ 金鑰);shell 確認框同一條(tests/check_shell_handoff_msg.js)
 check("**Trading on the SOURCE does not block it**" in DOC and "not trading on the SOURCE" not in DOC and "a trading strategy is not handed off" not in DOC,
       "1.3: a trading source hands off; no leftover source-trading stop")
+
+# desktop 0.1.11 設計稽核 D8:更新回覆句 agent 會一字不改講給用戶聽——用畫面上的「自動下單」,不講內部的「下單程式 / order program」
+REPLY = {"restart ok": ("「自動下單已用新版重新啟動。」", "\"Auto-trading restarted on the new version.\""),
+         "reconciler stopped": ("「自動下單原本沒在跑，沒動它。」", "\"Auto-trading wasn't running, so it was left alone.\""),
+         "not running anymore": ("「自動下單在換檔途中被停掉，就維持停著，沒有重新啟動。」", "\"Auto-trading was stopped while the files were being copied, so it stays stopped and wasn't restarted.\""),
+         "deferred / failed": ("「雲端主機的新檔已就位，但自動下單仍在跑舊版；等這筆單完成後再說一次「更新」就會重啟。」",
+                               "\"The cloud machine has the new files, but auto-trading is still on the old code; once this order finishes, say 更新 again and it will restart.\"")}
+for name, doc in (("cloud-handoff.md", DOC), ("updating.md", UPD)):
+    for label, (zh, en) in REPLY.items():
+        check(zh in doc and en in doc, f"D8 {name}: {label} reply sentence uses 自動下單 / Auto-trading (zh + en)")
+    said = re.findall(r"「[^」]*下單程式[^」]*」|\"The order program[^\"]*\"|but the order program", doc)
+    check(not said, f"D8 {name}: no reply sentence still says 下單程式 / the order program {said[:2]}")
+check("「新檔已在機器上，但自動下單仍在跑舊版。」 / \"The new files are on the machine, but auto-trading is still on the old code.\"" in DOC,
+      "D8 cloud-handoff.md U7: restart_failed sentence uses 自動下單 / auto-trading")
 
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)
