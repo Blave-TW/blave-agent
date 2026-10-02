@@ -4,15 +4,20 @@ Same contract as lib/capital_vault.py: only the order lib and
 lib/president_worker.py log in — lib/account_president.py reads the worker's
 snapshot and never holds a password. resolve() reads the workspace `.env`
 itself with one parser (a caller-supplied mapping is never trusted: it could
-carry PRESIDENT_LIVE, and two parsers can disagree on a quoted password — the
+point at another host, and two parsers can disagree on a quoted password — the
 wrong one burns a login try). A `vault:` sentinel in president_password /
 president_ca_password points at <base>/credentials/president_vault.json.
 
-Host gate: without PRESIDENT_LIVE=true in `.env` only a *.testpfctrade.com
-host is accepted (the test hosts' TLS certificate covers exactly that — the
-broker's mail writes test167.pfctrade.com, the working URL is
-https://test167.testpfctrade.com), and a server that reports itself not a
-test server is refused after login. With it, president_url is used.
+Host gate: production is switched on only by `"live": true` in the vault —
+written by the platform's binding flow, never by `.env` (a PRESIDENT_LIVE line
+there is refused, not obeyed: `.env` is a file the agent writes). Without it
+only a *.testpfctrade.com host is accepted (the test hosts' TLS certificate
+covers exactly that — the broker's mail writes test167.pfctrade.com, the
+working URL is https://test167.testpfctrade.com), and a server that reports
+itself not a test server is refused after login. With it, president_url is
+used. The vault keeps this out of the agent's ordinary write path; on a cloud
+box the agent runs as SYSTEM like the worker, so — as lib/capital_vault says
+of its own file — it stops accidents, not a SYSTEM process set on bypassing it.
 
 Login failures leave this module as a CLASS only (CERT_MISMATCH, CERT,
 PASSWORD, HOST, TIMEOUT, MAINTENANCE, BLOCKED, UNKNOWN), never the broker's
@@ -84,7 +89,7 @@ class LoginError(RuntimeError):
         "MAINTENANCE": "broker login maintenance (05:30–05:50 Taipei) — not attempted",
         "BLOCKED": "a previous login with these credentials was refused — not attempted until "
                    "the credentials in .env change (統一 locks the account after three wrong logins)",
-        "NON_TEST_SERVER": "the server is not a test server and PRESIDENT_LIVE is not set",
+        "NON_TEST_SERVER": "the server is not a test server and production is not switched on",
         "UNKNOWN": "the broker refused the login",
     }
 
@@ -152,26 +157,37 @@ def read_env(path=None):
     return env
 
 
-def live(env):
-    return str(env.get("president_live") or "").strip().lower() == "true"
+def live():
+    """True only when the platform's binding flow wrote `"live": true` into the
+    vault. Absent, unreadable or anything but the JSON true → test hosts only."""
+    try:
+        with open(VAULT, encoding="utf-8") as f:
+            v = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return isinstance(v, dict) and v.get("live") is True
 
 
 def endpoint(env):
     """The login URL this environment may use, or ValueError."""
-    if live(env):
+    if live():
         url = (env.get("president_url") or "").strip()
         if not url:
-            raise ValueError("PRESIDENT_LIVE=true but president_url is not set")
+            raise ValueError("統一期貨 production is switched on but president_url is not set")
         host = (urlparse(url).hostname or "").lower()
         if host not in LIVE_HOSTS:
             raise ValueError(f"president_url host {host or url!r} is not a known 統一 production "
                              f"login host {LIVE_HOSTS}")
     else:
+        if str(env.get("president_live") or "").strip().lower() == "true":
+            # refused rather than ignored: whoever wrote it expects production
+            raise ValueError("PRESIDENT_LIVE in .env does not switch 統一期貨 to production — "
+                             "only the platform's binding flow does (credentials/president_vault.json)")
         url = (env.get("president_test_url") or "").strip()
         host = (urlparse(url).hostname or "").lower()
         if not host.endswith(TEST_HOST_SUFFIX):
             raise ValueError(f"president_test_url host {host or url!r} is not *{TEST_HOST_SUFFIX} — "
-                             f"without PRESIDENT_LIVE=true only the broker's test hosts are allowed")
+                             f"until production is switched on only the broker's test hosts are allowed")
     if urlparse(url).scheme != "https":
         raise ValueError(f"president login URL must be https://, got {url!r}")
     return url.rstrip("/")
@@ -203,7 +219,7 @@ def resolve(_ignored=None):
         raise ValueError("president_ca_path missing from .env (the .pfx certificate)")
     return {"url": endpoint(env), "account": creds["president_account"],
             "password": creds["president_password"], "ca_path": creds["president_ca_path"],
-            "ca_password": creds["president_ca_password"], "live": live(env)}
+            "ca_password": creds["president_ca_password"], "live": live()}
 
 
 # ── login block (shared by every caller on this machine) ─────────────────────

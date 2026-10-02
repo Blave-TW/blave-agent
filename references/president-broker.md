@@ -56,7 +56,7 @@ This covers the **domestic futures account** only. Unitrade also has overseas fu
 **Test host URL gotcha:** the activation mail writes the host as `test167.pfctrade.com`, but the
 test hosts' TLS certificate only covers `*.testpfctrade.com`. The working URL is
 **`https://test167.testpfctrade.com`** (substitute the number from the mail). The libs refuse any
-other host unless `PRESIDENT_LIVE=true`.
+other host until production is switched on (Step 4).
 
 ---
 
@@ -95,21 +95,24 @@ president_ca_path=<absolute path to the .pfx on this machine>
 president_ca_password=<certificate password, may be empty>
 ```
 
-Production, only after the broker's production mail AND the user's explicit go-ahead:
+Production, only after the broker's production mail AND the user's explicit go-ahead, is switched
+on by the platform's 統一期貨 binding flow — it writes `"live": true` into
+`<base>/credentials/president_vault.json`. **You cannot switch it on:** never write that file, and a
+`PRESIDENT_LIVE` line in `.env` is refused (the libs raise rather than log in). `.env` carries only
+the production host:
 
 ```
-PRESIDENT_LIVE=true
 president_url=https://viploginm.pfctrade.com
 ```
 
-With `PRESIDENT_LIVE=true` only the two production login hosts are accepted —
+Once production is on, only the two production login hosts are accepted —
 `https://viploginm.pfctrade.com` and `https://viploginb.pfctrade.com` (both verified to log in with
 a matching TLS certificate, 2026-10-02). The broker's production mail for this account says
 **「本申請僅開放內外期 API 下單權限」** — futures order permission only (no stock trading through it).
-Without `PRESIDENT_LIVE=true` the libs only accept a `*.testpfctrade.com` host, and a login whose
-server reports it is not a test server is refused. The libs read `.env` themselves (one parser: BOM
-tolerated, one pair of surrounding quotes removed, nothing else interpreted) — a mapping passed by a
-caller is ignored, so `PRESIDENT_LIVE` can only come from `.env`.
+Until then the libs only accept a `*.testpfctrade.com` host, and a login whose server reports it
+is not a test server is refused. The libs read `.env` themselves (one parser: BOM tolerated, one
+pair of surrounding quotes removed, nothing else interpreted) — a mapping passed by a caller is
+ignored.
 
 **Wrong credentials are not retried.** 統一 locks an account after three wrong logins. A login the
 broker refuses for the password or the certificate (or two it refuses for a reason the libs can't
@@ -328,7 +331,7 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 4. One test order through `order_president.place_futures_market_order({}, "TMF", "buy", 1,
    "entry")` returns `ack == '0000'` (the test host will not fill it). The user reports the test to
    the broker rep and waits for the production mail.
-5. Production (`PRESIDENT_LIVE=true` + `president_url`) only with the user's explicit go-ahead;
+5. Production (switched on by the binding flow + `president_url`) only with the user's explicit go-ahead;
    repeat 3–4 there with the smallest order (TMF 1 lot) and confirm equity matches the broker's app.
 
 Status (2026-10-02, live account):

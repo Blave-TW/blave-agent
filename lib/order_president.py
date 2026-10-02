@@ -53,8 +53,8 @@ Design rules:
    and absence is what makes a chase request fall back to market loudly.
 
 Credentials: president_account / president_password / president_test_url /
-president_ca_path / president_ca_password (+ PRESIDENT_LIVE=true and
-president_url for production) — resolved by lib/president_vault.py.
+president_ca_path / president_ca_password (+ president_url for production,
+switched on only by the binding flow's vault) — resolved by lib/president_vault.py.
 """
 
 import json
@@ -353,7 +353,7 @@ def _tag_for(client_order_id):
 
 @contextmanager
 def _session(env):
-    # credentials and PRESIDENT_LIVE come from the workspace .env, never from `env`
+    # credentials and the host come from the workspace .env and vault, never from `env`
     api = president_vault.login(president_vault.resolve(), SDK_LOG_DIR)
     try:
         yield api

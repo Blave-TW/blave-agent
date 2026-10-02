@@ -11,7 +11,9 @@
    from on_match via the orderno of OUR seq's reply; HALT blocks entries not
    closes; a client_tag is refused the second time today; the session is
    logged out on every path.
-3. Host gate: without PRESIDENT_LIVE only *.testpfctrade.com.
+3. Host gate: production only from the vault's "live": true (the binding flow
+   writes it); a PRESIDENT_LIVE line in .env is refused, a caller mapping
+   ignored, an absent / unreadable / non-boolean vault means test hosts only.
 4. Snapshot: rows net per root, several months net and drop productid,
    an ot_qty / current_open disagreement fails the read, maintenance windows.
 5. Interface: every `order.<name>(` call site in lib/ and manager/ (the grep
@@ -90,6 +92,8 @@ check(raises(ValueError, lambda: op.near_month("TXF", LISTED, datetime(2026, 10,
 # ── 3. host gate + the one .env parser ───────────────────────────────────────
 president_vault.ENV_PATH = os.path.join(TMP, ".env")
 president_vault.BLOCK = os.path.join(TMP, "state", "president_login_block.json")
+president_vault.VAULT = os.path.join(TMP, "credentials", "president_vault.json")
+os.makedirs(os.path.dirname(president_vault.VAULT), exist_ok=True)
 PFX = os.path.join(TMP, "c.pfx")
 open(PFX, "wb").write(b"not-a-real-pfx")
 BASE = {"president_account": "A", "president_password": "P", "president_ca_path": PFX,
@@ -101,27 +105,53 @@ def envfile(d, bom=False):
         f.write("".join(f"{k}={v}\n" for k, v in d.items()))
 
 
+def vault(content):
+    if content is None:
+        if os.path.exists(president_vault.VAULT):
+            os.remove(president_vault.VAULT)
+        return
+    with open(president_vault.VAULT, "w", encoding="utf-8") as f:
+        f.write(content if isinstance(content, str) else json.dumps(content))
+
+
+LIVE_URL = "https://viploginm.pfctrade.com"
+vault(None)
 envfile(BASE)
 check(president_vault.resolve()["url"] == "https://test167.testpfctrade.com", "test host accepted")
 check(president_vault.resolve({"PRESIDENT_LIVE": "true", "president_url": "https://x.example"})["live"] is False,
-      "a caller-supplied mapping cannot turn PRESIDENT_LIVE on — only .env can")
+      "a caller-supplied mapping cannot switch production on")
 for bad in ("https://test167.pfctrade.com", "https://www.pfctrade.com", "http://x.testpfctrade.com",
             "https://evil.com/.testpfctrade.com"):
     envfile(dict(BASE, president_test_url=bad))
-    check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"without PRESIDENT_LIVE {bad} refused")
-for good in ("https://viploginm.pfctrade.com", "https://viploginb.pfctrade.com/"):
-    envfile(dict(BASE, PRESIDENT_LIVE="true", president_url=good))
+    check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"production off: {bad} refused")
+envfile(dict(BASE, PRESIDENT_LIVE="true", president_url=LIVE_URL))
+e = raises(ValueError, lambda: president_vault.resolve())
+check(e is not None and "PRESIDENT_LIVE" in str(e), "PRESIDENT_LIVE=true in .env alone → refused, not obeyed", e)
+for label, content in (("JSON string \"true\"", {"live": "true"}), ("live: 1", {"live": 1}),
+                       ("not JSON", "{live: true"), ("a list", [True]), ("no live key", {"president_password": "x"})):
+    vault(content)
+    envfile(dict(BASE, president_url=LIVE_URL))
+    check(president_vault.live() is False and president_vault.resolve()["url"] == "https://test167.testpfctrade.com",
+          f"vault {label} → production off, test host used")
+vault(None)
+os.makedirs(president_vault.VAULT)
+check(president_vault.live() is False, "vault unreadable (a directory) → production off")
+os.rmdir(president_vault.VAULT)
+vault({"live": True})
+for good in (LIVE_URL, "https://viploginb.pfctrade.com/"):
+    envfile(dict(BASE, president_url=good))
     check(president_vault.resolve()["url"] == good.rstrip("/") and president_vault.resolve()["live"],
-          f"PRESIDENT_LIVE: {good} accepted")
+          f"vault live: {good} accepted")
 for bad in ("https://test167.testpfctrade.com", "https://evil.example", "http://viploginm.pfctrade.com",
             "https://viploginm.pfctrade.com.evil.example"):
-    envfile(dict(BASE, PRESIDENT_LIVE="true", president_url=bad))
-    check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"PRESIDENT_LIVE: {bad} refused")
-envfile(dict(BASE, PRESIDENT_LIVE="true", president_url="https://viploginm.pfctrade.com"))
-check(president_vault.resolve()["url"] == "https://viploginm.pfctrade.com" and president_vault.resolve()["live"],
-      "PRESIDENT_LIVE=true in .env uses president_url")
-envfile(dict(BASE, PRESIDENT_LIVE="true"))
-check(raises(ValueError, lambda: president_vault.resolve()) is not None, "PRESIDENT_LIVE without president_url refused")
+    envfile(dict(BASE, president_url=bad))
+    check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"vault live: {bad} refused")
+envfile(dict(BASE, PRESIDENT_LIVE="true", president_url=LIVE_URL))
+check(president_vault.resolve()["url"] == LIVE_URL and president_vault.resolve()["live"],
+      "vault live + a leftover PRESIDENT_LIVE line → production, president_url")
+envfile(BASE)
+check(raises(ValueError, lambda: president_vault.resolve()) is not None, "vault live without president_url refused")
+vault(None)
 envfile(dict(BASE, president_password='"p=a\\ss${X}"'), bom=True)
 check(president_vault.resolve()["password"] == "p=a\\ss${X}" and president_vault.resolve()["account"] == "A",
       "BOM tolerated, one quote pair stripped, nothing else interpreted")
