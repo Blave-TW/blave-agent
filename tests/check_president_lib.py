@@ -63,15 +63,17 @@ check(op.settlement_at(2026, 10) == T(2026, 10, 21, 13, 30), "Oct 2026 settles W
 check(op.settlement_at(2026, 12) == T(2026, 12, 16, 13, 30), "Dec 2026 settles Wed 12/16 13:30")
 check(op.settlement_at(2027, 1) == T(2027, 1, 20, 13, 30), "Jan 2027 settles Wed 1/20 13:30")
 LISTED = ["TXFJ6", "TXFK6", "TXFL6"]
-check(op.near_month("TXF", LISTED, T(2026, 10, 21, 8, 44, 59)) == "TXFJ6", "settlement day 08:44:59 → J6")
-check(op.near_month("TXF", LISTED, T(2026, 10, 21, 8, 45, 0)) == "TXFK6",
-      "settlement day 08:45 (day session open) → entries roll to K6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 20, 14, 59, 59)) == "TXFJ6", "the day before, 14:59:59 → J6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 20, 15, 0, 0)) == "TXFK6",
+      "the day before, 15:00 (night session of the settlement trading day) → entries roll to K6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 21, 3, 0)) == "TXFK6", "settlement night 03:00 → K6")
 check(op.near_month("TXF", LISTED, T(2026, 10, 21, 13, 29)) == "TXFK6", "settlement day 13:29 → K6")
-check(op.near_month("TXF", LISTED, T(2026, 10, 20, 23, 0)) == "TXFJ6", "the night before settlement → J6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 21, 13, 31)) == "TXFK6", "after settlement → K6")
+check(op.near_month("TXF", LISTED, T(2026, 10, 19, 23, 0)) == "TXFJ6", "two nights before → J6")
 check(op.near_month("TXF", LISTED, T(2026, 9, 30, 10, 0)) == "TXFJ6", "a normal day → the month's own contract")
-check(op.near_month("TMF", ["TMFL6", "TMFA7", "TMFB7"], T(2026, 12, 16, 9, 0)) == "TMFA7",
+check(op.near_month("TMF", ["TMFL6", "TMFA7", "TMFB7"], T(2026, 12, 15, 15, 0)) == "TMFA7",
       "December settlement day → next year's A contract")
-check(op.near_month("MXF", ["MXFL6", "MXFA7"], T(2026, 12, 15, 13, 29)) == "MXFL6", "the day before → L6")
+check(op.near_month("MXF", ["MXFL6", "MXFA7"], T(2026, 12, 15, 14, 59)) == "MXFL6", "the day before 14:59 → L6")
 e = raises(op.PresidentError, lambda: op.near_month("TXF", ["TXFJ6", "TXFL6"], T(2026, 10, 21, 13, 31)))
 check(e is not None and "TXFK6" in str(e), "computed contract missing from the broker list → refused", e)
 check(raises(ValueError, lambda: op.near_month("TXF", LISTED, datetime(2026, 10, 1))) is not None,
@@ -377,6 +379,17 @@ for shape, data in (("single object", Resp(**DM)), ("list", [Resp(**DM)])):
           and snap["initial_margin"] == 105150.0 and snap["maintenance_margin"] == 80700.0
           and snap["margin_error"] is None,
           f"get_margin(actno, 'NTT') with .data as a {shape}: optequity / ordcexcess / iamt / mamt", snap)
+sparse = Resp(optequity=500000.0, ordcexcess=None, iamt=None, mamt=None, dwamt=None,
+              update_date=None, update_time=None)
+fake = types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=sparse)))
+snap2 = president_worker.read_account(fake, "7000001")
+check(snap2["equity"] == 500000.0 and snap2["available"] is None and snap2["day_flow"] is None
+      and snap2["margin_updated"] is None and snap2["margin_error"] is None,
+      "side margin fields missing → None, the round still writes a snapshot", snap2)
+fake = types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=Resp(optequity=None))))
+snap3 = president_worker.read_account(fake, "7000001")
+check(snap3["equity"] is None and snap3["margin_error"] == "optequity missing",
+      "optequity missing is the one margin failure (equity unknown, read error)", snap3)
 snapshot([], **{k: snap[k] for k in ("equity", "available", "initial_margin", "maintenance_margin")})
 eq = account_president.get_equity({})
 check(eq["equity"] == 11454097.0 and eq["maintenance_margin"] == 80700.0 and eq["available"] == 9000000.0,
@@ -393,13 +406,14 @@ check(president_worker.maintenance(T(2026, 10, 1, 5, 40)) == "login"
 
 # ── 8. settlement-day entries stay in a held expiring month ─────────────────
 ROWS_J = [{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1}]
-check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 9, 0)) == "TXFJ6",
-      "settlement day 09:00 holding J6 → the addition goes to J6 (never two months)")
-check(op.entry_contract("TXF", [], T(2026, 10, 21, 9, 0)) == "TXFK6", "settlement day 09:00 flat → K6")
+for when in (T(2026, 10, 20, 15, 0), T(2026, 10, 21, 2, 0), T(2026, 10, 21, 9, 0)):
+    check(op.entry_contract("TXF", ROWS_J, when) == "TXFJ6",
+          f"window {when:%m-%d %H:%M} holding J6 → the addition goes to J6 (never two months)")
+check(op.entry_contract("TXF", [], T(2026, 10, 20, 15, 0)) == "TXFK6", "window start, flat → K6")
 check(op.entry_contract("MXF", ROWS_J, T(2026, 10, 21, 9, 0)) == "MXFK6", "another root's J6 does not count")
 check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 13, 30)) == "TXFK6"
-      and op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 8, 44)) == "TXFJ6",
-      "outside 08:45–13:30 the plain rule applies")
+      and op.entry_contract("TXF", ROWS_J, T(2026, 10, 20, 14, 59)) == "TXFJ6",
+      "outside the day-before-15:00 → 13:30 window the plain rule applies")
 
 # ── 9. two processes closing at once: only one passes ────────────────────────
 import subprocess  # noqa: E402
@@ -433,6 +447,56 @@ _t.sleep(1.0)
 open(GO, "w").close()
 outs = sorted(p.communicate(timeout=60)[0].strip() for p in procs)
 check(outs == ["PASS", "REFUSED"], "two processes closing the same position at once: exactly one passes", outs)
+
+# ── 10. P1-C: a slow login does not eat the settle margin ─────────────────────
+saved_settle = president_vault.ORDER_SETTLE_S
+president_vault.ORDER_SETTLE_S = 1.0  # scaled: login 2 s against a 1 s margin = 25 s against 20 s
+snapshot([])
+open(op.LAST_ORDER_PATH, "w").write("{}")
+slow = use([ACK])
+
+
+class _Slow:
+    def __enter__(self):
+        _t.sleep(2.0)  # the login
+        return slow
+
+    def __exit__(self, *a):
+        slow.logout()
+
+
+op._session = lambda env: _Slow()
+t_call = _t.time()
+op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=0.3)
+marker = op.last_order_at(NOW_LIST[0])
+check(marker >= t_call + 2.0, "the marker is re-written at the send, after the slow login", marker - t_call)
+snapshot([], query_started_at=t_call + 1.5)
+ok, _q, _l = op.snapshot_caught_up()
+check(not ok, "a read started before the send's margin is not 'caught up', however slow the login was")
+president_vault.ORDER_SETTLE_S = saved_settle
+
+holder = subprocess.Popen([sys.executable, "-c", f"""
+import os, sys, time
+sys.path.insert(0, {ROOT!r}); os.chdir({TMP!r})
+from lib import order_president as op
+op.SEND_LOCK_PATH = {op.SEND_LOCK_PATH!r}
+with op._send_lock():
+    print("HELD", flush=True)
+    time.sleep(60)
+"""], stdout=subprocess.PIPE, text=True)
+check(holder.stdout.readline().strip() == "HELD", "child holds the send lock")
+t0 = _t.time()
+try:
+    with op._os_lock(op.SEND_LOCK_PATH, 0.5, "send lock"):
+        took_while_held = True
+except op.PresidentError:
+    took_while_held = False
+check(not took_while_held, "while it is held, another process cannot take it")
+holder.kill()
+holder.wait()
+with op._send_lock():
+    took = _t.time() - t0
+check(took < 5, "killed holder → the lock is free at once (no stale-file wait)", took)
 
 # ── 6. login: no national id leaves, auth failures block every later login ──
 import contextlib, io  # noqa: E402
@@ -518,18 +582,42 @@ os.path.exists(president_vault.BLOCK) and os.remove(president_vault.BLOCK)
 president_vault.in_login_maintenance = lambda now=None: False
 LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
 raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(president_vault.unblock(), "--unblock releases the block")
+check(president_vault.unblock() == "released", "--unblock releases the block")
 n = FakeUnitrade.logins
 LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
 got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 check(got.kind == "PASSWORD" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n + 1,
       "after --unblock exactly one login reaches the broker; its failure blocks again")
+n = FakeUnitrade.logins
+check(president_vault.unblock() == "used"
+      and raises(president_vault.LoginError,
+                 lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind == "BLOCKED"
+      and FakeUnitrade.logins == n,
+      "a second --unblock on the same block is refused; no login reaches the broker")
+os.remove(president_vault.BLOCK)
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 president_vault.unblock()
-LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="HTTPSConnectionPool(host='x'): Max retries exceeded"),
+                   Resp(ok=True, error="")]
+got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(got.kind == "HOST", "the released try hit a network error")
 president_vault.login(creds2, president_worker.SDK_LOG_DIR).logout()
 check(not os.path.exists(president_vault.BLOCK) and not os.path.exists(president_vault.BLOCK + ".claim"),
-      "a good login after --unblock clears the block")
+      "a network failure did not spend it: the next login went through and cleared the block")
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+president_vault.unblock()
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(president_vault.unblock() == "used", "spent")
+creds3 = dict(creds2, password="P3")
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
+check(president_vault.unblock() == "released", "new credentials failing → a new block with its own release")
+LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
+president_vault.login(creds3, president_worker.SDK_LOG_DIR).logout()
 
 # ── 7. reconciler block: split close / entry, never open behind an unconfirmed close ──
 os.makedirs("manager", exist_ok=True)
@@ -584,6 +672,28 @@ try:
     errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
     check(isinstance(r, dict) and r["executed_qty"] == 2 and "反向開倉失敗" in errs[-1]["error"],
           "close filled + entry failed: the close is returned for the book, the entry failure recorded", r)
+    def entry_deferred(env, sym, action, lots, intent, **kw):
+        if intent == "entry":
+            raise op.EntryDeferred("settlement window: snapshot not caught up")
+        return fake_place(env, sym, action, lots, intent)
+    op.place_futures_market_order = entry_deferred
+    n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8")))
+    r = reconciler.place_order("TMF", -3, exchange="president")
+    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
+    check(isinstance(r, dict) and r["executed_qty"] == 2 and r["entry_deferred"] == 1 and len(errs) == n_err,
+          "settlement-window flip: the close is booked, the entry is 'deferred', no order_error", r)
+
+    def unk(env, sym, action, lots, intent, **kw):
+        r = fake_place(env, sym, action, lots, intent)
+        if intent == "entry":
+            r.update(status="unknown", fill_qty=0.0, ack="0099")
+        return r
+    op.place_futures_market_order = unk
+    snapshot([])
+    r = reconciler.place_order("TMF", 1, exchange="president")
+    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
+    check(r["status"] == "unknown" and errs[-1].get("kind") == "order_status_unknown" and "0099" in errs[-1]["error"],
+          "an unknown status reaches the reconciler's result and order_errors (not folded into 'sent')", r)
     op.place_futures_market_order = fake_place
     json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],

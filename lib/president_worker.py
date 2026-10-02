@@ -120,6 +120,14 @@ def position_row(p):
     }
 
 
+def _num(obj, name):
+    v = getattr(obj, name, None)
+    try:
+        return None if v is None or v == "" else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def read_account(api, actno):
     """One margin + position read. RateLimited on the SDK's per-minute cap."""
     snap = {"ok": True, "error": None, "equity": None, "available": None,
@@ -133,17 +141,19 @@ def read_account(api, actno):
     m = api.daccount.get_margin(actno, MARGIN_CURRENCY)
     d = (m.data[0] if isinstance(m.data, list) and m.data else m.data) if m is not None and m.ok else None
     if d is not None and getattr(d, "optequity", None) is not None:
-        snap["equity"] = float(d.optequity)          # 權益數 (matched the app, 10-02)
-        snap["available"] = float(d.ordcexcess)      # 可動用保證金
-        snap["initial_margin"] = float(d.iamt)       # 原始保證金
-        snap["maintenance_margin"] = float(d.mamt)   # 維持保證金
-        snap["day_flow"] = float(d.dwamt)            # 當日出入金 — unverified as a flow source
-        snap["margin_updated"] = f"{getattr(d, 'update_date', '')} {getattr(d, 'update_time', '')}".strip()
+        # only optequity is required; a missing side field is None, not a failed round
+        snap["equity"] = float(d.optequity)                  # 權益數 (matched the app, 10-02)
+        snap["available"] = _num(d, "ordcexcess")            # 可動用保證金
+        snap["initial_margin"] = _num(d, "iamt")             # 原始保證金
+        snap["maintenance_margin"] = _num(d, "mamt")         # 維持保證金
+        snap["day_flow"] = _num(d, "dwamt")                  # 當日出入金 — unverified as a flow source
+        snap["margin_updated"] = f"{getattr(d, 'update_date', '') or ''} {getattr(d, 'update_time', '') or ''}".strip() or None
     elif m is not None and _RATE_LIMITED in str(m.error or ""):
         raise RateLimited(f"get_margin: {m.error}")
     else:
         # 查無資料 on an unfunded account is an answer, not a dead link
-        snap["margin_error"] = president_vault.sanitize(getattr(m, "error", "") or "no data")
+        snap["margin_error"] = president_vault.sanitize(
+            getattr(m, "error", "") or ("optequity missing" if d is not None else "no data"))
     p = _check(api.daccount.get_position(actno, "", ""), "get_position")
     for row in p.data or []:
         r = position_row(row)
@@ -378,10 +388,12 @@ if __name__ == "__main__":
         sys.exit(uninstall())
     if "--unblock" in sys.argv[1:]:
         # only after the user says the account is unlocked at the broker
-        released = president_vault.unblock()
-        _log("unblock: one login allowed; a failure blocks again" if released
-             else "unblock: nothing was blocked")
-        sys.exit(0)
+        state = president_vault.unblock()
+        _log({"released": "unblock: one login allowed; a failure blocks again",
+              "none": "unblock: nothing was blocked",
+              "used": "unblock: refused — this block was already released once; it lifts "
+                      "only when the credentials in .env change"}[state])
+        sys.exit(0 if state != "used" else 2)
     try:
         main()
     except KeyboardInterrupt:  # `nssm stop` sends Ctrl-C; main's finally already logged out

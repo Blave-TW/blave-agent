@@ -533,9 +533,17 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
             opening = 0  # never open behind a close that may not have happened
     if opening and guard.halted():
         opening = 0
+    deferred = 0
     if opening:
         try:
             legs.append(order_president.place_futures_market_order({}, sym, action, opening, 'entry'))
+        except order_president.EntryDeferred as e:
+            # settlement window, snapshot not caught up with the close: the entry
+            # picks its month next round — scheduled, not an error, nothing sent
+            logging.info(f"[reconciler/president] {sym}: entry of {opening} deferred — {e}")
+            deferred = opening
+            if not legs:
+                return False
         except Exception as e:
             if not legs:
                 raise
@@ -547,6 +555,14 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
                                 f"平倉已成交 {closing} 口,反向開倉失敗:{type(e).__name__}: {e}")
     if not legs:
         return False
+    unknown = [l for l in legs if l.get('status') == 'unknown']
+    if unknown:
+        # the broker answered a code the SDK does not define: nothing is resent and
+        # the next round reads the real position — but the user must be able to see it
+        from lib.portfolio import _record_order_error
+        _record_order_error(sym, venue_traits.PRESIDENT,
+                            f"統一回報未知狀態碼 {unknown[-1].get('ack')}(未重送;下一輪依實際部位對帳)",
+                            {"kind": "order_status_unknown"})
     qty = sum(float(l.get('fill_qty') or 0) for l in legs)
     avg = (sum(float(l.get('fill_qty') or 0) * float(l.get('avg_fill_price') or 0) for l in legs) / qty
            if qty else 0.0)
@@ -555,7 +571,9 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         'executed_qty':    qty,
         'exchange':        venue_traits.PRESIDENT,
         'resolved_symbol': legs[-1].get('symbol'),
-        'status':          'filled' if all(l.get('status') == 'filled' for l in legs) else 'sent',
+        'status':          ('unknown' if unknown else
+                            'filled' if all(l.get('status') == 'filled' for l in legs) else 'sent'),
+        'entry_deferred':  deferred,
         'ack':             legs[-1].get('ack'),
         'statuscode':      legs[-1].get('statuscode'),
     }

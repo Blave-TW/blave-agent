@@ -221,40 +221,61 @@ def _write_block(block):
         pass
 
 
-def blocked(creds):
-    """The class that blocks a login with exactly these credentials, or None.
+def _gate(creds):
+    """(blocking class or None, whether this call took the released try).
     A block the user released (unblock()) lets exactly ONE login through: the
     first caller to create the claim file takes it and the block goes back to
     closed before the login is even tried, so a failure re-blocks at once and
     two racing processes cannot both spend a try."""
     b = _read_block()
     if b.get("fp") != fingerprint(creds):
-        return None
+        return None, False
     if not (b.get("kind") in AUTH_CLASSES or int(b.get("unknown") or 0) >= UNKNOWN_BLOCK_AT):
-        return None
+        return None, False
     if b.get("allow_once"):
         try:
             os.close(os.open(BLOCK + ".claim", os.O_CREAT | os.O_EXCL | os.O_WRONLY))
         except OSError:
-            return b.get("kind") or "UNKNOWN"  # another process took the one try
+            return b.get("kind") or "UNKNOWN", False  # another process took the one try
         _write_block(dict(b, allow_once=False))
-        return None
-    return b.get("kind") or "UNKNOWN"
+        return None, True
+    return b.get("kind") or "UNKNOWN", False
+
+
+def blocked(creds):
+    """The class that blocks a login with exactly these credentials, or None
+    (taking the released try when there is one — see _gate)."""
+    return _gate(creds)[0]
+
+
+def _give_back_try():
+    """The released try ended on the network (HOST / TIMEOUT), not on the
+    password: it did not count at the broker, so it is not spent here either."""
+    b = _read_block()
+    if b.get("fp"):
+        try:
+            os.remove(BLOCK + ".claim")
+        except OSError:
+            pass
+        _write_block(dict(b, allow_once=True))
 
 
 def unblock():
     """The user says the account is unlocked at the broker (and the password is
-    right): allow ONE login with the blocked credentials. True if a block was
-    released, False if there was none."""
+    right): allow ONE login with the blocked credentials. Once per block — a
+    second release needs changed credentials in .env (which is a new block if
+    they fail too). Returns "released", "none" (nothing blocked) or "used"."""
     b = _read_block()
     if not b.get("fp"):
-        return False
+        return "none"
+    if b.get("unblock_used"):
+        return "used"
     try:
         os.remove(BLOCK + ".claim")
     except OSError:
         pass
-    _write_block(dict(b, allow_once=True, released_at=int(time.time())))
-    return True
+    _write_block(dict(b, allow_once=True, unblock_used=True, released_at=int(time.time())))
+    return "released"
 
 
 def _record(creds, kind):
@@ -324,7 +345,7 @@ def login(creds, log_dir):
 
     if in_login_maintenance():
         raise LoginError("MAINTENANCE")
-    kind = blocked(creds)
+    kind, released_try = _gate(creds)
     if kind:
         raise LoginError("BLOCKED")
 
@@ -346,16 +367,22 @@ def login(creds, log_dir):
     t.join(LOGIN_TIMEOUT_S)
     try:
         if t.is_alive():
+            if released_try:
+                _give_back_try()
             raise LoginError("TIMEOUT")
         if "exc" in box:
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
             if kind in AUTH_CLASSES:
                 _record(creds, kind)
+            elif released_try and kind in ("HOST", "TIMEOUT"):
+                _give_back_try()
             raise LoginError(kind)
         resp = box["resp"]
         if not resp.ok:
             kind = classify(resp.error)
             _record(creds, kind)
+            if released_try and kind in ("HOST", "TIMEOUT"):
+                _give_back_try()
             raise LoginError(kind)
         if not creds["live"] and api.test_mode is not True:
             raise LoginError("NON_TEST_SERVER")

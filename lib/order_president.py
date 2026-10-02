@@ -10,8 +10,8 @@ TXF / MXF / TMF, the lib maps them to a month contract (TXFJ6 = TXF, J=Oct, 6=20
 Design rules:
 1. ENTRY → COMPUTED NEAR MONTH, CLOSE → THE ROW'S OWN CONTRACT. Contracts
    settle at 13:30 Taipei on the third Wednesday of their month (the instant
-   the backtest's TXFR1 series changes contract). An entry goes to the month
-   the day session opens on, i.e. from 08:45 on settlement day entries go to
+   the backtest's TXFR1 series changes contract). New positions roll at the
+   night session before it: from 15:00 the day before settlement entries go to
    the next month (entry_roll_at — why: see there). The computed contract must
    appear in the broker's get_domestic_contracts list, else the order is
    refused. A reduce/close goes to the productid of the position row it closes
@@ -19,12 +19,15 @@ Design rules:
    only after the snapshot confirms the side and the size: a reduce that would
    add to or reverse a position, or a snapshot whose read started less than
    ORDER_SETTLE_S after this contract's last send, is refused before the login
-   (_claim: check + send marker under one machine-wide lock). In the
-   settlement-day window an entry stays in a still-held expiring month.
+   (_claim: check + send marker under one machine-wide lock; the marker is
+   written again right before the send, so a slow login does not eat the
+   margin). In the settlement window an entry stays in a still-held expiring
+   month, and waits (EntryDeferred) while the snapshot has not caught up.
    NOT verified across a real settlement day.
 2. SENT ≠ ACCEPTED ≠ FILLED. order() returning issend=True only means the
    request left this machine. Accepted = an on_reply for OUR seq with
-   statuscode '0000' (or a fill code 0003/0004). A fill = on_match rows for
+   a success status code (0000/0001/0003/0004/0006 — live market orders
+   answer 0004 directly). A fill = on_match rows for
    the orderno that reply carried (on_match has no seq). No fill seen within
    confirm_timeout returns status 'sent' with fill_qty 0 — an IOC the market
    did not take, or a fill not yet reported; the IOC-cancel report has never
@@ -82,7 +85,7 @@ TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")
 ROOTS = ("TXF", "MXF", "TMF")
 MONTH_CODES = "ABCDEFGHIJKL"  # futures month letters, A = January
 SETTLE_HOUR, SETTLE_MINUTE = 13, 30
-DAY_OPEN_HOUR, DAY_OPEN_MINUTE = 8, 45
+NIGHT_OPEN_HOUR, NIGHT_OPEN_MINUTE = 15, 0
 PROD_RE = re.compile(r"^(TXF|MXF|TMF)([A-L])(\d)$")
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
 # Reply status codes, from unitrade 1.0.0.7 trade/dlogic (DLogic.*_CODE):
@@ -97,8 +100,56 @@ _CANCELED = {"0002"}  # 0001 (a reduction) is not terminal
 _tags_lock = threading.Lock()
 
 
+try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
+
+
+@contextmanager
+def _os_lock(path, timeout, what):
+    """An exclusive OS lock on `path` (flock / msvcrt byte lock). The OS drops
+    it when the holder exits or is killed, so there is no stale-file reclaim —
+    and no reclaim race between two waiters (audit round 3 P2-1)."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.time() + timeout
+    try:
+        while True:
+            try:
+                if fcntl:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                break
+            except OSError:
+                if time.time() > deadline:
+                    raise PresidentError(f"another 統一 order holds the {what} — retry")
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            try:
+                if fcntl:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                else:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+    finally:
+        os.close(fd)
+
+
 class PresidentError(Exception):
     """The broker refused or could not take an order; message carries its code/text."""
+
+
+class EntryDeferred(PresidentError):
+    """An entry in the settlement window that waits for a fresh snapshot to pick
+    its month — a scheduled wait, not a failure; nothing was sent."""
 
 
 class DuplicateOrder(PresidentError):
@@ -115,14 +166,16 @@ def settlement_at(year, month):
 
 
 def entry_roll_at(year, month):
-    """08:45 Taipei on settlement day — from then on entries go to the next
-    month. A position opened in the expiring contract on its last day is
-    cash-settled at 13:30 and the reconciler then re-opens it in the next month:
-    two extra round trips of commission and slippage. Rolling at the day
-    session's open instead differs from the backtest's TXFR1 (which stays on the
-    expiring contract until 13:30) only by the calendar spread's move over those
-    ≤4h45m, and closes still go to whatever month is held."""
-    return settlement_at(year, month).replace(hour=DAY_OPEN_HOUR, minute=DAY_OPEN_MINUTE)
+    """15:00 Taipei the day before settlement — the night session that opens the
+    settlement day's trading date. From then on new positions go to the next
+    month: one opened in the expiring contract would be cash-settled at 13:30
+    next day and re-opened by the reconciler in the next month, two extra round
+    trips. The backtest's TXFR1 stays on the expiring contract until 13:30; the
+    live difference is the calendar spread's move over those ≤22h30m, on new
+    entries only (a held expiring position is added to in its own month — see
+    entry_contract — and closes go to whatever month is held)."""
+    return (settlement_at(year, month) - timedelta(days=1)).replace(
+        hour=NIGHT_OPEN_HOUR, minute=NIGHT_OPEN_MINUTE)
 
 
 def prod_id(root, year, month):
@@ -164,8 +217,9 @@ def near_month(root, listed, now=None):
 
 
 def settlement_window(now=None):
-    """(year, month) when `now` is between 08:45 and the 13:30 settlement on a
-    settlement day — entries already roll, the expiring contract still trades."""
+    """(year, month) when `now` is between the roll (15:00 the day before) and
+    the 13:30 settlement — entries already roll, the expiring contract still
+    trades."""
     now = _now(now).astimezone(TAIPEI)
     if entry_roll_at(now.year, now.month) <= now < settlement_at(now.year, now.month):
         return now.year, now.month
@@ -189,16 +243,17 @@ def entry_contract(root, rows, now=None):
 
 
 def _entry_contract_checked(root):
-    """entry_contract() on the worker snapshot. Only the settlement-day window
+    """entry_contract() on the worker snapshot. Only the settlement window
     reads it — and there only a snapshot read after the last send settled will
-    do, or a just-opened expiring position could be missed."""
+    do, or a just-opened (or just-closed) expiring position would be misread."""
     if not settlement_window():
         return computed_near(root)
     from lib.account_president import position_rows
     ok, _q, _last = snapshot_caught_up()
     if not ok:
-        raise PresidentError("settlement day: the 統一 snapshot has not caught up with the last "
-                             "order — not choosing a contract month on it; retry shortly")
+        raise EntryDeferred("settlement window: the 統一 snapshot has not caught up with the last "
+                            "order — the entry waits for it (next month unless the expiring one "
+                            "is still held)")
     return entry_contract(root, position_rows())
 
 
@@ -237,36 +292,13 @@ def snapshot_caught_up(productid=None):
     return (not last or q >= last + president_vault.ORDER_SETTLE_S), q, last
 
 
-@contextmanager
 def _send_lock():
     """One machine-wide lock around "check the snapshot → write the send
     marker": two processes (the reconciler and a flatten, an agent script…)
     must not both pass the same snapshot check. Held for milliseconds — the
     marker is written before the login, so the second holder sees it and is
     refused by snapshot_caught_up until the worker has read past the send."""
-    os.makedirs(os.path.dirname(SEND_LOCK_PATH), exist_ok=True)
-    deadline = time.time() + 30
-    while True:
-        try:
-            os.close(os.open(SEND_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            break
-        except FileExistsError:
-            try:
-                if time.time() - os.path.getmtime(SEND_LOCK_PATH) > 60:  # holder died inside
-                    os.remove(SEND_LOCK_PATH)
-                    continue
-            except OSError:
-                pass
-            if time.time() > deadline:
-                raise PresidentError("another 統一 order holds the send lock — retry")
-            time.sleep(0.05)
-    try:
-        yield
-    finally:
-        try:
-            os.remove(SEND_LOCK_PATH)
-        except OSError:
-            pass
+    return _os_lock(SEND_LOCK_PATH, 30, "send lock")
 
 
 def _claim(symbol, action, lots, intent):
@@ -345,24 +377,7 @@ def _tag_guard(tag):
     if tag is None:
         yield lambda: None
         return
-    os.makedirs(os.path.dirname(_TAGS_PATH), exist_ok=True)
-    lock = _TAGS_PATH + ".lock"
-    deadline = time.time() + 30
-    while True:
-        try:
-            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            break
-        except FileExistsError:
-            try:
-                if time.time() - os.path.getmtime(lock) > 120:  # holder died mid-send
-                    os.remove(lock)
-                    continue
-            except OSError:
-                pass
-            if time.time() > deadline:
-                raise PresidentError("another order holds the 統一 client_tag book — retry")
-            time.sleep(0.1)
-    try:
+    with _os_lock(_TAGS_PATH + ".lock", 30, "client_tag book"):
         today, tags = _tags_today()
         if tag in tags:
             raise DuplicateOrder(f"client_tag {tag!r} was already sent today — refused (the broker "
@@ -374,11 +389,6 @@ def _tag_guard(tag):
                 json.dump({"date": today, "tags": tags + [tag]}, f)
             os.replace(tmp, _TAGS_PATH)
         yield record
-    finally:
-        try:
-            os.remove(lock)
-        except OSError:
-            pass
 
 
 def _tag_for(client_order_id):
@@ -450,6 +460,11 @@ def _send(api, obj, reports, fields):
     guard.check_restart_stop(fields["intent"], fields)
     api.dtrade.on_reply = reports.on_reply
     api.dtrade.on_match = reports.on_match
+    # again, right before the send: the marker taken before the login holds the
+    # place against a concurrent close, but a slow login (up to LOGIN_TIMEOUT_S)
+    # would eat the settle margin if the guard counted from it
+    with _send_lock():
+        _mark_order_sent(obj.productid)
     resp = api.dtrade.order(obj)
     if not resp.issend:
         _request_snapshot_refresh()  # nothing went out: let the worker clear the marker's hold

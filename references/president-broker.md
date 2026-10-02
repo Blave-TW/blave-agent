@@ -120,8 +120,12 @@ to retry. Two ways out, both the user's call:
   updated (a changed value lifts the block);
 - the account was locked at the broker and the user says they have unlocked it there (統一's app,
   online unlock or the broker rep) → run `python lib/president_worker.py --unblock`. That allows
-  exactly **one** login; if it fails, the block is back at once. Do not run it on your own
-  initiative or twice in a row — every try counts toward 統一's three. Login errors come back as a
+  exactly **one** login; if it fails on the password or certificate, the block is back at once.
+  **Each block can be released once** — a second `--unblock` answers "refused"; after that only
+  changed credentials in `.env` lift it (and if those fail too, that is a new block with its own
+  one release). A released try that ends on the network (`HOST` / `TIMEOUT`) never reached the
+  password check, so it is given back, not spent. Never run it on your own initiative — every
+  try counts toward 統一's three. Login errors come back as a
 class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `MAINTENANCE`, `BLOCKED`,
 `UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
 national id, so it is never passed on. No login is attempted in 05:30–05:50.
@@ -168,10 +172,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   `"1"` (close only) and are checked against the worker snapshot first — the held row must be on the
   other side and at least as large, and the worker's read must have **started** at least 20 s
   (`president_vault.ORDER_SETTLE_S`; live 10-02 the broker's position showed the fill 12.0 s and
-  10.9 s after the send marker, which is written before the ~5–6 s login) after that contract's last send — or they are refused without
-  reaching the broker. The check and the send marker are taken under one machine-wide lock
-  (`state/president_send.lock`), so two processes (reconciler, 全部平倉, a script) cannot both pass
-  it. Expect a close right after another order to be refused for ~20–22 s; retry, never force.
+  10.9 s after the send) after that contract's last send — or they are refused without reaching the
+  broker. The check and a send marker are taken under one machine-wide OS lock
+  (`state/president_send.lock`; released by the OS if its holder dies), so two processes
+  (reconciler, 全部平倉, a script) cannot both pass it; the marker is written again right before the
+  order goes out, so a slow login (up to 30 s) cannot eat the margin. Expect a close right after another order to be refused for ~20–22 s; retry, never force.
 - `status='filled'` only on a real match; `status='sent'` means no fill was seen in time;
   `status='unknown'` means the broker answered a status code the SDK does not define — none of
   them is resubmitted; check the position first. Entries and closes both return the broker's
@@ -182,13 +187,16 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 - Contracts settle at **13:30 Taipei on the third Wednesday** of their month — the instant the
   backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
-- **Entry** → from **08:45 on settlement day** (the day session's open) entries go to the next
-  month; before that, to the current one. An entry into the expiring contract on its last day would
-  be cash-settled at 13:30 and re-opened by the reconciler in the next month — two extra round trips
-  — while rolling at the open differs from the backtest only by the calendar spread's move over
-  those ≤4h45m. **Exception:** if the account still holds the expiring month of that root in that
-  08:45–13:30 window, an entry (an addition) goes to the expiring month too, so two months are never
-  held at once; it settles with the rest at 13:30. The contract must appear in
+- **Entry** → from **15:00 the day before settlement** (the night session that opens the settlement
+  day's trading date) new positions go to the next month; before that, to the current one. A
+  position opened in the expiring contract inside that window would be cash-settled at 13:30 and
+  re-opened by the reconciler in the next month — two extra round trips. The backtest's `TXFR1`
+  stays on the expiring contract until 13:30 (first new-month bar 13:31); live, new entries differ
+  from it only by the calendar spread's move over those ≤22h30m. **Exception:** if the account still
+  holds the expiring month of that root inside the window, an entry (an addition) goes to the
+  expiring month too, so two months are never held at once; it settles with the rest at 13:30.
+  Inside the window an entry waits (`EntryDeferred`, not an error — the reconciler books the close
+  of a flip and opens next round) until the worker snapshot has caught up with the last order. The contract must appear in
   `get_domestic_contracts(root, "F")`; if it does not, the order is refused — never a guess.
 - **Reduce / close** → the `productid` of the position row being closed (worker snapshot), never a
   re-derived month: after a roll the near month is no longer the contract that is held. A root open
