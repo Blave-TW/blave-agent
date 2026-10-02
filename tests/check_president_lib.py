@@ -97,8 +97,16 @@ for bad in ("https://test167.pfctrade.com", "https://www.pfctrade.com", "http://
             "https://evil.com/.testpfctrade.com"):
     envfile(dict(BASE, president_test_url=bad))
     check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"without PRESIDENT_LIVE {bad} refused")
-envfile(dict(BASE, PRESIDENT_LIVE="true", president_url="https://api.pfctrade.example"))
-check(president_vault.resolve()["url"] == "https://api.pfctrade.example" and president_vault.resolve()["live"],
+for good in ("https://viploginm.pfctrade.com", "https://viploginb.pfctrade.com/"):
+    envfile(dict(BASE, PRESIDENT_LIVE="true", president_url=good))
+    check(president_vault.resolve()["url"] == good.rstrip("/") and president_vault.resolve()["live"],
+          f"PRESIDENT_LIVE: {good} accepted")
+for bad in ("https://test167.testpfctrade.com", "https://evil.example", "http://viploginm.pfctrade.com",
+            "https://viploginm.pfctrade.com.evil.example"):
+    envfile(dict(BASE, PRESIDENT_LIVE="true", president_url=bad))
+    check(raises(ValueError, lambda: president_vault.resolve()) is not None, f"PRESIDENT_LIVE: {bad} refused")
+envfile(dict(BASE, PRESIDENT_LIVE="true", president_url="https://viploginm.pfctrade.com"))
+check(president_vault.resolve()["url"] == "https://viploginm.pfctrade.com" and president_vault.resolve()["live"],
       "PRESIDENT_LIVE=true in .env uses president_url")
 envfile(dict(BASE, PRESIDENT_LIVE="true"))
 check(raises(ValueError, lambda: president_vault.resolve()) is not None, "PRESIDENT_LIVE without president_url refused")
@@ -298,9 +306,6 @@ snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 1},
 check(account_president.get_positions({}) == {"TXF": {"side": "long", "size": 1.0, "productid": "TXFJ6"},
                                               "TMF": {"side": "short", "size": 1.0, "productid": "TMFK6"}},
       "positions: canonical keys, lots, productid", account_president.get_positions({}))
-snapshot([{"root": "TXF", "productid": "TXFJ6", "net": 1, "net_current": 0}])
-check(raises(RuntimeError, lambda: account_president.get_positions({})) is not None,
-      "ot_qty vs current_open disagreement fails the read")
 snapshot([], account_fp="abc123")
 check(account_president.get_account_id({}) == "president:abc123", "account id is the snapshot fingerprint")
 snapshot([])
@@ -316,8 +321,42 @@ row = Resp(product="MXF", call_put="", productid="MXFJ6", month="202610", ot_qty
            current_buy_open_position=1, current_sell_open_position=0, open_buy_position_average_cost=47986.0,
            open_sell_position_average_cost=0.0, floating_pnl=20700.0, product_base_number=50)
 pr = president_worker.position_row(row)
-check(pr["root"] == "MXF" and pr["net"] == 1 and pr["net_current"] == 1 and pr["point_value"] == 50,
+check(pr["root"] == "MXF" and pr["net"] == 1 and pr["point_value"] == 50,
       "worker parses the test host's preloaded MXF row", pr)
+live_row = Resp(product="MXF", call_put="", productid="MXFJ6", month="202610", ot_qty_b=3, ot_qty_s=0,
+                current_buy_open_position=2, current_sell_open_position=0,
+                open_buy_position_average_cost=0.0, open_sell_position_average_cost=0.0,
+                floating_pnl=0.0, product_base_number=50)
+pr = president_worker.position_row(live_row)
+check(pr["net"] == 2 and pr["debug_ot_net"] == 3,
+      "live account shape (ot_qty_b=3, current_buy=2, app shows 2): net reads current_*", pr)
+
+
+class FakeDaccount:
+    def __init__(self, margin):
+        self.margin, self.asked = margin, []
+
+    def get_margin(self, actno, cur):
+        self.asked.append(cur)
+        return self.margin if cur == "NTT" else Resp(ok=False, error="查無資料!", data=None)
+
+    def get_position(self, actno, g, t):
+        return Resp(ok=True, error="", data=[live_row])
+
+
+DM = dict(optequity=11454097.0, ordcexcess=9000000.0, iamt=105150.0, mamt=80700.0, dwamt=0.0,
+          update_date="20261002", update_time="101500")
+for shape, data in (("single object", Resp(**DM)), ("list", [Resp(**DM)])):
+    fake = types.SimpleNamespace(daccount=FakeDaccount(Resp(ok=True, error="", data=data)))
+    snap = president_worker.read_account(fake, "7000001")
+    check(fake.daccount.asked == ["NTT"] and snap["equity"] == 11454097.0 and snap["available"] == 9000000.0
+          and snap["initial_margin"] == 105150.0 and snap["maintenance_margin"] == 80700.0
+          and snap["margin_error"] is None,
+          f"get_margin(actno, 'NTT') with .data as a {shape}: optequity / ordcexcess / iamt / mamt", snap)
+snapshot([], **{k: snap[k] for k in ("equity", "available", "initial_margin", "maintenance_margin")})
+eq = account_president.get_equity({})
+check(eq["equity"] == 11454097.0 and eq["maintenance_margin"] == 80700.0 and eq["available"] == 9000000.0,
+      "get_equity reports optequity, lists the margins", eq)
 check(president_worker.position_row(Resp(product="TXO", call_put="C", productid="TXO23000J6")) is None,
       "option rows are not futures positions")
 check(raises(RuntimeError, lambda: president_worker.position_row(

@@ -48,6 +48,8 @@ VAULT = os.path.join(os.path.dirname(_WS), "credentials", "president_vault.json"
 BLOCK = os.path.join(_WS, "state", "president_login_block.json")
 PW_PREFIX = "vault:"
 TEST_HOST_SUFFIX = ".testpfctrade.com"
+# the production login hosts (both logged in with a matching TLS certificate, 10-02)
+LIVE_HOSTS = ("viploginm.pfctrade.com", "viploginb.pfctrade.com")
 TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")  # no ZoneInfo: Windows has no tz database
 LOGIN_MAINTENANCE = (dtime(5, 30), dtime(5, 50))
 _SECRETS = ("president_password", "president_ca_password")
@@ -145,6 +147,10 @@ def endpoint(env):
         url = (env.get("president_url") or "").strip()
         if not url:
             raise ValueError("PRESIDENT_LIVE=true but president_url is not set")
+        host = (urlparse(url).hostname or "").lower()
+        if host not in LIVE_HOSTS:
+            raise ValueError(f"president_url host {host or url!r} is not a known 統一 production "
+                             f"login host {LIVE_HOSTS}")
     else:
         url = (env.get("president_test_url") or "").strip()
         host = (urlparse(url).hostname or "").lower()

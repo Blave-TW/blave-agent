@@ -53,6 +53,7 @@ MAINTENANCE = (
     (dtime(6, 0), dtime(7, 30), "account"),
 )
 _RATE_LIMITED = "超過每分鐘限制"  # unitrade Error.MSG012
+MARGIN_CURRENCY = "NTT"
 
 
 def _log(msg):
@@ -103,12 +104,15 @@ def position_row(p):
     pid = str(getattr(p, "productid", "") or "").upper()
     if not (len(pid) == 5 and pid[:3] == product and pid[3] in "ABCDEFGHIJKL" and pid[4].isdigit()):
         raise RuntimeError(f"get_position: {product} row with unreadable contract code {pid!r}")
+    # current_*_open_position is the open interest: on the live account (10-02) an
+    # MXFJ6 row read ot_qty_b=3, current_buy_open_position=2 and the broker's app
+    # showed 2. ot_qty is kept for debugging only — never reconciled on.
     return {
         "root": product,
         "productid": pid,
         "month": str(getattr(p, "month", "") or ""),
-        "net": int(p.ot_qty_b) - int(p.ot_qty_s),
-        "net_current": int(p.current_buy_open_position) - int(p.current_sell_open_position),
+        "net": int(p.current_buy_open_position) - int(p.current_sell_open_position),
+        "debug_ot_net": int(p.ot_qty_b) - int(p.ot_qty_s),
         "avg_cost_buy": float(p.open_buy_position_average_cost or 0),
         "avg_cost_sell": float(p.open_sell_position_average_cost or 0),
         "floating_pnl": float(p.floating_pnl or 0),
@@ -119,16 +123,22 @@ def position_row(p):
 def read_account(api, actno):
     """One margin + position read. RateLimited on the SDK's per-minute cap."""
     snap = {"ok": True, "error": None, "equity": None, "available": None,
-            "initial_margin": None, "margin_error": None, "currency": "TWD",
+            "initial_margin": None, "maintenance_margin": None, "day_flow": None,
+            "margin_updated": None, "margin_error": None, "currency": "TWD",
             "positions": [], "maintenance": None,
             # what the order lib and the reconciler compare with their last send
             "query_started_at": time.time()}
-    m = api.daccount.get_margin(actno, "")
-    if m is not None and m.ok and m.data:
-        d = m.data[0] if isinstance(m.data, list) else m.data
-        snap["equity"] = float(d.optequity)
-        snap["available"] = float(d.mamt)
-        snap["initial_margin"] = float(d.iamt)
+    # currency "NTT": "" answers 查無資料 on the live account too (10-02); .data is
+    # one DMargin there, not a list — both shapes are taken
+    m = api.daccount.get_margin(actno, MARGIN_CURRENCY)
+    d = (m.data[0] if isinstance(m.data, list) and m.data else m.data) if m is not None and m.ok else None
+    if d is not None and getattr(d, "optequity", None) is not None:
+        snap["equity"] = float(d.optequity)          # 權益數 (matched the app, 10-02)
+        snap["available"] = float(d.ordcexcess)      # 可動用保證金
+        snap["initial_margin"] = float(d.iamt)       # 原始保證金
+        snap["maintenance_margin"] = float(d.mamt)   # 維持保證金
+        snap["day_flow"] = float(d.dwamt)            # 當日出入金 — unverified as a flow source
+        snap["margin_updated"] = f"{getattr(d, 'update_date', '')} {getattr(d, 'update_time', '')}".strip()
     elif m is not None and _RATE_LIMITED in str(m.error or ""):
         raise RateLimited(f"get_margin: {m.error}")
     else:
@@ -137,7 +147,7 @@ def read_account(api, actno):
     p = _check(api.daccount.get_position(actno, "", ""), "get_position")
     for row in p.data or []:
         r = position_row(row)
-        if r and (r["net"] or r["net_current"]):
+        if r and r["net"]:
             snap["positions"].append(r)
     snap["data_at"] = int(time.time())
     # which account, without writing the account number down

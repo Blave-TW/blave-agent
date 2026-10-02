@@ -35,14 +35,16 @@ def _read_snapshot():
 
 
 def get_equity(env: dict) -> dict:
-    """權益數 (get_margin optequity), TWD. The margin query answers 查無資料 on
-    an unfunded test account — that is an error here, never a 0 equity."""
+    """權益數 (get_margin optequity), TWD — matched the broker's app on the live
+    account (10-02). Also: available (ordcexcess 可動用), initial_margin (iamt
+    原始), maintenance_margin (mamt 維持). A 查無資料 answer is an error here,
+    never a 0 equity."""
     snap = _read_snapshot()
     if snap.get("equity") is None:
         raise RuntimeError(f"president: no margin data ({snap.get('margin_error') or 'empty'}) — "
                            f"equity unknown")
     out = {"equity": snap["equity"], "currency": "TWD", "accounts": {"futures": snap["equity"]}}
-    for k in ("available", "initial_margin"):  # mamt 可用保證金 / iamt 原始保證金
+    for k in ("available", "initial_margin", "maintenance_margin"):
         if snap.get(k) is not None:
             out[k] = snap[k]
     return out
@@ -53,16 +55,9 @@ def position_rows():
     [{'root', 'productid', 'net'(signed lots), ...}] — lib/order_president
     closes by a row's own productid.
 
-    Net = ot_qty_b − ot_qty_s. Which of that and current_buy/sell_open_position
-    is the live open interest is only verified on one preloaded test row where
-    both said 1; when they disagree the read fails rather than guess."""
-    rows = list(_read_snapshot().get("positions", []))
-    for r in rows:
-        if r.get("net_current") is not None and r["net_current"] != r["net"]:
-            raise RuntimeError(f"president: {r['productid']} open interest disagrees "
-                               f"(ot_qty {r['net']:+d} vs current_open {r['net_current']:+d}) — "
-                               f"not reading a position I can't pin down")
-    return rows
+    Net = current_buy_open_position − current_sell_open_position (matched the
+    broker's app on the live account, 10-02; ot_qty did not)."""
+    return list(_read_snapshot().get("positions", []))
 
 
 def get_positions(env: dict) -> dict:

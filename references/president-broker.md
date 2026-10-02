@@ -99,9 +99,13 @@ Production, only after the broker's production mail AND the user's explicit go-a
 
 ```
 PRESIDENT_LIVE=true
-president_url=<production URL from the broker>
+president_url=https://viploginm.pfctrade.com
 ```
 
+With `PRESIDENT_LIVE=true` only the two production login hosts are accepted —
+`https://viploginm.pfctrade.com` and `https://viploginb.pfctrade.com` (both verified to log in with
+a matching TLS certificate, 2026-10-02). The broker's production mail for this account says
+**「本申請僅開放內外期 API 下單權限」** — futures order permission only (no stock trading through it).
 Without `PRESIDENT_LIVE=true` the libs only accept a `*.testpfctrade.com` host, and a login whose
 server reports it is not a test server is refused. The libs read `.env` themselves (one parser: BOM
 tolerated, one pair of surrounding quotes removed, nothing else interpreted) — a mapping passed by a
@@ -133,8 +137,8 @@ python lib/president_worker.py --once
 ```
 
 It logs in, reads margin and positions once, writes `state/president_probe.json`, logs out and
-exits 0 (ok) / 2 (failed, with the error in the file). On the test host `equity` is empty and
-`margin_error` says `查無資料!` — normal for an unfunded test account, not a failure.
+exits 0 (ok) / 2 (failed, with the error in the file). `equity` is 權益數; `margin_error` is set
+when the broker had no margin row.
 
 The long-running form (`python lib/president_worker.py`, no flag) is the machine's one standing
 login and writes `state/president_account.json` every 60 s for `lib/account_president.py`. On a
@@ -195,15 +199,22 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 ## Field-Verified Lessons (test host, 2026-09-30)
 
 1. **Test host URL** — `https://test167.testpfctrade.com`, not the `pfctrade.com` host in the mail.
-2. **Login, accounts, positions work on the test host; margin does not.** `get_accounts()` returns
-   one 7-digit account; `get_margin` answers `查無資料!`; `get_position(actno, "", "")` returns one
+2. **`get_margin` needs the currency `"NTT"`.** With `""` it answers `查無資料!` — on the test host
+   and on the live account alike; `get_margin(actno, "NTT")` returns the data, and `.data` is a
+   **single `DMargin` object, not a list** (the libs take both). Fields: `optequity` / `twdoptequity`
+   權益數, `ordcexcess` 可動用, `iamt` 原始保證金, `mamt` 維持保證金, `dwamt` 當日出入金,
+   `night_session_*` (the night-session versions), `update_date` / `update_time`. **Live account,
+   2026-10-02: `optequity` matched the broker's app** (read layer ① passed). `dwamt` may be the way
+   to a `get_flows` someday — unverified until a day with a real deposit/withdrawal.
+   `get_accounts()` returns one 7-digit account; `get_position(actno, "", "")` returns one
    row per product + month (`product`, `month` `202610`, `productid` `MXFJ6`, `ot_qty_b` /
    `ot_qty_s`, `current_buy_open_position` / `current_sell_open_position`,
    `open_buy_position_average_cost`, `floating_pnl`, `product_base_number`). The test account comes
    preloaded with 1 long MXF.
-3. **Which quantity is the open interest is not pinned down.** On the one preloaded row
-   `ot_qty_b` and `current_buy_open_position` both said 1. The snapshot keeps both; a read where they
-   disagree fails rather than guess. Settle it on the first live fill.
+3. **The open interest is `current_buy_open_position` / `current_sell_open_position`, not `ot_qty`.**
+   Live account, 2026-10-02: an MXFJ6 row read `ot_qty_b=3`, `current_buy_open_position=2`, and the
+   broker's app showed **2**. The libs reconcile on `current_*`; `ot_qty` is kept in the snapshot
+   as `debug_ot_net` only.
 4. **`issend=True` is not acceptance.** `order()` returns `issend` + `seq`; acceptance is the
    `on_reply` for that `seq` with `statuscode == '0000'` (委託成功). Observed: a TMF 1-lot market IOC
    got its 0000 reply at once, `nomatchqty=1`, and never filled (the test host does not match).
@@ -270,18 +281,20 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 1. Windows machine; `pip install unitrade python-dotenv` succeeded.
 2. `.env` has the five locked keys; `president_test_url` is `https://testNNN.testpfctrade.com`.
-3. `python lib/president_worker.py --once` exits 0; the probe lists the positions (test host:
-   equity empty with `查無資料!` is normal).
+3. `python lib/president_worker.py --once` exits 0; the probe lists the positions and equity.
 4. One test order through `order_president.place_futures_market_order({}, "TMF", "buy", 1,
    "entry")` returns `ack == '0000'` (the test host will not fill it). The user reports the test to
    the broker rep and waits for the production mail.
 5. Production (`PRESIDENT_LIVE=true` + `president_url`) only with the user's explicit go-ahead;
    repeat 3–4 there with the smallest order (TMF 1 lot) and confirm equity matches the broker's app.
 
+Status (2026-10-02, live account, read only): login on both production hosts ✓; equity
+(`optequity`) matches the app ✓ — read layer ① passed; positions match the app on `current_*` ✓.
+No live order yet.
+
 ## Unverified until a live account
 
-Equity and margin fields against the broker's app; which position quantity is the open interest;
-whether production refuses a close-only (`"1"`) order with nothing to close; the broker's text for a
+Margin fields other than `optequity` against the app; `dwamt` as a flow source; whether production refuses a close-only (`"1"`) order with nothing to close; the broker's text for a
 wrong password (so `PASSWORD` is classified from it, not counted as `UNKNOWN`);
 fills, partial fills and the IOC-cancel report; order recovery after a restart (`query_reply` /
 `query_match`); behaviour on a real settlement day and on holiday-shifted settlements; production
