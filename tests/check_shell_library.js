@@ -151,7 +151,8 @@ if (!process.versions.electron) {
     vm.createContext(D);
     vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto');\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
-      + "\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); if (next === 'throw') throw new Error('net'); return next; }\n"
+      + "\nvar libCache = null;\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
+      + cutFn(mainSrc, "libAnonOk") + "\n"
       + cutFn(mainSrc, "libWriteWs") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
     const file = path.join(WSd, "tmp", "library_102.py"), sec = path.join(WSd, "tmp", "library_102.security.json"), J = (x) => JSON.stringify(x);
@@ -183,6 +184,28 @@ if (!process.versions.electron) {
     fs.rmSync(mkt); const leg2 = await dl(102, { status: 200, body: { code: "q" } });
     fs.writeFileSync(mkt, "## Desktop-downloaded picks\n");
     const legacy = { a: J(leg1), b: J(leg2), noReq: D.calls.length === n1, kept: fs.readFileSync(file, "utf8") };
+    // Wei 10-02:官方 × 免費 × 不用 Blave 資料 → 沒有 key 也能下載(匿名 /public_code);其餘照舊要登入
+    vm.runInContext(`libCache = { strategies: [
+      { id: 102, is_official: true, price: 0, blave_data: "none" }, { id: 88, is_official: true, price: 0, blave_data: "required" },
+      { id: 125, is_official: true, price: 0, blave_data: null }, { id: 124, is_official: false, price: 0, blave_data: "none" },
+      { id: 500, is_official: true, price: 99, blave_data: "none" } ] };`, D);
+    const anonURL = (id) => "https://api.test/openclaw/marketplace/strategies/" + id + "/public_code";
+    const A = {};
+    D.token = null; let c0 = D.calls.length;
+    A.ok = J(await dl(102, { status: 200, body: { code: "anon = 1\n" } })); A.okCall = J(D.calls.slice(c0)); A.okBody = fs.readFileSync(file, "utf8");
+    c0 = D.calls.length; A.denied = [];
+    for (const id of [88, 125, 124, 500, 777]) A.denied.push((await dl(id, { status: 200, body: { code: "x" } })).kind);
+    A.deniedNoReq = D.calls.length === c0;
+    A.srv = [];
+    for (const resp of [{ status: 403, body: { error_code: "LOGIN_REQUIRED" } }, { status: 404, body: {} }, { status: 429, body: {} }, { status: 503, body: {} }, "throw"])
+      A.srv.push((await dl(102, resp)).kind);
+    D.token = "t"; D.key = null; c0 = D.calls.length;
+    A.noKey = J(await dl(102, { status: 200, body: { code: "anon = 2\n" } })); A.noKeyUrl = D.calls.slice(c0).map((c) => c[0]).join();
+    D.key = { api_key: "k1", secret_key: "s1" }; c0 = D.calls.length;
+    A.revoked = J(await dl(102, [{ status: 403, body: { error_code: "ERR005" } }, { status: 200, body: { code: "anon = 3\n" } }])); A.revokedUrls = D.calls.slice(c0).map((c) => c[0]).join();
+    c0 = D.calls.length; A.revokedReq = (await dl(88, [{ status: 401, body: {} }])).kind; A.revokedReqCalls = D.calls.length - c0;
+    c0 = D.calls.length; A.withKey = J(await dl(102, { status: 200, body: { code: "k = 1\n" } })); A.withKeyUrls = D.calls.slice(c0).map((c) => c[0]).join();
+    vm.runInContext("libCache = null;", D);
     // 預先放一個指向 workspace 外的同名 symlink:寫入要換掉 symlink 本身,外面那個檔不能被改
     const victim = path.join(outside, "victim.txt"); fs.writeFileSync(victim, "keep");
     fs.rmSync(file); fs.symlinkSync(victim, file);
@@ -200,6 +223,12 @@ if (!process.versions.electron) {
     ok("② 代下載失敗分四種:掃描擋下 blocked、404 gone、key 被撤(403 ERR005 / 401)signin、其餘(403 未購、5xx、code 不是字串 / 空白 / 超過 1 MB、打不到、body 壞)fail;失敗不動上一份檔",
       kinds.join() === "blocked,gone,fail,signin,signin,fail,fail,fail,fail,fail,fail" && keptAfterFail === "x = 3\n", kinds.join());
     ok("② 代下載:id 不是正整數 → fail;登入了卻沒有桌面 key(或沒登入)→ signin;都不送請求", badIds.every((k) => k === "fail") && noTok.kind === "signin" && noKey.kind === "signin" && noReq, J([badIds, noTok, noKey]));
+    ok("② 匿名下載:沒登入 × 官方免費且不用 Blave 資料 → 打 /public_code、不帶任何憑證、寫檔", A.ok === '{"ok":true}' && A.okCall === J([[anonURL(102), {}]]) && A.okBody === "anon = 1\n", J(A));
+    ok("② 匿名下載:要資料 / 未標(null)/ 社群 / 付費 / 清單裡沒有 → signin,一次請求都不送", A.denied.join() === "signin,signin,signin,signin,signin" && A.deniedNoReq, J(A.denied));
+    ok("② 匿名下載:伺服器說要登入 → signin;404 gone;429 / 503 / 打不到 fail", A.srv.join() === "signin,gone,fail,fail,fail", A.srv.join());
+    ok("② 匿名下載:登入了但沒 key → 走匿名;key 被撤(ERR005)→ 改走匿名;被撤 × 要資料 → signin(不試匿名)", A.noKey === '{"ok":true}' && A.noKeyUrl === anonURL(102)
+      && A.revoked === '{"ok":true}' && A.revokedUrls === "https://api.test/openclaw/marketplace/strategies/102/code," + anonURL(102) && A.revokedReq === "signin" && A.revokedReqCalls === 1, J(A));
+    ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code", A.withKeyUrls);
     ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
     ok("② 代下載:同名檔是指向 workspace 外的 symlink → 換掉 symlink 本身,外面的檔不變", a4.r === '{"ok":true}' && a4.victim === "keep" && !a4.isLink && a4.body === "z = 4\n", J(a4));
     ok("② 代下載:tmp 是指向 workspace 外的 symlink → fail、外面什麼都沒寫", a5.r === '{"ok":false,"kind":"fail"}' && a5.wrote === "victim.txt", J(a5));

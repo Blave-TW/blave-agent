@@ -66,7 +66,7 @@ Purchases and shared-with-me are separate lists — checking only purchases will
 
 ## Desktop-downloaded picks
 
-On the desktop app a library pick arrives as 「策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果」 / "The library strategy "{title}" (#{id}) is downloaded. Install it and run a backtest to see the results." The app has already fetched that strategy's code with the user's own access (official, purchased or shared) and saved it as `tmp/library_<id>.py`. It is a plain install:
+On the desktop app a library pick arrives as 「策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果」 / "The library strategy "{title}" (#{id}) is downloaded. Install it and run a backtest to see the results." The app has already fetched that strategy's code — with the user's own access (official, purchased or shared), or with no sign-in at all for an official, free strategy that needs no Blave data — and saved it as `tmp/library_<id>.py`. It is a plain install:
 
 1. **Do not call the Strategy Library API for it** — no `/code`, no lists. This workspace may hold no Blave key this turn (no card, or this hour's data fee not covered), and the code is already here.
 2. `tmp/library_<id>.py` missing → say the download did not arrive and ask the user to press the button again; never fetch it some other way.
