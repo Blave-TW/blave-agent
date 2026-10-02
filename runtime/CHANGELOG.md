@@ -8,7 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **電腦版資料卡只在真的撞到資料牆時出(0.1.13 策略庫轉換)**:`data_access_rule` 的 access=0 段,觸發條件多「這一輪 `lib/data.py` 呼叫停在 `DataAccessError`」,並明講「只用公開資料的那一輪不提資料權限、不掛 `<blave-card:data-access/>`」——沒綁卡的人由外殼代下載、裝好只用公開 K 線的策略後,回覆尾巴不再掛一張叫他綁卡的卡。只影響電腦版(BLAVE_DATA_ACCESS 只有外殼會設);雲端機 prompt 不變。
+- **電腦版資料卡只在真的撞到資料牆時出(0.1.13 策略庫轉換;spec §9 D1)**:`data_access_rule` 的 access=0 段改寫——事實句從「這台沒有 Blave 資料」改成「用到 Blave 資料的 `lib/data.py` 呼叫會停在 `DataAccessError`」;講缺資料、掛 `<blave-card:data-access/>` 只在這一輪真的撞到 `DataAccessError` 時,用戶開口要資料集但沒撞牆不出卡(先打,不憑事實段就說拿不到);台股單檔日線寫明「先走交易所 / FinMind,失敗才要 Blave」,不再說台股資料一律拿不到。只影響電腦版(BLAVE_DATA_ACCESS 只有外殼會設);雲端機 prompt 不變。
+- **發版注意(blave-agent VERSION)**:出 0.1.13 時 repo 根目錄 `VERSION` 必須大於所有已出貨的版號(含 0.1.12 之後任何 hotfix 的 bump)。電腦版只在「隨包 VERSION > workspace VERSION」時同步官方檔(`shell/main.js` syncOfficialOnUpdate);同步沒發生,workspace 就沒有 `references/marketplace.md` › Desktop-downloaded picks。外殼另有保底:找不到那個錨點就退回舊句 `lib.msg` / `lib.msgPaid`(agent 自己下載,沒綁卡的人照舊撞牆)。
 
 ## 1.1.108 — 2026-10-02(desktop 0.1.12)
 
