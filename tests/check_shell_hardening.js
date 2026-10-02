@@ -30,7 +30,9 @@ t("權限請求與權限檢查都掛了 handler,只放自家頁面的 clipboard-
   t("每一個 new Notification 都掛了 failed 的 log(沒簽章的包、用戶關掉通知時,通知只會 failed)", sends === 5 && watched === sends && /function notifWatch\(n, what\) \{ n\.on\("failed"/.test(main)); }
 
 // ── R9:~/Blave 建立時 0700 ──
-t("~/Blave 由 app 建立時是 0700(既有目錄不動)", /if \(!fs\.existsSync\(BASE\)\) fs\.mkdirSync\(BASE, \{ recursive: true, mode: 0o700 \}\);\s*fs\.mkdirSync\(WS, \{ recursive: true \}\);/.test(main));
+// 0.1.12 起建立 ~/Blave 的是 enginesetup.js(base / ws 由 main.js 傳 BASE / WS);實際建一次的行為在 tests/check_shell_engine_setup.js
+t("~/Blave 由 app 建立時是 0700(既有目錄不動)", /if \(!fs\.existsSync\(o\.base\)\) fs\.mkdirSync\(o\.base, \{ recursive: true, mode: 0o700 \}\);\s*fs\.mkdirSync\(o\.ws, \{ recursive: true \}\);/.test(fs.readFileSync(path.join(S, "enginesetup.js"), "utf8"))
+  && /base: BASE, ws: WS,/.test(main));
 
 // ── M1:Electron 主線、Node 下限、最低系統 ──
 { const pkg = JSON.parse(fs.readFileSync(path.join(S, "package.json"), "utf8")), lock = JSON.parse(fs.readFileSync(path.join(S, "package-lock.json"), "utf8"));

@@ -24,7 +24,7 @@ const el = () => { const set = new Set(); return { classList: { toggle: (c, on) 
   f({ live: true, ids: ["s", "p"] }, n);
   ok("進行中的卡只有「搜尋在等你過驗證」那一列(那一頁不拍縮圖)→ 收掉縮圖欄;還有別的頁 → 照舊留著", only === true && n.classList.contains("no-thumb") === false); }
 const body = (name) => { const a = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", a); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(a, k + 1); } throw new Error("unbalanced " + name); };
-ok("brPaintHead 第一步就判(摘要列那條早退之前);回合結束換成摘要列也走 brPaintHead;中欄牆新建與原地更新兩條路都掛", /^function brPaintHead\(b\) \{\s*brThumbClass\(b, b\.el\);\s*if \(b\.sum\) \{ brPaintSum\(b\); brOrder\(b\); return; \}/.test(body("brPaintHead"))
+ok("brPaintHead 第一步就判(摘要列那條早退之前);回合結束換成摘要列也走 brPaintHead;中欄牆新建與原地更新兩條路都掛", /^function brPaintHead\(b\) \{\s*brThumbClass\(b, b\.el\);\s*brSyncHold\(b\);\s*if \(b\.sum\) \{ brPaintSum\(b\); brOrder\(b\); return; \}/.test(body("brPaintHead"))
   && /b\.el = d; b\.sum = s; brPaintHead\(b\);/.test(body("brFinish")) && (body("brPaintOverlay").match(/brThumbClass\(exp\.block, wall\);/g) || []).length === 2);
 
 const chat = /@container chat \(max-width: 559px\) \{\s*\.bblk\.no-thumb \.pt \{ grid-template-columns: minmax\(0, 1fr\) auto; \}\s*\.bblk\.no-thumb \.pt-bar, \.bblk\.no-thumb \.pt-foot \{ grid-column: 1 \/ 3; \}\s*\.bblk\.no-thumb \.pt-prog \{ left: var\(--space-8\); \}\s*\}/;

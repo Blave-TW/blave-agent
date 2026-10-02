@@ -20,7 +20,9 @@ Si te resulta útil, dale una estrella al repositorio, y activa Watch › Releas
 
 ## Qué lo hace diferente
 
-### Backtests que comprueban si fue suerte
+### Backtests que comprueban el sobreajuste y usan comisiones reales
+
+Sobreajuste: parámetros que solo por casualidad encajan con los datos pasados.
 
 - Cada backtest de Tipo A ejecuta por defecto una prueba de permutación de Monte Carlo (MCPT, `lib/validation.py`) y registra un valor p: ¿unos datos barajados podrían haberlo hecho igual de bien?
 - Un barrido de parámetros (`lib/param_scan.py`) busca una meseta de parámetros que funcionen todos, no la mejor celda aislada.
@@ -94,7 +96,7 @@ Las novedades están en la versión en inglés: [README.md › News](README.md#n
 - Los montos a invertir y la reanudación del trading los haces tú: en la página Trading automático de la app de escritorio, o en el espacio de trabajo web si usas un servidor en la nube. El agente se niega a hacerlo por ti, aunque se lo pidas. Lo único que siempre puede hacer por su cuenta es activar el kill switch.
 - En la app de escritorio, las órdenes solo salen mientras Blave está abierto; después de cerrarlo y volver a abrirlo, el trading queda en pausa hasta que pulses Iniciar trading.
 - El agente verifica antes de informar: vuelve a leer un archivo después de editarlo y consulta una orden en el exchange antes de decir que se colocó. Cada intento de orden queda registrado en `state/audit.jsonl`.
-- Un backtest describe el pasado. No predice ni garantiza resultados futuros. MCPT y los barridos de parámetros reducen la probabilidad de que estés viendo suerte; no la eliminan.
+- Un backtest describe el pasado. No predice ni garantiza resultados futuros. MCPT comprueba si un resultado es estadísticamente significativo, y los barridos de parámetros comprueban si hay sobreajuste; ambos solo reducen la probabilidad de que el backtest te engañe, y ninguno la elimina.
 - Nada de esto constituye asesoramiento de inversión. Operar puede hacerte perder dinero, incluso todo.
 
 ## Política de firma de código

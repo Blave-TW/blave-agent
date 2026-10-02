@@ -1,0 +1,39 @@
+/* 安裝進度卡(renderer/engine.js;數值照 mockup-desktop-first-run-progress 的 A 卡+B 的下載量那一行)。
+   外框 = 聊天瀏覽區塊的卡:--bg-body、lg、--shadow-sm。等待一律中性色(條子 --ink-2,不用橘也不用綠);
+   記號沿用 8×2 短劃,紅色只在出事的那一列 */
+.eng-card { background: var(--bg-body); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: var(--space-12) var(--space-16) var(--space-16); margin-bottom: var(--space-24); transition: opacity var(--motion-base) var(--ease-standard); }
+.eng-card.is-leaving { opacity: 0; }
+.eng-top { display: flex; align-items: baseline; gap: var(--space-8); }
+.eng-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+.eng-time { flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.eng-sub { margin-top: var(--space-2); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 分段條:一段 = 一個步驟(結構,不是時間) */
+.eng-seg { display: flex; gap: var(--space-4); margin-top: var(--space-12); }
+.eng-seg > span { flex: 1; height: 4px; border-radius: var(--radius-pill); background: var(--surface-muted); overflow: hidden; }
+.eng-seg i { display: block; height: 100%; background: var(--ink-2); transform-origin: left center; transform: scaleX(0); transition: transform var(--motion-base) var(--ease-standard); }
+.eng-steps { list-style: none; margin: var(--space-12) 0 0; padding: 0; }
+.eng-st { display: grid; grid-template-columns: 16px 1fr auto; column-gap: var(--space-8); align-items: center; padding: var(--space-4) 0; font-size: 12px; line-height: 1.5; }
+.eng-mk { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.eng-dash { flex: none; width: 8px; height: 2px; background: var(--ink-3); }
+.eng-st.is-done .eng-dash { background: var(--ink-2); }
+.eng-st.is-wait .eng-dash { background: var(--border-frame); }
+.eng-st.is-err .eng-dash { background: var(--color-red); }
+.eng-st .spin16 { color: var(--ink); }
+.eng-st .lb { min-width: 0; color: var(--ink-3); }
+.eng-st.is-done .lb { color: var(--ink-2); }
+.eng-st.is-run .lb, .eng-st.is-err .lb { color: var(--ink); }
+.eng-st .tm { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.eng-st .dt { grid-column: 2 / 4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ink-2); }
+.eng-st .dt .mono { font-size: 11px; }
+/* 這個檔案的下載量(左)與已下載總量(右):沒有總量,所以只往上加,不畫百分比 */
+.eng-st .dt.eng-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--space-12); margin-top: var(--space-2); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+/* 訊息槽:慢 / 沒收到資料 / 失敗 / 超時共用一個位置,互斥 */
+.eng-slot { margin-top: var(--space-12); font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.eng-fault { min-width: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.eng-fault .fault-sub { margin-top: var(--space-4); }
+.eng-fault .fault-act { margin-top: var(--space-12); }
+.eng-err { margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
+.eng-err summary { width: fit-content; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.eng-err pre { margin: var(--space-8) 0 0; padding: var(--space-8) var(--space-12); border-radius: var(--radius-sm); background: var(--surface-card); box-shadow: var(--shadow-sm); font-family: "SF Mono", "Fira Code", "Consolas", monospace; font-size: 11px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* app.css 的 reduced-motion 是 `* { animation: none !important }`;canon › Loader:轉動即語意,這張卡的轉圈照轉 */
+@media (prefers-reduced-motion: reduce) { .eng-card .spin16 { animation: trSpin 1s linear infinite !important; } }

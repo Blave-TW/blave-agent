@@ -5,7 +5,8 @@ const fs = require("fs"), path = require("path"), os = require("os");
 const R = path.join(__dirname, "..", "shell", "renderer");
 const trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
 const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), html = fs.readFileSync(path.join(R, "index.html"), "utf8");
-let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
+let red = 0; const ok = (n, c, why) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) { red++; if (why !== undefined) console.log("      ", why); } };
+const pending = [];   // 非同步的段落:收尾前等它們跑完
 const fnOf = (src, name) => { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = src.indexOf("\nfunction ", i + 1), k = src.indexOf("\nasync function ", i + 1), c = src.indexOf("\nconst ", i + 1);
   return src.slice(i, Math.min(...[j, k, c].map((x) => (x < 0 ? Infinity : x)))); };
 
@@ -56,9 +57,100 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("本機:設定檔讀不懂(可能寫到一半)→ null(不能確定,不給刪)", inPortfolio("a") === null);
   fs.rmSync(tmp, { recursive: true, force: true });
   const del = fnOf(mainSrc, "deleteStrategy");
-  ok("deleteStrategy:回合進行中或正要開始都不刪", /if \(activeTurn \|\| turnStarting \|\| !stratNames\(\)\.includes\(name\)\) return false;/.test(del));
-  ok("deleteStrategy:在組合裡回 IN_PORTFOLIO、讀不懂回 CONFIG_UNREADABLE,都在丟垃圾桶之前", del.indexOf('code: "IN_PORTFOLIO"') > 0 && del.indexOf('code: "CONFIG_UNREADABLE"') > 0 && del.indexOf("IN_PORTFOLIO") < del.indexOf("trashItem"));
-  ok("畫面:擋下時開單鈕框講原因(先到自動下單頁移出),不是靜靜沒反應", /r\.code === "IN_PORTFOLIO" \|\| r\.code === "CONFIG_UNREADABLE"/.test(appSrc) && /single: true/.test(appSrc) && /t\("strat\.delInPf"\)/.test(appSrc)); }
+  ok("deleteStrategy:在組合裡回 IN_PORTFOLIO、讀不懂回 CONFIG_UNREADABLE,都在丟垃圾桶之前", del.indexOf('code: "IN_PORTFOLIO"') > 0 && del.indexOf('code: "CONFIG_UNREADABLE"') > 0 && del.indexOf("IN_PORTFOLIO") < del.indexOf("trashItem")); }
+
+// ── 本機刪策略:沒刪成的每一條路都要講原因(Wei 10-01 按「移到垃圾桶？」完全沒反應:主行程回裸 false,畫面無從講起)──
+{ const mainRun = (S) => new Function("S", "path", `let activeTurn = S.activeTurn, turnStarting = S.turnStarting;
+    const stratNames = () => S.names, STRAT_DIR = () => "/ws/strategies", fs = { readFileSync: () => "" }, stratMeta = () => ({ strategyName: null });
+    const inPortfolio = () => S.inPf, stratStopRerun = () => {}, shell = { trashItem: S.trash }, stratCache = new Map();
+    async ${fnOf(mainSrc, "deleteStrategy")}\nreturn deleteStrategy("a");`)(S, path);
+  const base = { activeTurn: null, turnStarting: false, names: ["a"], inPf: false, trash: async () => {} };
+  const code = async (o) => { const r = await mainRun({ ...base, ...o }); return r === true ? true : r && r.code; };
+  pending.push((async () => {
+    const got = [await code({ activeTurn: {} }), await code({ turnStarting: true }), await code({ names: ["b"] }), await code({ trash: async () => { throw new Error("x"); } }),
+      await code({ inPf: true }), await code({ inPf: null }), await code({})];
+    ok("主行程:回合中 / 正要開始 / 資料夾不在 / 丟不進垃圾桶,各回一個 code(不是光一個 false)",
+      got.join() === "TURN_RUNNING,TURN_RUNNING,NOT_FOUND,TRASH_FAILED,IN_PORTFOLIO,CONFIG_UNREADABLE,true", got);
+  })().catch((e) => ok("主行程 deleteStrategy 跑得起來", false, e)));
+  const delSrc = fnOf(mainSrc, "deleteStrategy"), codes = [...new Set([...delSrc.matchAll(/code: "([A-Z_]+)"/g)].map((m) => m[1]))];
+  ok("主行程:除了成功的 true,沒有任何一條路回裸的 false / null", !/return (false|null|undefined)?;/.test(delSrc) && !/return false\b/.test(delSrc));
+
+  // 畫面:真的跑 stratRefresh 畫列、按兩下列尾的鈕
+  const strings = fs.readFileSync(path.join(R, "strings.js"), "utf8"), STR = new Function(strings + "\nreturn STRINGS;")();
+  let focused = null;
+  const mk = (tag) => { const n = { tag, className: "", hidden: false, disabled: false, dataset: {}, attrs: {}, kids: [], on: {}, textContent: "", innerHTML: "", title: "", type: "", parent: null, cls: new Set(),
+    style: { p: {}, setProperty(k, v) { this.p[k] = v; }, removeProperty(k) { delete this.p[k]; } },
+    classList: { add: (c) => n.cls.add(c), remove: (c) => n.cls.delete(c), contains: (c) => n.cls.has(c), toggle: () => {} },
+    setAttribute(k, v) { n.attrs[k] = String(v); }, removeAttribute(k) { delete n.attrs[k]; }, getBoundingClientRect: () => ({ width: 90 }), focus() { focused = n; },
+    get isConnected() { let x = n; while (x.parent) x = x.parent; return x === dom["strat-list"] || x.root === true; },
+    addEventListener(ev, fn) { (n.on[ev] = n.on[ev] || []).push(fn); }, fire(ev) { return Promise.all((n.on[ev] || []).map((f) => f({}))); },
+    append(...c) { c.forEach((x) => n.appendChild(x)); }, appendChild(c) { c.parent = n; n.kids.push(c); return c; }, remove() { if (n.parent) n.parent.kids = n.parent.kids.filter((x) => x !== n); n.parent = null; },
+    querySelectorAll(sel) { const c = sel.replace(/^\./, ""), out = []; const walk = (x) => x.kids.forEach((k) => { if ((" " + k.className + " ").includes(" " + c + " ")) out.push(k); walk(k); }); walk(n); return out; } }; return n; };
+  const dom = {}, $ = (id) => dom[id] || (dom[id] = Object.assign(mk("div"), { id, root: true }));
+  const ETH = (name) => ({ name, displayName: "ETH 多空力道動能" });
+  let items = ["a", "b", "c"].map(ETH), result = false, lists = 0, idSeen = null; const boxes = [];
+  const scope = { $, document: { createElement: mk, createDocumentFragment: () => Object.assign(mk("#frag"), { frag: true }) }, t: (k, v) => { if (v && "id" in v) idSeen = v.id; return k; },
+    RP: { list: [], name: null }, stratNameFill: (nm, x) => { nm.textContent = x; }, stratTip: (d) => d, sideReclick: () => {}, stratSelect: () => {},
+    trOpen: () => {}, confirmBox: (o) => boxes.push(o),
+    window: { blave: { platform: "darwin", listStrategies: async () => { lists++; return items.slice(); }, deleteStrategy: async () => result } } };
+  const hasSync = /\nfunction stratDelSync\(/.test(appSrc), hasAt = /\nasync function stratRefreshAt\(/.test(appSrc);
+  const api = new Function(...Object.keys(scope), ["var running = false;", fnOf(appSrc, "armedDelete"), fnOf(trSrc, "trEl"), fnOf(trSrc, "cdelBoth"), ...["stratDelBody", "stratBlockedNote"].filter((f) => appSrc.includes("\nfunction " + f + "(")).map((f) => fnOf(appSrc, f)),   // 舊版(修之前)沒有 stratDelBody:照樣跑完、逐條紅
+    hasSync ? fnOf(appSrc, "stratDelSync") : "function stratDelSync() {}", hasAt ? "var stratRefreshAt = async " + fnOf(appSrc, "stratRefreshAt") : "",
+    "var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""), "return { stratRefresh, stratDelSync, setRunning: (v) => { running = v; } };"].join("\n"))(...Object.values(scope));
+  const wrapOf = (name) => $("strat-list").kids.find((w) => w.kids[0].dataset.name === name), delOf = (name) => wrapOf(name).kids[1], rowOf = (name) => wrapOf(name).kids[0];
+  // 框的內文:一般字(lines)/ 紅字(.cf-block)/ 紅字之後的一般字(補救)
+  const bodyOf = (b) => { if (b.length !== 1) return null; const o = b[0], ex = o.extra ? (o.extra.frag ? o.extra.kids : [o.extra]) : [];
+    return (o.lines || []).map((x) => "lines:" + x).concat(ex.map((n) => (n.className === "cf-block" ? "red:" : "plain:") + n.textContent)).join("|"); };
+  pending.push((async () => {
+    await api.stratRefresh(false);
+    const d0 = delOf("a"); api.setRunning(true); api.stratDelSync();
+    const hidMid = d0.disabled === true;
+    api.setRunning(false); api.stratDelSync();
+    ok("回合開始:回合前畫好的列,刪除鈕跟著收起;結束後回來(以前只在重建列時看一次 running,回合中照樣按得到)", hasSync && hidMid && d0.disabled === false);
+    api.setRunning(true); await api.stratRefresh(false); api.setRunning(false); api.stratDelSync();
+    ok("回合結束那次重讀趕在 running 歸零前畫好列:歸零後鈕要回來", hasSync && delOf("a").disabled === false);
+    const flips = appSrc.split("\n").filter((l) => /(^\s*|[;{]\s*)running = (true|false);/.test(l) && !/^let running/.test(l));
+    ok("列舉:每一個改 running 的地方都同步刪除鈕(" + flips.length + " 處)", flips.length >= 3 && flips.every((l) => /stratDelSync\(\)/.test(l)), flips.filter((l) => !/stratDelSync\(\)/.test(l)).map((l) => l.trim().slice(0, 80)));
+    const tryDel = async (r, name) => { result = r; boxes.length = 0; await api.stratRefresh(false); const d = delOf(name || "a"); await d.fire("click"); await d.fire("click"); return boxes; };
+    const want = { TURN_RUNNING: "lines:strat.delBusy", NOT_FOUND: "lines:strat.delGone", TRASH_FAILED: "red:strat.delFailed|plain:strat.delFailedHint",
+      IN_PORTFOLIO: "red:strat.delInPf", CONFIG_UNREADABLE: "red:strat.delCfgUnread" };
+    const seen = {};
+    for (const c of codes) seen[c] = bodyOf(await tryDel({ ok: false, code: c }));
+    ok("列舉主行程的每一個 code:畫面都開框講對應的原因;回合中、資料夾不在用一般字,組合／設定紅字,垃圾桶不收 = 紅字事實 + 一般字補救", codes.length === 5 && codes.every((c) => seen[c] === want[c]), seen);
+    const odd = [bodyOf(await tryDel(false)), bodyOf(await tryDel(null)), bodyOf(await tryDel(undefined)), bodyOf(await tryDel({ ok: false, code: "SOMETHING_NEW" }))];
+    ok("裸 false / null(IPC 被擋)/ 沒見過的 code:一樣開框,講沒刪成", odd.every((x) => x === want.TRASH_FAILED), odd);
+    scope.window.blave.platform = "win32"; idSeen = null; const w = bodyOf(await tryDel({ ok: false, code: "TRASH_FAILED" })); scope.window.blave.platform = "darwin";
+    ok("Windows:兩段都用 .win;補救那句帶資料夾代號(同名的兩支分得出是哪個資料夾)", w === "red:strat.delFailed.win|plain:strat.delFailedHint.win" && idSeen === "a", w);
+    const pf = await tryDel({ ok: false, code: "IN_PORTFOLIO" });
+    ok("還在組合裡:多一顆「前往部位」;其他原因沒有", !!(pf[0] && pf[0].alt && pf[0].alt.label === "cdel.goPos") && !((await tryDel({ ok: false, code: "TURN_RUNNING" }))[0] || { alt: 1 }).alt);
+    const busy = await tryDel({ ok: false, code: "TURN_RUNNING" }, "b");
+    ok("其他原因:關框後焦點回到被按的那一列", !!busy[0] && busy[0].opener === rowOf("b"));
+    // 焦點(設計稽核 0.1.12 §4-1):列被重建,要落在同位置那一列——原本下面那列;沒有就上一列;清單空了 = 新增鈕
+    items = ["a", "b", "c"].map(ETH); await api.stratRefresh(false); result = true; boxes.length = 0; let l0 = lists;
+    let d = delOf("b"); items = ["a", "c"].map(ETH); focused = null; await d.fire("click"); await d.fire("click");
+    const okMid = boxes.length === 0 && lists > l0 && focused === rowOf("c") && focused.isConnected;
+    d = delOf("c"); items = ["a"].map(ETH); focused = null; await d.fire("click"); await d.fire("click");
+    const okLast = focused === rowOf("a");
+    d = delOf("a"); items = []; focused = null; await d.fire("click"); await d.fire("click");
+    ok("成功:不開框、重讀清單;焦點落在下面那列 → 最後一列刪掉落上一列 → 清單空了落新增鈕", okMid && okLast && focused === $("strat-add"));
+    items = ["a", "b", "c"].map(ETH); await api.stratRefresh(false); result = { ok: false, code: "NOT_FOUND" }; boxes.length = 0; l0 = lists;
+    d = delOf("b"); items = ["a", "c"].map(ETH); await d.fire("click"); await d.fire("click");
+    ok("資料夾不在了:先重讀清單再開框;關框後焦點回到同位置那一列(不是已經被拆掉的那列)", lists > l0 && boxes.length === 1 && boxes[0].opener === rowOf("c") && boxes[0].opener.isConnected);
+    d = delOf("c"); items = ["a"].map(ETH); boxes.length = 0; await d.fire("click"); await d.fire("click");
+    const prev = boxes[0] && boxes[0].opener === rowOf("a");
+    d = delOf("a"); items = []; boxes.length = 0; await d.fire("click"); await d.fire("click");
+    ok("資料夾不在了:最後一列 → 上一列;清單空了 → 新增鈕", prev && boxes[0] && boxes[0].opener === $("strat-add"));
+    { const css = fs.readFileSync(path.join(R, "app.css"), "utf8"), tcss = fs.readFileSync(path.join(R, "trade.css"), "utf8");
+      ok("滑過列只在真的有 ✕ 時讓位(回合中 ✕ 收起不留 72px 空白,兩邊清單都是);條件包 :where,武裝那條仍蓋得過",
+        /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{ background: var\(--surface-muted\); color: var\(--ink\); \}/.test(css)
+        && /\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right: 72px; \}/.test(css)
+        && !/\n\.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{[^}]*padding-right/.test(css)
+        && /#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\):where\(:has\(\.cs-del:not\(:disabled\)\)\) \.strat-row \{ padding-right/.test(tcss)
+        && !/#strat-list-cloud \.strat-wrap:is\(:hover, :has\(:focus-visible\)\) \.strat-row \{ padding-right/.test(tcss)); }
+    const keys = ["strat.delBusy", "strat.delGone", "strat.delFailed", "strat.delFailed.win", "strat.delFailedHint", "strat.delFailedHint.win", "strat.delInPf", "strat.delCfgUnread"];
+    ok("每一句兩語都有;補救那兩句帶 {id}", keys.every((k) => STR.zh[k] && STR.en[k]) && ["strat.delFailedHint", "strat.delFailedHint.win"].every((k) => STR.zh[k].includes("{id}") && STR.en[k].includes("{id}")),
+      keys.filter((k) => !(STR.zh[k] && STR.en[k])));
+  })().catch((e) => ok("畫面刪除流程跑得起來", false, e))); }
 
 // ── 側欄 tooltip(兩邊側欄同一支)──
 { var t = (k, v) => (k === "side.rowTip" ? v.name + "（" + v.id + "）" : k);
@@ -156,7 +248,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   let running = false, loads = 0; const t = (k) => k;
   const window = { blave: { listStrategies: async () => [{ name: "a", displayName: "A", mtime: 1 }, { name: "b", displayName: "B", mtime: 2 }],
     loadStrategy: async (n) => { loads++; return { name: n, stats: null, code: "x" }; }, deleteStrategy: async () => true } };
-  const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, rpTab = (B) => (B.data && B.data.stats ? B.tab : "code"), confirmBox = () => {}, stratBlockedNote = () => mkEl("p");
+  const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, rpTab = (B) => (B.data && B.data.stats ? B.tab : "code"), confirmBox = () => {};
   const document = doc;
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));
@@ -251,6 +343,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
       ok("rpWaitHold:沒出現過 0;出現 100ms → 再等 200;出現超過 300ms → 0", h(0, 5000) === 0 && h(1000, 1100) === 200 && h(1000, 1400) === 0); }
     api.rpCloudSelect(null);
     ok("收掉選取:回雲端自動下單頁", $2("rp").hidden === true && $2("tr").hidden === false); }
+  await Promise.all(pending);
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();
 

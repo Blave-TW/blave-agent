@@ -38,7 +38,7 @@ if (process.versions.electron) {
   t("掛在 ready 之後(Chromium 自己的處理是啟動時裝的,後掛的才算數),走的是 app.quit()——也就是 before-quit 那兩道攔截", /\n  quitOnSignals\(process, \(\) => app\.quit\(\)\);/.test(ready) && mainSrc.indexOf("quitOnSignals(process,") > mainSrc.indexOf("app.whenReady().then(() => {"));
   const bq = cut(mainSrc, 'app.on("before-quit", (e) =>');
   const thens = bq.match(/\.then\(\(r\) => \{[^\n]*/g) || [];
-  t("按了取消:quitAsking 還原、quitConfirmed 不設(下一次結束照樣會問);對話框自己出錯也還原", thens.length === 2 && thens.every((x) => /^\.then\(\(r\) => \{ quitAsking = false; if \(r\.response === 1\) \{ quitConfirmed = true;/.test(x) && /\}, \(\) => \{ quitAsking = false; \}\);$/.test(x)), thens);
+  t("按了取消:quitAsking 還原、quitConfirmed 不設(下一次結束照樣會問);對話框自己出錯也還原", thens.length === 2 && thens.every((x) => /^\.then\(\(r\) => \{ quitAsking = false; if \(r\.response === sg\.goIndex\) \{ quitConfirmed = true;/.test(x) && /\}, \(\) => \{ quitAsking = false; \}\);$/.test(x)), thens);
   t("攔截的條件只看「現在」:正在下單(tradeMaybeLive)或回合在跑,沒有「問過一次就不再問」的旗標", /const live = !quitting && !quitConfirmed && tradeMaybeLive\(\);/.test(bq) && /if \(!quitting && !quitConfirmed && \(activeTurn \|\| turnStarting\)\) \{/.test(bq) && !/asked|askedOnce|quitAsked/.test(bq));
 
   // ---- ②

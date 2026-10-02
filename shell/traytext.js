@@ -93,4 +93,11 @@ function statusLine(tpl, line, labels) {
 const notifTitle = (prefix, title) => (prefix ? prefix + title : title);
 const quitDetail = (body, note) => (note ? body + "\n\n" + note : body);
 
-module.exports = { clean, fmt, cloudLine, localLine, cloudTrading, statusLine, notifTitle, quitDetail, venueLabel, VENUE_ID };
+/* 「留下 / 動作」兩顆鈕的原生確認框。noLink 之後 Windows 照陣列順序由左往右畫,Windows 慣例是動作在左、取消在最右;
+   macOS 的 [留下, 動作] 本來就畫成「動作｜留下」(預設鈕在最右),不能跟著反。預設鈕與 Esc 一律落在留下那顆;goIndex = 動作那顆的回傳值 */
+function stayGo(platform, stay, go) {
+  const win = platform === "win32";
+  return { buttons: win ? [go, stay] : [stay, go], defaultId: win ? 1 : 0, cancelId: win ? 1 : 0, goIndex: win ? 0 : 1 };
+}
+
+module.exports = { clean, fmt, cloudLine, localLine, cloudTrading, statusLine, notifTitle, quitDetail, venueLabel, VENUE_ID, stayGo };

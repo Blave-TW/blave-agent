@@ -537,7 +537,8 @@ def fetch_data(hdrs):
 - `source` = the fetcher name without `fetch_` (`'twstock_institutional'`, `'twmarket_margin'`, …;
   `_batch` names work too). 金融保險業 statements: `'twstock_financials_finance'`; 保險業 monthly
   revenue: `'twstock_monthly_revenue_insurance'`. `bar_tz` is required for a naive index: `'UTC'`
-  for `fetch_kline` and intraday TW bars, `'Asia/Taipei'` for `fetch_twstock_price*` daily bars.
+  for `fetch_kline` and intraday TW bars, `'Asia/Taipei'` for `fetch_twstock_price*` daily bars,
+  `'America/New_York'` for `fetch_usstock_price`.
 - Pass a **wide** frame: one row per date (Type C: dates × stocks, one call for the whole frame —
   a stock missing on a date is just NaN there; `examples/tw100_foreign_zscore` is the pattern).
   Pivot `fetch_twstock_financials` and unstack `fetch_twstock_trader_flows` first. The economic
@@ -578,6 +579,7 @@ is kept on purpose — never tighten one from memory:
 | `twfutures_bid_ask_vol` | the minute's close + 30 s (UTC) | row = minute open (api tick floor); today's minutes cached 30 s |
 | `economic_calendar` | release time + 5 min; no time → next day 00:00; upstream fill delay **unconfirmed** | api cache 5 min; 鉅亨 publishes no fill time — live waits for `real` |
 | `fear_greed` | D 01:00 **UTC** | alternative.me publishes one row a day at 00:00 UTC (the API's `time_until_update` on 2026-09-24 08:16 UTC pointed exactly at 00:00); the row stamped D is a snapshot at D's open. Serving lag after 00:00 **unconfirmed** → + 1 h; live waits for the row |
+| `usstock_price` — a US daily bar used as a feed on other bars (crypto, TW) | D 17:00 **New York** (05:00 Taipei under US daylight saving, 06:00 otherwise) | regular session ends 16:00 New York (13:00 early close); Yahoo publishes no time for its final daily bar and its volume keeps settling after the close — **unconfirmed**, + 1 h. Weekdays only; US holidays are not known — in a backtest the bars after one are NaN until the next US close (a ⚠️ names the day), live waits on one |
 
 Sources: TWSE Data E-Shop product specs (產製時間) https://eshop.twse.com.tw/zh/category/all ·
 FinMind update times https://finmind.github.io/tutor/TaiwanMarket/Chip/ (and /Technical/,

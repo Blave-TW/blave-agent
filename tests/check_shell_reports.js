@@ -56,7 +56,7 @@ if (!process.versions.electron) {
   { const appSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8"), mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8");
     ok("① 接線:rptSend 送的是泡泡那一句 + 指示的代號;字串表不再有 msgOnce / msgRecur(沒有東西會把它接回訊息裡)", /const msg = rptCompose\(desc, LANG, t\("rpt\.new\.msgLead"\)\);/.test(src) && /submitMessage\(msg, \{ note: rptNote\(desc\) \}\)/.test(src)
       && !("rpt.new.msgOnce" in STR.zh) && !("rpt.new.msgRecur" in STR.zh) && !("rpt.new.msgOnce" in STR.en) && !/msgOnce|msgRecur/.test(src));
-    ok("① 指示跟著那一輪存:重送同一句沿用(不從訊息本文推回來);泡泡畫的就是送出去的訊息本文", /lastUserNote = opts && typeof opts\.note === "string" \? opts\.note : msg === lastUserText \? lastUserNote : null;\s*const bubble = addMsg\("you", msg\);/.test(appSrc)
+    ok("① 指示跟著那一輪存:重送同一句沿用(不從訊息本文推回來);泡泡畫的就是送出去的訊息本文", /lastUserNote = opts && typeof opts\.note === "string" \? opts\.note : msg === lastUserText \? lastUserNote : null;\s*[^\n]*engDropHeld\(\);[^\n]*\n\s*const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg\);/.test(appSrc)
       && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote,/.test(appSrc));
     ok("① 主行程只認表上的代號,用環境變數交給 runtime(不進 argv、不進訊息);runtime 的表有同樣兩個代號", /const TURN_NOTES = \["report_once", "report_recur"\];/.test(mainSrc2) && /\.\.\.\(TURN_NOTES\.indexOf\(note\) >= 0 \? \{ BLAVE_TURN_NOTE: note \} : \{\}\),/.test(mainSrc2)
       && /"report_once": \(/.test(rt) && /"report_recur": \(/.test(rt)); }
@@ -166,6 +166,13 @@ if (!process.versions.electron) {
     ok("③ preload 四支;main 四個 handle(只收自家頁面)、登出清雲端報告快取、libraryList 回 why", /reportsList: \(\) => ipcRenderer\.invoke\("reports-list"\)/.test(pre) && /reportLoad: \(id\) => ipcRenderer\.invoke\("report-load", id\)/.test(pre) && /cloudReports: \(force\) => ipcRenderer\.invoke\("cloud-reports", force\)/.test(pre) && /cloudReport: \(id, ver\) => ipcRenderer\.invoke\("cloud-report", id, ver\)/.test(pre)
       && /handle\("reports-list", \(\) => reportsList\(\), \{ reports: \[\] \}\);/.test(mainSrc) && /handle\("report-load", \(_e, id\) => reportLoad\(id\), null\);/.test(mainSrc) && /handle\("cloud-reports", \(_e, force\) => cloudReports\(force === true\), \{ code: "UNREACH", reports: \[\] \}\);/.test(mainSrc) && /handle\("cloud-report", \(_e, id, ver\) => cloudReport\(id, ver\), \{ code: "UNREACH", report: null, images: \{\} \}\);/.test(mainSrc)
       && /rptCloudInvalidate\(\);/.test(cutFn(mainSrc, "clearToken")) && /const why = dataAccess === "none" \? dataAccessWhy\(signedIn\) : null;/.test(cutFn(mainSrc, "libraryList")) && (cutFn(mainSrc, "libraryList").match(/dataAccess, why \}/g) || []).length === 2);
+    { const pt = cutFn(src, "rptPaintTools"), sy = cutFn(src, "rptSync");
+      ok("③ 回合中「新增報告」點了才講(spec-0.1.12-library-notes §1):busy 不用原生 disabled、改 aria-disabled + title;訊息槽只在點過(busyTold)才寫 turn.busy、空著時也不 hidden 且先掛 role=status;點擊走 rptBusyTell 不開框;清在 rptSync 開頭;pending / stopped / stale 照舊 disabled + 常駐句",
+        /ask\.disabled = st !== "free" && st !== "busy";/.test(pt) && /if \(st === "busy"\) \{ ask\.setAttribute\("aria-disabled", "true"\); ask\.title = t\("turn\.busy"\); \}/.test(pt)
+        && /else if \(st === "busy"\) text = RPT\.busyTold \? t\("turn\.busy"\) : null;/.test(pt) && /msg\.hidden = !text && st !== "busy";/.test(pt) && /if \(st === "busy"\) msg\.setAttribute\("role", "status"\); else msg\.removeAttribute\("role"\);/.test(pt) && /if \(st === "pending"\) text = t\("rpt\.note\.pending"\);/.test(pt) && /text = t\(st === "stopped" \? "ho\.gate\.stopped" : "ho\.gate\.stale"\);/.test(pt)
+        && /^function rptSync\(\) \{\n  if \(!\(typeof running !== "undefined" && running === true\)\) RPT\.busyTold = false;/.test(sy) && !/busyTold = false/.test(pt)
+        && /g\("rpt-ask"\)\.addEventListener\("click", \(\) => \{ if \(g\("rpt-ask"\)\.getAttribute\("aria-disabled"\) === "true"\) \{ rptBusyTell\(\); return; \} rptNewOpen\(g\("rpt-ask"\)\); \}\);/.test(src)
+        && /#rpt-ask\[aria-disabled="true"\]/.test(fs.readFileSync(path.join(SHELL, "renderer", "app.css"), "utf8"))); }
     ok("③ 視圖互斥:envShowMain 兩個分支都在 libShowMain 後問 rptShowMain;trOpen / stratSelect / rpCloudSelect / libOpen 都 rptLeave;rptOpen 先 libLeave", /libShowMain\(gate\);[^\n]*\n\s*if \(typeof rptShowMain === "function"\) rptShowMain\(gate\);/.test(cutFn(trSrc, "envShowMain")) && /if \(typeof rptShowMain === "function"\) rptShowMain\(false\);\n\}$/.test(cutFn(trSrc, "envShowMain"))
       && /if \(typeof rptLeave === "function"\) rptLeave\(S\.env\);/.test(cutFn(trSrc, "trOpen")) && /if \(name && typeof rptLeave === "function"\) rptLeave\("local"\);/.test(cutFn(appSrc, "stratSelect")) && /if \(name && typeof rptLeave === "function"\) rptLeave\("cloud"\);/.test(cutFn(appSrc, "rpCloudSelect"))
       && /if \(typeof rptLeave === "function"\) rptLeave\(\);/.test(cutFn(libSrc, "libOpen")) && /if \(typeof libLeave === "function"\) libLeave\(\);/.test(cutFn(src, "rptOpen"))
@@ -356,9 +363,16 @@ app.whenReady().then(async () => {
     ok("④ 一般對話、人在看這一輪的瀏覽器展開頁:回合結束不打開報告、中欄不動,側欄「報告」出記號", !a.rpt && a.tr && a.reading === null && a.mark, JSON.stringify([a, brLeft]));
     // 還原成這段之前的樣子(後面的步驟接著用 new1 / new2 那份清單)
     await js(`(async () => { await rptOpen(); document.getElementById("rpt-back").click(); window.__r.list = window.__r.keepList; await rptLoad("local", true); rptBag("local").reading = window.__r.keepReading; })()`); await wait(150); }
-  // 回合中:鈕 disabled + turn.busy
-  await js(`running = true; rptSync();`); v = await view(); const busyOk = v.askDis && v.msg === (await T("turn.busy")); await js(`running = false; rptSync();`);
-  ok("④ 回合中:「新增報告」disabled + turn.busy;結束回復", busyOk && !(await view()).askDis, JSON.stringify(v));
+  // 回合中(spec-0.1.12-library-notes §1,點了才講):鈕 aria-disabled + title、訊息槽空;點了才寫 turn.busy、不開框;回合結束那句收掉、鈕回可按
+  await js(`running = true; rptSync();`); v = await view();
+  const busyA = await js(`(() => { const b = document.getElementById("rpt-ask"); return { aria: b.getAttribute("aria-disabled"), title: b.title, dis: b.disabled }; })()`);
+  const busyQuiet = !v.askDis && v.msg === "" && (await js(`document.getElementById("rpt-msg").getAttribute("role") === "status"`)) && busyA.aria === "true" && busyA.title === (await T("turn.busy"));
+  await js(`document.getElementById("rpt-ask").click();`); await wait(80);
+  const vTold = await view(), told = vTold.msg === (await T("turn.busy")) && (await js(`document.getElementById("rpn-scrim").hidden && document.getElementById("rpt-ask").getAttribute("aria-describedby") === "rpt-msg" && document.getElementById("rpt-msg").getAttribute("role") === "status"`));
+  await js(`rptSync();`); const keep = (await view()).msg === (await T("turn.busy"));
+  await js(`running = false; rptSync();`); const vEnd = await view();
+  const ended = !vEnd.askDis && vEnd.msg === null && (await js(`!document.getElementById("rpt-ask").hasAttribute("aria-disabled") && !document.getElementById("rpt-ask").title`));
+  ok("④ 回合中:「新增報告」aria-disabled + title、不常駐那句;點了才出 turn.busy(不開框、role=status)、忙碌中重畫還在;結束收掉、鈕回可按", busyQuiet && told && keep && ended, JSON.stringify([v, busyA, vTold, vEnd]));
   // 兩袋:本機在讀 new1;切到雲端(停機)→ 雲端清單照 api 順序、鈕 disabled + ho.gate.stopped;切回本機仍在讀 new1
   await js(`document.querySelector('#rpt-rows .rpt-row[data-id="new1"]').click();`); await wait(450);
   await js(`window.__r.cloudList = { code: "OK", reports: [{ id: "c-old", title: "雲端舊", type: "morning", created_at: 1, stored_at: 9 }, { id: "c-new", title: "雲端新", type: "research", created_at: 5, stored_at: 8 }] };

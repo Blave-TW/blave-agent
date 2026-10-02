@@ -8,6 +8,9 @@
 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process");
 const S = path.join(__dirname, "..", "shell"), R = path.join(S, "renderer");
 const mainSrc = fs.readFileSync(path.join(S, "main.js"), "utf8"), verSrc = fs.readFileSync(path.join(R, "versions.js"), "utf8");
+// 台指期判準用 trade.js 的那一支(守門框寫「N 口」靠它)
+const TXF = (() => { const tsrc = fs.readFileSync(path.join(R, "trade.js"), "utf8"), c = /^const TR_TXF_SPECS = [^\n]*\n/m.exec(tsrc)[0], f = /^function trTxfSpec\([^\n]*\n/m.exec(tsrc)[0];
+  return new Function(c.replace(/^const /, "var ") + f + "return { trTxfSpec };")(); })();
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 function fnSrc(src, name) {
   let a = src.indexOf("function " + name + "("); if (a < 0) throw new Error("找不到 " + name);
@@ -188,7 +191,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
     }
     const doc = { activeElement: null, createElement: (tag) => new El(tag), createDocumentFragment: () => new El("#fragment") };
     const names = ["verEl", "verEntry", "verDateShort", "verDateLong", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
-      "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verGuard", "verNeedUpdate",
+      "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verIsLots", "verGuard", "verNeedUpdate",
       "verRestoreAsk", "verRetry", "verAckKind", "verDoRestore", "verRollback", "verPollNeed", "verPollStop", "verPollEnsure", "verPollTick", "verOverlayExpire", "verBusyNote"];
     const consts = ["verSideOf", "VO", "VP", "voKey", "RERUN_WHY"].map((n) => constSrc(verSrc, n)).join("");
     const body = consts + "let vcSeq = 0, vcSide = null;\n" + names.map((n) => fnSrc(verSrc, n)).join("\n") + "\nreturn { " + names.join(", ") + ", VO, VP };";
@@ -205,7 +208,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const E = {}, $ = (id) => E[id] || byId(id) || (E[id] = Object.assign(new El("div"), { id }));
       const tbl = lang === "zh" ? zh : en, t = (k, vars) => { let s = tbl[k] || k; if (vars) for (const v in vars) s = s.split("{" + v + "}").join(vars[v]); return s; };
       const cloud = opt.cloud === true;
-      const bag = { name, data: { versions, code: "x = 1\n", displayName: "動能" }, drawn: {}, tab: "bt" };
+      const bag = { name, data: Object.assign({ versions, code: "x = 1\n", displayName: "動能" }, opt.stats ? { stats: opt.stats } : {}), drawn: {}, tab: "bt" };
       const RP = cloud ? { name: null, data: null, drawn: {}, tab: "bt" } : bag, RPC = cloud ? bag : { name: null, data: null };
       const tracked = [], loads = [], sent = [], boxes = [], said = [], shows = [], timers = [], acks = [], hoPaints = [];
       const vs = () => ({ key: null, name: null, data: null, open: null, blob: null, state: "", seq: 0, shownAt: 0, cache: new Map(), err: null, pend: null });
@@ -215,7 +218,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } }, trMD: () => "09/28", trStamp: () => "2026-09-28 10:00", requestAnimationFrame: (f) => f(),
         verLoad: (...a) => loads.push(["ver"].concat(a)), vcLoad: () => loads.push(["vc"]), hoPaint: () => { hoPaints.push(1); $("rp-act").hidden = false; }, rpShowTab: (tab) => shows.push(tab), rpPaintHead() {}, rpTab: (B) => B.tab,
         running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, paneSt: { chat: { off: false } }, paneToggle() {},
-        trFmt: (x) => String(x), trUnit: () => "USDT", xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
+        trFmt: (x) => String(x), trUnit: () => "USDT", trTxfSpec: TXF.trTxfSpec, trWith: (b, fn) => fn(), trRowTxf: () => (opt.rowTxf ? {} : null), xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
         window: { blave: { loadStrategy: async () => null } }, Date: FakeDate };
       $("ver-menu").hidden = true; $("vc-scrim").hidden = true; $("ver-wrap").hidden = true; $("ver-rerun").hidden = true; $("ver-banner-err").hidden = true;
       const F = new Function(...Object.keys(env), body)(...Object.values(env));
@@ -428,6 +431,22 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       {
         const r = tm(rig("zh", "momo", it3(), { momo: 500 }), 2); r.F.verRestoreAsk();
         ok("有金額 → 守門框(帶金額的 lead),不送指令", r.boxes.length === 1 && r.boxes[0].title === "這個策略正在下單" && r.boxes[0].extra.kids[0].textContent.includes("500 USDT") && r.sent.length === 0);
+        // 查證 #1 同類:台指期策略的金額是口數 → 「N 口」,不掛帳戶幣(報告裡的標的優先,沒有就看金額表的判法)
+        const lz = tm(rig("zh", "momo", it3(), { momo: 2 }, { stats: { symbol: "TXF" } }), 2); lz.F.verRestoreAsk();
+        const le = tm(rig("en", "momo", it3(), { momo: 2 }, { stats: { symbol: "MXF" } }), 2); le.F.verRestoreAsk();
+        const lr = tm(rig("zh", "momo", it3(), { momo: 3 }, { rowTxf: true }), 2); lr.F.verRestoreAsk();
+        const lb = tm(rig("zh", "momo", it3(), { momo: 500 }, { stats: { symbol: "BTCUSDT" }, rowTxf: true }), 2); lb.F.verRestoreAsk();
+        const l1e = tm(rig("en", "momo", it3(), { momo: 1 }, { stats: { symbol: "TXF" } }), 2); l1e.F.verRestoreAsk();
+        const l1z = tm(rig("zh", "momo", it3(), { momo: 1 }, { stats: { symbol: "TXF" } }), 2); l1z.F.verRestoreAsk();
+        const l1b = tm(rig("en", "momo", it3(), { momo: 1 }, { stats: { symbol: "BTCUSDT" } }), 2); l1b.F.verRestoreAsk();
+        ok("守門框 1 口:en 用 ver.guardLeadLot1「has {lots} lot running」(同網頁 workspace_ver_guard_lead_lot1)(不是「1 lots」);zh 同原句;不是口數的 1 照錢寫",
+          l1e.boxes[0].extra.kids[0].textContent.startsWith("動能 currently has 1 lot running on v3. Swapping the code for v2")
+          && l1z.boxes[0].extra.kids[0].textContent.startsWith("「動能」目前有 1 口在跑 v3。") && l1b.boxes[0].extra.kids[0].textContent.includes("1 USDT")
+          && en["ver.guardLeadLot1"].replace("has {lots} lot running", "has {lots} lots running") === en["ver.guardLeadLots"] && zh["ver.guardLeadLot1"] === zh["ver.guardLeadLots"]);
+        ok("查證 #1 守門框(設計稽核 S1):台指期策略用 ver.guardLeadLots 寫「N 口在跑」(漢字之間不留空格;zh / en),報告沒有標的時看金額表的判法;報告寫的是加密標的就照錢寫",
+          lz.boxes[0].extra.kids[0].textContent.includes("目前有 2 口在跑 v3") && !lz.boxes[0].extra.kids[0].textContent.includes("USDT")
+          && le.boxes[0].extra.kids[0].textContent.includes("currently has 2 lots running on v3") && lr.boxes[0].extra.kids[0].textContent.includes("目前有 3 口在跑 v3")
+          && lb.boxes[0].extra.kids[0].textContent.includes("500 USDT"));
         const c = tm(rig("zh", "momo", it3({ inplace: undefined }), null, { cloud: true }), 2); c.F.verRestoreAsk();
         ok("雲端 lib 太舊(沒有 inplace)→ 更新框:標題、內文、主鈕「去更新」、雲端 register;不送指令",
           c.boxes.length === 1 && c.boxes[0].title === "還原成 v2" && c.boxes[0].lines.join() === "雲端主機還是舊版，要先更新才能還原。更新一次就好，完成後再按一次「還原成這一版」。"

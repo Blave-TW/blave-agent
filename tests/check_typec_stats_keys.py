@@ -90,6 +90,23 @@ check(math.isclose(st["Sortino Ratio"], round(sortino, 4), abs_tol=1e-4)
       f"Sortino / Omega from the portfolio's own returns ({st['Sortino Ratio']} / {st['Omega Ratio']} "
       f"vs {sortino:.4f} / {omega:.4f})")
 
+# market (0.1.12 venue gate): a live tick keeps the backtest's market and re-records the universe it
+# actually trades — a universe picked at run time drifts from the backtest's (audit 0.1.12 P1-2)
+st["market"] = "crypto_perp:binance"
+st["market_symbols"] = ["A", "B", "C", "D", "E"]
+(WS / "strategies" / "pf" / "stats.json").write_text(json.dumps(st))
+LIVE = CLOSE.rename(columns={"E": "XAUUSDT"})
+os.environ["BLAVE_MODE"] = "live"
+try:
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        runner.run({"STRATEGY_NAME": "pf", "INTERVAL": "1d", "START": "2023-01-02", "FEE": FEE, "WARMUP": 20},
+                   lambda h: (LIVE.copy(), OPEN.rename(columns={"E": "XAUUSDT"}).copy()), compute)
+finally:
+    os.environ["BLAVE_MODE"] = "backtest"
+lv = json.loads((WS / "strategies" / "pf" / "stats.json").read_text())
+check(lv.get("market") == "crypto_perp:binance" and lv.get("market_symbols") == ["A", "B", "C", "D", "XAUUSDT"],
+      f"live tick: market carried, market_symbols = the live universe ({lv.get('market')}, {lv.get('market_symbols')})")
+
 # Type A writes the same report keys (Ann. Return is derived by the report when absent)
 with contextlib.redirect_stdout(io.StringIO()):
     runner.run({"STRATEGY_NAME": "single", "SYMBOL": "A", "INTERVAL": "1d", "START": "2023-01-02",

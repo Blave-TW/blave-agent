@@ -1,4 +1,4 @@
-// shell/telemetry.js:十八個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
+// shell/telemetry.js:二十個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
 // 跑法:node tests/check_shell_telemetry.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const { createTelemetry, EVENTS, FROM_RENDERER } = require("../shell/telemetry.js");
@@ -7,8 +7,10 @@ let red = 0; const t = (n, ok) => { console.log((ok ? "PASS  " : "FAIL  ") + n);
 const tick = () => new Promise((r) => setTimeout(r, 5));
 const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ dir, endpoint: "https://x/t", appVersion: "0.3.1", osVersion: "15.5", lang: "zh-TW",
   post: (u, b) => { sent.push(b); return Promise.resolve({ status: 200 }); }, ...extra }); return { tm, sent }; };
-(async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
+// 這支測試建的暫存資料夾都放在同一個 TMP_ROOT 底下,跑完(成功、失敗、中途拋例外)一律收掉
+const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
+(async () => { try {
+  const dir = fs.mkdtempSync(path.join(TMP_ROOT, "d-"));
   let { tm, sent } = mk(dir);
   tm.start(); await tick();
   t("預設開就送(app 裡不做首次告知):app_first_open + app_open", sent.map((b) => b.event).join() === "app_first_open,app_open");
@@ -26,7 +28,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("十八個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 18 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 20 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -34,16 +36,16 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   tm.setEnabled(false);
   const off = mk(dir); off.tm.start(); await tick();
   t("關掉:一則都不送、重開仍是關", off.tm.track("trade_started", { venue_kind: "paper" }) === false && off.sent.length === 0 && off.tm.isEnabled() === false);
-  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
+  const dir2 = fs.mkdtempSync(path.join(TMP_ROOT, "d-"));
   const pre = mk(dir2); pre.tm.setEnabled(false); pre.tm.start(); await tick();
   t("新安裝先關掉:連 app_first_open 都不送", pre.sent.length === 0);
   // 關掉那一刻已經排進去、還沒出門的也不送(track 是 fire-and-forget,post 在下一個 microtask)
-  const q = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"))); const accepted = q.tm.track("login_done"); q.tm.setEnabled(false); await tick();
+  const q = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-"))); const accepted = q.tm.track("login_done"); q.tm.setEnabled(false); await tick();
   t("關掉之後一則都不送——含已排隊的", accepted === true && q.sent.length === 0);
   q.tm.setEnabled(true); await tick();
   t("重新打開立即恢復:補送這次啟動的那兩則;再開一次不重送", q.sent.map((b) => b.event).join() === "app_first_open,app_open" && (q.tm.setEnabled(true), true) && (await tick(), q.sent.length === 2));
   // 舊版狀態檔(有 noticed 欄位)照讀不壞;曾經關掉的人更新後仍是關的、install_id 不變
-  const dirOld = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), oid = "11111111-2222-4333-8444-555555555555";
+  const dirOld = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), oid = "11111111-2222-4333-8444-555555555555";
   fs.writeFileSync(path.join(dirOld, "telemetry.json"), JSON.stringify({ install_id: oid, enabled: false, noticed: true, sent: ["app_first_open"] }));
   const oldOff = mk(dirOld); oldOff.tm.start(); await tick();
   t("舊檔 enabled:false + noticed:true → 仍是關的、一則都不送", oldOff.tm.isEnabled() === false && oldOff.sent.length === 0 && oldOff.tm.installId() === oid);
@@ -51,31 +53,31 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   const oldOn = mk(dirOld); oldOn.tm.start(); await tick();
   t("舊檔沒看過告知(noticed:false)但沒關 → 照預設開;寫回去的檔不再有 noticed", oldOn.sent.map((b) => b.event).join() === "app_open" && oldOn.tm.installId() === oid && (oldOn.tm.setEnabled(true), !("noticed" in JSON.parse(fs.readFileSync(path.join(dirOld, "telemetry.json"), "utf8")))));
 
-  const dirB = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
+  const dirB = fs.mkdtempSync(path.join(TMP_ROOT, "d-"));
   const boom = mk(dirB, { post: () => Promise.reject(new Error("offline")) }); boom.tm.start(); await tick();
   t("送不出去不炸", boom.tm.track("cloud_started") === true); await tick();
   const again = mk(dirB); again.tm.start(); await tick();
   t("離線的第一次啟動不吃掉 app_first_open:沒拿到 2xx 就不記帳,下次再送", again.sent.map((b) => b.event).join() === "app_first_open,app_open");
   const third = mk(dirB); third.tm.start(); await tick();
   t("…拿到 2xx 之後就不再送", third.sent.map((b) => b.event).join() === "app_open");
-  const dir400 = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
+  const dir400 = fs.mkdtempSync(path.join(TMP_ROOT, "d-"));
   const r400 = mk(dir400, { post: () => Promise.resolve({ status: 400 }) }); r400.tm.start(); await tick();
   t("非 2xx 不記帳", JSON.parse(fs.readFileSync(path.join(dir400, "telemetry.json"), "utf8")).sent.length === 0);
-  const thrower = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { post: () => { throw new Error("sync boom"); } }); thrower.tm.start();
+  const thrower = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { post: () => { throw new Error("sync boom"); } }); thrower.tm.start();
   t("post 同步丟例外也不炸", (() => { try { thrower.tm.track("cloud_started"); return true; } catch (_) { return false; } })()); await tick();
   fs.writeFileSync(path.join(dir2, "telemetry.json"), "{broken");
   const broken = mk(dir2);
   t("狀態檔壞掉:不炸、當成關(關掉的決定不能因壞檔靜默變回開)", /^[0-9a-f-]{36}$/.test(broken.tm.installId()) && broken.tm.isEnabled() === false);
   // meta 欄位過跟 api 同一組形狀;不符整則不送
   for (const [k, v] of [["lang", "my secret note"], ["lang", "zh_TW"], ["lang", "BTC-USDT"], ["appVersion", "1.0.0-dev"], ["appVersion", "1.0-BTCUSDT.long"], ["osVersion", "Darwin 25.5"]]) {
-    const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { [k]: v }); x.tm.start(); await tick();
+    const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { [k]: v }); x.tm.start(); await tick();
     t(k + "=" + JSON.stringify(v) + " → 一則都不出門", x.sent.length === 0 && x.tm.track("cloud_started") === false);
   }
-  for (const v of ["zh-TW", "en-US", "en", "zh-Hant-TW", "es-419"]) { const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { lang: v }); x.tm.start(); await tick(); t("lang=" + v + " 照送", x.sent.length === 2); }
+  for (const v of ["zh-TW", "en-US", "en", "zh-Hant-TW", "es-419"]) { const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { lang: v }); x.tm.start(); await tick(); t("lang=" + v + " 照送", x.sent.length === 2); }
   // os 依平台(0.1.3 Windows 真機:寫死 "macos" + os_version 段長 {1,4} 擋掉 10.0.20348 這種五位 build 號 → 一則都沒出門、sent 空)
   const tmSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
   t("os 不再寫死:依 process.platform 對到 macos / windows / linux(這台是 " + process.platform + ")", !/os: "macos"/.test(tmSrc) && sent.length > 0 && sent.every((b) => b.os === ({ darwin: "macos", win32: "windows", linux: "linux" })[process.platform]));
-  for (const v of ["10.0.20348", "10.0.19045", "10.0.26100", "15.5", "14.6.1", "26.0"]) { const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { osVersion: v }); x.tm.start(); await tick(); t("osVersion=" + v + " 照送(Windows 五位 build 號)", x.sent.length === 2 && x.sent[0].os_version === v); }
+  for (const v of ["10.0.20348", "10.0.19045", "10.0.26100", "15.5", "14.6.1", "26.0"]) { const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { osVersion: v }); x.tm.start(); await tick(); t("osVersion=" + v + " 照送(Windows 五位 build 號)", x.sent.length === 2 && x.sent[0].os_version === v); }
   { const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
     if (fs.existsSync(apiPy)) { const api = fs.readFileSync(apiPy, "utf8"), pick = (src, k) => { const m = src.match(new RegExp(k + '[^\\n]*?(/|r")(\\^[^"/]+)')); return m ? m[2].replace(/\\Z$/, "$") : null; };
       t("os_version / lang / app_version 三個形狀跟 api 的 _*_RE 逐字相同(api 早已是 {1,5},外殼落後就是這次的 bug)", ["os_version", "lang", "app_version"].every((k) => pick(tmSrc, k + ":") && pick(tmSrc, k + ":") === pick(api, "_" + k.toUpperCase() + "_RE = re\\.compile\\("))); }
@@ -100,7 +102,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   const handlerBody = cutBody(hi + 'ipcMain.handle("send-message", async (e, payload) =>'.length);
   // 每個情境一份乾淨的狀態:真的 telemetry(自己的暫存目錄)+ 只 stub 主行程那幾個外部依賴
   const scenario = async ({ flag = true, ours = true, turnOk = true, enabled = true, payload }) => {
-    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), x = mk(dir2); if (!enabled) x.tm.setEnabled(false);
+    const dir2 = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), x = mk(dir2); if (!enabled) x.tm.setEnabled(false);
     const ends = [];
     const ctx = { fromOurPage: () => ours, activeTurn: null, turnStarting: false, restarting: null, cloudHandoffOn: () => flag, tm: () => x.tm, newTurnStop: () => {},
       BrowserWindow: { fromWebContents: () => ({ isDestroyed: () => false, webContents: { send: (ch, a) => ends.push([ch, a]) } }) },
@@ -126,7 +128,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   // ── feature_used:名字是白名單,兩端同一份;renderer 每個送出點的名字都在表上;主行程拒絕表外的名字 ──
   const FEATURES = EVENTS.feature_used.name, trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8");
-  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 69 個 + browser_open_ext + suggest_shown / suggest_clicked + 規則四個 + 樣本外驗證兩個 + 更新提示兩個 = 80 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1、設定 › 公開連結 +1、送進 TradingView +7;library_comm 沒送出點但 0.1.5 還在送,留到它退場;batch 6:+browser_open_ext;0.1.9 建議下一步 +2、設定 › Agent 規則 +4;0.1.10 樣本外驗證 +2(report_wf / wf_requested)、更新提示 +2(update_restart / app_move),依序放最後)", ONCE_OF(fs) && FEATURES.length === 80 && FEATURES[69] === "browser_open_ext" && FEATURES.slice(70).join() === "suggest_shown,suggest_clicked,settings_rules,rules_save,rules_delete,reply_lang_set,report_wf,wf_requested,update_restart,app_move" && FEATURES[68] === "tv_fail_compile" && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[60] === "report_pdf" && FEATURES[61] === "share_list_open" && FEATURES.slice(62, 70).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext" && FEATURES.every((n) => n.length <= 16) && FEATURES[20] === "library_comm");
+  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 69 個 + browser_open_ext + suggest_shown / suggest_clicked + 規則四個 + 樣本外驗證兩個 + 更新提示兩個 + 0.1.12 六個 = 86 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1、設定 › 公開連結 +1、送進 TradingView +7;library_comm 沒送出點但 0.1.5 還在送,留到它退場;batch 6:+browser_open_ext;0.1.9 建議下一步 +2、設定 › Agent 規則 +4;0.1.10 樣本外驗證 +2(report_wf / wf_requested)、更新提示 +2(update_restart / app_move);0.1.12 安裝進度卡 engine_retry、市場對應 pick_gate_lock、策略庫成功筆記 library_note、交還鈕 browser_hb_head / browser_hb_chat、部位表點策略名 trade_strat_open,依序放最後)", ONCE_OF(fs) && FEATURES.length === 86 && FEATURES[69] === "browser_open_ext" && FEATURES.slice(70).join() === "suggest_shown,suggest_clicked,settings_rules,rules_save,rules_delete,reply_lang_set,report_wf,wf_requested,update_restart,app_move,engine_retry,pick_gate_lock,library_note,browser_hb_head,browser_hb_chat,trade_strat_open" && FEATURES[68] === "tv_fail_compile" && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[60] === "report_pdf" && FEATURES[61] === "share_list_open" && FEATURES.slice(62, 70).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext" && FEATURES.every((n) => n.length <= 16) && FEATURES[20] === "library_comm");
   // 兩端漂移:api/openclaw/desktop_telemetry.py 的 EVENTS["feature_used"] 逐字同一份(同 check_runtime_mirror:要 monorepo 版面)
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
@@ -180,12 +182,12 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
   t("接線:preload trackFeature → send(\"track-feature\");主行程 fromOurPage 才 tm().track(\"feature_used\", { name })",
     /trackFeature: \(name\) => ipcRenderer\.send\("track-feature", name\),/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))
     && /ipcMain\.on\("track-feature", \(e, name\) => \{ if \(fromOurPage\(e\)\) tm\(\)\.track\("feature_used", \{ name \}\); \}\);/.test(mainSrc));
-  { const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")));
+  { const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
     t("主行程拒絕表外的 name:策略名 / 空字串 / 非字串 / 大小寫不對 / 缺 props 都不送", [{ name: "my alpha v7" }, { name: "" }, { name: ["chat_sent"] }, { name: { toString: () => "chat_sent" } }, { name: "Chat_Sent" }, {}, null].every((p) => x.tm.track("feature_used", p) === false) && x.sent.length === 0);
     t("表內的 name 送;每一個都送得出去;props 只有 name 一格、不帶多塞的欄位", FEATURES.every((n) => x.tm.track("feature_used", { name: n, strategy: "SECRET", symbol: "BTCUSDT" }) === true)); await tick();
     t("…送出去的 " + FEATURES.length + " 則 props 各是 {name}、不含多塞的字", x.sent.length === FEATURES.length && x.sent.every((b, i) => b.event === "feature_used" && JSON.stringify(b.props) === JSON.stringify({ name: FEATURES[i] }) && !JSON.stringify(b).includes("SECRET"))); }
   // ── 外殼端每安裝每 name 每 UTC 日只送一次(契約;api 那顆 3,000/hr 熔斷算的是 POST 數,前提就是這裡) ──
-  { const dirD = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")); let clock = Date.UTC(2026, 8, 25, 23, 59, 30);
+  { const dirD = fs.mkdtempSync(path.join(TMP_ROOT, "d-")); let clock = Date.UTC(2026, 8, 25, 23, 59, 30);
     const mkD = (extra = {}) => mk(dirD, { now: () => clock, ...extra });
     let d = mkD();
     t("同日同 name:第一次送、第二次直接 false 不打 api;別的 name 照送", d.tm.track("feature_used", { name: "chat_sent" }) === true && (await tick(), d.tm.track("feature_used", { name: "chat_sent" }) === false) && d.tm.track("feature_used", { name: "view_cloud" } ) === true); await tick();
@@ -198,13 +200,13 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
     t("換日:同 name 再送一次;狀態檔換成新的一天、舊的那組清掉", d.tm.track("feature_used", { name: "chat_sent" }) === true && (await tick(), JSON.parse(fs.readFileSync(path.join(dirD, "telemetry.json"), "utf8")).daily.day === "20260926")
       && JSON.parse(fs.readFileSync(path.join(dirD, "telemetry.json"), "utf8")).daily.keys.join() === "feature_used:chat_sent");
     // 同一秒連點兩下:第一則還在路上(還沒 2xx、還沒記帳)第二則就要被 in-flight 擋掉
-    let release = null; const slow = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { post: () => new Promise((r) => { release = r; }) });
+    let release = null; const slow = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { post: () => new Promise((r) => { release = r; }) });
     t("送出中再 track 同 name:false(in-flight)", slow.tm.track("feature_used", { name: "chat_sent" }) === true && slow.tm.track("feature_used", { name: "chat_sent" }) === false); await tick();
     release({ status: 500 }); await tick();
     t("api 沒回 2xx:不記帳,之後可以再送(送出去就丟、api 去重)", slow.tm.track("feature_used", { name: "chat_sent" }) === true);
     // 狀態檔在、但 daily 那一段壞掉 / 舊版沒有:當今天什麼都沒送(退回「都送」),其餘欄位照讀
     for (const dailyRaw of [undefined, null, "x", { day: "yesterday", keys: [] }, { day: "20260925", keys: "chat_sent" }, { day: 20260925, keys: ["feature_used:chat_sent"] }]) {
-      const dirB = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), iid = "11111111-2222-4333-8444-555555555555";
+      const dirB = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), iid = "11111111-2222-4333-8444-555555555555";
       fs.writeFileSync(path.join(dirB, "telemetry.json"), JSON.stringify({ install_id: iid, enabled: true, sent: ["app_first_open"], daily: dailyRaw }));
       const b = mk(dirB, { now: () => clock }); t("daily 壞掉(" + JSON.stringify(dailyRaw) + ")→ 照送、install_id 不變", b.tm.track("feature_used", { name: "chat_sent" }) === true && b.tm.installId() === iid); }
     t("app_open 不走每日去重(每次啟動送、api 去重——留存靠它)", !/app_open/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8").match(/const DAILY = \[[^\]]*\]/)[0]));
@@ -224,7 +226,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
     t("first_reply_done 每安裝一次(ONCE);其餘八個每日一次(DAILY,api 的每小時熔斷算的是 POST 數)", /const ONCE = \[[^\]]*"first_reply_done"/.test(tmSrc9) && Object.keys(NEW).filter((e) => e !== "first_reply_done").every((e) => new RegExp('const DAILY = \\[[^\\]]*"' + e + '"').test(tmSrc9)));
     t("畫面只准送七個(FROM_RENDERER);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked"])
       && ["app_first_open", "app_open", "login_done", "first_backtest_done", "trade_started", "cloud_started", "feature_used", "plan_start_res", "update_failed", "heartbeat"].every((e) => !FROM_RENDERER.includes(e)));
-    const x = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")));
+    const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
     t("每個事件的每個值都送得出去;表外的值 / 缺屬性 / 塞內容都不送", Object.keys(NEW).every((ev) => NEW[ev][1].every((v) => x.tm.track(ev, { [NEW[ev][0]]: v, msg: "SECRET" }) === true || ev === "first_reply_done"))
       && Object.keys(NEW).every((ev) => x.tm.track(ev, { [NEW[ev][0]]: "SECRET_BTCUSDT" }) === false && x.tm.track(ev) === false)); await tick();
     t("…出門的 props 各只有那一格、不含多塞的字", x.sent.length > 0 && x.sent.every((b) => Object.keys(b.props).length === 1 && !JSON.stringify(b).includes("SECRET")));
@@ -319,7 +321,7 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
     t("heartbeat:一個屬性 live: on / off、名字 ≤16 字、每日一則不分值(DAILY + DAILY_ONE)、畫面送不了",
       JSON.stringify(EVENTS.heartbeat) === '{"live":["on","off"]}' && /const DAILY = \[[^\]]*"heartbeat"/.test(tmSrc9) && /const DAILY_ONE = \["heartbeat"\];/.test(tmSrc9) && !FROM_RENDERER.includes("heartbeat"));
     { let clock = Date.UTC(2026, 8, 29, 23, 59, 0), live = "off", boom = false, reads = 0;
-      const dirH = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), h = mk(dirH, { now: () => clock, heartbeatMs: 5, heartbeat: () => { reads++; if (boom) throw new Error("status boom"); return { live, secret: "SECRET" }; } });
+      const dirH = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), h = mk(dirH, { now: () => clock, heartbeatMs: 5, heartbeat: () => { reads++; if (boom) throw new Error("status boom"); return { live, secret: "SECRET" }; } });
       h.tm.start(); h.tm.start(); await new Promise((r) => setTimeout(r, 40));
       const beats = () => h.sent.filter((b) => b.event === "heartbeat");
       t("啟動就排計時器(只排一次;start 叫兩次也一樣):當天第一則送出,props 只有 live", beats().length === 1 && JSON.stringify(beats()[0].props) === '{"live":"off"}');
@@ -332,10 +334,28 @@ const mk = (dir, extra = {}) => { const sent = []; const tm = createTelemetry({ 
       t("讀下單狀態丟例外:不炸、那一輪不送", beats().length === 2);
       boom = false; h.tm.setEnabled(false); const readsOff = reads; await new Promise((r) => setTimeout(r, 40));
       t("關掉追蹤:心跳也不送,也不讀下單狀態", beats().length === 2 && reads === readsOff);
-      const plain = mk(fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-")), { heartbeatMs: 5 }); plain.tm.start(); await new Promise((r) => setTimeout(r, 30));
+      const plain = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { heartbeatMs: 5 }); plain.tm.start(); await new Promise((r) => setTimeout(r, 30));
       t("沒給 heartbeat 選項:不排心跳", !plain.sent.some((b) => b.event === "heartbeat")); }
     t("main.js:tm() 帶 heartbeat,live 用 tradeMaybeLive(同 updater 的 isTrading)", /heartbeat: \(\) => \(\{ live: tradeMaybeLive\(\) \? "on" : "off" \}\),/.test(main9));
   }
 
-  console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
+  // ── 0.1.12 引擎安裝(shell/enginesetup.js,主行程送):一個 prop、值是列舉、16 字以內、每日去重、畫面送不了 ──
+  { const ENG = { engine_setup: ["result", ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"]],
+      engine_opt_fail: ["result", ["us_net", "us_other", "us_timeout"]] };
+    const tmSrc12 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
+    t("engine_setup / engine_opt_fail:一個屬性 result、值逐字照設計稽核定稿、名字與值都在 16 字以內", Object.keys(ENG).every((ev) => EVENTS[ev] && JSON.stringify(Object.keys(EVENTS[ev])) === '["result"]' && JSON.stringify(EVENTS[ev].result) === JSON.stringify(ENG[ev][1]) && ev.length <= 16 && ENG[ev][1].every((v) => v.length <= 16)));
+    t("…每日去重(DAILY)、不是 once、畫面送不了(不在 FROM_RENDERER)", Object.keys(ENG).every((ev) => new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc12) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc12) && !FROM_RENDERER.includes(ev)));
+    const main12 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), eng12 = fs.readFileSync(path.join(__dirname, "..", "shell", "enginesetup.js"), "utf8"), engR = fs.readFileSync(path.join(R, "engine.js"), "utf8");
+    t("…送出點:enginesetup 的結束(done / fail,relink 不送)與美股那組失敗;main 把 track 接到 tm();重試鈕送 feature_used engine_retry",
+      /track: \(ev, props\) => tm\(\)\.track\(ev, props\)/.test(main12) && /if \(S\.kind !== "relink"\) track\("engine_setup", kindTag\(\) \+ "_done"\);/.test(eng12)
+      && /if \(S\.kind !== "relink" && !e\.aborted\) track\("engine_setup", kindTag\(\) \+ "_" \+ S\.err\.kind\);/.test(eng12) && /track\("engine_opt_fail", g\.id \+ "_" \+ S\.warn\.kind\);/.test(eng12)
+      && /function engRetry\(\) \{\s*trackFeature\("engine_retry"\);/.test(engR));
+    const apiPy12 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
+    if (!fs.existsSync(apiPy12)) console.log("SKIP  api 端引擎事件比對(需要 monorepo 版面)");
+    else { const api = fs.readFileSync(apiPy12, "utf8"), got = {};
+      for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
+      t("api desktop_telemetry.EVENTS 的 engine_setup / engine_opt_fail = 外殼這份(屬性名、值、順序、不是 once)", Object.keys(ENG).every((ev) => got[ev] && got[ev].key === "result" && JSON.stringify(got[ev].vals) === JSON.stringify(ENG[ev][1]) && got[ev].once === false)); } }
+  console.log(red ? red + " 紅" : "ALL PASS");
+} finally { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); }
+  process.exit(red ? 1 : 0);
 })();

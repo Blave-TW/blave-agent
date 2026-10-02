@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import csv
 import json
 import shutil
@@ -871,6 +872,16 @@ def _sanity_check_ohlc(df, label):
     Dropping leaves a gap in the bar series (shift/pct_change will span it) —
     same as an exchange outage. The dropped timestamps are printed so the gap
     is diagnosable; corrupt bars are strictly worse than a visible gap.
+
+    A bar whose open or close lies outside its own high-low range is repaired,
+    not dropped: the high is raised / the low lowered to hold them. Measured
+    2026-10-01 over the existing caches: 0 such bars in ~7.4M crypto, ~3.6M
+    Taiwan futures and ~25k Yahoo US bars; 76 in ~168k Blave 台股原始日K bars,
+    all of them an Open off the range by a median 0.3–0.65 % (max 2.9 %) with
+    the Close inside (6669 / 6770 before listing). Those prints did trade, so
+    the range held them; dropping the bar would cut the close every indicator
+    reads, keeping it as is would let an intrabar exit fire at a level the
+    bar's own high never reached.
     """
     if df.empty or not all(c in df.columns for c in ('Open', 'High', 'Low', 'Close')):
         return df
@@ -882,6 +893,19 @@ def _sanity_check_ohlc(df, label):
         print(f"  ⚠️  {label}: dropped {int(bad.sum())} bar(s) with invalid OHLC "
               f"(high<low, non-positive or NaN price) at: {ts}{more}")
         df = df[~bad]
+    body_hi = df[['Open', 'Close']].max(axis=1)
+    body_lo = df[['Open', 'Close']].min(axis=1)
+    # 1e-9 relative: rescaled bars (Yahoo's adjclose next to high × adjclose/close) differ by
+    # float rounding (≤ 2e-16 measured); the smallest real case measured was 1.4e-4
+    fix = (df['High'] < body_hi * (1 - 1e-9)) | (df['Low'] > body_lo * (1 + 1e-9))
+    if fix.any():
+        ts = ', '.join(str(t) for t in df.index[fix][:5])
+        more = '' if int(fix.sum()) <= 5 else f' (+{int(fix.sum()) - 5} more)'
+        print(f"  ⚠️  {label}: widened the high/low of {int(fix.sum())} bar(s) whose open or "
+              f"close lay outside it at: {ts}{more}")
+        df = df.copy()
+        df['High'] = df['High'].where(~fix, np.maximum(df['High'], body_hi))
+        df['Low'] = df['Low'].where(~fix, np.minimum(df['Low'], body_lo))
     return df
 
 
@@ -4577,6 +4601,330 @@ def fetch_fear_greed(start=None, end=None):
     return df
 
 
+# ── US stock daily bars: Yahoo Finance, desktop only ──────────────────────────
+# Fetched only by the desktop app, on the user's own computer for the user's own use
+# (data-onboarding canon §9, gate BLAVE_AGENT_LOCAL=1); anywhere else the fetcher raises.
+# Yahoo's public v8 chart endpoint first, the yfinance package as the fallback.
+#
+# Caliber, both sources: Yahoo's quote series is split-adjusted but not dividend-adjusted.
+# Open/High/Low are scaled by adjclose / close and Close becomes adjclose; Volume stays as
+# Yahoo has it — yfinance's own auto_adjust (yfinance/utils.py, 1.7.0) step for step, so a
+# series reads the same whichever source served it.
+#
+# Cache: one parquet per (symbol, source) holding the whole history from ONE answer. Not the
+# monthly layout: every split or dividend rescales all earlier bars, so months fetched on
+# different days would sit on different factors. A snapshot is replaced whole, never merged;
+# one request returns all of it (AAPL from 1980: 11.5k bars, 1.3 MB).
+_YAHOO_CHART   = 'https://query1.finance.yahoo.com/v8/finance/chart/'
+# Measured 2026-10-01 from a home connection: this UA → 200; requests' default UA and a
+# desktop-Chrome UA sent over requests' own TLS → 429 every time.
+_YAHOO_HEADERS = {'User-Agent': 'Mozilla/5.0 (compatible; blave-agent; +https://blave.org)'}
+_YAHOO_LIMITER = _RateLimiter(1, 1.0)
+_YAHOO_SESSION = None
+_YAHOO_PERIOD1 = -2208988800          # 1900-01-01: from the first bar
+_US_TZ         = 'America/New_York'
+_US_PREFIX     = 'usstock_daily'
+_US_RAW_COLS   = ['Open', 'High', 'Low', 'Close', 'AdjClose', 'Volume']
+_US_SOURCE_ZH  = '資料來源:Yahoo Finance(僅供個人使用,可能失效或有誤)'
+_US_SOURCE_EN  = 'Source: Yahoo Finance (personal use only; may be unavailable or wrong)'
+PUBLIC_SOURCE_EN[_US_SOURCE_ZH] = _US_SOURCE_EN
+_YF_CACHE_SET  = False
+# Circuit breaker: once a source is still rate-limiting after its retries, the rest of this
+# process skips it instead of asking again for every symbol of a universe (and lengthening the block).
+_US_BLOCK_S    = 900
+_US_BLOCKED    = {'yahoo': 0.0, 'yfinance': 0.0}
+
+_US_DESKTOP_ONLY = (
+    "US stock data is fetched only by the desktop app, on the user's own computer — in its chat "
+    "turns, backtests and scheduled reports — never on a cloud machine. Stop here (no other source, no web page) and "
+    "tell the user in one sentence: 美股資料目前只在電腦版可用 / US stock data is currently "
+    "available only in the desktop app.")
+
+
+_US_NOT_LIVE = (
+    "US stock data is fetched only in the desktop app's chat turns, backtests and scheduled reports; "
+    "a live trading tick (desktop or cloud) cannot fetch it, so a US strategy cannot go live yet. "
+    "Stop here and tell the user in one sentence: 美股策略目前還不能上線,美股資料只能在電腦版回測與對話裡用 / "
+    "US stock strategies cannot go live yet; US data works only for backtests and chat in the desktop app.")
+
+
+class UsStockUnavailable(RuntimeError):
+    """US daily bars cannot be served here: not the desktop app, or neither Yahoo nor yfinance
+    answered. The message is written to be relayed to the user, not debugged."""
+
+
+class UsStockNotHere(UsStockUnavailable):
+    """This process may not fetch US data at all (no desktop flag) — raised before any request."""
+
+
+class UsStockNotFound(LookupError):
+    """Yahoo has no such ticker (its 404 "No data found, symbol may be delisted") — yfinance
+    asks the same Yahoo, so the chain stops here."""
+
+
+def _usstock_allowed():
+    return os.environ.get('BLAVE_AGENT_LOCAL') == '1'
+
+
+def _us_require_desktop():
+    """Every function that sends a request to Yahoo calls this first, so no path — public or
+    private — reaches Yahoo off the desktop. A live trading tick gets the "cannot go live yet"
+    sentence; a cloud machine (scheduled report included, which also runs with BLAVE_MODE=live)
+    gets the desktop-only one."""
+    if _usstock_allowed():
+        return
+    live_tick = os.environ.get('BLAVE_MODE') == 'live' and os.environ.get('BLAVE_SCHEDULED_RUN') != '1'
+    raise UsStockNotHere(_US_NOT_LIVE if live_tick else _US_DESKTOP_ONLY)
+
+
+def _us_check_block(src):
+    left = _US_BLOCKED[src] - time.time()
+    if left > 0:
+        raise UsStockUnavailable(f"{src} rate-limited this process; not asked again for {left / 60:.0f} min")
+
+
+def _us_symbol(symbol):
+    """'aapl' → 'AAPL', 'BRK.B' → 'BRK-B' (Yahoo's class-share spelling). ValueError naming the
+    right fetcher for a Taiwan id or a Binance perp, and for anything that is not a ticker."""
+    s = str(symbol or '').strip().upper()
+    if s[:1].isdigit():
+        raise ValueError(f"fetch_usstock_price: {symbol!r} looks like a Taiwan stock id — "
+                         f"use fetch_twstock_price")
+    if s.endswith(('USDT', 'USDC')):
+        raise ValueError(f"fetch_usstock_price: {symbol!r} is a Binance perp symbol (tokenized US "
+                         f"stocks included) — use fetch_kline")
+    s = s.replace('.', '-')
+    if not re.fullmatch(r'[A-Z]{1,5}(-[A-Z]{1,2})?', s):
+        raise ValueError(f"fetch_usstock_price: expects a US ticker as Yahoo spells it ('AAPL', "
+                         f"'SPY', 'BRK-B'), got {symbol!r}; indices (^GSPC, ^IXIC) are not offered")
+    return s
+
+
+def _yahoo_session():
+    """Yahoo's own session — and the desktop gate every direct Yahoo request passes."""
+    global _YAHOO_SESSION
+    _us_require_desktop()
+    if _YAHOO_SESSION is None:
+        _YAHOO_SESSION = requests.Session()
+    return _YAHOO_SESSION
+
+
+def _yahoo_get(url, params, tries=3):
+    """One throttled GET at Yahoo on its own session, User-Agent and throttle — never the Taiwan
+    sources' (_tw_public_get), whose requests stay exactly as they are. Timeouts, connection
+    errors, 429 and 5xx are retried twice; the answer comes back unraised so a 404 can be read.
+    A 429 that outlasts the retries opens the circuit breaker for the rest of the process. The
+    desktop gate is in _yahoo_session, which every request here goes through."""
+    _us_check_block('yahoo')
+    for attempt in range(tries):
+        _YAHOO_LIMITER.acquire()
+        try:
+            r = _yahoo_session().get(url, params=params, headers=_YAHOO_HEADERS, timeout=30)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if attempt == tries - 1:
+                raise
+            time.sleep(2 ** (attempt + 1))
+            continue
+        if (r.status_code == 429 or r.status_code >= 500) and attempt < tries - 1:
+            time.sleep(2 ** (attempt + 1))
+            continue
+        if r.status_code == 429:
+            _US_BLOCKED['yahoo'] = time.time() + _US_BLOCK_S
+            raise UsStockUnavailable(f'Yahoo answered 429 (rate-limited) {tries} times; '
+                                     f'not asked again for {_US_BLOCK_S // 60} min')
+        return r
+
+
+def _us_empty():
+    return pd.DataFrame(columns=_US_RAW_COLS, index=pd.DatetimeIndex([], name='date'), dtype=float)
+
+
+def _us_tidy(df):
+    """Raw frame → floats on naive New York dates, one row a day, slots without a close dropped
+    (Yahoo pads non-trading slots with nulls)."""
+    df = df.astype(float)
+    df.index.name = 'date'
+    df = df[df['Close'].notna()]
+    return df[~df.index.duplicated(keep='last')].sort_index()
+
+
+def _fetch_usstock_yahoo_raw(sym):
+    """The whole daily history in one v8 chart answer → _US_RAW_COLS."""
+    r = _yahoo_get(_YAHOO_CHART + sym, {'interval': '1d', 'events': 'div,splits',
+                                        'period1': _YAHOO_PERIOD1, 'period2': int(time.time()) + 86400})
+    try:
+        j = r.json()
+    except ValueError:
+        j = {}
+    err = (j.get('chart') or {}).get('error') or {}
+    if r.status_code == 404 and err.get('code') == 'Not Found':
+        raise UsStockNotFound(f"Yahoo has no US ticker {sym!r} ({err.get('description')}) — "
+                              f"check the symbol with the user")
+    r.raise_for_status()
+    if err:
+        raise UsStockUnavailable(f"Yahoo chart {sym}: {err.get('code')} {str(err.get('description'))[:120]}")
+    res = ((j.get('chart') or {}).get('result') or [None])[0] or {}
+    stamps = res.get('timestamp') or []
+    if not stamps:
+        # a ticker Yahoo does not have is a 404 (above); 200 with nothing in it is a soft block or
+        # a glitch, and caching it would serve an empty history until the next bar is final
+        raise UsStockUnavailable(f'Yahoo chart {sym}: 200 with no bars')
+    ind = res.get('indicators') or {}
+    q = (ind.get('quote') or [{}])[0] or {}
+    adj = ((ind.get('adjclose') or [{}])[0] or {}).get('adjclose')
+    if adj is None:
+        # without it the caliber cannot be reached — never hand back half-adjusted bars
+        raise UsStockUnavailable(f'Yahoo chart {sym}: the answer has no adjclose series')
+    idx = pd.to_datetime(stamps, unit='s', utc=True).tz_convert(_US_TZ).tz_localize(None).normalize()
+    return _us_tidy(pd.DataFrame({'Open': q.get('open'), 'High': q.get('high'), 'Low': q.get('low'),
+                                  'Close': q.get('close'), 'AdjClose': adj,
+                                  'Volume': q.get('volume')}, index=idx))
+
+
+def _fetch_usstock_yfinance_raw(sym):
+    """Same frame from yfinance (Chrome-impersonating TLS via curl_cffi), auto_adjust=False so
+    the one adjustment below applies to both sources."""
+    global _YF_CACHE_SET
+    _us_require_desktop()
+    _us_check_block('yfinance')
+    try:
+        import yfinance as yf
+    except ImportError as e:
+        raise UsStockUnavailable('the yfinance package is not installed here') from e
+    if not _YF_CACHE_SET:
+        (_CACHE_DIR / 'yfinance').mkdir(parents=True, exist_ok=True)
+        yf.set_tz_cache_location(str(_CACHE_DIR / 'yfinance'))   # its timezone/cookie db stays in the workspace
+        cfg = getattr(yf, 'config', None)
+        if cfg is not None:
+            cfg.debug.hide_exceptions = False   # raise instead of logging (raise_errors= is deprecated)
+        _YF_CACHE_SET = True
+    _YAHOO_LIMITER.acquire()
+    try:
+        h = yf.Ticker(sym).history(period='max', interval='1d', auto_adjust=False, actions=True)
+    except Exception as e:
+        if type(e).__name__ == 'YFRateLimitError':
+            _US_BLOCKED['yfinance'] = time.time() + _US_BLOCK_S
+        raise
+    if h is None or h.empty:
+        raise UsStockUnavailable(f'yfinance {sym}: no bars')
+    div = h['Dividends'] if 'Dividends' in h.columns else pd.Series(0.0, index=h.index)
+    # yfinance fills a missing adjclose with Close (yfinance/utils.py parse_quotes): with a dividend
+    # after the first bar, Adj Close equal to Close on every bar is that fill, not an adjustment
+    if bool((div.iloc[1:] > 0).any()) and bool((h['Adj Close'] == h['Close']).all()):
+        raise UsStockUnavailable(f'yfinance {sym}: the answer has no adjclose series (Adj Close is Close)')
+    idx = pd.DatetimeIndex(h.index)
+    idx = (idx.tz_convert(_US_TZ).tz_localize(None) if idx.tz is not None else idx).normalize()
+    return _us_tidy(pd.DataFrame({'Open': h['Open'].to_numpy(), 'High': h['High'].to_numpy(),
+                                  'Low': h['Low'].to_numpy(), 'Close': h['Close'].to_numpy(),
+                                  'AdjClose': h['Adj Close'].to_numpy(),
+                                  'Volume': h['Volume'].to_numpy()}, index=idx))
+
+
+def _us_adjust(raw):
+    """yfinance's auto_adjust on a raw frame: Open/High/Low × adjclose/close, Close = adjclose,
+    Volume untouched."""
+    ratio = raw['AdjClose'] / raw['Close']
+    out = pd.DataFrame({c: raw[c] * ratio for c in ('Open', 'High', 'Low')}, index=raw.index)
+    out['Close'] = raw['AdjClose']
+    out['Volume'] = raw['Volume']
+    return out
+
+
+def _us_final_at(days):
+    """Naive New York dates → when each day's bar is final (FEED_TIMING['usstock_price'])."""
+    return FEED_TIMING['usstock_price']['available'](pd.DatetimeIndex(days).tz_localize(_US_TZ))
+
+
+def _us_published(df, now):
+    """Rows whose bar is final by `now`: Yahoo hands today's bar back while the session is still
+    open, and a half session must reach neither the cache nor a backtest."""
+    if df.empty:
+        return df
+    return df[np.asarray(_us_final_at(df.index) <= now)]
+
+
+def _us_stale(fetched_at, end, now):
+    """True when a snapshot taken at `fetched_at` may lack a bar the request covers: the latest
+    weekday on or before min(end, New York today) whose bar is final by `now` became final after
+    the snapshot. A market holiday counts as a weekday — one refetch it did not need."""
+    day = now.tz_convert(_US_TZ).tz_localize(None).normalize()
+    if end:
+        day = min(day, pd.Timestamp(end))
+    for _ in range(7):
+        if day.dayofweek < 5:
+            final = _us_final_at([day])[0]
+            if final <= now:
+                return final > fetched_at
+        day -= pd.Timedelta(days=1)
+    return False
+
+
+def _us_cache_read(sym, src):
+    path = _single_path(_US_PREFIX, {'symbol': sym, 'src': src})
+    try:
+        meta = json.loads((pq.read_schema(path).metadata or {})[_META_KEY])
+        return pd.read_parquet(path), pd.Timestamp(meta['fetched_at'], tz='UTC')
+    except Exception:
+        return None, None
+
+
+def _usstock_daily(sym, end):
+    """Raw snapshot for `sym` from the first source that can serve it, cached or fetched, with
+    attrs['source'] naming it. Each call answers from ONE source's snapshot."""
+    _us_require_desktop()
+    now = pd.Timestamp.now(tz='UTC')
+    failed = []
+    for src, label, fetch in (('yahoo', 'Yahoo', _fetch_usstock_yahoo_raw),
+                              ('yfinance', 'yfinance', _fetch_usstock_yfinance_raw)):
+        df, fetched_at = _us_cache_read(sym, src)
+        if df is None or _us_stale(fetched_at, end, now):
+            try:
+                df = _us_published(fetch(sym), now)
+            except UsStockNotFound:
+                raise
+            except Exception as e:
+                failed.append(f'{label}: {type(e).__name__}: {str(e)[:120]}')
+                print(f"  ⚠️  {sym} daily bars: {failed[-1]} — "
+                      + ('trying yfinance' if src == 'yahoo' else 'no source left'))
+                continue
+            _write_single(_US_PREFIX, {'symbol': sym, 'src': src}, df,
+                          {'fetched_at': now.strftime(_META_TS_FMT)})
+        df.attrs['source'] = label
+        logging.info('%s daily bars served by %s', sym, label)
+        return df
+    raise UsStockUnavailable(f"{sym}: no US daily bars this time — {'; '.join(failed)}")
+
+
+def fetch_usstock_price(symbol, start, end, headers=None):
+    """US stock / ETF daily bars, split- and dividend-adjusted. Returns Open/High/Low/Close/Volume
+    on naive New York trading dates (bar_tz='America/New_York' for align_feed).
+
+    `symbol` is the ticker as Yahoo spells it ('AAPL', 'SPY', 'BRK-B'; 'BRK.B' is accepted).
+    Prices: Open/High/Low × adjclose/close, Close = adjclose — yfinance's auto_adjust=True — so
+    returns across splits and dividends are real; the level of old bars is NOT what was quoted
+    then. Volume is Yahoo's (split-adjusted, never dividend-scaled).
+
+    Desktop app only (BLAVE_AGENT_LOCAL=1): fetched on the user's own computer from Yahoo
+    Finance's public chart endpoint, then the yfinance package; elsewhere raises
+    UsStockUnavailable with a sentence to relay. `headers` is accepted for a uniform fetch_data
+    signature and never sent. A day's bar appears from 17:00 New York time
+    (FEED_TIMING['usstock_price']). df.attrs['source'] = 'Yahoo' or 'yfinance'; a report or
+    reply that shows these numbers carries _US_SOURCE_ZH (personal use only, may be wrong).
+    Raises UsStockNotFound for a ticker Yahoo does not have."""
+    sym = _us_symbol(symbol)
+    datetime.strptime(start, '%Y-%m-%d')
+    if end:
+        datetime.strptime(end, '%Y-%m-%d')
+    raw = _usstock_daily(sym, end)
+    df = _us_adjust(raw)
+    keep = df.index >= pd.Timestamp(start)
+    if end:
+        keep &= df.index < pd.Timestamp(end) + pd.Timedelta(days=1)
+    df = _sanity_check_ohlc(df[keep], f'{sym} usstock price')
+    df.attrs['source'] = raw.attrs['source']
+    return df
+
+
 # ── Publication-time alignment for non-price feeds ────────────────────────────
 # A feed row is stamped with the period it DESCRIBES (三大法人 for trading day D is stamped
 # D 00:00; a Blave alpha row is stamped with its bucket's open). What a bar may use is what
@@ -4775,6 +5123,15 @@ FEED_TIMING = {
                             "UTC, and the row stamped that day was the one it had just published. "
                             "How long the API takes to actually serve the new row after 00:00 is "
                             "unconfirmed — +1 h kept; the live gate waits for it"},
+    'usstock_price': {'tz': _US_TZ, 'period': pd.Timedelta(days=1), 'available': _same_day_at(17),
+                      'calendar': 'us_trading_days', 'fresh': 'raise',
+                      'basis': "NYSE / Nasdaq regular session ends 16:00 New York time (13:00 on "
+                               "early-close days); Yahoo publishes no time for its final daily bar "
+                               "and its consolidated volume keeps settling after the close — "
+                               "unconfirmed, 17:00 New York kept. The zone carries daylight saving "
+                               "(05:00 Taipei in summer, 06:00 in winter). fetch_usstock_price drops "
+                               "a day's bar before this time, so a session still running never "
+                               "reaches the cache or a backtest"},
     'economic_calendar': {'tz': 'Asia/Taipei', 'period': None, 'available': 'econ',
                           'calendar': 'self', 'fresh': 'raise', 'columns': ['real'],
                           'basis': "`real` at the release time + api cache 5 min (market/anue/"
@@ -4812,6 +5169,7 @@ class FeedNotPublished(RuntimeError):
 
 
 _live_feeds = 0   # >0 while a LIVE tick's fetch_data runs (runner / wait_for_bar)
+_feed_trims = None   # a list while lib.runner's look-ahead replay listens: the bars align_feed cut
 
 
 class live_feeds:
@@ -4895,7 +5253,8 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
     interval: the bars' interval ('1h', '60m', '1d', …); a bar may use a row only if the row
               was available by label + interval.
     bar_tz:   required when the bars' index is naive: 'UTC' for fetch_kline / intraday
-              fetch_twfutures_ohlcv, 'Asia/Taipei' for fetch_twstock_price* daily bars.
+              fetch_twfutures_ohlcv, 'Asia/Taipei' for fetch_twstock_price* daily bars,
+              'America/New_York' for fetch_usstock_price.
 
     A bar whose due row is missing while an older one exists (a late source, a hole) gets
     NaN, not the older value. Live (live_feeds()) the LAST bar being in that state raises
@@ -4910,7 +5269,8 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
         if not bar_tz:
             raise ValueError("align_feed: the bars' index is naive — pass bar_tz ('UTC' for "
                              "fetch_kline and intraday fetch_twfutures_ohlcv, 'Asia/Taipei' for "
-                             "fetch_twstock_price* daily bars)")
+                             "fetch_twstock_price* daily bars, 'America/New_York' for "
+                             "fetch_usstock_price)")
         index = index.tz_localize(bar_tz)
     bar_close = index + pd.Timedelta(interval)
 
@@ -4948,6 +5308,11 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
                 local = local[(local.hour >= 8) & (local.hour < 14)]
             days = pd.DatetimeIndex(local.floor('D').unique())
             cand = days[days.dayofweek < 5]
+        elif spec['calendar'] == 'us_trading_days':
+            # New York weekdays the bars span; an exchange holiday is not known here, so on one
+            # a live tick waits for a row that never comes (as a TW holiday does for the TW feeds)
+            days = pd.DatetimeIndex(local.floor('D').unique())
+            cand = days[days.dayofweek < 5]
         else:
             cand = pd.DatetimeIndex(local.floor(period).unique())
         if spec['available'] == 'after_period':
@@ -4958,10 +5323,21 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
             c_avail = spec['available'](cand)
         c_s = _utc_ns(cand)
         req = _latest_by(_utc_ns(c_avail), c_s, close_ns)
-        need_ns = np.where(req >= 0, c_s[np.maximum(req, 0)], -1)
+        if len(c_s):   # bars that span no trading day (a weekend) have no row to wait for
+            need_ns = np.where(req >= 0, c_s[np.maximum(req, 0)], -1)
         used_ns = np.where(row >= 0, s_ns[np.maximum(row, 0)], -1)
         stale = (need_ns >= 0) & (used_ns < need_ns)
         out.loc[stale] = np.nan
+        if spec['calendar'] == 'us_trading_days':
+            mid = stale.copy()
+            if len(mid) and mid[-1]:       # the trailing run is reported (and cut) below
+                mid[np.flatnonzero(~mid)[-1] + 1 if (~mid).any() else 0:] = False
+            if mid.any():
+                days = pd.DatetimeIndex(np.unique(need_ns[mid])).tz_localize('UTC').tz_convert(stamps.tz)
+                names = ', '.join(str(d.date()) for d in days[:5]) + ('' if len(days) <= 5 else f' (+{len(days) - 5} more)')
+                print(f"  ⚠️  {source}: {int(mid.sum())} bar(s) set to NaN, {index[mid][0]} → "
+                      f"{index[mid][-1]} — no US row for weekday(s) {names}: most likely a US market "
+                      f"holiday (the lib has no holiday table), else a day missing from the data")
         if len(stale) and stale[-1]:
             k = int(np.flatnonzero(c_s == need_ns[-1])[0])
             need, due = cand[k], c_avail[k]
@@ -4970,6 +5346,8 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
             tail = len(stale) - (np.flatnonzero(~stale)[-1] + 1 if (~stale).any() else 0)
             print(f"  ⚠️  {source}: the last {tail} bar(s) are cut — the row for {need} was due by "
                   f"{due} and is not in the data yet (live refuses these bars until it lands)")
+            if _feed_trims is not None:
+                _feed_trims.extend(out.index[len(out) - tail:])
             out = out.iloc[:len(out) - tail]
     elif spec['fresh'] == 'warn' and len(stamps) and present.any():
         last = stamps[present].max()

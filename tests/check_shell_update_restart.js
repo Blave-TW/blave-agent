@@ -27,7 +27,7 @@ function rig(o) {
   const log = [], boxes = [], tracked = [];
   let quitConfirmed = false, child = !!o.trading, phase = o.phase || "blocked", nDialog = 0;
   const ctx = {
-    quitAsking: !!o.asking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading) },
+    quitAsking: !!o.asking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
     planRestart, cloudSt: () => (o.cloud ? { trading: true } : null), BrowserWindow: { getAllWindows: () => [] },
     tradeMaybeLive: () => (child ? { venue: "binance" } : null), venueName: (id) => (id === "binance" ? "Binance" : ""),
     showMain: () => { log.push("showMain"); if (o.showMainThrows) throw new Error("window gone"); },
@@ -38,6 +38,8 @@ function rig(o) {
     _tradeHost: { noteQuit: () => { log.push("noteQuit"); if (o.noteQuitThrows) throw new Error("note"); },
       stop: () => { log.push("stop:start"); return new Promise((ok) => setTimeout(() => { child = false; log.push("stop:done"); ok(); }, 30)); } },
     console: { error: () => {} },
+    // 0.1.12:背景安裝的 pip 在跑時要先收掉(稽核 0.1.12 P1-1);沒在裝時是立刻回來的 no-op,不進 log
+    engineAbort: () => (o.installing ? new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 10)) : Promise.resolve(false)),
   };
   Object.defineProperty(ctx, "quitConfirmed", { get: () => quitConfirmed, set: (v) => { quitConfirmed = v; log.push("quitConfirmed=" + v); } });
   const fn = new Function("ctx", "with (ctx) { " + RESTART + "\n return restartToUpdate; }")(ctx);
@@ -47,6 +49,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   { const r = rig({ trading: false, phase: "ready" }), res = await r.run();
     t("沒在下單:直接 install,不跳框、不收工;裝成才送埋點 feature_used update_restart", res.ok === true && r.log.join() === "install:ok,used" && r.boxes.length === 0 && r.tracked.join() === "feature_used:update_restart", r.log); }
+  { const r = rig({ trading: false, phase: "ready", installing: true }), res = await r.run();
+    t("0.1.12 背景安裝的 pip 在跑:先收掉 pip(等它結束)再 install", res.ok === true && r.log.join() === "engineAbort,install:ok,used", r.log); }
+  { const r = rig({ trading: true, response: 1, installing: true }), res = await r.run();
+    t("0.1.12 下單中、按確認、pip 也在跑:停單收完 → 收 pip → install", res.ok === true && r.log.join() === "showMain,dialog,used,quitConfirmed=true,noteQuit,stop:start,stop:done,engineAbort,install:ok", r.log); }
   { const r = rig({ trading: false, phase: "ready", installRes: { ok: false, error: "NOT_READY" } }), res = await r.run();
     t("…直接 install 當下沒成:不送埋點(不多算,稽核 P2-6)", res.ok === false && r.tracked.length === 0); }
   { const r = rig({ trading: true, response: 0 }), res = await r.run();
@@ -56,6 +62,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const b = r.boxes[0];
     t("確認框:warning、標題 tm.quitTitle、內文 tm.updateBody 帶 venue、鈕 [取消, 重新啟動以完成更新]、預設與 Esc 都是取消", b.type === "warning" && b.message === L.quitTitle
       && b.detail === L.updateBody.replace("{venue}", "Binance") && JSON.stringify(b.buttons) === JSON.stringify([L.quitStay, L.updateReady]) && b.defaultId === 0 && b.cancelId === 0, b); }
+  // 0.1.12 設計稽核:noLink 之後 Windows 照陣列由左往右畫——動作在左、取消在最右;預設與 Esc 仍是取消。macOS 照上面那組不動
+  { const r = rig({ trading: true, response: 1, platform: "win32" }), res = await r.run(), b = r.boxes[0];
+    t("Windows:鈕 [重新啟動以完成更新, 取消]、預設與 Esc 都是取消(1);按取消(回 1)→ CANCELED,什麼都沒動", JSON.stringify(b.buttons) === JSON.stringify([L.updateReady, L.quitStay]) && b.defaultId === 1 && b.cancelId === 1 && b.noLink === true
+      && res.error === "CANCELED" && r.log.join() === "showMain,dialog", JSON.stringify([b, r.log])); }
+  { const r = rig({ trading: true, response: 0, platform: "win32" }), res = await r.run();
+    t("Windows:按左邊那顆(回 0 = 重新啟動)→ 收工再裝", res.ok === true && r.log.indexOf("noteQuit") > 0 && r.log.some((x) => /^install:/.test(x)), r.log); }
   { const r = rig({ trading: true, cloud: true, response: 0 }); await r.run();
     t("雲端也確定在下單:內文多一段 tm.quitCloudNote(同結束攔截,經 TT.quitDetail)", r.boxes[0].detail === TT.quitDetail(L.updateBody.replace("{venue}", "Binance"), L.quitCloudNote) && r.boxes[0].detail.includes(L.quitCloudNote)); }
   { const r = rig({ trading: true, response: 1 }), res = await r.run();
@@ -182,10 +194,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   { const TSI = cut(src, "function tradeStartIfReady("), VLB = cut(src, "function venvLinkBroken("), EES = cut(src, "function ensureEngineShared(");
     const venv = (o) => {
       const log = []; let linkOk = !o.broken, runs = 0; const pend = [];
-      const ctx = { WIN: !!o.win, VENV_PY: "/b/venv/bin/python", WS: "/b/ws", venvRepairTried: false, _engineRun: null, _engineReports: new Set(), console: { error: (m) => log.push("err:" + m) },
+      const ctx = { WIN: !!o.win, VENV_PY: "/b/venv/bin/python", WS: "/b/ws", venvRepairTried: false, _engineRun: null, console: { error: (m) => log.push("err:" + m) },
         fs: { existsSync: (p) => (p === "/b/venv/bin/python" ? linkOk : true), lstatSync: () => ({ isSymbolicLink: () => true }) },
         tradeHost: () => ({ start: () => log.push("daemon") }), binanceLink: () => ({ start: () => log.push("binance") }),
-        ensureEngine: (rep) => { runs++; log.push("ensure"); return new Promise((ok, no) => pend.push(() => { rep("engine.preparing"); if (o.fail) no(new Error("pip")); else { if (!o.stillBroken) linkOk = true; ok(); } })); } };
+        ensureEngine: () => { runs++; log.push("ensure"); return new Promise((ok, no) => pend.push(() => { if (o.fail) no(new Error("pip")); else { if (!o.stillBroken) linkOk = true; ok(); } })); } };
       const api = new Function("ctx", "with (ctx) { " + [TSI, VLB, EES].join("\n") + "\n return { tradeStartIfReady, ensureEngineShared }; }")(ctx);
       return { api, log, ctx, runs: () => runs, finish: async () => { while (pend.length) pend.shift()(); await tick(); await tick(); } };
     };
@@ -193,10 +205,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       t("venv 好的:照舊直接起 daemon,不修", v.log.join() === "daemon,binance"); }
     { const v = venv({ broken: true }); v.api.tradeStartIfReady();
       t("斷掉的連結:不起 daemon、先修(ensureEngine)", v.log.join() === "ensure" && v.runs() === 1);
-      const seen = []; const p2 = v.api.ensureEngineShared((k) => seen.push(k));
+      const p2 = v.api.ensureEngineShared();
       t("修的途中送第一句話(ensure-engine):共用同一份,不再跑第二支 -m venv / pip", v.runs() === 1);
       await v.finish(); await p2;
-      t("修好之後自己起 daemon;畫面那邊也收到進度字", v.log.join() === "ensure,daemon,binance" && seen.join() === "engine.preparing", v.log);
+      t("修好之後自己起 daemon(進度不經這裡:enginesetup 的快照推給畫面)", v.log.join() === "ensure,daemon,binance", v.log);
       v.api.tradeStartIfReady(); t("…之後再叫:照舊起(不再修)", v.runs() === 1); }
     { const v = venv({ broken: true, fail: true }); v.api.tradeStartIfReady(); await v.finish();
       t("修失敗:只留一行 log、不起 daemon、不拋;這次啟動不再自動試(留給送訊息那條路)", v.log[0] === "ensure" && v.log.some((x) => /venv repair failed/.test(x)) && !v.log.includes("daemon") && (v.api.tradeStartIfReady(), v.runs() === 1), v.log); }
@@ -204,9 +216,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       t("修完還是斷的:不起、不迴圈", v.runs() === 1 && !v.log.includes("daemon")); }
     { const v = venv({ broken: true, win: true }); v.api.tradeStartIfReady();
       t("Windows:venv 沒有連結,不走這條", v.runs() === 0 && v.log.length === 0); }
-    t("接線:ensure-engine 走 ensureEngineShared;視窗關了不送進度", /return ensureEngineShared\(\(t\) => \{ if \(!win\.isDestroyed\(\)\) win\.webContents\.send\("engine-progress", t\); \}\)\.then\(\(r\) => \{ tradeStartIfReady\(\); return r; \}\);/.test(src)
-      && (src.match(/ensureEngine\(/g) || []).length === 2); }
+    t("接線:ensure-engine 與開 app 的背景安裝都走 ensureEngineShared(同一份);快照只送給我們的頁", /handle\("ensure-engine", \(\) => ensureEngineShared\(\)\.then\(\(r\) => \{ tradeStartIfReady\(\); return r; \}\)\);/.test(src)
+      && /function engineKick\(\) \{\s*ensureEngineShared\(\)/.test(src) && (src.match(/ensureEngine\(/g) || []).length === 2
+      && /if \(!w\.isDestroyed\(\) && isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("engine-state", s\)/.test(src)); }
 
+  // ── 0.1.12 結束 app:背景安裝的 pip 在跑就先收掉(稽核 0.1.12 P1-1);沒在裝、常駐程式也沒在跑就直接放行 ──
+  { const BQ = cut(src, 'app.on("before-quit", (e) => {');
+    const quitRig = (o) => {
+      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, activeTurn: null, turnStarting: false, tradeMaybeLive: () => null,
+        _tradeHost: o.daemon ? { isRunning: () => true, stop: () => new Promise((ok) => setTimeout(() => { log.push("daemon:stopped"); ok(); }, 10)) } : null,
+        _engineSetup: { busy: () => !!o.installing }, engineAbort: () => new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 5)),
+        app: { on: (ev, fn) => { ctx.handler = fn; }, quit: () => log.push("app.quit") } };
+      new Function("ctx", "with (ctx) { " + BQ + "); }")(ctx);
+      return { fire: async () => { const e = { prevented: false, preventDefault() { this.prevented = true; } }; ctx.handler(e); await sleep(40); return e.prevented; }, log, ctx };
+    };
+    { const q = quitRig({ installing: true }); const prevented = await q.fire();
+      t("結束 app、pip 在跑:先攔下、收掉 pip、再 app.quit()", prevented && q.log.join() === "engineAbort,app.quit" && q.ctx.quitting === true, q.log); }
+    { const q = quitRig({ installing: true, daemon: true }); await q.fire();
+      t("…常駐程式也在跑:兩個都收完才 app.quit()", q.log.includes("engineAbort") && q.log.includes("daemon:stopped") && q.log[q.log.length - 1] === "app.quit", q.log); }
+    { const q = quitRig({}); const prevented = await q.fire();
+      t("…都沒在跑:不攔、不收", !prevented && q.log.length === 0, q.log); } }
   // ── 接線:三個入口都走 restartToUpdate ──
   t("IPC update-install 改叫 restartToUpdate", /ipcMain\.handle\("update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\)\)\);/.test(src));
   t("選單列那一行 click = restartToUpdate()", /click: \(\) => \{ restartToUpdate\(\)\.catch\(/.test(cut(src, "function trayMenu(")));

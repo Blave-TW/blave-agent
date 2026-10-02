@@ -385,12 +385,22 @@ function verBoxCtx(side, B) {
   const cloud = side === "cloud", display = VER.safeName(B.data.displayName) || B.name;   // 規則只有一份,在 strategy_versions.js(稽核 S4)
   return { display, env: cloud ? "cloud" : undefined, footWhere: cloud ? t("ver.where", { name: display }) : undefined, opener: $("ver-restore") };
 }
+// 這支是不是台指期口數策略:報告裡的標的優先,沒有就看那一邊的金額表怎麼判(trRowTxf)
+function verIsLots(side, B) {
+  const s = B && B.data && B.data.stats, sym = s && typeof s.symbol === "string" ? s.symbol : null;
+  if (sym) return !!trTxfSpec(sym);
+  const bag = typeof TR_BAGS !== "undefined" ? TR_BAGS[side === "cloud" ? "cloud" : "local"] : null;
+  return !!bag && !!trWith(bag, () => trRowTxf(B.name));
+}
 // 有金額:不走還原,改開守門框(機器端 restore() 無論如何都會拒絕;這個框是讓人在按下去之前就知道)。amt 讀不到(ack 回 LIVE)用不帶金額的 lead
 function verGuard(side, B, n, cur, amt) {
   const c = verBoxCtx(side, B), vars = { display_name: c.display, name: B.name, n: String(n) };
   const extra = document.createDocumentFragment();
-  const lead = typeof amt === "number" && amt > 0
-    ? t("ver.guardLead", { name: c.display, amt: (trFmt(amt) || String(amt)) + " " + trUnit(), cur: "v" + cur, v: "v" + n })
+  // 台指期策略的金額是口數:另一句樣板(zh「{lots} 口在跑」,漢字之間不留空格),不掛帳戶幣(同金額表那一格)
+  const has = typeof amt === "number" && amt > 0, lots = has && verIsLots(side, B);
+  // 1 口另一句(en「1 lot」;台指期最常見就是 1 口,真錢守門框上最常出現)
+  const lead = lots ? t(amt === 1 ? "ver.guardLeadLot1" : "ver.guardLeadLots", { name: c.display, lots: trFmt(amt) || String(amt), cur: "v" + cur, v: "v" + n })
+    : has ? t("ver.guardLead", { name: c.display, amt: (trFmt(amt) || String(amt)) + " " + trUnit(), cur: "v" + cur, v: "v" + n })
     : t("ver.guardLeadNoAmt", { name: c.display, cur: "v" + cur, v: "v" + n });
   extra.appendChild(verEl("p", "", lead));
   const ol = verEl("ol", "vg-steps");

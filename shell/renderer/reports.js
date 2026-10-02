@@ -68,7 +68,8 @@ function rptStoredSince(sinceMs, list) { const s = Math.floor(sinceMs / 1000) - 
 /* ── 純邏輯到此 ── */
 
 const RPT = { bags: { local: rptNewBag(), cloud: rptNewBag() }, data: { local: null, cloud: null }, failed: { local: false, cloud: false }, skel: { local: false, cloud: false },
-  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, cloudRes: [], noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null };   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
+  seq: { local: 0, cloud: 0 }, readSeq: 0, docs: new Map(), pending: { local: null, cloud: null }, turnAt: null, cloudTurn: null, cloudRes: [], noNew: null, poll: null, sending: false, fail: false, opener: null, paintedEnv: null,
+  busyTold: false };   // 回合中點過停用的「新增報告」:那句「上一輪還在跑。」留到回合結束(rptSync 清)   // pending 每袋一份(雲端輪詢中送本機的不互蓋);fail = 上一次送出失敗:腳那一句留到下次送出 / 關框
 const RPT_DOCS_MAX = 8;   // 讀過的本體留幾份(回清單再進同一份不重抓;換語言整組清掉——渲染出來的字是 i18n 過的)
 function rptNewBag() { return { open: false, reading: null, scroll: 0, row: null, shown: RPT_PAGE }; }
 const rptBag = (env) => RPT.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
@@ -103,7 +104,7 @@ async function rptOpen() {
 // 焦點:進清單落在「新增報告」;那顆鈕停用時退到 #rpt-h;閱讀層在返回鈕
 function rptFocusHome() {
   const B = rptBag();
-  const h = B.reading ? $("rpt-back") : !$("rpt-ask").disabled ? $("rpt-ask") : $("rpt-h");
+  const h = B.reading ? $("rpt-back") : !$("rpt-ask").disabled ? $("rpt-ask") : $("rpt-h");   // 回合中的 aria-disabled 仍停得上去:落在它身上
   if (h && h.offsetParent) h.focus();
 }
 // 選了策略 / 開自動下單 / 開策略庫:那一邊的報告收起來(中欄一次只有一個視圖)。trOpen 直接翻 DOM、不經 envShowMain,所以這裡自己收 #rpt
@@ -157,6 +158,7 @@ function rptInvalidate() {
 }
 // 回合開始 / 結束(running 變了):工具列的鈕與那一行就地重畫;新增報告框開著也跟著
 function rptSync() {
+  if (!(typeof running !== "undefined" && running === true)) RPT.busyTold = false;   // 清在這裡、不在 rptPaintTools:忙碌中也會重畫
   if (!$("rpt").hidden && !rptBag().reading) rptPaintTools();
   if (!$("rpn-scrim").hidden) rptNewPaint();
 }
@@ -246,21 +248,32 @@ function rptPaintTools() {
   const env = libEnv(), data = RPT.data[env], n = data ? data.length : 0, count = $("rpt-count");
   count.textContent = t(n === 1 ? "rpt.count.one" : "rpt.count.other", { n: String(n) });
   count.classList.toggle("is-zero", n === 0);   // 0 份藏字留位
-  const st = rptAskState(rptCtx(env));
-  $("rpt-ask").disabled = st !== "free";
+  const st = rptAskState(rptCtx(env)), ask = $("rpt-ask");
+  // 回合中「點了才講」(同策略庫主鈕、策略版本):aria-disabled + title,點了才把那句寫進 rpt-msg;其餘停用態照舊原生 disabled + 常駐句
+  ask.disabled = st !== "free" && st !== "busy";
+  if (st === "busy") { ask.setAttribute("aria-disabled", "true"); ask.title = t("turn.busy"); }
+  else { ask.removeAttribute("aria-disabled"); ask.removeAttribute("title"); ask.removeAttribute("aria-describedby"); }
   $("rpt-ask-t").textContent = t(st === "pending" ? "rpt.asking" : "rpt.ask");
   $("rpt-ask").querySelector("svg").hidden = st === "pending";   // 「agent 寫作中…」不是動作,＋ icon 收掉
   const msg = $("rpt-msg");
   let text = null, err = false;
   if (st === "pending") text = t("rpt.note.pending");
-  else if (st === "busy") text = t("turn.busy");
+  else if (st === "busy") text = RPT.busyTold ? t("turn.busy") : null;
   else if (st === "stopped" || st === "stale") text = t(st === "stopped" ? "ho.gate.stopped" : "ho.gate.stale");
   else if (RPT.noNew === env) { text = t("rpt.err.noNew"); err = true; }
-  msg.textContent = ""; msg.className = "rpt-msg" + (err ? " err" : ""); msg.hidden = !text;
+  msg.textContent = ""; msg.className = "rpt-msg" + (err ? " err" : ""); msg.hidden = !text && st !== "busy";
+  // 忙碌態訊息槽空著也不藏、先掛好 role=status:帶著內容才出現的 live region 讀屏常常不唸
+  if (st === "busy") msg.setAttribute("role", "status"); else msg.removeAttribute("role");
   if (!text) return false;
   if (err) { const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); msg.appendChild(m); }   // 灰記號:不是錯誤,是「沒發生」
   msg.appendChild(libEl("span", "", text));
   return true;
+}
+// 回合中點了「新增報告」:把那句寫進工具列下的訊息槽(role=status 唸一次),鈕 describedby 指過去
+function rptBusyTell() {
+  RPT.busyTold = true;
+  rptPaintTools();
+  $("rpt-ask").setAttribute("aria-describedby", "rpt-msg");
 }
 function rptRow(r, current) {
   const b = libEl("button", "rpt-row"); b.type = "button"; b.dataset.id = r.id;
@@ -472,7 +485,7 @@ async function rptSend() {
   const g = (id) => document.getElementById(id);
   g("rpt-nav").addEventListener("click", () => { if (!rptBag().open) rptOpen(); else sideReclick(() => rptLeave()); });   // 再點一次 = 回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)
   g("rpt-back").addEventListener("click", rptBack);
-  g("rpt-ask").addEventListener("click", () => rptNewOpen(g("rpt-ask")));
+  g("rpt-ask").addEventListener("click", () => { if (g("rpt-ask").getAttribute("aria-disabled") === "true") { rptBusyTell(); return; } rptNewOpen(g("rpt-ask")); });
   g("rpt-rows").addEventListener("click", (e) => {   // 列會重畫:委派
     const b = e.target.closest(".rpt-row[data-id]"); if (b) { rptShowRead(b.dataset.id); return; }
     if (e.target.closest(".rpt-more")) rptMore();

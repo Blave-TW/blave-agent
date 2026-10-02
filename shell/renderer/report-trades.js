@@ -329,10 +329,26 @@
   // canon › Copy:時間 = MM/DD HH:mm(本地時間,跟時間軸同一個時區)。
   // 回測清單常跨好幾年,只印月日會分不出是哪一年——只要有任何一筆不在今年,
   // 整張清單(與十字線)一律帶年份;全在今年才用短格式。整欄同一種格式,欄寬才齊
-  function fmtTime(ts, withYear) {
+  // 日線以上(dateOnly)只印日期。日 K 的 ts 是「那一天的午夜」,但兩種寫法並存:UTC 午夜(加密日 K;美股與
+  // fetch_twstock_price 是無時區日期,lib/runner .timestamp() 當 UTC)與台北午夜(fetch_twstock_ohlcv / fetch_twfutures_ohlcv 的
+  // 1d 帶 Asia/Taipei)。固定用 UTC+8 取日期兩種都落在同一天(00:00 / 08:00);照本地時間印會多一個假的時間,UTC 以西還會退一天,
+  // 純 UTC 則把台北午夜那種印成前一天
+  const DAY_TZ_SHIFT = 8 * 3600;
+  function fmtTime(ts, withYear, dateOnly) {
+    if (dateOnly) {
+      const u = new Date((ts + DAY_TZ_SHIFT) * 1000);
+      const ymd = pad2(u.getUTCMonth() + 1) + "/" + pad2(u.getUTCDate());
+      return withYear ? u.getUTCFullYear() + "/" + ymd : ymd;
+    }
     const d = new Date(ts * 1000);
     const md = pad2(d.getMonth() + 1) + "/" + pad2(d.getDate()) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
     return withYear ? d.getFullYear() + "/" + md : md;
+  }
+  // 回測的 INTERVAL(stats.interval)一根 ≥ 1 天 → 進出場時間只印日期。認得 m / min / h / d / w / M(月);認不得就照舊印到分鐘
+  const IVL_SEC = { m: 60, min: 60, h: 3600, d: 86400, w: 604800, M: 2592000 };
+  function isDailyOrAbove(interval) {
+    const m = /^(\d{1,4})\s*(min|m|h|d|w|M)$/.exec(String(interval || "").trim().replace(/[HDW]$/, (c) => c.toLowerCase()));
+    return !!m && Number(m[1]) * IVL_SEC[m[2]] >= 86400;
   }
   function needsYear(trades, nowMs) {
     const y = new Date(nowMs).getFullYear();
@@ -498,7 +514,7 @@
     });
   };
 
-  function buildChart(host, candles, tracks, panes) {
+  function buildChart(host, candles, tracks, panes, dateOnly) {
     const LWC = LightweightCharts;
     const lang = document.documentElement.lang || "en";
     const inkMuted = token("--ink-3");
@@ -525,7 +541,7 @@
       rightPriceScale: { borderVisible: false },
       localization: {
         timeFormatter: function (time) {
-          return typeof time === "number" ? fmtTime(time, true) : String(time);
+          return typeof time === "number" ? fmtTime(time, true, dateOnly) : String(time);
         },
         priceFormatter: fmtPrice,
       },
@@ -641,7 +657,7 @@
 
   // 清單可達上萬筆,一次全塞 DOM 首繪會卡;捲近底部再補下一批
   const CHUNK = 500;
-  function buildList(listEl, rows, withYear, onPick) {
+  function buildList(listEl, rows, withYear, dateOnly, onPick) {
     const kindKey = { open: "tr.kind.open", close: "tr.kind.close", flip: "tr.kind.flip" };
     function buildRow(entry) {
       const p = entry.point;
@@ -649,7 +665,7 @@
       // 真的 button:鍵盤走得到、Enter/Space 會觸發,不必自己補 role 與 keydown
       const row = el("button", "tr-row");
       row.type = "button";
-      row.appendChild(el("span", "tr-ts", fmtTime(p.ts, withYear)));
+      row.appendChild(el("span", "tr-ts", fmtTime(p.ts, withYear, dateOnly)));
       row.appendChild(
         el("span", isBuy ? "tr-side is-buy" : "tr-side is-sell", t(isBuy ? "tr.buy" : "tr.sell") + " " + Math.abs(p.delta).toFixed(4))
       );
@@ -694,6 +710,7 @@
     const candles = sanitizeCandles(stats.candles);
     const tracks = buildTracks(trades, startPosition(stats));
     const withYear = needsYear(trades, Date.now());
+    const dateOnly = isDailyOrAbove(stats.interval);
 
     const root = el("div", "tr-root");
     container.appendChild(root);
@@ -704,7 +721,7 @@
       root.appendChild(host);
       try {
         if (typeof LightweightCharts === "undefined") throw new Error("LWC_MISSING");
-        built = buildChart(host, candles, tracks, sanitizePanes(stats.panes));
+        built = buildChart(host, candles, tracks, sanitizePanes(stats.panes), dateOnly);
         live = { chart: built.chart, cancelSized: whenSized(host, built.applyInitialView) };
       } catch (e) {
         // 圖壞了清單還是有用:不讓一個 LWC 例外把整個分頁變成空白
@@ -723,7 +740,7 @@
 
     const listEl = el("div", "tr-list");
     root.appendChild(listEl);
-    buildList(listEl, buildRows(tracks), withYear, function (track) {
+    buildList(listEl, buildRows(tracks), withYear, dateOnly, function (track) {
       if (!built) return;
       // 陣列索引 → logical 索引的位移(指標線 warmup 點落在首根 K 棒之前時不為 0)
       let base = built.chart.timeScale().timeToIndex(candles[0].time, true);
@@ -748,6 +765,7 @@
     buildSegments: buildSegments,
     trackBarRange: trackBarRange,
     fmtTime: fmtTime,
+    isDailyOrAbove: isDailyOrAbove,
     needsYear: needsYear,
     fmtPrice: fmtPrice,
   };

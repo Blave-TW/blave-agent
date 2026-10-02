@@ -18,7 +18,9 @@ Star the repo if this is useful — and Watch › Releases to get notified of ne
 
 ## What Makes It Different
 
-### Backtests That Check Whether It Was Luck
+### Backtests That Check for Overfitting and Use Real Fees
+
+Overfitting: parameters that just happen to fit past data.
 
 - Every Type A backtest runs a Monte Carlo permutation test by default (MCPT, `lib/validation.py`) and records a p-value: could shuffled data have done as well?
 - A parameter scan (`lib/param_scan.py`) looks for a plateau of parameters that all work, not the single best cell.
@@ -122,7 +124,7 @@ For any other exchange or broker with an API, the agent can write a helper from 
 - Funding amounts and resuming trading are done by you — in the desktop app's Auto trading page, or on the web workspace for a cloud machine. The agent refuses to do them for you, even when asked. The one thing it may always do by itself is trip the kill switch.
 - On the desktop app, orders only go out while Blave is running; after you quit and reopen it, trading stays paused until you press Start trading.
 - The agent verifies before it reports: it re-reads a file after editing it, and queries an order back from the exchange before saying it was placed. Every order attempt is logged to `state/audit.jsonl`.
-- A backtest describes the past. It does not predict or guarantee future results. MCPT and parameter scans lower the odds that you are looking at luck; they do not remove them.
+- A backtest describes the past. It does not predict or guarantee future results. MCPT checks whether a result is statistically significant, and parameter scans check for overfitting; both only lower the odds that a backtest is fooling you, and neither removes them.
 - Nothing here is investment advice. Trading can lose money, including all of it.
 
 ## Run It in the Cloud (Paid)

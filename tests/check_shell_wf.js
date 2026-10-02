@@ -48,6 +48,54 @@ if (!process.versions.electron) {
     W.wfRunsOf(700, 365, 30) === 11 && W.wfRunsOf(365, 365, 30) === 0 && W.wfRunsOf(700, 0, 30) === 0 && W.wfTotalDays(STATS, null) === 699 && W.wfTotalDays({}, w0) === W.wfDays(w0.runs[0].tr0, w0.runs[10].te1));
   ok("① 重選線三段:≤12 整條、13–60 短刻度、>60 不畫;標記點是各輪 test_start 在曲線上的位置(第一輪不畫)",
     W.wfMarkMode(12) === "line" && W.wfMarkMode(13) === "tick" && W.wfMarkMode(60) === "tick" && W.wfMarkMode(61) === "none" && W.wfRunMarks(w0).length === 10 && W.wfRunMarks(w0)[0] === w0.oos.dates.indexOf(w0.runs[1].te0));
+  // 0.1.12 Wei 截圖:台指期 1h 十年、累積報酬到 +1700%,舊碼步長卡 50% + 格線 24 條上限 → 刻度擠在下半部停在 +1050%、還多出一條 −100%
+  {
+    const axis = (lo, hi) => { lo = Math.min(lo, 0); hi = Math.max(hi, 0); const p = (hi - lo) * 0.08 || 1; return W.wfTicks(lo - p, hi + p); };
+    const nice = (s) => { const m = s / Math.pow(10, Math.floor(Math.log10(s) + 1e-9)); return [1, 2, 5].some((x) => Math.abs(m - x) < 1e-6); };
+    const sane = (a) => a.ticks.length >= 4 && a.ticks.length <= 6 && nice(a.step) && a.ticks.every((v, i) => v >= a.lo - 1e-9 && v <= a.hi + 1e-9 && (!i || v > a.ticks[i - 1]));
+    const tw = axis(-5, 1700);
+    ok("① Y 軸刻度:截圖那份(−5% … +1700%)→ 步長 500、0 / +500 / +1000 / +1500,刻度涵蓋到曲線頂、沒有 −100%",
+      sane(tw) && tw.step === 500 && tw.ticks.join() === "0,500,1000,1500" && tw.hi >= 1700 && tw.lo <= -5 && tw.lo > -500, JSON.stringify(tw));
+    const bad = [];
+    for (const lo of [0, -0.01, -0.3, -5, -37, -95, -99.9]) for (let e = -3; e <= 6; e += 0.01) {
+      const h = Math.pow(10, e);
+      for (const hi of [h, -Math.min(h, 99.99)]) { const a = axis(Math.min(lo, hi), Math.max(lo, hi)); if (!sane(a) || a.lo > Math.min(lo, hi, 0) || a.hi < Math.max(lo, hi, 0)) bad.push([lo, hi, a.ticks.length, a.step]); }
+    }
+    ok("① Y 軸刻度掃 1.2 萬組(低點 0 … −99.9%、高點 0.001% … +100 萬%、全部是負的):每組 4–6 條、1 / 2 / 5 × 10^n、刻度都在軸內、軸包得住資料", bad.length === 0, JSON.stringify(bad.slice(0, 5)));
+    const flat = axis(0, 0), tiny = axis(0, 0.3), neg = axis(-60, -3);
+    ok("① Y 軸刻度:全平(0%)、只有 +0.3%、全部是負的 → 都有 4–6 條;0 那條是真的 0(虛線判斷 v === 0);小步長標籤不帶浮點尾巴",
+      sane(flat) && flat.ticks.includes(0) && sane(tiny) && tiny.dp === 1 && tiny.ticks.map((v) => W.wfTickLabel(v, tiny.dp)).join() === "0.0%,+0.1%,+0.2%,+0.3%"
+      && sane(neg) && neg.ticks.includes(0) && neg.ticks.map((v) => W.wfTickLabel(v, neg.dp)).join() === "−60%,−40%,−20%,0%", JSON.stringify([flat, tiny, neg]));
+    const big = axis(0, 400000);
+    ok("① Y 軸刻度字:≥ 1,000 加千分位(同交易分頁 trFmt2)→ +1,500% / +400,000% / −1,000%;未滿 1,000 不變",
+      tw.ticks.map((v) => W.wfTickLabel(v, tw.dp)).join(" ") === "0% +500% +1,000% +1,500%" && big.ticks.map((v) => W.wfTickLabel(v, big.dp)).join(" ") === "0% +100,000% +200,000% +300,000% +400,000%"
+      && W.wfTickLabel(-1000, 0) === "−1,000%" && W.wfTickLabel(999, 0) === "+999%" && W.wfTickLabel(1e-30, 30) === "+0.00000000000000000000%", big.ticks.map((v) => W.wfTickLabel(v, big.dp)).join(" "));
+    ok("① Y 軸刻度:壞輸入(lo ≥ hi、非有限、相減溢位)不畫刻度、不當機", [[1, 1], [2, 1], [NaN, 1], [0, Infinity], [-1.7e308, 1.7e308]].every(([a, b]) => W.wfTicks(a, b).ticks.length === 0));
+
+    // 真的 drawChart 畫在假 canvas 上:刻度字與曲線點用同一把尺(值剛好落在刻度上的點,y 跟那個刻度字一樣),全部在繪圖區內、字不疊
+    const draw = (cum, Wd, Hd) => {
+      const calls = [], ctx = new Proxy({ measureText: (s) => ({ width: s.length * 6 }) }, {
+        get: (o, k) => (k in o ? o[k] : (...a) => calls.push([k, ...a])), set: () => true });
+      sb.document = { documentElement: {} }; sb.getComputedStyle = () => ({ getPropertyValue: () => "#888" });
+      W.drawChart({ clientWidth: Wd, clientHeight: Hd, getContext: () => ctx }, { oos: { dates: cum.map((_, i) => "2020-01-" + String(1 + (i % 28)).padStart(2, "0")), cum }, runs: null, step: 30 });
+      const labels = calls.filter((c) => c[0] === "fillText" && /%$/.test(c[1])).map((c) => ({ s: c[1], x: c[2], y: c[3] }));
+      const pts = calls.filter((c) => c[0] === "moveTo" || c[0] === "lineTo").slice(-cum.length).map((c) => ({ x: c[1], y: c[2] }));
+      return { labels, pts };
+    };
+    const shot = Array.from({ length: 3180 }, (_, i) => (i === 0 ? 0 : i === 2000 ? 1500 : i === 2950 ? 1700 : -5 + (1250 * i) / 3180));
+    const bad2 = [];
+    for (const [nm, cum] of [["截圖", shot], ["+40 萬%", [0, 100, 400000]], ["+0.3%", [0, 0.1, 0.3]], ["全負", [-2, -30, -60]], ["兩點", [0, 3.4]], ["全平", [0, 0]], ["+12%(要撐域)", [0, 5, 12]]]) for (const [Wd, Hd] of [[510, 220], [414, 220]]) {
+      const { labels, pts } = draw(cum, Wd, Hd), ys = labels.map((l) => l.y).sort((a, b) => a - b);
+      const inPlot = (y) => y >= 12 - 1e-6 && y <= Hd - 22 + 1e-6;
+      const gap = ys.slice(1).every((y, i) => y - ys[i] >= 14);
+      const same = labels.every((l) => cum.every((v, i) => wfTickVal(l.s) !== v || Math.abs(pts[i].y - l.y) < 1e-6));
+      const fits = labels.every((l) => l.x - 6 * l.s.length >= 0);
+      if (labels.length < 4 || labels.length > 6 || !ys.every(inPlot) || !pts.every((p) => inPlot(p.y)) || !gap || !same || !fits) bad2.push(nm + "@" + Wd + " " + labels.map((l) => l.s + "@" + l.y.toFixed(1)).join(" "));
+    }
+    function wfTickVal(s) { return Number(s.replace("−", "-").replace(/[,%]/g, "")); }
+    ok("① drawChart(假 canvas):截圖那份 / 極大 / 極小 / 全負 / 兩點 / 全平 / 要撐域 × 兩種寬 → 刻度 4–6 條、刻度字與曲線都在繪圖區內、字距 ≥ 14px、左邊界放得下最寬的字、落在刻度值上的點跟刻度字同一個 y",
+      bad2.length === 0, bad2.join("\n      "));
+  }
   ok("① 送出簽章只看 wf / code / Generated At(live 策略每根 K 重寫的 Sharpe 不算)", W.sentSig({ wf: SAMPLE, code: "x", stats: { "Generated At": 1, "Sharpe Ratio": 2 } }) === W.sentSig({ wf: SAMPLE, code: "x", stats: { "Generated At": 1, "Sharpe Ratio": 3 } }) && W.sentSig({ wf: SAMPLE, code: "x", stats: { "Generated At": 2 } }) !== W.sentSig({ wf: SAMPLE, code: "x", stats: { "Generated At": 1 } }));
 
   // ── ① 雲端「已送出」留到新結果到(稽核 P2-4,Wei 選 B):純函式 sentNow / holdLeft ──
@@ -246,6 +294,20 @@ if (!process.versions.electron) {
       ok("① wfPreset / wfRunsOf / wfTotalDays 兩邊一樣", days.every((d) => JSON.stringify(W.wfPreset(d)) === JSON.stringify(web.wfPreset(d)) && [[365, 30], [1095, 30], [30, 1], [0, 30], [d, 30]].every(([l, s]) => W.wfRunsOf(d, l, s) === web.wfRunsOf(d, l, s)))
         && [STATS, {}, { start: "x", end: "2024-01-01" }].every((bt) => W.wfTotalDays(bt, w0) === web.wfTotalDays(bt, w0)));
     }
+    // 雲端那份還沒換上 wfTicks 之前只記一行 SKIP(前端照 0.1.12 交接改完,這段自動變成逐項比)
+    if (!src.includes("function wfTicks(")) console.log("SKIP  ① wfTicks 兩邊比對(web workspace.html 還沒有 wfTicks)");
+    else {
+      let webT = null;
+      try {
+        const ctx = { console }; vm.createContext(ctx);
+        vm.runInContext("const WF_GRID_MAX_LINES = 24;\n" + ["wfTicks", "wfTickLabel"].map(fnSrc).join("\n") + "\nthis.__T = { wfTicks, wfTickLabel };", ctx);
+        webT = ctx.__T;
+      } catch (e) { ok("① 從 web workspace.html 切得出 wfTicks / wfTickLabel", false, e.message); }
+      if (webT) {
+        const R = [[-141.4, 1836.4], [-1, 1], [-0.024, 0.324], [-64.8, 4.8], [-0.96, 12.96], [-8, 108], [2, 1], [-1e5, 1e6]];
+        ok("① wfTicks / wfTickLabel 兩邊一樣", R.every(([a, b]) => { const x = W.wfTicks(a, b), y = webT.wfTicks(a, b); return JSON.stringify(x) === JSON.stringify(y) && x.ticks.every((v) => W.wfTickLabel(v, x.dp) === webT.wfTickLabel(v, y.dp)); }));
+      }
+    }
   }
 
   // ── ③ 接線 ──
@@ -393,10 +455,10 @@ if (!process.versions.electron) {
       odd.every((n) => { const m = ctx.fm(T("zh", "wf.msgRun", { name: n, lookback: "365", step: "30" }), ctx.STRINGS); return m && m.vars.name === n && m.vars.lookback === "365" && m.vars.step === "30"; })
       && at("zh", T("zh", "wf.msgRun", { name: "unknown_x", lookback: "365", step: "30" }), "title") === "unknown_x · 樣本外驗證");
     ok("③ B5 接線:只換顯示——addMsg 的用戶泡泡、對話標題(含 tooltip)、清單列都走 fixedLabel;送出的仍是原句(msgRun 不動);listSessions 不截 120(摘要之後才截)",
-      /b\.className = "bubble"; b\.textContent = fixedLabel\(text\) \|\| text;/.test(app) && /const shown = csTitle \? fixedLabel\(csTitle, "title"\) \|\| csTitle : "";[^\n]*\n  \$\("cs-title"\)\.textContent = shown \|\| t\("cs\.new"\);\n  \$\("cs-title"\)\.title = shown;/.test(app)
+      /const lab = fixedLabel\(text\);\n    b\.className = "bubble"; b\.textContent = lab \|\| text;[^\n]*\n    if \(lab\) b\._fixed = text;/.test(app) && /function youRelang\(\) \{[^\n]*b\.textContent = fixedLabel\(b\._fixed\) \|\| b\._fixed;/.test(app) && /const shown = csTitle \? fixedLabel\(csTitle, "title"\) \|\| csTitle : "";[^\n]*\n  \$\("cs-title"\)\.textContent = shown \|\| t\("cs\.new"\);\n  \$\("cs-title"\)\.title = shown;/.test(app)
       && /const fixedTitle = m\.title \? fixedLabel\(m\.title, "title"\) : null;\n  name\.textContent = fixedTitle \|\| \(m\.title \|\| ""\)\.slice\(0, 120\) \|\| t\("cs\.new"\);/.test(app)
       && /title: String\(r\.title \|\| ""\)\.slice\(0, 4000\)/.test(fn("listSessions")) && /submitMessage\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)/.test(app)
-      && (app.match(/fixedLabel\(/g) || []).length === 4);
+      && (app.match(/fixedLabel\(/g) || []).length === 5);   // 第五處是 youRelang(切語言時重組泡泡的摘要)
     const B5 = { zh: { "wf.msgRunLabel": "對 {name} 做樣本外驗證（訓練窗 {lookback} 天、測試窗 {step} 天）", "wf.msgRunTitle": "{name} · 樣本外驗證", "rob.msgScanLabel": "掃描 {name} 的參數", "rob.msgScanTitle": "{name} · 參數掃描" },
       en: { "wf.msgRunLabel": "Run out-of-sample validation on {name} (train {lookback} days, test {step} days)", "wf.msgRunTitle": "{name} · Out-of-Sample", "rob.msgScanLabel": "Scan the parameters of {name}", "rob.msgScanTitle": "{name} · Parameter Scan" } };
     { const long = "超長策略名稱".repeat(20) + "尾", tt = at("zh", T("zh", "wf.msgRun", { name: "long_x", lookback: "365", step: "30" }).replace("long_x", "long_x"), "title");

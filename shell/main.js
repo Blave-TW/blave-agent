@@ -630,21 +630,7 @@ function childEnv(own, platform = process.platform, penv = process.env) {
   return { ...env, ...WIN_PY_ENV, ...own, HOME: penv.USERPROFILE || own.HOME };
 }
 
-// 跑一顆 Python(建 venv、pip):argv 陣列直接交給 execFile,沒有 shell、沒有引號問題
-function pyExec(bin, args, envPath, timeout = 300000) {
-  return new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout, windowsHide: true, env: { ...process.env, ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}), PATH: envPath } }, (err, stdout, stderr) => {
-      if (!err) return resolve(String(stdout));
-      // 逾時 / 輸出爆 maxBuffer 時 stderr 常是空的,err.message 是整條指令(含用戶 home 路徑)——會被畫進失敗卡,換成說得出原因的一句
-      const why = err.killed && err.signal ? `timed out after ${Math.round(timeout / 1000)}s`
-        : err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ? "output too large" : "";
-      reject(new Error(why || String(stderr || err)));
-    });
-  });
-}
-
-// 首次連結時準備 ~/Blave:workspace 逐目錄從 repo 拷(照 README 的 merge 清單),
-// venv 裝 pinned SDK。冪等:存在就跳過。進度用 callback 丟回聊天欄。
+// ~/Blave 的官方檔案:workspace 逐目錄從 repo 拷(照 README 的 merge 清單)。
 // 官方檔案清單 = README 的 "Updating an existing workspace" 那張表。
 // 只覆寫這些;strategies/<name>/、state/、.env、cache/ 一律不碰,而且用 cpSync
 // (覆寫但不刪除)——agent 可以合法新增 lib/order_<新交易所>.py 這種用戶自己的
@@ -686,6 +672,18 @@ function officialList() {
    hash 用 git 的 blob sha;Windows 上被轉成 CRLF 的檔多比一次轉回 LF 的 */
 const OFFICIAL_MANIFEST = path.join(BASE, "state", "official-manifest.json");
 const OFFICIAL_KNOWN = path.join(__dirname, "official-known.json");
+/* 新增策略框判「標的是不是加密貨幣」用的幣名(renderer/newstrategy.js nsPartMarket):隨包 runtime/market_contracts.py PERP 的鍵去掉 USDT / USDC。
+   那張表已排除股票、黃金等 TradFi 永續,SPY / AAPL 不會在裡面。讀不到 → [](框退回「判不出來就照舊附那一句」),下次再讀 */
+let cryptoBasesMemo = null;
+function cryptoBases() {
+  if (cryptoBasesMemo) return cryptoBasesMemo;
+  try {
+    const src = fs.readFileSync(path.join(REPO, "runtime", "market_contracts.py"), "utf8");
+    const list = [...new Set([...src.matchAll(/^\s*"([A-Z0-9]+?)USD[TC]":/gm)].map((m) => m[1]))];
+    if (list.length) cryptoBasesMemo = list;
+    return list;
+  } catch (_) { return []; }
+}
 const blobSha = (buf) => crypto.createHash("sha1").update(`blob ${buf.length}\0`).update(buf).digest("hex");
 const relKey = (f) => f.split(path.sep).join("/");
 function readJsonObj(p) { try { const v = JSON.parse(fs.readFileSync(p, "utf8")); return v && typeof v === "object" && !Array.isArray(v) ? v : null; } catch (_) { return null; } }
@@ -753,73 +751,43 @@ const AGENT_SDK = "claude-agent-sdk==0.2.144";
 // 兩種架構釘同一版。記號檔比的是整串,所以既有 venv 在下一則訊息(ensure-engine 每次送訊息前都跑)會重跑一次
 // SDK 那條:把 50.0.1 換成 48.0.1,下載約 8 MB。
 const SDK_PINS = `${AGENT_SDK} cryptography==48.0.1`;
-// 只收 wheel:這個架構沒有 wheel 就兩秒內大聲失敗(pip「No matching distribution」),不退到編原始碼——那條路在用戶機上
-// 跑幾分鐘然後死在看不到的地方。清單裡每一個都在 arm64 與 x64 實機用這條指令裝過。
-// --isolated:不吃用戶的 pip.conf 與 PIP_* 環境變數(PIP_INDEX_URL / PIP_NO_BINARY 都會讓引擎裝到別的東西)。
-const PIP_INSTALL = "-m pip -q --isolated install --only-binary=:all:";
-// pip 失敗的 stderr 常是整段 build / resolver log:只留 pip 自己的 ERROR 行(沒有就留最後三行)給聊天欄
-function pipError(e) {
-  const lines = String((e && e.message) || e).split("\n").map((l) => l.trim()).filter(Boolean);
-  const err = lines.filter((l) => l.startsWith("ERROR:")).map((l) => l.replace(/ \(from versions:.*\)$/, ""));
-  return (err.length ? err : lines.slice(-3)).join("\n").slice(0, 600);
+/* 引擎安裝與它的進度快照在 enginesetup.js(建 workspace → venv + SDK → 策略套件一個一個裝)。冪等:裝過就跳過。
+   開 app 就在背景跑(engineKick);送出每一句之前 ensure-engine 再確認一次,跑到一半就接上同一份 */
+// 第一次要下載的量(SDK 那條 + WORKSPACE_DEPS 17 個,兩條共用的檔只算一次;pip dry-run / download 實測,SDK 的 wheel 帶 Claude CLI 就占 93–104 MB)。
+// 依平台不同:macOS 13 以下拿到的 scipy / numpy 是 OpenBLAS 版、比較大。實測 macOS 14+ Apple 晶片 209、Intel 217、macOS 12/13 Apple 晶片 224、
+// Intel 235、Windows 227(MB),各自往上取到 10 MB 當「約」值。量的是加了 yfinance 那一版的清單;SDK_PINS 或 WORKSPACE_DEPS 換了要重量一次。
+// 更新後補裝的量每一版都不同,不寫(畫面只在第一次寫大小)。process.arch 在 Rosetta 下是 x64,挑到的正是 x64 的 wheel
+function firstRunMB(platform = process.platform, arch = process.arch, darwinMajor = Number(os.release().split(".")[0])) {
+  if (platform === "win32") return 230;
+  if (platform === "darwin" && darwinMajor < 23) return arch === "arm64" ? 230 : 240;   // Darwin 23 = macOS 14
+  return arch === "arm64" ? 210 : 220;
 }
-// 引擎的 pip 都走這條。失敗先把完整 stderr 留在主行程的 stderr(沒有 log 檔,失敗卡上的字又是修剪過的),再丟修剪過的
-function pip(args, envPath, timeout) {
-  return pyExec(VENV_PY, [...PIP_INSTALL.split(" "), ...args.split(" ")], envPath, timeout).catch((e) => {
-    console.error("[engine] pip install failed:", args, "\n" + String((e && e.message) || e));
-    throw new Error(pipError(e));
+// 每一條 pip 兩道停:
+//   PIP_IDLE_MS(2 分鐘):下載中多久沒有新的資料就停——斷線、被擋都會落在這裡,以網路失敗呈現。慢但一直有在動的不會被它停掉:
+//   以前的固定 10 分鐘上限在 SDK 那一條(單一 wheel 93–104 MB)要約 172 KB/s 才裝得完,網速再慢就永遠失敗,重試又從 0 開始。
+//   PIP_TOTAL_MS(45 分鐘):只防真的卡死。最大的一條(Windows 的 SDK wheel 103.5 MB)在 40 KB/s 下約 43 分鐘;比這更慢的網路,
+//   210 MB 的第一次安裝本來就要一個半小時以上,停下來讓人知道比讓它無聲地跑更好。
+// 建 venv 不用網路,只有總上限
+const ENGINE_PIP_MS = 2700000, PKG_PIP_MS = 2700000, PIP_IDLE_MS = 120000, VENV_MS = 300000;
+// 選用的套件組:裝不起來不擋引擎(只記 log、那個功能暫時不能用,下次開 app 再試)。點名用套件名,版本照 WORKSPACE_DEPS;
+// 清單裡沒被點名的一律是核心(裝不起來就擋聊天)。美股資料(yfinance 與它的相依)只有美股功能用得到,lib 要在用到時才 import
+const OPTIONAL_DEPS = [{ id: "us", names: ["yfinance", "curl_cffi", "lxml", "peewee", "protobuf", "websockets", "beautifulsoup4", "multitasking", "platformdirs", "pytz"] }];
+let _engineSetup = null;
+function engineSetup() {
+  if (!_engineSetup) _engineSetup = require("./enginesetup").createEngineSetup({
+    fs, path, spawn: require("child_process").spawn, base: BASE, ws: WS, venvPy: VENV_PY, venvBin: VENV_BIN, win: WIN,
+    basePython, envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial, isPackaged: app.isPackaged,
+    sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
+    onChange: (s) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("engine-state", s); },
+    log: (m) => console.error(m),
+    // 結果類事件由主行程送:背景安裝可能在畫面開始聽之前就跑完了
+    track: (ev, props) => tm().track(ev, props),
   });
+  return _engineSetup;
 }
-async function ensureEngine(report) {
-  // 建 venv 與裝 SDK 共用「正在準備引擎」這一句:兩步都要走時別印兩次
-  let said = null;
-  const progress = (k) => { if (k !== said) report(k); said = k; };
-  const envPath = await loginShellPath();
-  const fresh = !fs.existsSync(WS);
-  if (fresh) {
-    progress("engine.workspace");
-    // 0700:裡面有 session.db(對話)、.env(金鑰)、狀態檔,同一台電腦的其他用戶不該讀得到(稽核 R9)。
-    // 只在我們自己建立的時候設;用戶既有的目錄不動他的權限。
-    if (!fs.existsSync(BASE)) fs.mkdirSync(BASE, { recursive: true, mode: 0o700 });
-    fs.mkdirSync(WS, { recursive: true });
-    copyOfficial();
-  } else if (!app.isPackaged) {
-    // 開發時(從原始碼跑,不是打包版)每次啟動都把官方檔案重拷一次,所以改了
-    // lib/ 或 AGENTS.md 只要重啟就生效。打包版不走這條:它照版本比對更新。
-    copyOfficial();
-  }
-  for (const d of ["state", "config"]) fs.mkdirSync(path.join(BASE, d), { recursive: true });
-  if (!fs.existsSync(VENV_PY)) {
-    progress("engine.preparing");
-    // .app 被搬走 / 改名 / 被 Gatekeeper translocate 之後,venv/bin/python* 是斷掉的連結,
-    // venv 模組撞到會直接報錯(實測)。先清掉斷的,site-packages 留著,重建只要幾秒。
-    // Windows 的 venv 沒有連結(Scripts\python.exe 是 launcher + pyvenv.cfg 的 home=),而且 NSIS 裝在固定位置:整段跳過
-    const vbin = path.join(BASE, "venv", VENV_BIN);
-    for (const n of !WIN && fs.existsSync(vbin) ? fs.readdirSync(vbin) : []) {
-      const f = path.join(vbin, n);
-      if (fs.lstatSync(f).isSymbolicLink() && !fs.existsSync(f)) fs.unlinkSync(f);
-    }
-    await pyExec(basePython(), ["-m", "venv", path.join(BASE, "venv")], envPath);
-  }
-  // 記號檔而不是「venv 在就當裝好了」:pip 中途失敗(斷網)時 venv 已經在,下次啟動要重試。
-  const sdkMark = path.join(BASE, "venv", ".blave-sdk");
-  if (!fs.existsSync(sdkMark) || fs.readFileSync(sdkMark, "utf8") !== SDK_PINS) {
-    progress("engine.preparing");
-    await pip(SDK_PINS, envPath, 600000);
-    fs.writeFileSync(sdkMark, SDK_PINS);
-  }
-  // workspace 的 lib/ 與 manager/ 要的第三方套件(從它們的 import 列出來的)。原本只裝
-  // SDK:agent 能聊天、能寫策略,一回測就炸(「Python 環境缺少 pandas」,實測)。
-  // 用一個記號檔而不是每次都問 pip——pip 光是確認「都裝了」也要好幾秒。
-  // 記號檔比內容:app 更新後清單變了(多一個套件、換版本)要重裝,只看檔案在不在會永遠跳過(稽核 S8)
-  const depsMark = path.join(BASE, "venv", ".blave-deps-1");
-  let depsHave = ""; try { depsHave = fs.readFileSync(depsMark, "utf8"); } catch (_) { /* 還沒裝過 */ }
-  if (depsHave !== WORKSPACE_DEPS.join("\n")) {
-    progress("engine.deps");
-    await pip(WORKSPACE_DEPS.join(" "), envPath, 900000);
-    fs.writeFileSync(depsMark, WORKSPACE_DEPS.join("\n"));
-  }
-}
+function ensureEngine() { return engineSetup().ensure(); }
+// 結束 app / 為了更新重開之前收掉正在跑的 pip(最多等 5 秒);沒在裝就立刻回來,永遠不拋
+function engineAbort() { return _engineSetup ? _engineSetup.abort().catch(() => false) : Promise.resolve(false); }
 
 // 這份清單是**列舉出來的**,不是憑印象:用 AST 掃 lib/ manager/ examples/ 與兩支策略
 // 模板(75 個檔)的頂層 import,扣掉標準庫與 workspace 自己的模組,再逐一實際 import。
@@ -827,9 +795,16 @@ async function ensureEngine(report) {
 // 刻意不裝:shioaji(永豐下單 SDK,有綁該券商的人才需要)、comtypes / pythoncom
 // (群益的 COM 介面,只有 Windows 有)。
 // 釘版本:打包版在實機裝到、並跑過一輪回測的那組(隨包 CPython 3.12;arm64 與 x64/Rosetta 都只靠 wheel 裝得起來)。升版要重跑那輪驗證。
+// yfinance(lib/data.py 美股日線的備援)連同它拉進來的九個一起釘,yfinance 排最後:一個一個裝時它那一步才不會把後面的全裝走。
+// 2026-10-01 驗過:這 17 個加上依賴(34 個)在 mac arm64、mac x86_64、win amd64 都有 cp312 / abi3 / 純 Python wheel
+// (pip download --only-binary=:all:),arm64 與 x64 隨包 CPython 3.12 一次全裝與一個一個 -c 裝的 pip freeze 相同。
+// cffi、pycparser(curl_cffi 的)與 soupsieve、typing_extensions(bs4 的)不在清單上,跟 matplotlib 自己的依賴一樣由 pip 解
 const WORKSPACE_DEPS = [
   "pandas==3.0.6", "numpy==2.5.3", "matplotlib==3.11.2", "pyarrow==25.0.1",
   "requests==2.34.2", "python-dotenv==1.2.3", "scipy==1.18.1",
+  "curl_cffi==0.16.3", "lxml==6.1.3", "peewee==4.5.2", "protobuf==7.36.2", "websockets==17.1",
+  "beautifulsoup4==4.15.0", "multitasking==0.0.13", "platformdirs==4.12.2", "pytz==2026.4",
+  "yfinance==1.7.0",
 ];
 
 
@@ -1197,17 +1172,20 @@ function stratStopRerun(names, sys) {
     } catch (_) { /* 已經結束了 */ }
   }
 }
-/* 回 true(進垃圾桶了)或 { ok:false, code }:IN_PORTFOLIO(還在組合裡:對帳器照這個名字在下單,刪了訊號就凍住)/
-   CONFIG_UNREADABLE(讀不到下單設定,寧可等一下)/ 其餘失敗 false */
+/* 回 true(進垃圾桶了)或 { ok:false, code }——沒刪成的每一條路都要帶 code,畫面照它講原因(回裸 false 時畫面無從講起,
+   Wei 10-01 按「移到垃圾桶？」完全沒反應):TURN_RUNNING(回合進行中或正要開始:agent 可能正在讀寫它)/ NOT_FOUND(資料夾已不在)/
+   IN_PORTFOLIO(還在組合裡:對帳器照這個名字在下單,刪了訊號就凍住)/ CONFIG_UNREADABLE(讀不到下單設定,寧可等一下)/
+   TRASH_FAILED(系統的垃圾桶不收) */
 async function deleteStrategy(name) {
-  if (activeTurn || turnStarting || !stratNames().includes(name)) return false;   // 回合正要開始也不刪(agent 可能正要讀它)
+  if (activeTurn || turnStarting) return { ok: false, code: "TURN_RUNNING" };
+  if (!stratNames().includes(name)) return { ok: false, code: "NOT_FOUND" };
   let sn = null; try { sn = stratMeta(fs.readFileSync(path.join(STRAT_DIR(), name, "strategy.py"), "utf8")).strategyName; } catch (_) { /* 讀不到檔:只比資料夾名 */ }
   const inPf = inPortfolio([name, sn]);
   if (inPf === true) return { ok: false, code: "IN_PORTFOLIO" };
   if (inPf === null) return { ok: false, code: "CONFIG_UNREADABLE" };
   stratStopRerun([name, sn]);   // canon §8:還原的背景重跑還活著就先停掉,不讓它寫回已丟進垃圾桶的資料夾
   try { await shell.trashItem(path.join(STRAT_DIR(), name)); stratCache.delete(name); return true; }
-  catch (_) { return false; }
+  catch (_) { return { ok: false, code: "TRASH_FAILED" }; }
 }
 
 // ── 對話(session)─────────────────────────────────────────
@@ -1759,6 +1737,24 @@ async function publicTiers(force) {
     return b;
   } catch (_) { return null; }
 }
+/* 台指期報價:雲端視角金額表的口數列換參考金額用(口 × 點值 × 指數;同網頁 loadTxfQuote)。跟網頁同一支、同一個 symbol——
+   txf_summary 是匿名可讀(token_optional + IP 限流),小台／微台跟大台同一個指數。成功的值留 5 分鐘;
+   問不到時照網頁回上一份(沒有就 null,畫面退回「—」),失敗後 60 秒內不再問,不拿輪詢去敲 api */
+const TXF_QUOTE_MS = 300000, TXF_RETRY_MS = 60000;
+let txfCache = null, txfFailAt = 0, txfInflight = null;
+function txfQuote() {
+  const now = Date.now();
+  if (txfCache && now - txfCache.at < TXF_QUOTE_MS) return Promise.resolve(txfCache.price);
+  if (now - txfFailAt < TXF_RETRY_MS) return Promise.resolve(txfCache ? txfCache.price : null);
+  if (txfInflight) return txfInflight;
+  txfInflight = getJSON(`${API_BASE}/studio/charts/twfutures/txf_summary?symbol=TXF`, {}).then((r) => {
+    const p = r && r.status === 200 && r.body ? Number(r.body.price) : NaN;
+    if (!(isFinite(p) && p > 0)) throw new Error("bad quote");
+    txfCache = { at: Date.now(), price: p };
+    return p;
+  }).catch(() => { txfFailAt = Date.now(); return txfCache ? txfCache.price : null; }).finally(() => { txfInflight = null; });
+  return txfInflight;
+}
 async function publicPricing() {
   const b = await publicTiers(false);
   if (!(b && b.trial && Number(b.trial.days) > 0)) return null;
@@ -1849,9 +1845,18 @@ function libSanitize(body) {
     out.push({ id, title, summary: str(s.summary, LIB_TEXT_MAX, true), description: str(s.description, LIB_TEXT_MAX, true), price, category: str(s.category, LIB_STR_MAX),
       created_at: str(s.created_at, LIB_STR_MAX), purchase_count: Number.isInteger(s.purchase_count) && s.purchase_count >= 0 ? s.purchase_count : 0,
       purchased: s.purchased === true, is_owner: s.is_owner === true, is_official: s.is_official === true, verified: s.verified === true,
-      direction: str(s.direction, LIB_STR_MAX), max_exposure: fin(s.max_exposure), report });
+      direction: str(s.direction, LIB_STR_MAX), max_exposure: fin(s.max_exposure), report,
+      success_note_ids: libNoteLangs(s.success_note_ids, (v) => (Number.isInteger(v) && v > 0 ? v : null)),
+      success_note_titles: libNoteLangs(s.success_note_titles, (v) => { const x = (str(v, LIB_TITLE_MAX) || "").trim(); return x || null; }) });
   }
   return out;
+}
+// 成功筆記兩欄(spec-0.1.12-library-notes §2.2):只收 zh / en,值過 pick;一個都不剩 → null(舊 api 沒有 titles 那欄也是 null)
+function libNoteLangs(v, pick) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out = {};
+  for (const k of ["zh", "en"]) { const x = pick(v[k]); if (x !== null) out[k] = x; }
+  return Object.keys(out).length ? out : null;
 }
 let libCache = null;   // { at, lang, signedIn, strategies }
 async function libraryList(langRaw, force) {
@@ -1900,6 +1905,30 @@ async function libraryReport(id, langRaw) {
   if (!report) return null;
   libReportCache.set(ck, { at: Date.now(), report });
   return report;
+}
+/* 策略詳情的成功筆記(spec-0.1.12-library-notes §2.2):GET /studio/success_notes/read_note?note_id=——每打一次 api 就記一筆閱讀,
+   所以匿名打(不帶桌面資料 key、主行程的 https 本來就沒有 cookie)、成功快取 30 分鐘、失敗不記。匿名回 201、帶 cookie 回 200,兩個都算。
+   付費筆記回 success:false + 空 content:當讀不到。回給畫面只留四欄;內文是外部 HTML,畫面那一側再過白名單重建(libNoteBuild)。 */
+const LIB_NOTE_HTML_MAX = 50000, LIB_NOTE_TTL_MS = 30 * 60 * 1000;
+function libNoteSanitize(body, id) {
+  const n = body && typeof body === "object" && body.success === true && body.note && typeof body.note === "object" ? body.note : null;
+  if (!n || typeof n.content !== "string" || !n.content.trim()) return null;
+  const t = Date.parse(typeof n.created_at === "string" ? n.created_at : "");
+  return { id, title: typeof n.title === "string" ? n.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, LIB_TITLE_MAX) : "",
+    html: n.content.slice(0, LIB_NOTE_HTML_MAX), date: isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null };   // api 的 GMT 是資料庫的裸時間:取 UTC 年月日,不轉本地時區
+}
+const libNoteCache = new Map();   // id → { at, note }
+async function libraryNote(id) {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const hit = libNoteCache.get(id);
+  if (hit && Date.now() - hit.at < LIB_NOTE_TTL_MS) return hit.note;
+  let r = null;
+  try { r = await getJSON(`${API_BASE}/studio/success_notes/read_note?note_id=${id}`, {}); } catch (_) { return null; }
+  if (r.status !== 200 && r.status !== 201) return null;
+  const note = libNoteSanitize(r.body, id);
+  if (!note) return null;
+  libNoteCache.set(id, { at: Date.now(), note });
+  return note;
 }
 /* 購買付費策略:POST /oauth/desktop/marketplace/purchase,帶帳號 token + app_secret(同 planStart:會動餘額與信用卡,
    帳號 token 單獨不准)。回 { status, body }:body 只留畫面分支要的幾欄;打不到 → { status: 0, body: null }。 */
@@ -2062,7 +2091,7 @@ function tradeStartIfReady() {
     // 這段期間 daemon 不在、交易頁講不出狀態。開機就修一次、修好再起(稽核 0.1.10 P2-4);只試一次,修不好留給送訊息那條路
     if (!venvRepairTried && fs.existsSync(WS) && venvLinkBroken()) {
       venvRepairTried = true;
-      ensureEngineShared(null).then(() => { if (fs.existsSync(VENV_PY)) tradeStartIfReady(); }, (e) => console.error("[trade] venv repair failed", e && e.message));
+      ensureEngineShared().then(() => { if (fs.existsSync(VENV_PY)) tradeStartIfReady(); }, (e) => console.error("[trade] venv repair failed", e && e.message));
     }
   } catch (e) { console.error("[trade] start failed", e && e.message); }
 }
@@ -2071,15 +2100,17 @@ function venvLinkBroken() {
   if (WIN) return false;   // Windows 的 venv 沒有連結(Scripts\python.exe 是 launcher)
   try { return fs.lstatSync(VENV_PY).isSymbolicLink() && !fs.existsSync(VENV_PY); } catch (_) { return false; }
 }
-/* 同一時間只跑一份 ensureEngine:開機修 venv 跟送第一句話的 ensure-engine 可能撞在一起(兩支 `-m venv` / pip 搶同一個資料夾)。
-   後到的共用先到的那一份;進度字轉給所有在等的畫面 */
+/* 同一時間只跑一份 ensureEngine:開 app 的背景安裝、開機修 venv、送第一句話的 ensure-engine 可能撞在一起(兩支 `-m venv` / pip 搶同一個資料夾)。
+   後到的共用先到的那一份;進度不經這裡,是 enginesetup 的快照推給畫面 */
 let _engineRun = null;
-const _engineReports = new Set();
-function ensureEngineShared(report) {
-  if (report) _engineReports.add(report);
-  if (!_engineRun) _engineRun = ensureEngine((k) => { for (const f of _engineReports) { try { f(k); } catch (_) { /* 視窗關了 */ } } })
-    .finally(() => { _engineRun = null; _engineReports.clear(); });
+function ensureEngineShared() {
+  if (!_engineRun) _engineRun = ensureEngine().finally(() => { _engineRun = null; });
   return _engineRun;
+}
+/* 開 app 就在背景裝(0.1.12 的 C):不等用戶選好 AI、送出第一句話。裝引擎不需要登入、不需要選定哪一種 AI——
+   三種都跑同一個 venv。失敗只留 log:卡上有重試,送第一句話時也會再試一次 */
+function engineKick() {
+  ensureEngineShared().then(() => tradeStartIfReady(), (e) => console.error("[engine] background setup failed: " + ((e && e.message) || e)));
 }
 /* Binance 真錢連接(binance_link.js)。金鑰只從 renderer 的表單經過這裡一次:查過權限 → 用 trusted 的路交給 daemon 寫進 workspace 的 .env。
    這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 要帳號 token(沒登入 Blave 的人查不到 IP,表單照樣能用)。 */
@@ -2416,14 +2447,13 @@ app.whenReady().then(() => {
   handle("save-connection", (_e, choice) => saveConnection(choice), false);
   handle("load-connection", () => loadConnection());
   handle("open-external", (_e, url) => openWebSafe(url), false);
-  handle("ensure-engine", (e) => {
-    const win = BrowserWindow.fromWebContents(e.sender);
-    // 引擎裝好(或本來就在)之後才起本機常駐程式
-    return ensureEngineShared((t) => { if (!win.isDestroyed()) win.webContents.send("engine-progress", t); }).then((r) => { tradeStartIfReady(); return r; });
-  });
+  // 引擎裝好(或本來就在)之後才起本機常駐程式
+  handle("ensure-engine", () => ensureEngineShared().then((r) => { tradeStartIfReady(); return r; }));
+  handle("engine-state", () => engineSetup().snapshot());
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
   handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
+  handle("crypto-bases", () => cryptoBases(), []);
   handle("delete-strategy", (_e, name) => deleteStrategy(String(name || "")));
   handle("list-sessions", () => listSessions());
   handle("load-session-images", (_e, id) => loadSessionImages(id));
@@ -2442,6 +2472,7 @@ app.whenReady().then(() => {
   handle("account-status", () => accountStatus());
   handle("balance", () => balanceHost().read());
   handle("public-pricing", () => publicPricing());
+  handle("txf-quote", () => txfQuote());
   // 花錢的動作只收自家畫面發的:renderer 會渲染 LLM 的文字,萬一有別的 frame 被帶進來,它不能替用戶開機
   ipcMain.handle("plan-start", (e) => (fromOurPage(e) ? planStart().then((r) => {
     tm().track("plan_start_res", { result: r.state ? "ok" : r.error === "NO_CARD" ? "no_card" : r.error === "NO_CREDIT" ? "no_credit" : "error" });
@@ -2633,6 +2664,7 @@ app.whenReady().then(() => {
   // 策略庫(renderer/library.js):清單與已安裝表只收自家頁面;購買會動到餘額與信用卡,拒絕時回「打不到」的形狀
   handle("library-list", (_e, lang, force) => libraryList(lang, force === true), null);
   handle("library-report", (_e, id, lang) => libraryReport(id, lang), null);
+  handle("library-note", (_e, id) => libraryNote(id), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   // 本機報告(renderer/reports.js):讀 <WS>/reports 的信封 / 本體 + sidecar 圖(data URI);renderer 不碰 fs
@@ -2683,6 +2715,7 @@ app.whenReady().then(() => {
   // 第二份 app 在結束前也會走到 whenReady,不能讓它把新 lib 拷進第一份正在下單的 workspace(稽核 S7)
   if (app.hasSingleInstanceLock()) startStep("workspace sync", syncOfficialOnUpdate);
   startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
+  if (app.hasSingleInstanceLock()) startStep("engine", engineKick);   // 要裝的在背景裝;已經裝好的幾毫秒就結束。第二份 app 不碰 venv
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   // 畫面自己的 blur 分不出「焦點進了內建瀏覽器那一頁」跟「整個視窗退到背景」,所以由這裡講
@@ -2732,7 +2765,7 @@ function setRestarting(v) {
 let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading", pause: "Pause trading (keep positions)", open: "Open Blave", quit: "Quit Blave…",
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
-  quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel",
+  quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel", ok: "OK",
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
@@ -2744,6 +2777,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
+  ev_market_hold: "Orders held", ev_market_hold_n: "A strategy’s market doesn’t match the connected exchange, so its orders are held; the position stays, with no stop-loss. Open Auto trading to see which one.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
@@ -2841,8 +2875,8 @@ async function pauseFromMenu() {
   if (r && r.ok) { if (Notification.isSupported()) notifWatch(new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, tmLabels.notifTitle), body: tmLabels.notifBody }), "paused").show(); return; }
   // 沒成功不能只靠系統通知(權限關掉 / 專注模式會被吞):把視窗叫出來、掛一個框講清楚(稽核 M1)
   showMain();
-  dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: pauseLabel(),
-    detail: r && r.error === "UNKNOWN_RESULT" ? tmLabels.pauseUnknown : tmLabels.pauseFail, buttons: ["OK"] });
+  dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: pauseLabel(),
+    detail: r && r.error === "UNKNOWN_RESULT" ? tmLabels.pauseUnknown : tmLabels.pauseFail, buttons: [tmLabels.ok] });
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
@@ -2861,16 +2895,18 @@ async function restartToUpdate() {
   if (step === "not_ready") return { ok: false, error: "NOT_READY" };
   if (step === "busy") return { ok: false, error: "TURN_BUSY" };
   if (step === "asking") return { ok: false, error: "ASKING" };
-  if (step === "install") { const res = updater().install(); if (res.ok) used(); return res; }
+  // 安裝程式不能留著:結束後它還在寫 venv,下次開 app 就是兩支 pip 寫同一個資料夾(Windows 上它還握著隨包 Python 的 DLL)
+  if (step === "install") { await engineAbort(); const res = updater().install(); if (res.ok) used(); return res; }
   let r = null;
   try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
   quitAsking = true;
+  const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.updateReady);
   try {
-    r = await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
+    r = await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTitle,
       detail: TT.quitDetail(tmLabels.updateBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""),
-      buttons: [tmLabels.quitStay, tmLabels.updateReady], defaultId: 0, cancelId: 0 });
+      buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId });
   } catch (_) { r = null; } finally { quitAsking = false; }
-  if (!r || r.response !== 1) return { ok: false, error: "CANCELED" };
+  if (!r || r.response !== sg.goIndex) return { ok: false, error: "CANCELED" };
   // 框開著的時候可能變了:回合開始了(程式觸發的)、updater 自己出錯了 → 不收工,什麼都沒動
   if (turnBusy()) return { ok: false, error: "TURN_BUSY" };
   const ph = phase();
@@ -2879,6 +2915,7 @@ async function restartToUpdate() {
   setRestarting("stopping"); quitConfirmed = true;
   try {
     if (_tradeHost) { _tradeHost.noteQuit(); await _tradeHost.stop(); }
+    await engineAbort();
     setRestarting("installing");
     const res = updater().install();
     if (res.ok) return res;
@@ -2901,7 +2938,7 @@ async function askMoveToApps() {
     trading: !!tradeMaybeLive(), askedThisRun: moveAsked })) return false;
   moveAsked = true;
   const parent = BrowserWindow.getAllWindows()[0] || undefined;
-  const r = await dialog.showMessageBox(parent, { type: "question", message: L.moveTitle, detail: L.moveBody,
+  const r = await dialog.showMessageBox(parent, { type: "question", noLink: true, message: L.moveTitle, detail: L.moveBody,
     buttons: [L.moveNo, L.moveGo], defaultId: 1, cancelId: 0 });
   if (r.response !== 1) {
     // 框是因為 app 在結束、視窗被關掉才回來的:用戶沒選,不記成「不要」(稽核 P2-5)
@@ -2983,8 +3020,9 @@ function traySync() {
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"];   // 全部六型(標籤用)
-const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的四型
+// market_hold(0.1.12):市場跟交易所對不上、執行側停了那一支(部位照留、停損不跑;canon notifications.md P1)
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "market_hold"];   // 全部七型(標籤用)
+const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的五型
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
@@ -3108,10 +3146,11 @@ app.on("before-quit", (e) => {
     if (quitAsking) return;   // 框還開著又按一次 Cmd+Q:不疊第二個(稽核 M2)
     try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
     quitAsking = true;
-    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTitle,
+    const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
+    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTitle,
       // 雲端也「確定在下單」時多一句:結束這個 app 不影響雲端。不確定就不說(那一句是在替雲端做保證)
-      detail: TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
-      .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; if (_tradeHost) _tradeHost.noteQuit(); app.quit(); } }, () => { quitAsking = false; });
+      detail: TT.quitDetail(tmLabels.quitBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : ""), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; if (_tradeHost) _tradeHost.noteQuit(); app.quit(); } }, () => { quitAsking = false; });
     return;
   }
   // 本機 agent 回合還在跑(可能正在更新雲端主機):結束會把它斷掉,先問一次(同自動下單那一道;已經確認過就不再問)
@@ -3120,12 +3159,15 @@ app.on("before-quit", (e) => {
     if (quitAsking) return;
     try { showMain(); } catch (_) { /* 同上 */ }
     quitAsking = true;
-    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", message: tmLabels.quitTurnTitle,
-      detail: tmLabels.quitTurnBody, buttons: [tmLabels.quitStay, tmLabels.quitGo], defaultId: 0, cancelId: 0 })
-      .then((r) => { quitAsking = false; if (r.response === 1) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
+    const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
+    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTurnTitle,
+      detail: tmLabels.quitTurnBody, buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+      .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } }, () => { quitAsking = false; });
     return;
   }
-  if (quitting || !_tradeHost || !_tradeHost.isRunning()) return;
+  // 常駐程式在跑、或背景安裝的 pip 還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)
+  const daemon = !!(_tradeHost && _tradeHost.isRunning()), installing = !!(_engineSetup && _engineSetup.busy());
+  if (quitting || (!daemon && !installing)) return;
   e.preventDefault(); quitting = true;
-  _tradeHost.stop().finally(() => app.quit());
+  Promise.all([daemon ? _tradeHost.stop() : null, engineAbort()]).finally(() => app.quit());
 });

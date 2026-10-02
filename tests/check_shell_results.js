@@ -31,11 +31,14 @@ function El(tag) {
     get previousElementSibling() { const s = this.parentNode ? this.parentNode.children.filter((c) => c.tagName) : []; return s[s.indexOf(this) - 1] || null; },
     closest(sel) { let n = this; while (n && !match(n, sel)) n = n.parentNode; return n || null; },
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; },
-    querySelectorAll(sel) { const direct = sel.startsWith(":scope > "), s = direct ? sel.slice(9) : sel, out = []; const walk = (n) => n.children.forEach((c) => { if (!c.tagName) return; if (match(c, s)) out.push(c); if (!direct) walk(c); }); walk(this); return out; },
+    querySelectorAll(sel) { const direct = sel.startsWith(":scope > "), s = direct ? sel.slice(9) : sel, out = []; const walk = (n) => n.children.forEach((c) => { if (!c.tagName) return; if (matchDesc(c, s, this)) out.push(c); if (!direct) walk(c); }); walk(this); return out; },
+    get firstChild() { const el = this; return el._text ? { get textContent() { return el._text; }, set textContent(v) { el._text = String(v); } } : el.children[0] || null; },
   };
   return e;
 }
 function Txt(s) { return { textContent: s, parentNode: null }; }
+// 「.a .b」:最後一段比自己,前面幾段依序在祖先裡找(不出 root)
+function matchDesc(n, sel, root) { const parts = sel.trim().split(/\s+/); if (!match(n, parts.pop())) return false; for (let p = n.parentNode; parts.length && p && p !== root; p = p.parentNode) if (match(p, parts[parts.length - 1])) parts.pop(); return !parts.length; }
 function match(n, sel) { if (!n.tagName) return false; const m = /^(\w+)?((?:\.[\w-]+)*)$/.exec(sel); if (!m) throw new Error("假 DOM 不認得 " + sel); return (!m[1] || n.tagName === m[1].toUpperCase()) && m[2].split(".").filter(Boolean).every((c) => n.classList.contains(c)); }
 const DOC = { body: El("body"), activeElement: null, createElement: El, createElementNS: (_ns, tag) => El(tag) };
 const CHAT = El("div"); DOC.body.appendChild(CHAT);
@@ -144,7 +147,20 @@ function box(extra) {
   // J:組合策略(Type C)的回測沒有逐筆紀錄(只有成交次數):「進出場紀錄」分頁講這件事,不講成「沒有進出場」
   { const trJs = read("report-trades.js");
     ok("J 進出場紀錄分頁:Type C(stats 有 benchmark_n)用自己的那一句,其餘照舊", /t\(stats && typeof stats\.benchmark_n === "number" \? "tr\.emptyPf" : "tr\.empty"\)/.test(trJs)
-      && /沒有逐筆進出場紀錄/.test(S.t("tr.emptyPf")) && /回測數據/.test(S.t("tr.emptyPf")) && S.t("tr.empty") === "這支策略沒有進出場紀錄。"); }
+      && /沒有逐筆進出場紀錄/.test(S.t("tr.emptyPf")) && /回測數據/.test(S.t("tr.emptyPf")) && S.t("tr.empty") === "這支策略沒有進出場紀錄。");
+    // 0.1.12 實測 04a:SPY 日線的進出場紀錄全是「08:00」——日期當 UTC 午夜寫進來、照台北時間印。日線以上只印日期,而且用 UTC 取(UTC 以西也不退一天)
+    const sb = { window: {} }; vm.createContext(sb); vm.runInContext(trJs, sb); const TP = sb.window.BlaveReport._tradesPure;
+    ok("J 日線以上判準(stats.interval):1d / 1D / 24h / 3d / 7d / 1w / 1W / 1M → 只印日期;23h 以下、分線、缺 / 認不得 → 照舊印到分鐘",
+      ["1d", "1D", "24h", "3d", "7d", "1w", "1W", "1M"].every((x) => TP.isDailyOrAbove(x) === true) && ["23h", "12h", "4h", "1h", "60m", "60min", "15m", "1m", "", null, undefined, "daily", "1 day"].every((x) => TP.isDailyOrAbove(x) === false));
+    const J = JSON.stringify, tz0 = process.env.TZ, ts = Date.UTC(2026, 3, 24) / 1000, at = (tz, f) => { process.env.TZ = tz; try { return f(); } finally { if (tz0 === undefined) delete process.env.TZ; else process.env.TZ = tz0; } };
+    const tpe = at("Asia/Taipei", () => [TP.fmtTime(ts, true, true), TP.fmtTime(ts, false, true), TP.fmtTime(ts, true, false)]), la = at("America/Los_Angeles", () => TP.fmtTime(ts, true, true));
+    ok("J 美股日線 2026-04-24(UTC 午夜):日期版台北 = 2026/04/24、不帶年 04/24;洛杉磯一樣 2026/04/24;分線照舊印台北 08:00", J(tpe) === J(["2026/04/24", "04/24", "2026/04/24 08:00"]) && la === "2026/04/24", J([tpe, la]));
+    // 台股 / 台指期 1d 走 fetch_twstock_ohlcv / fetch_twfutures_ohlcv 的是台北午夜(= 前一天 16:00 UTC):也要印成當天,不能退成 04/23
+    const tw = Date.UTC(2026, 3, 23, 16) / 1000, twd = ["Asia/Taipei", "America/Los_Angeles", "UTC", "Europe/London"].map((z) => at(z, () => TP.fmtTime(tw, true, true)));
+    ok("J 台股日線 2026-04-24(台北午夜):台北 / 洛杉磯 / UTC / 倫敦都印 2026/04/24", twd.every((x) => x === "2026/04/24"), J(twd));
+    ok("J 接線:renderTrades 用 stats.interval 算 dateOnly,清單列與十字線(localization.timeFormatter)都帶它", /const dateOnly = isDailyOrAbove\(stats\.interval\);/.test(trJs)
+      && /buildList\(listEl, buildRows\(tracks\), withYear, dateOnly, function/.test(trJs) && /fmtTime\(p\.ts, withYear, dateOnly\)/.test(trJs)
+      && /buildChart\(host, candles, tracks, sanitizePanes\(stats\.panes\), dateOnly\)/.test(trJs) && /fmtTime\(time, true, dateOnly\)/.test(trJs)); }
   // 一輪 5 張:先 3 張 + 還有 2 個;鈕的可及名稱
   const host = El("div"); host.className = "msg ai"; CHAT.appendChild(host);
   const five = S.resOrder(items.concat(rep).map((x, i) => ({ ...x, at: 10 - i })));
@@ -210,4 +226,60 @@ function box(extra) {
     ok("③ 埋點:result_report / result_strategy 在 feature_used 白名單、≤16 字(prop 是 VARCHAR(16))", ["result_report", "result_strategy"].every((n) => EVENTS.feature_used.name.includes(n) && n.length <= 16));
   })().catch((e) => ok("③ 重開重畫", false, e.stack));
 }
+// ── ④ 切語言當場重畫(0.1.11 Windows 真機:切 en 後結果卡還是中文,要重開 app 才換)──
+//   結果卡照 host._res 重畫;同一類「畫一次就不再重畫」的一起修:轉出卡、固定觸發句的摘要泡泡、引擎進度與「上一輪還在跑」那兩種系統行。
+{
+  const S = box(), tL = (k, v) => { let x = STR[S.LANG][k] || k; if (v) for (const n in v) x = x.split("{" + n + "}").join(v[n]); return x; };
+  S.t = tL;
+  vm.runInContext(read("export.js").replace(/^(const|let) /gm, "var "), S);
+  CHAT.children = [];
+  const it = (o) => ({ kind: "strategy", env: "local", ref: "r", ver: "1|0|1", sub: "backtest", title: "BTC SMA", facts: { has_bt: true, total_return: 12.5, max_dd: -3.25 }, at: 1, ...o });
+  const items = [it({ ref: "a" }), it({ ref: "b", title: "Gone one" }), it({ ref: "c", sub: "new", title: "New one" }), it({ ref: "d", title: "Later one" })];
+  const host = El("div"); host.className = "msg ai"; CHAT.appendChild(host);
+  S.resPaint(host, items, ["ok", "gone", "ok", "later"], items, 7);
+  host.querySelector(".res-more").click();
+  const snap = () => host.querySelector(".res-group").children.map((c) => texts(c) + "|" + (c.querySelector && c.querySelector("button") ? c.querySelector("button").getAttribute("aria-label") : "")).join(" / ");
+  const zh = snap();
+  S.LANG = "en"; S.resRelang();
+  const g = host.querySelector(".res-group"), cards = g.children.filter((c) => c.classList.contains("res"));
+  const btn = cards[0].querySelector("button");
+  ok("④ 切 en:結果卡當場換成英文(回測更新 → Backtest updated、總報酬 → Total Return、看回測 → View backtest),可及名稱用半形冒號",
+    texts(cards[0].querySelector(".m")).startsWith(STR.en["res.kind.btUpd"] + STR.en["bt.totalReturn"] + " +12.50%") && btn.textContent === STR.en["res.open.bt"] && btn.getAttribute("aria-label") === STR.en["res.open.bt"] + ": BTC SMA", texts(cards[0]) + " | " + (btn && btn.getAttribute("aria-label")));
+  ok("④ 狀態跟著留:已刪除那張仍是無鈕的已刪除態(英文)、之後有更新那張帶 Updated since、新策略那張是 New strategy",
+    cards[1].classList.contains("is-gone") && !cards[1].querySelector("button") && texts(cards[1]).includes(STR.en["res.gone.strat"]) && texts(cards[3]).includes(STR.en["res.later"]) && texts(cards[2]).includes(STR.en["res.kind.new"]), cards.map(texts).join(" / "));
+  ok("④ 重畫不重播進場動畫、展開過的保持展開、張數與順序不變、卡上沒有剩下的中文",
+    cards.length === 4 && cards.every((c) => c.classList.contains("is-still")) && g.classList.contains("all") && cards.map((c) => texts(c.querySelector(".t"))).join() === "BTC SMA,Gone one,New one,Later one"
+    && !/[\u4e00-\u9fff]/.test(texts(g)), texts(g));
+  S.LANG = "zh"; S.resRelang();
+  ok("④ 切回 zh:跟原本畫的一字不差", snap() === zh, snap() + " ≠ " + zh);
+  ok("④ applyStatic 會叫 resRelang / xpRelang / youRelang(切語言的那一條路)", /if \(typeof resRelang === "function"\) resRelang\(\);/.test(cutFn(appSrc, "applyStatic")) && /if \(typeof xpRelang === "function"\) xpRelang\(\);/.test(cutFn(appSrc, "applyStatic")) && /\n\s*youRelang\(\);/.test(cutFn(appSrc, "applyStatic")));
+
+  // 轉出卡:類型字、說明句(帶平台名)、兩顆鈕
+  const xpHost = El("div"); xpHost.className = "msg ai"; CHAT.appendChild(xpHost);
+  const card = S.xpCard({ target: "xq", strategy: "btc", filename: "btc_xq.xs", size: 2048, session: "s", id: "1" });
+  xpHost.appendChild(card);
+  S.LANG = "en"; S.xpRelang();
+  document_i18n(S);
+  const ft = card.querySelector(".ft"), cap = card.querySelector(".xp-cap"), bs = card.querySelectorAll("button");
+  ok("④ 轉出卡切 en:類型字 XS language、說明句英文(平台名照填)、下載 / 在程式碼分頁看兩顆鈕英文;大小那格不動",
+    texts(ft) === "XQ · " + STR.en["xp.lang.xq"] + " · 2.0 KB" && texts(cap) === STR.en["xp.capHonest"].split("{platform}").join("XQ") && bs.map((b) => b.textContent).join("|") === STR.en["xp.dl"] + "|" + STR.en["xp.view"], [texts(ft), texts(cap), bs.map((b) => b.textContent).join("|")].join(" / "));
+
+  // 固定觸發句的摘要泡泡:原句不動,摘要照現在的語言重組
+  const T = { busyPin: () => {}, scrollChat: () => {}, paintAi: () => {}, STRINGS: STR };
+  Object.assign(S, T);
+  vm.runInContext(["fixedMatch", "fixedName", "fixedLabel", "addMsg", "youRelang"].map((n) => cutFn(appSrc, n)).join("\n") + "\n" + /^const FIXED_PROMPTS = .*$/m.exec(appSrc)[0].replace(/^const /, "var "), S);
+  S.LANG = "zh";
+  const raw = STR.zh["wf.msgRun"].split("{name}").join("btc_sma").split("{lookback}").join("1095").split("{step}").join("30");
+  const you = S.addMsg("you", raw), plain = S.addMsg("you", "hello");
+  const zhLab = texts(you), lab = (l) => { const sv = S.LANG; S.LANG = l; const x = tL("wf.msgRunLabel", { name: "btc_sma", lookback: "1095", step: "30" }); S.LANG = sv; return x; };
+  S.LANG = "en"; S.youRelang();
+  ok("④ 固定觸發句的泡泡:切 en 換成英文摘要、切回 zh 回到原本那句;一般的話不動",
+    zhLab === lab("zh") && texts(you) === lab("en") && (S.LANG = "zh", S.youRelang(), texts(you) === zhLab) && texts(plain) === "hello", [zhLab, texts(you)].join(" / "));
+
+  // 上一輪還在跑:系統行記著 key(data-i18n),applyStatic 的 data-i18n 那一圈會照新語言重填(引擎進度 0.1.12 起是安裝進度卡,見 check_shell_engine_card)
+  ok("④「上一輪還在跑」的系統行掛 data-i18n", /addMsg\("sys", t\("turn\.busy"\)\)\.dataset\.i18n = "turn\.busy";/.test(appSrc)
+    && /document\.querySelectorAll\("\[data-i18n\]"\)\.forEach\(\(el\) => \{ el\.textContent = t\(el\.dataset\.i18n\); \}\);/.test(cutFn(appSrc, "applyStatic")));
+}
+// applyStatic 的 data-i18n 那一圈(同 app.js)
+function document_i18n(S) { const walk = (n) => n.children.forEach((c) => { if (!c.tagName) return; if (c.dataset.i18n) c.textContent = S.t(c.dataset.i18n); walk(c); }); walk(DOC.body); }
 process.on("beforeExit", () => { if (process.exitCode !== undefined) return; console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exitCode = red ? 1 : 0; });

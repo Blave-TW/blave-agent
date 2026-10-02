@@ -1,0 +1,106 @@
+{
+ "data_venues": [
+  "binance",
+  "bingx"
+ ],
+ "holds": {},
+ "order_check": {
+  "at": null,
+  "on": null,
+  "table": null,
+  "why": null
+ },
+ "verdicts": {
+  "btc_bn": {
+   "judged": true,
+   "market": "crypto_perp:binance",
+   "reasons": {
+    "binance": null,
+    "bingx": null,
+    "bybit": null,
+    "capital": "cryptoOnBroker",
+    "gateio": null,
+    "okx": null,
+    "paper": null
+   }
+  },
+  "btc_spy": {
+   "judged": true,
+   "market": "crypto_perp:binance",
+   "reasons": {
+    "binance": "us",
+    "bingx": "us",
+    "bybit": "us",
+    "capital": "us",
+    "gateio": "us",
+    "okx": "us",
+    "paper": "us"
+   }
+  },
+  "old_btc": {
+   "judged": true,
+   "market": null,
+   "reasons": {
+    "binance": "legacyMoved",
+    "bingx": "legacyMoved",
+    "bybit": "legacyMoved",
+    "capital": "legacyMoved",
+    "gateio": "legacyMoved",
+    "okx": "legacy",
+    "paper": null
+   }
+  },
+  "spy": {
+   "judged": true,
+   "market": "us_stock",
+   "reasons": {
+    "binance": "us",
+    "bingx": "us",
+    "bybit": "us",
+    "capital": "us",
+    "gateio": "us",
+    "okx": "us",
+    "paper": "us"
+   }
+  },
+  "tw2330": {
+   "judged": true,
+   "market": "tw_stock",
+   "reasons": {
+    "binance": "twStock",
+    "bingx": "twStock",
+    "bybit": "twStock",
+    "capital": "twStock",
+    "gateio": "twStock",
+    "okx": "twStock",
+    "paper": "twStock"
+   }
+  },
+  "txf": {
+   "judged": true,
+   "market": "tw_futures",
+   "reasons": {
+    "binance": "twFut",
+    "bingx": "twFut",
+    "bybit": "twFut",
+    "capital": null,
+    "gateio": "twFut",
+    "okx": "twFut",
+    "paper": "twFut"
+   }
+  },
+  "xau_bn": {
+   "judged": true,
+   "market": "crypto_perp:binance",
+   "reasons": {
+    "binance": null,
+    "bingx": "src",
+    "bybit": "src",
+    "capital": "cryptoOnBroker",
+    "gateio": "src",
+    "okx": "src",
+    "paper": null
+   }
+  }
+ }
+}

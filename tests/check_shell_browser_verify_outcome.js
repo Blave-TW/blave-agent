@@ -1,6 +1,7 @@
 // 搜尋驗證交接怎麼收場,分開記(稽核 P2-4):用戶跳過(按出口 / 交還後還在驗證頁 / 關掉那一格)、逾時、人不在、引擎斷線各是一回事。
 //   - 引擎斷線 / 回合結束 / 分頁壞掉不是用戶的決定:不記,同一輪的下一次搜尋照樣問他
 //   - 用戶跳過與逾時各記各的,之後這一輪不再問,而回給模型的 reason 照那一種講(user_skipped / timeout / no_user),不是一律 captcha
+//   - 用戶過了驗證、按「交還 agent」:同一次導覽稍早判成「還沒過」(頁面還沒長好)也要重判,過了就用那一頁的結果,不當成放棄
 // 不開視窗:視窗、webContents、頁面物件都是假的;搜尋引擎的結果頁由假頁面回「這是驗證頁」。
 // 跑法:node tests/check_shell_browser_verify_outcome.js(約 30 秒:兩次搜尋之間有 4 秒間隔)
 const path = require("path"), fs = require("fs"), os = require("os"), { EventEmitter } = require("events");
@@ -8,13 +9,14 @@ const SHELL = path.join(__dirname, "..", "shell"), B = path.join(SHELL, "browser
 let red = 0, last = null; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok ? "" : "  " + JSON.stringify(d === undefined ? last : d).slice(0, 600))); if (!ok) red++; };
 const J = (r) => (last = JSON.parse(r.content[0].text));
 
+let serp = async () => ({ captcha: true, items: [] });
 (async () => {
   const IP = require(path.join(B, "inpage"));
   const cdpFile = require.resolve(path.join(B, "cdp"));
   require.cache[cdpFile] = { id: cdpFile, filename: cdpFile, loaded: true, exports: { createPage: (wc) => ({
     attach: async () => {}, detach: () => {}, guarded: () => false, guard: async () => {}, disarm: async () => {}, quiet: async () => {},
     run: async (fn) => (fn === IP.dirtyFields ? { n: 0, edited: false } : fn === IP.readable ? 0 : null),
-    focused: async () => null, serp: async () => ({ captcha: true, items: [] }),   // 每一張搜尋結果頁都是驗證頁
+    focused: async () => null, serp: async () => serp(wc.getURL()),   // 預設每一張搜尋結果頁都是驗證頁(第 4 段換掉)
   }) } };
   const wcs = [];
   class FakeView {
@@ -69,7 +71,36 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   r = J(await p);
   t("3 關掉驗證頁那一格 → reason user_skipped,記成跳過", r.error === "search_unavailable" && r.reason === "user_skipped" && Br._cur().verifyEnd === "declined", [r, Br._cur().verifyEnd]);
 
-  // ---- 4. 原文鎖
+  // ---- 4. 用戶過了驗證、自動接續漏判,按「交還 agent」→ 重判,用這一頁的結果接著搜(不是放棄 Google、改去 DuckDuckGo)
+  Br.endTurn(); await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+  const PASSED = "https://www.google.com/search?q=btc+etf+flows&sei=1";
+  let early = 0;
+  serp = async (url) => {
+    if (url !== PASSED) return { captcha: true, items: [] };
+    if (early++ === 0) return { captcha: true, items: [] };   // 換頁剛落定那一次判早了:頁面還沒長好,還認成驗證頁
+    return { captcha: false, items: [{ href: "https://news-a.test/one", title: "First result", snippet: "one" }, { href: "https://news-b.test/two", title: "Second result", snippet: "two" }] };
+  };
+  at = sent.length;
+  p = search();
+  const a4 = await onAsk(at, p, () => {});
+  t("4(前提)問了他", !!a4);
+  const vt = Br._tabs.get(a4.id);
+  Br.takeover(vt.id);
+  const vwc = wcs[wcs.length - 1];   // 這次搜尋開的那一格(最後建的 view)
+  t("4(前提)找到那一格的頁面", /google\.com\/search/.test(vwc.getURL()), vwc.getURL());
+  await vwc.loadURL(PASSED);   // 用戶過了驗證,分頁導回搜尋結果
+  for (let i = 0; i < 40 && early === 0; i++) await new Promise((res) => setTimeout(res, 50));
+  await new Promise((res) => setTimeout(res, 600));
+  t("4(前提)自動接續那一次判成「還沒過」,之後沒有再判(這就是漏判)、請求還在等", early === 1 && !!vt.need && vt.userControl === true, [early, vt.need, vt.userControl]);
+  const opened = Br._tabs.reachable().length;
+  Br.handback(vt.id);   // 中欄標題列的「好了,交還 agent」
+  r = J(await p);
+  t("4 按了交還 → 重判、已經過了:用這一頁的結果回 Google(不是 DuckDuckGo、不是 search_unavailable)", r.ok === true && r.source === "google" && !r.fallback_reason && r.untrusted_content.results.length === 2, r);
+  t("4 沒有另開 DuckDuckGo 的分頁;這一輪不記成用戶跳過、Google 驗證次數不加", Br._tabs.reachable().length === opened && !Br._cur().verifyEnd && !Br._cur().captchas && !Br._cur().skipGoogle, [Br._tabs.reachable().map((x) => x.url), Br._cur().verifyEnd, Br._cur().captchas]);
+  t("4 那一格交還給 agent、不再是驗證中", !vt.userControl && !vt.verify && !vt.need);
+  serp = async () => ({ captcha: true, items: [] });
+
+  // ---- 5. 原文鎖
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8");
   const hand = idx.slice(idx.indexOf("async function handVerify("), idx.indexOf("const SEARCH_TAIL_MS"));
   t("handVerify:closed 不記(引擎斷線 / 回合結束 / 分頁壞掉);分頁是用戶關掉的才當 exit;其餘照 timeout / absent / declined 分開記", /if \(got === "closed"\) \{/.test(hand) && /t\.status === "closed"/.test(hand)

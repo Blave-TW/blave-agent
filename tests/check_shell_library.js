@@ -8,6 +8,9 @@
 //   ④ 用隨包的 Electron 開真的 index.html:清單順序與 tag、分段、詳情、CTA 閘門態、「用這支」→ 確認框 → 逐字那句話 → 進行中
 //      → turn-end 記對照表 → 已安裝;沒新策略的灰字;購買框六個分支(第一段、購買中鎖框、餘額不足有卡第二段、沒卡、409、失敗行、
 //      成功後直接送 lib.msgPaid);en 的價格與那句話;api 來的字只進 textContent。
+// ⑤ 成功筆記(spec-0.1.12-library-notes;不起 Electron):入口只認這一語言的 id / 標題、主行程收兩欄與讀筆記(匿名、200/201、30 分鐘快取、
+//    回四欄)、白名單重建(錄好的 fixture + 惡意片段,用 @xmldom 解析 + 假元素工廠;第一個 <hr> 之後不畫、a 拆字、img/script/iframe 整顆丟、零屬性)、
+//    回合中「點了才講」的接線(aria-disabled、清在 libSync)。讀筆記的端點每打一次就在正式站記一筆閱讀:這裡只用 tests/fixtures/success_notes.json。
 // 跑法:node tests/check_shell_library.js(找不到 shell/node_modules 的 Electron 時 ④ SKIP,①②③ 照跑)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
@@ -94,10 +97,11 @@ if (!process.versions.electron) {
 
   // ── ② 主行程 ──
   const M = {}; vm.createContext(M);
-  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize"), M);
+  vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libNoteLangs") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize")
+  + "\n" + mainSrc.match(/^const LIB_NOTE_HTML_MAX = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cutFn(mainSrc, "libNoteSanitize"), M);
   ok("② 清單不是陣列 / body 不是物件 → null", M.libSanitize(null) === null && M.libSanitize({}) === null && M.libSanitize({ strategies: "x" }) === null && M.libSanitize([]) === null);
   const good = M.libSanitize({ strategies: LIST });
-  ok("② 好的清單逐筆過、欄位齊、多出來的欄位不帶;report 多收 total_return 與 gates 的四個數字(其餘不帶)", good.length === LIST.length && good[0].id === 101 && good[0].report.spark.length === 64 && good[0].report.gate_checks.mcpt === "pass" && !("success_note_ids" in good[0]) && good[6].report === null
+  ok("② 好的清單逐筆過、欄位齊、多出來的欄位不帶(沒有筆記兩欄 → null);report 多收 total_return 與 gates 的四個數字(其餘不帶)", good.length === LIST.length && good[0].id === 101 && good[0].report.spark.length === 64 && good[0].report.gate_checks.mcpt === "pass" && good[0].success_note_ids === null && good[0].success_note_titles === null && good[6].report === null
     && good[0].report.total_return === 312.5 && JSON.stringify(good[0].report.gates) === '{"mcpt_p":0.0004,"robust":{"ratio":0.91},"fee":{"rate":0.0005,"actual":0.0004}}' && good[4].report.gates === null);
   ok("② gates 有格壞 / 缺格 → 那格 null、其餘照收;gates 不是物件 → null;total_return 不是數 → null", JSON.stringify(M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: { mcpt_p: "x", robust: 5, fee: { rate: 0.0005 } } }) })] })[0].report.gates) === '{"mcpt_p":null,"robust":{"ratio":null},"fee":{"rate":0.0005,"actual":null}}'
     && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: [] }) })] })[0].report.gates === null && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9" }) })] })[0].report.total_return === null);
@@ -138,6 +142,66 @@ if (!process.versions.electron) {
     ok("② libraryReport:id 要正整數、打 /strategies/<id>/report?lang=、登入才帶桌面資料 key、403 退匿名、非 200 / 打不到 / 形狀不對 → null、快取 5 分鐘 per id:lang", /if \(!Number\.isInteger\(id\) \|\| id <= 0\) return null;/.test(lr) && /\/openclaw\/marketplace\/strategies\/\$\{id\}\/report\?lang=\$\{lang\}/.test(lr)
       && /const key = loadToken\(\) \? loadDataKey\(\) : null;/.test(lr) && /if \(key && r\.status === 403\) r = await getJSON\(url, \{\}\);/.test(lr) && /catch \(_\) \{ return null; \}/.test(lr) && /if \(r\.status !== 200\) return null;/.test(lr)
       && /const report = libReportSanitize\(r\.body\);\s*if \(!report\) return null;/.test(lr) && /ck = `\$\{id\}:\$\{lang\}`/.test(lr) && /Date\.now\(\) - hit\.at < ACCT_FRESH_MS/.test(lr)); }
+
+  // ── ⑤ 成功筆記 ──
+  { const FX = JSON.parse(read(path.join(__dirname, "fixtures", "success_notes.json")));
+    const N = (ids, titles) => S({ success_note_ids: ids, success_note_titles: titles });
+    ok("⑤ 入口:只認這一語言的正整數 id、不拿另一語言頂;標題空白 / 非字串 → null", P.libNoteId(N({ zh: 116, en: 117 }), "zh") === 116 && P.libNoteId(N({ zh: 116 }), "en") === null && P.libNoteId(N({ zh: "116" }), "zh") === null
+      && P.libNoteId(N({ zh: 0 }), "zh") === null && P.libNoteId(N(null), "zh") === null && P.libNoteId(null, "zh") === null && P.libNoteTitle(N(null, { zh: " T " }), "zh") === "T" && P.libNoteTitle(N(null, { zh: "  " }), "zh") === null
+      && P.libNoteTitle(N(null, { en: "E" }), "zh") === null && P.libNoteTitle(N(null, { zh: 5 }), "zh") === null);
+    const sn = M.libSanitize({ strategies: [S({ id: 125, success_note_ids: { zh: 116, en: 117, ja: 9 }, success_note_titles: { zh: "a\u0000b\nc", en: "t".repeat(300), ja: "x" } }),
+      S({ id: 126, success_note_ids: { zh: "116", en: -1 }, success_note_titles: { zh: "  " } }), S({ id: 127, success_note_ids: [116], success_note_titles: "x" }), S({ id: 128, success_note_ids: { zh: true, en: 1.5 } })] });
+    ok("⑤ libSanitize 收兩欄:只留 zh / en、id 正整數、標題去控制字元截 200;壞值丟、整欄壞 / 不是物件 → null", JSON.stringify(sn[0].success_note_ids) === '{"zh":116,"en":117}' && sn[0].success_note_titles.zh === "a b c" && sn[0].success_note_titles.en.length === 200 && !("ja" in sn[0].success_note_titles)
+      && sn[1].success_note_ids === null && sn[1].success_note_titles === null && sn[2].success_note_ids === null && sn[2].success_note_titles === null && sn[3].success_note_ids === null, JSON.stringify(sn));
+    const nz = M.libNoteSanitize(FX.zh.body || FX.zh, 116), ne = M.libNoteSanitize(FX.en, 117);
+    ok("⑤ libNoteSanitize(錄好的 116 / 117):只回 id / title / html / date 四欄(images、tags、author、price 不帶);日期取 UTC 年月日", JSON.stringify(Object.keys(nz)) === '["id","title","html","date"]' && nz.id === 116 && nz.date === "2026-10-01" && ne.date === "2026-10-01"
+      && nz.title === FX.zh.note.title && nz.html === FX.zh.note.content && ne.title.startsWith("TXF Long-Only"), JSON.stringify(nz && { t: nz.title, d: nz.date }));
+    ok("⑤ libNoteSanitize 讀不到:付費筆記(success:false、空 content)/ 不存在 / 空白內文 / 形狀不對 → null;title 去控制字元、html 截 50000;日期壞 → null",
+      M.libNoteSanitize({ success: false, error: "Note is locked", note: { content: "", title: "x" } }, 1) === null && M.libNoteSanitize({ success: false, error: "Note not found" }, 1) === null && M.libNoteSanitize({ success: true, note: { content: "  " } }, 1) === null
+      && M.libNoteSanitize({ success: true, note: { content: 5 } }, 1) === null && M.libNoteSanitize(null, 1) === null && M.libNoteSanitize({ success: "true", note: { content: "x" } }, 1) === null
+      && M.libNoteSanitize({ success: true, note: { content: "y".repeat(60000), title: "a\tb", created_at: "nope" } }, 1).html.length === 50000 && M.libNoteSanitize({ success: true, note: { content: "x", title: "a\tb" } }, 1).title === "a b"
+      && M.libNoteSanitize({ success: true, note: { content: "x", created_at: "nope" } }, 1).date === null && M.libNoteSanitize({ success: true, note: { content: "x", created_at: "Wed, 30 Sep 2026 23:59:59 GMT" } }, 1).date === "2026-09-30");
+    const ln = cutFn(mainSrc, "libraryNote");
+    ok("⑤ libraryNote:id 要正整數、打 /studio/success_notes/read_note?note_id=、匿名(headers 是空物件,不帶桌面資料 key / cookie)、200 與 201 都收、打不到 null、成功才進 30 分鐘快取;IPC library-note 經 handle()",
+      /if \(!Number\.isInteger\(id\) \|\| id <= 0\) return null;/.test(ln) && /getJSON\(`\$\{API_BASE\}\/studio\/success_notes\/read_note\?note_id=\$\{id\}`, \{\}\)/.test(ln) && !/loadDataKey|loadToken|api-key|cookie/i.test(ln)
+      && /if \(r\.status !== 200 && r\.status !== 201\) return null;/.test(ln) && /catch \(_\) \{ return null; \}/.test(ln) && /if \(!note\) return null;\s*libNoteCache\.set\(id/.test(ln) && /LIB_NOTE_TTL_MS = 30 \* 60 \* 1000/.test(mainSrc)
+      && /handle\("library-note", \(_e, id\) => libraryNote\(id\), null\);/.test(mainSrc) && /libraryNote: \(id\) => ipcRenderer\.invoke\("library-note", id\)/.test(pre));
+    // 白名單重建:@xmldom 解析(text/html)+ 假元素工廠——假元素沒有 setAttribute / innerHTML,重建時若想搬屬性就直接丟例外
+    let XD = null; try { XD = require(path.join(SHELL, "node_modules", "@xmldom", "xmldom")).DOMParser; } catch (_) { XD = null; }
+    if (!XD) console.log("SKIP  ⑤ 白名單重建(找不到 shell/node_modules 的 @xmldom)");
+    else {
+      const parse = (h) => new XD({ onError: () => {} }).parseFromString("<html><body>" + h + "</body></html>", "text/html").getElementsByTagName("body")[0];
+      const mk = (tag, cls) => ({ tag, cls: cls || null, kids: [], append(...xs) { xs.forEach((x) => this.kids.push(x)); } });
+      const ser = (e) => (typeof e === "string" ? e : "<" + e.tag + (e.cls ? "." + e.cls : "") + ">" + e.kids.map(ser).join("") + "</" + e.tag + ">");
+      const tags = (e, acc) => { if (typeof e !== "string") { acc.add(e.tag); e.kids.forEach((k) => tags(k, acc)); } return acc; };
+      const build = (h) => P.libNoteBuild(parse(h), mk), txt = (e) => (typeof e === "string" ? e : e.kids.map(txt).join(""));
+      const ALLOWED = new Set(["div", "p", "h3", "ul", "ol", "li", "strong", "em", "br", "table", "tr", "th", "td"]);
+      const zh = build(FX.zh.note.content), en = build(FX.en.note.content), zt = txt(zh);
+      ok("⑤ 錄好的 zh 筆記:到第一個 <hr> 為止(導流段、到策略庫的連結字都沒有)、blockquote → .nt-lead、表格包 .nt-tw、標籤全在白名單", zt.includes("Supertrend 是很多看盤軟體") && zt.includes("2015–2016 年資料只有日盤") && !zt.includes("規則很簡單") && !zt.includes("到策略庫看這支")
+        && zh.kids[0].cls === "nt-lead" && zh.kids.some((k) => k.cls === "nt-tw" && k.kids[0].tag === "table") && [...tags(zh, new Set())].every((x) => ALLOWED.has(x)), [...tags(zh, new Set())].join());
+      ok("⑤ 錄好的 en 筆記:同樣停在 <hr> 前", txt(en).includes("Four things to know") && !txt(en).includes("Running it every hour is the work"));
+      const evil = build('<p onclick="x()">a<a href="javascript:alert(1)" onmouseover="y()">連結字</a><img src="https://e/x.png" onerror="z()"><script>steal()</script><style>p{}</style>'
+        + '<iframe src="https://e">i</iframe><svg><text>s</text></svg><textarea>t</textarea><noscript>n</noscript><span style="color:red">留字</span></p><h2 id="x">h2字</h2>'
+        + '<table><thead><tr><th>k</th></tr></thead><tbody><tr><td>v</td></tr></tbody></table><div><hr></div><p>導流</p>');
+      const es = ser(evil);
+      ok("⑤ 惡意片段:a 拆成純字、img / script / style / iframe / svg / textarea / noscript 整顆丟(連內容)、未知容器留字、thead / tbody 拆掉、巢狀的 <hr> 也截斷;輸出沒有任何屬性",
+        es === "<div.nt-body><p>a連結字留字</p><p>h2字</p><div.nt-tw><table><tr><th>k</th></tr><tr><td>v</td></tr></table></div></div>", es);
+      ok("⑤ <hr> 藏在引言 / 表格裡也截斷(之後的整段都不畫)", ser(build("<p>a</p><blockquote>引言<hr>尾</blockquote><p>導流</p>")) === "<div.nt-body><p>a</p><div.nt-lead>引言</div></div>"
+        && ser(build("<table><tr><td>1<hr></td></tr></table><p>導流</p>")) === "<div.nt-body><div.nt-tw><table><tr><td>1</td></tr></table></div></div>", ser(build("<p>a</p><blockquote>引言<hr>尾</blockquote><p>導流</p>")));
+      ok("⑤ 沒有 <hr> 全部畫;頂層裸字包成 <p>;空白文字不進表格", ser(build("前言<p>x</p><table> <tr> <td>1</td> </tr> </table>")) === "<div.nt-body><p>前言</p><p>x</p><div.nt-tw><table><tr><td>1</td></tr></table></div></div>", ser(build("前言<p>x</p><table> <tr> <td>1</td> </tr> </table>")));
+    }
+    const pc = cutFn(src, "libPaintCta"), sy = cutFn(src, "libSync"), pn = cutFn(src, "libNoteLoad");
+    ok("⑤ 回合中「點了才講」:busy 主鈕 aria-disabled + title、那一格空著也不 hidden(live region 先在樹裡)、點了叫 libBusyTell(不 libAsk / libBuyBox)、只有講過才補那句;清在 libSync 開頭(不在 libPaintCta)",
+      /case "busy": \{[\s\S]*?btn\("btn-fill", c\.paid \? buyLabel\(\) : t\("lib\.use"\), \(\) => libBusyTell\(s\)\);[\s\S]*?setAttribute\("aria-disabled", "true"\); b\.title = t\("turn\.busy"\);[\s\S]*?if \(LIB\.busyTold === s\.id\) \{ note\.textContent = t\("turn\.busy"\);/.test(pc)
+      && !/busyTold = null/.test(pc) && /^function libSync\(\) \{\n  if \(!\(typeof running !== "undefined" && running === true\)\) LIB\.busyTold = null;/.test(sy)
+      && /libBusyTell\(s\) \{\n  LIB\.busyTold = s\.id;/.test(src) && /note\.hidden = !note\.textContent && c\.state !== "busy";/.test(pc) && /\.lib-cta \.btn-fill\[aria-disabled="true"\]/.test(read(path.join(R, "app.css"))));
+    ok("⑤ 閱讀頁:內文只經 DOMParser + libNoteBuild(不 innerHTML);重試先把焦點交給 #lib-nt-title 才清掉內容(按下的鈕被拿掉不會把焦點丟到 BODY);成功才送 library_note;讀不到給 lib.note.err + lib.retry;入口卡在回測卡之後、關卡卡之前,沒有筆記不出",
+      /libNoteBuild\(new DOMParser\(\)\.parseFromString\(n\.html, "text\/html"\)\.body, /.test(pn) && /libTrack\("library_note"\);\n\}$/.test(pn) && /t\("lib\.note\.err"\)/.test(pn) && /t\("lib\.retry"\)/.test(pn)
+      && /b\.addEventListener\("click", \(\) => \{ h\.focus\(\); slot\.textContent = ""; libNoteLoad\(s, id\); \}\);/.test(pn) && /const h = \$\("lib-nt-title"\)/.test(pn)
+      && /det\.appendChild\(c1\);\n[^\n]*\n  if \(libNoteId\(s, LANG\)\) det\.appendChild\(libNoteLink\(s\)\);\n[^\n]*\n  const gc = r && r\.gate_checks;/.test(cutFn(src, "libPaintDetail"))
+      && require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.includes("library_note"));
+    ok("⑤ 四句文案逐字(spec §2.6)", STR.zh["lib.note.k"] === "成功筆記" && STR.en["lib.note.k"] === "Success Note" && STR.zh["lib.note.fallback"] === "讀這篇筆記" && STR.en["lib.note.fallback"] === "Read the Note"
+      && STR.zh["lib.note.back"] === "回到策略" && STR.en["lib.note.back"] === "Back to Strategy" && STR.zh["lib.note.err"] === "讀不到這篇筆記。" && STR.en["lib.note.err"] === "Couldn't load this note."); }
 
   // ── ③ 接線 ──
   ok("③ index.html:側欄「策略庫」在「自動下單」後、同一個 #side-nav 裡;歡迎頁多一顆 #chat-lib 在 #chat-eg 前;#lib 在 #rp 後、#main-empty 前;library.css;library.js 在 handoff.js 後(中間只許 export.js)、app.js 前",
@@ -326,7 +390,10 @@ app.whenReady().then(async () => {
   a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; ENV.cur = "cloud"; libAsk({ id: 101, title: "BTC 通道動能共振" }); const o = { lines: q("#del-body p").map((p) => p.textContent), notes: q("#del-body .cf-note").length, where: document.getElementById("del-where").hidden ? null : document.getElementById("del-where").textContent, env: !document.getElementById("del-env").hidden }; document.getElementById("del-cancel").click(); ENV.cur = "local"; await new Promise((r) => setTimeout(r, 40)); return o; })()`);
   ok("④ 雲端視角的下載確認框:內文兩段(l1 不帶目的地、雲端不出 billed)、lib.cf.cloudNote 在腳的 .del-where(不在內文 .cf-note)、「雲端」記號", a.lines.length === 2 && a.lines[0] === (await T("lib.cf.l1")) && a.notes === 0 && a.where === (await T("lib.cf.cloudNote")) && a.env, JSON.stringify(a));
   await js(`LIB.data.dataAccess = "included"; running = true; libSync();`); r = await cta();
-  ok("④ 回合中:主鈕 disabled、說明句 turn.busy", r.btn === (await T("lib.use")) && r.dis === true && r.note === (await T("turn.busy")), JSON.stringify(r));
+  { const n0 = await js(`(() => { const n = document.getElementById("lib-cta-note"), b = document.querySelector("#lib-cta .btn-fill"); return { hidden: n.hidden, role: n.getAttribute("role"), aria: b.getAttribute("aria-disabled"), title: b.title }; })()`);
+    const told = await js(`(async () => { const b = document.querySelector("#lib-cta .btn-fill"); b.focus(); b.click(); await new Promise((r) => setTimeout(r, 40)); libSync(); return { note: document.getElementById("lib-cta-note").textContent, focus: document.activeElement === document.querySelector("#lib-cta .btn-fill"), box: !document.getElementById("del-scrim").hidden }; })()`);
+    ok("④ 回合中(點了才講):主鈕 aria-disabled + title、不是原生 disabled;那一格空著但不 hidden、role=status;點了才寫 turn.busy、不開確認框、忙碌中重畫還在",
+      r.btn === (await T("lib.use")) && r.dis === false && r.note === "" && n0.hidden === false && n0.role === "status" && n0.aria === "true" && n0.title === (await T("turn.busy")) && told.note === (await T("turn.busy")) && !told.box, JSON.stringify([r, n0, told])); }
   // 用這支
   r = await js(`(async () => { running = false; libSync(); const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click();
     const open = !document.getElementById("del-scrim").hidden, title = document.getElementById("del-title").textContent, full = document.getElementById("del-title").title, lines = q("#del-body p").map((p) => p.textContent), okTxt = document.getElementById("del-ok").textContent, env = document.getElementById("del-env").hidden, focus = document.activeElement && document.activeElement.id;

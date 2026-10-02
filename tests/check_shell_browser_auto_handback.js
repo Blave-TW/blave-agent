@@ -119,7 +119,7 @@ if (!process.versions.electron) (async () => {
     evs = await turn();
     await kept("焦點在" + name, s, evs, "user_in_control");
   }
-  t("  user_in_control 的訊息照第十三批:請用戶按「交還 agent」", /Hand back to agent/.test(last.message) && /交還 agent/.test(last.message));
+  t("  user_in_control 的訊息:請用戶按瀏覽器標題旁的「好了，交還 agent」或回一句話", /hand it back\. Tell the user exactly this/.test(last.message) && /瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話/.test(last.message) && /'Hand back' on that page in the chat/.test(last.message) && /Done, hand back to agent/.test(last.message) && /next to the Browser title/.test(last.message) && !/頁面上方|top of that page/.test(last.message), last.message);
   s.wc._focus = "throw";
   evs = await turn();
   await kept("問不到焦點(頁面沒回應)", s, evs, "user_in_control");
@@ -333,7 +333,9 @@ if (!process.versions.electron) (async () => {
   // 不是「打字 vs 固定句」;帶 false 的呼叫端(排程 / 雲端發起 / 自動回合)還不存在——這一條釘住:呼叫端只有一個,而且旁邊寫明了誰該帶 false
   t("main.js:beginTurn 只有一個呼叫端,旁邊寫明 userSent 代表什麼、哪種回合要帶 false", (main.match(/browser\(\)\.beginTurn\(/g) || []).length === 1
     && /\/\/ userSent = 這一輪是人在這台電腦上按出來的[\s\S]{0,600}要帶 false 的是「沒有人在這台電腦按送出」的回合:\n\s*\/\/ 排程回合、雲端主機那邊發起的回合、任何自動回合[\s\S]{0,300}\n\s*try \{ brMount = await browser\(\)\.beginTurn\(/.test(main));
-  t("verify.js 檔頭(紅線)沒動", /^\/\/ /.test(fs.readFileSync(path.join(B, "verify.js"), "utf8")) && require("child_process").spawnSync("git", ["diff", "--quiet", "8bb6aaa", "--", "shell/browser/verify.js"], { cwd: path.join(__dirname, "..") }).status === 0);
+  { const head = (s) => String(s).slice(0, String(s).indexOf('"use strict";'));
+    const was = require("child_process").spawnSync("git", ["show", "8bb6aaa:shell/browser/verify.js"], { cwd: path.join(__dirname, "..") }).stdout;
+    t("verify.js 檔頭(紅線)沒動", !!was && head(was).length > 200 && head(was) === head(fs.readFileSync(path.join(B, "verify.js"), "utf8"))); }
 
   // ---- 規則文字(references/browser.md)
   const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8");
@@ -341,7 +343,7 @@ if (!process.versions.electron) (async () => {
   t("規則:用戶送出訊息時他接手過的分頁自動交還;他說處理好了就直接讀,不要請他按交還", /handed back to you by itself/.test(carry) && /read that tab first/.test(carry) && /do not ask them to hand it back/.test(carry), carry);
   t("規則:用戶剛操作過的頁先讀,不重新載入、不導去別處、不回上一頁", /read it before anything else/.test(carry) && /never reload it, go back in it or send it to another address/.test(carry) && /kind: "unsaved_input"/.test(carry), carry);
   const uic = (md.split("\n").find((l) => l.startsWith("On `user_in_control`")) || "");
-  t("規則:「請用戶按交還 agent」只適用於仍然回 user_in_control 的分頁(焦點在密碼欄之類、這一輪中途接手)", /was not handed back/.test(uic) && /password, code or card field/.test(uic) && /during this turn/.test(uic) && /Hand back to agent/.test(uic) && /Say exactly that in the reply/.test(uic), uic);
+  t("規則:「請用戶按交還 agent」只適用於仍然回 user_in_control 的分頁(焦點在密碼欄之類、這一輪中途接手)", /was not handed back/.test(uic) && /password, code or card field/.test(uic) && /during this turn/.test(uic) && /Done, hand back to agent/.test(uic) && /Say exactly that in the reply/.test(uic), uic);
   t("規則檔只有英文(引給用戶看的那幾句除外)", !/[一-鿿]/.test(carry.replace(/「[^」]*」/g, "")) && !/[一-鿿]/.test(uic.replace(/「[^」]*」/g, "").replace(/\(交還 agent\)/g, "")));
 
   fs.rmSync(tmp, { recursive: true, force: true });

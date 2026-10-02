@@ -338,7 +338,38 @@
     return { node: wrap, canvas: cv };
   }
 
-  // 單序列、線性 % 軸(樣本外通常只有一兩年,log 軸只畫得出一條 1× 線)。分頁藏著時量到 0,等 ResizeObserver 再叫
+  // Y 軸:步長只取 1 / 2 / 5 × 10^n,域內刻度落在 4–6 條。先找域內 ≤ 6 條的最小步長;不到 4 條時把域往刻度上撐
+  // (離 0 遠的那側先撐),回傳撐過的 lo / hi——曲線與刻度都用這組 lo / hi 換算,比例尺只有一個。
+  // 刻度值 = 整數 k × 步長:0 才是真的 0(虛線那條),小步長也不會冒出 0.30000000000000004
+  function wfTicks(lo, hi) {
+    const none = { lo, hi, step: 0, dp: 0, ticks: [] };
+    if (!isFinite(lo) || !isFinite(hi) || !isFinite(hi - lo) || !(hi > lo)) return none;
+    const span = hi - lo, eps = 1e-9;
+    const first = (s) => Math.ceil(lo / s - eps), last = (s) => Math.floor(hi / s + eps);
+    let p = Math.floor(Math.log10(span / 10)), step = 0, dp = 0;
+    for (let guard = 0; guard < 12 && !step; p++) {
+      for (const m of [1, 2, 5]) {
+        const s = m * Math.pow(10, p);
+        if (last(s) - first(s) + 1 <= 6) { step = s; dp = Math.max(0, -p); break; }
+        guard++;
+      }
+    }
+    if (!step) return none;
+    let k0 = first(step), k1 = last(step);
+    const grow = (top) => { if (top) { k1 = Math.ceil(hi / step - eps); hi = Math.max(hi, k1 * step); } else { k0 = Math.floor(lo / step + eps); lo = Math.min(lo, k0 * step); } };
+    if (k1 - k0 + 1 < 4) grow(Math.abs(hi) >= Math.abs(lo));
+    if (k1 - k0 + 1 < 4) grow(Math.abs(hi) < Math.abs(lo));
+    const ticks = [];
+    for (let k = k0; k <= k1 && ticks.length < WF_GRID_MAX_LINES; k++) ticks.push(k === 0 ? 0 : k * step);
+    return { lo, hi, step, dp, ticks };
+  }
+  // 千分位同交易分頁 trFmt2(en-US 分組,各語系小數點一律 .);小數位上限 20 是 toLocaleString 的舊上限,髒資料的極窄區間才會碰到
+  function wfTickLabel(v, dp) {
+    const d = Math.min(dp, 20);
+    return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%";
+  }
+
+  // 單序列、線性 % 軸(對數軸在累積報酬 ≤ −100% 時沒有定義)。分頁藏著時量到 0,等 ResizeObserver 再叫
   function drawChart(canvas, w) {
     const W = canvas.clientWidth, H = canvas.clientHeight;
     if (!W || !H || !w.oos) return;
@@ -352,21 +383,24 @@
     ctx.font = "10px 'Roboto Mono', ui-monospace, monospace";
     const cLine = token("--color-data-1"), cGrid = token("--border-hairline"), cText = token("--ink-3"), cMark = token("--color-greyDark");
 
-    const padL = 40, padR = 10, padT = 12, padB = 22;
-    const cum = w.oos.cum, n = cum.length, plotW = W - padL - padR, plotH = H - padT - padB;
-    const xAt = (i) => padL + (plotW * i) / (n - 1);
+    const cum = w.oos.cum, n = cum.length;
     let lo = Math.min.apply(null, cum), hi = Math.max.apply(null, cum);
     lo = Math.min(lo, 0);   // 0% 那條永遠留在畫面裡
     hi = Math.max(hi, 0);
     const padv = (hi - lo) * 0.08 || 1;
-    lo -= padv; hi += padv;
+    const ax = wfTicks(lo - padv, hi + padv);
+    lo = ax.lo; hi = ax.hi;
+    const labels = ax.ticks.map((v) => wfTickLabel(v, ax.dp));
+    // 左邊界跟著最寬的刻度字走:+10000% 這種字塞不進固定 40px;上限三分之一寬,髒資料也留得出繪圖區
+    const labelW = labels.reduce((m, s) => Math.max(m, ctx.measureText(s).width), 0);
+    const padL = Math.min(Math.max(40, Math.ceil(labelW) + 10), Math.floor(W / 3)), padR = 10, padT = 12, padB = 22;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const xAt = (i) => padL + (plotW * i) / (n - 1);
     const yAt = (v) => padT + plotH * (1 - (v - lo) / (hi - lo));
 
     ctx.textBaseline = "middle";
     ctx.lineWidth = 1;
-    const span = hi - lo, stepPct = span > 120 ? 50 : span > 60 ? 20 : span > 30 ? 10 : 5;
-    let v = Math.ceil(lo / stepPct) * stepPct;
-    for (let lines = 0; v <= hi && lines < WF_GRID_MAX_LINES; v += stepPct, lines++) {
+    ax.ticks.forEach((v, i) => {
       const y = yAt(v);
       ctx.strokeStyle = cGrid;
       ctx.setLineDash(v === 0 ? [3, 3] : []);
@@ -374,8 +408,8 @@
       ctx.setLineDash([]);
       ctx.fillStyle = cText;
       ctx.textAlign = "right";
-      ctx.fillText((v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + "%", padL - 6, y);
-    }
+      ctx.fillText(labels[i], padL - 6, y);
+    });
 
     // 重新選參數的時點:≤12 輪每輪邊界一條虛線、13–60 輪 X 軸上 4px 短刻度、>60 輪不畫(legend 用文字說)
     const mode = wfMarkMode(w.runs ? w.runs.length : 0);
@@ -848,6 +882,6 @@
   window.BlaveReport.wfAwaiting = wfAwaiting;
   window.BlaveReport.wfSig = sentSig;
   // 純計算函式掛出來給核對腳本用(tests/check_shell_wf.js);畫面不靠這個
-  window.BlaveReport._wf = { sanitizeWf, wfBand, wfPreset, wfRunsOf, wfTotalDays, wfDays, wfMarkMode, wfRunMarks, sentSig, sentNow, holdLeft, holdArm, holdClear, wfTurnEnded, wfAwaiting,
+  window.BlaveReport._wf = { sanitizeWf, wfBand, wfPreset, wfRunsOf, wfTotalDays, wfDays, wfMarkMode, wfRunMarks, wfTicks, wfTickLabel, drawChart, sentSig, sentNow, holdLeft, holdArm, holdClear, wfTurnEnded, wfAwaiting,
     WF_MIN_RUNS, WF_MAX_RUNS, WF_CLOUD_HOLD_MS, WF_CLOUD_REFETCH_MS, _sent: sent, _shown: shown };
 })();

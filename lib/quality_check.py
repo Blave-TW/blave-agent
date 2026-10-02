@@ -306,7 +306,7 @@ _PRICE_OR_META_FETCHERS = {
     "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_db_kline",
     "fetch_twstock_price", "fetch_twstock_price_adj",
     "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
-    "fetch_twstock_ohlcv", "fetch_twstock_quote", "fetch_twstock_quote_batch",
+    "fetch_twstock_ohlcv", "fetch_twstock_quote", "fetch_twstock_quote_batch", "fetch_usstock_price",
     "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch",
     "fetch_stock_futures_batch_daily",
     "fetch_twstock_ohlcv_symbols", "fetch_stock_futures_ohlcv_symbols",

@@ -1,0 +1,45 @@
+{
+ "_source": "GET /studio/success_notes/read_note?note_id=116 / 117,anonymous (201),recorded 2026-10-01 by the designer for spec-0.1.12-library-notes; author name blanked. Tests replay this instead of calling the endpoint (each call records a read).",
+ "zh": {
+  "note": {
+   "author": {
+    "name": "x"
+   },
+   "content": "<blockquote>台指期 11 年漲了四倍多，抱著不動就好？我們拿一個很常見的趨勢指標認真回測了一次。</blockquote>\n<p>Supertrend 是很多看盤軟體都內建的趨勢指標：價格站上那條線就是多頭，跌破就是空頭。這支台指期策略（Supertrend 趨勢，官方免費）只做一件事——<strong>台指期 1 小時線站上 Supertrend 就做多，跌破就出場空手</strong>，倉位隨波動率調整。2015 年 1 月到 2026 年 10 月回測：總報酬 +2,375%、年化約 31.4%、Sharpe 1.67、最大回撤 −16.5%；2015–2025 年 11 個完整年度裡，有 9 年贏過抱著不動。</p>\n<h3>Supertrend 怎麼算？台指期 1 小時線上的規則</h3>\n<p>先算 ATR（真實波幅的平滑平均，20 根），在每根 K 線的高低中點上下各畫一條「1.5 倍 ATR」的帶子。多頭時只看下緣那條：它只會往上收、不會往下鬆，價格一收盤跌破就翻空；空頭時反過來看上緣。<strong>策略只在多頭狀態持有台指期，翻空就空手</strong>，不放空。日盤加夜盤每天約 21 根 1 小時 K，每根收盤評估一次。</p>\n<p>倉位不是固定一口：用近 30 個交易日的實現波動率，把部位調到年化約 30% 的波動，最高 2 倍曝險。盤勢平靜時部位大一點，劇烈震盪時自動縮小。</p>\n<h3>為什麼只做多？</h3>\n<p>這支策略不放空，跌破就空手，把空頭時段整段讓出去——2022 年台指期跌了 23%，這支策略只小虧 2.7%。同期抱著不動的最大回撤是 −32%，策略是 −16.5%，<strong>大約砍半</strong>。</p>\n<h3>回測表現（2015–2026，1 小時 K）</h3>\n<table><tr><th>指標</th><th>數值</th></tr><tr><td>總報酬</td><td><strong>+2,375%</strong>（同期抱著不動 +425%）</td></tr><tr><td>年化報酬</td><td>約 31.4%（抱著不動約 15.2%）</td></tr><tr><td>Sharpe</td><td><strong>1.67</strong></td></tr><tr><td>最大回撤</td><td><strong>−16.5%</strong>（抱著不動 −32%）</td></tr><tr><td>進場次數</td><td>約每年 150 次，平均持有不到一天</td></tr><tr><td>MCPT p-value</td><td><strong>&lt; 0.001</strong>（2,000 次隨機洗牌沒有一次比它好）</td></tr></table>\n<p>已含每邊 0.005% 成本（期交稅＋手續費＋1 檔滑價）；每月結算日前一根強制空手，不把換月價差算成假獲利；約 44% 時間空手。以上為回測結果，非未來保證。</p>\n<h3>要誠實的四件事</h3>\n<p>① <strong>倍數 1.5 是在同一段資料上挑出來的</strong>：ATR 週期從 10 到 30 怎麼換，Sharpe 都在 1.59–1.67 之間，很穩；但倍數挪一格（1.25 或 1.75），Sharpe 就掉到約 1.4。整體仍過參數穩健門檻（鄰域平均 ÷ 選定值 = 0.89），但沒有樣本外，實盤大概率比回測差。② <strong>不是每年都贏</strong>：2016 年（+7.1% vs +11.7%）、2021 年（+12.8% vs +23.5%）跑輸抱著不動，2026 年至今也落後（+54.9% vs +67.3%）——大多頭裡震盪洗出場，就會少賺。③ 進出頻繁，每年約 150 次進場，滑價比回測假設差的話，績效會被吃掉一塊。④ 2015–2016 年資料只有日盤，2017 年起才含夜盤。</p>\n<hr>\n<h3>規則很簡單，難的是每小時都準時執行</h3>\n<p>邏輯就在上面。真正花時間的是日夜盤每小時算一次 Supertrend、按波動率調口數、避開結算日、自動下單，而且一根 K 都不能漏。Blave Agent 幫你把這條鏈跑完：在策略庫免費領取這支策略，跟 Agent 說一聲就能部署。</p>\n<p><a href=\"https://blave.org/agent/zh/library?s=125\">到策略庫看這支台指期 Supertrend 策略 →</a></p>\n",
+   "created_at": "Thu, 01 Oct 2026 08:16:55 GMT",
+   "id": 116,
+   "images": [
+    "https://blave.s3.ap-southeast-1.amazonaws.com/marketplace/strategy_reports/125/pnl.png"
+   ],
+   "is_draft": 0,
+   "language": "zh",
+   "market": "futures",
+   "price": 0,
+   "tags": [],
+   "title": "台指期 Supertrend 只做多：年化 31.4%、回撤只有抱著不動的一半，2022 大跌年只虧 2.7%",
+   "user_id": 1
+  },
+  "success": true
+ },
+ "en": {
+  "note": {
+   "author": {
+    "name": "x"
+   },
+   "content": "<blockquote>Taiwan index futures quadrupled in 11 years. So why not just hold? We put a very common trend indicator through an honest backtest.</blockquote>\n<p>Supertrend ships with most charting tools: price above the line means uptrend, below it means downtrend. This TXF strategy (TXF Supertrend Trend, official and free) does exactly one thing — <strong>go long Taiwan index futures when the 1-hour close holds above Supertrend, go flat when it breaks below</strong> — and sizes the position by volatility. Backtested January 2015 to October 2026: +2,375% total return, about 31.4% annualized, Sharpe 1.67, max drawdown −16.5%. It beat buy-and-hold in 9 of the 11 full calendar years from 2015 to 2025.</p>\n<h3>How does Supertrend work on TXF 1-hour bars?</h3>\n<p>Take the ATR (a smoothed average of true range, 20 bars) and draw a band 1.5×ATR above and below each bar's high-low midpoint. In an uptrend only the lower band matters: it can ratchet up but never loosen, and the first close below it flips the trend down. In a downtrend, the upper band takes over. <strong>The strategy holds TXF only while the trend is up and goes flat the moment it flips</strong> — it never shorts. Day and night sessions give about 21 one-hour bars a day; each close is evaluated.</p>\n<p>Size isn't a fixed contract count. The strategy scales exposure to target roughly 30% annualized volatility using the last 30 trading days of realized volatility, capped at 2×. Calm markets get a bigger position; violent ones get a smaller one automatically.</p>\n<h3>Why long only?</h3>\n<p>Because going flat on a breakdown hands the bear phases back to the market. In 2022, TXF fell 23%; this strategy lost 2.7%. Over the full period, buy-and-hold's worst drawdown was −32%; the strategy's was −16.5% — <strong>roughly half</strong>.</p>\n<h3>Backtest performance (2015–2026, 1-hour bars)</h3>\n<table><tr><th>Metric</th><th>Value</th></tr><tr><td>Total return</td><td><strong>+2,375%</strong> (buy-and-hold +425%)</td></tr><tr><td>Annualized</td><td>~31.4% (buy-and-hold ~15.2%)</td></tr><tr><td>Sharpe</td><td><strong>1.67</strong></td></tr><tr><td>Max drawdown</td><td><strong>−16.5%</strong> (buy-and-hold −32%)</td></tr><tr><td>Entries</td><td>~150 a year, average hold under a day</td></tr><tr><td>MCPT p-value</td><td><strong>&lt; 0.001</strong> (none of 2,000 random shuffles did better)</td></tr></table>\n<p>Includes 0.005% cost per side (futures tax + commission + 1 tick of slippage). The position is forced flat on the bar before each monthly settlement, so contract-roll gaps are never booked as fake profit. Flat about 44% of the time. Backtest results, not a guarantee of future performance.</p>\n<h3>Four things to know before you run it</h3>\n<p>First, <strong>the 1.5 multiplier was chosen on the same data</strong>. The ATR period barely matters — anywhere from 10 to 30, Sharpe stays between 1.59 and 1.67 — but move the multiplier one step (1.25 or 1.75) and Sharpe drops to about 1.4. It still passes our robustness gate (neighborhood average ÷ chosen cell = 0.89), but there is no out-of-sample period, so expect live results to come in below the backtest. Second, <strong>it doesn't win every year</strong>: it trailed buy-and-hold in 2016 (+7.1% vs +11.7%) and 2021 (+12.8% vs +23.5%), and is behind so far in 2026 (+54.9% vs +67.3%) — when a strong bull market chops it out, it leaves money on the table. Third, it trades often, about 150 entries a year; if your slippage is worse than one tick, that eats into returns. Fourth, 2015–2016 data covers the day session only; night sessions are included from 2017.</p>\n<hr>\n<h3>The rule is simple. Running it every hour is the work.</h3>\n<p>The logic is all above. What takes time is recomputing Supertrend every hour across day and night sessions, resizing contracts to volatility, stepping aside at settlement and placing orders without missing a bar. Blave Agent runs that chain for you: add this free strategy from the library, then tell your Agent to deploy it.</p>\n<p><a href=\"https://blave.org/agent/en/library?s=125\">See the TXF Supertrend strategy in the library →</a></p>\n",
+   "created_at": "Thu, 01 Oct 2026 08:16:58 GMT",
+   "id": 117,
+   "images": [
+    "https://blave.s3.ap-southeast-1.amazonaws.com/marketplace/strategy_reports/125/pnl.png"
+   ],
+   "is_draft": 0,
+   "language": "en",
+   "market": "futures",
+   "price": 0,
+   "tags": [],
+   "title": "TXF Long-Only Supertrend: 31.4% Annualized, Half the Drawdown of Buy-and-Hold, Only −2.7% in the 2022 Selloff",
+   "user_id": 1
+  },
+  "success": true
+ }
+}

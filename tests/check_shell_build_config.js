@@ -113,46 +113,42 @@ for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s
 // Intel / Rosetta(0.0.6 通用版實測):SDK → mcp → pyjwt[crypto] 拉進 cryptography,50.x 起 macOS 只出 arm64 wheel,x64 退到
 // 編原始碼(maturin 會自己抓一套 Rust 下來編,幾分鐘)、venv 半套。引擎的每一條 pip 都只收 wheel(--only-binary=:all:,
 // 沒 wheel 就兩秒內大聲失敗)且 --isolated(不吃用戶 pip.conf / PIP_*),cryptography 釘 48.0.1(最後一版 universal2 wheel),
-// 記號檔比整串釘法才會在既有 venv 上重跑。失敗要留痕、進聊天欄的字要說得出原因、不帶用戶路徑。
+// 記號檔比整串釘法才會在既有 venv 上重跑。失敗要留痕、進畫面的字要說得出原因、不帶用戶路徑。
+// 0.1.12 起 pip 在 shell/enginesetup.js(逐行讀進度、一個一個裝);它自己的行為在 tests/check_shell_engine_setup.js,這裡只釘「唯一一條」與釘法
 (async () => {
   const mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   const appSrc = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
-  const pipCmds = mainSrc.match(/pyExec\(VENV_PY, \[[^\]]*PIP_INSTALL[^\]]*\][^)]*\)/g) || [];
-  const slice = (a, b) => { const i = mainSrc.indexOf(a); if (i < 0) throw new Error("找不到 " + a); const j = mainSrc.indexOf(b, i); return mainSrc.slice(i, j + b.length); };
-  const pipError = new Function(slice("function pipError(e)", "\n}\n") + "; return pipError;")();
-  const trimmed = pipError(new Error("  Building wheel for cryptography (pyproject.toml) ... error\n  cargo: not found\nERROR: Could not find a version that satisfies the requirement cryptography==50.0.1 (from versions: 2.2, 2.2.1, 48.0.1)\n\nERROR: No matching distribution found for cryptography==50.0.1\n[notice] A new release of pip is available"));
-  const reported = [];
-  const progress = new Function("report", slice("let said = null;", "said = k; };") + "; return progress;")((k) => reported.push(k));
-  ["engine.preparing", "engine.preparing", "engine.deps"].forEach(progress);
-  const pipFn = slice("function pip(args, envPath, timeout)", "\n}\n");
-  // pyExec():從原文切出來、換一顆假的 execFile 跑三種收尾——被 timeout 殺、爆 maxBuffer、一般失敗;argv 是陣列、沒有 shell
-  let fakeErr = null, seen = null;
-  const mkPy = (win) => new Function("execFile", "process", "PY_ENV", "WIN", "WIN_PY_ENV", slice("function pyExec(bin, args, envPath, timeout = 300000)", "\n}\n") + "; return pyExec;")(
-    (f, a, o, cb) => { seen = { f, a, shell: !!o.shell, hide: o.windowsHide, env: o.env }; cb(fakeErr, "", fakeErr && fakeErr.stderr || ""); }, { env: {} }, {}, win, { PYTHONUTF8: "1" });
-  const sh = mkPy(false);
-  await (async () => { fakeErr = null; try { await mkPy(true)("py", ["-m", "pip"], "", 5000); } catch (_) {} })();
-  const seenWin = seen;
-  const shMsg = async (e) => { fakeErr = e; try { await sh("/Users/someone/Blave/venv/bin/python", ["-m", "pip"], "", 5000); return "(resolved)"; } catch (x) { return x.message; } };
-  const killed = await shMsg(Object.assign(new Error('Command failed: /Users/someone/Blave/venv/bin/python -m pip'), { killed: true, signal: "SIGTERM" }));
-  const big = await shMsg(Object.assign(new Error("stdout maxBuffer length exceeded"), { code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" }));
-  const plain = await shMsg(Object.assign(new Error("Command failed"), { stderr: "ERROR: boom" }));
+  const engSrc = fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8");
+  const E = require(path.join(SHELL, "enginesetup.js"));
+  const code = (x) => x.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const venvPy = "/Users/someone/Blave/venv/bin/python";
+  // 假的 spawn:一般失敗;argv 是陣列、沒有 shell(逾時、沒資料太久在 check_shell_engine_setup.js)
+  const { EventEmitter } = require("events");
+  let seen = null;
+  const runOnce = async (o) => {
+    const S = E.createEngineSetup({ fs: { existsSync: (f) => f !== venvPy && !/\.blave/.test(f), readFileSync: () => { throw new Error("none"); }, mkdirSync: () => {}, writeFileSync: () => {}, readdirSync: () => [], lstatSync: () => ({ isSymbolicLink: () => false }), unlinkSync: () => {} },
+      path, base: "/Users/someone/Blave", ws: "/Users/someone/Blave/workspace", venvPy, venvBin: "bin", win: false, basePython: () => "python3", envPath: async () => "", pyEnv: {}, copyOfficial: () => {}, isPackaged: true,
+      sdkPins: "claude-agent-sdk==0.2.144 cryptography==48.0.1", deps: ["pandas==3.0.6"], firstRunMB: 200, venvMs: 5000, engineMs: 5000, pkgMs: 5000, onChange: () => {}, log: () => {},
+      spawn: (bin, args, opt) => {
+        const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => setImmediate(() => c.emit("close", null));
+        if (args.includes("venv")) { setImmediate(() => c.emit("close", 0)); return c; }
+        seen = { bin, args, shell: !!opt.shell, hide: opt.windowsHide };
+        setImmediate(() => { if (o.stderr) c.stderr.emit("data", o.stderr); c.emit("close", 1); });
+        return c;
+      } });
+    try { await S.ensure(); return "(resolved)"; } catch (x) { return x.message; }
+  };
+  const plain = await runOnce({ stderr: "ERROR: boom\nsecond line" });
   for (const [ok, what] of [
     [/const SDK_PINS = `\$\{AGENT_SDK\} cryptography==48\.0\.1`;/.test(mainSrc), "SDK 與 cryptography==48.0.1 一起釘(最後一版 universal2 wheel)"],
-    [/const PIP_INSTALL = "-m pip -q --isolated install --only-binary=:all:";/.test(mainSrc), "PIP_INSTALL 帶 --isolated 與 --only-binary=:all:"],
-    [pipCmds.length === 1 && pipCmds[0] === 'pyExec(VENV_PY, [...PIP_INSTALL.split(" "), ...args.split(" ")], envPath, timeout)' && pipFn.includes(pipCmds[0]) && !/-m pip(?! -q --isolated)/.test(mainSrc.replace(/\/\/.*$/gm, "")), "引擎唯一一條 pip 指令在 pip() 裡走 PIP_INSTALL(陣列交給 execFile),沒有另起的 -m pip"],
-    [seen && seen.f === "/Users/someone/Blave/venv/bin/python" && seen.a.join(" ") === "-m pip" && seen.shell === false, "pyExec 把 bin 與 argv 陣列直接交給 execFile、不開 shell"],
-    [seen && seen.hide === true && !("PYTHONUTF8" in seen.env) && seenWin && seenWin.env.PYTHONUTF8 === "1", "pyExec 帶 windowsHide;PYTHONUTF8=1 只在 WIN(darwin 的 env 沒有)"],
-    [/await pip\(SDK_PINS, envPath, \d+\);/.test(mainSrc) && /await pip\(WORKSPACE_DEPS\.join\(" "\), envPath, \d+\);/.test(mainSrc), "SDK 與 workspace deps 兩條都經 pip()"],
-    [/!== SDK_PINS\)/.test(mainSrc) && /writeFileSync\(sdkMark, SDK_PINS\)/.test(mainSrc), ".blave-sdk 記號檔比、寫整串 SDK_PINS"],
-    [/console\.error\("\[engine\] pip install failed:"[\s\S]*throw new Error\(pipError\(e\)\);/.test(pipFn), "pip() 失敗先 console.error(\"[engine]\" …) 留痕,再丟 pipError 修剪過的"],
-    [trimmed === "ERROR: Could not find a version that satisfies the requirement cryptography==50.0.1\nERROR: No matching distribution found for cryptography==50.0.1", "pipError 只留 ERROR 行、去掉 (from versions: …) 那串"],
-    [pipError(new Error("a\nb\nc\nd")) === "b\nc\nd", "pipError 沒有 ERROR 行時留最後三行"],
-    [killed === "timed out after 5s", "sh() 被 timeout 殺 → 「timed out after Ns」,不是整條指令(→ " + killed + ")"],
-    [big === "output too large", "sh() 爆 maxBuffer → 「output too large」(→ " + big + ")"],
-    [plain === "ERROR: boom", "sh() 一般失敗仍把 stderr 原樣丟出"],
+    [/const PIP_INSTALL = \["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw"\];/.test(engSrc), "PIP_INSTALL 帶 --isolated 與 --only-binary=:all:(不帶 -q:會關掉進度)"],
+    [(code(engSrc).match(/\.\.\.PIP_INSTALL/g) || []).length === 1 && /await run\(o\.venvPy, \[\.\.\.PIP_INSTALL, \.\.\.args\]/.test(engSrc) && !/-m", "pip/.test(code(engSrc).replace(/const PIP_INSTALL = [^\n]*/, "")) && !/-m pip|"pip"/.test(code(mainSrc)), "引擎唯一一條 pip 指令在 enginesetup 的 pip() 裡走 PIP_INSTALL,main.js 沒有另起的 -m pip"],
+    [seen && seen.bin === venvPy && seen.args.slice(0, 7).join(" ") === E.PIP_INSTALL.join(" ") && seen.shell === false && seen.hide === true, "pip 用 venv 的 python、argv 陣列直接交給 spawn、不開 shell、帶 windowsHide"],
+    [plain === "ERROR: boom", "一般失敗丟修剪過的 ERROR 行(→ " + plain + ")"],
+    [/sdkPins: SDK_PINS, deps: WORKSPACE_DEPS/.test(mainSrc) && /read\(sdkMark\) !== o\.sdkPins/.test(engSrc) && /fs\.writeFileSync\(sdkMark, o\.sdkPins\)/.test(engSrc), ".blave-sdk 記號檔比、寫整串 SDK_PINS"],
+    [/o\.log\("\[engine\] pip install failed: "/.test(engSrc), "pip 失敗先把完整 stderr 留在主行程的 log,再丟修剪過的"],
     [!/"\/bin\/sh"/.test(mainSrc) && !/function sh\(/.test(mainSrc), "main.js 沒有 /bin/sh -c 的 sh() 了(Windows 沒有 /bin/sh)"],
-    [reported.join(",") === "engine.preparing,engine.deps", "「正在準備引擎」建 venv + 裝 SDK 只印一次"],
-    [/faultCard\(\)\.set\(\{ text: t\("turn\.engineFailed"/.test(appSrc) && !/addMsg\("sys", t\("turn\.engineFailed"/.test(appSrc), "引擎準備失敗畫失敗卡(紅記號),不是灰字"],
+    [/faultCard\(\)\.set\(\{ text: t\("turn\.engineFailed"/.test(appSrc) && !/addMsg\("sys", t\("turn\.engineFailed"/.test(appSrc), "引擎準備失敗(卡上沒畫出來的那種)畫失敗卡(紅記號),不是灰字"],
   ]) { console.log((ok ? "PASS  " : "FAIL  ") + what); if (!ok) red++; }
   process.exit(red ? 1 : 0);
 })();

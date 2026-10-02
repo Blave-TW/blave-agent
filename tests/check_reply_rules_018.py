@@ -48,7 +48,7 @@ t("#57 AGENTS › Response Style:警告與收尾不進回覆,影響結果才講�
   and "never the warning itself" in style)
 
 lib = read("references", "lib.md")
-scan = lib[lib.index("**Parameter scan workflow**"):lib.index("The web workspace sends three fixed prompts")]
+scan = lib[lib.index("**Parameter scan workflow**"):lib.index("The web workspace sends four fixed prompts")]
 t("#29 lib.md 掃描流程:指路指「參數掃描」分頁、不指回測分頁",
   "「參數掃描」 tab" in scan and "never send them to the 回測分頁" in scan)
 t("#29 AGENTS › Charts:資料夾圖檔出現在回測分頁只限雲端 web,掃描結果在參數掃描分頁",

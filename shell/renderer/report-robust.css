@@ -16,6 +16,7 @@
   gap: var(--space-8) var(--space-12);
   margin-bottom: var(--space-8);
 }
+.rob-status:empty { display: none; }   /* 過時態沒有落點 tag:不留 8px 空位 */
 /* Mini tag:18px 定高 / micro 角 / 11px。尖峰上 = 風險語意;其餘落點是陳述,中性。
    風險那一對 = tokens.css 的 redLight / redBlack(canon Badge,亮暗各自過 AA) */
 .rob-tag {
@@ -46,6 +47,8 @@
   color: var(--ink);
   max-width: 62ch;
 }
+/* 過時句裡的日期 / 費率一個值不拆行(窄寬時「2026-10-\n01」),只在值與值之間折 */
+.rob-verdict .mono { white-space: nowrap; }
 /* 候選比較表:列 = ▲ 尖峰 / ● 穩健 / 目前,欄 = 參數對 / Sharpe / 鄰域平均。
    表寬隨內容不拉滿;比較值不是策略自身損益 → 全中性不上漲跌色。 */
 .rob-cmp {
@@ -262,6 +265,19 @@
 .rob-tip.is-on { display: block; }
 .rob-tip .mono { color: var(--ink); }
 .rob-tip .tl { color: var(--ink-3); }
+
+/* ---- 結果頁頂列:meta(掃描自己的條件)+「重新掃描」靠右(同樣本外驗證的重跑列 .wf-bar)。
+   新鮮是描邊鈕、過時是填色鈕,兩者盒模型一樣(app.css),切換時版面不跳 ---- */
+.bt > .rob-top + * { margin-top: var(--space-16); }
+.rob-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-16);
+}
+.rob-top > .bt-meta { flex: 1 1 auto; min-width: 0; }
+.rob-top .rob-go { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+.rob-top .rob-cap { flex: 1 1 100%; text-align: right; }
 
 /* ---- 空狀態:一句 + 一顆填色鈕,回合進行中鈕停用 + 一行說明 ---- */
 .rob-empty {

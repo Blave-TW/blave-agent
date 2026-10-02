@@ -104,6 +104,53 @@
 .lib-dl { margin: var(--space-12) 0 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-4) var(--space-12); }
 .lib-dl dt { font-size: 12px; color: var(--ink-3); }
 .lib-dl dd { margin: 0; font-size: 12px; color: var(--ink); }
+/* 筆記層的返回鈕寫策略名:單行截斷,全文在 title */
+.lib-back { max-width: 100%; }
+.lib-back .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-back .t[hidden] { display: none; }
+/* 成功筆記入口卡(spec-0.1.12-library-notes §2.3):整張是一顆 button,同 .lib-card 的寬與節奏 */
+.lib-noteln { display: grid; grid-template-columns: minmax(0, 1fr) 16px; gap: var(--space-12); align-items: center; width: 100%; padding: var(--space-12) var(--space-16); text-align: left; background: var(--surface-card); border-radius: var(--radius-lg); transition: background var(--motion-fast) var(--ease-standard); }
+.lib-noteln:hover { background: var(--surface-muted); }
+.lib-noteln .l { min-width: 0; }
+.lib-noteln .k { display: block; font-size: 12px; color: var(--ink-3); }
+.lib-noteln .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: var(--space-2); font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.lib-noteln .go { justify-self: end; color: var(--ink-3); line-height: 1; }
+.lib-noteln .go .ic { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.lib-noteln:hover .k, .lib-noteln:hover .go { color: var(--ink-2); }   /* canon › Dropdown:hover 填色上灰字一併提亮 */
+.lib-noteln:focus-visible { outline-offset: -2px; }
+/* 筆記閱讀頁(§2.5):字級照報告閱讀頁 .rb-report,不另立一套 */
+.nt { max-width: 680px; padding-top: var(--space-4); color: var(--ink-2); overflow-wrap: anywhere; }
+.nt-k { font-size: 12px; color: var(--ink-3); }
+.nt-title { margin: var(--space-4) 0 0; font-size: 20px; font-weight: 600; line-height: 1.35; color: var(--ink); }
+.nt-title:focus { outline: none; }
+.nt-meta { margin-top: var(--space-4); font-size: 11px; color: var(--ink-3); }
+.nt-meta:empty { display: none; }
+.nt-body { margin-top: var(--space-24); }
+.nt-body .nt-lead { padding: var(--space-12) var(--space-16); background: var(--surface-card); border-radius: var(--radius-sm); font-size: 14px; line-height: 1.7; color: var(--ink); margin: 0 0 var(--space-16); }
+.nt-body .nt-lead p { margin: 0; color: inherit; }
+.nt-body .nt-lead p + p { margin-top: var(--space-8); }
+.nt-body h3 { font-size: 14px; font-weight: 600; color: var(--ink); margin: var(--space-24) 0 var(--space-8); }
+.nt-body p { font-size: 14px; line-height: 1.7; margin: 0 0 var(--space-12); }
+.nt-body ul, .nt-body ol { margin: 0 0 var(--space-12); padding: 0; }
+.nt-body ul { list-style: none; }
+.nt-body ol { padding-left: 1.4em; }
+.nt-body li { font-size: 14px; line-height: 1.7; margin-bottom: var(--space-4); }
+.nt-body ul li { padding-left: 1.2em; position: relative; }
+.nt-body ul li::before { content: "—"; position: absolute; left: 0; color: var(--ink-3); }
+.nt-body strong { color: var(--ink); font-weight: 600; }
+.nt-tw { overflow-x: auto; margin: 0 0 var(--space-12); }
+.nt-body table { width: 100%; font-size: 12px; border-collapse: collapse; overflow-wrap: normal; }
+.nt-body th { text-align: left; font-weight: 500; font-size: 10.5px; color: var(--ink-3); padding: var(--space-4) var(--space-12) var(--space-4) 0; border-bottom: 1px solid var(--border-frame); white-space: nowrap; }
+.nt-body td { padding: 7px var(--space-12) 7px 0; border-bottom: 1px solid var(--border-hairline); color: var(--ink-2); vertical-align: top; }
+.nt-body tr:last-child td { border-bottom: none; }
+.nt-body td:first-child { white-space: nowrap; }
+.nt-foot { margin-top: var(--space-24); padding-top: var(--space-16); border-top: 1px solid var(--border-hairline); }
+.nt .lib-state { padding-top: var(--space-16); }
+/* 載入中(同 .sk 配方:一條粗的、四條、空一段、三條) */
+.nt-sk .sk + .sk { margin-top: var(--space-12); }
+.sk.nt-sk-h { display: block; height: 16px; }
+.nt-title .sk.nt-sk-h { width: 82%; margin-top: var(--space-8); }
+.nt-sk-gap { height: var(--space-24); }
 /* 購買框裡的購買中那一行(spin16 來自 trade.css) */
 .cf-busy { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-8) 0 0; font-size: 12px; color: var(--ink-2); }
-@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back { transition: none; } .sk { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-back, .lib-noteln { transition: none; } .sk { animation: none; } }

@@ -251,6 +251,7 @@ function enterWorkspace(kind, info) {
   if (!csReady) { csReady = true; csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayLines(TR_BAGS.cloud.st); }); }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
+  if (typeof engSync === "function") engSync();   // 開 app 就在背景裝引擎:這一頁進來時可能已經裝到一半(engine.js)
   // 從設定 modal 裡換的:留在 modal、重畫模型接入那一頁(「使用中」換列),焦點不搶去輸入框
   if (!$("set-scrim").hidden) { paintBlaveBtn(); detect(); return; }
   autosize();          // 進工作頁先把輸入框高度對齊一行
@@ -414,8 +415,8 @@ LANGS.forEach(([v, name]) => {
   b.addEventListener("click", () => applyLangChoice(v));
   $("cn-lang").appendChild(b);
 });
-// 語言:當場換,不重載(重載會丟掉對話)。已經印出來的對話不回頭翻;agent 列用上次
-// 偵測結果重畫,不重跑偵測。設定 modal 的 select 與連結畫面的 segment 兩邊同步。
+// 語言:當場換,不重載(重載會丟掉對話)。agent 的回覆和用戶自己打的話維持原文,Blave 自己畫的字跟著語言換
+// (卡、系統行、固定觸發句的摘要;見 applyStatic)。agent 列用上次偵測結果重畫,不重跑偵測。設定 modal 的 select 與連結畫面的 segment 兩邊同步。
 function applyLangChoice(v) {
   // 存不了就只換這一次
   try { localStorage.setItem("ws_lang", v); } catch (_) { /* noop */ }
@@ -1018,11 +1019,28 @@ function stratNameFill(nm, text) {
   h.className = "sn-head"; h.textContent = p.head; tl.className = "sn-tail"; tl.textContent = p.tail;
   nm.append(h, tl);
 }
-function stratBlockedNote(code) {
+/* 沒刪成的框內文(設計稽核 0.1.12):回合中、資料夾不在不是錯誤 → 一般字;組合裡／設定讀不到 → 紅字;
+   其餘(垃圾桶不收、裸 false、IPC 被擋、沒見過的 code)→ 紅字講沒刪成 + 一般字講補救(同雲端 cdel.failed + failedHint) */
+function stratDelBody(code, id) {
+  const soft = { TURN_RUNNING: "strat.delBusy", NOT_FOUND: "strat.delGone" }[code];
+  if (soft) return { lines: [t(soft)] };
   const p = document.createElement("p"); p.className = "cf-block";
-  p.textContent = code === "IN_PORTFOLIO" ? t("strat.delInPf") : t("strat.delCfgUnread");
-  return p;
+  const block = { IN_PORTFOLIO: "strat.delInPf", CONFIG_UNREADABLE: "strat.delCfgUnread" }[code];
+  if (block) { p.textContent = t(block); return { lines: [], extra: p }; }
+  const win = window.blave.platform === "win32";
+  p.textContent = t(win ? "strat.delFailed.win" : "strat.delFailed");
+  return { lines: [], extra: cdelBoth(p, t(win ? "strat.delFailedHint.win" : "strat.delFailedHint", { id })) };
 }
+/* 這一列要沒了(刪掉／資料夾不在):重讀清單,回同一位置的列——原本在它下面那列,沒有就上一列,清單空了 = 新增鈕(同雲端 cdelRun)。
+   列是重建的,焦點不接住就掉到 BODY */
+async function stratRefreshAt(name) {
+  const at = Math.max(0, RP.list.findIndex((y) => y.name === name));
+  await stratRefresh(false);
+  const rows = $("strat-list").querySelectorAll(".strat-row");
+  return rows[Math.min(at, rows.length - 1)] || $("strat-add");
+}
+// 回合中主行程不給刪;列多半是回合開始前畫的,鈕的停用要跟著 running 走,不能只在重建列時看一次
+function stratDelSync() { $("strat-list").querySelectorAll(".cs-del").forEach((d) => { d.disabled = running; }); }
 async function stratRefresh(turnEnd) {
   const before = new Map(RP.list.map((x) => [x.name, x]));
   RP.list = await window.blave.listStrategies();
@@ -1044,13 +1062,13 @@ async function stratRefresh(turnEnd) {
     const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";
     const del = armedDelete(wrap, t("strat.del"), async () => {
       const r = await window.blave.deleteStrategy(x.name);
-      if (r === true) { stratRefresh(false); return; }
-      // 還在下單設定的組合裡 / 讀不到下單設定:不刪,講原因(對帳器照這個名字在下單,刪了訊號就凍住)
-      if (r && (r.code === "IN_PORTFOLIO" || r.code === "CONFIG_UNREADABLE")) {
-        const title = t("cdel.title", { name: (x.displayName || x.name).slice(0, 40) });
-        confirmBox({ title, lines: [], extra: stratBlockedNote(r.code), ok: t("cdel.gotIt"), opener: b, single: true, onOk: () => {},
-          alt: r.code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => trOpen("pos") } : null });
-      }
+      if (r === true) { (await stratRefreshAt(x.name)).focus(); return; }
+      // 沒刪成一律開框講原因,包括裸 false / null(IPC 被擋)與沒見過的 code。資料夾不在 = 先重讀,關框後焦點回到同位置那一列
+      const code = r && r.code;
+      const opener = code === "NOT_FOUND" ? await stratRefreshAt(x.name) : b;
+      const title = t("cdel.title", { name: (x.displayName || x.name).slice(0, 40) });
+      confirmBox({ title, ...stratDelBody(code, x.name), ok: t("cdel.gotIt"), opener, single: true, onOk: () => {},
+        alt: code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => trOpen("pos") } : null });
     }, false, window.blave.platform === "win32" ? "strat.delConfirm.win" : "strat.delConfirm");
     del.disabled = running;
     wrap.append(b, del);
@@ -1228,14 +1246,28 @@ function rpRobOpts() {
   const R = window.BlaveReport || {};
   return { t, busy: running, turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, buildMeta: R.buildMeta, resync: rpRobSync, refocus: rpRobRefocus };
 }
-/* 「開始掃描」:確認框 → 固定訊息進對話(同雲端工作頁 robAskScan)。不覆寫 viewing:rpBag()===RPC ⇔ ENV.cur==="cloud" ⇔ chatViewing 本來就回 env:cloud,
-   而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面) */
-function rpRobAsk(name, opener, begin) {
-  return new Promise((resolve) => confirmBox({ title: t("rob.btnScan"), lines: [t("rob.emptyCap")], ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
+/* 「開始掃描 / 重新掃描」:確認框 → 固定訊息進對話(同雲端工作頁 robAskScan)。不覆寫 viewing:rpBag()===RPC ⇔ ENV.cur==="cloud" ⇔ chatViewing 本來就回 env:cloud,
+   而且還帶著 strategy 欄位(覆寫成 { env } 會把它丟掉)。回 Promise<turn|false> = 跑起來的那一回合的序號;取消的話不會 resolve(模組不等它,沒有東西掛在上面)。
+   info(report-robust.js scanInfo):這次會用的期間 / 手續費(現在的回測)列在框裡;重新掃描另列上次的兩軸,訊息寫明範圍(spec-0.1.12-scan-stale §4) */
+function rpRobAsk(name, opener, begin, info) {
+  const now = (info && info.now) || {}, grid = info && info.rescan ? info.grid : null, D = "—";
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  // kv 的 dd 是 font:inherit:數字自己包 .mono(數字與漢字不共用字體)
+  const monoTpl = (tpl, vars) => { const s = mk("span"); String(tpl).split(/(\{\w+\})/).forEach((p) => { const m = /^\{(\w+)\}$/.exec(p); if (m && m[1] in vars) s.appendChild(mk("span", "mono", vars[m[1]])); else if (p) s.appendChild(document.createTextNode(p)); }); return s; };
+  const extra = document.createDocumentFragment(), dl = mk("dl", "cf-rows kv");
+  const row = (k, v) => { const r = mk("div", "cf-row"), dd = mk("dd"); dd.appendChild(v); r.append(mk("dt", "", k), dd); dl.appendChild(r); };
+  if (now.start && now.end) row(t("rob.cfPeriod"), mk("span", "mono", now.start + " → " + now.end));
+  if (now.fee) row(t("rob.cfFee"), mk("span", "mono", now.fee + "%"));
+  if (grid) row(t("rob.cfGrid"), monoTpl(t("rob.cfGridVal"), grid));
+  if (dl.firstChild) extra.appendChild(dl);
+  if (grid) extra.appendChild(mk("p", "cf-note", t("rob.cfNote")));
+  // 訊息裡的兩軸用原值(grid.raw:ASCII 負號、不補位數),框裡的顯示才用 pv 格式
+  const msg = grid ? t("rob.msgRescan", { name, start: now.start || D, end: now.end || D, fee: now.fee || D, ...grid.raw }) : t("rob.msgScan", { name });
+  return new Promise((resolve) => confirmBox({ title: t(grid ? "rob.btnRescan" : "rob.btnScan"), lines: [t(grid ? "rob.cfLead" : "rob.emptyCap")], extra, ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
     // begin():同樣本外驗證,送出前先記「這一支正在送」(暖機那段不顯示「agent 正在回覆上一則訊息」,稽核 P2-1)
-    onOk: () => { if (typeof begin === "function") begin(); submitMessage(t("rob.msgScan", { name })).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }); } }));
+    onOk: () => { if (typeof begin === "function") begin(); submitMessage(msg).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }); } }));
 }
-/* 回合開始 / 結束:參數掃描分頁的空狀態要跟著換鈕態(回合中鎖鈕、結束解鎖)。就地改鈕、不整塊重畫(焦點不掉到 body;有掃描結果的頁沒有鈕,模組自己略過) */
+/* 回合開始 / 結束:參數掃描分頁的鈕跟著換態(回合中鎖鈕、結束解鎖)。就地改鈕;結果頁的「已送出」翻面時模組自己整片重畫(焦點交給分頁鈕) */
 function rpRobSync() {
   const B = rpBag(), R = window.BlaveReport || {};
   if (B.drawn.rob && R.robSync) R.robSync($("rp-rob"), rpRobOpts());
@@ -1374,6 +1406,7 @@ function csClearChat() {
   $("chat-scroll").innerHTML = "";
   liveBubble = null; busy = null; swLine = null; swHeld = null;
   acctCard = null; creditCards.length = 0; dataCard = null;   // 卡片跟著聊天欄一起清掉
+  if (typeof engReattach === "function") engReattach();   // 安裝進度卡不屬於哪一條對話:清完補回來(engine.js)
 }
 function csStartNew() {
   sessionId = csNewId(); csTitle = "";
@@ -1386,21 +1419,22 @@ function csStartNew() {
    (runtime/agent_turn.py `_fault_receipt_suffix`:「\n[中斷前已執行:Bash strategies/、Read lib/x.py、…另有 N 步]」)。
    那行不是給人讀的:畫回去時拆掉,改畫成跟即時回合結束時一樣的「思考過程」收據(收起,點開看步驟)。
    splitReceipt 是純函式,tests/check_shell_history_receipt.js 從原文切出來跑,並釘住 runtime 那邊的格式。 */
-/* 固定觸發句(樣本外驗證 wf.msgRun、參數掃描 rob.msgScan)在對話裡只顯示一行摘要(設計精簡稽核 B5;規劃 b5-fixed-prompt-display-plan.md)。
+/* 固定觸發句(樣本外驗證 wf.msgRun、參數掃描 rob.msgScan、重新掃描 rob.msgRescan)在對話裡只顯示一行摘要(設計精簡稽核 B5;規劃 b5-fixed-prompt-display-plan.md)。
    只在顯示端換:送出與存進 session.db 的都是原句,一個 byte 不動(references/lib.md 拿原句當觸發句)。
    比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
    zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
    那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
-const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"]];
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"]];
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
   for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) {
     const tpl = strings && strings[l] && strings[l][src];
     if (typeof tpl !== "string" || !tpl) continue;
     const keys = [];
-    const body = tpl.split(/(\{(?:name|lookback|step)\})/).map((p) => {
+    // {lookback} / {step} = 數字;其餘({name}、重新掃描的期間 / 費率 / 兩軸)= 最短的任意字串
+    const body = tpl.split(/(\{\w+\})/).map((p) => {
       const m = /^\{(\w+)\}$/.exec(p);
-      if (m) { keys.push(m[1]); return m[1] === "name" ? "(.+?)" : "(\\d+)"; }
+      if (m) { keys.push(m[1]); return m[1] === "lookback" || m[1] === "step" ? "(\\d+)" : "(.+?)"; }
       return p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }).join("");
     const hit = new RegExp("^" + body + "$").exec(text);
@@ -1491,6 +1525,7 @@ async function csOpen(id) {
     .reduce(histFixOrder, [])
     .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addMsg("you", x.turn.content) : addHistoryAi(x.turn.content)));
   $("chat-eg").hidden = true;
+  if (typeof engReattach === "function") engReattach();   // 舊回合畫回去之後,安裝進度卡移到最下面(csClearChat 補回來時在最上面)
   csRenderHead(); csShowList(false); scrollChat();
 }
 // 用 trade.js 那顆 trStamp(MM/DD HH:mm,24 小時制):toLocaleString 會跟著語系給 12 小時制與不補零的月日
@@ -1732,7 +1767,9 @@ function addMsg(cls, text) {
   if (cls === "you") {
     // 泡泡樣式掛在子元素上(app.css `.msg.you .bubble`);.msg.you 自己只負責靠右
     const b = document.createElement("div");
-    b.className = "bubble"; b.textContent = fixedLabel(text) || text;   // 固定觸發句只顯示摘要(B5);重送 / 存檔用的仍是原文
+    const lab = fixedLabel(text);
+    b.className = "bubble"; b.textContent = lab || text;   // 固定觸發句只顯示摘要(B5);重送 / 存檔用的仍是原文
+    if (lab) b._fixed = text;   // 摘要是照當下語言組的:切語言時 youRelang 用原句重組
     el.appendChild(b);
   } else if (cls === "ai") {
     paintAi(el, text, false);
@@ -1745,6 +1782,7 @@ function addMsg(cls, text) {
   scrollChat();
   return el;
 }
+function youRelang() { $("chat-scroll").querySelectorAll(".msg.you .bubble").forEach((b) => { if (b._fixed) b.textContent = fixedLabel(b._fixed) || b._fixed; }); }
 /* 對話裡的連結(agent 回覆的 markdown、新聞 Sources)交給系統瀏覽器,不在 app 視窗內導覽。要 preventDefault:
    不然 <a target=_blank> 會走主行程的導覽守門(只放行 blave.org),新聞網站點了沒反應(0.1.1 用戶回報)。
    mdHref 已經只收 http(s),這裡再看一次是因為 href 是從 DOM 拿的 */
@@ -2100,6 +2138,8 @@ function busyOpenReceipts(b) {
    停下來之後用戶那句放回輸入框(雲端「取消排隊」的做法:接在用戶已打的字前面,不覆寫)——只放回用戶自己打的
    (sendDraft 帶 typed);送上雲端 / 拉回、策略庫、報告、掃描這些畫面代組的句子不放回。 */
 let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;
+// 等引擎時按停止:engineAbort 收掉這一句(不送、放回輸入框);engineSeq 讓還在等的那一份 submitMessage 回來時知道自己已經被收掉了
+let engineAbort = null, engineSeq = 0;
 let lastUserNote = null;   // 上一句帶的外殼指示(代號);重送同一句時沿用
 /* 輸入框上方那一行:上一輪還在跑,Enter 沒有送出。回合結束(sendBtnSync 看到 running 是 false)就收 */
 function taWaitShow(on) {
@@ -2118,6 +2158,8 @@ function sendBtnSync() {
 }
 async function stopTurn() {
   if (!running || turnStopping) return;
+  // 還在等引擎裝好(還沒有回合可停):這一句不送、馬上放回輸入框;安裝照跑,進度卡跟著安裝走,不在這裡收
+  if (engineWait && engineAbort) { const abort = engineAbort; engineSeq++; engineWait = false; engineAbort = null; trackFeature("chat_stop"); abort(); return; }
   turnStopping = true; turnStopped = true; sendBtnSync();
   trackFeature("chat_stop");
   let ok = false;
@@ -2141,7 +2183,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (!msg || running) return false;
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; sendBtnSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
+  running = true; sendBtnSync(); stratDelSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();   // 回合在跑:更新入口停用(更新會重開 app)
   $("ws-conn").disabled = true;   // 跑到一半不給換 agent
   $("mp-trigger").disabled = true; mpClose(false); csLock(true);
   $("chat-eg").hidden = true;     // 起手範例只在第一句話之前有意義
@@ -2151,18 +2193,31 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   // 不然那句話看起來送了兩次——留著的 ghost 泡泡跟之後真的送出的那則長一模一樣(Wei 實測截圖)
   // opts.note:外殼給這一輪的指示(代號,例「新增報告」的 report_once);不進泡泡、不進訊息本文。重送同一句沿用那一輪存的,不從本文推回來
   lastUserNote = opts && typeof opts.note === "string" ? opts.note : msg === lastUserText ? lastUserNote : null;
-  const bubble = addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
+  if (!(opts && opts.bubble) && typeof engDropHeld === "function") engDropHeld();   // 安裝失敗時留著等重試的那句:換送別句就不會再送了
+  const bubble = opts && opts.bubble && opts.bubble.isConnected ? opts.bubble : addMsg("you", msg); lastUserTyped = (opts && opts.typed === true) || (msg === lastUserText && lastUserTyped); lastUserText = msg;   // 重送同一句沿用原句的來源
   const unsend = () => { bubble.remove(); if (lastUserTyped) stopRestore(msg); };   // 自動組的固定句(轉出/範例)不塞回輸入框,跟暖機停止同一條規矩
+  if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg; csRenderHead(); csRemember(); }
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = [];
-  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync(); };
   try {
-    // 暖機(首次會裝 venv + SDK,約一分鐘)由 engine-progress 的系統訊息交代,
-    // 指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
+    // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     engineWait = true;
-    try { await window.blave.ensureEngine(); } finally { engineWait = false; }
+    const mine = ++engineSeq;
+    engineAbort = () => { unlock(); unsend(); };
+    let engErr = null;
+    try { await window.blave.ensureEngine(); } catch (e) { engErr = e; } finally { if (mine === engineSeq) { engineWait = false; engineAbort = null; } }
+    if (mine !== engineSeq) return false;   // 等的時候按了停止:stopTurn 已經收掉這一句
+    if (engErr) {
+      // 失敗畫在安裝卡上(原因、錯誤訊息、重試鈕):泡泡留著,重試裝好就送出這一句。卡上沒畫(只修 venv 連結那種)才用失敗卡
+      const es = await window.blave.engineState().catch(() => null);
+      if (es && typeof engOnState === "function") engOnState(es);
+      if (es && es.phase === "fail" && es.show && typeof engHold === "function") { engHold(msg, opts, bubble); unlock(); return false; }
+      faultCard().set({ text: t("turn.engineFailed", { msg: (engErr && engErr.message) || engErr }) });
+      unsend(); unlock(); return false;
+    }
     // 暖機期間按了停止:主行程還沒有回合可停,在這裡收掉,不送出
     if (turnStopped) { turnStopped = false; unlock(); bubble.remove(); if (lastUserTyped) stopRestore(msg); return false; }
     // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
@@ -2176,7 +2231,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
       faultCard().set({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) });
       unsend(); unlock(); return false;
     }
-    unsend(); addMsg("sys", t("turn.busy")); unlock(); return false;
+    unsend(); addMsg("sys", t("turn.busy")).dataset.i18n = "turn.busy"; unlock(); return false;
   } catch (e) {
     busyEnd();
     // 失敗卡而不是灰字:灰字排在「正在準備引擎…」下面,看起來像那一行還在跑(0.0.6 Intel 實測)
@@ -2221,8 +2276,6 @@ function chatSwitched(from, to) {
 
 function chatSwitchFlush() { if (swHeld) chatSwitched(swHeld.from, swHeld.to); }
 
-// 主行程丟的是 strings.js 的 key(它不組句子),查不到就原樣顯示。
-window.blave.onEngineProgress((key) => addMsg("sys", t(key)));
 // 引擎把上游的錯誤原封不動當成回覆文字吐出來(實測:一次一整塊,不是逐字串流),
 // 長這樣:`Failed to authenticate. API Error: 403 …`。401/403 = 這台電腦的授權沒了、
 // 402 = 沒額度,兩種都不是重講一次就會好的事,要給出口而不是給英文。
@@ -3023,7 +3076,7 @@ window.blave.onTurnEnd(async (r) => {
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });
   upTurnEnded(faulted);
-  running = false; turnStopping = false; sendBtnSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
+  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); $("ws-conn").disabled = false; $("mp-trigger").disabled = false; csLock(false); hoBusy(); if (typeof verBusy === "function") verBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof xpSync === "function") xpSync();
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複
@@ -3160,6 +3213,9 @@ function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
   if (typeof upRelang === "function") upRelang();   // 聊天裡那則更新 / 換官方檔的通知
+  if (typeof resRelang === "function") resRelang();   // 聊天結果卡(renderer/results.js)
+  if (typeof xpRelang === "function") xpRelang();     // 轉出卡(renderer/export.js)
+  youRelang();                                        // 固定觸發句的摘要泡泡
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();

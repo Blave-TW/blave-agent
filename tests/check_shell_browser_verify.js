@@ -78,6 +78,10 @@ async function pure() {
   t("等換頁的時候分頁被關 → closed", r.got === "closed", r);
   r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), left: async () => el() >= 5000 }) });
   t("按了「交還 agent」而且已經離開驗證頁 → passed", r.got === "passed", r);
+  // 同一次導覽稍早判過「還沒過」(頁面還沒長好),之後不再換頁:按交還要重判,不能當成放棄(改去 DuckDuckGo 重搜)
+  { const forced = []; r = await run({ d: (el) => ({ choice: () => (el() >= 5000 ? "done" : null), left: async (f) => { forced.push([el(), !!f]); return !!f && el() >= 5000; } }) });
+    t("按了「交還 agent」→ 重判(left 帶 force)→ 已經過了就 passed,不是 gave_up", r.got === "passed" && r.ms < 5500, r);
+    t("還沒按之前的輪詢不帶 force(一次導覽只判一次,不每 250ms 跑一次判別)", forced.filter(([ms]) => ms < 5000).length > 10 && forced.filter(([ms]) => ms < 5000).every(([, f]) => !f), forced.slice(0, 3)); }
   r = await run({ d: (el) => ({ present: () => el() < 10000 }) });
   t("等到一半視窗縮到 Dock → absent", r.got === "absent" && r.ms >= 10000 && r.ms < 11000, r);
   r = await run({ d: (el) => ({ alive: () => el() < 3000 }) });
@@ -107,7 +111,7 @@ async function pure() {
   const touches = (hand.match(/\.page\.\w+|\.wc\.\w+|IP\.\w+|executeJavaScript|sendInputEvent|insertText|loadURL|debugger/g) || []).sort();
   t("交接那一段對頁面只做兩件事:看網址(wc.getURL)、離開之後跑一次只讀的判別(page.serp);沒有點、填、按鍵、腳本、導覽", JSON.stringify(touches) === JSON.stringify([".page.serp", ".wc.getURL"]), touches);
   t("等換頁看的是主行程自己的載入狀態,不問頁面", /loading: \(\) => t\.status === "loading",/.test(hand));
-  t("只讀的判別排在「導覽走了、載完了、網址是搜尋頁」之後", /if \(v\.navs === seen \|\| t\.status === "loading"\) return false;\s*seen = v\.navs;\s*if \(!VF\.searchPage\(v\.wc\.getURL\(\), engine, engines\)\) return false;\s*try \{ const r = await v\.page\.serp\(engine, vf\);/.test(hand));
+  t("只讀的判別排在「導覽走了、載完了、網址是搜尋頁」之後", /left: async \(force\) => \{\s*if \(\(v\.navs === seen && !force\) \|\| t\.status === "loading"\) return false;\s*seen = v\.navs;\s*if \(!VF\.searchPage\(v\.wc\.getURL\(\), engine, engines\)\) return false;\s*try \{ const r = await v\.page\.serp\(engine, vf\);/.test(hand));
   t("verify.js 是純邏輯:不 require electron、不碰頁面", !/require\(["']electron["']\)/.test(vsrc) && !/executeJavaScript|sendInputEvent|webContents/.test(vsrc));
   const all = fs.readdirSync(path.join(SHELL, "browser")).map((f) => fs.readFileSync(path.join(SHELL, "browser", f), "utf8")).join("\n");
   t("不為了躲偵測改 user-agent / 指紋:整個 shell/browser 沒有 setUserAgent、userAgent 覆寫、解題服務", !/setUserAgent|userAgentFallback|Network\.setUserAgentOverride|2captcha|anti-?captcha|capsolver/i.test(all));

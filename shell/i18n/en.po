@@ -329,14 +329,99 @@ msgstr "Add Credit"
 msgid "conn.expired"
 msgstr "Your Blave sign-in is no longer valid. Sign in again to continue."
 
-msgid "engine.workspace"
-msgstr "Creating the workspace at ~/Blave/workspace …"
+msgid "eng.head"
+msgstr "Setting up this computer (first run only)"
 
-msgid "engine.deps"
-msgstr "Installing the Python packages strategies need (pandas, numpy…), first run only…"
+msgid "eng.headUpd"
+msgstr "This version updates the engine. Installing once."
 
-msgid "engine.preparing"
-msgstr "Preparing the engine (first run installs it, about a minute)…"
+msgid "eng.headUpdPkgs"
+msgstr "This version updates the strategy packages. Installing once."
+
+msgid "eng.headFail"
+msgstr "This computer isn’t set up yet"
+
+msgid "eng.size"
+msgstr "Downloads about {size}. A slow connection can take several minutes."
+
+msgid "eng.ws"
+msgstr "Create workspace"
+
+msgid "eng.engine"
+msgstr "Install engine"
+
+msgid "eng.pkgs"
+msgstr "Install strategy packages"
+
+msgid "eng.venv"
+msgstr "Create Python environment"
+
+msgid "eng.nth"
+msgstr "{i} of {n}: {name}"
+
+msgid "eng.bytes"
+msgstr "{a} / {b} MB"
+
+msgid "eng.dlTotal"
+msgstr "{x} MB downloaded"
+
+msgid "eng.installing"
+msgstr "Installing"
+
+msgid "eng.slow"
+msgstr "This step downloads from the internet and takes longer on a slow connection. The installer is still running; it stops after {limit} and can be retried."
+
+msgid "eng.slowInst"
+msgstr "Download finished; the installer is still running. It stops after {limit} and can be retried."
+
+msgid "eng.stall"
+msgstr "No data for {s}. Still waiting on the network; stops after {limit} and can be retried."
+
+msgid "eng.failNet"
+msgstr "The network dropped while downloading {name}. Setup didn’t finish."
+
+# 失敗原因判斷不出是網路時只寫這一句,不猜原因
+msgid "eng.failOther"
+msgstr "Setup didn’t finish."
+
+msgid "eng.failSub"
+msgstr "Retry picks up at {name}; finished packages are kept. The message above sends once setup finishes."
+
+# 背景安裝失敗、沒有一句話在等時:eng.failSub 截掉最後一句(那句講的是要送出的訊息)
+msgid "eng.failSubIdle"
+msgstr "Retry picks up at {name}; finished packages are kept."
+
+msgid "eng.toHead"
+msgstr "{name} didn’t finish installing within {limit} and was stopped."
+
+msgid "eng.toHeadVenv"
+msgstr "Creating the Python environment didn’t finish within {limit} and was stopped."
+
+msgid "eng.venvSub"
+msgstr "This step runs on this computer and doesn’t use the network. Retry picks up at this step."
+
+msgid "eng.venvSubHeld"
+msgstr "This step runs on this computer and doesn’t use the network. Retry picks up at this step; the message above sends once setup finishes."
+
+msgid "eng.toSub"
+msgstr "The connection may be too slow, or a company network or VPN may be blocking the download. Retry picks up at {name}."
+
+msgid "eng.details"
+msgstr "Error Details"
+
+msgid "eng.retry"
+msgstr "Retry"
+
+msgid "eng.ready"
+msgstr "This computer is ready · {t}"
+
+# {limit} 的值:實際設的上限(分鐘);數字與單位之間是不換行空格(U+00A0)
+# 選用的那組(美股資料)沒裝好:引擎照樣好、聊天照樣送(設計稽核 0.1.12 F5 定稿)
+msgid "eng.optFail"
+msgstr "The US stock data packages didn’t install, so US stock data isn’t available for now. Everything else works as usual. Blave will try again next time it opens."
+
+msgid "eng.min"
+msgstr "{m} min"
 
 msgid "mp.model"
 msgstr "Model"
@@ -1127,7 +1212,7 @@ msgstr "Signed out. This computer no longer gets Blave data."
 # ── trade:begin(由 scratchpad/trade/strings_spec.py 產生的區塊)──
 
 msgid "cx.lead"
-msgstr "Only in this computer’s workspace (~/Blave/workspace/.env). Blave does not upload them. The agent and your strategy code can read them; that is how they trade and fetch data for you."
+msgstr "Only in this computer’s workspace (~/Blave/workspace/.env). Blave does not upload them. The agent and your strategy code can read them; that is how they place orders and read your account for you."
 
 msgid "cx.note.one"
 msgstr "When you create the key on Binance: enable trading only, keep withdrawals off, and whitelist this IP."
@@ -1143,7 +1228,7 @@ msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
 msgid "cx.acct.meta"
-msgstr "Can place orders and read the account, and is also used to fetch this exchange's data. One at a time."
+msgstr "Used only to place orders and read the account. One exchange at a time."
 
 msgid "cx.venue"
 msgstr "Exchange / broker"
@@ -1488,6 +1573,123 @@ msgstr "Paper trading does not support TWD-priced instruments yet"
 msgid "tr.pick.twdKeep"
 msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
 
+msgid "ho.gate.mismatch.down"
+msgstr "This strategy doesn’t match {venue}, the exchange this computer is connected to, so it won’t auto-trade here; backtests and reports still work."
+
+msgid "ho.gate.mismatch.up"
+msgstr "This strategy doesn’t match {venue}, the exchange the cloud is connected to, so it won’t auto-trade there; backtests and reports still work."
+
+msgid "cx.gate.rebind1"
+msgstr "1 strategy in your table doesn’t match {venue}. After connecting, uncheck it in Pick strategies before you can save amounts again."
+
+msgid "cx.gate.rebind"
+msgstr "{n} strategies in your table don’t match {venue}. After connecting, uncheck them in Pick strategies before you can save amounts again."
+
+msgid "cx.cap.localWin"
+msgstr "The desktop app can’t connect to Capital yet. Capital needs a Windows cloud machine: choose Windows when you launch one on the web (it can’t be changed afterward)."
+
+msgid "cx.cap.localMac"
+msgstr "Capital’s order software runs only on Windows, so this Mac can’t connect to it. Capital needs a Windows cloud machine: choose Windows when you launch one on the web (it can’t be changed afterward)."
+
+msgid "tr.gate.startBlocked"
+msgstr "{name}: {reason}. Uncheck it in Pick strategies and save, then press {btn}."
+
+msgid "tr.gate.rejectedAny"
+msgstr "{name} doesn’t match the exchange you’re connected to. Uncheck it in Pick strategies, then save."
+
+msgid "tr.gate.rejected"
+msgstr "{name}: {reason}. Uncheck it in Pick strategies, then save."
+
+msgid "tr.gate.saveBlocked"
+msgstr "Uncheck {name} in Pick strategies to save."
+
+msgid "tr.gate.saveBlockedN"
+msgstr "Uncheck {names} in Pick strategies to save."
+
+msgid "tr.next.legacy"
+msgstr "No recorded data source: ask the agent to rerun the backtest to see whether it can auto-trade on {venue}."
+
+msgid "tr.next.cryptoOnBroker"
+msgstr "Crypto strategies: connect a crypto exchange instead to auto-trade them."
+
+msgid "tr.next.twFut"
+msgstr "Taiwan index futures: connect Capital on a Windows cloud machine to auto-trade them."
+
+msgid "tr.next.srcNoData"
+msgstr "Backtested on {src} data: {venue} data can’t be used for backtests yet, so connect {src} to auto-trade them."
+
+msgid "tr.next.src"
+msgstr "Backtested on {src} data: ask the agent to rerun it on {venue} data, or connect {src} instead."
+
+msgid "tr.gate.legacyFund"
+msgstr "Its backtest didn’t record a data source; rerun it before funding"
+
+msgid "tr.gate.keep"
+msgstr "{reason}; uncheck it to save"
+
+msgid "tr.gate.src"
+msgstr "Backtested on {src} data; you’re connected to {venue}"
+
+msgid "tr.gate.unconfirmed"
+msgstr "Its order symbol can’t be matched to a contract on {venue}"
+
+msgid "tr.gate.notRun"
+msgstr "Hasn’t run yet, so its order symbol is unknown; ask the agent to run it once"
+
+msgid "tr.hold.word"
+msgstr "Orders held"
+
+msgid "env.st.held"
+msgstr "A strategy’s orders are held"
+
+msgid "tr.hold.partial"
+msgstr "Held symbols: {syms}. {reason}"
+
+msgid "tr.hold.effect"
+msgstr "Its position stays as is: no entries, no exits, and its stop-loss won’t run."
+
+msgid "tr.hold.effectPart"
+msgstr "Positions in the held symbols stay as is: no entries, no exits, and their stop-loss won’t run."
+
+msgid "tr.hold.r5"
+msgstr "If another strategy trades the same symbol the other way, this one’s position may be closed along with it."
+
+msgid "tr.hold.next"
+msgstr "Fix it and rerun the backtest, and it resumes on the next round. To drop it instead, uncheck it in Pick strategies and save; its position will be closed."
+
+msgid "tr.hold.more"
+msgstr "and {n} more"
+
+msgid "tr.ov.evHold"
+msgstr "Orders held"
+
+msgid "tr.ov.evHoldNote"
+msgstr "Its market doesn’t match the connected exchange; the position stays, with no stop-loss"
+
+msgid "tm.evHoldNote"
+msgstr "A strategy’s market doesn’t match the connected exchange, so its orders are held; the position stays, with no stop-loss. Open Auto trading to see which one."
+
+msgid "tr.gate.cryptoOnBroker"
+msgstr "Capital only trades Taiwan index futures"
+
+msgid "tr.gate.twFut"
+msgstr "Taiwan index futures auto-trade only through Capital"
+
+msgid "tr.gate.other"
+msgstr "No exchange matches its data source"
+
+msgid "tr.gate.twStock"
+msgstr "Taiwan stocks can’t be auto-traded yet"
+
+msgid "tr.gate.legacy"
+msgstr "Its backtest didn’t record a data source"
+
+msgid "tr.gate.us"
+msgstr "Uses US stock data; US stocks are backtest-only for now"
+
+msgid "tr.typeB.rejected"
+msgstr "{name}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick strategies, then save."
+
 msgid "tr.gateHint"
 msgstr "Below the {m} {c} minimum entry — no position will open"
 
@@ -1499,6 +1701,27 @@ msgstr "of your equity"
 
 msgid "tr.unitNote"
 msgstr "Amounts in {c}"
+
+msgid "tr.lotsUnit"
+msgstr "lots"
+
+msgid "tr.lotsAria"
+msgstr "Lots"
+
+msgid "tr.txfConfirm"
+msgstr "{lots} lots of {prod} (≈ {amt} TWD)"
+
+msgid "tr.txfConfirmNoQuote"
+msgstr "{lots} lots of {prod}"
+
+msgid "tr.txfProd.tmf"
+msgstr "Micro"
+
+msgid "tr.txfProd.mxf"
+msgstr "Mini"
+
+msgid "tr.txfProd.txf"
+msgstr "Full-size"
 
 msgid "tr.unsaved"
 msgstr "Amounts not saved yet — they take effect on Save."
@@ -1625,6 +1848,9 @@ msgstr "Triggered by {names}"
 
 msgid "tr.orderTarget"
 msgstr "Order target {amount}"
+
+msgid "tr.orderNotional"
+msgstr "Notional value ≈ {amount}"
 
 msgid "tr.unbind"
 msgstr "Disconnect"
@@ -1923,6 +2149,10 @@ msgstr "Quit Blave"
 
 msgid "tm.quitStay"
 msgstr "Cancel"
+
+# 暫停失敗那個框唯一的鈕(noLink 之後是自訂鈕,Windows 不再替它翻成系統語言)
+msgid "tm.ok"
+msgstr "OK"
 
 msgid "tm.hidden"
 msgstr "Blave is still open and auto trading keeps running. Use the menu bar icon to pause or to open the window."
@@ -2287,8 +2517,9 @@ msgstr "The app version, macOS version and system language"
 msgid "priv.collect.4"
 msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
 
+# 0.1.12 加了引擎安裝的結果(engine_setup / engine_opt_fail):補在這一條(設計稽核 0.1.12 複驗定稿)
 msgid "priv.collect.6"
-msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, and your first AI reply — categories only, never the content"
+msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, your first AI reply, and whether the first-run or post-update setup of this computer (engine and strategy packages) finished and, if not, the category of the reason — categories only, never the content"
 
 msgid "priv.collect.7"
 msgstr "Once you sign in, your account also records which AI you’re connected to and whether this computer has run a backtest (kept 90 days)"
@@ -2670,6 +2901,9 @@ msgstr "The cloud’s state can’t be read right now, so this isn’t being sen
 msgid "ho.gate.stopped"
 msgstr "Your cloud machine is stopped, so nothing can be sent up right now."
 
+msgid "ho.gate.usstock"
+msgstr "US stock data is available only on this computer, so this strategy can’t be sent to the cloud."
+
 msgid "ho.back.btn"
 msgstr "Back to This Computer"
 
@@ -2802,6 +3036,25 @@ msgstr "This strategy is still in your auto-trading portfolio, so it can’t be 
 msgid "strat.delCfgUnread"
 msgstr "This computer’s trading settings couldn’t be read, so it isn’t clear whether this strategy is in the portfolio. Nothing was deleted; try again in a moment."
 
+# 本機刪策略沒刪成的其他原因(回合中 / 資料夾不在 / 系統垃圾桶不收):沒有一條路可以靜靜沒反應
+msgid "strat.delBusy"
+msgstr "The agent is still running a turn and may be reading or writing this strategy, so nothing was deleted. Delete it after the turn finishes."
+
+msgid "strat.delGone"
+msgstr "This strategy’s folder is no longer on this computer (it may have been moved, renamed or deleted), so nothing was deleted. The list has been refreshed."
+
+msgid "strat.delFailed"
+msgstr "Couldn’t move it to the Trash, so nothing was deleted."
+
+msgid "strat.delFailed.win"
+msgstr "Couldn’t move it to the Recycle Bin, so nothing was deleted."
+
+msgid "strat.delFailedHint"
+msgstr "Try again in a moment. If it still fails, open Blave › workspace › strategies in Finder and drag the “{id}” folder to the Trash."
+
+msgid "strat.delFailedHint.win"
+msgstr "Try again in a moment. If it still fails, open Blave › workspace › strategies in File Explorer and delete the “{id}” folder."
+
 msgid "side.rowTip"
 msgstr "{name} ({id})"
 
@@ -2818,7 +3071,7 @@ msgid "cx.ip.cloudNone"
 msgstr "Couldn’t read the cloud machine’s IP"
 
 msgid "cx.leadCloud"
-msgstr "Stored in your cloud machine’s workspace (.env). The key only passes through Blave on its way to your own machine; it isn’t stored with us and never enters chat history. The agent and your strategy code can read it; that is how they trade and fetch data for you."
+msgstr "Stored in your cloud machine’s workspace (.env). The key only passes through Blave on its way to your own machine; it isn’t stored with us and never enters chat history. The agent and your strategy code can read it; that is how they place orders and read your account for you."
 
 msgid "cx.chk.incomplete"
 msgstr "The API Key and Secret Key must be sent together, and this attempt didn’t include both, so nothing was saved. Fill in both, then connect again."
@@ -3318,6 +3571,45 @@ msgstr "Scan the parameters of {name}"
 msgid "rob.msgScanTitle"
 msgstr "{name} · Parameter Scan"
 
+msgid "rob.btnRescan"
+msgstr "Rescan"
+
+msgid "rob.stale.period"
+msgstr "the backtest period is now {start} → {end}"
+
+msgid "rob.stale.fee"
+msgstr "the fee is now {fee}%"
+
+msgid "rob.stale.join"
+msgstr ", "
+
+msgid "rob.stale.tail"
+msgstr " — below is the scan from before the change."
+
+msgid "rob.cfLead"
+msgstr "Rescans with the current backtest settings, keeping the same two parameters and ranges."
+
+msgid "rob.cfPeriod"
+msgstr "Period"
+
+msgid "rob.cfFee"
+msgstr "Fee"
+
+msgid "rob.cfGrid"
+msgstr "Grid"
+
+msgid "rob.cfGridVal"
+msgstr "{rp} {r0}–{r1} × {cp} {c0}–{c1} ({R}×{C})"
+
+msgid "rob.cfNote"
+msgstr "Usually takes a few minutes — longer with more data or a bigger grid. The new scan replaces this one."
+
+msgid "rob.msgRescan"
+msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+
+msgid "rob.msgRescanLabel"
+msgstr "Rescan the parameters of {name}"
+
 msgid "rp.tab.wf"
 msgstr "Out-of-Sample"
 
@@ -3576,6 +3868,18 @@ msgstr "Couldn't load the library."
 msgid "lib.retry"
 msgstr "Retry"
 
+msgid "lib.note.k"
+msgstr "Success Note"
+
+msgid "lib.note.fallback"
+msgstr "Read the Note"
+
+msgid "lib.note.back"
+msgstr "Back to Strategy"
+
+msgid "lib.note.err"
+msgstr "Couldn't load this note."
+
 msgid "lib.empty"
 msgstr "The library is empty right now."
 
@@ -3631,7 +3935,7 @@ msgid "lib.gate3"
 msgstr "Robust parameters"
 
 msgid "lib.gate3d"
-msgstr "Neighboring parameters hold up too — not a lucky point"
+msgstr "Neighboring parameters hold up too — not just one good point"
 
 msgid "lib.gate.pass"
 msgstr "Passed"
@@ -4381,8 +4685,17 @@ msgstr "Your turn"
 msgid "br.userOp"
 msgstr "You're in control"
 
-msgid "br.handback"
-msgstr "Hand back to agent"
+msgid "br.handback.done"
+msgstr "Done, hand back to agent"
+
+msgid "br.handback.chat"
+msgstr "Hand back"
+
+msgid "br.handback.aria"
+msgstr "Hand back: {domain}"
+
+msgid "br.handedBack"
+msgstr "Handed back to the agent"
 
 msgid "br.ask.login.h"
 msgstr "This page needs a sign-in"
@@ -5185,6 +5498,12 @@ msgstr "This strategy is trading"
 
 msgid "ver.guardLead"
 msgstr "{name} currently has {amt} running on {cur}. Swapping the code for {v} takes effect on the next bar and could flip a live position with no warning."
+
+msgid "ver.guardLeadLots"
+msgstr "{name} currently has {lots} lots running on {cur}. Swapping the code for {v} takes effect on the next bar and could flip a live position with no warning."
+
+msgid "ver.guardLeadLot1"
+msgstr "{name} currently has {lots} lot running on {cur}. Swapping the code for {v} takes effect on the next bar and could flip a live position with no warning."
 
 msgid "ver.guardS1"
 msgstr "Create a new strategy from {v}'s code; the original keeps trading untouched"

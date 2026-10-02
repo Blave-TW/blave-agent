@@ -220,17 +220,29 @@ function xpCard(c, old) {
   const ft = xpMk("span", "ft", platform + " · " + xpLang(c.target) + " · ");
   ft.appendChild(xpMk("span", "mono", xpSize(c.size)));
   f.append(fn, ft);
-  const dl = xpMk("button", "btn-fill", t("xp.dl")); dl.type = "button";
+  const dl = xpMk("button", "btn-fill", t("xp.dl")); dl.type = "button"; dl.dataset.i18n = "xp.dl";
   box.append(f, dl);
-  const acts = xpMk("div", "xp-acts"), view = xpMk("button", "btn-quiet", t("xp.view")); view.type = "button";
+  const acts = xpMk("div", "xp-acts"), view = xpMk("button", "btn-quiet", t("xp.view")); view.type = "button"; view.dataset.i18n = "xp.view";
   const st = xpMk("span", "xp-st"); st.setAttribute("role", "status"); st.setAttribute("aria-live", "polite");
   acts.append(view, st);
   dl.addEventListener("click", () => xpSave(c.id ? { session: c.session, id: c.id } : { strategy: c.strategy, target: c.target }, st));
   view.addEventListener("click", () => xpGoCode(c.strategy, c.target));
   wrap.append(box, xpMk("p", "xp-cap", t("xp.capHonest", { platform })), acts);
+  wrap._xp = c;
   if (c.target === "pine") box.appendChild(xpExt({ where: "card", target: c.target, strategy: c.strategy, id: c.id, session: c.session,
     old: !!old, at: Number(c.ts) > 0 ? Number(c.ts) * 1000 : null, wrap, row: acts, base: dl }));
   return wrap;
+}
+/* 切語言(applyStatic):兩顆鈕靠 data-i18n;帶參數的類型字與說明句照 wrap._xp 重填,Pine 那張的說明句與送進 TradingView 那顆由 tvRepaintSlots 接手。
+   存檔結果那一格(xp-st)是按過之後的一次性回報,不重畫 */
+function xpRelang() {
+  $("chat-scroll").querySelectorAll(".xp-wrap").forEach((w) => {
+    const c = w._xp; if (!c) return;
+    const platform = XP_PLATFORM[c.target], ft = w.querySelector(".ft"), cap = w.querySelector(".xp-cap");
+    if (ft && ft.firstChild) ft.firstChild.textContent = platform + " · " + xpLang(c.target) + " · ";
+    if (cap) cap.textContent = t("xp.capHonest", { platform });
+  });
+  if (typeof tvRepaintSlots === "function") tvRepaintSlots();
 }
 async function xpSave(ref, st) {
   let r = null; try { r = await window.blave.saveExport(ref); } catch (_) { r = null; }

@@ -10,6 +10,7 @@ const BR = {
   exp: null,           // null | { mode: "one", id } | { mode: "wall", block } | { mode: "snap", id?, snap, url, title }
   bw: null,            // 中欄展開層
   io: null, ro: null,
+  hk: 0,               // 聊天列交還鈕的 anchor 名稱流水號
 };
 const BR_ICON = {
   check: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
@@ -62,8 +63,8 @@ const brBad = (x) => !!x && !!(x.fail || x.blocked || x.relay) && !x.need;
    TradingView 的那一頁被標成未讀)——照一般分頁畫,狀態句是頁面標題。純函式 */
 const brUnread = (x) => !!x && x.by !== "user" && !x.search && !x.readEver && !x.used && !brBad(x) && !x.need && !brUserOp(x) && (x.ph === "open" || !!x.ended);
 function brFoot(x) {
+  if (brUserOp(x)) return t("br.userOp");   // 優先於 need:搜尋驗證接手之後還寫「搜尋要過機器人驗證」,看起來像他還沒做
   if (x.need) return t(x.need.kind === "login" ? "br.need.login" : x.need.kind === "captcha" ? "br.need.captcha" : x.need.kind === "file" ? "br.need.file" : x.need.kind === "confirm" ? "br.need.confirm" : "br.need.submit");
-  if (brUserOp(x)) return t("br.userOp");
   if (x.blocked) return t(x.blocked.kind === "addr" ? "br.blk.addr.h" : "br.row.blocked");   // 可疑網址 / 相似網域那一列跟擋下頁同一句
   if (x.fail) return t("br.failed", { why: t("br.fail." + x.fail).replace(/[。.]$/, "") });   // 訊息槽不帶句尾句號;失敗頁說明句照留
   if (x.relay) return t("br.relay");   // 只停在中繼頁(轉址、Loading…、Cloudflare):開了但沒讀到內容
@@ -113,8 +114,15 @@ function brPaintTile(el, x) {
   const dom = el.querySelector(".dom"); dom.textContent = ""; dom.append(brEl("b", "", brReg(brHost(x.url)) || x.url));
   const fk = BR_FAVS.get(brHost(x.url)), fv = el.querySelector(".pt-bar .fav"), want = fk ? fk.src + (fk.plate ? "|p" : "") : "";
   if (fv && fv.__src !== want) { const nf = brFav(x.url); nf.__src = want; fv.replaceWith(nf); }
-  const st = el.querySelector(".pt-st"); st.textContent = ""; const n = brStatusNode(x); if (n) st.append(n);
-  const foot = el.querySelector(".pt-foot"); foot.textContent = ""; foot.append(brEl("span", "", brFoot(x)));
+  // 聊天裡接手中的那一列(data-hold,brSyncHold 標):狀態位讓給右側的交還鈕,手形放進訊息槽
+  const hold = "hold" in el.dataset;
+  const st = el.querySelector(".pt-st"); st.textContent = ""; const n = hold ? null : brStatusNode(x); if (n) st.append(n);
+  const foot = el.querySelector(".pt-foot"); foot.textContent = ""; if (hold) foot.append(brIcon("hand")); foot.append(brEl("span", "", brFoot(x)));
+  // 交還鈕不能放進列裡(列本身是 button,不能巢狀):列裡留一塊同尺寸的隱形佔位,鈕是牆上的兄弟節點,用 CSS anchor 疊到佔位上
+  let sp = el.querySelector(":scope > .pt-hbs");
+  if (hold && !sp) { sp = brEl("span", "pt-hbs"); sp.setAttribute("aria-hidden", "true"); sp.style.setProperty("anchor-name", "--brh" + (el.__hk || (el.__hk = ++BR.hk))); el.append(sp); }
+  else if (!hold && sp) { sp.remove(); sp = null; }
+  if (sp) sp.textContent = t("br.handback.chat");
   const pr = el.querySelector(".pt-prog"); pr.style.transform = "scaleX(" + (x.ph === "read" && x.prog && x.prog.total ? Math.min(1, x.prog.n / x.prog.total) : 0) + ")";
   const pg = el.querySelector(".pg"); let img = pg.querySelector("img");
   if (x.thumb) { if (!img) { img = document.createElement("img"); img.alt = ""; pg.prepend(img); } if (img.src !== x.thumb) img.src = x.thumb; }
@@ -216,7 +224,8 @@ function brOrder(b) {
   if (!ng.length) { if (sep) sep.remove(); sep = null; }
   else if (!sep) sep = brEl("div", "bsep", t("br.cantRead"));
   const want = ok.concat(sep ? [sep] : [], ng);
-  if (want.some((el, i) => b.wall.children[i] !== el)) want.forEach((el) => b.wall.append(el));
+  const kids = [...b.wall.children].filter((el) => !el.classList.contains("pt-hb"));   // 交還鈕靠 anchor 定位,不管順序
+  if (want.some((el, i) => kids[i] !== el)) want.forEach((el) => b.wall.append(el));
 }
 /* 中欄分頁牆的順序:回合結束後同一套(已讀 → 未讀 → 讀不了);牆上每一格自己有 icon 與原因,不補細線與小標 */
 function brWallOrder(b, wall) {
@@ -225,8 +234,31 @@ function brWallOrder(b, wall) {
   const want = tiles.slice().sort((p, q) => rank(p) - rank(q));
   if (want.some((el, i) => tiles[i] !== el)) want.forEach((el) => wall.append(el));
 }
+/* 聊天那一列在用戶接手期間一直攤開(進行中、回合結束後摘要收著都一樣),右側帶一顆「交還 agent」:
+   中欄收起來時這是唯一的出口(設計稽核 0.1.12) */
+function brSyncHold(b) {
+  const want = new Map();
+  b.wall.querySelectorAll(":scope > .pt").forEach((el) => {
+    const x = BR.tabs.get(el.dataset.id), on = brUserOp(x);
+    if (on !== ("hold" in el.dataset)) { if (on) el.dataset.hold = ""; else delete el.dataset.hold; if (x) brPaintTile(el, x); }
+    if (on) want.set(el.dataset.id, el);
+  });
+  b.wall.querySelectorAll(":scope > .pt-hb").forEach((hb) => { if (!want.has(hb.dataset.id)) hb.remove(); });
+  want.forEach((el, id) => {
+    let hb = [...b.wall.querySelectorAll(":scope > .pt-hb")].find((k) => k.dataset.id === id);
+    if (!hb) {
+      hb = brEl("button", "btn-out pt-hb"); hb.type = "button"; hb.dataset.id = id;
+      hb.addEventListener("click", (e) => { e.stopPropagation(); trackFeature("browser_hb_chat"); window.blave.browserHandback(id); srSay(t("br.handedBack")); });
+      b.wall.append(hb);
+    }
+    hb.style.setProperty("position-anchor", "--brh" + el.__hk);
+    hb.textContent = t("br.handback.chat");
+    const x = BR.tabs.get(id); hb.setAttribute("aria-label", t("br.handback.aria", { domain: (x && brReg(brHost(x.url))) || (x && x.url) || "" }));
+  });
+}
 function brPaintHead(b) {
   brThumbClass(b, b.el);
+  brSyncHold(b);
   if (b.sum) { brPaintSum(b); brOrder(b); return; }   // 回合結束後的清單:已讀 → 未讀 → 讀不了
   const h = b.head; h.textContent = "";
   const inWall = BR.exp && BR.exp.mode === "wall" && BR.exp.block === b;
@@ -367,8 +399,10 @@ function brStatLine(host) {
   if (x && typeof tvStat === "function" && tvStat(host, x)) return;   // 「送進 TradingView」那一頁:狀態句由 pine-install.js 畫
   if (brUserOp(x)) {
     host.append(brIcon("hand"), brEl("span", "t", t("br.userOp")));
-    const hb = brEl("button", "btn-quiet", t("br.handback")); hb.type = "button";
-    hb.addEventListener("click", () => { if (x.need) trackFeature("browser_handoff"); window.blave.browserHandback(x.id); });
+    const hb = brEl("button", "btn-fill"); hb.type = "button"; hb.append(brEl("span", "", t("br.handback.done")));
+    hb.setAttribute("aria-label", t("br.handback.aria", { domain: brReg(brHost(x.url)) || x.url }));
+    // 鈕按下去就跟著狀態句一起消失,讀屏用戶聽不到結果:補念一句
+    hb.addEventListener("click", () => { if (x.need) trackFeature("browser_handoff"); trackFeature("browser_hb_head"); window.blave.browserHandback(x.id); srSay(t("br.handedBack")); });
     host.append(hb); return;
   }
   // 單頁:講「這一頁」的狀態,跟分頁格訊息槽同一組字(讀取中 2/5、已讀完、打不開、要登入);已讀 d/n 只在聊天卡頭講一次。
@@ -511,7 +545,8 @@ function brAsk(x) {
   // 外送檢查(確認網址):不是接手操作,是這個網址放行一次;網址本身在上面的網址列看得到
   if (k === "confirm") me.addEventListener("click", () => window.blave.browserUserDone(x.id, "open"));
   else me.addEventListener("click", () => { trackFeature("browser_takeover"); window.blave.browserTakeover(x.id); });
-  act.append(skip, me); box.append(txt, act);
+  // 接手中:「我來…」已經做了,只留出口;卡不拆,頁面框才不會在用戶按下去的那一刻上跳。確認網址的「仍要開啟」不是接手,照留
+  act.append(skip); if (!x.user || k === "confirm") act.append(me); box.append(txt, act);
   return box;
 }
 /* 純文字快照:把 markdown 標記剝掉只留字(圖片佔位整行拿掉、連結只留文字、表格分隔列拿掉) */
@@ -620,7 +655,7 @@ function brPaintOverlay() {
   const slot = brEl("div", "bv-slot");
   const tvn = typeof tvSlot === "function" ? tvSlot(x) : null;
   if (tvn) slot.append(tvn);
-  else if (x.need && !x.user) slot.append(brAsk(x));
+  else if (x.need) slot.append(brAsk(x));   // 接手後卡留著(只拿掉「我來…」),頁面框不跳
   else if (x.dl) { const l = brEl("div", "slot-line"); l.append(brIcon("ban"), brEl("span", "", t("br.dl", { name: x.dl }))); slot.append(l); }
   const page = brEl("div", "bv-page");
   if (x.blocked) {

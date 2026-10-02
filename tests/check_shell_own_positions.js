@@ -15,7 +15,7 @@ const fnSrc = (name) => {
 };
 
 class N {
-  constructor(tag) { this.tag = tag; this.children = []; this._t = ""; this.attrs = {}; this.className = ""; this.title = ""; }
+  constructor(tag) { this.tag = tag; this.children = []; this._t = ""; this.attrs = {}; this.dataset = {}; this.className = ""; this.title = ""; }
   set textContent(v) { this._t = v == null ? "" : String(v); this.children = []; }
   get textContent() { return this._t + this.children.map((c) => c.textContent).join(""); }
   appendChild(c) { if (c.frag) { this.children.push(...c.children); c.children = []; } else this.children.push(c); return c; }
@@ -83,7 +83,7 @@ ok("trOwnBook 存在", typeof trOwnBook === "function");
   const sp = trClientTargets({ sb: 1000, s1: 100 }, { sb: { weights: { BTCUSDT: -0.5, ETHUSDT: 0.5 }, market: "spot" },
     s1: { symbol: "BTCUSDT", position: 1, market: "spot" } });
   ok("Type C 現貨:這支策略的負權重先壓 0,不去抵別的策略的多單", sp["BTCUSDT@spot"] === 100 && sp["ETHUSDT@spot"] === 500);
-  const x = { portfolio: true }, lockedSrc = /const locked = !!x\.portfolio && !\(stored\[n\] > 0\) && !\(\(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true\);/.test(src);
+  const x = { portfolio: true }, lockedSrc = /const pfLock = !!x\.portfolio && !\(stored\[n\] > 0\) && !\(\(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true\);/.test(src);
   ok("投資組合策略:機器回報 can_trade_portfolio 時不鎖撥款", lockedSrc && !!x); }
 ok("字串表有兩個新 key", /"tr\.unmanaged":/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
   && /"tr\.unmanagedTip":/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8")));

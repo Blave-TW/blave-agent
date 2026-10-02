@@ -87,7 +87,7 @@ html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--sur
 .strat-head[hidden], .strat-list[hidden], .side-nav[hidden] { display: none; }
 .side-nav .strat-name { flex: 1; min-width: 0; }
 /* 雲端列尾只有一顆 ✕(按下開框,不在列內武裝成「刪除?」),名字讓出 ✕ 的位置就夠,不必留本機那 72 */
-#strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible)) .strat-row { padding-right: calc(var(--space-32) + var(--space-8)); }
+#strat-list-cloud .strat-wrap:is(:hover, :has(:focus-visible)):where(:has(.cs-del:not(:disabled))) .strat-row { padding-right: calc(var(--space-32) + var(--space-8)); }
 #strat-list-cloud .pf-state { padding: var(--space-8) var(--space-12); }   /* 同 #strat-empty */
 .strat-row .stx { flex: none; font-size: 11px; color: var(--ink-3); font-weight: 400; }
 
@@ -181,6 +181,7 @@ html.ws-sc .side-gate { display: none; }
    上限加在 .pf 的子元素——.pf 自己是捲動容器,要維持整欄寬,捲軸才在欄的右緣。頁首跟著收到同一條右緣,〔啟動下單〕對齊表格右緣;
    分頁列不收(底線是整欄的分隔線)。還沒連交易所的引導畫面(#tr-onboard)本來就是整欄置中的 46ch,不套 */
 #tr > .pf:not(#tr-onboard) > * { max-width: 760px; }
+#tr > .pf:not(#tr-onboard) > .pf-scroll { max-width: calc(760px + 2 * var(--space-4)); }   /* 多的是 focus 框的留白(見 .pf-scroll),表本身仍是 760 */
 #tr > .main-head { max-width: calc(760px + 2 * var(--space-24)); }
 .pf[hidden] { display: none; }
 .pf:focus-visible { outline-offset: -2px; }
@@ -204,18 +205,31 @@ html.ws-sc .side-gate { display: none; }
 .trv .pf-state { padding: var(--space-24) 0; }
 
 /* ---- 表格 ---- */
-.pf-scroll { overflow-x: auto; }
+/* 四邊留 4px 給 focus 框(2px 線＋2px offset)再用等量負 margin 抵銷:第一欄 padding-left 0,策略名的框會被捲動容器裁掉(canon › 捲動列的留白) */
+.pf-scroll { overflow-x: auto; padding: var(--space-4); margin: calc(-1 * var(--space-4)); }
 .pf-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .pf-tbl th { font-weight: 600; font-size: 11px; color: var(--ink-3); text-align: left; white-space: nowrap; padding: 0 var(--space-12) var(--space-8); border-bottom: 1px solid var(--color-greyDark); }
 .pf-tbl td { padding: var(--space-8) var(--space-12); color: var(--ink-2); border-bottom: 1px solid var(--border-hairline); vertical-align: middle; white-space: nowrap; }
 .pf-tbl tr:last-child td { border-bottom: none; }
 .pf-tbl tr.has-note td { border-bottom: none; }
+/* 執行側停單(spec §14.3):上一列的底線拿掉,跟下面的全寬說明列看起來是同一組;目標部位格 = 紅短劃 +「已停單」 */
+.pf-tbl tr.has-hold td { border-bottom: none; }
+.pf-tbl tr.pf-holdrow td.note .pf-note { font-size: 12px; color: var(--ink-3); }
+.pf-tbl td.n.hold-cell { color: var(--ink-2); font-family: inherit; font-variant-numeric: normal; }   /* 狀態字,不是數字:蓋過 .pf-tbl td.n 的等寬字 */
+.pf-tbl td.hold-cell .fault-mark { display: inline-block; vertical-align: middle; margin: 0 var(--space-8) 0 0; }
 .pf-tbl td.note { padding-top: 0; white-space: normal; }
 .pf-tbl th:first-child, .pf-tbl td:first-child { padding-left: 0; }
 .pf-tbl th:last-child, .pf-tbl td:last-child { padding-right: 0; }
 .pf-tbl .n { text-align: right; }
 .pf-tbl td.n, .pf-tbl td.sym, .trv .mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
-.pf-tbl td.key { color: var(--ink); white-space: normal; min-width: 120px; }
+.pf-tbl td.key { color: var(--ink); white-space: normal; min-width: 120px; position: relative; }
+/* 可點的策略名:canon「表格代號連結」(同 button.shl-name)。熱區撐滿整格(::before 定位到 td):
+   名字下面有 pf-note 時名字貼在格頂,只往上下外擴會跨進上一列 */
+.pf-strat { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: color var(--motion-fast) var(--ease-standard); }
+.pf-strat::before { content: ""; position: absolute; inset: 0; }
+.pf-strat:hover { text-decoration: underline; text-underline-offset: 3px; color: var(--ink-2); }
+/* 窄寬 Type C 標的清單的 tooltip 要蓋在熱區上面才叫得出來;寬度收到字,蓋掉的熱區只有那幾個字 */
+.sub-sym[title] { position: relative; z-index: 1; width: fit-content; }
 .trv .buy { color: var(--color-greenText); }
 .trv .sell { color: var(--color-redText); }
 .pf-tbl td.na { color: var(--color-greyDark); }
@@ -233,7 +247,7 @@ html.ws-sc .side-gate { display: none; }
 .amt-in[aria-invalid="true"] { border-color: var(--color-redText); }
 .pf-note.err { color: var(--color-redText); }
 .amt-in:disabled { color: var(--ink-3); border-color: var(--border-hairline); }
-.amt-unit { font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.amt-unit, .lots-unit { font-size: 11px; color: var(--ink-3); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 /* 雲端存完、報告還沒對上(.pend,spec-desktop-cloud-writable §1.2):數字灰一階 + 右邊 6×1 短線,不閃不轉;
    記號一定配儲存列那句字。短線那格在改過的列上留位不畫,欄不跳。目標部位欄整欄降灰 */
 .amt-in.pend { color: var(--ink-2); }
@@ -365,14 +379,14 @@ html.ws-sc .side-gate { display: none; }
   .pf-tbl .c-sym { display: none; }
   /* mockup 是 <400 才收單位。單位現在只寫「USDT」(設計 v4),但這一階收單位的行為刻意不動(保守:
      480 寬、視窗 1024 時差額欄不能被擠到要橫捲才看得到) */
-  .pf-tbl .ccy, .pf-tbl .amt-unit { display: none; }
+  .pf-tbl .ccy:not(.lots), .pf-tbl .amt-unit { display: none; }   /* 「口」不收:沒有單位的口數會被讀成錢 */
   .unit-note { display: block; }
   .sub-sym { display: block; }
   .pf-tbl td.key { min-width: 0; }
   .pf-log-row { gap: var(--space-8); }
   .pf-log-row .ts { width: 84px; }
   /* 一次只能連一個交易所,狀態帶已經寫了是哪一家:窄欄時這一欄是多餘的;單位同部位表收到表下一行 */
-  .pf-log-row .ex, .pf-log-row .ccy { display: none; }
+  .pf-log-row .ex, .pf-log-row .ccy:not(.lots) { display: none; }   /* 「口」不收:沒有單位的口數會被讀成錢 */
 }
 /* app.js 的 MAIN_MIN = 480:現行設定下這一段不會觸發,留著當保險(哪天中欄下限調低才用得到) */
 @container (max-width: 400px) {
@@ -425,6 +439,10 @@ html.ws-sc .side-gate { display: none; }
 .ps-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-16) var(--space-16); }
 .ps-hint { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .ps-list { margin-top: var(--space-8); }
+/* 選擇策略框底下的「下一步」(spec-0.1.12-venue-market-gate §3 B 案):前面一條 hairline,字照 .ps-hint */
+.ps-next { margin-top: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--border-hairline); }
+.ps-next p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.ps-next p + p { margin-top: var(--space-4); }
 .ps-body .pf-state { padding: var(--space-16) 0; }   /* modal 內 24 太空 */
 /* 列:整列是 label,點哪裡都切換;列與列之間不畫線(44 高的列靠間距分得開) */
 .ps-row { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; cursor: pointer; }

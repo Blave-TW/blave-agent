@@ -51,8 +51,8 @@ const lineOf = (src, re) => { const m = re.exec(src); return m ? src.slice(0, m.
   const pure = trade.slice(trade.indexOf("/* ── 純邏輯("), trade.indexOf("/* ── 純邏輯到此"));
   eval(pure.replace(/^const /gm, "var ").replace(/^let /gm, "var "));
   const trReport = () => TR.st.report;
-  const lockM = /const locked = (!!x\.portfolio && !\(stored\[n\] > 0\) && !\(\(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true\));/.exec(trade);
-  ok("V5-02", "撥款鎖的原文找得到(trade.js:" + lineOf(trade, /const locked = !!x\.portfolio/) + ")", !!lockM);
+  const lockM = /const pfLock = (!!x\.portfolio && !\(stored\[n\] > 0\) && !\(\(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true\));/.exec(trade);
+  ok("V5-02", "撥款鎖的原文找得到(trade.js:" + lineOf(trade, /const pfLock = !!x\.portfolio/) + ")", !!lockM);
   const locked = (report, stored) => { TR.st.report = report; const x = { portfolio: true }, n = "basket"; return eval(lockM[1]); };
   ok("V5-02", "舊回報(沒有 can_trade_portfolio):投資組合的撥款鎖著", locked({}, {}) === true);
   ok("V5-02", "can_trade_portfolio 是字串 \"true\" / 1:照樣鎖(只認 true)", locked({ can_trade_portfolio: "true" }, {}) && locked({ can_trade_portfolio: 1 }, {}));

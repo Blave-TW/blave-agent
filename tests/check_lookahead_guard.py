@@ -14,6 +14,8 @@ lib.data fetchers a strategy calls are replaced with synthetic ones.
     Taipei-wall-clock feed under Taipei-aware bars, TAIFEX
     settlement-masked bars, CME settlement_signals_from_db bars, Type C on the
     first-bar-of-period mask
+  passes: a US daily feed with holidays aligned onto 24/7 daily bars (the bars align_feed cut
+    at a holiday are excused; any other bar missing from a truncated run still counts)
   never refused: a nondeterministic strategy (the check cannot reproduce itself → skipped)
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_lookahead_guard.py
@@ -305,6 +307,41 @@ refused, _, has_stats = backtest("typec_old_mask", typec_fetch, typec(old_mask),
 check(bool(refused) and "偷看未來" in refused and "shift(1)" in refused and not has_stats,
       "Type C on the old last-bar-of-period mask: refused, message names the shift(1) fix")
 expect_pass("typec_new_mask", typec_fetch, typec(new_mask), INTERVAL="1d", WARMUP=20)
+
+# ── a US daily feed under 24/7 crypto bars: a US holiday has no row, ever ────────────────────────
+# Full run: the bars after a holiday are NaN mid-history (held). A truncation that ends there:
+# align_feed cuts those bars (due row not in the data). Live refuses them too, so they are not a
+# look-ahead — the replay excuses exactly the bars align_feed cut, nothing else.
+US_DAYS = pd.bdate_range("2024-01-01", "2025-12-31")
+US_DAYS = US_DAYS[US_DAYS.dayofweek != 4]          # every Friday a "holiday": 52 a year, so any cut can land on one
+US = pd.DataFrame({"Close": 100 + np.cumsum(rng.normal(0, 1, len(US_DAYS)))}, index=US_DAYS)
+DAILY = pd.date_range("2024-06-01", "2025-12-31", freq="1D")
+BTC_D = pd.DataFrame({"Open": 1.0, "High": 1.0, "Low": 1.0, "Close": 100 * np.exp(np.cumsum(rng.normal(0, 0.02, len(DAILY)))),
+                      "Volume": 1.0}, index=DAILY)
+D.fetch_usstock_price = lambda symbol, start, end, headers=None: US.copy()
+
+
+def us_filter_fetch(hdrs):
+    from lib.data import fetch_usstock_price, align_feed
+    df = BTC_D.copy()
+    rel = (fetch_usstock_price("SPY", "2024-01-01", None)["Close"].rolling(20).mean()).rename("rel").to_frame().dropna()
+    al = align_feed(df, rel, "usstock_price", "1d", bar_tz="UTC")
+    return df.loc[al.index].join(al)
+
+
+def us_filter_signal(df):
+    sig = (df["rel"].diff() > 0).astype(float)
+    return sig.where(df["rel"].notna() & df["rel"].shift(1).notna())   # NaN (holiday) = hold
+
+
+refused, out, has_stats = backtest("us_holiday_feed", us_filter_fetch, us_filter_signal, INTERVAL="1d", WARMUP=5)
+check(refused is None and has_stats and "Look-ahead check: passed" in out and "set to NaN" in out,
+      "US feed with holidays under daily crypto bars: passes (the bars align_feed cut at a holiday are excused)"
+      + (f" — got {refused[:200]!r}" if refused else ""))
+d = runner._lookahead_diff(pd.Series([1.0, 1.0, 1.0], index=IDX[:3]), pd.Series([1.0], index=IDX[:1]), IDX[3],
+                           excused=pd.DatetimeIndex([IDX[1]]))
+check(d is not None and d[0] == IDX[2],
+      "a bar missing from the truncated run that align_feed did NOT cut still counts as a difference")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

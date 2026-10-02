@@ -1,4 +1,4 @@
-import glob, hashlib, inspect, json, logging, os, re, time
+import glob, hashlib, inspect, json, logging, math, os, re, time
 from datetime import datetime, timedelta
 
 from lib import guard
@@ -659,6 +659,7 @@ def zero_ledger_symbols(symbols, venue=_CURRENT):
     guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     if not symbols:
         return
+    _zero_hold_pins(symbols)
     venue = _resolve_venue(venue)
     seed = _load_ledger_seed()
     now = datetime.utcnow().isoformat()
@@ -1405,6 +1406,233 @@ def _report_ledger_adoption():
 _SIGNAL_GATE_PATH = 'state/signal_gate.json'
 
 
+# Market hold: the platform runtime (portfolio_reporter → runtime/market_gate.holds) writes the
+# funded strategies whose market no longer matches the venue they are routed to — the save gate
+# let them in, then the contract table, their symbols, stats or code changed. That strategy's
+# share is frozen — no entry, no exit (Wei: a held strategy is fully stopped) — and nothing else:
+# other strategies on the same symbol, and a Type C's symbols that still match, trade as usual.
+# The frozen share (a "pin", state/market_hold_pins.json) starts at the contribution the last
+# reconcile aimed for (manager/last_reconcile.json; no row there = it had none = 0) and from then
+# on only moves toward 0: each round it is cut to the symbol's position the last reconcile saw
+# (the bot's book when self_ledger is on, else the account read) — a target that never filled,
+# or a position closed since, is never bought back — and a close-all zeroes it outright
+# (zero_ledger_symbols). There is no per-strategy book, so the symbol's whole position is the
+# tightest bound there is. A symbol only held strategies trade is signal-gated whole (no diff at
+# all); a shared one with no snapshot and no pin yet cannot be told apart from the others, so it
+# is gated whole too, loudly.
+_MARKET_HOLD_PATH = 'state/market_hold.json'
+_MARKET_HOLD_PINS_PATH = 'state/market_hold_pins.json'
+
+
+def _load_market_hold():
+    """{strategy: None (whole) | {canonical symbol, ...}}"""
+    try:
+        with open(_MARKET_HOLD_PATH) as f:
+            raw = json.load(f)
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for k, v in raw.items():
+        syms = v.get('symbols') if isinstance(v, dict) else None
+        out[str(k)] = ({str(x).replace('-', '').replace('_', '').upper() for x in syms}
+                       if isinstance(syms, list) and syms else None)
+    return out
+
+
+_GATE_MOD = {"mod": None, "tried_at": None, "why": None}
+_GATE_RETRY_S = 60
+_MARKET_CHECK_PATH = 'state/market_check.json'
+_market_check_written = [None]
+
+
+def _runtime_market_gate():
+    """runtime/market_gate (judge_symbol), loaded by path from <BASE>/current like lib/events —
+    never a bare `import market_gate`, which a strategy folder could shadow. None while it cannot
+    be loaded (no such file — an older runtime, a wrong BLAVE_AGENT_BASE, a junction being
+    re-made — or no judge_symbol): the order-time check is off then, which is logged on every
+    attempt, retried every _GATE_RETRY_S and written to state/market_check.json for the report."""
+    if _GATE_MOD["mod"] is not None:
+        return _GATE_MOD["mod"]
+    now = time.time()
+    if _GATE_MOD["tried_at"] is not None and now - _GATE_MOD["tried_at"] < _GATE_RETRY_S:
+        return None
+    _GATE_MOD["tried_at"] = now
+    base = os.environ.get("BLAVE_AGENT_BASE") or (r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent")
+    path = os.path.join(base, "current", "market_gate.py")
+    why = None
+    if not os.path.isfile(path):
+        why = "runtime_missing"
+    else:
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("blave_runtime_market_gate", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, "judge_symbol"):
+                _GATE_MOD.update(mod=mod, why=None)
+                logging.info("[portfolio] order-time market check on")
+                return mod
+            why = "runtime_old"
+        except Exception as e:
+            why = f"runtime_error: {type(e).__name__}"
+    _GATE_MOD["why"] = why
+    logging.warning(f"[portfolio] runtime market_gate not loadable ({why}, {path}) — "
+                    f"order-time market check OFF, retrying in {_GATE_RETRY_S}s")
+    return None
+
+
+def _write_market_check(mod):
+    """state/market_check.json = whether this reconciler's order-time check is on (the report's
+    market_gate.order_check). Written when it changes."""
+    if mod is None:
+        doc = {"on": False, "table": None, "why": _GATE_MOD["why"]}
+    else:
+        try:
+            ts = mod.table_status() if hasattr(mod, "table_status") else {"ok": True, "why": None}
+        except Exception as e:
+            ts = {"ok": False, "why": f"status_error: {type(e).__name__}"}
+        doc = {"on": True, "table": bool(ts.get("ok")), "why": None if ts.get("ok") else ts.get("why")}
+    if doc == _market_check_written[0] and os.path.exists(_MARKET_CHECK_PATH):
+        return
+    try:
+        os.makedirs(os.path.dirname(_MARKET_CHECK_PATH), exist_ok=True)
+        tmp = _MARKET_CHECK_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump({**doc, "at": time.time()}, f)
+        os.replace(tmp, _MARKET_CHECK_PATH)
+        _market_check_written[0] = doc
+    except OSError as e:
+        logging.warning(f'market check status write failed: {e}')
+
+
+def _record_new_holds(new):
+    """Order-time holds join state/market_hold.json at once (the report rewrites the file with
+    the same verdicts later) and each raises the P1 `market_hold` event now — the report only
+    alerts on names it has not seen in the file, so this is the one alert."""
+    try:
+        with open(_MARKET_HOLD_PATH) as f:
+            cur = json.load(f)
+        cur = cur if isinstance(cur, dict) else {}
+    except (OSError, ValueError):
+        cur = {}
+    fresh = []
+    for name, row in new.items():
+        old = cur.get(name)
+        if not isinstance(old, dict):
+            cur[name] = row
+            fresh.append(name)
+        elif 'symbols' in old and 'symbols' in row:
+            old['symbols'] = sorted(set(old['symbols']) | set(row['symbols']))
+        elif 'symbols' in old:
+            cur[name] = row
+    try:
+        os.makedirs(os.path.dirname(_MARKET_HOLD_PATH), exist_ok=True)
+        tmp = _MARKET_HOLD_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(cur, f)
+        os.replace(tmp, _MARKET_HOLD_PATH)
+    except OSError as e:
+        logging.warning(f'market hold write failed: {e}')
+    gate_mod = _runtime_market_gate()
+    for name in fresh:
+        try:
+            if gate_mod is not None and hasattr(gate_mod, 'should_alert') \
+                    and not gate_mod.should_alert(os.getcwd(), name, new[name].get('reason')):
+                continue
+            from lib import events
+            events.emit('market_hold', strategy=name, venue=new[name].get('venue'),
+                        reason=new[name].get('reason'))
+        except Exception as e:
+            logging.warning(f'market_hold event failed: {e}')
+
+
+def _held_symbol(held, name, sym):
+    if name not in held:
+        return False
+    syms = held[name]
+    return syms is None or str(sym).replace('-', '').replace('_', '').upper() in syms
+
+
+def _last_snapshot():
+    """(contributions {(strategy, key): contribution}, positions {key: signed USD}) from the last
+    reconcile snapshot, or None when there is none. Positions = the book it diffed against
+    (`ledger`) when self_ledger is on, else the account read (`actual`)."""
+    try:
+        with open('manager/last_reconcile.json') as f:
+            doc = json.load(f)
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    contrib = {}
+    target = doc.get('target')
+    for key, row in (target.items() if isinstance(target, dict) else ()):
+        for c in (row.get('contributors') or () if isinstance(row, dict) else ()):
+            try:
+                contrib[(str(c['strategy']), key)] = float(c['contribution'])
+            except (KeyError, TypeError, ValueError):
+                continue
+    book = doc.get('ledger') if isinstance(doc.get('ledger'), dict) else doc.get('actual')
+    pos = {}
+    for key, row in (book.items() if isinstance(book, dict) else ()):
+        try:
+            size = float((row or {}).get('size') or 0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        side = (row or {}).get('side') if isinstance(row, dict) else None
+        pos[key] = size if side == 'long' else (-size if side == 'short' else 0.0)
+    return contrib, pos
+
+
+def _load_hold_pins():
+    try:
+        with open(_MARKET_HOLD_PINS_PATH) as f:
+            raw = json.load(f)
+    except (OSError, ValueError, TypeError):
+        return {}
+    out = {}
+    for n, keys in (raw.items() if isinstance(raw, dict) else ()):
+        if isinstance(keys, dict):
+            for k, v in keys.items():
+                try:
+                    out.setdefault(str(n), {})[str(k)] = float(v)
+                except (TypeError, ValueError):
+                    continue
+    return out
+
+
+def _save_hold_pins(pins):
+    try:
+        os.makedirs(os.path.dirname(_MARKET_HOLD_PINS_PATH), exist_ok=True)
+        tmp = _MARKET_HOLD_PINS_PATH + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(pins, f, indent=2)
+        os.replace(tmp, _MARKET_HOLD_PINS_PATH)
+    except OSError as e:
+        logging.warning(f'market hold pins persist failed: {e}')
+
+
+def _toward_zero(pin, position):
+    """`pin` cut to `position`: same side and no bigger, else 0."""
+    if pin * position <= 0:
+        return 0.0
+    return pin if abs(pin) <= abs(position) else math.copysign(abs(position), pin)
+
+
+def _zero_hold_pins(keys):
+    """A close outside the diff (close-all) flattened these keys: every held share on them is 0
+    from now on — never bought back when trading resumes."""
+    keys = {str(k) for k in keys}
+    pins = _load_hold_pins()
+    for name in set(pins) | set(_load_market_hold()):
+        for k in keys:
+            pins.setdefault(name, {})[k] = 0.0
+    if pins:
+        _save_hold_pins(pins)
+
+
 def _load_signal_gate():
     try:
         with open(_SIGNAL_GATE_PATH) as f:
@@ -1769,7 +1997,69 @@ def aggregate_portfolio():
     states        = load_all_states()
     totals        = {}
     gate          = _load_signal_gate()
+    held          = _load_market_hold()
+    snap_box      = []      # the last reconcile snapshot, read once, only when something is held
+    old_pins      = _load_hold_pins()
+    pins          = {}      # this round's pins, held strategies only
+    unseparable   = set()   # keys a held share sits on with no snapshot and no pin yet
     lifted        = set()
+
+    gate_mod      = _runtime_market_gate()
+    _write_market_check(gate_mod)
+    new_holds     = {}
+    ws            = os.getcwd()
+
+    def _check(name, sym, exchange):
+        """Order-time market check (audit 0.1.12 R6): judged now, not a report round later — a
+        symbol the strategy just switched to never gets its first order. True = held."""
+        if _held_symbol(held, name, sym):
+            return True
+        if gate_mod is None or not exchange:
+            return False
+        try:
+            why = gate_mod.judge_symbol(ws, name, sym, str(exchange).lower())
+        except Exception as e:
+            logging.warning(f"[portfolio] {name}: market check failed ({e}) — not checked this round")
+            return False
+        if not why or why == 'legacy':
+            return False
+        canon = str(sym).replace('-', '').replace('_', '').upper()
+        logging.warning(f"[portfolio] {name}: {canon} does not match {exchange} ({why}) — held before ordering")
+        if why in ('src', 'unconfirmed'):
+            if held.get(name, set()) is not None:
+                held.setdefault(name, set()).add(canon)
+            row = new_holds.setdefault(name, {'venue': str(exchange).lower(), 'reason': why, 'symbols': []})
+            if 'symbols' in row:
+                row['symbols'] = sorted(set(row['symbols']) | {canon})
+        else:
+            held[name] = None
+            new_holds[name] = {'venue': str(exchange).lower(), 'reason': why}
+        return True
+
+    def _snapshot():
+        if not snap_box:
+            snap_box.append(_last_snapshot())
+        return snap_box[0]
+
+    def _freeze(name, key, live):
+        """The held share on `key` (see the market-hold note above _MARKET_HOLD_PATH)."""
+        snapshot = _snapshot()
+        if key in pins.get(name, {}):
+            return pins[name][key]
+        pin = old_pins.get(name, {}).get(key)
+        if pin is None and snapshot is not None:
+            pin = snapshot[0].get((name, key), 0.0)
+        if pin is None:
+            unseparable.add(key)
+            logging.warning(f"[portfolio] {name}: market does not match its exchange — held, "
+                            f"no recorded share on {key}: {key} held whole this round")
+            return live
+        if snapshot is not None:
+            pin = _toward_zero(pin, snapshot[1].get(key, 0.0))
+        pins.setdefault(name, {})[key] = pin
+        logging.warning(f"[portfolio] {name}: market does not match its exchange — "
+                        f"its share on {key} frozen at {pin:g}")
+        return pin
 
     def _add(key, market, exchange, asset_spec, contribution, contributor, gated):
         if key not in totals:
@@ -1817,9 +2107,15 @@ def aggregate_portfolio():
                     # strategy's long on the same coin — spot cannot short
                     w = 0.0
                 key = market_key(str(sym).replace('-', '').upper(), market)
-                _add(key, market, exchange, asset_spec, amount * w,
+                c = amount * w
+                # a zero weight orders nothing: judged once it carries one (the report skips it too)
+                hold = _held_symbol(held, name, sym) or (w != 0 and _check(name, sym, exchange))
+                if hold:
+                    c = _freeze(name, key, c)
+                _add(key, market, exchange, asset_spec, c,
                      {'strategy': name, 'position': w, 'amount': amount,
-                      'contribution': round(amount * w, 4), 'portfolio': True}, gated)
+                      'contribution': round(c, 4), 'portfolio': True,
+                      **({'market_hold': True} if hold else {})}, gated)
             continue
 
         symbol     = state.get('symbol')
@@ -1855,7 +2151,6 @@ def aggregate_portfolio():
                 lifted.add(name)
             else:
                 gated = True
-
         contribution = amount * position
 
         # spot and swap are different inventories — same symbol, different key,
@@ -1863,6 +2158,9 @@ def aggregate_portfolio():
         # each other (they'd converge the WRONG account's position)
         market = strategy_market(name)
         key = market_key(symbol, market)
+        hold = name in held or _check(name, symbol, exchange)
+        if hold:
+            contribution = _freeze(name, key, contribution)
 
         if key not in totals:
             totals[key] = {'signed': 0.0, 'exchange': exchange,
@@ -1878,7 +2176,31 @@ def aggregate_portfolio():
             'position':          position,
             'amount':            amount,
             'contribution': round(contribution, 4),
+            **({'market_hold': True} if hold else {}),
         })
+
+    # a held share whose symbol left the live state this round (Type C universe moved, SYMBOL
+    # edited) stays where it was too — dropping it would close it
+    left = {(n, k) for n in held for k in old_pins.get(n, {})}
+    left |= {nk for nk in ((_snapshot() or ({},))[0] if held else {}) if nk[0] in held}
+    for name, key in sorted(left):
+        if key in pins.get(name, {}) or not _held_symbol(held, name, split_key(key)[0]) \
+                or not exchanges.get(name) or float(amounts.get(name, 0)) == 0:
+            continue
+        pin = _freeze(name, key, 0.0)
+        if pin:
+            _add(key, split_key(key)[1], exchanges.get(name), asset_specs.get(name), pin,
+                 {'strategy': name, 'contribution': round(pin, 4), 'market_hold': True}, False)
+
+    if pins != old_pins and (pins or old_pins):
+        _save_hold_pins(pins)
+    if new_holds:
+        _record_new_holds(new_holds)
+
+    for key, data in totals.items():
+        cs = data['contributors']
+        if any(c.get('market_hold') for c in cs) and (key in unseparable or all(c.get('market_hold') for c in cs)):
+            data['gated'] = True   # only held shares here, or one not separable: nothing moves
 
     result = {}
     for key, data in totals.items():

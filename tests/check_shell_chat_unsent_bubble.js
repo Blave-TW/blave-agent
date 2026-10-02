@@ -2,6 +2,7 @@
 // (busy「上一輪還在跑」/ 版本閘 blocked / 暖機中按停止 / 引擎起不來)泡泡留著——ghost 泡泡
 // 跟之後真的送出的那則長一模一樣。修:沒送出去就收回泡泡,打字的那句還原到輸入框。
 // (fault 卡的「重送」與停止後再送是真的兩則、兩列 DB,不在此列。)
+// 0.1.12:安裝卡上的「重試」沿用同一個泡泡(opts.bubble),不另畫一則;安裝失敗時泡泡留著等重試(tests/check_shell_engine_card.js)
 // 跑法:node tests/check_shell_chat_unsent_bubble.js
 const fs = require("fs");
 const path = require("path");
@@ -10,8 +11,8 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 
 const sub = (src.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0];
 ok("泡泡留住節點+unsend(收回泡泡;打字的才塞回輸入框,固定句不塞)",
-  /const bubble = addMsg\("you", msg\);/.test(sub) && /const unsend = \(\) => \{ bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg\); \};/.test(sub));
-ok("busy(上一輪還在跑):收回泡泡再上系統行", /unsend\(\); addMsg\("sys", t\("turn\.busy"\)\); unlock\(\); return false;/.test(sub));
+  /const bubble = opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg\);/.test(sub) && /const unsend = \(\) => \{ bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg\); \};/.test(sub));
+ok("busy(上一輪還在跑):收回泡泡再上系統行", /unsend\(\); addMsg\("sys", t\("turn\.busy"\)\)\.dataset\.i18n = "turn\.busy"; unlock\(\); return false;/.test(sub));
 ok("版本閘 blocked:收回泡泡", /minv\.chat[\s\S]{0,200}unsend\(\); unlock\(\); return false;/.test(sub));
 ok("暖機中按停止:收回泡泡(還原照舊只認打字的)", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); bubble\.remove\(\); if \(lastUserTyped\) stopRestore\(msg\); return false; \}/.test(sub));
 ok("引擎起不來(catch):收回泡泡", /turn\.engineFailed[\s\S]{0,120}unsend\(\); unlock\(\); return false;/.test(sub));

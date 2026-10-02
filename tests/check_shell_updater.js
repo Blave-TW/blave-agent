@@ -100,7 +100,8 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("隨包的比較新 → 要拷;一樣 / workspace 比較新 / 隨包讀不到 → 不拷(只往上不往下)", officialStale("2026-09-21", "2026-09-10") && officialStale("2026-09-21-b", "2026-09-21")
     && officialStale("2026-09-21", "") && !officialStale("2026-09-21", "2026-09-21") && !officialStale("2026-09-10", "2026-09-21") && !officialStale("", "2026-09-21"));
   t("在常駐程式起來之前同步(它 import 的是 workspace 的 lib)", /startStep\("workspace sync", syncOfficialOnUpdate\);[^\n]*\n\s*startStep\("trade host", tradeStartIfReady\);/.test(mainSrc));
-  t("Python 相依的記號檔比內容(清單變了要重裝)", /depsHave !== WORKSPACE_DEPS\.join/.test(mainSrc));
+  { const E = require("../shell/enginesetup.js"), D = ["pandas==3.0.6", "numpy==2.5.3"];
+    t("Python 相依的記號檔比內容(清單變了要重裝;只裝換掉的那幾個)", /deps: WORKSPACE_DEPS/.test(mainSrc) && E.depsTodo(D, D.join("\n"), null).length === 0 && E.depsTodo(D, "pandas==3.0.5\nnumpy==2.5.3", null).join() === "pandas==3.0.6"); }
   t("只有拿到單一實例鎖的那一份才同步(第二份 app 不准把新 lib 拷進正在下單的 workspace)", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("workspace sync", syncOfficialOnUpdate\);/.test(mainSrc));
   t("VERSION 是 OFFICIAL_FILES 的最後一項(中途失敗 → 版號不變 → 下次重來)", /const OFFICIAL_FILES = \[[^\]]*"VERSION",\s*\];/.test(mainSrc));
   t("常駐程式的 env 帶 PY_ENV(不把 __pycache__ 寫進 .app)", /BLAVE_AGENT_STATE: path\.join\(BASE, "state"\),\s*\.\.\.PY_ENV/.test(mainSrc));

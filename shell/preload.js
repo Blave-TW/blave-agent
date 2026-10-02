@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("blave", {
   balance: () => ipcRenderer.invoke("balance"),   // Blave 餘額:{ balance, trial } 或 null(讀不到);憑證在主行程
   planStart: () => ipcRenderer.invoke("plan-start"),
   publicPricing: () => ipcRenderer.invoke("public-pricing"),
+  txfQuote: () => ipcRenderer.invoke("txf-quote"),   // 台指期指數(雲端視角口數列的參考金額);問不到 = null
   tradeLabels: (labels) => ipcRenderer.send("trade-labels", labels),
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
@@ -107,8 +108,10 @@ contextBridge.exposeInMainWorld("blave", {
   // 策略庫(renderer/library.js):清單由主行程打 api(畫面的 CSP 不外連);購買帶登入憑證、只在主行程;已安裝對照表存 userData
   libraryList: (lang, force) => ipcRenderer.invoke("library-list", lang, force),
   libraryReport: (id, lang) => ipcRenderer.invoke("library-report", id, lang),
+  libraryNote: (id) => ipcRenderer.invoke("library-note", id),
   libraryPurchase: (id, confirmTopup) => ipcRenderer.invoke("library-purchase", id, confirmTopup),
   libraryInstalled: (patch) => ipcRenderer.invoke("library-installed", patch),
+  cryptoBases: () => ipcRenderer.invoke("crypto-bases"),   // 新增策略框判標的是不是加密貨幣(renderer/newstrategy.js)
   // 本機報告(renderer/reports.js):信封清單 / 一份本體 + sidecar 圖(data URI);renderer 不碰 fs
   reportsList: () => ipcRenderer.invoke("reports-list"),
   reportLoad: (id) => ipcRenderer.invoke("report-load", id),
@@ -118,7 +121,9 @@ contextBridge.exposeInMainWorld("blave", {
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
   stopTurn: () => ipcRenderer.invoke("stop-turn"),   // true = 停止旗標寫下了;結果照樣等 turn-end
-  onEngineProgress: (fn) => ipcRenderer.on("engine-progress", (_e, t) => fn(t)),
+  // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
+  engineState: () => ipcRenderer.invoke("engine-state"),
+  onEngineState: (fn) => ipcRenderer.on("engine-state", (_e, s) => fn(s)),
   onTurnEvent: (fn) => ipcRenderer.on("turn-event", (_e, c) => fn(c)),
   onTurnEnd: (fn) => ipcRenderer.on("turn-end", (_e, r) => fn(r)),
   onWindowActive: (fn) => ipcRenderer.on("window-active", (_e, on) => fn(on === true)),

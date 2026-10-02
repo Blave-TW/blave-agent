@@ -111,9 +111,10 @@ function hoStay() {
 }
 /* 報告頁首描述下面那一行(#rp-ho-note):雲端停機 / 讀不到時**不切視角**,在原地講一句 + 一顆人按的「去雲端看」。
    key 給 null 就收起來。這個位置只為那兩句存在(規格 §2)。 */
-function hoNote(key) {
+function hoNote(key, opt) {
   const n = $("rp-ho-note"); if (!n) return;
   n.textContent = ""; n.hidden = !key; if (!key) return;
+  if (opt && opt.go === false) { n.append(t(key)); return; }          // 去雲端也解決不了的那句(用到美股資料):只講,不給鈕
   const b = document.createElement("button"); b.type = "button"; b.className = "btn-quiet"; b.textContent = t("ho.block.goCloud");
   b.addEventListener("click", () => { hoNote(null); envSwitchGuarded("cloud"); });   // 不記 pending:記了雲端那邊就會出「準備好了」卡,按幾次都繞回同一張
   n.append(t(key) + " ", b);
@@ -123,6 +124,10 @@ function hoAsk(dir, id, opener) {
   if (!HO.on || !HO_ID_RE.test(id)) return;
   if (typeof running !== "undefined" && running) return;                 // 鈕本身是 aria-disabled;這裡再守一次
   if (!envCanSwitch()) return;                                           // IME 選字中、別的框開著
+  // 用到美股資料(機器判的 market_gate):雲端主機抓不到,agent 照 cloud-handoff.md 第 4 步也會拒——
+  // 不開框、不送訊息(白花一個回合),原地講一句(spec-0.1.12-venue-market-gate §7)
+  const hoUs = dir === "up" ? trGateOf(TR_BAGS.local.st && TR_BAGS.local.st.report, id, null) : null;
+  if (hoUs && hoUs.reason === "us") { hoNote("ho.gate.usstock", { go: false }); return; }
   // 雲端沒在運行(沒登入、沒綁卡、沒主機、啟動中):切過去,那一頁自己會講。
   // 記下要送哪一支:那一頁通完(登入 / 啟動好)之後,雲端中欄會留一格「準備好了」卡,主鈕把人送回來按這顆鈕。
   // **切完才記**:envSwitch 自己會清 pending(人自己切視角 = 放棄這個意圖),先記會被那一行洗掉。
@@ -159,6 +164,12 @@ function hoAsk(dir, id, opener) {
   if (destHas) extra.appendChild(mk("p", "cf-removed", t(dir === "up" ? "ho.rename.up" : "ho.rename.down", { id, to })));
   else if (destHas === null) extra.appendChild(mk("p", "cf-removed", t("ho.rename.maybeUp")));
   if (srcLive) extra.appendChild(mk("p", "cf-note", dir === "up" ? t("ho.srcLive.up") : t("ho.srcLive.down")));
+  // 目的地連的交易所跟這支對不上(機器判的原因,另一邊的報告;legacy / 不知道就不講):搬過去也不能自動下單,花一個回合前先講
+  const srcRep = srcSt && srcSt.report, destVenue = trVenueIds(destSt && destSt.report)[0] || null;
+  const mm = destVenue ? trGateOf(srcRep, id, destVenue) : null;
+  // legacy / legacyMoved 看的是「現在路由到哪」:那是這一邊的路由,對另一邊說不準,不講
+  if (mm && mm.reason && !["legacy", "legacyMoved", "us"].includes(mm.reason))
+    extra.appendChild(mk("p", "cf-note", tv(dir === "up" ? "ho.gate.mismatch.up" : "ho.gate.mismatch.down", { venue: trVenueInline(destVenue) })));
   // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排;Type B 沒有回測,講確認它跑得起來
   const tb = hoKind(dir === "up" ? RP.data : RPC.data);
   extra.appendChild(mk("p", "cf-note", t(HO_NOTE[tb][dir === "up" ? 0 : 1])));

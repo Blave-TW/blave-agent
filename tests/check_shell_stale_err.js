@@ -35,7 +35,7 @@ function paint(report, st = {}) {
   };
   ctx.trEl = (tag, cls, text) => { const n = node(tag); n.cls = cls || ""; if (text != null) n.text = text; return n; };
   ctx.trSec = (x) => x; ctx.trTipLabel = (a2, b2) => node("span"); ctx.trHead = () => node("thead");
-  ctx.trMoneyInto = (n, v) => { n.text = String(v); }; ctx.trFmt = (v) => String(v); ctx.trFmt2 = (v) => String(v);
+  ctx.trMoneyInto = (n, v) => { n.text = String(v); }; ctx.trLotsInto = (n, v) => { n.text = String(v) + "口"; }; ctx.trFmt = (v) => String(v); ctx.trFmt2 = (v) => String(v);
   ctx.trUnit = () => "USDT"; ctx.trCcy = () => "USDT"; ctx.TR_STALE_MS = 10 * 60 * 1000;
   ctx.trVenueIds = (r) => Object.keys((r && r.venues) || {}); ctx.trLiveEntry = (r, id) => ((r && r.account && r.account.venues) || {})[id] || null;
   ctx.trOrderErrText = (sym, err) => "ERR:" + sym + ":" + err;

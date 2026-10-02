@@ -1,14 +1,15 @@
 /* window.BlaveReport.renderRobust(el, { stats, scan, code, name }, opts)
- * window.BlaveReport.robSync(el, opts) — 回合開始 / 結束時就地換空狀態的鈕態(不重畫)
+ * window.BlaveReport.robSync(el, opts) — 回合開始 / 結束時:「已送出」翻面就整片重畫,否則就地換鈕態
  * — 報告頁「參數掃描」分頁(雲端工作頁 data-tab="robust" 那一段的移植)。
  *
  * 純函式(sanitizeScan / robWhere / constFromCode…)與 DOM 結構照抄 workspace.html 的
- * robust 段,規則一條不改——兩邊看同一份 scan.json 要得出同一個結論。
+ * robust 段,規則一條不改——兩邊看同一份 scan.json 要得出同一個結論(過時判定:spec-0.1.12-scan-stale §2 第 1 層)。
  *
- * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`onScan(name, opener, begin)` = 掃描鈕的送出(確認框按下時先叫 begin(),暖機那段也算已送出)
+ * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`onScan(name, opener, begin, info)` = 掃描鈕的送出(確認框按下時先叫 begin(),暖機那段也算已送出;
+ * info = scanInfo():rescan / stale / 這次會用的期間與手續費 / 上次的兩軸)
  * (回 Promise<turn|false>:跑起來的那一回合的序號,送出成功才鎖成「已送出」);`busy` = 回合進行中;
  * `turn` = 目前回合序號(「已送出」只認送出那一輪);`scope` = 這一袋是哪一邊(本機 / 雲端同名策略不互相污染);
- * `buildMeta(stats)` = 回測那一行 meta 的節點(沒給就只寫「掃描 R×C」);`resync()` / `refocus()` 同 report-wf.js。之後 web 也能載同一支。
+ * `buildMeta(o)` = 回測那一行 meta 的組法(交進去的是回測的 symbol / interval + 掃描自己的期間;沒給就只寫手續費與「掃描 R×C」);`resync()` / `refocus()` 同 report-wf.js。之後 web 也能載同一支。
  *
  * scan.json 是機器端 lib/param_scan.write_scan 寫的、雲端那份又經 api 轉過一手:兩邊都
  * 當未信任輸入——逐欄型別檢查、每軸 ≤40、索引在網格內、參數名 ≤64 字;文字只進 textContent。 */
@@ -96,8 +97,37 @@
     });
     return d;
   }
-  /* stats = 同一支策略的回測:採用穩健參數重跑回測後 scan.current 會過時——兩邊的時間戳都在且
-   * scan 早於回測(stats.json 的 "Generated At")→ current 視為未知、結論句換「回測已重跑」 */
+  const ROB_END_GRACE_DAYS = 30;   // 回測訖日往後延不超過 30 天不算過時(超過才算;同 web robChanged):資料每天長,樣本外驗證預設也是每 30 天重挑參數
+  // "YYYY-MM-DD…" → 前 10 字;格式不對 = 未知(不拿去比、也不畫)
+  function day10(v) {
+    if (typeof v !== "string" || v.length > 32 || !/^\d{4}-\d{2}-\d{2}/.test(v)) return null;
+    return isFinite(Date.parse(v.slice(0, 10) + "T00:00:00Z")) ? v.slice(0, 10) : null;
+  }
+  const dayDiff = (a, b) => Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+  const pct4 = (v) => Math.round(v * 1e6) / 1e4;   // 小數費率 → %,取 4 位(同 runner 的 round(fee * 100, 4))
+  // 回測的費率(%):fee [%] 優先;舊 Type C 的 stats.json 只有小數 fee
+  function statsFeePct(stats) {
+    if (!stats) return null;
+    if (isNum(stats["fee [%]"]) && stats["fee [%]"] >= 0) return Math.round(stats["fee [%]"] * 1e4) / 1e4;
+    return isNum(stats.fee) && stats.fee >= 0 ? pct4(stats.fee) : null;
+  }
+  function nowOf(stats) {
+    const st = stats && typeof stats === "object" ? stats : null;
+    return { start: day10(st && st.start), end: day10(st && st.end), fee: statsFeePct(st), gen: st && isNum(st["Generated At"]) ? st["Generated At"] : null };
+  }
+  /* 過時判定(第 1 層:期間、手續費;web 工作頁同一套)。拿 scan.json 寫入當下的 start / end / fee 跟現在的回測比,
+   * 任一邊缺就不判(未知 ≠ 變了)。起日、手續費不給容差;訖日晚超過 30 天算變。
+   * 訖日往前縮只在回測是掃描之後才重跑的(stats "Generated At" > scan generated_at)才算:掃描比回測新時,
+   * 掃描訖日較晚只是它抓到了較新的 K 線,不是回測改了(Wei 拍板);缺任一個時間戳這一條不判 */
+  function scanChanges(ctx, now) {
+    const btNewer = ctx.gen !== null && now.gen !== null && now.gen > ctx.gen;
+    const period = (ctx.start !== null && now.start !== null && ctx.start !== now.start)
+      || (ctx.end !== null && now.end !== null && ((now.end < ctx.end && btNewer) || dayDiff(ctx.end, now.end) > ROB_END_GRACE_DAYS));
+    const fee = ctx.fee !== null && now.fee !== null && Math.abs(ctx.fee - now.fee) > 1e-9;
+    return { period: !!period, fee };
+  }
+  /* stats = 同一支策略的回測。過時 = 期間 / 手續費跟掃描當下不同(scanChanges);或沿用舊規則:策略碼讀不到常數、
+   * scan 早於回測(stats.json 的 "Generated At")。過時時 cur 一律 null——tag、「目前」列、虛線框、圖例都只看 cur */
   function sanitizeScan(raw, stats, code) {
     if (!raw || typeof raw !== "object") return null;
     if (typeof raw.row_param !== "string" || !raw.row_param || raw.row_param.length > 64) return null;
@@ -128,9 +158,35 @@
       }
       const sg = raw.generated_at, bg = stats && typeof stats === "object" ? stats["Generated At"] : undefined;
       stale = isNum(sg) && isNum(bg) && sg < bg;
-      if (stale) cur = null;
     }
-    return { stale, rowParam: raw.row_param, colParam: raw.col_param, rows, cols, grid, nbr, w, peak, plateau, cur, rd: decimals(rows), cd: decimals(cols) };
+    const ctx = { start: day10(raw.start), end: day10(raw.end), fee: isNum(raw.fee) && raw.fee >= 0 ? pct4(raw.fee) : null, gen: isNum(raw.generated_at) ? raw.generated_at : null };
+    const now = nowOf(stats);
+    const changed = scanChanges(ctx, now);
+    if (changed.period || changed.fee) stale = true;
+    if (stale) cur = null;
+    return { stale, changed, ctx, now, rowParam: raw.row_param, colParam: raw.col_param, rows, cols, grid, nbr, w, peak, plateau, cur, rd: decimals(rows), cd: decimals(cols) };
+  }
+  // 費率顯示:至少兩位、最多四位(0.05 → 0.05、0.045 → 0.045);兩位以內跟回測 meta 的 fmtFixed 一樣
+  function feeTxt(v) {
+    if (!isNum(v)) return DASH;
+    let s = v.toFixed(4);
+    while (/\.\d{2,}0$/.test(s)) s = s.slice(0, -1);
+    return s;
+  }
+  /* 過時句的組成(純函式,核對腳本直接跑):變了的項依「期間 → 手續費」排,值是現在回測的。
+   * 回 [{ key, vars }];只靠舊規則(回測重跑過)判過時、沒有點名項 → 空陣列,呼叫端用 rob.verdict.stale */
+  function staleParts(sc) {
+    const out = [];
+    if (sc.changed.period) out.push({ key: "rob.stale.period", vars: { start: sc.now.start || DASH, end: sc.now.end || DASH } });
+    if (sc.changed.fee) out.push({ key: "rob.stale.fee", vars: { fee: feeTxt(sc.now.fee) } });
+    return out;
+  }
+  /* 重新掃描要帶的網格:兩軸名稱、最小到最大值、格數(軸可能遞減)。raw = 給 agent 的訊息用原值:ASCII 負號、不補位數
+   * ——pv 的 U+2212 會被原樣抄進 Python(同 web robAskRescan);確認框顯示照用 pv */
+  function gridInfo(sc) {
+    const lo = (a) => Math.min.apply(null, a), hi = (a) => Math.max.apply(null, a), R = sc.rows, C = sc.cols;
+    return { rp: sc.rowParam, r0: pv(lo(R), sc.rd), r1: pv(hi(R), sc.rd), cp: sc.colParam, c0: pv(lo(C), sc.cd), c1: pv(hi(C), sc.cd), R: String(R.length), C: String(C.length),
+      raw: { rp: sc.rowParam, r0: String(lo(R)), r1: String(hi(R)), cp: sc.colParam, c0: String(lo(C)), c1: String(hi(C)) } };
   }
   // 目前參數的落點:穩健格本身優先於尖峰(兩者同格時不是風險),再看是否在 plateau 的鄰域內
   function robWhere(sc) {
@@ -248,18 +304,37 @@
 
   // ---------------------------------------------------------------- 1. meta
 
+  /* 期間與費率寫掃描自己的(scan.json),不是現在回測的——舊掃描貼上新期間的標籤比沒標過時更誤導。
+   * 掃描缺日期 / 缺費率那一組就不畫,不拿回測的補。symbol / interval 掃描沒記,只能沿用回測的 */
   function buildMeta(stats, sc, opts) {
+    const own = { symbol: stats && stats.symbol, interval: stats && stats.interval };
+    if (sc.ctx.start && sc.ctx.end) { own.start = sc.ctx.start; own.end = sc.ctx.end; }
     let meta = null;
-    try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(stats) : null; } catch (e) { console.warn("[robust]", e); }
+    try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(own) : null; } catch (e) { console.warn("[robust]", e); }
     if (!meta) meta = el("div", "bt-meta rob-meta");
-    const group = el("span", "mgrp");   // 只加組,分隔點由 CSS 畫(report-backtest.css .bt-meta > .mgrp + .mgrp)
-    group.append(el("span", "", opts.t("rob.metaScan")), el("span", "mono", sc.rows.length + "×" + sc.cols.length));
-    meta.appendChild(group);
+    const group = (label, val) => {   // 只加組,分隔點由 CSS 畫(report-backtest.css .bt-meta > .mgrp + .mgrp)
+      const g = el("span", "mgrp");
+      g.append(el("span", "", label), el("span", "mono", val));
+      meta.appendChild(g);
+    };
+    if (sc.ctx.fee !== null) group(opts.t("bt.fee"), feeTxt(sc.ctx.fee) + "%");
+    group(opts.t("rob.metaScan"), sc.rows.length + "×" + sc.cols.length);
     return meta;
   }
 
   // ---------------------------------------------------------------- 2. 結論卡
 
+  // 過時句的樣板(純函式):各項用 join 串起來再接 tail;句首是英文字母就大寫(zh 不受影響)。各項的變數名不重複
+  function staleTpl(parts, t) {
+    const vars = {};
+    let tpl = parts.map((x) => { Object.assign(vars, x.vars); return String(t(x.key)); }).join(String(t("rob.stale.join"))) + String(t("rob.stale.tail"));
+    tpl = tpl.charAt(0).toUpperCase() + tpl.slice(1);
+    return { tpl, vars };
+  }
+  function staleSentence(parts, t) {
+    const s = staleTpl(parts, t);
+    return fillMono(el("p", "rob-verdict"), s.tpl, s.vars);   // 值包 .mono(CSS 讓它不在值中間折行)
+  }
   /* 狀態 tag 說「在哪」、結論句只說「所以呢」,兩者不重複主詞。「就是穩健格」與「穩健區內」分開——
    * 共用句會變成拿自己跟自己比。只有尖峰上才上風險色,其餘落點是陳述 */
   function buildCard(sc, t) {
@@ -275,7 +350,9 @@
     const status = el("div", "rob-status");
     if (TAG) status.appendChild(el("span", "rob-tag " + TAG[0], TAG[1]));   // 過時態沒有落點可標
     card.appendChild(status);
-    card.appendChild(el("p", "rob-verdict", atPlateau ? t("rob.verdict.atPlateau") : {
+    const parts = where === "stale" ? staleParts(sc) : [];
+    if (parts.length) card.appendChild(staleSentence(parts, t));
+    else card.appendChild(el("p", "rob-verdict", atPlateau ? t("rob.verdict.atPlateau") : {
       peak: t("rob.verdict.peak"),
       inside: t("rob.verdict.inside"),
       outside: t("rob.verdict.outside"),
@@ -480,40 +557,46 @@
     frame.scrollLeft = want;
   }
 
-  // ---------------------------------------------------------------- 4. 空狀態 + 掃描鈕
+  // ---------------------------------------------------------------- 4. 掃描鈕(空狀態「開始掃描」、結果頁常駐「重新掃描」)
 
   /* scope:name → { sig, turn }(送出當下的 sentSig 與那一回合的序號)。鈕維持「已送出」的條件:回合還在跑、
-   * 而且就是送出的那一回合、而且掃描結果 / 程式碼 / 明確回測沒變——三者缺一就回「開始掃描」:新結果到了 sig 變;
+   * 而且就是送出的那一回合、而且掃描結果 / 程式碼 / 明確回測沒變——三者缺一就回原本的鈕:新結果到了 sig 變;
    * 掃描回合結束沒產出、之後任何無關回合開始時 turn 對不上;scope 讓本機 / 雲端的同名策略不互相污染 */
   const sent = new Map();
-  const shown = new WeakMap();   // container → 這一次畫的空狀態(robSync 就地改鈕、onScan 回來時對一下容器沒換成別支)
+  const shown = new WeakMap();   // container → 這一次畫的那一份(robSync 就地改鈕或整片重畫、onScan 回來時對一下容器沒換成別支)
   const sentKey = (opts, name) => (opts.scope || "") + ":" + name;
+  // pending = 確認框按下、submitMessage 還沒回來(暖機):那段 running 已是 true,認它才不會顯示「agent 正在回覆上一則訊息」(稽核 P2-1)
+  const isSent = (st, opts) => { const s = sent.get(sentKey(opts, st.name)); return !!opts.busy && !!s && s.sig === st.sig && (s.pending || s.turn === opts.turn); };
 
-  // 就地把鈕與那一行說明對到現在的回合狀態;不重建節點(焦點留在鈕上)
-  function syncEmpty(st, opts) {
-    const s = sent.get(sentKey(opts, st.name));
-    // pending = 確認框按下、submitMessage 還沒回來(暖機):那段 running 已是 true,認它才不會顯示「agent 正在回覆上一則訊息」(稽核 P2-1)
-    const isSent = !!opts.busy && !!s && s.sig === st.sig && (s.pending || s.turn === opts.turn);
+  // 送給呼叫端組確認框與訊息的:這次會用的期間 / 手續費(現在的回測),重新掃描另帶上次的兩軸
+  function scanInfo(stats, sc) {
+    const now = sc ? sc.now : nowOf(stats);
+    return { rescan: !!sc, stale: !!(sc && sc.stale), now: { start: now.start, end: now.end, fee: now.fee === null ? null : feeTxt(now.fee) }, grid: sc ? gridInfo(sc) : null };
+  }
+  function busyLabel(btn, text) {   // 等待環在鈕裡、文字前(同 report-wf.js)
+    btn.textContent = "";
+    const sp = el("span", "spin16");
+    sp.setAttribute("aria-hidden", "true");
+    btn.append(sp, document.createTextNode(text));
+  }
+
+  // 就地把鈕與那一行說明對到現在的回合狀態;不重建節點(焦點留在鈕上)。結果頁的「已送出」由整片重畫處理,這裡不換字
+  function syncBtn(st, opts) {
+    const on = isSent(st, opts);
     // 拿著焦點的鈕要停用(暖機 / 別的回合開了):先把焦點交給分頁鈕,不讓它掉到 <body>(設計複稽核 R2,0.1.9 就有)
     if (opts.busy && !st.btn.disabled && document.activeElement === st.btn && typeof opts.refocus === "function") opts.refocus();
     st.btn.disabled = !!opts.busy;
-    st.btn.textContent = opts.t(isSent ? "rob.btnSent" : "rob.btnScan");
-    const wantCap = !!opts.busy && !isSent;   // 回合進行中 submit 會直接回 false,按了沒反應像壞掉:鎖鈕 + 一行說明
+    if (st.kind === "empty") st.btn.textContent = opts.t(on ? "rob.btnSent" : "rob.btnScan");
+    const wantCap = !!opts.busy && !on;   // 回合進行中 submit 會直接回 false,按了沒反應像壞掉:鎖鈕 + 一行說明
     if (wantCap && !st.cap) { st.cap = el("p", "rob-cap", opts.t("rob.busy")); st.box.appendChild(st.cap); }
     else if (!wantCap && st.cap) { st.cap.remove(); st.cap = null; }
   }
-  function renderEmpty(el0, data, sig, opts) {
-    const box = el("div", "rob-empty");
-    box.appendChild(el("p", "rob-empty-txt", opts.t("rob.empty")));
-    const btn = el("button", "btn-fill");
-    btn.type = "button";
-    box.appendChild(btn);
-    const st = { name: data.name, sig, box, btn, cap: null };
-    btn.addEventListener("click", () => {
+  function wireBtn(container, st, info, opts) {
+    st.btn.addEventListener("click", () => {
       if (typeof opts.onScan !== "function") return;
-      const key = sentKey(opts, data.name);
+      const key = sentKey(opts, st.name), sig = st.sig;
       const begin = () => sent.set(key, { sig, turn: null, pending: true });   // 呼叫端在確認框按下、送出之前叫
-      Promise.resolve(opts.onScan(data.name, btn, begin)).catch(() => false).then((turn) => {
+      Promise.resolve(opts.onScan(st.name, st.btn, begin, info)).catch(() => false).then((turn) => {
         if (!turn && turn !== 0) {
           // 沒送出去:收掉 pending,照現在的回合狀態就地換鈕(忙碌就是停用 + 那一行說明)
           const cur = sent.get(key);
@@ -522,25 +605,61 @@
           return;
         }
         sent.set(key, { sig, turn });
-        if (shown.get(el0) === st) syncEmpty(st, { ...opts, busy: true, turn });   // 送出成功 = 那一回合已開
+        const now = shown.get(container);   // 送出成功 = 那一回合已開
+        if (now === st && st.kind === "empty") syncBtn(st, { ...opts, busy: true, turn });
+        // 結果頁:結論卡與熱圖收掉、只留 meta 與鈕(回合開始時 robSync 多半已經畫好了,那時 now.sent 已是 true)
+        else if (now && now.kind === "result" && now.data === st.data && !now.sent) renderRobust(container, st.data, { ...opts, busy: true, turn });
       });
     });
+  }
+  function renderEmpty(el0, data, sig, opts) {
+    const box = el("div", "rob-empty");
+    box.appendChild(el("p", "rob-empty-txt", opts.t("rob.empty")));
+    const btn = el("button", "btn-fill");
+    btn.type = "button";
+    box.appendChild(btn);
+    const st = { kind: "empty", name: data.name, data, sig, box, btn, cap: null };
+    wireBtn(el0, st, scanInfo(data.stats && typeof data.stats === "object" ? data.stats : null, null), opts);
     shown.set(el0, st);
-    syncEmpty(st, opts);
+    syncBtn(st, opts);
     el0.textContent = "";
     el0.appendChild(box);
   }
-  // 呼叫端在回合開始 / 結束時叫:空狀態就地換鈕態;有掃描結果的頁沒有鈕,什麼都不做
+  /* 結果頁頂列:meta(掃描自己的條件)+「重新掃描」(位置同樣本外驗證的「重新驗證」,右上)。
+   * 新鮮 = 描邊鈕(焦點留給結論卡);過時 = 填色鈕;已送出 = 填色、停用、鈕裡轉圈 */
+  function buildTop(container, data, stats, sc, opts, snt) {
+    const top = el("div", "rob-top");
+    try { top.appendChild(buildMeta(stats, sc, opts)); } catch (e) { console.warn("[robust]", e); }
+    const btn = el("button", (snt || sc.stale ? "btn-fill" : "btn-out") + " rob-go");
+    btn.type = "button";
+    if (snt) busyLabel(btn, opts.t("rob.btnSent"));
+    else btn.textContent = opts.t("rob.btnRescan");
+    top.appendChild(btn);
+    const st = { kind: "result", name: data.name, data, sig: sentSig(data), box: top, btn, cap: null, sent: snt };
+    wireBtn(container, st, scanInfo(stats, sc), opts);
+    shown.set(container, st);
+    syncBtn(st, opts);
+    return top;
+  }
+  // 呼叫端在回合開始 / 結束時叫:「已送出」翻面了就整片重畫(結果頁:收掉 / 換回舊結果),否則就地換鈕態
   function robSync(container, opts) {
     const st = shown.get(container);
     if (!st || !st.btn.isConnected) return;
-    syncEmpty(st, opts || {});
+    opts = opts || {};
+    if (st.kind === "result" && isSent(st, opts) !== st.sent) { renderRobust(container, st.data, opts); return; }
+    syncBtn(st, opts);
   }
 
   // ---------------------------------------------------------------- 入口
 
+  /* 整片重畫會把焦點所在的鈕拿掉(送出後變「已送出」、回合結束舊結果回來):焦點交給呼叫端放到參數掃描那顆分頁鈕,不掉到 <body> */
   function renderRobust(container, data, opts) {
     opts = opts || {};
+    const had = container.contains(document.activeElement);
+    paint(container, data, opts);
+    if (had && !container.contains(document.activeElement) && typeof opts.refocus === "function") opts.refocus();
+  }
+  function paint(container, data, opts) {
     if (typeof opts.t !== "function") opts.t = (k) => k;
     data = data && typeof data === "object" ? data : {};
     hideTip();
@@ -551,12 +670,15 @@
     try { sc = sanitizeScan(data.scan, stats, data.code); } catch (e) { console.warn("[robust]", e); }
     if (!sc) { renderEmpty(container, data, sentSig(data), opts); return; }
     const root = el("div", "bt rob");
+    const snt = isSent({ name: data.name, sig: sentSig(data) }, opts);
+    root.appendChild(buildTop(container, data, stats, sc, opts, snt));
+    container.appendChild(root);
+    if (snt) return;   // 已送出:舊結果整塊拿掉、下方留空,不淡化(canon 不用 opacity 表示失效);回合結束沒有新結果時 robSync 重畫、舊結果回來
     let heat = null;
     // 每一塊各自 try:scan.json 是 agent 寫的,一塊壞掉不該拖垮整頁
-    [() => buildMeta(stats, sc, opts), () => buildCard(sc, opts.t), () => { heat = buildHeat(sc, opts.t); return heat.node; }].forEach((fn) => {
+    [() => buildCard(sc, opts.t), () => { heat = buildHeat(sc, opts.t); return heat.node; }].forEach((fn) => {
       try { const node = fn(); if (node) root.appendChild(node); } catch (e) { console.warn("[robust]", e); }
     });
-    container.appendChild(root);
     if (heat) try { scrollMarksIntoView(heat.frame); } catch (e) { console.warn("[robust]", e); }
   }
 
@@ -573,5 +695,5 @@
   };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_robust.js);畫面不靠這個
   // report-wf.js(樣本外驗證)的軸、常數讀法、數字格式也從這裡拿(同一套,不另抄)
-  window.BlaveReport._rob = { sanitizeScan, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM };
+  window.BlaveReport._rob = { sanitizeScan, staleParts, staleTpl, scanChanges, feeTxt, gridInfo, scanInfo, ROB_END_GRACE_DAYS, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM };
 })();

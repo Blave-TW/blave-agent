@@ -445,7 +445,7 @@ function createBrowser(o) {
   const ERR = (error, message, extra) => R(Object.assign({ ok: false, error, message }, extra || {}), error !== "needs_user" && error !== "still_waiting");
   const MSG = {
     not_found: "no such tab; call browser_tabs to see the tabs you can use",
-    user_in_control: "the user is operating this tab: you cannot read or act on it until they press \"Hand back to agent\" (交還 agent) at the top of that page. Tell the user exactly that in your reply and give no other reason — the tab is still open and nothing was lost. Work on another tab meanwhile; use this one after they hand it back",
+    user_in_control: "the user is operating this tab: you cannot read or act on it until they hand it back. Tell the user exactly this in your reply and give no other reason: 「這一頁你正在操作。弄好之後按瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話，我就接著讀。」 (English UI: \"You're in control of this page. When you're done, press 'Done, hand back to agent' next to the Browser title, or 'Hand back' on that page in the chat, or just reply here, and I'll pick it up.\") The tab is still open and nothing was lost. Work on another tab meanwhile; use this one after they hand it back",
     stale_ref: "the ref is out of date; call browser_snapshot again",
     obscured: "the element is covered by another element (often a cookie banner or popup); close that first",
     browser_off: "the user turned the built-in browser off",
@@ -582,9 +582,10 @@ function createBrowser(o) {
       alive: () => cur === c && here() && views.get(t.id) === v && t.status !== "closed" && t.status !== "failed",
       present, choice: () => t.userDone || null, touchedAt: () => (t.userControl ? t.touchedAt || 0 : 0),
       loading: () => t.status === "loading",
-      // 只在「導覽走了、載完了、網址是這個引擎的搜尋頁」之後才看一次頁面(跟每一張搜尋結果頁同一支只讀的判別);網址還是驗證頁時什麼都不跑
-      left: async () => {
-        if (v.navs === seen || t.status === "loading") return false;
+      // 只在「導覽走了、載完了、網址是這個引擎的搜尋頁」之後才看一次頁面(跟每一張搜尋結果頁同一支只讀的判別);網址還是驗證頁時什麼都不跑。
+      // force(用戶按了交還):同一次導覽判過「還沒過」也再判一次——那一次可能是頁面還沒長好
+      left: async (force) => {
+        if ((v.navs === seen && !force) || t.status === "loading") return false;
         seen = v.navs;
         if (!VF.searchPage(v.wc.getURL(), engine, engines)) return false;
         try { const r = await v.page.serp(engine, vf); return !!r && !r.captcha; } catch (_) { return false; }

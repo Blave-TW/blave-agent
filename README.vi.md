@@ -20,7 +20,9 @@ Nếu thấy hữu ích, hãy Star repo — và bật Watch › Releases để �
 
 ## Điểm khác biệt
 
-### Backtest có kiểm tra xem có phải do may mắn
+### Backtest có kiểm tra overfitting và tính phí thật
+
+Overfitting: tham số chỉ tình cờ khớp với dữ liệu quá khứ.
 
 - Mỗi lần backtest Type A, mặc định đều chạy kiểm định hoán vị Monte Carlo (MCPT, `lib/validation.py`) và ghi lại p-value: dữ liệu bị xáo trộn có làm được tốt như vậy không?
 - Quét tham số (`lib/param_scan.py`) tìm một cao nguyên tham số mà cả vùng đều hiệu quả, không phải một ô tốt nhất.
@@ -94,7 +96,7 @@ Tin mới xem ở bản tiếng Anh: [README.md › News](README.md#news)
 - Số tiền đầu tư và việc tiếp tục giao dịch do chính bạn làm — trên trang Giao dịch tự động của bản máy tính, hoặc trên workspace web với máy chủ đám mây. Agent sẽ từ chối làm thay bạn, kể cả khi được yêu cầu. Việc duy nhất nó luôn được tự làm là kích hoạt kill switch.
 - Trên bản máy tính, lệnh chỉ được gửi khi Blave đang mở; sau khi thoát rồi mở lại, giao dịch vẫn tạm dừng cho đến khi bạn nhấn Bắt đầu giao dịch.
 - Agent kiểm tra rồi mới báo: sửa tệp xong sẽ đọc lại, đặt lệnh xong sẽ truy vấn lại sàn rồi mới nói lệnh đã được đặt. Mọi lần thử đặt lệnh đều được ghi vào `state/audit.jsonl`.
-- Backtest mô tả quá khứ. Nó không dự đoán hay bảo đảm kết quả tương lai. MCPT và quét tham số giảm khả năng bạn đang nhìn thấy may mắn; chúng không loại bỏ được khả năng đó.
+- Backtest mô tả quá khứ. Nó không dự đoán hay bảo đảm kết quả tương lai. MCPT kiểm tra kết quả có ý nghĩa thống kê hay không, còn quét tham số kiểm tra có overfitting hay không; cả hai chỉ giảm khả năng bạn bị backtest đánh lừa, và không cái nào loại bỏ được khả năng đó.
 - Không có nội dung nào ở đây là tư vấn đầu tư. Giao dịch có thể thua lỗ, kể cả mất toàn bộ.
 
 ## Chính sách ký mã

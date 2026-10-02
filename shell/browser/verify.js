@@ -64,7 +64,8 @@ function nextEngine(engine) { const i = ORDER.indexOf(engine); return i >= 0 && 
 /**
  * 等用戶過驗證。不碰頁面:d 的每一支都只讀主行程自己的狀態。
  * d: { now(), sleep(ms), alive() → 分頁與回合都還在, present() → 視窗在畫面上, choice() → 用戶按的鈕(null | "done" | "ddg" | "skip"),
- *      touchedAt() → 用戶第一次動手的時間戳(沒動過 = 0), left() → Promise<bool> 分頁已經導覽回搜尋結果,
+ *      touchedAt() → 用戶第一次動手的時間戳(沒動過 = 0), left(force?) → Promise<bool> 分頁已經導覽回搜尋結果
+ *      (force = 用戶按了交還:同一次導覽已經判過也要重判),
  *      loading()? → 分頁正在換頁(主行程自己的載入狀態),
  *      deadline?(這次呼叫最晚要回的時間戳), waitMs?, touchedMs? }
  * 回 "passed"(過了)| "exit"(按了出口)| "gave_up"(按了交還、換頁落定之後還在驗證頁)| "timeout" | "absent"(人不在)| "closed"
@@ -77,14 +78,16 @@ async function waitVerify(d) {
     const c = d.choice();
     if (c === "done") {
       // 「交還 agent」=「我弄好了」。過完驗證、頁面正在導回搜尋結果時按下去的,上面那一次查到的是「還在載」(稽核 P2-6):
-      // 等換頁落定再判;落定之後還沒離開才當沒過,不再問第二次
+      // 等換頁落定再判;落定之後還沒離開才當沒過,不再問第二次。
+      // 這一段的 left 一律帶 force:平常的輪詢一次導覽只判一次,判成「還沒過」之後同一次導覽就不再看——
+      // 那一次判早了(頁面還沒長好)的話,不重判就會把已經過了的驗證當成放棄、改去 DuckDuckGo 重搜
       const t0 = d.now(), until = Math.min(t0 + HANDBACK_SETTLE_MS, d.deadline || Infinity);
       while (d.alive() && d.now() < until && ((d.loading && d.loading()) || d.now() - t0 < HANDBACK_GRACE_MS)) {
         await d.sleep(250);
-        if (await d.left()) return "passed";
+        if (await d.left(true)) return "passed";
       }
       if (!d.alive()) return "closed";
-      return (await d.left()) ? "passed" : "gave_up";
+      return (await d.left(true)) ? "passed" : "gave_up";
     }
     if (c) return "exit";
     if (!d.present()) return "absent";

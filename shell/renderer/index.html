@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="browser.css">
 <link rel="stylesheet" href="export.css">
 <link rel="stylesheet" href="versions.css">
+<link rel="stylesheet" href="engine.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -211,7 +212,7 @@
             </div>
           </div>
           <!-- 詳情模式:頁首只剩返回鈕 -->
-          <button class="lib-back" id="lib-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span data-i18n="lib.nav"></span></button>
+          <button class="lib-back" id="lib-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span id="lib-back-l" data-i18n="lib.nav"></span><span class="t" id="lib-back-s" hidden></span></button>
         </div>
         <div class="lib-body" id="lib-body" tabindex="0">
           <!-- 閘門卡(spec-desktop-0.1.6 §3.3):本機視角、付不出資料費時清單頂端那一張;內容由 library.js 的 libGateNode 畫 -->
@@ -453,6 +454,7 @@
     <div class="ps-body" id="ps-body">
       <p class="ps-hint" data-i18n="tr.pick.hint"></p>
       <div class="ps-list" id="ps-list"></div>
+      <div class="ps-next" id="ps-next" hidden></div>
     </div>
     <div class="modal-foot">
       <span class="del-where" id="ps-where" hidden></span>
@@ -628,4 +630,5 @@
 <script src="versions.js"></script>
 <script src="browser.js"></script>
 <script src="pine-install.js"></script>
+<script src="engine.js"></script>
 </body></html>

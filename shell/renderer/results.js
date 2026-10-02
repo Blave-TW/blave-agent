@@ -357,3 +357,7 @@ function resRestore(e) {
   const host = resHostNow() || addMsg("ai", "");
   resPaint(host, e.items, e.states, null, e.ts);
 }
+/* 切語言(applyStatic):卡上的字是畫的當下 t() 填的,照 host._res 記著的項目與狀態原地重畫(0.1.11 Windows 真機:切 en 後卡還是中文) */
+function resRelang() {
+  $("chat-scroll").querySelectorAll(".msg.ai").forEach((host) => { if (host._res) resPaint(host, host._res.items, host._res.states, null, Number(host.dataset.resTs)); });
+}

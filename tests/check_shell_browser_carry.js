@@ -110,8 +110,8 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
     const r = J(await call(tool, { tab: a.alias }));
     t(tool + " 沿用的分頁、用戶接手中 → user_in_control,沒進頁面", r.ok === false && r.error === "user_in_control" && a.page.entered.length === 0 && !JSON.stringify(r).includes(SECRET), r);
   }
-  t("user_in_control 的訊息:講了要按「交還 agent」才能讀、要模型照實告訴用戶、不准講別的原因(#201)", /operating this tab/.test(last.message) && /Hand back to agent/.test(last.message) && /交還 agent/.test(last.message)
-    && /Tell the user exactly that/.test(last.message) && /no other reason/.test(last.message) && /still open/.test(last.message), last);
+  t("user_in_control 的訊息:講了要按瀏覽器標題旁的「好了，交還 agent」(或回一句話)才能讀、要模型照實告訴用戶、不准講別的原因(#201)", /operating this tab/.test(last.message) && /hand it back\. Tell the user exactly this/.test(last.message) && /瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話/.test(last.message) && /'Hand back' on that page in the chat/.test(last.message) && /Done, hand back to agent/.test(last.message) && /next to the Browser title/.test(last.message) && !/頁面上方|top of that page/.test(last.message)
+    && /no other reason/.test(last.message) && /still open/.test(last.message), last);
   const ua = (await list()).find((x) => x.tab === a.alias);
   t("browser_tabs:用戶接手中的分頁標 user_control、只回主機名不回標題(稽核 S9 照舊)", ua.status === "user_control" && ua.url === "site-1.com" && ua.title === "" && ua.from_previous_turn === true && /operating/.test(ua.note), ua);
   Br.handback(a.tab.id);
@@ -212,7 +212,7 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   t("tabFor:每一關都過了才記「這一輪接上」(在網址政策那一關之後、交出分頁之前)", /if \(a\) return \{ e: ERR\("blocked_policy"[^\n]*\n\s*tabs\.use\(t\.id\);[^\n]*\n\s*return \{ t, v \};/.test(idx));
   t("browser_tabs 列的是 reachable(這一輪開的+前面回合還活著的)", /name === "browser_tabs"\) \{ const list = tabs\.reachable\(\)\.map\(tabInfo\)/.test(idx));
   const desc = tools.TOOLS.find((x) => x.name === "browser_tabs").description;
-  t("工具說明:browser_tabs 講了前面回合的分頁還在、照同一個代號用", /earlier turns that are still open/.test(desc) && /same id/.test(desc) && /Hand back to agent/.test(desc), desc);
+  t("工具說明:browser_tabs 講了前面回合的分頁還在、照同一個代號用", /earlier turns that are still open/.test(desc) && /same id/.test(desc) && /until they hand it back \(button next to the Browser title, or by replying in chat\)\./.test(desc) && !/Hand back to agent/.test(desc), desc);
 
   // ---- 規則文字(references/browser.md)
   const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8");
@@ -221,7 +221,7 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
   t("規則:前面回合的分頁還在、代號不變,先 browser_tabs、不重開同一個網址(#201)", /stay open after the turn ends and keep the same id/.test(carry) && /call `browser_tabs`/.test(carry) && /`from_previous_turn`/.test(carry) && /the same address is not opened a second time/.test(carry), carry);
   t("規則:用戶說已經點開 / 登入 / 處理好了 → 先讀那個分頁(#201)", /already opened, clicked, signed in to or finished something/.test(carry) && /我已經點開了／登入好了／處理好了/.test(carry) && /read that tab first/.test(carry), carry);
   const uic = (md.split("\n").find((l) => l.startsWith("On `user_in_control`")) || "");
-  t("規則:user_in_control 要照實講「按交還 agent 之後才能讀」,不編別的原因(#201)", /Hand back to agent/.test(uic) && /交還 agent/.test(uic) && /Say exactly that in the reply/.test(uic) && /give no other reason/.test(uic) && /tabs are not reopened every turn/.test(uic), uic);
+  t("規則:user_in_control 要照實講「按交還 agent 之後才能讀」,不編別的原因(#201)", /\*\*Done, hand back to agent\*\* next to the Browser title/.test(uic) && /\*\*Hand back\*\* on that page in the chat/.test(uic) && /瀏覽器標題旁的『好了，交還 agent』，或聊天裡那一頁的『交還 agent』，也可以直接回我一句話/.test(uic) && !/頁面上方|top of that page/.test(uic) && /Say exactly that in the reply/.test(uic) && /give no other reason/.test(uic) && /tabs are not reopened every turn/.test(uic), uic);
 
   const flow = sec("## Standard flow"), hid = (flow.split("\n").find((l) => l.startsWith("- **Content behind a tab")) || "");
   t("規則:讀不到預期內容、頁面上有分頁 / 展開鈕 / 顯示更多 → 先 snapshot 找到、click 點開、再讀;試過才可以說讀不到(#202)",

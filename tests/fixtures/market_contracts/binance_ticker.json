@@ -1,0 +1,127 @@
+[
+ {
+  "price": "84112.8",
+  "symbol": "BTCUSDC",
+  "time": 1790838674098
+ },
+ {
+  "price": "4183.84",
+  "symbol": "XAUUSDT",
+  "time": 1790838672585
+ },
+ {
+  "price": "0.0043957",
+  "symbol": "1000PEPEUSDT",
+  "time": 1790838672352
+ },
+ {
+  "price": "119.1800",
+  "symbol": "SOLUSDC",
+  "time": 1790838674227
+ },
+ {
+  "price": "2774.80",
+  "symbol": "ETHUSDT_270326",
+  "time": 1790838496170
+ },
+ {
+  "price": "2717.51",
+  "symbol": "ETHUSD1",
+  "time": 1790838664169
+ },
+ {
+  "price": "0.5222000",
+  "symbol": "EDGEUSDT",
+  "time": 1790838670773
+ },
+ {
+  "price": "357.59000",
+  "symbol": "TSLAUSDT",
+  "time": 1790838674035
+ },
+ {
+  "price": "84158.30",
+  "symbol": "BTCUSDT",
+  "time": 1790838674340
+ },
+ {
+  "price": "0.0043915",
+  "symbol": "1000PEPEUSDC",
+  "time": 1790838670375
+ },
+ {
+  "price": "2717.41",
+  "symbol": "ETHUSDC",
+  "time": 1790838674540
+ },
+ {
+  "price": "84189.70",
+  "symbol": "BTCUSD1",
+  "time": 1790838645950
+ },
+ {
+  "price": "4177.25",
+  "symbol": "XAUTUSDT",
+  "time": 1790838674685
+ },
+ {
+  "price": "85205.9",
+  "symbol": "BTCUSDT_261225",
+  "time": 1790838631877
+ },
+ {
+  "price": "84176.40",
+  "symbol": "BTCU",
+  "time": 1790838617464
+ },
+ {
+  "price": "0.032300",
+  "symbol": "ETHBTC",
+  "time": 1790838645893
+ },
+ {
+  "price": "2744.20",
+  "symbol": "ETHUSDT_261225",
+  "time": 1790838660272
+ },
+ {
+  "price": "189.16000",
+  "symbol": "COINUSDT",
+  "time": 1790838667065
+ },
+ {
+  "price": "119.2400",
+  "symbol": "SOLUSDT",
+  "time": 1790838673030
+ },
+ {
+  "price": "86296.5",
+  "symbol": "BTCUSDT_270326",
+  "time": 1790838631794
+ },
+ {
+  "price": "2718.42",
+  "symbol": "ETHUSDT",
+  "time": 1790838673795
+ },
+ {
+  "price": "2718.92",
+  "symbol": "ETHU",
+  "time": 1790838667067
+ },
+ {
+  "price": "297.870000",
+  "symbol": "QNTUSDT",
+  "time": 1790841266393
+ },
+ {
+  "price": "0.0096680",
+  "symbol": "BBUSDT",
+  "time": 1790841267103
+ },
+ {
+  "price": "0.1055000",
+  "symbol": "ONUSDT",
+  "time": 1790841265641
+ }
+]

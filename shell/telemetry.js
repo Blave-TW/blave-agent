@@ -31,6 +31,10 @@ const EVENTS = {
   lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit"] },
   // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
   heartbeat: { live: ["on", "off"] },
+  // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;
+  // 只修 venv 連結的不送),以及選用的那組(美股資料)沒裝好(前綴是組別)。分兩個事件:同一輪會同時有 first_done 與美股失敗
+  engine_setup: { result: ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"] },
+  engine_opt_fail: { result: ["us_net", "us_other", "us_timeout"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -68,13 +72,23 @@ const EVENTS = {
     // 樣本外驗證(0.1.10;renderer/app.js):點分頁(同 report_scan)、確認框送出且回合跑起來(同 scan_requested)
     "report_wf", "wf_requested",
     // 更新提示(0.1.10;main.js):「重新啟動以完成更新」真的走下去(直接裝、或下單中確認後)、搬到「應用程式」那一問按了「移」。主行程送
-    "update_restart", "app_move"] },
+    "update_restart", "app_move",
+    // 安裝進度卡(0.1.12;renderer/engine.js engRetry):按了卡上的「重試」(送下一句時自動再試的不算)
+    "engine_retry",
+    // 市場對應(0.1.12;renderer/trade.js psOpen):打開選擇策略框時至少一列因為市場對不上被鎖。
+    "pick_gate_lock",
+    // 策略庫成功筆記(0.1.12;renderer/library.js):閱讀頁內文第一次畫成功
+    "library_note",
+    // 內建瀏覽器的交還鈕(0.1.12;renderer/browser.js):標題列那顆、聊天那一列那顆,按了就記(不管有沒有 need;browser_handoff 照舊)
+    "browser_hb_head", "browser_hb_chat",
+    // 部位表點策略名開那支的進出場紀錄(0.1.12;renderer/trade.js trStratOpen):真的換頁才送,點下去才發現不在的不送
+    "trade_strat_open"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
-  "plan_start_res", "update_failed", "lib_blocked", "heartbeat"];
+  "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)

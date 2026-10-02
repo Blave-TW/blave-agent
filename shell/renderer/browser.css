@@ -104,9 +104,9 @@
 .bblk .favs .fav:first-child { margin-left: 0; }
 .bblk-head .more { font-size: 11px; color: var(--ink-3); }
 .bblk-head .cnt { color: var(--ink-3); }
-.bblk:not(.sum) .wall > .pt:not([data-ph="wait"]), .bblk:not(.sum) .wall > .bsep { display: none; }
-.bblk:not(.sum):not(:has(.pt[data-ph="wait"])) .wall { display: none; }
-.bblk:not(.sum):not(:has(.pt[data-ph="wait"])) .bblk-head { padding-bottom: 0; }
+.bblk:not(.sum) .wall > .pt:not([data-ph="wait"]):not([data-hold]), .bblk:not(.sum) .wall > .bsep { display: none; }
+.bblk:not(.sum):not(:has(.pt[data-ph="wait"], .pt[data-hold])) .wall { display: none; }
+.bblk:not(.sum):not(:has(.pt[data-ph="wait"], .pt[data-hold])) .bblk-head { padding-bottom: 0; }
 .bblk.is-empty { display: none; }
 /* 清單裡只有「搜尋在等你過驗證」那一列:卡頭那一行是空的(沒有圖示疊、沒有計數),不畫 */
 .bblk.only-need .bblk-head { display: none; }
@@ -121,6 +121,27 @@
 .bblk.sum .favs { display: inline-flex; }
 .bblk.sum summary .cv7 { margin-left: auto; margin-right: var(--space-4); color: var(--ink-3); }   /* 視覺 7px;熱區是整列(40 高) */
 .bblk.sum .wall { padding: 0 var(--space-8) var(--space-8); }
+/* 摘要收著時,接手中的那一列照樣攤在摘要行下面(其他格照舊收著) */
+.bblk.sum:not([open]):has(.pt[data-hold])::details-content { content-visibility: visible; }
+.bblk.sum:not([open]) .wall > :not(.pt[data-hold], .pt-hb) { display: none; }
+
+/* 接手中那一列的「交還 agent」:列是 button 不能巢狀,鈕是牆上的兄弟節點,靠 anchor 疊在列裡同尺寸的隱形佔位(.pt-hbs)上。
+   視覺 24 高、字 12、左右 8;熱區沿用 .btn-out 的外擴 7(36 高)。佔位是 visibility: hidden,預設的 anchors-visible 會連鈕一起藏:改 always */
+.bblk .wall { position: relative; }
+.pt-hbs { display: none; }
+.bblk .pt[data-hold] .pt-hbs { display: block; visibility: hidden; height: 24px; padding: 0 var(--space-8); border: 1px solid transparent; font-size: 12px; line-height: 22px; white-space: nowrap; }
+.pt-hb { position: absolute; left: anchor(left); top: anchor(top); position-visibility: always; z-index: 1; height: 24px; padding: 0 var(--space-8); font-size: 12px; }
+.pt-foot .ic { flex: none; width: 12px; height: 12px; }
+@container chat (max-width: 559px) {
+  .bblk .pt[data-hold] .pt-bar, .bblk .pt[data-hold] .pt-foot { grid-column: 2; }
+  .bblk .pt[data-hold] .pt-hbs { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  .bblk.no-thumb .pt[data-hold] .pt-bar, .bblk.no-thumb .pt[data-hold] .pt-foot { grid-column: 1; }
+  .bblk.no-thumb .pt[data-hold] .pt-hbs { grid-column: 2; }
+}
+@container chat (min-width: 560px) {
+  .bblk .pt[data-hold] .pt-hbs { position: absolute; right: var(--space-12); bottom: 5px; }
+  .bblk .pt[data-hold] .pt-foot { padding-right: 112px; }
+}
 
 /* ── 中欄展開層 ── */
 .bw { position: absolute; left: 0; right: 0; bottom: 0; top: 52px; z-index: 20; display: flex; flex-direction: column; min-height: 0; background: var(--bg-body); }
@@ -128,14 +149,16 @@
 .bw-head { flex: none; display: flex; align-items: center; gap: var(--space-12); padding: var(--space-16) var(--space-24) var(--space-12); }
 .bw-head .txt { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-12); height: 21px; }
 .bw-head h5 { flex: none; margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; color: var(--ink); }
-.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow-x: clip; }   /* 只裁左右:上下要留給文字鈕外擴的熱區(hidden 會連上下一起裁成 18) */
+.bw-stat { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: var(--space-8); height: 18px; min-height: 0; margin-top: 0; font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow-x: clip; }   /* 只裁左右:上下要留給交還鈕(24 高)與它的熱區(hidden 會連上下一起裁成 18) */
 .bw-stat > * { flex: none; }
-.bw-stat .t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 狀態句太長只截文字那一段;icon、進度格、文字鈕不縮 */
+.bw-stat .t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* 狀態句太長只截文字那一段;icon、進度格、鈕不縮 */
 .bw-stat b { font-weight: 600; color: var(--ink); }
 .bw-stat .ic { width: 14px; height: 14px; }
-.bw-stat .btn-quiet { position: relative; margin-left: var(--space-4); }
-/* 「交還 agent」視覺 17 高、熱區 32:標題列高 49、狀態句在中間,整塊留在標題列內,不伸進網址列 */
-.bw-stat .btn-quiet::before { content: ""; position: absolute; left: -4px; right: -4px; top: 50%; height: 32px; transform: translateY(-50%); }
+/* 「好了,交還 agent」實心小鈕:視覺 24 高,上下各溢出狀態句那一格 3px(只裁左右,不裁);熱區沿用 .btn-fill 的外擴 7(36 高),
+   標題列高 49、整塊留在標題列內,不伸進網址列 */
+.bw-stat .btn-fill { height: 24px; padding: 0 var(--space-8); margin-left: var(--space-4); font-size: 12px; }
+/* 中欄窄到連鈕都放不下才截字(只在 ≤440 狀態句收掉之後才縮;截在裡面那一層:鈕本身 overflow 會連外擴的熱區一起裁掉) */
+.bw-stat .btn-fill > span { display: block; overflow: hidden; text-overflow: ellipsis; }
 /* 32 的鈕對齊 20.8 高的 h5 那一行;✕ 的筆畫(不是盒子)對齊內容右緣。熱區 44,下緣仍在標題列內、不伸進頁面框 */
 .bw-close { position: relative; margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1) calc(var(--space-6) * -1) 0; }
 .bw-close::before { content: ""; position: absolute; inset: -6px; }
@@ -199,6 +222,11 @@
 .br-set { margin: var(--space-24) 0; padding-top: var(--space-16); border-top: 1px solid var(--border-hairline); }
 .br-set .btn-quiet { margin-top: var(--space-8); }
 
+/* 中欄很窄(拖寬聊天欄 / 側欄)時「你在操作」與手形放不下:收掉,只留交還鈕(鈕上的字已經講了是誰在操作) */
+@container main (max-width: 440px) {
+  .bw-stat:has(> .btn-fill) > :not(.btn-fill) { display: none; }
+  .bw-stat .btn-fill { margin-left: 0; flex: 0 1 auto; min-width: 0; }
+}
 @container main (max-width: 600px) {
   .bw-stat .segs { display: none; }
   .bv .ask { flex-direction: column; gap: var(--space-12); }

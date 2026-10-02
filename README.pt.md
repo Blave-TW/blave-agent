@@ -20,7 +20,9 @@ Se for útil, dê uma estrela ao repositório, e ative Watch › Releases para s
 
 ## O que o torna diferente
 
-### Backtests que verificam se foi sorte
+### Backtests que verificam overfitting e usam taxas reais
+
+Overfitting: parâmetros que só por acaso se encaixam nos dados passados.
 
 - Todo backtest de Tipo A roda por padrão um teste de permutação de Monte Carlo (MCPT, `lib/validation.py`) e registra um valor p: dados embaralhados poderiam ter se saído tão bem?
 - Uma varredura de parâmetros (`lib/param_scan.py`) procura um platô de parâmetros que funcionam todos, não a melhor célula isolada.
@@ -94,7 +96,7 @@ As novidades estão na versão em inglês: [README.md › News](README.md#news)
 - Os valores a investir e a retomada do trading ficam por sua conta: na página Trading automático do app para desktop, ou no espaço de trabalho web para um servidor na nuvem. O agente se recusa a fazer isso por você, mesmo que você peça. A única coisa que ele sempre pode fazer sozinho é acionar o kill switch.
 - No app para desktop, as ordens só saem enquanto o Blave está aberto; depois de fechar e abrir de novo, o trading continua pausado até você clicar em Iniciar trading.
 - O agente verifica antes de relatar: relê um arquivo depois de editá-lo e consulta a ordem na exchange antes de dizer que ela foi enviada. Cada tentativa de ordem fica registrada em `state/audit.jsonl`.
-- Um backtest descreve o passado. Ele não prevê nem garante resultados futuros. MCPT e varreduras de parâmetros diminuem a chance de você estar olhando para sorte; não a eliminam.
+- Um backtest descreve o passado. Ele não prevê nem garante resultados futuros. MCPT verifica se um resultado é estatisticamente significativo, e as varreduras de parâmetros verificam se há overfitting; ambos só diminuem a chance de o backtest te enganar, e nenhum a elimina.
 - Nada aqui constitui recomendação de investimento. Operar pode dar prejuízo, inclusive perder tudo.
 
 ## Política de assinatura de código
