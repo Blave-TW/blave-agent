@@ -95,6 +95,16 @@ president_ca_path=<absolute path to the .pfx on this machine>
 president_ca_password=<certificate password, may be empty>
 ```
 
+**On a Windows cloud machine the user binds 統一期貨 on the web 自動下單 page, not through you.**
+The platform's connect steps (`runtime/president_connect.py`) take the account and trading password
+from the form, the `.pfx` and its password as an encrypted upload, install `unitrade`, log in once
+read-only and install the worker. Afterwards `.env` holds only sentinels (`president_password=vault:…`,
+`president_ca_password=vault:ca`), `president_ca_path` points at `<base>\credentials\president.pfx`
+and the secrets sit in the vault. Never rewrite those lines, never write the vault or the `.pfx`, never
+run the steps by hand; if the user asks you to bind it, send them to the page. Unbinding (or binding
+another venue) removes all seven lines, the vault, the `.pfx` and the worker service. The `.env` block
+above is for a machine set up by hand (development / test host).
+
 Production, only after the broker's production mail AND the user's explicit go-ahead, is switched
 on by the platform's 統一期貨 binding flow — it writes `"live": true` into
 `<base>/credentials/president_vault.json`. **You cannot switch it on:** never write that file, and a

@@ -103,11 +103,12 @@ ALLOWED = frozenset({
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
     "book_account_confirm", "version_restore",
 })
-# In the api's list, refused here: the Capital (群益) connect steps install
-# SKCOM and an NSSM worker on a cloud Windows host — nothing of that on a
-# user's own computer.
+# In the api's list, refused here: the Capital (群益) and 統一期貨 connect steps
+# install broker components and an NSSM worker on a cloud Windows host —
+# nothing of that on a user's own computer.
 CLOUD_ONLY = frozenset({
     "capital_setup", "capital_pfx_key", "capital_pfx", "capital_probe", "capital_finish",
+    "president_setup", "president_pfx_key", "president_pfx", "president_probe", "president_finish",
 })
 UNSIGNED_OK = frozenset({"halt"})
 

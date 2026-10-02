@@ -431,7 +431,8 @@ def _oaep(c):
                              algorithm=c["hashes"].SHA256(), label=None)
 
 
-def cmd_pfx_key(args):
+def cmd_pfx_key(args, key_path=None):
+    """key_path: where the private half waits (another broker's flow passes its own)."""
     if args:
         _refuse("BAD_ARGS")
     c = _crypto()
@@ -443,12 +444,13 @@ def cmd_pfx_key(args):
     spki = priv.public_key().public_bytes(c["ser"].Encoding.DER,
                                           c["ser"].PublicFormat.SubjectPublicKeyInfo)
     p = _paths()
+    key_path = key_path or p["key"]
     os.makedirs(p["cred"], exist_ok=True)
-    tmp = p["key"] + ".tmp"
+    tmp = key_path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"key_id": key_id, "expires_at": expires_at, "pem": pem}, f)
     restrict_admins(tmp)
-    os.replace(tmp, p["key"])  # one key at a time: a newer request voids the older
+    os.replace(tmp, key_path)  # one key at a time: a newer request voids the older
     return {"key_id": key_id, "alg": ALG, "spki": base64.b64encode(spki).decode(),
             "expires_at": expires_at}
 
@@ -473,12 +475,12 @@ def check_pfx_args(args):
         _refuse("BAD_ARGS", "bad envelope")
 
 
-def open_envelope(key_id, envelope):
+def open_envelope(key_id, envelope, key_path=None):
     """→ (pfx bytes, export password). Consumes the key: deleted before the
     decrypt is attempted, so a key is good for exactly one upload whatever
     happens next."""
     c = _crypto()
-    path = _paths()["key"]
+    path = key_path or _paths()["key"]
     try:
         with open(path, encoding="utf-8") as f:
             rec = json.load(f)

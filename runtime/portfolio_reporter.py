@@ -1372,6 +1372,9 @@ def build_report():
     cap = _read_json(os.path.join(WORKSPACE_STATE, "capital_connect.json"))
     if isinstance(cap, dict):
         report["capital_connect"] = cap
+    pres = _read_json(os.path.join(WORKSPACE_STATE, "president_connect.json"))
+    if isinstance(pres, dict):
+        report["president_connect"] = pres
     return report
 
 

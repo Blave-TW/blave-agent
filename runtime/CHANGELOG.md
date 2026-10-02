@@ -8,6 +8,17 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **統一期貨雲端開通(新 `runtime/president_connect.py`,群益那套的同形)**:`credentials` 綁統一時(雲端 Windows),交易密碼與
+  正式開關(`"live": true`)寫進 `credentials\president_vault.json`,`.env` 換成哨兵並寫入固定的憑證路徑與正式主機;舊 workspace lib
+  (不從 vault 讀正式開關)拒綁 `LIB_OUTDATED`。五個新指令 `president_setup`(裝 unitrade 釘版)／`president_pfx_key`／`president_pfx`
+  (瀏覽器封裝的 pfx + 憑證密碼,本機先驗密碼再存成固定檔名 `president.pfx`,接著唯讀登入一次)／`president_probe`
+  (`{"after_unlock": true}` 先 `--unblock`)／`president_finish`(`president_worker.py --install`);進度寫
+  `state/president_connect.json`,報告帶 `president_connect`。vault 與 pfx 給 SYSTEM + Administrators 讀(worker 是 LocalSystem)。
+  解綁會把統一七行全拿掉(`_cmd_credentials_remove` 依 `cred_env` 展開)並刪 vault、pfx、待用金鑰、status,叫 worker 服務自刪;
+  綁別家逐出統一時同樣刪。電腦版 daemon 不收這五個(`CLOUD_ONLY`)。`capital_connect.cmd_pfx_key`/`open_envelope` 多一個
+  `key_path` 參數(預設不變)讓統一用自己的金鑰檔。**出貨順序:api(president-api da25804f)先上**,否則網頁送的指令被 400 擋。
+  測試 `tests/check_president_connect.py`(加密那段要有 `cryptography` 的 python,例如 `/usr/bin/python3`)。
+
 - **台灣券商分支改查 venue 特性表(純抽取,群益行為不變)**:新 `runtime/venue_traits.py`(`lib/venue_traits.py` 的逐字副本,runtime 與
   workspace 分通道出貨所以不 import),`command_listener` 的金庫清除／NSSM Administrator 密碼／手動平倉列、`portfolio_reporter.can_flatten`
   改問特性表,不再比對字面 `"capital"`。測試 `tests/check_venue_traits.py`(兩份逐字相同、列舉零殘留)。

@@ -45,6 +45,7 @@ if _RUNTIME_DIR not in sys.path:
     sys.path.append(_RUNTIME_DIR)
 
 import capital_connect
+import president_connect
 import telegram_pairing
 import turn_slots
 import venue_traits
@@ -1190,6 +1191,9 @@ def _cmd_credentials(args):
     # 群益 on a cloud Windows box: real values → a separate Administrator-only
     # file for the 群益 order code, sentinels → .env (spec §6-B)
     env = capital_connect.divert_credentials(env, local=_local_mode())
+    # 統一期貨 on a cloud Windows box: the trading password and the production
+    # switch → the vault, sentinels + certificate path + production host → .env
+    env = president_connect.divert_credentials(env, local=_local_mode())
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -1259,6 +1263,11 @@ def _cmd_credentials(args):
                 capital_connect.drop_vault(["capital_password"])
             except Exception as e:
                 _log(f"capital vault drop failed: {type(e).__name__}")
+        if venue_traits.PRESIDENT in evicted_ids:  # the vault holds its production switch
+            try:
+                president_connect.drop_vault()
+            except Exception as e:
+                _log(f"president vault drop failed: {type(e).__name__}")
         cpath = os.path.join(WORKSPACE, "manager", "portfolio_config.json")
         try:
             with open(cpath) as f:
@@ -3520,6 +3529,12 @@ def _cmd_credentials_remove(args):
     # casefold like the write side: a MixedCase line (agent-hand-written
     # Gateio_Api_Key) must still match its unbind name
     drop = {n.casefold() for n in names if not n.upper().startswith("BLAVE_")}
+    # a venue with its own name set (venue_traits cred_env — 統一's seven) goes whole:
+    # its extra lines would otherwise outlive the unbind
+    for _t in venue_traits.TRAITS.values():
+        _own = set(_t.get("cred_env") or {})
+        if _own & drop:
+            drop |= _own
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -3541,6 +3556,10 @@ def _cmd_credentials_remove(args):
         capital_connect.drop_vault(names)
     except Exception as e:
         _log(f"capital vault drop failed: {type(e).__name__}")
+    try:
+        president_connect.drop_vault(names)
+    except Exception as e:
+        _log(f"president vault drop failed: {type(e).__name__}")
     # P1-2: unbind must shrink the bind manifest too, or an agent hand-writing
     # the SAME venue's keys back into .env after the unbind would still be in
     # the allowed list and route again without any UI bind.
@@ -5671,6 +5690,12 @@ HANDLERS.update({
     name: (lambda args, _n=name: capital_connect.dispatch(
         _n, args, Deferred, lambda: _push(_ON_PROGRESS, "capital connect"), _local_mode()))
     for name in capital_connect.COMMANDS
+})
+# 統一期貨 cloud connect (runtime/president_connect.py): same shape
+HANDLERS.update({
+    name: (lambda args, _n=name: president_connect.dispatch(
+        _n, args, Deferred, lambda: _push(_ON_PROGRESS, "president connect"), _local_mode()))
+    for name in president_connect.COMMANDS
 })
 
 
