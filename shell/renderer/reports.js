@@ -473,11 +473,12 @@ async function rptSend() {
   rptNewLock(false);
   if (!ok) { RPT.fail = true; rptNewPaint(); return; }   // 框留著、欄位不清、鈕回復,腳放那一句:讓人原樣重送
   fm.textContent = "";
+  // 先記 pending、畫成原生 disabled 再關框:回合中鈕只是 aria-disabled,先關會把焦點還給它,緊接著停用焦點就掉到 body
+  RPT.pending[env] = { env, before }; RPT.noNew = null;
+  rptSync();
   rptNewClose();
   d.value = ""; d.style.height = "";
-  RPT.pending[env] = { env, before }; RPT.noNew = null;
   libTrack("reports_ask");
-  rptSync();
 }
 
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
