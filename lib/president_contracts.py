@@ -8,7 +8,10 @@ A held row of a root is one of:
   settlement and the 13:30 settlement);
 - SETTLED residue: its settlement time has passed and the broker no longer
   lists it (or the list is unknown) — cash-settled, treated as not held, never
-  closed or added to;
+  closed or added to. Before its settlement time a held row is real whatever
+  the list says (an index month trades until 13:30 on its settlement day; a
+  row missing from the list then means a short list, not a gone contract), so
+  the month alone decides;
 - PENDING: its settlement time has passed but the broker still lists it — a
   holiday-postponed settlement, or a broker list that has not dropped it yet.
   Treated as the bot's expiring month (a held month is added to, never a second
@@ -112,8 +115,6 @@ def classify_row(row, listed=None, now=None):
         if listed is not None and pid in listed:
             return "pending"
         return "settled"
-    if listed is not None and listed and pid not in listed:
-        return "settled"  # the broker dropped it early: nothing left to trade or close
     if pid in (front_month(row["root"], now), computed_near(row["root"], now)):
         return "bot"
     return "manual"

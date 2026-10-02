@@ -477,8 +477,11 @@ check(pc.classify_row(R("TXFJ6"), None, T(2026, 10, 21, 14, 0)) == "settled"
       and pc.classify_row(R("TXFJ6"), ["TXFK6", "TXFL6"], T(2026, 10, 21, 14, 0)) == "settled"
       and pc.classify_row(R("TXFJ6"), ["TXFJ6", "TXFK6"], T(2026, 10, 21, 14, 0)) == "pending",
       "past settlement: settled when unlisted (or list unknown), pending while the broker still lists it")
-check(pc.classify_row(R("TXFJ6"), ["TXFK6"], T(2026, 10, 15, 10, 0)) == "settled",
-      "dropped from the broker's list before its date → settled")
+check(pc.classify_row(R("TXFJ6"), ["TXFK6"], T(2026, 10, 15, 10, 0)) == "bot"
+      and pc.classify_row(R("TXFJ6"), [], T(2026, 10, 15, 10, 0)) == "bot"
+      and pc.classify_row(R("TXFL6"), ["TXFJ6"], T(2026, 10, 15, 10, 0)) == "manual",
+      "before its settlement a held row is judged by its month alone — a short broker list never "
+      "hides it (hidden, the reconciler would re-open it every round and flatten would skip it)")
 e = raises(pc.ManualPosition, lambda: pc.bot_rows([R("TXFJ6"), R("TXFL6", -1)], None, T(2026, 10, 1, 10, 0)))
 check(e is not None and "TXFL6" in str(e) and "不會動它" in str(e), "a manual far month fails the read, named", e)
 check(raises(op.PresidentError, lambda: op.entry_contract(
