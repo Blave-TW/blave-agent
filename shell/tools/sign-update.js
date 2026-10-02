@@ -7,9 +7,9 @@
 //       沒簽的 yml 放在 desktop/<track>/staging/<ver>/latest.yml 之後跑。依序(任何一步不過就停,線上不受影響):
 //       1. 私鑰檔 0600、是 Ed25519、它的公鑰在 update-keys.json 裡——不在的話,用它簽的版本已裝的 app 全部驗不過
 //       2. staging 的 yml:版號對、還沒簽過;從正式網址把 exe 整個抓回來,sha512 要等於 yml 的
-//       3. 線上 latest.yml 的版號要比它小(這條軌第一次發才加 --first-release)
+//       3. 線上 latest.yml(直接問 S3)的版號要比它小;只有 S3 回 404 才是第一次發(要加 --first-release),其他錯誤就停
 //       4. 簽 → 用 app 同一支 verifyManifest 驗一次 → 傳成 desktop/<track>/latest.yml(這一刻起對外)→ 下載頁的固定檔名 Blave-Setup.exe
-//       --dry-run:1–4 的檢查都做、印出簽好的 yml,不上傳。
+//       --dry-run:1–4 的檢查都做、印出簽好的 yml,不上傳。keygen --dry-run 只印會寫到哪,不產生、不寫檔。
 // 設定:環境變數或 ~/.config/blave/desktop-release.env(同 release.js)。
 //   BLAVE_UPDATE_SIGNING_KEY  私鑰檔路徑(預設 ~/.config/blave/desktop-update-ed25519.pem)
 //   BLAVE_RELEASE_BUCKET      預設同 release.js
@@ -64,7 +64,7 @@ function signYml({ ymlText, version, feed, privateKey, keys, exeSha512, liveVers
   if (liveVersion) {
     if (first) throw new Error(`線上已經有 latest.yml(${liveVersion}),不是第一次發:拿掉 --first-release`);
     if (!sig.newer(version, liveVersion)) throw new Error(`線上已經是 ${liveVersion},${version} 沒有比它大`);
-  } else if (!first) throw new Error("讀不到線上的 latest.yml;真的是這條軌第一次發才加 --first-release");
+  } else if (!first) throw new Error("S3 上這條軌還沒有 latest.yml(404):真的是第一次發才加 --first-release");
   const signature = sig.signManifest(privateKey, { feed, version, sha512: info.sha512 });
   const signedText = ymlText.replace(/\s*$/, "\n") + `blaveSignature: ${signature}\n`;
   const m = sig.verifyManifest(yaml.load(signedText), { keys, feed, currentVersion: "0.0.0" });
@@ -72,8 +72,22 @@ function signYml({ ymlText, version, feed, privateKey, keys, exeSha512, liveVers
   return { signedText, exe };
 }
 
-const sha512Of = (buf) => crypto.createHash("sha512").update(buf).digest("base64");
 const ymlVersion = (t) => (/^version:\s*(\S+)/m.exec(t || "") || [])[1] || null;
+/* 純函式(tests/check_shell_updatesig.js):read() 丟出的錯誤帶 stderr(execFileSync 的形狀)。
+   回線上版號,或 null = S3 明確說 404;讀得到卻沒有版號、403、throttle、連不上都 throw。 */
+function liveFromS3(read) {
+  let r;
+  try { r = read(); } catch (e) {
+    const err = String((e && (e.stderr || e.message)) || e);
+    if (/\(404\)|NoSuchKey/.test(err)) return null;
+    throw new Error(`讀不到線上的 latest.yml,而且不是 404(權限或網路?):${err.trim().split("\n").pop()}`);
+  }
+  const v = ymlVersion(r.stdout);
+  if (!v) throw new Error("線上的 latest.yml 讀得到但沒有版號");
+  return v;
+}
+
+const sha512Of = (buf) => crypto.createHash("sha512").update(buf).digest("base64");
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -83,6 +97,7 @@ async function main() {
   loadEnvFile();
   const keyPath = process.env.BLAVE_UPDATE_SIGNING_KEY || DEFAULT_KEY;
   if (argv[0] === "keygen") {
+    if (dry) { console.log(`演練:不產生金鑰、不寫任何檔。真的跑會寫私鑰到 ${keyPath}(0600、已存在就停),公鑰加進 ${KEYS_FILE}`); return; }
     const { pub, had } = keygen(keyPath, KEYS_FILE);
     console.log(`私鑰:${keyPath}(0600)\n公鑰已加進 ${KEYS_FILE}:\n  ${pub}`);
     if (had) console.log(`⚠ update-keys.json 原本就有 ${had} 把:新舊並存一版之後,才能拿掉舊的那把`);
@@ -106,8 +121,11 @@ async function main() {
   let ymlText;
   try { ymlText = aws(["s3", "cp", `s3://${BUCKET}/${prefix}/staging/${version}/latest.yml`, "-"], { stdio: ["ignore", "pipe", "pipe"] }); }
   catch (e) { die(`讀不到 s3://${BUCKET}/${prefix}/staging/${version}/latest.yml(GitHub Actions 的 stage job 核准、跑完了嗎?):${String(e.stderr || e.message).trim().split("\n")[0]}`); }
-  const live = await fetch(`${feed}/latest.yml?t=${Date.now()}`, { cache: "no-store" }).catch(() => null);
-  const liveVersion = live && live.status === 200 ? ymlVersion(await live.text()) : null;
+  // 線上版號直接問 S3(不經 CDN 快取):只有 404 才算這條軌還沒有 latest.yml,其他錯誤停下來,不引導去加 --first-release
+  let liveVersion;
+  try {
+    liveVersion = liveFromS3(() => ({ ok: true, stdout: aws(["s3", "cp", `s3://${BUCKET}/${prefix}/latest.yml`, "-"], { stdio: ["ignore", "pipe", "pipe"] }) }));
+  } catch (e) { die(e.message); }
   step(`從正式網址把 Blave-Setup-${version}.exe 抓回來算 sha512`);
   const r = await fetch(`${feed}/Blave-Setup-${version}.exe`, { cache: "no-store" });
   if (r.status !== 200) die(`正式網址上抓不到 Blave-Setup-${version}.exe(status ${r.status}):stage job 跑完了嗎?`);
@@ -134,4 +152,4 @@ async function main() {
   for (const w of warnings) console.log("  ⚠ " + w);
 }
 if (require.main === module) main().catch((e) => die((e && e.stack) || String(e)));
-module.exports = { keygen, loadSigningKey, signYml };
+module.exports = { keygen, loadSigningKey, signYml, liveFromS3 };

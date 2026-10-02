@@ -38,7 +38,7 @@ const signManifest = (privateKey, fields) => crypto.sign(null, payload(fields), 
 
 /* info = electron-updater 解析好的 latest.yml(js-yaml load,多出來的 key 原樣留著)。回 { sha512 } 或 { error }。
    形狀卡死:頂層與每一筆 files[] 的 sha512 都要等於簽過的那個(只有 sha2 的那筆也算不等),不准有 packages
-   (web installer 的 7z 另外下載、不經過驗章)。這樣就不必去猜 electron-updater 會挑 files 裡的哪一筆。 */
+   (web installer 的 7z 另外下載、不經過驗章),不准 isAdminRightsRequired。這樣就不必去猜 electron-updater 會挑 files 裡的哪一筆。 */
 function verifyManifest(info, { keys, feed, currentVersion }) {
   if (!info || typeof info !== "object") return { error: "no update info" };
   const { version, sha512, blaveSignature: sig } = info;
@@ -48,6 +48,8 @@ function verifyManifest(info, { keys, feed, currentVersion }) {
   if (info.packages != null) return { error: "manifest lists web-installer packages" };
   const files = Array.isArray(info.files) ? info.files : [];
   if (!files.length || files.some((f) => !f || f.sha512 !== sha512)) return { error: "manifest files[] sha512 differs from the signed one" };
+  // 沒簽到的這個欄位會讓 electron-updater 改用 elevate.exe 跑安裝檔(跳 UAC);per-user 安裝用不到,一律不收
+  if (info.isAdminRightsRequired || files.some((f) => f.isAdminRightsRequired)) return { error: "manifest asks for admin rights" };
   const data = payload({ feed, version, sha512 }), raw = Buffer.from(sig, "base64");
   let ok = false;
   for (const k of Array.isArray(keys) ? keys : []) { try { if (crypto.verify(null, data, publicKey(k), raw)) { ok = true; break; } } catch (_) { /* 這把讀不懂:換下一把 */ } }

@@ -78,7 +78,7 @@ jobs:
             echo "::group::$t"
             if node "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
           done
-          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py; do
+          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py tests/check_parent_watch_peek.py; do
             echo "::group::$t"
             if "$BLAVE_TEST_PYTHON" "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
           done
@@ -121,8 +121,19 @@ jobs:
           fi
           [[ "$TRACK" =~ ^win(-test)?$ ]] || { echo "::error::track 只能是 win-test 或 win(現在是 $TRACK)"; exit 1; }
           url="https://download.blave.org/desktop/$TRACK"
-          # 線上版號:正式軌與測試軌都查——同版或更舊的 yml 傳上去,已裝的 app 不會更新、還會把人搞混。讀不到 = 這條軌第一次發
-          live="$(curl -fsSL "$url/latest.yml?t=$(date +%s)" 2>/dev/null | sed -n 's/^version: *//p' | tr -d '\r' || true)"
+          # 線上版號:正式軌與測試軌都查——同版或更舊的 yml 傳上去,已裝的 app 不會更新、還會把人搞混。
+          # 只有 404 算「這條軌第一次發」;403(CDN 背後的 S3 對不存在的 key 也回 403)、5xx、連不上一律停,不猜
+          live_version() {
+            local f code; f="$(mktemp)"
+            code="$(curl -sS --retry 3 -o "$f" -w '%{http_code}' "$1/latest.yml?t=$(date +%s)")" || code="${code:-000}"
+            case "$code" in
+              200) LIVE="$(sed -n 's/^version: *//p' "$f" | tr -d '\r')"; rm -f "$f"
+                   [ -n "$LIVE" ] || { echo "::error::$1/latest.yml 讀得到但沒有版號"; exit 1; } ;;
+              404) LIVE=""; rm -f "$f" ;;
+              *)   rm -f "$f"; echo "::error::讀 $1/latest.yml 拿到 HTTP $code(不是 200 也不是 404):不確定線上版號就不發"; exit 1 ;;
+            esac
+          }
+          live_version "$url"; live="$LIVE"
           if [ -n "$live" ]; then
             node -e 'const [a,b]=process.argv.slice(1).map(v=>v.split(".").map(Number));for(let i=0;i<3;i++){if(a[i]!==b[i])process.exit(a[i]>b[i]?0:1)}process.exit(1)' "$ver" "$live" \
               || { echo "::error::$url 上已經是 $live,$ver 沒有比它大"; exit 1; }
@@ -287,10 +298,16 @@ jobs:
           grep -qF "$SHA" "$up/latest.yml" || { echo "::error::artifact 裡的 latest.yml 跟 $exe 對不上"; exit 1; }
           if grep -q '^blaveSignature:' "$up/latest.yml"; then echo "::error::CI 產的 latest.yml 不該帶簽章"; exit 1; fi
           IMM="public, max-age=31536000, immutable"
+          # 只有 404 算「不存在」:403(role 少了 GetObject / ListBucket)、throttle、連不上都當成查不到,直接停——
+          # 當成不存在的話,下一步就會覆寫線上簽好的 latest.yml 正指著的安裝檔
+          absent() {
+            local err
+            if err="$(aws s3api head-object --bucket "$BUCKET" --key "$1" 2>&1 >/dev/null)"; then return 1; fi
+            if grep -qE '\(404\)|Not Found' <<<"$err"; then return 0; fi
+            echo "::error::查 s3://$BUCKET/$1 失敗,而且不是 404(權限或網路?):$err"; exit 1
+          }
           for k in "$exe" "$exe.blockmap"; do
-            if aws s3api head-object --bucket "$BUCKET" --key "$PREFIX/$k" >/dev/null 2>&1; then
-              echo "::error::s3://$BUCKET/$PREFIX/$k 已經在 bucket 裡。帶版號的檔不能覆寫,這個版號作廢,請發下一個版號"; exit 1
-            fi
+            absent "$PREFIX/$k" || { echo "::error::s3://$BUCKET/$PREFIX/$k 已經在 bucket 裡。帶版號的檔不能覆寫,這個版號作廢,請發下一個版號"; exit 1; }
           done
           aws s3 cp "$up/$exe" "s3://$BUCKET/$PREFIX/$exe" --cache-control "$IMM" --only-show-errors
           aws s3 cp "$up/$exe.blockmap" "s3://$BUCKET/$PREFIX/$exe.blockmap" --cache-control "$IMM" --only-show-errors

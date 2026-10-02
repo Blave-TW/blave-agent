@@ -52,6 +52,8 @@ const V = (info, o = {}) => sig.verifyManifest(info, { keys: o.keys || [pubA], f
     "版號不是 A.B.C": manifest({ version: "0.1.13-beta.1" }),
     "換軌重放:win-test 簽的那份放到 win": manifest({ signFeed: "https://download.blave.org/desktop/win-test" }),
     "沒有 info": null,
+    "files 那筆要求管理員權限(沒簽到;會改用 elevate.exe 跳 UAC)": (() => { const m = manifest(); m.files[0].isAdminRightsRequired = true; return m; })(),
+    "頂層要求管理員權限": { ...manifest(), isAdminRightsRequired: true },
   };
   for (const [name, info] of Object.entries(bad)) t("驗不過:" + name, !!V(info).error && !V(info).sha512);
   t("降版那筆的簽章本身是對的(擋它的是版號比較,不是簽章)", !V(manifest({ version: "0.1.11" }), { current: "0.1.10" }).error);
@@ -188,12 +190,26 @@ const V = (info, o = {}) => sig.verifyManifest(info, { keys: o.keys || [pubA], f
   t("signYml 拒絕:yml 版號跟要發的不同", throws({ version: "0.1.14" }, /版號/));
   t("signYml 拒絕:正式網址上的 exe 跟 yml 的 sha 不同", throws({ exeSha512: sha(evil) }, /對不上/));
   t("signYml 拒絕:線上已經是同版或更新", throws({ liveVersion: "0.1.13" }, /沒有比它大/) && throws({ liveVersion: "0.2.0" }, /沒有比它大/));
-  t("signYml 拒絕:讀不到線上又沒說 --first-release;線上有卻說 --first-release", throws({ liveVersion: null }, /first-release/) && throws({ first: true }, /first-release/));
+  t("signYml 拒絕:線上沒有(404)又沒說 --first-release;線上有卻說 --first-release", throws({ liveVersion: null }, /404.*first-release/) && throws({ first: true }, /first-release/));
   t("signYml 拒絕:files[] 指到別的檔名", throws({ ymlText: base.ymlText.replace("url: Blave-Setup-0.1.13.exe", "url: other.exe") }, /files/));
   t("signYml 拒絕:yml 的 files 跟頂層 sha 不一致(自己驗一次就擋下)", throws({ ymlText: base.ymlText.replace(/(files:\n  - url: \S+\n    sha512: )\S+/, "$1" + sha(evil)) }, /驗不過/));
   t("loadSigningKey 拒絕:公鑰不在 update-keys.json(會讓全體更新卡死的那把)", (() => { try { signer.loadSigningKey(keyPath, [pubA]); return false; } catch (e) { return /不在 update-keys\.json/.test(e.message); } })());
   fs.chmodSync(keyPath, 0o644);
   t("loadSigningKey 拒絕:私鑰檔權限太寬", (() => { try { signer.loadSigningKey(keyPath, keys); return false; } catch (e) { return /chmod 600/.test(e.message); } })());
+  { // 線上版號:只有 S3 明確 404 才算這條軌沒有 latest.yml
+    const L = signer.liveFromS3, thr = (stderr) => () => { const e = new Error("Command failed"); e.stderr = stderr; throw e; };
+    const fails = (fn) => { try { L(fn); return false; } catch (e) { return /不是 404|沒有版號/.test(e.message); } };
+    t("liveFromS3:讀得到 → 版號;S3 回 404 / NoSuchKey → null(第一次發)",
+      L(() => ({ stdout: "version: 0.1.11\nfiles: []\n" })) === "0.1.11" && L(thr("fatal error: An error occurred (404) when calling the HeadObject operation: Key \"desktop/win/latest.yml\" does not exist")) === null && L(thr("An error occurred (NoSuchKey) when calling the GetObject operation")) === null);
+    t("liveFromS3:403、throttle、連不上、讀得到卻沒版號 → 停(不引導去加 --first-release)",
+      fails(thr("fatal error: An error occurred (403) when calling the HeadObject operation: Forbidden")) && fails(thr("An error occurred (SlowDown) when calling the GetObject operation"))
+      && fails(thr("Could not connect to the endpoint URL")) && fails(() => ({ stdout: "<html>oops</html>" }))); }
+  { // keygen --dry-run:不產生、不寫
+    const home = path.join(TMP, "home"), kpath = path.join(TMP, "dry", "k.pem"), before = fs.readFileSync(path.join(SHELL, "update-keys.json"), "utf8");
+    fs.mkdirSync(home, { recursive: true });
+    const r = cp.spawnSync(process.execPath, [path.join(SHELL, "tools", "sign-update.js"), "keygen", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: home, BLAVE_UPDATE_SIGNING_KEY: kpath } });
+    t("keygen --dry-run:不產生私鑰、不改 update-keys.json、只印會寫到哪", r.status === 0 && /演練/.test(r.stdout) && !fs.existsSync(kpath) && !fs.existsSync(path.dirname(kpath)) && fs.readFileSync(path.join(SHELL, "update-keys.json"), "utf8") === before);
+    fs.writeFileSync(path.join(SHELL, "update-keys.json"), before); }   // 退步時它會寫進 repo 的那份:還原,紅留在上面那條
   t("keygen 不覆寫已存在的私鑰", (() => { try { signer.keygen(keyPath, keysFile); return false; } catch (e) { return /不覆寫/.test(e.message); } })());
 
   // ── 5. 釘死的前提(electron-updater 升版、打包、CI 改形狀時會紅)──
@@ -218,6 +234,40 @@ const V = (info, o = {}) => sig.verifyManifest(info, { keys: o.keys || [pubA], f
   t("CI build job:沒有任何 secrets、沒有 AWS、沒有 id-token(npm ci 在這裡跑)", !/secrets\./.test(buildJ) && !/aws/i.test(buildJ) && !/id-token/.test(buildJ));
   t("CI stage job:環境 desktop-release(要核准)、OIDC role、不 checkout、不跑 npm/node", stageJ.environment === "desktop-release" && stageJ.permissions["id-token"] === "write" && /role-to-assume/.test(stageS) && !/aws-access-key-id|aws-secret-access-key/.test(stageS) && !stageJ.steps.some((x) => /checkout|setup-node/.test(x.uses || "")) && !/npm (ci|install)|npx /.test(stageS));
   t("整個 workflow 只能把 yml 傳到 staging/,碰不到對外的 latest.yml 與固定檔名 Blave-Setup.exe", /\$PREFIX\/staging\/\$VER\/latest\.yml/.test(stageS) && !/\$PREFIX\/latest\.yml/.test(JSON.stringify(wf)) && !/\$PREFIX\/Blave-Setup\.exe/.test(JSON.stringify(wf)) && !/aws-access-key-id/.test(JSON.stringify(wf)));
+
+  { // 把 workflow 裡兩支「存不存在」的 bash 函式切出來,用假的 aws / curl 真的跑:只有 404 算不存在,其他錯誤一律停
+    const steps = [].concat(...Object.values(wf.jobs).map((j) => j.steps || [])), runs = steps.map((x) => x.run || "").join("\n");
+    const fn = (name) => { const a = runs.indexOf(name + "() {"), b = runs.indexOf("\n}\n", a); return a >= 0 && b > a ? runs.slice(a, b + 3) : null; };
+    const bin = path.join(TMP, "fakebin"); fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "aws"), `#!/bin/bash
+case "$FAKE" in
+  exists) exit 0 ;;
+  404) echo "An error occurred (404) when calling the HeadObject operation: Not Found" >&2; exit 254 ;;
+  403) echo "An error occurred (403) when calling the HeadObject operation: Forbidden" >&2; exit 254 ;;
+  *) echo "Could not connect to the endpoint URL" >&2; exit 255 ;;
+esac
+`, { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "curl"), `#!/bin/bash
+out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && { out="$2"; shift; }; shift; done
+case "$FAKE" in
+  200) printf 'version: 0.1.11\nfiles: []\n' > "$out"; printf 200 ;;
+  200empty) printf '<html></html>' > "$out"; printf 200 ;;
+  404|403|503) printf 'x' > "$out"; printf "$FAKE" ;;
+  *) printf 000; exit 6 ;;
+esac
+`, { mode: 0o755 });
+    const sh = (body, fake) => cp.spawnSync("bash", ["-c", "set -eo pipefail\nBUCKET=b\n" + body], { encoding: "utf8", env: { ...process.env, PATH: bin + ":" + process.env.PATH, FAKE: fake } });
+    const absent = fn("absent"), live = fn("live_version");
+    t("workflow 有 absent() 與 live_version(),而且真的被用在覆寫檢查與線上版號", !!absent && !!live && /absent "\$PREFIX\/\$k" \|\|/.test(runs) && /live_version "\$url"; live="\$LIVE"/.test(runs) && !/head-object[^\n]*>\/dev\/null 2>&1; then/.test(runs) && !/curl[^\n]*latest\.yml[^\n]*\|\| true/.test(runs));
+    if (absent && live) {
+      const A = (fake) => sh(absent + 'if absent "desktop/win/Blave-Setup-0.1.12.exe"; then echo ABSENT; else echo PRESENT; fi', fake);
+      t("absent:存在 → PRESENT(拒絕覆寫);S3 回 404 → ABSENT", /PRESENT/.test(A("exists").stdout) && A("exists").status === 0 && /ABSENT/.test(A("404").stdout) && A("404").status === 0);
+      t("absent:403 / 連不上 → exit 1,不當成不存在", ["403", "net"].every((f) => { const r = A(f); return r.status === 1 && !/ABSENT|PRESENT/.test(r.stdout) && /::error::/.test(r.stdout); }));
+      const Lv = (fake) => sh(live + 'live_version "https://x.invalid/desktop/win"; echo "LIVE=[$LIVE]"', fake);
+      t("live_version:200 → 版號;404 → 空(第一次發)", /LIVE=\[0\.1\.11\]/.test(Lv("200").stdout) && /LIVE=\[\]/.test(Lv("404").stdout) && Lv("404").status === 0);
+      t("live_version:403 / 503 / 連不上 / 200 卻沒版號 → exit 1", ["403", "503", "000", "200empty"].every((f) => { const r = Lv(f); return r.status === 1 && !/LIVE=/.test(r.stdout) && /::error::/.test(r.stdout); }));
+    }
+    t("CI 閘門跑 check_parent_watch_peek.py(Windows 死結修正那支)", /check_parent_watch_peek\.py/.test(JSON.stringify(wf.jobs.test))); }
 
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

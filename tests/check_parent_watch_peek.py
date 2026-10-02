@@ -5,7 +5,8 @@ thread's blocking read(0) held).
 
   1. Logic, any OS (nt watch driven with a FIONREAD peek on a POSIX pipe):
      EOF is seen; data the app writes is drained and the watch keeps going;
-     while the pipe is open and empty no read() is ever in progress; a handle
+     while the pipe is open and empty no read() is ever in progress and it
+     sleeps between peeks (no busy loop); a handle
      that cannot be peeked falls back to the blocking read and still sees EOF;
      on a POSIX box the real peek reports "cannot peek" instead of raising.
   2. Windows only, the real thing: a child whose stdin is a pipe the parent
@@ -89,8 +90,14 @@ if os.name != "nt":
 
         r, w = os.pipe()
         box = []
+        peeks = [0]
+
+        def counting_peek(fd):
+            peeks[0] += 1
+            return posix_peek(fd)
+
         t = threading.Thread(target=lambda: box.append(
-            ld._wait_parent_gone_nt(4242, fd=r, wait_pid=block, peek=posix_peek)), daemon=True)
+            ld._wait_parent_gone_nt(4242, fd=r, wait_pid=block, peek=counting_peek)), daemon=True)
         spy.calls = 0
         t.start()
         samples = []
@@ -99,6 +106,10 @@ if os.name != "nt":
             samples.append(spy.inside)
         check(not box and spy.calls == 0 and max(samples) == 0,
               "[peek] pipe open and empty → still watching, no read() in progress, none made")
+        # PEEK_S between peeks: ~1/PEEK_S per second. A busy loop (the sleep dropped) does thousands
+        limit = int(1.0 / ld.PEEK_S) * 2 + 2
+        check(0 < peeks[0] <= limit,
+              f"[peek] pipe open and empty → it waits between peeks, no busy loop ({peeks[0]} peeks in ~1s, limit {limit})")
         os.write(w, b"x" * 100)
         time.sleep(ld.PEEK_S * 3)
         check(not box and spy.calls >= 1 and posix_peek(r) == 0,
