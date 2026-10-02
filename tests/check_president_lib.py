@@ -615,7 +615,10 @@ class FakeUnitrade:
 
     def login(self, url, user, pw, ca, ca_pw):
         FakeUnitrade.logins += 1
-        return LOGIN_SCRIPT.pop(0)
+        nxt = LOGIN_SCRIPT.pop(0)
+        if isinstance(nxt, BaseException):
+            raise nxt
+        return nxt
 
     def logout(self):
         self.out = True
@@ -658,6 +661,18 @@ e = raises(president_vault.LoginError, lambda: president_vault.login(creds2, pre
 check(e1.kind == "UNKNOWN" and e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n + 2,
       "ONE unclassifiable rejection blocks the next try (the real wrong-password text is unverified)", e)
 os.remove(president_vault.BLOCK)
+n = FakeUnitrade.logins
+LOGIN_SCRIPT[:] = [ValueError("unexpected reply layout")]
+e1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+e = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(e1 is not None and e1.kind == "UNKNOWN" and e is not None and e.kind == "BLOCKED"
+      and FakeUnitrade.logins == n + 1,
+      "ONE unclassifiable failure the SDK RAISED on blocks too (it may have been a wrong password)", (e1, e))
+os.remove(president_vault.BLOCK)
+LOGIN_SCRIPT[:] = [ConnectionError("Failed to establish a new connection")]
+e1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(e1 is not None and e1.kind == "HOST" and not os.path.exists(president_vault.BLOCK),
+      "a raised connection failure (never reached the broker) does not block", e1)
 LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤,請重新輸入!")]
 check(raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind
       == "PASSWORD", "a password answer is PASSWORD")

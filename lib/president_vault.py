@@ -30,9 +30,9 @@ every further login on this machine with the same credentials
 (state/president_login_block.json, keyed on their fingerprint — no secret is
 written) until `.env` changes or the user releases it (`python
 lib/president_worker.py --unblock`, only after they unlocked the account at the
-broker) — a release allows one login, and its failure blocks again; two
-unclassifiable server rejections block too, because an unknown text may be a
-wrong password. No login is attempted in the
+broker) — a release allows one login, and its failure blocks again; one
+unclassifiable rejection blocks too — whether the broker answered it or the SDK
+raised on it — because an unknown text may be a wrong password. No login is attempted in the
 broker's 05:30–05:50 login maintenance.
 
 Imported two ways like capital_vault: `import president_vault` from the
@@ -426,9 +426,10 @@ def login(creds, log_dir):
             raise LoginError("TIMEOUT")
         if "exc" in box:
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
-            if kind in AUTH_CLASSES:
-                _record(creds, kind)
-            elif released_try and kind == "HOST":
+            # an SDK that raised on an answer it could not parse may still have
+            # been refused a wrong password: same rule as a refusal it returned
+            _record(creds, kind)
+            if released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)
         resp = box["resp"]
