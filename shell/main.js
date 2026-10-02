@@ -207,6 +207,7 @@ const loadConnection = () => connStore().load();
 
 // ── 使用追蹤(telemetry.js:十八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
+const telemetryLive = () => app.isPackaged || process.env.BLAVE_TELEMETRY === "1";
 function tm() {
   if (!_tm) _tm = require("./telemetry").createTelemetry({
     dir: app.getPath("userData"), endpoint: `${API_BASE}/oauth/desktop/telemetry`,
@@ -214,7 +215,7 @@ function tm() {
     getToken: () => loadToken(),
     heartbeat: () => ({ live: tradeMaybeLive() ? "on" : "off" }),   // 每日在線心跳;live 同 updater 的 isTrading 判準
     // 開發版(npm start、測試用的 BLAVE_HOME)不送:不然每次開發重啟都在灌正式的漏斗。要實測送出設 BLAVE_TELEMETRY=1
-    post: (u, b) => (app.isPackaged || process.env.BLAVE_TELEMETRY === "1" ? postJSON(u, b) : Promise.resolve()),
+    post: (u, b) => (telemetryLive() ? postJSON(u, b) : Promise.resolve()),
   });
   return _tm;
 }
@@ -1973,9 +1974,10 @@ async function libraryDownload(strategyId) {
   const key = loadToken() ? loadDataKey() : null;
   const anon = async () => {
     if (!libAnonOk(strategyId)) return null;
-    // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數
+    // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數。
+    // 開發版 / e2e(每次新的 BLAVE_HOME 就是新的 install_id)同 tm 的 post 那道閘:不帶,不然每跑一次就灌一個正式的安裝數
     let h = {};
-    try { if (tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
+    try { if (telemetryLive() && tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
     try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
   };
   let r = null;
