@@ -33,10 +33,17 @@ const NOTARIZE = !!(process.env.APPLE_API_KEY && process.env.APPLE_API_KEY_ID &&
 if (T.mac && RELEASE && !NOTARIZE && process.env.BLAVE_SKIP_NOTARIZE !== "1")
   throw new Error("release 要設 APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER(只簽不公證:BLAVE_SKIP_NOTARIZE=1)");
 // Windows:publisherName 是憑證的 CN,electron-updater 拿它驗更新包的 Authenticode——它是 null 時 NsisUpdater 整個跳過驗章,
-// 只剩 yml 的 sha512 + HTTPS。所以 release 一定要給;沒憑證的階段要明說。
+// 只剩 yml 的 sha512 + HTTPS。所以 release 一定要給;沒憑證的階段要明說(這段期間靠 updatesig.js 的離線簽章擋換包)。
 const WIN_PUBLISHER = process.env.BLAVE_WIN_PUBLISHER || null;
 if (T.win && RELEASE && !WIN_PUBLISHER && process.env.BLAVE_WIN_UNSIGNED !== "1")
   throw new Error("release(win)要設 BLAVE_WIN_PUBLISHER(簽章憑證的 CN;刻意不簽:BLAVE_WIN_UNSIGNED=1)");
+
+// 有更新來源的 Windows 包一定要內嵌更新公鑰(update-keys.json,tools/sign-update.js keygen 寫的):沒有的話 app 拒收之後每一版,
+// 已裝的人只能手動重裝。只看 UPDATE_URL 不看 RELEASE:不帶更新來源的 pack:win 照打
+if (T.win && UPDATE_URL) {
+  const why = require("./updatesig").keysProblem(JSON.parse(fs.readFileSync(path.join(__dirname, "update-keys.json"), "utf8")));
+  if (why) throw new Error(`Windows 包帶了更新來源,但 update-keys.json 不能用(${why}):先跑 node tools/sign-update.js keygen 並 commit 公鑰`);
+}
 
 const WIN_ONLY = T.win && !T.mac;   // extraMetadata.name 的閘:同一次同時打 mac 就不蓋(mac 不能碰)
 const REPO = path.join(__dirname, "..");
@@ -65,7 +72,7 @@ module.exports = {
   extraMetadata: RELEASE || UPDATE_URL || WIN_ONLY ? { ...(RELEASE ? { blaveRelease: true } : {}), ...(UPDATE_URL ? { blaveUpdateUrl: UPDATE_URL } : {}), ...(WIN_ONLY ? { name: "Blave" } : {}) } : undefined,
   publish: UPDATE_URL ? [{ provider: "generic", url: UPDATE_URL }] : null,   // 只為了產生 latest-mac.yml / latest.yml;上傳是手動的(--publish never)
   npmRebuild: false,
-  files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "cloud.js", "cloudcmd.js", "cloud_capital.js", "reportshare.js", "reportpdf.js", "print-preload.js", "minversion.js", "official-known.json", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "agentrules.js", "mcpcode.js", "balance.js", "enginesetup.js", "browser/**/*", "!browser/devverify.*", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
+  files: ["main.js", "daemon.js", "telemetry.js", "updater.js", "updatesig.js", "update-keys.json", "cloud.js", "cloudcmd.js", "cloud_capital.js", "reportshare.js", "reportpdf.js", "print-preload.js", "minversion.js", "official-known.json", "traytext.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "agentrules.js", "mcpcode.js", "balance.js", "enginesetup.js", "browser/**/*", "!browser/devverify.*", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   // 隨包 Python 依目標平台切(tools/fetch-python.sh 三顆都抓):平台區塊的 extraResources 會接在這份後面
   extraResources: [
     { from: "..", to: "agent", filter: tracked },

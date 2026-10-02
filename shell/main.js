@@ -257,6 +257,8 @@ function updater() {
     autoUpdater: feedUrl ? require("electron-updater").autoUpdater : null,
     // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭);Windows 是 NSIS,沒有原生這一層 → 不給,electron-updater 下載完就算 ready
     nativeUpdater: feedUrl && process.platform === "darwin" ? require("electron").autoUpdater : null,
+    // Windows 包沒有 Authenticode:更新只收離線私鑰簽過的 yml(updatesig.js)。mac 由 Squirrel 驗 Developer ID,不走這條
+    signed: feedUrl && process.platform === "win32" ? { keys: require("./update-keys.json") } : null,
     feedUrl, currentVersion: app.getVersion(),
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
     onState: (st) => {

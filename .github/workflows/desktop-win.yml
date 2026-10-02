@@ -1,9 +1,12 @@
-# Blave 電腦版 Windows x64(NSIS)建置與發佈。mac 版走 shell/tools/release.js(本機打包機);Windows 沒有 release.js 那條,
-# 整條在這裡:閘門測試 → 打包(未簽章)→ 產物驗證 → artifact → S3。S3 的 key 佈局照 release.js:
-#   desktop/<track>/Blave-Setup-<ver>.exe(帶版號,immutable,已存在就拒絕)、.exe.blockmap(差量更新用)、
-#   desktop/<track>/latest.yml(最後傳,傳上去那一刻對外)、desktop/<track>/Blave-Setup.exe(固定檔名,給下載頁)。
-# 軌道:win-test(dispatch 預設)/ win(正式;tag desktop-v* 推上來一律正式)。包裡的更新網址 = https://download.blave.org/desktop/<track>。
-# 簽章(SignPath)那一步先留骨架,審核過再開;現在的包是未簽章的(BLAVE_WIN_UNSIGNED=1),SmartScreen 會擋一次。
+# Blave 電腦版 Windows x64(NSIS)建置與發佈。mac 版走 shell/tools/release.js(本機打包機)。
+# 這裡:閘門測試 → 打包(未簽章,沒有任何金鑰)→ 產物驗證 → artifact → stage(環境審核 + OIDC)→ 停。
+# **這個 workflow 不會讓新版對外**:更新只收離線私鑰簽過的 latest.yml(shell/updatesig.js,稽核 2026-10-02 P1-1),
+# 私鑰只在 Wei 的 Mac 上,由 shell/tools/sign-update.js 簽好、傳成 latest.yml 才算發版。S3 的 key 佈局:
+#   desktop/<track>/Blave-Setup-<ver>.exe(帶版號,immutable,已存在就拒絕)、.exe.blockmap(差量更新用)  ← stage job
+#   desktop/<track>/staging/<ver>/latest.yml(還沒簽,app 不讀這裡)                                        ← stage job
+#   desktop/<track>/latest.yml(簽好的,傳上去那一刻對外)、desktop/<track>/Blave-Setup.exe(下載頁固定檔名) ← sign-update.js
+# 軌道:win-test(dispatch 預設)/ win(正式)。包裡的更新網址 = https://download.blave.org/desktop/<track>。
+# Authenticode(SignPath)那一步先留骨架,審核過再開;現在的包是未簽章的(BLAVE_WIN_UNSIGNED=1),SmartScreen 會擋一次。
 name: desktop-win
 
 on:
@@ -81,10 +84,17 @@ jobs:
           done
           exit $red
 
+  # 這個 job 沒有任何金鑰(npm ci 的相依在這裡跑,postinstall 寫 $GITHUB_ENV 也偷不到東西),產物只交給 artifact
   build:
     needs: test
     runs-on: windows-latest
     timeout-minutes: 45
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      url: ${{ steps.meta.outputs.url }}
+      prefix: ${{ steps.meta.outputs.prefix }}
+      sha512: ${{ steps.stage.outputs.sha512 }}
+      artifact: blave-desktop-win-${{ steps.meta.outputs.version }}-${{ env.TRACK }}
     steps:
       # Windows runner 的 git 預設 autocrlf=true:checkout 會把隨包的 lib/ runtime/ 全轉成 CRLF(runtime CHANGELOG 記過這個坑),
       # 也會讓下面 sed 的 $ 錨點對不上。要在 checkout 之前關
@@ -237,27 +247,45 @@ jobs:
       # ────────────────────────────────────────────────────────────────────────────────────────────────────
 
       # 正式軌原本只收 SignPath 簽過的包(稽核 09-26 M3③、S-1:未簽章的 app.asar / Blave.exe 在 per-user 安裝目錄裡誰都換得掉)。
-      # 不等 SignPath 審核,未簽章包也發正式軌;風險已接受。SignPath 接上後,照上面那段把簽章步驟打開即可。
+      # 不等 SignPath 審核,未簽章包也發正式軌;本機竄改的風險已接受。更新來源被換掉另由離線簽章擋(shell/updatesig.js)。
 
-      # 只有這裡以後看得到 AWS 憑證(action 會把它們 export 到之後的 step 環境,所以上傳放最後、後面不再有 step)
-      - name: Configure AWS credentials
+  # 只有這個 job 拿得到 AWS:環境 desktop-release 要 Wei 按核准才會開始;OIDC 短效憑證,role 只能寫 desktop/win*/ 底下
+  # 帶版號的檔與 staging/(寫不到 latest.yml、Blave-Setup.exe)。不 checkout、不跑 npm:只有 artifact + aws CLI。
+  stage:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: desktop-release
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: upload
+
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.BLAVE_RELEASE_AWS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.BLAVE_RELEASE_AWS_SECRET }}
+          role-to-assume: ${{ vars.BLAVE_RELEASE_ROLE_ARN }}
           aws-region: ${{ secrets.BLAVE_RELEASE_AWS_REGION }}
 
-      # 順序就是安全性(同 release.js 的 uploadPlan / publish):帶版號的檔先傳(已存在就拒絕——immutable 快取一年,覆寫後 CDN 邊緣還是舊檔),
-      # 從正式網址整個抓回來比 sha512,才傳 latest.yml(這一刻起對外);之後的固定檔名失敗只警告,不能報成發版失敗。
-      - name: Upload to S3
+      # 順序就是安全性:帶版號的檔先查(已存在就拒絕——immutable 快取一年,覆寫後 CDN 邊緣還是舊檔)再傳,
+      # 從正式網址整個抓回來比 sha512,沒簽的 yml 最後放進 staging/。對外的 latest.yml 這裡碰不到
+      - name: Upload versioned files and unsigned manifest
         env:
           BUCKET: ${{ secrets.BLAVE_RELEASE_BUCKET }}
-          PREFIX: ${{ steps.meta.outputs.prefix }}
-          URL: ${{ steps.meta.outputs.url }}
-          VER: ${{ steps.meta.outputs.version }}
-          SHA: ${{ steps.stage.outputs.sha512 }}
+          PREFIX: ${{ needs.build.outputs.prefix }}
+          URL: ${{ needs.build.outputs.url }}
+          VER: ${{ needs.build.outputs.version }}
+          SHA: ${{ needs.build.outputs.sha512 }}
         run: |
-          up=shell/dist/upload; exe="Blave-Setup-$VER.exe"
+          up=upload; exe="Blave-Setup-$VER.exe"
+          sha512() { openssl dgst -sha512 -binary "$1" | base64 -w0; }
+          [ "$(sha512 "$up/$exe")" = "$SHA" ] || { echo "::error::artifact 裡的 $exe 跟 build job 算的 sha512 不一樣"; exit 1; }
+          grep -qF "$SHA" "$up/latest.yml" || { echo "::error::artifact 裡的 latest.yml 跟 $exe 對不上"; exit 1; }
+          if grep -q '^blaveSignature:' "$up/latest.yml"; then echo "::error::CI 產的 latest.yml 不該帶簽章"; exit 1; fi
           IMM="public, max-age=31536000, immutable"
           for k in "$exe" "$exe.blockmap"; do
             if aws s3api head-object --bucket "$BUCKET" --key "$PREFIX/$k" >/dev/null 2>&1; then
@@ -267,10 +295,7 @@ jobs:
           aws s3 cp "$up/$exe" "s3://$BUCKET/$PREFIX/$exe" --cache-control "$IMM" --only-show-errors
           aws s3 cp "$up/$exe.blockmap" "s3://$BUCKET/$PREFIX/$exe.blockmap" --cache-control "$IMM" --only-show-errors
           curl -fsSL --retry 3 -o "$up/.roundtrip.exe" "$URL/$exe"
-          got="$(node -e 'console.log(require("crypto").createHash("sha512").update(require("fs").readFileSync(process.argv[1])).digest("base64"))' "$up/.roundtrip.exe")"
-          [ "$got" = "$SHA" ] || { echo "::error::正式網址上的 $exe 跟本機的不一樣(sha512 不符)。latest.yml 還沒換,線上不受影響"; exit 1; }
-          aws s3 cp "$up/latest.yml" "s3://$BUCKET/$PREFIX/latest.yml" --cache-control no-cache --only-show-errors --content-type text/yaml
-          echo "✓ $PREFIX/latest.yml 已換——$VER 從這一刻起對外生效($URL/)"
-          aws s3 cp "$up/$exe" "s3://$BUCKET/$PREFIX/Blave-Setup.exe" --cache-control no-cache --only-show-errors \
-            || echo "::warning::固定檔名 $PREFIX/Blave-Setup.exe 沒傳成(新版已對外,不要還原版號;手動補傳這一個檔即可)"
-          echo "::notice::$VER 已放上 $PREFIX/(更新網址 $URL);接下來不自動做:commit / tag / GitHub Release"
+          [ "$(sha512 "$up/.roundtrip.exe")" = "$SHA" ] || { echo "::error::正式網址上的 $exe 跟 artifact 的不一樣(sha512 不符)"; exit 1; }
+          aws s3 cp "$up/latest.yml" "s3://$BUCKET/$PREFIX/staging/$VER/latest.yml" --cache-control no-cache --only-show-errors --content-type text/yaml
+          track="${PREFIX#desktop/}"
+          echo "::notice::$VER 已放上 $PREFIX/,**還沒對外**。在 Mac 上跑:cd shell && node tools/sign-update.js $VER --track $track(先 --dry-run 看一次)"

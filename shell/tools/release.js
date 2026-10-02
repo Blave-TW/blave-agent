@@ -262,4 +262,4 @@ async function main() {
   }
 }
 if (require.main === module) main().catch((e) => die(e && e.stack || String(e)));
-module.exports = { uploadPlan, publish, newer, semver, mayRelease, resolveTrack, foreignFilesInApps, lockDecision };
+module.exports = { uploadPlan, publish, newer, semver, mayRelease, resolveTrack, foreignFilesInApps, lockDecision, loadEnvFile, DEFAULTS };

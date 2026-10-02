@@ -9,6 +9,7 @@
 //   - 沒有更新來源(開發版、沒設 BLAVE_UPDATE_URL 打出來的包)= 整個關掉,畫面只顯示版號。
 //
 // 這個檔不 require electron / electron-updater:由 main.js 注入,node 測試才跑得動。
+const sig = require("./updatesig");
 const CHECK_EVERY_MS = 4 * 3600 * 1000;
 const FIRST_CHECK_MS = 30 * 1000;   // 啟動後先讓 app 把該做的做完
 const FAIL_STAGE = { checking: "check", downloading: "download", staging: "staging", ready: "install", blocked: "install" };
@@ -22,11 +23,14 @@ const FAIL_STAGE = { checking: "check", downloading: "download", staging: "stagi
    = 唯讀的 translocation、沒簽章的包、磁碟滿、/Applications 沒寫入權)。所以要聽 electron 原生 autoUpdater 的
    update-downloaded 才算 ready;在那之後的 error 是安裝失敗,要講出來、也要能再試,不能吞掉。
    **Windows(NSIS)沒有 Squirrel 那一層**:electron-updater 自己下載 Setup.exe、驗 sha512 與簽章,它的 update-downloaded 就是
-   「已暫存」;main.js 在 win32 不給 nativeUpdater(null),這裡就把那個事件直接當 ready——不然 phase 永遠卡在 staging。 */
+   「已暫存」;main.js 在 win32 不給 nativeUpdater(null),這裡就把那個事件直接當 ready——不然 phase 永遠卡在 staging。
+   opts.signed = { keys }(只有 win32 給):包沒有 Authenticode,electron-updater 只比 yml 的 sha512,所以另外要求 yml 帶
+   離線私鑰的簽章(updatesig.js)。驗在 electron-updater 下載完、暫存之前那一步(verifySignature),不過就不暫存、不裝。 */
 function createUpdater(opts) {
   const au = opts.autoUpdater, log = opts.log || (() => {});
   const timer = opts.setTimer || ((fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); return t; });
-  let state = { phase: opts.feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false, pushed = null;
+  let feedUrl = opts.feedUrl || null;
+  let state = { phase: feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false, pushed = null;
   const push = () => { const ps = publicState(); pushed = ps.phase; try { opts.onState(ps); } catch (_) { /* 畫面壞掉不該影響更新 */ } };
   const set = (patch) => { state = { ...state, ...patch }; push(); };
   // 失敗在哪一步(埋點 update_failed):階段取自出錯那一刻的 phase,不是錯誤訊息
@@ -35,18 +39,33 @@ function createUpdater(opts) {
   const publicState = () => ({ ...state, current: opts.currentVersion, phase: state.phase === "ready" || state.phase === "blocked" ? (opts.isTrading() ? "blocked" : "ready") : state.phase });
 
   function start() {
-    if (started || !opts.feedUrl) return false;
+    if (started || !feedUrl) return false;
     started = true;
+    if (opts.signed) {
+      const why = sig.keysProblem(opts.signed.keys) || (typeof au.verifySignature !== "function" ? "electron-updater has no verifySignature hook" : null);
+      // 驗不了就整個不更新(畫面只顯示版號),不退回只比 sha512
+      if (why) { log("updates disabled: " + why); feedUrl = null; set({ phase: "off" }); return false; }
+      requireSignature(opts.signed.keys);
+    }
     au.autoDownload = true;
     au.autoInstallOnAppQuit = true;      // 結束 app = 已經停止下單,這時裝是安全的
     au.allowDowngrade = false;
     au.allowPrerelease = false;
-    au.setFeedURL({ provider: "generic", url: opts.feedUrl });
+    au.setFeedURL({ provider: "generic", url: feedUrl });
     au.on("checking-for-update", () => set({ phase: "checking", error: null }));
     au.on("update-available", (i) => set({ phase: "downloading", version: i && i.version, percent: 0 }));
     au.on("update-not-available", () => set({ phase: "idle", version: null, checkedAt: Date.now() }));   // 「已是最新版 · {t} 檢查過」用的時間
     au.on("download-progress", (p) => set({ phase: "downloading", percent: p && Number.isFinite(p.percent) ? Math.floor(p.percent) : null }));
-    au.on("update-downloaded", (i) => set({ phase: opts.nativeUpdater ? "staging" : "ready", version: i && i.version, percent: 100 }));
+    au.on("update-downloaded", (i) => {
+      if (opts.signed) {
+        // 快取裡已經有同一個 sha512 的檔時,electron-updater 不重新下載、也就不走 verifySignature:在這裡再驗一次 yml。
+        // 必須同步設 autoInstallOnAppQuit——發完這個事件它緊接著掛「結束時安裝」,看的就是這一刻的值
+        const m = sig.verifyManifest(i, { keys: opts.signed.keys, feed: feedUrl, currentVersion: opts.currentVersion });
+        au.autoInstallOnAppQuit = !m.error;
+        if (m.error) { log("downloaded update rejected: " + m.error); fail("download"); set({ phase: "error", error: "UPDATE_FAILED" }); return; }
+      }
+      set({ phase: opts.nativeUpdater ? "staging" : "ready", version: i && i.version, percent: 100 });
+    });
     if (opts.nativeUpdater) opts.nativeUpdater.on("update-downloaded", () => set({ phase: "ready", percent: 100 }));
     au.on("error", (e) => {
       log("update error: " + (e && e.message));
@@ -58,12 +77,34 @@ function createUpdater(opts) {
     setTimeout(() => check(), FIRST_CHECK_MS).unref?.();
     return true;
   }
+  /* electron-updater 在 doDownloadUpdate 下載完(含差量組裝)、改名進快取之前叫 this.verifySignature(暫存檔):回字串 = 刪檔、
+     發 ERR_UPDATER_INVALID_SIGNATURE。公開的 verifyUpdateCodeSignature 只在 app-update.yml 有 publisherName 時才會被叫到,
+     未簽章包沒有,所以掛在這一層;原本那支(Authenticode)最後照叫,SignPath 接上後兩道都在。
+     electron-updater 釘死 6.8.9,tests/check_shell_updatesig.js 會核對這個呼叫點還在。 */
+  function requireSignature(keys) {
+    let pending = null;
+    const authenticode = au.verifySignature;
+    au.disableWebInstaller = true;
+    au.on("update-available", (i) => { pending = i; });   // 它先發這個才開始下載,拿到的就是等一下要下載的那份 yml
+    au.verifySignature = async (file) => {
+      try {
+        const m = sig.verifyManifest(pending, { keys, feed: feedUrl, currentVersion: opts.currentVersion });
+        if (m.error) { log("update rejected: " + m.error); return m.error; }
+        if ((await sig.sha512File(file)) !== m.sha512) { log("update rejected: installer sha512 differs from the signed manifest"); return "installer sha512 differs from the signed manifest"; }
+        return await authenticode.call(au, file);
+      } catch (e) {
+        log("update rejected: verification failed: " + (e && e.message));
+        return "update verification failed";
+      }
+    };
+  }
   function check() {
-    if (!opts.feedUrl || ["checking", "downloading", "staging", "ready", "blocked"].indexOf(state.phase) >= 0) return false;
+    if (!feedUrl || ["checking", "downloading", "staging", "ready", "blocked"].indexOf(state.phase) >= 0) return false;
     // 按下去那一刻就講「檢查中」:electron-updater 的 checking-for-update 事件要等它連上 feed 才發,那之前畫面還停在舊的「已是最新版」
     set({ phase: "checking", error: null });
     // electron-updater 查 feed 失敗是先 emit error 再 reject:error 那支記過了(phase 已是 error)就不再記一次
-    Promise.resolve().then(() => au.checkForUpdates()).catch((e) => { log("check failed: " + (e && e.message)); if (state.phase !== "error") fail("check"); set({ phase: "error", error: "CHECK_FAILED" }); });
+    // 下載失敗(含驗章不過)已經由 error 事件處理過;downloadPromise 的 reject 接住,不留成 unhandled rejection
+    Promise.resolve().then(() => au.checkForUpdates()).then((r) => { if (r && r.downloadPromise) r.downloadPromise.catch(() => {}); }).catch((e) => { log("check failed: " + (e && e.message)); if (state.phase !== "error") fail("check"); set({ phase: "error", error: "CHECK_FAILED" }); });
     return true;
   }
   /* ready ↔ blocked 只跟著下單狀態變,沒有事件會 set():選單列 5 秒那一輪叫這支,phase 跟上次推給畫面的不同才推(暫停後「…」拿掉、
