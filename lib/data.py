@@ -1536,9 +1536,51 @@ def fetch_open_interest_coin(symbol, headers):
         line), total_exchanges[], price[] + price_symbol / price_multiplier,
         provisional_from
       symbol, token_id, updated_at
-    `symbol` accepts BTC / BTCUSDT / btc. 404 → None; 503 propagates."""
+    `symbol` accepts BTC / BTCUSDT / btc. 404 → None; 503 propagates.
+    This is the last 7 days only; for a backtest-length series use
+    fetch_open_interest_history (one exchange, coin units — a different basis)."""
     return _raw_snapshot('oi_imbalance/get_coin', headers,
                          {'symbol': symbol}, allow_404=True)
+
+
+# First 5-minute bucket per exchange. The cache asks for whole months (from the 1st), and a
+# window starting before the exchange's history is a 400, so every request is moved up to this.
+# Move these earlier if the platform backfills deeper — anything before them is silently dropped.
+_OI_HISTORY_START = {'binance': '2021-12-01', 'bybit': '2025-08-21', 'gate': '2026-03-28'}
+
+
+def fetch_open_interest_history(symbol, interval, start, end, headers, exchange='binance'):
+    """未平倉量歷史 Open interest history (GET /oi_imbalance/get_history) — ONE coin on ONE
+    exchange, backtestable. Returns DataFrame with 'alpha' column, UTC index (bucket start).
+    alpha = **one-sided open interest in COINS, not USD**; multiplied contracts are already
+    converted back to coins (1000PEPE → PEPE count). Same basis as the Studio dashboard 未平倉量
+    card. Each bucket is the LAST reading of its period (a stock level, never summed); the
+    current bucket (today's, on '1d') keeps moving until its period closes, as with klines.
+    exchange: 'binance' (default) / 'bybit' / 'gate'. History starts (5-minute resolution):
+    binance 2021-12-01 (or the coin's listing), bybit 2025-08-21, gate 2026-03-28 — an earlier
+    `start` is moved up to that day, so read df.index[0] for the real first bucket. Only
+    currently listed contracts; a delisted coin, or one this exchange (or Binance perps) does
+    not list, raises requests.HTTPError 404 "<TOKEN> is not a collected symbol on <exchange>".
+    interval: min / h / d units, minimum 5min ('5min', '1h', '4h', '1d'); '1w' is a 400.
+    USD OI: alpha × the price of ONE coin. On a multiplied contract fetch_kline's close is per
+    contract unit (per 1000 coins for 1000PEPEUSDT), so divide it by the multiplier first;
+    for BTC-style contracts alpha × close ≈ USD OI.
+    NOT the same number as fetch_open_interest_table / _coin (5 exchanges summed, USD) and NOT
+    the OI 失衡 indicator. 400 / 404 raise at once (body in the message); 503 is retried, then
+    raises. Cached monthly; an empty or partial past month is re-checked after 24 h."""
+    # 'Gate' would miss its floor and get a cache dir of its own
+    exchange = exchange.lower()
+    params = {'symbol': symbol, 'period': interval}
+    # default omitted, as in fetch_funding_rate
+    if exchange != 'binance':
+        params['oi_exchange'] = exchange
+    floor = _OI_HISTORY_START.get(exchange)
+    endpoint = 'oi_imbalance/get_history'
+    return _extend_cache_monthly(
+        'oi_history', params,
+        lambda s, e: _fetch_alpha_raw(endpoint, params, headers, max(s, floor) if floor else s, e),
+        start, end, empty_marker_ttl_hours=24,
+    )
 
 
 def fetch_liquidation_map(symbol, headers):
