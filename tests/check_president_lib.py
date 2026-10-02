@@ -169,7 +169,20 @@ def use(script, issend=True):
         def __exit__(self, *a):
             api.logout()
     op._session = lambda env: _Ctx()
+    fresh()
     return api
+
+
+def fresh():
+    """The worker read again after every send so far (positions unchanged) — an
+    entry needs a caught-up snapshot to pick its month."""
+    try:
+        cur = json.load(open(account_president._SNAPSHOT))
+    except (OSError, ValueError):
+        cur = {"ok": True, "equity": 100000.0, "positions": []}
+    now = __import__("time").time()
+    cur.update(read_at=now, query_started_at=now + president_vault.ORDER_SETTLE_S)
+    json.dump(cur, open(account_president._SNAPSHOT, "w"))
 
 
 op._TAGS_PATH = os.path.join(TMP, "state", "tags.json")
@@ -411,9 +424,37 @@ for when in (T(2026, 10, 20, 15, 0), T(2026, 10, 21, 2, 0), T(2026, 10, 21, 9, 0
           f"window {when:%m-%d %H:%M} holding J6 → the addition goes to J6 (never two months)")
 check(op.entry_contract("TXF", [], T(2026, 10, 20, 15, 0)) == "TXFK6", "window start, flat → K6")
 check(op.entry_contract("MXF", ROWS_J, T(2026, 10, 21, 9, 0)) == "MXFK6", "another root's J6 does not count")
-check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 21, 13, 30)) == "TXFK6"
-      and op.entry_contract("TXF", ROWS_J, T(2026, 10, 20, 14, 59)) == "TXFJ6",
-      "outside the day-before-15:00 → 13:30 window the plain rule applies")
+check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 22, 10, 0)) == "TXFJ6",
+      "holiday-postponed settlement: J6 still held after the computed roll → still added to J6, "
+      "not K6 beside it (the broker list decides whether it still trades)")
+check(op.entry_contract("TXF", [{"root": "TXF", "productid": "TXFK6", "net": -1}], T(2026, 10, 1, 10, 0))
+      == "TXFK6", "a held far month is added to, not the near month beside it")
+check(raises(op.PresidentError, lambda: op.entry_contract(
+    "TXF", ROWS_J + [{"root": "TXF", "productid": "TXFK6", "net": 1}], T(2026, 10, 21, 9, 0))) is not None,
+      "two months already held → no entry")
+
+# postponed settlement through the order path: listed → trades, delisted → refused
+snapshot([{"root": "TMF", "productid": "TMFA0", "net": 1}])
+api = use([ACK])
+NOW_LIST.append("TMFA0")
+op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=0.3)
+check(api.sent[-1].productid == "TMFA0", "held month still in the broker's list → the addition goes there",
+      vars(api.sent[-1]))
+NOW_LIST.remove("TMFA0")
+api = use([ACK])
+e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
+check(e is not None and "TMFA0" in str(e) and not api.sent,
+      "held month the broker no longer lists → refused, nothing sent", e)
+snapshot([])
+
+# a send marker that cannot be written stops the order
+real_path = op.LAST_ORDER_PATH
+op.LAST_ORDER_PATH = os.path.join(TMP, "no-such-dir-file", "x")
+open(os.path.join(TMP, "no-such-dir-file"), "w").close()  # a file where the directory should be
+api = use([ACK])
+e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
+check(e is not None and "marker" in str(e) and not api.sent, "marker write fails → nothing sent", e)
+op.LAST_ORDER_PATH = real_path
 
 # ── 9. two processes closing at once: only one passes ────────────────────────
 import subprocess  # noqa: E402
@@ -619,6 +660,30 @@ check(president_vault.unblock() == "released", "new credentials failing → a ne
 LOGIN_SCRIPT[:] = [Resp(ok=True, error="")]
 president_vault.login(creds3, president_worker.SDK_LOG_DIR).logout()
 
+# a released try that times out is spent (the broker may have checked the password)
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
+raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
+president_vault.unblock()
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="Timeout")]
+got = raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
+n = FakeUnitrade.logins
+got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds3, president_worker.SDK_LOG_DIR))
+check(got.kind == "TIMEOUT" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n,
+      "a TIMEOUT on the released try is not given back")
+os.remove(president_vault.BLOCK)
+
+# the certificate is fingerprinted by its bytes: equivalent path spellings are one certificate
+pfx = os.path.join(TMP, "Cert.pfx")
+open(pfx, "wb").write(b"pfx-bytes-1")
+a1 = dict(creds3, ca_path=pfx)
+for alias in (pfx.replace("Cert.pfx", "./Cert.pfx"), os.path.relpath(pfx), pfx + ""):
+    check(president_vault.fingerprint(dict(a1, ca_path=alias)) == president_vault.fingerprint(a1),
+          f"same certificate via {alias!r} → same fingerprint")
+open(pfx, "wb").write(b"pfx-bytes-renewed")
+fp_new = president_vault.fingerprint(a1)
+open(pfx, "wb").write(b"pfx-bytes-1")
+check(fp_new != president_vault.fingerprint(a1), "a renewed certificate (new bytes) is a new fingerprint")
+
 # ── 7. reconciler block: split close / entry, never open behind an unconfirmed close ──
 os.makedirs("manager", exist_ok=True)
 json.dump({"exchanges": {"s1": "president"}}, open("manager/portfolio_config.json", "w"))
@@ -692,8 +757,10 @@ try:
     snapshot([])
     r = reconciler.place_order("TMF", 1, exchange="president")
     errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
-    check(r["status"] == "unknown" and errs[-1].get("kind") == "order_status_unknown" and "0099" in errs[-1]["error"],
-          "an unknown status reaches the reconciler's result and order_errors (not folded into 'sent')", r)
+    check(r["status"] == "unknown" and not any(e.get("kind") == "order_status_unknown" for e in errs)
+          and len(errs) == n_err,
+          "an unknown status stays 'unknown' in the result but never reaches order_errors "
+          "(every row there is a P1 order_error on the platform)", r)
     op.place_futures_market_order = fake_place
     json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],

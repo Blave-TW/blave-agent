@@ -538,8 +538,8 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         try:
             legs.append(order_president.place_futures_market_order({}, sym, action, opening, 'entry'))
         except order_president.EntryDeferred as e:
-            # settlement window, snapshot not caught up with the close: the entry
-            # picks its month next round — scheduled, not an error, nothing sent
+            # snapshot not caught up with the close: the entry picks its month
+            # next round — scheduled, not an error, nothing sent
             logging.info(f"[reconciler/president] {sym}: entry of {opening} deferred — {e}")
             deferred = opening
             if not legs:
@@ -557,12 +557,13 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         return False
     unknown = [l for l in legs if l.get('status') == 'unknown']
     if unknown:
-        # the broker answered a code the SDK does not define: nothing is resent and
-        # the next round reads the real position — but the user must be able to see it
-        from lib.portfolio import _record_order_error
-        _record_order_error(sym, venue_traits.PRESIDENT,
-                            f"統一回報未知狀態碼 {unknown[-1].get('ack')}(未重送;下一輪依實際部位對帳)",
-                            {"kind": "order_status_unknown"})
+        # a code the SDK does not define: nothing is resent, the next round reads the
+        # real position. P3 (log + the lib's order_unknown_status audit) on purpose —
+        # every order_errors row is a P1 order_error on the platform today; making
+        # this P2 needs api to route the kind and notifications.md to rank it first.
+        logging.warning(f"[reconciler/president] {sym}: broker status {unknown[-1].get('ack')!r} "
+                        f"not defined by the SDK — not resent; next round reconciles on the "
+                        f"real position")
     qty = sum(float(l.get('fill_qty') or 0) for l in legs)
     avg = (sum(float(l.get('fill_qty') or 0) * float(l.get('avg_fill_price') or 0) for l in legs) / qty
            if qty else 0.0)

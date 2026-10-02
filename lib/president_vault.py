@@ -197,9 +197,24 @@ def resolve(_ignored=None):
 
 # ── login block (shared by every caller on this machine) ─────────────────────
 
+def _cert_identity(ca_path):
+    """The certificate as the fingerprint sees it: a hash of the .pfx file's
+    bytes, so `C:\\x.pfx`, `c:\\x.pfx`, a relative path or an 8.3 short name
+    are one certificate (rewriting .env with an equivalent spelling must not
+    look like new credentials and buy a fresh wrong-password try), while a
+    renewed certificate (new bytes) is a real change. Unreadable file → its
+    normalized absolute path (the SDK will fail on it anyway)."""
+    try:
+        with open(ca_path, "rb") as f:
+            return "sha256:" + hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        return "path:" + os.path.normcase(os.path.abspath(ca_path or ""))
+
+
 def fingerprint(creds):
-    raw = "\0".join(creds.get(k) or "" for k in ("account", "password", "ca_path", "ca_password"))
-    return hashlib.sha256(f"president-login-v1\0{raw}".encode()).hexdigest()[:16]
+    raw = "\0".join([creds.get("account") or "", creds.get("password") or "",
+                      _cert_identity(creds.get("ca_path")), creds.get("ca_password") or ""])
+    return hashlib.sha256(f"president-login-v2\0{raw}".encode()).hexdigest()[:16]
 
 
 def _read_block():
@@ -249,8 +264,9 @@ def blocked(creds):
 
 
 def _give_back_try():
-    """The released try ended on the network (HOST / TIMEOUT), not on the
-    password: it did not count at the broker, so it is not spent here either."""
+    """The released try never reached the broker (HOST: no connection), so it
+    did not count there and is not spent here. A TIMEOUT is not given back —
+    the broker may have checked the password before going quiet."""
     b = _read_block()
     if b.get("fp"):
         try:
@@ -367,21 +383,19 @@ def login(creds, log_dir):
     t.join(LOGIN_TIMEOUT_S)
     try:
         if t.is_alive():
-            if released_try:
-                _give_back_try()
             raise LoginError("TIMEOUT")
         if "exc" in box:
             kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
             if kind in AUTH_CLASSES:
                 _record(creds, kind)
-            elif released_try and kind in ("HOST", "TIMEOUT"):
+            elif released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)
         resp = box["resp"]
         if not resp.ok:
             kind = classify(resp.error)
             _record(creds, kind)
-            if released_try and kind in ("HOST", "TIMEOUT"):
+            if released_try and kind == "HOST":
                 _give_back_try()
             raise LoginError(kind)
         if not creds["live"] and api.test_mode is not True:

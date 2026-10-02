@@ -123,8 +123,11 @@ to retry. Two ways out, both the user's call:
   exactly **one** login; if it fails on the password or certificate, the block is back at once.
   **Each block can be released once** — a second `--unblock` answers "refused"; after that only
   changed credentials in `.env` lift it (and if those fail too, that is a new block with its own
-  one release). A released try that ends on the network (`HOST` / `TIMEOUT`) never reached the
-  password check, so it is given back, not spent. Never run it on your own initiative — every
+  one release). A released try that could not connect (`HOST`) never reached the password check,
+  so it is given back; a `TIMEOUT` is spent (the broker may have checked the password before going
+  quiet). The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
+  `president_ca_path` with an equivalent spelling (case, `.\`, relative) does not count as new
+  credentials; a renewed certificate does. Never run it on your own initiative — every
   try counts toward 統一's three. Login errors come back as a
 class only (`CERT_MISMATCH`, `CERT`, `PASSWORD`, `HOST`, `TIMEOUT`, `MAINTENANCE`, `BLOCKED`,
 `UNKNOWN`) — the broker's own text for a certificate that is not this account's contains the
@@ -179,7 +182,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   order goes out, so a slow login (up to 30 s) cannot eat the margin. Expect a close right after another order to be refused for ~20–22 s; retry, never force.
 - `status='filled'` only on a real match; `status='sent'` means no fill was seen in time;
   `status='unknown'` means the broker answered a status code the SDK does not define — none of
-  them is resubmitted; check the position first. Entries and closes both return the broker's
+  them is resubmitted; check the position first. `unknown` is **P3 today** (the lib's
+  `order_unknown_status` audit line + a reconciler log warning; it is deliberately not written to
+  `manager/order_errors.json`, because the platform turns every row there into a P1 下單失敗 TG +
+  email). Raising it to P2 needs, in this order: api routing that `kind` to its own P2 event,
+  `notifications.md` ranking it, then the machine writing it. Entries and closes both return the broker's
   `ack` (first status code) and `statuscode` (last).
 - Entries are blocked while `state/HALT` is set; reduces always pass.
 
@@ -187,7 +194,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 - Contracts settle at **13:30 Taipei on the third Wednesday** of their month — the instant the
   backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
-- **Entry** → from **15:00 the day before settlement** (the night session that opens the settlement
+- **Entry** → if the account already holds a month of that root, the entry is added to **that
+  month** (never two months at once — this is also what keeps a holiday-postponed settlement from
+  pausing trading: after the computed third-Wednesday roll the expiring month is still held and,
+  as long as the broker still lists it, entries keep going there; a held month the broker no
+  longer lists is refused). With nothing held: from **15:00 the day before settlement** (the night session that opens the settlement
   day's trading date) new positions go to the next month; before that, to the current one. A
   position opened in the expiring contract inside that window would be cash-settled at 13:30 and
   re-opened by the reconciler in the next month — two extra round trips. The backtest's `TXFR1`
@@ -195,8 +206,9 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   from it only by the calendar spread's move over those ≤22h30m. **Exception:** if the account still
   holds the expiring month of that root inside the window, an entry (an addition) goes to the
   expiring month too, so two months are never held at once; it settles with the rest at 13:30.
-  Inside the window an entry waits (`EntryDeferred`, not an error — the reconciler books the close
-  of a flip and opens next round) until the worker snapshot has caught up with the last order. The contract must appear in
+  Every entry waits (`EntryDeferred`, not an error — the reconciler books the close of a flip and
+  opens next round) until the worker snapshot has caught up with the last order, since the held
+  month is read from it. The contract must appear in
   `get_domestic_contracts(root, "F")`; if it does not, the order is refused — never a guess.
 - **Reduce / close** → the `productid` of the position row being closed (worker snapshot), never a
   re-derived month: after a roll the near month is no longer the contract that is held. A root open

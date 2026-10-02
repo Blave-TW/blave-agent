@@ -21,8 +21,10 @@ Design rules:
    ORDER_SETTLE_S after this contract's last send, is refused before the login
    (_claim: check + send marker under one machine-wide lock; the marker is
    written again right before the send, so a slow login does not eat the
-   margin). In the settlement window an entry stays in a still-held expiring
-   month, and waits (EntryDeferred) while the snapshot has not caught up.
+   margin). An entry goes to the month already held for that root (never two
+   months at once — covers the settlement window and holiday-postponed
+   settlements), else the computed near month, and waits (EntryDeferred) while
+   the snapshot has not caught up.
    NOT verified across a real settlement day.
 2. SENT ≠ ACCEPTED ≠ FILLED. order() returning issend=True only means the
    request left this machine. Accepted = an on_reply for OUR seq with
@@ -216,44 +218,37 @@ def near_month(root, listed, now=None):
     return _require_listed(computed_near(root, now), listed)
 
 
-def settlement_window(now=None):
-    """(year, month) when `now` is between the roll (15:00 the day before) and
-    the 13:30 settlement — entries already roll, the expiring contract still
-    trades."""
-    now = _now(now).astimezone(TAIPEI)
-    if entry_roll_at(now.year, now.month) <= now < settlement_at(now.year, now.month):
-        return now.year, now.month
-    return None
-
-
 def entry_contract(root, rows, now=None):
-    """The contract an entry for `root` goes to. Normally computed_near(); in
-    the settlement-day window, if the account still holds the expiring month
-    of this root, the entry goes there too — adding in the next month would hold
-    two months at once (a read the reconciler refuses) until 13:30, while an
-    addition to the expiring month settles with the rest and the reconciler
-    re-opens the whole position in the next month afterwards."""
+    """The contract an entry for `root` goes to: the month already held for that
+    root, if there is one; otherwise computed_near(). Adding where the position
+    already is means the account never holds two months of a root (a read the
+    reconciler refuses):
+    - in the settlement window, a held expiring month is added to and settles
+      with the rest at 13:30, instead of opening the next month beside it;
+    - when a holiday postpones the settlement past the third Wednesday, the
+      expiring month is still held and still listed after the computed roll —
+      the calendar alone would open the next month beside it and pause trading
+      for a day. The broker's contract list is the check (_require_listed): a
+      held month the broker no longer lists is refused, never guessed around.
+    A held month is only trusted from a snapshot read after the last send."""
     root = str(root).upper()
-    window = settlement_window(now)
-    if window:
-        expiring = prod_id(root, *window)
-        if any(r["root"] == root and r["productid"] == expiring and r["net"] for r in rows):
-            return expiring
+    held = sorted({r["productid"] for r in rows if r["root"] == root and r["net"]})
+    if len(held) == 1:
+        return held[0]
+    if held:
+        raise PresidentError(f"{root} is held in several months {held} — no entry until one settles")
     return computed_near(root, now)
 
 
 def _entry_contract_checked(root):
-    """entry_contract() on the worker snapshot. Only the settlement window
-    reads it — and there only a snapshot read after the last send settled will
-    do, or a just-opened (or just-closed) expiring position would be misread."""
-    if not settlement_window():
-        return computed_near(root)
+    """entry_contract() on the worker snapshot, which must have been read after
+    the last send settled — else a just-opened or just-closed month would be
+    misread (EntryDeferred: the entry waits a round, nothing is sent)."""
     from lib.account_president import position_rows
     ok, _q, _last = snapshot_caught_up()
     if not ok:
-        raise EntryDeferred("settlement window: the 統一 snapshot has not caught up with the last "
-                            "order — the entry waits for it (next month unless the expiring one "
-                            "is still held)")
+        raise EntryDeferred("the 統一 snapshot has not caught up with the last order — the entry "
+                            "waits for it to pick its contract month")
     return entry_contract(root, position_rows())
 
 
@@ -314,6 +309,8 @@ def _claim(symbol, action, lots, intent):
 
 
 def _mark_order_sent(productid):
+    """Raises when the marker cannot be written: an order the guards cannot see
+    is an order that may be sent twice, so nothing is sent without it."""
     d = _last_orders()
     d[productid] = time.time()
     try:
@@ -322,7 +319,8 @@ def _mark_order_sent(productid):
             json.dump(d, f)
         os.replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
     except OSError as e:
-        logging.warning(f"[president] last-order marker not written: {e}")
+        raise PresidentError(f"the send marker could not be written ({type(e).__name__}) — "
+                             f"not sending")
 
 
 def _checked_close(symbol, action, lots):

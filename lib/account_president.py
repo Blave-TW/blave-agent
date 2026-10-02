@@ -75,9 +75,8 @@ def get_positions(env: dict) -> dict:
         if len(rows) > 1:
             held = ", ".join(f"{r['productid']} {r['net']:+d}" for r in rows)
             raise RuntimeError(f"president: {root} is open in several contract months ({held}) — "
-                               f"trading paused rather than add months together. On a settlement "
-                               f"day this clears when the expiring month settles at 13:30; "
-                               f"otherwise contact support")
+                               f"trading paused rather than add months together. It clears when the "
+                               f"expiring month settles; if it does not, contact support")
         n = rows[0]["net"]
         out[root] = {"side": "long" if n > 0 else "short", "size": float(abs(n)),
                      "productid": rows[0]["productid"]}
