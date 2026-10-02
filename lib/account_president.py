@@ -10,8 +10,14 @@
 # platform falls back to flagging equity jumps as 資金異動, as it does for 群益.
 # See references/president-broker.md.
 import json
+import logging
 import os
 import time
+
+try:
+    from lib import president_contracts as _contracts
+except ImportError:  # loaded with lib/ itself on sys.path
+    import president_contracts as _contracts
 
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "president_account.json")
@@ -60,16 +66,28 @@ def position_rows():
     return list(_read_snapshot().get("positions", []))
 
 
+def bot_position_rows(now=None):
+    """The held rows the bot trades on (lib/president_contracts.bot_rows):
+    settled residue of an expired month is dropped (logged, never closed —
+    it was cash-settled), a month the bot does not trade fails the read
+    (ManualPosition)."""
+    snap = _read_snapshot()
+    keep, residue = _contracts.bot_rows(snap.get("positions", []), snap.get("listed"), now)
+    for r in residue:
+        logging.info(f"[president] {r['productid']} {r['net']:+d}: past its settlement and not "
+                     f"listed — treated as settled, ignored")
+    return keep
+
+
 def get_positions(env: dict) -> dict:
     """{canonical: {'side', 'size', 'productid'}} with size in LOTS, canonical
-    = TXF/MXF/TMF. One root open in two contract months fails the read: summed,
-    a long J6 and a short K6 would read as flat and the reconciler would trade
-    on top of both. lib/order_president keeps entries in the held month on a
-    settlement day so this is not reached by the bot's own orders."""
+    = TXF/MXF/TMF, from bot_position_rows(). One root open in two contract months
+    fails the read: summed, a long J6 and a short K6 would read as flat and the
+    reconciler would trade on top of both; lib/order_president adds to a held
+    month, so the bot's own orders do not get here."""
     months = {}
-    for r in position_rows():
-        if r["net"]:
-            months.setdefault(r["root"], []).append(r)
+    for r in bot_position_rows():
+        months.setdefault(r["root"], []).append(r)
     out = {}
     for root, rows in months.items():
         if len(rows) > 1:

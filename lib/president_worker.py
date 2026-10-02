@@ -128,6 +128,29 @@ def _num(obj, name):
         return None
 
 
+_LISTED = {"at": 0.0, "value": None}
+LISTED_TTL_S = 300
+
+
+def _listed_contracts(api):
+    """{root: [contract codes]} the broker lists now (cached 5 min), or None —
+    lib/president_contracts tells a settled expired month from a still-trading
+    one with it."""
+    if time.time() - _LISTED["at"] < LISTED_TTL_S and _LISTED["value"] is not None:
+        return _LISTED["value"]
+    out = {}
+    try:
+        for root in ROOTS:
+            r = api.get_domestic_contracts(root, "F")
+            if not r or not r.ok:
+                return None  # unknown — never a partial list
+            out[root] = [str(c.prod_id).upper() for c in r.data or []]
+    except Exception:
+        return None
+    _LISTED.update(at=time.time(), value=out)
+    return out
+
+
 def read_account(api, actno):
     """One margin + position read. RateLimited on the SDK's per-minute cap."""
     snap = {"ok": True, "error": None, "equity": None, "available": None,
@@ -154,6 +177,7 @@ def read_account(api, actno):
         # 查無資料 on an unfunded account is an answer, not a dead link
         snap["margin_error"] = president_vault.sanitize(
             getattr(m, "error", "") or ("optequity missing" if d is not None else "no data"))
+    snap["listed"] = _listed_contracts(api)
     p = _check(api.daccount.get_position(actno, "", ""), "get_position")
     for row in p.data or []:
         r = position_row(row)

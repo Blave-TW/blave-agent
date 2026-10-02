@@ -54,7 +54,11 @@ TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")  # no ZoneInfo: Windows has
 LOGIN_MAINTENANCE = (dtime(5, 30), dtime(5, 50))
 _SECRETS = ("president_password", "president_ca_password")
 AUTH_CLASSES = ("CERT_MISMATCH", "CERT", "PASSWORD")
-UNKNOWN_BLOCK_AT = 2
+# The broker's real wrong-password text has not been seen (it is only guessed
+# from the SDK's own strings): an unclassifiable refusal may be a wrong password,
+# and the user's own typo in the app plus two of ours locks the account — so one
+# unclassifiable refusal blocks.
+UNKNOWN_BLOCK_AT = 1
 # How long after a send the worker's next read must START before it counts as
 # showing that send (order lib close check, reconciler Read-Your-Writes). An IOC
 # market order is filled or killed at the exchange within the second; what is
@@ -111,11 +115,18 @@ def classify(text):
         return "CERT_MISMATCH"
     if "憑證" in s or re.search(r"\b50(1[0-3]|6[01]|70)\b", s):
         return "CERT"
-    if s.strip() == "Timeout" or "timed out" in s.lower() or "ReadTimeout" in s:
+    # HOST only when the request never reached the broker; a connection that
+    # broke after the request went out (aborted / reset / read timeout) may
+    # already have had its password checked — that is TIMEOUT, never given back
+    if any(t in s for t in ("Connection aborted", "RemoteDisconnected", "Connection reset",
+                            "ConnectionResetError", "ReadTimeout", "Read timed out")):
         return "TIMEOUT"
-    if any(t in s for t in ("NameResolution", "getaddrinfo", "Max retries", "SSLError",
-                            "ConnectionError", "Connection refused", "Failed to establish")):
+    if any(t in s for t in ("NameResolution", "getaddrinfo", "Failed to establish", "ConnectTimeout",
+                            "Connection refused", "SSLError", "CERTIFICATE_VERIFY_FAILED")):
         return "HOST"
+    if (s.strip() == "Timeout" or "timed out" in s.lower() or "Max retries" in s
+            or "ConnectionError" in s):
+        return "TIMEOUT"
     if any(t in s for t in ("密碼", "查無此使用者", "使用者密碼未設定")):
         return "PASSWORD"
     return "UNKNOWN"
@@ -196,6 +207,14 @@ def resolve(_ignored=None):
 
 
 # ── login block (shared by every caller on this machine) ─────────────────────
+
+def _pfx_readable(ca_path):
+    try:
+        with open(ca_path, "rb"):
+            return True
+    except (OSError, TypeError):
+        return False
+
 
 def _cert_identity(ca_path):
     """The certificate as the fingerprint sees it: a hash of the .pfx file's
@@ -364,6 +383,11 @@ def login(creds, log_dir):
     kind, released_try = _gate(creds)
     if kind:
         raise LoginError("BLOCKED")
+    if not _pfx_readable(creds.get("ca_path")):
+        # the SDK sends the password before it opens the certificate: an unreadable
+        # .pfx would spend a broker login try for nothing
+        _record(creds, "CERT")
+        raise LoginError("CERT")
 
     from unitrade.unitrade import Unitrade
 

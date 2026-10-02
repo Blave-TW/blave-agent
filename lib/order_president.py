@@ -57,7 +57,6 @@ president_ca_path / president_ca_password (+ PRESIDENT_LIVE=true and
 president_url for production) — resolved by lib/president_vault.py.
 """
 
-import calendar
 import json
 import logging
 import os
@@ -65,10 +64,13 @@ import re
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from hashlib import sha1
 
 from lib import guard, president_vault
+from lib.president_contracts import (MONTH_CODES, PROD_RE, ROOTS, TAIPEI, ManualPosition,  # noqa: F401
+                                     computed_near, entry_roll_at, front_month, prod_id,
+                                     settlement_at)
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -82,13 +84,6 @@ LAST_ORDER_PATH = os.path.join(_WS, "state", "president_last_order_at.json")
 SEND_LOCK_PATH = os.path.join(_WS, "state", "president_send.lock")
 SDK_LOG_DIR = os.path.join(_WS, "state", "president_logs")
 
-# fixed UTC+8 (no DST since 1979): Windows Python ships no tz database, ZoneInfo would raise there
-TAIPEI = timezone(timedelta(hours=8), "Asia/Taipei")
-ROOTS = ("TXF", "MXF", "TMF")
-MONTH_CODES = "ABCDEFGHIJKL"  # futures month letters, A = January
-SETTLE_HOUR, SETTLE_MINUTE = 13, 30
-NIGHT_OPEN_HOUR, NIGHT_OPEN_MINUTE = 15, 0
-PROD_RE = re.compile(r"^(TXF|MXF|TMF)([A-L])(\d)$")
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
 # Reply status codes, from unitrade 1.0.0.7 trade/dlogic (DLogic.*_CODE):
 # 0000 委託成功, 0001 減量成功, 0002 刪單成功, 0003 部份成交, 0004 完全成交,
@@ -160,49 +155,6 @@ class DuplicateOrder(PresidentError):
 
 # ── near month (rule 1) ──────────────────────────────────────────────────────
 
-def settlement_at(year, month):
-    """13:30 Taipei on the third Wednesday of year/month."""
-    first = calendar.weekday(year, month, 1)  # Mon=0
-    day = 1 + (calendar.WEDNESDAY - first) % 7 + 14
-    return datetime(year, month, day, SETTLE_HOUR, SETTLE_MINUTE, tzinfo=TAIPEI)
-
-
-def entry_roll_at(year, month):
-    """15:00 Taipei the day before settlement — the night session that opens the
-    settlement day's trading date. From then on new positions go to the next
-    month: one opened in the expiring contract would be cash-settled at 13:30
-    next day and re-opened by the reconciler in the next month, two extra round
-    trips. The backtest's TXFR1 stays on the expiring contract until 13:30; the
-    live difference is the calendar spread's move over those ≤22h30m, on new
-    entries only (a held expiring position is added to in its own month — see
-    entry_contract — and closes go to whatever month is held)."""
-    return (settlement_at(year, month) - timedelta(days=1)).replace(
-        hour=NIGHT_OPEN_HOUR, minute=NIGHT_OPEN_MINUTE)
-
-
-def prod_id(root, year, month):
-    return f"{root}{MONTH_CODES[month - 1]}{year % 10}"
-
-
-def _now(now):
-    now = now or datetime.now(TAIPEI)
-    if now.tzinfo is None:
-        raise ValueError("near_month needs a timezone-aware time")
-    return now
-
-
-def computed_near(root, now=None):
-    """The contract the roll rule picks at `now`, before any broker check."""
-    root = str(root).upper()
-    if root not in ROOTS:
-        raise ValueError(f"{root!r} is not TXF/MXF/TMF")
-    now = _now(now)
-    y, m = now.astimezone(TAIPEI).year, now.astimezone(TAIPEI).month
-    while entry_roll_at(y, m) <= now:
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    return prod_id(root, y, m)
-
-
 def _require_listed(want, listed):
     listed = [str(x).upper() for x in (listed or [])]
     if want not in listed:
@@ -232,6 +184,8 @@ def entry_contract(root, rows, now=None):
       held month the broker no longer lists is refused, never guessed around.
     A held month is only trusted from a snapshot read after the last send."""
     root = str(root).upper()
+    # `rows` are the bot's rows (account_president.bot_position_rows): settled
+    # residue is already gone, a manual month already failed the read
     held = sorted({r["productid"] for r in rows if r["root"] == root and r["net"]})
     if len(held) == 1:
         return held[0]
@@ -244,12 +198,12 @@ def _entry_contract_checked(root):
     """entry_contract() on the worker snapshot, which must have been read after
     the last send settled — else a just-opened or just-closed month would be
     misread (EntryDeferred: the entry waits a round, nothing is sent)."""
-    from lib.account_president import position_rows
+    from lib.account_president import bot_position_rows
     ok, _q, _last = snapshot_caught_up()
     if not ok:
         raise EntryDeferred("the 統一 snapshot has not caught up with the last order — the entry "
                             "waits for it to pick its contract month")
-    return entry_contract(root, position_rows())
+    return entry_contract(root, bot_position_rows())
 
 
 def _listed(api, root):
@@ -328,11 +282,11 @@ def _checked_close(symbol, action, lots):
     snapshot shows a position on the other side, at least that large, read
     after this contract's last order settled. Anything else is refused (never
     sent). Call under _send_lock()."""
-    from lib.account_president import position_rows
+    from lib.account_president import bot_position_rows
     sym = str(symbol).upper()
     if not PROD_RE.match(sym) and sym not in ROOTS:
         raise ValueError(f"{symbol!r} is not TXF/MXF/TMF or a month contract code")
-    rows = position_rows()
+    rows = bot_position_rows()  # never a settled month (cash-settled) or a manual one
     hits = [r for r in rows if (r["productid"] == sym if PROD_RE.match(sym) else r["root"] == sym)]
     if not hits:
         raise PresidentError(f"no open {sym} position in the 統一 snapshot — nothing to close")

@@ -123,9 +123,14 @@ to retry. Two ways out, both the user's call:
   exactly **one** login; if it fails on the password or certificate, the block is back at once.
   **Each block can be released once** — a second `--unblock` answers "refused"; after that only
   changed credentials in `.env` lift it (and if those fail too, that is a new block with its own
-  one release). A released try that could not connect (`HOST`) never reached the password check,
-  so it is given back; a `TIMEOUT` is spent (the broker may have checked the password before going
-  quiet). The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
+  one release). **One** refusal the libs cannot classify blocks too: the broker's real
+  wrong-password text has not been observed, and the user's own typo in the app plus two of ours
+  would lock the account. A `.pfx` this identity cannot read is refused as `CERT` and blocked
+  without contacting the broker (the SDK sends the password before it opens the certificate). A
+  released try that could not connect (`HOST` — name resolution, connection refused, connect
+  timeout, TLS) never reached the password check,
+  so it is given back; a `TIMEOUT` — including a connection aborted or reset after the request
+  went out — is spent (the broker may have checked the password). The certificate is fingerprinted by the `.pfx` file's bytes, so rewriting
   `president_ca_path` with an equivalent spelling (case, `.\`, relative) does not count as new
   credentials; a renewed certificate does. Never run it on your own initiative — every
   try counts toward 統一's three. Login errors come back as a
@@ -194,11 +199,20 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 - Contracts settle at **13:30 Taipei on the third Wednesday** of their month — the instant the
   backtest's `TXFR1` series changes contract (its first new-month bar is 13:31).
-- **Entry** → if the account already holds a month of that root, the entry is added to **that
-  month** (never two months at once — this is also what keeps a holiday-postponed settlement from
-  pausing trading: after the computed third-Wednesday roll the expiring month is still held and,
-  as long as the broker still lists it, entries keep going there; a held month the broker no
-  longer lists is refused). With nothing held: from **15:00 the day before settlement** (the night session that opens the settlement
+- **Which held rows count** (`lib/president_contracts.py`; the worker records the broker's contract
+  list each tick for this):
+  - the bot's months are only the **front month** (next to settle) and the **computed entry
+    month** — they differ between the roll (15:00 the day before) and the 13:30 settlement;
+  - a month **past its settlement time that the broker no longer lists** (or the list is unknown)
+    is **settled residue**: treated as not held, never closed (it was cash-settled), only logged;
+  - a month past its settlement time that the broker **still lists** (a holiday-postponed
+    settlement, or a list that has not dropped it yet) still counts as held;
+  - **any other month** (a far month the user opened in the app) **fails the position read**:
+    「偵測到 XXX 月份的手動部位,Blave 不會動它;請先在 App 處理或告訴 agent」. Blave never adds to,
+    closes or sums a month it does not trade. The read failure takes the normal path (three in a
+    row → HALT, P1 — the user should know).
+- **Entry** → if the bot holds a month of that root, the entry is added to **that month** (never two
+  months at once). With nothing held: from **15:00 the day before settlement** (the night session that opens the settlement
   day's trading date) new positions go to the next month; before that, to the current one. A
   position opened in the expiring contract inside that window would be cash-settled at 13:30 and
   re-opened by the reconciler in the next month — two extra round trips. The backtest's `TXFR1`

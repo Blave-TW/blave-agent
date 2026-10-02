@@ -56,6 +56,14 @@ sys.modules.setdefault("unitrade.unitrade", _utu)
 
 from lib import account_president, guard, order_president as op, president_vault, president_worker  # noqa: E402
 from lib.order_president import TAIPEI  # noqa: E402
+from lib import president_contracts as pc  # noqa: E402
+
+# the order and read paths take "now" from the wall clock — pin it: 10-20 16:00 is
+# inside the October roll window (front month J6, entries to K6), so both are the
+# bot's months and nothing here depends on the day the test runs
+FIXED_NOW = datetime(2026, 10, 20, 16, 0, tzinfo=TAIPEI)
+_real_now = pc._now
+pc._now = lambda now: _real_now(now or FIXED_NOW)
 
 # ── 1. near month ────────────────────────────────────────────────────────────
 T = lambda *a: datetime(*a, tzinfo=TAIPEI)  # noqa: E731
@@ -82,7 +90,9 @@ check(raises(ValueError, lambda: op.near_month("TXF", LISTED, datetime(2026, 10,
 # ── 3. host gate + the one .env parser ───────────────────────────────────────
 president_vault.ENV_PATH = os.path.join(TMP, ".env")
 president_vault.BLOCK = os.path.join(TMP, "state", "president_login_block.json")
-BASE = {"president_account": "A", "president_password": "P", "president_ca_path": "c.pfx",
+PFX = os.path.join(TMP, "c.pfx")
+open(PFX, "wb").write(b"not-a-real-pfx")
+BASE = {"president_account": "A", "president_password": "P", "president_ca_path": PFX,
         "president_ca_password": "", "president_test_url": "https://test167.testpfctrade.com"}
 
 
@@ -282,26 +292,26 @@ check(e is not None and "A123456789" not in str(e) and "PSCNET" not in str(e)
       "an order signing error never carries the national id or certificate — exception or audit", str(e))
 
 # reduce → the row's own productid, even after the near month rolled past it
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}])
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
 api = use([ACK])
 r = op.close_position_partial({}, "TMF", "long", 1, client_order_id="flat20260930120000123456")
-check(api.sent[-1].productid == "TMFA0" and api.sent[-1].bs == "S" and api.sent[-1].opencloseflag == "1"
+check(api.sent[-1].productid == "TMFJ6" and api.sent[-1].bs == "S" and api.sent[-1].opencloseflag == "1"
       and r["exchange"] == "president",
       "close: the held row's productid, opencloseflag '1'", vars(api.sent[-1]))
 check(r["ack"] == "0000" and r["statuscode"] == "0000" and r["seq"] == "S1" and r["orderno"] == "O1",
       "the close carries the broker's ack / statuscode / seq / orderno like an entry", r)
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and len(api.sent) == 1, "a snapshot older than that contract's last order → refused, not sent")
-last = op.last_order_at("TMFA0")
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}], query_started_at=last - 1,
+last = op.last_order_at("TMFJ6")
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}], query_started_at=last - 1,
          read_at=last + 30)
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and len(api.sent) == 1, "a read that STARTED before the send (written after it) → refused")
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}],
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],
          query_started_at=last + president_vault.ORDER_SETTLE_S - 1)
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and len(api.sent) == 1, "a read started inside the settle margin → refused")
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 2, "net_current": 2}])
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
 e = raises(op.DuplicateOrder, lambda: op.close_position_partial({}, "TMF", "long", 1,
                                                                client_order_id="flat20260930120000123456"))
 check(e is not None and len(api.sent) == 1, "the same client id again today → refused locally")
@@ -313,8 +323,8 @@ snapshot([])
 check(raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "reduce")) is not None
       and len(api.sent) == 1, "a reduce with nothing held → refused, not sent")
 check(len(api.sent[-1].note) <= 10, "note fits 10 chars", api.sent[-1].note)
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 1, "net_current": 1},
-          {"root": "TMF", "productid": "TMFB0", "net": 1, "net_current": 1}])
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1},
+          {"root": "TMF", "productid": "TMFK6", "net": 1, "net_current": 1}])
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None,
       "a root open in two months is not closed by root")
 check(raises(ValueError, lambda: op.place_futures_market_order({}, "TMFJ6", "buy", 1, "entry")) is not None,
@@ -324,7 +334,7 @@ open("state/HALT", "w").write("{}")
 api = use([ACK])
 check(raises(guard.Halted, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry")) is not None
       and not api.sent, "HALT: entry refused before login")
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 1, "net_current": 1}])
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
 r = op.place_futures_market_order({}, "TMF", "sell", 1, "reduce", confirm_timeout=0.4)
 check(len(api.sent) == 1, "HALT: reduce passes")
 os.remove("state/HALT")
@@ -427,23 +437,35 @@ check(op.entry_contract("MXF", ROWS_J, T(2026, 10, 21, 9, 0)) == "MXFK6", "anoth
 check(op.entry_contract("TXF", ROWS_J, T(2026, 10, 22, 10, 0)) == "TXFJ6",
       "holiday-postponed settlement: J6 still held after the computed roll → still added to J6, "
       "not K6 beside it (the broker list decides whether it still trades)")
-check(op.entry_contract("TXF", [{"root": "TXF", "productid": "TXFK6", "net": -1}], T(2026, 10, 1, 10, 0))
-      == "TXFK6", "a held far month is added to, not the near month beside it")
+# which held rows are the bot's
+R = lambda pid, n=1: {"root": pid[:3], "productid": pid, "net": n}  # noqa: E731
+check(pc.classify_row(R("TXFJ6"), None, T(2026, 10, 1, 10, 0)) == "bot"
+      and pc.classify_row(R("TXFK6"), None, T(2026, 10, 1, 10, 0)) == "manual"
+      and pc.classify_row(R("TXFK6"), None, T(2026, 10, 20, 16, 0)) == "bot",
+      "bot months = front or computed entry month; a far month is manual")
+check(pc.classify_row(R("TXFJ6"), None, T(2026, 10, 21, 14, 0)) == "settled"
+      and pc.classify_row(R("TXFJ6"), ["TXFK6", "TXFL6"], T(2026, 10, 21, 14, 0)) == "settled"
+      and pc.classify_row(R("TXFJ6"), ["TXFJ6", "TXFK6"], T(2026, 10, 21, 14, 0)) == "pending",
+      "past settlement: settled when unlisted (or list unknown), pending while the broker still lists it")
+check(pc.classify_row(R("TXFJ6"), ["TXFK6"], T(2026, 10, 15, 10, 0)) == "settled",
+      "dropped from the broker's list before its date → settled")
+e = raises(pc.ManualPosition, lambda: pc.bot_rows([R("TXFJ6"), R("TXFL6", -1)], None, T(2026, 10, 1, 10, 0)))
+check(e is not None and "TXFL6" in str(e) and "不會動它" in str(e), "a manual far month fails the read, named", e)
 check(raises(op.PresidentError, lambda: op.entry_contract(
     "TXF", ROWS_J + [{"root": "TXF", "productid": "TXFK6", "net": 1}], T(2026, 10, 21, 9, 0))) is not None,
       "two months already held → no entry")
 
 # postponed settlement through the order path: listed → trades, delisted → refused
-snapshot([{"root": "TMF", "productid": "TMFA0", "net": 1}])
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}])
 api = use([ACK])
-NOW_LIST.append("TMFA0")
+NOW_LIST.append("TMFJ6")  # the broker still lists the expiring month
 op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=0.3)
-check(api.sent[-1].productid == "TMFA0", "held month still in the broker's list → the addition goes there",
+check(api.sent[-1].productid == "TMFJ6", "held month still in the broker's list → the addition goes there",
       vars(api.sent[-1]))
-NOW_LIST.remove("TMFA0")
+NOW_LIST.remove("TMFJ6")
 api = use([ACK])
 e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry"))
-check(e is not None and "TMFA0" in str(e) and not api.sent,
+check(e is not None and "TMFJ6" in str(e) and not api.sent,
       "held month the broker no longer lists → refused, nothing sent", e)
 snapshot([])
 
@@ -590,23 +612,35 @@ api2 = president_vault.login(president_vault.resolve(), president_worker.SDK_LOG
 check(FakeUnitrade.logins == n + 1 and not os.path.exists(president_vault.BLOCK),
       "changed credentials in .env lift the block; a good login clears it")
 api2.logout()
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="[APGW]something unexpected"),
-                   Resp(ok=False, error="[APGW]something unexpected")]
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="[APGW]something unexpected")]
 creds2 = president_vault.resolve()
-for _ in range(2):
-    raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+e1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 e = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n + 3,
-      "two unclassifiable rejections block the third try (統一 locks at three)", e)
+check(e1.kind == "UNKNOWN" and e is not None and e.kind == "BLOCKED" and FakeUnitrade.logins == n + 2,
+      "ONE unclassifiable rejection blocks the next try (the real wrong-password text is unverified)", e)
 os.remove(president_vault.BLOCK)
 LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤,請重新輸入!")]
 check(raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR)).kind
       == "PASSWORD", "a password answer is PASSWORD")
 os.remove(president_vault.BLOCK)
-for text, kind in (("Timeout", "TIMEOUT"), ("HTTPSConnectionPool(host='x'): Max retries exceeded", "HOST")):
+for text, kind in (("Timeout", "TIMEOUT"),
+                   ("HTTPSConnectionPool(host='x'): Max retries exceeded (Caused by NewConnectionError("
+                    "'Failed to establish a new connection'))", "HOST"),
+                   ("HTTPSConnectionPool(host='x'): Max retries exceeded (Caused by NameResolutionError())", "HOST"),
+                   ("('Connection aborted.', RemoteDisconnected('Remote end closed connection'))", "TIMEOUT"),
+                   ("HTTPSConnectionPool(host='x'): Read timed out. (read timeout=30)", "TIMEOUT"),
+                   ("HTTPSConnectionPool(host='x'): Max retries exceeded", "TIMEOUT")):
     LOGIN_SCRIPT[:] = [Resp(ok=False, error=text)]
     got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
     check(got.kind == kind and not os.path.exists(president_vault.BLOCK), f"{kind} does not count toward a block")
+# an unreadable .pfx: refused and blocked before any broker contact (the SDK sends the password first)
+n = FakeUnitrade.logins
+gone = dict(creds2, ca_path=os.path.join(TMP, "missing.pfx"))
+got = raises(president_vault.LoginError, lambda: president_vault.login(gone, president_worker.SDK_LOG_DIR))
+got2 = raises(president_vault.LoginError, lambda: president_vault.login(gone, president_worker.SDK_LOG_DIR))
+check(got.kind == "CERT" and got2.kind == "BLOCKED" and FakeUnitrade.logins == n,
+      "unreadable .pfx → CERT, blocked, the broker never contacted")
+os.remove(president_vault.BLOCK)
 president_vault.in_login_maintenance = lambda now=None: True
 LOGIN_SCRIPT[:] = []
 got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
@@ -640,7 +674,7 @@ os.remove(president_vault.BLOCK)
 LOGIN_SCRIPT[:] = [Resp(ok=False, error="密碼錯誤")]
 raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 president_vault.unblock()
-LOGIN_SCRIPT[:] = [Resp(ok=False, error="HTTPSConnectionPool(host='x'): Max retries exceeded"),
+LOGIN_SCRIPT[:] = [Resp(ok=False, error="Max retries exceeded (Caused by NameResolutionError())"),
                    Resp(ok=True, error="")]
 got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 check(got.kind == "HOST", "the released try hit a network error")
@@ -770,6 +804,35 @@ try:
     check(reconciler._current_venue() == "president", "the venue for classification is president")
 finally:
     op.place_futures_market_order = real_place
+
+# ── 11. after settlement: a leftover expired row is not a position ───────────
+pc._now = lambda now: _real_now(now or T(2026, 10, 21, 14, 0))  # 30 min after J6 settled
+open(op.LAST_ORDER_PATH, "w").write("{}")
+for listed in (None, {"TMF": ["TMFK6", "TMFL6"], "TXF": [], "MXF": []}):
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed=listed)
+    n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8")))
+    check(reconciler.get_positions() == {}, f"residue J6 (list {'unknown' if listed is None else 'without J6'}) "
+                                            f"reads as no position")
+    NOW_LIST[:] = ["TMFK6"]
+    api = use([ACK])
+    reconciler.place_order("TMF", 1, exchange="president")
+    errs = json.load(open("manager/order_errors.json", encoding="utf-8"))
+    check([o.productid for o in api.sent] == ["TMFK6"] and len(errs) == n_err,
+          "the entry goes to K6, nothing is sent to J6, no order_errors row",
+          ([vars(o) for o in api.sent], errs[n_err:]))
+    open(op.LAST_ORDER_PATH, "w").write("{}")
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed={"TMF": ["TMFJ6", "TMFK6"]})
+check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 1.0, "exchange": "president"}},
+      "past settlement but still listed (holiday-postponed) → still the bot's position")
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}])
+api = use([ACK])
+check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
+      and not api.sent, "a close of settled residue is refused, never sent")
+snapshot([{"root": "TMF", "productid": "TMFL6", "net": -1}])
+e = raises(pc.ManualPosition, reconciler.get_positions)
+check(e is not None and "TMFL6" in str(e), "a manual far month fails the read (no lots summed, nothing touched)", e)
+pc._now = lambda now: _real_now(now or FIXED_NOW)
+NOW_LIST[:] = [op.near_month("TMF", [f"TMF{c}{d}" for c in op.MONTH_CODES for d in "0123456789"])]
 
 # ── 5. interface: every order.<name>( call site in lib/ manager/ is either
 # implemented here or unreachable for a TW broker (named with the reason) ──
