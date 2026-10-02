@@ -745,7 +745,7 @@ async function libSend(s) {
 
 /* ── 購買(規格 §4.4):兩段確認框對齊網頁 libBuy / libPurchase;憑證只在主行程 ── */
 function libBuyBox(s, stage, opener, o) {
-  if (LIB.buying !== null) return;
+  if (LIB.buying !== null || LIB.pending) return;   // 代下載中:買完接著的 libSend 會被擋掉,變成付了錢卻沒裝
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;
   const price = libPriceText(s) || "—", title = t("lib.buy.title", { title: s.title });
   if (stage === "confirm") {

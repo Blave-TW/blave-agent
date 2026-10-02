@@ -1969,9 +1969,9 @@ async function libraryDownload(strategyId) {
     fs.mkdirSync(dir, { recursive: true });
     // workspace 裡的東西策略碼都改得到:tmp 被換成指向外面的 symlink 就不寫,檔案不會落到 workspace 外
     if (fs.realpathSync(dir) !== path.join(fs.realpathSync(WS), "tmp")) return { ok: false, kind: "fail" };
-    if (b.security && typeof b.security === "object") libWriteWs(dir, sec, JSON.stringify(b.security));
-    else fs.rmSync(path.join(dir, sec), { force: true });
+    fs.rmSync(path.join(dir, sec), { force: true });   // 先拿掉舊的:不管後面哪一步失敗,都不會留一份對不上這份碼的掃描結果
     libWriteWs(dir, name, b.code);
+    if (b.security && typeof b.security === "object") libWriteWs(dir, sec, JSON.stringify(b.security));
   } catch (_) { return { ok: false, kind: "fail" }; }
   return { ok: true };
 }

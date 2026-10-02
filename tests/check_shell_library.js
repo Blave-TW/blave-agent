@@ -158,6 +158,12 @@ if (!process.versions.electron) {
     const a2 = { r: J(r2), sec: JSON.parse(fs.readFileSync(sec, "utf8")).findings.length, body: fs.readFileSync(file, "utf8") };
     const r3 = await dl(102, { status: 200, body: { code: "x = 3\n" } });
     const a3 = { r: J(r3), secGone: !fs.existsSync(sec) };
+    // 碼寫不進去(同名的是一個資料夾):失敗,而且不留一份對不上的掃描結果
+    await dl(102, { status: 200, body: { code: "x\n", security: { blocked: false, findings: [] } } });
+    fs.rmSync(file); fs.mkdirSync(file);
+    const r3b = await dl(102, { status: 200, body: { code: "x = 9\n", security: { blocked: false, findings: [] } } });
+    const a3b = { r: J(r3b), sec: fs.existsSync(sec) };
+    fs.rmSync(file, { recursive: true }); fs.writeFileSync(file, "x = 3\n");
     const kinds = [];
     for (const resp of [{ status: 403, body: { error: "blocked", security: { blocked: true } } }, { status: 404, body: { error: "strategy not found" } }, { status: 403, body: { error: "not purchased" } },
       { status: 403, body: { error_code: "ERR005" } }, { status: 500, body: {} }, { status: 200, body: { code: 5 } }, { status: 200, body: { code: "  " } }, { status: 200, body: { code: "x".repeat(1024 * 1024 + 1) } }, "throw", { status: 200, body: null }])
@@ -180,7 +186,8 @@ if (!process.versions.electron) {
     fs.rmSync(base, { recursive: true, force: true });
     ok("② 代下載:用桌面 key 打 /code、寫 workspace/tmp/library_<id>.py(0600、不留暫存檔)、回 { ok: true }", a1.r === '{"ok":true}' && a1.body === "print(1)\n" && a1.mode === 0o600 && a1.url === "https://api.test/openclaw/marketplace/strategies/102/code"
       && a1.hdr === '{"api-key":"k1","secret-key":"s1"}' && a1.stray === "library_102.py", J(a1));
-    ok("② 代下載:回應帶 security → 另存 .security.json;下一次沒帶 → 刪掉舊的那份", a2.r === '{"ok":true}' && a2.sec === 1 && a2.body === "x = 2\n" && a3.r === '{"ok":true}' && a3.secGone, J([a2, a3]));
+    ok("② 代下載:回應帶 security → 另存 .security.json;下一次沒帶 → 刪掉舊的那份;碼寫不進去 → fail 且不留掃描結果", a2.r === '{"ok":true}' && a2.sec === 1 && a2.body === "x = 2\n" && a3.r === '{"ok":true}' && a3.secGone
+      && a3b.r === '{"ok":false,"kind":"fail"}' && a3b.sec === false, J([a2, a3, a3b]));
     ok("② 代下載失敗分三種:掃描擋下 blocked、404 gone、其餘(403 未購 / key 被撤、5xx、code 不是字串 / 空白 / 超過 1 MB、打不到、body 壞)fail;失敗不動上一份檔",
       kinds.join() === "blocked,gone,fail,fail,fail,fail,fail,fail,fail,fail" && keptAfterFail === "x = 3\n", kinds.join());
     ok("② 代下載:id 不是正整數、沒登入、沒有 key → fail,而且一次請求都不送", badIds.every((k) => k === "fail") && noTok.kind === "fail" && noKey.kind === "fail" && noReq, J([badIds, noTok, noKey]));
@@ -348,6 +355,7 @@ if (!process.versions.electron) {
     const z = STR.zh;
     ok("⑥ 確認框:本機第一段是 lib.cf.l1Local;billed 時 required / 未標出資料費那一行、none 不出;雲端用 lib.cf.l1、不出資料費", L72 === [z["lib.cf.l1Local"], z["lib.cf.l2"], z["lib.note.billed"]].join("|") && L101 === [z["lib.cf.l1Local"], z["lib.cf.l2"]].join("|")
       && Lnull === L72 && Lcloud === [z["lib.cf.l1"], z["lib.cf.l2"]].join("|"), JSON.stringify([L72, L101, Lnull, Lcloud]));
+    ok("⑥ 代下載中不開購買框(買完接著的 libSend 會被擋,變成付了錢沒裝)", /if \(LIB\.buying !== null \|\| LIB\.pending\) return;/.test(cutFn(src, "libBuyBox")));
     ok("⑥ 購買框的資料費那一行跟確認框用同一支 libFeeLine", /if \(libFeeLine\(libEnv\(\), LIB\.data \? LIB\.data\.dataAccess : null, libNeeds\(s\)\)\) extra\.appendChild\(libEl\("p", "cf-note", t\("lib\.note\.billed"\)\)\);/.test(cutFn(src, "libBuyBox")));
   })());
 
