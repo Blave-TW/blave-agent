@@ -210,10 +210,10 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
     is **settled residue**: treated as not held, never closed (it was cash-settled), only logged;
   - a month past its settlement time that the broker **still lists** (a holiday-postponed
     settlement, or a list that has not dropped it yet) still counts as held;
-  - **any other month** (a far month the user opened in the app) **fails the position read**:
-    「偵測到 XXX 月份的手動部位,Blave 不會動它;請先在 App 處理或告訴 agent」. Blave never adds to,
-    closes or sums a month it does not trade. The read failure takes the normal path (three in a
-    row → HALT, P1 — the user should know).
+  - **any other month** (a far month the user opened in the app) is **left out of every read**
+    and logged once: Blave never adds to, closes or sums a month it does not trade, and it does
+    not stop the bot's own months — of that root or any other — from being read, traded or closed
+    by 全部平倉. It is the user's position; the user closes it in the app.
 - **Entry** → if the bot holds a month of that root, the entry is added to **that month** (never two
   months at once). With nothing held: from **15:00 the day before settlement** (the night session that opens the settlement
   day's trading date) new positions go to the next month; before that, to the current one. A

@@ -22,6 +22,7 @@ except ImportError:  # loaded with lib/ itself on sys.path
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "president_account.json")
 _STALE_S = 300  # worker cadence is 60 s; 5 misses = stale
+_manual_logged = set()  # (productid, net) already logged by this process
 ROOTS = ("TXF", "MXF", "TMF")
 
 
@@ -67,15 +68,22 @@ def position_rows():
 
 
 def bot_position_rows(now=None):
-    """The held rows the bot trades on (lib/president_contracts.bot_rows):
-    settled residue of an expired month is dropped (logged, never closed —
-    it was cash-settled), a month the bot does not trade fails the read
-    (ManualPosition)."""
+    """The held rows the bot trades on (lib/president_contracts.bot_rows) —
+    what the reconciler reads, what flatten reads and what the order lib
+    checks a close against. Settled residue of an expired month is dropped
+    (logged, never closed — it was cash-settled); a month the bot does not
+    trade (the user's own, opened in the app) is left out (logged once per
+    position), so it neither blocks the bot's rows nor gets closed by them."""
     snap = _read_snapshot()
-    keep, residue = _contracts.bot_rows(snap.get("positions", []), snap.get("listed"), now)
+    keep, residue, manual = _contracts.bot_rows(snap.get("positions", []), snap.get("listed"), now)
     for r in residue:
         logging.info(f"[president] {r['productid']} {r['net']:+d}: past its settlement and not "
                      f"listed — treated as settled, ignored")
+    for r in manual:
+        if (r["productid"], r["net"]) not in _manual_logged:
+            _manual_logged.add((r["productid"], r["net"]))
+            logging.warning(f"[president] {r['productid']} {r['net']:+d}: a month the bot does not "
+                            f"trade (opened in the app) — left out, Blave never touches it")
     return keep
 
 

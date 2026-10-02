@@ -18,9 +18,10 @@ A held row of a root is one of:
   month opened beside it): ignoring it would double the exposure for a day if it
   is really still trading, and the order path's own contract-list check
   refuses a contract that is not;
-- MANUAL: any other month (a far month the user opened in the app) — the read
-  fails for that root: Blave will not touch it, and summing it in would
-  mis-count the lots.
+- MANUAL: any other month (a far month the user opened in the app) — left out
+  of every read (logged): Blave never closes, adds to or sums it, and it does
+  not stop the bot's own rows — of its root or any other — from being read,
+  traded or flattened.
 """
 import calendar
 import re
@@ -32,10 +33,6 @@ MONTH_CODES = "ABCDEFGHIJKL"  # futures month letters, A = January
 SETTLE_HOUR, SETTLE_MINUTE = 13, 30
 NIGHT_OPEN_HOUR, NIGHT_OPEN_MINUTE = 15, 0
 PROD_RE = re.compile(r"^(TXF|MXF|TMF)([A-L])(\d)$")
-
-
-class ManualPosition(RuntimeError):
-    """A month of a root the bot does not trade is held — the read fails for it."""
 
 
 def _now(now):
@@ -121,17 +118,14 @@ def classify_row(row, listed=None, now=None):
 
 
 def bot_rows(rows, listed_by_root=None, now=None):
-    """The held rows the bot counts (bot + pending), and the settled residue it
-    ignores. Raises ManualPosition for a month the bot does not trade."""
-    keep, residue = [], []
+    """(keep, residue, manual): the held rows the bot counts (bot + pending),
+    the settled residue it ignores, and the months it does not trade (left
+    out, never touched)."""
+    keep, residue, manual = [], [], []
     for r in rows:
         if not r.get("net"):
             continue
         listed = (listed_by_root or {}).get(r["root"])
         kind = classify_row(r, listed, now)
-        if kind == "manual":
-            raise ManualPosition(
-                f"偵測到 {r['productid']}({r['net']:+d} 口)的手動部位,Blave 不會動它;請先在 App 處理"
-                f"或告訴 agent — {r['root']} 暫停對帳")
-        (residue if kind == "settled" else keep).append(r)
-    return keep, residue
+        {"settled": residue, "manual": manual}.get(kind, keep).append(r)
+    return keep, residue, manual

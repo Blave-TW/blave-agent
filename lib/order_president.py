@@ -68,7 +68,7 @@ from datetime import datetime
 from hashlib import sha1
 
 from lib import guard, president_vault
-from lib.president_contracts import (MONTH_CODES, PROD_RE, ROOTS, TAIPEI, ManualPosition,  # noqa: F401
+from lib.president_contracts import (MONTH_CODES, PROD_RE, ROOTS, TAIPEI,  # noqa: F401
                                      computed_near, entry_roll_at, front_month, prod_id,
                                      settlement_at)
 
@@ -185,7 +185,7 @@ def entry_contract(root, rows, now=None):
     A held month is only trusted from a snapshot read after the last send."""
     root = str(root).upper()
     # `rows` are the bot's rows (account_president.bot_position_rows): settled
-    # residue is already gone, a manual month already failed the read
+    # residue and the user's own months are already left out
     held = sorted({r["productid"] for r in rows if r["root"] == root and r["net"]})
     if len(held) == 1:
         return held[0]
@@ -286,7 +286,9 @@ def _checked_close(symbol, action, lots):
     sym = str(symbol).upper()
     if not PROD_RE.match(sym) and sym not in ROOTS:
         raise ValueError(f"{symbol!r} is not TXF/MXF/TMF or a month contract code")
-    rows = bot_position_rows()  # never a settled month (cash-settled) or a manual one
+    # the bot's rows only: a settled month (cash-settled) or the user's own month is
+    # never closed, and its presence does not block closing the bot's
+    rows = bot_position_rows()
     hits = [r for r in rows if (r["productid"] == sym if PROD_RE.match(sym) else r["root"] == sym)]
     if not hits:
         raise PresidentError(f"no open {sym} position in the 統一 snapshot — nothing to close")

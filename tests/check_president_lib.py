@@ -482,8 +482,10 @@ check(pc.classify_row(R("TXFJ6"), ["TXFK6"], T(2026, 10, 15, 10, 0)) == "bot"
       and pc.classify_row(R("TXFL6"), ["TXFJ6"], T(2026, 10, 15, 10, 0)) == "manual",
       "before its settlement a held row is judged by its month alone — a short broker list never "
       "hides it (hidden, the reconciler would re-open it every round and flatten would skip it)")
-e = raises(pc.ManualPosition, lambda: pc.bot_rows([R("TXFJ6"), R("TXFL6", -1)], None, T(2026, 10, 1, 10, 0)))
-check(e is not None and "TXFL6" in str(e) and "不會動它" in str(e), "a manual far month fails the read, named", e)
+keep, residue, manual = pc.bot_rows([R("TXFJ6"), R("TXFL6", -1), R("MXFL6")], None, T(2026, 10, 1, 10, 0))
+check([r["productid"] for r in keep] == ["TXFJ6"] and not residue
+      and [r["productid"] for r in manual] == ["TXFL6", "MXFL6"],
+      "manual far months are set apart (never raised): the bot's J6 is still kept", (keep, manual))
 check(raises(op.PresidentError, lambda: op.entry_contract(
     "TXF", ROWS_J + [{"root": "TXF", "productid": "TXFK6", "net": 1}], T(2026, 10, 21, 9, 0))) is not None,
       "two months already held → no entry")
@@ -862,8 +864,39 @@ api = use([ACK])
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and not api.sent, "a close of settled residue is refused, never sent")
 snapshot([{"root": "TMF", "productid": "TMFL6", "net": -1}])
-e = raises(pc.ManualPosition, reconciler.get_positions)
-check(e is not None and "TMFL6" in str(e), "a manual far month fails the read (no lots summed, nothing touched)", e)
+check(reconciler.get_positions() == {}, "a manual far month alone reads as no bot position (nothing summed)")
+# the user's own months (opened in the app) are left out: the bot's rows of that root and of
+# others are still read, and 全部平倉 — flatten's two calls per venue, get_positions then
+# close_position_partial for each row — still closes them
+open(op.LAST_ORDER_PATH, "w").write("{}")
+MIXED = [{"root": "TMF", "productid": "TMFK6", "net": 2, "net_current": 2},
+         {"root": "TMF", "productid": "TMFL6", "net": -1, "net_current": -1},
+         {"root": "TXF", "productid": "TXFL6", "net": 1, "net_current": 1}]
+MIXED_LISTED = {"TMF": ["TMFK6", "TMFL6"], "TXF": ["TXFK6", "TXFL6"], "MXF": ["MXFK6", "MXFL6"]}
+snapshot(MIXED, listed=MIXED_LISTED)
+check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 2.0, "exchange": "president"}},
+      "reconciler with manual TMFL6 + TXFL6 held: the bot's TMFK6 is read, TXF is not blocked")
+flat_pos = account_president.get_positions({})
+check(list(flat_pos) == ["TMF"] and flat_pos["TMF"]["productid"] == "TMFK6",
+      "flatten's read with manual months held: only the bot's row", flat_pos)
+NOW_LIST[:] = ["TMFK6", "TMFL6"]
+api = use([ACK])
+flat_errs = []
+for _i, (_sym, _p) in enumerate(flat_pos.items()):
+    try:  # flatten records a failed close and goes on — so does this
+        op.format_qty({}, _sym, _p["size"])
+        op.close_position_partial({}, _sym, _p["side"], _p["size"], client_order_id=f"flat2026102114000000000{_i}")
+    except Exception as _e:  # noqa: BLE001
+        flat_errs.append(str(_e))
+check(not flat_errs and [(o.productid, o.bs, o.opencloseflag) for o in api.sent] == [("TMFK6", "S", "1")],
+      "全部平倉 with manual months held: the bot's TMFK6 is closed, nothing goes to TMFL6 / TXFL6",
+      (flat_errs, [vars(o) for o in api.sent]))
+open(op.LAST_ORDER_PATH, "w").write("{}")
+snapshot(MIXED, listed=MIXED_LISTED)
+api = use([ACK])
+check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMFL6", "short", 1)) is not None
+      and not api.sent, "the user's own month named by its code → refused, never sent")
+open(op.LAST_ORDER_PATH, "w").write("{}")
 pc._now = lambda now: _real_now(now or FIXED_NOW)
 NOW_LIST[:] = [op.near_month("TMF", [f"TMF{c}{d}" for c in op.MONTH_CODES for d in "0123456789"])]
 
