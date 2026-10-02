@@ -572,6 +572,15 @@ def blave_data_need(source: str):
     or custom `lib.*` modules (helper code). A wrong False only costs a failed backtest: the
     data gate itself is lib/data.py plus the api."""
     try:
+        return _blave_data_need(source)
+    except Exception:
+        # Deeply nested code makes ast.parse raise MemoryError / RecursionError (api runs this on
+        # untrusted community code): can't tell, and one listing must not stop a whole publish.
+        return None
+
+
+def _blave_data_need(source: str):
+    try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
         return None

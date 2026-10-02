@@ -11,7 +11,7 @@ the desktop library groups "usable without a card" on it.
      Taiwan daily pair's free-first chain still falls back to Blave, so it counts as Blave.
      Inert names are not functions. Every shipped lib module that reaches a Blave name or BASE
      of lib.data is in _LIB_REACHING_BLAVE.
-  3. Classifier cases: plain / aliased / module-attribute / getattr reach into lib.data, direct
+  3. Deeply nested code (ast.parse MemoryError) → None, nothing raised. Classifier cases: plain / aliased / module-attribute / getattr reach into lib.data, direct
      api.blave.org URLs, and every "can't tell" shape → None (BASE, private helpers, the report
      builders, the module rebound or passed as a value, vars()); True wins over None.
   4. Shipped templates and examples classify as their fetchers say.
@@ -156,6 +156,14 @@ CASES = [
     ("unknown constant", "from lib.data import SOME_NEW_URL\n", None),
     ("bundle: one part needs data", "# ===== STRATEGY 1: A =====\nfrom lib.data import fetch_kline\n# ===== STRATEGY 2: B =====\nfrom lib.data import fetch_cvd_coin\n", True),
 ]
+# audit r2 P2-3:深層巢狀 → ast.parse 丟 MemoryError(api 的 py3.9 與這裡都會);判不出,不准丟出去
+for label, deep in (("200k unary minus", "x = " + "-" * 200000 + "1"), ("200k not", "x = " + "not " * 200000 + "1"),
+                    ("100k nested lists", "x = " + "[" * 100000 + "]" * 100000)):
+    try:
+        got = need(HEAD + deep)
+    except BaseException as e:   # noqa: B036 — the point is that nothing escapes
+        got = f"raised {type(e).__name__}"
+    check(got is None, f"deeply nested code ({label}): None, nothing raised (got {got})")
 for label, src, want in CASES:
     got = need(HEAD + src)
     check(got is want, f"{label}: {want} (got {got})")
