@@ -195,18 +195,17 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
   const texts = (n) => (n && typeof n === "object" ? [n.textContent || "", ...(n.kids || []).flatMap(texts)] : []);
   const xpSrc = fs.readFileSync(path.join(R, "export.js"), "utf8");
   const TPLB = { up: "B 把策略 {id} 送上我的雲端主機，存成 {to}。", down: "B 把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。" };
-  const run = (dir, cloudCfg, localCfg, cloudList = [], localList = [], code = null, gate = null) => {
+  const run = (dir, cloudCfg, localCfg, cloudList = [], localList = [], code = null) => {
     const boxes = [], sent = [], opts = [];
     const c = { HO: { on: true, pending: null }, HO_ID_RE: /^[A-Za-z0-9_-]{1,64}$/, running: false, ENV: { cur: dir === "up" ? "local" : "cloud" },
-      trVenueLabel: (id) => "L:" + id,
       envCanSwitch: () => true, hoCloudLive: () => true, envCloudKind: () => "running", hoNote: () => {}, envSwitchGuarded: () => true,
-      TR_BAGS: { cloud: { st: { report: Object.assign({ config: cloudCfg }, gate && gate.cloud) } }, local: { st: { report: Object.assign({ config: localCfg }, gate && gate.local) } } },
+      TR_BAGS: { cloud: { st: { report: { config: cloudCfg } } }, local: { st: { report: { config: localCfg } } } },
       t: (k, v) => k + (v ? JSON.stringify(v) : ""), confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
       envCloudList: () => cloudList, RP: { list: localList, data: dir === "up" && code ? { code } : null }, RPC: { data: dir === "down" && code ? { code } : null }, LANG: "zh",
       hoTpl: (k) => (k === "B" ? TPLB : TPL), HO_NOTE: { "": ["ho.note.up", "ho.note.down"], B: ["ho.noteB.up", "ho.noteB.down"] }, paneSt: { chat: {} },
       submitMessage: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, trackFeature: () => {} };
     vm.createContext(c);
-    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse") + cut(trSrc, "trGateOf") + cut(trSrc, "trVenueInline") + cut(trSrc, "trZhTidy") + cut(trSrc, "tv") + cut(trSrc, "trVenueIds")
+    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse")
       + xpSrc.slice(xpSrc.indexOf("function xpIsTypeB("), xpSrc.indexOf("\n", xpSrc.indexOf("function xpIsTypeB("))), c);
     c.hoAsk(dir, "btc_rsi", {});
     const b = boxes[0]; if (!b) return null;
@@ -266,48 +265,8 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
     && /"ho\.rename\.maybeUp": "若雲端已有同名策略，會改存成新名字，原本那支不動。"/.test(strings));
   t("舊的來源擋下態整段退場(ho.block.srcUp / srcDown 不在程式與字串表)", !/ho\.block\.src/.test(src + strings));
   t("那一句的字:兩個方向都講「照常下單」與「給金額才會開始下單」", ["up", "down"].every((d) => (strings.match(new RegExp('"ho\\.srcLive\\.' + d + '": "[^"]*"', "g")) || []).length === 2)
-    && /"ho\.srcLive\.up": "這台電腦這一支照常下單；雲端那份[^"]*給金額，才會開始下單。"/.test(strings) && /"ho\.srcLive\.down": "雲端那一支照常下單；[^"]*給金額，才會開始下單。"/.test(strings)); }
-// 0.1.12 市場對應(spec-0.1.12-venue-market-gate §7):美股不開框原地講;其他對不上的照常送、確認框多一行(目的地那家的原因,另一邊的報告)
-{ const cut = (s2, name) => { const i = s2.indexOf("function " + name + "("); return s2.slice(i, s2.indexOf("\n}\n", i) + 3); };
-  const V = (id) => ({ venues: { [id]: { credentials: true, pair: true, order: true, account: true } } });
-  const verdict = (reasons, market) => ({ market_gate: { data_venues: ["binance"], verdicts: { spy_ma: { market, reasons } } } });
-  const go = (dir, localRep, cloudRep) => {
-    const boxes = [], sent = [], notes = [];
-    const c = { HO: { on: true, pending: null }, HO_ID_RE: /^[A-Za-z0-9_-]{1,64}$/, running: false, envCanSwitch: () => true, hoCloudLive: () => true,
-      hoNote: (k, o) => notes.push([k, o || null]), RP: { list: [], data: null }, RPC: { data: null }, ENV: { cur: "local" },
-      TR_BAGS: { local: { st: { report: localRep } }, cloud: { st: { report: cloudRep } } }, envCloudList: () => [], LANG: "zh",
-      t: (k, v) => k + (v ? JSON.stringify(v) : ""), trVenueLabel: (id) => "L:" + id, confirmBox: (o) => boxes.push(o),
-      document: { createElement: () => { const n = { kids: [], textContent: "", append(...x) { n.kids.push(...x); }, appendChild(x) { n.kids.push(x); return x; } }; return n; },
-        createDocumentFragment: () => { const n = { kids: [], append(...x) { n.kids.push(...x); }, appendChild(x) { n.kids.push(x); return x; } }; return n; } },
-      $: () => ({}), hoTpl: () => ({ up: "把策略 {id} 送上我的雲端主機，存成 {to}。", down: "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。" }),
-      HO_NOTE: { "": ["ho.note.up", "ho.note.down"], B: ["ho.noteB.up", "ho.noteB.down"] }, paneSt: { chat: {} },
-      submitMessage: (m) => { sent.push(m); return Promise.resolve(false); }, trackFeature: () => {} };
-    vm.createContext(c);
-    const xp = fs.readFileSync(path.join(R, "export.js"), "utf8");
-    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse") + cut(trSrc, "trGateOf") + cut(trSrc, "trVenueInline") + cut(trSrc, "trZhTidy") + cut(trSrc, "tv") + cut(trSrc, "trVenueIds")
-      + xp.slice(xp.indexOf("function xpIsTypeB("), xp.indexOf("\n", xp.indexOf("function xpIsTypeB("))), c);
-    c.hoAsk(dir, "spy_ma", {});
-    const texts = (n) => (n && typeof n === "object" ? [n.textContent || "", ...(n.kids || []).flatMap(texts)] : []);
-    return { boxes: boxes.length, sent: sent.length, notes, txt: boxes[0] ? texts(boxes[0].extra).join("|") : "" };
-  };
-  const all = (r) => ({ paper: r, binance: r, okx: r, bybit: r, bingx: r, gateio: r, capital: r });
-  const us = go("up", Object.assign(V("paper"), verdict(all("us"), "us_stock")), V("okx"));
-  t("送上雲端:機器判 us → hoNote(ho.gate.usstock, { go: false })、不開框、不送訊息", JSON.stringify(us.notes) === JSON.stringify([["ho.gate.usstock", { go: false }]]) && us.boxes === 0 && us.sent === 0, JSON.stringify(us));
-  const mm = go("up", Object.assign(V("paper"), verdict({ paper: null, okx: "src" }, "crypto_perp:binance")), V("okx"));
-  t("送上雲端:雲端連 OKX、這支在 OKX 是 src → 照常開框,多一行 ho.gate.mismatch.up(雲端那家的顯示名)", mm.boxes === 1 && /ho\.gate\.mismatch\.up\{"venue":" L:okx "\}/.test(mm.txt), mm.txt);
-  const ok2 = go("up", Object.assign(V("paper"), verdict({ paper: null, okx: null }, "crypto_perp:binance")), V("okx"));
-  const leg = go("up", Object.assign(V("paper"), verdict({ paper: null, okx: "legacy" }, null)), V("okx"));
-  const nov = go("up", Object.assign(V("paper"), verdict({ paper: null, okx: "src" }, "crypto_perp:binance")), {});
-  t("送上雲端:通過 / legacy / 雲端沒連交易所 → 沒有那一行", ok2.boxes === 1 && !/mismatch/.test(ok2.txt) && !/mismatch/.test(leg.txt) && nov.boxes === 1 && !/mismatch/.test(nov.txt));
-  const down = go("down", V("binance"), Object.assign(V("okx"), verdict({ binance: "twStock", okx: "twStock" }, "tw_stock")));
-  t("拉回:這台電腦連 Binance、雲端那份判 twStock → ho.gate.mismatch.down;拉回不擋美股(那支在雲端本來就跑不了)", down.boxes === 1 && /ho\.gate\.mismatch\.down\{"venue":" L:binance "\}/.test(down.txt), down.txt);
-  const node = { kids: [], hidden: true, text: "", set textContent(v) { this.text = v; this.kids = []; }, append(...x) { this.kids.push(...x); } };
-  const c2 = { $: () => node, t: (k) => "T:" + k, document: { createElement: () => ({ addEventListener() {} }) }, envSwitchGuarded() {} };
-  vm.createContext(c2); vm.runInContext(cut(src, "hoNote"), c2);
-  c2.hoNote("ho.gate.usstock", { go: false });
-  const noBtn = node.hidden === false && JSON.stringify(node.kids) === JSON.stringify(["T:ho.gate.usstock"]);
-  c2.hoNote("ho.gate.stopped");
-  t("hoNote(key, { go: false }) 只放那一句、沒有鈕;不帶參數照舊附「去雲端看」鈕", noBtn && node.kids.length === 2 && node.kids[0] === "T:ho.gate.stopped ");
-  t("字(設計師定稿):ho.gate.usstock / ho.gate.mismatch.up 兩語都在", /"ho\.gate\.usstock": "美股資料只能在這台電腦上用，這支策略送不上雲端。"/.test(strings)
-    && /"ho\.gate\.mismatch\.up": "這支策略跟雲端連的\{venue\}對不上，送上去也不能自動下單；回測和報告照常。"/.test(strings) && /"ho\.gate\.mismatch\.down": "This strategy doesn’t match \{venue\}/.test(strings)); }
+    && /"ho\.srcLive\.up": "這台電腦這一支照常下單；雲端那份[^"]*給金額，才會開始下單。"/.test(strings) && /"ho\.srcLive\.down": "雲端那一支照常下單；[^"]*給金額，才會開始下單。"/.test(strings));
+  // 0.1.12 市場檢查出貨前整個拿掉:送上雲端 / 拉回不看市場(美股不在這裡擋,也不多那一行「對不上」)
+  t("送上雲端 / 拉回不看市場:handoff.js 沒有 trGateOf / market_gate / ho.gate.usstock / ho.gate.mismatch;字串表也沒有那三句",
+    !/trGateOf|market_gate|ho\.gate\.(usstock|mismatch)/.test(src) && !/ho\.gate\.(usstock|mismatch)/.test(strings)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

@@ -1573,119 +1573,11 @@ msgstr "Paper trading does not support TWD-priced instruments yet"
 msgid "tr.pick.twdKeep"
 msgstr "Paper trading does not support TWD-priced instruments yet; once unchecked, it can’t be added back"
 
-msgid "ho.gate.mismatch.down"
-msgstr "This strategy doesn’t match {venue}, the exchange this computer is connected to, so it won’t auto-trade here; backtests and reports still work."
-
-msgid "ho.gate.mismatch.up"
-msgstr "This strategy doesn’t match {venue}, the exchange the cloud is connected to, so it won’t auto-trade there; backtests and reports still work."
-
-msgid "cx.gate.rebind1"
-msgstr "1 strategy in your table doesn’t match {venue}. After connecting, uncheck it in Pick strategies before you can save amounts again."
-
-msgid "cx.gate.rebind"
-msgstr "{n} strategies in your table don’t match {venue}. After connecting, uncheck them in Pick strategies before you can save amounts again."
-
 msgid "cx.cap.localWin"
 msgstr "The desktop app can’t connect to Capital yet. Capital needs a Windows cloud machine: choose Windows when you launch one on the web (it can’t be changed afterward)."
 
 msgid "cx.cap.localMac"
 msgstr "Capital’s order software runs only on Windows, so this Mac can’t connect to it. Capital needs a Windows cloud machine: choose Windows when you launch one on the web (it can’t be changed afterward)."
-
-msgid "tr.gate.startBlocked"
-msgstr "{name}: {reason}. Uncheck it in Pick strategies and save, then press {btn}."
-
-msgid "tr.gate.rejectedAny"
-msgstr "{name} doesn’t match the exchange you’re connected to. Uncheck it in Pick strategies, then save."
-
-msgid "tr.gate.rejected"
-msgstr "{name}: {reason}. Uncheck it in Pick strategies, then save."
-
-msgid "tr.gate.saveBlocked"
-msgstr "Uncheck {name} in Pick strategies to save."
-
-msgid "tr.gate.saveBlockedN"
-msgstr "Uncheck {names} in Pick strategies to save."
-
-msgid "tr.next.legacy"
-msgstr "No recorded data source: ask the agent to rerun the backtest to see whether it can auto-trade on {venue}."
-
-msgid "tr.next.cryptoOnBroker"
-msgstr "Crypto strategies: connect a crypto exchange instead to auto-trade them."
-
-msgid "tr.next.twFut"
-msgstr "Taiwan index futures: connect Capital on a Windows cloud machine to auto-trade them."
-
-msgid "tr.next.srcNoData"
-msgstr "Backtested on {src} data: {venue} data can’t be used for backtests yet, so connect {src} to auto-trade them."
-
-msgid "tr.next.src"
-msgstr "Backtested on {src} data: ask the agent to rerun it on {venue} data, or connect {src} instead."
-
-msgid "tr.gate.legacyFund"
-msgstr "Its backtest didn’t record a data source; rerun it before funding"
-
-msgid "tr.gate.keep"
-msgstr "{reason}; uncheck it to save"
-
-msgid "tr.gate.src"
-msgstr "Backtested on {src} data; you’re connected to {venue}"
-
-msgid "tr.gate.unconfirmed"
-msgstr "Its order symbol can’t be matched to a contract on {venue}"
-
-msgid "tr.gate.notRun"
-msgstr "Hasn’t run yet, so its order symbol is unknown; ask the agent to run it once"
-
-msgid "tr.hold.word"
-msgstr "Orders held"
-
-msgid "env.st.held"
-msgstr "A strategy’s orders are held"
-
-msgid "tr.hold.partial"
-msgstr "Held symbols: {syms}. {reason}"
-
-msgid "tr.hold.effect"
-msgstr "Its position stays as is: no entries, no exits, and its stop-loss won’t run."
-
-msgid "tr.hold.effectPart"
-msgstr "Positions in the held symbols stay as is: no entries, no exits, and their stop-loss won’t run."
-
-msgid "tr.hold.r5"
-msgstr "If another strategy trades the same symbol the other way, this one’s position may be closed along with it."
-
-msgid "tr.hold.next"
-msgstr "Fix it and rerun the backtest, and it resumes on the next round. To drop it instead, uncheck it in Pick strategies and save; its position will be closed."
-
-msgid "tr.hold.more"
-msgstr "and {n} more"
-
-msgid "tr.ov.evHold"
-msgstr "Orders held"
-
-msgid "tr.ov.evHoldNote"
-msgstr "Its market doesn’t match the connected exchange; the position stays, with no stop-loss"
-
-msgid "tm.evHoldNote"
-msgstr "A strategy’s market doesn’t match the connected exchange, so its orders are held; the position stays, with no stop-loss. Open Auto trading to see which one."
-
-msgid "tr.gate.cryptoOnBroker"
-msgstr "Capital only trades Taiwan index futures"
-
-msgid "tr.gate.twFut"
-msgstr "Taiwan index futures auto-trade only through Capital"
-
-msgid "tr.gate.other"
-msgstr "No exchange matches its data source"
-
-msgid "tr.gate.twStock"
-msgstr "Taiwan stocks can’t be auto-traded yet"
-
-msgid "tr.gate.legacy"
-msgstr "Its backtest didn’t record a data source"
-
-msgid "tr.gate.us"
-msgstr "Uses US stock data; US stocks are backtest-only for now"
 
 msgid "tr.typeB.rejected"
 msgstr "{name}: No fixed run interval, so for now it runs automatically only in the cloud. Uncheck it in Pick strategies, then save."
@@ -2901,9 +2793,6 @@ msgstr "The cloud’s state can’t be read right now, so this isn’t being sen
 msgid "ho.gate.stopped"
 msgstr "Your cloud machine is stopped, so nothing can be sent up right now."
 
-msgid "ho.gate.usstock"
-msgstr "US stock data is available only on this computer, so this strategy can’t be sent to the cloud."
-
 msgid "ho.back.btn"
 msgstr "Back to This Computer"
 
@@ -3800,7 +3689,7 @@ msgid "lib.nav"
 msgstr "Strategy Library"
 
 msgid "lib.chip"
-msgstr "See free strategies"
+msgstr "See Ready-Made Strategies"
 
 msgid "lib.desc"
 msgstr "Official strategies are free; community strategies can be bought right here. Verified first, then longest backtest."
@@ -4569,9 +4458,6 @@ msgstr "Indicators"
 
 msgid "ns.msgLogic"
 msgstr "Logic"
-
-msgid "ns.msgDefault"
-msgstr "For crypto symbols, default to USDT-margined perpetual futures unless stated otherwise."
 
 # ── 策略庫「付不出資料費」的出口(spec-desktop-0.1.6 §3;取代 lib.gate.noData)──
 msgid "lib.gate.bindCard"

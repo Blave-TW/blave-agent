@@ -1573,119 +1573,11 @@ msgstr "模擬交易暫不支援台幣計價的標的"
 msgid "tr.pick.twdKeep"
 msgstr "模擬交易暫不支援台幣計價的標的；取消勾選後不能再加回來"
 
-msgid "ho.gate.mismatch.down"
-msgstr "這支策略跟這台電腦連的{venue}對不上，拉回來也不能自動下單；回測和報告照常。"
-
-msgid "ho.gate.mismatch.up"
-msgstr "這支策略跟雲端連的{venue}對不上，送上去也不能自動下單；回測和報告照常。"
-
-msgid "cx.gate.rebind1"
-msgstr "表上有 1 支策略跟{venue}對不上；連上之後，要先在「選擇策略」取消勾選它，才能再儲存金額。"
-
-msgid "cx.gate.rebind"
-msgstr "表上有 {n} 支策略跟{venue}對不上；連上之後，要先在「選擇策略」取消勾選它們，才能再儲存金額。"
-
 msgid "cx.cap.localWin"
 msgstr "電腦版還不能連群益。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。"
 
 msgid "cx.cap.localMac"
 msgstr "群益的下單元件只能在 Windows 上執行，這台 Mac 連不了。要連群益，得用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。"
-
-msgid "tr.gate.startBlocked"
-msgstr "「{name}」{reason}。先在「選擇策略」取消勾選並儲存，再按「{btn}」。"
-
-msgid "tr.gate.rejectedAny"
-msgstr "「{name}」跟你連的交易所對不上。到「選擇策略」取消勾選後再儲存。"
-
-msgid "tr.gate.rejected"
-msgstr "「{name}」{reason}。到「選擇策略」取消勾選後再儲存。"
-
-msgid "tr.gate.saveBlocked"
-msgstr "先在「選擇策略」取消勾選「{name}」，才能儲存。"
-
-msgid "tr.gate.saveBlockedN"
-msgstr "先在「選擇策略」取消勾選{names}，才能儲存。"
-
-msgid "tr.next.legacy"
-msgstr "沒記下資料來源的：請 agent 重跑一次回測，就知道能不能在{venue}自動下單。"
-
-msgid "tr.next.cryptoOnBroker"
-msgstr "加密貨幣策略：改連加密貨幣交易所，就能自動下單。"
-
-msgid "tr.next.twFut"
-msgstr "台指期策略：在 Windows 雲端主機連群益，就能自動下單。"
-
-msgid "tr.next.srcNoData"
-msgstr "用{src}資料回測的：{venue}的資料目前還不能拿來回測，要自動下單得改連{src}。"
-
-msgid "tr.next.src"
-msgstr "用{src}資料回測的：請 agent 改用{venue}的資料重跑回測，或改連{src}。"
-
-msgid "tr.gate.legacyFund"
-msgstr "回測沒記下資料來源，重跑一次回測才能撥金額"
-
-msgid "tr.gate.keep"
-msgstr "{reason}；取消勾選後才能儲存"
-
-msgid "tr.gate.src"
-msgstr "用{src}的資料回測，你連的是{venue}"
-
-msgid "tr.gate.unconfirmed"
-msgstr "下單的標的無法確認是{venue}上的哪個合約"
-
-msgid "tr.gate.notRun"
-msgstr "還沒跑過，不知道要下單哪個標的；請 agent 先跑一次"
-
-msgid "tr.hold.word"
-msgstr "已停單"
-
-msgid "env.st.held"
-msgstr "有策略已停單"
-
-msgid "tr.hold.partial"
-msgstr "停單的標的：{syms}。{reason}"
-
-msgid "tr.hold.effect"
-msgstr "部位照留，不進場、不平倉，停損也不會執行。"
-
-msgid "tr.hold.effectPart"
-msgstr "被停的那一份部位照留，不進場、不平倉，停損也不會執行。"
-
-msgid "tr.hold.r5"
-msgstr "同一個標的有別支策略反向下單時，這支的部位可能被一起平掉。"
-
-msgid "tr.hold.next"
-msgstr "改好並重跑回測後，下一輪會自動恢復；不要了就在「選擇策略」取消勾選並儲存，這支的部位會平掉。"
-
-msgid "tr.hold.more"
-msgstr "等 {n} 個"
-
-msgid "tr.ov.evHold"
-msgstr "已停單"
-
-msgid "tr.ov.evHoldNote"
-msgstr "市場跟連的交易所對不上；部位照留，停損不會執行"
-
-msgid "tm.evHoldNote"
-msgstr "有一支策略的市場跟連的交易所對不上，已停止下單，部位照留、停損不會執行。打開「自動下單」看是哪一支。"
-
-msgid "tr.gate.cryptoOnBroker"
-msgstr "群益只能下台指期"
-
-msgid "tr.gate.twFut"
-msgstr "台指期只能透過群益自動下單"
-
-msgid "tr.gate.other"
-msgstr "資料來源沒有對應的交易所"
-
-msgid "tr.gate.twStock"
-msgstr "台股現股目前還不能自動下單"
-
-msgid "tr.gate.legacy"
-msgstr "回測沒記下資料來源"
-
-msgid "tr.gate.us"
-msgstr "用到美股資料；美股目前只能回測"
 
 msgid "tr.typeB.rejected"
 msgstr "「{name}」沒有固定的執行週期，目前只能在雲端自動執行。到「選擇策略」取消勾選後再儲存。"
@@ -2901,9 +2793,6 @@ msgstr "現在讀不到雲端的狀況，先不送。"
 msgid "ho.gate.stopped"
 msgstr "雲端主機已停機，現在送不上去。"
 
-msgid "ho.gate.usstock"
-msgstr "美股資料只能在這台電腦上用，這支策略送不上雲端。"
-
 msgid "ho.back.btn"
 msgstr "回這台電腦送上來"
 
@@ -3800,7 +3689,7 @@ msgid "lib.nav"
 msgstr "策略庫"
 
 msgid "lib.chip"
-msgstr "看免費策略"
+msgstr "看現成策略"
 
 msgid "lib.desc"
 msgstr "官方策略免費，社群策略可直接購買。已驗證優先，再看樣本期長短。"
@@ -4571,9 +4460,6 @@ msgstr "指標"
 
 msgid "ns.msgLogic"
 msgstr "邏輯"
-
-msgid "ns.msgDefault"
-msgstr "加密貨幣標的未註明市場時，預設 USDT 本位永續合約。"
 
 # ── 策略庫「付不出資料費」的出口(spec-desktop-0.1.6 §3;取代 lib.gate.noData)──
 msgid "lib.gate.bindCard"

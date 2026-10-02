@@ -1,6 +1,6 @@
 // 新增策略 modal(shell/renderer/newstrategy.js;spec-desktop-0.1.6 §4)。
 //   ① 純邏輯(從原文切出來跑,不碰 DOM):nsCompose zh / en——只填週期(09-25 在雲端版實填 4h 量到的原句)、全填、全空 → ""、邏輯尾端的 。/ . 不重複、
-//      空格跳過;字串表 ns.* 逐字同 web 的 workspace_ns_*(previewEmpty 除外:只放「—」佔位)。
+//      空格跳過;字串表 ns.* 逐字同 web 的 workspace_ns_*(previewEmpty 除外:只放「—」佔位);任何標的都不附 web 那句「加密貨幣標的…預設永續」(不從代號猜市場)。
 //   ② 接線(原文):index.html 的 ＋ / chip / 框的骨架與載入順序;trapTab 擴到 input / textarea;escTop 鏈有 #ns-scrim;telemetry 白名單有 strategy_new;沒有 innerHTML。
 //   ③ 用隨包的 Electron 開真的 index.html:＋ 開框(焦點到名稱欄、空表單送出 disabled 且 aria-describedby 指到 ns-hint、預覽「—」)→ 填一格預覽即時 = 組句、送出 enabled →
 //      送出 → 送到對話的就是那句、關框、表單清空、strategy_new;失敗 → 框留著、欄位不清、腳那一句;雲端視角三處目的地記號;停機 → 送出 disabled + 閘門句;
@@ -12,15 +12,15 @@ const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  ← " + String(d).slice(0, 2000))); if (!c) red++; };
 const read = (f) => fs.readFileSync(f, "utf8");
 const src = read(path.join(R, "newstrategy.js")), appSrc = read(path.join(R, "app.js")), html = read(path.join(R, "index.html")), strings = read(path.join(R, "strings.js"));
-const mainSrc = read(path.join(SHELL, "main.js")), preloadSrc = read(path.join(SHELL, "preload.js"));
+const mainSrc = read(path.join(SHELL, "main.js")), preloadSrc = read(path.join(SHELL, "preload.js")), po = (L) => read(path.join(SHELL, "i18n", L + ".po"));
 const cutFn = (s, name) => { const i = s.indexOf("function " + name + "("); if (i < 0) throw new Error("no " + name); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("unbalanced " + name); };
 const STR = (() => { const sb = {}; vm.runInNewContext(strings + "\nthis.S = STRINGS;", sb); return sb.S; })();
 // web 的字(逐字;web/app/translations/*/LC_MESSAGES/messages.po 的 workspace_ns_*,2026-09-25 抄下)
 const WEB = {
-  zh: { lead: "幫我建立策略", symbol: "標的", timeframe: "週期", indicators: "指標", logic: "邏輯", dflt: "加密貨幣標的未註明市場時，預設 USDT 本位永續合約。", hint: "至少填寫一項，其餘交給 agent 判斷。", previewEmpty: "（至少填寫一項）", submit: "送出到對話" },
-  en: { lead: "Create a strategy", symbol: "Symbol", timeframe: "Timeframe", indicators: "Indicators", logic: "Logic", dflt: "For crypto symbols, default to USDT-margined perpetual futures unless stated otherwise.", hint: "Fill in at least one field — the agent works out the rest.", previewEmpty: "(fill in at least one field)", submit: "Send to Chat" },   // submit 依 canon 改 Title Case(設計稽核 建-2),不逐字同 web
+  zh: { lead: "幫我建立策略", symbol: "標的", timeframe: "週期", indicators: "指標", logic: "邏輯", hint: "至少填寫一項，其餘交給 agent 判斷。", previewEmpty: "（至少填寫一項）", submit: "送出到對話" },
+  en: { lead: "Create a strategy", symbol: "Symbol", timeframe: "Timeframe", indicators: "Indicators", logic: "Logic", hint: "Fill in at least one field — the agent works out the rest.", previewEmpty: "(fill in at least one field)", submit: "Send to Chat" },   // submit 依 canon 改 Title Case(設計稽核 建-2),不逐字同 web
 };
-const S = (L) => ({ lead: STR[L]["ns.msgLead"], symbol: STR[L]["ns.msgSymbol"], timeframe: STR[L]["ns.msgTimeframe"], indicators: STR[L]["ns.msgIndicators"], logic: STR[L]["ns.msgLogic"], dflt: STR[L]["ns.msgDefault"] });
+const S = (L) => ({ lead: STR[L]["ns.msgLead"], symbol: STR[L]["ns.msgSymbol"], timeframe: STR[L]["ns.msgTimeframe"], indicators: STR[L]["ns.msgIndicators"], logic: STR[L]["ns.msgLogic"] });
 
 if (!process.versions.electron) {
   // ── ① 純邏輯 ──
@@ -29,35 +29,22 @@ if (!process.versions.electron) {
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
-  ["zh", "en"].forEach((L) => ok(`① ${L} ns.* 的組句字逐字同 web 的 workspace_ns_msg_* / hint;預覽空格只放「—」(規則講在頂端 ns.hint 一次,不逐字同 web 的 preview_empty)`, ["lead", "symbol", "timeframe", "indicators", "logic", "dflt"].every((k) => S(L)[k] === WEB[L][k]) && STR[L]["ns.hint"] === WEB[L].hint && STR[L]["ns.previewEmpty"] === "—" && STR[L]["ns.submit"] === WEB[L].submit));
-  ok("① zh 只填週期 4h = 雲端版實填量到的原句", P.nsCompose({ timeframe: "4h" }, "zh", S("zh")) === "幫我建立策略。週期：4h。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。");
-  ok("① zh 全填:名稱進「」、每格一句、邏輯尾端的 。不重複、尾句", P.nsCompose({ name: "均線黃金交叉", symbol: "BTC", timeframe: "1h", indicators: "MA20、MA50", logic: "黃金交叉做多，死亡交叉平倉。" }, "zh", S("zh"))
-    === "幫我建立策略「均線黃金交叉」。標的：BTC。週期：1h。指標：MA20、MA50。邏輯：黃金交叉做多，死亡交叉平倉。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。");
-  ok("① zh 邏輯尾端的 ！？ 也去掉再補 。;只有空白的格子跳過(全空 → \"\")", P.nsCompose({ logic: "跌破月線就跑！！" }, "zh", S("zh")) === "幫我建立策略。邏輯：跌破月線就跑。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。"
+  ["zh", "en"].forEach((L) => ok(`① ${L} ns.* 的組句字逐字同 web 的 workspace_ns_msg_* / hint;預覽空格只放「—」(規則講在頂端 ns.hint 一次,不逐字同 web 的 preview_empty)`, ["lead", "symbol", "timeframe", "indicators", "logic"].every((k) => S(L)[k] === WEB[L][k]) && STR[L]["ns.hint"] === WEB[L].hint && STR[L]["ns.previewEmpty"] === "—" && STR[L]["ns.submit"] === WEB[L].submit));
+  ok("① zh 只填週期 4h:只有那一格,不附「加密貨幣標的…預設永續」", P.nsCompose({ timeframe: "4h" }, "zh", S("zh")) === "幫我建立策略。週期：4h。");
+  ok("① zh 全填:名稱進「」、每格一句、邏輯尾端的 。不重複", P.nsCompose({ name: "均線黃金交叉", symbol: "BTC", timeframe: "1h", indicators: "MA20、MA50", logic: "黃金交叉做多，死亡交叉平倉。" }, "zh", S("zh"))
+    === "幫我建立策略「均線黃金交叉」。標的：BTC。週期：1h。指標：MA20、MA50。邏輯：黃金交叉做多，死亡交叉平倉。");
+  ok("① zh 邏輯尾端的 ！？ 也去掉再補 。;只有空白的格子跳過(全空 → \"\")", P.nsCompose({ logic: "跌破月線就跑！！" }, "zh", S("zh")) === "幫我建立策略。邏輯：跌破月線就跑。"
     && P.nsCompose({ name: "  ", symbol: "\n" }, "zh", S("zh")) === "" && P.nsCompose({}, "zh", S("zh")) === "" && P.nsCompose(null, "zh", S("zh")) === "");
-  ok("① en 全填:名稱進雙引號、半形冒號句號、邏輯尾端的 . 不重複、尾句前一個空格", P.nsCompose({ name: "MA cross", symbol: "BTC", timeframe: "4h", indicators: "RSI", logic: "Long when RSI < 30." }, "en", S("en"))
-    === 'Create a strategy "MA cross". Symbol: BTC. Timeframe: 4h. Indicators: RSI. Logic: Long when RSI < 30. For crypto symbols, default to USDT-margined perpetual futures unless stated otherwise.');
-  // e2e 0.1.8 #47:標的 2330 也被附上「加密貨幣標的…」那句
-  const DZ = S("zh").dflt, DE = S("en").dflt;
-  // 0.1.12 實測 03b:SPY(美股)也被附上。幣名表 = 主行程 cryptoBases() 讀真的 runtime/market_contracts.py(從 main.js 原文切出來跑)
-  const M = { fs, path, REPO: path.join(SHELL, ".."), Set }; vm.createContext(M); vm.runInContext("var cryptoBasesMemo = null;\n" + cutFn(mainSrc, "cryptoBases"), M);
-  const BASES = new Set(vm.runInContext("cryptoBases()", M));
-  // 另一套切法逐鍵核對:PERP 每個鍵去掉 USDT / USDC 結尾都要在表裡、表裡也不多出別的(列舉才算沒漏)
-  const perp = read(path.join(SHELL, "..", "runtime", "market_contracts.py")).split("PERP = {")[1].split("\n}")[0].split("\n").map((l) => (/^\s+"(\w+)":/.exec(l) || [])[1]).filter(Boolean);
-  const want = new Set(perp.map((k) => k.endsWith("USDT") ? k.slice(0, -4) : k.endsWith("USDC") ? k.slice(0, -4) : "?" + k));
-  ok("① 主行程幣名表 = PERP 每個鍵的幣名(逐鍵核對,一個不多一個不少)", perp.length > 300 && want.size === BASES.size && [...want].every((x) => BASES.has(x)), [...want].filter((x) => !BASES.has(x)).slice(0, 10).join(","));
-  ok("① 主行程幣名表:讀得到隨包永續表、主流幣都在、常見美股 / ETF 代號都不在(那張表已排除 TradFi 永續)", BASES.size > 300 && ["BTC", "ETH", "SOL", "XRP", "DOGE", "1000PEPE", "1000SHIB"].every((x) => BASES.has(x))
-    && !["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "GOOGL", "META", "COIN", "MSTR", "IWM", "VOO", "TQQQ", "BRK"].some((x) => BASES.has(x)), [...BASES].slice(0, 20).join(","));
-  const C = (sym, L = "zh") => P.nsCompose({ symbol: sym }, L, S(L), BASES);
-  ok("① 台股標的(2330):不附加密那句;其餘照舊", P.nsCompose({ name: "台積電均線", symbol: "2330", timeframe: "1d" }, "zh", S("zh"), BASES) === "幫我建立策略「台積電均線」。標的：2330。週期：1d。"
-    && P.nsCompose({ symbol: "2330", timeframe: "1d" }, "en", S("en"), BASES) === "Create a strategy. Symbol: 2330. Timeframe: 1d.");
-  ok("① 認得出來的台股 / 台指期寫法都不附", ["2330", "00878", "006208", "00679B", "2330.TW", "6488.TWO", "TXF", "mxf", "TMF", "台指期", "臺指期 TXF", "小台", "微台", "2330 台積電", "2330、2317", "2330, 2454", "台股 0050", "加權指數"].every((x) => !C(x).includes(DZ) && !P.nsWantsDefault(x, BASES)));
-  ok("① 美股代號不附(SPY 原句、小寫、BRK.B / BRK-B、多檔、台美混寫)", P.nsCompose({ name: "SPY 均線", symbol: "SPY", timeframe: "1d" }, "zh", S("zh"), BASES) === "幫我建立策略「SPY 均線」。標的：SPY。週期：1d。"
-    && C("SPY", "en") === "Create a strategy. Symbol: SPY." && ["SPY", "spy", "AAPL", "QQQ", "TSLA", "BRK.B", "BRK-B", "SPY QQQ", "SPY、AAPL", "AAPL, 2330", "TSMC 2330"].every((x) => !C(x).includes(DZ) && !C(x, "en").includes(DE)));
-  ok("① 認得出加密貨幣才附(裸幣名、小寫、USDT / USDC 交易對各種寫法、千倍幣、撞美股代號的幣名、混寫裡有一段是加密)", ["BTC", "btc", "SOL", "BTCUSDT", "ETH/USDT", "ETH-USDT", "btc_usdc", "1000PEPE", "1000SHIB", "ON", "DIA", "2330, BTC", "AAPL, BTC", "BTC ETH", "SPY, XYZUSDT", "2330 FOOUSDC"].every((x) => C(x).endsWith(DZ) && C(x, "en").endsWith(" " + DE)), ["BTC", "ON", "AAPL, BTC"].map((x) => C(x)).join(" / "));
-  ok("① 一段都判不出來的照舊附(沒填、空白、只有公司名、3 碼或 7 碼數字、不是代號的長字)", ["", "   ", "台積電", "比特幣", "123", "1234567", "bitcoin"].every((x) => P.nsWantsDefault(x, BASES)) && P.nsCompose({ timeframe: "4h" }, "zh", S("zh"), BASES).endsWith(DZ));
-  ok("① 幣名表還沒拿到(空 / 沒給):BTC 跟 SPY 分不出來 → 照舊附;交易對與台股照常判", [new Set(), undefined].every((b) => P.nsWantsDefault("BTC", b) && P.nsWantsDefault("SPY", b) && P.nsWantsDefault("ETHUSDT", b) && !P.nsWantsDefault("2330", b)));
-  ok("① en 只填週期", P.nsCompose({ timeframe: "4h" }, "en", S("en")) === "Create a strategy. Timeframe: 4h. For crypto symbols, default to USDT-margined perpetual futures unless stated otherwise.");
+  ok("① en 全填:名稱進雙引號、半形冒號句號、邏輯尾端的 . 不重複", P.nsCompose({ name: "MA cross", symbol: "BTC", timeframe: "4h", indicators: "RSI", logic: "Long when RSI < 30." }, "en", S("en"))
+    === 'Create a strategy "MA cross". Symbol: BTC. Timeframe: 4h. Indicators: RSI. Logic: Long when RSI < 30.');
+  ok("① en 只填週期", P.nsCompose({ timeframe: "4h" }, "en", S("en")) === "Create a strategy. Timeframe: 4h.");
+  // 0.1.12 Wei 拍板:不從代號猜市場——加密、美股、台股、混寫、判不出來的標的,預覽句都 = 前導 + 標的那一句,結尾沒有別的
+  { const SYMS = ["BTC", "btc", "BTCUSDT", "ETH/USDT", "1000PEPE", "ON", "SPY", "AAPL", "BRK.B", "2330", "00679B", "TXF", "台指期", "2330, BTC", "AAPL, BTC", "台積電", "比特幣", "123"];
+    const bad = [];
+    SYMS.forEach((x) => { if (P.nsCompose({ symbol: x }, "zh", S("zh")) !== "幫我建立策略。標的：" + x + "。") bad.push("zh:" + x); if (P.nsCompose({ symbol: x }, "en", S("en")) !== "Create a strategy. Symbol: " + x + ".") bad.push("en:" + x); });
+    ok("① 任何標的都不接市場預設句(zh / en 各 " + SYMS.length + " 種:加密、美股、台股、台指期、混寫、判不出來)", bad.length === 0, bad.join(", ")); }
+  ok("① 那句與它的 key 整個拿掉:兩張字串表、兩份 .po 都沒有 ns.msgDefault,也沒有「本位永續」/「USDT-margined」字樣", !("ns.msgDefault" in STR.zh) && !("ns.msgDefault" in STR.en)
+    && !/ns\.msgDefault/.test(po("zh") + po("en")) && !/本位永續|USDT-margined/.test(strings + src));
 
   // ── ② 接線 ──
   ok("② index.html:側欄「策略」標題旁 #strat-add(aria-haspopup=dialog、aria-label ns.title、inline svg);歡迎頁第三顆 #chat-ns 在 #chat-lib 之後、#chat-eg 之前", /<div class="strat-head" id="strat-head"><span class="label" data-i18n="ws\.strategies"><\/span><button class="strat-add" id="strat-add" type="button" aria-haspopup="dialog" data-i18n-aria="ns\.title"><svg/.test(html)
@@ -68,10 +55,8 @@ if (!process.versions.electron) {
   ok("② newstrategy.js 在 report-blocks.js 之後、app.js 之前載;沒有 innerHTML;strategy_new 在 telemetry.js 白名單、送出點只在 r.started 之後", html.indexOf('src="newstrategy.js"') > html.indexOf('src="report-blocks.js"') && html.indexOf('src="newstrategy.js"') < html.indexOf('src="app.js"')
     && !/innerHTML|insertAdjacentHTML/.test(src) && require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.includes("strategy_new") && /if \(!ok\) \{[^\n]*return; \}[^\n]*\n[\s\S]*?libTrack\("strategy_new"\)/.test(cutFn(src, "nsSend")) && /nsLock\(true\);[\s\S]*?await submitMessage[\s\S]*?nsLock\(false\);/.test(cutFn(src, "nsSend")) && /\["ns-submit", "ns-cancel", "ns-close"\]/.test(src)
     && /<span class="modal-btns"><button type="button" class="btn-out" id="ns-cancel"[^\n]*<button type="submit" class="btn-fill" id="ns-submit"[^\n]*<\/span>/.test(html));
-  ok("② 幣名表接線:preload cryptoBases → 主行程 handle(\"crypto-bases\", 擋外頁回 []);nsWire 拿到非空陣列才換 NS.bases 並 nsSync;預覽與送出都把 NS.bases 交給 nsCompose",
-    /cryptoBases: \(\) => ipcRenderer\.invoke\("crypto-bases"\)/.test(preloadSrc) && /handle\("crypto-bases", \(\) => cryptoBases\(\), \[\]\);/.test(mainSrc)
-    && /window\.blave\.cryptoBases\(\)\.then\(\(a\) => \{ if \(Array\.isArray\(a\) && a\.length\) \{ NS\.bases = new Set\(a\.filter\(\(x\) => typeof x === "string"\)\); nsSync\(\); \} \}\)\.catch/.test(src)
-    && /nsCompose\(nsFields\(\), LANG, nsStrings\(\), NS\.bases\)/.test(cutFn(src, "nsRefresh")) && /nsCompose\(nsFields\(\), LANG, nsStrings\(\), NS\.bases\)/.test(cutFn(src, "nsSend")));
+  ok("② 猜市場那一套不留死碼:newstrategy.js 沒有 nsPartMarket / nsWantsDefault / NS.bases / dflt,主行程沒有 cryptoBases / crypto-bases,preload 沒有 cryptoBases",
+    !/nsPartMarket|nsWantsDefault|nsIsTw|NS_TW_|NS_US_SHAPE|NS\.bases|\bbases\b|dflt|msgDefault|cryptoBases/.test(src) && !/cryptoBases|crypto-bases/.test(mainSrc) && !/cryptoBases|crypto-bases/.test(preloadSrc));
   ok("② app.js:trapTab 圈到 input / textarea;escTop 鏈有 #ns-scrim(在 del 之後、cx 之前);回合三個出口都 nsSync;applyStatic 叫 nsRepaint", /querySelectorAll\("button, select, input, textarea"\)/.test(cutFn(appSrc, "trapTab")) && /!\$\("rpn-scrim"\)\.hidden \? rptNewClose : !\$\("ns-scrim"\)\.hidden \? nsClose : !\$\("cx-scrim"\)\.hidden/.test(cutFn(appSrc, "escTop"))
     && (appSrc.match(/if \(typeof nsSync === "function"\) nsSync\(\);/g) || []).length === 3 && /if \(typeof nsRepaint === "function"\) nsRepaint\(\);/.test(cutFn(appSrc, "applyStatic")));
   { const keys = [...new Set([...src.matchAll(/\bt\("(ns\.[^"]+)"/g)].map((m) => m[1]).concat([...html.matchAll(/data-i18n(?:-aria|-ph)?="(ns\.[^"]+)"/g)].map((m) => m[1])))];
@@ -116,14 +101,14 @@ app.whenReady().then(async () => {
   let b = await box();
   ok("③ ＋ → 開框:440 寬、焦點在名稱欄、預覽「—」(.empty)、送出 disabled + aria-describedby=ns-hint、本機不掛雲端記號、底下 inert", b.open && Math.round(b.w) === 440 && b.focus === "ns-name" && b.preview === (await T("ns.previewEmpty")) && b.empty && b.dis && b.desc === "ns-hint" && !b.cloud && b.env && b.where && b.inert && b.msg === "", JSON.stringify(b));
   await js(`(() => { const f = document.getElementById("ns-modal"); f.elements.timeframe.value = "4h"; f.dispatchEvent(new Event("input", { bubbles: true })); })()`); b = await box();
-  ok("③ 填一格(週期 4h)→ 預覽即時 = 組句(雲端版實填量到的原句)、送出 enabled、aria-describedby 拿掉", b.preview === "幫我建立策略。週期：4h。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。" && !b.empty && !b.dis && b.desc === null, JSON.stringify(b));
+  ok("③ 填一格(週期 4h)→ 預覽即時 = 組句(雲端版實填量到的原句)、送出 enabled、aria-describedby 拿掉", b.preview === "幫我建立策略。週期：4h。" && !b.empty && !b.dis && b.desc === null, JSON.stringify(b));
   // 失敗:submitMessage 回 false(上一輪還在跑那一句由對話講)→ 框留著、欄位不清、腳那一句、鈕回復
   await js(`window.__ns.sendResult = { started: false }; document.getElementById("ns-submit").click();`); await wait(120); b = await box();
   ok("③ 送出失敗:框留著、欄位不清、腳「送不出去…」、送出鈕回復", b.open && b.vals === "||4h||" && b.msg === (await T("modal.sendFailed")) && !b.dis && (await js("window.__ns.sent.length")) === 1 && !(await js("window.__ns.tracked.includes('strategy_new')")), JSON.stringify(b));
   // 成功:送到對話的就是預覽那句、關框、表單清空、焦點回 ＋、strategy_new
   await js(`window.__ns.sendResult = { started: true }; running = false; document.getElementById("ns-submit").click();`); await wait(150); b = await box();
   r = await js(`({ last: window.__ns.sent[window.__ns.sent.length - 1].message, env: window.__ns.sent[window.__ns.sent.length - 1].viewing.env, tracked: window.__ns.tracked.includes("strategy_new"), you: [...document.querySelectorAll("#chat-scroll .msg.you .bubble")].map((x) => x.textContent) })`);
-  ok("③ 送出成功:對話收到預覽那句(viewing.env=local)、關框、表單清空、預覽回空態、焦點回 ＋、strategy_new、底下不再 inert", r.last === "幫我建立策略。週期：4h。加密貨幣標的未註明市場時，預設 USDT 本位永續合約。" && r.env === "local" && r.tracked && r.you[r.you.length - 1] === r.last
+  ok("③ 送出成功:對話收到預覽那句(viewing.env=local)、關框、表單清空、預覽回空態、焦點回 ＋、strategy_new、底下不再 inert", r.last === "幫我建立策略。週期：4h。" && r.env === "local" && r.tracked && r.you[r.you.length - 1] === r.last
     && !b.open && b.vals === "||||" && b.empty && b.focus === "strat-add" && !b.inert, JSON.stringify([r, b]));
   // 回合中:送出 disabled + turn.busy
   await js(`(async () => { running = false; document.getElementById("strat-add").click(); await new Promise((r) => setTimeout(r, 100)); const f = document.getElementById("ns-modal"); f.elements.name.value = "x"; f.dispatchEvent(new Event("input", { bubbles: true })); })()`); await wait(60);
@@ -148,7 +133,7 @@ app.whenReady().then(async () => {
   // en:組句換英文
   r = await js(`(async () => { setLang("en"); applyStatic(); document.getElementById("strat-add").click(); await new Promise((r) => setTimeout(r, 100)); const f = document.getElementById("ns-modal"); f.reset(); f.elements.timeframe.value = "4h"; f.dispatchEvent(new Event("input", { bubbles: true }));
     const out = { preview: document.getElementById("ns-preview").textContent, title: document.getElementById("ns-title").textContent }; nsClose(); setLang("zh"); applyStatic(); return out; })()`);
-  ok("③ en:預覽句換英文、標題換字", r.preview === "Create a strategy. Timeframe: 4h. For crypto symbols, default to USDT-margined perpetual futures unless stated otherwise." && r.title === "Add Strategy", JSON.stringify(r));
+  ok("③ en:預覽句換英文、標題換字", r.preview === "Create a strategy. Timeframe: 4h." && r.title === "Add Strategy", JSON.stringify(r));
   ok("③ 整個流程沒有 innerHTML 進畫面(表單值只進 textContent)", (await js(`document.querySelectorAll("#ns-preview *").length`)) === 0);
 
   console.log(red ? `\n③ ${red} 紅` : "\n③ ALL PASS");

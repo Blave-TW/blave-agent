@@ -83,9 +83,9 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console,
       $: () => null, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: {}, srSay() {}, trIsPaper: () => false, UNIT: "TWD", EQ: 2000000 });
     vm.runInContext("function trUnit() { return UNIT; } function trEquity() { return EQ; }", ctx);
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + src.slice(src.indexOf("const TR_GATE_KEY"), src.indexOf("function trGateReason")).replace(/^const /gm, "var ")
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
       + ["trEl", "trSec", "trTipLabel", "trHead", "trFmt", "trMoneyInto", "trReport", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
-        "trVenueInline", "trZhTidy", "tv", "trGateReason", "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trAmountTable"].map((n) => cutF(src, n)).join("\n"), ctx);
+        "trStratName", "trTxfWant", "trRowTxf", "trRowIsLot", "trRowMoney", "trAmountTable"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };
     const paint = (price, unit = "TWD", eq = 2000000, mixed = false) => {
       vm.runInContext("TR_TXF.price = " + J(price) + "; UNIT = " + J(unit) + "; EQ = " + J(eq), ctx);

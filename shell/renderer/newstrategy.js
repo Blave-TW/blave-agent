@@ -1,40 +1,16 @@
 /* 新增策略 modal(設計:blave-canon output/designer/spec-desktop-0.1.6-2026-09-25.md §4;照雲端工作頁 #ns_modal 逐格搬)。
    側欄「策略」標題旁的 ＋ / 歡迎頁的「新增策略」chip → 五格(名稱 / 標的 / 週期 / 指標 / 邏輯)+ 即時預覽句 +「至少填一項」+ 策略庫連結;
-   送出 = 把預覽那句(nsCompose,逐字同 web 的 nsCompose)送到對話。不記 pending、不輪詢:回覆本身就在對話裡,策略檔出現在側欄靠既有的 stratRefresh。
+   送出 = 把預覽那句(nsCompose,句型同 web 的 nsCompose)送到對話。不記 pending、不輪詢:回覆本身就在對話裡,策略檔出現在側欄靠既有的 stratRefresh。
    殼同 confirmBox 家族(#del-scrim 的 440 框);雲端視角:標題列灰底 +「雲端」記號 + 腳的目的地句。
    用到 app.js 的 $ / t / LANG / running / csTitle / csStartNew / submitMessage / trapTab / paneSt / paneToggle、trade.js 的 envCanSwitch、
    library.js 的 libEnv / libCloud / libOpen / libTrack / libEl、reports.js 的 rptAskState——都在呼叫時才取。 */
 
 /* ── 純邏輯(tests/check_shell_newstrategy.js 從原文切出來跑;這一段不准碰 DOM / i18n)── */
 const NS_FIELDS = ["name", "symbol", "timeframe", "indicators", "logic"];
-/* 五格 → 送到對話的那句(逐字照 web nsCompose):zh 全形「」：。、en 半形;空格跳過;全空 → "";邏輯尾端的 。！？ / .!? 先去掉再補。
-   f = { name, symbol, timeframe, indicators, logic },s = { lead, symbol, timeframe, indicators, logic, dflt }(字串表的字,由呼叫端代) */
-/* 「加密貨幣標的…預設永續」那句只在標的認得出加密貨幣時附(e2e 0.1.8 #47:2330 被附上;0.1.12 實測:SPY 被附上)。標的逐段判:
-   台股 / 台指期 = 4–6 碼數字代號(2330、00878、00679B、2330.TW)、TXF / MXF / TMF、或帶「台指 臺指 台股 臺股 大台 小台 微台 加權指數」的字;
-   加密 = USDT / USDC 結尾(同 export.js xpIsCrypto),或是 runtime/market_contracts.py 永續表裡的幣名(bases,主行程讀給的;那張表已排除股票、
-   黃金等 TradFi 永續)——幣名先比,ON、DIA、SPX 這種撞美股代號的算加密;美股 = lib/data.py _us_symbol 認的寫法(1–5 個字母,BRK.B / BRK-B)。
-   任一段是加密 → 附;只認出台股 / 美股 → 不附;一段都判不出(空格、只寫公司名)→ 照舊附(那句本來就是「未註明時」的預設)。
-   bases 還沒拿到(空)時不判美股:BTC 跟 SPY 分不出來,寧可照舊附。關鍵字寫成 \u 跳脫:這個檔的非註解行不放中文字面(tests/check_shell_strings.js) */
-const NS_TW_CODE = /^\d{4,6}[A-Za-z]?(\.TWO?)?$/i, NS_TW_FUT = /^(TXF|MXF|TMF)$/i;
-const NS_TW_WORD = /[\u53f0\u81fa]\u6307|[\u53f0\u81fa]\u80a1|[\u5927\u5c0f\u5fae]\u53f0|\u52a0\u6b0a\u6307\u6578/;
-const NS_US_SHAPE = /^[A-Z]{1,5}(-[A-Z]{1,2})?$/;
-function nsPartMarket(p, bases) {
-  if (NS_TW_CODE.test(p) || NS_TW_FUT.test(p) || NS_TW_WORD.test(p)) return "tw";
-  const a = p.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (/USD[TC]$/.test(a) || (bases && bases.has(a))) return "crypto";
-  if (!bases || !bases.size) return null;
-  return NS_US_SHAPE.test(p.toUpperCase().replace(/\./g, "-")) ? "us" : null;
-}
-function nsWantsDefault(sym, bases) {
-  let known = false;
-  for (const p of String(sym || "").split(/[\s,\uff0c\u3001;\uff1b/()\uff08\uff09]+/).filter(Boolean)) {
-    const m = nsPartMarket(p, bases);
-    if (m === "crypto") return true;
-    if (m) known = true;
-  }
-  return !known;
-}
-function nsCompose(f, lang, s, bases) {
+/* 五格 → 送到對話的那句:zh 全形「」：。、en 半形;空格跳過;全空 → "";邏輯尾端的 。！？ / .!? 先去掉再補。
+   句型照 web nsCompose,但不附 web 那句「加密貨幣標的未註明市場時預設永續」:不從代號猜市場,哪個市場交給 agent 問或判斷。
+   f = { name, symbol, timeframe, indicators, logic },s = { lead, symbol, timeframe, indicators, logic }(字串表的字,由呼叫端代) */
+function nsCompose(f, lang, s) {
   const v = (k) => String(f && f[k] != null ? f[k] : "").trim();
   const name = v("name"), sym = v("symbol"), tf = v("timeframe"), ind = v("indicators"), logic = v("logic");
   if (!name && !sym && !tf && !ind && !logic) return "";
@@ -45,27 +21,25 @@ function nsCompose(f, lang, s, bases) {
     if (tf) msg += s.timeframe + "：" + tf + "。";
     if (ind) msg += s.indicators + "：" + ind + "。";
     if (logic) msg += s.logic + "：" + logic.replace(/[。！？]+$/, "") + "。";
-    if (nsWantsDefault(sym, bases)) msg += s.dflt;
   } else {
     msg = name ? s.lead + ' "' + name + '".' : s.lead + ".";
     if (sym) msg += " " + s.symbol + ": " + sym + ".";
     if (tf) msg += " " + s.timeframe + ": " + tf + ".";
     if (ind) msg += " " + s.indicators + ": " + ind + ".";
     if (logic) msg += " " + s.logic + ": " + logic.replace(/[.!?]+$/, "") + ".";
-    if (nsWantsDefault(sym, bases)) msg += " " + s.dflt;
   }
   return msg;
 }
 /* ── 純邏輯到此 ── */
 
-const NS = { sending: false, opener: null, fail: false, bases: new Set() };   // fail = 上一次送出失敗:腳那一句留到下次送出 / 關框(讓人原樣重送);bases = 加密幣名(nsWire 向主行程拿)
-function nsStrings() { return { lead: t("ns.msgLead"), symbol: t("ns.msgSymbol"), timeframe: t("ns.msgTimeframe"), indicators: t("ns.msgIndicators"), logic: t("ns.msgLogic"), dflt: t("ns.msgDefault") }; }
+const NS = { sending: false, opener: null, fail: false };   // fail = 上一次送出失敗:腳那一句留到下次送出 / 關框(讓人原樣重送)
+function nsStrings() { return { lead: t("ns.msgLead"), symbol: t("ns.msgSymbol"), timeframe: t("ns.msgTimeframe"), indicators: t("ns.msgIndicators"), logic: t("ns.msgLogic") }; }
 function nsFields() { const f = $("ns-modal"), o = {}; NS_FIELDS.forEach((k) => { const el = f.elements[k]; o[k] = el ? el.value : ""; }); return o; }
 // 閘門同「新增報告」的鈕(停機 / 逾時 / 回合中);這個框沒有 pending 態
 function nsGate() { const env = libEnv(); return rptAskState({ running: typeof running !== "undefined" && running === true, env, cloud: env === "cloud" ? libCloud() : null, pending: false }); }
 // 每次 input 重算(照 web nsRefresh):預覽句、送出鈕 disabled 直到任一格有字、閘門句;送出中 foot-msg 不動
 function nsRefresh() {
-  const msg = nsCompose(nsFields(), LANG, nsStrings(), NS.bases), pv = $("ns-preview");
+  const msg = nsCompose(nsFields(), LANG, nsStrings()), pv = $("ns-preview");
   pv.textContent = msg || t("ns.previewEmpty"); pv.classList.toggle("empty", !msg);
   const st = nsGate();
   $("ns-submit").disabled = !msg || NS.sending || st !== "free";
@@ -106,7 +80,7 @@ function nsRepaint() { if (!$("ns-scrim").hidden) { nsPaintEnv(); nsRefresh(); }
 // 送出(同 §1.5 的流程):成功(跑起來)→ 關框、清欄、strategy_new;失敗 → 框留著、欄位不清、鈕回復,那一句放 foot-msg
 async function nsSend() {
   if (NS.sending) return;
-  const msg = nsCompose(nsFields(), LANG, nsStrings(), NS.bases);
+  const msg = nsCompose(nsFields(), LANG, nsStrings());
   if (!msg) return;
   if (nsGate() !== "free") { nsRefresh(); return; }
   NS.sending = true; NS.fail = false;
@@ -138,7 +112,4 @@ async function nsSend() {
   g("ns-lib").addEventListener("click", () => { if (NS.sending) return; nsClose(); libOpen(); });   // 關框、開同視角的策略庫
   g("ns-scrim").addEventListener("mousedown", (e) => { if (e.target === g("ns-scrim")) nsClose(); });
   g("ns-scrim").addEventListener("keydown", (e) => trapTab(e, g("ns-modal")));
-  if (window.blave && typeof window.blave.cryptoBases === "function") {
-    window.blave.cryptoBases().then((a) => { if (Array.isArray(a) && a.length) { NS.bases = new Set(a.filter((x) => typeof x === "string")); nsSync(); } }).catch(() => {});
-  }
 })();

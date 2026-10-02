@@ -585,27 +585,16 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("呼吸點樣式沿用 .run-dot.live:--color-green、--motion-blink ×3、reduced-motion 停格", /\.run-dot\.live \{ background: var\(--color-green\); animation: trRunPulse calc\(var\(--motion-blink\) \* 3\)/.test(css)
       && /@media \(prefers-reduced-motion: reduce\) \{\n\s*\.run-dot\.live \{ animation: none; \}/.test(css)); }
 
-  // §14.4 執行側停單:切換器紅短劃(看過就消,名單變了才再亮)、整支停單的呼吸點熄掉、雲端列尾寫「已停單」;Type C 只停部分標的不算整支
-  { const H = (holds, extra = {}) => rep({ market_gate: { verdicts: {}, holds }, states: { a: { updated_at: Date.now() / 1000 }, c: { weights: { BTCUSDT: 1 }, updated_at: Date.now() / 1000 } },
-      config: { amounts: { a: 100, c: 100 } }, scheduled: ["a", "c"], ...extra });
-    const one = H({ a: { venue: "binance", reason: "src", symbols: ["XAUUSDT"] } }), two = H({ a: { venue: "binance", reason: "src" }, c: { venue: "binance", reason: "unconfirmed", symbols: ["ONUSDT"] } });
-    const e1 = envCell("local", { alive: true, report: one }), e2 = envCell("cloud", cloudSt(okc("running"), two));
-    ok("§14.4 切換器:有停單 → 紅短劃 + env.st.held(講「有策略」,不講整台),sig = hold:排序後的策略名(名單變了才再亮)",
-      e1.dot === "bad" && e1.word === "env.st.held" && e1.sig === "hold:a" && e2.sig === "hold:a,c" && envCellMark(e2, "hold:a") === "bad"
-      && envCell("local", { alive: true, report: H({}) }).dot === null);
-    ok("設計稽核 hold-display #1:其他策略照常下單時 run 照算(true),紅短劃看過之後回到綠點",
-      e1.run === true && envCellMark(e1, "hold:a") === "run");
-    const deadHeld = { alive: true, report: H({ a: { venue: "binance", reason: "src" } }, { reconciler: { alive: false, heartbeat_at: 1700000000 }, daemon: { reconciler: { wanted: true, running: false } } }) };
-    const dh = envCell("local", deadHeld);
-    ok("設計稽核 hold-display #1:對帳器異常停止 + 有停單 → 講 died(比單支停單嚴重,先講)", dh.word === "tr.s.died" && dh.sig === "died:1700000000");
-    const ch = envCell("cloud", cloudSt(okc("running"), two), true);
-    ok("設計稽核 hold-display #1:雲端有在途指令 + 有停單 → 出事優先(紅短劃 + env.st.held,不是 busy)", ch.dot === "bad" && ch.word === "env.st.held");
-    ok("§14.4 呼吸點:整支停單熄掉;Type C 只停部分標的照亮;沒停的照亮",
-      envRunDot("a", { report: one }, Date.now(), null) === false && envRunDot("c", { report: two }, Date.now(), null) === true && envRunDot("a", { report: H({}) }, Date.now(), null) === true);
-    ok("§14.4 雲端列尾:整支停單、有金額 → tr.hold.word;部分停單 → 不寫",
-      envStratWord("a", { report: one, alive: true }) === "tr.hold.word" && envStratWord("c", { report: two, alive: true }) === null);
-    ok("§14.4 這台電腦的側欄也加同一個字(envPaintLocalDots:有金額、整支停單)",
-      /const want = !!\(a && a\[b\.dataset\.name\] > 0 && trHoldWhole\(r, b\.dataset\.name\)\)/.test(src) && /trEl\("span", "stx hold-mk", t\("tr\.hold\.word"\)\)/.test(src)); }
+  // 0.1.12 市場檢查出貨前整個拿掉:舊開發版機器的報告就算還帶 market_gate.holds,切換器、呼吸點、雲端列尾、側欄都不理它
+  { const J = JSON.stringify, H = (holds, extra = {}) => rep({ market_gate: { verdicts: {}, holds }, states: { a: { updated_at: Date.now() / 1000 } },
+      config: { amounts: { a: 100 } }, scheduled: ["a"], ...extra });
+    const held = H({ a: { venue: "binance", reason: "src" } }), none = H({});
+    const e1 = envCell("local", { alive: true, report: held }), e0 = envCell("local", { alive: true, report: none });
+    const ch = envCell("cloud", cloudSt(okc("running"), held), true);
+    ok("報告帶舊的 market_gate.holds:切換器、雲端在途、呼吸點、雲端列尾都跟沒帶一樣(沒有停單這回事)",
+      J(e1) === J(e0) && e1.dot !== "bad" && ch.dot === "busy" && ch.word === "env.st.sending"
+      && envRunDot("a", { report: held }, Date.now(), null) === true && envStratWord("a", { report: held, alive: true }) === null, J([e1, e0, ch]));
+    ok("原文:沒有停單那一套(trHoldOf / trHoldWhole / trHeldNames、hold-mk、env.st.held、market_gate)", !/trHold(Of|Whole|R5|SymText)\b|trHeldNames|hold-mk|env\.st\.held|market_gate/.test(src)); }
 
   process.removeAllListeners("beforeExit");
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

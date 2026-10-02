@@ -23,7 +23,7 @@ t("P2 不發,水位線照推", o.show.length === 0 && o.mark === 32);
 o = p1Pick([ev(40, "machine_restart_stopped", {}, 3600), ev(41, "machine_restart_stopped", {}, 60)], 32, NOW);
 t("超過 15 分鐘的舊事件不發", types(o) === "machine_restart_stopped:41" && o.mark === 41);
 t("舊型別 downtime_paused 不再發(被 machine_restart_stopped 取代),水位線照推", (() => { const x = p1Pick([ev(45, "downtime_paused", {})], 41, NOW); return x.show.length === 0 && x.mark === 45; })());
-t("events 裡的五個 P1 型別都認得(0.1.12 加 market_hold)", ["execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "market_hold"]
+t("events 裡的四個 P1 型別都認得", ["execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"]
   .every((ty, i) => p1Pick([ev(100 + i, ty, {})], 50, NOW).show.length === 1));
 o = p1Pick([null, 7, { id: "x", type: "halt" }, { id: 60, type: 3 }, ev(61, "execution_stuck", null)], 50, NOW);
 t("壞資料不炸、好的照發", types(o) === "execution_stuck:61" && o.mark === 61);

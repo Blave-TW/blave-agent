@@ -212,11 +212,6 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl td { padding: var(--space-8) var(--space-12); color: var(--ink-2); border-bottom: 1px solid var(--border-hairline); vertical-align: middle; white-space: nowrap; }
 .pf-tbl tr:last-child td { border-bottom: none; }
 .pf-tbl tr.has-note td { border-bottom: none; }
-/* 執行側停單(spec §14.3):上一列的底線拿掉,跟下面的全寬說明列看起來是同一組;目標部位格 = 紅短劃 +「已停單」 */
-.pf-tbl tr.has-hold td { border-bottom: none; }
-.pf-tbl tr.pf-holdrow td.note .pf-note { font-size: 12px; color: var(--ink-3); }
-.pf-tbl td.n.hold-cell { color: var(--ink-2); font-family: inherit; font-variant-numeric: normal; }   /* 狀態字,不是數字:蓋過 .pf-tbl td.n 的等寬字 */
-.pf-tbl td.hold-cell .fault-mark { display: inline-block; vertical-align: middle; margin: 0 var(--space-8) 0 0; }
 .pf-tbl td.note { padding-top: 0; white-space: normal; }
 .pf-tbl th:first-child, .pf-tbl td:first-child { padding-left: 0; }
 .pf-tbl th:last-child, .pf-tbl td:last-child { padding-right: 0; }
@@ -439,10 +434,6 @@ html.ws-sc .side-gate { display: none; }
 .ps-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-16) var(--space-16); }
 .ps-hint { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .ps-list { margin-top: var(--space-8); }
-/* 選擇策略框底下的「下一步」(spec-0.1.12-venue-market-gate §3 B 案):前面一條 hairline,字照 .ps-hint */
-.ps-next { margin-top: var(--space-8); padding-top: var(--space-8); border-top: 1px solid var(--border-hairline); }
-.ps-next p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.ps-next p + p { margin-top: var(--space-4); }
 .ps-body .pf-state { padding: var(--space-16) 0; }   /* modal 內 24 太空 */
 /* 列:整列是 label,點哪裡都切換;列與列之間不畫線(44 高的列靠間距分得開) */
 .ps-row { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; cursor: pointer; }

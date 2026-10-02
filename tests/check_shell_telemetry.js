@@ -160,14 +160,16 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   const LEGACY = ["library_comm", "browser_source", "tv_read", "tv_fix", "tv_fail_compile"];
   // 先佔名字、送出點還沒併進來的(report_pdf = 報告「存成 PDF」):送出點一進來這條就紅,提醒把它從這裡拿掉
   const RESERVED = ["report_pdf"];
+  // 0.1.12 起無送出點:市場檢查出貨前整個拿掉,名字已在 api 白名單、兩端逐字比對,留著不動;不准再有送出點
+  const DROPPED = ["pick_gate_lock"];
   // 主行程送的:browser_agent(agent 第一次呼叫瀏覽器工具,shell/browser/index.js firstUse 的 o.track;main.js 接到 telemetry)
   const brSrc = fs.readFileSync(path.join(R, "..", "browser", "index.js"), "utf8");
   const MAIN_SENT = /if \(o\.track\) o\.track\("browser_agent"\)/.test(brSrc) && /track: \(name\) => tm\(\)\.track\("feature_used", \{ name \}\)/.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")) ? ["browser_agent"] : [];
   // 更新提示(0.1.10):main.js restartToUpdate 真的走下去(直接裝 / 下單中確認後)送 update_restart、askMoveToApps 按了「移」送 app_move
   { const mainS = fs.readFileSync(path.join(R, "..", "main.js"), "utf8");
     for (const n of ["update_restart", "app_move"]) if (mainS.includes('tm().track("feature_used", { name: "' + n + '" })')) MAIN_SENT.push(n); }
-  const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && RESERVED.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
-  t("白名單上每個名字都有送出點(library_comm / browser_source / tv_read / tv_fix / tv_fail_compile 例外:留給舊外殼)", noSender.length === 0 && LEGACY.concat(RESERVED).every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
+  const noSender = FEATURES.filter((n) => !used.has(n) && LEGACY.indexOf(n) < 0 && RESERVED.indexOf(n) < 0 && DROPPED.indexOf(n) < 0 && MAIN_SENT.indexOf(n) < 0);
+  t("白名單上每個名字都有送出點(library_comm / browser_source / tv_read / tv_fix / tv_fail_compile 例外:留給舊外殼;pick_gate_lock 0.1.12 起無送出點)", noSender.length === 0 && LEGACY.concat(RESERVED, DROPPED).every((n) => FEATURES.includes(n) && !used.has(n))); if (noSender.length) console.log("      沒送出點:" + noSender.join(", "));
   t("送出點只在功能那一層:report 五個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、樣本外驗證在 rpWfAsk 送出成功、聊天在 started、停止在 stopTurn 按下、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(!b \|\| b\.disabled\) return;\n\s*rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\);\n/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))

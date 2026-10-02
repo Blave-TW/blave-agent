@@ -90,8 +90,8 @@ check(math.isclose(st["Sortino Ratio"], round(sortino, 4), abs_tol=1e-4)
       f"Sortino / Omega from the portfolio's own returns ({st['Sortino Ratio']} / {st['Omega Ratio']} "
       f"vs {sortino:.4f} / {omega:.4f})")
 
-# market (0.1.12 venue gate): a live tick keeps the backtest's market and re-records the universe it
-# actually trades — a universe picked at run time drifts from the backtest's (audit 0.1.12 P1-2)
+# no market fields (the 0.1.12 venue check was dropped before release): a live tick neither carries a
+# stale `market` / `market_symbols` left in stats.json nor records a new one
 st["market"] = "crypto_perp:binance"
 st["market_symbols"] = ["A", "B", "C", "D", "E"]
 (WS / "strategies" / "pf" / "stats.json").write_text(json.dumps(st))
@@ -104,8 +104,8 @@ try:
 finally:
     os.environ["BLAVE_MODE"] = "backtest"
 lv = json.loads((WS / "strategies" / "pf" / "stats.json").read_text())
-check(lv.get("market") == "crypto_perp:binance" and lv.get("market_symbols") == ["A", "B", "C", "D", "XAUUSDT"],
-      f"live tick: market carried, market_symbols = the live universe ({lv.get('market')}, {lv.get('market_symbols')})")
+check("market" not in lv and "market_symbols" not in lv,
+      f"live tick: no market / market_symbols carried or recorded ({lv.get('market')}, {lv.get('market_symbols')})")
 
 # Type A writes the same report keys (Ann. Return is derived by the report when absent)
 with contextlib.redirect_stdout(io.StringIO()):

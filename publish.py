@@ -21,7 +21,6 @@ Version comes from runtime/VERSION — bump it first; re-publishing an existing
 version number is refused (machines that rolled a version back skip re-attempts
 of the same number, so a fix must ship under a new one).
 """
-import datetime
 import hashlib
 import io
 import json
@@ -39,7 +38,6 @@ RUNTIME = os.path.join(HERE, "runtime")
 # silently on the fleet.
 SYSTEMD = os.path.join(os.path.dirname(HERE), "api", "blave_agent", "systemd")
 S3_PREFIX = "blave-agent"
-CONTRACTS_MAX_AGE_DAYS = 7
 
 
 def build_tarball():
@@ -80,16 +78,6 @@ def main():
     sha = hashlib.sha256(data).hexdigest()
     manifest = {"latest": version, "sha256": sha, "size": len(data)}
     print(f"release {version}: {len(data)} bytes, sha256={sha}")
-    # a contract listed after the last build reads as "another exchange's data" on the fleet
-    # (fail-closed, but users hit it) — say how old the shipped table is, refuse a stale one
-    with open(os.path.join(RUNTIME, "market_contracts.py")) as f:
-        built = re.search(r'GENERATED_AT = "([^"]+)"', f.read()).group(1)
-    age = (datetime.datetime.now(datetime.timezone.utc)
-           - datetime.datetime.fromisoformat(built.replace("Z", "+00:00"))).days
-    print(f"market_contracts.py built {built} ({age} d) — rebuild first unless that is today: "
-          f"python3 tools/build_market_contracts.py")
-    if do_publish and age > CONTRACTS_MAX_AGE_DAYS and "--stale-contracts-ok" not in sys.argv:
-        sys.exit(f"ERROR: market_contracts.py is {age} days old — rebuild it (or pass --stale-contracts-ok)")
 
     if not do_publish:
         print("dry-run only — rerun with `publish` to upload")

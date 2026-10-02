@@ -672,18 +672,6 @@ function officialList() {
    hash 用 git 的 blob sha;Windows 上被轉成 CRLF 的檔多比一次轉回 LF 的 */
 const OFFICIAL_MANIFEST = path.join(BASE, "state", "official-manifest.json");
 const OFFICIAL_KNOWN = path.join(__dirname, "official-known.json");
-/* 新增策略框判「標的是不是加密貨幣」用的幣名(renderer/newstrategy.js nsPartMarket):隨包 runtime/market_contracts.py PERP 的鍵去掉 USDT / USDC。
-   那張表已排除股票、黃金等 TradFi 永續,SPY / AAPL 不會在裡面。讀不到 → [](框退回「判不出來就照舊附那一句」),下次再讀 */
-let cryptoBasesMemo = null;
-function cryptoBases() {
-  if (cryptoBasesMemo) return cryptoBasesMemo;
-  try {
-    const src = fs.readFileSync(path.join(REPO, "runtime", "market_contracts.py"), "utf8");
-    const list = [...new Set([...src.matchAll(/^\s*"([A-Z0-9]+?)USD[TC]":/gm)].map((m) => m[1]))];
-    if (list.length) cryptoBasesMemo = list;
-    return list;
-  } catch (_) { return []; }
-}
 const blobSha = (buf) => crypto.createHash("sha1").update(`blob ${buf.length}\0`).update(buf).digest("hex");
 const relKey = (f) => f.split(path.sep).join("/");
 function readJsonObj(p) { try { const v = JSON.parse(fs.readFileSync(p, "utf8")); return v && typeof v === "object" && !Array.isArray(v) ? v : null; } catch (_) { return null; } }
@@ -2453,7 +2441,6 @@ app.whenReady().then(() => {
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
   handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
-  handle("crypto-bases", () => cryptoBases(), []);
   handle("delete-strategy", (_e, name) => deleteStrategy(String(name || "")));
   handle("list-sessions", () => listSessions());
   handle("load-session-images", (_e, id) => loadSessionImages(id));
@@ -2777,7 +2764,6 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
-  ev_market_hold: "Orders held", ev_market_hold_n: "A strategy’s market doesn’t match the connected exchange, so its orders are held; the position stays, with no stop-loss. Open Auto trading to see which one.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
@@ -3020,9 +3006,8 @@ function traySync() {
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
-// market_hold(0.1.12):市場跟交易所對不上、執行側停了那一支(部位照留、停損不跑;canon notifications.md P1)
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped", "market_hold"];   // 全部七型(標籤用)
-const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的五型
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"];   // 全部六型(標籤用)
+const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的四型
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發

@@ -522,28 +522,6 @@ def _ack_bind_reset():
         _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
 
 
-def _resume_gate():
-    """啟動下單 after a rebind: a FUNDED strategy whose market does not match the newly bound
-    exchange would fail every round from the moment HALT clears — refuse, HALT stays. A strategy
-    still routed to that venue is not held here (`legacy`: it traded there before)."""
-    if not _gate_on():
-        return
-    import market_gate  # same runtime dir
-    venues = _gate_venues()
-    amounts, labels = market_gate.read_routing(WORKSPACE)
-    for name in sorted(amounts):
-        if not market_gate.funded(amounts, name):
-            continue
-        label = str(labels.get(name) or "").lower()
-        why, market, venue = _gate_verdict(name, venues, label)
-        # still routed to the venue that refuses = the save gate approved it there and the table,
-        # its symbols or its stats moved since: lib/portfolio holds that one strategy
-        # (market_gate.holds), the rest of the machine starts
-        if why and why != "notRun" and label != venue:   # notRun: it trades nothing yet
-            raise ValueError(f"{_GATE_CODE[why]}: {_gate_sentence(why, name, market, venue)}，"
-                             f"先在「選擇策略」取消勾選並儲存，再按「啟動下單」")
-
-
 def _cmd_resume(args):
     from lib.guard import clear_halt
 
@@ -555,7 +533,6 @@ def _cmd_resume(args):
     hold = _book_hold_asking()
     if hold:
         return _held_for_book(hold)
-    _resume_gate()
     # 「啟動並補齊部位」must honor the choice: a signal gate left over from an
     # earlier resume_wait would silently keep excluding those strategies from
     # reconciling — remove it BEFORE clearing HALT (mirror of resume_wait's
@@ -609,7 +586,6 @@ def _cmd_resume_wait(args):
     hold = _book_hold_asking()
     if hold:
         return _held_for_book(hold)
-    _resume_gate()
     cfg = load_portfolio_config()
     amounts = strategy_amounts(cfg)
     exchanges = cfg.get("exchanges", {})
@@ -1362,80 +1338,6 @@ def _strategy_source(name):
             return f.read()
     except OSError:
         return None
-
-
-def _strategy_uses_us_stock(name):
-    """"flag" / "us" / None for strategies/<name>/ — runtime/market_gate.code_flags (code read as
-    text, never imported: this runtime does not execute workspace code)."""
-    import market_gate  # same runtime dir
-    return market_gate.code_flags(os.path.join(WORKSPACE, "strategies", name))
-
-
-_VENUE_LABEL = {"binance": "Binance", "bingx": "BingX", "okx": "OKX", "gateio": "Gate.io",
-                "bybit": "Bybit", "capital": "群益", "paper": "模擬交易"}
-# market_gate reason → the refusal's code (parsed by the desktop app and the web workspace:
-# `CODE: 「<folder name>」<sentence>`, same convention as the bind errors) and its sentence
-_GATE_CODE = {"us": "MARKET_US", "legacy": "MARKET_LEGACY", "legacyMoved": "MARKET_LEGACY",
-              "unconfirmed": "MARKET_UNCONFIRMED", "notRun": "MARKET_NOT_RUN",
-              "twStock": "MARKET_TW_STOCK",
-              "other": "MARKET_OTHER", "twFut": "MARKET_TW_FUTURES",
-              "cryptoOnBroker": "MARKET_CRYPTO_ON_BROKER", "src": "MARKET_SOURCE"}
-
-
-def _gate_sentence(why, name, market, venue):
-    src = market.split(":", 1)[1] if market and ":" in market else ""
-    return {
-        "us": f"「{name}」用到美股資料，美股目前只能回測",
-        "legacy": f"「{name}」的回測沒記下資料來源，要先重跑一次回測",
-        "legacyMoved": f"「{name}」的回測沒記下資料來源，要先重跑一次回測",
-        "unconfirmed": f"「{name}」要下單的標的，沒有確認是{_VENUE_LABEL.get(venue, venue)}上的同一個合約",
-        "notRun": f"「{name}」還沒跑過，先讓它跑一次、寫出要下單的標的",
-        "twStock": f"「{name}」是台股現股，目前還不能自動下單",
-        "other": f"「{name}」的資料來源沒有對應的交易所",
-        "twFut": f"「{name}」是台指期，只能透過群益自動下單",
-        "cryptoOnBroker": f"「{name}」是加密貨幣策略，群益只能下台指期",
-        "src": f"「{name}」用 {_VENUE_LABEL.get(src, src)} 的資料回測，你連的是 {_VENUE_LABEL.get(venue, venue)}",
-    }[why]
-
-
-def _bound_venue_ids():
-    """Lowercased venue ids with a credential pair in .env — and, when the UI bind manifest
-    exists, listed in it (keys an agent hand-wrote never route; lib/venue_wiring filters them
-    the same way)."""
-    bound = set()
-    try:
-        with open(os.path.join(WORKSPACE, ".env")) as f:
-            bound = {i.lower() for i in _venue_cred_ids(f.read().splitlines())}
-    except OSError:
-        pass
-    manifest = _ui_manifest_ids()
-    if manifest is not None:
-        bound &= manifest
-    return bound
-
-
-def _gate_venues():
-    """Every venue the market gate judges against: each bound one (a hand-written second pair
-    on a machine without a bind manifest routes too — any of them refusing refuses)."""
-    return sorted(_bound_venue_ids())
-
-
-def _gate_verdict(name, venues, label=None):
-    """(reason or None, market, venue that refused) for strategies/<name>/ on `venues`
-    (runtime/market_gate.judge — a self-ordering Type B is never judged); `label` = the venue
-    it is routed to now."""
-    import market_gate  # same runtime dir
-    market = None
-    for venue in venues or [None]:
-        why, market, _ = market_gate.judge(WORKSPACE, name, venue, label=label)
-        if why:
-            return why, market, venue
-    return None, market, None
-
-
-def _gate_on():
-    import market_gate  # same runtime dir
-    return market_gate.lib_writes_market(WORKSPACE)
 
 
 def _wait_for_bar_available():
@@ -3207,35 +3109,6 @@ def _cmd_amounts(args):
             raise ValueError("amounts must be finite and >= 0")
         clean[k] = round(f, 2)
 
-    # Market gate (runtime/market_gate.py): a strategy whose market does not match the bound
-    # exchange would only fail every round — refuse the save up front. Picked = scheduled, so
-    # any amount counts, 0 included. US data (no live tick can fetch it) and strategy code that
-    # touches the desktop flag are refused everywhere; the rest needs a workspace lib that
-    # records `market` (else nothing could ever lift `legacy`). `legacy` (no recorded market)
-    # holds back only a NEW pick or a $0 → funded change on a real venue (群益 too, not paper).
-    # `legacy` = routed to this very venue before the save (the UI-authoritative copy the
-    # reconciler trades on, never the agent-editable config) — it traded here; routed elsewhere,
-    # blanked by a rebind or never picked = `legacyMoved`, refused at any amount.
-    import market_gate  # same runtime dir
-    gate_on = _gate_on()
-    venues = _gate_venues() if gate_on else []
-    gate_prev, gate_labels = market_gate.read_routing(WORKSPACE)
-    for k, amt in clean.items():
-        flag = _strategy_uses_us_stock(k)
-        if flag == "flag":
-            raise ValueError(f"MARKET_FLAG: 「{k}」的程式動到電腦版旗標 BLAVE_AGENT_LOCAL，不能上線，"
-                             f"請取消勾選後再儲存")
-        why, market, venue = _gate_verdict(k, venues, str(gate_labels.get(k) or "").lower())
-        if why is None or (why != "us" and not gate_on):
-            continue
-        if why == "legacy":
-            if k in gate_prev and (amt <= 0 or market_gate.funded(gate_prev, k)):
-                continue
-            raise ValueError(f"{_GATE_CODE[why]}: {_gate_sentence(why, k, market, venue)}，"
-                             f"或取消勾選後再儲存")
-        raise ValueError(f"{_GATE_CODE[why]}: {_gate_sentence(why, k, market, venue)}，"
-                         f"請取消勾選後再儲存")
-
     if _local_mode():
         # Type B runs off crontab/schtasks, which local mode never touches —
         # saving one would look deployed and never run. Refuse, don't go quiet.
@@ -3294,11 +3167,22 @@ def _cmd_amounts(args):
     # Only inherit venues that are STILL BOUND (keys in .env) — after 解除綁定
     # +重連別家, the old routing would otherwise zombie back in (positions
     # live on the account, not in this dict).
-    # pair rule (_venue_cred_ids): a lone OPENAI_API_KEY is never a routing target; P2-4: when
-    # the UI bind manifest exists, only UI-bound venues count — keys an agent hand-wrote into .env
-    # don't route (lib/venue_wiring filters them), so inheriting one would save a config that
-    # LOOKS deployed but never trades.
-    bound = _bound_venue_ids()
+    bound = set()
+    try:
+        with open(os.path.join(WORKSPACE, ".env")) as f:
+            # pair rule (_venue_cred_ids), same as everywhere else: a lone
+            # OPENAI_API_KEY must not get inferred as a venue and written
+            # into exchanges as a routing target
+            bound = {i.lower() for i in _venue_cred_ids(f.read().splitlines())}
+    except OSError:
+        pass
+    # P2-4: when the UI bind manifest exists, only UI-bound venues count as
+    # inheritable — keys an agent hand-wrote into .env don't route
+    # (lib/venue_wiring filters them), so inheriting one here would save a
+    # config that LOOKS deployed but never trades.
+    manifest = _ui_manifest_ids()
+    if manifest is not None:
+        bound &= manifest
     old = {k: (v if v in bound else "") for k, v in old.items()}
     venues = {v for v in old.values() if v}
     default_venue = venues.pop() if len(venues) == 1 else ""

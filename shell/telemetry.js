@@ -75,7 +75,7 @@ const EVENTS = {
     "update_restart", "app_move",
     // 安裝進度卡(0.1.12;renderer/engine.js engRetry):按了卡上的「重試」(送下一句時自動再試的不算)
     "engine_retry",
-    // 市場對應(0.1.12;renderer/trade.js psOpen):打開選擇策略框時至少一列因為市場對不上被鎖。
+    // pick_gate_lock:0.1.12 起無送出點(市場檢查出貨前整個拿掉);名字留著,api 白名單已登記、兩端逐字比對連順序都比
     "pick_gate_lock",
     // 策略庫成功筆記(0.1.12;renderer/library.js):閱讀頁內文第一次畫成功
     "library_note",

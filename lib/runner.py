@@ -76,12 +76,6 @@ MCPT_SEED = 42
 # The web compares scan.json's generated_at against it: a scan older than the last
 # backtest means the parameters may have moved, so scan.current is shown as unknown.
 GENERATED_AT_KEY = 'Generated At'
-# stats.json `market`: which market the backtested prices came from — written by a backtest from
-# the lib.data price fetcher it actually called (_stats_market), carried over by live ticks. The
-# platform matches it against the bound exchange before a strategy may be funded
-# (runtime/market_gate.py). Absent = an older backtest, nothing recorded.
-MARKET_KEY = 'market'
-MARKET_SYMBOLS_KEY = 'market_symbols'   # Type C: the symbols the crypto contract check looks up
 
 
 def _carry_over(out_dir, mode):
@@ -101,7 +95,7 @@ def _carry_over(out_dir, mode):
     try:
         with open(Path(out_dir) / 'stats.json', encoding='utf-8') as f:
             old = json.load(f)
-        return {k: old[k] for k in MCPT_KEYS + (GENERATED_AT_KEY, MARKET_KEY, MARKET_SYMBOLS_KEY) if k in old}
+        return {k: old[k] for k in MCPT_KEYS + (GENERATED_AT_KEY,) if k in old}
     except Exception as e:  # absent on first tick, or a half-written file — carry nothing
         logging.debug("stats.json carry-over skipped: %s", e)
         return {}
@@ -861,65 +855,6 @@ class _Raised:
         self.exc = exc
 
 
-# lib.data price fetchers → (market family, data venue, position of the symbol argument)
-_PRICE_FETCHERS = {
-    'fetch_kline': ('crypto', 'binance', 0), 'fetch_kline_batch': ('crypto', 'binance', 0),
-    'fetch_bingx_kline': ('crypto', 'bingx', 0),
-    'fetch_twstock_price': ('tw_stock', None, 0), 'fetch_twstock_price_adj': ('tw_stock', None, 0),
-    'fetch_twstock_price_batch': ('tw_stock', None, 0), 'fetch_twstock_price_adj_batch': ('tw_stock', None, 0),
-    'fetch_twstock_ohlcv': ('tw_stock', None, 0),
-    'fetch_twfutures_ohlcv': ('tw_futures', None, 0), 'fetch_twfutures_ohlcv_batch': ('tw_futures', None, 0),
-    'fetch_stock_futures_batch_daily': ('other', None, 0),
-    'fetch_db_kline': ('other', None, 1),
-    'fetch_usstock_price': ('us_stock', None, 0),
-}
-# keyword spellings of a fetcher's symbol argument, appended after the positional ones
-_SYMBOL_KWARGS = ('symbol', 'symbols', 'sid', 'stock_id', 'stock_ids', 'futures_id')
-# the TAIFEX index futures the platform can trade (群益 only wires these three)
-_TW_INDEX_FUTURES = ('TXF', 'MXF', 'TMF')
-
-
-def _sym_key(s):
-    return str(s).replace('-', '').replace('_', '').replace('/', '').upper()
-
-
-def _stats_market(calls, config):
-    """stats.json `market` from the price fetchers fetch_data called (depth-0 calls, in order):
-    crypto_perp:<venue> / crypto_spot:<venue> (MARKET = "spot"), tw_futures (TXF / MXF / TMF),
-    tw_stock, us_stock, or other (CME and the like, stock futures, or two markets at once).
-    Type A looks at the fetcher that returned SYMBOL's bars — the BTC strategy that also
-    reads SPY is crypto — falling back to every price fetcher when no call names SYMBOL, except
-    for crypto: SYMBOL's bars came some unrecorded way, so which exchange's contract it is stays
-    unknown (None, judged as a backtest with no market). None when no price fetcher ran."""
-    prices = [(n, a) for n, a in calls if n in _PRICE_FETCHERS]
-    if not prices:
-        return None
-    want = config.get('SYMBOL')
-
-    def names(n, args):
-        i = _PRICE_FETCHERS[n][2]
-        v = args[i] if len(args) > i else None
-        return [_sym_key(x) for x in (v if isinstance(v, (list, tuple)) else [v]) if x is not None]
-
-    chosen = prices
-    if want:
-        hit = [(n, a) for n, a in prices if _sym_key(want) in names(n, a)]
-        chosen = hit if hit else prices
-    kinds = {_PRICE_FETCHERS[n][:2] for n, _ in chosen}
-    if len(kinds) != 1:
-        return 'other'
-    family, venue = kinds.pop()
-    if family == 'crypto' and want and chosen is prices:
-        return None
-    if family == 'crypto':
-        return f"crypto_{'spot' if config.get('MARKET') == 'spot' else 'perp'}:{venue}"
-    if family == 'tw_futures':
-        sym = _sym_key(want or '')
-        sym = sym[:-2] if sym.endswith('R1') else sym
-        return 'tw_futures' if sym in _TW_INDEX_FUTURES else 'other'
-    return family
-
-
 class _FetchRecorder:
     """Wraps every lib.data fetch_* for the duration of one fetch_data call — and the
     strategy module's own global of the same function, for a top-level
@@ -931,7 +866,6 @@ class _FetchRecorder:
         import threading
         self.config  = config
         self.records = {}
-        self.calls   = []   # (fetcher name, first two args) of every depth-0 call, in order
         self.usable  = True
         self._depth  = threading.local()
 
@@ -965,9 +899,6 @@ class _FetchRecorder:
         def make(name, fn):
             def wrapper(*args, **kwargs):
                 depth = getattr(self._depth, 'n', 0)
-                if depth == 0:
-                    kw = [kwargs[k] for k in _SYMBOL_KWARGS if k in kwargs]
-                    self.calls.append((name, (tuple(args) + tuple(kw))[:2]))
                 self._depth.n = depth + 1
                 try:
                     out = fn(*args, **kwargs)
@@ -1688,9 +1619,6 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                           f"strategy is not for the library.")
         stats.update(_carry_over(out_dir, mode))  # live tick keeps MCPT + Generated At; backtest drops/restamps
         stats.setdefault(GENERATED_AT_KEY, int(time.time()))
-        market = _stats_market(recorder.calls, config) if recorder else None
-        if market:
-            stats[MARKET_KEY] = market
         if mode == 'backtest' and _superseded(config, src0):   # before the lock creates versions/
             _discard_superseded(strategy_name)
             return
@@ -1834,12 +1762,6 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         # No automatic MCPT for Type C — see _auto_mcpt's docstring (mcpt() is single-series).
         carried = _carry_over(out_dir, mode)  # live tick keeps MCPT + Generated At; backtest drops/restamps
         carried.setdefault(GENERATED_AT_KEY, int(time.time()))
-        market = _stats_market(recorder.calls, config) if recorder else None
-        if market:
-            carried[MARKET_KEY] = market
-        if carried.get(MARKET_KEY):
-            # every run, live ticks too: a universe picked at run time drifts from the backtest's
-            carried[MARKET_SYMBOLS_KEY] = [str(c).replace('-', '').upper() for c in close_df.columns]
         stats = {'strategy': strategy_name, 'interval': interval,
                  'start': close_df.index[0].strftime('%Y-%m-%d'),
                  'end':   close_df.index[-1].strftime('%Y-%m-%d'),
