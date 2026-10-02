@@ -59,9 +59,13 @@ UNKNOWN_BLOCK_AT = 2
 # showing that send (order lib close check, reconciler Read-Your-Writes). An IOC
 # market order is filled or killed at the exchange within the second; what is
 # unknown is how late the broker's position query reflects it (the test host
-# never fills). 10 s is a margin, not a measurement — the worker delays its
-# refresh-flag read to match, so a close waits ~10–12 s after the previous one.
-ORDER_SETTLE_S = 10
+# never fills). Live account, 10-02 (TMF 1 lot, one buy + one close): the
+# broker's position query showed the fill 12.0 s and 10.9 s after the send
+# marker — the marker is written before the ~5–6 s login, so those figures are on
+# the same clock this guard uses. 20 s covers both with ~8 s to spare; the worker
+# delays its refresh-flag read to match, so a close waits ~20–22 s after the
+# previous order.
+ORDER_SETTLE_S = 20
 
 
 class LoginError(RuntimeError):

@@ -217,6 +217,28 @@ api = use([("reply", {"statuscode": "9999", "orderstatus": "錯誤:ERR 保證金
 e = raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=2))
 check(e is not None and "9999" in str(e) and api.logged_out, "9999 reply raises with the broker text", e)
 
+api = use([("reply", {"statuscode": "ERR5", "orderstatus": "已收盤,委託傳送失敗", "orderno": ""})])
+check(raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry",
+                                                                      confirm_timeout=2)) is not None,
+      "ERRn reply raises")
+api = use([("reply", {"statuscode": "9902", "orderstatus": "TTO0002:尚未開始接收委託或者不接受此種委託",
+                      "orderno": ""})])
+check(raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF", "buy", 1, "entry",
+                                                                      confirm_timeout=2)) is not None,
+      "99xx server reply (official doc example 9902) raises")
+
+# live 10-02: the first reply to a market IOC was already 0004 (完全成交), with its match row
+api = use([("reply", {"statuscode": "0004", "orderstatus": "完全成交", "orderno": "O1", "matchqty": 1}),
+           ("match", {"orderno": "O1", "matchseq": "M1", "matchqty": 1, "matchprice": 48716.0})])
+r = op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=3)
+check(r["status"] == "filled" and r["ack"] == "0004" and r["avg_fill_price"] == 48716.0 and len(api.sent) == 1,
+      "a first reply of 0004 is success — filled, not an error, sent once", r)
+
+api = use([("reply", {"statuscode": "0099", "orderstatus": "?", "orderno": "O1", "matchqty": 0})])
+r = op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=1)
+check(r["status"] == "unknown" and r["ack"] == "0099" and r["fill_qty"] == 0 and len(api.sent) == 1,
+      "an undefined status code is neither success nor rejection: 'unknown', not resent", r)
+
 api = use([ACK, ("reply", {"statuscode": "0001", "orderstatus": "減量成功", "orderno": "O1", "matchqty": 0})])
 t0 = _t.time()
 r = op.place_futures_market_order({}, "TMF", "buy", 1, "entry", confirm_timeout=1.5)
@@ -251,6 +273,8 @@ r = op.close_position_partial({}, "TMF", "long", 1, client_order_id="flat2026093
 check(api.sent[-1].productid == "TMFA0" and api.sent[-1].bs == "S" and api.sent[-1].opencloseflag == "1"
       and r["exchange"] == "president",
       "close: the held row's productid, opencloseflag '1'", vars(api.sent[-1]))
+check(r["ack"] == "0000" and r["statuscode"] == "0000" and r["seq"] == "S1" and r["orderno"] == "O1",
+      "the close carries the broker's ack / statuscode / seq / orderno like an entry", r)
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and len(api.sent) == 1, "a snapshot older than that contract's last order → refused, not sent")
 last = op.last_order_at("TMFA0")

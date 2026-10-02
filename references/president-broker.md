@@ -166,13 +166,16 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 
 - Market IOC, quantity in 口. Entries send `opencloseflag=""` (the broker decides); closes send
   `"1"` (close only) and are checked against the worker snapshot first — the held row must be on the
-  other side and at least as large, and the worker's read must have **started** at least 10 s
-  (`president_vault.ORDER_SETTLE_S`) after that contract's last send — or they are refused without
+  other side and at least as large, and the worker's read must have **started** at least 20 s
+  (`president_vault.ORDER_SETTLE_S`; live 10-02 the broker's position showed the fill 12.0 s and
+  10.9 s after the send marker, which is written before the ~5–6 s login) after that contract's last send — or they are refused without
   reaching the broker. The check and the send marker are taken under one machine-wide lock
   (`state/president_send.lock`), so two processes (reconciler, 全部平倉, a script) cannot both pass
-  it. Expect a close right after another order to be refused for ~10–12 s; retry, never force.
-- `status='filled'` only on a real match; `status='sent'` means no fill was seen in time — never
-  resubmit on it; check the position first.
+  it. Expect a close right after another order to be refused for ~20–22 s; retry, never force.
+- `status='filled'` only on a real match; `status='sent'` means no fill was seen in time;
+  `status='unknown'` means the broker answered a status code the SDK does not define — none of
+  them is resubmitted; check the position first. Entries and closes both return the broker's
+  `ack` (first status code) and `statuscode` (last).
 - Entries are blocked while `state/HALT` is set; reduces always pass.
 
 ### Near month
@@ -218,8 +221,14 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 4. **`issend=True` is not acceptance.** `order()` returns `issend` + `seq`; acceptance is the
    `on_reply` for that `seq` with `statuscode == '0000'` (委託成功). Observed: a TMF 1-lot market IOC
    got its 0000 reply at once, `nomatchqty=1`, and never filled (the test host does not match).
-   Status codes (from the SDK): 0000 accepted, 0003 part filled, 0004 filled, 0002 cancelled,
-   0001 reduced, 9999 / ERR1–ERR5 rejected.
+   Status codes — source: unitrade 1.0.0.7 `trade/dlogic` (`DLogic.*_CODE`); the official docs
+   have no table: 0000 委託成功, 0001 減量成功 (not terminal), 0002 刪單成功, 0003 部份成交,
+   **0004 完全成交**, 0006 改價成功; rejections 9999 (SDK error reply), ERR1/2/3/5 (委託傳送失敗 /
+   尚未開盤 / 驗章失敗 / 已收盤) and server 99xx (the official dtrade page's example: 9902
+   `TTO0002:尚未開始接收委託或者不接受此種委託`). **Live, 10-02: the first reply to a market IOC was
+   already 0004** — the order filled before an 0000 was seen — so success is any of
+   0000/0001/0003/0004/0006, not 0000 alone. Any other code: not a success, not a rejection —
+   `status='unknown'`, audited, never resent.
 5. **Fills come from `on_match`, which carries no `seq`.** Correlate through the `orderno` of the
    `on_reply` for your `seq`. `on_reply` hands over the SAME object on every update — copy fields in
    the callback.
@@ -288,15 +297,36 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
 5. Production (`PRESIDENT_LIVE=true` + `president_url`) only with the user's explicit go-ahead;
    repeat 3–4 there with the smallest order (TMF 1 lot) and confirm equity matches the broker's app.
 
-Status (2026-10-02, live account, read only): login on both production hosts ✓; equity
-(`optequity`) matches the app ✓ — read layer ① passed; positions match the app on `current_*` ✓.
-No live order yet.
+Status (2026-10-02, live account):
+- Read layer: login on both production hosts ✓; equity (`optequity`) matches the app ✓ (①);
+  positions match the app on `current_*` ✓.
+- **First live round trip, 12:42 Taipei, TMF 1 lot through the shipped lib** (the user's existing
+  MXF position untouched): buy TMFJ6 filled at 48716, ack 0004, 6.3 s from the call to the
+  confirmed fill; the broker's position showed it **12.0 s** after the send marker; close (sell, `"1"`)
+  filled at 48712, 5.2 s; position flat **10.9 s** after the marker; the worker snapshot caught up
+  6.0 s after each. (`ORDER_SETTLE_S` raised from 10 to 20 s on these numbers.)
 
-## Unverified until a live account
+Trading-layer checklist (`venue-onboarding.md` §3):
+| item | state |
+|---|---|
+| confirmed fills reported (not intent), single market IOC buy + close | ✓ live 10-02 |
+| close-only (`"1"`) close of a held position, snapshot-checked | ✓ live 10-02 |
+| HALT blocks entries, closes pass; restart gate; audit trail | ✓ tests (no live HALT run) |
+| unit = 口, canonical TXF/MXF/TMF ↔ month code | ✓ live (TMFJ6) |
+| IOC not filled → cancel report | ✗ never observed |
+| partial fills | ✗ not seen |
+| order recovery after a restart (`query_reply` / `query_match`) | ✗ 0 rows on the test host, untried live |
+| settlement day (10-21) and holiday-shifted settlement | ✗ |
+| production `"1"` with nothing to close | ✗ untried (test host accepts it) |
+| the broker's text for a wrong password | ✗ |
+| `dwamt` as a deposit/withdrawal source | ✗ needs a day with a real flow |
+| limit layer / execution styles | not shipped (chase falls back to market) |
+
+## Still unverified
 
 Margin fields other than `optequity` against the app; `dwamt` as a flow source; whether production refuses a close-only (`"1"`) order with nothing to close; the broker's text for a
 wrong password (so `PASSWORD` is classified from it, not counted as `UNKNOWN`);
-fills, partial fills and the IOC-cancel report; order recovery after a restart (`query_reply` /
+partial fills and the IOC-cancel report; order recovery after a restart (`query_reply` /
 `query_match`); behaviour on a real settlement day and on holiday-shifted settlements; production
 connection/rate limits and IP registration; the worker's behaviour across the daily maintenance
 windows and weekends.

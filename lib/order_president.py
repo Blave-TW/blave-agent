@@ -85,9 +85,14 @@ SETTLE_HOUR, SETTLE_MINUTE = 13, 30
 DAY_OPEN_HOUR, DAY_OPEN_MINUTE = 8, 45
 PROD_RE = re.compile(r"^(TXF|MXF|TMF)([A-L])(\d)$")
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
-# 0001 = 減量成功 (a quantity reduction) is not terminal; 0002 = 刪單成功 is
-_ACCEPTED = {"0000", "0001", "0003", "0004"}
-_CANCELED = {"0002"}
+# Reply status codes, from unitrade 1.0.0.7 trade/dlogic (DLogic.*_CODE):
+# 0000 委託成功, 0001 減量成功, 0002 刪單成功, 0003 部份成交, 0004 完全成交,
+# 0006 改價成功; 9999 = an error reply (parse_error), ERR1/2/3/5 = 委託傳送失敗 /
+# 尚未開盤 / 驗章失敗 / 已收盤. The official dtrade page shows a server reply
+# 9902 "TTO0002:尚未開始接收委託或者不接受此種委託" — 99xx are rejections. The live account's first reply to a market IOC was
+# already 0004 (10-02); the test host answers 0000 and never fills.
+_ACCEPTED = {"0000", "0001", "0003", "0004", "0006"}
+_CANCELED = {"0002"}  # 0001 (a reduction) is not terminal
 
 _tags_lock = threading.Lock()
 
@@ -467,10 +472,16 @@ def _await(reports, seq, lots, timeout, fields):
             break
         time.sleep(0.05)
     code = (ack or {}).get("statuscode")
+    unknown = False
     if ack and code not in _ACCEPTED and code not in _CANCELED:
         err = president_vault.sanitize(ack.get("orderstatus"))
-        guard.audit("order_error", seq=seq, code=code, error=err, **fields)
-        raise PresidentError(f"統一 rejected the order: statuscode={code} {err}")
+        if str(code).startswith(("99", "ERR")):
+            guard.audit("order_error", seq=seq, code=code, error=err, **fields)
+            raise PresidentError(f"統一 rejected the order: statuscode={code} {err}")
+        # a code the SDK does not define: not a success, not a rejection — fills
+        # still count if match rows arrive; otherwise 'unknown', never resent
+        unknown = True
+        guard.audit("order_unknown_status", seq=seq, code=code, error=err, **fields)
     orderno = (ack or {}).get("orderno")
     settled_at = None
     while orderno and time.time() < deadline:
@@ -492,7 +503,8 @@ def _await(reports, seq, lots, timeout, fields):
     replied = int(last.get("matchqty") or 0)
     if replied > qty:
         qty, avg = replied, (avg if rows else 0.0)
-    return {"seq": seq, "orderno": orderno, "status": "filled" if qty else "sent",
+    return {"seq": seq, "orderno": orderno,
+            "status": "filled" if qty else ("unknown" if unknown else "sent"),
             "symbol": fields["symbol"], "fill_qty": float(qty), "avg_fill_price": avg,
             "ack": code, "statuscode": last.get("statuscode")}
 
@@ -588,12 +600,18 @@ def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
     result = place_futures_market_order(
         env, symbol, action, lots, intent="reduce",
         client_tag=_tag_for(client_order_id) if client_order_id else None)
+    # the broker's own codes travel with the close as with an entry (the 10-02
+    # live close came back without them: this mapping dropped them)
     return {
         "avg_price": result.get("avg_fill_price") or 0.0,
         "executed_qty": result.get("fill_qty") or 0.0,
         "exchange": "president",
         "resolved_symbol": result.get("symbol"),
         "status": result.get("status"),
+        "ack": result.get("ack"),
+        "statuscode": result.get("statuscode"),
+        "seq": result.get("seq"),
+        "orderno": result.get("orderno"),
     }
 
 

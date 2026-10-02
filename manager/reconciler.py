@@ -556,6 +556,8 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         'exchange':        venue_traits.PRESIDENT,
         'resolved_symbol': legs[-1].get('symbol'),
         'status':          'filled' if all(l.get('status') == 'filled' for l in legs) else 'sent',
+        'ack':             legs[-1].get('ack'),
+        'statuscode':      legs[-1].get('statuscode'),
     }
 
 
