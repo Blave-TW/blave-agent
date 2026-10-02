@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **電腦版資料卡只在真的撞到資料牆時出(0.1.13 策略庫轉換)**:`data_access_rule` 的 access=0 段,觸發條件多「這一輪 `lib/data.py` 呼叫停在 `DataAccessError`」,並明講「只用公開資料的那一輪不提資料權限、不掛 `<blave-card:data-access/>`」——沒綁卡的人由外殼代下載、裝好只用公開 K 線的策略後,回覆尾巴不再掛一張叫他綁卡的卡。只影響電腦版(BLAVE_DATA_ACCESS 只有外殼會設);雲端機 prompt 不變。
 
 ## 1.1.108 — 2026-10-02(desktop 0.1.12)
 

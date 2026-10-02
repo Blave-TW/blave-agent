@@ -3974,6 +3974,15 @@ msgstr "進度在右邊的對話。"
 msgid "lib.err.noNew"
 msgstr "這一輪結束了，但沒看到新策略。看對話裡 agent 怎麼說。"
 
+msgid "lib.dl.fail"
+msgstr "下載不到這支策略，請再試一次。"
+
+msgid "lib.dl.blocked"
+msgstr "這支策略沒通過平台的安全檢查，不能下載。"
+
+msgid "lib.dl.gone"
+msgstr "這支策略已經不在策略庫了。"
+
 msgid "lib.gate.signedOut"
 msgstr "登入 Blave 之後才能下載到這台電腦。"
 
@@ -3985,6 +3994,9 @@ msgstr "下載「{title}」？"
 
 msgid "lib.cf.l1"
 msgstr "agent 會把策略下載到 strategies/ 資料夾，用最新資料跑一次回測，結果出現在左側欄。"
+
+msgid "lib.cf.l1Local"
+msgstr "策略會下載到這台電腦的 strategies/ 資料夾，agent 檢查過程式碼再用最新資料跑一次回測，結果出現在左側欄。"
 
 msgid "lib.cf.l2"
 msgstr "不會自動下單，要不要上線由你決定。"
@@ -4000,6 +4012,10 @@ msgstr "幫我下載官方策略「{title}」（#{id}），跑一次回測看看
 
 msgid "lib.msgPaid"
 msgstr "幫我下載已購買的策略「{title}」（#{id}），跑一次回測看看結果"
+
+# 本機「用這支」:外殼已把程式碼放在 workspace/tmp/library_<id>.py;runtime 契約(references/marketplace.md › Desktop-downloaded picks)
+msgid "lib.msgLocal"
+msgstr "策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果"
 
 msgid "lib.where.local"
 msgstr "這台電腦"

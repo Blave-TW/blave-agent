@@ -68,6 +68,8 @@ for need, label in [
     (r"no SSH, no\s+other machines", "不可以去別處找憑證"),
     (r"fetch_kline", "公開 K 線照樣回答"),
     (re.escape(agent_turn.DATA_ACCESS_CARD), "marker 還在"),
+    (r"stopped with `DataAccessError`", "撞到資料閘門(DataAccessError)那一輪也算"),
+    (r"ran on public data only.*carries no marker", "只用公開資料的那一輪不提資料、不掛 marker(0.1.13:沒卡裝好免資料策略不出綁卡卡)"),
 ]:
     t("access=0:約束保留 —— " + label, bool(re.search(need, block)))
 

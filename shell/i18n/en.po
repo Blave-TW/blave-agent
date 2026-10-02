@@ -3973,6 +3973,15 @@ msgstr "Progress is in the chat on the right."
 msgid "lib.err.noNew"
 msgstr "The turn ended without a new strategy. See what the agent said in the chat."
 
+msgid "lib.dl.fail"
+msgstr "Couldn't download this strategy. Please try again."
+
+msgid "lib.dl.blocked"
+msgstr "This strategy failed the platform security scan and can't be downloaded."
+
+msgid "lib.dl.gone"
+msgstr "This strategy is no longer in the library."
+
 msgid "lib.gate.signedOut"
 msgstr "Sign in to Blave to download to this computer."
 
@@ -3984,6 +3993,9 @@ msgstr "Download \"{title}\"?"
 
 msgid "lib.cf.l1"
 msgstr "The agent downloads it into strategies/ and runs a backtest on fresh data; the result shows up in the sidebar."
+
+msgid "lib.cf.l1Local"
+msgstr "It downloads into strategies/ on this computer; the agent checks the code, then runs a backtest on fresh data. The result shows up in the sidebar."
 
 msgid "lib.cf.l2"
 msgstr "No orders are placed — whether to run it is your call."
@@ -3999,6 +4011,10 @@ msgstr "Download the official strategy \"{title}\" (#{id}) and run a backtest to
 
 msgid "lib.msgPaid"
 msgstr "Download my purchased strategy \"{title}\" (#{id}) and run a backtest"
+
+# 本機「用這支」:外殼已把程式碼放在 workspace/tmp/library_<id>.py;runtime 契約(references/marketplace.md › Desktop-downloaded picks)
+msgid "lib.msgLocal"
+msgstr "The library strategy \"{title}\" (#{id}) is downloaded. Install it and run a backtest to see the results."
 
 msgid "lib.where.local"
 msgstr "this computer"
