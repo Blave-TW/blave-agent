@@ -10,6 +10,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 (none)
 
+## 1.1.108 — 2026-10-02(desktop 0.1.12)
+
+- **Windows 對帳器在第一次載入 numpy 時永久卡死(0.1.12 Windows 真機 e2e)**:`local_daemon` 的父行程監看在 Windows 用一條執行緒對 stdin 做阻塞 `read(0)`,CRT 在整段等待期間握著 fd 0 的鎖;同一行程裡 numpy 的 OpenBLAS DLL 初始化(在 loader lock 底下)要拿同一把鎖 → 死結,直到 app 關掉 stdin。對帳器(`--run-reconciler`)與 daemon(`--secret-stdin`)都跑這條監看;模擬帳戶每次要價格(`paper_data` → 策略 `fetch_data` → `lib.data`)必中,所有交易所在同方向調整部位時的 drift band(`portfolio._daily_sigma` → `lib.data`)也會走到。現象:「補齊部位」後實際一直 0、約數分鐘後畫面說「下單停了，不是你按的」、再按啟動卡在「啟動中…」。修法:`_wait_parent_gone_nt` 的 stdin 監看改成 `PeekNamedPipe` 輪詢(每 0.2 秒,`PEEK_S`),只在有資料時才讀,寫端關掉(ERROR_BROKEN_PIPE)= 父行程關了 stdin;不是 pipe 的 stdin 退回原本的阻塞讀。POSIX 路徑(select + read)不變。測試 `tests/check_parent_watch_peek.py`(新;Windows 上真的開監看再 `import numpy`,舊讀法當對照會卡住)。
+
 ## 1.1.107 — 2026-10-02(desktop 0.1.12)
 
 - **由 runtime 修掉沒更新 workspace 的機器上那份壞 K 線快取(雲端版本落後 D 案)**:api `/kline` 10-01 前會多回一根 end_date 隔天的殘缺 bar,舊 lib 把它併進 `cache/kline2_*` 不再重抓的過去月份;lib 換 kline3 只到得了有更新 workspace 的機器。新增 `kline_cache_heal.py`,`portfolio_reporter` 回報與 ack **之後**跑:不刪不改檔,只把受影響的過去月份檔 mtime 撥回該月月初(不跟 symlink),讓舊 lib 自己的 `_written_before_month_end` 補抓(merge keep='last',修好的 api 蓋掉那根)。檔案從不消失,進行中的自動下單那一輪不會讀不到檔。

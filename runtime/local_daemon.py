@@ -40,8 +40,9 @@ _nt(), the POSIX path untouched:
   1. parent watch   POSIX: select() on stdin + getppid() polling. Windows:
                     select() takes sockets only and a dead parent is never
                     re-parented, so _wait_parent_gone_nt runs two threads —
-                    one blocked in read(0) (EOF / broken pipe = "parent closed
-                    stdin"), one parked in WaitForSingleObject on the parent's
+                    one peeking stdin with PeekNamedPipe (broken pipe = "parent
+                    closed stdin"; never a blocking read, see there), one
+                    parked in WaitForSingleObject on the parent's
                     process handle (Task Manager kill, crash: the pipe is not
                     guaranteed to break first). First to return wins.
   2. lock           POSIX: flock, and the reconciler inherits the daemon's
@@ -135,6 +136,8 @@ _SYNCHRONIZE = 0x00100000
 _INFINITE = 0xFFFFFFFF
 _WAIT_OBJECT_0 = 0
 _ERROR_INVALID_PARAMETER = 87  # OpenProcess: no such pid
+_ERROR_BROKEN_PIPE = 109       # PeekNamedPipe: the write end is closed
+PEEK_S = 0.2                   # Windows stdin watch: how often the pipe is peeked
 
 
 def _nt():
@@ -186,16 +189,47 @@ def _wait_pid_nt(pid):
         k.CloseHandle(h)
 
 
-def _wait_parent_gone_nt(ppid, fd=0, wait_pid=None):
+def _peek_pipe_nt(fd):
+    """Bytes waiting in the pipe behind `fd`, without reading: None = the write
+    end is closed, False = it cannot be peeked (not a pipe, or not Windows)."""
+    try:
+        import _winapi
+        avail, _left = _winapi.PeekNamedPipe(msvcrt.get_osfhandle(fd), 0)
+    except OSError as e:
+        return None if getattr(e, "winerror", None) == _ERROR_BROKEN_PIPE else False
+    except (ImportError, AttributeError):
+        return False
+    return avail
+
+
+def _wait_parent_gone_nt(ppid, fd=0, wait_pid=None, peek=None):
     """See the module docstring, guarantee 1. Both threads are daemon threads:
-    the one still blocked when the other returns is abandoned with the process."""
+    the one still blocked when the other returns is abandoned with the process.
+
+    The stdin side never parks a read on the pipe: the CRT's read() holds that
+    fd's lock (and, on a synchronous handle, the file object) for as long as it
+    waits, and a native DLL whose init touches stdin then hangs under the loader
+    lock — numpy's OpenBLAS did, freezing the reconciler mid-round on its first
+    price lookup (0.1.12 Windows e2e). So it peeks, and reads only what is there."""
     why = []
     got = threading.Event()
+    peek = peek or _peek_pipe_nt
 
     def _eof():
         try:
-            while os.read(fd, 4096):
-                pass  # the app writes the secret line only; anything else is drained
+            while True:
+                n = peek(fd)
+                if n is False:  # not a pipe: a blocking read is the only EOF signal there is
+                    while os.read(fd, 4096):
+                        pass
+                    break
+                if n is None:
+                    break
+                if n:  # the app writes the secret line only; anything else is drained
+                    if not os.read(fd, min(n, 4096)):
+                        break
+                else:
+                    time.sleep(PEEK_S)
         except (OSError, ValueError):
             pass
         why.append("parent closed stdin")

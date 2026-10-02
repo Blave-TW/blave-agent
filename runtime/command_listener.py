@@ -413,7 +413,7 @@ def _child_kw(**kw):
     top of the call's own. stdin is /dev/null unless the caller chose one: a
     child inherits our stdin otherwise, and in the desktop app that is the
     overlapped pipe Electron hands local_daemon for `--secret-stdin`, with the
-    parent-watch thread blocked in read(0) on it. A python that inherits it
+    parent watch on it. A python that inherits it
     hangs at interpreter start on Windows (0.1.3 Lightsail, 2026-09-25: every
     wait_for_bar tick stuck at 3–8 MB, 36 orphaned interpreters an hour, and
     the 30-minute kill() only reached the venv launcher) — and no child has
