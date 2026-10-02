@@ -145,9 +145,12 @@ if (!process.versions.electron) {
   ASYNC.push((async () => { // 代下載(§4.2 / D1):真的 fs、假的 getJSON;workspace 是暫存目錄
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "blave-dl-")), WSd = path.join(base, "workspace"), outside = path.join(base, "outside");
     fs.mkdirSync(WSd); fs.mkdirSync(outside);
+    const refs = path.join(WSd, "references"), mkt = path.join(refs, "marketplace.md");
+    fs.mkdirSync(refs); fs.writeFileSync(mkt, "# Strategy Library API\n\n## Desktop-downloaded picks\n\n…");
     const D = { require, Buffer, WS: WSd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
     vm.createContext(D);
-    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto');\n" + mainSrc.match(/^const LIB_CODE_MAX = [^\n]*$/m)[0].replace(/^const /, "var ")
+    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto');\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
+      + "\n" + cutFn(mainSrc, "libContractReady")
       + "\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); if (next === 'throw') throw new Error('net'); return next; }\n"
       + cutFn(mainSrc, "libWriteWs") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
@@ -166,7 +169,7 @@ if (!process.versions.electron) {
     fs.rmSync(file, { recursive: true }); fs.writeFileSync(file, "x = 3\n");
     const kinds = [];
     for (const resp of [{ status: 403, body: { error: "blocked", security: { blocked: true } } }, { status: 404, body: { error: "strategy not found" } }, { status: 403, body: { error: "not purchased" } },
-      { status: 403, body: { error_code: "ERR005" } }, { status: 500, body: {} }, { status: 200, body: { code: 5 } }, { status: 200, body: { code: "  " } }, { status: 200, body: { code: "x".repeat(1024 * 1024 + 1) } }, "throw", { status: 200, body: null }])
+      { status: 403, body: { error_code: "ERR005" } }, { status: 401, body: {} }, { status: 500, body: {} }, { status: 200, body: { code: 5 } }, { status: 200, body: { code: "  " } }, { status: 200, body: { code: "x".repeat(1024 * 1024 + 1) } }, "throw", { status: 200, body: null }])
       kinds.push((await dl(102, resp)).kind);
     const keptAfterFail = fs.readFileSync(file, "utf8");
     const n0 = D.calls.length; const badIds = [];
@@ -174,6 +177,12 @@ if (!process.versions.electron) {
     D.token = null; const noTok = await dl(102, { status: 200, body: { code: "y" } }); D.token = "t";
     D.key = null; const noKey = await dl(102, { status: 200, body: { code: "y" } }); D.key = { api_key: "k1", secret_key: "s1" };
     const noReq = D.calls.length === n0;
+    // P1-2:workspace 的 marketplace.md 還是舊的(沒有新契約錨點)/ 不存在 → 不下載、回 legacy,畫面改送舊句
+    fs.writeFileSync(mkt, "# Strategy Library API\n\n## My accessible strategies\n");
+    const n1 = D.calls.length, leg1 = await dl(102, { status: 200, body: { code: "q" } });
+    fs.rmSync(mkt); const leg2 = await dl(102, { status: 200, body: { code: "q" } });
+    fs.writeFileSync(mkt, "## Desktop-downloaded picks\n");
+    const legacy = { a: J(leg1), b: J(leg2), noReq: D.calls.length === n1, kept: fs.readFileSync(file, "utf8") };
     // 預先放一個指向 workspace 外的同名 symlink:寫入要換掉 symlink 本身,外面那個檔不能被改
     const victim = path.join(outside, "victim.txt"); fs.writeFileSync(victim, "keep");
     fs.rmSync(file); fs.symlinkSync(victim, file);
@@ -188,9 +197,10 @@ if (!process.versions.electron) {
       && a1.hdr === '{"api-key":"k1","secret-key":"s1"}' && a1.stray === "library_102.py", J(a1));
     ok("② 代下載:回應帶 security → 另存 .security.json;下一次沒帶 → 刪掉舊的那份;碼寫不進去 → fail 且不留掃描結果", a2.r === '{"ok":true}' && a2.sec === 1 && a2.body === "x = 2\n" && a3.r === '{"ok":true}' && a3.secGone
       && a3b.r === '{"ok":false,"kind":"fail"}' && a3b.sec === false, J([a2, a3, a3b]));
-    ok("② 代下載失敗分三種:掃描擋下 blocked、404 gone、其餘(403 未購 / key 被撤、5xx、code 不是字串 / 空白 / 超過 1 MB、打不到、body 壞)fail;失敗不動上一份檔",
-      kinds.join() === "blocked,gone,fail,fail,fail,fail,fail,fail,fail,fail" && keptAfterFail === "x = 3\n", kinds.join());
-    ok("② 代下載:id 不是正整數、沒登入、沒有 key → fail,而且一次請求都不送", badIds.every((k) => k === "fail") && noTok.kind === "fail" && noKey.kind === "fail" && noReq, J([badIds, noTok, noKey]));
+    ok("② 代下載失敗分四種:掃描擋下 blocked、404 gone、key 被撤(403 ERR005 / 401)signin、其餘(403 未購、5xx、code 不是字串 / 空白 / 超過 1 MB、打不到、body 壞)fail;失敗不動上一份檔",
+      kinds.join() === "blocked,gone,fail,signin,signin,fail,fail,fail,fail,fail,fail" && keptAfterFail === "x = 3\n", kinds.join());
+    ok("② 代下載:id 不是正整數 → fail;登入了卻沒有桌面 key(或沒登入)→ signin;都不送請求", badIds.every((k) => k === "fail") && noTok.kind === "signin" && noKey.kind === "signin" && noReq, J([badIds, noTok, noKey]));
+    ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
     ok("② 代下載:同名檔是指向 workspace 外的 symlink → 換掉 symlink 本身,外面的檔不變", a4.r === '{"ok":true}' && a4.victim === "keep" && !a4.isLink && a4.body === "z = 4\n", J(a4));
     ok("② 代下載:tmp 是指向 workspace 外的 symlink → fail、外面什麼都沒寫", a5.r === '{"ok":false,"kind":"fail"}' && a5.wrote === "victim.txt", J(a5));
   })());
@@ -293,6 +303,8 @@ if (!process.versions.electron) {
     && /const libCloudOk = \(\) => !!\(TR_BAGS\.cloud\.st && TR_BAGS\.cloud\.st\.cloud && TR_BAGS\.cloud\.st\.cloud\.strategies_ok === true\);/.test(src) && /function libInvalidate\(\) \{ LIB\.stale = true; LIB\.dlFail = null; LIB\.cloudInstalled = \{\}; LIB\.cloudWait = null; LIB\.cloudNames = null; libRefresh\(\); \}/.test(src));
   ok("③ applyStatic 換語言重畫;stratRefresh 重建列後 libStratChanged;delClose 認 dataset.lock(購買中 Esc / ✕ / 框外都不關)", /if \(typeof libRepaint === "function"\) libRepaint\(\);/.test(cutFn(appSrc, "applyStatic"))
     && /if \(typeof libStratChanged === "function"\) libStratChanged\(\);/.test(cutFn(appSrc, "stratRefresh")) && /if \(sc\.hidden \|\| sc\.dataset\.lock\) return;/.test(cutFn(appSrc, "delClose")));
+  { const anchor = mainSrc.match(/^const LIB_CONTRACT_ANCHOR = "([^"]+)";$/m);
+    ok("③ 外殼認的契約錨點就是 references/marketplace.md 裡那一節的標題(改了其中一邊這裡就紅)", !!anchor && read(path.join(__dirname, "..", "references", "marketplace.md")).split("\n").includes(anchor[1]), anchor && anchor[1]); }
   ok("③ 代下載的 IPC:preload libraryDownload、main 走 handle()(只收自家頁面,拒絕回 fail)", /libraryDownload: \(id\) => ipcRenderer\.invoke\("library-download", id\)/.test(pre)
     && /handle\("library-download", \(_e, id\) => libraryDownload\(id\), \{ ok: false, kind: "fail" \}\);/.test(mainSrc));
   ok("③ preload 四支;main:清單、報告與已安裝走 handle()(只收自家頁面)、購買用 ipcMain.handle + fromOurPage、拒絕回打不到的形狀", /libraryList: \(lang, force\) => ipcRenderer\.invoke\("library-list", lang, force\)/.test(pre) && /libraryReport: \(id, lang\) => ipcRenderer\.invoke\("library-report", id, lang\)/.test(pre) && /libraryPurchase: \(id, confirmTopup\) => ipcRenderer\.invoke\("library-purchase", id, confirmTopup\)/.test(pre) && /libraryInstalled: \(patch\) => ipcRenderer\.invoke\("library-installed", patch\)/.test(pre)
@@ -309,15 +321,16 @@ if (!process.versions.electron) {
 
   // ── ⑥ 本機「用這支」的流程(spec-0.1.13 §4;不起 Electron:libAsk / libSend / libTurnEnd 切出來,四周全是替身)──
   ASYNC.push((async () => {
-    const F = { STR: STR.zh, calls: { dl: [], sent: [], track: [], inval: 0, box: [] }, dlNext: null, subOk: true, env: "local" };
+    const F = { STR: STR.zh, calls: { dl: [], sent: [], track: [], inval: 0, box: [], opts: [] }, dlNext: null, subOk: true, env: "local" };
     vm.createContext(F);
     vm.runInContext(block.replace(/^const /gm, "var ") + `
       var LIB = { pending: null, noNew: null, dlFail: null, data: { dataAccess: "billed" }, installed: {} }, running = false, csTitle = "", RP = { list: [{ name: "old", mtime: 1 }] }, paneSt = { chat: { off: false } };
       var t = (k) => STR[k], libEnv = () => env, envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
       var libTrack = (n) => calls.track.push(n), libBlocked = () => {}, libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
-      var confirmBox = (o) => calls.box.push(o), submitMessage = async (m) => { calls.sent.push(m); return subOk; };
+      var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; };
+      var chatViewing = () => ({ env: env === "cloud" ? "cloud" : "local", strategy: "seen" });
       var window = { blave: { libraryDownload: (id) => { calls.dl.push(id); return new Promise((res, rej) => { dlNext = { res, rej }; }); } } };
-      ` + cutFn(src, "libAsk") + "\nasync " + cutFn(src, "libSend") + "\n" + cutFn(src, "libTurnEnd"), F);
+      ` + cutFn(src, "libDlKey") + "\n" + cutFn(src, "libAsk") + "\nasync " + cutFn(src, "libSend") + "\n" + cutFn(src, "libTurnEnd"), F);
     const tick = () => new Promise((r) => setTimeout(r, 0));
     const s101 = { id: 101, title: "BTC 通道動能共振", price: 0, blave_data: "none" }, s72 = { id: 72, title: "DOGE 籌碼集中度", price: 0, blave_data: "required" }, s9 = { id: 9, title: "已買", price: 900, purchased: true };
     // A. 成功:下載中是 pending/dl、擋重入;下載完才送 lib.msgLocal
@@ -332,17 +345,30 @@ if (!process.versions.electron) {
     ok("⑥ 下載成功才送 lib.msgLocal(逐字)→ 進行中、library_use", done.sent === "策略庫的「BTC 通道動能共振」（#101）已經下載好了，幫我安裝並跑一次回測看看結果" && done.pending === "101,true,local" && done.track === "library_use", JSON.stringify(done));
     // B. 失敗三種:不送訊息、pending 清掉、dlFail 記 kind;gone 重拉清單、dlFail 留著
     const fails = [];
-    for (const [resp, rej] of [[{ ok: false, kind: "blocked" }], [{ ok: false, kind: "gone" }], [{ ok: false, kind: "fail" }], [{ ok: false, kind: "weird" }], [null], [undefined, true]]) {
+    for (const [resp, rej] of [[{ ok: false, kind: "blocked" }], [{ ok: false, kind: "gone" }], [{ ok: false, kind: "signin" }], [{ ok: false, kind: "fail" }], [{ ok: false, kind: "weird" }], [null], [undefined, true]]) {
       F.LIB.pending = null; F.calls.sent.length = 0; const inval0 = F.calls.inval;
       F.libSend(s72); await tick(); if (rej) F.dlNext.rej(new Error("ipc")); else F.dlNext.res(resp); await tick(); await tick();
       fails.push([F.LIB.dlFail && F.LIB.dlFail.id, F.LIB.dlFail && F.LIB.dlFail.kind, F.LIB.pending, F.calls.sent.length, F.calls.inval - inval0].join("/"));
     }
-    ok("⑥ 下載失敗:blocked / gone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;只有 gone 重拉清單", fails.join() === "72/blocked//0/0,72/gone//0/1,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
+    ok("⑥ 下載失敗:blocked / gone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;只有 gone 重拉清單", fails.join() === "72/blocked//0/0,72/gone//0/1,72/signin//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
+    ok("⑥ 下載沒成的那句:kind → 字串 key,五種都有 zh / en,認不得的當 fail", ["blocked", "gone", "signin", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
     F.libSend(s72); await tick();
     ok("⑥ 再按一次:那句錯誤清掉", F.LIB.dlFail === null && F.LIB.pending && F.LIB.pending.stage === "dl"); F.dlNext.res({ ok: true }); await tick(); await tick();
-    // C. 下載好了但訊息送不出去:pending 清掉
-    F.LIB.pending = null; F.subOk = false; F.libSend(s9); await tick(); F.dlNext.res({ ok: true }); await tick(); await tick();
-    ok("⑥ 付費已購的本機也送 lib.msgLocal;送不出去 → pending 清掉", F.calls.sent[F.calls.sent.length - 1] === "策略庫的「已買」（#9）已經下載好了，幫我安裝並跑一次回測看看結果" && F.LIB.pending === null);
+    // C. 下載好了但訊息送不出去(下載中用戶自己先送了一句,回合在跑):pending 清掉,而且講出來
+    F.LIB.pending = null; F.LIB.dlFail = null; F.subOk = false; F.libSend(s9); await tick(); F.dlNext.res({ ok: true }); await tick(); await tick();
+    ok("⑥ 付費已購的本機也送 lib.msgLocal;送不出去 → pending 清掉、dlFail = unsent(不靜默)", F.calls.sent[F.calls.sent.length - 1] === "策略庫的「已買」（#9）已經下載好了，幫我安裝並跑一次回測看看結果" && F.LIB.pending === null
+      && F.LIB.dlFail && F.LIB.dlFail.id === 9 && F.LIB.dlFail.kind === "unsent", JSON.stringify(F.LIB.dlFail));
+    F.subOk = true; F.LIB.dlFail = null;
+    // P2-3:下載中切到雲端視角 → 這句仍釘在本機(viewing 在按下去那一刻定案)
+    F.libSend(s101); await tick(); F.env = "cloud"; F.dlNext.res({ ok: true }); await tick(); await tick();
+    const pin = F.calls.opts[F.calls.opts.length - 1];
+    ok("⑥ 下載那一兩秒切到雲端視角:lib.msgLocal 仍帶 viewing.env=local(按下去那一刻的),不會送給雲端主機", pin && pin.viewing && pin.viewing.env === "local" && pin.viewing.strategy === "seen"
+      && F.calls.sent[F.calls.sent.length - 1].startsWith("策略庫的「BTC 通道動能共振」"), JSON.stringify(pin));
+    F.env = "local"; F.LIB.pending = null;
+    // P1-2:workspace 還是舊契約 → 送舊句(官方 lib.msg、已購 lib.msgPaid)
+    F.libSend(s101); await tick(); F.dlNext.res({ ok: true, legacy: true }); await tick(); await tick(); const lg1 = F.calls.sent[F.calls.sent.length - 1]; F.LIB.pending = null;
+    F.libSend(s9); await tick(); F.dlNext.res({ ok: true, legacy: true }); await tick(); await tick(); const lg2 = F.calls.sent[F.calls.sent.length - 1]; F.LIB.pending = null;
+    ok("⑥ workspace 還沒有新契約(legacy)→ 退回舊句 lib.msg / lib.msgPaid", lg1 === "幫我下載官方策略「BTC 通道動能共振」（#101），跑一次回測看看結果" && lg2 === "幫我下載已購買的策略「已買」（#9），跑一次回測看看結果", JSON.stringify([lg1, lg2]));
     // D. 雲端:不代下載,照舊 lib.msg / lib.msgPaid
     F.subOk = true; F.env = "cloud"; const n0 = F.calls.dl.length;
     F.libSend(s101); await tick(); const c1 = F.calls.sent[F.calls.sent.length - 1]; F.LIB.pending = null;

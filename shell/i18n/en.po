@@ -3979,6 +3979,13 @@ msgstr "Couldn't download this strategy. Please try again."
 msgid "lib.dl.blocked"
 msgstr "This strategy failed the platform security scan and can't be downloaded."
 
+# 0.1.13 稽核補的兩種(字待設計師定稿)
+msgid "lib.dl.signin"
+msgstr "This computer's Blave sign-in needs renewing. Sign in to Blave again, then press again."
+
+msgid "lib.dl.unsent"
+msgstr "The install request wasn't sent, so this strategy isn't installed. Press again once the chat is free."
+
 msgid "lib.dl.gone"
 msgstr "This strategy is no longer in the library."
 

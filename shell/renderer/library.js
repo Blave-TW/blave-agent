@@ -35,6 +35,8 @@ function libListedDays(s, now) { const c = libCreated(s); return c === null ? nu
 function libIsFree(s) { return !(s && typeof s.price === "number" && s.price > 0); }
 // 這支要不要 Blave 資料(api 的 blave_data;spec-0.1.13 §1.1):"none" / "required" / null(未標)。用到它的判斷一律把 null 當 required
 function libNeeds(s) { return s && (s.blave_data === "none" || s.blave_data === "required") ? s.blave_data : null; }
+// 代下載沒成的那句:主行程判的 kind(+ 畫面自己的 unsent)→ 字串 key;認不得的一律當 fail
+function libDlKey(kind) { return ["blocked", "gone", "signin", "unsent"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
 // 確認框與購買框的資料費那一行(§4.1):本機、按小時計費、而且這支不是只用公開資料。兩個框共用這一支,條件不會漂
 function libFeeLine(env, dataAccess, needs) { return env !== "cloud" && dataAccess === "billed" && needs !== "none"; }
 // 推薦排序(同公開頁 library_rules.recoSort):已驗證 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
@@ -179,7 +181,7 @@ function libNoteBuild(root, mk) {
 
 const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, loading: false, skel: false, failed: false, stale: false, seq: 0,
   pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
-  dlFail: null,   // 本機代下載失敗:{ id, kind: blocked | gone | fail }(§4.2);再按一次、離開詳情、libInvalidate 清掉
+  dlFail: null,   // 本機代下載沒成:{ id, kind: blocked | gone | signin | fail | unsent }(§4.2);再按一次、離開詳情、libInvalidate 清掉
   cloudInstalled: {}, cloudWait: null, cloudNames: null,   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
   busyTold: null, noteSeq: 0 };   // busyTold:回合中點過哪一支的停用主鈕(那句「上一輪還在跑。」要留著,回合結束 libSync 清掉);noteSeq:筆記載入的世代
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
@@ -600,7 +602,7 @@ function libPaintCta(s) {
   if (c.err) { const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, libEl("span", "", t("lib.err.noNew"))); box.appendChild(e); }
   if (LIB.dlFail && LIB.dlFail.id === s.id && c.state !== "pending") {
     const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.setAttribute("role", "status");
-    e.append(m, libEl("span", "", t(LIB.dlFail.kind === "blocked" ? "lib.dl.blocked" : LIB.dlFail.kind === "gone" ? "lib.dl.gone" : "lib.dl.fail"))); box.appendChild(e);
+    e.append(m, libEl("span", "", t(libDlKey(LIB.dlFail.kind)))); box.appendChild(e);
   }
 }
 
@@ -718,24 +720,31 @@ async function libSend(s) {
   const cl = env === "cloud" ? libCloudList() : RP.list, before = cl ? new Map(cl.map((x) => [x.name, x.mtime])) : null;   // 同 stratRefresh 的比法:名字 + mtime;雲端清單缺席就不記(之後不猜)
   if (env === "cloud") LIB.cloudWait = null;   // 上一支還在等清單跟上就放掉:寧可它沒標「已安裝」,也不能把第二支的資料夾記到第一支
   LIB.dlFail = null;
+  let send = msg, opts;
   if (local) {
+    // 送出對象在按下去那一刻定案:下載那一兩秒裡切到雲端視角,這句也不能變成送給雲端主機(那邊沒有 tmp/library_<id>.py)
+    opts = { viewing: typeof chatViewing === "function" ? chatViewing() : { env: "local" } };
     LIB.pending = { id: s.id, env, before, stage: "dl" }; LIB.noNew = null; libSync();
     let r = null;
     try { r = await window.blave.libraryDownload(s.id); } catch (_) { r = null; }
     if (!r || r.ok !== true) {
       LIB.pending = null;
-      const kind = r && (r.kind === "blocked" || r.kind === "gone") ? r.kind : "fail";
+      const kind = r && ["blocked", "gone", "signin"].includes(r.kind) ? r.kind : "fail";
       if (kind === "gone") libInvalidate();   // 下架了:清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
       LIB.dlFail = { id: s.id, kind };
       libSync(); const b = libCtaMain(); if (b) b.focus();
       return;
     }
+    if (r.legacy) {   // workspace 還是舊契約:照舊由 agent 自己下載
+      send = libMsg(s, t(libIsFree(s) ? "lib.msg" : "lib.msgPaid"));
+      if (!send) { LIB.pending = null; libSync(); return; }
+    }
     LIB.pending.stage = "turn"; libSync();
   }
   if (csTitle) csStartNew();
-  submitMessage(msg).then((ok) => {
+  submitMessage(send, opts).then((ok) => {
     if (ok) { LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use"); }
-    else if (local) LIB.pending = null;   // 送不出去:tmp/ 那份留著,下次下載整份覆蓋
+    else if (local) { LIB.pending = null; LIB.dlFail = { id: s.id, kind: "unsent" }; }   // 下載中有別句先送出(回合在跑)等:講出來,不靜默
     libSync();
     // 回合送出了,但引擎是 Blave AI 而帳號不能跑:下一步就是 402(按了「使用」但被擋)
     const a = typeof acct !== "undefined" ? acct : null;

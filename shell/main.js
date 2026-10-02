@@ -1945,8 +1945,15 @@ async function libraryPurchase(strategyId, confirmTopup) {
    登入後主行程一律持有這把 key——所以本機「用這支」一律由這裡代抓,寫成 workspace/tmp/library_<id>.py,agent 從安全檢查那一步接手
    (references/marketplace.md › Desktop-downloaded picks)。資料閘門不動:回測抓 Blave 資料照樣過 .env 沒 key、BLAVE_DATA_ACCESS=0、
    api 計費三道。社群策略的伺服器掃描結果(security)另存 library_<id>.security.json 給 agent 照 exit 1 處理;這次沒有就刪掉上一份。
-   回 { ok: true } 或 { ok: false, kind: "blocked"(平台掃描擋下)| "gone"(404)| "fail" };內容不回給畫面。 */
+   回 { ok: true }、{ ok: true, legacy: true }(workspace 還沒有新契約:沒下載,畫面改送舊句)或 { ok: false, kind: "blocked"(平台掃描擋下)|
+   "gone"(404)| "signin"(沒有桌面 key / key 被撤:重新登入才會好)| "fail" };內容不回給畫面。 */
 const LIB_CODE_MAX = 1024 * 1024;
+/* workspace 的官方檔是隨包副本,只在隨包 VERSION 比較新時才同步(syncOfficialOnUpdate);同步沒發生(版號沒往上、備份失敗)時
+   agent 讀的還是舊 marketplace.md,看不懂 lib.msgLocal。所以看契約本身在不在,不看版號 */
+const LIB_CONTRACT_ANCHOR = "## Desktop-downloaded picks";
+function libContractReady() {
+  try { return fs.readFileSync(path.join(WS, "references", "marketplace.md"), "utf8").includes(LIB_CONTRACT_ANCHOR); } catch (_) { return false; }
+}
 function libWriteWs(dir, name, text) {
   // rename 換掉的是目錄項本身:預先放好的同名 symlink 不會被跟著寫過去
   const part = path.join(dir, `.${name}.${crypto.randomBytes(6).toString("hex")}`);
@@ -1955,14 +1962,16 @@ function libWriteWs(dir, name, text) {
 }
 async function libraryDownload(strategyId) {
   if (!Number.isInteger(strategyId) || strategyId <= 0) return { ok: false, kind: "fail" };
+  if (!libContractReady()) return { ok: true, legacy: true };
   const key = loadToken() ? loadDataKey() : null;
-  if (!key) return { ok: false, kind: "fail" };
+  if (!key) return { ok: false, kind: "signin" };   // 09-20 前登入的從沒拿過 key、或 Keychain 讀不到:重新登入才會發
   let r = null;
   try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code`, { "api-key": key.api_key, "secret-key": key.secret_key }); }
   catch (_) { return { ok: false, kind: "fail" }; }
   const b = r.body && typeof r.body === "object" ? r.body : {};
   if (r.status === 403 && b.security && b.security.blocked === true) return { ok: false, kind: "blocked" };
   if (r.status === 404) return { ok: false, kind: "gone" };
+  if (r.status === 401 || (r.status === 403 && b.error_code === "ERR005")) return { ok: false, kind: "signin" };   // key 被撤(別台登出 / 撤銷)
   if (r.status !== 200 || typeof b.code !== "string" || !b.code.trim() || Buffer.byteLength(b.code) > LIB_CODE_MAX) return { ok: false, kind: "fail" };
   const dir = path.join(WS, "tmp"), name = `library_${strategyId}.py`, sec = `library_${strategyId}.security.json`;
   try {

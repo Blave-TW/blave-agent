@@ -3980,6 +3980,13 @@ msgstr "下載不到這支策略，請再試一次。"
 msgid "lib.dl.blocked"
 msgstr "這支策略沒通過平台的安全檢查，不能下載。"
 
+# 0.1.13 稽核補的兩種(字待設計師定稿)
+msgid "lib.dl.signin"
+msgstr "這台電腦的 Blave 登入需要更新，重新登入 Blave 後再按一次。"
+
+msgid "lib.dl.unsent"
+msgstr "安裝那句沒送出去，這支還沒裝。等對話空下來再按一次。"
+
 msgid "lib.dl.gone"
 msgstr "這支策略已經不在策略庫了。"
 
