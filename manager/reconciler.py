@@ -251,73 +251,41 @@ _CAPITAL_OPTION_RE = re.compile(r"^TX[O1245UVXYZ]\d{3,6}[A-X]\d$")
 # state/capital_account.json every 60s; force_next re-reconciles within 5s of
 # a fill. A round landing in that gap reads the PRE-order snapshot, sees the
 # position unchanged, and re-sends the same order (margin happened to reject
-# the duplicate that day — not a backstop to rely on). _capital_mark_order_sent
-# records when THIS process last sent a capital order; _capital_get_positions
-# refuses a snapshot whose read did not start settled after that mark.
-_CAPITAL_LAST_ORDER_PATH = 'state/capital_last_order_at'
-_capital_last_order_at = 0.0  # process-local fast path
-
-
-def _capital_load_last_order_at():
-    """Seed the process-local marker from disk at import time — covers a
-    watchdog restart (references/manager.md: restarts on crash) landing
-    inside the same <60s window as a just-sent order, which a bare in-memory
-    variable would silently forget."""
-    global _capital_last_order_at
-    try:
-        with open(_CAPITAL_LAST_ORDER_PATH) as f:
-            _capital_last_order_at = float(f.read().strip() or 0)
-    except (FileNotFoundError, ValueError):
-        pass
-
-
-def _capital_mark_order_sent():
-    """Call right before the order API call (after all validation gates) and
-    again once it returns — covers the call regardless of how it resolves
-    (fill, reject, exception).
-    Written both in-process (fast path) and to disk (survives a restart),
-    atomic tmp+replace matching lib/capital_worker.py's own snapshot write."""
-    global _capital_last_order_at
-    _capital_last_order_at = time.time()
-    try:
-        os.makedirs(os.path.dirname(_CAPITAL_LAST_ORDER_PATH), exist_ok=True)
-        tmp = _CAPITAL_LAST_ORDER_PATH + '.tmp'
-        with open(tmp, 'w') as f:
-            f.write(repr(_capital_last_order_at))
-        os.replace(tmp, _CAPITAL_LAST_ORDER_PATH)
-    except OSError as e:
-        logging.warning(f"[reconciler/capital] failed to persist last-order marker: {e}")
-
-
-_capital_load_last_order_at()
+# the duplicate that day — not a backstop to rely on). lib/order_capital marks
+# every 群益 futures order on this machine (lib.capital_vault.mark_order_sent —
+# reconciler, flatten and scripts alike); _capital_get_positions re-reads that
+# mark every round and refuses a snapshot whose read did not start settled
+# after it. Read every round, not once at import: a flatten in another process
+# kicks this reconciler right after its closes.
 
 
 class CapitalCacheLagError(Exception):
     """state/capital_account.json has not yet been refreshed since this
-    process's own last capital order — a Read-Your-Writes guard, NOT a
+    machine's last capital order — a Read-Your-Writes guard, NOT a
     connectivity failure. Must not count toward DISCONNECT_HALT_AFTER (see
     _get_positions_guarded) or be treated as a "state consumed" round in the
     main loop (see __main__)."""
 
 
 def _capital_check_snapshot_caught_up(query_started_at):
-    """Raise iff a capital order was sent by this process and the worker's
+    """Raise iff a capital order was sent on this machine and the worker's
     last read did not START at least capital_vault.ORDER_SETTLE_S after it.
     The query start, not the write time (read_at): a read begun before the
     order and written after it still shows the old open interest. No-op when
-    no order is pending (_capital_last_order_at==0) — the normal,
-    overwhelming-majority-of-rounds path is untouched.
+    no order was ever marked — the normal, overwhelming-majority-of-rounds
+    path is untouched.
 
     Ordering contract (caller): call this AFTER the snapshot's own
     freshness/ok check (lib.account_capital._read_snapshot, raised inside
     get_positions()) has already passed — otherwise a genuinely dead worker
     would trip this guard forever instead of surfacing as the real stale-
     snapshot error that counts toward auto-halt."""
-    from lib.capital_vault import ORDER_SETTLE_S
-    if _capital_last_order_at and query_started_at < _capital_last_order_at + ORDER_SETTLE_S:
+    from lib.capital_vault import ORDER_SETTLE_S, last_order_at
+    last = last_order_at()
+    if last and query_started_at < last + ORDER_SETTLE_S:
         raise CapitalCacheLagError(
             f"群益部位快取尚未跟上最近一次下單(快取查詢開始於 {query_started_at:.0f}"
-            f",下單於 {_capital_last_order_at:.0f},需晚 {ORDER_SETTLE_S} 秒)—— 本輪跳過,等下一輪快取更新")
+            f",下單於 {last:.0f},需晚 {ORDER_SETTLE_S} 秒)—— 本輪跳過,等下一輪快取更新")
 
 
 def _hand_wired_routed():
@@ -351,7 +319,7 @@ def _capital_get_positions():
 
     Read-Your-Writes guard (2026-08-14): after the snapshot's own freshness
     check passes, also refuses a snapshot whose read did not start settled
-    after this process's last capital order (_capital_check_snapshot_caught_up)
+    after this machine's last capital order (_capital_check_snapshot_caught_up)
     — raises CapitalCacheLagError in that post-order window instead of
     returning stale positions."""
     from lib.account_capital import get_positions as _acct_positions, get_query_started_at
@@ -438,7 +406,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     "never risk more than intended" convention is untouched by this fix."""
     import math
     from dotenv import dotenv_values
-    from lib.order_capital import place_futures_market_order, _request_snapshot_refresh
+    from lib.order_capital import place_futures_market_order
 
     spec = _CAPITAL_FUTURES_SPEC.get(str(symbol).upper())
     if not spec:
@@ -459,19 +427,8 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     action = 'buy' if signed_diff > 0 else 'sell'
     intent = 'reduce' if reduce_only else 'entry'
     env = dotenv_values()
-    # Read-Your-Writes marker — set before the call so it covers this attempt
-    # regardless of outcome (fill, reject, or exception below).
-    _capital_mark_order_sent()
-    try:
-        result = place_futures_market_order(env, spec['capital_symbol'], action, lots, intent)
-    finally:
-        # Stamped again once the call is over: it may log in first and waits
-        # up to its confirm timeout for the fill, so the settle window runs from
-        # the fill, not from before the login. The refresh flag is touched after
-        # the marker so the worker's early tick (flag + settle) lands on a read
-        # this guard accepts.
-        _capital_mark_order_sent()
-        _request_snapshot_refresh()
+    # the Read-Your-Writes mark is written by the order lib, around the send
+    result = place_futures_market_order(env, spec['capital_symbol'], action, lots, intent)
     return {
         'avg_price':       result.get('avg_fill_price') or 0.0,
         'executed_qty':    result.get('fill_qty') or 0.0,

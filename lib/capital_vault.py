@@ -36,6 +36,37 @@ BLOCK_CODES = (300, 307)
 # 群益's GetOpenInterest lag has not been timed — measure it on the next live
 # round trip before trusting the margin.
 ORDER_SETTLE_S = 20
+# When this machine last sent a 群益 futures order — written by lib/order_capital
+# for EVERY caller (reconciler, flatten, scripts), read by the reconciler on
+# every round. Per process the last value is also kept in memory, so a failed
+# disk write still covers the process that sent.
+LAST_ORDER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "state", "capital_last_order_at")
+_last_order_mem = 0.0
+
+
+def mark_order_sent():
+    global _last_order_mem
+    _last_order_mem = time.time()
+    try:
+        os.makedirs(os.path.dirname(LAST_ORDER_PATH), exist_ok=True)
+        with open(LAST_ORDER_PATH + ".tmp", "w") as f:
+            f.write(repr(_last_order_mem))
+        os.replace(LAST_ORDER_PATH + ".tmp", LAST_ORDER_PATH)
+    except OSError as e:
+        import logging
+        logging.warning(f"capital: last-order marker not written ({type(e).__name__}) — "
+                        f"other processes will not see this order")
+
+
+def last_order_at():
+    """Unix time of the last 群益 futures order sent on this machine, 0.0 if none."""
+    try:
+        with open(LAST_ORDER_PATH) as f:
+            disk = float(f.read().strip() or 0)
+    except (OSError, ValueError):
+        disk = 0.0
+    return max(disk, _last_order_mem)
 
 
 def fingerprint(login_id, password):

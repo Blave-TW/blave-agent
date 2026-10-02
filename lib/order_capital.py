@@ -361,8 +361,17 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
     p.sDayTrade = 0
     p.sReserved = 0
 
-    seq_no = _send(sess, lambda: sess.order.SendFutureOrderCLR(sess.login_id, False, p), fields)
-    return _finish(sess, seq_no, symbol, confirm_timeout, fields)
+    # The reconciler skips its rounds until a snapshot read STARTED settled after
+    # this mark — whoever sent the order (flatten included). Stamped again once
+    # the fill wait is over, then the refresh flag, so the worker's early tick
+    # (flag + settle) lands on a read the guard accepts.
+    capital_vault.mark_order_sent()
+    try:
+        seq_no = _send(sess, lambda: sess.order.SendFutureOrderCLR(sess.login_id, False, p), fields)
+        return _finish(sess, seq_no, symbol, confirm_timeout, fields)
+    finally:
+        capital_vault.mark_order_sent()
+        _request_snapshot_refresh()
 
 
 # ── securities ───────────────────────────────────────────────────────────────

@@ -9,8 +9,13 @@ close on it opens the reverse. Asserts, case by case:
    pre-field worker wrote the snapshot; stale / error snapshots raise as before.
 3. _capital_get_positions on a real snapshot file: a read_at well past the order
    with an early query start is refused; a settled query start returns positions.
-4. _capital_place_order stamps the marker again after the call (also when it
-   raises) and touches the refresh flag only after that.
+4. The marker belongs to the order lib, shared by every process on the
+   machine: place_futures_market_order (so close_position_partial, which
+   flatten uses, and the reconciler alike) stamps it before the send and again
+   after the fill wait, also when that raises, and touches the refresh flag
+   only after the final stamp. The reconciler re-reads it every round: a mark
+   another process wrote (a flatten, then a kicked round) is honoured, and a
+   failed disk write still leaves the sending process covered.
 5. capital_worker._tick_snapshot stamps query_started_at before its first query;
    main()'s rate-limit branch never writes a snapshot.
 6. capital_worker._sleep_until_refresh: no flag → full poll; fresh flag → tick at
@@ -29,6 +34,18 @@ open("manager/portfolio_config.json", "w").write("{}")
 
 from lib import account_capital, capital_vault, capital_worker, order_capital  # noqa: E402
 from manager import reconciler  # noqa: E402
+
+capital_vault.LAST_ORDER_PATH = os.path.join(TMP, "capital_last_order_at")
+
+
+def set_marker(t, disk=True):
+    """The machine's last order at t: on disk (another process) or only in memory."""
+    capital_vault._last_order_mem = 0.0 if disk else t
+    if os.path.exists(capital_vault.LAST_ORDER_PATH):
+        os.remove(capital_vault.LAST_ORDER_PATH)
+    if disk and t:
+        with open(capital_vault.LAST_ORDER_PATH, "w") as f:
+            f.write(repr(t))
 
 S = capital_vault.ORDER_SETTLE_S
 fails = 0
@@ -50,10 +67,10 @@ def lag(q):
 
 # 1 — the comparison
 check(S >= 20, f"ORDER_SETTLE_S >= 20 (統一's measured 12.0/10.9 s + margin): {S}")
-reconciler._capital_last_order_at = 0.0
+set_marker(0.0)
 check(not lag(0.0) and not lag(1e12), "no order pending → never refused")
 M = 1_000_000.0
-reconciler._capital_last_order_at = M
+set_marker(M)
 for q, want in ((M - 5, True), (M, True), (M + S - 0.001, True), (M + S, False), (M + S + 100, False)):
     check(lag(q) is want, f"order at M, query started at M{q - M:+g} → {'refused' if want else 'accepted'}")
 
@@ -87,7 +104,7 @@ except RuntimeError as e:
 
 # 3 — the reconciler read, end to end on a snapshot file
 now = time.time()
-reconciler._capital_last_order_at = now - 100
+set_marker(now - 100)
 pos = [{"symbol": "TM2610", "side": "buy", "lots": 1.0}]
 write_snap(read_at=now, query_started_at=now - 99, positions=pos)
 try:
@@ -104,49 +121,83 @@ try:
     check(False, "pre-field snapshot, read_at 5 s after the order → refused (settle applies)")
 except reconciler.CapitalCacheLagError:
     check(True, "pre-field snapshot, read_at 5 s after the order → refused (settle applies)")
-reconciler._capital_last_order_at = 0.0
+set_marker(0.0)
 write_snap(read_at=now, query_started_at=now - 250, positions=pos)
 check(reconciler._capital_get_positions().get("TMF", {}).get("size") == 1.0,
       "no order pending → an old query start is still read (normal rounds unchanged)")
 
-# 4 — the marker around the call
+# 4 — the marker around the send, written by the order lib for every caller
+import types  # noqa: E402
+
 order_capital._REFRESH_FLAG = os.path.join(TMP, "capital_refresh")
 seen = {}
-real_refresh = order_capital._request_snapshot_refresh
+real = {n: getattr(order_capital, n) for n in ("_get_session", "_send", "_finish", "_request_snapshot_refresh",
+                                                "_check_halt", "sk")}
+real_restart = order_capital.guard.check_restart_stop
+order_capital.guard.check_restart_stop = lambda *a, **k: None
+order_capital._check_halt = lambda fields: None
+order_capital.sk = types.SimpleNamespace(FUTUREORDER=lambda: types.SimpleNamespace())
+order_capital._get_session = lambda env: types.SimpleNamespace(futures_account="F000", login_id="x",
+                                                              order=types.SimpleNamespace())
 
 
-def fake_order(env, symbol, action, lots, intent):
-    seen["call_at"] = time.time()
-    seen["marker_in_call"] = reconciler._capital_last_order_at
+def fake_send(sess, send_fn, fields):
+    seen["send_at"] = time.time()
+    seen["marker_at_send"] = capital_vault.last_order_at()
+    return "1234567890123"
+
+
+def fake_finish(sess, seq_no, symbol, timeout, fields):
     time.sleep(0.05)
+    seen["finish_end"] = time.time()
     if seen.get("raise"):
-        raise RuntimeError("rejected")
-    return {"status": "filled", "fill_qty": lots, "avg_fill_price": 1.0, "symbol": "TM2610"}
+        raise RuntimeError("confirm failed")
+    return {"status": "filled", "fill_qty": 1.0, "avg_fill_price": 1.0, "symbol": "TM2610", "seq_no": seq_no}
 
 
 def recording_refresh():
-    seen["marker_at_flag"] = reconciler._capital_last_order_at
-    real_refresh()
+    seen["marker_at_flag"] = capital_vault.last_order_at()
+    real["_request_snapshot_refresh"]()
 
 
-order_capital.place_futures_market_order = fake_order
+order_capital._send = fake_send
+order_capital._finish = fake_finish
 order_capital._request_snapshot_refresh = recording_refresh
-for raising in (False, True):
+for label, call, raising in (
+        ("flatten close (close_position_partial)", lambda: order_capital.close_position_partial({}, "TM2610", "long", 1), False),
+        ("reconciler order (_capital_place_order)", lambda: reconciler._capital_place_order("TMF", 1.0), False),
+        ("raising fill wait", lambda: order_capital.place_futures_market_order({}, "TM0000", "buy", 1, "entry"), True)):
+    set_marker(0.0)
     seen.clear()
     seen["raise"] = raising
     try:
-        reconciler._capital_place_order("TMF", 1.0)
+        call()
     except RuntimeError:
         pass
-    m = reconciler._capital_last_order_at
-    tag = "raising call" if raising else "filled call"
-    check(seen["marker_in_call"] <= seen["call_at"], f"{tag}: marker stamped before the call")
-    check(m > seen["call_at"] + 0.04, f"{tag}: marker stamped again after the call returned")
-    check(seen.get("marker_at_flag") == m, f"{tag}: refresh flag touched after the final marker")
-    check(os.path.getmtime(order_capital._REFRESH_FLAG) >= m - 0.01, f"{tag}: flag mtime >= marker")
-    with open("state/capital_last_order_at") as f:
-        check(float(f.read()) == m, f"{tag}: marker on disk = final marker")
-order_capital._request_snapshot_refresh = real_refresh
+    with open(capital_vault.LAST_ORDER_PATH) as f:
+        disk = float(f.read())
+    check(0 < seen["marker_at_send"] <= seen["send_at"], f"{label}: marked on disk before the send")
+    check(disk >= seen["finish_end"], f"{label}: marked again after the fill wait")
+    check(seen.get("marker_at_flag") == disk, f"{label}: refresh flag touched after the final mark")
+    check(os.path.getmtime(order_capital._REFRESH_FLAG) >= disk - 0.01, f"{label}: flag mtime >= mark")
+for n, v in real.items():
+    setattr(order_capital, n, v)
+order_capital.guard.check_restart_stop = real_restart
+
+# another process's mark (a flatten that then kicks the reconciler) is read this round
+now = time.time()
+write_snap(read_at=now, query_started_at=now - 3, positions=pos)
+set_marker(0.0)
+check(reconciler._capital_get_positions().get("TMF", {}).get("size") == 1.0, "no mark → read")
+set_marker(now - 8)
+try:
+    reconciler._capital_get_positions()
+    check(False, "a mark written by another process 8 s ago → the next round is refused")
+except reconciler.CapitalCacheLagError:
+    check(True, "a mark written by another process 8 s ago → the next round is refused")
+set_marker(now - 8, disk=False)
+check(lag(now - 3), "disk write failed → the sending process's own mark still refuses")
+set_marker(0.0)
 
 # 5 — the worker stamps before querying
 calls = {}
