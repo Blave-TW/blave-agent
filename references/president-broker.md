@@ -206,8 +206,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   list each tick for this):
   - the bot's months are only the **front month** (next to settle) and the **computed entry
     month** — they differ between the roll (15:00 the day before) and the 13:30 settlement;
-  - a month **past its settlement time that the broker no longer lists** (or the list is unknown)
-    is **settled residue**: treated as not held, never closed (it was cash-settled), only logged;
+  - a month **past its settlement time that the broker's list, read, no longer carries** is
+    **settled residue**: treated as not held, never closed (it was cash-settled), only logged;
+  - a month past its settlement time while the broker's list **could not be read** fails the read
+    as a transient (`ListUnknown`): the reconciler skips the round and nothing is guessed — guessing
+    "settled" would open the next month beside a holiday-postponed one that still trades;
   - a month past its settlement time that the broker **still lists** (a holiday-postponed
     settlement, or a list that has not dropped it yet) still counts as held;
   - **any other month** (a far month the user opened in the app) is **left out of every read**

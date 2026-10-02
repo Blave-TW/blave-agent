@@ -6,12 +6,16 @@ A held row of a root is one of:
 - the bot's: the FRONT month (first whose settlement is still ahead) or the
   computed ENTRY month (they differ between the roll at 15:00 the day before
   settlement and the 13:30 settlement);
-- SETTLED residue: its settlement time has passed and the broker no longer
-  lists it (or the list is unknown) — cash-settled, treated as not held, never
+- SETTLED residue: its settlement time has passed and the broker's list, read,
+  no longer carries it — cash-settled, treated as not held, never
   closed or added to. Before its settlement time a held row is real whatever
   the list says (an index month trades until 13:30 on its settlement day; a
   row missing from the list then means a short list, not a gone contract), so
   the month alone decides;
+- UNKNOWN: its settlement time has passed and the broker's list could not be
+  read (or came back empty) — the read fails as a transient (ListUnknown: the
+  reconciler skips the round, nothing is guessed): calling it settled would
+  re-open the next month beside a holiday-postponed one that is still trading;
 - PENDING: its settlement time has passed but the broker still lists it — a
   holiday-postponed settlement, or a broker list that has not dropped it yet.
   Treated as the bot's expiring month (a held month is added to, never a second
@@ -33,6 +37,11 @@ MONTH_CODES = "ABCDEFGHIJKL"  # futures month letters, A = January
 SETTLE_HOUR, SETTLE_MINUTE = 13, 30
 NIGHT_OPEN_HOUR, NIGHT_OPEN_MINUTE = 15, 0
 PROD_RE = re.compile(r"^(TXF|MXF|TMF)([A-L])(\d)$")
+
+
+class ListUnknown(RuntimeError):
+    """A held month is past its settlement time and the broker's contract list
+    was not read — settled or postponed cannot be told; skip the round."""
 
 
 def _now(now):
@@ -103,15 +112,15 @@ def month_of(productid, now=None):
 
 
 def classify_row(row, listed=None, now=None):
-    """'bot' / 'settled' / 'pending' / 'manual' for one held row (see module doc).
+    """'bot' / 'settled' / 'pending' / 'unknown' / 'manual' for one held row (see module doc).
     `listed`: the broker's contract codes for this row's root, or None if unknown."""
     now = _now(now)
     pid = row["productid"]
     settled_by_time = settlement_at(*month_of(pid, now)) <= now
     if settled_by_time:
-        if listed is not None and pid in listed:
-            return "pending"
-        return "settled"
+        if not listed:
+            return "unknown"
+        return "pending" if pid in listed else "settled"
     if pid in (front_month(row["root"], now), computed_near(row["root"], now)):
         return "bot"
     return "manual"
@@ -120,12 +129,16 @@ def classify_row(row, listed=None, now=None):
 def bot_rows(rows, listed_by_root=None, now=None):
     """(keep, residue, manual): the held rows the bot counts (bot + pending),
     the settled residue it ignores, and the months it does not trade (left
-    out, never touched)."""
+    out, never touched). Raises ListUnknown for a month past its settlement
+    whose root's broker list is unknown."""
     keep, residue, manual = [], [], []
     for r in rows:
         if not r.get("net"):
             continue
         listed = (listed_by_root or {}).get(r["root"])
         kind = classify_row(r, listed, now)
+        if kind == "unknown":
+            raise ListUnknown(f"統一 {r['productid']} 已過結算時點、但讀不到券商的合約清單——"
+                              f"無法分辨已結算或順延,本輪跳過")
         {"settled": residue, "manual": manual}.get(kind, keep).append(r)
     return keep, residue, manual

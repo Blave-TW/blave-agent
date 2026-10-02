@@ -18,6 +18,10 @@ try:
     from lib import president_contracts as _contracts
 except ImportError:  # loaded with lib/ itself on sys.path
     import president_contracts as _contracts
+try:
+    from lib import venue_errors
+except ImportError:
+    venue_errors = None
 
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "president_account.json")
@@ -85,6 +89,15 @@ def bot_position_rows(now=None):
             logging.warning(f"[president] {r['productid']} {r['net']:+d}: a month the bot does not "
                             f"trade (opened in the app) — left out, Blave never touches it")
     return keep
+
+
+def classify(exc):
+    """lib.venue_errors class of a failed read: an unread contract list past a
+    settlement is TRANSIENT (skip the round, never halt); anything else falls
+    to the reconciler's floor."""
+    if venue_errors is not None and isinstance(exc, _contracts.ListUnknown):
+        return venue_errors.TRANSIENT
+    return None
 
 
 def get_positions(env: dict) -> dict:

@@ -473,10 +473,14 @@ check(pc.classify_row(R("TXFJ6"), None, T(2026, 10, 1, 10, 0)) == "bot"
       and pc.classify_row(R("TXFK6"), None, T(2026, 10, 1, 10, 0)) == "manual"
       and pc.classify_row(R("TXFK6"), None, T(2026, 10, 20, 16, 0)) == "bot",
       "bot months = front or computed entry month; a far month is manual")
-check(pc.classify_row(R("TXFJ6"), None, T(2026, 10, 21, 14, 0)) == "settled"
-      and pc.classify_row(R("TXFJ6"), ["TXFK6", "TXFL6"], T(2026, 10, 21, 14, 0)) == "settled"
+check(pc.classify_row(R("TXFJ6"), ["TXFK6", "TXFL6"], T(2026, 10, 21, 14, 0)) == "settled"
       and pc.classify_row(R("TXFJ6"), ["TXFJ6", "TXFK6"], T(2026, 10, 21, 14, 0)) == "pending",
-      "past settlement: settled when unlisted (or list unknown), pending while the broker still lists it")
+      "past settlement: settled when the read list lacks it, pending while the broker still lists it")
+check(pc.classify_row(R("TXFJ6"), None, T(2026, 10, 21, 14, 0)) == "unknown"
+      and pc.classify_row(R("TXFJ6"), [], T(2026, 10, 22, 9, 0)) == "unknown"
+      and raises(pc.ListUnknown, lambda: pc.bot_rows([R("TXFJ6")], None, T(2026, 10, 22, 9, 0))) is not None,
+      "past settlement with the list unread (or empty) → unknown, never guessed settled (a postponed J6 "
+      "would get K6 opened beside it)")
 check(pc.classify_row(R("TXFJ6"), ["TXFK6"], T(2026, 10, 15, 10, 0)) == "bot"
       and pc.classify_row(R("TXFJ6"), [], T(2026, 10, 15, 10, 0)) == "bot"
       and pc.classify_row(R("TXFL6"), ["TXFJ6"], T(2026, 10, 15, 10, 0)) == "manual",
@@ -757,6 +761,7 @@ check(fp_new != president_vault.fingerprint(a1), "a renewed certificate (new byt
 os.makedirs("manager", exist_ok=True)
 json.dump({"exchanges": {"s1": "president"}}, open("manager/portfolio_config.json", "w"))
 from manager import reconciler  # noqa: E402
+from lib import venue_errors  # noqa: E402
 sent_legs = []
 FILL = {}
 
@@ -843,11 +848,10 @@ finally:
 # ── 11. after settlement: a leftover expired row is not a position ───────────
 pc._now = lambda now: _real_now(now or T(2026, 10, 21, 14, 0))  # 30 min after J6 settled
 open(op.LAST_ORDER_PATH, "w").write("{}")
-for listed in (None, {"TMF": ["TMFK6", "TMFL6"], "TXF": [], "MXF": []}):
+for listed in ({"TMF": ["TMFK6", "TMFL6"], "TXF": [], "MXF": []},):
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed=listed)
     n_err = len(json.load(open("manager/order_errors.json", encoding="utf-8")))
-    check(reconciler.get_positions() == {}, f"residue J6 (list {'unknown' if listed is None else 'without J6'}) "
-                                            f"reads as no position")
+    check(reconciler.get_positions() == {}, "residue J6 (list read, without J6) reads as no position")
     NOW_LIST[:] = ["TMFK6"]
     api = use([ACK])
     reconciler.place_order("TMF", 1, exchange="president")
@@ -859,7 +863,17 @@ for listed in (None, {"TMF": ["TMFK6", "TMFL6"], "TXF": [], "MXF": []}):
 snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed={"TMF": ["TMFJ6", "TMFK6"]})
 check(reconciler.get_positions() == {"TMF": {"side": "long", "size": 1.0, "exchange": "president"}},
       "past settlement but still listed (holiday-postponed) → still the bot's position")
-snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}])
+for listed in (None, {"TMF": [], "TXF": [], "MXF": []}):
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed=listed)
+    e = raises(pc.ListUnknown, reconciler.get_positions)
+    check(e is not None and reconciler._classify("president", e) == venue_errors.TRANSIENT,
+          f"past settlement, list {'unread' if listed is None else 'empty'} → the read fails as TRANSIENT "
+          f"(round skipped, never halts, nothing guessed)", e)
+    api = use([ACK])
+    check(raises(pc.ListUnknown, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
+          and not api.sent, "…and no close is sent on it either")
+    open(op.LAST_ORDER_PATH, "w").write("{}")
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1}], listed={"TMF": ["TMFK6", "TMFL6"]})
 api = use([ACK])
 check(raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1)) is not None
       and not api.sent, "a close of settled residue is refused, never sent")
