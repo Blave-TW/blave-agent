@@ -1962,7 +1962,7 @@ function libWriteWs(dir, name, text) {
   catch (e) { try { fs.unlinkSync(part); } catch (_) { /* 沒寫出來就沒有 */ } throw e; }
 }
 /* 不登入也能下載的那幾支(Wei 10-02):官方 × 免費 × 不用 Blave 資料。這裡看的是畫面那份清單(libCache)——只決定要不要試匿名那條,
-   放不放行由 api 的 /public_code 在伺服器端再判一次(blave_data 是 NULL 一律不放)。清單裡沒有這支就不試 */
+   放不放行由 api 的 /public_code 在伺服器端再判一次(blave_data 是 NULL 一律不放;不合格回 404,這裡就當 gone)。清單裡沒有這支就不試 */
 function libAnonOk(id) {
   const s = libCache && Array.isArray(libCache.strategies) ? libCache.strategies.find((x) => x.id === id) : null;
   return !!s && s.is_official === true && s.price === 0 && s.blave_data === "none";
@@ -1973,7 +1973,10 @@ async function libraryDownload(strategyId) {
   const key = loadToken() ? loadDataKey() : null;
   const anon = async () => {
     if (!libAnonOk(strategyId)) return null;
-    try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, {}); } catch (_) { return { status: 0, body: null }; }
+    // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數
+    let h = {};
+    try { if (tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
+    try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
   };
   let r = null;
   if (key) {
@@ -1988,7 +1991,7 @@ async function libraryDownload(strategyId) {
   const b = r.body && typeof r.body === "object" ? r.body : {};
   if (r.status === 403 && b.security && b.security.blocked === true) return { ok: false, kind: "blocked" };
   if (r.status === 404) return { ok: false, kind: "gone" };
-  if (r.status === 401 || (r.status === 403 && (b.error_code === "ERR005" || b.error_code === "LOGIN_REQUIRED"))) return { ok: false, kind: "signin" };
+  if (r.status === 401 || (r.status === 403 && b.error_code === "ERR005")) return { ok: false, kind: "signin" };
   if (r.status !== 200 || typeof b.code !== "string" || !b.code.trim() || Buffer.byteLength(b.code) > LIB_CODE_MAX) return { ok: false, kind: "fail" };
   const dir = path.join(WS, "tmp"), name = `library_${strategyId}.py`, sec = `library_${strategyId}.security.json`;
   try {

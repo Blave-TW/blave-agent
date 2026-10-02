@@ -151,7 +151,7 @@ if (!process.versions.electron) {
     vm.createContext(D);
     vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto');\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
-      + "\nvar libCache = null;\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
+      + "\nvar libCache = null, tmOn = true;\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
       + cutFn(mainSrc, "libAnonOk") + "\n"
       + cutFn(mainSrc, "libWriteWs") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
@@ -193,11 +193,12 @@ if (!process.versions.electron) {
     const A = {};
     D.token = null; let c0 = D.calls.length;
     A.ok = J(await dl(102, { status: 200, body: { code: "anon = 1\n" } })); A.okCall = J(D.calls.slice(c0)); A.okBody = fs.readFileSync(file, "utf8");
+    vm.runInContext("tmOn = false;", D); c0 = D.calls.length; A.off = J(await dl(102, { status: 200, body: { code: "anon = 1\n" } })); A.offCall = J(D.calls.slice(c0)); vm.runInContext("tmOn = true;", D);
     c0 = D.calls.length; A.denied = [];
     for (const id of [88, 125, 124, 500, 777]) A.denied.push((await dl(id, { status: 200, body: { code: "x" } })).kind);
     A.deniedNoReq = D.calls.length === c0;
     A.srv = [];
-    for (const resp of [{ status: 403, body: { error_code: "LOGIN_REQUIRED" } }, { status: 404, body: {} }, { status: 429, body: {} }, { status: 503, body: {} }, "throw"])
+    for (const resp of [{ status: 404, body: {} }, { status: 429, body: {} }, { status: 503, body: {} }, "throw"])
       A.srv.push((await dl(102, resp)).kind);
     D.token = "t"; D.key = null; c0 = D.calls.length;
     A.noKey = J(await dl(102, { status: 200, body: { code: "anon = 2\n" } })); A.noKeyUrl = D.calls.slice(c0).map((c) => c[0]).join();
@@ -223,9 +224,10 @@ if (!process.versions.electron) {
     ok("② 代下載失敗分四種:掃描擋下 blocked、404 gone、key 被撤(403 ERR005 / 401)signin、其餘(403 未購、5xx、code 不是字串 / 空白 / 超過 1 MB、打不到、body 壞)fail;失敗不動上一份檔",
       kinds.join() === "blocked,gone,fail,signin,signin,fail,fail,fail,fail,fail,fail" && keptAfterFail === "x = 3\n", kinds.join());
     ok("② 代下載:id 不是正整數 → fail;登入了卻沒有桌面 key(或沒登入)→ signin;都不送請求", badIds.every((k) => k === "fail") && noTok.kind === "signin" && noKey.kind === "signin" && noReq, J([badIds, noTok, noKey]));
-    ok("② 匿名下載:沒登入 × 官方免費且不用 Blave 資料 → 打 /public_code、不帶任何憑證、寫檔", A.ok === '{"ok":true}' && A.okCall === J([[anonURL(102), {}]]) && A.okBody === "anon = 1\n", J(A));
+    ok("② 匿名下載:沒登入 × 官方免費且不用 Blave 資料 → 打 /public_code、不帶任何憑證(只帶埋點 install_id 計安裝數)、寫檔;關掉使用事件就連 install_id 都不帶",
+      A.ok === '{"ok":true}' && A.okCall === J([[anonURL(102), { "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77" }]]) && A.okBody === "anon = 1\n" && A.off === '{"ok":true}' && A.offCall === J([[anonURL(102), {}]]), J(A));
     ok("② 匿名下載:要資料 / 未標(null)/ 社群 / 付費 / 清單裡沒有 → signin,一次請求都不送", A.denied.join() === "signin,signin,signin,signin,signin" && A.deniedNoReq, J(A.denied));
-    ok("② 匿名下載:伺服器說要登入 → signin;404 gone;429 / 503 / 打不到 fail", A.srv.join() === "signin,gone,fail,fail,fail", A.srv.join());
+    ok("② 匿名下載:伺服器不給(404)→ gone;429 / 503 / 打不到 fail", A.srv.join() === "gone,fail,fail,fail", A.srv.join());
     ok("② 匿名下載:登入了但沒 key → 走匿名;key 被撤(ERR005)→ 改走匿名;被撤 × 要資料 → signin(不試匿名)", A.noKey === '{"ok":true}' && A.noKeyUrl === anonURL(102)
       && A.revoked === '{"ok":true}' && A.revokedUrls === "https://api.test/openclaw/marketplace/strategies/102/code," + anonURL(102) && A.revokedReq === "signin" && A.revokedReqCalls === 1, J(A));
     ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code", A.withKeyUrls);
