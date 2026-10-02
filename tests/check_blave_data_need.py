@@ -2,13 +2,18 @@
 No network. The api stores the answer per library listing (scripts/marketplace_admin.py publish);
 the desktop library groups "usable without a card" on it.
 
-  1. Every public def in lib/data.py is in exactly one of _DESKTOP_PUBLIC_DATA / _BLAVE_DATA, and
-     neither set names anything data.py no longer has.
+  1. Every public top-level name in lib/data.py (defs, classes, constants) is in exactly one of
+     _DESKTOP_PUBLIC_DATA / _BLAVE_DATA / _DATA_INERT, BASE is in none of them, and no set names
+     anything data.py no longer has.
   2. The split is the one data.py's own code implies: a def that reaches a `BASE` URL (through any
      private helper, `_retry_get` excluded — it only compares against BASE) is Blave, unless it
-     branches on the desktop's public source first (`_kline_source` / `_twstock_daily`).
+     branches on the desktop's Binance kline source (`_kline_source`, no Blave fallback). The
+     Taiwan daily pair's free-first chain still falls back to Blave, so it counts as Blave.
+     Inert names are not functions. Every shipped lib module that reaches a Blave name or BASE
+     of lib.data is in _LIB_REACHING_BLAVE.
   3. Classifier cases: plain / aliased / module-attribute / getattr reach into lib.data, direct
-     api.blave.org URLs, and every "can't tell" shape → None; True wins over None.
+     api.blave.org URLs, and every "can't tell" shape → None (BASE, private helpers, the report
+     builders, the module rebound or passed as a value, vars()); True wins over None.
   4. Shipped templates and examples classify as their fetchers say.
 Run: cd blave-agent && .venv/bin/python tests/check_blave_data_need.py
 """
@@ -34,11 +39,22 @@ def check(cond, msg):
 tree = ast.parse(open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read())
 funcs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
 public = {k for k in funcs if not k.startswith("_")}
-pub, blave = qc._DESKTOP_PUBLIC_DATA, qc._BLAVE_DATA
+top = set(public)
+for n in tree.body:
+    if isinstance(n, ast.ClassDef):
+        top.add(n.name)
+    elif isinstance(n, (ast.Assign, ast.AnnAssign)):
+        for t in n.targets if isinstance(n, ast.Assign) else [n.target]:
+            if isinstance(t, ast.Name):
+                top.add(t.id)
+top = {k for k in top if not k.startswith("_")}
+pub, blave, inert = qc._DESKTOP_PUBLIC_DATA, qc._BLAVE_DATA, qc._DATA_INERT
 
-check(not pub & blave, f"no name in both sets: {sorted(pub & blave)}")
-check(public <= pub | blave, f"every public data.py def is classified — missing: {sorted(public - pub - blave)}")
-check(pub | blave <= public, f"no stale names in the sets: {sorted((pub | blave) - public)}")
+check(not (pub & blave or pub & inert or blave & inert), "no name in two sets")
+check(top - {"BASE"} <= pub | blave | inert, f"every public data.py name is classified — missing: {sorted(top - {'BASE'} - pub - blave - inert)}")
+check(pub | blave | inert <= top, f"no stale names in the sets: {sorted((pub | blave | inert) - top)}")
+check("BASE" in top and "BASE" not in pub | blave | inert, "BASE stays unclassified (a strategy holding it builds its own Blave URL)")
+check(not inert & public, f"inert names are not functions: {sorted(inert & public)}")
 
 
 def refs(node):
@@ -51,7 +67,7 @@ def refs(node):
     return out
 
 
-DESKTOP_BRANCH = {"_kline_source", "_twstock_daily"}
+DESKTOP_BRANCH = {"_kline_source"}
 direct = {k: "BASE" in refs(v) and k != "_retry_get" for k, v in funcs.items()}
 calls = {k: (refs(v) & set(funcs)) - {k} for k, v in funcs.items()}
 
@@ -65,6 +81,29 @@ check(implied_blave == blave & public,
       f"_BLAVE_DATA matches what data.py reaches — should add {sorted(implied_blave - blave)}, "
       f"should drop {sorted((blave & public) - implied_blave)}")
 check(len(blave) > 50 and len(pub) > 15, f"the sets are not empty shells ({len(blave)} / {len(pub)})")
+check({"fetch_twstock_price", "fetch_twstock_price_adj"} <= blave, "Taiwan daily pair falls back to Blave → Blave")
+
+# every shipped lib module that reaches lib.data's Blave names (or BASE) must be in _LIB_REACHING_BLAVE
+reaching = set()
+for path in glob.glob(os.path.join(ROOT, "lib", "*.py")):
+    mod = os.path.basename(path)[:-3]
+    if mod in ("data", "quality_check"):
+        continue
+    mt = ast.parse(open(path, encoding="utf-8").read())
+    aliases, names = {"data", "_data"}, set()
+    for n in ast.walk(mt):
+        if isinstance(n, ast.ImportFrom) and n.module == "lib.data":
+            names |= {a.name for a in n.names}
+        elif isinstance(n, ast.ImportFrom) and n.module == "lib":
+            aliases |= {a.asname or a.name for a in n.names if a.name == "data"}
+        elif isinstance(n, ast.Import):
+            aliases |= {a.asname for a in n.names if a.name == "lib.data" and a.asname}
+    for n in ast.walk(mt):
+        if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in aliases:
+            names.add(n.attr)
+    if names & (blave | {"BASE"}):
+        reaching.add(mod)
+check(reaching == set(qc._LIB_REACHING_BLAVE), f"_LIB_REACHING_BLAVE = the lib modules that reach Blave: {sorted(reaching)}")
 
 # ── 3. classifier cases ─────────────────────────────────────────────────────
 need = qc.blave_data_need
@@ -72,7 +111,7 @@ HEAD = 'STRATEGY_NAME = "x"\n'
 CASES = [
     ("kline only", "def fetch_data(h):\n    from lib.data import fetch_kline\n    return fetch_kline('BTCUSDT','1h','2020-01-01',None,h)\n", False),
     ("kline + public helpers + runner", "from lib.data import fetch_kline, txf_settlement_mask, FEED_TIMING\nfrom lib.runner import run\nfrom lib.strategy import add_realized_vol\n", False),
-    ("single-ticker tw daily", "from lib.data import fetch_twstock_price_adj\n", False),
+    ("single-ticker tw daily falls back to Blave", "from lib.data import fetch_twstock_price_adj\n", True),
     ("whale", "from lib.data import fetch_kline, fetch_whale_hunter\n", True),
     ("aliased import", "from lib.data import fetch_holder_concentration as hc\nhc('DOGEUSDT')\n", True),
     ("module alias attr", "from lib import data as d\nd.fetch_taker_intensity('BTCUSDT')\n", True),
@@ -101,6 +140,20 @@ CASES = [
     ("ccxt fetch_* is not lib.data", "import ccxt\nfrom lib.data import fetch_kline\nccxt.binance().fetch_funding_rate('BTC/USDT')\n", False),
     ("own fetch_* helper", "import requests\ndef fetch_news():\n    return requests.get('https://example.com').json()\n", False),
     ("True wins over None", "from lib.data import *\nfrom lib.data import fetch_whale_hunter\n", True),
+    # audit P2-1: five shapes that used to read as False
+    ("BASE imported", "import requests\nfrom lib.data import BASE, fetch_kline\nrequests.get(BASE + '/whale_hunter/x')\n", None),
+    ("BASE via module", "import requests\nfrom lib import data\nrequests.get(data.BASE + '/x')\n", None),
+    ("private helper imported", "from lib.data import _fetch_kline_raw\n", None),
+    ("private helper via module", "from lib import data\ndata._retry_get('u')\n", None),
+    ("report builder from-import", "from lib.report_bricks import funding_brick\n", None),
+    ("report builder module", "from lib import report_templates\n", None),
+    ("report builder dotted", "import lib.report_bricks\n", None),
+    ("module rebound", "from lib import data\nD = data\nD.fetch_whale_hunter('BTC')\n", None),
+    ("module passed as value", "from lib import data\nrun(data)\n", None),
+    ("vars() on module", "from lib import data\nvars(data)['fetch_' + 'x']()\n", None),
+    ("dotted module rebound", "import lib.data\nD = lib.data\n", None),
+    ("inert names only", "from lib.data import fetch_kline, DataAccessError, FEED_TIMING, closed_bars_only\n", False),
+    ("unknown constant", "from lib.data import SOME_NEW_URL\n", None),
     ("bundle: one part needs data", "# ===== STRATEGY 1: A =====\nfrom lib.data import fetch_kline\n# ===== STRATEGY 2: B =====\nfrom lib.data import fetch_cvd_coin\n", True),
 ]
 for label, src, want in CASES:
@@ -111,8 +164,8 @@ for label, src, want in CASES:
 EXPECT = {
     "strategies/TEMPLATE_A.py": False, "strategies/TEMPLATE_C.py": False,
     "examples/btc_sma_cross/strategy.py": False,      # fetch_kline
-    "examples/tsmc_ma/strategy.py": False,            # single-ticker fetch_twstock_price_adj
-    "examples/twstock_momentum/strategy.py": False,   # per-ticker fetch_twstock_price_adj loop
+    "examples/tsmc_ma/strategy.py": True,             # fetch_twstock_price_adj: Blave fallback
+    "examples/twstock_momentum/strategy.py": True,    # per-ticker fetch_twstock_price_adj loop
     "examples/btc_ti_5min/strategy.py": True,         # fetch_taker_intensity
     "examples/cl_sma/strategy.py": True,              # fetch_db_kline
     "examples/tw100_foreign_zscore/strategy.py": True,
