@@ -83,6 +83,9 @@ def _request_snapshot_refresh():
     try:
         with open(_REFRESH_FLAG, "w"):
             pass
+        # the worker times its early tick from the mtime; reopening an existing
+        # empty file is not guaranteed to move it on every platform
+        os.utime(_REFRESH_FLAG, None)
     except OSError:
         pass  # refresh is best-effort; the 60s poll still covers it
 

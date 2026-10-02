@@ -361,9 +361,12 @@ def _tick_snapshot(order, login_id, tf, ts):
     # equity None = securities-only account (no TF) — written explicitly
     # so lib/account_capital.py can raise a READABLE error instead of
     # KeyError (audit P1-1). Securities valuation is a known gap.
+    # query_started_at, not read_at, is what the reconciler compares with its
+    # last order: a read begun before the order and written after it still
+    # shows the old open interest
     snap = {"ok": True, "error": None, "positions": [], "holdings": [],
             "equity": None, "currency": "TWD", "accounts": None,
-            "available": None}
+            "available": None, "query_started_at": time.time()}
     if tf:
         rights = query_rights(order, login_id, tf)
         snap["equity"] = rights["equity"]
@@ -463,21 +466,32 @@ def main():
             _log(f"tick failed: {e}")
             _fail_and_exit({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
-        # Sleep in small slices, early-ticking when an order just went out
-        # (REFRESH_FLAG touched by lib/order_capital) so fills hit the snapshot
-        # fast. MIN_TICK_SPACING_S keeps a floor under back-to-back orders —
-        # the flag stays put and is consumed on the next slice after the floor.
-        slept = 0
-        while slept < POLL_S:
-            time.sleep(REFRESH_CHECK_S)
-            slept += REFRESH_CHECK_S
-            if slept >= MIN_TICK_SPACING_S and os.path.exists(REFRESH_FLAG):
-                try:
-                    os.remove(REFRESH_FLAG)
-                except OSError:
-                    pass
-                _log("refresh flag -> early tick")  # ASCII only: log rides cp950 console redirects
-                break
+        _sleep_until_refresh()
+
+
+def _sleep_until_refresh():
+    """Sleep up to POLL_S in small slices, early-ticking when an order just
+    went out (REFRESH_FLAG touched by lib/order_capital) so fills hit the
+    snapshot fast. MIN_TICK_SPACING_S keeps a floor under back-to-back orders,
+    and the tick waits until ORDER_SETTLE_S after the flag's last touch: the
+    reconciler does not trust a read that started sooner, so an earlier tick
+    would only push the next usable read to the 60 s poll. The flag stays put
+    until consumed."""
+    slept = 0
+    while slept < POLL_S:
+        time.sleep(REFRESH_CHECK_S)
+        slept += REFRESH_CHECK_S
+        try:
+            touched = os.path.getmtime(REFRESH_FLAG)
+        except OSError:
+            continue
+        if slept >= MIN_TICK_SPACING_S and time.time() >= touched + capital_vault.ORDER_SETTLE_S:
+            try:
+                os.remove(REFRESH_FLAG)
+            except OSError:
+                pass
+            _log("refresh flag -> early tick")  # ASCII only: log rides cp950 console redirects
+            return
 
 
 PROBE_PATH = os.path.join(WORKSPACE, "state", "capital_probe.json")

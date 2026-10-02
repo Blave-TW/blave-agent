@@ -26,6 +26,16 @@ PW_PREFIX = "vault:"
 BLOCK = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                      "state", "capital_login_block.json")
 BLOCK_CODES = (300, 307)
+# How long after an order the worker's next read must START before the
+# reconciler trusts it to show that order (manager/reconciler.py's
+# Read-Your-Writes guard), and how long the worker holds its early tick after
+# the refresh flag. A read that began before the order, or too soon after the
+# fill, still shows the old open interest — on 群益 sNewClose=2 a second close
+# on that read opens the reverse. 20 s is 統一期貨's measured figure (its
+# position query showed a live fill 12.0 s / 10.9 s after the send, 10-02);
+# 群益's GetOpenInterest lag has not been timed — measure it on the next live
+# round trip before trusting the margin.
+ORDER_SETTLE_S = 20
 
 
 def fingerprint(login_id, password):
