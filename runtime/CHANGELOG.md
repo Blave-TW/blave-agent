@@ -14,7 +14,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
   (瀏覽器封裝的 pfx + 憑證密碼,本機先驗密碼再存成固定檔名 `president.pfx`,接著唯讀登入一次)／`president_probe`
   (`{"after_unlock": true}` 先 `--unblock`)／`president_finish`(`president_worker.py --install`);進度寫
   `state/president_connect.json`,報告帶 `president_connect`。vault 與 pfx 給 SYSTEM + Administrators 讀(worker 是 LocalSystem)。
-  解綁會把統一七行全拿掉(`_cmd_credentials_remove` 依 `cred_env` 展開)並刪 vault、pfx、待用金鑰、status,叫 worker 服務自刪;
+  非 Windows 雲端機拒綁 `NOT_WINDOWS`(否則交易密碼會明文留在 `.env`、又永遠到不了正式主機)。解綁會把統一七行全拿掉(`_cmd_credentials_remove` 依 `cred_env` 展開)並刪 vault、pfx、待用金鑰、status,叫 worker 服務自刪;
   綁別家逐出統一時同樣刪。電腦版 daemon 不收這五個(`CLOUD_ONLY`)。`capital_connect.cmd_pfx_key`/`open_envelope` 多一個
   `key_path` 參數(預設不變)讓統一用自己的金鑰檔。**出貨順序:api(president-api da25804f)先上**,否則網頁送的指令被 400 擋。
   測試 `tests/check_president_connect.py`(加密那段要有 `cryptography` 的 python,例如 `/usr/bin/python3`)。

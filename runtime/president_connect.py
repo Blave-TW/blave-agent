@@ -200,13 +200,16 @@ def _write_vault(d):
 def divert_credentials(env, local=False):
     """_cmd_credentials hook: the trading password → the vault, production
     switched on there, sentinels + the fixed certificate path and production
-    host → .env. Returns the env mapping to write. Unchanged on the desktop and
-    off Windows (production stays off there: test hosts only), and for a write
-    that does not carry both the account and a real password."""
+    host → .env. Returns the env mapping to write. Unchanged on the desktop
+    and for a write that does not carry both the account and a real password;
+    refused on a cloud box that is not Windows (v1) — written as is there, the
+    trading password would sit in .env with no way to production."""
     if not any(k.casefold().startswith("president_") for k in env):
         return env
-    if local or not IS_WINDOWS:
+    if local:
         return env
+    if not IS_WINDOWS:
+        _refuse("NOT_WINDOWS", "統一期貨 needs a Windows cloud machine in this version")
     vals = {k.casefold(): v for k, v in env.items()}
     account, password = vals.get(_ACCOUNT), vals.get(_SECRET)
     if not account or not password or password.startswith(VAULT_PW_PREFIX):

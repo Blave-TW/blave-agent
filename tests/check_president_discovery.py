@@ -34,6 +34,9 @@ from manager import flatten  # noqa: E402
 
 # the unbind path re-syncs schedules — the REAL crontab / schtasks otherwise
 cl._sync_strategy_crons = lambda names: None
+# discovery of the hand-written shape is what this pins; the cloud bind's
+# vault diversion (refused off Windows) has its own check_president_connect
+cl.president_connect.divert_credentials = lambda env, local=False: env
 os.chdir(WS)  # importing manager.flatten moves the cwd to the repo; lib/guard writes state/ relative to it
 
 fails = 0

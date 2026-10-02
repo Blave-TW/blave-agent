@@ -1,6 +1,6 @@
 """統一期貨 cloud connect (runtime/president_connect.py) — no network, no Windows, no broker.
 
-  1. bind (divert_credentials): desktop / non-Windows untouched; an old lib refused; the trading
+  1. bind (divert_credentials): desktop untouched, a non-Windows cloud box refused; an old lib refused; the trading
      password and the production switch go to the vault, .env gets sentinels + the fixed
      certificate path + the production host; credentials\\ locked before any plaintext; vault and
      pfx readable by SYSTEM AND Administrators (the worker is LocalSystem); a failed ACL refuses
@@ -87,7 +87,9 @@ BIND = {"president_account": "70000011234", "president_password": "trade-pw"}
 # ── 1. bind ──
 check("1 desktop: untouched", pc.divert_credentials(dict(BIND), local=True) == BIND)
 pc.IS_WINDOWS = False
-check("1 not Windows: untouched (production stays off)", pc.divert_credentials(dict(BIND)) == BIND)
+check("1 a cloud box that is not Windows: refused (the password would sit in .env with no way to production)",
+      refused(lambda: pc.divert_credentials(dict(BIND)), "NOT_WINDOWS") is True
+      and pc.divert_credentials({"OKX_API_KEY": "k"}) == {"OKX_API_KEY": "k"})
 pc.IS_WINDOWS = True
 check("1 other venues' writes: untouched", pc.divert_credentials({"OKX_API_KEY": "k"}) == {"OKX_API_KEY": "k"})
 check("1 a workspace lib that reads production from .env → LIB_OUTDATED, nothing written",
