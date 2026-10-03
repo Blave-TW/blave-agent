@@ -208,6 +208,7 @@ const loadConnection = () => connStore().load();
 
 // ── 使用追蹤(telemetry.js:十八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
+const telemetryLive = () => app.isPackaged || process.env.BLAVE_TELEMETRY === "1";
 function tm() {
   if (!_tm) _tm = require("./telemetry").createTelemetry({
     dir: app.getPath("userData"), endpoint: `${API_BASE}/oauth/desktop/telemetry`,
@@ -215,7 +216,7 @@ function tm() {
     getToken: () => loadToken(),
     heartbeat: () => ({ live: tradeMaybeLive() ? "on" : "off" }),   // 每日在線心跳;live 同 updater 的 isTrading 判準
     // 開發版(npm start、測試用的 BLAVE_HOME)不送:不然每次開發重啟都在灌正式的漏斗。要實測送出設 BLAVE_TELEMETRY=1
-    post: (u, b) => (app.isPackaged || process.env.BLAVE_TELEMETRY === "1" ? postJSON(u, b) : Promise.resolve()),
+    post: (u, b) => (telemetryLive() ? postJSON(u, b) : Promise.resolve()),
   });
   return _tm;
 }
@@ -1856,6 +1857,8 @@ function libSanitize(body) {
       created_at: str(s.created_at, LIB_STR_MAX), purchase_count: Number.isInteger(s.purchase_count) && s.purchase_count >= 0 ? s.purchase_count : 0,
       purchased: s.purchased === true, is_owner: s.is_owner === true, is_official: s.is_official === true, verified: s.verified === true,
       direction: str(s.direction, LIB_STR_MAX), max_exposure: fin(s.max_exposure), report,
+      // 電腦版要不要 Blave 資料 key 才跑得了回測(api 上架時判):required / none(只用公開資料)/ null(判不出、舊 api)——畫面把 null 當 required
+      blave_data: s.blave_data === "none" || s.blave_data === "required" ? s.blave_data : null,
       success_note_ids: libNoteLangs(s.success_note_ids, (v) => (Number.isInteger(v) && v > 0 ? v : null)),
       success_note_titles: libNoteLangs(s.success_note_titles, (v) => { const x = (str(v, LIB_TITLE_MAX) || "").trim(); return x || null; }) });
   }
@@ -1957,6 +1960,78 @@ async function libraryPurchase(strategyId, confirmTopup) {
   catch (_) { return { status: 0, body: null }; }
   libCache = null;   // 買了(或另一台正在買)之後 purchased 會變:下次開清單重打
   return { status: r.status, body: libPurchaseBody(r.body) };
+}
+/* 代下載策略碼(spec-0.1.13-library-conversion §4.2 / D1):付不出資料費的帳號,workspace `.env` 裡沒有 Blave key(syncDataEnv),
+   agent 自己打 /code 會撞牆。但 /code 不收資料費、不回任何資料,桌面 key 本來就在它的允許範圍(api decorators.DESKTOP_KEY_ALLOWED),
+   登入後主行程一律持有這把 key——所以本機「用這支」一律由這裡代抓,寫成 workspace/tmp/library_<id>.py,agent 從安全檢查那一步接手
+   (references/marketplace.md › Desktop-downloaded picks)。資料閘門不動:回測抓 Blave 資料照樣過 .env 沒 key、BLAVE_DATA_ACCESS=0、
+   api 計費三道。社群策略的伺服器掃描結果(security)另存 library_<id>.security.json 給 agent 照 exit 1 處理;這次沒有就刪掉上一份。
+   沒有桌面 key(沒登入 / key 被撤)時,官方 × 免費 × 不用 Blave 資料的那幾支改走匿名的 /public_code;其餘要登入。
+   回 { ok: true }、{ ok: true, legacy: true }(workspace 還沒有新契約:沒下載,畫面改送舊句)或 { ok: false, kind: "blocked"(平台掃描擋下)|
+   "gone"(/code 404 = 真的下架)| "anonGone"(/public_code 404:下架,或已不符合免登入的條件,分不出來)| "signin"(這支要登入,而這台沒有能用的 key)|
+   "rateLimited"(429)| "fail" };
+   內容不回給畫面。 */
+const LIB_CODE_MAX = 1024 * 1024;
+/* workspace 的官方檔是隨包副本,只在隨包 VERSION 比較新時才同步(syncOfficialOnUpdate);同步沒發生(版號沒往上、備份失敗)時
+   agent 讀的還是舊 marketplace.md,看不懂 lib.msgLocal。所以看契約本身在不在,不看版號 */
+const LIB_CONTRACT_ANCHOR = "## Desktop-downloaded picks";
+function libContractReady() {
+  try { return fs.readFileSync(path.join(WS, "references", "marketplace.md"), "utf8").includes(LIB_CONTRACT_ANCHOR); } catch (_) { return false; }
+}
+function libWriteWs(dir, name, text) {
+  // rename 換掉的是目錄項本身:預先放好的同名 symlink 不會被跟著寫過去
+  const part = path.join(dir, `.${name}.${crypto.randomBytes(6).toString("hex")}`);
+  try { fs.writeFileSync(part, text, { mode: 0o600, flag: "wx" }); fs.renameSync(part, path.join(dir, name)); }
+  catch (e) { try { fs.unlinkSync(part); } catch (_) { /* 沒寫出來就沒有 */ } throw e; }
+}
+/* 不登入也能下載的那幾支(Wei 10-02):官方 × 免費 × 不用 Blave 資料。這裡看的是畫面那份清單(libCache)——只決定要不要試匿名那條,
+   放不放行由 api 的 /public_code 在伺服器端再判一次(blave_data 是 NULL 一律不放;不合格回 404,這裡就當 gone)。清單裡沒有這支就不試 */
+function libAnonOk(id) {
+  const s = libCache && Array.isArray(libCache.strategies) ? libCache.strategies.find((x) => x.id === id) : null;
+  return !!s && s.is_official === true && s.price === 0 && s.blave_data === "none";
+}
+async function libraryDownload(strategyId) {
+  if (!Number.isInteger(strategyId) || strategyId <= 0) return { ok: false, kind: "fail" };
+  const key = loadToken() ? loadDataKey() : null;
+  // 舊契約只在有 key 時退回舊句(agent 自己用 .env 的 key 打 /code);沒有 key 時舊 agent 會撞牆、叫人登入,免登入策略不准出現那句(spec §0.1)
+  if (!libContractReady()) return key ? { ok: true, legacy: true } : { ok: false, kind: libAnonOk(strategyId) ? "fail" : "signin" };
+  const anon = async () => {
+    if (!libAnonOk(strategyId)) return null;
+    // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數。
+    // 開發版 / e2e(每次新的 BLAVE_HOME 就是新的 install_id)同 tm 的 post 那道閘:不帶,不然每跑一次就灌一個正式的安裝數
+    let h = {};
+    try { if (telemetryLive() && tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
+    try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
+  };
+  let r = null, viaAnon = false;
+  if (key) {
+    try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code`, { "api-key": key.api_key, "secret-key": key.secret_key }); }
+    catch (_) { return { ok: false, kind: "fail" }; }
+    const kb = r.body && typeof r.body === "object" ? r.body : {};
+    if (r.status === 401 || (r.status === 403 && kb.error_code === "ERR005")) { r = await anon(); viaAnon = true; }   // key 被撤(別台登出 / 撤銷):能匿名的照樣裝
+  } else {
+    r = await anon(); viaAnon = true;   // 沒登入,或 09-20 前登入從沒拿過 key、Keychain 讀不到
+  }
+  if (!r) return { ok: false, kind: "signin" };
+  const b = r.body && typeof r.body === "object" ? r.body : {};
+  if (r.status === 403 && b.security && b.security.blocked === true) return { ok: false, kind: "blocked" };
+  if (r.status === 404) {   // 匿名那條的 404 也可能是清單快取過時(改成要資料 / 要登入了),不能說它下架
+    libCache = null;   // 畫面接著重拉清單:快取得先作廢,不然 5 分鐘內拿回同一份舊清單、再按又是同一個錯
+    return { ok: false, kind: viaAnon ? "anonGone" : "gone" };
+  }
+  if (r.status === 429) return { ok: false, kind: "rateLimited" };   // 匿名每 IP 每小時 30 次:一小時內重按也沒用,不講「再試一次」
+  if (r.status === 401 || (r.status === 403 && b.error_code === "ERR005")) return { ok: false, kind: "signin" };
+  if (r.status !== 200 || typeof b.code !== "string" || !b.code.trim() || Buffer.byteLength(b.code) > LIB_CODE_MAX) return { ok: false, kind: "fail" };
+  const dir = path.join(WS, "tmp"), name = `library_${strategyId}.py`, sec = `library_${strategyId}.security.json`;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    // workspace 裡的東西策略碼都改得到:tmp 被換成指向外面的 symlink 就不寫,檔案不會落到 workspace 外
+    if (fs.realpathSync(dir) !== path.join(fs.realpathSync(WS), "tmp")) return { ok: false, kind: "fail" };
+    fs.rmSync(path.join(dir, sec), { force: true });   // 先拿掉舊的:不管後面哪一步失敗,都不會留一份對不上這份碼的掃描結果
+    libWriteWs(dir, name, b.code);
+    if (b.security && typeof b.security === "object") libWriteWs(dir, sec, JSON.stringify(b.security));
+  } catch (_) { return { ok: false, kind: "fail" }; }
+  return { ok: true };
 }
 /* 「已安裝」對照表(規格 §1.2):{ marketplace id → 本機策略資料夾名 },只有這台電腦視角在用。存 userData、不進 workspace
    (agent 讀得到 workspace;這張表是外殼自己的記憶)。patch = { id, name } 記一筆、{ id, name: null } 拿掉一筆、不給只讀。 */
@@ -2676,6 +2751,7 @@ app.whenReady().then(() => {
   handle("library-note", (_e, id) => libraryNote(id), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
+  handle("library-download", (_e, id) => libraryDownload(id), { ok: false, kind: "fail" });
   // 本機報告(renderer/reports.js):讀 <WS>/reports 的信封 / 本體 + sidecar 圖(data URI);renderer 不碰 fs
   handle("reports-list", () => reportsList(), { reports: [] });
   handle("report-load", (_e, id) => reportLoad(id), null);

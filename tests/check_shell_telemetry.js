@@ -1,4 +1,4 @@
-// shell/telemetry.js:二十個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
+// shell/telemetry.js:二十二個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
 // 跑法:node tests/check_shell_telemetry.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const { createTelemetry, EVENTS, FROM_RENDERER } = require("../shell/telemetry.js");
@@ -28,7 +28,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("二十個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 20 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十二個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 22 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -85,7 +85,8 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   t("shell/package.json 的版號符合契約(不然打包版每一則都被丟)", /^[0-9]{1,4}(\.[0-9]{1,4}){1,3}(-(alpha|beta|rc)\.[0-9]{1,3})?$/.test(require("../shell/package.json").version));
   // main.js 的接線:這三件被改掉測試要紅
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
-  t("main.js:開發版不送(isPackaged 閘還在)", /app\.isPackaged \|\| process\.env\.BLAVE_TELEMETRY === "1" \? postJSON/.test(mainSrc));
+  t("main.js:開發版不送(isPackaged 閘還在;策略庫匿名下載的 install_id 共用同一支 telemetryLive)", /^const telemetryLive = \(\) => app\.isPackaged \|\| process\.env\.BLAVE_TELEMETRY === "1";$/m.test(mainSrc)
+    && /post: \(u, b\) => \(telemetryLive\(\) \? postJSON\(u, b\) : Promise\.resolve\(\)\)/.test(mainSrc));
   t("main.js:lang 只取 app.getLocale()", /lang: app\.getLocale\(\)/.test(mainSrc) && !/lang: process\.env/.test(mainSrc));
   t("首次告知那條 IPC 退場;讀 / 切開關兩支都只收自家頁面", !/telemetry-noticed|telemetryNoticed|setNoticed/.test(mainSrc + fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8") + fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8"))
     && /ipcMain\.handle\("telemetry-get", \(e\) => \(fromOurPage\(e\)/.test(mainSrc) && /ipcMain\.handle\("telemetry-set", \(e, on\) => \{ if \(!fromOurPage\(e\)\) return false;/.test(mainSrc));
@@ -128,7 +129,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   t("不是自家頁面:回 busy、不送", s.r.busy === true && s.events === "");
   // ── feature_used:名字是白名單,兩端同一份;renderer 每個送出點的名字都在表上;主行程拒絕表外的名字 ──
   const FEATURES = EVENTS.feature_used.name, trSrc = fs.readFileSync(path.join(R, "trade.js"), "utf8");
-  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 69 個 + browser_open_ext + suggest_shown / suggest_clicked + 規則四個 + 樣本外驗證兩個 + 更新提示兩個 + 0.1.12 六個 = 86 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1、設定 › 公開連結 +1、送進 TradingView +7;library_comm 沒送出點但 0.1.5 還在送,留到它退場;batch 6:+browser_open_ext;0.1.9 建議下一步 +2、設定 › Agent 規則 +4;0.1.10 樣本外驗證 +2(report_wf / wf_requested)、更新提示 +2(update_restart / app_move);0.1.12 安裝進度卡 engine_retry、市場對應 pick_gate_lock、策略庫成功筆記 library_note、交還鈕 browser_hb_head / browser_hb_chat、部位表點策略名 trade_strat_open,依序放最後)", ONCE_OF(fs) && FEATURES.length === 86 && FEATURES[69] === "browser_open_ext" && FEATURES.slice(70).join() === "suggest_shown,suggest_clicked,settings_rules,rules_save,rules_delete,reply_lang_set,report_wf,wf_requested,update_restart,app_move,engine_retry,pick_gate_lock,library_note,browser_hb_head,browser_hb_chat,trade_strat_open" && FEATURES[68] === "tv_fail_compile" && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[60] === "report_pdf" && FEATURES[61] === "share_list_open" && FEATURES.slice(62, 70).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext" && FEATURES.every((n) => n.length <= 16) && FEATURES[20] === "library_comm");
+  t("feature_used 不是 once、name 白名單 = canon product-telemetry.md 那 69 個 + browser_open_ext + suggest_shown / suggest_clicked + 規則四個 + 樣本外驗證兩個 + 更新提示兩個 + 0.1.12 六個 + 0.1.13 兩個 = 88 個(0.1.6:+reports_list / reports_read / reports_ask / strategy_new;0.1.7 內建瀏覽器 +9、停止鈕 chat_stop、雲端群益開通 +6、晨報與新聞管道 +4;0.1.8 報告分享 +3、策略轉出 +6、策略版本 +5、聊天結果卡 +2、報告存成 PDF +1、設定 › 公開連結 +1、送進 TradingView +7;library_comm 沒送出點但 0.1.5 還在送,留到它退場;batch 6:+browser_open_ext;0.1.9 建議下一步 +2、設定 › Agent 規則 +4;0.1.10 樣本外驗證 +2(report_wf / wf_requested)、更新提示 +2(update_restart / app_move);0.1.12 安裝進度卡 engine_retry、市場對應 pick_gate_lock、策略庫成功筆記 library_note、交還鈕 browser_hb_head / browser_hb_chat、部位表點策略名 trade_strat_open;0.1.13 策略庫轉換 lib_installed / library_no_new,依序放最後)", ONCE_OF(fs) && FEATURES.length === 88 && FEATURES[69] === "browser_open_ext" && FEATURES.slice(70).join() === "suggest_shown,suggest_clicked,settings_rules,rules_save,rules_delete,reply_lang_set,report_wf,wf_requested,update_restart,app_move,engine_retry,pick_gate_lock,library_note,browser_hb_head,browser_hb_chat,trade_strat_open,lib_installed,library_no_new" && FEATURES[68] === "tv_fail_compile" && FEATURES[0] === "report_backtest" && FEATURES[15] === "chat_stop" && FEATURES[24] === "strategy_new" && FEATURES[33] === "browser_url" && FEATURES[39] === "cap_rdp_open" && FEATURES[43] === "news_licensed" && FEATURES[57] === "version_fork" && FEATURES[58] === "result_report" && FEATURES[59] === "result_strategy" && FEATURES[60] === "report_pdf" && FEATURES[61] === "share_list_open" && FEATURES.slice(62, 70).join() === "tv_send,tv_pasted,tv_read,tv_fix,tv_agent_paste,tv_fail_editor,tv_fail_compile,browser_open_ext" && FEATURES.every((n) => n.length <= 16) && FEATURES[20] === "library_comm");
   // 兩端漂移:api/openclaw/desktop_telemetry.py 的 EVENTS["feature_used"] 逐字同一份(同 check_runtime_mirror:要 monorepo 版面)
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
@@ -226,7 +227,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       && Object.keys(EVENTS).every((ev) => ev.length <= 19));   // 舊的 first_backtest_done 19 字,新名字一律 ≤16
     const tmSrc9 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
     t("first_reply_done 每安裝一次(ONCE);其餘八個每日一次(DAILY,api 的每小時熔斷算的是 POST 數)", /const ONCE = \[[^\]]*"first_reply_done"/.test(tmSrc9) && Object.keys(NEW).filter((e) => e !== "first_reply_done").every((e) => new RegExp('const DAILY = \\[[^\\]]*"' + e + '"').test(tmSrc9)));
-    t("畫面只准送七個(FROM_RENDERER);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked"])
+    t("畫面只准送九個(FROM_RENDERER;0.1.13 +lib_pick / idea_sent 接在最後);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent"])
       && ["app_first_open", "app_open", "login_done", "first_backtest_done", "trade_started", "cloud_started", "feature_used", "plan_start_res", "update_failed", "heartbeat"].every((e) => !FROM_RENDERER.includes(e)));
     const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
     t("每個事件的每個值都送得出去;表外的值 / 缺屬性 / 塞內容都不送", Object.keys(NEW).every((ev) => NEW[ev][1].every((v) => x.tm.track(ev, { [NEW[ev][0]]: v, msg: "SECRET" }) === true || ev === "first_reply_done"))
@@ -256,7 +257,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       for (const m of src.matchAll(/(?<![.\w])trackEvent\(([^)]*)/g)) if (!/^"[a-z_]+", \{/.test(m[1]) && !/^ev, props$/.test(m[1])) badE.push(f + ": 形狀不對 " + m[0]);
       for (const m of src.matchAll(/libBlocked\(([^()]*(?:\([^()]*\))?[^()]*)\);/g)) for (const v of valLits(m[1])) if (EVENTS.lib_blocked.why.indexOf(v) < 0) badE.push(f + ": lib_blocked=" + v);
     }
-    t("畫面每個 trackEvent 送出點:事件在 FROM_RENDERER、屬性名對、字面值在列舉;七個都有送出點", badE.length === 0 && FROM_RENDERER.every((e) => sites.includes(e)));
+    t("畫面每個 trackEvent 送出點:事件在 FROM_RENDERER、屬性名對、字面值在列舉;九個都有送出點", badE.length === 0 && FROM_RENDERER.every((e) => sites.includes(e)));
     if (badE.length) console.log("      " + badE.join("\n      "));
     // 算值的純函式:切出來跑,每種輸入的輸出都在列舉裡(或 null = 不送)
     const appSrc9 = fs.readFileSync(path.join(R, "app.js"), "utf8"), libSrc9 = fs.readFileSync(path.join(R, "library.js"), "utf8");
@@ -291,7 +292,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     t("libBlockedWhy:閘門態才算被擋(signedOut / noData 的 why / 雲端停了或過期);忙碌、下載中、可用 → null",
       why({ state: "signedOut" }) === "signed_out" && ["no_card", "no_balance", "unknown"].every((w) => why({ state: "noData", why: w }) === w) && why({ state: "stopped" }) === "cloud_off" && why({ state: "stale" }) === "cloud_off"
       && ["busy", "pending", "buying", "free", "owned", "paid", "installed"].every((st) => why({ state: st }) === null)
-      && /why: state === "noData" \? \(c\.why === "no_card" \|\| c\.why === "no_balance" \? c\.why : "unknown"\) : null/.test(libSrc9));
+      && /why: state === "noData" \? g : null/.test(libSrc9) && /if \(c\.dataAccess === "none"\) return c\.why === "no_card" \|\| c\.why === "no_balance" \? c\.why : "unknown";\n  return "unknown";/.test(libSrc9));
     t("lib_blocked 送出點:點進詳情(libShowDetail,使用者的點擊)與「使用」送出後引擎不能跑;不在 render(libPaintCta)",
       /libPaint\(\); \$\("lib-body"\)\.scrollTop = 0;\n\s*const s = libFind\(id\); if \(s\) libBlocked\(libBlockedWhy\(libCtaOf\(s\)\)\);/.test(libSrc9) && !/libBlocked/.test(libSrc9.slice(libSrc9.indexOf("function libPaintCta("), libSrc9.indexOf("function libAsk("))));
     // 主行程接線:track-event 只收自家頁面 + FROM_RENDERER;plan_start_res 的對照;updater 的 onFail
@@ -357,6 +358,24 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     else { const api = fs.readFileSync(apiPy12, "utf8"), got = {};
       for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
       t("api desktop_telemetry.EVENTS 的 engine_setup / engine_opt_fail = 外殼這份(屬性名、值、順序、不是 once)", Object.keys(ENG).every((ev) => got[ev] && got[ev].key === "result" && JSON.stringify(got[ev].vals) === JSON.stringify(ENG[ev][1]) && got[ev].once === false)); } }
+  // ── 0.1.13 策略庫轉換(spec-0.1.13-library-conversion §8;renderer 送):一個 prop、值是列舉、16 字以內、每日去重、畫面送得了 ──
+  { const N13 = { lib_pick: ["data", ["none", "required", "unknown"]], idea_sent: ["from", ["welcome", "lib_head", "lib_empty"]] };
+    const tmSrc13 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
+    t("lib_pick / idea_sent:一個屬性、值逐字照 spec §8、名字與值都在 16 字以內", Object.keys(N13).every((ev) => EVENTS[ev] && JSON.stringify(Object.keys(EVENTS[ev])) === JSON.stringify([N13[ev][0]]) && JSON.stringify(EVENTS[ev][N13[ev][0]]) === JSON.stringify(N13[ev][1]) && ev.length <= 16 && N13[ev][1].every((v) => v.length <= 16)));
+    t("…每日去重(DAILY)、不是 once、畫面送得了(在 FROM_RENDERER)", Object.keys(N13).every((ev) => new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc13) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc13) && FROM_RENDERER.includes(ev)));
+    const x13 = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
+    t("…每個值都送得出去;表外的值 / 塞內容不送", Object.keys(N13).every((ev) => N13[ev][1].every((v) => x13.tm.track(ev, { [N13[ev][0]]: v, title: "SECRET" }) === true)) && Object.keys(N13).every((ev) => x13.tm.track(ev, { [N13[ev][0]]: "SECRET_TITLE" }) === false)); await tick();
+    t("…出門的 props 各只有那一格", x13.sent.filter((b) => N13[b.event]).length === 6 && x13.sent.every((b) => !JSON.stringify(b).includes("SECRET")));
+    const lib13 = fs.readFileSync(path.join(R, "library.js"), "utf8"), ns13 = fs.readFileSync(path.join(R, "newstrategy.js"), "utf8");
+    t("…送出點:lib_pick 只在本機 submitMessage 回 ok 那一支(值來自 libPickData);idea_sent 在找點子框送出成功、關框之後;都包 try",
+      /if \(ok\) \{[\s\S]*?if \(local\) \{ try \{ window\.blave\.trackEvent\("lib_pick", \{ data: libPickData\(s\) \}\); \} catch \(_\) \{ \} \}/.test(lib13) && (lib13.match(/trackEvent\("lib_pick"/g) || []).length === 1
+      && /ideaClose\(\);[\s\S]*try \{ window\.blave\.trackEvent\("idea_sent", \{ from \}\); \} catch \(_\) \{ \}/.test(ns13) && (ns13.match(/trackEvent\("idea_sent"/g) || []).length === 1);
+    t("…feature_used 的兩個名字:lib_installed 在本機認到新策略與雲端認到(libTurnEnd 兩處 + libCloudChanged)、library_no_new 只在本機沒新策略", (lib13.match(/libTrack\("lib_installed"\)/g) || []).length === 3 && (lib13.match(/libTrack\("library_no_new"\)/g) || []).length === 1);
+    const apiPy13 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
+    if (!fs.existsSync(apiPy13)) console.log("SKIP  api 端 0.1.13 事件比對(需要 monorepo 版面)");
+    else { const api = fs.readFileSync(apiPy13, "utf8"), got = {};
+      for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
+      t("api desktop_telemetry.EVENTS 的 lib_pick / idea_sent = 外殼這份(屬性名、值、順序、不是 once)", Object.keys(N13).every((ev) => got[ev] && got[ev].key === N13[ev][0] && JSON.stringify(got[ev].vals) === JSON.stringify(N13[ev][1]) && got[ev].once === false)); } }
   console.log(red ? red + " 紅" : "ALL PASS");
 } finally { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); }
   process.exit(red ? 1 : 0);

@@ -2395,7 +2395,7 @@ msgid "priv.collect.hOff"
 msgstr "Collected when on"
 
 msgid "priv.collect.5"
-msgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"
+msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from"
 
 msgid "priv.collect.1"
 msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"
@@ -2416,6 +2416,10 @@ msgstr "Where things got stuck: the category of a failed turn, a failed AI conne
 msgid "priv.collect.7"
 msgstr "Once you sign in, your account also records which AI you’re connected to and whether this computer has run a backtest (kept 90 days)"
 
+# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
+msgid "priv.collect.8"
+msgstr "When you download a no-sign-in library strategy: which one (its library number) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"
+
 msgid "priv.never.h"
 msgstr "Never collected"
 
@@ -2423,7 +2427,7 @@ msgid "priv.never.1"
 msgstr "Chat content"
 
 msgid "priv.never.2"
-msgstr "Strategy code and names"
+msgstr "Your own strategies' code and names"
 
 msgid "priv.never.3"
 msgstr "Symbols, amounts, positions"
@@ -3692,7 +3696,7 @@ msgid "lib.chip"
 msgstr "See Ready-Made Strategies"
 
 msgid "lib.desc"
-msgstr "Official strategies are free; community strategies can be bought right here. Verified first, then longest backtest."
+msgstr "Verified first, then longest backtest."
 
 msgid "lib.mkt.aria"
 msgstr "Market"
@@ -3973,6 +3977,30 @@ msgstr "Progress is in the chat on the right."
 msgid "lib.err.noNew"
 msgstr "The turn ended without a new strategy. See what the agent said in the chat."
 
+msgid "lib.dl.fail"
+msgstr "Couldn't download this strategy. Please try again."
+
+msgid "lib.dl.blocked"
+msgstr "This strategy failed the platform security scan and can't be downloaded."
+
+# 0.1.13 稽核補的兩種(字待設計師定稿)
+msgid "lib.dl.signin"
+msgstr "This computer's Blave sign-in needs renewing. Sign in to Blave again, then press again."
+
+msgid "lib.dl.unsent"
+msgstr "The install request wasn't sent, so this strategy isn't installed. Press again once the chat is free."
+
+msgid "lib.dl.gone"
+msgstr "This strategy is no longer in the library."
+
+# 匿名 /public_code 的 404:下架或已不符合免登入條件分不出來,講中性句(spec-0.1.13-smallfixes #10)
+msgid "lib.dl.anonGone"
+msgstr "This strategy can't be downloaded without signing in anymore. It may have been removed, or it now needs sign-in. The list has been refreshed."
+
+# 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
+msgid "lib.dl.rateLimited"
+msgstr "Too many downloads right now. Please try again later."
+
 msgid "lib.gate.signedOut"
 msgstr "Sign in to Blave to download to this computer."
 
@@ -3984,6 +4012,9 @@ msgstr "Download \"{title}\"?"
 
 msgid "lib.cf.l1"
 msgstr "The agent downloads it into strategies/ and runs a backtest on fresh data; the result shows up in the sidebar."
+
+msgid "lib.cf.l1Local"
+msgstr "It downloads into strategies/ on this computer; the agent checks the code, then runs a backtest on fresh data. The result shows up in the sidebar."
 
 msgid "lib.cf.l2"
 msgstr "No orders are placed — whether to run it is your call."
@@ -3999,6 +4030,10 @@ msgstr "Download the official strategy \"{title}\" (#{id}) and run a backtest to
 
 msgid "lib.msgPaid"
 msgstr "Download my purchased strategy \"{title}\" (#{id}) and run a backtest"
+
+# 本機「用這支」:外殼已把程式碼放在 workspace/tmp/library_<id>.py;runtime 契約(references/marketplace.md › Desktop-downloaded picks)
+msgid "lib.msgLocal"
+msgstr "The library strategy \"{title}\" (#{id}) is downloaded. Install it and run a backtest to see the results."
 
 msgid "lib.where.local"
 msgstr "this computer"
@@ -4466,14 +4501,101 @@ msgstr "Add a Card, Get {t} Days of Data"
 msgid "lib.gate.topup"
 msgstr "Top Up"
 
-msgid "lib.gate.noCard"
-msgstr "This account has no card yet, so the agent can't reach the library."
+# ── 0.1.13 策略庫轉換(spec-0.1.13-library-conversion §7):沒權限時分組、詳情鈕下第一句看資料需求 ──
+msgid "lib.grp.now"
+msgstr "Usable Now"
 
-msgid "lib.gate.noBalance"
-msgstr "The data fee for this hour couldn't be charged, so the agent can't reach the library. Top up and it's back right away."
+msgid "lib.grp.card"
+msgstr "After Adding a Card"
 
-msgid "lib.gate.unknown"
-msgstr "The account’s data status couldn’t be checked, so the agent may not reach the library. Check again under Settings › Account & plan."
+msgid "lib.grp.topup"
+msgstr "After Topping Up"
+
+msgid "lib.grp.check"
+msgstr "After Your Account Is Confirmed"
+
+msgid "lib.grp.signedOut"
+msgstr "Sign In First"
+
+msgid "lib.grp.gate.noCard"
+msgstr "These need a card on file to backtest."
+
+msgid "lib.grp.gate.noBalance"
+msgstr "This hour's data fee couldn't be charged, so these can't backtest for now. Top up and they're back right away."
+
+msgid "lib.grp.gate.unknown"
+msgstr "Your account's data status couldn't be checked, so these may not backtest."
+
+msgid "lib.grp.gate.signedOut"
+msgstr "Sign in to Blave to download these."
+
+msgid "lib.grp.empty"
+msgstr "None here use public prices only yet."
+
+msgid "lib.need.data"
+msgstr "Its backtest uses Blave data."
+
+msgid "lib.need.unknown"
+msgstr "Its data needs aren't marked yet, so it's treated as using Blave data."
+
+msgid "lib.why.noBalance"
+msgstr "This hour's data fee couldn't be charged; top up and it's back right away."
+
+msgid "lib.why.unknown"
+msgstr "Your account's data status couldn't be checked."
+
+msgid "lib.pub"
+msgstr "Uses public exchange prices only, no Blave data."
+
+# ── 上網找點子(spec-0.1.13 §5、§7;只在這台電腦視角)。idea.mkt.any 是空字串:.po 的空 msgstr 等於沒翻,所以不進表,由 newstrategy.js 代空字串 ──
+msgid "idea.chip"
+msgstr "Search the Web for Ideas"
+
+msgid "idea.descLead"
+msgstr "Nothing fits?"
+
+msgid "idea.link"
+msgstr "Have the agent search the web for ideas"
+
+msgid "idea.btn"
+msgstr "Have the Agent Search for Ideas"
+
+msgid "idea.title"
+msgstr "Search the Web for Strategy Ideas"
+
+msgid "idea.mkt"
+msgstr "Market"
+
+msgid "idea.any"
+msgstr "Any"
+
+msgid "idea.topic"
+msgstr "Topic"
+
+msgid "idea.opt"
+msgstr "(optional)"
+
+msgid "idea.topicPh"
+msgstr "e.g. funding rate, opening-range breakout"
+
+msgid "idea.noOrders"
+msgstr "No orders are placed."
+
+msgid "idea.cost"
+msgstr "This turn is billed by Blave AI usage from your balance; the more pages it reads, the more it uses."
+
+msgid "idea.msg"
+msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. Write each as explicit entry and exit rules, say whether it needs Blave data, and give the source URL. No code yet, and no call on today's direction. I'll pick one for you to backtest."
+
+# en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
+msgid "idea.mkt.crypto"
+msgstr "crypto "
+
+msgid "idea.mkt.tw"
+msgstr "Taiwan stock "
+
+msgid "idea.topicTpl"
+msgstr " around \"{t}\""
 
 msgid "br.h"
 msgstr "Browser"

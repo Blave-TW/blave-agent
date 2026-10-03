@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld("blave", {
   libraryNote: (id) => ipcRenderer.invoke("library-note", id),
   libraryPurchase: (id, confirmTopup) => ipcRenderer.invoke("library-purchase", id, confirmTopup),
   libraryInstalled: (patch) => ipcRenderer.invoke("library-installed", patch),
+  libraryDownload: (id) => ipcRenderer.invoke("library-download", id),
   // 本機報告(renderer/reports.js):信封清單 / 一份本體 + sidecar 圖(data URI);renderer 不碰 fs
   reportsList: () => ipcRenderer.invoke("reports-list"),
   reportLoad: (id) => ipcRenderer.invoke("report-load", id),

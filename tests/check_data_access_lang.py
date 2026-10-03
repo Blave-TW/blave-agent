@@ -68,12 +68,20 @@ for need, label in [
     (r"no SSH, no\s+other machines", "不可以去別處找憑證"),
     (r"fetch_kline", "公開 K 線照樣回答"),
     (re.escape(agent_turn.DATA_ACCESS_CARD), "marker 還在"),
+    (r"Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, your reply must",
+     "只有這一輪真的撞到 DataAccessError 才講缺資料(spec-0.1.13 §9 D1)"),
+    (r"no call stopped with `DataAccessError`.*ran on public data only.*carries no marker",
+     "沒撞牆的那一輪(例:只用公開資料的策略)不提資料、不掛 marker"),
+    (r"never output it in a turn where no call stopped with\s+`DataAccessError`", "marker 只在撞牆那一輪"),
+    (r"Do not decide from these facts alone that something is unavailable", "用戶開口要資料集:先打,不憑事實段就說拿不到"),
+    (r"any `lib/data.py` call that needs Blave data stops\s+with `DataAccessError`", "事實句是「用到 Blave 資料才會失敗」,不是「這台沒有資料」"),
+    (r"single-ticker Taiwan daily prices .* need Blave only when those fail", "台股單檔日線先走公開來源、失敗才要 Blave(不說台股資料一律拿不到)"),
 ]:
     t("access=0:約束保留 —— " + label, bool(re.search(need, block)))
 
 # ④ 外殼帶 BLAVE_DATA_ACCESS_WHY 時,Facts 多**一句事實**(給模型,不是給用戶的句子)+ 一條「講真正的原因」。
 #   2026-09-24 真機:登入著、只是餘額不夠,agent 回「需要登入 Blave 帳號才能存取」——舊規則只說「沒資料」。
-FACTS_PLAIN = "Facts: this desktop has no Blave data access this turn"
+FACTS_PLAIN = "Facts: on this desktop this turn, any `lib/data.py` call that needs Blave data stops with `DataAccessError` before sending anything"
 RULE = "State the actual reason above; do not say the user must sign in unless the reason is signed_out"
 def facts(why):
     if why is None: os.environ.pop("BLAVE_DATA_ACCESS_WHY", None)

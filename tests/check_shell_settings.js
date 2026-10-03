@@ -377,7 +377,7 @@ ok("訊息格只由 planPaint 寫:index.html 沒有那個節點、程式裡只�
 ok("登出沒撤成那句到得了這一頁", /setHint\(\{ text: t\("cn\.blave\.signOutLocalOnly"\) \}\)/.test(src));
 ok("字串:合併後的頁名、確認框、刪掉的五個 key(zh / en)", /msgid "set\.cat\.plan"\nmsgstr "帳號與方案"/.test(PO2[0]) && /msgid "set\.cat\.plan"\nmsgstr "Account & plan"/.test(PO2[1]) && /msgid "pv\.e\.btn"\nmsgstr "Account & Plan"/.test(PO2[1])
   && /msgid "acct\.cf\.title"\nmsgstr "登出 Blave？"/.test(PO2[0]) && /msgid "acct\.cf\.ok"\nmsgstr "Sign Out"/.test(PO2[1]) && /msgid "acct\.out\.4"\nmsgstr "登出不會停用雲端主機，主機費照扣。"/.test(PO2[0])
-  && /msgid "lib\.gate\.unknown"\nmsgstr "The account’s data status/.test(PO2[1]) && PO2.every((p) => !/msgid "(set\.cat\.acct|acct\.toPlan|acct\.toPlanBtn|acct\.in\.1|acct\.in\.2)"/.test(p) && !/資料與雲端方案|Data & [Cc]loud [Pp]lan/.test(p)));
+  && PO2.every((p) => !/msgid "lib\.gate\.unknown"/.test(p)) && PO2.every((p) => !/msgid "(set\.cat\.acct|acct\.toPlan|acct\.toPlanBtn|acct\.in\.1|acct\.in\.2)"/.test(p) && !/資料與雲端方案|Data & [Cc]loud [Pp]lan/.test(p)));
 ok("agent 文件裡的頁名跟著改", /Settings › 帳號與方案 \(en: Account & plan\)/.test(fs.readFileSync(path.join(__dirname, "..", "references", "billing.md"), "utf8")) && /Sign in from Settings › Account & plan/.test(fs.readFileSync(path.join(__dirname, "..", "references", "cloud-handoff.md"), "utf8")));
 ok("字串:acct.out.3 照定稿(不跟 acct.out.2「對話留在這台電腦」打架)", /msgid "acct\.out\.3"\nmsgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"/.test(PO2[0]));
 // 聊天欄捲動邊界:靜止沒有線,捲起來才浮一條
@@ -408,7 +408,7 @@ ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="shares"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
-ok("隱私:會收 7 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.10 帳號狀態一併回報的那條排最後)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.7"\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
+ok("隱私:會收 8 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.13 免登入下載的安裝識別碼接在安裝識別碼後、0.1.10 帳號狀態一併回報的那條排最後)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.8", "priv\.collect\.7"\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src));
 { // 隱私開關連點(0.1.10 #9-1):上一次還沒回來,後面幾下不送;回來了(成功或丟例外)才解鎖。不用 disabled——焦點會掉到 body
@@ -463,14 +463,19 @@ ok("隱私:會收 7 條(功能那條緊接在里程碑後、0.1.9「卡在哪一
       !!m && lic.includes("\n   " + m[0] + "\n") && !/\[yyyy\]|\[name of copyright owner\]/.test(lic)); }
   window.blave.openExternal = realOpen; LANG = "zh"; }
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾條,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:會收那一條寫到 macOS 版本與系統語言;二十個事件逐項對得上契約的白名單(feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容;0.1.9 的九個與 0.1.12 的引擎安裝兩個是「卡在哪一步」那一條:只記類別;heartbeat 是里程碑那一條的「app 開著的每一天」)", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 20 && /首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
+ok("隱私:會收那一條寫到 macOS 版本與系統語言;二十二個事件逐項對得上契約的白名單(feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容;0.1.9 的九個與 0.1.12 的引擎安裝兩個是「卡在哪一步」那一條:只記類別;heartbeat 是里程碑那一條的「app 開著的每一天」;0.1.13 的 lib_pick / idea_sent 在功能那一條講到:用策略庫的策略記要不要 Blave 資料、送出找點子記哪個入口)", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 22 && /首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
   && /each day the app stays open \(and whether local auto-trading is running\)/.test(PO[1])
-  && /msgid "priv\.collect\.5"\nmsgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"/.test(PO[0]) && /msgid "priv\.collect\.5"\nmsgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"/.test(PO[1])
+  && /msgid "priv\.collect\.5"\nmsgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容；從策略庫用一支策略時，記它要不要 Blave 資料；送出找點子時，記是從哪個入口送出"/.test(PO[0]) && /msgid "priv\.collect\.5"\nmsgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from"/.test(PO[1])
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS, c5 = (L) => (PO[L].match(/msgid "priv\.collect\.5"\nmsgstr "([^"]*)"/) || [])[1] || "";   // 兩個新事件真的有被講到:事件還在白名單上,面板就要有對應那半句
+    return !!ev.lib_pick && !!ev.idea_sent && /要不要 Blave 資料/.test(c5(0)) && /哪個入口/.test(c5(0)) && /whether it needs Blave data/.test(c5(1)) && /which entry point/.test(c5(1)); })()
   && /msgid "priv\.collect\.6"\nmsgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下、回來後能不能用，啟動雲端方案的結果，更新卡在哪一步，第一次收到 AI 回覆，第一次安裝或更新後補裝（引擎與策略套件）有沒有裝好、沒裝好是哪一類原因；只記類別，不含內容"/.test(PO[0])
   && /msgid "priv\.collect\.6"\nmsgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, your first AI reply, and whether the first-run or post-update setup of this computer \(engine and strategy packages\) finished and, if not, the category of the reason — categories only, never the content"/.test(PO[1]));
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
+ok("隱私 0.1.13(Wei 核准草稿 §B):priv.collect.8 講免登入下載記哪一支 + 安裝識別碼、登入後對上帳號;priv.never.2 收窄成「你自己的策略」", /msgid "priv\.collect\.8"\nmsgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"/.test(PO[0])
+  && /msgid "priv\.collect\.8"\nmsgstr "When you download a no-sign-in library strategy: which one \(its library number\) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"/.test(PO[1])
+  && /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
 ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選項 shr.anon 除外);首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, "").replace(/msgid "shr\.anon"\nmsgstr "[^"]*"/, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));
 // 設定 › 資料與雲端方案 › 主機運行中那格:主鈕是「切到雲端」(關設定 + 走切換器同一個守門入口),不再外開網頁(Wei:不用前往工作頁了)
 {

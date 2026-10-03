@@ -500,6 +500,163 @@ _SPOT_FIX = ("The backtest clamps it to flat, same as live, but scans and walk-f
              "`signal = signal.clip(lower=0.0)` (or pass short_th=-1e9).")
 
 
+# ── Blave data need on the desktop (strategy-library listing) ──────────────────
+
+# Every public top-level name in lib/data.py sits in exactly one of these three
+# sets — tests/check_blave_data_need.py enumerates data.py and goes red on a new
+# or moved one. "Public" = never calls api.blave.org on the desktop build:
+# fetch_kline(_batch) go to Binance there (BLAVE_KLINE_SOURCE=binance). The
+# single-ticker Taiwan daily pair is NOT public: when the exchanges / FinMind
+# fail it falls back to Blave, which stops a keyless desktop.
+_DESKTOP_PUBLIC_DATA = frozenset({
+    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_usstock_price",
+    "fetch_fear_greed", "fetch_binance_ticker_24h",
+    "fetch_tw_announcements_public", "fetch_twfutures_institutional_public",
+    "fetch_twmarket_index_public", "fetch_twmarket_institutional_public",
+    "fetch_twmarket_margin_public", "fetch_twmarket_turnover_public",
+    "fetch_twse_day_all_public", "tw_market_public_allowed",
+    "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
+    "settlement_signals_from_db", "twstock_industry_name", "txf_settlement_mask",
+})
+_BLAVE_DATA = frozenset({
+    "fetch_capital_shortage", "fetch_cvd_coin", "fetch_cvd_table", "fetch_db_kline",
+    "fetch_economic_calendar", "fetch_funding_rate", "fetch_holder_concentration",
+    "fetch_liquidation", "fetch_liquidation_coin", "fetch_liquidation_exchanges",
+    "fetch_liquidation_map", "fetch_long_short_ratio_coin", "fetch_long_short_ratio_table",
+    "fetch_market_direction", "fetch_market_sentiment", "fetch_news",
+    "fetch_open_interest_coin", "fetch_open_interest_history", "fetch_open_interest_table",
+    "fetch_squeeze_momentum",
+    "fetch_stock_futures_batch_daily", "fetch_stock_futures_ohlcv_symbols",
+    "fetch_taker_intensity", "fetch_top_trader_exposure", "fetch_unusual_movement",
+    "fetch_whale_hunter",
+    "fetch_twfutures_bid_ask_vol", "fetch_twfutures_institutional", "fetch_twfutures_ohlcv",
+    "fetch_twfutures_ohlcv_batch", "fetch_twfutures_pcr",
+    "fetch_twmarket_dividend_points", "fetch_twmarket_index", "fetch_twmarket_institutional",
+    "fetch_twmarket_margin", "fetch_twmarket_turnover",
+    "fetch_twstock_all_broker_net", "fetch_twstock_balance_sheet",
+    "fetch_twstock_balance_sheet_batch", "fetch_twstock_branch_daily_net",
+    "fetch_twstock_broker_net", "fetch_twstock_dividend", "fetch_twstock_dividend_batch",
+    "fetch_twstock_financials", "fetch_twstock_financials_batch",
+    "fetch_twstock_foreign_shareholding_batch", "fetch_twstock_holidays", "fetch_twstock_info",
+    "fetch_twstock_institutional", "fetch_twstock_institutional_batch", "fetch_twstock_list",
+    "fetch_twstock_market_value_all", "fetch_twstock_monthly_revenue",
+    "fetch_twstock_monthly_revenue_batch", "fetch_twstock_ohlcv", "fetch_twstock_ohlcv_symbols",
+    "fetch_twstock_per", "fetch_twstock_per_batch", "fetch_twstock_price", "fetch_twstock_price_adj",
+    "fetch_twstock_price_adj_batch",
+    "fetch_twstock_price_batch", "fetch_twstock_quote", "fetch_twstock_quote_batch",
+    "fetch_twstock_shareholding", "fetch_twstock_shareholding_batch",
+    "fetch_twstock_trader_flows", "is_tw_trading_day",
+})
+# Classes and constants that carry no fetch. BASE is deliberately absent: a
+# strategy that takes it builds its own Blave URL.
+_DATA_INERT = frozenset({
+    "DataAccessError", "UnknownFetcher", "TwPublicUnavailable", "UsStockUnavailable",
+    "UsStockNotHere", "UsStockNotFound", "FeedNotPublished", "closed_bars_only", "live_feeds",
+    "FEED_TIMING", "TW_FLOWS", "TWSE_INDUSTRY_NAMES", "PUBLIC_SOURCE_EN",
+})
+# Shipped lib modules that call Blave fetchers themselves (the report builders).
+# The test lists every lib module that reaches lib.data's Blave names.
+_LIB_REACHING_BLAVE = frozenset({"report_bricks", "report_templates"})
+_DYNAMIC_IMPORTS = {"__import__", "import_module", "exec", "eval"}
+
+
+def blave_data_need(source: str):
+    """Does this strategy code need the Blave data key on the desktop? True / False, or None
+    when it can't be told statically. Stored per listing at publish time
+    (api scripts/marketplace_admin.py); the desktop treats None like True.
+
+    True wins over None: one certain Blave call settles it. None covers what a static read
+    can't follow — any lib.data name outside the three sets (BASE, private helpers, a fetcher
+    this checkout doesn't know), `import *`, the lib.data module passed around as a value or
+    read by a computed name, dynamic imports / exec / vars(), the report builders, relative
+    or custom `lib.*` modules (helper code). A wrong False only costs a failed backtest: the
+    data gate itself is lib/data.py plus the api."""
+    try:
+        return _blave_data_need(source)
+    except Exception:
+        # Deeply nested code makes ast.parse raise MemoryError / RecursionError (api runs this on
+        # untrusted community code): can't tell, and one listing must not stop a whole publish.
+        return None
+
+
+def _blave_data_need(source: str):
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return None
+    known = _DESKTOP_PUBLIC_DATA | _BLAVE_DATA | _DATA_INERT
+    shipped = {p.stem for p in Path(__file__).parent.iterdir()
+               if p.suffix == ".py" or (p.is_dir() and not p.name.startswith(("_", ".")))}
+    bare_strings = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr)}
+    data_aliases = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom) and n.module == "lib" and not n.level:
+            data_aliases |= {a.asname or "data" for a in n.names if a.name == "data"}
+        elif isinstance(n, ast.Import):
+            data_aliases |= {a.asname for a in n.names if a.name == "lib.data" and a.asname}
+
+    def is_data(node):
+        return (isinstance(node, ast.Name) and node.id in data_aliases
+                or isinstance(node, ast.Attribute) and node.attr == "data"
+                and isinstance(node.value, ast.Name) and node.value.id == "lib")
+
+    # every place the lib.data module object may appear legitimately: as the base of `.name`,
+    # or as getattr's first argument with a constant name
+    allowed = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Attribute) and is_data(n.value):
+            allowed.add(id(n.value))
+            if isinstance(n.value, ast.Attribute):
+                allowed.add(id(n.value.value))
+        elif (isinstance(n, ast.Call) and _call_name(n) == "getattr" and len(n.args) >= 2
+              and is_data(n.args[0]) and isinstance(n.args[1], ast.Constant)):
+            allowed.add(id(n.args[0]))
+
+    used, unknown = set(), False   # used = names taken from lib.data, however they were reached
+    for n in ast.walk(tree):
+        if (isinstance(n, ast.Name) and n.id in data_aliases or is_data(n)) and id(n) not in allowed:
+            unknown = True   # the module handed around as a value (D = data, f(data), vars(data))
+        if isinstance(n, ast.ImportFrom):
+            mod = n.module or ""
+            if n.level or mod.split(".")[0] == "strategies":
+                unknown = True
+            elif mod == "lib.data":
+                used |= {a.name for a in n.names}
+                unknown |= any(a.name not in known for a in n.names)
+            elif mod == "lib":
+                unknown |= any(a.name not in shipped or a.name in _LIB_REACHING_BLAVE for a in n.names)
+            elif mod.startswith("lib.") and (mod.split(".")[1] not in shipped
+                                             or mod.split(".")[1] in _LIB_REACHING_BLAVE):
+                unknown = True
+        elif isinstance(n, ast.Import):
+            for a in n.names:
+                parts = a.name.split(".")
+                if parts[0] == "strategies" or parts[0] == "lib" and len(parts) > 1 and (
+                        parts[1] not in shipped or parts[1] in _LIB_REACHING_BLAVE):
+                    unknown = True
+        elif isinstance(n, ast.Attribute) and is_data(n.value):
+            used.add(n.attr)
+            unknown |= n.attr not in known
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in bare_strings:
+            if "api.blave.org" in n.value:   # a direct HTTP call past lib/data.py
+                return True
+        if isinstance(n, ast.Call):
+            name = _call_name(n)
+            if name in _DYNAMIC_IMPORTS:
+                unknown = True
+            elif name == "getattr" and len(n.args) >= 2 and is_data(n.args[0]):
+                attr = n.args[1]
+                if isinstance(attr, ast.Constant) and isinstance(attr.value, str):
+                    used.add(attr.value)
+                    unknown |= attr.value not in known
+                else:
+                    unknown = True
+
+    if used & _BLAVE_DATA:
+        return True
+    return None if unknown else False
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _c(line: int, msg: str) -> dict:

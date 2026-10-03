@@ -64,6 +64,20 @@ GET /openclaw/marketplace/strategies/{id}
 
 Purchases and shared-with-me are separate lists — checking only purchases will miss shared strategies.
 
+## Desktop-downloaded picks
+
+On the desktop app a library pick arrives as 「策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果」 / "The library strategy "{title}" (#{id}) is downloaded. Install it and run a backtest to see the results." The app has already fetched that strategy's code — with the user's own access (official, purchased or shared), or with no sign-in at all for an official, free strategy that needs no Blave data — and saved it as `tmp/library_<id>.py`. It is a plain install:
+
+1. **Do not call the Strategy Library API for it** — no `/code`, no lists. This workspace may hold no Blave key this turn (no card, or this hour's data fee not covered), and the code is already here.
+2. `tmp/library_<id>.py` missing → say the download did not arrive and ask the user to press the button again; never fetch it some other way.
+3. `tmp/library_<id>.security.json` present → the platform's server-side scan of someone else's code. If its `findings` list is not empty, show them to the user and ask before going on, exactly like a `lib/security_check.py` exit 1.
+4. Continue the install flow above from step 5 (bundle check → security scan → quality scan → run) with `tmp/library_<id>.py` as the downloaded file.
+5. Step 9 applies: delete `tmp/library_<id>.py` and `tmp/library_<id>.security.json` before the reply.
+
+Whether the backtest needs Blave data changes none of this. A strategy on public klines runs without data access; one that needs Blave data stops at its first Blave call with `DataAccessError`, and only then does the desktop data-access rule apply.
+
+The older 「幫我下載官方策略「{title}」（#{id}）…」 / 「幫我下載已購買的策略…」 picks (the web workspace, the desktop's cloud view, desktop apps before 0.1.13) still mean: fetch the code yourself with the install flow above.
+
 ## Forking a strategy (use one as a base for the user's own)
 
 **Fork ≠ install.** When the user wants an existing strategy as a *starting point to modify* — 「用 X 當底」, "fork", "copy it into my own strategy" — do NOT run the install flow above. (A web-workspace library pick shaped like 「幫我下載官方策略「{title}」（#{id}），跑一次回測看看結果」 is a plain install, NOT a fork — run the install flow above with the given id.) Instead:

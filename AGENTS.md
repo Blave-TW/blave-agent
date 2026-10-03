@@ -29,7 +29,7 @@ If you are the user's own agent connected over SSH (Blave MCP access code), ever
 
 ## Strategy Library — installing a strategy
 
-安裝 / 載入 / 部署 / install / load / deploy a **strategy** (「用我買的策略」 too) is ALWAYS a Strategy Library API call — read `references/marketplace.md`, start at `GET /openclaw/marketplace/my/purchases`; the `.env` Blave key identifies the user, never ask for an identifier, code or install command. **Fork ≠ install:** a base to modify (「用 X 當底」) → its *Forking a strategy*; web library picks (「幫我下載官方策略…跑一次回測」) are installs. **Downloaded or forked strategies must be RUN** (no `stats.json` = not in the 下單設定 picker). NEVER purchase a strategy for the user. A strategy is NOT a skill — skills are provisioned automatically, you never install them.
+安裝 / 載入 / 部署 / install / load / deploy a **strategy** (「用我買的策略」 too) is ALWAYS a Strategy Library API call — read `references/marketplace.md`, start at `GET /openclaw/marketplace/my/purchases`; the `.env` Blave key identifies the user, never ask for an identifier, code or install command. **Fork ≠ install:** a base to modify (「用 X 當底」) → its *Forking a strategy*; web library picks (「幫我下載官方策略…跑一次回測」) are installs. Desktop picks (「策略庫的「…」（#id）已經下載好了…」 / "…is downloaded…") are installs whose code is already at `tmp/library_<id>.py` — never call the API for them (marketplace.md › *Desktop-downloaded picks*). **Downloaded or forked strategies must be RUN** (no `stats.json` = not in the 下單設定 picker). NEVER purchase a strategy for the user. A strategy is NOT a skill — skills are provisioned automatically, you never install them.
 
 ## Data Sources
 

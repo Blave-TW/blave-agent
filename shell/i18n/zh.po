@@ -2398,7 +2398,7 @@ msgid "priv.collect.1"
 msgstr "做到哪一步：首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行"
 
 msgid "priv.collect.5"
-msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"
+msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容；從策略庫用一支策略時，記它要不要 Blave 資料；送出找點子時，記是從哪個入口送出"
 
 msgid "priv.collect.2"
 msgstr "發生的時間"
@@ -2416,6 +2416,10 @@ msgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原
 msgid "priv.collect.7"
 msgstr "登入後，帳號也會記下：連的是哪種 AI、這台電腦有沒有跑過回測（保留 90 天）"
 
+# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
+msgid "priv.collect.8"
+msgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
+
 msgid "priv.never.h"
 msgstr "不收"
 
@@ -2423,7 +2427,7 @@ msgid "priv.never.1"
 msgstr "對話內容"
 
 msgid "priv.never.2"
-msgstr "策略的程式碼與名稱"
+msgstr "你自己的策略：程式碼與名稱"
 
 msgid "priv.never.3"
 msgstr "標的、金額、部位"
@@ -3692,7 +3696,7 @@ msgid "lib.chip"
 msgstr "看現成策略"
 
 msgid "lib.desc"
-msgstr "官方策略免費，社群策略可直接購買。已驗證優先，再看樣本期長短。"
+msgstr "已驗證優先，再看樣本期長短。"
 
 msgid "lib.mkt.aria"
 msgstr "市場"
@@ -3974,6 +3978,30 @@ msgstr "進度在右邊的對話。"
 msgid "lib.err.noNew"
 msgstr "這一輪結束了，但沒看到新策略。看對話裡 agent 怎麼說。"
 
+msgid "lib.dl.fail"
+msgstr "下載不到這支策略，請再試一次。"
+
+msgid "lib.dl.blocked"
+msgstr "這支策略沒通過平台的安全檢查，不能下載。"
+
+# 0.1.13 稽核補的兩種(字待設計師定稿)
+msgid "lib.dl.signin"
+msgstr "這台電腦的 Blave 登入需要更新，重新登入 Blave 後再按一次。"
+
+msgid "lib.dl.unsent"
+msgstr "安裝那句沒送出去，這支還沒裝。等對話空下來再按一次。"
+
+msgid "lib.dl.gone"
+msgstr "這支策略已經不在策略庫了。"
+
+# 匿名 /public_code 的 404:下架或已不符合免登入條件分不出來,講中性句(spec-0.1.13-smallfixes #10)
+msgid "lib.dl.anonGone"
+msgstr "這支現在不能免登入下載，可能已經下架，或改成要登入。清單已經重新整理。"
+
+# 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
+msgid "lib.dl.rateLimited"
+msgstr "下載次數太多，請稍後再試。"
+
 msgid "lib.gate.signedOut"
 msgstr "登入 Blave 之後才能下載到這台電腦。"
 
@@ -3985,6 +4013,9 @@ msgstr "下載「{title}」？"
 
 msgid "lib.cf.l1"
 msgstr "agent 會把策略下載到 strategies/ 資料夾，用最新資料跑一次回測，結果出現在左側欄。"
+
+msgid "lib.cf.l1Local"
+msgstr "策略會下載到這台電腦的 strategies/ 資料夾，agent 檢查過程式碼再用最新資料跑一次回測，結果出現在左側欄。"
 
 msgid "lib.cf.l2"
 msgstr "不會自動下單，要不要上線由你決定。"
@@ -4000,6 +4031,10 @@ msgstr "幫我下載官方策略「{title}」（#{id}），跑一次回測看看
 
 msgid "lib.msgPaid"
 msgstr "幫我下載已購買的策略「{title}」（#{id}），跑一次回測看看結果"
+
+# 本機「用這支」:外殼已把程式碼放在 workspace/tmp/library_<id>.py;runtime 契約(references/marketplace.md › Desktop-downloaded picks)
+msgid "lib.msgLocal"
+msgstr "策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果"
 
 msgid "lib.where.local"
 msgstr "這台電腦"
@@ -4468,14 +4503,101 @@ msgstr "綁卡，送 {t} 天資料"
 msgid "lib.gate.topup"
 msgstr "儲值"
 
-msgid "lib.gate.noCard"
-msgstr "這個帳號還沒綁卡，agent 拿不到策略庫。"
+# ── 0.1.13 策略庫轉換(spec-0.1.13-library-conversion §7):沒權限時分組、詳情鈕下第一句看資料需求 ──
+msgid "lib.grp.now"
+msgstr "現在就能用"
 
-msgid "lib.gate.noBalance"
-msgstr "這一小時付不出資料費，agent 拿不到策略庫。儲值後馬上恢復。"
+msgid "lib.grp.card"
+msgstr "綁卡後能用"
 
-msgid "lib.gate.unknown"
-msgstr "現在查不到帳號的資料狀態，agent 可能拿不到策略庫。到「帳號與方案」重新查看。"
+msgid "lib.grp.topup"
+msgstr "儲值後能用"
+
+msgid "lib.grp.check"
+msgstr "帳號狀態確認後能用"
+
+msgid "lib.grp.signedOut"
+msgstr "要先登入"
+
+msgid "lib.grp.gate.noCard"
+msgstr "這些要綁卡才跑得了回測。"
+
+msgid "lib.grp.gate.noBalance"
+msgstr "這一小時付不出資料費，這些先跑不了回測。儲值後馬上恢復。"
+
+msgid "lib.grp.gate.unknown"
+msgstr "現在查不到帳號的資料狀態，這些可能跑不了回測。"
+
+msgid "lib.grp.gate.signedOut"
+msgstr "這些要先登入 Blave 才能下載。"
+
+msgid "lib.grp.empty"
+msgstr "這裡還沒有只用公開價格的策略。"
+
+msgid "lib.need.data"
+msgstr "這支的回測要用 Blave 資料。"
+
+msgid "lib.need.unknown"
+msgstr "這支還沒標出用不用 Blave 資料，先照要用處理。"
+
+msgid "lib.why.noBalance"
+msgstr "這一小時付不出資料費，儲值後馬上恢復。"
+
+msgid "lib.why.unknown"
+msgstr "現在查不到帳號的資料狀態。"
+
+msgid "lib.pub"
+msgstr "這支只用交易所公開價格，不用 Blave 資料。"
+
+# ── 上網找點子(spec-0.1.13 §5、§7;只在這台電腦視角)。idea.mkt.any 是空字串:.po 的空 msgstr 等於沒翻,所以不進表,由 newstrategy.js 代空字串 ──
+msgid "idea.chip"
+msgstr "上網找點子"
+
+msgid "idea.descLead"
+msgstr "沒有合適的，"
+
+msgid "idea.link"
+msgstr "請 agent 上網找點子"
+
+msgid "idea.btn"
+msgstr "請 agent 上網找點子"
+
+msgid "idea.title"
+msgstr "上網找策略點子"
+
+msgid "idea.mkt"
+msgstr "市場"
+
+msgid "idea.any"
+msgstr "不限"
+
+msgid "idea.topic"
+msgstr "方向"
+
+msgid "idea.opt"
+msgstr "（選填）"
+
+msgid "idea.topicPh"
+msgstr "例如：資金費率、開盤區間突破、外資連買"
+
+msgid "idea.noOrders"
+msgstr "不會下單。"
+
+msgid "idea.cost"
+msgstr "這一輪按 Blave AI 的用量從餘額扣，讀的網頁越多用量越大。"
+
+msgid "idea.msg"
+msgstr "上網幫我找 3 個{mkt}可以回測的策略點子{topic}。每個寫成明確的進出場規則，註明要不要用到 Blave 資料，並附來源網址；先不要寫程式，也不要給今天的多空判斷。我挑一個再請你回測。"
+
+# en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
+msgid "idea.mkt.crypto"
+msgstr "加密貨幣"
+
+msgid "idea.mkt.tw"
+msgstr "台股"
+
+msgid "idea.topicTpl"
+msgstr "，方向是「{t}」"
 
 msgid "br.h"
 msgstr "瀏覽器"

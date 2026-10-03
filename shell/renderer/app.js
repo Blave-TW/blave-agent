@@ -252,6 +252,7 @@ function enterWorkspace(kind, info) {
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   if (typeof engSync === "function") engSync();   // 開 app 就在背景裝引擎:這一頁進來時可能已經裝到一半(engine.js)
+  if (typeof libIdeaSync === "function") libIdeaSync();   // 換了引擎:找點子入口跟著(Blave AI 要帳號能跑)
   // 從設定 modal 裡換的:留在 modal、重畫模型接入那一頁(「使用中」換列),焦點不搶去輸入框
   if (!$("set-scrim").hidden) { paintBlaveBtn(); detect(); return; }
   autosize();          // 進工作頁先把輸入框高度對齊一行
@@ -461,7 +462,7 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
    app 裡不做首次告知(Wei);關掉之後清單留著——看得到自己關掉的是什麼。全段不寫「匿名」:登入後安裝編號會跟帳號對上。
    開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
-const PRIV_COLLECT = ["priv.collect.1", "priv.collect.5", "priv.collect.6", "priv.collect.2", "priv.collect.3", "priv.collect.4", "priv.collect.7"];
+const PRIV_COLLECT = ["priv.collect.1", "priv.collect.5", "priv.collect.6", "priv.collect.2", "priv.collect.3", "priv.collect.4", "priv.collect.8", "priv.collect.7"];
 /* 功能被使用(canon .claude/docs/product-telemetry.md):只交一個白名單裡的名字給主行程,不帶內容、不計次(api 每安裝每 name 每日一列)。
    送出點放在「功能被使用」那一層(分頁切換、主要動作的 handler),不放 render;名字的字面在 tests/check_shell_telemetry.js 對兩端白名單掃 */
 function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
@@ -960,7 +961,7 @@ document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target))
 /* Esc 關最上面那一層,焦點在哪都一樣:點了框裡的字、從對話清單的 ✕ 開、視窗切回來,焦點會落在 body,
    掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
 function escTop() {
-  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("shr-scrim").hidden ? shrClose
+  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("shr-scrim").hidden ? shrClose
     : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? (rulesEscFn() || setClose) : !$("mp-panel").hidden ? () => mpClose(true)
     : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
 }
@@ -2585,6 +2586,7 @@ function acctPaint() {
     if (!s.can_run) acctShown(card, "turn", s);
   });
   dataCardSync(s);
+  if (typeof libIdeaPaint === "function") libIdeaPaint();   // 帳號能不能跑變了:Blave AI 的找點子入口跟著
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   planWatch(s);
   // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
