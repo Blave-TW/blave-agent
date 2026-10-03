@@ -56,6 +56,13 @@ from urllib.parse import urlencode
 import requests
 
 from lib import guard
+try:
+    from lib import reject_token
+except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
+    from types import SimpleNamespace as _NS
+    reject_token = _NS(tag=lambda kind, msg: str(msg), from_code=lambda *a, **k: None, credential_codes=lambda v: frozenset(),
+                       **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
+                                                 "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -82,10 +89,26 @@ _time_offset = {"ms": 0}   # server-clock correction, set on -1021
 class BinanceError(Exception):
     """Raised on any Binance error response or unexpected shape."""
 
-    def __init__(self, code, msg, path=""):
+    def __init__(self, code, msg, path="", kind=None):
         self.code = code
         self.msg = msg
-        super().__init__(f"Binance error {code}: {msg or '(empty msg)'} | {path}")
+        kind = kind or _reject_kind(code, msg)
+        super().__init__(reject_token.tag(kind, f"Binance error {code}: {msg or '(empty msg)'} | {path}"))
+
+
+# lib/reject_token kinds, from Binance's official error pages: USDⓈ-M futures
+# (-2019 MARGIN_NOT_SUFFICIEN, -2022 REDUCE_ONLY_REJECT, -4118
+# REDUCE_ONLY_MARGIN_CHECK_FAILED) and spot (-2010 NEW_ORDER_REJECTED is shared by
+# many rejections — only its documented "Account has insufficient balance for
+# requested action." message counts). Rejected keys: account_binance._CREDENTIAL.
+_REJECT_CODES = {"-2019": reject_token.INSUFFICIENT_MARGIN, "-2022": reject_token.REDUCE_ONLY_REJECTED,
+                 "-4118": reject_token.REDUCE_ONLY_REJECTED}
+
+
+def _reject_kind(code, msg):
+    if str(code) == "-2010" and "insufficient balance" in str(msg or "").lower():
+        return reject_token.INSUFFICIENT_MARGIN
+    return reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("binance"))
 
 
 class OrderNotConfirmed(Exception):
@@ -307,7 +330,7 @@ def get_contract_rules(env, symbol):
             }
     if symbol not in _rules_cache:
         raise BinanceError("N/A", f"symbol {symbol} not found in /fapi/v1/exchangeInfo",
-                           "exchangeInfo")
+                           "exchangeInfo", kind=reject_token.SYMBOL_UNAVAILABLE)
     return _rules_cache[symbol]
 
 
@@ -323,17 +346,17 @@ def format_qty(env, symbol, qty, price=None):
     place_market_order (units pitfall, references/manager.md)."""
     rules = get_contract_rules(env, symbol)
     if not rules["active"]:
-        raise ValueError(f"{symbol} is not open for trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for trading"))
     q = _floor_to_step(qty, rules["step"])
     if float(q) < rules["min_qty"] or float(q) <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} qty {qty} floors to {q}, below exchange minimum {rules['min_qty']}"
-        )
+        ))
     if price is not None and float(q) * float(price) < rules["min_notional"]:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} notional {float(q) * float(price):.4f} below minimum "
             f"{rules['min_notional']} USDT"
-        )
+        ))
     return format(q, "f")
 
 
@@ -844,7 +867,7 @@ def get_spot_rules(env, symbol):
         symbols = info.get("symbols") or []
         if not symbols:
             raise BinanceError("N/A", f"symbol {symbol} not in spot exchangeInfo",
-                               "exchangeInfo")
+                               "exchangeInfo", kind=reject_token.SYMBOL_UNAVAILABLE)
         s = symbols[0]
         filters = {f.get("filterType"): f for f in s.get("filters", [])}
         lot = filters.get("LOT_SIZE", {})
@@ -864,12 +887,12 @@ def format_spot_qty(env, symbol, qty):
     on a suspended symbol. Plain decimal string."""
     rules = get_spot_rules(env, symbol)
     if not rules["active"]:
-        raise ValueError(f"{symbol} is not open for trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for trading"))
     q = _floor_to_step(qty, rules["step"])
     if float(q) < rules["min_qty"] or float(q) <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} spot qty {qty} floors to {q}, below minimum {rules['min_qty']}"
-        )
+        ))
     return format(q, "f")
 
 

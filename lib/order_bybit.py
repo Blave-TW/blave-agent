@@ -33,6 +33,13 @@ from decimal import ROUND_DOWN, Decimal
 import requests
 
 from lib import guard
+try:
+    from lib import reject_token
+except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
+    from types import SimpleNamespace as _NS
+    reject_token = _NS(tag=lambda kind, msg: str(msg), from_code=lambda *a, **k: None, credential_codes=lambda v: frozenset(),
+                       **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
+                                                 "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -94,10 +101,19 @@ class BybitError(Exception):
     """code = Bybit retCode and http_status = HTTP status, when known —
     lib/account_bybit.classify reads them."""
 
-    def __init__(self, *args, code=None, http_status=None):
-        super().__init__(*args)
+    def __init__(self, *args, code=None, http_status=None, kind=None):
+        kind = kind or reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("bybit"))
+        super().__init__(*((reject_token.tag(kind, args[0]),) + args[1:] if args and kind else args))
         self.code = code
         self.http_status = http_status
+
+
+# lib/reject_token kinds, from Bybit's v5 error page: 110004 / 110045 wallet balance and 110007 /
+# 110012 available balance insufficient; 110017 "orderQty will be truncated to zero" (a reduce-only
+# order larger than what is left). Rejected keys: account_bybit._CREDENTIAL.
+_REJECT_CODES = {"110004": reject_token.INSUFFICIENT_MARGIN, "110007": reject_token.INSUFFICIENT_MARGIN,
+                 "110012": reject_token.INSUFFICIENT_MARGIN, "110045": reject_token.INSUFFICIENT_MARGIN,
+                 "110017": reject_token.REDUCE_ONLY_REJECTED}
 
 
 class OrderNotConfirmed(Exception):
@@ -320,7 +336,7 @@ def get_contract_rules(env: dict, symbol: str) -> dict:
         rows = _public(env, "/v5/market/instruments-info",
                        {"category": "linear", "symbol": symbol}).get("list") or []
         if not rows:
-            raise BybitError(f"bybit: unknown linear symbol {symbol}")
+            raise BybitError(f"bybit: unknown linear symbol {symbol}", kind=reject_token.SYMBOL_UNAVAILABLE)
         lot, price = rows[0]["lotSizeFilter"], rows[0]["priceFilter"]
         _RULES_CACHE[key] = {
             "step": str(lot["qtyStep"]),
@@ -721,7 +737,7 @@ def get_spot_rules(env: dict, symbol: str) -> dict:
         rows = _public(env, "/v5/market/instruments-info",
                        {"category": "spot", "symbol": symbol}).get("list") or []
         if not rows:
-            raise BybitError(f"bybit: unknown spot symbol {symbol}")
+            raise BybitError(f"bybit: unknown spot symbol {symbol}", kind=reject_token.SYMBOL_UNAVAILABLE)
         lot, price = rows[0]["lotSizeFilter"], rows[0]["priceFilter"]
         _RULES_CACHE[key] = {
             "step": str(lot["basePrecision"]),

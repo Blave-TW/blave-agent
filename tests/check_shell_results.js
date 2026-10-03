@@ -160,7 +160,15 @@ function box(extra) {
     ok("J 台股日線 2026-04-24(台北午夜):台北 / 洛杉磯 / UTC / 倫敦都印 2026/04/24", twd.every((x) => x === "2026/04/24"), J(twd));
     ok("J 接線:renderTrades 用 stats.interval 算 dateOnly,清單列與十字線(localization.timeFormatter)都帶它", /const dateOnly = isDailyOrAbove\(stats\.interval\);/.test(trJs)
       && /buildList\(listEl, buildRows\(tracks\), withYear, dateOnly, function/.test(trJs) && /fmtTime\(p\.ts, withYear, dateOnly\)/.test(trJs)
-      && /buildChart\(host, candles, tracks, sanitizePanes\(stats\.panes\), dateOnly\)/.test(trJs) && /fmtTime\(time, true, dateOnly\)/.test(trJs)); }
+      && /buildChart\(host, candles, tracks, sanitizePanes\(stats\.panes\), dateOnly\)/.test(trJs) && /fmtTime\(time, true, dateOnly\)/.test(trJs));
+    // spec-0.1.13 #7:窄框每一列固定折成同樣兩行(方向+數量+種類 / 價格 … 部位),寬框一行;斷點同網頁 560,量清單本身的寬
+    const css = read("report-trades.css"), nar = (/@container tr-list \(max-width: 560px\) \{([\s\S]*?)\n\}/.exec(css) || [])[1] || "";
+    ok("#7 進出場紀錄列:兩組 .tr-l1(方向+數量、種類)/ .tr-l2(價格、部位),寬框 display: contents 攤平成一行",
+      /l1\.appendChild\(\s*el\("span", isBuy \? "tr-side is-buy" : "tr-side is-sell"/.test(trJs) && /if \(kindKey\[p\.kind\]\) l1\.appendChild\(el\("span", "tr-kind"/.test(trJs)
+      && /l2\.appendChild\(el\("span", "tr-px"/.test(trJs) && /l2\.appendChild\(el\("span", "tr-pos"/.test(trJs) && /row\.append\(l1, l2\);/.test(trJs)
+      && /\.tr-l1, \.tr-l2 \{ display: contents; \}/.test(css) && /\.tr-side, \.tr-kind, \.tr-px, \.tr-pos \{ white-space: nowrap; \}/.test(css));
+    ok("#7 窄框(清單 ≤ 560):列改 grid 兩欄、時間欄佔兩行、兩組各自一行 flex;清單是 container", /container: tr-list \/ inline-size;/.test(css)
+      && /\.tr-row \{ display: grid; grid-template-columns: auto 1fr;/.test(nar) && /\.tr-ts \{ grid-row: span 2;/.test(nar) && /\.tr-l1, \.tr-l2 \{ display: flex;/.test(nar)); }
   // 一輪 5 張:先 3 張 + 還有 2 個;鈕的可及名稱
   const host = El("div"); host.className = "msg ai"; CHAT.appendChild(host);
   const five = S.resOrder(items.concat(rep).map((x, i) => ({ ...x, at: 10 - i })));

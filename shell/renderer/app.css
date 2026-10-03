@@ -976,7 +976,21 @@ body.resizing * { cursor: col-resize !important; }
 .cf-row.lev { padding-top: 0; }
 .cf-row.lev dt { font-size: 12px; color: var(--ink-3); }
 .cf-row.lev dd { font-size: 12px; color: var(--ink-2); }
-.cf-row.lev.over dd { color: var(--color-redText); font-weight: 600; }
+/* 那一列下面的提醒(群益口數太大,spec-0.1.13 #1):不擋存檔,所以不上紅——灰記號 + ink-2(同 .verdict.is-calm);
+   .cf-block 是紅字,只留給單真的會被退的句子。整寬接在那一列的數字下面 */
+.cf-row.has-warn { flex-wrap: wrap; row-gap: var(--space-2); }
+.cf-row dd.cf-warn { flex: 0 0 100%; display: flex; gap: var(--space-8); text-align: left; white-space: normal; font: inherit; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.cf-row dd.cf-warn .fault-mark { background: var(--ink-3); }
+.del-body.lines p.cf-zeroed { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }   /* 改成 0 的那幾支:使用者自己選的,不用紅 */
+/* 解除暫停框的部位清單(ux-order-1-4-5 §3.3):小標「HH:mm 讀到的部位」、標的等寬 + 多空上色 */
+.del-body.lines p.cf-sub { margin: var(--space-12) 0 var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cf-row dt.mono { font-family: "Roboto Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+.cf-row dt .side { margin-left: var(--space-8); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; font-size: 12px; }
+.cf-row dt .side.buy { color: var(--color-greenText); }
+.cf-row dt .side.sell { color: var(--color-redText); }
+/* 第 3 級槓桿的勾選列(§1.2):真 checkbox 包在 label 裡、整列都是熱區;勾號照 .ps-cb(墨色) */
+.cf-ack { display: flex; align-items: center; gap: var(--space-12); min-height: 44px; margin-top: var(--space-12); padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm); background: var(--color-darkBody); font-size: 13px; line-height: 1.5; color: var(--ink); cursor: pointer; }
 .del-body.lines p.cf-removed { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .del-body.lines p.cf-block { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--color-redText); }
 .del-body.lines p.cf-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }

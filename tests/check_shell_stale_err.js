@@ -18,7 +18,7 @@ const cutBlock = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b); if (i
 const pure = cutBlock("/* ── 純邏輯(", "/* ── 純邏輯到此") + cutBlock("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
 const cut = (name) => { const i = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + name); };
 
-const node = (tag) => ({ tag, cls: "", kids: [], text: "", appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
+const node = (tag) => ({ tag, cls: "", kids: [], text: "", dataset: {}, on: {}, addEventListener(e, f) { this.on[e] = f; }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
   setAttribute() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
 const flat = (n, out = []) => { if (n && n.tag) { out.push(n); (n.kids || []).forEach((k) => flat(k, out)); } return out; };
 

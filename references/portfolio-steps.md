@@ -61,7 +61,7 @@ The switcher at the top of the middle pane picks the side: 「這台電腦」 fo
 **Fund / deploy a strategy (set amounts):**
 1. 點左側「自動下單」，切到「部位」分頁
 2. 點「選擇策略」勾選策略，按「確定」
-3. 在「部位大小」欄填金額（填 0＝不下單）
+3. 在「金額」欄填金額（填 0＝不下單）
 4. 按「儲存」，確認框再按一次「儲存」
 
 **Start / resume trading:**

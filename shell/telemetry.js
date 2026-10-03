@@ -89,7 +89,11 @@ const EVENTS = {
     "trade_strat_open",
     // 策略庫轉換(0.1.13;renderer/library.js libTurnEnd / libCloudChanged):「用這支」那一輪結束、清單真的多了一支(或覆蓋同名那支);
     // 本機那一輪結束了但沒看到新策略
-    "lib_installed", "library_no_new"] },
+    "lib_installed", "library_no_new",
+    // 下單 UX(0.1.13;renderer/trade.js,ux-order-1-4-5 §4):第 3 級槓桿勾了而且存成功、部位表「N 支策略」拆解被打開。不帶金額
+    "trade_lev_ack", "trade_net_open",
+    // 部位表拒單那一行的「請 agent 查原因」(0.1.13;order-copy #14 §4.4):填進聊天框才算(不送出)
+    "trade_err_ask"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

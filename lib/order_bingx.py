@@ -46,6 +46,13 @@ from decimal import Decimal, ROUND_DOWN
 import requests
 
 from lib import guard
+try:
+    from lib import reject_token
+except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
+    from types import SimpleNamespace as _NS
+    reject_token = _NS(tag=lambda kind, msg: str(msg), from_code=lambda *a, **k: None, credential_codes=lambda v: frozenset(),
+                       **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
+                                                 "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -74,10 +81,13 @@ _position_mode_cache = {}  # api_key -> "hedge" | "oneway"
 class BingXError(Exception):
     """Raised on any BingX error response or unexpected shape."""
 
-    def __init__(self, code, msg, path=""):
+    def __init__(self, code, msg, path="", kind=None):
         self.code = code
         self.msg = msg
-        super().__init__(f"BingX error {code}: {msg or '(empty msg)'} | {path}")
+        # lib/reject_token: only rejected keys (account_bingx._CREDENTIAL) — BingX's margin and
+        # reduce-only codes could not be verified from its docs, so they stay unclassified
+        kind = kind or reject_token.from_code(code, {}, reject_token.credential_codes("bingx"))
+        super().__init__(reject_token.tag(kind, f"BingX error {code}: {msg or '(empty msg)'} | {path}"))
 
 
 class OrderNotConfirmed(Exception):
@@ -292,7 +302,7 @@ def get_contract_rules(env, symbol):
                 "active": str(r.get("apiStateOpen", "")).lower() == "true",
             }
     if symbol not in _rules_cache:
-        raise BingXError("N/A", f"symbol {symbol} not found in /quote/contracts", "contracts")
+        raise BingXError("N/A", f"symbol {symbol} not found in /quote/contracts", "contracts", kind=reject_token.SYMBOL_UNAVAILABLE)
     return _rules_cache[symbol]
 
 
@@ -307,17 +317,17 @@ def format_qty(env, symbol, qty, price=None):
     floored qty is below min_qty, or below min_notional when price is given."""
     rules = get_contract_rules(env, symbol)
     if not rules["active"]:
-        raise ValueError(f"{symbol} is not open for API trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for API trading"))
     q = _floor_to_precision(qty, rules["qty_precision"])
     if float(q) < rules["min_qty"]:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} qty {qty} floors to {q}, below exchange minimum {rules['min_qty']}"
-        )
+        ))
     if price is not None and float(q) * float(price) < rules["min_notional"]:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} notional {float(q) * float(price):.4f} below minimum "
             f"{rules['min_notional']} USDT"
-        )
+        ))
     return format(q, "f")
 
 
@@ -843,7 +853,7 @@ def get_spot_rules(env, symbol):
                           and str(r.get("status")) == "1",
             }
     if sym not in _spot_rules_cache:
-        raise BingXError("N/A", f"symbol {sym} not in spot common/symbols", "symbols")
+        raise BingXError("N/A", f"symbol {sym} not in spot common/symbols", "symbols", kind=reject_token.SYMBOL_UNAVAILABLE)
     return _spot_rules_cache[sym]
 
 
@@ -852,12 +862,12 @@ def format_spot_qty(env, symbol, qty):
     on a suspended symbol. Plain decimal string."""
     rules = get_spot_rules(env, symbol)
     if not rules["active"]:
-        raise ValueError(f"{symbol} is not open for spot trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for spot trading"))
     q = _floor_to_step(qty, rules["step"])
     if float(q) < rules["min_qty"] or float(q) <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} spot qty {qty} floors to {q}, below minimum {rules['min_qty']}"
-        )
+        ))
     return format(q, "f")
 
 

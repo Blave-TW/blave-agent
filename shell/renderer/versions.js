@@ -400,7 +400,7 @@ function verGuard(side, B, n, cur, amt) {
   const has = typeof amt === "number" && amt > 0, lots = has && verIsLots(side, B);
   // 1 口另一句(en「1 lot」;台指期最常見就是 1 口,真錢守門框上最常出現)
   const lead = lots ? t(amt === 1 ? "ver.guardLeadLot1" : "ver.guardLeadLots", { name: c.display, lots: trFmt(amt) || String(amt), cur: "v" + cur, v: "v" + n })
-    : has ? t("ver.guardLead", { name: c.display, amt: (trFmt(amt) || String(amt)) + " " + trUnit(), cur: "v" + cur, v: "v" + n })
+    : has ? t("ver.guardLead", { name: c.display, amt: [trFmt(amt) || String(amt), trUnit()].filter(Boolean).join(" "), cur: "v" + cur, v: "v" + n })
     : t("ver.guardLeadNoAmt", { name: c.display, cur: "v" + cur, v: "v" + n });
   extra.appendChild(verEl("p", "", lead));
   const ol = verEl("ol", "vg-steps");

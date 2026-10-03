@@ -50,10 +50,11 @@
   max-height: 360px;
   overflow-y: auto;
   font-size: 12px;
+  container: tr-list / inline-size;   /* 列的折法看清單本身的寬,不看視窗(中欄、面板寬度各不同) */
 }
 
 /* 一列一筆。是 button(鍵盤可達),外觀是表格列:hairline 分隔、整列可點。
-   窄窗(面板內寬約 280)放不下五欄時允許折行,部位欄靠右 */
+   寬框一行;窄框(清單 ≤ 560,同網頁 exec-body 的斷點)每一列固定折成同樣兩行,見檔尾 */
 .tr-row {
   display: flex;
   flex-wrap: wrap;
@@ -76,6 +77,10 @@
 .tr-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
 .tr-ts { flex: none; font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); }
+/* 寬框:兩組攤平,各段照舊是列的 flex 子項 */
+.tr-l1, .tr-l2 { display: contents; }
+/* 每一段內部不斷行:「買進」跟數量、「→ 部位」跟數字不會被拆到兩行 */
+.tr-side, .tr-kind, .tr-px, .tr-pos { white-space: nowrap; }
 /* 方向詞上語意色;數量/價格/部位維持灰階(dark 下 green/red 即文字用色階,
    canon › Trading colors:dark 端 greenText/redText 重映射回同值) */
 .tr-side { flex: none; }
@@ -85,6 +90,14 @@
 .tr-kind { flex: none; font-size: 11px; color: var(--ink); }
 .tr-px { flex: none; font-family: "Roboto Mono", ui-monospace, monospace; color: var(--ink-3); }
 .tr-pos { flex: none; margin-left: auto; text-align: right; }
+
+/* 窄框:時間欄佔兩行(分線的日期、時分在空格處自己折成兩行;日線一個字串、一行);
+   第一行方向+數量+種類,第二行價格靠左、部位靠右。每一列折法相同,不看價格字串多長 */
+@container tr-list (max-width: 560px) {
+  .tr-row { display: grid; grid-template-columns: auto 1fr; column-gap: var(--space-8); row-gap: var(--space-2); }
+  .tr-ts { grid-row: span 2; width: min-content; }
+  .tr-l1, .tr-l2 { display: flex; align-items: baseline; gap: var(--space-8); min-width: 0; }
+}
 
 /* 系統設定要求減少動態時,hover 底色直接切換 */
 @media (prefers-reduced-motion: reduce) {

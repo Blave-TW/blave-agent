@@ -28,11 +28,12 @@ PRICE (the whole model, Wei 2026-08-21):
     contract_value (TXF 200 / MXF 50 / TMF 10; shares 1), PnL = lots ×
     contract_value × Δprice, and the position row carries unit "contracts" so
     the wiring reports lots back. One symbol holds one unit: a contract fill
-    on a notional position (or the reverse) is refused. Leverage is judged
-    per unit, never summed across them: notional positions on gross value,
-    contract positions on lots × the spec's `margin` (TAIFEX initial margin,
-    written with the spec by the platform): notional against MAX_LEVERAGE ×
-    equity, margin against equity itself (1×, as a broker would). The account
+    on a notional position (or the reverse) is refused. Notional positions
+    have no leverage cap (Wei 2026-10-03: no hard limit, the UI only warns —
+    there is no liquidation model either, so paper results can look better
+    than a real account at high leverage). Contract positions are checked on
+    lots × the spec's `margin` (TAIFEX initial margin, written with the spec by
+    the platform) against equity itself (1×, as a broker would). The account
     is unit-less (no FX), as everywhere in paper.
 
 Contract rules are permissive (fetch_data gives OHLC, not an instrument spec):
@@ -44,7 +45,7 @@ Ledger: state/paper_ledger.json (atomic writes, flock on POSIX / msvcrt on
 Windows). Seeded with PAPER_INITIAL_EQUITY (.env, default 100,000 USDT); a ledger
 older than PAPER_BOUND_TS is re-seeded, so unbind→rebind is a fresh start.
 reset_account(env) wipes and re-seeds — agent runs it on explicit user request
-only. Reduce/close legs are NEVER refused by the equity/leverage checks.
+only. Reduce/close legs are NEVER refused by the equity/margin checks.
 """
 import json
 import logging
@@ -53,6 +54,13 @@ import threading
 import time
 
 from lib import guard
+try:
+    from lib import reject_token
+except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
+    from types import SimpleNamespace as _NS
+    reject_token = _NS(tag=lambda kind, msg: str(msg), from_code=lambda *a, **k: None, credential_codes=lambda v: frozenset(),
+                       **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
+                                                 "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 from lib.paper_data import current_price, PaperNoPrice
@@ -73,7 +81,6 @@ DEFAULT_CASH = 100_000.0  # new ledgers only — an existing ledger keeps its in
 TAKER_FEE = 0.0005   # market / crossing-limit / protective-trigger
 MAKER_FEE = 0.0002   # resting-limit fill
 SPOT_FEE = 0.001     # spot both sides
-MAX_LEVERAGE = 10.0
 MAX_FILLS = 500
 MAX_CLOSED_ORDERS = 1000
 
@@ -156,7 +163,7 @@ def _spot_base(sym):
     for q in ("USDT", "USDC"):
         if sym.endswith(q) and len(sym) > len(q):
             return sym[: -len(q)]
-    raise PaperError(f"paper spot supports USDT/USDC quotes only, got {sym}")
+    raise PaperError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"paper spot supports USDT/USDC quotes only, got {sym}"))
 
 
 # ── ledger ───────────────────────────────────────────────────────────────────
@@ -373,8 +380,8 @@ def _equity(env, led, marks):
 def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_value=None,
                      margin=None):
     """Net one-way position update; returns realized PnL. Only exposure-adding
-    fills are checked against equity/leverage (computed on the would-be state,
-    committed only if it passes). Reduce/close never refused — no liquidation
+    fills are checked against equity and contract margin (computed on the
+    would-be state, committed only if it passes). Reduce/close never refused — no liquidation
     model, so a blown account must still be flatten-able.
 
     contract_value: set for a CONTRACT fill (signed_qty is lots; see module
@@ -418,19 +425,12 @@ def _apply_swap_fill(env, led, sym, signed_qty, price, fee, marks, contract_valu
         if equity <= 0:
             raise PaperError("paper account equity would be <= 0 — refused "
                              "(reset_account to start over)")
-        # two units, two checks — TWD point-value lots and USD notional are
-        # never added together (Wei 2026-09-22)
-        trial_pos = dict(led, positions=new_positions)
-        gross = sum(abs(p["qty"]) * _pos_mark(env, trial_pos, s, marks)[0]
-                    for s, p in new_positions.items() if p.get("unit") != "contracts")
-        if gross > MAX_LEVERAGE * equity + 1e-9:
-            raise PaperError(f"gross notional {gross:.0f} exceeds {MAX_LEVERAGE:g}× "
-                             f"paper equity {equity:.0f} — refused")
+        # contract lots are margin-checked; notional has no cap (see docstring)
         margin_used = sum(abs(p["qty"]) * float(p.get("margin") or 0)
                           for p in new_positions.values() if p.get("unit") == "contracts")
         if margin_used > equity + 1e-9:  # 1×: margin must be covered, as at a broker
-            raise PaperError(f"contract margin {margin_used:.0f} exceeds paper equity "
-                             f"{equity:.0f} — refused")
+            raise PaperError(reject_token.tag(reject_token.PAPER_MARGIN, f"contract margin {margin_used:.0f} exceeds paper equity "
+                             f"{equity:.0f} — refused"))
     led["cash"] = new_cash
     led["positions"] = new_positions
     if sym not in new_positions:
@@ -444,14 +444,14 @@ def _fill_spot(led, o, base_qty, price, fee_rate):
         cost = base_qty * price
         fee = cost * fee_rate
         if led["cash"] < cost + fee:
-            raise PaperError(f"insufficient paper cash for {o['symbol']} buy "
-                             f"({led['cash']:.2f} < {cost + fee:.2f})")
+            raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash for {o['symbol']} buy "
+                             f"({led['cash']:.2f} < {cost + fee:.2f})"))
         led["cash"] -= cost + fee
         led["spot"][base] = led["spot"].get(base, 0.0) + base_qty
     else:
         held = led["spot"].get(base, 0.0)
         if base_qty > held + 1e-12:
-            raise PaperError(f"insufficient {base} to sell ({held} < {base_qty})")
+            raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to sell ({held} < {base_qty})"))
         proceeds = base_qty * price
         fee = proceeds * fee_rate
         led["cash"] += proceeds - fee
@@ -921,9 +921,9 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
             mark = _price(env, sym, {})
             base = _spot_base(sym)
             if side == "buy" and led["cash"] < float(base_qty) * px * (1 + SPOT_FEE):
-                raise PaperError(f"insufficient paper cash to rest a {sym} buy")
+                raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash to rest a {sym} buy"))
             if side == "sell" and led["spot"].get(base, 0.0) + 1e-12 < float(base_qty):
-                raise PaperError(f"insufficient {base} to rest a sell")
+                raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to rest a sell"))
             crosses = (px >= mark) if side == "buy" else (px <= mark)
             o = _new_order(led, sym, "spot", side, "limit", px, float(base_qty),
                            client_order_id, post_only=post_only)

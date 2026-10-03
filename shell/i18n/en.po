@@ -1220,6 +1220,12 @@ msgstr "When you create the key on Binance: enable trading only, keep withdrawal
 msgid "cx.note.oneV"
 msgstr "When you create the key on {venue}: allow trading only and keep withdrawals off. If you set an IP whitelist, add this IP."
 
+msgid "cx.note.subAcct"
+msgstr "We suggest a sub-account just for Blave, with the key created there. Blave manages every position on this account, so trades you open by hand may get closed."
+
+msgid "cx.note.subAcctOwn"
+msgstr "We suggest a sub-account just for Blave, with the key created there. On a one-way account the exchange nets Blave's orders against your own position in the same coin."
+
 # 查不到提領權限的那家(Gate.io):Blave 不會替他擋,講明要自己確認
 msgid "cx.note.wdUnchecked"
 msgstr "Blave can’t tell whether a {venue} key has withdrawal permission, so it won’t refuse one: check that withdrawals are off for this key before you connect."
@@ -1372,20 +1378,35 @@ msgstr "Enter a number, e.g. 1,500.50"
 msgid "tr.amountTooBig"
 msgstr "The limit is 1,000,000,000"
 
+msgid "tr.badLots"
+msgstr "Enter a whole number of lots, e.g. 3"
+
+msgid "tr.badLotsOld"
+msgstr "This is an older setting with a fractional lot count. Enter a whole number, e.g. 3"
+
 msgid "tr.lev"
 msgstr "Leverage (total ÷ equity)"
 
-msgid "tr.levBlock"
-msgstr "Over the paper account limit of {x}× equity (about {cap} {c}). Lower the amounts, then save."
+msgid "tr.lev.margin"
+msgstr "Above 1× this runs on margin. Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
 
-msgid "tr.levStillOver"
-msgstr "Still over the paper account limit of {x}× equity (about {cap} {c}) — orders beyond it will be refused."
+msgid "tr.lev.marginShort"
+msgstr "Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
 
-msgid "tr.levOverShort"
-msgstr "Over the {x}× paper limit"
+msgid "tr.lev.loss"
+msgstr "At full size, a {p}% move against every position at once costs your entire equity; the exchange liquidates before that."
+
+msgid "tr.lev.lossPaper"
+msgstr "At full size, a {p}% move against every position at once takes the paper account's equity to zero."
+
+msgid "tr.lev.binance5"
+msgstr "Binance sub-accounts are capped at 5× futures leverage."
+
+msgid "tr.lev.ack"
+msgstr "I understand that at full size, a {p}% move against everything wipes out my equity"
 
 msgid "tr.err.paperLev"
-msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the position size."
+msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the amount."
 
 msgid "tr.err.paperBroke"
 msgstr "{sym} order not placed: the paper account's equity is at zero, so no new positions can open."
@@ -1396,17 +1417,44 @@ msgstr "{sym}: this OKX account mode can't trade futures. In OKX, go to Settings
 msgid "tr.err.gateDeviated"
 msgstr "{sym}: Gate.io's order book was too far from the mark price, so the exchange refused the market order and nothing filled. This contract is usually just thin for a moment; the next round retries on its own."
 
+msgid "tr.err.margin"
+msgstr "{sym} order not placed: not enough available margin or balance on the account. Lower the amount, add funds, or raise this contract's leverage on the exchange."
+
+msgid "tr.err.minSize"
+msgstr "{sym} order not placed: the size is below the exchange's minimum order. Raise this strategy's amount, or wait for the difference to grow."
+
+msgid "tr.err.symbol"
+msgstr "{sym} order not placed: the exchange doesn't list this contract or has paused trading on it. Check on the exchange; if it's delisted, ask the agent to move the strategy to another contract."
+
+msgid "tr.err.key"
+msgstr "{sym} order not placed: the exchange rejected this key (trading permission, IP whitelist, or the key itself). Go to Settings › Account and press Retest to see which."
+
+msgid "tr.err.reduceOnly"
+msgstr "{sym} order not placed: the exchange refused a reduce-only order because the position or open orders there differ from what Blave expects (closed by hand, or another order is open). Check this position on the exchange."
+
+msgid "tr.err.paperMargin"
+msgstr "{sym} order not placed: the margin for these TAIFEX lots adds up to more than the paper account's equity. Lower the lots and try again."
+
+msgid "tr.err.ask"
+msgstr "Ask the agent why"
+
+msgid "tr.err.askPrompt"
+msgstr "The order engine reported a failed order: {sym} — {err}. Please find out why, explain it in plain words, and tell me what to do; don't place any orders yourself."
+
+msgid "tr.err.askPromptCloud"
+msgstr "The cloud machine's order engine reported a failed order: {sym} — {err}. Please use the blave tools to find out why on that machine, explain it in plain words, and tell me what to do; don't place any orders yourself."
+
 msgid "tr.stopChoiceSelf"
-msgstr "No new positions will be opened after pausing. Closing positions only closes positions opened by auto-trading — anything you opened manually is left untouched."
+msgstr "Exits, stops and take-profits keep running. Closing positions here only closes positions opened by auto-trading; ones you opened manually are left alone."
 
 msgid "tr.stopChoice"
-msgstr "No new positions will be opened after pausing. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
+msgstr "Exits, stops and take-profits keep running. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
 
 msgid "tr.closeAllWarn2"
 msgstr "Strategy amounts are kept: pressing Start trading later rebuilds positions to those amounts. If you don't want that, zero the amounts first."
 
 msgid "tr.stopKeep"
-msgstr "Pause, leave positions untouched"
+msgstr "Pause new positions"
 
 msgid "tr.stopFlat"
 msgstr "Pause and close positions"
@@ -1532,7 +1580,28 @@ msgid "tr.col.symbol"
 msgstr "Symbol"
 
 msgid "tr.col.amount"
-msgstr "Position size"
+msgstr "Amount"
+
+msgid "tr.col.signal"
+msgstr "Signal"
+
+msgid "tr.amountFoot"
+msgstr "Target position = amount × signal. A signal of 1 is full size; some strategies go above 1."
+
+msgid "tr.net.tag"
+msgstr "{n} strategies"
+
+msgid "tr.net.sum"
+msgstr "Net {t}"
+
+msgid "tr.net.sumOffZero"
+msgstr "Net 0: long {l} and short {s} cancel out, so there's no {base} position on the exchange."
+
+msgid "tr.net.sumOff"
+msgstr "Net {t}: long {l}, short {s}; {m} cancels out."
+
+msgid "tr.net.foot"
+msgstr "Strategies on the same symbol are added up and only the net is traded; opposite directions cancel out."
 
 msgid "tr.col.targetPos"
 msgstr "Target position"
@@ -1565,7 +1634,16 @@ msgid "tr.noStrategies"
 msgstr "No strategy is ready to trade yet. Ask the agent for one — once it has a backtest you can give it a size."
 
 msgid "tr.typeC"
-msgstr "Portfolio strategies do not support auto-trading yet"
+msgstr "Blave needs an update"
+
+msgid "tr.typeCHost"
+msgstr "The machine needs an update"
+
+msgid "tr.typeCNext"
+msgstr "Portfolio strategies can auto-trade once Blave on this computer is updated."
+
+msgid "tr.typeCNextHost"
+msgstr "Portfolio strategies can auto-trade once the machine's software is updated."
 
 msgid "tr.pick.twd"
 msgstr "Paper trading does not support TWD-priced instruments yet"
@@ -1594,8 +1672,14 @@ msgstr "of your equity"
 msgid "tr.unitNote"
 msgstr "Amounts in {c}"
 
+msgid "tr.ccyUnknown"
+msgstr "The account can't be read, so the currency of these amounts can't be confirmed yet."
+
 msgid "tr.lotsUnit"
 msgstr "lots"
+
+msgid "tr.lotUnit"
+msgstr "lot"
 
 msgid "tr.lotsAria"
 msgstr "Lots"
@@ -1605,6 +1689,21 @@ msgstr "{lots} lots of {prod} (≈ {amt} TWD)"
 
 msgid "tr.txfConfirmNoQuote"
 msgstr "{lots} lots of {prod}"
+
+msgid "tr.txfConfirm1"
+msgstr "{lots} lot of {prod} (≈ {amt} TWD)"
+
+msgid "tr.txfConfirmNoQuote1"
+msgstr "{lots} lot of {prod}"
+
+msgid "tr.txfBigNotional"
+msgstr "{lots} lots of {prod} is about {amt} TWD notional, {x}× your equity. Make sure this is the size you want."
+
+msgid "tr.txfBigNotional1"
+msgstr "{lots} lot of {prod} is about {amt} TWD notional, {x}× your equity. Make sure this is the size you want."
+
+msgid "tr.txfBigLots"
+msgstr "{lots} lots of {prod} is a very large size. Make sure no extra zero slipped in."
 
 msgid "tr.txfProd.tmf"
 msgstr "Micro"
@@ -1632,6 +1731,9 @@ msgstr "Saved — this computer now uses the new amounts."
 
 msgid "tr.saveTitle"
 msgstr "Confirm trade amounts"
+
+msgid "tr.saveZeroed"
+msgstr "Set to 0: {names} — their share of futures positions will be closed and spot holdings sold."
 
 msgid "tr.saveWarn"
 msgstr "Once saved, the order engine reconciles to these amounts — orders may fire immediately."
@@ -2144,7 +2246,6 @@ msgstr "A machine that stays on runs your strategies on schedule and places the 
 msgid "env.open.more"
 msgstr "See the Full Plan"
 
-
 msgid "side.cloud.emptyReady"
 msgstr "Your machine is up. Strategies you send here will be listed."
 
@@ -2404,7 +2505,7 @@ msgid "priv.collect.2"
 msgstr "When it happened"
 
 msgid "priv.collect.3"
-msgstr "The app version, macOS version and system language"
+msgstr "The app version, operating system and version, and system language"
 
 msgid "priv.collect.4"
 msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
@@ -2996,7 +3097,6 @@ msgstr "API key saved to your cloud machine; Binance permissions check passed."
 msgid "tr.cloud.cxSavedV"
 msgstr "The key is saved on your cloud machine. Whether the {venue} account can be read shows once the machine reports."
 
-
 msgid "tr.cloud.cxUnknown"
 msgstr "The key was sent, but the cloud machine hasn’t reported the check result. Close this and watch this page: it switches to the trading settings if the connection went through. If not, connect again."
 
@@ -3029,9 +3129,6 @@ msgstr "close them in Capital’s trading software"
 
 msgid "up.c.msg"
 msgstr "Update the cloud machine to the latest version"
-
-msgid "tr.cloud.typeC"
-msgstr "Set a portfolio strategy’s first amount in the web workspace; you can adjust it here after that."
 
 msgid "cdel.absent"
 msgstr "This strategy wasn’t on the cloud machine, so nothing was deleted. The list catches up once it updates."
@@ -3120,6 +3217,12 @@ msgstr "No strategy has an amount, so there’s nothing to start. Set an amount 
 msgid "tr.startOffNoAmtRelease"
 msgstr "No strategy has an amount, so there’s nothing to start. To let your own strategy code place orders again, press Release pause."
 
+msgid "tr.releaseClose"
+msgstr "Close positions and release"
+
+msgid "tr.startOffNoAmtReleaseClose"
+msgstr "No strategy has an amount, so there's nothing to start. To let your own strategy code place orders again, press Close positions and release."
+
 msgid "tr.release"
 msgstr "Release pause"
 
@@ -3175,26 +3278,49 @@ msgid "tr.relAuto"
 msgstr "This pause was triggered automatically (for example a rejected key, repeated account-read failures or an account change). Release only once that’s fixed."
 
 msgid "tr.relX1Title"
-msgstr "Releasing the pause will close these positions"
+msgstr "Releasing the pause closes these {n} positions"
 
-msgid "tr.relX1Body"
-msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the {n} futures positions on this account, including ones you opened manually. Orders from your own strategy code are allowed again."
+msgid "tr.relX1Lead"
+msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the futures positions on this account, including ones you opened by hand:"
+
+msgid "tr.relX2Lead"
+msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes these positions opened by auto-trading; positions you opened by hand are left alone:"
+
+msgid "tr.relReadAt"
+msgstr "Positions as read at {time}"
+
+msgid "tr.relMore"
+msgstr "{n} more"
+
+msgid "tr.rel.long"
+msgstr "Long"
+
+msgid "tr.rel.short"
+msgstr "Short"
+
+msgid "tr.relSelfCode"
+msgstr "Orders from your own strategy code are allowed again."
+
+msgid "tr.relX1TitleN"
+msgstr "Releasing the pause may close positions"
+
+msgid "tr.relX2TitleN"
+msgstr "Releasing the pause may close auto-trading positions"
+
+msgid "tr.relX2BodyN"
+msgstr "Couldn't read the auto-trading ledger. No strategy has an amount, so once released the order program resumes reconciling and market-closes any positions auto-trading opened; positions you opened by hand are left alone."
 
 msgid "tr.relX1BodyN"
-msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the futures positions on this account, including ones you opened manually. Orders from your own strategy code are allowed again."
+msgstr "Couldn't read this account's positions. No strategy has an amount, so once released the order program resumes reconciling and market-closes any futures positions on the account, including ones you opened by hand."
 
 msgid "tr.relX2Title"
 msgstr "Releasing the pause will close auto-trading positions"
-
-msgid "tr.relX2Body"
-msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the positions auto-trading opened; positions you opened manually are left alone. Orders from your own strategy code are allowed again."
 
 msgid "tr.relNotNow"
 msgstr "Not now"
 
 msgid "tr.relCloseGo"
 msgstr "Close positions and release"
-
 
 msgid "tr.diedZ"
 msgstr "Trading stopped, and not because you paused it · last ran {t}."
@@ -3222,7 +3348,6 @@ msgstr "This version of Blave needs an update before it can send Release pause. 
 
 msgid "tr.cloud.cxSavedStalePaper"
 msgstr "The paper account was sent, but the cloud machine still hasn’t reported back, so this page hasn’t switched to order settings. You can try again, or ask the agent in chat what’s going on with the machine."
-
 
 msgid "tr.runningZ"
 msgstr "Order program running · no strategy has an amount"
