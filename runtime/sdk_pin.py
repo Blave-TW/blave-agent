@@ -92,9 +92,13 @@ def add_dir(d):
     pip --target does not run the tree's .pth files, which the venv would have
     run at startup, so they are replayed here in place: path lines go right
     after d (ahead of the venv's copies), `import` lines run as site.py runs
-    them. That covers pywin32 if the SDK's dependency tree ever pulls it in
-    again (pywin32.pth adds win32, win32/lib, Pythonwin); its DLL dir is added
-    explicitly because pywin32_bootstrap only looks in site.getsitepackages()."""
+    them. On Windows mcp pulls in pywin32, whose pywin32.pth adds win32,
+    win32/lib and pythonwin. Its `import pywin32_bootstrap` is a no-op here —
+    the venv's own pywin32 already ran it at startup and registered the VENV's
+    pywin32_system32 — and pywintypes loads its DLL by bare name, so whichever
+    DLL directory Windows searches first would win. The pin's DLLs are therefore
+    loaded by full path up front; a later load by name gets the one already in
+    the process, never a mix of two pywin32 versions."""
     if d in sys.path:
         return
     # after the runtime's own dir: a top-level package in the SDK's dependency
@@ -118,7 +122,11 @@ def add_dir(d):
                     pos += 1
     dll = os.path.join(d, "pywin32_system32")
     if os.name == "nt" and os.path.isdir(dll):
+        import ctypes
         os.add_dll_directory(dll)
+        for f in sorted(os.listdir(dll)):
+            if f.lower().endswith(".dll"):
+                ctypes.WinDLL(os.path.join(dll, f))
     for line in imports:
         exec(line)  # noqa: S102 — same as site.addpackage
 

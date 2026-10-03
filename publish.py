@@ -21,9 +21,14 @@ serves it only to the listed users while it is newer than manifest.json.
 SDK pin (runtime/SDK_VERSION): after changing it, `python publish.py lock`
 resolves `claude-agent-sdk==<pin>` from wheels only for every platform the fleet
 and the desktop run (SDK_TARGETS) and writes runtime/sdk-lock-<key>.txt — every
-package of the tree pinned with the sha256 of each of its wheels. Commit those
-with the pin; publish refuses a missing or stale lock and ships them in the
-tarball (sdk_sync.py and provision install with --require-hashes). A pin PyPI has
+package of the tree pinned with the sha256 of each of its wheels. pip picks the
+versions/wheels; the package set is the closure under each target's own PEP 508
+markers (TARGET_ENV — pip evaluates markers on the Mac running it). Commit those
+with the pin; publish refuses a missing or stale lock, re-checks each lock against
+that closure using PyPI's Requires-Dist for the pinned versions (network, ~20s),
+and ships them in the tarball (sdk_sync.py and provision install with
+--require-hashes). Only pip (and its vendored `packaging`) is used — nothing else
+to install on the publishing machine. A pin PyPI has
 no win_amd64 wheel for (0.2.157, 0.2.160–0.2.163) fails `lock`: on Windows it
 would never install (or, without --only-binary, install with no bundled CLI).
 
@@ -65,27 +70,93 @@ SDK_TARGETS = [
     ("macosx_arm64-py3.12", "macosx_11_0_arm64", "3.12"),
     ("macosx_x86_64-py3.12", "macosx_11_0_x86_64", "3.12"),
 ]
+# PEP 508 marker environment of each target. pip's --platform / --python-version
+# only pick wheels; requirement markers (`sys_platform == "win32"`,
+# `python_version < "3.11"`) are still evaluated against the interpreter running
+# pip — a lock built on a Mac silently dropped mcp's pywin32 from the Windows lock
+# (runtime 1.1.109 canary, uid=1). So the closure is recomputed here per target.
+_POSIX = {"os_name": "posix", "implementation_name": "cpython",
+          "platform_python_implementation": "CPython", "platform_release": "", "platform_version": ""}
+_WIN = {**_POSIX, "os_name": "nt", "sys_platform": "win32", "platform_system": "Windows",
+        "platform_machine": "AMD64"}
+_MAC = {**_POSIX, "sys_platform": "darwin", "platform_system": "Darwin"}
+TARGET_ENV = {
+    "linux_x86_64-py3.10": {**_POSIX, "sys_platform": "linux", "platform_system": "Linux",
+                            "platform_machine": "x86_64", "python_version": "3.10",
+                            "python_full_version": "3.10.12"},
+    "win_amd64-py3.14": {**_WIN, "python_version": "3.14", "python_full_version": "3.14.0"},
+    "win_amd64-py3.12": {**_WIN, "python_version": "3.12", "python_full_version": "3.12.10"},
+    "macosx_arm64-py3.12": {**_MAC, "platform_machine": "arm64", "python_version": "3.12",
+                            "python_full_version": "3.12.14"},
+    "macosx_x86_64-py3.12": {**_MAC, "platform_machine": "x86_64", "python_version": "3.12",
+                             "python_full_version": "3.12.14"},
+}
+SDK_ROOT_PKG = "claude-agent-sdk"
+
+
+def _packaging():
+    # pip's vendored copy: publish already needs pip, so no extra dependency
+    try:
+        from packaging.requirements import Requirement
+        from packaging.utils import canonicalize_name
+    except ImportError:
+        from pip._vendor.packaging.requirements import Requirement
+        from pip._vendor.packaging.utils import canonicalize_name
+    return Requirement, canonicalize_name
 
 
 def lock_path(key):
     return os.path.join(RUNTIME, f"sdk-lock-{key}.txt")
 
 
+def _pypi(name, version):
+    import urllib.request
+
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=60) as r:
+        return json.load(r)
+
+
 def _wheel_hashes(name, version):
     """Every wheel PyPI has for name==version: the machine's pip picks the wheel
     for its own tags (a newer manylinux than the one resolved here), and that
     file's hash has to be in the lock."""
-    import urllib.request
-
-    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=60) as r:
-        files = json.load(r)["urls"]
-    return sorted({f["digests"]["sha256"] for f in files if f["filename"].endswith(".whl")})
+    return sorted({f["digests"]["sha256"] for f in _pypi(name, version)["urls"]
+                   if f["filename"].endswith(".whl")})
 
 
-def sdk_lock_text(pin, key, plat, py):
-    """The pinned, hashed requirement set for one target, or None when pip cannot
-    resolve `claude-agent-sdk==<pin>` there from wheels only. --dry-run reads the
-    index metadata, so no wheel is downloaded."""
+def target_closure(root, requires_of, env):
+    """{canonical name: [Requirement, ...]} reachable from `root` (a requirement
+    string) when every marker is evaluated in `env`. requires_of(name) gives that
+    package's Requires-Dist list, or None when it is not known."""
+    Requirement, canon = _packaging()
+    need, seen, todo = {}, set(), [Requirement(root)]
+    while todo:
+        req = todo.pop()
+        name = canon(req.name)
+        need.setdefault(name, []).append(req)
+        for extra in [""] + sorted(req.extras):
+            if (name, extra) in seen:
+                continue
+            seen.add((name, extra))
+            for spec in requires_of(name) or []:
+                r = Requirement(spec)
+                if r.marker is None or r.marker.evaluate({**env, "extra": extra}):
+                    todo.append(r)
+    return need
+
+
+def _closure_problems(need, versions):
+    """need: target_closure(); versions: {canonical name: version} actually pinned."""
+    bad = [f"missing {n}" for n in sorted(set(need) - set(versions))]
+    bad += [f"not needed on this platform: {n}" for n in sorted(set(versions) - set(need))]
+    for n in sorted(set(need) & set(versions)):
+        for r in need[n]:
+            if not r.specifier.contains(versions[n], prereleases=True):
+                bad.append(f"{n}=={versions[n]} does not satisfy {r}")
+    return bad
+
+
+def _pip_report(roots, plat, py):
     import subprocess
     import tempfile
 
@@ -95,22 +166,75 @@ def sdk_lock_text(pin, key, plat, py):
             [sys.executable, "-m", "pip", "install", "--dry-run", "--ignore-installed",
              "--only-binary=:all:", "--platform", plat, "--python-version", py,
              "--implementation", "cp", "--target", os.path.join(tmp, "t"), "--quiet",
-             "--disable-pip-version-check", "--report", report, f"claude-agent-sdk=={pin}"],
+             "--disable-pip-version-check", "--report", report, *roots],
             capture_output=True, text=True, timeout=300)
-        if r.returncode != 0:
+        return json.load(open(report))["install"] if r.returncode == 0 else None
+
+
+def sdk_lock_text(pin, key, plat, py):
+    """The pinned, hashed requirement set for one target, or None when it cannot be
+    resolved from wheels only. pip picks versions and wheels for the target's tags
+    (--dry-run reads index metadata, nothing is downloaded); the package SET is the
+    closure under the target's own markers — anything pip skipped because the Mac
+    running it is not the target is added as an extra root and resolved again."""
+    Requirement, canon = _packaging()
+    env, root = TARGET_ENV[key], f"{SDK_ROOT_PKG}=={pin}"
+    roots = [root]
+    for _ in range(6):
+        items = _pip_report(roots, plat, py)
+        if items is None:
             return None
-        items = json.load(open(report))["install"]
-    lines = [f"# claude-agent-sdk=={pin} {key} — written by `python publish.py lock`, do not edit"]
-    for it in sorted(items, key=lambda i: i["metadata"]["name"].lower()):
-        name, version = it["metadata"]["name"], it["metadata"]["version"]
+        meta = {canon(i["metadata"]["name"]): i["metadata"] for i in items}
+        need = target_closure(root, lambda n: (meta[n].get("requires_dist") or []) if n in meta else None, env)
+        missing = sorted(set(need) - set(meta))
+        if not missing:
+            break
+        for n in missing:
+            reqs = need[n]
+            extras = sorted({e for r in reqs for e in r.extras})
+            spec = ",".join(str(r.specifier) for r in reqs if str(r.specifier))
+            roots.append(f"{reqs[0].name}{'[' + ','.join(extras) + ']' if extras else ''}{spec}")
+    else:
+        return None
+    versions = {n: meta[n]["version"] for n in need}
+    if _closure_problems(need, versions):
+        return None
+    lines = [f"# {SDK_ROOT_PKG}=={pin} {key} — written by `python publish.py lock`, do not edit"]
+    for n in sorted(need):
+        name, version = meta[n]["name"], meta[n]["version"]
         hashes = " ".join(f"--hash=sha256:{h}" for h in _wheel_hashes(name, version))
         lines.append(f"{name}=={version} {hashes}")
     return "\n".join(lines) + "\n"
 
 
+def read_lock(key):
+    """{canonical name: version} pinned in runtime/sdk-lock-<key>.txt."""
+    _, canon = _packaging()
+    out = {}
+    for line in open(lock_path(key), encoding="utf-8"):
+        if line.strip() and not line.startswith("#"):
+            name, version = line.split()[0].split("==")
+            out[canon(name)] = version
+    return out
+
+
+def lock_problems(pin, key, requires_of=None, versions=None):
+    """Is the committed lock exactly the closure of claude-agent-sdk==<pin> under the
+    target's markers? Each package's Requires-Dist comes from PyPI for the pinned
+    version (network). [] = complete."""
+    versions = read_lock(key) if versions is None else versions
+    if requires_of is None:
+        names = {n: n for n in versions}
+
+        def requires_of(n):
+            return (_pypi(names[n], versions[n])["info"].get("requires_dist") or []) if n in versions else None
+    return _closure_problems(target_closure(f"{SDK_ROOT_PKG}=={pin}", requires_of, TARGET_ENV[key]),
+                             versions)
+
+
 def write_locks(pin, targets=SDK_TARGETS):
-    """(Re)write runtime/sdk-lock-<key>.txt for every target; returns the keys pip
-    could not resolve (nothing is written for those — the old file is removed)."""
+    """(Re)write runtime/sdk-lock-<key>.txt for every target; returns the keys that
+    could not be resolved (nothing is written for those — the old file is removed)."""
     bad = []
     for key, plat, py in targets:
         text = sdk_lock_text(pin, key, plat, py)
@@ -133,7 +257,7 @@ def stale_locks(pin, targets=SDK_TARGETS):
                 head = f.readline()
         except OSError:
             head = ""
-        if not head.startswith(f"# claude-agent-sdk=={pin} {key} "):
+        if not head.startswith(f"# {SDK_ROOT_PKG}=={pin} {key} "):
             bad.append(key)
     return bad
 
@@ -257,7 +381,12 @@ def main():
     if stale:
         sys.exit(f"ERROR: runtime/sdk-lock-*.txt missing or not for {pin}: {', '.join(stale)} "
                  f"— run `python publish.py lock` and commit the result")
-    print(f"sdk pin {pin}: hash-locked for {len(SDK_TARGETS)} platforms")
+    incomplete = {key: p for key, _, _ in SDK_TARGETS for p in [lock_problems(pin, key)] if p}
+    if incomplete:
+        sys.exit("ERROR: lock does not match the dependency closure under that platform's markers — "
+                 + "; ".join(f"{k}: {', '.join(p)}" for k, p in incomplete.items())
+                 + " — rerun `python publish.py lock`")
+    print(f"sdk pin {pin}: hash-locked and complete for {len(SDK_TARGETS)} platforms")
 
     if not do_publish:
         print("dry-run only — rerun with `publish` to upload")

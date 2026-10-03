@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **SDK 鎖檔漏了平台專用的相依(1.1.109 canary 抓到:uid=1 Windows `sdk_sync` 被 `--require-hashes` 拒裝,`pywin32>=311` 沒釘)**:pip 的 `--platform`/`--python-version` 只挑 wheel,requirement 的環境標記仍用跑 pip 那台 Mac 判斷,所以 Mac 上產的鎖檔漏了 mcp 的 `pywin32; sys_platform == "win32"`(兩個 Windows 鎖檔),也漏了 anyio 的 `exceptiongroup; python_version < "3.11"`(Linux py3.10 鎖檔,下次換 pin 才會炸)。`publish.py lock` 改成:版本與 wheel 仍由 pip 挑,套件集合改以各平台自己的 PEP 508 標記(`TARGET_ENV`)重算閉包,pip 因主機標記漏掉的補成額外 root 再解,直到集合穩定;只用 pip 與它內附的 `packaging`,沒有新依賴。`publish` 前置檢查新增完整性:每個鎖檔都要等於「在該平台標記下、以 PyPI 上該版本 Requires-Dist 算出的閉包」(多、少、版本不符都擋;要網路,約 20 秒)。五個鎖檔重產:兩個 Windows 多 `pywin32==312`,Linux 多 `exceptiongroup==1.3.1`,Mac 兩份不變。Windows 上 pin 目錄的 pywin32:`sdk_pin.add_dir` 先以完整路徑載入 pin 目錄 `pywin32_system32` 的 DLL(venv 自己的 pywin32 開機時已登記它的 DLL 目錄,pywintypes 又是用檔名載入,不先載會混到兩個版本),自我驗證在 Windows 另 import `pywintypes`、`win32api` 並確認來自新裝的目錄。測試 `tests/check_sdk_pin.py` 5b 節。
+
 - **群益台指期單的成交回報晚到也照實記(`lib/order_capital.py`、`manager/reconciler.py`、`manager/flatten.py`;隨 blave-agent VERSION 2026-10-03-e 出貨,不是 runtime 發版)**:8/17 實測成交回報 15–30 秒才到,單在 15 秒逾時就回 `sent`／0 口,self_ledger 帳本照 0 記、下一輪重複下單。現在看起來沒成交完或沒回報時再等最多 30 秒(`LATE_REPORT_S`)收晚到的回報,等待中 COM 出錯也把已確認的口數回傳(帶 `error`);等完仍未確認或只成交一部分 → 對帳器寫一筆下單失敗紀錄(平台轉成 P1 `order_error`:工作頁、TG、email),叫用戶到群益確認實際部位,照常繼續跑、不 HALT(Wei 拍板)。每張單最多多等 30 秒。全部出場等進行中的執行改成最多 90 秒(一張群益單最長 15＋30 秒,反手兩張共用同一個進行中標記)。測試 `tests/check_capital_late_fill.py`(新,虛擬時鐘跑真的 `_await_fill`)。
 
 ## 1.1.109 — 2026-10-03
