@@ -3036,11 +3036,22 @@ def fetch_twstock_market_value_all(headers, top=None):
     return out
 
 
+# Retry passes for ids the server could not fetch: smaller chunks, longer waits. Sent one
+# request at a time on purpose — the server already fans out per id under a shared FinMind
+# rate limit, and concurrent client requests would just burn that budget faster.
+_FUNDAMENTAL_RETRY_PASSES = ((50, 0), (10, 10), (5, 30))
+
+
 def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers):
     """Batch fetch fundamental data. Returns dict {stock_id: DataFrame}.
-    Uses cache first; fetches uncached stocks in chunks of 50 via batch API."""
+    Uses cache first; fetches uncached stocks via the batch API.
+
+    An id the server reports in `failed` (rate limit / upstream error), or whose request
+    errored, is retried; if it still fails, raises RuntimeError naming the ids instead of
+    returning a result that silently lacks them. Ids absent from both `data` and `failed`
+    genuinely have no data and are simply absent from the result."""
     results = {}
-    uncached = []
+    pending = []
 
     for sid in stock_ids:
         path = _fundamental_cache_path(prefix, sid)
@@ -3048,27 +3059,56 @@ def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers):
         if df is not None:
             results[sid] = df
         else:
-            uncached.append(sid)
+            pending.append(sid)
+    pending = list(dict.fromkeys(pending))
 
-    for i in range(0, len(uncached), 50):
-        chunk = uncached[i:i + 50]
-        try:
-            r = _retry_get(f'{BASE}/studio/market/twstock/batch/{endpoint}',
-                           headers=headers,
-                           params={'stock_ids': ','.join(chunk)},
-                           timeout=120)
-            batch_data = r.json().get('data', {})
-            for sid, records in batch_data.items():
-                if not records:
+    url = f'{BASE}/studio/market/twstock/batch/{endpoint}'
+    for chunk_size, wait in _FUNDAMENTAL_RETRY_PASSES:
+        if not pending:
+            break
+        if wait:
+            print(f'  [batch] {endpoint}: retrying {len(pending)} failed ids in {wait}s')
+            time.sleep(wait)
+        failed, answered = [], False
+        for i in range(0, len(pending), chunk_size):
+            chunk = pending[i:i + chunk_size]
+            try:
+                r = _retry_get(url, headers=headers,
+                               params={'stock_ids': ','.join(chunk)}, timeout=120)
+                body = r.json()
+            except DataAccessError:
+                raise
+            except requests.HTTPError as e:
+                status = getattr(e.response, 'status_code', None)
+                if status is not None and status < 500 and status != 429:
+                    raise   # bad request / auth: retrying cannot change the answer
+                failed.extend(chunk)
+                continue
+            except (requests.RequestException, ValueError):
+                failed.extend(chunk)
+                continue
+            answered = True
+            server_failed = set(body.get('failed') or ())
+            failed.extend(sid for sid in chunk if sid in server_failed)
+            for sid, records in (body.get('data') or {}).items():
+                if not records or sid in server_failed:
                     continue
                 df = pd.DataFrame(records)
                 df['date'] = pd.to_datetime(df['date'])
                 df = df.set_index('date').sort_index()
                 _save_fundamental_cache(_fundamental_cache_path(prefix, sid), df)
                 results[sid] = df
-        except Exception as e:
-            print(f'  [batch] {endpoint} chunk {i//50 + 1} error: {e}')
+        pending = failed
+        if not answered:
+            # Every request already exhausted _retry_get's backoff: the server is not
+            # answering, and smaller chunks would only multiply that wait.
+            break
 
+    if pending:
+        raise RuntimeError(
+            f'{url}: {len(pending)} stock ids still failed after retrying '
+            f'(server rate limit, upstream error or no response) '
+            f'— refusing to return a result missing them: {pending}')
     return results
 
 
