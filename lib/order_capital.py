@@ -302,6 +302,40 @@ def _finish(sess, seq_no, symbol, timeout, fields):
     return result
 
 
+# 8/17 live: futures fill reports arrived 15–30 s after the order (8/14: under a
+# second). _await_fill's confirm_timeout (15 s) plus its 1 s grace after the first
+# row is shorter than that, so a filled IOC came back 'sent' / short — and under
+# self_ledger the book counts only what is reported, so the next round bought the
+# same lots again. An order that looks short or unconfirmed gets this much longer.
+LATE_REPORT_S = 30.0
+
+
+def _late_rows(sess, r, want, fields):
+    """Keep pumping for `want` lots of fill rows on r's seq_no (IOC is final at
+    matching; its rows can trickle in apart and late), up to LATE_REPORT_S, then
+    re-aggregate. A COM failure in THIS wait returns what was confirmed so far
+    with `error` instead of raising. (A COM failure earlier, inside _await_fill,
+    still raises as it always did — rows already received there are not
+    returned; that path is unchanged by this fix.)"""
+    rows = lambda: sess.events.fills.get(r["seq_no"], [])  # noqa: E731
+    deadline = time.time() + LATE_REPORT_S
+    try:
+        while sum(x["qty"] for x in rows()) < want and time.time() < deadline:
+            pythoncom.PumpWaitingMessages()
+            time.sleep(0.05)
+    except Exception as e:
+        r = dict(r, error=f"{type(e).__name__}: {e}")
+    got = rows()
+    qty = sum(x["qty"] for x in got)
+    if qty > r["fill_qty"]:
+        r = dict(r, status="filled", symbol=got[0]["symbol"], fill_qty=qty, market=got[0]["market"],
+                 avg_fill_price=sum(x["price"] * x["qty"] for x in got) / qty, fill_ids=[x["fill_id"] for x in got])
+        guard.audit("order_filled", seq_no=r["seq_no"], fill_qty=qty, avg_fill_price=r["avg_fill_price"],
+                    resolved_symbol=r["symbol"], late=True, **fields)
+        _request_snapshot_refresh()
+    return r
+
+
 def _check_halt(fields):
     if fields["intent"] == "entry" and guard.halted():
         guard.audit("order_denied_halt", **fields)
@@ -325,7 +359,10 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
     defeats the kill switch — don't.
 
     Returns _await_fill()'s dict; 'filled' carries the RESOLVED contract
-    (e.g. TM2608) in 'symbol' — reconcile against that, not the alias."""
+    (e.g. TM2608) in 'symbol' — reconcile against that, not the alias.
+    An order that looks short or unconfirmed after confirm_timeout waits up to
+    LATE_REPORT_S more for late fill rows (_late_rows); still 'sent' after that
+    means accepted but unconfirmed — the reconciler records it for the user."""
     if action not in ("buy", "sell"):
         raise ValueError(f"action must be 'buy' or 'sell', got {action!r}")
     if intent not in ("entry", "reduce"):
@@ -359,7 +396,10 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
     p.sReserved = 0
 
     seq_no = _send(sess, lambda: sess.order.SendFutureOrderCLR(sess.login_id, False, p), fields)
-    return _finish(sess, seq_no, symbol, confirm_timeout, fields)
+    r = _finish(sess, seq_no, symbol, confirm_timeout, fields)
+    if r["status"] != "filled" or r["fill_qty"] < lots:
+        r = _late_rows(sess, r, lots, fields)
+    return r
 
 
 # ── securities ───────────────────────────────────────────────────────────────

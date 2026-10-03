@@ -377,6 +377,19 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
     return closed, errors
 
 
+def _inflight_wait_s():
+    """How long close-all waits for in-flight executions. One 群益 futures order can take
+    confirm_timeout (15 s) + lib.order_capital.LATE_REPORT_S (30 s) = 45 s before its fill
+    is booked, and a reversal sends two such orders (close, then open) under one in-flight
+    marker: 2 × 45 = 90 s. Waiting less closes over a book that hasn't heard of them yet.
+    Not covered: a first SKCOM login inside the marker (~12 s) can push it past 90 s."""
+    try:
+        from lib.order_capital import LATE_REPORT_S
+    except Exception:  # Windows-only deps / half-updated lib: assume the shipped 30 s
+        LATE_REPORT_S = 30.0
+    return 2 * (15.0 + float(LATE_REPORT_S))
+
+
 def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
     """After HALT is tripped, give in-flight TWAP/chase/custom executions a
     moment to drain before closing over them (audit P1 #4): flatten and a
@@ -447,7 +460,7 @@ def flatten():
             return False
     elif not guard.halted():
         guard.trip_halt("close all positions", "flatten")
-    _wait_for_inflight()
+    _wait_for_inflight(timeout_s=_inflight_wait_s())
     closed = errors = 0
     # self_ledger scope (see module docstring): ON → close only the bot's own
     # SWAP book; the user's manual positions are untouched even here. Spot

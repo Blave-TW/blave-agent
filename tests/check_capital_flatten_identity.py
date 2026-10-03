@@ -89,7 +89,8 @@ flatten._load_ledger_seed = lambda: {"seeded_at": "2026-01-01T00:00:00", "symbol
 import lib.portfolio as _lp0  # noqa: E402
 _real_ready = _lp0.book_ready
 _lp0.book_ready = lambda config=None: True  # the book cases below have a baseline
-flatten._wait_for_inflight = lambda *a, **k: []
+WAITS = []
+flatten._wait_for_inflight = lambda *a, **k: WAITS.append(k) or []
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
                                       restart_stopped=lambda: False)
 EXTRA_ENV = {}
@@ -391,6 +392,11 @@ POS["capital"] = CAP_ONE
 pr.venues = lambda: {"capital": CAP, "binance": BIN}
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(popens) == 1,
       "listener: mixed → flatten launched")
+
+# close-all waits long enough for a reversal's two 群益 orders: 2 × (confirm 15 s + LATE_REPORT_S 30 s)
+WAITS.clear(); run_flatten(True)
+check(flatten._inflight_wait_s() >= 90 and WAITS and WAITS[0].get("timeout_s") == flatten._inflight_wait_s(),
+      f"close-all's in-flight wait ≥ 90 s and flatten() passes it ({flatten._inflight_wait_s()}, {WAITS[:1]})")
 
 print("PASS" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

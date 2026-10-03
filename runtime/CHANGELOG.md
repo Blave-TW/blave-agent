@@ -8,6 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **群益台指期單的成交回報晚到也照實記(`lib/order_capital.py`、`manager/reconciler.py`、`manager/flatten.py`;隨 blave-agent VERSION 2026-10-03-e 出貨,不是 runtime 發版)**:8/17 實測成交回報 15–30 秒才到,單在 15 秒逾時就回 `sent`／0 口,self_ledger 帳本照 0 記、下一輪重複下單。現在看起來沒成交完或沒回報時再等最多 30 秒(`LATE_REPORT_S`)收晚到的回報,等待中 COM 出錯也把已確認的口數回傳(帶 `error`);等完仍未確認或只成交一部分 → 對帳器寫一筆下單失敗紀錄(平台轉成 P1 `order_error`:工作頁、TG、email),叫用戶到群益確認實際部位,照常繼續跑、不 HALT(Wei 拍板)。每張單最多多等 30 秒。全部出場等進行中的執行改成最多 90 秒(一張群益單最長 15＋30 秒,反手兩張共用同一個進行中標記)。測試 `tests/check_capital_late_fill.py`(新,虛擬時鐘跑真的 `_await_fill`)。
 - **Blave AI 型錄升到 Sonnet 5.5／Opus 5.5／Fable 5.1**:看圖改用 `anthropic/claude-sonnet-5-5`(`model_prefs.VISION_MODEL`),切換模型提示的範例 id 跟著換,並註明 `/v1/models` 裡帶 `legacy: true` 的舊型號不要選。api 先上(proxy 型錄要先認得新 id),舊 id 照收不斷線。
 
 ## 1.1.108 — 2026-10-02(desktop 0.1.12)
