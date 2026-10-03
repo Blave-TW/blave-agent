@@ -641,6 +641,10 @@ REVIEWED = {
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("telegram_pairing.py", "replace_retry"): "the replace callable atomic_file.replacing is handed",
+    ("sdk_pin.py", "_mark_bad"): ".ready → .bad inside $BASE/sdk/<pin> (rename of our own marker); $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
+    ("sdk_sync.py", "_rename"): "<pin>.tmp → <pin> directory swap; $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
+    ("sdk_sync.py", "_save_state"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
+    ("sdk_sync.py", "run"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
 }
 found = []
 for name in sorted(os.listdir(RUNTIME)):
@@ -691,6 +695,8 @@ WRITE_REVIEWED = {
     ("turn_slots.py", "acquire"): "fd from os.open(O_EXCL)",
     ("web_bridge.py", "touch_heartbeat"): "BASE/state heartbeat; cloud only",
     ("web_bridge.py", "_stop_running"): "stop flag in BASE/state/turn_stop; cloud only",
+    ("sdk_sync.py", "_save_state"): "$BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
+    ("sdk_sync.py", "run"): ".ready marker in $BASE/sdk/<pin>; $BASE/sdk and $BASE/state: cloud-only job (jobs.json blave-agent-sdk; the desktop has no $BASE/sdk and no sdk_sync), runtime = agent user there; desktop $BASE is outside the Codex sandbox anyway",
 }
 app_found, create_found, write_found = set(), set(), set()
 for name in sorted(os.listdir(RUNTIME)):
