@@ -735,7 +735,7 @@ function syncOfficialOnUpdate() {
   } catch (e) { console.error("[update] workspace sync failed: " + (e && e.message)); return false; }
 }
 
-const AGENT_SDK = "claude-agent-sdk==0.2.144";
+const AGENT_SDK = "claude-agent-sdk==0.2.159";
 // cryptography 跟 SDK 一起釘:SDK → mcp → pyjwt[crypto] 拉進它,50.x 起 macOS 只出 arm64 wheel,Intel(含被 Rosetta
 // 跑成 x64)會退到從原始碼編(要 Rust,用戶機沒有)——0.0.6 通用版在 Intel 就死在這裡。48.0.1 是最後一版 universal2 wheel,
 // 兩種架構釘同一版。記號檔比的是整串,所以既有 venv 在下一則訊息(ensure-engine 每次送訊息前都跑)會重跑一次
@@ -1688,6 +1688,7 @@ const DEEPSEEK_EFFORTS = ["low", "high", "max"];
 const BLAVE_NAMES = {
   "anthropic/claude-haiku-4-5-20251001": "Haiku 4.5", "anthropic/claude-sonnet-5-5": "Sonnet 5.5",
   "anthropic/claude-opus-5-5": "Opus 5.5", "anthropic/claude-fable-5-1": "Fable 5.1",
+  "anthropic/claude-opus-4-8": "Opus 4.8", "anthropic/claude-fable-5": "Fable 5",
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash", "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
 };
 // proxy 把舊世代留在 /v1/models(帶 legacy: true)只為了舊版 app 不斷線;這版不列,存著舊 id 的人
