@@ -473,7 +473,7 @@ ok("隱私:會收那一條寫到 macOS 版本與系統語言;二十二個事件�
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
-ok("隱私 0.1.13(Wei 核准草稿 §B):priv.collect.8 講免登入下載記哪一支 + 安裝識別碼、登入後對上帳號;priv.never.2 收窄成「你自己的策略」", /msgid "priv\.collect\.8"\nmsgstr "沒登入時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"/.test(PO[0])
+ok("隱私 0.1.13(Wei 核准草稿 §B):priv.collect.8 講免登入下載記哪一支 + 安裝識別碼、登入後對上帳號;priv.never.2 收窄成「你自己的策略」", /msgid "priv\.collect\.8"\nmsgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"/.test(PO[0])
   && /msgid "priv\.collect\.8"\nmsgstr "When you download a no-sign-in library strategy: which one \(its library number\) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"/.test(PO[1])
   && /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
 ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選項 shr.anon 除外);首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, "").replace(/msgid "shr\.anon"\nmsgstr "[^"]*"/, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));

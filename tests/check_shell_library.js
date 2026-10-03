@@ -209,8 +209,12 @@ if (!process.versions.electron) {
     fs.writeFileSync(mkt, "# Strategy Library API\n\n## My accessible strategies\n");
     const n1 = D.calls.length, leg1 = await dl(102, { status: 200, body: { code: "q" } });
     fs.rmSync(mkt); const leg2 = await dl(102, { status: 200, body: { code: "q" } });
+    // 舊契約 × 沒有 key(稽核 0.1.13 UI S1):不退回舊句(舊 agent 會叫人登入);免登入策略回 fail、其餘 signin,都不送請求
+    vm.runInContext(`libCache = { strategies: [{ id: 102, is_official: true, price: 0, blave_data: "none" }] };`, D);
+    D.token = null; const leg3 = await dl(102, { status: 200, body: { code: "q" } }), leg4 = await dl(88, { status: 200, body: { code: "q" } }); D.token = "t";
+    vm.runInContext("libCache = null;", D);
     fs.writeFileSync(mkt, "## Desktop-downloaded picks\n");
-    const legacy = { a: J(leg1), b: J(leg2), noReq: D.calls.length === n1, kept: fs.readFileSync(file, "utf8") };
+    const legacy = { a: J(leg1), b: J(leg2), c: J(leg3), d: J(leg4), noReq: D.calls.length === n1, kept: fs.readFileSync(file, "utf8") };
     // Wei 10-02:官方 × 免費 × 不用 Blave 資料 → 沒有 key 也能下載(匿名 /public_code);其餘照舊要登入
     vm.runInContext(`libCache = { strategies: [
       { id: 102, is_official: true, price: 0, blave_data: "none" }, { id: 88, is_official: true, price: 0, blave_data: "required" },
@@ -226,10 +230,19 @@ if (!process.versions.electron) {
     for (const id of [88, 125, 124, 500, 777]) A.denied.push((await dl(id, { status: 200, body: { code: "x" } })).kind);
     A.deniedNoReq = D.calls.length === c0;
     A.srv = [];
-    for (const resp of [{ status: 404, body: {} }, { status: 429, body: {} }, { status: 503, body: {} }, "throw"])
-      A.srv.push((await dl(102, resp)).kind);
+    const cache0 = vm.runInContext("libCache", D);   // 404 會把快取作廢(M1):每一筆前放回去
+    for (const resp of [{ status: 404, body: {} }, { status: 429, body: {} }, { status: 503, body: {} }, "throw"]) {
+      D.cache0 = cache0; vm.runInContext("libCache = cache0;", D); A.srv.push((await dl(102, resp)).kind); }
+    vm.runInContext("libCache = cache0;", D);
     D.token = "t"; D.key = { api_key: "k1", secret_key: "s1" };
     A.revoked404 = (await dl(102, [{ status: 403, body: { error_code: "ERR005" } }, { status: 404, body: {} }])).kind;   // key 被撤改走匿名、匿名那條 404:也是 anonGone
+    vm.runInContext("libCache = cache0;", D);
+    // 稽核 0.1.13 UI M1:404 之後主行程的清單快取要作廢(畫面接著重拉才拿得到新清單);其他失敗不動快取
+    const keepCache = 'libCache = { strategies: [{ id: 102, is_official: true, price: 0, blave_data: "none" }] };';
+    vm.runInContext(keepCache, D); D.token = null; D.key = null; await dl(102, { status: 404, body: {} }); A.cacheAfterAnon404 = vm.runInContext("libCache", D);
+    vm.runInContext(keepCache, D); D.token = "t"; D.key = { api_key: "k1", secret_key: "s1" }; await dl(102, { status: 404, body: {} }); A.cacheAfterGone = vm.runInContext("libCache", D);
+    vm.runInContext(keepCache, D); A.rl = [(await dl(102, { status: 429, body: {} })).kind]; await dl(102, { status: 500, body: {} }); A.cacheAfter500 = !!vm.runInContext("libCache", D);
+    D.token = null; D.key = null; A.rl.push((await dl(102, { status: 429, body: {} })).kind);
     D.token = null; D.key = null;
     D.token = "t"; D.key = null; c0 = D.calls.length;
     A.noKey = J(await dl(102, { status: 200, body: { code: "anon = 2\n" } })); A.noKeyUrl = D.calls.slice(c0).map((c) => c[0]).join();
@@ -258,7 +271,9 @@ if (!process.versions.electron) {
     ok("② 匿名下載:沒登入 × 官方免費且不用 Blave 資料 → 打 /public_code、不帶任何憑證(只帶埋點 install_id 計安裝數)、寫檔;關掉使用事件就連 install_id 都不帶",
       A.ok === '{"ok":true}' && A.okCall === J([[anonURL(102), { "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77" }]]) && A.okBody === "anon = 1\n" && A.off === '{"ok":true}' && A.offCall === J([[anonURL(102), {}]]), J(A));
     ok("② 匿名下載:要資料 / 未標(null)/ 社群 / 付費 / 清單裡沒有 → signin,一次請求都不送", A.denied.join() === "signin,signin,signin,signin,signin" && A.deniedNoReq, J(A.denied));
-    ok("② 匿名下載:伺服器不給(404)→ anonGone(下架或已不符合免登入,分不出來;spec-0.1.13-smallfixes #10),key 被撤改走匿名的 404 也是;/code 的 404 照舊 gone;429 / 503 / 打不到 fail", A.srv.join() === "anonGone,fail,fail,fail" && A.revoked404 === "anonGone" && kinds[1] === "gone", J([A.srv, A.revoked404, kinds[1]]));
+    ok("② 404(gone / anonGone)回之前先作廢主行程的清單快取(之後的 libraryList 真的重打);429 / 500 不動快取", A.cacheAfterAnon404 === null && A.cacheAfterGone === null && A.cacheAfter500 === true, J([A.cacheAfterAnon404, A.cacheAfterGone, A.cacheAfter500]));
+    ok("② 429(兩條都算)→ rateLimited(講「稍後」,不講「再試一次」;稽核 0.1.13 UI S5)", A.rl.join() === "rateLimited,rateLimited" && /稍後/.test(STR.zh["lib.dl.rateLimited"]) && /later/.test(STR.en["lib.dl.rateLimited"]) && !/再試一次/.test(STR.zh["lib.dl.rateLimited"]), A.rl.join());
+    ok("② 匿名下載:伺服器不給(404)→ anonGone(下架或已不符合免登入,分不出來;spec-0.1.13-smallfixes #10),key 被撤改走匿名的 404 也是;/code 的 404 照舊 gone;429 rateLimited;503 / 打不到 fail", A.srv.join() === "anonGone,rateLimited,fail,fail" && A.revoked404 === "anonGone" && kinds[1] === "gone", J([A.srv, A.revoked404, kinds[1]]));
     ok("② 匿名下載:登入了但沒 key → 走匿名;key 被撤(ERR005)→ 改走匿名;被撤 × 要資料 → signin(不試匿名)", A.noKey === '{"ok":true}' && A.noKeyUrl === anonURL(102)
       && A.revoked === '{"ok":true}' && A.revokedUrls === "https://api.test/openclaw/marketplace/strategies/102/code," + anonURL(102) && A.revokedReq === "signin" && A.revokedReqCalls === 1, J(A));
     ok("② key 被撤改走匿名:第一個請求帶那把 key,第二個(匿名)只帶 install_id、被撤的 key 不跟著送", A.revokedHdr === J([{ "api-key": "k1", "secret-key": "s1" }, { "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77" }]), A.revokedHdr);
@@ -266,7 +281,7 @@ if (!process.versions.electron) {
     ok("② install_id 的閘跟 tm 的 post 同一支 telemetryLive(打包版或 BLAVE_TELEMETRY=1)", /^const telemetryLive = \(\) => app\.isPackaged \|\| process\.env\.BLAVE_TELEMETRY === "1";$/m.test(mainSrc)
       && /post: \(u, b\) => \(telemetryLive\(\) \? postJSON\(u, b\) : Promise\.resolve\(\)\)/.test(mainSrc));
     ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code", A.withKeyUrls);
-    ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
+    ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.c === '{"ok":false,"kind":"fail"}' && legacy.d === '{"ok":false,"kind":"signin"}' && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
     ok("② 代下載:同名檔是指向 workspace 外的 symlink → 換掉 symlink 本身,外面的檔不變", a4.r === '{"ok":true}' && a4.victim === "keep" && !a4.isLink && a4.body === "z = 4\n", J(a4));
     ok("② 代下載:tmp 是指向 workspace 外的 symlink → fail、外面什麼都沒寫", a5.r === '{"ok":false,"kind":"fail"}' && a5.wrote === "victim.txt", J(a5));
   })());
@@ -358,7 +373,7 @@ if (!process.versions.electron) {
     ok("③ 四個入口共用 libIdeaNow;開關在開機、libOpen、回前景、設定裡切內建瀏覽器時重問(libIdeaSync),切視角 / 帳號狀態變了重畫(libIdeaPaint),換引擎(enterWorkspace)重問",
       /\n  libIdeaSync\(\);\n/.test(src.slice(src.indexOf("(function libWire()"))) && /envShowMain\(\);\n\s*libIdeaSync\(\);/.test(cutFn(src, "libOpen")) && /libIdeaPaint\(\);/.test(cutFn(src, "libShowMain"))
       && /if \(typeof libIdeaSync === "function"\) libIdeaSync\(\);/.test(cutFn(appSrc, "enterWorkspace")) && /if \(typeof libIdeaPaint === "function"\) libIdeaPaint\(\);/.test(cutFn(appSrc, "acctPaint"))
-      && /tvPrefs\(\); libIdeaSync\(\); \}\);/.test(brSrc) && (src.match(/libIdeaNow\(\)/g) || []).length === 5 && !/libIdeaOn\(/.test(src.slice(src.indexOf("/* ── 純邏輯到此")).replace(/return libIdeaOn\(\{/, "")));
+      && /tvPrefs\(\); if \(typeof libIdeaSync === "function"\) libIdeaSync\(\); \}\);/.test(brSrc) && (src.match(/libIdeaNow\(\)/g) || []).length === 5 && !/libIdeaOn\(/.test(src.slice(src.indexOf("/* ── 純邏輯到此")).replace(/return libIdeaOn\(\{/, "")));
     ok("③ 頁首說明句(§2.7):找點子開著才接 idea.descLead + 文字鈕 + 句號,文字鈕與句號同一個 .nw;拿掉「官方策略免費…」", /const nw = libEl\("span", "nw"\);\s*nw\.append\(libIdeaBtn\("btn-quiet", "idea\.link", "lib_head"\), LANG === "zh" \? "\\u3002" : "\."\);/.test(cutFn(src, "libPaintDesc"))
       && STR.zh["lib.desc"] === "已驗證優先，再看樣本期長短。" && STR.en["lib.desc"] === "Verified first, then longest backtest.");
     ok("③ 找點子開關切換時重畫清單:焦點在列上 → 回同一列;在被拿掉的文字鈕上 → 交給 #lib-h(不掉到 body)", /if \(r\) r\.focus\(\); else if \(inList && !a\.isConnected\) \$\("lib-h"\)\.focus\(\);/.test(cutFn(src, "libPaintListKeep")) && /libPaintDesc\(\); libPaintList\(\);/.test(cutFn(src, "libPaintListKeep")));
@@ -376,8 +391,8 @@ if (!process.versions.electron) {
     && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略照舊 lib.note.paid", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); if \(c\.pub\) note\.textContent = t\("lib\.pub"\); break;/.test(src) && STR.zh["lib.note.paid"] === "從 Blave Agent 餘額扣款。");
-  ok("③ 快取作廢的四個事件都接了:登出 / 兩條登入路徑 → libInvalidate;設定關掉 → libRefresh;主行程登出(clearToken)與換 token 都清 libCache;購買成功後 libRefresh", (appSrc.match(/if \(typeof libInvalidate === "function"\) libInvalidate\(\);/g) || []).length === 3
-    && /if \(typeof libRefresh === "function"\) libRefresh\(\);/.test(cutFn(appSrc, "setClose")) && /libCache = null;/.test(cutFn(mainSrc, "clearToken")) && (mainSrc.match(/^\s*libCache = null;/gm) || []).length === 3
+  ok("③ 快取作廢的四個事件都接了:登出 / 兩條登入路徑 → libInvalidate;設定關掉 → libRefresh;主行程登出(clearToken)、換 token、下載 404 都清 libCache;購買成功後 libRefresh", (appSrc.match(/if \(typeof libInvalidate === "function"\) libInvalidate\(\);/g) || []).length === 3
+    && /if \(typeof libRefresh === "function"\) libRefresh\(\);/.test(cutFn(appSrc, "setClose")) && /libCache = null;/.test(cutFn(mainSrc, "clearToken")) && (mainSrc.match(/^\s*libCache = null;/gm) || []).length === 4
     && /libSend\(s\); libRefresh\(\); return;/.test(src) && /function libRepaint\(\) \{ if \(\$\("lib"\)\.hidden\) return; LIB\.reports\.clear\(\); libPaint\(\); if \(LIB\.data && LIB\.data\.lang !== LANG\) libLoad\(false\); \}/.test(src) && /window\.addEventListener\("focus", \(\) => \{ libRefresh\(\); libIdeaSync\(\); \}\);/.test(src));
   ok("③ 每次進視圖都重問主行程;切視角時畫的是這一邊那袋;pending 記的是 name → mtime 的 Map", /envShowMain\(\);\n\s*libIdeaSync\(\);\n\s*libLoad\(false\);/.test(src) && /if \(on && \(!was \|\| LIB\.paintedEnv !== libEnv\(\)\)\) \{ libPaint\(\); if \(was\) libLoad\(false\); \}/.test(src)
     && /cl = env === "cloud" \? libCloudList\(\) : RP\.list, before = cl \? new Map\(cl\.map\(\(x\) => \[x\.name, x\.mtime\]\)\) : null;/.test(src) && /p\.before\.get\(x\.name\) !== x\.mtime/.test(src) && !/libShort/.test(src)
@@ -429,14 +444,14 @@ if (!process.versions.electron) {
     F.calls.events.length = 0;
     // B. 失敗三種:不送訊息、pending 清掉、dlFail 記 kind;gone 重拉清單、dlFail 留著
     const fails = [];
-    for (const [resp, rej] of [[{ ok: false, kind: "blocked" }], [{ ok: false, kind: "gone" }], [{ ok: false, kind: "anonGone" }], [{ ok: false, kind: "signin" }], [{ ok: false, kind: "fail" }], [{ ok: false, kind: "weird" }], [null], [undefined, true]]) {
+    for (const [resp, rej] of [[{ ok: false, kind: "blocked" }], [{ ok: false, kind: "gone" }], [{ ok: false, kind: "anonGone" }], [{ ok: false, kind: "signin" }], [{ ok: false, kind: "rateLimited" }], [{ ok: false, kind: "fail" }], [{ ok: false, kind: "weird" }], [null], [undefined, true]]) {
       F.LIB.pending = null; F.calls.sent.length = 0; const inval0 = F.calls.inval;
       F.libSend(s72); await tick(); if (rej) F.dlNext.rej(new Error("ipc")); else F.dlNext.res(resp); await tick(); await tick();
       fails.push([F.LIB.dlFail && F.LIB.dlFail.id, F.LIB.dlFail && F.LIB.dlFail.kind, F.LIB.pending, F.calls.sent.length, F.calls.inval - inval0].join("/"));
     }
-    ok("⑥ 下載失敗:blocked / gone / anonGone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;gone 與 anonGone 重拉清單、dlFail 留著", fails.join() === "72/blocked//0/0,72/gone//0/1,72/anonGone//0/1,72/signin//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
+    ok("⑥ 下載失敗:blocked / gone / anonGone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;gone 與 anonGone 重拉清單、dlFail 留著", fails.join() === "72/blocked//0/0,72/gone//0/1,72/anonGone//0/1,72/signin//0/0,72/rateLimited//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
     ok("⑥ 下載失敗不送 lib_pick / library_use", F.calls.events.length === 0 && !F.calls.track.slice(1).includes("library_use"), JSON.stringify([F.calls.events, F.calls.track]));
-    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
+    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
     F.libSend(s72); await tick();
     ok("⑥ 再按一次:那句錯誤清掉", F.LIB.dlFail === null && F.LIB.pending && F.LIB.pending.stage === "dl"); F.dlNext.res({ ok: true }); await tick(); await tick();
     // C. 下載好了但訊息送不出去(下載中用戶自己先送了一句,回合在跑):pending 清掉,而且講出來
@@ -506,7 +521,7 @@ const __fixed = {
   getLocale: async () => "zh-TW", loadConnection: async () => ({ kind: "claude" }), detectAgents: async () => ({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }),
   listStrategies: async () => window.__lib.strats, listSessions: async () => [], loadSession: async () => [], loadSessionImages: async () => [], updateState: async () => ({ phase: "idle", current: "0.0.0" }),
   hasBlaveToken: async () => window.__lib.hasToken, ensureEngine: async () => ({}), loadStrategy: async (n) => ({ name: n, stats: null, code: "x", scan: null }),
-  libraryList: async (lang) => { window.__lib.calls.push(lang); return window.__lib.list; }, libraryInstalled: async (p) => { if (p) { window.__lib.patches.push(p); if (p.name === null) delete window.__lib.installed[String(p.id)]; else window.__lib.installed[String(p.id)] = p.name; } return Object.assign({}, window.__lib.installed); },
+  libraryList: async (lang, force) => { window.__lib.calls.push(lang); window.__lib.forces = (window.__lib.forces || []).concat([force === true]); return window.__lib.list; }, libraryInstalled: async (p) => { if (p) { window.__lib.patches.push(p); if (p.name === null) delete window.__lib.installed[String(p.id)]; else window.__lib.installed[String(p.id)] = p.name; } return Object.assign({}, window.__lib.installed); },
   sendMessage: async (p) => { window.__lib.sent.push(p); return window.__lib.sendResult; },
   libraryPurchase: (id, c) => new Promise((res) => { window.__lib.buys.push([id, c]); window.__lib.buyRelease = () => res(window.__lib.buyResult); }),
   libraryDownload: async (id) => { window.__lib.downloads.push(id); return window.__lib.dlResult; },
@@ -749,10 +764,11 @@ app.whenReady().then(async () => {
     const q = (x) => [...document.querySelectorAll(x)]; q('#lib-body .lib-row[data-id="101"]')[0].click(); const gated = q("#lib-cta .btn-fill").length === 0 && q("#lib-cta .btn-out").length === 1 && q("#lib-cta .note")[0].textContent === t("lib.need.unknown") + t("lib.why.unknown");
     window.__lib.list = { strategies: ${JSON.stringify(LIST)}, signedIn: true, dataAccess: "included" }; window.dispatchEvent(new Event("focus")); await new Promise((r) => setTimeout(r, 60)); const unGated = q("#lib-cta .btn-fill").length === 1 && q("#lib-cta .btn-fill")[0].textContent === t("lib.use");
     const n1 = window.__lib.calls.length; await setOpen(); setClose(); await new Promise((r) => setTimeout(r, 40)); const n2 = window.__lib.calls.length;
-    libInvalidate(); await new Promise((r) => setTimeout(r, 40)); const n3 = window.__lib.calls.length;
+    libInvalidate(); await new Promise((r) => setTimeout(r, 40)); const n3 = window.__lib.calls.length, f3 = window.__lib.forces[window.__lib.forces.length - 1];
+    libRefresh(); await new Promise((r) => setTimeout(r, 40)); const f4 = window.__lib.forces[window.__lib.forces.length - 1];
     setLang("en"); applyStatic(); await new Promise((r) => setTimeout(r, 40)); const langCall = window.__lib.calls[window.__lib.calls.length - 1]; setLang("zh"); applyStatic(); await new Promise((r) => setTimeout(r, 40));
-    return { n0, n1, n2, n3, gated, unGated, langCall, last: window.__lib.calls[window.__lib.calls.length - 1], detail: libBag().detail }; })()`);
-  ok("④ 進視圖重問 → 主行程說付不出資料費(沒帶 why → unknown → 描邊鈕)就擋;回前景重問 → 解;設定關掉、libInvalidate、換語言各再問一次(語言帶 en);詳情那支留著", r.n1 > r.n0 && r.gated && r.unGated && r.n2 === r.n1 + 1 && r.n3 === r.n2 + 1 && r.langCall === "en" && r.last === "zh" && r.detail === 101, JSON.stringify(r));
+    return { n0, n1, n2, n3, f3, f4, gated, unGated, langCall, last: window.__lib.calls[window.__lib.calls.length - 1], detail: libBag().detail }; })()`);
+  ok("④ 進視圖重問 → 主行程說付不出資料費(沒帶 why → unknown → 描邊鈕)就擋;回前景重問 → 解;設定關掉、libInvalidate、換語言各再問一次(語言帶 en);詳情那支留著", r.n1 > r.n0 && r.gated && r.unGated && r.n2 === r.n1 + 1 && r.n3 === r.n2 + 1 && r.f3 === true && r.f4 === false && r.langCall === "en" && r.last === "zh" && r.detail === 101, JSON.stringify(r));
   // 兩邊都開著時切視角:畫的是這一邊那袋(雲端沒有對照表、{where} 是雲端主機)
   r = await js(`(async () => { LIB.bags.cloud.open = true; LIB.bags.cloud.detail = 72; document.getElementById("cv-empty").hidden = true; ENV.cur = "cloud"; envShowMain(); await new Promise((r) => setTimeout(r, 60)); const q = (x) => [...document.querySelectorAll(x)];
     const c = { lib: !document.getElementById("lib").hidden, h5: q("#lib-det h5")[0] && q("#lib-det h5")[0].textContent, where: q("#lib-cta .note")[0].textContent, painted: LIB.paintedEnv };

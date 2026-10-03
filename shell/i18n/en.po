@@ -3997,6 +3997,10 @@ msgstr "This strategy is no longer in the library."
 msgid "lib.dl.anonGone"
 msgstr "This strategy can't be downloaded without signing in anymore. It may have been removed, or it now needs sign-in. The list has been refreshed."
 
+# 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
+msgid "lib.dl.rateLimited"
+msgstr "Too many downloads right now. Please try again later."
+
 msgid "lib.gate.signedOut"
 msgstr "Sign in to Blave to download to this computer."
 

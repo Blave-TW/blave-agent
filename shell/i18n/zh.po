@@ -2418,7 +2418,7 @@ msgstr "登入後，帳號也會記下：連的是哪種 AI、這台電腦有沒
 
 # 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
 msgid "priv.collect.8"
-msgstr "沒登入時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
+msgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
 
 msgid "priv.never.h"
 msgstr "不收"
@@ -3997,6 +3997,10 @@ msgstr "這支策略已經不在策略庫了。"
 # 匿名 /public_code 的 404:下架或已不符合免登入條件分不出來,講中性句(spec-0.1.13-smallfixes #10)
 msgid "lib.dl.anonGone"
 msgstr "這支現在不能免登入下載，可能已經下架，或改成要登入。清單已經重新整理。"
+
+# 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
+msgid "lib.dl.rateLimited"
+msgstr "下載次數太多，請稍後再試。"
 
 msgid "lib.gate.signedOut"
 msgstr "登入 Blave 之後才能下載到這台電腦。"

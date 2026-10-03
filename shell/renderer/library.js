@@ -63,7 +63,7 @@ function libIdeaOn(c) {
   return c.env === "local" && c.browserOn === true && engineOk;
 }
 // 代下載沒成的那句:主行程判的 kind(+ 畫面自己的 unsent)→ 字串 key;認不得的一律當 fail
-function libDlKey(kind) { return ["blocked", "gone", "anonGone", "signin", "unsent"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
+function libDlKey(kind) { return ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
 // 確認框與購買框的資料費那一行(§4.1):本機、按小時計費、而且這支不是只用公開資料。兩個框共用這一支,條件不會漂
 function libFeeLine(env, dataAccess, needs) { return env !== "cloud" && dataAccess === "billed" && needs !== "none"; }
 // 推薦排序(同公開頁 library_rules.recoSort):已驗證 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
@@ -364,13 +364,13 @@ function libShowMain(gate) {
 
 /* ── 資料 ─────────────────────────────────────────────── */
 async function libLoad(force) {
-  const seq = ++LIB.seq;
+  const seq = ++LIB.seq, fresh = force === true || LIB.stale === true;   // 作廢過(libInvalidate / 買了)就略過主行程的 5 分鐘快取
   LIB.loading = true; LIB.failed = false; LIB.skel = false; LIB.stale = false;
   let shownAt = 0;
   // canon Loader:200ms 內回來不畫 skeleton;畫了至少留 300ms(rpWaitHold 同一個數)
   const timer = setTimeout(() => { if (LIB.seq !== seq || LIB.data) return; LIB.skel = true; shownAt = Date.now(); if (!$("lib").hidden) libPaint(); }, 200);
   let r = null;
-  try { r = await window.blave.libraryList(LANG, force === true); } catch (_) { r = null; }
+  try { r = await window.blave.libraryList(LANG, fresh); } catch (_) { r = null; }
   if (LIB.seq !== seq) return;
   clearTimeout(timer);
   if (shownAt) {
@@ -837,7 +837,7 @@ async function libSend(s) {
     try { r = await window.blave.libraryDownload(s.id); } catch (_) { r = null; }
     if (!r || r.ok !== true) {
       LIB.pending = null;
-      const kind = r && ["blocked", "gone", "anonGone", "signin"].includes(r.kind) ? r.kind : "fail";
+      const kind = r && ["blocked", "gone", "anonGone", "signin", "rateLimited"].includes(r.kind) ? r.kind : "fail";
       if (kind === "gone" || kind === "anonGone") libInvalidate();   // 下架了(或匿名那條已不給):清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
       LIB.dlFail = { id: s.id, kind };
       libSync(); const b = libCtaMain(); if (b) b.focus();

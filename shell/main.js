@@ -1948,7 +1948,8 @@ async function libraryPurchase(strategyId, confirmTopup) {
    api 計費三道。社群策略的伺服器掃描結果(security)另存 library_<id>.security.json 給 agent 照 exit 1 處理;這次沒有就刪掉上一份。
    沒有桌面 key(沒登入 / key 被撤)時,官方 × 免費 × 不用 Blave 資料的那幾支改走匿名的 /public_code;其餘要登入。
    回 { ok: true }、{ ok: true, legacy: true }(workspace 還沒有新契約:沒下載,畫面改送舊句)或 { ok: false, kind: "blocked"(平台掃描擋下)|
-   "gone"(/code 404 = 真的下架)| "anonGone"(/public_code 404:下架,或已不符合免登入的條件,分不出來)| "signin"(這支要登入,而這台沒有能用的 key)| "fail" };
+   "gone"(/code 404 = 真的下架)| "anonGone"(/public_code 404:下架,或已不符合免登入的條件,分不出來)| "signin"(這支要登入,而這台沒有能用的 key)|
+   "rateLimited"(429)| "fail" };
    內容不回給畫面。 */
 const LIB_CODE_MAX = 1024 * 1024;
 /* workspace 的官方檔是隨包副本,只在隨包 VERSION 比較新時才同步(syncOfficialOnUpdate);同步沒發生(版號沒往上、備份失敗)時
@@ -1971,8 +1972,9 @@ function libAnonOk(id) {
 }
 async function libraryDownload(strategyId) {
   if (!Number.isInteger(strategyId) || strategyId <= 0) return { ok: false, kind: "fail" };
-  if (!libContractReady()) return { ok: true, legacy: true };
   const key = loadToken() ? loadDataKey() : null;
+  // 舊契約只在有 key 時退回舊句(agent 自己用 .env 的 key 打 /code);沒有 key 時舊 agent 會撞牆、叫人登入,免登入策略不准出現那句(spec §0.1)
+  if (!libContractReady()) return key ? { ok: true, legacy: true } : { ok: false, kind: libAnonOk(strategyId) ? "fail" : "signin" };
   const anon = async () => {
     if (!libAnonOk(strategyId)) return null;
     // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數。
@@ -1993,7 +1995,11 @@ async function libraryDownload(strategyId) {
   if (!r) return { ok: false, kind: "signin" };
   const b = r.body && typeof r.body === "object" ? r.body : {};
   if (r.status === 403 && b.security && b.security.blocked === true) return { ok: false, kind: "blocked" };
-  if (r.status === 404) return { ok: false, kind: viaAnon ? "anonGone" : "gone" };   // 匿名那條的 404 也可能是清單快取過時(改成要資料 / 要登入了),不能說它下架
+  if (r.status === 404) {   // 匿名那條的 404 也可能是清單快取過時(改成要資料 / 要登入了),不能說它下架
+    libCache = null;   // 畫面接著重拉清單:快取得先作廢,不然 5 分鐘內拿回同一份舊清單、再按又是同一個錯
+    return { ok: false, kind: viaAnon ? "anonGone" : "gone" };
+  }
+  if (r.status === 429) return { ok: false, kind: "rateLimited" };   // 匿名每 IP 每小時 30 次:一小時內重按也沒用,不講「再試一次」
   if (r.status === 401 || (r.status === 403 && b.error_code === "ERR005")) return { ok: false, kind: "signin" };
   if (r.status !== 200 || typeof b.code !== "string" || !b.code.trim() || Buffer.byteLength(b.code) > LIB_CODE_MAX) return { ok: false, kind: "fail" };
   const dir = path.join(WS, "tmp"), name = `library_${strategyId}.py`, sec = `library_${strategyId}.security.json`;
