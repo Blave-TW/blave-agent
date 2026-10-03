@@ -8,6 +8,7 @@ if (a < 0 || b < 0) { console.log("FAIL  找不到 syncDataEnv 的原文"); proc
 const WS = fs.mkdtempSync(path.join(os.tmpdir(), "blave-env-"));
 let KEY = { api_key: "a".repeat(64), secret_key: "b".repeat(64) };
 const loadDataKey = () => KEY;
+const wsfile = require("../shell/wsfile");
 // eval 裡的 const 出不了 eval 的作用域,換成 var 才拿得到 ENV_BEGIN / ENV_END / syncDataEnv
 eval(src.slice(a, b).replace(/^const /gm, "var "));
 const f = path.join(WS, ".env");
@@ -44,12 +45,12 @@ fs.writeFileSync(f, "BINANCE_API_KEY=keep\n"); fs.chmodSync(f, 0o000);
 const r = syncDataEnv(true);
 fs.chmodSync(f, 0o600);
 t("讀不到(非 ENOENT)→ 回 none、原檔一個字沒動", r === "none" && rd() === "BINANCE_API_KEY=keep\n");
-t("沒留下暫存檔", !fs.existsSync(f + ".blave-tmp"));
+t("沒留下暫存檔", fs.readdirSync(WS).every((x) => !x.startsWith("..env.")));
 
 // rename 失敗(.env 是個目錄):暫存檔裡是明文 key,要清掉
 fs.rmSync(f); fs.mkdirSync(f);
 syncDataEnv(true);
-t("rename 失敗 → 暫存檔不留", !fs.existsSync(f + ".blave-tmp"));
+t("rename 失敗 → 暫存檔不留", fs.readdirSync(WS).every((x) => !x.startsWith("..env.")));
 
 // 兩把 key 各看各的:帳號 token(能燒 AI 額度)只在連的是 Blave 時才進 agent 的 env;資料 key 看的是
 // 有沒有登入,自帶 CLI 的人也拿得到。兩個條件對調任何一個,這裡就紅。

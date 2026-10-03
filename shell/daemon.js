@@ -8,6 +8,7 @@
    - 不依賴 electron:測試(tests/check_shell_daemon.js)直接 require 這個檔。 */
 const fs = require("fs"), path = require("path"), crypto = require("crypto");
 const { spawn } = require("child_process");
+const wsfile = require("./wsfile");
 
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
@@ -261,7 +262,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
       return m ? Number(m[1]) : null;
     } catch (_) { return null; }
   }
-  function eqAppend(row) { try { fs.appendFileSync(eqFile, JSON.stringify(row) + "\n", { mode: 0o600 }); } catch (_) { /* 記不到就少一個點 */ } }
+  function eqAppend(row) { try { wsfile.append(eqFile, JSON.stringify(row) + "\n"); } catch (_) { /* 記不到就少一個點 */ } }
   function eqTick() {
     const st = status(); if (!st.alive) return;
     const acc = liveAccount(st.report); if (!acc || acc.partial) return;
@@ -312,7 +313,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   function uiEvent(cmd, extra) {
     const type = UI_EVENT[cmd]; if (!type) return;
     const acc = liveAccount(status().report);
-    try { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(uiFile, JSON.stringify({ ts: Math.floor(Date.now() / 1000), type, venue: (acc && acc.venue) || null, ...extra }) + "\n", { mode: 0o600 }); } catch (_) { /* 少一筆事件 */ }
+    try { fs.mkdirSync(stateDir, { recursive: true }); wsfile.append(uiFile, JSON.stringify({ ts: Math.floor(Date.now() / 1000), type, venue: (acc && acc.venue) || null, ...extra }) + "\n"); } catch (_) { /* 少一筆事件 */ }
   }
   /* 自動下單執行中結束 app(主行程的結束確認框按了「結束 Blave」):這台電腦從這一刻起什麼單都不下、也不平倉,
      再開時是「已暫停」。不記的話時間軸上看不出下單是什麼時候停的(e2e 0.1.8 #76)。沿用 halt 那一列,

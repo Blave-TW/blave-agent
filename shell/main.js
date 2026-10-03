@@ -10,6 +10,7 @@ const path = require("path");
 const os = require("os");
 const fs = require("fs");
 const { createDaemonHost } = require("./daemon.js");
+const wsfile = require("./wsfile");
 
 // 打包版的名字 = userData 目錄名(~/Library/Application Support/Blave)與 Keychain 項目名。
 // electron-builder 的 productName 不會寫進 asar 裡的 package.json,不設的話打包版會跟開發版
@@ -407,18 +408,8 @@ function syncDataEnv(want) {
   if (next === cur) return state;
   try {
     if (!next) fs.unlinkSync(envFile);        // 整個檔只有我們那塊:不留空檔
-    else {
-      // 先寫暫存檔再 rename:背景策略可能正在讀這個檔,寫到一半 crash 也不能留半個檔
-      const tmp = envFile + ".blave-tmp";
-      try {
-        fs.writeFileSync(tmp, next, { mode: 0o600 });
-        fs.chmodSync(tmp, 0o600);
-        fs.renameSync(tmp, envFile);
-      } catch (e) {
-        try { fs.unlinkSync(tmp); } catch (_) {}   // rename 沒成功:暫存檔裡是明文 key,不能留著
-        throw e;
-      }
-    }
+    // 先寫暫存檔再 rename:背景策略可能正在讀這個檔,寫到一半 crash 也不能留半個檔;rename 沒成功時暫存檔(明文 key)由 replace 刪掉
+    else wsfile.replace(envFile, next);
   } catch (_) { return own ? "own" : "none"; }   // workspace 還沒建好 / 寫不進去:只剩用戶自己那組算數
   return state;
 }
@@ -1515,8 +1506,8 @@ const RPT_ERRLOG_MAX = 64 * 1024, RPT_ERRLOG_KEEP = 200;
 function rptLogError(id, message) {
   const f = path.join(RPT_DIR(), "upload_errors.log");
   fs.mkdirSync(RPT_DIR(), { recursive: true });
-  fs.appendFileSync(f, new Date().toISOString().replace(/\.\d+Z$/, "Z") + " " + id + ": " + String(message).replace(/\s+/g, " ") + "\n");
-  if (fs.statSync(f).size > RPT_ERRLOG_MAX) fs.writeFileSync(f, fs.readFileSync(f, "utf8").split("\n").filter(Boolean).slice(-RPT_ERRLOG_KEEP).join("\n") + "\n");
+  wsfile.append(f, new Date().toISOString().replace(/\.\d+Z$/, "Z") + " " + id + ": " + String(message).replace(/\s+/g, " ") + "\n");
+  if (fs.lstatSync(f).size > RPT_ERRLOG_MAX) wsfile.replace(f, fs.readFileSync(f, "utf8").split("\n").filter(Boolean).slice(-RPT_ERRLOG_KEEP).join("\n") + "\n");
 }
 const SHARE_UPLOAD_TIMEOUT_MS = 90 * 1000;   // 本機報告最多 20 張圖:api 逐張存完才回
 let _share = null;

@@ -13,6 +13,7 @@
 //
 // 這個檔不 require electron;檔案系統、鎖、策略清單、下單狀態都由呼叫端注入(測試用假的)。
 const fs = require("fs"), path = require("path"), { spawn } = require("child_process");
+const wsfile = require("./wsfile");
 
 const BEGIN = "# >>> blave desktop data sources (managed, do not edit) >>>";
 const END = "# <<< blave desktop data sources <<<";
@@ -123,10 +124,8 @@ function createDataSrc(opts) {
   const read = () => { try { return fs.readFileSync(opts.envFile, "utf8"); } catch (e) { if (e.code === "ENOENT") return ""; throw e; } };
   function write(next) {
     if (!next) { try { fs.unlinkSync(opts.envFile); } catch (e) { if (e.code !== "ENOENT") throw e; } return; }
-    // 先寫暫存檔再 rename:策略可能正在讀;rename 沒成功時暫存檔裡是明文金鑰,不能留著
-    const tmp = opts.envFile + ".blave-src-tmp";
-    try { fs.writeFileSync(tmp, next, { mode: 0o600 }); fs.chmodSync(tmp, 0o600); fs.renameSync(tmp, opts.envFile); }
-    catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} throw e; }
+    // 先寫暫存檔再 rename:策略可能正在讀;rename 沒成功時暫存檔(明文金鑰)由 replace 刪掉
+    wsfile.replace(opts.envFile, next);
   }
   // 讀-改-寫:拿到鎖之後**同步**做完(中間沒有 await,主行程裡別的 .env 寫入插不進來)
   async function mutate(fn) {
