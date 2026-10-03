@@ -54,6 +54,8 @@ t("掃得到東西(清單是空的 = 掃描壞了)", hits.length >= 24, "只掃�
   const wf = yaml.load(fs.readFileSync(path.join(ROOT, ".github", "workflows", "desktop-win.yml"), "utf8"));
   const step = ((wf.jobs.test || {}).steps || []).find((x) => x.name === "Gate tests") || {};
   t("CI 閘門:step 的 env 帶 BLAVE_TEST_WINDOW=1", !!step.env && step.env[require("./" + GATE_FILE).ENV] === "1", JSON.stringify(step.env));
+  { const steps = (wf.jobs.test || {}).steps || [], si = steps.findIndex((x) => /defaults write -g AppleShowScrollBars -string WhenScrolling/.test(x.run || "")), gi = steps.indexOf(step);
+    t("CI 閘門:Gate tests 之前把捲軸設成浮動式(跟發版機一樣;runner 沒觸控板會變常駐 15px 捲軸,版面測試誤紅)", si >= 0 && gi > si, JSON.stringify({ si, gi })); }
   const relSrc = fs.readFileSync(path.join(ROOT, "shell", "tools", "release.js"), "utf8");
   const relRe = /filter\(\(f\) => (\/\^\(check_shell_[^\n]*?\$\/)\.test\(f\) && f !== "check_shell_paths\.js"\)/.exec(relSrc);
   const want = relRe ? fs.readdirSync(DIR).filter((f) => eval(relRe[1]).test(f) && f !== "check_shell_paths.js").sort() : null;

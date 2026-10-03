@@ -68,6 +68,13 @@ jobs:
         run: |
           npm ci
           node node_modules/electron/install.js
+      # 捲軸跟發版機一樣用浮動式:版面測試(報告 KPI、樣本外每輪明細的捲動框)量的是 macOS 浮動捲軸,不佔版面寬。
+      # runner 沒有觸控板,「自動」會解成常駐 15px 捲軸,捲動框與文件本身各少 15px → 寬度斷言誤紅(run 37110239513)。
+      # 這是讓環境跟本機一致,不是放寬斷言;本機用 -AppleShowScrollBars Always 跑同兩支測試,紅的項目與數字跟 runner 一模一樣
+      - name: Overlay scroll bars (same as the release Mac)
+        run: |
+          defaults write -g AppleShowScrollBars -string WhenScrolling
+          test "$(defaults read -g AppleShowScrollBars)" = WhenScrolling
       # 同 release.js:Electron 那段要真的跑(BLAVE_TEST_WINDOW=1),印出守門那行 SKIP = 有一段沒跑到,記紅(稽核 2026-10-02 P2-5／B1)
       - name: Gate tests
         env:
