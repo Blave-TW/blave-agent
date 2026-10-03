@@ -2103,25 +2103,43 @@ def ed03(w):
 
 @scenario("ED-04")
 def ed04(w):
+    # Wei 2026-10-03: paper has no notional leverage cap (the UI only warns)
     w.fresh(amounts={"a1": 2_000_000}, signals={"a1": 1})
-    w.eq(w.settle(), [], "10× paper equity cap: the entry is refused")
+    w.eq(w.settle(), [(B, "buy", 40.0, False)], "20× paper equity: the entry fills at its amount")
+    w.eq(w.order_errors(), [], "no refusal")
+
+
+@scenario("ED-04b")
+def ed04b(w):
+    w.fresh(strategies=(("a1", B), ("a2", E)), amounts={"a1": 600_000, "a2": 600_000},
+            signals={"a1": 1, "a2": 1})
+    got = sorted(w.settle())
+    w.eq(got, sorted([(B, "buy", 12.0, False), (E, "buy", 300.0, False)]),
+         "12× across two symbols: both legs fill")
+    w.eq(w.order_errors(), [], "no refusal")
+
+
+@scenario("ED-04c")
+def ed04c(w):
+    w.fresh(amounts={"a1": 2_000_000}, signals={"a1": 1})
+    w.settle()
+    w.marks(BTCUSDT=47000.0)  # -6% on 20× → equity below zero
+    w.amounts(a1=2_100_000)
+    w.eq(w.settle(), [], "equity <= 0: the add is refused")
     e = w.order_errors()
-    w.check(e and "exceeds 10× paper equity" in e[-1]["error"], f"order_errors: {e[-1:]}")
-    w.check(any("Order failed" in m for m in w.tg), "a notice")
-    w.eq((w.book(), w.orders_log()), ({}, []), "nothing booked")
-    w.round()
-    w.eq(len([x for x in w.order_errors() if "exceeds" in x["error"]]), 2,
-         "retried next round (not stuck silently)")
+    w.check(e and "equity would be <= 0" in e[-1]["error"], f"order_errors: {e[-1:]}")
+    w.sig("a1", 0)
+    w.eq(w.settle(), [(B, "sell", 40.0, True)], "a blown account still closes")
 
 
 @scenario("ED-05")
 def ed05(w):
     _long(w)
-    w.manual(B, 19.975)  # the user's own position fills the leverage cap
+    w.manual(B, 19.975)  # the user's own position takes the account to ~10×
     w.amounts(a1=2000)
-    w.eq(w.settle(), [], "the add is refused (gross notional over 10×)")
+    w.eq(w.settle(), [(B, "buy", 0.02, False)], "the add fills (no leverage cap)")
     w.sig("a1", 0)
-    w.eq(w.settle(), [(B, "sell", 0.02, True)], "a reduce is never refused by the cap")
+    w.eq(w.settle(), [(B, "sell", 0.04, True)], "the reduce closes the strategy's share")
 
 
 @scenario("ED-06")

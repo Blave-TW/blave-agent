@@ -60,6 +60,13 @@ from decimal import Decimal, ROUND_DOWN
 import requests
 
 from lib import guard
+try:
+    from lib import reject_token
+except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
+    from types import SimpleNamespace as _NS
+    reject_token = _NS(tag=lambda kind, msg: str(msg), from_code=lambda *a, **k: None, credential_codes=lambda v: frozenset(),
+                       **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
+                                                 "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -80,7 +87,16 @@ class GateioError(Exception):
     def __init__(self, code, msg, path=""):
         self.code = code
         self.msg = msg
-        super().__init__(f"Gate.io error {code}: {msg or '(empty msg)'} | {path}")
+        kind = reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("gateio"))
+        super().__init__(reject_token.tag(kind, f"Gate.io error {code}: {msg or '(empty msg)'} | {path}"))
+
+
+# lib/reject_token kinds: BALANCE_NOT_ENOUGH measured on a spot sell (lib/order_gateio.py module
+# docstring, references/lib.md). Rejected keys: account_gateio._CREDENTIAL. The other labels in
+# the order-copy spec (INSUFFICIENT_AVAILABLE, ORDER_SIZE_TOO_SMALL, SIZE_TOO_SMALL,
+# CONTRACT_NOT_FOUND, REDUCE_ONLY_FAIL, POSITION_EMPTY) could not be read verbatim from Gate's
+# label list — not classified until they are.
+_REJECT_CODES = {"BALANCE_NOT_ENOUGH": reject_token.INSUFFICIENT_MARGIN}
 
 
 # A market order whose worst fill would land too far from the mark price is
@@ -288,7 +304,7 @@ def _contract(sym):
     for quote in ("USDT", "USDC"):
         if sym.endswith(quote) and len(sym) > len(quote):
             return f"{sym[:-len(quote)]}_{quote}"
-    raise ValueError(f"cannot derive Gate.io contract from {sym!r}")
+    raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"cannot derive Gate.io contract from {sym!r}"))
 
 
 def _futures_rules(env, symbol):
@@ -328,14 +344,14 @@ def format_qty(env, symbol, qty, price=None):
     re-convert contracts→contracts and oversize N× — the manager.md pitfall)."""
     r = _futures_rules(env, symbol)
     if not r["active"]:
-        raise ValueError(f"{symbol} is not open for trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for trading"))
     # Decimal all the way: float division under-sizes by a whole contract at
     # exact multiples (the OKX 0.01/0.1 lesson)
     contracts = int(Decimal(str(qty)) / Decimal(r["multiplier"]))
     if contracts < r["min_ct"] or contracts <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} qty {qty} = {contracts} contracts, below minimum {r['min_ct']}"
-        )
+        ))
     return str(contracts)
 
 
@@ -758,13 +774,13 @@ def get_spot_rules(env, symbol):
 def format_spot_qty(env, symbol, qty):
     r = _spot_rules(env, symbol)
     if not r["active"]:
-        raise ValueError(f"{symbol} is not open for spot trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for spot trading"))
     q = Decimal(str(qty)).quantize(Decimal(r["amount_step"]).normalize(),
                                    rounding=ROUND_DOWN)
     if float(q) < r["min_base"] or float(q) <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} spot qty {qty} floors to {q}, below minimum {r['min_base']}"
-        )
+        ))
     return format(q, "f")
 
 
@@ -825,7 +841,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
         raise ValueError(f"side must be buy|sell, got {side!r}")
     r = _spot_rules(env, symbol)
     if not r["active"]:
-        raise ValueError(f"{symbol} is not open for spot trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for spot trading"))
     body = {
         "currency_pair": pair,
         "side": side,

@@ -69,5 +69,19 @@ check(len(got) == 1 and got[0][0] == "order_buy" and abs(got[0][1]["amount"] - 1
 got = run(2, 0, {"executed_qty": 1, "avg_price": 20000.0}, spec={"type": "futures_contracts"}, exchange="capital")
 check(len(got) == 1 and got[0][1]["amount"] == 1, f"lot-based: announces the lots filled (1), not the 2 asked: {got}")
 
+# 群益: the leg keeps the month contract that filled — orders.jsonl's symbol is the book key (TXF),
+# so without it the pages can never show 「大台（TX2610）」 (audit-0.1.13-desktop D1)
+open("manager/orders.jsonl", "w").close()
+run(2, 0, {"executed_qty": 2, "avg_price": 23000.0, "exchange": "capital", "resolved_symbol": "TX2610", "status": "filled"},
+    spec={"type": "futures_contracts"}, exchange="capital")
+rows = [json.loads(x) for x in open("manager/orders.jsonl") if x.strip()]
+check(rows and rows[-1]["legs"][0].get("resolved_symbol") == "TX2610", f"capital leg carries resolved_symbol: {rows[-1:] }")
+open("manager/orders.jsonl", "w").close()
+run(2, 0, {"executed_qty": 0.0, "avg_price": 0.0, "exchange": "capital", "resolved_symbol": "TM0000", "status": "sent"},
+    spec={"type": "futures_contracts"}, exchange="capital")
+rows = [json.loads(x) for x in open("manager/orders.jsonl") if x.strip()]
+check(not rows or "resolved_symbol" not in rows[-1]["legs"][0],
+      f"an unconfirmed capital order (0 filled) does not carry its alias as the month contract: {rows[-1:]}")
+
 print("\n" + ("PASS" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)

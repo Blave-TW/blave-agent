@@ -50,6 +50,13 @@ from decimal import Decimal, ROUND_DOWN
 import requests
 
 from lib import guard
+try:
+    from lib import reject_token
+except ImportError:  # half-updated workspace (lib/reject_token.py not landed): orders work, messages go out untagged
+    from types import SimpleNamespace as _NS
+    reject_token = _NS(tag=lambda kind, msg: str(msg), from_code=lambda *a, **k: None, credential_codes=lambda v: frozenset(),
+                       **{k: k.lower() for k in ("INSUFFICIENT_MARGIN", "BELOW_MIN_SIZE", "SYMBOL_UNAVAILABLE",
+                                                 "KEY_PERMISSION", "REDUCE_ONLY_REJECTED", "PAPER_MARGIN")})
 
 guard.mark_money_process()  # Stop in the chat never kills this process (lib/guard)
 
@@ -64,10 +71,18 @@ class OKXError(Exception):
     """Raised on any OKX error response or unexpected shape. code/msg carry
     the innermost (sCode/sMsg) detail when present."""
 
-    def __init__(self, code, msg, path=""):
+    def __init__(self, code, msg, path="", kind=None):
         self.code = code
         self.msg = msg
-        super().__init__(f"OKX error {code}: {msg or '(empty msg)'} | {path}")
+        kind = kind or reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("okx"))
+        super().__init__(reject_token.tag(kind, f"OKX error {code}: {msg or '(empty msg)'} | {path}"))
+
+
+# lib/reject_token kinds: 51008 insufficient margin (measured live 2026-08, references/manager.md
+# "Order-qty UNITS pitfall"), 51020 below the minimum (references/okx-skill.md). Rejected keys:
+# account_okx._CREDENTIAL. A reduce-only rejection code could not be verified from OKX's docs —
+# not classified (the message shows as is).
+_REJECT_CODES = {"51008": reject_token.INSUFFICIENT_MARGIN, "51020": reject_token.BELOW_MIN_SIZE}
 
 
 # Same pair as lib/account_okx.py — the token is what the desktop and web match on.
@@ -284,7 +299,7 @@ def _swap_inst(sym):
         return f"{sym[:-4]}-USDT-SWAP"
     if sym.endswith("USDC"):
         return f"{sym[:-4]}-USDC-SWAP"
-    raise ValueError(f"cannot derive OKX swap instId from {sym!r}")
+    raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"cannot derive OKX swap instId from {sym!r}"))
 
 
 def _spot_inst(sym):
@@ -294,7 +309,7 @@ def _spot_inst(sym):
         return f"{sym[:-4]}-USDT"
     if sym.endswith("USDC"):
         return f"{sym[:-4]}-USDC"
-    raise ValueError(f"cannot derive OKX spot instId from {sym!r}")
+    raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"cannot derive OKX spot instId from {sym!r}"))
 
 
 def _instrument(env, inst_id, inst_type):
@@ -302,7 +317,7 @@ def _instrument(env, inst_id, inst_type):
         rows = _send("GET", "/api/v5/public/instruments", env,
                      params={"instType": inst_type, "instId": inst_id})
         if not rows:
-            raise OKXError("N/A", f"{inst_id} not found in instruments", "instruments")
+            raise OKXError("N/A", f"{inst_id} not found in instruments", "instruments", kind=reject_token.SYMBOL_UNAVAILABLE)
         r = rows[0]
         _rules_cache[inst_id] = {
             "ct_val": float(r.get("ctVal") or 1),   # base units per contract (swap)
@@ -341,15 +356,15 @@ def format_qty(env, symbol, qty, price=None):
     contracts→contracts and oversize N× on ctVal≠1 — the manager.md pitfall)."""
     r = _instrument(env, _swap_inst(symbol), "SWAP")
     if not r["active"]:
-        raise ValueError(f"{symbol} is not open for trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for trading"))
     # Decimal all the way: float division under-sizes by a whole lot at exact
     # multiples (0.01/0.1 = 0.09999… → floors to 0.09 ct — measured live, the
     # entry filled 0.009 ETH instead of 0.01)
     contracts = _floor_to_step(Decimal(str(qty)) / Decimal(str(r["ct_val"])), r["lot_sz"])
     if float(contracts) < r["min_sz"] or float(contracts) <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} qty {qty} = {contracts} contracts, below minimum {r['min_sz']}"
-        )
+        ))
     return format(contracts, "f")
 
 
@@ -760,12 +775,12 @@ def get_spot_rules(env, symbol):
 def format_spot_qty(env, symbol, qty):
     r = get_spot_rules(env, symbol)
     if not r["active"]:
-        raise ValueError(f"{symbol} is not open for spot trading")
+        raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"{symbol} is not open for spot trading"))
     q = _floor_to_step(qty, r["step"])
     if float(q) < r["min_qty"] or float(q) <= 0:
-        raise ValueError(
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE,
             f"{symbol} spot qty {qty} floors to {q}, below minimum {r['min_qty']}"
-        )
+        ))
     return format(q, "f")
 
 

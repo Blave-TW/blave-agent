@@ -109,6 +109,25 @@ def _write_reconcile_snapshot(target, actual, orders, ledger=None, gates=None, r
         logging.warning(f'failed to write manager/last_reconcile.json: {e}')
 
 
+def _reject_front(error):
+    """An order lib's [order_reject:<kind>] token goes first, even when a caller wrapped the
+    message ("close_symbol: {e}") — the 200-char cut must not take it (lib/reject_token)."""
+    try:
+        from lib import reject_token
+    except ImportError:  # half-updated workspace: record as before
+        return str(error)
+    return reject_token.to_front(error)
+
+
+def _reject_plain(error):
+    """The message without its [order_reject:<kind>] token — for notices read by people (TG, desktop)."""
+    try:
+        from lib import reject_token
+    except ImportError:
+        return str(error)
+    return reject_token.plain(error)
+
+
 def _record_order_error(symbol, exchange, error, extra=None):
     """Last few order failures, for the workspace page — a reconciler that
     fails silently in a tmux log is indistinguishable from one that never
@@ -122,7 +141,7 @@ def _record_order_error(symbol, exchange, error, extra=None):
         except (OSError, ValueError):
             rows = []
         rows.append({**(extra or {}), 'ts': datetime.utcnow().isoformat(), 'symbol': symbol,
-                     'exchange': exchange, 'error': str(error)[:200]})
+                     'exchange': exchange, 'error': _reject_front(error)[:200]})
         with open(path, 'w') as f:
             json.dump(rows[-5:], f, indent=2)
     except Exception as e:
@@ -2566,7 +2585,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                 logging.error(log_msg)
                 _record_order_error(symbol, order.get('exchange'), e)
                 notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',
-                                {'symbol': symbol, 'error': e}))
+                                {'symbol': symbol, 'error': _reject_plain(e)}))
                 failed = True
                 break
 
@@ -2607,9 +2626,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=10, send_telegram_fn=N
                                  ('exchange', 'exchange'),
                                  # one-way netting (lib.venue_wiring._netted_room / _netted_exit)
                                  ('netted_qty', 'netted_qty'),
-                                 ('netted_exit', 'netted_exit')):
+                                 ('netted_exit', 'netted_exit'),
+                                 # 群益: the month contract that filled (TX2610) — the order row's
+                                 # symbol is the book key (TXF); the pages show 「大台（TX2610）」
+                                 ('resolved_symbol', 'resolved_symbol')):
                     if placed.get(src) is not None:
                         leg[dst] = placed[src]
+                if not float(placed.get('executed_qty') or 0):
+                    # nothing filled: 群益 hands back the alias it sent (TM0000), not a month contract
+                    leg.pop('resolved_symbol', None)
                 # self_ledger accounting (2026-08-20 audit P0-2): sub_diff is
                 # the PRE-rounding request — capital rounds to a whole lot,
                 # crypto floors to a qty step — so it can differ from what
