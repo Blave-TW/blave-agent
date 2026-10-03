@@ -82,7 +82,11 @@ const EVENTS = {
     // 內建瀏覽器的交還鈕(0.1.12;renderer/browser.js):標題列那顆、聊天那一列那顆,按了就記(不管有沒有 need;browser_handoff 照舊)
     "browser_hb_head", "browser_hb_chat",
     // 部位表點策略名開那支的進出場紀錄(0.1.12;renderer/trade.js trStratOpen):真的換頁才送,點下去才發現不在的不送
-    "trade_strat_open"] },
+    "trade_strat_open",
+    // 下單 UX(0.1.13;renderer/trade.js,ux-order-1-4-5 §4):第 3 級槓桿勾了而且存成功、部位表「N 支策略」拆解被打開。不帶金額
+    "trade_lev_ack", "trade_net_open",
+    // 部位表拒單那一行的「請 agent 查原因」(0.1.13;order-copy #14 §4.4):填進聊天框才算(不送出)
+    "trade_err_ask"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

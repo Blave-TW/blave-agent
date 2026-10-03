@@ -666,13 +666,16 @@
       const row = el("button", "tr-row");
       row.type = "button";
       row.appendChild(el("span", "tr-ts", fmtTime(p.ts, withYear, dateOnly)));
-      row.appendChild(
+      // 兩組:窄框時固定折成「方向+數量 種類」一行、「價格 … 部位」一行(report-trades.css 的 container query);寬框兩組攤平成一行
+      const l1 = el("span", "tr-l1"), l2 = el("span", "tr-l2");
+      l1.appendChild(
         el("span", isBuy ? "tr-side is-buy" : "tr-side is-sell", t(isBuy ? "tr.buy" : "tr.sell") + " " + Math.abs(p.delta).toFixed(4))
       );
       // 種類小標只掛方向性事件;調倉列不加,整片同向微調裡才一眼挑得出開平倉
-      if (kindKey[p.kind]) row.appendChild(el("span", "tr-kind", t(kindKey[p.kind])));
-      row.appendChild(el("span", "tr-px", fmtPrice(p.price)));
-      row.appendChild(el("span", "tr-pos", t("tr.position", { n: p.posAfter.toFixed(4) })));
+      if (kindKey[p.kind]) l1.appendChild(el("span", "tr-kind", t(kindKey[p.kind])));
+      l2.appendChild(el("span", "tr-px", fmtPrice(p.price)));
+      l2.appendChild(el("span", "tr-pos", t("tr.position", { n: p.posAfter.toFixed(4) })));
+      row.append(l1, l2);
       row.addEventListener("click", function () {
         const prev = listEl.querySelector('.tr-row[aria-current="true"]');
         if (prev) prev.removeAttribute("aria-current");

@@ -1220,6 +1220,12 @@ msgstr "在 Binance 建金鑰時：只開交易權限、提領務必關閉，並
 msgid "cx.note.oneV"
 msgstr "在 {venue} 建金鑰時：只開交易權限，提領務必關閉。有設 IP 白名單的話，把這個 IP 加進去。"
 
+msgid "cx.note.subAcct"
+msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。Blave 會管這個帳戶上的所有部位，你手動開的單也可能被平掉。"
+
+msgid "cx.note.subAcctOwn"
+msgstr "建議開一個只給 Blave 用的子帳戶，金鑰建在子帳戶。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+
 # 查不到提領權限的那家(Gate.io):Blave 不會替他擋,講明要自己確認
 msgid "cx.note.wdUnchecked"
 msgstr "Blave 查不到 {venue} 金鑰有沒有提領權限，不會替你擋下：連接前請自己確認這把金鑰的提領是關閉的。"
@@ -1372,20 +1378,35 @@ msgstr "請輸入數字，例如 1,500.50"
 msgid "tr.amountTooBig"
 msgstr "上限 1,000,000,000"
 
+msgid "tr.badLots"
+msgstr "請輸入整數口數，例如 3"
+
+msgid "tr.badLotsOld"
+msgstr "這一格是舊設定的小數口數，請改成整數，例如 3"
+
 msgid "tr.lev"
 msgstr "槓桿（合計 ÷ 淨值）"
 
-msgid "tr.levBlock"
-msgstr "超過模擬帳戶上限 {x} 倍（約 {cap} {c}）。請調低金額再儲存。"
+msgid "tr.lev.margin"
+msgstr "超過 1 倍要用合約保證金。Blave 不會替你調槓桿：交易所上這些合約至少要設 {L} 倍，不夠的單會被拒。"
 
-msgid "tr.levStillOver"
-msgstr "仍超過模擬帳戶上限 {x} 倍（約 {cap} {c}），超過的單會被拒絕。"
+msgid "tr.lev.marginShort"
+msgstr "Blave 不會替你調槓桿：交易所上這些合約至少要設 {L} 倍，不夠的單會被拒。"
 
-msgid "tr.levOverShort"
-msgstr "超過模擬帳戶上限 {x} 倍"
+msgid "tr.lev.loss"
+msgstr "照這些金額滿倉，全部部位一起反向 {p}%，虧損就等於你全部的淨值；交易所會更早強平。"
+
+msgid "tr.lev.lossPaper"
+msgstr "照這些金額滿倉，全部部位一起反向 {p}%，模擬帳戶的淨值就會歸零。"
+
+msgid "tr.lev.binance5"
+msgstr "Binance 子帳戶的合約槓桿最多 5 倍。"
+
+msgid "tr.lev.ack"
+msgstr "我知道照這些金額滿倉，全部反向 {p}% 就虧掉全部淨值"
 
 msgid "tr.err.paperLev"
-msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限 {cap} {c}（淨值的 {x} 倍）。請調低部位大小。"
+msgstr "{sym} 沒有下單：部位要到 {gross} {c}，超過模擬帳戶上限 {cap} {c}（淨值的 {x} 倍）。請調低金額。"
 
 msgid "tr.err.paperBroke"
 msgstr "{sym} 沒有下單：模擬帳戶淨值已經歸零，不能再開倉。"
@@ -1396,17 +1417,44 @@ msgstr "{sym}：OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模�
 msgid "tr.err.gateDeviated"
 msgstr "{sym}：Gate.io 盤口偏離標記價太遠，市價單被交易所擋下，沒有成交。多半是這個合約一時流動性不足，下一輪會自動再試。"
 
+msgid "tr.err.margin"
+msgstr "{sym} 沒有下單：帳戶的可用保證金或餘額不夠。調低金額、補入資金，或到交易所調高這個合約的槓桿。"
+
+msgid "tr.err.minSize"
+msgstr "{sym} 沒有下單：這次要調整的數量低於交易所的最小下單量。調高這支策略的金額，或等差額變大再下。"
+
+msgid "tr.err.symbol"
+msgstr "{sym} 沒有下單：交易所上找不到這個合約，或它目前暫停交易。先到交易所確認；如果已經下架，請 agent 把策略換到別的合約。"
+
+msgid "tr.err.key"
+msgstr "{sym} 沒有下單：交易所拒絕了這把金鑰（交易權限、IP 白名單，或金鑰本身）。到 設定 › 帳戶 按「重新測試」看是哪一個。"
+
+msgid "tr.err.reduceOnly"
+msgstr "{sym} 沒有下單：交易所拒絕了只減倉的單，交易所上的部位或掛單跟 Blave 記的不一樣（可能被手動平掉，或還有別的掛單）。到交易所看一下這個部位現在的狀態。"
+
+msgid "tr.err.paperMargin"
+msgstr "{sym} 沒有下單：台指期每口要的保證金加起來，超過模擬帳戶的淨值。調低口數再試。"
+
+msgid "tr.err.ask"
+msgstr "請 agent 查原因"
+
+msgid "tr.err.askPrompt"
+msgstr "下單機回報下單失敗：{sym}——{err}。請幫我查原因、用白話解釋，並告訴我該怎麼處理；先不要自行下單。"
+
+msgid "tr.err.askPromptCloud"
+msgstr "雲端主機的下單機回報下單失敗：{sym}——{err}。請用 blave 工具查這台主機的原因、用白話解釋，並告訴我該怎麼處理；先不要自行下單。"
+
 msgid "tr.stopChoiceSelf"
-msgstr "暫停後不會再開任何新倉。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
+msgstr "平倉與停損停利照常執行。「關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
 
 msgid "tr.stopChoice"
-msgstr "暫停後不會再開任何新倉。「關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
+msgstr "平倉與停損停利照常執行。「關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
 
 msgid "tr.closeAllWarn2"
 msgstr "策略金額會保留：之後按「啟動下單」，下單機會照現有金額把部位重建回來；不想重建，先把金額歸零。"
 
 msgid "tr.stopKeep"
-msgstr "暫停，不動部位"
+msgstr "暫停開新倉"
 
 msgid "tr.stopFlat"
 msgstr "暫停並關閉部位"
@@ -1532,7 +1580,28 @@ msgid "tr.col.symbol"
 msgstr "標的"
 
 msgid "tr.col.amount"
-msgstr "部位大小"
+msgstr "金額"
+
+msgid "tr.col.signal"
+msgstr "訊號"
+
+msgid "tr.amountFoot"
+msgstr "目標部位 ＝ 金額 × 訊號。訊號 1 是滿倉，有的策略會超過 1。"
+
+msgid "tr.net.tag"
+msgstr "{n} 支策略"
+
+msgid "tr.net.sum"
+msgstr "合計 {t}"
+
+msgid "tr.net.sumOffZero"
+msgstr "合計 0：多 {l}、空 {s} 互相抵銷，交易所上不會有 {base} 部位。"
+
+msgid "tr.net.sumOff"
+msgstr "合計 {t}：多 {l}、空 {s}，互相抵銷了 {m}。"
+
+msgid "tr.net.foot"
+msgstr "同一個標的的策略先相加，只下淨額；方向相反會互相抵銷。"
 
 msgid "tr.col.targetPos"
 msgstr "目標部位"
@@ -1565,7 +1634,16 @@ msgid "tr.noStrategies"
 msgstr "還沒有可以下單的策略。先請代理做一檔，回測跑完就能設金額。"
 
 msgid "tr.typeC"
-msgstr "投資組合策略暫不支援自動下單"
+msgstr "Blave 要先更新"
+
+msgid "tr.typeCHost"
+msgstr "主機程式要先更新"
+
+msgid "tr.typeCNext"
+msgstr "投資組合策略要等這台電腦的 Blave 更新後，才能自動下單。"
+
+msgid "tr.typeCNextHost"
+msgstr "投資組合策略要等主機的程式更新後，才能自動下單。"
 
 msgid "tr.pick.twd"
 msgstr "模擬交易暫不支援台幣計價的標的"
@@ -1594,7 +1672,13 @@ msgstr "你淨值的"
 msgid "tr.unitNote"
 msgstr "金額單位：{c}"
 
+msgid "tr.ccyUnknown"
+msgstr "讀不到帳戶，這些金額的幣別要等讀到帳戶才能確認。"
+
 msgid "tr.lotsUnit"
+msgstr "口"
+
+msgid "tr.lotUnit"
 msgstr "口"
 
 msgid "tr.lotsAria"
@@ -1605,6 +1689,21 @@ msgstr "{lots} 口{prod}（≈ {amt} TWD）"
 
 msgid "tr.txfConfirmNoQuote"
 msgstr "{lots} 口{prod}"
+
+msgid "tr.txfConfirm1"
+msgstr "{lots} 口{prod}（≈ {amt} TWD）"
+
+msgid "tr.txfConfirmNoQuote1"
+msgstr "{lots} 口{prod}"
+
+msgid "tr.txfBigNotional"
+msgstr "{lots} 口{prod}的名目約 {amt} TWD，是你淨值的 {x} 倍。確認這是你要的口數。"
+
+msgid "tr.txfBigNotional1"
+msgstr "{lots} 口{prod}的名目約 {amt} TWD，是你淨值的 {x} 倍。確認這是你要的口數。"
+
+msgid "tr.txfBigLots"
+msgstr "{lots} 口{prod}是很大的口數。確認沒有多打一個 0。"
 
 msgid "tr.txfProd.tmf"
 msgstr "微台"
@@ -1632,6 +1731,9 @@ msgstr "已儲存，這台電腦已套用新金額。"
 
 msgid "tr.saveTitle"
 msgstr "確認下單金額"
+
+msgid "tr.saveZeroed"
+msgstr "改成 0：{names}——這幾支那一份的合約部位會平倉、現貨會賣出。"
 
 msgid "tr.saveWarn"
 msgstr "儲存後，下單機會照新的金額對帳，可能立即產生下單。"
@@ -2144,7 +2246,6 @@ msgstr "一台 24 小時開著的主機，照排程跑策略、自動下單；�
 msgid "env.open.more"
 msgstr "看完整方案內容"
 
-
 msgid "side.cloud.emptyReady"
 msgstr "主機已經開好了。策略送上來之後，會列在這裡。"
 
@@ -2404,7 +2505,7 @@ msgid "priv.collect.2"
 msgstr "發生的時間"
 
 msgid "priv.collect.3"
-msgstr "app 版本、macOS 版本、系統語言"
+msgstr "app 版本、作業系統與版本、系統語言"
 
 msgid "priv.collect.4"
 msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟你的帳號對上"
@@ -2992,7 +3093,6 @@ msgstr "金鑰已存到雲端主機，Binance 權限檢查通過。"
 msgid "tr.cloud.cxSavedV"
 msgstr "金鑰已存到雲端主機。{venue} 帳戶讀不讀得到，等主機回報才知道。"
 
-
 msgid "tr.cloud.cxUnknown"
 msgstr "金鑰送出去了，但雲端主機還沒回報檢查結果。先關掉這個框看這一頁：接上了會自己換成下單設定；沒有的話再連一次。"
 
@@ -3025,9 +3125,6 @@ msgstr "請在群益下單軟體手動平倉"
 
 msgid "up.c.msg"
 msgstr "把雲端主機更新到最新版本"
-
-msgid "tr.cloud.typeC"
-msgstr "投資組合策略的第一筆金額要在網頁工作頁設定，之後可以在這裡調整。"
 
 msgid "cdel.absent"
 msgstr "雲端主機上本來就沒有這支策略，沒有刪除任何東西。側欄清單更新後就會對上。"
@@ -3116,6 +3213,12 @@ msgstr "還沒有策略設定金額，沒有東西可以啟動。先到「部位
 msgid "tr.startOffNoAmtRelease"
 msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「解除暫停」。"
 
+msgid "tr.releaseClose"
+msgstr "平倉並解除暫停"
+
+msgid "tr.startOffNoAmtReleaseClose"
+msgstr "還沒有策略設定金額，沒有東西可以啟動。只想讓你自己的策略程式恢復下單，按「平倉並解除暫停」。"
+
 msgid "tr.release"
 msgstr "解除暫停"
 
@@ -3171,26 +3274,49 @@ msgid "tr.relAuto"
 msgstr "這次暫停是系統自動觸發的（例如金鑰被拒、讀帳連續失敗、帳戶變更）。確定問題處理好了再解除。"
 
 msgid "tr.relX1Title"
-msgstr "解除暫停會平掉這些部位"
+msgstr "解除暫停會平掉這 {n} 個部位"
 
-msgid "tr.relX1Body"
-msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，把這個帳戶上的 {n} 個合約部位市價平掉，包含你自己手動開的單；你自己的策略程式下的單也會恢復放行。"
+msgid "tr.relX1Lead"
+msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，用市價平掉這個帳戶上的合約部位，包含你手動開的單："
+
+msgid "tr.relX2Lead"
+msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，用市價平掉自動下單建立的這些部位；你手動開的單不會被動到："
+
+msgid "tr.relReadAt"
+msgstr "{time} 讀到的部位"
+
+msgid "tr.relMore"
+msgstr "還有 {n} 個"
+
+msgid "tr.rel.long"
+msgstr "多"
+
+msgid "tr.rel.short"
+msgstr "空"
+
+msgid "tr.relSelfCode"
+msgstr "你自己的策略程式下的單也會恢復放行。"
+
+msgid "tr.relX1TitleN"
+msgstr "解除暫停可能會平掉部位"
+
+msgid "tr.relX2TitleN"
+msgstr "解除暫停可能會平掉自動下單的部位"
+
+msgid "tr.relX2BodyN"
+msgstr "讀不到自動下單的帳本。還沒有策略設定金額，解除後下單程式會恢復對帳；帳本上如果有部位，會用市價平掉，你手動開的單不會被動到。"
 
 msgid "tr.relX1BodyN"
-msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，把這個帳戶上的合約部位市價平掉，包含你自己手動開的單；你自己的策略程式下的單也會恢復放行。"
+msgstr "讀不到這個帳戶現在的部位。還沒有策略設定金額，解除後下單程式會恢復對帳；帳上如果有合約部位，會用市價平掉，包含你手動開的單。"
 
 msgid "tr.relX2Title"
 msgstr "解除暫停會平掉自動下單的部位"
-
-msgid "tr.relX2Body"
-msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，把自動下單建立的部位市價平掉，你手動開的單不會被動到；你自己的策略程式下的單也會恢復放行。"
 
 msgid "tr.relNotNow"
 msgstr "先不要"
 
 msgid "tr.relCloseGo"
-msgstr "平掉並解除暫停"
-
+msgstr "平倉並解除暫停"
 
 msgid "tr.diedZ"
 msgstr "下單停了，不是你按的 · 停在 {t}。"
@@ -3218,7 +3344,6 @@ msgstr "這個版本的 Blave 需要更新，才能送出「解除暫停」。�
 
 msgid "tr.cloud.cxSavedStalePaper"
 msgstr "模擬帳戶已經送出，但雲端主機到現在都沒有回報，這一頁還沒換成下單設定。可以再試一次，或到聊天請 agent 看看主機怎麼了。"
-
 
 msgid "tr.runningZ"
 msgstr "下單程式在跑 · 還沒有策略設定金額"

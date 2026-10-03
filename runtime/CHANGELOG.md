@@ -8,7 +8,17 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **回測「交易次數」只算 |Δw| ≥ 0.00005 的權重變化(desktop 0.1.13 #9,`lib/analysis.count_trades`;`lib/runner.py` Type A／C、`lib/walk_forward.py` 樣本外與各輪)**:跟 `stats['trades']` 寫到小數 4 位的同一條,交易次數 = 進出場紀錄的筆數。量測:官方 #102(SOL Supertrend,波動率調倉)兩份本機回測 2156 vs 2095、2112 vs 2051,差的 61 筆全是四捨五入成 0 的微調,沒有 nan／價格 ≤ 0 被丟、沒有截斷。**對外數字會變**:同一份碼更新 lib 後重跑,交易次數變少(#102 這次 2168 → 2107),版本比較框的「交易次數」新舊兩版會差這一塊;已上架策略在策略庫的數字要重新上架才變;權重只有微調的策略會變成 0 筆並出 0 筆警告。**同一版也會對不上**:沒改碼重跑時不鑄新版(`_same_code_version`),版本紀錄存的 `trades` 還是舊定義,報告的 stats.json 是新定義,直到改碼產生新版。手續費照舊算全部 Δw;參數掃描與樣本外驗證挑參數時「完全沒動過」的排除規則不變(只改報出來的次數)。測試 `tests/check_trade_count.py`(新)。
+- **拒單帶分類 token(desktop 0.1.13,spec-0.1.13-order-copy #14;`lib/reject_token.py` 新、各 `lib/order_*.py`、`lib/portfolio.py`)**:認得的拒單在錯誤字串最前面加 `[order_reject:<kind>]`(insufficient_margin / below_min_size / symbol_unavailable / key_permission / reduce_only_rejected / paper_margin),外殼與網頁只認這個 token 翻白話。代碼只收官方文件或實測過的:Binance -2019、-2010(訊息是 insufficient balance 那一種)、-2022、-4118;Bybit 110004/110007/110012/110045、110017;OKX 51008、51020;Gate.io BALANCE_NOT_ENOUGH;金鑰被拒一律用各家 `account_*._CREDENTIAL`;lib 自己擋的低於最小量、合約不存在/暫停、模擬帳戶現金不足/非 USDT 報價/台指期保證金。**沒分類(照原文顯示)**:BingX 的保證金與只減倉代碼、OKX 只減倉、Gate.io 其餘 label——查不到官方逐字;群益這版不分類。`_record_order_error` 把被呼叫端前綴推到後面的 token 移回最前面,200 字截斷後還在;TG／電腦版通知那一句拿掉 token。錯誤的型別與 `code` 屬性不變。workspace 只更新一半(`lib/reject_token.py` 沒落地)時各 order lib 退回不帶 token,下單照常。測試 `tests/check_reject_token.py`(新)。
+- **外殼下單 UX(desktop 0.1.13,ux-order-1-4-5 §1/§2/§3 與 order-copy #8/#12/#14;`shell/renderer/trade.js`、`trade.css`、`app.css`、i18n、`shell/telemetry.js`)**:合計列下的倍數提醒三級(`LEV_T1/T2/T3` = 1/5/10;只在有未存改動時;合約列才講交易所槓桿要設幾倍、Binance L>5 接子帳戶 5 倍那句;真錢 ≥10 倍確認框要勾 `tr.lev.ack` 才能存;模擬帳戶 5 倍起 `tr.lev.lossPaper`);金額表加「訊號」欄、表頭「金額」、表下 `tr.amountFoot`;部位表同標的兩支以上有金額的策略出「N 支策略」拆解;解除暫停會平倉時鈕與原因行換「平倉並解除暫停」、確認框逐筆列出部位與讀到的時間,部位改用即時讀帳數(讀帳失敗/過期才退回快照);連接框第一段子帳戶建議;暫停框主鈕「暫停開新倉」;投資組合策略被鎖改講「要先更新」並在選擇策略框給更新出口(`tr.cloud.typeC` 退役);拒單六種白話句與部位表那一行「請 agent 查原因」(只填本機聊天框、不送出);群益口數單的「大台（TX2610）」改讀 `legs[].resolved_symbol`(lib 的 order leg 與全部出場的 leg 都帶上月份合約,orders.jsonl 的 symbol 仍是帳本 key);口數／金額格打到一半或打錯的原字跨報告重畫保留(設計稽核 B7),沒動過的舊小數口數點名 `tr.badLotsOld`。模擬帳戶 10 倍上限在外殼一起退役(smallfixes #5 / #13,配合 `lib/order_paper.py` 拿掉引擎上限):`TR_PAPER_MAX_LEV`、`trLevCheck`、`tr.levBlock` / `tr.levStillOver` / `tr.levOverShort` 與 `.over` 紅色拿掉,倍數一律墨色,超過 10 倍照樣可存;`tr.err.paperLev` 與它的解析留著給還沒更新 lib 的機器。稽核跟進:按「儲存」先把每一格重驗一次(不靠 blur);解除暫停的部位,即時讀帳失敗或過期、而且舊快照說空的 → 「可能」框,不判成不會平倉;self_ledger 帳本空但那一輪有下單 → 不知道;讀不到帳本換 `tr.relX2TitleN`/`tr.relX2BodyN`;確認框列出「改成 0」的策略(`tr.saveZeroed`);`tr.err.paperLev` 句尾改「請調低金額」;`tests/check_web_desktop_parity.js`(新)比對兩個表面的 LEV_T 與幣別對照表(BLAVE_WEB_DIR,找不到就紅)。埋點 `feature_used` 加 `trade_lev_ack`、`trade_net_open`、`trade_err_ask`(api 白名單同批)。
+- **外殼小修(desktop 0.1.13 小修 spec;不在 runtime/ 但同一批出貨,`shell/renderer/trade.js`、`report-trades.js/.css`、`app.css`、`versions.js`、i18n)**:
+  - 群益口數存檔確認框:那一列名目(口 × 點值 × 指數)超過 TWD 淨值 5 倍(`LEV_T2`,槓桿提醒 1／5／10 的第 2 級)、或沒有報價／淨值時大台 ≥ 50、小台 ≥ 200、微台 ≥ 1,000 口,那一列下面多一句提醒(`tr.txfBigNotional`／`tr.txfBigLots`,灰記號、不擋、不上紅,沒改的舊列也檢查)。
+  - 口數格只收整數(可帶千分位,空白 = 0);小數、負數標紅並擋儲存(`tr.badLots`),不再把 2.9 截成 2。
+  - 讀帳失敗時的帳戶幣:讀到的 → 那家的固定幣別(`CX_VENUES[].ccy`、模擬 USDT、群益 TWD;`tests/check_venue_ccy.py` 逐支對 `lib/account_*.py`)→ 自訂交易所查不到就不帶幣別、不出倍數,改講 `tr.ccyUnknown`。不再寫死退成 USDT。
+  - en 口數單複數:1 口用 `tr.lotUnit`／`tr.txfConfirm1`／`tr.txfConfirmNoQuote1`／`tr.txfBigNotional1`(`trLotsKey`)。
+  - 進出場紀錄窄框(清單 ≤ 560)每一列固定兩行:方向+數量+種類一行、價格與部位一行;各段不在內部斷行。
+  - 隱私面板 `priv.collect.3` 改寫「作業系統與版本」(Windows 也是這一句)。
+  - 群益商品名:下單紀錄與總覽事件寫「大台（TX2610）」(代碼等寬),交易所部位表的口數列寫商品名。
 
 ## 1.1.108 — 2026-10-02(desktop 0.1.12)
 
