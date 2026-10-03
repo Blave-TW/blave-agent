@@ -93,9 +93,10 @@ t("#90 tmp/ 的一次性腳本:回覆前刪掉、不抄 tmp/ 裡的舊腳本",
 
 # 第五批
 t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(先估、先講、超過 25 分鐘先提短期間),範例策略的檔頭也寫了(agent 抄的就是範例)",
-  "**Before a Taiwan backtest on the desktop, work out the wait and say it first:**" in agents and "stocks × years × 36 s" in agents
+  "**Desktop Taiwan backtest: say the wait first**" in agents and "`fetch_twstock_price[_adj]` costs ~36 s per uncached listed stock-year, `*_batch` minutes" in agents
   and all("# Data wait:" in read("examples", n, "strategy.py").split("import sys")[0] and "tell the user before running" in read("examples", n, "strategy.py")
-          for n in ("twstock_momentum", "tw100_foreign_zscore")))
+          for n in ("twstock_momentum", "tw100_foreign_zscore"))
+  and "~36 s per stock-year of the per-stock free fetchers" in read("examples", "tw100_foreign_zscore", "strategy.py"))
 t("I 改參數時,DESCRIPTION 與檔頭裡寫到的同一個數字一起改(策略頁的副標是 DESCRIPTION)",
   "Changing a parameter also changes every place the file states that number: `DESCRIPTION` and the header comment" in agents
   and "**Keep the words true to the code.**" in read("references", "strategy-code.md"))
