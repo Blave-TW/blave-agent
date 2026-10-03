@@ -9,11 +9,13 @@ lib.data fetchers a strategy calls are replaced with synthetic ones.
     built in fetch_data (_add_indicators path, caught through the lib.data replay) and a
     Type C portfolio on the old `(s != s.shift(-1)).fillna(True)` rebalance mask
     and the same shift(-1) after fetch_data moved the index from naive UTC to Asia/Taipei
+  refused on every setting (default, one pool cut, budget already spent), naming the missing
+    column: Type C ranking factors across a stock that has data before it lists, masked afterwards
   passes: SMA cross with warm-up NaNs (also after that zone change), a correct label='right'
     higher timeframe, an external daily feed aligned with its publication lag, a naive
     Taipei-wall-clock feed under Taipei-aware bars, TAIFEX
     settlement-masked bars, CME settlement_signals_from_db bars, Type C on the
-    first-bar-of-period mask
+    first-bar-of-period mask, the same factor ranking masked before it ranks
   passes: a US daily feed with holidays aligned onto 24/7 daily bars (the bars align_feed cut
     at a holiday are excused; any other bar missing from a truncated run still counts)
   never refused: a nondeterministic strategy (the check cannot reproduce itself → skipped)
@@ -307,6 +309,195 @@ refused, _, has_stats = backtest("typec_old_mask", typec_fetch, typec(old_mask),
 check(bool(refused) and "偷看未來" in refused and "shift(1)" in refused and not has_stats,
       "Type C on the old last-bar-of-period mask: refused, message names the shift(1) fix")
 expect_pass("typec_new_mask", typec_fetch, typec(new_mask), INTERVAL="1d", WARMUP=20)
+
+# ── Type C: a cross-sectional rank that counts a stock before it listed ─────────────────────
+# Z has fundamentals for its whole history but prices only from bar LIST_AT (the 3447 / 6614
+# shape). A truncated replay before LIST_AT drops Z's column; ranking the factors before masking
+# by `valid` lets Z move everyone else's percentile in the full run. The pool cut that would
+# catch it is a lottery (LIST_AT sits just above the pool's lower bound, and a slow strategy runs
+# one cut) — the column-set cut must refuse it on every setting.
+SIDS, LIST_AT = list("ABCDEFGHIJK") + ["Z"], 240
+frng = np.random.default_rng(11)
+PX = {s: pd.DataFrame({"Open": PRICES["A"].to_numpy() * (1 + frng.normal(0, 0.01, 700)),
+                       "Close": PRICES["B"].to_numpy() * (1 + frng.normal(0, 0.01, 700))}, index=DIDX)
+      for s in SIDS}
+PX["Z"] = PX["Z"].iloc[LIST_AT:]
+FAC = {s: pd.DataFrame({"f1": frng.normal(size=700), "f2": frng.normal(size=700)}, index=DIDX) for s in SIDS}
+# two dict-per-symbol batch fetchers outside FEED_TIMING: the replay cuts them by stamp, so the
+# only thing a truncation changes is which symbols exist
+D.fetch_kline_batch = lambda ids, interval, start, end, headers: {s: PX[s].copy() for s in ids}
+D.fetch_twstock_dividend_batch = lambda ids, start, end, headers: {s: FAC[s].copy() for s in ids}
+
+
+def listing_fetch(hdrs):
+    from lib.data import fetch_kline_batch, fetch_twstock_dividend_batch
+    px = fetch_kline_batch(SIDS, "1d", "2022-01-03", None, hdrs)
+    fa = fetch_twstock_dividend_batch(SIDS, "2022-01-03", None, hdrs)
+    closes, opens, f1, f2 = {}, {}, {}, {}
+    for s in SIDS:
+        p = px.get(s)
+        if p is None or p.empty:
+            continue
+        closes[s], opens[s], f1[s], f2[s] = p["Close"], p["Open"], fa[s]["f1"], fa[s]["f2"]
+    close_df = pd.DataFrame(closes).sort_index()
+    at = lambda d: pd.DataFrame(d).reindex(close_df.index)
+    return close_df, at(opens), at(f1), at(f2)
+
+
+def factor_basket(mask_first):
+    def compute(data):
+        close_df, open_df, f1, f2 = data
+        valid = close_df.notna() & f1.notna() & f2.notna()
+        if mask_first:
+            f1, f2 = f1.where(valid), f2.where(valid)
+        score = ((f1.rank(axis=1, pct=True) + f2.rank(axis=1, pct=True)) / 2).where(valid)
+        rank = score.rank(axis=1, ascending=False, method="first", na_option="bottom")
+        w = pd.DataFrame(np.where((rank <= 3) & score.notna(), 1 / 3, 0.0),
+                         index=score.index, columns=score.columns)
+        w[~new_mask(close_df.index)] = np.nan
+        return w.ffill().fillna(0.0).values, pd.concat({"close": close_df, "open": open_df}, axis=1)
+    return compute
+
+
+class SlowClock:
+    """Every monotonic() read is 40 s later: compute_signals measures 40 s (under the skip
+    threshold) and the budget is spent before the second cut — the 13:36 one-cut pass."""
+    def __init__(self):
+        self.n = 0
+
+    def monotonic(self):
+        self.n += 1
+        return 40.0 * self.n
+
+    def __getattr__(self, name):
+        return getattr(runner_time, name)
+
+
+runner_time, saved_cuts = runner.time, runner.LOOKAHEAD_CUTS
+for tag, cuts, clock in (("default", saved_cuts, runner_time), ("one pool cut", 1, runner_time),
+                         ("budget spent", saved_cuts, None)):
+    runner.LOOKAHEAD_CUTS = cuts
+    slug = tag.replace(" ", "_")
+    runner.time = clock or SlowClock()
+    refused, out, has_stats = backtest(f"typec_rank_before_listing_{slug}", listing_fetch,
+                                       factor_basket(False), INTERVAL="1d", WARMUP=20)
+    check(bool(refused) and "偷看未來" in refused and not has_stats
+          and "1 column(s) exist in the full data but not at the cut, e.g. Z" in refused
+          and "did not exist yet" in refused,
+          f"Type C ranking a not-yet-listed stock ({tag}): refused, message names the missing column"
+          + ("" if refused else " — it passed: " + next((l for l in out.splitlines() if "Look-ahead" in l), "")))
+    runner.time = clock or SlowClock()
+    expect_pass(f"typec_mask_before_rank_{slug}", listing_fetch, factor_basket(True), INTERVAL="1d", WARMUP=20)
+runner.time, runner.LOOKAHEAD_CUTS = runner_time, saved_cuts
+
+refused, out, _ = backtest("typec_mask_before_rank_report", listing_fetch, factor_basket(True), INTERVAL="1d", WARMUP=20)
+check(refused is None and "dropped not-yet-listed symbols" in out,
+      "the pass line says the symbol-set cut dropped a symbol")
+
+# a cut that keeps every column proves nothing about ranking before listing — the pass line
+# must not claim it: (1) the strategy reindexes to a fixed universe, (2) a row-truncated replay
+def listing_fetch_fixed_universe(hdrs):
+    from lib.data import fetch_kline_batch, fetch_twstock_dividend_batch
+    px = fetch_kline_batch(SIDS, "1d", "2022-01-03", None, hdrs)
+    fa = fetch_twstock_dividend_batch(SIDS, "2022-01-03", None, hdrs)
+    close_df = pd.DataFrame({s: px[s]["Close"] for s in SIDS}).sort_index().reindex(columns=SIDS)
+    at = lambda col, src: pd.DataFrame({s: src[s][col] for s in SIDS}).reindex(close_df.index)
+    return close_df, at("Open", px), at("f1", fa), at("f2", fa)
+
+
+refused, out, _ = backtest("typec_fixed_universe", listing_fetch_fixed_universe, factor_basket(False),
+                           INTERVAL="1d", WARMUP=20)
+check(refused is None and "did not take effect" in out and "dropped not-yet-listed" not in out,
+      "universe reindexed to a fixed list: passes, but says the symbol-set check did not take effect")
+runner._FetchRecorder.usable = property(lambda self: False, lambda self, v: None)   # instance attr → forced off
+refused, out, _ = backtest("typec_compute_only", listing_fetch, factor_basket(False), INTERVAL="1d", WARMUP=20)
+del runner._FetchRecorder.usable
+check(refused is None and "compute_signals only" in out and "did not take effect" in out,
+      "compute-only replay: says the symbol-set check did not take effect")
+
+
+# the symbol-set cut fails to run (strategy needs more history): the pool cuts still count
+def needs_history(compute, bars):
+    def wrapped(data):
+        if len(data[0]) < bars:
+            raise ValueError(f"need {bars} bars")
+        return compute(data)
+    return wrapped
+
+
+refused, out, has_stats = backtest("typec_needs_300", listing_fetch, needs_history(factor_basket(True), 300),
+                                   INTERVAL="1d", WARMUP=20)
+check(refused is None and has_stats and "Look-ahead check: passed" in out
+      and "the symbol-set cut failed to run: need 300 bars" in out,
+      "symbol-set cut fails to run: annotated pass on the pool cuts, error named")
+
+
+# a weight held on a symbol before it existed: the moved column is the missing one → "possibly"
+def hold_z(data):
+    close_df, open_df, _, _ = data
+    w = pd.DataFrame(0.0, index=close_df.index, columns=close_df.columns)
+    if "Z" in w:
+        w["Z"] = 1.0
+    return w.values, pd.concat({"close": close_df, "open": open_df}, axis=1)
+
+
+refused, _, _ = backtest("typec_hold_before_listing", listing_fetch, hold_z, INTERVAL="1d", WARMUP=20)
+check(bool(refused) and "[Z]" in refused and "e.g. Z — possibly" in refused,
+      "weight on the missing symbol itself: refused, the rank rule worded as 'possibly'")
+
+# _lookahead_column_cuts on every shape compute_signals may hand it
+cc = pd.DataFrame({"A": PX["A"]["Close"], "Z": PX["Z"]["Close"]}).reindex(DIDX)
+noskip = np.zeros(len(DIDX), dtype=bool)
+w2 = np.zeros((len(DIDX), 2))
+shapes = {"multi": pd.concat({"close": cc, "open": cc}, axis=1), "no close level": cc,
+          "dict": {"close": cc}, "ndarray": cc.values, "empty": pd.concat({"close": cc.iloc[:, :0]}, axis=1),
+          "all-NaN column": pd.concat({"close": cc.assign(C=np.nan)}, axis=1)}
+want = {"multi": [LIST_AT], "no close level": [], "dict": [LIST_AT], "ndarray": [], "empty": [],
+        "all-NaN column": [LIST_AT]}
+for name, pdf in shapes.items():
+    try:
+        got = runner._lookahead_column_cuts((w2, pdf), (cc,), DIDX, 40, 233, noskip)
+    except Exception as e:
+        got = f"raised {e!r}"
+    check(got == want[name], f"column cuts on {name}: {got}")
+check(runner._lookahead_column_cuts(("not Type C", cc), (cc,), DIDX, 40, 233, noskip) == [],
+      "column cuts on a Type A result: none")
+sk = noskip.copy()
+sk[LIST_AT - 1] = sk[LIST_AT - 2] = True
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 233, sk) == [LIST_AT - 2],
+      "a settlement bar steps the column cut earlier")
+sk = noskip.copy()
+sk[225:LIST_AT] = True
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 233, sk) == [],
+      "a pick above the pool floor never steps below it")
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 300, noskip) == [LIST_AT],
+      "every start below the pool floor: the latest one is still cut (floor = WARMUP+20)")
+fac = cc.copy()
+fac["Z"] = 1.0
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc, fac), DIDX, 40, 233, noskip) == [LIST_AT],
+      "a symbol with data before its first priced bar: cut right at that bar")
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), ("junk", {"x": [fac]}, None), DIDX, 40, 233, noskip)
+      == [LIST_AT], "fetch_data frames found inside lists / dicts")
+
+# the real shape (2026-10-03 run): the stock with pre-listing fundamentals is neither the latest
+# lister nor the earliest past the pool floor — W lists at 250 and Y at 650 with no early data,
+# Z has fundamentals from 300 and prices from 500. Only a cut in (300, 500] can see Z; the
+# column-set pick must find it from the data, not from where columns start.
+saved_px = PX, FAC, SIDS
+PX, FAC = dict(PX), dict(FAC)
+SIDS = SIDS + ["W", "Y"]
+PX["Z"] = PX["A"].iloc[500:] * 1.01
+PX["W"], PX["Y"] = PX["B"].iloc[250:] * 1.02, PX["C"].iloc[650:] * 1.03
+FAC["Z"] = FAC["A"].iloc[300:] * -1
+FAC["W"], FAC["Y"] = FAC["B"].iloc[250:] + 0.1, FAC["C"].iloc[650:] - 0.1
+runner.LOOKAHEAD_CUTS = 1
+refused, out, _ = backtest("typec_phantom_mid_history", listing_fetch, factor_basket(False), INTERVAL="1d", WARMUP=20)
+check(bool(refused) and "not at the cut, e.g. Z" in refused,
+      "pre-listing data mid-history, neither latest nor earliest lister: refused, Z named"
+      + ("" if refused else " — " + next((l for l in out.splitlines() if "Look-ahead" in l), "")))
+expect_pass("typec_phantom_mid_history_masked", listing_fetch, factor_basket(True), INTERVAL="1d", WARMUP=20)
+runner.LOOKAHEAD_CUTS = saved_cuts
+PX, FAC, SIDS = saved_px
 
 # ── a US daily feed under 24/7 crypto bars: a US holiday has no row, ever ────────────────────────
 # Full run: the bars after a holiday are NaN mid-history (held). A truncation that ends there:

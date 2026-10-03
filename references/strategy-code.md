@@ -787,6 +787,8 @@ def compute_signals(data, param1=PARAM1, param2=PARAM2):
 
 See `examples/tw100_foreign_zscore/strategy.py` (z-score proportional) and `examples/twstock_momentum/strategy.py` (top-N equal weight) for complete working implementations.
 
+**Mask before you rank.** A cross-sectional rank / mean / percentile across symbols (one factor or several averaged) must first mask, with `.where(valid)`, every stock that did not exist yet or whose data is incomplete at that bar — ranking first and masking afterwards lets a stock that has fundamentals but no price yet (not listed) shift everyone else's rank, and the look-ahead check refuses it (`N column(s) exist in the full data but not at the cut`).
+
 ### Live trading (Type C)
 
 A funded Type C strategy (an `amounts` entry > 0 in `manager/portfolio_config.json`) trades

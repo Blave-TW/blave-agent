@@ -826,6 +826,10 @@ def _send_best_effort(send_fn, arg):
 LOOKAHEAD_CUTS     = 5         # truncation points, one of them "drop the last bar"
 LOOKAHEAD_SEED     = MCPT_SEED
 LOOKAHEAD_BUDGET_S = 30.0      # stop adding cuts past this; the verdict says how many ran
+# Type C also gets up to two cuts where the column set changes (a symbol's first priced bar),
+# run first and outside the budget: a cross-sectional rank that counts a stock before it listed
+# only shows up when the cut drops that stock while its other data is already there, and the
+# random pool reached such a cut by luck.
 LOOKAHEAD_RTOL     = 1e-6
 LOOKAHEAD_ATOL     = 1e-9
 _LOOKAHEAD_PATTERNS = (
@@ -1083,6 +1087,71 @@ def _lookahead_diff(full, part, cut, excused=()):
     return None
 
 
+def _frames(obj, depth=0):
+    """DataFrames inside a fetch_data output (tuple / list / dict, two levels deep)."""
+    if isinstance(obj, pd.DataFrame):
+        return [obj]
+    if depth < 2 and isinstance(obj, (tuple, list)):
+        return [f for v in obj for f in _frames(v, depth + 1)]
+    if depth < 2 and isinstance(obj, dict):
+        return [f for v in obj.values() for f in _frames(v, depth + 1)]
+    return []
+
+
+def _lookahead_column_cuts(result, data, index, lo_hard, lo_pool, skip):
+    """Type C cut positions k (bars >= index[k] removed) where a symbol has not started yet,
+    at most two. A symbol's start is its first priced bar in price_df['close'] (weights are 0,
+    never NaN, before a listing). A cut at k only catches a rank over a not-yet-listed symbol
+    when that symbol already has OTHER data (fundamentals, revenue…) before k and its price
+    starts at or after k — so the cuts are chosen to cover the most such symbols, from the
+    fetch_data frames that share close's columns. With none of those, fall back to the latest
+    start and the earliest one past the pool floor. A settlement bar steps the cut earlier
+    (keeps the symbol absent), never below the pool floor once the pick was above it."""
+    if not (isinstance(result, tuple) and len(result) >= 2 and isinstance(result[0], np.ndarray)):
+        return []
+    n = len(index)
+    try:
+        close = result[1]['close']
+        has = close.notna().to_numpy()
+        start = np.where(has.any(axis=0), has.argmax(axis=0), n)
+        first = np.full(len(close.columns), n)
+        for f in _frames(data):
+            if not len(f.columns.intersection(close.columns)) or f.columns.has_duplicates:
+                continue
+            got = f.reindex(index=index, columns=close.columns).notna().to_numpy()
+            first = np.minimum(first, np.where(got.any(axis=0), got.argmax(axis=0), n))
+    except Exception:
+        return []
+    live = (start >= lo_hard) & (start < n)
+    lo_c, hi_c = first[live], start[live]
+    early = lo_c < hi_c                      # data before its first priced bar
+    picks = []
+    if early.any():
+        lo_c, hi_c = lo_c[early], hi_c[early]
+        cand = np.unique(hi_c)
+        if (cand >= lo_pool).any():
+            cand = cand[cand >= lo_pool]
+        cover = (lo_c[None, :] < cand[:, None]) & (cand[:, None] <= hi_c[None, :])
+        for _ in range(2):
+            if not cover.any():
+                break
+            i = int(cover.sum(axis=1).argmax())
+            picks.append(int(cand[i]))
+            cover &= ~cover[i][None, :]
+    else:
+        starts = sorted({int(k) for k in hi_c})
+        picks = [starts[-1]] if starts else []
+        picks += [k for k in starts if k >= lo_pool][:1]
+    out = []
+    for k in picks:
+        floor = lo_pool if k >= lo_pool else lo_hard
+        while k > floor and skip[k - 1]:
+            k -= 1
+        if not skip[k - 1] and k not in out:
+            out.append(k)
+    return out
+
+
 def _lookahead_skip_mask(result, data, index):
     """Bars that must not be the LAST bar of a truncated run: settlement bars. Both
     settlement helpers mark the bar before a roll only once the roll is visible
@@ -1134,7 +1203,9 @@ def _lookahead_source_hints(config):
 
 def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, recorder, compute_s=0.0):
     """Truncation-invariance verdict for this backtest:
-      ('pass', detail) | ('skip', reason) | ('leak', (cut, ts, col, full_v, part_v, how)).
+      ('pass', detail) | ('skip', reason) |
+      ('leak', (cut, ts, col, full_v, part_v, how, missing)) — `missing`: columns of the full
+      run absent from the truncated one (Type C), [] otherwise.
 
     Two replay modes, best first: 'fetch' re-runs fetch_data on recorded lib.data results
     (covers _add_indicators), 'compute' re-runs compute_signals on the truncated fetch_data
@@ -1205,36 +1276,56 @@ def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, reco
         if n - 1 <= lo:
             return 'skip', f'only {n} bars (WARMUP {warmup}) — too short to test'
         skip = _lookahead_skip_mask(result, data, index)
+        fixed = _lookahead_column_cuts(result, data, index, warmup + 20, lo, skip)
         rng  = np.random.default_rng(LOOKAHEAD_SEED)
         pool = [n - 1] + list(rng.permutation(np.arange(lo, n - 1)))
-        cuts = [k for k in pool if not skip[k - 1]][:LOOKAHEAD_CUTS]
+        cuts = fixed + [k for k in pool if not skip[k - 1] and k not in fixed][:LOOKAHEAD_CUTS]
         if not cuts:
             return 'skip', 'every candidate cut sits on a settlement bar'
-        ran, errors = 0, []
+        ran, errors, fixed_ran, fixed_dropped, fixed_err = 0, [], 0, 0, []
         for k in cuts:
-            if ran and time.monotonic() - started > LOOKAHEAD_BUDGET_S:
+            if k not in fixed and ran and time.monotonic() - started > LOOKAHEAD_BUDGET_S:
                 break
             cut = index[k]
+            err = None
             try:
                 part = quiet(fn, cut)
             except (Exception, SystemExit) as e:
-                errors.append(str(e)[:120])
-                continue
-            if part is None:
-                errors.append('truncated run returned an unexpected shape')
-                continue
-            if len(part) >= len(full):  # the replay did not actually lose the tail
-                errors.append('truncation did not shorten the data')
+                part, err = None, str(e)[:120]
+            if err is None and part is None:
+                err = 'truncated run returned an unexpected shape'
+            if err is None and len(part) >= len(full):  # the replay did not actually lose the tail
+                err = 'truncation did not shorten the data'
+            if err is not None:
+                errors.append(err)
+                if k in fixed:
+                    fixed_err.append(err)
                 continue
             ran += 1
+            missing = (list(full.columns.difference(part.columns, sort=False))
+                       if isinstance(full, pd.DataFrame) and isinstance(part, pd.DataFrame) else [])
+            if k in fixed:
+                fixed_ran += 1
+                fixed_dropped += bool(missing)
             d = _lookahead_diff(full, part, cut, excused=pd.DatetimeIndex(trims))
             if d is not None:
-                return 'leak', (cut,) + d + (how,)
+                return 'leak', (cut,) + d + (how, missing)
         if ran == 0:
             why_not.append(f"{how}: every truncated run failed ({'; '.join(errors[:2])})")
             continue
         scope = 'fetch_data + compute_signals' if how == 'fetch' else 'compute_signals only'
-        return 'pass', f"{ran} truncation point(s), {scope}"
+        detail = f"{ran} truncation point(s), {scope}"
+        # say what the symbol-set cuts actually established — a cut that ran but kept every
+        # column (row-truncated replay, a strategy that reindexes to a fixed universe) proves
+        # nothing about ranking stocks before they listed
+        if fixed_dropped:
+            detail += f"; {fixed_dropped} of them dropped not-yet-listed symbols"
+        elif fixed_ran:
+            detail += ("; the symbol-set check did not take effect (the columns are still there "
+                       "after truncation)")
+        elif fixed:
+            detail += f"; the symbol-set cut failed to run: {fixed_err[0] if fixed_err else 'not reached'}"
+        return 'pass', detail
     return 'skip', '; '.join(why_not) or 'no replay mode available'
 
 
@@ -1256,7 +1347,7 @@ def _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, re
         logging.warning("look-ahead check skipped: %s", info)
         print(f"  ⚠️ Look-ahead check skipped — this backtest is NOT verified free of look-ahead: {info}")
         return
-    cut, ts, col, full_v, part_v, how = info
+    cut, ts, col, full_v, part_v, how, missing = info
     where = f"{ts}" + (f" [{col}]" if col is not None else "")
     scope = ('fetch_data (incl. _add_indicators) + compute_signals' if how == 'fetch'
              else 'compute_signals')
@@ -1273,6 +1364,16 @@ def _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, re
         "Type C: the old _rebalance_mask `(s != s.shift(-1)).fillna(True)` does this — use "
         "`(s != s.shift(1)).to_numpy()` (first bar of each period).",
     ]
+    if missing:
+        # a weight that moved on a symbol present in both runs is the denominator effect; one on
+        # a missing symbol is a position held before it existed, which has other causes too
+        rule = ("a cross-sectional rank/mean/percentile must first mask stocks that did not exist "
+                "yet or whose data is incomplete at that point." if col not in missing else
+                "possibly a cross-sectional rank/mean/percentile, or weights over all columns, that "
+                "did not first mask stocks that did not exist yet or whose data is incomplete at "
+                "that point.")
+        lines.append(f"❌ {len(missing)} column(s) exist in the full data but not at the cut, e.g. "
+                     f"{', '.join(map(str, missing[:8]))} — {rule}")
     lines += [f"❌ {h}" for h in _lookahead_source_hints(config)]
     lines.append("❌ Backtest refused — fix it so every bar uses only data up to its own close, then re-run.")
     msg = '\n'.join(lines)
