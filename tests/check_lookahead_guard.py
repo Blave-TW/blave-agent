@@ -407,12 +407,14 @@ def listing_fetch_fixed_universe(hdrs):
 
 refused, out, _ = backtest("typec_fixed_universe", listing_fetch_fixed_universe, factor_basket(False),
                            INTERVAL="1d", WARMUP=20)
-check(refused is None and "did not take effect" in out and "dropped not-yet-listed" not in out,
+check(refused is None and "did not take effect" in out and "dropped not-yet-listed" not in out
+      and "⚠️ Look-ahead check passed with a gap — NOT verified" in out and "Look-ahead check: passed" not in out,
       "universe reindexed to a fixed list: passes, but says the symbol-set check did not take effect")
 runner._FetchRecorder.usable = property(lambda self: False, lambda self, v: None)   # instance attr → forced off
 refused, out, _ = backtest("typec_compute_only", listing_fetch, factor_basket(False), INTERVAL="1d", WARMUP=20)
 del runner._FetchRecorder.usable
-check(refused is None and "compute_signals only" in out and "did not take effect" in out,
+check(refused is None and "compute_signals only" in out and "did not take effect" in out
+      and "⚠️ Look-ahead check passed with a gap — NOT verified" in out,
       "compute-only replay: says the symbol-set check did not take effect")
 
 
@@ -427,7 +429,7 @@ def needs_history(compute, bars):
 
 refused, out, has_stats = backtest("typec_needs_300", listing_fetch, needs_history(factor_basket(True), 300),
                                    INTERVAL="1d", WARMUP=20)
-check(refused is None and has_stats and "Look-ahead check: passed" in out
+check(refused is None and has_stats and "⚠️ Look-ahead check passed with a gap — NOT verified" in out and "Look-ahead check: passed" not in out
       and "the symbol-set cut failed to run: need 300 bars" in out,
       "symbol-set cut fails to run: annotated pass on the pool cuts, error named")
 
@@ -456,28 +458,42 @@ want = {"multi": [LIST_AT], "no close level": [], "dict": [LIST_AT], "ndarray": 
         "all-NaN column": [LIST_AT]}
 for name, pdf in shapes.items():
     try:
-        got = runner._lookahead_column_cuts((w2, pdf), (cc,), DIDX, 40, 233, noskip)
+        got = runner._lookahead_column_cuts((w2, pdf), (cc,), DIDX, 40, 233, noskip)[0]
     except Exception as e:
         got = f"raised {e!r}"
     check(got == want[name], f"column cuts on {name}: {got}")
-check(runner._lookahead_column_cuts(("not Type C", cc), (cc,), DIDX, 40, 233, noskip) == [],
+check(runner._lookahead_column_cuts(("not Type C", cc), (cc,), DIDX, 40, 233, noskip)[0] == [],
       "column cuts on a Type A result: none")
 sk = noskip.copy()
 sk[LIST_AT - 1] = sk[LIST_AT - 2] = True
-check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 233, sk) == [LIST_AT - 2],
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 233, sk)[0] == [LIST_AT - 2],
       "a settlement bar steps the column cut earlier")
 sk = noskip.copy()
 sk[225:LIST_AT] = True
-check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 233, sk) == [],
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 233, sk)[0] == [],
       "a pick above the pool floor never steps below it")
-check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 300, noskip) == [LIST_AT],
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc,), DIDX, 40, 300, noskip)[0] == [LIST_AT],
       "every start below the pool floor: the latest one is still cut (floor = WARMUP+20)")
 fac = cc.copy()
 fac["Z"] = 1.0
-check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc, fac), DIDX, 40, 233, noskip) == [LIST_AT],
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), (cc, fac), DIDX, 40, 233, noskip)[0] == [LIST_AT],
       "a symbol with data before its first priced bar: cut right at that bar")
-check(runner._lookahead_column_cuts((w2, shapes["multi"]), ("junk", {"x": [fac]}, None), DIDX, 40, 233, noskip)
+check(runner._lookahead_column_cuts((w2, shapes["multi"]), ("junk", {"x": [fac]}, None), DIDX, 40, 233, noskip)[0]
       == [LIST_AT], "fetch_data frames found inside lists / dicts")
+bad = fac.iloc[[0, 0, 1]]                                    # shares columns, duplicated index → reindex raises
+cuts, notes = runner._lookahead_column_cuts((w2, shapes["multi"]), (cc, bad, fac), DIDX, 40, 233, noskip)
+check(cuts == [LIST_AT] and len(notes) == 1 and "frame #2 skipped" in notes[0],
+      f"an unreadable frame is skipped and noted, the others still place the cut: {cuts} {notes}")
+cuts, notes = runner._lookahead_column_cuts((w2, shapes["multi"]), (bad,), DIDX, 40, 233, noskip)
+check(cuts == [LIST_AT] and len(notes) == 1, "…and with only that frame the fallback pick survives")
+
+# budget spent after the first cut: the column cut AND "drop the last bar" still both run
+runner.time = SlowClock()
+refused, out, _ = backtest("typec_budget_last_bar", listing_fetch, factor_basket(True), INTERVAL="1d", WARMUP=20)
+runner.time = runner_time
+check(refused is None and "passed (2 truncation point(s)" in out,
+      "budget spent: the column cut and the last-bar cut both run"
+      + ("" if refused else " — " + next((l for l in out.splitlines() if "Look-ahead" in l), "")))
 
 # the real shape (2026-10-03 run): the stock with pre-listing fundamentals is neither the latest
 # lister nor the earliest past the pool floor — W lists at 250 and Y at 650 with no early data,

@@ -1106,22 +1106,27 @@ def _lookahead_column_cuts(result, data, index, lo_hard, lo_pool, skip):
     starts at or after k — so the cuts are chosen to cover the most such symbols, from the
     fetch_data frames that share close's columns. With none of those, fall back to the latest
     start and the earliest one past the pool floor. A settlement bar steps the cut earlier
-    (keeps the symbol absent), never below the pool floor once the pick was above it."""
+    (keeps the symbol absent), never below the pool floor once the pick was above it.
+    → (cuts, notes): notes name the fetch_data frames that could not be read — only that frame
+    is left out of the choice."""
     if not (isinstance(result, tuple) and len(result) >= 2 and isinstance(result[0], np.ndarray)):
-        return []
+        return [], []
     n = len(index)
     try:
         close = result[1]['close']
         has = close.notna().to_numpy()
         start = np.where(has.any(axis=0), has.argmax(axis=0), n)
-        first = np.full(len(close.columns), n)
-        for f in _frames(data):
+    except Exception:
+        return [], []
+    first, notes = np.full(len(close.columns), n), []
+    for i, f in enumerate(_frames(data)):
+        try:
             if not len(f.columns.intersection(close.columns)) or f.columns.has_duplicates:
                 continue
             got = f.reindex(index=index, columns=close.columns).notna().to_numpy()
             first = np.minimum(first, np.where(got.any(axis=0), got.argmax(axis=0), n))
-    except Exception:
-        return []
+        except Exception as e:
+            notes.append(f"fetch_data frame #{i + 1} skipped when placing it ({str(e)[:80]})")
     live = (start >= lo_hard) & (start < n)
     lo_c, hi_c = first[live], start[live]
     early = lo_c < hi_c                      # data before its first priced bar
@@ -1149,7 +1154,7 @@ def _lookahead_column_cuts(result, data, index, lo_hard, lo_pool, skip):
             k -= 1
         if not skip[k - 1] and k not in out:
             out.append(k)
-    return out
+    return out, notes
 
 
 def _lookahead_skip_mask(result, data, index):
@@ -1203,7 +1208,7 @@ def _lookahead_source_hints(config):
 
 def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, recorder, compute_s=0.0):
     """Truncation-invariance verdict for this backtest:
-      ('pass', detail) | ('skip', reason) |
+      ('pass', detail) | ('partial', detail) | ('skip', reason) |
       ('leak', (cut, ts, col, full_v, part_v, how, missing)) — `missing`: columns of the full
       run absent from the truncated one (Type C), [] otherwise.
 
@@ -1276,7 +1281,10 @@ def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, reco
         if n - 1 <= lo:
             return 'skip', f'only {n} bars (WARMUP {warmup}) — too short to test'
         skip = _lookahead_skip_mask(result, data, index)
-        fixed = _lookahead_column_cuts(result, data, index, warmup + 20, lo, skip)
+        fixed, notes = _lookahead_column_cuts(result, data, index, warmup + 20, lo, skip)
+        # "drop the last bar" is also outside the budget: a slow strategy may only get the
+        # fixed cuts, and a leak that shows only on the newest bar needs this one
+        always = fixed + ([n - 1] if not skip[n - 2] and n - 1 not in fixed else [])
         rng  = np.random.default_rng(LOOKAHEAD_SEED)
         pool = [n - 1] + list(rng.permutation(np.arange(lo, n - 1)))
         cuts = fixed + [k for k in pool if not skip[k - 1] and k not in fixed][:LOOKAHEAD_CUTS]
@@ -1284,7 +1292,7 @@ def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, reco
             return 'skip', 'every candidate cut sits on a settlement bar'
         ran, errors, fixed_ran, fixed_dropped, fixed_err = 0, [], 0, 0, []
         for k in cuts:
-            if k not in fixed and ran and time.monotonic() - started > LOOKAHEAD_BUDGET_S:
+            if k not in always and ran and time.monotonic() - started > LOOKAHEAD_BUDGET_S:
                 break
             cut = index[k]
             err = None
@@ -1318,13 +1326,15 @@ def _lookahead_check(config, fetch_data_fn, compute_fn, hdrs, data, result, reco
         # say what the symbol-set cuts actually established — a cut that ran but kept every
         # column (row-truncated replay, a strategy that reindexes to a fixed universe) proves
         # nothing about ranking stocks before they listed
+        detail += ''.join(f"; {x}" for x in notes)
         if fixed_dropped:
-            detail += f"; {fixed_dropped} of them dropped not-yet-listed symbols"
-        elif fixed_ran:
-            detail += ("; the symbol-set check did not take effect (the columns are still there "
-                       "after truncation)")
-        elif fixed:
-            detail += f"; the symbol-set cut failed to run: {fixed_err[0] if fixed_err else 'not reached'}"
+            return 'pass', detail + f"; {fixed_dropped} of them dropped not-yet-listed symbols"
+        if fixed_ran:
+            return 'partial', detail + ("; the symbol-set check did not take effect (the columns "
+                                        "are still there after truncation)")
+        if fixed:
+            return 'partial', detail + ("; the symbol-set cut failed to run: "
+                                        + (fixed_err[0] if fixed_err else 'not reached'))
         return 'pass', detail
     return 'skip', '; '.join(why_not) or 'no replay mode available'
 
@@ -1342,6 +1352,11 @@ def _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, re
     if verdict == 'pass':
         logging.info("look-ahead check passed: %s", info)
         print(f"  Look-ahead check: passed ({info})")
+        return
+    if verdict == 'partial':   # the cuts that ran agree, but ranking before listing is unproven
+        logging.warning("look-ahead check passed with a gap: %s", info)
+        print(f"  ⚠️ Look-ahead check passed with a gap — NOT verified for a rank over stocks not "
+              f"listed yet: {info}")
         return
     if verdict == 'skip':
         logging.warning("look-ahead check skipped: %s", info)
