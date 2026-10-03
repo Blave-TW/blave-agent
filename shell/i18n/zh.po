@@ -2398,7 +2398,7 @@ msgid "priv.collect.1"
 msgstr "做到哪一步：首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行"
 
 msgid "priv.collect.5"
-msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"
+msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容；從策略庫用一支策略時，記它要不要 Blave 資料；送出找點子時，記是從哪個入口送出"
 
 msgid "priv.collect.2"
 msgstr "發生的時間"
@@ -2416,6 +2416,10 @@ msgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原
 msgid "priv.collect.7"
 msgstr "登入後，帳號也會記下：連的是哪種 AI、這台電腦有沒有跑過回測（保留 90 天）"
 
+# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
+msgid "priv.collect.8"
+msgstr "沒登入時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
+
 msgid "priv.never.h"
 msgstr "不收"
 
@@ -2423,7 +2427,7 @@ msgid "priv.never.1"
 msgstr "對話內容"
 
 msgid "priv.never.2"
-msgstr "策略的程式碼與名稱"
+msgstr "你自己的策略：程式碼與名稱"
 
 msgid "priv.never.3"
 msgstr "標的、金額、部位"

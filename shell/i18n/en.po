@@ -2395,7 +2395,7 @@ msgid "priv.collect.hOff"
 msgstr "Collected when on"
 
 msgid "priv.collect.5"
-msgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"
+msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from"
 
 msgid "priv.collect.1"
 msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud"
@@ -2416,6 +2416,10 @@ msgstr "Where things got stuck: the category of a failed turn, a failed AI conne
 msgid "priv.collect.7"
 msgstr "Once you sign in, your account also records which AI you’re connected to and whether this computer has run a backtest (kept 90 days)"
 
+# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
+msgid "priv.collect.8"
+msgstr "When you download a no-sign-in library strategy: which one (its library number) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"
+
 msgid "priv.never.h"
 msgstr "Never collected"
 
@@ -2423,7 +2427,7 @@ msgid "priv.never.1"
 msgstr "Chat content"
 
 msgid "priv.never.2"
-msgstr "Strategy code and names"
+msgstr "Your own strategies' code and names"
 
 msgid "priv.never.3"
 msgstr "Symbols, amounts, positions"
