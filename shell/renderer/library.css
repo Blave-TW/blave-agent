@@ -47,6 +47,21 @@
 .lib-gate[hidden] { display: none; }
 .lib-gate p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
 .lib-state { margin: 0; padding: var(--space-24) 0; font-size: 13px; color: var(--ink-3); }
+/* 沒權限時分兩組(spec-0.1.13 §2.2,值抄 mockup):組標題是真的 h6(覆蓋全域 h6 的字級與邊距),數字 .mono 淡一階;
+   組間 24、組內不另加距(列自己有 hairline);閘門卡掛在第二組標題正下方 */
+.lib-grp + .lib-grp { margin-top: var(--space-24); }
+.lib-grp-h { display: flex; align-items: baseline; gap: var(--space-6); margin: 0; padding: 0 0 var(--space-8); font-size: 12px; font-weight: 600; line-height: 1.5; color: var(--ink-2); }
+.lib-grp-h .mono { font-weight: 400; color: var(--ink-3); }
+.lib-grp .lib-gate { margin: 0 0 var(--space-12); }
+.lib-grp-empty { margin: 0; padding: var(--space-12) var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); border-top: 1px solid var(--border-hairline); border-bottom: 1px solid var(--border-hairline); }
+.lib-grp-empty .btn-quiet { font-size: inherit; }
+/* 頁首說明句尾的找點子文字鈕(§2.7):跟句子同色、hover 變 ink;鈕和句號同一個 nowrap,句號不單獨掉行 */
+.lib-desc .btn-quiet { font-size: inherit; color: var(--ink-2); }
+.lib-desc .btn-quiet:hover { color: var(--ink); }
+.lib-desc .nw { white-space: nowrap; }
+/* 找點子框(§5.2;殼是 app.css 的表單 modal):市場分段不撐滿整列;「方向」後面的「(選填)」淡一階、不加粗 */
+.idea-seg { align-self: flex-start; }
+.fld-l .opt { font-weight: 400; color: var(--ink-3); }
 .lib-state .btn-out { display: inline-flex; align-items: center; margin-top: var(--space-12); }
 /* skeleton(canon Loader:200ms 內回來不畫、畫了至少留 300ms;微光靠 lib-shimmer) */
 .sk-row { min-height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 72px 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); }

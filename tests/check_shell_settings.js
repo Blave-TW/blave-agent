@@ -377,7 +377,7 @@ ok("訊息格只由 planPaint 寫:index.html 沒有那個節點、程式裡只�
 ok("登出沒撤成那句到得了這一頁", /setHint\(\{ text: t\("cn\.blave\.signOutLocalOnly"\) \}\)/.test(src));
 ok("字串:合併後的頁名、確認框、刪掉的五個 key(zh / en)", /msgid "set\.cat\.plan"\nmsgstr "帳號與方案"/.test(PO2[0]) && /msgid "set\.cat\.plan"\nmsgstr "Account & plan"/.test(PO2[1]) && /msgid "pv\.e\.btn"\nmsgstr "Account & Plan"/.test(PO2[1])
   && /msgid "acct\.cf\.title"\nmsgstr "登出 Blave？"/.test(PO2[0]) && /msgid "acct\.cf\.ok"\nmsgstr "Sign Out"/.test(PO2[1]) && /msgid "acct\.out\.4"\nmsgstr "登出不會停用雲端主機，主機費照扣。"/.test(PO2[0])
-  && /msgid "lib\.gate\.unknown"\nmsgstr "The account’s data status/.test(PO2[1]) && PO2.every((p) => !/msgid "(set\.cat\.acct|acct\.toPlan|acct\.toPlanBtn|acct\.in\.1|acct\.in\.2)"/.test(p) && !/資料與雲端方案|Data & [Cc]loud [Pp]lan/.test(p)));
+  && PO2.every((p) => !/msgid "lib\.gate\.unknown"/.test(p)) && PO2.every((p) => !/msgid "(set\.cat\.acct|acct\.toPlan|acct\.toPlanBtn|acct\.in\.1|acct\.in\.2)"/.test(p) && !/資料與雲端方案|Data & [Cc]loud [Pp]lan/.test(p)));
 ok("agent 文件裡的頁名跟著改", /Settings › 帳號與方案 \(en: Account & plan\)/.test(fs.readFileSync(path.join(__dirname, "..", "references", "billing.md"), "utf8")) && /Sign in from Settings › Account & plan/.test(fs.readFileSync(path.join(__dirname, "..", "references", "cloud-handoff.md"), "utf8")));
 ok("字串:acct.out.3 照定稿(不跟 acct.out.2「對話留在這台電腦」打架)", /msgid "acct\.out\.3"\nmsgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"/.test(PO2[0]));
 // 聊天欄捲動邊界:靜止沒有線,捲起來才浮一條
@@ -463,7 +463,7 @@ ok("隱私:會收 7 條(功能那條緊接在里程碑後、0.1.9「卡在哪一
       !!m && lic.includes("\n   " + m[0] + "\n") && !/\[yyyy\]|\[name of copyright owner\]/.test(lic)); }
   window.blave.openExternal = realOpen; LANG = "zh"; }
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾條,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:會收那一條寫到 macOS 版本與系統語言;二十個事件逐項對得上契約的白名單(feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容;0.1.9 的九個與 0.1.12 的引擎安裝兩個是「卡在哪一步」那一條:只記類別;heartbeat 是里程碑那一條的「app 開著的每一天」)", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 20 && /首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
+ok("隱私:會收那一條寫到 macOS 版本與系統語言;二十二個事件逐項對得上契約的白名單(feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容;0.1.9 的九個與 0.1.12 的引擎安裝兩個是「卡在哪一步」那一條:只記類別;heartbeat 是里程碑那一條的「app 開著的每一天」;0.1.13 的 lib_pick / idea_sent 沒改面板字,歸屬待 Wei 定)", /macOS 版本、系統語言/.test(PO[0]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 22 && /首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
   && /each day the app stays open \(and whether local auto-trading is running\)/.test(PO[1])
   && /msgid "priv\.collect\.5"\nmsgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容"/.test(PO[0]) && /msgid "priv\.collect\.5"\nmsgstr "Which features were used: the names of tabs and buttons, once per day each, never what is inside them"/.test(PO[1])
   && /msgid "priv\.collect\.6"\nmsgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下、回來後能不能用，啟動雲端方案的結果，更新卡在哪一步，第一次收到 AI 回覆，第一次安裝或更新後補裝（引擎與策略套件）有沒有裝好、沒裝好是哪一類原因；只記類別，不含內容"/.test(PO[0])

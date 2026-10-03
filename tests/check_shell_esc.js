@@ -34,6 +34,8 @@ const MODALS = [
   // 0.1.6 的兩個表單 modal(欄位可聚焦:焦點在框裡那一格會落在描述欄 / 名稱欄上)
   { name: "新增策略", open: `(running = false, nsOpen($("strat-add")))`, isOpen: `!$("ns-scrim").hidden`, text: "#ns-modal .ns-hint" },
   { name: "新增報告", open: `(running = false, rptNewOpen($("rpt-ask")))`, isOpen: `!$("rpn-scrim").hidden`, text: "#rpn-honest" },
+  // 0.1.13 上網找點子(殼同新增策略;焦點在框裡那一格落在方向欄上)
+  { name: "上網找點子", open: `(running = false, ENV.cur = "local", ideaOpen($("chat-idea"), "welcome", "any"))`, isOpen: `!$("idea-scrim").hidden`, text: "#idea-hint" },
   // 0.1.8 報告分享確認框(焦點在框裡那一格落在「匿名」radio 上)
   { name: "報告分享", open: `(hasToken = true, shrOpen({ env: "local", id: "x", rep: { type: "research", title: "t", blocks: [] }, host: $("rpt-read"), share: null, name: null }, "new", $("rpt-share")))`, isOpen: `!$("shr-scrim").hidden`, text: "#shr-must" },
   // 模型選單沒有型錄時整塊沒有版面(量到 0×0),點不到字;它的點擊路徑跟「焦點在 body」同一條(document 層),由那一格代表

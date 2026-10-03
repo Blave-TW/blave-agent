@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **版號**:這批 runtime 改動排 1.1.109(desktop 0.1.13);發版時連同下面幾行一起搬到版本標題下。
+- **外殼策略庫轉換 UI(desktop 0.1.13;spec-0.1.13-library-conversion §1–§8;不在 runtime/ 但同一批出貨,`shell/renderer/library.js`、`newstrategy.js`、`index.html`、`library.css`、`telemetry.js`、i18n)**:本機沒登入、或登入但付不出資料費(沒綁卡 / 餘額不足 / 查不到帳號狀態,含 `dataAccess` 為 null)時,清單分「現在就能用」與第二組(要先登入 / 綁卡後能用 / 儲值後能用 / 帳號狀態確認後能用),閘門卡掛在第二組標題下;沒登入時第一組只放官方 × 免費 × 不用 Blave 資料的策略(`libAnonOk`),已登入時第一組是 `blave_data = none` 的;有卡與雲端平鋪。詳情主鈕:免登入策略沒登入也是「用這支」(主行程走匿名 `/public_code`),其他沒登入只講登入;要資料(含未標)的登入後才講綁卡,鈕下第一句看資料需求、第二句看原因;分組中的免資料策略鈕下講「只用交易所公開價格」。`lib.gate.noCard` / `noBalance` / `unknown` 退役、清單頂端的 `#lib-gate` 拿掉。上網找點子:歡迎頁第二顆籤、策略庫頁首句尾、第一組空、市場空四個入口共用 `libIdeaOn`(這台電腦 × 內建瀏覽器開著 × 引擎跑得動),開同一個框(殼同新增策略框,市場三選一 + 方向選填 + 預覽 + 誠實句,Blave AI 才講費用)。頁首說明拿掉「官方策略免費…」那句。埋點:新事件 `lib_pick{data}`(本機「用這支」回合跑起來)、`idea_sent{from}`,`feature_used` 新名 `lib_installed`、`library_no_new`(api 白名單同批)。
 - **電腦版資料卡只在真的撞到資料牆時出(0.1.13 策略庫轉換;spec §9 D1)**:`data_access_rule` 的 access=0 段改寫——事實句從「這台沒有 Blave 資料」改成「用到 Blave 資料的 `lib/data.py` 呼叫會停在 `DataAccessError`」;講缺資料、掛 `<blave-card:data-access/>` 只在這一輪真的撞到 `DataAccessError` 時,用戶開口要資料集但沒撞牆不出卡(先打,不憑事實段就說拿不到);台股單檔日線寫明「先走交易所 / FinMind,失敗才要 Blave」,不再說台股資料一律拿不到。只影響電腦版(BLAVE_DATA_ACCESS 只有外殼會設);雲端機 prompt 不變。
 - **發版注意(blave-agent VERSION)**:出 0.1.13 時 repo 根目錄 `VERSION` 必須大於所有已出貨的版號(含 0.1.12 之後任何 hotfix 的 bump)。電腦版只在「隨包 VERSION > workspace VERSION」時同步官方檔(`shell/main.js` syncOfficialOnUpdate);同步沒發生,workspace 就沒有 `references/marketplace.md` › Desktop-downloaded picks。外殼另有保底:找不到那個錨點就退回舊句 `lib.msg` / `lib.msgPaid`(agent 自己下載,沒綁卡的人照舊撞牆)。
 

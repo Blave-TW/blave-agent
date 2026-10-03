@@ -3315,7 +3315,7 @@ document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, t
 document.addEventListener("compositionend", () => { ENV_COMPOSING = false; }, true);
 // 開通頁看得見嗎(稽核 Q1):從這一頁按「綁卡」外開瀏覽器,回來要重查帳號狀態,不然畫面一直停在「綁卡」
 function envOpenVisible() { return ENV.cur === "cloud" && !$("cv-empty").hidden; }
-function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden && $("ns-scrim").hidden && $("rpn-scrim").hidden && $("shr-scrim").hidden; }   // 兩個表單 modal(新增策略 / 新增報告)開著也不切:送出時才讀視角,切了會送去另一台;分享框同理(公開的是開框那一袋的那一份)
+function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden && $("ns-scrim").hidden && $("idea-scrim").hidden && $("rpn-scrim").hidden && $("shr-scrim").hidden; }   // 兩個表單 modal(新增策略 / 新增報告)開著也不切:送出時才讀視角,切了會送去另一台;分享框同理(公開的是開框那一袋的那一份)
 function envSwitchGuarded(env) {
   if ((env !== "local" && env !== "cloud") || !envCanSwitch()) return false;
   envSwitch(env); return true;

@@ -1,6 +1,6 @@
 // Blave 電腦版 — 使用追蹤(主行程用)。契約:blave-canon output/backend/2026-09-21-desktop-telemetry-contract.md
 //
-// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。十八個事件、每個事件的屬性都是列舉——
+// 只回答一件事:「哪一步發生了(或卡在哪一步)、什麼時候、哪個版本」。二十二個事件、每個事件的屬性都是列舉——
 // 這個檔**沒有任何自由文字的入口**:對話、策略碼、策略名、標的、金額、部位、金鑰、路徑進不來,
 // 不是靠呼叫端自律,是 track() 只認下面這張表(api 端還有同一張白名單再擋一次)。
 //
@@ -35,6 +35,10 @@ const EVENTS = {
   // 只修 venv 連結的不送),以及選用的那組(美股資料)沒裝好(前綴是組別)。分兩個事件:同一輪會同時有 first_done 與美股失敗
   engine_setup: { result: ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"] },
   engine_opt_fail: { result: ["us_net", "us_other", "us_timeout"] },
+  // 策略庫轉換(0.1.13;spec-0.1.13-library-conversion §8,renderer 送):本機「用這支」回合跑起來時那支的資料需求(未標 = unknown;雲端不送)、
+  // 找點子框送出成功時從哪個入口來。匿名使用不加屬性:看 user_id 有無、同一 install_id 之後有沒有 login_done
+  lib_pick: { data: ["none", "required", "unknown"] },
+  idea_sent: { from: ["welcome", "lib_head", "lib_empty"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -82,18 +86,21 @@ const EVENTS = {
     // 內建瀏覽器的交還鈕(0.1.12;renderer/browser.js):標題列那顆、聊天那一列那顆,按了就記(不管有沒有 need;browser_handoff 照舊)
     "browser_hb_head", "browser_hb_chat",
     // 部位表點策略名開那支的進出場紀錄(0.1.12;renderer/trade.js trStratOpen):真的換頁才送,點下去才發現不在的不送
-    "trade_strat_open"] },
+    "trade_strat_open",
+    // 策略庫轉換(0.1.13;renderer/library.js libTurnEnd / libCloudChanged):「用這支」那一輪結束、清單真的多了一支(或覆蓋同名那支);
+    // 本機那一輪結束了但沒看到新策略
+    "lib_installed", "library_no_new"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
-  "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail"];
+  "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

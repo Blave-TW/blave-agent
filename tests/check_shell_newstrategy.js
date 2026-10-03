@@ -46,6 +46,17 @@ if (!process.versions.electron) {
   ok("① 那句與它的 key 整個拿掉:兩張字串表、兩份 .po 都沒有 ns.msgDefault,也沒有「本位永續」/「USDT-margined」字樣", !("ns.msgDefault" in STR.zh) && !("ns.msgDefault" in STR.en)
     && !/ns\.msgDefault/.test(po("zh") + po("en")) && !/本位永續|USDT-margined/.test(strings + src));
 
+  // 上網找點子的那句(spec-0.1.13 §1.5 / §7)
+  const IS = (L) => ({ msg: STR[L]["idea.msg"], topicTpl: STR[L]["idea.topicTpl"], mkt: { crypto: STR[L]["idea.mkt.crypto"], tw: STR[L]["idea.mkt.tw"], any: "" } });
+  ok("① ideaCompose zh:市場代進、方向進「」;不限 / 沒方向就整段不帶(逐字照 spec §7)", P.ideaCompose("tw", "外資連買", IS("zh")) === "上網幫我找 3 個台股可以回測的策略點子，方向是「外資連買」。每個寫成明確的進出場規則，註明要不要用到 Blave 資料，並附來源網址；先不要寫程式，也不要給今天的多空判斷。我挑一個再請你回測。"
+    && P.ideaCompose("any", "", IS("zh")) === "上網幫我找 3 個可以回測的策略點子。每個寫成明確的進出場規則，註明要不要用到 Blave 資料，並附來源網址；先不要寫程式，也不要給今天的多空判斷。我挑一個再請你回測。");
+  ok("① ideaCompose en:市場尾端一個空白、方向前面一個空白", P.ideaCompose("crypto", "funding rate", IS("en")) === 'Search the web for 3 backtestable crypto strategy ideas around "funding rate". Write each as explicit entry and exit rules, say whether it needs Blave data, and give the source URL. No code yet, and no call on today\'s direction. I\'ll pick one for you to backtest.'
+    && P.ideaCompose("any", null, IS("en")).startsWith("Search the web for 3 backtestable strategy ideas. Write"));
+  ok("① ideaCompose 方向清洗:控制字元 → 空白、連續空白合併、去頭尾、截 40;只剩空白 → 不帶;方向裡的 {mkt} / {topic} 不再被代換", P.ideaCompose("any", "  a\n\tb\u0000  c  ", { msg: "[{mkt}|{topic}]", topicTpl: "<{t}>", mkt: { any: "" } }) === "[|<a b c>]"
+    && P.ideaCompose("any", "x".repeat(60), { msg: "{mkt}{topic}", topicTpl: "{t}", mkt: { any: "" } }).length === 40 && P.ideaCompose("any", " \n ", { msg: "{mkt}{topic}.", topicTpl: "<{t}>", mkt: { any: "" } }) === "."
+    && P.ideaCompose("tw", "{mkt}{topic}", { msg: "{mkt}{topic}", topicTpl: "<{t}>", mkt: { tw: "T" } }) === "T<{mkt}{topic}>");
+  ok("① ideaCompose 範本壞掉 → null(寧可不送):msg 少一個槽 / 兩個槽、topicTpl 沒有 {t}、市場不在表上", [P.ideaCompose("any", "", { msg: "{topic}", topicTpl: "{t}", mkt: { any: "" } }), P.ideaCompose("any", "", { msg: "{mkt}{mkt}{topic}", topicTpl: "{t}", mkt: { any: "" } }),
+    P.ideaCompose("any", "x", { msg: "{mkt}{topic}", topicTpl: "t", mkt: { any: "" } }), P.ideaCompose("us", "", IS("zh")), P.ideaCompose("toString", "", IS("zh")), P.ideaCompose("any", "", null)].every((x) => x === null));
   // ── ② 接線 ──
   ok("② index.html:側欄「策略」標題旁 #strat-add(aria-haspopup=dialog、aria-label ns.title、inline svg);歡迎頁第三顆 #chat-ns 在 #chat-lib 之後、#chat-eg 之前", /<div class="strat-head" id="strat-head"><span class="label" data-i18n="ws\.strategies"><\/span><button class="strat-add" id="strat-add" type="button" aria-haspopup="dialog" data-i18n-aria="ns\.title"><svg/.test(html)
     && html.indexOf('id="chat-ns"') > html.indexOf('id="chat-lib"') && html.indexOf('id="chat-ns"') < html.indexOf('id="chat-eg"') && /<button class="wc-chip" id="chat-ns" type="button" data-i18n="ns\.chip">/.test(html));
@@ -57,8 +68,19 @@ if (!process.versions.electron) {
     && /<span class="modal-btns"><button type="button" class="btn-out" id="ns-cancel"[^\n]*<button type="submit" class="btn-fill" id="ns-submit"[^\n]*<\/span>/.test(html));
   ok("② 猜市場那一套不留死碼:newstrategy.js 沒有 nsPartMarket / nsWantsDefault / NS.bases / dflt,主行程沒有 cryptoBases / crypto-bases,preload 沒有 cryptoBases",
     !/nsPartMarket|nsWantsDefault|nsIsTw|NS_TW_|NS_US_SHAPE|NS\.bases|\bbases\b|dflt|msgDefault|cryptoBases/.test(src) && !/cryptoBases|crypto-bases/.test(mainSrc) && !/cryptoBases|crypto-bases/.test(preloadSrc));
-  ok("② app.js:trapTab 圈到 input / textarea;escTop 鏈有 #ns-scrim(在 del 之後、cx 之前);回合三個出口都 nsSync;applyStatic 叫 nsRepaint", /querySelectorAll\("button, select, input, textarea"\)/.test(cutFn(appSrc, "trapTab")) && /!\$\("rpn-scrim"\)\.hidden \? rptNewClose : !\$\("ns-scrim"\)\.hidden \? nsClose : !\$\("cx-scrim"\)\.hidden/.test(cutFn(appSrc, "escTop"))
+  ok("② app.js:trapTab 圈到 input / textarea;escTop 鏈有 #ns-scrim 與 #idea-scrim(在 del 之後、cx 之前);回合三個出口都 nsSync;applyStatic 叫 nsRepaint", /querySelectorAll\("button, select, input, textarea"\)/.test(cutFn(appSrc, "trapTab")) && /!\$\("rpn-scrim"\)\.hidden \? rptNewClose : !\$\("ns-scrim"\)\.hidden \? nsClose : !\$\("idea-scrim"\)\.hidden \? ideaClose : !\$\("cx-scrim"\)\.hidden/.test(cutFn(appSrc, "escTop"))
     && (appSrc.match(/if \(typeof nsSync === "function"\) nsSync\(\);/g) || []).length === 3 && /if \(typeof nsRepaint === "function"\) nsRepaint\(\);/.test(cutFn(appSrc, "applyStatic")));
+  ok("② 找點子框的骨架(spec-0.1.13 §5.2):#idea-scrim(dialog、hidden)> form#idea-modal.set-modal.del-modal;沒有雲端記號;市場分段 role=group 指到 label、三顆 aria-pressed(預設不限);方向欄 maxlength 40、autocomplete off;預覽 .cf-quote aria-live;腳 foot-msg role=status + 取消 + 送出",
+    /<div class="scrim" id="idea-scrim" role="dialog" aria-modal="true" aria-labelledby="idea-title" hidden>\s*<form class="set-modal del-modal" id="idea-modal">/.test(html) && !/id="idea-env"/.test(html)
+    && /<div class="lib-seg idea-seg" id="idea-mkt" role="group" aria-labelledby="idea-mkt-l">/.test(html) && /<span class="fld-l" id="idea-mkt-l" data-i18n="idea\.mkt">/.test(html) && /data-mkt="any" aria-pressed="true" data-i18n="idea\.any"/.test(html)
+    && /<input class="f-input txt" id="idea-topic" name="topic" maxlength="40" autocomplete="off" data-i18n-ph="idea\.topicPh">/.test(html) && /<div class="cf-quote" id="idea-preview" aria-live="polite"><\/div>/.test(html) && /<span class="foot-msg" id="idea-msg" role="status"><\/span>/.test(html)
+    && /<button type="button" class="btn-out" id="idea-cancel" data-i18n="del\.cancel"><\/button><button type="submit" class="btn-fill" id="idea-submit" data-i18n="ns\.submit"><\/button>/.test(html));
+  ok("② 找點子框接線:只在這台電腦視角開、別的框開著不開;焦點 60ms 給方向欄;inert;選字中的 Enter 不送;送出照 ideaGate(只看回合、固定本機)、成功才關框清欄並送 idea_sent{from};trapTab;envCanSwitch 認它;nsSync / nsRepaint 帶到它",
+    /if \(!sc\.hidden \|\| libEnv\(\) !== "local"\) return;/.test(cutFn(src, "ideaOpen")) && /envCanSwitch\(\)\) return;/.test(cutFn(src, "ideaOpen")) && /\$\("idea-topic"\)\.focus\(\); \}, 60\);/.test(cutFn(src, "ideaOpen")) && /\$\("view-ws"\)\.inert = true;/.test(cutFn(src, "ideaOpen"))
+    && /e\.key === "Enter" && \(e\.isComposing \|\| e\.keyCode === 229\)\) e\.preventDefault\(\);/.test(src) && /if \(ideaGate\(\) !== "free"\) \{ ideaRefresh\(\); return; \}/.test(cutFn(src, "ideaSend")) && /env: "local", cloud: null/.test(cutFn(src, "ideaGate"))
+    && /if \(!ok\) \{ IDEA\.fail = true; ideaRefresh\(\); return; \}[\s\S]*ideaClose\(\);[\s\S]*\$\("idea-modal"\)\.reset\(\);[\s\S]*trackEvent\("idea_sent", \{ from \}\)/.test(cutFn(src, "ideaSend")) && /trapTab\(e, g\("idea-modal"\)\)/.test(src)
+    && /\$\("idea-scrim"\)\.hidden/.test(cutFn(read(path.join(R, "trade.js")), "envCanSwitch")) && /if \(!\$\("idea-scrim"\)\.hidden\) ideaRefresh\(\);/.test(cutFn(src, "nsSync")) && /if \(!\$\("idea-scrim"\)\.hidden\) ideaRefresh\(\);/.test(cutFn(src, "nsRepaint")));
+  ok("② 誠實句(§5.2):一律「不會下單。」,引擎是 Blave AI 才接 idea.cost", /libJoin\(t\("idea\.noOrders"\), typeof cur !== "undefined" && cur === "blave" \? t\("idea\.cost"\) : ""\)/.test(cutFn(src, "ideaRefresh")));
   { const keys = [...new Set([...src.matchAll(/\bt\("(ns\.[^"]+)"/g)].map((m) => m[1]).concat([...html.matchAll(/data-i18n(?:-aria|-ph)?="(ns\.[^"]+)"/g)].map((m) => m[1])))];
     const missing = keys.filter((k) => !(k in STR.zh) || !(k in STR.en));
     ok("② 用到的 " + keys.length + " 個 ns.* key zh / en 都齊;zh 全形標點", missing.length === 0 && Object.keys(STR.zh).filter((k) => k.startsWith("ns.")).every((k) => !/[一-鿿][,.?:;!]/.test(STR.zh[k])), missing); }

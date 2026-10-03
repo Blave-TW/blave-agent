@@ -202,7 +202,8 @@
         <div class="lib-head" id="lib-head">
           <div class="lib-head-list" id="lib-head-list">
             <h5 class="main-head-name" id="lib-h" tabindex="-1" data-i18n="lib.nav"></h5>
-            <p class="lib-desc" data-i18n="lib.desc"></p>
+            <!-- 說明句由 library.js libPaintDesc 畫(找點子開著時句尾接文字鈕;不用 data-i18n,換語言時 applyStatic 才不會把鈕洗掉) -->
+            <p class="lib-desc" id="lib-desc"></p>
             <div class="lib-tools">
               <div class="lib-seg" id="lib-seg" role="group" data-i18n-aria="lib.mkt.aria">
                 <button type="button" data-mkt="all" aria-pressed="true" data-i18n="lib.mkt.all"></button>
@@ -215,8 +216,8 @@
           <button class="lib-back" id="lib-back" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg><span id="lib-back-l" data-i18n="lib.nav"></span><span class="t" id="lib-back-s" hidden></span></button>
         </div>
         <div class="lib-body" id="lib-body" tabindex="0">
-          <!-- 閘門卡(spec-desktop-0.1.6 §3.3):本機視角、付不出資料費時清單頂端那一張;內容由 library.js 的 libGateNode 畫 -->
-          <div class="lib-gate" id="lib-gate" hidden></div>
+          <!-- 沒權限時的兩組(spec-0.1.13 §2.2):section.lib-grp × 2,閘門卡掛在第二組頭上;不分組時空著、列畫在 #lib-rows。內容由 library.js 的 libPaintList 畫 -->
+          <div id="lib-grps"></div>
           <div class="lib-rows" id="lib-rows"></div>
           <p class="lib-state" id="lib-state" role="status" hidden></p>
           <div class="lib-det" id="lib-det" hidden></div>
@@ -267,6 +268,8 @@
           <div class="wc-chips">
             <!-- 「看現成策略」開策略庫(不送訊息;同雲端歡迎頁那顆 workspace_chip_free) -->
             <button class="wc-chip" id="chat-lib" type="button" data-i18n="lib.chip"></button>
+            <!-- 「上網找點子」開找點子框(spec-0.1.13 §5.1;只在這台電腦視角、內建瀏覽器開著、引擎跑得動時出,library.js libIdeaPaint 切 hidden) -->
+            <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
             <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁第二顆) -->
             <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
             <button class="wc-chip" id="chat-eg" type="button" data-i18n="ws.chatExample"></button>
@@ -528,6 +531,33 @@
       <span class="del-where" id="ns-where" hidden></span>
       <span class="ns-lib-hint"><span data-i18n="ns.libHint"></span><button type="button" class="btn-quiet" id="ns-lib" data-i18n="ns.libLink"></button></span>
       <span class="modal-btns"><button type="button" class="btn-out" id="ns-cancel" data-i18n="del.cancel"></button><button type="submit" class="btn-fill" id="ns-submit" data-i18n="ns.submit" disabled></button></span>
+    </div>
+  </form>
+</div>
+
+<!-- 上網找點子(spec-0.1.13 §5.2;殼照 #ns-modal 搬:.scrim + form.set-modal.del-modal 440,接線在 newstrategy.js)。只在這台電腦視角開得出來,所以沒有雲端記號。
+     市場三選一 + 方向(選填)+ 即時預覽句(.cf-quote)+ 誠實句(不會下單;引擎是 Blave AI 才接費用句) -->
+<div class="scrim" id="idea-scrim" role="dialog" aria-modal="true" aria-labelledby="idea-title" hidden>
+  <form class="set-modal del-modal" id="idea-modal">
+    <div class="modal-head">
+      <h6 id="idea-title" data-i18n="idea.title"></h6>
+      <button type="button" class="modal-close" id="idea-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="fld"><span class="fld-l" id="idea-mkt-l" data-i18n="idea.mkt"></span>
+        <div class="lib-seg idea-seg" id="idea-mkt" role="group" aria-labelledby="idea-mkt-l">
+          <button type="button" data-mkt="crypto" aria-pressed="false" data-i18n="lib.mkt.crypto"></button>
+          <button type="button" data-mkt="tw" aria-pressed="false" data-i18n="lib.mkt.tw"></button>
+          <button type="button" data-mkt="any" aria-pressed="true" data-i18n="idea.any"></button>
+        </div>
+      </div>
+      <label class="fld"><span class="fld-l"><span data-i18n="idea.topic"></span><span class="opt" id="idea-opt"></span></span><input class="f-input txt" id="idea-topic" name="topic" maxlength="40" autocomplete="off" data-i18n-ph="idea.topicPh"></label>
+      <div class="fld"><span class="fld-l" data-i18n="ns.previewLabel"></span><div class="cf-quote" id="idea-preview" aria-live="polite"></div></div>
+      <p class="ns-hint" id="idea-hint"></p>
+    </div>
+    <div class="modal-foot">
+      <span class="foot-msg" id="idea-msg" role="status"></span>
+      <span class="modal-btns"><button type="button" class="btn-out" id="idea-cancel" data-i18n="del.cancel"></button><button type="submit" class="btn-fill" id="idea-submit" data-i18n="ns.submit"></button></span>
     </div>
   </form>
 </div>

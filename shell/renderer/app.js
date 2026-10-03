@@ -252,6 +252,7 @@ function enterWorkspace(kind, info) {
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   if (typeof engSync === "function") engSync();   // 開 app 就在背景裝引擎:這一頁進來時可能已經裝到一半(engine.js)
+  if (typeof libIdeaSync === "function") libIdeaSync();   // 換了引擎:找點子入口跟著(Blave AI 要帳號能跑)
   // 從設定 modal 裡換的:留在 modal、重畫模型接入那一頁(「使用中」換列),焦點不搶去輸入框
   if (!$("set-scrim").hidden) { paintBlaveBtn(); detect(); return; }
   autosize();          // 進工作頁先把輸入框高度對齊一行
@@ -954,7 +955,7 @@ document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target))
 /* Esc 關最上面那一層,焦點在哪都一樣:點了框裡的字、從對話清單的 ✕ 開、視窗切回來,焦點會落在 body,
    掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
 function escTop() {
-  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("shr-scrim").hidden ? shrClose
+  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("shr-scrim").hidden ? shrClose
     : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? (rulesEscFn() || setClose) : !$("mp-panel").hidden ? () => mpClose(true)
     : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
 }
@@ -2579,6 +2580,7 @@ function acctPaint() {
     if (!s.can_run) acctShown(card, "turn", s);
   });
   dataCardSync(s);
+  if (typeof libIdeaPaint === "function") libIdeaPaint();   // 帳號能不能跑變了:Blave AI 的找點子入口跟著
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   planWatch(s);
   // 能跑了就不必再盯:清掉名單,視窗回前景不再打 account_status(它跟 LLM 共用每分鐘 30 次的桶,
