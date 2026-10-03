@@ -758,7 +758,7 @@ function engineSetup() {
   if (!_engineSetup) _engineSetup = require("./enginesetup").createEngineSetup({
     fs, path, spawn: require("child_process").spawn, base: BASE, ws: WS, venvPy: VENV_PY, venvBin: VENV_BIN, win: WIN,
     basePython, envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial, isPackaged: app.isPackaged,
-    sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
+    sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, lock: WORKSPACE_LOCK_FOR === require("./enginesetup").lockKey(SDK_PINS, WORKSPACE_DEPS) ? WORKSPACE_LOCK : [], optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
     onChange: (s) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("engine-state", s); },
     log: (m) => console.error(m),
     // 結果類事件由主行程送:背景安裝可能在畫面開始聽之前就跑完了
@@ -779,13 +779,29 @@ function engineAbort() { return _engineSetup ? _engineSetup.abort().catch(() => 
 // yfinance(lib/data.py 美股日線的備援)連同它拉進來的九個一起釘,yfinance 排最後:一個一個裝時它那一步才不會把後面的全裝走。
 // 2026-10-01 驗過:這 17 個加上依賴(34 個)在 mac arm64、mac x86_64、win amd64 都有 cp312 / abi3 / 純 Python wheel
 // (pip download --only-binary=:all:),arm64 與 x64 隨包 CPython 3.12 一次全裝與一個一個 -c 裝的 pip freeze 相同。
-// cffi、pycparser(curl_cffi 的)與 soupsieve、typing_extensions(bs4 的)不在清單上,跟 matplotlib 自己的依賴一樣由 pip 解
+// cffi、pycparser(curl_cffi 的)與 soupsieve、typing_extensions(bs4 的)不在清單上(不直接裝),跟 matplotlib 自己的依賴一樣由 pip 解,版本照下面的 WORKSPACE_LOCK
 const WORKSPACE_DEPS = [
   "pandas==3.0.6", "numpy==2.5.3", "matplotlib==3.11.2", "pyarrow==25.0.1",
   "requests==2.34.2", "python-dotenv==1.2.3", "scipy==1.18.1",
   "curl_cffi==0.16.3", "lxml==6.1.3", "peewee==4.5.2", "protobuf==7.36.2", "websockets==17.1",
   "beautifulsoup4==4.15.0", "multitasking==0.0.13", "platformdirs==4.12.2", "pytz==2026.4",
   "yfinance==1.7.0",
+];
+// 間接相依也釘(稽核 2026-10-02 P2-4):沒釘的那幾十個(SDK 那串、matplotlib 的、curl_cffi / bs4 的)只要 PyPI 上被搶發一個新版,
+// 新用戶第一次開 app 就裝到它。這份只進 -c,不是要裝的東西:用不到的行不會被裝(pywin32 / tzdata 只有 Windows 用得到)。
+// 不是手寫的:SDK_PINS 或 WORKSPACE_DEPS 一換就跑 node tools/lock-deps.js <venv python>(五個平台解出同一組版本才印),整段貼回來。
+// WORKSPACE_LOCK_FOR 對不上現在的 SDK_PINS + WORKSPACE_DEPS 時不帶鎖(退回只釘直接相依,免得舊鎖跟新版衝突裝不起來),閘門測試同時變紅。
+// 沒有 hash:pip 的 hash 模式不吃 -c 裡的 hash,要整串改成 -r 才行,跟一個一個裝的流程衝突(另案)
+const WORKSPACE_LOCK_FOR = "0f6e409d9d08";
+const WORKSPACE_LOCK = [
+  "annotated-types==0.8.0", "anyio==4.15.1", "attrs==26.1.0", "certifi==2026.7.22", "cffi==2.1.1", "charset-normalizer==3.5.2",
+  "click==8.5.0", "contourpy==1.4.0", "cycler==0.12.1", "fonttools==4.66.1", "h11==0.16.0", "httpcore2==2.13.1",
+  "httpx2==2.13.1", "idna==3.20", "jsonschema==4.26.0", "jsonschema-specifications==2025.9.1", "kiwisolver==1.5.1", "mcp==2.3.0",
+  "mcp-types==2.3.0", "opentelemetry-api==1.45.0", "packaging==26.3", "pillow==12.3.0", "pycparser==3.0", "pydantic==2.13.5",
+  "pydantic-core==2.46.5", "pyjwt==2.15.1", "pyparsing==3.3.3", "python-dateutil==2.9.0.post0", "python-multipart==0.0.32", "pywin32==312",
+  "referencing==0.37.0", "rpds-py==2026.6.3", "six==1.17.0", "sniffio==1.3.1", "soupsieve==2.10", "sse-starlette==3.5.0",
+  "starlette==1.7.0", "truststore==0.10.4", "typing-extensions==4.16.0", "typing-inspection==0.4.4", "tzdata==2026.4", "urllib3==2.8.0",
+  "uvicorn==0.54.0",
 ];
 
 
