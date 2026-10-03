@@ -51,6 +51,16 @@ def precise_pnl(close_v, open_v, w_curr, w_prev, exec_shifted, fee):
     return pf_ret, overnight, delta_w, tc_daily
 
 
+def count_trades(delta_w):
+    """Weight changes that count as a trade: |Δw| ≥ 0.00005, i.e. nonzero after
+    rounding to 4 dp — the same rounding the runner applies when it writes
+    stats['trades'], so 'Trades' equals the trade list the reports show.
+    Smaller changes are float noise and vol-scaling micro-adjustments; this is a
+    reporting definition, not a claim about live orders (a big enough account
+    can still send one). Fees still use every Δw."""
+    return int(np.count_nonzero(np.round(np.nan_to_num(np.asarray(delta_w, dtype=float)), 4)))
+
+
 def periods_per_year(index, n=None):
     """Bars per year derived from the actual date range of `index` (n bars over
     span_days) — works for any market (crypto 24/7, stocks 252d, futures ~250d,

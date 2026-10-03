@@ -221,12 +221,14 @@ def _window_stats(pos, exec_raw, close_v, open_v, index, a, b, fee):
     traded in that window — a do-nothing window's Sharpe 0.0 would otherwise beat
     every losing combo and win the plateau in a bear stretch (same rule as
     scan_grid)."""
-    from lib.analysis import compute_stats
+    from lib.analysis import compute_stats, count_trades
 
     pf_ret, delta_w = _price_pnl(pos[a:b], exec_raw[a:b], close_v[a:b], open_v[a:b], fee)
-    trades = int(np.count_nonzero(np.nan_to_num(delta_w)))
-    if not trades:
+    # The "never traded" exclusion keeps its raw any-change rule (same as scan_grid) so
+    # plateau picks don't move; only the reported count uses the trade definition.
+    if not np.count_nonzero(np.nan_to_num(delta_w)):
         return None
+    trades = count_trades(delta_w)
     sharpe, _, _, mdd, ann_ret = compute_stats(pf_ret, index[a:b])
     return sharpe, ann_ret, mdd, trades
 
@@ -340,7 +342,7 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
     """
     import warnings
     warnings.filterwarnings('ignore', category=FutureWarning)
-    from lib.analysis import compute_stats
+    from lib.analysis import compute_stats, count_trades
     try:
         from lib.progress import Progress
     except ImportError:  # half-updated workspace — fail open, no progress lines
@@ -427,7 +429,7 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
     oos_index = index[oos_a:oos_b]
     pf_ret, delta_w = _price_pnl(pos_oos, exec_oos, close_oos, open_oos, fee)
     oos_sharpe, _, _, oos_mdd, oos_ann = compute_stats(pf_ret, oos_index)
-    oos_trades = int(np.count_nonzero(np.nan_to_num(delta_w)))
+    oos_trades = count_trades(delta_w)
     dates, cum = _oos_curve(oos_index, pf_ret)
 
     # Every per-run test number is cut out of the ONE stitched series priced above —
@@ -446,7 +448,7 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
             'train_sharpe': _v(train_sharpes[-1]),
             'test_sharpe': _v(compute_stats(seg, oos_index[a:b])[0]),
             'test_return': _v((float(np.prod(1.0 + np.nan_to_num(seg))) - 1.0) * 100),
-            'trades': int(np.count_nonzero(np.nan_to_num(delta_w[a:b]))),
+            'trades': count_trades(delta_w[a:b]),
         })
 
     valid, excluded = _split_runs(train_sharpes)

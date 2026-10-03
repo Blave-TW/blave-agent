@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from dotenv import dotenv_values
 from lib.execute import update_state, load_state, save_state
-from lib.analysis import plot_pnl, plot_pnl_portfolio, precise_pnl, compute_stats
+from lib.analysis import plot_pnl, plot_pnl_portfolio, precise_pnl, compute_stats, count_trades
 
 _REPO_ROOT = Path(__file__).parent.parent
 
@@ -1475,7 +1475,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         mdd        = -abs(mdd_raw) * 100  # drawdown is a loss from peak → always ≤ 0
         bench_ret  = (close_v[-1] / close_v[0] - 1) * 100
         total_fees = float(tc_daily.sum()) * 100
-        n_trades   = int(np.count_nonzero(np.nan_to_num(delta_w)))
+        n_trades   = count_trades(delta_w)
 
         def _v(x):
             if x is None: return None
@@ -1737,7 +1737,7 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         total_ret = pf_equity[-1] - 1
         sharpe, sortino, omega, mdd, ann_ret = compute_stats(pf_ret, close_df.index)
 
-        n_trades = int(np.count_nonzero(np.nan_to_num(delta_w)))
+        n_trades = count_trades(delta_w)
 
         print(f"  Total Return:  {total_ret:.1%}")
         print(f"  Ann. Return:   {ann_ret:.1%}")
