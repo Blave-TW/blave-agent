@@ -3823,8 +3823,12 @@ def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):
         symbol = symbol[:-2]
     if symbol in ('MXF', 'TMF'):
         symbol = 'TXF'
+    # 2026-10 server rebuild re-stamped stock-futures bars (end-of-minute, halved volume,
+    # R1 roll) but past months are never re-fetched, so they need a fresh namespace.
+    # TXF content was unchanged and keeps its cache.
+    prefix = 'twfutures' if symbol == 'TXF' else 'twfutures2'
     df = _extend_cache_monthly(
-        f'twfutures_{schema}', {'symbol': symbol},
+        f'{prefix}_{schema}', {'symbol': symbol},
         lambda s, e: _fetch_twfutures_raw_smart(symbol, schema, s, e, headers),
         start, end,
         empty_marker_ttl_hours=24,   # history is backfilled progressively server-side
