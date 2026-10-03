@@ -35,6 +35,7 @@ import sdk_pin
 # before any other import: the pin's directory carries its own anyio/pydantic/mcp
 sdk = sdk_pin.load()
 
+import atomic_file  # noqa: E402
 import model_prefs  # noqa: E402
 import session_store as ss  # noqa: E402
 import strategy_reporter  # noqa: E402
@@ -4324,9 +4325,8 @@ def _write_sched_outcome():
         return
     path = os.path.join(WORKSPACE, "report_jobs", job, ".sched_result.json")
     try:
-        with open(path + ".tmp", "w", encoding="utf-8") as f:
+        with atomic_file.replacing(path, encoding="utf-8") as f:
             json.dump({k: v for k, v in SCHED_OUTCOME.items() if isinstance(v, (str, int, float, type(None)))}, f)
-        os.replace(path + ".tmp", path)
     except OSError as e:
         print(f"[agent_turn] sched outcome not written: {e}", file=sys.stderr)
 

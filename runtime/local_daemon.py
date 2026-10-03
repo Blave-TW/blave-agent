@@ -83,6 +83,8 @@ import sys
 import threading
 import time
 
+import atomic_file
+
 try:
     import fcntl
 except ImportError:  # Windows
@@ -307,10 +309,8 @@ def _slide_events(events_mod, evs):
 
 def _write_json_atomic(path, doc):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with atomic_file.replacing(path, encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False)
-    os.replace(tmp, path)
 
 
 class Rejected(Exception):
@@ -518,9 +518,8 @@ class ReconcilerSupervisor:
         only there is gone by the time anyone asks why trading paused."""
         _log(msg)
         try:
-            with open(os.path.join(self.ws, "state", "reconciler.log"), "a",
-                      encoding="utf-8") as f:
-                f.write(f"[local_daemon] {_stamp()} {msg}\n")
+            atomic_file.append_line(os.path.join(self.ws, "state", "reconciler.log"),
+                                    f"[local_daemon] {_stamp()} {msg}\n")
         except OSError:
             pass
 
@@ -688,7 +687,7 @@ class ReconcilerSupervisor:
                     os.replace(log_path, log_path + ".1")
             except OSError:
                 pass
-            with open(log_path, "ab") as logf:
+            with atomic_file.open_append(log_path) as logf:
                 # Through run_reconciler below, holding a pipe we never write
                 # to: its EOF is how the reconciler learns this daemon is gone,
                 # SIGKILL included.
@@ -702,10 +701,8 @@ class ReconcilerSupervisor:
             _release_fd(fd)  # POSIX: the child's copy keeps the lock; Windows: the child takes it now
         if _nt():
             self._confirm_child_lock()
-        tmp = f"{self._pid_path}.{os.getpid()}.tmp"
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(self._pid_path) as f:
             f.write(str(self._proc.pid))
-        os.replace(tmp, self._pid_path)
         _log(f"reconciler started (pid {self._proc.pid})")
 
     def _confirm_child_lock(self):
@@ -1112,6 +1109,7 @@ def main(argv=None):
         _log("another local daemon already owns this workspace — exiting")
         return 3
     os.chdir(ws)
+    atomic_file.sweep_runtime_temps(ws, os.environ.get("BLAVE_AGENT_STATE") or os.path.join(base, "state"))
     _link_current(base)
     daemon = Daemon(ws, secret)
     for sig in (signal.SIGTERM, signal.SIGINT):

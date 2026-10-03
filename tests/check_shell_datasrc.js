@@ -61,7 +61,7 @@ const ds = D.createDataSrc({ envFile: ENVF, lock, strategies: () => STRATS, trad
   t("存成功:交易所金鑰原樣、我們那塊接在後面、值用單引號包(# 不會被讀成註解)", ok1.ok === true && rd() === want);
   t("權限收成 0600", (fs.statSync(ENVF).mode & 0o777) === 0o600);
   t("讀-改-寫有拿鎖,而且放了", locks === 1 && held === false);
-  t("沒留暫存檔", !fs.existsSync(ENVF + ".blave-src-tmp"));
+  t("沒留暫存檔", fs.readdirSync(WS).every((x) => !x.startsWith("..env.")));
   { // python-dotenv 讀回來的值一字不差(有裝才驗;沒裝就 SKIP,不假綠)
     const py = path.join(__dirname, "..", ".venv", "bin", "python");
     const r = fs.existsSync(py) ? cp.spawnSync(py, ["-c", "import sys,json\nfrom dotenv import dotenv_values\nprint(json.dumps(dotenv_values(sys.argv[1])))", ENVF], { encoding: "utf8" }) : null;

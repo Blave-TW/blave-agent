@@ -26,6 +26,8 @@ import subprocess
 import sys
 import time
 
+import atomic_file
+
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 OUT_PATH = os.path.join(WORKSPACE, "manager", "account.json")
 # 出入金流水的機器端狀態:每所的增量游標(上次成功拉取的時點)+ 供上傳的
@@ -83,11 +85,9 @@ def _read_flow_state():
 
 
 def _write_flow_state(state):
-    tmp = FLOW_STATE_PATH + ".tmp"
     try:
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(FLOW_STATE_PATH) as f:
             json.dump(state, f)
-        os.replace(tmp, FLOW_STATE_PATH)  # atomic
     except OSError as e:
         _log(f"flow_state write failed: {type(e).__name__}")
 
@@ -102,11 +102,9 @@ def _read_ever_ok():
 
 
 def _write_ever_ok(state):
-    tmp = EVER_OK_PATH + ".tmp"
     try:
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(EVER_OK_PATH) as f:
             json.dump(state, f)
-        os.replace(tmp, EVER_OK_PATH)  # atomic
     except OSError as e:
         _log(f"ever_ok write failed: {type(e).__name__}")
 
@@ -412,10 +410,8 @@ def main():
         out["venues"][vid] = entry
         _log(f"{vid}: {'ok' if entry['ok'] else entry['error']['stage'] + ' failed'}")
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    tmp = OUT_PATH + ".tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(OUT_PATH) as f:  # atomic: the reporter never sees a half-written file
         json.dump(out, f)
-    os.replace(tmp, OUT_PATH)  # atomic: the reporter never sees a half-written file
     # Drop cursors for venues no longer bound (unbound → key gone from .env) so a
     # stale window can't resurface if the venue is rebound later.
     _write_flow_state({v: flow_state[v] for v in venues if v in flow_state})

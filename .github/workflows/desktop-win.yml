@@ -41,7 +41,7 @@ defaults:
     shell: bash
 
 jobs:
-  # 閘門測試跟 release.js 的「閘門測試」一模一樣(全部 check_shell_*.js + check_version_matrix_shell.js,除了 check_shell_paths.js),
+  # 閘門測試跟 release.js 的「閘門測試」一模一樣(全部 check_shell_*.js + check_version_matrix_shell.js + check_tests_window_guard.js,除了 check_shell_paths.js;Electron 段落照跑),
   # 加上兩支 Windows 語意的 Python 測試。放 mac runner 不放 Windows:這些測試在 POSIX 上假造 win32(check_local_daemon_windows.py
   # 還會 import 真的 fcntl 來比 POSIX 分支;check_shell_daemon.js 靠 symlink + chmod 000;Electron 測試經 node_modules/.bin/electron
   # 這個 sh shim 起 Electron),搬到 Windows 上跑等於半套 SKIP,不是更嚴。
@@ -68,17 +68,23 @@ jobs:
         run: |
           npm ci
           node node_modules/electron/install.js
+      # 同 release.js:Electron 那段要真的跑(BLAVE_TEST_WINDOW=1),印出守門那行 SKIP = 有一段沒跑到,記紅(稽核 2026-10-02 P2-5／B1)
       - name: Gate tests
         env:
           BLAVE_TEST_PYTHON: ${{ steps.py.outputs.python-path }}
+          BLAVE_TEST_WINDOW: "1"
         run: |
           red=0
-          for t in tests/check_shell_*.js tests/check_version_matrix_shell.js; do
+          for t in tests/check_shell_*.js tests/check_version_matrix_shell.js tests/check_tests_window_guard.js; do
             [ "$t" = tests/check_shell_paths.js ] && continue
             echo "::group::$t"
-            if node "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
+            if out=$(node "$t" 2>&1); then rc=0; else rc=$?; fi
+            printf '%s\n' "$out"
+            echo "::endgroup::"
+            if [ "$rc" -ne 0 ]; then echo "::error::$t 沒過"; red=1
+            elif grep -qF "SKIP (set BLAVE_TEST_WINDOW=1" <<<"$out"; then echo "::error::$t 的 Electron 那段沒跑到"; red=1; fi
           done
-          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py tests/check_parent_watch_peek.py; do
+          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py tests/check_parent_watch_peek.py tests/check_runtime_atomic_file.py; do
             echo "::group::$t"
             if "$BLAVE_TEST_PYTHON" "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
           done

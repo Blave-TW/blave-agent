@@ -102,7 +102,7 @@ function rig(o = {}) {
   const S = E.createEngineSetup({
     fs, path, spawn, base, ws, venvPy, venvBin: "bin", win: false, basePython: () => "/bundled/python3", envPath: async () => "/usr/bin:/bin",
     pyEnv: { PYTHONUTF8: "1" }, copyOfficial: () => { fs.mkdirSync(path.join(ws, "lib"), { recursive: true }); }, isPackaged: true,
-    sdkPins: o.sdk || SDK, deps: o.deps || DEPS, optional: o.optional || OPT, firstRunMB: 200, venvMs: 300000, engineMs: 600000, pkgMs: o.pkgMs || 600000,
+    sdkPins: o.sdk || SDK, deps: o.deps || DEPS, lock: o.lock, optional: o.optional || OPT, firstRunMB: 200, venvMs: 300000, engineMs: 600000, pkgMs: o.pkgMs || 600000,
     idleMs: o.idleMs, watchMs: 5, alive: o.alive, sleep: o.sleep, lockWaitMs: o.lockWaitMs,
     now: o.realNow ? Date.now : () => clock, onChange: (s) => snaps.push(s), log: (m) => logs.push(m), track: (ev, p) => tracked.push(ev + ":" + p.result),
   });
@@ -344,6 +344,23 @@ const venvDir = (r) => path.join(r.base, "venv");
     const S2 = E.createEngineSetup({ fs, path, spawn: () => { throw new Error("不該跑"); }, base: d.base, ws: d.ws, venvPy: d.venvPy, venvBin: "bin", win: false, basePython: () => "x", envPath: async () => "", pyEnv: {}, copyOfficial: () => { copies++; }, isPackaged: false,
       sdkPins: SDK, deps: DEPS, firstRunMB: 200, venvMs: 1, engineMs: 1, pkgMs: 1, onChange: () => {}, log: () => {} });
     await S2.ensure(); ok("開發版:沒事可做也重拷官方檔", copies === 1); }
+
+  // ── 間接相依的鎖(稽核 2026-10-02 P2-4):只進 -c,不裝、不進記號檔;main.js 那份要跟現在的直接相依對得上 ──
+  { const L = ["six==1.17.0", "urllib3==2.8.0"], k = rig({ lock: L }); await k.S.ensure();
+    const pf = path.join(venvDir(k), ".blave-pins.txt");
+    ok("lock:-c 那份 = 直接相依 + 鎖(SDK 那條叫起來時就在)", pipCalls(k)[0].pins === [...DEPS, ...L].join("\n") + "\n" && fs.readFileSync(pf, "utf8") === [...DEPS, ...L].join("\n") + "\n");
+    ok("lock:鎖裡的不會被當成要裝的(pip 只裝 SDK 與清單)、記號檔照舊只有清單", pinsOf(k).join() === [SDK_LAST, ...DEPS].join() && !pipCalls(k).some((c) => L.some((l) => c.args.includes(l)))
+      && fs.readFileSync(path.join(venvDir(k), ".blave-deps-1"), "utf8") === DEPS.join("\n"), pinsOf(k));
+    // 更新:清單換了一個版本、SDK 也換了 → 補裝與 SDK 重裝的 -c 都不帶鎖(不把既有間接相依降回鎖定版)
+    const u = rig({ base: k.base, lock: L, deps: [bump(DEPS[0]), ...DEPS.slice(1)], sdk: SDK2 }); await u.S.ensure();
+    ok("lock:更新 / 補裝(既有 venv)不帶鎖,-c 只有直接相依", u.S.snapshot().kind === "update" && pipCalls(u).length >= 2
+      && pipCalls(u).every((c) => c.pins === [bump(DEPS[0]), ...DEPS.slice(1)].join("\n") + "\n"), pipCalls(u).map((c) => c.pins)); }
+  { const LOCK = vm.runInNewContext(lit(/const WORKSPACE_LOCK = (\[[\s\S]*?\]);/)), FOR = vm.runInNewContext(lit(/const WORKSPACE_LOCK_FOR = ("[^"]+");/));
+    const nn = (p) => p.split("==")[0].toLowerCase().replace(/[-_.]+/g, "-"), direct = new Set([...MAIN_DEPS, ...SDK.split(" ")].map(nn));
+    ok("WORKSPACE_LOCK_FOR 對得上現在的 SDK_PINS + WORKSPACE_DEPS(對不上 = 換了直接相依沒重解鎖:跑 node shell/tools/lock-deps.js 貼回 main.js)", FOR === E.lockKey(SDK, MAIN_DEPS), { FOR, now: E.lockKey(SDK, MAIN_DEPS) });
+    ok("WORKSPACE_LOCK:每行都是 名字==版本、不重複、不含直接相依(那些已經在清單裡)", LOCK.length >= 30 && LOCK.every((l) => /^[a-z0-9][a-z0-9._-]*==[0-9][0-9A-Za-z.+!-]*$/.test(l)) && new Set(LOCK.map(nn)).size === LOCK.length && !LOCK.some((l) => direct.has(nn(l))), LOCK.filter((l) => direct.has(nn(l))));
+    ok("lockKey:SDK 或清單任一個換了就不一樣", E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK2, MAIN_DEPS) && E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK, [bump(MAIN_DEPS[0]), ...MAIN_DEPS.slice(1)]) && E.lockKey(SDK, MAIN_DEPS) === E.lockKey(SDK, [...MAIN_DEPS]));
+    ok("接線:main.js 只在 WORKSPACE_LOCK_FOR 對得上時才帶鎖,對不上帶空的", /lock: WORKSPACE_LOCK_FOR === require\("\.\/enginesetup"\)\.lockKey\(SDK_PINS, WORKSPACE_DEPS\) \? WORKSPACE_LOCK : \[\],/.test(MAIN_SRC)); }
 
   for (const d of TMPS) fs.rmSync(d, { recursive: true, force: true });
   process.exit(red ? 1 : 0);

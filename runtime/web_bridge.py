@@ -35,6 +35,7 @@ import time
 import urllib.request
 import uuid
 
+import atomic_file
 import model_prefs
 import command_listener
 import portfolio_reporter
@@ -297,7 +298,7 @@ def save_attachment(attachment):
         if os.path.exists(path):
             name = f"{int(time.time())}_{name}"
             path = os.path.join(INBOUND_DIR, name)
-        with open(path, "wb") as f:
+        with atomic_file.replacing(path, "wb") as f:  # a dangling symlink there passes the exists() above
             f.write(data)
         return name
     except Exception as e:
@@ -433,10 +434,8 @@ def _persist_queue():
     already ACKed, and not running it is worse than losing it on a crash."""
     try:
         os.makedirs(os.path.dirname(QUEUE_PATH), exist_ok=True)
-        tmp = QUEUE_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(QUEUE_PATH, encoding="utf-8") as f:
             json.dump({"v": 1, "queues": {s: q for s, q in _queues.items() if q}}, f)
-        os.replace(tmp, QUEUE_PATH)
     except OSError as e:
         print(f"[web_bridge] queue persist failed: {e}", file=sys.stderr)
 

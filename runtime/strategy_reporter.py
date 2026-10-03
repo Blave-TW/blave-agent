@@ -20,6 +20,8 @@ import urllib.error
 import urllib.request
 from zoneinfo import ZoneInfo
 
+import atomic_file
+
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 STRATEGIES_DIR = os.path.join(WORKSPACE, "strategies")
 # 剛出生、還沒回測完的策略:源檔存在但 stats.json 還沒寫出來的頭幾秒。此窗內
@@ -879,10 +881,8 @@ def _load_state_file(path):
 def _save_state_file(path, state):
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(path) as f:
             json.dump(state, f)
-        os.replace(tmp, path)
     except OSError:
         pass
 

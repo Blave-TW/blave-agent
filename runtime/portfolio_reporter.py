@@ -48,6 +48,7 @@ import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+import atomic_file
 import events
 import kline_cache_heal
 import sdk_sync
@@ -901,11 +902,9 @@ def _notice_daily(key, msg):
             if isinstance(v, (int, float)) and now - v < _NOTICE_KEEP_S}
     try:
         os.makedirs(os.path.dirname(_NOTICE_STATE), exist_ok=True)
-        # unique: the timer, web_bridge and telegram_bridge can all build a report at once
-        tmp = f"{_NOTICE_STATE}.{os.getpid()}.{time.monotonic_ns()}.tmp"
-        with open(tmp, "w") as f:
+        # random temp name: the timer, web_bridge and telegram_bridge can all build a report at once
+        with atomic_file.replacing(_NOTICE_STATE) as f:
             json.dump(seen, f)
-        os.replace(tmp, _NOTICE_STATE)
     except OSError:
         pass
 

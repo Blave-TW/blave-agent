@@ -209,7 +209,7 @@ if (!process.versions.electron) {
       const g1 = M.f("r1"), g2 = M.f("r2");
       ok("P2-5 圖檔是 symlink / <id>.files 是 symlink / 報告本體是 symlink → 都不讀(不會把 workspace 外的檔公開出去)", g1 && Object.keys(g1.images).join() === "a.png" && g2 && Object.keys(g2.images).length === 0 && M.f("r3") === null && typeof g1.mtime === "number", JSON.stringify([g1 && g1.images, g2 && g2.images]));
       // upload_errors.log 的格式 = lib/report.py _last_error 找的那一行(" <id>: ")
-      const L = { fs, path, WS };
+      const L = { fs, path, WS, wsfile: require("../shell/wsfile") };
       vm.runInNewContext("const RPT_DIR = () => path.join(WS, 'reports');\n" + /const RPT_ERRLOG_MAX = [^\n]*/.exec(mainSrc)[0] + "\n" + cutFn(mainSrc, "rptLogError") + "\nthis.f = rptLogError;", L);
       L.f("tw-9", "share refused (400): blocks[3].source.url:\n bad"); for (let i = 0; i < 900; i++) L.f("big-" + i, "y".repeat(100));
       const lg = fs.readFileSync(path.join(dir, "upload_errors.log"), "utf8").split("\n").filter(Boolean);

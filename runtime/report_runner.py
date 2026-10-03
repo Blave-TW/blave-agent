@@ -14,9 +14,9 @@ Usage (from the scheduler thread, or `report_run_now`):
     report_runner.py <id>
 
 Exit 2 = no such job / bad job.json, 3 = another run of the same job holds the lock
-(both: nothing recorded); 1 = the run failed; 0 = ok or skipped. Stdlib-only, no
-import of any other runtime module and never of workspace/lib/ — the workspace is
-the agent's, and may be broken.
+(both: nothing recorded); 1 = the run failed; 0 = ok or skipped. Stdlib plus two
+runtime siblings (turn_slots for the turn-slot rules, atomic_file for writes), never
+workspace/lib/ — the workspace is the agent's, and may be broken.
 """
 import json
 import os
@@ -53,6 +53,7 @@ DEGRADED_ALERT_AFTER = 3     # 連續幾次降級才通知(P2)
 DEGRADED_ALERT_COOLDOWN_S = 86400
 STATE_DIR = os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(WORKSPACE), "state")
 # 回合名額與 bridge 共用 runtime/turn_slots(同一份檔、同一套規則;稽核 0.1.7 P2-10 前是抄一份在這裡)
+import atomic_file  # noqa: E402
 import turn_slots  # noqa: E402
 SLOTS_DIR = turn_slots.SLOTS_DIR
 LIMITS_PATH = turn_slots.LIMITS_PATH
@@ -327,7 +328,7 @@ def _acquire_lock(jd):
     lock, held until the process exits. None = another run of this job is live
     (立即執行 landing on the schedule's own fire), and this one must not write
     run.log / runs.jsonl over it."""
-    fh = open(os.path.join(jd, ".lock"), "w")
+    fh = atomic_file.open_truncate(os.path.join(jd, ".lock"), "w")
     try:
         if os.name == "nt":
             import msvcrt
@@ -388,10 +389,8 @@ def _append_run(jd, entry):
             lines = []
         lines.append(json.dumps(entry, ensure_ascii=False))
         lines = lines[-RUNS_KEEP:]
-        tmp = f"{path}.{os.getpid()}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(path, encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
-        os.replace(tmp, path)
     except OSError as e:
         print(f"[report_runner] runs.jsonl write failed: {type(e).__name__}: {e}", file=sys.stderr)
 
@@ -457,10 +456,8 @@ def _count_attempt(jd, now, tz):
     """Written under the job's flock BEFORE the turn starts: a runner killed mid-turn still
     counted it."""
     n = _agent_attempts_today(jd, now, tz) + 1
-    tmp = _agent_day_path(jd) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with atomic_file.replacing(_agent_day_path(jd), encoding="utf-8") as f:
         json.dump({"date": _day(now, tz).isoformat(), "n": n}, f)
-    os.replace(tmp, _agent_day_path(jd))
 
 
 # 不算進「連續降級」:不是 agent 壞了(已跑過、沒點數、沒同意、app 關著),通知只會吵
@@ -748,7 +745,7 @@ def check_upgrade(interp, env):
         prev = None
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        with open(AVAIL_STATE_PATH, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(AVAIL_STATE_PATH, encoding="utf-8") as f:
             f.write("1" if now_ok else "0")
     except OSError:
         return
@@ -758,7 +755,7 @@ def check_upgrade(interp, env):
         if job is None or job.get("kind") == "watch" or job.get("agent_consent") is True:
             continue
         try:
-            open(os.path.join(job_dir(job_id), UPGRADE_NOTE), "w").close()
+            atomic_file.touch(os.path.join(job_dir(job_id), UPGRADE_NOTE))
         except OSError:
             continue
         _emit(interp, env, "report_agent_available", job=job_id)
@@ -775,7 +772,7 @@ def _notify_degraded(job, reason, count, interp, env):
         pass
     if _emit(interp, env, "report_degraded", job=job["id"], title=job["title"], reason=reason, count=count):
         try:   # 送成功才進冷卻,送不出去下一次降級還會再試
-            open(stamp, "w").close()
+            atomic_file.touch(stamp)
         except OSError:
             pass
 
@@ -877,7 +874,7 @@ def run_job(job_id):
 
 def _write_log(jd, text):
     try:
-        with open(os.path.join(jd, "run.log"), "w", encoding="utf-8") as f:
+        with atomic_file.replacing(os.path.join(jd, "run.log"), encoding="utf-8") as f:
             f.write(text)
     except OSError as e:
         print(f"[report_runner] run.log write failed: {e}", file=sys.stderr)
