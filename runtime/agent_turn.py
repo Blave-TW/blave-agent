@@ -30,11 +30,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-import claude_agent_sdk as sdk
-import model_prefs
-import session_store as ss
-import strategy_reporter
-import turn_stop
+import sdk_pin
+
+# before any other import: the pin's directory carries its own anyio/pydantic/mcp
+sdk = sdk_pin.load()
+
+import model_prefs  # noqa: E402
+import session_store as ss  # noqa: E402
+import strategy_reporter  # noqa: E402
+import turn_stop  # noqa: E402
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 

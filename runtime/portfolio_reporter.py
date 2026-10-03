@@ -50,6 +50,7 @@ from datetime import datetime, timedelta, timezone
 
 import events
 import kline_cache_heal
+import sdk_sync
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
     r"C:\blave-agent" if os.name == "nt" else "/opt/blave-agent"
@@ -1646,6 +1647,10 @@ def main():
     heal_rec = kline_cache_heal.read_record()
     if heal_rec:
         payload["kline2_heal"] = heal_rec
+    try:
+        payload["sdk"] = sdk_sync.report()
+    except Exception as e:
+        print(f"[portfolio_reporter] sdk status failed: {e}", file=sys.stderr)
     try:
         resp = report(payload)
         print(f"[portfolio_reporter] reported: {resp}", file=sys.stderr)

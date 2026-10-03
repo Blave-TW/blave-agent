@@ -140,6 +140,7 @@ for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s
   };
   const plain = await runOnce({ stderr: "ERROR: boom\nsecond line" });
   for (const [ok, what] of [
+    [mainSrc.includes(`const AGENT_SDK = "claude-agent-sdk==${fs.readFileSync(path.join(__dirname, "..", "runtime", "SDK_VERSION"), "utf8").trim()}";`), "電腦版 AGENT_SDK 等於 runtime/SDK_VERSION(雲端機隊與 provision 讀的同一個 pin)"],
     [/const SDK_PINS = `\$\{AGENT_SDK\} cryptography==48\.0\.1`;/.test(mainSrc), "SDK 與 cryptography==48.0.1 一起釘(最後一版 universal2 wheel)"],
     [/const PIP_INSTALL = \["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw"\];/.test(engSrc), "PIP_INSTALL 帶 --isolated 與 --only-binary=:all:(不帶 -q:會關掉進度)"],
     [(code(engSrc).match(/\.\.\.PIP_INSTALL/g) || []).length === 1 && /await run\(o\.venvPy, \[\.\.\.PIP_INSTALL, \.\.\.args\]/.test(engSrc) && !/-m", "pip/.test(code(engSrc).replace(/const PIP_INSTALL = [^\n]*/, "")) && !/-m pip|"pip"/.test(code(mainSrc)), "引擎唯一一條 pip 指令在 enginesetup 的 pip() 裡走 PIP_INSTALL,main.js 沒有另起的 -m pip"],
