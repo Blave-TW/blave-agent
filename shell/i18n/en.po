@@ -1394,16 +1394,16 @@ msgid "tr.lev.marginShort"
 msgstr "Blave doesn't set leverage for you: set these contracts to at least {L}× on the exchange, or orders that don't fit are rejected."
 
 msgid "tr.lev.loss"
-msgstr "At full size, a {p}% move against every position at once costs your entire equity; the exchange liquidates before that."
+msgstr "At full size, if every position moves {p}% against you at once, the loss equals your entire equity; the exchange liquidates before that."
 
 msgid "tr.lev.lossPaper"
-msgstr "At full size, a {p}% move against every position at once takes the paper account's equity to zero."
+msgstr "At full size, if every position moves {p}% against you at once, the paper account's equity goes to zero."
 
 msgid "tr.lev.binance5"
 msgstr "Binance sub-accounts are capped at 5× futures leverage."
 
 msgid "tr.lev.ack"
-msgstr "I understand that at full size, a {p}% move against everything wipes out my equity"
+msgstr "I understand that at full size, a move of {p}% against everything wipes out my equity"
 
 msgid "tr.err.paperLev"
 msgstr "{sym} order not placed: the position would reach {gross} {c}, over the paper account limit of {cap} {c} ({x}× equity). Lower the amount."
