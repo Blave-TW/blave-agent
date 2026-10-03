@@ -794,7 +794,7 @@ const WORKSPACE_DEPS = [
 // 不是手寫的:SDK_PINS 或 WORKSPACE_DEPS 一換就跑 node tools/lock-deps.js <venv python>(五個平台解出同一組版本才印),整段貼回來。
 // WORKSPACE_LOCK_FOR 對不上現在的 SDK_PINS + WORKSPACE_DEPS 時不帶鎖(退回只釘直接相依,免得舊鎖跟新版衝突裝不起來),閘門測試同時變紅。
 // 沒有 hash:pip 的 hash 模式不吃 -c 裡的 hash,要整串改成 -r 才行,跟一個一個裝的流程衝突(另案)
-const WORKSPACE_LOCK_FOR = "0f6e409d9d08";
+const WORKSPACE_LOCK_FOR = "68ee11a232d1";
 const WORKSPACE_LOCK = [
   "annotated-types==0.8.0", "anyio==4.15.1", "attrs==26.1.0", "certifi==2026.7.22", "cffi==2.1.1", "charset-normalizer==3.5.2",
   "click==8.5.0", "contourpy==1.4.0", "cycler==0.12.1", "fonttools==4.66.1", "h11==0.16.0", "httpcore2==2.13.1",
