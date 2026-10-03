@@ -1686,9 +1686,16 @@ function codexModels() {
 // proxy 原樣轉發、亂填的值 DeepSeek 回 422;Pro 同一題 low/high/max 輸出 151/283/354 token。
 const DEEPSEEK_EFFORTS = ["low", "high", "max"];
 const BLAVE_NAMES = {
-  "anthropic/claude-haiku-4-5-20251001": "Haiku 4.5", "anthropic/claude-sonnet-5": "Sonnet 5",
-  "anthropic/claude-opus-4-8": "Opus 4.8", "anthropic/claude-fable-5": "Fable 5",
+  "anthropic/claude-haiku-4-5-20251001": "Haiku 4.5", "anthropic/claude-sonnet-5-5": "Sonnet 5.5",
+  "anthropic/claude-opus-5-5": "Opus 5.5", "anthropic/claude-fable-5-1": "Fable 5.1",
   "deepseek/deepseek-v4-flash": "DeepSeek V4 Flash", "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
+};
+// proxy 把舊世代留在 /v1/models(帶 legacy: true)只為了舊版 app 不斷線;這版不列,存著舊 id 的人
+// 對到同家族的新型號,而不是退回預設(renderer mpInit 讀 successors)。
+const BLAVE_SUCCESSORS = {
+  "anthropic/claude-sonnet-5": "anthropic/claude-sonnet-5-5",
+  "anthropic/claude-opus-4-8": "anthropic/claude-opus-5-5",
+  "anthropic/claude-fable-5": "anthropic/claude-fable-5-1",
 };
 const BLAVE_STRENGTH = [/fable/, /opus/, /sonnet/, /haiku/, /deepseek.*pro/, /deepseek.*flash/];
 /* 帳號能不能用 Blave AI(綁卡流程用)。回 api 的 account_status 原樣,或 null(沒 token / 打不到 /
@@ -1968,7 +1975,7 @@ async function blaveModels() {
     // proxy 的型錄順序是 haiku→sonnet→opus→fable→deepseek,照強度重排;
     // 不認得的新 model 排最後(不擋,它會照 API 給的順序出現)。
     const rank = (id) => { const i = BLAVE_STRENGTH.findIndex((re) => re.test(id)); return i < 0 ? 99 : i; };
-    return (r.body.data || []).map((m) => {
+    return (r.body.data || []).filter((m) => !m.legacy).map((m) => {
       const claude = /^anthropic\//.test(m.id) && !/haiku/.test(m.id);
       const efforts = claude ? CLAUDE_EFFORTS : /^deepseek\//.test(m.id) ? DEEPSEEK_EFFORTS : [];
       return { id: m.id, name: BLAVE_NAMES[m.id] || m.id,
@@ -1991,7 +1998,7 @@ async function modelOptions(kind) {
     const models = await blaveModels();
     // Blave 線的預設是 DeepSeek V4 Pro(Wei 指定);型錄裡沒有才退 sonnet
     const d = models.find((m) => /deepseek.*pro/.test(m.id)) || models.find((m) => /sonnet/.test(m.id)) || models[0];
-    return { models, defaultModel: d ? d.id : null };
+    return { models, defaultModel: d ? d.id : null, successors: BLAVE_SUCCESSORS };
   }
   return { models: CLAUDE_MODELS, defaultModel: "sonnet" };
 }

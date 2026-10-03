@@ -693,11 +693,13 @@ def _tz_ok(tz):
     return True
 
 
-# 雲端排程報告每份一輪 agent 的估價(點 = TWD,每份)。Claude:09-26 Sonnet 實測 0.46–0.55 USD/份
-# × 1.25 markup × 32(pricing.md 的扣費公式)≈ 18–22 點,加 web search 每次 0.4 點。
+# 雲端排程報告每份一輪 agent 的估價(點 = TWD,每份)。Claude 是估算、不是實測:09-26 在 Sonnet 舊價
+# ($3/$15)實測 0.46–0.55 USD/份 × 1.25 markup × 32 ≈ 18–22 點,加 web search 每次 0.4 點,得 18–25;
+# Sonnet 5.5 輸入與輸出都降到舊價的 2/3($2/$10):token 部分 18–22 × 2/3 ≈ 12–14.7,web search 不跟著降
+# (上緣那 3 點照舊),合計 12–18。
 # 上限是 1.0 USD(runtime agent_turn SCHEDULED_MAX_BUDGET_USD)= 1.0 × 1.25 × 32 = 40 點,超過就停、改出純資料版。
 # 每次跑用的是用戶「當時」的模型偏好,不是登記那一刻的,所以估價只能講「依你當時的模型」。
-SCHEDULED_COST_TWD = {"claude": (18, 25), "deepseek": (0.5, 1)}
+SCHEDULED_COST_TWD = {"claude": (12, 18), "deepseek": (0.5, 1)}
 
 
 def scheduled_cost(model=None):

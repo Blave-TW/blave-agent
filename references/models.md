@@ -2,7 +2,9 @@
 
 Model IDs change over time (new Claude generations, provider updates) — never rely on a memorized
 or previously-seen ID. The proxy's `/v1/models` response is the single source of truth; always
-fetch it fresh before switching.
+fetch it fresh before switching. Entries marked `"legacy": true` are older generations kept only so
+existing setups keep working — never pick, suggest or switch to a legacy model; when the user names a
+family ("Opus", "Sonnet"), use the non-legacy id of that family.
 
 **The switching mechanism is runtime-dependent — determine which RUNTIME this machine is FIRST,
 then follow only that section.** The other fleet's procedure fails outright here, it does not
@@ -45,7 +47,7 @@ current session id already filled in:
 python3 <runtime dir>/set_model.py <session_id> <model_id>
 ```
 Run the injected command verbatim, substituting only `<model_id>` with the full id exactly as
-returned by `/v1/models` (e.g. `anthropic/claude-sonnet-5`). Never guess or hand-construct the
+returned by `/v1/models` (e.g. `anthropic/claude-sonnet-5-5`). Never guess or hand-construct the
 session id or the runtime path — the preference is stored per session
 (`/opt/blave-agent/state/model_prefs.json` on Linux, `C:\blave-agent\state\model_prefs.json`
 on Windows), so a wrong session id switches nobody, silently.
@@ -57,8 +59,8 @@ performs — no gateway exists on this runtime, this is just a proxy-side check)
 ```bash
 curl -s -H "x-api-key: $ANTHROPIC_API_KEY" https://api.blave.org/openclaw/proxy/v1/models/<id>
 ```
-Accepts both the bare id (`claude-sonnet-5`) and the prefixed form
-(`anthropic/claude-sonnet-5`). 200 means the model is wired up; if it 404s even though the id
+Accepts both the bare id (`claude-sonnet-5-5`) and the prefixed form
+(`anthropic/claude-sonnet-5-5`). 200 means the model is wired up; if it 404s even though the id
 was in the list, do NOT proceed — tell the user the switch isn't available rather than
 reporting success.
 
@@ -96,8 +98,8 @@ json.dump(cfg, open('/root/.openclaw/openclaw.json', 'w'), indent=2)
 curl -s -H "x-api-key: $KEY" https://api.blave.org/openclaw/proxy/v1/models/<id from Step 1>
 ```
 This single-model lookup is the same pre-flight check the gateway itself runs internally before
-accepting a model. Accepts both the bare id (`claude-sonnet-5`) and the prefixed form
-(`anthropic/claude-sonnet-5`). If it returns 200, the switch will work after restart. If it 404s
+accepting a model. Accepts both the bare id (`claude-sonnet-5-5`) and the prefixed form
+(`anthropic/claude-sonnet-5-5`). If it returns 200, the switch will work after restart. If it 404s
 even though the id was present in the Step 1 list, do NOT proceed — the model isn't actually wired
 up on the proxy side yet. Tell the user the switch isn't available rather than reporting success.
 

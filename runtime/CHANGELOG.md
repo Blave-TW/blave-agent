@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **Blave AI 型錄升到 Sonnet 5.5／Opus 5.5／Fable 5.1**:看圖改用 `anthropic/claude-sonnet-5-5`(`model_prefs.VISION_MODEL`),切換模型提示的範例 id 跟著換,並註明 `/v1/models` 裡帶 `legacy: true` 的舊型號不要選。api 先上(proxy 型錄要先認得新 id),舊 id 照收不斷線。
 
 ## 1.1.108 — 2026-10-02(desktop 0.1.12)
 

@@ -3,6 +3,7 @@
 //   1. 引擎是 Blave AI / 不是 Blave AI:呼叫 mpOpen() 不丟例外、面板 hidden === false、鈕的 aria-expanded = true
 //   2. Blave AI + 已登入:開選單時重讀餘額(主行程 10 秒內用上一次的答案);沒登入、別的引擎不讀
 //   3. 鍵盤開的焦點落在選中那一列,滑鼠開的不動焦點;回合進行中不開;mpPickModel 同一個寫法也跑一次
+//   4. mpInit:存著舊世代 id 的人對到同家族新 id,不退回預設
 // 跑法:node tests/check_shell_model_menu.js
 const fs = require("fs"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
@@ -35,4 +36,23 @@ ok("鍵盤開的:焦點落在選中那一列;滑鼠開的不動焦點;沒有選�
   ok("mpPickModel() 同樣不丟例外(鍵盤選的焦點跟到選中列)", err === null && w.focused.join() === "row", err); }
 { const w = open({ cur: "claude" }, true); w.M.mpClose(true);
   ok("mpClose():面板收起、焦點回到鈕上", w.$("mp-panel").hidden === true && w.$("mp-trigger").attrs["aria-expanded"] === "false" && w.focused.join() === "mp-trigger"); }
-console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
+// 4. mpInit:存著舊世代 id(proxy 已不列)→ 對到 successors 的新 id、effort 帶過去,不退回預設;沒對應的照舊退預設
+async function init(savedModel, efforts) {
+  const opt = { models: [{ id: "anthropic/claude-opus-5-5" }, { id: "deepseek/deepseek-v4-pro" }], defaultModel: "deepseek/deepseek-v4-pro",
+    successors: { "anthropic/claude-opus-4-8": "anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5": "anthropic/claude-sonnet-5-5" } };
+  const prefs = { blave: { model: savedModel, efforts } };
+  const els = {}; const $ = (id) => els[id] || (els[id] = { hidden: false });
+  const window = { blave: { modelOptions: async () => opt, loadModelPrefs: async () => prefs } };
+  const MP = {};
+  await new Function("$", "window", "MP", "isObj", "mpPaint", `async ${fn("mpInit")}\n return mpInit;`)($, window, MP, (v) => !!v && typeof v === "object" && !Array.isArray(v), () => {})("blave");
+  return MP;
+}
+(async () => {
+  let m = await init("anthropic/claude-opus-4-8", { "anthropic/claude-opus-4-8": "max" });
+  ok("mpInit:舊 opus-4-8 → opus-5-5、effort 帶過去", m.model === "anthropic/claude-opus-5-5" && m.prefs.blave.efforts["anthropic/claude-opus-5-5"] === "max", m.model);
+  m = await init("anthropic/claude-sonnet-5", {});
+  ok("mpInit:對應的新 id 不在型錄 → 退預設", m.model === "deepseek/deepseek-v4-pro", m.model);
+  m = await init("anthropic/claude-opus-5-5", { "anthropic/claude-opus-5-5": "low" });
+  ok("mpInit:已是新 id → 不動", m.model === "anthropic/claude-opus-5-5" && m.prefs.blave.efforts["anthropic/claude-opus-5-5"] === "low", m.model);
+  console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
+})();

@@ -1497,9 +1497,11 @@ def model_catalog_rule(session_id):
         f'curl -s {PROXY_BASE_URL}/v1/models -H "x-api-key: $ANTHROPIC_API_KEY"\n'
         "```\n"
         "`$ANTHROPIC_API_KEY` 已經在你的環境變數裡（本 runtime 的 proxy token），\n"
-        "不需要另外要金鑰，直接呼叫就有正確、即時的清單跟計價。\n\n"
+        "不需要另外要金鑰，直接呼叫就有正確、即時的清單跟計價。\n"
+        "清單裡帶 `\"legacy\": true` 的是舊世代型號，只為了讓舊設定不斷線而保留：\n"
+        "不要選、不要推薦、不要切到它；使用者講家族名（Opus、Sonnet）就用同家族非 legacy 的 id。\n\n"
         "如果使用者要求切換模型：先用上面的指令確認完整 model id"
-        "（例如 `anthropic/claude-sonnet-5`），然後執行：\n"
+        "（例如 `anthropic/claude-sonnet-5-5`），然後執行：\n"
         "```\n"
         f"python3 {_THIS_DIR}/set_model.py {session_id} <model_id>\n"
         "```\n"

@@ -447,7 +447,7 @@ jd = LR.register_schedule("lib-job", "t", "p", "30 8 * * *", "每天 08:30", "pr
 doc = json.load(open(os.path.join(jd, "job.json")))
 jd2 = LR.register_schedule("lib-job2", "t", "p", "30 8 * * *", "每天 08:30", "print(1)", tz="Asia/Taipei")
 check(doc.get("agent_consent") is True and "model" not in doc and "agent_consent" not in json.load(open(os.path.join(jd2, "job.json")))
-      and LR.scheduled_cost() == (0.5, 1) and LR.scheduled_cost("anthropic/claude-sonnet-5") == (18, 25),
+      and LR.scheduled_cost() == (0.5, 1) and LR.scheduled_cost("anthropic/claude-sonnet-5-5") == (12, 18),
       "register_schedule:同意才記 agent_consent、不記模型;估價依當下模型")
 os.environ["BLAVE_SCHEDULED_JOB"] = "lib-job"
 LR.write_report("lib-job-20260926", "t", [{"type": "text", "markdown": "x"}], type="morning")

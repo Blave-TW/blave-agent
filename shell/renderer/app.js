@@ -842,7 +842,13 @@ async function mpInit(kind) {
   if (!isObj(MP.prefs[kind].efforts)) MP.prefs[kind].efforts = {};
   $("mp").hidden = MP.models.length === 0;
   if (!MP.models.length) { MP.model = null; return; }
-  const saved = (MP.prefs[kind] || {}).model;
+  const slot = MP.prefs[kind];
+  const next = ((opt && opt.successors) || {})[slot.model];
+  if (next && MP.models.some((m) => m.id === next)) {
+    if (slot.efforts[next] === undefined && slot.efforts[slot.model] !== undefined) slot.efforts[next] = slot.efforts[slot.model];
+    slot.model = next;
+  }
+  const saved = slot.model;
   MP.model = MP.models.some((m) => m.id === saved) ? saved : (opt.defaultModel || MP.models[0].id);
   mpPaint();
 }

@@ -140,7 +140,7 @@ None of these add anything beyond the server hour already paid:
   reads its output is billed as LLM tokens like any other turn.)
 - A deployed strategy on the system cron / Scheduled Task (`wait_for_bar.py`, `run_strategy.sh`).
 - A watchboard widget script (`lib/watch.py`; deterministic code by contract).
-- A scheduled report's data-only fallback (`report_jobs/<id>/run.py`). On a cloud machine, a job the user agreed to (`agent_consent`) also runs a scheduled **agent turn** that narrates it, billed as LLM tokens like a chat turn on whatever model they use at the time — about 18–25 TWD per run on Claude (web search included), about 1 on DeepSeek, capped at 1.0 USD (~40 TWD) per run (`lib.report.scheduled_cost()`). Not on the desktop in this version.
+- A scheduled report's data-only fallback (`report_jobs/<id>/run.py`). On a cloud machine, a job the user agreed to (`agent_consent`) also runs a scheduled **agent turn** that narrates it, billed as LLM tokens like a chat turn on whatever model they use at the time — about 12–18 TWD per run on Claude (web search included), about 1 on DeepSeek, capped at 1.0 USD (~40 TWD) per run (`lib.report.scheduled_cost()`). Not on the desktop in this version.
 - Any `lib/data.py` fetch, cached or not — data is bundled.
 - Telegram / web notifications sent by scripts.
 

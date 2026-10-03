@@ -22,7 +22,7 @@ PATH = os.environ.get("BLAVE_AGENT_MODEL_PREFS", "/opt/blave-agent/state/model_p
 
 DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 
-VISION_MODEL = "anthropic/claude-sonnet-5"
+VISION_MODEL = "anthropic/claude-sonnet-5-5"
 _IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 LAST_KEY = "_last"  # not a session id (those are web-…/chat ids), so it cannot collide
 
