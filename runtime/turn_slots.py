@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 
+import atomic_file
 import portfolio_reporter
 
 BASE = os.environ.get("BLAVE_AGENT_BASE") or (
@@ -72,10 +73,8 @@ def write_limits(limits):
         return
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        tmp = LIMITS_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(LIMITS_PATH, encoding="utf-8") as f:
             json.dump(new, f)
-        os.replace(tmp, LIMITS_PATH)
         print(f"[turn_slots] limits → {new}", file=sys.stderr)
     except OSError as e:
         print(f"[turn_slots] cannot write {LIMITS_PATH}: {e}", file=sys.stderr)

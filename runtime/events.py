@@ -47,6 +47,13 @@ ROTATE_MIN_LINES = 200
 HARD_CAP_BYTES = 2 * 1024 * 1024
 
 
+def _replacing(path, mode="w", **kw):
+    # Lazy: lib/events.py loads this file by path from strategy processes whose sys.path
+    # has no runtime/ — they only ever call append(), never the two rewrites below
+    import atomic_file
+    return atomic_file.replacing(path, mode, **kw)
+
+
 def _log(msg):
     print(f"[events] {msg}", file=sys.stderr)
 
@@ -138,10 +145,8 @@ def save_acked(value):
         return False
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        tmp = ACKED_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with _replacing(ACKED_PATH, encoding="utf-8") as f:
             f.write(str(value))
-        os.replace(tmp, ACKED_PATH)
         return True
     except OSError as e:
         _log(f"acked write failed: {e}")
@@ -221,10 +226,8 @@ def rotate(acked=None):
         keep = list(reversed(tail))
 
     try:
-        tmp = EVENTS_PATH + ".tmp"
-        with open(tmp, "wb") as f:
+        with _replacing(EVENTS_PATH, "wb") as f:
             f.writelines(keep)
-        os.replace(tmp, EVENTS_PATH)
     except OSError as e:
         _log(f"rotate write failed: {e}")
         return 0

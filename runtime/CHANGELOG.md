@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **runtime 寫檔不再跟著 agent 預先放好的 symlink 走(稽核 2026-10-02 N1 的 runtime 半,隨 desktop 0.1.13)**:原本 43 處「固定暫存檔名 `path + ".tmp"`(或 pid 檔名)寫好再 `os.replace`」,agent 能在 workspace / state 裡先把那個名字做成指向外面的 symlink,`open(tmp, "w")` 就把內容寫到 runtime 那個用戶寫得到的任何地方——其中 `.env`(`_cmd_credentials` / `_cmd_credentials_remove`:agent 寫得到的行加交易所 key)與 `report_uploader.log_error` 的檔尾改寫內容是 agent 控制的。新 `atomic_file.py`:`replacing(path)` 用隨機檔名 + `O_CREAT|O_EXCL` 建暫存檔(名字已被佔走就 `FileExistsError`,不寫)、寫完才 replace,只清自己建的暫存檔;權限預設同 `open()`,`.env` 建檔即 0600(`fchmod`),Windows 雲端的 ACL 走 `prepare`;`telegram_bridge` 沿用 `replace_retry`。`log_error` 的 append 改 `append_line`(`O_NOFOLLOW`)。`events.py` 被 `lib/events.py` 以檔案路徑載入(sys.path 沒有 runtime/),改在函式內才 import。沒換的 7 處(搬檔、log 輪替、symlink 建立、已經是隨機名的群益 vault)列在測試的審過清單。測試 `tests/check_runtime_atomic_file.py`(新:照 PoC 種 symlink 跑真的 `_cmd_credentials` / `log_error`;列舉 runtime/ 每個 `os.replace` / `os.rename`)。
 
 ## 1.1.108 — 2026-10-02(desktop 0.1.12)
 

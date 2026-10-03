@@ -53,6 +53,7 @@ DEGRADED_ALERT_AFTER = 3     # 連續幾次降級才通知(P2)
 DEGRADED_ALERT_COOLDOWN_S = 86400
 STATE_DIR = os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(WORKSPACE), "state")
 # 回合名額與 bridge 共用 runtime/turn_slots(同一份檔、同一套規則;稽核 0.1.7 P2-10 前是抄一份在這裡)
+import atomic_file  # noqa: E402
 import turn_slots  # noqa: E402
 SLOTS_DIR = turn_slots.SLOTS_DIR
 LIMITS_PATH = turn_slots.LIMITS_PATH
@@ -388,10 +389,8 @@ def _append_run(jd, entry):
             lines = []
         lines.append(json.dumps(entry, ensure_ascii=False))
         lines = lines[-RUNS_KEEP:]
-        tmp = f"{path}.{os.getpid()}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(path, encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
-        os.replace(tmp, path)
     except OSError as e:
         print(f"[report_runner] runs.jsonl write failed: {type(e).__name__}: {e}", file=sys.stderr)
 
@@ -457,10 +456,8 @@ def _count_attempt(jd, now, tz):
     """Written under the job's flock BEFORE the turn starts: a runner killed mid-turn still
     counted it."""
     n = _agent_attempts_today(jd, now, tz) + 1
-    tmp = _agent_day_path(jd) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with atomic_file.replacing(_agent_day_path(jd), encoding="utf-8") as f:
         json.dump({"date": _day(now, tz).isoformat(), "n": n}, f)
-    os.replace(tmp, _agent_day_path(jd))
 
 
 # 不算進「連續降級」:不是 agent 壞了(已跑過、沒點數、沒同意、app 關著),通知只會吵

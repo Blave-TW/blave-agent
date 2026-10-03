@@ -38,6 +38,8 @@ import re
 import sys
 import time
 
+import atomic_file
+
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 STATE_DIR = os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(WORKSPACE), "state")
 RECORD_PATH = os.path.join(STATE_DIR, "kline2_heal.json")
@@ -142,10 +144,8 @@ def read_record():
 
 def _write_record(rec):
     os.makedirs(STATE_DIR, exist_ok=True)
-    tmp = RECORD_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with atomic_file.replacing(RECORD_PATH, encoding="utf-8") as f:
         json.dump(rec, f)
-    os.replace(tmp, RECORD_PATH)
 
 
 def run(now=None):

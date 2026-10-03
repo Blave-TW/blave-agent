@@ -44,6 +44,7 @@ _RUNTIME_DIR = os.path.dirname(os.path.abspath(__file__))
 if _RUNTIME_DIR not in sys.path:
     sys.path.append(_RUNTIME_DIR)
 
+import atomic_file
 import capital_connect
 import telegram_pairing
 import turn_slots
@@ -122,6 +123,12 @@ _LOCAL_ENV_DROP = ("BLAVE_", "ANTHROPIC_", "OPENAI_")
 # (_binance_bind_check) is no longer what this is waiting for: it runs in every
 # mode now, cloud included.
 LOCAL_OPEN_VENUES = frozenset({"PAPER"})
+
+
+def _env_acl(path):
+    """Cloud Windows: .env readable by Administrators only (POSIX gets 0600 from the write)."""
+    if not _local_mode():
+        capital_connect.restrict_admins(path)
 
 
 def _local_mode():
@@ -631,10 +638,8 @@ def _cmd_resume_wait(args):
                 f"press start again in a few seconds") from e
     gate_path = os.path.join("state", "signal_gate.json")
     os.makedirs(os.path.dirname(gate_path), exist_ok=True)
-    tmp = gate_path + ".tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(gate_path) as f:
         _json.dump(gate, f, indent=2)
-    os.replace(tmp, gate_path)
     _ack_bind_reset()
     clear_halt("web")
     return f"resumed_wait gated={len(gate)}"
@@ -767,10 +772,8 @@ def _write_ui_amounts_mirror(amounts, exchanges, only_if_present=False):
         doc = {"amounts": amounts if isinstance(amounts, dict) else {},
                "exchanges": exchanges if isinstance(exchanges, dict) else {},
                "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())}
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(path) as f:  # atomic, same convention as portfolio_config
             json.dump(doc, f, indent=2)
-        os.replace(tmp, path)  # atomic, same convention as portfolio_config
     except OSError as e:
         _log(f"ui amounts mirror write failed: {type(e).__name__}: {e}")
 
@@ -852,10 +855,8 @@ def _write_fresh_ledger_seed():
     seed_path = os.path.join(WORKSPACE, "manager", "ledger_seed.json")
     os.makedirs(os.path.dirname(seed_path), exist_ok=True)
     doc = {"seeded_at": datetime.utcnow().isoformat(), "symbols": {}}
-    tmp = seed_path + ".tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(seed_path) as f:
         json.dump(doc, f, indent=2)
-    os.replace(tmp, seed_path)
 
 
 def _ws_lib_resets_by_account():
@@ -1034,12 +1035,10 @@ def _write_ui_cred_manifest(lines):
         ids = sorted(i.lower() for i in _venue_cred_ids(lines))
         path = os.path.join(WORKSPACE, "manager", "credentials.ui.json")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(path) as f:
             json.dump({"ids": ids,
                        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())},
                       f, indent=2)
-        os.replace(tmp, path)
     except OSError as e:
         _log(f"credentials manifest write failed: {type(e).__name__}: {e}")
 
@@ -1213,13 +1212,9 @@ def _cmd_credentials(args):
                 kept = [l for l in kept if not _stale_cred(l)]
                 evicted_ids = {i.lower() for i in evict}
         kept += [f"{k}={env[k]}" for k in env]
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
+        # atomic — a torn .env would strand the machine keyless. 0600 is POSIX only; Windows gets its ACL in prepare
+        with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
             f.write("\n".join(kept) + "\n")
-        os.chmod(tmp, 0o600)  # POSIX only; Windows gets its ACL below
-        if not _local_mode():
-            capital_connect.restrict_admins(tmp)
-        os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
     _write_ui_cred_manifest(kept)  # final lines = the UI-confirmed bound set
     book_account = {}
     if binding:
@@ -1256,9 +1251,8 @@ def _cmd_credentials(args):
                            for k, v in cfg["exchanges"].items()}
                 if cleared != cfg["exchanges"]:
                     cfg["exchanges"] = cleared
-                    with open(cpath + ".tmp", "w") as f:
+                    with atomic_file.replacing(cpath) as f:  # atomic, reconciler-watched
                         json.dump(cfg, f, indent=2)
-                    os.replace(cpath + ".tmp", cpath)  # atomic, reconciler-watched
         except (OSError, ValueError) as e:
             _log(f"evicted-venue routing clear failed: {type(e).__name__}: {e}")
     # rebind restores the signal schedules the unbind cleared (audit: without
@@ -1647,10 +1641,8 @@ def _downtime_read_stamp():
 def _downtime_write_stamp(now):
     try:
         os.makedirs(os.path.dirname(DOWNTIME_WATCH), exist_ok=True)
-        tmp = f"{DOWNTIME_WATCH}.{os.getpid()}.tmp"
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(DOWNTIME_WATCH) as f:  # a torn stamp would read as "no history"
             f.write(repr(now))
-        os.replace(tmp, DOWNTIME_WATCH)  # a torn stamp would read as "no history"
     except OSError:
         pass
 
@@ -1816,10 +1808,8 @@ def _read_boot_record():
 
 def _write_atomic(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(path) as f:
         f.write(text)
-    os.replace(tmp, path)
 
 
 def _refresh_boot_record():
@@ -2505,11 +2495,9 @@ def _sync_deployment_registry(ac_names):
     if not changed:
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
     try:
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(path) as f:
             json.dump(deps, f, indent=2)
-        os.replace(tmp, path)
     except OSError as e:
         _log(f"deployment registry sync failed: {type(e).__name__}: {e}")
 
@@ -2540,11 +2528,9 @@ def _prune_deployment_registry(ac_names):
         return
     for n in stale:
         deps.pop(n, None)
-    tmp = path + ".tmp"
     try:
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(path) as f:
             json.dump(deps, f, indent=2)
-        os.replace(tmp, path)
     except OSError as e:
         _log(f"deployment registry prune failed: {type(e).__name__}: {e}")
 
@@ -3218,10 +3204,8 @@ def _cmd_amounts(args):
     # 紅線 L2:UI 儲存=權威副本。鏡像先寫、config 後寫(P2-2)——reconciler
     # mtime-watch 的是 config,這個順序讓它觸發的那一輪就讀到新權威值。
     _write_ui_amounts_mirror(clean, cfg["exchanges"])
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
         json.dump(cfg, f, indent=2)
-    os.replace(tmp, path)  # atomic: the reconciler mtime-watches + json-loads this
     # signal_gate 殘留清理:resume_wait 寫下的 baseline 只有在「訊號變動」時由
     # lib/portfolio 的 lift 路徑清掉,但金額歸 0 / 取消勾選的策略在 aggregate
     # 提前 continue,永遠走不到那條路——之後重新 fund 會拿作廢的 baseline 誤
@@ -3243,10 +3227,8 @@ def _cmd_amounts(args):
             kept = {n: v for n, v in gate.items()
                     if clean.get(n, 0) > 0 and n not in newly_funded}
             if kept != gate:
-                gtmp = gate_path + ".tmp"
-                with open(gtmp, "w") as f:
+                with atomic_file.replacing(gate_path) as f:  # atomic, same convention as _cmd_resume_wait
                     json.dump(kept, f, indent=2)
-                os.replace(gtmp, gate_path)  # atomic, same convention as _cmd_resume_wait
     except FileNotFoundError:
         pass  # no gate = nothing to clean
     except (OSError, ValueError, TypeError) as e:
@@ -3359,10 +3341,8 @@ def _cmd_execution(args):
         raise RuntimeError("portfolio config unreadable (not a dict) — try again")
     cfg["execution"] = clean
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(path) as f:  # atomic: the reconciler mtime-watches + json-loads this
         json.dump(cfg, f, indent=2)
-    os.replace(tmp, path)  # atomic: the reconciler mtime-watches + json-loads this
     # Old workspaces predate the execution-style dispatch layer: the reconciler
     # there ignores this config key entirely, so a non-market setting would
     # look saved yet trade as market, silently. The setting is still WRITTEN
@@ -3518,13 +3498,9 @@ def _cmd_credentials_remove(args):
             return "credentials_remove=0"
         kept = [l for l in lines if l.split("=", 1)[0].strip().casefold() not in drop]
         removed = len(lines) - len(kept)
-        tmp = path + ".tmp"
-        with open(tmp, "w") as f:
+        # atomic — a torn .env would strand the machine keyless
+        with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
             f.write("\n".join(kept) + "\n")
-        os.chmod(tmp, 0o600)
-        if not _local_mode():
-            capital_connect.restrict_admins(tmp)
-        os.replace(tmp, path)  # atomic — a torn .env would strand the machine keyless
     try:  # the keys are already gone: nothing here may skip the manifest shrink / halt below
         capital_connect.drop_vault(names)
     except Exception as e:
@@ -3553,9 +3529,8 @@ def _cmd_credentials_remove(args):
                 acct = json.load(f)
             for vid in dropped_ids:
                 (acct.get("venues") or {}).pop(vid, None)
-            with open(apath + ".tmp", "w") as f:
+            with atomic_file.replacing(apath) as f:  # atomic: a path unit watches this
                 json.dump(acct, f)
-            os.replace(apath + ".tmp", apath)  # atomic: a path unit watches this
         except (OSError, ValueError):
             pass  # no account.json yet, or unreadable — the reader will converge it
 
@@ -3622,10 +3597,9 @@ def _cmd_credentials_remove(args):
                         cfg["amounts"] = {}
                         cfg["exchanges"] = {}
                         cfg.pop("weights", None)
-                        with open(cpath + ".tmp", "w") as f:
-                            json.dump(cfg, f, indent=2)
                         # atomic: the reconciler mtime-watches + json-loads this
-                        os.replace(cpath + ".tmp", cpath)
+                        with atomic_file.replacing(cpath) as f:
+                            json.dump(cfg, f, indent=2)
                 except FileNotFoundError:
                     pass  # no portfolio was ever written — nothing to clear
                 except (OSError, ValueError) as e:
@@ -3659,11 +3633,9 @@ def _purge_deployment_registry(entries):
     changed = any(deps.pop(e, None) is not None for e in entries)
     if not changed:
         return
-    tmp = path + ".tmp"
     try:
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(path) as f:
             json.dump(deps, f, indent=2)
-        os.replace(tmp, path)
     except OSError as e:
         _log(f"deployment registry purge failed: {type(e).__name__}: {e}")
 
@@ -3952,9 +3924,8 @@ def _register_reconciler_deployment(start_type_ok=None):
         # atomic: a truncate-write killed mid-way leaves a broken JSON, which
         # the next read turns into deps={} — silently wiping every OTHER
         # strategy's health registration with it
-        with open(dep_path + ".tmp", "w") as f:
+        with atomic_file.replacing(dep_path) as f:
             json.dump(deps, f, indent=2)
-        os.replace(dep_path + ".tmp", dep_path)
     except OSError as e:
         _log(f"deployments.json registration failed: {e}")
 
@@ -4541,10 +4512,8 @@ def _remove_retry(path, what):
 
 def _write_json_atomic(path, doc):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
+    with atomic_file.replacing(path) as f:
         json.dump(doc, f, indent=2)
-    os.replace(tmp, path)
 
 
 def _write_text_atomic(path, text):
@@ -4553,10 +4522,8 @@ def _write_text_atomic(path, text):
     UnicodeEncodeError(同 agent_turn 讀 preferences.md 的理由,反方向)。
     newline 也釘死,免得 Windows 寫出 \\r\\n 讓「一條規則一行」多帶一個字元。"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+    with atomic_file.replacing(path, encoding="utf-8", newline="\n") as f:
         f.write(text)
-    os.replace(tmp, path)
 
 
 def _builtin_methods():

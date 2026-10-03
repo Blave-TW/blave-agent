@@ -83,6 +83,8 @@ import sys
 import threading
 import time
 
+import atomic_file
+
 try:
     import fcntl
 except ImportError:  # Windows
@@ -307,10 +309,8 @@ def _slide_events(events_mod, evs):
 
 def _write_json_atomic(path, doc):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with atomic_file.replacing(path, encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False)
-    os.replace(tmp, path)
 
 
 class Rejected(Exception):
@@ -702,10 +702,8 @@ class ReconcilerSupervisor:
             _release_fd(fd)  # POSIX: the child's copy keeps the lock; Windows: the child takes it now
         if _nt():
             self._confirm_child_lock()
-        tmp = f"{self._pid_path}.{os.getpid()}.tmp"
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(self._pid_path) as f:
             f.write(str(self._proc.pid))
-        os.replace(tmp, self._pid_path)
         _log(f"reconciler started (pid {self._proc.pid})")
 
     def _confirm_child_lock(self):

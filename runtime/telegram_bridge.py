@@ -25,6 +25,7 @@ import threading
 import time
 import urllib.request
 
+import atomic_file
 import model_prefs
 import portfolio_reporter
 import telegram_pairing
@@ -103,11 +104,9 @@ def load_offset(bot_id):
 
 def save_offset(offset, bot_id):
     os.makedirs(os.path.dirname(OFFSET_PATH), exist_ok=True)
-    tmp = OFFSET_PATH + ".tmp"
     try:
-        with open(tmp, "w") as f:
+        with atomic_file.replacing(OFFSET_PATH, replace=telegram_pairing.replace_retry) as f:
             json.dump({"bot": bot_id, "offset": offset}, f)
-        telegram_pairing.replace_retry(tmp, OFFSET_PATH)
     except OSError as e:
         # the in-memory offset is still right; only a restart before the next save replays
         print(f"[telegram_bridge] offset save failed: {type(e).__name__}", file=sys.stderr)

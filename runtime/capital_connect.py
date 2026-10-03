@@ -56,6 +56,8 @@ import sys
 import threading
 import time
 
+import atomic_file
+
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
 IS_WINDOWS = os.name == "nt"
 
@@ -177,9 +179,8 @@ def _update(section=None, create=True, **fields):
         st["updated_at"] = now
         path = _paths()["status"]
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path + ".tmp", "w", encoding="utf-8") as f:
+        with atomic_file.replacing(path, encoding="utf-8") as f:
             json.dump(st, f)
-        os.replace(path + ".tmp", path)
         return st
 
 
@@ -355,9 +356,8 @@ def _read_block():
 def _write_block(block):
     path = _paths()["block"]
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
+    with atomic_file.replacing(path, encoding="utf-8") as f:
         json.dump(block, f)
-    os.replace(path + ".tmp", path)
 
 
 def pw_blocked():
@@ -444,11 +444,9 @@ def cmd_pfx_key(args):
                                           c["ser"].PublicFormat.SubjectPublicKeyInfo)
     p = _paths()
     os.makedirs(p["cred"], exist_ok=True)
-    tmp = p["key"] + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    # one key at a time: a newer request voids the older
+    with atomic_file.replacing(p["key"], encoding="utf-8", prepare=restrict_admins) as f:
         json.dump({"key_id": key_id, "expires_at": expires_at, "pem": pem}, f)
-    restrict_admins(tmp)
-    os.replace(tmp, p["key"])  # one key at a time: a newer request voids the older
     return {"key_id": key_id, "alg": ALG, "spki": base64.b64encode(spki).decode(),
             "expires_at": expires_at}
 
@@ -778,10 +776,8 @@ def vehicle_import(stage):
                 os.remove(path)
             except OSError:
                 pass
-        tmp = os.path.join(stage, "result.json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(os.path.join(stage, "result.json"), encoding="utf-8") as f:
             json.dump(result, f)
-        os.replace(tmp, os.path.join(stage, "result.json"))
 
 
 # ── probe ────────────────────────────────────────────────────────────────────
@@ -923,9 +919,8 @@ def _register_worker_deployment():
     deps.setdefault("capital_worker", {"type": "daemon", "expect_every_minutes": 5,
                                        "registered_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())})
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
+    with atomic_file.replacing(path, encoding="utf-8") as f:
         json.dump(deps, f, indent=2)
-    os.replace(path + ".tmp", path)
 
 
 def run_finish(push=None):

@@ -30,6 +30,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import atomic_file
 import claude_agent_sdk as sdk
 import model_prefs
 import session_store as ss
@@ -4318,9 +4319,8 @@ def _write_sched_outcome():
         return
     path = os.path.join(WORKSPACE, "report_jobs", job, ".sched_result.json")
     try:
-        with open(path + ".tmp", "w", encoding="utf-8") as f:
+        with atomic_file.replacing(path, encoding="utf-8") as f:
             json.dump({k: v for k, v in SCHED_OUTCOME.items() if isinstance(v, (str, int, float, type(None)))}, f)
-        os.replace(path + ".tmp", path)
     except OSError as e:
         print(f"[agent_turn] sched outcome not written: {e}", file=sys.stderr)
 

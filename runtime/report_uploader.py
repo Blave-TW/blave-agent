@@ -71,6 +71,7 @@ import urllib.request
 
 # 圖片走既有的 strategy_image 通道：副檔名白名單、大小上限、PUT 與 507 語意都在
 # 那裡實作過一次，這裡不重寫第二份(會漂開的那種)。
+import atomic_file
 import strategy_reporter
 
 WORKSPACE = os.environ.get("BLAVE_AGENT_WORKSPACE", "/opt/blave-agent/workspace")
@@ -175,10 +176,8 @@ def _read_json(path, default=None):
 def _write_json(path, obj):
     """原子寫：同一份檔可能正被別的 process 讀。"""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with atomic_file.replacing(path, encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, allow_nan=False)
-    os.replace(tmp, path)
 
 
 def drop(doc):
@@ -204,15 +203,13 @@ def log_error(report_id, message, log_path=ERROR_LOG):
     line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {report_id}: {message}\n"
     try:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(line)
-        if os.path.getsize(log_path) > _ERROR_LOG_MAX_BYTES:
+        # the agent can write this directory: neither the append nor the trim may follow a symlink out of it
+        atomic_file.append_line(log_path, line)
+        if os.lstat(log_path).st_size > _ERROR_LOG_MAX_BYTES:
             with open(log_path, encoding="utf-8", errors="replace") as f:
                 tail = f.readlines()[-_ERROR_LOG_KEEP_LINES:]
-            tmp = log_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
+            with atomic_file.replacing(log_path, encoding="utf-8") as f:
                 f.writelines(tail)
-            os.replace(tmp, log_path)
     except OSError as e:
         print(f"[report_uploader] error log write failed: {e}", file=sys.stderr)
 
