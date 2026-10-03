@@ -133,11 +133,15 @@ def pip_install(pin, target, lock):
 # What a turn reaches beyond `import claude_agent_sdk`: mcp.server and the
 # in-memory transport the SDK's in-process MCP servers run on.
 _PROBE = (
-    "import json, sys; sys.path.insert(0, sys.argv[2]); import sdk_pin; sdk_pin.add_dir(sys.argv[1]); "
+    "import json, os, sys; sys.path.insert(0, sys.argv[2]); import sdk_pin; sdk_pin.add_dir(sys.argv[1]); "
     "import claude_agent_sdk as s, mcp, mcp.server, mcp.shared.memory; "
     "from claude_agent_sdk._cli_version import __cli_version__ as c; "
     "s.create_sdk_mcp_server(name='probe', tools=[]); "
-    "print(json.dumps([s.__version__, c, s.__file__, mcp.__file__]))"
+    "files = [s.__file__, mcp.__file__]\n"
+    # Windows: pywin32 comes with mcp; its modules and DLL must be the pin's own
+    "if os.name == 'nt' and os.path.isdir(os.path.join(sys.argv[1], 'win32')):\n"
+    "    import pywintypes, win32api; files += [pywintypes.__file__, win32api.__file__]\n"
+    "print(json.dumps([s.__version__, c, files]))"
 )
 
 
@@ -147,9 +151,9 @@ def verify(d, pin):
                        capture_output=True, text=True, timeout=CHECK_TIMEOUT_S, cwd=d)
     if r.returncode != 0:
         raise ValueError(f"import failed: {r.stderr.strip()[-300:]}")
-    sdk, cli, init, mcp_init = json.loads(r.stdout.strip().splitlines()[-1])
+    sdk, cli, files = json.loads(r.stdout.strip().splitlines()[-1])
     root = os.path.normcase(os.path.abspath(d)) + os.sep
-    for f in (init, mcp_init):
+    for f in files:
         if not os.path.normcase(os.path.abspath(f)).startswith(root):
             raise ValueError(f"imported {f}, not the new install")
     if sdk != pin:

@@ -82,7 +82,9 @@ ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 # Engine tools that deliver after the turn: the CLI is closed when the turn ends, so a Monitor
 # event or a session cron reaches no one. e2e 0.1.8 #127 — the agent armed a Monitor on
 # stats.json, wrote 「等它完成後我會回報」 and ended the turn; nothing ever reported.
-NO_LATER_TOOLS = ["Monitor", "CronCreate"]
+# 2026-10-03 the same promise again through ScheduleWakeup (not refused then); PushNotification
+# and RemoteTrigger are the same kind of later delivery. Names verified inside claude 2.1.239 and 2.1.281.
+NO_LATER_TOOLS = ["Monitor", "CronCreate", "ScheduleWakeup", "PushNotification", "RemoteTrigger"]
 # Desktop: the built-in browser is the only way to the web (e2e 0.1.8 #125 — with the browser
 # switched off the agent searched with the engine's own tool, and the chat showed none of what
 # it read). The shell names the state in BLAVE_BROWSER; see desktop_web().
@@ -1145,13 +1147,91 @@ def _sched_bash_guard_hooks(options):
     return _add_hook(options, "PreToolUse", "Bash", guard)
 
 
+# 回合結束時引擎追蹤的程序(前景、逾時被轉背景、run_in_background)全部被殺,沒有東西會再叫醒 agent。
+# 2026-10-03 事故:run_in_background 拿到「You will be notified」、agent 回「跑完後我會立即回報」就結束回合;
+# 09-28:回測給了 10 分鐘 timeout,CLI 到點轉背景,回合結束連回測一起死。所以 run_in_background 一律拒絕,
+# 會跑回測/掃參的前景呼叫 timeout 不到「這一輪還剩的時間」也拒絕(上限 = 自動轉背景的門檻,見 turn_env;
+# 剩餘 = 續跑判斷同一條式子 _BRIDGE_KILL_SEC − _RESUME_TAIL_MARGIN_SEC − 已用)。
+# 等待寫法只給 python time.sleep 輪詢(references/deployment.md 3b 那一行):單一指令、不串 `;`(AGENTS.md 的規矩),
+# 實測 claude 2.1.281 可用;開頭的 `sleep N`(N≥25)CLI 會擋。
+# 放行的脫離寫法只有 nohup / setsid 開頭、結尾單一 `&`(3b:這一輪自己輪詢到完成);`& wait`、引號裡的 & 都不算。
+# 只認直接寫在指令裡的啟動;agent 自己寫的包裝腳本、cd 進策略目錄再跑 strategy.py 擋不到。
+_BACKTEST_LAUNCH_RE = re.compile(
+    r"\bpython[\w.]*(?:\.exe)?\s+(?:-[XW]\s*\S+\s+|-(?!c\b)[A-Za-z]+\s+)*[^\s;&|<>]*\bstrategies[/\\][^\s;&|<>]+\.py\b"
+    r"|-m\s+lib\.(?:runner|param_scan|walk_forward|validation)\b"
+    r"|\bfrom\s+lib\.(?:runner|param_scan|walk_forward|validation)\s+import\b"
+    r"|\bimport\s+lib\.(?:runner|param_scan|walk_forward|validation)\b"
+    r"|\bfrom\s+lib\s+import\s[\w\s,()]*?\b(?:runner|param_scan|walk_forward|validation)\b"
+)
+_DETACHED_RE = re.compile(r"^\s*(?:\w+=\S*\s+)*(?:nohup|setsid)\b[^\n]*(?<![&>|])&\s*$")
+
+_POLL_HINT = (
+    "To wait for something already running, poll in the foreground with ONE command that waits and exits by "
+    "itself: `python3 -c \"import time; time.sleep(150); print(''.join(open('tmp/<job>.log', encoding='utf-8', "
+    "errors='replace').readlines()[-3:]))\"` with the Bash tool's `timeout` 180000, repeated until the final line "
+    "appears. A leading `sleep N` of 25 s or more is refused by the engine; Monitor, ScheduleWakeup, cron tools and "
+    "run_in_background are refused here. Steps: references/deployment.md › Long jobs."
+)
+
+
+def bg_guard_reason(tool_input, need_ms):
+    """Bash 呼叫該不該拒絕:回給模型的理由,或 None。need_ms = min(這一輪的 Bash 上限, 這一輪還剩的時間)。"""
+    tool_input = tool_input or {}
+    if tool_input.get("run_in_background") in (True, "true", "True", 1):
+        return ("Refused by the Blave runtime — run_in_background is not available here. When this turn ends the "
+                "engine closes and kills every process it is tracking, a backgrounded one included, and nothing "
+                "calls you again: its completion notice reaches no one and no later report from you is possible. "
+                "Run the command in the foreground with the Bash tool's `timeout` (up to " + str(need_ms) + "; the "
+                "call returns as soon as the command ends). " + _POLL_HINT)
+    cmd = tool_input.get("command")
+    if not isinstance(cmd, str) or not _BACKTEST_LAUNCH_RE.search(cmd) or _DETACHED_RE.search(cmd):
+        return None
+    try:
+        timeout = int(tool_input.get("timeout"))
+    except (TypeError, ValueError):
+        timeout = 0
+    if timeout >= need_ms:
+        return None
+    return ("Refused by the Blave runtime — this starts a backtest / scan, and with `timeout` "
+            + (str(timeout) if timeout else "unset (default 120000)") + " the engine moves it to the background "
+            "when that runs out; the background run is killed when this turn ends and its result is lost. Issue the "
+            "same command again in the foreground with the Bash tool's `timeout` set to " + str(need_ms) + " (what "
+            "this turn has left — the call returns as soon as the run ends, so a short run costs nothing extra). If "
+            "the run is not going to finish within that, do not start it this way: follow references/deployment.md "
+            "› When the job does not finish in the turn. " + _POLL_HINT)
+
+
+def _bg_guard_hooks(options):
+    """PreToolUse:Bash,任何回合:run_in_background 與 timeout 不足的回測啟動拒絕,理由回給模型。"""
+    t0 = time.monotonic()   # 掛載在回合開頭(run_turn 的 t_start 前幾行)
+
+    async def guard(input_data, _tool_use_id, _context):
+        # 續跑時 options.env 整個換成新 dict、上限變小——每次呼叫當下讀
+        try:
+            cap_ms = int((getattr(options, "env", None) or {}).get("BASH_MAX_TIMEOUT_MS") or 1800000)
+        except (TypeError, ValueError):
+            cap_ms = 1800000
+        left_ms = int((_BRIDGE_KILL_SEC - _RESUME_TAIL_MARGIN_SEC - (time.monotonic() - t0)) * 1000)
+        reason = bg_guard_reason((input_data or {}).get("tool_input"), max(0, min(cap_ms, left_ms)))
+        if not reason:
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                       "permissionDecisionReason": reason}}
+
+    return _add_hook(options, "PreToolUse", "Bash", guard)
+
+
 def _mount_turn_hooks(options, sink, scheduled, lang_msg=None, reply_lang=None):
+    # 不分 sink:雲端 blave-agent-web.service 是 KillMode=process,脫離的程序同樣活得過回合,
+    # 承諾回報同樣沒人兌現。機隊的 hook 通道以排程回合那道為先例,發版前在 29026 跑一個真實回合確認(runtime/CHANGELOG)。
+    # SDK 沒有 hooks 時 _add_hook 不掛(fail-open)。
+    _bg_guard_hooks(options)
     if isinstance(sink, LocalSink):
-        # 電腦版才掛(實測過 SDK 0.2.144 + 本機 CLI);機隊等 29026 驗過 hook 通道再開
+        # 語言與排程器兩道只在電腦版(實測過本機 CLI);機隊另外驗過再開
         _lang_hooks(options, lang_reminder(lang_msg, reply_lang))
         _sched_guard_hooks(options)
     if scheduled:
-        # 不分 sink:雲端排程回合正是要擋的那一種。機隊的 hook 通道還沒實測,SDK 沒有 hooks 時 _add_hook 不掛(fail-open)
+        # 不分 sink:雲端排程回合正是要擋的那一種。SDK 沒有 hooks 時 _add_hook 不掛(fail-open)
         _sched_bash_guard_hooks(options)
 
 

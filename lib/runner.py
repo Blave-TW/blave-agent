@@ -1,5 +1,13 @@
 import contextlib, hashlib, json, logging, math, os, shutil, time
 from pathlib import Path
+try:
+    import fcntl
+except ImportError:  # Windows — msvcrt instead
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 import numpy as np
 import pandas as pd
 from dotenv import dotenv_values
@@ -76,6 +84,58 @@ MCPT_SEED = 42
 # The web compares scan.json's generated_at against it: a scan older than the last
 # backtest means the parameters may have moved, so scan.current is shown as unknown.
 GENERATED_AT_KEY = 'Generated At'
+
+
+# One backtest per strategy at a time. A second one would overwrite the first's stats.json /
+# chart / version mid-run, and an agent that lost track of a backtest it detached (nohup) in an
+# earlier turn tends to start it again. The OS lock dies with its process, so a crashed run never
+# leaves a stale lock; the sidecar (pid, start time) is only read to explain a refusal — a separate
+# file because msvcrt locks are mandatory and a locked byte cannot be read on Windows.
+BACKTEST_LOCK = '.backtest.lock'
+BACKTEST_HOLDER = '.backtest.json'
+_held_backtest_locks = {}   # strategy name → fd, held for the life of this process
+# A restore's quiet re-run (BLAVE_QUIET=1) waits for a running backtest instead of failing: the user
+# pressed 還原, and a "failed" line for a run that only had to queue would be wrong. Below the
+# listener's RESTORE_RERUN_TIMEOUT_S (15 min) so the wait ends before the watcher kills the child.
+QUIET_LOCK_WAIT_S = 10 * 60
+
+
+def _try_lock(fd):
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        elif msvcrt is not None:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        return True
+    except OSError:
+        return False
+
+
+def _hold_backtest_lock(name, out_dir, wait_s=0.0):
+    if name in _held_backtest_locks:
+        return
+    fd = os.open(out_dir / BACKTEST_LOCK, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.monotonic() + wait_s
+    while not _try_lock(fd):
+        if time.monotonic() < deadline:
+            time.sleep(2)
+            continue
+        os.close(fd)
+        try:
+            with open(out_dir / BACKTEST_HOLDER, encoding='utf-8') as f:
+                holder = json.load(f)
+        except (OSError, ValueError):
+            holder = {}
+        raise SystemExit(
+            f"❌ A backtest of {name} is already running (PID {holder.get('pid', '?')}, "
+            f"started {holder.get('started', '?')}). Not starting a second one — wait for that run to "
+            f"finish and read its result; do not kill it, and do not delete stats.json or versions/.")
+    _held_backtest_locks[name] = fd
+    try:
+        _write_json_atomic(out_dir / BACKTEST_HOLDER,
+                           {'pid': os.getpid(), 'started': time.strftime('%Y-%m-%d %H:%M:%S %z')})
+    except OSError as e:
+        logging.warning("backtest holder note not written: %s", e)
 
 
 def _carry_over(out_dir, mode):
@@ -408,7 +468,9 @@ def _write_chart_dir(out_dir, df, candles, panes, trades, symbol, interval):
     n_chunks = -(-n // CHART_CHUNK_BARS)
     first = max(0, n_chunks - CHART_MAX_CHUNKS)
     truncated = first > 0
-    tmp_dir = out_dir / 'chart.tmp'
+    _sweep_chart_leftovers(out_dir)
+    # per writer: a live tick may rebuild chart/ while a BLAVE_MODE=backtest run does too
+    tmp_dir = out_dir / f'chart.tmp-{os.getpid()}'
     shutil.rmtree(tmp_dir, ignore_errors=True)
     os.makedirs(tmp_dir)
     pane_pts = [p['points'] for p in panes]
@@ -448,7 +510,7 @@ def _swap_chart_dir(tmp_dir, chart_dir, attempts=5):
     on Windows a rename fails while the reporter has a chunk open or Defender is scanning
     the fresh files, and a plain rmtree+rename would leave a gutted chart/ behind. Retries
     briefly; if it still fails the old set is put back and the error propagates."""
-    old_dir = chart_dir.with_name(chart_dir.name + '.old')
+    old_dir = chart_dir.with_name(f'{chart_dir.name}.old-{os.getpid()}')
     for attempt in range(attempts):
         try:
             if chart_dir.exists():
@@ -464,6 +526,20 @@ def _swap_chart_dir(tmp_dir, chart_dir, attempts=5):
                 raise
             time.sleep(0.5)
     shutil.rmtree(old_dir, ignore_errors=True)
+
+
+_CHART_LEFTOVER_STALE_S = 6 * 3600
+
+
+def _sweep_chart_leftovers(out_dir):
+    """chart.tmp* / chart.old* left by a run killed mid-write; only old ones, a live writer's are fresh."""
+    now = time.time()
+    for p in out_dir.glob('chart.*'):
+        try:
+            if p.name.startswith(('chart.tmp', 'chart.old')) and now - p.stat().st_mtime > _CHART_LEFTOVER_STALE_S:
+                shutil.rmtree(p, ignore_errors=True)
+        except OSError:
+            pass
 
 
 def _chart_refresh_due(out_dir, tail_first_ts, tail_last_ts):
@@ -1204,6 +1280,29 @@ def _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, re
     raise SystemExit(msg)
 
 
+def _refuse_zero_trades_c(name):
+    """Type C backtest whose weights were zero on every bar (from flat, any nonzero weight is a
+    trade). Refused like a look-ahead failure — no stats.json, no version: 2026-10-03 the data
+    quota ran out mid-fetch, the universe came back near-empty and a 0-trade backtest was filed
+    as the strategy's result. The run cannot tell missing data from a strategy that truly held
+    nothing, so it names both."""
+    msg = '\n'.join([
+        f"❌ {name}: 0 trades — the weight vector was zero on every bar, so there is no backtest to keep.",
+        "❌ Possible causes: (1) data missing — look above for `[batch] … failed` / fetch errors, or "
+        "symbols that returned no rows in this range (a quota or upstream outage: re-run later, do not "
+        "change the strategy); (2) the selection or entry condition never fires on this data — check "
+        "thresholds against the data's actual range; (3) weights became NaN / 0 after alignment "
+        "(universe filter, rebalance mask, feed join); (4) the strategy truly holds nothing in this "
+        "span — a longer START would show it trade.",
+        # Not 「Backtest refused」: the restore re-run classifier reads that as final (no 再跑一次 button),
+        # and a data gap is often temporary.
+        "❌ No backtest kept — no stats.json or version was written. Tell the user which of these it is "
+        "before changing anything.",
+    ])
+    logging.error(msg)
+    raise SystemExit(msg)
+
+
 def _weight_row_warnings(weights, index):
     """Type C weight rows the backtest will silently mis-book: gross above 1 (tied ranks
     under rank()'s default method='average' give 1.5 for a top-2 of [3,3,3,1]) and
@@ -1369,6 +1468,9 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
     out_dir = _REPO_ROOT / 'strategies' / strategy_name
     os.makedirs(out_dir, exist_ok=True)
+    if mode == 'backtest':
+        _hold_backtest_lock(strategy_name, out_dir,
+                            QUIET_LOCK_WAIT_S if os.environ.get('BLAVE_QUIET') == '1' else 0.0)
     # Without Telegram, make_sender() (evaluated before run()) logs a warning first, which
     # implicitly installs a bare stderr StreamHandler and would make basicConfig a no-op.
     # Drop only that one (not force=True) so handlers other code attached stay in place.
@@ -1744,6 +1846,8 @@ def run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         print(f"  Sharpe Ratio:  {sharpe:.2f}")
         print(f"  Max Drawdown:  {mdd:.1%}")
         print(f"  Fee Rate:      {fee*100:.4f}%  Total Fees: {tc_daily.sum()*100:.2f}%  Trades: {n_trades}")
+        if n_trades == 0 and mode == 'backtest':
+            _refuse_zero_trades_c(strategy_name)
         if n_trades == 0:
             print("  ⚠️ WARNING: 0 trades — the weight vector never changed; "
                   "all stats are meaningless. Check thresholds against the data's actual range.")

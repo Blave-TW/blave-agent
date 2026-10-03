@@ -21,8 +21,12 @@
      imports every release module)
   5. publish: the committed hash locks are current and shipped; promote refuses a
      canary that is not newer or whose tarball does not match its sha256
+  5b. lock completeness is judged under each target's own markers (a win32-only,
+     a python<3.11-only and a darwin-only dep land only in their own lock; the
+     committed Windows locks carry pywin32, the Linux 3.10 one exceptiongroup)
   6. with --net: `publish.py lock` cannot resolve 0.2.160 on Windows (no
-     win_amd64 wheel) and resolves 0.2.159 everywhere
+     win_amd64 wheel), resolves 0.2.159 to exactly the committed lock, and every
+     committed lock equals the closure from PyPI's Requires-Dist
 
 POSIX only (the fake CLI is a shell script). No network unless --net.
 Run: cd blave-agent && python3 tests/check_sdk_pin.py [--net]
@@ -530,6 +534,48 @@ check("promote: tarball sha256 differs from the canary manifest → refused",
       "does not match" in out and puts == [], out)
 check("promote: 1.1.10 is newer than 1.1.9", promote("1.1.9", "1.1.10")[0] == "ok")
 
+# ── 5b. locks follow each platform's own markers ────────────────────────────
+# pip evaluates markers on the machine running it, so a lock built on a Mac lost
+# mcp's `pywin32; sys_platform == "win32"` (runtime 1.1.109 canary, uid=1) and
+# anyio's `exceptiongroup; python_version < "3.11"` for the 3.10 Linux fleet.
+TREE = {
+    "claude-agent-sdk": ["mcp>=1", "jwtish[crypto]>=2"],
+    "mcp": ['winonly>=311; sys_platform == "win32"', 'oldpy; python_version < "3.11"',
+            'maconly; sys_platform == "darwin"'],
+    "jwtish": ['cryptoish>=3; extra == "crypto"', 'never; extra == "other"'],
+    "winonly": [], "oldpy": [], "maconly": [], "cryptoish": [], "never": [],
+}
+VERS = {"claude-agent-sdk": "0.2.159", "mcp": "2.3.0", "jwtish": "2.15.1", "cryptoish": "50.0.2",
+        "winonly": "312", "oldpy": "1.3.1", "maconly": "1.0"}
+
+
+def problems(key, drop=(), extra=None):
+    v = {n: x for n, x in VERS.items() if n not in drop}
+    v.update(extra or {})
+    return publish.lock_problems("0.2.159", key, requires_of=TREE.get, versions=v)
+
+
+win_ok = problems("win_amd64-py3.14", drop=("oldpy", "maconly"))
+check("win closure = sdk, mcp, jwtish[crypto]→cryptoish, winonly (no py<3.11 / mac-only / unused extra)",
+      win_ok == [], win_ok)
+check("win lock without the win32-only dep → reported missing",
+      problems("win_amd64-py3.14", drop=("oldpy", "maconly", "winonly")) == ["missing winonly"])
+check("linux 3.10 lock must carry the python_version < 3.11 dep",
+      problems("linux_x86_64-py3.10", drop=("winonly", "maconly", "oldpy")) == ["missing oldpy"])
+check("mac lock must carry the darwin-only dep and must not carry the win32-only one",
+      problems("macosx_arm64-py3.12", drop=("oldpy",)) == ["not needed on this platform: winonly"]
+      and problems("macosx_arm64-py3.12", drop=("oldpy", "winonly", "maconly")) == ["missing maconly"])
+check("a pinned version outside the requirement's specifier is reported",
+      problems("win_amd64-py3.14", drop=("oldpy", "maconly"), extra={"winonly": "310"})
+      == ["winonly==310 does not satisfy winonly>=311; sys_platform == \"win32\""])
+locks = {k: publish.read_lock(k) for k, _, _ in publish.SDK_TARGETS}
+check("committed locks: pywin32 on both Windows targets, nowhere else",
+      all(("pywin32" in v) == k.startswith("win_") for k, v in locks.items()),
+      {k: "pywin32" in v for k, v in locks.items()})
+check("committed locks: exceptiongroup (anyio on py < 3.11) only on Linux py3.10",
+      all(("exceptiongroup" in v) == (k == "linux_x86_64-py3.10") for k, v in locks.items()),
+      {k: "exceptiongroup" in v for k, v in locks.items()})
+
 # ── 6. lock resolution (network) ────────────────────────────────────────────
 if "--net" in sys.argv:
     check("lock: 0.2.160 has no win_amd64 wheel → unresolvable",
@@ -537,6 +583,9 @@ if "--net" in sys.argv:
     text = publish.sdk_lock_text("0.2.159", "win_amd64-py3.14", "win_amd64", "3.14")
     check("lock: 0.2.159 resolves and matches the committed lock",
           text == open(publish.lock_path("win_amd64-py3.14")).read())
+    for k, _, _ in publish.SDK_TARGETS:
+        got = publish.lock_problems(pin, k)
+        check(f"committed lock {k} = closure under its markers (PyPI Requires-Dist)", got == [], got)
 
 import shutil  # noqa: E402
 shutil.rmtree(TMP, ignore_errors=True)
