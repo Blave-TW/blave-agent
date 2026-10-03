@@ -11,17 +11,21 @@ Usage (from this repo's root; AWS creds come from the environment):
     python publish.py publish             # upload, whole fleet
     python publish.py publish --canary    # upload, only the api's canary user_ids
     python publish.py promote             # point the whole fleet at the canary version
+    python publish.py lock                # after changing runtime/SDK_VERSION (network)
 
 Canary: the tarball goes up as usual, but the manifest is written to
 manifest-canary.json; the api (`release_manifest()`, `_RELEASE_CANARY_UIDS`)
 serves it only to the listed users while it is newer than manifest.json.
 `promote` copies it to manifest.json — same version number, same tarball.
 
-SDK pin (runtime/SDK_VERSION): every publish first checks that pip can resolve
-`claude-agent-sdk==<pin>` from wheels only, for every platform the fleet and
-the desktop run (SDK_TARGETS). PyPI has skipped the win_amd64 wheel for
-several releases (0.2.157, 0.2.160–0.2.163); on Windows that pin would never
-install (or, without --only-binary, install with no bundled CLI).
+SDK pin (runtime/SDK_VERSION): after changing it, `python publish.py lock`
+resolves `claude-agent-sdk==<pin>` from wheels only for every platform the fleet
+and the desktop run (SDK_TARGETS) and writes runtime/sdk-lock-<key>.txt — every
+package of the tree pinned with the sha256 of each of its wheels. Commit those
+with the pin; publish refuses a missing or stale lock and ships them in the
+tarball (sdk_sync.py and provision install with --require-hashes). A pin PyPI has
+no win_amd64 wheel for (0.2.157, 0.2.160–0.2.163) fails `lock`: on Windows it
+would never install (or, without --only-binary, install with no bundled CLI).
 
 Credentials — this repo is PUBLIC, so nothing here reads api/common/config.py:
     BLAVE_S3_KEY      AWS access key id
@@ -51,34 +55,86 @@ RUNTIME = os.path.join(HERE, "runtime")
 # silently on the fleet.
 SYSTEMD = os.path.join(os.path.dirname(HERE), "api", "blave_agent", "systemd")
 S3_PREFIX = "blave-agent"
-# (pip --platform, --python-version): Linux cloud (Ubuntu 22.04), Windows cloud,
-# Windows desktop, Mac desktop arm64 / Intel.
+# (lock key, pip --platform, --python-version): Linux cloud (Ubuntu 22.04), Windows
+# cloud, Windows desktop, Mac desktop arm64 / Intel. The key is what
+# sdk_pin.lock_key() computes on the machine itself.
 SDK_TARGETS = [
-    ("manylinux_2_17_x86_64", "3.10"),
-    ("win_amd64", "3.14"),
-    ("win_amd64", "3.12"),
-    ("macosx_11_0_arm64", "3.12"),
-    ("macosx_11_0_x86_64", "3.12"),
+    ("linux_x86_64-py3.10", "manylinux_2_17_x86_64", "3.10"),
+    ("win_amd64-py3.14", "win_amd64", "3.14"),
+    ("win_amd64-py3.12", "win_amd64", "3.12"),
+    ("macosx_arm64-py3.12", "macosx_11_0_arm64", "3.12"),
+    ("macosx_x86_64-py3.12", "macosx_11_0_x86_64", "3.12"),
 ]
 
 
-def sdk_preflight(pin, targets=SDK_TARGETS):
-    """Names of the targets pip cannot resolve `claude-agent-sdk==<pin>` for from
-    wheels only. --dry-run reads the index metadata, so no wheel is downloaded."""
+def lock_path(key):
+    return os.path.join(RUNTIME, f"sdk-lock-{key}.txt")
+
+
+def _wheel_hashes(name, version):
+    """Every wheel PyPI has for name==version: the machine's pip picks the wheel
+    for its own tags (a newer manylinux than the one resolved here), and that
+    file's hash has to be in the lock."""
+    import urllib.request
+
+    with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{version}/json", timeout=60) as r:
+        files = json.load(r)["urls"]
+    return sorted({f["digests"]["sha256"] for f in files if f["filename"].endswith(".whl")})
+
+
+def sdk_lock_text(pin, key, plat, py):
+    """The pinned, hashed requirement set for one target, or None when pip cannot
+    resolve `claude-agent-sdk==<pin>` there from wheels only. --dry-run reads the
+    index metadata, so no wheel is downloaded."""
     import subprocess
     import tempfile
 
-    bad = []
     with tempfile.TemporaryDirectory() as tmp:
-        for plat, py in targets:
-            r = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--dry-run", "--ignore-installed",
-                 "--only-binary=:all:", "--platform", plat, "--python-version", py,
-                 "--implementation", "cp", "--target", tmp, "--quiet",
-                 "--disable-pip-version-check", f"claude-agent-sdk=={pin}"],
-                capture_output=True, text=True, timeout=300)
-            if r.returncode != 0:
-                bad.append(f"{plat}/py{py}")
+        report = os.path.join(tmp, "report.json")
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--dry-run", "--ignore-installed",
+             "--only-binary=:all:", "--platform", plat, "--python-version", py,
+             "--implementation", "cp", "--target", os.path.join(tmp, "t"), "--quiet",
+             "--disable-pip-version-check", "--report", report, f"claude-agent-sdk=={pin}"],
+            capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            return None
+        items = json.load(open(report))["install"]
+    lines = [f"# claude-agent-sdk=={pin} {key} — written by `python publish.py lock`, do not edit"]
+    for it in sorted(items, key=lambda i: i["metadata"]["name"].lower()):
+        name, version = it["metadata"]["name"], it["metadata"]["version"]
+        hashes = " ".join(f"--hash=sha256:{h}" for h in _wheel_hashes(name, version))
+        lines.append(f"{name}=={version} {hashes}")
+    return "\n".join(lines) + "\n"
+
+
+def write_locks(pin, targets=SDK_TARGETS):
+    """(Re)write runtime/sdk-lock-<key>.txt for every target; returns the keys pip
+    could not resolve (nothing is written for those — the old file is removed)."""
+    bad = []
+    for key, plat, py in targets:
+        text = sdk_lock_text(pin, key, plat, py)
+        if text is None:
+            bad.append(key)
+            if os.path.exists(lock_path(key)):
+                os.remove(lock_path(key))
+            continue
+        with open(lock_path(key), "w", encoding="utf-8") as f:
+            f.write(text)
+    return bad
+
+
+def stale_locks(pin, targets=SDK_TARGETS):
+    """Targets whose committed lock is missing or was written for another pin."""
+    bad = []
+    for key, _, _ in targets:
+        try:
+            with open(lock_path(key), encoding="utf-8") as f:
+                head = f.readline()
+        except OSError:
+            head = ""
+        if not head.startswith(f"# claude-agent-sdk=={pin} {key} "):
+            bad.append(key)
     return bad
 
 
@@ -103,7 +159,8 @@ def build_tarball():
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for name in sorted(os.listdir(RUNTIME)):
-            if name.endswith(".py") or name in ("VERSION", "SDK_VERSION", "jobs.json"):
+            if (name.endswith(".py") or name in ("VERSION", "SDK_VERSION", "jobs.json")
+                    or (name.startswith("sdk-lock-") and name.endswith(".txt"))):
                 tar.add(os.path.join(RUNTIME, name), arcname=name)
         for name in unit_names:
             path = os.path.join(SYSTEMD, name)
@@ -145,21 +202,50 @@ def _exists(s3, bucket, key):
     return True
 
 
-def promote():
-    s3, bucket = _s3()
+def _vkey(v):
+    return tuple(int(x) for x in str(v).split("."))
+
+
+def promote(s3=None, bucket=None):
+    """Point manifest.json at the canary — only if the canary is newer than what the
+    fleet has, and only if the tarball it names is byte-for-byte what it claims."""
+    if s3 is None:
+        s3, bucket = _s3()
     body = s3.get_object(Bucket=bucket, Key=f"{S3_PREFIX}/manifest-canary.json")["Body"].read()
-    manifest = json.loads(body)
-    if not _exists(s3, bucket, f"{S3_PREFIX}/releases/{manifest['latest']}.tar.gz"):
-        sys.exit(f"ERROR: canary names {manifest['latest']} but its tarball is missing")
+    canary = json.loads(body)
+    try:
+        current = json.loads(
+            s3.get_object(Bucket=bucket, Key=f"{S3_PREFIX}/manifest.json")["Body"].read())
+    except Exception as e:
+        code = getattr(e, "response", {}).get("Error", {}).get("Code")
+        if code not in ("404", "NoSuchKey", "NotFound"):
+            raise
+        current = {"latest": "0"}
+    if _vkey(canary["latest"]) <= _vkey(current["latest"]):
+        sys.exit(f"ERROR: canary {canary['latest']} is not newer than the fleet's "
+                 f"{current['latest']} — nothing to promote")
+    tar = s3.get_object(Bucket=bucket,
+                        Key=f"{S3_PREFIX}/releases/{canary['latest']}.tar.gz")["Body"].read()
+    if hashlib.sha256(tar).hexdigest() != canary["sha256"] or len(tar) != canary["size"]:
+        sys.exit(f"ERROR: tarball {canary['latest']} does not match the canary manifest's "
+                 f"sha256/size — not promoting")
     s3.put_object(Bucket=bucket, Key=f"{S3_PREFIX}/manifest.json", Body=body,
                   ContentType="application/json")
-    print(f"promoted {manifest['latest']} to the whole fleet — picked up within ~6 minutes")
+    print(f"promoted {canary['latest']} to the whole fleet — picked up within ~6 minutes")
 
 
 def main():
     args = sys.argv[1:]
     if args[:1] == ["promote"]:
         return promote()
+    if args[:1] == ["lock"]:
+        pin = open(os.path.join(RUNTIME, "SDK_VERSION")).read().strip()
+        bad = write_locks(pin)
+        if bad:
+            sys.exit(f"ERROR: claude-agent-sdk=={pin} has no wheel-only install for {', '.join(bad)} "
+                     f"— pick a pin PyPI ships for every platform (runtime/SDK_VERSION)")
+        print(f"wrote {len(SDK_TARGETS)} lock files for {pin} — commit them with the pin")
+        return
     do_publish = args[:1] == ["publish"]
     canary = "--canary" in args
     version, data = build_tarball()
@@ -167,11 +253,11 @@ def main():
     manifest = {"latest": version, "sha256": sha, "size": len(data)}
     print(f"release {version}: {len(data)} bytes, sha256={sha}")
     pin = open(os.path.join(RUNTIME, "SDK_VERSION")).read().strip()
-    bad = sdk_preflight(pin)
-    if bad:
-        sys.exit(f"ERROR: claude-agent-sdk=={pin} has no wheel-only install for {', '.join(bad)} "
-                 f"— pick a pin PyPI ships for every platform (runtime/SDK_VERSION)")
-    print(f"sdk pin {pin}: wheels resolve on {len(SDK_TARGETS)} platforms")
+    stale = stale_locks(pin)
+    if stale:
+        sys.exit(f"ERROR: runtime/sdk-lock-*.txt missing or not for {pin}: {', '.join(stale)} "
+                 f"— run `python publish.py lock` and commit the result")
+    print(f"sdk pin {pin}: hash-locked for {len(SDK_TARGETS)} platforms")
 
     if not do_publish:
         print("dry-run only — rerun with `publish` to upload")

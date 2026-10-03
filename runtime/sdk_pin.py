@@ -14,7 +14,9 @@ this module. The desktop has no $BASE/sdk/ at all, so it always uses its venv
 """
 import importlib
 import os
+import platform
 import re
+import stat
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,13 +43,32 @@ def read_pin(path=PIN_FILE):
 
 
 def read_ready(d):
-    """`.ready` is "<sdk> <cli>"; returns that pair or None."""
+    """`.ready` is "<sdk> <cli>"; returns that pair or None. O_NONBLOCK + fstat on
+    the opened fd: a FIFO planted as `.ready` must not hang a turn on open()."""
     try:
-        with open(os.path.join(d, ".ready"), encoding="utf-8") as f:
-            parts = f.read().split()
+        fd = os.open(os.path.join(d, ".ready"), os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > 256:
+            return None
+        parts = os.read(fd, 256).decode("utf-8", "replace").split()
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
     return (parts[0], parts[1]) if len(parts) >= 2 else None
+
+
+def lock_key():
+    """Names this interpreter's runtime/sdk-lock-<key>.txt (publish.py SDK_TARGETS)."""
+    plat = {"linux": "linux", "win32": "win", "darwin": "macosx"}.get(sys.platform, sys.platform)
+    return f"{plat}_{platform.machine().lower()}-py{sys.version_info[0]}.{sys.version_info[1]}"
+
+
+def lock_file():
+    return os.path.join(_HERE, f"sdk-lock-{lock_key()}.txt")
 
 
 def ready_dir(pin, root=SDK_ROOT):
@@ -65,27 +86,76 @@ def ready_dir(pin, root=SDK_ROOT):
     return d
 
 
+def add_dir(d):
+    """Put d (a pip --target tree) after the runtime's own dir and before the venv.
+
+    pip --target does not run the tree's .pth files, which the venv would have
+    run at startup, so they are replayed here in place: path lines go right
+    after d (ahead of the venv's copies), `import` lines run as site.py runs
+    them. That covers pywin32 if the SDK's dependency tree ever pulls it in
+    again (pywin32.pth adds win32, win32/lib, Pythonwin); its DLL dir is added
+    explicitly because pywin32_bootstrap only looks in site.getsitepackages()."""
+    if d in sys.path:
+        return
+    # after the runtime's own dir: a top-level package in the SDK's dependency
+    # tree must never shadow a runtime module of the same name
+    pos = min(1, len(sys.path))
+    sys.path.insert(pos, d)
+    pos += 1
+    imports = []
+    for pth in sorted(f for f in os.listdir(d) if f.endswith(".pth")):
+        with open(os.path.join(d, pth), encoding="utf-8") as f:
+            for line in f:
+                line = line.rstrip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith(("import ", "import\t")):
+                    imports.append(line)
+                    continue
+                p = os.path.join(d, line)
+                if os.path.isdir(p) and p not in sys.path:
+                    sys.path.insert(pos, p)
+                    pos += 1
+    dll = os.path.join(d, "pywin32_system32")
+    if os.name == "nt" and os.path.isdir(dll):
+        os.add_dll_directory(dll)
+    for line in imports:
+        exec(line)  # noqa: S102 — same as site.addpackage
+
+
 def _drop(d):
-    prefix = os.path.normcase(os.path.abspath(d)) + os.sep
-    while d in sys.path:
-        sys.path.remove(d)
+    prefix = os.path.normcase(os.path.abspath(d))
+    sys.path[:] = [p for p in sys.path
+                   if not (os.path.normcase(os.path.abspath(p or ".")) + os.sep).startswith(prefix + os.sep)]
     for name, mod in list(sys.modules.items()):
         f = getattr(mod, "__file__", None)
-        if f and os.path.normcase(os.path.abspath(f)).startswith(prefix):
+        if f and os.path.normcase(os.path.abspath(f)).startswith(prefix + os.sep):
             del sys.modules[name]
     importlib.invalidate_caches()
 
 
+def _mark_bad(d):
+    """The pin dir would not import: take it out of rotation for every later turn
+    (sdk_sync counts it as a failure and reinstalls)."""
+    try:
+        os.replace(os.path.join(d, ".ready"), os.path.join(d, ".bad"))
+    except OSError:
+        pass
+
+
 def load(pin_file=PIN_FILE, root=SDK_ROOT):
     """Import and return claude_agent_sdk, from the pin's directory when ready."""
+    d = None
     try:
         d = ready_dir(read_pin(pin_file), root)
-    except Exception:
+        if d:
+            add_dir(d)
+    except Exception as e:
+        print(f"[sdk_pin] pin dir unusable ({e!r}); using the venv SDK", file=sys.stderr)
+        if d:
+            _drop(d)
+            _mark_bad(d)
         d = None
-    if d and d not in sys.path:
-        # after the runtime's own dir: a top-level package in the SDK's dependency
-        # tree must never shadow a runtime module of the same name
-        sys.path.insert(1, d)
     try:
         return importlib.import_module("claude_agent_sdk")
     except Exception as e:
@@ -93,6 +163,7 @@ def load(pin_file=PIN_FILE, root=SDK_ROOT):
             raise
         print(f"[sdk_pin] {d} failed to import ({e!r}); using the venv SDK", file=sys.stderr)
         _drop(d)
+        _mark_bad(d)
         sys.modules.pop("claude_agent_sdk", None)
         return importlib.import_module("claude_agent_sdk")
 
@@ -130,3 +201,8 @@ def status(pin_file=PIN_FILE, root=SDK_ROOT):
         return {"pin": pin, "active": "pin", "sdk": sdk, "cli": cli}
     sdk, cli = venv_versions()
     return {"pin": pin, "active": "venv", "sdk": sdk, "cli": cli}
+
+
+if __name__ == "__main__":
+    # provision: which lock file this interpreter installs from
+    print(lock_file())
