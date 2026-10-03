@@ -221,6 +221,249 @@ if POSIX:
     check(os.path.getsize(log) <= ru._ERROR_LOG_MAX_BYTES and open(log).read().rstrip().endswith("r1: trim me") and os.listdir(out) == [],
           "report_uploader.log_error trim: normal trim still works")
 
+# ── open_append / touch ──
+import subprocess  # noqa: E402
+if POSIX:
+    ws, out = fresh()
+    lg = os.path.join(ws, "flatten.log")
+    os.symlink(os.path.join(out, "planted"), lg)
+    try:
+        A.open_append(lg).close()
+        err = None
+    except OSError as e:
+        err = e
+    check(err is not None and os.listdir(out) == [], "open_append: path is a symlink → OSError, nothing created outside")
+    kick = os.path.join(ws, "kick")
+    os.symlink(os.path.join(out, "kick-planted"), kick)
+    try:
+        A.touch(kick)
+        err = None
+    except OSError as e:
+        err = e
+    check(err is not None and os.listdir(out) == [], "touch: path is a symlink → OSError, nothing created outside")
+ws, _ = fresh()
+lg = os.path.join(ws, "child.log")
+with A.open_append(lg) as logf:
+    subprocess.run([sys.executable, "-c", "print('from child')"], stdout=logf, stderr=logf, check=True)
+with A.open_append(lg) as logf:
+    logf.write(b"tail\n")
+check(open(lg, "rb").read().replace(b"\r\n", b"\n") == b"from child\ntail\n", "open_append: a Popen can log into it; appends, never truncates")
+k = os.path.join(ws, "kick")
+A.touch(k)
+os.utime(k, (1, 1))
+A.touch(k)
+check(os.path.isfile(k) and os.stat(k).st_mtime > 1000, "touch: creates the file, then bumps its mtime")
+
+# ── Windows newline rule: same bytes as open(); O_BINARY in every flag set ──
+ws, _ = fresh()
+text = "blave_api_key=bk\nPAPER_API_KEY=paper\n一行\n"
+with open(os.path.join(ws, "via_open"), "w", encoding="utf-8") as fh:
+    fh.write(text)
+with A.replacing(os.path.join(ws, "via_replacing"), encoding="utf-8") as fh:
+    fh.write(text)
+A.append_line(os.path.join(ws, "via_append"), text)
+with open(os.path.join(ws, "via_open_a"), "a", encoding="utf-8") as fh:
+    fh.write(text)
+rb = lambda nm: open(os.path.join(ws, nm), "rb").read()  # noqa: E731
+check(rb("via_replacing") == rb("via_open") and rb("via_append") == rb("via_open_a"),
+      f"newline: replacing / append_line write the same bytes as open() on this platform ({rb('via_open')[:20]!r})")
+asrc = open(os.path.join(RUNTIME, "atomic_file.py"), encoding="utf-8").read()
+check(asrc.count('getattr(os, "O_BINARY", 0)') >= 2 and (not hasattr(os, "O_BINARY") or (A._FLAGS & os.O_BINARY and A._APPEND & os.O_BINARY)),
+      "newline: O_BINARY in both flag sets (without it the Windows CRT translates \\n a second time under TextIOWrapper)")
+
+# ── report_uploader: moves and deletes inside reports/ never go through a symlinked directory ──
+if POSIX:
+    ru_spec = importlib.util.spec_from_file_location("report_uploader_sd", os.path.join(RUNTIME, "report_uploader.py"))
+    RU = importlib.util.module_from_spec(ru_spec)
+    ru_spec.loader.exec_module(RU)
+
+    def tree():
+        n[0] += 1
+        w = os.path.join(BASE, f"t{n[0]}", "ws")
+        out = os.path.join(BASE, f"t{n[0]}", "outside")
+        os.makedirs(os.path.join(w, "reports"))
+        os.makedirs(out)
+        RU.REPORTS_DIR = os.path.join(w, "reports")
+        RU.SENT_DIR, RU.FAILED_DIR = os.path.join(RU.REPORTS_DIR, "sent"), os.path.join(RU.REPORTS_DIR, "failed")
+        RU.WATCH_DIR = os.path.join(w, "watch")
+        RU.WATCH_DATA_DIR = os.path.join(RU.WATCH_DIR, "data")
+        return w, out
+
+    def put(d, name, body="x", age=0):
+        p = os.path.join(d, name)
+        with open(p, "w") as fh:
+            fh.write(body)
+        if age:
+            os.utime(p, (time_now - age, time_now - age))
+        return p
+
+    import time as _t  # noqa: E402
+    time_now = _t.time()
+    OLD = RU._ORPHAN_FILES_MAX_AGE_S + 3600
+
+    def run_safe_dir_cases(label):
+        w, out = tree()
+        for i in range(30):
+            put(out, f"doc{i}.txt", age=i + 1)
+        os.symlink(out, RU.SENT_DIR)
+        RU._prune_sent(RU.SENT_DIR)
+        check(len(os.listdir(out)) == 30, f"{label}_prune_sent: sent/ is a symlink to a dir of 30 files → none deleted ({len(os.listdir(out))})")
+        rep = put(RU.REPORTS_DIR, "settings.json", "{}")
+        try:
+            RU._retire(rep, RU.SENT_DIR)
+            err = None
+        except OSError as e:
+            err = e
+        check(err is not None and os.path.isfile(rep) and not os.path.exists(os.path.join(out, "settings.json")),
+              f"{label}_retire: sent/ symlinked → refuses, report stays, nothing lands outside")
+        put(out, "victim.json")
+        os.symlink(out, RU.FAILED_DIR)
+        RU._clear_failed("victim", RU.FAILED_DIR)
+        check(os.path.isfile(os.path.join(out, "victim.json")), f"{label}_clear_failed: failed/ symlinked → the outside victim.json survives")
+
+        w, out = tree()
+        shutil.rmtree(RU.REPORTS_DIR)
+        os.makedirs(os.path.join(out, "old.files"))
+        put(os.path.join(out, "old.files"), "keep.png")
+        os.utime(os.path.join(out, "old.files"), (time_now - OLD, time_now - OLD))
+        os.symlink(out, RU.REPORTS_DIR)
+        RU._sweep_orphan_files()
+        check(os.path.isfile(os.path.join(out, "old.files", "keep.png")), f"{label}_sweep_orphan_files: reports/ symlinked → the outside *.files dir survives")
+        rep = put(RU.REPORTS_DIR, "r.json", "{}")
+        try:
+            RU._retire(rep, RU.SENT_DIR)
+        except OSError:
+            pass
+        check(not os.path.exists(os.path.join(out, "sent")), f"{label}_retire: reports/ symlinked → no sent/ is created outside")
+
+        w, out = tree()
+        os.makedirs(RU.SENT_DIR)
+        for i in range(30):
+            put(RU.SENT_DIR, f"r{i}.json", age=i + 1)
+            os.makedirs(os.path.join(RU.SENT_DIR, f"r{i}.files"))
+        os.symlink(out, os.path.join(RU.SENT_DIR, "r29.files-link.json"))
+        RU._prune_sent(RU.SENT_DIR)
+        left = sorted(x for x in os.listdir(RU.SENT_DIR) if x.endswith(".json") and not os.path.islink(os.path.join(RU.SENT_DIR, x)))
+        check(len(left) == RU.SENT_KEEP and "r0.json" in left and not os.path.exists(os.path.join(RU.SENT_DIR, "r29.files"))
+              and os.path.exists(os.path.join(RU.SENT_DIR, "r0.files")),
+              f"{label}_prune_sent: real sent/ keeps the newest {RU.SENT_KEEP} and their .files, drops the rest ({len(left)})")
+        rep = put(RU.REPORTS_DIR, "a.json", "{}")
+        os.makedirs(os.path.join(RU.REPORTS_DIR, "a.files"))
+        put(os.path.join(RU.REPORTS_DIR, "a.files"), "new.png")
+        os.makedirs(os.path.join(RU.SENT_DIR, "a.files"))
+        put(os.path.join(RU.SENT_DIR, "a.files"), "stale.png")
+        RU._retire(rep, RU.SENT_DIR)
+        check(os.path.isfile(os.path.join(RU.SENT_DIR, "a.json")) and os.listdir(os.path.join(RU.SENT_DIR, "a.files")) == ["new.png"]
+              and not os.path.exists(rep), f"{label}_retire: real sent/ → report and its .files move, an older .files there is replaced")
+        RU._retire(put(RU.REPORTS_DIR, "b.json", "{}"), RU.FAILED_DIR)
+        check(os.path.isfile(os.path.join(RU.FAILED_DIR, "b.json")), f"{label}_retire: creates failed/ when missing")
+        os.makedirs(os.path.join(RU.FAILED_DIR, "b.files"))
+        RU._clear_failed("b", RU.FAILED_DIR)
+        check(not os.path.exists(os.path.join(RU.FAILED_DIR, "b.json")) and not os.path.exists(os.path.join(RU.FAILED_DIR, "b.files")),
+              f"{label}_clear_failed: real failed/ → copy and .files removed")
+        for nm, age, with_json in (("old", OLD, False), ("young", 10, False), ("kept", OLD, True)):
+            d = os.path.join(RU.REPORTS_DIR, nm + ".files")
+            os.makedirs(d)
+            put(d, "x.png")
+            if with_json:
+                put(RU.REPORTS_DIR, nm + ".json", "{}")
+            os.utime(d, (time_now - age, time_now - age))
+        RU._sweep_orphan_files()
+        check(not os.path.exists(os.path.join(RU.REPORTS_DIR, "old.files")) and os.path.isdir(os.path.join(RU.REPORTS_DIR, "young.files"))
+              and os.path.isdir(os.path.join(RU.REPORTS_DIR, "kept.files")),
+              f"{label}_sweep_orphan_files: real reports/ → only the day-old orphan goes")
+
+    run_safe_dir_cases("report_uploader.")
+
+    # swap AFTER the directory was opened (an agent loop racing the uploader): the operations must stay on
+    # the directory that was opened, not on whatever the path names now
+    class SwapAfterOpen(A.SafeDir):
+        swap = None
+
+        def __init__(self, root, path, create=False):
+            super().__init__(root, path, create=create)
+            if SwapAfterOpen.swap and os.path.abspath(path) == SwapAfterOpen.swap[0]:
+                target, outside = SwapAfterOpen.swap
+                SwapAfterOpen.swap = None
+                os.rename(target, target + ".real")
+                os.symlink(outside, target)
+
+    real_sd = RU.atomic_file.SafeDir
+    RU.atomic_file.SafeDir = SwapAfterOpen
+    try:
+        w, out = tree()
+        os.makedirs(RU.SENT_DIR)
+        for i in range(30):
+            put(RU.SENT_DIR, f"r{i}.json", age=i + 1)
+            put(out, f"r{i}.json", age=i + 1)
+            os.makedirs(os.path.join(out, f"r{i}.files"))
+        SwapAfterOpen.swap = (os.path.abspath(RU.SENT_DIR), out)
+        RU._prune_sent(RU.SENT_DIR)
+        check(len(os.listdir(out)) == 60 and len(os.listdir(RU.SENT_DIR + ".real")) == RU.SENT_KEEP,
+              f"_prune_sent: sent/ swapped for a symlink after it was opened → the outside dir is untouched, the real one pruned ({len(os.listdir(out))})")
+        w, out = tree()
+        os.makedirs(RU.FAILED_DIR)
+        put(RU.FAILED_DIR, "v.json")
+        put(out, "v.json")
+        os.makedirs(os.path.join(out, "v.files"))
+        SwapAfterOpen.swap = (os.path.abspath(RU.FAILED_DIR), out)
+        RU._clear_failed("v", RU.FAILED_DIR)
+        check(os.path.isfile(os.path.join(out, "v.json")) and os.path.isdir(os.path.join(out, "v.files"))
+              and not os.path.exists(os.path.join(RU.FAILED_DIR + ".real", "v.json")),
+              "_clear_failed: failed/ swapped after open → the outside v.json / v.files survive")
+        w, out = tree()
+        d = os.path.join(RU.REPORTS_DIR, "old.files")
+        os.makedirs(d)
+        os.makedirs(os.path.join(out, "old.files"))
+        put(os.path.join(out, "old.files"), "keep.png")
+        os.utime(os.path.join(out, "old.files"), (time_now - OLD, time_now - OLD))
+        os.utime(d, (time_now - OLD, time_now - OLD))
+        SwapAfterOpen.swap = (os.path.abspath(RU.REPORTS_DIR), out)
+        RU._sweep_orphan_files()
+        check(os.path.isfile(os.path.join(out, "old.files", "keep.png")), "_sweep_orphan_files: reports/ swapped after open → the outside *.files survives")
+    finally:
+        RU.atomic_file.SafeDir = real_sd
+
+    w, out = tree()
+    put(out, "precious.txt")
+    os.makedirs(RU.SENT_DIR)
+    d = os.path.join(RU.SENT_DIR, "z.files")
+    os.makedirs(d)
+    os.symlink(out, os.path.join(d, "link-to-outside"))
+    with A.SafeDir(w, RU.SENT_DIR) as sd:
+        sd.rmtree("z.files")
+    check(not os.path.exists(d) and os.path.isfile(os.path.join(out, "precious.txt")),
+          "SafeDir.rmtree: a symlink inside the tree is unlinked, never followed")
+    saved = os.supports_dir_fd
+    os.supports_dir_fd = set()  # the Windows branch: no dir_fd, realpath must stay under the root
+    try:
+        run_safe_dir_cases("[no dir_fd] report_uploader.")
+    finally:
+        os.supports_dir_fd = saved
+
+# ── command_listener append / touch sites ──
+if POSIX:
+    st = os.path.join(WS, "state")
+    os.makedirs(os.path.join(st, "execution"), exist_ok=True)
+    out = os.path.join(BASE, "outside-append")
+    os.makedirs(out)
+    for nm in ("audit.jsonl", os.path.join("execution", "kick")):
+        p = os.path.join(st, nm)
+        if os.path.lexists(p):
+            os.remove(p)
+        os.symlink(os.path.join(out, os.path.basename(nm) + "-planted"), p)
+    cl.WORKSPACE_STATE = st
+    cl._kick_reconciler()
+    cl._downtime_unprotected(1, 2)
+    ev_spec = importlib.util.spec_from_file_location("events_sd", os.path.join(RUNTIME, "events.py"))
+    EV = importlib.util.module_from_spec(ev_spec)
+    ev_spec.loader.exec_module(EV)
+    if os.path.lexists(EV.EVENTS_PATH):
+        os.remove(EV.EVENTS_PATH)
+    os.symlink(os.path.join(out, "events-planted"), EV.EVENTS_PATH)
+    EV.append("probe", {"k": 1})
+    check(os.listdir(out) == [], "command_listener kick / audit.jsonl and events.append through planted symlinks → nothing outside")
+
 # ── enumeration: every os.replace / os.rename in runtime/ is reviewed ──
 # (file, enclosing function) → why it is not a write-then-replace that needs atomic_file
 REVIEWED = {
@@ -228,7 +471,6 @@ REVIEWED = {
     ("local_daemon.py", "_link_current"): "os.symlink(tmp) never follows an existing name (EEXIST)",
     ("local_daemon.py", "_spawn_locked"): "reconciler.log rotation: renames the log, writes nothing",
     ("web_bridge.py", "_load_queue"): "moves a corrupt queue aside, writes nothing",
-    ("report_uploader.py", "_retire"): "moves a finished report (and its .files/) into sent/ or failed/",
     ("skill_sync.py", "main"): "directory swap of the skill clone",
     ("telegram_pairing.py", "replace_retry"): "the replace callable atomic_file.replacing is handed",
 }
@@ -250,6 +492,42 @@ stray = [x for x in found if x not in REVIEWED]
 check(not stray, f"every os.replace / os.rename in runtime/ is atomic_file or reviewed (unreviewed: {stray})")
 check(not [x for x in REVIEWED if x not in found], f"no stale entries on the reviewed list ({[x for x in REVIEWED if x not in found]})")
 check(len(found) >= 6, f"enumeration found the reviewed sites (found {len(found)}; 0 = the scan broke)")
+# appends and in-place creates: open(..., "a…"), os.O_APPEND, os.open(O_CREAT) without O_EXCL / O_NOFOLLOW
+APPEND_REVIEWED = {
+    ("events.py", "append"): "inlined O_NOFOLLOW append (strategy processes load events.py by path, no atomic_file)",
+    ("command_listener.py", "_flatten_already_running"): '"a+" lock probe on an existing flatten.lock, writes nothing',
+}
+CREATE_REVIEWED = {
+    ("telegram_pairing.py", "write_json_600"): "config/ is root:root 755 on Linux (agent can't place a symlink), explicit ACL on Windows, BASE/config is outside the desktop sandbox",
+    ("command_listener.py", "_env_lock"): ".env.lock: flock target, never written; worst case an empty file",
+    ("command_listener.py", "_env_lock_nt"): ".env.lock: msvcrt lock target, never written",
+    ("local_daemon.py", "_take_reconciler_lock"): "lock file, never written",
+    ("local_daemon.py", "acquire"): "lock file, never written",
+    ("local_daemon.py", "_try_lock"): "lock file, never written",
+    ("session_store.py", "_conn"): "session.db lives in BASE/state (outside the workspace); created empty 0600",
+}
+app_found, create_found = set(), set()
+for name in sorted(os.listdir(RUNTIME)):
+    if not name.endswith(".py") or name == "atomic_file.py":
+        continue
+    tree_ = ast.parse(open(os.path.join(RUNTIME, name), encoding="utf-8").read())
+    for fn in [x for x in ast.walk(tree_) if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
+                mode = node.args[1] if len(node.args) > 1 else next((k.value for k in node.keywords if k.arg == "mode"), None)
+                if isinstance(mode, ast.Constant) and isinstance(mode.value, str) and "a" in mode.value:
+                    app_found.add((name, fn.name))
+            if isinstance(node, ast.Attribute) and node.attr == "O_APPEND":
+                app_found.add((name, fn.name))
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "open"
+                    and isinstance(node.func.value, ast.Name) and node.func.value.id == "os"):
+                flags = ast.dump(node.args[1]) if len(node.args) > 1 else ""
+                if "O_CREAT" in flags and "O_EXCL" not in flags and "O_NOFOLLOW" not in flags and "_APPEND" not in flags:
+                    create_found.add((name, fn.name))
+check(not sorted(app_found - set(APPEND_REVIEWED)), f"every append in runtime/ goes through atomic_file or is reviewed (unreviewed: {sorted(app_found - set(APPEND_REVIEWED))})")
+check(not sorted(set(APPEND_REVIEWED) - app_found), f"no stale entries on the append list ({sorted(set(APPEND_REVIEWED) - app_found)})")
+check(not sorted(create_found - set(CREATE_REVIEWED)), f"every os.open(O_CREAT) without O_EXCL/O_NOFOLLOW is reviewed (unreviewed: {sorted(create_found - set(CREATE_REVIEWED))})")
+check(not sorted(set(CREATE_REVIEWED) - create_found), f"no stale entries on the create list ({sorted(set(CREATE_REVIEWED) - create_found)})")
 srcs = {nm: open(os.path.join(RUNTIME, nm), encoding="utf-8").read() for nm in os.listdir(RUNTIME) if nm.endswith(".py")}
 check(sum(s.count("atomic_file.replacing(") for s in srcs.values()) >= 40,
       f"call sites use atomic_file.replacing ({sum(s.count('atomic_file.replacing(') for s in srcs.values())})")

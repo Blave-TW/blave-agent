@@ -14,6 +14,8 @@ written through. Only a temp this call created is ever removed.
 import contextlib
 import os
 import secrets
+import shutil
+import stat
 
 _FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
 
@@ -48,13 +50,147 @@ def replacing(path, mode="w", *, perm=None, prepare=None, replace=None, **open_k
         raise
 
 
+_APPEND = (os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+           | getattr(os, "O_BINARY", 0))
+
+
+def open_append(path, mode="ab", **open_kw):
+    """`open(path, "a"/"ab")` that refuses a symlink at `path` (O_NOFOLLOW; Windows has no
+    such flag, and a file symlink there needs a privilege). Usable as Popen stdout."""
+    fd = os.open(path, _APPEND, 0o666)
+    try:
+        return os.fdopen(fd, mode, **open_kw)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def append_line(path, text, encoding="utf-8"):
-    """Append without following a symlink at `path` (O_NOFOLLOW; Windows has no
-    such flag, and creating a symlink there needs a privilege)."""
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-                 | getattr(os, "O_BINARY", 0), 0o666)
-    with os.fdopen(fd, "a", encoding=encoding) as f:
+    with open_append(path, "a", encoding=encoding) as f:
         f.write(text)
+
+
+def touch(path):
+    """Create-or-bump-mtime without following a symlink at `path`."""
+    fd = os.open(path, _APPEND, 0o666)
+    try:
+        if os.utime in os.supports_fd:
+            os.utime(fd)
+        else:
+            os.utime(path)
+    finally:
+        os.close(fd)
+
+
+class SafeDir:
+    """A directory under `root`, reached without following a symlink anywhere below `root`.
+
+    For the runtime's deletes and moves inside agent-writable trees (reports/sent, reports/):
+    swapping `sent` or `reports` for a symlink must not turn "keep the newest 20" into
+    "delete someone's documents". POSIX: one O_NOFOLLOW open per component, then every
+    operation is relative to the final fd, so a later swap changes nothing. Windows has no
+    dir_fd: the resolved path must stay under root at open time (junctions need no privilege
+    there, so the check matters; a swap after it is not covered)."""
+
+    def __init__(self, root, path, create=False):
+        rel = os.path.relpath(path, root)
+        parts = [] if rel == "." else rel.split(os.sep)
+        if any(p in ("", os.pardir) for p in parts):
+            raise OSError(f"{path} is not under {root}")
+        self.path = path
+        self.fd = None
+        if os.rename in os.supports_dir_fd and hasattr(os, "O_DIRECTORY"):
+            flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                for part in parts:
+                    try:
+                        nfd = os.open(part, flags, dir_fd=fd)
+                    except FileNotFoundError:
+                        if not create:
+                            raise
+                        os.mkdir(part, dir_fd=fd)
+                        nfd = os.open(part, flags, dir_fd=fd)
+                    os.close(fd)
+                    fd = nfd
+            except BaseException:
+                os.close(fd)
+                raise
+            self.fd = fd
+        else:
+            real_root = os.path.realpath(root)
+            if create and not os.path.isdir(path):
+                cur = root
+                for part in parts:
+                    cur = os.path.join(cur, part)
+                    if not os.path.realpath(cur).startswith(real_root + os.sep):
+                        raise OSError(f"{cur} resolves outside {root}")
+                    if not os.path.isdir(cur):
+                        os.mkdir(cur)
+            real = os.path.realpath(path)
+            if real != real_root and not real.startswith(real_root + os.sep):
+                raise OSError(f"{path} resolves outside {root}")
+            if not os.path.isdir(real):
+                raise NotADirectoryError(path)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def close(self):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+    def _at(self, name):
+        if os.sep in name or (os.altsep and os.altsep in name) or name in ("", os.curdir, os.pardir):
+            raise ValueError(f"not a plain name: {name!r}")
+        return (name, {"dir_fd": self.fd}) if self.fd is not None else (os.path.join(self.path, name), {})
+
+    def listdir(self):
+        return os.listdir(self.fd if self.fd is not None else self.path)
+
+    def lstat(self, name):
+        p, kw = self._at(name)
+        return os.stat(p, follow_symlinks=False, **kw)
+
+    def remove(self, name):
+        p, kw = self._at(name)
+        os.unlink(p, **kw)
+
+    def move_in(self, src, name):
+        """os.replace(src, <this dir>/name) — the destination side never follows a symlink."""
+        p, kw = self._at(name)
+        os.replace(src, p, **({"dst_dir_fd": self.fd} if self.fd is not None else {}))
+
+    def rmtree(self, name):
+        """Remove the real directory `name` here and everything in it; a symlink entry
+        (here or anywhere below) is never followed. Missing / not a directory → no-op."""
+        try:
+            st = self.lstat(name)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISDIR(st.st_mode):
+            return
+        if self.fd is None:
+            shutil.rmtree(os.path.join(self.path, name))
+            return
+        _rmtree_fd(self.fd, name)
+
+
+def _rmtree_fd(parent, name):
+    fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
+    try:
+        for e in os.scandir(fd):
+            if e.is_dir(follow_symlinks=False):
+                _rmtree_fd(fd, e.name)
+            else:
+                os.unlink(e.name, dir_fd=fd)
+    finally:
+        os.close(fd)
+    os.rmdir(name, dir_fd=parent)
 
 
 def _drop(tmp):

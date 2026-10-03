@@ -518,9 +518,8 @@ class ReconcilerSupervisor:
         only there is gone by the time anyone asks why trading paused."""
         _log(msg)
         try:
-            with open(os.path.join(self.ws, "state", "reconciler.log"), "a",
-                      encoding="utf-8") as f:
-                f.write(f"[local_daemon] {_stamp()} {msg}\n")
+            atomic_file.append_line(os.path.join(self.ws, "state", "reconciler.log"),
+                                    f"[local_daemon] {_stamp()} {msg}\n")
         except OSError:
             pass
 
@@ -688,7 +687,7 @@ class ReconcilerSupervisor:
                     os.replace(log_path, log_path + ".1")
             except OSError:
                 pass
-            with open(log_path, "ab") as logf:
+            with atomic_file.open_append(log_path) as logf:
                 # Through run_reconciler below, holding a pipe we never write
                 # to: its EOF is how the reconciler learns this daemon is gone,
                 # SIGKILL included.

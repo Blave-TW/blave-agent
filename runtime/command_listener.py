@@ -1016,8 +1016,7 @@ def _kick_reconciler():
     try:
         kick = os.path.join(WORKSPACE, "state", "execution", "kick")
         os.makedirs(os.path.dirname(kick), exist_ok=True)
-        with open(kick, "a"):
-            os.utime(kick, None)
+        atomic_file.touch(kick)
     except OSError:
         pass
 
@@ -1712,8 +1711,7 @@ def _downtime_unprotected(down_from, down_to):
                            "offline_s": int(down_to - down_from),
                            "down_from": int(down_from), "down_to": int(down_to)})
         os.makedirs(WORKSPACE_STATE, exist_ok=True)
-        with open(os.path.join(WORKSPACE_STATE, "audit.jsonl"), "a") as f:
-            f.write(line + "\n")
+        atomic_file.append_line(os.path.join(WORKSPACE_STATE, "audit.jsonl"), line + "\n")
     except OSError as e:
         _log(f"downtime_check_failed audit line not written: {type(e).__name__}")
 
@@ -2013,10 +2011,9 @@ def _restart_stop_failed(last_up):
                "down_to": int(_clock())}
     try:
         os.makedirs(WORKSPACE_STATE, exist_ok=True)
-        with open(os.path.join(WORKSPACE_STATE, "audit.jsonl"), "a") as f:
-            f.write(json.dumps({
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
-                "event": "machine_restart_stop_failed", "gated": gated, **payload}) + "\n")
+        atomic_file.append_line(os.path.join(WORKSPACE_STATE, "audit.jsonl"), json.dumps({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime()),
+            "event": "machine_restart_stop_failed", "gated": gated, **payload}) + "\n")
     except OSError:
         pass
     if not gated:
@@ -4383,7 +4380,7 @@ def _launch_flatten(prefix):
     child_env["BLAVE_AGENT_WORKSPACE"] = WORKSPACE
     if _local_mode():
         # own session: the flatten must outlive a daemon that is shutting down
-        with open(log_path, "ab") as logf:
+        with atomic_file.open_append(log_path) as logf:
             proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
                                     env=_local_child_env(), stdout=logf, stderr=logf,
                                     start_new_session=True, **_child_kw())
@@ -4405,7 +4402,7 @@ def _launch_flatten(prefix):
         return prefix + "started"
     # Linux:bridge unit 是 KillMode=process(見 systemd/blave-agent-web.service)
     # ——重啟只殺 bridge 本體,flatten 活到收工
-    with open(log_path, "ab") as logf:
+    with atomic_file.open_append(log_path) as logf:
         proc = subprocess.Popen(
             ["python3", "manager/flatten.py"],
             cwd=WORKSPACE, env=child_env,

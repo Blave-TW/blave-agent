@@ -117,7 +117,12 @@ def append(ev_type, payload=None, ts=None):
         return None
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        with open(EVENTS_PATH, "a", encoding="utf-8") as f:
+        # same as atomic_file.append_line, inlined: strategy processes load this file by path
+        # (lib/events.py) with no runtime/ on sys.path. O_NOFOLLOW: a symlinked events.jsonl
+        # must not carry the line out of the workspace
+        fd = os.open(EVENTS_PATH, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+                     | getattr(os, "O_BINARY", 0), 0o666)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(line)
     except OSError as e:
         _log(f"append {ev_type} failed: {e}")

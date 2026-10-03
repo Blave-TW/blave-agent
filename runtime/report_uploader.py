@@ -62,7 +62,7 @@ strategy_reporter / portfolio_reporter: the token resolves to this user only.
 import json
 import os
 import re
-import shutil
+import stat
 import sys
 import time
 import unicodedata
@@ -515,39 +515,59 @@ def pending():
     return out
 
 
+def _safe_dir(path, create=False):
+    """reports/、watch/ 底下的目錄,一路不跟 symlink(atomic_file.SafeDir)。agent 寫得到這兩棵樹:
+    sent/ 或 reports/ 被換成指向外面的 symlink 時,下面的搬檔與「只留最近 20 份」不能變成刪別人的檔。
+    根 = 那棵樹的上一層(正式環境就是 WORKSPACE;測試會把 REPORTS_DIR 換到別處)"""
+    for tree in (REPORTS_DIR, WATCH_DIR):
+        if os.path.commonpath([os.path.abspath(path), os.path.abspath(tree)]) == os.path.abspath(tree):
+            return atomic_file.SafeDir(os.path.dirname(tree), path, create=create)
+    return atomic_file.SafeDir(WORKSPACE, path, create=create)
+
+
 def _retire(path, target_dir):
     """報告連同它的圖片 sidecar 一起搬走——drop dir 不留孤兒目錄。"""
-    os.makedirs(target_dir, exist_ok=True)
-    os.replace(path, os.path.join(target_dir, os.path.basename(path)))
-    src = os.path.splitext(path)[0] + FILES_SUFFIX
-    if not os.path.isdir(src):
-        return
-    dst = os.path.join(target_dir, os.path.basename(src))
-    shutil.rmtree(dst, ignore_errors=True)  # os.replace 換不掉非空目錄
-    try:
-        os.replace(src, dst)
-    except OSError as e:
-        # 報告已經搬走了，這個目錄現在是孤兒——_sweep_orphan_files 一天後收掉它
-        print(f"[report_uploader] {os.path.basename(src)} not retired: {e}",
-              file=sys.stderr)
+    with _safe_dir(target_dir, create=True) as dst:
+        dst.move_in(path, os.path.basename(path))
+        src = os.path.splitext(path)[0] + FILES_SUFFIX
+        if not os.path.isdir(src) or os.path.islink(src):
+            return
+        name = os.path.basename(src)
+        try:
+            dst.rmtree(name)  # os.replace 換不掉非空目錄
+            dst.move_in(src, name)
+        except OSError as e:
+            # 報告已經搬走了，這個目錄現在是孤兒——_sweep_orphan_files 一天後收掉它
+            print(f"[report_uploader] {name} not retired: {e}", file=sys.stderr)
 
 
 def _prune_sent(sent_dir=SENT_DIR):
     """sent/ 只留最近幾份給機器端 agent 回頭看；本體在平台上，這裡不是歸檔。"""
     try:
-        files = [os.path.join(sent_dir, n) for n in os.listdir(sent_dir)]
+        d = _safe_dir(sent_dir)
     except OSError:
         return
-    files = [p for p in files if os.path.isfile(p)]
-    if len(files) <= SENT_KEEP:
-        return
-    files.sort(key=os.path.getmtime, reverse=True)
-    for path in files[SENT_KEEP:]:
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        shutil.rmtree(os.path.splitext(path)[0] + FILES_SUFFIX, ignore_errors=True)
+    with d:
+        files = []
+        for n in d.listdir():
+            try:
+                st = d.lstat(n)
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                files.append((st.st_mtime, n))
+        if len(files) <= SENT_KEEP:
+            return
+        files.sort(reverse=True)
+        for _, n in files[SENT_KEEP:]:
+            try:
+                d.remove(n)
+            except OSError:
+                pass
+            try:
+                d.rmtree(os.path.splitext(n)[0] + FILES_SUFFIX)
+            except OSError:
+                pass
 
 
 def _sweep_orphan_files():
@@ -557,21 +577,31 @@ def _sweep_orphan_files():
     cutoff = time.time() - _ORPHAN_FILES_MAX_AGE_S
     for base in (REPORTS_DIR, WATCH_DATA_DIR):
         try:
-            names = os.listdir(base)
+            d = _safe_dir(base)
         except OSError:
             continue
-        for name in names:
-            if not name.endswith(FILES_SUFFIX):
-                continue
-            d = os.path.join(base, name)
-            if not os.path.isdir(d) or os.path.exists(d[:-len(FILES_SUFFIX)] + ".json"):
-                continue
+        with d:
             try:
-                if os.path.getmtime(d) > cutoff:
-                    continue
+                names = d.listdir()
             except OSError:
                 continue
-            shutil.rmtree(d, ignore_errors=True)
+            for name in names:
+                if not name.endswith(FILES_SUFFIX):
+                    continue
+                try:
+                    st = d.lstat(name)
+                    if not stat.S_ISDIR(st.st_mode) or st.st_mtime > cutoff:
+                        continue
+                    d.lstat(name[:-len(FILES_SUFFIX)] + ".json")
+                    continue  # 報告還在
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    continue
+                try:
+                    d.rmtree(name)
+                except OSError:
+                    pass
 
 
 def _fail_permanently(report_id, path, message, state, failed_dir=FAILED_DIR,
@@ -761,13 +791,17 @@ def _clear_failed(report_id, failed_dir=FAILED_DIR):
     還有一份失敗的報告(uid=1 T7b 一開場就被它帶偏)。sidecar 一起清:_sweep_orphan_files
     不掃 failed/,留下就是永久孤兒。"""
     try:
-        os.remove(os.path.join(failed_dir, report_id + ".json"))
+        with _safe_dir(failed_dir) as d:  # failed/ 被換成 symlink 時不能變成刪外面同名的檔
+            try:
+                d.remove(report_id + ".json")
+            except FileNotFoundError:
+                pass
+            d.rmtree(report_id + FILES_SUFFIX)
     except FileNotFoundError:
         pass
     except OSError as e:
         print(f"[report_uploader] {report_id}: stale failed/ copy not removed: {e}",
               file=sys.stderr)
-    shutil.rmtree(os.path.join(failed_dir, report_id + FILES_SUFFIX), ignore_errors=True)
 
 
 def run_once(token=None, started=None):

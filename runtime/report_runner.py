@@ -14,9 +14,9 @@ Usage (from the scheduler thread, or `report_run_now`):
     report_runner.py <id>
 
 Exit 2 = no such job / bad job.json, 3 = another run of the same job holds the lock
-(both: nothing recorded); 1 = the run failed; 0 = ok or skipped. Stdlib-only, no
-import of any other runtime module and never of workspace/lib/ — the workspace is
-the agent's, and may be broken.
+(both: nothing recorded); 1 = the run failed; 0 = ok or skipped. Stdlib plus two
+runtime siblings (turn_slots for the turn-slot rules, atomic_file for writes), never
+workspace/lib/ — the workspace is the agent's, and may be broken.
 """
 import json
 import os
