@@ -550,7 +550,7 @@ _BLAVE_DATA = frozenset({
 # Classes and constants that carry no fetch. BASE is deliberately absent: a
 # strategy that takes it builds its own Blave URL.
 _DATA_INERT = frozenset({
-    "DataAccessError", "UnknownFetcher", "TwPublicUnavailable", "UsStockUnavailable",
+    "DataAccessError", "BatchIncomplete", "UnknownFetcher", "TwPublicUnavailable", "UsStockUnavailable",
     "UsStockNotHere", "UsStockNotFound", "FeedNotPublished", "closed_bars_only", "live_feeds",
     "FEED_TIMING", "TW_FLOWS", "TWSE_INDUSTRY_NAMES", "PUBLIC_SOURCE_EN",
 })
