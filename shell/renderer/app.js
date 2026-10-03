@@ -2351,8 +2351,8 @@ function classifyFault(text) {
   }
   const nm = NO_MODEL_RE.exec(text || "");
   if (nm) {
-    // 括號裡的名字**不能拿來認人**:我們送的是別名(`fable`),CLI 會先解析成完整 id 才
-    // 報錯(`claude-fable-5`,見 anthropics/claude-code#68121 的實際輸出),兩個字串對
+    // 括號裡的名字**不能拿來認人**:送出去的不一定是它報的那個字串——別名(`haiku`)CLI 會先解析成
+    // 完整 id 才報錯(見 anthropics/claude-code#68121 的實際輸出),Blave 線還帶 `anthropic/` 前綴,兩個字串對
     // 不起來——拿它去標記會標到一個不存在的 id,選擇也不會換回預設。出事的一定是這一輪
     // 送出去的那個 model,所以用 turnModel;括號裡的字只在認不出來時拿來顯示。
     const id = turnModel || nm[1];

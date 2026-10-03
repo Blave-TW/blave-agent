@@ -1637,18 +1637,22 @@ async function cloudReport(id, ver) {
 // **effort 的集合永遠跟著 model 走**——選不到不存在的組合,不必事後驗。
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
-// Claude Code 沒有本機型錄可讀,別名清單我們自己維護。
+// Claude Code 沒有本機型錄可讀,清單我們自己維護。fable / opus / sonnet 送明確 id 而不是別名:
+// 別名由 CLI 自己解析,CLI 2.1.281 的 `sonnet` 是 claude-sonnet-5 不是 5.5(29026 實測),選單寫的會跟實際跑的不一樣。
 // haiku 的 efforts 是空的:實測(把 CLI 指到 mock upstream 看它送什麼)CLI 對 haiku
 // 完全不送 output_config,`--effort` 不報錯但沒有任何作用——放一個按了沒反應的控件
 // 比藏掉它更糟。
 // 順序 = 模型強度,最強的在上面(三個引擎同一個規則)。預設不是第一個:預設跟著
-// `defaultModel` 走(sonnet——每個方案都有、速度與能力的平衡點),「預設」徽章也是。
+// `defaultModel` 走(Sonnet——每個方案都有、速度與能力的平衡點),「預設」徽章也是。
 const CLAUDE_MODELS = [
-  { id: "fable", name: "Fable", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
-  { id: "opus", name: "Opus", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
-  { id: "sonnet", name: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "claude-fable-5-1", name: "Fable", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "claude-opus-5-5", name: "Opus", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
+  { id: "claude-sonnet-5-5", name: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: "high" },
   { id: "haiku", name: "Haiku", efforts: [], defaultEffort: null },
 ];
+const CLAUDE_DEFAULT = "claude-sonnet-5-5";
+// 偏好檔裡存的舊別名對到明確 id(effort 跟著帶,renderer mpInit 讀 successors)
+const CLAUDE_SUCCESSORS = { sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5", fable: "claude-fable-5-1" };
 
 // Codex 自己維護一份型錄(伺服器下發、帶 etag,會變):每個 model 的 effort 集合與
 // 預設值都在裡面,`visibility: "hide"` 的(gpt-reserve、codex-auto-review)它自己
@@ -2001,7 +2005,7 @@ async function modelOptions(kind) {
     const d = models.find((m) => /deepseek.*pro/.test(m.id)) || models.find((m) => /sonnet/.test(m.id)) || models[0];
     return { models, defaultModel: d ? d.id : null, successors: BLAVE_SUCCESSORS };
   }
-  return { models: CLAUDE_MODELS, defaultModel: "sonnet" };
+  return { models: CLAUDE_MODELS, defaultModel: CLAUDE_DEFAULT, successors: CLAUDE_SUCCESSORS };
 }
 
 // 選擇按引擎各記一組,跨重啟保留:{ codex: { model, efforts: { <model>: <level> } }, … }
@@ -2308,9 +2312,9 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     "--delivery", "local",
     // 選擇器畫得出來時,model / effort **一律明確指定**:輸入框上寫的就是送出去的,
     // 不靠引擎那邊看不見的預設。只有型錄拿不到(沒畫選擇器)時兩個才是 null——
-    // 那時 Claude / Blave AI 照舊送 sonnet,Codex 什麼都不帶(runtime 用「有沒有明確
-    // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m sonnet`)。
-    ...(model ? ["--model", model] : useCodex ? [] : ["--model", "sonnet"]),
+    // 那時 Claude / Blave AI 照舊送 Sonnet(proxy 也認裸 id),Codex 什麼都不帶(runtime 用「有沒有明確
+    // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m <那個名字>`)。
+    ...(model ? ["--model", model] : useCodex ? [] : ["--model", CLAUDE_DEFAULT]),
     ...(effort ? ["--effort", effort] : []),
     // 回覆語言跟著用戶打的字走,不跟介面(Wei):刻意**不帶** --ui-lang。runtime 的順序是
     // 「機器設定 > ui_lang > 看訊息猜」,電腦版沒有機器設定,不帶就落到最後一項。
