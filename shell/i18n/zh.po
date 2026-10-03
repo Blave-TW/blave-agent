@@ -3990,6 +3990,10 @@ msgstr "安裝那句沒送出去，這支還沒裝。等對話空下來再按一
 msgid "lib.dl.gone"
 msgstr "這支策略已經不在策略庫了。"
 
+# 匿名 /public_code 的 404:下架或已不符合免登入條件分不出來,講中性句(spec-0.1.13-smallfixes #10)
+msgid "lib.dl.anonGone"
+msgstr "這支現在不能免登入下載，可能已經下架，或改成要登入。清單已經重新整理。"
+
 msgid "lib.gate.signedOut"
 msgstr "登入 Blave 之後才能下載到這台電腦。"
 

@@ -1948,7 +1948,8 @@ async function libraryPurchase(strategyId, confirmTopup) {
    api 計費三道。社群策略的伺服器掃描結果(security)另存 library_<id>.security.json 給 agent 照 exit 1 處理;這次沒有就刪掉上一份。
    沒有桌面 key(沒登入 / key 被撤)時,官方 × 免費 × 不用 Blave 資料的那幾支改走匿名的 /public_code;其餘要登入。
    回 { ok: true }、{ ok: true, legacy: true }(workspace 還沒有新契約:沒下載,畫面改送舊句)或 { ok: false, kind: "blocked"(平台掃描擋下)|
-   "gone"(404)| "signin"(這支要登入,而這台沒有能用的 key)| "fail" };內容不回給畫面。 */
+   "gone"(/code 404 = 真的下架)| "anonGone"(/public_code 404:下架,或已不符合免登入的條件,分不出來)| "signin"(這支要登入,而這台沒有能用的 key)| "fail" };
+   內容不回給畫面。 */
 const LIB_CODE_MAX = 1024 * 1024;
 /* workspace 的官方檔是隨包副本,只在隨包 VERSION 比較新時才同步(syncOfficialOnUpdate);同步沒發生(版號沒往上、備份失敗)時
    agent 讀的還是舊 marketplace.md,看不懂 lib.msgLocal。所以看契約本身在不在,不看版號 */
@@ -1980,19 +1981,19 @@ async function libraryDownload(strategyId) {
     try { if (telemetryLive() && tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
     try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
   };
-  let r = null;
+  let r = null, viaAnon = false;
   if (key) {
     try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code`, { "api-key": key.api_key, "secret-key": key.secret_key }); }
     catch (_) { return { ok: false, kind: "fail" }; }
     const kb = r.body && typeof r.body === "object" ? r.body : {};
-    if (r.status === 401 || (r.status === 403 && kb.error_code === "ERR005")) r = await anon();   // key 被撤(別台登出 / 撤銷):能匿名的照樣裝
+    if (r.status === 401 || (r.status === 403 && kb.error_code === "ERR005")) { r = await anon(); viaAnon = true; }   // key 被撤(別台登出 / 撤銷):能匿名的照樣裝
   } else {
-    r = await anon();   // 沒登入,或 09-20 前登入從沒拿過 key、Keychain 讀不到
+    r = await anon(); viaAnon = true;   // 沒登入,或 09-20 前登入從沒拿過 key、Keychain 讀不到
   }
   if (!r) return { ok: false, kind: "signin" };
   const b = r.body && typeof r.body === "object" ? r.body : {};
   if (r.status === 403 && b.security && b.security.blocked === true) return { ok: false, kind: "blocked" };
-  if (r.status === 404) return { ok: false, kind: "gone" };
+  if (r.status === 404) return { ok: false, kind: viaAnon ? "anonGone" : "gone" };   // 匿名那條的 404 也可能是清單快取過時(改成要資料 / 要登入了),不能說它下架
   if (r.status === 401 || (r.status === 403 && b.error_code === "ERR005")) return { ok: false, kind: "signin" };
   if (r.status !== 200 || typeof b.code !== "string" || !b.code.trim() || Buffer.byteLength(b.code) > LIB_CODE_MAX) return { ok: false, kind: "fail" };
   const dir = path.join(WS, "tmp"), name = `library_${strategyId}.py`, sec = `library_${strategyId}.security.json`;

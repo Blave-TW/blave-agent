@@ -3989,6 +3989,10 @@ msgstr "The install request wasn't sent, so this strategy isn't installed. Press
 msgid "lib.dl.gone"
 msgstr "This strategy is no longer in the library."
 
+# 匿名 /public_code 的 404:下架或已不符合免登入條件分不出來,講中性句(spec-0.1.13-smallfixes #10)
+msgid "lib.dl.anonGone"
+msgstr "This strategy can't be downloaded without signing in anymore. It may have been removed, or it now needs sign-in. The list has been refreshed."
+
 msgid "lib.gate.signedOut"
 msgstr "Sign in to Blave to download to this computer."
 

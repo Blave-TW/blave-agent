@@ -63,7 +63,7 @@ function libIdeaOn(c) {
   return c.env === "local" && c.browserOn === true && engineOk;
 }
 // 代下載沒成的那句:主行程判的 kind(+ 畫面自己的 unsent)→ 字串 key;認不得的一律當 fail
-function libDlKey(kind) { return ["blocked", "gone", "signin", "unsent"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
+function libDlKey(kind) { return ["blocked", "gone", "anonGone", "signin", "unsent"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
 // 確認框與購買框的資料費那一行(§4.1):本機、按小時計費、而且這支不是只用公開資料。兩個框共用這一支,條件不會漂
 function libFeeLine(env, dataAccess, needs) { return env !== "cloud" && dataAccess === "billed" && needs !== "none"; }
 // 推薦排序(同公開頁 library_rules.recoSort):已驗證 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
@@ -837,8 +837,8 @@ async function libSend(s) {
     try { r = await window.blave.libraryDownload(s.id); } catch (_) { r = null; }
     if (!r || r.ok !== true) {
       LIB.pending = null;
-      const kind = r && ["blocked", "gone", "signin"].includes(r.kind) ? r.kind : "fail";
-      if (kind === "gone") libInvalidate();   // 下架了:清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
+      const kind = r && ["blocked", "gone", "anonGone", "signin"].includes(r.kind) ? r.kind : "fail";
+      if (kind === "gone" || kind === "anonGone") libInvalidate();   // 下架了(或匿名那條已不給):清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
       LIB.dlFail = { id: s.id, kind };
       libSync(); const b = libCtaMain(); if (b) b.focus();
       return;

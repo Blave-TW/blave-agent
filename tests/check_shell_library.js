@@ -228,6 +228,9 @@ if (!process.versions.electron) {
     A.srv = [];
     for (const resp of [{ status: 404, body: {} }, { status: 429, body: {} }, { status: 503, body: {} }, "throw"])
       A.srv.push((await dl(102, resp)).kind);
+    D.token = "t"; D.key = { api_key: "k1", secret_key: "s1" };
+    A.revoked404 = (await dl(102, [{ status: 403, body: { error_code: "ERR005" } }, { status: 404, body: {} }])).kind;   // key 被撤改走匿名、匿名那條 404:也是 anonGone
+    D.token = null; D.key = null;
     D.token = "t"; D.key = null; c0 = D.calls.length;
     A.noKey = J(await dl(102, { status: 200, body: { code: "anon = 2\n" } })); A.noKeyUrl = D.calls.slice(c0).map((c) => c[0]).join();
     D.key = { api_key: "k1", secret_key: "s1" }; c0 = D.calls.length;
@@ -255,7 +258,7 @@ if (!process.versions.electron) {
     ok("② 匿名下載:沒登入 × 官方免費且不用 Blave 資料 → 打 /public_code、不帶任何憑證(只帶埋點 install_id 計安裝數)、寫檔;關掉使用事件就連 install_id 都不帶",
       A.ok === '{"ok":true}' && A.okCall === J([[anonURL(102), { "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77" }]]) && A.okBody === "anon = 1\n" && A.off === '{"ok":true}' && A.offCall === J([[anonURL(102), {}]]), J(A));
     ok("② 匿名下載:要資料 / 未標(null)/ 社群 / 付費 / 清單裡沒有 → signin,一次請求都不送", A.denied.join() === "signin,signin,signin,signin,signin" && A.deniedNoReq, J(A.denied));
-    ok("② 匿名下載:伺服器不給(404)→ gone;429 / 503 / 打不到 fail", A.srv.join() === "gone,fail,fail,fail", A.srv.join());
+    ok("② 匿名下載:伺服器不給(404)→ anonGone(下架或已不符合免登入,分不出來;spec-0.1.13-smallfixes #10),key 被撤改走匿名的 404 也是;/code 的 404 照舊 gone;429 / 503 / 打不到 fail", A.srv.join() === "anonGone,fail,fail,fail" && A.revoked404 === "anonGone" && kinds[1] === "gone", J([A.srv, A.revoked404, kinds[1]]));
     ok("② 匿名下載:登入了但沒 key → 走匿名;key 被撤(ERR005)→ 改走匿名;被撤 × 要資料 → signin(不試匿名)", A.noKey === '{"ok":true}' && A.noKeyUrl === anonURL(102)
       && A.revoked === '{"ok":true}' && A.revokedUrls === "https://api.test/openclaw/marketplace/strategies/102/code," + anonURL(102) && A.revokedReq === "signin" && A.revokedReqCalls === 1, J(A));
     ok("② key 被撤改走匿名:第一個請求帶那把 key,第二個(匿名)只帶 install_id、被撤的 key 不跟著送", A.revokedHdr === J([{ "api-key": "k1", "secret-key": "s1" }, { "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77" }]), A.revokedHdr);
@@ -426,14 +429,14 @@ if (!process.versions.electron) {
     F.calls.events.length = 0;
     // B. 失敗三種:不送訊息、pending 清掉、dlFail 記 kind;gone 重拉清單、dlFail 留著
     const fails = [];
-    for (const [resp, rej] of [[{ ok: false, kind: "blocked" }], [{ ok: false, kind: "gone" }], [{ ok: false, kind: "signin" }], [{ ok: false, kind: "fail" }], [{ ok: false, kind: "weird" }], [null], [undefined, true]]) {
+    for (const [resp, rej] of [[{ ok: false, kind: "blocked" }], [{ ok: false, kind: "gone" }], [{ ok: false, kind: "anonGone" }], [{ ok: false, kind: "signin" }], [{ ok: false, kind: "fail" }], [{ ok: false, kind: "weird" }], [null], [undefined, true]]) {
       F.LIB.pending = null; F.calls.sent.length = 0; const inval0 = F.calls.inval;
       F.libSend(s72); await tick(); if (rej) F.dlNext.rej(new Error("ipc")); else F.dlNext.res(resp); await tick(); await tick();
       fails.push([F.LIB.dlFail && F.LIB.dlFail.id, F.LIB.dlFail && F.LIB.dlFail.kind, F.LIB.pending, F.calls.sent.length, F.calls.inval - inval0].join("/"));
     }
-    ok("⑥ 下載失敗:blocked / gone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;只有 gone 重拉清單", fails.join() === "72/blocked//0/0,72/gone//0/1,72/signin//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
+    ok("⑥ 下載失敗:blocked / gone / anonGone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;gone 與 anonGone 重拉清單、dlFail 留著", fails.join() === "72/blocked//0/0,72/gone//0/1,72/anonGone//0/1,72/signin//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
     ok("⑥ 下載失敗不送 lib_pick / library_use", F.calls.events.length === 0 && !F.calls.track.slice(1).includes("library_use"), JSON.stringify([F.calls.events, F.calls.track]));
-    ok("⑥ 下載沒成的那句:kind → 字串 key,五種都有 zh / en,認不得的當 fail", ["blocked", "gone", "signin", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
+    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
     F.libSend(s72); await tick();
     ok("⑥ 再按一次:那句錯誤清掉", F.LIB.dlFail === null && F.LIB.pending && F.LIB.pending.stage === "dl"); F.dlNext.res({ ok: true }); await tick(); await tick();
     // C. 下載好了但訊息送不出去(下載中用戶自己先送了一句,回合在跑):pending 清掉,而且講出來
