@@ -113,6 +113,7 @@ if (POSIX) {
   t("接線:datasrc.js 的 write 用 wsfile.replace,沒有固定的 .blave-src-tmp", /wsfile\.replace\(opts\.envFile, next\)/.test(dsSrc) && !/blave-src-tmp/.test(dsSrc));
   t("接線:rptLogError 只用 wsfile.append / wsfile.replace 寫", (() => { const s = cutFn(mainSrc, "rptLogError"); return /wsfile\.append\(f,/.test(s) && /wsfile\.replace\(f,/.test(s) && !/fs\.(appendFileSync|writeFileSync)/.test(s); })());
   t("接線:daemon.js 的 equity_history / ui_events 走 wsfile.append,檔裡沒有 appendFileSync", /wsfile\.append\(eqFile,/.test(dmSrc) && /wsfile\.append\(uiFile,/.test(dmSrc) && !/appendFileSync/.test(dmSrc));
+  t("接線:策略庫代下載 libWriteWs 走 wsfile.replace,自己不寫暫存檔", (() => { const s = cutFn(mainSrc, "libWriteWs"); return /wsfile\.replace\(path\.join\(dir, name\), text\)/.test(s) && !/writeFileSync|renameSync|randomBytes/.test(s); })());
   t("打包:wsfile.js 在 electron-builder 的 files 裡", /files:\s*\[[^\]]*"wsfile\.js"/.test(fs.readFileSync(path.join(SHELL, "electron-builder.config.js"), "utf8")));
 
   fs.rmSync(ROOT, { recursive: true, force: true });

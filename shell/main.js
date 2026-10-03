@@ -1978,12 +1978,8 @@ const LIB_CONTRACT_ANCHOR = "## Desktop-downloaded picks";
 function libContractReady() {
   try { return fs.readFileSync(path.join(WS, "references", "marketplace.md"), "utf8").includes(LIB_CONTRACT_ANCHOR); } catch (_) { return false; }
 }
-function libWriteWs(dir, name, text) {
-  // rename 換掉的是目錄項本身:預先放好的同名 symlink 不會被跟著寫過去
-  const part = path.join(dir, `.${name}.${crypto.randomBytes(6).toString("hex")}`);
-  try { fs.writeFileSync(part, text, { mode: 0o600, flag: "wx" }); fs.renameSync(part, path.join(dir, name)); }
-  catch (e) { try { fs.unlinkSync(part); } catch (_) { /* 沒寫出來就沒有 */ } throw e; }
-}
+// 同 wsfile.replace:隨機檔名 + wx 寫好再 rename,預先放好的同名 symlink 不會被跟著寫過去
+function libWriteWs(dir, name, text) { wsfile.replace(path.join(dir, name), text); }
 /* 不登入也能下載的那幾支(Wei 10-02):官方 × 免費 × 不用 Blave 資料。這裡看的是畫面那份清單(libCache)——只決定要不要試匿名那條,
    放不放行由 api 的 /public_code 在伺服器端再判一次(blave_data 是 NULL 一律不放;不合格回 404,這裡就當 gone)。清單裡沒有這支就不試 */
 function libAnonOk(id) {

@@ -176,7 +176,7 @@ if (!process.versions.electron) {
     fs.mkdirSync(refs); fs.writeFileSync(mkt, "# Strategy Library API\n\n## Desktop-downloaded picks\n\n…");
     const D = { require, Buffer, WS: WSd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
     vm.createContext(D);
-    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto');\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
+    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
       + "\nvar libCache = null, tmOn = true, live = true;\nfunction telemetryLive() { return live; }\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
       + cutFn(mainSrc, "libAnonOk") + "\n"
