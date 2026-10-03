@@ -350,7 +350,11 @@ const venvDir = (r) => path.join(r.base, "venv");
     const pf = path.join(venvDir(k), ".blave-pins.txt");
     ok("lock:-c 那份 = 直接相依 + 鎖(SDK 那條叫起來時就在)", pipCalls(k)[0].pins === [...DEPS, ...L].join("\n") + "\n" && fs.readFileSync(pf, "utf8") === [...DEPS, ...L].join("\n") + "\n");
     ok("lock:鎖裡的不會被當成要裝的(pip 只裝 SDK 與清單)、記號檔照舊只有清單", pinsOf(k).join() === [SDK_LAST, ...DEPS].join() && !pipCalls(k).some((c) => L.some((l) => c.args.includes(l)))
-      && fs.readFileSync(path.join(venvDir(k), ".blave-deps-1"), "utf8") === DEPS.join("\n"), pinsOf(k)); }
+      && fs.readFileSync(path.join(venvDir(k), ".blave-deps-1"), "utf8") === DEPS.join("\n"), pinsOf(k));
+    // 更新:清單換了一個版本、SDK 也換了 → 補裝與 SDK 重裝的 -c 都不帶鎖(不把既有間接相依降回鎖定版)
+    const u = rig({ base: k.base, lock: L, deps: [bump(DEPS[0]), ...DEPS.slice(1)], sdk: SDK2 }); await u.S.ensure();
+    ok("lock:更新 / 補裝(既有 venv)不帶鎖,-c 只有直接相依", u.S.snapshot().kind === "update" && pipCalls(u).length >= 2
+      && pipCalls(u).every((c) => c.pins === [bump(DEPS[0]), ...DEPS.slice(1)].join("\n") + "\n"), pipCalls(u).map((c) => c.pins)); }
   { const LOCK = vm.runInNewContext(lit(/const WORKSPACE_LOCK = (\[[\s\S]*?\]);/)), FOR = vm.runInNewContext(lit(/const WORKSPACE_LOCK_FOR = ("[^"]+");/));
     const nn = (p) => p.split("==")[0].toLowerCase().replace(/[-_.]+/g, "-"), direct = new Set([...MAIN_DEPS, ...SDK.split(" ")].map(nn));
     ok("WORKSPACE_LOCK_FOR 對得上現在的 SDK_PINS + WORKSPACE_DEPS(對不上 = 換了直接相依沒重解鎖:跑 node shell/tools/lock-deps.js 貼回 main.js)", FOR === E.lockKey(SDK, MAIN_DEPS), { FOR, now: E.lockKey(SDK, MAIN_DEPS) });

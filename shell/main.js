@@ -789,6 +789,7 @@ const WORKSPACE_DEPS = [
 ];
 // 間接相依也釘(稽核 2026-10-02 P2-4):沒釘的那幾十個(SDK 那串、matplotlib 的、curl_cffi / bs4 的)只要 PyPI 上被搶發一個新版,
 // 新用戶第一次開 app 就裝到它。這份只進 -c,不是要裝的東西:用不到的行不會被裝(pywin32 / tzdata 只有 Windows 用得到)。
+// 只用在第一次安裝(enginesetup.js:更新 / 補裝時帶鎖會把既有 venv 的間接相依降回鎖定版)。
 // 不是手寫的:SDK_PINS 或 WORKSPACE_DEPS 一換就跑 node tools/lock-deps.js <venv python>(五個平台解出同一組版本才印),整段貼回來。
 // WORKSPACE_LOCK_FOR 對不上現在的 SDK_PINS + WORKSPACE_DEPS 時不帶鎖(退回只釘直接相依,免得舊鎖跟新版衝突裝不起來),閘門測試同時變紅。
 // 沒有 hash:pip 的 hash 模式不吃 -c 裡的 hash,要整串改成 -r 才行,跟一個一個裝的流程衝突(另案)

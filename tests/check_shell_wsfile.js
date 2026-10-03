@@ -26,6 +26,9 @@ if (POSIX) {
     fs.writeFileSync(victim, "ORIGINAL\n"); fs.symlinkSync(victim, f);
     W.replace(f, "NEW\n");
     t("replace:目標本身是 symlink → 換掉的是目錄項,外面那個檔一個字沒動,.env 變成一般檔", fs.readFileSync(victim, "utf8") === "ORIGINAL\n" && !fs.lstatSync(f).isSymbolicLink() && fs.readFileSync(f, "utf8") === "NEW\n"); }
+  { const { ws } = fresh(), f = path.join(ws, ".env"), old = process.umask(0o277);
+    try { W.replace(f, "U=1\n"); } finally { process.umask(old); }
+    t("replace:umask 把 owner 位元也扣掉(0o277)時照樣是 0600", (fs.statSync(f).mode & 0o777) === 0o600); }
   { const { ws } = fresh(), f = path.join(ws, ".env");
     W.replace(f, "A=1\n"); fs.chmodSync(f, 0o644); W.replace(f, "A=2\n");
     t("replace:權限 0600(既有檔也收成 0600)、內容是新的、不留暫存檔", (fs.statSync(f).mode & 0o777) === 0o600 && fs.readFileSync(f, "utf8") === "A=2\n" && leftovers(ws, ".env").length === 0); }

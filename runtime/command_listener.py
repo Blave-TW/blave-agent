@@ -92,7 +92,7 @@ def _beat():
     nothing, which is worse than a button that is visibly disabled."""
     try:
         os.makedirs(os.path.dirname(HEARTBEAT), exist_ok=True)
-        with open(HEARTBEAT, "w") as f:
+        with atomic_file.replacing(HEARTBEAT) as f:
             f.write(str(int(time.time())))
     except OSError:
         pass
@@ -129,6 +129,13 @@ def _env_acl(path):
     """Cloud Windows: .env readable by Administrators only (POSIX gets 0600 from the write)."""
     if not _local_mode():
         capital_connect.restrict_admins(path)
+
+
+def _sweep_env_temps():
+    """Under the .env lock: a .env temp left by a killed writer is a plaintext copy of the
+    keys, and "remove the key" must not leave one behind. 60 s spares the desktop shell's
+    lock-free write of its own block (it lives for milliseconds)."""
+    atomic_file.sweep_stale(WORKSPACE, older_than_s=60, only=".env")
 
 
 def _local_mode():
@@ -1214,6 +1221,7 @@ def _cmd_credentials(args):
         # atomic — a torn .env would strand the machine keyless. 0600 is POSIX only; Windows gets its ACL in prepare
         with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
             f.write("\n".join(kept) + "\n")
+        _sweep_env_temps()
     _write_ui_cred_manifest(kept)  # final lines = the UI-confirmed bound set
     book_account = {}
     if binding:
@@ -3498,6 +3506,7 @@ def _cmd_credentials_remove(args):
         # atomic — a torn .env would strand the machine keyless
         with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
             f.write("\n".join(kept) + "\n")
+        _sweep_env_temps()
     try:  # the keys are already gone: nothing here may skip the manifest shrink / halt below
         capital_connect.drop_vault(names)
     except Exception as e:
@@ -4265,7 +4274,7 @@ def _record_manual_close_row(symbols):
     rows.append({"kind": "manual_close_required", "symbols": symbols, "reason": "identity",
                  "ts": datetime.utcnow().isoformat(), "symbol": "*", "exchange": "capital",
                  "error": "close-all: 群益部位未平倉(此身分無法登入群益 API),請在群益下單軟體手動平倉"})
-    with open(path, "w") as f:
+    with atomic_file.replacing(path) as f:  # rows came from a file the agent can write
         json.dump(rows[-5:], f, indent=2)
 
 
@@ -4992,7 +5001,7 @@ def _cmd_manage_backtest(args):
     # flush at exit AFTER the stderr error line, and the log tail the job's
     # `error` is cut from would end in report text instead of the reason.
     env = _strategy_subprocess_env() | {"PYTHONUNBUFFERED": "1"}
-    with open(paths["log"], "wb") as logf:
+    with atomic_file.open_truncate(paths["log"]) as logf:
         proc = subprocess.Popen(argv, cwd=WORKSPACE, env=env,
                                 stdout=logf, stderr=logf, **_child_kw(**popen_kw))
     doc = {
@@ -5369,7 +5378,7 @@ def _start_rerun(name, n, path, expect_hash=None):
     env = _strategy_subprocess_env("backtest", **extra)
     if expect_hash:  # an edit landing while the child is still importing is caught too (runner._superseded)
         env["BLAVE_EXPECT_CODE_HASH"] = expect_hash
-    with open(_versions_path(name, "rerun.log"), "wb") as logf:
+    with atomic_file.open_truncate(_versions_path(name, "rerun.log")) as logf:
         proc = subprocess.Popen([_workspace_python(), script], cwd=WORKSPACE, env=env,
                                 stdout=logf, stderr=logf, **_child_kw(**popen_kw))
     try:
@@ -5727,6 +5736,7 @@ def run(on_applied=None, on_progress=None):
         _log("BLAVE_PROXY_TOKEN not set; command listener disabled")
         return
     _log("started")
+    atomic_file.sweep_runtime_temps(WORKSPACE, os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(WORKSPACE), "state"))
     try:
         _machine_restart_check()
     except Exception as e:

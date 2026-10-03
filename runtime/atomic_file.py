@@ -13,9 +13,11 @@ written through. Only a temp this call created is ever removed.
 """
 import contextlib
 import os
+import re
 import secrets
 import shutil
 import stat
+import time
 
 _FLAGS = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
 
@@ -70,6 +72,67 @@ def append_line(path, text, encoding="utf-8"):
         f.write(text)
 
 
+def open_truncate(path, mode="wb", **open_kw):
+    """`open(path, "w"/"wb")` for a file that must be readable while it is written (a log a
+    child process streams into): truncates in place like open(), but refuses a symlink."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+                 | getattr(os, "O_BINARY", 0), 0o666)
+    try:
+        return os.fdopen(fd, mode, **open_kw)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+# replacing() names its temps .<name>.<12 hex>.tmp; shell/wsfile.js uses .<name>.<12 hex> (no suffix)
+_OWN_RE = re.compile(r"^\..+\.[0-9a-f]{12}\.tmp$")
+_SHELL_RE = re.compile(r"^\..+\.[0-9a-f]{12}$")
+
+
+def is_own_temp(name):
+    return bool(_OWN_RE.match(name))
+
+
+def sweep_stale(directory, older_than_s=600, only=None):
+    """Remove temps a killed writer left behind (a crash between write and replace): regular
+    files in replacing()'s naming, older than `older_than_s` — a live writer's temp is seconds
+    old. `only="<name>"` narrows to that target's temps and also takes shell/wsfile.js's
+    suffix-less ones (kept to a named target: that shape is too plain to sweep a whole dir by).
+    Returns the count removed."""
+    n = 0
+    now = time.time()
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return 0
+    for name in names:
+        if only is None:
+            if not _OWN_RE.match(name):
+                continue
+        elif not (name.startswith("." + only + ".") and (_OWN_RE.match(name) or _SHELL_RE.match(name))):
+            continue
+        p = os.path.join(directory, name)
+        try:
+            st = os.lstat(p)
+            if stat.S_ISREG(st.st_mode) and now - st.st_mtime >= older_than_s:
+                os.unlink(p)
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def sweep_runtime_temps(workspace, state_dir):
+    """At runtime start: the directories the runtime replaces files in, plus the .env temps
+    (shell and runtime) at the workspace root."""
+    n = sweep_stale(workspace, only=".env")
+    for d in (workspace, os.path.join(workspace, "manager"), os.path.join(workspace, "state"),
+              os.path.join(workspace, "state", "heartbeat"), os.path.join(workspace, "reports"),
+              os.path.join(workspace, "watch"), state_dir):
+        n += sweep_stale(d)
+    return n
+
+
 def touch(path):
     """Create-or-bump-mtime without following a symlink at `path`."""
     fd = os.open(path, _APPEND, 0o666)
@@ -109,7 +172,8 @@ class SafeDir:
                     except FileNotFoundError:
                         if not create:
                             raise
-                        os.mkdir(part, dir_fd=fd)
+                        with contextlib.suppress(FileExistsError):  # a second uploader got there first
+                            os.mkdir(part, dir_fd=fd)
                         nfd = os.open(part, flags, dir_fd=fd)
                     os.close(fd)
                     fd = nfd
@@ -126,7 +190,10 @@ class SafeDir:
                     if not os.path.realpath(cur).startswith(real_root + os.sep):
                         raise OSError(f"{cur} resolves outside {root}")
                     if not os.path.isdir(cur):
-                        os.mkdir(cur)
+                        with contextlib.suppress(FileExistsError):
+                            os.mkdir(cur)
+            if not os.path.lexists(path):
+                raise FileNotFoundError(path)  # same as the POSIX branch: callers treat it as "nothing there"
             real = os.path.realpath(path)
             if real != real_root and not real.startswith(real_root + os.sep):
                 raise OSError(f"{path} resolves outside {root}")

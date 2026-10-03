@@ -685,7 +685,8 @@ def pending_status(state=None, now=None):
         out["quiet_wait"] = min(out["quiet_wait"] + 0.05, QUIET_WAIT_MAX_S)
     for d in (REPORTS_DIR, WATCH_OPS_DIR, WATCH_DATA_DIR):
         try:
-            out["tmp"] += sum(1 for n in os.listdir(d) if n.endswith(".tmp"))
+            # a producer's half-written <id>.json.tmp; the runtime's own replacing() temps are not reports
+            out["tmp"] += sum(1 for n in os.listdir(d) if n.endswith(".tmp") and not atomic_file.is_own_temp(n))
         except OSError:
             pass
     return out

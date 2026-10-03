@@ -61,11 +61,11 @@ t("掃得到東西(清單是空的 = 掃描壞了)", hits.length >= 24, "只掃�
   fs.mkdirSync(bin); fs.mkdirSync(tdir);
   for (const f of fs.readdirSync(DIR)) if (/\.(js|py)$/.test(f)) fs.writeFileSync(path.join(tdir, f), "");
   // 假 node:記下跑了哪支;FAKE_SKIP / FAKE_FAIL 點名的那支印守門那行 / exit 1
-  fs.writeFileSync(path.join(bin, "node"), '#!/bin/bash\nb=$(basename "$1"); echo "$b" >> "$RAN"\n[ "$b" = "$FAKE_SKIP" ] && echo "' + require("./" + GATE_FILE).SKIP_LINE + '  ②"\n[ "$b" = "$FAKE_FAIL" ] && exit 1\necho "PASS  x"; exit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, "node"), '#!/bin/bash\nb=$(basename "$1"); echo "$b" >> "$RAN"\n[ "$b" = "$FAKE_SKIP" ] && echo "' + require("./" + GATE_FILE).SKIP_LINE + '  ②"\n[ "$b" = "$FAKE_SKIP" ] && [ -n "$FAKE_BIG" ] && head -c 400000 /dev/zero | tr "\\\\0" x && echo\n[ "$b" = "$FAKE_FAIL" ] && exit 1\necho "PASS  x"; exit 0\n', { mode: 0o755 });
   fs.writeFileSync(path.join(bin, "py"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
   const run = (o = {}) => { const ran = path.join(tmp, "ran-" + Math.random().toString(36).slice(2)); fs.writeFileSync(ran, "");
     const r = cp.spawnSync("bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", step.run || "exit 99"], { cwd: tmp, encoding: "utf8",
-      env: { PATH: bin + ":/usr/bin:/bin", RAN: ran, BLAVE_TEST_PYTHON: path.join(bin, "py"), FAKE_SKIP: o.skip || "", FAKE_FAIL: o.fail || "" } });
+      env: { PATH: bin + ":/usr/bin:/bin", RAN: ran, BLAVE_TEST_PYTHON: path.join(bin, "py"), FAKE_SKIP: o.skip || "", FAKE_FAIL: o.fail || "", FAKE_BIG: o.big ? "1" : "" } });
     return { status: r.status, out: r.stdout + r.stderr, ran: fs.readFileSync(ran, "utf8").split("\n").filter(Boolean).sort() }; };
   const ok = run();
   t("CI 閘門:跑的 node 測試 = release.js 閘門那一份(含 check_tests_window_guard.js)", !!want && want.length >= 10 && JSON.stringify(ok.ran) === JSON.stringify(want) && ok.ran.includes(SELF),
@@ -73,6 +73,8 @@ t("掃得到東西(清單是空的 = 掃描壞了)", hits.length >= 24, "只掃�
   t("CI 閘門:全部過 → exit 0", ok.status === 0, ok.out.slice(-300));
   const sk = run({ skip: "check_shell_esc.js" });
   t("CI 閘門:有一支印出守門那行 SKIP(exit 0)→ 整步紅,而且點名是哪支", sk.status !== 0 && /::error::tests\/check_shell_esc\.js/.test(sk.out), sk.out.slice(-300));
+  const big = run({ skip: "check_shell_esc.js", big: true });
+  t("CI 閘門:SKIP 那行後面還有 400KB 輸出(超過 pipe buffer;grep -q 早退、pipefail 下 printf | grep 會回 141 漏抓)→ 照樣紅", big.status !== 0 && /::error::tests\/check_shell_esc\.js 的 Electron/.test(big.out), big.out.slice(-300));
   const fl = run({ fail: "check_shell_esc.js" });
   t("CI 閘門:有一支 exit 1 → 整步紅,後面的照跑", fl.status !== 0 && /::error::tests\/check_shell_esc\.js 沒過/.test(fl.out) && fl.ran.length === ok.ran.length, fl.out.slice(-300));
   fs.rmSync(tmp, { recursive: true, force: true }); }

@@ -1109,6 +1109,7 @@ def main(argv=None):
         _log("another local daemon already owns this workspace — exiting")
         return 3
     os.chdir(ws)
+    atomic_file.sweep_runtime_temps(ws, os.environ.get("BLAVE_AGENT_STATE") or os.path.join(base, "state"))
     _link_current(base)
     daemon = Daemon(ws, secret)
     for sig in (signal.SIGTERM, signal.SIGINT):

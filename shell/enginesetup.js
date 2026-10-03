@@ -236,9 +236,11 @@ function createEngineSetup(o) {
       // 每一條 pip(SDK 那條與每個策略套件)都拿整份 WORKSPACE_DEPS 當 -c,所以在引擎那一步之前就寫好:
       // SDK 換版時它的相依不能把核心套件悄悄升級掉——那樣之後記號檔看起來都裝好了,漂移永遠修不回來;真的衝突就當場失敗。
       // 套件一個一個裝時,依賴版本也跟一次全裝解出來的一樣(兩種裝法的 pip freeze 實測相同);選用的那組也不能換掉核心的版本
-      // o.lock = 間接相依的版本(main.js WORKSPACE_LOCK):只進 -c,不在要裝的清單裡;記號檔照舊只看 o.deps
+      // o.lock = 間接相依的版本(main.js WORKSPACE_LOCK):只進 -c,不在要裝的清單裡;記號檔照舊只看 o.deps。
+      // 只在第一次安裝帶:pip install -c 會把「被這次要裝的東西依賴到」的既有套件改成鎖定版(實測 pip 25.0.1:
+      // 已裝 idna 3.20、鎖 3.10,補裝依賴它的套件就降回 3.10),更新 / 補裝時帶鎖會把 agent 自己升過的間接相依降版
       fs.mkdirSync(venvDir, { recursive: true });
-      fs.writeFileSync(pinsFile, [...o.deps, ...(o.lock || [])].join("\n") + "\n");
+      fs.writeFileSync(pinsFile, [...o.deps, ...(S.kind === "first" ? o.lock || [] : [])].join("\n") + "\n");
       if (needVenv || needSdk) await step("engine", async () => {
         if (needVenv) {
           Object.assign(S.cur, { sub: "venv", t0: now(), limitMs: o.venvMs, idleMs: null }); emit();

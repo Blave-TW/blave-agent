@@ -10,6 +10,7 @@ function replace(file, data) {
   let fd = null, made = false;
   try {
     fd = fs.openSync(part, "wx", 0o600); made = true;
+    fs.fchmodSync(fd, 0o600);   // 建檔的 0o600 會被 umask 再扣(例:0o277 → 0o400);舊寫法的 chmod 0600 要保住
     fs.writeFileSync(fd, data); fs.closeSync(fd); fd = null;
     fs.renameSync(part, file);
   } catch (e) {

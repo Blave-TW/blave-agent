@@ -174,7 +174,7 @@ def download_tg_file(token, file_id, name):
         if os.path.exists(path):
             name = f"{int(time.time())}_{name}"
             path = os.path.join(INBOUND_DIR, name)
-        with open(path, "wb") as f:
+        with atomic_file.replacing(path, "wb") as f:  # a dangling symlink there passes the exists() above
             f.write(data)
         return name
     except Exception as e:

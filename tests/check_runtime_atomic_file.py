@@ -4,6 +4,12 @@ directory the runtime writes must not carry the write out of it (audit 2026-10-0
 Same shape as the audit's PoC: plant a symlink at the name about to be written, run the real code,
 check nothing appeared outside. Then an enumeration: every os.replace in runtime/*.py either sits
 inside atomic_file.py or is on the reviewed list below — a new fixed-name tmp+replace turns this red.
+Known limits (accepted, audit S5): only the last path component is protected for fixed-name
+writes — an agent that swaps a whole directory (manager/, reports/) for a symlink makes those
+fixed names land outside; reports/ moves and deletes go through SafeDir, but the rmtree in
+_cmd_report_delete / _cmd_delete_strategy (user presses delete) does not. BASE/state is outside
+the desktop Codex sandbox (writable roots = the workspace + temp dirs), so its writers are
+reviewed, not converted.
 All in a temp dir; never touches the repo's workspace or ~/Blave.
 Run: cd blave-agent && .venv/bin/python tests/check_runtime_atomic_file.py
 """
@@ -268,8 +274,10 @@ rb = lambda nm: open(os.path.join(ws, nm), "rb").read()  # noqa: E731
 check(rb("via_replacing") == rb("via_open") and rb("via_append") == rb("via_open_a"),
       f"newline: replacing / append_line write the same bytes as open() on this platform ({rb('via_open')[:20]!r})")
 asrc = open(os.path.join(RUNTIME, "atomic_file.py"), encoding="utf-8").read()
-check(asrc.count('getattr(os, "O_BINARY", 0)') >= 2 and (not hasattr(os, "O_BINARY") or (A._FLAGS & os.O_BINARY and A._APPEND & os.O_BINARY)),
-      "newline: O_BINARY in both flag sets (without it the Windows CRT translates \\n a second time under TextIOWrapper)")
+_flag_src = [asrc.split("_FLAGS = ", 1)[1].split("\n", 1)[0], asrc.split("_APPEND = (", 1)[1].split("\n\n", 1)[0],
+             asrc.split("def open_truncate(", 1)[1].split("try:", 1)[0]]
+check(all('getattr(os, "O_BINARY", 0)' in x for x in _flag_src) and (not hasattr(os, "O_BINARY") or (A._FLAGS & os.O_BINARY and A._APPEND & os.O_BINARY)),
+      "newline: O_BINARY in all three flag sets (replacing, append, truncate) (without it the Windows CRT translates \\n a second time under TextIOWrapper)")
 
 # ── report_uploader: moves and deletes inside reports/ never go through a symlinked directory ──
 if POSIX:
@@ -464,6 +472,166 @@ if POSIX:
     EV.append("probe", {"k": 1})
     check(os.listdir(out) == [], "command_listener kick / audit.jsonl and events.append through planted symlinks → nothing outside")
 
+# ── open_truncate (a log a child streams into) ──
+if POSIX:
+    ws, out = fresh()
+    lg = os.path.join(ws, "mgmt_backtest.log")
+    with open(os.path.join(out, "victim"), "w") as fh:
+        fh.write("KEEP\n")
+    os.symlink(os.path.join(out, "victim"), lg)
+    try:
+        A.open_truncate(lg).close()
+        err = None
+    except OSError as e:
+        err = e
+    check(err is not None and open(os.path.join(out, "victim")).read() == "KEEP\n", "open_truncate: path is a symlink → OSError, the file it points at is not truncated")
+ws, _ = fresh()
+lg = os.path.join(ws, "run.log")
+with open(lg, "w") as fh:
+    fh.write("old run\n")
+with A.open_truncate(lg) as logf:
+    subprocess.run([sys.executable, "-c", "print('new run')"], stdout=logf, stderr=logf, check=True)
+check(open(lg, "rb").read().replace(b"\r\n", b"\n") == b"new run\n", "open_truncate: truncates like open('wb'), a Popen can stream into it")
+
+# ── direct writers that used open(path, "w") in workspace (audit M1) ──
+if POSIX:
+    victim = os.path.join(BASE, "victim_rc")
+    with open(victim, "w") as fh:
+        fh.write("IMPORTANT USER DATA\n")
+    hb = cl.HEARTBEAT
+    os.makedirs(os.path.dirname(hb), exist_ok=True)
+    if os.path.lexists(hb):
+        os.remove(hb)
+    os.symlink(victim, hb)
+    cl._beat()
+    check(open(victim).read() == "IMPORTANT USER DATA\n" and not os.path.islink(hb) and open(hb).read().strip().isdigit(),
+          "command_listener._beat: heartbeat symlinked to a user file → the file is untouched, the heartbeat is replaced")
+    oe = os.path.join(WS, "manager", "order_errors.json")
+    with open(oe, "w") as fh:
+        json.dump([{"kind": "agent-written"}], fh)
+    victim2 = os.path.join(BASE, "victim_oe")
+    os.rename(oe, victim2)
+    os.symlink(victim2, oe)
+    cl._record_manual_close_row(["TXF"])
+    check(json.load(open(victim2)) == [{"kind": "agent-written"}] and not os.path.islink(oe) and json.load(open(oe))[-1]["kind"] == "manual_close_required",
+          "command_listener._record_manual_close_row: order_errors.json symlinked → the outside file keeps its content")
+    rr_spec = importlib.util.spec_from_file_location("report_runner_sd", os.path.join(RUNTIME, "report_runner.py"))
+    RR = importlib.util.module_from_spec(rr_spec)
+    rr_spec.loader.exec_module(RR)
+    jd = os.path.join(WS, "report_jobs", "j1")
+    os.makedirs(jd, exist_ok=True)
+    victim3 = os.path.join(BASE, "victim_run")
+    with open(victim3, "w") as fh:
+        fh.write("KEEP\n")
+    os.symlink(victim3, os.path.join(jd, "run.log"))
+    RR._write_log(jd, "agent output\n")
+    check(open(victim3).read() == "KEEP\n" and open(os.path.join(jd, "run.log")).read() == "agent output\n",
+          "report_runner._write_log: run.log symlinked → the outside file keeps its content")
+    os.symlink(victim3, os.path.join(jd, ".lock"))
+    fh_ = None
+    try:
+        fh_ = RR._acquire_lock(jd)
+        err = None
+    except OSError as e:
+        err = e
+    finally:
+        if fh_:
+            fh_.close()
+    check(err is not None and open(victim3).read() == "KEEP\n", "report_runner._acquire_lock: .lock symlinked → refuses instead of truncating the target")
+
+# ── SafeDir: Windows branch reports a missing dir like POSIX; concurrent mkdir is fine ──
+if POSIX:
+    w = os.path.join(BASE, "sd-missing")
+    os.makedirs(w)
+    for label, forced in (("POSIX", False), ("no dir_fd", True)):
+        saved = os.supports_dir_fd
+        if forced:
+            os.supports_dir_fd = set()
+        try:
+            try:
+                A.SafeDir(w, os.path.join(w, "reports", "failed"))
+                err = None
+            except Exception as e:
+                err = e
+            check(isinstance(err, FileNotFoundError), f"SafeDir [{label}]: missing dir → FileNotFoundError ({type(err).__name__})")
+            real_mkdir = os.mkdir
+
+            def racing_mkdir(p, *a, **k):
+                real_mkdir(p, *a, **k)
+                raise FileExistsError(p)
+
+            os.mkdir = racing_mkdir
+            try:
+                tgt = os.path.join(w, f"race-{label.replace(' ', '')}", "sent")
+                with A.SafeDir(w, tgt, create=True):
+                    pass
+                err = None
+            except Exception as e:
+                err = e
+            finally:
+                os.mkdir = real_mkdir
+            check(err is None and os.path.isdir(tgt), f"SafeDir [{label}] create: another writer made the dir first → still opens ({err!r})")
+        finally:
+            os.supports_dir_fd = saved
+    import io, contextlib as _cl  # noqa: E401,E402
+    buf = io.StringIO()
+    saved = os.supports_dir_fd
+    os.supports_dir_fd = set()
+    RU.REPORTS_DIR = os.path.join(w, "reports")
+    try:
+        with _cl.redirect_stderr(buf):
+            RU._clear_failed("nope", os.path.join(w, "reports", "failed"))
+    finally:
+        os.supports_dir_fd = saved
+    check(buf.getvalue() == "", f"_clear_failed [no dir_fd]: failed/ never created → silent, no false error line ({buf.getvalue().strip()[:80]})")
+
+# ── stale temps (a writer killed between write and replace) ──
+ws, _ = fresh()
+mk = lambda nm, age: (open(os.path.join(ws, nm), "w").close(), os.utime(os.path.join(ws, nm), (time_now - age, time_now - age)))  # noqa: E731
+import time as _tt  # noqa: E402
+time_now = _tt.time()
+mk(".account.json.0123456789ab.tmp", 3600)
+mk(".account.json.0123456789ac.tmp", 5)
+mk("report.json.tmp", 3600)
+mk(".notes.0123456789ab", 3600)
+mk("..env.0123456789ab", 3600)
+if POSIX:
+    os.symlink(os.path.join(BASE, "nowhere"), os.path.join(ws, ".x.json.0123456789ab.tmp"))
+A.sweep_stale(ws)
+left = sorted(os.listdir(ws))
+check(".account.json.0123456789ab.tmp" not in left and ".account.json.0123456789ac.tmp" in left and "report.json.tmp" in left
+      and ".notes.0123456789ab" in left and "..env.0123456789ab" in left and (not POSIX or ".x.json.0123456789ab.tmp" in left),
+      f"sweep_stale: only an old regular file in replacing()'s naming goes ({left})")
+A.sweep_stale(ws, only=".env")
+check("..env.0123456789ab" not in os.listdir(ws) and ".notes.0123456789ab" in os.listdir(ws), "sweep_stale(only='.env'): the shell's suffix-less .env temp goes too, other dotfiles stay")
+if POSIX:
+    for nm in ("..env.aaaaaaaaaaaa.tmp", "..env.bbbbbbbbbbbb"):
+        with open(os.path.join(WS, nm), "w") as fh:
+            fh.write("BINANCE_API_KEY=plaintext\n")
+        os.utime(os.path.join(WS, nm), (time_now - 120, time_now - 120))
+    cl._in_workspace(cl._cmd_credentials, {"env": {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper"}})
+    cl._in_workspace(cl._cmd_credentials_remove, {"env": ["PAPER_API_KEY", "PAPER_SECRET_KEY"]})
+    check(not [x for x in os.listdir(WS) if x.startswith("..env.")], "credentials / credentials_remove: a crashed writer's plaintext .env temp is gone afterwards")
+    rd = os.path.join(BASE, "pend-ws", "reports")
+    os.makedirs(rd)
+    RU.REPORTS_DIR = rd
+    open(os.path.join(rd, ".upload_errors.log.0123456789ab.tmp"), "w").close()
+    open(os.path.join(rd, "half.json.tmp"), "w").close()
+    st_ = RU.pending_status(state={}, now=time_now)
+    check(st_.get("tmp") == 1, f"pending_status: a producer's half-written .tmp counts, the runtime's own temp does not ({st_})")
+    ws2 = os.path.join(BASE, "boot-ws")
+    os.makedirs(os.path.join(ws2, "manager"))
+    for nm in ("..env.cccccccccccc.tmp", "..env.dddddddddddd", os.path.join("manager", ".account.json.eeeeeeeeeeee.tmp")):
+        open(os.path.join(ws2, nm), "w").close()
+        os.utime(os.path.join(ws2, nm), (time_now - 3600, time_now - 3600))
+    A.sweep_runtime_temps(ws2, os.path.join(BASE, "boot-state"))
+    check(not [x for x in os.listdir(ws2) if x.startswith("..env.")] and os.listdir(os.path.join(ws2, "manager")) == [],
+          "sweep_runtime_temps at start: .env temps (both namings) and manager/ temps from a crash are cleared")
+src_ld = open(os.path.join(RUNTIME, "local_daemon.py"), encoding="utf-8").read()
+src_cl = open(os.path.join(RUNTIME, "command_listener.py"), encoding="utf-8").read()
+check("atomic_file.sweep_runtime_temps(ws," in src_ld and "atomic_file.sweep_runtime_temps(WORKSPACE," in src_cl.split("def run(", 1)[1],
+      "wiring: local_daemon main and command_listener.run sweep at start")
+
 # ── enumeration: every os.replace / os.rename in runtime/ is reviewed ──
 # (file, enclosing function) → why it is not a write-then-replace that needs atomic_file
 REVIEWED = {
@@ -506,17 +674,43 @@ CREATE_REVIEWED = {
     ("local_daemon.py", "_try_lock"): "lock file, never written",
     ("session_store.py", "_conn"): "session.db lives in BASE/state (outside the workspace); created empty 0600",
 }
-app_found, create_found = set(), set()
+# plain writes: open / os.fdopen with "w" / "x" / "+" (not "a": the list above), write_text / write_bytes
+WRITE_REVIEWED = {
+    ("agent_turn.py", "_image_quota_line"): "BASE/state (strategy_reporter.STATE_DIR): outside the desktop Codex sandbox; cloud runtime = agent user",
+    ("agent_turn.py", "_write_system_prompt_file"): "fd from tempfile.mkstemp (O_EXCL, random name) in BASE/state",
+    ("capital_connect.py", "_write_vault"): "random temp name, its own ACL steps (cloud Windows, SYSTEM)",
+    ("capital_connect.py", "import_via_vehicle"): "BASE/credentials stage dir (cloud Windows, SYSTEM-only ACL)",
+    ("file_watcher.py", "main"): "BASE/state heartbeat; cloud only",
+    ("local_daemon.py", "_reject"): "fd from os.open(O_EXCL)",
+    ("model_prefs.py", "set"): "BASE/state (BLAVE_AGENT_MODEL_PREFS); cloud only",
+    ("report_runner.py", "_agent_turn_cloud"): "stop flag in BASE/state/turn_stop; cloud only",
+    ("strategy_reporter.py", "record_image_quota"): "BASE/state: outside the desktop Codex sandbox; cloud runtime = agent user",
+    ("telegram_bridge.py", "touch_heartbeat"): "BASE/state heartbeat; cloud only",
+    ("telegram_pairing.py", "write_json_600"): "config/ root:root 755 on Linux, explicit ACL on Windows; desktop has no Telegram bridge",
+    ("telegram_pairing.py", "_mark_checked"): "BASE/state; cloud only",
+    ("turn_slots.py", "acquire"): "fd from os.open(O_EXCL)",
+    ("web_bridge.py", "touch_heartbeat"): "BASE/state heartbeat; cloud only",
+    ("web_bridge.py", "_stop_running"): "stop flag in BASE/state/turn_stop; cloud only",
+}
+app_found, create_found, write_found = set(), set(), set()
 for name in sorted(os.listdir(RUNTIME)):
     if not name.endswith(".py") or name == "atomic_file.py":
         continue
     tree_ = ast.parse(open(os.path.join(RUNTIME, name), encoding="utf-8").read())
     for fn in [x for x in ast.walk(tree_) if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef))]:
         for node in ast.walk(fn):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
+            is_open = isinstance(node, ast.Call) and (isinstance(node.func, ast.Name) and node.func.id == "open" or (
+                isinstance(node.func, ast.Attribute) and node.func.attr == "fdopen" and isinstance(node.func.value, ast.Name) and node.func.value.id == "os"))
+            if is_open:
                 mode = node.args[1] if len(node.args) > 1 else next((k.value for k in node.keywords if k.arg == "mode"), None)
                 if isinstance(mode, ast.Constant) and isinstance(mode.value, str) and "a" in mode.value:
                     app_found.add((name, fn.name))
+                elif isinstance(mode, ast.Constant) and isinstance(mode.value, str) and any(c in mode.value for c in "wx+"):
+                    write_found.add((name, fn.name))
+                elif mode is not None and not isinstance(mode, ast.Constant):
+                    write_found.add((name, fn.name))  # a computed mode is reviewed like a write
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("write_text", "write_bytes"):
+                write_found.add((name, fn.name))
             if isinstance(node, ast.Attribute) and node.attr == "O_APPEND":
                 app_found.add((name, fn.name))
             if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "open"
@@ -526,6 +720,8 @@ for name in sorted(os.listdir(RUNTIME)):
                     create_found.add((name, fn.name))
 check(not sorted(app_found - set(APPEND_REVIEWED)), f"every append in runtime/ goes through atomic_file or is reviewed (unreviewed: {sorted(app_found - set(APPEND_REVIEWED))})")
 check(not sorted(set(APPEND_REVIEWED) - app_found), f"no stale entries on the append list ({sorted(set(APPEND_REVIEWED) - app_found)})")
+check(not sorted(write_found - set(WRITE_REVIEWED)), f"every plain write in runtime/ goes through atomic_file or is reviewed (unreviewed: {sorted(write_found - set(WRITE_REVIEWED))})")
+check(not sorted(set(WRITE_REVIEWED) - write_found), f"no stale entries on the write list ({sorted(set(WRITE_REVIEWED) - write_found)})")
 check(not sorted(create_found - set(CREATE_REVIEWED)), f"every os.open(O_CREAT) without O_EXCL/O_NOFOLLOW is reviewed (unreviewed: {sorted(create_found - set(CREATE_REVIEWED))})")
 check(not sorted(set(CREATE_REVIEWED) - create_found), f"no stale entries on the create list ({sorted(set(CREATE_REVIEWED) - create_found)})")
 srcs = {nm: open(os.path.join(RUNTIME, nm), encoding="utf-8").read() for nm in os.listdir(RUNTIME) if nm.endswith(".py")}

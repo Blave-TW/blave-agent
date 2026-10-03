@@ -82,9 +82,9 @@ jobs:
             printf '%s\n' "$out"
             echo "::endgroup::"
             if [ "$rc" -ne 0 ]; then echo "::error::$t 沒過"; red=1
-            elif printf '%s\n' "$out" | grep -qF "SKIP (set BLAVE_TEST_WINDOW=1"; then echo "::error::$t 的 Electron 那段沒跑到"; red=1; fi
+            elif grep -qF "SKIP (set BLAVE_TEST_WINDOW=1" <<<"$out"; then echo "::error::$t 的 Electron 那段沒跑到"; red=1; fi
           done
-          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py tests/check_parent_watch_peek.py; do
+          for t in tests/check_local_daemon_windows.py tests/check_local_env_windows.py tests/check_parent_watch_peek.py tests/check_runtime_atomic_file.py; do
             echo "::group::$t"
             if "$BLAVE_TEST_PYTHON" "$t"; then echo "::endgroup::"; else echo "::endgroup::"; echo "::error::$t 沒過"; red=1; fi
           done

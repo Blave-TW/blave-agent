@@ -328,7 +328,7 @@ def _acquire_lock(jd):
     lock, held until the process exits. None = another run of this job is live
     (立即執行 landing on the schedule's own fire), and this one must not write
     run.log / runs.jsonl over it."""
-    fh = open(os.path.join(jd, ".lock"), "w")
+    fh = atomic_file.open_truncate(os.path.join(jd, ".lock"), "w")
     try:
         if os.name == "nt":
             import msvcrt
@@ -745,7 +745,7 @@ def check_upgrade(interp, env):
         prev = None
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
-        with open(AVAIL_STATE_PATH, "w", encoding="utf-8") as f:
+        with atomic_file.replacing(AVAIL_STATE_PATH, encoding="utf-8") as f:
             f.write("1" if now_ok else "0")
     except OSError:
         return
@@ -755,7 +755,7 @@ def check_upgrade(interp, env):
         if job is None or job.get("kind") == "watch" or job.get("agent_consent") is True:
             continue
         try:
-            open(os.path.join(job_dir(job_id), UPGRADE_NOTE), "w").close()
+            atomic_file.touch(os.path.join(job_dir(job_id), UPGRADE_NOTE))
         except OSError:
             continue
         _emit(interp, env, "report_agent_available", job=job_id)
@@ -772,7 +772,7 @@ def _notify_degraded(job, reason, count, interp, env):
         pass
     if _emit(interp, env, "report_degraded", job=job["id"], title=job["title"], reason=reason, count=count):
         try:   # 送成功才進冷卻,送不出去下一次降級還會再試
-            open(stamp, "w").close()
+            atomic_file.touch(stamp)
         except OSError:
             pass
 
@@ -874,7 +874,7 @@ def run_job(job_id):
 
 def _write_log(jd, text):
     try:
-        with open(os.path.join(jd, "run.log"), "w", encoding="utf-8") as f:
+        with atomic_file.replacing(os.path.join(jd, "run.log"), encoding="utf-8") as f:
             f.write(text)
     except OSError as e:
         print(f"[report_runner] run.log write failed: {e}", file=sys.stderr)
