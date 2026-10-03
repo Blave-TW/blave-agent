@@ -9,6 +9,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 ## Unreleased
 
 - **群益台指期單的成交回報晚到也照實記(`lib/order_capital.py`、`manager/reconciler.py`、`manager/flatten.py`;隨 blave-agent VERSION 2026-10-03-e 出貨,不是 runtime 發版)**:8/17 實測成交回報 15–30 秒才到,單在 15 秒逾時就回 `sent`／0 口,self_ledger 帳本照 0 記、下一輪重複下單。現在看起來沒成交完或沒回報時再等最多 30 秒(`LATE_REPORT_S`)收晚到的回報,等待中 COM 出錯也把已確認的口數回傳(帶 `error`);等完仍未確認或只成交一部分 → 對帳器寫一筆下單失敗紀錄(平台轉成 P1 `order_error`:工作頁、TG、email),叫用戶到群益確認實際部位,照常繼續跑、不 HALT(Wei 拍板)。每張單最多多等 30 秒。全部出場等進行中的執行改成最多 90 秒(一張群益單最長 15＋30 秒,反手兩張共用同一個進行中標記)。測試 `tests/check_capital_late_fill.py`(新,虛擬時鐘跑真的 `_await_fill`)。
+- **回合結束後的背景回測與假承諾回報(2026-10-03)**:`NO_LATER_TOOLS` 加 `ScheduleWakeup`／`PushNotification`／`RemoteTrigger`(claude 2.1.239、2.1.281 內名稱已核);新 PreToolUse Bash 守門 `_bg_guard_hooks`(**所有回合都掛,含雲端**——雲端 `KillMode=process` 同樣受害;語言/排程器兩道照舊只掛電腦版):`run_in_background` 一律拒絕;前景啟動回測/掃參(`strategies/…py`、含 `-X utf8`,`lib.runner|param_scan|walk_forward|validation`)而 `timeout` 低於 min(這一輪 Bash 上限, 這一輪還剩的時間)的拒絕(會被 CLI 轉背景、回合結束被殺,09-28 事故路徑);只放行 `nohup`／`setsid` 開頭、結尾單一 `&` 的脫離啟動。拒絕理由只給單一指令的 python `time.sleep` 輪詢(2.1.281 實測可用;開頭 `sleep N`≥25 會被 CLI 擋)。上限在呼叫當下讀 `options.env`(續跑會換小),剩餘時間用續跑判斷同一條式子。另:還原重跑的分類多認 `BatchIncomplete` 與 Type C 0 筆交易為 DATA(可再跑一次)。測試 `tests/check_bg_backtest_guard.py`(新)。**機隊掛載:發版前在 29026 跑一個真實回合，確認 hook 有觸發。**
 
 ## 1.1.110 — 2026-10-03
 

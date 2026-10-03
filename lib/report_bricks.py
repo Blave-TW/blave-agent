@@ -115,6 +115,8 @@ def _crypto_closes(b, symbols):
         except _data.DataAccessError:
             # Only when the kline source is Blave: the desktop sets BLAVE_KLINE_SOURCE=binance (public).
             raise Skip(_skip_text("日 K(BLAVE_KLINE_SOURCE 不是 binance)")) from None
+        except _data.BatchIncomplete as e:   # a report degrades; the missing coins get a note below
+            klines = e.partial
         closes = {}
         for s in syms:
             df = klines.get(s)
@@ -814,6 +816,9 @@ def _dividend_rows(b):
     if ids:
         try:
             got = _data.fetch_twstock_dividend_batch(ids, day, day, b.headers)
+        except _data.BatchIncomplete as e:
+            b.notes.append(f"個股除權息有 {len(e.failed)} 檔抓取失敗,未列入")
+            got = e.partial
         except Exception as e:
             b.notes.append(f"個股除權息抓取失敗({type(e).__name__})")
             got = {}

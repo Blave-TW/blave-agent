@@ -1081,15 +1081,21 @@ def fetch_kline_batch(symbols, interval, start, end, headers):
             df['Volume'] = 0
         return df[['Open', 'High', 'Low', 'Close', 'Volume']].astype(float)
 
-    results = _fetch_batch_cached(
-        f'kline3_{interval}', f'{BASE}/kline/batch?period={interval}', 'symbols',
-        lambda sid, s, e, hdrs: _fetch_kline_raw(sid, interval, s, e, hdrs),
-        _parse, symbols, start, end, headers,
-        chunk_size=20, start_param='start_date', end_param='end_date',
-        date_chunk_days=30 if _is_sub_5min(interval) else 365,
-    )
-    return {sid: _drop_forming_bar(_sanity_check_ohlc(df, f'{sid} {interval} kline'), interval)
-            for sid, df in results.items()}
+    def _clean(results):
+        return {sid: _drop_forming_bar(_sanity_check_ohlc(df, f'{sid} {interval} kline'), interval)
+                for sid, df in results.items()}
+    try:
+        results = _fetch_batch_cached(
+            f'kline3_{interval}', f'{BASE}/kline/batch?period={interval}', 'symbols',
+            lambda sid, s, e, hdrs: _fetch_kline_raw(sid, interval, s, e, hdrs),
+            _parse, symbols, start, end, headers,
+            chunk_size=20, start_param='start_date', end_param='end_date',
+            date_chunk_days=30 if _is_sub_5min(interval) else 365,
+        )
+    except BatchIncomplete as e:
+        e.partial = _clean(e.partial)   # a caller that degrades gets the same frames a full result would hold
+        raise
+    return _clean(results)
 
 
 def _binance_batch(uniq, interval, start, end, headers):
@@ -2526,9 +2532,10 @@ def fetch_twstock_dividend(stock_id, start, end, headers):
 def fetch_twstock_dividend_batch(stock_ids, start, end, headers):
     """Batch 台股股利事件. Returns dict {stock_id: DataFrame} (same columns as
     fetch_twstock_dividend). Ids with no dividend history are silently absent
-    (the batch API's contract); ids in the API's `failed` list are reported and
-    absent — re-call for those. Cache-first per stock (1-day TTL, full history),
-    uncached ids fetched in chunks of 50; ranges sliced locally."""
+    (the batch API's contract); ids in the API's `failed` list (or of an errored request) get one
+    serial retry in chunks of 10, and if still failing BatchIncomplete is raised with the rest in
+    `.partial`. Cache-first per stock (1-day TTL, full history), uncached ids fetched in chunks of 50;
+    ranges sliced locally."""
     results, uncached = {}, []
     for sid in stock_ids:
         path = _fundamental_cache_path('twstock_dividend', sid)
@@ -2538,27 +2545,43 @@ def fetch_twstock_dividend_batch(stock_ids, start, end, headers):
         else:
             uncached.append(sid)
 
-    for i in range(0, len(uncached), 50):
-        chunk = uncached[i:i + 50]
-        try:
-            r = _retry_get(f'{BASE}/studio/market/twstock/batch/dividend',
-                           headers=headers,
-                           params={'stock_ids': ','.join(chunk)}, timeout=120)
-            payload = r.json()
-            failed = payload.get('failed', [])
-            if failed:
-                print(f'  [batch] dividend server-side fetch failed for {failed} — '
-                      f'absent from results, re-call for those ids')
-            for sid, records in payload.get('data', {}).items():
-                if not records:
+    url = f'{BASE}/studio/market/twstock/batch/dividend'
+    pending = list(dict.fromkeys(uncached))
+    for size in (50, 10):
+        if not pending:
+            break
+        failed, answered = [], False
+        for i in range(0, len(pending), size):
+            chunk = pending[i:i + size]
+            try:
+                payload = _retry_get(url, headers=headers, params={'stock_ids': ','.join(chunk)}, timeout=120).json()
+            except DataAccessError:
+                raise
+            except requests.HTTPError as e:
+                status = getattr(e.response, 'status_code', None)
+                if status is not None and status < 500 and status != 429:
+                    raise
+                failed.extend(chunk)
+                continue
+            except (requests.RequestException, ValueError):
+                failed.extend(chunk)
+                continue
+            answered = True
+            server_failed = set(payload.get('failed') or ())
+            failed.extend(sid for sid in chunk if sid in server_failed)
+            for sid, records in (payload.get('data') or {}).items():
+                if not records or sid in server_failed:
                     continue
                 df = pd.DataFrame(records)
-                _save_fundamental_cache(
-                    _fundamental_cache_path('twstock_dividend', sid), df)
+                _save_fundamental_cache(_fundamental_cache_path('twstock_dividend', sid), df)
                 results[sid] = _dividend_slice(df, start, end).reset_index(drop=True)
-        except Exception as e:
-            print(f'  [batch] dividend chunk {i//50 + 1} error: {e}')
-
+        pending = failed
+        if not answered:
+            break
+    if pending:
+        raise BatchIncomplete(f'{url}: {len(pending)} stock ids still failed after retrying — refusing to '
+                              f'return a result missing them: {pending}. Usually temporary: run again later.',
+                              results, pending)
     return results
 
 
@@ -3148,6 +3171,16 @@ def _mark_empty_months(prefix, sid, start, end):
             pd.DataFrame().to_parquet(path)
 
 
+class BatchIncomplete(RuntimeError):
+    """A batch fetch where some ids still failed after the retry pass (server `failed` —
+    upstream quota / error — or an errored request). `partial` holds the ids that did come
+    back, `failed` the rest; a caller that can degrade (a report) may use `partial`, a
+    backtest or live tick must not."""
+    def __init__(self, msg, partial, failed):
+        super().__init__(msg)
+        self.partial, self.failed = partial, failed
+
+
 def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids, start, end, headers,
                          chunk_size=50, mark_empty_months=True, start_param='start', end_param='end',
                          date_chunk_days=None):
@@ -3196,14 +3229,18 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
             cursor = span_end + timedelta(days=1)
         return spans
 
-    def _fetch_batch_range(id_list, range_start, range_end):
-        """chunk_size ids per request x date_chunk_days-sized date spans, all issued
-        concurrently. Returns ({id: DataFrame}, failed_ids): frames merged across spans,
+    answered = []
+
+    def _fetch_batch_range(id_list, range_start, range_end, size=chunk_size, workers=8, give_up_after=None):
+        """size ids per request x date_chunk_days-sized date spans, `workers` at a time.
+        give_up_after=N (serial only): when the first N requests all fail outright, the rest are
+        not sent and their ids count as failed — a dead upstream answers the same to every one.
+        Returns ({id: DataFrame}, failed_ids): frames merged across spans,
         missing/empty ids simply absent (caller treats absence as 'no data') — EXCEPT
         ids in failed_ids, whose chunk errored or was server-side rate-limited; for
         those, absence is unknown, not 'empty', and must never be cached as empty."""
         out, failed_ids = {}, set()
-        id_chunks = [id_list[i:i + chunk_size] for i in range(0, len(id_list), chunk_size)]
+        id_chunks = [id_list[i:i + size] for i in range(0, len(id_list), size)]
         date_spans = _date_spans(range_start, range_end)
         jobs = [(idx, chunk, span) for idx, chunk in enumerate(id_chunks) for span in date_spans]
 
@@ -3214,6 +3251,7 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
                 params = {id_param_name: ','.join(chunk), start_param: span_start, end_param: span_end}
                 r = _retry_get(batch_url, headers=headers, params=params, timeout=120)
                 body = r.json()
+                answered.append(True)
                 failed = body.get('failed', [])
                 if failed:
                     print(f'  [batch] {batch_url} server-side fetch failed (rate limit or upstream error), dropped: {failed}')
@@ -3221,16 +3259,39 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
                 for _id, records in body.get('data', {}).items():
                     if records:
                         partial[_id] = _normalise_index(parse_fn(records))
+            except DataAccessError:
+                raise
+            except requests.HTTPError as e:
+                status = getattr(e.response, 'status_code', None)
+                if status is not None and status < 500 and status != 429:
+                    raise   # bad request / auth / unknown symbol: not a quota problem, retrying cannot help
+                print(f'  [batch] {batch_url} chunk {idx + 1} {span}: error: {e}')
+                failed_ids.update(chunk)
             except Exception as e:
                 print(f'  [batch] {batch_url} chunk {idx + 1} {span}: error: {e}')
                 failed_ids.update(chunk)
             return partial
 
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            futures = [pool.submit(_fetch_chunk, idx, chunk, span) for idx, chunk, span in jobs]
-            for future in as_completed(futures):
-                for _id, df in future.result().items():
-                    out[_id] = pd.concat([out[_id], df]) if _id in out else df
+        def _merge(partial):
+            for _id, df in partial.items():
+                out[_id] = pd.concat([out[_id], df]) if _id in out else df
+
+        if workers == 1:
+            dead = 0
+            for n, (idx, chunk, span) in enumerate(jobs):
+                if give_up_after and n >= give_up_after and dead == n:
+                    print(f'  [batch] {batch_url}: first {n} retries all failed — not sending the rest')
+                    for _, rest, _ in jobs[n:]:
+                        failed_ids.update(rest)
+                    break
+                partial = _fetch_chunk(idx, chunk, span)
+                dead += not partial and set(chunk) <= failed_ids
+                _merge(partial)
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(_fetch_chunk, idx, chunk, span) for idx, chunk, span in jobs]
+                for future in as_completed(futures):
+                    _merge(future.result())
 
         for _id, df in out.items():
             out[_id] = df[~df.index.duplicated(keep='last')].sort_index()
@@ -3309,11 +3370,28 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
     # (Single layout only: the monthly batch path keeps its exact `start` — sub-5min
     # kline batches are validated against the server's earliest date and a month-
     # aligned start before it is a hard 400, not a clamp.)
-    fetched, failed_ids = _fetch_batch_range(uncached, f'{start[:7]}-01' if (single and start) else start, end)
+    full_start = f'{start[:7]}-01' if (single and start) else start
+    answered.clear()
+    fetched, failed_ids = _fetch_batch_range(uncached, full_start, end)
+    # One serial pass in smaller chunks, no waiting and no loop: the usual cause is the server's
+    # hourly upstream quota (2026-10-03: FinMind 27k calls against 18k, 7,254 stock-requests
+    # dropped and a backtest went through with 0 trades), which will not come back within the run.
+    # Skipped when no request got any answer — _retry_get already backed off.
+    if failed_ids and answered:
+        retry_ids = [_id for _id in dict.fromkeys(uncached) if _id in failed_ids]
+        retry_ids += sorted(failed_ids.difference(retry_ids))
+        print(f'  [batch] {batch_url}: retrying {len(retry_ids)} failed ids, one request at a time')
+        again, failed_ids = _fetch_batch_range(retry_ids, full_start, end,
+                                               size=max(1, chunk_size // 5), workers=1, give_up_after=3)
+        for _id, df in again.items():
+            df = pd.concat([fetched[_id], df]) if _id in fetched else df
+            fetched[_id] = df[~df.index.duplicated(keep='last')].sort_index()
     end_str = end or datetime.utcnow().strftime('%Y-%m-%d')
     start_ts = pd.Timestamp(start)
     end_ts = pd.Timestamp(end_str) + pd.Timedelta(days=1)
     for _id, df in fetched.items():
+        if _id in failed_ids:
+            continue   # partial spans of a failed id: caching them would freeze the hole
         if single:
             _save_single(prefix, {'id': _id}, df, start, end)
         else:
@@ -3339,6 +3417,14 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
             else:
                 _mark_empty_months(prefix, _id, start, end)
 
+    if failed_ids:
+        failed = sorted(failed_ids)
+        shown = ', '.join(map(str, failed[:100])) + (f' … (+{len(failed) - 100} more)' if len(failed) > 100 else '')
+        raise BatchIncomplete(
+            f'{batch_url}: {len(failed)} ids still failed after retrying — refusing to return a result missing '
+            f'them: {shown}. Usually temporary (the server\'s data quota or an upstream outage): run again later. '
+            f'If the same ids fail on every run, they do not exist or are delisted on this source — remove them '
+            f'from the universe.', results, failed)
     return results
 
 

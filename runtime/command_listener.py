@@ -5162,7 +5162,7 @@ _RESTORE_ADOPT_POLL_S = 5
 _RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT")
 _RERUN_DATA_MARKS = ("DataAccessError", "TwPublicUnavailable", "FeedNotPublished", "ERR007",
                      "ERR005", "HTTPError", "ConnectionError", "ConnectTimeout", "ReadTimeout",
-                     "the feed has no rows")
+                     "the feed has no rows", "BatchIncomplete", "the weight vector was zero on every bar")
 _RESTORE_MARK = "@@BLAVE_RESTORE@@ "   # plain ASCII: str.splitlines() also splits on \x1c-\x1e
 _RESTORE_PY = (
     "import json, sys\n"

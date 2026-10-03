@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory() as base:
       and "code they point you to goes into `strategies/` as they ask" in b and "never goes into `control/` or `.env`" in b
       and "`strategies/`, `control/` or `.env`" not in b and "Cite the source URL and title" in b and "references/browser.md" in b)
 
-t("回合結束後才會回來的工具一律關掉(Monitor / CronCreate;e2e 0.1.8 #127)", '["Task", "Agent"] + NO_LATER_TOOLS' in src.split("disallowed_tools=")[1].split("\n")[0] and 'NO_LATER_TOOLS = ["Monitor", "CronCreate"]' in src)
+t("回合結束後才會回來的工具一律關掉(Monitor / CronCreate;e2e 0.1.8 #127;ScheduleWakeup / PushNotification / RemoteTrigger:2026-10-03)", '["Task", "Agent"] + NO_LATER_TOOLS' in src.split("disallowed_tools=")[1].split("\n")[0] and 'NO_LATER_TOOLS = ["Monitor", "CronCreate", "ScheduleWakeup", "PushNotification", "RemoteTrigger"]' in src)
 # 電腦版上網只有內建瀏覽器一條路(e2e 0.1.8 #125)
 dw, off = ns["desktop_web"], ns["web_tools_off"]
 

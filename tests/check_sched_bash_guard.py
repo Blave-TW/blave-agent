@@ -283,13 +283,14 @@ def mounted(sink, scheduled):
 
 
 local = at.LocalSink.__new__(at.LocalSink)
-t("④ 排程回合、非電腦版 sink:掛上 Bash 守門", mounted(_Remote(), True) == ["_sched_bash_guard_hooks.<locals>.guard"],
+BG = "_bg_guard_hooks.<locals>.guard"   # 背景回測守門每個回合都掛(tests/check_bg_backtest_guard.py)
+t("④ 排程回合、非電腦版 sink:掛上 Bash 守門", mounted(_Remote(), True) == [BG, "_sched_bash_guard_hooks.<locals>.guard"],
   mounted(_Remote(), True))
-t("④ 非排程回合(雲端):不掛任何 PreToolUse", mounted(_Remote(), False) == [], mounted(_Remote(), False))
+t("④ 非排程回合(雲端):只有背景守門", mounted(_Remote(), False) == [BG], mounted(_Remote(), False))
 t("④ 非排程回合(電腦版):只有排程器那一道,沒有這道",
-  mounted(local, False) == ["_sched_guard_hooks.<locals>.guard"], mounted(local, False))
-t("④ 排程回合(電腦版):兩道並存", sorted(mounted(local, True)) == sorted(
-    ["_sched_guard_hooks.<locals>.guard", "_sched_bash_guard_hooks.<locals>.guard"]), mounted(local, True))
+  mounted(local, False) == [BG, "_sched_guard_hooks.<locals>.guard"], mounted(local, False))
+t("④ 排程回合(電腦版):三道並存", sorted(mounted(local, True)) == sorted(
+    [BG, "_sched_guard_hooks.<locals>.guard", "_sched_bash_guard_hooks.<locals>.guard"]), mounted(local, True))
 
 before = list(at.PROTECTED_EDIT_RULES)
 t("⑤ 非排程回合不禁 Read(/.env)", "Read(/.env)" not in before)
