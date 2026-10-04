@@ -66,10 +66,10 @@ function loginShellPath() {
 /* Windows 的 npm 全域 CLI 是 .cmd 包裝檔,Node 不經 shell 開不了(EINVAL)。只有這種才走 shell;命令列裡只有我們寫死的字
    與 where.exe 給的路徑(引號包住,路徑含空白也行)。 */
 const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: `"${bin}"`, shell: true } : { file: bin, shell: false });
-function run(cmd, args, envPath, timeout = 10000) {
+function run(cmd, args, envPath, timeout = 10000, cwd = undefined) {
   const w = cmdWrap(cmd);
   return new Promise((resolve) => {
-    execFile(w.file, args, { timeout, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
+    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
       (err, stdout, stderr) => resolve({
         code: err ? (err.code === undefined ? -1 : err.code) : 0,
         stdout: String(stdout || ""), stderr: String(stderr || ""),
@@ -83,10 +83,19 @@ function pickWinBin(stdout) {
   const lines = String(stdout || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   return lines.find((l) => /\.exe$/i.test(l)) || lines.find((l) => /\.(cmd|bat)$/i.test(l)) || null;
 }
+// where.exe 先搜目前工作目錄、才搜 PATH:app 繼承的 cwd 裡放一個 codex.exe 就會排第一。which 把 cwd 釘在 System32,
+// 這裡再只留上層目錄在 envPath 裡的結果(大小寫、尾端反斜線、引號正規化)(純函式)
+const winDirKey = (d) => path.win32.normalize(d.replace(/"/g, "").trim()).replace(/\\+$/, "").toLowerCase();
+function winOnPath(stdout, envPath) {
+  const dirs = new Set(String(envPath || "").split(";").filter((d) => d.trim()).map(winDirKey));
+  return String(stdout || "").split(/\r?\n/).map((s) => s.trim())
+    .filter((l) => l && dirs.has(winDirKey(path.win32.dirname(l)))).join("\r\n");
+}
 async function which(name, envPath) {
   if (process.platform === "win32") {
-    const r = await run(path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32", "where.exe"), [name], envPath, 5000);
-    return r.code === 0 ? pickWinBin(r.stdout) : null;
+    const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
+    const r = await run(path.win32.join(sys32, "where.exe"), [name], envPath, 5000, sys32);
+    return r.code === 0 ? pickWinBin(winOnPath(r.stdout, envPath)) : null;
   }
   const r = await run("/usr/bin/env", ["sh", "-c", `command -v ${name}`], envPath, 5000);
   return r.code === 0 ? r.stdout.trim() : null;
