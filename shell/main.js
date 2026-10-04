@@ -66,10 +66,10 @@ function loginShellPath() {
 /* Windows 的 npm 全域 CLI 是 .cmd 包裝檔,Node 不經 shell 開不了(EINVAL)。只有這種才走 shell;命令列裡只有我們寫死的字
    與 where.exe 給的路徑(引號包住,路徑含空白也行)。 */
 const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: `"${bin}"`, shell: true } : { file: bin, shell: false });
-function run(cmd, args, envPath, timeout = 10000) {
+function run(cmd, args, envPath, timeout = 10000, cwd = undefined) {
   const w = cmdWrap(cmd);
   return new Promise((resolve) => {
-    execFile(w.file, args, { timeout, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
+    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
       (err, stdout, stderr) => resolve({
         code: err ? (err.code === undefined ? -1 : err.code) : 0,
         stdout: String(stdout || ""), stderr: String(stderr || ""),
@@ -77,15 +77,25 @@ function run(cmd, args, envPath, timeout = 10000) {
   });
 }
 
-// where.exe 依 PATH 順序列出每個符合 PATHEXT 的檔:優先拿 .exe(原生安裝器),npm 的 .cmd 只在沒有 .exe 時拿(純函式)
+// where.exe 依 PATH 順序列出每個符合的檔:優先拿 .exe(原生安裝器),npm 的 .cmd/.bat 只在沒有 .exe 時拿。
+// npm 同時放一個無副檔名的 sh 包裝檔、而且常排第一行——execFile 開不了它(ENOENT),不能當退路(純函式)
 function pickWinBin(stdout) {
   const lines = String(stdout || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-  return lines.find((l) => /\.exe$/i.test(l)) || lines[0] || null;
+  return lines.find((l) => /\.exe$/i.test(l)) || lines.find((l) => /\.(cmd|bat)$/i.test(l)) || null;
+}
+// where.exe 先搜目前工作目錄、才搜 PATH:app 繼承的 cwd 裡放一個 codex.exe 就會排第一。which 把 cwd 釘在 System32,
+// 這裡再只留上層目錄在 envPath 裡的結果(大小寫、尾端反斜線、引號正規化)(純函式)
+const winDirKey = (d) => path.win32.normalize(d.replace(/"/g, "").trim()).replace(/\\+$/, "").toLowerCase();
+function winOnPath(stdout, envPath) {
+  const dirs = new Set(String(envPath || "").split(";").filter((d) => d.trim()).map(winDirKey));
+  return String(stdout || "").split(/\r?\n/).map((s) => s.trim())
+    .filter((l) => l && dirs.has(winDirKey(path.win32.dirname(l)))).join("\r\n");
 }
 async function which(name, envPath) {
   if (process.platform === "win32") {
-    const r = await run(path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32", "where.exe"), [name], envPath, 5000);
-    return r.code === 0 ? pickWinBin(r.stdout) : null;
+    const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
+    const r = await run(path.win32.join(sys32, "where.exe"), [name], envPath, 5000, sys32);
+    return r.code === 0 ? pickWinBin(winOnPath(r.stdout, envPath)) : null;
   }
   const r = await run("/usr/bin/env", ["sh", "-c", `command -v ${name}`], envPath, 5000);
   return r.code === 0 ? r.stdout.trim() : null;
@@ -96,10 +106,12 @@ async function which(name, envPath) {
 const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
 /* Windows 的 codex.cmd 要解到真的 codex.exe:runtime/codex_engine.py 用 create_subprocess_exec 起它,吃不了 .cmd。
    npm 的 bin/codex.js(0.156.1)找的是 <平台套件>/vendor/<triple>/bin/codex.exe,退路是 @openai/codex 自己的 vendor/;
-   兩個都相對於 .cmd 所在的全域 node_modules。解不到就當沒裝(留一行 log),不把 .cmd 交給 runtime 去炸。純函式。 */
+   npm 11 + 0.160.0 實測平台套件改成巢狀裝在 @openai/codex/node_modules 底下。全都相對於 .cmd 所在的全域 node_modules。
+   解不到就當沒裝(留一行 log),不把 .cmd 交給 runtime 去炸。純函式。 */
 const CODEX_WIN_EXE = (arch) => {
-  const triple = arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc";
-  return [`codex-win32-${arch === "arm64" ? "arm64" : "x64"}`, "codex"].map((pkg) => path.win32.join("node_modules", "@openai", pkg, "vendor", triple, "bin", "codex.exe"));
+  const triple = arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc", plat = `codex-win32-${arch === "arm64" ? "arm64" : "x64"}`;
+  const tail = ["vendor", triple, "bin", "codex.exe"];
+  return [["@openai", plat], ["@openai", "codex"], ["@openai", "codex", "node_modules", "@openai", plat]].map((pkg) => path.win32.join("node_modules", ...pkg, ...tail));
 };
 function winRealExe(bin, arch, exists = fs.existsSync) {
   if (!bin || !/\.(cmd|bat)$/i.test(bin)) return bin;
@@ -2687,7 +2699,7 @@ app.whenReady().then(() => {
   // 換版時備份的資料夾:在 Finder 裡選起來。路徑由主行程自己算(畫面不交路徑),沒有備份就什麼都不做
   handle("update-show-backup", () => { if (!_officialBackup) return false; shell.showItemInFolder(path.join(WS, _officialBackup.dir)); return true; }, false);
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
-  // 安裝識別碼:用戶來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
+  // 安裝識別碼(設定 › 一般 › 關於):回報問題、來信要求刪除使用資料時要附的那一組(隱私權政策)。追蹤關掉也照給——關掉之前送出的紀錄還在
   handle("telemetry-install-id", () => tm().installId());
   // 切換的當下打一次 account_status:它帶著開關狀態,api 的提醒信立刻知道(沒登入就不打)
   ipcMain.handle("telemetry-set", (e, on) => { if (!fromOurPage(e)) return false; tm().setEnabled(on === true); accountStatus(); return tm().isEnabled(); });

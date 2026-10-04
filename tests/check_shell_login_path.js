@@ -42,5 +42,31 @@ t("winRealExe:codex.cmd → 平台套件的 codex.exe(npm bin/codex.js 0.156.1 �
 t("winRealExe:平台套件不在 → @openai/codex 自己的 vendor/", winRealExe(cmd, "x64", (p) => p === fallback) === fallback);
 t("winRealExe:兩個都不在 → null(不把 .cmd 交給 runtime 的 create_subprocess_exec)", winRealExe(cmd, "x64", () => false) === null);
 t("winRealExe:已經是 .exe / null 原樣回", winRealExe("C:\\x\\codex.exe", "x64", () => false) === "C:\\x\\codex.exe" && winRealExe(null, "x64") === null);
-t("which 在 win32 用 System32\\where.exe;run 只對 .cmd/.bat 開 shell", /System32", "where\.exe"\), \[name\], envPath, 5000\)/.test(src) && /const cmdWrap = \(bin\) => \(process\.platform === "win32" && \/\\\.\(cmd\|bat\)\$\/i\.test\(bin\)/.test(src));
+// 測試機實測(Codex 0.160.0 用 npm i -g、Node 24、npm 11):where.exe 第一行是 npm 的無副檔名 sh 包裝檔,平台套件巢狀裝在 @openai/codex 底下
+const WHERE_REAL = "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\codex\r\nC:\\Users\\Administrator\\AppData\\Roaming\\npm\\codex.cmd\r\n";
+const realCmd = "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\codex.cmd";
+const nested = (pkg, triple) => "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\" + pkg + "\\vendor\\" + triple + "\\bin\\codex.exe";
+t("pickWinBin:where 第一行是無副檔名的 sh 包裝檔 → 跳過、拿 codex.cmd", pickWinBin(WHERE_REAL) === realCmd);
+t("pickWinBin:只有無副檔名那一行 → null(交給 execFile 只會 ENOENT、被誤判成未登入)", pickWinBin("C:\\r\\npm\\codex\r\n") === null);
+t("pickWinBin:claude 三種都在(sh / .cmd / .exe)→ 仍拿 .exe;只有 sh + .cmd → .cmd;.bat 也算",
+  pickWinBin("C:\\r\\npm\\claude\r\nC:\\r\\npm\\claude.cmd\r\nC:\\Users\\u\\.local\\bin\\claude.exe\r\n") === "C:\\Users\\u\\.local\\bin\\claude.exe"
+  && pickWinBin("C:\\r\\npm\\claude\r\nC:\\r\\npm\\claude.cmd\r\n") === "C:\\r\\npm\\claude.cmd" && pickWinBin("C:\\r\\x\r\nC:\\r\\x.bat\r\n") === "C:\\r\\x.bat");
+t("winRealExe:平台套件巢狀在 @openai/codex/node_modules 底下(0.160.0)→ 找得到", winRealExe(realCmd, "x64", (p) => p === nested("codex-win32-x64", "x86_64-pc-windows-msvc")) === nested("codex-win32-x64", "x86_64-pc-windows-msvc"));
+t("winRealExe:arm64 的巢狀路徑同一套規則", winRealExe(realCmd, "arm64", (p) => p === nested("codex-win32-arm64", "aarch64-pc-windows-msvc")) === nested("codex-win32-arm64", "aarch64-pc-windows-msvc"));
+t("winRealExe:實測那兩行一路走下來 → 巢狀 codex.exe", winRealExe(pickWinBin(WHERE_REAL), "x64", (p) => p === nested("codex-win32-x64", "x86_64-pc-windows-msvc")) === nested("codex-win32-x64", "x86_64-pc-windows-msvc"));
+// where.exe 先搜目前工作目錄(稽核 P2-1):cwd 釘 System32,結果只留上層目錄在 envPath 裡的
+const wk = src.match(/^const winDirKey = .*$/m), wo = src.match(/^function winOnPath\(stdout, envPath\) \{[\s\S]*?\n\}/m);
+if (!wk || !wo) { console.log("FAIL  找不到 winDirKey / winOnPath"); process.exit(1); }
+eval(wk[0].replace(/^const /, "var ")); eval(wo[0]);
+const EP = "C:\\WINDOWS\\system32;\"C:\\Program Files\\nodejs\";C:\\Users\\u\\AppData\\Roaming\\npm\\;C:\\Users\\u\\.local\\bin";
+t("winOnPath:cwd 裡的 codex.exe(不在 envPath)被濾掉,PATH 裡的 .cmd 留下 → pickWinBin 拿 .cmd 不拿 cwd 那顆",
+  pickWinBin(winOnPath("C:\\Users\\u\\Downloads\\codex.exe\r\nC:\\Users\\u\\AppData\\Roaming\\npm\\codex.cmd\r\n", EP)) === "C:\\Users\\u\\AppData\\Roaming\\npm\\codex.cmd");
+t("winOnPath:大小寫不同、PATH 項尾端反斜線、引號包住都算在 envPath 內",
+  winOnPath("c:\\users\\U\\APPDATA\\roaming\\npm\\codex.cmd\r\nC:\\Program Files\\nodejs\\claude.exe\r\nC:\\Users\\u\\.local\\bin\\claude.exe", EP).split("\r\n").length === 3);
+t("winOnPath:envPath 的子目錄、上層目錄都不算", winOnPath("C:\\Users\\u\\.local\\bin\\x\\codex.exe\r\nC:\\Users\\u\\codex.exe", EP) === "");
+t("winOnPath:全被濾掉 → pickWinBin null(當沒裝,不退回 cwd 那顆)", pickWinBin(winOnPath("D:\\evil\\claude.exe\r\n", EP)) === null);
+t("which 在 win32:cwd 釘 System32、where 的輸出先過 winOnPath 才 pickWinBin;run 把 cwd 交給 execFile",
+  /run\(path\.win32\.join\(sys32, "where\.exe"\), \[name\], envPath, 5000, sys32\)/.test(src) && /pickWinBin\(winOnPath\(r\.stdout, envPath\)\)/.test(src)
+  && /function run\(cmd, args, envPath, timeout = 10000, cwd = undefined\)/.test(src) && /execFile\(w\.file, args, \{ timeout, cwd,/.test(src));
+t("which 在 win32 用 System32\\where.exe;run 只對 .cmd/.bat 開 shell", /const sys32 = path\.win32\.join\(process\.env\.SystemRoot \|\| "C:\\\\Windows", "System32"\)/.test(src) && /const cmdWrap = \(bin\) => \(process\.platform === "win32" && \/\\\.\(cmd\|bat\)\$\/i\.test\(bin\)/.test(src));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

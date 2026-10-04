@@ -398,6 +398,13 @@
               <p class="set-up-line" id="set-up-line" role="status"></p>
               <button type="button" class="btn-quiet" id="set-up-btn"></button>
             </div>
+            <!-- 安裝識別碼(只在這裡一處):回報問題、要求刪除使用資料時附上。追蹤關掉也照出——要刪的是關掉之前送出的那些。
+                 值由 app.js 的 aboutIdLoad 填;讀不到或不是 UUID 的形狀就整段不出 -->
+            <div class="set-up-row" id="set-id" hidden>
+              <p class="set-up-line set-id-line"><span data-i18n="about.id"></span><code class="set-idv" id="set-idv"></code></p>
+              <button type="button" class="btn-quiet" id="set-id-copy" data-i18n="about.idCopy"></button>
+            </div>
+            <p class="set-up-line" id="set-id-note" data-i18n="about.idNote" hidden></p>
             <!-- 法遵兩份並排、不成句(不是「使用即表示同意」那種同意文字)。服務條款只有這一個入口;隱私權政策在 設定 › 隱私 另有一個就地的。
                  外開瀏覽器,網址帶目前語言 -->
             <p class="set-legal"><button type="button" class="btn-quiet" id="set-terms" data-i18n="legal.terms"></button> <span aria-hidden="true">·</span> <button type="button" class="btn-quiet" id="set-privacy" data-i18n="legal.privacy"></button></p>

@@ -872,8 +872,6 @@ body.resizing * { cursor: col-resize !important; }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
-.priv-id { margin-top: var(--space-16); flex-wrap: wrap; }
-.priv-idv { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); user-select: all; -webkit-user-select: all; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
 .set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
@@ -883,6 +881,9 @@ body.resizing * { cursor: col-resize !important; }
 .set-up-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-16); min-height: 24px; }
 .set-up-line { margin: 0; min-width: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .set-up-line .mono { white-space: nowrap; }
+/* 安裝識別碼:標籤 --ink-3、值 mono --ink-2 整串 36 字不截;放不下就整串換到標籤下一行(不在連字號處斷) */
+.set-id-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-8); }
+.set-idv { font-family: "Roboto Mono", ui-monospace, monospace; font-size: 12px; color: var(--ink-2); white-space: nowrap; user-select: all; -webkit-user-select: all; }
 #set-up-btn .spin16 { vertical-align: -3px; }   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
 .set-about button { flex: none; }
 /* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────

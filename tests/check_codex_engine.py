@@ -248,6 +248,50 @@ for state, want in (("off", True), ("unavailable", True), ("on", True), (None, F
     run_local_turn(engine="codex", codex_bin="/x/codex")
     assert seen["web_search_off"] is want, (state, seen.get("web_search_off"))
     assert bool(at.web_tools_off(at.desktop_web(at.LocalSink("s1"), False), False)) is want, state
+
+# ── 4c. Windows 沙盒:沒設定時 exec 的 shell 指令全被 policy 擋(codex 0.160 core/src/exec_policy.rs)──
+#      只在 Windows 補 unelevated;用戶 config.toml 已設定(新鍵或三個舊鍵,頂層或 `profile` 指到的那段)就不蓋;讀不了照補
+import shutil  # noqa: E402
+WIN_SB = ["-c", 'windows.sandbox="unelevated"']
+_win_home = tempfile.mkdtemp(prefix="check-codex-win-")
+_win_env = {"CODEX_HOME": _win_home}
+_win_cfg = os.path.join(_win_home, "config.toml")
+_was_windows = getattr(codex_engine, "_WINDOWS", None)
+codex_engine._WINDOWS = True
+try:
+    assert codex_engine.build_args("/x/codex", "/ws", env=_win_env) == BASE_ARGV[:9] + WIN_SB + BASE_ARGV[9:]
+    for body in ('[windows]\nsandbox = "elevated"\n', '[features]\nwindows_sandbox = true\n',
+                 '[features]\nwindows_sandbox_elevated = true\n',
+                 'enable_experimental_windows_sandbox = true\n'):
+        with open(_win_cfg, "w") as f:
+            f.write(body)
+        assert not any("windows.sandbox" in a for a in codex_engine.build_args("/x/codex", "/ws", env=_win_env)), body
+    with open(_win_cfg, "w") as f:
+        f.write("not = toml [\n")
+    assert codex_engine.build_args("/x/codex", "/ws", env=_win_env).count('windows.sandbox="unelevated"') == 1, "讀不了照補"
+    with open(_win_cfg, "w") as f:
+        f.write('model = "gpt-5.5"\n[windows]\n')
+    assert 'windows.sandbox="unelevated"' in codex_engine.build_args("/x/codex", "/ws", env=_win_env), "別的設定不算"
+    for body in ('profile = "x"\n[profiles.x.windows]\nsandbox = "elevated"\n',
+                 'profile = "x"\n[profiles.x.features]\nwindows_sandbox_elevated = true\n'):
+        with open(_win_cfg, "w") as f:
+            f.write(body)
+        assert not any("windows.sandbox" in a for a in codex_engine.build_args("/x/codex", "/ws", env=_win_env)), body
+    for body in ('profile = "y"\n[profiles.x.windows]\nsandbox = "elevated"\n',
+                 'profile = 1\n[profiles.x.windows]\nsandbox = "elevated"\n',
+                 'profile = "x"\n[profiles]\nx = "elevated"\n',
+                 '[profiles.x.windows]\nsandbox = "elevated"\n'):
+        with open(_win_cfg, "w") as f:
+            f.write(body)
+        assert codex_engine.build_args("/x/codex", "/ws", env=_win_env).count('windows.sandbox="unelevated"') == 1, \
+            "profile 指向不存在/型別不對/沒選 profile → 照補: " + body
+    with open(_win_cfg, "w") as f:
+        f.write('profile = "x"\n[profiles.x.windows]\nsandbox = "elevated"\n')
+    codex_engine._WINDOWS = False
+    assert codex_engine.build_args("/x/codex", "/ws", env=_win_env) == BASE_ARGV, "非 Windows:argv 逐字不變"
+finally:
+    codex_engine._WINDOWS = _was_windows
+    shutil.rmtree(_win_home)
 os.environ.pop("BLAVE_BROWSER", None)
 assert at.desktop_web(object(), False) is None and at.web_tools_off(None, False) == [], "雲端(不是 LocalSink):不歸這條管"
 codex_engine.run = real_run
@@ -451,6 +495,24 @@ open(MCP_CFG, "w").close()
 run_local_turn(engine="codex", codex_bin=new_codex)
 argv, env = spawned()
 assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in env, "沒 --mcp-config 不掛"
+
+# Windows:TMPDIR 不進 codex——電腦版給的是 8.3 短檔名,unelevated 沙盒比對可寫根時一邊展開一邊沒展開,每個指令都拒跑
+_tmpdir_was = os.environ.get("TMPDIR")
+os.environ["TMPDIR"] = r"C:\Users\ADMINI~1\AppData\Local\Temp"
+_was_windows = codex_engine._WINDOWS
+try:
+    codex_engine._WINDOWS = True
+    run_local_turn(engine="codex", codex_bin=new_codex)
+    assert "TMPDIR" not in spawned()[1], "Windows 不給 codex TMPDIR"
+    codex_engine._WINDOWS = False
+    run_local_turn(engine="codex", codex_bin=new_codex)
+    assert spawned()[1].get("TMPDIR") == os.environ["TMPDIR"], "macOS / Linux 照舊"
+finally:
+    codex_engine._WINDOWS = _was_windows
+    if _tmpdir_was is None:
+        os.environ.pop("TMPDIR")
+    else:
+        os.environ["TMPDIR"] = _tmpdir_was
 
 chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG)
 assert chunks[-1]["type"] == "done", chunks

@@ -2548,17 +2548,17 @@ msgstr "Records are kept for 25 months. Anything that can’t be sent is dropped
 msgid "priv.kept"
 msgstr "Records sent before you turned this off are still kept for 25 months."
 
-msgid "priv.id"
+msgid "about.id"
 msgstr "Installation ID"
 
-msgid "priv.idCopy"
+msgid "about.idCopy"
 msgstr "Copy"
 
-msgid "priv.idCopied"
+msgid "about.idCopied"
 msgstr "Copied"
 
-msgid "priv.idNote"
-msgstr "Include this ID when you email us to delete the usage data sent from this computer."
+msgid "about.idNote"
+msgstr "Include this ID when you report a problem or ask us to delete the usage data sent from this computer."
 
 msgid "cx.apiKey"
 msgstr "API Key"

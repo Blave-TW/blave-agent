@@ -8,7 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **Windows 上 Codex 引擎的 shell 指令全被擋(`codex_engine.build_args`)**:codex 0.160 在 Windows、沒設定沙盒模式、workspace-write、approval=never 同時成立時,每一條 shell 指令都是 Forbidden(stderr `rejected: blocked by policy`,`core/src/exec_policy.rs`);選沙盒模式的 setup 只有 TUI 會跑,只用 `codex exec` 的用戶永遠碰不到。現在 Windows 上多帶 `-c windows.sandbox="unelevated"`(restricted token + ACL,不提權、不改系統設定);用戶 `config.toml`(`$CODEX_HOME` 或 `~/.codex`)已設 `windows.sandbox`,或舊鍵 `features.windows_sandbox`／`features.windows_sandbox_elevated`／`enable_experimental_windows_sandbox` 時不帶(`-c` 會蓋過設定,不把 elevated 的人降級);頂層 `profile = "x"` 指到的 `[profiles.x]` 底下設了同樣的鍵也算(稽核 P2-2),profile 名稱不存在或型別不對當作沒設;讀不了 config 照帶。macOS／Linux 的 argv 不變。測試機(codex 0.160.0,RDP session)實跑:帶旗標兩條指令 exit 0,拿掉旗標同一 prompt 被 policy 擋。測試 `tests/check_codex_engine.py` 4c 節。
+
+- **Windows 電腦版的 Codex 回合每條 shell 指令仍被沙盒拒跑(`codex_engine.run`)**:電腦版給子行程 `TMPDIR=os.tmpdir()`,Windows 上那是 8.3 短檔名(`C:\Users\ADMINI~1\...`)。codex 0.160 unelevated 沙盒把權限設定的可寫根(`TMPDIR` 經 canonicalize 展開成長檔名)跟舊版投影(`TMPDIR` 原樣)逐字比對,不一致就整條拒跑:`windows unelevated restricted-token sandbox cannot enforce split writable root sets directly; refusing to run unsandboxed`(`sandboxing/src/windows.rs`),沙盒 log 連 START 都沒有。直接跑 `codex exec` 的環境沒有 `TMPDIR`,所以重現不出來。現在 Windows 上 spawn codex 前拔掉 `TMPDIR`(POSIX 慣例;Windows 沙盒自己會把 `TEMP`／`TMP` 設成可寫,`windows-sandbox-rs/src/allow.rs`)。macOS／Linux 不變。測試機(codex 0.160.0,session 2、無 console 父行程+`CREATE_NO_WINDOW`、照 `childEnv` 組的環境)實跑:短檔名 `TMPDIR` 重現拒跑;換長檔名即通過;修正後的 `run()` 讀檔與 `tempfile` 寫入都 exit 0。測試 `tests/check_codex_engine.py`。
 
 ## 1.1.111 — 2026-10-03(desktop 0.1.13)
 
