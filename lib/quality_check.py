@@ -368,7 +368,11 @@ def _check_plot_series(tree: ast.AST) -> list[dict]:
         trigger[0],
         f"indicator-driven Type A strategy ({trigger[1]}) without PLOT_SERIES — "
         "the backtest tab's trade chart gets no indicator line, so the user cannot see "
-        "why it traded. " + _PLOT_SERIES_FIX,
+        "why it traded. Downloaded library strategy installed as is, or the baseline run of a "
+        "fresh fork: do not edit it — run it unchanged and tell the user the chart will have no "
+        "indicator line (references/marketplace.md, step 7 of the install flow / step 5 of the "
+        "fork flow). A strategy you wrote or are editing: "
+        + _PLOT_SERIES_FIX,
     )]
 
 
@@ -693,5 +697,8 @@ if __name__ == "__main__":
         print("❌ CRITICAL issues — do NOT run/submit this strategy without fixing them.")
         sys.exit(2)
     else:
-        print("⚠️  Warnings only — confirm with user before running/submitting.")
+        print("⚠️  Warnings only. Downloaded library strategy installed as is, or the baseline "
+              "run of a fresh fork: run it unchanged and mention each warning in the reply "
+              "(references/marketplace.md, step 7 of the install flow / step 5 of the fork flow). "
+              "Otherwise confirm with user before running/submitting.")
         sys.exit(1)

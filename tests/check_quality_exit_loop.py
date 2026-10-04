@@ -283,5 +283,39 @@ check(rc == 0 and wrote and "hand-written exit loop" not in out,
       f"the same strategy on apply_exits: finishes, no exit-loop warning (rc={rc})")
 shutil.rmtree(WS)
 
+# PLOT_SERIES warning vs references/marketplace.md install-flow step 7 / fork step 5 (run as is): Codex
+# stopped an install when the warning read as an unconditional "declare it", so the library
+# exception must come before the fix instruction, in the warning and in AGENTS.md.
+from lib.quality_check import _check_plot_series
+pw = _check_plot_series(ast.parse('SYMBOL = "BTCUSDT"\ndef compute_signals(df):\n    return df.close.rolling(5).mean()\n'))
+msg = pw[0]["msg"] if pw else ""
+check("library strategy installed as is, or the baseline run of a fresh fork: do not edit" in msg.lower()
+      and "step 7 of the install flow / step 5 of the fork flow" in msg
+      and msg.lower().index("do not edit") < msg.index("Declare the"),
+      "PLOT_SERIES warning names the downloaded-library exception before the fix instruction")
+with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+    f.write('SYMBOL = "BTCUSDT"\nFEE = 0.0005\ndef compute_signals(df):\n    return df.close.rolling(5).mean()\n')
+r = subprocess.run([sys.executable, os.path.join(ROOT, "lib", "quality_check.py"), f.name], capture_output=True, text=True)
+os.unlink(f.name)
+check(r.returncode == 1 and "baseline run of a fresh fork: run it unchanged" in r.stdout
+      and "step 7 of the install flow / step 5 of the fork flow" in r.stdout
+      and r.stdout.index("fresh fork") < r.stdout.index("Otherwise confirm"),
+      "CLI exit-1 footer does not tell a library install to stop and ask")
+agents_lines = open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read().splitlines()
+agents = [l for l in agents_lines if "MUST declare `PLOT_SERIES`" in l]
+check(len(agents) == 1 and "you write or edit" in agents[0] and "step 7 of the install flow / step 5 of the fork flow" in agents[0]
+      and "when installing a library strategy as is" in agents[0] and "fresh fork's baseline" in agents[0] and "only if the user asks" in agents[0],
+      "AGENTS.md PLOT_SERIES rule is scoped to own strategies, library installs → marketplace step 7, later user edits allowed")
+report = [l for l in agents_lines if l.startswith("- **Reporting a backtest")]
+check(len(report) == 1 and "you wrote or edited: add `PLOT_SERIES` or ask" in report[0]
+      and "installed as is" in report[0] and "fresh fork's baseline" in report[0] and "step 7 of the install flow / step 5 of the fork flow" in report[0]
+      and "chart → add `PLOT_SERIES` or ask" not in report[0],
+      "AGENTS.md › Reporting a backtest: add-or-ask only for own strategies, library installs → marketplace step 7")
+mk = open(os.path.join(ROOT, "references", "marketplace.md"), encoding="utf-8").read()
+fork5 = mk[mk.index("5. **Run the baseline backtest immediately**"):]
+fork5 = fork5[:fork5.index("\n")]
+check("quality exit 1: run the baseline anyway" in fork5 and "do not stop to ask" in fork5,
+      "marketplace fork step 5: quality exit 1 runs the baseline instead of falling back to 'confirm with user'")
+
 print("all ok" if not fails else "FAILED")
 sys.exit(1 if fails else 0)
