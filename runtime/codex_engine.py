@@ -294,14 +294,22 @@ def _windows_sandbox_flags(env):
             doc = tomllib.load(f)
     except (ImportError, OSError, ValueError):
         return _WINDOWS_SANDBOX
-    windows = doc.get("windows")
-    features = doc.get("features")
-    if (isinstance(windows, dict) and "sandbox" in windows) \
-            or (isinstance(features, dict)
-                and ("windows_sandbox" in features or "windows_sandbox_elevated" in features)) \
-            or "enable_experimental_windows_sandbox" in doc:
+    # The active profile's table counts too: `profile = "x"` + `[profiles.x.windows]` is a
+    # choice as real as the top-level one. A name that is missing or not a table = not set.
+    profiles, name = doc.get("profiles"), doc.get("profile")
+    active = profiles.get(name) if isinstance(profiles, dict) and isinstance(name, str) else None
+    if _sandbox_set(doc) or (isinstance(active, dict) and _sandbox_set(active)):
         return ()
     return _WINDOWS_SANDBOX
+
+
+def _sandbox_set(table):
+    windows = table.get("windows")
+    features = table.get("features")
+    return (isinstance(windows, dict) and "sandbox" in windows) \
+        or (isinstance(features, dict)
+            and ("windows_sandbox" in features or "windows_sandbox_elevated" in features)) \
+        or "enable_experimental_windows_sandbox" in table
 
 
 def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_url=None,
