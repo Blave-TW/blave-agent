@@ -112,10 +112,12 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
 
 | Model | input | cache write | cache read | output |
 |---|---|---|---|---|
-| Haiku | 40 | 50 | 4 | 200 |
-| Sonnet (default) | 120 | 150 | 12 | 600 |
-| Opus | 200 | 250 | 20 | 1000 |
-| Fable | 400 | 500 | 40 | 2000 |
+| Haiku 4.5 | 40 | 50 | 4 | 200 |
+| Sonnet 5.5 / Sonnet 5 (default Claude) | 80 | 100 | 8 | 400 |
+| Opus 5.5 | 160 | 200 | 8 | 800 |
+| Fable 5.1 | 400 | 500 | 10 | 2000 |
+| Opus 4.8 (legacy) | 200 | 250 | 20 | 1000 |
+| Fable 5 (legacy) | 400 | 500 | 40 | 2000 |
 | deepseek-v4-flash | 8.25 | 8.25 | 0.275 | 24.75 |
 | deepseek-v4-pro | 24.75 | 24.75 | 0.825 | 74.25 |
 
@@ -125,7 +127,8 @@ write, cache read, output). Prices are TWD per 1M tokens (`LLM_PRICING`):
 - **Web search: 0.4 TWD per search, Claude models only** (Anthropic server-side tool). DeepSeek
   paths never bill it.
 - Model match order (`_get_llm_pricing`): `deepseek-v4-pro` → any other `deepseek` (flash) →
-  `haiku` → `opus` → `fable` → otherwise Sonnet. Switching is per session and applies from the
+  `haiku` → `opus-5-5` → any other `opus` (legacy price) → `fable-5-1` → any other `fable`
+  (legacy price) → otherwise Sonnet. Legacy ids still work at their own (older) price. Switching is per session and applies from the
   next message (`references/models.md`).
 - Free trial: LLM usage draws from a separate 100 TWD allowance instead of the balance; when the
   allowance is used up the proxy refuses further model calls until the trial ends.
