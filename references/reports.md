@@ -138,7 +138,9 @@ writes the pictures before the JSON, in the order the drop dir requires. For
 
 **The write is the finish line.** Once the JSON is in the drop dir the report is
 produced and you are done — tell the user it has been produced and will show up in the
-Reports list (「報告」 in the workspace sidebar) shortly, then move on. **The chat reply is one
+Reports list (「報告」 in the workspace sidebar) within about two minutes, then move on.
+Never say it is already in the list: the upload has not run yet, and the platform can
+still refuse it. **The chat reply is one
 or two sentences: the conclusion and the one thing to watch.** The report is the record; do not
 restate it in chat — no bullet list, no figure the report already shows (its lead and KPI row
 are right there), no status line about the run (「Published successfully.」). In the desktop app
@@ -155,7 +157,8 @@ upload working, not a failure. If you need the document again, open
 or you have reason to think it was refused. That is the failure worth knowing about: a
 report whose format the api rejects moves to `reports/failed/` with the reason appended
 to `reports/upload_errors.log` (the message names the offending field path), and it will
-never arrive on its own. `'unknown'` is not a failure — it also means "sent a while ago
+never arrive on its own. You do not have to go looking: the runtime puts a refused
+report in front of you at the start of your next turn — tell the user then. `'unknown'` is not a failure — it also means "sent a while ago
 and already pruned from `sent/`".
 
 Old BlaveClaw machines (pre-Blave-Agent runtime) have no uploader; files just
