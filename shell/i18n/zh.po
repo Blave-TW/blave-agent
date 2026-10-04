@@ -108,6 +108,10 @@ msgstr "上一輪還在跑，結束後再按 Enter 送出。"
 msgid "ws.sugGroup"
 msgstr "建議下一步"
 
+# 建議列右上角的關閉 ×(aria-label);逐字同 web workspace_sug_close
+msgid "ws.sugClose"
+msgstr "關閉建議"
+
 msgid "ws.send"
 msgstr "送出"
 

@@ -314,7 +314,12 @@
              .is-closed 與 inert 同進退,預設收合;小標與 group 的 aria-label 同字,小標 aria-hidden,讀屏只念一份 -->
         <div class="sug-wrap is-closed" id="sug-wrap" inert>
           <div class="sug" role="group" data-i18n-aria="ws.sugGroup">
-            <div class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"></div>
+            <!-- 關閉 × 不能放進小標(小標 aria-hidden,讀屏會看不到)。兩個包在 .sug-head:收合時 .sug 往下縮、內容從頂端被裁,
+                 × 釘在 .sug 頂端的話會留在畫面上滑過建議列;釘在 head 才會跟小標一起被裁掉 -->
+            <div class="sug-head">
+              <div class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"></div>
+              <button type="button" class="sug-close" id="sug-close" data-i18n-aria="ws.sugClose">✕</button>
+            </div>
             <div class="sug-rows" id="sug-rows"></div>
           </div>
         </div>
