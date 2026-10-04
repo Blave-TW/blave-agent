@@ -496,6 +496,24 @@ run_local_turn(engine="codex", codex_bin=new_codex)
 argv, env = spawned()
 assert not any("mcp_servers" in a for a in argv) and "BLAVE_MCP_TOKEN" not in env, "沒 --mcp-config 不掛"
 
+# Windows:TMPDIR 不進 codex——電腦版給的是 8.3 短檔名,unelevated 沙盒比對可寫根時一邊展開一邊沒展開,每個指令都拒跑
+_tmpdir_was = os.environ.get("TMPDIR")
+os.environ["TMPDIR"] = r"C:\Users\ADMINI~1\AppData\Local\Temp"
+_was_windows = codex_engine._WINDOWS
+try:
+    codex_engine._WINDOWS = True
+    run_local_turn(engine="codex", codex_bin=new_codex)
+    assert "TMPDIR" not in spawned()[1], "Windows 不給 codex TMPDIR"
+    codex_engine._WINDOWS = False
+    run_local_turn(engine="codex", codex_bin=new_codex)
+    assert spawned()[1].get("TMPDIR") == os.environ["TMPDIR"], "macOS / Linux 照舊"
+finally:
+    codex_engine._WINDOWS = _was_windows
+    if _tmpdir_was is None:
+        os.environ.pop("TMPDIR")
+    else:
+        os.environ["TMPDIR"] = _tmpdir_was
+
 chunks = run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG)
 assert chunks[-1]["type"] == "done", chunks
 argv, env = spawned()

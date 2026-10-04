@@ -512,6 +512,14 @@ async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_don
         env = {k: v for k, v in env.items() if k not in (MCP_TOKEN_ENV, "BLAVE_MCP_URL")}
     if not browser_url:
         env = {k: v for k, v in env.items() if k not in (BROWSER_TOKEN_ENV, "BLAVE_BROWSER_URL")}
+    if _WINDOWS:
+        # The unelevated sandbox refuses every command ("cannot enforce split writable root sets")
+        # when TMPDIR is an 8.3 path (os.tmpdir() gives C:\Users\ADMINI~1\...): the split policy
+        # canonicalizes it (protocol/src/permissions.rs normalize_effective_absolute_path), the
+        # legacy SandboxPolicy keeps it raw (protocol.rs), and codex 0.160 compares the two root
+        # sets verbatim (sandboxing/src/windows.rs). TMPDIR is a POSIX name; the Windows sandbox
+        # already makes TEMP / TMP writable on its own (windows-sandbox-rs/src/allow.rs).
+        env = {k: v for k, v in env.items() if k.upper() != "TMPDIR"}
     proc = await asyncio.create_subprocess_exec(
         *build_args(codex_bin, cwd, model, effort, mcp_url, browser_url, web_search_off, env),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
