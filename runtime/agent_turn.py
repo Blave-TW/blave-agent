@@ -544,6 +544,18 @@ _REPORT_FAIL_MAX_LINES = 3
 _REPORT_FAIL_ERROR_CHARS = 300
 
 
+_REPORT_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_CTRL_RE = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]+")
+
+
+def _prompt_safe(text, cap):
+    """嵌進 [...] 事實行的外來字串:控制字元與換行換空白、`]` 跳脫,免得一個標題就把
+    事實行收尾、後面接成看起來像系統指示的文字。"""
+    if not isinstance(text, str):
+        return ""
+    return _CTRL_RE.sub(" ", text).strip()[:cap].replace("]", "\\]")
+
+
 def _report_failures_line(now=None):
     """還沒講過的拒收報告一行機器事實(沒有就空字串)。fail-silent,同 _image_quota_line。"""
     try:
@@ -557,9 +569,10 @@ def _report_failures_line(now=None):
             return ""
         items = []
         for f in fresh[:_REPORT_FAIL_MAX_LINES]:
-            title = f.get("title")
-            name = f"「{title[:80]}」({f['id']})" if isinstance(title, str) and title else f["id"]
-            items.append(f"{name}:{str(f.get('error') or '')[:_REPORT_FAIL_ERROR_CHARS]}")
+            title = _prompt_safe(f.get("title"), 80)
+            rid = f["id"] if _REPORT_ID_RE.fullmatch(f["id"]) else "(檔名不合法)"
+            name = f"「{title}」({rid})" if title else rid
+            items.append(f"{name}:{_prompt_safe(f.get('error'), _REPORT_FAIL_ERROR_CHARS)}")
         more = f";另有 {len(fresh) - _REPORT_FAIL_MAX_LINES} 份" if len(fresh) > _REPORT_FAIL_MAX_LINES else ""
         # 只留還在 failed/ 的,told 檔不隨歷史變大
         told = {f["id"]: f["at"] for f in live if told.get(f["id"]) == f["at"]}
@@ -1483,7 +1496,9 @@ def version_restore_note(since):
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None, viewing_widgets=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
-                 version_note=None, desktop=False):
+                 version_note=None, desktop=False, report_fail_line=None):
+    """`report_fail_line`:run_turn 每回合算一次傳進來(排程回合傳 "",續跑沿用同一行);
+    None = 這裡自己算(測試與其他呼叫端)。"""
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -1596,7 +1611,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     quota_line = _image_quota_line()
     if quota_line:
         parts.append(quota_line)
-    report_fail_line = _report_failures_line()
+    if report_fail_line is None:
+        report_fail_line = _report_failures_line()
     if report_fail_line:
         parts.append(report_fail_line)
     # 語言錨放**真正的最尾端**(recency 權重最大)且由 code 偵測、給「針對性」指令:
@@ -3906,13 +3922,16 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     except Exception as e:
         print(f"[agent_turn] version note skipped: {type(e).__name__}", file=sys.stderr)
         version_note = None
+    # 排程回合沒人在場:講了沒人聽,還會把「講過了」記掉,用戶在對話裡就再也聽不到。
+    # 只算一次:_report_failures_line 會寫 told 標記,續跑重建 prompt 時再算就是空的
+    report_fail_line = "" if isinstance(sink, ReportSink) else _report_failures_line()
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
                           viewing_view=viewing_view, viewing_widgets=viewing_widgets,
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
                           lang_basis=lang_msg, version_note=version_note,
-                          desktop=_desktop_surface(sink))
+                          report_fail_line=report_fail_line, desktop=_desktop_surface(sink))
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -4290,6 +4309,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
                                   version_note=version_note,
+                                  report_fail_line=report_fail_line,
                                   desktop=_desktop_surface(sink))
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
