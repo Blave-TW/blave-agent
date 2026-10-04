@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.113 — 2026-10-04
+
 - **報告被永久拒收不再靜默(`report_uploader`、`strategy_reporter`、`agent_turn`;要 api 先上)**:uploader 判死一份報告(api 400/413,或沒打到 api 就失敗:壞 JSON、sidecar 缺圖、本地預檢)時另記一筆事實到 `state/report_failures.json`(`origin` = api／machine,同 id 上傳成功即清;看盤板不記);`strategy_reporter` 把 `reports/failed/` 裡還在的那些搭 manifest 便車送 `report_failures`(最多 20 筆,讀失敗整欄省略),api 存起來給報告清單畫「上傳失敗」,machine 那種由平台發 P2 `report_rejected`;agent 下一回合開頭注入一行機器事實(每筆 `(id, at)` 只講一次,told 檔 `state/report_failures_told.json`;排程回合(ReportSink)不注入也不記標記,空回覆續跑沿用第一次算出的那一行;標題、原因裡的控制字元換空白、`]` 跳脫,不合法的檔名寫成「檔名不合法」),要它主動告訴用戶哪份沒上架、修好用同一個 id 重寫。測試在 api `tests/check_report_failures.py`。
 
 ## 1.1.112 — 2026-10-04(desktop 0.1.14)
