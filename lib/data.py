@@ -1,6 +1,9 @@
 import os
 import io
 import re
+import collections
+import contextlib
+import itertools
 import csv
 import hashlib
 import json
@@ -3095,13 +3098,30 @@ def fetch_twstock_market_value_all(headers, top=None):
 
 
 # Retry passes for ids the server could not fetch: smaller chunks, longer waits. The first
-# pass sends _FUNDAMENTAL_BATCH_WORKERS requests at once: these datasets are read from the
+# pass keeps up to _FUNDAMENTAL_BATCH_WORKERS requests in flight: these datasets are read from the
 # api's own whole-market store (no FinMind quota behind them), and a whole-market run is
 # ~40 requests per dataset against the 500 / 5 min per-IP and per-key limit, which counts
 # requests, not concurrency. Retry passes stay one request at a time — they only run when
 # the server is already struggling.
 _FUNDAMENTAL_RETRY_PASSES = ((50, 0), (10, 10), (5, 30))
 _FUNDAMENTAL_BATCH_WORKERS = 4
+
+
+def _in_order(fn, items, workers):
+    """fn over items with at most `workers` calls in flight, results yielded in input
+    order. Closing the generator (the caller raised) stops handing out new calls; only
+    the ones already in flight finish."""
+    if workers <= 1:
+        yield from map(fn, items)
+        return
+    it = iter(items)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        window = collections.deque(pool.submit(fn, x) for x in itertools.islice(it, workers))
+        while window:
+            done = window.popleft().result()
+            for x in itertools.islice(it, 1):
+                window.append(pool.submit(fn, x))
+            yield done
 
 
 def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers, types=None):
@@ -3152,39 +3172,40 @@ def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers, types=None):
             print(f'  [batch] {endpoint}: retrying {len(pending)} failed ids in {wait}s')
             time.sleep(wait)
         chunks = [pending[i:i + chunk_size] for i in range(0, len(pending), chunk_size)]
-        if pass_no == 0 and len(chunks) > 1:
-            with ThreadPoolExecutor(max_workers=_FUNDAMENTAL_BATCH_WORKERS) as pool:
-                answers = list(pool.map(_request, chunks))
-        else:
-            answers = map(_request, chunks)   # lazy: a raise stops the remaining requests
+        workers = _FUNDAMENTAL_BATCH_WORKERS if pass_no == 0 else 1
         failed, answered = [], False
-        for chunk, body in zip(chunks, answers):
-            if isinstance(body, DataAccessError):
-                raise body
-            if isinstance(body, requests.HTTPError):
-                status = getattr(body.response, 'status_code', None)
-                if status is not None and status < 500 and status != 429:
-                    raise body   # bad request / auth: retrying cannot change the answer
-                failed.extend(chunk)
-                continue
-            if isinstance(body, (requests.RequestException, ValueError)):
-                failed.extend(chunk)
-                continue
-            if isinstance(body, BaseException):
-                raise body
-            answered = True
-            server_failed = set(body.get('failed') or ())
-            failed.extend(sid for sid in chunk if sid in server_failed)
-            for sid, records in (body.get('data') or {}).items():
-                if not records or sid in server_failed:
+        with contextlib.closing(_in_order(_request, chunks, workers)) as answers:
+            for chunk, body in zip(chunks, answers):
+                if isinstance(body, DataAccessError):
+                    raise body
+                if isinstance(body, requests.HTTPError):
+                    status = getattr(body.response, 'status_code', None)
+                    if status is not None and status < 500 and status != 429:
+                        raise body   # bad request / auth: retrying cannot change the answer
+                    failed.extend(chunk)
                     continue
-                df = pd.DataFrame(records)
-                df['date'] = pd.to_datetime(df['date'])
-                df = _only_types(df.set_index('date').sort_index(), types)
-                if df.empty:
+                if isinstance(body, (requests.RequestException, ValueError)):
+                    failed.extend(chunk)
                     continue
-                _save_fundamental_cache(_fundamental_cache_path(prefix, sid, types), df)
-                results[sid] = df
+                if isinstance(body, BaseException):
+                    raise body
+                answered = True
+                server_failed = set(body.get('failed') or ())
+                failed.extend(sid for sid in chunk if sid in server_failed)
+                for sid, records in (body.get('data') or {}).items():
+                    if not records or sid in server_failed:
+                        continue
+                    df = pd.DataFrame(records)
+                    df['date'] = pd.to_datetime(df['date'])
+                    df = df.set_index('date').sort_index()
+                    if types and not df['type'].isin(types).all():
+                        # an api that predates `types` sent every item: that is the full frame
+                        _save_fundamental_cache(_fundamental_cache_path(prefix, sid), df)
+                        df = _only_types(df, types)
+                    if df.empty:
+                        continue
+                    _save_fundamental_cache(_fundamental_cache_path(prefix, sid, types), df)
+                    results[sid] = df
         pending = failed
         if not answered:
             # Every request already exhausted _retry_get's backoff: the server is not

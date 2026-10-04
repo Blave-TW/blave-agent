@@ -1,9 +1,11 @@
 """_fetch_fundamental_batch: parallel first pass and statement `types=`.
 
-Pins: the 4-way first pass returns exactly what a one-at-a-time pass returns, and a failed
-chunk is still retried serially / raised; `types=` is sent to the api, cut locally again
-(an api that ignores it answers every item), cached under its own file — a later full read
-never sees the subset — and served from a fresh full cache file without a request.
+Pins: the 4-way first pass returns exactly what a one-at-a-time pass returns, never has more
+than 4 requests out, stops handing out requests after a 4xx, and a failed chunk is still
+retried serially / raised; `types=` is sent to the api, cut locally again (an api that ignores
+it answers every item — that answer is kept as the full cache file), the subset cached under
+its own file — a later full read never sees the subset — and served from a fresh full cache
+file without a request.
 No network. Run: cd blave-agent && .venv/bin/python tests/check_fundamental_batch_types.py
 """
 import os, shutil, sys, tempfile, threading, time
@@ -67,6 +69,10 @@ par = d.fetch_twstock_balance_sheet_batch(IDS, {})
 check(sorted(par) == sorted(serial) and len(par) == 160
       and all(par[s].equals(serial[s]) for s in serial), "4-way first pass returns the same frames as serial")
 check(peak[0] > 1 and len(calls) == 4, f"first pass really overlaps ({peak[0]} in flight, {len(calls)} calls)")
+reset()
+d._retry_get = fake(all_rows, delay=0.05)
+d.fetch_twstock_balance_sheet_batch([str(5000 + i) for i in range(500)], {})
+check(len(calls) == 10 and 1 < peak[0] <= 4, f"10 chunks, never more than 4 in flight ({peak[0]})")
 
 # 2. failed ids across parallel chunks → retried one request at a time, then raised
 reset()
@@ -95,19 +101,19 @@ d._retry_get = fake(flaky)
 out = d.fetch_twstock_financials_batch(IDS[:160], {})
 check(len(out) == 160, "a timed-out chunk is retried and the result is complete")
 
-# 4. a 4xx in any parallel chunk is raised
+# 4. a 4xx in any parallel chunk is raised, and no new request goes out after it
 reset()
 class _Resp: status_code = 400
 def bad(ids, t):
-    if "1100" in ids:
+    if "5000" in ids:
         raise requests.HTTPError("400", response=_Resp())
     return all_rows(ids, t)
-d._retry_get = fake(bad)
+d._retry_get = fake(bad, delay=0.05)
 try:
-    d.fetch_twstock_financials_batch(IDS[:160], {})
+    d.fetch_twstock_financials_batch([str(5000 + i) for i in range(500)], {})
     check(False, "4xx → raises")
 except requests.HTTPError:
-    check(len(calls) == 4, "4xx in one chunk → raised, no retry pass")
+    check(len(calls) <= 5, f"4xx in the first chunk → raised, the other 9 chunks mostly never sent ({len(calls)} calls)")
 
 # 5. types: sent, cut locally against an api that ignores it, cached apart from the full file
 reset()
@@ -116,18 +122,35 @@ sub = d.fetch_twstock_balance_sheet_batch(["2330", "9999"], {}, types=["Equity"]
 check(calls[0][1] == "Equity", f"types sent to the api ({calls[0][1]})")
 check(list(sub) == ["2330"] and set(sub["2330"]["type"]) == {"Equity"} and len(sub["2330"]) == 2,
       "old api answered every item → only Equity rows returned")
-check(not (TMP / "twstock_bs_2330.parquet").exists(), "subset never written under the full cache name")
+check(len(d.pd.read_parquet(TMP / "twstock_bs_2330.parquet")) == 3,
+      "old api's every-item answer kept as the full cache file (all 3 rows, not the subset)")
+calls.clear()
 full = d.fetch_twstock_balance_sheet_batch(["2330"], {})
-check(calls[-1][1] is None and len(full["2330"]) == 3, "later full read refetches and gets every item")
+check(not calls and len(full["2330"]) == 3, "later full read served from that file, every item")
 calls.clear()
 again = d.fetch_twstock_balance_sheet_batch(["2330"], {}, types=("Equity",))
 check(not calls and again["2330"].equals(sub["2330"]), "fresh full cache → subset cut locally, no request")
 none_ = d.fetch_twstock_balance_sheet_batch(["2330"], {}, types="EPS")
 check(not calls and none_ == {}, "full cache without the item → absent, no request")
 
-# 6. a subset cache serves the same subset, any order / duplicates
+# 6. an api that honours types: subset cached apart, full file never written
 reset()
-d._retry_get = fake(all_rows)
+def honours(ids, t):
+    keep = set(t.split(",")) if t else None
+    return _R({"data": {s: [r for r in rows(s) if keep is None or r["type"] in keep] for s in ids},
+               "failed": []})
+d._retry_get = fake(honours)
+sub = d.fetch_twstock_balance_sheet_batch(["2330"], {}, types=["Equity"])
+check(len(sub["2330"]) == 2 and not (TMP / "twstock_bs_2330.parquet").exists(),
+      "new api's subset answer never written under the full cache name")
+calls.clear()
+full = d.fetch_twstock_balance_sheet_batch(["2330"], {})
+check(len(calls) == 1 and calls[0][1] is None and len(full["2330"]) == 3,
+      "later full read refetches without types and gets every item")
+
+# 7. a subset cache serves the same subset, any order / duplicates
+reset()
+d._retry_get = fake(honours)
 d.fetch_twstock_financials_batch(["2330"], {}, types=["TotalAssets", "Equity"])
 calls.clear()
 hit = d.fetch_twstock_financials_batch(["2330"], {}, types=["Equity", "TotalAssets", "Equity"])
@@ -135,7 +158,7 @@ check(not calls and len(hit["2330"]) == 3, "subset cache hit regardless of order
 other = d.fetch_twstock_financials_batch(["2330"], {}, types=["Equity"])
 check(len(calls) == 1 and len(other["2330"]) == 2, "a different subset is its own cache entry")
 
-# 7. validation
+# 8. validation
 for badt in ([], ["a,b"], ["x" * 101], [f"T{i}" for i in range(51)]):
     try:
         d.fetch_twstock_financials_batch(["2330"], {}, types=badt)

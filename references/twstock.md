@@ -519,7 +519,8 @@ for sid in universe:
 
 Whole market and only a few items needed → pass `types=` (the balance sheet is ~110 items per
 stock, most of the download): `fetch_twstock_balance_sheet_batch(universe, hdrs, types=['Equity'])`.
-Only those `type` rows come back; the full frame's cache is untouched.
+Only those `type` rows come back; the full frame's cache is untouched. At most 50 names per
+call; an empty list raises `ValueError` (pass `None` for every item).
 
 損益表 key types：`Revenue`、`GrossProfit`、`OperatingIncome`、`IncomeAfterTaxes`、`EPS`
 
