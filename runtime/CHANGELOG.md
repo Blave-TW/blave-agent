@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **報告被永久拒收不再靜默(`report_uploader`、`strategy_reporter`、`agent_turn`;要 api 先上)**:uploader 判死一份報告(api 400/413,或沒打到 api 就失敗:壞 JSON、sidecar 缺圖、本地預檢)時另記一筆事實到 `state/report_failures.json`(`origin` = api／machine,同 id 上傳成功即清;看盤板不記);`strategy_reporter` 把 `reports/failed/` 裡還在的那些搭 manifest 便車送 `report_failures`(最多 20 筆,讀失敗整欄省略),api 存起來給報告清單畫「上傳失敗」,machine 那種由平台發 P2 `report_rejected`;agent 下一回合開頭注入一行機器事實(每筆 `(id, at)` 只講一次,told 檔 `state/report_failures_told.json`),要它主動告訴用戶哪份沒上架、修好用同一個 id 重寫。測試在 api `tests/check_report_failures.py`。
+
 ## 1.1.112 — 2026-10-04(desktop 0.1.14)
 
 - **Windows 上 Codex 引擎的 shell 指令全被擋(`codex_engine.build_args`)**:codex 0.160 在 Windows、沒設定沙盒模式、workspace-write、approval=never 同時成立時,每一條 shell 指令都是 Forbidden(stderr `rejected: blocked by policy`,`core/src/exec_policy.rs`);選沙盒模式的 setup 只有 TUI 會跑,只用 `codex exec` 的用戶永遠碰不到。現在 Windows 上多帶 `-c windows.sandbox="unelevated"`(restricted token + ACL,不提權、不改系統設定);用戶 `config.toml`(`$CODEX_HOME` 或 `~/.codex`)已設 `windows.sandbox`,或舊鍵 `features.windows_sandbox`／`features.windows_sandbox_elevated`／`enable_experimental_windows_sandbox` 時不帶(`-c` 會蓋過設定,不把 elevated 的人降級);頂層 `profile = "x"` 指到的 `[profiles.x]` 底下設了同樣的鍵也算(稽核 P2-2),profile 名稱不存在或型別不對當作沒設;讀不了 config 照帶。macOS／Linux 的 argv 不變。測試機(codex 0.160.0,RDP session)實跑:帶旗標兩條指令 exit 0,拿掉旗標同一 prompt 被 policy 擋。測試 `tests/check_codex_engine.py` 4c 節。

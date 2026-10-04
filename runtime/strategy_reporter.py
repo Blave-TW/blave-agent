@@ -82,6 +82,12 @@ _IMG_UPLOAD_BUDGET_SEC = 30
 # record_image_quota() for why this one failure is worth persisting and
 # agent_turn._image_quota_line() for when it is allowed to be mentioned.
 IMG_QUOTA_PATH = os.path.join(STATE_DIR, "strategy_image_quota.json")
+# 報告被永久拒收的事實:report_uploader 寫({id: {at, title, error, origin}})、本模組捎給
+# 平台(manifest 的 report_failures)、agent_turn 讓 agent 下一輪講。路徑只定義在這裡,
+# 理由同 IMG_QUOTA_PATH:三個 process 都已經 import 這支輕模組。
+REPORT_FAILURES_PATH = os.path.join(STATE_DIR, "report_failures.json")
+REPORT_FAILED_DIR = os.path.join(WORKSPACE, "reports", "failed")
+REPORT_FAILURES_MAX = 20
 API_URL = os.environ.get(
     "BLAVE_STRATEGIES_URL", "https://api.blave.org/openclaw/agent/strategies"
 )
@@ -1218,6 +1224,30 @@ def report_schedules():
     return out
 
 
+def report_failures():
+    """The `report_failures` list: reports refused for good that are still sitting in
+    reports/failed/, newest first. An entry whose file is gone (the agent re-sent the id
+    and the uploader cleared it, or someone deleted it by hand) is no longer a failure
+    the user needs to see, so the folder — not the fact file — decides membership."""
+    try:
+        with open(REPORT_FAILURES_PATH, encoding="utf-8") as f:
+            facts = json.load(f)
+    except FileNotFoundError:
+        return []
+    if not isinstance(facts, dict):
+        return []
+    out = []
+    for rid, fact in facts.items():
+        if not isinstance(fact, dict):
+            continue
+        if not os.path.isfile(os.path.join(REPORT_FAILED_DIR, f"{rid}.json")):
+            continue
+        out.append({"id": rid, "at": fact.get("at"), "title": fact.get("title"),
+                    "error": fact.get("error"), "origin": fact.get("origin")})
+    out.sort(key=lambda e: e["at"] if isinstance(e["at"], int) else 0, reverse=True)
+    return out[:REPORT_FAILURES_MAX]
+
+
 # 用戶常駐規則(web「Agent 常駐規則」面板的讀側)。同一個檔
 # agent_turn.preferences_rule() 每輪整份注進 system prompt,agent 自己在對話裡也會
 # 改它;這裡只負責把原文捎給平台,讓 web 顯示得出來(解析成規則陣列在 api 端做)。
@@ -1518,6 +1548,12 @@ def report_cache(strategies, token=None, image_sigs=None, record=True):
         # Omitted, not []: the api reads an absent field as "old runtime, keep what
         # you have" — an empty list would wipe the user's schedule list on a hiccup.
         print(f"[strategy_reporter] report_schedules failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
+    try:
+        payload["report_failures"] = report_failures()
+    except Exception as e:
+        # Omitted, not [], for the same reason: [] would clear the list in the web.
+        print(f"[strategy_reporter] report_failures failed: {type(e).__name__}: {e}",
               file=sys.stderr)
     # 常駐規則的原文。這個 key 在不在,就是 api 端「這台機器支不支援在 web 管理規則」
     # 的旗標——所以 None(讀不動)必須整個省略,不能塞 "" 冒充「沒有規則」。

@@ -616,6 +616,31 @@ def _fail_permanently(report_id, path, message, state, failed_dir=FAILED_DIR,
     state.pop(report_id, None)
 
 
+def _refuse_report(report_id, path, message, state, doc=None, origin="machine"):
+    """報告通道的永久失敗:照 _fail_permanently 歸檔,再記一筆拒收事實。看盤板不走這裡——
+    事實是給報告清單與 agent 用的。origin="api" = api 回 400/413(平台在拒收那一刻已發過
+    report_rejected);"machine" = 沒打到 api 就失敗,平台只能從這筆事實得知。"""
+    _fail_permanently(report_id, path, message, state)
+    title = doc.get("title") if isinstance(doc, dict) else None
+    _record_failure(report_id, message, title if isinstance(title, str) else None, origin)
+
+
+def _record_failure(report_id, message, title, origin):
+    facts = _read_json(strategy_reporter.REPORT_FAILURES_PATH, {})
+    if not isinstance(facts, dict):
+        facts = {}
+    facts[report_id] = {"at": int(time.time()), "title": title, "error": message,
+                        "origin": origin}
+    # failed/ 從不自己清,這份也就不會自己縮:只留最近的,平台與 agent 都只看這麼多
+    if len(facts) > 2 * strategy_reporter.REPORT_FAILURES_MAX:
+        keep = sorted(facts, key=lambda k: (facts[k] or {}).get("at") or 0, reverse=True)
+        facts = {k: facts[k] for k in keep[:2 * strategy_reporter.REPORT_FAILURES_MAX]}
+    try:
+        _write_json(strategy_reporter.REPORT_FAILURES_PATH, facts)
+    except OSError as e:
+        print(f"[report_uploader] {report_id}: failure fact not recorded: {e}", file=sys.stderr)
+
+
 def _defer(report_id, message, state):
     """暫時性失敗：指數退避，上限一小時，不設放棄次數。"""
     entry = state.get(report_id) if isinstance(state.get(report_id), dict) else {}
@@ -698,9 +723,8 @@ def upload_one(report_id, path, state, token, started=None):
     `started` = 這一輪掃描的起點,圖片上傳跟報告 PUT 共用 TICK_BUDGET_S。"""
     started = time.time() if started is None else started
     if not _ID_RE.fullmatch(report_id):
-        _fail_permanently(report_id, path,
-                          "file name is not a valid report id ([A-Za-z0-9_-]{1,64})",
-                          state)
+        _refuse_report(report_id, path,
+                       "file name is not a valid report id ([A-Za-z0-9_-]{1,64})", state)
         return "failed"
     if _quiet_left(report_id, path, time.time()) > 0:
         return "skipped"  # 可能還在寫，留給下一輪（main() 會等滿再掃一次）
@@ -714,10 +738,9 @@ def upload_one(report_id, path, state, token, started=None):
         print(f"[report_uploader] {report_id} not sizeable this tick: {e}", file=sys.stderr)
         return "skipped"
     if size > _READ_MAX_BYTES:
-        _fail_permanently(report_id, path,
-                          f"file is {size} bytes; anything past {_READ_MAX_BYTES} cannot "
-                          f"serialize under the {REPORT_MAX_BYTES} byte ceiling",
-                          state)
+        _refuse_report(report_id, path,
+                       f"file is {size} bytes; anything past {_READ_MAX_BYTES} cannot "
+                       f"serialize under the {REPORT_MAX_BYTES} byte ceiling", state)
         return "failed"
 
     try:
@@ -729,18 +752,18 @@ def upload_one(report_id, path, state, token, started=None):
         print(f"[report_uploader] {report_id} not readable this tick: {e}", file=sys.stderr)
         return "skipped"
     except ValueError as e:  # UnicodeDecodeError：內容不是 UTF-8，重試也不會變
-        _fail_permanently(report_id, path, f"file is not valid UTF-8 ({e})", state)
+        _refuse_report(report_id, path, f"file is not valid UTF-8 ({e})", state)
         return "failed"
     try:
         doc = json.loads(raw)
     except _JSON_ERRORS as e:
-        _fail_permanently(report_id, path, f"file is not valid JSON ({e})", state)
+        _refuse_report(report_id, path, f"file is not valid JSON ({e})", state)
         return "failed"
     if isinstance(doc, dict):
         doc.setdefault("id", report_id)  # 檔名即 id；不一致才拒收，見 check_report
     err = check_report(doc, report_id)
     if err:
-        _fail_permanently(report_id, path, err, state)
+        _refuse_report(report_id, path, err, state, doc)
         return "failed"
     try:
         doc["blocks"], _ = unique_footnotes(doc["blocks"])
@@ -749,14 +772,14 @@ def upload_one(report_id, path, state, token, started=None):
               file=sys.stderr)
     outcome, message = _resolve_images(doc, report_id, started, token)
     if outcome == "permanent":
-        _fail_permanently(report_id, path, message, state)
+        _refuse_report(report_id, path, message, state, doc)
         return "failed"
     if outcome == "retry":
         _defer(report_id, message, state)
         return "deferred"
     body, err = _serialize(doc)
     if err:
-        _fail_permanently(report_id, path, err, state)
+        _refuse_report(report_id, path, err, state, doc)
         return "failed"
 
     try:
@@ -764,7 +787,7 @@ def upload_one(report_id, path, state, token, started=None):
     except urllib.error.HTTPError as e:
         message, permanent = _api_error(e)
         if permanent:
-            _fail_permanently(report_id, path, message, state)
+            _refuse_report(report_id, path, message, state, doc, origin="api")
             return "failed"
         _defer(report_id, message, state)
         return "deferred"
@@ -803,6 +826,14 @@ def _clear_failed(report_id, failed_dir=FAILED_DIR):
     except OSError as e:
         print(f"[report_uploader] {report_id}: stale failed/ copy not removed: {e}",
               file=sys.stderr)
+    facts = _read_json(strategy_reporter.REPORT_FAILURES_PATH, {})
+    if isinstance(facts, dict) and report_id in facts:
+        del facts[report_id]
+        try:
+            _write_json(strategy_reporter.REPORT_FAILURES_PATH, facts)
+        except OSError as e:
+            print(f"[report_uploader] {report_id}: failure fact not cleared: {e}",
+                  file=sys.stderr)
 
 
 def run_once(token=None, started=None):

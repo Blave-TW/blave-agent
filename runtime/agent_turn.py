@@ -533,6 +533,52 @@ def _image_quota_line(now=None):
         return ""
 
 
+# ── 報告被永久拒收 ─────────────────────────────────────────────────────────
+# agent 寫完報告 JSON 就回「做好了」,上傳是回合結束後 uploader 的事;被拒收時那一回合
+# 早就結束了。事實由 report_uploader 寫(strategy_reporter.REPORT_FAILURES_PATH),這裡
+# 只在下一回合講一次:每筆 (id, at) 注入過就記進 told 檔,同 id 再被拒一次 at 會變、會再講。
+# 不設冷卻重講:網頁報告清單同時列著這筆失敗,漏講一次的代價不是整件事靜音。
+_REPORT_FAIL_TOLD_PATH = os.path.join(strategy_reporter.STATE_DIR, "report_failures_told.json")
+_REPORT_FAIL_MAX_AGE_SEC = 7 * 86400  # = api 報告清單顯示失敗的期限
+_REPORT_FAIL_MAX_LINES = 3
+_REPORT_FAIL_ERROR_CHARS = 300
+
+
+def _report_failures_line(now=None):
+    """還沒講過的拒收報告一行機器事實(沒有就空字串)。fail-silent,同 _image_quota_line。"""
+    try:
+        now = now if now is not None else time.time()
+        told = _read_state_json(_REPORT_FAIL_TOLD_PATH)
+        live = strategy_reporter.report_failures()
+        fresh = [f for f in live
+                 if isinstance(f.get("at"), int) and now - f["at"] <= _REPORT_FAIL_MAX_AGE_SEC
+                 and told.get(f["id"]) != f["at"]]
+        if not fresh:
+            return ""
+        items = []
+        for f in fresh[:_REPORT_FAIL_MAX_LINES]:
+            title = f.get("title")
+            name = f"「{title[:80]}」({f['id']})" if isinstance(title, str) and title else f["id"]
+            items.append(f"{name}:{str(f.get('error') or '')[:_REPORT_FAIL_ERROR_CHARS]}")
+        more = f";另有 {len(fresh) - _REPORT_FAIL_MAX_LINES} 份" if len(fresh) > _REPORT_FAIL_MAX_LINES else ""
+        # 只留還在 failed/ 的,told 檔不隨歷史變大
+        told = {f["id"]: f["at"] for f in live if told.get(f["id"]) == f["at"]}
+        told.update({f["id"]: f["at"] for f in fresh})
+        try:
+            os.makedirs(strategy_reporter.STATE_DIR, exist_ok=True)
+            with atomic_file.replacing(_REPORT_FAIL_TOLD_PATH, encoding="utf-8") as f:
+                json.dump(told, f)
+        except OSError:
+            return ""  # 記不下來就不講:寧可漏一次,不要每輪都唸
+        return ("[報告上傳失敗(機器事實,不是推測——伺服器或上傳程式拒收,這些報告沒有進報告清單):"
+                + ";".join(items) + more
+                + "。本回合主動告訴使用者哪份報告沒有上架、原因用白話一句,不貼原文;"
+                "照原因修好後用同一個 id 重寫,上傳成功會自動清掉 reports/failed/ 裡的舊檔。"
+                "修好之前不要再說那份報告已經在清單裡。]")
+    except Exception:
+        return ""
+
+
 # 導航類回合(問怎麼部署/綁定/啟動)把 references/portfolio-steps.md 的步驟腳本段
 # 直接注入:UI 標籤要一字不差,模型自己不會去讀那個檔(29026 實測:啟動下單編出
 # 「運行」分頁、綁定編出「渠道」分頁/「綁定」鈕)——頁面被 ui_nav 開好後錯標籤
@@ -1550,6 +1596,9 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
     quota_line = _image_quota_line()
     if quota_line:
         parts.append(quota_line)
+    report_fail_line = _report_failures_line()
+    if report_fail_line:
+        parts.append(report_fail_line)
     # 語言錨放**真正的最尾端**(recency 權重最大)且由 code 偵測、給「針對性」指令:
     # 系統規則是中文寫的+歷史多為中文,籠統的「跟著使用者語言」擋不住英文訊息被
     # 回成中文/中英混雜(實測兩輪)。必須排在上面所有中文逐輪指令(紅線句、建議句
