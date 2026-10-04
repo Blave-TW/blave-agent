@@ -857,6 +857,10 @@ async function mpInit(kind) {
   mpPaint();
 }
 
+// Codex 的型錄檔(~/.codex/models_cache.json)要等第一次 codex exec 才寫出來:剛裝好的電腦進工作頁時讀到空的,
+// 選擇器就一直藏著。每輪收尾(成功失敗都算,失敗那輪也可能已寫出)再讀一次,讀到就長出來。
+function mpTurnEnd() { if (MP.kind === "codex" && !MP.models.length) mpInit("codex"); }
+
 function mpPaint() {
   const m = mpCur(); if (!m) return;
   const eff = mpEffort();
@@ -3096,6 +3100,7 @@ window.blave.onTurnEnd(async (r) => {
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
+  mpTurnEnd();
   if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議列停一拍才長出,那時回覆與下面兩行的卡都已掛好(renderer/suggest.js)
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
   chatSwitchFlush();   // 回合中切過視角:那一行排在這一輪之後(結果卡的落點已經在上一行定了)
