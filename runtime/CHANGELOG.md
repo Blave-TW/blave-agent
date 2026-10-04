@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-(none)
+- **Windows 上 Codex 引擎的 shell 指令全被擋(`codex_engine.build_args`)**:codex 0.160 在 Windows、沒設定沙盒模式、workspace-write、approval=never 同時成立時,每一條 shell 指令都是 Forbidden(stderr `rejected: blocked by policy`,`core/src/exec_policy.rs`);選沙盒模式的 setup 只有 TUI 會跑,只用 `codex exec` 的用戶永遠碰不到。現在 Windows 上多帶 `-c windows.sandbox="unelevated"`(restricted token + ACL,不提權、不改系統設定);用戶 `config.toml`(`$CODEX_HOME` 或 `~/.codex`)已設 `windows.sandbox`,或舊鍵 `features.windows_sandbox`／`features.windows_sandbox_elevated`／`enable_experimental_windows_sandbox` 時不帶(`-c` 會蓋過設定,不把 elevated 的人降級),讀不了 config 照帶。macOS／Linux 的 argv 不變。測試機(codex 0.160.0,RDP session)實跑:帶旗標兩條指令 exit 0,拿掉旗標同一 prompt 被 policy 擋。測試 `tests/check_codex_engine.py` 4c 節。
 
 ## 1.1.111 — 2026-10-03(desktop 0.1.13)
 

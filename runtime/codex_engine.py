@@ -273,8 +273,39 @@ def browser_server(codex_bin, cwd, env):
 _WEB_SEARCH_OFF = ("-c", 'web_search="disabled"')
 
 
+_WINDOWS = os.name == "nt"
+_WINDOWS_SANDBOX = ("-c", 'windows.sandbox="unelevated"')
+
+
+def _windows_sandbox_flags(env):
+    """Windows only. With no sandbox mode configured, exec under workspace-write + approval
+    never forbids every shell command ("rejected: blocked by policy", codex 0.160
+    core/src/exec_policy.rs), and only the TUI ever runs the setup that picks a mode.
+    unelevated (restricted token + ACLs) needs no admin rights and changes no system setting.
+    `-c` outranks the user's config, so a user who already chose a mode — or set one of the
+    legacy keys it is derived from — keeps theirs; a config we cannot read gets the flag."""
+    if not _WINDOWS:
+        return ()
+    try:
+        import tomllib  # same reason as _mcp_name_taken: not at module top
+        home = env.get("CODEX_HOME") or os.path.join(env.get("HOME") or os.path.expanduser("~"),
+                                                     ".codex")
+        with open(os.path.join(home, "config.toml"), "rb") as f:
+            doc = tomllib.load(f)
+    except (ImportError, OSError, ValueError):
+        return _WINDOWS_SANDBOX
+    windows = doc.get("windows")
+    features = doc.get("features")
+    if (isinstance(windows, dict) and "sandbox" in windows) \
+            or (isinstance(features, dict)
+                and ("windows_sandbox" in features or "windows_sandbox_elevated" in features)) \
+            or "enable_experimental_windows_sandbox" in doc:
+        return ()
+    return _WINDOWS_SANDBOX
+
+
 def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_url=None,
-               web_search_off=False):
+               web_search_off=False, env=None):
     """model / effort are forwarded only when the user picked them in the shell (which
     guarantees a slug from Codex's own catalog and an effort that model supports); absent,
     Codex uses the user's own defaults and the argv is unchanged. mcp_url comes from
@@ -315,6 +346,7 @@ def build_args(codex_bin, cwd, model=None, effort=None, mcp_url=None, browser_ur
         # default — the agent writes strategy files and every lib/ data fetch needs the net.
         "-s", "workspace-write",
         "-c", "sandbox_workspace_write.network_access=true",
+        *_windows_sandbox_flags(os.environ if env is None else env),
         "-c", f"project_doc_max_bytes={_PROJECT_DOC_MAX_BYTES}",
         "-C", cwd,
         # Prompt on stdin, not argv: it carries the conversation history (argv is
@@ -473,7 +505,7 @@ async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_don
     if not browser_url:
         env = {k: v for k, v in env.items() if k not in (BROWSER_TOKEN_ENV, "BLAVE_BROWSER_URL")}
     proc = await asyncio.create_subprocess_exec(
-        *build_args(codex_bin, cwd, model, effort, mcp_url, browser_url, web_search_off),
+        *build_args(codex_bin, cwd, model, effort, mcp_url, browser_url, web_search_off, env),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
         stderr=None,  # Codex's own log goes straight to this process's stderr
         cwd=cwd, env=env, limit=_LINE_LIMIT,
