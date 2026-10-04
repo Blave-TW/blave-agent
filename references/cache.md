@@ -61,7 +61,7 @@ _normalise_index(df)                 # convert tz-aware → tz-naive UTC
 | Type | Cache style | Location |
 |---|---|---|
 | Broker/trader per-day flows | One file per trading day | `cache/twstock_broker_stock_{id}/{date}.parquet` |
-| Fundamental data (financials, balance sheet, revenue) | Single file, 30-day mtime TTL | `cache/twstock_fin_{id}.parquet` |
+| Fundamental data (financials, balance sheet, revenue) | Single file, 30-day mtime TTL | `cache/twstock_fin_{id}.parquet`; a `types=` subset in `twstock_fin_types-{hash}_{id}.parquet` |
 
 These types have their own caching logic and are not affected by the monthly system.
 

@@ -2,6 +2,7 @@ import os
 import io
 import re
 import csv
+import hashlib
 import json
 import shutil
 import numbers
@@ -2845,8 +2846,42 @@ def fetch_twstock_branch_daily_net(stock_id, start, end, headers,
 
 # ── Taiwan fundamental data (quarterly / monthly) ────────────────────────────
 
-def _fundamental_cache_path(prefix, stock_id):
-    return _CACHE_DIR / f'{prefix}_{stock_id}.parquet'
+def _fundamental_cache_path(prefix, stock_id, types=None):
+    """`types` (a normalized tuple) gets its own file: a subset must never sit under the
+    full frame's name, or every later full read would silently get only those rows."""
+    if not types:
+        return _CACHE_DIR / f'{prefix}_{stock_id}.parquet'
+    tag = hashlib.sha1('\x1f'.join(types).encode()).hexdigest()[:10]
+    return _CACHE_DIR / f'{prefix}_types-{tag}_{stock_id}.parquet'
+
+
+_STATEMENT_TYPE_RE = re.compile(r'[\w\-()（）]{1,100}')
+_STATEMENT_TYPES_MAX = 50
+
+
+def _statement_types(types):
+    """None → None; a str or an iterable of FinMind `type` names → a sorted, de-duplicated
+    tuple (the cache key). Same whitelist as the api's `types` parameter."""
+    if types is None:
+        return None
+    if isinstance(types, str):
+        types = [types]
+    out = tuple(sorted({str(t).strip() for t in types}))
+    if not out:
+        raise ValueError('types must name at least one statement item, or be None for all')
+    bad = [t for t in out if not _STATEMENT_TYPE_RE.fullmatch(t)]
+    if bad:
+        raise ValueError(f'invalid statement type name(s): {bad}')
+    if len(out) > _STATEMENT_TYPES_MAX:
+        raise ValueError(f'at most {_STATEMENT_TYPES_MAX} types per call, got {len(out)}')
+    return out
+
+
+def _only_types(df, types):
+    """An api that predates `types` answers every item; the subset is cut here either way."""
+    if not types or df.empty:
+        return df
+    return df[df['type'].isin(types)]
 
 
 def _load_fundamental_cache(path, max_age_days=30, prefix=None):
@@ -3059,26 +3094,40 @@ def fetch_twstock_market_value_all(headers, top=None):
     return out
 
 
-# Retry passes for ids the server could not fetch: smaller chunks, longer waits. Sent one
-# request at a time on purpose — the server already fans out per id under a shared FinMind
-# rate limit, and concurrent client requests would just burn that budget faster.
+# Retry passes for ids the server could not fetch: smaller chunks, longer waits. The first
+# pass sends _FUNDAMENTAL_BATCH_WORKERS requests at once: these datasets are read from the
+# api's own whole-market store (no FinMind quota behind them), and a whole-market run is
+# ~40 requests per dataset against the 500 / 5 min per-IP and per-key limit, which counts
+# requests, not concurrency. Retry passes stay one request at a time — they only run when
+# the server is already struggling.
 _FUNDAMENTAL_RETRY_PASSES = ((50, 0), (10, 10), (5, 30))
+_FUNDAMENTAL_BATCH_WORKERS = 4
 
 
-def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers):
+def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers, types=None):
     """Batch fetch fundamental data. Returns dict {stock_id: DataFrame}.
     Uses cache first; fetches uncached stocks via the batch API.
+
+    `types` (statements only) keeps just those `type` rows: cut locally from a fresh full
+    cache file when there is one, otherwise asked of the api and cached under a
+    types-specific file, never the full one.
 
     An id the server reports in `failed` (rate limit / upstream error), or whose request
     errored, is retried; if it still fails, raises RuntimeError naming the ids instead of
     returning a result that silently lacks them. Ids absent from both `data` and `failed`
     genuinely have no data and are simply absent from the result."""
+    types = _statement_types(types)
     results = {}
     pending = []
 
     for sid in stock_ids:
-        path = _fundamental_cache_path(prefix, sid)
-        df = _load_fundamental_cache(path, prefix=prefix)
+        df = _load_fundamental_cache(_fundamental_cache_path(prefix, sid), prefix=prefix)
+        if df is not None and types:
+            df = _only_types(df, types)
+            if df.empty:
+                continue   # full file has none of them: same answer the api would give
+        elif df is None and types:
+            df = _load_fundamental_cache(_fundamental_cache_path(prefix, sid, types), prefix=prefix)
         if df is not None:
             results[sid] = df
         else:
@@ -3086,30 +3135,43 @@ def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers):
     pending = list(dict.fromkeys(pending))
 
     url = f'{BASE}/studio/market/twstock/batch/{endpoint}'
-    for chunk_size, wait in _FUNDAMENTAL_RETRY_PASSES:
+    params = {'types': ','.join(types)} if types else {}
+
+    def _request(chunk):
+        try:
+            r = _retry_get(url, headers=headers,
+                           params={'stock_ids': ','.join(chunk), **params}, timeout=120)
+            return r.json()
+        except Exception as e:   # handed back and judged in order by the caller
+            return e
+
+    for pass_no, (chunk_size, wait) in enumerate(_FUNDAMENTAL_RETRY_PASSES):
         if not pending:
             break
         if wait:
             print(f'  [batch] {endpoint}: retrying {len(pending)} failed ids in {wait}s')
             time.sleep(wait)
+        chunks = [pending[i:i + chunk_size] for i in range(0, len(pending), chunk_size)]
+        if pass_no == 0 and len(chunks) > 1:
+            with ThreadPoolExecutor(max_workers=_FUNDAMENTAL_BATCH_WORKERS) as pool:
+                answers = list(pool.map(_request, chunks))
+        else:
+            answers = map(_request, chunks)   # lazy: a raise stops the remaining requests
         failed, answered = [], False
-        for i in range(0, len(pending), chunk_size):
-            chunk = pending[i:i + chunk_size]
-            try:
-                r = _retry_get(url, headers=headers,
-                               params={'stock_ids': ','.join(chunk)}, timeout=120)
-                body = r.json()
-            except DataAccessError:
-                raise
-            except requests.HTTPError as e:
-                status = getattr(e.response, 'status_code', None)
+        for chunk, body in zip(chunks, answers):
+            if isinstance(body, DataAccessError):
+                raise body
+            if isinstance(body, requests.HTTPError):
+                status = getattr(body.response, 'status_code', None)
                 if status is not None and status < 500 and status != 429:
-                    raise   # bad request / auth: retrying cannot change the answer
+                    raise body   # bad request / auth: retrying cannot change the answer
                 failed.extend(chunk)
                 continue
-            except (requests.RequestException, ValueError):
+            if isinstance(body, (requests.RequestException, ValueError)):
                 failed.extend(chunk)
                 continue
+            if isinstance(body, BaseException):
+                raise body
             answered = True
             server_failed = set(body.get('failed') or ())
             failed.extend(sid for sid in chunk if sid in server_failed)
@@ -3118,8 +3180,10 @@ def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers):
                     continue
                 df = pd.DataFrame(records)
                 df['date'] = pd.to_datetime(df['date'])
-                df = df.set_index('date').sort_index()
-                _save_fundamental_cache(_fundamental_cache_path(prefix, sid), df)
+                df = _only_types(df.set_index('date').sort_index(), types)
+                if df.empty:
+                    continue
+                _save_fundamental_cache(_fundamental_cache_path(prefix, sid, types), df)
                 results[sid] = df
         pending = failed
         if not answered:
@@ -3135,14 +3199,16 @@ def _fetch_fundamental_batch(prefix, endpoint, stock_ids, headers):
     return results
 
 
-def fetch_twstock_financials_batch(stock_ids, headers):
-    """Batch fetch 台股季頻綜合損益表. Returns dict {stock_id: DataFrame}."""
-    return _fetch_fundamental_batch('twstock_fin', 'financials', stock_ids, headers)
+def fetch_twstock_financials_batch(stock_ids, headers, types=None):
+    """Batch fetch 台股季頻綜合損益表. Returns dict {stock_id: DataFrame}.
+    types=['IncomeAfterTaxes', ...] returns only those items (much less to download)."""
+    return _fetch_fundamental_batch('twstock_fin', 'financials', stock_ids, headers, types)
 
 
-def fetch_twstock_balance_sheet_batch(stock_ids, headers):
-    """Batch fetch 台股季頻資產負債表. Returns dict {stock_id: DataFrame}."""
-    return _fetch_fundamental_batch('twstock_bs', 'balance_sheet', stock_ids, headers)
+def fetch_twstock_balance_sheet_batch(stock_ids, headers, types=None):
+    """Batch fetch 台股季頻資產負債表. Returns dict {stock_id: DataFrame}.
+    types=['Equity', ...] returns only those items (much less to download)."""
+    return _fetch_fundamental_batch('twstock_bs', 'balance_sheet', stock_ids, headers, types)
 
 
 def fetch_twstock_monthly_revenue_batch(stock_ids, headers):

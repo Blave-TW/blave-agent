@@ -451,8 +451,8 @@ from lib.data import (
     fetch_twstock_institutional_batch,          # (stock_ids, start, end, headers) → foreign_net（= foreign_buy − foreign_sell，單位是股，÷1000 才是張）及原始欄位
     fetch_twstock_shareholding_batch,           # (stock_ids, start, end, headers) → shareholders 欄
     fetch_twstock_foreign_shareholding_batch,   # (stock_ids, start, end, headers) → 外資持股比率/股數
-    fetch_twstock_financials_batch,             # (stock_ids, headers) → 損益表 long format
-    fetch_twstock_balance_sheet_batch,          # (stock_ids, headers) → 資產負債表 long format
+    fetch_twstock_financials_batch,             # (stock_ids, headers, types=None) → 損益表 long format
+    fetch_twstock_balance_sheet_batch,          # (stock_ids, headers, types=None) → 資產負債表 long format
     fetch_twstock_monthly_revenue_batch,        # (stock_ids, headers) → revenue, revenue_month, revenue_year
 )
 ```
@@ -516,6 +516,10 @@ for sid in universe:
     eps_yoy      = fin['EPS'].pct_change(4)                  # EPS YoY（同季比）
     rev_yoy      = rev['revenue'].pct_change(12)             # 月營收 YoY
 ```
+
+Whole market and only a few items needed → pass `types=` (the balance sheet is ~110 items per
+stock, most of the download): `fetch_twstock_balance_sheet_batch(universe, hdrs, types=['Equity'])`.
+Only those `type` rows come back; the full frame's cache is untouched.
 
 損益表 key types：`Revenue`、`GrossProfit`、`OperatingIncome`、`IncomeAfterTaxes`、`EPS`
 
