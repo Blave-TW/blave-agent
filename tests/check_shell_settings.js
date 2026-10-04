@@ -292,8 +292,8 @@ ok("分類順序:一般 → 模型接入 → Agent 規則 → 資料來源 → �
   && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
 // 舊的兩個分類 id 都還開得到合併後的頁:真的跑 setCat
 { const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "src", "plan", "shares", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [];
-  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "rulesOpen", "rulesClear", "privLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
-    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
+  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "rulesOpen", "rulesClear", "privLoad", "aboutIdLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
+    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
   const open = (k) => { painted = 0; tracked.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join() }; };
   const a = open("acct"), b = open("plan");
   ok("setCat(\"acct\") 與 setCat(\"plan\") 開到同一頁:左欄亮「帳號與方案」、只露出那一頁、整頁重畫、埋點記 settings_plan", JSON.stringify(a) === JSON.stringify(b) && a.cur === "plan" && a.shown === "plan" && a.painted === 1 && a.tracked === "settings_plan");
@@ -426,14 +426,14 @@ ok("隱私:會收 8 條(功能那條緊接在里程碑後、0.1.9「卡在哪一
   ok("隱私開關:主行程丟例外也解鎖,畫面維持原狀", env.PRIV === false && sent.length === 3);
   ok("隱私開關:鎖是旗標,不是把開關 disabled(焦點留在開關上)", !/disabled/.test(fnSrc("privToggle"))); }
 { /* 法遵入口(法遵稽核):app 裡本來連一個服務條款 / 隱私權政策的連結都沒有,而隱私權政策 §9.1 還叫人到
-     設定 › 隱私 關遙測、拿安裝識別碼。隱私權政策放隱私那一頁、服務條款跟版本資訊放「關於」;兩個都外開瀏覽器、網址帶目前語言。
+     設定 › 隱私 關遙測(安裝識別碼後來搬到 設定 › 一般 › 關於)。隱私權政策放隱私那一頁、服務條款跟版本資訊放「關於」;兩個都外開瀏覽器、網址帶目前語言。
      **不加同意步驟、不擋畫面**(Wei 還沒決定任何接受流程) */
   const seen2 = []; const realOpen = window.blave.openExternal;
   window.blave.openExternal = (u) => { seen2.push(u); };
   // privPaint 真的跑一次(假 DOM 夠用:它只用 createElement / append / textContent)
   eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const /, "var ")); eval(src.match(/const PRIV_NEVER = [^\n]*;/)[0].replace(/^const /, "var "));
   eval(src.match(/^const legalUrl = [^\n]*$/m)[0].replace(/^const /, "var "));
-  var PRIV = true, PRIV_ID = "abc", privToggle = () => {}, srSay = () => {};
+  var PRIV = true, privToggle = () => {}, srSay = () => {};
   eval(fnSrc("privPaint"));
   LANG = "zh"; privPaint();
   // privPaint 用 document.createElement 組節點,不經過 $():從 #set-priv 的子樹把那顆鈕找出來

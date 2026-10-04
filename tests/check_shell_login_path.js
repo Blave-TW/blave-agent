@@ -42,5 +42,17 @@ t("winRealExe:codex.cmd → 平台套件的 codex.exe(npm bin/codex.js 0.156.1 �
 t("winRealExe:平台套件不在 → @openai/codex 自己的 vendor/", winRealExe(cmd, "x64", (p) => p === fallback) === fallback);
 t("winRealExe:兩個都不在 → null(不把 .cmd 交給 runtime 的 create_subprocess_exec)", winRealExe(cmd, "x64", () => false) === null);
 t("winRealExe:已經是 .exe / null 原樣回", winRealExe("C:\\x\\codex.exe", "x64", () => false) === "C:\\x\\codex.exe" && winRealExe(null, "x64") === null);
+// 測試機實測(Codex 0.160.0 用 npm i -g、Node 24、npm 11):where.exe 第一行是 npm 的無副檔名 sh 包裝檔,平台套件巢狀裝在 @openai/codex 底下
+const WHERE_REAL = "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\codex\r\nC:\\Users\\Administrator\\AppData\\Roaming\\npm\\codex.cmd\r\n";
+const realCmd = "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\codex.cmd";
+const nested = (pkg, triple) => "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\" + pkg + "\\vendor\\" + triple + "\\bin\\codex.exe";
+t("pickWinBin:where 第一行是無副檔名的 sh 包裝檔 → 跳過、拿 codex.cmd", pickWinBin(WHERE_REAL) === realCmd);
+t("pickWinBin:只有無副檔名那一行 → null(交給 execFile 只會 ENOENT、被誤判成未登入)", pickWinBin("C:\\r\\npm\\codex\r\n") === null);
+t("pickWinBin:claude 三種都在(sh / .cmd / .exe)→ 仍拿 .exe;只有 sh + .cmd → .cmd;.bat 也算",
+  pickWinBin("C:\\r\\npm\\claude\r\nC:\\r\\npm\\claude.cmd\r\nC:\\Users\\u\\.local\\bin\\claude.exe\r\n") === "C:\\Users\\u\\.local\\bin\\claude.exe"
+  && pickWinBin("C:\\r\\npm\\claude\r\nC:\\r\\npm\\claude.cmd\r\n") === "C:\\r\\npm\\claude.cmd" && pickWinBin("C:\\r\\x\r\nC:\\r\\x.bat\r\n") === "C:\\r\\x.bat");
+t("winRealExe:平台套件巢狀在 @openai/codex/node_modules 底下(0.160.0)→ 找得到", winRealExe(realCmd, "x64", (p) => p === nested("codex-win32-x64", "x86_64-pc-windows-msvc")) === nested("codex-win32-x64", "x86_64-pc-windows-msvc"));
+t("winRealExe:arm64 的巢狀路徑同一套規則", winRealExe(realCmd, "arm64", (p) => p === nested("codex-win32-arm64", "aarch64-pc-windows-msvc")) === nested("codex-win32-arm64", "aarch64-pc-windows-msvc"));
+t("winRealExe:實測那兩行一路走下來 → 巢狀 codex.exe", winRealExe(pickWinBin(WHERE_REAL), "x64", (p) => p === nested("codex-win32-x64", "x86_64-pc-windows-msvc")) === nested("codex-win32-x64", "x86_64-pc-windows-msvc"));
 t("which 在 win32 用 System32\\where.exe;run 只對 .cmd/.bat 開 shell", /System32", "where\.exe"\), \[name\], envPath, 5000\)/.test(src) && /const cmdWrap = \(bin\) => \(process\.platform === "win32" && \/\\\.\(cmd\|bat\)\$\/i\.test\(bin\)/.test(src));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

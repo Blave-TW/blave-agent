@@ -2548,17 +2548,17 @@ msgstr "紀錄保留 25 個月。送不出去就丟掉，不影響任何功能�
 msgid "priv.kept"
 msgstr "關掉之前送出的紀錄仍保留 25 個月。"
 
-msgid "priv.id"
+msgid "about.id"
 msgstr "安裝識別碼"
 
-msgid "priv.idCopy"
+msgid "about.idCopy"
 msgstr "複製"
 
-msgid "priv.idCopied"
+msgid "about.idCopied"
 msgstr "已複製"
 
-msgid "priv.idNote"
-msgstr "要我們刪除這台電腦送出的使用資料時，請在來信裡附上這組識別碼。"
+msgid "about.idNote"
+msgstr "回報問題或要求刪除使用資料時，請附上這組識別碼。"
 
 msgid "cx.apiKey"
 msgstr "API Key"

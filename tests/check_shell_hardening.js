@@ -42,10 +42,13 @@ t("~/Blave 由 app 建立時是 0700(既有目錄不動)", /if \(!fs\.existsSync
   const cfgSrc = fs.readFileSync(path.join(S, "electron-builder.config.js"), "utf8");
   t("最低系統 macOS 13 明寫進打包設定(Electron 44 不支援 12)", /minimumSystemVersion: "13\.0"/.test(cfgSrc)); }
 
-// ── 安裝識別碼(隱私權政策:來信附上它要求刪除)──
-{ const app = fs.readFileSync(path.join(S, "renderer", "app.js"), "utf8"), pre = fs.readFileSync(path.join(S, "preload.js"), "utf8"), str = fs.readFileSync(path.join(S, "renderer", "strings.js"), "utf8");
+// ── 安裝識別碼(隱私權政策:回報問題、來信要求刪除時附上;只在 設定 › 一般 › 關於 一處)──
+{ const app = fs.readFileSync(path.join(S, "renderer", "app.js"), "utf8"), pre = fs.readFileSync(path.join(S, "preload.js"), "utf8"), str = fs.readFileSync(path.join(S, "renderer", "strings.js"), "utf8"), html = fs.readFileSync(path.join(S, "renderer", "index.html"), "utf8");
+  const fn = (name) => { const i = app.indexOf("function " + name + "("); return i < 0 ? "" : app.slice(i, app.indexOf("\n}\n", i)); };
   t("IPC 過 fromOurPage(handle);preload 只暴露固定函式", /handle\("telemetry-install-id", \(\) => tm\(\)\.installId\(\)\);/.test(main) && /telemetryInstallId: \(\) => ipcRenderer\.invoke\("telemetry-install-id"\)/.test(pre));
-  t("畫面只收 UUID 的形狀、用 textContent 畫、追蹤關掉也看得到(不看 PRIV)", /PRIV_ID = typeof id === "string" && \/\^\[0-9a-f\]\{8\}/.test(app) && /if \(PRIV_ID\) \{/.test(app) && !/if \(PRIV_ID && PRIV\)/.test(app) && /mk\("code", "priv-idv", PRIV_ID\)/.test(app));
-  t("叫法統一:「安裝識別碼」/ Installation ID;舊的「隨機編號」當名稱的寫法不在了", /"priv\.id": "安裝識別碼"/.test(str) && /"priv\.id": "Installation ID"/.test(str) && !/這份安裝的隨機編號/.test(str)); }
+  t("畫面只收 UUID 的形狀、用 textContent 畫、追蹤關掉也看得到(不看 PRIV)", /INSTALL_ID = typeof id === "string" && \/\^\[0-9a-f\]\{8\}/.test(fn("aboutIdLoad")) && /\$\("set-idv"\)\.textContent = INSTALL_ID/.test(fn("aboutIdLoad")) && !/PRIV/.test(fn("aboutIdLoad")) && !/innerHTML/.test(fn("aboutIdLoad")));
+  t("只在「一般 › 關於」一處:版本那一行之後、法遵連結之前;隱私頁不再畫識別碼;切到「一般」才讀", (() => { const a = html.indexOf('id="set-up-line"'), b = html.indexOf('id="set-idv"'), c = html.indexOf('<p class="set-legal">'); return a > 0 && a < b && b < c; })()
+    && !/install|INSTALL_ID|PRIV_ID|\.id(Copy|Note)?"/i.test(fn("privPaint")) && !/telemetryInstallId/.test(fn("privLoad")) && /if \(cat === "display"\) aboutIdLoad\(\);/.test(app));
+  t("叫法統一:「安裝識別碼」/ Installation ID;舊的「隨機編號」當名稱的寫法不在了;priv.id* 的舊 key 不在", /"about\.id": "安裝識別碼"/.test(str) && /"about\.id": "Installation ID"/.test(str) && !/這份安裝的隨機編號/.test(str) && !/"priv\.id/.test(str)); }
 
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

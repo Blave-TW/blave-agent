@@ -376,6 +376,7 @@ function setCat(cat) {
   if (cat === "model") mdlPaint();
   if (cat === "src") { srcLoad(); trackFeature("settings_datasrc"); } else srcClear();   // 資料來源(renderer/datasrc.js);離開那一類就把沒存的金鑰從輸入框清掉
   if (cat === "rules") rulesOpen(); else rulesClear();   // Agent 規則(renderer/rules.js):離開這一類就丟掉沒存的編輯
+  if (cat === "display") aboutIdLoad();
   if (cat === "priv") privLoad();
   if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
@@ -469,10 +470,8 @@ function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_)
 // 卡在哪一步(同一份登記表,0.1.9):事件名 + 一格列舉值,主行程對 FROM_RENDERER 與列舉再驗;不帶內容
 function trackEvent(ev, props) { try { window.blave.trackEvent(ev, props); } catch (_) { } }
 const PRIV_NEVER = ["priv.never.1", "priv.never.2", "priv.never.3", "priv.never.4", "priv.never.5", "priv.never.6"];
-let PRIV_ID = null;   // 安裝識別碼:只收 UUID 的形狀(它會被畫出來、放進剪貼簿)
 async function privLoad() {
   try { PRIV = (await window.blave.telemetryGet()) === true; } catch (_) { PRIV = null; }
-  try { const id = await window.blave.telemetryInstallId(); PRIV_ID = typeof id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ? id : null; } catch (_) { PRIV_ID = null; }
   privPaint();
 }
 // 連點:前一次還沒回來就不再送(不用 disabled:按鈕一停用焦點就掉到 body)
@@ -503,17 +502,7 @@ function privPaint() {
     keys.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col);
   });
   box.append(two, mk("p", "priv-fine", off ? t("priv.kept") : t("priv.fine")));
-  // 安裝識別碼:開關關著也看得到——要求刪除的是關掉之前送出去的那些
-  if (PRIV_ID) {
-    const idRow = mk("div", "sw-row priv-id"), copy = mk("button", "btn-quiet", t("priv.idCopy")); copy.type = "button";
-    copy.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(PRIV_ID); } catch (_) { return; }
-      copy.textContent = t("priv.idCopied"); srSay(t("priv.idCopied")); setTimeout(() => { if (copy.isConnected) copy.textContent = t("priv.idCopy"); }, 2000);
-    });
-    idRow.append(mk("span", "sw-l", t("priv.id")), mk("code", "priv-idv", PRIV_ID), copy);
-    box.append(idRow, mk("p", "priv-lead", t("priv.idNote")));
-  }
-  /* 隱私權政策的入口(法遵稽核):政策 §9.1 叫人到這一頁關遙測、拿安裝識別碼,這一頁卻沒有連回那份政策 */
+  /* 隱私權政策的入口(法遵稽核):政策 §9.1 叫人到這一頁關遙測(安裝識別碼在 設定 › 一般 › 關於),這一頁要能連回那份政策 */
   const legal = mk("p", "set-legal"), pl = mk("button", "btn-quiet", t("legal.privacy")); pl.type = "button"; pl.id = "priv-legal";
   pl.addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
   legal.append(pl); box.append(legal);
@@ -752,6 +741,20 @@ window.blave.onUpdateState((st) => { UP = st; upPaint(); });
 upRefresh();
 $("ws-update").addEventListener("click", () => { if ($("ws-update").dataset.kind === "restart") upInstall(); });
 $("set-up-btn").addEventListener("click", () => { const k = $("set-up-btn").dataset.kind; if (k === "restart") upInstall(); else if (k === "check") upCheck(); });   // restarting:什麼都不做
+/* 安裝識別碼(設定 › 一般 › 關於,全 app 只這一處):只收 UUID 的形狀(它會被畫出來、放進剪貼簿);追蹤關掉也照出——
+   要求刪除的是關掉之前送出去的那些。每次切到「一般」重讀 */
+var INSTALL_ID = null, INSTALL_ID_T = 0;   // var:同 UP,這一行還沒跑到就被 setCat 叫到也不會撞 TDZ
+async function aboutIdLoad() {
+  try { const id = await window.blave.telemetryInstallId(); INSTALL_ID = typeof id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ? id : null; } catch (_) { INSTALL_ID = null; }
+  $("set-idv").textContent = INSTALL_ID || "";
+  $("set-id").hidden = $("set-id-note").hidden = !INSTALL_ID;
+}
+$("set-id-copy").addEventListener("click", async () => {
+  if (!INSTALL_ID) return;
+  try { await navigator.clipboard.writeText(INSTALL_ID); } catch (_) { return; }
+  const b = $("set-id-copy"); b.textContent = t("about.idCopied"); srSay(t("about.idCopied"));
+  clearTimeout(INSTALL_ID_T); INSTALL_ID_T = setTimeout(() => { b.textContent = t("about.idCopy"); }, 2000);
+});
 $("set-terms").addEventListener("click", () => window.blave.openExternal(legalUrl("terms_of_service")));   // 服務條款:跟版本資訊同一塊(設定 › 一般 › 關於)
 $("set-privacy").addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
 $("btn-send").addEventListener("click", () => (running ? stopTurn() : sendDraft()));
