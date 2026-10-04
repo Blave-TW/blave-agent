@@ -93,7 +93,9 @@ const EVENTS = {
     // 下單 UX(0.1.13;renderer/trade.js,ux-order-1-4-5 §4):第 3 級槓桿勾了而且存成功、部位表「N 支策略」拆解被打開。不帶金額
     "trade_lev_ack", "trade_net_open",
     // 部位表拒單那一行的「請 agent 查原因」(0.1.13;order-copy #14 §4.4):填進聊天框才算(不送出)
-    "trade_err_ask"] },
+    "trade_err_ask",
+    // 建議下一步的關閉(renderer/suggest.js sugDismiss):按 × 或 Esc 收掉;送出、換對話、出錯的收合不算。不分 × / Esc(name 16 字裝不下第二格)
+    "suggest_closed"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

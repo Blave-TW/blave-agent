@@ -3,6 +3,8 @@
 //   2. 最多 3 行:sugItems 過濾非字串 / 空白 / 超長,取前 3
 //   3. 送出後收合:回合結束才長出;送出(任何入口)、出錯、換對話都收合作廢;出錯 / 被停的回合不長
 //   4. 原本貼底時,建議列長完(高度轉場的 transitionend)才捲到底;用戶自己往上捲過不搶
+//   5. 關閉 × 與 Esc:都走 sugCollapse、焦點交回輸入框、記 suggest_closed;Esc 只在焦點在建議區或空輸入框時收,
+//      輸入框有字、組字中、別的層開著、已收合都不收
 // 跑法:node tests/check_shell_suggest.js
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -41,10 +43,10 @@ const el = (id) => { const e = { id, inert: false, children: [], _text: "", list
   contains(x) { for (let p = x; p; p = p.parent) if (p === e) return true; return false; },
   focus() { doc.activeElement = e; }, get offsetHeight() { return 0; }, scrollHeight: 0, scrollTop: 0, clientHeight: 0 }; return e; };
 const doc = { activeElement: null, createElement: () => el(null) };
-const W = { "sug-wrap": el("sug-wrap"), "sug-rows": el("sug-rows"), "ta": el("ta"), "chat-scroll": el("chat-scroll") };
-W["sug-rows"].parent = W["sug-wrap"]; W["sug-wrap"].inert = true; W["sug-wrap"].classes.add("is-closed");
+const W = { "sug-wrap": el("sug-wrap"), "sug-rows": el("sug-rows"), "sug-close": el("sug-close"), "ta": el("ta"), "chat-scroll": el("chat-scroll") };
+W["sug-rows"].parent = W["sug-wrap"]; W["sug-close"].parent = W["sug-wrap"]; W.ta.value = ""; W["sug-wrap"].inert = true; W["sug-wrap"].classes.add("is-closed");
 const ctx = { $: (id) => W[id], document: doc, sessionId: "desktop-aaaa", running: false, tracked: [], sent: [],
-  trackFeature: (n) => ctx.tracked.push(n), motionBaseMs: () => 0, chatEdge: () => {}, setTimeout, clearTimeout };
+  trackFeature: (n) => ctx.tracked.push(n), escTop: () => ctx.topLayer || null, motionBaseMs: () => 0, chatEdge: () => {}, setTimeout, clearTimeout };
 // submitMessage 的替身只做真的那支開頭兩件事(下面另外釘住原文):回合在跑就不送、否則先收合建議列。
 // failNext:收合之後沒跑起來(暖機中停止、版本閘、busy、引擎起不來)——真的那支這時已 unlock(running=false)再回 false
 ctx.submitMessage = async (m) => { if (!m || ctx.running) return false; ctx.sugCollapse(); ctx.running = true;
@@ -119,6 +121,37 @@ ok("sugItems:items 不是陣列 → 空", ctx.sugItems({ items: "a" }).length ==
   ok("長到一半就收合(送出 / 換對話):監聽跟著收,不再捲", box.scrollTop === 1000 && !wrap.listeners.transitionend);
   ctx.sugCollapse();
 
+  // ── 5. 關閉 × 與 Esc ──
+  const showFresh = async () => { ctx.sugCollapse(); ctx.sugChunk({ items: ["丁", "戊"] }); ctx.sugTurnEnd(true); await wait(); ctx.tracked = []; };
+  const esc = (target, extra = {}) => { const e = Object.assign({ key: "Escape", keyCode: 27, isComposing: false, defaultPrevented: false, target, prevented: false,
+    preventDefault() { e.prevented = true; } }, extra); return e; };
+  const keyOn = (node, e) => node.listeners.keydown(e);
+  await showFresh(); W.ta.focus();
+  W["sug-close"].focus(); W["sug-close"].listeners.click();
+  ok("按 ×:收合(inert + is-closed)、焦點回輸入框、記一次 suggest_closed", !open() && W["sug-wrap"].inert && doc.activeElement === W.ta && JSON.stringify(ctx.tracked) === JSON.stringify(["suggest_closed"]));
+  await showFresh(); doc.activeElement = null; W["sug-close"].listeners.click();
+  ok("按 × 時焦點不在建議區(滑鼠點、焦點在 body):一樣明確交回輸入框", doc.activeElement === W.ta);
+
+  await showFresh(); W.ta.value = "  "; let e = esc(W.ta); keyOn(W.ta, e);
+  ok("Esc:焦點在空的輸入框(只有空白也算空)→ 收合、preventDefault、記 suggest_closed", !open() && e.prevented && JSON.stringify(ctx.tracked) === JSON.stringify(["suggest_closed"]));
+  await showFresh(); W.ta.value = "還沒送的草稿"; e = esc(W.ta); keyOn(W.ta, e);
+  ok("Esc:輸入框有字 → 不收、不 preventDefault、不記", open() && !e.prevented && ctx.tracked.length === 0);
+  W.ta.value = "";
+  e = esc(W["sug-rows"].children[0]); keyOn(W["sug-wrap"], e);
+  ok("Esc:焦點在建議列上 → 收合、焦點回輸入框", !open() && e.prevented && doc.activeElement === W.ta);
+  await showFresh(); e = esc(W["sug-close"]); keyOn(W["sug-wrap"], e);
+  ok("Esc:焦點在 × 本身 → 收合", !open() && e.prevented);
+  await showFresh(); ctx.topLayer = () => {}; e = esc(W.ta); keyOn(W.ta, e);
+  ok("Esc:有 modal / 選單開著(escTop 有東西)→ 讓給它,不收、不 preventDefault", open() && !e.prevented && ctx.tracked.length === 0);
+  ctx.topLayer = null;
+  for (const [name, extra] of [["組字中(isComposing)", { isComposing: true }], ["組字中(keyCode 229)", { keyCode: 229 }], ["別人已 preventDefault", { defaultPrevented: true }], ["不是 Esc", { key: "a" }]]) {
+    e = esc(W.ta, extra); keyOn(W.ta, e);
+    ok("Esc:" + name + " → 不收", open() && !e.prevented && ctx.tracked.length === 0);
+  }
+  ctx.sugCollapse(); e = esc(W.ta); keyOn(W.ta, e);
+  ok("Esc:已經收合 → 不做事(不 preventDefault,document 層 / 瀏覽器照常收)", !e.prevented && ctx.tracked.length === 0);
+  ok("送出 / 換對話的收合不記 suggest_closed(埋點只在 × 與 Esc 那條)", !/suggest_closed/.test(cut(sugSrc, "function sugCollapse()", "function sugDismiss()")));
+
   // ── 接線(原文) ──
   const sub = cut(app, "async function submitMessage(msg, opts)", "UPD.turnCloud = false;");
   ok("submitMessage 開頭收合(打字、點建議、轉出、交接…任何入口)", /if \(!msg \|\| running\) return false;\n\s*if \(typeof sugCollapse === "function"\) sugCollapse\(\);/.test(sub));
@@ -130,6 +163,10 @@ ok("sugItems:items 不是陣列 → 空", ctx.sugItems({ items: "a" }).length ==
   ok("index.html:建議列預設收合 + inert、group 帶 aria-label key、小標 aria-hidden、腳本與樣式都載入",
     /<div class="sug-wrap is-closed" id="sug-wrap" inert>/.test(html) && /role="group" data-i18n-aria="ws.sugGroup"/.test(html) && /class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"/.test(html)
     && /<script src="app\.js"><\/script>\n<script src="suggest\.js"><\/script>/.test(html) && /<link rel="stylesheet" href="suggest\.css">/.test(html));
+  ok("index.html:× 是 .sug 底下真的 button(不在 aria-hidden 的小標裡)、帶 aria-label key、在建議列之前",
+    /<div class="sug-head">\s*<div class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"><\/div>\s*<button type="button" class="sug-close" id="sug-close" data-i18n-aria="ws.sugClose">✕<\/button>\s*<\/div>\s*<div class="sug-rows" id="sug-rows"><\/div>/.test(html));
+  const css = fs.readFileSync(path.join(R, "suggest.css"), "utf8"), closeCss = cut(css, ".sug-head {", ".sug-item {");
+  ok("suggest.css:× 墊 z-index、focus ring 內縮、沒有寫死的色碼與毫秒", /z-index: 1/.test(closeCss) && /\.sug-close:focus-visible \{ outline-offset: -2px;/.test(closeCss) && !/#[0-9a-f]{3,8}\b|\d+ms\b/i.test(closeCss));
   console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })();

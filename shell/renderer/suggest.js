@@ -1,5 +1,5 @@
 /* 建議下一步:照雲端工作頁 workspace.html 的 .sug-wrap / #chat_sug(designer mockup v9.2 案 4)。
-   在 app.js 之後載入(用它的 $、sessionId、running、submitMessage、trackFeature、motionBaseMs、chatEdge)。
+   在 app.js 之後載入(用它的 $、sessionId、running、submitMessage、trackFeature、motionBaseMs、chatEdge、escTop)。
    runtime 在回合收尾把 <suggest> 剝掉、另送 {type:"suggestions", items};這裡先收著,回合結束(沒出錯、沒被停)停一拍才長出。
    任何入口送出、出錯、換對話都收合作廢(點建議但那句沒跑起來例外:同一組長回來,見 sugRender)。只在記憶體:重開 app、換對話都不留——同雲端(逐字稿裡沒有這段,重整就沒了)。 */
 const SUG = { pending: null, timer: null, unpin: null };
@@ -24,6 +24,28 @@ function sugCollapse() {
   wrap.inert = true;
   wrap.classList.add("is-closed");
 }
+// 用戶自己收掉(× 或 Esc)。埋點只在這裡:sugCollapse 也被送出、出錯、換對話叫,那些不算收掉。
+// 焦點明確交回輸入框,不靠 sugCollapse 裡「焦點在建議區才移」的條件(web 那邊 × 不在條件涵蓋的範圍,兩邊寫法一致)
+function sugDismiss() {
+  sugCollapse();
+  $("ta").focus();
+  trackFeature("suggest_closed");
+}
+// Esc 掛在輸入框與建議區本身(比 document 層的 escTop 與 browser.js 先跑):焦點在建議區、或在空的輸入框才收;
+// 輸入框有字不收(免得被當成清空);有 modal / 選單開著讓它先關;收了就 preventDefault,browser.js 看到便不收瀏覽器
+function sugEsc(e) {
+  if (e.key !== "Escape" || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;   // 組字中的 Esc 是取消選字
+  const wrap = $("sug-wrap"), ta = $("ta");
+  if (wrap.classList.contains("is-closed")) return;
+  const inSug = wrap.contains(e.target), emptyTa = e.target === ta && ta.value.trim() === "";
+  if (!inSug && !emptyTa) return;
+  if (escTop()) return;
+  e.preventDefault();
+  sugDismiss();
+}
+$("sug-close").addEventListener("click", sugDismiss);
+$("sug-wrap").addEventListener("keydown", sugEsc);
+$("ta").addEventListener("keydown", sugEsc);
 function sugRender(items) {
   const list = $("sug-rows");
   list.textContent = "";

@@ -108,6 +108,10 @@ msgstr "The previous turn is still running. Press Enter again when it finishes."
 msgid "ws.sugGroup"
 msgstr "Suggested Next Steps"
 
+# 建議列右上角的關閉 ×(aria-label);逐字同 web workspace_sug_close
+msgid "ws.sugClose"
+msgstr "Dismiss suggestions"
+
 msgid "ws.send"
 msgstr "Send"
 

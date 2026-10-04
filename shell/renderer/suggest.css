@@ -22,6 +22,21 @@
 .sug-wrap.is-closed .sug { padding-bottom: 0; }
 /* 小標 = web .group-label(13/600、greyMedium);下緣 12:標籤到第一列(12 + 行上 padding 8)要大於列距 16,Proximity 才不反轉 */
 .sug-cap { padding: 0 var(--space-12) var(--space-12); font-size: 13px; font-weight: 600; color: var(--ink-3); }
+/* 關閉 ×:幾何同 web .attach-clear(20×20、radius-micro、✕ 11px),色同 .modal-close。絕對定位不佔排版,小標行高度不變。
+   熱區 = 小標行右端 44 × 31.5(小標 13 × 1.5 + 下緣 12),不壓到第一列;電腦版只有滑鼠,不做觸控的 44 高。
+   z-index:長出途中 .sug-item 帶 transform 自成疊層、DOM 又在後面,不墊高的話動畫途中列會蓋住 × */
+.sug-head { position: relative; }   /* .sug-close 的定位基準(見 index.html 那段註解) */
+.sug-close {
+  position: absolute; top: 0; right: var(--space-4); z-index: 1;
+  width: 20px; height: 20px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-micro);
+  font-size: 11px; line-height: 1; color: var(--ink-3);
+  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+}
+.sug-close::before { content: ""; position: absolute; top: 0; right: calc(var(--space-4) * -1); width: 44px; height: calc(13px * 1.5 + var(--space-12)); }
+.sug-close:hover { background: var(--surface-muted); color: var(--ink); }
+.sug-close:focus-visible { outline-offset: -2px; border-radius: var(--radius-micro); }   /* 貼著 .sug 頂端,外推的 ring 會被 overflow:hidden 裁掉 */
 .sug-item {
   display: flex; align-items: baseline; gap: var(--space-12);
   width: 100%; min-height: 36px; padding: var(--space-8) var(--space-12);
