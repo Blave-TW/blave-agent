@@ -11,9 +11,10 @@
 const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
+const { StringDecoder } = require("string_decoder");
 
 /* 每一家上架前都要過自家 e2e(G2)。thinking 一律照引擎帶的轉(Wei:思考模式常開、深度跟著模型選單的 low/high/max),
-   轉送口不補也不改;空回應重試見 handback 規格,原型不做。name / keysUrl 給畫面(連結表單與模型選單),不是秘密。 */
+   轉送口不補也不改(空回應重試見 startRelay 裡的 retryOr)。name / keysUrl 給畫面(連結表單與模型選單),不是秘密。 */
 const PRESETS = Object.freeze({
   deepseek: Object.freeze({
     origin: "https://api.deepseek.com",
@@ -27,8 +28,41 @@ const PRESETS = Object.freeze({
   }),
 });
 
-const DEFAULT_LIMITS = Object.freeze({ maxRequests: 150, maxOutputTokens: 400000, maxBodyBytes: 32 * 1024 * 1024 });
+/* emptyRetries / emptyBackoffMs:DeepSeek 思考模式偶爾整則只有 thinking(或什麼都沒有)就收尾,引擎拿到會當這輪結束、用戶看到沒回覆。
+   重送同一請求就好;每次重送都算進 maxRequests / maxOutputTokens。 */
+const DEFAULT_LIMITS = Object.freeze({ maxRequests: 150, maxOutputTokens: 400000, maxBodyBytes: 32 * 1024 * 1024, emptyRetries: 2, emptyBackoffMs: 1000 });
 const UPSTREAM_TIMEOUT_MS = 300000;
+const PING_EVERY_MS = 10000;
+const PING = 'event: ping\ndata: {"type": "ping"}\n\n';
+const DROP_HEADERS = /^(transfer-encoding|connection|content-encoding|content-length|set-cookie)$/i;
+const hasText = (x) => typeof x === "string" && /\S/.test(x);
+
+/* 串流的一個事件算不算「已經有輸出」:算了就放行,之後不能再重送。看不懂的一律算(不攔自己不懂的東西)。
+   回 true = 有輸出;字串 = message_delta 的 stop_reason;undefined = 還沒有(message_start、ping、thinking…) */
+function sseEventState(raw) {
+  const line = raw.split("\n").find((l) => l.startsWith("data:"));
+  if (!line) return undefined;
+  let d;
+  try { d = JSON.parse(line.slice(5)); } catch (_) { return true; }
+  if (!d || typeof d !== "object") return true;
+  if (d.type === "error") return true;
+  if (d.type === "content_block_start") {
+    const b = d.content_block || {};
+    return b.type === "tool_use" || b.type === "server_tool_use" || (b.type === "text" && hasText(b.text)) ? true : undefined;
+  }
+  if (d.type === "content_block_delta") {
+    const x = d.delta || {};
+    return x.type === "input_json_delta" || (x.type === "text_delta" && hasText(x.text)) ? true : undefined;
+  }
+  if (d.type === "message_delta") return d.delta && typeof d.delta.stop_reason === "string" ? d.delta.stop_reason : undefined;
+  return undefined;
+}
+
+/* 非串流的整則回應是不是空的:content 是陣列、裡面沒有 tool_use 也沒有非空白 text。看不懂的形狀不算空。 */
+function jsonIsEmpty(m) {
+  if (!m || typeof m !== "object" || !Array.isArray(m.content)) return false;
+  return !m.content.some((b) => b && (b.type === "tool_use" || b.type === "server_tool_use" || (b.type === "text" && hasText(b.text))));
+}
 const FWD_HEADERS = ["anthropic-version", "accept"];
 
 function anthropicError(res, status, type, message, noRetry) {
@@ -57,7 +91,7 @@ function startRelay(opts, presets = PRESETS) {
   const token = crypto.randomBytes(32).toString("hex");
   const up = new URL(p.origin);
   const agent = up.protocol === "https:" ? https : http;
-  const stats = { requests: 0, outputTokens: 0, capHit: false, rewrites: 0, rejected: 0 };
+  const stats = { requests: 0, outputTokens: 0, capHit: false, rewrites: 0, rejected: 0, emptyRetries: 0 };
   let revoked = false, port = 0;
 
   const srv = http.createServer((req, res) => {
@@ -87,31 +121,105 @@ function startRelay(opts, presets = PRESETS) {
       for (const h of FWD_HEADERS) if (typeof req.headers[h] === "string") headers[h] = req.headers[h];
       if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
       headers[p.authHeader] = p.authHeader === "authorization" ? "Bearer " + key : key;
-      const upReq = agent.request({ protocol: up.protocol, hostname: up.hostname, port: up.port || undefined,
-        method: "POST", path: p.prefix + "/v1/messages", headers, timeout: UPSTREAM_TIMEOUT_MS }, (upRes) => {
-        const rh = {};
-        for (const [k, v] of Object.entries(upRes.headers)) if (!/^(transfer-encoding|connection|content-encoding|content-length|set-cookie)$/i.test(k)) rh[k] = v;
-        res.writeHead(upRes.statusCode || 502, rh);
-        // output_tokens:message_delta 帶的是這則訊息的累計值,取最大;只算數,不改內容
-        let maxOut = 0, tail = "", counted = false;
-        const count = () => { if (!counted) { counted = true; stats.outputTokens += maxOut; } };
-        upRes.on("data", (c) => {
-          const s = tail + c.toString("latin1");
-          for (const m of s.matchAll(/"output_tokens"\s*:\s*(\d+)/g)) maxOut = Math.max(maxOut, Number(m[1]));
-          tail = s.slice(-40);
-          res.write(c);
+
+      let curReq = null, timer = null, gone = false;
+      res.on("close", () => { if (!res.writableFinished) { gone = true; clearTimeout(timer); if (curReq) curReq.destroy(); } });
+      // held:{ status, headers, chunks } 一則還沒交給引擎的空回應;重送不成就把它原樣交出去
+      const replay = (held) => {
+        if (!res.headersSent) res.writeHead(held.status, held.headers);
+        for (const c of held.chunks) res.write(c);
+        res.end();
+      };
+      const retryOr = (n, held, stopReason) => {
+        // 撞到長度上限的空回應重送也是一樣的結果,只會再燒一次
+        if (stopReason === "max_tokens" || gone) return replay(held);
+        if (n >= limits.emptyRetries) { onEvent({ type: "empty_giveup", attempts: n + 1 }); return replay(held); }
+        if (stats.requests >= limits.maxRequests || stats.outputTokens >= limits.maxOutputTokens) {
+          // 引擎拿到空回應多半就收尾、不會再來撞 429:在這裡就記上限,turn_failed 才會是 cap 而不是沒回覆
+          stats.capHit = true; onEvent({ type: "cap", requests: stats.requests, outputTokens: stats.outputTokens });
+          return replay(held);
+        }
+        stats.requests++; stats.emptyRetries++;
+        onEvent({ type: "empty_retry", attempt: n + 1 });
+        timer = setTimeout(() => send(n + 1, held), limits.emptyBackoffMs * (n + 1));
+      };
+      const send = (n, prev) => {
+        if (gone) return;
+        const upReq = curReq = agent.request({ protocol: up.protocol, hostname: up.hostname, port: up.port || undefined,
+          method: "POST", path: p.prefix + "/v1/messages", headers, timeout: UPSTREAM_TIMEOUT_MS }, (upRes) => {
+          const status = upRes.statusCode || 502, rh = {};
+          for (const [k, v] of Object.entries(upRes.headers)) if (!DROP_HEADERS.test(k)) rh[k] = v;
+          const ct = String(upRes.headers["content-type"] || "");
+          // output_tokens:message_delta 帶的是這則訊息的累計值,取最大;只算數,不改內容
+          let maxOut = 0, tail = "", counted = false;
+          const count = () => { if (!counted) { counted = true; stats.outputTokens += maxOut; } };
+          const sniff = (c) => {
+            const t = tail + c.toString("latin1");
+            for (const m of t.matchAll(/"output_tokens"\s*:\s*(\d+)/g)) maxOut = Math.max(maxOut, Number(m[1]));
+            tail = t.slice(-40);
+          };
+          upRes.on("close", count);   // 中途斷掉的那一筆也算進上限
+          const ok = status >= 200 && status < 300, sse = /text\/event-stream/i.test(ct), json = /application\/json/i.test(ct);
+
+          // 重送回來的不是同一種(錯誤、或串流換成 JSON):交出前一則
+          if (!ok || (!sse && !json) || (prev && res.headersSent && !sse)) {
+            if (prev) { upRes.on("data", sniff); upRes.on("end", count); upRes.on("error", () => {}); return replay(prev); }
+            res.writeHead(status, rh);
+            upRes.on("data", (c) => { sniff(c); res.write(c); });
+            upRes.on("end", () => { count(); res.end(); });
+            upRes.on("error", () => res.destroy());
+            return;
+          }
+          const held = { status, headers: rh, chunks: [] };
+
+          if (json) {
+            upRes.on("data", (c) => { sniff(c); held.chunks.push(c); });
+            upRes.on("end", () => {
+              count();
+              let m = null;
+              try { m = JSON.parse(Buffer.concat(held.chunks).toString("utf8")); } catch (_) { m = null; }
+              if (!jsonIsEmpty(m)) return replay(held);
+              retryOr(n, held, m.stop_reason);
+            });
+            upRes.on("error", () => (prev ? replay(prev) : res.destroy()));
+            return;
+          }
+
+          // 串流:有輸出之前先扣著(期間每 10 秒補一個 ping,SDK 會略過),有輸出就把扣著的一起放、之後原樣轉
+          if (!res.headersSent) res.writeHead(status, rh);
+          const dec = new StringDecoder("utf8");
+          let buf = "", live = false, stopReason = null, lastPing = Date.now();
+          const goLive = () => { live = true; for (const c of held.chunks) res.write(c); held.chunks = []; };
+          upRes.on("data", (c) => {
+            sniff(c);
+            if (live) return res.write(c);
+            held.chunks.push(c);
+            buf += dec.write(c).replace(/\r/g, "");
+            let i;
+            while (!live && (i = buf.indexOf("\n\n")) >= 0) {
+              const st = sseEventState(buf.slice(0, i)); buf = buf.slice(i + 2);
+              if (st === true) goLive(); else if (st) stopReason = st;
+            }
+            if (!live && Date.now() - lastPing >= PING_EVERY_MS) { lastPing = Date.now(); res.write(PING); }
+          });
+          upRes.on("end", () => {
+            count();
+            if (live) return res.end();
+            if (buf.trim() && sseEventState(buf) === true) { goLive(); return res.end(); }
+            retryOr(n, held, stopReason);
+          });
+          upRes.on("error", () => { if (!live) goLive(); res.destroy(); });
         });
-        upRes.on("end", () => { count(); res.end(); });
-        upRes.on("error", () => res.destroy());
-        upRes.on("close", count);   // 中途斷掉的那一筆也算進上限
-      });
-      upReq.on("timeout", () => upReq.destroy(new Error("upstream timeout")));
-      upReq.on("error", (e) => {
-        onEvent({ type: "upstream_error", code: e && e.code ? String(e.code) : "ERR" });
-        if (!res.headersSent) anthropicError(res, 502, "api_error", "upstream unreachable", false); else res.destroy();
-      });
-      res.on("close", () => { if (!res.writableFinished) upReq.destroy(); });
-      upReq.end(out);
+        upReq.on("timeout", () => upReq.destroy(new Error("upstream timeout")));
+        upReq.on("error", (e) => {
+          if (gone) return;
+          onEvent({ type: "upstream_error", code: e && e.code ? String(e.code) : "ERR" });
+          if (prev && !upReq.res) return replay(prev);
+          if (!res.headersSent) anthropicError(res, 502, "api_error", "upstream unreachable", false); else res.destroy();
+        });
+        upReq.end(out);
+      };
+      send(0, null);
     });
   });
 
