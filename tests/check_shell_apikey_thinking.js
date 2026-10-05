@@ -9,12 +9,14 @@ const run = (body, purpose) => { const b = JSON.parse(JSON.stringify(body)); con
 
 let r = run({ model: "deepseek-v4-pro", tools: TOOLS, thinking: { type: "adaptive" }, output_config: { effort: "max" } });
 t("主回合帶 adaptive + effort max:原樣(強度不動)", !r.bg && r.b.model === "deepseek-v4-pro" && r.b.thinking.type === "adaptive" && r.b.output_config.effort === "max");
-r = run({ model: "deepseek-v4-flash", tools: TOOLS, thinking: { type: "disabled" }, output_config: { effort: "low" } });
-t("主回合帶 disabled:改成開(adaptive),選的 flash 與 effort 不動", !r.bg && r.b.model === "deepseek-v4-flash" && r.b.thinking.type === "adaptive" && r.b.output_config.effort === "low");
+r = run({ model: "deepseek-v4-flash", tools: TOOLS, thinking: { type: "adaptive" }, output_config: { effort: "low" } });
+t("用戶選 flash 當主模型:是主回合(開思考、effort 不動)", !r.bg && r.b.model === "deepseek-v4-flash" && r.b.thinking.type === "adaptive" && r.b.output_config.effort === "low");
+r = run({ model: "deepseek-v4-pro", tools: TOOLS, thinking: { type: "disabled" } });
+t("請求自己帶 thinking disabled:當幕後(主回合實錄一律送 adaptive)→ flash、關思考", r.bg && r.b.model === "deepseek-v4-flash" && r.b.thinking.type === "disabled");
 r = run({ model: "deepseek-v4-pro", tools: TOOLS });
 t("主回合沒帶 thinking:補開", !r.bg && r.b.thinking.type === "adaptive");
-r = run({ model: "deepseek-v4-pro", tools: [], output_config: { effort: "high", format: { type: "json_schema" } } });
-t("主模型 id 但沒帶工具(CLI 的標題請求):幕後 → flash、關思考", r.bg && r.b.model === "deepseek-v4-flash" && r.b.thinking.type === "disabled");
+r = run({ model: "deepseek/deepseek-background", tools: [], output_config: { effort: "high", format: { type: "json_schema" } } });
+t("runtime 設的幕後 id deepseek/deepseek-background(標題請求):幕後 → flash、關思考", r.bg && r.b.model === "deepseek-v4-flash" && r.b.thinking.type === "disabled");
 r = run({ model: "claude-haiku-9", tools: TOOLS, thinking: { type: "adaptive" } });
 t("型錄外的 id(帶工具也一樣):幕後 → flash、關思考", r.bg && r.b.model === "deepseek-v4-flash" && r.b.thinking.type === "disabled");
 r = run({ model: "deepseek-v4-pro", tools: TOOLS, thinking: { type: "adaptive" } }, "Background");
@@ -32,9 +34,9 @@ t("x-blave-purpose: background:幕後(大小寫不拘)", r.bg && r.b.thinking.ty
   const relay = await startRelay({ preset: "mock", key: "not-a-real-deepseek-key" }, { mock: { ...P, origin: `http://127.0.0.1:${srv.address().port}` } });
   const post = (body, extra) => new Promise((ok) => { const q = http.request({ hostname: "127.0.0.1", port: relay.port, path: "/v1/messages", method: "POST",
     headers: { "content-type": "application/json", "x-api-key": relay.token, ...(extra || {}) } }, (res) => { res.resume(); res.on("end", ok); }); q.end(JSON.stringify(body)); });
-  await post({ model: "deepseek-v4-pro", max_tokens: 10, tools: TOOLS, thinking: { type: "disabled" }, messages: [] });
+  await post({ model: "deepseek-v4-pro", max_tokens: 10, tools: TOOLS, messages: [] });
   await post({ model: "deepseek-v4-pro", max_tokens: 10, tools: TOOLS, messages: [] }, { "x-blave-purpose": "background" });
-  t("經轉送口:主回合的 disabled 到上游已是 adaptive", log[0] && log[0].thinking.type === "adaptive" && log[0].model === "deepseek-v4-pro");
+  t("經轉送口:主回合沒帶 thinking,到上游已補 adaptive", log[0] && log[0].thinking.type === "adaptive" && log[0].model === "deepseek-v4-pro");
   t("經轉送口:header 標幕後 → 上游收到 flash + disabled、stats.background 計 1", log[1] && log[1].model === "deepseek-v4-flash" && log[1].thinking.type === "disabled" && relay.stats.background === 1);
   relay.stop(); srv.close();
   console.log(fails ? `\n${fails} 項失敗` : "\n全部通過");

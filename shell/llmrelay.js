@@ -76,18 +76,19 @@ function jsonIsEmpty(m) {
 }
 const FWD_HEADERS = ["anthropic-version", "accept"];
 
-/* 思考規則(Wei 拍板,api proxy 同一條):
-   - 幕後雜事一律走便宜那顆、關思考:型錄外的 id(引擎的 small/fast)、沒帶工具的請求(實測 CLI 2.1.281 的標題請求用主模型 id、
-     tools 是空陣列;WebFetch 摘要同類)、或呼叫端標了 x-blave-purpose: background。
-   - 其餘是主回合:一律開思考,強度(output_config.effort)照引擎帶的;沒帶或帶 disabled 都改成 adaptive。
+/* 思考規則(Wei 拍板,跟 api proxy 同一組判準):
+   - 幕後雜事一律走便宜那顆、關思考:型錄外的 id(runtime 把引擎的 small/fast 設成 deepseek/deepseek-background,
+     標題、WebFetch 摘要都走它——不設的話引擎沿用主模型 id、分不出來)、請求自己帶 thinking disabled
+     (主回合實錄一律送 adaptive)、或呼叫端標了 x-blave-purpose: background。
+   - 其餘是主回合:一律開思考,強度(output_config.effort)照引擎帶的;沒帶 thinking 就補 adaptive。
    直接改 body;回 true = 幕後 */
 function thinkingPolicy(p, body, purpose) {
-  const background = p.models.indexOf(body.model) < 0 || !(Array.isArray(body.tools) && body.tools.length > 0)
-    || String(purpose || "").toLowerCase() === "background";
+  const off = !!body.thinking && typeof body.thinking === "object" && body.thinking.type === "disabled";
+  const background = p.models.indexOf(body.model) < 0 || off || String(purpose || "").toLowerCase() === "background";
   if (background) {
     body.model = p.cheapModel;
     body.thinking = { type: "disabled" };
-  } else if (!body.thinking || typeof body.thinking !== "object" || body.thinking.type === "disabled") {
+  } else if (!body.thinking || typeof body.thinking !== "object") {
     body.thinking = { type: "adaptive" };
   }
   return background;

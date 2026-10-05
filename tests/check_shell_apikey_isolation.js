@@ -83,7 +83,7 @@ async function unit() {
   const abs = await req(base, { headers: { "x-api-key": relay.token }, target: "http://api.deepseek.com/v1/messages" });
   t("絕對 URL 當 request target → 400", abs.status === 400);
   t("被擋的請求一筆都沒到上游", mock.log.length === 2);
-  t("沒帶工具的請求算幕後:改 flash、關思考(思考規則,細節在 check_shell_apikey_thinking.js)", mock.log[0].body.model === "deepseek-v4-flash" && mock.log[0].body.thinking.type === "disabled");
+  t("主模型、沒帶 thinking:補開思考(思考規則,細節在 check_shell_apikey_thinking.js)", mock.log[0].body.model === "deepseek-v4-pro" && mock.log[0].body.thinking.type === "adaptive");
   await req(base, { headers: { "x-api-key": relay.token }, body: '{"model":"claude-haiku-9","max_tokens":5,"thinking":{"type":"adaptive"},"messages":[]}' });
   t("型錄外的 model 改寫成 flash、帶了 adaptive 也改成關思考", mock.log[2].body.model === "deepseek-v4-flash" && mock.log[2].body.thinking.type === "disabled" && relay.stats.rewrites >= 1);
   const cap = await req(base, { headers: { "x-api-key": relay.token } });

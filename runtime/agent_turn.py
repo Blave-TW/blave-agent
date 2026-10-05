@@ -68,6 +68,18 @@ PROXY_ENV = {
 }
 
 
+# 引擎的 small/fast 模型(標題、WebFetch 摘要等旁支請求)。主模型是 DeepSeek 時設成這個不在型錄裡的 id,
+# proxy 與電腦版轉送口認得它是幕後、改走 flash 關思考;不設的話引擎沿用主模型 id,跟主回合分不出來。
+# 不能用 deepseek-v4-flash:用戶可以選 flash 當主模型。兩個變數都設:CLI 先看 SMALL_FAST,沒有才看 DEFAULT_HAIKU
+BACKGROUND_MODEL = "deepseek/deepseek-background"
+
+
+def background_model_env(model):
+    if not model or "deepseek" not in str(model).lower():
+        return {}
+    return {"ANTHROPIC_SMALL_FAST_MODEL": BACKGROUND_MODEL, "ANTHROPIC_DEFAULT_HAIKU_MODEL": BACKGROUND_MODEL}
+
+
 def _relay_mode():
     """電腦版自帶 API 金鑰:外殼只在這個模式帶這兩個變數(shell/main.js llmEnv)。"""
     return bool(os.environ.get("BLAVE_LLM_RELAY_URL") and os.environ.get("BLAVE_LLM_RELAY_TOKEN"))
@@ -3994,6 +4006,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # Keychain 認的是 USER,外殼 spawn 這支時要帶齊(見 shell/main.js)。
         turn_env.pop("ANTHROPIC_BASE_URL", None)
         turn_env.pop("ANTHROPIC_API_KEY", None)
+    if _relay_mode() or os.environ.get("BLAVE_PROXY_TOKEN"):
+        turn_env.update(background_model_env(model))
     turn_env.update({
         "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": "1800000",
         "BASH_MAX_TIMEOUT_MS": "1800000",
