@@ -67,12 +67,13 @@ function loginShellPath() {
    與 where.exe 給的路徑(引號包住,路徑含空白也行)。 */
 const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: `"${bin}"`, shell: true } : { file: bin, shell: false });
 function run(cmd, args, envPath, timeout = 10000, cwd = undefined) {
-  const w = cmdWrap(cmd);
+  const w = cmdWrap(cmd), t0 = Date.now();
   return new Promise((resolve) => {
     execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath } },
       (err, stdout, stderr) => resolve({
         code: err ? (err.code === undefined ? -1 : err.code) : 0,
         stdout: String(stdout || ""), stderr: String(stderr || ""),
+        timedOut: !!(err && err.killed), ms: Date.now() - t0,
       }));
   });
 }
@@ -91,18 +92,55 @@ function winOnPath(stdout, envPath) {
   return String(stdout || "").split(/\r?\n/).map((s) => s.trim())
     .filter((l) => l && dirs.has(winDirKey(path.win32.dirname(l)))).join("\r\n");
 }
-async function which(name, envPath) {
+// seen(選用,偵測紀錄用):where.exe 在 PATH 裡看到哪幾種檔。只有無副檔名 shim 時 pickWinBin 回 null,不記就分不出「沒裝」
+async function which(name, envPath, seen) {
   if (process.platform === "win32") {
     const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
     const r = await run(path.win32.join(sys32, "where.exe"), [name], envPath, 5000, sys32);
+    if (seen) { seen.where = r.code === 0 ? winOnPath(r.stdout, envPath).split(/\r?\n/).filter(Boolean).map(binKind) : []; if (r.timedOut) seen.whereTimedOut = true; }
     return r.code === 0 ? pickWinBin(winOnPath(r.stdout, envPath)) : null;
   }
   const r = await run("/usr/bin/env", ["sh", "-c", `command -v ${name}`], envPath, 5000);
   return r.code === 0 ? r.stdout.trim() : null;
 }
 
+/* 偵測紀錄(BASE/state/detect.log,一次偵測一行 JSON,留最近 200 行):用戶回報「偵測不到」時拿來分辨是沒找到檔、
+   只找到 npm 的 shim、登入檢查逾時,還是 CLI 自己回了非 0。只記檔種、回傳碼、逾時、耗時、登入與否:
+   不記路徑(含使用者名稱)、不記 stdout/stderr(`claude auth status` 會印 email)。 */
+// 登入檢查的上限:暖機時實測不到 2 秒(測試機 codex 0.160 / claude),10 秒只會在冷啟動(剛裝好第一次跑、防毒掃一顆上百 MB 的
+// 執行檔、Windows 慢機)時撞到,而撞到就被當成「未登入」叫用戶重登。只放寬這一條;which 的 5 秒不動
+const LOGIN_CHECK_MS = 20000;
+// 檔種(純函式;tests/check_shell_login_path.js)
+function binKind(p) {
+  if (!p) return "none";
+  if (/\/ChatGPT\.app\/Contents\/Resources\/codex$/.test(p)) return "chatgpt";
+  if (/\.exe$/i.test(p)) return "exe";
+  if (/\.(cmd|bat)$/i.test(p)) return "cmd";
+  if (/\.ps1$/i.test(p)) return "ps1";
+  return /^(?:[a-z]:)?\\/i.test(p) ? "shim" : "posix";
+}
+const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms });
+/* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
+   none = 沒找到檔;shim = Windows 上 PATH 裡只有 npm 的包裝檔、解不到 codex.exe;timeout = 登入檢查逾時;
+   badjson = `claude auth status` 回的不是 JSON(舊版);nonzero = CLI 有回答、答案是沒登入(codex 非 0;claude 的 loggedIn=false) */
+function detectWhy(kind, r) {
+  if (r.loggedIn) return null;
+  if (r.bin === "none") return kind === "codex" && (r.where || []).some((k) => k === "cmd" || k === "shim") ? "codex_shim" : kind + "_none";
+  if (r.timedOut) return kind + "_timeout";
+  if (kind === "claude" && r.json === false) return "claude_badjson";
+  return kind + "_nonzero";
+}
+const DETECT_LOG_MAX = 64 * 1024, DETECT_LOG_KEEP = 200;
+function detectLogWrite(f, entry) {
+  try {
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    wsfile.append(f, JSON.stringify(entry) + "\n");
+    if (fs.lstatSync(f).size > DETECT_LOG_MAX) wsfile.replace(f, fs.readFileSync(f, "utf8").split("\n").filter(Boolean).slice(-DETECT_LOG_KEEP).join("\n") + "\n");
+  } catch (_) { /* 記不了不擋偵測 */ }
+}
+
 // 偵測結果契約(renderer 據此畫 a/b/c 三態):
-// { claude: {installed, loggedIn, authMethod, email, path}, codex: {installed, loggedIn, path} }
+// { claude: {installed, loggedIn, authMethod, email, path, why}, codex: {installed, loggedIn, path, why} }(why = detectWhy,能用時 null)
 const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
 /* Windows 的 codex.cmd 要解到真的 codex.exe:runtime/codex_engine.py 用 create_subprocess_exec 起它,吃不了 .cmd。
    npm 的 bin/codex.js(0.156.1)找的是 <平台套件>/vendor/<triple>/bin/codex.exe,退路是 @openai/codex 自己的 vendor/;
@@ -118,8 +156,9 @@ function winRealExe(bin, arch, exists = fs.existsSync) {
   const dir = path.win32.dirname(bin);
   return CODEX_WIN_EXE(arch).map((rel) => path.win32.join(dir, rel)).find((p) => exists(p)) || null;
 }
-async function codexPath(envPath) {
-  const found = await which("codex", envPath);
+async function codexPath(envPath, seen) {
+  const found = await which("codex", envPath, seen);
+  if (seen) seen.found = binKind(found);
   if (process.platform === "win32") {
     const exe = winRealExe(found, process.arch);
     if (found && !exe) console.error("[detect] codex is a .cmd shim with no codex.exe next to it: " + found);
@@ -133,34 +172,44 @@ async function codexBinNow() { return codexPath(await loginShellPath()); }
 async function detectAgents() {
   const envPath = await loginShellPath();
   const out = {
-    claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null },
-    codex: { installed: false, loggedIn: false, path: null },
+    claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null },
+    codex: { installed: false, loggedIn: false, path: null, why: null },
   };
-  const claudeBin = await which("claude", envPath);
-  if (claudeBin) {
+  const rec = { claude: {}, codex: {} };
+  // 兩條同時跑:各自最多 LOGIN_CHECK_MS,整次偵測最多也就這麼久(依序跑最壞要兩倍,畫面那邊沒有自己的逾時)
+  await Promise.all([(async () => {
+    const claudeBin = await which("claude", envPath, rec.claude);
+    rec.claude.bin = binKind(claudeBin);
+    if (!claudeBin) return;
     out.claude.installed = true;
     out.claude.path = claudeBin;
     // 官方判定:`claude auth status` 非互動輸出 JSON,以 loggedIn 欄位為準
-    const r = await run(claudeBin, ["auth", "status"], envPath);
+    const r = await run(claudeBin, ["auth", "status"], envPath, LOGIN_CHECK_MS);
+    Object.assign(rec.claude, runRec(r));
     try {
       const j = JSON.parse(r.stdout);
       out.claude.loggedIn = !!j.loggedIn;
       out.claude.authMethod = j.authMethod || null;
       out.claude.email = j.email || null;
-    } catch (_) { /* 舊版沒有這個子指令:當成未知,顯示成未登入 */ }
-  }
-  // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
-  // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
-  // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
-  // 「有 Codex」的人會看到「未偵測到」。
-  const codexBin = await codexPath(envPath);
-  if (codexBin) {
+    } catch (_) { rec.claude.json = false; /* 舊版沒有這個子指令:當成未知,顯示成未登入 */ }
+  })(), (async () => {
+    // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
+    // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
+    // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
+    // 「有 Codex」的人會看到「未偵測到」。
+    const codexBin = await codexPath(envPath, rec.codex);
+    rec.codex.bin = binKind(codexBin);
+    if (!codexBin) return;
     out.codex.installed = true;
     out.codex.path = codexBin;
     // 官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
-    const r = await run(codexBin, ["login", "status"], envPath);
+    const r = await run(codexBin, ["login", "status"], envPath, LOGIN_CHECK_MS);
+    Object.assign(rec.codex, runRec(r));
     out.codex.loggedIn = r.code === 0;
-  }
+  })()]);
+  rec.claude.loggedIn = out.claude.loggedIn; rec.codex.loggedIn = out.codex.loggedIn;
+  out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
+  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, ...rec });
   return out;
 }
 

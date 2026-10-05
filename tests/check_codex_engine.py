@@ -201,6 +201,33 @@ assert seen["model"] == "sonnet" and seen["effort"] is None, seen
 _, recent = at.ss.get_context("s1")
 assert recent[-2:] == [("user", "hello"), ("assistant", "done")], recent[-2:]
 
+# ── 2c. Windows 的 shell 包裝:收據只顯示模型寫的指令 ─────────────────────────
+#      item.command 是 codex 對 argv 做 shlex_join(app-server-protocol item_builders.rs);
+#      Windows 上 argv = [powershell.exe, (-NoLogo/-NoProfile), -Command, UTF8 前綴 + 腳本]
+#      (shell-command/src/powershell.rs)。測試機 sandbox log 實錄的形狀。
+import shlex  # noqa: E402
+PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+PREFIX = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n"
+WIN_RUN = r"C:\Users\Administrator\Blave\venv\Scripts\python.exe lib/runner.py strategies\rsi\strategy.py"
+uw = codex_engine._unwrap_shell
+assert uw(shlex.join([PS, "-Command", PREFIX + WIN_RUN])) == WIN_RUN
+assert uw(shlex.join([PS, "-NoLogo", "-NoProfile", "-Command", PREFIX + "Get-Content AGENTS.md"])) == "Get-Content AGENTS.md"
+assert uw(shlex.join(["pwsh", "-c", "Get-ChildItem tmp"])) == "Get-ChildItem tmp", "沒前綴、pwsh、-c 也拆"
+assert uw(shlex.join([r"C:\Program Files\PowerShell\7\pwsh.EXE", "-command", PREFIX + "ls"])) == "ls", "大小寫不分"
+# 雙引號的寫法(shlex 在 '\'' 混用時會出現)照樣拆;腳本裡的 ' 原樣保留
+dq = '"' + PS.replace("\\", "\\\\") + '" -Command "' + PREFIX + "Write-Output 'a b'" + '"'
+assert uw(dq) == "Write-Output 'a b'", uw(dq)
+# 認不得的形狀原樣回:多一個參數、陌生旗標、只有前綴、不是 PowerShell、引號沒關
+for keep in (shlex.join([PS, "-Command", "ls", "extra"]), shlex.join([PS, "-ExecutionPolicy", "Bypass", "-Command", "ls"]),
+             shlex.join([PS, "-Command", PREFIX]), shlex.join(["cmd.exe", "/c", "dir"]), PS + " -Command 'ls"):
+    assert uw(keep) == keep, keep
+assert uw("/bin/zsh -lc 'python3 lib/x.py'") == "python3 lib/x.py" and uw("bash -c ls") == "ls", "POSIX 照舊"
+# 收據的受詞:包著時是 powershell.exe 的路徑,拆開後是模型寫的那句;回測照樣認得出
+GC = shlex.join([PS, "-Command", PREFIX + "Get-Content references/marketplace.md -TotalCount 70"])
+assert "powershell" in at._bash_summary(GC).lower(), "前提:包著時受詞是 PowerShell 的路徑"
+assert at._bash_summary(uw(GC)) == "Get-Content references/marketplace.md", at._bash_summary(uw(GC))
+assert at._bash_kind(uw(shlex.join([PS, "-Command", PREFIX + WIN_RUN])), at.WORKSPACE, set())[0] == "backtest"
+
 # ── 3. 失敗走既有兜底 ───────────────────────────────────────────────────────
 codex_engine.run = fake_codex(FIXTURE[:2] + [
     {"type": "error", "message": "unexpected status 503 Service Unavailable: x"},

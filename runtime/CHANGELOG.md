@@ -8,6 +8,9 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **外殼修正(desktop 0.1.15;不在 runtime/ 但同一批出貨,`shell/main.js`、`shell/renderer/app.js`、`shell/telemetry.js`;要 api 先上)**:偵測本機 Claude Code／Codex 每次寫一行到 `~/Blave/state/detect.log`(找到的檔種 exe／cmd／ps1／無副檔名 shim／ChatGPT 內附、where.exe 看到哪幾種、登入檢查回傳碼、是否逾時、耗時;不記路徑與 CLI 輸出,超過 64KB 收成最近 200 行);`claude auth status`／`codex login status` 逾時 10→20 秒,兩條改成同時跑(整次最多 20 秒);新增埋點 `detect_fail`(`why`:claude_none／claude_timeout／claude_nonzero／claude_badjson／codex_none／codex_shim／codex_timeout／codex_nonzero,連結畫面偵測完每個不能用的 CLI 各一則、每日去重;api `openclaw/desktop_telemetry.py` 白名單同批)。測試 `tests/check_shell_login_path.js`、`tests/check_shell_telemetry.js`。
+- **Windows 上 Codex 的收據顯示整串 PowerShell 包裝(`codex_engine._unwrap_shell`)**:除了 POSIX 的 `sh/bash/zsh -lc|-c`,也拆 `powershell.exe`／`pwsh`(可帶 `-NoLogo`／`-NoProfile`)`-Command|-c <腳本>`,並去掉 codex 自己加的 `try { [Console]::OutputEncoding=… } catch {}` 前綴(`codex-rs/shell-command/src/powershell.rs` UTF8_OUTPUT_PREFIX),收據受詞與分類只看模型寫的那句;認不得的形狀(陌生旗標、多餘參數、只有前綴)原樣回。macOS／Linux 行為不變。測試 `tests/check_codex_engine.py` 2c 節。
+
 ## 1.1.113 — 2026-10-04
 
 - **報告被永久拒收不再靜默(`report_uploader`、`strategy_reporter`、`agent_turn`;要 api 先上)**:uploader 判死一份報告(api 400/413,或沒打到 api 就失敗:壞 JSON、sidecar 缺圖、本地預檢)時另記一筆事實到 `state/report_failures.json`(`origin` = api／machine,同 id 上傳成功即清;看盤板不記);`strategy_reporter` 把 `reports/failed/` 裡還在的那些搭 manifest 便車送 `report_failures`(最多 20 筆,讀失敗整欄省略),api 存起來給報告清單畫「上傳失敗」,machine 那種由平台發 P2 `report_rejected`;agent 下一回合開頭注入一行機器事實(每筆 `(id, at)` 只講一次,told 檔 `state/report_failures_told.json`;排程回合(ReportSink)不注入也不記標記,空回覆續跑沿用第一次算出的那一行;標題、原因裡的控制字元換空白、`]` 跳脫,不合法的檔名寫成「檔名不合法」),要它主動告訴用戶哪份沒上架、修好用同一個 id 重寫。測試在 api `tests/check_report_failures.py`。
