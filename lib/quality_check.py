@@ -24,7 +24,7 @@ from pathlib import Path
 def check(filepath: str) -> list[dict]:
     """Return list of findings: {level: 'CRITICAL'|'WARNING', line: int, msg: str}"""
     try:
-        source = Path(filepath).read_text(encoding="utf-8")
+        source = Path(filepath).read_text(encoding="utf-8-sig")   # a Windows editor's BOM is not a syntax error
     except (OSError, UnicodeDecodeError) as e:
         return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot read file: {e}"}]
 
@@ -46,7 +46,7 @@ def _parse_for_runner(filepath: str):
     # below on the file that is *executing* — it obviously parses, and the full
     # CLI already reports read/parse problems as CRITICAL, so return None here.
     try:
-        return ast.parse(Path(filepath).read_text(encoding="utf-8"))
+        return ast.parse(Path(filepath).read_text(encoding="utf-8-sig"))
     except (OSError, SyntaxError, ValueError):
         return None
 

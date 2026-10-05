@@ -1193,7 +1193,7 @@ def _lookahead_source_hints(config):
     if not path:
         return []
     try:
-        lines = Path(path).read_text(encoding='utf-8').splitlines()
+        lines = Path(path).read_text(encoding='utf-8-sig').splitlines()
     except OSError:
         return []
     hints = []

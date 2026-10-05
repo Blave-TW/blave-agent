@@ -371,6 +371,29 @@ for tool in ("quality_check.py", "security_check.py"):
     check((r.stdout.splitlines() or [""])[0] == "RESULT: do-not-run" and r.returncode == 2 and "RuntimeError" in r.stderr and "Traceback" not in r.stderr,
           f"{tool}: an unexpected error inside the scan → RESULT: do-not-run, exit 2 ({r.stdout[:40]!r}, {r.returncode}, {r.stderr[-80:]!r})")
 
+# A UTF-8 BOM (Windows Notepad, PowerShell `Set-Content -Encoding UTF8`) is not a syntax error: read as
+# plain utf-8 it stays as U+FEFF, ast.parse fails, and every strategy a Windows user edited is refused —
+# while the runner's blocking guards (pinned END, TXF mask) silently found nothing in the same file.
+def cli_bytes(tool, data):
+    with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as f:
+        f.write(data)
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "lib", tool), f.name], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return f.name, r.returncode, (r.stdout.splitlines() or [""])[0]
+BOM = b"\xef\xbb\xbf"
+fn, rc, first = cli_bytes("quality_check.py", BOM + CLEAN.encode("utf-8")); os.unlink(fn)
+check(first == "RESULT: clean" and rc == 0, f"quality_check: a clean file saved with a UTF-8 BOM → RESULT: clean, exit 0 ({first!r}, {rc})")
+fn, rc, first = cli_bytes("quality_check.py", BOM + BAD.encode("utf-8")); os.unlink(fn)
+check(first == "RESULT: do-not-run" and rc == 2, f"quality_check: a broken file with a BOM is still do-not-run, exit 2 ({first!r}, {rc})")
+fn, rc, first = cli_bytes("security_check.py", BOM + CLEAN.encode("utf-8")); os.unlink(fn)
+check(first == "RESULT: clean" and rc == 0, f"security_check: a clean file with a BOM → RESULT: clean, exit 0 ({first!r}, {rc})")
+from lib.quality_check import end_pinned_findings
+with tempfile.NamedTemporaryFile("wb", suffix=".py", delete=False) as f:
+    f.write(BOM + CLEAN.replace('FEE = 0.0005', 'FEE = 0.0005\nEND = "2025-12-31"').encode("utf-8"))
+check(len(end_pinned_findings(f.name)) == 1, "runner guard (pinned END) still sees a file saved with a BOM")
+os.unlink(f.name)
+from lib.strategy import version_note_of
+check(version_note_of("\ufeffVERSION_NOTE = 'v2 note'\n") == "v2 note", "version_note_of reads a stored code blob that starts with a BOM")
+
 # references decide on the RESULT line, never on exit 1 / exit 2
 install = mk[mk.index("6. **Security scan**"):mk.index("8. **Run it")]
 check("Decide on its `RESULT: …` line (printed first), never on the exit code" in install and "exit 1 for both 1 and 2" in install,

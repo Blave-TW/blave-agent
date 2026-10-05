@@ -43,7 +43,7 @@ _EXEC_RE = re.compile(r"\b(eval|exec|compile)\s*\(")
 def check(filepath: str) -> list[dict]:
     """Return list of findings: {level: 'CRITICAL'|'WARNING', line: int, msg: str}"""
     try:
-        source = Path(filepath).read_text(encoding="utf-8")
+        source = Path(filepath).read_text(encoding="utf-8-sig")   # a Windows editor's BOM is not a syntax error
     except (OSError, UnicodeDecodeError) as e:
         return [{"level": "CRITICAL", "line": 0, "msg": f"Cannot read file: {e}"}]
     findings = []
